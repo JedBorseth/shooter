@@ -47,6 +47,10 @@ func _check_buses() -> void:
 		),
 		"Weapons bus has a compressor"
 	)
+	var has_tail := false
+	for i in AudioServer.get_bus_effect_count(weapons) if weapons >= 0 else 0:
+		has_tail = has_tail or AudioServer.get_bus_effect(weapons, i) is AudioEffectReverb
+	_check(has_tail, "Weapons bus has a reverb tail")
 	_check(
 		(
 			AudioServer.get_bus_effect_count(0) > 0

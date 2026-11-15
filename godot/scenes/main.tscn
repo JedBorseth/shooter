@@ -22,6 +22,8 @@
 [ext_resource type="PackedScene" path="res://assets/weapons/m870/m870.fbx" id="14_m870"]
 [ext_resource type="PackedScene" path="res://assets/weapons/m40/m40.fbx" id="15_m40"]
 [ext_resource type="PackedScene" path="res://assets/weapons/pistol/pistol.fbx" id="16_pistol"]
+[ext_resource type="Script" path="res://scripts/score_feed.gd" id="17_score"]
+[ext_resource type="AudioStream" path="res://assets/audio/ui/medal.ogg" id="18_medal"]
 
 [sub_resource type="ProceduralSkyMaterial" id="SkyMat"]
 sky_top_color = Color(0.3, 0.44, 0.62, 1)
@@ -397,6 +399,21 @@ text = "30 / 120"
 
 [node name="HitSound" type="AudioStreamPlayer" parent="HUD"]
 volume_db = -6.0
+bus = &"UI"
+
+[node name="ScoreFeed" type="Control" parent="HUD"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("17_score")
+
+[node name="MedalSound" type="AudioStreamPlayer" parent="HUD/ScoreFeed"]
+stream = ExtResource("18_medal")
+volume_db = -8.0
 bus = &"UI"
 
 [node name="PauseMenu" parent="." instance=ExtResource("5_pause")]

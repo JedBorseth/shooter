@@ -8,6 +8,7 @@ pub mod look;
 pub mod movement;
 pub mod player;
 pub mod rng;
+pub mod score;
 pub mod weapon;
 
 pub use glam::{Vec2, Vec3};
