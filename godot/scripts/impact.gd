@@ -44,12 +44,29 @@ func setup(normal: Vector3, with_decal: bool, surface: String = "concrete") -> v
 
 
 func _sound_for(surface: String) -> AudioStream:
-	# The .ogg files themselves are cached by ResourceLoader; the randomizer is cheap.
+	var paths: PackedStringArray = _paths_for(surface)
+	if paths.is_empty():
+		return null
+	# The .ogg files are cached by ResourceLoader; the randomizer is cheap.
 	var randomizer := AudioStreamRandomizer.new()
 	randomizer.random_pitch = 1.1
-	for i in range(1, 9):
-		var path := "res://assets/audio/impacts/%s_%d.ogg" % [surface, i]
-		if not ResourceLoader.exists(path):
-			break
+	for path in paths:
 		randomizer.add_stream(-1, load(path))
-	return randomizer if randomizer.streams_count > 0 else null
+	return randomizer
+
+
+## Which numbered files exist per surface. Only paths are cached, so no
+## resource outlives the scene at exit.
+static var _paths := {}
+
+
+static func _paths_for(surface: String) -> PackedStringArray:
+	if not _paths.has(surface):
+		var found := PackedStringArray()
+		for i in range(1, 9):
+			var path := "res://assets/audio/impacts/%s_%d.ogg" % [surface, i]
+			if not ResourceLoader.exists(path):
+				break
+			found.append(path)
+		_paths[surface] = found
+	return _paths[surface]

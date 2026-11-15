@@ -184,6 +184,12 @@ func _sentry(main: Node, player: FpsPlayer) -> void:
 	player.global_position = sentry.global_position + Vector3(-4, 0.05, 4)
 	await _ticks(60 * 3)
 	_check(_damage_taken > damage_before, "the sentry shoots a visible player")
+	_check(sentry.call("apply_damage", 500.0, false), "the sentry can be destroyed")
+	var hitbox := sentry.get_node("Hitbox") as StaticBody3D
+	_check(hitbox.collision_layer == 0, "a destroyed sentry can't be hit (no hit markers)")
+	var hurt_while_down := _damage_taken
+	await _ticks(60)
+	_check(_damage_taken == hurt_while_down, "a destroyed sentry stops firing")
 	# Let the last shot's sound finish so nothing is still playing at exit.
 	sentry.set("enabled", false)
 	player.global_position = Vector3(0, 0.05, 20)

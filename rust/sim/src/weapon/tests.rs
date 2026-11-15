@@ -375,3 +375,64 @@ fn picking_up_a_carried_weapon_refills_ammo() {
     assert_eq!(s.slots[1].reserve, 32);
     assert_eq!(s.active, 0, "refilling does not switch weapons");
 }
+
+#[test]
+fn reload_cannot_skip_a_pump_cycle() {
+    let mut s = ready_with(["m870", "m1911"]);
+    let mut events = Vec::new();
+    // Mash fire and reload on alternate ticks for one second.
+    for i in 0..60 {
+        let input = CombatInput {
+            fire: i % 2 == 0,
+            reload: i % 2 == 1,
+            ..Default::default()
+        };
+        step(&mut s, &input, &CombatContext::default(), DT, &mut events);
+    }
+    // One shot, a 0.62 s pump, then a second shot interrupting the queued reload at most.
+    assert!(shots(&events) <= 2, "fired {}", shots(&events));
+}
+
+#[test]
+fn reload_pressed_during_a_cycle_starts_after_it() {
+    let mut s = ready_with(["m40", "m1911"]);
+    run(&mut s, fire(), CombatContext::default(), 1);
+    assert!(matches!(s.action, Action::Cycling { .. }));
+    let events = run(
+        &mut s,
+        CombatInput {
+            reload: true,
+            ..Default::default()
+        },
+        CombatContext::default(),
+        1,
+    );
+    assert!(events.is_empty());
+    assert!(
+        matches!(s.action, Action::Cycling { .. }),
+        "the bolt still cycles"
+    );
+    let events = run(&mut s, CombatInput::default(), CombatContext::default(), 70);
+    assert!(events.contains(&CombatEvent::ReloadStarted {
+        weapon: id("m40"),
+        empty: false
+    }));
+}
+
+#[test]
+fn pickup_drops_aim() {
+    let mut s = ready();
+    run(&mut s, aim(), CombatContext::default(), 30);
+    assert_eq!(s.ads, 1.0);
+    run(
+        &mut s,
+        CombatInput {
+            aim: true,
+            pickup: Some(id("m40")),
+            ..Default::default()
+        },
+        CombatContext::default(),
+        1,
+    );
+    assert_eq!(s.scope_amount(), 0.0);
+}

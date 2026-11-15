@@ -106,6 +106,8 @@ pub struct CombatState {
     /// Seconds of heavy sway left after running out of breath.
     pub winded: f32,
     pub holding_breath: bool,
+    /// Reload was pressed while working the bolt or pump; it starts once the cycle ends.
+    pub reload_queued: bool,
 }
 
 impl CombatState {
@@ -128,6 +130,7 @@ impl CombatState {
             breath: 1.0,
             winded: 0.0,
             holding_breath: false,
+            reload_queued: false,
         }
     }
 
@@ -287,6 +290,7 @@ pub fn step(
 
     if ctx.sprinting {
         state.sprint_out = state.def().sprint_out_time;
+        state.reload_queued = false;
         if state.is_reloading() {
             // Classic rule: sprinting interrupts a reload; rounds already loaded stay.
             state.action = Action::Ready;
@@ -299,7 +303,16 @@ pub fn step(
     advance_action(state, dt, events);
 
     let def = state.def();
+    // A reload can't cut a bolt or pump cycle short: it waits for the cycle to end.
     if input.reload && !ctx.sprinting {
+        if matches!(state.action, Action::Cycling { .. }) {
+            state.reload_queued = true;
+        } else {
+            try_start_reload(state, events);
+        }
+    }
+    if state.reload_queued && matches!(state.action, Action::Ready) {
+        state.reload_queued = false;
         try_start_reload(state, events);
     }
 
@@ -358,6 +371,8 @@ fn pick_up(state: &mut CombatState, weapon: WeaponId, events: &mut Vec<CombatEve
     state.active = slot;
     state.burst = 0;
     state.cooldown = 0.0;
+    state.ads = 0.0;
+    state.reload_queued = false;
     state.action = Action::Raising {
         remaining: def.raise_time,
     };
@@ -484,8 +499,10 @@ fn advance_action(state: &mut CombatState, dt: f32, events: &mut Vec<CombatEvent
 fn try_start_reload(state: &mut CombatState, events: &mut Vec<CombatEvent>) {
     let weapon = *state.weapon();
     let def = weapon.id.def();
-    let idle = matches!(state.action, Action::Ready | Action::Cycling { .. });
-    if !idle || weapon.magazine >= def.magazine || weapon.reserve == 0 {
+    if !matches!(state.action, Action::Ready)
+        || weapon.magazine >= def.magazine
+        || weapon.reserve == 0
+    {
         return;
     }
     let empty = weapon.magazine == 0;

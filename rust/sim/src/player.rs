@@ -99,6 +99,14 @@ impl PlayerState {
         }
     }
 
+    /// A freshly spawned player with the default loadout and full health.
+    pub fn spawned(params: &PlayerParams) -> Self {
+        Self {
+            health: params.health.max_health,
+            ..Self::default()
+        }
+    }
+
     pub fn alive(&self) -> bool {
         self.health > 0.0
     }
@@ -206,10 +214,12 @@ pub fn step(
         wish: input.wish,
         yaw: input.yaw,
         jump: input.jump,
-        // While scoped the sprint key holds breath instead.
-        sprint: input.sprint && !scoped,
+        // While scoped the sprint key holds breath instead. Movement still sees the
+        // key (blocked), so letting go of the scope with Shift held doesn't count
+        // as a fresh sprint press.
+        sprint: input.sprint,
         crouch: input.crouch,
-        block_sprint: input.fire || input.aim || reload_pressed,
+        block_sprint: input.fire || input.aim || reload_pressed || scoped,
         speed_multiplier: def.move_scale * (1.0 + (def.ads_move_scale - 1.0) * ads),
     };
     let velocity = movement::step(&mut state.movement, &move_input, env, &params.movement, dt);
@@ -405,5 +415,24 @@ mod tests {
         run(&mut s, hold, MoveEnv::default(), 5);
         assert!(s.combat.holding_breath);
         assert!(!s.movement.sprinting);
+
+        // Let go of the scope while still holding Shift and moving: no sprint.
+        let release = PlayerInput {
+            wish: Vec2::Y,
+            sprint: true,
+            ..Default::default()
+        };
+        run(&mut s, release, MoveEnv::default(), 40);
+        assert!(
+            !s.movement.sprinting,
+            "releasing the scope must not start a sprint"
+        );
+    }
+
+    #[test]
+    fn spawned_players_get_the_configured_health() {
+        let mut params = PlayerParams::default();
+        params.health.max_health = 150.0;
+        assert_eq!(PlayerState::spawned(&params).health, 150.0);
     }
 }

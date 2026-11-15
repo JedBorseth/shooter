@@ -164,6 +164,7 @@ impl ICharacterBody3D for FpsPlayer {
         let rid = self.base().get_rid();
         self.headroom.add_exception_rid(rid);
         self.base_mut().add_to_group("players");
+        self.state = PlayerState::spawned(&self.params);
 
         self.yaw = self.base().get_rotation().y;
         self.base_mut().set_rotation(Vector3::ZERO);
@@ -521,6 +522,8 @@ impl FpsPlayer {
     fn set_input_enabled(&mut self, enabled: bool) {
         self.input_enabled = enabled;
         self.latched = Default::default();
+        // A key still held when the menu closes is not a fresh press.
+        self.interact_held = enabled && Input::singleton().is_action_pressed("interact");
     }
 
     /// Points the view: yaw and pitch in radians (spawns, tests, spectating).
@@ -756,7 +759,8 @@ impl FpsPlayer {
                     }
                     None => targets.push((target, damage, headshot)),
                 }
-                self.spawn_impact(hit.position, hit.normal, false, "flesh");
+                let surface = surface_meta(Some(collider)).unwrap_or_else(|| "flesh".to_owned());
+                self.spawn_impact(hit.position, hit.normal, false, &surface);
             } else {
                 let surface = surface_of(hit.collider.as_ref());
                 // Shotguns leave a decal for only some pellets to limit clutter.
@@ -984,7 +988,7 @@ impl FpsPlayer {
     }
 
     fn respawn(&mut self) {
-        self.state = PlayerState::default();
+        self.state = PlayerState::spawned(&self.params);
         let spawn = self.spawn;
         let mut body = self.base_mut();
         body.set_global_position(spawn.origin);
@@ -1036,15 +1040,20 @@ fn find_damageable(collider: &Gd<Node>) -> Option<Gd<Node>> {
 }
 
 /// The `surface` metadata on a collider or its nearest ancestor that has it.
-fn surface_of(collider: Option<&Gd<Node>>) -> String {
+fn surface_meta(collider: Option<&Gd<Node>>) -> Option<String> {
     let mut node = collider.cloned();
     while let Some(current) = node {
         if current.has_meta("surface") {
-            return current.get_meta("surface").to_string();
+            return Some(current.get_meta("surface").to_string());
         }
         node = current.get_parent();
     }
-    DEFAULT_SURFACE.to_owned()
+    None
+}
+
+/// Like [`surface_meta`], defaulting to concrete for untagged world geometry.
+fn surface_of(collider: Option<&Gd<Node>>) -> String {
+    surface_meta(collider).unwrap_or_else(|| DEFAULT_SURFACE.to_owned())
 }
 
 /// Frame-rate independent exponential smoothing factor.

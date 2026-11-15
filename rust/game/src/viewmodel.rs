@@ -149,6 +149,9 @@ pub struct WeaponView {
     round_sound: Option<Gd<AudioStreamPlayer>>,
     /// Optional marker where shells leave the weapon.
     ejection: Option<Gd<Node3D>>,
+    /// Resolved from `weapon` once the table is loaded.
+    id: Option<WeaponId>,
+    shell_mesh: Option<Gd<CylinderMesh>>,
 
     flash_time: f32,
     flash_count: u32,
@@ -162,6 +165,11 @@ impl INode3D for WeaponView {
         self.cycle_sound = self.base().try_get_node_as("CycleSound");
         self.round_sound = self.base().try_get_node_as("RoundSound");
         self.ejection = self.base().try_get_node_as("Ejection");
+        self.id = WeaponId::by_key(&self.weapon.to_string());
+        if self.id.is_none() {
+            godot_error!("WeaponView: unknown weapon `{}`", self.weapon);
+        }
+        self.shell_mesh = Some(shell_mesh(&shader, self.shell_color, self.shell_size));
         self.flash.set_visible(false);
         self.flash_light.set_visible(false);
     }
@@ -179,7 +187,7 @@ impl INode3D for WeaponView {
 
 impl WeaponView {
     pub fn weapon_id(&self) -> Option<WeaponId> {
-        WeaponId::by_key(&self.weapon.to_string())
+        self.id
     }
 
     /// Where shells come out, in the view's parent (rig) space.
@@ -237,6 +245,23 @@ struct Shell {
     spin: Vector3,
     age: f32,
     clinked: bool,
+}
+
+/// A casing: a small cylinder drawn with the viewmodel shader.
+fn shell_mesh(shader: &Gd<Shader>, color: Color, size: Vector2) -> Gd<CylinderMesh> {
+    let mut cylinder = CylinderMesh::new_gd();
+    cylinder.set_top_radius(size.x);
+    cylinder.set_bottom_radius(size.x);
+    cylinder.set_height(size.y);
+    cylinder.set_radial_segments(8);
+    cylinder.set_rings(1);
+    let mut material = ShaderMaterial::new_gd();
+    material.set_shader(shader);
+    material.set_shader_parameter("albedo", &color.to_variant());
+    material.set_shader_parameter("metallic", &0.85.to_variant());
+    material.set_shader_parameter("roughness", &0.35.to_variant());
+    cylinder.set_material(&material);
+    cylinder
 }
 
 /// Replaces each surface's standard material with the viewmodel shader, copying
@@ -423,10 +448,11 @@ impl ViewmodelRig {
     /// Throws a casing out of the ejection port, to the right and up. Shells
     /// live in the rig's (camera) space, so they use the viewmodel shader too.
     fn eject_shell(&mut self, view: &Gd<WeaponView>) {
-        let (start, color, size) = {
+        let (start, mesh) = {
             let v = view.bind();
-            (v.ejection_point(), v.shell_color, v.shell_size)
+            (v.ejection_point(), v.shell_mesh.clone())
         };
+        let Some(mesh) = mesh else { return };
         if self.shells.len() < SHELL_POOL {
             let mut mesh = MeshInstance3D::new_alloc();
             mesh.set_cast_shadows_setting(
@@ -447,21 +473,8 @@ impl ViewmodelRig {
         self.shells_ejected = self.shells_ejected.wrapping_add(1);
         let seed = self.shells_ejected;
 
-        let mut cylinder = CylinderMesh::new_gd();
-        cylinder.set_top_radius(size.x);
-        cylinder.set_bottom_radius(size.x);
-        cylinder.set_height(size.y);
-        cylinder.set_radial_segments(8);
-        cylinder.set_rings(1);
-        let mut material = ShaderMaterial::new_gd();
-        material.set_shader(&load::<Shader>("res://shaders/viewmodel.gdshader"));
-        material.set_shader_parameter("albedo", &color.to_variant());
-        material.set_shader_parameter("metallic", &0.85.to_variant());
-        material.set_shader_parameter("roughness", &0.35.to_variant());
-        cylinder.set_material(&material);
-
         let shell = &mut self.shells[index];
-        shell.mesh.set_mesh(&cylinder);
+        shell.mesh.set_mesh(&mesh);
         shell.mesh.set_visible(true);
         shell.position = start;
         shell.velocity = Vector3::new(

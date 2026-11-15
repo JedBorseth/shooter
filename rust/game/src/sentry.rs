@@ -5,7 +5,7 @@
 
 use godot::classes::{
     AudioStreamPlayer3D, INode3D, MeshInstance3D, Node3D, OmniLight3D, PackedScene,
-    PhysicsRayQueryParameters3D, StandardMaterial3D,
+    PhysicsRayQueryParameters3D, StandardMaterial3D, StaticBody3D,
 };
 use godot::prelude::*;
 use shooter_sim::rng;
@@ -63,6 +63,8 @@ pub struct Sentry {
     eye: OnReady<Gd<MeshInstance3D>>,
     #[init(node = "FireSound")]
     fire_sound: OnReady<Gd<AudioStreamPlayer3D>>,
+    #[init(node = "Hitbox")]
+    hitbox: OnReady<Gd<StaticBody3D>>,
 
     eye_material: Option<Gd<StandardMaterial3D>>,
     health: f32,
@@ -106,6 +108,7 @@ impl INode3D for Sentry {
             self.apply_head();
             if self.down_for <= 0.0 {
                 self.health = self.max_health;
+                self.hitbox.set_collision_layer(HITBOX_LAYER);
             }
             self.set_eye(0.0);
             return;
@@ -173,6 +176,7 @@ impl Sentry {
         if self.health <= 0.0 {
             self.down_for = self.repair_time;
             self.burst_left = 0;
+            self.hitbox.set_collision_layer(0);
             return true;
         }
         false

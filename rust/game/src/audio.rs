@@ -24,12 +24,12 @@ pub fn variations(base: &str, pitch: f32) -> Option<Gd<AudioStreamRandomizer>> {
         return None;
     }
     let mut randomizer = AudioStreamRandomizer::new_gd();
-    for (i, path) in paths.iter().enumerate() {
+    for path in &paths {
         if let Some(stream) = loader
             .load(path)
             .and_then(|r| r.try_cast::<AudioStream>().ok())
         {
-            randomizer.add_stream(i as i32, &stream);
+            randomizer.add_stream(-1, &stream);
         }
     }
     randomizer.set_random_pitch(pitch);
