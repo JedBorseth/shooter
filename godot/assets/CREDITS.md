@@ -25,7 +25,7 @@ Gameplay assets below are CC0 (public domain). No attribution is required, but w
 ## Zombies menu reference assets
 
 `zombies/` contains the globe texture, background/flare images, five map signposts,
-and three navigation sounds from the user-supplied
+the hover sound, and quiet looping `audio/main-theme.mp3` music from the user-supplied
 [JedBorseth/bo2-menu asset collection](https://github.com/JedBorseth/bo2-menu/tree/main/public/assets),
 revision `1f4b968c47238dfaefb45f36743352e05a24d1cc`.
 `agency_bold.ttf` was converted losslessly from that collection's `fonts/AGENCYB.woff`

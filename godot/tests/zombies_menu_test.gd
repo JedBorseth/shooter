@@ -25,10 +25,14 @@ func _run() -> void:
 	_check(not title.get_node("Margin").visible, "main menu hides while Zombies is open")
 	_check(zombies.screen == "zombies", "Zombies opens before Solo")
 	_check(zombies.get_node("Canvas/Landing/Solo").has_focus(), "Solo has keyboard focus")
+	await _check_audio(zombies)
+	var music := zombies.get("_music") as AudioStreamPlayer
+	var music_reference: WeakRef = weakref(music)
 	await _capture("zombies-menu.png")
 	zombies.get_node("Canvas/Landing/Solo").pressed.emit()
 	await _frames(3)
 	_check(zombies.screen == "maps", "Solo opens globe map selector")
+	_check(zombies.get("_music") == music and music.playing, "music continues across Solo navigation")
 	_check(zombies.get_node("Canvas/MapSelector").visible, "map selector is visible")
 	_check(zombies.selected_map == 0, "Green Run is initially selected")
 	await _action("ui_down")
@@ -65,15 +69,39 @@ func _run() -> void:
 	_check(not ResourceLoader.has_cached("res://scenes/main.tscn"), "map selection does not load the arena")
 	_check(not ResourceLoader.has_cached("res://scenes/player.tscn"), "map selection does not load the player")
 	_check(zombies.find_children("*", "Node3D", true, false).is_empty(), "globe uses no gameplay or 3D scene nodes")
+	_check(not (zombies.get("_hover_sound") as AudioStreamPlayer).playing, "map selection plays no click sounds")
 	await _cancel()
 	_check(zombies.screen == "zombies", "Esc returns from maps to Zombies")
 	await _cancel()
 	_check(title.get_node_or_null("ZombiesMenu") == null, "Esc returns from Zombies to title")
+	_check(music_reference.get_ref() == null, "leaving Zombies disposes its music player")
 	_check(title.get_node("Margin").visible and zombies_button.has_focus(), "title restores visibility and focus")
 	zombies_button.pressed.emit()
 	await _frames(2)
 	_check(title.get_node("ZombiesMenu").screen == "zombies", "reopening Zombies starts at Solo choice")
 	_finish()
+
+
+func _check_audio(zombies: Node) -> void:
+	var music := zombies.get("_music") as AudioStreamPlayer
+	var hover := zombies.get("_hover_sound") as AudioStreamPlayer
+	_check(music.playing and (music.stream as AudioStreamMP3).loop, "background music plays and loops")
+	_check(music.volume_db <= -38.0, "background music is very quiet")
+	_check(zombies.find_children("*", "AudioStreamPlayer", true, false).size() == 2, "only hover and music players exist")
+	zombies.get_node("Canvas/Landing/Solo").mouse_entered.emit()
+	_check(hover.playing, "first hover plays")
+	var next_time: int = zombies.get("_next_hover_time_msec")
+	hover.stop()
+	zombies.get_node("Canvas/Back").mouse_entered.emit()
+	_check(not hover.playing and zombies.get("_next_hover_time_msec") == next_time,
+		"moving to another button cannot bypass hover cooldown")
+	await create_timer(0.45).timeout
+	zombies.get_node("Canvas/Back").mouse_entered.emit()
+	_check(hover.playing, "hover can play again after cooldown")
+	var replay_time: int = zombies.get("_next_hover_time_msec")
+	zombies.get_node("Canvas/Landing/Solo").mouse_entered.emit()
+	_check(zombies.get("_next_hover_time_msec") == replay_time, "repeated hover does not restart sound")
+	hover.stop()
 
 
 func _cancel() -> void:

@@ -7,6 +7,7 @@ const ASSETS := "res://assets/zombies/"
 const ORANGE := Color("e88b36")
 const WHITE := Color("c8c9c8")
 const MUTED := Color("8c9295")
+const HOVER_COOLDOWN_MSEC := 400
 const MAPS := [
 	{"name": "GREEN RUN", "mode": "TRANZIT", "region": "WASHINGTON, USA", "lat": 46.0, "lon": -122.0,
 		"image": "transit", "description": "A bus. A fractured world. Keep moving through the fog."},
@@ -40,8 +41,8 @@ var _map_buttons: Array[Button] = []
 var _markers: Array[Button] = []
 var _marker_labels: Array[Label] = []
 var _hover_sound: AudioStreamPlayer
-var _accept_sound: AudioStreamPlayer
-var _map_sound: AudioStreamPlayer
+var _music: AudioStreamPlayer
+var _next_hover_time_msec := 0
 var _longitude := deg_to_rad(-122.0)
 var _target_longitude := deg_to_rad(-122.0)
 var _dragging := false
@@ -51,8 +52,9 @@ var _font: Font
 func _ready() -> void:
 	_font = load(ASSETS + "agency_bold.ttf") as Font
 	_hover_sound = _audio("audio/misc/cac_edit_class.mp3", -23.0)
-	_accept_sound = _audio("audio/misc/accept_00.mp3", -18.0)
-	_map_sound = _audio("audio/globe/level_select.mp3", -22.0)
+	_music = _audio("audio/main-theme.mp3", -38.0)
+	(_music.stream as AudioStreamMP3).loop = true
+	_music.play()
 	_canvas = Control.new()
 	_canvas.name = "Canvas"
 	_canvas.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -102,6 +104,11 @@ func _build_landing() -> void:
 	_description.size.x = 470
 
 
+func _exit_tree() -> void:
+	_music.stop()
+	_hover_sound.stop()
+
+
 func _build_selector() -> void:
 	_selector = Control.new()
 	_selector.name = "MapSelector"
@@ -149,7 +156,6 @@ func open_solo() -> void:
 	_breadcrumb.text = "SHOOTER  /  ZOMBIES  /  SOLO"
 	_globe.position = Vector2(590, 125)
 	_globe.size = Vector2(760, 760)
-	_accept_sound.play()
 	select_map(selected_map)
 	_map_buttons[selected_map].grab_focus()
 
@@ -157,7 +163,6 @@ func open_solo() -> void:
 func select_map(index: int) -> void:
 	if index < 0 or index >= MAPS.size():
 		return
-	var changed := selected_map != index
 	selected_map = index
 	var map: Dictionary = MAPS[index]
 	_target_longitude = deg_to_rad(float(map["lon"]))
@@ -169,12 +174,9 @@ func select_map(index: int) -> void:
 	for i in _map_buttons.size():
 		_map_buttons[i].add_theme_color_override("font_color", ORANGE if i == index else WHITE)
 		_marker_labels[i].modulate = ORANGE if i == index else WHITE
-	if changed:
-		_map_sound.play()
 
 
 func go_back() -> void:
-	_accept_sound.play()
 	if screen == "maps":
 		_show_landing()
 	else:
@@ -284,7 +286,7 @@ func _button(parent: Node, text: String, at: Vector2, dimensions: Vector2, font_
 	highlight.content_margin_left = 8
 	for state: String in ["hover", "focus", "pressed"]:
 		button.add_theme_stylebox_override(state, highlight)
-	button.mouse_entered.connect(func() -> void: _hover_sound.play())
+	button.mouse_entered.connect(_play_hover.bind(button))
 	parent.add_child(button)
 	return button
 
@@ -299,6 +301,15 @@ func _image(parent: Node, path: String, at: Vector2, dimensions: Vector2) -> Tex
 	image.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	parent.add_child(image)
 	return image
+
+
+func _play_hover(button: Button) -> void:
+	var now := Time.get_ticks_msec()
+	# One shared cooldown across all buttons. Never restart an active sound.
+	if button.disabled or now < _next_hover_time_msec or _hover_sound.playing:
+		return
+	_next_hover_time_msec = now + HOVER_COOLDOWN_MSEC
+	_hover_sound.play()
 
 
 func _audio(path: String, volume: float) -> AudioStreamPlayer:
