@@ -1,0 +1,19 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/tracer.gd" id="1_script"]
+
+[sub_resource type="StandardMaterial3D" id="Mat_tracer"]
+transparency = 1
+blend_mode = 1
+shading_mode = 0
+albedo_color = Color(1, 0.8, 0.5, 1)
+disable_receive_shadows = true
+
+[sub_resource type="BoxMesh" id="Mesh_tracer"]
+material = SubResource("Mat_tracer")
+size = Vector3(0.03, 0.03, 1)
+
+[node name="Tracer" type="MeshInstance3D"]
+cast_shadow = 0
+mesh = SubResource("Mesh_tracer")
+script = ExtResource("1_script")

@@ -8,12 +8,16 @@ The plan, decisions, and reference projects are in [docs/roadmap.md](docs/roadma
 
 ![First-person views: hip fire, aimed down sights, firing, sprinting, reloading, and the pistol aimed](docs/media/phase1-weapons.jpg)
 
+![AK-47 iron sights, PDW-9 red dot, M870 pump, M40 scope, the weapon racks, and the damage vignette with a direction indicator](docs/media/phase1-arsenal.jpg)
+
 ## Layout
 
 - `godot/`: the Godot project (scenes, GDScript glue, assets).
-- `rust/sim/`: engine-independent, deterministic simulation: movement, weapons (fire rate, falloff, recoil patterns, spread, reloads, ADS, switching), and the combined per-player step that netcode will predict. No Godot types, so the client and the dedicated server share it and it can be unit-tested on its own.
-- `rust/game/`: the GDExtension that exposes the simulation to Godot: `FpsPlayer` (input, hitscan, camera), `ViewmodelRig` and `WeaponView` (procedural weapon motion, muzzle flash, sounds), and `TargetDummy`.
-- `godot/shaders/`: viewmodel projection (own FOV, never clips walls), muzzle flash, and the blockout grid.
+- `godot/data/weapons/`: one RON file per weapon (damage, fire rate, recoil pattern, spread, reload style, pellets, scope). Edit a file while the game runs from a debug build and it reloads.
+- `rust/sim/`: engine-independent, deterministic simulation: movement, weapons (fire rate, falloff, recoil patterns, spread, pellets, bolt and pump cycling, magazine and shell-by-shell reloads, ADS, scope sway and hold breath, switching, pickups), health (regeneration, fall damage, death), and the combined per-player step that netcode will predict. No Godot types, so the client and the dedicated server share it and it can be unit-tested on its own.
+- `rust/game/`: the GDExtension that exposes the simulation to Godot: `FpsPlayer` (input, hitscan, tracers, footsteps, camera), `ViewmodelRig` and `WeaponView` (procedural weapon motion, muzzle flash, ejected shells, sounds), `WeaponPickup` (weapon racks), `Sentry` (a turret that shoots back), and `TargetDummy`.
+- `godot/shaders/`: viewmodel projection (own FOV, never clips walls), muzzle flash, damage vignette, and the blockout grid.
+- `godot/scripts/`: GDScript for the HUD, scope and damage overlays, pause and settings menu (`Settings` autoload), impacts, and tracers.
 - `docs/`: roadmap and design notes.
 
 ## Set up a Linux playtest machine
@@ -39,11 +43,12 @@ Rebuild with `cargo build` after changing Rust code. The editor hot-reloads the 
 ```sh
 cd rust && cargo test && cargo clippy --all-targets
 cd .. && godot --headless --path godot --script res://tests/smoke_test.gd
+godot --headless --path godot --script res://tests/settings_test.gd
 ```
 
-The smoke test loads the arena headless and drives the player through movement (toggle sprint, slide, crouch) and combat (aim, fire, kill a dummy, reload, switch). It exits non-zero on failure.
+The smoke test loads the arena headless and drives the player through movement (toggle sprint, slide, crouch), combat (aim, fire, kill a dummy, reload, switch), a weapon rack, the shotgun (pellets, pump, shell-by-shell reload), the sniper (scope, hold breath), damage, regeneration, death and respawn, fall damage, and the sentry. The settings test checks the menu and that settings save and load. Both exit non-zero on failure.
 
-To review visuals, capture a set of first-person screenshots (hip, ADS, firing, sprint, reload, pistol, impacts). This needs a GPU:
+To review visuals, capture a set of first-person screenshots (every weapon at the hip and aimed, firing, sprint, reload, shotgun pump, sniper scope, tracers, impacts, racks, damage, death). This needs a GPU:
 
 ```sh
 CAPTURE_DIR=/tmp/shots godot --path godot --resolution 1600x900 --script res://tests/capture_screens.gd
@@ -58,11 +63,27 @@ CAPTURE_DIR=/tmp/shots godot --path godot --resolution 1600x900 --script res://t
 | Crouch (toggle; slides while sprinting) | C or Ctrl |
 | Jump | Space |
 | Fire / aim down sights | Left / right mouse |
+| Hold breath (while scoped) | Shift |
+| Take weapon or refill ammo at a rack | F |
 | Reload | R |
 | Switch weapon | 1, 2, or mouse wheel |
-| Release mouse | Esc |
+| Pause menu and settings | Esc |
+| Show or hide the controls line | F1 |
 
-The arena has target dummies at several ranges. They show their health and respawn 3 seconds after being killed.
+The arena has target dummies at several ranges. They show their health and respawn 3 seconds after being killed. Weapon racks next to the spawn hold every weapon; walk up and press F to swap. The sentry on the raised platform shoots at you when you come within 32 m and can see it; shoot it to knock it out for 10 seconds.
+
+## Weapons
+
+| Weapon | Type | Notes |
+| --- | --- | --- |
+| M4A1 | Assault rifle | 750 RPM, 4-shot kill up close |
+| AK-47 | Assault rifle | 600 RPM, 3-shot kill up close, stronger recoil |
+| PDW-9 | SMG | 900 RPM, damage falls off early, red dot |
+| M870 | Pump shotgun | 8 pellets, one-shot kill up close, loads shell by shell (fire to interrupt) |
+| M40 | Bolt-action sniper | One-shot chest kill, 3.5x scope that sways; hold Shift to steady it |
+| M1911 | Pistol | Semi-automatic sidearm |
+
+Exported builds must include `*.ron` in the export preset's non-resource filter so the weapon files are packed.
 
 ## Assets
 

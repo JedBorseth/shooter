@@ -1,12 +1,15 @@
 extends SceneTree
 ## Headless smoke test: loads the arena and drives the Rust player through
-## movement (toggle sprint, slide, crouch) and combat (ADS, fire, kill, reload,
-## switch). Exits non-zero on failure.
+## movement (toggle sprint, slide, crouch), combat (ADS, fire, kill, reload,
+## switch), the weapon racks, shotgun and sniper rules, damage, death and
+## respawn, fall damage, and the sentry. Exits non-zero on failure.
 ## Run from the repo root: godot --headless --path godot --script res://tests/smoke_test.gd
 
 var _failures: PackedStringArray = []
 var _hits := 0
 var _kills := 0
+var _damage_taken := 0.0
+var _deaths := 0
 
 
 func _initialize() -> void:
@@ -28,8 +31,15 @@ func _run() -> void:
 
 	await _ticks(20)
 	_check(player.is_on_floor(), "player lands on the floor")
+	player.damaged.connect(func(amount: float, _from: Vector3, _fall: bool) -> void: _damage_taken += amount)
+	player.died.connect(func() -> void: _deaths += 1)
 	await _movement(player)
 	await _combat(main, player)
+	await _racks(main, player)
+	await _shotgun(main, player)
+	await _sniper(main, player)
+	await _health(player)
+	await _sentry(main, player)
 	_finish()
 
 
@@ -87,6 +97,110 @@ func _combat(main: Node, player: FpsPlayer) -> void:
 
 	await _ticks(200)
 	_check(dummy.health() == 100.0, "dummy respawns with full health, got %.0f" % dummy.health())
+
+
+func _racks(main: Node, player: FpsPlayer) -> void:
+	var rack := main.get_node("Armory/Rack_m870") as Node3D
+	# Stand in front of the rack and look at it.
+	player.global_position = rack.global_position + Vector3(1.6, 0, 0)
+	await _ticks(2)
+	var to := rack.global_position + Vector3(0, 1.0, 0) - (player.global_position + Vector3(0, 1.68, 0))
+	player.set_look(atan2(-to.x, -to.z), atan2(to.y, Vector2(to.x, to.z).length()))
+	await _ticks(3)
+	_check(player.interact_prompt() == "[F] Take M870", "rack prompt, got '%s'" % player.interact_prompt())
+	await _tap("interact")
+	await _ticks(40)
+	_check(player.weapon_name() == "M870", "F takes the shotgun from the rack, got %s" % player.weapon_name())
+	_check(player.interact_prompt() == "[F] Refill M870 ammo", "carried weapon offers a refill, got '%s'" % player.interact_prompt())
+
+
+func _shotgun(main: Node, player: FpsPlayer) -> void:
+	var dummy := await _dummy_ahead(main, player, 5.0)
+	var hits_before := _hits
+	var kills_before := _kills
+	await _tap("fire")
+	await _ticks(2)
+	_check(_hits == hits_before + 1, "a shotgun blast confirms one hit, got %d" % (_hits - hits_before))
+	_check(_kills == kills_before + 1, "one blast kills at 5 m")
+	_check(player.magazine() == 5, "one shell spent, got %d" % player.magazine())
+	await _tap("fire")
+	await _ticks(2)
+	_check(player.magazine() == 5, "the pump blocks a second shot, got %d" % player.magazine())
+	await _ticks(40)
+	await _tap("reload")
+	await _ticks(45)
+	_check(player.is_reloading(), "shotgun reload starts")
+	await _ticks(35)
+	_check(player.magazine() == 6, "shotgun loads one shell, got %d" % player.magazine())
+	dummy.queue_free()
+
+
+func _sniper(main: Node, player: FpsPlayer) -> void:
+	player.give_weapon("m40")
+	await _ticks(50)
+	_check(player.weapon_name() == "M40", "sniper equipped, got %s" % player.weapon_name())
+	var dummy := await _dummy_ahead(main, player, 20.0)
+	Input.action_press("aim")
+	await _ticks(30)
+	_check(player.scope_amount() > 0.99, "sniper scopes in, got %.2f" % player.scope_amount())
+	Input.action_press("sprint")
+	await _ticks(10)
+	_check(player.is_holding_breath(), "Shift holds breath while scoped")
+	var kills_before := _kills
+	await _tap("fire")
+	await _ticks(2)
+	Input.action_release("sprint")
+	_check(_kills == kills_before + 1, "a chest shot with the sniper kills at 20 m")
+	Input.action_release("aim")
+	await _ticks(30)
+	dummy.queue_free()
+
+
+func _health(player: FpsPlayer) -> void:
+	player.take_damage(60.0, player.global_position + Vector3(5, 0, 0))
+	_check(is_equal_approx(player.health(), 40.0), "damage lowers health, got %.0f" % player.health())
+	_check(_damage_taken >= 60.0, "damaged signal fires")
+	await _ticks(60 * 6)
+	_check(player.health() == player.max_health(), "health regenerates, got %.0f" % player.health())
+
+	var spawn := player.global_position
+	player.take_damage(500.0, spawn)
+	_check(not player.is_alive() and _deaths == 1, "lethal damage kills")
+	await _ticks(60 * 3 + 10)
+	_check(player.is_alive() and player.health() == player.max_health(), "player respawns with full health")
+	_check(player.weapon_name() == "M4A1", "respawn restores the default loadout, got %s" % player.weapon_name())
+
+	# A 7 m drop hurts but does not kill.
+	var damage_before := _damage_taken
+	player.global_position = Vector3(0, 7.5, 20)
+	await _ticks(100)
+	_check(_damage_taken > damage_before and player.is_alive(), "a 7 m fall hurts, took %.0f" % (_damage_taken - damage_before))
+
+
+func _sentry(main: Node, player: FpsPlayer) -> void:
+	var sentry := main.get_node("Sentry") as Node3D
+	var damage_before := _damage_taken
+	# On the platform beside the sentry, in plain sight.
+	player.global_position = sentry.global_position + Vector3(-4, 0.05, 4)
+	await _ticks(60 * 3)
+	_check(_damage_taken > damage_before, "the sentry shoots a visible player")
+	# Let the last shot's sound finish so nothing is still playing at exit.
+	sentry.set("enabled", false)
+	player.global_position = Vector3(0, 0.05, 20)
+	await _ticks(120)
+
+
+## Spawns a fresh dummy straight ahead and aims at its chest.
+func _dummy_ahead(main: Node, player: FpsPlayer, distance: float) -> Node3D:
+	player.global_position = Vector3(0, 0.05, 20)
+	player.set_look(0.0, 0.0)
+	await _ticks(5)
+	var dummy := (load("res://scenes/props/target_dummy.tscn") as PackedScene).instantiate() as Node3D
+	main.add_child(dummy)
+	dummy.global_position = player.global_position + Vector3(0, 0, -distance)
+	player.set_look(0.0, atan2(1.1 - 1.68, distance))
+	await _ticks(5)
+	return dummy
 
 
 func _tap(action: String) -> void:

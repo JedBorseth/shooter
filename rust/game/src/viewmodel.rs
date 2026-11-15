@@ -1,5 +1,5 @@
-//! First-person weapon presentation: procedural pose, sway, bob, kick, reload
-//! and switch motion, muzzle flash, and weapon sounds.
+//! First-person weapon presentation: procedural pose, sway, bob, kick, reload,
+//! bolt/pump, and switch motion, muzzle flash, ejected shells, and weapon sounds.
 //!
 //! Nothing here affects gameplay; the simulation in `shooter-sim` decides when
 //! shots happen. The rig only turns simulation state into motion, so the same
@@ -8,11 +8,14 @@
 use std::f32::consts::PI;
 
 use godot::classes::{
-    AudioStreamPlayer, BaseMaterial3D, INode3D, Material, MeshInstance3D, Node3D, OmniLight3D,
-    Shader, ShaderMaterial,
+    AudioStreamPlayer, AudioStreamRandomizer, BaseMaterial3D, CylinderMesh, INode3D, Material,
+    MeshInstance3D, Node3D, OmniLight3D, Shader, ShaderMaterial,
 };
 use godot::prelude::*;
+use shooter_sim::rng;
 use shooter_sim::weapon::WeaponId;
+
+use crate::audio;
 
 /// One rendered frame of state the rig animates from.
 #[derive(Clone, Copy, Debug)]
@@ -20,6 +23,10 @@ pub struct ViewFrame {
     pub weapon: WeaponId,
     /// 0 = hip, 1 = aimed down sights.
     pub ads: f32,
+    /// 0 unless aiming a scoped weapon. The weapon hides behind the scope overlay.
+    pub scope: f32,
+    /// False while the player is dead.
+    pub visible: bool,
     pub sprinting: bool,
     /// Horizontal speed relative to walk speed.
     pub speed_ratio: f32,
@@ -36,6 +43,8 @@ pub enum ViewAction {
     Reloading(f32),
     Lowering(f32),
     Raising(f32),
+    /// Working the bolt or pump.
+    Cycling(f32),
 }
 
 /// A damped spring, integrated semi-implicitly for stability at any frame rate.
@@ -66,11 +75,9 @@ fn smoothstep(t: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
-fn weapon_from_name(name: &str) -> Option<WeaponId> {
-    WeaponId::ALL
-        .into_iter()
-        .find(|id| id.def().name == name || format!("{id:?}") == name)
-}
+/// Seconds an ejected shell stays visible.
+const SHELL_LIFETIME: f32 = 0.8;
+const SHELL_POOL: usize = 8;
 
 /// One first-person weapon: model, muzzle, sounds, and its pose offsets.
 ///
@@ -81,7 +88,7 @@ fn weapon_from_name(name: &str) -> Option<WeaponId> {
 pub struct WeaponView {
     base: Base<Node3D>,
 
-    /// Simulation weapon this view presents (`M4` or `Pistol`).
+    /// Weapon file key this view presents, such as `m4` for `data/weapons/m4.ron`.
     #[export]
     weapon: GString,
     #[export]
@@ -109,6 +116,21 @@ pub struct WeaponView {
     #[export]
     #[init(val = 1.0)]
     albedo_boost: f32,
+    /// Offset (metres) at the middle of a bolt or pump cycle.
+    #[export]
+    #[init(val = Vector3::new(0.0, -0.01, 0.03))]
+    cycle_position: Vector3,
+    /// Rotation (degrees: pitch, yaw, roll) at the middle of a bolt or pump cycle.
+    #[export]
+    #[init(val = Vector3::new(4.0, 0.0, 6.0))]
+    cycle_rotation: Vector3,
+    /// Shell casing colour and size (radius, length in metres).
+    #[export]
+    #[init(val = Color::from_rgb(0.85, 0.62, 0.25))]
+    shell_color: Color,
+    #[export]
+    #[init(val = Vector2::new(0.005, 0.022))]
+    shell_size: Vector2,
 
     #[init(node = "Model")]
     model: OnReady<Gd<Node3D>>,
@@ -122,6 +144,11 @@ pub struct WeaponView {
     reload_sound: OnReady<Gd<AudioStreamPlayer>>,
     #[init(node = "DryFireSound")]
     dry_fire_sound: OnReady<Gd<AudioStreamPlayer>>,
+    /// Optional: bolt or pump sound, and the sound of one round going in.
+    cycle_sound: Option<Gd<AudioStreamPlayer>>,
+    round_sound: Option<Gd<AudioStreamPlayer>>,
+    /// Optional marker where shells leave the weapon.
+    ejection: Option<Gd<Node3D>>,
 
     flash_time: f32,
     flash_count: u32,
@@ -132,6 +159,9 @@ impl INode3D for WeaponView {
     fn ready(&mut self) {
         let shader = load::<Shader>("res://shaders/viewmodel.gdshader");
         convert_to_viewmodel_materials(&self.model.clone().upcast(), &shader, self.albedo_boost);
+        self.cycle_sound = self.base().try_get_node_as("CycleSound");
+        self.round_sound = self.base().try_get_node_as("RoundSound");
+        self.ejection = self.base().try_get_node_as("Ejection");
         self.flash.set_visible(false);
         self.flash_light.set_visible(false);
     }
@@ -149,7 +179,17 @@ impl INode3D for WeaponView {
 
 impl WeaponView {
     pub fn weapon_id(&self) -> Option<WeaponId> {
-        weapon_from_name(&self.weapon.to_string())
+        WeaponId::by_key(&self.weapon.to_string())
+    }
+
+    /// Where shells come out, in the view's parent (rig) space.
+    fn ejection_point(&self) -> Vector3 {
+        let local = self
+            .ejection
+            .as_ref()
+            .map(|marker| marker.get_position())
+            .unwrap_or(Vector3::new(0.02, -0.03, -0.12));
+        self.base().get_transform() * local
     }
 
     pub fn on_fired(&mut self) {
@@ -175,6 +215,28 @@ impl WeaponView {
     pub fn on_dry_fire(&mut self) {
         self.dry_fire_sound.play();
     }
+
+    pub fn on_cycled(&mut self) {
+        if let Some(sound) = &mut self.cycle_sound {
+            sound.play();
+        }
+    }
+
+    pub fn on_round_loaded(&mut self) {
+        if let Some(sound) = &mut self.round_sound {
+            sound.play();
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct Shell {
+    mesh: Gd<MeshInstance3D>,
+    position: Vector3,
+    velocity: Vector3,
+    spin: Vector3,
+    age: f32,
+    clinked: bool,
 }
 
 /// Replaces each surface's standard material with the viewmodel shader, copying
@@ -216,6 +278,13 @@ fn viewmodel_material(
         material.set_shader_parameter("albedo", &boosted.to_variant());
         material.set_shader_parameter("roughness", &standard.get_roughness().to_variant());
         material.set_shader_parameter("metallic", &standard.get_metallic().to_variant());
+        if standard.get_feature(godot::classes::base_material_3d::Feature::EMISSION) {
+            material.set_shader_parameter("emission", &standard.get_emission().to_variant());
+            material.set_shader_parameter(
+                "emission_energy",
+                &standard.get_emission_energy_multiplier().to_variant(),
+            );
+        }
         if let Some(texture) =
             standard.get_texture(godot::classes::base_material_3d::TextureParam::ALBEDO)
         {
@@ -249,6 +318,15 @@ pub struct ViewmodelRig {
 
     views: Vec<Gd<WeaponView>>,
     active: Option<WeaponId>,
+    shells: Vec<Shell>,
+    next_shell: usize,
+    shells_ejected: u32,
+    /// Seconds until a bolt or pump ejects its shell.
+    pending_shell: Option<(WeaponId, f32)>,
+    shell_sound: Option<Gd<AudioStreamPlayer>>,
+    low_ammo_sound: Option<Gd<AudioStreamPlayer>>,
+    cycle_kick: f32,
+    pickup_dip: f32,
     time: f32,
     bob_phase: f32,
     bob_blend: f32,
@@ -276,6 +354,8 @@ impl INode3D for ViewmodelRig {
         for view in &mut self.views {
             view.set_visible(false);
         }
+        self.shell_sound = self.make_player("res://assets/audio/player/shell", -16.0);
+        self.low_ammo_sound = self.make_player("res://assets/audio/player/low_ammo", -10.0);
     }
 }
 
@@ -287,13 +367,155 @@ impl ViewmodelRig {
             .cloned()
     }
 
-    pub fn on_fired(&mut self, weapon: WeaponId, ads: f32) {
+    /// A shot was fired. Self-loading weapons eject a shell right away; bolt
+    /// and pump weapons eject when they cycle.
+    pub fn on_fired(&mut self, weapon: WeaponId, ads: f32, eject: bool) {
         let Some(mut view) = self.view(weapon) else {
             return;
         };
         let strength = view.bind().kick_strength * (1.0 - 0.45 * ads);
         view.bind_mut().on_fired();
         self.kick.velocity += Vector3::new(2.2, 0.0, 1.1) * strength;
+        if eject {
+            self.eject_shell(&view);
+        }
+    }
+
+    pub fn on_cycled(&mut self, weapon: WeaponId) {
+        if let Some(mut view) = self.view(weapon) {
+            view.bind_mut().on_cycled();
+        }
+        // The spent case comes out about a third of the way through the cycle.
+        self.pending_shell = Some((weapon, weapon.def().cycle_time * 0.35));
+    }
+
+    pub fn on_round_loaded(&mut self, weapon: WeaponId) {
+        if let Some(mut view) = self.view(weapon) {
+            view.bind_mut().on_round_loaded();
+        }
+        self.cycle_kick = 1.0;
+    }
+
+    pub fn on_low_ammo(&mut self, _weapon: WeaponId) {
+        if let Some(sound) = &mut self.low_ammo_sound {
+            sound.play();
+        }
+    }
+
+    pub fn on_picked_up(&mut self, weapon: WeaponId) {
+        if let Some(mut view) = self.view(weapon) {
+            view.bind_mut().on_reload();
+        }
+        self.pickup_dip = 1.0;
+    }
+
+    fn make_player(&mut self, base: &str, volume_db: f32) -> Option<Gd<AudioStreamPlayer>> {
+        let stream: Gd<AudioStreamRandomizer> = audio::variations(base, 1.1)?;
+        let mut player = AudioStreamPlayer::new_alloc();
+        player.set_stream(&stream);
+        player.set_volume_db(volume_db);
+        player.set_bus("Effects");
+        player.set_max_polyphony(4);
+        self.base_mut().add_child(&player);
+        Some(player)
+    }
+
+    /// Throws a casing out of the ejection port, to the right and up. Shells
+    /// live in the rig's (camera) space, so they use the viewmodel shader too.
+    fn eject_shell(&mut self, view: &Gd<WeaponView>) {
+        let (start, color, size) = {
+            let v = view.bind();
+            (v.ejection_point(), v.shell_color, v.shell_size)
+        };
+        if self.shells.len() < SHELL_POOL {
+            let mut mesh = MeshInstance3D::new_alloc();
+            mesh.set_cast_shadows_setting(
+                godot::classes::geometry_instance_3d::ShadowCastingSetting::OFF,
+            );
+            self.base_mut().add_child(&mesh);
+            self.shells.push(Shell {
+                mesh,
+                position: Vector3::ZERO,
+                velocity: Vector3::ZERO,
+                spin: Vector3::ZERO,
+                age: SHELL_LIFETIME,
+                clinked: true,
+            });
+        }
+        let index = self.next_shell % self.shells.len();
+        self.next_shell = self.next_shell.wrapping_add(1);
+        self.shells_ejected = self.shells_ejected.wrapping_add(1);
+        let seed = self.shells_ejected;
+
+        let mut cylinder = CylinderMesh::new_gd();
+        cylinder.set_top_radius(size.x);
+        cylinder.set_bottom_radius(size.x);
+        cylinder.set_height(size.y);
+        cylinder.set_radial_segments(8);
+        cylinder.set_rings(1);
+        let mut material = ShaderMaterial::new_gd();
+        material.set_shader(&load::<Shader>("res://shaders/viewmodel.gdshader"));
+        material.set_shader_parameter("albedo", &color.to_variant());
+        material.set_shader_parameter("metallic", &0.85.to_variant());
+        material.set_shader_parameter("roughness", &0.35.to_variant());
+        cylinder.set_material(&material);
+
+        let shell = &mut self.shells[index];
+        shell.mesh.set_mesh(&cylinder);
+        shell.mesh.set_visible(true);
+        shell.position = start;
+        shell.velocity = Vector3::new(
+            1.3 + rng::unit(seed, 1) * 0.6,
+            1.0 + rng::unit(seed, 2) * 0.6,
+            0.2 + rng::signed(seed, 3) * 0.2,
+        );
+        shell.spin = Vector3::new(
+            rng::signed(seed, 4) * 25.0,
+            rng::signed(seed, 5) * 10.0,
+            18.0 + rng::unit(seed, 6) * 12.0,
+        );
+        shell.age = 0.0;
+        shell.clinked = false;
+    }
+
+    fn update_shells(&mut self, dt: f32) {
+        if let Some((weapon, delay)) = self.pending_shell {
+            let delay = delay - dt;
+            self.pending_shell = if delay <= 0.0 {
+                if let Some(view) = self.view(weapon) {
+                    self.eject_shell(&view);
+                }
+                None
+            } else {
+                Some((weapon, delay))
+            };
+        }
+        // Gravity is world-down, expressed in the rig's rotating space.
+        let gravity = self.base().get_global_basis().inverse() * Vector3::new(0.0, -9.8, 0.0);
+        let mut clink = false;
+        for shell in &mut self.shells {
+            if shell.age >= SHELL_LIFETIME {
+                continue;
+            }
+            shell.age += dt;
+            shell.velocity += gravity * dt;
+            shell.position += shell.velocity * dt;
+            let rotation = shell.spin * shell.age;
+            let basis = Basis::from_euler(EulerOrder::YXZ, rotation);
+            shell
+                .mesh
+                .set_transform(Transform3D::new(basis, shell.position));
+            if !shell.clinked && shell.age > 0.45 {
+                shell.clinked = true;
+                clink = true;
+            }
+            if shell.age >= SHELL_LIFETIME {
+                shell.mesh.set_visible(false);
+            }
+        }
+        if clink && let Some(sound) = &mut self.shell_sound {
+            sound.play();
+        }
     }
 
     pub fn on_reload(&mut self, weapon: WeaponId) {
@@ -314,13 +536,16 @@ impl ViewmodelRig {
     }
 
     pub fn update(&mut self, frame: &ViewFrame, dt: f32) {
-        if self.active != Some(frame.weapon) {
-            for view in &mut self.views {
-                let show = view.bind().weapon_id() == Some(frame.weapon);
+        self.update_shells(dt);
+        // Hidden while dead, and once the scope overlay covers the screen.
+        let shown = frame.visible && frame.scope < 0.85;
+        for view in &mut self.views {
+            let show = shown && view.bind().weapon_id() == Some(frame.weapon);
+            if view.is_visible() != show {
                 view.set_visible(show);
             }
-            self.active = Some(frame.weapon);
         }
+        self.active = Some(frame.weapon);
         let Some(mut view) = self.view(frame.weapon) else {
             return;
         };
@@ -384,7 +609,17 @@ impl ViewmodelRig {
         };
         self.switch_drop = drop_target;
 
-        let (hip, aim, sprint_pos, sprint_rot, pivot) = {
+        // Bolt or pump: a quick push and roll, peaking mid-cycle. A loaded shell
+        // gives a small bump.
+        let cycle = match frame.action {
+            ViewAction::Cycling(p) => (PI * p).sin().max(0.0) * (1.0 - 0.5 * frame.scope),
+            _ => 0.0,
+        };
+        self.cycle_kick = (self.cycle_kick - dt * 6.0).max(0.0);
+        self.pickup_dip = (self.pickup_dip - dt * 2.5).max(0.0);
+        let bump = smoothstep(self.cycle_kick) * 0.4 + smoothstep(self.pickup_dip) * 0.6;
+
+        let (hip, aim, sprint_pos, sprint_rot, pivot, cycle_pos, cycle_rot) = {
             let v = view.bind();
             (
                 v.hip_position,
@@ -392,6 +627,8 @@ impl ViewmodelRig {
                 v.sprint_position,
                 v.sprint_rotation,
                 v.pivot,
+                v.cycle_position,
+                v.cycle_rotation,
             )
         };
         let mut position = hip + (aim - hip) * ads;
@@ -400,6 +637,7 @@ impl ViewmodelRig {
         position += Vector3::new(-self.sway.value.x * 0.25, self.sway.value.y * 0.25, 0.0);
         position += Vector3::new(0.0, 0.0, self.kick.value.z * 0.4);
         position += Vector3::new(0.0, self.land.value.y * 0.1, 0.0);
+        position += cycle_pos * cycle + Vector3::new(0.0, -0.02 * bump, 0.01 * bump);
         // Reload: tilt the magazine well toward the camera and bring the weapon inward.
         position += Vector3::new(
             -0.03 * dip,
@@ -412,10 +650,15 @@ impl ViewmodelRig {
             + self.kick.value.x * 0.35
             + self.sway.value.y
             + deg(10.0) * dip
-            - deg(35.0) * self.switch_drop;
-        let yaw = deg(sprint_rot.y) * sprint + self.sway.value.x;
-        let roll =
-            deg(sprint_rot.z) * sprint + bob_roll + deg(32.0) * dip + self.sway.value.x * 0.6;
+            - deg(35.0) * self.switch_drop
+            + deg(cycle_rot.x) * cycle
+            + deg(4.0) * bump;
+        let yaw = deg(sprint_rot.y) * sprint + self.sway.value.x + deg(cycle_rot.y) * cycle;
+        let roll = deg(sprint_rot.z) * sprint
+            + bob_roll
+            + deg(32.0) * dip
+            + self.sway.value.x * 0.6
+            + deg(cycle_rot.z) * cycle;
 
         // Rotate around the pivot rather than the sight origin.
         let basis = Basis::from_euler(EulerOrder::YXZ, Vector3::new(pitch, yaw, roll));

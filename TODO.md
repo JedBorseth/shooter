@@ -26,50 +26,55 @@ The open work for building this into a modern-military, Call-of-Duty-style multi
 
 ## Phase 1: single-player feel (in progress)
 
-Done: movement (toggle sprint, toggle crouch, slide, jump), M4A1 and M1911 weapon simulation, viewmodel shader and procedural motion, hitscan with headshots, impacts, target dummies, HUD.
+Done: movement (toggle sprint, toggle crouch, slide, jump), six data-driven weapons (M4A1, AK-47, PDW-9, M870, M40, M1911), viewmodel shader and procedural motion, hitscan with headshots, tracers, shell ejection, per-surface impacts and footsteps, weapon racks, health with regeneration, fall damage, death and respawn, damage feedback, pause and settings menu, audio buses, a training sentry, HUD.
 
 ### Weapons and gunplay
 
 - [ ] First-person arms (CC0 rigged arms, or temporary blockout hands) attached to the weapons.
 - [ ] Authored animations (draw, reload, empty reload, sprint, inspect) driven by `AnimationTree`, replacing the procedural reload and switch poses in `rust/game/src/viewmodel.rs`.
-- [ ] Bullet tracers. Remote players' tracers are needed for multiplayer readability; own tracers only every Nth round.
-- [ ] Shell ejection particles from an ejection-port marker on each `WeaponView`.
+- [x] Bullet tracers: own tracers every Nth round (`tracer_every` in the weapon file). The sentry already uses the same tracer scene, as remote players will.
+- [x] Shell ejection particles from an ejection-port marker on each `WeaponView`.
 - [ ] Bullet penetration through thin cover, with per-material damage reduction (`rust/sim` rules, `rust/game` raycasts).
-- [ ] Per-surface impact effects and sounds (metal, concrete, wood, dirt), using physics material or metadata on colliders.
-- [ ] Data-driven weapon definitions: move `M4` and `PISTOL` out of `rust/sim/src/weapon.rs` into RON or TOML files (`serde`), loaded at startup and hot-reloadable in debug builds.
-- [ ] More weapons: SMG, shotgun (pellets), bolt-action sniper with a scope overlay, LMG. Quaternius's Ultimate Gun Pack has matching CC0 models.
+- [x] Per-surface impact effects and sounds (metal, concrete, wood, dirt, flesh), from `surface` metadata on colliders.
+- [x] Data-driven weapon definitions: RON files in `godot/data/weapons/`, loaded at startup and hot-reloaded in debug builds.
+- [x] More weapons: AK-47, PDW-9 SMG (with a red dot), M870 pump shotgun (pellets, shell-by-shell reload), M40 bolt-action sniper (scope overlay).
+- [ ] LMG (large magazine, slow ADS, long reload), and a burst-fire rifle (`FireMode::Burst`).
 - [ ] Attachments: optics (red dot, ACOG), suppressor, grip, extended magazine, as modifiers on `WeaponDef`.
-- [ ] Hold-breath sway for scoped weapons.
+- [x] Hold-breath sway for scoped weapons.
 - [ ] **good first task** Weapon inspect on a key press (procedural spin in `ViewmodelRig`).
-- [ ] **good first task** Low-ammo click and a "LOW AMMO" HUD warning.
+- [x] **good first task** Low-ammo click and a "LOW AMMO" HUD warning.
 
 ### Movement
 
 - [ ] Mantling and vaulting over waist-high cover (shape casts forward and up, then an animated move).
 - [ ] Prone (third stance, `MoveParams` heights, crawl speed).
-- [ ] Footstep sounds, with surface types and a cadence tied to speed.
-- [ ] Fall damage and a landing camera dip scaled by fall speed.
-- [ ] Slide polish: slide-cancel rules, camera tilt during the slide, slide sound.
-- [ ] **good first task** Head bob and strafe tilt for the camera (small, with a settings toggle).
+- [x] Footstep sounds, with surface types and a cadence tied to speed.
+- [x] Fall damage and a landing camera dip scaled by fall speed.
+- [x] Slide camera tilt and slide sound.
+- [ ] Slide-cancel rules (jump or crouch out of a slide, with a short cooldown).
+- [x] **good first task** Head bob and strafe tilt for the camera (small, with a settings toggle).
 
 ### Feel and polish
 
 - [ ] Camera recoil shake tuned per weapon. Move magic numbers in `FpsPlayer::process` into exported properties.
-- [ ] Damage feedback when the player is hit: red vignette, directional indicator, hit sounds.
-- [ ] Audio buses (Master, SFX, Weapons, UI) with a compressor on Weapons and reverb zones on maps.
-- [ ] Positional audio for impacts and other players' gunfire (`AudioStreamPlayer3D` with distance and occlusion).
-- [ ] **good first task** Kill confirmation sound for hit markers.
+- [x] Damage feedback when the player is hit: red vignette, directional indicator, hit sounds.
+- [x] Audio buses (Master, Weapons, Effects, UI) with a compressor on Weapons and a limiter on Master.
+- [ ] Reverb zones on maps (`Area3D` reverb buses for the tunnel and indoor spaces).
+- [x] Positional audio for impacts and the sentry's gunfire.
+- [ ] Occlusion for positional audio, and other players' gunfire once multiplayer exists.
+- [x] **good first task** Kill confirmation sound for hit markers.
 
 ### Settings and UX
 
-- [ ] Pause menu (Esc) with resume, settings, and quit.
-- [ ] Settings: mouse sensitivity, ADS sensitivity multiplier, FOV, invert Y, volume sliders, keybind remapping. Persist them in `user://settings.cfg`.
+- [x] Pause menu (Esc) with resume, settings, and quit.
+- [x] Settings: mouse sensitivity, ADS sensitivity multiplier, FOV, camera motion, volume sliders, window, vsync, and frame cap, saved in `user://settings.cfg`.
+- [ ] Invert Y and keybind remapping.
 - [ ] Gamepad support: stick deadzones, response curves, and aim assist (slowdown only, off by default).
-- [ ] **good first task** Show the controls overlay only for the first minute, or toggle it with F1.
+- [x] **good first task** Show the controls overlay only for the first minute, or toggle it with F1.
 
 ## Phase 2: netcode core
 
-- [ ] Choose the transport. The default plan is Godot's ENet `MultiplayerPeer` with custom packet serialization. Evaluate a Rust transport first (for example `renet`, or `lightyear`'s design as reference) and record the decision in `docs/roadmap.md`.
+- [x] Choose the transport: Godot's `ENetMultiplayerPeer` as a UDP pipe, with all serialization, ticks, and buffers in Rust (see `docs/roadmap.md`).
 - [ ] Fixed-tick loop shared by client and server (60 Hz), with tick numbers on every input and snapshot.
 - [ ] Input packets: each send carries the last N inputs to survive packet loss. The server keeps an input buffer per player.
 - [ ] Client-side prediction: keep a ring buffer of `PlayerState` and `PlayerInput` per tick. On each server snapshot, rewind to the acknowledged tick and replay pending inputs (`shooter_sim::player::step`).
@@ -91,7 +96,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), M4A1 and M1911 weapo
 
 ## Phase 4: game loop
 
-- [ ] Health, regeneration after a delay, death, and respawn.
+- [x] Health, regeneration after a delay, death, and respawn (`shooter_sim::player`). Respawn picks the original spawn until the spawn system exists.
 - [ ] Team Deathmatch: two teams of 6, score limit, time limit, round end screen.
 - [ ] Spawn system: weighted spawn points that avoid enemy line of sight and recent deaths.
 - [ ] Kill feed, scoreboard (Tab), and match timer HUD.

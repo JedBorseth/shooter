@@ -12,6 +12,8 @@ uniform vec4 albedo : source_color = vec4(1.0);
 uniform sampler2D albedo_texture : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_white;
 uniform float roughness : hint_range(0.0, 1.0) = 0.6;
 uniform float metallic : hint_range(0.0, 1.0) = 0.0;
+uniform vec4 emission : source_color = vec4(0.0, 0.0, 0.0, 1.0);
+uniform float emission_energy = 1.0;
 
 void vertex() {
 	POSITION = viewmodel_position(PROJECTION_MATRIX, MODELVIEW_MATRIX, VERTEX);
@@ -22,4 +24,5 @@ void fragment() {
 	ROUGHNESS = roughness;
 	METALLIC = metallic;
 	SPECULAR = 0.5;
+	EMISSION = emission.rgb * emission_energy;
 }

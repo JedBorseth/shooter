@@ -14,6 +14,9 @@ movement and gunplay, with 6v6 matches on dedicated servers.
 | First milestone | 6v6 Team Deathmatch on a dedicated server | The core mode of the genre. |
 | Art | CC0 placeholders (Quaternius guns, OpenGameArt sounds) and a shader grid on blockout maps | Get the feel right first. |
 | Sprint and crouch | Toggles, as in classic Call of Duty on PC | Requested by the project lead. |
+| Weapon data | One RON file per weapon in `godot/data/weapons/`, parsed by `shooter-sim` | Tuning without recompiling, hot reload in debug builds, and the same numbers on client and server. A `WeaponId` is an index into the table sorted by file name, so both sides must load the same files. |
+| Hosting | Dedicated headless servers only, even for local play | One authority model. No listen server to keep in sync. |
+| Transport | Godot's `ENetMultiplayerPeer` used only as a UDP pipe (reliable and unreliable channels); packet formats, ticks, input buffers, and prediction in Rust | Built into Godot and the headless export, no extra native dependency, and all netcode logic stays testable in Rust. |
 
 ## Phases
 
@@ -24,7 +27,8 @@ Each phase ends with something playable.
    - ✅ Movement in `rust/sim`: Source-style acceleration and friction, toggle sprint (classic CoD), toggle crouch, slide, jump. Camera interpolated between physics ticks.
    - ✅ Weapons in `rust/sim`: M4A1 (750 RPM, 30 to 21 damage falloff) and M1911 (semi-auto). Recoil patterns that recover, deterministic hashed spread, ADS with zoom and movement penalty, sprint-out delay, sprint cancels reload, auto-reload, lower/raise switching.
    - ✅ Presentation in `rust/game`: viewmodel shader with its own FOV and no wall clipping, procedural sway, bob, kick, landing dip, sprint/reload/switch poses, muzzle flash and light, CC0 weapon sounds, hitscan with headshots, impact sparks and decals, target dummies, hit markers, dynamic crosshair, ammo HUD.
-   - Next: hands and authored animations, ADS sensitivity settings, a pause/settings menu, audio mixing (buses, reverb), tracers, gamepad support.
+   - ✅ Arsenal and polish: weapons as RON data files with hot reload; AK-47, PDW-9 (red dot), M870 (pellets, pump, shell-by-shell reload), M40 (bolt action, scope overlay, hold breath); tracers, shell ejection, per-surface impacts and footsteps, weapon racks; health, regeneration, fall damage, death and respawn, damage vignette and direction indicators; head bob and tilt; pause and settings menu; audio buses; a training sentry that shoots back.
+   - Next: hands and authored animations, reverb zones, gamepad support, LMG.
 
 2. **Netcode core.** Server-authoritative 60 Hz tick. Clients send input with tick numbers. The client predicts its own movement and replays inputs when the server corrects it. Remote players render about 100 ms behind with snapshot interpolation. Snapshots are delta-compressed over ENet (UDP).
 3. **Lag compensation.** The server keeps a hitbox history ring buffer and rewinds to the shooter's view time to check hits. Favor-the-shooter with a rewind cap.

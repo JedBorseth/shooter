@@ -1,0 +1,28 @@
+// M1911-style sidearm: semi-automatic, fast handling.
+(
+    name: "M1911",
+    slot: Secondary,
+    fire_mode: Semi,
+    rounds_per_minute: 400,
+    magazine: 8,
+    reserve: 32,
+    damage: (near: 40, far: 25, falloff_start: 10, falloff_end: 30, headshot: 1.4),
+    range: 200,
+    reload: Magazine(time: 1.5, empty_time: 1.9),
+    ads_time: 0.18,
+    sprint_out_time: 0.15,
+    raise_time: 0.3,
+    lower_time: 0.25,
+    spread: (hip: 2.0, hip_moving: 3.0, air: 5.0, ads: 0.1),
+    ads_fov_scale: 0.9,
+    ads_move_scale: 0.75,
+    move_scale: 1.05,
+    recoil: (
+        pattern: [(1.4, 0.1)],
+        jitter: (0.25, 0.35),
+        ads_scale: 0.8,
+        recovery_delay: 0.06,
+        recovery_rate: 9.0,
+    ),
+    tracer_every: 0,
+)

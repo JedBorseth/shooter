@@ -1,0 +1,69 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://assets/weapons/m40/m40.fbx" id="1_model"]
+[ext_resource type="AudioStream" path="res://assets/audio/weapons/m40_fire.ogg" id="2_fire"]
+[ext_resource type="AudioStream" path="res://assets/audio/weapons/m4_reload.ogg" id="3_reload"]
+[ext_resource type="AudioStream" path="res://assets/audio/weapons/dry_fire.ogg" id="4_dry"]
+[ext_resource type="Material" path="res://materials/muzzle_flash.tres" id="5_flash"]
+[ext_resource type="AudioStream" path="res://assets/audio/player/bolt_cycle.ogg" id="6_cycle"]
+
+[sub_resource type="QuadMesh" id="Quad_flash"]
+material = ExtResource("5_flash")
+size = Vector2(0.2, 0.2)
+
+[node name="M40" type="WeaponView"]
+weapon = "m40"
+hip_position = Vector3(0.12, -0.11, -0.3)
+ads_position = Vector3(0, 0, -0.06)
+sprint_position = Vector3(-0.04, 0.015, 0.03)
+sprint_rotation = Vector3(-4, 22, 24)
+pivot = Vector3(0, -0.096, 0.015)
+albedo_boost = 1.6
+kick_strength = 2.4
+cycle_position = Vector3(0.01, -0.025, 0.025)
+cycle_rotation = Vector3(7, -4, 20)
+shell_color = Color(0.85, 0.62, 0.25, 1)
+shell_size = Vector2(0.006, 0.032)
+
+[node name="Model" type="Node3D" parent="."]
+position = Vector3(0, -0.081, -0.045)
+rotation = Vector3(0, 1.5707964, 0)
+scale = Vector3(0.15, 0.15, 0.15)
+
+[node name="Mesh" parent="Model" instance=ExtResource("1_model")]
+
+[node name="Muzzle" type="Marker3D" parent="."]
+position = Vector3(0, -0.0315, -0.825)
+
+[node name="Flash" type="MeshInstance3D" parent="Muzzle"]
+cast_shadow = 0
+mesh = SubResource("Quad_flash")
+
+[node name="FlashLight" type="OmniLight3D" parent="Muzzle"]
+light_color = Color(1, 0.72, 0.42, 1)
+light_energy = 2.5
+omni_range = 6.0
+
+[node name="Ejection" type="Marker3D" parent="."]
+position = Vector3(0.012, -0.036, -0.135)
+
+[node name="FireSound" type="AudioStreamPlayer" parent="."]
+stream = ExtResource("2_fire")
+volume_db = -3.0
+max_polyphony = 8
+bus = &"Weapons"
+
+[node name="ReloadSound" type="AudioStreamPlayer" parent="."]
+stream = ExtResource("3_reload")
+volume_db = -4.0
+bus = &"Weapons"
+
+[node name="DryFireSound" type="AudioStreamPlayer" parent="."]
+stream = ExtResource("4_dry")
+volume_db = -6.0
+bus = &"Weapons"
+
+[node name="CycleSound" type="AudioStreamPlayer" parent="."]
+stream = ExtResource("6_cycle")
+volume_db = -3.0
+bus = &"Weapons"

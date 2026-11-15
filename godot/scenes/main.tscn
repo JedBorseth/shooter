@@ -1,4 +1,4 @@
-[gd_scene load_steps=14 format=3]
+[gd_scene format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/player.tscn" id="1_player"]
 [ext_resource type="Script" path="res://scripts/hud.gd" id="2_hud"]
@@ -10,6 +10,18 @@
 [ext_resource type="Material" path="res://materials/greybox_tunnel.tres" id="m_tunnel"]
 [ext_resource type="Material" path="res://materials/greybox_crate.tres" id="m_crate"]
 [ext_resource type="PackedScene" path="res://scenes/props/target_dummy.tscn" id="4_dummy"]
+[ext_resource type="PackedScene" path="res://scenes/ui/pause_menu.tscn" id="5_pause"]
+[ext_resource type="Script" path="res://scripts/scope_overlay.gd" id="6_scope"]
+[ext_resource type="Script" path="res://scripts/damage_overlay.gd" id="7_damage"]
+[ext_resource type="Shader" path="res://shaders/damage_vignette.gdshader" id="8_vignette"]
+[ext_resource type="PackedScene" path="res://scenes/props/weapon_rack.tscn" id="9_rack"]
+[ext_resource type="PackedScene" path="res://scenes/props/sentry.tscn" id="10_sentry"]
+[ext_resource type="PackedScene" path="res://assets/weapons/m4/m4.fbx" id="11_m4"]
+[ext_resource type="PackedScene" path="res://assets/weapons/ak47/ak47.fbx" id="12_ak47"]
+[ext_resource type="PackedScene" path="res://assets/weapons/pdw9/pdw9.fbx" id="13_pdw9"]
+[ext_resource type="PackedScene" path="res://assets/weapons/m870/m870.fbx" id="14_m870"]
+[ext_resource type="PackedScene" path="res://assets/weapons/m40/m40.fbx" id="15_m40"]
+[ext_resource type="PackedScene" path="res://assets/weapons/pistol/pistol.fbx" id="16_pistol"]
 
 [sub_resource type="ProceduralSkyMaterial" id="SkyMat"]
 sky_top_color = Color(0.3, 0.44, 0.62, 1)
@@ -32,6 +44,23 @@ sdfgi_enabled = true
 sdfgi_use_occlusion = true
 glow_enabled = true
 
+[sub_resource type="ShaderMaterial" id="Mat_vignette"]
+shader = ExtResource("8_vignette")
+
+[sub_resource type="StyleBoxFlat" id="Style_health_bg"]
+bg_color = Color(0, 0, 0, 0.45)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+[sub_resource type="StyleBoxFlat" id="Style_health_fill"]
+bg_color = Color(0.92, 0.92, 0.88, 0.9)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
 [node name="Main" type="Node3D"]
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
@@ -45,6 +74,15 @@ directional_shadow_max_distance = 90.0
 
 [node name="Map" type="CSGCombiner3D" parent="."]
 use_collision = true
+metadata/surface = "concrete"
+
+[node name="MapWood" type="CSGCombiner3D" parent="."]
+use_collision = true
+metadata/surface = "wood"
+
+[node name="MapMetal" type="CSGCombiner3D" parent="."]
+use_collision = true
+metadata/surface = "metal"
 
 [node name="Floor" type="CSGBox3D" parent="Map"]
 position = Vector3(0, -0.5, 0)
@@ -96,27 +134,27 @@ position = Vector3(-14, 1.5, -2)
 size = Vector3(6, 3, 0.8)
 material = ExtResource("m_wall")
 
-[node name="CrateA" type="CSGBox3D" parent="Map"]
+[node name="CrateA" type="CSGBox3D" parent="MapWood"]
 position = Vector3(-18, 0.45, 14)
 size = Vector3(1.2, 0.9, 1.2)
 material = ExtResource("m_crate")
 
-[node name="CrateB" type="CSGBox3D" parent="Map"]
+[node name="CrateB" type="CSGBox3D" parent="MapWood"]
 position = Vector3(-16.8, 0.45, 14)
 size = Vector3(1.2, 0.9, 1.2)
 material = ExtResource("m_crate")
 
-[node name="CrateStack" type="CSGBox3D" parent="Map"]
+[node name="CrateStack" type="CSGBox3D" parent="MapWood"]
 position = Vector3(-18, 1.35, 14)
 size = Vector3(1.2, 0.9, 1.2)
 material = ExtResource("m_crate")
 
-[node name="Platform" type="CSGBox3D" parent="Map"]
+[node name="Platform" type="CSGBox3D" parent="MapMetal"]
 position = Vector3(16, 1.5, -16)
 size = Vector3(8, 3, 8)
 material = ExtResource("m_platform")
 
-[node name="Ramp" type="CSGBox3D" parent="Map"]
+[node name="Ramp" type="CSGBox3D" parent="MapMetal"]
 position = Vector3(16, 1.28, -8.8)
 rotation = Vector3(0.436332, 0, 0)
 size = Vector3(4, 0.4, 7.6)
@@ -136,6 +174,48 @@ material = ExtResource("m_tunnel")
 position = Vector3(-10, 1.65, -18)
 size = Vector3(4, 0.5, 4)
 material = ExtResource("m_tunnel")
+
+[node name="Armory" type="Node3D" parent="."]
+
+[node name="Rack_m4" parent="Armory" instance=ExtResource("9_rack")]
+transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, -7, 0, 14)
+weapon = "m4"
+display_model = ExtResource("11_m4")
+display_scale = 0.163
+
+[node name="Rack_ak47" parent="Armory" instance=ExtResource("9_rack")]
+transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, -7, 0, 16.2)
+weapon = "ak47"
+display_model = ExtResource("12_ak47")
+display_scale = 0.163
+
+[node name="Rack_pdw9" parent="Armory" instance=ExtResource("9_rack")]
+transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, -7, 0, 18.4)
+weapon = "pdw9"
+display_model = ExtResource("13_pdw9")
+display_scale = 0.15
+
+[node name="Rack_m870" parent="Armory" instance=ExtResource("9_rack")]
+transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, -7, 0, 20.6)
+weapon = "m870"
+display_model = ExtResource("14_m870")
+display_scale = 0.17
+
+[node name="Rack_m40" parent="Armory" instance=ExtResource("9_rack")]
+transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, -7, 0, 22.8)
+weapon = "m40"
+display_model = ExtResource("15_m40")
+display_scale = 0.15
+
+[node name="Rack_m1911" parent="Armory" instance=ExtResource("9_rack")]
+transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, -7, 0, 25)
+weapon = "m1911"
+display_model = ExtResource("16_pistol")
+display_scale = 0.12
+
+[node name="Sentry" parent="." instance=ExtResource("10_sentry")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 19, 3, -19.5)
+range = 32.0
 
 [node name="Targets" type="Node3D" parent="."]
 
@@ -167,6 +247,36 @@ position = Vector3(0, 0.05, 20)
 script = ExtResource("2_hud")
 player_path = NodePath("../Player")
 
+[node name="Scope" type="Control" parent="HUD"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("6_scope")
+
+[node name="Damage" type="Control" parent="HUD"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("7_damage")
+
+[node name="Vignette" type="ColorRect" parent="HUD/Damage"]
+material = SubResource("Mat_vignette")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
 [node name="Crosshair" type="Control" parent="HUD"]
 layout_mode = 3
 anchors_preset = 15
@@ -189,12 +299,79 @@ anchor_top = 1.0
 anchor_bottom = 1.0
 offset_left = 24.0
 offset_top = -48.0
-offset_right = 1300.0
+offset_right = 1500.0
 offset_bottom = -20.0
 grow_vertical = 0
 theme_override_colors/font_color = Color(1, 1, 1, 0.7)
 theme_override_font_sizes/font_size = 14
-text = "WASD move   Shift sprint (toggle)   C / Ctrl crouch (slide while sprinting)   Space jump   LMB fire   RMB aim   R reload   1 / 2 / wheel switch   Esc release mouse"
+text = "WASD move   Shift sprint (toggle) / hold breath   C crouch   Space jump   LMB fire   RMB aim   R reload   1 / 2 / wheel switch   F take weapon   Esc menu   F1 hide"
+
+[node name="Health" type="ProgressBar" parent="HUD"]
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = -78.0
+offset_right = 264.0
+offset_bottom = -64.0
+grow_vertical = 0
+mouse_filter = 2
+theme_override_styles/background = SubResource("Style_health_bg")
+theme_override_styles/fill = SubResource("Style_health_fill")
+value = 100.0
+show_percentage = false
+
+[node name="Warning" type="Label" parent="HUD"]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -150.0
+offset_top = 48.0
+offset_right = 150.0
+offset_bottom = 74.0
+grow_horizontal = 2
+theme_override_constants/outline_size = 6
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.6)
+theme_override_font_sizes/font_size = 18
+horizontal_alignment = 1
+text = "LOW AMMO"
+
+[node name="Prompt" type="Label" parent="HUD"]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -200.0
+offset_top = 90.0
+offset_right = 200.0
+offset_bottom = 118.0
+grow_horizontal = 2
+theme_override_constants/outline_size = 6
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.7)
+theme_override_font_sizes/font_size = 20
+horizontal_alignment = 1
+text = "[F] Take M870"
+
+[node name="Death" type="Label" parent="HUD"]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -300.0
+offset_top = -120.0
+offset_right = 300.0
+offset_bottom = -40.0
+grow_horizontal = 2
+theme_override_constants/outline_size = 8
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.8)
+theme_override_colors/font_color = Color(1, 0.3, 0.25, 1)
+theme_override_font_sizes/font_size = 32
+horizontal_alignment = 1
+text = "YOU DIED"
 
 [node name="Ammo" type="VBoxContainer" parent="HUD"]
 anchors_preset = 3
@@ -220,3 +397,10 @@ text = "M4A1"
 theme_override_font_sizes/font_size = 34
 horizontal_alignment = 2
 text = "30 / 120"
+
+[node name="HitSound" type="AudioStreamPlayer" parent="HUD"]
+volume_db = -6.0
+bus = &"UI"
+
+[node name="PauseMenu" parent="." instance=ExtResource("5_pause")]
+player_path = NodePath("../Player")
