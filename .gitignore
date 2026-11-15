@@ -1,0 +1,6 @@
+# Godot-generated cache and local editor state
+.godot/
+# Export outputs and credentials
+builds/
+export_credentials.cfg
+.DS_Store
