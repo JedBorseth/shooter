@@ -3,6 +3,8 @@
 use godot::classes::{IStaticBody3D, Label3D, MeshInstance3D, StandardMaterial3D, StaticBody3D};
 use godot::prelude::*;
 
+use crate::aim_assist::AimAssistTarget;
+
 /// Collision layer 3 ("hitboxes"), as a bit mask.
 pub const HITBOX_LAYER: u32 = 1 << 2;
 /// Collision layer 1 ("world").
@@ -130,6 +132,13 @@ impl TargetDummy {
         self.head
             .set_collision_layer(if hittable { HITBOX_LAYER } else { 0 });
         self.label.set_visible(hittable);
+        if let Some(mut assist) = self
+            .base()
+            .get_node_or_null("AimAssist")
+            .and_then(|n| n.try_cast::<AimAssistTarget>().ok())
+        {
+            assist.bind_mut().set_active(hittable);
+        }
     }
 
     fn update_label(&mut self) {

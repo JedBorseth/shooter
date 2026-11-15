@@ -1,6 +1,11 @@
 extends CanvasLayer
 ## Heads-up display: crosshair, hit markers, ammo, and a movement readout for tuning.
 
+const GAMEPAD_CONTROLS := (
+	"LS move   L3 sprint (toggle)   B crouch (slide while sprinting)   A jump"
+	+ "   RT fire   LT aim   X reload   Y switch   RS look (aim assist on)"
+)
+
 @export var player_path: NodePath
 
 @onready var _player: FpsPlayer = get_node_or_null(player_path) as FpsPlayer
@@ -8,6 +13,8 @@ extends CanvasLayer
 @onready var _readout: Label = $Readout
 @onready var _weapon: Label = $Ammo/Weapon
 @onready var _ammo: Label = $Ammo/Count
+@onready var _controls: Label = $Controls
+@onready var _keyboard_controls := _controls.text
 
 
 func _ready() -> void:
@@ -26,6 +33,7 @@ func _process(_delta: float) -> void:
 			Engine.get_frames_per_second(),
 		]
 	)
+	_controls.text = GAMEPAD_CONTROLS if _player.using_gamepad() else _keyboard_controls
 	_weapon.text = _player.weapon_name()
 	_ammo.text = (
 		"RELOADING"
