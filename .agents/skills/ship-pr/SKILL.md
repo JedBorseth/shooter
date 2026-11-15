@@ -16,7 +16,7 @@ In those cases, say in the final reply what you left unpublished.
 
 ## Repository facts
 
-- Default branch: `main`. There is no branch protection, so GitHub will not wait for CI on its own. You wait for the checks, then merge.
+- Default branch: `main`. A ruleset ("Protect main") requires a pull request, requires the CI jobs and `Export clients` to pass, and requires the branch to be up to date with `main` before merging. GitHub auto-merge therefore waits for those checks. You still confirm every check yourself, including the ones the ruleset does not list.
 - Merge method: squash. The repository deletes the head branch after a merge, so do not pass `--delete-branch` (it fails in a worktree because `main` is checked out elsewhere).
 - CI comes from two workflows, and every check from both must pass:
   - `CI` (`.github/workflows/ci.yml`): Rust fmt and clippy, Rust tests on Linux, Windows, and macOS, GDScript lint and format, and a headless Godot smoke test.
@@ -64,6 +64,14 @@ The body has a short summary of what changed and why, a "Testing" section listin
 
 In T3 Code, link the PR to the thread with `link_pull_request` right after you create it.
 
+Then turn on auto-merge, so GitHub merges as soon as the required checks pass on an up-to-date branch:
+
+```sh
+gh pr merge <number> --auto --squash
+```
+
+Skip auto-merge if the user asked you to hold the PR.
+
 ### 5. Wait for every check
 
 Get the head commit: `git rev-parse HEAD`.
@@ -93,17 +101,17 @@ git fetch origin
 git merge-base --is-ancestor origin/main HEAD && echo current || echo behind
 ```
 
-If it is behind, go back to step 3. CI must pass on the rebased commit, not just on an older one.
+If it is behind, go back to step 3. The ruleset blocks a stale branch anyway, and CI must pass on the rebased commit. If someone else pushed to your branch (for example, GitHub's "Update branch" merge), run `git pull --ff-only` first and look at what they changed.
 
 Do not merge if the PR is a draft, has a "changes requested" review, or the user asked you to hold it.
 
-When it is current and every check passed:
+Auto-merge usually lands the PR by itself. If `gh pr view <number> --json state` still shows `OPEN` once it is current and every check has passed, merge it yourself:
 
 ```sh
 gh pr merge <number> --squash --match-head-commit "$(git rev-parse HEAD)"
 ```
 
-`--match-head-commit` stops the merge if someone pushed to the branch after your checks ran.
+`--match-head-commit` stops the merge if someone pushed to the branch after your checks ran. If the merge is refused, read the reason (`gh pr view <number> --json mergeStateStatus`) and fix that. Never use `--admin` and never change the ruleset to get a merge through.
 
 ### 8. Confirm and report
 
