@@ -196,9 +196,12 @@ func _apply(key: StringName) -> void:
 		&"fullscreen":
 			_apply_window_mode()
 		&"vsync":
+			# Mailbox vsync doesn't tear and queues no frames, so it adds less input
+			# lag than standard vsync. Godot falls back to standard vsync where the
+			# driver lacks mailbox. Matches `display/window/vsync/vsync_mode`.
 			if not _headless():
 				DisplayServer.window_set_vsync_mode(
-					DisplayServer.VSYNC_ENABLED if vsync else DisplayServer.VSYNC_DISABLED
+					DisplayServer.VSYNC_MAILBOX if vsync else DisplayServer.VSYNC_DISABLED
 				)
 
 

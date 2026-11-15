@@ -27,18 +27,25 @@ use shooter_sim::look::{
 use shooter_sim::movement::{MoveEnv, Stance};
 use shooter_sim::player::{self, PlayerEvent, PlayerInput, PlayerParams, PlayerState};
 use shooter_sim::weapon::{self, Action, CombatEvent, FireMode, LoadStage, Reload, WeaponId};
-use shooter_sim::{Vec2, Vec3};
+use shooter_sim::{Vec2, Vec3, rng};
 
 use crate::aim_assist::{AIM_ASSIST_GROUP, AimAssistTarget};
 use crate::audio;
 use crate::convert::{to_godot, to_sim};
 use crate::pickup::{INTERACT_LAYER, WeaponPickup};
+use crate::spring::{Spring, impulse_for_peak, smoothing};
 use crate::target::{HITBOX_LAYER, WORLD_LAYER};
 use crate::viewmodel::{ViewAction, ViewFrame, ViewmodelRig};
 
 const PITCH_LIMIT: f32 = FRAC_PI_2 - 0.01;
 /// Surface used when a collider has no `surface` metadata.
 const DEFAULT_SURFACE: &str = "concrete";
+
+/// Camera punch spring: stiff and well damped. A shot's punch peaks after about
+/// 35 ms and is roughly half gone by the next M4 round (80 ms), so during a spray
+/// the camera sits at most ~1.6 punches away from the aim point.
+const PUNCH_STIFFNESS: f32 = 900.0;
+const PUNCH_DAMPING: f32 = 48.0;
 
 /// Actions whose presses are remembered until the next physics tick, so a tap
 /// shorter than one tick (or a mouse-wheel step) is never lost.
@@ -60,24 +67,6 @@ struct RayHit {
     position: Vector3,
     normal: Vector3,
     collider: Option<Gd<Node>>,
-}
-
-/// A damped spring for camera effects, integrated semi-implicitly.
-#[derive(Clone, Copy, Debug, Default)]
-struct Spring {
-    value: f32,
-    velocity: f32,
-}
-
-impl Spring {
-    fn step(&mut self, stiffness: f32, damping: f32, dt: f32) {
-        let steps = (dt / (1.0 / 240.0)).ceil().max(1.0);
-        let h = dt / steps;
-        for _ in 0..steps as u32 {
-            self.velocity += (-self.value * stiffness - self.velocity * damping) * h;
-            self.value += self.velocity * h;
-        }
-    }
 }
 
 #[derive(GodotClass)]
@@ -102,6 +91,10 @@ pub struct FpsPlayer {
     #[export]
     #[init(val = 1.08)]
     sprint_fov_scale: f32,
+    /// Fraction of each weapon's camera punch kept while fully aimed down sights.
+    #[export]
+    #[init(val = 0.6)]
+    ads_punch_scale: f32,
     /// Head bob and strafe or slide tilt. Landing and damage still move the camera.
     #[export]
     #[init(val = true)]
@@ -190,8 +183,8 @@ pub struct FpsPlayer {
     previous_ads: f32,
     eye_height: f32,
     fov_sprint: f32,
-    shake: f32,
-    shake_velocity: f32,
+    /// Visual-only camera offset: x pitch up, y yaw left, z roll (radians).
+    punch: Spring,
     spawn: Transform3D,
     respawn_in: f32,
     death_blend: f32,
@@ -200,8 +193,8 @@ pub struct FpsPlayer {
     stride_length: f32,
     bob_blend: f32,
     tilt: f32,
-    land_dip: Spring,
-    flinch: Spring,
+    land_dip: Spring<f32>,
+    flinch: Spring<f32>,
     look_target: Option<WeaponId>,
     sounds: HashMap<String, Option<Gd<AudioStreamRandomizer>>>,
     /// The last gameplay input came from a gamepad (not the mouse or keyboard).
@@ -362,9 +355,7 @@ impl ICharacterBody3D for FpsPlayer {
         let ads_zoom = 1.0 + (combat.def().ads_fov_scale - 1.0) * ads;
         let fov = self.base_fov * self.fov_sprint * ads_zoom;
 
-        // Small roll shake per shot, on a spring.
-        self.shake_velocity += (-self.shake * 300.0 - self.shake_velocity * 24.0) * dt;
-        self.shake += self.shake_velocity * dt;
+        self.punch.step(PUNCH_STIFFNESS, PUNCH_DAMPING, dt);
         self.land_dip.step(90.0, 13.0, dt);
         self.flinch.step(160.0, 16.0, dt);
 
@@ -377,10 +368,13 @@ impl ICharacterBody3D for FpsPlayer {
         let death_roll = self.death_blend * 0.45;
         let eye = self.eye_height * (1.0 - self.death_blend * 0.75);
 
+        // Aim (look plus simulated recoil and sway) and the visual punch stay
+        // separate: the punch moves the camera for feel, but bullets follow the aim.
+        let punch = self.punch.value;
         let view = Vector3::new(
-            self.pitch + recoil.x + sway.x + self.flinch.value,
-            self.yaw - recoil.y - sway.y,
-            self.shake + bob_roll + tilt + death_roll,
+            self.pitch + recoil.x + sway.x + self.flinch.value + punch.x,
+            self.yaw - recoil.y - sway.y + punch.y,
+            punch.z + bob_roll + tilt + death_roll,
         );
         let basis = Basis::from_euler(EulerOrder::YXZ, view);
         let origin =
@@ -953,13 +947,12 @@ impl FpsPlayer {
                 let ads = self.state.combat.ads;
                 let low = self.state.combat.weapon().magazine <= def.low_ammo();
                 let mut rig = self.viewmodel.bind_mut();
-                rig.on_fired(weapon, ads, def.cycle_time <= 0.0);
+                let punch = rig.on_fired(weapon, ads, def.cycle_time <= 0.0);
                 if low {
                     rig.on_low_ammo(weapon);
                 }
                 drop(rig);
-                let kick = 0.35 * (1.0 - 0.6 * ads) * if def.pellets > 1 { 2.0 } else { 1.0 };
-                self.shake_velocity += if shot.is_multiple_of(2) { kick } else { -kick };
+                self.kick_camera(punch, ads, shot);
             }
             CombatEvent::DryFire { weapon } => self.viewmodel.bind_mut().on_dry_fire(weapon),
             CombatEvent::ReloadStarted { weapon, .. } => {
@@ -972,6 +965,19 @@ impl FpsPlayer {
             CombatEvent::PickedUp { weapon } => self.viewmodel.bind_mut().on_picked_up(weapon),
             CombatEvent::ReloadFinished { .. } | CombatEvent::Switched { .. } => {}
         }
+    }
+
+    /// Adds one shot's camera punch. `degrees` is the peak pitch, yaw jitter, and roll.
+    fn kick_camera(&mut self, degrees: Vector3, ads: f32, shot: u32) {
+        let scale = 1.0 + (self.ads_punch_scale - 1.0) * ads;
+        let roll_sign = if shot.is_multiple_of(2) { 1.0 } else { -1.0 };
+        let peak = Vector3::new(
+            degrees.x,
+            degrees.y * rng::signed(shot, 101),
+            degrees.z * roll_sign,
+        ) * scale;
+        let impulse = |deg: f32| impulse_for_peak(deg.to_radians(), PUNCH_STIFFNESS, PUNCH_DAMPING);
+        self.punch.velocity += Vector3::new(impulse(peak.x), impulse(peak.y), impulse(peak.z));
     }
 
     /// Hitscan from the eye along the view direction plus recoil, spread, and
@@ -1263,6 +1269,7 @@ impl FpsPlayer {
         self.previous_ads = 0.0;
         self.eye_height = self.params.movement.eye_height(Stance::Standing);
         self.fov_sprint = 1.0;
+        self.punch = Spring::default();
         self.stride = 0.0;
         self.stride_length = 2.0;
         self.assist.reset();
@@ -1335,11 +1342,6 @@ fn surface_meta(collider: Option<&Gd<Node>>) -> Option<String> {
 /// Like [`surface_meta`], defaulting to concrete for untagged world geometry.
 fn surface_of(collider: Option<&Gd<Node>>) -> String {
     surface_meta(collider).unwrap_or_else(|| DEFAULT_SURFACE.to_owned())
-}
-
-/// Frame-rate independent exponential smoothing factor.
-fn smoothing(rate: f32, delta: f32) -> f32 {
-    1.0 - (-rate * delta).exp()
 }
 
 fn linear_db(linear: f32) -> f32 {

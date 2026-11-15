@@ -157,9 +157,15 @@ fn recoil_climbs_then_recovers() {
     let mut s = ready();
     run(&mut s, fire(), CombatContext::default(), 30);
     let peak = s.recoil;
+    // About seven M4 rounds: the aim climbs, but stays small. The weapon kick
+    // and camera punch in `shooter-game` carry the visual violence.
     assert!(
-        peak.x > 3f32.to_radians(),
+        peak.x > 1.5f32.to_radians(),
         "view climbs during a spray: {peak:?}"
+    );
+    assert!(
+        peak.x < 3f32.to_radians(),
+        "aim recoil stays small (the punch is visual): {peak:?}"
     );
     run(&mut s, CombatInput::default(), CombatContext::default(), 90);
     assert!(s.recoil.length() < peak.length() * 0.01);

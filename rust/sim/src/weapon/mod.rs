@@ -7,6 +7,10 @@
 //! each shot; shotguns load shell by shell and firing interrupts the reload.
 //! Scoped weapons sway, and holding breath steadies them for a few seconds.
 //!
+//! Recoil follows the arcade split: the aim kick here is small and recovers
+//! quickly, so sprays stay controllable. The weapon model kick and camera punch
+//! in `shooter-game` carry most of the violence, and never move the aim.
+//!
 //! Like movement, this is deterministic: spread, pellets, and recoil jitter are
 //! hashed from the player's shot counter, and scope sway is a function of
 //! accumulated tick time, so client prediction and the server agree.
