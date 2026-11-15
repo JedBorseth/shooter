@@ -59,7 +59,7 @@ func _run() -> void:
 	await _health(player)
 	await _sentry(main, player)
 	await _gamepad(main, player)
-	_score(main, player)
+	await _score(main, player)
 	_finish()
 
 
@@ -296,10 +296,14 @@ func _score(main: Node, player: FpsPlayer) -> void:
 		"dying is counted and ends the streak"
 	)
 	var feed := main.get_node("HUD/ScoreFeed")
-	feed.add_award(50, "Headshot", true)
-	feed.add_award(50, "Longshot", true)
-	_check(feed.pending_medals() >= 2, "medals queue for the banner")
-	_check(feed.running_total() >= 100, "popups add up the points")
+	feed.add_award(50, "Double Kill", true)
+	feed.add_award(50, "Triple Kill", true)
+	feed.add_award(50, "Quad Kill", true)
+	_check(feed.pending_medals() == 2, "medals queue, a bigger multi-kill replaces a waiting one")
+	_check(feed.running_total() >= 150, "popups add up the points")
+	# Stop the chime so nothing is still playing at exit.
+	(feed.get_node("MedalSound") as AudioStreamPlayer).stop()
+	await _ticks(5)
 
 
 ## Spawns a fresh dummy straight ahead and aims at its chest.

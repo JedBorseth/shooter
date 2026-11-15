@@ -70,9 +70,14 @@ pub enum Award {
 }
 
 impl Award {
-    /// Whether the HUD gives this its own banner, not just a points popup.
+    /// Whether the HUD gives this its own banner, not just a points line.
+    /// Only the rarer awards get one, so banners keep up with the action:
+    /// headshots and distance bonuses are frequent and show as lines only.
     pub fn is_medal(self) -> bool {
-        !matches!(self, Award::Kill)
+        matches!(
+            self,
+            Award::Collateral | Award::MultiKill(_) | Award::Streak(_)
+        )
     }
 
     /// Text for popups and banners.
@@ -310,9 +315,12 @@ mod tests {
     }
 
     #[test]
-    fn only_kill_is_not_a_medal() {
+    fn only_rare_awards_get_banners() {
         assert!(!Award::Kill.is_medal());
-        assert!(Award::Headshot.is_medal());
+        assert!(!Award::Headshot.is_medal());
+        assert!(!Award::Longshot.is_medal());
+        assert!(Award::Collateral.is_medal());
+        assert!(Award::MultiKill(2).is_medal());
         assert!(Award::Streak(5).is_medal());
     }
 }

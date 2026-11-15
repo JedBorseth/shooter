@@ -440,7 +440,8 @@ impl FpsPlayer {
     fn respawned();
 
     /// Emitted for each award a kill earns: the kill itself first, then
-    /// bonuses and medals. `medal` awards also get a HUD banner.
+    /// bonuses and medals. `medal` awards (multi-kills, collaterals, streaks)
+    /// also get a HUD banner.
     #[signal]
     fn scored(points: i64, label: GString, medal: bool);
 

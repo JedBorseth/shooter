@@ -10,7 +10,9 @@ const TOTAL_HOLD := 2.2
 const LINE_TIME := 2.0
 ## Seconds each medal banner is shown; queued medals play back to back.
 const MEDAL_TIME := 1.6
-const MAX_LINES := 5
+const MAX_LINES := 6
+## Banners waiting beyond this are dropped (oldest first), so they never lag.
+const MAX_PENDING_MEDALS := 2
 const GOLD := Color(1.0, 0.84, 0.32)
 
 var player: FpsPlayer
@@ -33,11 +35,18 @@ func add_award(points: int, label: String, medal: bool) -> void:
 	_total += points
 	_total_left = TOTAL_HOLD
 	_total_pop = 1.0
-	_lines.push_front({"text": label, "points": points, "age": 0.0, "medal": medal})
+	var bonus := label != "Kill"
+	_lines.push_front({"text": label, "points": points, "age": 0.0, "bonus": bonus})
 	if _lines.size() > MAX_LINES:
 		_lines.resize(MAX_LINES)
 	if medal:
-		_medals.append(label)
+		# A bigger multi-kill replaces a smaller one that hasn't shown yet.
+		if _medals.size() > 1 and label.ends_with("Kill") and _medals[-1].ends_with("Kill"):
+			_medals[-1] = label
+		else:
+			_medals.append(label)
+		while _medals.size() > 1 + MAX_PENDING_MEDALS:
+			_medals.remove_at(1)
 		if _medals.size() == 1:
 			_start_medal()
 
@@ -91,7 +100,7 @@ func _draw() -> void:
 	var y := centre.y + 100.0
 	for line in _lines:
 		var alpha := clampf((LINE_TIME - line.age) / 0.35, 0.0, 1.0)
-		var color := Color(GOLD, alpha) if line.medal else Color(1, 1, 1, alpha * 0.9)
+		var color := Color(GOLD, alpha) if line.bonus else Color(1, 1, 1, alpha * 0.9)
 		var text := "%s  +%d" % [line.text, line.points]
 		_draw_centered(text, Vector2(centre.x, y), 16, color, Color(0, 0, 0, 0.6 * alpha))
 		y += 20.0
