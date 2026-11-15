@@ -1,0 +1,59 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://assets/weapons/ak47/ak47.fbx" id="1_model"]
+[ext_resource type="AudioStream" path="res://assets/audio/weapons/ak47_fire.ogg" id="2_fire"]
+[ext_resource type="AudioStream" path="res://assets/audio/weapons/m4_reload.ogg" id="3_reload"]
+[ext_resource type="AudioStream" path="res://assets/audio/weapons/dry_fire.ogg" id="4_dry"]
+[ext_resource type="Material" path="res://materials/muzzle_flash.tres" id="5_flash"]
+
+[sub_resource type="QuadMesh" id="Quad_flash"]
+material = ExtResource("5_flash")
+size = Vector2(0.16, 0.16)
+
+[node name="AK47" type="WeaponView"]
+weapon = "ak47"
+hip_position = Vector3(0.1, -0.09, -0.448)
+ads_position = Vector3(0, 0, -0.14)
+sprint_position = Vector3(-0.04, 0.015, 0.03)
+sprint_rotation = Vector3(-4, 22, 24)
+pivot = Vector3(0, -0.09, 0.278)
+albedo_boost = 1.6
+kick_strength = 1.15
+
+[node name="Model" type="Node3D" parent="."]
+position = Vector3(0, -0.1402, 0.2771)
+rotation = Vector3(0, 1.5707964, 0)
+scale = Vector3(0.163, 0.163, 0.163)
+
+[node name="Mesh" parent="Model" instance=ExtResource("1_model")]
+
+[node name="Muzzle" type="Marker3D" parent="."]
+position = Vector3(0, -0.0456, -0.3505)
+
+[node name="Flash" type="MeshInstance3D" parent="Muzzle"]
+cast_shadow = 0
+mesh = SubResource("Quad_flash")
+
+[node name="FlashLight" type="OmniLight3D" parent="Muzzle"]
+light_color = Color(1, 0.72, 0.42, 1)
+light_energy = 2.5
+omni_range = 6.0
+
+[node name="Ejection" type="Marker3D" parent="."]
+position = Vector3(0.013, -0.0424, 0.1304)
+
+[node name="FireSound" type="AudioStreamPlayer" parent="."]
+stream = ExtResource("2_fire")
+volume_db = -6.0
+max_polyphony = 8
+bus = &"Weapons"
+
+[node name="ReloadSound" type="AudioStreamPlayer" parent="."]
+stream = ExtResource("3_reload")
+volume_db = -4.0
+bus = &"Weapons"
+
+[node name="DryFireSound" type="AudioStreamPlayer" parent="."]
+stream = ExtResource("4_dry")
+volume_db = -6.0
+bus = &"Weapons"

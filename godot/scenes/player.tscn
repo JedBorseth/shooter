@@ -1,8 +1,13 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/weapons/m4_view.tscn" id="1_m4"]
 [ext_resource type="PackedScene" path="res://scenes/weapons/pistol_view.tscn" id="2_pistol"]
 [ext_resource type="PackedScene" path="res://scenes/effects/impact.tscn" id="3_impact"]
+[ext_resource type="PackedScene" path="res://scenes/effects/tracer.tscn" id="4_tracer"]
+[ext_resource type="PackedScene" path="res://scenes/weapons/ak47_view.tscn" id="5_ak47"]
+[ext_resource type="PackedScene" path="res://scenes/weapons/pdw9_view.tscn" id="6_pdw9"]
+[ext_resource type="PackedScene" path="res://scenes/weapons/m870_view.tscn" id="7_m870"]
+[ext_resource type="PackedScene" path="res://scenes/weapons/m40_view.tscn" id="8_m40"]
 
 [sub_resource type="CapsuleShape3D" id="Capsule_body"]
 radius = 0.35
@@ -16,6 +21,7 @@ collision_layer = 2
 floor_constant_speed = true
 floor_snap_length = 0.3
 impact_scene = ExtResource("3_impact")
+tracer_scene = ExtResource("4_tracer")
 
 [node name="Collision" type="CollisionShape3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
@@ -27,6 +33,14 @@ enabled = false
 shape = SubResource("Sphere_headroom")
 target_position = Vector3(0, 0.7, 0)
 
+[node name="Footsteps" type="AudioStreamPlayer" parent="."]
+max_polyphony = 2
+bus = &"Effects"
+
+[node name="BodySounds" type="AudioStreamPlayer" parent="."]
+max_polyphony = 2
+bus = &"Effects"
+
 [node name="Camera" type="Camera3D" parent="."]
 current = true
 fov = 70.0
@@ -37,3 +51,11 @@ near = 0.03
 [node name="M4" parent="Camera/Viewmodel" instance=ExtResource("1_m4")]
 
 [node name="Pistol" parent="Camera/Viewmodel" instance=ExtResource("2_pistol")]
+
+[node name="AK47" parent="Camera/Viewmodel" instance=ExtResource("5_ak47")]
+
+[node name="PDW9" parent="Camera/Viewmodel" instance=ExtResource("6_pdw9")]
+
+[node name="M870" parent="Camera/Viewmodel" instance=ExtResource("7_m870")]
+
+[node name="M40" parent="Camera/Viewmodel" instance=ExtResource("8_m40")]

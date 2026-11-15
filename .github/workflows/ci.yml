@@ -107,3 +107,5 @@ jobs:
         run: .github/scripts/import-assets.sh
       - name: Run smoke test
         run: godot --headless --path godot --script res://tests/smoke_test.gd
+      - name: Run settings test
+        run: godot --headless --path godot --script res://tests/settings_test.gd

@@ -2,42 +2,47 @@
 //!
 //! Physics runs at the fixed tick (`physics_process`) and calls the shared
 //! simulation in `shooter-sim`. The camera is a top-level node updated every
-//! rendered frame: position and recoil are interpolated between the last two
-//! ticks, while mouse look is applied immediately, so aiming never waits for a
-//! physics tick on high-refresh displays.
+//! rendered frame: position, recoil, and scope sway are interpolated between the
+//! last two ticks, while mouse look is applied immediately, so aiming never
+//! waits for a physics tick on high-refresh displays.
 //!
 //! Gamepad look also runs every rendered frame: stick shaping, turn boost, and
 //! aim assist (slowdown and rotational) from `shooter_sim::look`. Aim assist
 //! only applies while the last input came from a gamepad.
 
-use std::f32::consts::FRAC_PI_2;
+use std::collections::HashMap;
+use std::f32::consts::{FRAC_PI_2, PI};
 
 use godot::classes::input::MouseMode;
 use godot::classes::{
-    Camera3D, CapsuleShape3D, CharacterBody3D, CollisionShape3D, Engine, ICharacterBody3D, Input,
-    InputEvent, InputEventJoypadButton, InputEventJoypadMotion, InputEventKey,
-    InputEventMouseButton, InputEventMouseMotion, Node3D, PackedScene, PhysicsDirectSpaceState3D,
-    PhysicsRayQueryParameters3D, ShapeCast3D,
+    AudioStreamPlayer, AudioStreamRandomizer, Camera3D, CapsuleShape3D, CharacterBody3D,
+    CollisionShape3D, Engine, ICharacterBody3D, Input, InputEvent, InputEventJoypadButton,
+    InputEventJoypadMotion, InputEventKey, InputEventMouseButton, InputEventMouseMotion, Node3D,
+    PackedScene, PhysicsDirectSpaceState3D, PhysicsRayQueryParameters3D, ShapeCast3D,
 };
 use godot::prelude::*;
 use shooter_sim::look::{
     self, AimAssist, AimAssistParams, AssistTarget, AssistView, StickLook, StickParams,
 };
-use shooter_sim::movement::{MoveEnv, MoveParams, Stance};
-use shooter_sim::player::{self, PlayerInput, PlayerState};
-use shooter_sim::weapon::{Action, CombatEvent, WeaponId};
+use shooter_sim::movement::{MoveEnv, Stance};
+use shooter_sim::player::{self, PlayerEvent, PlayerInput, PlayerParams, PlayerState};
+use shooter_sim::weapon::{self, Action, CombatEvent, FireMode, LoadStage, Reload, WeaponId};
 use shooter_sim::{Vec2, Vec3};
 
 use crate::aim_assist::{AIM_ASSIST_GROUP, AimAssistTarget};
+use crate::audio;
 use crate::convert::{to_godot, to_sim};
+use crate::pickup::{INTERACT_LAYER, WeaponPickup};
 use crate::target::{HITBOX_LAYER, WORLD_LAYER};
 use crate::viewmodel::{ViewAction, ViewFrame, ViewmodelRig};
 
 const PITCH_LIMIT: f32 = FRAC_PI_2 - 0.01;
+/// Surface used when a collider has no `surface` metadata.
+const DEFAULT_SURFACE: &str = "concrete";
 
 /// Actions whose presses are remembered until the next physics tick, so a tap
 /// shorter than one tick (or a mouse-wheel step) is never lost.
-const LATCHED_ACTIONS: [&str; 9] = [
+const LATCHED_ACTIONS: [&str; 10] = [
     "jump",
     "crouch",
     "sprint",
@@ -46,8 +51,34 @@ const LATCHED_ACTIONS: [&str; 9] = [
     "weapon_next",
     "weapon_1",
     "weapon_2",
+    "interact",
     "refill_ammo",
 ];
+
+/// What a ray hit: position, normal, and collider.
+struct RayHit {
+    position: Vector3,
+    normal: Vector3,
+    collider: Option<Gd<Node>>,
+}
+
+/// A damped spring for camera effects, integrated semi-implicitly.
+#[derive(Clone, Copy, Debug, Default)]
+struct Spring {
+    value: f32,
+    velocity: f32,
+}
+
+impl Spring {
+    fn step(&mut self, stiffness: f32, damping: f32, dt: f32) {
+        let steps = (dt / (1.0 / 240.0)).ceil().max(1.0);
+        let h = dt / steps;
+        for _ in 0..steps as u32 {
+            self.velocity += (-self.value * stiffness - self.velocity * damping) * h;
+            self.value += self.velocity * h;
+        }
+    }
+}
 
 #[derive(GodotClass)]
 #[class(init, base = CharacterBody3D)]
@@ -58,6 +89,11 @@ pub struct FpsPlayer {
     #[export]
     #[init(val = 0.0022)]
     mouse_sensitivity: f32,
+    /// Extra sensitivity multiplier while aiming down sights (on top of the
+    /// automatic FOV scaling).
+    #[export]
+    #[init(val = 1.0)]
+    ads_sensitivity_scale: f32,
     /// Vertical field of view in degrees at the hip.
     #[export]
     #[init(val = 70.0)]
@@ -66,6 +102,17 @@ pub struct FpsPlayer {
     #[export]
     #[init(val = 1.08)]
     sprint_fov_scale: f32,
+    /// Head bob and strafe or slide tilt. Landing and damage still move the camera.
+    #[export]
+    #[init(val = true)]
+    camera_motion: bool,
+    #[export]
+    #[init(val = 3.0)]
+    respawn_delay: f32,
+    /// How far away weapon racks can be used, in metres.
+    #[export]
+    #[init(val = 2.6)]
+    interact_distance: f32,
     /// Horizontal stick turn rate at full deflection, in degrees per second.
     #[export]
     #[init(val = 200.0)]
@@ -109,6 +156,9 @@ pub struct FpsPlayer {
     /// Spawned where bullets hit the world.
     #[export]
     impact_scene: OnEditor<Gd<PackedScene>>,
+    /// Bullet tracer, spawned for every Nth round (`tracer_every` in the weapon file).
+    #[export]
+    tracer_scene: OnEditor<Gd<PackedScene>>,
 
     #[init(node = "Camera")]
     camera: OnReady<Gd<Camera3D>>,
@@ -118,24 +168,43 @@ pub struct FpsPlayer {
     collision: OnReady<Gd<CollisionShape3D>>,
     #[init(node = "Headroom")]
     headroom: OnReady<Gd<ShapeCast3D>>,
+    #[init(node = "Footsteps")]
+    footsteps: OnReady<Gd<AudioStreamPlayer>>,
+    #[init(node = "BodySounds")]
+    body_sounds: OnReady<Gd<AudioStreamPlayer>>,
 
-    params: MoveParams,
+    params: PlayerParams,
     state: PlayerState,
-    events: Vec<CombatEvent>,
+    events: Vec<PlayerEvent>,
     latched: [bool; LATCHED_ACTIONS.len()],
+    interact_held: bool,
+    input_enabled: bool,
     env: MoveEnv,
     yaw: f32,
     pitch: f32,
     look_delta: Vector2,
+    wish: Vector2,
     previous_position: Vector3,
     current_position: Vector3,
     previous_recoil: Vec2,
+    previous_sway: Vec2,
     previous_ads: f32,
     eye_height: f32,
     fov_sprint: f32,
-    fall_speed: f32,
     shake: f32,
     shake_velocity: f32,
+    spawn: Transform3D,
+    respawn_in: f32,
+    death_blend: f32,
+    /// Metres walked since the last footstep.
+    stride: f32,
+    stride_length: f32,
+    bob_blend: f32,
+    tilt: f32,
+    land_dip: Spring,
+    flinch: Spring,
+    look_target: Option<WeaponId>,
+    sounds: HashMap<String, Option<Gd<AudioStreamRandomizer>>>,
     /// The last gameplay input came from a gamepad (not the mouse or keyboard).
     gamepad: bool,
     gamepad_device: i32,
@@ -150,15 +219,14 @@ impl ICharacterBody3D for FpsPlayer {
         self.camera.set_as_top_level(true);
         let rid = self.base().get_rid();
         self.headroom.add_exception_rid(rid);
+        self.base_mut().add_to_group("players");
+        self.state = PlayerState::spawned(&self.params);
 
         self.yaw = self.base().get_rotation().y;
         self.base_mut().set_rotation(Vector3::ZERO);
-        let position = self.base().get_global_position();
-        self.previous_position = position;
-        self.current_position = position;
-        self.eye_height = self.params.eye_height(Stance::Standing);
-        self.fov_sprint = 1.0;
-        self.apply_stance_shape(Stance::Standing);
+        self.spawn = self.base().get_global_transform();
+        self.reset_view();
+        self.input_enabled = true;
 
         if !Engine::singleton().is_editor_hint() {
             Input::singleton().set_mouse_mode(MouseMode::CAPTURED);
@@ -166,14 +234,13 @@ impl ICharacterBody3D for FpsPlayer {
     }
 
     fn input(&mut self, event: Gd<InputEvent>) {
+        if !self.input_enabled {
+            return;
+        }
         let mut input = Input::singleton();
         let captured = input.get_mouse_mode() == MouseMode::CAPTURED;
 
         self.track_device(&event);
-        if event.is_action_pressed("pause") {
-            input.set_mouse_mode(MouseMode::VISIBLE);
-            return;
-        }
         for (latched, action) in self.latched.iter_mut().zip(LATCHED_ACTIONS) {
             if event.is_action_pressed(action) {
                 *latched = true;
@@ -183,8 +250,10 @@ impl ICharacterBody3D for FpsPlayer {
             Ok(motion) => {
                 if captured {
                     // Screen-relative motion ignores window stretch; scaling by the
-                    // FOV keeps aim speed consistent when zoomed in (ADS).
-                    let zoom = self.camera.get_fov() / self.base_fov;
+                    // FOV keeps aim speed consistent when zoomed in (ADS, scopes).
+                    let ads = self.state.combat.ads;
+                    let zoom = self.camera.get_fov() / self.base_fov
+                        * (1.0 + (self.ads_sensitivity_scale - 1.0) * ads);
                     let delta = motion.get_screen_relative() * self.mouse_sensitivity * zoom;
                     self.yaw -= delta.x;
                     let pitch = (self.pitch - delta.y).clamp(-PITCH_LIMIT, PITCH_LIMIT);
@@ -204,12 +273,9 @@ impl ICharacterBody3D for FpsPlayer {
     }
 
     fn physics_process(&mut self, delta: f64) {
+        let dt = delta as f32;
+        self.look_target = self.find_pickup();
         let input = self.read_input();
-        if Input::singleton().is_action_just_pressed("refill_ammo")
-            | self.take_latched("refill_ammo")
-        {
-            self.state.combat.refill_ammo();
-        }
         self.headroom.force_shapecast_update();
         let on_floor = self.base().is_on_floor();
         self.env = MoveEnv {
@@ -218,20 +284,31 @@ impl ICharacterBody3D for FpsPlayer {
         };
 
         self.previous_recoil = self.state.combat.recoil;
+        self.previous_sway = self.state.combat.scope_sway();
         self.previous_ads = self.state.combat.ads;
         let previous_stance = self.state.movement.stance;
         let mut events = std::mem::take(&mut self.events);
         events.clear();
+        if self.refill_pressed() {
+            let mut combat = Vec::new();
+            self.state.combat.refill_ammo(&mut combat);
+            events.extend(combat.into_iter().map(PlayerEvent::Combat));
+        }
         let velocity = player::step(
             &mut self.state,
             &input,
             self.env,
             &self.params,
-            delta as f32,
+            dt,
             &mut events,
         );
-        if self.params.height(previous_stance) != self.params.height(self.state.movement.stance) {
-            self.apply_stance_shape(self.state.movement.stance);
+        let stance = self.state.movement.stance;
+        let movement = &self.params.movement;
+        if movement.height(previous_stance) != movement.height(stance) {
+            self.apply_stance_shape(stance);
+        }
+        if stance == Stance::Sliding && previous_stance != Stance::Sliding {
+            self.play_body("res://assets/audio/player/slide", 0.0);
         }
 
         let mut body = self.base_mut();
@@ -239,67 +316,104 @@ impl ICharacterBody3D for FpsPlayer {
         body.move_and_slide();
         let resolved = body.get_velocity();
         let position = body.get_global_position();
-        let landed = !on_floor && body.is_on_floor();
         drop(body);
 
-        if landed {
-            self.viewmodel.bind_mut().on_landed(self.fall_speed);
-        }
-        self.fall_speed = (-velocity.y).max(0.0);
         // Walls and floors clip the velocity; keep the clipped value as next tick's state.
         self.state.movement.velocity = to_sim(resolved);
+        let moved = Vector2::new(
+            position.x - self.current_position.x,
+            position.z - self.current_position.z,
+        )
+        .length();
         self.previous_position = self.current_position;
         self.current_position = position;
+        self.advance_footsteps(moved);
 
         for event in &events {
             self.handle_event(event);
         }
         self.events = events;
+
+        if !self.state.alive() {
+            self.respawn_in -= dt;
+            if self.respawn_in <= 0.0 {
+                self.respawn();
+            }
+        }
     }
 
     fn process(&mut self, delta: f64) {
-        let delta = delta as f32;
+        let dt = delta as f32;
         let fraction = Engine::singleton().get_physics_interpolation_fraction() as f32;
         let feet = self.previous_position.lerp(self.current_position, fraction);
-        let recoil = self
-            .previous_recoil
-            .lerp(self.state.combat.recoil, fraction);
-        let ads = self.previous_ads + (self.state.combat.ads - self.previous_ads) * fraction;
+        let combat = &self.state.combat;
+        let recoil = self.previous_recoil.lerp(combat.recoil, fraction);
+        let sway = self.previous_sway.lerp(combat.scope_sway(), fraction);
+        let ads = self.previous_ads + (combat.ads - self.previous_ads) * fraction;
 
-        let target_eye = self.params.eye_height(self.state.movement.stance);
-        self.eye_height += (target_eye - self.eye_height) * smoothing(14.0, delta);
+        let alive = self.state.alive();
+        let death_target = if alive { 0.0 } else { 1.0 };
+        self.death_blend += (death_target - self.death_blend) * smoothing(5.0, dt);
 
-        let movement = &self.state.movement;
+        let movement = self.state.movement;
+        let target_eye = self.params.movement.eye_height(movement.stance);
+        self.eye_height += (target_eye - self.eye_height) * smoothing(14.0, dt);
+
         let fast = movement.sprinting || movement.stance == Stance::Sliding;
         let sprint_target = if fast { self.sprint_fov_scale } else { 1.0 };
-        self.fov_sprint += (sprint_target - self.fov_sprint) * smoothing(8.0, delta);
-        let ads_zoom = 1.0 + (self.state.combat.def().ads_fov_scale - 1.0) * ads;
+        self.fov_sprint += (sprint_target - self.fov_sprint) * smoothing(8.0, dt);
+        let ads_zoom = 1.0 + (combat.def().ads_fov_scale - 1.0) * ads;
         let fov = self.base_fov * self.fov_sprint * ads_zoom;
 
         // Small roll shake per shot, on a spring.
-        self.shake_velocity += (-self.shake * 300.0 - self.shake_velocity * 24.0) * delta;
-        self.shake += self.shake_velocity * delta;
+        self.shake_velocity += (-self.shake * 300.0 - self.shake_velocity * 24.0) * dt;
+        self.shake += self.shake_velocity * dt;
+        self.land_dip.step(90.0, 13.0, dt);
+        self.flinch.step(160.0, 16.0, dt);
 
-        let origin = feet + Vector3::UP * self.eye_height;
-        self.apply_stick_look(origin, ads, delta);
+        if alive && self.input_enabled {
+            let eye = feet + Vector3::UP * self.eye_height;
+            self.apply_stick_look(eye, ads, dt);
+        }
 
-        let view = Vector3::new(self.pitch + recoil.x, self.yaw - recoil.y, self.shake);
+        let (bob, bob_roll, tilt) = self.camera_motion_offsets(dt, ads);
+        let death_roll = self.death_blend * 0.45;
+        let eye = self.eye_height * (1.0 - self.death_blend * 0.75);
+
+        let view = Vector3::new(
+            self.pitch + recoil.x + sway.x + self.flinch.value,
+            self.yaw - recoil.y - sway.y,
+            self.shake + bob_roll + tilt + death_roll,
+        );
         let basis = Basis::from_euler(EulerOrder::YXZ, view);
+        let origin =
+            feet + Vector3::UP * (eye + bob.y + self.land_dip.value) + basis.col_a() * bob.x;
         self.camera
             .set_global_transform(Transform3D::new(basis, origin));
         self.camera.set_fov(fov);
 
         let frame = self.view_frame(ads);
         self.look_delta = Vector2::ZERO;
-        self.viewmodel.bind_mut().update(&frame, delta);
+        self.viewmodel.bind_mut().update(&frame, dt);
     }
 }
 
 #[godot_api]
 impl FpsPlayer {
-    /// Emitted when a shot damages a target.
+    /// Emitted when a shot damages a target (once per shot, even for shotguns).
     #[signal]
     fn hit_confirmed(killed: bool, headshot: bool);
+
+    /// Emitted when the player takes damage. `from` is the attacker's position
+    /// (the player's own position for falls).
+    #[signal]
+    fn damaged(amount: f32, from: Vector3, fall: bool);
+
+    #[signal]
+    fn died();
+
+    #[signal]
+    fn respawned();
 
     /// Horizontal speed in metres per second, for HUD and debugging.
     #[func]
@@ -316,6 +430,7 @@ impl FpsPlayer {
     fn movement_state(&self) -> GString {
         let movement = &self.state.movement;
         let label = match movement.stance {
+            _ if !self.state.alive() => "Dead",
             Stance::Sliding => "Sliding",
             Stance::Crouching => "Crouching",
             Stance::Standing if movement.sprinting => "Sprinting",
@@ -326,7 +441,13 @@ impl FpsPlayer {
 
     #[func]
     fn weapon_name(&self) -> GString {
-        self.state.combat.def().name.into()
+        self.state.combat.def().name.as_str().into()
+    }
+
+    /// File key of the active weapon, such as `m4`.
+    #[func]
+    fn weapon_key(&self) -> GString {
+        self.state.combat.def().key.as_str().into()
     }
 
     #[func]
@@ -337,6 +458,12 @@ impl FpsPlayer {
     #[func]
     fn reserve(&self) -> i32 {
         i32::from(self.state.combat.weapon().reserve)
+    }
+
+    /// Rounds at or below which the HUD shows a low-ammo warning.
+    #[func]
+    fn low_ammo_threshold(&self) -> i32 {
+        i32::from(self.state.combat.def().low_ammo())
     }
 
     #[func]
@@ -350,13 +477,120 @@ impl FpsPlayer {
         self.state.combat.ads
     }
 
+    /// 0 unless aiming a scoped weapon; the HUD draws the scope overlay from it.
+    #[func]
+    fn scope_amount(&self) -> f32 {
+        self.state.combat.scope_amount()
+    }
+
+    /// Breath left for steadying a scope, 0 to 1.
+    #[func]
+    fn breath(&self) -> f32 {
+        self.state.combat.breath
+    }
+
+    #[func]
+    fn is_holding_breath(&self) -> bool {
+        self.state.combat.holding_breath
+    }
+
     /// Current hip-fire cone half-angle in radians, for the crosshair.
     #[func]
     fn spread_radians(&self) -> f32 {
         self.state
             .combat
-            .spread_degrees(&self.state.combat_context(self.env, &self.params))
+            .spread_degrees(&self.state.combat_context(self.env, &self.params.movement))
             .to_radians()
+    }
+
+    #[func]
+    fn pellet_count(&self) -> i32 {
+        i32::from(self.state.combat.def().pellets)
+    }
+
+    /// Each pellet's cone half-angle in radians (0 for single-projectile weapons).
+    #[func]
+    fn pellet_spread_radians(&self) -> f32 {
+        self.state.combat.def().pellet_spread.to_radians()
+    }
+
+    #[func]
+    fn health(&self) -> f32 {
+        self.state.health
+    }
+
+    #[func]
+    fn max_health(&self) -> f32 {
+        self.params.health.max_health
+    }
+
+    #[func]
+    fn is_alive(&self) -> bool {
+        self.state.alive()
+    }
+
+    /// Seconds until respawn while dead.
+    #[func]
+    fn respawn_time_left(&self) -> f32 {
+        if self.state.alive() {
+            0.0
+        } else {
+            self.respawn_in.max(0.0)
+        }
+    }
+
+    /// Prompt for the pickup in front of the player, or empty.
+    #[func]
+    fn interact_prompt(&self) -> GString {
+        let Some(id) = self.look_target else {
+            return GString::new();
+        };
+        let name = &id.def().name;
+        if self.state.combat.slots.iter().any(|s| s.id == id) {
+            GString::from(&format!("[F] Refill {name} ammo"))
+        } else {
+            GString::from(&format!("[F] Take {name}"))
+        }
+    }
+
+    /// Damages the player from a world position. Returns true if it killed them.
+    #[func]
+    fn take_damage(&mut self, amount: f32, from: Vector3) -> bool {
+        let mut events = Vec::new();
+        let killed = player::apply_damage(&mut self.state, amount, false, &mut events);
+        for event in &events {
+            self.handle_vitals(event, from);
+        }
+        killed
+    }
+
+    /// Gives this weapon now, as if taken from a rack (tests and debugging).
+    #[func]
+    fn give_weapon(&mut self, key: GString) -> bool {
+        let Some(id) = WeaponId::by_key(&key.to_string()) else {
+            return false;
+        };
+        let combat = &mut self.state.combat;
+        let mut events = Vec::new();
+        let input = weapon::CombatInput {
+            pickup: Some(id),
+            ..Default::default()
+        };
+        let ctx = weapon::CombatContext::default();
+        weapon::step(combat, &input, &ctx, 0.0, &mut events);
+        for event in events {
+            self.handle_event(&PlayerEvent::Combat(event));
+        }
+        true
+    }
+
+    /// While false, the player ignores devices (menus are open).
+    #[func]
+    fn set_input_enabled(&mut self, enabled: bool) {
+        self.input_enabled = enabled;
+        self.latched = Default::default();
+        // A key still held when the menu closes is not a fresh press.
+        self.interact_held = enabled && Input::singleton().is_action_pressed("interact");
     }
 
     /// Points the view: yaw and pitch in radians (spawns, tests, spectating).
@@ -372,9 +606,9 @@ impl FpsPlayer {
         self.camera.get_fov()
     }
 
-    /// View yaw in radians, without recoil.
+    /// View yaw in radians, without recoil. Used by HUD damage indicators.
     #[func]
-    fn yaw(&self) -> f32 {
+    fn view_yaw(&self) -> f32 {
         self.yaw
     }
 
@@ -400,9 +634,27 @@ impl FpsPlayer {
         std::mem::take(&mut self.latched[index])
     }
 
+    /// T in the demo arena refills every carried weapon. This is a demo
+    /// convenience applied outside `player::step`; when netcode lands it should
+    /// become a server-side debug command, not client input.
+    fn refill_pressed(&mut self) -> bool {
+        let pressed = Input::singleton().is_action_just_pressed("refill_ammo")
+            | self.take_latched("refill_ammo");
+        pressed && self.input_enabled && self.state.alive()
+    }
+
     fn read_input(&mut self) -> PlayerInput {
+        if !self.input_enabled {
+            self.wish = Vector2::ZERO;
+            return PlayerInput {
+                yaw: self.yaw,
+                pitch: self.pitch,
+                ..Default::default()
+            };
+        }
         let input = Input::singleton();
         let wish = input.get_vector("move_left", "move_right", "move_back", "move_forward");
+        self.wish = wish;
         let mut held = |action: &str| input.is_action_pressed(action) | self.take_latched(action);
 
         let jump = held("jump");
@@ -413,6 +665,9 @@ impl FpsPlayer {
         let next = held("weapon_next");
         let slot_1 = held("weapon_1");
         let slot_2 = held("weapon_2");
+        let interact_down = held("interact");
+        let interact = interact_down && !self.interact_held;
+        self.interact_held = interact_down;
 
         let current = match self.state.combat.action {
             Action::Lowering { to, .. } => to,
@@ -439,7 +694,50 @@ impl FpsPlayer {
             aim: input.is_action_pressed("aim"),
             reload,
             switch_to,
+            pickup: if interact { self.look_target } else { None },
         }
+    }
+
+    fn eye_position(&self) -> Vector3 {
+        self.current_position
+            + Vector3::UP * self.params.movement.eye_height(self.state.movement.stance)
+    }
+
+    fn ray(&self, from: Vector3, to: Vector3, mask: u32) -> Option<RayHit> {
+        let mut space = self.base().get_world_3d()?.get_direct_space_state()?;
+        let exclude: Array<Rid> = array![self.base().get_rid()];
+        let query = PhysicsRayQueryParameters3D::create_ex(from, to)
+            .collision_mask(mask)
+            .exclude(&exclude)
+            .done()?;
+        let hit = space.intersect_ray(&query);
+        if hit.is_empty() {
+            return None;
+        }
+        Some(RayHit {
+            position: hit.get_or_nil("position").try_to::<Vector3>().unwrap_or(to),
+            normal: hit
+                .get_or_nil("normal")
+                .try_to::<Vector3>()
+                .unwrap_or(Vector3::UP),
+            collider: hit.get_or_nil("collider").try_to::<Gd<Node>>().ok(),
+        })
+    }
+
+    /// The weapon pickup under the crosshair, within reach.
+    fn find_pickup(&self) -> Option<WeaponId> {
+        if !self.state.alive() {
+            return None;
+        }
+        let from = self.eye_position();
+        let direction = to_godot(player::aim_direction(self.yaw, self.pitch, Vec2::ZERO));
+        let hit = self.ray(
+            from,
+            from + direction * self.interact_distance,
+            WORLD_LAYER | INTERACT_LAYER,
+        )?;
+        let pickup = hit.collider?.try_cast::<WeaponPickup>().ok()?;
+        pickup.bind().weapon_id()
     }
 
     /// Switches between gamepad and mouse-and-keyboard on deliberate input,
@@ -601,9 +899,12 @@ impl FpsPlayer {
         if !self.rumble || !self.gamepad {
             return;
         }
-        let (weak, strong, seconds) = match weapon {
-            WeaponId::M4 => (0.35, 0.15, 0.06),
-            WeaponId::Pistol => (0.5, 0.35, 0.09),
+        let def = weapon.def();
+        let (weak, strong, seconds) = match def.fire_mode {
+            FireMode::Auto => (0.35, 0.15, 0.06),
+            // Shotguns and snipers: one heavy shot.
+            FireMode::Semi if def.damage.near * f32::from(def.pellets) >= 80.0 => (0.8, 0.7, 0.16),
+            FireMode::Semi => (0.5, 0.35, 0.09),
         };
         Input::singleton()
             .start_joy_vibration_ex(self.gamepad_device, weak, strong)
@@ -611,72 +912,126 @@ impl FpsPlayer {
             .done();
     }
 
-    fn handle_event(&mut self, event: &CombatEvent) {
+    fn handle_event(&mut self, event: &PlayerEvent) {
         match *event {
-            CombatEvent::Fired { weapon, aim_offset } => {
-                self.fire_ray(weapon, aim_offset);
+            PlayerEvent::Combat(combat) => self.handle_combat(combat),
+            PlayerEvent::Landed { speed } => {
+                self.viewmodel.bind_mut().on_landed(speed);
+                self.land_dip.velocity -= (speed * 0.03).min(0.45);
+                if speed > 3.0 {
+                    let volume = linear_db(((speed - 3.0) / 9.0).clamp(0.25, 1.0));
+                    self.play_body("res://assets/audio/player/land", volume);
+                    self.play_footstep(volume - 4.0);
+                }
+            }
+            PlayerEvent::Damaged { .. } | PlayerEvent::Died => {
+                let from = self.current_position;
+                self.handle_vitals(event, from);
+            }
+        }
+    }
+
+    fn handle_vitals(&mut self, event: &PlayerEvent, from: Vector3) {
+        match *event {
+            PlayerEvent::Damaged { amount, fall } => {
+                self.flinch.velocity += if fall { -0.6 } else { 0.4 } * (amount / 30.0).min(1.5);
+                self.play_body("res://assets/audio/player/hurt", -2.0);
+                self.signals().damaged().emit(amount, from, fall);
+            }
+            PlayerEvent::Died => {
+                self.respawn_in = self.respawn_delay;
+                self.signals().died().emit();
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_combat(&mut self, event: CombatEvent) {
+        match event {
+            CombatEvent::Fired {
+                weapon,
+                aim_offset,
+                shot,
+            } => {
+                let def = weapon.def();
+                self.fire_shot(weapon, aim_offset, shot);
                 self.rumble_on_fire(weapon);
                 let ads = self.state.combat.ads;
-                self.viewmodel.bind_mut().on_fired(weapon, ads);
-                self.shake_velocity += if self.state.combat.shots_fired.is_multiple_of(2) {
-                    0.35
-                } else {
-                    -0.35
-                } * (1.0 - 0.6 * ads);
+                let low = self.state.combat.weapon().magazine <= def.low_ammo();
+                let mut rig = self.viewmodel.bind_mut();
+                rig.on_fired(weapon, ads, def.cycle_time <= 0.0);
+                if low {
+                    rig.on_low_ammo(weapon);
+                }
+                drop(rig);
+                let kick = 0.35 * (1.0 - 0.6 * ads) * if def.pellets > 1 { 2.0 } else { 1.0 };
+                self.shake_velocity += if shot.is_multiple_of(2) { kick } else { -kick };
             }
             CombatEvent::DryFire { weapon } => self.viewmodel.bind_mut().on_dry_fire(weapon),
             CombatEvent::ReloadStarted { weapon, .. } => {
                 self.viewmodel.bind_mut().on_reload(weapon)
             }
+            CombatEvent::RoundLoaded { weapon } => {
+                self.viewmodel.bind_mut().on_round_loaded(weapon)
+            }
+            CombatEvent::Cycled { weapon } => self.viewmodel.bind_mut().on_cycled(weapon),
+            CombatEvent::PickedUp { weapon } => self.viewmodel.bind_mut().on_picked_up(weapon),
             CombatEvent::ReloadFinished { .. } | CombatEvent::Switched { .. } => {}
         }
     }
 
-    /// Hitscan from the eye along the view direction plus recoil and spread.
-    fn fire_ray(&mut self, weapon: WeaponId, aim_offset: Vec2) {
+    /// Hitscan from the eye along the view direction plus recoil, spread, and
+    /// sway, once per pellet. Damage is summed per target so a shotgun blast
+    /// confirms one hit, not eight.
+    fn fire_shot(&mut self, weapon: WeaponId, aim_offset: Vec2, shot: u32) {
         let def = weapon.def();
-        let origin = self.current_position + Vector3::UP * self.eye_height;
-        let direction = to_godot(player::aim_direction(self.yaw, self.pitch, aim_offset));
-        let to = origin + direction * def.range;
+        let origin = self.eye_position();
+        let mut targets: Vec<(Gd<Node>, f32, bool)> = Vec::new();
+        let mut first_end = None;
 
-        let Some(mut space) = self
-            .base()
-            .get_world_3d()
-            .and_then(|w| w.get_direct_space_state())
-        else {
-            return;
-        };
-        let exclude: Array<Rid> = array![self.base().get_rid()];
-        let Some(query) = PhysicsRayQueryParameters3D::create_ex(origin, to)
-            .collision_mask(WORLD_LAYER | HITBOX_LAYER)
-            .exclude(&exclude)
-            .done()
-        else {
-            return;
-        };
-        let hit = space.intersect_ray(&query);
-        if hit.is_empty() {
-            return;
-        }
-        let position = hit.get_or_nil("position").try_to::<Vector3>().unwrap_or(to);
-        let normal = hit
-            .get_or_nil("normal")
-            .try_to::<Vector3>()
-            .unwrap_or(Vector3::UP);
-        let collider = hit.get_or_nil("collider").try_to::<Gd<Node>>().ok();
+        for pellet in 0..def.pellets {
+            let offset = aim_offset + weapon::pellet_offset(weapon, shot, pellet);
+            let direction = to_godot(player::aim_direction(self.yaw, self.pitch, offset));
+            let to = origin + direction * def.range;
+            let hit = self.ray(origin, to, WORLD_LAYER | HITBOX_LAYER);
+            let end = hit.as_ref().map(|h| h.position).unwrap_or(to);
+            first_end.get_or_insert(end);
+            let Some(hit) = hit else { continue };
 
-        let target = collider.as_ref().and_then(find_damageable);
-        if let (Some(collider), Some(mut target)) = (collider, target) {
-            let headshot = collider
-                .get_meta_ex("hit_zone")
-                .default(&"body".to_variant())
-                .done()
-                .to_string()
-                == "head";
-            let mut damage = def.damage_at(origin.distance_to(position));
-            if headshot {
-                damage *= def.headshot_multiplier;
+            let target = hit.collider.as_ref().and_then(find_damageable);
+            if let (Some(collider), Some(target)) = (&hit.collider, target) {
+                let headshot = collider
+                    .get_meta_ex("hit_zone")
+                    .default(&"body".to_variant())
+                    .done()
+                    .to_string()
+                    == "head";
+                let mut damage = def.damage_at(origin.distance_to(hit.position));
+                if headshot {
+                    damage *= def.damage.headshot;
+                }
+                match targets
+                    .iter_mut()
+                    .find(|(t, _, _)| t.instance_id() == target.instance_id())
+                {
+                    Some(entry) => {
+                        entry.1 += damage;
+                        entry.2 |= headshot;
+                    }
+                    None => targets.push((target, damage, headshot)),
+                }
+                let surface = surface_meta(Some(collider)).unwrap_or_else(|| "flesh".to_owned());
+                self.spawn_impact(hit.position, hit.normal, false, &surface);
+            } else {
+                let surface = surface_of(hit.collider.as_ref());
+                // Shotguns leave a decal for only some pellets to limit clutter.
+                let decal = def.pellets == 1 || pellet % 3 == 0;
+                self.spawn_impact(hit.position, hit.normal, decal, &surface);
             }
+        }
+
+        let mut confirmed = None;
+        for (mut target, damage, headshot) in targets {
             let killed = target
                 .call(
                     "apply_damage",
@@ -684,14 +1039,43 @@ impl FpsPlayer {
                 )
                 .try_to::<bool>()
                 .unwrap_or(false);
+            let (k, h) = confirmed.unwrap_or((false, false));
+            confirmed = Some((k | killed, h | headshot));
+        }
+        if let Some((killed, headshot)) = confirmed {
             self.signals().hit_confirmed().emit(killed, headshot);
-            self.spawn_impact(position, normal, false);
-        } else {
-            self.spawn_impact(position, normal, true);
+        }
+
+        if def.tracer_every > 0
+            && shot.is_multiple_of(u32::from(def.tracer_every))
+            && let Some(end) = first_end
+        {
+            self.spawn_tracer(end);
         }
     }
 
-    fn spawn_impact(&mut self, position: Vector3, normal: Vector3, decal: bool) {
+    /// Tracers start near the muzzle: the viewmodel is drawn with its own FOV,
+    /// so this is a camera-relative approximation that reads right on screen.
+    fn spawn_tracer(&mut self, end: Vector3) {
+        let ads = self.state.combat.ads;
+        let hip = Vector3::new(0.09, -0.1, -0.55);
+        let aimed = Vector3::new(0.0, -0.05, -0.55);
+        let start = self.camera.get_global_transform() * hip.lerp(aimed, ads);
+        let Some(mut tracer) = self
+            .tracer_scene
+            .instantiate()
+            .and_then(|n| n.try_cast::<Node3D>().ok())
+        else {
+            return;
+        };
+        let Some(mut parent) = self.base().get_parent() else {
+            return;
+        };
+        parent.add_child(&tracer);
+        tracer.call("setup", &[start.to_variant(), end.to_variant()]);
+    }
+
+    fn spawn_impact(&mut self, position: Vector3, normal: Vector3, decal: bool, surface: &str) {
         let Some(mut impact) = self
             .impact_scene
             .instantiate()
@@ -704,7 +1088,104 @@ impl FpsPlayer {
         };
         parent.add_child(&impact);
         impact.set_global_position(position);
-        impact.call("setup", &[normal.to_variant(), decal.to_variant()]);
+        impact.call(
+            "setup",
+            &[
+                normal.to_variant(),
+                decal.to_variant(),
+                GString::from(surface).to_variant(),
+            ],
+        );
+    }
+
+    /// Steps once per stride on the ground. Stride length shortens with speed so
+    /// cadence rises when sprinting; crouching is quieter.
+    fn advance_footsteps(&mut self, moved: f32) {
+        let movement = self.state.movement;
+        if !self.env.on_floor || movement.stance == Stance::Sliding || !self.state.alive() {
+            return;
+        }
+        let (length, volume) = match movement.stance {
+            Stance::Crouching => (1.25, -14.0),
+            _ if movement.sprinting => (2.3, 0.0),
+            _ => (1.9, -5.0),
+        };
+        self.stride_length = length;
+        self.stride += moved;
+        if self.stride >= length {
+            self.stride -= length;
+            self.play_footstep(volume);
+        }
+        if moved < 0.001 {
+            self.stride = (self.stride - 0.02).max(0.0);
+        }
+    }
+
+    fn play_footstep(&mut self, volume_db: f32) {
+        let feet = self.current_position + Vector3::UP * 0.1;
+        let surface = self
+            .ray(feet, feet + Vector3::DOWN * 0.5, WORLD_LAYER)
+            .map(|hit| surface_of(hit.collider.as_ref()))
+            .unwrap_or_else(|| DEFAULT_SURFACE.to_owned());
+        let path = format!("res://assets/audio/footsteps/{surface}");
+        let Some(stream) = self.sound(&path, 1.08) else {
+            return;
+        };
+        self.footsteps.set_stream(&stream);
+        self.footsteps.set_volume_db(volume_db);
+        self.footsteps.play();
+    }
+
+    fn play_body(&mut self, base: &str, volume_db: f32) {
+        let Some(stream) = self.sound(base, 1.05) else {
+            return;
+        };
+        self.body_sounds.set_stream(&stream);
+        self.body_sounds.set_volume_db(volume_db);
+        self.body_sounds.play();
+    }
+
+    fn sound(&mut self, base: &str, pitch: f32) -> Option<Gd<AudioStreamRandomizer>> {
+        self.sounds
+            .entry(base.to_owned())
+            .or_insert_with(|| audio::variations(base, pitch))
+            .clone()
+    }
+
+    /// Head bob, strafe tilt, and slide tilt: (bob offset, bob roll, tilt) in
+    /// metres and radians. Zero when camera motion is turned off.
+    fn camera_motion_offsets(&mut self, dt: f32, ads: f32) -> (Vector2, f32, f32) {
+        let movement = self.state.movement;
+        let speed = Vector2::new(movement.velocity.x, movement.velocity.z).length();
+        let walking = self.env.on_floor && movement.stance != Stance::Sliding && self.state.alive();
+        let target = if walking {
+            (speed / self.params.movement.walk_speed).min(1.5)
+        } else {
+            0.0
+        };
+        self.bob_blend += (target - self.bob_blend) * smoothing(10.0, dt);
+
+        let slide_tilt = if movement.stance == Stance::Sliding {
+            0.07
+        } else {
+            0.0
+        };
+        let strafe_tilt = -self.wish.x * 0.012 * (1.0 - ads);
+        self.tilt += (slide_tilt + strafe_tilt - self.tilt) * smoothing(8.0, dt);
+        if !self.camera_motion {
+            return (Vector2::ZERO, 0.0, 0.0);
+        }
+
+        // One dip per footstep: the stride phase drives the bob, so the camera
+        // and the footstep sounds stay in sync.
+        let phase = self.stride / self.stride_length.max(0.1) * PI;
+        let amount = self.bob_blend * (1.0 - 0.85 * ads);
+        let bob = Vector2::new(
+            (phase * 0.5).sin() * 0.012 * amount,
+            -phase.sin().abs() * 0.022 * amount,
+        );
+        let roll = (phase * 0.5).sin() * 0.004 * amount;
+        (bob, roll, self.tilt)
     }
 
     fn view_frame(&self, ads: f32) -> ViewFrame {
@@ -714,12 +1195,31 @@ impl FpsPlayer {
         let action = match combat.action {
             Action::Ready => ViewAction::Ready,
             Action::Reloading { remaining, empty } => {
-                let total = if empty {
-                    def.reload_empty_time
-                } else {
-                    def.reload_time
+                let total = match def.reload {
+                    Reload::Magazine { time, empty_time } => {
+                        if empty {
+                            empty_time
+                        } else {
+                            time
+                        }
+                    }
+                    Reload::PerRound { .. } => 1.0,
                 };
                 ViewAction::Reloading(progress(remaining, total))
+            }
+            // Round-by-round: tilt in, hold while loading, tilt back out.
+            Action::Loading { remaining, stage } => {
+                let Reload::PerRound { start, end, .. } = def.reload else {
+                    return self.frame_with(ads, ViewAction::Ready);
+                };
+                ViewAction::Reloading(match stage {
+                    LoadStage::Opening => 0.5 * progress(remaining, start),
+                    LoadStage::Round => 0.5,
+                    LoadStage::Closing => 0.5 + 0.5 * progress(remaining, end),
+                })
+            }
+            Action::Cycling { remaining } => {
+                ViewAction::Cycling(progress(remaining, def.cycle_time))
             }
             Action::Lowering { remaining, .. } => {
                 ViewAction::Lowering(progress(remaining, def.lower_time))
@@ -728,21 +1228,58 @@ impl FpsPlayer {
                 ViewAction::Raising(progress(remaining, def.raise_time))
             }
         };
+        self.frame_with(ads, action)
+    }
+
+    fn frame_with(&self, ads: f32, action: ViewAction) -> ViewFrame {
+        let combat = &self.state.combat;
         let velocity = self.state.movement.velocity;
         ViewFrame {
             weapon: combat.weapon().id,
             ads,
+            scope: combat.scope_amount(),
+            visible: self.state.alive(),
             sprinting: self.state.movement.sprinting,
-            speed_ratio: Vec3::new(velocity.x, 0.0, velocity.z).length() / self.params.walk_speed,
+            speed_ratio: Vec3::new(velocity.x, 0.0, velocity.z).length()
+                / self.params.movement.walk_speed,
             on_floor: self.env.on_floor,
             look_delta: self.look_delta,
             action,
         }
     }
 
+    fn respawn(&mut self) {
+        self.state = PlayerState::spawned(&self.params);
+        let spawn = self.spawn;
+        let mut body = self.base_mut();
+        body.set_global_position(spawn.origin);
+        body.set_velocity(Vector3::ZERO);
+        drop(body);
+        self.yaw = spawn.basis.get_euler().y;
+        self.pitch = 0.0;
+        self.reset_view();
+        self.signals().respawned().emit();
+    }
+
+    fn reset_view(&mut self) {
+        let position = self.base().get_global_position();
+        self.previous_position = position;
+        self.current_position = position;
+        self.previous_recoil = Vec2::ZERO;
+        self.previous_sway = Vec2::ZERO;
+        self.previous_ads = 0.0;
+        self.eye_height = self.params.movement.eye_height(Stance::Standing);
+        self.fov_sprint = 1.0;
+        self.stride = 0.0;
+        self.stride_length = 2.0;
+        self.assist.reset();
+        self.assist_target = None;
+        self.apply_stance_shape(Stance::Standing);
+    }
+
     /// Resizes the capsule for a stance, keeping its bottom at the body origin (the feet).
     fn apply_stance_shape(&mut self, stance: Stance) {
-        let height = self.params.height(stance);
+        let height = self.params.movement.height(stance);
         if let Some(shape) = self.collision.get_shape()
             && let Ok(mut capsule) = shape.try_cast::<CapsuleShape3D>()
         {
@@ -790,7 +1327,28 @@ fn find_damageable(collider: &Gd<Node>) -> Option<Gd<Node>> {
     None
 }
 
+/// The `surface` metadata on a collider or its nearest ancestor that has it.
+fn surface_meta(collider: Option<&Gd<Node>>) -> Option<String> {
+    let mut node = collider.cloned();
+    while let Some(current) = node {
+        if current.has_meta("surface") {
+            return Some(current.get_meta("surface").to_string());
+        }
+        node = current.get_parent();
+    }
+    None
+}
+
+/// Like [`surface_meta`], defaulting to concrete for untagged world geometry.
+fn surface_of(collider: Option<&Gd<Node>>) -> String {
+    surface_meta(collider).unwrap_or_else(|| DEFAULT_SURFACE.to_owned())
+}
+
 /// Frame-rate independent exponential smoothing factor.
 fn smoothing(rate: f32, delta: f32) -> f32 {
     1.0 - (-rate * delta).exp()
+}
+
+fn linear_db(linear: f32) -> f32 {
+    20.0 * linear.max(1e-4).log10()
 }

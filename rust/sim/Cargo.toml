@@ -10,4 +10,6 @@ workspace = true
 
 [dependencies]
 # Same version godot-rust already uses, so this adds no new download.
-glam = "0.32"
+glam = { version = "0.32", features = ["serde"] }
+ron = "0.12.3"
+serde = { version = "1.0.229", features = ["derive"] }

@@ -1,4 +1,4 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene format=3]
 
 [ext_resource type="PackedScene" path="res://assets/weapons/pistol/pistol.fbx" id="1_model"]
 [ext_resource type="AudioStream" path="res://assets/audio/weapons/pistol_fire.ogg" id="2_fire"]
@@ -11,7 +11,7 @@ material = ExtResource("5_flash")
 size = Vector2(0.16, 0.16)
 
 [node name="Pistol" type="WeaponView"]
-weapon = "Pistol"
+weapon = "m1911"
 hip_position = Vector3(0.09, -0.1, -0.32)
 ads_position = Vector3(0, 0, -0.3)
 sprint_position = Vector3(-0.01, -0.02, 0.04)
@@ -39,15 +39,21 @@ light_color = Color(1, 0.72, 0.42, 1)
 light_energy = 2.5
 omni_range = 6.0
 
+[node name="Ejection" type="Marker3D" parent="."]
+position = Vector3(0.0096, -0.006, -0.06)
+
 [node name="FireSound" type="AudioStreamPlayer" parent="."]
 stream = ExtResource("2_fire")
 volume_db = -6.0
 max_polyphony = 8
+bus = &"Weapons"
 
 [node name="ReloadSound" type="AudioStreamPlayer" parent="."]
 stream = ExtResource("3_reload")
 volume_db = -4.0
+bus = &"Weapons"
 
 [node name="DryFireSound" type="AudioStreamPlayer" parent="."]
 stream = ExtResource("4_dry")
 volume_db = -6.0
+bus = &"Weapons"

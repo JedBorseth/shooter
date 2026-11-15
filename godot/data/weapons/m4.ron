@@ -1,0 +1,33 @@
+// M4A1-style carbine: 4-shot kill up close (30 damage), 5 at range.
+// Angles are degrees, times seconds, distances metres. See rust/sim/src/weapon/def.rs.
+(
+    name: "M4A1",
+    slot: Primary,
+    fire_mode: Auto,
+    rounds_per_minute: 750,
+    magazine: 30,
+    reserve: 120,
+    damage: (near: 30, far: 21, falloff_start: 25, falloff_end: 50, headshot: 1.4),
+    range: 400,
+    reload: Magazine(time: 2.1, empty_time: 2.6),
+    ads_time: 0.25,
+    sprint_out_time: 0.22,
+    raise_time: 0.45,
+    lower_time: 0.3,
+    spread: (hip: 2.2, hip_moving: 4.0, air: 6.0, ads: 0.0),
+    ads_fov_scale: 0.8,
+    ads_move_scale: 0.6,
+    move_scale: 1.0,
+    recoil: (
+        pattern: [
+            (0.55, 0.05), (0.5, 0.1), (0.45, 0.15), (0.42, -0.05),
+            (0.4, -0.2), (0.38, -0.15), (0.36, 0.1), (0.35, 0.22),
+            (0.34, 0.12), (0.33, -0.1), (0.32, -0.2), (0.32, 0.0),
+        ],
+        jitter: (0.06, 0.1),
+        ads_scale: 0.75,
+        recovery_delay: 0.1,
+        recovery_rate: 7.0,
+    ),
+    tracer_every: 3,
+)

@@ -1,6 +1,7 @@
 extends SceneTree
-## Captures reference screenshots of the first-person view (hip, ADS, firing,
-## sprint, reload, pistol, impacts) for reviewing weapon feel and visuals.
+## Captures reference screenshots of the first-person view (every weapon at the
+## hip and aimed, firing, sprint, reload, shotgun pump, sniper scope, impacts,
+## weapon racks, damage, death) for reviewing weapon feel and visuals.
 ## Needs a GPU and a display (or Xvfb):
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
 ##     --script res://tests/capture_screens.gd
@@ -21,6 +22,7 @@ func _run() -> void:
 	var main: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
 	root.add_child(main)
 	var player := main.get_node("Player") as FpsPlayer
+	main.get_node("Sentry").set("enabled", false)
 	player.set_look(0.0, -0.05)
 	await _ticks(60)
 	await _shot("01_m4_hip")
@@ -73,6 +75,69 @@ func _run() -> void:
 	Input.action_release("fire")
 	await _ticks(60)
 	await _shot("09_impacts")
+
+	# Shells in the air just after a shot.
+	player.set_look(0.0, -0.05)
+	await _tap("fire")
+	await _ticks(7)
+	await _shot("10_m4_shells")
+	await _ticks(60)
+
+	for weapon in [["ak47", "AK47"], ["pdw9", "PDW9"], ["m870", "M870"]]:
+		player.give_weapon(weapon[0])
+		await _ticks(60)
+		await _shot("11_%s_hip" % weapon[0])
+		Input.action_press("aim")
+		await _ticks(30)
+		await _shot("12_%s_ads" % weapon[0])
+		Input.action_release("aim")
+		await _ticks(30)
+
+	# Pump mid-cycle, after a shot at the wall.
+	await _tap("fire")
+	await _ticks(16)
+	await _shot("13_m870_pump")
+	await _ticks(60)
+
+	player.give_weapon("m40")
+	await _ticks(60)
+	await _shot("14_m40_hip")
+	player.set_look(0.0, -0.02)
+	Input.action_press("aim")
+	await _ticks(40)
+	await _shot("15_m40_scope")
+	Input.action_release("aim")
+	await _ticks(30)
+
+	# Tracers: fire the M4 at the far wall and catch one in flight.
+	player.give_weapon("m4")
+	await _ticks(60)
+	player.set_look(0.03, 0.02)
+	Input.action_press("fire")
+	await _ticks(10)
+	await _shot("16_tracers")
+	Input.action_release("fire")
+	await _ticks(40)
+
+	# The armory: look at a rack to see the prompt.
+	var rack := main.get_node("Armory/Rack_m870") as Node3D
+	player.global_position = rack.global_position + Vector3(2.0, 0, 0)
+	await _ticks(3)
+	var to := (
+		rack.global_position + Vector3(0, 1.0, 0) - (player.global_position + Vector3(0, 1.68, 0))
+	)
+	player.set_look(atan2(-to.x, -to.z), atan2(to.y, Vector2(to.x, to.z).length()))
+	await _ticks(10)
+	await _shot("17_rack")
+
+	# Damage from the left, then death.
+	player.set_look(0.0, 0.0)
+	player.take_damage(45.0, player.global_position + Vector3(-10, 0, 0))
+	await _ticks(6)
+	await _shot("18_damaged")
+	player.take_damage(100.0, player.global_position + Vector3(0, 0, 10))
+	await _ticks(70)
+	await _shot("19_dead")
 	quit()
 
 

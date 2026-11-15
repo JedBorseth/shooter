@@ -1,0 +1,32 @@
+// M870 pump shotgun: 8 pellets, one-shot kill up close, loads shell by shell.
+// Firing (with a shell loaded) interrupts a reload.
+(
+    name: "M870",
+    slot: Primary,
+    fire_mode: Semi,
+    rounds_per_minute: 600,
+    cycle_time: 0.62,
+    pellets: 8,
+    pellet_spread: 4.5,
+    magazine: 6,
+    reserve: 30,
+    damage: (near: 20, far: 6, falloff_start: 6, falloff_end: 16, headshot: 1.2),
+    range: 60,
+    reload: PerRound(start: 0.45, per_round: 0.5, end: 0.45),
+    ads_time: 0.22,
+    sprint_out_time: 0.2,
+    raise_time: 0.45,
+    lower_time: 0.3,
+    spread: (hip: 1.0, hip_moving: 1.5, air: 3.0, ads: 0.0),
+    ads_fov_scale: 0.88,
+    ads_move_scale: 0.65,
+    move_scale: 0.97,
+    recoil: (
+        pattern: [(3.2, 0.3)],
+        jitter: (0.4, 0.5),
+        ads_scale: 0.85,
+        recovery_delay: 0.05,
+        recovery_rate: 7.0,
+    ),
+    tracer_every: 0,
+)

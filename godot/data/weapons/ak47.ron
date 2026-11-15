@@ -1,0 +1,33 @@
+// AK-47-style rifle: slower and harder-hitting than the M4 (3-shot kill up
+// close), with a stronger climb that pulls right.
+(
+    name: "AK-47",
+    slot: Primary,
+    fire_mode: Auto,
+    rounds_per_minute: 600,
+    magazine: 30,
+    reserve: 120,
+    damage: (near: 34, far: 25, falloff_start: 22, falloff_end: 45, headshot: 1.4),
+    range: 400,
+    reload: Magazine(time: 2.4, empty_time: 2.9),
+    ads_time: 0.28,
+    sprint_out_time: 0.25,
+    raise_time: 0.5,
+    lower_time: 0.33,
+    spread: (hip: 2.5, hip_moving: 4.5, air: 6.5, ads: 0.05),
+    ads_fov_scale: 0.8,
+    ads_move_scale: 0.58,
+    move_scale: 0.97,
+    recoil: (
+        pattern: [
+            (0.75, 0.05), (0.7, 0.15), (0.65, 0.2), (0.6, 0.25),
+            (0.55, 0.3), (0.5, 0.15), (0.48, -0.1), (0.46, -0.25),
+            (0.45, 0.1), (0.44, 0.3), (0.44, 0.2), (0.44, 0.05),
+        ],
+        jitter: (0.08, 0.14),
+        ads_scale: 0.75,
+        recovery_delay: 0.1,
+        recovery_rate: 6.5,
+    ),
+    tracer_every: 3,
+)
