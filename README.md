@@ -82,6 +82,7 @@ Export presets are in `godot/export_presets.cfg`. The Rust library for each plat
 | Fire / aim down sights | Left / right mouse |
 | Reload | R |
 | Switch weapon | 1, 2, or mouse wheel |
+| Refill all ammo to max (demo) | T |
 | Release mouse | Esc |
 
 Gamepads work too (Xbox layout shown; PlayStation and others use the same positions):

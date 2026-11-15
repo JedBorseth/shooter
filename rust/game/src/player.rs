@@ -37,7 +37,7 @@ const PITCH_LIMIT: f32 = FRAC_PI_2 - 0.01;
 
 /// Actions whose presses are remembered until the next physics tick, so a tap
 /// shorter than one tick (or a mouse-wheel step) is never lost.
-const LATCHED_ACTIONS: [&str; 8] = [
+const LATCHED_ACTIONS: [&str; 9] = [
     "jump",
     "crouch",
     "sprint",
@@ -46,6 +46,7 @@ const LATCHED_ACTIONS: [&str; 8] = [
     "weapon_next",
     "weapon_1",
     "weapon_2",
+    "refill_ammo",
 ];
 
 #[derive(GodotClass)]
@@ -204,6 +205,11 @@ impl ICharacterBody3D for FpsPlayer {
 
     fn physics_process(&mut self, delta: f64) {
         let input = self.read_input();
+        if Input::singleton().is_action_just_pressed("refill_ammo")
+            | self.take_latched("refill_ammo")
+        {
+            self.state.combat.refill_ammo();
+        }
         self.headroom.force_shapecast_update();
         let on_floor = self.base().is_on_floor();
         self.env = MoveEnv {
