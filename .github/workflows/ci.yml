@@ -58,6 +58,24 @@ jobs:
           workspaces: rust
       - run: cargo test --locked
 
+  # The "Protect main" ruleset requires a check named "Rust (fmt, clippy, test)".
+  # Lint and the per-OS tests run as separate jobs, so this job reports that one
+  # name and passes only when all of them passed.
+  rust:
+    name: Rust (fmt, clippy, test)
+    if: ${{ always() }}
+    needs: [rust-lint, rust-test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every Rust job to pass
+        env:
+          LINT: ${{ needs.rust-lint.result }}
+          TEST: ${{ needs.rust-test.result }}
+        run: |
+          echo "rust-lint: $LINT, rust-test: $TEST"
+          test "$LINT" = success && test "$TEST" = success
+
   gdscript:
     name: GDScript (lint, format)
     runs-on: ubuntu-latest
