@@ -66,6 +66,6 @@ jobs:
         with:
           version: ${{ env.GODOT_VERSION }}
       - name: Import assets
-        run: godot --headless --path godot --import
+        run: .github/scripts/import-assets.sh
       - name: Run smoke test
         run: godot --headless --path godot --script res://tests/smoke_test.gd
