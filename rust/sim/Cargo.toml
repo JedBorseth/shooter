@@ -1,0 +1,13 @@
+[package]
+name = "shooter-sim"
+description = "Engine-independent, deterministic gameplay simulation shared by client and server."
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+# Same version godot-rust already uses, so this adds no new download.
+glam = "0.32"

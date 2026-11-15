@@ -1,0 +1,16 @@
+[package]
+name = "shooter-game"
+description = "Godot GDExtension that exposes the simulation to the engine."
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+godot = { version = "0.5.5", features = ["api-4-7"] }
+shooter-sim = { path = "../sim" }
+
+[lints]
+workspace = true

@@ -1,0 +1,83 @@
+; Open this file with Godot 4.7 or newer.
+; Build the Rust extension first: `cargo build` in ../rust.
+config_version=5
+
+[application]
+config/name="Shooter"
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.7", "Forward Plus")
+config/icon="res://assets/icon.svg"
+
+[display]
+window/size/viewport_width=1600
+window/size/viewport_height=900
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
+[input]
+move_forward={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":87)]
+}
+move_back={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":83)]
+}
+move_left={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":65)]
+}
+move_right={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":68)]
+}
+jump={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":32)]
+}
+sprint={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":4194325)]
+}
+crouch={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":67), Object(InputEventKey,"physical_keycode":4194326)]
+}
+fire={
+"deadzone": 0.2,
+"events": [Object(InputEventMouseButton,"button_index":1)]
+}
+aim={
+"deadzone": 0.2,
+"events": [Object(InputEventMouseButton,"button_index":2)]
+}
+reload={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":82)]
+}
+weapon_next={
+"deadzone": 0.2,
+"events": [Object(InputEventMouseButton,"button_index":4), Object(InputEventMouseButton,"button_index":5)]
+}
+weapon_1={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":49)]
+}
+weapon_2={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":50)]
+}
+
+[layer_names]
+3d_physics/layer_1="world"
+3d_physics/layer_2="players"
+3d_physics/layer_3="hitboxes"
+
+[physics]
+3d/physics_engine="Jolt Physics"
+common/physics_ticks_per_second=60
+
+[rendering]
+anti_aliasing/quality/msaa_3d=2
+anti_aliasing/quality/screen_space_aa=1
+environment/defaults/default_clear_color=Color(0.035, 0.05, 0.08, 1)
