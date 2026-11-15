@@ -1,9 +1,8 @@
 name: Build
 
-# Exports playable client builds. Every push to main builds Linux and Windows.
-# Tags (v*), manual runs, and pull requests that change the build setup also build
-# macOS, which costs 10x the runner minutes on a private repository. Tags publish
-# a GitHub Release.
+# Exports playable Linux, Windows, and macOS clients on every push to main, on
+# manual runs, and on pull requests that change the build setup. Tags (v*) also
+# publish the builds as a GitHub Release.
 
 on:
   push:
@@ -15,6 +14,7 @@ on:
       - .github/actions/**
       - .github/scripts/**
       - godot/export_presets.cfg
+      - godot/project.godot
       - godot/shooter.gdextension
       - rust/Cargo.toml
       - rust/Cargo.lock
@@ -64,7 +64,6 @@ jobs:
 
   lib-macos:
     name: GDExtension (macos, universal)
-    if: github.ref_type == 'tag' || github.event_name != 'push'
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
@@ -94,7 +93,6 @@ jobs:
   export:
     name: Export clients
     needs: [lib, lib-macos]
-    if: ${{ !cancelled() && needs.lib.result == 'success' && needs.lib-macos.result != 'failure' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -143,10 +141,8 @@ jobs:
           mkdir -p dist
           (cd builds/linux && zip -qr "../../dist/${NAME}-linux-x86_64.zip" .)
           (cd builds/windows && zip -qr "../../dist/${NAME}-windows-x86_64.zip" .)
-          if [[ -f rust/target/release/libshooter_game.dylib ]]; then
-            # macOS exports straight to a zipped, ad-hoc signed .app.
-            export_preset "macOS" "$PWD/dist/${NAME}-macos-universal.zip"
-          fi
+          # macOS exports straight to a zipped, ad-hoc signed .app.
+          export_preset "macOS" "$PWD/dist/${NAME}-macos-universal.zip"
           ls -lh dist
       - uses: actions/upload-artifact@v7
         with:

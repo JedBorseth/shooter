@@ -61,7 +61,7 @@ CAPTURE_DIR=/tmp/shots godot --path godot --resolution 1600x900 --script res://t
 GitHub Actions runs two workflows:
 
 - **CI** (`.github/workflows/ci.yml`) runs on every pull request and push to `main`: `cargo fmt`, `clippy -D warnings`, `cargo test`, gdlint and gdformat, and the headless smoke test against Godot 4.7.2.
-- **Build** (`.github/workflows/build.yml`) exports playable clients on every push to `main`: Linux and Windows zips appear as workflow artifacts. Tags, manual runs, and pull requests that change the build setup also export a universal macOS app (ad-hoc signed, not notarized, so macOS asks before opening it). Pushing a `v*` tag publishes the zips as a GitHub Release.
+- **Build** (`.github/workflows/build.yml`) exports playable clients on every push to `main` and on pull requests that change the build setup: Linux, Windows, and universal macOS zips appear as workflow artifacts. The macOS app is ad-hoc signed, not notarized, so macOS asks before opening it. Pushing a `v*` tag publishes the zips as a GitHub Release.
 
 To cut a release:
 
