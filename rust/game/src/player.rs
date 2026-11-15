@@ -182,7 +182,6 @@ pub struct FpsPlayer {
     env: MoveEnv,
     yaw: f32,
     pitch: f32,
-    look_delta: Vector2,
     wish: Vector2,
     previous_position: Vector3,
     current_position: Vector3,
@@ -256,9 +255,7 @@ impl ICharacterBody3D for FpsPlayer {
                         * (1.0 + (self.ads_sensitivity_scale - 1.0) * ads);
                     let delta = motion.get_screen_relative() * self.mouse_sensitivity * zoom;
                     self.yaw -= delta.x;
-                    let pitch = (self.pitch - delta.y).clamp(-PITCH_LIMIT, PITCH_LIMIT);
-                    self.look_delta += Vector2::new(-delta.x, pitch - self.pitch);
-                    self.pitch = pitch;
+                    self.pitch = (self.pitch - delta.y).clamp(-PITCH_LIMIT, PITCH_LIMIT);
                 }
                 return;
             }
@@ -393,7 +390,6 @@ impl ICharacterBody3D for FpsPlayer {
         self.camera.set_fov(fov);
 
         let frame = self.view_frame(ads);
-        self.look_delta = Vector2::ZERO;
         self.viewmodel.bind_mut().update(&frame, dt);
     }
 }
@@ -850,12 +846,10 @@ impl FpsPlayer {
         self.turn(-rates.x * delta, rates.y * delta);
     }
 
-    /// Turns the view (yaw left and pitch up, in radians) and feeds viewmodel sway.
+    /// Turns the view (yaw left and pitch up, in radians).
     fn turn(&mut self, yaw: f32, pitch: f32) {
         self.yaw += yaw;
-        let clamped = (self.pitch + pitch).clamp(-PITCH_LIMIT, PITCH_LIMIT);
-        self.look_delta += Vector2::new(yaw, clamped - self.pitch);
-        self.pitch = clamped;
+        self.pitch = (self.pitch + pitch).clamp(-PITCH_LIMIT, PITCH_LIMIT);
     }
 
     /// Enabled aim assist targets in range with a clear line of sight.
@@ -1243,7 +1237,6 @@ impl FpsPlayer {
             speed_ratio: Vec3::new(velocity.x, 0.0, velocity.z).length()
                 / self.params.movement.walk_speed,
             on_floor: self.env.on_floor,
-            look_delta: self.look_delta,
             action,
         }
     }
