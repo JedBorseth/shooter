@@ -50,7 +50,7 @@ existing arena on selection; **Multiplayer** is a disabled placeholder. **Zombie
 opens a Black Ops 2 inspired menu: **Solo** leads to a rotating globe with five
 selectable map locations. Use the list, map markers, or arrow buttons to select;
 drag the globe to rotate, and use Back or Esc to return. Zombies maps are menu
-previews, with gameplay marked coming soon. Zombies assets load only on menu entry.
+previews; gameplay is not implemented yet. Zombies assets load only on menu entry.
 Use the mouse or press Enter to select the focused menu option.
 
 ## Test

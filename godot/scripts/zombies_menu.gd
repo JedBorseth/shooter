@@ -6,19 +6,18 @@ signal back_requested
 const ASSETS := "res://assets/zombies/"
 const ORANGE := Color("e88b36")
 const WHITE := Color("c8c9c8")
-const MUTED := Color("8c9295")
 const HOVER_COOLDOWN_MSEC := 400
 const MAPS := [
-	{"name": "GREEN RUN", "mode": "TRANZIT", "region": "WASHINGTON, USA", "lat": 46.0, "lon": -122.0,
-		"image": "transit", "description": "A bus. A fractured world. Keep moving through the fog."},
-	{"name": "NUKETOWN ZOMBIES", "mode": "SURVIVAL", "region": "NEVADA, USA", "lat": 37.0, "lon": -116.0,
-		"image": "nuketown", "description": "Return to the test site. Survive the fallout."},
-	{"name": "DIE RISE", "mode": "GREAT LEAP FORWARD", "region": "SHANGHAI, CHINA", "lat": 31.0, "lon": 121.0,
-		"image": "highrise", "description": "Above the ruined skyline, every step could be your last."},
-	{"name": "BURIED", "mode": "RESOLUTION 1295", "region": "ANGOLA", "lat": -12.0, "lon": 17.0,
-		"image": "buried", "description": "An abandoned frontier town, lost beneath the earth."},
-	{"name": "ORIGINS", "mode": "DIG SITE", "region": "NORTHERN FRANCE", "lat": 50.0, "lon": 3.0,
-		"image": "tomb", "description": "The trenches hold a secret. Discover where it all began."},
+	{"name": "GREEN RUN", "lat": 46.0, "lon": -122.0,
+		"image": "transit"},
+	{"name": "NUKETOWN ZOMBIES", "lat": 37.0, "lon": -116.0,
+		"image": "nuketown"},
+	{"name": "DIE RISE", "lat": 31.0, "lon": 121.0,
+		"image": "highrise"},
+	{"name": "BURIED", "lat": -12.0, "lon": 17.0,
+		"image": "buried"},
+	{"name": "ORIGINS", "lat": 50.0, "lon": 3.0,
+		"image": "tomb"},
 ]
 
 var selected_map := 0
@@ -29,13 +28,6 @@ var _selector: Control
 var _globe: ColorRect
 var _material: ShaderMaterial
 var _heading: Label
-var _breadcrumb: Label
-var _description: Label
-var _map_name: Label
-var _map_mode: Label
-var _region: Label
-var _notice: Label
-var _preview: TextureRect
 var _solo: Button
 var _map_buttons: Array[Button] = []
 var _markers: Array[Button] = []
@@ -74,15 +66,12 @@ func _ready() -> void:
 	_globe.mouse_filter = Control.MOUSE_FILTER_STOP
 	_globe.gui_input.connect(_globe_input)
 	_canvas.add_child(_globe)
-	_breadcrumb = _label(_canvas, "SHOOTER  /  ZOMBIES", Vector2(110, 45), 20, MUTED)
 	_heading = _label(_canvas, "ZOMBIES", Vector2(110, 86), 74, WHITE)
-	_label(_canvas, "1 PLAYER  /  LOCAL", Vector2(1280, 57), 22, MUTED)
 	_build_landing()
 	_build_selector()
-	var back := _button(_canvas, "[ ESC ]  BACK", Vector2(110, 816), Vector2(210, 48), 24)
+	var back := _button(_canvas, "BACK", Vector2(110, 816), Vector2(210, 48), 24)
 	back.name = "Back"
 	back.pressed.connect(go_back)
-	_label(_canvas, "ENTER  SELECT     /     ESC  BACK", Vector2(1150, 835), 20, MUTED)
 	resized.connect(_resize_canvas)
 	_resize_canvas()
 	_show_landing()
@@ -100,8 +89,6 @@ func _build_landing() -> void:
 		var placeholder := _button(_landing, entry[0], Vector2(110, entry[1]), Vector2(360, 56), 32)
 		placeholder.disabled = true
 		placeholder.focus_mode = Control.FOCUS_NONE
-	_description = _label(_landing, "Play solo against zombies.", Vector2(114, 718), 25, MUTED)
-	_description.size.x = 470
 
 
 func _exit_tree() -> void:
@@ -114,7 +101,6 @@ func _build_selector() -> void:
 	_selector.name = "MapSelector"
 	_selector.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_canvas.add_child(_selector)
-	_label(_selector, "SELECT LOCATION", Vector2(114, 206), 22, ORANGE)
 	for i in MAPS.size():
 		var map_button := _button(_selector, MAPS[i]["name"], Vector2(110, 246 + i * 58), Vector2(400, 52), 31)
 		map_button.name = "Map%d" % i
@@ -131,20 +117,12 @@ func _build_selector() -> void:
 		_markers.append(marker)
 		var caption := _label(_selector, MAPS[i]["name"], Vector2.ZERO, 19, WHITE)
 		_marker_labels.append(caption)
-	_preview = _image(_selector, "images/menu_zm_map_signpost_transit.png", Vector2(112, 564), Vector2(96, 96))
-	_map_name = _label(_selector, "", Vector2(230, 565), 32, ORANGE)
-	_map_mode = _label(_selector, "", Vector2(230, 606), 24, WHITE)
-	_region = _label(_selector, "", Vector2(114, 677), 21, MUTED)
-	_notice = _label(_selector, "", Vector2(114, 718), 24, WHITE)
-	_notice.size = Vector2(430, 80)
-	_notice.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	var previous := _button(_selector, "<", Vector2(680, 745), Vector2(56, 48), 32)
 	previous.name = "Previous"
 	previous.pressed.connect(func() -> void: select_map(posmod(selected_map - 1, MAPS.size())))
 	var next := _button(_selector, ">", Vector2(1204, 745), Vector2(56, 48), 32)
 	next.name = "Next"
 	next.pressed.connect(func() -> void: select_map(posmod(selected_map + 1, MAPS.size())))
-	_label(_selector, "DRAG TO ROTATE  /  CHOOSE A LOCATION", Vector2(770, 760), 20, MUTED)
 
 
 func open_solo() -> void:
@@ -153,7 +131,6 @@ func open_solo() -> void:
 	_landing.hide()
 	_selector.show()
 	_heading.text = "SOLO"
-	_breadcrumb.text = "SHOOTER  /  ZOMBIES  /  SOLO"
 	_globe.position = Vector2(590, 125)
 	_globe.size = Vector2(760, 760)
 	select_map(selected_map)
@@ -164,13 +141,7 @@ func select_map(index: int) -> void:
 	if index < 0 or index >= MAPS.size():
 		return
 	selected_map = index
-	var map: Dictionary = MAPS[index]
-	_target_longitude = deg_to_rad(float(map["lon"]))
-	_map_name.text = map["name"]
-	_map_mode.text = map["mode"]
-	_region.text = map["region"]
-	_notice.text = "%s\nMap unavailable — coming soon." % map["description"]
-	_preview.texture = load(ASSETS + "images/menu_zm_map_signpost_%s.png" % map["image"]) as Texture2D
+	_target_longitude = deg_to_rad(float(MAPS[index]["lon"]))
 	for i in _map_buttons.size():
 		_map_buttons[i].add_theme_color_override("font_color", ORANGE if i == index else WHITE)
 		_marker_labels[i].modulate = ORANGE if i == index else WHITE
@@ -189,7 +160,6 @@ func _show_landing() -> void:
 	_landing.show()
 	_selector.hide()
 	_heading.text = "ZOMBIES"
-	_breadcrumb.text = "SHOOTER  /  ZOMBIES"
 	_globe.position = Vector2(655, 100)
 	_globe.size = Vector2(900, 900)
 	_solo.grab_focus()
