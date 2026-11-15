@@ -18,13 +18,20 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	if _player == null:
 		return
-	_readout.text = "%s   %.1f m/s   %d fps" % [
-		_player.movement_state(),
-		_player.horizontal_speed(),
-		Engine.get_frames_per_second(),
-	]
+	_readout.text = (
+		"%s   %.1f m/s   %d fps"
+		% [
+			_player.movement_state(),
+			_player.horizontal_speed(),
+			Engine.get_frames_per_second(),
+		]
+	)
 	_weapon.text = _player.weapon_name()
-	_ammo.text = "RELOADING" if _player.is_reloading() else "%d / %d" % [_player.magazine(), _player.reserve()]
+	_ammo.text = (
+		"RELOADING"
+		if _player.is_reloading()
+		else "%d / %d" % [_player.magazine(), _player.reserve()]
+	)
 	_ammo.modulate = Color(1, 0.35, 0.3) if _player.magazine() == 0 else Color.WHITE
 
 	# Convert the spread cone to pixels so the crosshair shows where shots can land.

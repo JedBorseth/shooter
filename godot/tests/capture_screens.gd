@@ -2,7 +2,8 @@ extends SceneTree
 ## Captures reference screenshots of the first-person view (hip, ADS, firing,
 ## sprint, reload, pistol, impacts) for reviewing weapon feel and visuals.
 ## Needs a GPU and a display (or Xvfb):
-##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 --script res://tests/capture_screens.gd
+##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
+##     --script res://tests/capture_screens.gd
 
 var _out := OS.get_environment("CAPTURE_DIR")
 

@@ -1,0 +1,161 @@
+name: Build
+
+# Exports playable client builds. Every push to main builds Linux and Windows.
+# Tags (v*), manual runs, and pull requests that change the build setup also build
+# macOS, which costs 10x the runner minutes on a private repository. Tags publish
+# a GitHub Release.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - .github/workflows/build.yml
+      - .github/actions/**
+      - godot/export_presets.cfg
+      - godot/shooter.gdextension
+      - rust/Cargo.toml
+      - rust/Cargo.lock
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+permissions:
+  contents: read
+
+env:
+  GODOT_VERSION: 4.7.2
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  lib:
+    name: GDExtension (${{ matrix.platform }})
+    strategy:
+      matrix:
+        include:
+          - platform: linux
+            os: ubuntu-latest
+            file: libshooter_game.so
+          - platform: windows
+            os: windows-latest
+            file: shooter_game.dll
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: Build release library
+        working-directory: rust
+        run: cargo build --locked --release -p shooter-game
+      - uses: actions/upload-artifact@v7
+        with:
+          name: lib-${{ matrix.platform }}
+          path: rust/target/release/${{ matrix.file }}
+          if-no-files-found: error
+          retention-days: 3
+
+  lib-macos:
+    name: GDExtension (macos, universal)
+    if: github.ref_type == 'tag' || github.event_name != 'push'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: Build universal library
+        working-directory: rust
+        run: |
+          cargo build --locked --release -p shooter-game --target aarch64-apple-darwin
+          cargo build --locked --release -p shooter-game --target x86_64-apple-darwin
+          mkdir -p target/release
+          lipo -create -output target/release/libshooter_game.dylib \
+            target/aarch64-apple-darwin/release/libshooter_game.dylib \
+            target/x86_64-apple-darwin/release/libshooter_game.dylib
+      - uses: actions/upload-artifact@v7
+        with:
+          name: lib-macos
+          path: rust/target/release/libshooter_game.dylib
+          if-no-files-found: error
+          retention-days: 3
+
+  export:
+    name: Export clients
+    needs: [lib, lib-macos]
+    if: ${{ !cancelled() && needs.lib.result == 'success' && needs.lib-macos.result != 'failure' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/lfs-pull
+      - uses: ./.github/actions/setup-godot
+        with:
+          version: ${{ env.GODOT_VERSION }}
+          templates: "true"
+      - name: Download libraries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: lib-*
+          path: rust/target/release
+          merge-multiple: true
+      - name: Name the build
+        id: meta
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            echo "name=shooter-${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=shooter-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Import assets
+        run: |
+          # The editor loads the debug entry from shooter.gdextension; point it at the
+          # release build so scenes that use Rust classes load during import and export.
+          mkdir -p rust/target/debug
+          cp rust/target/release/libshooter_game.so rust/target/debug/
+          godot --headless --path godot --import
+      - name: Export
+        env:
+          NAME: ${{ steps.meta.outputs.name }}
+        run: |
+          set -euo pipefail
+          export_preset() {
+            local preset="$1" out="$2"
+            mkdir -p "$(dirname "$out")"
+            godot --headless --path godot --export-release "$preset" "$out"
+            test -e "$out"
+          }
+          export_preset "Linux" "$PWD/builds/linux/shooter.x86_64"
+          export_preset "Windows Desktop" "$PWD/builds/windows/shooter.exe"
+          mkdir -p dist
+          (cd builds/linux && zip -qr "../../dist/${NAME}-linux-x86_64.zip" .)
+          (cd builds/windows && zip -qr "../../dist/${NAME}-windows-x86_64.zip" .)
+          if [[ -f rust/target/release/libshooter_game.dylib ]]; then
+            # macOS exports straight to a zipped, ad-hoc signed .app.
+            export_preset "macOS" "$PWD/dist/${NAME}-macos-universal.zip"
+          fi
+          ls -lh dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.meta.outputs.name }}
+          path: dist/*.zip
+          if-no-files-found: error
+          retention-days: 14
+      - name: Publish release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v3
+        with:
+          files: dist/*.zip
+          generate_release_notes: true
