@@ -44,7 +44,10 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _on_hit(killed: bool, headshot: bool) -> void:
 	_crosshair.show_hit(killed, headshot)
-	var path := "res://assets/audio/impacts/%s.ogg" % ("kill" if killed else ("headshot" if headshot else "hitmarker"))
+	var path := (
+		"res://assets/audio/impacts/%s.ogg"
+		% ("kill" if killed else ("headshot" if headshot else "hitmarker"))
+	)
 	if ResourceLoader.exists(path):
 		_hit_sound.stream = load(path)
 		_hit_sound.play()
@@ -55,11 +58,14 @@ func _process(delta: float) -> void:
 		return
 	var show_fps: bool = Settings.show_fps
 	_readout.visible = show_fps
-	_readout.text = "%s   %.1f m/s   %d fps" % [
-		_player.movement_state(),
-		_player.horizontal_speed(),
-		Engine.get_frames_per_second(),
-	]
+	_readout.text = (
+		"%s   %.1f m/s   %d fps"
+		% [
+			_player.movement_state(),
+			_player.horizontal_speed(),
+			Engine.get_frames_per_second(),
+		]
+	)
 	_controls_left = maxf(_controls_left - delta, 0.0)
 	_controls.visible = _controls_forced or _controls_left > 0.0
 

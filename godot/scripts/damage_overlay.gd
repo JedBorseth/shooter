@@ -49,4 +49,13 @@ func _draw() -> void:
 		var alpha := clampf(indicator["left"] / INDICATOR_TIME, 0.0, 1.0)
 		# Screen angle: 0 is straight up (in front), increasing clockwise.
 		var screen := -bearing - PI / 2.0
-		draw_arc(centre, INDICATOR_RADIUS, screen - INDICATOR_WIDTH / 2.0, screen + INDICATOR_WIDTH / 2.0, 24, Color(1, 0.15, 0.1, 0.85 * alpha), 7.0, true)
+		draw_arc(
+			centre,
+			INDICATOR_RADIUS,
+			screen - INDICATOR_WIDTH / 2.0,
+			screen + INDICATOR_WIDTH / 2.0,
+			24,
+			Color(1, 0.15, 0.1, 0.85 * alpha),
+			7.0,
+			true
+		)

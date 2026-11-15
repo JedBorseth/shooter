@@ -36,4 +36,6 @@ func _place() -> void:
 	var up := Vector3.UP if absf(_direction.dot(Vector3.UP)) < 0.99 else Vector3.RIGHT
 	var basis := Basis.looking_at(_direction, up)
 	# The mesh is a unit-length box along -Z; stretch it to the visible span.
-	global_transform = Transform3D(basis.scaled(Vector3(1, 1, span)), _from + _direction * (tail + span * 0.5))
+	global_transform = Transform3D(
+		basis.scaled(Vector3(1, 1, span)), _from + _direction * (tail + span * 0.5)
+	)

@@ -147,7 +147,9 @@ func load_settings() -> void:
 		push_warning("Could not read %s (%s); using defaults." % [path, error_string(err)])
 	for section: String in SECTIONS:
 		for key: StringName in SECTIONS[section]:
-			var stored: Variant = config.get_value(section, key, DEFAULTS[key]) if err == OK else DEFAULTS[key]
+			var stored: Variant = (
+				config.get_value(section, key, DEFAULTS[key]) if err == OK else DEFAULTS[key]
+			)
 			set(key, _sanitize(key, stored))
 	_dirty = false
 	_save_timer.stop()
@@ -196,15 +198,18 @@ func _apply(key: StringName) -> void:
 		&"vsync":
 			if not _headless():
 				DisplayServer.window_set_vsync_mode(
-					DisplayServer.VSYNC_ENABLED if vsync else DisplayServer.VSYNC_DISABLED)
+					DisplayServer.VSYNC_ENABLED if vsync else DisplayServer.VSYNC_DISABLED
+				)
 
 
 func _apply_window_mode() -> void:
 	if _headless():
 		return
 	var mode := DisplayServer.window_get_mode()
-	var is_fullscreen := mode == DisplayServer.WINDOW_MODE_FULLSCREEN \
+	var is_fullscreen := (
+		mode == DisplayServer.WINDOW_MODE_FULLSCREEN
 		or mode == DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN
+	)
 	if fullscreen and not is_fullscreen:
 		# Exclusive fullscreen gives the lowest latency on Windows; elsewhere it
 		# behaves like borderless fullscreen.

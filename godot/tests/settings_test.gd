@@ -39,14 +39,29 @@ func _check_buses() -> void:
 	for bus: String in ["Master", "Weapons", "Effects", "UI"]:
 		_check(AudioServer.get_bus_index(bus) >= 0, "bus %s exists" % bus)
 	var weapons := AudioServer.get_bus_index("Weapons")
-	_check(weapons >= 0 and AudioServer.get_bus_effect_count(weapons) > 0
-		and AudioServer.get_bus_effect(weapons, 0) is AudioEffectCompressor, "Weapons bus has a compressor")
-	_check(AudioServer.get_bus_effect_count(0) > 0 and AudioServer.get_bus_effect(0, 0) is AudioEffectHardLimiter,
-		"Master bus has a hard limiter")
-	_check(weapons >= 0 and AudioServer.get_bus_send(weapons) == &"Master", "Weapons sends to Master")
+	_check(
+		(
+			weapons >= 0
+			and AudioServer.get_bus_effect_count(weapons) > 0
+			and AudioServer.get_bus_effect(weapons, 0) is AudioEffectCompressor
+		),
+		"Weapons bus has a compressor"
+	)
+	_check(
+		(
+			AudioServer.get_bus_effect_count(0) > 0
+			and AudioServer.get_bus_effect(0, 0) is AudioEffectHardLimiter
+		),
+		"Master bus has a hard limiter"
+	)
+	_check(
+		weapons >= 0 and AudioServer.get_bus_send(weapons) == &"Master", "Weapons sends to Master"
+	)
 	var ui := AudioServer.get_bus_index("UI")
-	_check(is_equal_approx(AudioServer.get_bus_volume_db(ui), linear_to_db(0.7)),
-		"UI bus volume applied from defaults, got %.2f dB" % AudioServer.get_bus_volume_db(ui))
+	_check(
+		is_equal_approx(AudioServer.get_bus_volume_db(ui), linear_to_db(0.7)),
+		"UI bus volume applied from defaults, got %.2f dB" % AudioServer.get_bus_volume_db(ui)
+	)
 
 
 func _check_fov(settings: Node) -> void:
@@ -64,7 +79,10 @@ func _check_validation(settings: Node) -> void:
 	settings.set_setting(&"mouse_sensitivity", "fast")
 	_check(settings.mouse_sensitivity == 1.0, "a non-number falls back to the default")
 	settings.set_setting(&"max_fps", 75)
-	_check(settings.max_fps == 0, "an unlisted frame cap falls back to unlimited, got %d" % settings.max_fps)
+	_check(
+		settings.max_fps == 0,
+		"an unlisted frame cap falls back to unlimited, got %d" % settings.max_fps
+	)
 	settings.reset_to_defaults()
 
 	# A corrupt or hand-edited file must load safely.
@@ -78,7 +96,10 @@ func _check_validation(settings: Node) -> void:
 	_check(settings.fov == 80.0, "loaded fov clamps to 80, got %s" % settings.fov)
 	_check(settings.vsync == true, "loaded non-bool vsync falls back to true")
 	_check(settings.master_volume == 1.0, "loaded NaN volume falls back to 1.0")
-	_check(settings.ads_sensitivity == 1.5, "valid loaded value is kept, got %s" % settings.ads_sensitivity)
+	_check(
+		settings.ads_sensitivity == 1.5,
+		"valid loaded value is kept, got %s" % settings.ads_sensitivity
+	)
 	settings.reset_to_defaults()
 
 
@@ -91,13 +112,19 @@ func _check_round_trip(settings: Node) -> void:
 	_check(settings.save_settings() == OK, "settings save")
 	_check(Engine.max_fps == 144, "frame cap applied to the engine, got %d" % Engine.max_fps)
 	var weapons := AudioServer.get_bus_index("Weapons")
-	_check(is_equal_approx(AudioServer.get_bus_volume_db(weapons), linear_to_db(0.4)), "Weapons volume applied")
+	_check(
+		is_equal_approx(AudioServer.get_bus_volume_db(weapons), linear_to_db(0.4)),
+		"Weapons volume applied"
+	)
 
 	# A fresh instance reads only what is in the file.
 	var fresh: Node = (load("res://scripts/settings.gd") as GDScript).new()
 	fresh.path = TEST_PATH
 	fresh.load_settings()
-	_check(is_equal_approx(fresh.mouse_sensitivity, 2.35), "mouse_sensitivity round-trips, got %s" % fresh.mouse_sensitivity)
+	_check(
+		is_equal_approx(fresh.mouse_sensitivity, 2.35),
+		"mouse_sensitivity round-trips, got %s" % fresh.mouse_sensitivity
+	)
 	_check(fresh.fov == 95.0, "fov round-trips, got %s" % fresh.fov)
 	_check(fresh.camera_motion == false, "camera_motion round-trips")
 	_check(fresh.max_fps == 144, "max_fps round-trips, got %d" % fresh.max_fps)
@@ -108,7 +135,10 @@ func _check_round_trip(settings: Node) -> void:
 	# Apply to a stand-in for the Rust player.
 	var player := _FakePlayer.new()
 	settings.apply_to_player(player)
-	_check(is_equal_approx(player.mouse_sensitivity, 0.0022 * 2.35), "player mouse_sensitivity scaled by the base rate")
+	_check(
+		is_equal_approx(player.mouse_sensitivity, 0.0022 * 2.35),
+		"player mouse_sensitivity scaled by the base rate"
+	)
 	_check(is_equal_approx(player.base_fov, settings.vertical_fov()), "player base_fov is vertical")
 	_check(player.camera_motion == false, "player camera_motion set")
 	_check(player.ads_sensitivity_scale == 1.0, "player ads_sensitivity_scale set")
@@ -149,10 +179,16 @@ func _check_menu(settings: Node) -> void:
 	_check(is_equal_approx((sliders[0] as HSlider).value, 3.0), "slider follows outside changes")
 
 	(menu.get_node("%ResetButton") as Button).pressed.emit()
-	_check(settings.fov == 102.0 and is_equal_approx(fov_slider.value, 102.0), "reset restores defaults")
+	_check(
+		settings.fov == 102.0 and is_equal_approx(fov_slider.value, 102.0),
+		"reset restores defaults"
+	)
 
 	await _press(&"pause")
-	_check(menu.is_open() and (menu.get_node("%MainPage") as Control).visible, "Esc on settings goes back")
+	_check(
+		menu.is_open() and (menu.get_node("%MainPage") as Control).visible,
+		"Esc on settings goes back"
+	)
 	await _press(&"pause")
 	_check(not menu.is_open(), "Esc on the main page closes the menu")
 

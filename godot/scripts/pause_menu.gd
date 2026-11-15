@@ -127,7 +127,9 @@ func _show_settings() -> void:
 	_hint.text = "ESC  BACK      CHANGES SAVE AUTOMATICALLY"
 	# Fit the scroll area to short windows.
 	var available := get_viewport().get_visible_rect().size.y - 330.0
-	_scroll.custom_minimum_size.y = maxf(minf(_sections.get_combined_minimum_size().y, available), 200.0)
+	_scroll.custom_minimum_size.y = maxf(
+		minf(_sections.get_combined_minimum_size().y, available), 200.0
+	)
 	_scroll.scroll_vertical = 0
 	_focus(_sliders[&"mouse_sensitivity"])
 
@@ -145,16 +147,25 @@ func _focus(control: Control) -> void:
 
 # --- Settings page --------------------------------------------------------
 
+
 func _build_settings() -> void:
 	var sensitivity := func(v: float) -> String: return "%.2f" % v
 	var percent := func(v: float) -> String: return "%d%%" % roundi(v * 100.0)
 
 	var controls := _add_section("Controls")
 	_add_slider(controls, &"mouse_sensitivity", "Mouse sensitivity", 0.05, sensitivity)
-	_add_slider(controls, &"ads_sensitivity", "Aim sensitivity", 0.05, func(v: float) -> String: return "%.2f×" % v)
+	_add_slider(
+		controls,
+		&"ads_sensitivity",
+		"Aim sensitivity",
+		0.05,
+		func(v: float) -> String: return "%.2f×" % v
+	)
 
 	var video := _add_section("Video")
-	_add_slider(video, &"fov", "Field of view", 1.0, func(v: float) -> String: return "%d°" % roundi(v))
+	_add_slider(
+		video, &"fov", "Field of view", 1.0, func(v: float) -> String: return "%d°" % roundi(v)
+	)
 	_add_toggle(video, &"camera_motion", "Camera motion")
 	_add_toggle(video, &"fullscreen", "Fullscreen")
 	_add_toggle(video, &"vsync", "VSync")
@@ -183,7 +194,9 @@ func _add_section(title: String) -> VBoxContainer:
 	return section
 
 
-func _add_slider(section: VBoxContainer, key: StringName, label: String, step: float, format: Callable) -> void:
+func _add_slider(
+	section: VBoxContainer, key: StringName, label: String, step: float, format: Callable
+) -> void:
 	var limits: Vector2 = Settings.RANGES[key]
 	var slider := HSlider.new()
 	slider.min_value = limits.x
@@ -216,14 +229,17 @@ func _add_fps_option(section: VBoxContainer) -> void:
 	_fps_option.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	for fps: int in Settings.MAX_FPS_OPTIONS:
 		_fps_option.add_item("Unlimited" if fps == 0 else "%d FPS" % fps, fps)
-	_fps_option.item_selected.connect(func(index: int) -> void:
-		Settings.set_setting(&"max_fps", _fps_option.get_item_id(index)))
+	_fps_option.item_selected.connect(
+		func(index: int) -> void: Settings.set_setting(&"max_fps", _fps_option.get_item_id(index))
+	)
 	_add_row(section, "Frame rate limit", _fps_option)
 
 
 ## Adds a labelled row around `control`. The row shows the same accent bar as the
 ## toggle rows while `control` has focus.
-func _add_row(section: VBoxContainer, label: String, control: Control, extra: Control = null) -> void:
+func _add_row(
+	section: VBoxContainer, label: String, control: Control, extra: Control = null
+) -> void:
 	var panel := PanelContainer.new()
 	panel.theme_type_variation = &"SettingRow"
 	panel.custom_minimum_size.y = 36
@@ -263,6 +279,7 @@ func _sync_controls() -> void:
 
 
 # --- Sounds -----------------------------------------------------------------
+
 
 func _setup_sounds() -> void:
 	# The UI sounds are optional until they are added to the project.

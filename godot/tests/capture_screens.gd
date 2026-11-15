@@ -3,7 +3,8 @@ extends SceneTree
 ## hip and aimed, firing, sprint, reload, shotgun pump, sniper scope, impacts,
 ## weapon racks, damage, death) for reviewing weapon feel and visuals.
 ## Needs a GPU and a display (or Xvfb):
-##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 --script res://tests/capture_screens.gd
+##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
+##     --script res://tests/capture_screens.gd
 
 var _out := OS.get_environment("CAPTURE_DIR")
 
@@ -122,7 +123,9 @@ func _run() -> void:
 	var rack := main.get_node("Armory/Rack_m870") as Node3D
 	player.global_position = rack.global_position + Vector3(2.0, 0, 0)
 	await _ticks(3)
-	var to := rack.global_position + Vector3(0, 1.0, 0) - (player.global_position + Vector3(0, 1.68, 0))
+	var to := (
+		rack.global_position + Vector3(0, 1.0, 0) - (player.global_position + Vector3(0, 1.68, 0))
+	)
 	player.set_look(atan2(-to.x, -to.z), atan2(to.y, Vector2(to.x, to.z).length()))
 	await _ticks(10)
 	await _shot("17_rack")

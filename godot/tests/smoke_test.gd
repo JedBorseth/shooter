@@ -5,6 +5,8 @@ extends SceneTree
 ## respawn, fall damage, and the sentry. Exits non-zero on failure.
 ## Run from the repo root: godot --headless --path godot --script res://tests/smoke_test.gd
 
+const DUMMY_SCENE := preload("res://scenes/props/target_dummy.tscn")
+
 var _failures: PackedStringArray = []
 var _hits := 0
 var _kills := 0
@@ -24,14 +26,18 @@ func _run() -> void:
 	if player == null:
 		_finish()
 		return
-	player.hit_confirmed.connect(func(killed: bool, _headshot: bool) -> void:
-		_hits += 1
-		if killed:
-			_kills += 1)
+	player.hit_confirmed.connect(
+		func(killed: bool, _headshot: bool) -> void:
+			_hits += 1
+			if killed:
+				_kills += 1
+	)
 
 	await _ticks(20)
 	_check(player.is_on_floor(), "player lands on the floor")
-	player.damaged.connect(func(amount: float, _from: Vector3, _fall: bool) -> void: _damage_taken += amount)
+	player.damaged.connect(
+		func(amount: float, _from: Vector3, _fall: bool) -> void: _damage_taken += amount
+	)
 	player.died.connect(func() -> void: _deaths += 1)
 	await _movement(player)
 	await _combat(main, player)
@@ -48,26 +54,44 @@ func _movement(player: FpsPlayer) -> void:
 	Input.action_press("move_forward")
 	await _tap("sprint")
 	await _ticks(90)
-	_check(player.movement_state() == "Sprinting", "toggle sprint stays on after release, got %s" % player.movement_state())
-	_check(player.horizontal_speed() > 6.5, "sprint speed > 6.5 m/s, got %.2f" % player.horizontal_speed())
+	_check(
+		player.movement_state() == "Sprinting",
+		"toggle sprint stays on after release, got %s" % player.movement_state()
+	)
+	_check(
+		player.horizontal_speed() > 6.5,
+		"sprint speed > 6.5 m/s, got %.2f" % player.horizontal_speed()
+	)
 	_check(player.global_position.z < start.z - 5.0, "player moved toward -Z")
 
 	await _tap("crouch")
 	await _ticks(1)
-	_check(player.movement_state() == "Sliding", "crouch while sprinting slides, got %s" % player.movement_state())
+	_check(
+		player.movement_state() == "Sliding",
+		"crouch while sprinting slides, got %s" % player.movement_state()
+	)
 	await _ticks(90)
-	_check(player.movement_state() == "Crouching", "slide ends in a crouch, got %s" % player.movement_state())
+	_check(
+		player.movement_state() == "Crouching",
+		"slide ends in a crouch, got %s" % player.movement_state()
+	)
 
 	Input.action_release("move_forward")
 	await _tap("crouch")
 	await _ticks(30)
-	_check(player.movement_state() == "Standing", "crouch toggles back to standing, got %s" % player.movement_state())
-	_check(player.horizontal_speed() < 0.1, "friction stops the player, got %.2f" % player.horizontal_speed())
+	_check(
+		player.movement_state() == "Standing",
+		"crouch toggles back to standing, got %s" % player.movement_state()
+	)
+	_check(
+		player.horizontal_speed() < 0.1,
+		"friction stops the player, got %.2f" % player.horizontal_speed()
+	)
 
 
 func _combat(main: Node, player: FpsPlayer) -> void:
 	# A fresh dummy 8 m straight ahead; aim at its chest.
-	var dummy := (load("res://scenes/props/target_dummy.tscn") as PackedScene).instantiate() as TargetDummy
+	var dummy := DUMMY_SCENE.instantiate() as TargetDummy
 	main.add_child(dummy)
 	dummy.global_position = player.global_position + Vector3(0, 0, -8)
 	player.set_look(0.0, atan2(1.1 - 1.68, 8.0))
@@ -104,14 +128,25 @@ func _racks(main: Node, player: FpsPlayer) -> void:
 	# Stand in front of the rack and look at it.
 	player.global_position = rack.global_position + Vector3(1.6, 0, 0)
 	await _ticks(2)
-	var to := rack.global_position + Vector3(0, 1.0, 0) - (player.global_position + Vector3(0, 1.68, 0))
+	var to := (
+		rack.global_position + Vector3(0, 1.0, 0) - (player.global_position + Vector3(0, 1.68, 0))
+	)
 	player.set_look(atan2(-to.x, -to.z), atan2(to.y, Vector2(to.x, to.z).length()))
 	await _ticks(3)
-	_check(player.interact_prompt() == "[F] Take M870", "rack prompt, got '%s'" % player.interact_prompt())
+	_check(
+		player.interact_prompt() == "[F] Take M870",
+		"rack prompt, got '%s'" % player.interact_prompt()
+	)
 	await _tap("interact")
 	await _ticks(40)
-	_check(player.weapon_name() == "M870", "F takes the shotgun from the rack, got %s" % player.weapon_name())
-	_check(player.interact_prompt() == "[F] Refill M870 ammo", "carried weapon offers a refill, got '%s'" % player.interact_prompt())
+	_check(
+		player.weapon_name() == "M870",
+		"F takes the shotgun from the rack, got %s" % player.weapon_name()
+	)
+	_check(
+		player.interact_prompt() == "[F] Refill M870 ammo",
+		"carried weapon offers a refill, got '%s'" % player.interact_prompt()
+	)
 
 
 func _shotgun(main: Node, player: FpsPlayer) -> void:
@@ -120,7 +155,9 @@ func _shotgun(main: Node, player: FpsPlayer) -> void:
 	var kills_before := _kills
 	await _tap("fire")
 	await _ticks(2)
-	_check(_hits == hits_before + 1, "a shotgun blast confirms one hit, got %d" % (_hits - hits_before))
+	_check(
+		_hits == hits_before + 1, "a shotgun blast confirms one hit, got %d" % (_hits - hits_before)
+	)
 	_check(_kills == kills_before + 1, "one blast kills at 5 m")
 	_check(player.magazine() == 5, "one shell spent, got %d" % player.magazine())
 	await _tap("fire")
@@ -158,7 +195,9 @@ func _sniper(main: Node, player: FpsPlayer) -> void:
 
 func _health(player: FpsPlayer) -> void:
 	player.take_damage(60.0, player.global_position + Vector3(5, 0, 0))
-	_check(is_equal_approx(player.health(), 40.0), "damage lowers health, got %.0f" % player.health())
+	_check(
+		is_equal_approx(player.health(), 40.0), "damage lowers health, got %.0f" % player.health()
+	)
 	_check(_damage_taken >= 60.0, "damaged signal fires")
 	await _ticks(60 * 6)
 	_check(player.health() == player.max_health(), "health regenerates, got %.0f" % player.health())
@@ -167,14 +206,23 @@ func _health(player: FpsPlayer) -> void:
 	player.take_damage(500.0, spawn)
 	_check(not player.is_alive() and _deaths == 1, "lethal damage kills")
 	await _ticks(60 * 3 + 10)
-	_check(player.is_alive() and player.health() == player.max_health(), "player respawns with full health")
-	_check(player.weapon_name() == "M4A1", "respawn restores the default loadout, got %s" % player.weapon_name())
+	_check(
+		player.is_alive() and player.health() == player.max_health(),
+		"player respawns with full health"
+	)
+	_check(
+		player.weapon_name() == "M4A1",
+		"respawn restores the default loadout, got %s" % player.weapon_name()
+	)
 
 	# A 7 m drop hurts but does not kill.
 	var damage_before := _damage_taken
 	player.global_position = Vector3(0, 7.5, 20)
 	await _ticks(100)
-	_check(_damage_taken > damage_before and player.is_alive(), "a 7 m fall hurts, took %.0f" % (_damage_taken - damage_before))
+	_check(
+		_damage_taken > damage_before and player.is_alive(),
+		"a 7 m fall hurts, took %.0f" % (_damage_taken - damage_before)
+	)
 
 
 func _sentry(main: Node, player: FpsPlayer) -> void:
@@ -201,7 +249,7 @@ func _dummy_ahead(main: Node, player: FpsPlayer, distance: float) -> Node3D:
 	player.global_position = Vector3(0, 0.05, 20)
 	player.set_look(0.0, 0.0)
 	await _ticks(5)
-	var dummy := (load("res://scenes/props/target_dummy.tscn") as PackedScene).instantiate() as Node3D
+	var dummy := DUMMY_SCENE.instantiate() as Node3D
 	main.add_child(dummy)
 	dummy.global_position = player.global_position + Vector3(0, 0, -distance)
 	player.set_look(0.0, atan2(1.1 - 1.68, distance))

@@ -45,7 +45,9 @@ func _draw() -> void:
 	draw_line(centre + Vector2(0, -radius), centre + Vector2(0, gap), line, 1.4)
 	for i in range(1, 5):
 		var step := gap * i / 5.0
-		for dot: Vector2 in [Vector2(step, 0), Vector2(-step, 0), Vector2(0, step), Vector2(0, -step)]:
+		for dot: Vector2 in [
+			Vector2(step, 0), Vector2(-step, 0), Vector2(0, step), Vector2(0, -step)
+		]:
 			draw_circle(centre + dot, 2.2, line)
 
 	if player.is_holding_breath() or player.breath() < 0.99:
@@ -55,4 +57,12 @@ func _draw() -> void:
 		var bar := Rect2(centre + Vector2(-width / 2.0, radius * 0.72), Vector2(width, 4))
 		draw_rect(bar, Color(1, 1, 1, 0.25))
 		draw_rect(Rect2(bar.position, Vector2(width * player.breath(), 4)), Color(1, 1, 1, 0.85))
-		draw_string(font, bar.position + Vector2(0, -8), label, HORIZONTAL_ALIGNMENT_CENTER, width, 14, Color(1, 1, 1, 0.8))
+		draw_string(
+			font,
+			bar.position + Vector2(0, -8),
+			label,
+			HORIZONTAL_ALIGNMENT_CENTER,
+			width,
+			14,
+			Color(1, 1, 1, 0.8)
+		)
