@@ -99,6 +99,10 @@ toggle_controls={
 "deadzone": 0.2,
 "events": [Object(InputEventKey,"physical_keycode":4194332)]
 }
+refill_ammo={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":84)]
+}
 
 [layer_names]
 3d_physics/layer_1="world"

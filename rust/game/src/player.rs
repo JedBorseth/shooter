@@ -42,7 +42,7 @@ const DEFAULT_SURFACE: &str = "concrete";
 
 /// Actions whose presses are remembered until the next physics tick, so a tap
 /// shorter than one tick (or a mouse-wheel step) is never lost.
-const LATCHED_ACTIONS: [&str; 9] = [
+const LATCHED_ACTIONS: [&str; 10] = [
     "jump",
     "crouch",
     "sprint",
@@ -52,6 +52,7 @@ const LATCHED_ACTIONS: [&str; 9] = [
     "weapon_1",
     "weapon_2",
     "interact",
+    "refill_ammo",
 ];
 
 /// What a ray hit: position, normal, and collider.
@@ -288,6 +289,11 @@ impl ICharacterBody3D for FpsPlayer {
         let previous_stance = self.state.movement.stance;
         let mut events = std::mem::take(&mut self.events);
         events.clear();
+        if self.refill_pressed() {
+            let mut combat = Vec::new();
+            self.state.combat.refill_ammo(&mut combat);
+            events.extend(combat.into_iter().map(PlayerEvent::Combat));
+        }
         let velocity = player::step(
             &mut self.state,
             &input,
@@ -626,6 +632,15 @@ impl FpsPlayer {
             .position(|a| *a == action)
             .expect("action is latched");
         std::mem::take(&mut self.latched[index])
+    }
+
+    /// T in the demo arena refills every carried weapon. This is a demo
+    /// convenience applied outside `player::step`; when netcode lands it should
+    /// become a server-side debug command, not client input.
+    fn refill_pressed(&mut self) -> bool {
+        let pressed = Input::singleton().is_action_just_pressed("refill_ammo")
+            | self.take_latched("refill_ammo");
+        pressed && self.input_enabled && self.state.alive()
     }
 
     fn read_input(&mut self) -> PlayerInput {

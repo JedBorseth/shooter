@@ -436,3 +436,84 @@ fn pickup_drops_aim() {
     );
     assert_eq!(s.scope_amount(), 0.0);
 }
+
+#[test]
+fn refill_ammo_fills_every_slot_and_ends_reload() {
+    let mut s = ready();
+    s.slots[0].magazine = 3;
+    s.slots[0].reserve = 0;
+    s.slots[1].magazine = 0;
+    s.slots[1].reserve = 4;
+    s.action = Action::Reloading {
+        remaining: 1.0,
+        empty: false,
+    };
+    let mut events = Vec::new();
+    s.refill_ammo(&mut events);
+    let m4 = id("m4").def();
+    assert_eq!(s.slots[0].magazine, m4.magazine);
+    assert_eq!(s.slots[0].reserve, m4.reserve);
+    assert_eq!(s.slots[1], WeaponState::full(id("m1911")));
+    assert_eq!(s.action, Action::Ready);
+    assert!(events.contains(&CombatEvent::PickedUp { weapon: id("m4") }));
+
+    // A weapon switch in progress is left alone.
+    s.action = Action::Lowering {
+        remaining: 0.2,
+        to: 1,
+    };
+    s.refill_ammo(&mut events);
+    assert!(matches!(s.action, Action::Lowering { to: 1, .. }));
+}
+
+#[test]
+fn refill_ammo_ends_a_shell_by_shell_reload() {
+    let mut s = ready_with(["m870", "m1911"]);
+    s.slots[0].magazine = 2;
+    let reload = CombatInput {
+        reload: true,
+        ..Default::default()
+    };
+    run(&mut s, reload, CombatContext::default(), 40);
+    assert!(matches!(s.action, Action::Loading { .. }));
+    s.refill_ammo(&mut Vec::new());
+    assert_eq!(s.slots[0], WeaponState::full(id("m870")));
+    assert_eq!(s.action, Action::Ready);
+    let events = run(&mut s, CombatInput::default(), CombatContext::default(), 60);
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, CombatEvent::RoundLoaded { .. })),
+        "no more shells go in"
+    );
+}
+
+#[test]
+fn refill_ammo_never_skips_a_bolt_cycle() {
+    // A cycle in progress keeps running.
+    let mut s = ready_with(["m40", "m1911"]);
+    run(&mut s, fire(), CombatContext::default(), 1);
+    let Action::Cycling { remaining } = s.action else {
+        panic!("the bolt cycles after a shot, got {:?}", s.action);
+    };
+    s.refill_ammo(&mut Vec::new());
+    assert_eq!(s.action, Action::Cycling { remaining });
+
+    // Firing the last round leaves the chamber empty: the refill ends the
+    // reload that follows, and the bolt is worked before the next shot.
+    let mut s = ready_with(["m40", "m1911"]);
+    s.slots[0].magazine = 1;
+    run(&mut s, fire(), CombatContext::default(), 1);
+    run(&mut s, CombatInput::default(), CombatContext::default(), 10);
+    assert!(matches!(s.action, Action::Reloading { empty: true, .. }));
+    let mut events = Vec::new();
+    s.refill_ammo(&mut events);
+    assert_eq!(s.weapon().magazine, id("m40").def().magazine);
+    assert!(matches!(s.action, Action::Cycling { .. }));
+    assert!(events.contains(&CombatEvent::Cycled { weapon: id("m40") }));
+    let events = run(&mut s, fire(), CombatContext::default(), 30);
+    assert_eq!(shots(&events), 0, "the bolt is still being worked");
+    let events = run(&mut s, CombatInput::default(), CombatContext::default(), 40);
+    assert!(events.is_empty());
+    assert_eq!(s.action, Action::Ready);
+}

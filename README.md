@@ -89,6 +89,7 @@ Export presets are in `godot/export_presets.cfg`. The Rust library for each plat
 | Take weapon or refill ammo at a rack | F |
 | Reload | R |
 | Switch weapon | 1, 2, or mouse wheel |
+| Refill all ammo to max (demo) | T |
 | Pause menu and settings | Esc |
 | Show or hide the controls line | F1 |
 

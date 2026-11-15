@@ -304,7 +304,7 @@ offset_bottom = -20.0
 grow_vertical = 0
 theme_override_colors/font_color = Color(1, 1, 1, 0.7)
 theme_override_font_sizes/font_size = 14
-text = "WASD move   Shift sprint (toggle) / hold breath   C crouch   Space jump   LMB fire   RMB aim   R reload   1 / 2 / wheel switch   F take weapon   Esc menu   F1 hide"
+text = "WASD move   Shift sprint (toggle) / hold breath   C crouch   Space jump   LMB fire   RMB aim   R reload   1 / 2 / wheel switch   F take weapon   T refill ammo   Esc menu   F1 hide"
 
 [node name="Health" type="ProgressBar" parent="HUD"]
 anchors_preset = 2

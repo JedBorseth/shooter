@@ -160,6 +160,41 @@ impl CombatState {
         )
     }
 
+    /// Demo cheat: fills every carried weapon's magazine and reserve to that
+    /// weapon's maximum.
+    ///
+    /// A reload in progress (including a shell-by-shell one) ends, since it is
+    /// no longer needed. A weapon switch or a bolt or pump cycle in progress
+    /// continues. If the active weapon's chamber was empty (its last round was
+    /// fired, so no cycle followed), a bolt or pump weapon works its action
+    /// before it can fire, so the refill never skips a cycle.
+    ///
+    /// This runs outside [`step`]. When netcode lands it should become a
+    /// server-side debug command, not client input.
+    pub fn refill_ammo(&mut self, events: &mut Vec<CombatEvent>) {
+        let chamber_empty = self.weapon().magazine == 0;
+        for slot in &mut self.slots {
+            *slot = WeaponState::full(slot.id);
+        }
+        self.reload_queued = false;
+        if self.is_reloading() || matches!(self.action, Action::Ready) {
+            let cycle_time = self.def().cycle_time;
+            self.action = if chamber_empty && cycle_time > 0.0 {
+                events.push(CombatEvent::Cycled {
+                    weapon: self.weapon().id,
+                });
+                Action::Cycling {
+                    remaining: cycle_time,
+                }
+            } else {
+                Action::Ready
+            };
+        }
+        events.push(CombatEvent::PickedUp {
+            weapon: self.weapon().id,
+        });
+    }
+
     /// How far into a scope the player is: 0 unless the weapon has one.
     pub fn scope_amount(&self) -> f32 {
         if self.def().scope.is_some() {

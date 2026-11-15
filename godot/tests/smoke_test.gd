@@ -1,6 +1,6 @@
 extends SceneTree
 ## Headless smoke test: loads the arena and drives the Rust player through
-## movement (toggle sprint, slide, crouch), combat (ADS, fire, kill, reload,
+## movement (toggle sprint, slide, crouch), combat (ADS, fire, kill, reload, refill,
 ## switch), the weapon racks, shotgun and sniper rules, damage, death and
 ## respawn, fall damage, the sentry, and gamepad look and aim assist. Exits
 ## non-zero on failure.
@@ -116,6 +116,18 @@ func _combat(main: Node, player: FpsPlayer) -> void:
 	_check(player.is_reloading(), "R starts a reload")
 	await _ticks(150)
 	_check(player.magazine() == 30, "reload refills the magazine, got %d" % player.magazine())
+	var max_reserve := _weapon_stat(player.weapon_key(), "reserve")
+	_check(max_reserve > 0, "weapon data lists a reserve, got %d" % max_reserve)
+	_check(
+		player.reserve() < max_reserve,
+		"reload draws from the reserve, got %d of %d" % [player.reserve(), max_reserve]
+	)
+
+	await _tap("refill_ammo")
+	_check(
+		player.reserve() == max_reserve,
+		"T refills the reserve to max, got %d of %d" % [player.reserve(), max_reserve]
+	)
 
 	await _tap("weapon_2")
 	await _ticks(60)
@@ -297,6 +309,14 @@ func _gamepad(main: Node, player: FpsPlayer) -> void:
 			)
 		dummy.global_position = player.global_position + Vector3(0, 0, -10)
 	player.aim_assist = true
+
+
+## Reads a whole-number field such as `reserve` from a weapon's data file.
+func _weapon_stat(key: String, field: String) -> int:
+	var text := FileAccess.get_file_as_string("res://data/weapons/%s.ron" % key)
+	var regex := RegEx.create_from_string("(?m)^\\s*%s:\\s*(\\d+)" % field)
+	var found := regex.search(text)
+	return found.get_string(1).to_int() if found else -1
 
 
 func _tap(action: String) -> void:
