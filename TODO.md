@@ -30,7 +30,7 @@ The open work for building this into a modern-military, Call-of-Duty-style multi
 
 ## Phase 1: single-player feel (in progress)
 
-Done: movement (toggle sprint, toggle crouch, slide, jump), six data-driven weapons (M4A1, AK-47, PDW-9, M870, M40, M1911), viewmodel shader and procedural motion, hitscan with headshots, tracers, shell ejection, per-surface impacts and footsteps, weapon racks, health with regeneration, fall damage, death and respawn, damage feedback, pause and settings menu, audio buses, a training sentry, HUD.
+Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with aim assist, six data-driven weapons (M4A1, AK-47, PDW-9, M870, M40, M1911), viewmodel shader and procedural motion, hitscan with headshots, tracers, shell ejection, per-surface impacts and footsteps, weapon racks, health with regeneration, fall damage, death and respawn, damage feedback, pause and settings menu, audio buses, a training sentry, HUD.
 
 ### Weapons and gunplay
 
@@ -73,7 +73,9 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), six data-driven weap
 - [x] Pause menu (Esc) with resume, settings, and quit.
 - [x] Settings: mouse sensitivity, ADS sensitivity multiplier, FOV, camera motion, volume sliders, window, vsync, and frame cap, saved in `user://settings.cfg`.
 - [ ] Invert Y and keybind remapping.
-- [ ] Gamepad support: stick deadzones, response curves, and aim assist (slowdown only, off by default).
+- [x] Gamepad support: bindings, stick deadzones and response curve, turn boost, rumble, and aim assist (slowdown and rotational, on by default for gamepads only; no snap).
+- [ ] Gamepad settings in the settings menu: look speed, deadzones, curve, invert Y, aim assist toggle and strength, rumble (currently exported properties on `FpsPlayer`).
+- [ ] Button prompts with controller glyphs instead of text, and D-pad bindings for weapon slots. A gamepad binding for interact (weapon racks).
 - [x] **good first task** Show the controls overlay only for the first minute, or toggle it with F1.
 
 ## Phase 2: netcode core

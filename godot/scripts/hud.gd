@@ -6,6 +6,11 @@ extends CanvasLayer
 ## Seconds the controls line stays up after spawning; F1 toggles it.
 const CONTROLS_TIME := 60.0
 
+const GAMEPAD_CONTROLS := (
+	"LS move   L3 sprint (toggle)   B crouch (slide while sprinting)   A jump"
+	+ "   RT fire   LT aim   X reload   Y switch   RS look (aim assist on)"
+)
+
 @export var player_path: NodePath
 
 var _controls_left := CONTROLS_TIME
@@ -24,6 +29,7 @@ var _controls_forced := false
 @onready var _damage: Control = $Damage
 @onready var _scope: Control = $Scope
 @onready var _hit_sound: AudioStreamPlayer = $HitSound
+@onready var _keyboard_controls := _controls.text
 
 
 func _ready() -> void:
@@ -68,6 +74,7 @@ func _process(delta: float) -> void:
 	)
 	_controls_left = maxf(_controls_left - delta, 0.0)
 	_controls.visible = _controls_forced or _controls_left > 0.0
+	_controls.text = GAMEPAD_CONTROLS if _player.using_gamepad() else _keyboard_controls
 
 	var alive := _player.is_alive()
 	var scoped := _player.scope_amount() >= 0.85

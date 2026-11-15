@@ -14,8 +14,8 @@ The plan, decisions, and reference projects are in [docs/roadmap.md](docs/roadma
 
 - `godot/`: the Godot project (scenes, GDScript glue, assets).
 - `godot/data/weapons/`: one RON file per weapon (damage, fire rate, recoil pattern, spread, reload style, pellets, scope). Edit a file while the game runs from a debug build and it reloads.
-- `rust/sim/`: engine-independent, deterministic simulation: movement, weapons (fire rate, falloff, recoil patterns, spread, pellets, bolt and pump cycling, magazine and shell-by-shell reloads, ADS, scope sway and hold breath, switching, pickups), health (regeneration, fall damage, death), and the combined per-player step that netcode will predict. No Godot types, so the client and the dedicated server share it and it can be unit-tested on its own.
-- `rust/game/`: the GDExtension that exposes the simulation to Godot: `FpsPlayer` (input, hitscan, tracers, footsteps, camera), `ViewmodelRig` and `WeaponView` (procedural weapon motion, muzzle flash, ejected shells, sounds), `WeaponPickup` (weapon racks), `Sentry` (a turret that shoots back), and `TargetDummy`.
+- `rust/sim/`: engine-independent, deterministic simulation: movement, weapons (fire rate, falloff, recoil patterns, spread, pellets, bolt and pump cycling, magazine and shell-by-shell reloads, ADS, scope sway and hold breath, switching, pickups), health (regeneration, fall damage, death), the combined per-player step that netcode will predict, and gamepad look (stick shaping, aim assist). No Godot types, so the client and the dedicated server share it and it can be unit-tested on its own.
+- `rust/game/`: the GDExtension that exposes the simulation to Godot: `FpsPlayer` (input, gamepad look and aim assist, hitscan, tracers, footsteps, camera), `AimAssistTarget`, `ViewmodelRig` and `WeaponView` (procedural weapon motion, muzzle flash, ejected shells, sounds), `WeaponPickup` (weapon racks), `Sentry` (a turret that shoots back), and `TargetDummy`.
 - `godot/shaders/`: viewmodel projection (own FOV, never clips walls), muzzle flash, damage vignette, and the blockout grid.
 - `godot/scripts/`: GDScript for the HUD, scope and damage overlays, pause and settings menu (`Settings` autoload), impacts, and tracers.
 - `docs/`: roadmap and design notes.
@@ -46,7 +46,7 @@ cd .. && godot --headless --path godot --script res://tests/smoke_test.gd
 godot --headless --path godot --script res://tests/settings_test.gd
 ```
 
-The smoke test loads the arena headless and drives the player through movement (toggle sprint, slide, crouch), combat (aim, fire, kill a dummy, reload, switch), a weapon rack, the shotgun (pellets, pump, shell-by-shell reload), the sniper (scope, hold breath), damage, regeneration, death and respawn, fall damage, and the sentry. The settings test checks the menu and that settings save and load. Both exit non-zero on failure.
+The smoke test loads the arena headless and drives the player through movement (toggle sprint, slide, crouch), combat (aim, fire, kill a dummy, reload, switch), a weapon rack, the shotgun (pellets, pump, shell-by-shell reload), the sniper (scope, hold breath), damage, regeneration, death and respawn, fall damage, the sentry, and gamepad look with aim assist. The settings test checks the menu and that settings save and load. Both exit non-zero on failure.
 
 GDScript is linted and formatted with [gdtoolkit](https://github.com/Scony/godot-gdscript-toolkit):
 
@@ -91,6 +91,20 @@ Export presets are in `godot/export_presets.cfg`. The Rust library for each plat
 | Switch weapon | 1, 2, or mouse wheel |
 | Pause menu and settings | Esc |
 | Show or hide the controls line | F1 |
+
+Gamepads work too (Xbox layout shown; PlayStation and others use the same positions):
+
+| Action | Input |
+| --- | --- |
+| Move / look | Left stick / right stick |
+| Sprint (toggle) | L3 (click the left stick) |
+| Crouch (toggle; slides while sprinting) | B |
+| Jump | A |
+| Fire / aim down sights | RT / LT |
+| Reload | X |
+| Switch weapon | Y |
+
+On a gamepad, aim assist slows the right stick near a target and follows part of the target's movement relative to you while you move or look. It never snaps to a target, and the mouse never gets it. The HUD switches its controls hint to whichever device you used last. Stick speed, deadzones, response curve, invert Y, aim assist, and rumble are exported properties on the `Player` node; the settings menu does not show them yet.
 
 The arena has target dummies at several ranges. They show their health and respawn 3 seconds after being killed. Weapon racks next to the spawn hold every weapon; walk up and press F to swap. The sentry on the raised platform shoots at you when you come within 32 m and can see it; shoot it to knock it out for 10 seconds.
 

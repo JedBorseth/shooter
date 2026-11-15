@@ -5,6 +5,10 @@
 //! rendered frame: position, recoil, and scope sway are interpolated between the
 //! last two ticks, while mouse look is applied immediately, so aiming never
 //! waits for a physics tick on high-refresh displays.
+//!
+//! Gamepad look also runs every rendered frame: stick shaping, turn boost, and
+//! aim assist (slowdown and rotational) from `shooter_sim::look`. Aim assist
+//! only applies while the last input came from a gamepad.
 
 use std::collections::HashMap;
 use std::f32::consts::{FRAC_PI_2, PI};
@@ -12,15 +16,20 @@ use std::f32::consts::{FRAC_PI_2, PI};
 use godot::classes::input::MouseMode;
 use godot::classes::{
     AudioStreamPlayer, AudioStreamRandomizer, Camera3D, CapsuleShape3D, CharacterBody3D,
-    CollisionShape3D, Engine, ICharacterBody3D, Input, InputEvent, InputEventMouseButton,
-    InputEventMouseMotion, Node3D, PackedScene, PhysicsRayQueryParameters3D, ShapeCast3D,
+    CollisionShape3D, Engine, ICharacterBody3D, Input, InputEvent, InputEventJoypadButton,
+    InputEventJoypadMotion, InputEventKey, InputEventMouseButton, InputEventMouseMotion, Node3D,
+    PackedScene, PhysicsDirectSpaceState3D, PhysicsRayQueryParameters3D, ShapeCast3D,
 };
 use godot::prelude::*;
+use shooter_sim::look::{
+    self, AimAssist, AimAssistParams, AssistTarget, AssistView, StickLook, StickParams,
+};
 use shooter_sim::movement::{MoveEnv, Stance};
 use shooter_sim::player::{self, PlayerEvent, PlayerInput, PlayerParams, PlayerState};
-use shooter_sim::weapon::{self, Action, CombatEvent, LoadStage, Reload, WeaponId};
+use shooter_sim::weapon::{self, Action, CombatEvent, FireMode, LoadStage, Reload, WeaponId};
 use shooter_sim::{Vec2, Vec3};
 
+use crate::aim_assist::{AIM_ASSIST_GROUP, AimAssistTarget};
 use crate::audio;
 use crate::convert::{to_godot, to_sim};
 use crate::pickup::{INTERACT_LAYER, WeaponPickup};
@@ -103,6 +112,46 @@ pub struct FpsPlayer {
     #[export]
     #[init(val = 2.6)]
     interact_distance: f32,
+    /// Horizontal stick turn rate at full deflection, in degrees per second.
+    #[export]
+    #[init(val = 200.0)]
+    stick_yaw_speed: f32,
+    /// Vertical stick turn rate at full deflection, in degrees per second.
+    #[export]
+    #[init(val = 150.0)]
+    stick_pitch_speed: f32,
+    /// Extra horizontal turn rate after holding the stick at the edge, in
+    /// degrees per second. 0 disables the boost.
+    #[export]
+    #[init(val = 120.0)]
+    stick_turn_boost: f32,
+    /// Look stick deflection below this is ignored (0 to 1).
+    #[export]
+    #[init(val = 0.1)]
+    stick_deadzone: f32,
+    /// Look stick deflection within this of the edge reads as full (0 to 1).
+    #[export]
+    #[init(val = 0.04)]
+    stick_outer_deadzone: f32,
+    /// Look stick response curve exponent: 1 is linear, 2 is finer near the center.
+    #[export]
+    #[init(val = 2.0)]
+    stick_curve: f32,
+    #[export]
+    stick_invert_y: bool,
+    /// Controller aim assist: slowdown and rotational, never a snap. Mouse
+    /// aiming never gets it.
+    #[export]
+    #[init(val = true)]
+    aim_assist: bool,
+    /// Scales aim assist: 0 is none, 1 is the default tuning.
+    #[export(range = (0.0, 1.5))]
+    #[init(val = 1.0)]
+    aim_assist_strength: f32,
+    /// Controller vibration when firing.
+    #[export]
+    #[init(val = true)]
+    rumble: bool,
     /// Spawned where bullets hit the world.
     #[export]
     impact_scene: OnEditor<Gd<PackedScene>>,
@@ -155,6 +204,12 @@ pub struct FpsPlayer {
     flinch: Spring,
     look_target: Option<WeaponId>,
     sounds: HashMap<String, Option<Gd<AudioStreamRandomizer>>>,
+    /// The last gameplay input came from a gamepad (not the mouse or keyboard).
+    gamepad: bool,
+    gamepad_device: i32,
+    stick_look: StickLook,
+    assist: AimAssist,
+    assist_target: Option<u64>,
 }
 
 #[godot_api]
@@ -184,6 +239,7 @@ impl ICharacterBody3D for FpsPlayer {
         let mut input = Input::singleton();
         let captured = input.get_mouse_mode() == MouseMode::CAPTURED;
 
+        self.track_device(&event);
         for (latched, action) in self.latched.iter_mut().zip(LATCHED_ACTIONS) {
             if event.is_action_pressed(action) {
                 *latched = true;
@@ -308,6 +364,11 @@ impl ICharacterBody3D for FpsPlayer {
         self.shake += self.shake_velocity * dt;
         self.land_dip.step(90.0, 13.0, dt);
         self.flinch.step(160.0, 16.0, dt);
+
+        if alive && self.input_enabled {
+            let eye = feet + Vector3::UP * self.eye_height;
+            self.apply_stick_look(eye, ads, dt);
+        }
 
         let (bob, bob_roll, tilt) = self.camera_motion_offsets(dt, ads);
         let death_roll = self.death_blend * 0.45;
@@ -539,10 +600,22 @@ impl FpsPlayer {
         self.camera.get_fov()
     }
 
-    /// View yaw in radians, for HUD damage indicators.
+    /// View yaw in radians, without recoil. Used by HUD damage indicators.
     #[func]
     fn view_yaw(&self) -> f32 {
         self.yaw
+    }
+
+    /// True while the last gameplay input came from a gamepad.
+    #[func]
+    fn using_gamepad(&self) -> bool {
+        self.gamepad
+    }
+
+    /// True while controller aim assist is on a target.
+    #[func]
+    fn aim_assist_engaged(&self) -> bool {
+        self.assist_target.is_some()
     }
 }
 
@@ -652,6 +725,178 @@ impl FpsPlayer {
         pickup.bind().weapon_id()
     }
 
+    /// Switches between gamepad and mouse-and-keyboard on deliberate input,
+    /// ignoring stick drift and tiny mouse bumps.
+    fn track_device(&mut self, event: &Gd<InputEvent>) {
+        let gamepad = if let Ok(motion) = event.clone().try_cast::<InputEventJoypadMotion>() {
+            if motion.get_axis_value().abs() < 0.3 {
+                return;
+            }
+            self.gamepad_device = motion.get_device();
+            true
+        } else if let Ok(button) = event.clone().try_cast::<InputEventJoypadButton>() {
+            if !button.is_pressed() {
+                return;
+            }
+            self.gamepad_device = button.get_device();
+            true
+        } else if let Ok(motion) = event.clone().try_cast::<InputEventMouseMotion>() {
+            if motion.get_screen_relative().length() < 4.0 {
+                return;
+            }
+            false
+        } else if event.clone().try_cast::<InputEventKey>().is_ok()
+            || event.clone().try_cast::<InputEventMouseButton>().is_ok()
+        {
+            if !event.is_pressed() {
+                return;
+            }
+            false
+        } else {
+            return;
+        };
+        if gamepad != self.gamepad {
+            self.gamepad = gamepad;
+            self.assist.reset();
+            self.assist_target = None;
+        }
+    }
+
+    fn stick_params(&self) -> StickParams {
+        StickParams {
+            inner_deadzone: self.stick_deadzone.clamp(0.0, 0.9),
+            outer_deadzone: self.stick_outer_deadzone.clamp(0.0, 0.5),
+            curve: self.stick_curve.max(0.1),
+            yaw_speed: self.stick_yaw_speed.to_radians(),
+            pitch_speed: self.stick_pitch_speed.to_radians(),
+            boost_yaw_speed: self.stick_turn_boost.max(0.0).to_radians(),
+            ..StickParams::default()
+        }
+    }
+
+    fn assist_params(&self) -> AimAssistParams {
+        let k = self.aim_assist_strength.max(0.0);
+        let d = AimAssistParams::default();
+        let slow = |full: f32| (1.0 - (1.0 - full) * k).clamp(0.0, 1.0);
+        AimAssistParams {
+            slowdown_hip: slow(d.slowdown_hip),
+            slowdown_ads: slow(d.slowdown_ads),
+            rotation_hip: (d.rotation_hip * k).min(1.0),
+            rotation_ads: (d.rotation_ads * k).min(1.0),
+            ..d
+        }
+    }
+
+    /// Right-stick look for this rendered frame, with aim assist. Scaled by
+    /// zoom like the mouse, so aiming down sights turns slower.
+    fn apply_stick_look(&mut self, eye: Vector3, ads: f32, delta: f32) {
+        let input = Input::singleton();
+        let strength = |action: &str| input.get_action_raw_strength(action);
+        let mut raw = Vec2::new(
+            strength("look_right") - strength("look_left"),
+            strength("look_up") - strength("look_down"),
+        );
+        if self.stick_invert_y {
+            raw.y = -raw.y;
+        }
+        let params = self.stick_params();
+        let stick = look::shape_stick(raw, &params);
+        if stick != Vec2::ZERO {
+            self.gamepad = true;
+        }
+        let zoom = self.camera.get_fov() / self.base_fov;
+        let mut rates = self.stick_look.rates(stick, &params, delta) * zoom;
+
+        let assist_on = self.gamepad
+            && self.aim_assist
+            && self.aim_assist_strength > 0.0
+            && !self.state.movement.sprinting;
+        if assist_on {
+            let moving = input
+                .get_vector("move_left", "move_right", "move_back", "move_forward")
+                .length()
+                > 0.0;
+            let view = AssistView {
+                eye: to_sim(eye),
+                yaw: self.yaw,
+                pitch: self.pitch,
+                ads,
+                active: moving || stick != Vec2::ZERO,
+            };
+            let targets = self.assist_targets(eye);
+            let out = self.assist.update(&view, &targets, &self.assist_params());
+            self.assist_target = out.target;
+            rates *= out.slowdown;
+            self.turn(out.rotation.x, out.rotation.y);
+        } else if self.assist_target.is_some() {
+            self.assist.reset();
+            self.assist_target = None;
+        }
+        self.turn(-rates.x * delta, rates.y * delta);
+    }
+
+    /// Turns the view (yaw left and pitch up, in radians) and feeds viewmodel sway.
+    fn turn(&mut self, yaw: f32, pitch: f32) {
+        self.yaw += yaw;
+        let clamped = (self.pitch + pitch).clamp(-PITCH_LIMIT, PITCH_LIMIT);
+        self.look_delta += Vector2::new(yaw, clamped - self.pitch);
+        self.pitch = clamped;
+    }
+
+    /// Enabled aim assist targets in range with a clear line of sight.
+    fn assist_targets(&self, eye: Vector3) -> Vec<AssistTarget> {
+        let Some(mut space) = self
+            .base()
+            .get_world_3d()
+            .and_then(|w| w.get_direct_space_state())
+        else {
+            return Vec::new();
+        };
+        let range = AimAssistParams::default().range;
+        let forward = to_godot(look::view_direction(self.yaw, self.pitch));
+        let exclude: Array<Rid> = array![self.base().get_rid()];
+        self.base()
+            .get_tree()
+            .get_nodes_in_group(AIM_ASSIST_GROUP)
+            .iter_shared()
+            .filter_map(|node| node.try_cast::<AimAssistTarget>().ok())
+            .filter_map(|marker| {
+                let target = {
+                    let marker = marker.bind();
+                    if !marker.enabled() {
+                        return None;
+                    }
+                    marker.capsule()
+                };
+                let to_center = to_godot(target.center()) - eye;
+                if to_center.length() > range || to_center.dot(forward) <= 0.0 {
+                    return None;
+                }
+                let visible = [target.center(), target.top].into_iter().any(|point| {
+                    line_of_sight(&mut space, eye, to_godot(point), &exclude, &marker)
+                });
+                visible.then_some(target)
+            })
+            .collect()
+    }
+
+    fn rumble_on_fire(&self, weapon: WeaponId) {
+        if !self.rumble || !self.gamepad {
+            return;
+        }
+        let def = weapon.def();
+        let (weak, strong, seconds) = match def.fire_mode {
+            FireMode::Auto => (0.35, 0.15, 0.06),
+            // Shotguns and snipers: one heavy shot.
+            FireMode::Semi if def.damage.near * f32::from(def.pellets) >= 80.0 => (0.8, 0.7, 0.16),
+            FireMode::Semi => (0.5, 0.35, 0.09),
+        };
+        Input::singleton()
+            .start_joy_vibration_ex(self.gamepad_device, weak, strong)
+            .duration(seconds)
+            .done();
+    }
+
     fn handle_event(&mut self, event: &PlayerEvent) {
         match *event {
             PlayerEvent::Combat(combat) => self.handle_combat(combat),
@@ -695,6 +940,7 @@ impl FpsPlayer {
             } => {
                 let def = weapon.def();
                 self.fire_shot(weapon, aim_offset, shot);
+                self.rumble_on_fire(weapon);
                 let ads = self.state.combat.ads;
                 let low = self.state.combat.weapon().magazine <= def.low_ammo();
                 let mut rig = self.viewmodel.bind_mut();
@@ -1011,6 +1257,8 @@ impl FpsPlayer {
         self.fov_sprint = 1.0;
         self.stride = 0.0;
         self.stride_length = 2.0;
+        self.assist.reset();
+        self.assist_target = None;
         self.apply_stance_shape(Stance::Standing);
     }
 
@@ -1025,6 +1273,31 @@ impl FpsPlayer {
         self.collision
             .set_position(Vector3::new(0.0, height / 2.0, 0.0));
     }
+}
+
+/// True if nothing in the world blocks the line from `eye` to `point`, other
+/// than the target's own body.
+fn line_of_sight(
+    space: &mut Gd<PhysicsDirectSpaceState3D>,
+    eye: Vector3,
+    point: Vector3,
+    exclude: &Array<Rid>,
+    marker: &Gd<AimAssistTarget>,
+) -> bool {
+    let Some(query) = PhysicsRayQueryParameters3D::create_ex(eye, point)
+        .collision_mask(WORLD_LAYER)
+        .exclude(exclude)
+        .done()
+    else {
+        return false;
+    };
+    let hit = space.intersect_ray(&query);
+    if hit.is_empty() {
+        return true;
+    }
+    hit.get_or_nil("collider")
+        .try_to::<Gd<Node>>()
+        .is_ok_and(|collider| collider.is_ancestor_of(marker))
 }
 
 /// Walks up from a hit collider to the first node that can take damage.
