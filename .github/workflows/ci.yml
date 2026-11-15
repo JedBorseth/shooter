@@ -44,9 +44,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
-      - run: uvx --from gdtoolkit==4.5.0 gdlint godot/scripts godot/tests
-      - run: uvx --from gdtoolkit==4.5.0 gdformat --check godot/scripts godot/tests
+      # pipx ships with the runner image.
+      - run: pipx run --spec gdtoolkit==4.5.0 gdlint godot/scripts godot/tests
+      - run: pipx run --spec gdtoolkit==4.5.0 gdformat --check godot/scripts godot/tests
 
   smoke:
     name: Godot smoke test (headless)
