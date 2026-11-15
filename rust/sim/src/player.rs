@@ -96,11 +96,7 @@ pub fn step(
 
 /// World-space direction for view angles plus an aim offset (`x` pitch up, `y` yaw right).
 pub fn aim_direction(yaw: f32, pitch: f32, offset: Vec2) -> Vec3 {
-    let pitch = pitch + offset.x;
-    let yaw = yaw - offset.y;
-    let (sy, cy) = yaw.sin_cos();
-    let (sp, cp) = pitch.sin_cos();
-    Vec3::new(-sy * cp, sp, -cy * cp)
+    crate::look::view_direction(yaw - offset.y, pitch + offset.x)
 }
 
 #[cfg(test)]
