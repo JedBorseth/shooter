@@ -1,0 +1,222 @@
+[gd_scene load_steps=14 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/player.tscn" id="1_player"]
+[ext_resource type="Script" path="res://scripts/hud.gd" id="2_hud"]
+[ext_resource type="Script" path="res://scripts/crosshair.gd" id="3_crosshair"]
+[ext_resource type="Material" path="res://materials/greybox_floor.tres" id="m_floor"]
+[ext_resource type="Material" path="res://materials/greybox_wall.tres" id="m_wall"]
+[ext_resource type="Material" path="res://materials/greybox_cover.tres" id="m_cover"]
+[ext_resource type="Material" path="res://materials/greybox_platform.tres" id="m_platform"]
+[ext_resource type="Material" path="res://materials/greybox_tunnel.tres" id="m_tunnel"]
+[ext_resource type="Material" path="res://materials/greybox_crate.tres" id="m_crate"]
+[ext_resource type="PackedScene" path="res://scenes/props/target_dummy.tscn" id="4_dummy"]
+
+[sub_resource type="ProceduralSkyMaterial" id="SkyMat"]
+sky_top_color = Color(0.3, 0.44, 0.62, 1)
+sky_horizon_color = Color(0.68, 0.7, 0.72, 1)
+ground_bottom_color = Color(0.16, 0.15, 0.14, 1)
+ground_horizon_color = Color(0.68, 0.7, 0.72, 1)
+
+[sub_resource type="Sky" id="Sky"]
+sky_material = SubResource("SkyMat")
+
+[sub_resource type="Environment" id="Env"]
+background_mode = 2
+sky = SubResource("Sky")
+ambient_light_source = 3
+reflected_light_source = 2
+tonemap_mode = 4
+ssao_enabled = true
+ssil_enabled = true
+sdfgi_enabled = true
+sdfgi_use_occlusion = true
+glow_enabled = true
+
+[node name="Main" type="Node3D"]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Env")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+rotation = Vector3(-0.9, 0.6, 0)
+light_energy = 1.2
+shadow_enabled = true
+directional_shadow_max_distance = 90.0
+
+[node name="Map" type="CSGCombiner3D" parent="."]
+use_collision = true
+
+[node name="Floor" type="CSGBox3D" parent="Map"]
+position = Vector3(0, -0.5, 0)
+size = Vector3(64, 1, 64)
+material = ExtResource("m_floor")
+
+[node name="WallNorth" type="CSGBox3D" parent="Map"]
+position = Vector3(0, 3, -32.5)
+size = Vector3(66, 6, 1)
+material = ExtResource("m_wall")
+
+[node name="WallSouth" type="CSGBox3D" parent="Map"]
+position = Vector3(0, 3, 32.5)
+size = Vector3(66, 6, 1)
+material = ExtResource("m_wall")
+
+[node name="WallEast" type="CSGBox3D" parent="Map"]
+position = Vector3(32.5, 3, 0)
+size = Vector3(1, 6, 64)
+material = ExtResource("m_wall")
+
+[node name="WallWest" type="CSGBox3D" parent="Map"]
+position = Vector3(-32.5, 3, 0)
+size = Vector3(1, 6, 64)
+material = ExtResource("m_wall")
+
+[node name="CoverLowA" type="CSGBox3D" parent="Map"]
+position = Vector3(-4, 0.6, 6)
+size = Vector3(3, 1.2, 0.6)
+material = ExtResource("m_cover")
+
+[node name="CoverLowB" type="CSGBox3D" parent="Map"]
+position = Vector3(5, 0.6, 2)
+size = Vector3(3, 1.2, 0.6)
+material = ExtResource("m_cover")
+
+[node name="CoverLowC" type="CSGBox3D" parent="Map"]
+position = Vector3(0, 0.6, -6)
+size = Vector3(4, 1.2, 0.6)
+material = ExtResource("m_cover")
+
+[node name="CoverTallA" type="CSGBox3D" parent="Map"]
+position = Vector3(10, 1.5, 10)
+size = Vector3(0.8, 3, 5)
+material = ExtResource("m_wall")
+
+[node name="CoverTallB" type="CSGBox3D" parent="Map"]
+position = Vector3(-14, 1.5, -2)
+size = Vector3(6, 3, 0.8)
+material = ExtResource("m_wall")
+
+[node name="CrateA" type="CSGBox3D" parent="Map"]
+position = Vector3(-18, 0.45, 14)
+size = Vector3(1.2, 0.9, 1.2)
+material = ExtResource("m_crate")
+
+[node name="CrateB" type="CSGBox3D" parent="Map"]
+position = Vector3(-16.8, 0.45, 14)
+size = Vector3(1.2, 0.9, 1.2)
+material = ExtResource("m_crate")
+
+[node name="CrateStack" type="CSGBox3D" parent="Map"]
+position = Vector3(-18, 1.35, 14)
+size = Vector3(1.2, 0.9, 1.2)
+material = ExtResource("m_crate")
+
+[node name="Platform" type="CSGBox3D" parent="Map"]
+position = Vector3(16, 1.5, -16)
+size = Vector3(8, 3, 8)
+material = ExtResource("m_platform")
+
+[node name="Ramp" type="CSGBox3D" parent="Map"]
+position = Vector3(16, 1.28, -8.8)
+rotation = Vector3(0.436332, 0, 0)
+size = Vector3(4, 0.4, 7.6)
+material = ExtResource("m_platform")
+
+[node name="TunnelLeft" type="CSGBox3D" parent="Map"]
+position = Vector3(-11.5, 0.95, -18)
+size = Vector3(1, 1.9, 4)
+material = ExtResource("m_tunnel")
+
+[node name="TunnelRight" type="CSGBox3D" parent="Map"]
+position = Vector3(-8.5, 0.95, -18)
+size = Vector3(1, 1.9, 4)
+material = ExtResource("m_tunnel")
+
+[node name="TunnelRoof" type="CSGBox3D" parent="Map"]
+position = Vector3(-10, 1.65, -18)
+size = Vector3(4, 0.5, 4)
+material = ExtResource("m_tunnel")
+
+[node name="Targets" type="Node3D" parent="."]
+
+[node name="Dummy1" parent="Targets" instance=ExtResource("4_dummy")]
+position = Vector3(-6, 0, 10)
+
+[node name="Dummy2" parent="Targets" instance=ExtResource("4_dummy")]
+position = Vector3(6, 0, 8)
+
+[node name="Dummy3" parent="Targets" instance=ExtResource("4_dummy")]
+position = Vector3(-2, 0, -2)
+
+[node name="Dummy4" parent="Targets" instance=ExtResource("4_dummy")]
+position = Vector3(13, 3, -18.5)
+
+[node name="Dummy5" parent="Targets" instance=ExtResource("4_dummy")]
+position = Vector3(-20, 0, -25)
+
+[node name="Dummy6" parent="Targets" instance=ExtResource("4_dummy")]
+position = Vector3(0, 0, -28)
+
+[node name="Dummy7" parent="Targets" instance=ExtResource("4_dummy")]
+position = Vector3(16, 3.0, -16)
+
+[node name="Player" parent="." instance=ExtResource("1_player")]
+position = Vector3(0, 0.05, 20)
+
+[node name="HUD" type="CanvasLayer" parent="."]
+script = ExtResource("2_hud")
+player_path = NodePath("../Player")
+
+[node name="Crosshair" type="Control" parent="HUD"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("3_crosshair")
+
+[node name="Readout" type="Label" parent="HUD"]
+offset_left = 24.0
+offset_top = 20.0
+theme_override_font_sizes/font_size = 16
+text = "Standing"
+
+[node name="Controls" type="Label" parent="HUD"]
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = -48.0
+offset_right = 1300.0
+offset_bottom = -20.0
+grow_vertical = 0
+theme_override_colors/font_color = Color(1, 1, 1, 0.7)
+theme_override_font_sizes/font_size = 14
+text = "WASD move   Shift sprint (toggle)   C / Ctrl crouch (slide while sprinting)   Space jump   LMB fire   RMB aim   R reload   1 / 2 / wheel switch   Esc release mouse"
+
+[node name="Ammo" type="VBoxContainer" parent="HUD"]
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -260.0
+offset_top = -110.0
+offset_right = -32.0
+offset_bottom = -28.0
+grow_horizontal = 0
+grow_vertical = 0
+alignment = 2
+
+[node name="Weapon" type="Label" parent="HUD/Ammo"]
+theme_override_colors/font_color = Color(1, 1, 1, 0.75)
+theme_override_font_sizes/font_size = 18
+horizontal_alignment = 2
+text = "M4A1"
+
+[node name="Count" type="Label" parent="HUD/Ammo"]
+theme_override_font_sizes/font_size = 34
+horizontal_alignment = 2
+text = "30 / 120"

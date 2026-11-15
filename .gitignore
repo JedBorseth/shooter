@@ -4,3 +4,6 @@
 builds/
 export_credentials.cfg
 .DS_Store
+
+# Rust build output
+rust/target/

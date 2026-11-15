@@ -1,0 +1,27 @@
+[workspace]
+resolver = "3"
+members = ["sim", "game"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+# Triggered by code that godot-rust's #[class(init)] macro generates.
+redundant_field_names = "allow"
+
+# Games need optimized code even in debug builds; dependencies are always fully optimized.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

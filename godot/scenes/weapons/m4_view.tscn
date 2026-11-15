@@ -1,0 +1,53 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="PackedScene" path="res://assets/weapons/m4/m4.fbx" id="1_model"]
+[ext_resource type="AudioStream" path="res://assets/audio/weapons/m4_fire.ogg" id="2_fire"]
+[ext_resource type="AudioStream" path="res://assets/audio/weapons/m4_reload.ogg" id="3_reload"]
+[ext_resource type="AudioStream" path="res://assets/audio/weapons/dry_fire.ogg" id="4_dry"]
+[ext_resource type="Material" path="res://materials/muzzle_flash.tres" id="5_flash"]
+
+[sub_resource type="QuadMesh" id="Quad_flash"]
+material = ExtResource("5_flash")
+size = Vector2(0.16, 0.16)
+
+[node name="M4" type="WeaponView"]
+weapon = "M4"
+hip_position = Vector3(0.1, -0.09, -0.24)
+ads_position = Vector3(0, 0, -0.09)
+sprint_position = Vector3(-0.04, 0.015, 0.03)
+sprint_rotation = Vector3(-4, 22, 24)
+pivot = Vector3(0, -0.07, 0.06)
+albedo_boost = 1.8
+kick_strength = 1.0
+
+[node name="Model" type="Node3D" parent="."]
+position = Vector3(0, -0.1728, 0.0163)
+rotation = Vector3(0, 1.5707964, 0)
+scale = Vector3(0.163, 0.163, 0.163)
+
+[node name="Mesh" parent="Model" instance=ExtResource("1_model")]
+
+[node name="Muzzle" type="Marker3D" parent="."]
+position = Vector3(0, -0.069, -0.59)
+
+[node name="Flash" type="MeshInstance3D" parent="Muzzle"]
+cast_shadow = 0
+mesh = SubResource("Quad_flash")
+
+[node name="FlashLight" type="OmniLight3D" parent="Muzzle"]
+light_color = Color(1, 0.72, 0.42, 1)
+light_energy = 2.5
+omni_range = 6.0
+
+[node name="FireSound" type="AudioStreamPlayer" parent="."]
+stream = ExtResource("2_fire")
+volume_db = -6.0
+max_polyphony = 8
+
+[node name="ReloadSound" type="AudioStreamPlayer" parent="."]
+stream = ExtResource("3_reload")
+volume_db = -4.0
+
+[node name="DryFireSound" type="AudioStreamPlayer" parent="."]
+stream = ExtResource("4_dry")
+volume_db = -6.0
