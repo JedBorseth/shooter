@@ -16,7 +16,9 @@ var _hit_color: Color = Color.WHITE
 
 func show_hit(killed: bool, headshot: bool) -> void:
 	_hit_left = hit_marker_time * (1.6 if killed else 1.0)
-	_hit_color = Color(1, 0.2, 0.15) if killed else (Color(1, 0.85, 0.3) if headshot else Color.WHITE)
+	_hit_color = (
+		Color(1, 0.2, 0.15) if killed else (Color(1, 0.85, 0.3) if headshot else Color.WHITE)
+	)
 
 
 func _process(delta: float) -> void:

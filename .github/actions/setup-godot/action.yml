@@ -1,0 +1,70 @@
+name: Set up Godot
+description: >-
+  Downloads an official Godot release (standard build, no .NET), checks it against
+  the published SHA-512, caches it, and puts `godot` on PATH. Optionally installs
+  the desktop export templates (Linux, Windows, macOS).
+inputs:
+  version:
+    description: Godot version, for example 4.7.2
+    required: true
+  templates:
+    description: Also install the desktop export templates
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - name: Restore Godot cache
+      id: cache
+      uses: actions/cache@v6
+      with:
+        path: ${{ runner.temp }}/godot-cache
+        key: godot-${{ inputs.version }}-${{ runner.os }}-templates-${{ inputs.templates }}-v1
+    - name: Download Godot
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        TEMPLATES: ${{ inputs.templates }}
+        CACHE: ${{ runner.temp }}/godot-cache
+      run: |
+        set -euo pipefail
+        base="https://github.com/godotengine/godot/releases/download/${VERSION}-stable"
+        work="$RUNNER_TEMP/godot-download"
+        mkdir -p "$work" "$CACHE/bin"
+        cd "$work"
+        curl -fsSL --retry 3 -o SHA512-SUMS.txt "$base/SHA512-SUMS.txt"
+        files=("Godot_v${VERSION}-stable_linux.x86_64.zip")
+        if [[ "$TEMPLATES" == "true" ]]; then
+          files+=("Godot_v${VERSION}-stable_export_templates.tpz")
+        fi
+        for f in "${files[@]}"; do
+          curl -fsSL --retry 3 -o "$f" "$base/$f"
+          grep -E " ${f}\$" SHA512-SUMS.txt | sha512sum -c -
+        done
+        unzip -q -j "Godot_v${VERSION}-stable_linux.x86_64.zip" -d "$CACHE/bin"
+        mv "$CACHE"/bin/Godot_v* "$CACHE/bin/godot"
+        chmod +x "$CACHE/bin/godot"
+        if [[ "$TEMPLATES" == "true" ]]; then
+          # Keep only the desktop templates; the full archive is about 1.3 GB.
+          mkdir -p "$CACHE/templates"
+          unzip -q -j "Godot_v${VERSION}-stable_export_templates.tpz" \
+            'templates/version.txt' 'templates/linux_*x86_64' \
+            'templates/windows_*x86_64*.exe' 'templates/macos.zip' \
+            -d "$CACHE/templates"
+        fi
+        rm -rf "$work"
+    - name: Install Godot
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        TEMPLATES: ${{ inputs.templates }}
+        CACHE: ${{ runner.temp }}/godot-cache
+      run: |
+        set -euo pipefail
+        echo "$CACHE/bin" >> "$GITHUB_PATH"
+        if [[ "$TEMPLATES" == "true" ]]; then
+          dest="$HOME/.local/share/godot/export_templates/${VERSION}.stable"
+          mkdir -p "$dest"
+          cp "$CACHE"/templates/* "$dest/"
+        fi
+        "$CACHE/bin/godot" --version

@@ -21,10 +21,12 @@ func _run() -> void:
 	if player == null:
 		_finish()
 		return
-	player.hit_confirmed.connect(func(killed: bool, _headshot: bool) -> void:
-		_hits += 1
-		if killed:
-			_kills += 1)
+	player.hit_confirmed.connect(
+		func(killed: bool, _headshot: bool) -> void:
+			_hits += 1
+			if killed:
+				_kills += 1
+	)
 
 	await _ticks(20)
 	_check(player.is_on_floor(), "player lands on the floor")
@@ -38,26 +40,46 @@ func _movement(player: FpsPlayer) -> void:
 	Input.action_press("move_forward")
 	await _tap("sprint")
 	await _ticks(90)
-	_check(player.movement_state() == "Sprinting", "toggle sprint stays on after release, got %s" % player.movement_state())
-	_check(player.horizontal_speed() > 6.5, "sprint speed > 6.5 m/s, got %.2f" % player.horizontal_speed())
+	_check(
+		player.movement_state() == "Sprinting",
+		"toggle sprint stays on after release, got %s" % player.movement_state()
+	)
+	_check(
+		player.horizontal_speed() > 6.5,
+		"sprint speed > 6.5 m/s, got %.2f" % player.horizontal_speed()
+	)
 	_check(player.global_position.z < start.z - 5.0, "player moved toward -Z")
 
 	await _tap("crouch")
 	await _ticks(1)
-	_check(player.movement_state() == "Sliding", "crouch while sprinting slides, got %s" % player.movement_state())
+	_check(
+		player.movement_state() == "Sliding",
+		"crouch while sprinting slides, got %s" % player.movement_state()
+	)
 	await _ticks(90)
-	_check(player.movement_state() == "Crouching", "slide ends in a crouch, got %s" % player.movement_state())
+	_check(
+		player.movement_state() == "Crouching",
+		"slide ends in a crouch, got %s" % player.movement_state()
+	)
 
 	Input.action_release("move_forward")
 	await _tap("crouch")
 	await _ticks(30)
-	_check(player.movement_state() == "Standing", "crouch toggles back to standing, got %s" % player.movement_state())
-	_check(player.horizontal_speed() < 0.1, "friction stops the player, got %.2f" % player.horizontal_speed())
+	_check(
+		player.movement_state() == "Standing",
+		"crouch toggles back to standing, got %s" % player.movement_state()
+	)
+	_check(
+		player.horizontal_speed() < 0.1,
+		"friction stops the player, got %.2f" % player.horizontal_speed()
+	)
 
 
 func _combat(main: Node, player: FpsPlayer) -> void:
 	# A fresh dummy 8 m straight ahead; aim at its chest.
-	var dummy := (load("res://scenes/props/target_dummy.tscn") as PackedScene).instantiate() as TargetDummy
+	var dummy := (
+		(load("res://scenes/props/target_dummy.tscn") as PackedScene).instantiate() as TargetDummy
+	)
 	main.add_child(dummy)
 	dummy.global_position = player.global_position + Vector3(0, 0, -8)
 	player.set_look(0.0, atan2(1.1 - 1.68, 8.0))

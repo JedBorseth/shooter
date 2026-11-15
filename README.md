@@ -24,7 +24,7 @@ The plan, decisions, and reference projects are in [docs/roadmap.md](docs/roadma
 
 ## Build and run
 
-Requirements: Godot 4.7.2+ (standard build, no .NET) and a stable Rust toolchain.
+Requirements: Godot 4.7.2+ (standard build, no .NET), a stable Rust toolchain, and [Git LFS](https://git-lfs.com) (models, textures, and audio are stored in LFS). Run `git lfs install` once before you clone, or `git lfs pull` in an existing clone.
 
 ```sh
 cd rust && cargo build          # builds rust/target/debug/libshooter_game.*
@@ -43,11 +43,33 @@ cd .. && godot --headless --path godot --script res://tests/smoke_test.gd
 
 The smoke test loads the arena headless and drives the player through movement (toggle sprint, slide, crouch) and combat (aim, fire, kill a dummy, reload, switch). It exits non-zero on failure.
 
+GDScript is linted and formatted with [gdtoolkit](https://github.com/Scony/godot-gdscript-toolkit):
+
+```sh
+uvx --from gdtoolkit==4.5.0 gdformat godot/scripts godot/tests
+uvx --from gdtoolkit==4.5.0 gdlint godot/scripts godot/tests
+```
+
 To review visuals, capture a set of first-person screenshots (hip, ADS, firing, sprint, reload, pistol, impacts). This needs a GPU:
 
 ```sh
 CAPTURE_DIR=/tmp/shots godot --path godot --resolution 1600x900 --script res://tests/capture_screens.gd
 ```
+
+## CI and builds
+
+GitHub Actions runs two workflows:
+
+- **CI** (`.github/workflows/ci.yml`) runs on every pull request and push to `main`: `cargo fmt` and `clippy -D warnings`, `cargo test` on Linux, Windows, and macOS, gdlint and gdformat, and the headless smoke test against Godot 4.7.2.
+- **Build** (`.github/workflows/build.yml`) exports playable clients on every pull request and every push to `main`: Linux, Windows, and universal macOS zips appear as artifacts on the workflow run, so you can play a PR before it merges. The macOS app is ad-hoc signed, not notarized, so macOS asks before opening it. Pushing a `v*` tag publishes the zips as a GitHub Release.
+
+To cut a release:
+
+```sh
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+Export presets are in `godot/export_presets.cfg`. The Rust library for each platform is built on that platform's runner, then one Linux job exports all clients with Godot's export templates.
 
 ## Controls
 
