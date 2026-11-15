@@ -1,6 +1,7 @@
 //! GDExtension entry point. Godot classes defined here wrap the engine-free
 //! simulation in `shooter-sim`.
 
+mod aim_assist;
 mod convert;
 mod player;
 mod target;

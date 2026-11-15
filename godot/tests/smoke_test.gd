@@ -1,8 +1,10 @@
 extends SceneTree
 ## Headless smoke test: loads the arena and drives the Rust player through
 ## movement (toggle sprint, slide, crouch) and combat (ADS, fire, kill, reload,
-## switch). Exits non-zero on failure.
+## switch), then gamepad look and aim assist. Exits non-zero on failure.
 ## Run from the repo root: godot --headless --path godot --script res://tests/smoke_test.gd
+
+const DUMMY_SCENE := preload("res://scenes/props/target_dummy.tscn")
 
 var _failures: PackedStringArray = []
 var _hits := 0
@@ -32,6 +34,7 @@ func _run() -> void:
 	_check(player.is_on_floor(), "player lands on the floor")
 	await _movement(player)
 	await _combat(main, player)
+	await _gamepad(main, player)
 	_finish()
 
 
@@ -77,9 +80,7 @@ func _movement(player: FpsPlayer) -> void:
 
 func _combat(main: Node, player: FpsPlayer) -> void:
 	# A fresh dummy 8 m straight ahead; aim at its chest.
-	var dummy := (
-		(load("res://scenes/props/target_dummy.tscn") as PackedScene).instantiate() as TargetDummy
-	)
+	var dummy := DUMMY_SCENE.instantiate() as TargetDummy
 	main.add_child(dummy)
 	dummy.global_position = player.global_position + Vector3(0, 0, -8)
 	player.set_look(0.0, atan2(1.1 - 1.68, 8.0))
@@ -109,6 +110,41 @@ func _combat(main: Node, player: FpsPlayer) -> void:
 
 	await _ticks(200)
 	_check(dummy.health() == 100.0, "dummy respawns with full health, got %.0f" % dummy.health())
+
+
+func _gamepad(main: Node, player: FpsPlayer) -> void:
+	player.set_look(0.0, 0.0)
+	Input.action_press("look_right", 1.0)
+	await _ticks(30)
+	Input.action_release("look_right")
+	_check(player.using_gamepad(), "right stick switches to gamepad input")
+	_check(player.yaw() < -0.5, "right stick turns the view right, yaw %.2f" % player.yaw())
+
+	# A dummy 10 m ahead with the crosshair on its chest, then a strafe right.
+	var dummy := DUMMY_SCENE.instantiate() as TargetDummy
+	main.add_child(dummy)
+	dummy.global_position = player.global_position + Vector3(0, 0, -10)
+	var pitch := atan2(0.885 - 1.68, 10.0)
+	for assist in [true, false]:
+		player.aim_assist = assist
+		player.set_look(0.0, pitch)
+		await _ticks(10)
+		_check(
+			player.aim_assist_engaged() == assist,
+			"aim assist %s on a target in view" % ("engages" if assist else "stays off")
+		)
+		Input.action_press("move_right")
+		await _ticks(20)
+		Input.action_release("move_right")
+		await _ticks(30)
+		if assist:
+			_check(
+				player.yaw() > 0.01, "rotational assist follows the target, yaw %.3f" % player.yaw()
+			)
+		else:
+			_check(player.yaw() == 0.0, "no rotation without assist, yaw %.3f" % player.yaw())
+		dummy.global_position = player.global_position + Vector3(0, 0, -10)
+	player.aim_assist = true
 
 
 func _tap(action: String) -> void:

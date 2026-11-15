@@ -11,8 +11,8 @@ The plan, decisions, and reference projects are in [docs/roadmap.md](docs/roadma
 ## Layout
 
 - `godot/`: the Godot project (scenes, GDScript glue, assets).
-- `rust/sim/`: engine-independent, deterministic simulation: movement, weapons (fire rate, falloff, recoil patterns, spread, reloads, ADS, switching), and the combined per-player step that netcode will predict. No Godot types, so the client and the dedicated server share it and it can be unit-tested on its own.
-- `rust/game/`: the GDExtension that exposes the simulation to Godot: `FpsPlayer` (input, hitscan, camera), `ViewmodelRig` and `WeaponView` (procedural weapon motion, muzzle flash, sounds), and `TargetDummy`.
+- `rust/sim/`: engine-independent, deterministic simulation: movement, weapons (fire rate, falloff, recoil patterns, spread, reloads, ADS, switching), the combined per-player step that netcode will predict, and gamepad look (stick shaping, aim assist). No Godot types, so the client and the dedicated server share it and it can be unit-tested on its own.
+- `rust/game/`: the GDExtension that exposes the simulation to Godot: `FpsPlayer` (input, gamepad look and aim assist, hitscan, camera), `AimAssistTarget`, `ViewmodelRig` and `WeaponView` (procedural weapon motion, muzzle flash, sounds), and `TargetDummy`.
 - `godot/shaders/`: viewmodel projection (own FOV, never clips walls), muzzle flash, and the blockout grid.
 - `docs/`: roadmap and design notes.
 
@@ -41,7 +41,7 @@ cd rust && cargo test && cargo clippy --all-targets
 cd .. && godot --headless --path godot --script res://tests/smoke_test.gd
 ```
 
-The smoke test loads the arena headless and drives the player through movement (toggle sprint, slide, crouch) and combat (aim, fire, kill a dummy, reload, switch). It exits non-zero on failure.
+The smoke test loads the arena headless and drives the player through movement (toggle sprint, slide, crouch), combat (aim, fire, kill a dummy, reload, switch), and gamepad look with aim assist. It exits non-zero on failure.
 
 GDScript is linted and formatted with [gdtoolkit](https://github.com/Scony/godot-gdscript-toolkit):
 
@@ -83,6 +83,20 @@ Export presets are in `godot/export_presets.cfg`. The Rust library for each plat
 | Reload | R |
 | Switch weapon | 1, 2, or mouse wheel |
 | Release mouse | Esc |
+
+Gamepads work too (Xbox layout shown; PlayStation and others use the same positions):
+
+| Action | Input |
+| --- | --- |
+| Move / look | Left stick / right stick |
+| Sprint (toggle) | L3 (click the left stick) |
+| Crouch (toggle; slides while sprinting) | B |
+| Jump | A |
+| Fire / aim down sights | RT / LT |
+| Reload | X |
+| Switch weapon | Y |
+
+On a gamepad, aim assist slows the right stick near a target and follows part of the target's movement relative to you while you move or look. It never snaps to a target, and the mouse never gets it. The HUD switches its controls hint to whichever device you used last. Stick speed, deadzones, response curve, invert Y, aim assist, and rumble are exported properties on the `Player` node until the settings menu exists.
 
 The arena has target dummies at several ranges. They show their health and respawn 3 seconds after being killed.
 

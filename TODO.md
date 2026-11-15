@@ -30,7 +30,7 @@ The open work for building this into a modern-military, Call-of-Duty-style multi
 
 ## Phase 1: single-player feel (in progress)
 
-Done: movement (toggle sprint, toggle crouch, slide, jump), M4A1 and M1911 weapon simulation, viewmodel shader and procedural motion, hitscan with headshots, impacts, target dummies, HUD.
+Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with aim assist, M4A1 and M1911 weapon simulation, viewmodel shader and procedural motion, hitscan with headshots, impacts, target dummies, HUD.
 
 ### Weapons and gunplay
 
@@ -68,7 +68,9 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), M4A1 and M1911 weapo
 
 - [ ] Pause menu (Esc) with resume, settings, and quit.
 - [ ] Settings: mouse sensitivity, ADS sensitivity multiplier, FOV, invert Y, volume sliders, keybind remapping. Persist them in `user://settings.cfg`.
-- [ ] Gamepad support: stick deadzones, response curves, and aim assist (slowdown only, off by default).
+- [x] Gamepad support: bindings, stick deadzones and response curve, turn boost, rumble, and aim assist (slowdown and rotational, on by default for gamepads only; no snap).
+- [ ] Gamepad settings in the settings menu: look speed, deadzones, curve, invert Y, aim assist toggle and strength, rumble (currently exported properties on `FpsPlayer`).
+- [ ] Button prompts with controller glyphs instead of text, and D-pad bindings for weapon slots.
 - [ ] **good first task** Show the controls overlay only for the first minute, or toggle it with F1.
 
 ## Phase 2: netcode core
