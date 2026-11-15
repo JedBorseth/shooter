@@ -1,23 +1,15 @@
 name: Build
 
-# Exports playable Linux, Windows, and macOS clients on every push to main, on
-# manual runs, and on pull requests that change the build setup. Tags (v*) also
-# publish the builds as a GitHub Release.
+# Exports playable Linux, Windows, and macOS clients for every pull request and
+# every push to main, so anyone can download a PR's build and play it before it
+# merges. Runners are free for public repositories. Tags (v*) also publish the
+# builds as a GitHub Release.
 
 on:
   push:
     branches: [main]
     tags: ["v*"]
   pull_request:
-    paths:
-      - .github/workflows/build.yml
-      - .github/actions/**
-      - .github/scripts/**
-      - godot/export_presets.cfg
-      - godot/project.godot
-      - godot/shooter.gdextension
-      - rust/Cargo.toml
-      - rust/Cargo.lock
   workflow_dispatch:
 
 concurrency:

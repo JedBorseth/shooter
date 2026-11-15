@@ -19,8 +19,8 @@ env:
   CARGO_INCREMENTAL: 0
 
 jobs:
-  rust:
-    name: Rust (fmt, clippy, test)
+  rust-lint:
+    name: Rust (fmt, clippy)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -36,6 +36,26 @@ jobs:
           workspaces: rust
       - run: cargo fmt --all --check
       - run: cargo clippy --all-targets --locked -- -D warnings
+
+  # Public repository, so every runner OS is free. The simulation must behave the
+  # same on every platform the client and server run on, so test on all three.
+  rust-test:
+    name: Rust tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
       - run: cargo test --locked
 
   gdscript:
