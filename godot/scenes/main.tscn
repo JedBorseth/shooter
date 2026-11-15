@@ -194,7 +194,7 @@ offset_bottom = -20.0
 grow_vertical = 0
 theme_override_colors/font_color = Color(1, 1, 1, 0.7)
 theme_override_font_sizes/font_size = 14
-text = "WASD move   Shift sprint (toggle)   C / Ctrl crouch (slide while sprinting)   Space jump   LMB fire   RMB aim   R reload   1 / 2 / wheel switch   Esc release mouse"
+text = "WASD move   Shift sprint (toggle)   C / Ctrl crouch (slide while sprinting)   Space jump   LMB fire   RMB aim   R reload   1 / 2 / wheel switch   T refill ammo   Esc release mouse"
 
 [node name="Ammo" type="VBoxContainer" parent="HUD"]
 anchors_preset = 3

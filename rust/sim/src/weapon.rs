@@ -295,6 +295,17 @@ impl CombatState {
     pub fn is_reloading(&self) -> bool {
         matches!(self.action, Action::Reloading { .. })
     }
+
+    /// Demo cheat: fills every carried weapon's magazine and reserve to the
+    /// maximum, and ends any reload in progress since it is no longer needed.
+    pub fn refill_ammo(&mut self) {
+        for slot in &mut self.slots {
+            *slot = WeaponState::full(slot.id);
+        }
+        if self.is_reloading() {
+            self.action = Action::Ready;
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -587,6 +598,31 @@ mod tests {
         // 750 RPM for 2 s is 25 rounds.
         assert_eq!(shots(&events), 25);
         assert_eq!(s.weapon().magazine, 5);
+    }
+
+    #[test]
+    fn refill_ammo_fills_every_slot_and_ends_reload() {
+        let mut s = ready();
+        s.slots[0].magazine = 3;
+        s.slots[0].reserve = 0;
+        s.slots[1].magazine = 0;
+        s.slots[1].reserve = 4;
+        s.action = Action::Reloading {
+            remaining: 1.0,
+            empty: false,
+        };
+        s.refill_ammo();
+        assert_eq!(s.slots[0], WeaponState::full(WeaponId::M4));
+        assert_eq!(s.slots[1], WeaponState::full(WeaponId::Pistol));
+        assert_eq!(s.action, Action::Ready);
+
+        // A weapon switch in progress is left alone.
+        s.action = Action::Lowering {
+            remaining: 0.2,
+            to: 1,
+        };
+        s.refill_ammo();
+        assert!(matches!(s.action, Action::Lowering { to: 1, .. }));
     }
 
     #[test]

@@ -103,6 +103,10 @@ func _combat(main: Node, player: FpsPlayer) -> void:
 	_check(player.is_reloading(), "R starts a reload")
 	await _ticks(150)
 	_check(player.magazine() == 30, "reload refills the magazine, got %d" % player.magazine())
+	_check(player.reserve() < 120, "reload draws from the reserve, got %d" % player.reserve())
+
+	await _tap("refill_ammo")
+	_check(player.reserve() == 120, "T refills the reserve to max, got %d" % player.reserve())
 
 	await _tap("weapon_2")
 	await _ticks(60)
