@@ -68,7 +68,7 @@ In T3 Code, link the PR to the thread with `link_pull_request` right after you c
 
 Get the head commit: `git rev-parse HEAD`.
 
-- In T3 Code: call `watch_pull_request` on the PR and end your turn. You are woken when checks finish. Do not poll, sleep, or run `gh pr checks --watch` there.
+- In T3 Code: call `watch_pull_request` on the PR and end your turn. You are woken when checks finish. Do not poll, sleep, or run `gh pr checks --watch` there. A wake that says "required checks passed" can arrive while slower checks (the macOS build, the client export) are still running. On every wake, run `gh pr checks <number>`. If anything is still pending, end your turn again; the watch stays on.
 - Elsewhere: `gh pr checks <number> --watch --fail-fast --interval 30`, with a timeout of at least 30 minutes.
 
 The checks are done when every check on the current head commit has finished. If none are listed yet, the workflows have not registered; wait, do not treat that as green. `success`, `skipped`, and `neutral` count as passing.
