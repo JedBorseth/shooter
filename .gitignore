@@ -8,8 +8,5 @@ export_credentials.cfg
 # Rust build output
 rust/target/
 
-# Generated map assets; rebuild from the supplied C2M export.
-/godot/assets/maps/nuketown/generated/
-
 # Python asset-pipeline caches.
 __pycache__/

@@ -26,12 +26,27 @@ func _run() -> void:
 		_finish()
 		return
 	_check(true, "home button enters Nuketown")
+	for name in ["Health", "Damage", "Scope", "ScoreFeed", "HitSound"]:
+		_check(current_scene.get_node_or_null("HUD/" + name) != null, "HUD includes " + name)
 	var player := current_scene.get_node("Player") as FpsPlayer
+	await physics_frame
 	var start_y := player.position.y
+	var ray := PhysicsRayQueryParameters3D.create(
+		player.global_position + Vector3.UP * 0.25, player.global_position + Vector3.DOWN * 4.0, 1
+	)
+	var floor_hit := player.get_world_3d().direct_space_state.intersect_ray(ray)
+	_check(not floor_hit.is_empty(), "authored spawn has world collision beneath it")
+	var floor_y: float = floor_hit.get("position", player.global_position).y
 	for i in 120:
 		await physics_frame
 	_check(player.is_on_floor(), "player lands on Nuketown collision")
-	_check(absf(player.position.y - start_y) < 1.0, "spawn stays above the map floor")
+	_check(
+		absf(player.position.y - floor_y) < 0.15,
+		(
+			"player lands on the probed map floor (ground %.3f, landed %.3f)"
+			% [floor_y, player.position.y]
+		)
+	)
 	var start := player.position
 	Input.action_press("move_forward")
 	for i in 60:

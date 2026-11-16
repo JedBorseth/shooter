@@ -90,7 +90,13 @@ stand-in level.
 
 ## Rebuild the generated map
 
-Generated assets remain ignored by Git; the supplied source archive is required.
+The ready-to-play resources in `godot/assets/maps/nuketown/generated/` are
+tracked in Git LFS. Install Git LFS before cloning, or run `git lfs pull` in an
+existing checkout. Normal play and client exports do not require the source
+archive or the conversion tools.
+
+The commands below are only needed to regenerate the map from the supplied source
+archive. Raw BO2/C2M exports in `builds/` remain excluded from Git.
 From the repository root, using Python with Pillow installed and Godot 4.7.2:
 
 ```sh
