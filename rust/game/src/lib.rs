@@ -3,7 +3,9 @@
 
 mod aim_assist;
 mod audio;
+mod body;
 mod convert;
+mod net;
 mod pickup;
 mod player;
 mod sentry;

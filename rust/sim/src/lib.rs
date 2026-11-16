@@ -6,6 +6,7 @@
 
 pub mod look;
 pub mod movement;
+pub mod net;
 pub mod player;
 pub mod rng;
 pub mod weapon;

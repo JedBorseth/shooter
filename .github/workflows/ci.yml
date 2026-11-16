@@ -109,3 +109,7 @@ jobs:
         run: godot --headless --path godot --script res://tests/smoke_test.gd
       - name: Run settings test
         run: godot --headless --path godot --script res://tests/settings_test.gd
+      # Starts a dedicated server process and joins it over UDP on localhost
+      # through a simulated lossy, jittery link.
+      - name: Run netcode test
+        run: godot --headless --path godot --script res://tests/net_test.gd
