@@ -30,6 +30,9 @@ func _run() -> void:
 		_check(false, "build the Rust extension first (cargo build -p shooter-game)")
 		_finish()
 		return
+	var nuketown := OS.get_cmdline_user_args().has("--nuketown")
+	var map_name := "Nuketown" if nuketown else "Arena"
+	var map_path := "res://scenes/nuketown.tscn" if nuketown else "res://scenes/main.tscn"
 	var settings: Node = root.get_node("Settings")
 	settings.path = SETTINGS_PATH
 	settings.reset_to_defaults()
@@ -57,6 +60,7 @@ func _run() -> void:
 			"127.0.0.1:%d" % MASTER_PORT,
 		]
 	)
+	server_args.append_array(PackedStringArray(["--map", map_name.to_lower()]))
 	_pids.append(OS.create_process(OS.get_executable_path(), server_args))
 	_check(_pids.all(func(pid: int) -> bool: return pid > 0), "master and server processes start")
 
@@ -85,7 +89,7 @@ func _run() -> void:
 	if row.is_empty():
 		_finish()
 		return
-	_check(row[2] == "Arena" and row[3] == "Free-for-all", "map and mode show, got %s" % row)
+	_check(row[2] == map_name and row[3] == "Free-for-all", "map and mode show, got %s" % row)
 	_check(row[4] == "0 / 12  +2 bots", "players and bots show, got '%s'" % row[4])
 	_check(row[5].ends_with(" ms"), "ping shows, got '%s'" % row[5])
 
@@ -150,7 +154,7 @@ func _run() -> void:
 	if client == null:
 		_finish()
 		return
-	_check(current_scene.scene_file_path == "res://scenes/main.tscn", "the arena is loaded")
+	_check(current_scene.scene_file_path == map_path, "the server map is loaded")
 	_check(client.port == GAME_PORT, "the client joined the game port")
 	_check(client.remote_ids().size() == 2, "both bots are visible")
 	# The status panel notices the join on its next frame.

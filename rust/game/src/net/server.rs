@@ -52,7 +52,14 @@ use crate::target::WORLD_LAYER;
 /// player and its UI, practice targets, and the sentry turret (it would damage
 /// players without the server knowing). Weapon racks stay: they are solid, and
 /// players take weapons from them through their input.
-const CLIENT_ONLY_NODES: [&str; 5] = ["Player", "HUD", "PauseMenu", "Targets", "Sentry"];
+const CLIENT_ONLY_NODES: [&str; 6] = [
+    "Player",
+    "HUD",
+    "PauseMenu",
+    "Targets",
+    "Sentry",
+    "SecretLaser",
+];
 
 /// Seconds a new connection has to say hello.
 const HELLO_TIMEOUT_TICKS: Tick = 5 * TICK_RATE;
@@ -300,10 +307,13 @@ impl NetServer {
     }
 
     fn load_map(&mut self) {
-        let Some(map) = self.map_scene.as_ref().and_then(|s| s.instantiate()) else {
+        let Some(mut map) = self.map_scene.as_ref().and_then(|s| s.instantiate()) else {
             godot_warn!("server: no map scene set");
             return;
         };
+        if map.has_method("prepare_server") {
+            map.call("prepare_server", &[]);
+        }
         if let Some(player) = map.get_node_or_null("Player")
             && let Ok(player) = player.try_cast::<Node3D>()
         {

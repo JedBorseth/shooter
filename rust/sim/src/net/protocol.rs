@@ -26,7 +26,8 @@ use crate::score::{Award, ScoreTotals, Scored};
 use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState};
 
 /// Bumped whenever the wire format changes; mismatched clients are rejected.
-pub const PROTOCOL_VERSION: u16 = 3;
+// Version 4 requires clients to load the map advertised by server discovery.
+pub const PROTOCOL_VERSION: u16 = 4;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
 pub const MAX_INPUTS_PER_PACKET: usize = 24;
 /// Wish vectors are sent as signed bytes; prediction must use the same values.

@@ -128,5 +128,7 @@ jobs:
       # Internet tabs of the server browser, and joins it from the list.
       - name: Run server browser test
         run: godot --headless --path godot --script res://tests/server_browser_test.gd
+      - name: Run Nuketown server browser test
+        run: godot --headless --path godot --script res://tests/server_browser_test.gd -- --nuketown
       - name: Run title screen test
         run: godot --headless --path godot --script res://tests/title_screen_test.gd

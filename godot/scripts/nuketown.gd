@@ -12,6 +12,12 @@ var _spawn_yaw := 0.0
 
 
 func _enter_tree() -> void:
+	if has_node("Player"):
+		prepare_server()
+
+
+## Also called before the dedicated server reads and removes the spawn marker.
+func prepare_server() -> void:
 	var file := FileAccess.open("res://assets/maps/nuketown/generated/map.json", FileAccess.READ)
 	if file == null:
 		push_error("Nuketown map metadata is missing.")
@@ -26,8 +32,16 @@ func _enter_tree() -> void:
 
 
 func _ready() -> void:
+	if not has_node("Player"):
+		set_physics_process(false)
+		set_process_unhandled_input(false)
+		return
 	$HUD/ReturnToMenu.pressed.connect(
-		func() -> void: get_tree().change_scene_to_file("res://scenes/title_screen.tscn")
+		func() -> void:
+			if Net.is_online():
+				Net.leave()
+			else:
+				get_tree().change_scene_to_file("res://scenes/title_screen.tscn")
 	)
 	$SecretLaser.place($Player.position, _spawn_yaw)
 	$SecretLaser.laser_taken.connect(_spawn_laser_targets, CONNECT_ONE_SHOT)
@@ -41,7 +55,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func _physics_process(_delta: float) -> void:
 	# Render geometry has no original invisible map-boundary brushes. Recover if
 	# someone walks off the scenery instead of leaving them stranded below it.
-	if not _respawning and $Player.position.y < -20.0:
+	if not Net.is_online() and not _respawning and $Player.position.y < -20.0:
 		_respawning = true
 		get_tree().reload_current_scene.call_deferred()
 

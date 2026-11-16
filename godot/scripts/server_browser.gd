@@ -12,7 +12,6 @@ enum Tab { INTERNET, LAN, FAVORITES }
 
 const MenuStyle := preload("res://scripts/ui/menu_style.gd")
 ## Kept as a path so opening the browser does not load the arena.
-const ARENA_PATH := "res://scenes/main.tscn"
 ## Seconds a LAN scan shows "Searching" before it says nothing was found.
 const LAN_SEARCH_SECONDS := 1.5
 
@@ -32,6 +31,7 @@ var _searching := false
 var _loading := false
 var _join_target := ""
 var _join_name := ""
+var _join_map_path := ""
 
 @onready var _list: Tree = %List
 @onready var _status: Label = %Status
@@ -282,7 +282,7 @@ func _check_direct() -> void:
 				elif server.players >= server.max_players:
 					_error = "%s is full." % server.name
 				else:
-					_start_join(server.address, server.name)
+					_start_join(server.address, server.name, server.map)
 			"offline":
 				_direct_failed = _direct_target
 				_direct_target = ""
@@ -301,11 +301,15 @@ func _check_direct() -> void:
 func _join_selected() -> void:
 	var server: Dictionary = _list.selected_server()
 	if _can_join(server):
-		_start_join(server.address, server.name)
+		_start_join(server.address, server.name, server.map)
 
 
-func _start_join(address: String, server_name: String) -> void:
+func _start_join(address: String, server_name: String, map_name := "Arena") -> void:
 	if _loading:
+		return
+	_join_map_path = Net.map_path(map_name)
+	if _join_map_path.is_empty():
+		show_error("This build does not include the map %s." % map_name)
 		return
 	_loading = true
 	_join_target = address
@@ -315,7 +319,7 @@ func _start_join(address: String, server_name: String) -> void:
 		(control as Button).disabled = true
 	_update_status()
 	# Load the arena on a thread so the browser keeps drawing.
-	var error := ResourceLoader.load_threaded_request(ARENA_PATH)
+	var error := ResourceLoader.load_threaded_request(_join_map_path)
 	if error != OK:
 		_join_failed(error_string(error))
 		return
@@ -324,7 +328,7 @@ func _start_join(address: String, server_name: String) -> void:
 
 func _process(_delta: float) -> void:
 	var progress: Array = []
-	match ResourceLoader.load_threaded_get_status(ARENA_PATH, progress):
+	match ResourceLoader.load_threaded_get_status(_join_map_path, progress):
 		ResourceLoader.THREAD_LOAD_IN_PROGRESS:
 			if not progress.is_empty():
 				_status.text = (
@@ -332,7 +336,7 @@ func _process(_delta: float) -> void:
 				)
 		ResourceLoader.THREAD_LOAD_LOADED:
 			set_process(false)
-			var arena := ResourceLoader.load_threaded_get(ARENA_PATH) as PackedScene
+			var arena := ResourceLoader.load_threaded_get(_join_map_path) as PackedScene
 			if arena == null:
 				_join_failed("invalid arena scene")
 				return
