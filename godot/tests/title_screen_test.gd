@@ -23,16 +23,26 @@ func _run() -> void:
 	var menu := title.get_node("Margin/Layout/Menu")
 	var testing := menu.get_node("TestingArea") as Button
 	_check(menu.get_child(0) == testing, "Testing Area is the first option")
-	_check(not testing.disabled and testing.has_focus(), "Testing Area is enabled and keyboard focused")
+	_check(
+		not testing.disabled and testing.has_focus(), "Testing Area is enabled and keyboard focused"
+	)
 	_check((menu.get_node("Multiplayer") as Button).disabled, "Multiplayer is a placeholder")
 	_check(not (menu.get_node("Zombies") as Button).disabled, "Zombies opens its menu")
 	for i in 5:
 		await process_frame
-	for path: String in ["res://scenes/main.tscn", "res://scenes/player.tscn",
-			"res://scenes/props/target_dummy.tscn", "res://scenes/weapons/m4_view.tscn",
-			"res://scenes/zombies_menu.tscn", "res://assets/zombies/textures/globe_zm.jpg"]:
+	for path: String in [
+		"res://scenes/main.tscn",
+		"res://scenes/player.tscn",
+		"res://scenes/props/target_dummy.tscn",
+		"res://scenes/weapons/m4_view.tscn",
+		"res://scenes/zombies_menu.tscn",
+		"res://assets/zombies/textures/globe_zm.jpg"
+	]:
 		_check(not ResourceLoader.has_cached(path), "menu does not load %s" % path)
-	_check(title.find_children("*", "Node3D", true, false).is_empty(), "menu contains no 3D gameplay nodes")
+	_check(
+		title.find_children("*", "Node3D", true, false).is_empty(),
+		"menu contains no 3D gameplay nodes"
+	)
 	_check(not title.is_processing(), "menu does not poll for arena loading while idle")
 	if "--startup-only" in OS.get_cmdline_user_args():
 		_finish()
@@ -50,7 +60,9 @@ func _run() -> void:
 		if current_scene != null and current_scene.scene_file_path == "res://scenes/main.tscn":
 			break
 		await process_frame
-	var entered_arena := current_scene != null and current_scene.scene_file_path == "res://scenes/main.tscn"
+	var entered_arena := (
+		current_scene != null and current_scene.scene_file_path == "res://scenes/main.tscn"
+	)
 	_check(entered_arena, "Testing Area transitions into the existing arena")
 	if entered_arena:
 		_check(current_scene.get_node_or_null("Player") != null, "arena contains the player")

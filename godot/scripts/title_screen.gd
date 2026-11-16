@@ -3,10 +3,10 @@ extends Control
 
 const ARENA_PATH := "res://scenes/main.tscn"
 
+var _loading := false
+
 @onready var _testing: Button = $Margin/Layout/Menu/TestingArea
 @onready var _status: Label = $Margin/Layout/Status
-
-var _loading := false
 
 
 func _ready() -> void:
@@ -55,11 +55,13 @@ func _open_zombies() -> void:
 	$Background.hide()
 	$Margin.hide()
 	add_child(zombies)
-	zombies.back_requested.connect(func() -> void:
-		zombies.queue_free()
-		$Background.show()
-		$Margin.show()
-		$Margin/Layout/Menu/Zombies.grab_focus())
+	zombies.back_requested.connect(
+		func() -> void:
+			zombies.queue_free()
+			$Background.show()
+			$Margin.show()
+			$Margin/Layout/Menu/Zombies.grab_focus()
+	)
 
 
 func _start_testing() -> void:
