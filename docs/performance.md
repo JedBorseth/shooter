@@ -37,7 +37,7 @@ tools/benchmark.sh --out after.json --compare docs/perf/baseline.json
 
 `tools/benchmark.sh` runs `godot/tests/benchmark.gd` at 1920×1080 (under `xvfb-run` when there is no display). It loads the Testing Area, Slamcity, and the Zombies arena with a 24-zombie horde walking at the player, holds each fixed viewpoint for 120 frames at each preset, and prints frame time, 99th-percentile frame time, GPU time, and draw calls. `tools/bench_compare.py` prints a Markdown table of two runs and exits non-zero if a map and preset got more than 5% slower, so a loop can stop on a regression.
 
-Narrow a run with `BENCH_MAPS=slamcity`, `BENCH_PRESETS=medium`, or `BENCH_FRAMES=60`. Set `BENCH_CAPTURE=<dir>` to save a screenshot of every viewpoint for before-and-after comparisons.
+Narrow a run with `BENCH_MAPS=slamcity`, `BENCH_PRESETS=medium`, or `BENCH_FRAMES=60`, and measure with motion blur on with `BENCH_MOTION_BLUR=1`. The script visits every map once before it measures, so shader compiles do not land in the first number. Set `BENCH_CAPTURE=<dir>` to save a screenshot of every viewpoint for before-and-after comparisons.
 
 **Read GPU time, not frames per second.** GPU time comes from the renderer's own timestamps. Under Xvfb, each frame is also copied through the CPU to the virtual display, which adds about 8 ms at 1080p. That caps the wall-clock numbers near 60–100 fps even when the GPU is idle half the frame. On a real display, the frame rate follows GPU time.
 
@@ -57,6 +57,8 @@ The presets live in `godot/scripts/graphics.gd`. The `Settings` autoload applies
 | Sun shadows | 2048 atlas, softest-cheapest filter, 50% range | 4096, soft low, 80% range | 4096, soft medium, full range |
 | Anisotropic filtering | 2× | 4× | 16× |
 | Lightmap sampling | bilinear | bilinear | bicubic |
+
+Motion blur is a separate setting, off by default (`scripts/motion_blur.gd`, a compositor effect that blurs along the renderer's motion vectors). It costs about 0.45 ms on Low and 0.75 ms on Medium on the reference card, motion vectors included.
 
 The player can pick any render scale from 50% to native in the settings menu. Below native, Low upscales with FSR 1 (about 0.3 ms on the reference card) and Medium and High with FSR 2 (sharper, but about 1.5 ms of fixed cost, so it only pays off on faster cards).
 
@@ -91,3 +93,4 @@ GPU time on Medium at 1080p on the reference card, average over viewpoints (wors
 | Modelled props | 4.99 (5.21) ms | 5.81 (6.05) ms | 4.99 (5.35) ms |
 | Baked lightmaps | 5.06 (5.25) ms | 5.97 (6.19) ms | 5.15 (5.49) ms |
 | One-material characters (horde: 629 to 195 draw calls) | 5.08 (5.27) ms | 6.07 (6.26) ms | 5.22 (5.64) ms |
+| Effects (sparks, debris, dust, tracers, ambient dust) | 5.05 (5.23) ms | 5.95 (6.11) ms | 5.15 (5.55) ms |

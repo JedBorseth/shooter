@@ -1,60 +1,78 @@
 [gd_scene format=3]
 
 [ext_resource type="Script" path="res://scripts/impact.gd" id="1_script"]
+[ext_resource type="Shader" path="res://shaders/spark.gdshader" id="2_spark"]
+[ext_resource type="Texture2D" path="res://assets/textures/decals/bullet_hole_albedo.png" id="3_hole"]
+[ext_resource type="Texture2D" path="res://assets/textures/decals/bullet_hole_normal.png" id="4_hole_normal"]
 
-[sub_resource type="Gradient" id="Gradient_hole"]
-offsets = PackedFloat32Array(0, 0.35, 0.6, 1)
-colors = PackedColorArray(0.02, 0.02, 0.02, 1, 0.06, 0.05, 0.05, 0.9, 0.15, 0.14, 0.13, 0.35, 0.2, 0.2, 0.2, 0)
+[sub_resource type="ParticleProcessMaterial" id="Process_sparks"]
+particle_flag_align_y = true
+direction = Vector3(0, 1, 0)
+spread = 55.0
+initial_velocity_min = 4.0
+initial_velocity_max = 10.0
+gravity = Vector3(0, -14, 0)
+scale_min = 0.6
+scale_max = 1.3
 
-[sub_resource type="GradientTexture2D" id="Texture_hole"]
-gradient = SubResource("Gradient_hole")
+[sub_resource type="ShaderMaterial" id="Mat_spark"]
+resource_local_to_scene = true
+render_priority = 1
+shader = ExtResource("2_spark")
+
+[sub_resource type="QuadMesh" id="Mesh_spark"]
+resource_local_to_scene = true
+material = SubResource("Mat_spark")
+size = Vector2(0.012, 0.11)
+
+[sub_resource type="Curve" id="Curve_grow"]
+_data = [Vector2(0, 0.45), 0.0, 1.2, 0, 0, Vector2(1, 1), 0.2, 0.0, 0, 0]
+point_count = 2
+
+[sub_resource type="CurveTexture" id="Texture_grow"]
+curve = SubResource("Curve_grow")
+
+[sub_resource type="Gradient" id="Gradient_fade"]
+offsets = PackedFloat32Array(0, 0.25, 1)
+colors = PackedColorArray(1, 1, 1, 1, 1, 1, 1, 0.8, 1, 1, 1, 0)
+
+[sub_resource type="GradientTexture1D" id="Texture_fade"]
+gradient = SubResource("Gradient_fade")
+
+[sub_resource type="ParticleProcessMaterial" id="Process_dust"]
+resource_local_to_scene = true
+color = Color(0.55, 0.52, 0.48, 0.55)
+color_ramp = SubResource("Texture_fade")
+direction = Vector3(0, 1, 0)
+spread = 30.0
+initial_velocity_min = 0.6
+initial_velocity_max = 1.8
+gravity = Vector3(0, -0.3, 0)
+damping_min = 1.5
+damping_max = 2.5
+angle_min = -180.0
+angle_max = 180.0
+scale_min = 0.7
+scale_max = 1.4
+scale_curve = SubResource("Texture_grow")
+
+[sub_resource type="Gradient" id="Gradient_puff"]
+offsets = PackedFloat32Array(0, 0.45, 1)
+colors = PackedColorArray(1, 1, 1, 1, 1, 1, 1, 0.55, 1, 1, 1, 0)
+
+[sub_resource type="GradientTexture2D" id="Texture_puff"]
+gradient = SubResource("Gradient_puff")
 width = 64
 height = 64
 fill = 1
 fill_from = Vector2(0.5, 0.5)
 fill_to = Vector2(0.5, 0)
 
-[sub_resource type="ParticleProcessMaterial" id="Process_sparks"]
-direction = Vector3(0, 1, 0)
-spread = 55.0
-initial_velocity_min = 3.0
-initial_velocity_max = 8.0
-gravity = Vector3(0, -14, 0)
-scale_min = 0.5
-scale_max = 1.2
-
-[sub_resource type="StandardMaterial3D" id="Mat_spark"]
-resource_local_to_scene = true
-shading_mode = 0
-albedo_color = Color(1, 0.75, 0.4, 1)
-billboard_mode = 3
-particles_anim_h_frames = 1
-particles_anim_v_frames = 1
-particles_anim_loop = false
-
-[sub_resource type="QuadMesh" id="Mesh_spark"]
-resource_local_to_scene = true
-material = SubResource("Mat_spark")
-size = Vector2(0.025, 0.025)
-
-[sub_resource type="ParticleProcessMaterial" id="Process_dust"]
-resource_local_to_scene = true
-color = Color(0.55, 0.52, 0.48, 0.55)
-direction = Vector3(0, 1, 0)
-spread = 25.0
-initial_velocity_min = 0.6
-initial_velocity_max = 1.6
-gravity = Vector3(0, -0.6, 0)
-damping_min = 1.5
-damping_max = 2.5
-scale_min = 0.6
-scale_max = 1.4
-
 [sub_resource type="StandardMaterial3D" id="Mat_dust"]
 transparency = 1
-shading_mode = 0
+shading_mode = 2
 vertex_color_use_as_albedo = true
-albedo_color = Color(1, 1, 1, 0.5)
+albedo_texture = SubResource("Texture_puff")
 billboard_mode = 3
 particles_anim_h_frames = 1
 particles_anim_v_frames = 1
@@ -62,7 +80,28 @@ particles_anim_loop = false
 
 [sub_resource type="QuadMesh" id="Mesh_dust"]
 material = SubResource("Mat_dust")
-size = Vector2(0.18, 0.18)
+size = Vector2(0.3, 0.3)
+
+[sub_resource type="ParticleProcessMaterial" id="Process_debris"]
+direction = Vector3(0, 1, 0)
+spread = 50.0
+initial_velocity_min = 1.5
+initial_velocity_max = 4.5
+angular_velocity_min = -720.0
+angular_velocity_max = 720.0
+gravity = Vector3(0, -12, 0)
+scale_min = 0.5
+scale_max = 1.3
+
+[sub_resource type="StandardMaterial3D" id="Mat_debris"]
+resource_local_to_scene = true
+albedo_color = Color(0.55, 0.53, 0.5, 1)
+roughness = 0.9
+
+[sub_resource type="BoxMesh" id="Mesh_debris"]
+resource_local_to_scene = true
+material = SubResource("Mat_debris")
+size = Vector3(0.018, 0.012, 0.022)
 
 [node name="Impact" type="Node3D"]
 script = ExtResource("1_script")
@@ -70,7 +109,7 @@ script = ExtResource("1_script")
 [node name="Sparks" type="GPUParticles3D" parent="."]
 emitting = false
 amount = 10
-lifetime = 0.35
+lifetime = 0.3
 one_shot = true
 explosiveness = 1.0
 process_material = SubResource("Process_sparks")
@@ -79,11 +118,20 @@ draw_pass_1 = SubResource("Mesh_spark")
 [node name="Dust" type="GPUParticles3D" parent="."]
 emitting = false
 amount = 6
-lifetime = 0.8
+lifetime = 1.1
 one_shot = true
 explosiveness = 0.9
 process_material = SubResource("Process_dust")
 draw_pass_1 = SubResource("Mesh_dust")
+
+[node name="Debris" type="GPUParticles3D" parent="."]
+emitting = false
+amount = 8
+lifetime = 0.7
+one_shot = true
+explosiveness = 1.0
+process_material = SubResource("Process_debris")
+draw_pass_1 = SubResource("Mesh_debris")
 
 [node name="Sound" type="AudioStreamPlayer3D" parent="."]
 volume_db = -4.0
@@ -92,5 +140,6 @@ max_distance = 60.0
 bus = &"Effects"
 
 [node name="Decal" type="Decal" parent="."]
-size = Vector3(0.09, 0.2, 0.09)
-texture_albedo = SubResource("Texture_hole")
+size = Vector3(0.15, 0.2, 0.15)
+texture_albedo = ExtResource("3_hole")
+texture_normal = ExtResource("4_hole_normal")

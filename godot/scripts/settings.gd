@@ -29,6 +29,7 @@ const DEFAULTS := {
 	&"show_fps": true,
 	&"graphics_quality": GraphicsQuality.Preset.MEDIUM,
 	&"render_scale": 1.0,
+	&"motion_blur": false,
 	&"master_volume": 1.0,
 	&"weapons_volume": 0.8,
 	&"effects_volume": 0.8,
@@ -49,6 +50,7 @@ const SECTIONS := {
 		&"show_fps",
 		&"graphics_quality",
 		&"render_scale",
+		&"motion_blur",
 	],
 	"audio": [&"master_volume", &"weapons_volume", &"effects_volume", &"ui_volume"],
 	"multiplayer": [&"master_server"],
@@ -99,8 +101,10 @@ var max_fps: int = DEFAULTS[&"max_fps"]
 var show_fps: bool = DEFAULTS[&"show_fps"]
 ## A `GraphicsQuality.Preset`.
 var graphics_quality: int = DEFAULTS[&"graphics_quality"]
-## Fraction of the window the 3D view renders at; FSR 2 upscales below 1.0.
+## Fraction of the window the 3D view renders at; FSR upscales below 1.0.
 var render_scale: float = DEFAULTS[&"render_scale"]
+## Camera and object motion blur (scripts/motion_blur.gd). Off by default.
+var motion_blur: bool = DEFAULTS[&"motion_blur"]
 ## Linear bus volumes, 0 to 1.
 var master_volume: float = DEFAULTS[&"master_volume"]
 var weapons_volume: float = DEFAULTS[&"weapons_volume"]
@@ -232,9 +236,9 @@ func _apply(key: StringName) -> void:
 			AudioServer.set_bus_mute(bus, volume <= 0.0)
 		return
 	match key:
-		&"graphics_quality", &"render_scale":
+		&"graphics_quality", &"render_scale", &"motion_blur":
 			if is_inside_tree():
-				GraphicsQuality.apply(get_tree(), graphics_quality, render_scale)
+				GraphicsQuality.apply(get_tree(), graphics_quality, render_scale, motion_blur)
 		&"max_fps":
 			Engine.max_fps = max_fps
 		&"fullscreen":

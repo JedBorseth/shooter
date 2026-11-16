@@ -77,6 +77,17 @@ The `.glb` lines up exactly with the pack's `.fbx` (which stays as the source), 
 
 Each shot shows a flash with ragged petals that change every shot, a short plume along the barrel seen from the side, and every few shots a puff of grey smoke that drifts up and fades in the world (`shaders/muzzle_flash.gdshader`, `shaders/muzzle_smoke.gdshader`, built in `WeaponView`).
 
+### Effects
+
+![Sparks and dust on a wall, bullet holes, motion blur on a fast turn, and muzzle smoke](media/effects.jpg)
+
+- **Impacts** (`scenes/effects/impact.tscn`): glowing spark streaks that follow their velocity (`shaders/spark.gdshader`), chips of debris in the surface's colour, a soft lit dust puff that grows and fades, and a bullet hole (`tools/build_decals.py` makes its albedo and normal map) tinted per surface. Flesh gets blood droplets and mist instead; metal sparks but does not chip.
+- **Tracers** (`shaders/tracer.gdshader`): a hot core with a soft edge, bright enough to bloom.
+- **Ambient dust**: a few dozen motes drift in the air around the player and catch the light.
+- **Motion blur**: an option in the settings, off by default.
+
+Depth of field while aiming was tried and left out: the weapon is drawn into a thin slice of depth (so it never clips into walls), so a near blur can only blur the whole weapon, iron sights included, which makes aiming worse.
+
 ### Palette
 
 Every vertex of the model carries its palette role. `rust/game/src/character/palette.rs` maps each role to a colour per team, and `shaders/character.gdshader` draws all of them with one material per team.

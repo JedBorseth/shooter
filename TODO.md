@@ -160,11 +160,11 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 - [x] Map meshes: the blockout CSG is baked into meshes with lightmap UVs (`godot/tools/bake_map_meshes.gd`).
 - [ ] Building trim: window frames, sills, gutters, and fire escapes on Slamcity's buildings.
 - [x] Characters: one material and two surfaces per character, rest-space fabric and wear detail, and per-zombie skin tone and blood (`shaders/character.gdshader`).
-- [ ] Effects and post: impact debris, blood, dust, depth of field when aiming, motion blur option.
+- [x] Effects and post: spark streaks, debris, soft dust, blood, bullet-hole decals, glowing tracers, ambient dust, and a motion blur option. Depth of field while aiming was left out (it blurs the iron sights).
 
 ## Phase 6 and later: production polish
 
-- [ ] Post-processing pass: color grading LUT, motion blur option, depth of field during ADS for scoped weapons.
+- [ ] Post-processing pass: color grading LUT. (Motion blur is an option; depth of field while aiming was left out because it blurs the iron sights.)
 - [ ] Lighting pass: baked lightmaps or SDFGI tuning per map, volumetric fog, reflection probes.
 - [ ] Performance budget and profiling: target 144 FPS on a mid-range GPU, CPU frame time per system.
 - [ ] Loadouts and a create-a-class screen.
