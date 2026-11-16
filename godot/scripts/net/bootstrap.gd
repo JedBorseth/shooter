@@ -4,12 +4,15 @@ extends Node
 ## From the command line, after `--`:
 ##
 ##   --server [--port N] [--bots N] [--bot-damage] [--name NAME] [--master HOST[:PORT]]
-##            [--query-port N] [--map arena|nuketown]
+##            [--query-port N] [--map arena|nuketown|slamcity]
+##            [--score-limit N] [--time-limit MINUTES] [--auto-start]
 ##                                    run as a dedicated server (use with --headless);
 ##                                    with --bot-damage the bots' bursts hurt players.
 ##                                    Server browsers see NAME; with --master the
 ##                                    server stays listed on that master server.
 ##                                    Browsers query UDP port N+1 (or --query-port).
+##                                    Team Deathmatch to N kills (75) or MINUTES (10);
+##                                    --auto-start skips the lobby's ready-up.
 ##   --connect HOST[:PORT] [--lag MS] [--jitter MS] [--loss PERCENT]
 ##                                    join a server; lag, jitter, and loss are
 ##                                    simulated in each direction for testing
@@ -25,7 +28,10 @@ const ARENA_SCENE := "res://scenes/main.tscn"
 const MAP_SCENES := {
 	"arena": ARENA_SCENE,
 	"nuketown": "res://scenes/nuketown.tscn",
+	"slamcity": "res://scenes/slamcity.tscn",
 }
+## Names server browsers show for each map.
+const MAP_NAMES := {"arena": "Arena", "nuketown": "Nuketown", "slamcity": "Slamcity"}
 const TITLE_SCENE := "res://scenes/title_screen.tscn"
 const REMOTE_PLAYER_SCENE := "res://scenes/remote_player.tscn"
 const OVERLAY_SCRIPT := "res://scripts/net/net_overlay.gd"
@@ -123,7 +129,7 @@ func _start_server(options: Dictionary) -> void:
 		return
 	var server := (load(SERVER_SCENE) as PackedScene).instantiate() as NetServer
 	server.map_scene = load(scene_path) as PackedScene
-	server.map_name = "Nuketown" if selected_map.to_lower() == "nuketown" else "Arena"
+	server.map_name = MAP_NAMES[selected_map.to_lower()]
 	server.port = int(options.get("port", DEFAULT_PORT))
 	server.bots = int(options.get("bots", 0))
 	server.bots_deal_damage = options.has("bot-damage")
@@ -131,6 +137,11 @@ func _start_server(options: Dictionary) -> void:
 		server.server_name = options["name"]
 	server.master_server = options.get("master", "")
 	server.query_port = int(options.get("query-port", 0))
+	if options.has("score-limit"):
+		server.score_limit = maxi(int(options["score-limit"]), 1)
+	if options.has("time-limit"):
+		server.time_limit_minutes = maxf(float(options["time-limit"]), 0.1)
+	server.auto_start = options.has("auto-start")
 	var previous := tree.current_scene
 	tree.root.add_child(server)
 	tree.current_scene = server
@@ -156,6 +167,8 @@ func _attach_client(main: Node, target: String, options: Dictionary) -> void:
 	client.port = int(target.get_slice(":", 1)) if target.contains(":") else DEFAULT_PORT
 	client.player_path = player.get_path()
 	client.remote_player_scene = load(REMOTE_PLAYER_SCENE)
+	client.player_name = Settings.player_name
+	client.primary = Settings.loadout_primary
 	client.latency_ms = float(options.get("lag", 0))
 	client.jitter_ms = float(options.get("jitter", 0))
 	client.loss_percent = float(options.get("loss", 0))

@@ -101,7 +101,8 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Input rate limits: draining a backlog costs credit that builds up one input per tick (`InputQueue`, at most a quarter second banked), so a client that sends inputs faster than the tick rate gets throttled instead of moving faster.
 - [ ] Replays on slopes: `body::place` restores the body's floor contact but not its remembered floor normal, so a correction replayed on the ramp may drift and correct again. Add a ramp run to `godot/tests/net_test.gd` and restore the floor normal if it shows up.
 - [x] Reliable game events on the reliable ENet channel: hits, damage, kills (`NetClient.kill_reported`, ready for a kill feed), and score.
-- [ ] More reliable events for Phase 4: joins and leaves with player names, team changes, chat.
+- [x] Reliable events for Phase 4: joins and leaves with player names and teams, the match phase and clock, and the scoreboard.
+- [ ] Chat.
 - [ ] Hit reactions for third parties: other clients see a victim flinch only when it dies. Send the hit direction to everyone, or add a "hit this tick" bit to `PlayerView`.
 - [ ] Validate view ticks against what the server expects (its snapshot send time plus RTT and the client's interpolation delay), so a tampered client cannot pick the most favourable moment within the 300 ms rewind window.
 - [ ] Bandwidth: send the owner's full state only when it differs from what the client predicted, or delta-compress it like remote players (about 60 kbps down and 27 kbps up per client today, with 60 Hz snapshots and 120 Hz inputs).
@@ -117,15 +118,18 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 ## Phase 4: game loop
 
 - [x] Health, regeneration after a delay, death, and respawn (`shooter_sim::player`). Respawn picks the original spawn until the spawn system exists.
-- [ ] Team Deathmatch: two teams of 6, score limit, time limit, round end screen.
-- [ ] Team colours from the match: send each player's team in snapshots and set `SoldierRig.team` (allies tan with blue accents, enemies charcoal with red-orange; see `docs/art-direction.md`).
-- [ ] Spawn system: weighted spawn points that avoid enemy line of sight and recent deaths.
+- [x] Team Deathmatch rules on the server: two teams (new players join the smaller), 75 kills or 10 minutes, no friendly fire, a lobby that waits for everyone to ready up, a countdown, and a results phase before the next match (`rust/sim/src/tdm.rs`).
+- [ ] Round end screen.
+- [x] Team colours from the match: teammates wear the allies' colours and show their name; enemies wear the enemies' colours and show none.
+- [x] Spawn system: a map's `SpawnPoints` (with an optional `team` metadata) are weighted away from enemies, their line of sight, and recent deaths, with a pull toward the player's own side. Matches start with each team on its own side.
 - [ ] Kill feed, scoreboard (Tab), and match timer HUD.
 - [ ] Killcam from the server snapshot buffer.
 - [ ] First real map: a three-lane layout, blocked out with CSG, then modular CC0 kit pieces.
 - [x] Server browser: LAN search, master server list, favorites, direct connect by IP or host name, ping, and leave or lose the connection back to the browser.
-- [ ] Lobby flow: ready-up and a pre-match lobby on the server.
-- [ ] Player names: send a name in the hello, show it in the kill feed and scoreboard, and count players by name in the server browser.
+- [x] Lobby flow on the server: warm-up until every player is ready (`--auto-start` skips it).
+- [ ] Lobby screen: ready button, teams, loadout.
+- [x] Player names: sent in the hello (`Settings.player_name`), cleaned by the server, and listed in the roster.
+- [ ] Show names in the kill feed and scoreboard.
 
 ## Zombies
 

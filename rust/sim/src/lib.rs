@@ -12,6 +12,7 @@ pub mod net;
 pub mod player;
 pub mod rng;
 pub mod score;
+pub mod tdm;
 pub mod weapon;
 pub mod zombies;
 

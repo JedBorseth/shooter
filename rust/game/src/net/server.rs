@@ -12,6 +12,11 @@
 //! server applies the damage, keeps score, and tells the players involved
 //! through reliable [`GameEvent`]s.
 //!
+//! It runs Team Deathmatch (`shooter_sim::tdm`): it puts each player on a
+//! team, keeps the match clock and the team scores, picks spawn points away
+//! from enemies, spawns players with the loadout they chose, and sends the
+//! roster, the match state, and the scoreboard as game events.
+//!
 //! It also answers server browser queries on its query port (the game port
 //! plus one) and, given a master server, keeps itself listed there
 //! (`super::discovery`).
@@ -19,6 +24,7 @@
 //! Started by `scripts/net/bootstrap.gd` with `-- --server`, or automatically
 //! in a dedicated server export.
 
+use std::collections::VecDeque;
 use std::f32::consts::PI;
 
 use godot::classes::{
@@ -32,14 +38,17 @@ use shooter_sim::net::input_queue::InputQueue;
 use shooter_sim::net::lag::{self, LagHistory, Pellet, Target};
 use shooter_sim::net::protocol::{
     ClientMessage, GameEvent, MAX_EVENTS_PER_MESSAGE, OwnState, PROTOCOL_VERSION, PlayerView,
-    Predicted, ServerMessage, Snapshot,
+    Predicted, ScoreRow, ServerMessage, Snapshot,
 };
 use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::{CHANNEL_COUNT, DEFAULT_PORT, MAX_PLAYERS, TICK_DT, TICK_RATE, Tick};
 use shooter_sim::player::{self, PlayerEvent, PlayerInput, PlayerParams, PlayerState};
 use shooter_sim::score::{Kill, ScoreRules, ScoreState};
-use shooter_sim::weapon::{self, CombatEvent, WeaponId};
-use shooter_sim::{Vec2, rng};
+use shooter_sim::tdm::{
+    self, MatchRules, MatchState, Phase, SpawnPoint, SpawnRules, Team, Threat, Transition,
+};
+use shooter_sim::weapon::{self, CombatEvent, Slot, WeaponId};
+use shooter_sim::{Vec2, Vec3, rng};
 
 use super::discovery::QueryResponder;
 use super::transport::{self, NetEvent};
@@ -67,6 +76,12 @@ const HELLO_TIMEOUT_TICKS: Tick = 5 * TICK_RATE;
 const PICKUP_REACH: f32 = 3.0;
 /// Bots get ids from here up, so they never collide with client ids.
 const FIRST_BOT_ID: u8 = 200;
+/// Seconds a death keeps nearby spawn points unattractive.
+const RECENT_DEATH_SECONDS: u32 = 5;
+/// Ticks between scoreboard updates when nothing scored.
+const SCOREBOARD_INTERVAL: Tick = TICK_RATE;
+/// Height of the point enemies must see for a spawn to count as watched.
+const SPAWN_CHECK_HEIGHT: f32 = 1.5;
 
 #[derive(GodotClass)]
 #[class(init, base = Node3D)]
@@ -111,6 +126,18 @@ pub struct NetServer {
     /// direct connects only.
     #[export]
     master_server: GString,
+    /// Kills a team needs to win.
+    #[export]
+    #[init(val = 75)]
+    score_limit: i32,
+    /// Minutes of play before the team ahead wins.
+    #[export]
+    #[init(val = 10.0)]
+    time_limit_minutes: f32,
+    /// Start matches without waiting for players to ready up (tests, and
+    /// servers that should just run).
+    #[export]
+    auto_start: bool,
 
     host: Option<Gd<ENetConnection>>,
     clients: Vec<ClientSlot>,
@@ -122,8 +149,17 @@ pub struct NetServer {
     params: PlayerParams,
     score_rules: ScoreRules,
     net_events: Vec<NetEvent>,
+    /// The map's player start, the fallback for maps without spawn points.
     spawn: Vector3,
     responder: Option<QueryResponder>,
+    rules: MatchRules,
+    match_state: MatchState,
+    spawn_points: Vec<SpawnPoint>,
+    spawn_rules: SpawnRules,
+    /// Where players died recently, and when.
+    recent_deaths: VecDeque<(Tick, Vec3)>,
+    /// Tick of the next scoreboard update.
+    next_scoreboard: Tick,
 }
 
 struct ClientSlot {
@@ -141,6 +177,10 @@ struct ClientSlot {
     debug_rewound: bool,
     /// Game events to send reliably at the end of the tick.
     outbox: Vec<GameEvent>,
+    /// Ready to start the match (lobby).
+    ready: bool,
+    /// The primary weapon for the next spawn.
+    primary: WeaponId,
 }
 
 struct Avatar {
@@ -151,7 +191,10 @@ struct Avatar {
     yaw: f32,
     pitch: f32,
     bot: bool,
-    spawn: Vector3,
+    name: String,
+    team: Team,
+    /// The primary weapon this player spawns with.
+    primary: WeaponId,
     respawn_in: f32,
     /// Tick of the latest spawn: shots rewound to before it cannot hit this life.
     spawned_at: Tick,
@@ -181,7 +224,15 @@ impl INode3D for NetServer {
         // Headless, nothing paces the main loop; don't spin a core.
         Engine::singleton().set_max_fps(TICK_RATE as i32 * 2);
         self.spawn = Vector3::new(0.0, 0.05, 20.0);
+        self.rules = MatchRules {
+            score_limit: self.score_limit.max(1) as u32,
+            time_limit: self.time_limit_minutes.max(0.1) * 60.0,
+            ..MatchRules::default()
+        };
         self.load_map();
+        if self.spawn_points.is_empty() {
+            self.spawn_points = fallback_spawns(self.spawn);
+        }
 
         let mut host = ENetConnection::new_gd();
         let error = host
@@ -198,7 +249,8 @@ impl INode3D for NetServer {
         self.host = Some(host);
 
         for i in 0..self.bots.clamp(0, 50) {
-            self.spawn_avatar(FIRST_BOT_ID + i as u8, true);
+            let id = FIRST_BOT_ID + i as u8;
+            self.spawn_avatar(id, true, &format!("Bot {}", i + 1), default_primary());
         }
         self.start_query_responder();
     }
@@ -223,12 +275,16 @@ impl INode3D for NetServer {
         self.drop_silent_peers();
 
         self.simulate();
+        self.update_match();
         self.tick += 1;
         if self
             .tick
             .is_multiple_of(self.snapshot_interval.max(1) as u32)
         {
             self.broadcast();
+        }
+        if self.tick >= self.next_scoreboard {
+            self.broadcast_scoreboard();
         }
         self.send_events();
         host.flush();
@@ -264,6 +320,30 @@ impl NetServer {
             .find(|a| i32::from(a.id) == id)
             .map_or(-1, |a| i64::from(a.score.score))
     }
+
+    /// A player's team (tests and debugging), or -1 if absent.
+    #[func]
+    fn player_team(&self, id: i32) -> i32 {
+        self.avatars
+            .iter()
+            .find(|a| i32::from(a.id) == id)
+            .map_or(-1, |a| i32::from(a.team))
+    }
+
+    /// "lobby", "countdown", "playing", or "ended".
+    #[func]
+    fn match_phase(&self) -> GString {
+        GString::from(phase_name(self.match_state.phase))
+    }
+
+    /// A team's kills this match.
+    #[func]
+    fn team_score(&self, team: i32) -> i64 {
+        usize::try_from(team)
+            .ok()
+            .and_then(|t| self.match_state.scores.get(t))
+            .map_or(0, |s| i64::from(*s))
+    }
 }
 
 impl NetServer {
@@ -284,7 +364,7 @@ impl NetServer {
             game_port,
             name: self.server_name.to_string(),
             map: self.map_name.to_string(),
-            mode: "Free-for-all".to_owned(),
+            mode: "Team Deathmatch".to_owned(),
             players: 0,
             max_players: MAX_PLAYERS as u8,
             bots: 0,
@@ -319,6 +399,7 @@ impl NetServer {
         {
             self.spawn = player.get_position();
         }
+        self.spawn_points = map_spawns(&map);
         for name in CLIENT_ONLY_NODES {
             if let Some(node) = map.get_node_or_null(name) {
                 node.free();
@@ -344,6 +425,8 @@ impl NetServer {
                     view_tick: None,
                     debug_rewound: false,
                     outbox: Vec::new(),
+                    ready: false,
+                    primary: default_primary(),
                 });
             }
             NetEvent::Disconnect(peer) => {
@@ -354,6 +437,8 @@ impl NetServer {
                 if let Some(id) = client.player {
                     godot_print!("server: player {id} left");
                     self.despawn_avatar(id);
+                    self.broadcast_event(&GameEvent::Left { id });
+                    self.next_scoreboard = self.tick;
                 }
             }
             NetEvent::Receive(peer, bytes, _) => {
@@ -372,7 +457,7 @@ impl NetServer {
 
     fn handle_message(&mut self, index: usize, message: ClientMessage) {
         match message {
-            ClientMessage::Hello { version } => {
+            ClientMessage::Hello { version, name } => {
                 if self.clients[index].player.is_some() {
                     return;
                 }
@@ -392,14 +477,23 @@ impl NetServer {
                     return;
                 };
                 self.clients[index].player = Some(id);
-                self.spawn_avatar(id, false);
+                let name = tdm::clean_name(&name, &format!("Player {}", id + 1));
+                let primary = self.clients[index].primary;
+                // The welcome goes first, so the client knows its id before
+                // the roster arrives.
                 let welcome = ServerMessage::Welcome {
                     player_id: id,
                     tick: self.tick,
                     snapshot_interval: self.snapshot_interval.clamp(1, 255) as u8,
                 };
                 transport::send_reliable(&mut peer, &welcome.encode(&[]));
-                godot_print!("server: player {id} joined");
+                // Everyone already here, then the newcomer for everyone.
+                let roster: Vec<GameEvent> = self.avatars.iter().map(joined_event).collect();
+                self.clients[index].outbox.extend(roster);
+                self.spawn_avatar(id, false, &name, primary);
+                let event = self.match_event();
+                self.send_event(id, event);
+                godot_print!("server: player {id} \"{name}\" joined");
             }
             ClientMessage::Input(packet) => {
                 let client = &mut self.clients[index];
@@ -417,6 +511,21 @@ impl NetServer {
             ClientMessage::Debug { rewound_hitboxes } => {
                 self.clients[index].debug_rewound = rewound_hitboxes;
             }
+            ClientMessage::Ready { ready } => {
+                self.clients[index].ready = ready;
+                self.next_scoreboard = self.tick;
+            }
+            ClientMessage::Loadout { primary } => {
+                if !is_loadout_primary(primary) {
+                    return;
+                }
+                self.clients[index].primary = primary;
+                if let Some(id) = self.clients[index].player
+                    && let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id)
+                {
+                    avatar.primary = primary;
+                }
+            }
         }
     }
 
@@ -433,36 +542,119 @@ impl NetServer {
         });
     }
 
-    fn spawn_avatar(&mut self, id: u8, bot: bool) {
-        let slot = f32::from(id % 6) - 2.5;
-        let offset = if bot {
-            Vector3::new(slot * 3.0, 0.0, -14.0)
-        } else {
-            Vector3::new(slot * 2.0, 0.0, -f32::from(id / 6) * 2.0)
-        };
-        let position = self.spawn + offset;
+    fn spawn_avatar(&mut self, id: u8, bot: bool, name: &str, primary: WeaponId) {
+        let mut counts = [0; tdm::TEAM_COUNT];
+        for avatar in &self.avatars {
+            counts[usize::from(avatar.team)] += 1;
+        }
+        let team = tdm::assign_team(counts, u8::from(bot));
         let mut parts = body::build_body(&format!("Player{id}"));
         self.base_mut().add_child(&parts.body);
         let predicted = Predicted {
             state: PlayerState::spawned(&self.params),
-            position: to_sim(position),
+            position: Vec3::ZERO,
             on_floor: false,
         };
         body::place(&mut parts, &self.params.movement, &predicted);
-        // Players face down the map (-Z); bots face back toward the spawn.
-        let yaw = if bot { PI } else { 0.0 };
         self.avatars.push(Avatar {
             id,
             parts,
             predicted,
-            yaw,
+            yaw: 0.0,
             pitch: 0.0,
             bot,
-            spawn: position,
+            name: name.to_owned(),
+            team,
+            primary,
             respawn_in: 0.0,
             spawned_at: self.tick,
             score: ScoreState::default(),
         });
+        let event = joined_event(self.avatars.last().expect("just pushed"));
+        self.broadcast_event(&event);
+        // Before a match the team starts together; during one, somewhere safe.
+        let start = !self.match_state.scoring();
+        let slot = counts[usize::from(team)];
+        self.respawn(id, start.then_some(slot));
+        self.next_scoreboard = self.tick;
+    }
+
+    /// Brings a player back to life at a spawn point with their loadout.
+    /// `start_slot` places them among their team's start spawns instead of
+    /// at the safest spawn.
+    fn respawn(&mut self, id: u8, start_slot: Option<usize>) {
+        let Some(index) = self.avatars.iter().position(|a| a.id == id) else {
+            return;
+        };
+        let team = self.avatars[index].team;
+        let point = match start_slot {
+            Some(slot) => tdm::start_spawn(&self.spawn_points, team, slot),
+            None => self.safest_spawn(index),
+        };
+        let Some(point) = point.and_then(|i| self.spawn_points.get(i)).copied() else {
+            return;
+        };
+        let tick = self.tick;
+        let avatar = &mut self.avatars[index];
+        let loadout = [avatar.primary, WeaponId::expect("m1911")];
+        avatar.predicted = Predicted {
+            state: PlayerState::new(loadout),
+            position: point.position,
+            on_floor: false,
+        };
+        avatar.yaw = point.yaw;
+        avatar.pitch = 0.0;
+        avatar.spawned_at = tick;
+        avatar.respawn_in = self.respawn_delay;
+        body::place(&mut avatar.parts, &self.params.movement, &avatar.predicted);
+        self.send_event(id, GameEvent::Spawned { yaw: point.yaw });
+    }
+
+    /// The spawn point furthest from trouble for the player at `index`.
+    fn safest_spawn(&self, index: usize) -> Option<usize> {
+        let me = &self.avatars[index];
+        let threats: Vec<Threat> = self
+            .avatars
+            .iter()
+            .filter(|a| a.id != me.id && a.predicted.state.alive())
+            .map(|a| Threat {
+                position: a.predicted.position,
+                enemy: a.team != me.team,
+            })
+            .collect();
+        let eyes: Vec<Vector3> = self
+            .avatars
+            .iter()
+            .filter(|a| a.team != me.team && a.predicted.state.alive())
+            .map(|a| {
+                let stance = a.predicted.state.movement.stance;
+                to_godot(a.predicted.position)
+                    + Vector3::UP * self.params.movement.eye_height(stance)
+            })
+            .collect();
+        let deaths: Vec<Vec3> = self.recent_deaths.iter().map(|(_, p)| *p).collect();
+        let mut space = self
+            .base()
+            .get_world_3d()
+            .and_then(|world| world.get_direct_space_state());
+        let points = &self.spawn_points;
+        let seen = |i: usize| -> u32 {
+            let Some(space) = &mut space else { return 0 };
+            let target = to_godot(points[i].position) + Vector3::UP * SPAWN_CHECK_HEIGHT;
+            eyes.iter()
+                .filter(|eye| world_hit(space, **eye, target).is_none())
+                .count() as u32
+        };
+        let seed = rng::hash(u32::from(me.id), self.tick);
+        tdm::choose_spawn(
+            points,
+            me.team,
+            &threats,
+            &deaths,
+            &self.spawn_rules,
+            seen,
+            seed,
+        )
     }
 
     fn despawn_avatar(&mut self, id: u8) {
@@ -479,6 +671,7 @@ impl NetServer {
         let mut events = Vec::new();
         let mut shots = Vec::new();
         let mut fall_deaths = Vec::new();
+        let mut respawns = Vec::new();
         let tick = self.tick;
         for avatar in &mut self.avatars {
             let inputs: Vec<(PlayerInput, Option<f64>)> = if avatar.bot {
@@ -560,18 +753,15 @@ impl NetServer {
             } else {
                 avatar.respawn_in -= TICK_DT;
                 if avatar.respawn_in <= 0.0 {
-                    avatar.predicted = Predicted {
-                        state: PlayerState::spawned(&self.params),
-                        position: to_sim(avatar.spawn),
-                        on_floor: false,
-                    };
-                    avatar.spawned_at = tick;
-                    body::place(&mut avatar.parts, &self.params.movement, &avatar.predicted);
+                    respawns.push(avatar.id);
                 }
             }
         }
         for id in fall_deaths {
             self.record_death(id);
+        }
+        for id in respawns {
+            self.respawn(id, None);
         }
         for shot in shots {
             self.resolve_shot(&shot);
@@ -587,6 +777,14 @@ impl NetServer {
         if shooter.bot && !self.bots_deal_damage {
             return;
         }
+        // Nobody gets hurt while a match counts down or shows its results.
+        if matches!(
+            self.match_state.phase,
+            Phase::Countdown | Phase::Ended { .. }
+        ) {
+            return;
+        }
+        let shooter_team = shooter.team;
         let Some(mut space) = shooter
             .parts
             .body
@@ -618,8 +816,10 @@ impl NetServer {
         let targets: Vec<Target> = self
             .avatars
             .iter()
+            // No friendly fire: bullets pass through teammates.
             .filter(|a| {
                 a.id != shot.shooter
+                    && a.team != shooter_team
                     && a.predicted.state.alive()
                     && f64::from(a.spawned_at) <= rewind
             })
@@ -685,9 +885,20 @@ impl NetServer {
                     headshot: hit.headshot,
                 });
                 self.record_death(hit.id);
+                let victim_team = self.avatars.iter().find(|a| a.id == hit.id).map(|a| a.team);
+                if let Some(victim_team) = victim_team
+                    && let Some(end) =
+                        self.match_state
+                            .on_kill(&self.rules, Some(shooter_team), victim_team)
+                {
+                    self.on_transition(end);
+                } else {
+                    self.broadcast_match();
+                }
             }
         }
-        if !kills.is_empty() {
+        // Points only count in a match, not in the lobby's warm-up.
+        if !kills.is_empty() && self.match_state.scoring() {
             let rules = self.score_rules;
             let Some(shooter) = self.avatars.iter_mut().find(|a| a.id == shot.shooter) else {
                 return;
@@ -700,9 +911,17 @@ impl NetServer {
 
     /// Counts a death and tells the player their new totals.
     fn record_death(&mut self, id: u8) {
+        let tick = self.tick;
+        let scoring = self.match_state.scoring();
         let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
             return;
         };
+        self.recent_deaths
+            .push_back((tick, avatar.predicted.position));
+        self.next_scoreboard = tick;
+        if !scoring {
+            return;
+        }
         avatar.score.on_death();
         let totals = avatar.score.totals();
         self.send_event(
@@ -712,6 +931,120 @@ impl NetServer {
                 totals,
             },
         );
+    }
+
+    /// Runs the match clock and starts, ends, and restarts matches.
+    fn update_match(&mut self) {
+        let horizon = RECENT_DEATH_SECONDS * TICK_RATE;
+        while self
+            .recent_deaths
+            .front()
+            .is_some_and(|(t, _)| self.tick.saturating_sub(*t) > horizon)
+        {
+            self.recent_deaths.pop_front();
+        }
+        let humans: Vec<&ClientSlot> = self.clients.iter().filter(|c| c.player.is_some()).collect();
+        if humans.is_empty() && !self.auto_start {
+            if self.match_state.phase != Phase::Lobby {
+                self.match_state.reset();
+            }
+            return;
+        }
+        let all_ready = self.auto_start || humans.iter().all(|c| c.ready);
+        let phase = self.match_state.phase;
+        let transition = self.match_state.tick(&self.rules, TICK_DT, all_ready);
+        if let Some(transition) = transition {
+            self.on_transition(transition);
+        } else if self.match_state.phase != phase {
+            self.broadcast_match();
+        }
+    }
+
+    fn on_transition(&mut self, transition: Transition) {
+        match transition {
+            Transition::Started => {
+                godot_print!("server: match started");
+                self.recent_deaths.clear();
+                // Everyone starts fresh on their own side, in join order.
+                let mut slots = [0; tdm::TEAM_COUNT];
+                let mut order: Vec<(Team, u8)> =
+                    self.avatars.iter().map(|a| (a.team, a.id)).collect();
+                order.sort_unstable();
+                for (team, id) in order {
+                    if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) {
+                        avatar.score = ScoreState::default();
+                    }
+                    let slot = &mut slots[usize::from(team)];
+                    self.respawn(id, Some(*slot));
+                    *slot += 1;
+                }
+                let ids: Vec<u8> = self.avatars.iter().map(|a| a.id).collect();
+                for id in ids {
+                    self.send_event(
+                        id,
+                        GameEvent::Score {
+                            awards: Vec::new(),
+                            totals: ScoreState::default().totals(),
+                        },
+                    );
+                }
+            }
+            Transition::Ended { winner } => {
+                godot_print!(
+                    "server: match over, {} ({} to {})",
+                    winner.map_or("a draw".to_owned(), |t| format!("team {} won", t + 1)),
+                    self.match_state.scores[0],
+                    self.match_state.scores[1]
+                );
+                // Ready-up again only before the first match of a session.
+                for client in &mut self.clients {
+                    client.ready = true;
+                }
+            }
+            Transition::NextCountdown => {}
+        }
+        self.broadcast_match();
+        self.next_scoreboard = self.tick;
+    }
+
+    fn match_event(&self) -> GameEvent {
+        let state = &self.match_state;
+        let ends_at = (state.phase != Phase::Lobby)
+            .then(|| self.tick + (state.time_left.max(0.0) * TICK_RATE as f32).round() as Tick);
+        GameEvent::Match {
+            phase: state.phase,
+            ends_at,
+            scores: state.scores,
+            score_limit: self.rules.score_limit,
+        }
+    }
+
+    fn broadcast_match(&mut self) {
+        let event = self.match_event();
+        self.broadcast_event(&event);
+    }
+
+    /// Sends everyone every player's score, kills, deaths, ping, and readiness.
+    fn broadcast_scoreboard(&mut self) {
+        self.next_scoreboard = self.tick + SCOREBOARD_INTERVAL;
+        let rows: Vec<ScoreRow> = self
+            .avatars
+            .iter()
+            .map(|a| {
+                let client = self.client_of(a.id);
+                ScoreRow {
+                    id: a.id,
+                    score: a.score.score,
+                    kills: a.score.kills,
+                    deaths: a.score.deaths,
+                    ping_ms: client.map_or(0, |c| {
+                        transport::round_trip_ms(&c.peer).clamp(0.0, 9999.0) as u16
+                    }),
+                    ready: client.is_none_or(|c| c.ready),
+                }
+            })
+            .collect();
+        self.broadcast_event(&GameEvent::Scoreboard { rows });
     }
 
     fn client_of(&self, id: u8) -> Option<&ClientSlot> {
@@ -854,4 +1187,91 @@ fn pickup_in_reach(
     hit.get_or_nil("collider")
         .try_to::<Gd<WeaponPickup>>()
         .is_ok_and(|pickup| pickup.bind().weapon_id() == Some(weapon))
+}
+
+fn joined_event(avatar: &Avatar) -> GameEvent {
+    GameEvent::Joined {
+        id: avatar.id,
+        name: avatar.name.clone(),
+        team: avatar.team,
+        bot: avatar.bot,
+    }
+}
+
+fn phase_name(phase: Phase) -> &'static str {
+    match phase {
+        Phase::Lobby => "lobby",
+        Phase::Countdown => "countdown",
+        Phase::Playing => "playing",
+        Phase::Ended { .. } => "ended",
+    }
+}
+
+fn default_primary() -> WeaponId {
+    WeaponId::expect("m4")
+}
+
+/// Whether players may choose this weapon as their primary: any primary but
+/// the secret laser.
+pub(crate) fn is_loadout_primary(id: WeaponId) -> bool {
+    let def = id.def();
+    def.slot == Slot::Primary && !def.beam
+}
+
+/// The map's spawn points: `Node3D` children of a `SpawnPoints` node, each
+/// facing the way players should, with an optional `team` metadata (0 or 1;
+/// none or -1 for either team).
+fn map_spawns(map: &Gd<Node>) -> Vec<SpawnPoint> {
+    let Some(parent) = map
+        .get_node_or_null("SpawnPoints")
+        .and_then(|n| n.try_cast::<Node3D>().ok())
+    else {
+        return Vec::new();
+    };
+    let base = parent.get_transform();
+    parent
+        .get_children()
+        .iter_shared()
+        .filter_map(|child| child.try_cast::<Node3D>().ok())
+        .map(|point| {
+            let transform = base * point.get_transform();
+            let team = point
+                .get_meta_ex("team")
+                .default(&(-1).to_variant())
+                .done()
+                .try_to::<i32>()
+                .ok()
+                .and_then(|t| Team::try_from(t).ok())
+                .filter(|t| usize::from(*t) < tdm::TEAM_COUNT);
+            SpawnPoint {
+                position: to_sim(transform.origin),
+                yaw: transform.basis.get_euler().y,
+                team,
+            }
+        })
+        .collect()
+}
+
+/// Spawn points for maps that have none: team 1 in a line through the player
+/// start, facing down the map (-Z), and team 2 14 metres further on, facing
+/// back. The first slots are nearest the middle.
+fn fallback_spawns(start: Vector3) -> Vec<SpawnPoint> {
+    [0.0, 1.0, -1.0, 2.0, -2.0, 3.0]
+        .into_iter()
+        .flat_map(|offset: f32| {
+            let x = offset * 2.0;
+            [
+                SpawnPoint {
+                    position: to_sim(start + Vector3::new(x, 0.0, 0.0)),
+                    yaw: 0.0,
+                    team: Some(0),
+                },
+                SpawnPoint {
+                    position: to_sim(start + Vector3::new(x * 1.5, 0.0, -14.0)),
+                    yaw: PI,
+                    team: Some(1),
+                },
+            ]
+        })
+        .collect()
 }
