@@ -188,6 +188,13 @@ impl INode3D for SoldierRig {
         }
         self.flash_material = Some(palette::hit_flash_material());
         self.apply_team();
+        // A per-character seed for the shader's wear, skin tone, and blood.
+        let variant = (self.base().instance_id().to_i64().unsigned_abs() % 1009) as f32 * 0.0731;
+        for child in skeleton.get_children().iter_shared() {
+            if let Ok(mut mesh) = child.try_cast::<MeshInstance3D>() {
+                mesh.set_instance_shader_parameter("variant", &variant.to_variant());
+            }
+        }
         if self.zombie {
             add_zombie_eyes(&skeleton);
         }
@@ -855,7 +862,10 @@ fn recolour(mut mesh: Gd<MeshInstance3D>, team: Team) {
             continue;
         };
         let role = material.get_name().to_string();
-        if let Some(team_material) = palette::material(team, &role) {
+        if role == "character" {
+            let character = palette::character_material(team, false);
+            mesh.set_surface_override_material(surface, &character);
+        } else if let Some(team_material) = palette::material(team, &role) {
             mesh.set_surface_override_material(surface, &team_material);
         }
     }

@@ -9,8 +9,8 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use godot::classes::StandardMaterial3D;
 use godot::classes::base_material_3d::{Feature, ShadingMode};
+use godot::classes::{Shader, ShaderMaterial, StandardMaterial3D, Texture2D};
 use godot::prelude::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -122,6 +122,59 @@ fn build(team: Team, role: &str) -> Gd<StandardMaterial3D> {
         m.set_feature(Feature::EMISSION, true);
         m.set_emission(c);
         m.set_emission_energy_multiplier(0.35);
+    }
+    m
+}
+
+thread_local! {
+    static CHARACTER: RefCell<HashMap<(Team, bool), Gd<ShaderMaterial>>> =
+        RefCell::new(HashMap::new());
+}
+
+/// The one material a team's characters use for every merged mesh (body, gear,
+/// arms): `shaders/character.gdshader` with the team's colours per role.
+/// `viewmodel` draws it with the first-person projection.
+pub fn character_material(team: Team, viewmodel: bool) -> Gd<ShaderMaterial> {
+    CHARACTER.with(|cache| {
+        cache
+            .borrow_mut()
+            .entry((team, viewmodel))
+            .or_insert_with(|| build_character(team, viewmodel))
+            .clone()
+    })
+}
+
+fn build_character(team: Team, viewmodel: bool) -> Gd<ShaderMaterial> {
+    let mut m = ShaderMaterial::new_gd();
+    m.set_shader(&load::<Shader>("res://shaders/character.gdshader"));
+    let colours: PackedColorArray = ROLES.iter().map(|role| colour(team, role)).collect();
+    let roughness: PackedFloat32Array = ROLES
+        .iter()
+        .map(|role| match *role {
+            "visor" => 0.35,
+            "helmet" | "vest" | "webbing" => 0.75,
+            _ => 0.88,
+        })
+        .collect();
+    let mut hidden = 0;
+    let mut emissive = 0;
+    for (i, role) in ROLES.iter().enumerate() {
+        if super::palette::hidden(team, role) {
+            hidden |= 1 << i;
+        }
+        if *role == "accent" && team != Team::Zombies {
+            emissive |= 1 << i;
+        }
+    }
+    m.set_shader_parameter("palette", &colours.to_variant());
+    m.set_shader_parameter("role_roughness", &roughness.to_variant());
+    m.set_shader_parameter("hidden_roles", &hidden.to_variant());
+    m.set_shader_parameter("emissive_roles", &emissive.to_variant());
+    m.set_shader_parameter("viewmodel", &viewmodel.to_variant());
+    let zombie = if team == Team::Zombies { 1.0 } else { 0.0 };
+    m.set_shader_parameter("zombie", &zombie.to_variant());
+    if let Ok(weave) = try_load::<Texture2D>("res://assets/textures/canvas/albedo.jpg") {
+        m.set_shader_parameter("weave", &weave.to_variant());
     }
     m
 }

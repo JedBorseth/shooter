@@ -25,6 +25,9 @@ void vertex() {
 		float size = length(MODEL_MATRIX[0].xyz);
 		vec4 centre = VIEW_MATRIX * vec4(MODEL_MATRIX[3].xyz, 1.0);
 		POSITION = PROJECTION_MATRIX * (centre + vec4(VERTEX.xy * size, 0.0, 0.0));
+	} else {
+		// Writing POSITION anywhere makes Godot use it everywhere.
+		POSITION = PROJECTION_MATRIX * (MODELVIEW_MATRIX * vec4(VERTEX, 1.0));
 	}
 }
 
