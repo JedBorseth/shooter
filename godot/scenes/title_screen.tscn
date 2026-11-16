@@ -1,0 +1,123 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/title_screen.gd" id="1_menu"]
+[ext_resource type="Shader" path="res://shaders/title_background.gdshader" id="2_background"]
+
+[sub_resource type="ShaderMaterial" id="Background"]
+shader = ExtResource("2_background")
+
+[node name="TitleScreen" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(0.88, 0.93, 0.94, 1)
+script = ExtResource("1_menu")
+
+[node name="Background" type="ColorRect" parent="."]
+material = SubResource("Background")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Margin" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 64
+theme_override_constants/margin_top = 48
+theme_override_constants/margin_right = 64
+theme_override_constants/margin_bottom = 40
+
+[node name="Layout" type="VBoxContainer" parent="Margin"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="Build" type="Label" parent="Margin/Layout"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.51, 0.85, 0.79, 1)
+theme_override_font_sizes/font_size = 16
+text = "SHOOTER  /  DEVELOPMENT BUILD"
+
+[node name="TopSpace" type="Control" parent="Margin/Layout"]
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 2
+
+[node name="Title" type="Label" parent="Margin/Layout"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 88
+text = "SHOOTER"
+
+[node name="Subtitle" type="Label" parent="Margin/Layout"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.57, 0.66, 0.71, 1)
+theme_override_font_sizes/font_size = 20
+text = "Choose your deployment."
+
+[node name="MenuSpace" type="Control" parent="Margin/Layout"]
+custom_minimum_size = Vector2(0, 16)
+layout_mode = 2
+mouse_filter = 2
+
+[node name="Menu" type="VBoxContainer" parent="Margin/Layout"]
+custom_minimum_size = Vector2(480, 0)
+layout_mode = 2
+size_flags_horizontal = 0
+theme_override_constants/separation = 12
+theme_override_colors/font_color = Color(0.88, 0.93, 0.94, 1)
+
+[node name="TestingArea" type="Button" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(480, 76)
+layout_mode = 2
+mouse_default_cursor_shape = 2
+theme_override_colors/font_color = Color(0.88, 0.97, 0.95, 1)
+theme_override_font_sizes/font_size = 24
+text = "Testing Area    →"
+alignment = 0
+
+[node name="Multiplayer" type="Button" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(480, 76)
+layout_mode = 2
+focus_mode = 0
+theme_override_colors/font_disabled_color = Color(0.43, 0.51, 0.56, 1)
+theme_override_font_sizes/font_size = 24
+disabled = true
+text = "Multiplayer  /  Coming soon"
+alignment = 0
+
+[node name="Zombies" type="Button" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(480, 76)
+layout_mode = 2
+mouse_default_cursor_shape = 2
+theme_override_colors/font_disabled_color = Color(0.43, 0.51, 0.56, 1)
+theme_override_font_sizes/font_size = 24
+text = "Zombies    →"
+alignment = 0
+
+[node name="Status" type="Label" parent="Margin/Layout"]
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.57, 0.66, 0.71, 1)
+theme_override_font_sizes/font_size = 18
+text = "Movement, weapons, and target practice."
+
+[node name="BottomSpace" type="Control" parent="Margin/Layout"]
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 2
+
+[node name="Footer" type="Label" parent="Margin/Layout"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.43, 0.53, 0.58, 1)
+theme_override_font_sizes/font_size = 16
+text = "SELECT WITH MOUSE OR ENTER"

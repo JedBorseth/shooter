@@ -1,6 +1,6 @@
 # Asset credits
 
-All third-party assets are CC0 (public domain). No attribution is required, but we list them anyway.
+Gameplay assets below are CC0 (public domain). No attribution is required, but we list them anyway.
 
 | Asset | Files | Source | License |
 | --- | --- | --- | --- |
@@ -19,3 +19,17 @@ All third-party assets are CC0 (public domain). No attribution is required, but 
 | Shotgun Reload Sound Effects by zer0_sol (`Rack`) | `audio/player/shotgun_pump.ogg` | [OpenGameArt](https://opengameart.org/content/shotgun-reload-sound-effects) | CC0 |
 | Medal chime, synthesized for this project with ffmpeg (two decaying sine tones, E6 then B6, with a quiet E7 shimmer; command in the commit that added it) | `audio/ui/medal.ogg` | Original | CC0 |
 | Universal Animation Library and Universal Animation Library 2 by Quaternius (Standard): the mannequin, its rig, and the animations listed in `tools/build_character_assets.py`. The soldier's uniform regions, gear, and first-person arms are built from the mannequin by that tool | `characters/soldier/soldier.glb`, `characters/animations/ual1.glb`, `characters/animations/ual2.glb` | [OpenGameArt](https://opengameart.org/content/universal-animation-library), [OpenGameArt](https://opengameart.org/content/universal-animation-library-2) | CC0 |
+
+## Zombies menu reference assets
+
+`zombies/` contains the globe texture, background/flare images, five map signposts,
+the hover sound, and quiet looping `audio/main-theme.mp3` music from the user-supplied
+[JedBorseth/bo2-menu asset collection](https://github.com/JedBorseth/bo2-menu/tree/main/public/assets),
+revision `1f4b968c47238dfaefb45f36743352e05a24d1cc`.
+`agency_bold.ttf` was converted losslessly from that collection's `fonts/AGENCYB.woff`
+to a Godot-supported TrueType container. No new imagery was needed.
+
+These reference assets are not covered by the CC0 statement above. The source
+repository supplies no asset license; the original game imagery/audio and font
+retain their respective owners' rights. The globe shader and menu code are local
+implementations.

@@ -45,12 +45,22 @@ godot --editor --path godot     # open the editor
 
 Rebuild with `cargo build` after changing Rust code. The editor hot-reloads the extension.
 
+Launch opens a lightweight title menu. **Testing Area**, the first option, loads the
+existing arena on selection; **Multiplayer** is a disabled placeholder. **Zombies**
+opens a Black Ops 2 inspired menu: **Solo** leads to a rotating globe with five
+selectable map locations. Use the list, map markers, or arrow buttons to select;
+drag the globe to rotate, and use Back or Esc to return. Zombies maps are menu
+previews; gameplay is not implemented yet. Zombies assets load only on menu entry.
+Use the mouse or press Enter to select the focused menu option.
+
 ## Test
 
 ```sh
 cd rust && cargo test && cargo clippy --all-targets
 cd .. && godot --headless --path godot --script res://tests/smoke_test.gd
 godot --headless --path godot --script res://tests/settings_test.gd
+godot --headless --path godot --script res://tests/title_screen_test.gd
+godot --headless --path godot --script res://tests/zombies_menu_test.gd
 ```
 
 The smoke test loads the arena headless and drives the player through movement (toggle sprint, slide, crouch), combat (aim, fire, kill a dummy, reload, switch), the characters (first-person and third-person hands on the grip, every hit zone, headshot and leg damage), a weapon rack, the shotgun (pellets, pump, shell-by-shell reload), the sniper (scope, hold breath), damage, regeneration, death and respawn, fall damage, the sentry, and gamepad look with aim assist. The settings test checks the menu and that settings save and load. Both exit non-zero on failure.
@@ -67,6 +77,10 @@ GDScript is linted and formatted with [gdtoolkit](https://github.com/Scony/godot
 uvx --from gdtoolkit==4.5.0 gdformat godot/scripts godot/tests
 uvx --from gdtoolkit==4.5.0 gdlint godot/scripts godot/tests
 ```
+
+The title screen test checks that startup leaves arena resources unloaded, then
+selects Testing Area and verifies the transition. Add `-- --startup-only` to check
+just the menu without a Rust extension build.
 
 To review visuals, capture a set of first-person screenshots (every weapon at the hip and aimed, firing, sprint, reload, shotgun pump, sniper scope, tracers, impacts, racks, damage, death). This needs a GPU:
 
