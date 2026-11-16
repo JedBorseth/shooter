@@ -459,7 +459,14 @@ impl ICharacterBody3D for FpsPlayer {
         self.camera.set_fov(fov);
 
         let frame = self.view_frame(ads);
-        self.viewmodel.bind_mut().update(&frame, dt);
+        let inspect = self.input_enabled
+            && self.state.alive()
+            && Input::singleton().is_action_just_pressed("inspect");
+        let mut rig = self.viewmodel.bind_mut();
+        if inspect {
+            rig.start_inspect();
+        }
+        rig.update(&frame, dt);
     }
 }
 
@@ -637,6 +644,12 @@ impl FpsPlayer {
         } else {
             self.respawn_in.max(0.0)
         }
+    }
+
+    /// Whether a weapon inspect is playing (tests).
+    #[func]
+    fn is_inspecting(&self) -> bool {
+        self.viewmodel.bind().inspecting()
     }
 
     /// Prompt for the pickup or device in front of the player, or empty.
@@ -1632,6 +1645,8 @@ impl FpsPlayer {
                 / self.params.movement.walk_speed,
             on_floor: self.env.on_floor,
             action,
+            empty_reload: matches!(combat.action, Action::Reloading { empty: true, .. }),
+            empty: combat.weapon().magazine == 0,
         }
     }
 

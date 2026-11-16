@@ -14,6 +14,12 @@ FBX (which stays the source):
     <key>.tres           the StandardMaterial3D the glb uses (through its
                          .import file, see tools/fix_weapon_imports.py)
 
+Moving parts: each weapon's parts in PARTS (the magazine, a shotgun's pump,
+a bolt handle, a pistol's slide) are found among the model's loose pieces
+before welding, baked with the rest, then exported as their own glTF nodes
+(`Magazine`, `Pump`, `Bolt`, `Slide`) next to `Body`, each with its origin at
+its own centre, so the game can animate them.
+
 How the textures are made: each pack material is classed as steel, coated
 steel, polymer, wood, or glass (CLASSES). Cycles bakes, into the new UVs, a
 tangent-space normal map from a Bevel node (rounded edges without extra
@@ -43,6 +49,19 @@ WEAPONS_DIR = REPO / "godot/assets/weapons"
 ALL = ["m4", "ak47", "pdw9", "m870", "m40", "pistol", "lsw6", "br3", "suppressor", "foregrip"]
 SIZES = {"pistol": 1024, "suppressor": 512, "foregrip": 512}
 DEFAULT_SIZE = 2048
+
+# Moving parts, as Blender-space boxes (x0, x1, z0, z1) that contain the loose
+# piece, or "lowest" for the piece that reaches lowest (a box magazine).
+PARTS = {
+    "m4": {"Magazine": "lowest"},
+    "ak47": {"Magazine": "lowest"},
+    "lsw6": {"Magazine": "lowest"},
+    "pdw9": {"Magazine": "lowest"},
+    "br3": {"Magazine": "lowest"},
+    "m870": {"Pump": (1.3, 2.42, -0.12, 0.2)},
+    "m40": {"Bolt": (0.22, 0.32, 0.12, 0.36)},
+    "pistol": {"Slide": (-0.32, 1.47, 0.41, 0.71)},
+}
 
 # Pack material -> class. Every class has a base colour (linear), roughness,
 # metallic, and how its edges wear.
@@ -100,6 +119,83 @@ def import_model(key: str):
     bpy.context.view_layer.objects.active = obj
     obj.select_set(True)
     return obj
+
+
+def mark_parts(key: str, obj):
+    """Puts each moving part's loose piece in a vertex group `part_<Name>`."""
+    rules = PARTS.get(key, {})
+    if not rules:
+        return
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bm.verts.ensure_lookup_table()
+    # Loose pieces: connected vertex sets.
+    seen = set()
+    pieces = []
+    for start in bm.verts:
+        if start.index in seen:
+            continue
+        stack, piece = [start], []
+        seen.add(start.index)
+        while stack:
+            v = stack.pop()
+            piece.append(v.index)
+            for edge in v.link_edges:
+                other = edge.other_vert(v)
+                if other.index not in seen:
+                    seen.add(other.index)
+                    stack.append(other)
+        pieces.append(piece)
+    world = obj.matrix_world
+    boxes = []
+    for piece in pieces:
+        co = [world @ bm.verts[i].co for i in piece]
+        boxes.append((min(c.x for c in co), max(c.x for c in co), min(c.z for c in co), max(c.z for c in co)))
+    bm.free()
+    for name, rule in rules.items():
+        if rule == "lowest":
+            chosen = [min(range(len(pieces)), key=lambda i: boxes[i][2])]
+        else:
+            x0, x1, z0, z1 = rule
+            tol = 0.03
+            chosen = [
+                i for i, (a, b, c, d) in enumerate(boxes)
+                if a >= x0 - tol and b <= x1 + tol and c >= z0 - tol and d <= z1 + tol
+            ]
+        if not chosen:
+            raise SystemExit(f"{key}: no loose piece for {name}")
+        group = obj.vertex_groups.new(name=f"part_{name}")
+        group.add([i for c in chosen for i in pieces[c]], 1.0, "REPLACE")
+        log(f"  {name}: {sum(len(pieces[c]) for c in chosen)} vertices")
+
+
+def separate_parts(obj) -> list:
+    """Splits each `part_<Name>` group into its own object, origin at its centre."""
+    parts = []
+    for group in list(obj.vertex_groups):
+        if not group.name.startswith("part_"):
+            continue
+        name = group.name[len("part_"):]
+        bpy.ops.object.select_all(action="DESELECT")
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.mesh.select_all(action="DESELECT")
+        obj.vertex_groups.active_index = group.index
+        bpy.ops.object.vertex_group_select()
+        bpy.ops.mesh.separate(type="SELECTED")
+        bpy.ops.object.mode_set(mode="OBJECT")
+        part = [o for o in bpy.context.selected_objects if o != obj][0]
+        part.name = name
+        part.data.name = name
+        bpy.ops.object.select_all(action="DESELECT")
+        part.select_set(True)
+        bpy.context.view_layer.objects.active = part
+        bpy.ops.object.origin_set(type="ORIGIN_GEOMETRY", center="BOUNDS")
+        parts.append(part)
+    obj.name = "Body"
+    obj.data.name = "Body"
+    return parts
 
 
 def clean_mesh(obj):
@@ -365,6 +461,11 @@ def export(key: str, obj):
     obj.data.materials.append(material)
     for poly in obj.data.polygons:
         poly.material_index = 0
+    parts = separate_parts(obj)
+    bpy.ops.object.select_all(action="DESELECT")
+    for o in [obj, *parts]:
+        o.select_set(True)
+    bpy.context.view_layer.objects.active = obj
     bpy.ops.export_scene.gltf(
         filepath=str(WEAPONS_DIR / key / f"{key}.glb"),
         export_format="GLB",
@@ -406,6 +507,8 @@ def build(key: str):
     log(key)
     reset()
     obj = import_model(key)
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+    mark_parts(key, obj)
     clean_mesh(obj)
     unwrap(obj)
     build_textures(key, obj, SIZES.get(key, DEFAULT_SIZE))
