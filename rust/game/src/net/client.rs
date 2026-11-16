@@ -386,8 +386,7 @@ impl NetClient {
             .iter()
             .enumerate()
             .filter(|(i, _)| {
-                u8::try_from(*i)
-                    .is_ok_and(|i| crate::net::server::is_loadout_primary(WeaponId(i)))
+                u8::try_from(*i).is_ok_and(|i| crate::net::server::is_loadout_primary(WeaponId(i)))
             })
             .map(|(_, def)| {
                 let mut d = VarDictionary::new();
