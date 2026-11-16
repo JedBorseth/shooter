@@ -1,20 +1,22 @@
-//! Shooting-range target dummy: takes damage, flinches away from hits, topples
-//! away from the killing shot, and respawns.
+//! Shooting-range target: an armed soldier that takes damage per hit zone,
+//! flinches away from hits, falls away from the killing shot, and respawns.
 
-use godot::classes::{IStaticBody3D, Label3D, MeshInstance3D, StandardMaterial3D, StaticBody3D};
+use godot::classes::{IStaticBody3D, Label3D, StaticBody3D};
 use godot::prelude::*;
+use shooter_sim::hitbox::HitboxPose;
+use shooter_sim::movement::Stance;
+use shooter_sim::weapon::WeaponId;
 
 use crate::aim_assist::AimAssistTarget;
-use crate::spring::{Spring, impulse_for_peak};
+use crate::character::rig::{SoldierFrame, SoldierRig};
+use crate::convert::to_sim;
+use crate::hitbox_rig::HitboxRig;
 
-/// Hit flinch spring (tilt in radians): loose enough to wobble once.
-const LEAN_STIFFNESS: f32 = 140.0;
-const LEAN_DAMPING: f32 = 9.0;
-
-/// Collision layer 3 ("hitboxes"), as a bit mask.
-pub const HITBOX_LAYER: u32 = 1 << 2;
-/// Collision layer 1 ("world").
+pub use crate::hitbox_rig::HITBOX_LAYER;
+/// Collision layer 1 ("world"), as a bit mask.
 pub const WORLD_LAYER: u32 = 1;
+/// Collision layer 5 ("bodies"): blocks movement but not bullets.
+pub const BODY_LAYER: u32 = 1 << 4;
 
 #[derive(GodotClass)]
 #[class(init, base = StaticBody3D)]
@@ -27,83 +29,56 @@ pub struct TargetDummy {
     #[export]
     #[init(val = 3.0)]
     respawn_delay: f32,
+    /// Weapon file key the soldier holds.
+    #[export]
+    #[init(val = GString::from("m4"))]
+    weapon: GString,
+    #[export]
+    crouching: bool,
+    /// Aim pitch in degrees (up positive).
+    #[export]
+    aim_pitch: f32,
 
     #[init(node = "HealthLabel")]
     label: OnReady<Gd<Label3D>>,
-    /// Pivot at the feet; rotating it topples the dummy.
-    #[init(node = "Visual")]
-    visual: OnReady<Gd<Node3D>>,
-    #[init(node = "Visual/BodyMesh")]
-    body_mesh: OnReady<Gd<MeshInstance3D>>,
-    #[init(node = "Visual/HeadMesh")]
-    head_mesh: OnReady<Gd<MeshInstance3D>>,
-    #[init(node = "Head")]
-    head: OnReady<Gd<StaticBody3D>>,
+    #[init(node = "Soldier")]
+    rig: OnReady<Gd<SoldierRig>>,
+    #[init(node = "Hitboxes")]
+    hitboxes: OnReady<Gd<HitboxRig>>,
 
-    flash_material: Option<Gd<StandardMaterial3D>>,
     health: f32,
-    flash: f32,
     respawn_in: f32,
-    fall: f32,
-    /// Horizontal direction, in the dummy's space, that the dummy topples toward.
-    topple: Vector3,
-    /// Hit flinch: a horizontal vector whose length is the tilt angle.
-    lean: Spring,
-    /// Kill pop, 1 right after the kill and decaying to 0.
-    pop: f32,
+    /// False on a dedicated server, which never draws the soldier.
+    visuals: bool,
 }
 
 #[godot_api]
 impl IStaticBody3D for TargetDummy {
     fn ready(&mut self) {
+        self.visuals = crate::character::rig::visuals_enabled();
         self.health = self.max_health;
-        self.topple = Vector3::FORWARD;
-        // Each dummy flashes on its own, so it needs its own copy of the material.
-        let material = self
-            .body_mesh
-            .get_active_material(0)
-            .map(|m| m.duplicate_resource())
-            .and_then(|m| m.try_cast::<StandardMaterial3D>().ok());
-        if let Some(material) = &material {
-            let mut material = material.clone();
-            material.set_feature(godot::classes::base_material_3d::Feature::EMISSION, true);
-            material.set_emission(Color::from_rgb(1.0, 0.25, 0.1));
-            material.set_emission_energy_multiplier(0.0);
-            self.body_mesh.set_material_override(&material);
-            self.head_mesh.set_material_override(&material);
-        }
-        self.flash_material = material;
         self.update_label();
+        self.base_mut().set_collision_layer(BODY_LAYER);
+        self.base_mut().set_collision_mask(0);
     }
 
     fn process(&mut self, delta: f64) {
-        let delta = delta as f32;
-        if self.flash > 0.0 {
-            self.flash = (self.flash - delta * 6.0).max(0.0);
-            if let Some(material) = &mut self.flash_material {
-                material.set_emission_energy_multiplier(self.flash * 3.0);
-            }
+        let dt = delta as f32;
+        let alive = self.health > 0.0;
+        let frame = self.frame(alive);
+        if self.visuals {
+            self.rig.bind_mut().update(&frame, dt);
         }
+        let pose = alive.then(|| HitboxPose {
+            feet: to_sim(self.base().get_global_position()),
+            yaw: frame.yaw,
+            pitch: frame.pitch,
+            stance: frame.stance,
+        });
+        self.hitboxes.bind_mut().set_pose(pose);
 
-        let dead = self.health <= 0.0;
-        let target_fall = if dead { 1.0 } else { 0.0 };
-        self.fall += (target_fall - self.fall) * (1.0 - (-10.0 * delta).exp());
-        self.lean.step(LEAN_STIFFNESS, LEAN_DAMPING, delta);
-        self.pop = (self.pop - delta * 5.0).max(0.0);
-
-        // Tilt the top toward `tilt`; its length is the angle.
-        let tilt = self.topple * (self.fall * std::f32::consts::FRAC_PI_2) + self.lean.value;
-        let angle = tilt.length();
-        let basis = if angle > 1e-4 {
-            Basis::from_axis_angle(Vector3::UP.cross(tilt / angle), angle)
-        } else {
-            Basis::IDENTITY
-        };
-        let scale = 1.0 + 0.12 * self.pop * self.pop;
-        self.visual.set_basis(basis.scaled(Vector3::splat(scale)));
-
-        if dead {
-            self.respawn_in -= delta;
+        if !alive {
+            self.respawn_in -= dt;
             if self.respawn_in <= 0.0 {
                 self.respawn();
             }
@@ -120,7 +95,6 @@ impl TargetDummy {
             return false;
         }
         self.health -= amount;
-        self.flash = 1.0;
         let killed = self.health <= 0.0;
         if killed {
             self.health = 0.0;
@@ -132,34 +106,40 @@ impl TargetDummy {
     }
 
     /// Visual reaction to a hit from a shot travelling along `direction` (world
-    /// space): a flinch, or on a kill, a pop and a fall away from the shooter.
+    /// space): a flinch, or on a kill, a fall away from the shooter.
     #[func]
     pub fn react_to_hit(&mut self, direction: Vector3, killed: bool) {
-        let local = self.base().get_global_basis().inverse() * direction;
-        let Some(away) = Vector3::new(local.x, 0.0, local.z).try_normalized() else {
-            return;
-        };
-        if killed {
-            // Still getting up from the last kill: turn the fall toward the new
-            // direction instead of snapping to it.
-            self.topple = (self.topple * self.fall + away * (1.0 - self.fall))
-                .try_normalized()
-                .unwrap_or(away);
-            self.pop = 1.0;
-            self.flash = 2.0;
-        } else {
-            let peak = 7f32.to_radians();
-            self.lean.velocity += away * impulse_for_peak(peak, LEAN_STIFFNESS, LEAN_DAMPING);
-        }
+        self.rig.bind_mut().hit(direction, killed);
     }
 
     #[func]
     pub fn health(&self) -> f32 {
         self.health
     }
+
+    /// Horizontal direction the body falls toward, or zero while standing.
+    #[func]
+    pub fn fall_direction(&self) -> Vector3 {
+        self.rig.bind().fall_direction()
+    }
 }
 
 impl TargetDummy {
+    fn frame(&self, alive: bool) -> SoldierFrame {
+        SoldierFrame {
+            stance: if self.crouching {
+                Stance::Crouching
+            } else {
+                Stance::Standing
+            },
+            yaw: self.base().get_global_rotation().y,
+            pitch: self.aim_pitch.to_radians(),
+            weapon: WeaponId::by_key(&self.weapon.to_string()),
+            alive,
+            ..SoldierFrame::default()
+        }
+    }
+
     fn respawn(&mut self) {
         self.health = self.max_health;
         self.set_hittable(true);
@@ -167,13 +147,6 @@ impl TargetDummy {
     }
 
     fn set_hittable(&mut self, hittable: bool) {
-        self.base_mut().set_collision_layer(if hittable {
-            WORLD_LAYER | HITBOX_LAYER
-        } else {
-            0
-        });
-        self.head
-            .set_collision_layer(if hittable { HITBOX_LAYER } else { 0 });
         self.label.set_visible(hittable);
         if let Some(mut assist) = self
             .base()

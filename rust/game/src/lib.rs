@@ -4,7 +4,9 @@
 mod aim_assist;
 mod audio;
 mod body;
+mod character;
 mod convert;
+mod hitbox_rig;
 mod net;
 mod pickup;
 mod player;

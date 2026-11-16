@@ -11,6 +11,7 @@ size = Vector2(0.2, 0.2)
 
 [node name="M4" type="WeaponView"]
 weapon = "m4"
+grip_rake = 22.0
 hip_position = Vector3(0.1, -0.09, -0.24)
 ads_position = Vector3(0, 0, -0.09)
 sprint_position = Vector3(-0.04, 0.015, 0.03)
@@ -51,3 +52,9 @@ bus = &"Weapons"
 stream = ExtResource("4_dry")
 volume_db = -6.0
 bus = &"Weapons"
+
+[node name="GripRight" type="Marker3D" parent="."]
+position = Vector3(0, -0.15, -0.005)
+
+[node name="GripLeft" type="Marker3D" parent="."]
+position = Vector3(0, -0.065, -0.28)

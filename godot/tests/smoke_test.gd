@@ -1,9 +1,9 @@
 extends SceneTree
 ## Headless smoke test: loads the arena and drives the Rust player through
 ## movement (toggle sprint, slide, crouch), combat (ADS, fire, kill, reload, refill,
-## switch), the weapon racks, shotgun and sniper rules, damage, death and
-## respawn, fall damage, the sentry, gamepad look and aim assist, and kill
-## scoring. Exits non-zero on failure.
+## switch), hit zones and the soldier characters, the weapon racks, shotgun and
+## sniper rules, damage, death and respawn, fall damage, the sentry, gamepad look
+## and aim assist, and kill scoring. Exits non-zero on failure.
 ## Run from the repo root: godot --headless --path godot --script res://tests/smoke_test.gd
 
 const DUMMY_SCENE := preload("res://scenes/props/target_dummy.tscn")
@@ -11,6 +11,7 @@ const DUMMY_SCENE := preload("res://scenes/props/target_dummy.tscn")
 var _failures: PackedStringArray = []
 var _hits := 0
 var _kills := 0
+var _headshots := 0
 var _damage_taken := 0.0
 var _deaths := 0
 var _kill_awards := 0
@@ -29,10 +30,12 @@ func _run() -> void:
 		_finish()
 		return
 	player.hit_confirmed.connect(
-		func(killed: bool, _headshot: bool) -> void:
+		func(killed: bool, headshot: bool) -> void:
 			_hits += 1
 			if killed:
 				_kills += 1
+			if headshot:
+				_headshots += 1
 	)
 
 	_check(
@@ -53,6 +56,7 @@ func _run() -> void:
 	)
 	await _movement(player)
 	await _combat(main, player)
+	await _characters(main, player)
 	await _racks(main, player)
 	await _shotgun(main, player)
 	await _sniper(main, player)
@@ -135,8 +139,8 @@ func _combat(main: Node, player: FpsPlayer) -> void:
 	_check(player.magazine() < 30, "magazine is spent, got %d" % player.magazine())
 	Input.action_release("aim")
 	await _sixtieths(30)
-	var up := (dummy.get_node("Visual") as Node3D).basis.y.normalized()
-	_check(up.z < -0.8, "dummy topples away from the shooter, up %s" % up)
+	var fall := dummy.fall_direction()
+	_check(fall.z < -0.8, "dummy falls away from the shooter, toward %s" % fall)
 
 	await _tap("reload")
 	await _sixtieths(2)
@@ -162,6 +166,77 @@ func _combat(main: Node, player: FpsPlayer) -> void:
 
 	await _sixtieths(200)
 	_check(dummy.health() == 100.0, "dummy respawns with full health, got %.0f" % dummy.health())
+
+
+func _characters(main: Node, player: FpsPlayer) -> void:
+	await _tap("weapon_1")
+	await _sixtieths(60)
+	_check(player.weapon_name() == "M4A1", "back on the M4, got %s" % player.weapon_name())
+
+	# The player's own arms hold the weapon in first person.
+	var arms := player.get_node("Camera/Viewmodel/Arms") as Node3D
+	var arms_mesh := arms.find_child("ArmsFP", true, false) as MeshInstance3D
+	_check(arms_mesh != null and arms_mesh.visible, "first-person arms are drawn")
+	var view := player.get_node("Camera/Viewmodel/M4") as Node3D
+	var grip := (view.get_node("GripRight") as Node3D).global_position
+	# The wrist sits a palm's width (about 9 cm) from the grip it holds.
+	var wrist: Vector3 = arms.wrist_position(true)
+	_check(
+		wrist.distance_to(grip) < 0.12,
+		"first-person hand holds the grip, wrist %.3f m away" % wrist.distance_to(grip)
+	)
+
+	# A dummy 10 m ahead: a soldier with a weapon in hand and every hit zone.
+	var dummy := await _dummy_ahead(main, player, 10.0)
+	await _sixtieths(10)
+	var soldier := dummy.get_node("Soldier") as SoldierRig
+	var weapon := soldier.weapon_node()
+	_check(weapon != null, "the dummy holds a weapon")
+	if weapon != null:
+		var hand := soldier.wrist_position(true)
+		var dummy_grip := (weapon.get_node("GripRight") as Node3D).global_position
+		_check(
+			hand.distance_to(dummy_grip) < 0.12,
+			"the dummy's hand holds the grip, wrist %.3f m away" % hand.distance_to(dummy_grip)
+		)
+	var shapes: Array = (dummy.get_node("Hitboxes") as HitboxRig).shapes()
+	var zones := {}
+	for shape: Array in shapes:
+		zones[shape[0]] = true
+	_check(
+		zones.keys().size() == 5 and shapes.size() == 13,
+		"hitboxes cover head, chest, stomach, arms, and legs, got %s" % [zones.keys()]
+	)
+
+	# One aimed shot at the head, then one at a shin: 30 damage x1.4, then x0.85.
+	Input.action_press("aim")
+	await _sixtieths(20)
+	var headshots := _headshots
+	await _shoot_at(player, shapes[0][1] as Vector3)
+	_check(_headshots == headshots + 1, "a shot at the head is a headshot")
+	_check(
+		is_equal_approx(dummy.health(), 58.0),
+		"a headshot does 1.4x damage, health %.1f" % dummy.health()
+	)
+	var shin_a: Vector3 = shapes[9][1]
+	var shin_b: Vector3 = shapes[9][2]
+	await _shoot_at(player, shin_a.lerp(shin_b, 0.5))
+	_check(
+		is_equal_approx(dummy.health(), 32.5),
+		"a leg shot does 0.85x damage, health %.1f" % dummy.health()
+	)
+	Input.action_release("aim")
+	dummy.queue_free()
+	await _sixtieths(20)
+
+
+## Looks at a world point and fires a single round.
+func _shoot_at(player: FpsPlayer, point: Vector3) -> void:
+	var to := point - (player.global_position + Vector3(0, 1.68, 0))
+	player.set_look(atan2(-to.x, -to.z), atan2(to.y, Vector2(to.x, to.z).length()))
+	await _sixtieths(15)
+	await _tap("fire")
+	await _sixtieths(15)
 
 
 func _racks(main: Node, player: FpsPlayer) -> void:
@@ -199,7 +274,7 @@ func _shotgun(main: Node, player: FpsPlayer) -> void:
 	_check(
 		_hits == hits_before + 1, "a shotgun blast confirms one hit, got %d" % (_hits - hits_before)
 	)
-	_check(_kills == kills_before + 1, "one blast kills at 5 m")
+	_check(_kills == kills_before + 1, "one blast kills at 5 m, health left %.0f" % dummy.health())
 	_check(player.magazine() == 5, "one shell spent, got %d" % player.magazine())
 	await _tap("fire")
 	await _sixtieths(2)
