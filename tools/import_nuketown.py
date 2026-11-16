@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["pillow>=11", "numpy>=2"]
+# ///
 """Convert a C2Mv3 BO2 export to reusable glTF meshes, materials, and placements.
 
-Requires Pillow. Raw exports and generated assets stay outside version control.
+Requires Pillow and NumPy. Raw exports and generated assets stay outside version
+control.
 """
 import argparse
 from array import array
@@ -12,9 +17,213 @@ import math
 from pathlib import Path
 import re
 import sys
+import numpy as np
 from PIL import Image, ImageOps
 
 UNIT = 0.0254
+
+# C2M joins the material layers of one BSP surface with "__".  The techset's
+# first letter is the blend function: m/a are multiply decals, b is alpha
+# blend, t is alpha test, and unlit_* ignores lighting.
+MULTIPLY_TECHSETS = ('m0', 'a0', 'unlitdecalblend_multiply')
+ALPHA_TEST_TECHSETS = ('t0', 'treecanopy', 'flag_t', 'unlit_alphatest')
+
+
+def alpha_mode(info):
+    """Return the glTF alpha mode for a CoD material, or ``invisible``."""
+    techset = info.get('TechSet') or ''
+    if techset == 'shadowcaster':
+        return 'invisible'
+    if techset.startswith(ALPHA_TEST_TECHSETS):
+        return 'MASK'
+    if techset.startswith(('b0', 'a0')) or techset in ('unlit_add',):
+        return 'BLEND'
+    if info.get('Blending') == 4:
+        return 'BLEND'
+    return 'OPAQUE'
+
+
+def layer_blend_mode(info):
+    """Blend mode for a second (decal/AO) layer on a BSP surface."""
+    techset = info.get('TechSet') or ''
+    if techset.startswith(MULTIPLY_TECHSETS):
+        return 'multiply'
+    return 'alpha'
+
+
+def is_multiply_material(info):
+    """A standalone surface whose texture is meant to darken what is behind it."""
+    return (info.get('TechSet') or '').startswith(MULTIPLY_TECHSETS)
+
+
+def is_unlit(info):
+    techset = info.get('TechSet') or ''
+    return techset.startswith(('unlit_', 'sw4_3d_unlit', 'sw4_3d_animated_unlit',
+                               'sw4_3d_nuketown_tv')) or techset == 'unlitdecalblend_multiply'
+
+
+def color_texture_slot(info):
+    """Find the colour texture, including the alternate slots used by models."""
+    textures = info.get('Textures', {})
+    for slot in ('colorMap', 'diffuse_map', 'Color_Map'):
+        texture = textures.get(slot) or {}
+        if texture.get('Name'):
+            return texture['Name']
+    if (textures.get('WelcomeToNuketown') or {}).get('Name'):
+        return textures['WelcomeToNuketown']['Name']
+    layers = [(int(match.group(1)), name) for name in textures
+              if (match := re.fullmatch(r'Layer(\d+)Map', name))]
+    if layers:
+        return textures[max(layers)[1]]['Name']
+    return None
+
+
+def _linear_rgb(image):
+    rgb = np.asarray(image.convert('RGB'), dtype=np.float32) / 255.0
+    return np.where(rgb <= 0.04045, rgb / 12.92, ((rgb + 0.055) / 1.055) ** 2.4)
+
+
+def _srgb_image(linear):
+    linear = np.clip(linear, 0.0, 1.0)
+    rgb = np.where(linear <= 0.0031308, linear * 12.92,
+                   1.055 * np.power(linear, 1.0 / 2.4) - 0.055)
+    return Image.fromarray(np.clip(rgb * 255.0 + 0.5, 0, 255).astype(np.uint8), 'RGB')
+
+
+def compose_color_texture(base, layers):
+    """Reconstruct C2M's layered BSP material with the one UV set it exports.
+
+    ``layers`` items are ``(image, mode)`` where mode is ``multiply`` or
+    ``alpha``.  Blending happens in linear space, as the game's shader does.
+    """
+    base = base.convert('RGBA')
+    color = _linear_rgb(base)
+    for image, mode in layers:
+        image = image.convert('RGBA')
+        if image.size != base.size:
+            image = image.resize(base.size, Image.Resampling.LANCZOS)
+        layer = _linear_rgb(image)
+        alpha = np.asarray(image.getchannel('A'), dtype=np.float32)[..., None] / 255.0
+        if mode == 'multiply':
+            color *= (1.0 - alpha) + layer * alpha
+        else:
+            color = color * (1.0 - alpha) + layer * alpha
+    return Image.merge('RGBA', (*_srgb_image(color).split(), base.getchannel('A')))
+
+
+def multiply_to_alpha_texture(image):
+    """Turn a multiply decal into a glTF alpha-blended overlay.
+
+    CoD's multiply decals are mostly white with grey/black grime and have no
+    usable opacity channel for glTF.  A darkening overlay built from
+    ``1 - min(lerp(1, rgb, alpha))`` reproduces a grayscale multiply exactly in
+    linear space and keeps colour tints where the decal has them.
+    """
+    image = image.convert('RGBA')
+    color = _linear_rgb(image)
+    alpha = np.asarray(image.getchannel('A'), dtype=np.float32)[..., None] / 255.0
+    multiplier = (1.0 - alpha) + color * alpha
+    low = multiplier.min(axis=2)
+    overlay_alpha = 1.0 - low
+    safe = np.maximum(overlay_alpha, 1e-6)
+    overlay = (multiplier - low[..., None]) / safe[..., None]
+    overlay = np.where(overlay_alpha[..., None] > 1e-6, overlay, 0.0)
+    rgba = _srgb_image(overlay).convert('RGBA')
+    rgba.putalpha(Image.fromarray(np.clip(overlay_alpha * 255.0 + 0.5, 0, 255).astype(np.uint8), 'L'))
+    return rgba
+
+
+def _decode_normal(image):
+    rgb = np.asarray(image.convert('RGB'), dtype=np.float32) / 255.0
+    return rgb * 2.0 - 1.0
+
+
+def _encode_normal(normal):
+    rgb = np.clip((normal + 1.0) * 127.5 + 0.5, 0, 255).astype(np.uint8)
+    return Image.fromarray(rgb, 'RGB')
+
+
+def _normalise(normal):
+    length = np.sqrt(np.sum(normal * normal, axis=2, keepdims=True))
+    return normal / np.maximum(length, 1e-6)
+
+
+def compose_detail_normal(base, detail, scale=(16.0, 16.0), strength=1.0):
+    """Tile CoD's detail normal into the base normal with a whiteout blend.
+
+    glTF has no detail-normal stage.  The maps use the same UV set, so baking
+    the tiled detail into the normal texture keeps the surface detail without a
+    map-specific shader.
+    """
+    base = base.convert('RGBA')
+    width, height = base.size
+    detail = detail.convert('RGB')
+    detail_width, detail_height = detail.size
+    rows = ((np.arange(height) * max(scale[1], 1.0) / height) % 1.0 * detail_height).astype(np.int32)
+    columns = ((np.arange(width) * max(scale[0], 1.0) / width) % 1.0 * detail_width).astype(np.int32)
+    rows %= detail_height
+    columns %= detail_width
+    tiled = np.asarray(detail, dtype=np.float32)[rows[:, None], columns[None, :]]
+    detail_normal = tiled / 127.5 - 1.0
+    base_normal = _decode_normal(base)
+    combined = np.stack([
+        base_normal[..., 0] + detail_normal[..., 0],
+        base_normal[..., 1] + detail_normal[..., 1],
+        base_normal[..., 2] * detail_normal[..., 2],
+    ], axis=2)
+    combined = _normalise(combined)
+    strength = max(0.0, min(1.0, strength))
+    normal = _normalise(base_normal * (1.0 - strength) + combined * strength)
+    rgba = _encode_normal(normal).convert('RGBA')
+    rgba.putalpha(base.getchannel('A'))
+    return rgba
+
+
+def bleed_discarded_color(image, cutoff=0.35, passes=16):
+    """Fill alpha-tested cutout pixels with nearby visible colour.
+
+    Mipmapped alpha test blends the RGB of discarded texels into the visible
+    edge.  CoD's foliage texels there are nearly black, which produces the dark
+    fringe around hedges and trees in the converted map.  Dilating the nearest
+    surviving colour outwards removes that fringe without changing the cutout.
+    """
+    rgba = np.asarray(image.convert('RGBA')).copy()
+    rgb = rgba[..., :3].astype(np.float32)
+    alpha = rgba[..., 3]
+    unknown = alpha < int(cutoff * 255)
+    known = ~unknown
+    if not unknown.any() or not known.any():
+        return image
+    height, width = alpha.shape
+    neighbours = ((1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1))
+    for _ in range(passes):
+        total = np.zeros_like(rgb)
+        count = np.zeros((height, width), dtype=np.float32)
+        for dy, dx in neighbours:
+            colour = np.roll(rgb, (dy, dx), axis=(0, 1))
+            mask = np.roll(known, (dy, dx), axis=(0, 1))
+            if dy > 0:
+                colour[:dy] = 0
+                mask[:dy] = False
+            elif dy < 0:
+                colour[dy:] = 0
+                mask[dy:] = False
+            if dx > 0:
+                colour[:, :dx] = 0
+                mask[:, :dx] = False
+            elif dx < 0:
+                colour[:, dx:] = 0
+                mask[:, dx:] = False
+            total += colour * mask[..., None]
+            count += mask
+        fill = unknown & (count > 0)
+        if not fill.any():
+            break
+        rgb[fill] = total[fill] / count[fill, None]
+        known |= fill
+        unknown &= ~fill
+    rgba[..., :3] = np.clip(rgb + 0.5, 0, 255).astype(np.uint8)
+    return Image.fromarray(rgba, 'RGBA')
 
 
 def xyz(v):
@@ -44,56 +253,182 @@ class Export:
                      'buffers': [], 'bufferViews': [], 'accessors': []}
         self.binary = bytearray()
         self.texture_cache, self.material_cache = {}, {}
+        self.texture_kinds = {}
         self.missing = set()
         (output/'textures').mkdir(parents=True, exist_ok=True)
 
-    def texture(self, name, normal=False):
+    def texture(self, name, normal=False, layers=(), multiply_decal=False, bleed=False, detail=None):
         if name.startswith('$'):
             return None
-        key = (name, normal)
+        key = (name, normal, layers, multiply_decal, bleed, detail)
         if key in self.texture_cache:
             return self.texture_cache[key]
         if name not in self.images:
             self.missing.add(name)
             return None
-        filename = hashlib.sha256((name+str(normal)).encode()).hexdigest()[:24]+'.png'
+        for layer_name, _ in layers:
+            if layer_name not in self.images:
+                self.missing.add(layer_name)
+                return None
+        if detail and detail[0] not in self.images:
+            self.missing.add(detail[0])
+            detail = None
+        filename = hashlib.sha256(repr(key).encode()).hexdigest()[:24]+'.png'
+        if not layers and not multiply_decal and not bleed and not detail:
+            # Keep the original names for untouched textures so regenerating
+            # the map does not churn hundreds of tracked files.
+            filename = hashlib.sha256((name+str(normal)).encode()).hexdigest()[:24]+'.png'
         path = self.output/'textures'/filename
         if not path.exists():
-            with Image.open(self.images[name]) as im:
-                im = im.convert('RGBA')
-                if normal:
-                    red, green, blue, alpha = im.split()
-                    im = Image.merge('RGBA', (red, ImageOps.invert(green), blue, alpha))
-                im.save(path, compress_level=3)
+            with Image.open(self.images[name]) as source:
+                im = source.convert('RGBA')
+            if layers:
+                loaded = []
+                for layer_name, mode in layers:
+                    with Image.open(self.images[layer_name]) as layer:
+                        loaded.append((layer.convert('RGBA'), mode))
+                im = compose_color_texture(im, loaded)
+            if multiply_decal:
+                im = multiply_to_alpha_texture(im)
+            if bleed:
+                im = bleed_discarded_color(im)
+            if detail:
+                detail_name, detail_scale, detail_strength = detail
+                with Image.open(self.images[detail_name]) as source:
+                    im = compose_detail_normal(im, source.convert('RGB'), detail_scale, detail_strength)
+            if normal:
+                red, green, blue, alpha = im.split()
+                im = Image.merge('RGBA', (red, ImageOps.invert(green), blue, alpha))
+            im.save(path, compress_level=3)
         index = len(self.gltf['textures'])
         self.gltf['images'].append({'uri': 'textures/'+filename})
         self.gltf['textures'].append({'sampler': 0, 'source': index})
         self.texture_cache[key] = index
+        self.texture_kinds[filename] = 'normal' if normal else 'color'
         return index
+
+    def roughness_texture(self, name):
+        """Convert a CoD specular map's gloss alpha into glTF roughness (G)."""
+        if name.startswith('$'):
+            return None
+        key = ('roughness', name)
+        if key in self.texture_cache:
+            return self.texture_cache[key]
+        if name not in self.images:
+            self.missing.add(name)
+            return None
+        filename = hashlib.sha256(('roughness'+name).encode()).hexdigest()[:24]+'.png'
+        path = self.output/'textures'/filename
+        if not path.exists():
+            with Image.open(self.images[name]) as source:
+                gloss = source.convert('RGBA').getchannel('A')
+            roughness = ImageOps.invert(gloss)
+            zero = Image.new('L', gloss.size, 0)
+            Image.merge('RGB', (zero, roughness, zero)).save(path, compress_level=3)
+        index = len(self.gltf['textures'])
+        self.gltf['images'].append({'uri': 'textures/'+filename})
+        self.gltf['textures'].append({'sampler': 0, 'source': index})
+        self.texture_cache[key] = index
+        self.texture_kinds[filename] = 'roughness'
+        return index
+
+    def specular_roughness(self, name):
+        """A roughness texture for varying gloss, or one constant for flat maps."""
+        if name.startswith('$'):
+            return None
+        if name not in self.images:
+            self.missing.add(name)
+            return None
+        key = ('specular', name)
+        if key in self.texture_cache:
+            return self.texture_cache[key]
+        with Image.open(self.images[name]) as source:
+            alpha = np.asarray(source.convert('RGBA').getchannel('A'), dtype=np.float32) / 255.0
+        gloss = float(alpha.mean())
+        if float(alpha.std()) < 0.04:
+            result = max(0.05, min(1.0, 1.0 - gloss))
+        else:
+            result = self.roughness_texture(name)
+        self.texture_cache[key] = result
+        return result
 
     def material(self, name):
         if name in self.material_cache:
             return self.material_cache[name]
-        # C2M joins layered BSP materials with __. Keep the base surface.
-        info = self.material_info.get(name, self.material_info.get(name.split('__')[0], {}))
+        # C2M joins layered BSP materials with __. Rebuild each layer over the
+        # base surface instead of dropping everything after the first one.
+        parts = name.split('__')
+        info = self.material_info.get(parts[0], {})
+        if not info and len(parts) > 1:
+            info = self.material_info.get(name, {})
         textures = info.get('Textures', {})
+        # CoD's specular model is not glTF metallic-roughness.  Gloss becomes
+        # roughness below, but metallic stays dielectric because SurfType METAL
+        # also covers painted metal; raw-metal names would need an explicit
+        # source-authoring pass rather than a blanket heuristic.
         pbr = {'metallicFactor': 0.0, 'roughnessFactor': 0.8}
         mat = {'name': name, 'pbrMetallicRoughness': pbr, 'doubleSided': True}
-        color = textures.get('colorMap') or {}
-        tex = self.texture(color.get('Name', '$white'))
+
+        if info.get('TechSet') == 'shadowcaster':
+            # Caulk and shadow-caster surfaces never draw in the original map.
+            # Alpha scissor with a transparent factor avoids the alpha-blended
+            # depth prepass that a BLEND material would add for the whole map.
+            pbr['baseColorFactor'] = [0, 0, 0, 0]
+            mat['alphaMode'] = 'MASK'
+            mat['alphaCutoff'] = 1.0
+            mat['doubleSided'] = False
+            self.material_cache[name] = len(self.gltf['materials'])
+            self.gltf['materials'].append(mat)
+            return self.material_cache[name]
+
+        layers = []
+        for layer_name in parts[1:]:
+            layer_info = self.material_info.get(layer_name, {})
+            layer_color = color_texture_slot(layer_info)
+            if layer_color and not layer_color.startswith('$'):
+                layers.append((layer_color, layer_blend_mode(layer_info)))
+        color_name = color_texture_slot(info)
+        multiply_decal = not layers and is_multiply_material(info)
+        mode = alpha_mode(info)
+        tex = self.texture(color_name, layers=tuple(layers), multiply_decal=multiply_decal,
+                           bleed=mode == 'MASK' or info.get('SurfType') in ('FOLIAGE', 'GRASS')) if color_name else None
         if tex is not None:
             pbr['baseColorTexture'] = {'index': tex}
-        elif color.get('Name') == '$black':
+        elif color_name == '$black':
             pbr['baseColorFactor'] = [0, 0, 0, 1]
         tint = info.get('Constants', {}).get('colorTint', {}).get('Value')
-        if tint and tex is not None:
+        if tint and (tex is not None or color_name in (None, '$white')):
             pbr['baseColorFactor'] = [max(0, min(1, tint[k])) for k in ('X', 'Y', 'Z', 'W')]
         normal = textures.get('normalMap') or {}
-        tex = self.texture(normal.get('Name', '$identitynormalmap'), True)
+        detail = textures.get('detailMap') or {}
+        detail_scale = info.get('Constants', {}).get('detailScale', {}).get('Value')
+        detail_arg = None
+        if detail.get('Name') and detail_scale:
+            detail_arg = (detail['Name'],
+                          (detail_scale.get('X', 1.0), detail_scale.get('Y', 1.0)),
+                          detail_scale.get('Z', 1.0))
+        tex = self.texture(normal.get('Name', '$identitynormalmap'), True, detail=detail_arg)
         if tex is not None:
             mat['normalTexture'] = {'index': tex}
-        if info.get('Blending', 0) or info.get('TechSet', '').startswith(('t0', 'treecanopy')):
+        unlit = is_unlit(info)
+        if not unlit:
+            specular = textures.get('specularMap') or {}
+            roughness = self.specular_roughness(specular.get('Name', '$white'))
+            if isinstance(roughness, float):
+                pbr['roughnessFactor'] = roughness
+            elif roughness is not None:
+                pbr['metallicRoughnessTexture'] = {'index': roughness}
+                pbr['roughnessFactor'] = 1.0
+        if multiply_decal:
+            mode = 'BLEND'
+        if mode == 'MASK':
             mat.update(alphaMode='MASK', alphaCutoff=0.35)
+        elif mode == 'BLEND':
+            mat['alphaMode'] = 'BLEND'
+        if unlit:
+            mat['extensions'] = {'KHR_materials_unlit': {}}
+            if 'extensionsUsed' not in self.gltf:
+                self.gltf['extensionsUsed'] = ['KHR_materials_unlit']
         index = len(self.gltf['materials'])
         self.gltf['materials'].append(mat)
         self.material_cache[name] = index
@@ -201,8 +536,9 @@ class Export:
         self.gltf['buffers'] = [{'uri': 'nuketown.bin', 'byteLength': len(self.binary)}]
         (self.output/'nuketown.bin').write_bytes(self.binary)
         (self.output/'nuketown.gltf').write_text(json.dumps(self.gltf, separators=(',', ':')))
+        (self.output/'textures.json').write_text(json.dumps({'kinds': self.texture_kinds}, indent=2)+'\n')
         report = {'map': 'mp_nuketown_2020', 'placements': len(placements), 'meshes': len(self.gltf['meshes']),
-                  'materials': len(self.gltf['materials']), 'textures': len(self.texture_cache), 'spawns': entities,
+                  'materials': len(self.gltf['materials']), 'textures': len(self.gltf['images']), 'spawns': entities,
                   'units': 'meters', 'coordinates': 'x,z,-y', 'source_units_to_meters': UNIT}
         (self.output/'map.json').write_text(json.dumps(report, indent=2)+'\n')
         print(json.dumps({k:v for k,v in report.items() if k!='spawns'}, indent=2))

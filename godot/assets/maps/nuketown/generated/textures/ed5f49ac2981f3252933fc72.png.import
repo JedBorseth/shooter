@@ -2,7 +2,7 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bks3iemsft1sd"
+uid="uid://c4oox43wdfqek"
 path.s3tc="res://.godot/imported/ed5f49ac2981f3252933fc72.png-2f75ea3ea75721590ddc76897ae030c2.s3tc.ctex"
 path.etc2="res://.godot/imported/ed5f49ac2981f3252933fc72.png-2f75ea3ea75721590ddc76897ae030c2.etc2.ctex"
 metadata={
@@ -23,7 +23,7 @@ compress/lossy_quality=0.7
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
-compress/normal_map=0
+compress/normal_map=true
 compress/channel_pack=0
 mipmaps/generate=true
 mipmaps/limit=-1
