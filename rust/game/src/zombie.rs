@@ -8,11 +8,17 @@
 //! the map has more than one yard: a zombie spawned in a side yard first walks
 //! straight to that yard's gate (`waypoint`), and a zombie that stops getting
 //! anywhere walks straight to the open gate that best leads to its target.
+//!
+//! A zombie that spawns behind a window first tears down the window's
+//! barrier (`scripts/zombies_barrier.gd`), one board at a time, then climbs
+//! through. It groans now and then, snarls when it swings, and cries out when
+//! it dies. Far from the camera its animation updates less often.
 
-use godot::classes::{CharacterBody3D, ICharacterBody3D, Node3D};
+use godot::classes::{AudioStream, AudioStreamPlayer3D, CharacterBody3D, ICharacterBody3D, Node3D};
 use godot::prelude::*;
 use shooter_sim::hitbox::HitboxPose;
 use shooter_sim::movement::Stance;
+use shooter_sim::rng;
 use shooter_sim::zombies::{self, Attack, AttackEvent, ZombieRules};
 
 use crate::aim_assist::AimAssistTarget;
@@ -20,6 +26,9 @@ use crate::character::rig::{SoldierFrame, SoldierRig, wrap_angle};
 use crate::convert::{to_godot, to_sim};
 use crate::hitbox_rig::HitboxRig;
 use crate::target::{BODY_LAYER, WORLD_LAYER};
+
+/// Collision layer 6 ("barriers"): window boards only zombies bump into.
+pub const BARRIER_LAYER: u32 = 1 << 5;
 
 /// Collision layer 2 ("players"), as a bit mask.
 const PLAYER_LAYER: u32 = 1 << 1;
@@ -31,6 +40,17 @@ const TURN_RATE: f32 = 10.0;
 const WAYPOINT_REACH: f32 = 1.5;
 /// Seconds of moving under a quarter of its speed before a zombie heads for a gate.
 const STUCK_SECONDS: f32 = 1.0;
+/// A zombie this close to its barrier tears at it.
+const BARRIER_REACH: f32 = 1.7;
+/// Seconds per board torn off.
+const TEAR_SECONDS: f32 = 1.1;
+/// Seconds between groans, at least and at most.
+const GROAN_MIN: f32 = 3.0;
+const GROAN_MAX: f32 = 9.0;
+/// Beyond these distances from the camera, the animation updates every
+/// second and every fourth frame.
+const HALF_RATE_DISTANCE: f32 = 18.0;
+const QUARTER_RATE_DISTANCE: f32 = 32.0;
 
 #[derive(GodotClass)]
 #[class(init, base = CharacterBody3D)]
@@ -49,11 +69,21 @@ pub struct Zombie {
     #[export]
     #[init(val = 4.0)]
     corpse_time: f32,
+    /// Played now and then while it chases (an `AudioStreamRandomizer`).
+    #[export]
+    groans: Option<Gd<AudioStream>>,
+    /// Played when it swings.
+    #[export]
+    attack_sounds: Option<Gd<AudioStream>>,
+    /// Played when it dies.
+    #[export]
+    death_sounds: Option<Gd<AudioStream>>,
 
     #[init(node = "Soldier")]
     rig: OnReady<Gd<SoldierRig>>,
     #[init(node = "Hitboxes")]
     hitboxes: OnReady<Gd<HitboxRig>>,
+    voice: Option<Gd<AudioStreamPlayer3D>>,
 
     rules: ZombieRules,
     attack: Attack,
@@ -72,6 +102,14 @@ pub struct Zombie {
     stuck_for: f32,
     /// Any hit kills (the Insta-Kill power-up).
     insta_kill: bool,
+    /// The window barrier between this zombie and the arena, until it is through.
+    barrier: Option<Gd<Node3D>>,
+    tear_for: f32,
+    groan_in: f32,
+    /// Rendered frames since the last animation update, and their time.
+    anim_frames: u32,
+    anim_time: f32,
+    seed: u32,
 }
 
 #[godot_api]
@@ -83,16 +121,30 @@ impl ICharacterBody3D for Zombie {
         self.base_mut().set_rotation(Vector3::ZERO);
         self.base_mut().set_collision_layer(BODY_LAYER);
         self.base_mut()
-            .set_collision_mask(WORLD_LAYER | BODY_LAYER | PLAYER_LAYER);
+            .set_collision_mask(WORLD_LAYER | BODY_LAYER | PLAYER_LAYER | BARRIER_LAYER);
         self.base_mut().add_to_group("zombies");
+        self.voice = self.base().try_get_node_as::<AudioStreamPlayer3D>("Voice");
+        self.seed = self.base().instance_id().to_i64() as u32;
+        self.groan_in = GROAN_MIN + rng::unit(self.seed, 0) * (GROAN_MAX - GROAN_MIN);
     }
 
-    /// Animation runs per rendered frame; movement and attacks per tick.
+    /// Animation runs per rendered frame (less often far away); movement and
+    /// attacks per tick.
     fn process(&mut self, delta: f64) {
-        if self.visuals {
-            let frame = self.frame(self.moved);
-            self.rig.bind_mut().update(&frame, delta as f32);
+        if !self.visuals {
+            return;
         }
+        self.anim_frames += 1;
+        self.anim_time += delta as f32;
+        let every = self.animation_interval();
+        // Spread the zombies over the frames, so they do not all update at once.
+        if !(self.anim_frames + self.seed).is_multiple_of(every) && self.is_alive() {
+            return;
+        }
+        let frame = self.frame(self.moved);
+        let dt = std::mem::take(&mut self.anim_time);
+        self.anim_frames = 0;
+        self.rig.bind_mut().update(&frame, dt);
     }
 
     fn physics_process(&mut self, delta: f64) {
@@ -107,12 +159,21 @@ impl ICharacterBody3D for Zombie {
         }
 
         let position = self.base().get_global_position();
+        self.groan(dt);
+        if self.tear_barrier(position, dt) {
+            self.moved = Vector3::ZERO;
+            return;
+        }
         let target = self.nearest_player(position);
         let distance = target
             .as_ref()
             .map(|t| zombies::flat_distance(to_sim(position), to_sim(t.get_global_position())));
         match self.attack.step(&self.rules, distance, dt) {
-            Some(AttackEvent::Swung) => self.rig.bind_mut().attack(),
+            Some(AttackEvent::Swung) => {
+                self.rig.bind_mut().attack();
+                let sound = self.attack_sounds.clone();
+                self.say(sound);
+            }
             Some(AttackEvent::Hit) => {
                 if let Some(target) = &target {
                     self.strike(target.clone());
@@ -191,6 +252,8 @@ impl Zombie {
         let killed = self.health <= 0.0;
         if killed {
             self.health = 0.0;
+            let sound = self.death_sounds.clone();
+            self.say(sound);
             self.base_mut().set_collision_layer(0);
             self.base_mut().set_collision_mask(WORLD_LAYER);
             self.hitboxes.bind_mut().set_pose(None);
@@ -242,6 +305,18 @@ impl Zombie {
     pub fn set_insta_kill(&mut self, on: bool) {
         self.insta_kill = on;
     }
+
+    /// The window barrier this zombie must tear down to get in.
+    #[func]
+    pub fn set_barrier(&mut self, barrier: Gd<Node3D>) {
+        self.barrier = Some(barrier);
+    }
+
+    /// Whether it is still outside, at or on its way to a barrier (tests).
+    #[func]
+    pub fn behind_barrier(&self) -> bool {
+        self.barrier.is_some()
+    }
 }
 
 impl Zombie {
@@ -249,6 +324,80 @@ impl Zombie {
     pub fn configure(&mut self, max_health: f32, speed: f32) {
         self.max_health = max_health;
         self.speed = speed;
+    }
+
+    /// Tears at the barrier while next to it and boards remain. Returns true
+    /// while the zombie is busy with it (and should not move).
+    fn tear_barrier(&mut self, position: Vector3, dt: f32) -> bool {
+        let Some(mut barrier) = self.barrier.clone() else {
+            return false;
+        };
+        if !barrier.is_instance_valid() {
+            self.barrier = None;
+            return false;
+        }
+        let boards = barrier.call("boards", &[]).try_to::<i64>().unwrap_or(0);
+        let at = barrier.get_global_position();
+        let near = zombies::flat_distance(to_sim(position), to_sim(at)) < BARRIER_REACH;
+        if boards == 0 {
+            // Through the window once past it: chase from here on.
+            if self.waypoint.is_none() {
+                self.barrier = None;
+            }
+            return false;
+        }
+        if !near {
+            return false;
+        }
+        let to = at - position;
+        self.yaw = (-to.x).atan2(-to.z);
+        self.tear_for += dt;
+        if self.tear_for >= TEAR_SECONDS {
+            self.tear_for = 0.0;
+            self.rig.bind_mut().attack();
+            barrier.call("tear", &[]);
+        }
+        true
+    }
+
+    fn groan(&mut self, dt: f32) {
+        self.groan_in -= dt;
+        if self.groan_in > 0.0 {
+            return;
+        }
+        self.counter_groan();
+        let sound = self.groans.clone();
+        self.say(sound);
+    }
+
+    fn counter_groan(&mut self) {
+        self.seed = self.seed.wrapping_add(1);
+        self.groan_in = GROAN_MIN + rng::unit(self.seed, 1) * (GROAN_MAX - GROAN_MIN);
+    }
+
+    fn say(&mut self, sound: Option<Gd<AudioStream>>) {
+        if let (Some(voice), Some(sound)) = (&mut self.voice, sound) {
+            voice.set_stream(&sound);
+            voice.play();
+        }
+    }
+
+    /// Animation updates every frame near the camera, every second frame
+    /// further away, and every fourth frame far away.
+    fn animation_interval(&self) -> u32 {
+        let Some(camera) = self.base().get_viewport().and_then(|v| v.get_camera_3d()) else {
+            return 1;
+        };
+        let distance = camera
+            .get_global_position()
+            .distance_to(self.base().get_global_position());
+        if distance > QUARTER_RATE_DISTANCE {
+            4
+        } else if distance > HALF_RATE_DISTANCE {
+            2
+        } else {
+            1
+        }
     }
 
     /// The gates a stuck zombie may head for.

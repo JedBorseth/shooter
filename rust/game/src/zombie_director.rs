@@ -8,7 +8,9 @@
 //! spawn points with a `zone` metadata only spawn once their zone is open, and
 //! zombies spawned there first walk to the spawn's `via` point (the gate).
 //! Kills sometimes drop power-ups, which the player collects by walking over
-//! them.
+//! them. Spawn points behind a window name its `barrier`; zombies spawned
+//! there tear it down first, and players board it back up for points
+//! ([`ZombieDirector::rebuild_reward`]).
 
 use godot::classes::{INode3D, Node3D, PackedScene};
 use godot::prelude::*;
@@ -70,6 +72,20 @@ pub struct ZombieDirector {
     double_points_left: f32,
     /// A Nuke is killing everything: its kills pay nothing on their own.
     nuking: bool,
+    /// Points paid this round for rebuilding barriers.
+    rebuild_points: i64,
+}
+
+/// Points for each board put back on a barrier.
+const REBUILD_POINTS: i64 = 10;
+/// Most points rebuilding pays in one round.
+const MAX_REBUILD_POINTS: i64 = 300;
+
+#[derive(Clone)]
+struct SpawnPoint {
+    position: Vector3,
+    via: Option<Vector3>,
+    barrier: Option<Gd<Node3D>>,
 }
 
 struct Drop {
@@ -120,6 +136,7 @@ impl INode3D for ZombieDirector {
                 RoundEvent::RoundStarted { round } => {
                     self.round_kills = 0;
                     self.round_drops = 0;
+                    self.rebuild_points = 0;
                     self.signals().round_started().emit(i64::from(round));
                 }
                 RoundEvent::RoundCleared { round } => {
@@ -213,6 +230,19 @@ impl ZombieDirector {
     #[func]
     fn double_points_left(&self) -> f32 {
         self.double_points_left
+    }
+
+    /// Pays for a board put back on a barrier, up to a cap each round.
+    /// Returns the points paid.
+    #[func]
+    fn rebuild_reward(&mut self) -> i64 {
+        if self.rebuild_points >= MAX_REBUILD_POINTS {
+            return 0;
+        }
+        self.rebuild_points += REBUILD_POINTS;
+        let before = self.points;
+        self.award(REBUILD_POINTS);
+        self.points - before
     }
 
     /// Gives points outright (tests and debugging).
@@ -443,8 +473,9 @@ impl ZombieDirector {
         self.base().try_get_node_as::<Node3D>(&self.player_path)
     }
 
-    /// Spawn points in open zones, each with its gate (`via`) if it has one.
-    fn spawn_points(&self) -> Vec<(Vector3, Option<Vector3>)> {
+    /// Spawn points in open zones, each with its gate or window (`via`) and
+    /// barrier if it has them.
+    fn spawn_points(&self) -> Vec<SpawnPoint> {
         let Some(parent) = self.base().try_get_node_as::<Node>(&self.spawns_path) else {
             return Vec::new();
         };
@@ -465,31 +496,47 @@ impl ZombieDirector {
                     .has_meta("via")
                     .then(|| n.get_meta("via").try_to::<Vector3>().ok())
                     .flatten();
-                (n.get_global_position(), via)
+                let barrier = n
+                    .has_meta("barrier")
+                    .then(|| n.get_meta("barrier").try_to::<NodePath>().ok())
+                    .flatten()
+                    .and_then(|path| n.try_get_node_as::<Node3D>(&path));
+                SpawnPoint {
+                    position: n.get_global_position(),
+                    via,
+                    barrier,
+                }
             })
             .collect()
     }
 
     /// A spawn point away from the player, picked by a hash of the round and
     /// zombie, so the same match spawns the same way.
-    fn pick_spawn(&self, round: u32, index: u32) -> Option<(Vector3, Option<Vector3>)> {
+    fn pick_spawn(&self, round: u32, index: u32) -> Option<SpawnPoint> {
         let points = self.spawn_points();
         if points.is_empty() {
             return None;
         }
         let player = self.player().map(|p| p.get_global_position());
-        let far: Vec<(Vector3, Option<Vector3>)> = points
+        let far: Vec<SpawnPoint> = points
             .iter()
-            .copied()
-            .filter(|(p, _)| player.is_none_or(|pl| p.distance_to(pl) >= self.spawn_min_distance))
+            .filter(|s| {
+                player.is_none_or(|pl| s.position.distance_to(pl) >= self.spawn_min_distance)
+            })
+            .cloned()
             .collect();
-        let pool = if far.is_empty() { points } else { far };
+        let mut pool = if far.is_empty() { points } else { far };
         let pick = rng::hash(round, index) as usize % pool.len();
-        Some(pool[pick])
+        Some(pool.swap_remove(pick))
     }
 
     fn spawn(&mut self, round: u32, index: u32, health: f32, speed: f32) {
-        let Some((position, via)) = self.pick_spawn(round, index) else {
+        let Some(SpawnPoint {
+            position,
+            via,
+            barrier,
+        }) = self.pick_spawn(round, index)
+        else {
             godot_error!("ZombieDirector: no spawn points under {}", self.spawns_path);
             return;
         };
@@ -508,6 +555,9 @@ impl ZombieDirector {
             z.set_insta_kill(self.insta_kill_left > 0.0);
             if let Some(via) = via {
                 z.set_waypoint(via);
+            }
+            if let Some(barrier) = barrier {
+                z.set_barrier(barrier);
             }
         }
         // Face the player from the start.

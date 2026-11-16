@@ -142,12 +142,12 @@ Done: rounds with a growing, toughening horde, zombies that walk straight at the
 - [x] Spend points: wall weapons with prices, ammo at half price, and debris over two gates that opens side yards with their own spawns and wall weapons (`scripts/zombies_door.gd`; the director is the wallet).
 - [x] Power-ups that drop from kills: Max Ammo, Insta-Kill, Double Points, and a nuke (rules in `rust/sim/src/zombies.rs`, tokens in `scripts/zombies_power_up.gd`).
 - [ ] Start Zombies with only the M1911 (needs an empty primary slot in `CombatState`).
-- [ ] Zombie sounds (groans, attack, death) and a round-change sting. Needs CC0 audio.
-- [ ] Barriers at the spawn points that zombies tear down and players rebuild for points.
+- [x] Zombie sounds (groans, attacks, deaths; CC0, `tools/build_zombie_audio.py`) and round stings (synthesized).
+- [x] Barriers: zombies spawn outside and tear the boards off their window; players rebuild them for points (`scripts/zombies_barrier.gd`).
 - [ ] Downed state and revives for co-op, once Zombies runs on the dedicated server.
 - [ ] Playable versions of the menu's maps; today every map loads the one arena.
 - [x] A cheaper zombie for big hordes: two surfaces per character instead of eleven (a 24-zombie horde draws about 195 calls instead of 630).
-- [ ] Animate distant zombies at a reduced rate. Needs care: `SoldierPoser` adjusts the animated pose every frame.
+- [x] Animate distant zombies at a reduced rate: every second frame beyond 18 m and every fourth beyond 32 m, staggered across zombies.
 
 ## Phase 5: online services (all self-hosted)
 

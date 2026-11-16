@@ -74,6 +74,11 @@ Zombies always walk in a straight line at you and slide along whatever is in the
 way; ones that spawn in a side yard walk to its gate first, and ones that walk into
 a wall head for the open gate on the shortest way to you. Up to 24 are alive at once.
 
+Zombies spawn outside the walls and climb in through eight boarded windows, tearing
+off one board a second or so. Look at a damaged window and press F to put a board
+back: 10 points a board, up to 300 a round. Bullets pass between the boards. Zombies
+groan as they come, snarl when they swing, and a sting marks each round.
+
 A zombie that reaches you swings. The first hit takes half your health and the
 second kills you, unless your health has fully regenerated in between. There is no
 respawn: death ends the match and shows how many rounds you survived, with

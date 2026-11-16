@@ -10,6 +10,8 @@ const BLOOD := Color(0.62, 0.05, 0.03)
 const POINTS_COLOR := Color(1.0, 0.86, 0.45)
 const SPEND_COLOR := Color(0.95, 0.4, 0.3)
 const POWER_UP_COLOR := Color(0.55, 1.0, 0.45)
+const ROUND_START_SOUND := "res://assets/audio/zombies/round_start.ogg"
+const ROUND_END_SOUND := "res://assets/audio/zombies/round_end.ogg"
 ## Seconds each "+N" popup floats.
 const POPUP_TIME := 0.9
 const MAX_POPUPS := 8
@@ -26,6 +28,7 @@ var _left_label: Label
 var _banner: Label
 var _banner_time := 0.0
 var _power_ups: Label
+var _sting: AudioStreamPlayer
 var _round_flash := 0.0
 ## Each popup: {"label": Label, "age": float}.
 var _popups: Array[Dictionary] = []
@@ -57,6 +60,10 @@ func _ready() -> void:
 	_power_ups.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_place(_power_ups, Vector2(0.5, 1), Rect2(-300, -150, 600, 40))
 	_build_game_over()
+	_sting = AudioStreamPlayer.new()
+	_sting.bus = &"UI"
+	_sting.volume_db = -3.0
+	add_child(_sting)
 	if _director == null:
 		return
 	_director.round_started.connect(_on_round_started)
@@ -120,12 +127,20 @@ func _tally(round_number: int) -> String:
 
 
 func _on_round_started(round_number: int) -> void:
+	_play_sting(ROUND_START_SOUND)
 	_round_label.text = _tally(round_number)
 	_round_flash = 2.0
 	_show_banner("ROUND %d" % round_number, 2.5)
 
 
+func _play_sting(path: String) -> void:
+	if ResourceLoader.exists(path):
+		_sting.stream = load(path)
+		_sting.play()
+
+
 func _on_round_cleared(round_number: int) -> void:
+	_play_sting(ROUND_END_SOUND)
 	_show_banner("ROUND %d SURVIVED" % round_number, 3.0)
 
 
