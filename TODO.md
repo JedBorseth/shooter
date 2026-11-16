@@ -34,7 +34,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 
 ### Weapons and gunplay
 
-- [ ] First-person arms (CC0 rigged arms, or temporary blockout hands) attached to the weapons.
+- [x] First-person arms attached to the weapons: the soldier's arms mesh, with IK onto `GripRight`/`GripLeft` markers on each weapon view (`rust/game/src/character/arms.rs`).
 - [ ] Authored animations (draw, reload, empty reload, sprint, inspect) driven by `AnimationTree`, replacing the procedural reload and switch poses in `rust/game/src/viewmodel.rs`.
 - [x] Bullet tracers: own tracers every Nth round (`tracer_every` in the weapon file). The sentry already uses the same tracer scene, as remote players will.
 - [x] Shell ejection particles from an ejection-port marker on each `WeaponView`.
@@ -94,7 +94,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] A determinism test in `rust/sim`: the same input stream gives bit-identical state across runs and in release and debug builds.
 - [x] Network condition simulator (latency, jitter, loss) for local testing, plus a debug overlay (ping, loss, prediction error).
 - [x] Headless dedicated server export: an export preset with the `dedicated_server` feature, a `--server` command-line flag, no rendering or audio.
-- [ ] Third-person player model for remote players: CC0 character with locomotion blend space, aim offset, and weapon in hand. (Remote players are placeholder capsules with a gun, muzzle flash, and gunfire sound.)
+- [x] Third-person player model for remote players: CC0 soldier with locomotion blend spaces, aim pitch, hand IK on the weapon, reload, and death (`SoldierRig`, see `docs/art-direction.md`).
 - [ ] Server-side shots: resolve `CombatEvent::Fired` on the server against other players' hitboxes and send hit confirmations. Lands together with Phase 3's rewind.
 - [ ] Input rate limits: the server applies up to three queued inputs per tick to drain a backlog, so a client that sends inputs faster than the tick rate moves faster. Cap inputs per second per client.
 - [ ] Replays on slopes: `body::place` restores the body's floor contact but not its remembered floor normal, so a correction replayed on the ramp may drift and correct again. Add a ramp run to `godot/tests/net_test.gd` and restore the floor normal if it shows up.
@@ -103,16 +103,17 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 
 ## Phase 3: lag compensation
 
-- [ ] Hitboxes per body part (head, torso, limbs) on the hitboxes collision layer, with damage multipliers.
+- [x] Hitboxes per body part (head, chest, stomach, arms, legs) on the hitboxes collision layer, with damage multipliers (`rust/sim/src/hitbox.rs`, `HitboxRig`).
 - [ ] Server hitbox history: a ring buffer of hitbox transforms for about 1 second of ticks.
 - [ ] Rewind on fire: the server checks the shot against the hitboxes as the shooter saw them (interpolation delay + RTT), capped at a maximum rewind.
-- [ ] Debug visualization: draw server-rewound hitboxes next to client hitboxes.
-- [ ] Unit tests for rewind math in `rust/sim` (engine-free hit testing with simple shapes).
+- [ ] Debug visualization: draw server-rewound hitboxes next to client hitboxes. (F4 already draws every character's client-side hitboxes.)
+- [ ] Unit tests for rewind math in `rust/sim`. (Engine-free hit testing with simple shapes exists: `hitbox::raycast`.)
 
 ## Phase 4: game loop
 
 - [x] Health, regeneration after a delay, death, and respawn (`shooter_sim::player`). Respawn picks the original spawn until the spawn system exists.
 - [ ] Team Deathmatch: two teams of 6, score limit, time limit, round end screen.
+- [ ] Team colours from the match: send each player's team in snapshots and set `SoldierRig.team` (allies tan with blue accents, enemies charcoal with red-orange; see `docs/art-direction.md`).
 - [ ] Spawn system: weighted spawn points that avoid enemy line of sight and recent deaths.
 - [ ] Kill feed, scoreboard (Tab), and match timer HUD.
 - [ ] Killcam from the server snapshot buffer.

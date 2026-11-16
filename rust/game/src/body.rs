@@ -128,7 +128,8 @@ pub fn build_body(name: &str) -> BodyParts {
     let mut body = CharacterBody3D::new_alloc();
     body.set_name(name);
     body.set_collision_layer(PLAYER_LAYER);
-    body.set_collision_mask(crate::target::WORLD_LAYER);
+    // Walls and floors, and solid bodies such as target dummies.
+    body.set_collision_mask(crate::target::WORLD_LAYER | crate::target::BODY_LAYER);
     body.set_floor_constant_speed_enabled(true);
     body.set_floor_snap_length(0.3);
 

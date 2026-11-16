@@ -14,9 +14,11 @@ use godot::classes::{
 use godot::global::randf_range;
 use godot::prelude::*;
 use shooter_sim::rng;
-use shooter_sim::weapon::WeaponId;
+use shooter_sim::weapon::{Slot, WeaponId};
 
 use crate::audio;
+use crate::character::arms::FpArms;
+use crate::character::poser::Grips;
 use crate::spring::{Spring, smoothing};
 
 /// One rendered frame of state the rig animates from.
@@ -129,6 +131,16 @@ pub struct WeaponView {
     #[export]
     #[init(val = -3.0)]
     tail_db: f32,
+    /// Pistol grip rake in degrees (how far the grip leans back from vertical),
+    /// for the hand that holds it. The grip positions are the `GripRight` and
+    /// `GripLeft` markers.
+    #[export]
+    #[init(val = 22.0)]
+    grip_rake: f32,
+    /// Set before the view enters the tree to use it as a third-person weapon:
+    /// normal materials, a camera-facing flash, and no sounds or shells.
+    #[export]
+    world_model: bool,
 
     #[init(node = "Model")]
     model: OnReady<Gd<Node3D>>,
@@ -158,12 +170,16 @@ pub struct WeaponView {
 #[godot_api]
 impl INode3D for WeaponView {
     fn ready(&mut self) {
+        self.id = WeaponId::by_key(&self.weapon.to_string());
+        if self.world_model {
+            self.ready_world();
+            return;
+        }
         let shader = load::<Shader>("res://shaders/viewmodel.gdshader");
         convert_to_viewmodel_materials(&self.model.clone().upcast(), &shader, self.albedo_boost);
         self.cycle_sound = self.base().try_get_node_as("CycleSound");
         self.round_sound = self.base().try_get_node_as("RoundSound");
         self.ejection = self.base().try_get_node_as("Ejection");
-        self.id = WeaponId::by_key(&self.weapon.to_string());
         if self.id.is_none() {
             godot_error!("WeaponView: unknown weapon `{}`", self.weapon);
         }
@@ -190,6 +206,41 @@ impl INode3D for WeaponView {
 impl WeaponView {
     pub fn weapon_id(&self) -> Option<WeaponId> {
         self.id
+    }
+
+    /// Where the hands hold this weapon, in its own space.
+    pub fn grips(&self) -> Grips {
+        crate::character::rig::grips_of(&self.to_gd().upcast(), self.grip_rake)
+    }
+
+    /// Third-person setup: brightened standard materials (the low-poly pack is
+    /// dark), a flash that faces the camera, a shorter flash light, and no
+    /// gunshot layers.
+    fn ready_world(&mut self) {
+        brighten_materials(&self.model.clone().upcast(), self.albedo_boost.sqrt());
+        if let Some(material) = self.flash.get_active_material(0)
+            && let Ok(mut world) = material.duplicate_resource().try_cast::<ShaderMaterial>()
+        {
+            world.set_shader_parameter("viewmodel", &false.to_variant());
+            self.flash.set_surface_override_material(0, &world);
+        }
+        self.flash.set_scale(Vector3::splat(1.6));
+        self.flash_light
+            .set_param(godot::classes::light_3d::Param::RANGE, 4.0);
+        // The sound players stay but never play: other players' gunfire is
+        // positional and comes from their own node.
+        self.flash.set_visible(false);
+        self.flash_light.set_visible(false);
+    }
+
+    /// A muzzle flash with no sound, for third-person weapons.
+    pub fn flash_world(&mut self) {
+        self.flash_count = self.flash_count.wrapping_add(1);
+        let roll = (self.flash_count as f32 * 2.399_963) % (2.0 * PI);
+        self.flash.set_rotation(Vector3::new(0.0, 0.0, roll));
+        self.flash.set_visible(true);
+        self.flash_light.set_visible(true);
+        self.flash_time = 0.05;
     }
 
     /// Where shells come out, in the view's parent (rig) space.
@@ -365,6 +416,81 @@ fn viewmodel_material(
     material
 }
 
+/// Multiplies the albedo of every standard material under `root` (on copies).
+fn brighten_materials(root: &Gd<Node>, boost: f32) {
+    for child in root.get_children().iter_shared() {
+        if let Ok(mut mesh) = child.clone().try_cast::<MeshInstance3D>() {
+            for surface in 0..mesh.get_surface_override_material_count() {
+                let Some(source) = mesh.get_active_material(surface) else {
+                    continue;
+                };
+                let Ok(mut copy) = source.duplicate_resource().try_cast::<BaseMaterial3D>() else {
+                    continue;
+                };
+                let a = copy.get_albedo();
+                copy.set_albedo(Color::from_rgba(a.r * boost, a.g * boost, a.b * boost, a.a));
+                mesh.set_surface_override_material(surface, &copy);
+            }
+        }
+        brighten_materials(&child, boost);
+    }
+}
+
+thread_local! {
+    static WEAPON_SCENES: std::cell::RefCell<std::collections::HashMap<String, Gd<PackedScene>>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+const WEAPON_SCENE_DIR: &str = "res://scenes/weapons";
+
+/// The weapon view scene for a weapon: `scenes/weapons/<key>_view.tscn`, or any
+/// scene in that folder whose root `weapon` property is the key.
+pub fn weapon_scene(id: WeaponId) -> Option<Gd<PackedScene>> {
+    let key = id.def().key.clone();
+    if let Some(scene) = WEAPON_SCENES.with(|c| c.borrow().get(&key).cloned()) {
+        return Some(scene);
+    }
+    let mut loader = godot::classes::ResourceLoader::singleton();
+    let direct = format!("{WEAPON_SCENE_DIR}/{key}_view.tscn");
+    let scene = if loader.exists(&direct) {
+        try_load::<PackedScene>(&direct).ok()
+    } else {
+        loader
+            .list_directory(WEAPON_SCENE_DIR)
+            .as_slice()
+            .iter()
+            .map(|f| f.to_string())
+            .filter(|f| f.ends_with(".tscn") || f.ends_with(".scn"))
+            .filter_map(|f| try_load::<PackedScene>(&format!("{WEAPON_SCENE_DIR}/{f}")).ok())
+            .find(|scene| scene_weapon_key(scene).as_deref() == Some(key.as_str()))
+    }?;
+    WEAPON_SCENES.with(|c| c.borrow_mut().insert(key, scene.clone()));
+    Some(scene)
+}
+
+/// The `weapon` property of a weapon view scene's root, read without instancing it.
+fn scene_weapon_key(scene: &Gd<PackedScene>) -> Option<String> {
+    let state = scene.get_state()?;
+    (0..state.get_node_property_count(0))
+        .find(|&i| state.get_node_property_name(0, i) == "weapon")
+        .map(|i| {
+            state
+                .get_node_property_value(0, i)
+                .to::<GString>()
+                .to_string()
+        })
+}
+
+/// A weapon view set up as a third-person weapon, not yet in the tree.
+pub fn instantiate_world_weapon(id: WeaponId) -> Option<Gd<WeaponView>> {
+    let mut view = weapon_scene(id)?
+        .instantiate()?
+        .try_cast::<WeaponView>()
+        .ok()?;
+    view.bind_mut().world_model = true;
+    Some(view)
+}
+
 /// Moves the active [`WeaponView`] procedurally. Child of the camera.
 #[derive(GodotClass)]
 #[class(init, base = Node3D)]
@@ -381,6 +507,8 @@ pub struct ViewmodelRig {
     bob_frequency: f32,
 
     views: Vec<Gd<WeaponView>>,
+    /// The player's arms, holding the active view.
+    arms: Option<Gd<FpArms>>,
     active: Option<WeaponId>,
     shells: Vec<Shell>,
     next_shell: usize,
@@ -418,6 +546,7 @@ impl INode3D for ViewmodelRig {
         for view in &mut self.views {
             view.set_visible(false);
         }
+        self.arms = self.base().try_get_node_as::<FpArms>("Arms");
         self.shell_sound = self.make_player("res://assets/audio/player/shell", -16.0);
         self.low_ammo_sound = self.make_player("res://assets/audio/player/low_ammo", -10.0);
     }
@@ -714,5 +843,19 @@ impl ViewmodelRig {
         let basis = Basis::from_euler(EulerOrder::YXZ, Vector3::new(pitch, yaw, roll));
         let origin = position + pivot - basis * pivot;
         view.set_transform(Transform3D::new(basis, origin));
+
+        if let Some(arms) = &mut self.arms {
+            // The support hand leaves the weapon for the middle of a reload.
+            let p = self.reload_progress;
+            let support = self.reload_blend
+                * smoothstep((p - 0.1) / 0.15)
+                * (1.0 - smoothstep((p - 0.62) / 0.2));
+            let hold = shown.then(|| {
+                let mut grips = view.bind().grips();
+                grips.pistol = frame.weapon.def().slot == Slot::Secondary;
+                (view.clone().upcast::<Node3D>(), grips)
+            });
+            arms.bind_mut().follow(hold, support);
+        }
     }
 }

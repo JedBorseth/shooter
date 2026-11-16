@@ -27,6 +27,7 @@ use godot::classes::{
     PhysicsDirectSpaceState3D, PhysicsRayQueryParameters3D, ShapeCast3D,
 };
 use godot::prelude::*;
+use shooter_sim::hitbox::HitZone;
 use shooter_sim::look::{
     self, AimAssist, AimAssistParams, AssistTarget, AssistView, StickLook, StickParams,
 };
@@ -1146,17 +1147,18 @@ impl FpsPlayer {
 
             let target = hit.collider.as_ref().and_then(find_damageable);
             if let (Some(collider), Some(target)) = (&hit.collider, target) {
-                let headshot = collider
-                    .get_meta_ex("hit_zone")
-                    .default(&"body".to_variant())
-                    .done()
-                    .to_string()
-                    == "head";
+                // Untagged damageable colliders (the sentry) count as the chest.
+                let zone = HitZone::from_name(
+                    &collider
+                        .get_meta_ex("hit_zone")
+                        .default(&"chest".to_variant())
+                        .done()
+                        .to_string(),
+                )
+                .unwrap_or(HitZone::Chest);
+                let headshot = zone == HitZone::Head;
                 let distance = origin.distance_to(hit.position);
-                let mut damage = def.damage_at(distance);
-                if headshot {
-                    damage *= def.damage.headshot;
-                }
+                let damage = def.damage_at(distance) * zone.damage_scale(def.damage.headshot);
                 match targets
                     .iter_mut()
                     .find(|(t, ..)| t.instance_id() == target.instance_id())

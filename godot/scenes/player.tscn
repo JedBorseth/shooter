@@ -8,6 +8,7 @@
 [ext_resource type="PackedScene" path="res://scenes/weapons/pdw9_view.tscn" id="6_pdw9"]
 [ext_resource type="PackedScene" path="res://scenes/weapons/m870_view.tscn" id="7_m870"]
 [ext_resource type="PackedScene" path="res://scenes/weapons/m40_view.tscn" id="8_m40"]
+[ext_resource type="PackedScene" path="res://scenes/characters/fp_arms.tscn" id="9_arms"]
 
 [sub_resource type="CapsuleShape3D" id="Capsule_body"]
 radius = 0.35
@@ -18,6 +19,7 @@ radius = 0.3
 
 [node name="Player" type="FpsPlayer"]
 collision_layer = 2
+collision_mask = 17
 floor_constant_speed = true
 floor_snap_length = 0.3
 impact_scene = ExtResource("3_impact")
@@ -59,3 +61,5 @@ near = 0.03
 [node name="M870" parent="Camera/Viewmodel" instance=ExtResource("7_m870")]
 
 [node name="M40" parent="Camera/Viewmodel" instance=ExtResource("8_m40")]
+
+[node name="Arms" parent="Camera/Viewmodel" instance=ExtResource("9_arms")]

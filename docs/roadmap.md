@@ -12,7 +12,9 @@ movement and gunplay, with 6v6 matches on dedicated servers.
 | Code split | `rust/sim` has no engine types | The same deterministic code drives client prediction and the server, and it can be unit-tested. |
 | Server | Headless Godot export running the same project and Rust extension | Client and server collide against the same map with the same physics. |
 | First milestone | 6v6 Team Deathmatch on a dedicated server | The core mode of the genre. |
-| Art | CC0 placeholders (Quaternius guns, OpenGameArt sounds) and a shader grid on blockout maps | Get the feel right first. |
+| Art | Clean low-poly modern military: flat colours, no photo textures. CC0 Quaternius guns and characters, OpenGameArt sounds, and a shader grid on blockout maps. Teams differ in value (tan against charcoal) and accent (blue against red-orange). See [art-direction.md](art-direction.md) | Matches the guns already in use, reads at a glance, renders fast, and a small team can finish it. |
+| Characters | One humanoid soldier on Godot's `SkeletonProfileHumanoid`, retargeted at import, so any humanoid animation set plays on any body. Animation tree for locomotion, a Rust skeleton modifier for aim, spine twist, and two-bone hand IK onto grip markers on each weapon | Remote players, range dummies, the first-person arms, and later zombies share one rig and one pipeline. |
+| Hit zones | Head, chest, stomach, arms, and legs as simple shapes in `rust/sim/src/hitbox.rs`, posed from feet position, view angles, and stance, not from the animated skeleton | The server never runs animation, and lag compensation can rebuild past hitboxes from snapshots. Same result on every machine. |
 | Sprint and crouch | Toggles, as in classic Call of Duty on PC | Requested by the project lead. |
 | Weapon data | One RON file per weapon in `godot/data/weapons/`, parsed by `shooter-sim` | Tuning without recompiling, hot reload in debug builds, and the same numbers on client and server. A `WeaponId` is an index into the table sorted by file name, so both sides must load the same files. |
 | Hosting | Dedicated headless server only, even for local play. No listen server | One authority model. Client and server code never share a process, so nothing leaks between them. |
@@ -48,18 +50,20 @@ Each phase ends with something playable.
    - ✅ Arcade retune: about 35% less aim recoil with faster recovery on every weapon, a visual-only camera punch per weapon, harder weapon kick with roll, popping hit markers, larger muzzle flashes, mailbox vsync.
    - ✅ Crisp pass: 120 Hz simulation tick, recoil without tick lag, faster stops, jump buffering and coyote time, quicker ADS, sprint-out and weapon switches, SMAA, lighter lighting, FOV kicks on slides and kills, target flinch and topple.
    - ✅ Arcade scoring: kill points with headshot, longshot, point-blank, collateral, multi-kill and streak bonuses (rules in `rust/sim/src/score.rs`, ready to move to the server), "+N" popups, medal banners with a chime, score and K/D in the HUD.
-   - Next: hands and authored animations, reverb zones, gamepad settings in the menu, LMG.
+   - ✅ Characters: a CC0 soldier retargeted to the humanoid profile, team colours, hit zones with damage multipliers (head, chest, stomach, arms, legs) and an F4 overlay, soldier range dummies, and first-person arms holding every weapon. See [art-direction.md](art-direction.md).
+   - Next: authored first-person animations (draw, reload, inspect), reverb zones, gamepad settings in the menu, LMG.
 
 2. **Netcode core.** Server-authoritative 120 Hz tick (the same `TICK_RATE` the client simulates at), with snapshots sent at 60 Hz. Clients send input with tick numbers. The client predicts its own movement and replays inputs when the server corrects it. Remote players render about 100 ms behind with snapshot interpolation. Snapshots are delta-compressed over ENet (UDP).
    - ✅ Wire protocol in `rust/sim/src/net`: bit-packed messages; redundant inputs (up to 16 per packet); snapshots carry the receiver's full state bit-exact and every other player quantized (millimetres, 16-bit angles) and delta-compressed against the client's last acknowledged snapshot. Fuzzed against garbage input.
    - ✅ Dedicated server (`NetServer`, `-- --server`) with scripted bots, and a headless Linux server export.
    - ✅ Client (`NetClient`, `-- --connect`): prediction and reconciliation with replay through the same `body::tick` the server runs, visual error smoothing, adaptive snapshot interpolation for remote players, a link conditioner (latency, jitter, loss), and an F3 overlay.
    - ✅ Determinism: a one-minute scripted run hashes the same in debug and release, and on Linux, Windows, and macOS in CI.
-   - Next: a third-person character for remote players (they are placeholder capsules), then Phase 3.
+   - ✅ Remote players are drawn as the soldier: locomotion, aim, weapon in hand, reload, fire, and death from snapshot state.
+   - Next: Phase 3.
 3. **Lag compensation.** The server keeps a hitbox history ring buffer and rewinds to the shooter's view time to check hits. Favor-the-shooter with a rewind cap.
 4. **Game loop.** Team Deathmatch: spawns, health and damage falloff, kill feed, scoreboard, respawn, match timer, first real map.
 5. **Online services.** Self-hosted Nakama for accounts, parties, and matchmaking. Dockerized headless servers. Agones later, to start servers on demand.
-6. **Polish.** Third-person character with animation tree and IK for other players, audio occlusion and positional mixing, killcam (replay from the server snapshot buffer), post-processing, server-side anti-cheat (input validation, rate limits).
+6. **Polish.** Ragdolls and directional hit reactions, audio occlusion and positional mixing, killcam (replay from the server snapshot buffer), post-processing, server-side anti-cheat (input validation, rate limits).
 7. **Content.** Weapon classes, attachments, loadouts, progression, more maps.
 
 ## Reference projects

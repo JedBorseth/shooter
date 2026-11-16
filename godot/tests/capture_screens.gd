@@ -1,8 +1,9 @@
 extends SceneTree
 ## Captures reference screenshots of the first-person view (every weapon at the
 ## hip and aimed, firing, sprint, reload, shotgun pump, sniper scope, impacts,
-## weapon racks, kill popups and medals, damage, death) for
-## reviewing weapon feel and visuals.
+## weapon racks, kill popups and medals, damage, death) and of the soldier
+## characters (both teams in several poses, a close-up, and the F4 hitbox
+## overlay) for reviewing feel and visuals.
 ## Needs a GPU and a display (or Xvfb):
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
 ##     --script res://tests/capture_screens.gd
@@ -162,6 +163,8 @@ func _run() -> void:
 	Input.action_release("aim")
 	await _sixtieths(60)
 
+	await _characters(main, player)
+
 	# Damage from the left, then death.
 	player.set_look(0.0, 0.0)
 	player.take_damage(45.0, player.global_position + Vector3(-10, 0, 0))
@@ -171,6 +174,76 @@ func _run() -> void:
 	await _sixtieths(70)
 	await _shot("19_dead")
 	quit()
+
+
+## Soldiers of both teams in a row, the hitbox overlay on the range dummies, and
+## a close-up from a free camera.
+func _characters(main: Node, player: FpsPlayer) -> void:
+	player.give_weapon("m4")
+	player.global_position = Vector3(0, 0.05, 14.5)
+	player.set_look(0.0, -0.1)
+	var scene := load("res://scenes/characters/soldier.tscn") as PackedScene
+	var poses := [
+		{"weapon": "m4"},
+		{"weapon": "ak47", "ads": 1.0},
+		{"weapon": "m870", "stance": "crouching"},
+		{"weapon": "pdw9", "velocity": Vector3(0, 0, 5)},
+		{"weapon": "m40", "reload": 0.4},
+		{"weapon": "m1911", "ads": 1.0},
+	]
+	var soldiers: Array[SoldierRig] = []
+	for i in poses.size():
+		var soldier := scene.instantiate() as SoldierRig
+		main.add_child(soldier)
+		soldier.set_team_index(i % 2)
+		soldier.global_position = Vector3(-3.75 + 1.5 * i, 0, 9.5)
+		soldiers.append(soldier)
+	for frame in 90:
+		for i in soldiers.size():
+			var pose: Dictionary = poses[i].duplicate()
+			pose["yaw"] = PI
+			soldiers[i].drive(pose, 1.0 / 60.0)
+		await process_frame
+	await _shot("22_soldiers")
+
+	# The hitbox overlay on the same row of range dummies.
+	for soldier in soldiers:
+		soldier.queue_free()
+	player.global_position = Vector3(0, 0.05, 16)
+	player.set_look(0.0, -0.12)
+	HitboxRig.set_debug_visible(true)
+	await _sixtieths(10)
+	await _shot("23_hitboxes")
+	HitboxRig.set_debug_visible(false)
+
+	# Close-up from a free camera, without the HUD.
+	var layers := root.find_children("*", "CanvasLayer", true, false)
+	for layer: CanvasLayer in layers:
+		layer.visible = false
+	# The player's own arms float at its camera, which this view can see.
+	var viewmodel := player.get_node("Camera/Viewmodel") as Node3D
+	viewmodel.visible = false
+	var hero := scene.instantiate() as SoldierRig
+	main.add_child(hero)
+	hero.global_position = Vector3(0, 0, 14)
+	var camera := Camera3D.new()
+	camera.fov = 40
+	main.add_child(camera)
+	camera.look_at_from_position(Vector3(1.4, 1.55, 11.4), Vector3(0, 1.25, 14))
+	camera.make_current()
+	for team in [1, 0]:
+		hero.set_team_index(team)
+		for frame in 60:
+			hero.drive({"weapon": "m4", "yaw": -0.35, "pitch": 0.05}, 1.0 / 60.0)
+			await process_frame
+		await _shot("24_closeup_%s" % ("enemy" if team == 1 else "ally"))
+	hero.queue_free()
+	camera.queue_free()
+	for layer: CanvasLayer in layers:
+		layer.visible = true
+	viewmodel.visible = true
+	(player.get_node("Camera") as Camera3D).make_current()
+	await _sixtieths(5)
 
 
 func _wait_for_flash(player: FpsPlayer) -> void:

@@ -89,6 +89,15 @@ func _run() -> void:
 		var from := bot.feet()
 		await _ticks(60)
 		_check(bot.feet().distance_to(from) > 0.5, "the bot moves on this client")
+		var soldier := bot.soldier()
+		_check(
+			soldier != null and soldier.weapon_node() != null,
+			"the bot is drawn as a soldier holding a weapon"
+		)
+		_check(
+			soldier.wrist_position(true).distance_to(bot.feet()) > 0.5,
+			"the bot's hands are on its weapon (IK ran)"
+		)
 
 	# Own movement under 40-55 ms each way and 5% loss: sprint, slide, jump.
 	Input.action_press("move_forward")

@@ -7,7 +7,7 @@
     rounds_per_minute: 600,
     cycle_time: 0.62,
     pellets: 8,
-    pellet_spread: 4.5,
+    pellet_spread: 3.0,
     magazine: 6,
     reserve: 30,
     damage: (near: 20, far: 6, falloff_start: 6, falloff_end: 16, headshot: 1.2),

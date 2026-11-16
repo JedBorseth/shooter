@@ -219,25 +219,36 @@ range = 32.0
 [node name="Targets" type="Node3D" parent="."]
 
 [node name="Dummy1" parent="Targets" instance=ExtResource("4_dummy")]
-position = Vector3(-6, 0, 10)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -6, 0, 10)
+weapon = "m4"
 
 [node name="Dummy2" parent="Targets" instance=ExtResource("4_dummy")]
-position = Vector3(6, 0, 8)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 6, 0, 8)
+weapon = "ak47"
 
 [node name="Dummy3" parent="Targets" instance=ExtResource("4_dummy")]
-position = Vector3(-2, 0, -2)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -2, 0, -2)
+weapon = "pdw9"
+crouching = true
 
 [node name="Dummy4" parent="Targets" instance=ExtResource("4_dummy")]
-position = Vector3(13, 3, -18.5)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 13, 3, -18.5)
+weapon = "m40"
+aim_pitch = -6.0
 
 [node name="Dummy5" parent="Targets" instance=ExtResource("4_dummy")]
-position = Vector3(-20, 0, -25)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -20, 0, -25)
+weapon = "m870"
 
 [node name="Dummy6" parent="Targets" instance=ExtResource("4_dummy")]
-position = Vector3(0, 0, -28)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, -28)
+weapon = "m4"
+crouching = true
 
 [node name="Dummy7" parent="Targets" instance=ExtResource("4_dummy")]
-position = Vector3(16, 3.0, -16)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 16, 3.0, -16)
+weapon = "m1911"
+aim_pitch = -8.0
 
 [node name="Player" parent="." instance=ExtResource("1_player")]
 position = Vector3(0, 0.05, 20)

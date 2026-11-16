@@ -13,9 +13,10 @@ size = Vector2(0.3, 0.3)
 
 [node name="M870" type="WeaponView"]
 weapon = "m870"
+grip_rake = 45.0
 fire_volume_db = -3.0
 hip_position = Vector3(0.1, -0.1, -0.2)
-ads_position = Vector3(0, 0, -0.1)
+ads_position = Vector3(0, 0, -0.14)
 sprint_position = Vector3(-0.04, 0.015, 0.03)
 sprint_rotation = Vector3(-4, 22, 24)
 pivot = Vector3(0, -0.063, 0.085)
@@ -69,3 +70,9 @@ stream = ExtResource("7_round")
 volume_db = -5.0
 max_polyphony = 2
 bus = &"Weapons"
+
+[node name="GripRight" type="Marker3D" parent="."]
+position = Vector3(0, -0.1, 0.1)
+
+[node name="GripLeft" type="Marker3D" parent="."]
+position = Vector3(0, -0.053, -0.25)
