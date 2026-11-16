@@ -1,6 +1,6 @@
 # Asset credits
 
-Gameplay assets below are CC0 (public domain). No attribution is required, but we list them anyway.
+Gameplay assets below are CC0 (public domain), except the Barlow Condensed font, which is under the SIL Open Font License 1.1. No attribution is required, but we list them anyway.
 
 | Asset | Files | Source | License |
 | --- | --- | --- | --- |
@@ -17,6 +17,7 @@ Gameplay assets below are CC0 (public domain). No attribution is required, but w
 | Hurt Sound Effects by EZduzziteh (`hurt_01`, `hurt_04`) | `audio/player/hurt_1.ogg`, `audio/player/hurt_2.ogg` | [OpenGameArt](https://opengameart.org/content/hurt-sound-effects) | CC0 |
 | Equipment Clicks III by LFA (bolt-action rifle segment, 2.03 s to 3.08 s) | `audio/player/bolt_cycle.ogg` | [OpenGameArt](https://opengameart.org/content/equipment-clicks-iii) | CC0 |
 | Shotgun Reload Sound Effects by zer0_sol (`Rack`) | `audio/player/shotgun_pump.ogg` | [OpenGameArt](https://opengameart.org/content/shotgun-reload-sound-effects) | CC0 |
+| Barlow Condensed (Bold, ExtraBold) by The Barlow Project Authors, used for the score feed and medals | `fonts/BarlowCondensed-Bold.ttf`, `fonts/BarlowCondensed-ExtraBold.ttf` (license in `fonts/OFL.txt`) | [Google Fonts](https://github.com/google/fonts/tree/main/ofl/barlowcondensed) | OFL-1.1 |
 | Medal chime, synthesized for this project with ffmpeg (two decaying sine tones, E6 then B6, with a quiet E7 shimmer; command in the commit that added it) | `audio/ui/medal.ogg` | Original | CC0 |
 | Universal Animation Library and Universal Animation Library 2 by Quaternius (Standard): the mannequin, its rig, and the animations listed in `tools/build_character_assets.py`. The soldier's uniform regions, gear, and first-person arms are built from the mannequin by that tool | `characters/soldier/soldier.glb`, `characters/animations/ual1.glb`, `characters/animations/ual2.glb` | [OpenGameArt](https://opengameart.org/content/universal-animation-library), [OpenGameArt](https://opengameart.org/content/universal-animation-library-2) | CC0 |
 
