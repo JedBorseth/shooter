@@ -22,6 +22,7 @@ Rules of thumb for this renderer on this card, from the measurements below:
 
 - Cost is per pixel, not per triangle. Draw calls and triangle counts at today's scale barely move GPU time; full-screen effects (SSAO, MSAA, glow, soft shadows) do.
 - Bake lighting instead of computing it live. No SDFGI, VoxelGI, or screen-space reflections. Volumetric fog is High only.
+- Decals cost per pixel they cover: Slamcity's 44 (road paint, damage, manholes, drips) cost about 0.3 ms on Medium. Keep them few and small.
 - Reflection probes are expensive here: four small interior probes in Slamcity cost about 0.8 ms whenever a room filled the screen, and one probe over the whole block cost 0.7 ms everywhere. Baked lightmaps light the interiors instead (`tools/bake_lightmaps.sh`).
 - Textures are compressed on the GPU (BPTC/S3TC), with mipmaps, 1K for most surfaces and 2K only for the weapon in view. Sample each surface once (one projection), not three times.
 - Characters cost through their surfaces and skinning: keep each one to a few surfaces and use LODs.
@@ -94,3 +95,4 @@ GPU time on Medium at 1080p on the reference card, average over viewpoints (wors
 | Baked lightmaps | 5.06 (5.25) ms | 5.97 (6.19) ms | 5.15 (5.49) ms |
 | One-material characters (horde: 629 to 195 draw calls) | 5.08 (5.27) ms | 6.07 (6.26) ms | 5.22 (5.64) ms |
 | Effects (sparks, debris, dust, tracers, ambient dust) | 5.05 (5.23) ms | 5.95 (6.11) ms | 5.15 (5.55) ms |
+| Slamcity decals and building trim | 5.07 (5.26) ms | 6.31 (6.54) ms | 5.19 (5.60) ms |

@@ -44,6 +44,7 @@ MATERIALS = {
     "skyline_b": "skyline_dark",
     "skyline_c": "skyline_brick",
     "boundary": "boundary",
+    "steel": "steel_painted",
 }
 
 
@@ -238,6 +239,50 @@ def store(name, rot):
 store("StoreNorth", False)
 store("StoreSouth", True)
 
+# --- Building trim: window frames, sills, storefronts, gutters, and downpipes ------
+# Visual only (no collision), so it never changes movement or cover.
+def frame(name, parent, rot, x0, x1, y0, y1, face_z, out, mat="trim", sill=True):
+    """A frame around an opening in a wall whose face is at z = face_z, standing
+    out toward +z when out > 0 (or -z when out < 0)."""
+    t = 0.07
+    z0, z1 = sorted((face_z, face_z + out))
+    pbox(f"{name}Top", parent, rot, x0 - t, x1 + t, y1, y1 + t, z0, z1, mat)
+    pbox(f"{name}Left", parent, rot, x0 - t, x0, y0, y1, z0, z1, mat)
+    pbox(f"{name}Right", parent, rot, x1, x1 + t, y0, y1, z0, z1, mat)
+    if sill:
+        sz0, sz1 = sorted((face_z, face_z + out * 1.8))
+        pbox(f"{name}Sill", parent, rot, x0 - 0.12, x1 + 0.12, y0 - 0.08, y0, sz0, sz1, "sidewalk")
+    else:
+        pbox(f"{name}Bottom", parent, rot, x0 - t, x1 + t, y0 - t, y0, z0, z1, mat)
+
+
+def building_trim(tag, rot):
+    name = f"Trim{tag}"
+    s.combiner(name, None, collision=False)
+    # Flats, street side: ground-floor windows and every upper window.
+    frame(f"FlatsWinW{tag}", name, rot, -22.2, -20.8, 1.0, 2.1, -14.0, 0.1)
+    frame(f"FlatsWinE{tag}", name, rot, -17.3, -15.9, 1.0, 2.1, -14.0, 0.1)
+    for i, cx in enumerate((-25.4, -20.4, -15.4, -10.4)):
+        frame(f"FlatsUpper{tag}{i}", name, rot, cx + 1.0, cx + 2.4, 4.0, 5.3, -13.9, 0.1)
+        frame(f"FlatsDoor{tag}{i}", name, rot, cx - 0.6, cx + 0.6, 3.2, 5.5, -13.9, 0.08, sill=False)
+    # Flats, alley side.
+    frame(f"FlatsBackWin{tag}", name, rot, -16.0, -14.4, 1.0, 2.1, -22.0, -0.1)
+    # Gutter along the roof edge and downpipes at the corners.
+    pbox(f"Gutter{tag}", name, rot, -28.4, -7.6, 6.45, 6.6, -11.75, -11.55, "steel")
+    for i, x in enumerate((-27.85, -8.15)):
+        pbox(f"Downpipe{tag}{i}", name, rot, x - 0.06, x + 0.06, 0.0, 6.5, -13.95, -13.83, "steel")
+    # Store: dark storefront frames with a kick plate.
+    frame(f"StoreWinW{tag}", name, rot, 9.0, 12.0, 0.9, 2.6, -15.0, 0.08, mat="trim", sill=False)
+    frame(f"StoreWinE{tag}", name, rot, 14.4, 19.0, 0.9, 2.6, -15.0, 0.08, mat="trim", sill=False)
+    frame(f"StoreDoor{tag}", name, rot, 12.5, 13.7, 0.0, 2.4, -15.0, 0.08, mat="trim", sill=False)
+    pbox(f"StoreKick{tag}", name, rot, 8.0, 20.0, 0.0, 0.35, -15.0, -14.92, "trim")
+    for i, x in enumerate((8.12, 19.88)):
+        pbox(f"StorePipe{tag}{i}", name, rot, x - 0.05, x + 0.05, 0.0, 3.9, -14.95, -14.85, "steel")
+
+
+building_trim("A", False)
+building_trim("B", True)
+
 # --- Street furniture, vehicles, and alley clutter ------------------------------------
 s.combiner("Props", "concrete")
 s.combiner("PropsMetal", "metal")
@@ -346,6 +391,50 @@ for tag, rot in (("A", False), ("B", True)):
     # Roller shutters over the closed ground-floor doors of the flats.
     for i, cx in enumerate((-25.4, -10.4)):
         prop(f"Shutter{tag}{i}", "shutter_door", rot, cx, 0, -13.72)
+
+# --- Decals: road paint, wear, and grime ---------------------------------------------
+# CC0 ambientCG decals (tools/build_decals.py). Road paint is grey in the texture
+# and tinted here. A Decal projects along its local -Y.
+s.node("Decals", "Node3D", ".")
+DECALS_USED = set()
+
+
+def decal(name, texture, rotated, x, y, z, size, yaw=0.0, pitch=0.0, modulate=(1, 1, 1, 1)):
+    DECALS_USED.add(texture)
+    px, pz = rot_point(x, z, rotated)
+    props = {"position": vec(px, y, pz)}
+    yaw = yaw + (PI if rotated else 0.0)
+    if yaw or pitch:
+        props["rotation"] = vec(pitch, yaw, 0)
+    props["size"] = vec(*size)
+    props["texture_albedo"] = f'ExtResource("d_{texture}_albedo")'
+    props["texture_normal"] = f'ExtResource("d_{texture}_normal")'
+    props["modulate"] = "Color(%s)" % ", ".join(f(c) for c in modulate)
+    props["normal_fade"] = "0.3"
+    s.node(name, "Decal", "Decals", props)
+
+
+WHITE = (0.92, 0.92, 0.9, 0.9)
+YELLOW = (0.95, 0.75, 0.25, 0.9)
+for tag, rot in (("A", False), ("B", True)):
+    # Dashed centre lines down the street in front of the buildings, and crossings
+    # where it meets the plaza.
+    for i, x in enumerate((-30, -24, -18, 18, 24, 30)):
+        decal(f"Dashes{tag}{i}", "lane_dashes", rot, x, 0, -11.2, (2.0, 1.0, 6.0), PI / 2, 0, YELLOW)
+    decal(f"CrossingWest{tag}", "crosswalk", rot, -15.0, 0, -11.0, (3.5, 1.0, 5.6), 0, 0, WHITE)
+    decal(f"CrossingEast{tag}", "crosswalk", rot, 15.0, 0, -11.0, (3.5, 1.0, 5.6), 0, 0, WHITE)
+    decal(f"EdgeLine{tag}", "edge_lines", rot, -24.0, 0, 3.0, (4.0, 1.0, 8.0), 0, 0, WHITE)
+    # Patched and broken asphalt, and manholes.
+    for i, (x, z, yaw, scale) in enumerate(((-30, -3, 0.4, 3.5), (-19, -24.6, 1.1, 2.8), (5, -24.2, 2.0, 3.0),
+                                            (26, -12.5, 0.7, 3.2), (-6, -11.5, 2.6, 2.5))):
+        decal(f"Damage{tag}{i}", "asphalt_damage", rot, x, 0, z, (scale, 1.0, scale), yaw)
+    decal(f"ManholeA{tag}", "manhole", rot, -20.0, 0, -11.6, (1.2, 0.6, 1.2), 0.3)
+    decal(f"ManholeB{tag}", "manhole", rot, 21.0, 0, -9.0, (1.2, 0.6, 1.2), 1.2)
+    # Rain streaks down the walls under the roof edges.
+    for i, (x, y, z, toward_z) in enumerate(((-24.0, 5.2, -13.9, 1), (-12.0, 5.2, -13.9, 1), (-20.0, 4.8, -22.1, -1),
+                                             (-12.0, 4.8, -22.1, -1), (11.0, 2.6, -14.9, 1), (17.5, 2.6, -22.1, -1))):
+        pitch = PI / 2 if toward_z > 0 else -PI / 2
+        decal(f"Drips{tag}{i}", "drips", rot, x, y, z, (2.4, 0.6, 3.0), 0, pitch, (0.6, 0.58, 0.55, 0.85))
 
 # Ceiling lights inside the open flats and the stores, so the rooms read as lit
 # rooms instead of black boxes. They are Static and only baked: the node's script
@@ -461,6 +550,11 @@ ext += "".join(
 ext += "".join(
     f'\n[ext_resource type="PackedScene" path="res://assets/props/{name}/{name}.gltf" id="p_{name}"]'
     for name in sorted(PROPS_USED)
+)
+ext += "".join(
+    f'\n[ext_resource type="Texture2D" path="res://assets/textures/decals/{name}_{kind}.png" id="d_{name}_{kind}"]'
+    for name in sorted(DECALS_USED)
+    for kind in ("albedo", "normal")
 )
 
 # Late-afternoon light: a CC0 sky image (tools/build_skies.py) rotated so its sun

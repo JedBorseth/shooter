@@ -39,6 +39,14 @@ Props are CC0 models from [Poly Haven](https://polyhaven.com/models), built by `
 
 Props never change how a map plays. Each one that should block players or bullets stands on a box in a hidden CSG combiner (`Blockers`, `CoverBlockers`, or the map's existing combiners, now hidden), so collision stays exactly as simple as the blockout and impacts still report a surface. Crate stacks are scaled to fill their old blockout box; jersey barriers are scaled to fill the old low cover.
 
+### Decals and trim
+
+![Slamcity with road paint, manholes, damaged asphalt, and framed windows and storefronts](media/decals-trim.jpg)
+
+Slamcity's surfaces carry CC0 ambientCG decals (`tools/build_decals.py` packs them into `godot/assets/textures/decals/`): worn crossings, dashed centre lines, and edge lines (grey in the texture, painted white or yellow by the Decal's modulate), patched and broken asphalt, manholes, and rain streaks under the roof edges. Following the rule that texture detail stays quiet, there is no graffiti where players look for enemies.
+
+Its buildings get trim that has no collision, so it never changes movement or cover: window frames and stone sills on the flats, dark storefront frames and a kick plate on the stores, a gutter along the flats' roof, and downpipes on the corners (`building_trim` in `tools/build_slamcity.py`).
+
 ### Light
 
 ![Slamcity, the Testing Area, and Zombies before (left) and after (right) the lighting pass](media/lighting.jpg)

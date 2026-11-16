@@ -2,16 +2,23 @@
 # requires-python = ">=3.11"
 # dependencies = ["numpy>=2", "pillow>=11"]
 # ///
-"""Generate the bullet-hole decal textures (original, CC0):
+"""Build the decal textures in godot/assets/textures/decals/:
 
     uv run tools/build_decals.py
 
-Writes godot/assets/textures/decals/bullet_hole_albedo.png (RGBA: a dark hole,
-a chipped lighter rim, and thin cracks, fading out at the edge) and
-bullet_hole_normal.png (an OpenGL normal map of the crater). The impact
-scene tints the albedo per surface.
+- bullet_hole_albedo.png and bullet_hole_normal.png, generated here
+  (original, CC0): a dark hole, a chipped lighter rim, and thin cracks, with a
+  crater normal map. The impact scene tints the albedo per surface.
+- Surface decals from ambientCG (CC0), packed as <name>_albedo.png (RGBA,
+  opacity in alpha) and <name>_normal.png: road markings (stored grey, so a
+  Decal's modulate paints them white or yellow), asphalt damage, a manhole
+  cover, and drip streaks for walls. Downloads are cached in
+  ~/.cache/shooter-textures.
 """
 
+import io
+import urllib.request
+import zipfile
 from pathlib import Path
 
 import numpy as np
@@ -19,6 +26,50 @@ from PIL import Image
 
 SIZE = 128
 OUT = Path(__file__).resolve().parent.parent / "godot/assets/textures/decals"
+CACHE = Path.home() / ".cache/shooter-textures"
+
+# name: (ambientCG decal, store the colour as grey for tinting)
+SURFACE_DECALS = {
+    "crosswalk": ("RoadLines020C", True),
+    "lane_dashes": ("RoadLines028C", True),
+    "edge_lines": ("RoadLines023C", True),
+    "asphalt_damage": ("AsphaltDamage001", False),
+    "manhole": ("ManholeCover010", False),
+    "drips": ("Leaking016B", False),
+}
+
+
+def fetch_decal(name: str, asset: str, grey: bool) -> None:
+    CACHE.mkdir(parents=True, exist_ok=True)
+    path = CACHE / f"{asset}_1K-PNG.zip"
+    if not path.exists():
+        url = f"https://ambientcg.com/get?file={asset}_1K-PNG.zip"
+        request = urllib.request.Request(url, headers={"User-Agent": "shooter-asset-pipeline"})
+        with urllib.request.urlopen(request, timeout=120) as response:
+            path.write_bytes(response.read())
+    archive = zipfile.ZipFile(path)
+
+    def part(suffix):
+        for entry in archive.namelist():
+            if entry.endswith(f"_{suffix}.png"):
+                return Image.open(io.BytesIO(archive.read(entry)))
+        return None
+
+    color = part("Color").convert("RGB")
+    opacity = part("Opacity")
+    alpha = opacity.convert("L") if opacity is not None else Image.new("L", color.size, 255)
+    if grey:
+        lum = np.asarray(color.convert("L"), dtype=np.float32)
+        lum = np.clip(lum * (0.85 * 255.0 / max(float(np.percentile(lum, 95)), 1.0)), 0, 255)
+        color = Image.fromarray(lum.astype(np.uint8)).convert("RGB")
+    rgba = color.copy()
+    rgba.putalpha(alpha.resize(color.size))
+    rgba = rgba.resize((512, 512) if max(rgba.size) <= 1024 else rgba.size, Image.LANCZOS)
+    rgba.save(OUT / f"{name}_albedo.png", optimize=True)
+    normal = part("NormalGL")
+    if normal is not None:
+        normal.convert("RGB").resize(rgba.size, Image.LANCZOS).save(OUT / f"{name}_normal.png", optimize=True)
+    print(f"{name}: {asset}")
 
 
 def value_noise(size: int, cells: int, rng: np.random.Generator) -> np.ndarray:
@@ -69,6 +120,8 @@ def main() -> None:
     n /= np.linalg.norm(n, axis=2, keepdims=True)
     rgb = ((n * 0.5 + 0.5) * 255).astype(np.uint8)
     Image.fromarray(rgb, "RGB").save(OUT / "bullet_hole_normal.png")
+    for name, (asset, grey) in SURFACE_DECALS.items():
+        fetch_decal(name, asset, grey)
     print(f"wrote {OUT}")
 
 
