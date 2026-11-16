@@ -58,17 +58,13 @@ Use the mouse or press Enter to select the focused menu option.
 ```sh
 cd rust && cargo test && cargo clippy --all-targets
 cd .. && godot --headless --path godot --script res://tests/smoke_test.gd
-<<<<<<< HEAD
 godot --headless --path godot --script res://tests/settings_test.gd
-=======
 godot --headless --path godot --script res://tests/title_screen_test.gd
 godot --headless --path godot --script res://tests/zombies_menu_test.gd
->>>>>>> 0326f8a (Add title screen and Zombies globe map selector)
 ```
 
 The smoke test loads the arena headless and drives the player through movement (toggle sprint, slide, crouch), combat (aim, fire, kill a dummy, reload, switch), the characters (first-person and third-person hands on the grip, every hit zone, headshot and leg damage), a weapon rack, the shotgun (pellets, pump, shell-by-shell reload), the sniper (scope, hold breath), damage, regeneration, death and respawn, fall damage, the sentry, and gamepad look with aim assist. The settings test checks the menu and that settings save and load. Both exit non-zero on failure.
 
-<<<<<<< HEAD
 The netcode test starts a dedicated server process with a bot, joins it over UDP on localhost through a simulated link (40 ms latency plus 15 ms jitter each way, 5% loss), shoots the strafing bot dead from 14 m with server-side hit detection, sprints, slides, and jumps, and checks that the server confirmed the hits and the kill, that prediction never needed a correction, and that the bot is interpolated:
 
 ```sh
@@ -82,14 +78,11 @@ uvx --from gdtoolkit==4.5.0 gdformat godot/scripts godot/tests
 uvx --from gdtoolkit==4.5.0 gdlint godot/scripts godot/tests
 ```
 
-To review visuals, capture a set of first-person screenshots (every weapon at the hip and aimed, firing, sprint, reload, shotgun pump, sniper scope, tracers, impacts, racks, damage, death). This needs a GPU:
-=======
 The title screen test checks that startup leaves arena resources unloaded, then
 selects Testing Area and verifies the transition. Add `-- --startup-only` to check
 just the menu without a Rust extension build.
 
-To review visuals, capture a set of first-person screenshots (hip, ADS, firing, sprint, reload, pistol, impacts). This needs a GPU:
->>>>>>> 0326f8a (Add title screen and Zombies globe map selector)
+To review visuals, capture a set of first-person screenshots (every weapon at the hip and aimed, firing, sprint, reload, shotgun pump, sniper scope, tracers, impacts, racks, damage, death). This needs a GPU:
 
 ```sh
 CAPTURE_DIR=/tmp/shots godot --path godot --resolution 1600x900 --script res://tests/capture_screens.gd
