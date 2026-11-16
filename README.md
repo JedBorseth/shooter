@@ -28,6 +28,7 @@ The plan, decisions, and reference projects are in [docs/roadmap.md](docs/roadma
 - `godot/scripts/`: GDScript for the HUD, scope and damage overlays, pause and settings menu (`Settings` autoload), the title screen and server browser, impacts, tracers, and the `Net` autoload that starts a server or client from command-line options or the server browser (`godot/scripts/net/`).
 - `docs/`: roadmap, [art direction](docs/art-direction.md) (the look, the character pipeline, hit zones), and design notes.
 - `tools/build_weapon_audio.py`: builds the layered gunshot sounds from bart's CC0 firearm library and trims dead air from the other sounds. Run it with `uv run`; its docstring explains the steps.
+- `tools/build_textures.py` and `tools/build_skies.py`: the CC0 world texture library and sky images (run with `uv run`). `tools/build_weapons.py`: rebuilds the guns as PBR models in Blender (`blender -b --python tools/build_weapons.py`; needs Blender 4.2+ with numpy). See [docs/art-direction.md](docs/art-direction.md).
 - `tools/build_character_assets.py`: builds the soldier (uniform regions, helmet, goggles, plate carrier, belt, pads, armbands, first-person arms) and the trimmed animation sets from Quaternius's CC0 Universal Animation Library. Run it with `uv run`; see [docs/art-direction.md](docs/art-direction.md).
 
 ## Set up a Linux playtest machine

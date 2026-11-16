@@ -8,8 +8,9 @@
 use std::f32::consts::PI;
 
 use godot::classes::{
-    AudioStreamPlayer, AudioStreamRandomizer, BaseMaterial3D, CylinderMesh, INode3D, Material,
-    MeshInstance3D, Node3D, OmniLight3D, Shader, ShaderMaterial,
+    AudioStreamPlayer, AudioStreamRandomizer, BaseMaterial3D, Curve, CurveTexture, CylinderMesh,
+    GpuParticles3D, Gradient, GradientTexture1D, INode3D, Material, MeshInstance3D, Node3D,
+    OmniLight3D, ParticleProcessMaterial, QuadMesh, Shader, ShaderMaterial,
 };
 use godot::global::randf_range;
 use godot::prelude::*;
@@ -165,6 +166,13 @@ pub struct WeaponView {
 
     flash_time: f32,
     flash_count: u32,
+    /// The flash seen from the side: two crossed quads along the barrel.
+    plume: Vec<Gd<MeshInstance3D>>,
+    /// Two smoke emitters, restarted in turn so one puff can linger while the
+    /// next one starts.
+    smoke: Vec<Gd<GpuParticles3D>>,
+    smoke_next: usize,
+    smoke_cooldown: f32,
 }
 
 #[godot_api]
@@ -193,14 +201,19 @@ impl INode3D for WeaponView {
         }
         self.flash.set_visible(false);
         self.flash_light.set_visible(false);
+        self.build_muzzle_effects(true);
     }
 
     fn process(&mut self, delta: f64) {
+        self.smoke_cooldown -= delta as f32;
         if self.flash_time > 0.0 {
             self.flash_time -= delta as f32;
             if self.flash_time <= 0.0 {
                 self.flash.set_visible(false);
                 self.flash_light.set_visible(false);
+                for plume in &mut self.plume {
+                    plume.set_visible(false);
+                }
             }
         }
     }
@@ -234,16 +247,83 @@ impl WeaponView {
         // positional and comes from their own node.
         self.flash.set_visible(false);
         self.flash_light.set_visible(false);
+        self.build_muzzle_effects(false);
+    }
+
+    /// The side plume and the smoke emitters, built in code so every weapon
+    /// scene gets them. `viewmodel` draws them with the weapon's projection.
+    fn build_muzzle_effects(&mut self, viewmodel: bool) {
+        let Some(mut muzzle) = self
+            .flash
+            .get_parent()
+            .and_then(|p| p.try_cast::<Node3D>().ok())
+        else {
+            return;
+        };
+        let length = if viewmodel { 0.32 } else { 0.5 };
+        if let Some(material) = self.flash.get_active_material(0)
+            && let Ok(mut side) = material.duplicate_resource().try_cast::<ShaderMaterial>()
+        {
+            side.set_shader_parameter("shape", &1.to_variant());
+            side.set_shader_parameter("viewmodel", &viewmodel.to_variant());
+            let mut quad = QuadMesh::new_gd();
+            quad.set_size(Vector2::new(length, length * 0.38));
+            quad.set_material(&side);
+            // Two quads crossed along the barrel (-Z), so the plume shows from
+            // above and from the side. The quad's +X points down the barrel.
+            for roll in [0.0, PI * 0.5] {
+                let mut plume = MeshInstance3D::new_alloc();
+                plume.set_mesh(&quad);
+                plume.set_cast_shadows_setting(
+                    godot::classes::geometry_instance_3d::ShadowCastingSetting::OFF,
+                );
+                let basis = Basis::from_axis_angle(Vector3::FORWARD, roll)
+                    * Basis::from_axis_angle(Vector3::UP, PI * 0.5);
+                plume.set_transform(Transform3D::new(
+                    basis,
+                    Vector3::new(0.0, 0.0, -length * 0.5),
+                ));
+                plume.set_visible(false);
+                muzzle.add_child(&plume);
+                self.plume.push(plume);
+            }
+        }
+        let shader = load::<Shader>("res://shaders/muzzle_smoke.gdshader");
+        for _ in 0..2 {
+            let smoke = smoke_emitter(&shader, viewmodel);
+            muzzle.add_child(&smoke);
+            self.smoke.push(smoke);
+        }
+    }
+
+    /// Flash, plume, and maybe a puff of smoke, for one shot.
+    fn show_flash(&mut self) {
+        self.flash_count = self.flash_count.wrapping_add(1);
+        let seed = (self.flash_count % 97) as f32;
+        self.flash
+            .set_instance_shader_parameter("seed", &seed.to_variant());
+        self.flash.set_visible(true);
+        self.flash_light.set_visible(true);
+        for plume in &mut self.plume {
+            plume.set_instance_shader_parameter("seed", &seed.to_variant());
+            plume.set_visible(true);
+        }
+        // About three frames at 60 FPS: visible on every shot, yet off again
+        // between rounds at 750 RPM (80 ms), so automatic fire flickers.
+        self.flash_time = 0.05;
+        if self.smoke_cooldown <= 0.0 && !self.smoke.is_empty() {
+            let index = self.smoke_next % self.smoke.len();
+            self.smoke[index].restart();
+            self.smoke_next = index + 1;
+            self.smoke_cooldown = 0.14;
+        }
     }
 
     /// A muzzle flash with no sound, for third-person weapons.
     pub fn flash_world(&mut self) {
-        self.flash_count = self.flash_count.wrapping_add(1);
         let roll = (self.flash_count as f32 * 2.399_963) % (2.0 * PI);
         self.flash.set_rotation(Vector3::new(0.0, 0.0, roll));
-        self.flash.set_visible(true);
-        self.flash_light.set_visible(true);
-        self.flash_time = 0.05;
+        self.show_flash();
     }
 
     /// Where shells come out, in the view's parent (rig) space.
@@ -257,17 +337,13 @@ impl WeaponView {
     }
 
     pub fn on_fired(&mut self) {
-        self.flash_count = self.flash_count.wrapping_add(1);
         // Cheap variation without a random generator: rotate by a golden-angle step.
-        let roll = (self.flash_count as f32 * 2.399_963) % (2.0 * PI);
-        let scale = 0.85 + 0.3 * ((self.flash_count * 7 % 10) as f32 / 10.0);
+        let next = self.flash_count.wrapping_add(1);
+        let roll = (next as f32 * 2.399_963) % (2.0 * PI);
+        let scale = 0.85 + 0.3 * ((next * 7 % 10) as f32 / 10.0);
         self.flash.set_rotation(Vector3::new(0.0, 0.0, roll));
         self.flash.set_scale(Vector3::splat(scale));
-        self.flash.set_visible(true);
-        self.flash_light.set_visible(true);
-        // About three frames at 60 FPS: visible on every shot, yet off again
-        // between rounds at 750 RPM (80 ms), so automatic fire flickers.
-        self.flash_time = 0.05;
+        self.show_flash();
 
         if let Some(gunshot) = &mut self.gunshot {
             gunshot.play();
@@ -414,13 +490,73 @@ fn viewmodel_material(
                 &standard.get_emission_energy_multiplier().to_variant(),
             );
         }
-        if let Some(texture) =
-            standard.get_texture(godot::classes::base_material_3d::TextureParam::ALBEDO)
-        {
+        use godot::classes::base_material_3d::TextureParam;
+        if let Some(texture) = standard.get_texture(TextureParam::ALBEDO) {
             material.set_shader_parameter("albedo_texture", &texture.to_variant());
+        }
+        // Weapons from tools/build_weapons.py pack occlusion, roughness, and
+        // metallic into one ORM texture, used as the roughness texture.
+        if let (Some(normal), Some(orm)) = (
+            standard.get_texture(TextureParam::NORMAL),
+            standard.get_texture(TextureParam::ROUGHNESS),
+        ) {
+            material.set_shader_parameter("use_maps", &true.to_variant());
+            material.set_shader_parameter("normal_texture", &normal.to_variant());
+            material.set_shader_parameter("orm_texture", &orm.to_variant());
         }
     }
     material
+}
+
+/// A short-lived puff of gun smoke: a few soft particles that leave the muzzle,
+/// slow down, rise, grow, and fade. World-space, so the puff stays where the
+/// shot was while the weapon moves on.
+fn smoke_emitter(shader: &Gd<Shader>, viewmodel: bool) -> Gd<GpuParticles3D> {
+    use godot::classes::particle_process_material::Parameter;
+    let mut process = ParticleProcessMaterial::new_gd();
+    process.set_direction(Vector3::new(0.0, 0.0, -1.0));
+    process.set_spread(18.0);
+    process.set_param_min(Parameter::INITIAL_LINEAR_VELOCITY, 0.6);
+    process.set_param_max(Parameter::INITIAL_LINEAR_VELOCITY, 1.4);
+    process.set_param_min(Parameter::DAMPING, 2.0);
+    process.set_param_max(Parameter::DAMPING, 3.0);
+    process.set_gravity(Vector3::new(0.0, 0.25, 0.0));
+    process.set_param_min(Parameter::SCALE, 0.7);
+    process.set_param_max(Parameter::SCALE, 1.2);
+    let mut growth = Curve::new_gd();
+    growth.add_point(Vector2::new(0.0, 0.35));
+    growth.add_point(Vector2::new(1.0, 1.0));
+    let mut growth_texture = CurveTexture::new_gd();
+    growth_texture.set_curve(&growth);
+    process.set_param_texture(Parameter::SCALE, &growth_texture);
+    let mut fade = Gradient::new_gd();
+    fade.set_color(0, Color::from_rgba(1.0, 1.0, 1.0, 0.9));
+    fade.set_color(1, Color::from_rgba(1.0, 1.0, 1.0, 0.0));
+    let mut fade_texture = GradientTexture1D::new_gd();
+    fade_texture.set_gradient(&fade);
+    process.set_color_ramp(&fade_texture);
+
+    let mut material = ShaderMaterial::new_gd();
+    material.set_shader(shader);
+    material.set_shader_parameter("viewmodel", &viewmodel.to_variant());
+    let mut quad = QuadMesh::new_gd();
+    let size = if viewmodel { 0.22 } else { 0.4 };
+    quad.set_size(Vector2::new(size, size));
+    quad.set_material(&material);
+
+    let mut particles = GpuParticles3D::new_alloc();
+    particles.set_amount(4);
+    particles.set_lifetime(0.9);
+    particles.set_one_shot(true);
+    particles.set_explosiveness_ratio(0.85);
+    particles.set_use_local_coordinates(false);
+    particles.set_process_material(&process);
+    particles.set_draw_pass_mesh(0, &quad);
+    particles
+        .set_cast_shadows_setting(godot::classes::geometry_instance_3d::ShadowCastingSetting::OFF);
+    particles.set_visibility_aabb(Aabb::new(Vector3::splat(-4.0), Vector3::splat(8.0)));
+    particles.set_emitting(false);
+    particles
 }
 
 /// Multiplies the albedo of every standard material under `root` (on copies).

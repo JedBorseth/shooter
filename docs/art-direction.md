@@ -45,6 +45,21 @@ Each map is lit by a CC0 sky image (an HDRI from [Poly Haven](https://polyhaven.
 
 Each map grades its image lightly with the environment's contrast and saturation adjustments. Zombies adds volumetric fog, which only the High preset draws.
 
+### Weapons
+
+![Every weapon at the hip, the M4 firing, its smoke, and the weapon racks](media/weapon-materials.jpg)
+
+The guns keep the CC0 gun pack's shapes. `tools/build_weapons.py` runs in Blender (`blender -b --python tools/build_weapons.py`) and turns each pack model into a PBR weapon:
+
+1. Weld, triangulate, and smooth-shade with hard edges above 35°, so flat panels stay crisp and round parts read round.
+2. Unwrap into one UV set and bake, with Cycles: a tangent-space normal map from a Bevel node (rounded edges without extra triangles), ambient occlusion, an edge mask, and which pack material every texel came from.
+3. Paint each class in numpy: steel, coated steel that wears through to bare metal at the edges, polymer and wood that lighten where hands rub them, and dark glass. Fine noise breaks up colour and roughness, and cavities collect dirt.
+4. Export `<key>.glb` (one material, so one draw call per gun) with `<key>_albedo.png`, `<key>_normal.png`, `<key>_orm.png`, and the material `<key>.tres`. Each `.glb.import` points the model at that material; `tools/build_textures.py --fix-imports` sets that up and compresses the textures.
+
+The `.glb` lines up exactly with the pack's `.fbx` (which stays as the source), so the iron sights, grips, and muzzles need no changes. The first-person shader reads the normal and ORM maps; third-person guns use the material directly.
+
+Each shot shows a flash with ragged petals that change every shot, a short plume along the barrel seen from the side, and every few shots a puff of grey smoke that drifts up and fades in the world (`shaders/muzzle_flash.gdshader`, `shaders/muzzle_smoke.gdshader`, built in `WeaponView`).
+
 ### Palette
 
 Each surface of the model is named after a palette role. `rust/game/src/character/palette.rs` maps each role to a colour per team.

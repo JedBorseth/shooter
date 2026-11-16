@@ -202,12 +202,17 @@ def write_look(name: str, look: dict) -> None:
     (MATERIALS / f"{name}.tres").write_text("\n".join(lines) + "\n")
 
 
+WEAPONS = REPO / "godot/assets/weapons"
+
+
 def fix_imports() -> None:
-    """VRAM-compress every texture with mipmaps; mark normal maps."""
+    """VRAM-compress every world and weapon texture with mipmaps, mark normal
+    maps, and point each weapon .glb at its material (tools/build_weapons.py)."""
     count = 0
-    for path in sorted(TEXTURES.glob("*/*.jpg.import")):
+    paths = sorted(TEXTURES.glob("*/*.jpg.import")) + sorted(WEAPONS.glob("*/*_*.png.import"))
+    for path in paths:
         text = path.read_text()
-        is_normal = path.name.startswith("normal")
+        is_normal = path.name.startswith("normal") or path.name.endswith("_normal.png.import")
         replacements = {
             "compress/mode=0": "compress/mode=2",
             "compress/mode=1": "compress/mode=2",
@@ -224,6 +229,24 @@ def fix_imports() -> None:
         if new != text:
             path.write_text(new)
             count += 1
+    for path in sorted(WEAPONS.glob("*/*.glb.import")):
+        key = path.name.removesuffix(".glb.import")
+        material = f"res://assets/weapons/{key}/{key}.tres"
+        text = path.read_text()
+        sub = (
+            '_subresources={\n"materials": {\n"Weapon": {\n"use_external/enabled": true,\n'
+            f'"use_external/path": "{material}"\n}}\n}}\n}}'
+        )
+        start = text.find("_subresources=")
+        if start < 0:
+            continue
+        end = text.find("\n", start)
+        if text[start:end].strip() == "_subresources={}":
+            new = text[:start] + sub + text[end:]
+        else:
+            continue
+        path.write_text(new)
+        count += 1
     print(f"updated {count} import files")
 
 

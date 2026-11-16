@@ -1,6 +1,6 @@
 [gd_scene format=3]
 
-[ext_resource type="PackedScene" path="res://assets/weapons/m4/m4.fbx" id="1_model"]
+[ext_resource type="PackedScene" path="res://assets/weapons/m4/m4.glb" id="1_model"]
 [ext_resource type="AudioStream" path="res://assets/audio/weapons/m4_reload.ogg" id="3_reload"]
 [ext_resource type="AudioStream" path="res://assets/audio/weapons/dry_fire.ogg" id="4_dry"]
 [ext_resource type="Material" path="res://materials/muzzle_flash.tres" id="5_flash"]
@@ -17,7 +17,7 @@ ads_position = Vector3(0, 0, -0.075)
 sprint_position = Vector3(-0.04, 0.015, 0.03)
 sprint_rotation = Vector3(-4, 22, 24)
 pivot = Vector3(0, -0.07, 0.06)
-albedo_boost = 1.8
+albedo_boost = 1.0
 kick_strength = 1.35
 camera_punch = Vector3(0.3, 0.12, 0.8)
 

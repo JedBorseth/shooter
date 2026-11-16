@@ -154,7 +154,7 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 - [x] PBR world textures: a CC0 texture library and one world-space surface shader for every map (`tools/build_textures.py`, `godot/shaders/world.gdshader`).
 - [x] Lighting: CC0 sky images lined up with each map's sun, sky light in the shade, haze, colour grading, flickering lamps and volumetric fog (High) in Zombies.
 - [ ] Baked lightmaps, once the maps are meshes with lightmap UVs (comes with the map models).
-- [ ] Weapons: PBR materials, smoothed shading, baked wear, better muzzle flash and smoke.
+- [x] Weapons: PBR materials, smoothed shading, baked wear, better muzzle flash and smoke (`tools/build_weapons.py`).
 - [ ] Map models: replace blockout boxes with modelled building parts and props.
 - [ ] Characters: textured soldier, zombie variants, fewer surfaces per character.
 - [ ] Effects and post: impact debris, blood, dust, depth of field when aiming, motion blur option.
