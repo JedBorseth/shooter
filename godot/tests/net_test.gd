@@ -176,6 +176,7 @@ func _play_match(client: NetClient) -> void:
 		"the bot is on the other team (%s, %s)" % [me.get("team"), bot.get("team")]
 	)
 	_check(client.match_info().phase == "lobby", "the match waits in the lobby")
+	_check(client.set_loadout("m4+grip"), "an attachment variant is a valid loadout")
 	client.set_ready(true)
 	var saw_countdown := false
 	for i in 1200:
@@ -193,6 +194,11 @@ func _play_match(client: NetClient) -> void:
 	)
 	# Everyone respawned at the start; let the correction settle.
 	await _ticks(60)
+	var player := client.get_node(client.player_path) as FpsPlayer
+	_check(
+		player.weapon_key() == "m4+grip",
+		"the match starts with the chosen loadout, got %s" % player.weapon_key()
+	)
 
 
 ## Aims down sights at the strafing bot, 14 m away, and fires short M4 bursts

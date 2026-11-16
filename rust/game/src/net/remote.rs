@@ -163,7 +163,7 @@ impl RemotePlayer {
                     _ => "m4",
                 };
                 let mut loader = ResourceLoader::singleton();
-                [def.key.as_str(), fallback, "ak47"]
+                [def.model_key(), fallback, "ak47"]
                     .into_iter()
                     .map(|key| format!("res://assets/audio/weapons/{key}_fire.ogg"))
                     .find(|path| loader.exists(path))

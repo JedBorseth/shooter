@@ -28,4 +28,5 @@
     ),
     scope: Some((sway: 0.55, hold_breath: 4.0, breath_recovery: 2.5)),
     tracer_every: 1,
+    attachments: [Suppressor, ExtendedMag],
 )

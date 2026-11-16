@@ -27,4 +27,5 @@
         recovery_rate: 11.0,
     ),
     tracer_every: 3,
+    attachments: [Acog, Suppressor, Grip, ExtendedMag],
 )

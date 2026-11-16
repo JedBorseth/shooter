@@ -15,11 +15,12 @@ use godot::classes::{
 use godot::global::randf_range;
 use godot::prelude::*;
 use shooter_sim::rng;
-use shooter_sim::weapon::{Slot, WeaponId};
+use shooter_sim::weapon::{Attachment, Slot, WeaponId};
 
 use crate::audio;
 use crate::character::arms::FpArms;
 use crate::character::poser::Grips;
+use crate::sights::IronSights;
 use crate::spring::{Spring, smoothing};
 
 /// One rendered frame of state the rig animates from.
@@ -181,6 +182,13 @@ pub struct WeaponView {
     smoke: Vec<Gd<GpuParticles3D>>,
     smoke_next: usize,
     smoke_cooldown: f32,
+    /// The attachment fitted (see `set_attachment`), and one asked for before
+    /// the view was ready.
+    attachment: Option<Attachment>,
+    pending_attachment: Option<Attachment>,
+    /// Where the left hand held the weapon before a foregrip moved it.
+    grip_left_rest: Option<Vector3>,
+    suppressed: bool,
 }
 
 #[godot_api]
@@ -189,6 +197,8 @@ impl INode3D for WeaponView {
         self.id = WeaponId::by_key(&self.weapon.to_string());
         if self.world_model {
             self.ready_world();
+            let pending = self.pending_attachment.take();
+            self.set_attachment(pending);
             return;
         }
         let shader = load::<Shader>("res://shaders/viewmodel.gdshader");
@@ -210,6 +220,8 @@ impl INode3D for WeaponView {
         self.flash.set_visible(false);
         self.flash_light.set_visible(false);
         self.build_muzzle_effects(true);
+        let pending = self.pending_attachment.take();
+        self.set_attachment(pending);
     }
 
     fn process(&mut self, delta: f64) {
@@ -230,6 +242,101 @@ impl INode3D for WeaponView {
 impl WeaponView {
     pub fn weapon_id(&self) -> Option<WeaponId> {
         self.id
+    }
+
+    /// Asks for an attachment on a view that is not in the tree yet.
+    pub fn set_pending_attachment(&mut self, attachment: Option<Attachment>) {
+        self.pending_attachment = attachment;
+    }
+
+    /// Fits an attachment's parts, or takes them off: a suppressor on the
+    /// muzzle (no flash, a quieter shot), a foregrip under the handguard
+    /// (the left hand moves onto it), or a red dot or ACOG in place of the
+    /// iron sights.
+    pub fn set_attachment(&mut self, attachment: Option<Attachment>) {
+        if self.attachment == attachment {
+            return;
+        }
+        self.attachment = attachment;
+        if let Some(mut old) = self.base().get_node_or_null("Attachment") {
+            self.base_mut().remove_child(&old);
+            old.queue_free();
+        }
+        if let (Some(rest), Some(mut marker)) = (
+            self.grip_left_rest.take(),
+            self.base().try_get_node_as::<Node3D>("GripLeft"),
+        ) {
+            marker.set_position(rest);
+        }
+        let mut parts = Node3D::new_alloc();
+        parts.set_name("Attachment");
+        let scale = self.model.get_scale().x;
+        let optic = matches!(attachment, Some(Attachment::RedDot | Attachment::Acog));
+        let mut iron = self.base().try_get_node_as::<IronSights>("Sights");
+        if let Some(iron) = &mut iron {
+            iron.set_visible(!optic);
+        }
+        self.suppressed = attachment == Some(Attachment::Suppressor);
+        if let Some(gunshot) = &mut self.gunshot {
+            gunshot.set_suppressed(self.suppressed);
+        }
+        match attachment {
+            Some(Attachment::Suppressor) => {
+                let muzzle = self
+                    .base()
+                    .try_get_node_as::<Node3D>("Muzzle")
+                    .map(|m| m.get_position())
+                    .unwrap_or_default();
+                // The model's thread end (x = -0.095) on the muzzle, body forward.
+                if let Some(mut mesh) =
+                    instance_model("res://assets/weapons/suppressor/suppressor.glb")
+                {
+                    mesh.set_rotation(Vector3::new(0.0, PI / 2.0, 0.0));
+                    mesh.set_scale(Vector3::splat(scale));
+                    mesh.set_position(muzzle - Vector3::new(0.0, 0.0, 0.095 * scale));
+                    parts.add_child(&mesh);
+                }
+            }
+            Some(Attachment::Grip) => {
+                if let Some(mut marker) = self.base().try_get_node_as::<Node3D>("GripLeft") {
+                    let rest = marker.get_position();
+                    // The grip's mount (y = 0.423) just under the handguard.
+                    if let Some(mut mesh) =
+                        instance_model("res://assets/weapons/foregrip/foregrip.glb")
+                    {
+                        mesh.set_scale(Vector3::splat(scale));
+                        mesh.set_position(rest - Vector3::new(0.0, 0.423 * scale + 0.006, 0.0));
+                        parts.add_child(&mesh);
+                    }
+                    self.grip_left_rest = Some(rest);
+                    marker.set_position(rest - Vector3::new(0.0, 0.045, -0.004));
+                }
+            }
+            Some(Attachment::RedDot | Attachment::Acog) => {
+                let (rear_z, base, size) = iron
+                    .as_ref()
+                    .map(|s| s.bind().placement())
+                    .unwrap_or((0.0, -0.022, 1.0));
+                let (style, z, glow) = if attachment == Some(Attachment::Acog) {
+                    ("acog", rear_z - 0.03, Color::from_rgba(1.0, 0.25, 0.1, 1.0))
+                } else {
+                    (
+                        "reflex",
+                        rear_z - 0.09,
+                        Color::from_rgba(1.0, 0.12, 0.06, 1.0),
+                    )
+                };
+                let mut sights = IronSights::optic(style, z, base, size, glow);
+                sights.set_name("Optic");
+                parts.add_child(&sights);
+            }
+            Some(Attachment::ExtendedMag) | None => {}
+        }
+        self.base_mut().add_child(&parts);
+        if !self.world_model {
+            let shader = load::<Shader>("res://shaders/viewmodel.gdshader");
+            convert_to_viewmodel_materials(&parts.clone().upcast(), &shader, self.albedo_boost);
+        }
     }
 
     /// Where the hands hold this weapon, in its own space.
@@ -351,7 +458,10 @@ impl WeaponView {
         let scale = 0.85 + 0.3 * ((next * 7 % 10) as f32 / 10.0);
         self.flash.set_rotation(Vector3::new(0.0, 0.0, roll));
         self.flash.set_scale(Vector3::splat(scale));
-        self.show_flash();
+        // A suppressor hides the flash.
+        if !self.suppressed {
+            self.show_flash();
+        }
 
         if let Some(gunshot) = &mut self.gunshot {
             gunshot.play();
@@ -383,13 +493,21 @@ impl WeaponView {
             self.base_mut().add_child(&player);
             Some(player)
         };
+        let snap = layer("snap", "GunshotSnap", snap_db, 4)?;
+        let body = layer("body", "GunshotBody", body_db, 4)?;
+        // One echo at a time: each shot cuts the last one's tail, so full
+        // auto stays tight instead of piling up reverb.
+        let tail = layer("tail", "GunshotTail", tail_db, 1)?;
         Some(Gunshot {
             pitch,
-            snap: layer("snap", "GunshotSnap", snap_db, 4)?,
-            body: layer("body", "GunshotBody", body_db, 4)?,
-            // One echo at a time: each shot cuts the last one's tail, so full
-            // auto stays tight instead of piling up reverb.
-            tail: layer("tail", "GunshotTail", tail_db, 1)?,
+            volumes: [
+                snap.get_volume_db(),
+                body.get_volume_db(),
+                tail.get_volume_db(),
+            ],
+            snap,
+            body,
+            tail,
         })
     }
 
@@ -414,12 +532,26 @@ impl WeaponView {
 /// so a few source shots combine into many different-sounding ones.
 struct Gunshot {
     pitch: f32,
+    /// Each layer's volume as built, before any suppressor.
+    volumes: [f32; 3],
     snap: Gd<AudioStreamPlayer>,
     body: Gd<AudioStreamPlayer>,
     tail: Gd<AudioStreamPlayer>,
 }
 
 impl Gunshot {
+    /// A suppressor takes the crack off and most of the echo.
+    fn set_suppressed(&mut self, on: bool) {
+        let cut = if on { [14.0, 7.0, 12.0] } else { [0.0; 3] };
+        for ((player, volume), cut) in [&mut self.snap, &mut self.body, &mut self.tail]
+            .into_iter()
+            .zip(self.volumes)
+            .zip(cut)
+        {
+            player.set_volume_db(volume - cut);
+        }
+    }
+
     fn play(&mut self) {
         let pitch = randf_range(0.96, 1.04) as f32 * self.pitch;
         for player in [&mut self.snap, &mut self.body, &mut self.tail] {
@@ -595,6 +727,20 @@ fn brighten_materials(root: &Gd<Node>, boost: f32) {
     }
 }
 
+/// Instances a model scene (an attachment's), or none if it is missing.
+fn instance_model(path: &str) -> Option<Gd<Node3D>> {
+    try_load::<PackedScene>(path)
+        .ok()?
+        .instantiate()?
+        .try_cast::<Node3D>()
+        .ok()
+}
+
+/// The plain weapon an attachment variant is built on (or the weapon itself).
+pub fn base_weapon(id: WeaponId) -> WeaponId {
+    WeaponId::by_key(id.def().model_key()).unwrap_or(id)
+}
+
 thread_local! {
     static WEAPON_SCENES: std::cell::RefCell<std::collections::HashMap<String, Gd<PackedScene>>> =
         std::cell::RefCell::new(std::collections::HashMap::new());
@@ -605,7 +751,7 @@ const WEAPON_SCENE_DIR: &str = "res://scenes/weapons";
 /// The weapon view scene for a weapon: `scenes/weapons/<key>_view.tscn`, or any
 /// scene in that folder whose root `weapon` property is the key.
 pub fn weapon_scene(id: WeaponId) -> Option<Gd<PackedScene>> {
-    let key = id.def().key.clone();
+    let key = id.def().model_key().to_owned();
     if let Some(scene) = WEAPON_SCENES.with(|c| c.borrow().get(&key).cloned()) {
         return Some(scene);
     }
@@ -646,7 +792,11 @@ pub fn instantiate_world_weapon(id: WeaponId) -> Option<Gd<WeaponView>> {
         .instantiate()?
         .try_cast::<WeaponView>()
         .ok()?;
-    view.bind_mut().world_model = true;
+    {
+        let mut v = view.bind_mut();
+        v.world_model = true;
+        v.set_pending_attachment(id.def().attachment);
+    }
     Some(view)
 }
 
@@ -713,9 +863,10 @@ impl INode3D for ViewmodelRig {
 
 impl ViewmodelRig {
     fn view(&self, weapon: WeaponId) -> Option<Gd<WeaponView>> {
+        let base = base_weapon(weapon);
         self.views
             .iter()
-            .find(|v| v.bind().weapon_id() == Some(weapon))
+            .find(|v| v.bind().weapon_id() == Some(base))
             .cloned()
     }
 
@@ -890,8 +1041,13 @@ impl ViewmodelRig {
         self.update_shells(dt);
         // Hidden while dead, and once the scope overlay covers the screen.
         let shown = frame.visible && frame.scope < 0.85;
+        let base = base_weapon(frame.weapon);
         for view in &mut self.views {
-            let show = shown && view.bind().weapon_id() == Some(frame.weapon);
+            let show = shown && view.bind().weapon_id() == Some(base);
+            if show {
+                view.bind_mut()
+                    .set_attachment(frame.weapon.def().attachment);
+            }
             if view.is_visible() != show {
                 view.set_visible(show);
             }

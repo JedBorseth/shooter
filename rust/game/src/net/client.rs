@@ -379,19 +379,34 @@ impl NetClient {
     }
 
     /// The weapons a loadout may use as its primary, as dictionaries with
-    /// `key` and `name`, in weapon table order.
+    /// `key`, `name`, and `attachments` (each a dictionary with `key`, the
+    /// variant's weapon key such as "m4+grip", and `name`), in table order.
     #[func]
     fn loadout_weapons() -> Array<VarDictionary> {
-        shooter_sim::weapon::table()
+        let table = shooter_sim::weapon::table();
+        table
             .iter()
             .enumerate()
-            .filter(|(i, _)| {
-                u8::try_from(*i).is_ok_and(|i| crate::net::server::is_loadout_primary(WeaponId(i)))
+            .filter(|(i, def)| {
+                def.attachment.is_none()
+                    && u8::try_from(*i)
+                        .is_ok_and(|i| crate::net::server::is_loadout_primary(WeaponId(i)))
             })
             .map(|(_, def)| {
                 let mut d = VarDictionary::new();
                 d.set("key", &GString::from(def.key.as_str()));
                 d.set("name", &GString::from(def.name.as_str()));
+                let attachments: Array<VarDictionary> = def
+                    .attachments
+                    .iter()
+                    .map(|a| {
+                        let mut entry = VarDictionary::new();
+                        entry.set("key", &GString::from(&format!("{}+{}", def.key, a.key())));
+                        entry.set("name", a.label());
+                        entry
+                    })
+                    .collect();
+                d.set("attachments", &attachments);
                 d
             })
             .collect()

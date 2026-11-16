@@ -275,6 +275,18 @@ The arena has target dummies at several ranges: enemy soldiers holding different
 | LSW-6 | Light machine gun | 75 rounds at 650 RPM; slow to aim, sprint out of, and reload |
 | M1911 | Pistol | Semi-automatic sidearm |
 
+In Team Deathmatch the loadout menu (L) also fits one attachment to the primary. Each weapon file lists the ones it takes:
+
+| Attachment | Effect |
+| --- | --- |
+| Red Dot | A reflex sight in place of the iron sights |
+| ACOG | A 2.5x combat scope (aims through the scope view) |
+| Suppressor | Quieter, no muzzle flash or tracers, shorter damage range |
+| Grip | A vertical foregrip: a quarter less recoil |
+| Ext. Mag | Half again as many rounds, a slightly slower reload |
+
+The weapon table holds a variant of each weapon for each attachment (`m4+grip`), with its numbers changed in `rust/sim/src/weapon/def.rs` (`Attachment::apply`), so prediction, the server, and the wire format treat it like any other weapon.
+
 Exported builds must include `*.ron` in the export preset's non-resource filter so the weapon files are packed.
 
 ## Assets

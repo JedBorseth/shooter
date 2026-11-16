@@ -65,6 +65,30 @@ pub struct IronSights {
     cuts: Array<Aabb>,
 }
 
+impl IronSights {
+    /// Where the sights sit: (rear z, height of the top under it, size).
+    pub fn placement(&self) -> (f32, f32, f32) {
+        (self.rear_z, self.rear_base, self.size)
+    }
+
+    /// An optic in `style` ("reflex" or "acog") at `rear_z` on a top at
+    /// `base`, not yet in the tree.
+    pub fn optic(style: &str, rear_z: f32, base: f32, size: f32, glow: Color) -> Gd<IronSights> {
+        let mut sights = IronSights::new_alloc();
+        {
+            let mut s = sights.bind_mut();
+            s.style = GString::from(style);
+            s.rear_z = rear_z;
+            s.front_z = rear_z;
+            s.rear_base = base;
+            s.front_base = base;
+            s.size = size;
+            s.glow = glow;
+        }
+        sights
+    }
+}
+
 #[godot_api]
 impl INode3D for IronSights {
     fn ready(&mut self) {
@@ -116,6 +140,9 @@ enum Style {
     Shotgun,
     Pistol,
     Reflex,
+    /// A compact prism scope (the ACOG attachment); aiming through it shows
+    /// the scope overlay, so this is what everyone else sees.
+    Acog,
 }
 
 impl Style {
@@ -126,6 +153,7 @@ impl Style {
             "shotgun" => Self::Shotgun,
             "pistol" => Self::Pistol,
             "reflex" => Self::Reflex,
+            "acog" => Self::Acog,
             _ => return None,
         })
     }
@@ -138,6 +166,7 @@ impl Style {
             Self::Shotgun => shotgun(p, &mut parts),
             Self::Pistol => pistol(p, &mut parts),
             Self::Reflex => reflex(p, &mut parts),
+            Self::Acog => acog(p, &mut parts),
         }
         parts
     }
@@ -535,6 +564,82 @@ fn reflex(p: &Params, parts: &mut Parts) {
         zr - 0.0056 * s,
         zr - 0.0054 * s,
         16,
+    );
+}
+
+fn acog(p: &Params, parts: &mut Parts) {
+    let s = p.size;
+    let zr = p.rear_z;
+    let b = &mut parts.steel;
+    let tube = 0.0125 * s;
+    let bottom = -0.0175 * s;
+    // Mount from the rail up to the housing.
+    b.extrude(
+        Axis::X,
+        &rect(
+            zr - 0.046 * s,
+            p.rear_base,
+            zr + 0.012 * s,
+            bottom + 0.002 * s,
+        ),
+        -0.011 * s,
+        0.011 * s,
+    );
+    // Housing: a squared body with the tube through it.
+    b.extrude(
+        Axis::X,
+        &rect(zr - 0.05 * s, bottom, zr + 0.016 * s, tube * 0.6),
+        -0.0145 * s,
+        0.0145 * s,
+    );
+    // Objective bell at the front and eyepiece at the back.
+    b.ring(
+        Vector2::ZERO,
+        tube,
+        0.0178 * s,
+        zr - 0.082 * s,
+        zr - 0.05 * s,
+        0.0,
+        TAU,
+        36,
+    );
+    b.ring(
+        Vector2::ZERO,
+        0.0105 * s,
+        0.0145 * s,
+        zr + 0.016 * s,
+        zr + 0.034 * s,
+        0.0,
+        TAU,
+        36,
+    );
+    // Adjustment turret on top.
+    b.cylinder(
+        Axis::X,
+        v2(zr - 0.02 * s, tube * 0.6),
+        0.005 * s,
+        -0.004 * s,
+        0.004 * s,
+        12,
+    );
+    b.extrude(
+        Axis::Z,
+        &rect(-0.004 * s, tube * 0.6, 0.004 * s, tube * 0.6 + 0.008 * s),
+        zr - 0.026 * s,
+        zr - 0.014 * s,
+    );
+    parts.glass.disc(Vector2::ZERO, tube, zr - 0.06 * s, 36);
+    parts
+        .glass
+        .disc(Vector2::ZERO, 0.0105 * s, zr + 0.03 * s, 36);
+    // The lit chevron, a dot at this size.
+    parts.glow.cylinder(
+        Axis::Z,
+        Vector2::ZERO,
+        0.0009 * s,
+        zr - 0.0402 * s,
+        zr - 0.04 * s,
+        12,
     );
 }
 
