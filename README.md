@@ -134,13 +134,15 @@ It listens for players on UDP port 27015 (`--port N` to change) and answers serv
 In the game, **Multiplayer** on the title screen opens the server browser:
 
 - **LAN** lists every server on your network (and on your own machine), with its map, players, bots, and ping.
-- **Internet** lists the servers on a master server. Enter its address in the field at the top; the browser remembers it.
+- **Internet** opens by default and lists the servers on the public Borseth directory at `50.67.76.237:27010`. You can enter a different directory address in the field at the top; the browser remembers it. Blank settings from older installs use the public directory.
 - **Favorites** lists servers you starred, online or not. Click a server's star, or select it and press **Add favorite**.
 - **Direct connect** takes an IP or host name with an optional port. The browser asks the server first, then joins. If the server does not answer queries (only its game port is open), the button changes to **Join anyway**.
 
 Double-click a server, or select it and press Enter or **Join**. If the server rejects the client (a different game version), never answers, or drops the connection, the game returns to the browser and says why. **Leave server** in the pause menu (Esc) returns to the browser too.
 
 To play over the internet, the server's host forwards UDP 27015 and 27016 to the server machine, or both players join the same VPN (Tailscale, WireGuard). Then the other player uses Direct connect with the host's address.
+
+To expose the public Borseth host, forward UDP 27010 (directory), 27015 (game), and 27016 (server details) to the same machine. Its game server uses `--name Borseth --master 50.67.76.237:27010`. If its public IP changes, update both the host configuration and the default `master_server` in `godot/scripts/settings.gd`.
 
 ### Master server
 

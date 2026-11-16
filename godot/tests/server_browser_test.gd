@@ -33,6 +33,7 @@ func _run() -> void:
 	var settings: Node = root.get_node("Settings")
 	settings.path = SETTINGS_PATH
 	settings.reset_to_defaults()
+	settings.set_setting(&"master_server", "127.0.0.1:%d" % MASTER_PORT)
 	load("res://scripts/server_browser.gd").storage_path = STORAGE_PATH
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(STORAGE_PATH))
 
@@ -71,7 +72,12 @@ func _run() -> void:
 		_finish()
 		return
 	_check(not (title.get_node("Margin") as Control).visible, "the title menu hides")
-	_check((browser.get_node("%LanTab") as Button).button_pressed, "LAN is the first tab")
+	_check(
+		(browser.get_node("%InternetTab") as Button).button_pressed,
+		"the configured directory opens the Internet tab"
+	)
+	(browser.get_node("%LanTab") as Button).pressed.emit()
+	await process_frame
 
 	# LAN: the server process takes a few seconds to start; keep refreshing.
 	var row := await _wait_for_row(browser, 30.0)

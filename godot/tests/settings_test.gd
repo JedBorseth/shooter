@@ -91,6 +91,7 @@ func _check_validation(settings: Node) -> void:
 	config.set_value("video", "vsync", "yes")
 	config.set_value("audio", "master_volume", NAN)
 	config.set_value("controls", "ads_sensitivity", 1.5)
+	config.set_value("multiplayer", "master_server", "  ")
 	config.save(TEST_PATH)
 	settings.load_settings()
 	_check(settings.fov == 80.0, "loaded fov clamps to 80, got %s" % settings.fov)
@@ -99,6 +100,10 @@ func _check_validation(settings: Node) -> void:
 	_check(
 		settings.ads_sensitivity == 1.5,
 		"valid loaded value is kept, got %s" % settings.ads_sensitivity
+	)
+	_check(
+		settings.master_server == settings.DEFAULTS[&"master_server"],
+		"older installs with a blank master use the public directory"
 	)
 	settings.reset_to_defaults()
 
@@ -109,6 +114,7 @@ func _check_round_trip(settings: Node) -> void:
 	settings.set_setting(&"camera_motion", false)
 	settings.set_setting(&"max_fps", 144)
 	settings.set_setting(&"weapons_volume", 0.4)
+	settings.set_setting(&"master_server", "custom.example:27010")
 	_check(settings.save_settings() == OK, "settings save")
 	_check(Engine.max_fps == 144, "frame cap applied to the engine, got %d" % Engine.max_fps)
 	var weapons := AudioServer.get_bus_index("Weapons")
@@ -130,6 +136,7 @@ func _check_round_trip(settings: Node) -> void:
 	_check(fresh.max_fps == 144, "max_fps round-trips, got %d" % fresh.max_fps)
 	_check(is_equal_approx(fresh.weapons_volume, 0.4), "weapons_volume round-trips")
 	_check(fresh.ui_volume == 0.7, "untouched setting keeps its default")
+	_check(fresh.master_server == "custom.example:27010", "custom master is preserved")
 	fresh.free()
 
 	# Apply to a stand-in for the Rust player.
