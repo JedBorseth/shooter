@@ -518,6 +518,13 @@ impl FpsPlayer {
         .length()
     }
 
+    /// Floor contact recorded by the last predicted or authoritative movement
+    /// tick, exposed so tests can compare it with the engine's contact state.
+    #[func]
+    fn is_grounded(&self) -> bool {
+        self.on_floor
+    }
+
     /// Human-readable movement state, for HUD and debugging.
     #[func]
     fn movement_state(&self) -> GString {

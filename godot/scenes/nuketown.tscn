@@ -5,29 +5,50 @@
 [ext_resource type="PackedScene" path="res://assets/maps/nuketown/generated/nuketown_world.scn" id="5_world"]
 [ext_resource type="Script" path="res://scripts/nuketown.gd" id="6_level"]
 [ext_resource type="Script" path="res://scripts/secret_laser.gd" id="7_secret"]
+[ext_resource type="Texture2D" uid="uid://c21lj1e3rpr52" path="res://assets/skies/range_day.hdr" id="9_sky"]
 
 [ext_resource type="PackedScene" path="res://scenes/ui/pause_menu.tscn" id="8_pause"]
 
-[sub_resource type="ProceduralSkyMaterial" id="SkyMat"]
-sky_top_color = Color(0.3, 0.44, 0.62, 1)
-sky_horizon_color = Color(0.68, 0.7, 0.72, 1)
-ground_bottom_color = Color(0.16, 0.15, 0.14, 1)
-ground_horizon_color = Color(0.68, 0.7, 0.72, 1)
+[sub_resource type="PanoramaSkyMaterial" id="SkyMat"]
+panorama = ExtResource("9_sky")
 
 [sub_resource type="Sky" id="Sky"]
 sky_material = SubResource("SkyMat")
+radiance_size = 3
 
 [sub_resource type="Environment" id="Env"]
 background_mode = 2
 sky = SubResource("Sky")
+sky_rotation = Vector3(0, 0.12, 0)
 ambient_light_source = 3
+ambient_light_energy = 1.1
 reflected_light_source = 2
 tonemap_mode = 4
-ssao_enabled = false
-ssil_enabled = false
-sdfgi_enabled = false
-sdfgi_use_occlusion = true
+tonemap_exposure = 0.9
+ssao_enabled = true
+ssao_radius = 1.2
+ssao_intensity = 1.4
+ssao_power = 1.5
 glow_enabled = true
+glow_intensity = 0.35
+glow_bloom = 0.03
+glow_hdr_threshold = 1.1
+fog_enabled = true
+fog_light_color = Color(0.78, 0.83, 0.88, 1)
+fog_light_energy = 0.6
+fog_sun_scatter = 0.15
+fog_density = 0.0022
+fog_aerial_perspective = 0.6
+fog_sky_affect = 0.25
+background_energy_multiplier = 0.85
+adjustment_enabled = true
+adjustment_contrast = 1.06
+adjustment_saturation = 1.04
+metadata/_graphics_authored = {
+"glow": true,
+"ssao": true,
+"volumetric_fog": false
+}
 
 [node name="Nuketown" type="Node3D"]
 script = ExtResource("6_level")
@@ -36,10 +57,91 @@ script = ExtResource("6_level")
 environment = SubResource("Env")
 
 [node name="Sun" type="DirectionalLight3D" parent="."]
-rotation = Vector3(-0.9, 0.6, 0)
-light_energy = 1.2
+rotation = Vector3(-0.645, -0.854, 0)
+light_color = Color(1, 0.94, 0.84, 1)
+light_energy = 2.7
 shadow_enabled = true
-directional_shadow_max_distance = 90.0
+shadow_blur = 2.0
+directional_shadow_max_distance = 100.0
+metadata/_graphics_authored = {
+"shadow_distance": 100.0
+}
+
+[node name="Interior" type="Node3D" parent="."]
+
+[node name="BlueAmbient" type="ReflectionProbe" parent="Interior"]
+position = Vector3(22, 0.18, -9.5)
+size = Vector3(14, 3.25, 14)
+interior = true
+ambient_mode = 2
+ambient_color = Color(0.5, 0.52, 0.55, 1)
+ambient_color_energy = 0.4
+update_mode = 0
+
+[node name="YellowAmbient" type="ReflectionProbe" parent="Interior"]
+position = Vector3(-19.5, 0.18, -11)
+size = Vector3(12, 3.25, 12)
+interior = true
+ambient_mode = 2
+ambient_color = Color(0.52, 0.5, 0.46, 1)
+ambient_color_energy = 0.4
+update_mode = 0
+
+[node name="BlueLivingLight" type="OmniLight3D" parent="Interior"]
+position = Vector3(22, 0.6, -8)
+light_color = Color(1, 0.88, 0.72, 1)
+light_energy = 0.25
+omni_range = 3.2
+omni_attenuation = 1.5
+
+[node name="BlueKitchenLight" type="OmniLight3D" parent="Interior"]
+position = Vector3(26, 0.6, -12)
+light_color = Color(1, 0.9, 0.76, 1)
+light_energy = 0.22
+omni_range = 3.0
+omni_attenuation = 1.5
+
+[node name="BlueHallLight" type="OmniLight3D" parent="Interior"]
+position = Vector3(18, 0.6, -6)
+light_color = Color(1, 0.9, 0.78, 1)
+light_energy = 0.18
+omni_range = 2.8
+omni_attenuation = 1.5
+
+[node name="BlueFireplaceLight" type="OmniLight3D" parent="Interior"]
+position = Vector3(17.6, 0.15, -6.6)
+light_color = Color(1, 0.36, 0.12, 1)
+light_energy = 0.35
+omni_range = 1.8
+omni_attenuation = 1.6
+
+[node name="BlueStairLight" type="OmniLight3D" parent="Interior"]
+position = Vector3(22.8, 0.8, -2.4)
+light_color = Color(1, 0.78, 0.56, 1)
+light_energy = 0.18
+omni_range = 2.2
+omni_attenuation = 1.5
+
+[node name="BlueCarportLight" type="OmniLight3D" parent="Interior"]
+position = Vector3(6, 2.0, -8)
+light_color = Color(0.8, 0.86, 1, 1)
+light_energy = 0.45
+omni_range = 4.0
+omni_attenuation = 1.4
+
+[node name="YellowLivingLight" type="OmniLight3D" parent="Interior"]
+position = Vector3(-18, 0.6, -10)
+light_color = Color(1, 0.88, 0.7, 1)
+light_energy = 0.22
+omni_range = 3.0
+omni_attenuation = 1.5
+
+[node name="YellowKitchenLight" type="OmniLight3D" parent="Interior"]
+position = Vector3(-21, 0.6, -15)
+light_color = Color(1, 0.9, 0.74, 1)
+light_energy = 0.18
+omni_range = 2.8
+omni_attenuation = 1.5
 
 [node name="World" parent="." instance=ExtResource("5_world")]
 

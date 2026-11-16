@@ -86,6 +86,27 @@ jobs:
       - run: pipx run --spec gdtoolkit==4.5.0 gdlint godot/scripts godot/tests
       - run: pipx run --spec gdtoolkit==4.5.0 gdformat --check godot/scripts godot/tests
 
+  # The importer's geometry and material rules are pure Python, so they run
+  # without Godot, LFS, or the raw game export. Keep this job small and scoped
+  # to tools/test_import_nuketown.py.
+  python-importer:
+    name: Python importer tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: python -m pip install "Pillow>=11,<13" "numpy>=2,<3"
+      - name: Run importer regression tests
+        run: |
+          # discover exits 0 when the pattern matches nothing, so fail loudly
+          # if the test file is renamed or removed.
+          test -f tools/test_import_nuketown.py
+          python -m unittest discover -s tools -p "test_import_nuketown.py" -v
+
   smoke:
     name: Godot smoke test (headless)
     runs-on: ubuntu-latest
@@ -112,6 +133,14 @@ jobs:
         run: godot --headless --path godot --script res://tests/slamcity_test.gd
       - name: Run Nuketown navigation and collision test
         run: godot --headless --path godot --script res://tests/nuketown_test.gd
+      # Drives the real player up and down both houses' stairs without jumping,
+      # and checks the blue house's interior floor lanes and hearth.
+      - name: Run Nuketown physics test
+        run: godot --headless --path godot --script res://tests/nuketown_physics_test.gd
+      # Measures the real camera while climbing the blue stairs: reach the
+      # upper floor, no per-frame teleport spikes, normal walking speed.
+      - name: Run Nuketown climb smoothness test
+        run: godot --headless --path godot --script res://tests/nuketown_climb_test.gd
       - name: Run settings test
         run: godot --headless --path godot --script res://tests/settings_test.gd
       - name: Run secret laser test

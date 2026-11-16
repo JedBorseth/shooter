@@ -97,7 +97,8 @@ archive or the conversion tools.
 
 The commands below are only needed to regenerate the map from the supplied source
 archive. Raw BO2/C2M exports in `builds/` remain excluded from Git.
-From the repository root, using Python with Pillow installed and Godot 4.7.2:
+From the repository root, using Python with Pillow and NumPy installed and Godot
+4.7.2:
 
 ```sh
 python3 tools/import_nuketown.py builds/nuketown/source godot/assets/maps/nuketown/generated
@@ -113,9 +114,75 @@ The converter maps CoD inches/z-up to meters/y-up, flips normal-map green channe
 converts TIFF to PNG, reconstructs base materials, and splits large meshes below
 Godot's surface limit. Meshes and collision shapes are shared across repeated props.
 Textures use mipmaps and VRAM compression; the configuration tool defaults to a
-1024-pixel limit. Source layered decals, original game scripts, animated foliage,
-and destructible-prop simulation are not recreated.
+1024-pixel limit. Source layered decals, animated foliage, and destructible-prop
+simulation are not recreated; layered decals are baked into their base textures.
 
-`tools/test_import_nuketown.py` checks coordinate rotation and mesh splitting.
-The Godot integration test activates the real home-screen transition, checks floor
-collision and walking, and clicks the Home button to return.
+Material reconstruction follows the exported C2M data rather than guessing:
+
+- `colorMap` plus the model slots (`diffuse_map`, `Color_Map`, `Layer1Map`/highest
+  layer map, and the Nuketown TV welcome screen) supply base colour.
+- Layered BSP surfaces joined with `__` are baked in order. Multiply layers
+  (`m0`, `a0`, and `unlitdecalblend_multiply`) darken the base; `b0` layers alpha
+  blend. Standalone multiply decals become alpha overlays so they no longer
+  render as white bands. The overlay is exact for grayscale grime; saturated
+  coloured multiply decals are necessarily an approximation because glTF has no
+  per-channel multiply blend.
+- Glass and other `b0` surfaces use alpha blending; foliage and `t0` surfaces use
+  alpha testing. Caulk and `shadowcaster` surfaces are invisible as in game, and
+  use a fully discarded alpha-scissor material rather than an alpha-blended depth
+  prepass. Collision stays on the full source mesh.
+- The alpha channel of a specular map is gloss: uniform gloss becomes a constant
+  roughness and varying gloss becomes a glTF metallic/roughness texture.
+- `detailMap` normals are tiled at the exported `detailScale` and baked into the
+  base normal with a whiteout blend, because glTF has no detail-normal stage.
+- Source colour is bled outward into discarded alpha-test texels so mipmapped
+  foliage edges do not turn black.
+- `textures.json` marks normal maps for `tools/configure_nuketown_textures.gd`, so
+  they use Godot's normal-map VRAM compression instead of colour-oriented S3TC.
+- `unlit_*`, `sw4_3d_unlit*`, and `sw4_3d_nuketown_tv` materials use
+  `KHR_materials_unlit` so screens and light fixtures stay self-lit.
+
+`tools/test_import_nuketown.py` checks coordinates, mesh splitting, blend rules,
+layered compositing, multiply decals, detail normals, specular roughness, alpha
+bleed, unlit materials, and hidden caulk surfaces. On a GPU, capture the converted
+views with `CAPTURE_DIR=/tmp/nuketown CAPTURE_HUD=0 godot --path godot --resolution
+1600x900 --script res://tests/nuketown_capture.gd`; `CAPTURE_QA=1` also frames the
+known hearth floor gap.
+
+## Remaining glTF approximations
+
+These are deliberate limits of expressing the CoD material system in glTF:
+
+- A standalone coloured multiply decal becomes an alpha overlay. It is exact for
+  the greyscale grime decals used here; saturated source colours become tinted
+  overlays rather than true `colour × base`.
+- `metallicFactor` stays `0`. CoD's specular model does not identify raw metal
+  reliably (`METAL` also covers painted metal), so only gloss-derived roughness
+  is imported.
+- glTF has no shadow-only surface. Caulk/`shadowcaster` faces are invisible and
+  keep collision, but a true shadow-only copy would need to be split out by the
+  bake step. The importer does not remove their triangles because collision is
+  owned by `bake_nuketown.gd`.
+- BSP layers are baked into one colour texture using the single UV set C2M
+  exports. Per-layer UV transforms that C2M does not export cannot be recovered.
+- Detail normals are baked into the base normal because glTF has no detail-normal
+  stage. Multi-layer unlit screens select one source layer rather than recreating
+  the game's animated layer cycle.
+- Alpha blending and masking are static; alpha-to-coverage and the original
+  animated foliage/destructible-prop shaders are not recreated.
+
+Known source gap: the exported BSP has no floor in the hearth area around
+`x 18.6–21.3, z -9.75–-10.85` (source floor triangles surround a hole of about
+`x 18.0–22.0, z -11.4–-9.0`). The importer preserves the export as-is; the
+gameplay/physics layer supplies the matching floor and collider. The blue
+house also has the same missing caulk floor in the living room
+(`x 13.9–18.4, z -9.7–-3.8`) and back room (`x 16.6–21.8, z -20.2–-17.8`).
+`godot/tools/bake_nuketown.gd` adds carpet/tile patch meshes with source-scaled
+UVs and trimesh collision at the surrounding heights, plus collision-only
+player-clip ramps over both staircases so the capsule moves at walking speed
+without riser teleports. The ramps are solid box segments on movement-only layer
+16, which the player mask includes and hitscan ignores; the visible stair
+trimeshes still take bullets. `godot/tests/nuketown_physics_test.gd` checks the surfaces, seams,
+diagonal approach, ledges, ramp width/height, and both stairs;
+`godot/tests/nuketown_climb_test.gd` checks the real camera stays smooth while
+climbing.
