@@ -82,6 +82,11 @@ pub struct MoveState {
     pub slide_time: f32,
     /// Seconds until another slide is allowed.
     pub slide_cooldown: f32,
+    /// Seconds left in which a jump press still counts (jump buffering).
+    pub jump_buffer: f32,
+    /// Seconds left in which the player may still jump after leaving the floor
+    /// (coyote time).
+    pub coyote: f32,
     /// Previous tick's buttons, for edge detection without engine help.
     pub jump_held: bool,
     pub crouch_held: bool,
@@ -105,6 +110,10 @@ pub struct MoveParams {
     pub stop_speed: f32,
     pub gravity: f32,
     pub jump_velocity: f32,
+    /// A jump pressed up to this long before landing still happens on landing.
+    pub jump_buffer_time: f32,
+    /// A jump pressed up to this long after walking off a ledge still happens.
+    pub coyote_time: f32,
     /// Horizontal speed a slide starts at (or the current speed, if faster).
     pub slide_speed: f32,
     /// Sprint speed fraction required to start a slide.
@@ -125,13 +134,15 @@ impl Default for MoveParams {
             sprint_speed: 7.4,
             crouch_speed: 2.6,
             sprint_min_forward: 0.5,
-            ground_accel: 12.0,
+            ground_accel: 15.0,
             air_accel: 2.0,
             air_wish_speed: 1.2,
-            friction: 7.0,
-            stop_speed: 2.5,
+            friction: 10.0,
+            stop_speed: 4.0,
             gravity: 19.0,
             jump_velocity: 6.2,
+            jump_buffer_time: 0.1,
+            coyote_time: 0.1,
             slide_speed: 9.5,
             slide_min_speed_ratio: 0.85,
             slide_duration: 0.75,
@@ -180,6 +191,16 @@ pub fn step(
     state.crouch_held = input.crouch;
     state.sprint_held = input.sprint;
     state.slide_cooldown = (state.slide_cooldown - dt).max(0.0);
+    state.jump_buffer = if jump_pressed {
+        params.jump_buffer_time
+    } else {
+        (state.jump_buffer - dt).max(0.0)
+    };
+    state.coyote = if env.on_floor {
+        params.coyote_time
+    } else {
+        (state.coyote - dt).max(0.0)
+    };
 
     let wish = input.wish.clamp_length_max(1.0);
     let (forward, right) = basis_from_yaw(input.yaw);
@@ -200,7 +221,11 @@ pub fn step(
     );
 
     let mut jumped = false;
-    if jump_pressed && env.on_floor && state.stance != Stance::Crouching {
+    let grounded = env.on_floor || state.coyote > 0.0;
+    if state.jump_buffer > 0.0 && grounded && state.stance != Stance::Crouching {
+        // Consume both windows so one press gives one jump.
+        state.jump_buffer = 0.0;
+        state.coyote = 0.0;
         // Jumping out of a slide keeps its momentum.
         if state.stance == Stance::Sliding {
             state.stance = Stance::Standing;
@@ -219,11 +244,13 @@ pub fn step(
         apply_friction(&mut state.velocity, friction, params.stop_speed, dt);
         if state.stance != Stance::Sliding {
             let wish_speed = wish.length() * max_speed(state, params) * input.speed_multiplier;
+            // Scale acceleration by at least `stop_speed`, so slow stances (crouch,
+            // aiming) still reach their speed against the stronger low-speed friction.
             accelerate(
                 &mut state.velocity,
                 wish_dir,
                 wish_speed,
-                params.ground_accel,
+                params.ground_accel * (params.stop_speed / wish_speed.max(1e-3)).max(1.0),
                 dt,
             );
         }
@@ -596,6 +623,133 @@ mod tests {
         s.velocity.y = 0.0;
         step(&mut s, &jump, MoveEnv::default(), &params, DT);
         assert_eq!(s.velocity.y, 0.0);
+    }
+
+    const AIR: MoveEnv = MoveEnv {
+        on_floor: false,
+        can_stand: true,
+    };
+
+    fn jump() -> MoveInput {
+        MoveInput {
+            jump: true,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn jump_pressed_just_before_landing_is_buffered() {
+        let p = MoveParams::default();
+        let mut s = MoveState {
+            velocity: Vec3::new(0.0, -3.0, 0.0),
+            ..Default::default()
+        };
+        // Pressed 50 ms before touching down, then released.
+        step(&mut s, &jump(), AIR, &p, crate::TICK_DT);
+        for _ in 0..5 {
+            step(&mut s, &MoveInput::default(), AIR, &p, crate::TICK_DT);
+        }
+        step(
+            &mut s,
+            &MoveInput::default(),
+            MoveEnv::default(),
+            &p,
+            crate::TICK_DT,
+        );
+        assert!(s.velocity.y > p.jump_velocity * 0.9, "jumps on landing");
+    }
+
+    #[test]
+    fn jump_pressed_too_early_is_dropped() {
+        let p = MoveParams::default();
+        let mut s = MoveState::default();
+        step(&mut s, &jump(), AIR, &p, crate::TICK_DT);
+        for _ in 0..30 {
+            step(&mut s, &MoveInput::default(), AIR, &p, crate::TICK_DT);
+        }
+        step(
+            &mut s,
+            &MoveInput::default(),
+            MoveEnv::default(),
+            &p,
+            crate::TICK_DT,
+        );
+        assert_eq!(s.velocity.y, 0.0);
+    }
+
+    #[test]
+    fn coyote_time_allows_one_late_jump() {
+        let p = MoveParams::default();
+        let mut s = MoveState::default();
+        step(
+            &mut s,
+            &MoveInput::default(),
+            MoveEnv::default(),
+            &p,
+            crate::TICK_DT,
+        );
+        // Walked off a ledge 50 ms ago.
+        for _ in 0..6 {
+            step(&mut s, &MoveInput::default(), AIR, &p, crate::TICK_DT);
+        }
+        step(&mut s, &jump(), AIR, &p, crate::TICK_DT);
+        assert!(s.velocity.y > p.jump_velocity * 0.9, "late jump works");
+
+        // A second press in the air does nothing.
+        step(&mut s, &MoveInput::default(), AIR, &p, crate::TICK_DT);
+        let before = s.velocity.y;
+        step(&mut s, &jump(), AIR, &p, crate::TICK_DT);
+        assert!(s.velocity.y < before, "no double jump");
+    }
+
+    #[test]
+    fn coyote_time_runs_out() {
+        let p = MoveParams::default();
+        let mut s = MoveState::default();
+        step(
+            &mut s,
+            &MoveInput::default(),
+            MoveEnv::default(),
+            &p,
+            crate::TICK_DT,
+        );
+        for _ in 0..30 {
+            step(&mut s, &MoveInput::default(), AIR, &p, crate::TICK_DT);
+        }
+        let before = s.velocity.y;
+        step(&mut s, &jump(), AIR, &p, crate::TICK_DT);
+        assert!(s.velocity.y < before);
+    }
+
+    #[test]
+    fn stops_crisply_at_the_real_tick_rate() {
+        let p = MoveParams::default();
+        let mut s = MoveState::default();
+        let ticks = |seconds: f32| (seconds * crate::TICK_RATE as f32) as usize;
+        for _ in 0..ticks(1.0) {
+            step(&mut s, &forward(), MoveEnv::default(), &p, crate::TICK_DT);
+        }
+        assert!((speed(&s) - p.walk_speed).abs() < 0.05, "full speed");
+        for _ in 0..ticks(0.2) {
+            step(
+                &mut s,
+                &MoveInput::default(),
+                MoveEnv::default(),
+                &p,
+                crate::TICK_DT,
+            );
+        }
+        assert_eq!(speed(&s), 0.0, "stopped from a walk within 200 ms");
+
+        // Reaches full walking speed within 150 ms from rest.
+        for _ in 0..ticks(0.15) {
+            step(&mut s, &forward(), MoveEnv::default(), &p, crate::TICK_DT);
+        }
+        assert!(
+            (speed(&s) - p.walk_speed).abs() < 0.05,
+            "speed {}",
+            speed(&s)
+        );
     }
 
     #[test]

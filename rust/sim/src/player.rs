@@ -180,16 +180,6 @@ pub fn step(
     dt: f32,
     events: &mut Vec<PlayerEvent>,
 ) -> Vec3 {
-    let input = if state.alive() {
-        *input
-    } else {
-        PlayerInput {
-            yaw: input.yaw,
-            pitch: input.pitch,
-            ..Default::default()
-        }
-    };
-
     if env.on_floor && state.airborne {
         events.push(PlayerEvent::Landed {
             speed: state.fall_speed,
@@ -198,6 +188,20 @@ pub fn step(
         apply_damage(state, damage, true, events);
     }
     state.airborne = !env.on_floor;
+
+    // Decided after landing damage, so a fatal landing already gets no control.
+    let input = if state.alive() {
+        *input
+    } else {
+        // A jump pressed just before dying must not fire later from the buffer.
+        state.movement.jump_buffer = 0.0;
+        state.movement.coyote = 0.0;
+        PlayerInput {
+            yaw: input.yaw,
+            pitch: input.pitch,
+            ..Default::default()
+        }
+    };
 
     state.since_damage += dt;
     if state.alive() && state.since_damage >= params.health.regen_delay {
@@ -364,6 +368,37 @@ mod tests {
         let events = fall_and_land(&mut s, 70);
         assert!(events.contains(&PlayerEvent::Died));
         assert!(!s.alive());
+    }
+
+    #[test]
+    fn a_jump_buffered_before_a_fatal_landing_does_not_fire() {
+        let mut s = ready_state();
+        run(&mut s, PlayerInput::default(), AIRBORNE, 66);
+        let jump = PlayerInput {
+            jump: true,
+            ..Default::default()
+        };
+        run(&mut s, jump, AIRBORNE, 3);
+        s.movement.velocity.y = 0.0;
+        let events = run(&mut s, jump, MoveEnv::default(), 1);
+        assert!(events.contains(&PlayerEvent::Died));
+        assert!(s.movement.velocity.y <= 0.0, "the body stays down");
+    }
+
+    #[test]
+    fn a_jump_buffered_before_dying_in_the_air_does_not_fire() {
+        let mut s = ready_state();
+        let jump = PlayerInput {
+            jump: true,
+            ..Default::default()
+        };
+        run(&mut s, jump, AIRBORNE, 1);
+        let mut events = Vec::new();
+        apply_damage(&mut s, 200.0, false, &mut events);
+        run(&mut s, PlayerInput::default(), AIRBORNE, 1);
+        s.movement.velocity.y = 0.0;
+        run(&mut s, PlayerInput::default(), MoveEnv::default(), 1);
+        assert!(s.movement.velocity.y <= 0.0, "the body stays down");
     }
 
     #[test]

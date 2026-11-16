@@ -109,6 +109,23 @@ fn empty_magazine_auto_reloads_and_refills() {
 }
 
 #[test]
+fn full_auto_matches_fire_rate_at_the_real_tick_rate() {
+    let mut s = ready();
+    let mut events = Vec::new();
+    for _ in 0..2 * crate::TICK_RATE {
+        step(
+            &mut s,
+            &fire(),
+            &CombatContext::default(),
+            crate::TICK_DT,
+            &mut events,
+        );
+    }
+    // 750 RPM for 2 s is 25 rounds, whatever the tick rate.
+    assert_eq!(shots(&events), 25);
+}
+
+#[test]
 fn sprinting_blocks_fire_then_sprint_out_delays_it() {
     let mut s = ready();
     let sprint = CombatContext {
@@ -118,8 +135,8 @@ fn sprinting_blocks_fire_then_sprint_out_delays_it() {
     let events = run(&mut s, fire(), sprint, 30);
     assert_eq!(shots(&events), 0);
 
-    // 0.22 s sprint-out is 13 ticks at 60 Hz.
-    let events = run(&mut s, fire(), CombatContext::default(), 12);
+    // 0.15 s sprint-out is 9 ticks at 60 Hz.
+    let events = run(&mut s, fire(), CombatContext::default(), 8);
     assert_eq!(shots(&events), 0);
     let events = run(&mut s, fire(), CombatContext::default(), 2);
     assert_eq!(shots(&events), 1);
