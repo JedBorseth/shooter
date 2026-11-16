@@ -182,6 +182,9 @@ pub struct FpsPlayer {
     /// Bullet tracer, spawned for every Nth round (`tracer_every` in the weapon file).
     #[export]
     tracer_scene: OnEditor<Gd<PackedScene>>,
+    /// Solid beam drawn on every shot of an energy weapon (`beam` in the weapon file).
+    #[export]
+    beam_scene: Option<Gd<PackedScene>>,
 
     #[init(node = "Camera")]
     camera: OnReady<Gd<Camera3D>>,
@@ -663,6 +666,25 @@ impl FpsPlayer {
         self.latched = Default::default();
         // A key still held when the menu closes is not a fresh press.
         self.interact_held = enabled && Input::singleton().is_action_pressed("interact");
+    }
+
+    /// Moves the player instantly and points them along `yaw`, keeping weapons,
+    /// health, and score (map secrets, tests). Offline only: online, the server
+    /// owns the player's position.
+    #[func]
+    fn teleport(&mut self, position: Vector3, yaw: f32) {
+        self.state.movement.velocity = Vec3::ZERO;
+        self.on_floor = false;
+        let placed = Predicted {
+            state: self.state,
+            position: to_sim(position),
+            on_floor: false,
+        };
+        body::place(&mut self.parts(), &self.params.movement, &placed);
+        self.previous_position = position;
+        self.current_position = position;
+        self.yaw = yaw;
+        self.pitch = 0.0;
     }
 
     /// Points the view: yaw and pitch in radians (spawns, tests, spectating).
@@ -1152,7 +1174,8 @@ impl FpsPlayer {
                 let ads = self.state.combat.ads;
                 let low = self.state.combat.weapon().magazine <= def.low_ammo();
                 let mut rig = self.viewmodel.bind_mut();
-                let punch = rig.on_fired(weapon, ads, def.cycle_time <= 0.0);
+                let eject = def.cycle_time <= 0.0 && !def.beam;
+                let punch = rig.on_fired(weapon, ads, eject);
                 if low {
                     rig.on_low_ammo(weapon);
                 }
@@ -1285,23 +1308,26 @@ impl FpsPlayer {
             );
         }
 
-        if def.tracer_every > 0
-            && shot.is_multiple_of(u32::from(def.tracer_every))
-            && let Some(end) = first_end
-        {
-            self.spawn_tracer(end);
+        let Some(end) = first_end else { return };
+        if def.beam {
+            if let Some(scene) = self.beam_scene.clone() {
+                self.spawn_streak(&scene, end);
+            }
+        } else if def.tracer_every > 0 && shot.is_multiple_of(u32::from(def.tracer_every)) {
+            let scene = (*self.tracer_scene).clone();
+            self.spawn_streak(&scene, end);
         }
     }
 
-    /// Tracers start near the muzzle: the viewmodel is drawn with its own FOV,
-    /// so this is a camera-relative approximation that reads right on screen.
-    fn spawn_tracer(&mut self, end: Vector3) {
+    /// Tracers and beams start near the muzzle: the viewmodel is drawn with its
+    /// own FOV, so this is a camera-relative approximation that reads right on
+    /// screen.
+    fn spawn_streak(&mut self, scene: &Gd<PackedScene>, end: Vector3) {
         let ads = self.state.combat.ads;
         let hip = Vector3::new(0.09, -0.1, -0.55);
         let aimed = Vector3::new(0.0, -0.05, -0.55);
         let start = self.camera.get_global_transform() * hip.lerp(aimed, ads);
-        let Some(mut tracer) = self
-            .tracer_scene
+        let Some(mut tracer) = scene
             .instantiate()
             .and_then(|n| n.try_cast::<Node3D>().ok())
         else {

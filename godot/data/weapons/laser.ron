@@ -1,0 +1,30 @@
+// Prism Laser: the Nuketown easter egg (see godot/scripts/secret_laser.gd).
+// Deliberately broken: kills anything in one hit at any range, full auto, no
+// spread, no recoil, and a magazine that takes over a minute to empty.
+(
+    name: "PRISM LASER",
+    slot: Primary,
+    fire_mode: Auto,
+    rounds_per_minute: 900,
+    magazine: 999,
+    reserve: 9999,
+    damage: (near: 10000, far: 10000, falloff_start: 2000, falloff_end: 2000, headshot: 1.0),
+    range: 2000,
+    reload: Magazine(time: 0.6, empty_time: 0.6),
+    ads_time: 0.08,
+    sprint_out_time: 0.05,
+    raise_time: 0.2,
+    lower_time: 0.12,
+    spread: (hip: 0.0, hip_moving: 0.0, air: 0.0, ads: 0.0),
+    ads_fov_scale: 0.75,
+    ads_move_scale: 1.0,
+    move_scale: 1.0,
+    recoil: (
+        pattern: [(0.0, 0.0)],
+        jitter: (0.0, 0.0),
+        ads_scale: 0.0,
+        recovery_delay: 0.0,
+        recovery_rate: 10.0,
+    ),
+    beam: true,
+)

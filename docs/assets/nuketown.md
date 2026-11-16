@@ -74,6 +74,20 @@ previously active Qwen TTS and music-AI services on exit, including service-stop
 cleanup. It is installed but not enabled at login. The AI services are left running
 when playing on the separate Windows PC.
 
+## Easter egg
+
+A faint pink triangle marks a spot on a wall near the player's spawn. Walk into
+it and keep pushing for under a second to phase into a hidden vault holding the
+**Prism Laser**: full auto, no spread or recoil, and lethal in one hit at any
+range. The glowing ring in the vault leads back out. Taking the laser puts
+target soldiers on the eight spawn points farthest from yours.
+
+The converted map has no gameplay markers, so `godot/scripts/secret_laser.gd`
+picks the wall at runtime: the first upright surface a ray finds looking back
+from the spawn, sweeping outward until a wall is tall enough and has floor in
+front of it. `godot/tests/secret_laser_test.gd` checks the whole flow on a
+stand-in level.
+
 ## Rebuild the generated map
 
 Generated assets remain ignored by Git; the supplied source archive is required.
