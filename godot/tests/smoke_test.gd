@@ -339,6 +339,36 @@ func _burst_and_lmg(main: Node, player: FpsPlayer) -> void:
 		player.weapon_name() == "LSW-6" and player.magazine() == 75,
 		"the LMG holds 75 rounds, got %s with %d" % [player.weapon_name(), player.magazine()]
 	)
+	# Animated parts: the magazine comes out mid-reload and goes back in.
+	var magazine := player.get_node_or_null("Camera/Viewmodel/LSW6/Model/Mesh/Magazine") as Node3D
+	_check(magazine != null, "the LMG's magazine is its own part")
+	if magazine != null:
+		await _tap("fire")
+		await _sixtieths(20)
+		var seated := magazine.global_position
+		await _tap("reload")
+		var furthest := 0.0
+		for i in 300:
+			furthest = maxf(furthest, magazine.global_position.distance_to(seated))
+			if not player.is_reloading():
+				break
+			await _sixtieths(1)
+		await _sixtieths(10)
+		_check(furthest > 0.15, "the magazine drops out during the reload, %.2f m" % furthest)
+		_check(
+			magazine.global_position.distance_to(seated) < 0.01,
+			(
+				"and is back in afterwards, off by %.3f m"
+				% magazine.global_position.distance_to(seated)
+			)
+		)
+	# Inspect: the key starts it, firing stops it.
+	await _tap("inspect")
+	await _sixtieths(10)
+	_check(player.is_inspecting(), "the inspect key turns the weapon over")
+	await _tap("fire")
+	await _sixtieths(5)
+	_check(not player.is_inspecting(), "firing stops the inspect")
 
 
 func _health(player: FpsPlayer) -> void:
