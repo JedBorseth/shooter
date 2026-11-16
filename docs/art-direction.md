@@ -31,6 +31,14 @@ To add a surface, add a set or a look to the tool, run it, import, and run it ag
 
 Curved shapes switch projection axis where their normal turns past 45°, which shows as a seam on strongly patterned textures. Use calm textures on cylinders, or give modelled props their own UVs.
 
+### Props
+
+![Covered cars, street lamps, crates, bins, barrels, jersey barriers, and roof plant across the three maps](media/map-props.jpg)
+
+Props are CC0 models from [Poly Haven](https://polyhaven.com/models), built by `tools/build_props.py` in Blender: it downloads the 1K glTF, keeps the named parts, decimates to a triangle budget (1.5k to 6k; the textures carry the fine detail), puts the origin at the bottom centre, and writes `godot/assets/props/<name>/<name>.gltf` with its textures beside it. Godot generates LODs at import.
+
+Props never change how a map plays. Each one that should block players or bullets stands on a box in a hidden CSG combiner (`Blockers`, `CoverBlockers`, or the map's existing combiners, now hidden), so collision stays exactly as simple as the blockout and impacts still report a surface. Crate stacks are scaled to fill their old blockout box; jersey barriers are scaled to fill the old low cover.
+
 ### Light
 
 ![Slamcity, the Testing Area, and Zombies before (left) and after (right) the lighting pass](media/lighting.jpg)

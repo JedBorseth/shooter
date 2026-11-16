@@ -18,6 +18,15 @@
 [ext_resource type="Script" path="res://scripts/zombies_hud.gd" id="21_zhud"]
 [ext_resource type="Texture2D" path="res://assets/skies/zombies_night.hdr" id="22_sky"]
 [ext_resource type="Script" path="res://scripts/lamp_flicker.gd" id="23_flicker"]
+[ext_resource type="PackedScene" path="res://assets/props/barrel_blue/barrel_blue.gltf" id="p_barrel_blue"]
+[ext_resource type="PackedScene" path="res://assets/props/barrel_red/barrel_red.gltf" id="p_barrel_red"]
+[ext_resource type="PackedScene" path="res://assets/props/barrel_steel/barrel_steel.gltf" id="p_barrel_steel"]
+[ext_resource type="PackedScene" path="res://assets/props/covered_car/covered_car.gltf" id="p_covered_car"]
+[ext_resource type="PackedScene" path="res://assets/props/crate/crate.gltf" id="p_crate"]
+[ext_resource type="PackedScene" path="res://assets/props/street_lamp/street_lamp.gltf" id="p_street_lamp"]
+[ext_resource type="PackedScene" path="res://assets/props/trash_can/trash_can.gltf" id="p_trash_can"]
+[ext_resource type="PackedScene" path="res://assets/props/tyre/tyre.gltf" id="p_tyre"]
+[ext_resource type="PackedScene" path="res://assets/props/utility_box/utility_box.gltf" id="p_utility_box"]
 
 [sub_resource type="PanoramaSkyMaterial" id="SkyMat"]
 panorama = ExtResource("22_sky")
@@ -163,6 +172,7 @@ sides = 20
 material = ExtResource("m_cover")
 
 [node name="Barrels" type="CSGCombiner3D" parent="."]
+visible = false
 use_collision = true
 metadata/surface = "metal"
 
@@ -222,7 +232,24 @@ height = 1.0
 sides = 14
 material = ExtResource("m_barrel_blue")
 
+[node name="CarBlock" type="CSGBox3D" parent="Barrels"]
+position = Vector3(-24.0, 0.7, -5.0)
+size = Vector3(1.8, 1.4, 4.4)
+
+[node name="Bin0Block" type="CSGBox3D" parent="Barrels"]
+position = Vector3(10.0, 0.45, -25.4)
+size = Vector3(0.6, 0.9, 0.6)
+
+[node name="Bin1Block" type="CSGBox3D" parent="Barrels"]
+position = Vector3(-25.4, 0.45, 8.0)
+size = Vector3(0.6, 0.9, 0.6)
+
+[node name="UtilityBlock" type="CSGBox3D" parent="Barrels"]
+position = Vector3(25.7, 0.56, -4.0)
+size = Vector3(0.45, 1.12, 0.55)
+
 [node name="Crates" type="CSGCombiner3D" parent="."]
+visible = false
 use_collision = true
 metadata/surface = "wood"
 
@@ -256,12 +283,185 @@ position = Vector3(22.8, 0.7, 20.6)
 size = Vector3(1.4, 1.4, 1.4)
 material = ExtResource("m_crate")
 
+[node name="Props3D" type="Node3D" parent="."]
+
+[node name="Barrel0" parent="Props3D" instance=ExtResource("p_barrel_red")]
+position = Vector3(-4.5, 0, -3)
+scale = Vector3(1.25, 1.12, 1.25)
+
+[node name="Barrel1" parent="Props3D" instance=ExtResource("p_barrel_steel")]
+position = Vector3(-3.6, 0, -3.6)
+rotation = Vector3(0, 0.9, 0)
+scale = Vector3(1.25, 1.12, 1.25)
+
+[node name="Barrel2" parent="Props3D" instance=ExtResource("p_barrel_steel")]
+position = Vector3(5, 0, 4)
+rotation = Vector3(0, 1.8, 0)
+scale = Vector3(1.25, 1.12, 1.25)
+
+[node name="Barrel3" parent="Props3D" instance=ExtResource("p_barrel_blue")]
+position = Vector3(4.2, 0, 4.8)
+rotation = Vector3(0, 2.7, 0)
+scale = Vector3(1.25, 1.12, 1.25)
+
+[node name="Barrel4" parent="Props3D" instance=ExtResource("p_barrel_red")]
+position = Vector3(-12, 0, 14)
+rotation = Vector3(0, 3.6, 0)
+scale = Vector3(1.25, 1.12, 1.25)
+
+[node name="Barrel5" parent="Props3D" instance=ExtResource("p_barrel_steel")]
+position = Vector3(13, 0, -13)
+rotation = Vector3(0, 4.5, 0)
+scale = Vector3(1.25, 1.12, 1.25)
+
+[node name="Barrel6" parent="Props3D" instance=ExtResource("p_barrel_steel")]
+position = Vector3(-18, 0, -6)
+rotation = Vector3(0, 5.4, 0)
+scale = Vector3(1.25, 1.12, 1.25)
+
+[node name="Barrel7" parent="Props3D" instance=ExtResource("p_barrel_blue")]
+position = Vector3(18, 0, 7)
+rotation = Vector3(0, 6.3, 0)
+scale = Vector3(1.25, 1.12, 1.25)
+
+[node name="Crate00" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(-23, 0, -22.5)
+scale = Vector3(1.8868, 2.1739, 1.7094)
+
+[node name="Crate01" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(-23, 1, -22.5)
+rotation = Vector3(0, 0.03, 0)
+scale = Vector3(1.8868, 2.1739, 1.7094)
+
+[node name="Crate02" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(-22, 0, -22.5)
+scale = Vector3(1.8868, 2.1739, 1.7094)
+
+[node name="Crate03" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(-22, 1, -22.5)
+rotation = Vector3(0, 0.03, 0)
+scale = Vector3(1.8868, 2.1739, 1.7094)
+
+[node name="Crate10" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(22, 0, -22.5)
+scale = Vector3(1.8868, 2.1739, 1.7094)
+
+[node name="Crate11" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(22, 1, -22.5)
+rotation = Vector3(0, 0.03, 0)
+scale = Vector3(1.8868, 2.1739, 1.7094)
+
+[node name="Crate12" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(23, 0, -22.5)
+scale = Vector3(1.8868, 2.1739, 1.7094)
+
+[node name="Crate13" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(23, 1, -22.5)
+rotation = Vector3(0, 0.03, 0)
+scale = Vector3(1.8868, 2.1739, 1.7094)
+
+[node name="Crate20" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(-23, 0, 22.5)
+scale = Vector3(1.8868, 2.1739, 1.7094)
+
+[node name="Crate21" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(-23, 1, 22.5)
+rotation = Vector3(0, 0.03, 0)
+scale = Vector3(1.8868, 2.1739, 1.7094)
+
+[node name="Crate22" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(-22, 0, 22.5)
+scale = Vector3(1.8868, 2.1739, 1.7094)
+
+[node name="Crate23" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(-22, 1, 22.5)
+rotation = Vector3(0, 0.03, 0)
+scale = Vector3(1.8868, 2.1739, 1.7094)
+
+[node name="Crate30" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(22, 0, 22.5)
+scale = Vector3(1.8868, 2.1739, 1.7094)
+
+[node name="Crate31" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(22, 1, 22.5)
+rotation = Vector3(0, 0.03, 0)
+scale = Vector3(1.8868, 2.1739, 1.7094)
+
+[node name="Crate32" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(23, 0, 22.5)
+scale = Vector3(1.8868, 2.1739, 1.7094)
+
+[node name="Crate33" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(23, 1, 22.5)
+rotation = Vector3(0, 0.03, 0)
+scale = Vector3(1.8868, 2.1739, 1.7094)
+
+[node name="Crate40" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(-20.95, 0, -22.8)
+scale = Vector3(1.3208, 1.5217, 1.1966)
+
+[node name="Crate41" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(-20.95, 0.7, -22.8)
+rotation = Vector3(0, 0.03, 0)
+scale = Vector3(1.3208, 1.5217, 1.1966)
+
+[node name="Crate42" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(-20.25, 0, -22.8)
+scale = Vector3(1.3208, 1.5217, 1.1966)
+
+[node name="Crate43" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(-20.25, 0.7, -22.8)
+rotation = Vector3(0, 0.03, 0)
+scale = Vector3(1.3208, 1.5217, 1.1966)
+
+[node name="Crate50" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(22.45, 0, 20.6)
+scale = Vector3(1.3208, 1.5217, 1.1966)
+
+[node name="Crate51" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(22.45, 0.7, 20.6)
+rotation = Vector3(0, 0.03, 0)
+scale = Vector3(1.3208, 1.5217, 1.1966)
+
+[node name="Crate52" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(23.15, 0, 20.6)
+scale = Vector3(1.3208, 1.5217, 1.1966)
+
+[node name="Crate53" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(23.15, 0.7, 20.6)
+rotation = Vector3(0, 0.03, 0)
+scale = Vector3(1.3208, 1.5217, 1.1966)
+
+[node name="Tyre0" parent="Props3D" instance=ExtResource("p_tyre")]
+position = Vector3(-6, 0, -25.5)
+rotation = Vector3(0, 0.3, 0)
+
+[node name="Tyre1" parent="Props3D" instance=ExtResource("p_tyre")]
+position = Vector3(-6.5, 0, -25.4)
+rotation = Vector3(0, 0.6, 0)
+
+[node name="Bin0" parent="Props3D" instance=ExtResource("p_trash_can")]
+position = Vector3(10, 0, -25.4)
+rotation = Vector3(0, 0.2, 0)
+
+[node name="Bin1" parent="Props3D" instance=ExtResource("p_trash_can")]
+position = Vector3(-25.4, 0, 8)
+rotation = Vector3(0, 1.3, 0)
+
+[node name="Car" parent="Props3D" instance=ExtResource("p_covered_car")]
+position = Vector3(-24, 0, -5)
+
+[node name="Utility" parent="Props3D" instance=ExtResource("p_utility_box")]
+position = Vector3(25.7, 0, -4)
+rotation = Vector3(0, -1.5708, 0)
+
 [node name="Lamps" type="Node3D" parent="."]
 
 [node name="Lamp0" type="Node3D" parent="Lamps"]
 position = Vector3(-12, 0, -12)
 
 [node name="Pole" type="CSGCylinder3D" parent="Lamps/Lamp0"]
+visible = false
 position = Vector3(0, 2.0, 0)
 use_collision = true
 radius = 0.09
@@ -270,14 +470,18 @@ sides = 8
 material = ExtResource("m_wall")
 metadata/surface = "metal"
 
+[node name="Post" parent="Lamps/Lamp0" instance=ExtResource("p_street_lamp")]
+position = Vector3(0, 0, 0)
+
 [node name="Bulb" type="MeshInstance3D" parent="Lamps/Lamp0"]
-position = Vector3(0, 4.15, 0)
+position = Vector3(0, 3.56, 0)
+scale = Vector3(0.4, 0.4, 0.4)
 mesh = SubResource("Mesh_lamp")
 
 [node name="Light" type="OmniLight3D" parent="Lamps/Lamp0"]
 script = ExtResource("23_flicker")
 seed = 3
-position = Vector3(0, 4.0, 0)
+position = Vector3(0, 3.45, 0)
 light_color = Color(1, 0.66, 0.36, 1)
 light_energy = 2.2
 omni_range = 14.0
@@ -287,6 +491,7 @@ shadow_enabled = false
 position = Vector3(12, 0, -12)
 
 [node name="Pole" type="CSGCylinder3D" parent="Lamps/Lamp1"]
+visible = false
 position = Vector3(0, 2.0, 0)
 use_collision = true
 radius = 0.09
@@ -295,14 +500,18 @@ sides = 8
 material = ExtResource("m_wall")
 metadata/surface = "metal"
 
+[node name="Post" parent="Lamps/Lamp1" instance=ExtResource("p_street_lamp")]
+position = Vector3(0, 0, 0)
+
 [node name="Bulb" type="MeshInstance3D" parent="Lamps/Lamp1"]
-position = Vector3(0, 4.15, 0)
+position = Vector3(0, 3.56, 0)
+scale = Vector3(0.4, 0.4, 0.4)
 mesh = SubResource("Mesh_lamp")
 
 [node name="Light" type="OmniLight3D" parent="Lamps/Lamp1"]
 script = ExtResource("23_flicker")
 seed = 10
-position = Vector3(0, 4.0, 0)
+position = Vector3(0, 3.45, 0)
 light_color = Color(1, 0.66, 0.36, 1)
 light_energy = 2.2
 omni_range = 14.0
@@ -312,6 +521,7 @@ shadow_enabled = false
 position = Vector3(-12, 0, 12)
 
 [node name="Pole" type="CSGCylinder3D" parent="Lamps/Lamp2"]
+visible = false
 position = Vector3(0, 2.0, 0)
 use_collision = true
 radius = 0.09
@@ -320,14 +530,18 @@ sides = 8
 material = ExtResource("m_wall")
 metadata/surface = "metal"
 
+[node name="Post" parent="Lamps/Lamp2" instance=ExtResource("p_street_lamp")]
+position = Vector3(0, 0, 0)
+
 [node name="Bulb" type="MeshInstance3D" parent="Lamps/Lamp2"]
-position = Vector3(0, 4.15, 0)
+position = Vector3(0, 3.56, 0)
+scale = Vector3(0.4, 0.4, 0.4)
 mesh = SubResource("Mesh_lamp")
 
 [node name="Light" type="OmniLight3D" parent="Lamps/Lamp2"]
 script = ExtResource("23_flicker")
 seed = 17
-position = Vector3(0, 4.0, 0)
+position = Vector3(0, 3.45, 0)
 light_color = Color(1, 0.66, 0.36, 1)
 light_energy = 2.2
 omni_range = 14.0
@@ -337,6 +551,7 @@ shadow_enabled = false
 position = Vector3(12, 0, 12)
 
 [node name="Pole" type="CSGCylinder3D" parent="Lamps/Lamp3"]
+visible = false
 position = Vector3(0, 2.0, 0)
 use_collision = true
 radius = 0.09
@@ -345,14 +560,18 @@ sides = 8
 material = ExtResource("m_wall")
 metadata/surface = "metal"
 
+[node name="Post" parent="Lamps/Lamp3" instance=ExtResource("p_street_lamp")]
+position = Vector3(0, 0, 0)
+
 [node name="Bulb" type="MeshInstance3D" parent="Lamps/Lamp3"]
-position = Vector3(0, 4.15, 0)
+position = Vector3(0, 3.56, 0)
+scale = Vector3(0.4, 0.4, 0.4)
 mesh = SubResource("Mesh_lamp")
 
 [node name="Light" type="OmniLight3D" parent="Lamps/Lamp3"]
 script = ExtResource("23_flicker")
 seed = 24
-position = Vector3(0, 4.0, 0)
+position = Vector3(0, 3.45, 0)
 light_color = Color(1, 0.66, 0.36, 1)
 light_energy = 2.2
 omni_range = 14.0
@@ -362,6 +581,7 @@ shadow_enabled = false
 position = Vector3(3, 0, -1)
 
 [node name="Pole" type="CSGCylinder3D" parent="Lamps/Lamp4"]
+visible = false
 position = Vector3(0, 2.0, 0)
 use_collision = true
 radius = 0.09
@@ -370,14 +590,18 @@ sides = 8
 material = ExtResource("m_wall")
 metadata/surface = "metal"
 
+[node name="Post" parent="Lamps/Lamp4" instance=ExtResource("p_street_lamp")]
+position = Vector3(0, 0, 0)
+
 [node name="Bulb" type="MeshInstance3D" parent="Lamps/Lamp4"]
-position = Vector3(0, 4.15, 0)
+position = Vector3(0, 3.56, 0)
+scale = Vector3(0.4, 0.4, 0.4)
 mesh = SubResource("Mesh_lamp")
 
 [node name="Light" type="OmniLight3D" parent="Lamps/Lamp4"]
 script = ExtResource("23_flicker")
 seed = 31
-position = Vector3(0, 4.0, 0)
+position = Vector3(0, 3.45, 0)
 light_color = Color(1, 0.66, 0.36, 1)
 light_energy = 2.2
 omni_range = 14.0

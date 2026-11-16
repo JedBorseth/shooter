@@ -206,13 +206,24 @@ WEAPONS = REPO / "godot/assets/weapons"
 
 
 def fix_imports() -> None:
-    """VRAM-compress every world and weapon texture with mipmaps, mark normal
-    maps, and point each weapon .glb at its material (tools/build_weapons.py)."""
+    """VRAM-compress every world, weapon, and prop texture with mipmaps, mark
+    normal maps, and point each weapon .glb at its material
+    (tools/build_weapons.py)."""
     count = 0
-    paths = sorted(TEXTURES.glob("*/*.jpg.import")) + sorted(WEAPONS.glob("*/*_*.png.import"))
+    props = REPO / "godot/assets/props"
+    paths = (
+        sorted(TEXTURES.glob("*/*.jpg.import"))
+        + sorted(WEAPONS.glob("*/*_*.png.import"))
+        + sorted(props.glob("*/*.jpg.import"))
+        + sorted(props.glob("*/*.png.import"))
+    )
     for path in paths:
         text = path.read_text()
-        is_normal = path.name.startswith("normal") or path.name.endswith("_normal.png.import")
+        is_normal = (
+            path.name.startswith("normal")
+            or path.name.endswith("_normal.png.import")
+            or "_nor_gl" in path.name
+        )
         replacements = {
             "compress/mode=0": "compress/mode=2",
             "compress/mode=1": "compress/mode=2",

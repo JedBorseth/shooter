@@ -73,8 +73,10 @@ class Scene:
             lines.append(f"{k} = {v}")
         self.nodes.append("\n".join(lines))
 
-    def combiner(self, name, surface, parent=".", collision=True):
+    def combiner(self, name, surface, parent=".", collision=True, visible=True):
         props = {}
+        if not visible:
+            props["visible"] = "false"
         if collision:
             props["use_collision"] = "true"
         else:
@@ -247,14 +249,56 @@ def car(name, rot, cx, cz, along_x, mat, length=4.4, width=1.9):
     pbox(name + "Cabin", "PropsMetal", rot, cx - cx2, cx + cx2, 1.1, 1.7, cz - cz2, cz + cz2, "glass")
 
 
+# Props are CC0 Poly Haven models (tools/build_props.py). Each one that should
+# block players and bullets gets a box in a hidden combiner, so collision stays
+# as simple as the blockout and bullets still report a surface.
+s.combiner("Blockers", "metal", visible=False)
+s.combiner("BlockersWood", "wood", visible=False)
+s.node("Props3D", "Node3D", ".")
+PROPS_USED = set()
+
+
+def rot_point(x, z, rotated):
+    return (-x, -z) if rotated else (x, z)
+
+
+def prop(name, model, rotated, x, y, z, yaw=0.0, scale=1.0):
+    PROPS_USED.add(model)
+    px, pz = rot_point(x, z, rotated)
+    props = {"position": vec(px, y, pz)}
+    yaw = yaw + (PI if rotated else 0.0)
+    if yaw:
+        props["rotation"] = vec(0, yaw, 0)
+    if scale != 1.0:
+        props["scale"] = vec(scale, scale, scale)
+    s.node(name, None, "Props3D", props, instance=f"p_{model}")
+
+
+def blocker(name, rotated, x0, x1, y0, y1, z0, z1, wood=False):
+    pbox(name, "BlockersWood" if wood else "Blockers", rotated, x0, x1, y0, y1, z0, z1, "trim")
+
+
+def car(name, rot, cx, cz, along_x):
+    hx, hz = (2.2, 0.95) if along_x else (0.95, 2.2)
+    blocker(name + "Block", rot, cx - hx, cx + hx, 0, 1.4, cz - hz, cz + hz)
+    prop(name, "covered_car", rot, cx, 0, cz, PI / 2 if along_x else 0.0)
+
+
+def crate_stack(name, rot, x0, z0, wood=True):
+    """Four wooden crates in place of a 1.2 m blockout crate."""
+    blocker(name + "Block", rot, x0, x0 + 1.2, 0, 0.92, z0, z0 + 1.2, wood=True)
+    for i, (dx, dy) in enumerate(((0.32, 0), (0.88, 0), (0.32, 0.46), (0.88, 0.46))):
+        prop(f"{name}{i}", "crate", rot, x0 + dx, dy, z0 + 0.6, (i % 2) * 0.06)
+
+
 for tag, rot in (("A", False), ("B", True)):
     # Vehicles break up the lanes in front of the buildings.
-    car(f"Sedan{tag}", rot, -22, -10, True, "car_red")
+    car(f"Sedan{tag}", rot, -22, -10, True)
     pbox(f"BoxTruck{tag}", "PropsMetal", rot, -1, 5, 0.3, 3.0, -12.2, -9.8, "truck")
     pbox(f"BoxTruckCab{tag}", "PropsMetal", rot, 5, 6.8, 0.3, 2.2, -12.1, -9.9, "car_blue")
-    car(f"Taxi{tag}", rot, 27, -10.5, True, "car_taxi")
-    car(f"Hatch{tag}", rot, 24.5, -19, False, "car_blue")
-    car(f"Coupe{tag}", rot, 30.5, -20, False, "car_red")
+    car(f"Taxi{tag}", rot, 27, -10.5, True)
+    car(f"Hatch{tag}", rot, 24.5, -19, False)
+    car(f"Coupe{tag}", rot, 30.5, -20, False)
     # The kiosk blocks the straight line between the two spawns.
     pbox(f"Kiosk{tag}", "Props", rot, -12, -10, 0, 2.6, -1.5, 1.5, "brick_blue")
     pbox(f"KioskRoof{tag}", "Props", rot, -12.3, -9.7, 2.6, 2.8, -1.8, 1.8, "trim")
@@ -264,19 +308,48 @@ for tag, rot in (("A", False), ("B", True)):
     # Alley behind the buildings.
     pbox(f"Dumpster{tag}", "PropsMetal", rot, -25, -23.2, 0, 1.3, -24.9, -23.6, "dumpster")
     pbox(f"DumpsterGap{tag}", "PropsMetal", rot, 0.5, 2.3, 0, 1.3, -21, -19.7, "dumpster")
-    pbox(f"AcUnit{tag}", "PropsMetal", rot, -14, -12.8, 0, 1.0, -23.2, -22, "metal")
-    pbox(f"CrateLow{tag}", "PropsWood", rot, -5, -3.8, 0, 1.2, -25, -23.8, "wood")
-    pbox(f"CrateHigh{tag}", "PropsWood", rot, -5, -3.8, 1.2, 2.4, -25, -23.8, "wood")
-    pbox(f"CrateSide{tag}", "PropsWood", rot, -3.8, -2.6, 0, 1.2, -25, -23.8, "wood")
+    blocker(f"AcUnit{tag}Block", rot, -14, -12.8, 0, 1.0, -23.2, -22)
+    prop(f"AcUnit{tag}", "aircon", rot, -13.4, 0, -22.6, PI)
+    crate_stack(f"CrateLow{tag}", rot, -5, -25)
+    crate_stack(f"CrateSide{tag}", rot, -3.8, -25)
+    blocker(f"CrateHigh{tag}Block", rot, -5, -3.8, 0.92, 1.84, -25, -23.8, wood=True)
+    prop(f"CrateHigh{tag}", "military_crate", rot, -4.4, 0.92, -24.4, 0.1)
     pbox(f"Pallets{tag}", "PropsWood", rot, 14, 16, 0, 0.6, -25, -23.5, "wood")
     pbox(f"NewsBoxes{tag}", "PropsMetal", rot, 6.2, 7.4, 0, 1.1, -14.6, -14.0, "car_blue")
-    pbox(f"Hydrant{tag}", "PropsMetal", rot, -30.3, -29.9, 0, 0.8, -9.3, -8.9, "car_red")
+    blocker(f"Hydrant{tag}Block", rot, -30.3, -29.9, 0, 0.8, -9.3, -8.9)
+    prop(f"Hydrant{tag}", "hydrant", rot, -30.1, 0, -9.1, 0.4)
 
-# Lamp posts and signs are visual only.
-s.combiner("Lamps", None, collision=False)
+    # Clutter against walls: bins, barrels, tyres, boxes, and the alley's lights.
+    for i, (x, z, yaw) in enumerate(((-27.3, -13.5, 0.3), (-8.7, -13.5, -0.4), (5.5, -14.3, 0.9))):
+        blocker(f"Bin{tag}{i}Block", rot, x - 0.3, x + 0.3, 0, 0.9, z - 0.3, z + 0.3)
+        prop(f"Bin{tag}{i}", "trash_can", rot, x, 0, z, yaw)
+    for i, (x, z, model) in enumerate(((-26.0, -24.6, "barrel_red"), (-22.5, -24.7, "barrel_steel"),
+                                        (-21.8, -25.2, "barrel_blue"), (16.8, -25.0, "barrel_steel"))):
+        blocker(f"Barrel{tag}{i}Block", rot, x - 0.3, x + 0.3, 0, 0.9, z - 0.3, z + 0.3)
+        prop(f"Barrel{tag}{i}", model, rot, x, 0, z, i * 1.3)
+    prop(f"Tyre{tag}0", "tyre", rot, -7.2, 0, -25.4, 0.2)
+    prop(f"Tyre{tag}1", "tyre", rot, -7.6, 0, -25.3, 0.5)
+    blocker(f"Tyres{tag}Block", rot, -7.9, -6.9, 0, 0.6, -25.6, -25.0)
+    blocker(f"Boxes{tag}Block", rot, -2.3, -1.4, 0, 0.68, -25.4, -24.7, wood=True)
+    prop(f"Box{tag}0", "cardboard_box", rot, -1.9, 0, -25.0, 0.2)
+    prop(f"Box{tag}1", "cardboard_box", rot, -1.85, 0.34, -25.05, -0.3)
+    blocker(f"Utility{tag}Block", rot, 20.0, 20.45, 0, 1.12, -21.6, -21.0)
+    prop(f"Utility{tag}", "utility_box", rot, 20.22, 0, -21.3, -PI / 2)
+    prop(f"SecurityLightFlats{tag}", "security_light", rot, -20.0, 3.2, -22.0, PI)
+    prop(f"SecurityLightStore{tag}", "security_light", rot, 14.0, 2.9, -22.0, PI)
+    # Roof plant on the flats and the store, seen from the walkway and the streets.
+    for i, (x, y, z) in enumerate(((-25.5, 6.9, -18.5), (-24.5, 6.9, -18.5), (-11.5, 6.9, -20.0),
+                                   (11.0, 4.3, -20.5), (17.0, 4.3, -18.0))):
+        prop(f"RoofAc{tag}{i}", "aircon", rot, x, y, z, PI if i % 2 else 0.0)
+    # Roller shutters over the closed ground-floor doors of the flats.
+    for i, cx in enumerate((-25.4, -10.4)):
+        prop(f"Shutter{tag}{i}", "shutter_door", rot, cx, 0, -13.72)
+
+# Street lamps are visual only.
 for i, (x, z) in enumerate(((-12.6, -7.6), (12.6, 7.6), (12.6, -7.6), (-12.6, 7.6))):
-    s.box(f"Lamp{i}", "Lamps", x - 0.08, x + 0.08, 0, 5, z - 0.08, z + 0.08, "metal")
-    s.box(f"LampHead{i}", "Lamps", x - 0.3, x + 0.3, 5, 5.2, z - 0.3, z + 0.3, "trim")
+    PROPS_USED.add("street_lamp")
+    s.node(f"Lamp{i}", None, "Props3D", {"position": vec(x, 0, z), "rotation": vec(0, (i % 2) * PI, 0)},
+           instance="p_street_lamp")
 
 
 def label(name, pos, rot_y, text, size, color):
@@ -363,6 +436,10 @@ ext = """[ext_resource type="PackedScene" path="res://scenes/player.tscn" id="1_
 ext += "".join(
     f'\n[ext_resource type="Material" path="res://materials/world/{look}.tres" id="mat_{key}"]'
     for key, look in MATERIALS.items()
+)
+ext += "".join(
+    f'\n[ext_resource type="PackedScene" path="res://assets/props/{name}/{name}.gltf" id="p_{name}"]'
+    for name in sorted(PROPS_USED)
 )
 
 # Late-afternoon light: a CC0 sky image (tools/build_skies.py) rotated so its sun

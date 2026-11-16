@@ -87,3 +87,4 @@ GPU time on Medium at 1080p on the reference card, average over viewpoints (wors
 | PBR world textures | 4.75 (4.89) ms | 5.35 (5.54) ms | 4.68 (5.04) ms |
 | Sky lighting, haze, and grading | 4.90 (5.08) ms | 5.67 (5.87) ms | 4.92 (5.31) ms |
 | PBR weapons, muzzle plume and smoke | 4.98 (5.21) ms | 5.72 (6.01) ms | 4.93 (5.32) ms |
+| Modelled props | 4.99 (5.21) ms | 5.81 (6.05) ms | 4.99 (5.35) ms |
