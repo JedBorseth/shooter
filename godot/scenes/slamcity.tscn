@@ -35,6 +35,21 @@
 [ext_resource type="Material" path="res://materials/world/skyline_dark.tres" id="mat_skyline_b"]
 [ext_resource type="Material" path="res://materials/world/skyline_brick.tres" id="mat_skyline_c"]
 [ext_resource type="Material" path="res://materials/world/boundary.tres" id="mat_boundary"]
+[ext_resource type="PackedScene" path="res://assets/props/aircon/aircon.gltf" id="p_aircon"]
+[ext_resource type="PackedScene" path="res://assets/props/barrel_blue/barrel_blue.gltf" id="p_barrel_blue"]
+[ext_resource type="PackedScene" path="res://assets/props/barrel_red/barrel_red.gltf" id="p_barrel_red"]
+[ext_resource type="PackedScene" path="res://assets/props/barrel_steel/barrel_steel.gltf" id="p_barrel_steel"]
+[ext_resource type="PackedScene" path="res://assets/props/cardboard_box/cardboard_box.gltf" id="p_cardboard_box"]
+[ext_resource type="PackedScene" path="res://assets/props/covered_car/covered_car.gltf" id="p_covered_car"]
+[ext_resource type="PackedScene" path="res://assets/props/crate/crate.gltf" id="p_crate"]
+[ext_resource type="PackedScene" path="res://assets/props/hydrant/hydrant.gltf" id="p_hydrant"]
+[ext_resource type="PackedScene" path="res://assets/props/military_crate/military_crate.gltf" id="p_military_crate"]
+[ext_resource type="PackedScene" path="res://assets/props/security_light/security_light.gltf" id="p_security_light"]
+[ext_resource type="PackedScene" path="res://assets/props/shutter_door/shutter_door.gltf" id="p_shutter_door"]
+[ext_resource type="PackedScene" path="res://assets/props/street_lamp/street_lamp.gltf" id="p_street_lamp"]
+[ext_resource type="PackedScene" path="res://assets/props/trash_can/trash_can.gltf" id="p_trash_can"]
+[ext_resource type="PackedScene" path="res://assets/props/tyre/tyre.gltf" id="p_tyre"]
+[ext_resource type="PackedScene" path="res://assets/props/utility_box/utility_box.gltf" id="p_utility_box"]
 
 [sub_resource type="PanoramaSkyMaterial" id="SkyMat"]
 panorama = ExtResource("21_sky")
@@ -873,15 +888,26 @@ metadata/surface = "metal"
 use_collision = true
 metadata/surface = "wood"
 
-[node name="SedanABody" type="CSGBox3D" parent="PropsMetal"]
-position = Vector3(-22, 0.65, -10)
-size = Vector3(4.4, 0.9, 1.9)
-material = ExtResource("mat_car_red")
+[node name="Blockers" type="CSGCombiner3D" parent="."]
+visible = false
+use_collision = true
+metadata/surface = "metal"
 
-[node name="SedanACabin" type="CSGBox3D" parent="PropsMetal"]
-position = Vector3(-22, 1.4, -10)
-size = Vector3(2.4, 0.6, 1.7)
-material = ExtResource("mat_glass")
+[node name="BlockersWood" type="CSGCombiner3D" parent="."]
+visible = false
+use_collision = true
+metadata/surface = "wood"
+
+[node name="Props3D" type="Node3D" parent="."]
+
+[node name="SedanABlock" type="CSGBox3D" parent="Blockers"]
+position = Vector3(-22, 0.7, -10)
+size = Vector3(4.4, 1.4, 1.9)
+material = ExtResource("mat_trim")
+
+[node name="SedanA" parent="Props3D" instance=ExtResource("p_covered_car")]
+position = Vector3(-22, 0, -10)
+rotation = Vector3(0, 1.5708, 0)
 
 [node name="BoxTruckA" type="CSGBox3D" parent="PropsMetal"]
 position = Vector3(2, 1.65, -11)
@@ -893,35 +919,30 @@ position = Vector3(5.9, 1.25, -11)
 size = Vector3(1.8, 1.9, 2.2)
 material = ExtResource("mat_car_blue")
 
-[node name="TaxiABody" type="CSGBox3D" parent="PropsMetal"]
-position = Vector3(27, 0.65, -10.5)
-size = Vector3(4.4, 0.9, 1.9)
-material = ExtResource("mat_car_taxi")
+[node name="TaxiABlock" type="CSGBox3D" parent="Blockers"]
+position = Vector3(27, 0.7, -10.5)
+size = Vector3(4.4, 1.4, 1.9)
+material = ExtResource("mat_trim")
 
-[node name="TaxiACabin" type="CSGBox3D" parent="PropsMetal"]
-position = Vector3(27, 1.4, -10.5)
-size = Vector3(2.4, 0.6, 1.7)
-material = ExtResource("mat_glass")
+[node name="TaxiA" parent="Props3D" instance=ExtResource("p_covered_car")]
+position = Vector3(27, 0, -10.5)
+rotation = Vector3(0, 1.5708, 0)
 
-[node name="HatchABody" type="CSGBox3D" parent="PropsMetal"]
-position = Vector3(24.5, 0.65, -19)
-size = Vector3(1.9, 0.9, 4.4)
-material = ExtResource("mat_car_blue")
+[node name="HatchABlock" type="CSGBox3D" parent="Blockers"]
+position = Vector3(24.5, 0.7, -19)
+size = Vector3(1.9, 1.4, 4.4)
+material = ExtResource("mat_trim")
 
-[node name="HatchACabin" type="CSGBox3D" parent="PropsMetal"]
-position = Vector3(24.5, 1.4, -19)
-size = Vector3(1.7, 0.6, 2.4)
-material = ExtResource("mat_glass")
+[node name="HatchA" parent="Props3D" instance=ExtResource("p_covered_car")]
+position = Vector3(24.5, 0, -19)
 
-[node name="CoupeABody" type="CSGBox3D" parent="PropsMetal"]
-position = Vector3(30.5, 0.65, -20)
-size = Vector3(1.9, 0.9, 4.4)
-material = ExtResource("mat_car_red")
+[node name="CoupeABlock" type="CSGBox3D" parent="Blockers"]
+position = Vector3(30.5, 0.7, -20)
+size = Vector3(1.9, 1.4, 4.4)
+material = ExtResource("mat_trim")
 
-[node name="CoupeACabin" type="CSGBox3D" parent="PropsMetal"]
-position = Vector3(30.5, 1.4, -20)
-size = Vector3(1.7, 0.6, 2.4)
-material = ExtResource("mat_glass")
+[node name="CoupeA" parent="Props3D" instance=ExtResource("p_covered_car")]
+position = Vector3(30.5, 0, -20)
 
 [node name="KioskA" type="CSGBox3D" parent="Props"]
 position = Vector3(-11, 1.3, 0)
@@ -958,25 +979,61 @@ position = Vector3(1.4, 0.65, -20.35)
 size = Vector3(1.8, 1.3, 1.3)
 material = ExtResource("mat_dumpster")
 
-[node name="AcUnitA" type="CSGBox3D" parent="PropsMetal"]
+[node name="AcUnitABlock" type="CSGBox3D" parent="Blockers"]
 position = Vector3(-13.4, 0.5, -22.6)
 size = Vector3(1.2, 1, 1.2)
-material = ExtResource("mat_metal")
+material = ExtResource("mat_trim")
 
-[node name="CrateLowA" type="CSGBox3D" parent="PropsWood"]
-position = Vector3(-4.4, 0.6, -24.4)
-size = Vector3(1.2, 1.2, 1.2)
-material = ExtResource("mat_wood")
+[node name="AcUnitA" parent="Props3D" instance=ExtResource("p_aircon")]
+position = Vector3(-13.4, 0, -22.6)
+rotation = Vector3(0, 3.1416, 0)
 
-[node name="CrateHighA" type="CSGBox3D" parent="PropsWood"]
-position = Vector3(-4.4, 1.8, -24.4)
-size = Vector3(1.2, 1.2, 1.2)
-material = ExtResource("mat_wood")
+[node name="CrateLowABlock" type="CSGBox3D" parent="BlockersWood"]
+position = Vector3(-4.4, 0.46, -24.4)
+size = Vector3(1.2, 0.92, 1.2)
+material = ExtResource("mat_trim")
 
-[node name="CrateSideA" type="CSGBox3D" parent="PropsWood"]
-position = Vector3(-3.2, 0.6, -24.4)
-size = Vector3(1.2, 1.2, 1.2)
-material = ExtResource("mat_wood")
+[node name="CrateLowA0" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(-4.68, 0, -24.4)
+
+[node name="CrateLowA1" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(-4.12, 0, -24.4)
+rotation = Vector3(0, 0.06, 0)
+
+[node name="CrateLowA2" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(-4.68, 0.46, -24.4)
+
+[node name="CrateLowA3" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(-4.12, 0.46, -24.4)
+rotation = Vector3(0, 0.06, 0)
+
+[node name="CrateSideABlock" type="CSGBox3D" parent="BlockersWood"]
+position = Vector3(-3.2, 0.46, -24.4)
+size = Vector3(1.2, 0.92, 1.2)
+material = ExtResource("mat_trim")
+
+[node name="CrateSideA0" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(-3.48, 0, -24.4)
+
+[node name="CrateSideA1" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(-2.92, 0, -24.4)
+rotation = Vector3(0, 0.06, 0)
+
+[node name="CrateSideA2" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(-3.48, 0.46, -24.4)
+
+[node name="CrateSideA3" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(-2.92, 0.46, -24.4)
+rotation = Vector3(0, 0.06, 0)
+
+[node name="CrateHighABlock" type="CSGBox3D" parent="BlockersWood"]
+position = Vector3(-4.4, 1.38, -24.4)
+size = Vector3(1.2, 0.92, 1.2)
+material = ExtResource("mat_trim")
+
+[node name="CrateHighA" parent="Props3D" instance=ExtResource("p_military_crate")]
+position = Vector3(-4.4, 0.92, -24.4)
+rotation = Vector3(0, 0.1, 0)
 
 [node name="PalletsA" type="CSGBox3D" parent="PropsWood"]
 position = Vector3(15, 0.3, -24.25)
@@ -988,20 +1045,151 @@ position = Vector3(6.8, 0.55, -14.3)
 size = Vector3(1.2, 1.1, 0.6)
 material = ExtResource("mat_car_blue")
 
-[node name="HydrantA" type="CSGBox3D" parent="PropsMetal"]
+[node name="HydrantABlock" type="CSGBox3D" parent="Blockers"]
 position = Vector3(-30.1, 0.4, -9.1)
 size = Vector3(0.4, 0.8, 0.4)
-material = ExtResource("mat_car_red")
+material = ExtResource("mat_trim")
 
-[node name="SedanBBody" type="CSGBox3D" parent="PropsMetal"]
-position = Vector3(22, 0.65, 10)
-size = Vector3(4.4, 0.9, 1.9)
-material = ExtResource("mat_car_red")
+[node name="HydrantA" parent="Props3D" instance=ExtResource("p_hydrant")]
+position = Vector3(-30.1, 0, -9.1)
+rotation = Vector3(0, 0.4, 0)
 
-[node name="SedanBCabin" type="CSGBox3D" parent="PropsMetal"]
-position = Vector3(22, 1.4, 10)
-size = Vector3(2.4, 0.6, 1.7)
-material = ExtResource("mat_glass")
+[node name="BinA0Block" type="CSGBox3D" parent="Blockers"]
+position = Vector3(-27.3, 0.45, -13.5)
+size = Vector3(0.6, 0.9, 0.6)
+material = ExtResource("mat_trim")
+
+[node name="BinA0" parent="Props3D" instance=ExtResource("p_trash_can")]
+position = Vector3(-27.3, 0, -13.5)
+rotation = Vector3(0, 0.3, 0)
+
+[node name="BinA1Block" type="CSGBox3D" parent="Blockers"]
+position = Vector3(-8.7, 0.45, -13.5)
+size = Vector3(0.6, 0.9, 0.6)
+material = ExtResource("mat_trim")
+
+[node name="BinA1" parent="Props3D" instance=ExtResource("p_trash_can")]
+position = Vector3(-8.7, 0, -13.5)
+rotation = Vector3(0, -0.4, 0)
+
+[node name="BinA2Block" type="CSGBox3D" parent="Blockers"]
+position = Vector3(5.5, 0.45, -14.3)
+size = Vector3(0.6, 0.9, 0.6)
+material = ExtResource("mat_trim")
+
+[node name="BinA2" parent="Props3D" instance=ExtResource("p_trash_can")]
+position = Vector3(5.5, 0, -14.3)
+rotation = Vector3(0, 0.9, 0)
+
+[node name="BarrelA0Block" type="CSGBox3D" parent="Blockers"]
+position = Vector3(-26, 0.45, -24.6)
+size = Vector3(0.6, 0.9, 0.6)
+material = ExtResource("mat_trim")
+
+[node name="BarrelA0" parent="Props3D" instance=ExtResource("p_barrel_red")]
+position = Vector3(-26, 0, -24.6)
+
+[node name="BarrelA1Block" type="CSGBox3D" parent="Blockers"]
+position = Vector3(-22.5, 0.45, -24.7)
+size = Vector3(0.6, 0.9, 0.6)
+material = ExtResource("mat_trim")
+
+[node name="BarrelA1" parent="Props3D" instance=ExtResource("p_barrel_steel")]
+position = Vector3(-22.5, 0, -24.7)
+rotation = Vector3(0, 1.3, 0)
+
+[node name="BarrelA2Block" type="CSGBox3D" parent="Blockers"]
+position = Vector3(-21.8, 0.45, -25.2)
+size = Vector3(0.6, 0.9, 0.6)
+material = ExtResource("mat_trim")
+
+[node name="BarrelA2" parent="Props3D" instance=ExtResource("p_barrel_blue")]
+position = Vector3(-21.8, 0, -25.2)
+rotation = Vector3(0, 2.6, 0)
+
+[node name="BarrelA3Block" type="CSGBox3D" parent="Blockers"]
+position = Vector3(16.8, 0.45, -25)
+size = Vector3(0.6, 0.9, 0.6)
+material = ExtResource("mat_trim")
+
+[node name="BarrelA3" parent="Props3D" instance=ExtResource("p_barrel_steel")]
+position = Vector3(16.8, 0, -25)
+rotation = Vector3(0, 3.9, 0)
+
+[node name="TyreA0" parent="Props3D" instance=ExtResource("p_tyre")]
+position = Vector3(-7.2, 0, -25.4)
+rotation = Vector3(0, 0.2, 0)
+
+[node name="TyreA1" parent="Props3D" instance=ExtResource("p_tyre")]
+position = Vector3(-7.6, 0, -25.3)
+rotation = Vector3(0, 0.5, 0)
+
+[node name="TyresABlock" type="CSGBox3D" parent="Blockers"]
+position = Vector3(-7.4, 0.3, -25.3)
+size = Vector3(1, 0.6, 0.6)
+material = ExtResource("mat_trim")
+
+[node name="BoxesABlock" type="CSGBox3D" parent="BlockersWood"]
+position = Vector3(-1.85, 0.34, -25.05)
+size = Vector3(0.9, 0.68, 0.7)
+material = ExtResource("mat_trim")
+
+[node name="BoxA0" parent="Props3D" instance=ExtResource("p_cardboard_box")]
+position = Vector3(-1.9, 0, -25)
+rotation = Vector3(0, 0.2, 0)
+
+[node name="BoxA1" parent="Props3D" instance=ExtResource("p_cardboard_box")]
+position = Vector3(-1.85, 0.34, -25.05)
+rotation = Vector3(0, -0.3, 0)
+
+[node name="UtilityABlock" type="CSGBox3D" parent="Blockers"]
+position = Vector3(20.225, 0.56, -21.3)
+size = Vector3(0.45, 1.12, 0.6)
+material = ExtResource("mat_trim")
+
+[node name="UtilityA" parent="Props3D" instance=ExtResource("p_utility_box")]
+position = Vector3(20.22, 0, -21.3)
+rotation = Vector3(0, -1.5708, 0)
+
+[node name="SecurityLightFlatsA" parent="Props3D" instance=ExtResource("p_security_light")]
+position = Vector3(-20, 3.2, -22)
+rotation = Vector3(0, 3.1416, 0)
+
+[node name="SecurityLightStoreA" parent="Props3D" instance=ExtResource("p_security_light")]
+position = Vector3(14, 2.9, -22)
+rotation = Vector3(0, 3.1416, 0)
+
+[node name="RoofAcA0" parent="Props3D" instance=ExtResource("p_aircon")]
+position = Vector3(-25.5, 6.9, -18.5)
+
+[node name="RoofAcA1" parent="Props3D" instance=ExtResource("p_aircon")]
+position = Vector3(-24.5, 6.9, -18.5)
+rotation = Vector3(0, 3.1416, 0)
+
+[node name="RoofAcA2" parent="Props3D" instance=ExtResource("p_aircon")]
+position = Vector3(-11.5, 6.9, -20)
+
+[node name="RoofAcA3" parent="Props3D" instance=ExtResource("p_aircon")]
+position = Vector3(11, 4.3, -20.5)
+rotation = Vector3(0, 3.1416, 0)
+
+[node name="RoofAcA4" parent="Props3D" instance=ExtResource("p_aircon")]
+position = Vector3(17, 4.3, -18)
+
+[node name="ShutterA0" parent="Props3D" instance=ExtResource("p_shutter_door")]
+position = Vector3(-25.4, 0, -13.72)
+
+[node name="ShutterA1" parent="Props3D" instance=ExtResource("p_shutter_door")]
+position = Vector3(-10.4, 0, -13.72)
+
+[node name="SedanBBlock" type="CSGBox3D" parent="Blockers"]
+position = Vector3(22, 0.7, 10)
+size = Vector3(4.4, 1.4, 1.9)
+material = ExtResource("mat_trim")
+
+[node name="SedanB" parent="Props3D" instance=ExtResource("p_covered_car")]
+position = Vector3(22, 0, 10)
+rotation = Vector3(0, 4.7124, 0)
 
 [node name="BoxTruckB" type="CSGBox3D" parent="PropsMetal"]
 position = Vector3(-2, 1.65, 11)
@@ -1013,35 +1201,32 @@ position = Vector3(-5.9, 1.25, 11)
 size = Vector3(1.8, 1.9, 2.2)
 material = ExtResource("mat_car_blue")
 
-[node name="TaxiBBody" type="CSGBox3D" parent="PropsMetal"]
-position = Vector3(-27, 0.65, 10.5)
-size = Vector3(4.4, 0.9, 1.9)
-material = ExtResource("mat_car_taxi")
+[node name="TaxiBBlock" type="CSGBox3D" parent="Blockers"]
+position = Vector3(-27, 0.7, 10.5)
+size = Vector3(4.4, 1.4, 1.9)
+material = ExtResource("mat_trim")
 
-[node name="TaxiBCabin" type="CSGBox3D" parent="PropsMetal"]
-position = Vector3(-27, 1.4, 10.5)
-size = Vector3(2.4, 0.6, 1.7)
-material = ExtResource("mat_glass")
+[node name="TaxiB" parent="Props3D" instance=ExtResource("p_covered_car")]
+position = Vector3(-27, 0, 10.5)
+rotation = Vector3(0, 4.7124, 0)
 
-[node name="HatchBBody" type="CSGBox3D" parent="PropsMetal"]
-position = Vector3(-24.5, 0.65, 19)
-size = Vector3(1.9, 0.9, 4.4)
-material = ExtResource("mat_car_blue")
+[node name="HatchBBlock" type="CSGBox3D" parent="Blockers"]
+position = Vector3(-24.5, 0.7, 19)
+size = Vector3(1.9, 1.4, 4.4)
+material = ExtResource("mat_trim")
 
-[node name="HatchBCabin" type="CSGBox3D" parent="PropsMetal"]
-position = Vector3(-24.5, 1.4, 19)
-size = Vector3(1.7, 0.6, 2.4)
-material = ExtResource("mat_glass")
+[node name="HatchB" parent="Props3D" instance=ExtResource("p_covered_car")]
+position = Vector3(-24.5, 0, 19)
+rotation = Vector3(0, 3.1416, 0)
 
-[node name="CoupeBBody" type="CSGBox3D" parent="PropsMetal"]
-position = Vector3(-30.5, 0.65, 20)
-size = Vector3(1.9, 0.9, 4.4)
-material = ExtResource("mat_car_red")
+[node name="CoupeBBlock" type="CSGBox3D" parent="Blockers"]
+position = Vector3(-30.5, 0.7, 20)
+size = Vector3(1.9, 1.4, 4.4)
+material = ExtResource("mat_trim")
 
-[node name="CoupeBCabin" type="CSGBox3D" parent="PropsMetal"]
-position = Vector3(-30.5, 1.4, 20)
-size = Vector3(1.7, 0.6, 2.4)
-material = ExtResource("mat_glass")
+[node name="CoupeB" parent="Props3D" instance=ExtResource("p_covered_car")]
+position = Vector3(-30.5, 0, 20)
+rotation = Vector3(0, 3.1416, 0)
 
 [node name="KioskB" type="CSGBox3D" parent="Props"]
 position = Vector3(11, 1.3, 0)
@@ -1078,25 +1263,65 @@ position = Vector3(-1.4, 0.65, 20.35)
 size = Vector3(1.8, 1.3, 1.3)
 material = ExtResource("mat_dumpster")
 
-[node name="AcUnitB" type="CSGBox3D" parent="PropsMetal"]
+[node name="AcUnitBBlock" type="CSGBox3D" parent="Blockers"]
 position = Vector3(13.4, 0.5, 22.6)
 size = Vector3(1.2, 1, 1.2)
-material = ExtResource("mat_metal")
+material = ExtResource("mat_trim")
 
-[node name="CrateLowB" type="CSGBox3D" parent="PropsWood"]
-position = Vector3(4.4, 0.6, 24.4)
-size = Vector3(1.2, 1.2, 1.2)
-material = ExtResource("mat_wood")
+[node name="AcUnitB" parent="Props3D" instance=ExtResource("p_aircon")]
+position = Vector3(13.4, 0, 22.6)
+rotation = Vector3(0, 6.2832, 0)
 
-[node name="CrateHighB" type="CSGBox3D" parent="PropsWood"]
-position = Vector3(4.4, 1.8, 24.4)
-size = Vector3(1.2, 1.2, 1.2)
-material = ExtResource("mat_wood")
+[node name="CrateLowBBlock" type="CSGBox3D" parent="BlockersWood"]
+position = Vector3(4.4, 0.46, 24.4)
+size = Vector3(1.2, 0.92, 1.2)
+material = ExtResource("mat_trim")
 
-[node name="CrateSideB" type="CSGBox3D" parent="PropsWood"]
-position = Vector3(3.2, 0.6, 24.4)
-size = Vector3(1.2, 1.2, 1.2)
-material = ExtResource("mat_wood")
+[node name="CrateLowB0" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(4.68, 0, 24.4)
+rotation = Vector3(0, 3.1416, 0)
+
+[node name="CrateLowB1" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(4.12, 0, 24.4)
+rotation = Vector3(0, 3.2016, 0)
+
+[node name="CrateLowB2" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(4.68, 0.46, 24.4)
+rotation = Vector3(0, 3.1416, 0)
+
+[node name="CrateLowB3" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(4.12, 0.46, 24.4)
+rotation = Vector3(0, 3.2016, 0)
+
+[node name="CrateSideBBlock" type="CSGBox3D" parent="BlockersWood"]
+position = Vector3(3.2, 0.46, 24.4)
+size = Vector3(1.2, 0.92, 1.2)
+material = ExtResource("mat_trim")
+
+[node name="CrateSideB0" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(3.48, 0, 24.4)
+rotation = Vector3(0, 3.1416, 0)
+
+[node name="CrateSideB1" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(2.92, 0, 24.4)
+rotation = Vector3(0, 3.2016, 0)
+
+[node name="CrateSideB2" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(3.48, 0.46, 24.4)
+rotation = Vector3(0, 3.1416, 0)
+
+[node name="CrateSideB3" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(2.92, 0.46, 24.4)
+rotation = Vector3(0, 3.2016, 0)
+
+[node name="CrateHighBBlock" type="CSGBox3D" parent="BlockersWood"]
+position = Vector3(4.4, 1.38, 24.4)
+size = Vector3(1.2, 0.92, 1.2)
+material = ExtResource("mat_trim")
+
+[node name="CrateHighB" parent="Props3D" instance=ExtResource("p_military_crate")]
+position = Vector3(4.4, 0.92, 24.4)
+rotation = Vector3(0, 3.2416, 0)
 
 [node name="PalletsB" type="CSGBox3D" parent="PropsWood"]
 position = Vector3(-15, 0.3, 24.25)
@@ -1108,53 +1333,164 @@ position = Vector3(-6.8, 0.55, 14.3)
 size = Vector3(1.2, 1.1, 0.6)
 material = ExtResource("mat_car_blue")
 
-[node name="HydrantB" type="CSGBox3D" parent="PropsMetal"]
+[node name="HydrantBBlock" type="CSGBox3D" parent="Blockers"]
 position = Vector3(30.1, 0.4, 9.1)
 size = Vector3(0.4, 0.8, 0.4)
-material = ExtResource("mat_car_red")
-
-[node name="Lamps" type="CSGCombiner3D" parent="."]
-use_collision = false
-
-[node name="Lamp0" type="CSGBox3D" parent="Lamps"]
-position = Vector3(-12.6, 2.5, -7.6)
-size = Vector3(0.16, 5, 0.16)
-material = ExtResource("mat_metal")
-
-[node name="LampHead0" type="CSGBox3D" parent="Lamps"]
-position = Vector3(-12.6, 5.1, -7.6)
-size = Vector3(0.6, 0.2, 0.6)
 material = ExtResource("mat_trim")
 
-[node name="Lamp1" type="CSGBox3D" parent="Lamps"]
-position = Vector3(12.6, 2.5, 7.6)
-size = Vector3(0.16, 5, 0.16)
-material = ExtResource("mat_metal")
+[node name="HydrantB" parent="Props3D" instance=ExtResource("p_hydrant")]
+position = Vector3(30.1, 0, 9.1)
+rotation = Vector3(0, 3.5416, 0)
 
-[node name="LampHead1" type="CSGBox3D" parent="Lamps"]
-position = Vector3(12.6, 5.1, 7.6)
-size = Vector3(0.6, 0.2, 0.6)
+[node name="BinB0Block" type="CSGBox3D" parent="Blockers"]
+position = Vector3(27.3, 0.45, 13.5)
+size = Vector3(0.6, 0.9, 0.6)
 material = ExtResource("mat_trim")
 
-[node name="Lamp2" type="CSGBox3D" parent="Lamps"]
-position = Vector3(12.6, 2.5, -7.6)
-size = Vector3(0.16, 5, 0.16)
-material = ExtResource("mat_metal")
+[node name="BinB0" parent="Props3D" instance=ExtResource("p_trash_can")]
+position = Vector3(27.3, 0, 13.5)
+rotation = Vector3(0, 3.4416, 0)
 
-[node name="LampHead2" type="CSGBox3D" parent="Lamps"]
-position = Vector3(12.6, 5.1, -7.6)
-size = Vector3(0.6, 0.2, 0.6)
+[node name="BinB1Block" type="CSGBox3D" parent="Blockers"]
+position = Vector3(8.7, 0.45, 13.5)
+size = Vector3(0.6, 0.9, 0.6)
 material = ExtResource("mat_trim")
 
-[node name="Lamp3" type="CSGBox3D" parent="Lamps"]
-position = Vector3(-12.6, 2.5, 7.6)
-size = Vector3(0.16, 5, 0.16)
-material = ExtResource("mat_metal")
+[node name="BinB1" parent="Props3D" instance=ExtResource("p_trash_can")]
+position = Vector3(8.7, 0, 13.5)
+rotation = Vector3(0, 2.7416, 0)
 
-[node name="LampHead3" type="CSGBox3D" parent="Lamps"]
-position = Vector3(-12.6, 5.1, 7.6)
-size = Vector3(0.6, 0.2, 0.6)
+[node name="BinB2Block" type="CSGBox3D" parent="Blockers"]
+position = Vector3(-5.5, 0.45, 14.3)
+size = Vector3(0.6, 0.9, 0.6)
 material = ExtResource("mat_trim")
+
+[node name="BinB2" parent="Props3D" instance=ExtResource("p_trash_can")]
+position = Vector3(-5.5, 0, 14.3)
+rotation = Vector3(0, 4.0416, 0)
+
+[node name="BarrelB0Block" type="CSGBox3D" parent="Blockers"]
+position = Vector3(26, 0.45, 24.6)
+size = Vector3(0.6, 0.9, 0.6)
+material = ExtResource("mat_trim")
+
+[node name="BarrelB0" parent="Props3D" instance=ExtResource("p_barrel_red")]
+position = Vector3(26, 0, 24.6)
+rotation = Vector3(0, 3.1416, 0)
+
+[node name="BarrelB1Block" type="CSGBox3D" parent="Blockers"]
+position = Vector3(22.5, 0.45, 24.7)
+size = Vector3(0.6, 0.9, 0.6)
+material = ExtResource("mat_trim")
+
+[node name="BarrelB1" parent="Props3D" instance=ExtResource("p_barrel_steel")]
+position = Vector3(22.5, 0, 24.7)
+rotation = Vector3(0, 4.4416, 0)
+
+[node name="BarrelB2Block" type="CSGBox3D" parent="Blockers"]
+position = Vector3(21.8, 0.45, 25.2)
+size = Vector3(0.6, 0.9, 0.6)
+material = ExtResource("mat_trim")
+
+[node name="BarrelB2" parent="Props3D" instance=ExtResource("p_barrel_blue")]
+position = Vector3(21.8, 0, 25.2)
+rotation = Vector3(0, 5.7416, 0)
+
+[node name="BarrelB3Block" type="CSGBox3D" parent="Blockers"]
+position = Vector3(-16.8, 0.45, 25)
+size = Vector3(0.6, 0.9, 0.6)
+material = ExtResource("mat_trim")
+
+[node name="BarrelB3" parent="Props3D" instance=ExtResource("p_barrel_steel")]
+position = Vector3(-16.8, 0, 25)
+rotation = Vector3(0, 7.0416, 0)
+
+[node name="TyreB0" parent="Props3D" instance=ExtResource("p_tyre")]
+position = Vector3(7.2, 0, 25.4)
+rotation = Vector3(0, 3.3416, 0)
+
+[node name="TyreB1" parent="Props3D" instance=ExtResource("p_tyre")]
+position = Vector3(7.6, 0, 25.3)
+rotation = Vector3(0, 3.6416, 0)
+
+[node name="TyresBBlock" type="CSGBox3D" parent="Blockers"]
+position = Vector3(7.4, 0.3, 25.3)
+size = Vector3(1, 0.6, 0.6)
+material = ExtResource("mat_trim")
+
+[node name="BoxesBBlock" type="CSGBox3D" parent="BlockersWood"]
+position = Vector3(1.85, 0.34, 25.05)
+size = Vector3(0.9, 0.68, 0.7)
+material = ExtResource("mat_trim")
+
+[node name="BoxB0" parent="Props3D" instance=ExtResource("p_cardboard_box")]
+position = Vector3(1.9, 0, 25)
+rotation = Vector3(0, 3.3416, 0)
+
+[node name="BoxB1" parent="Props3D" instance=ExtResource("p_cardboard_box")]
+position = Vector3(1.85, 0.34, 25.05)
+rotation = Vector3(0, 2.8416, 0)
+
+[node name="UtilityBBlock" type="CSGBox3D" parent="Blockers"]
+position = Vector3(-20.225, 0.56, 21.3)
+size = Vector3(0.45, 1.12, 0.6)
+material = ExtResource("mat_trim")
+
+[node name="UtilityB" parent="Props3D" instance=ExtResource("p_utility_box")]
+position = Vector3(-20.22, 0, 21.3)
+rotation = Vector3(0, 1.5708, 0)
+
+[node name="SecurityLightFlatsB" parent="Props3D" instance=ExtResource("p_security_light")]
+position = Vector3(20, 3.2, 22)
+rotation = Vector3(0, 6.2832, 0)
+
+[node name="SecurityLightStoreB" parent="Props3D" instance=ExtResource("p_security_light")]
+position = Vector3(-14, 2.9, 22)
+rotation = Vector3(0, 6.2832, 0)
+
+[node name="RoofAcB0" parent="Props3D" instance=ExtResource("p_aircon")]
+position = Vector3(25.5, 6.9, 18.5)
+rotation = Vector3(0, 3.1416, 0)
+
+[node name="RoofAcB1" parent="Props3D" instance=ExtResource("p_aircon")]
+position = Vector3(24.5, 6.9, 18.5)
+rotation = Vector3(0, 6.2832, 0)
+
+[node name="RoofAcB2" parent="Props3D" instance=ExtResource("p_aircon")]
+position = Vector3(11.5, 6.9, 20)
+rotation = Vector3(0, 3.1416, 0)
+
+[node name="RoofAcB3" parent="Props3D" instance=ExtResource("p_aircon")]
+position = Vector3(-11, 4.3, 20.5)
+rotation = Vector3(0, 6.2832, 0)
+
+[node name="RoofAcB4" parent="Props3D" instance=ExtResource("p_aircon")]
+position = Vector3(-17, 4.3, 18)
+rotation = Vector3(0, 3.1416, 0)
+
+[node name="ShutterB0" parent="Props3D" instance=ExtResource("p_shutter_door")]
+position = Vector3(25.4, 0, 13.72)
+rotation = Vector3(0, 3.1416, 0)
+
+[node name="ShutterB1" parent="Props3D" instance=ExtResource("p_shutter_door")]
+position = Vector3(10.4, 0, 13.72)
+rotation = Vector3(0, 3.1416, 0)
+
+[node name="Lamp0" parent="Props3D" instance=ExtResource("p_street_lamp")]
+position = Vector3(-12.6, 0, -7.6)
+rotation = Vector3(0, 0, 0)
+
+[node name="Lamp1" parent="Props3D" instance=ExtResource("p_street_lamp")]
+position = Vector3(12.6, 0, 7.6)
+rotation = Vector3(0, 3.1416, 0)
+
+[node name="Lamp2" parent="Props3D" instance=ExtResource("p_street_lamp")]
+position = Vector3(12.6, 0, -7.6)
+rotation = Vector3(0, 0, 0)
+
+[node name="Lamp3" parent="Props3D" instance=ExtResource("p_street_lamp")]
+position = Vector3(-12.6, 0, 7.6)
+rotation = Vector3(0, 3.1416, 0)
 
 [node name="Signs" type="Node3D" parent="."]
 

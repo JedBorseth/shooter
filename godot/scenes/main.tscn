@@ -19,6 +19,14 @@
 [ext_resource type="PackedScene" path="res://assets/weapons/pistol/pistol.glb" id="16_pistol"]
 [ext_resource type="PackedScene" path="res://scenes/ui/hud.tscn" id="19_hud"]
 [ext_resource type="Texture2D" path="res://assets/skies/range_day.hdr" id="20_sky"]
+[ext_resource type="PackedScene" path="res://assets/props/barrel_blue/barrel_blue.gltf" id="p_barrel_blue"]
+[ext_resource type="PackedScene" path="res://assets/props/barrel_red/barrel_red.gltf" id="p_barrel_red"]
+[ext_resource type="PackedScene" path="res://assets/props/barrel_steel/barrel_steel.gltf" id="p_barrel_steel"]
+[ext_resource type="PackedScene" path="res://assets/props/barrier/barrier.gltf" id="p_barrier"]
+[ext_resource type="PackedScene" path="res://assets/props/crate/crate.gltf" id="p_crate"]
+[ext_resource type="PackedScene" path="res://assets/props/military_crate/military_crate.gltf" id="p_military_crate"]
+[ext_resource type="PackedScene" path="res://assets/props/tyre/tyre.gltf" id="p_tyre"]
+[ext_resource type="PackedScene" path="res://assets/props/utility_box/utility_box.gltf" id="p_utility_box"]
 
 [sub_resource type="PanoramaSkyMaterial" id="SkyMat"]
 panorama = ExtResource("20_sky")
@@ -69,8 +77,14 @@ use_collision = true
 metadata/surface = "concrete"
 
 [node name="MapWood" type="CSGCombiner3D" parent="."]
+visible = false
 use_collision = true
 metadata/surface = "wood"
+
+[node name="CoverBlockers" type="CSGCombiner3D" parent="."]
+visible = false
+use_collision = true
+metadata/surface = "concrete"
 
 [node name="MapMetal" type="CSGCombiner3D" parent="."]
 use_collision = true
@@ -101,17 +115,17 @@ position = Vector3(-32.5, 3, 0)
 size = Vector3(1, 6, 64)
 material = ExtResource("m_wall")
 
-[node name="CoverLowA" type="CSGBox3D" parent="Map"]
+[node name="CoverLowA" type="CSGBox3D" parent="CoverBlockers"]
 position = Vector3(-4, 0.6, 6)
 size = Vector3(3, 1.2, 0.6)
 material = ExtResource("m_cover")
 
-[node name="CoverLowB" type="CSGBox3D" parent="Map"]
+[node name="CoverLowB" type="CSGBox3D" parent="CoverBlockers"]
 position = Vector3(5, 0.6, 2)
 size = Vector3(3, 1.2, 0.6)
 material = ExtResource("m_cover")
 
-[node name="CoverLowC" type="CSGBox3D" parent="Map"]
+[node name="CoverLowC" type="CSGBox3D" parent="CoverBlockers"]
 position = Vector3(0, 0.6, -6)
 size = Vector3(4, 1.2, 0.6)
 material = ExtResource("m_cover")
@@ -166,6 +180,120 @@ material = ExtResource("m_tunnel")
 position = Vector3(-10, 1.65, -18)
 size = Vector3(4, 0.5, 4)
 material = ExtResource("m_tunnel")
+
+[node name="Props3D" type="Node3D" parent="."]
+
+[node name="CoverLowABarrier0" parent="Props3D" instance=ExtResource("p_barrier")]
+position = Vector3(-4.75, 0, 6)
+scale = Vector3(0.9615, 1.0811, 1.3636)
+
+[node name="CoverLowABarrier1" parent="Props3D" instance=ExtResource("p_barrier")]
+position = Vector3(-3.25, 0, 6)
+rotation = Vector3(0, 3.1416, 0)
+scale = Vector3(0.9615, 1.0811, 1.3636)
+
+[node name="CoverLowBBarrier0" parent="Props3D" instance=ExtResource("p_barrier")]
+position = Vector3(4.25, 0, 2)
+scale = Vector3(0.9615, 1.0811, 1.3636)
+
+[node name="CoverLowBBarrier1" parent="Props3D" instance=ExtResource("p_barrier")]
+position = Vector3(5.75, 0, 2)
+rotation = Vector3(0, 3.1416, 0)
+scale = Vector3(0.9615, 1.0811, 1.3636)
+
+[node name="CoverLowCBarrier0" parent="Props3D" instance=ExtResource("p_barrier")]
+position = Vector3(-1.3333, 0, -6)
+scale = Vector3(0.8547, 1.0811, 1.3636)
+
+[node name="CoverLowCBarrier1" parent="Props3D" instance=ExtResource("p_barrier")]
+position = Vector3(0, 0, -6)
+rotation = Vector3(0, 3.1416, 0)
+scale = Vector3(0.8547, 1.0811, 1.3636)
+
+[node name="CoverLowCBarrier2" parent="Props3D" instance=ExtResource("p_barrier")]
+position = Vector3(1.3333, 0, -6)
+scale = Vector3(0.8547, 1.0811, 1.3636)
+
+[node name="CrateA0" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(-18.3, 0, 14)
+scale = Vector3(1.1321, 0.9783, 1.0256)
+
+[node name="CrateA1" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(-18.3, 0.45, 14)
+rotation = Vector3(0, 0.03, 0)
+scale = Vector3(1.1321, 0.9783, 1.0256)
+
+[node name="CrateA2" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(-17.7, 0, 14)
+scale = Vector3(1.1321, 0.9783, 1.0256)
+
+[node name="CrateA3" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(-17.7, 0.45, 14)
+rotation = Vector3(0, 0.03, 0)
+scale = Vector3(1.1321, 0.9783, 1.0256)
+
+[node name="CrateB0" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(-17.1, 0, 14)
+scale = Vector3(1.1321, 0.9783, 1.0256)
+
+[node name="CrateB1" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(-17.1, 0.45, 14)
+rotation = Vector3(0, 0.03, 0)
+scale = Vector3(1.1321, 0.9783, 1.0256)
+
+[node name="CrateB2" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(-16.5, 0, 14)
+scale = Vector3(1.1321, 0.9783, 1.0256)
+
+[node name="CrateB3" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(-16.5, 0.45, 14)
+rotation = Vector3(0, 0.03, 0)
+scale = Vector3(1.1321, 0.9783, 1.0256)
+
+[node name="CrateStack0" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(-18.3, 0.9, 14)
+scale = Vector3(1.1321, 0.9783, 1.0256)
+
+[node name="CrateStack1" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(-18.3, 1.35, 14)
+rotation = Vector3(0, 0.03, 0)
+scale = Vector3(1.1321, 0.9783, 1.0256)
+
+[node name="CrateStack2" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(-17.7, 0.9, 14)
+scale = Vector3(1.1321, 0.9783, 1.0256)
+
+[node name="CrateStack3" parent="Props3D" instance=ExtResource("p_crate")]
+position = Vector3(-17.7, 1.35, 14)
+rotation = Vector3(0, 0.03, 0)
+scale = Vector3(1.1321, 0.9783, 1.0256)
+
+[node name="WallBarrel0" parent="Props3D" instance=ExtResource("p_barrel_red")]
+position = Vector3(-30.8, 0, -30.6)
+rotation = Vector3(0, 0.4, 0)
+
+[node name="WallBarrel1" parent="Props3D" instance=ExtResource("p_barrel_steel")]
+position = Vector3(-30, 0, -31)
+rotation = Vector3(0, 1.1, 0)
+
+[node name="WallBarrel2" parent="Props3D" instance=ExtResource("p_barrel_blue")]
+position = Vector3(30.6, 0, 30.8)
+rotation = Vector3(0, 2, 0)
+
+[node name="WallTyre0" parent="Props3D" instance=ExtResource("p_tyre")]
+position = Vector3(-31.2, 0, 25)
+rotation = Vector3(0, 1.4, 0)
+
+[node name="WallCrate0" parent="Props3D" instance=ExtResource("p_military_crate")]
+position = Vector3(29.5, 0, -31.2)
+
+[node name="WallCrate1" parent="Props3D" instance=ExtResource("p_military_crate")]
+position = Vector3(29.5, 0.46, -31.2)
+rotation = Vector3(0, 0.05, 0)
+
+[node name="WallUtility" parent="Props3D" instance=ExtResource("p_utility_box")]
+position = Vector3(31.7, 0, 12)
+rotation = Vector3(0, -1.5708, 0)
 
 [node name="Armory" type="Node3D" parent="."]
 
