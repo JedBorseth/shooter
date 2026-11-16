@@ -303,7 +303,7 @@ func _score(main: Node, player: FpsPlayer) -> void:
 	_check(feed.running_total() >= 150, "popups add up the points")
 	# Stop the chime so nothing is still playing at exit.
 	(feed.get_node("MedalSound") as AudioStreamPlayer).stop()
-	await _ticks(5)
+	await _sixtieths(5)
 
 
 ## Spawns a fresh dummy straight ahead and aims at its chest.

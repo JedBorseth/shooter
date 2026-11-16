@@ -133,7 +133,7 @@ func _run() -> void:
 
 	# Two quick kills for the score popups and the "Double Kill" banner.
 	player.global_position = Vector3(0, 0.1, 4)
-	await _ticks(20)
+	await _sixtieths(20)
 	var dummy_scene := load("res://scenes/props/target_dummy.tscn") as PackedScene
 	var first := dummy_scene.instantiate() as Node3D
 	var second := dummy_scene.instantiate() as Node3D
@@ -150,17 +150,17 @@ func _run() -> void:
 			- (player.global_position + Vector3(0, 1.68, 0))
 		)
 		player.set_look(atan2(-aim.x, -aim.z), atan2(aim.y, Vector2(aim.x, aim.z).length()))
-		await _ticks(25)
+		await _sixtieths(25)
 		Input.action_press("fire")
 		for i in 60:
 			await physics_frame
 			if player.kills() > kills:
 				break
 		Input.action_release("fire")
-	await _ticks(10)
+	await _sixtieths(10)
 	await _shot("21_double_kill")
 	Input.action_release("aim")
-	await _ticks(60)
+	await _sixtieths(60)
 
 	# Damage from the left, then death.
 	player.set_look(0.0, 0.0)
