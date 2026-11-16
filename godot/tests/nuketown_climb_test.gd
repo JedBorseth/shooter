@@ -40,6 +40,9 @@ func _run() -> void:
 	var ticks := 0
 	var top_tick := -1
 	var heights: Array[float] = []
+	var captured_frames: Array[Image] = []
+	var capture_names: Array[String] = []
+	var first_tick := Engine.get_physics_frames()
 	Input.action_press("move_forward")
 	var frames := int(SECONDS * Engine.physics_ticks_per_second)
 	for i in frames:
@@ -57,12 +60,13 @@ func _run() -> void:
 				jumps += 1
 		previous = position
 		heights.append(position.y)
-		ticks += 1
+		ticks = Engine.get_physics_frames() - first_tick
 		if top_tick < 0 and position.y - start_y > MIN_CLIMB:
 			top_tick = ticks
 		if not _out.is_empty() and i % 6 == 0:
 			await RenderingServer.frame_post_draw
-			root.get_texture().get_image().save_png(_out.path_join("climb_%03d.png" % i))
+			captured_frames.append(root.get_texture().get_image())
+			capture_names.append("climb_%03d.png" % i)
 	Input.action_release("move_forward")
 	var climbed := heights[-1] - start_y
 	print(
@@ -81,4 +85,10 @@ func _run() -> void:
 		and top_tick >= MIN_TICKS_TO_TOP
 		and top_tick <= MAX_TICKS_TO_TOP
 	)
+	# PNG encoding blocks the main thread long enough to advance several physics
+	# ticks between samples. Keep that I/O outside the movement measurement.
+	for i in captured_frames.size():
+		if captured_frames[i].save_png(_out.path_join(capture_names[i])) != OK:
+			push_error("Could not save climb frame " + capture_names[i])
+			ok = false
 	quit(0 if ok else 1)
