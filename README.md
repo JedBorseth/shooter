@@ -271,6 +271,8 @@ The arena has target dummies at several ranges: enemy soldiers holding different
 | PDW-9 | SMG | 900 RPM, damage falls off early, red dot |
 | M870 | Pump shotgun | 8 pellets, one-shot kill up close, loads shell by shell (fire to interrupt) |
 | M40 | Bolt-action sniper | One-shot chest kill, 3.5x scope that sways; hold Shift to steady it |
+| BR-3 | Burst rifle (bullpup) | Three-round bursts at 900 RPM; one burst kills up close; red dot |
+| LSW-6 | Light machine gun | 75 rounds at 650 RPM; slow to aim, sprint out of, and reload |
 | M1911 | Pistol | Semi-automatic sidearm |
 
 Exported builds must include `*.ron` in the export preset's non-resource filter so the weapon files are packed.

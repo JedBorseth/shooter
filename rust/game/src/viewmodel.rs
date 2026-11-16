@@ -132,6 +132,14 @@ pub struct WeaponView {
     #[export]
     #[init(val = -3.0)]
     tail_db: f32,
+    /// Borrow another weapon's gunshot layers (its key), for a weapon without
+    /// its own recordings; empty uses this weapon's.
+    #[export]
+    sound_from: GString,
+    /// Pitch of the gunshot, 1 as recorded (lower sounds heavier).
+    #[export]
+    #[init(val = 1.0)]
+    fire_pitch: f32,
     /// Pistol grip rake in degrees (how far the grip leans back from vertical),
     /// for the hand that holds it. The grip positions are the `GripRight` and
     /// `GripLeft` markers.
@@ -355,7 +363,13 @@ impl WeaponView {
     }
 
     fn load_gunshot(&mut self) -> Option<Gunshot> {
-        let dir = format!("res://assets/audio/weapons/{}", self.weapon);
+        let key = if self.sound_from.is_empty() {
+            &self.weapon
+        } else {
+            &self.sound_from
+        };
+        let dir = format!("res://assets/audio/weapons/{key}");
+        let pitch = self.fire_pitch;
         let (snap_db, body_db, tail_db) = (self.snap_db, self.body_db, self.tail_db);
         let mut layer = |name: &str, node: &str, offset_db: f32, polyphony: i32| {
             // Pitch is set per shot in `Gunshot::play`, the same for every layer.
@@ -370,6 +384,7 @@ impl WeaponView {
             Some(player)
         };
         Some(Gunshot {
+            pitch,
             snap: layer("snap", "GunshotSnap", snap_db, 4)?,
             body: layer("body", "GunshotBody", body_db, 4)?,
             // One echo at a time: each shot cuts the last one's tail, so full
@@ -398,6 +413,7 @@ impl WeaponView {
 /// The layers of one gunshot, played together. Each picks its own recording,
 /// so a few source shots combine into many different-sounding ones.
 struct Gunshot {
+    pitch: f32,
     snap: Gd<AudioStreamPlayer>,
     body: Gd<AudioStreamPlayer>,
     tail: Gd<AudioStreamPlayer>,
@@ -405,7 +421,7 @@ struct Gunshot {
 
 impl Gunshot {
     fn play(&mut self) {
-        let pitch = randf_range(0.96, 1.04) as f32;
+        let pitch = randf_range(0.96, 1.04) as f32 * self.pitch;
         for player in [&mut self.snap, &mut self.body, &mut self.tail] {
             player.set_pitch_scale(pitch);
             player.play();

@@ -28,9 +28,10 @@ use crate::tdm::{MAX_NAME_CHARS, Phase, TEAM_COUNT, Team};
 use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState};
 
 /// Bumped whenever the wire format changes; mismatched clients are rejected.
-// Version 5 adds Team Deathmatch: names, teams, ready-up, loadouts, the
-// match clock, and the scoreboard.
-pub const PROTOCOL_VERSION: u16 = 5;
+// Version 5 added Team Deathmatch: names, teams, ready-up, loadouts, the
+// match clock, and the scoreboard. Version 6 adds burst fire to the
+// predicted combat state.
+pub const PROTOCOL_VERSION: u16 = 6;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
 pub const MAX_INPUTS_PER_PACKET: usize = 24;
 /// Wish vectors are sent as signed bytes; prediction must use the same values.
@@ -1168,6 +1169,7 @@ fn write_combat_state(w: &mut BitWriter, c: &CombatState) {
     w.f32(c.recoil.y);
     w.u32(c.shots_fired);
     w.bool(c.fire_held);
+    w.u8(c.burst_left);
     w.f32(c.sway_time);
     w.f32(c.breath);
     w.f32(c.winded);
@@ -1231,6 +1233,7 @@ fn read_combat_state(r: &mut BitReader) -> DecodeResult<CombatState> {
         recoil: Vec2::new(r.f32()?, r.f32()?),
         shots_fired: r.u32()?,
         fire_held: r.bool()?,
+        burst_left: r.u8()?,
         sway_time: r.f32()?,
         breath: r.f32()?,
         winded: r.f32()?,

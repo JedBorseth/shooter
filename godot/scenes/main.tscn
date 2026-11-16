@@ -7,6 +7,8 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/pause_menu.tscn" id="5_pause"]
 [ext_resource type="ArrayMesh" path="res://assets/maps/main/MapMetal.res" id="9_j8jky"]
 [ext_resource type="PackedScene" path="res://scenes/props/weapon_rack.tscn" id="9_rack"]
+[ext_resource type="PackedScene" path="res://assets/weapons/lsw6/lsw6.glb" id="17_lsw6"]
+[ext_resource type="PackedScene" path="res://assets/weapons/br3/br3.glb" id="18_br3"]
 [ext_resource type="PackedScene" path="res://scenes/props/sentry.tscn" id="10_sentry"]
 [ext_resource type="PackedScene" uid="uid://f4nuvi0vah4o" path="res://assets/weapons/m4/m4.glb" id="11_m4"]
 [ext_resource type="PackedScene" uid="uid://cyygpfwlyiqpr" path="res://assets/weapons/ak47/ak47.glb" id="12_ak47"]
@@ -288,6 +290,20 @@ transform = Transform3D(0.99875027, 0, 0.04997917, 0, 1, 0, -0.04997917, 0, 0.99
 transform = Transform3D(-3.6199901e-06, 0, -1, 0, 1, 0, 1, 0, -3.6199901e-06, 31.7, 0, 12)
 
 [node name="Armory" type="Node3D" parent="." unique_id=1354870362]
+
+[node name="Rack_br3" parent="Armory" instance=ExtResource("9_rack")]
+weapon = "br3"
+display_model = ExtResource("18_br3")
+display_scale = 0.15
+transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, -7, 0, 11.8)
+collision_layer = 9
+
+[node name="Rack_lsw6" parent="Armory" instance=ExtResource("9_rack")]
+weapon = "lsw6"
+display_model = ExtResource("17_lsw6")
+display_scale = 0.14
+transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, -7, 0, 9.6)
+collision_layer = 9
 
 [node name="Rack_m4" parent="Armory" unique_id=1821848319 instance=ExtResource("9_rack")]
 weapon = "m4"

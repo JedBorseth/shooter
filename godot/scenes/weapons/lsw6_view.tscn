@@ -1,0 +1,71 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://assets/weapons/lsw6/lsw6.glb" id="1_model"]
+[ext_resource type="AudioStream" path="res://assets/audio/weapons/m4_reload.ogg" id="3_reload"]
+[ext_resource type="AudioStream" path="res://assets/audio/weapons/dry_fire.ogg" id="4_dry"]
+[ext_resource type="Material" path="res://materials/muzzle_flash.tres" id="5_flash"]
+
+[sub_resource type="QuadMesh" id="Quad_flash"]
+material = ExtResource("5_flash")
+size = Vector2(0.2, 0.2)
+
+[node name="LSW6" type="WeaponView"]
+weapon = "lsw6"
+sound_from = "ak47"
+fire_pitch = 0.88
+fire_volume_db = -5.0
+grip_rake = 25.0
+hip_position = Vector3(0.1, -0.078, -0.448)
+ads_position = Vector3(0, 0, -0.1)
+sprint_position = Vector3(-0.04, 0.015, 0.03)
+sprint_rotation = Vector3(-6, 26, 28)
+pivot = Vector3(0, -0.102, 0.278)
+albedo_boost = 1.0
+kick_strength = 1.3
+camera_punch = Vector3(0.32, 0.18, 0.7)
+
+[node name="Model" type="Node3D" parent="."]
+position = Vector3(0, -0.1555, 0.2771)
+rotation = Vector3(0, 1.5707964, 0)
+scale = Vector3(0.163, 0.163, 0.163)
+
+[node name="Mesh" parent="Model" instance=ExtResource("1_model")]
+
+[node name="Sights" type="IronSights" parent="."]
+style = "ak"
+rear_z = -0.008
+front_z = -0.322
+rear_base = -0.0204
+front_base = -0.0487
+cuts = Array[AABB]([AABB(-0.03, -0.048, -0.334, 0.06, 0.048, 0.034)])
+
+[node name="Muzzle" type="Marker3D" parent="."]
+position = Vector3(0, -0.0576, -0.3505)
+
+[node name="Flash" type="MeshInstance3D" parent="Muzzle"]
+cast_shadow = 0
+mesh = SubResource("Quad_flash")
+
+[node name="FlashLight" type="OmniLight3D" parent="Muzzle"]
+light_color = Color(1, 0.72, 0.42, 1)
+light_energy = 4.0
+omni_range = 8.0
+
+[node name="Ejection" type="Marker3D" parent="."]
+position = Vector3(0.013, -0.0544, 0.1304)
+
+[node name="ReloadSound" type="AudioStreamPlayer" parent="."]
+stream = ExtResource("3_reload")
+volume_db = -4.0
+bus = &"Weapons"
+
+[node name="DryFireSound" type="AudioStreamPlayer" parent="."]
+stream = ExtResource("4_dry")
+volume_db = -6.0
+bus = &"Weapons"
+
+[node name="GripRight" type="Marker3D" parent="."]
+position = Vector3(0, -0.117, 0.05)
+
+[node name="GripLeft" type="Marker3D" parent="."]
+position = Vector3(0, -0.072, -0.09)

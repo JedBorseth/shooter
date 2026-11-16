@@ -1230,7 +1230,7 @@ impl FpsPlayer {
         }
         let def = weapon.def();
         let (weak, strong, seconds) = match def.fire_mode {
-            FireMode::Auto => (0.35, 0.15, 0.06),
+            FireMode::Auto | FireMode::Burst { .. } => (0.35, 0.15, 0.06),
             // Shotguns and snipers: one heavy shot.
             FireMode::Semi if def.damage.near * f32::from(def.pellets) >= 80.0 => (0.8, 0.7, 0.16),
             FireMode::Semi => (0.5, 0.35, 0.09),

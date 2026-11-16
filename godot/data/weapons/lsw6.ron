@@ -1,0 +1,34 @@
+// LSW-6 light support weapon: a 75-round magazine and steady sustained fire
+// (33 damage up close, 4-shot kill at range), paid for with slow handling: a
+// long aim, a slow sprint-out, a heavy step, and a long reload.
+(
+    name: "LSW-6",
+    slot: Primary,
+    fire_mode: Auto,
+    rounds_per_minute: 650,
+    magazine: 75,
+    reserve: 225,
+    damage: (near: 33, far: 25, falloff_start: 30, falloff_end: 60, headshot: 1.35),
+    range: 400,
+    reload: Magazine(time: 4.8, empty_time: 5.6),
+    ads_time: 0.36,
+    sprint_out_time: 0.32,
+    raise_time: 0.6,
+    lower_time: 0.35,
+    spread: (hip: 3.4, hip_moving: 6.0, air: 8.0, ads: 0.05),
+    ads_fov_scale: 0.8,
+    ads_move_scale: 0.45,
+    move_scale: 0.88,
+    recoil: (
+        pattern: [
+            (0.3, 0.02), (0.28, 0.06), (0.25, 0.09), (0.22, 0.04),
+            (0.2, -0.06), (0.19, -0.11), (0.18, -0.05), (0.18, 0.06),
+            (0.17, 0.11), (0.17, 0.04), (0.16, -0.08), (0.16, 0.0),
+        ],
+        jitter: (0.05, 0.09),
+        ads_scale: 0.65,
+        recovery_delay: 0.1,
+        recovery_rate: 8.0,
+    ),
+    tracer_every: 4,
+)

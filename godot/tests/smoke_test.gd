@@ -60,6 +60,7 @@ func _run() -> void:
 	await _racks(main, player)
 	await _shotgun(main, player)
 	await _sniper(main, player)
+	await _burst_and_lmg(main, player)
 	await _health(player)
 	await _sentry(main, player)
 	await _gamepad(main, player)
@@ -307,6 +308,31 @@ func _sniper(main: Node, player: FpsPlayer) -> void:
 	Input.action_release("aim")
 	await _sixtieths(30)
 	dummy.queue_free()
+
+
+func _burst_and_lmg(main: Node, player: FpsPlayer) -> void:
+	player.give_weapon("br3")
+	await _sixtieths(60)
+	_check(player.weapon_name() == "BR-3", "burst rifle equipped, got %s" % player.weapon_name())
+	var dummy := await _dummy_ahead(main, player, 8.0)
+	Input.action_press("aim")
+	await _sixtieths(30)
+	var kills_before := _kills
+	await _tap("fire")
+	await _sixtieths(30)
+	Input.action_release("aim")
+	_check(
+		player.magazine() == 27, "one tap fires a three-round burst, %d left" % player.magazine()
+	)
+	_check(_kills == kills_before + 1, "one aimed burst to the chest kills at 8 m")
+	await _sixtieths(20)
+	dummy.queue_free()
+	player.give_weapon("lsw6")
+	await _sixtieths(90)
+	_check(
+		player.weapon_name() == "LSW-6" and player.magazine() == 75,
+		"the LMG holds 75 rounds, got %s with %d" % [player.weapon_name(), player.magazine()]
+	)
 
 
 func _health(player: FpsPlayer) -> void:
