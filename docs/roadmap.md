@@ -70,6 +70,10 @@ Each phase ends with something playable.
    - ✅ F4 draws the server's rewound hitboxes for each of your shots (white) next to the client's.
    - ✅ The netcode test kills a strafing bot through a 110 ms, 5% loss link.
 4. **Game loop.** Team Deathmatch: spawns, health and damage falloff, kill feed, scoreboard, respawn, match timer, first real map.
+   - ✅ Rules on the server (`rust/sim/src/tdm.rs`): two balanced teams, 75 kills or 10 minutes, no friendly fire, lobby with ready-up, countdown, results, and the next match. Kills only score during a match; the lobby is warm-up.
+   - ✅ Spawns: weighted spawn points (`SpawnPoints` in a map) that avoid enemies, their sightlines, and recent deaths. Loadouts: the client picks a primary (`ClientMessage::Loadout`), used from the next spawn.
+   - ✅ Protocol 5: names in the hello; the roster (`Joined`, `Left`), match phase and clock (`Match`), scoreboard rows, and spawn facing as reliable events. Teammates are drawn in the allies' colours with their names; enemies in the enemies' colours.
+   - Next: the HUD (kill feed, scoreboard, timer, results, lobby and loadout screens), the three-lane Slamcity, bots that play, and a Team Deathmatch button that starts a local server.
 5. **Online services.** Self-hosted Nakama for accounts, parties, and matchmaking. Dockerized headless servers. Agones later, to start servers on demand.
 6. **Polish.** Ragdolls and directional hit reactions, audio occlusion and positional mixing, killcam (replay from the server snapshot buffer), post-processing, server-side anti-cheat (input validation, rate limits).
 7. **Content.** Weapon classes, attachments, loadouts, progression, more maps.

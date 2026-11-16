@@ -82,6 +82,19 @@ impl RemotePlayer {
         self.name_label.set_text(name);
     }
 
+    /// Teammates wear the allies' colours, show their name, and take no hits
+    /// from us; everyone else wears the enemies' colours.
+    pub fn set_friendly(&mut self, friendly: bool) {
+        self.rig
+            .bind_mut()
+            .set_team_index(if friendly { 0 } else { 1 });
+        self.base_mut().set_meta("friendly", &friendly.to_variant());
+        // Names show through walls, so only teammates get one.
+        self.name_label
+            .set_modulate(Color::from_rgb(0.55, 0.78, 1.0));
+        self.name_label.set_visible(friendly);
+    }
+
     pub fn apply(&mut self, s: &RemoteSample, delta: f32) {
         let position = to_godot(s.position);
         self.base_mut().set_global_position(position);

@@ -1,9 +1,11 @@
 extends SceneTree
 ## Headless netcode test: starts a dedicated server process with one bot,
 ## joins it through a simulated bad network (latency, jitter, loss), and checks
-## that the client joins, interpolates the bot, shoots the strafing bot dead
-## with the server's lag compensation, predicts its own movement without
-## corrections, and converges with the server. Exits non-zero on failure.
+## that the client joins on the other team from the bot, readies up and plays
+## a Team Deathmatch match, interpolates the bot, shoots the strafing bot dead
+## with the server's lag compensation (scoring for its team), predicts its own
+## movement without corrections, and converges with the server. Exits non-zero
+## on failure.
 ## Run from the repo root: godot --headless --path godot --script res://tests/net_test.gd
 
 const PORT := 27999
@@ -47,6 +49,7 @@ func _run() -> void:
 	client.port = PORT
 	client.player_path = player.get_path()
 	client.remote_player_scene = REMOTE_PLAYER_SCENE
+	client.player_name = "Tester"
 	client.latency_ms = 40.0
 	client.jitter_ms = 15.0
 	client.loss_percent = 5.0
@@ -62,6 +65,7 @@ func _run() -> void:
 		_finish()
 		return
 	await _ticks(60)
+	await _play_match(client)
 	var spawn := player.global_position
 	_check(
 		spawn.distance_to(client.stats().server_position) < 0.05,
@@ -86,9 +90,17 @@ func _run() -> void:
 		)
 		await _shoot_bot(player, client, bot)
 
-	# Weapon rack: player 0 spawns 2 m from the M870 rack (x = -7, z = 20.6).
+	# Weapon rack: walk west until 2 m from the M870 rack (x = -7, z = 20.6).
 	# The server checks the pickup against its own raycast; an honest one
 	# must go through without a correction.
+	player.set_look(PI / 2.0, 0.0)
+	Input.action_press("move_forward")
+	for i in 600:
+		if player.global_position.x <= -5.0:
+			break
+		await physics_frame
+	Input.action_release("move_forward")
+	await _ticks(60)
 	player.set_look(PI / 2.0, -0.42)
 	await _ticks(5)
 	Input.action_press("interact")
@@ -102,6 +114,8 @@ func _run() -> void:
 	player.set_look(0.0, 0.0)
 
 	# Own movement under 40-55 ms each way and 5% loss: sprint, slide, jump.
+	# (The match start moved us once; count corrections from here.)
+	var corrections_before := int(client.stats().corrections)
 	Input.action_press("move_forward")
 	Input.action_press("sprint")
 	await _ticks(2)
@@ -119,13 +133,14 @@ func _run() -> void:
 	await _ticks(90)
 
 	var stats := client.stats()
+	var corrections := int(stats.corrections) - corrections_before
 	var moved := player.global_position.distance_to(spawn)
 	_check(moved > 8.0, "player moved while online, %.1f m" % moved)
 	_check(
-		int(stats.corrections) == 0,
+		corrections == 0,
 		(
 			"prediction matched the server with no corrections, got %d (last %.1f cm)"
-			% [stats.corrections, stats.last_error_cm]
+			% [corrections, stats.last_error_cm]
 		)
 	)
 	var error := player.global_position.distance_to(stats.server_position)
@@ -141,6 +156,43 @@ func _run() -> void:
 		)
 	)
 	_finish()
+
+
+## Checks the roster and the lobby, readies up, and waits out the countdown.
+func _play_match(client: NetClient) -> void:
+	var roster := client.roster()
+	_check(roster.size() == 2, "the roster lists us and the bot, got %d" % roster.size())
+	var me := {}
+	var bot := {}
+	for entry: Dictionary in roster:
+		if entry.me:
+			me = entry
+		else:
+			bot = entry
+	_check(me.get("name") == "Tester", "the server knows our name, got %s" % me.get("name"))
+	_check(bot.get("bot", false), "the other player is a bot")
+	_check(
+		me.get("team", -1) != bot.get("team", -1),
+		"the bot is on the other team (%s, %s)" % [me.get("team"), bot.get("team")]
+	)
+	_check(client.match_info().phase == "lobby", "the match waits in the lobby")
+	client.set_ready(true)
+	var saw_countdown := false
+	for i in 1200:
+		var phase: String = client.match_info().phase
+		saw_countdown = saw_countdown or phase == "countdown"
+		if phase == "playing":
+			break
+		await physics_frame
+	var info := client.match_info()
+	_check(saw_countdown, "readying up starts the countdown")
+	_check(info.phase == "playing", "the match starts, phase %s" % info.phase)
+	_check(
+		info.seconds_left > 590.0 and info.score_limit == 75,
+		"a 10 minute match to 75, %.0f s left, limit %d" % [info.seconds_left, info.score_limit]
+	)
+	# Everyone respawned at the start; let the correction settle.
+	await _ticks(60)
 
 
 ## Aims down sights at the strafing bot, 14 m away, and fires short M4 bursts
@@ -179,6 +231,11 @@ func _shoot_bot(player: FpsPlayer, client: NetClient, bot: RemotePlayer) -> void
 	_check(int(stats.hits_confirmed) >= 4, "the server confirms hits on the moving bot")
 	_check(int(stats.kills_confirmed) >= 1, "the server confirms the kill")
 	_check(player.score() >= 100, "the server's kill points reach the HUD, %d" % player.score())
+	var info := client.match_info()
+	_check(
+		info.scores[info.my_team] >= 1,
+		"the kill scores for our team, scores %s (we are %d)" % [info.scores, info.my_team]
+	)
 	_check(int(stats.rewound_received) > 0, "the server sends the hitboxes it rewound (F4 overlay)")
 	HitboxRig.set_debug_visible(false)
 	await _ticks(10)

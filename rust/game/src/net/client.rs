@@ -9,6 +9,9 @@
 //! The server decides hits and kills and sends them as reliable game events:
 //! the client passes them to the local player (kill confirmations, score,
 //! damage taken) and emits `kill_reported` for every kill, for a kill feed.
+//! It also keeps the Team Deathmatch state the HUD shows: who is playing on
+//! which team (`roster`), the match phase, clock, and team scores
+//! (`match_info`), and the scoreboard.
 //! With the F4 hitbox overlay on, it also draws, in white, the hitboxes the
 //! server rewound for each of our shots, next to the ones drawn here.
 //!
@@ -25,10 +28,12 @@ use shooter_sim::net::conditioner::{LinkConditioner, LinkSettings};
 use shooter_sim::net::interpolation::{InterpolationBuffer, SnapshotClock};
 use shooter_sim::net::prediction::Reconciled;
 use shooter_sim::net::protocol::{
-    ClientMessage, GameEvent, InputPacket, PROTOCOL_VERSION, ServerMessage, Snapshot,
+    ClientMessage, GameEvent, InputPacket, PROTOCOL_VERSION, ScoreRow, ServerMessage, Snapshot,
 };
 use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::{CHANNEL_COUNT, CHANNEL_RELIABLE, DEFAULT_PORT, TICK_RATE, Tick};
+use shooter_sim::tdm::{Phase, TEAM_COUNT, Team};
+use shooter_sim::weapon::WeaponId;
 
 use super::remote::{RemotePlayer, RemoteSample};
 use super::transport::{self, NetEvent};
@@ -61,6 +66,13 @@ pub struct NetClient {
     #[export]
     #[init(val = i32::from(DEFAULT_PORT))]
     port: i32,
+    /// The name other players see.
+    #[export]
+    player_name: GString,
+    /// Primary weapon to ask for when joining (a weapon key), or empty for
+    /// the server's default.
+    #[export]
+    primary: GString,
     /// The local `FpsPlayer` to predict.
     #[export]
     player_path: NodePath,
@@ -98,6 +110,20 @@ pub struct NetClient {
     debug_requested: bool,
     /// The server's rewound hitboxes for recent shots, with seconds left.
     ghosts: VecDeque<(Gd<HitboxRig>, f32)>,
+    /// Everyone in the game, ourselves included.
+    roster: Vec<RosterEntry>,
+    match_phase: Option<Phase>,
+    match_ends_at: Option<Tick>,
+    team_scores: [u32; TEAM_COUNT],
+    score_limit: u32,
+}
+
+struct RosterEntry {
+    id: u8,
+    name: String,
+    team: Team,
+    bot: bool,
+    row: ScoreRow,
 }
 
 struct Remote {
@@ -200,8 +226,15 @@ impl INode for NetClient {
                 NetEvent::Connect(mut peer) => {
                     let hello = ClientMessage::Hello {
                         version: PROTOCOL_VERSION,
+                        name: self.player_name.to_string(),
                     };
                     transport::send_reliable(&mut peer, &hello.encode());
+                    if let Some(primary) = WeaponId::by_key(&self.primary.to_string())
+                        && crate::net::server::is_loadout_primary(primary)
+                    {
+                        let loadout = ClientMessage::Loadout { primary };
+                        transport::send_reliable(&mut peer, &loadout.encode());
+                    }
                 }
                 NetEvent::Disconnect(_) => self.on_disconnected(),
                 NetEvent::Receive(_, bytes, channel) => {
@@ -273,6 +306,110 @@ impl NetClient {
     /// A player killed another (both ids as in `player_id`; bots from 200).
     #[signal]
     fn kill_reported(killer: i32, victim: i32, weapon: GString, headshot: bool);
+
+    /// Someone joined, left, or changed team or name.
+    #[signal]
+    fn roster_changed();
+
+    /// The match phase or the team scores changed.
+    #[signal]
+    fn match_changed();
+
+    /// New scoreboard figures arrived.
+    #[signal]
+    fn scoreboard_changed();
+
+    /// Every player, ourselves included, as dictionaries with `id`, `name`,
+    /// `team`, `bot`, `me`, `score`, `kills`, `deaths`, `ping`, and `ready`,
+    /// sorted by team and then by score.
+    #[func]
+    fn roster(&self) -> Array<VarDictionary> {
+        let mut entries: Vec<&RosterEntry> = self.roster.iter().collect();
+        entries.sort_by(|a, b| {
+            (a.team, std::cmp::Reverse(a.row.score), a.id).cmp(&(
+                b.team,
+                std::cmp::Reverse(b.row.score),
+                b.id,
+            ))
+        });
+        entries
+            .into_iter()
+            .map(|e| {
+                let mut d = VarDictionary::new();
+                d.set("id", i32::from(e.id));
+                d.set("name", &GString::from(e.name.as_str()));
+                d.set("team", i32::from(e.team));
+                d.set("bot", e.bot);
+                d.set("me", Some(e.id) == self.player_id);
+                d.set("score", e.row.score);
+                d.set("kills", e.row.kills);
+                d.set("deaths", e.row.deaths);
+                d.set("ping", i32::from(e.row.ping_ms));
+                d.set("ready", e.row.ready);
+                d
+            })
+            .collect()
+    }
+
+    /// The match as a dictionary: `phase` ("lobby", "countdown", "playing",
+    /// "ended", or "" before the server said), `seconds_left`, `scores` (per
+    /// team), `score_limit`, `winner` (a team, -1 for a draw), and `my_team`.
+    #[func]
+    fn match_info(&self) -> VarDictionary {
+        let mut d = VarDictionary::new();
+        let (phase, winner) = match self.match_phase {
+            None => ("", -1),
+            Some(Phase::Lobby) => ("lobby", -1),
+            Some(Phase::Countdown) => ("countdown", -1),
+            Some(Phase::Playing) => ("playing", -1),
+            Some(Phase::Ended { winner }) => ("ended", winner.map_or(-1, i32::from)),
+        };
+        d.set("phase", phase);
+        d.set("winner", winner);
+        let seconds_left = match (self.match_ends_at, self.newest) {
+            (Some(end), Some(now)) => f64::from(end.saturating_sub(now)) / f64::from(TICK_RATE),
+            _ => 0.0,
+        };
+        d.set("seconds_left", seconds_left);
+        let scores: PackedInt32Array = self.team_scores.iter().map(|s| *s as i32).collect();
+        d.set("scores", &scores);
+        d.set("score_limit", self.score_limit);
+        d.set("my_team", self.local_team().map_or(-1, i32::from));
+        d
+    }
+
+    /// A player's name, or "" if unknown.
+    #[func]
+    fn name_of(&self, id: i32) -> GString {
+        self.entry(id)
+            .map_or_else(GString::new, |e| GString::from(e.name.as_str()))
+    }
+
+    /// A player's team, or -1 if unknown.
+    #[func]
+    fn team_of(&self, id: i32) -> i32 {
+        self.entry(id).map_or(-1, |e| i32::from(e.team))
+    }
+
+    /// Tells the server we are ready (or not) to start the match.
+    #[func]
+    fn set_ready(&mut self, ready: bool) {
+        self.send_reliable(&ClientMessage::Ready { ready });
+    }
+
+    /// Picks the primary weapon (a weapon key) for our next spawn. Returns
+    /// false for a weapon that cannot be a loadout primary.
+    #[func]
+    fn set_loadout(&mut self, primary: GString) -> bool {
+        let Some(id) = WeaponId::by_key(&primary.to_string())
+            .filter(|id| crate::net::server::is_loadout_primary(*id))
+        else {
+            return false;
+        };
+        self.primary = primary;
+        self.send_reliable(&ClientMessage::Loadout { primary: id });
+        true
+    }
 
     /// True once the server accepted us.
     #[func]
@@ -467,6 +604,101 @@ impl NetClient {
                     self.add_ghost(pose);
                 }
             }
+            GameEvent::Joined {
+                id,
+                name,
+                team,
+                bot,
+            } => {
+                match self.roster.iter_mut().find(|e| e.id == id) {
+                    Some(entry) => {
+                        entry.name = name;
+                        entry.team = team;
+                        entry.bot = bot;
+                    }
+                    None => self.roster.push(RosterEntry {
+                        id,
+                        name,
+                        team,
+                        bot,
+                        row: ScoreRow {
+                            id,
+                            ready: bot,
+                            ..ScoreRow::default()
+                        },
+                    }),
+                }
+                // Our own team decides everyone's colours.
+                if Some(id) == self.player_id {
+                    for i in 0..self.remotes.len() {
+                        self.dress_remote(i);
+                    }
+                } else if let Some(i) = self.remotes.iter().position(|r| r.id == id) {
+                    self.dress_remote(i);
+                }
+                self.signals().roster_changed().emit();
+            }
+            GameEvent::Left { id } => {
+                self.roster.retain(|e| e.id != id);
+                self.signals().roster_changed().emit();
+            }
+            GameEvent::Match {
+                phase,
+                ends_at,
+                scores,
+                score_limit,
+            } => {
+                self.match_phase = Some(phase);
+                self.match_ends_at = ends_at;
+                self.team_scores = scores;
+                self.score_limit = score_limit;
+                self.signals().match_changed().emit();
+            }
+            GameEvent::Scoreboard { rows } => {
+                for row in rows {
+                    if let Some(entry) = self.roster.iter_mut().find(|e| e.id == row.id) {
+                        entry.row = row;
+                    }
+                }
+                self.signals().scoreboard_changed().emit();
+            }
+            GameEvent::Spawned { yaw } => {
+                if let Some(player) = &mut self.player {
+                    player.bind_mut().set_look(yaw, 0.0);
+                }
+            }
+        }
+    }
+
+    fn entry(&self, id: i32) -> Option<&RosterEntry> {
+        self.roster.iter().find(|e| i32::from(e.id) == id)
+    }
+
+    fn local_team(&self) -> Option<Team> {
+        let me = self.player_id?;
+        self.roster.iter().find(|e| e.id == me).map(|e| e.team)
+    }
+
+    /// Names a remote player and colours them by whether they are on our team.
+    fn dress_remote(&mut self, index: usize) {
+        let id = self.remotes[index].id;
+        let Some(entry) = self.roster.iter().find(|e| e.id == id) else {
+            return;
+        };
+        let friendly = self.local_team() == Some(entry.team);
+        let name = entry.name.clone();
+        let mut node = self.remotes[index].node.clone();
+        let mut remote = node.bind_mut();
+        remote.set_display_name(&name);
+        remote.set_friendly(friendly);
+    }
+
+    fn send_reliable(&mut self, message: &ClientMessage) {
+        if self.status != Status::Joined && self.status != Status::Connecting {
+            return;
+        }
+        if let Some(server) = &mut self.server {
+            transport::send_reliable(server, &message.encode());
         }
     }
 
@@ -547,6 +779,7 @@ impl NetClient {
                         node,
                         buffer: InterpolationBuffer::default(),
                     });
+                    self.dress_remote(self.remotes.len() - 1);
                     self.remotes.len() - 1
                 }
             };
@@ -635,6 +868,10 @@ impl NetClient {
         for (ghost, _) in self.ghosts.drain(..) {
             ghost.upcast::<Node>().queue_free();
         }
+        self.roster.clear();
+        self.match_phase = None;
+        self.signals().roster_changed().emit();
+        self.signals().match_changed().emit();
     }
 
     fn count_in(&mut self, bytes: usize) {

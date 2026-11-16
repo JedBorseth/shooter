@@ -324,7 +324,7 @@ impl SoldierRig {
     }
 
     #[func]
-    fn set_team_index(&mut self, team: i32) {
+    pub fn set_team_index(&mut self, team: i32) {
         self.team = team;
         self.apply_team();
     }

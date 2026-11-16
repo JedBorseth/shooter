@@ -697,7 +697,7 @@ impl FpsPlayer {
 
     /// Points the view: yaw and pitch in radians (spawns, tests, spectating).
     #[func]
-    fn set_look(&mut self, yaw: f32, pitch: f32) {
+    pub(crate) fn set_look(&mut self, yaw: f32, pitch: f32) {
         self.yaw = yaw;
         self.pitch = pitch.clamp(-PITCH_LIMIT, PITCH_LIMIT);
     }
@@ -1245,7 +1245,12 @@ impl FpsPlayer {
             first_end.get_or_insert(end);
             let Some(hit) = hit else { continue };
 
-            let target = hit.collider.as_ref().and_then(find_damageable);
+            // Teammates take no damage online, so they confirm no hits either.
+            let target = hit
+                .collider
+                .as_ref()
+                .and_then(find_damageable)
+                .filter(|t| !t.has_meta("friendly") || !t.get_meta("friendly").booleanize());
             if let (Some(collider), Some(target)) = (&hit.collider, target) {
                 // Untagged damageable colliders (the sentry) count as the chest.
                 let zone = HitZone::from_name(

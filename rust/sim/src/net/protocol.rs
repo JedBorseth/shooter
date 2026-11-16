@@ -11,7 +11,8 @@
 //!   receiver's own authoritative state at full precision (prediction compares
 //!   it bit for bit) and every other player quantized and delta-compressed
 //!   against the last snapshot that client acknowledged.
-//! - Server → client, reliable: [`GameEvent`]s (hits, damage, kills, score),
+//! - Server → client, reliable: [`GameEvent`]s (hits, damage, kills, score,
+//!   who is playing on which team, the match clock, and the scoreboard),
 //!   which happen once and must not be lost.
 
 use glam::{IVec3, Vec2, Vec3};
@@ -23,11 +24,13 @@ use crate::look::PITCH_LIMIT;
 use crate::movement::{MoveState, Stance};
 use crate::player::{PlayerInput, PlayerState};
 use crate::score::{Award, ScoreTotals, Scored};
+use crate::tdm::{MAX_NAME_CHARS, Phase, TEAM_COUNT, Team};
 use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState};
 
 /// Bumped whenever the wire format changes; mismatched clients are rejected.
-// Version 4 requires clients to load the map advertised by server discovery.
-pub const PROTOCOL_VERSION: u16 = 4;
+// Version 5 adds Team Deathmatch: names, teams, ready-up, loadouts, the
+// match clock, and the scoreboard.
+pub const PROTOCOL_VERSION: u16 = 5;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
 pub const MAX_INPUTS_PER_PACKET: usize = 24;
 /// Wish vectors are sent as signed bytes; prediction must use the same values.
@@ -41,8 +44,9 @@ const VIEW_TICK_STEPS: f64 = 256.0;
 const VIEW_TICK_LIMIT: f64 = 4_294_967_296.0;
 /// Cap on events in one reliable message.
 pub const MAX_EVENTS_PER_MESSAGE: usize = 64;
-/// Cap on players in one [`GameEvent::Rewound`].
+/// Cap on players in one [`GameEvent::Rewound`] or [`GameEvent::Scoreboard`].
 const MAX_REWOUND_POSES: usize = 32;
+const MAX_SCOREBOARD_ROWS: usize = 64;
 
 const TAG_BITS: u32 = 3;
 
@@ -50,12 +54,23 @@ const TAG_BITS: u32 = 3;
 pub enum ClientMessage {
     Hello {
         version: u16,
+        /// The player's name; the server cleans it (`tdm::clean_name`).
+        name: String,
     },
     Input(InputPacket),
     /// Debug: ask for the hitboxes the server rewinds for each of our shots
     /// ([`GameEvent::Rewound`]). Sent reliably when the F4 overlay toggles.
     Debug {
         rewound_hitboxes: bool,
+    },
+    /// Ready (or not) to start the match, in the lobby.
+    Ready {
+        ready: bool,
+    },
+    /// The primary weapon to spawn with from the next spawn on (the sidearm is
+    /// always the M1911).
+    Loadout {
+        primary: WeaponId,
     },
 }
 
@@ -123,6 +138,41 @@ pub enum GameEvent {
         tick: f64,
         poses: Vec<(u8, HitboxPose)>,
     },
+    /// To everyone: a player joined, or changed name or team. A new client
+    /// gets one for every player already in the game, itself included.
+    Joined {
+        id: u8,
+        name: String,
+        team: Team,
+        bot: bool,
+    },
+    /// To everyone: a player left.
+    Left { id: u8 },
+    /// To everyone: the match phase or the team scores changed. `ends_at` is
+    /// the server tick the phase's clock runs out (none in the lobby).
+    Match {
+        phase: Phase,
+        ends_at: Option<Tick>,
+        scores: [u32; TEAM_COUNT],
+        score_limit: u32,
+    },
+    /// To everyone, about once a second: every player's line on the scoreboard.
+    Scoreboard { rows: Vec<ScoreRow> },
+    /// To one player: they (re)spawned facing `yaw` (radians).
+    Spawned { yaw: f32 },
+}
+
+/// One player's line on the scoreboard.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ScoreRow {
+    pub id: u8,
+    pub score: u32,
+    pub kills: u32,
+    pub deaths: u32,
+    /// Round-trip time to the server in milliseconds (0 for bots).
+    pub ping_ms: u16,
+    /// Ready to start, in the lobby (bots always are).
+    pub ready: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -252,9 +302,10 @@ impl ClientMessage {
     pub fn encode(&self) -> Vec<u8> {
         let mut w = BitWriter::new();
         match self {
-            ClientMessage::Hello { version } => {
+            ClientMessage::Hello { version, name } => {
                 w.bits(0, TAG_BITS);
                 w.u16(*version);
+                write_string(&mut w, name, MAX_NAME_BYTES);
             }
             ClientMessage::Input(packet) => {
                 w.bits(1, TAG_BITS);
@@ -282,6 +333,14 @@ impl ClientMessage {
                 w.bits(2, TAG_BITS);
                 w.bool(*rewound_hitboxes);
             }
+            ClientMessage::Ready { ready } => {
+                w.bits(3, TAG_BITS);
+                w.bool(*ready);
+            }
+            ClientMessage::Loadout { primary } => {
+                w.bits(4, TAG_BITS);
+                write_weapon(&mut w, *primary);
+            }
         }
         w.finish()
     }
@@ -289,7 +348,16 @@ impl ClientMessage {
     pub fn decode(bytes: &[u8]) -> DecodeResult<Self> {
         let mut r = BitReader::new(bytes);
         match r.bits(TAG_BITS)? {
-            0 => Ok(ClientMessage::Hello { version: r.u16()? }),
+            0 => {
+                let version = r.u16()?;
+                // An older client sends no name; let the version check reject it.
+                let name = if version == PROTOCOL_VERSION {
+                    read_string(&mut r, MAX_NAME_BYTES)?
+                } else {
+                    String::new()
+                };
+                Ok(ClientMessage::Hello { version, name })
+            }
             1 => {
                 let ack_snapshot = read_option_tick(&mut r)?;
                 let first_seq = r.varint()?;
@@ -315,6 +383,10 @@ impl ClientMessage {
             }
             2 => Ok(ClientMessage::Debug {
                 rewound_hitboxes: r.bool()?,
+            }),
+            3 => Ok(ClientMessage::Ready { ready: r.bool()? }),
+            4 => Ok(ClientMessage::Loadout {
+                primary: read_weapon(&mut r)?,
             }),
             _ => Err(DecodeError::Invalid("client message tag")),
         }
@@ -530,7 +602,7 @@ impl ServerMessage {
 // ---------------------------------------------------------------------------
 // Reliable game events
 
-const EVENT_TAG_BITS: u32 = 3;
+const EVENT_TAG_BITS: u32 = 4;
 
 fn write_event(w: &mut BitWriter, event: &GameEvent) {
     match event {
@@ -599,6 +671,62 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
                 write_stance(w, pose.stance);
             }
         }
+        GameEvent::Joined {
+            id,
+            name,
+            team,
+            bot,
+        } => {
+            w.bits(5, EVENT_TAG_BITS);
+            w.u8(*id);
+            write_string(w, name, MAX_NAME_BYTES);
+            w.bits(u32::from(*team), 1);
+            w.bool(*bot);
+        }
+        GameEvent::Left { id } => {
+            w.bits(6, EVENT_TAG_BITS);
+            w.u8(*id);
+        }
+        GameEvent::Match {
+            phase,
+            ends_at,
+            scores,
+            score_limit,
+        } => {
+            w.bits(7, EVENT_TAG_BITS);
+            let (tag, winner) = match phase {
+                Phase::Lobby => (0, None),
+                Phase::Countdown => (1, None),
+                Phase::Playing => (2, None),
+                Phase::Ended { winner } => (3, Some(*winner)),
+            };
+            w.bits(tag, 2);
+            if let Some(winner) = winner {
+                w.bits(winner.map_or(0, |t| u32::from(t) + 1), 2);
+            }
+            write_option_tick(w, *ends_at);
+            for score in scores {
+                w.varint(*score);
+            }
+            w.varint(*score_limit);
+        }
+        GameEvent::Scoreboard { rows } => {
+            w.bits(8, EVENT_TAG_BITS);
+            let count = rows.len().min(MAX_SCOREBOARD_ROWS);
+            w.varint(count as u32);
+            for row in &rows[..count] {
+                w.u8(row.id);
+                w.varint(row.score);
+                w.varint(row.kills);
+                w.varint(row.deaths);
+                w.u16(row.ping_ms);
+                w.bool(row.ready);
+            }
+        }
+        GameEvent::Spawned { yaw } => {
+            w.bits(9, EVENT_TAG_BITS);
+            w.f32(*yaw);
+        }
     }
 }
 
@@ -665,6 +793,60 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
             }
             Ok(GameEvent::Rewound { shot, tick, poses })
         }
+        5 => Ok(GameEvent::Joined {
+            id: r.u8()?,
+            name: read_string(r, MAX_NAME_BYTES)?,
+            team: r.bits(1)? as Team,
+            bot: r.bool()?,
+        }),
+        6 => Ok(GameEvent::Left { id: r.u8()? }),
+        7 => {
+            let phase = match r.bits(2)? {
+                0 => Phase::Lobby,
+                1 => Phase::Countdown,
+                2 => Phase::Playing,
+                _ => Phase::Ended {
+                    winner: match r.bits(2)? {
+                        0 => None,
+                        1 => Some(0),
+                        2 => Some(1),
+                        _ => return Err(DecodeError::Invalid("winner")),
+                    },
+                },
+            };
+            let ends_at = read_option_tick(r)?;
+            let mut scores = [0; TEAM_COUNT];
+            for score in &mut scores {
+                *score = r.varint()?;
+            }
+            Ok(GameEvent::Match {
+                phase,
+                ends_at,
+                scores,
+                score_limit: r.varint()?,
+            })
+        }
+        8 => {
+            let count = r.varint()? as usize;
+            if count > MAX_SCOREBOARD_ROWS {
+                return Err(DecodeError::Invalid("scoreboard rows"));
+            }
+            let mut rows = Vec::with_capacity(count);
+            for _ in 0..count {
+                rows.push(ScoreRow {
+                    id: r.u8()?,
+                    score: r.varint()?,
+                    kills: r.varint()?,
+                    deaths: r.varint()?,
+                    ping_ms: r.u16()?,
+                    ready: r.bool()?,
+                });
+            }
+            Ok(GameEvent::Scoreboard { rows })
+        }
+        9 => Ok(GameEvent::Spawned {
+            yaw: read_finite(r)?,
+        }),
         _ => Err(DecodeError::Invalid("event tag")),
     }
 }
@@ -1104,6 +1286,34 @@ fn valid_weapon(id: WeaponId) -> bool {
     usize::from(id.0) < weapon::table().len()
 }
 
+/// Names are at most this many bytes of UTF-8 on the wire.
+const MAX_NAME_BYTES: usize = MAX_NAME_CHARS * 4;
+
+/// A UTF-8 string, cut at a character boundary to at most `max` bytes.
+fn write_string(w: &mut BitWriter, s: &str, max: usize) {
+    let mut end = s.len().min(max);
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    let bytes = &s.as_bytes()[..end];
+    w.varint(bytes.len() as u32);
+    for byte in bytes {
+        w.u8(*byte);
+    }
+}
+
+fn read_string(r: &mut BitReader, max: usize) -> DecodeResult<String> {
+    let len = r.varint()? as usize;
+    if len > max {
+        return Err(DecodeError::Invalid("string length"));
+    }
+    let mut bytes = Vec::with_capacity(len);
+    for _ in 0..len {
+        bytes.push(r.u8()?);
+    }
+    String::from_utf8(bytes).map_err(|_| DecodeError::Invalid("string"))
+}
+
 fn write_option_tick(w: &mut BitWriter, tick: Option<Tick>) {
     match tick {
         Some(t) => {
@@ -1449,9 +1659,80 @@ mod tests {
                     },
                 )],
             },
+            GameEvent::Joined {
+                id: 4,
+                name: "Ünïcode ace".to_owned(),
+                team: 1,
+                bot: false,
+            },
+            GameEvent::Left { id: 201 },
+            GameEvent::Spawned { yaw: -2.5 },
+            GameEvent::Match {
+                phase: Phase::Lobby,
+                ends_at: None,
+                scores: [0, 0],
+                score_limit: 75,
+            },
+            GameEvent::Match {
+                phase: Phase::Ended { winner: Some(1) },
+                ends_at: Some(123_456),
+                scores: [41, 75],
+                score_limit: 75,
+            },
+            GameEvent::Match {
+                phase: Phase::Ended { winner: None },
+                ends_at: Some(9),
+                scores: [3, 3],
+                score_limit: 1,
+            },
+            GameEvent::Scoreboard {
+                rows: vec![
+                    ScoreRow {
+                        id: 0,
+                        score: 1450,
+                        kills: 12,
+                        deaths: 4,
+                        ping_ms: 38,
+                        ready: true,
+                    },
+                    ScoreRow {
+                        id: 203,
+                        ..ScoreRow::default()
+                    },
+                ],
+            },
         ]);
         let bytes = msg.encode(&[]);
         assert_eq!(ServerMessage::decode(&bytes, |_| None).unwrap(), msg);
+    }
+
+    #[test]
+    fn lobby_messages_round_trip() {
+        for msg in [
+            ClientMessage::Hello {
+                version: PROTOCOL_VERSION,
+                name: "Josh".to_owned(),
+            },
+            ClientMessage::Ready { ready: true },
+            ClientMessage::Loadout {
+                primary: WeaponId::expect("ak47"),
+            },
+        ] {
+            assert_eq!(ClientMessage::decode(&msg.encode()).unwrap(), msg);
+        }
+    }
+
+    #[test]
+    fn long_names_are_cut_at_a_character_boundary() {
+        let msg = ClientMessage::Hello {
+            version: PROTOCOL_VERSION,
+            name: "é".repeat(100),
+        };
+        let ClientMessage::Hello { name, .. } = ClientMessage::decode(&msg.encode()).unwrap()
+        else {
+            panic!("not a hello");
+        };
+        assert_eq!(name, "é".repeat(MAX_NAME_BYTES / 2));
     }
 
     #[test]

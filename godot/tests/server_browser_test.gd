@@ -89,7 +89,7 @@ func _run() -> void:
 	if row.is_empty():
 		_finish()
 		return
-	_check(row[2] == map_name and row[3] == "Free-for-all", "map and mode show, got %s" % row)
+	_check(row[2] == map_name and row[3] == "Team Deathmatch", "map and mode show, got %s" % row)
 	_check(row[4] == "0 / 12  +2 bots", "players and bots show, got '%s'" % row[4])
 	_check(row[5].ends_with(" ms"), "ping shows, got '%s'" % row[5])
 
