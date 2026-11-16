@@ -1,75 +1,21 @@
 //! Another player as this client sees them: interpolated from snapshots and
 //! drawn as the third-person soldier (`SoldierRig`), with gunfire sound at the
-//! muzzle and hit zones posed from the same snapshot (drawn with F4; the server
-//! resolves hits against them once lag compensation lands).
+//! muzzle and hit zones posed from the same snapshot (drawn with F4).
+//!
+//! The local player's shots hit these hit zones for instant feedback (hit
+//! markers, blood, a flinch), but deal no damage here: the server rewinds the
+//! same poses (`shooter_sim::net::lag`) and decides every hit and kill.
 
 use std::collections::HashMap;
 
 use godot::classes::{AudioStream, AudioStreamPlayer3D, INode3D, Label3D, Node3D, ResourceLoader};
 use godot::prelude::*;
-use shooter_sim::Vec3;
-use shooter_sim::hitbox::HitboxPose;
-use shooter_sim::movement::Stance;
-use shooter_sim::net::interpolation::{Interpolate, lerp_angle};
-use shooter_sim::net::protocol::PlayerView;
+pub use shooter_sim::net::lag::RemoteSample;
 use shooter_sim::weapon::{Reload, Slot, WeaponId};
 
 use crate::character::rig::{SoldierFrame, SoldierRig};
 use crate::convert::to_godot;
 use crate::hitbox_rig::HitboxRig;
-
-/// One remote player's state at a snapshot, ready to blend.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct RemoteSample {
-    pub position: Vec3,
-    pub yaw: f32,
-    pub pitch: f32,
-    pub stance: Stance,
-    pub sprinting: bool,
-    pub on_floor: bool,
-    pub ads: f32,
-    pub weapon: WeaponId,
-    pub reloading: bool,
-    pub alive: bool,
-    pub shots_fired: u32,
-}
-
-impl From<&PlayerView> for RemoteSample {
-    fn from(v: &PlayerView) -> Self {
-        Self {
-            position: v.position(),
-            yaw: v.yaw(),
-            pitch: v.pitch(),
-            stance: v.stance,
-            sprinting: v.sprinting,
-            on_floor: v.on_floor,
-            ads: v.ads(),
-            weapon: v.weapon,
-            reloading: v.reloading,
-            alive: v.alive,
-            shots_fired: v.shots_fired,
-        }
-    }
-}
-
-impl Interpolate for RemoteSample {
-    fn interpolate(&self, to: &Self, t: f32) -> Self {
-        // Respawns and other teleports jump instead of sliding across the map.
-        if self.alive != to.alive || self.position.distance(to.position) > 2.0 {
-            return if t < 0.5 { *self } else { *to };
-        }
-        let discrete = if t < 0.5 { self } else { to };
-        Self {
-            position: self.position.lerp(to.position, t),
-            yaw: lerp_angle(self.yaw, to.yaw, t),
-            pitch: self.pitch + (to.pitch - self.pitch) * t,
-            ads: self.ads + (to.ads - self.ads) * t,
-            // Shots show once the snapshot that contains them is reached.
-            shots_fired: self.shots_fired,
-            ..*discrete
-        }
-    }
-}
 
 #[derive(GodotClass)]
 #[class(init, base = Node3D)]
@@ -109,6 +55,25 @@ impl RemotePlayer {
     #[func]
     fn soldier(&self) -> Gd<SoldierRig> {
         self.rig.clone()
+    }
+
+    /// The hit zones, for tests.
+    #[func]
+    fn hitboxes(&self) -> Gd<HitboxRig> {
+        self.hitboxes.clone()
+    }
+
+    /// Called by the local player's hitscan. The server owns health, so this
+    /// never kills here; the kill arrives from the server.
+    #[func]
+    fn apply_damage(&mut self, _amount: f32, _headshot: bool) -> bool {
+        false
+    }
+
+    /// A small predicted flinch away from the local player's hit.
+    #[func]
+    pub fn react_to_hit(&mut self, direction: Vector3, killed: bool) {
+        self.rig.bind_mut().hit(direction, killed);
     }
 }
 
@@ -158,13 +123,8 @@ impl RemotePlayer {
             alive: s.alive,
         };
         self.rig.bind_mut().update(&frame, delta);
-        let pose = s.alive.then_some(HitboxPose {
-            feet: s.position,
-            yaw: s.yaw,
-            pitch: s.pitch,
-            stance: s.stance,
-        });
-        self.hitboxes.bind_mut().set_pose(pose);
+        // The server rewinds exactly this pose when it checks our shots.
+        self.hitboxes.bind_mut().set_pose(s.hitbox_pose());
 
         let fired = self.shots_fired.is_some_and(|last| s.shots_fired > last);
         self.shots_fired = Some(s.shots_fired);

@@ -25,6 +25,7 @@ fn input(tick: u32) -> PlayerInput {
         reload: tick % 400 == 300,
         switch_to: (tick % 900 == 600).then_some(((tick / 900) % 2) as u8),
         pickup: None,
+        view_tick: None,
     }
     .quantized()
 }

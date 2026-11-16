@@ -70,7 +70,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [ ] Occlusion for positional audio, and other players' gunfire once multiplayer exists.
 - [x] **good first task** Kill confirmation sound for hit markers.
 - [x] Hit markers pop in and settle; kill markers are larger, thicker, and red.
-- [ ] Score popups (+100, headshot and longshot bonuses) and medals at the crosshair.
+- [x] Score popups (+100, headshot and longshot bonuses) and medals at the crosshair.
 
 ### Settings and UX
 
@@ -95,19 +95,22 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Network condition simulator (latency, jitter, loss) for local testing, plus a debug overlay (ping, loss, prediction error).
 - [x] Headless dedicated server export: an export preset with the `dedicated_server` feature, a `--server` command-line flag, no rendering or audio.
 - [x] Third-person player model for remote players: CC0 soldier with locomotion blend spaces, aim pitch, hand IK on the weapon, reload, and death (`SoldierRig`, see `docs/art-direction.md`).
-- [ ] Server-side shots: resolve `CombatEvent::Fired` on the server against other players' hitboxes and send hit confirmations. Lands together with Phase 3's rewind.
-- [ ] Input rate limits: the server applies up to three queued inputs per tick to drain a backlog, so a client that sends inputs faster than the tick rate moves faster. Cap inputs per second per client.
+- [x] Server-side shots: the server resolves `CombatEvent::Fired` against other players' rewound hitboxes, applies damage, keeps score, and sends hit confirmations, damage, kills, and score as reliable game events.
+- [x] Input rate limits: draining a backlog costs credit that builds up one input per tick (`InputQueue`, at most a quarter second banked), so a client that sends inputs faster than the tick rate gets throttled instead of moving faster.
 - [ ] Replays on slopes: `body::place` restores the body's floor contact but not its remembered floor normal, so a correction replayed on the ramp may drift and correct again. Add a ramp run to `godot/tests/net_test.gd` and restore the floor normal if it shows up.
-- [ ] Reliable game events (joins, kills, chat) on the reliable ENet channel, for the kill feed and scoreboard in Phase 4.
+- [x] Reliable game events on the reliable ENet channel: hits, damage, kills (`NetClient.kill_reported`, ready for a kill feed), and score.
+- [ ] More reliable events for Phase 4: joins and leaves with player names, team changes, chat.
+- [ ] Hit reactions for third parties: other clients see a victim flinch only when it dies. Send the hit direction to everyone, or add a "hit this tick" bit to `PlayerView`.
+- [ ] Validate view ticks against what the server expects (its snapshot send time plus RTT and the client's interpolation delay), so a tampered client cannot pick the most favourable moment within the 300 ms rewind window.
 - [ ] Bandwidth: send the owner's full state only when it differs from what the client predicted, or delta-compress it like remote players (about 60 kbps down and 27 kbps up per client today, with 60 Hz snapshots and 120 Hz inputs).
 
 ## Phase 3: lag compensation
 
 - [x] Hitboxes per body part (head, chest, stomach, arms, legs) on the hitboxes collision layer, with damage multipliers (`rust/sim/src/hitbox.rs`, `HitboxRig`).
-- [ ] Server hitbox history: a ring buffer of hitbox transforms for about 1 second of ticks.
-- [ ] Rewind on fire: the server checks the shot against the hitboxes as the shooter saw them (interpolation delay + RTT), capped at a maximum rewind.
-- [ ] Debug visualization: draw server-rewound hitboxes next to client hitboxes. (F4 already draws every character's client-side hitboxes.)
-- [ ] Unit tests for rewind math in `rust/sim`. (Engine-free hit testing with simple shapes exists: `hitbox::raycast`.)
+- [x] Server hitbox history: a second of sent snapshots (`net::lag::LagHistory`); hitboxes are rebuilt from position, view angles, and stance.
+- [x] Rewind on fire: each firing input carries the client's interpolation tick; the server checks the shot against hitboxes at that tick, capped at 300 ms.
+- [x] Debug visualization: with F4 on, the server's rewound hitboxes for each of your shots are drawn in white next to the client's.
+- [x] Unit tests for rewind math in `rust/sim` (`net::lag`), and a netcode test that kills a strafing bot through a lossy, 110 ms link.
 
 ## Phase 4: game loop
 
@@ -125,7 +128,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [ ] Nakama (self-hosted, Docker Compose) for accounts, parties, and matchmaking. Use the `nakama-godot` client.
 - [ ] Dockerfile for the headless server (Godot export + Rust extension).
 - [ ] Server allocation: Nakama match handler starts or assigns a dedicated server and hands its address to players. Agones on Kubernetes later.
-- [ ] Server-side validation and anti-cheat basics: input rate limits, speed and fire-rate checks, view-angle sanity checks.
+- [ ] Server-side validation and anti-cheat basics: speed and fire-rate checks, view-angle sanity checks. (Input rate limits are done: `InputQueue` credit. Fire rate already follows from the server running the weapon simulation itself.)
 
 ## Phase 6 and later: production polish
 
