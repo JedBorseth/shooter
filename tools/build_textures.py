@@ -81,7 +81,7 @@ LOOKS: dict[str, dict] = {
     "plaster_warm": {"set": "plaster", "size": 3.0, "tint": (0.86, 0.8, 0.68), "grime": 0.15},
     "trim_dark": {"set": "painted_metal", "size": 2.0, "tint": (0.17, 0.17, 0.19), "metal": 0.2},
     "door_teal": {"set": "painted_metal", "size": 1.5, "tint": (0.12, 0.42, 0.44), "metal": 0.0, "rough": 0.8},
-    "glass": {"set": None, "tint": (0.06, 0.1, 0.14), "rough": 0.08, "metal": 0.0, "specular": 0.9},
+    "glass": {"set": None, "tint": (0.05, 0.08, 0.11), "rough": 0.12, "metal": 0.0, "specular": 0.35},
     "steel_painted": {"set": "painted_metal", "size": 2.0, "tint": (0.4, 0.42, 0.45), "metal": 0.6},
     "wood": {"set": "planks", "size": 2.0, "tint": (1.0, 0.95, 0.88)},
     "canvas_tan": {"set": "canvas", "size": 1.5, "tint": (0.74, 0.65, 0.48)},

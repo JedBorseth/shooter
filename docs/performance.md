@@ -22,6 +22,7 @@ Rules of thumb for this renderer on this card, from the measurements below:
 
 - Cost is per pixel, not per triangle. Draw calls and triangle counts at today's scale barely move GPU time; full-screen effects (SSAO, MSAA, glow, soft shadows) do.
 - Bake lighting instead of computing it live. No SDFGI, VoxelGI, or screen-space reflections. Volumetric fog is High only.
+- Reflection probes are expensive here: four small interior probes in Slamcity cost about 0.8 ms whenever a room filled the screen, and one probe over the whole block cost 0.7 ms everywhere. Prefer baked lightmaps for indoor light.
 - Textures are compressed on the GPU (BPTC/S3TC), with mipmaps, 1K for most surfaces and 2K only for the weapon in view. Sample each surface once (one projection), not three times.
 - Characters cost through their surfaces and skinning: keep each one to a few surfaces and use LODs.
 
@@ -84,3 +85,4 @@ GPU time on Medium at 1080p on the reference card, average over viewpoints (wors
 | --- | ---: | ---: | ---: |
 | Before the overhaul (#27) | 4.27 (4.42) ms | 4.89 (5.00) ms | 4.39 (4.76) ms |
 | PBR world textures | 4.75 (4.89) ms | 5.35 (5.54) ms | 4.68 (5.04) ms |
+| Sky lighting, haze, and grading | 4.90 (5.08) ms | 5.67 (5.87) ms | 4.92 (5.31) ms |

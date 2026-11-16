@@ -4,9 +4,9 @@
 
 [resource]
 shader = ExtResource("1_shader")
-shader_parameter/tint = Color(0.06, 0.1, 0.14, 1)
+shader_parameter/tint = Color(0.05, 0.08, 0.11, 1)
 shader_parameter/textured = false
-shader_parameter/roughness_scale = 0.08
+shader_parameter/roughness_scale = 0.12
 shader_parameter/metallic_scale = 0
-shader_parameter/specular = 0.9
+shader_parameter/specular = 0.35
 shader_parameter/grime = 0.3
