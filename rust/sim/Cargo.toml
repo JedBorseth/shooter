@@ -10,6 +10,9 @@ workspace = true
 
 [dependencies]
 # Same version godot-rust already uses, so this adds no new download.
-glam = { version = "0.32", features = ["serde"] }
+# `libm`: glam's own float math goes through the same portable library as ours.
+glam = { version = "0.32", features = ["serde", "libm"] }
+# Bit-identical sin, cos, exp, atan2 on every platform; see `fmath`.
+libm = "0.2"
 ron = "0.12.3"
 serde = { version = "1.0.229", features = ["derive"] }

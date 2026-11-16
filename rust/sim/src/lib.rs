@@ -4,6 +4,7 @@
 //! the client (for prediction) and on the dedicated server (as the authority),
 //! and can be unit-tested without the engine.
 
+pub mod fmath;
 pub mod look;
 pub mod movement;
 pub mod net;

@@ -6,8 +6,8 @@ use shooter_sim::movement::MoveEnv;
 use shooter_sim::net::TICK_DT;
 use shooter_sim::net::protocol::Predicted;
 use shooter_sim::player::{self, PlayerInput, PlayerParams, PlayerState};
-use shooter_sim::rng;
 use shooter_sim::{Vec2, Vec3};
+use shooter_sim::{fmath, rng};
 
 /// A scripted but varied input stream: strafing, turning, sprinting, sliding,
 /// jumping, aiming, firing, reloading, and switching weapons.
@@ -15,8 +15,8 @@ fn input(tick: u32) -> PlayerInput {
     let r = |salt: u32| rng::unit(tick / 7, salt);
     PlayerInput {
         wish: Vec2::new(r(1) * 2.0 - 1.0, if r(2) < 0.8 { 1.0 } else { -0.4 }),
-        yaw: (tick as f32 * 0.013).sin() * 2.0,
-        pitch: (tick as f32 * 0.007).cos() * 0.3,
+        yaw: fmath::sin(tick as f32 * 0.013) * 2.0,
+        pitch: fmath::cos(tick as f32 * 0.007) * 0.3,
         jump: tick % 97 < 2,
         sprint: tick % 150 < 2,
         crouch: tick % 150 == 70 || tick % 150 == 71,
@@ -105,7 +105,7 @@ fn same_inputs_give_bit_identical_state() {
 /// The hash a reference run produced. CI runs this on Linux, Windows, and
 /// macOS, so a platform whose float math differs fails here before players
 /// see mispredictions. If a deliberate simulation change moves it, update it.
-const REFERENCE_HASH: u64 = 0xad4c_2986_c063_32c0;
+const REFERENCE_HASH: u64 = 0x2eb6_f5e7_300f_11f6;
 
 #[test]
 fn state_matches_the_reference_on_every_platform() {
