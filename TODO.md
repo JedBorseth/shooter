@@ -137,7 +137,8 @@ Done: rounds with a growing, toughening horde, zombies that walk straight at the
 - [ ] Barriers at the spawn points that zombies tear down and players rebuild for points.
 - [ ] Downed state and revives for co-op, once Zombies runs on the dedicated server.
 - [ ] Playable versions of the menu's maps; today every map loads the one arena.
-- [ ] A cheaper zombie for big hordes: fewer material surfaces or a LOD, and animation at a reduced rate far away. 24 soldiers on screen cost about half the frame rate on a GTX 1060.
+- [x] A cheaper zombie for big hordes: two surfaces per character instead of eleven (a 24-zombie horde draws about 195 calls instead of 630).
+- [ ] Animate distant zombies at a reduced rate. Needs care: `SoldierPoser` adjusts the animated pose every frame.
 
 ## Phase 5: online services (all self-hosted)
 
@@ -158,7 +159,7 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 - [x] Map props: CC0 Poly Haven models (cars, lamps, crates, barrels, bins, barriers, AC units, shutters) on the existing collision (`tools/build_props.py`).
 - [x] Map meshes: the blockout CSG is baked into meshes with lightmap UVs (`godot/tools/bake_map_meshes.gd`).
 - [ ] Building trim: window frames, sills, gutters, and fire escapes on Slamcity's buildings.
-- [ ] Characters: textured soldier, zombie variants, fewer surfaces per character.
+- [x] Characters: one material and two surfaces per character, rest-space fabric and wear detail, and per-zombie skin tone and blood (`shaders/character.gdshader`).
 - [ ] Effects and post: impact debris, blood, dust, depth of field when aiming, motion blur option.
 
 ## Phase 6 and later: production polish

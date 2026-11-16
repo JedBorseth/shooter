@@ -261,6 +261,46 @@ class Surface:
         )
 
 
+def write_merged_mesh(w: Writer, name: str, surfaces: list[Surface]) -> int:
+    """All surfaces as one primitive with the shared `character` material, so a
+    character draws in one call per mesh. Each vertex carries its rest-pose
+    position (UV = x, y; UV2.x = z), for detail that sticks to the body while it
+    animates, and its palette role (UV2.y = (index + 0.5) / 16), which
+    shaders/character.gdshader colours per team."""
+    positions, normals, joints, weights, indices, uv0, uv1 = [], [], [], [], [], [], []
+    base = 0
+    for s in surfaces:
+        s = s.compacted()
+        if len(s.indices) == 0:
+            continue
+        n = len(s.positions)
+        positions.append(s.positions)
+        normals.append(s.normals)
+        joints.append(s.joints)
+        weights.append(s.weights)
+        indices.append(s.indices + base)
+        uv0.append(s.positions[:, :2])
+        role = (ROLES.index(s.role) + 0.5) / 16.0
+        uv1.append(np.column_stack([s.positions[:, 2], np.full(n, role)]))
+        base += n
+    pos = np.concatenate(positions).astype(np.float32)
+    index_type = np.uint16 if len(pos) < 65536 else np.uint32
+    primitive = {
+        "attributes": {
+            "POSITION": w.add(pos, 34962, bounds=True),
+            "NORMAL": w.add(np.concatenate(normals).astype(np.float32), 34962),
+            "TEXCOORD_0": w.add(np.concatenate(uv0).astype(np.float32), 34962),
+            "TEXCOORD_1": w.add(np.concatenate(uv1).astype(np.float32), 34962),
+            "JOINTS_0": w.add(np.concatenate(joints).astype(np.uint8), 34962),
+            "WEIGHTS_0": w.add(np.concatenate(weights).astype(np.float32), 34962),
+        },
+        "indices": w.add(np.concatenate(indices).reshape(-1).astype(index_type), 34963),
+        "material": len(ROLES),
+    }
+    w.doc.setdefault("meshes", []).append({"name": name, "primitives": [primitive]})
+    return len(w.doc["meshes"]) - 1
+
+
 def write_mesh(w: Writer, name: str, surfaces: list[Surface]) -> int:
     primitives = []
     for s in surfaces:
@@ -312,6 +352,13 @@ def copy_rig(src: Gltf, w: Writer) -> None:
             },
         }
         for role in ROLES
+    ] + [
+        {
+            # Every merged mesh (write_merged_mesh). The game swaps in a team's
+            # shaders/character.gdshader material.
+            "name": "character",
+            "pbrMetallicRoughness": {"baseColorFactor": [0.4, 0.4, 0.4, 1.0], "metallicFactor": 0.0},
+        }
     ]
 
 
@@ -824,11 +871,11 @@ def build_soldier(src: Gltf) -> None:
     copy_rig(src, w)
     third, first = body_surfaces(body)
     gear = build_gear(body)
-    attach_mesh(w, src, "Mannequin", write_mesh(w, "Body", third), "Rig")
+    attach_mesh(w, src, "Mannequin", write_merged_mesh(w, "Body", third), "Rig")
     w.doc["nodes"][src.node_index("Mannequin")]["name"] = "Body"
-    attach_mesh(w, src, "Gear", write_mesh(w, "Gear", gear), "Rig")
+    attach_mesh(w, src, "Gear", write_merged_mesh(w, "Gear", gear), "Rig")
     fp = first + [s for s in armbands(body)]
-    attach_mesh(w, src, "ArmsFP", write_mesh(w, "ArmsFP", merge_by_role(fp)), "Rig")
+    attach_mesh(w, src, "ArmsFP", write_merged_mesh(w, "ArmsFP", merge_by_role(fp)), "Rig")
     tris = sum(len(s.compacted().indices) for s in third + gear)
     print(f"soldier: {tris} triangles third-person, {len(body.joint_names)} bones")
     w.save(OUT / "soldier" / "soldier.glb")

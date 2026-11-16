@@ -90,3 +90,4 @@ GPU time on Medium at 1080p on the reference card, average over viewpoints (wors
 | PBR weapons, muzzle plume and smoke | 4.98 (5.21) ms | 5.72 (6.01) ms | 4.93 (5.32) ms |
 | Modelled props | 4.99 (5.21) ms | 5.81 (6.05) ms | 4.99 (5.35) ms |
 | Baked lightmaps | 5.06 (5.25) ms | 5.97 (6.19) ms | 5.15 (5.49) ms |
+| One-material characters (horde: 629 to 195 draw calls) | 5.08 (5.27) ms | 6.07 (6.26) ms | 5.22 (5.64) ms |

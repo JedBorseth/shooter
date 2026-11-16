@@ -150,6 +150,11 @@ fn viewmodel_colours(mesh: &mut Gd<MeshInstance3D>, team: Team) {
             continue;
         };
         let role = material.get_name().to_string();
+        if role == "character" {
+            let character = palette::character_material(team, true);
+            mesh.set_surface_override_material(surface, &character);
+            continue;
+        }
         let Some(colour) = palette::material(team, &role) else {
             continue;
         };

@@ -79,7 +79,7 @@ Each shot shows a flash with ragged petals that change every shot, a short plume
 
 ### Palette
 
-Each surface of the model is named after a palette role. `rust/game/src/character/palette.rs` maps each role to a colour per team.
+Every vertex of the model carries its palette role. `rust/game/src/character/palette.rs` maps each role to a colour per team, and `shaders/character.gdshader` draws all of them with one material per team.
 
 | Role | Allies | Enemies |
 | --- | --- | --- |
@@ -98,11 +98,23 @@ There are no teams in the game yet. Until Team Deathmatch lands (Phase 4), every
 | --- | --- | --- |
 | Third-person triangles | 15k | 14.5k (body 13.7k, gear 0.8k) |
 | Bones | 60 | 53 (Godot's humanoid profile) |
-| Materials | One per palette role, shared by every character of a team | 11 roles |
-| Draw calls per character | 12 | 11 surfaces plus the weapon |
-| Textures | None yet (world surfaces are textured; characters are next) | None |
+| Materials | One per team, shared by every character of that team | 1 (`shaders/character.gdshader`, 11 roles) |
+| Draw calls per character | 4 | 2 (body and gear) plus the weapon |
+| Textures | Shared, small | The canvas weave from the world texture library |
 
 Godot generates LODs for the meshes at import, so distant soldiers cost less.
+
+### Character detail
+
+![Both teams on the range, an ally up close, and the zombie horde with a close-up](media/characters-v2.jpg)
+
+`tools/build_character_assets.py` merges each of the soldier's meshes (body, gear, first-person arms) into one surface. Each vertex stores its rest-pose position (UV and UV2.x) and its palette role (UV2.y). `shaders/character.gdshader` then:
+
+- colours each role from the team palette, and collapses roles a team does not wear (a zombie's helmet and goggles) to a point, shadows included;
+- adds detail in rest-pose space, so it sticks to the body while it animates: a fabric weave on cloth, faded patches that differ per character, and dirt toward the feet;
+- for zombies, varies the skin tone per zombie and adds blood, so a horde does not look cloned.
+
+The per-character seed is an instance uniform (`variant`, set by `SoldierRig`), so every character of a team still shares one material. A 24-zombie horde went from about 630 draw calls to about 195.
 
 ## Building a character
 
