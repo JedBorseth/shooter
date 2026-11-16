@@ -11,6 +11,7 @@ mod net;
 mod pickup;
 mod player;
 mod sentry;
+mod sights;
 mod spring;
 mod target;
 mod viewmodel;

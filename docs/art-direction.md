@@ -103,6 +103,30 @@ The hitboxes are a pure function of snapshot fields, not of the animated skeleto
 - Range dummies block movement with a capsule on the `bodies` layer (layer 5). Bullets ignore that layer and hit the zones.
 - Other players' hitboxes are drawn but not hittable yet. Shots against them resolve on the server together with lag compensation (Phase 3).
 
+## Weapon sights
+
+![Aimed down the M4, AK-47, M870, M1911, and PDW-9 sights, and the M4 at the hip](media/iron-sights.jpg)
+
+The gun pack models its sights as solid blocks, which look like slabs when you aim through them. `IronSights` (`rust/game/src/sights.rs`) cuts those blocks out of the imported mesh and builds new sights in code, in the same flat-shaded, hard-edged style:
+
+| Style | Weapons | Rear | Front |
+| --- | --- | --- | --- |
+| `ar` | M4A1 | Flip-up aperture between two protective ears | A-frame tower, square post inside U-shaped ears |
+| `ak` | AK-47 | Tangent leaf with a wide U-notch blade | Post inside a round hood that is open at the top |
+| `shotgun` | M870 | Ghost ring between ears | Ramped blade with a red fiber-optic rod |
+| `pistol` | M1911 | Notched blade with two green tritium dots | Post with one tritium dot |
+| `reflex` | PDW-9 | Mini reflex sight: hooded window, coated lens, red dot | |
+
+Rules the sights follow:
+
+- **Sight line.** Each weapon scene's origin is on the sight line, so at full ADS the sight line is the camera's axis. An aperture is centred on it. A notch sight follows "equal height, equal light": the front post's tip is level with the top of the rear blade, and the post fills the middle of the notch.
+- **Contrast.** Sight steel is darker than the weapon body, so the sight picture reads against it. Dots and fibers are emissive, so they show in shade and pick up a little glow.
+- **Clear picture.** Each weapon's `ads_position` puts the rear sight close to the eye, so the aperture or notch is large on screen. The support hand holds the handguard low enough to stay out of the sight picture. The AK, M870, M1911, and PDW-9 models sit lower under their sight lines than the pack draws them, so the new sights stand clear of the receiver.
+
+A `Sights` node in each `scenes/weapons/*_view.tscn` sets the style, the rear and front positions along the sight line, the height of the weapon under each sight, a size scale, the glow colour, and `cuts`: boxes in the view's space. Any triangle of the imported model whose centre lies in a box is removed. The cut meshes and the built sights are cached and shared by every copy of a weapon, including third-person ones.
+
+To review sights, capture every weapon at the hip and aimed: `CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 --script res://tests/capture_sights.gd` (needs a GPU and a display, or Xvfb).
+
 ## Zombies and other characters
 
 A Zombies mode would use the same skeleton and pipeline. Universal Animation Library 2 already includes `Zombie_Idle_Loop`, `Zombie_Walk_Fwd_Loop`, and `Zombie_Scratch`. To add a zombie:
