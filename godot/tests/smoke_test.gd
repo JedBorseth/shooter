@@ -36,6 +36,7 @@ func _run() -> void:
 
 	await _ticks(20)
 	_check(player.is_on_floor(), "player lands on the floor")
+	_gunshots(player)
 	player.damaged.connect(
 		func(amount: float, _from: Vector3, _fall: bool) -> void: _damage_taken += amount
 	)
@@ -49,6 +50,18 @@ func _run() -> void:
 	await _sentry(main, player)
 	await _gamepad(main, player)
 	_finish()
+
+
+func _gunshots(player: FpsPlayer) -> void:
+	var views := player.find_children("*", "WeaponView", true, false)
+	_check(views.size() >= 6, "every weapon has a view, got %d" % views.size())
+	for view in views:
+		var layers := 0
+		for layer in ["GunshotSnap", "GunshotBody", "GunshotTail"]:
+			var sound := view.get_node_or_null(layer) as AudioStreamPlayer
+			if sound != null and sound.stream != null:
+				layers += 1
+		_check(layers == 3, "%s gunshot has snap, body and tail layers" % view.name)
 
 
 func _movement(player: FpsPlayer) -> void:

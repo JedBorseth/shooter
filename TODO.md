@@ -63,6 +63,8 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [ ] Camera recoil shake tuned per weapon. Move magic numbers in `FpsPlayer::process` into exported properties.
 - [x] Damage feedback when the player is hit: red vignette, directional indicator, hit sounds.
 - [x] Audio buses (Master, Weapons, Effects, UI) with a compressor on Weapons and a limiter on Master.
+- [x] Layered gunshots (snap, body, and tail, each picked from several recordings) with no dead air before the transient. Rebuild them with `tools/build_weapon_audio.py`.
+- [ ] A per-shot mechanical layer (bolt and spring clack) for each gun, and a hollow last-rounds layer for the final few shots in a magazine.
 - [ ] Reverb zones on maps (`Area3D` reverb buses for the tunnel and indoor spaces).
 - [x] Positional audio for impacts and the sentry's gunfire.
 - [ ] Occlusion for positional audio, and other players' gunfire once multiplayer exists.

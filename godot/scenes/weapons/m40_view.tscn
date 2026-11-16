@@ -1,7 +1,6 @@
 [gd_scene format=3]
 
 [ext_resource type="PackedScene" path="res://assets/weapons/m40/m40.fbx" id="1_model"]
-[ext_resource type="AudioStream" path="res://assets/audio/weapons/m40_fire.ogg" id="2_fire"]
 [ext_resource type="AudioStream" path="res://assets/audio/weapons/m4_reload.ogg" id="3_reload"]
 [ext_resource type="AudioStream" path="res://assets/audio/weapons/dry_fire.ogg" id="4_dry"]
 [ext_resource type="Material" path="res://materials/muzzle_flash.tres" id="5_flash"]
@@ -13,6 +12,7 @@ size = Vector2(0.2, 0.2)
 
 [node name="M40" type="WeaponView"]
 weapon = "m40"
+fire_volume_db = -3.0
 hip_position = Vector3(0.12, -0.11, -0.3)
 ads_position = Vector3(0, 0, -0.06)
 sprint_position = Vector3(-0.04, 0.015, 0.03)
@@ -46,12 +46,6 @@ omni_range = 6.0
 
 [node name="Ejection" type="Marker3D" parent="."]
 position = Vector3(0.012, -0.036, -0.135)
-
-[node name="FireSound" type="AudioStreamPlayer" parent="."]
-stream = ExtResource("2_fire")
-volume_db = -3.0
-max_polyphony = 8
-bus = &"Weapons"
 
 [node name="ReloadSound" type="AudioStreamPlayer" parent="."]
 stream = ExtResource("3_reload")

@@ -19,6 +19,7 @@ The plan, decisions, and reference projects are in [docs/roadmap.md](docs/roadma
 - `godot/shaders/`: viewmodel projection (own FOV, never clips walls), muzzle flash, damage vignette, and the blockout grid.
 - `godot/scripts/`: GDScript for the HUD, scope and damage overlays, pause and settings menu (`Settings` autoload), impacts, and tracers.
 - `docs/`: roadmap and design notes.
+- `tools/build_weapon_audio.py`: builds the layered gunshot sounds from bart's CC0 firearm library and trims dead air from the other sounds. Run it with `uv run`; its docstring explains the steps.
 
 ## Set up a Linux playtest machine
 
