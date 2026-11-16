@@ -39,8 +39,17 @@ func _run() -> void:
 	if setup != null:
 		var options: Dictionary = setup.options()
 		_check(
-			options == {"map": "slamcity", "bots": 11, "score_limit": 75, "time_limit": 10},
-			"the default local match is 6v6 Slamcity to 75 in 10 minutes, got %s" % options
+			(
+				options
+				== {
+					"map": "slamcity",
+					"bots": 11,
+					"bot_skill": "normal",
+					"score_limit": 75,
+					"time_limit": 10
+				}
+			),
+			"the default local match is 6v6 Slamcity with normal bots, got %s" % options
 		)
 		setup.back_requested.emit()
 		await process_frame

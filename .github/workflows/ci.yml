@@ -132,6 +132,10 @@ jobs:
         run: godot --headless --path godot --script res://tests/server_browser_test.gd -- --nuketown
       - name: Run title screen test
         run: godot --headless --path godot --script res://tests/title_screen_test.gd
+      # Six bots play a minute of Team Deathmatch on Slamcity in a server in
+      # the test process: they navigate, find each other, and score kills.
+      - name: Run bots test
+        run: godot --headless --path godot --script res://tests/bots_test.gd
       # The benchmark needs a GPU to measure anything; this run only keeps the
       # script, its maps, and every graphics preset loading. See docs/performance.md.
       - name: Run benchmark script (no GPU)

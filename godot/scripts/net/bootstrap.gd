@@ -3,11 +3,14 @@ extends Node
 ##
 ## From the command line, after `--`:
 ##
-##   --server [--port N] [--bots N] [--bot-damage] [--name NAME] [--master HOST[:PORT]]
+##   --server [--port N] [--bots N] [--bot-skill easy|normal|hard] [--bot-damage]
+##            [--name NAME] [--master HOST[:PORT]]
 ##            [--query-port N] [--map arena|nuketown|slamcity]
 ##            [--score-limit N] [--time-limit MINUTES] [--auto-start]
 ##                                    run as a dedicated server (use with --headless);
-##                                    with --bot-damage the bots' bursts hurt players.
+##                                    with --bot-skill the bots play the match; without
+##                                    it they are scripted targets, and --bot-damage
+##                                    lets their bursts hurt players.
 ##                                    Server browsers see NAME; with --master the
 ##                                    server stays listed on that master server.
 ##                                    Browsers query UDP port N+1 (or --query-port).
@@ -112,8 +115,8 @@ func join(target: String, options: Dictionary = {}, arena: PackedScene = null) -
 
 
 ## Starts a dedicated server in a background process with `options` (`map`,
-## `bots`, `score_limit`, `time_limit` in minutes) and joins it. The server
-## does not answer server browsers.
+## `bots`, `bot_skill`, `score_limit`, `time_limit` in minutes) and joins it.
+## The server does not answer server browsers.
 func start_local_match(options: Dictionary) -> void:
 	stop_local_server()
 	var map := String(options.get("map", "slamcity"))
@@ -136,6 +139,8 @@ func start_local_match(options: Dictionary) -> void:
 				map,
 				"--bots",
 				str(int(options.get("bots", 0))),
+				"--bot-skill",
+				String(options.get("bot_skill", "normal")),
 				"--score-limit",
 				str(int(options.get("score_limit", 75))),
 				"--time-limit",
@@ -196,6 +201,7 @@ func _start_server(options: Dictionary) -> void:
 	server.port = int(options.get("port", DEFAULT_PORT))
 	server.bots = int(options.get("bots", 0))
 	server.bots_deal_damage = options.has("bot-damage")
+	server.bot_skill = String(options.get("bot-skill", ""))
 	if String(options.get("name", "")) != "":
 		server.server_name = options["name"]
 	server.master_server = options.get("master", "")

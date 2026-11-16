@@ -118,6 +118,8 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 ## Phase 4: game loop
 
 - [x] Health, regeneration after a delay, death, and respawn (`shooter_sim::player`). Respawn picks the original spawn until the spawn system exists.
+- [x] Bots that play Team Deathmatch (`--bot-skill easy|normal|hard`): a navigation mesh baked from the map's collision, field-of-view and line-of-sight perception, reaction time, turn-rate-limited aim with shrinking error, bursts and taps, strafing, sprinting between fights, random loadouts, and players taking bots' places (`rust/game/src/net/bots.rs`, `rust/sim/src/bot.rs`).
+- [ ] Bots: use cover, throw nothing yet; smarter lane choice (they roam between random spots and the enemy's side).
 - [x] Team Deathmatch rules on the server: two teams (new players join the smaller), 75 kills or 10 minutes, no friendly fire, a lobby that waits for everyone to ready up, a countdown, and a results phase before the next match (`rust/sim/src/tdm.rs`).
 - [x] Round end screen: VICTORY, DEFEAT, or DRAW with the scoreboard, then the next match's countdown.
 - [x] Team colours from the match: teammates wear the allies' colours and show their name; enemies wear the enemies' colours and show none.
