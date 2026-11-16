@@ -51,6 +51,8 @@ Each map is lit by a CC0 sky image (an HDRI from [Poly Haven](https://polyhaven.
 | Slamcity | `qwantani_late_afternoon_puresky` | Late afternoon: a warm sun, long shadows, warm haze that fades the skyline. The light stands at 28°, above the sky's own sun (19°), so the streets stay lit |
 | Zombies | `qwantani_moon_noon_puresky` | Moonlit night with stars, blue moonlight, dim fog, and street lamps that flicker (`scripts/lamp_flicker.gd`) |
 
+![Before (left) and after (right) the baked lightmaps: Slamcity's street, a corner store, the alley, and the Testing Area](media/lightmaps.jpg)
+
 Each map also has a baked LightmapGI: three bounces of sunlight and sky light, so rooms, the walkway, and the shade under awnings get soft bounced light and darken where the sky can't reach. `tools/bake_lightmaps.sh` bakes it in two steps:
 
 1. `godot/tools/bake_map_meshes.gd` turns each map's visible CSG into meshes with lightmap UVs (saved in `godot/assets/maps/<map>/`), places them beside the CSG, and hides the CSG, which keeps its collision and impact surface. Running it again replaces what it made. Props get lightmap UVs at import.
