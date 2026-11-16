@@ -41,6 +41,10 @@ Props never change how a map plays. Each one that should block players or bullet
 
 ### Decals and trim
 
+![The three-lane Slamcity: Market Street from the west yard, the flats' roof over the street, the back alley with the fire escape, and the laundromat](media/slamcity-lanes.jpg)
+
+Slamcity is a three-lane Team Deathmatch map (`tools/build_slamcity.py`): the back alley with a fire escape up to the flats' roof, Market Street around the skate bowl, and joined interiors with windows onto the street, mirrored so both teams get the same lanes.
+
 ![Slamcity with road paint, manholes, damaged asphalt, and framed windows and storefronts](media/decals-trim.jpg)
 
 Slamcity's surfaces carry CC0 ambientCG decals (`tools/build_decals.py` packs them into `godot/assets/textures/decals/`): worn crossings, dashed centre lines, and edge lines (grey in the texture, painted white or yellow by the Decal's modulate), patched and broken asphalt, manholes, and rain streaks under the roof edges. Following the rule that texture detail stays quiet, there is no graffiti where players look for enemies.
