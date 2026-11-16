@@ -8,16 +8,11 @@ const ORANGE := Color("e88b36")
 const WHITE := Color("c8c9c8")
 const HOVER_COOLDOWN_MSEC := 400
 const MAPS := [
-	{"name": "GREEN RUN", "lat": 46.0, "lon": -122.0,
-		"image": "transit"},
-	{"name": "NUKETOWN ZOMBIES", "lat": 37.0, "lon": -116.0,
-		"image": "nuketown"},
-	{"name": "DIE RISE", "lat": 31.0, "lon": 121.0,
-		"image": "highrise"},
-	{"name": "BURIED", "lat": -12.0, "lon": 17.0,
-		"image": "buried"},
-	{"name": "ORIGINS", "lat": 50.0, "lon": 3.0,
-		"image": "tomb"},
+	{"name": "GREEN RUN", "lat": 46.0, "lon": -122.0, "image": "transit"},
+	{"name": "NUKETOWN ZOMBIES", "lat": 37.0, "lon": -116.0, "image": "nuketown"},
+	{"name": "DIE RISE", "lat": 31.0, "lon": 121.0, "image": "highrise"},
+	{"name": "BURIED", "lat": -12.0, "lon": 17.0, "image": "buried"},
+	{"name": "ORIGINS", "lat": 50.0, "lon": 3.0, "image": "tomb"},
 ]
 
 var selected_map := 0
@@ -85,7 +80,9 @@ func _build_landing() -> void:
 	_solo = _button(_landing, "SOLO", Vector2(110, 250), Vector2(360, 64), 42)
 	_solo.name = "Solo"
 	_solo.pressed.connect(open_solo)
-	for entry: Array in [["CUSTOM GAMES", 350], ["THEATRE", 414], ["LEADERBOARDS", 510], ["OPTIONS", 606]]:
+	for entry: Array in [
+		["CUSTOM GAMES", 350], ["THEATRE", 414], ["LEADERBOARDS", 510], ["OPTIONS", 606]
+	]:
 		var placeholder := _button(_landing, entry[0], Vector2(110, entry[1]), Vector2(360, 56), 32)
 		placeholder.disabled = true
 		placeholder.focus_mode = Control.FOCUS_NONE
@@ -102,14 +99,18 @@ func _build_selector() -> void:
 	_selector.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_canvas.add_child(_selector)
 	for i in MAPS.size():
-		var map_button := _button(_selector, MAPS[i]["name"], Vector2(110, 246 + i * 58), Vector2(400, 52), 31)
+		var map_button := _button(
+			_selector, MAPS[i]["name"], Vector2(110, 246 + i * 58), Vector2(400, 52), 31
+		)
 		map_button.name = "Map%d" % i
 		map_button.pressed.connect(select_map.bind(i))
 		map_button.focus_entered.connect(select_map.bind(i))
 		_map_buttons.append(map_button)
 		var marker := _button(_selector, "", Vector2.ZERO, Vector2(64, 64), 20)
 		marker.name = "Marker%d" % i
-		marker.icon = load(ASSETS + "images/menu_zm_map_signpost_%s.png" % MAPS[i]["image"]) as Texture2D
+		marker.icon = (
+			load(ASSETS + "images/menu_zm_map_signpost_%s.png" % MAPS[i]["image"]) as Texture2D
+		)
 		marker.expand_icon = true
 		marker.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		marker.tooltip_text = MAPS[i]["name"]
@@ -232,7 +233,9 @@ func _label(parent: Node, text: String, at: Vector2, font_size: int, color: Colo
 	return label
 
 
-func _button(parent: Node, text: String, at: Vector2, dimensions: Vector2, font_size: int) -> Button:
+func _button(
+	parent: Node, text: String, at: Vector2, dimensions: Vector2, font_size: int
+) -> Button:
 	var button := Button.new()
 	button.text = text
 	button.position = at
