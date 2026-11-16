@@ -12,6 +12,7 @@ var _loading := false
 var _scene_path := ARENA_PATH
 var _destination := "testing arena"
 var _zombies_menu: Node
+var _tdm_setup: Node
 
 @onready var _testing: Button = $Margin/Layout/Menu/TestingArea
 @onready var _status: Label = $Margin/Layout/Status
@@ -27,6 +28,7 @@ func _ready() -> void:
 	$Margin/Layout/Menu/Slamcity.pressed.connect(
 		func() -> void: _start_scene(SLAMCITY_PATH, "Slamcity")
 	)
+	$Margin/Layout/Menu/TeamDeathmatch.pressed.connect(_open_tdm)
 	$Margin/Layout/Menu/Multiplayer.pressed.connect(_open_multiplayer)
 	$Margin/Layout/Menu/Zombies.pressed.connect(_open_zombies)
 	_testing.grab_focus()
@@ -58,6 +60,38 @@ func _open_multiplayer(message := "") -> void:
 			$Margin.show()
 			$Margin/Layout/Menu/Multiplayer.grab_focus()
 	)
+
+
+func _open_tdm() -> void:
+	if _loading:
+		return
+	var setup := Control.new()
+	setup.set_script(load("res://scripts/tdm_setup.gd"))
+	setup.name = "TdmSetup"
+	_tdm_setup = setup
+	$Margin.hide()
+	add_child(setup)
+	setup.back_requested.connect(_close_tdm)
+	setup.start_requested.connect(_start_tdm)
+
+
+func _close_tdm() -> void:
+	if _tdm_setup != null:
+		_tdm_setup.queue_free()
+		_tdm_setup = null
+	$Margin.show()
+	$Margin/Layout/Menu/TeamDeathmatch.grab_focus()
+
+
+func _start_tdm(options: Dictionary) -> void:
+	_close_tdm()
+	_loading = true
+	_set_buttons_disabled(true)
+	_status.text = "Starting a local server…"
+	# Let the status draw before the map loads.
+	await get_tree().process_frame
+	await get_tree().process_frame
+	Net.start_local_match(options)
 
 
 func _open_zombies() -> void:
@@ -114,7 +148,9 @@ func _start_scene(path: String, destination: String) -> void:
 
 
 func _set_buttons_disabled(disabled: bool) -> void:
-	for name: String in ["TestingArea", "Slamcity", "Nuketown", "Multiplayer", "Zombies"]:
+	for name: String in [
+		"TestingArea", "TeamDeathmatch", "Slamcity", "Nuketown", "Multiplayer", "Zombies"
+	]:
 		($Margin/Layout/Menu.get_node(name) as Button).disabled = disabled
 
 

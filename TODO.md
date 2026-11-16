@@ -119,17 +119,18 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 
 - [x] Health, regeneration after a delay, death, and respawn (`shooter_sim::player`). Respawn picks the original spawn until the spawn system exists.
 - [x] Team Deathmatch rules on the server: two teams (new players join the smaller), 75 kills or 10 minutes, no friendly fire, a lobby that waits for everyone to ready up, a countdown, and a results phase before the next match (`rust/sim/src/tdm.rs`).
-- [ ] Round end screen.
+- [x] Round end screen: VICTORY, DEFEAT, or DRAW with the scoreboard, then the next match's countdown.
 - [x] Team colours from the match: teammates wear the allies' colours and show their name; enemies wear the enemies' colours and show none.
 - [x] Spawn system: a map's `SpawnPoints` (with an optional `team` metadata) are weighted away from enemies, their line of sight, and recent deaths, with a pull toward the player's own side. Matches start with each team on its own side.
-- [ ] Kill feed, scoreboard (Tab), and match timer HUD.
+- [x] Kill feed, scoreboard (Tab), and match timer HUD (`godot/scripts/net/tdm_hud.gd`).
 - [ ] Killcam from the server snapshot buffer.
 - [ ] First real map: a three-lane layout, blocked out with CSG, then modular CC0 kit pieces.
 - [x] Server browser: LAN search, master server list, favorites, direct connect by IP or host name, ping, and leave or lose the connection back to the browser.
 - [x] Lobby flow on the server: warm-up until every player is ready (`--auto-start` skips it).
-- [ ] Lobby screen: ready button, teams, loadout.
+- [x] Lobby and loadout menu (L): primary weapon choice (applies from the next spawn) and Ready; opens by itself in the lobby.
+- [x] A Team Deathmatch button on the title screen that runs a local server with bots and joins it.
 - [x] Player names: sent in the hello (`Settings.player_name`), cleaned by the server, and listed in the roster.
-- [ ] Show names in the kill feed and scoreboard.
+- [x] Names in the kill feed and scoreboard.
 
 ## Zombies
 

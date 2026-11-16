@@ -6,9 +6,18 @@ extends Node3D
 var _respawning := false
 
 
+## Called by the dedicated server before it removes the local player.
+func prepare_server() -> void:
+	set_physics_process(false)
+
+
 func _physics_process(_delta: float) -> void:
 	# The boundary walls should keep everyone in. If someone still escapes the
-	# playable space, recover them instead of leaving them falling forever.
-	if not _respawning and $Player.position.y < -20.0:
+	# playable space offline, recover them instead of leaving them falling
+	# forever. Online, the server respawns players.
+	var player := get_node_or_null("Player") as Node3D
+	if player == null or _respawning or Net.is_online():
+		return
+	if player.position.y < -20.0:
 		_respawning = true
 		get_tree().reload_current_scene.call_deferred()

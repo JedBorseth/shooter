@@ -50,7 +50,10 @@ godot --editor --path godot     # open the editor
 Rebuild with `cargo build` after changing Rust code. The editor hot-reloads the extension.
 
 Launch opens a lightweight title menu. **Testing Area**, the first option, loads the
-existing arena on selection. **Slamcity** is a small, fast city-block map: walk-up flats
+existing arena on selection. **Team Deathmatch** sets up a local match (your name, the
+map, team size from 1v1 to 6v6 with bots in the empty places, kill limit, and time limit),
+starts a dedicated server for it in the background, and joins it; leaving the match stops
+that server. **Slamcity** is a small, fast city-block map: walk-up flats
 with a first-floor walkway, corner stores, a sunken skate bowl in the middle, and alleys
 around the edges, with practice targets and a weapon rack at each spawn. It ships in every
 build. **Multiplayer** opens the server browser (see [Play online](#play-online)). **Zombies**
@@ -140,7 +143,9 @@ Multiplayer runs on a dedicated server, even on one machine. The server is the s
 godot --headless --path godot -- --server --name "Friday 1v1" --map nuketown --bots 3
 ```
 
-`--map arena` (default) and `--map nuketown` select the server map. Browser joins load that same map; command-line clients can pass `--map nuketown` with `--connect`. Protocol 4 rejects older clients that always load the arena.
+`--map arena` (default), `--map nuketown`, and `--map slamcity` select the server map. Browser joins load that same map; command-line clients can pass `--map nuketown` with `--connect`. Protocol 5 rejects older clients.
+
+Servers run Team Deathmatch: two teams, to 75 kills or 10 minutes (`--score-limit N`, `--time-limit MINUTES`). Players warm up in a lobby until everyone has pressed Ready in the loadout menu (L), then a countdown starts the match. `--auto-start` skips the ready-up. After the results, the next match counts down by itself.
 
 It listens for players on UDP port 27015 (`--port N` to change) and answers server browsers on the next port, 27016 (`--query-port N` to change). To run several servers on one machine, step the game port by 2 (27015, 27017, …) so the LAN search finds them all.
 
@@ -217,6 +222,8 @@ Export presets are in `godot/export_presets.cfg`. The Rust library for each plat
 | Refill all ammo to max (demo) | T |
 | Pause menu and settings | Esc |
 | Show or hide the controls line | F1 |
+| Scoreboard (online, hold) | Tab |
+| Loadout and Ready (online) | L |
 | Netcode overlay (online) | F3 |
 | Hitbox overlay (debug builds) | F4 |
 
@@ -231,6 +238,8 @@ Gamepads work too (Xbox layout shown; PlayStation and others use the same positi
 | Fire / aim down sights | RT / LT |
 | Reload | X |
 | Switch weapon | Y |
+| Scoreboard (online, hold) | Back / View |
+| Loadout and Ready (online) | D-pad up |
 
 On a gamepad, aim assist slows the right stick near a target and follows part of the target's movement relative to you while you move or look. It never snaps to a target, and the mouse never gets it. The HUD switches its controls hint to whichever device you used last. Stick speed, deadzones, response curve, invert Y, aim assist, and rumble are exported properties on the `Player` node; the settings menu does not show them yet.
 

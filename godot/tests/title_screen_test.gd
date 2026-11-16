@@ -30,6 +30,21 @@ func _run() -> void:
 	_check(not (menu.get_node("Nuketown") as Button).disabled, "Nuketown is a home-screen option")
 	_check(not (menu.get_node("Multiplayer") as Button).disabled, "Multiplayer opens its browser")
 	_check(not (menu.get_node("Zombies") as Button).disabled, "Zombies opens its menu")
+	var tdm := menu.get_node("TeamDeathmatch") as Button
+	_check(menu.get_child(1) == tdm and not tdm.disabled, "Team Deathmatch is the second option")
+	tdm.pressed.emit()
+	await process_frame
+	var setup := title.get_node_or_null("TdmSetup")
+	_check(setup != null, "Team Deathmatch opens its setup")
+	if setup != null:
+		var options: Dictionary = setup.options()
+		_check(
+			options == {"map": "slamcity", "bots": 11, "score_limit": 75, "time_limit": 10},
+			"the default local match is 6v6 Slamcity to 75 in 10 minutes, got %s" % options
+		)
+		setup.back_requested.emit()
+		await process_frame
+		_check(title.get_node_or_null("TdmSetup") == null, "Back closes the setup")
 	for i in 5:
 		await process_frame
 	for path: String in [
