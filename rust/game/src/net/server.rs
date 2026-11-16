@@ -2,9 +2,15 @@
 //!
 //! Each physics tick (`TICK_RATE`) it reads client packets, applies each player's
 //! queued inputs to that player's body (the same `body::tick` the client
-//! predicts with), then sends every client a snapshot: their own state at full
-//! precision plus everyone else, delta-compressed against the snapshot that
-//! client last acknowledged.
+//! predicts with), resolves the shots those inputs fired, then sends every
+//! client a snapshot: their own state at full precision plus everyone else,
+//! delta-compressed against the snapshot that client last acknowledged.
+//!
+//! Shots are checked with lag compensation (`shooter_sim::net::lag`): against
+//! every other player's hitboxes as the shooter saw them, rebuilt from the
+//! snapshots already sent, and against the map's walls in the present. The
+//! server applies the damage, keeps score, and tells the players involved
+//! through reliable [`GameEvent`]s.
 //!
 //! Started by `scripts/net/bootstrap.gd` with `-- --server`, or automatically
 //! in a dedicated server export.
@@ -13,21 +19,22 @@ use std::f32::consts::PI;
 
 use godot::classes::{
     ENetConnection, ENetPacketPeer, Engine, INode3D, Node3D, PackedScene,
-    PhysicsRayQueryParameters3D,
+    PhysicsDirectSpaceState3D, PhysicsRayQueryParameters3D,
 };
 use godot::global::Error;
 use godot::prelude::*;
-use shooter_sim::Vec2;
 use shooter_sim::net::input_queue::InputQueue;
+use shooter_sim::net::lag::{self, LagHistory, Pellet, Target};
 use shooter_sim::net::protocol::{
-    ClientMessage, OwnState, PROTOCOL_VERSION, PlayerView, Predicted, ServerMessage, Snapshot,
+    ClientMessage, GameEvent, MAX_EVENTS_PER_MESSAGE, OwnState, PROTOCOL_VERSION, PlayerView,
+    Predicted, ServerMessage, Snapshot,
 };
 use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::{CHANNEL_COUNT, DEFAULT_PORT, MAX_PLAYERS, TICK_DT, TICK_RATE, Tick};
-use shooter_sim::player::PlayerParams;
-use shooter_sim::player::{self, PlayerInput, PlayerState};
-use shooter_sim::rng;
-use shooter_sim::weapon::WeaponId;
+use shooter_sim::player::{self, PlayerEvent, PlayerInput, PlayerParams, PlayerState};
+use shooter_sim::score::{Kill, ScoreRules, ScoreState};
+use shooter_sim::weapon::{self, CombatEvent, WeaponId};
+use shooter_sim::{Vec2, rng};
 
 use super::transport::{self, NetEvent};
 use crate::body::{self, BodyParts};
@@ -71,13 +78,20 @@ pub struct NetServer {
     #[export]
     #[init(val = 3.0)]
     respawn_delay: f32,
+    /// Whether bots' bursts can hurt players. Off by default, so a test client
+    /// is not shot at random.
+    #[export]
+    bots_deal_damage: bool,
 
     host: Option<Gd<ENetConnection>>,
     clients: Vec<ClientSlot>,
     avatars: Vec<Avatar>,
     tick: Tick,
     history: SnapshotHistory,
+    /// Every snapshot's players for the last second, for lag compensation.
+    lag: LagHistory,
     params: PlayerParams,
+    score_rules: ScoreRules,
     net_events: Vec<NetEvent>,
     spawn: Vector3,
 }
@@ -90,6 +104,13 @@ struct ClientSlot {
     /// Newest snapshot the client has acknowledged.
     ack: Option<Tick>,
     connected_at: Tick,
+    /// The newest view tick the client sent, for shots fired by inputs
+    /// without one.
+    view_tick: Option<f64>,
+    /// The client asked for the rewound hitboxes of its shots (F4 overlay).
+    debug_rewound: bool,
+    /// Game events to send reliably at the end of the tick.
+    outbox: Vec<GameEvent>,
 }
 
 struct Avatar {
@@ -102,6 +123,22 @@ struct Avatar {
     bot: bool,
     spawn: Vector3,
     respawn_in: f32,
+    /// Tick of the latest spawn: shots rewound to before it cannot hit this life.
+    spawned_at: Tick,
+    score: ScoreState,
+}
+
+/// A shot fired this tick, waiting to be checked.
+struct Shot {
+    shooter: u8,
+    /// Eye position after the input that fired, as the client computes it.
+    eye: Vector3,
+    yaw: f32,
+    pitch: f32,
+    weapon: WeaponId,
+    aim_offset: Vec2,
+    shot: u32,
+    view_tick: Option<f64>,
 }
 
 #[godot_api]
@@ -156,6 +193,7 @@ impl INode3D for NetServer {
         {
             self.broadcast();
         }
+        self.send_events();
         host.flush();
     }
 }
@@ -171,6 +209,15 @@ impl NetServer {
     #[func]
     fn server_tick(&self) -> i64 {
         i64::from(self.tick)
+    }
+
+    /// Match score of a player (tests and debugging), or -1 if absent.
+    #[func]
+    fn player_score(&self, id: i32) -> i64 {
+        self.avatars
+            .iter()
+            .find(|a| i32::from(a.id) == id)
+            .map_or(-1, |a| i64::from(a.score.score))
     }
 }
 
@@ -207,6 +254,9 @@ impl NetServer {
                     inputs: InputQueue::default(),
                     ack: None,
                     connected_at: self.tick,
+                    view_tick: None,
+                    debug_rewound: false,
+                    outbox: Vec::new(),
                 });
             }
             NetEvent::Disconnect(peer) => {
@@ -277,6 +327,9 @@ impl NetServer {
                     client.ack = Some(ack);
                 }
             }
+            ClientMessage::Debug { rewound_hitboxes } => {
+                self.clients[index].debug_rewound = rewound_hitboxes;
+            }
         }
     }
 
@@ -320,6 +373,8 @@ impl NetServer {
             bot,
             spawn: position,
             respawn_in: 0.0,
+            spawned_at: self.tick,
+            score: ScoreState::default(),
         });
     }
 
@@ -330,13 +385,17 @@ impl NetServer {
         }
     }
 
-    /// Applies each player's inputs for this tick.
+    /// Applies each player's inputs for this tick, then resolves the shots
+    /// they fired. Shots fired in the same tick all count, so two players who
+    /// fire at each other in the same tick can trade kills.
     fn simulate(&mut self) {
         let mut events = Vec::new();
+        let mut shots = Vec::new();
+        let mut fall_deaths = Vec::new();
         let tick = self.tick;
         for avatar in &mut self.avatars {
-            let inputs: Vec<PlayerInput> = if avatar.bot {
-                vec![bot_input(avatar, tick)]
+            let inputs: Vec<(PlayerInput, Option<f64>)> = if avatar.bot {
+                vec![(bot_input(avatar, tick), None)]
             } else {
                 let Some(client) = self
                     .clients
@@ -345,9 +404,18 @@ impl NetServer {
                 else {
                     continue;
                 };
-                client.inputs.take().map(|(_, input)| input).collect()
+                let inputs: Vec<PlayerInput> = client.inputs.take().map(|(_, i)| i).collect();
+                inputs
+                    .into_iter()
+                    .map(|input| {
+                        if input.view_tick.is_some() {
+                            client.view_tick = input.view_tick;
+                        }
+                        (input, client.view_tick)
+                    })
+                    .collect()
             };
-            for input in &inputs {
+            for (input, view_tick) in &inputs {
                 let mut input = *input;
                 if let Some(weapon) = input.pickup
                     && !pickup_in_reach(avatar, &input, weapon, &self.params)
@@ -356,9 +424,6 @@ impl NetServer {
                 }
                 let input = &input;
                 events.clear();
-                // Combat events (shots) are resolved on the server in Phase 3,
-                // with lag compensation; for now remote clients see shots
-                // through the replicated shot counter.
                 body::tick(
                     &mut avatar.parts,
                     &self.params,
@@ -368,7 +433,35 @@ impl NetServer {
                 );
                 avatar.yaw = input.yaw;
                 avatar.pitch = input.pitch;
+                for event in &events {
+                    match *event {
+                        PlayerEvent::Combat(CombatEvent::Fired {
+                            weapon,
+                            aim_offset,
+                            shot,
+                        }) => {
+                            let p = &avatar.predicted;
+                            let eye = to_godot(p.position)
+                                + Vector3::UP
+                                    * self.params.movement.eye_height(p.state.movement.stance);
+                            shots.push(Shot {
+                                shooter: avatar.id,
+                                eye,
+                                yaw: input.yaw,
+                                pitch: input.pitch,
+                                weapon,
+                                aim_offset,
+                                shot,
+                                view_tick: *view_tick,
+                            });
+                        }
+                        // Only falls kill inside the step; shots are resolved below.
+                        PlayerEvent::Died => fall_deaths.push(avatar.id),
+                        _ => {}
+                    }
+                }
             }
+            avatar.score.tick(TICK_DT);
             if avatar.bot {
                 let combat = &mut avatar.predicted.state.combat;
                 if combat.weapon().magazine == 0 && combat.weapon().reserve == 0 {
@@ -385,9 +478,185 @@ impl NetServer {
                         position: to_sim(avatar.spawn),
                         on_floor: false,
                     };
+                    avatar.spawned_at = tick;
                     body::place(&mut avatar.parts, &self.params.movement, &avatar.predicted);
                 }
             }
+        }
+        for id in fall_deaths {
+            self.record_death(id);
+        }
+        for shot in shots {
+            self.resolve_shot(&shot);
+        }
+    }
+
+    /// Checks one shot against the map now and the other players as the
+    /// shooter saw them, then applies its damage.
+    fn resolve_shot(&mut self, shot: &Shot) {
+        let Some(shooter) = self.avatars.iter().find(|a| a.id == shot.shooter) else {
+            return;
+        };
+        if shooter.bot && !self.bots_deal_damage {
+            return;
+        }
+        let Some(mut space) = shooter
+            .parts
+            .body
+            .get_world_3d()
+            .and_then(|world| world.get_direct_space_state())
+        else {
+            return;
+        };
+        let def = shot.weapon.def();
+        let origin = to_sim(shot.eye);
+        let pellets: Vec<Pellet> = (0..def.pellets)
+            .map(|pellet| {
+                let offset =
+                    shot.aim_offset + weapon::pellet_offset(shot.weapon, shot.shot, pellet);
+                let direction = player::aim_direction(shot.yaw, shot.pitch, offset).normalize();
+                let to = shot.eye + to_godot(direction) * def.range;
+                // Walls do not move, so they are tested in the present.
+                let max_distance = world_hit(&mut space, shot.eye, to)
+                    .map_or(def.range, |hit| shot.eye.distance_to(hit));
+                Pellet {
+                    origin,
+                    direction,
+                    max_distance,
+                }
+            })
+            .collect();
+
+        let rewind = self.lag.rewind_target(self.tick, shot.view_tick);
+        let targets: Vec<Target> = self
+            .avatars
+            .iter()
+            .filter(|a| {
+                a.id != shot.shooter
+                    && a.predicted.state.alive()
+                    && f64::from(a.spawned_at) <= rewind
+            })
+            .filter_map(|a| {
+                let pose = self.lag.sample(a.id, rewind)?.hitbox_pose()?;
+                Some(Target { id: a.id, pose })
+            })
+            .collect();
+        if self
+            .client_of(shot.shooter)
+            .is_some_and(|c| c.debug_rewound)
+        {
+            let poses = targets.iter().map(|t| (t.id, t.pose)).collect();
+            self.send_event(
+                shot.shooter,
+                GameEvent::Rewound {
+                    shot: shot.shot,
+                    tick: rewind,
+                    poses,
+                },
+            );
+        }
+
+        let mut kills = Vec::new();
+        for hit in lag::resolve_shot(def, &pellets, &targets) {
+            let Some(victim) = self.avatars.iter_mut().find(|a| a.id == hit.id) else {
+                continue;
+            };
+            let killed = player::apply_damage(
+                &mut victim.predicted.state,
+                hit.damage,
+                false,
+                &mut Vec::new(),
+            );
+            self.send_event(
+                shot.shooter,
+                GameEvent::Hit {
+                    victim: hit.id,
+                    shot: shot.shot,
+                    damage: hit.damage,
+                    headshot: hit.headshot,
+                    killed,
+                },
+            );
+            self.send_event(
+                hit.id,
+                GameEvent::Hurt {
+                    attacker: shot.shooter,
+                    from: origin,
+                    damage: hit.damage,
+                    killed,
+                },
+            );
+            if killed {
+                kills.push(Kill {
+                    distance: hit.distance,
+                    headshot: hit.headshot,
+                });
+                self.broadcast_event(&GameEvent::Kill {
+                    killer: shot.shooter,
+                    victim: hit.id,
+                    weapon: shot.weapon,
+                    headshot: hit.headshot,
+                });
+                self.record_death(hit.id);
+            }
+        }
+        if !kills.is_empty() {
+            let rules = self.score_rules;
+            let Some(shooter) = self.avatars.iter_mut().find(|a| a.id == shot.shooter) else {
+                return;
+            };
+            let awards = shooter.score.on_shot_kills(&rules, &kills);
+            let totals = shooter.score.totals();
+            self.send_event(shot.shooter, GameEvent::Score { awards, totals });
+        }
+    }
+
+    /// Counts a death and tells the player their new totals.
+    fn record_death(&mut self, id: u8) {
+        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
+            return;
+        };
+        avatar.score.on_death();
+        let totals = avatar.score.totals();
+        self.send_event(
+            id,
+            GameEvent::Score {
+                awards: Vec::new(),
+                totals,
+            },
+        );
+    }
+
+    fn client_of(&self, id: u8) -> Option<&ClientSlot> {
+        self.clients.iter().find(|c| c.player == Some(id))
+    }
+
+    /// Queues an event for one player's client (bots have none).
+    fn send_event(&mut self, id: u8, event: GameEvent) {
+        if let Some(client) = self.clients.iter_mut().find(|c| c.player == Some(id)) {
+            client.outbox.push(event);
+        }
+    }
+
+    fn broadcast_event(&mut self, event: &GameEvent) {
+        for client in &mut self.clients {
+            if client.player.is_some() {
+                client.outbox.push(event.clone());
+            }
+        }
+    }
+
+    /// Sends each client the events queued this tick, reliably and in order.
+    fn send_events(&mut self) {
+        for client in &mut self.clients {
+            if client.outbox.is_empty() {
+                continue;
+            }
+            for chunk in client.outbox.chunks(MAX_EVENTS_PER_MESSAGE) {
+                let message = ServerMessage::Events(chunk.to_vec());
+                transport::send_reliable(&mut client.peer, &message.encode(&[]));
+            }
+            client.outbox.clear();
         }
     }
 
@@ -400,6 +669,7 @@ impl NetServer {
             .collect();
         views.sort_by_key(|v| v.id);
         self.history.insert(self.tick, views.clone());
+        self.lag.record(self.tick, views.clone());
 
         for client in &mut self.clients {
             let Some(id) = client.player else { continue };
@@ -445,6 +715,20 @@ fn bot_input(avatar: &Avatar, tick: Tick) -> PlayerInput {
         ..Default::default()
     }
     .quantized()
+}
+
+/// Where a ray from `from` to `to` first meets the map, if it does. Players
+/// are on their own layer, so only walls, floors, and props count.
+fn world_hit(
+    space: &mut Gd<PhysicsDirectSpaceState3D>,
+    from: Vector3,
+    to: Vector3,
+) -> Option<Vector3> {
+    let query = PhysicsRayQueryParameters3D::create_ex(from, to)
+        .collision_mask(WORLD_LAYER)
+        .done()?;
+    let hit = space.intersect_ray(&query);
+    hit.get_or_nil("position").try_to::<Vector3>().ok()
 }
 
 /// True if the weapon rack the input claims is really under this player's

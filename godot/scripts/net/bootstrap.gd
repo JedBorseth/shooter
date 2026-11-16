@@ -1,7 +1,9 @@
 extends Node
 ## Starts networking from command-line options given after `--`:
 ##
-##   --server [--port N] [--bots N]   run as a dedicated server (use with --headless)
+##   --server [--port N] [--bots N] [--bot-damage]
+##                                    run as a dedicated server (use with --headless);
+##                                    with --bot-damage the bots' bursts hurt players
 ##   --connect HOST[:PORT] [--lag MS] [--jitter MS] [--loss PERCENT]
 ##                                    join a server; lag, jitter, and loss are
 ##                                    simulated in each direction for testing
@@ -46,6 +48,7 @@ func _start_server(options: Dictionary) -> void:
 	var server := (load(SERVER_SCENE) as PackedScene).instantiate() as NetServer
 	server.port = int(options.get("port", DEFAULT_PORT))
 	server.bots = int(options.get("bots", 0))
+	server.bots_deal_damage = options.has("bot-damage")
 	var previous := tree.current_scene
 	tree.root.add_child(server)
 	tree.current_scene = server

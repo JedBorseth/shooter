@@ -20,6 +20,7 @@ movement and gunplay, with 6v6 matches on dedicated servers.
 | Hosting | Dedicated headless server only, even for local play. No listen server | One authority model. Client and server code never share a process, so nothing leaks between them. |
 | Transport | Godot's `ENetConnection` used only as a UDP packet pipe (unreliable, unsequenced; reliable only for the handshake). Serialization, ticks, input buffers, prediction, and interpolation are in `rust/sim/src/net` | ENet ships with Godot on every platform, with connection handling, fragmentation, and RTT and loss statistics. A Rust UDP stack (`renet`) would duplicate that. Owning the wire format keeps it bit-packed, delta-compressed, and testable without the engine. |
 | Input model | Source-style numbered inputs. Clients send every unacknowledged input each tick. The server applies each client's inputs in order, one per tick, two or three when a backlog builds, and never invents input when none has arrived | The server runs exactly the inputs the client predicted with, so prediction only misses when something the client could not know happens. No clock synchronization needed. |
+| Lag compensation | The server checks each shot against other players as the shooter drew them: firing inputs carry the client's interpolation tick, and the server rebuilds hitboxes at that tick from the snapshots it sent, interpolated with the same code as the client. Rewind is capped at 300 ms; walls are tested in the present. Shooter-side hit markers are predicted; kills and score come only from the server | Favor the shooter, as in Call of Duty and Source. Rebuilding from the sent snapshots reproduces exactly what the client drew. The cap keeps players with very high pings from shooting targets long gone behind cover |
 | Aim assist | Gamepad only, on by default: slowdown near targets plus rotational assist while moving or looking. No snap-to-target. Computed on the client; the server only sees view angles | The console-shooter standard. No snap keeps it from aiming for the player. |
 | Feel | Arcade, not simulation: about 200 to 300 ms time-to-kill, fast handling, loud hit feedback | The target is classic Call of Duty pacing. See "Arcade feel rules" below. |
 
@@ -59,8 +60,13 @@ Each phase ends with something playable.
    - ✅ Client (`NetClient`, `-- --connect`): prediction and reconciliation with replay through the same `body::tick` the server runs, visual error smoothing, adaptive snapshot interpolation for remote players, a link conditioner (latency, jitter, loss), and an F3 overlay.
    - ✅ Determinism: a one-minute scripted run hashes the same in debug and release, and on Linux, Windows, and macOS in CI.
    - ✅ Remote players are drawn as the soldier: locomotion, aim, weapon in hand, reload, fire, and death from snapshot state.
-   - Next: Phase 3.
+   - ✅ Server-side shots: the server resolves every shot, applies damage, and keeps score (`rust/sim/src/score.rs` now runs on the server). Hits, damage taken, kills, and score go to clients as reliable game events on the reliable ENet channel.
+   - ✅ Input rate cap: draining a backlog is paid for with credit that builds up one input per tick, so no client applies more than one input per tick over time.
+   - Next: Phase 4.
 3. **Lag compensation.** The server keeps a hitbox history ring buffer and rewinds to the shooter's view time to check hits. Favor-the-shooter with a rewind cap.
+   - ✅ `rust/sim/src/net/lag.rs`: a second of sent snapshots, sampled exactly like the client's interpolation buffer; rewind to the view tick each firing input carries, capped at 300 ms; pellets against every target's hitboxes, stopped by walls tested on the server's map. Unit tests show a strafing target hit where the shooter saw it and missed without the rewind.
+   - ✅ F4 draws the server's rewound hitboxes for each of your shots (white) next to the client's.
+   - ✅ The netcode test kills a strafing bot through a 110 ms, 5% loss link.
 4. **Game loop.** Team Deathmatch: spawns, health and damage falloff, kill feed, scoreboard, respawn, match timer, first real map.
 5. **Online services.** Self-hosted Nakama for accounts, parties, and matchmaking. Dockerized headless servers. Agones later, to start servers on demand.
 6. **Polish.** Ragdolls and directional hit reactions, audio occlusion and positional mixing, killcam (replay from the server snapshot buffer), post-processing, server-side anti-cheat (input validation, rate limits).

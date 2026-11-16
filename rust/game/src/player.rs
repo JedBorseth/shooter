@@ -15,8 +15,14 @@
 //! unconfirmed inputs when the server disagrees. Corrections are blended out
 //! visually instead of snapping the camera. The server owns respawns and the
 //! demo ammo refill.
+//!
+//! Online, the server also owns damage, kills, and score. Firing inputs carry
+//! the tick other players were drawn at, so the server can check the shot
+//! against what this player saw. Hit markers on other players show at once
+//! (predicted); the server's verdict then confirms kills, adds any hit the
+//! prediction missed, and sends score awards, damage taken, and deaths.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::f32::consts::PI;
 
 use godot::classes::input::MouseMode;
@@ -35,7 +41,7 @@ use shooter_sim::movement::{MoveEnv, Stance};
 use shooter_sim::net::prediction::{ErrorSmoothing, Prediction, Reconciled};
 use shooter_sim::net::protocol::{OwnState, Predicted};
 use shooter_sim::player::{self, PlayerEvent, PlayerInput, PlayerParams, PlayerState};
-use shooter_sim::score::{Kill, ScoreRules, ScoreState};
+use shooter_sim::score::{Kill, ScoreRules, ScoreState, ScoreTotals, Scored};
 use shooter_sim::weapon::{self, Action, CombatEvent, FireMode, LoadStage, Reload, WeaponId};
 use shooter_sim::{Vec2, Vec3, rng};
 
@@ -201,6 +207,12 @@ pub struct FpsPlayer {
     on_floor: bool,
     /// Present while connected to a server.
     prediction: Option<Prediction>,
+    /// Online: the server tick other players were last drawn at, sent with
+    /// firing inputs for lag compensation.
+    view_tick: Option<f64>,
+    /// Online: recent shots whose hit marker was already shown from local
+    /// hitscan, so the server's confirmation does not show it again.
+    predicted_hits: VecDeque<u32>,
     smoothing: ErrorSmoothing,
     yaw: f32,
     pitch: f32,
@@ -694,6 +706,8 @@ impl FpsPlayer {
     /// Back to offline play (the connection ended).
     pub(crate) fn stop_prediction(&mut self) {
         self.prediction = None;
+        self.view_tick = None;
+        self.predicted_hits.clear();
     }
 
     pub(crate) fn prediction(&self) -> Option<&Prediction> {
@@ -736,6 +750,49 @@ impl FpsPlayer {
             }
         }
         result
+    }
+
+    /// Online: the server tick other players are drawn at this frame.
+    pub(crate) fn set_view_tick(&mut self, tick: f64) {
+        self.view_tick = Some(tick);
+    }
+
+    /// The server's verdict on one of our shots that hit `victim`.
+    pub(crate) fn on_server_hit(&mut self, shot: u32, headshot: bool, killed: bool) {
+        if killed {
+            let headshot_scale = if headshot { 1.6 } else { 1.0 };
+            self.kick_fov(-self.kill_fov_kick * headshot_scale);
+            self.signals().hit_confirmed().emit(true, headshot);
+        } else if !self.predicted_hits.contains(&shot) {
+            // Local hitscan missed but the server hit: show it now.
+            self.signals().hit_confirmed().emit(false, headshot);
+        }
+    }
+
+    /// Another player hit us. Health itself arrives with the next snapshot.
+    pub(crate) fn on_server_hurt(&mut self, damage: f32, from: Vector3, killed: bool) {
+        self.handle_vitals(
+            &PlayerEvent::Damaged {
+                amount: damage,
+                fall: false,
+            },
+            from,
+        );
+        if killed {
+            self.handle_vitals(&PlayerEvent::Died, from);
+        }
+    }
+
+    /// Awards and match totals from the server.
+    pub(crate) fn on_server_score(&mut self, awards: &[Scored], totals: ScoreTotals) {
+        self.score.set_totals(totals);
+        for scored in awards {
+            self.signals().scored().emit(
+                scored.points as i64,
+                &GString::from(scored.award.label().as_str()),
+                scored.award.is_medal(),
+            );
+        }
     }
 
     /// The state prediction records: simulation plus what the engine owns.
@@ -824,6 +881,11 @@ impl FpsPlayer {
             reload,
             switch_to,
             pickup: if interact { self.look_target } else { None },
+            view_tick: if fire && self.prediction.is_some() {
+                self.view_tick
+            } else {
+                None
+            },
         }
     }
 
@@ -1067,7 +1129,10 @@ impl FpsPlayer {
             }
             PlayerEvent::Died => {
                 self.respawn_in = self.respawn_delay;
-                self.score.on_death();
+                // Online, the server counts deaths and sends the totals.
+                if self.prediction.is_none() {
+                    self.score.on_death();
+                }
                 self.signals().died().emit();
             }
             _ => {}
@@ -1205,6 +1270,12 @@ impl FpsPlayer {
         }
         if let Some((killed, headshot)) = confirmed {
             self.signals().hit_confirmed().emit(killed, headshot);
+            if self.prediction.is_some() {
+                self.predicted_hits.push_back(shot);
+                if self.predicted_hits.len() > 64 {
+                    self.predicted_hits.pop_front();
+                }
+            }
         }
         for scored in self.score.on_shot_kills(&self.score_rules, &kills) {
             self.signals().scored().emit(

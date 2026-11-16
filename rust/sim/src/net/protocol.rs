@@ -11,18 +11,22 @@
 //!   receiver's own authoritative state at full precision (prediction compares
 //!   it bit for bit) and every other player quantized and delta-compressed
 //!   against the last snapshot that client acknowledged.
+//! - Server → client, reliable: [`GameEvent`]s (hits, damage, kills, score),
+//!   which happen once and must not be lost.
 
 use glam::{IVec3, Vec2, Vec3};
 
 use super::Tick;
 use super::bits::{BitReader, BitWriter, DecodeError, DecodeResult};
+use crate::hitbox::HitboxPose;
 use crate::look::PITCH_LIMIT;
 use crate::movement::{MoveState, Stance};
 use crate::player::{PlayerInput, PlayerState};
+use crate::score::{Award, ScoreTotals, Scored};
 use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState};
 
 /// Bumped whenever the wire format changes; mismatched clients are rejected.
-pub const PROTOCOL_VERSION: u16 = 2;
+pub const PROTOCOL_VERSION: u16 = 3;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
 pub const MAX_INPUTS_PER_PACKET: usize = 24;
 /// Wish vectors are sent as signed bytes; prediction must use the same values.
@@ -30,13 +34,28 @@ const WISH_SCALE: f32 = 127.0;
 /// Remote positions are sent in millimetres.
 const POSITION_SCALE: f32 = 1000.0;
 const ANGLE_STEPS: f32 = 65536.0;
+/// View ticks are sent in 1/256 of a tick (about 33 µs at 120 Hz).
+const VIEW_TICK_STEPS: f64 = 256.0;
+/// View ticks at or past this many ticks do not fit the wire format.
+const VIEW_TICK_LIMIT: f64 = 4_294_967_296.0;
+/// Cap on events in one reliable message.
+pub const MAX_EVENTS_PER_MESSAGE: usize = 64;
+/// Cap on players in one [`GameEvent::Rewound`].
+const MAX_REWOUND_POSES: usize = 32;
 
 const TAG_BITS: u32 = 3;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ClientMessage {
-    Hello { version: u16 },
+    Hello {
+        version: u16,
+    },
     Input(InputPacket),
+    /// Debug: ask for the hitboxes the server rewinds for each of our shots
+    /// ([`GameEvent::Rewound`]). Sent reliably when the F4 overlay toggles.
+    Debug {
+        rewound_hitboxes: bool,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -60,6 +79,49 @@ pub enum ServerMessage {
         server_version: u16,
     },
     Snapshot(Snapshot),
+    /// Things that happened once, sent reliably and in order.
+    Events(Vec<GameEvent>),
+}
+
+/// A one-off game event. The server decides every hit and kill; clients only
+/// present them.
+#[derive(Clone, Debug, PartialEq)]
+pub enum GameEvent {
+    /// To the shooter: their shot number `shot` hit `victim`. A shotgun blast
+    /// is one event per victim, with the pellets' damage summed.
+    Hit {
+        victim: u8,
+        shot: u32,
+        damage: f32,
+        headshot: bool,
+        killed: bool,
+    },
+    /// To the victim: `attacker` (eye at `from`) hit them.
+    Hurt {
+        attacker: u8,
+        from: Vec3,
+        damage: f32,
+        killed: bool,
+    },
+    /// To everyone: a kill, for the kill feed.
+    Kill {
+        killer: u8,
+        victim: u8,
+        weapon: WeaponId,
+        headshot: bool,
+    },
+    /// To one player: awards just earned, if any, and their match totals.
+    Score {
+        awards: Vec<Scored>,
+        totals: ScoreTotals,
+    },
+    /// Debug, to a shooter who asked: every other player's hitbox pose as the
+    /// server rewound it to check shot `shot`, at server tick `tick`.
+    Rewound {
+        shot: u32,
+        tick: f64,
+        poses: Vec<(u8, HitboxPose)>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -169,8 +231,17 @@ impl PlayerInput {
         self.pitch = self.pitch.clamp(-PITCH_LIMIT, PITCH_LIMIT);
         self.switch_to = self.switch_to.filter(|slot| *slot < 4);
         self.pickup = self.pickup.filter(|id| valid_weapon(*id));
+        self.view_tick = self.view_tick.and_then(quantize_view_tick);
         self
     }
+}
+
+/// A view tick as the wire carries it, or `None` if it cannot be sent.
+fn quantize_view_tick(tick: f64) -> Option<f64> {
+    // NaN and infinities fall outside the range too.
+    (0.0..VIEW_TICK_LIMIT)
+        .contains(&tick)
+        .then(|| (tick * VIEW_TICK_STEPS).floor() / VIEW_TICK_STEPS)
 }
 
 // ---------------------------------------------------------------------------
@@ -192,15 +263,23 @@ impl ClientMessage {
                 let skipped = (packet.inputs.len() - count) as u32;
                 w.varint(packet.first_seq.wrapping_add(skipped));
                 w.varint(count as u32);
-                let mut previous = None;
+                let mut previous: Option<PlayerInput> = None;
                 for input in &packet.inputs[packet.inputs.len() - count..] {
-                    let same = previous == Some(*input);
+                    let input = PlayerInput {
+                        view_tick: input.view_tick.and_then(quantize_view_tick),
+                        ..*input
+                    };
+                    let same = previous == Some(input);
                     w.bool(same);
                     if !same {
-                        write_input(&mut w, input);
+                        write_input(&mut w, &input, previous.and_then(|p| p.view_tick));
                     }
-                    previous = Some(*input);
+                    previous = Some(input);
                 }
+            }
+            ClientMessage::Debug { rewound_hitboxes } => {
+                w.bits(2, TAG_BITS);
+                w.bool(*rewound_hitboxes);
             }
         }
         w.finish()
@@ -222,7 +301,8 @@ impl ClientMessage {
                     let input = if r.bool()? {
                         *inputs.last().ok_or(DecodeError::Invalid("repeat"))?
                     } else {
-                        read_input(&mut r)?
+                        let previous = inputs.last().and_then(|p| p.view_tick);
+                        read_input(&mut r, previous)?
                     };
                     inputs.push(input);
                 }
@@ -232,12 +312,18 @@ impl ClientMessage {
                     inputs,
                 }))
             }
+            2 => Ok(ClientMessage::Debug {
+                rewound_hitboxes: r.bool()?,
+            }),
             _ => Err(DecodeError::Invalid("client message tag")),
         }
     }
 }
 
-fn write_input(w: &mut BitWriter, input: &PlayerInput) {
+/// Writes an input. `previous_view` is the view tick of the input before it in
+/// the packet: while firing, view ticks advance about one tick per input, so
+/// they are sent as a small difference from it.
+fn write_input(w: &mut BitWriter, input: &PlayerInput, previous_view: Option<f64>) {
     let byte = |v: f32| ((v.clamp(-1.0, 1.0) * WISH_SCALE).round() as i8) as u8;
     w.u8(byte(input.wish.x));
     w.u8(byte(input.wish.y));
@@ -267,9 +353,52 @@ fn write_input(w: &mut BitWriter, input: &PlayerInput) {
         }
         _ => w.bool(false),
     }
+    write_view_tick(w, input.view_tick, previous_view);
 }
 
-fn read_input(r: &mut BitReader) -> DecodeResult<PlayerInput> {
+/// View ticks in wire steps. Only called on quantized ticks, which are exact.
+fn view_steps(tick: f64) -> i64 {
+    (tick * VIEW_TICK_STEPS) as i64
+}
+
+fn write_view_tick(w: &mut BitWriter, tick: Option<f64>, previous: Option<f64>) {
+    let Some(tick) = tick.and_then(quantize_view_tick) else {
+        w.bool(false);
+        return;
+    };
+    w.bool(true);
+    let delta = previous
+        .map(|p| view_steps(tick) - view_steps(p))
+        .and_then(|d| i32::try_from(d).ok());
+    w.bool(delta.is_some());
+    match delta {
+        Some(delta) => w.varint_signed(delta),
+        None => {
+            let steps = view_steps(tick);
+            w.u32((steps >> 8) as u32);
+            w.u8(steps as u8);
+        }
+    }
+}
+
+fn read_view_tick(r: &mut BitReader, previous: Option<f64>) -> DecodeResult<Option<f64>> {
+    if !r.bool()? {
+        return Ok(None);
+    }
+    let steps = if r.bool()? {
+        let previous = previous.ok_or(DecodeError::Invalid("view tick delta"))?;
+        view_steps(previous) + i64::from(r.varint_signed()?)
+    } else {
+        (i64::from(r.u32()?) << 8) | i64::from(r.u8()?)
+    };
+    let tick = steps as f64 / VIEW_TICK_STEPS;
+    if !(0.0..VIEW_TICK_LIMIT).contains(&tick) {
+        return Err(DecodeError::Invalid("view tick"));
+    }
+    Ok(Some(tick))
+}
+
+fn read_input(r: &mut BitReader, previous_view: Option<f64>) -> DecodeResult<PlayerInput> {
     let mut axis = || -> DecodeResult<f32> {
         let v = r.u8()? as i8;
         if v == i8::MIN {
@@ -299,6 +428,7 @@ fn read_input(r: &mut BitReader) -> DecodeResult<PlayerInput> {
     } else {
         None
     };
+    let view_tick = read_view_tick(r, previous_view)?;
     Ok(PlayerInput {
         wish,
         yaw,
@@ -311,6 +441,7 @@ fn read_input(r: &mut BitReader) -> DecodeResult<PlayerInput> {
         reload,
         switch_to,
         pickup,
+        view_tick,
     })
 }
 
@@ -342,6 +473,14 @@ impl ServerMessage {
                 w.bits(2, TAG_BITS);
                 write_snapshot(&mut w, snapshot, baseline);
             }
+            ServerMessage::Events(events) => {
+                w.bits(3, TAG_BITS);
+                let count = events.len().min(MAX_EVENTS_PER_MESSAGE);
+                w.varint(count as u32);
+                for event in &events[..count] {
+                    write_event(&mut w, event);
+                }
+            }
         }
         w.finish()
     }
@@ -371,9 +510,204 @@ impl ServerMessage {
                 server_version: r.u16()?,
             }),
             2 => Ok(ServerMessage::Snapshot(read_snapshot(&mut r, baseline)?)),
+            3 => {
+                let count = r.varint()? as usize;
+                if count > MAX_EVENTS_PER_MESSAGE {
+                    return Err(DecodeError::Invalid("event count"));
+                }
+                let mut events = Vec::with_capacity(count);
+                for _ in 0..count {
+                    events.push(read_event(&mut r)?);
+                }
+                Ok(ServerMessage::Events(events))
+            }
             _ => Err(DecodeError::Invalid("server message tag")),
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Reliable game events
+
+const EVENT_TAG_BITS: u32 = 3;
+
+fn write_event(w: &mut BitWriter, event: &GameEvent) {
+    match event {
+        GameEvent::Hit {
+            victim,
+            shot,
+            damage,
+            headshot,
+            killed,
+        } => {
+            w.bits(0, EVENT_TAG_BITS);
+            w.u8(*victim);
+            w.varint(*shot);
+            w.f32(*damage);
+            w.bool(*headshot);
+            w.bool(*killed);
+        }
+        GameEvent::Hurt {
+            attacker,
+            from,
+            damage,
+            killed,
+        } => {
+            w.bits(1, EVENT_TAG_BITS);
+            w.u8(*attacker);
+            write_vec3(w, *from);
+            w.f32(*damage);
+            w.bool(*killed);
+        }
+        GameEvent::Kill {
+            killer,
+            victim,
+            weapon,
+            headshot,
+        } => {
+            w.bits(2, EVENT_TAG_BITS);
+            w.u8(*killer);
+            w.u8(*victim);
+            write_weapon(w, *weapon);
+            w.bool(*headshot);
+        }
+        GameEvent::Score { awards, totals } => {
+            w.bits(3, EVENT_TAG_BITS);
+            let count = awards.len().min(MAX_EVENTS_PER_MESSAGE);
+            w.varint(count as u32);
+            for scored in &awards[..count] {
+                write_award(w, scored.award);
+                w.varint(scored.points);
+            }
+            w.varint(totals.score);
+            w.varint(totals.kills);
+            w.varint(totals.deaths);
+            w.varint(totals.streak);
+        }
+        GameEvent::Rewound { shot, tick, poses } => {
+            w.bits(4, EVENT_TAG_BITS);
+            w.varint(*shot);
+            write_view_tick(w, Some(*tick), None);
+            let count = poses.len().min(MAX_REWOUND_POSES);
+            w.varint(count as u32);
+            for (id, pose) in &poses[..count] {
+                w.u8(*id);
+                write_vec3(w, pose.feet);
+                w.f32(pose.yaw);
+                w.f32(pose.pitch);
+                write_stance(w, pose.stance);
+            }
+        }
+    }
+}
+
+fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
+    match r.bits(EVENT_TAG_BITS)? {
+        0 => Ok(GameEvent::Hit {
+            victim: r.u8()?,
+            shot: r.varint()?,
+            damage: read_finite(r)?,
+            headshot: r.bool()?,
+            killed: r.bool()?,
+        }),
+        1 => Ok(GameEvent::Hurt {
+            attacker: r.u8()?,
+            from: read_finite_vec3(r)?,
+            damage: read_finite(r)?,
+            killed: r.bool()?,
+        }),
+        2 => Ok(GameEvent::Kill {
+            killer: r.u8()?,
+            victim: r.u8()?,
+            weapon: read_weapon(r)?,
+            headshot: r.bool()?,
+        }),
+        3 => {
+            let count = r.varint()? as usize;
+            if count > MAX_EVENTS_PER_MESSAGE {
+                return Err(DecodeError::Invalid("award count"));
+            }
+            let mut awards = Vec::with_capacity(count);
+            for _ in 0..count {
+                awards.push(Scored {
+                    award: read_award(r)?,
+                    points: r.varint()?,
+                });
+            }
+            Ok(GameEvent::Score {
+                awards,
+                totals: ScoreTotals {
+                    score: r.varint()?,
+                    kills: r.varint()?,
+                    deaths: r.varint()?,
+                    streak: r.varint()?,
+                },
+            })
+        }
+        4 => {
+            let shot = r.varint()?;
+            let tick = read_view_tick(r, None)?.ok_or(DecodeError::Invalid("rewound tick"))?;
+            let count = r.varint()? as usize;
+            if count > MAX_REWOUND_POSES {
+                return Err(DecodeError::Invalid("rewound count"));
+            }
+            let mut poses = Vec::with_capacity(count);
+            for _ in 0..count {
+                let id = r.u8()?;
+                let pose = HitboxPose {
+                    feet: read_finite_vec3(r)?,
+                    yaw: read_finite(r)?,
+                    pitch: read_finite(r)?,
+                    stance: read_stance(r)?,
+                };
+                poses.push((id, pose));
+            }
+            Ok(GameEvent::Rewound { shot, tick, poses })
+        }
+        _ => Err(DecodeError::Invalid("event tag")),
+    }
+}
+
+fn write_award(w: &mut BitWriter, award: Award) {
+    let (tag, count) = match award {
+        Award::Kill => (0, None),
+        Award::Headshot => (1, None),
+        Award::Longshot => (2, None),
+        Award::PointBlank => (3, None),
+        Award::Collateral => (4, None),
+        Award::MultiKill(n) => (5, Some(n)),
+        Award::Streak(n) => (6, Some(n)),
+    };
+    w.bits(tag, 3);
+    if let Some(n) = count {
+        w.varint(n);
+    }
+}
+
+fn read_award(r: &mut BitReader) -> DecodeResult<Award> {
+    Ok(match r.bits(3)? {
+        0 => Award::Kill,
+        1 => Award::Headshot,
+        2 => Award::Longshot,
+        3 => Award::PointBlank,
+        4 => Award::Collateral,
+        5 => Award::MultiKill(r.varint()?),
+        6 => Award::Streak(r.varint()?),
+        _ => return Err(DecodeError::Invalid("award")),
+    })
+}
+
+fn read_finite(r: &mut BitReader) -> DecodeResult<f32> {
+    let v = r.f32()?;
+    if v.is_finite() {
+        Ok(v)
+    } else {
+        Err(DecodeError::Invalid("non-finite number"))
+    }
+}
+
+fn read_finite_vec3(r: &mut BitReader) -> DecodeResult<Vec3> {
+    Ok(Vec3::new(read_finite(r)?, read_finite(r)?, read_finite(r)?))
 }
 
 fn write_snapshot(w: &mut BitWriter, s: &Snapshot, baseline: &[PlayerView]) {
@@ -981,6 +1315,142 @@ mod tests {
             let diff = diff.min(std::f32::consts::TAU - diff);
             assert!(diff < 1e-3, "yaw {yaw} came back as {back}");
         }
+    }
+
+    #[test]
+    fn view_ticks_ride_along_as_small_deltas() {
+        let firing: Vec<PlayerInput> = (0..12)
+            .map(|i| {
+                PlayerInput {
+                    // Aiming moves the view every tick, so no input repeats.
+                    yaw: 0.5 + i as f32 * 0.01,
+                    fire: true,
+                    view_tick: Some(123_456.0 + f64::from(i) * 1.013),
+                    ..Default::default()
+                }
+                .quantized()
+            })
+            .collect();
+        let without: Vec<PlayerInput> = firing
+            .iter()
+            .map(|i| PlayerInput {
+                view_tick: None,
+                ..*i
+            })
+            .collect();
+        let packet = |inputs: Vec<PlayerInput>| {
+            ClientMessage::Input(InputPacket {
+                ack_snapshot: Some(9),
+                first_seq: 40,
+                inputs,
+            })
+        };
+        let msg = packet(firing.clone());
+        let bytes = msg.encode();
+        assert_eq!(ClientMessage::decode(&bytes).unwrap(), msg);
+        let plain = packet(without).encode();
+        assert!(
+            bytes.len() <= plain.len() + 12 * 2 + 5,
+            "{} bytes with view ticks, {} without",
+            bytes.len(),
+            plain.len()
+        );
+        let expected = ((123_456.0 + 3.0 * 1.013) * 256.0_f64).floor() / 256.0;
+        assert_eq!(firing[3].view_tick, Some(expected), "1/256 tick steps");
+    }
+
+    #[test]
+    fn view_ticks_that_cannot_be_sent_are_dropped() {
+        for bad in [-1.0, f64::NAN, f64::INFINITY, 5e9] {
+            let input = PlayerInput {
+                view_tick: Some(bad),
+                ..Default::default()
+            };
+            assert_eq!(input.quantized().view_tick, None, "{bad}");
+        }
+        let input = PlayerInput {
+            view_tick: Some(4_294_967_295.999),
+            ..Default::default()
+        }
+        .quantized();
+        let msg = ClientMessage::Input(InputPacket {
+            ack_snapshot: None,
+            first_seq: 1,
+            inputs: vec![input],
+        });
+        assert_eq!(ClientMessage::decode(&msg.encode()).unwrap(), msg);
+    }
+
+    #[test]
+    fn debug_requests_round_trip() {
+        for on in [true, false] {
+            let msg = ClientMessage::Debug {
+                rewound_hitboxes: on,
+            };
+            assert_eq!(ClientMessage::decode(&msg.encode()).unwrap(), msg);
+        }
+    }
+
+    #[test]
+    fn game_events_round_trip() {
+        let msg = ServerMessage::Events(vec![
+            GameEvent::Hit {
+                victim: 201,
+                shot: 77_000,
+                damage: 41.5,
+                headshot: true,
+                killed: false,
+            },
+            GameEvent::Hurt {
+                attacker: 3,
+                from: Vec3::new(1.0, 1.6, -20.25),
+                damage: 27.0,
+                killed: true,
+            },
+            GameEvent::Kill {
+                killer: 3,
+                victim: 0,
+                weapon: WeaponId::expect("m40"),
+                headshot: true,
+            },
+            GameEvent::Score {
+                awards: vec![
+                    Scored {
+                        award: Award::Kill,
+                        points: 100,
+                    },
+                    Scored {
+                        award: Award::MultiKill(3),
+                        points: 50,
+                    },
+                    Scored {
+                        award: Award::Streak(10),
+                        points: 100,
+                    },
+                ],
+                totals: ScoreTotals {
+                    score: 2350,
+                    kills: 14,
+                    deaths: 2,
+                    streak: 10,
+                },
+            },
+            GameEvent::Rewound {
+                shot: 5,
+                tick: 9000.5,
+                poses: vec![(
+                    7,
+                    HitboxPose {
+                        feet: Vec3::new(2.0, 0.0, 3.0),
+                        yaw: 1.0,
+                        pitch: -0.2,
+                        stance: Stance::Crouching,
+                    },
+                )],
+            },
+        ]);
+        let bytes = msg.encode(&[]);
+        assert_eq!(ServerMessage::decode(&bytes, |_| None).unwrap(), msg);
     }
 
     #[test]

@@ -2,8 +2,9 @@
 //!
 //! Every kill pays a flat amount, then bonuses stack on top for how it
 //! happened. The HUD shows each award as a "+N" popup, and medals also get a
-//! banner. This is the rule book only; the client feeds it confirmed kills
-//! now, and the dedicated server will own it once kills are authoritative.
+//! banner. This is the rule book only. Offline, the client feeds it its own
+//! kills; online, the dedicated server keeps every player's score and sends
+//! each award and the new totals (`net::protocol::GameEvent::Score`).
 
 /// Tunable scoring rules.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -104,6 +105,15 @@ pub struct Scored {
     pub points: u32,
 }
 
+/// The parts of a [`ScoreState`] the HUD shows, as the server sends them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ScoreTotals {
+    pub score: u32,
+    pub kills: u32,
+    pub deaths: u32,
+    pub streak: u32,
+}
+
 /// One player's score for a match.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ScoreState {
@@ -175,6 +185,23 @@ impl ScoreState {
         self.kills += kills.len() as u32;
         self.score += awards.iter().map(|a| a.points).sum::<u32>();
         awards
+    }
+
+    pub fn totals(&self) -> ScoreTotals {
+        ScoreTotals {
+            score: self.score,
+            kills: self.kills,
+            deaths: self.deaths,
+            streak: self.streak,
+        }
+    }
+
+    /// Takes the server's totals (online, the server keeps score).
+    pub fn set_totals(&mut self, totals: ScoreTotals) {
+        self.score = totals.score;
+        self.kills = totals.kills;
+        self.deaths = totals.deaths;
+        self.streak = totals.streak;
     }
 
     /// Ends the current streak and chain.

@@ -6,17 +6,26 @@
 //! and sends every unacknowledged input. Each rendered frame it draws remote
 //! players about 100 ms in the past.
 //!
+//! The server decides hits and kills and sends them as reliable game events:
+//! the client passes them to the local player (kill confirmations, score,
+//! damage taken) and emits `kill_reported` for every kill, for a kill feed.
+//! With the F4 hitbox overlay on, it also draws, in white, the hitboxes the
+//! server rewound for each of our shots, next to the ones drawn here.
+//!
 //! An optional link conditioner adds latency, jitter, and loss in both
 //! directions, to try the netcode at realistic pings against a local server.
+
+use std::collections::VecDeque;
 
 use godot::classes::{ENetConnection, ENetPacketPeer, INode, PackedScene, Time};
 use godot::global::Error;
 use godot::prelude::*;
+use shooter_sim::hitbox::HitboxPose;
 use shooter_sim::net::conditioner::{LinkConditioner, LinkSettings};
 use shooter_sim::net::interpolation::{InterpolationBuffer, SnapshotClock};
 use shooter_sim::net::prediction::Reconciled;
 use shooter_sim::net::protocol::{
-    ClientMessage, InputPacket, PROTOCOL_VERSION, ServerMessage, Snapshot,
+    ClientMessage, GameEvent, InputPacket, PROTOCOL_VERSION, ServerMessage, Snapshot,
 };
 use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::{CHANNEL_COUNT, CHANNEL_RELIABLE, DEFAULT_PORT, TICK_RATE, Tick};
@@ -24,7 +33,13 @@ use shooter_sim::net::{CHANNEL_COUNT, CHANNEL_RELIABLE, DEFAULT_PORT, TICK_RATE,
 use super::remote::{RemotePlayer, RemoteSample};
 use super::transport::{self, NetEvent};
 use crate::convert::to_godot;
+use crate::hitbox_rig::{self, HitboxRig};
 use crate::player::FpsPlayer;
+
+/// Seconds the server's rewound hitboxes stay drawn after a shot.
+const GHOST_SECONDS: f32 = 1.5;
+/// Most rewound hitbox sets drawn at once (an automatic weapon fires many).
+const MAX_GHOSTS: usize = 24;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum Status {
@@ -79,6 +94,10 @@ pub struct NetClient {
     incoming: Option<LinkConditioner>,
     net_events: Vec<NetEvent>,
     stats: Stats,
+    /// Whether the server was last told to send rewound hitboxes.
+    debug_requested: bool,
+    /// The server's rewound hitboxes for recent shots, with seconds left.
+    ghosts: VecDeque<(Gd<HitboxRig>, f32)>,
 }
 
 struct Remote {
@@ -99,6 +118,14 @@ struct Stats {
     kbps_in: f64,
     kbps_out: f64,
     server_position: Vector3,
+    /// Our shots the server counted as hits, and as kills.
+    hits_confirmed: u32,
+    kills_confirmed: u32,
+    /// Times another player hit us, and killed us.
+    times_hurt: u32,
+    deaths: u32,
+    /// Players' hitboxes the server sent back as it rewound them (debug).
+    rewound_received: u32,
 }
 
 #[godot_api]
@@ -197,6 +224,7 @@ impl INode for NetClient {
 
         if self.status == Status::Joined {
             self.send_inputs(now);
+            self.send_debug_request();
         }
         if let (Some(link), Some(server)) = (&mut self.outgoing, &mut self.server) {
             for bytes in link.receive(now) {
@@ -220,6 +248,11 @@ impl INode for NetClient {
                 remote.node.bind_mut().apply(&sample, delta as f32);
             }
         }
+        // Shots fired before the next frame aim at what was just drawn.
+        if let Some(player) = &mut self.player {
+            player.bind_mut().set_view_tick(render_tick);
+        }
+        self.age_ghosts(delta as f32);
     }
 
     fn exit_tree(&mut self) {
@@ -237,6 +270,10 @@ impl INode for NetClient {
 
 #[godot_api]
 impl NetClient {
+    /// A player killed another (both ids as in `player_id`; bots from 200).
+    #[signal]
+    fn kill_reported(killer: i32, victim: i32, weapon: GString, headshot: bool);
+
     /// True once the server accepted us.
     #[func]
     fn is_joined(&self) -> bool {
@@ -291,6 +328,11 @@ impl NetClient {
         d.set("bytes_out", self.stats.bytes_out as i64);
         d.set("server_position", self.stats.server_position);
         d.set("remote_players", self.remotes.len() as i32);
+        d.set("hits_confirmed", self.stats.hits_confirmed);
+        d.set("kills_confirmed", self.stats.kills_confirmed);
+        d.set("times_hurt", self.stats.times_hurt);
+        d.set("deaths", self.stats.deaths);
+        d.set("rewound_received", self.stats.rewound_received);
         if let Some(clock) = &self.clock {
             let ms = |ticks: f64| ticks * 1000.0 / f64::from(TICK_RATE);
             d.set("interp_delay_ms", ms(clock.delay()));
@@ -350,6 +392,131 @@ impl NetClient {
                 if self.status == Status::Joined {
                     self.apply_snapshot(snapshot);
                 }
+            }
+            ServerMessage::Events(events) => {
+                if self.status == Status::Joined {
+                    for event in events {
+                        self.apply_event(event);
+                    }
+                }
+            }
+        }
+    }
+
+    fn apply_event(&mut self, event: GameEvent) {
+        match event {
+            GameEvent::Hit {
+                victim,
+                shot,
+                headshot,
+                killed,
+                ..
+            } => {
+                self.stats.hits_confirmed += 1;
+                if killed {
+                    self.stats.kills_confirmed += 1;
+                }
+                let Some(player) = &mut self.player else {
+                    return;
+                };
+                player.bind_mut().on_server_hit(shot, headshot, killed);
+                // The body falls away from our shot.
+                if killed && let Some(remote) = self.remotes.iter_mut().find(|r| r.id == victim) {
+                    let direction = remote.node.bind().feet() - player.get_global_position();
+                    remote.node.bind_mut().react_to_hit(direction, true);
+                }
+            }
+            GameEvent::Hurt {
+                from,
+                damage,
+                killed,
+                ..
+            } => {
+                self.stats.times_hurt += 1;
+                if killed {
+                    self.stats.deaths += 1;
+                }
+                if let Some(player) = &mut self.player {
+                    player
+                        .bind_mut()
+                        .on_server_hurt(damage, to_godot(from), killed);
+                }
+            }
+            GameEvent::Kill {
+                killer,
+                victim,
+                weapon,
+                headshot,
+            } => {
+                let name = GString::from(&weapon.def().name);
+                self.signals().kill_reported().emit(
+                    i32::from(killer),
+                    i32::from(victim),
+                    &name,
+                    headshot,
+                );
+            }
+            GameEvent::Score { awards, totals } => {
+                if let Some(player) = &mut self.player {
+                    player.bind_mut().on_server_score(&awards, totals);
+                }
+            }
+            GameEvent::Rewound { poses, .. } => {
+                self.stats.rewound_received += poses.len() as u32;
+                for (_, pose) in poses {
+                    self.add_ghost(pose);
+                }
+            }
+        }
+    }
+
+    /// Asks the server for rewound hitboxes while the F4 overlay is on.
+    fn send_debug_request(&mut self) {
+        let wanted = hitbox_rig::debug_draw();
+        if wanted == self.debug_requested {
+            return;
+        }
+        let Some(server) = &mut self.server else {
+            return;
+        };
+        let message = ClientMessage::Debug {
+            rewound_hitboxes: wanted,
+        };
+        transport::send_reliable(server, &message.encode());
+        self.debug_requested = wanted;
+    }
+
+    /// Draws one player's hitboxes as the server rewound them for a shot.
+    fn add_ghost(&mut self, pose: HitboxPose) {
+        if !hitbox_rig::debug_draw() {
+            return;
+        }
+        while self.ghosts.len() >= MAX_GHOSTS {
+            if let Some((ghost, _)) = self.ghosts.pop_front() {
+                ghost.upcast::<Node>().queue_free();
+            }
+        }
+        let mut ghost = HitboxRig::new_alloc();
+        ghost.set_name("ServerHitboxes");
+        ghost
+            .bind_mut()
+            .make_ghost(Color::from_rgba(1.0, 1.0, 1.0, 0.18));
+        let Some(mut parent) = self.base().get_parent() else {
+            ghost.free();
+            return;
+        };
+        parent.add_child(&ghost);
+        ghost.bind_mut().set_pose(Some(pose));
+        self.ghosts.push_back((ghost, GHOST_SECONDS));
+    }
+
+    fn age_ghosts(&mut self, delta: f32) {
+        for (_, left) in &mut self.ghosts {
+            *left -= delta;
+        }
+        while self.ghosts.front().is_some_and(|(_, left)| *left <= 0.0) {
+            if let Some((ghost, _)) = self.ghosts.pop_front() {
+                ghost.upcast::<Node>().queue_free();
             }
         }
     }
@@ -464,6 +631,9 @@ impl NetClient {
         }
         for remote in self.remotes.drain(..) {
             remote.node.upcast::<Node>().queue_free();
+        }
+        for (ghost, _) in self.ghosts.drain(..) {
+            ghost.upcast::<Node>().queue_free();
         }
     }
 

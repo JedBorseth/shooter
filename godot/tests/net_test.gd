@@ -1,8 +1,9 @@
 extends SceneTree
 ## Headless netcode test: starts a dedicated server process with one bot,
 ## joins it through a simulated bad network (latency, jitter, loss), and checks
-## that the client joins, predicts its own movement without corrections,
-## converges with the server, and interpolates the bot. Exits non-zero on failure.
+## that the client joins, interpolates the bot, shoots the strafing bot dead
+## with the server's lag compensation, predicts its own movement without
+## corrections, and converges with the server. Exits non-zero on failure.
 ## Run from the repo root: godot --headless --path godot --script res://tests/net_test.gd
 
 const PORT := 27999
@@ -67,21 +68,6 @@ func _run() -> void:
 		"client starts where the server spawned it"
 	)
 
-	# Weapon rack: player 0 spawns 2 m from the M870 rack (x = -7, z = 20.6).
-	# The server checks the pickup against its own raycast; an honest one
-	# must go through without a correction.
-	player.set_look(PI / 2.0, -0.42)
-	await _ticks(5)
-	Input.action_press("interact")
-	await _ticks(2)
-	Input.action_release("interact")
-	await _ticks(90)
-	_check(
-		player.weapon_key() == "m870",
-		"takes the M870 from the rack online, got %s" % player.weapon_key()
-	)
-	player.set_look(0.0, 0.0)
-
 	# Bot: visible, interpolated, and moving.
 	_check(client.remote_ids().size() == 1, "the bot appears, ids %s" % client.remote_ids())
 	if client.remote_ids().size() == 1:
@@ -98,6 +84,22 @@ func _run() -> void:
 			soldier.wrist_position(true).distance_to(bot.feet()) > 0.5,
 			"the bot's hands are on its weapon (IK ran)"
 		)
+		await _shoot_bot(player, client, bot)
+
+	# Weapon rack: player 0 spawns 2 m from the M870 rack (x = -7, z = 20.6).
+	# The server checks the pickup against its own raycast; an honest one
+	# must go through without a correction.
+	player.set_look(PI / 2.0, -0.42)
+	await _ticks(5)
+	Input.action_press("interact")
+	await _ticks(2)
+	Input.action_release("interact")
+	await _ticks(90)
+	_check(
+		player.weapon_key() == "m870",
+		"takes the M870 from the rack online, got %s" % player.weapon_key()
+	)
+	player.set_look(0.0, 0.0)
 
 	# Own movement under 40-55 ms each way and 5% loss: sprint, slide, jump.
 	Input.action_press("move_forward")
@@ -139,6 +141,56 @@ func _run() -> void:
 		)
 	)
 	_finish()
+
+
+## Aims down sights at the strafing bot, 14 m away, and fires short M4 bursts
+## at its stomach as this client draws it, until the server reports a kill.
+## About 100 ms of interpolation plus a 110 ms round trip put the bot a metre
+## or more from where the server has it when each shot arrives, so every hit
+## depends on the server rewinding the bot to what this client saw.
+func _shoot_bot(player: FpsPlayer, client: NetClient, bot: RemotePlayer) -> void:
+	HitboxRig.set_debug_visible(true)
+	Input.action_press("aim")
+	for i in 600:
+		if int(client.stats().kills_confirmed) > 0:
+			break
+		var target := _stomach(bot)
+		if target != Vector3.INF:
+			var eye := player.global_position + Vector3.UP * 1.68
+			var to := target - eye
+			player.set_look(atan2(-to.x, -to.z), atan2(to.y, Vector2(to.x, to.z).length()))
+		# Bursts of three rounds, then a pause for the recoil to settle.
+		var firing := i >= 30 and i % 48 < 24
+		if firing and not Input.is_action_pressed("fire"):
+			Input.action_press("fire")
+		elif not firing and Input.is_action_pressed("fire"):
+			Input.action_release("fire")
+		await physics_frame
+	Input.action_release("fire")
+	Input.action_release("aim")
+	await _ticks(30)
+	var stats := client.stats()
+	print(
+		(
+			"shooting: %d hits and %d kills confirmed, score %d"
+			% [stats.hits_confirmed, stats.kills_confirmed, player.score()]
+		)
+	)
+	_check(int(stats.hits_confirmed) >= 4, "the server confirms hits on the moving bot")
+	_check(int(stats.kills_confirmed) >= 1, "the server confirms the kill")
+	_check(player.score() >= 100, "the server's kill points reach the HUD, %d" % player.score())
+	_check(int(stats.rewound_received) > 0, "the server sends the hitboxes it rewound (F4 overlay)")
+	HitboxRig.set_debug_visible(false)
+	await _ticks(10)
+
+
+## Centre of the bot's stomach hit zone as drawn on this client, or INF while
+## it has no hitboxes (dead).
+func _stomach(bot: RemotePlayer) -> Vector3:
+	for shape in bot.hitboxes().shapes():
+		if shape[0] == "stomach":
+			return (shape[1] + shape[2]) * 0.5
+	return Vector3.INF
 
 
 func _ticks(count: int) -> void:

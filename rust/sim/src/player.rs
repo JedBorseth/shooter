@@ -25,6 +25,11 @@ pub struct PlayerInput {
     pub switch_to: Option<u8>,
     /// Take this weapon from the pickup the player is looking at.
     pub pickup: Option<WeaponId>,
+    /// Online only: the server tick (fractional) this client was drawing other
+    /// players at when the input was read. The server rewinds their hitboxes to
+    /// it to check this input's shots (`net::lag`). Sent while firing; the
+    /// simulation itself ignores it.
+    pub view_tick: Option<f64>,
 }
 
 /// Health rules. Damage itself comes from weapons (applied by whoever runs the

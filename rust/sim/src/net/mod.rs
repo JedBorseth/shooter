@@ -1,6 +1,6 @@
 //! Netcode core, engine-free: wire protocol, server input buffering, client
-//! prediction and reconciliation, snapshot interpolation, and a network
-//! condition simulator.
+//! prediction and reconciliation, snapshot interpolation, lag compensation,
+//! and a network condition simulator.
 //!
 //! Model: the dedicated server is authoritative and runs the same fixed tick
 //! as client prediction (`TICK_RATE`), sending snapshots at 60 Hz.
@@ -13,6 +13,7 @@ pub mod bits;
 pub mod conditioner;
 pub mod input_queue;
 pub mod interpolation;
+pub mod lag;
 pub mod prediction;
 pub mod protocol;
 pub mod snapshot_history;
@@ -26,7 +27,7 @@ pub use crate::{TICK_DT, TICK_RATE};
 pub const DEFAULT_PORT: u16 = 27015;
 /// ENet channel for snapshots and inputs (sent unreliable, unsequenced).
 pub const CHANNEL_UNRELIABLE: i32 = 0;
-/// ENet channel for the handshake (sent reliable).
+/// ENet channel for the handshake and game events (sent reliable).
 pub const CHANNEL_RELIABLE: i32 = 1;
 pub const CHANNEL_COUNT: i32 = 2;
 /// Players per server: 6v6.

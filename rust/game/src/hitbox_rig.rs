@@ -57,11 +57,15 @@ struct Part {
 pub struct HitboxRig {
     base: Base<Node3D>,
 
-    /// When false the shapes are only drawn, never hit. Remote players use this
-    /// until the server resolves shots against their hitboxes (Phase 3).
+    /// When false the shapes are only drawn, never hit (the server's rewound
+    /// hitboxes in the F4 overlay).
     #[export]
     #[init(val = true)]
     collide: bool,
+    /// One colour for every zone; fully transparent (the default) colours
+    /// each zone on its own. Set before the rig enters the tree.
+    #[export]
+    tint: Color,
 
     parts: Vec<Part>,
     pose: Option<HitboxPose>,
@@ -128,6 +132,12 @@ impl HitboxRig {
 }
 
 impl HitboxRig {
+    /// Draw-only, in one colour. Call before the rig enters the tree.
+    pub fn make_ghost(&mut self, tint: Color) {
+        self.collide = false;
+        self.tint = tint;
+    }
+
     /// Poses the shapes, or turns them off with `None` (dead, despawned).
     pub fn set_pose(&mut self, pose: Option<HitboxPose>) {
         let was_enabled = self.pose.is_some();
@@ -172,7 +182,12 @@ impl HitboxRig {
             godot::classes::base_material_3d::Flags::DISABLE_DEPTH_TEST,
             true,
         );
-        material.set_albedo(zone_colour(hb.zone));
+        let colour = if self.tint.a > 0.0 {
+            self.tint
+        } else {
+            zone_colour(hb.zone)
+        };
+        material.set_albedo(colour);
         mesh.set_cast_shadows_setting(
             godot::classes::geometry_instance_3d::ShadowCastingSetting::OFF,
         );
