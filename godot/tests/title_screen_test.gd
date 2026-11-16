@@ -26,6 +26,7 @@ func _run() -> void:
 	_check(
 		not testing.disabled and testing.has_focus(), "Testing Area is enabled and keyboard focused"
 	)
+	_check(not (menu.get_node("Slamcity") as Button).disabled, "Slamcity is a home-screen option")
 	_check(not (menu.get_node("Nuketown") as Button).disabled, "Nuketown is a home-screen option")
 	_check((menu.get_node("Multiplayer") as Button).disabled, "Multiplayer is a placeholder")
 	_check(not (menu.get_node("Zombies") as Button).disabled, "Zombies opens its menu")
@@ -36,6 +37,7 @@ func _run() -> void:
 		"res://scenes/player.tscn",
 		"res://scenes/props/target_dummy.tscn",
 		"res://scenes/weapons/m4_view.tscn",
+		"res://scenes/slamcity.tscn",
 		"res://scenes/nuketown.tscn",
 		"res://assets/maps/nuketown/generated/nuketown_world.scn",
 		"res://scenes/zombies_menu.tscn",

@@ -1,0 +1,1609 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/player.tscn" id="1_player"]
+[ext_resource type="Script" path="res://scripts/hud.gd" id="2_hud"]
+[ext_resource type="Script" path="res://scripts/crosshair.gd" id="3_crosshair"]
+[ext_resource type="PackedScene" path="res://scenes/props/target_dummy.tscn" id="4_dummy"]
+[ext_resource type="PackedScene" path="res://scenes/ui/pause_menu.tscn" id="5_pause"]
+[ext_resource type="Script" path="res://scripts/scope_overlay.gd" id="6_scope"]
+[ext_resource type="Script" path="res://scripts/damage_overlay.gd" id="7_damage"]
+[ext_resource type="Shader" path="res://shaders/damage_vignette.gdshader" id="8_vignette"]
+[ext_resource type="PackedScene" path="res://scenes/props/weapon_rack.tscn" id="9_rack"]
+[ext_resource type="PackedScene" path="res://assets/weapons/m4/m4.fbx" id="11_m4"]
+[ext_resource type="PackedScene" path="res://assets/weapons/ak47/ak47.fbx" id="12_ak47"]
+[ext_resource type="PackedScene" path="res://assets/weapons/pdw9/pdw9.fbx" id="13_pdw9"]
+[ext_resource type="PackedScene" path="res://assets/weapons/m870/m870.fbx" id="14_m870"]
+[ext_resource type="PackedScene" path="res://assets/weapons/m40/m40.fbx" id="15_m40"]
+[ext_resource type="PackedScene" path="res://assets/weapons/pistol/pistol.fbx" id="16_pistol"]
+[ext_resource type="Script" path="res://scripts/score_feed.gd" id="17_score"]
+[ext_resource type="AudioStream" path="res://assets/audio/ui/medal.ogg" id="18_medal"]
+[ext_resource type="Shader" path="res://shaders/greybox.gdshader" id="19_greybox"]
+[ext_resource type="Script" path="res://scripts/slamcity.gd" id="20_level"]
+
+[sub_resource type="ShaderMaterial" id="mat_asphalt"]
+shader = ExtResource("19_greybox")
+shader_parameter/base_color = Color(0.24, 0.25, 0.27, 1)
+
+[sub_resource type="ShaderMaterial" id="mat_sidewalk"]
+shader = ExtResource("19_greybox")
+shader_parameter/base_color = Color(0.6, 0.58, 0.54, 1)
+
+[sub_resource type="ShaderMaterial" id="mat_bowl"]
+shader = ExtResource("19_greybox")
+shader_parameter/base_color = Color(0.68, 0.68, 0.7, 1)
+
+[sub_resource type="ShaderMaterial" id="mat_bowl_floor"]
+shader = ExtResource("19_greybox")
+shader_parameter/base_color = Color(0.5, 0.52, 0.56, 1)
+
+[sub_resource type="ShaderMaterial" id="mat_brick"]
+shader = ExtResource("19_greybox")
+shader_parameter/base_color = Color(0.55, 0.3, 0.24, 1)
+
+[sub_resource type="ShaderMaterial" id="mat_brick_blue"]
+shader = ExtResource("19_greybox")
+shader_parameter/base_color = Color(0.38, 0.42, 0.5, 1)
+
+[sub_resource type="ShaderMaterial" id="mat_interior"]
+shader = ExtResource("19_greybox")
+shader_parameter/base_color = Color(0.74, 0.69, 0.58, 1)
+
+[sub_resource type="ShaderMaterial" id="mat_trim"]
+shader = ExtResource("19_greybox")
+shader_parameter/base_color = Color(0.2, 0.2, 0.22, 1)
+
+[sub_resource type="ShaderMaterial" id="mat_door"]
+shader = ExtResource("19_greybox")
+shader_parameter/base_color = Color(0.13, 0.38, 0.4, 1)
+
+[sub_resource type="ShaderMaterial" id="mat_glass"]
+shader = ExtResource("19_greybox")
+shader_parameter/base_color = Color(0.12, 0.2, 0.28, 1)
+
+[sub_resource type="ShaderMaterial" id="mat_metal"]
+shader = ExtResource("19_greybox")
+shader_parameter/base_color = Color(0.36, 0.38, 0.41, 1)
+
+[sub_resource type="ShaderMaterial" id="mat_wood"]
+shader = ExtResource("19_greybox")
+shader_parameter/base_color = Color(0.55, 0.45, 0.3, 1)
+
+[sub_resource type="ShaderMaterial" id="mat_fabric"]
+shader = ExtResource("19_greybox")
+shader_parameter/base_color = Color(0.62, 0.55, 0.42, 1)
+
+[sub_resource type="ShaderMaterial" id="mat_dumpster"]
+shader = ExtResource("19_greybox")
+shader_parameter/base_color = Color(0.2, 0.36, 0.25, 1)
+
+[sub_resource type="ShaderMaterial" id="mat_car_red"]
+shader = ExtResource("19_greybox")
+shader_parameter/base_color = Color(0.6, 0.15, 0.12, 1)
+
+[sub_resource type="ShaderMaterial" id="mat_car_taxi"]
+shader = ExtResource("19_greybox")
+shader_parameter/base_color = Color(0.85, 0.64, 0.15, 1)
+
+[sub_resource type="ShaderMaterial" id="mat_car_blue"]
+shader = ExtResource("19_greybox")
+shader_parameter/base_color = Color(0.2, 0.3, 0.55, 1)
+
+[sub_resource type="ShaderMaterial" id="mat_truck"]
+shader = ExtResource("19_greybox")
+shader_parameter/base_color = Color(0.82, 0.82, 0.8, 1)
+
+[sub_resource type="ShaderMaterial" id="mat_skyline_a"]
+shader = ExtResource("19_greybox")
+shader_parameter/base_color = Color(0.46, 0.44, 0.42, 1)
+
+[sub_resource type="ShaderMaterial" id="mat_skyline_b"]
+shader = ExtResource("19_greybox")
+shader_parameter/base_color = Color(0.34, 0.33, 0.35, 1)
+
+[sub_resource type="ShaderMaterial" id="mat_skyline_c"]
+shader = ExtResource("19_greybox")
+shader_parameter/base_color = Color(0.52, 0.36, 0.3, 1)
+
+[sub_resource type="ProceduralSkyMaterial" id="SkyMat"]
+sky_top_color = Color(0.27, 0.4, 0.62, 1)
+sky_horizon_color = Color(0.86, 0.68, 0.52, 1)
+ground_bottom_color = Color(0.16, 0.15, 0.14, 1)
+ground_horizon_color = Color(0.86, 0.68, 0.52, 1)
+
+[sub_resource type="Sky" id="Sky"]
+sky_material = SubResource("SkyMat")
+
+[sub_resource type="Environment" id="Env"]
+background_mode = 2
+sky = SubResource("Sky")
+ambient_light_source = 3
+reflected_light_source = 2
+tonemap_mode = 4
+ssao_enabled = true
+glow_enabled = true
+
+[sub_resource type="ShaderMaterial" id="Mat_vignette"]
+shader = ExtResource("8_vignette")
+
+[sub_resource type="StyleBoxFlat" id="Style_health_bg"]
+bg_color = Color(0, 0, 0, 0.45)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+[sub_resource type="StyleBoxFlat" id="Style_health_fill"]
+bg_color = Color(0.92, 0.92, 0.88, 0.9)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+[node name="Slamcity" type="Node3D"]
+script = ExtResource("20_level")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Env")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+rotation = Vector3(-0.62, 2.3, 0)
+light_color = Color(1, 0.9, 0.78, 1)
+light_energy = 1.3
+shadow_enabled = true
+directional_shadow_max_distance = 90.0
+
+[node name="Ground" type="CSGCombiner3D" parent="."]
+use_collision = true
+metadata/surface = "concrete"
+
+[node name="Plaza" type="CSGBox3D" parent="Ground"]
+position = Vector3(0, -1.5, 0)
+size = Vector3(26, 3, 16)
+material = SubResource("mat_sidewalk")
+
+[node name="StreetNorth" type="CSGBox3D" parent="Ground"]
+position = Vector3(0, -1.5, -17)
+size = Vector3(68, 3, 18)
+material = SubResource("mat_asphalt")
+
+[node name="StreetSouth" type="CSGBox3D" parent="Ground"]
+position = Vector3(0, -1.5, 17)
+size = Vector3(68, 3, 18)
+material = SubResource("mat_asphalt")
+
+[node name="StreetWest" type="CSGBox3D" parent="Ground"]
+position = Vector3(-23.5, -1.5, 0)
+size = Vector3(21, 3, 16)
+material = SubResource("mat_asphalt")
+
+[node name="StreetEast" type="CSGBox3D" parent="Ground"]
+position = Vector3(23.5, -1.5, 0)
+size = Vector3(21, 3, 16)
+material = SubResource("mat_asphalt")
+
+[node name="BowlCut" type="CSGBox3D" parent="Ground"]
+position = Vector3(0, -0.95, 0)
+size = Vector3(16, 2.1, 8)
+operation = 2
+material = SubResource("mat_bowl")
+
+[node name="BowlFloor" type="CSGBox3D" parent="Ground"]
+position = Vector3(0, -1.9, 0)
+size = Vector3(16, 0.2, 8)
+material = SubResource("mat_bowl_floor")
+
+[node name="BowlRampA" type="CSGPolygon3D" parent="Ground"]
+position = Vector3(-8, 0, -1)
+polygon = PackedVector2Array(0, -2, 5, -2, 5, -1.8, 0, 0)
+depth = 3
+material = SubResource("mat_bowl")
+
+[node name="BowlRampB" type="CSGPolygon3D" parent="Ground"]
+position = Vector3(8, 0, 1)
+rotation = Vector3(0, 3.1416, 0)
+polygon = PackedVector2Array(0, -2, 5, -2, 5, -1.8, 0, 0)
+depth = 3
+material = SubResource("mat_bowl")
+
+[node name="GrindRail" type="CSGBox3D" parent="Ground"]
+position = Vector3(0, -1.575, 0)
+size = Vector3(5, 0.45, 0.3)
+material = SubResource("mat_metal")
+
+[node name="BowlLedgeA" type="CSGBox3D" parent="Ground"]
+position = Vector3(2.1, -1.3, -2.7)
+size = Vector3(1.4, 1, 1)
+material = SubResource("mat_bowl")
+
+[node name="BowlLedgeB" type="CSGBox3D" parent="Ground"]
+position = Vector3(-2.1, -1.3, 2.7)
+size = Vector3(1.4, 1, 1)
+material = SubResource("mat_bowl")
+
+[node name="Boundary" type="CSGCombiner3D" parent="."]
+use_collision = true
+metadata/surface = "concrete"
+
+[node name="WallNorth" type="CSGBox3D" parent="Boundary"]
+position = Vector3(0, 2.5, -26.5)
+size = Vector3(70, 5, 1)
+material = SubResource("mat_skyline_b")
+
+[node name="WallSouth" type="CSGBox3D" parent="Boundary"]
+position = Vector3(0, 2.5, 26.5)
+size = Vector3(70, 5, 1)
+material = SubResource("mat_skyline_b")
+
+[node name="WallWest" type="CSGBox3D" parent="Boundary"]
+position = Vector3(-34.5, 2.5, 0)
+size = Vector3(1, 5, 54)
+material = SubResource("mat_skyline_b")
+
+[node name="WallEast" type="CSGBox3D" parent="Boundary"]
+position = Vector3(34.5, 2.5, 0)
+size = Vector3(1, 5, 54)
+material = SubResource("mat_skyline_b")
+
+[node name="Skyline" type="CSGCombiner3D" parent="."]
+use_collision = false
+
+[node name="TowerN0" type="CSGBox3D" parent="Skyline"]
+position = Vector3(-28, 7, -33.75)
+size = Vector3(16, 14, 12.5)
+material = SubResource("mat_skyline_a")
+
+[node name="TowerS0" type="CSGBox3D" parent="Skyline"]
+position = Vector3(28, 7, 33.75)
+size = Vector3(16, 14, 12.5)
+material = SubResource("mat_skyline_a")
+
+[node name="TowerN1" type="CSGBox3D" parent="Skyline"]
+position = Vector3(-13, 11, -33.75)
+size = Vector3(14, 22, 12.5)
+material = SubResource("mat_skyline_c")
+
+[node name="TowerS1" type="CSGBox3D" parent="Skyline"]
+position = Vector3(13, 11, 33.75)
+size = Vector3(14, 22, 12.5)
+material = SubResource("mat_skyline_c")
+
+[node name="TowerN2" type="CSGBox3D" parent="Skyline"]
+position = Vector3(0, 5.5, -33.75)
+size = Vector3(12, 11, 12.5)
+material = SubResource("mat_skyline_b")
+
+[node name="TowerS2" type="CSGBox3D" parent="Skyline"]
+position = Vector3(0, 5.5, 33.75)
+size = Vector3(12, 11, 12.5)
+material = SubResource("mat_skyline_b")
+
+[node name="TowerN3" type="CSGBox3D" parent="Skyline"]
+position = Vector3(14, 9, -33.75)
+size = Vector3(16, 18, 12.5)
+material = SubResource("mat_skyline_a")
+
+[node name="TowerS3" type="CSGBox3D" parent="Skyline"]
+position = Vector3(-14, 9, 33.75)
+size = Vector3(16, 18, 12.5)
+material = SubResource("mat_skyline_a")
+
+[node name="TowerN4" type="CSGBox3D" parent="Skyline"]
+position = Vector3(29, 13, -33.75)
+size = Vector3(14, 26, 12.5)
+material = SubResource("mat_skyline_c")
+
+[node name="TowerS4" type="CSGBox3D" parent="Skyline"]
+position = Vector3(-29, 13, 33.75)
+size = Vector3(14, 26, 12.5)
+material = SubResource("mat_skyline_c")
+
+[node name="TowerW0" type="CSGBox3D" parent="Skyline"]
+position = Vector3(-41.75, 8, -18.75)
+size = Vector3(12.5, 16, 17.5)
+material = SubResource("mat_skyline_b")
+
+[node name="TowerE0" type="CSGBox3D" parent="Skyline"]
+position = Vector3(41.75, 8, 18.75)
+size = Vector3(12.5, 16, 17.5)
+material = SubResource("mat_skyline_b")
+
+[node name="TowerW1" type="CSGBox3D" parent="Skyline"]
+position = Vector3(-41.75, 4.5, 0)
+size = Vector3(12.5, 9, 20)
+material = SubResource("mat_skyline_a")
+
+[node name="TowerE1" type="CSGBox3D" parent="Skyline"]
+position = Vector3(41.75, 4.5, 0)
+size = Vector3(12.5, 9, 20)
+material = SubResource("mat_skyline_a")
+
+[node name="TowerW2" type="CSGBox3D" parent="Skyline"]
+position = Vector3(-41.75, 10, 18.75)
+size = Vector3(12.5, 20, 17.5)
+material = SubResource("mat_skyline_c")
+
+[node name="TowerE2" type="CSGBox3D" parent="Skyline"]
+position = Vector3(41.75, 10, -18.75)
+size = Vector3(12.5, 20, 17.5)
+material = SubResource("mat_skyline_c")
+
+[node name="ApartmentsNorth" type="CSGCombiner3D" parent="."]
+use_collision = true
+metadata/surface = "concrete"
+
+[node name="Shell" type="CSGBox3D" parent="ApartmentsNorth"]
+position = Vector3(-18, 3.3, -18)
+size = Vector3(20, 6.6, 8)
+material = SubResource("mat_brick")
+
+[node name="FlatsCut" type="CSGBox3D" parent="ApartmentsNorth"]
+position = Vector3(-18, 1.4, -18)
+size = Vector3(9.4, 3, 7.4)
+operation = 2
+material = SubResource("mat_interior")
+
+[node name="DoorWestCut" type="CSGBox3D" parent="ApartmentsNorth"]
+position = Vector3(-19.4, 1.1, -14.15)
+size = Vector3(1.2, 2.4, 0.5)
+operation = 2
+material = SubResource("mat_interior")
+
+[node name="WindowWestCut" type="CSGBox3D" parent="ApartmentsNorth"]
+position = Vector3(-21.5, 1.55, -14.15)
+size = Vector3(1.4, 1.1, 0.5)
+operation = 2
+material = SubResource("mat_interior")
+
+[node name="WindowEastCut" type="CSGBox3D" parent="ApartmentsNorth"]
+position = Vector3(-16.6, 1.55, -14.15)
+size = Vector3(1.4, 1.1, 0.5)
+operation = 2
+material = SubResource("mat_interior")
+
+[node name="DoorEastCut" type="CSGBox3D" parent="ApartmentsNorth"]
+position = Vector3(-14.6, 1.1, -14.15)
+size = Vector3(1.2, 2.4, 0.5)
+operation = 2
+material = SubResource("mat_interior")
+
+[node name="BackDoorCut" type="CSGBox3D" parent="ApartmentsNorth"]
+position = Vector3(-20.9, 1.1, -21.85)
+size = Vector3(1.2, 2.4, 0.5)
+operation = 2
+material = SubResource("mat_interior")
+
+[node name="BackWindowCut" type="CSGBox3D" parent="ApartmentsNorth"]
+position = Vector3(-15.2, 1.55, -21.85)
+size = Vector3(1.6, 1.1, 0.5)
+operation = 2
+material = SubResource("mat_interior")
+
+[node name="PartitionBack" type="CSGBox3D" parent="ApartmentsNorth"]
+position = Vector3(-18, 1.45, -20.55)
+size = Vector3(0.3, 2.9, 2.3)
+material = SubResource("mat_interior")
+
+[node name="PartitionFront" type="CSGBox3D" parent="ApartmentsNorth"]
+position = Vector3(-18, 1.45, -16.25)
+size = Vector3(0.3, 2.9, 3.9)
+material = SubResource("mat_interior")
+
+[node name="PartitionHeader" type="CSGBox3D" parent="ApartmentsNorth"]
+position = Vector3(-18, 2.55, -18.8)
+size = Vector3(0.3, 0.7, 1.2)
+material = SubResource("mat_interior")
+
+[node name="BedWest" type="CSGBox3D" parent="ApartmentsNorth"]
+position = Vector3(-21.5, 0.3, -20.7)
+size = Vector3(2, 0.6, 1.6)
+material = SubResource("mat_fabric")
+
+[node name="BedEast" type="CSGBox3D" parent="ApartmentsNorth"]
+position = Vector3(-14.5, 0.3, -20.7)
+size = Vector3(2, 0.6, 1.6)
+material = SubResource("mat_fabric")
+
+[node name="Dresser" type="CSGBox3D" parent="ApartmentsNorth"]
+position = Vector3(-17.3, 0.6, -20.9)
+size = Vector3(0.8, 1.2, 1.4)
+material = SubResource("mat_wood")
+
+[node name="FakeDoorGround0" type="CSGBox3D" parent="ApartmentsNorth"]
+position = Vector3(-25.4, 1.15, -13.93)
+size = Vector3(1.2, 2.3, 0.06)
+material = SubResource("mat_door")
+
+[node name="FakeDoorGround1" type="CSGBox3D" parent="ApartmentsNorth"]
+position = Vector3(-10.4, 1.15, -13.93)
+size = Vector3(1.2, 2.3, 0.06)
+material = SubResource("mat_door")
+
+[node name="FakeDoorUpper0" type="CSGBox3D" parent="ApartmentsNorth"]
+position = Vector3(-25.4, 4.35, -13.93)
+size = Vector3(1.2, 2.3, 0.06)
+material = SubResource("mat_door")
+
+[node name="FakeWindowUpper0" type="CSGBox3D" parent="ApartmentsNorth"]
+position = Vector3(-23.7, 4.65, -13.93)
+size = Vector3(1.4, 1.3, 0.06)
+material = SubResource("mat_glass")
+
+[node name="FakeDoorUpper1" type="CSGBox3D" parent="ApartmentsNorth"]
+position = Vector3(-20.4, 4.35, -13.93)
+size = Vector3(1.2, 2.3, 0.06)
+material = SubResource("mat_door")
+
+[node name="FakeWindowUpper1" type="CSGBox3D" parent="ApartmentsNorth"]
+position = Vector3(-18.7, 4.65, -13.93)
+size = Vector3(1.4, 1.3, 0.06)
+material = SubResource("mat_glass")
+
+[node name="FakeDoorUpper2" type="CSGBox3D" parent="ApartmentsNorth"]
+position = Vector3(-15.4, 4.35, -13.93)
+size = Vector3(1.2, 2.3, 0.06)
+material = SubResource("mat_door")
+
+[node name="FakeWindowUpper2" type="CSGBox3D" parent="ApartmentsNorth"]
+position = Vector3(-13.7, 4.65, -13.93)
+size = Vector3(1.4, 1.3, 0.06)
+material = SubResource("mat_glass")
+
+[node name="FakeDoorUpper3" type="CSGBox3D" parent="ApartmentsNorth"]
+position = Vector3(-10.4, 4.35, -13.93)
+size = Vector3(1.2, 2.3, 0.06)
+material = SubResource("mat_door")
+
+[node name="FakeWindowUpper3" type="CSGBox3D" parent="ApartmentsNorth"]
+position = Vector3(-8.7, 4.65, -13.93)
+size = Vector3(1.4, 1.3, 0.06)
+material = SubResource("mat_glass")
+
+[node name="Roof" type="CSGBox3D" parent="ApartmentsNorth"]
+position = Vector3(-17, 6.75, -17)
+size = Vector3(22.8, 0.3, 10.8)
+material = SubResource("mat_trim")
+
+[node name="SignBoard" type="CSGBox3D" parent="ApartmentsNorth"]
+position = Vector3(-18, 7.65, -11.9)
+size = Vector3(10, 1.5, 0.2)
+material = SubResource("mat_trim")
+
+[node name="ApartmentsNorthWalkway" type="CSGCombiner3D" parent="."]
+use_collision = true
+metadata/surface = "metal"
+
+[node name="Deck" type="CSGBox3D" parent="ApartmentsNorthWalkway"]
+position = Vector3(-17, 3.1, -13)
+size = Vector3(22, 0.2, 2)
+material = SubResource("mat_metal")
+
+[node name="RailTop" type="CSGBox3D" parent="ApartmentsNorthWalkway"]
+position = Vector3(-18, 4.125, -12.025)
+size = Vector3(20, 0.15, 0.15)
+material = SubResource("mat_metal")
+
+[node name="RailEnd" type="CSGBox3D" parent="ApartmentsNorthWalkway"]
+position = Vector3(-28.075, 3.7, -13)
+size = Vector3(0.15, 1, 2)
+material = SubResource("mat_metal")
+
+[node name="Post0" type="CSGBox3D" parent="ApartmentsNorthWalkway"]
+position = Vector3(-27.9, 3.3, -12.025)
+size = Vector3(0.1, 6.6, 0.15)
+material = SubResource("mat_metal")
+
+[node name="Post1" type="CSGBox3D" parent="ApartmentsNorthWalkway"]
+position = Vector3(-24, 3.3, -12.025)
+size = Vector3(0.1, 6.6, 0.15)
+material = SubResource("mat_metal")
+
+[node name="Post2" type="CSGBox3D" parent="ApartmentsNorthWalkway"]
+position = Vector3(-20, 3.3, -12.025)
+size = Vector3(0.1, 6.6, 0.15)
+material = SubResource("mat_metal")
+
+[node name="Post3" type="CSGBox3D" parent="ApartmentsNorthWalkway"]
+position = Vector3(-16, 3.3, -12.025)
+size = Vector3(0.1, 6.6, 0.15)
+material = SubResource("mat_metal")
+
+[node name="Post4" type="CSGBox3D" parent="ApartmentsNorthWalkway"]
+position = Vector3(-12, 3.3, -12.025)
+size = Vector3(0.1, 6.6, 0.15)
+material = SubResource("mat_metal")
+
+[node name="Post5" type="CSGBox3D" parent="ApartmentsNorthWalkway"]
+position = Vector3(-8.1, 3.3, -12.025)
+size = Vector3(0.1, 6.6, 0.15)
+material = SubResource("mat_metal")
+
+[node name="Baluster0" type="CSGBox3D" parent="ApartmentsNorthWalkway"]
+position = Vector3(-26, 3.625, -12.025)
+size = Vector3(0.08, 0.85, 0.11)
+material = SubResource("mat_metal")
+
+[node name="Baluster1" type="CSGBox3D" parent="ApartmentsNorthWalkway"]
+position = Vector3(-22, 3.625, -12.025)
+size = Vector3(0.08, 0.85, 0.11)
+material = SubResource("mat_metal")
+
+[node name="Baluster2" type="CSGBox3D" parent="ApartmentsNorthWalkway"]
+position = Vector3(-18, 3.625, -12.025)
+size = Vector3(0.08, 0.85, 0.11)
+material = SubResource("mat_metal")
+
+[node name="Baluster3" type="CSGBox3D" parent="ApartmentsNorthWalkway"]
+position = Vector3(-14, 3.625, -12.025)
+size = Vector3(0.08, 0.85, 0.11)
+material = SubResource("mat_metal")
+
+[node name="Baluster4" type="CSGBox3D" parent="ApartmentsNorthWalkway"]
+position = Vector3(-10, 3.625, -12.025)
+size = Vector3(0.08, 0.85, 0.11)
+material = SubResource("mat_metal")
+
+[node name="Stairs" type="CSGPolygon3D" parent="ApartmentsNorthWalkway"]
+position = Vector3(-8, 0, -12)
+rotation = Vector3(0, -1.5708, 0)
+polygon = PackedVector2Array(0, 0, 5.6, 0, 0, 3.2)
+depth = 2
+material = SubResource("mat_metal")
+
+[node name="LandingRailBack" type="CSGBox3D" parent="ApartmentsNorthWalkway"]
+position = Vector3(-6.975, 3.7, -14.075)
+size = Vector3(2.05, 1, 0.15)
+material = SubResource("mat_metal")
+
+[node name="LandingRailEast" type="CSGBox3D" parent="ApartmentsNorthWalkway"]
+position = Vector3(-6.025, 3.7, -13)
+size = Vector3(0.15, 1, 2)
+material = SubResource("mat_metal")
+
+[node name="ApartmentsSouth" type="CSGCombiner3D" parent="."]
+use_collision = true
+metadata/surface = "concrete"
+
+[node name="Shell" type="CSGBox3D" parent="ApartmentsSouth"]
+position = Vector3(18, 3.3, 18)
+size = Vector3(20, 6.6, 8)
+material = SubResource("mat_brick")
+
+[node name="FlatsCut" type="CSGBox3D" parent="ApartmentsSouth"]
+position = Vector3(18, 1.4, 18)
+size = Vector3(9.4, 3, 7.4)
+operation = 2
+material = SubResource("mat_interior")
+
+[node name="DoorWestCut" type="CSGBox3D" parent="ApartmentsSouth"]
+position = Vector3(19.4, 1.1, 14.15)
+size = Vector3(1.2, 2.4, 0.5)
+operation = 2
+material = SubResource("mat_interior")
+
+[node name="WindowWestCut" type="CSGBox3D" parent="ApartmentsSouth"]
+position = Vector3(21.5, 1.55, 14.15)
+size = Vector3(1.4, 1.1, 0.5)
+operation = 2
+material = SubResource("mat_interior")
+
+[node name="WindowEastCut" type="CSGBox3D" parent="ApartmentsSouth"]
+position = Vector3(16.6, 1.55, 14.15)
+size = Vector3(1.4, 1.1, 0.5)
+operation = 2
+material = SubResource("mat_interior")
+
+[node name="DoorEastCut" type="CSGBox3D" parent="ApartmentsSouth"]
+position = Vector3(14.6, 1.1, 14.15)
+size = Vector3(1.2, 2.4, 0.5)
+operation = 2
+material = SubResource("mat_interior")
+
+[node name="BackDoorCut" type="CSGBox3D" parent="ApartmentsSouth"]
+position = Vector3(20.9, 1.1, 21.85)
+size = Vector3(1.2, 2.4, 0.5)
+operation = 2
+material = SubResource("mat_interior")
+
+[node name="BackWindowCut" type="CSGBox3D" parent="ApartmentsSouth"]
+position = Vector3(15.2, 1.55, 21.85)
+size = Vector3(1.6, 1.1, 0.5)
+operation = 2
+material = SubResource("mat_interior")
+
+[node name="PartitionBack" type="CSGBox3D" parent="ApartmentsSouth"]
+position = Vector3(18, 1.45, 20.55)
+size = Vector3(0.3, 2.9, 2.3)
+material = SubResource("mat_interior")
+
+[node name="PartitionFront" type="CSGBox3D" parent="ApartmentsSouth"]
+position = Vector3(18, 1.45, 16.25)
+size = Vector3(0.3, 2.9, 3.9)
+material = SubResource("mat_interior")
+
+[node name="PartitionHeader" type="CSGBox3D" parent="ApartmentsSouth"]
+position = Vector3(18, 2.55, 18.8)
+size = Vector3(0.3, 0.7, 1.2)
+material = SubResource("mat_interior")
+
+[node name="BedWest" type="CSGBox3D" parent="ApartmentsSouth"]
+position = Vector3(21.5, 0.3, 20.7)
+size = Vector3(2, 0.6, 1.6)
+material = SubResource("mat_fabric")
+
+[node name="BedEast" type="CSGBox3D" parent="ApartmentsSouth"]
+position = Vector3(14.5, 0.3, 20.7)
+size = Vector3(2, 0.6, 1.6)
+material = SubResource("mat_fabric")
+
+[node name="Dresser" type="CSGBox3D" parent="ApartmentsSouth"]
+position = Vector3(17.3, 0.6, 20.9)
+size = Vector3(0.8, 1.2, 1.4)
+material = SubResource("mat_wood")
+
+[node name="FakeDoorGround0" type="CSGBox3D" parent="ApartmentsSouth"]
+position = Vector3(25.4, 1.15, 13.93)
+size = Vector3(1.2, 2.3, 0.06)
+material = SubResource("mat_door")
+
+[node name="FakeDoorGround1" type="CSGBox3D" parent="ApartmentsSouth"]
+position = Vector3(10.4, 1.15, 13.93)
+size = Vector3(1.2, 2.3, 0.06)
+material = SubResource("mat_door")
+
+[node name="FakeDoorUpper0" type="CSGBox3D" parent="ApartmentsSouth"]
+position = Vector3(25.4, 4.35, 13.93)
+size = Vector3(1.2, 2.3, 0.06)
+material = SubResource("mat_door")
+
+[node name="FakeWindowUpper0" type="CSGBox3D" parent="ApartmentsSouth"]
+position = Vector3(23.7, 4.65, 13.93)
+size = Vector3(1.4, 1.3, 0.06)
+material = SubResource("mat_glass")
+
+[node name="FakeDoorUpper1" type="CSGBox3D" parent="ApartmentsSouth"]
+position = Vector3(20.4, 4.35, 13.93)
+size = Vector3(1.2, 2.3, 0.06)
+material = SubResource("mat_door")
+
+[node name="FakeWindowUpper1" type="CSGBox3D" parent="ApartmentsSouth"]
+position = Vector3(18.7, 4.65, 13.93)
+size = Vector3(1.4, 1.3, 0.06)
+material = SubResource("mat_glass")
+
+[node name="FakeDoorUpper2" type="CSGBox3D" parent="ApartmentsSouth"]
+position = Vector3(15.4, 4.35, 13.93)
+size = Vector3(1.2, 2.3, 0.06)
+material = SubResource("mat_door")
+
+[node name="FakeWindowUpper2" type="CSGBox3D" parent="ApartmentsSouth"]
+position = Vector3(13.7, 4.65, 13.93)
+size = Vector3(1.4, 1.3, 0.06)
+material = SubResource("mat_glass")
+
+[node name="FakeDoorUpper3" type="CSGBox3D" parent="ApartmentsSouth"]
+position = Vector3(10.4, 4.35, 13.93)
+size = Vector3(1.2, 2.3, 0.06)
+material = SubResource("mat_door")
+
+[node name="FakeWindowUpper3" type="CSGBox3D" parent="ApartmentsSouth"]
+position = Vector3(8.7, 4.65, 13.93)
+size = Vector3(1.4, 1.3, 0.06)
+material = SubResource("mat_glass")
+
+[node name="Roof" type="CSGBox3D" parent="ApartmentsSouth"]
+position = Vector3(17, 6.75, 17)
+size = Vector3(22.8, 0.3, 10.8)
+material = SubResource("mat_trim")
+
+[node name="SignBoard" type="CSGBox3D" parent="ApartmentsSouth"]
+position = Vector3(18, 7.65, 11.9)
+size = Vector3(10, 1.5, 0.2)
+material = SubResource("mat_trim")
+
+[node name="ApartmentsSouthWalkway" type="CSGCombiner3D" parent="."]
+use_collision = true
+metadata/surface = "metal"
+
+[node name="Deck" type="CSGBox3D" parent="ApartmentsSouthWalkway"]
+position = Vector3(17, 3.1, 13)
+size = Vector3(22, 0.2, 2)
+material = SubResource("mat_metal")
+
+[node name="RailTop" type="CSGBox3D" parent="ApartmentsSouthWalkway"]
+position = Vector3(18, 4.125, 12.025)
+size = Vector3(20, 0.15, 0.15)
+material = SubResource("mat_metal")
+
+[node name="RailEnd" type="CSGBox3D" parent="ApartmentsSouthWalkway"]
+position = Vector3(28.075, 3.7, 13)
+size = Vector3(0.15, 1, 2)
+material = SubResource("mat_metal")
+
+[node name="Post0" type="CSGBox3D" parent="ApartmentsSouthWalkway"]
+position = Vector3(27.9, 3.3, 12.025)
+size = Vector3(0.1, 6.6, 0.15)
+material = SubResource("mat_metal")
+
+[node name="Post1" type="CSGBox3D" parent="ApartmentsSouthWalkway"]
+position = Vector3(24, 3.3, 12.025)
+size = Vector3(0.1, 6.6, 0.15)
+material = SubResource("mat_metal")
+
+[node name="Post2" type="CSGBox3D" parent="ApartmentsSouthWalkway"]
+position = Vector3(20, 3.3, 12.025)
+size = Vector3(0.1, 6.6, 0.15)
+material = SubResource("mat_metal")
+
+[node name="Post3" type="CSGBox3D" parent="ApartmentsSouthWalkway"]
+position = Vector3(16, 3.3, 12.025)
+size = Vector3(0.1, 6.6, 0.15)
+material = SubResource("mat_metal")
+
+[node name="Post4" type="CSGBox3D" parent="ApartmentsSouthWalkway"]
+position = Vector3(12, 3.3, 12.025)
+size = Vector3(0.1, 6.6, 0.15)
+material = SubResource("mat_metal")
+
+[node name="Post5" type="CSGBox3D" parent="ApartmentsSouthWalkway"]
+position = Vector3(8.1, 3.3, 12.025)
+size = Vector3(0.1, 6.6, 0.15)
+material = SubResource("mat_metal")
+
+[node name="Baluster0" type="CSGBox3D" parent="ApartmentsSouthWalkway"]
+position = Vector3(26, 3.625, 12.025)
+size = Vector3(0.08, 0.85, 0.11)
+material = SubResource("mat_metal")
+
+[node name="Baluster1" type="CSGBox3D" parent="ApartmentsSouthWalkway"]
+position = Vector3(22, 3.625, 12.025)
+size = Vector3(0.08, 0.85, 0.11)
+material = SubResource("mat_metal")
+
+[node name="Baluster2" type="CSGBox3D" parent="ApartmentsSouthWalkway"]
+position = Vector3(18, 3.625, 12.025)
+size = Vector3(0.08, 0.85, 0.11)
+material = SubResource("mat_metal")
+
+[node name="Baluster3" type="CSGBox3D" parent="ApartmentsSouthWalkway"]
+position = Vector3(14, 3.625, 12.025)
+size = Vector3(0.08, 0.85, 0.11)
+material = SubResource("mat_metal")
+
+[node name="Baluster4" type="CSGBox3D" parent="ApartmentsSouthWalkway"]
+position = Vector3(10, 3.625, 12.025)
+size = Vector3(0.08, 0.85, 0.11)
+material = SubResource("mat_metal")
+
+[node name="Stairs" type="CSGPolygon3D" parent="ApartmentsSouthWalkway"]
+position = Vector3(8, 0, 12)
+rotation = Vector3(0, 1.5708, 0)
+polygon = PackedVector2Array(0, 0, 5.6, 0, 0, 3.2)
+depth = 2
+material = SubResource("mat_metal")
+
+[node name="LandingRailBack" type="CSGBox3D" parent="ApartmentsSouthWalkway"]
+position = Vector3(6.975, 3.7, 14.075)
+size = Vector3(2.05, 1, 0.15)
+material = SubResource("mat_metal")
+
+[node name="LandingRailEast" type="CSGBox3D" parent="ApartmentsSouthWalkway"]
+position = Vector3(6.025, 3.7, 13)
+size = Vector3(0.15, 1, 2)
+material = SubResource("mat_metal")
+
+[node name="StoreNorth" type="CSGCombiner3D" parent="."]
+use_collision = true
+metadata/surface = "concrete"
+
+[node name="Shell" type="CSGBox3D" parent="StoreNorth"]
+position = Vector3(14, 2, -18.5)
+size = Vector3(12, 4, 7)
+material = SubResource("mat_brick_blue")
+
+[node name="InteriorCut" type="CSGBox3D" parent="StoreNorth"]
+position = Vector3(14, 1.75, -18.5)
+size = Vector3(11.4, 3.7, 6.4)
+operation = 2
+material = SubResource("mat_interior")
+
+[node name="DoorCut" type="CSGBox3D" parent="StoreNorth"]
+position = Vector3(13.1, 1.15, -15.15)
+size = Vector3(1.2, 2.5, 0.5)
+operation = 2
+material = SubResource("mat_interior")
+
+[node name="WindowWestCut" type="CSGBox3D" parent="StoreNorth"]
+position = Vector3(10.5, 1.75, -15.15)
+size = Vector3(3, 1.7, 0.5)
+operation = 2
+material = SubResource("mat_interior")
+
+[node name="WindowEastCut" type="CSGBox3D" parent="StoreNorth"]
+position = Vector3(16.7, 1.75, -15.15)
+size = Vector3(4.6, 1.7, 0.5)
+operation = 2
+material = SubResource("mat_interior")
+
+[node name="SideDoorCut" type="CSGBox3D" parent="StoreNorth"]
+position = Vector3(19.85, 1.15, -19)
+size = Vector3(0.5, 2.5, 1.2)
+operation = 2
+material = SubResource("mat_interior")
+
+[node name="Counter" type="CSGBox3D" parent="StoreNorth"]
+position = Vector3(10.8, 0.55, -18.6)
+size = Vector3(3.6, 1.1, 0.8)
+material = SubResource("mat_wood")
+
+[node name="ShelfFront" type="CSGBox3D" parent="StoreNorth"]
+position = Vector3(16.6, 0.9, -18.15)
+size = Vector3(4, 1.8, 0.5)
+material = SubResource("mat_metal")
+
+[node name="ShelfBack" type="CSGBox3D" parent="StoreNorth"]
+position = Vector3(16.6, 0.9, -20.35)
+size = Vector3(4, 1.8, 0.5)
+material = SubResource("mat_metal")
+
+[node name="Fridges" type="CSGBox3D" parent="StoreNorth"]
+position = Vector3(8.7, 1.1, -20.55)
+size = Vector3(0.8, 2.2, 2.3)
+material = SubResource("mat_glass")
+
+[node name="Awning" type="CSGBox3D" parent="StoreNorth"]
+position = Vector3(14, 3.075, -14.3)
+size = Vector3(12, 0.15, 1.4)
+material = SubResource("mat_car_red")
+
+[node name="Roof" type="CSGBox3D" parent="StoreNorth"]
+position = Vector3(14, 4.15, -18.5)
+size = Vector3(12.4, 0.3, 7.4)
+material = SubResource("mat_trim")
+
+[node name="StoreSouth" type="CSGCombiner3D" parent="."]
+use_collision = true
+metadata/surface = "concrete"
+
+[node name="Shell" type="CSGBox3D" parent="StoreSouth"]
+position = Vector3(-14, 2, 18.5)
+size = Vector3(12, 4, 7)
+material = SubResource("mat_brick_blue")
+
+[node name="InteriorCut" type="CSGBox3D" parent="StoreSouth"]
+position = Vector3(-14, 1.75, 18.5)
+size = Vector3(11.4, 3.7, 6.4)
+operation = 2
+material = SubResource("mat_interior")
+
+[node name="DoorCut" type="CSGBox3D" parent="StoreSouth"]
+position = Vector3(-13.1, 1.15, 15.15)
+size = Vector3(1.2, 2.5, 0.5)
+operation = 2
+material = SubResource("mat_interior")
+
+[node name="WindowWestCut" type="CSGBox3D" parent="StoreSouth"]
+position = Vector3(-10.5, 1.75, 15.15)
+size = Vector3(3, 1.7, 0.5)
+operation = 2
+material = SubResource("mat_interior")
+
+[node name="WindowEastCut" type="CSGBox3D" parent="StoreSouth"]
+position = Vector3(-16.7, 1.75, 15.15)
+size = Vector3(4.6, 1.7, 0.5)
+operation = 2
+material = SubResource("mat_interior")
+
+[node name="SideDoorCut" type="CSGBox3D" parent="StoreSouth"]
+position = Vector3(-19.85, 1.15, 19)
+size = Vector3(0.5, 2.5, 1.2)
+operation = 2
+material = SubResource("mat_interior")
+
+[node name="Counter" type="CSGBox3D" parent="StoreSouth"]
+position = Vector3(-10.8, 0.55, 18.6)
+size = Vector3(3.6, 1.1, 0.8)
+material = SubResource("mat_wood")
+
+[node name="ShelfFront" type="CSGBox3D" parent="StoreSouth"]
+position = Vector3(-16.6, 0.9, 18.15)
+size = Vector3(4, 1.8, 0.5)
+material = SubResource("mat_metal")
+
+[node name="ShelfBack" type="CSGBox3D" parent="StoreSouth"]
+position = Vector3(-16.6, 0.9, 20.35)
+size = Vector3(4, 1.8, 0.5)
+material = SubResource("mat_metal")
+
+[node name="Fridges" type="CSGBox3D" parent="StoreSouth"]
+position = Vector3(-8.7, 1.1, 20.55)
+size = Vector3(0.8, 2.2, 2.3)
+material = SubResource("mat_glass")
+
+[node name="Awning" type="CSGBox3D" parent="StoreSouth"]
+position = Vector3(-14, 3.075, 14.3)
+size = Vector3(12, 0.15, 1.4)
+material = SubResource("mat_car_red")
+
+[node name="Roof" type="CSGBox3D" parent="StoreSouth"]
+position = Vector3(-14, 4.15, 18.5)
+size = Vector3(12.4, 0.3, 7.4)
+material = SubResource("mat_trim")
+
+[node name="Props" type="CSGCombiner3D" parent="."]
+use_collision = true
+metadata/surface = "concrete"
+
+[node name="PropsMetal" type="CSGCombiner3D" parent="."]
+use_collision = true
+metadata/surface = "metal"
+
+[node name="PropsWood" type="CSGCombiner3D" parent="."]
+use_collision = true
+metadata/surface = "wood"
+
+[node name="SedanABody" type="CSGBox3D" parent="PropsMetal"]
+position = Vector3(-22, 0.65, -10)
+size = Vector3(4.4, 0.9, 1.9)
+material = SubResource("mat_car_red")
+
+[node name="SedanACabin" type="CSGBox3D" parent="PropsMetal"]
+position = Vector3(-22, 1.4, -10)
+size = Vector3(2.4, 0.6, 1.7)
+material = SubResource("mat_glass")
+
+[node name="BoxTruckA" type="CSGBox3D" parent="PropsMetal"]
+position = Vector3(2, 1.65, -11)
+size = Vector3(6, 2.7, 2.4)
+material = SubResource("mat_truck")
+
+[node name="BoxTruckCabA" type="CSGBox3D" parent="PropsMetal"]
+position = Vector3(5.9, 1.25, -11)
+size = Vector3(1.8, 1.9, 2.2)
+material = SubResource("mat_car_blue")
+
+[node name="TaxiABody" type="CSGBox3D" parent="PropsMetal"]
+position = Vector3(27, 0.65, -10.5)
+size = Vector3(4.4, 0.9, 1.9)
+material = SubResource("mat_car_taxi")
+
+[node name="TaxiACabin" type="CSGBox3D" parent="PropsMetal"]
+position = Vector3(27, 1.4, -10.5)
+size = Vector3(2.4, 0.6, 1.7)
+material = SubResource("mat_glass")
+
+[node name="HatchABody" type="CSGBox3D" parent="PropsMetal"]
+position = Vector3(24.5, 0.65, -19)
+size = Vector3(1.9, 0.9, 4.4)
+material = SubResource("mat_car_blue")
+
+[node name="HatchACabin" type="CSGBox3D" parent="PropsMetal"]
+position = Vector3(24.5, 1.4, -19)
+size = Vector3(1.7, 0.6, 2.4)
+material = SubResource("mat_glass")
+
+[node name="CoupeABody" type="CSGBox3D" parent="PropsMetal"]
+position = Vector3(30.5, 0.65, -20)
+size = Vector3(1.9, 0.9, 4.4)
+material = SubResource("mat_car_red")
+
+[node name="CoupeACabin" type="CSGBox3D" parent="PropsMetal"]
+position = Vector3(30.5, 1.4, -20)
+size = Vector3(1.7, 0.6, 2.4)
+material = SubResource("mat_glass")
+
+[node name="KioskA" type="CSGBox3D" parent="Props"]
+position = Vector3(-11, 1.3, 0)
+size = Vector3(2, 2.6, 3)
+material = SubResource("mat_brick_blue")
+
+[node name="KioskRoofA" type="CSGBox3D" parent="Props"]
+position = Vector3(-11, 2.7, 0)
+size = Vector3(2.6, 0.2, 3.6)
+material = SubResource("mat_trim")
+
+[node name="PlanterNWA" type="CSGBox3D" parent="Props"]
+position = Vector3(-10.5, 0.4, -6.4)
+size = Vector3(3, 0.8, 1.2)
+material = SubResource("mat_sidewalk")
+
+[node name="PlanterSWA" type="CSGBox3D" parent="Props"]
+position = Vector3(-10.5, 0.4, 6.4)
+size = Vector3(3, 0.8, 1.2)
+material = SubResource("mat_sidewalk")
+
+[node name="BenchNA" type="CSGBox3D" parent="PropsWood"]
+position = Vector3(-3.5, 0.25, -6.3)
+size = Vector3(3, 0.5, 0.6)
+material = SubResource("mat_wood")
+
+[node name="DumpsterA" type="CSGBox3D" parent="PropsMetal"]
+position = Vector3(-24.1, 0.65, -24.25)
+size = Vector3(1.8, 1.3, 1.3)
+material = SubResource("mat_dumpster")
+
+[node name="DumpsterGapA" type="CSGBox3D" parent="PropsMetal"]
+position = Vector3(1.4, 0.65, -20.35)
+size = Vector3(1.8, 1.3, 1.3)
+material = SubResource("mat_dumpster")
+
+[node name="AcUnitA" type="CSGBox3D" parent="PropsMetal"]
+position = Vector3(-13.4, 0.5, -22.6)
+size = Vector3(1.2, 1, 1.2)
+material = SubResource("mat_metal")
+
+[node name="CrateLowA" type="CSGBox3D" parent="PropsWood"]
+position = Vector3(-4.4, 0.6, -24.4)
+size = Vector3(1.2, 1.2, 1.2)
+material = SubResource("mat_wood")
+
+[node name="CrateHighA" type="CSGBox3D" parent="PropsWood"]
+position = Vector3(-4.4, 1.8, -24.4)
+size = Vector3(1.2, 1.2, 1.2)
+material = SubResource("mat_wood")
+
+[node name="CrateSideA" type="CSGBox3D" parent="PropsWood"]
+position = Vector3(-3.2, 0.6, -24.4)
+size = Vector3(1.2, 1.2, 1.2)
+material = SubResource("mat_wood")
+
+[node name="PalletsA" type="CSGBox3D" parent="PropsWood"]
+position = Vector3(15, 0.3, -24.25)
+size = Vector3(2, 0.6, 1.5)
+material = SubResource("mat_wood")
+
+[node name="NewsBoxesA" type="CSGBox3D" parent="PropsMetal"]
+position = Vector3(6.8, 0.55, -14.3)
+size = Vector3(1.2, 1.1, 0.6)
+material = SubResource("mat_car_blue")
+
+[node name="HydrantA" type="CSGBox3D" parent="PropsMetal"]
+position = Vector3(-30.1, 0.4, -9.1)
+size = Vector3(0.4, 0.8, 0.4)
+material = SubResource("mat_car_red")
+
+[node name="SedanBBody" type="CSGBox3D" parent="PropsMetal"]
+position = Vector3(22, 0.65, 10)
+size = Vector3(4.4, 0.9, 1.9)
+material = SubResource("mat_car_red")
+
+[node name="SedanBCabin" type="CSGBox3D" parent="PropsMetal"]
+position = Vector3(22, 1.4, 10)
+size = Vector3(2.4, 0.6, 1.7)
+material = SubResource("mat_glass")
+
+[node name="BoxTruckB" type="CSGBox3D" parent="PropsMetal"]
+position = Vector3(-2, 1.65, 11)
+size = Vector3(6, 2.7, 2.4)
+material = SubResource("mat_truck")
+
+[node name="BoxTruckCabB" type="CSGBox3D" parent="PropsMetal"]
+position = Vector3(-5.9, 1.25, 11)
+size = Vector3(1.8, 1.9, 2.2)
+material = SubResource("mat_car_blue")
+
+[node name="TaxiBBody" type="CSGBox3D" parent="PropsMetal"]
+position = Vector3(-27, 0.65, 10.5)
+size = Vector3(4.4, 0.9, 1.9)
+material = SubResource("mat_car_taxi")
+
+[node name="TaxiBCabin" type="CSGBox3D" parent="PropsMetal"]
+position = Vector3(-27, 1.4, 10.5)
+size = Vector3(2.4, 0.6, 1.7)
+material = SubResource("mat_glass")
+
+[node name="HatchBBody" type="CSGBox3D" parent="PropsMetal"]
+position = Vector3(-24.5, 0.65, 19)
+size = Vector3(1.9, 0.9, 4.4)
+material = SubResource("mat_car_blue")
+
+[node name="HatchBCabin" type="CSGBox3D" parent="PropsMetal"]
+position = Vector3(-24.5, 1.4, 19)
+size = Vector3(1.7, 0.6, 2.4)
+material = SubResource("mat_glass")
+
+[node name="CoupeBBody" type="CSGBox3D" parent="PropsMetal"]
+position = Vector3(-30.5, 0.65, 20)
+size = Vector3(1.9, 0.9, 4.4)
+material = SubResource("mat_car_red")
+
+[node name="CoupeBCabin" type="CSGBox3D" parent="PropsMetal"]
+position = Vector3(-30.5, 1.4, 20)
+size = Vector3(1.7, 0.6, 2.4)
+material = SubResource("mat_glass")
+
+[node name="KioskB" type="CSGBox3D" parent="Props"]
+position = Vector3(11, 1.3, 0)
+size = Vector3(2, 2.6, 3)
+material = SubResource("mat_brick_blue")
+
+[node name="KioskRoofB" type="CSGBox3D" parent="Props"]
+position = Vector3(11, 2.7, 0)
+size = Vector3(2.6, 0.2, 3.6)
+material = SubResource("mat_trim")
+
+[node name="PlanterNWB" type="CSGBox3D" parent="Props"]
+position = Vector3(10.5, 0.4, 6.4)
+size = Vector3(3, 0.8, 1.2)
+material = SubResource("mat_sidewalk")
+
+[node name="PlanterSWB" type="CSGBox3D" parent="Props"]
+position = Vector3(10.5, 0.4, -6.4)
+size = Vector3(3, 0.8, 1.2)
+material = SubResource("mat_sidewalk")
+
+[node name="BenchNB" type="CSGBox3D" parent="PropsWood"]
+position = Vector3(3.5, 0.25, 6.3)
+size = Vector3(3, 0.5, 0.6)
+material = SubResource("mat_wood")
+
+[node name="DumpsterB" type="CSGBox3D" parent="PropsMetal"]
+position = Vector3(24.1, 0.65, 24.25)
+size = Vector3(1.8, 1.3, 1.3)
+material = SubResource("mat_dumpster")
+
+[node name="DumpsterGapB" type="CSGBox3D" parent="PropsMetal"]
+position = Vector3(-1.4, 0.65, 20.35)
+size = Vector3(1.8, 1.3, 1.3)
+material = SubResource("mat_dumpster")
+
+[node name="AcUnitB" type="CSGBox3D" parent="PropsMetal"]
+position = Vector3(13.4, 0.5, 22.6)
+size = Vector3(1.2, 1, 1.2)
+material = SubResource("mat_metal")
+
+[node name="CrateLowB" type="CSGBox3D" parent="PropsWood"]
+position = Vector3(4.4, 0.6, 24.4)
+size = Vector3(1.2, 1.2, 1.2)
+material = SubResource("mat_wood")
+
+[node name="CrateHighB" type="CSGBox3D" parent="PropsWood"]
+position = Vector3(4.4, 1.8, 24.4)
+size = Vector3(1.2, 1.2, 1.2)
+material = SubResource("mat_wood")
+
+[node name="CrateSideB" type="CSGBox3D" parent="PropsWood"]
+position = Vector3(3.2, 0.6, 24.4)
+size = Vector3(1.2, 1.2, 1.2)
+material = SubResource("mat_wood")
+
+[node name="PalletsB" type="CSGBox3D" parent="PropsWood"]
+position = Vector3(-15, 0.3, 24.25)
+size = Vector3(2, 0.6, 1.5)
+material = SubResource("mat_wood")
+
+[node name="NewsBoxesB" type="CSGBox3D" parent="PropsMetal"]
+position = Vector3(-6.8, 0.55, 14.3)
+size = Vector3(1.2, 1.1, 0.6)
+material = SubResource("mat_car_blue")
+
+[node name="HydrantB" type="CSGBox3D" parent="PropsMetal"]
+position = Vector3(30.1, 0.4, 9.1)
+size = Vector3(0.4, 0.8, 0.4)
+material = SubResource("mat_car_red")
+
+[node name="Lamps" type="CSGCombiner3D" parent="."]
+use_collision = false
+
+[node name="Lamp0" type="CSGBox3D" parent="Lamps"]
+position = Vector3(-12.6, 2.5, -7.6)
+size = Vector3(0.16, 5, 0.16)
+material = SubResource("mat_metal")
+
+[node name="LampHead0" type="CSGBox3D" parent="Lamps"]
+position = Vector3(-12.6, 5.1, -7.6)
+size = Vector3(0.6, 0.2, 0.6)
+material = SubResource("mat_trim")
+
+[node name="Lamp1" type="CSGBox3D" parent="Lamps"]
+position = Vector3(12.6, 2.5, 7.6)
+size = Vector3(0.16, 5, 0.16)
+material = SubResource("mat_metal")
+
+[node name="LampHead1" type="CSGBox3D" parent="Lamps"]
+position = Vector3(12.6, 5.1, 7.6)
+size = Vector3(0.6, 0.2, 0.6)
+material = SubResource("mat_trim")
+
+[node name="Lamp2" type="CSGBox3D" parent="Lamps"]
+position = Vector3(12.6, 2.5, -7.6)
+size = Vector3(0.16, 5, 0.16)
+material = SubResource("mat_metal")
+
+[node name="LampHead2" type="CSGBox3D" parent="Lamps"]
+position = Vector3(12.6, 5.1, -7.6)
+size = Vector3(0.6, 0.2, 0.6)
+material = SubResource("mat_trim")
+
+[node name="Lamp3" type="CSGBox3D" parent="Lamps"]
+position = Vector3(-12.6, 2.5, 7.6)
+size = Vector3(0.16, 5, 0.16)
+material = SubResource("mat_metal")
+
+[node name="LampHead3" type="CSGBox3D" parent="Lamps"]
+position = Vector3(-12.6, 5.1, 7.6)
+size = Vector3(0.6, 0.2, 0.6)
+material = SubResource("mat_trim")
+
+[node name="Signs" type="Node3D" parent="."]
+
+[node name="SkylineNorth" type="Label3D" parent="Signs"]
+position = Vector3(14, 12, -27.4)
+pixel_size = 0.01
+modulate = Color(1, 0.35, 0.2, 1)
+outline_modulate = Color(0.05, 0.05, 0.06, 1)
+font_size = 400
+outline_size = 50
+text = "SLAMCITY"
+
+[node name="SkylineSouth" type="Label3D" parent="Signs"]
+position = Vector3(-14, 12, 27.4)
+rotation = Vector3(0, 3.1416, 0)
+pixel_size = 0.01
+modulate = Color(1, 0.35, 0.2, 1)
+outline_modulate = Color(0.05, 0.05, 0.06, 1)
+font_size = 400
+outline_size = 50
+text = "SLAMCITY"
+
+[node name="StoreNorth" type="Label3D" parent="Signs"]
+position = Vector3(14, 3.55, -14.95)
+pixel_size = 0.01
+modulate = Color(1, 0.9, 0.6, 1)
+outline_modulate = Color(0.05, 0.05, 0.06, 1)
+font_size = 72
+outline_size = 9
+text = "CORNER STORE 24H"
+
+[node name="StoreSouth" type="Label3D" parent="Signs"]
+position = Vector3(-14, 3.55, 14.95)
+rotation = Vector3(0, 3.1416, 0)
+pixel_size = 0.01
+modulate = Color(1, 0.9, 0.6, 1)
+outline_modulate = Color(0.05, 0.05, 0.06, 1)
+font_size = 72
+outline_size = 9
+text = "CORNER STORE 24H"
+
+[node name="FlatsNorth" type="Label3D" parent="Signs"]
+position = Vector3(-18, 7.65, -11.74)
+pixel_size = 0.01
+modulate = Color(0.55, 0.85, 1, 1)
+outline_modulate = Color(0.05, 0.05, 0.06, 1)
+font_size = 100
+outline_size = 12
+text = "SLAMCITY FLATS"
+
+[node name="FlatsSouth" type="Label3D" parent="Signs"]
+position = Vector3(18, 7.65, 11.74)
+rotation = Vector3(0, 3.1416, 0)
+pixel_size = 0.01
+modulate = Color(0.55, 0.85, 1, 1)
+outline_modulate = Color(0.05, 0.05, 0.06, 1)
+font_size = 100
+outline_size = 12
+text = "SLAMCITY FLATS"
+
+[node name="Spawns" type="Node3D" parent="."]
+
+[node name="West" type="Marker3D" parent="Spawns"]
+position = Vector3(-31, 0.05, 0)
+rotation = Vector3(0, -1.5708, 0)
+
+[node name="East" type="Marker3D" parent="Spawns"]
+position = Vector3(31, 0.05, 0)
+rotation = Vector3(0, 1.5708, 0)
+
+[node name="Armory" type="Node3D" parent="."]
+
+[node name="RackWest_m4" parent="Armory" instance=ExtResource("9_rack")]
+position = Vector3(-33.2, 0, -5.5)
+rotation = Vector3(0, 1.5708, 0)
+weapon = "m4"
+display_model = ExtResource("11_m4")
+display_scale = 0.163
+
+[node name="RackWest_ak47" parent="Armory" instance=ExtResource("9_rack")]
+position = Vector3(-33.2, 0, -3.3)
+rotation = Vector3(0, 1.5708, 0)
+weapon = "ak47"
+display_model = ExtResource("12_ak47")
+display_scale = 0.163
+
+[node name="RackWest_pdw9" parent="Armory" instance=ExtResource("9_rack")]
+position = Vector3(-33.2, 0, -1.1)
+rotation = Vector3(0, 1.5708, 0)
+weapon = "pdw9"
+display_model = ExtResource("13_pdw9")
+display_scale = 0.15
+
+[node name="RackWest_m870" parent="Armory" instance=ExtResource("9_rack")]
+position = Vector3(-33.2, 0, 1.1)
+rotation = Vector3(0, 1.5708, 0)
+weapon = "m870"
+display_model = ExtResource("14_m870")
+display_scale = 0.17
+
+[node name="RackWest_m40" parent="Armory" instance=ExtResource("9_rack")]
+position = Vector3(-33.2, 0, 3.3)
+rotation = Vector3(0, 1.5708, 0)
+weapon = "m40"
+display_model = ExtResource("15_m40")
+display_scale = 0.15
+
+[node name="RackWest_m1911" parent="Armory" instance=ExtResource("9_rack")]
+position = Vector3(-33.2, 0, 5.5)
+rotation = Vector3(0, 1.5708, 0)
+weapon = "m1911"
+display_model = ExtResource("16_pistol")
+display_scale = 0.12
+
+[node name="RackEast_m4" parent="Armory" instance=ExtResource("9_rack")]
+position = Vector3(33.2, 0, 5.5)
+rotation = Vector3(0, -1.5708, 0)
+weapon = "m4"
+display_model = ExtResource("11_m4")
+display_scale = 0.163
+
+[node name="RackEast_ak47" parent="Armory" instance=ExtResource("9_rack")]
+position = Vector3(33.2, 0, 3.3)
+rotation = Vector3(0, -1.5708, 0)
+weapon = "ak47"
+display_model = ExtResource("12_ak47")
+display_scale = 0.163
+
+[node name="RackEast_pdw9" parent="Armory" instance=ExtResource("9_rack")]
+position = Vector3(33.2, 0, 1.1)
+rotation = Vector3(0, -1.5708, 0)
+weapon = "pdw9"
+display_model = ExtResource("13_pdw9")
+display_scale = 0.15
+
+[node name="RackEast_m870" parent="Armory" instance=ExtResource("9_rack")]
+position = Vector3(33.2, 0, -1.1)
+rotation = Vector3(0, -1.5708, 0)
+weapon = "m870"
+display_model = ExtResource("14_m870")
+display_scale = 0.17
+
+[node name="RackEast_m40" parent="Armory" instance=ExtResource("9_rack")]
+position = Vector3(33.2, 0, -3.3)
+rotation = Vector3(0, -1.5708, 0)
+weapon = "m40"
+display_model = ExtResource("15_m40")
+display_scale = 0.15
+
+[node name="RackEast_m1911" parent="Armory" instance=ExtResource("9_rack")]
+position = Vector3(33.2, 0, -5.5)
+rotation = Vector3(0, -1.5708, 0)
+weapon = "m1911"
+display_model = ExtResource("16_pistol")
+display_scale = 0.12
+
+[node name="Targets" type="Node3D" parent="."]
+
+[node name="Walkway" parent="Targets" instance=ExtResource("4_dummy")]
+position = Vector3(20, 3.2, 13)
+weapon = "m40"
+aim_pitch = -6.0
+
+[node name="Bowl" parent="Targets" instance=ExtResource("4_dummy")]
+position = Vector3(4.5, -1.8, -2)
+rotation = Vector3(0, 1.5708, 0)
+weapon = "pdw9"
+
+[node name="StoreCounter" parent="Targets" instance=ExtResource("4_dummy")]
+position = Vector3(11, 0, -20)
+rotation = Vector3(0, 3.1416, 0)
+weapon = "m1911"
+
+[node name="Alley" parent="Targets" instance=ExtResource("4_dummy")]
+position = Vector3(0, 0, -24)
+rotation = Vector3(0, 1.5708, 0)
+weapon = "m4"
+crouching = true
+
+[node name="Kiosk" parent="Targets" instance=ExtResource("4_dummy")]
+position = Vector3(13.2, 0, 2.5)
+rotation = Vector3(0, 1.5708, 0)
+weapon = "ak47"
+
+[node name="Truck" parent="Targets" instance=ExtResource("4_dummy")]
+position = Vector3(-8, 0, 11)
+rotation = Vector3(0, 1.5708, 0)
+weapon = "m870"
+crouching = true
+
+[node name="StoreSouth" parent="Targets" instance=ExtResource("4_dummy")]
+position = Vector3(-11, 0, 17)
+weapon = "m4"
+
+[node name="EastStreet" parent="Targets" instance=ExtResource("4_dummy")]
+position = Vector3(29, 0, 5)
+rotation = Vector3(0, 1.5708, 0)
+weapon = "ak47"
+
+[node name="Flat" parent="Targets" instance=ExtResource("4_dummy")]
+position = Vector3(-16, 0, -17)
+rotation = Vector3(0, 3.1416, 0)
+weapon = "m870"
+
+[node name="Player" parent="." instance=ExtResource("1_player")]
+position = Vector3(-31, 0.05, 0)
+rotation = Vector3(0, -1.5708, 0)
+
+[node name="HUD" type="CanvasLayer" parent="."]
+script = ExtResource("2_hud")
+player_path = NodePath("../Player")
+
+[node name="Scope" type="Control" parent="HUD"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("6_scope")
+
+[node name="Damage" type="Control" parent="HUD"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("7_damage")
+
+[node name="Vignette" type="ColorRect" parent="HUD/Damage"]
+material = SubResource("Mat_vignette")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Crosshair" type="Control" parent="HUD"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("3_crosshair")
+
+[node name="Readout" type="Label" parent="HUD"]
+offset_left = 24.0
+offset_top = 20.0
+theme_override_font_sizes/font_size = 16
+text = "Standing"
+
+[node name="Controls" type="Label" parent="HUD"]
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = -48.0
+offset_right = 1500.0
+offset_bottom = -20.0
+grow_vertical = 0
+theme_override_colors/font_color = Color(1, 1, 1, 0.7)
+theme_override_font_sizes/font_size = 14
+text = "WASD move   Shift sprint (toggle) / hold breath   C crouch   Space jump   LMB fire   RMB aim   R reload   1 / 2 / wheel switch   F take weapon   T refill ammo   Esc menu   F1 hide"
+
+[node name="Health" type="ProgressBar" parent="HUD"]
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = -78.0
+offset_right = 264.0
+offset_bottom = -64.0
+grow_vertical = 0
+mouse_filter = 2
+theme_override_styles/background = SubResource("Style_health_bg")
+theme_override_styles/fill = SubResource("Style_health_fill")
+value = 100.0
+show_percentage = false
+
+[node name="Warning" type="Label" parent="HUD"]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -150.0
+offset_top = 48.0
+offset_right = 150.0
+offset_bottom = 74.0
+grow_horizontal = 2
+theme_override_constants/outline_size = 6
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.6)
+theme_override_font_sizes/font_size = 18
+horizontal_alignment = 1
+text = "LOW AMMO"
+
+[node name="Prompt" type="Label" parent="HUD"]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -200.0
+offset_top = 90.0
+offset_right = 200.0
+offset_bottom = 118.0
+grow_horizontal = 2
+theme_override_constants/outline_size = 6
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.7)
+theme_override_font_sizes/font_size = 20
+horizontal_alignment = 1
+text = "[F] Take M870"
+
+[node name="Death" type="Label" parent="HUD"]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -300.0
+offset_top = -120.0
+offset_right = 300.0
+offset_bottom = -40.0
+grow_horizontal = 2
+theme_override_constants/outline_size = 8
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.8)
+theme_override_colors/font_color = Color(1, 0.3, 0.25, 1)
+theme_override_font_sizes/font_size = 32
+horizontal_alignment = 1
+text = "YOU DIED"
+
+[node name="Ammo" type="VBoxContainer" parent="HUD"]
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -260.0
+offset_top = -110.0
+offset_right = -32.0
+offset_bottom = -28.0
+grow_horizontal = 0
+grow_vertical = 0
+alignment = 2
+
+[node name="Weapon" type="Label" parent="HUD/Ammo"]
+theme_override_colors/font_color = Color(1, 1, 1, 0.75)
+theme_override_font_sizes/font_size = 18
+horizontal_alignment = 2
+text = "M4A1"
+
+[node name="Count" type="Label" parent="HUD/Ammo"]
+theme_override_font_sizes/font_size = 34
+horizontal_alignment = 2
+text = "30 / 120"
+
+[node name="HitSound" type="AudioStreamPlayer" parent="HUD"]
+volume_db = -6.0
+bus = &"UI"
+
+[node name="ScoreFeed" type="Control" parent="HUD"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("17_score")
+
+[node name="MedalSound" type="AudioStreamPlayer" parent="HUD/ScoreFeed"]
+stream = ExtResource("18_medal")
+volume_db = -8.0
+bus = &"UI"
+
+[node name="PauseMenu" parent="." instance=ExtResource("5_pause")]
+player_path = NodePath("../Player")

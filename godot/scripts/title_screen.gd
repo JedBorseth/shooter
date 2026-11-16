@@ -3,6 +3,7 @@ extends Control
 
 const ARENA_PATH := "res://scenes/main.tscn"
 const NUKETOWN_PATH := "res://scenes/nuketown.tscn"
+const SLAMCITY_PATH := "res://scenes/slamcity.tscn"
 
 var _loading := false
 var _scene_path := ARENA_PATH
@@ -18,6 +19,9 @@ func _ready() -> void:
 	_testing.pressed.connect(_start_testing)
 	$Margin/Layout/Menu/Nuketown.pressed.connect(
 		func() -> void: _start_scene(NUKETOWN_PATH, "Nuketown")
+	)
+	$Margin/Layout/Menu/Slamcity.pressed.connect(
+		func() -> void: _start_scene(SLAMCITY_PATH, "Slamcity")
 	)
 	$Margin/Layout/Menu/Zombies.pressed.connect(_open_zombies)
 	_testing.grab_focus()
@@ -96,7 +100,7 @@ func _start_scene(path: String, destination: String) -> void:
 
 
 func _set_buttons_disabled(disabled: bool) -> void:
-	for name: String in ["TestingArea", "Nuketown", "Zombies"]:
+	for name: String in ["TestingArea", "Slamcity", "Nuketown", "Zombies"]:
 		($Margin/Layout/Menu.get_node(name) as Button).disabled = disabled
 
 

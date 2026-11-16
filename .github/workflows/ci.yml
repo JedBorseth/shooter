@@ -107,6 +107,9 @@ jobs:
         run: .github/scripts/import-assets.sh
       - name: Run smoke test
         run: godot --headless --path godot --script res://tests/smoke_test.gd
+      # Enters Slamcity from the home screen and walks, climbs, and shoots through it.
+      - name: Run Slamcity test
+        run: godot --headless --path godot --script res://tests/slamcity_test.gd
       - name: Run settings test
         run: godot --headless --path godot --script res://tests/settings_test.gd
       # Starts a dedicated server process and joins it over UDP on localhost
