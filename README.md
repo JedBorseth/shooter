@@ -14,13 +14,15 @@ The plan, decisions, and reference projects are in [docs/roadmap.md](docs/roadma
 
 ![First-person arms: M4 at the hip, aimed, sprinting, and reloading, the pistol aimed, and the M870 pump](docs/media/first-person-arms.jpg)
 
+![Zombies: a horde closing in, a zombie up close, a zombie's swing, and the game-over screen](docs/media/zombies.jpg)
+
 ## Layout
 
 - `godot/`: the Godot project (scenes, GDScript glue, assets).
 - `godot/assets/characters/`: the soldier model and its animation sets (built by `tools/build_character_assets.py`), and the bone maps that retarget them to Godot's humanoid skeleton. `godot/scenes/characters/` holds the third-person soldier and the first-person arms.
 - `godot/data/weapons/`: one RON file per weapon (damage, fire rate, recoil pattern, spread, reload style, pellets, scope). Edit a file while the game runs from a debug build and it reloads.
-- `rust/sim/`: engine-independent, deterministic simulation: movement, weapons (fire rate, falloff, recoil patterns, spread, pellets, bolt and pump cycling, magazine and shell-by-shell reloads, ADS, scope sway and hold breath, switching, pickups), health (regeneration, fall damage, death), hit zones (head, chest, stomach, arms, legs, posed from stance and view angles, with damage multipliers), the combined per-player step that the client predicts and the server runs, and gamepad look (stick shaping, aim assist). `rust/sim/src/net/` holds the netcode core: the bit-packed wire protocol with delta compression, the server's input queue (with an input rate cap), client prediction and reconciliation, snapshot interpolation, lag compensation (hitbox history, rewind, and shot resolution), a network condition simulator, and server discovery (`discovery.rs`: the query and master server packets, and the browser's logic). No Godot types, so the client and the dedicated server share it and it can be unit-tested on its own.
-- `rust/game/`: the GDExtension that exposes the simulation to Godot: `FpsPlayer` (input, gamepad look and aim assist, hitscan, tracers, footsteps, camera, prediction), `AimAssistTarget`, `ViewmodelRig` and `WeaponView` (procedural weapon motion, muzzle flash, ejected shells, sounds), `WeaponPickup` (weapon racks), `Sentry` (a turret that shoots back), `TargetDummy` (an armed soldier), the characters in `rust/game/src/character/` (`SoldierRig` with its animation tree, `SoldierPoser` for aim and hand IK, `FpArms`, team palettes), `HitboxRig` (hit zones as physics shapes, F4 overlay), and networking in `rust/game/src/net/`: `NetServer` (the dedicated server, which also resolves every shot, applies damage, and keeps score), `NetClient`, `RemotePlayer` (other players, interpolated), and `ServerBrowser` (finds servers for the server browser; the server side answers its queries).
+- `rust/sim/`: engine-independent, deterministic simulation: Zombies rules (`zombies.rs`: rounds, horde size and health, gaits, the straight-line chase, attacks, the two-hit rule, points), movement, weapons (fire rate, falloff, recoil patterns, spread, pellets, bolt and pump cycling, magazine and shell-by-shell reloads, ADS, scope sway and hold breath, switching, pickups), health (regeneration, fall damage, death), hit zones (head, chest, stomach, arms, legs, posed from stance and view angles, with damage multipliers), the combined per-player step that the client predicts and the server runs, and gamepad look (stick shaping, aim assist). `rust/sim/src/net/` holds the netcode core: the bit-packed wire protocol with delta compression, the server's input queue (with an input rate cap), client prediction and reconciliation, snapshot interpolation, lag compensation (hitbox history, rewind, and shot resolution), a network condition simulator, and server discovery (`discovery.rs`: the query and master server packets, and the browser's logic). No Godot types, so the client and the dedicated server share it and it can be unit-tested on its own.
+- `rust/game/`: the GDExtension that exposes the simulation to Godot: `FpsPlayer` (input, gamepad look and aim assist, hitscan, tracers, footsteps, camera, prediction), `AimAssistTarget`, `ViewmodelRig` and `WeaponView` (procedural weapon motion, muzzle flash, ejected shells, sounds), `WeaponPickup` (weapon racks), `Sentry` (a turret that shoots back), `TargetDummy` (an armed soldier), `Zombie` and `ZombieDirector` (Zombies mode), the characters in `rust/game/src/character/` (`SoldierRig` with its animation tree, `SoldierPoser` for aim and hand IK, `FpArms`, team palettes), `HitboxRig` (hit zones as physics shapes, F4 overlay), and networking in `rust/game/src/net/`: `NetServer` (the dedicated server, which also resolves every shot, applies damage, and keeps score), `NetClient`, `RemotePlayer` (other players, interpolated), and `ServerBrowser` (finds servers for the server browser; the server side answers its queries).
 - `rust/master/`: `shooter-master`, the master server that lists dedicated servers for the in-game server browser.
 - `godot/shaders/`: viewmodel projection (own FOV, never clips walls), muzzle flash, damage vignette, and the blockout grid.
 - `godot/scripts/`: GDScript for the HUD, scope and damage overlays, pause and settings menu (`Settings` autoload), the title screen and server browser, impacts, tracers, and the `Net` autoload that starts a server or client from command-line options or the server browser (`godot/scripts/net/`).
@@ -53,9 +55,25 @@ around the edges, with practice targets and a weapon rack at each spawn. It ship
 build. **Multiplayer** opens the server browser (see [Play online](#play-online)). **Zombies**
 opens a Black Ops 2 inspired menu: **Solo** leads to a rotating globe with five
 selectable map locations. Use the list, map markers, or arrow buttons to select;
-drag the globe to rotate, and use Back or Esc to return. Zombies maps are menu
-previews; gameplay is not implemented yet. Zombies assets load only on menu entry.
-Use the mouse or press Enter to select the focused menu option.
+drag the globe to rotate, and use Back or Esc to return. **START GAME** loads the
+Zombies arena; every map plays in that arena for now. Zombies assets load only on
+menu entry. Use the mouse or press Enter to select the focused menu option.
+
+### Zombies
+
+Survive rounds of zombies in a walled yard at night. Each round sends more zombies
+(6, 8, 13, 18, 24, then five more per round), with more health (150 in round 1, 100
+more each round to round 9, then 10% more per round). Everyone walks in round 1 to
+3; joggers join from round 4 and runners from round 7, all slower than your sprint.
+Zombies always walk in a straight line at you and slide along whatever is in the
+way. Up to 24 are alive at once.
+
+A zombie that reaches you swings. The first hit takes half your health and the
+second kills you, unless your health has fully regenerated in between. There is no
+respawn: death ends the match and shows how many rounds you survived, with
+**Play again** and **Main menu**. Hits pay 10 points, kills 60, and headshot kills
+100; you start with 500. The weapon tables on the north wall hand out guns and
+refill ammo (F). The T refill key is off in this mode. Esc opens the pause menu.
 
 ## Test
 
@@ -66,7 +84,10 @@ godot --headless --path godot --script res://tests/slamcity_test.gd
 godot --headless --path godot --script res://tests/settings_test.gd
 godot --headless --path godot --script res://tests/title_screen_test.gd
 godot --headless --path godot --script res://tests/zombies_menu_test.gd
+godot --headless --path godot --script res://tests/zombies_test.gd
 ```
+
+The Zombies test loads the arena and checks that zombies spawn, walk straight at the player at their round's speed, can be shot for points, that clearing round 1 starts round 2, and that exactly two zombie hits end the match with no respawn. `godot/tests/zombies_capture.gd` takes reference screenshots on a GPU (set `CAPTURE_DIR`).
 
 The smoke test loads the arena headless and drives the player through movement (toggle sprint, slide, crouch), combat (aim, fire, kill a dummy, reload, switch), the characters (first-person and third-person hands on the grip, every hit zone, headshot and leg damage), a weapon rack, the shotgun (pellets, pump, shell-by-shell reload), the sniper (scope, hold breath), damage, regeneration, death and respawn, fall damage, the sentry, and gamepad look with aim assist. The settings test checks the menu and that settings save and load. Both exit non-zero on failure.
 

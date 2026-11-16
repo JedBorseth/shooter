@@ -13,6 +13,7 @@ pub mod player;
 pub mod rng;
 pub mod score;
 pub mod weapon;
+pub mod zombies;
 
 pub use glam::{Vec2, Vec3};
 

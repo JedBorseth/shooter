@@ -12,9 +12,9 @@ use std::f32::consts::PI;
 use godot::classes::animation_mixer::AnimationCallbackModeProcess;
 use godot::classes::{
     AnimationLibrary, AnimationNode, AnimationNodeAnimation, AnimationNodeBlend2,
-    AnimationNodeBlendSpace1D, AnimationNodeBlendTree, AnimationNodeTimeScale,
-    AnimationNodeTransition, AnimationRootNode, AnimationTree, INode3D, MeshInstance3D, Node3D,
-    Skeleton3D, StandardMaterial3D,
+    AnimationNodeBlendSpace1D, AnimationNodeBlendTree, AnimationNodeOneShot,
+    AnimationNodeTimeScale, AnimationNodeTransition, AnimationRootNode, AnimationTree,
+    BoneAttachment3D, INode3D, MeshInstance3D, Node3D, Skeleton3D, SphereMesh, StandardMaterial3D,
 };
 use godot::prelude::*;
 use shooter_sim::movement::Stance;
@@ -31,6 +31,10 @@ const WALK_SPEED: f32 = 1.06;
 const JOG_SPEED: f32 = 3.0;
 const SPRINT_SPEED: f32 = 6.0;
 const CROUCH_SPEED: f32 = 0.72;
+/// Natural ground speed (m/s) of the zombie walk loop, measured from the planted foot.
+const ZOMBIE_WALK_SPEED: f32 = 0.95;
+/// Zombies slower than this play the shamble alone, sped up to their speed.
+const ZOMBIE_SHAMBLE_LIMIT: f32 = 2.1;
 /// Non-sprinting runs blend no further than this toward the sprint, then speed up.
 const RUN_BLEND_LIMIT: f32 = 4.0;
 /// The legs turn at most this far from the aim (radians) when strafing.
@@ -115,6 +119,10 @@ pub struct SoldierRig {
     #[export]
     #[init(val = 1)]
     team: i32,
+    /// Animate as a zombie: shambling walk, arms reaching, a scratch attack,
+    /// and no weapon. Set before the rig enters the tree.
+    #[export]
+    zombie: bool,
 
     #[init(node = "Model")]
     model: OnReady<Gd<Node3D>>,
@@ -163,8 +171,15 @@ impl INode3D for SoldierRig {
         skeleton.clone().upcast::<Node>().add_child(&poser);
         self.poser = Some(poser);
 
-        for name in ["Body", "Gear"] {
-            if let Some(mesh) = skeleton.try_get_node_as::<MeshInstance3D>(name) {
+        // A zombie's gear includes its hidden helmet, which the overlay would
+        // draw as a ghost: flash only its body.
+        let flashing: &[&str] = if self.zombie {
+            &["Body"]
+        } else {
+            &["Body", "Gear"]
+        };
+        for name in flashing {
+            if let Some(mesh) = skeleton.try_get_node_as::<MeshInstance3D>(*name) {
                 self.meshes.push(mesh);
             }
         }
@@ -173,6 +188,9 @@ impl INode3D for SoldierRig {
         }
         self.flash_material = Some(palette::hit_flash_material());
         self.apply_team();
+        if self.zombie {
+            add_zombie_eyes(&skeleton);
+        }
 
         let tree = self.build_tree();
         self.tree = Some(tree);
@@ -424,19 +442,37 @@ impl SoldierRig {
             let set = |tree: &mut Gd<AnimationTree>, path: &str, value: Variant| {
                 tree.set(&format!("parameters/{path}"), &value);
             };
-            set(tree, "stand/blend_position", stand_position.to_variant());
-            set(tree, "stand_rate/scale", stand_rate.to_variant());
-            set(tree, "crouch/blend_position", crouch_position.to_variant());
-            set(tree, "crouch_rate/scale", crouch_rate.to_variant());
-            set(tree, "stance/blend_amount", self.crouch.to_variant());
-            set(tree, "slide/blend_amount", self.slide.to_variant());
-            set(tree, "air/blend_amount", self.air.to_variant());
-            let hold = if self.weapon.is_some() && frame.alive {
-                1.0f32
+            if self.zombie {
+                // Walkers shamble; faster zombies blend into a jog and a run.
+                let position = if !moving {
+                    0.0
+                } else if speed < ZOMBIE_SHAMBLE_LIMIT {
+                    ZOMBIE_WALK_SPEED
+                } else {
+                    speed.min(SPRINT_SPEED)
+                };
+                let rate = if moving {
+                    (speed / position.max(ZOMBIE_WALK_SPEED)).clamp(0.5, 1.8)
+                } else {
+                    1.0
+                };
+                set(tree, "walk/blend_position", position.to_variant());
+                set(tree, "walk_rate/scale", rate.to_variant());
             } else {
-                0.0
-            };
-            set(tree, "hold/blend_amount", hold.to_variant());
+                set(tree, "stand/blend_position", stand_position.to_variant());
+                set(tree, "stand_rate/scale", stand_rate.to_variant());
+                set(tree, "crouch/blend_position", crouch_position.to_variant());
+                set(tree, "crouch_rate/scale", crouch_rate.to_variant());
+                set(tree, "stance/blend_amount", self.crouch.to_variant());
+                set(tree, "slide/blend_amount", self.slide.to_variant());
+                set(tree, "air/blend_amount", self.air.to_variant());
+                let hold = if self.weapon.is_some() && frame.alive {
+                    1.0f32
+                } else {
+                    0.0
+                };
+                set(tree, "hold/blend_amount", hold.to_variant());
+            }
             // Only on a change: a request restarts the death clip.
             if self.life_requested != Some(frame.alive) {
                 self.life_requested = Some(frame.alive);
@@ -444,6 +480,18 @@ impl SoldierRig {
                 set(tree, "life/transition_request", life.to_variant());
             }
             tree.advance(f64::from(dt));
+        }
+    }
+
+    /// A zombie's scratch attack (zombie rigs only).
+    pub fn attack(&mut self) {
+        if let Some(tree) = &mut self.tree
+            && self.zombie
+        {
+            tree.set(
+                "parameters/attack/request",
+                &(godot::classes::animation_node_one_shot::OneShotRequest::FIRE.ord()).to_variant(),
+            );
         }
     }
 
@@ -596,6 +644,10 @@ impl SoldierRig {
             }
         }
         tree.set_root_node("../Model");
+        if self.zombie {
+            let graph = zombie_graph();
+            return self.finish_tree(tree, graph);
+        }
 
         let mut graph = AnimationNodeBlendTree::new_gd();
         let mut add = |name: &str, node: Gd<AnimationNode>, x: f32| {
@@ -682,6 +734,14 @@ impl SoldierRig {
         for (to, port, from) in links {
             graph.connect_node(to, port, from);
         }
+        self.finish_tree(tree, graph)
+    }
+
+    fn finish_tree(
+        &mut self,
+        mut tree: Gd<AnimationTree>,
+        graph: Gd<AnimationNodeBlendTree>,
+    ) -> Gd<AnimationTree> {
         tree.set_tree_root(&graph.upcast::<AnimationRootNode>());
         // Advanced by `update`, so the pose follows the time the owner gives it
         // (and tests and screenshots are repeatable).
@@ -690,6 +750,99 @@ impl SoldierRig {
         tree.set_active(true);
         tree
     }
+}
+
+/// Eye offsets from the head bone, in skeleton space (the model faces +Z there).
+const EYE_SPREAD: f32 = 0.034;
+const EYE_UP: f32 = 0.075;
+const EYE_FORWARD: f32 = 0.095;
+
+/// Two glowing eyes on the head bone.
+fn add_zombie_eyes(skeleton: &Gd<Skeleton3D>) {
+    let head = skeleton.find_bone("Head");
+    if head < 0 {
+        godot_error!("SoldierRig: no Head bone for the zombie's eyes");
+        return;
+    }
+    let rest = skeleton.get_bone_global_rest(head);
+    let mut attachment = BoneAttachment3D::new_alloc();
+    attachment.set_name("Eyes");
+    attachment.set_bone_name("Head");
+    skeleton.clone().upcast::<Node>().add_child(&attachment);
+    let mut sphere = SphereMesh::new_gd();
+    sphere.set_radius(0.016);
+    sphere.set_height(0.026);
+    sphere.set_radial_segments(8);
+    sphere.set_rings(4);
+    sphere.set_material(&palette::zombie_eye_material());
+    for side in [-1.0, 1.0] {
+        let eye = Vector3::new(side * EYE_SPREAD, EYE_UP, EYE_FORWARD);
+        let mut mesh = MeshInstance3D::new_alloc();
+        mesh.set_mesh(&sphere);
+        mesh.set_cast_shadows_setting(
+            godot::classes::geometry_instance_3d::ShadowCastingSetting::OFF,
+        );
+        mesh.set_position(rest.basis.inverse() * eye);
+        attachment.add_child(&mesh);
+    }
+}
+
+/// The zombie's animation graph: a shamble that blends into a jog and a run
+/// with speed, a one-shot scratch attack, and the death fall.
+fn zombie_graph() -> Gd<AnimationNodeBlendTree> {
+    let mut graph = AnimationNodeBlendTree::new_gd();
+    let clip = |name: &str| {
+        let mut a = AnimationNodeAnimation::new_gd();
+        a.set_animation(name);
+        a
+    };
+    let mut walk = AnimationNodeBlendSpace1D::new_gd();
+    walk.set_min_space(0.0);
+    walk.set_max_space(SPRINT_SPEED);
+    for (name, position) in [
+        ("ual2/Zombie_Idle", 0.0),
+        ("ual2/Zombie_Walk_Fwd", ZOMBIE_WALK_SPEED),
+        ("ual1/Jog_Fwd", JOG_SPEED),
+        ("ual1/Sprint", SPRINT_SPEED),
+    ] {
+        let point = name.rsplit('/').next().unwrap_or(name);
+        walk.add_blend_point_ex(&clip(name).upcast::<AnimationRootNode>(), position)
+            .name(point)
+            .done();
+    }
+    graph.add_node("walk", &walk.upcast::<AnimationNode>());
+    graph.add_node(
+        "walk_rate",
+        &AnimationNodeTimeScale::new_gd().upcast::<AnimationNode>(),
+    );
+    let mut scratch = clip("ual2/Zombie_Scratch");
+    scratch.set_loop_mode(godot::classes::animation::LoopMode::NONE);
+    graph.add_node("attack_clip", &scratch.upcast::<AnimationNode>());
+    let mut attack = AnimationNodeOneShot::new_gd();
+    attack.set_fadein_time(0.08);
+    attack.set_fadeout_time(0.25);
+    graph.add_node("attack", &attack.upcast::<AnimationNode>());
+    let mut death = clip("ual1/Death01");
+    death.set_loop_mode(godot::classes::animation::LoopMode::NONE);
+    graph.add_node("death_clip", &death.upcast::<AnimationNode>());
+    let mut life = AnimationNodeTransition::new_gd();
+    life.set_input_count(2);
+    life.set_input_name(0, "alive");
+    life.set_input_name(1, "dead");
+    life.set_input_reset(1, true);
+    life.set_xfade_time(0.12);
+    graph.add_node("life", &life.upcast::<AnimationNode>());
+    for (to, port, from) in [
+        ("walk_rate", 0, "walk"),
+        ("attack", 0, "walk_rate"),
+        ("attack", 1, "attack_clip"),
+        ("life", 0, "attack"),
+        ("life", 1, "death_clip"),
+        ("output", 0, "life"),
+    ] {
+        graph.connect_node(to, port, from);
+    }
+    graph
 }
 
 /// Swaps each surface's imported material for the team's material of the same role.

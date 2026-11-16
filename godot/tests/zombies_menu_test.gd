@@ -1,5 +1,6 @@
 extends SceneTree
-## UI navigation and asset isolation; does not require the Rust gameplay extension.
+## UI navigation and asset isolation. Entering the arena from START GAME is
+## checked only when the Rust gameplay extension is built.
 ## Optional GPU captures:
 ## MENU_CAPTURE_DIR=/tmp/menu godot --path godot --script res://tests/zombies_menu_test.gd
 
@@ -104,7 +105,35 @@ func _run() -> void:
 	_check(
 		title.get_node("ZombiesMenu").screen == "zombies", "reopening Zombies starts at Solo choice"
 	)
+	await _start_game(title.get_node("ZombiesMenu"))
 	_finish()
+
+
+func _start_game(zombies: Node) -> void:
+	zombies.get_node("Canvas/Landing/Solo").pressed.emit()
+	await _frames(2)
+	zombies.select_map(1)
+	var requested: Array[String] = []
+	zombies.play_requested.connect(func(map_name: String) -> void: requested.append(map_name))
+	var start := zombies.get_node("Canvas/MapSelector/Start") as Button
+	start.pressed.emit()
+	start.pressed.emit()
+	_check(requested == ["NUKETOWN ZOMBIES"], "START GAME requests the selected map once")
+	_check(start.disabled, "START GAME disables while loading")
+	if not ClassDB.class_exists("ZombieDirector"):
+		print("SKIP entering the Zombies arena: the Rust extension is not built")
+		return
+	var deadline := Time.get_ticks_msec() + 30000
+	while Time.get_ticks_msec() < deadline:
+		if current_scene != null and current_scene.scene_file_path.ends_with("zombies_arena.tscn"):
+			break
+		await process_frame
+	var entered := (
+		current_scene != null and current_scene.scene_file_path.ends_with("zombies_arena.tscn")
+	)
+	_check(entered, "START GAME loads the Zombies arena")
+	if entered:
+		_check(current_scene.get_node_or_null("Director") != null, "the arena runs a match")
 
 
 func _check_audio(zombies: Node) -> void:

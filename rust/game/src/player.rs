@@ -132,6 +132,14 @@ pub struct FpsPlayer {
     #[export]
     #[init(val = 3.0)]
     respawn_delay: f32,
+    /// Respawn after `respawn_delay`. Off in Zombies, where death ends the match.
+    #[export]
+    #[init(val = true)]
+    auto_respawn: bool,
+    /// The T key refills every carried weapon (the demo arena). Off in Zombies.
+    #[export]
+    #[init(val = true)]
+    allow_refill: bool,
     /// How far away weapon racks can be used, in metres.
     #[export]
     #[init(val = 2.6)]
@@ -373,7 +381,7 @@ impl ICharacterBody3D for FpsPlayer {
         self.events = events;
 
         // Online, the server respawns the player and the next snapshot moves them.
-        if !self.state.alive() && self.prediction.is_none() {
+        if !self.state.alive() && self.prediction.is_none() && self.auto_respawn {
             self.respawn_in -= dt;
             if self.respawn_in <= 0.0 {
                 self.respawn();
@@ -848,7 +856,11 @@ impl FpsPlayer {
     fn refill_pressed(&mut self) -> bool {
         let pressed = Input::singleton().is_action_just_pressed("refill_ammo")
             | self.take_latched("refill_ammo");
-        pressed && self.input_enabled && self.state.alive() && self.prediction.is_none()
+        pressed
+            && self.allow_refill
+            && self.input_enabled
+            && self.state.alive()
+            && self.prediction.is_none()
     }
 
     fn read_input(&mut self) -> PlayerInput {
