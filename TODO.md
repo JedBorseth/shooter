@@ -43,7 +43,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Data-driven weapon definitions: RON files in `godot/data/weapons/`, loaded at startup and hot-reloaded in debug builds.
 - [x] More weapons: AK-47, PDW-9 SMG (with a red dot), M870 pump shotgun (pellets, shell-by-shell reload), M40 bolt-action sniper (scope overlay).
 - [x] LMG (LSW-6: 75 rounds, slow aim and reload) and a burst-fire rifle (BR-3: `FireMode::Burst`, three rounds a pull, one burst kills up close).
-- [ ] Attachments: optics (red dot, ACOG), suppressor, grip, extended magazine, as modifiers on `WeaponDef`.
+- [x] Attachments: red dot, ACOG, suppressor, grip, and extended magazine, as weapon variants (`Attachment::apply`), chosen in the loadout menu, with their parts on the first- and third-person models.
 - [x] Hold-breath sway for scoped weapons.
 - [ ] **good first task** Weapon inspect on a key press (procedural spin in `ViewmodelRig`).
 - [x] **good first task** Low-ammo click and a "LOW AMMO" HUD warning.

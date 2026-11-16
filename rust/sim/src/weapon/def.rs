@@ -126,6 +126,107 @@ pub struct ScopeDef {
     pub breath_recovery: f32,
 }
 
+/// Something fitted to a primary weapon in a loadout. Each weapon file lists
+/// the attachments it takes; the table then holds a variant of the weapon for
+/// each (`m4+grip`), with its numbers changed by [`Attachment::apply`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
+pub enum Attachment {
+    /// A reflex sight in place of the iron sights.
+    RedDot,
+    /// A 2.5x combat scope.
+    Acog,
+    /// Quiet, no muzzle flash or tracers, shorter range.
+    Suppressor,
+    /// A vertical foregrip: a quarter less recoil.
+    Grip,
+    /// Half again as many rounds, a slightly slower reload.
+    ExtendedMag,
+}
+
+impl Attachment {
+    pub const ALL: [Attachment; 5] = [
+        Attachment::RedDot,
+        Attachment::Acog,
+        Attachment::Suppressor,
+        Attachment::Grip,
+        Attachment::ExtendedMag,
+    ];
+
+    /// Lower-case key, used in variant keys (`m4+grip`) and scripts.
+    pub fn key(self) -> &'static str {
+        match self {
+            Attachment::RedDot => "reddot",
+            Attachment::Acog => "acog",
+            Attachment::Suppressor => "suppressor",
+            Attachment::Grip => "grip",
+            Attachment::ExtendedMag => "extmag",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<Attachment> {
+        Attachment::ALL.into_iter().find(|a| a.key() == key)
+    }
+
+    /// The name players see.
+    pub fn label(self) -> &'static str {
+        match self {
+            Attachment::RedDot => "Red Dot",
+            Attachment::Acog => "ACOG",
+            Attachment::Suppressor => "Suppressor",
+            Attachment::Grip => "Grip",
+            Attachment::ExtendedMag => "Ext. Mag",
+        }
+    }
+
+    /// The weapon with this attachment fitted.
+    pub fn apply(self, base: &WeaponDef) -> WeaponDef {
+        let mut def = base.clone();
+        def.key = format!("{}+{}", base.key, self.key());
+        def.name = format!("{} {}", base.name, self.label());
+        def.attachment = Some(self);
+        def.base_key = base.key.clone();
+        def.attachments = Vec::new();
+        match self {
+            Attachment::RedDot => {
+                // A clear sight picture aims a touch faster than irons.
+                def.ads_time *= 0.95;
+            }
+            Attachment::Acog => {
+                def.ads_fov_scale = (def.ads_fov_scale * 0.55).min(0.45);
+                def.ads_time += 0.06;
+                def.ads_move_scale *= 0.9;
+                def.scope.get_or_insert(ScopeDef {
+                    sway: 0.0,
+                    hold_breath: 0.0,
+                    breath_recovery: 0.0,
+                });
+            }
+            Attachment::Suppressor => {
+                def.damage.falloff_start *= 0.7;
+                def.damage.falloff_end *= 0.75;
+                def.tracer_every = 0;
+            }
+            Attachment::Grip => {
+                for kick in &mut def.recoil.pattern {
+                    *kick *= 0.75;
+                }
+                def.recoil.jitter *= 0.75;
+            }
+            Attachment::ExtendedMag => {
+                def.magazine = (f32::from(def.magazine) * 1.5).round() as u16;
+                def.reload = match def.reload {
+                    Reload::Magazine { time, empty_time } => Reload::Magazine {
+                        time: time + 0.2,
+                        empty_time: empty_time + 0.2,
+                    },
+                    other => other,
+                };
+            }
+        }
+        def
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 pub struct WeaponDef {
     /// File name without extension. Set by the loader, not read from the file.
@@ -168,6 +269,15 @@ pub struct WeaponDef {
     /// of tracers, and no shell casings come out.
     #[serde(default)]
     pub beam: bool,
+    /// Attachments this weapon takes in a loadout.
+    #[serde(default)]
+    pub attachments: Vec<Attachment>,
+    /// On an attachment variant: the attachment fitted.
+    #[serde(skip)]
+    pub attachment: Option<Attachment>,
+    /// On an attachment variant: the plain weapon's key (its model and sounds).
+    #[serde(skip)]
+    pub base_key: String,
 }
 
 fn one() -> u8 {
@@ -175,6 +285,16 @@ fn one() -> u8 {
 }
 
 impl WeaponDef {
+    /// The key of the weapon whose model and sounds this one uses: itself, or
+    /// the plain weapon for an attachment variant.
+    pub fn model_key(&self) -> &str {
+        if self.base_key.is_empty() {
+            &self.key
+        } else {
+            &self.base_key
+        }
+    }
+
     pub fn fire_interval(&self) -> f32 {
         60.0 / self.rounds_per_minute
     }
@@ -259,6 +379,11 @@ pub fn parse_all<'a>(
         .into_iter()
         .map(|(key, source)| parse(key, source))
         .collect::<Result<Vec<_>, _>>()?;
+    let variants: Vec<WeaponDef> = defs
+        .iter()
+        .flat_map(|def| def.attachments.iter().map(move |a| a.apply(def)))
+        .collect();
+    defs.extend(variants);
     defs.sort_by(|a, b| a.key.cmp(&b.key));
     if defs.len() > usize::from(u8::MAX) {
         return Err(LoadError {
@@ -320,14 +445,44 @@ mod tests {
 
     #[test]
     fn builtin_table_is_sorted_and_complete() {
-        let keys: Vec<_> = table().iter().map(|d| d.key.as_str()).collect();
+        let keys: Vec<_> = table()
+            .iter()
+            .filter(|d| d.attachment.is_none())
+            .map(|d| d.key.as_str())
+            .collect();
         assert_eq!(
             keys,
             [
                 "ak47", "br3", "laser", "lsw6", "m1911", "m4", "m40", "m870", "pdw9"
             ]
         );
+        let all: Vec<_> = table().iter().map(|d| d.key.as_str()).collect();
+        let mut sorted = all.clone();
+        sorted.sort_unstable();
+        assert_eq!(all, sorted);
         assert_eq!(WeaponId::expect("m4").def().name, "M4A1");
+    }
+
+    #[test]
+    fn attachments_make_variants_with_changed_numbers() {
+        let m4 = WeaponId::expect("m4").def();
+        let grip = WeaponId::expect("m4+grip").def();
+        assert_eq!(grip.name, "M4A1 Grip");
+        assert_eq!(grip.model_key(), "m4");
+        assert_eq!(grip.attachment, Some(Attachment::Grip));
+        assert!(grip.recoil.pattern[0].x < m4.recoil.pattern[0].x);
+        let mag = WeaponId::expect("m4+extmag").def();
+        assert_eq!(mag.magazine, 45);
+        let acog = WeaponId::expect("ak47+acog").def();
+        assert!(acog.scope.is_some() && acog.ads_fov_scale < 0.5);
+        let quiet = WeaponId::expect("m4+suppressor").def();
+        assert_eq!(quiet.tracer_every, 0);
+        assert!(quiet.damage.falloff_end < m4.damage.falloff_end);
+        // No red dot on weapons that already have one, nor optics on the sniper.
+        assert!(WeaponId::by_key("pdw9+reddot").is_none());
+        assert!(WeaponId::by_key("m40+acog").is_none());
+        assert!(WeaponId::by_key("m1911+grip").is_none());
+        assert!(table().len() < 64);
     }
 
     #[test]

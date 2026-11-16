@@ -30,4 +30,5 @@
         recovery_rate: 10.0,
     ),
     tracer_every: 3,
+    attachments: [RedDot, Acog, Suppressor, Grip, ExtendedMag],
 )

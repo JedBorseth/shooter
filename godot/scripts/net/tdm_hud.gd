@@ -45,6 +45,9 @@ var _board_tables: Array[GridContainer] = []
 var _board_headers: Array[Label] = []
 var _menu: Control
 var _weapon_buttons := {}
+## Each base weapon's attachment choices (dictionaries with `key` and `name`).
+var _attachments := {}
+var _attachment_row: HBoxContainer
 var _ready_button: Button
 var _menu_status: Label
 var _is_ready := false
@@ -298,11 +301,41 @@ func _choose(key: String) -> void:
 	_highlight_loadout()
 
 
+## The base weapon of a loadout key ("m4+grip" -> "m4").
+func _base(key: String) -> String:
+	return key.get_slice("+", 0)
+
+
 func _highlight_loadout() -> void:
 	var current := String(client.loadout()) if client != null else ""
 	for key: String in _weapon_buttons:
 		var button: Button = _weapon_buttons[key]
-		button.button_pressed = key == current
+		button.button_pressed = key == _base(current)
+	_build_attachment_row(current)
+
+
+## Buttons for the chosen weapon's attachments: none, or one of them.
+func _build_attachment_row(current: String) -> void:
+	if _attachment_row == null:
+		return
+	for child in _attachment_row.get_children():
+		child.queue_free()
+	var base := _base(current)
+	var options: Array = _attachments.get(base, [])
+	if options.is_empty():
+		return
+	var choices := [{"key": base, "name": "No attachment"}]
+	choices.append_array(options)
+	for choice: Dictionary in choices:
+		var button := Button.new()
+		button.text = String(choice.name)
+		button.toggle_mode = true
+		button.button_pressed = String(choice.key) == current
+		button.custom_minimum_size = Vector2(0, 38)
+		button.add_theme_font_size_override("font_size", 15)
+		MenuStyle.style_button(button, true)
+		button.pressed.connect(_choose.bind(String(choice.key)))
+		_attachment_row.add_child(button)
 
 
 func _toggle_ready() -> void:
@@ -476,6 +509,10 @@ func _build_menu() -> void:
 		button.pressed.connect(_choose.bind(key))
 		layout.add_child(button)
 		_weapon_buttons[key] = button
+		_attachments[key] = weapon.get("attachments", [])
+	_attachment_row = HBoxContainer.new()
+	_attachment_row.add_theme_constant_override("separation", 6)
+	layout.add_child(_attachment_row)
 	var sidearm := Label.new()
 	sidearm.text = "Sidearm: M1911"
 	sidearm.add_theme_color_override("font_color", MenuStyle.TEXT_DIM)

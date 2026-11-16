@@ -327,6 +327,12 @@ func _burst_and_lmg(main: Node, player: FpsPlayer) -> void:
 	_check(_kills == kills_before + 1, "one aimed burst to the chest kills at 8 m")
 	await _sixtieths(20)
 	dummy.queue_free()
+	player.give_weapon("m4+extmag")
+	await _sixtieths(60)
+	_check(
+		player.weapon_name() == "M4A1 Ext. Mag" and player.magazine() == 45,
+		"an extended magazine holds 45, got %s with %d" % [player.weapon_name(), player.magazine()]
+	)
 	player.give_weapon("lsw6")
 	await _sixtieths(90)
 	_check(
