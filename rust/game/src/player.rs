@@ -252,6 +252,13 @@ pub struct FpsPlayer {
     score: ScoreState,
     score_rules: ScoreRules,
     look_target: Option<WeaponId>,
+    /// Points the weapon under the crosshair costs (Zombies wall weapons).
+    look_price: i64,
+    /// Something else to use under the crosshair: a node with `interact`
+    /// and `interact_prompt` methods (Zombies doors).
+    look_device: Option<Gd<Node>>,
+    /// Max Ammo (Zombies) asked for a refill on the next tick.
+    refill_requested: bool,
     sounds: HashMap<String, Option<Gd<AudioStreamRandomizer>>>,
     /// The last gameplay input came from a gamepad (not the mouse or keyboard).
     gamepad: bool,
@@ -328,7 +335,10 @@ impl ICharacterBody3D for FpsPlayer {
 
     fn physics_process(&mut self, delta: f64) {
         let dt = delta as f32;
-        self.look_target = self.find_pickup();
+        self.look_target = None;
+        self.look_price = 0;
+        self.look_device = None;
+        self.find_interactable();
         // Quantized exactly as the server will decode it, so prediction matches.
         let input = self.read_input().quantized();
 
@@ -339,7 +349,7 @@ impl ICharacterBody3D for FpsPlayer {
         let previous_stance = self.state.movement.stance;
         let mut events = std::mem::take(&mut self.events);
         events.clear();
-        if self.refill_pressed() {
+        if self.refill_pressed() || std::mem::take(&mut self.refill_requested) {
             let mut combat = Vec::new();
             self.state.combat.refill_ammo(&mut combat);
             events.extend(combat.into_iter().map(PlayerEvent::Combat));
@@ -622,18 +632,46 @@ impl FpsPlayer {
         }
     }
 
-    /// Prompt for the pickup in front of the player, or empty.
+    /// Prompt for the pickup or device in front of the player, or empty.
     #[func]
     fn interact_prompt(&self) -> GString {
+        if let Some(device) = &self.look_device {
+            let mut device = device.clone();
+            return device
+                .call("interact_prompt", &[])
+                .try_to::<GString>()
+                .unwrap_or_default();
+        }
         let Some(id) = self.look_target else {
             return GString::new();
         };
         let name = &id.def().name;
-        if self.state.combat.slots.iter().any(|s| s.id == id) {
-            GString::from(&format!("[F] Refill {name} ammo"))
-        } else {
-            GString::from(&format!("[F] Take {name}"))
+        let owned = self.state.combat.slots.iter().any(|s| s.id == id);
+        let cost = self.pickup_cost(id);
+        if cost == 0 {
+            return if owned {
+                GString::from(&format!("[F] Refill {name} ammo"))
+            } else {
+                GString::from(&format!("[F] Take {name}"))
+            };
         }
+        let what = if owned {
+            format!("{name} ammo")
+        } else {
+            name.clone()
+        };
+        if self.wallet_points() >= cost {
+            GString::from(&format!("[F] Buy {what}: {cost}"))
+        } else {
+            GString::from(&format!("{what}: {cost} points"))
+        }
+    }
+
+    /// Fills every carried weapon's ammo on the next tick (Zombies' Max Ammo).
+    /// Offline only, like the T refill.
+    #[func]
+    pub fn refill_all_ammo(&mut self) {
+        self.refill_requested = true;
     }
 
     /// Damages the player from a world position. Returns true if it killed them.
@@ -886,8 +924,22 @@ impl FpsPlayer {
         let slot_1 = held("weapon_1");
         let slot_2 = held("weapon_2");
         let interact_down = held("interact");
-        let interact = interact_down && !self.interact_held;
+        let mut interact = interact_down && !self.interact_held;
         self.interact_held = interact_down;
+        if interact && let Some(device) = &self.look_device {
+            let mut device = device.clone();
+            let me = self.to_gd().to_variant();
+            device.call("interact", &[me]);
+            interact = false;
+        }
+        // A wall weapon with a price is paid for before it is taken.
+        if interact
+            && let Some(id) = self.look_target
+            && self.pickup_cost(id) > 0
+            && !self.spend(self.pickup_cost(id))
+        {
+            interact = false;
+        }
 
         let current = match self.state.combat.action {
             Action::Lowering { to, .. } => to,
@@ -949,20 +1001,67 @@ impl FpsPlayer {
         })
     }
 
-    /// The weapon pickup under the crosshair, within reach.
-    fn find_pickup(&self) -> Option<WeaponId> {
+    /// The weapon pickup or device under the crosshair, within reach.
+    fn find_interactable(&mut self) {
         if !self.state.alive() {
-            return None;
+            return;
         }
         let from = self.eye_position();
         let direction = to_godot(player::aim_direction(self.yaw, self.pitch, Vec2::ZERO));
-        let hit = self.ray(
-            from,
-            from + direction * self.interact_distance,
-            WORLD_LAYER | INTERACT_LAYER,
-        )?;
-        let pickup = hit.collider?.try_cast::<WeaponPickup>().ok()?;
-        pickup.bind().weapon_id()
+        let Some(collider) = self
+            .ray(
+                from,
+                from + direction * self.interact_distance,
+                WORLD_LAYER | INTERACT_LAYER,
+            )
+            .and_then(|hit| hit.collider)
+        else {
+            return;
+        };
+        match collider.try_cast::<WeaponPickup>() {
+            Ok(pickup) => {
+                let pickup = pickup.bind();
+                self.look_target = pickup.weapon_id();
+                self.look_price = pickup.price();
+            }
+            Err(node) => {
+                if node.has_method("interact") && node.has_method("interact_prompt") {
+                    self.look_device = Some(node);
+                }
+            }
+        }
+    }
+
+    /// What taking `id` from the pickup under the crosshair costs: its price,
+    /// or half for ammo of a weapon already carried.
+    fn pickup_cost(&self, id: WeaponId) -> i64 {
+        if self.state.combat.slots.iter().any(|s| s.id == id) {
+            self.look_price / 2
+        } else {
+            self.look_price
+        }
+    }
+
+    /// The Zombies wallet (`ZombieDirector`), if this level has one.
+    fn wallet(&self) -> Option<Gd<Node>> {
+        self.base()
+            .get_tree()
+            .get_first_node_in_group("zombies_wallet")
+    }
+
+    fn wallet_points(&self) -> i64 {
+        self.wallet()
+            .map(|mut w| w.call("points", &[]).try_to::<i64>().unwrap_or(0))
+            .unwrap_or(0)
+    }
+
+    /// Pays `amount` from the wallet; false if there is none or too little.
+    fn spend(&self, amount: i64) -> bool {
+        self.wallet().is_some_and(|mut w| {
+            w.call("spend", &[amount.to_variant()])
+                .try_to::<bool>()
+                .unwrap_or(false)
+        })
     }
 
     /// Switches between gamepad and mouse-and-keyboard on deliberate input,

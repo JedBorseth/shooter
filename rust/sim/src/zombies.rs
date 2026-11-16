@@ -227,6 +227,79 @@ pub mod points {
     }
 }
 
+/// Drops from killed zombies, as in the genre: each one helps for a moment.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum PowerUp {
+    /// Fills every weapon's ammo.
+    MaxAmmo,
+    /// Any hit kills, for [`POWER_UP_SECONDS`].
+    InstaKill,
+    /// Points are doubled, for [`POWER_UP_SECONDS`].
+    DoublePoints,
+    /// Kills every zombie in play and pays [`NUKE_POINTS`].
+    Nuke,
+}
+
+/// Seconds Insta-Kill and Double Points last.
+pub const POWER_UP_SECONDS: f32 = 30.0;
+/// Seconds a dropped power-up waits to be picked up.
+pub const POWER_UP_LIFETIME: f32 = 30.0;
+/// Points a Nuke pays (the zombies it kills pay nothing themselves).
+pub const NUKE_POINTS: u32 = 400;
+/// Most power-ups that drop in one round.
+pub const MAX_DROPS_PER_ROUND: u32 = 4;
+/// Chance that a kill drops a power-up, while the round has drops left.
+pub const DROP_CHANCE: f32 = 0.035;
+
+impl PowerUp {
+    pub const ALL: [PowerUp; 4] = [
+        PowerUp::MaxAmmo,
+        PowerUp::InstaKill,
+        PowerUp::DoublePoints,
+        PowerUp::Nuke,
+    ];
+
+    /// The name the HUD shows.
+    pub fn label(self) -> &'static str {
+        match self {
+            PowerUp::MaxAmmo => "MAX AMMO",
+            PowerUp::InstaKill => "INSTA-KILL",
+            PowerUp::DoublePoints => "DOUBLE POINTS",
+            PowerUp::Nuke => "KABOOM",
+        }
+    }
+
+    /// Lower-case key for scripts.
+    pub fn key(self) -> &'static str {
+        match self {
+            PowerUp::MaxAmmo => "max_ammo",
+            PowerUp::InstaKill => "insta_kill",
+            PowerUp::DoublePoints => "double_points",
+            PowerUp::Nuke => "nuke",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<PowerUp> {
+        PowerUp::ALL.into_iter().find(|p| p.key() == key)
+    }
+
+    /// Whether it lasts a while instead of acting once.
+    pub fn timed(self) -> bool {
+        matches!(self, PowerUp::InstaKill | PowerUp::DoublePoints)
+    }
+}
+
+/// The power-up the `kill`th kill of `round` drops, if any. `dropped` is how
+/// many this round has dropped already. Deterministic: the same match drops
+/// the same way.
+pub fn power_up_drop(round: u32, kill: u32, dropped: u32) -> Option<PowerUp> {
+    if dropped >= MAX_DROPS_PER_ROUND || rng::unit(round.wrapping_mul(7919), kill) >= DROP_CHANCE {
+        return None;
+    }
+    let pick = rng::hash(round, kill.wrapping_add(31)) as usize % PowerUp::ALL.len();
+    Some(PowerUp::ALL[pick])
+}
+
 /// Where a round is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Phase {
@@ -340,6 +413,40 @@ impl Rounds {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod power_up_tests {
+    use super::*;
+
+    #[test]
+    fn drops_are_rare_capped_and_varied() {
+        let mut total = 0;
+        let mut kinds = std::collections::HashSet::new();
+        for round in 1..=50 {
+            let mut dropped = 0;
+            for kill in 0..zombies_in_round(round) {
+                if let Some(power_up) = power_up_drop(round, kill, dropped) {
+                    dropped += 1;
+                    kinds.insert(power_up);
+                }
+            }
+            assert!(dropped <= MAX_DROPS_PER_ROUND);
+            total += dropped;
+        }
+        // About 3.5% of some 6,000 kills, capped per round.
+        assert!((100..=220).contains(&total), "{total} drops");
+        assert_eq!(kinds.len(), 4);
+        assert_eq!(power_up_drop(3, 5, 1), power_up_drop(3, 5, 1));
+    }
+
+    #[test]
+    fn power_ups_round_trip_their_keys() {
+        for p in PowerUp::ALL {
+            assert_eq!(PowerUp::from_key(p.key()), Some(p));
+        }
+        assert!(PowerUp::InstaKill.timed() && !PowerUp::Nuke.timed());
     }
 }
 

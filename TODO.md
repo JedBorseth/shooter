@@ -139,8 +139,9 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 
 Done: rounds with a growing, toughening horde, zombies that walk straight at the player (walk, jog, and run gaits) with a scratch attack, the two-hit rule, points for hits and kills, a round counter, points and game-over HUD, and a night arena (`godot/scenes/zombies_arena.tscn`, rules in `rust/sim/src/zombies.rs`).
 
-- [ ] Spend points: wall weapons with prices, ammo refills that cost points, doors that open new areas.
-- [ ] Power-ups that drop from kills (max ammo, insta-kill, double points, nuke).
+- [x] Spend points: wall weapons with prices, ammo at half price, and debris over two gates that opens side yards with their own spawns and wall weapons (`scripts/zombies_door.gd`; the director is the wallet).
+- [x] Power-ups that drop from kills: Max Ammo, Insta-Kill, Double Points, and a nuke (rules in `rust/sim/src/zombies.rs`, tokens in `scripts/zombies_power_up.gd`).
+- [ ] Start Zombies with only the M1911 (needs an empty primary slot in `CombatState`).
 - [ ] Zombie sounds (groans, attack, death) and a round-change sting. Needs CC0 audio.
 - [ ] Barriers at the spawn points that zombies tear down and players rebuild for points.
 - [ ] Downed state and revives for co-op, once Zombies runs on the dedicated server.

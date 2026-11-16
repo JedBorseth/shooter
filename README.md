@@ -71,14 +71,25 @@ Survive rounds of zombies in a walled yard at night. Each round sends more zombi
 more each round to round 9, then 10% more per round). Everyone walks in round 1 to
 3; joggers join from round 4 and runners from round 7, all slower than your sprint.
 Zombies always walk in a straight line at you and slide along whatever is in the
-way. Up to 24 are alive at once.
+way; ones that spawn in a side yard walk to its gate first, and ones that walk into
+a wall head for the open gate on the shortest way to you. Up to 24 are alive at once.
 
 A zombie that reaches you swings. The first hit takes half your health and the
 second kills you, unless your health has fully regenerated in between. There is no
 respawn: death ends the match and shows how many rounds you survived, with
 **Play again** and **Main menu**. Hits pay 10 points, kills 60, and headshot kills
-100; you start with 500. The weapon tables on the north wall hand out guns and
-refill ammo (F). The T refill key is off in this mode. Esc opens the pause menu.
+100; you start with 500 and an M4. Spend points with F:
+
+- **Wall weapons:** the tables on the north wall sell the M1911 (500), M870 (900),
+  PDW-9 (1000), and M4A1 (1200); the side yards add the AK-47 (1400) and M40 (1500).
+  Ammo for a gun you carry costs half.
+- **Debris:** the gates in the west and east walls are piled with debris; clearing it
+  (750 west, 1000 east) opens that yard, its wall weapon, and its zombie spawns.
+- **Power-ups:** a kill sometimes drops one (at most four a round), glowing green
+  for 30 seconds: Max Ammo, Insta-Kill (any hit kills for 30 seconds), Double Points
+  (30 seconds), and Kaboom (kills every zombie and pays 400).
+
+The T refill key is off in this mode. Esc opens the pause menu.
 
 ## Test
 

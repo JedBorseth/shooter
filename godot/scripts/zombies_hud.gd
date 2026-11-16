@@ -1,12 +1,15 @@
 extends Control
-## Zombies HUD: the round number, points with "+N" popups, the countdown
-## between rounds, zombies left, and the game-over screen. Driven by
+## Zombies HUD: the round number, points with "+N" popups (and "-N" when
+## spending), the countdown between rounds, zombies left, power-up
+## announcements and the timers of the active ones, and the game-over screen. Driven by
 ## ZombieDirector signals; the rules live in Rust (rust/sim/src/zombies.rs).
 
 const TITLE_SCENE := "res://scenes/title_screen.tscn"
 const FONT_PATH := "res://assets/zombies/agency_bold.ttf"
 const BLOOD := Color(0.62, 0.05, 0.03)
 const POINTS_COLOR := Color(1.0, 0.86, 0.45)
+const SPEND_COLOR := Color(0.95, 0.4, 0.3)
+const POWER_UP_COLOR := Color(0.55, 1.0, 0.45)
 ## Seconds each "+N" popup floats.
 const POPUP_TIME := 0.9
 const MAX_POPUPS := 8
@@ -22,6 +25,7 @@ var _points_label: Label
 var _left_label: Label
 var _banner: Label
 var _banner_time := 0.0
+var _power_ups: Label
 var _round_flash := 0.0
 ## Each popup: {"label": Label, "age": float}.
 var _popups: Array[Dictionary] = []
@@ -48,12 +52,18 @@ func _ready() -> void:
 	_banner.name = "Banner"
 	_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_place(_banner, Vector2(0.5, 0), Rect2(-400, 110, 800, 76))
+	_power_ups = _label(30, POWER_UP_COLOR)
+	_power_ups.name = "PowerUps"
+	_power_ups.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_place(_power_ups, Vector2(0.5, 1), Rect2(-300, -150, 600, 40))
 	_build_game_over()
 	if _director == null:
 		return
 	_director.round_started.connect(_on_round_started)
 	_director.round_cleared.connect(_on_round_cleared)
 	_director.points_awarded.connect(_on_points)
+	_director.points_spent.connect(_on_spent)
+	_director.power_up_collected.connect(_on_power_up)
 	_director.game_over.connect(_on_game_over)
 	_round_label.text = _tally(_director.round())
 	_show_banner("GET READY", 3.0)
@@ -77,6 +87,13 @@ func _process(delta: float) -> void:
 	elif not _director.is_over():
 		_left_label.text = "NEXT ROUND IN  %d" % ceili(_director.break_left())
 	_left_label.visible = not _director.is_over()
+
+	var active: PackedStringArray = []
+	if _director.insta_kill_left() > 0.0:
+		active.append("INSTA-KILL  %d" % ceili(_director.insta_kill_left()))
+	if _director.double_points_left() > 0.0:
+		active.append("DOUBLE POINTS  %d" % ceili(_director.double_points_left()))
+	_power_ups.text = "     ".join(active)
 
 	_banner_time = maxf(_banner_time - delta, 0.0)
 	_banner.modulate.a = clampf(_banner_time / 0.6, 0.0, 1.0)
@@ -119,6 +136,18 @@ func _on_points(points: int, _total: int) -> void:
 	_popups.append({"label": popup, "age": 0.0})
 	while _popups.size() > MAX_POPUPS:
 		(_popups.pop_front().label as Label).queue_free()
+
+
+func _on_spent(points: int, _total: int) -> void:
+	var popup := _label(28, SPEND_COLOR)
+	popup.text = "-%d" % points
+	_place(popup, Vector2(1, 1), Rect2(-150, -214, 120, 34))
+	_popups.append({"label": popup, "age": 0.0})
+
+
+func _on_power_up(_kind: String, label: String) -> void:
+	_banner.add_theme_color_override("font_color", POWER_UP_COLOR)
+	_show_banner(label, 2.5)
 
 
 func _on_game_over(round_number: int) -> void:
@@ -167,6 +196,8 @@ func _place(control: Control, anchor: Vector2, rect: Rect2) -> void:
 
 
 func _show_banner(text: String, seconds: float) -> void:
+	if not text in ["MAX AMMO", "INSTA-KILL", "DOUBLE POINTS", "KABOOM"]:
+		_banner.add_theme_color_override("font_color", Color(0.9, 0.85, 0.8))
 	_banner.text = text
 	_banner_time = seconds
 
