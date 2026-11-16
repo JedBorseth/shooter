@@ -1,4 +1,4 @@
-//! First-person weapon presentation: procedural pose, sway, bob, kick, reload,
+//! First-person weapon presentation: procedural pose, bob, kick, reload,
 //! bolt/pump, and switch motion, muzzle flash, ejected shells, and weapon sounds.
 //!
 //! Nothing here affects gameplay; the simulation in `shooter-sim` decides when
@@ -31,8 +31,6 @@ pub struct ViewFrame {
     /// Horizontal speed relative to walk speed.
     pub speed_ratio: f32,
     pub on_floor: bool,
-    /// Mouse look applied this frame, in radians (`x` yaw left, `y` pitch down).
-    pub look_delta: Vector2,
     pub action: ViewAction,
 }
 
@@ -333,13 +331,6 @@ pub struct ViewmodelRig {
     #[export]
     #[init(val = 1.7)]
     bob_frequency: f32,
-    /// How much mouse look drags the weapon.
-    #[export]
-    #[init(val = 3.5)]
-    sway_amount: f32,
-    #[export]
-    #[init(val = 0.09)]
-    sway_limit: f32,
 
     views: Vec<Gd<WeaponView>>,
     active: Option<WeaponId>,
@@ -359,8 +350,6 @@ pub struct ViewmodelRig {
     reload_blend: f32,
     reload_progress: f32,
     switch_drop: f32,
-    /// x: yaw, y: pitch (radians), z: unused.
-    sway: Spring,
     /// x: pitch up (radians), y: unused, z: push back (metres).
     kick: Spring,
     /// y: vertical dip (metres).
@@ -590,17 +579,8 @@ impl ViewmodelRig {
         let bob_roll = self.bob_phase.sin() * bob * 1.4;
         let breathe = (self.time * 1.3).sin() * 0.0015 * hip_amount;
 
-        // Sway: the weapon lags behind mouse movement, then springs back.
-        let sway_scale = self.sway_amount * (1.0 - 0.7 * ads);
-        self.sway.velocity +=
-            Vector3::new(frame.look_delta.x, frame.look_delta.y, 0.0) * sway_scale * 60.0;
-        self.sway.step(140.0, 18.0, dt);
-        let limit = self.sway_limit;
-        self.sway.value = Vector3::new(
-            self.sway.value.x.clamp(-limit, limit),
-            self.sway.value.y.clamp(-limit, limit),
-            0.0,
-        );
+        // No look sway: the weapon stays locked to the camera when aiming around,
+        // so it only moves from walking, firing, landing, and actions.
 
         self.kick.step(260.0, 22.0, dt);
         self.land.step(120.0, 14.0, dt);
@@ -647,7 +627,6 @@ impl ViewmodelRig {
         let mut position = hip + (aim - hip) * ads;
         position += sprint_pos * sprint;
         position += bob_offset + Vector3::new(0.0, breathe, 0.0);
-        position += Vector3::new(-self.sway.value.x * 0.25, self.sway.value.y * 0.25, 0.0);
         position += Vector3::new(0.0, 0.0, self.kick.value.z * 0.4);
         position += Vector3::new(0.0, self.land.value.y * 0.1, 0.0);
         position += cycle_pos * cycle + Vector3::new(0.0, -0.02 * bump, 0.01 * bump);
@@ -659,19 +638,13 @@ impl ViewmodelRig {
         );
 
         let deg = |v: f32| v.to_radians();
-        let pitch = deg(sprint_rot.x) * sprint
-            + self.kick.value.x * 0.35
-            + self.sway.value.y
-            + deg(10.0) * dip
+        let pitch = deg(sprint_rot.x) * sprint + self.kick.value.x * 0.35 + deg(10.0) * dip
             - deg(35.0) * self.switch_drop
             + deg(cycle_rot.x) * cycle
             + deg(4.0) * bump;
-        let yaw = deg(sprint_rot.y) * sprint + self.sway.value.x + deg(cycle_rot.y) * cycle;
-        let roll = deg(sprint_rot.z) * sprint
-            + bob_roll
-            + deg(32.0) * dip
-            + self.sway.value.x * 0.6
-            + deg(cycle_rot.z) * cycle;
+        let yaw = deg(sprint_rot.y) * sprint + deg(cycle_rot.y) * cycle;
+        let roll =
+            deg(sprint_rot.z) * sprint + bob_roll + deg(32.0) * dip + deg(cycle_rot.z) * cycle;
 
         // Rotate around the pivot rather than the sight origin.
         let basis = Basis::from_euler(EulerOrder::YXZ, Vector3::new(pitch, yaw, roll));
