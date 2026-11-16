@@ -28,6 +28,8 @@ use crate::viewmodel::{self, WeaponView};
 /// Natural ground speeds (m/s) of the in-place loops, measured from the planted
 /// foot. Playback scales to the real speed so feet do not slide.
 const WALK_SPEED: f32 = 1.06;
+/// Playback speed of the climb clip, so it fits a mantle's short climb.
+const CLIMB_RATE: f32 = 1.45;
 const JOG_SPEED: f32 = 3.0;
 const SPRINT_SPEED: f32 = 6.0;
 const CROUCH_SPEED: f32 = 0.72;
@@ -91,6 +93,8 @@ pub struct SoldierFrame {
     /// Reload progress 0..1 while reloading.
     pub reload: Option<f32>,
     pub alive: bool,
+    /// Climbing over a ledge: plays the climb once as it starts.
+    pub mantling: bool,
 }
 
 impl Default for SoldierFrame {
@@ -106,6 +110,7 @@ impl Default for SoldierFrame {
             weapon: None,
             reload: None,
             alive: true,
+            mantling: false,
         }
     }
 }
@@ -155,6 +160,7 @@ pub struct SoldierRig {
     death_yaw_target: f32,
     was_alive: bool,
     life_requested: Option<bool>,
+    was_mantling: bool,
 }
 
 #[godot_api]
@@ -307,6 +313,7 @@ impl SoldierRig {
             weapon: get("weapon").and_then(|v| WeaponId::by_key(&v.to_string())),
             reload: (reload >= 0.0).then_some(reload),
             alive: b("alive", true),
+            mantling: b("mantling", false),
         };
         self.update(&frame, delta);
     }
@@ -480,6 +487,17 @@ impl SoldierRig {
                 };
                 set(tree, "hold/blend_amount", hold.to_variant());
             }
+            // The climb plays once as a mantle starts.
+            if frame.mantling && !self.was_mantling && !self.zombie {
+                set(tree, "climb_rate/scale", CLIMB_RATE.to_variant());
+                set(
+                    tree,
+                    "climb/request",
+                    (godot::classes::animation_node_one_shot::OneShotRequest::FIRE.ord())
+                        .to_variant(),
+                );
+            }
+            self.was_mantling = frame.mantling;
             // Only on a change: a request restarts the death clip.
             if self.life_requested != Some(frame.alive) {
                 self.life_requested = Some(frame.alive);
@@ -705,6 +723,15 @@ impl SoldierRig {
         add("slide", AnimationNodeBlend2::new_gd().upcast(), 3.0);
         add("jump_clip", clip("ual1/Jump").upcast(), 3.0);
         add("air", AnimationNodeBlend2::new_gd().upcast(), 4.0);
+        // A mantle: the climb clip once, sped up to the short climb.
+        let mut climb = clip("ual2/ClimbUp_1m_RM");
+        climb.set_loop_mode(godot::classes::animation::LoopMode::NONE);
+        add("climb_clip", climb.upcast(), 4.0);
+        add("climb_rate", AnimationNodeTimeScale::new_gd().upcast(), 4.0);
+        let mut climb_shot = AnimationNodeOneShot::new_gd();
+        climb_shot.set_fadein_time(0.06);
+        climb_shot.set_fadeout_time(0.15);
+        add("climb", climb_shot.upcast(), 4.5);
         add("hold_clip", clip("ual1/Pistol_Aim_Neutral").upcast(), 4.0);
         let mut hold = AnimationNodeBlend2::new_gd();
         hold.set_filter_enabled(true);
@@ -732,7 +759,10 @@ impl SoldierRig {
             ("slide", 1, "slide_clip"),
             ("air", 0, "slide"),
             ("air", 1, "jump_clip"),
-            ("hold", 0, "air"),
+            ("climb_rate", 0, "climb_clip"),
+            ("climb", 0, "air"),
+            ("climb", 1, "climb_rate"),
+            ("hold", 0, "climb"),
             ("hold", 1, "hold_clip"),
             ("life", 0, "hold"),
             ("life", 1, "death_clip"),

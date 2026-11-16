@@ -53,6 +53,7 @@ pub struct RemoteSample {
     pub reloading: bool,
     pub alive: bool,
     pub shots_fired: u32,
+    pub mantling: bool,
 }
 
 impl From<&PlayerView> for RemoteSample {
@@ -69,6 +70,7 @@ impl From<&PlayerView> for RemoteSample {
             reloading: v.reloading,
             alive: v.alive,
             shots_fired: v.shots_fired,
+            mantling: v.mantling,
         }
     }
 }

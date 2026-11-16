@@ -29,9 +29,9 @@ use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState}
 
 /// Bumped whenever the wire format changes; mismatched clients are rejected.
 // Version 5 added Team Deathmatch: names, teams, ready-up, loadouts, the
-// match clock, and the scoreboard. Version 6 adds burst fire to the
-// predicted combat state.
-pub const PROTOCOL_VERSION: u16 = 6;
+// match clock, and the scoreboard. Version 6 added burst fire to the
+// predicted combat state, and version 7 mantling to the movement state.
+pub const PROTOCOL_VERSION: u16 = 7;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
 pub const MAX_INPUTS_PER_PACKET: usize = 24;
 /// Wish vectors are sent as signed bytes; prediction must use the same values.
@@ -223,6 +223,8 @@ pub struct PlayerView {
     pub alive: bool,
     /// Rounds fired so far; an increase means the player fired.
     pub shots_fired: u32,
+    /// Climbing over a ledge.
+    pub mantling: bool,
 }
 
 impl PlayerView {
@@ -241,6 +243,7 @@ impl PlayerView {
             reloading: combat.is_reloading(),
             alive: p.state.alive(),
             shots_fired: combat.shots_fired,
+            mantling: p.state.movement.mantling(),
         }
     }
 
@@ -1004,6 +1007,7 @@ fn write_view_delta(w: &mut BitWriter, v: &PlayerView, base: &PlayerView) {
             p.weapon,
             p.reloading,
             p.alive,
+            p.mantling,
         )
     };
     let flags_changed = flags(v) != flags(base);
@@ -1016,6 +1020,7 @@ fn write_view_delta(w: &mut BitWriter, v: &PlayerView, base: &PlayerView) {
         write_weapon(w, v.weapon);
         w.bool(v.reloading);
         w.bool(v.alive);
+        w.bool(v.mantling);
     }
     let shots = v.shots_fired.wrapping_sub(base.shots_fired);
     w.bool(shots != 0);
@@ -1046,6 +1051,7 @@ fn read_view_delta(r: &mut BitReader, base: &PlayerView) -> DecodeResult<PlayerV
         v.weapon = read_weapon(r)?;
         v.reloading = r.bool()?;
         v.alive = r.bool()?;
+        v.mantling = r.bool()?;
     }
     if r.bool()? {
         v.shots_fired = base.shots_fired.wrapping_add(r.varint()?);
@@ -1105,6 +1111,8 @@ fn write_move_state(w: &mut BitWriter, m: &MoveState) {
     w.bool(m.sprint_held);
     w.f32(m.jump_buffer);
     w.f32(m.coyote);
+    w.f32(m.mantle_time);
+    w.f32(m.mantle_rise);
 }
 
 fn read_move_state(r: &mut BitReader) -> DecodeResult<MoveState> {
@@ -1119,6 +1127,8 @@ fn read_move_state(r: &mut BitReader) -> DecodeResult<MoveState> {
         sprint_held: r.bool()?,
         jump_buffer: r.f32()?,
         coyote: r.f32()?,
+        mantle_time: r.f32()?,
+        mantle_rise: r.f32()?,
     })
 }
 

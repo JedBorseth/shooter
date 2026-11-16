@@ -50,6 +50,24 @@ func _run() -> void:
 	_check(player.global_position.x > start.x + 3.0, "player walks east from spawn")
 	_check(player.is_on_floor(), "yard collision holds the player")
 
+	# Mantling: jump at the yard's low wall while walking at it to climb over.
+	await _teleport(player, Vector3(-50, 0.05, 0))
+	player.set_look(-PI / 2, 0.0)
+	Input.action_press("move_forward")
+	await _sixtieths(30)
+	var peak := 0.0
+	Input.action_press("jump")
+	for i in 60:
+		peak = maxf(peak, player.global_position.y)
+		await _sixtieths(1)
+	Input.action_release("jump")
+	Input.action_release("move_forward")
+	await _sixtieths(20)
+	_check(
+		player.global_position.x > -47.4 and peak > 1.0,
+		"jumping at the low wall climbs over it, at %s (peak %.2f)" % [player.global_position, peak]
+	)
+
 	# North lane: the fire escape climbs from the alley to a landing, then back
 	# over itself to the roof.
 	await _teleport(player, Vector3(-40.6, 0.05, -21.6))

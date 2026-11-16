@@ -50,12 +50,13 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 
 ### Movement
 
-- [ ] Mantling and vaulting over waist-high cover (shape casts forward and up, then an animated move).
-- [ ] Prone (third stance, `MoveParams` heights, crawl speed).
+- [x] Mantling: jump at a ledge 0.5 to 1.35 m high while moving toward it to climb onto or over it (the engine finds the ledge, `movement::step` climbs; predicted like any move).
+- [x] Third-person mantle animation (UAL2's `ClimbUp_1m_RM`, played once as a mantle starts).
+- [ ] Prone (third stance, `MoveParams` heights, crawl speed). On hold until there is a CC0 crawl animation for third person.
 - [x] Footstep sounds, with surface types and a cadence tied to speed.
 - [x] Fall damage and a landing camera dip scaled by fall speed.
 - [x] Slide camera tilt and slide sound.
-- [ ] Slide-cancel rules (jump or crouch out of a slide, with a short cooldown).
+- [x] Slide-cancel: crouch again during a slide to stand up with its speed and sprint on; jumping out keeps its momentum. Both start the slide cooldown.
 - [x] **good first task** Head bob and strafe tilt for the camera (small, with a settings toggle).
 
 ### Feel and polish

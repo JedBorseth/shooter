@@ -134,6 +134,7 @@ impl RemotePlayer {
             weapon: Some(s.weapon),
             reload,
             alive: s.alive,
+            mantling: s.mantling,
         };
         self.rig.bind_mut().update(&frame, delta);
         // The server rewinds exactly this pose when it checks our shots.

@@ -256,6 +256,7 @@ mod tests {
         let env = MoveEnv {
             on_floor: p.on_floor,
             can_stand: true,
+            ledge: None,
         };
         let mut events = Vec::new();
         let v = player::step(

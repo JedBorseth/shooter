@@ -6,7 +6,8 @@
 //! `scenes/player.tscn`; any difference shows up as mispredictions.
 
 use godot::classes::{
-    CapsuleShape3D, CharacterBody3D, CollisionShape3D, ShapeCast3D, SphereShape3D,
+    CapsuleShape3D, CharacterBody3D, CollisionShape3D, PhysicsDirectSpaceState3D,
+    PhysicsRayQueryParameters3D, ShapeCast3D, SphereShape3D,
 };
 use godot::prelude::*;
 use shooter_sim::movement::{MoveEnv, MoveParams, Stance};
@@ -15,6 +16,7 @@ use shooter_sim::net::{TICK_DT, TICK_RATE};
 use shooter_sim::player::{self, PlayerEvent, PlayerInput, PlayerParams};
 
 use crate::convert::{to_godot, to_sim};
+use crate::target::WORLD_LAYER;
 
 /// Collision layer 2 ("players"), as a bit mask.
 pub const PLAYER_LAYER: u32 = 1 << 1;
@@ -61,6 +63,7 @@ pub fn tick(
     let env = MoveEnv {
         on_floor: p.on_floor,
         can_stand: !parts.headroom.is_colliding(),
+        ledge: find_ledge(parts, &params.movement, p, input.yaw),
     };
     let previous_stance = p.state.movement.stance;
     let requested = player::step(&mut p.state, input, env, params, TICK_DT, events);
@@ -76,6 +79,65 @@ pub fn tick(
     p.position = to_sim(parts.body.get_global_position());
     p.on_floor = parts.body.is_on_floor();
     TickOutcome { env }
+}
+
+/// The height of a ledge in front of the player they could climb onto: a
+/// wall within reach at knee height, a top surface `mantle_min` to
+/// `mantle_max` above the feet just past its face, and room to stand on it.
+/// Only looked for while the player could use it (alive, not already
+/// climbing or crouched). Client and server see the same geometry, so both
+/// find the same ledge.
+fn find_ledge(parts: &BodyParts, params: &MoveParams, p: &Predicted, yaw: f32) -> Option<f32> {
+    let movement = &p.state.movement;
+    if !p.state.alive() || movement.mantling() || movement.stance != Stance::Standing {
+        return None;
+    }
+    let mut space = parts.body.get_world_3d()?.get_direct_space_state()?;
+    let feet = to_godot(p.position);
+    let (forward, _) = shooter_sim::movement::basis_from_yaw(yaw);
+    let forward = to_godot(forward);
+    let exclude: Array<Rid> = array![parts.body.get_rid()];
+    let ray = |space: &mut Gd<PhysicsDirectSpaceState3D>, from: Vector3, to: Vector3| {
+        let query = PhysicsRayQueryParameters3D::create_ex(from, to)
+            .collision_mask(WORLD_LAYER)
+            .exclude(&exclude)
+            .done()?;
+        let hit = space.intersect_ray(&query);
+        hit.get_or_nil("position").try_to::<Vector3>().ok()
+    };
+    // A wall in front, at knee height.
+    let knee = feet + Vector3::UP * (params.mantle_min * 0.8);
+    let wall = ray(&mut space, knee, knee + forward * 0.75)?;
+    // Its top, just past the face.
+    let over = Vector3::new(wall.x, feet.y, wall.z) + forward * 0.3;
+    let top = ray(
+        &mut space,
+        over + Vector3::UP * (params.mantle_max + 0.3),
+        over + Vector3::UP * (params.mantle_min * 0.5),
+    )?;
+    let height = top.y - feet.y;
+    if !(params.mantle_min..=params.mantle_max).contains(&height) {
+        return None;
+    }
+    // Room to stand on top, and nothing between the head and the top.
+    let head = feet + Vector3::UP * (height + 0.1);
+    if ray(
+        &mut space,
+        top + Vector3::UP * 0.05,
+        top + Vector3::UP * params.stand_height,
+    )
+    .is_some()
+        || ray(
+            &mut space,
+            Vector3::new(feet.x, top.y + params.stand_height * 0.6, feet.z),
+            top + Vector3::UP * params.stand_height * 0.6,
+        )
+        .is_some()
+        || ray(&mut space, head, Vector3::new(top.x, head.y, top.z)).is_some()
+    {
+        return None;
+    }
+    Some(height)
 }
 
 /// Moves the body to a state without simulating (spawns, reconciliation).
