@@ -129,7 +129,9 @@ impl ICharacterBody3D for Zombie {
         }
         let mut horizontal = Vector3::ZERO;
         if let Some(target) = &target {
-            let goal = self.waypoint.unwrap_or_else(|| target.get_global_position());
+            let goal = self
+                .waypoint
+                .unwrap_or_else(|| target.get_global_position());
             let direction = to_godot(zombies::chase_direction(to_sim(position), to_sim(goal)));
             if direction != Vector3::ZERO {
                 let want = (-direction.x).atan2(-direction.z);
