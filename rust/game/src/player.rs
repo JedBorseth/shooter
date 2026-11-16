@@ -9,35 +9,45 @@
 //! Gamepad look also runs every rendered frame: stick shaping, turn boost, and
 //! aim assist (slowdown and rotational) from `shooter_sim::look`. Aim assist
 //! only applies while the last input came from a gamepad.
+//!
+//! Online, a `NetClient` turns on prediction: every tick's input and result
+//! are recorded, and server snapshots are reconciled against them, replaying
+//! unconfirmed inputs when the server disagrees. Corrections are blended out
+//! visually instead of snapping the camera. The server owns respawns and the
+//! demo ammo refill.
 
 use std::collections::HashMap;
-use std::f32::consts::{FRAC_PI_2, PI};
+use std::f32::consts::PI;
 
 use godot::classes::input::MouseMode;
 use godot::classes::{
-    AudioStreamPlayer, AudioStreamRandomizer, Camera3D, CapsuleShape3D, CharacterBody3D,
-    CollisionShape3D, Engine, ICharacterBody3D, Input, InputEvent, InputEventJoypadButton,
-    InputEventJoypadMotion, InputEventKey, InputEventMouseButton, InputEventMouseMotion, Node3D,
-    PackedScene, PhysicsDirectSpaceState3D, PhysicsRayQueryParameters3D, ShapeCast3D,
+    AudioStreamPlayer, AudioStreamRandomizer, Camera3D, CharacterBody3D, CollisionShape3D, Engine,
+    ICharacterBody3D, Input, InputEvent, InputEventJoypadButton, InputEventJoypadMotion,
+    InputEventKey, InputEventMouseButton, InputEventMouseMotion, Node3D, PackedScene,
+    PhysicsDirectSpaceState3D, PhysicsRayQueryParameters3D, ShapeCast3D,
 };
 use godot::prelude::*;
 use shooter_sim::look::{
     self, AimAssist, AimAssistParams, AssistTarget, AssistView, StickLook, StickParams,
 };
 use shooter_sim::movement::{MoveEnv, Stance};
+use shooter_sim::net::prediction::{ErrorSmoothing, Prediction, Reconciled};
+use shooter_sim::net::protocol::{OwnState, Predicted};
 use shooter_sim::player::{self, PlayerEvent, PlayerInput, PlayerParams, PlayerState};
 use shooter_sim::weapon::{self, Action, CombatEvent, FireMode, LoadStage, Reload, WeaponId};
 use shooter_sim::{Vec2, Vec3, rng};
 
 use crate::aim_assist::{AIM_ASSIST_GROUP, AimAssistTarget};
 use crate::audio;
+use crate::body::{self, BodyParts};
 use crate::convert::{to_godot, to_sim};
 use crate::pickup::{INTERACT_LAYER, WeaponPickup};
 use crate::spring::{Spring, impulse_for_peak, smoothing};
 use crate::target::{HITBOX_LAYER, WORLD_LAYER};
 use crate::viewmodel::{ViewAction, ViewFrame, ViewmodelRig};
 
-const PITCH_LIMIT: f32 = FRAC_PI_2 - 0.01;
+use shooter_sim::look::PITCH_LIMIT;
+
 /// Surface used when a collider has no `surface` metadata.
 const DEFAULT_SURFACE: &str = "concrete";
 
@@ -185,6 +195,11 @@ pub struct FpsPlayer {
     interact_held: bool,
     input_enabled: bool,
     env: MoveEnv,
+    /// Floor contact after the last move; the next tick's `MoveEnv::on_floor`.
+    on_floor: bool,
+    /// Present while connected to a server.
+    prediction: Option<Prediction>,
+    smoothing: ErrorSmoothing,
     yaw: f32,
     pitch: f32,
     wish: Vector2,
@@ -287,13 +302,8 @@ impl ICharacterBody3D for FpsPlayer {
     fn physics_process(&mut self, delta: f64) {
         let dt = delta as f32;
         self.look_target = self.find_pickup();
-        let input = self.read_input();
-        self.headroom.force_shapecast_update();
-        let on_floor = self.base().is_on_floor();
-        self.env = MoveEnv {
-            on_floor,
-            can_stand: !self.headroom.is_colliding(),
-        };
+        // Quantized exactly as the server will decode it, so prediction matches.
+        let input = self.read_input().quantized();
 
         self.previous_recoil = self.state.combat.recoil;
         self.previous_sway = self.state.combat.scope_sway();
@@ -306,33 +316,28 @@ impl ICharacterBody3D for FpsPlayer {
             self.state.combat.refill_ammo(&mut combat);
             events.extend(combat.into_iter().map(PlayerEvent::Combat));
         }
-        let velocity = player::step(
-            &mut self.state,
-            &input,
-            self.env,
+        let mut predicted = self.predicted();
+        let outcome = body::tick(
+            &mut self.parts(),
             &self.params,
-            dt,
+            &mut predicted,
+            &input,
             &mut events,
         );
-        let stance = self.state.movement.stance;
-        let movement = &self.params.movement;
-        if movement.height(previous_stance) != movement.height(stance) {
-            self.apply_stance_shape(stance);
+        self.state = predicted.state;
+        self.on_floor = predicted.on_floor;
+        self.env = outcome.env;
+        if let Some(prediction) = &mut self.prediction {
+            let seq = prediction.next_seq();
+            prediction.record(seq, input, predicted);
         }
+        let stance = self.state.movement.stance;
         if stance == Stance::Sliding && previous_stance != Stance::Sliding {
             self.play_body("res://assets/audio/player/slide", 0.0);
             self.kick_fov(self.slide_fov_kick);
         }
 
-        let mut body = self.base_mut();
-        body.set_velocity(to_godot(velocity));
-        body.move_and_slide();
-        let resolved = body.get_velocity();
-        let position = body.get_global_position();
-        drop(body);
-
-        // Walls and floors clip the velocity; keep the clipped value as next tick's state.
-        self.state.movement.velocity = to_sim(resolved);
+        let position = to_godot(predicted.position);
         let moved = Vector2::new(
             position.x - self.current_position.x,
             position.z - self.current_position.z,
@@ -347,7 +352,8 @@ impl ICharacterBody3D for FpsPlayer {
         }
         self.events = events;
 
-        if !self.state.alive() {
+        // Online, the server respawns the player and the next snapshot moves them.
+        if !self.state.alive() && self.prediction.is_none() {
             self.respawn_in -= dt;
             if self.respawn_in <= 0.0 {
                 self.respawn();
@@ -358,7 +364,8 @@ impl ICharacterBody3D for FpsPlayer {
     fn process(&mut self, delta: f64) {
         let dt = delta as f32;
         let fraction = Engine::singleton().get_physics_interpolation_fraction() as f32;
-        let feet = self.previous_position.lerp(self.current_position, fraction);
+        let feet = self.previous_position.lerp(self.current_position, fraction)
+            + to_godot(self.smoothing.update(dt));
         let combat = &self.state.combat;
         // Recoil kicks show on the first frame after the shot's tick instead of
         // easing in across a tick; only recovery is interpolated.
@@ -646,6 +653,75 @@ impl FpsPlayer {
 }
 
 impl FpsPlayer {
+    /// Starts recording inputs for prediction (the client joined a server).
+    pub(crate) fn start_prediction(&mut self) {
+        self.prediction = Some(Prediction::default());
+    }
+
+    /// Back to offline play (the connection ended).
+    pub(crate) fn stop_prediction(&mut self) {
+        self.prediction = None;
+    }
+
+    pub(crate) fn prediction(&self) -> Option<&Prediction> {
+        self.prediction.as_ref()
+    }
+
+    /// Reconciles with the server's state after one of our inputs. On a
+    /// misprediction the body restarts from the server's state and replays
+    /// every input the server has not applied yet.
+    pub(crate) fn apply_server_state(&mut self, own: &OwnState) -> Reconciled {
+        let Some(mut prediction) = self.prediction.take() else {
+            return Reconciled::Ignored;
+        };
+        let mut parts = self.parts();
+        let params = self.params;
+        let mut discarded = Vec::new();
+        let result = prediction.reconcile(own.last_input, &own.predicted, |p, input| {
+            // Replays repeat effects the player already saw; drop their events.
+            body::place(&mut parts, &params.movement, p);
+            discarded.clear();
+            body::tick(&mut parts, &params, p, input, &mut discarded);
+        });
+        self.prediction = Some(prediction);
+
+        if let Reconciled::Corrected { current, .. } = result {
+            body::place(&mut parts, &params.movement, &current);
+            let respawned = !self.state.alive() && current.state.alive();
+            self.state = current.state;
+            self.on_floor = current.on_floor;
+            let before = self.current_position;
+            let after = to_godot(current.position);
+            // Keep the tick-to-tick camera interpolation continuous and blend
+            // the jump out over a few frames instead.
+            self.previous_position += after - before;
+            self.current_position = after;
+            self.smoothing.correct(to_sim(before), current.position);
+            if respawned {
+                self.reset_view();
+                self.signals().respawned().emit();
+            }
+        }
+        result
+    }
+
+    /// The state prediction records: simulation plus what the engine owns.
+    fn predicted(&self) -> Predicted {
+        Predicted {
+            state: self.state,
+            position: to_sim(self.base().get_global_position()),
+            on_floor: self.on_floor,
+        }
+    }
+
+    fn parts(&self) -> BodyParts {
+        BodyParts {
+            body: (*self.base()).clone(),
+            collision: (*self.collision).clone(),
+            headroom: (*self.headroom).clone(),
+        }
+    }
+
     fn take_latched(&mut self, action: &str) -> bool {
         let index = LATCHED_ACTIONS
             .iter()
@@ -655,12 +731,12 @@ impl FpsPlayer {
     }
 
     /// T in the demo arena refills every carried weapon. This is a demo
-    /// convenience applied outside `player::step`; when netcode lands it should
-    /// become a server-side debug command, not client input.
+    /// convenience applied outside `player::step`, so it is offline only:
+    /// online the server owns ammo and a local refill would only mispredict.
     fn refill_pressed(&mut self) -> bool {
         let pressed = Input::singleton().is_action_just_pressed("refill_ammo")
             | self.take_latched("refill_ammo");
-        pressed && self.input_enabled && self.state.alive()
+        pressed && self.input_enabled && self.state.alive() && self.prediction.is_none()
     }
 
     fn read_input(&mut self) -> PlayerInput {
@@ -1300,6 +1376,7 @@ impl FpsPlayer {
         body.set_global_position(spawn.origin);
         body.set_velocity(Vector3::ZERO);
         drop(body);
+        self.on_floor = false;
         self.yaw = spawn.basis.get_euler().y;
         self.pitch = 0.0;
         self.reset_view();
@@ -1321,19 +1398,8 @@ impl FpsPlayer {
         self.stride_length = 2.0;
         self.assist.reset();
         self.assist_target = None;
-        self.apply_stance_shape(Stance::Standing);
-    }
-
-    /// Resizes the capsule for a stance, keeping its bottom at the body origin (the feet).
-    fn apply_stance_shape(&mut self, stance: Stance) {
-        let height = self.params.movement.height(stance);
-        if let Some(shape) = self.collision.get_shape()
-            && let Ok(mut capsule) = shape.try_cast::<CapsuleShape3D>()
-        {
-            capsule.set_height(height);
-        }
-        self.collision
-            .set_position(Vector3::new(0.0, height / 2.0, 0.0));
+        let stance = self.state.movement.stance;
+        body::apply_stance_shape(&mut self.parts(), &self.params.movement, stance);
     }
 }
 

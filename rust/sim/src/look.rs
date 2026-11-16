@@ -18,6 +18,11 @@
 
 use glam::{Vec2, Vec3};
 
+use crate::fmath;
+
+/// Furthest the view pitches up or down, in radians: just short of straight up.
+pub const PITCH_LIMIT: f32 = std::f32::consts::FRAC_PI_2 - 0.01;
+
 /// Stick response settings.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct StickParams {
@@ -64,7 +69,7 @@ pub fn shape_stick(raw: Vec2, params: &StickParams) -> Vec2 {
         return Vec2::ZERO;
     }
     let t = ((length - params.inner_deadzone) / live).clamp(0.0, 1.0);
-    raw / length * t.powf(params.curve)
+    raw / length * fmath::powf(t, params.curve)
 }
 
 /// Turns stick deflection into turn rates, with a boost for long full turns.
@@ -234,16 +239,16 @@ impl AimAssist {
 
 /// Unit view direction for Godot yaw and pitch (yaw 0 looks down -Z).
 pub fn view_direction(yaw: f32, pitch: f32) -> Vec3 {
-    let (sy, cy) = yaw.sin_cos();
-    let (sp, cp) = pitch.sin_cos();
+    let (sy, cy) = fmath::sin_cos(yaw);
+    let (sp, cp) = fmath::sin_cos(pitch);
     Vec3::new(-sy * cp, sp, -cy * cp)
 }
 
 /// Yaw and pitch that look from `from` to `to`, inverse of [`view_direction`].
 pub fn bearing(from: Vec3, to: Vec3) -> Vec2 {
     let d = to - from;
-    let yaw = (-d.x).atan2(-d.z);
-    let pitch = d.y.atan2(Vec2::new(d.x, d.z).length());
+    let yaw = fmath::atan2(-d.x, -d.z);
+    let pitch = fmath::atan2(d.y, Vec2::new(d.x, d.z).length());
     Vec2::new(yaw, pitch)
 }
 
@@ -264,10 +269,9 @@ fn target_weight(
         return None;
     }
     // Angles from the crosshair to the body's surface and to the bubble edge.
-    let off_body = ((miss - target.radius).max(0.0)).atan2(along);
-    let bubble = (target.radius * (params.bubble_scale - 1.0))
-        .atan2(along)
-        .max(params.min_bubble);
+    let off_body = fmath::atan2((miss - target.radius).max(0.0), along);
+    let bubble =
+        fmath::atan2(target.radius * (params.bubble_scale - 1.0), along).max(params.min_bubble);
     if off_body >= bubble {
         return None;
     }

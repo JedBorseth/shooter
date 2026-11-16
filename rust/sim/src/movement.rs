@@ -172,7 +172,7 @@ impl MoveParams {
 
 /// Unit vectors for a yaw: (forward, right), on the horizontal plane.
 pub fn basis_from_yaw(yaw: f32) -> (Vec3, Vec3) {
-    let (s, c) = yaw.sin_cos();
+    let (s, c) = crate::fmath::sin_cos(yaw);
     (Vec3::new(-s, 0.0, -c), Vec3::new(c, 0.0, -s))
 }
 

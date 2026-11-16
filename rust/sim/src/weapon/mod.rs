@@ -26,7 +26,7 @@ pub use def::{
     builtin, install, parse, parse_all, table,
 };
 
-use crate::rng;
+use crate::{fmath, rng};
 
 /// Ammo for one carried weapon.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -223,8 +223,8 @@ impl CombatState {
         };
         let t = self.sway_time;
         let pattern = Vec2::new(
-            (t * 1.7).sin() * 0.6 + (t * 0.9 + 0.4).sin() * 0.4,
-            (t * 1.1 + 1.0).sin() * 0.7 + (t * 0.6).cos() * 0.3,
+            fmath::sin(t * 1.7) * 0.6 + fmath::sin(t * 0.9 + 0.4) * 0.4,
+            fmath::sin(t * 1.1 + 1.0) * 0.7 + fmath::cos(t * 0.6) * 0.3,
         );
         pattern * scope.sway.to_radians() * breath * self.ads
     }
@@ -301,7 +301,7 @@ pub fn pellet_offset(weapon: WeaponId, shot: u32, pellet: u8) -> Vec2 {
     let stream = 16 + u32::from(pellet) * 2;
     let angle = rng::unit(shot, stream) * TAU;
     let radius = rng::unit(shot, stream + 1).sqrt() * cone;
-    Vec2::new(angle.sin(), angle.cos()) * radius
+    Vec2::new(fmath::sin(angle), fmath::cos(angle)) * radius
 }
 
 /// Advances combat by one tick.
@@ -591,7 +591,7 @@ fn fire(state: &mut CombatState, ctx: &CombatContext, events: &mut Vec<CombatEve
     let cone = state.spread_degrees(ctx).to_radians();
     let angle = rng::unit(seed, 1) * TAU;
     let radius = rng::unit(seed, 2).sqrt() * cone;
-    let spread = Vec2::new(angle.sin(), angle.cos()) * radius;
+    let spread = Vec2::new(fmath::sin(angle), fmath::cos(angle)) * radius;
     events.push(CombatEvent::Fired {
         weapon: state.weapon().id,
         aim_offset: state.recoil + spread + state.scope_sway(),
@@ -632,7 +632,7 @@ fn recover(state: &mut CombatState, dt: f32) {
         return;
     }
     state.burst = 0;
-    state.recoil *= (-recoil.recovery_rate * dt).exp();
+    state.recoil *= fmath::exp(-recoil.recovery_rate * dt);
     if state.recoil.length_squared() < 1e-8 {
         state.recoil = Vec2::ZERO;
     }

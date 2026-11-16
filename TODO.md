@@ -24,7 +24,7 @@ The open work for building this into a modern-military, Call-of-Duty-style multi
 
 - **Rust by default.** Gameplay rules, simulation, and netcode go in Rust. Engine-independent logic goes in `rust/sim` (no Godot types, deterministic, unit-tested). Godot-facing classes go in `rust/game`.
 - **GDScript where it is honestly simpler:** UI, HUD, small effect scripts, editor tools, and test harnesses.
-- **Determinism.** Anything the server and client both simulate must produce the same result from the same inputs. Use `shooter_sim::rng` (hashed from shared counters), never a stateful random generator, wall-clock time, or frame delta inside `rust/sim`.
+- **Determinism.** Anything the server and client both simulate must produce the same result from the same inputs. Use `shooter_sim::rng` (hashed from shared counters), never a stateful random generator, wall-clock time, or frame delta inside `rust/sim`. Use `shooter_sim::fmath` for `sin`, `cos`, `exp`, `powf`, and `atan2`, never the `f32` methods: platform math libraries differ in the last bits, so a Windows client would drift from a Linux server.
 - **Dependencies** are welcome when they save real work. They must be open source and self-hostable: no service that needs someone else's API key or account. Say why you added one in the PR.
 - **Assets** must be CC0 or another license that allows commercial use and modification. Credit every asset in [godot/assets/CREDITS.md](godot/assets/CREDITS.md).
 
@@ -82,19 +82,24 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [ ] Button prompts with controller glyphs instead of text, and D-pad bindings for weapon slots. A gamepad binding for interact (weapon racks).
 - [x] **good first task** Show the controls overlay only for the first minute, or toggle it with F1.
 
-## Phase 2: netcode core
+## Phase 2: netcode core (in progress)
 
-- [x] Choose the transport: Godot's `ENetMultiplayerPeer` as a UDP pipe, with all serialization, ticks, and buffers in Rust (see `docs/roadmap.md`).
-- [ ] Fixed-tick loop shared by client and server (120 Hz, `shooter_sim::TICK_RATE`), with tick numbers on every input and snapshot. Snapshots go out at 60 Hz.
-- [ ] Input packets: each send carries the last N inputs to survive packet loss. The server keeps an input buffer per player.
-- [ ] Client-side prediction: keep a ring buffer of `PlayerState` and `PlayerInput` per tick. On each server snapshot, rewind to the acknowledged tick and replay pending inputs (`shooter_sim::player::step`).
-- [ ] Smooth error correction: blend visual position after a misprediction instead of snapping.
-- [ ] Snapshot interpolation for remote players, rendered about 100 ms in the past, with jitter buffering.
-- [ ] Snapshot delta compression against the last acknowledged snapshot. Quantize positions and angles.
-- [ ] A determinism test in `rust/sim`: the same input stream gives bit-identical state across runs and in release and debug builds.
-- [ ] Network condition simulator (latency, jitter, loss) for local testing, plus a debug overlay (ping, loss, prediction error).
-- [ ] Headless dedicated server export: an export preset with the `dedicated_server` feature, a `--server` command-line flag, no rendering or audio.
-- [ ] Third-person player model for remote players: CC0 character with locomotion blend space, aim offset, and weapon in hand.
+- [x] Choose the transport: Godot's `ENetConnection` as a packet pipe, with serialization in Rust (decision and reasons in `docs/roadmap.md`).
+- [x] Fixed-tick loop shared by client and server (120 Hz, `shooter_sim::TICK_RATE`), with sequence numbers on every input and tick numbers on every snapshot. Snapshots go out at 60 Hz.
+- [x] Input packets: each send carries every unacknowledged input (up to 16) to survive packet loss. The server keeps an input queue per player (`shooter_sim::net::input_queue`).
+- [x] Client-side prediction: a history of inputs and resulting states per input; on each snapshot, compare, and on a mismatch restart from the server's state and replay pending inputs through `body::tick`.
+- [x] Smooth error correction: blend visual position after a misprediction instead of snapping.
+- [x] Snapshot interpolation for remote players, rendered about 100 ms in the past, with an adaptive jitter buffer.
+- [x] Snapshot delta compression against the last acknowledged snapshot. Quantize positions and angles.
+- [x] A determinism test in `rust/sim`: the same input stream gives bit-identical state across runs and in release and debug builds.
+- [x] Network condition simulator (latency, jitter, loss) for local testing, plus a debug overlay (ping, loss, prediction error).
+- [x] Headless dedicated server export: an export preset with the `dedicated_server` feature, a `--server` command-line flag, no rendering or audio.
+- [ ] Third-person player model for remote players: CC0 character with locomotion blend space, aim offset, and weapon in hand. (Remote players are placeholder capsules with a gun, muzzle flash, and gunfire sound.)
+- [ ] Server-side shots: resolve `CombatEvent::Fired` on the server against other players' hitboxes and send hit confirmations. Lands together with Phase 3's rewind.
+- [ ] Input rate limits: the server applies up to three queued inputs per tick to drain a backlog, so a client that sends inputs faster than the tick rate moves faster. Cap inputs per second per client.
+- [ ] Replays on slopes: `body::place` restores the body's floor contact but not its remembered floor normal, so a correction replayed on the ramp may drift and correct again. Add a ramp run to `godot/tests/net_test.gd` and restore the floor normal if it shows up.
+- [ ] Reliable game events (joins, kills, chat) on the reliable ENet channel, for the kill feed and scoreboard in Phase 4.
+- [ ] Bandwidth: send the owner's full state only when it differs from what the client predicted, or delta-compress it like remote players (about 60 kbps down and 27 kbps up per client today, with 60 Hz snapshots and 120 Hz inputs).
 
 ## Phase 3: lag compensation
 
@@ -134,8 +139,8 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 
 - [x] GitHub Actions CI: `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`, gdlint and gdformat, and the headless smoke test (download Godot 4.7.2 in the job).
 - [x] Release builds: export presets for Linux, Windows, and macOS clients, exported on `main` and published on `v*` tags.
-- [ ] Dedicated server build: a Linux export preset with `dedicated_server=true`, packaged as a Docker image and pushed to GitHub Container Registry from the Build workflow.
-- [ ] Determinism test in CI: record an input sequence, run it through `shooter_sim::player::step` twice (and on each OS in the build matrix), and compare state hashes. Catches prediction desyncs before netcode depends on them.
+- [ ] Dedicated server build: a Linux export preset with `dedicated_server=true` (done, exported by the Build workflow), packaged as a Docker image and pushed to GitHub Container Registry from the Build workflow.
+- [x] Determinism test in CI: record an input sequence, run it through `shooter_sim::player::step` twice (and on each OS in the build matrix), and compare state hashes. Catches prediction desyncs before netcode depends on them. (`rust/sim/tests/determinism.rs`)
 - [ ] Visual and performance checks on a GPU runner: run `capture_screens.gd` and a scripted fly-through that records frame times, on a self-hosted runner with a GPU, for trusted branches only.
 - [ ] **good first task** A `justfile` or Makefile with `build`, `run`, `test`, `screens` targets.
 - [ ] **good first task** Editor plugin or script that measures a weapon model's sight line and muzzle to fill in `WeaponView` offsets automatically (what was done by hand for the M4 and M1911).

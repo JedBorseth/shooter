@@ -1,9 +1,9 @@
 name: Build
 
-# Exports playable Linux, Windows, and macOS clients for every pull request and
-# every push to main, so anyone can download a PR's build and play it before it
-# merges. Runners are free for public repositories. Tags (v*) also publish the
-# builds as a GitHub Release.
+# Exports playable Linux, Windows, and macOS clients, plus a headless Linux
+# dedicated server, for every pull request and every push to main, so anyone
+# can download a PR's build and play it before it merges. Runners are free for
+# public repositories. Tags (v*) also publish the builds as a GitHub Release.
 
 on:
   push:
@@ -130,9 +130,12 @@ jobs:
           }
           export_preset "Linux" "$PWD/builds/linux/shooter.x86_64"
           export_preset "Windows Desktop" "$PWD/builds/windows/shooter.exe"
+          # Headless dedicated server: runs as a server on start, no rendering or audio.
+          export_preset "Linux Server" "$PWD/builds/server/shooter-server.x86_64"
           mkdir -p dist
           (cd builds/linux && zip -qr "../../dist/${NAME}-linux-x86_64.zip" .)
           (cd builds/windows && zip -qr "../../dist/${NAME}-windows-x86_64.zip" .)
+          (cd builds/server && zip -qr "../../dist/${NAME}-server-linux-x86_64.zip" .)
           # macOS exports straight to a zipped, ad-hoc signed .app.
           export_preset "macOS" "$PWD/dist/${NAME}-macos-universal.zip"
           ls -lh dist

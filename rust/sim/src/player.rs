@@ -83,7 +83,7 @@ pub struct PlayerState {
     /// Downward speed during the last airborne tick, for landing and fall damage.
     pub fall_speed: f32,
     pub airborne: bool,
-    reload_held: bool,
+    pub(crate) reload_held: bool,
 }
 
 impl PlayerState {

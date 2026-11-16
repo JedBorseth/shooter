@@ -14,10 +14,10 @@ The plan, decisions, and reference projects are in [docs/roadmap.md](docs/roadma
 
 - `godot/`: the Godot project (scenes, GDScript glue, assets).
 - `godot/data/weapons/`: one RON file per weapon (damage, fire rate, recoil pattern, spread, reload style, pellets, scope). Edit a file while the game runs from a debug build and it reloads.
-- `rust/sim/`: engine-independent, deterministic simulation: movement, weapons (fire rate, falloff, recoil patterns, spread, pellets, bolt and pump cycling, magazine and shell-by-shell reloads, ADS, scope sway and hold breath, switching, pickups), health (regeneration, fall damage, death), the combined per-player step that netcode will predict, and gamepad look (stick shaping, aim assist). No Godot types, so the client and the dedicated server share it and it can be unit-tested on its own.
-- `rust/game/`: the GDExtension that exposes the simulation to Godot: `FpsPlayer` (input, gamepad look and aim assist, hitscan, tracers, footsteps, camera), `AimAssistTarget`, `ViewmodelRig` and `WeaponView` (procedural weapon motion, muzzle flash, ejected shells, sounds), `WeaponPickup` (weapon racks), `Sentry` (a turret that shoots back), and `TargetDummy`.
+- `rust/sim/`: engine-independent, deterministic simulation: movement, weapons (fire rate, falloff, recoil patterns, spread, pellets, bolt and pump cycling, magazine and shell-by-shell reloads, ADS, scope sway and hold breath, switching, pickups), health (regeneration, fall damage, death), the combined per-player step that the client predicts and the server runs, and gamepad look (stick shaping, aim assist). `rust/sim/src/net/` holds the netcode core: the bit-packed wire protocol with delta compression, the server's input queue, client prediction and reconciliation, snapshot interpolation, and a network condition simulator. No Godot types, so the client and the dedicated server share it and it can be unit-tested on its own.
+- `rust/game/`: the GDExtension that exposes the simulation to Godot: `FpsPlayer` (input, gamepad look and aim assist, hitscan, tracers, footsteps, camera, prediction), `AimAssistTarget`, `ViewmodelRig` and `WeaponView` (procedural weapon motion, muzzle flash, ejected shells, sounds), `WeaponPickup` (weapon racks), `Sentry` (a turret that shoots back), `TargetDummy`, and networking in `rust/game/src/net/`: `NetServer` (the dedicated server), `NetClient`, and `RemotePlayer` (other players, interpolated).
 - `godot/shaders/`: viewmodel projection (own FOV, never clips walls), muzzle flash, damage vignette, and the blockout grid.
-- `godot/scripts/`: GDScript for the HUD, scope and damage overlays, pause and settings menu (`Settings` autoload), impacts, and tracers.
+- `godot/scripts/`: GDScript for the HUD, scope and damage overlays, pause and settings menu (`Settings` autoload), impacts, tracers, and the `Net` autoload that starts a server or client from command-line options (`godot/scripts/net/`).
 - `docs/`: roadmap and design notes.
 - `tools/build_weapon_audio.py`: builds the layered gunshot sounds from bart's CC0 firearm library and trims dead air from the other sounds. Run it with `uv run`; its docstring explains the steps.
 
@@ -49,6 +49,12 @@ godot --headless --path godot --script res://tests/settings_test.gd
 
 The smoke test loads the arena headless and drives the player through movement (toggle sprint, slide, crouch), combat (aim, fire, kill a dummy, reload, switch), a weapon rack, the shotgun (pellets, pump, shell-by-shell reload), the sniper (scope, hold breath), damage, regeneration, death and respawn, fall damage, the sentry, and gamepad look with aim assist. The settings test checks the menu and that settings save and load. Both exit non-zero on failure.
 
+The netcode test starts a dedicated server process with a bot, joins it over UDP on localhost through a simulated link (40 ms latency plus 15 ms jitter each way, 5% loss), sprints, slides, and jumps, and checks that prediction never needed a correction and that the bot is interpolated:
+
+```sh
+godot --headless --path godot --script res://tests/net_test.gd
+```
+
 GDScript is linted and formatted with [gdtoolkit](https://github.com/Scony/godot-gdscript-toolkit):
 
 ```sh
@@ -62,12 +68,31 @@ To review visuals, capture a set of first-person screenshots (every weapon at th
 CAPTURE_DIR=/tmp/shots godot --path godot --resolution 1600x900 --script res://tests/capture_screens.gd
 ```
 
+## Play online
+
+Multiplayer runs on a dedicated server, even on one machine. The server is the same Godot project, started headless:
+
+```sh
+godot --headless --path godot -- --server --bots 3   # UDP port 27015; --port N to change
+godot --path godot -- --connect 127.0.0.1            # HOST or HOST:PORT
+```
+
+Bots are scripted players that strafe, crouch, jump, and fire, so one client has something to watch. To feel the netcode at a realistic ping against a local server, add a simulated link to the client (each value applies in each direction):
+
+```sh
+godot --path godot -- --connect 127.0.0.1 --lag 50 --jitter 10 --loss 2
+```
+
+F3 toggles the netcode overlay: ping, loss, inputs waiting for the server, prediction corrections, interpolation delay, and bandwidth. Online, the practice targets and the sentry are removed and T (refill ammo) is disabled, since the server owns ammo and health. The server respawns players. Shots don't damage other players yet; server-side hit detection with lag compensation is Phase 3.
+
+The Build workflow also exports a headless Linux dedicated server (`shooter-<version>-server-linux-x86_64.zip`). It starts as a server on its own; pass `-- --port N --bots N` to configure it.
+
 ## CI and builds
 
 GitHub Actions runs two workflows:
 
 - **CI** (`.github/workflows/ci.yml`) runs on every pull request and push to `main`: `cargo fmt` and `clippy -D warnings`, `cargo test` on Linux, Windows, and macOS, gdlint and gdformat, and the headless smoke test against Godot 4.7.2.
-- **Build** (`.github/workflows/build.yml`) exports playable clients on every pull request and every push to `main`: Linux, Windows, and universal macOS zips appear as artifacts on the workflow run, so you can play a PR before it merges. The macOS app is ad-hoc signed, not notarized, so macOS asks before opening it. Pushing a `v*` tag publishes the zips as a GitHub Release.
+- **Build** (`.github/workflows/build.yml`) exports playable clients and a headless Linux dedicated server on every pull request and every push to `main`: Linux, Windows, universal macOS, and server zips appear as artifacts on the workflow run, so you can play a PR before it merges. The macOS app is ad-hoc signed, not notarized, so macOS asks before opening it. Pushing a `v*` tag publishes the zips as a GitHub Release.
 
 To cut a release:
 
@@ -93,6 +118,7 @@ Export presets are in `godot/export_presets.cfg`. The Rust library for each plat
 | Refill all ammo to max (demo) | T |
 | Pause menu and settings | Esc |
 | Show or hide the controls line | F1 |
+| Netcode overlay (online) | F3 |
 
 Gamepads work too (Xbox layout shown; PlayStation and others use the same positions):
 

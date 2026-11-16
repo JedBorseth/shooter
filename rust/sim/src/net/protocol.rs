@@ -1,0 +1,997 @@
+//! Wire format for every client and server message.
+//!
+//! The transport (Godot's ENet) only moves bytes; everything about what is in a
+//! packet lives here so it can be tested without the engine.
+//!
+//! - Client → server: a hello, then one [`InputPacket`] per tick. Each carries
+//!   every input the server has not acknowledged yet (up to
+//!   [`MAX_INPUTS_PER_PACKET`]), so a lost packet costs nothing as long as a later
+//!   one arrives.
+//! - Server → client: a welcome, then [`Snapshot`]s. A snapshot holds the
+//!   receiver's own authoritative state at full precision (prediction compares
+//!   it bit for bit) and every other player quantized and delta-compressed
+//!   against the last snapshot that client acknowledged.
+
+use glam::{IVec3, Vec2, Vec3};
+
+use super::Tick;
+use super::bits::{BitReader, BitWriter, DecodeError, DecodeResult};
+use crate::look::PITCH_LIMIT;
+use crate::movement::{MoveState, Stance};
+use crate::player::{PlayerInput, PlayerState};
+use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState};
+
+/// Bumped whenever the wire format changes; mismatched clients are rejected.
+pub const PROTOCOL_VERSION: u16 = 2;
+/// Cap on redundant inputs per packet (200 ms at 120 Hz).
+pub const MAX_INPUTS_PER_PACKET: usize = 24;
+/// Wish vectors are sent as signed bytes; prediction must use the same values.
+const WISH_SCALE: f32 = 127.0;
+/// Remote positions are sent in millimetres.
+const POSITION_SCALE: f32 = 1000.0;
+const ANGLE_STEPS: f32 = 65536.0;
+
+const TAG_BITS: u32 = 3;
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ClientMessage {
+    Hello { version: u16 },
+    Input(InputPacket),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct InputPacket {
+    /// Newest snapshot tick the client has, used as the delta baseline.
+    pub ack_snapshot: Option<Tick>,
+    /// Sequence number of `inputs[0]`; the rest follow consecutively.
+    pub first_seq: u32,
+    pub inputs: Vec<PlayerInput>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ServerMessage {
+    Welcome {
+        player_id: u8,
+        tick: Tick,
+        /// Ticks between snapshots, which sets the interpolation delay.
+        snapshot_interval: u8,
+    },
+    Reject {
+        server_version: u16,
+    },
+    Snapshot(Snapshot),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Snapshot {
+    pub tick: Tick,
+    /// Tick of the snapshot the remote players are delta-encoded against.
+    pub baseline: Option<Tick>,
+    /// The receiving player's authoritative state, if they are in the game.
+    pub own: Option<OwnState>,
+    /// Every other player, sorted by id.
+    pub players: Vec<PlayerView>,
+}
+
+/// Everything client prediction needs to restart from the server's result.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct OwnState {
+    /// Sequence number of the last input the server applied (0 for none).
+    pub last_input: u32,
+    pub predicted: Predicted,
+}
+
+/// A player's full simulation state plus the parts the engine owns.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Predicted {
+    pub state: PlayerState,
+    /// Feet position.
+    pub position: Vec3,
+    pub on_floor: bool,
+}
+
+/// What other clients see of a player: quantized, and only what rendering needs.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PlayerView {
+    pub id: u8,
+    /// Feet position in millimetres.
+    pub position: IVec3,
+    /// View angles in 1/65536 turns.
+    pub yaw: u16,
+    pub pitch: u16,
+    pub stance: Stance,
+    pub sprinting: bool,
+    pub on_floor: bool,
+    /// Aim-down-sights amount, 0 to 255.
+    pub ads: u8,
+    pub weapon: WeaponId,
+    pub reloading: bool,
+    pub alive: bool,
+    /// Rounds fired so far; an increase means the player fired.
+    pub shots_fired: u32,
+}
+
+impl PlayerView {
+    pub fn from_state(id: u8, p: &Predicted, yaw: f32, pitch: f32) -> Self {
+        let combat = &p.state.combat;
+        Self {
+            id,
+            position: (p.position * POSITION_SCALE).round().as_ivec3(),
+            yaw: angle_to_u16(yaw),
+            pitch: angle_to_u16(pitch),
+            stance: p.state.movement.stance,
+            sprinting: p.state.movement.sprinting,
+            on_floor: p.on_floor,
+            ads: (combat.ads.clamp(0.0, 1.0) * 255.0).round() as u8,
+            weapon: combat.weapon().id,
+            reloading: combat.is_reloading(),
+            alive: p.state.alive(),
+            shots_fired: combat.shots_fired,
+        }
+    }
+
+    pub fn position(&self) -> Vec3 {
+        self.position.as_vec3() / POSITION_SCALE
+    }
+
+    /// Yaw in radians, in `[-π, π)`.
+    pub fn yaw(&self) -> f32 {
+        u16_to_angle(self.yaw)
+    }
+
+    /// Pitch in radians, in `[-π, π)`.
+    pub fn pitch(&self) -> f32 {
+        u16_to_angle(self.pitch)
+    }
+
+    pub fn ads(&self) -> f32 {
+        f32::from(self.ads) / 255.0
+    }
+}
+
+fn angle_to_u16(radians: f32) -> u16 {
+    let turns = radians / std::f32::consts::TAU;
+    let fraction = turns - turns.floor();
+    ((fraction * ANGLE_STEPS).round() as u32 % 65536) as u16
+}
+
+fn u16_to_angle(value: u16) -> f32 {
+    (value as i16) as f32 / ANGLE_STEPS * std::f32::consts::TAU
+}
+
+impl PlayerInput {
+    /// The input as the server will decode it. The client predicts with this,
+    /// so both sides step with exactly the same values.
+    pub fn quantized(mut self) -> Self {
+        let q = |v: f32| (v.clamp(-1.0, 1.0) * WISH_SCALE).round() / WISH_SCALE;
+        self.wish = Vec2::new(q(self.wish.x), q(self.wish.y));
+        // The client already clamps; this keeps a tampered pitch off the server.
+        self.pitch = self.pitch.clamp(-PITCH_LIMIT, PITCH_LIMIT);
+        self.switch_to = self.switch_to.filter(|slot| *slot < 4);
+        self.pickup = self.pickup.filter(|id| valid_weapon(*id));
+        self
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Client messages
+
+impl ClientMessage {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut w = BitWriter::new();
+        match self {
+            ClientMessage::Hello { version } => {
+                w.bits(0, TAG_BITS);
+                w.u16(*version);
+            }
+            ClientMessage::Input(packet) => {
+                w.bits(1, TAG_BITS);
+                write_option_tick(&mut w, packet.ack_snapshot);
+                // Only the newest inputs fit; number the first one actually sent.
+                let count = packet.inputs.len().min(MAX_INPUTS_PER_PACKET);
+                let skipped = (packet.inputs.len() - count) as u32;
+                w.varint(packet.first_seq.wrapping_add(skipped));
+                w.varint(count as u32);
+                let mut previous = None;
+                for input in &packet.inputs[packet.inputs.len() - count..] {
+                    let same = previous == Some(*input);
+                    w.bool(same);
+                    if !same {
+                        write_input(&mut w, input);
+                    }
+                    previous = Some(*input);
+                }
+            }
+        }
+        w.finish()
+    }
+
+    pub fn decode(bytes: &[u8]) -> DecodeResult<Self> {
+        let mut r = BitReader::new(bytes);
+        match r.bits(TAG_BITS)? {
+            0 => Ok(ClientMessage::Hello { version: r.u16()? }),
+            1 => {
+                let ack_snapshot = read_option_tick(&mut r)?;
+                let first_seq = r.varint()?;
+                let count = r.varint()? as usize;
+                if count > MAX_INPUTS_PER_PACKET {
+                    return Err(DecodeError::Invalid("input count"));
+                }
+                let mut inputs: Vec<PlayerInput> = Vec::with_capacity(count);
+                for _ in 0..count {
+                    let input = if r.bool()? {
+                        *inputs.last().ok_or(DecodeError::Invalid("repeat"))?
+                    } else {
+                        read_input(&mut r)?
+                    };
+                    inputs.push(input);
+                }
+                Ok(ClientMessage::Input(InputPacket {
+                    ack_snapshot,
+                    first_seq,
+                    inputs,
+                }))
+            }
+            _ => Err(DecodeError::Invalid("client message tag")),
+        }
+    }
+}
+
+fn write_input(w: &mut BitWriter, input: &PlayerInput) {
+    let byte = |v: f32| ((v.clamp(-1.0, 1.0) * WISH_SCALE).round() as i8) as u8;
+    w.u8(byte(input.wish.x));
+    w.u8(byte(input.wish.y));
+    w.f32(input.yaw);
+    w.f32(input.pitch);
+    for flag in [
+        input.jump,
+        input.sprint,
+        input.crouch,
+        input.fire,
+        input.aim,
+        input.reload,
+    ] {
+        w.bool(flag);
+    }
+    match input.switch_to {
+        Some(slot) if slot < 4 => {
+            w.bool(true);
+            w.bits(u32::from(slot), 2);
+        }
+        _ => w.bool(false),
+    }
+    match input.pickup {
+        Some(id) if valid_weapon(id) => {
+            w.bool(true);
+            write_weapon(w, id);
+        }
+        _ => w.bool(false),
+    }
+}
+
+fn read_input(r: &mut BitReader) -> DecodeResult<PlayerInput> {
+    let mut axis = || -> DecodeResult<f32> {
+        let v = r.u8()? as i8;
+        if v == i8::MIN {
+            return Err(DecodeError::Invalid("wish"));
+        }
+        Ok(f32::from(v) / WISH_SCALE)
+    };
+    let wish = Vec2::new(axis()?, axis()?);
+    let yaw = r.f32()?;
+    let pitch = r.f32()?;
+    if !yaw.is_finite() || !pitch.is_finite() {
+        return Err(DecodeError::Invalid("view angles"));
+    }
+    let jump = r.bool()?;
+    let sprint = r.bool()?;
+    let crouch = r.bool()?;
+    let fire = r.bool()?;
+    let aim = r.bool()?;
+    let reload = r.bool()?;
+    let switch_to = if r.bool()? {
+        Some(r.bits(2)? as u8)
+    } else {
+        None
+    };
+    let pickup = if r.bool()? {
+        Some(read_weapon(r)?)
+    } else {
+        None
+    };
+    Ok(PlayerInput {
+        wish,
+        yaw,
+        pitch,
+        jump,
+        sprint,
+        crouch,
+        fire,
+        aim,
+        reload,
+        switch_to,
+        pickup,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Server messages
+
+impl ServerMessage {
+    /// Encodes the message. `baseline` holds the remote players of the snapshot
+    /// named by `Snapshot::baseline`, exactly as this client received them.
+    pub fn encode(&self, baseline: &[PlayerView]) -> Vec<u8> {
+        let mut w = BitWriter::new();
+        match self {
+            ServerMessage::Welcome {
+                player_id,
+                tick,
+                snapshot_interval,
+            } => {
+                w.bits(0, TAG_BITS);
+                w.u16(PROTOCOL_VERSION);
+                w.u8(*player_id);
+                w.u32(*tick);
+                w.u8(*snapshot_interval);
+            }
+            ServerMessage::Reject { server_version } => {
+                w.bits(1, TAG_BITS);
+                w.u16(*server_version);
+            }
+            ServerMessage::Snapshot(snapshot) => {
+                w.bits(2, TAG_BITS);
+                write_snapshot(&mut w, snapshot, baseline);
+            }
+        }
+        w.finish()
+    }
+
+    /// Decodes a message. `baseline` looks up the remote players of an earlier
+    /// snapshot by tick; a snapshot whose baseline is unknown fails to decode.
+    pub fn decode<'a>(
+        bytes: &[u8],
+        baseline: impl FnOnce(Tick) -> Option<&'a [PlayerView]>,
+    ) -> DecodeResult<Self> {
+        let mut r = BitReader::new(bytes);
+        match r.bits(TAG_BITS)? {
+            0 => {
+                let version = r.u16()?;
+                if version != PROTOCOL_VERSION {
+                    return Ok(ServerMessage::Reject {
+                        server_version: version,
+                    });
+                }
+                Ok(ServerMessage::Welcome {
+                    player_id: r.u8()?,
+                    tick: r.u32()?,
+                    snapshot_interval: r.u8()?.max(1),
+                })
+            }
+            1 => Ok(ServerMessage::Reject {
+                server_version: r.u16()?,
+            }),
+            2 => Ok(ServerMessage::Snapshot(read_snapshot(&mut r, baseline)?)),
+            _ => Err(DecodeError::Invalid("server message tag")),
+        }
+    }
+}
+
+fn write_snapshot(w: &mut BitWriter, s: &Snapshot, baseline: &[PlayerView]) {
+    w.u32(s.tick);
+    match s.baseline {
+        // Baselines are recent, so send the distance back instead of the tick.
+        Some(base) => {
+            w.bool(true);
+            w.varint(s.tick.wrapping_sub(base));
+        }
+        None => w.bool(false),
+    }
+    match &s.own {
+        Some(own) => {
+            w.bool(true);
+            w.varint(own.last_input);
+            write_predicted(w, &own.predicted);
+        }
+        None => w.bool(false),
+    }
+    let baseline = if s.baseline.is_some() { baseline } else { &[] };
+    w.varint(s.players.len() as u32);
+    for view in &s.players {
+        w.u8(view.id);
+        let base = baseline
+            .iter()
+            .find(|b| b.id == view.id)
+            .copied()
+            .unwrap_or(PlayerView {
+                id: view.id,
+                ..PlayerView::default()
+            });
+        write_view_delta(w, view, &base);
+    }
+}
+
+fn read_snapshot<'a>(
+    r: &mut BitReader,
+    baseline: impl FnOnce(Tick) -> Option<&'a [PlayerView]>,
+) -> DecodeResult<Snapshot> {
+    let tick = r.u32()?;
+    let base_tick = if r.bool()? {
+        Some(tick.wrapping_sub(r.varint()?))
+    } else {
+        None
+    };
+    let own = if r.bool()? {
+        Some(OwnState {
+            last_input: r.varint()?,
+            predicted: read_predicted(r)?,
+        })
+    } else {
+        None
+    };
+    let base: &[PlayerView] = match base_tick {
+        Some(t) => baseline(t).ok_or(DecodeError::Invalid("unknown baseline"))?,
+        None => &[],
+    };
+    let count = r.varint()? as usize;
+    if count > 255 {
+        return Err(DecodeError::Invalid("player count"));
+    }
+    let mut players = Vec::with_capacity(count);
+    for _ in 0..count {
+        let id = r.u8()?;
+        let b = base
+            .iter()
+            .find(|b| b.id == id)
+            .copied()
+            .unwrap_or(PlayerView {
+                id,
+                ..PlayerView::default()
+            });
+        players.push(read_view_delta(r, &b)?);
+    }
+    Ok(Snapshot {
+        tick,
+        baseline: base_tick,
+        own,
+        players,
+    })
+}
+
+/// Field groups of a [`PlayerView`], each sent only when it changed.
+fn write_view_delta(w: &mut BitWriter, v: &PlayerView, base: &PlayerView) {
+    let changed = v != base;
+    w.bool(changed);
+    if !changed {
+        return;
+    }
+    for axis in 0..3 {
+        let delta = v.position[axis].wrapping_sub(base.position[axis]);
+        w.bool(delta != 0);
+        if delta != 0 {
+            w.varint_signed(delta);
+        }
+    }
+    let look = (v.yaw, v.pitch) != (base.yaw, base.pitch);
+    w.bool(look);
+    if look {
+        w.u16(v.yaw);
+        w.u16(v.pitch);
+    }
+    let flags = |p: &PlayerView| {
+        (
+            p.stance,
+            p.sprinting,
+            p.on_floor,
+            p.ads,
+            p.weapon,
+            p.reloading,
+            p.alive,
+        )
+    };
+    let flags_changed = flags(v) != flags(base);
+    w.bool(flags_changed);
+    if flags_changed {
+        write_stance(w, v.stance);
+        w.bool(v.sprinting);
+        w.bool(v.on_floor);
+        w.u8(v.ads);
+        write_weapon(w, v.weapon);
+        w.bool(v.reloading);
+        w.bool(v.alive);
+    }
+    let shots = v.shots_fired.wrapping_sub(base.shots_fired);
+    w.bool(shots != 0);
+    if shots != 0 {
+        w.varint(shots);
+    }
+}
+
+fn read_view_delta(r: &mut BitReader, base: &PlayerView) -> DecodeResult<PlayerView> {
+    let mut v = *base;
+    if !r.bool()? {
+        return Ok(v);
+    }
+    for axis in 0..3 {
+        if r.bool()? {
+            v.position[axis] = base.position[axis].wrapping_add(r.varint_signed()?);
+        }
+    }
+    if r.bool()? {
+        v.yaw = r.u16()?;
+        v.pitch = r.u16()?;
+    }
+    if r.bool()? {
+        v.stance = read_stance(r)?;
+        v.sprinting = r.bool()?;
+        v.on_floor = r.bool()?;
+        v.ads = r.u8()?;
+        v.weapon = read_weapon(r)?;
+        v.reloading = r.bool()?;
+        v.alive = r.bool()?;
+    }
+    if r.bool()? {
+        v.shots_fired = base.shots_fired.wrapping_add(r.varint()?);
+    }
+    Ok(v)
+}
+
+// ---------------------------------------------------------------------------
+// Full-precision state for prediction
+
+fn write_predicted(w: &mut BitWriter, p: &Predicted) {
+    write_vec3(w, p.position);
+    w.bool(p.on_floor);
+    let s = &p.state;
+    w.bool(s.reload_held);
+    w.f32(s.health);
+    w.f32(s.since_damage);
+    w.f32(s.fall_speed);
+    w.bool(s.airborne);
+    write_move_state(w, &s.movement);
+    write_combat_state(w, &s.combat);
+}
+
+fn read_predicted(r: &mut BitReader) -> DecodeResult<Predicted> {
+    let position = read_vec3(r)?;
+    let on_floor = r.bool()?;
+    let reload_held = r.bool()?;
+    let health = r.f32()?;
+    let since_damage = r.f32()?;
+    let fall_speed = r.f32()?;
+    let airborne = r.bool()?;
+    let movement = read_move_state(r)?;
+    let combat = read_combat_state(r)?;
+    Ok(Predicted {
+        state: PlayerState {
+            movement,
+            combat,
+            health,
+            since_damage,
+            fall_speed,
+            airborne,
+            reload_held,
+        },
+        position,
+        on_floor,
+    })
+}
+
+fn write_move_state(w: &mut BitWriter, m: &MoveState) {
+    write_vec3(w, m.velocity);
+    write_stance(w, m.stance);
+    w.bool(m.sprinting);
+    w.f32(m.slide_time);
+    w.f32(m.slide_cooldown);
+    w.bool(m.jump_held);
+    w.bool(m.crouch_held);
+    w.bool(m.sprint_held);
+    w.f32(m.jump_buffer);
+    w.f32(m.coyote);
+}
+
+fn read_move_state(r: &mut BitReader) -> DecodeResult<MoveState> {
+    Ok(MoveState {
+        velocity: read_vec3(r)?,
+        stance: read_stance(r)?,
+        sprinting: r.bool()?,
+        slide_time: r.f32()?,
+        slide_cooldown: r.f32()?,
+        jump_held: r.bool()?,
+        crouch_held: r.bool()?,
+        sprint_held: r.bool()?,
+        jump_buffer: r.f32()?,
+        coyote: r.f32()?,
+    })
+}
+
+fn write_combat_state(w: &mut BitWriter, c: &CombatState) {
+    for slot in &c.slots {
+        write_weapon(w, slot.id);
+        w.u16(slot.magazine);
+        w.u16(slot.reserve);
+    }
+    w.bits(u32::from(c.active), 2);
+    match c.action {
+        Action::Ready => w.bits(0, 3),
+        Action::Reloading { remaining, empty } => {
+            w.bits(1, 3);
+            w.f32(remaining);
+            w.bool(empty);
+        }
+        Action::Loading { remaining, stage } => {
+            w.bits(2, 3);
+            w.f32(remaining);
+            let stage = match stage {
+                LoadStage::Opening => 0,
+                LoadStage::Round => 1,
+                LoadStage::Closing => 2,
+            };
+            w.bits(stage, 2);
+        }
+        Action::Cycling { remaining } => {
+            w.bits(3, 3);
+            w.f32(remaining);
+        }
+        Action::Lowering { remaining, to } => {
+            w.bits(4, 3);
+            w.f32(remaining);
+            w.bits(u32::from(to), 2);
+        }
+        Action::Raising { remaining } => {
+            w.bits(5, 3);
+            w.f32(remaining);
+        }
+    }
+    w.f32(c.ads);
+    w.f32(c.cooldown);
+    w.f32(c.sprint_out);
+    w.u16(c.burst);
+    w.f32(c.since_shot);
+    w.f32(c.recoil.x);
+    w.f32(c.recoil.y);
+    w.u32(c.shots_fired);
+    w.bool(c.fire_held);
+    w.f32(c.sway_time);
+    w.f32(c.breath);
+    w.f32(c.winded);
+    w.bool(c.holding_breath);
+    w.bool(c.reload_queued);
+}
+
+fn read_combat_state(r: &mut BitReader) -> DecodeResult<CombatState> {
+    let mut slot = || -> DecodeResult<WeaponState> {
+        Ok(WeaponState {
+            id: read_weapon(r)?,
+            magazine: r.u16()?,
+            reserve: r.u16()?,
+        })
+    };
+    let slots = [slot()?, slot()?];
+    let active = r.bits(2)? as u8;
+    if usize::from(active) >= slots.len() {
+        return Err(DecodeError::Invalid("active slot"));
+    }
+    let action = match r.bits(3)? {
+        0 => Action::Ready,
+        1 => Action::Reloading {
+            remaining: r.f32()?,
+            empty: r.bool()?,
+        },
+        2 => Action::Loading {
+            remaining: r.f32()?,
+            stage: match r.bits(2)? {
+                0 => LoadStage::Opening,
+                1 => LoadStage::Round,
+                2 => LoadStage::Closing,
+                _ => return Err(DecodeError::Invalid("load stage")),
+            },
+        },
+        3 => Action::Cycling {
+            remaining: r.f32()?,
+        },
+        4 => {
+            let remaining = r.f32()?;
+            let to = r.bits(2)? as u8;
+            if usize::from(to) >= slots.len() {
+                return Err(DecodeError::Invalid("switch slot"));
+            }
+            Action::Lowering { remaining, to }
+        }
+        5 => Action::Raising {
+            remaining: r.f32()?,
+        },
+        _ => return Err(DecodeError::Invalid("action")),
+    };
+    Ok(CombatState {
+        slots,
+        active,
+        action,
+        ads: r.f32()?,
+        cooldown: r.f32()?,
+        sprint_out: r.f32()?,
+        burst: r.u16()?,
+        since_shot: r.f32()?,
+        recoil: Vec2::new(r.f32()?, r.f32()?),
+        shots_fired: r.u32()?,
+        fire_held: r.bool()?,
+        sway_time: r.f32()?,
+        breath: r.f32()?,
+        winded: r.f32()?,
+        holding_breath: r.bool()?,
+        reload_queued: r.bool()?,
+    })
+}
+
+fn write_vec3(w: &mut BitWriter, v: Vec3) {
+    w.f32(v.x);
+    w.f32(v.y);
+    w.f32(v.z);
+}
+
+fn read_vec3(r: &mut BitReader) -> DecodeResult<Vec3> {
+    Ok(Vec3::new(r.f32()?, r.f32()?, r.f32()?))
+}
+
+fn write_stance(w: &mut BitWriter, stance: Stance) {
+    let value = match stance {
+        Stance::Standing => 0,
+        Stance::Crouching => 1,
+        Stance::Sliding => 2,
+    };
+    w.bits(value, 2);
+}
+
+fn read_stance(r: &mut BitReader) -> DecodeResult<Stance> {
+    match r.bits(2)? {
+        0 => Ok(Stance::Standing),
+        1 => Ok(Stance::Crouching),
+        2 => Ok(Stance::Sliding),
+        _ => Err(DecodeError::Invalid("stance")),
+    }
+}
+
+/// Weapons go by their index in the weapon table, which both sides build from
+/// the same data files.
+fn write_weapon(w: &mut BitWriter, id: WeaponId) {
+    w.u8(id.0);
+}
+
+fn read_weapon(r: &mut BitReader) -> DecodeResult<WeaponId> {
+    let id = WeaponId(r.u8()?);
+    if valid_weapon(id) {
+        Ok(id)
+    } else {
+        Err(DecodeError::Invalid("weapon"))
+    }
+}
+
+fn valid_weapon(id: WeaponId) -> bool {
+    usize::from(id.0) < weapon::table().len()
+}
+
+fn write_option_tick(w: &mut BitWriter, tick: Option<Tick>) {
+    match tick {
+        Some(t) => {
+            w.bool(true);
+            w.u32(t);
+        }
+        None => w.bool(false),
+    }
+}
+
+fn read_option_tick(r: &mut BitReader) -> DecodeResult<Option<Tick>> {
+    Ok(if r.bool()? { Some(r.u32()?) } else { None })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::movement::MoveEnv;
+    use crate::player::{self, PlayerParams};
+
+    fn sample_state(ticks: usize) -> Predicted {
+        let params = PlayerParams::default();
+        let mut state = PlayerState::default();
+        let mut events = Vec::new();
+        for i in 0..ticks {
+            let input = PlayerInput {
+                wish: Vec2::new(0.3, 1.0),
+                yaw: i as f32 * 0.01,
+                fire: i > 40,
+                sprint: i == 3,
+                ..Default::default()
+            };
+            player::step(
+                &mut state,
+                &input,
+                MoveEnv::default(),
+                &params,
+                1.0 / 60.0,
+                &mut events,
+            );
+        }
+        Predicted {
+            state,
+            position: Vec3::new(1.5, 0.25, -7.125),
+            on_floor: true,
+        }
+    }
+
+    #[test]
+    fn inputs_round_trip_with_redundancy() {
+        let a = PlayerInput {
+            wish: Vec2::new(-0.5, 1.0),
+            yaw: 1.234,
+            pitch: -0.3,
+            jump: true,
+            fire: true,
+            switch_to: Some(1),
+            pickup: Some(WeaponId::expect("m1911")),
+            ..Default::default()
+        }
+        .quantized();
+        let b = PlayerInput { jump: false, ..a };
+        let msg = ClientMessage::Input(InputPacket {
+            ack_snapshot: Some(77),
+            first_seq: 1000,
+            inputs: vec![a, a, a, b, b],
+        });
+        let bytes = msg.encode();
+        assert!(
+            bytes.len() < 36,
+            "repeats cost one bit each: {} bytes",
+            bytes.len()
+        );
+        assert_eq!(ClientMessage::decode(&bytes).unwrap(), msg);
+    }
+
+    #[test]
+    fn oversize_packets_keep_the_newest_inputs_numbered_correctly() {
+        let extra = 6;
+        let inputs: Vec<PlayerInput> = (0..MAX_INPUTS_PER_PACKET + extra)
+            .map(|i| PlayerInput {
+                yaw: i as f32,
+                ..Default::default()
+            })
+            .collect();
+        let msg = ClientMessage::Input(InputPacket {
+            ack_snapshot: None,
+            first_seq: 100,
+            inputs,
+        });
+        let ClientMessage::Input(decoded) = ClientMessage::decode(&msg.encode()).unwrap() else {
+            panic!("expected input");
+        };
+        assert_eq!(decoded.inputs.len(), MAX_INPUTS_PER_PACKET);
+        assert_eq!(decoded.first_seq, 100 + extra as u32);
+        assert_eq!(decoded.inputs[0].yaw, extra as f32);
+    }
+
+    #[test]
+    fn tampered_pitch_is_clamped() {
+        let input = PlayerInput {
+            pitch: 3.0,
+            ..Default::default()
+        };
+        assert_eq!(input.quantized().pitch, PITCH_LIMIT);
+    }
+
+    #[test]
+    fn quantized_inputs_survive_the_wire_exactly() {
+        let input = PlayerInput {
+            wish: Vec2::new(0.123_456, -0.987_654),
+            ..Default::default()
+        };
+        let msg = ClientMessage::Input(InputPacket {
+            ack_snapshot: None,
+            first_seq: 1,
+            inputs: vec![input.quantized()],
+        });
+        let ClientMessage::Input(decoded) = ClientMessage::decode(&msg.encode()).unwrap() else {
+            panic!("expected input");
+        };
+        assert_eq!(decoded.inputs[0], input.quantized());
+        assert_ne!(decoded.inputs[0], input);
+    }
+
+    #[test]
+    fn own_state_is_bit_exact() {
+        let predicted = sample_state(70);
+        let snapshot = ServerMessage::Snapshot(Snapshot {
+            tick: 500,
+            baseline: None,
+            own: Some(OwnState {
+                last_input: 42,
+                predicted,
+            }),
+            players: vec![],
+        });
+        let bytes = snapshot.encode(&[]);
+        let decoded = ServerMessage::decode(&bytes, |_| None).unwrap();
+        assert_eq!(decoded, snapshot);
+    }
+
+    #[test]
+    fn remote_players_delta_against_the_baseline() {
+        let p = sample_state(30);
+        let a = PlayerView::from_state(3, &p, 0.5, -0.1);
+        let b = PlayerView::from_state(9, &p, 2.0, 0.2);
+        let full = ServerMessage::Snapshot(Snapshot {
+            tick: 100,
+            baseline: None,
+            own: None,
+            players: vec![a, b],
+        });
+        let full_bytes = full.encode(&[]);
+
+        // Next tick: player 3 moved a little, player 9 is unchanged, player 12 joined.
+        let mut a2 = a;
+        a2.position.x += 37;
+        let c = PlayerView::from_state(12, &p, 0.0, 0.0);
+        let delta = ServerMessage::Snapshot(Snapshot {
+            tick: 101,
+            baseline: Some(100),
+            own: None,
+            players: vec![a2, b, c],
+        });
+        let baseline = [a, b];
+        let delta_bytes = delta.encode(&baseline);
+        let decoded = ServerMessage::decode(&delta_bytes, |tick| {
+            assert_eq!(tick, 100);
+            Some(&baseline[..])
+        })
+        .unwrap();
+        assert_eq!(decoded, delta);
+        let unchanged = ServerMessage::Snapshot(Snapshot {
+            tick: 102,
+            baseline: Some(100),
+            own: None,
+            players: vec![a, b],
+        });
+        let unchanged_bytes = unchanged.encode(&baseline);
+        assert!(
+            unchanged_bytes.len() < full_bytes.len() / 3,
+            "unchanged players cost a few bits: {} vs {} bytes",
+            unchanged_bytes.len(),
+            full_bytes.len()
+        );
+    }
+
+    #[test]
+    fn unknown_baseline_is_an_error() {
+        let msg = ServerMessage::Snapshot(Snapshot {
+            tick: 10,
+            baseline: Some(5),
+            own: None,
+            players: vec![],
+        });
+        assert_eq!(
+            ServerMessage::decode(&msg.encode(&[]), |_| None),
+            Err(DecodeError::Invalid("unknown baseline"))
+        );
+    }
+
+    #[test]
+    fn view_angles_wrap_and_round_trip() {
+        for yaw in [-3.0, -0.5, 0.0, 0.7, 3.1, 7.0, -9.0] {
+            let p = sample_state(1);
+            let v = PlayerView::from_state(0, &p, yaw, 0.0);
+            let back = v.yaw();
+            let diff = (back - yaw).rem_euclid(std::f32::consts::TAU);
+            let diff = diff.min(std::f32::consts::TAU - diff);
+            assert!(diff < 1e-3, "yaw {yaw} came back as {back}");
+        }
+    }
+
+    #[test]
+    fn garbage_never_panics() {
+        for seed in 0..2000u32 {
+            let len = (crate::rng::hash(seed, 0) % 64) as usize;
+            let bytes: Vec<u8> = (0..len)
+                .map(|i| crate::rng::hash(seed, i as u32 + 1) as u8)
+                .collect();
+            let _ = ClientMessage::decode(&bytes);
+            let _ = ServerMessage::decode(&bytes, |_| Some(&[]));
+        }
+    }
+}
