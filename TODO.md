@@ -60,7 +60,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 
 ### Feel and polish
 
-- [ ] Camera recoil shake tuned per weapon. Move magic numbers in `FpsPlayer::process` into exported properties.
+- [x] Camera recoil punch tuned per weapon (`camera_punch` on `WeaponView`, `ads_punch_scale` on `FpsPlayer`), visual only, separate from the aim recoil in the weapon files.
 - [x] Damage feedback when the player is hit: red vignette, directional indicator, hit sounds.
 - [x] Audio buses (Master, Weapons, Effects, UI) with a compressor on Weapons and a limiter on Master.
 - [x] Layered gunshots (snap, body, and tail, each picked from several recordings) with no dead air before the transient. Rebuild them with `tools/build_weapon_audio.py`.
@@ -69,6 +69,8 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Positional audio for impacts and the sentry's gunfire.
 - [ ] Occlusion for positional audio, and other players' gunfire once multiplayer exists.
 - [x] **good first task** Kill confirmation sound for hit markers.
+- [x] Hit markers pop in and settle; kill markers are larger, thicker, and red.
+- [ ] Score popups (+100, headshot and longshot bonuses) and medals at the crosshair.
 
 ### Settings and UX
 

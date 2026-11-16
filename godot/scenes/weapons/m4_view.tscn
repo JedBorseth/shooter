@@ -7,7 +7,7 @@
 
 [sub_resource type="QuadMesh" id="Quad_flash"]
 material = ExtResource("5_flash")
-size = Vector2(0.16, 0.16)
+size = Vector2(0.2, 0.2)
 
 [node name="M4" type="WeaponView"]
 weapon = "m4"
@@ -17,7 +17,8 @@ sprint_position = Vector3(-0.04, 0.015, 0.03)
 sprint_rotation = Vector3(-4, 22, 24)
 pivot = Vector3(0, -0.07, 0.06)
 albedo_boost = 1.8
-kick_strength = 1.0
+kick_strength = 1.35
+camera_punch = Vector3(0.3, 0.12, 0.8)
 
 [node name="Model" type="Node3D" parent="."]
 position = Vector3(0, -0.1728, 0.0163)
@@ -35,8 +36,8 @@ mesh = SubResource("Quad_flash")
 
 [node name="FlashLight" type="OmniLight3D" parent="Muzzle"]
 light_color = Color(1, 0.72, 0.42, 1)
-light_energy = 2.5
-omni_range = 6.0
+light_energy = 4.0
+omni_range = 8.0
 
 [node name="Ejection" type="Marker3D" parent="."]
 position = Vector3(0.0196, -0.067, -0.081)

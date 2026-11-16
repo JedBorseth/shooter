@@ -17,7 +17,8 @@ sprint_position = Vector3(-0.01, -0.02, 0.04)
 sprint_rotation = Vector3(-28, 8, 18)
 pivot = Vector3(0, -0.06, 0.02)
 albedo_boost = 1.5
-kick_strength = 0.8
+kick_strength = 1.15
+camera_punch = Vector3(0.55, 0.2, 1.2)
 
 [node name="Model" type="Node3D" parent="."]
 position = Vector3(-0.0024, -0.09, -0.012)
@@ -35,8 +36,8 @@ mesh = SubResource("Quad_flash")
 
 [node name="FlashLight" type="OmniLight3D" parent="Muzzle"]
 light_color = Color(1, 0.72, 0.42, 1)
-light_energy = 2.5
-omni_range = 6.0
+light_energy = 3.5
+omni_range = 7.0
 
 [node name="Ejection" type="Marker3D" parent="."]
 position = Vector3(0.0096, -0.006, -0.06)

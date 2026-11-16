@@ -17,6 +17,7 @@ use shooter_sim::rng;
 use shooter_sim::weapon::WeaponId;
 
 use crate::audio;
+use crate::spring::{Spring, smoothing};
 
 /// One rendered frame of state the rig animates from.
 #[derive(Clone, Copy, Debug)]
@@ -44,29 +45,6 @@ pub enum ViewAction {
     Raising(f32),
     /// Working the bolt or pump.
     Cycling(f32),
-}
-
-/// A damped spring, integrated semi-implicitly for stability at any frame rate.
-#[derive(Clone, Copy, Debug, Default)]
-struct Spring {
-    value: Vector3,
-    velocity: Vector3,
-}
-
-impl Spring {
-    fn step(&mut self, stiffness: f32, damping: f32, dt: f32) {
-        // Sub-step so long frames don't explode.
-        let steps = (dt / (1.0 / 240.0)).ceil().max(1.0);
-        let h = dt / steps;
-        for _ in 0..steps as u32 {
-            self.velocity += (-self.value * stiffness - self.velocity * damping) * h;
-            self.value += self.velocity * h;
-        }
-    }
-}
-
-fn smoothing(rate: f32, dt: f32) -> f32 {
-    1.0 - (-rate * dt).exp()
 }
 
 fn smoothstep(t: f32) -> f32 {
@@ -102,10 +80,16 @@ pub struct WeaponView {
     #[export]
     #[init(val = Vector3::new(-12.0, 35.0, 10.0))]
     sprint_rotation: Vector3,
-    /// Kick impulse scale for this weapon.
+    /// Kick impulse scale for this weapon's model. Kept large: the gun should look
+    /// violent while the aim recoil in `shooter-sim` stays small and learnable.
     #[export]
     #[init(val = 1.0)]
     kick_strength: f32,
+    /// Peak camera punch per shot in degrees: pitch up, random yaw, alternating roll.
+    /// Visual only: it moves the camera, never the aim, and settles within a few frames.
+    #[export]
+    #[init(val = Vector3::new(0.3, 0.12, 0.8))]
+    camera_punch: Vector3,
     /// Point the procedural rotations turn around (roughly the firing hand),
     /// relative to the sight origin.
     #[export]
@@ -227,7 +211,9 @@ impl WeaponView {
         self.flash.set_scale(Vector3::splat(scale));
         self.flash.set_visible(true);
         self.flash_light.set_visible(true);
-        self.flash_time = 0.035;
+        // About three frames at 60 FPS: visible on every shot, yet off again
+        // between rounds at 750 RPM (80 ms), so automatic fire flickers.
+        self.flash_time = 0.05;
 
         if let Some(gunshot) = &mut self.gunshot {
             gunshot.play();
@@ -412,8 +398,10 @@ pub struct ViewmodelRig {
     reload_blend: f32,
     reload_progress: f32,
     switch_drop: f32,
-    /// x: pitch up (radians), y: unused, z: push back (metres).
+    /// x: pitch up (radians), y: roll (radians), z: push back (metres).
     kick: Spring,
+    /// Shots fired, to alternate the kick's roll direction.
+    shots: u32,
     /// y: vertical dip (metres).
     land: Spring,
 }
@@ -443,18 +431,29 @@ impl ViewmodelRig {
             .cloned()
     }
 
-    /// A shot was fired. Self-loading weapons eject a shell right away; bolt
-    /// and pump weapons eject when they cycle.
-    pub fn on_fired(&mut self, weapon: WeaponId, ads: f32, eject: bool) {
+    /// A shot was fired: kicks the weapon model and returns this weapon's camera
+    /// punch (degrees). Self-loading weapons eject a shell right away; bolt and
+    /// pump weapons eject when they cycle.
+    pub fn on_fired(&mut self, weapon: WeaponId, ads: f32, eject: bool) -> Vector3 {
         let Some(mut view) = self.view(weapon) else {
-            return;
+            return Vector3::ZERO;
         };
-        let strength = view.bind().kick_strength * (1.0 - 0.45 * ads);
+        let (strength, punch) = {
+            let v = view.bind();
+            (v.kick_strength * (1.0 - 0.4 * ads), v.camera_punch)
+        };
         view.bind_mut().on_fired();
-        self.kick.velocity += Vector3::new(2.2, 0.0, 1.1) * strength;
+        self.shots = self.shots.wrapping_add(1);
+        let roll = if self.shots.is_multiple_of(2) {
+            1.0
+        } else {
+            -1.0
+        };
+        self.kick.velocity += Vector3::new(2.2, roll * 0.9, 1.1) * strength;
         if eject {
             self.eject_shell(&view);
         }
+        punch
     }
 
     pub fn on_cycled(&mut self, weapon: WeaponId) {
@@ -705,8 +704,11 @@ impl ViewmodelRig {
             + deg(cycle_rot.x) * cycle
             + deg(4.0) * bump;
         let yaw = deg(sprint_rot.y) * sprint + deg(cycle_rot.y) * cycle;
-        let roll =
-            deg(sprint_rot.z) * sprint + bob_roll + deg(32.0) * dip + deg(cycle_rot.z) * cycle;
+        let roll = deg(sprint_rot.z) * sprint
+            + bob_roll
+            + deg(32.0) * dip
+            + self.kick.value.y * 0.25
+            + deg(cycle_rot.z) * cycle;
 
         // Rotate around the pivot rather than the sight origin.
         let basis = Basis::from_euler(EulerOrder::YXZ, Vector3::new(pitch, yaw, roll));

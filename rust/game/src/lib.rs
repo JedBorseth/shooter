@@ -7,6 +7,7 @@ mod convert;
 mod pickup;
 mod player;
 mod sentry;
+mod spring;
 mod target;
 mod viewmodel;
 mod weapon_data;

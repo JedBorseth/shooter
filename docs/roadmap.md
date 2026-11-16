@@ -18,6 +18,17 @@ movement and gunplay, with 6v6 matches on dedicated servers.
 | Hosting | Dedicated headless servers only, even for local play | One authority model. No listen server to keep in sync. |
 | Transport | Godot's `ENetMultiplayerPeer` used only as a UDP pipe (reliable and unreliable channels); packet formats, ticks, input buffers, and prediction in Rust | Built into Godot and the headless export, no extra native dependency, and all netcode logic stays testable in Rust. |
 | Aim assist | Gamepad only, on by default: slowdown near targets plus rotational assist while moving or looking. No snap-to-target. Computed on the client; the server only sees view angles | The console-shooter standard. No snap keeps it from aiming for the player. |
+| Feel | Arcade, not simulation: about 200 to 300 ms time-to-kill, fast handling, loud hit feedback | The target is classic Call of Duty pacing. See "Arcade feel rules" below. |
+
+## Arcade feel rules
+
+These rules apply to every weapon and movement change.
+
+- **Recoil is mostly visual.** Aim recoil (the `recoil` block in each weapon's RON file) stays small, follows a learnable pattern, and recovers quickly. The weapon model kick (`kick_strength`) and the camera punch (`camera_punch`) on each `WeaponView` carry the violence, and never move the aim. Aiming down sights keeps 60% of the punch (`ads_punch_scale` on `FpsPlayer`).
+- **Every hit is confirmed.** Hit markers pop in oversized and settle, with distinct sounds for body hits, headshots, and kills. Kill markers are larger, thicker, red, and stay up twice as long.
+- **Time-to-kill is about 200 to 300 ms** for primaries at their best range. Reloads, ADS, and sprint-out stay short.
+- **Input comes first.** Mouse look applies every rendered frame and never waits for a physics tick. Vsync, when on, uses mailbox mode (no tearing, no queued frames).
+- **Avoid simulation mechanics:** weapon inertia, stamina, heavy sway on unscoped weapons, bullet drop at normal ranges, and random recoil.
 
 ## Phases
 
@@ -30,7 +41,8 @@ Each phase ends with something playable.
    - ✅ Presentation in `rust/game`: viewmodel shader with its own FOV and no wall clipping, camera-locked weapon (no look sway), bob, kick, landing dip, sprint/reload/switch poses, muzzle flash and light, CC0 weapon sounds, hitscan with headshots, impact sparks and decals, target dummies, hit markers, dynamic crosshair, ammo HUD.
    - ✅ Arsenal and polish: weapons as RON data files with hot reload; AK-47, PDW-9 (red dot), M870 (pellets, pump, shell-by-shell reload), M40 (bolt action, scope overlay, hold breath); tracers, shell ejection, per-surface impacts and footsteps, weapon racks; health, regeneration, fall damage, death and respawn, damage vignette and direction indicators; head bob and tilt; pause and settings menu; audio buses; a training sentry that shoots back.
    - ✅ Gamepad: bindings, radial deadzone and response curve, turn boost at full deflection, rumble, aim assist (slowdown and rotational) in `rust/sim/src/look.rs`.
-   - Next: hands and authored animations, reverb zones, gamepad settings in the menu, LMG.
+   - ✅ Arcade retune: about 35% less aim recoil with faster recovery on every weapon, a visual-only camera punch per weapon, harder weapon kick with roll, popping hit markers, larger muzzle flashes, mailbox vsync.
+   - Next: hands and authored animations, reverb zones, score popups and medals, gamepad settings in the menu, LMG.
 
 2. **Netcode core.** Server-authoritative 60 Hz tick. Clients send input with tick numbers. The client predicts its own movement and replays inputs when the server corrects it. Remote players render about 100 ms behind with snapshot interpolation. Snapshots are delta-compressed over ENet (UDP).
 3. **Lag compensation.** The server keeps a hitbox history ring buffer and rewinds to the shooter's view time to check hits. Favor-the-shooter with a rewind cap.

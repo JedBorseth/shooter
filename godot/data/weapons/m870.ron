@@ -22,11 +22,11 @@
     ads_move_scale: 0.65,
     move_scale: 0.97,
     recoil: (
-        pattern: [(3.2, 0.3)],
-        jitter: (0.4, 0.5),
-        ads_scale: 0.85,
-        recovery_delay: 0.05,
-        recovery_rate: 7.0,
+        pattern: [(2.1, 0.2)],
+        jitter: (0.26, 0.33),
+        ads_scale: 0.8,
+        recovery_delay: 0.04,
+        recovery_rate: 10.0,
     ),
     tracer_every: 0,
 )
