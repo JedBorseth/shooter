@@ -46,7 +46,10 @@ godot --editor --path godot     # open the editor
 Rebuild with `cargo build` after changing Rust code. The editor hot-reloads the extension.
 
 Launch opens a lightweight title menu. **Testing Area**, the first option, loads the
-existing arena on selection; **Multiplayer** is a disabled placeholder. **Zombies**
+existing arena on selection. **Slamcity** is a small, fast city-block map: walk-up flats
+with a first-floor walkway, corner stores, a sunken skate bowl in the middle, and alleys
+around the edges, with practice targets and a weapon rack at each spawn. It ships in every
+build. **Multiplayer** is a disabled placeholder. **Zombies**
 opens a Black Ops 2 inspired menu: **Solo** leads to a rotating globe with five
 selectable map locations. Use the list, map markers, or arrow buttons to select;
 drag the globe to rotate, and use Back or Esc to return. Zombies maps are menu
@@ -58,6 +61,7 @@ Use the mouse or press Enter to select the focused menu option.
 ```sh
 cd rust && cargo test && cargo clippy --all-targets
 cd .. && godot --headless --path godot --script res://tests/smoke_test.gd
+godot --headless --path godot --script res://tests/slamcity_test.gd
 godot --headless --path godot --script res://tests/settings_test.gd
 godot --headless --path godot --script res://tests/title_screen_test.gd
 godot --headless --path godot --script res://tests/zombies_menu_test.gd
