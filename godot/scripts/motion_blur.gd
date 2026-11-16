@@ -60,7 +60,6 @@ void main() {
 }
 """
 
-
 ## How much of the frame's motion becomes blur. 1.0 is a full frame's movement.
 @export_range(0.0, 2.0) var intensity := 0.5
 @export_range(4, 16) var samples := 8
