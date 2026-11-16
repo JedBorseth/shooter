@@ -1,0 +1,119 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/zombies_door.gd" id="1_door"]
+[ext_resource type="Material" path="res://materials/world/wood.tres" id="2_wood"]
+[ext_resource type="Material" path="res://materials/world/canvas_tan.tres" id="3_bags"]
+[ext_resource type="Material" path="res://materials/world/steel_painted.tres" id="4_steel"]
+[ext_resource type="AudioStream" path="res://assets/audio/impacts/wood_1.ogg" id="5_sound"]
+
+[sub_resource type="BoxShape3D" id="Shape_block"]
+size = Vector3(8, 4, 0.8)
+
+[sub_resource type="BoxMesh" id="Mesh_plank"]
+size = Vector3(4.6, 0.32, 0.08)
+
+[sub_resource type="BoxMesh" id="Mesh_post"]
+size = Vector3(0.16, 3.4, 0.16)
+
+[sub_resource type="BoxMesh" id="Mesh_bag"]
+size = Vector3(0.9, 0.32, 0.5)
+
+[node name="Door" type="StaticBody3D"]
+script = ExtResource("1_door")
+metadata/surface = "wood"
+
+[node name="Collision" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, 0)
+shape = SubResource("Shape_block")
+
+[node name="Debris" type="Node3D" parent="."]
+
+[node name="PostLeft" type="MeshInstance3D" parent="Debris"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.6, 1.7, 0.1)
+mesh = SubResource("Mesh_post")
+surface_material_override/0 = ExtResource("4_steel")
+
+[node name="PostRight" type="MeshInstance3D" parent="Debris"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.6, 1.7, 0.1)
+mesh = SubResource("Mesh_post")
+surface_material_override/0 = ExtResource("4_steel")
+
+[node name="PostMiddle" type="MeshInstance3D" parent="Debris"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1, 1.7, 0.1)
+mesh = SubResource("Mesh_post")
+surface_material_override/0 = ExtResource("4_steel")
+
+[node name="Plank0" type="MeshInstance3D" parent="Debris"]
+transform = Transform3D(0.998, -0.0698, 0, 0.0698, 0.998, 0, 0, 0, 1, -1.8, 2.9, 0.2)
+mesh = SubResource("Mesh_plank")
+surface_material_override/0 = ExtResource("2_wood")
+
+[node name="Plank1" type="MeshInstance3D" parent="Debris"]
+transform = Transform3D(0.995, 0.0998, 0, -0.0998, 0.995, 0, 0, 0, 1, 1.9, 2.6, 0.2)
+mesh = SubResource("Mesh_plank")
+surface_material_override/0 = ExtResource("2_wood")
+
+[node name="Plank2" type="MeshInstance3D" parent="Debris"]
+transform = Transform3D(0.999, 0.0349, 0, -0.0349, 0.999, 0, 0, 0, 1, -1.7, 1.9, 0.2)
+mesh = SubResource("Mesh_plank")
+surface_material_override/0 = ExtResource("2_wood")
+
+[node name="Plank3" type="MeshInstance3D" parent="Debris"]
+transform = Transform3D(0.993, -0.1219, 0, 0.1219, 0.993, 0, 0, 0, 1, 1.8, 1.6, 0.2)
+mesh = SubResource("Mesh_plank")
+surface_material_override/0 = ExtResource("2_wood")
+
+[node name="Plank4" type="MeshInstance3D" parent="Debris"]
+transform = Transform3D(0.996, 0.0872, 0, -0.0872, 0.996, 0, 0, 0, 1, -1.9, 1.0, 0.2)
+mesh = SubResource("Mesh_plank")
+surface_material_override/0 = ExtResource("2_wood")
+
+[node name="Plank5" type="MeshInstance3D" parent="Debris"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.7, 0.9, 0.2)
+mesh = SubResource("Mesh_plank")
+surface_material_override/0 = ExtResource("2_wood")
+
+[node name="Plank6" type="MeshInstance3D" parent="Debris"]
+transform = Transform3D(0.9, 0.4359, 0, -0.4359, 0.9, 0, 0, 0, 1, 0.3, 2.2, 0.3)
+mesh = SubResource("Mesh_plank")
+surface_material_override/0 = ExtResource("2_wood")
+
+[node name="Bags0" type="MeshInstance3D" parent="Debris"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.0, 0.16, -0.25)
+mesh = SubResource("Mesh_bag")
+surface_material_override/0 = ExtResource("3_bags")
+
+[node name="Bags1" type="MeshInstance3D" parent="Debris"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.05, 0.16, -0.25)
+mesh = SubResource("Mesh_bag")
+surface_material_override/0 = ExtResource("3_bags")
+
+[node name="Bags2" type="MeshInstance3D" parent="Debris"]
+transform = Transform3D(0.97, 0, 0.243, 0, 1, 0, -0.243, 0, 0.97, -2.5, 0.48, -0.25)
+mesh = SubResource("Mesh_bag")
+surface_material_override/0 = ExtResource("3_bags")
+
+[node name="Bags3" type="MeshInstance3D" parent="Debris"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.6, 0.16, -0.25)
+mesh = SubResource("Mesh_bag")
+surface_material_override/0 = ExtResource("3_bags")
+
+[node name="Bags4" type="MeshInstance3D" parent="Debris"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.4, 0.16, -0.25)
+mesh = SubResource("Mesh_bag")
+surface_material_override/0 = ExtResource("3_bags")
+
+[node name="Price" type="Label3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.6, 0.35)
+pixel_size = 0.006
+modulate = Color(1, 0.86, 0.45, 1)
+outline_modulate = Color(0.05, 0.05, 0.06, 1)
+font_size = 64
+outline_size = 12
+text = "1000"
+
+[node name="Sound" type="AudioStreamPlayer3D" parent="."]
+stream = ExtResource("5_sound")
+volume_db = 4.0
+unit_size = 8.0
+bus = &"Effects"

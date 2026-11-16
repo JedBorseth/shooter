@@ -44,6 +44,7 @@ func _run() -> void:
 	await _shooting(director, player)
 	await _round_two(director)
 	await _two_hits(director, player, hud)
+	await _economy()
 	_finish()
 
 
@@ -120,6 +121,109 @@ func _round_two(director: ZombieDirector) -> void:
 	_check(_rounds_started == [1, 2], "round 2 starts after the break")
 	_check(director.remaining() == 8, "round 2 sends 8 zombies, got %d" % director.remaining())
 	_check(_points_awarded == director.points() - 500, "every award reached the HUD signal")
+
+
+## Spending points: a wall weapon, the debris over the west gate, and each
+## power-up, in a fresh arena whose first round never starts on its own.
+func _economy() -> void:
+	current_scene.queue_free()
+	await process_frame
+	var arena: Node = (load(ARENA) as PackedScene).instantiate()
+	var director := arena.get_node("Director") as ZombieDirector
+	director.first_break = 600.0
+	root.add_child(arena)
+	current_scene = arena
+	var player := arena.get_node("Player") as FpsPlayer
+	await _sixtieths(20)
+
+	# The PDW-9 on the north wall costs 1000; the player starts with 500 (and an M4).
+	player.global_position = Vector3(-2, 0.05, -21.6)
+	player.set_look(0.0, -0.45)
+	await _sixtieths(4)
+	_check(
+		player.interact_prompt() == "PDW-9: 1000 points",
+		"a wall weapon shows its price, got '%s'" % player.interact_prompt()
+	)
+	await _tap("interact")
+	_check(player.weapon_key() != "pdw9", "500 points do not buy the PDW-9")
+	director.add_points(1000)
+	await _sixtieths(2)
+	_check(player.interact_prompt() == "[F] Buy PDW-9: 1000", "with 1500 the PDW-9 is for sale")
+	await _tap("interact")
+	await _sixtieths(30)
+	_check(player.weapon_key() == "pdw9", "buying takes the PDW-9, got %s" % player.weapon_key())
+	_check(director.points() == 500, "the PDW-9 cost 1000, %d left" % director.points())
+	_check(
+		player.interact_prompt() == "[F] Buy PDW-9 ammo: 500",
+		"ammo for it costs half, got '%s'" % player.interact_prompt()
+	)
+
+	# The debris over the west gate opens the west yard for 750.
+	player.global_position = Vector3(-22.6, 0.05, 4)
+	player.set_look(PI / 2.0, -0.1)
+	await _sixtieths(4)
+	_check(
+		player.interact_prompt() == "Clear the debris: 750 points",
+		"the debris shows its price, got '%s'" % player.interact_prompt()
+	)
+	director.add_points(1000)
+	await _sixtieths(2)
+	await _tap("interact")
+	await _sixtieths(10)
+	_check(director.is_zone_open("yard_west"), "clearing the debris opens the west yard")
+	_check(director.points() == 750, "the debris cost 750, %d left" % director.points())
+	_check(not director.is_zone_open("lot_east"), "the east lot stays shut")
+	player.set_look(PI / 2.0, 0.0)
+	Input.action_press("move_forward")
+	await _sixtieths(90)
+	Input.action_release("move_forward")
+	_check(
+		player.global_position.x < -27.0,
+		"the player walks through the gate, at %s" % player.global_position
+	)
+
+	# Power-ups, dropped at the player's feet.
+	director.drop_power_up("double_points", player.global_position)
+	await _sixtieths(2)
+	_check(director.drops_on_ground() == 0, "walking over a power-up collects it")
+	_check(director.double_points_left() > 29.0, "Double Points runs for 30 seconds")
+	var before := director.points()
+	director.on_zombie_hurt(false, false, Vector3.ZERO)
+	_check(director.points() - before == 20, "Double Points pays 20 for a hit")
+	await _tap("fire")
+	await _sixtieths(10)
+	var magazine := player.magazine()
+	director.drop_power_up("max_ammo", player.global_position)
+	await _sixtieths(3)
+	_check(
+		player.magazine() > magazine,
+		"Max Ammo refills the magazine (%d -> %d)" % [magazine, player.magazine()]
+	)
+	director.drop_power_up("insta_kill", player.global_position)
+	await _sixtieths(2)
+	_check(director.insta_kill_left() > 29.0, "Insta-Kill runs for 30 seconds")
+	director.skip_break()
+	for i in 600:
+		if director.zombies().size() >= 2:
+			break
+		await physics_frame
+	var zombies := director.zombies()
+	_check(zombies.size() >= 2, "round 1 sends zombies, got %d" % zombies.size())
+	if zombies.size() >= 2:
+		(zombies[0] as Zombie).apply_damage(1.0, false)
+		_check(not (zombies[0] as Zombie).is_alive(), "under Insta-Kill any hit kills")
+		before = director.points()
+		director.drop_power_up("nuke", player.global_position)
+		await _sixtieths(2)
+		var alive := 0
+		for zombie: Zombie in director.zombies():
+			if zombie.is_alive():
+				alive += 1
+		_check(alive == 0, "the nuke kills every zombie, %d left" % alive)
+		_check(
+			director.points() - before == 800,
+			"the nuke pays 400, doubled, got %d" % (director.points() - before)
+		)
 
 
 func _two_hits(director: ZombieDirector, player: FpsPlayer, hud: Node) -> void:

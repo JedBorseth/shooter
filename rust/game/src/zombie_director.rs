@@ -2,11 +2,18 @@
 //! spawns the round's zombies at the map's spawn points, pays points for
 //! hits and kills, and ends the match when the player dies. The rules are in
 //! `shooter_sim::zombies`.
+//!
+//! It is also the match's economy: the player's points are a wallet (group
+//! `zombies_wallet`) that wall weapons and doors spend from. Doors open zones:
+//! spawn points with a `zone` metadata only spawn once their zone is open, and
+//! zombies spawned there first walk to the spawn's `via` point (the gate).
+//! Kills sometimes drop power-ups, which the player collects by walking over
+//! them.
 
 use godot::classes::{INode3D, Node3D, PackedScene};
 use godot::prelude::*;
 use shooter_sim::rng;
-use shooter_sim::zombies::{self, Phase, RoundEvent, Rounds, ZombieRules};
+use shooter_sim::zombies::{self, Phase, PowerUp, RoundEvent, Rounds, ZombieRules};
 
 use crate::zombie::Zombie;
 
@@ -36,6 +43,14 @@ pub struct ZombieDirector {
     #[export]
     #[init(val = 500)]
     starting_points: i64,
+    /// Dropped for a power-up; its script's `setup(kind)` and
+    /// `set_time_left(seconds)` are called (`scripts/zombies_power_up.gd`).
+    #[export]
+    power_up_scene: Option<Gd<PackedScene>>,
+    /// The player collects a power-up within this many metres.
+    #[export]
+    #[init(val = 1.6)]
+    pickup_radius: f32,
 
     rules: ZombieRules,
     rounds: Option<Rounds>,
@@ -43,6 +58,24 @@ pub struct ZombieDirector {
     kills: i64,
     headshots: i64,
     events: Vec<RoundEvent>,
+    /// Zones whose spawn points are in use ("" is the starting area).
+    open_zones: Vec<String>,
+    /// Gates between open zones, for zombies that walk into walls.
+    gates: Vec<Vector3>,
+    /// Kills and power-up drops this round.
+    round_kills: u32,
+    round_drops: u32,
+    drops: Vec<Drop>,
+    insta_kill_left: f32,
+    double_points_left: f32,
+    /// A Nuke is killing everything: its kills pay nothing on their own.
+    nuking: bool,
+}
+
+struct Drop {
+    kind: PowerUp,
+    node: Gd<Node3D>,
+    left: f32,
 }
 
 #[godot_api]
@@ -50,10 +83,16 @@ impl INode3D for ZombieDirector {
     fn ready(&mut self) {
         self.points = self.starting_points;
         self.rounds = Some(Rounds::new(self.first_break));
+        self.open_zones = vec![String::new()];
+        self.base_mut().add_to_group("zombies_wallet");
     }
 
     fn physics_process(&mut self, delta: f64) {
         let dt = delta as f32;
+        // Before the round copy below: a Nuke's kills count toward the round.
+        if self.rounds.is_some_and(|r| r.phase != Phase::Over) {
+            self.update_power_ups(dt);
+        }
         let Some(mut rounds) = self.rounds else {
             return;
         };
@@ -79,6 +118,8 @@ impl INode3D for ZombieDirector {
         for event in &events {
             match *event {
                 RoundEvent::RoundStarted { round } => {
+                    self.round_kills = 0;
+                    self.round_drops = 0;
                     self.signals().round_started().emit(i64::from(round));
                 }
                 RoundEvent::RoundCleared { round } => {
@@ -115,6 +156,87 @@ impl ZombieDirector {
     /// The player died in round `round`.
     #[signal]
     fn game_over(round: i64);
+
+    /// A kill dropped a power-up (`kind` is its key, such as "insta_kill").
+    #[signal]
+    fn power_up_dropped(kind: GString);
+
+    /// The player picked up a power-up; `label` is what to announce.
+    #[signal]
+    fn power_up_collected(kind: GString, label: GString);
+
+    /// Points were spent on something: `points` this time, `total` left.
+    #[signal]
+    fn points_spent(points: i64, total: i64);
+
+    /// Takes `amount` points if the player has them. Wall weapons and doors
+    /// pay through this.
+    #[func]
+    fn spend(&mut self, amount: i64) -> bool {
+        if amount < 0 || self.points < amount {
+            return false;
+        }
+        self.points -= amount;
+        let total = self.points;
+        self.signals().points_spent().emit(amount, total);
+        true
+    }
+
+    /// Opens a zone: its spawn points join the rotation, and `gate` (where
+    /// the zone meets the rest of the map) guides zombies that get stuck.
+    #[func]
+    fn open_zone(&mut self, zone: GString, gate: Vector3) {
+        let zone = zone.to_string();
+        if !self.open_zones.contains(&zone) {
+            self.open_zones.push(zone);
+        }
+        self.gates.push(gate);
+        let gates = self.gates.clone();
+        for mut zombie in self.zombies().iter_shared() {
+            zombie.bind_mut().set_gates(gates.clone());
+        }
+    }
+
+    /// Whether a zone is open ("" is the starting area).
+    #[func]
+    fn is_zone_open(&self, zone: GString) -> bool {
+        self.open_zones.contains(&zone.to_string())
+    }
+
+    /// Seconds of Insta-Kill left.
+    #[func]
+    fn insta_kill_left(&self) -> f32 {
+        self.insta_kill_left
+    }
+
+    /// Seconds of Double Points left.
+    #[func]
+    fn double_points_left(&self) -> f32 {
+        self.double_points_left
+    }
+
+    /// Gives points outright (tests and debugging).
+    #[func]
+    fn add_points(&mut self, amount: i64) {
+        self.points += amount.max(0);
+    }
+
+    /// Power-ups lying on the ground (tests).
+    #[func]
+    fn drops_on_ground(&self) -> i64 {
+        self.drops.len() as i64
+    }
+
+    /// Drops a power-up at `position` (tests and debugging); `kind` is a key
+    /// such as "max_ammo".
+    #[func]
+    fn drop_power_up(&mut self, kind: GString, position: Vector3) -> bool {
+        let Some(kind) = PowerUp::from_key(&kind.to_string()) else {
+            return false;
+        };
+        self.spawn_drop(kind, position);
+        true
+    }
 
     #[func]
     fn round(&self) -> i64 {
@@ -185,9 +307,7 @@ impl ZombieDirector {
 
     /// A zombie this director spawned was hit.
     #[func]
-    fn on_zombie_hurt(&mut self, killed: bool, headshot: bool) {
-        let points = i64::from(zombies::points::for_hit(killed, headshot));
-        self.points += points;
+    fn on_zombie_hurt(&mut self, killed: bool, headshot: bool, position: Vector3) {
         if killed {
             self.kills += 1;
             if headshot {
@@ -196,18 +316,135 @@ impl ZombieDirector {
             if let Some(rounds) = &mut self.rounds {
                 rounds.on_killed();
             }
+            let round = self.rounds.map_or(1, |r| r.round);
+            let kill = self.round_kills;
+            self.round_kills += 1;
+            if !self.nuking
+                && let Some(kind) = zombies::power_up_drop(round, kill, self.round_drops)
+            {
+                self.round_drops += 1;
+                self.spawn_drop(kind, position);
+            }
         }
-        let total = self.points;
-        self.signals().points_awarded().emit(points, total);
+        if self.nuking {
+            return;
+        }
+        let points = i64::from(zombies::points::for_hit(killed, headshot));
+        self.award(points);
     }
 }
 
 impl ZombieDirector {
+    /// Pays points, doubled during Double Points.
+    fn award(&mut self, points: i64) {
+        let points = if self.double_points_left > 0.0 {
+            points * 2
+        } else {
+            points
+        };
+        self.points += points;
+        let total = self.points;
+        self.signals().points_awarded().emit(points, total);
+    }
+
+    fn spawn_drop(&mut self, kind: PowerUp, position: Vector3) {
+        let Some(node) = self
+            .power_up_scene
+            .as_ref()
+            .and_then(|s| s.instantiate())
+            .and_then(|n| n.try_cast::<Node3D>().ok())
+        else {
+            return;
+        };
+        let mut node = node;
+        self.base_mut().add_child(&node);
+        node.set_global_position(position + Vector3::UP * 0.9);
+        node.call("setup", &[GString::from(kind.key()).to_variant()]);
+        self.drops.push(Drop {
+            kind,
+            node,
+            left: zombies::POWER_UP_LIFETIME,
+        });
+        self.signals()
+            .power_up_dropped()
+            .emit(&GString::from(kind.key()));
+    }
+
+    /// Ages the drops and the timed power-ups, and collects drops the player
+    /// walks over.
+    fn update_power_ups(&mut self, dt: f32) {
+        let insta_before = self.insta_kill_left > 0.0;
+        self.insta_kill_left = (self.insta_kill_left - dt).max(0.0);
+        self.double_points_left = (self.double_points_left - dt).max(0.0);
+        let player = self.player().map(|p| p.get_global_position());
+        let mut collected = Vec::new();
+        let radius = self.pickup_radius;
+        self.drops.retain_mut(|drop| {
+            drop.left -= dt;
+            let near = player.is_some_and(|p| {
+                let at = drop.node.get_global_position();
+                Vector2::new(at.x - p.x, at.z - p.z).length() < radius && (at.y - p.y).abs() < 2.5
+            });
+            if near {
+                collected.push(drop.kind);
+            } else {
+                drop.node.call("set_time_left", &[drop.left.to_variant()]);
+            }
+            let keep = !near && drop.left > 0.0;
+            if !keep {
+                drop.node.queue_free();
+            }
+            keep
+        });
+        for kind in collected {
+            self.collect(kind);
+        }
+        let insta_now = self.insta_kill_left > 0.0;
+        if insta_now != insta_before {
+            for mut zombie in self.zombies().iter_shared() {
+                zombie.bind_mut().set_insta_kill(insta_now);
+            }
+        }
+    }
+
+    fn collect(&mut self, kind: PowerUp) {
+        match kind {
+            PowerUp::MaxAmmo => {
+                if let Some(mut player) = self.player() {
+                    player.call("refill_all_ammo", &[]);
+                }
+            }
+            PowerUp::InstaKill => self.insta_kill_left = zombies::POWER_UP_SECONDS,
+            PowerUp::DoublePoints => self.double_points_left = zombies::POWER_UP_SECONDS,
+            PowerUp::Nuke => {
+                let zombies = self.zombies();
+                self.nuking = true;
+                {
+                    // Each kill's signal calls back into this director
+                    // (`on_zombie_hurt`); the guard allows that.
+                    let _guard = self.base_mut();
+                    for mut zombie in zombies.iter_shared() {
+                        let health = zombie.bind().health();
+                        if health > 0.0 {
+                            zombie.bind_mut().apply_damage(health + 1.0, false);
+                        }
+                    }
+                }
+                self.nuking = false;
+                self.award(i64::from(zombies::NUKE_POINTS));
+            }
+        }
+        self.signals()
+            .power_up_collected()
+            .emit(&GString::from(kind.key()), &GString::from(kind.label()));
+    }
+
     fn player(&self) -> Option<Gd<Node3D>> {
         self.base().try_get_node_as::<Node3D>(&self.player_path)
     }
 
-    fn spawn_points(&self) -> Vec<Vector3> {
+    /// Spawn points in open zones, each with its gate (`via`) if it has one.
+    fn spawn_points(&self) -> Vec<(Vector3, Option<Vector3>)> {
         let Some(parent) = self.base().try_get_node_as::<Node>(&self.spawns_path) else {
             return Vec::new();
         };
@@ -215,22 +452,36 @@ impl ZombieDirector {
             .get_children()
             .iter_shared()
             .filter_map(|c| c.try_cast::<Node3D>().ok())
-            .map(|n| n.get_global_position())
+            .filter(|n| {
+                let zone = n
+                    .get_meta_ex("zone")
+                    .default(&"".to_variant())
+                    .done()
+                    .to_string();
+                self.open_zones.contains(&zone)
+            })
+            .map(|n| {
+                let via = n
+                    .has_meta("via")
+                    .then(|| n.get_meta("via").try_to::<Vector3>().ok())
+                    .flatten();
+                (n.get_global_position(), via)
+            })
             .collect()
     }
 
     /// A spawn point away from the player, picked by a hash of the round and
     /// zombie, so the same match spawns the same way.
-    fn pick_spawn(&self, round: u32, index: u32) -> Option<Vector3> {
+    fn pick_spawn(&self, round: u32, index: u32) -> Option<(Vector3, Option<Vector3>)> {
         let points = self.spawn_points();
         if points.is_empty() {
             return None;
         }
         let player = self.player().map(|p| p.get_global_position());
-        let far: Vec<Vector3> = points
+        let far: Vec<(Vector3, Option<Vector3>)> = points
             .iter()
             .copied()
-            .filter(|p| player.is_none_or(|pl| p.distance_to(pl) >= self.spawn_min_distance))
+            .filter(|(p, _)| player.is_none_or(|pl| p.distance_to(pl) >= self.spawn_min_distance))
             .collect();
         let pool = if far.is_empty() { points } else { far };
         let pick = rng::hash(round, index) as usize % pool.len();
@@ -238,7 +489,7 @@ impl ZombieDirector {
     }
 
     fn spawn(&mut self, round: u32, index: u32, health: f32, speed: f32) {
-        let Some(position) = self.pick_spawn(round, index) else {
+        let Some((position, via)) = self.pick_spawn(round, index) else {
             godot_error!("ZombieDirector: no spawn points under {}", self.spawns_path);
             return;
         };
@@ -250,7 +501,15 @@ impl ZombieDirector {
             return;
         };
         zombie.set_name(&format!("Zombie_{round}_{index}"));
-        zombie.bind_mut().configure(health, speed);
+        {
+            let mut z = zombie.bind_mut();
+            z.configure(health, speed);
+            z.set_gates(self.gates.clone());
+            z.set_insta_kill(self.insta_kill_left > 0.0);
+            if let Some(via) = via {
+                z.set_waypoint(via);
+            }
+        }
         // Face the player from the start.
         if let Some(player) = self.player() {
             let to = player.get_global_position() - position;

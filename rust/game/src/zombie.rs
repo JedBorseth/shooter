@@ -4,6 +4,10 @@
 //!
 //! There is no pathfinding on purpose: each tick the zombie heads straight for
 //! its target, and `move_and_slide` slides it along whatever is in the way.
+//! Two exceptions keep the straight lines from pinning zombies to walls once
+//! the map has more than one yard: a zombie spawned in a side yard first walks
+//! straight to that yard's gate (`waypoint`), and a zombie that stops getting
+//! anywhere walks straight to the open gate that best leads to its target.
 
 use godot::classes::{CharacterBody3D, ICharacterBody3D, Node3D};
 use godot::prelude::*;
@@ -23,6 +27,10 @@ const GRAVITY: f32 = 20.0;
 /// Radians per second the body turns toward its target (visual only; the
 /// walk direction is always the straight line).
 const TURN_RATE: f32 = 10.0;
+/// A waypoint counts as reached within this many metres.
+const WAYPOINT_REACH: f32 = 1.5;
+/// Seconds of moving under a quarter of its speed before a zombie heads for a gate.
+const STUCK_SECONDS: f32 = 1.0;
 
 #[derive(GodotClass)]
 #[class(init, base = CharacterBody3D)]
@@ -57,6 +65,13 @@ pub struct Zombie {
     dead_for: f32,
     hits_landed: u32,
     visuals: bool,
+    /// Walk here before chasing (a gate).
+    waypoint: Option<Vector3>,
+    /// The open gates between the map's yards.
+    gates: Vec<Vector3>,
+    stuck_for: f32,
+    /// Any hit kills (the Insta-Kill power-up).
+    insta_kill: bool,
 }
 
 #[godot_api]
@@ -106,12 +121,18 @@ impl ICharacterBody3D for Zombie {
             Some(AttackEvent::Missed) | None => {}
         }
 
+        if self
+            .waypoint
+            .is_some_and(|w| zombies::flat_distance(to_sim(position), to_sim(w)) < WAYPOINT_REACH)
+        {
+            self.waypoint = None;
+        }
         let mut horizontal = Vector3::ZERO;
         if let Some(target) = &target {
-            let direction = to_godot(zombies::chase_direction(
-                to_sim(position),
-                to_sim(target.get_global_position()),
-            ));
+            let goal = self
+                .waypoint
+                .unwrap_or_else(|| target.get_global_position());
+            let direction = to_godot(zombies::chase_direction(to_sim(position), to_sim(goal)));
             if direction != Vector3::ZERO {
                 let want = (-direction.x).atan2(-direction.z);
                 let turn = TURN_RATE * dt;
@@ -137,6 +158,7 @@ impl ICharacterBody3D for Zombie {
         let moved = body.get_velocity();
         drop(body);
         self.moved = moved;
+        self.check_stuck(horizontal, moved, dt, target.as_ref());
 
         let pose = HitboxPose {
             feet: to_sim(self.base().get_global_position()),
@@ -152,7 +174,7 @@ impl ICharacterBody3D for Zombie {
 impl Zombie {
     /// Emitted for every damaging hit, before the zombie reacts.
     #[signal]
-    pub fn hurt(killed: bool, headshot: bool);
+    pub fn hurt(killed: bool, headshot: bool, position: Vector3);
 
     /// Emitted when one of this zombie's swings lands on a player.
     #[signal]
@@ -164,6 +186,7 @@ impl Zombie {
         if !self.is_alive() {
             return false;
         }
+        let amount = if self.insta_kill { self.health } else { amount };
         self.health -= amount;
         let killed = self.health <= 0.0;
         if killed {
@@ -175,7 +198,8 @@ impl Zombie {
                 assist.bind_mut().set_active(false);
             }
         }
-        self.signals().hurt().emit(killed, headshot);
+        let position = self.base().get_global_position();
+        self.signals().hurt().emit(killed, headshot, position);
         killed
     }
 
@@ -206,6 +230,18 @@ impl Zombie {
     pub fn facing(&self) -> f32 {
         self.yaw
     }
+
+    /// Walks straight here before chasing (a side yard's gate).
+    #[func]
+    pub fn set_waypoint(&mut self, waypoint: Vector3) {
+        self.waypoint = Some(waypoint);
+    }
+
+    /// While on, any hit kills (Insta-Kill).
+    #[func]
+    pub fn set_insta_kill(&mut self, on: bool) {
+        self.insta_kill = on;
+    }
 }
 
 impl Zombie {
@@ -213,6 +249,46 @@ impl Zombie {
     pub fn configure(&mut self, max_health: f32, speed: f32) {
         self.max_health = max_health;
         self.speed = speed;
+    }
+
+    /// The gates a stuck zombie may head for.
+    pub fn set_gates(&mut self, gates: Vec<Vector3>) {
+        self.gates = gates;
+    }
+
+    /// A zombie walking into a wall heads for the open gate on the shortest
+    /// way to its target, then chases again.
+    fn check_stuck(
+        &mut self,
+        wanted: Vector3,
+        moved: Vector3,
+        dt: f32,
+        target: Option<&Gd<Node3D>>,
+    ) {
+        let want = Vector2::new(wanted.x, wanted.z).length();
+        let got = Vector2::new(moved.x, moved.z).length();
+        if want < 0.1 || got > want * 0.25 || self.waypoint.is_some() {
+            self.stuck_for = 0.0;
+            return;
+        }
+        self.stuck_for += dt;
+        if self.stuck_for < STUCK_SECONDS {
+            return;
+        }
+        self.stuck_for = 0.0;
+        let Some(target) = target.map(|t| t.get_global_position()) else {
+            return;
+        };
+        let here = self.base().get_global_position();
+        self.waypoint = self
+            .gates
+            .iter()
+            .copied()
+            .filter(|g| g.distance_to(here) > WAYPOINT_REACH * 2.0)
+            .min_by(|a, b| {
+                let cost = |g: &Vector3| g.distance_to(here) + g.distance_to(target);
+                cost(a).total_cmp(&cost(b))
+            });
     }
 
     fn frame(&self, velocity: Vector3) -> SoldierFrame {

@@ -1,4 +1,4 @@
-[gd_scene format=3 uid="uid://bdeepoh2bs10w"]
+[gd_scene format=3 uid="uid://d34k0akqxx8w0"]
 
 [ext_resource type="PackedScene" path="res://scenes/player.tscn" id="1_player"]
 [ext_resource type="LightmapGIData" uid="uid://brl4t7h4kwi7r" path="res://scenes/zombies_arena.lmbake" id="2_hkte1"]
@@ -6,14 +6,18 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/pause_menu.tscn" id="5_pause"]
 [ext_resource type="PackedScene" path="res://scenes/props/weapon_rack.tscn" id="9_rack"]
 [ext_resource type="PackedScene" uid="uid://f4nuvi0vah4o" path="res://assets/weapons/m4/m4.glb" id="11_m4"]
+[ext_resource type="PackedScene" uid="uid://cyygpfwlyiqpr" path="res://assets/weapons/ak47/ak47.glb" id="12_ak47"]
 [ext_resource type="PackedScene" uid="uid://dmc57n0wq6djd" path="res://assets/weapons/pdw9/pdw9.glb" id="13_pdw9"]
 [ext_resource type="PackedScene" uid="uid://db06ijyhm84qu" path="res://assets/weapons/m870/m870.glb" id="14_m870"]
+[ext_resource type="PackedScene" uid="uid://cgsrcdi5ss4rb" path="res://assets/weapons/m40/m40.glb" id="15_m40"]
 [ext_resource type="PackedScene" uid="uid://ccmnn0ufjhdla" path="res://assets/weapons/pistol/pistol.glb" id="16_pistol"]
 [ext_resource type="PackedScene" path="res://scenes/ui/hud.tscn" id="19_hud"]
 [ext_resource type="PackedScene" path="res://scenes/zombies/zombie.tscn" id="20_zombie"]
 [ext_resource type="Script" uid="uid://o8q12w3swokr" path="res://scripts/zombies_hud.gd" id="21_zhud"]
 [ext_resource type="Texture2D" uid="uid://bknsvyijt4p6o" path="res://assets/skies/zombies_night.hdr" id="22_sky"]
 [ext_resource type="Script" uid="uid://dct36uf5dfgpr" path="res://scripts/lamp_flicker.gd" id="23_flicker"]
+[ext_resource type="PackedScene" path="res://scenes/zombies/door.tscn" id="24_door"]
+[ext_resource type="PackedScene" path="res://scenes/zombies/power_up.tscn" id="25_power_up"]
 [ext_resource type="Material" path="res://materials/world/barrel_blue.tres" id="m_barrel_blue"]
 [ext_resource type="Material" path="res://materials/world/yard_pillar.tres" id="m_cover"]
 [ext_resource type="Material" path="res://materials/world/range_crate.tres" id="m_crate"]
@@ -186,7 +190,59 @@ height = 4.0
 sides = 20
 material = ExtResource("m_cover")
 
-[node name="MapMesh" type="MeshInstance3D" parent="." unique_id=1927856586]
+[node name="GateWestCut" type="CSGBox3D" parent="Map" unique_id=2094404954]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -24.5, 2, 4)
+operation = 2
+size = Vector3(1.4, 4, 8)
+material = ExtResource("m_wall")
+
+[node name="YardWestFloor" type="CSGBox3D" parent="Map" unique_id=920276146]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -33.25, -0.5, 4)
+size = Vector3(18.5, 1, 32)
+material = ExtResource("m_floor")
+
+[node name="YardWestWallFar" type="CSGBox3D" parent="Map" unique_id=562479175]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -43, 2.5, 4)
+size = Vector3(1, 5, 32)
+material = ExtResource("m_wall")
+
+[node name="YardWestWallNorth" type="CSGBox3D" parent="Map" unique_id=2105022698]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -33.75, 2.5, -11.5)
+size = Vector3(18.5, 5, 1)
+material = ExtResource("m_wall")
+
+[node name="YardWestWallSouth" type="CSGBox3D" parent="Map" unique_id=661665346]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -33.75, 2.5, 19.5)
+size = Vector3(18.5, 5, 1)
+material = ExtResource("m_wall")
+
+[node name="GateEastCut" type="CSGBox3D" parent="Map" unique_id=1798077753]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24.5, 2, 4)
+operation = 2
+size = Vector3(1.4, 4, 8)
+material = ExtResource("m_wall")
+
+[node name="YardEastFloor" type="CSGBox3D" parent="Map" unique_id=1387933490]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 33.25, -0.5, 4)
+size = Vector3(18.5, 1, 32)
+material = ExtResource("m_floor")
+
+[node name="YardEastWallFar" type="CSGBox3D" parent="Map" unique_id=1679522778]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 43, 2.5, 4)
+size = Vector3(1, 5, 32)
+material = ExtResource("m_wall")
+
+[node name="YardEastWallNorth" type="CSGBox3D" parent="Map" unique_id=664001496]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 33.75, 2.5, -11.5)
+size = Vector3(18.5, 5, 1)
+material = ExtResource("m_wall")
+
+[node name="YardEastWallSouth" type="CSGBox3D" parent="Map" unique_id=1380635764]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 33.75, 2.5, 19.5)
+size = Vector3(18.5, 5, 1)
+material = ExtResource("m_wall")
+
+[node name="MapMesh" type="MeshInstance3D" parent="." unique_id=2108903488]
 mesh = ExtResource("5_3o2ur")
 metadata/csg_visual = true
 
@@ -266,6 +322,38 @@ size = Vector3(0.6, 0.9, 0.6)
 [node name="UtilityBlock" type="CSGBox3D" parent="Barrels" unique_id=1617028702]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 25.7, 0.56, -4)
 size = Vector3(0.45, 1.12, 0.55)
+
+[node name="YardWestBarrel0" type="CSGCylinder3D" parent="Barrels" unique_id=1683794793]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -33, 0.55, -4)
+radius = 0.4
+height = 1.1
+material = ExtResource("m_barrel_blue")
+
+[node name="YardWestBarrel1" type="CSGCylinder3D" parent="Barrels" unique_id=538845743]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -37.5, 0.55, 10)
+radius = 0.4
+height = 1.1
+material = ExtResource("m_barrel_blue")
+
+[node name="YardWestCarBlock" type="CSGBox3D" parent="Barrels" unique_id=328405552]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -30, 0.7, 13)
+size = Vector3(1.8, 1.4, 4.4)
+
+[node name="YardEastBarrel0" type="CSGCylinder3D" parent="Barrels" unique_id=243738077]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 33, 0.55, -4)
+radius = 0.4
+height = 1.1
+material = ExtResource("m_barrel_blue")
+
+[node name="YardEastBarrel1" type="CSGCylinder3D" parent="Barrels" unique_id=1570199680]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 37.5, 0.55, 10)
+radius = 0.4
+height = 1.1
+material = ExtResource("m_barrel_blue")
+
+[node name="YardEastCarBlock" type="CSGBox3D" parent="Barrels" unique_id=1889902041]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 30, 0.7, 13)
+size = Vector3(1.8, 1.4, 4.4)
 
 [node name="Crates" type="CSGCombiner3D" parent="." unique_id=888424804]
 visible = false
@@ -418,6 +506,24 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -24, 0, -5)
 [node name="Utility" parent="Props3D" unique_id=114533951 instance=ExtResource("p_utility_box")]
 transform = Transform3D(-3.6199901e-06, 0, -1, 0, 1, 0, 1, 0, -3.6199901e-06, 25.7, 0, -4)
 
+[node name="YardWestBarrel0" parent="Props3D" unique_id=672604550 instance=ExtResource("p_barrel_red")]
+transform = Transform3D(1.25, 0, 0, 0, 1.12, 0, 0, 0, 1.25, -33, 0, -4)
+
+[node name="YardWestBarrel1" parent="Props3D" unique_id=1671674353 instance=ExtResource("p_barrel_steel")]
+transform = Transform3D(1.25, 0, 0, 0, 1.12, 0, 0, 0, 1.25, -37.5, 0, 10)
+
+[node name="YardWestCar" parent="Props3D" unique_id=589845605 instance=ExtResource("p_covered_car")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -30, 0, 13)
+
+[node name="YardEastBarrel0" parent="Props3D" unique_id=2142286302 instance=ExtResource("p_barrel_red")]
+transform = Transform3D(1.25, 0, 0, 0, 1.12, 0, 0, 0, 1.25, 33, 0, -4)
+
+[node name="YardEastBarrel1" parent="Props3D" unique_id=1508644049 instance=ExtResource("p_barrel_steel")]
+transform = Transform3D(1.25, 0, 0, 0, 1.12, 0, 0, 0, 1.25, 37.5, 0, 10)
+
+[node name="YardEastCar" parent="Props3D" unique_id=1281934447 instance=ExtResource("p_covered_car")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 30, 0, 13)
+
 [node name="Lamps" type="Node3D" parent="." unique_id=2093754381]
 
 [node name="Lamp0" type="Node3D" parent="Lamps" unique_id=1275731576]
@@ -441,7 +547,7 @@ mesh = SubResource("Mesh_lamp")
 [node name="Light" type="OmniLight3D" parent="Lamps/Lamp0" unique_id=845185438]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.45, 0)
 light_color = Color(1, 0.66, 0.36, 1)
-light_energy = 2.2882044
+light_energy = 2.3329659
 omni_range = 14.0
 script = ExtResource("23_flicker")
 seed = 3
@@ -467,7 +573,7 @@ mesh = SubResource("Mesh_lamp")
 [node name="Light" type="OmniLight3D" parent="Lamps/Lamp1" unique_id=1448923242]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.45, 0)
 light_color = Color(1, 0.66, 0.36, 1)
-light_energy = 2.2128541
+light_energy = 2.2217908
 omni_range = 14.0
 script = ExtResource("23_flicker")
 seed = 10
@@ -493,7 +599,7 @@ mesh = SubResource("Mesh_lamp")
 [node name="Light" type="OmniLight3D" parent="Lamps/Lamp2" unique_id=692131819]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.45, 0)
 light_color = Color(1, 0.66, 0.36, 1)
-light_energy = 2.3011942
+light_energy = 2.3623853
 omni_range = 14.0
 script = ExtResource("23_flicker")
 seed = 17
@@ -519,7 +625,7 @@ mesh = SubResource("Mesh_lamp")
 [node name="Light" type="OmniLight3D" parent="Lamps/Lamp3" unique_id=1394167131]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.45, 0)
 light_color = Color(1, 0.66, 0.36, 1)
-light_energy = 2.260641
+light_energy = 2.293322
 omni_range = 14.0
 script = ExtResource("23_flicker")
 seed = 24
@@ -545,10 +651,62 @@ mesh = SubResource("Mesh_lamp")
 [node name="Light" type="OmniLight3D" parent="Lamps/Lamp4" unique_id=1579320137]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.45, 0)
 light_color = Color(1, 0.66, 0.36, 1)
-light_energy = 2.1805022
+light_energy = 2.1687393
 omni_range = 14.0
 script = ExtResource("23_flicker")
 seed = 31
+
+[node name="Lamp5" type="Node3D" parent="Lamps" unique_id=654215598]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -34, 0, 2)
+
+[node name="Pole" type="CSGCylinder3D" parent="Lamps/Lamp5" unique_id=441157883]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, 0)
+visible = false
+use_collision = true
+radius = 0.09
+height = 4.0
+material = ExtResource("m_wall")
+metadata/surface = "metal"
+
+[node name="Post" parent="Lamps/Lamp5" unique_id=1221910770 instance=ExtResource("p_street_lamp")]
+
+[node name="Bulb" type="MeshInstance3D" parent="Lamps/Lamp5" unique_id=416554885]
+transform = Transform3D(0.4, 0, 0, 0, 0.4, 0, 0, 0, 0.4, 0, 3.56, 0)
+mesh = SubResource("Mesh_lamp")
+
+[node name="Light" type="OmniLight3D" parent="Lamps/Lamp5" unique_id=1647920468]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.45, 0)
+light_color = Color(1, 0.66, 0.36, 1)
+light_energy = 2.230293
+omni_range = 14.0
+script = ExtResource("23_flicker")
+seed = 5
+
+[node name="Lamp6" type="Node3D" parent="Lamps" unique_id=1426490514]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 34, 0, 2)
+
+[node name="Pole" type="CSGCylinder3D" parent="Lamps/Lamp6" unique_id=861504796]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, 0)
+visible = false
+use_collision = true
+radius = 0.09
+height = 4.0
+material = ExtResource("m_wall")
+metadata/surface = "metal"
+
+[node name="Post" parent="Lamps/Lamp6" unique_id=650410789 instance=ExtResource("p_street_lamp")]
+
+[node name="Bulb" type="MeshInstance3D" parent="Lamps/Lamp6" unique_id=99951578]
+transform = Transform3D(0.4, 0, 0, 0, 0.4, 0, 0, 0, 0.4, 0, 3.56, 0)
+mesh = SubResource("Mesh_lamp")
+
+[node name="Light" type="OmniLight3D" parent="Lamps/Lamp6" unique_id=2042841222]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.45, 0)
+light_color = Color(1, 0.66, 0.36, 1)
+light_energy = 2.2831454
+omni_range = 14.0
+script = ExtResource("23_flicker")
+seed = 6
 
 [node name="WallWeapons" type="Node3D" parent="." unique_id=1187996272]
 
@@ -556,6 +714,7 @@ seed = 31
 weapon = "m1911"
 display_model = ExtResource("16_pistol")
 display_scale = 0.12
+price = 500
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6, 0, -23.4)
 collision_layer = 9
 
@@ -563,6 +722,7 @@ collision_layer = 9
 weapon = "pdw9"
 display_model = ExtResource("13_pdw9")
 display_scale = 0.15
+price = 1000
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2, 0, -23.4)
 collision_layer = 9
 
@@ -570,6 +730,7 @@ collision_layer = 9
 weapon = "m4"
 display_model = ExtResource("11_m4")
 display_scale = 0.163
+price = 1200
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2, 0, -23.4)
 collision_layer = 9
 
@@ -577,8 +738,38 @@ collision_layer = 9
 weapon = "m870"
 display_model = ExtResource("14_m870")
 display_scale = 0.17
+price = 900
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6, 0, -23.4)
 collision_layer = 9
+
+[node name="Rack_ak47" parent="WallWeapons" unique_id=158855892 instance=ExtResource("9_rack")]
+weapon = "ak47"
+display_model = ExtResource("12_ak47")
+display_scale = 0.163
+price = 1400
+transform = Transform3D(-3.6199901e-06, 0, 1, 0, 1, 0, -1, 0, -3.6199901e-06, -42.4, 0, 4)
+collision_layer = 9
+
+[node name="Rack_m40" parent="WallWeapons" unique_id=1479080463 instance=ExtResource("9_rack")]
+weapon = "m40"
+display_model = ExtResource("15_m40")
+display_scale = 0.15
+price = 1500
+transform = Transform3D(-3.6199901e-06, 0, -1, 0, 1, 0, 1, 0, -3.6199901e-06, 42.4, 0, 4)
+collision_layer = 9
+
+[node name="Doors" type="Node3D" parent="." unique_id=614245316]
+
+[node name="DoorWest" parent="Doors" unique_id=826537705 instance=ExtResource("24_door")]
+transform = Transform3D(-3.6199901e-06, 0, 1, 0, 1, 0, -1, 0, -3.6199901e-06, -24.5, 0, 4)
+collision_layer = 9
+price = 750
+zone = "yard_west"
+
+[node name="DoorEast" parent="Doors" unique_id=1863809534 instance=ExtResource("24_door")]
+transform = Transform3D(-3.6199901e-06, 0, -1, 0, 1, 0, 1, 0, -3.6199901e-06, 24.5, 0, 4)
+collision_layer = 9
+zone = "lot_east"
 
 [node name="Spawns" type="Node3D" parent="." unique_id=1655940609]
 
@@ -606,10 +797,31 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 21, 0.05, -12)
 [node name="Spawn7" type="Marker3D" parent="Spawns" unique_id=612833855]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 21, 0.05, 12)
 
+[node name="Spawn8" type="Marker3D" parent="Spawns" unique_id=1566612523]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -40, 0.05, -8)
+metadata/zone = "yard_west"
+metadata/via = Vector3(-24.5, 0, 4)
+
+[node name="Spawn9" type="Marker3D" parent="Spawns" unique_id=790879059]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -40, 0.05, 16)
+metadata/zone = "yard_west"
+metadata/via = Vector3(-24.5, 0, 4)
+
+[node name="Spawn10" type="Marker3D" parent="Spawns" unique_id=292153805]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 40, 0.05, -8)
+metadata/zone = "lot_east"
+metadata/via = Vector3(24.5, 0, 4)
+
+[node name="Spawn11" type="Marker3D" parent="Spawns" unique_id=778152975]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 40, 0.05, 16)
+metadata/zone = "lot_east"
+metadata/via = Vector3(24.5, 0, 4)
+
 [node name="Director" type="ZombieDirector" parent="." unique_id=1377428754]
 zombie_scene = ExtResource("20_zombie")
 player_path = NodePath("../Player")
 spawns_path = NodePath("../Spawns")
+power_up_scene = ExtResource("25_power_up")
 
 [node name="Player" parent="." unique_id=637251143 instance=ExtResource("1_player")]
 base_fov = 69.56998
