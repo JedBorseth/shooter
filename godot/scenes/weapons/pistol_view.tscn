@@ -1,6 +1,6 @@
 [gd_scene format=3]
 
-[ext_resource type="PackedScene" path="res://assets/weapons/pistol/pistol.fbx" id="1_model"]
+[ext_resource type="PackedScene" path="res://assets/weapons/pistol/pistol.glb" id="1_model"]
 [ext_resource type="AudioStream" path="res://assets/audio/weapons/pistol_reload.ogg" id="3_reload"]
 [ext_resource type="AudioStream" path="res://assets/audio/weapons/dry_fire.ogg" id="4_dry"]
 [ext_resource type="Material" path="res://materials/muzzle_flash.tres" id="5_flash"]
@@ -17,7 +17,7 @@ ads_position = Vector3(0, 0, -0.24)
 sprint_position = Vector3(-0.01, -0.02, 0.04)
 sprint_rotation = Vector3(-28, 8, 18)
 pivot = Vector3(0, -0.064, 0.02)
-albedo_boost = 1.5
+albedo_boost = 1.0
 kick_strength = 1.15
 camera_punch = Vector3(0.55, 0.2, 1.2)
 

@@ -1,6 +1,6 @@
 [gd_scene format=3]
 
-[ext_resource type="PackedScene" path="res://assets/weapons/m870/m870.fbx" id="1_model"]
+[ext_resource type="PackedScene" path="res://assets/weapons/m870/m870.glb" id="1_model"]
 [ext_resource type="AudioStream" path="res://assets/audio/player/shotgun_pump.ogg" id="3_reload"]
 [ext_resource type="AudioStream" path="res://assets/audio/weapons/dry_fire.ogg" id="4_dry"]
 [ext_resource type="Material" path="res://materials/muzzle_flash.tres" id="5_flash"]
@@ -20,7 +20,7 @@ ads_position = Vector3(0, 0, -0.08)
 sprint_position = Vector3(-0.04, 0.015, 0.03)
 sprint_rotation = Vector3(-4, 22, 24)
 pivot = Vector3(0, -0.073, 0.085)
-albedo_boost = 1.6
+albedo_boost = 1.0
 kick_strength = 2.75
 camera_punch = Vector3(1.1, 0.3, 1.6)
 cycle_position = Vector3(0, -0.012, 0.045)
