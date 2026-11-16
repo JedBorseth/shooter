@@ -77,6 +77,7 @@ UAL2_ANIMATIONS = [
     "Zombie_Idle_Loop",
     "Zombie_Walk_Fwd_Loop",
     "Zombie_Scratch",
+    "ClimbUp_1m_RM",
 ]
 
 # Body regions by the bone a vertex mostly follows (UAL1 bone names).
@@ -376,7 +377,10 @@ def attach_mesh(w: Writer, src: Gltf, node_name: str, mesh: int, parent: str) ->
 
 
 def copy_animations(src: Gltf, w: Writer, names: list[str]) -> None:
+    """Copies the named animations. Root-motion clips (`_RM`) keep their root
+    bone where it starts: the game moves the body itself."""
     by_name = {a["name"]: a for a in src.json["animations"]}
+    root = src.json["skins"][0]["joints"][0]
     missing = [n for n in names if n not in by_name]
     if missing:
         raise SystemExit(f"animations not found: {missing}")
@@ -384,9 +388,16 @@ def copy_animations(src: Gltf, w: Writer, names: list[str]) -> None:
     for name in names:
         anim = by_name[name]
         samplers = []
-        for s in anim["samplers"]:
+        frozen = {
+            ch["sampler"]
+            for ch in anim["channels"]
+            if name.endswith("_RM") and ch["target"]["node"] == root and ch["target"]["path"] == "translation"
+        }
+        for i, s in enumerate(anim["samplers"]):
             times = src.accessor(s["input"]).astype(np.float32)
             values = src.accessor(s["output"]).astype(np.float32)
+            if i in frozen:
+                values = np.repeat(values[:1], len(values), axis=0)
             samplers.append(
                 {
                     "input": w.add(times, bounds=True),

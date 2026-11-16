@@ -48,6 +48,7 @@ fn run(ticks: u32) -> (u64, Predicted) {
         let env = MoveEnv {
             on_floor: p.on_floor,
             can_stand: true,
+            ledge: None,
         };
         events.clear();
         let v = player::step(

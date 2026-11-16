@@ -1,4 +1,4 @@
-//! First-person movement: walk, sprint, crouch, slide, and jump.
+//! First-person movement: walk, sprint, crouch, slide, jump, and mantle.
 //!
 //! The model is the Quake/Source "accelerate toward a wish velocity, then apply
 //! friction" approach, tuned for faster, snappier, arcade-military pacing. The engine
@@ -52,6 +52,9 @@ pub struct MoveEnv {
     pub on_floor: bool,
     /// False when there is no headroom to stand up from a crouch.
     pub can_stand: bool,
+    /// Height above the feet of a ledge in front of the player that they could
+    /// climb onto (with room to stand on top), if there is one in reach.
+    pub ledge: Option<f32>,
 }
 
 impl Default for MoveEnv {
@@ -59,6 +62,7 @@ impl Default for MoveEnv {
         Self {
             on_floor: true,
             can_stand: true,
+            ledge: None,
         }
     }
 }
@@ -91,6 +95,16 @@ pub struct MoveState {
     pub jump_held: bool,
     pub crouch_held: bool,
     pub sprint_held: bool,
+    /// Seconds left climbing over a ledge (0 when not mantling).
+    pub mantle_time: f32,
+    /// Upward speed while mantling, set when the climb starts.
+    pub mantle_rise: f32,
+}
+
+impl MoveState {
+    pub fn mantling(&self) -> bool {
+        self.mantle_time > 0.0
+    }
 }
 
 /// Tuning values. Distances are metres, times are seconds.
@@ -125,6 +139,14 @@ pub struct MoveParams {
     pub crouch_height: f32,
     /// Distance from the top of the capsule down to the eyes.
     pub eye_from_top: f32,
+    /// Ledges from this high to `mantle_max` (above the feet) can be climbed.
+    pub mantle_min: f32,
+    pub mantle_max: f32,
+    /// Seconds a mantle takes, plus this much per metre of height.
+    pub mantle_base_time: f32,
+    pub mantle_time_per_metre: f32,
+    /// Forward speed while climbing, which carries the player onto the top.
+    pub mantle_forward_speed: f32,
 }
 
 impl Default for MoveParams {
@@ -151,6 +173,11 @@ impl Default for MoveParams {
             stand_height: 1.8,
             crouch_height: 1.1,
             eye_from_top: 0.12,
+            mantle_min: 0.5,
+            mantle_max: 1.35,
+            mantle_base_time: 0.22,
+            mantle_time_per_metre: 0.2,
+            mantle_forward_speed: 2.6,
         }
     }
 }
@@ -207,6 +234,10 @@ pub fn step(
     let wish_dir = (forward * wish.y + right * wish.x).normalize_or_zero();
     let horizontal_speed = horizontal(state.velocity).length();
 
+    if state.mantling() {
+        return mantle(state, forward, params, dt);
+    }
+
     tick_slide(state, params, dt);
     update_stance(
         state,
@@ -220,6 +251,24 @@ pub fn step(
         forward,
     );
 
+    // Jumping at a ledge in reach while moving toward it climbs over it.
+    if state.jump_buffer > 0.0
+        && wish.y > 0.3
+        && state.stance != Stance::Crouching
+        && let Some(height) = env.ledge
+        && (params.mantle_min..=params.mantle_max).contains(&height)
+    {
+        state.jump_buffer = 0.0;
+        state.coyote = 0.0;
+        state.sprinting = false;
+        state.stance = Stance::Standing;
+        let time = params.mantle_base_time + params.mantle_time_per_metre * height;
+        state.mantle_time = time;
+        // A little over the ledge, so the feet clear its edge.
+        state.mantle_rise = (height + 0.15) / time;
+        return mantle(state, forward, params, dt);
+    }
+
     let mut jumped = false;
     let grounded = env.on_floor || state.coyote > 0.0;
     if state.jump_buffer > 0.0 && grounded && state.stance != Stance::Crouching {
@@ -229,6 +278,7 @@ pub fn step(
         // Jumping out of a slide keeps its momentum.
         if state.stance == Stance::Sliding {
             state.stance = Stance::Standing;
+            state.slide_cooldown = params.slide_cooldown;
         }
         state.velocity.y = params.jump_velocity;
         jumped = true;
@@ -320,8 +370,31 @@ fn update_stance(
                 state.sprinting = start_sprint;
             }
         }
-        Stance::Sliding => {}
+        Stance::Sliding => {
+            // Slide-cancel: crouch again to stand up out of the slide with its
+            // speed, sprinting on if still pushing forward.
+            if crouch_pressed && env.can_stand {
+                state.stance = Stance::Standing;
+                state.slide_time = 0.0;
+                state.slide_cooldown = params.slide_cooldown;
+                state.sprinting = moving_forward && !input.block_sprint;
+            }
+        }
     }
+}
+
+/// One tick of a mantle: rise at a steady speed while pushing forward, with
+/// no gravity. The engine's collision carries the body up the wall and onto
+/// the top.
+fn mantle(state: &mut MoveState, forward: Vec3, params: &MoveParams, dt: f32) -> Vec3 {
+    state.mantle_time = (state.mantle_time - dt).max(0.0);
+    let rise = if state.mantle_time > 0.0 {
+        state.mantle_rise
+    } else {
+        0.0
+    };
+    state.velocity = forward * params.mantle_forward_speed + Vec3::Y * rise;
+    state.velocity
 }
 
 /// Advances the slide timer and ends the slide, in a crouch, when it runs out or slows down.
@@ -516,6 +589,7 @@ mod tests {
         let low_ceiling = MoveEnv {
             on_floor: true,
             can_stand: false,
+            ledge: None,
         };
         run(&mut s, crouch, low_ceiling, 1);
         run(&mut s, MoveInput::default(), low_ceiling, 1);
@@ -628,6 +702,7 @@ mod tests {
     const AIR: MoveEnv = MoveEnv {
         on_floor: false,
         can_stand: true,
+        ledge: None,
     };
 
     fn jump() -> MoveInput {
@@ -759,6 +834,7 @@ mod tests {
         let air = MoveEnv {
             on_floor: false,
             can_stand: true,
+            ledge: None,
         };
         run(
             &mut s,
@@ -802,5 +878,83 @@ mod tests {
             s
         };
         assert_eq!(simulate(), simulate());
+    }
+
+    #[test]
+    fn jumping_at_a_ledge_climbs_it() {
+        let p = MoveParams::default();
+        let mut s = MoveState::default();
+        let env = MoveEnv {
+            ledge: Some(1.1),
+            ..Default::default()
+        };
+        let input = MoveInput {
+            wish: Vec2::Y,
+            jump: true,
+            ..Default::default()
+        };
+        let v = step(&mut s, &input, env, &p, DT);
+        assert!(s.mantling());
+        assert!(v.y > 2.0 && v.z < -1.0, "{v}");
+        // It rises about the ledge's height over the climb.
+        let mut risen = v.y * DT;
+        let held = MoveInput {
+            wish: Vec2::Y,
+            ..Default::default()
+        };
+        while s.mantling() {
+            risen += step(&mut s, &held, MoveEnv::default(), &p, DT).y * DT;
+        }
+        assert!((risen - 1.25).abs() < 0.15, "{risen}");
+    }
+
+    #[test]
+    fn ledges_out_of_reach_or_standing_still_just_jump() {
+        let p = MoveParams::default();
+        for (ledge, wish) in [
+            (Some(2.0), Vec2::Y),
+            (Some(1.0), Vec2::ZERO),
+            (None, Vec2::Y),
+        ] {
+            let mut s = MoveState::default();
+            let env = MoveEnv {
+                ledge,
+                ..Default::default()
+            };
+            let input = MoveInput {
+                wish,
+                jump: true,
+                ..Default::default()
+            };
+            step(&mut s, &input, env, &p, DT);
+            assert!(!s.mantling(), "{ledge:?} {wish}");
+            assert!(s.velocity.y > 5.0);
+        }
+    }
+
+    #[test]
+    fn crouching_again_cancels_a_slide() {
+        let mut s = MoveState::default();
+        let sprint = MoveInput {
+            wish: Vec2::Y,
+            sprint: true,
+            ..Default::default()
+        };
+        run(&mut s, sprint, MoveEnv::default(), 2);
+        run(&mut s, forward(), MoveEnv::default(), 90);
+        let crouch = MoveInput {
+            wish: Vec2::Y,
+            crouch: true,
+            ..Default::default()
+        };
+        run(&mut s, crouch, MoveEnv::default(), 1);
+        assert_eq!(s.stance, Stance::Sliding);
+        run(&mut s, forward(), MoveEnv::default(), 6);
+        let fast = speed(&s);
+        run(&mut s, crouch, MoveEnv::default(), 1);
+        assert_eq!(s.stance, Stance::Standing);
+        assert!(s.sprinting, "a slide-cancel sprints on");
+        assert!(speed(&s) > fast * 0.9, "the slide's speed carries over");
+        assert!(s.slide_cooldown > 0.0);
     }
 }

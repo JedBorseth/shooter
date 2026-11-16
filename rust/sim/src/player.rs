@@ -120,7 +120,8 @@ impl PlayerState {
     pub fn combat_context(&self, env: MoveEnv, params: &MoveParams) -> CombatContext {
         let speed = Vec2::new(self.movement.velocity.x, self.movement.velocity.z).length();
         CombatContext {
-            sprinting: self.movement.sprinting,
+            // The weapon is lowered while climbing, as while sprinting.
+            sprinting: self.movement.sprinting || self.movement.mantling(),
             airborne: !env.on_floor,
             move_ratio: speed / params.walk_speed,
         }
@@ -292,6 +293,7 @@ mod tests {
     const AIRBORNE: MoveEnv = MoveEnv {
         on_floor: false,
         can_stand: true,
+        ledge: None,
     };
 
     #[test]
