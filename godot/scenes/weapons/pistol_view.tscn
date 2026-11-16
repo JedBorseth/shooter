@@ -12,24 +12,34 @@ size = Vector2(0.16, 0.16)
 [node name="Pistol" type="WeaponView"]
 weapon = "m1911"
 grip_rake = 0.0
-hip_position = Vector3(0.09, -0.1, -0.32)
-ads_position = Vector3(0, 0, -0.3)
+hip_position = Vector3(0.09, -0.096, -0.32)
+ads_position = Vector3(0, 0, -0.24)
 sprint_position = Vector3(-0.01, -0.02, 0.04)
 sprint_rotation = Vector3(-28, 8, 18)
-pivot = Vector3(0, -0.06, 0.02)
+pivot = Vector3(0, -0.064, 0.02)
 albedo_boost = 1.5
 kick_strength = 1.15
 camera_punch = Vector3(0.55, 0.2, 1.2)
 
 [node name="Model" type="Node3D" parent="."]
-position = Vector3(-0.0024, -0.09, -0.012)
+position = Vector3(-0.0024, -0.094, -0.012)
 rotation = Vector3(0, 1.5707964, 0)
 scale = Vector3(0.12, 0.12, 0.12)
 
 [node name="Mesh" parent="Model" instance=ExtResource("1_model")]
 
+[node name="Sights" type="IronSights" parent="."]
+style = "pistol"
+rear_z = 0.004
+front_z = -0.172
+rear_base = -0.0099
+front_base = -0.0102
+size = 1.2
+glow = Color(0.35, 1, 0.45, 1)
+cuts = Array[AABB]([AABB(-0.01, -0.0094, -0.004, 0.02, 0.0094, 0.01), AABB(-0.01, -0.0096, -0.179, 0.02, 0.0096, 0.023)])
+
 [node name="Muzzle" type="Marker3D" parent="."]
-position = Vector3(-0.0024, -0.021, -0.2)
+position = Vector3(-0.0024, -0.025, -0.2)
 
 [node name="Flash" type="MeshInstance3D" parent="Muzzle"]
 cast_shadow = 0
@@ -41,7 +51,7 @@ light_energy = 3.5
 omni_range = 7.0
 
 [node name="Ejection" type="Marker3D" parent="."]
-position = Vector3(0.0096, -0.006, -0.06)
+position = Vector3(0.0096, -0.01, -0.06)
 
 [node name="ReloadSound" type="AudioStreamPlayer" parent="."]
 stream = ExtResource("3_reload")
@@ -54,7 +64,7 @@ volume_db = -6.0
 bus = &"Weapons"
 
 [node name="GripRight" type="Marker3D" parent="."]
-position = Vector3(0, -0.083, -0.017)
+position = Vector3(0, -0.087, -0.017)
 
 [node name="GripLeft" type="Marker3D" parent="."]
-position = Vector3(0, -0.12, 0.05)
+position = Vector3(0, -0.124, 0.05)

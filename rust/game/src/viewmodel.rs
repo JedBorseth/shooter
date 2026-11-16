@@ -177,6 +177,9 @@ impl INode3D for WeaponView {
         }
         let shader = load::<Shader>("res://shaders/viewmodel.gdshader");
         convert_to_viewmodel_materials(&self.model.clone().upcast(), &shader, self.albedo_boost);
+        if let Some(sights) = self.base().try_get_node_as::<Node>("Sights") {
+            convert_to_viewmodel_materials(&sights, &shader, 1.0);
+        }
         self.cycle_sound = self.base().try_get_node_as("CycleSound");
         self.round_sound = self.base().try_get_node_as("RoundSound");
         self.ejection = self.base().try_get_node_as("Ejection");
@@ -374,6 +377,10 @@ fn convert_to_viewmodel_materials(root: &Gd<Node>, shader: &Gd<Shader>, boost: f
                 let Some(source) = mesh.get_active_material(surface) else {
                     continue;
                 };
+                // Shader materials (a sight's lens) already draw as a viewmodel.
+                if source.clone().try_cast::<ShaderMaterial>().is_ok() {
+                    continue;
+                }
                 let material = viewmodel_material(&source, shader, boost);
                 mesh.set_surface_override_material(surface, &material);
             }
