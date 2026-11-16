@@ -11,6 +11,7 @@ use godot::classes::{
     AudioStreamPlayer, AudioStreamRandomizer, BaseMaterial3D, CylinderMesh, INode3D, Material,
     MeshInstance3D, Node3D, OmniLight3D, Shader, ShaderMaterial,
 };
+use godot::global::randf_range;
 use godot::prelude::*;
 use shooter_sim::rng;
 use shooter_sim::weapon::WeaponId;
@@ -131,6 +132,21 @@ pub struct WeaponView {
     #[export]
     #[init(val = Vector2::new(0.005, 0.022))]
     shell_size: Vector2,
+    /// Gunshot volume. The layers below are offsets from it, in dB: the crack
+    /// above 1.5 kHz, the punch below it, and the echo. At 0/0/0 they add up to
+    /// the original recording.
+    #[export]
+    #[init(val = -6.0)]
+    fire_volume_db: f32,
+    #[export]
+    #[init(val = 2.0)]
+    snap_db: f32,
+    #[export]
+    #[init(val = 0.0)]
+    body_db: f32,
+    #[export]
+    #[init(val = -3.0)]
+    tail_db: f32,
 
     #[init(node = "Model")]
     model: OnReady<Gd<Node3D>>,
@@ -138,8 +154,6 @@ pub struct WeaponView {
     flash: OnReady<Gd<MeshInstance3D>>,
     #[init(node = "Muzzle/FlashLight")]
     flash_light: OnReady<Gd<OmniLight3D>>,
-    #[init(node = "FireSound")]
-    fire_sound: OnReady<Gd<AudioStreamPlayer>>,
     #[init(node = "ReloadSound")]
     reload_sound: OnReady<Gd<AudioStreamPlayer>>,
     #[init(node = "DryFireSound")]
@@ -147,6 +161,8 @@ pub struct WeaponView {
     /// Optional: bolt or pump sound, and the sound of one round going in.
     cycle_sound: Option<Gd<AudioStreamPlayer>>,
     round_sound: Option<Gd<AudioStreamPlayer>>,
+    /// Built from `assets/audio/weapons/<weapon>/` when the view is ready.
+    gunshot: Option<Gunshot>,
     /// Optional marker where shells leave the weapon.
     ejection: Option<Gd<Node3D>>,
     /// Resolved from `weapon` once the table is loaded.
@@ -170,6 +186,10 @@ impl INode3D for WeaponView {
             godot_error!("WeaponView: unknown weapon `{}`", self.weapon);
         }
         self.shell_mesh = Some(shell_mesh(&shader, self.shell_color, self.shell_size));
+        self.gunshot = self.load_gunshot();
+        if self.gunshot.is_none() {
+            godot_error!("WeaponView: no gunshot layers for `{}`", self.weapon);
+        }
         self.flash.set_visible(false);
         self.flash_light.set_visible(false);
     }
@@ -211,13 +231,37 @@ impl WeaponView {
         self.flash_light.set_visible(true);
         self.flash_time = 0.035;
 
-        let pitch = 0.97 + 0.06 * ((self.flash_count * 13 % 10) as f32 / 10.0);
-        self.fire_sound.set_pitch_scale(pitch);
-        self.fire_sound.play();
+        if let Some(gunshot) = &mut self.gunshot {
+            gunshot.play();
+        }
     }
 
     pub fn on_reload(&mut self) {
         self.reload_sound.play();
+    }
+
+    fn load_gunshot(&mut self) -> Option<Gunshot> {
+        let dir = format!("res://assets/audio/weapons/{}", self.weapon);
+        let (snap_db, body_db, tail_db) = (self.snap_db, self.body_db, self.tail_db);
+        let mut layer = |name: &str, node: &str, offset_db: f32, polyphony: i32| {
+            // Pitch is set per shot in `Gunshot::play`, the same for every layer.
+            let stream = audio::variations(&format!("{dir}/{name}"), 1.0)?;
+            let mut player = AudioStreamPlayer::new_alloc();
+            player.set_name(node);
+            player.set_stream(&stream);
+            player.set_volume_db(self.fire_volume_db + offset_db);
+            player.set_bus("Weapons");
+            player.set_max_polyphony(polyphony);
+            self.base_mut().add_child(&player);
+            Some(player)
+        };
+        Some(Gunshot {
+            snap: layer("snap", "GunshotSnap", snap_db, 4)?,
+            body: layer("body", "GunshotBody", body_db, 4)?,
+            // One echo at a time: each shot cuts the last one's tail, so full
+            // auto stays tight instead of piling up reverb.
+            tail: layer("tail", "GunshotTail", tail_db, 1)?,
+        })
     }
 
     pub fn on_dry_fire(&mut self) {
@@ -233,6 +277,24 @@ impl WeaponView {
     pub fn on_round_loaded(&mut self) {
         if let Some(sound) = &mut self.round_sound {
             sound.play();
+        }
+    }
+}
+
+/// The layers of one gunshot, played together. Each picks its own recording,
+/// so a few source shots combine into many different-sounding ones.
+struct Gunshot {
+    snap: Gd<AudioStreamPlayer>,
+    body: Gd<AudioStreamPlayer>,
+    tail: Gd<AudioStreamPlayer>,
+}
+
+impl Gunshot {
+    fn play(&mut self) {
+        let pitch = randf_range(0.96, 1.04) as f32;
+        for player in [&mut self.snap, &mut self.body, &mut self.tail] {
+            player.set_pitch_scale(pitch);
+            player.play();
         }
     }
 }

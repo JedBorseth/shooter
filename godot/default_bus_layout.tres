@@ -9,7 +9,7 @@ release = 0.08
 resource_name = "Compressor"
 threshold = -12.0
 gain = 3.0
-attack_us = 200.0
+attack_us = 2000.0
 release_ms = 120.0
 
 [resource]
