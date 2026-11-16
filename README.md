@@ -37,6 +37,22 @@ The plan, decisions, and reference projects are in [docs/roadmap.md](docs/roadma
 2. Install Rust: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`.
 3. Install Godot 4.7.2 (standard build, no .NET) from the [4.7.2 release page](https://github.com/godotengine/godot/releases/tag/4.7.2-stable). Unzip it and put the binary on your PATH as `godot`.
 
+## Set up a Mac playtest machine
+
+1. Install Apple's command-line tools with `xcode-select --install` if needed.
+2. Install a stable Rust toolchain from [rustup](https://rustup.rs/).
+3. Download the standard macOS universal build of Godot 4.7.2 from the [release page](https://github.com/godotengine/godot/releases/tag/4.7.2-stable), unzip it, and move `Godot.app` into `~/Applications`.
+
+From the repository root, build and launch:
+
+```sh
+(cd rust && cargo build)
+"$HOME/Applications/Godot.app/Contents/MacOS/Godot" --editor --headless --path godot --import
+"$HOME/Applications/Godot.app/Contents/MacOS/Godot" --path godot
+```
+
+The universal Godot app supports Apple Silicon and Intel Macs; Cargo builds the extension for your Mac's architecture. The first build and asset import can take a few minutes. For later runs, use the last command. Add `--editor` to open the project in the editor.
+
 ## Build and run
 
 Requirements: Godot 4.7.2+ (standard build, no .NET), a stable Rust toolchain, and [Git LFS](https://git-lfs.com) (models, textures, and audio are stored in LFS). Run `git lfs install` once before you clone, or `git lfs pull` in an existing clone.
