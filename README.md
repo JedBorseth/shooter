@@ -19,10 +19,11 @@ The plan, decisions, and reference projects are in [docs/roadmap.md](docs/roadma
 - `godot/`: the Godot project (scenes, GDScript glue, assets).
 - `godot/assets/characters/`: the soldier model and its animation sets (built by `tools/build_character_assets.py`), and the bone maps that retarget them to Godot's humanoid skeleton. `godot/scenes/characters/` holds the third-person soldier and the first-person arms.
 - `godot/data/weapons/`: one RON file per weapon (damage, fire rate, recoil pattern, spread, reload style, pellets, scope). Edit a file while the game runs from a debug build and it reloads.
-- `rust/sim/`: engine-independent, deterministic simulation: movement, weapons (fire rate, falloff, recoil patterns, spread, pellets, bolt and pump cycling, magazine and shell-by-shell reloads, ADS, scope sway and hold breath, switching, pickups), health (regeneration, fall damage, death), hit zones (head, chest, stomach, arms, legs, posed from stance and view angles, with damage multipliers), the combined per-player step that the client predicts and the server runs, and gamepad look (stick shaping, aim assist). `rust/sim/src/net/` holds the netcode core: the bit-packed wire protocol with delta compression, the server's input queue (with an input rate cap), client prediction and reconciliation, snapshot interpolation, lag compensation (hitbox history, rewind, and shot resolution), and a network condition simulator. No Godot types, so the client and the dedicated server share it and it can be unit-tested on its own.
-- `rust/game/`: the GDExtension that exposes the simulation to Godot: `FpsPlayer` (input, gamepad look and aim assist, hitscan, tracers, footsteps, camera, prediction), `AimAssistTarget`, `ViewmodelRig` and `WeaponView` (procedural weapon motion, muzzle flash, ejected shells, sounds), `WeaponPickup` (weapon racks), `Sentry` (a turret that shoots back), `TargetDummy` (an armed soldier), the characters in `rust/game/src/character/` (`SoldierRig` with its animation tree, `SoldierPoser` for aim and hand IK, `FpArms`, team palettes), `HitboxRig` (hit zones as physics shapes, F4 overlay), and networking in `rust/game/src/net/`: `NetServer` (the dedicated server, which also resolves every shot, applies damage, and keeps score), `NetClient`, and `RemotePlayer` (other players, interpolated).
+- `rust/sim/`: engine-independent, deterministic simulation: movement, weapons (fire rate, falloff, recoil patterns, spread, pellets, bolt and pump cycling, magazine and shell-by-shell reloads, ADS, scope sway and hold breath, switching, pickups), health (regeneration, fall damage, death), hit zones (head, chest, stomach, arms, legs, posed from stance and view angles, with damage multipliers), the combined per-player step that the client predicts and the server runs, and gamepad look (stick shaping, aim assist). `rust/sim/src/net/` holds the netcode core: the bit-packed wire protocol with delta compression, the server's input queue (with an input rate cap), client prediction and reconciliation, snapshot interpolation, lag compensation (hitbox history, rewind, and shot resolution), a network condition simulator, and server discovery (`discovery.rs`: the query and master server packets, and the browser's logic). No Godot types, so the client and the dedicated server share it and it can be unit-tested on its own.
+- `rust/game/`: the GDExtension that exposes the simulation to Godot: `FpsPlayer` (input, gamepad look and aim assist, hitscan, tracers, footsteps, camera, prediction), `AimAssistTarget`, `ViewmodelRig` and `WeaponView` (procedural weapon motion, muzzle flash, ejected shells, sounds), `WeaponPickup` (weapon racks), `Sentry` (a turret that shoots back), `TargetDummy` (an armed soldier), the characters in `rust/game/src/character/` (`SoldierRig` with its animation tree, `SoldierPoser` for aim and hand IK, `FpArms`, team palettes), `HitboxRig` (hit zones as physics shapes, F4 overlay), and networking in `rust/game/src/net/`: `NetServer` (the dedicated server, which also resolves every shot, applies damage, and keeps score), `NetClient`, `RemotePlayer` (other players, interpolated), and `ServerBrowser` (finds servers for the server browser; the server side answers its queries).
+- `rust/master/`: `shooter-master`, the master server that lists dedicated servers for the in-game server browser.
 - `godot/shaders/`: viewmodel projection (own FOV, never clips walls), muzzle flash, damage vignette, and the blockout grid.
-- `godot/scripts/`: GDScript for the HUD, scope and damage overlays, pause and settings menu (`Settings` autoload), impacts, tracers, and the `Net` autoload that starts a server or client from command-line options (`godot/scripts/net/`).
+- `godot/scripts/`: GDScript for the HUD, scope and damage overlays, pause and settings menu (`Settings` autoload), the title screen and server browser, impacts, tracers, and the `Net` autoload that starts a server or client from command-line options or the server browser (`godot/scripts/net/`).
 - `docs/`: roadmap, [art direction](docs/art-direction.md) (the look, the character pipeline, hit zones), and design notes.
 - `tools/build_weapon_audio.py`: builds the layered gunshot sounds from bart's CC0 firearm library and trims dead air from the other sounds. Run it with `uv run`; its docstring explains the steps.
 - `tools/build_character_assets.py`: builds the soldier (uniform regions, helmet, goggles, plate carrier, belt, pads, armbands, first-person arms) and the trimmed animation sets from Quaternius's CC0 Universal Animation Library. Run it with `uv run`; see [docs/art-direction.md](docs/art-direction.md).
@@ -49,7 +50,7 @@ Launch opens a lightweight title menu. **Testing Area**, the first option, loads
 existing arena on selection. **Slamcity** is a small, fast city-block map: walk-up flats
 with a first-floor walkway, corner stores, a sunken skate bowl in the middle, and alleys
 around the edges, with practice targets and a weapon rack at each spawn. It ships in every
-build. **Multiplayer** is a disabled placeholder. **Zombies**
+build. **Multiplayer** opens the server browser (see [Play online](#play-online)). **Zombies**
 opens a Black Ops 2 inspired menu: **Solo** leads to a rotating globe with five
 selectable map locations. Use the list, map markers, or arrow buttons to select;
 drag the globe to rotate, and use Back or Esc to return. Zombies maps are menu
@@ -75,6 +76,13 @@ The netcode test starts a dedicated server process with a bot, joins it over UDP
 godot --headless --path godot --script res://tests/net_test.gd
 ```
 
+The server browser test starts a master server and a dedicated server that lists itself on it, opens **Multiplayer** from the title screen, finds the server on the LAN and Internet tabs with its name, players, and ping, saves it as a favorite, checks that a direct connect to a silent address offers "Join anyway", joins from the list, and leaves through the pause menu. It needs the master binary:
+
+```sh
+cd rust && cargo build -p shooter-game -p shooter-master
+cd .. && godot --headless --path godot --script res://tests/server_browser_test.gd
+```
+
 GDScript is linted and formatted with [gdtoolkit](https://github.com/Scony/godot-gdscript-toolkit):
 
 ```sh
@@ -97,7 +105,36 @@ CAPTURE_DIR=/tmp/shots godot --path godot --resolution 1600x900 --script res://t
 Multiplayer runs on a dedicated server, even on one machine. The server is the same Godot project, started headless:
 
 ```sh
-godot --headless --path godot -- --server --bots 3   # UDP port 27015; --port N to change
+godot --headless --path godot -- --server --name "Friday 1v1" --bots 3
+```
+
+It listens for players on UDP port 27015 (`--port N` to change) and answers server browsers on the next port, 27016 (`--query-port N` to change). To run several servers on one machine, step the game port by 2 (27015, 27017, …) so the LAN search finds them all.
+
+In the game, **Multiplayer** on the title screen opens the server browser:
+
+- **LAN** lists every server on your network (and on your own machine), with its map, players, bots, and ping.
+- **Internet** lists the servers on a master server. Enter its address in the field at the top; the browser remembers it.
+- **Favorites** lists servers you starred, online or not. Click a server's star, or select it and press **Add favorite**.
+- **Direct connect** takes an IP or host name with an optional port. The browser asks the server first, then joins. If the server does not answer queries (only its game port is open), the button changes to **Join anyway**.
+
+Double-click a server, or select it and press Enter or **Join**. If the server rejects the client (a different game version), never answers, or drops the connection, the game returns to the browser and says why. **Leave server** in the pause menu (Esc) returns to the browser too.
+
+To play over the internet, the server's host forwards UDP 27015 and 27016 to the server machine, or both players join the same VPN (Tailscale, WireGuard). Then the other player uses Direct connect with the host's address.
+
+### Master server
+
+The master server keeps the list behind the Internet tab. Servers started with `--master HOST[:PORT]` send it a heartbeat every 30 seconds; it drops a server 75 seconds after the last one, or at once when the server shuts down. It never carries game traffic: browsers get the list of addresses from it, then ask each server for its details and ping. It is a single small binary with no other dependencies:
+
+```sh
+cd rust && cargo run --release -p shooter-master              # UDP 27010; --port N, --bind IP
+godot --headless --path godot -- --server --name "EU 1" --master master.example.com
+```
+
+The Linux dedicated server zip includes it as `shooter-master`. A heartbeat or list request only counts when it carries a token the master sent to that address, so a forged address cannot list someone else's machine or aim a list at it, and every request is padded so that no answer is larger than the question.
+
+The command line still works without the browser:
+
+```sh
 godot --path godot -- --connect 127.0.0.1            # HOST or HOST:PORT
 ```
 
@@ -107,11 +144,11 @@ Bots are scripted players that strafe, crouch, jump, and fire, so one client has
 godot --path godot -- --connect 127.0.0.1 --lag 50 --jitter 10 --loss 2
 ```
 
-F3 toggles the netcode overlay: ping, loss, inputs waiting for the server, prediction corrections, interpolation delay, and bandwidth. Online, the practice targets and the sentry are removed and T (refill ammo) is disabled, since the server owns ammo and health. The server respawns players.
+F3 shows or hides the netcode overlay (hidden at first): ping, loss, inputs waiting for the server, prediction corrections, interpolation delay, and bandwidth. Online, the practice targets and the sentry are removed and T (refill ammo) is disabled, since the server owns ammo and health. The server respawns players.
 
 The server decides every hit. Each firing input carries the moment the client was drawing other players at, and the server rebuilds their hitboxes at that moment from the snapshots it sent (lag compensation, up to 300 ms back), so a shot that hit on your screen hits. Hit markers show at once from your own hitscan; kills, score, medals, and damage you take come from the server. With F4 on in a debug build, the hitboxes the server rewound for each of your shots are drawn in white next to the client's coloured ones.
 
-The Build workflow also exports a headless Linux dedicated server (`shooter-<version>-server-linux-x86_64.zip`). It starts as a server on its own; pass `-- --port N --bots N` to configure it.
+The Build workflow also exports a headless Linux dedicated server (`shooter-<version>-server-linux-x86_64.zip`), with the master server binary next to it. It starts as a server on its own; pass `-- --port N --bots N --name NAME --master HOST` to configure it.
 
 ## CI and builds
 

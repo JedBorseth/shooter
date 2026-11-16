@@ -121,7 +121,9 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [ ] Kill feed, scoreboard (Tab), and match timer HUD.
 - [ ] Killcam from the server snapshot buffer.
 - [ ] First real map: a three-lane layout, blocked out with CSG, then modular CC0 kit pieces.
-- [ ] Lobby flow: main menu, host or join by IP, ready-up.
+- [x] Server browser: LAN search, master server list, favorites, direct connect by IP or host name, ping, and leave or lose the connection back to the browser.
+- [ ] Lobby flow: ready-up and a pre-match lobby on the server.
+- [ ] Player names: send a name in the hello, show it in the kill feed and scoreboard, and count players by name in the server browser.
 
 ## Phase 5: online services (all self-hosted)
 

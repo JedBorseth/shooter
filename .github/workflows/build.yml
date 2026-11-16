@@ -1,7 +1,8 @@
 name: Build
 
 # Exports playable Linux, Windows, and macOS clients, plus a headless Linux
-# dedicated server, for every pull request and every push to main, so anyone
+# dedicated server (with the master server binary next to it), for every pull
+# request and every push to main, so anyone
 # can download a PR's build and play it before it merges. Runners are free for
 # public repositories. Tags (v*) also publish the builds as a GitHub Release.
 
@@ -53,6 +54,18 @@ jobs:
           path: rust/target/release/${{ matrix.file }}
           if-no-files-found: error
           retention-days: 3
+      # The master server ships in the Linux dedicated server zip.
+      - name: Build master server
+        if: matrix.platform == 'linux'
+        working-directory: rust
+        run: cargo build --locked --release -p shooter-master
+      - uses: actions/upload-artifact@v7
+        if: matrix.platform == 'linux'
+        with:
+          name: master-linux
+          path: rust/target/release/shooter-master
+          if-no-files-found: error
+          retention-days: 3
 
   lib-macos:
     name: GDExtension (macos, universal)
@@ -102,6 +115,11 @@ jobs:
           pattern: lib-*
           path: rust/target/release
           merge-multiple: true
+      - name: Download master server
+        uses: actions/download-artifact@v8
+        with:
+          name: master-linux
+          path: master
       - name: Name the build
         id: meta
         run: |
@@ -132,6 +150,8 @@ jobs:
           export_preset "Windows Desktop" "$PWD/builds/windows/shooter.exe"
           # Headless dedicated server: runs as a server on start, no rendering or audio.
           export_preset "Linux Server" "$PWD/builds/server/shooter-server.x86_64"
+          # Artifacts drop the executable bit.
+          install -m 755 master/shooter-master builds/server/shooter-master
           mkdir -p dist
           (cd builds/linux && zip -qr "../../dist/${NAME}-linux-x86_64.zip" .)
           (cd builds/windows && zip -qr "../../dist/${NAME}-windows-x86_64.zip" .)

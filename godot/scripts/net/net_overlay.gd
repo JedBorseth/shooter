@@ -1,11 +1,13 @@
 extends Label
 ## Netcode readout in the top-right corner: ping, loss, snapshots, prediction
-## corrections, interpolation delay, and bandwidth. F3 toggles it.
+## corrections, interpolation delay, and bandwidth. Hidden at first, since it
+## covers the score; F3 toggles it.
 
 var client: NetClient
 
 
 func _ready() -> void:
+	visible = false
 	set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, 16)
 	grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
