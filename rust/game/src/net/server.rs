@@ -17,6 +17,11 @@
 //! from enemies, spawns players with the loadout they chose, and sends the
 //! roster, the match state, and the scoreboard as game events.
 //!
+//! With a bot skill set, its bots play the match (`super::bots`): they walk
+//! a navigation mesh baked from the map, look for enemies, and aim and shoot
+//! through the same inputs players send. Without one, bots are scripted
+//! targets for tests.
+//!
 //! It also answers server browser queries on its query port (the game port
 //! plus one) and, given a master server, keeps itself listed there
 //! (`super::discovery`).
@@ -33,6 +38,7 @@ use godot::classes::{
 };
 use godot::global::Error;
 use godot::prelude::*;
+use shooter_sim::bot::Skill;
 use shooter_sim::net::discovery::{ServerInfo, query_port_for};
 use shooter_sim::net::input_queue::InputQueue;
 use shooter_sim::net::lag::{self, LagHistory, Pellet, Target};
@@ -50,6 +56,7 @@ use shooter_sim::tdm::{
 use shooter_sim::weapon::{self, CombatEvent, Slot, WeaponId};
 use shooter_sim::{Vec2, Vec3, rng};
 
+use super::bots::{BotBrain, BotNavigation, BotPlayer, BotWorld};
 use super::discovery::QueryResponder;
 use super::transport::{self, NetEvent};
 use crate::body::{self, BodyParts};
@@ -106,10 +113,14 @@ pub struct NetServer {
     #[export]
     #[init(val = 3.0)]
     respawn_delay: f32,
-    /// Whether bots' bursts can hurt players. Off by default, so a test client
-    /// is not shot at random.
+    /// Whether scripted bots' bursts can hurt players. Off by default, so a
+    /// test client is not shot at random. Bots with a skill always can.
     #[export]
     bots_deal_damage: bool,
+    /// "easy", "normal", or "hard" for bots that play the match; empty for
+    /// scripted bots that strafe and fire bursts (tests).
+    #[export]
+    bot_skill: GString,
     /// Name shown in server browsers.
     #[export]
     #[init(val = GString::from("Shooter server"))]
@@ -160,6 +171,9 @@ pub struct NetServer {
     recent_deaths: VecDeque<(Tick, Vec3)>,
     /// Tick of the next scoreboard update.
     next_scoreboard: Tick,
+    /// The navigation mesh bots walk, when they play.
+    navigation: Option<BotNavigation>,
+    navigation_pending: bool,
 }
 
 struct ClientSlot {
@@ -195,6 +209,8 @@ struct Avatar {
     team: Team,
     /// The primary weapon this player spawns with.
     primary: WeaponId,
+    /// A bot that plays the match decides its inputs here.
+    brain: Option<BotBrain>,
     respawn_in: f32,
     /// Tick of the latest spawn: shots rewound to before it cannot hit this life.
     spawned_at: Tick,
@@ -248,9 +264,20 @@ impl INode3D for NetServer {
         godot_print!("server: listening on UDP port {}", self.port);
         self.host = Some(host);
 
+        let skill = Skill::parse(&self.bot_skill.to_string());
+        // CSG builds its collision a frame after entering the tree, so the
+        // navigation mesh bakes on an early tick (`physics_process`).
+        self.navigation_pending = skill.is_some() && self.bots > 0;
         for i in 0..self.bots.clamp(0, 50) {
             let id = FIRST_BOT_ID + i as u8;
-            self.spawn_avatar(id, true, &format!("Bot {}", i + 1), default_primary());
+            let brain = skill.map(|skill| BotBrain::new(skill, rng::hash(u32::from(id), 77)));
+            self.spawn_avatar(
+                id,
+                true,
+                &format!("Bot {}", i + 1),
+                default_primary(),
+                brain,
+            );
         }
         self.start_query_responder();
     }
@@ -274,6 +301,12 @@ impl INode3D for NetServer {
         self.net_events = events;
         self.drop_silent_peers();
 
+        if self.navigation_pending && self.tick >= 2 {
+            self.navigation_pending = false;
+            let mut parent = self.base().clone().upcast::<Node>();
+            let map = self.base().get_child(0);
+            self.navigation = map.and_then(|map| BotNavigation::bake(&mut parent, &map));
+        }
         self.simulate();
         self.update_match();
         self.tick += 1;
@@ -334,6 +367,21 @@ impl NetServer {
     #[func]
     fn match_phase(&self) -> GString {
         GString::from(phase_name(self.match_state.phase))
+    }
+
+    /// Whether the bots have a navigation mesh to walk.
+    #[func]
+    fn has_bot_navigation(&self) -> bool {
+        self.navigation.is_some()
+    }
+
+    /// Kills a player has scored this match (tests), or -1 if absent.
+    #[func]
+    fn player_kills(&self, id: i32) -> i64 {
+        self.avatars
+            .iter()
+            .find(|a| i32::from(a.id) == id)
+            .map_or(-1, |a| i64::from(a.score.kills))
     }
 
     /// A team's kills this match.
@@ -439,6 +487,7 @@ impl NetServer {
                     self.despawn_avatar(id);
                     self.broadcast_event(&GameEvent::Left { id });
                     self.next_scoreboard = self.tick;
+                    self.balance_bots();
                 }
             }
             NetEvent::Receive(peer, bytes, _) => {
@@ -490,7 +539,8 @@ impl NetServer {
                 // Everyone already here, then the newcomer for everyone.
                 let roster: Vec<GameEvent> = self.avatars.iter().map(joined_event).collect();
                 self.clients[index].outbox.extend(roster);
-                self.spawn_avatar(id, false, &name, primary);
+                self.spawn_avatar(id, false, &name, primary, None);
+                self.balance_bots();
                 let event = self.match_event();
                 self.send_event(id, event);
                 godot_print!("server: player {id} \"{name}\" joined");
@@ -542,7 +592,14 @@ impl NetServer {
         });
     }
 
-    fn spawn_avatar(&mut self, id: u8, bot: bool, name: &str, primary: WeaponId) {
+    fn spawn_avatar(
+        &mut self,
+        id: u8,
+        bot: bool,
+        name: &str,
+        primary: WeaponId,
+        brain: Option<BotBrain>,
+    ) {
         let mut counts = [0; tdm::TEAM_COUNT];
         for avatar in &self.avatars {
             counts[usize::from(avatar.team)] += 1;
@@ -566,6 +623,7 @@ impl NetServer {
             name: name.to_owned(),
             team,
             primary,
+            brain,
             respawn_in: 0.0,
             spawned_at: self.tick,
             score: ScoreState::default(),
@@ -596,6 +654,15 @@ impl NetServer {
         };
         let tick = self.tick;
         let avatar = &mut self.avatars[index];
+        if let Some(brain) = &mut avatar.brain {
+            // Bots pick a new primary every life.
+            let options = loadout_primaries();
+            let pick = rng::hash(u32::from(avatar.id), tick) as usize % options.len().max(1);
+            if let Some(primary) = options.get(pick) {
+                avatar.primary = *primary;
+            }
+            brain.on_spawn(point.yaw, tick);
+        }
         let loadout = [avatar.primary, WeaponId::expect("m1911")];
         avatar.predicted = Predicted {
             state: PlayerState::new(loadout),
@@ -657,6 +724,50 @@ impl NetServer {
         )
     }
 
+    /// Playing bots fill the teams up to the size the server started with
+    /// (its bots plus one player): each player who joins takes a bot's place,
+    /// and a bot comes back when a player leaves. Teams stay even.
+    fn balance_bots(&mut self) {
+        let Some(skill) = Skill::parse(&self.bot_skill.to_string()) else {
+            return;
+        };
+        let target = usize::try_from(self.bots).unwrap_or(0) + 1;
+        loop {
+            let mut counts = [0usize; tdm::TEAM_COUNT];
+            for avatar in &self.avatars {
+                counts[usize::from(avatar.team)] += 1;
+            }
+            let total = counts[0] + counts[1];
+            if total > target {
+                // A bot leaves the bigger team.
+                let team = u8::from(counts[1] > counts[0]);
+                let Some(id) = self
+                    .avatars
+                    .iter()
+                    .filter(|a| a.brain.is_some() && a.team == team)
+                    .map(|a| a.id)
+                    .max()
+                else {
+                    return;
+                };
+                self.despawn_avatar(id);
+                self.broadcast_event(&GameEvent::Left { id });
+            } else if total < target {
+                let Some(id) =
+                    (FIRST_BOT_ID..=u8::MAX).find(|id| !self.avatars.iter().any(|a| a.id == *id))
+                else {
+                    return;
+                };
+                let brain = BotBrain::new(skill, rng::hash(u32::from(id), self.tick));
+                let name = format!("Bot {}", id - FIRST_BOT_ID + 1);
+                self.spawn_avatar(id, true, &name, default_primary(), Some(brain));
+            } else {
+                return;
+            }
+            self.next_scoreboard = self.tick;
+        }
+    }
+
     fn despawn_avatar(&mut self, id: u8) {
         if let Some(index) = self.avatars.iter().position(|a| a.id == id) {
             let avatar = self.avatars.swap_remove(index);
@@ -673,9 +784,50 @@ impl NetServer {
         let mut fall_deaths = Vec::new();
         let mut respawns = Vec::new();
         let tick = self.tick;
+        // What bots know about everyone this tick.
+        let players: Vec<BotPlayer> = self
+            .avatars
+            .iter()
+            .map(|a| BotPlayer {
+                id: a.id,
+                team: a.team,
+                alive: a.predicted.state.alive(),
+                feet: to_godot(a.predicted.position),
+                stance: a.predicted.state.movement.stance,
+            })
+            .collect();
+        let mut team_spawns: [Vec<Vector3>; 2] = [Vec::new(), Vec::new()];
+        for point in &self.spawn_points {
+            if let Some(team) = point.team {
+                team_spawns[usize::from(team.min(1))].push(to_godot(point.position));
+            }
+        }
+        let mut space = self
+            .base()
+            .get_world_3d()
+            .and_then(|world| world.get_direct_space_state());
         for avatar in &mut self.avatars {
             let inputs: Vec<(PlayerInput, Option<f64>)> = if avatar.bot {
-                vec![(bot_input(avatar, tick), None)]
+                let input = match (&mut avatar.brain, &mut self.navigation, &mut space) {
+                    (Some(brain), Some(navigation), Some(space)) => {
+                        let me = players
+                            .iter()
+                            .find(|p| p.id == avatar.id)
+                            .copied()
+                            .expect("every avatar is listed");
+                        let mut world = BotWorld {
+                            tick,
+                            players: &players,
+                            params: &self.params,
+                            navigation,
+                            space,
+                            team_spawns: &team_spawns,
+                        };
+                        brain.think(&me, &avatar.predicted, &mut world)
+                    }
+                    _ => bot_input(avatar, tick),
+                };
+                vec![(input, None)]
             } else {
                 let Some(client) = self
                     .clients
@@ -774,7 +926,7 @@ impl NetServer {
         let Some(shooter) = self.avatars.iter().find(|a| a.id == shot.shooter) else {
             return;
         };
-        if shooter.bot && !self.bots_deal_damage {
+        if shooter.bot && shooter.brain.is_none() && !self.bots_deal_damage {
             return;
         }
         // Nobody gets hurt while a match counts down or shows its results.
@@ -854,6 +1006,9 @@ impl NetServer {
                 false,
                 &mut Vec::new(),
             );
+            if let Some(brain) = &mut victim.brain {
+                brain.on_hurt(shot.shooter, shot.eye, self.tick);
+            }
             self.send_event(
                 shot.shooter,
                 GameEvent::Hit {
@@ -1209,6 +1364,14 @@ fn phase_name(phase: Phase) -> &'static str {
 
 fn default_primary() -> WeaponId {
     WeaponId::expect("m4")
+}
+
+/// Every weapon a loadout may use as its primary.
+fn loadout_primaries() -> Vec<WeaponId> {
+    (0..weapon::table().len())
+        .filter_map(|i| u8::try_from(i).ok().map(WeaponId))
+        .filter(|id| is_loadout_primary(*id))
+        .collect()
 }
 
 /// Whether players may choose this weapon as their primary: any primary but

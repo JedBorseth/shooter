@@ -12,12 +12,14 @@ const MAPS := [["Slamcity", "slamcity"], ["Testing Arena", "arena"]]
 const TEAM_SIZES := [1, 2, 3, 4, 5, 6]
 const SCORE_LIMITS := [25, 50, 75, 100]
 const TIME_LIMITS := [5, 10, 15, 20]
+const BOT_SKILLS := [["Easy", "easy"], ["Normal", "normal"], ["Hard", "hard"]]
 
 var _name: LineEdit
 var _map: OptionButton
 var _team_size: OptionButton
 var _score_limit: OptionButton
 var _time_limit: OptionButton
+var _bot_skill: OptionButton
 var _start: Button
 
 
@@ -39,6 +41,7 @@ func options() -> Dictionary:
 	return {
 		"map": MAPS[_map.selected][1],
 		"bots": team_size * 2 - 1,
+		"bot_skill": BOT_SKILLS[_bot_skill.selected][1],
 		"score_limit": SCORE_LIMITS[_score_limit.selected],
 		"time_limit": TIME_LIMITS[_time_limit.selected],
 	}
@@ -88,6 +91,7 @@ func _build() -> void:
 	_team_size = _choice(
 		layout, "Teams", TEAM_SIZES.map(func(n: int) -> String: return "%dv%d" % [n, n]), 5
 	)
+	_bot_skill = _choice(layout, "Bots", BOT_SKILLS.map(func(s: Array) -> String: return s[0]), 1)
 	_score_limit = _choice(
 		layout, "Kill limit", SCORE_LIMITS.map(func(n: int) -> String: return str(n)), 2
 	)

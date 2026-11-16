@@ -363,12 +363,12 @@ func _bar_label(text: String, colour: Color, size: int) -> Label:
 func _build_banners() -> void:
 	_banner = _bar_label("", Color.WHITE, 54)
 	_banner.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	_banner.position = Vector2(-400, -190)
+	_banner.position = Vector2(-400, -330)
 	_banner.custom_minimum_size = Vector2(800, 0)
 	_root.add_child(_banner)
 	_sub_banner = _bar_label("", MenuStyle.TEXT, 20)
 	_sub_banner.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	_sub_banner.position = Vector2(-400, -118)
+	_sub_banner.position = Vector2(-400, -268)
 	_sub_banner.custom_minimum_size = Vector2(800, 0)
 	_root.add_child(_sub_banner)
 	_hint = _bar_label("", MenuStyle.ACCENT, 17)
@@ -394,7 +394,7 @@ func _build_board() -> void:
 	_board.add_theme_stylebox_override("panel", MenuStyle.panel())
 	_board.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
 	_board.custom_minimum_size = Vector2(760, 0)
-	_board.position = Vector2(-380, -240)
+	_board.position = Vector2(-380, -222)
 	_board.visible = false
 	_board.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_board)

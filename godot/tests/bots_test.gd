@@ -1,0 +1,74 @@
+extends SceneTree
+## Headless bots test: runs a dedicated server in this process on Slamcity
+## with six bots at normal skill and no players, starts the match without a
+## ready-up, and checks that the bots bake a navigation mesh, find each other
+## across the map, and score kills within a minute of play, and that the
+## server keeps its tick rate. BOTS=12 runs a full 6v6; SKILL sets the skill.
+## godot --headless --path godot --script res://tests/bots_test.gd
+
+const PORT := 27996
+const SECONDS := 60
+
+var _failures := 0
+
+
+func _initialize() -> void:
+	_run.call_deferred()
+
+
+func _run() -> void:
+	var bots := int(OS.get_environment("BOTS")) if OS.get_environment("BOTS") != "" else 6
+	var server := (load("res://scenes/server.tscn") as PackedScene).instantiate() as NetServer
+	server.map_scene = load("res://scenes/slamcity.tscn") as PackedScene
+	server.map_name = "Slamcity"
+	server.port = PORT
+	server.query_port = -1
+	server.bots = bots
+	server.bot_skill = (
+		OS.get_environment("SKILL") if OS.get_environment("SKILL") != "" else "normal"
+	)
+	server.auto_start = true
+	root.add_child(server)
+	for i in 5:
+		await physics_frame
+	_check(server.has_bot_navigation(), "the bots bake a navigation mesh")
+	_check(server.player_count() == bots, "%d bots join, got %d" % [bots, server.player_count()])
+	var teams := [0, 0]
+	for i in bots:
+		teams[server.player_team(200 + i)] += 1
+	_check(teams[0] == teams[1], "the bots split evenly, got %s" % [teams])
+
+	var started := Time.get_ticks_usec()
+	var ticks := SECONDS * Engine.physics_ticks_per_second
+	for i in ticks:
+		await physics_frame
+	var seconds := (Time.get_ticks_usec() - started) / 1e6
+	print("bots: %d ticks took %.1f s of wall time" % [ticks, seconds])
+	# The server keeps up when the ticks take about as long as they should.
+	_check(seconds < SECONDS * 1.1, "the server keeps up with its tick rate (%.1f s)" % seconds)
+	_check(server.match_phase() == "playing", "the match is on, got %s" % server.match_phase())
+	var scores := [server.team_score(0), server.team_score(1)]
+	print("bots: team scores after %d s: %s" % [SECONDS, scores])
+	_check(scores[0] + scores[1] >= 4, "the bots find and kill each other, scores %s" % [scores])
+	var killers := 0
+	for i in bots:
+		if server.player_kills(200 + i) > 0:
+			killers += 1
+	# A minute is short enough for one side to win it outright, so this only
+	# asks that more than one bot gets kills.
+	_check(killers >= 2, "kills come from several bots, %d of %d" % [killers, bots])
+	server.queue_free()
+	_finish()
+
+
+func _check(ok: bool, description: String) -> void:
+	print("%s %s" % ["PASS" if ok else "FAIL", description])
+	if not ok:
+		_failures += 1
+
+
+func _finish() -> void:
+	print("bots test: %d failure(s)" % _failures)
+	for i in 4:
+		await process_frame
+	quit(1 if _failures else 0)

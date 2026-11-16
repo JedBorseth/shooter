@@ -39,6 +39,8 @@ func _run() -> void:
 			map,
 			"--bots",
 			String(options.get("bots", "5")),
+			"--bot-skill",
+			String(options.get("bot-skill", "normal")),
 			"--score-limit",
 			"3",
 		]
@@ -99,6 +101,14 @@ func _run() -> void:
 	Input.action_press("scoreboard")
 	await _frames(20)
 	await _shot("05_scoreboard")
+	Input.action_release("scoreboard")
+	# Watch the bots play for a while.
+	for i in 6:
+		await _frames(150)
+		await _shot("06_play_%d" % i)
+	Input.action_press("scoreboard")
+	await _frames(10)
+	await _shot("07_scoreboard_later")
 	Input.action_release("scoreboard")
 	_finish(0)
 
