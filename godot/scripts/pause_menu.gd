@@ -3,6 +3,8 @@ extends CanvasLayer
 ## but leaves the scene tree running, because a multiplayer match never pauses.
 ## Settings apply live through the `Settings` autoload and save when the menu closes.
 
+const GraphicsQuality := preload("res://scripts/graphics.gd")
+
 const PAUSE_ACTION := &"pause"
 const CLICK_SOUND := "res://assets/audio/ui/click.ogg"
 const HOVER_SOUND := "res://assets/audio/ui/hover.ogg"
@@ -16,6 +18,8 @@ var _value_labels: Dictionary[StringName, Label] = {}
 var _value_formats: Dictionary[StringName, Callable] = {}
 var _toggles: Dictionary[StringName, CheckButton] = {}
 var _fps_option: OptionButton
+var _quality_option: OptionButton
+var _scale_option: OptionButton
 var _click: AudioStreamPlayer
 var _hover: AudioStreamPlayer
 var _quiet := false
@@ -60,8 +64,9 @@ func _input(event: InputEvent) -> void:
 		return
 	if not (pause or event.is_action_pressed(&"ui_cancel")):
 		return
-	if _fps_option.get_popup().visible:
-		return  # Let the dropdown close itself.
+	for option: OptionButton in [_fps_option, _quality_option, _scale_option]:
+		if option.get_popup().visible:
+			return  # Let the dropdown close itself.
 	get_viewport().set_input_as_handled()
 	if _settings_page.visible:
 		_show_main()
@@ -182,6 +187,7 @@ func _build_settings() -> void:
 	_add_toggle(video, &"vsync", "VSync")
 	_add_fps_option(video)
 	_add_toggle(video, &"show_fps", "Show FPS counter")
+	_add_graphics_options(video)
 
 	var audio := _add_section("Audio")
 	_add_slider(audio, &"master_volume", "Master", 0.01, percent)
@@ -246,6 +252,30 @@ func _add_fps_option(section: VBoxContainer) -> void:
 	_add_row(section, "Frame rate limit", _fps_option)
 
 
+func _add_graphics_options(section: VBoxContainer) -> void:
+	_quality_option = OptionButton.new()
+	_quality_option.custom_minimum_size.x = 150
+	_quality_option.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	for i in GraphicsQuality.NAMES.size():
+		_quality_option.add_item(GraphicsQuality.NAMES[i], i)
+	_quality_option.item_selected.connect(
+		func(index: int) -> void: Settings.set_graphics_preset(_quality_option.get_item_id(index))
+	)
+	_add_row(section, "Graphics quality", _quality_option)
+
+	_scale_option = OptionButton.new()
+	_scale_option.custom_minimum_size.x = 150
+	_scale_option.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	for i in GraphicsQuality.RENDER_SCALES.size():
+		var scale := GraphicsQuality.RENDER_SCALES[i]
+		_scale_option.add_item("Native" if scale >= 0.999 else "%d%%" % roundi(scale * 100.0), i)
+	_scale_option.item_selected.connect(
+		func(index: int) -> void:
+			Settings.set_setting(&"render_scale", GraphicsQuality.RENDER_SCALES[index])
+	)
+	_add_row(section, "Render scale", _scale_option)
+
+
 ## Adds a labelled row around `control`. The row shows the same accent bar as the
 ## toggle rows while `control` has focus.
 func _add_row(
@@ -287,6 +317,19 @@ func _sync_controls() -> void:
 	for key: StringName in _toggles:
 		_toggles[key].set_pressed_no_signal(Settings.get(key))
 	_fps_option.select(_fps_option.get_item_index(Settings.max_fps))
+	_quality_option.select(_quality_option.get_item_index(Settings.graphics_quality))
+	_scale_option.select(_closest_scale(Settings.render_scale))
+
+
+func _closest_scale(scale: float) -> int:
+	var best := 0
+	for i in GraphicsQuality.RENDER_SCALES.size():
+		if (
+			absf(GraphicsQuality.RENDER_SCALES[i] - scale)
+			< absf(GraphicsQuality.RENDER_SCALES[best] - scale)
+		):
+			best = i
+	return best
 
 
 # --- Sounds -----------------------------------------------------------------
