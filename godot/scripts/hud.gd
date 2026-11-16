@@ -1,7 +1,7 @@
 extends CanvasLayer
-## Heads-up display: crosshair, hit markers and sounds, ammo with low-ammo
-## warnings, health, damage feedback, scope overlay, pickup prompts, the death
-## screen, and a movement readout for tuning.
+## Heads-up display: crosshair, hit markers and sounds, score popups and
+## medals, ammo with low-ammo warnings, health, damage feedback, scope overlay,
+## pickup prompts, the death screen, and a movement readout for tuning.
 
 ## Seconds the controls line stays up after spawning; F1 toggles it.
 const CONTROLS_TIME := 60.0
@@ -30,16 +30,19 @@ var _controls_forced := false
 @onready var _scope: Control = $Scope
 @onready var _hit_sound: AudioStreamPlayer = $HitSound
 @onready var _keyboard_controls := _controls.text
+@onready var _score_feed: Control = $ScoreFeed
 
 
 func _ready() -> void:
 	if _player == null:
 		return
 	_player.hit_confirmed.connect(_on_hit)
+	_player.scored.connect(_score_feed.add_award)
 	_player.damaged.connect(_damage.on_damaged)
 	_player.respawned.connect(func() -> void: _controls_left = 0.0)
 	_damage.player = _player
 	_scope.player = _player
+	_score_feed.player = _player
 
 
 func _unhandled_input(event: InputEvent) -> void:

@@ -17,3 +17,4 @@ All third-party assets are CC0 (public domain). No attribution is required, but 
 | Hurt Sound Effects by EZduzziteh (`hurt_01`, `hurt_04`) | `audio/player/hurt_1.ogg`, `audio/player/hurt_2.ogg` | [OpenGameArt](https://opengameart.org/content/hurt-sound-effects) | CC0 |
 | Equipment Clicks III by LFA (bolt-action rifle segment, 2.03 s to 3.08 s) | `audio/player/bolt_cycle.ogg` | [OpenGameArt](https://opengameart.org/content/equipment-clicks-iii) | CC0 |
 | Shotgun Reload Sound Effects by zer0_sol (`Rack`) | `audio/player/shotgun_pump.ogg` | [OpenGameArt](https://opengameart.org/content/shotgun-reload-sound-effects) | CC0 |
+| Medal chime, synthesized for this project with ffmpeg (two decaying sine tones, E6 then B6, with a quiet E7 shimmer; command in the commit that added it) | `audio/ui/medal.ogg` | Original | CC0 |

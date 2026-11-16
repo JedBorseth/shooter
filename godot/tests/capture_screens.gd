@@ -1,7 +1,8 @@
 extends SceneTree
 ## Captures reference screenshots of the first-person view (every weapon at the
 ## hip and aimed, firing, sprint, reload, shotgun pump, sniper scope, impacts,
-## weapon racks, damage, death) for reviewing weapon feel and visuals.
+## weapon racks, kill popups and medals, damage, death) for
+## reviewing weapon feel and visuals.
 ## Needs a GPU and a display (or Xvfb):
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
 ##     --script res://tests/capture_screens.gd
@@ -129,6 +130,37 @@ func _run() -> void:
 	player.set_look(atan2(-to.x, -to.z), atan2(to.y, Vector2(to.x, to.z).length()))
 	await _sixtieths(10)
 	await _shot("17_rack")
+
+	# Two quick kills for the score popups and the "Double Kill" banner.
+	player.global_position = Vector3(0, 0.1, 4)
+	await _sixtieths(20)
+	var dummy_scene := load("res://scenes/props/target_dummy.tscn") as PackedScene
+	var first := dummy_scene.instantiate() as Node3D
+	var second := dummy_scene.instantiate() as Node3D
+	main.add_child(first)
+	main.add_child(second)
+	first.global_position = player.global_position + Vector3(-0.8, 0, -7)
+	second.global_position = player.global_position + Vector3(0.8, 0, -7)
+	Input.action_press("aim")
+	for dummy: Node3D in [first, second]:
+		var kills := player.kills()
+		var aim := (
+			dummy.global_position
+			+ Vector3(0, 1.3, 0)
+			- (player.global_position + Vector3(0, 1.68, 0))
+		)
+		player.set_look(atan2(-aim.x, -aim.z), atan2(aim.y, Vector2(aim.x, aim.z).length()))
+		await _sixtieths(25)
+		Input.action_press("fire")
+		for i in 60:
+			await physics_frame
+			if player.kills() > kills:
+				break
+		Input.action_release("fire")
+	await _sixtieths(10)
+	await _shot("21_double_kill")
+	Input.action_release("aim")
+	await _sixtieths(60)
 
 	# Damage from the left, then death.
 	player.set_look(0.0, 0.0)

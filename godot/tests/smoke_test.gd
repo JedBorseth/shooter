@@ -2,8 +2,8 @@ extends SceneTree
 ## Headless smoke test: loads the arena and drives the Rust player through
 ## movement (toggle sprint, slide, crouch), combat (ADS, fire, kill, reload, refill,
 ## switch), the weapon racks, shotgun and sniper rules, damage, death and
-## respawn, fall damage, the sentry, and gamepad look and aim assist. Exits
-## non-zero on failure.
+## respawn, fall damage, the sentry, gamepad look and aim assist, and kill
+## scoring. Exits non-zero on failure.
 ## Run from the repo root: godot --headless --path godot --script res://tests/smoke_test.gd
 
 const DUMMY_SCENE := preload("res://scenes/props/target_dummy.tscn")
@@ -13,6 +13,7 @@ var _hits := 0
 var _kills := 0
 var _damage_taken := 0.0
 var _deaths := 0
+var _kill_awards := 0
 
 
 func _initialize() -> void:
@@ -45,6 +46,11 @@ func _run() -> void:
 		func(amount: float, _from: Vector3, _fall: bool) -> void: _damage_taken += amount
 	)
 	player.died.connect(func() -> void: _deaths += 1)
+	player.scored.connect(
+		func(_points: int, label: String, _medal: bool) -> void:
+			if label == "Kill":
+				_kill_awards += 1
+	)
 	await _movement(player)
 	await _combat(main, player)
 	await _racks(main, player)
@@ -53,6 +59,7 @@ func _run() -> void:
 	await _health(player)
 	await _sentry(main, player)
 	await _gamepad(main, player)
+	await _score(main, player)
 	_finish()
 
 
@@ -276,6 +283,27 @@ func _sentry(main: Node, player: FpsPlayer) -> void:
 	sentry.set("enabled", false)
 	player.global_position = Vector3(0, 0.05, 20)
 	await _sixtieths(120)
+
+
+func _score(main: Node, player: FpsPlayer) -> void:
+	_check(
+		player.kills() == _kills and _kill_awards == _kills,
+		"every kill is scored, kills %d awards %d of %d" % [player.kills(), _kill_awards, _kills]
+	)
+	_check(player.score() >= 100 * _kills, "kills pay at least 100 each, score %d" % player.score())
+	_check(
+		player.deaths() == _deaths and player.kill_streak() == 0,
+		"dying is counted and ends the streak"
+	)
+	var feed := main.get_node("HUD/ScoreFeed")
+	feed.add_award(50, "Double Kill", true)
+	feed.add_award(50, "Triple Kill", true)
+	feed.add_award(50, "Quad Kill", true)
+	_check(feed.pending_medals() == 2, "medals queue, a bigger multi-kill replaces a waiting one")
+	_check(feed.running_total() >= 150, "popups add up the points")
+	# Stop the chime so nothing is still playing at exit.
+	(feed.get_node("MedalSound") as AudioStreamPlayer).stop()
+	await _sixtieths(5)
 
 
 ## Spawns a fresh dummy straight ahead and aims at its chest.

@@ -34,6 +34,7 @@ use shooter_sim::movement::{MoveEnv, Stance};
 use shooter_sim::net::prediction::{ErrorSmoothing, Prediction, Reconciled};
 use shooter_sim::net::protocol::{OwnState, Predicted};
 use shooter_sim::player::{self, PlayerEvent, PlayerInput, PlayerParams, PlayerState};
+use shooter_sim::score::{Kill, ScoreRules, ScoreState};
 use shooter_sim::weapon::{self, Action, CombatEvent, FireMode, LoadStage, Reload, WeaponId};
 use shooter_sim::{Vec2, Vec3, rng};
 
@@ -224,6 +225,8 @@ pub struct FpsPlayer {
     tilt: f32,
     land_dip: Spring<f32>,
     flinch: Spring<f32>,
+    score: ScoreState,
+    score_rules: ScoreRules,
     look_target: Option<WeaponId>,
     sounds: HashMap<String, Option<Gd<AudioStreamRandomizer>>>,
     /// The last gameplay input came from a gamepad (not the mouse or keyboard).
@@ -305,6 +308,7 @@ impl ICharacterBody3D for FpsPlayer {
         // Quantized exactly as the server will decode it, so prediction matches.
         let input = self.read_input().quantized();
 
+        self.score.tick(dt);
         self.previous_recoil = self.state.combat.recoil;
         self.previous_sway = self.state.combat.scope_sway();
         self.previous_ads = self.state.combat.ads;
@@ -441,6 +445,34 @@ impl FpsPlayer {
 
     #[signal]
     fn respawned();
+
+    /// Emitted for each award a kill earns: the kill itself first, then
+    /// bonuses and medals. `medal` awards (multi-kills, collaterals, streaks)
+    /// also get a HUD banner.
+    #[signal]
+    fn scored(points: i64, label: GString, medal: bool);
+
+    /// Match score so far.
+    #[func]
+    fn score(&self) -> i64 {
+        i64::from(self.score.score)
+    }
+
+    #[func]
+    fn kills(&self) -> i64 {
+        i64::from(self.score.kills)
+    }
+
+    #[func]
+    fn deaths(&self) -> i64 {
+        i64::from(self.score.deaths)
+    }
+
+    /// Kills since the last death.
+    #[func]
+    fn kill_streak(&self) -> i64 {
+        i64::from(self.score.streak)
+    }
 
     /// Horizontal speed in metres per second, for HUD and debugging.
     #[func]
@@ -1034,6 +1066,7 @@ impl FpsPlayer {
             }
             PlayerEvent::Died => {
                 self.respawn_in = self.respawn_delay;
+                self.score.on_death();
                 self.signals().died().emit();
             }
             _ => {}
@@ -1097,8 +1130,9 @@ impl FpsPlayer {
     fn fire_shot(&mut self, weapon: WeaponId, aim_offset: Vec2, shot: u32) {
         let def = weapon.def();
         let origin = self.eye_position();
-        // Per target: damage, headshot, and the direction of the first pellet to hit.
-        let mut targets: Vec<(Gd<Node>, f32, bool, Vector3)> = Vec::new();
+        // Per target: summed damage, any headshot, direction of the first pellet
+        // to hit, and its distance.
+        let mut targets: Vec<(Gd<Node>, f32, bool, Vector3, f32)> = Vec::new();
         let mut first_end = None;
 
         for pellet in 0..def.pellets {
@@ -1118,7 +1152,8 @@ impl FpsPlayer {
                     .done()
                     .to_string()
                     == "head";
-                let mut damage = def.damage_at(origin.distance_to(hit.position));
+                let distance = origin.distance_to(hit.position);
+                let mut damage = def.damage_at(distance);
                 if headshot {
                     damage *= def.damage.headshot;
                 }
@@ -1130,7 +1165,7 @@ impl FpsPlayer {
                         entry.1 += damage;
                         entry.2 |= headshot;
                     }
-                    None => targets.push((target, damage, headshot, direction)),
+                    None => targets.push((target, damage, headshot, direction, distance)),
                 }
                 let surface = surface_meta(Some(collider)).unwrap_or_else(|| "flesh".to_owned());
                 self.spawn_impact(hit.position, hit.normal, false, &surface);
@@ -1143,7 +1178,8 @@ impl FpsPlayer {
         }
 
         let mut confirmed = None;
-        for (mut target, damage, headshot, direction) in targets {
+        let mut kills = Vec::new();
+        for (mut target, damage, headshot, direction, distance) in targets {
             let killed = target
                 .call(
                     "apply_damage",
@@ -1160,12 +1196,20 @@ impl FpsPlayer {
             if killed {
                 let headshot_scale = if headshot { 1.6 } else { 1.0 };
                 self.kick_fov(-self.kill_fov_kick * headshot_scale);
+                kills.push(Kill { distance, headshot });
             }
             let (k, h) = confirmed.unwrap_or((false, false));
             confirmed = Some((k | killed, h | headshot));
         }
         if let Some((killed, headshot)) = confirmed {
             self.signals().hit_confirmed().emit(killed, headshot);
+        }
+        for scored in self.score.on_shot_kills(&self.score_rules, &kills) {
+            self.signals().scored().emit(
+                scored.points as i64,
+                &GString::from(scored.award.label().as_str()),
+                scored.award.is_medal(),
+            );
         }
 
         if def.tracer_every > 0
@@ -1390,6 +1434,7 @@ impl FpsPlayer {
         self.previous_recoil = Vec2::ZERO;
         self.previous_sway = Vec2::ZERO;
         self.previous_ads = 0.0;
+
         self.eye_height = self.params.movement.eye_height(Stance::Standing);
         self.fov_sprint = 1.0;
         self.punch = Spring::default();
