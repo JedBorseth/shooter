@@ -23,8 +23,8 @@ use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState}
 
 /// Bumped whenever the wire format changes; mismatched clients are rejected.
 pub const PROTOCOL_VERSION: u16 = 2;
-/// Cap on redundant inputs per packet (about 270 ms at 60 Hz).
-pub const MAX_INPUTS_PER_PACKET: usize = 16;
+/// Cap on redundant inputs per packet (200 ms at 120 Hz).
+pub const MAX_INPUTS_PER_PACKET: usize = 24;
 /// Wish vectors are sent as signed bytes; prediction must use the same values.
 const WISH_SCALE: f32 = 127.0;
 /// Remote positions are sent in millimetres.
@@ -585,6 +585,8 @@ fn write_move_state(w: &mut BitWriter, m: &MoveState) {
     w.bool(m.jump_held);
     w.bool(m.crouch_held);
     w.bool(m.sprint_held);
+    w.f32(m.jump_buffer);
+    w.f32(m.coyote);
 }
 
 fn read_move_state(r: &mut BitReader) -> DecodeResult<MoveState> {
@@ -597,6 +599,8 @@ fn read_move_state(r: &mut BitReader) -> DecodeResult<MoveState> {
         jump_held: r.bool()?,
         crouch_held: r.bool()?,
         sprint_held: r.bool()?,
+        jump_buffer: r.f32()?,
+        coyote: r.f32()?,
     })
 }
 
@@ -843,7 +847,8 @@ mod tests {
 
     #[test]
     fn oversize_packets_keep_the_newest_inputs_numbered_correctly() {
-        let inputs: Vec<PlayerInput> = (0..20)
+        let extra = 6;
+        let inputs: Vec<PlayerInput> = (0..MAX_INPUTS_PER_PACKET + extra)
             .map(|i| PlayerInput {
                 yaw: i as f32,
                 ..Default::default()
@@ -858,8 +863,8 @@ mod tests {
             panic!("expected input");
         };
         assert_eq!(decoded.inputs.len(), MAX_INPUTS_PER_PACKET);
-        assert_eq!(decoded.first_seq, 104);
-        assert_eq!(decoded.inputs[0].yaw, 4.0);
+        assert_eq!(decoded.first_seq, 100 + extra as u32);
+        assert_eq!(decoded.inputs[0].yaw, extra as f32);
     }
 
     #[test]

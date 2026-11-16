@@ -17,8 +17,8 @@ use crate::movement::MoveState;
 use crate::player::PlayerInput;
 use crate::weapon::{Action, CombatState};
 
-/// About 2 seconds of inputs at 60 Hz; older ones can no longer be acknowledged usefully.
-const HISTORY: usize = 128;
+/// About 2 seconds of inputs; older ones can no longer be acknowledged usefully.
+const HISTORY: usize = 2 * super::TICK_RATE as usize;
 
 /// Position error below this is float noise, not a misprediction.
 pub const POSITION_TOLERANCE: f32 = 0.01;
@@ -154,6 +154,8 @@ fn move_diverged(a: &MoveState, b: &MoveState) -> bool {
         || a.velocity.distance(b.velocity) > VELOCITY_TOLERANCE
         || (a.slide_time - b.slide_time).abs() > TIME_TOLERANCE
         || (a.slide_cooldown - b.slide_cooldown).abs() > TIME_TOLERANCE
+        || (a.jump_buffer - b.jump_buffer).abs() > TIME_TOLERANCE
+        || (a.coyote - b.coyote).abs() > TIME_TOLERANCE
 }
 
 fn combat_diverged(a: &CombatState, b: &CombatState) -> bool {

@@ -99,7 +99,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [ ] Input rate limits: the server applies up to three queued inputs per tick to drain a backlog, so a client that sends inputs faster than the tick rate moves faster. Cap inputs per second per client.
 - [ ] Replays on slopes: `body::place` restores the body's floor contact but not its remembered floor normal, so a correction replayed on the ramp may drift and correct again. Add a ramp run to `godot/tests/net_test.gd` and restore the floor normal if it shows up.
 - [ ] Reliable game events (joins, kills, chat) on the reliable ENet channel, for the kill feed and scoreboard in Phase 4.
-- [ ] Bandwidth: send the owner's full state only when it differs from what the client predicted, or delta-compress it like remote players (about 35 kbps per client with 60 Hz snapshots today).
+- [ ] Bandwidth: send the owner's full state only when it differs from what the client predicted, or delta-compress it like remote players (about 60 kbps down and 27 kbps up per client today, with 60 Hz snapshots and 120 Hz inputs).
 
 ## Phase 3: lag compensation
 

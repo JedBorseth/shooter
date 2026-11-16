@@ -10,7 +10,7 @@ use std::collections::VecDeque;
 use super::Tick;
 use super::protocol::PlayerView;
 
-/// One second at 60 Hz. An older acknowledgement falls back to a full snapshot.
+/// About a second of 60 Hz snapshots. An older acknowledgement falls back to a full snapshot.
 pub const HISTORY_TICKS: usize = 64;
 
 #[derive(Default)]

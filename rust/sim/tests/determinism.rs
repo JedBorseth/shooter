@@ -83,10 +83,13 @@ fn run(ticks: u32) -> (u64, Predicted) {
     (hash, p)
 }
 
+/// One minute of play.
+const TICKS: u32 = 60 * shooter_sim::TICK_RATE;
+
 #[test]
 fn same_inputs_give_bit_identical_state() {
-    let (a, pa) = run(3600);
-    let (b, pb) = run(3600);
+    let (a, pa) = run(TICKS);
+    let (b, pb) = run(TICKS);
     assert_eq!(a, b);
     assert_eq!(pa, pb);
     // The script exercises the whole simulation, not a player standing still.
@@ -105,10 +108,10 @@ fn same_inputs_give_bit_identical_state() {
 /// The hash a reference run produced. CI runs this on Linux, Windows, and
 /// macOS, so a platform whose float math differs fails here before players
 /// see mispredictions. If a deliberate simulation change moves it, update it.
-const REFERENCE_HASH: u64 = 0x2eb6_f5e7_300f_11f6;
+const REFERENCE_HASH: u64 = 0x2fae_dd08_37db_9797;
 
 #[test]
 fn state_matches_the_reference_on_every_platform() {
-    let (hash, _) = run(3600);
+    let (hash, _) = run(TICKS);
     assert_eq!(hash, REFERENCE_HASH, "simulation hash {hash:#018x}");
 }

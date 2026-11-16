@@ -53,7 +53,7 @@ Each phase ends with something playable.
    - ✅ Wire protocol in `rust/sim/src/net`: bit-packed messages; redundant inputs (up to 16 per packet); snapshots carry the receiver's full state bit-exact and every other player quantized (millimetres, 16-bit angles) and delta-compressed against the client's last acknowledged snapshot. Fuzzed against garbage input.
    - ✅ Dedicated server (`NetServer`, `-- --server`) with scripted bots, and a headless Linux server export.
    - ✅ Client (`NetClient`, `-- --connect`): prediction and reconciliation with replay through the same `body::tick` the server runs, visual error smoothing, adaptive snapshot interpolation for remote players, a link conditioner (latency, jitter, loss), and an F3 overlay.
-   - ✅ Determinism: a 3600-tick scripted run hashes the same in debug and release, and on Linux, Windows, and macOS in CI.
+   - ✅ Determinism: a one-minute scripted run hashes the same in debug and release, and on Linux, Windows, and macOS in CI.
    - Next: a third-person character for remote players (they are placeholder capsules), then Phase 3.
 3. **Lag compensation.** The server keeps a hitbox history ring buffer and rewinds to the shooter's view time to check hits. Favor-the-shooter with a rewind cap.
 4. **Game loop.** Team Deathmatch: spawns, health and damage falloff, kill feed, scoreboard, respawn, match timer, first real map.

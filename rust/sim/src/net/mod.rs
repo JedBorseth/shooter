@@ -2,7 +2,8 @@
 //! prediction and reconciliation, snapshot interpolation, and a network
 //! condition simulator.
 //!
-//! Model: the dedicated server is authoritative and runs a fixed 60 Hz tick.
+//! Model: the dedicated server is authoritative and runs the same fixed tick
+//! as client prediction (`TICK_RATE`), sending snapshots at 60 Hz.
 //! Clients send numbered inputs every tick, predict their own player, and
 //! reconcile against snapshots. Other players render about 100 ms in the past.
 //! The transport is Godot's ENet, used only as an unreliable UDP pipe; all
@@ -16,13 +17,11 @@ pub mod prediction;
 pub mod protocol;
 pub mod snapshot_history;
 
-/// Server tick counter. At 60 Hz a `u32` lasts over two years.
+/// Server tick counter. At 120 Hz a `u32` lasts over a year.
 pub type Tick = u32;
 
-/// Simulation ticks per second, on the server and in client prediction.
-pub const TICK_RATE: u32 = 60;
-/// Seconds per tick.
-pub const TICK_DT: f32 = 1.0 / TICK_RATE as f32;
+/// The simulation tick, shared by the server and client prediction.
+pub use crate::{TICK_DT, TICK_RATE};
 /// UDP port the dedicated server listens on by default.
 pub const DEFAULT_PORT: u16 = 27015;
 /// ENet channel for snapshots and inputs (sent unreliable, unsequenced).

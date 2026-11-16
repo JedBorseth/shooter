@@ -1,6 +1,6 @@
 //! Dedicated server: the authority for every player.
 //!
-//! Each 60 Hz physics tick it reads client packets, applies each player's
+//! Each physics tick (`TICK_RATE`) it reads client packets, applies each player's
 //! queued inputs to that player's body (the same `body::tick` the client
 //! predicts with), then sends every client a snapshot: their own state at full
 //! precision plus everyone else, delta-compressed against the snapshot that
@@ -60,9 +60,9 @@ pub struct NetServer {
     /// Scripted players to spawn, for testing with one client.
     #[export]
     bots: i32,
-    /// Send a snapshot every this many ticks (1 = 60 Hz).
-    #[export(range = (1.0, 6.0))]
-    #[init(val = 1)]
+    /// Send a snapshot every this many ticks (2 = 60 Hz at the 120 Hz tick).
+    #[export(range = (1.0, 8.0))]
+    #[init(val = 2)]
     snapshot_interval: i32,
     /// The map to load. Client-only nodes (see `CLIENT_ONLY_NODES`) are removed.
     #[export]

@@ -8,6 +8,8 @@
 
 use std::collections::VecDeque;
 
+#[cfg(test)]
+use super::TICK_DT;
 use super::{TICK_RATE, Tick};
 
 /// Estimates the server tick and the delayed tick to render remote players at.
@@ -49,7 +51,7 @@ impl SnapshotClock {
             return;
         }
         let error = tick - self.server_tick;
-        if error.abs() > 30.0 {
+        if error.abs() > f64::from(TICK_RATE) / 2.0 {
             // Half a second off: a stall or a server restart. Start over.
             self.server_tick = tick;
             self.render_tick = tick - self.delay();
@@ -81,7 +83,7 @@ impl SnapshotClock {
         // Run up to 10% fast or slow to close the gap without visible jumps.
         let rate = 1.0 + (error * 0.1).clamp(-0.1, 0.1);
         self.render_tick += ticks * rate;
-        if error.abs() > 15.0 {
+        if error.abs() > f64::from(TICK_RATE) / 4.0 {
             self.render_tick = target;
         }
         self.render_tick
@@ -212,28 +214,32 @@ mod tests {
     #[test]
     fn clock_renders_behind_the_server_and_tracks_it() {
         let mut clock = SnapshotClock::new(0.1);
-        let dt = 1.0 / 60.0;
+        clock.set_interval(2);
+        let frame = 1.0 / 60.0;
         let mut render = 0.0;
-        for tick in 1000..1600u32 {
-            // Snapshots arrive with up to 2 ticks of jitter.
-            clock.on_snapshot(tick - (crate::rng::hash(tick, 3) % 3));
-            render = clock.advance(dt);
+        let mut newest = 0;
+        for i in 0..600u32 {
+            // 60 Hz snapshots (every 2 ticks), some a snapshot late.
+            newest = 1000 + 2 * i;
+            let late = 2 * (crate::rng::hash(i, 3) % 2);
+            clock.on_snapshot(newest - late);
+            render = clock.advance(frame);
         }
-        let behind = clock.server_tick() - render;
+        let behind = (clock.server_tick() - render) / f64::from(TICK_RATE);
         assert!(
-            (5.0..12.0).contains(&behind),
-            "renders about 100 ms behind, got {behind:.2} ticks"
+            (0.08..0.2).contains(&behind),
+            "renders about 100 ms behind, got {behind:.3} s"
         );
-        assert!((clock.server_tick() - 1599.0).abs() < 3.0);
+        assert!((clock.server_tick() - f64::from(newest)).abs() < f64::from(TICK_RATE) * 0.05);
     }
 
     #[test]
     fn clock_resyncs_after_a_stall() {
         let mut clock = SnapshotClock::new(0.1);
         clock.on_snapshot(100);
-        clock.advance(1.0 / 60.0);
+        clock.advance(TICK_DT);
         clock.on_snapshot(5000);
-        let render = clock.advance(1.0 / 60.0);
+        let render = clock.advance(TICK_DT);
         assert!((render - (5000.0 - clock.delay())).abs() < 2.0);
     }
 
