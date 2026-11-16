@@ -29,7 +29,7 @@ const DEFAULTS := {
 	&"weapons_volume": 0.8,
 	&"effects_volume": 0.8,
 	&"ui_volume": 0.7,
-	&"master_server": "",
+	&"master_server": "50.67.76.237:27010",
 }
 
 ## Config file section for each setting.
@@ -82,7 +82,7 @@ var weapons_volume: float = DEFAULTS[&"weapons_volume"]
 var effects_volume: float = DEFAULTS[&"effects_volume"]
 var ui_volume: float = DEFAULTS[&"ui_volume"]
 ## Master server (`host[:port]`) the server browser lists internet servers
-## from; empty for none.
+## from. Blank values from older installs use the public directory.
 var master_server: String = DEFAULTS[&"master_server"]
 
 var _dirty := false
@@ -243,7 +243,8 @@ func _sanitize(key: StringName, value: Variant) -> Variant:
 			return clampf(float(value), limits.x, limits.y)
 		TYPE_STRING:
 			if value is String or value is StringName:
-				return String(value).strip_edges().left(255)
+				var text := String(value).strip_edges().left(255)
+				return text if not text.is_empty() else default
 	return default
 
 

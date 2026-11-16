@@ -4,7 +4,7 @@ extends Node
 ## From the command line, after `--`:
 ##
 ##   --server [--port N] [--bots N] [--bot-damage] [--name NAME] [--master HOST[:PORT]]
-##            [--query-port N]
+##            [--query-port N] [--map arena|nuketown]
 ##                                    run as a dedicated server (use with --headless);
 ##                                    with --bot-damage the bots' bursts hurt players.
 ##                                    Server browsers see NAME; with --master the
@@ -22,12 +22,16 @@ extends Node
 
 const SERVER_SCENE := "res://scenes/server.tscn"
 const ARENA_SCENE := "res://scenes/main.tscn"
+const MAP_SCENES := {
+	"arena": ARENA_SCENE,
+	"nuketown": "res://scenes/nuketown.tscn",
+}
 const TITLE_SCENE := "res://scenes/title_screen.tscn"
 const REMOTE_PLAYER_SCENE := "res://scenes/remote_player.tscn"
 const OVERLAY_SCRIPT := "res://scripts/net/net_overlay.gd"
 const STATUS_SCRIPT := "res://scripts/net/net_status.gd"
 const DEFAULT_PORT := 27015
-const OFFLINE_ONLY_NODES := ["Targets", "Sentry"]
+const OFFLINE_ONLY_NODES := ["Targets", "Sentry", "SecretLaser"]
 
 ## Set by `leave`: the title screen opens the server browser and shows
 ## `browser_message` (why we left), then clears both.
@@ -80,7 +84,10 @@ func join(target: String, options: Dictionary = {}, arena: PackedScene = null) -
 	var tree := get_tree()
 	var main := tree.current_scene
 	if main == null or main.get_node_or_null("Player") == null:
-		var scene := arena if arena != null else load(ARENA_SCENE) as PackedScene
+		var scene := (
+			arena if arena != null else load(map_path(String(options.get("map", "Arena"))))
+			as PackedScene
+		)
 		if tree.change_scene_to_packed(scene) != OK:
 			push_error("Net.join: cannot load the arena")
 			return
@@ -101,9 +108,22 @@ func leave(message := "") -> void:
 	get_tree().change_scene_to_file(TITLE_SCENE)
 
 
+## Only known local map scenes can be selected by a server listing.
+static func map_path(map_name: String) -> String:
+	return MAP_SCENES.get(map_name.to_lower(), "")
+
+
 func _start_server(options: Dictionary) -> void:
 	var tree := get_tree()
+	var selected_map := String(options.get("map", "arena"))
+	var scene_path := map_path(selected_map)
+	if scene_path.is_empty():
+		push_error("Unknown server map: %s" % selected_map)
+		tree.quit(1)
+		return
 	var server := (load(SERVER_SCENE) as PackedScene).instantiate() as NetServer
+	server.map_scene = load(scene_path) as PackedScene
+	server.map_name = "Nuketown" if selected_map.to_lower() == "nuketown" else "Arena"
 	server.port = int(options.get("port", DEFAULT_PORT))
 	server.bots = int(options.get("bots", 0))
 	server.bots_deal_damage = options.has("bot-damage")
