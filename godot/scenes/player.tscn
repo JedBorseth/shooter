@@ -11,6 +11,8 @@
 [ext_resource type="PackedScene" path="res://scenes/characters/fp_arms.tscn" id="9_arms"]
 [ext_resource type="PackedScene" path="res://scenes/weapons/laser_view.tscn" id="10_laser"]
 [ext_resource type="PackedScene" path="res://scenes/effects/laser_beam.tscn" id="11_beam"]
+[ext_resource type="PackedScene" path="res://scenes/weapons/lsw6_view.tscn" id="12_lsw6"]
+[ext_resource type="PackedScene" path="res://scenes/weapons/br3_view.tscn" id="13_br3"]
 
 [sub_resource type="Gradient" id="Gradient_mote_fade"]
 offsets = PackedFloat32Array(0, 0.2, 0.8, 1)
@@ -110,5 +112,9 @@ near = 0.03
 [node name="M40" parent="Camera/Viewmodel" instance=ExtResource("8_m40")]
 
 [node name="Laser" parent="Camera/Viewmodel" instance=ExtResource("10_laser")]
+
+[node name="LSW6" parent="Camera/Viewmodel" instance=ExtResource("12_lsw6")]
+
+[node name="BR3" parent="Camera/Viewmodel" instance=ExtResource("13_br3")]
 
 [node name="Arms" parent="Camera/Viewmodel" instance=ExtResource("9_arms")]

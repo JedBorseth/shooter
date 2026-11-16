@@ -40,10 +40,16 @@ impl WeaponId {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
 pub enum FireMode {
     Auto,
     Semi,
+    /// A press fires `rounds` shots at the weapon's fire rate, even if the
+    /// trigger is let go, then waits `delay` seconds before the next burst.
+    Burst {
+        rounds: u8,
+        delay: f32,
+    },
 }
 
 /// Which loadout slot a weapon goes in. Picking one up replaces that slot.
@@ -272,7 +278,7 @@ macro_rules! builtin_files {
 /// The weapon files in `godot/data/weapons`, compiled in.
 pub fn builtin() -> Vec<WeaponDef> {
     parse_all(builtin_files![
-        "ak47", "laser", "m1911", "m40", "m4", "m870", "pdw9"
+        "ak47", "br3", "laser", "lsw6", "m1911", "m40", "m4", "m870", "pdw9"
     ])
     .expect("built-in weapon files are valid")
 }
@@ -317,7 +323,9 @@ mod tests {
         let keys: Vec<_> = table().iter().map(|d| d.key.as_str()).collect();
         assert_eq!(
             keys,
-            ["ak47", "laser", "m1911", "m4", "m40", "m870", "pdw9"]
+            [
+                "ak47", "br3", "laser", "lsw6", "m1911", "m4", "m40", "m870", "pdw9"
+            ]
         );
         assert_eq!(WeaponId::expect("m4").def().name, "M4A1");
     }

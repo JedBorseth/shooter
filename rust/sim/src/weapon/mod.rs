@@ -112,6 +112,8 @@ pub struct CombatState {
     pub holding_breath: bool,
     /// Reload was pressed while working the bolt or pump; it starts once the cycle ends.
     pub reload_queued: bool,
+    /// Rounds left in the current burst (burst-fire weapons).
+    pub burst_left: u8,
 }
 
 impl CombatState {
@@ -135,6 +137,7 @@ impl CombatState {
             winded: 0.0,
             holding_breath: false,
             reload_queued: false,
+            burst_left: 0,
         }
     }
 
@@ -312,8 +315,9 @@ pub fn step(
     dt: f32,
     events: &mut Vec<CombatEvent>,
 ) {
-    let was_firing = state.fire_held;
-    let fire_pressed = input.fire && !was_firing;
+    // A burst keeps firing after the trigger is let go.
+    let was_firing = state.fire_held || state.burst_left > 0;
+    let fire_pressed = input.fire && !state.fire_held;
     state.fire_held = input.fire;
     // During a spray a slightly negative cooldown carries into the next shot so the
     // fire rate stays exact even when the interval isn't a whole number of ticks.
@@ -358,6 +362,7 @@ pub fn step(
     let trigger = match def.fire_mode {
         FireMode::Auto => input.fire,
         FireMode::Semi => fire_pressed,
+        FireMode::Burst { .. } => state.burst_left > 0 || fire_pressed,
     };
     // Firing with a round loaded interrupts a shell-by-shell reload.
     if trigger && matches!(state.action, Action::Loading { .. }) && state.weapon().magazine > 0 {
@@ -377,6 +382,7 @@ pub fn step(
     let ready = matches!(state.action, Action::Ready) && !ctx.sprinting && state.sprint_out <= 0.0;
     if trigger && ready && state.cooldown <= 0.0 {
         if state.weapon().magazine == 0 {
+            state.burst_left = 0;
             if fire_pressed {
                 events.push(CombatEvent::DryFire {
                     weapon: state.weapon().id,
@@ -384,6 +390,11 @@ pub fn step(
             }
             try_start_reload(state, events);
         } else {
+            if let FireMode::Burst { rounds, .. } = def.fire_mode
+                && state.burst_left == 0
+            {
+                state.burst_left = rounds.max(1);
+            }
             fire(state, ctx, events);
         }
     } else if state.weapon().magazine == 0
@@ -409,6 +420,7 @@ fn pick_up(state: &mut CombatState, weapon: WeaponId, events: &mut Vec<CombatEve
     state.slots[usize::from(slot)] = WeaponState::full(weapon);
     state.active = slot;
     state.burst = 0;
+    state.burst_left = 0;
     state.cooldown = 0.0;
     state.ads = 0.0;
     state.reload_queued = false;
@@ -516,6 +528,8 @@ fn advance_action(state: &mut CombatState, dt: f32, events: &mut Vec<CombatEvent
             }
             state.active = to;
             state.burst = 0;
+            state.burst_left = 0;
+            state.burst_left = 0;
             state.cooldown = 0.0;
             state.action = Action::Raising {
                 remaining: state.def().raise_time,
@@ -614,6 +628,13 @@ fn fire(state: &mut CombatState, ctx: &CombatContext, events: &mut Vec<CombatEve
     slot.magazine -= 1;
     // Accumulate so the average fire rate is exact even when the interval is not a whole number of ticks.
     state.cooldown += def.fire_interval();
+    if let FireMode::Burst { delay, .. } = def.fire_mode {
+        state.burst_left = state.burst_left.saturating_sub(1);
+        if state.burst_left == 0 || slot.magazine == 0 {
+            state.burst_left = 0;
+            state.cooldown += delay;
+        }
+    }
     state.burst = state.burst.saturating_add(1);
     state.since_shot = 0.0;
     state.shots_fired = state.shots_fired.wrapping_add(1);

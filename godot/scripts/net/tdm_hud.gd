@@ -21,6 +21,8 @@ const WEAPON_ROLES := {
 	"m4": "Assault rifle. Accurate, all-round.",
 	"ak47": "Assault rifle. Hits harder, kicks harder.",
 	"pdw9": "SMG. Fast fire and handling, short range.",
+	"br3": "Burst rifle. Three rounds a pull; one burst up close.",
+	"lsw6": "Light machine gun. 75 rounds, slow to aim.",
 	"m870": "Pump shotgun. One shot up close.",
 	"m40": "Bolt-action sniper. One shot to the chest.",
 }

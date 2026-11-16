@@ -540,3 +540,60 @@ fn refill_ammo_never_skips_a_bolt_cycle() {
     assert!(events.is_empty());
     assert_eq!(s.action, Action::Ready);
 }
+
+#[test]
+fn a_burst_fires_three_rounds_from_one_press() {
+    let id = WeaponId::expect("br3");
+    let mut s = CombatState::new([id, WeaponId::expect("m1911")]);
+    s.action = Action::Ready;
+    let ctx = CombatContext::default();
+    let mut events = Vec::new();
+    let mut shots = 0;
+    // Press for one tick, then let go: the burst still fires all three.
+    for tick in 0..60 {
+        let input = CombatInput {
+            fire: tick == 0,
+            ..Default::default()
+        };
+        events.clear();
+        step(&mut s, &input, &ctx, 1.0 / 120.0, &mut events);
+        shots += events
+            .iter()
+            .filter(|e| matches!(e, CombatEvent::Fired { .. }))
+            .count();
+    }
+    assert_eq!(shots, 3);
+    assert_eq!(s.weapon().magazine, 27);
+    assert_eq!(s.burst_left, 0);
+}
+
+#[test]
+fn holding_the_trigger_waits_out_the_delay_between_bursts() {
+    let id = WeaponId::expect("br3");
+    let mut s = CombatState::new([id, WeaponId::expect("m1911")]);
+    s.action = Action::Ready;
+    let ctx = CombatContext::default();
+    let mut events = Vec::new();
+    let mut fired_at = Vec::new();
+    // Tap every 10 ticks for a second.
+    for tick in 0..120 {
+        let input = CombatInput {
+            fire: tick % 10 < 5,
+            ..Default::default()
+        };
+        events.clear();
+        step(&mut s, &input, &ctx, 1.0 / 120.0, &mut events);
+        if events
+            .iter()
+            .any(|e| matches!(e, CombatEvent::Fired { .. }))
+        {
+            fired_at.push(tick);
+        }
+    }
+    // Bursts of three, 1/15 s apart, then at least 0.2 s before the next.
+    assert!(
+        fired_at.len() >= 6 && fired_at.len() % 3 == 0,
+        "{fired_at:?}"
+    );
+    assert!(fired_at[3] - fired_at[2] >= 24 + 8, "{fired_at:?}");
+}

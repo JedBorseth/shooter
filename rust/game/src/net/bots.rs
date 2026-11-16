@@ -426,9 +426,15 @@ impl BotBrain {
                 }
                 want.fire = tick < self.burst_until;
             }
-            FireMode::Semi => {
-                // Taps, no faster than a person pulls a trigger.
-                let gap = (60.0 / def.rounds_per_minute).max(def.cycle_time).max(0.15)
+            FireMode::Semi | FireMode::Burst { .. } => {
+                // Taps (one per burst), no faster than a person pulls a trigger.
+                let between = match def.fire_mode {
+                    FireMode::Burst { rounds, delay } => {
+                        60.0 / def.rounds_per_minute * f32::from(rounds) + delay
+                    }
+                    _ => 60.0 / def.rounds_per_minute,
+                };
+                let gap = between.max(def.cycle_time).max(0.15)
                     * if self.skill == Skill::Easy { 1.6 } else { 1.15 };
                 if tick >= self.pause_until {
                     want.fire = true;
@@ -587,8 +593,12 @@ struct Want {
     reload: bool,
 }
 
+/// Whether the trigger must be let go between shots (semi-automatics and bursts).
 fn is_semi(state: &Predicted) -> bool {
-    state.state.combat.weapon().id.def().fire_mode == FireMode::Semi
+    !matches!(
+        state.state.combat.weapon().id.def().fire_mode,
+        FireMode::Auto
+    )
 }
 
 fn horizontal_distance(a: Vector3, b: Vector3) -> f32 {

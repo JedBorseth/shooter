@@ -39,7 +39,7 @@ import numpy as np
 
 REPO = Path(__file__).resolve().parent.parent
 WEAPONS_DIR = REPO / "godot/assets/weapons"
-ALL = ["m4", "ak47", "pdw9", "m870", "m40", "pistol"]
+ALL = ["m4", "ak47", "pdw9", "m870", "m40", "pistol", "lsw6", "br3"]
 SIZES = {"pistol": 1024}
 DEFAULT_SIZE = 2048
 
