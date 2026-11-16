@@ -60,6 +60,18 @@ func _spawning(director: ZombieDirector) -> void:
 
 func _chase(director: ZombieDirector, player: FpsPlayer) -> void:
 	var zombie: Zombie = director.zombies()[0]
+	# Zombies spawn outside, tear down their window's barrier, and climb in.
+	_check(zombie.behind_barrier(), "the zombie spawns behind a boarded window")
+	for i in 20 * 60:
+		if not zombie.behind_barrier():
+			break
+		await _sixtieths(1)
+	_check(not zombie.behind_barrier(), "the zombie tears the boards down and climbs in")
+	var bare := 0
+	for barrier: Node in current_scene.get_node("Barriers").get_children():
+		if barrier.boards() == 0:
+			bare += 1
+	_check(bare >= 1, "a barrier lost all its boards")
 	await _sixtieths(30)
 	var start := zombie.global_position
 	var to_player := _flat(player.global_position - start)
@@ -182,12 +194,33 @@ func _economy() -> void:
 		"the player walks through the gate, at %s" % player.global_position
 	)
 
+	# Boarding a window back up pays 10 points a board.
+	var before := 0
+	var barrier := arena.get_node("Barriers/Barrier0")
+	barrier.tear()
+	barrier.tear()
+	_check(barrier.boards() == 4, "zombies can tear boards off, %d left" % barrier.boards())
+	player.global_position = Vector3(-14, 0.05, -21.8)
+	player.set_look(0.0, -0.3)
+	await _sixtieths(4)
+	_check(
+		player.interact_prompt() == "[F] Rebuild barrier",
+		"a damaged barrier offers a rebuild, got '%s'" % player.interact_prompt()
+	)
+	before = director.points()
+	await _tap("interact")
+	await _sixtieths(2)
+	_check(barrier.boards() == 5, "a press puts a board back, %d up" % barrier.boards())
+	_check(director.points() - before == 10, "a board pays 10 points")
+	player.global_position = Vector3(-22, 0.05, 4)
+	await _sixtieths(10)
+
 	# Power-ups, dropped at the player's feet.
 	director.drop_power_up("double_points", player.global_position)
 	await _sixtieths(2)
 	_check(director.drops_on_ground() == 0, "walking over a power-up collects it")
 	_check(director.double_points_left() > 29.0, "Double Points runs for 30 seconds")
-	var before := director.points()
+	before = director.points()
 	director.on_zombie_hurt(false, false, Vector3.ZERO)
 	_check(director.points() - before == 20, "Double Points pays 20 for a hit")
 	await _tap("fire")

@@ -1,0 +1,56 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/zombies_barrier.gd" id="1_barrier"]
+[ext_resource type="Material" path="res://materials/world/wood.tres" id="2_wood"]
+[ext_resource type="AudioStream" path="res://assets/audio/impacts/wood_1.ogg" id="3_sound"]
+
+[sub_resource type="BoxShape3D" id="Shape_boards"]
+size = Vector3(2.0, 2.2, 0.3)
+
+[sub_resource type="BoxMesh" id="Mesh_board"]
+size = Vector3(2.1, 0.2, 0.05)
+
+[node name="Barrier" type="StaticBody3D"]
+script = ExtResource("1_barrier")
+metadata/surface = "wood"
+
+[node name="Collision" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1, 0)
+shape = SubResource("Shape_boards")
+
+[node name="Boards" type="Node3D" parent="."]
+
+[node name="Board0" type="MeshInstance3D" parent="Boards"]
+transform = Transform3D(0.9982, -0.0600, 0, 0.0600, 0.9982, 0, 0, 0, 1, 0, 0.35, 0)
+mesh = SubResource("Mesh_board")
+surface_material_override/0 = ExtResource("2_wood")
+
+[node name="Board1" type="MeshInstance3D" parent="Boards"]
+transform = Transform3D(0.9968, 0.0799, 0, -0.0799, 0.9968, 0, 0, 0, 1, 0, 0.67, 0)
+mesh = SubResource("Mesh_board")
+surface_material_override/0 = ExtResource("2_wood")
+
+[node name="Board2" type="MeshInstance3D" parent="Boards"]
+transform = Transform3D(0.9992, -0.0400, 0, 0.0400, 0.9992, 0, 0, 0, 1, 0, 0.99, 0)
+mesh = SubResource("Mesh_board")
+surface_material_override/0 = ExtResource("2_wood")
+
+[node name="Board3" type="MeshInstance3D" parent="Boards"]
+transform = Transform3D(0.9988, 0.0500, 0, -0.0500, 0.9988, 0, 0, 0, 1, 0, 1.31, 0)
+mesh = SubResource("Mesh_board")
+surface_material_override/0 = ExtResource("2_wood")
+
+[node name="Board4" type="MeshInstance3D" parent="Boards"]
+transform = Transform3D(0.9960, -0.0899, 0, 0.0899, 0.9960, 0, 0, 0, 1, 0, 1.63, 0)
+mesh = SubResource("Mesh_board")
+surface_material_override/0 = ExtResource("2_wood")
+
+[node name="Board5" type="MeshInstance3D" parent="Boards"]
+transform = Transform3D(0.9996, 0.0300, 0, -0.0300, 0.9996, 0, 0, 0, 1, 0, 1.95, 0)
+mesh = SubResource("Mesh_board")
+surface_material_override/0 = ExtResource("2_wood")
+
+[node name="Sound" type="AudioStreamPlayer3D" parent="."]
+stream = ExtResource("3_sound")
+unit_size = 6.0
+bus = &"Effects"

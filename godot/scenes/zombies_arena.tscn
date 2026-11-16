@@ -1,4 +1,4 @@
-[gd_scene format=3 uid="uid://d34k0akqxx8w0"]
+[gd_scene format=3 uid="uid://5gegtuncri2d"]
 
 [ext_resource type="PackedScene" path="res://scenes/player.tscn" id="1_player"]
 [ext_resource type="LightmapGIData" uid="uid://brl4t7h4kwi7r" path="res://scenes/zombies_arena.lmbake" id="2_hkte1"]
@@ -18,6 +18,7 @@
 [ext_resource type="Script" uid="uid://dct36uf5dfgpr" path="res://scripts/lamp_flicker.gd" id="23_flicker"]
 [ext_resource type="PackedScene" path="res://scenes/zombies/door.tscn" id="24_door"]
 [ext_resource type="PackedScene" path="res://scenes/zombies/power_up.tscn" id="25_power_up"]
+[ext_resource type="PackedScene" path="res://scenes/zombies/barrier.tscn" id="26_barrier"]
 [ext_resource type="Material" path="res://materials/world/barrel_blue.tres" id="m_barrel_blue"]
 [ext_resource type="Material" path="res://materials/world/yard_pillar.tres" id="m_cover"]
 [ext_resource type="Material" path="res://materials/world/range_crate.tres" id="m_crate"]
@@ -82,6 +83,12 @@ emission_energy_multiplier = 6.0
 material = SubResource("Mat_lamp")
 radius = 0.22
 height = 0.44
+
+[sub_resource type="BoxShape3D" id="Shape_window_x"]
+size = Vector3(1.9, 2.2, 0.4)
+
+[sub_resource type="BoxShape3D" id="Shape_window_z"]
+size = Vector3(0.4, 2.2, 1.9)
 
 [node name="ZombiesArena" type="Node3D" unique_id=250796776]
 
@@ -242,7 +249,255 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 33.75, 2.5, 19.5)
 size = Vector3(18.5, 5, 1)
 material = ExtResource("m_wall")
 
-[node name="MapMesh" type="MeshInstance3D" parent="." unique_id=2108903488]
+[node name="Window0Cut" type="CSGBox3D" parent="Map" unique_id=979271039]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -14, 1.1, -24.5)
+operation = 2
+size = Vector3(1.9, 2.2, 1.4)
+material = ExtResource("m_wall")
+
+[node name="Window0Sill" type="CSGBox3D" parent="Map" unique_id=722850564]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -14, -0.5, -24.5)
+size = Vector3(2, 1, 1.2)
+material = ExtResource("m_floor")
+
+[node name="Window0Pad" type="CSGBox3D" parent="Map" unique_id=461792456]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -14, -0.5, -27.5)
+size = Vector3(4.6, 1, 4)
+material = ExtResource("m_floor")
+
+[node name="Window0Back" type="CSGBox3D" parent="Map" unique_id=886405269]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -14, 2, -29.75)
+size = Vector3(5.6, 4, 0.5)
+material = ExtResource("m_wall")
+
+[node name="Window0SideL" type="CSGBox3D" parent="Map" unique_id=233359986]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16.55, 2, -27.5)
+size = Vector3(0.5, 4, 4)
+material = ExtResource("m_wall")
+
+[node name="Window0SideR" type="CSGBox3D" parent="Map" unique_id=74404387]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -11.45, 2, -27.5)
+size = Vector3(0.5, 4, 4)
+material = ExtResource("m_wall")
+
+[node name="Window1Cut" type="CSGBox3D" parent="Map" unique_id=457219616]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14, 1.1, -24.5)
+operation = 2
+size = Vector3(1.9, 2.2, 1.4)
+material = ExtResource("m_wall")
+
+[node name="Window1Sill" type="CSGBox3D" parent="Map" unique_id=393207285]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14, -0.5, -24.5)
+size = Vector3(2, 1, 1.2)
+material = ExtResource("m_floor")
+
+[node name="Window1Pad" type="CSGBox3D" parent="Map" unique_id=1053763076]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14, -0.5, -27.5)
+size = Vector3(4.6, 1, 4)
+material = ExtResource("m_floor")
+
+[node name="Window1Back" type="CSGBox3D" parent="Map" unique_id=643691693]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14, 2, -29.75)
+size = Vector3(5.6, 4, 0.5)
+material = ExtResource("m_wall")
+
+[node name="Window1SideL" type="CSGBox3D" parent="Map" unique_id=1517210702]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 11.45, 2, -27.5)
+size = Vector3(0.5, 4, 4)
+material = ExtResource("m_wall")
+
+[node name="Window1SideR" type="CSGBox3D" parent="Map" unique_id=1076185316]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16.55, 2, -27.5)
+size = Vector3(0.5, 4, 4)
+material = ExtResource("m_wall")
+
+[node name="Window2Cut" type="CSGBox3D" parent="Map" unique_id=1936569592]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -14, 1.1, 24.5)
+operation = 2
+size = Vector3(1.9, 2.2, 1.4)
+material = ExtResource("m_wall")
+
+[node name="Window2Sill" type="CSGBox3D" parent="Map" unique_id=1638818965]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -14, -0.5, 24.5)
+size = Vector3(2, 1, 1.2)
+material = ExtResource("m_floor")
+
+[node name="Window2Pad" type="CSGBox3D" parent="Map" unique_id=1943502086]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -14, -0.5, 27.5)
+size = Vector3(4.6, 1, 4)
+material = ExtResource("m_floor")
+
+[node name="Window2Back" type="CSGBox3D" parent="Map" unique_id=1054762094]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -14, 2, 29.75)
+size = Vector3(5.6, 4, 0.5)
+material = ExtResource("m_wall")
+
+[node name="Window2SideL" type="CSGBox3D" parent="Map" unique_id=1591771535]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16.55, 2, 27.5)
+size = Vector3(0.5, 4, 4)
+material = ExtResource("m_wall")
+
+[node name="Window2SideR" type="CSGBox3D" parent="Map" unique_id=948427991]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -11.45, 2, 27.5)
+size = Vector3(0.5, 4, 4)
+material = ExtResource("m_wall")
+
+[node name="Window3Cut" type="CSGBox3D" parent="Map" unique_id=1409225118]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14, 1.1, 24.5)
+operation = 2
+size = Vector3(1.9, 2.2, 1.4)
+material = ExtResource("m_wall")
+
+[node name="Window3Sill" type="CSGBox3D" parent="Map" unique_id=482888214]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14, -0.5, 24.5)
+size = Vector3(2, 1, 1.2)
+material = ExtResource("m_floor")
+
+[node name="Window3Pad" type="CSGBox3D" parent="Map" unique_id=1894921260]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14, -0.5, 27.5)
+size = Vector3(4.6, 1, 4)
+material = ExtResource("m_floor")
+
+[node name="Window3Back" type="CSGBox3D" parent="Map" unique_id=939421860]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14, 2, 29.75)
+size = Vector3(5.6, 4, 0.5)
+material = ExtResource("m_wall")
+
+[node name="Window3SideL" type="CSGBox3D" parent="Map" unique_id=1507947264]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 11.45, 2, 27.5)
+size = Vector3(0.5, 4, 4)
+material = ExtResource("m_wall")
+
+[node name="Window3SideR" type="CSGBox3D" parent="Map" unique_id=532400841]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16.55, 2, 27.5)
+size = Vector3(0.5, 4, 4)
+material = ExtResource("m_wall")
+
+[node name="Window4Cut" type="CSGBox3D" parent="Map" unique_id=989525375]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -24.5, 1.1, -17)
+operation = 2
+size = Vector3(1.4, 2.2, 1.9)
+material = ExtResource("m_wall")
+
+[node name="Window4Sill" type="CSGBox3D" parent="Map" unique_id=878563634]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -24.5, -0.5, -17)
+size = Vector3(1.2, 1, 2)
+material = ExtResource("m_floor")
+
+[node name="Window4Pad" type="CSGBox3D" parent="Map" unique_id=1585050807]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -27.5, -0.5, -17)
+size = Vector3(4, 1, 4.6)
+material = ExtResource("m_floor")
+
+[node name="Window4Back" type="CSGBox3D" parent="Map" unique_id=1990466088]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -29.75, 2, -17)
+size = Vector3(0.5, 4, 5.6)
+material = ExtResource("m_wall")
+
+[node name="Window4SideL" type="CSGBox3D" parent="Map" unique_id=268802667]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -27.5, 2, -19.55)
+size = Vector3(4, 4, 0.5)
+material = ExtResource("m_wall")
+
+[node name="Window4SideR" type="CSGBox3D" parent="Map" unique_id=1803577042]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -27.5, 2, -14.45)
+size = Vector3(4, 4, 0.5)
+material = ExtResource("m_wall")
+
+[node name="Window5Cut" type="CSGBox3D" parent="Map" unique_id=1543006319]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -24.5, 1.1, 22)
+operation = 2
+size = Vector3(1.4, 2.2, 1.9)
+material = ExtResource("m_wall")
+
+[node name="Window5Sill" type="CSGBox3D" parent="Map" unique_id=2067840490]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -24.5, -0.5, 22)
+size = Vector3(1.2, 1, 2)
+material = ExtResource("m_floor")
+
+[node name="Window5Pad" type="CSGBox3D" parent="Map" unique_id=1941648468]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -27.5, -0.5, 22)
+size = Vector3(4, 1, 4.6)
+material = ExtResource("m_floor")
+
+[node name="Window5Back" type="CSGBox3D" parent="Map" unique_id=1006825492]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -29.75, 2, 22)
+size = Vector3(0.5, 4, 5.6)
+material = ExtResource("m_wall")
+
+[node name="Window5SideL" type="CSGBox3D" parent="Map" unique_id=1676497260]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -27.5, 2, 19.45)
+size = Vector3(4, 4, 0.5)
+material = ExtResource("m_wall")
+
+[node name="Window5SideR" type="CSGBox3D" parent="Map" unique_id=36283852]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -27.5, 2, 24.55)
+size = Vector3(4, 4, 0.5)
+material = ExtResource("m_wall")
+
+[node name="Window6Cut" type="CSGBox3D" parent="Map" unique_id=779221640]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24.5, 1.1, -17)
+operation = 2
+size = Vector3(1.4, 2.2, 1.9)
+material = ExtResource("m_wall")
+
+[node name="Window6Sill" type="CSGBox3D" parent="Map" unique_id=199276499]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24.5, -0.5, -17)
+size = Vector3(1.2, 1, 2)
+material = ExtResource("m_floor")
+
+[node name="Window6Pad" type="CSGBox3D" parent="Map" unique_id=1340712140]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 27.5, -0.5, -17)
+size = Vector3(4, 1, 4.6)
+material = ExtResource("m_floor")
+
+[node name="Window6Back" type="CSGBox3D" parent="Map" unique_id=533719247]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 29.75, 2, -17)
+size = Vector3(0.5, 4, 5.6)
+material = ExtResource("m_wall")
+
+[node name="Window6SideL" type="CSGBox3D" parent="Map" unique_id=2056146787]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 27.5, 2, -19.55)
+size = Vector3(4, 4, 0.5)
+material = ExtResource("m_wall")
+
+[node name="Window6SideR" type="CSGBox3D" parent="Map" unique_id=720908727]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 27.5, 2, -14.45)
+size = Vector3(4, 4, 0.5)
+material = ExtResource("m_wall")
+
+[node name="Window7Cut" type="CSGBox3D" parent="Map" unique_id=1199222116]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24.5, 1.1, 22)
+operation = 2
+size = Vector3(1.4, 2.2, 1.9)
+material = ExtResource("m_wall")
+
+[node name="Window7Sill" type="CSGBox3D" parent="Map" unique_id=1066739035]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24.5, -0.5, 22)
+size = Vector3(1.2, 1, 2)
+material = ExtResource("m_floor")
+
+[node name="Window7Pad" type="CSGBox3D" parent="Map" unique_id=1271017694]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 27.5, -0.5, 22)
+size = Vector3(4, 1, 4.6)
+material = ExtResource("m_floor")
+
+[node name="Window7Back" type="CSGBox3D" parent="Map" unique_id=851061494]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 29.75, 2, 22)
+size = Vector3(0.5, 4, 5.6)
+material = ExtResource("m_wall")
+
+[node name="Window7SideL" type="CSGBox3D" parent="Map" unique_id=1945302754]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 27.5, 2, 19.45)
+size = Vector3(4, 4, 0.5)
+material = ExtResource("m_wall")
+
+[node name="Window7SideR" type="CSGBox3D" parent="Map" unique_id=1300177759]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 27.5, 2, 24.55)
+size = Vector3(4, 4, 0.5)
+material = ExtResource("m_wall")
+
+[node name="MapMesh" type="MeshInstance3D" parent="." unique_id=561737112]
 mesh = ExtResource("5_3o2ur")
 metadata/csg_visual = true
 
@@ -547,7 +802,7 @@ mesh = SubResource("Mesh_lamp")
 [node name="Light" type="OmniLight3D" parent="Lamps/Lamp0" unique_id=845185438]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.45, 0)
 light_color = Color(1, 0.66, 0.36, 1)
-light_energy = 2.3329659
+light_energy = 2.3786027
 omni_range = 14.0
 script = ExtResource("23_flicker")
 seed = 3
@@ -573,7 +828,7 @@ mesh = SubResource("Mesh_lamp")
 [node name="Light" type="OmniLight3D" parent="Lamps/Lamp1" unique_id=1448923242]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.45, 0)
 light_color = Color(1, 0.66, 0.36, 1)
-light_energy = 2.2217908
+light_energy = 2.2307634
 omni_range = 14.0
 script = ExtResource("23_flicker")
 seed = 10
@@ -599,7 +854,7 @@ mesh = SubResource("Mesh_lamp")
 [node name="Light" type="OmniLight3D" parent="Lamps/Lamp2" unique_id=692131819]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.45, 0)
 light_color = Color(1, 0.66, 0.36, 1)
-light_energy = 2.3623853
+light_energy = 2.4252036
 omni_range = 14.0
 script = ExtResource("23_flicker")
 seed = 17
@@ -625,7 +880,7 @@ mesh = SubResource("Mesh_lamp")
 [node name="Light" type="OmniLight3D" parent="Lamps/Lamp3" unique_id=1394167131]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.45, 0)
 light_color = Color(1, 0.66, 0.36, 1)
-light_energy = 2.293322
+light_energy = 2.3264754
 omni_range = 14.0
 script = ExtResource("23_flicker")
 seed = 24
@@ -651,7 +906,7 @@ mesh = SubResource("Mesh_lamp")
 [node name="Light" type="OmniLight3D" parent="Lamps/Lamp4" unique_id=1579320137]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.45, 0)
 light_color = Color(1, 0.66, 0.36, 1)
-light_energy = 2.1687393
+light_energy = 2.1570399
 omni_range = 14.0
 script = ExtResource("23_flicker")
 seed = 31
@@ -677,7 +932,7 @@ mesh = SubResource("Mesh_lamp")
 [node name="Light" type="OmniLight3D" parent="Lamps/Lamp5" unique_id=1647920468]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.45, 0)
 light_color = Color(1, 0.66, 0.36, 1)
-light_energy = 2.230293
+light_energy = 2.1738472
 omni_range = 14.0
 script = ExtResource("23_flicker")
 seed = 5
@@ -703,7 +958,7 @@ mesh = SubResource("Mesh_lamp")
 [node name="Light" type="OmniLight3D" parent="Lamps/Lamp6" unique_id=2042841222]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.45, 0)
 light_color = Color(1, 0.66, 0.36, 1)
-light_energy = 2.2831454
+light_energy = 2.2780974
 omni_range = 14.0
 script = ExtResource("23_flicker")
 seed = 6
@@ -771,31 +1026,155 @@ transform = Transform3D(-3.6199901e-06, 0, -1, 0, 1, 0, 1, 0, -3.6199901e-06, 24
 collision_layer = 9
 zone = "lot_east"
 
+[node name="WindowBlockers" type="Node3D" parent="." unique_id=821946191]
+
+[node name="WindowBlock0" type="StaticBody3D" parent="WindowBlockers" unique_id=2140648372]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -14, 1.1, -24.5)
+collision_layer = 64
+collision_mask = 0
+
+[node name="Shape" type="CollisionShape3D" parent="WindowBlockers/WindowBlock0" unique_id=167367772]
+shape = SubResource("Shape_window_x")
+
+[node name="WindowBlock1" type="StaticBody3D" parent="WindowBlockers" unique_id=1282658777]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14, 1.1, -24.5)
+collision_layer = 64
+collision_mask = 0
+
+[node name="Shape" type="CollisionShape3D" parent="WindowBlockers/WindowBlock1" unique_id=310773872]
+shape = SubResource("Shape_window_x")
+
+[node name="WindowBlock2" type="StaticBody3D" parent="WindowBlockers" unique_id=7050581]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -14, 1.1, 24.5)
+collision_layer = 64
+collision_mask = 0
+
+[node name="Shape" type="CollisionShape3D" parent="WindowBlockers/WindowBlock2" unique_id=1457111918]
+shape = SubResource("Shape_window_x")
+
+[node name="WindowBlock3" type="StaticBody3D" parent="WindowBlockers" unique_id=1634314885]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14, 1.1, 24.5)
+collision_layer = 64
+collision_mask = 0
+
+[node name="Shape" type="CollisionShape3D" parent="WindowBlockers/WindowBlock3" unique_id=187674]
+shape = SubResource("Shape_window_x")
+
+[node name="WindowBlock4" type="StaticBody3D" parent="WindowBlockers" unique_id=1202581108]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -24.5, 1.1, -17)
+collision_layer = 64
+collision_mask = 0
+
+[node name="Shape" type="CollisionShape3D" parent="WindowBlockers/WindowBlock4" unique_id=66254561]
+shape = SubResource("Shape_window_z")
+
+[node name="WindowBlock5" type="StaticBody3D" parent="WindowBlockers" unique_id=1636106758]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -24.5, 1.1, 22)
+collision_layer = 64
+collision_mask = 0
+
+[node name="Shape" type="CollisionShape3D" parent="WindowBlockers/WindowBlock5" unique_id=1583116614]
+shape = SubResource("Shape_window_z")
+
+[node name="WindowBlock6" type="StaticBody3D" parent="WindowBlockers" unique_id=1740813502]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24.5, 1.1, -17)
+collision_layer = 64
+collision_mask = 0
+
+[node name="Shape" type="CollisionShape3D" parent="WindowBlockers/WindowBlock6" unique_id=1205078326]
+shape = SubResource("Shape_window_z")
+
+[node name="WindowBlock7" type="StaticBody3D" parent="WindowBlockers" unique_id=1479867355]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24.5, 1.1, 22)
+collision_layer = 64
+collision_mask = 0
+
+[node name="Shape" type="CollisionShape3D" parent="WindowBlockers/WindowBlock7" unique_id=249791144]
+shape = SubResource("Shape_window_z")
+
+[node name="Barriers" type="Node3D" parent="." unique_id=1396475276]
+
+[node name="Barrier0" parent="Barriers" unique_id=394418300 instance=ExtResource("26_barrier")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -14, 0, -23.85)
+collision_layer = 40
+collision_mask = 0
+
+[node name="Barrier1" parent="Barriers" unique_id=308244301 instance=ExtResource("26_barrier")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14, 0, -23.85)
+collision_layer = 40
+collision_mask = 0
+
+[node name="Barrier2" parent="Barriers" unique_id=927535087 instance=ExtResource("26_barrier")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -14, 0, 23.85)
+collision_layer = 40
+collision_mask = 0
+
+[node name="Barrier3" parent="Barriers" unique_id=278757615 instance=ExtResource("26_barrier")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14, 0, 23.85)
+collision_layer = 40
+collision_mask = 0
+
+[node name="Barrier4" parent="Barriers" unique_id=483259211 instance=ExtResource("26_barrier")]
+transform = Transform3D(-3.6199901e-06, 0, 1, 0, 1, 0, -1, 0, -3.6199901e-06, -23.85, 0, -17)
+collision_layer = 40
+collision_mask = 0
+
+[node name="Barrier5" parent="Barriers" unique_id=1689144349 instance=ExtResource("26_barrier")]
+transform = Transform3D(-3.6199901e-06, 0, 1, 0, 1, 0, -1, 0, -3.6199901e-06, -23.85, 0, 22)
+collision_layer = 40
+collision_mask = 0
+
+[node name="Barrier6" parent="Barriers" unique_id=1102854512 instance=ExtResource("26_barrier")]
+transform = Transform3D(-3.6199901e-06, 0, 1, 0, 1, 0, -1, 0, -3.6199901e-06, 23.85, 0, -17)
+collision_layer = 40
+collision_mask = 0
+
+[node name="Barrier7" parent="Barriers" unique_id=1642725990 instance=ExtResource("26_barrier")]
+transform = Transform3D(-3.6199901e-06, 0, 1, 0, 1, 0, -1, 0, -3.6199901e-06, 23.85, 0, 22)
+collision_layer = 40
+collision_mask = 0
+
 [node name="Spawns" type="Node3D" parent="." unique_id=1655940609]
 
 [node name="Spawn0" type="Marker3D" parent="Spawns" unique_id=23932598]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -14, 0.05, -21)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -14, 0.05, -27.5)
+metadata/via = Vector3(-14, 0, -22.9)
+metadata/barrier = NodePath("../../Barriers/Barrier0")
 
 [node name="Spawn1" type="Marker3D" parent="Spawns" unique_id=1299381853]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14, 0.05, -21)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14, 0.05, -27.5)
+metadata/via = Vector3(14, 0, -22.9)
+metadata/barrier = NodePath("../../Barriers/Barrier1")
 
 [node name="Spawn2" type="Marker3D" parent="Spawns" unique_id=1820236350]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -14, 0.05, 21)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -14, 0.05, 27.5)
+metadata/via = Vector3(-14, 0, 22.9)
+metadata/barrier = NodePath("../../Barriers/Barrier2")
 
 [node name="Spawn3" type="Marker3D" parent="Spawns" unique_id=237464984]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14, 0.05, 21)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14, 0.05, 27.5)
+metadata/via = Vector3(14, 0, 22.9)
+metadata/barrier = NodePath("../../Barriers/Barrier3")
 
 [node name="Spawn4" type="Marker3D" parent="Spawns" unique_id=1891235084]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -21, 0.05, -12)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -27.5, 0.05, -17)
+metadata/via = Vector3(-22.9, 0, -17)
+metadata/barrier = NodePath("../../Barriers/Barrier4")
 
 [node name="Spawn5" type="Marker3D" parent="Spawns" unique_id=1955122341]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -21, 0.05, 12)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -27.5, 0.05, 22)
+metadata/via = Vector3(-22.9, 0, 22)
+metadata/barrier = NodePath("../../Barriers/Barrier5")
 
 [node name="Spawn6" type="Marker3D" parent="Spawns" unique_id=1077352546]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 21, 0.05, -12)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 27.5, 0.05, -17)
+metadata/via = Vector3(22.9, 0, -17)
+metadata/barrier = NodePath("../../Barriers/Barrier6")
 
 [node name="Spawn7" type="Marker3D" parent="Spawns" unique_id=612833855]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 21, 0.05, 12)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 27.5, 0.05, 22)
+metadata/via = Vector3(22.9, 0, 22)
+metadata/barrier = NodePath("../../Barriers/Barrier7")
 
 [node name="Spawn8" type="Marker3D" parent="Spawns" unique_id=1566612523]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -40, 0.05, -8)
