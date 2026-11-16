@@ -213,6 +213,7 @@ def fix_imports() -> None:
     props = REPO / "godot/assets/props"
     paths = (
         sorted(TEXTURES.glob("*/*.jpg.import"))
+        + sorted(TEXTURES.glob("*/*.png.import"))
         + sorted(WEAPONS.glob("*/*_*.png.import"))
         + sorted(props.glob("*/*.jpg.import"))
         + sorted(props.glob("*/*.png.import"))
