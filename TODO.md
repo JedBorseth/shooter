@@ -85,7 +85,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 ## Phase 2: netcode core
 
 - [x] Choose the transport: Godot's `ENetMultiplayerPeer` as a UDP pipe, with all serialization, ticks, and buffers in Rust (see `docs/roadmap.md`).
-- [ ] Fixed-tick loop shared by client and server (60 Hz), with tick numbers on every input and snapshot.
+- [ ] Fixed-tick loop shared by client and server (120 Hz, `shooter_sim::TICK_RATE`), with tick numbers on every input and snapshot. Snapshots go out at 60 Hz.
 - [ ] Input packets: each send carries the last N inputs to survive packet loss. The server keeps an input buffer per player.
 - [ ] Client-side prediction: keep a ring buffer of `PlayerState` and `PlayerInput` per tick. On each server snapshot, rewind to the acknowledged tick and replay pending inputs (`shooter_sim::player::step`).
 - [ ] Smooth error correction: blend visual position after a misprediction instead of snapping.

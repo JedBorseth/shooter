@@ -27,7 +27,10 @@ These rules apply to every weapon and movement change.
 - **Recoil is mostly visual.** Aim recoil (the `recoil` block in each weapon's RON file) stays small, follows a learnable pattern, and recovers quickly. The weapon model kick (`kick_strength`) and the camera punch (`camera_punch`) on each `WeaponView` carry the violence, and never move the aim. Aiming down sights keeps 60% of the punch (`ads_punch_scale` on `FpsPlayer`).
 - **Every hit is confirmed.** Hit markers pop in oversized and settle, with distinct sounds for body hits, headshots, and kills. Kill markers are larger, thicker, red, and stay up twice as long.
 - **Time-to-kill is about 200 to 300 ms** for primaries at their best range. Reloads, ADS, and sprint-out stay short.
-- **Input comes first.** Mouse look applies every rendered frame and never waits for a physics tick. Vsync, when on, uses mailbox mode (no tearing, no queued frames).
+- **Input comes first.** The simulation ticks at 120 Hz (`shooter_sim::TICK_RATE`), so a press waits at most about 8 ms for the tick that acts on it. Mouse look applies every rendered frame and never waits for a tick. Recoil kicks show on the first frame after the shot instead of easing in across a tick. Vsync, when on, uses mailbox mode (no tearing, no queued frames).
+- **Forgive the player's timing.** A jump pressed up to 100 ms before landing, or up to 100 ms after walking off a ledge, still happens. Stopping and changing direction take under 200 ms.
+- **Frame rate over fancy lighting.** Greybox maps run without SDFGI and SSIL (about 40% more frames on a GTX 1060 with no visible difference here). Anti-aliasing is 2x MSAA plus SMAA, which is sharper than FXAA. Revisit per map in the lighting pass.
+- **Kills pay off.** Targets flinch away from hits and topple away from the killing shot, and the camera gives a short zoom-in thump.
 - **Avoid simulation mechanics:** weapon inertia, stamina, heavy sway on unscoped weapons, bullet drop at normal ranges, and random recoil.
 
 ## Phases
@@ -36,15 +39,16 @@ Each phase ends with something playable.
 
 0. **Foundation** ✅ Forward+, Jolt, Rust workspace, input map, greybox arena, headless smoke test.
 1. **Single-player feel**
-   - ✅ Movement in `rust/sim`: Source-style acceleration and friction, toggle sprint (classic CoD), toggle crouch, slide, jump. Camera interpolated between physics ticks.
+   - ✅ Movement in `rust/sim`: Source-style acceleration and friction, toggle sprint (classic CoD), toggle crouch, slide, jump with buffering and coyote time, at a 120 Hz tick. Camera interpolated between physics ticks.
    - ✅ Weapons in `rust/sim`: M4A1 (750 RPM, 30 to 21 damage falloff) and M1911 (semi-auto). Recoil patterns that recover, deterministic hashed spread, ADS with zoom and movement penalty, sprint-out delay, sprint cancels reload, auto-reload, lower/raise switching.
    - ✅ Presentation in `rust/game`: viewmodel shader with its own FOV and no wall clipping, camera-locked weapon (no look sway), bob, kick, landing dip, sprint/reload/switch poses, muzzle flash and light, CC0 weapon sounds, hitscan with headshots, impact sparks and decals, target dummies, hit markers, dynamic crosshair, ammo HUD.
    - ✅ Arsenal and polish: weapons as RON data files with hot reload; AK-47, PDW-9 (red dot), M870 (pellets, pump, shell-by-shell reload), M40 (bolt action, scope overlay, hold breath); tracers, shell ejection, per-surface impacts and footsteps, weapon racks; health, regeneration, fall damage, death and respawn, damage vignette and direction indicators; head bob and tilt; pause and settings menu; audio buses; a training sentry that shoots back.
    - ✅ Gamepad: bindings, radial deadzone and response curve, turn boost at full deflection, rumble, aim assist (slowdown and rotational) in `rust/sim/src/look.rs`.
    - ✅ Arcade retune: about 35% less aim recoil with faster recovery on every weapon, a visual-only camera punch per weapon, harder weapon kick with roll, popping hit markers, larger muzzle flashes, mailbox vsync.
+   - ✅ Crisp pass: 120 Hz simulation tick, recoil without tick lag, faster stops, jump buffering and coyote time, quicker ADS, sprint-out and weapon switches, SMAA, lighter lighting, FOV kicks on slides and kills, target flinch and topple.
    - Next: hands and authored animations, reverb zones, score popups and medals, gamepad settings in the menu, LMG.
 
-2. **Netcode core.** Server-authoritative 60 Hz tick. Clients send input with tick numbers. The client predicts its own movement and replays inputs when the server corrects it. Remote players render about 100 ms behind with snapshot interpolation. Snapshots are delta-compressed over ENet (UDP).
+2. **Netcode core.** Server-authoritative 120 Hz tick (the same `TICK_RATE` the client simulates at), with snapshots sent at 60 Hz. Clients send input with tick numbers. The client predicts its own movement and replays inputs when the server corrects it. Remote players render about 100 ms behind with snapshot interpolation. Snapshots are delta-compressed over ENet (UDP).
 3. **Lag compensation.** The server keeps a hitbox history ring buffer and rewinds to the shooter's view time to check hits. Favor-the-shooter with a rewind cap.
 4. **Game loop.** Team Deathmatch: spawns, health and damage falloff, kill feed, scoreboard, respawn, match timer, first real map.
 5. **Online services.** Self-hosted Nakama for accounts, parties, and matchmaking. Dockerized headless servers. Agones later, to start servers on demand.

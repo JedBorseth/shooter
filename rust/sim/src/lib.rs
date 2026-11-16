@@ -11,3 +11,12 @@ pub mod rng;
 pub mod weapon;
 
 pub use glam::{Vec2, Vec3};
+
+/// Simulation ticks per second. The engine's physics tick must match
+/// (`physics/common/physics_ticks_per_second` in `project.godot`). 120 Hz halves
+/// the wait between a button press and the tick that acts on it, compared
+/// with 60 Hz. `step` functions take `dt`, so tests may still run at other rates.
+pub const TICK_RATE: u32 = 120;
+
+/// Seconds per simulation tick.
+pub const TICK_DT: f32 = 1.0 / TICK_RATE as f32;

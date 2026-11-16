@@ -46,6 +46,10 @@ const DEFAULT_SURFACE: &str = "concrete";
 /// the camera sits at most ~1.6 punches away from the aim point.
 const PUNCH_STIFFNESS: f32 = 900.0;
 const PUNCH_DAMPING: f32 = 48.0;
+/// FOV pulse spring (fraction of the FOV): a quick widen on slide starts and a
+/// short zoom-in "thump" on kills.
+const FOV_KICK_STIFFNESS: f32 = 220.0;
+const FOV_KICK_DAMPING: f32 = 22.0;
 
 /// Actions whose presses are remembered until the next physics tick, so a tap
 /// shorter than one tick (or a mouse-wheel step) is never lost.
@@ -91,6 +95,14 @@ pub struct FpsPlayer {
     #[export]
     #[init(val = 1.08)]
     sprint_fov_scale: f32,
+    /// Peak FOV widening when a slide starts, as a fraction of the FOV.
+    #[export]
+    #[init(val = 0.06)]
+    slide_fov_kick: f32,
+    /// Peak FOV zoom-in on a kill, as a fraction of the FOV (headshot kills get 1.6x).
+    #[export]
+    #[init(val = 0.025)]
+    kill_fov_kick: f32,
     /// Fraction of each weapon's camera punch kept while fully aimed down sights.
     #[export]
     #[init(val = 0.6)]
@@ -185,6 +197,8 @@ pub struct FpsPlayer {
     fov_sprint: f32,
     /// Visual-only camera offset: x pitch up, y yaw left, z roll (radians).
     punch: Spring,
+    /// FOV offset as a fraction of the FOV.
+    fov_kick: Spring<f32>,
     spawn: Transform3D,
     respawn_in: f32,
     death_blend: f32,
@@ -219,6 +233,14 @@ impl ICharacterBody3D for FpsPlayer {
         self.spawn = self.base().get_global_transform();
         self.reset_view();
         self.input_enabled = true;
+
+        let ticks = Engine::singleton().get_physics_ticks_per_second();
+        if ticks != shooter_sim::TICK_RATE as i32 {
+            godot_warn!(
+                "physics runs at {ticks} Hz but the simulation is tuned for {} Hz",
+                shooter_sim::TICK_RATE
+            );
+        }
 
         if !Engine::singleton().is_editor_hint() {
             Input::singleton().set_mouse_mode(MouseMode::CAPTURED);
@@ -299,6 +321,7 @@ impl ICharacterBody3D for FpsPlayer {
         }
         if stance == Stance::Sliding && previous_stance != Stance::Sliding {
             self.play_body("res://assets/audio/player/slide", 0.0);
+            self.kick_fov(self.slide_fov_kick);
         }
 
         let mut body = self.base_mut();
@@ -337,7 +360,13 @@ impl ICharacterBody3D for FpsPlayer {
         let fraction = Engine::singleton().get_physics_interpolation_fraction() as f32;
         let feet = self.previous_position.lerp(self.current_position, fraction);
         let combat = &self.state.combat;
-        let recoil = self.previous_recoil.lerp(combat.recoil, fraction);
+        // Recoil kicks show on the first frame after the shot's tick instead of
+        // easing in across a tick; only recovery is interpolated.
+        let recoil = if combat.recoil.length_squared() > self.previous_recoil.length_squared() {
+            combat.recoil
+        } else {
+            self.previous_recoil.lerp(combat.recoil, fraction)
+        };
         let sway = self.previous_sway.lerp(combat.scope_sway(), fraction);
         let ads = self.previous_ads + (combat.ads - self.previous_ads) * fraction;
 
@@ -353,7 +382,8 @@ impl ICharacterBody3D for FpsPlayer {
         let sprint_target = if fast { self.sprint_fov_scale } else { 1.0 };
         self.fov_sprint += (sprint_target - self.fov_sprint) * smoothing(8.0, dt);
         let ads_zoom = 1.0 + (combat.def().ads_fov_scale - 1.0) * ads;
-        let fov = self.base_fov * self.fov_sprint * ads_zoom;
+        self.fov_kick.step(FOV_KICK_STIFFNESS, FOV_KICK_DAMPING, dt);
+        let fov = self.base_fov * self.fov_sprint * ads_zoom * (1.0 + self.fov_kick.value);
 
         self.punch.step(PUNCH_STIFFNESS, PUNCH_DAMPING, dt);
         self.land_dip.step(90.0, 13.0, dt);
@@ -967,6 +997,11 @@ impl FpsPlayer {
         }
     }
 
+    /// Pulses the FOV: positive widens, negative zooms in. `peak` is a fraction of the FOV.
+    fn kick_fov(&mut self, peak: f32) {
+        self.fov_kick.velocity += impulse_for_peak(peak, FOV_KICK_STIFFNESS, FOV_KICK_DAMPING);
+    }
+
     /// Adds one shot's camera punch. `degrees` is the peak pitch, yaw jitter, and roll.
     fn kick_camera(&mut self, degrees: Vector3, ads: f32, shot: u32) {
         let scale = 1.0 + (self.ads_punch_scale - 1.0) * ads;
@@ -986,7 +1021,8 @@ impl FpsPlayer {
     fn fire_shot(&mut self, weapon: WeaponId, aim_offset: Vec2, shot: u32) {
         let def = weapon.def();
         let origin = self.eye_position();
-        let mut targets: Vec<(Gd<Node>, f32, bool)> = Vec::new();
+        // Per target: damage, headshot, and the direction of the first pellet to hit.
+        let mut targets: Vec<(Gd<Node>, f32, bool, Vector3)> = Vec::new();
         let mut first_end = None;
 
         for pellet in 0..def.pellets {
@@ -1012,13 +1048,13 @@ impl FpsPlayer {
                 }
                 match targets
                     .iter_mut()
-                    .find(|(t, _, _)| t.instance_id() == target.instance_id())
+                    .find(|(t, ..)| t.instance_id() == target.instance_id())
                 {
                     Some(entry) => {
                         entry.1 += damage;
                         entry.2 |= headshot;
                     }
-                    None => targets.push((target, damage, headshot)),
+                    None => targets.push((target, damage, headshot, direction)),
                 }
                 let surface = surface_meta(Some(collider)).unwrap_or_else(|| "flesh".to_owned());
                 self.spawn_impact(hit.position, hit.normal, false, &surface);
@@ -1031,7 +1067,7 @@ impl FpsPlayer {
         }
 
         let mut confirmed = None;
-        for (mut target, damage, headshot) in targets {
+        for (mut target, damage, headshot, direction) in targets {
             let killed = target
                 .call(
                     "apply_damage",
@@ -1039,6 +1075,16 @@ impl FpsPlayer {
                 )
                 .try_to::<bool>()
                 .unwrap_or(false);
+            if target.has_method("react_to_hit") {
+                target.call(
+                    "react_to_hit",
+                    &[direction.to_variant(), killed.to_variant()],
+                );
+            }
+            if killed {
+                let headshot_scale = if headshot { 1.6 } else { 1.0 };
+                self.kick_fov(-self.kill_fov_kick * headshot_scale);
+            }
             let (k, h) = confirmed.unwrap_or((false, false));
             confirmed = Some((k | killed, h | headshot));
         }
@@ -1270,6 +1316,7 @@ impl FpsPlayer {
         self.eye_height = self.params.movement.eye_height(Stance::Standing);
         self.fov_sprint = 1.0;
         self.punch = Spring::default();
+        self.fov_kick = Spring::default();
         self.stride = 0.0;
         self.stride_length = 2.0;
         self.assist.reset();

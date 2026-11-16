@@ -1,9 +1,15 @@
-//! Shooting-range target dummy: takes damage, shows health, falls, respawns.
+//! Shooting-range target dummy: takes damage, flinches away from hits, topples
+//! away from the killing shot, and respawns.
 
 use godot::classes::{IStaticBody3D, Label3D, MeshInstance3D, StandardMaterial3D, StaticBody3D};
 use godot::prelude::*;
 
 use crate::aim_assist::AimAssistTarget;
+use crate::spring::{Spring, impulse_for_peak};
+
+/// Hit flinch spring (tilt in radians): loose enough to wobble once.
+const LEAN_STIFFNESS: f32 = 140.0;
+const LEAN_DAMPING: f32 = 9.0;
 
 /// Collision layer 3 ("hitboxes"), as a bit mask.
 pub const HITBOX_LAYER: u32 = 1 << 2;
@@ -39,12 +45,19 @@ pub struct TargetDummy {
     flash: f32,
     respawn_in: f32,
     fall: f32,
+    /// Horizontal direction, in the dummy's space, that the dummy topples toward.
+    topple: Vector3,
+    /// Hit flinch: a horizontal vector whose length is the tilt angle.
+    lean: Spring,
+    /// Kill pop, 1 right after the kill and decaying to 0.
+    pop: f32,
 }
 
 #[godot_api]
 impl IStaticBody3D for TargetDummy {
     fn ready(&mut self) {
         self.health = self.max_health;
+        self.topple = Vector3::FORWARD;
         // Each dummy flashes on its own, so it needs its own copy of the material.
         let material = self
             .body_mesh
@@ -75,11 +88,19 @@ impl IStaticBody3D for TargetDummy {
         let dead = self.health <= 0.0;
         let target_fall = if dead { 1.0 } else { 0.0 };
         self.fall += (target_fall - self.fall) * (1.0 - (-10.0 * delta).exp());
-        self.visual.set_rotation(Vector3::new(
-            -self.fall * std::f32::consts::FRAC_PI_2,
-            0.0,
-            0.0,
-        ));
+        self.lean.step(LEAN_STIFFNESS, LEAN_DAMPING, delta);
+        self.pop = (self.pop - delta * 5.0).max(0.0);
+
+        // Tilt the top toward `tilt`; its length is the angle.
+        let tilt = self.topple * (self.fall * std::f32::consts::FRAC_PI_2) + self.lean.value;
+        let angle = tilt.length();
+        let basis = if angle > 1e-4 {
+            Basis::from_axis_angle(Vector3::UP.cross(tilt / angle), angle)
+        } else {
+            Basis::IDENTITY
+        };
+        let scale = 1.0 + 0.12 * self.pop * self.pop;
+        self.visual.set_basis(basis.scaled(Vector3::splat(scale)));
 
         if dead {
             self.respawn_in -= delta;
@@ -108,6 +129,28 @@ impl TargetDummy {
         }
         self.update_label();
         killed
+    }
+
+    /// Visual reaction to a hit from a shot travelling along `direction` (world
+    /// space): a flinch, or on a kill, a pop and a fall away from the shooter.
+    #[func]
+    pub fn react_to_hit(&mut self, direction: Vector3, killed: bool) {
+        let local = self.base().get_global_basis().inverse() * direction;
+        let Some(away) = Vector3::new(local.x, 0.0, local.z).try_normalized() else {
+            return;
+        };
+        if killed {
+            // Still getting up from the last kill: turn the fall toward the new
+            // direction instead of snapping to it.
+            self.topple = (self.topple * self.fall + away * (1.0 - self.fall))
+                .try_normalized()
+                .unwrap_or(away);
+            self.pop = 1.0;
+            self.flash = 2.0;
+        } else {
+            let peak = 7f32.to_radians();
+            self.lean.velocity += away * impulse_for_peak(peak, LEAN_STIFFNESS, LEAN_DAMPING);
+        }
     }
 
     #[func]
