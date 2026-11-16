@@ -29,6 +29,7 @@ const DEFAULTS := {
 	&"weapons_volume": 0.8,
 	&"effects_volume": 0.8,
 	&"ui_volume": 0.7,
+	&"master_server": "",
 }
 
 ## Config file section for each setting.
@@ -36,6 +37,7 @@ const SECTIONS := {
 	"controls": [&"mouse_sensitivity", &"ads_sensitivity"],
 	"video": [&"fov", &"camera_motion", &"fullscreen", &"vsync", &"max_fps", &"show_fps"],
 	"audio": [&"master_volume", &"weapons_volume", &"effects_volume", &"ui_volume"],
+	"multiplayer": [&"master_server"],
 }
 
 ## Allowed range of each float setting.
@@ -79,6 +81,9 @@ var master_volume: float = DEFAULTS[&"master_volume"]
 var weapons_volume: float = DEFAULTS[&"weapons_volume"]
 var effects_volume: float = DEFAULTS[&"effects_volume"]
 var ui_volume: float = DEFAULTS[&"ui_volume"]
+## Master server (`host[:port]`) the server browser lists internet servers
+## from; empty for none.
+var master_server: String = DEFAULTS[&"master_server"]
 
 var _dirty := false
 var _save_timer := Timer.new()
@@ -225,18 +230,20 @@ func _apply_window_mode() -> void:
 ## range, or returns the default when it cannot.
 func _sanitize(key: StringName, value: Variant) -> Variant:
 	var default: Variant = DEFAULTS[key]
+	var number := value is int or value is float
 	match typeof(default):
 		TYPE_BOOL:
 			return value if value is bool else default
 		TYPE_INT:
-			if (value is int or value is float) and int(value) in MAX_FPS_OPTIONS:
-				return int(value)
-			return default
+			return int(value) if number and int(value) in MAX_FPS_OPTIONS else default
 		TYPE_FLOAT:
-			if not (value is int or value is float) or is_nan(float(value)):
+			if not number or is_nan(float(value)):
 				return default
 			var limits: Vector2 = RANGES[key]
 			return clampf(float(value), limits.x, limits.y)
+		TYPE_STRING:
+			if value is String or value is StringName:
+				return String(value).strip_edges().left(255)
 	return default
 
 

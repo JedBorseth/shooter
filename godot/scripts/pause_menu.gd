@@ -39,6 +39,7 @@ func _ready() -> void:
 
 	_resume_button.pressed.connect(close)
 	_settings_button.pressed.connect(_show_settings)
+	%LeaveButton.pressed.connect(_leave)
 	%QuitButton.pressed.connect(_quit)
 	%ResetButton.pressed.connect(Settings.reset_to_defaults)
 	%BackButton.pressed.connect(_show_main)
@@ -83,6 +84,7 @@ func open() -> void:
 		return
 	_sync_controls()
 	_show_main()
+	%LeaveButton.text = "Leave server" if Net.is_online() else "Main menu"
 	_root.show()
 	_focus(_resume_button)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -132,6 +134,15 @@ func _show_settings() -> void:
 	)
 	_scroll.scroll_vertical = 0
 	_focus(_sliders[&"mouse_sensitivity"])
+
+
+## Online: back to the server browser. Offline: back to the title screen.
+func _leave() -> void:
+	Settings.flush()
+	if Net.is_online():
+		Net.leave()
+	else:
+		get_tree().change_scene_to_file(Net.TITLE_SCENE)
 
 
 func _quit() -> void:

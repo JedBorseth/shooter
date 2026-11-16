@@ -97,9 +97,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust
-      - name: Build the GDExtension
+      - name: Build the GDExtension and the master server
         working-directory: rust
-        run: cargo build --locked -p shooter-game
+        run: cargo build --locked -p shooter-game -p shooter-master
       - uses: ./.github/actions/setup-godot
         with:
           version: ${{ env.GODOT_VERSION }}
@@ -118,3 +118,9 @@ jobs:
       # through a simulated lossy, jittery link.
       - name: Run netcode test
         run: godot --headless --path godot --script res://tests/net_test.gd
+      # Starts a master server and a dedicated server, finds it on the LAN and
+      # Internet tabs of the server browser, and joins it from the list.
+      - name: Run server browser test
+        run: godot --headless --path godot --script res://tests/server_browser_test.gd
+      - name: Run title screen test
+        run: godot --headless --path godot --script res://tests/title_screen_test.gd

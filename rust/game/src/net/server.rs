@@ -12,6 +12,10 @@
 //! server applies the damage, keeps score, and tells the players involved
 //! through reliable [`GameEvent`]s.
 //!
+//! It also answers server browser queries on its query port (the game port
+//! plus one) and, given a master server, keeps itself listed there
+//! (`super::discovery`).
+//!
 //! Started by `scripts/net/bootstrap.gd` with `-- --server`, or automatically
 //! in a dedicated server export.
 
@@ -23,6 +27,7 @@ use godot::classes::{
 };
 use godot::global::Error;
 use godot::prelude::*;
+use shooter_sim::net::discovery::{ServerInfo, query_port_for};
 use shooter_sim::net::input_queue::InputQueue;
 use shooter_sim::net::lag::{self, LagHistory, Pellet, Target};
 use shooter_sim::net::protocol::{
@@ -36,6 +41,7 @@ use shooter_sim::score::{Kill, ScoreRules, ScoreState};
 use shooter_sim::weapon::{self, CombatEvent, WeaponId};
 use shooter_sim::{Vec2, rng};
 
+use super::discovery::QueryResponder;
 use super::transport::{self, NetEvent};
 use crate::body::{self, BodyParts};
 use crate::convert::{to_godot, to_sim};
@@ -82,6 +88,22 @@ pub struct NetServer {
     /// is not shot at random.
     #[export]
     bots_deal_damage: bool,
+    /// Name shown in server browsers.
+    #[export]
+    #[init(val = GString::from("Shooter server"))]
+    server_name: GString,
+    /// Map name shown in server browsers.
+    #[export]
+    #[init(val = GString::from("Arena"))]
+    map_name: GString,
+    /// UDP port that answers server browser queries; 0 means `port + 1`, and
+    /// -1 turns queries off.
+    #[export]
+    query_port: i32,
+    /// Master server (`host[:port]`) to stay listed on, or empty for LAN and
+    /// direct connects only.
+    #[export]
+    master_server: GString,
 
     host: Option<Gd<ENetConnection>>,
     clients: Vec<ClientSlot>,
@@ -94,6 +116,7 @@ pub struct NetServer {
     score_rules: ScoreRules,
     net_events: Vec<NetEvent>,
     spawn: Vector3,
+    responder: Option<QueryResponder>,
 }
 
 struct ClientSlot {
@@ -170,6 +193,13 @@ impl INode3D for NetServer {
         for i in 0..self.bots.clamp(0, 50) {
             self.spawn_avatar(FIRST_BOT_ID + i as u8, true);
         }
+        self.start_query_responder();
+    }
+
+    fn exit_tree(&mut self) {
+        if let Some(responder) = &mut self.responder {
+            responder.goodbye();
+        }
     }
 
     fn physics_process(&mut self, _delta: f64) {
@@ -195,6 +225,14 @@ impl INode3D for NetServer {
         }
         self.send_events();
         host.flush();
+
+        let players = self.clients.iter().filter(|c| c.player.is_some()).count();
+        let bots = self.avatars.iter().filter(|a| a.bot).count();
+        if let Some(responder) = &mut self.responder {
+            responder.info.players = players.min(255) as u8;
+            responder.info.bots = bots.min(255) as u8;
+            responder.poll();
+        }
     }
 }
 
@@ -222,6 +260,45 @@ impl NetServer {
 }
 
 impl NetServer {
+    fn start_query_responder(&mut self) {
+        let Ok(game_port) = u16::try_from(self.port) else {
+            return;
+        };
+        let query_port = match self.query_port {
+            0 => query_port_for(game_port),
+            port => match u16::try_from(port) {
+                Ok(port) => port,
+                Err(_) => return,
+            },
+        };
+        let info = ServerInfo {
+            instance: QueryResponder::new_instance_id(),
+            protocol: PROTOCOL_VERSION,
+            game_port,
+            name: self.server_name.to_string(),
+            map: self.map_name.to_string(),
+            mode: "Free-for-all".to_owned(),
+            players: 0,
+            max_players: MAX_PLAYERS as u8,
+            bots: 0,
+        };
+        match QueryResponder::bind(query_port, info, &self.master_server.to_string()) {
+            Ok(responder) => {
+                godot_print!(
+                    "server: \"{}\" answers server browsers on UDP port {query_port}",
+                    responder.info.name
+                );
+                self.responder = Some(responder);
+            }
+            // The game still works without it; only browsers cannot see it.
+            Err(error) => {
+                godot_warn!(
+                    "server: cannot answer server browsers on UDP port {query_port}: {error}"
+                );
+            }
+        }
+    }
+
     fn load_map(&mut self) {
         let Some(map) = self.map_scene.as_ref().and_then(|s| s.instantiate()) else {
             godot_warn!("server: no map scene set");

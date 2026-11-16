@@ -1,9 +1,11 @@
 extends Control
 ## Keep the arena as a path, never a preload or scene dependency: launch is UI only.
 
+const MenuStyle := preload("res://scripts/ui/menu_style.gd")
 const ARENA_PATH := "res://scenes/main.tscn"
 const NUKETOWN_PATH := "res://scenes/nuketown.tscn"
 const SLAMCITY_PATH := "res://scenes/slamcity.tscn"
+const BROWSER_PATH := "res://scenes/server_browser.tscn"
 
 var _loading := false
 var _scene_path := ARENA_PATH
@@ -23,34 +25,37 @@ func _ready() -> void:
 	$Margin/Layout/Menu/Slamcity.pressed.connect(
 		func() -> void: _start_scene(SLAMCITY_PATH, "Slamcity")
 	)
+	$Margin/Layout/Menu/Multiplayer.pressed.connect(_open_multiplayer)
 	$Margin/Layout/Menu/Zombies.pressed.connect(_open_zombies)
 	_testing.grab_focus()
-	var normal := _button_style(Color("14232d"), Color("344650"))
-	var hover := _button_style(Color("1e3943"), Color("83daca"))
-	var pressed := _button_style(Color("284c54"), Color("83daca"))
-	var disabled := _button_style(Color("101a23"), Color("24323d"))
-	var focus := StyleBoxFlat.new()
-	focus.bg_color = Color.TRANSPARENT
-	focus.border_color = Color("83daca")
-	focus.set_border_width_all(2)
-	focus.set_expand_margin_all(4.0)
 	for button: Button in $Margin/Layout/Menu.get_children():
-		button.add_theme_stylebox_override("normal", normal)
-		button.add_theme_stylebox_override("hover", hover)
-		button.add_theme_stylebox_override("pressed", pressed)
-		button.add_theme_stylebox_override("disabled", disabled)
-		button.add_theme_stylebox_override("focus", focus)
+		MenuStyle.style_button(button)
+	# Back from a server (left, or the connection failed): straight to the browser.
+	if Net.return_to_browser:
+		var message := Net.browser_message
+		Net.return_to_browser = false
+		Net.browser_message = ""
+		_open_multiplayer(message)
 
 
-func _button_style(background: Color, border: Color) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = background
-	style.border_color = border
-	style.set_border_width_all(1)
-	style.border_width_left = 3
-	style.content_margin_left = 24.0
-	style.content_margin_right = 24.0
-	return style
+func _open_multiplayer(message := "") -> void:
+	if _loading:
+		return
+	var scene := load(BROWSER_PATH) as PackedScene
+	if scene == null:
+		_status.text = "Unable to open the server browser."
+		return
+	var browser := scene.instantiate()
+	$Margin.hide()
+	add_child(browser)
+	if message != "":
+		browser.show_error(message)
+	browser.back_requested.connect(
+		func() -> void:
+			browser.queue_free()
+			$Margin.show()
+			$Margin/Layout/Menu/Multiplayer.grab_focus()
+	)
 
 
 func _open_zombies() -> void:
@@ -100,7 +105,7 @@ func _start_scene(path: String, destination: String) -> void:
 
 
 func _set_buttons_disabled(disabled: bool) -> void:
-	for name: String in ["TestingArea", "Slamcity", "Nuketown", "Zombies"]:
+	for name: String in ["TestingArea", "Slamcity", "Nuketown", "Multiplayer", "Zombies"]:
 		($Margin/Layout/Menu.get_node(name) as Button).disabled = disabled
 
 

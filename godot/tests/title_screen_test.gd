@@ -28,7 +28,7 @@ func _run() -> void:
 	)
 	_check(not (menu.get_node("Slamcity") as Button).disabled, "Slamcity is a home-screen option")
 	_check(not (menu.get_node("Nuketown") as Button).disabled, "Nuketown is a home-screen option")
-	_check((menu.get_node("Multiplayer") as Button).disabled, "Multiplayer is a placeholder")
+	_check(not (menu.get_node("Multiplayer") as Button).disabled, "Multiplayer opens its browser")
 	_check(not (menu.get_node("Zombies") as Button).disabled, "Zombies opens its menu")
 	for i in 5:
 		await process_frame
@@ -41,6 +41,7 @@ func _run() -> void:
 		"res://scenes/nuketown.tscn",
 		"res://assets/maps/nuketown/generated/nuketown_world.scn",
 		"res://scenes/zombies_menu.tscn",
+		"res://scenes/server_browser.tscn",
 		"res://assets/zombies/textures/globe_zm.jpg"
 	]:
 		_check(not ResourceLoader.has_cached(path), "menu does not load %s" % path)
