@@ -110,6 +110,8 @@ jobs:
       # Enters Slamcity from the home screen and walks, climbs, and shoots through it.
       - name: Run Slamcity test
         run: godot --headless --path godot --script res://tests/slamcity_test.gd
+      - name: Run Nuketown navigation and collision test
+        run: godot --headless --path godot --script res://tests/nuketown_test.gd
       - name: Run settings test
         run: godot --headless --path godot --script res://tests/settings_test.gd
       - name: Run secret laser test

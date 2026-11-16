@@ -35,3 +35,13 @@ These reference assets are not covered by the CC0 statement above. The source
 repository supplies no asset license; the original game imagery/audio and font
 retain their respective owners' rights. The globe shader and menu code are local
 implementations.
+
+## Nuketown map assets
+
+`maps/nuketown/generated/` contains the runtime geometry, model placements, and
+converted textures for Nuketown 2025 (`mp_nuketown_2020`), extracted from the
+user-supplied Call of Duty: Black Ops II installation using C2Mv3 v3.0.5.
+These original game assets are not CC0 and retain their respective owners' rights;
+no separate redistribution license was supplied with the export. The converter
+and Godot scene integration are local implementations. See
+[the export and rebuild notes](../../docs/assets/nuketown.md) for provenance.
