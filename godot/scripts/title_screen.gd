@@ -2,6 +2,11 @@ extends Control
 ## Keep the arena as a path, never a preload or scene dependency: launch is UI only.
 
 const ARENA_PATH := "res://scenes/main.tscn"
+const NUKETOWN_PATH := "res://scenes/nuketown.tscn"
+
+var _loading := false
+var _scene_path := ARENA_PATH
+var _destination := "testing arena"
 
 var _loading := false
 
@@ -13,6 +18,9 @@ func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	set_process(false)
 	_testing.pressed.connect(_start_testing)
+	$Margin/Layout/Menu/Nuketown.pressed.connect(
+		func() -> void: _start_scene(NUKETOWN_PATH, "Nuketown")
+	)
 	$Margin/Layout/Menu/Zombies.pressed.connect(_open_zombies)
 	_testing.grab_focus()
 	var normal := _button_style(Color("14232d"), Color("344650"))
@@ -65,30 +73,45 @@ func _open_zombies() -> void:
 
 
 func _start_testing() -> void:
+	_start_scene(ARENA_PATH, "testing arena")
+
+
+func _start_scene(path: String, destination: String) -> void:
 	if _loading:
 		return
+	_scene_path = path
+	_destination = destination
+	if (
+		path == NUKETOWN_PATH
+		and not FileAccess.file_exists("res://assets/maps/nuketown/generated/nuketown_world.scn")
+	):
+		_status.text = "Nuketown is not installed in this build."
+		return
 	_loading = true
-	_testing.disabled = true
-	$Margin/Layout/Menu/Zombies.disabled = true
-	_status.text = "Loading testing arena…"
-	# Begin loading only after activation. Polling keeps the menu responsive.
-	var error := ResourceLoader.load_threaded_request(ARENA_PATH)
+	_set_buttons_disabled(true)
+	_status.text = "Loading %s…" % _destination
+	var error := ResourceLoader.load_threaded_request(_scene_path)
 	if error != OK:
 		_loading_failed(error_string(error))
 		return
 	set_process(true)
 
 
+func _set_buttons_disabled(disabled: bool) -> void:
+	for name: String in ["TestingArea", "Nuketown", "Zombies"]:
+		($Margin/Layout/Menu.get_node(name) as Button).disabled = disabled
+
+
 func _process(_delta: float) -> void:
 	var progress: Array = []
-	var state := ResourceLoader.load_threaded_get_status(ARENA_PATH, progress)
+	var state := ResourceLoader.load_threaded_get_status(_scene_path, progress)
 	match state:
 		ResourceLoader.THREAD_LOAD_IN_PROGRESS:
 			if not progress.is_empty():
-				_status.text = "Loading testing arena… %d%%" % int(progress[0] * 100.0)
+				_status.text = "Loading %s… %d%%" % [_destination, int(progress[0] * 100.0)]
 		ResourceLoader.THREAD_LOAD_LOADED:
 			set_process(false)
-			var arena := ResourceLoader.load_threaded_get(ARENA_PATH) as PackedScene
+			var arena := ResourceLoader.load_threaded_get(_scene_path) as PackedScene
 			if arena == null:
 				_loading_failed("Invalid arena scene")
 				return
@@ -102,8 +125,7 @@ func _process(_delta: float) -> void:
 func _loading_failed(reason: String) -> void:
 	set_process(false)
 	_loading = false
-	_testing.disabled = false
-	$Margin/Layout/Menu/Zombies.disabled = false
-	_status.text = "Unable to open testing arena. Please try again."
+	_set_buttons_disabled(false)
+	_status.text = "Unable to open %s. Please try again." % _destination
 	_testing.grab_focus()
-	push_error("Testing arena: %s" % reason)
+	push_error("%s: %s" % [_destination, reason])
