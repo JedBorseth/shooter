@@ -274,6 +274,7 @@ func _add_graphics_options(section: VBoxContainer) -> void:
 			Settings.set_setting(&"render_scale", GraphicsQuality.RENDER_SCALES[index])
 	)
 	_add_row(section, "Render scale", _scale_option)
+	_add_toggle(section, &"motion_blur", "Motion blur")
 
 
 ## Adds a labelled row around `control`. The row shows the same accent bar as the

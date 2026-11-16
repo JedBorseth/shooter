@@ -71,11 +71,20 @@ const PRESETS := [
 ]
 
 const _AUTHORED := &"_graphics_authored"
+const MotionBlur := preload("res://scripts/motion_blur.gd")
+
+## One compositor (with the motion blur effect) shared by every map while the
+## setting is on.
+static var _blur_compositor: Compositor
+static var _motion_blur := false
 
 
 ## Applies a preset and render scale to the engine, the root viewport, and every
 ## adopted node in the tree.
-static func apply(tree: SceneTree, preset: int, render_scale: float) -> void:
+static func apply(
+	tree: SceneTree, preset: int, render_scale: float, motion_blur: bool = false
+) -> void:
+	_motion_blur = motion_blur
 	var p: Dictionary = PRESETS[clampi(preset, 0, PRESETS.size() - 1)]
 	var viewport := tree.root
 	var scaled := render_scale < 0.999
@@ -131,10 +140,19 @@ static func adopt(node: Node, preset: int) -> void:
 	_apply_node(node, PRESETS[clampi(preset, 0, PRESETS.size() - 1)])
 
 
+static func _compositor() -> Compositor:
+	if _blur_compositor == null:
+		_blur_compositor = Compositor.new()
+		var effects: Array[CompositorEffect] = [MotionBlur.new()]
+		_blur_compositor.compositor_effects = effects
+	return _blur_compositor
+
+
 static func _apply_node(node: Node, p: Dictionary) -> void:
 	if not is_instance_valid(node):
 		return
 	if node is WorldEnvironment:
+		(node as WorldEnvironment).compositor = _compositor() if _motion_blur else null
 		var env := (node as WorldEnvironment).environment
 		if env == null or not env.has_meta(_AUTHORED):
 			return

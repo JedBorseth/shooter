@@ -12,6 +12,39 @@
 [ext_resource type="PackedScene" path="res://scenes/weapons/laser_view.tscn" id="10_laser"]
 [ext_resource type="PackedScene" path="res://scenes/effects/laser_beam.tscn" id="11_beam"]
 
+[sub_resource type="Gradient" id="Gradient_mote_fade"]
+offsets = PackedFloat32Array(0, 0.2, 0.8, 1)
+colors = PackedColorArray(1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0)
+
+[sub_resource type="GradientTexture1D" id="Texture_mote_fade"]
+gradient = SubResource("Gradient_mote_fade")
+
+[sub_resource type="ParticleProcessMaterial" id="Process_motes"]
+emission_shape = 3
+emission_box_extents = Vector3(7, 2.5, 7)
+direction = Vector3(1, 0.2, 0.3)
+spread = 180.0
+initial_velocity_min = 0.03
+initial_velocity_max = 0.12
+gravity = Vector3(0, -0.01, 0)
+scale_min = 0.5
+scale_max = 1.2
+color = Color(1, 0.97, 0.9, 0.35)
+color_ramp = SubResource("Texture_mote_fade")
+
+[sub_resource type="StandardMaterial3D" id="Mat_mote"]
+transparency = 1
+shading_mode = 2
+vertex_color_use_as_albedo = true
+billboard_mode = 3
+particles_anim_h_frames = 1
+particles_anim_v_frames = 1
+particles_anim_loop = false
+
+[sub_resource type="QuadMesh" id="Mesh_mote"]
+material = SubResource("Mat_mote")
+size = Vector2(0.012, 0.012)
+
 [sub_resource type="CapsuleShape3D" id="Capsule_body"]
 radius = 0.35
 height = 1.8
@@ -45,6 +78,17 @@ bus = &"Effects"
 [node name="BodySounds" type="AudioStreamPlayer" parent="."]
 max_polyphony = 2
 bus = &"Effects"
+
+[node name="AmbientDust" type="GPUParticles3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6, 0)
+cast_shadow = 0
+amount = 90
+lifetime = 9.0
+preprocess = 9.0
+local_coords = false
+visibility_aabb = AABB(-9, -4, -9, 18, 8, 18)
+process_material = SubResource("Process_motes")
+draw_pass_1 = SubResource("Mesh_mote")
 
 [node name="Camera" type="Camera3D" parent="."]
 current = true

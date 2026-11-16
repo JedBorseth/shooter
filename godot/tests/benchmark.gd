@@ -15,6 +15,7 @@ extends SceneTree
 ##   BENCH_MAPS     comma list of testing, slamcity, zombies (default: all).
 ##   BENCH_FRAMES   frames measured per viewpoint (default 120).
 ##   BENCH_CAPTURE  directory for a screenshot of each viewpoint (optional).
+##   BENCH_MOTION_BLUR  1 to measure with motion blur on (off by default).
 ##
 ## GPU time comes from the renderer's own timestamps, so it is the most stable
 ## number under Xvfb. Frame time is wall clock and includes Xvfb's copy.
@@ -84,6 +85,7 @@ func _run() -> void:
 	settings.path = SETTINGS_PATH
 	settings.set_setting(&"vsync", false)
 	settings.set_setting(&"max_fps", 0)
+	settings.set_setting(&"motion_blur", OS.get_environment("BENCH_MOTION_BLUR") == "1")
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	RenderingServer.viewport_set_measure_render_time(root.get_viewport_rid(), true)
 
@@ -91,6 +93,14 @@ func _run() -> void:
 	var maps := _list("BENCH_MAPS", MAPS.keys())
 	var size := Vector2(DisplayServer.window_get_size())
 	print("benchmark at %dx%d on %s" % [size.x, size.y, RenderingServer.get_video_adapter_name()])
+	# Warm up: visit every map once, so shader and pipeline compiles land here
+	# and not in the first measurement.
+	for map: String in maps:
+		var warm: Node = (load(MAPS[map]["scene"]) as PackedScene).instantiate()
+		root.add_child(warm)
+		await _frames(60)
+		warm.queue_free()
+		await _frames(5)
 	for preset: String in presets:
 		settings.set_graphics_preset(PRESET_KEYS[preset])
 		for map: String in maps:

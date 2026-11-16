@@ -194,6 +194,11 @@ func _check_graphics(settings: Node) -> void:
 	settings.set_setting(&"render_scale", 0.67)
 	_check(root.scaling_3d_mode == Viewport.SCALING_3D_MODE_FSR2, "High upscales with FSR 2")
 	_check(root.screen_space_aa == Viewport.SCREEN_SPACE_AA_DISABLED, "FSR 2 replaces SMAA")
+	_check(world.compositor == null, "no motion blur by default")
+	settings.set_setting(&"motion_blur", true)
+	_check(world.compositor != null, "motion blur adds a compositor to the environment")
+	settings.set_setting(&"motion_blur", false)
+	_check(world.compositor == null, "turning motion blur off removes it")
 	settings.set_setting(&"render_scale", 0.2)
 	_check(is_equal_approx(settings.render_scale, 0.5), "render scale clamps to 50%")
 
@@ -227,7 +232,7 @@ func _check_menu(settings: Node) -> void:
 	_check((menu.get_node("%SettingsPage") as Control).visible, "Settings opens the settings page")
 	var sliders: Array[Node] = menu.find_children("*", "HSlider", true, false)
 	_check(sliders.size() == 7, "seven sliders, got %d" % sliders.size())
-	_check(menu.find_children("*", "CheckButton", true, false).size() == 4, "four toggles")
+	_check(menu.find_children("*", "CheckButton", true, false).size() == 5, "five toggles")
 
 	# Drive a slider and a toggle like a player would.
 	var fov_slider := sliders[2] as HSlider
