@@ -8,8 +8,6 @@ var _loading := false
 var _scene_path := ARENA_PATH
 var _destination := "testing arena"
 
-var _loading := false
-
 @onready var _testing: Button = $Margin/Layout/Menu/TestingArea
 @onready var _status: Label = $Margin/Layout/Status
 
