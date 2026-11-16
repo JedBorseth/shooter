@@ -96,3 +96,4 @@ GPU time on Medium at 1080p on the reference card, average over viewpoints (wors
 | One-material characters (horde: 629 to 195 draw calls) | 5.08 (5.27) ms | 6.07 (6.26) ms | 5.22 (5.64) ms |
 | Effects (sparks, debris, dust, tracers, ambient dust) | 5.05 (5.23) ms | 5.95 (6.11) ms | 5.15 (5.55) ms |
 | Slamcity decals and building trim | 5.07 (5.26) ms | 6.31 (6.54) ms | 5.19 (5.60) ms |
+| Three-lane Slamcity (new map, twice the size; new viewpoints) | 5.11 (5.20) ms | 6.49 (6.65) ms | 5.20 (5.52) ms |

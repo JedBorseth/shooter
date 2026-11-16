@@ -53,10 +53,11 @@ Launch opens a lightweight title menu. **Testing Area**, the first option, loads
 existing arena on selection. **Team Deathmatch** sets up a local match (your name, the
 map, team size from 1v1 to 6v6 with bots in the empty places, kill limit, and time limit),
 starts a dedicated server for it in the background, and joins it; leaving the match stops
-that server. **Slamcity** is a small, fast city-block map: walk-up flats
-with a first-floor walkway, corner stores, a sunken skate bowl in the middle, and alleys
-around the edges, with practice targets and a weapon rack at each spawn. It ships in every
-build. **Multiplayer** opens the server browser (see [Play online](#play-online)). **Zombies**
+that server. **Slamcity** is the Team Deathmatch map, a city block with three lanes
+between parking-yard spawns at each end: a back alley with a fire escape up to the flats'
+roof (the high ground), Market Street around a sunken skate bowl, and a run of interiors
+(corner store, apartment lobby, laundromat) with windows onto the street. Offline it has
+practice targets on the far half. It ships in every build. **Multiplayer** opens the server browser (see [Play online](#play-online)). **Zombies**
 opens a Black Ops 2 inspired menu: **Solo** leads to a rotating globe with five
 selectable map locations. Use the list, map markers, or arrow buttons to select;
 drag the globe to rotate, and use Back or Esc to return. **START GAME** loads the
