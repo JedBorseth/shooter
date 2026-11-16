@@ -92,6 +92,8 @@ static func apply(tree: SceneTree, preset: int, render_scale: float) -> void:
 	RenderingServer.directional_shadow_atlas_set_size(p["shadow_atlas"], true)
 	RenderingServer.directional_soft_shadow_filter_set_quality(p["shadow_filter"])
 	RenderingServer.positional_soft_shadow_filter_set_quality(p["shadow_filter"])
+	# Bicubic lightmap sampling smooths baked shadows; worth it on High only.
+	RenderingServer.lightmaps_set_bicubic_filter(preset == Preset.HIGH)
 	RenderingServer.environment_set_ssao_quality(
 		p["ssao_quality"], preset != Preset.HIGH, 0.5, 2, 50.0, 300.0
 	)

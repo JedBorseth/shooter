@@ -22,7 +22,7 @@ Rules of thumb for this renderer on this card, from the measurements below:
 
 - Cost is per pixel, not per triangle. Draw calls and triangle counts at today's scale barely move GPU time; full-screen effects (SSAO, MSAA, glow, soft shadows) do.
 - Bake lighting instead of computing it live. No SDFGI, VoxelGI, or screen-space reflections. Volumetric fog is High only.
-- Reflection probes are expensive here: four small interior probes in Slamcity cost about 0.8 ms whenever a room filled the screen, and one probe over the whole block cost 0.7 ms everywhere. Prefer baked lightmaps for indoor light.
+- Reflection probes are expensive here: four small interior probes in Slamcity cost about 0.8 ms whenever a room filled the screen, and one probe over the whole block cost 0.7 ms everywhere. Baked lightmaps light the interiors instead (`tools/bake_lightmaps.sh`).
 - Textures are compressed on the GPU (BPTC/S3TC), with mipmaps, 1K for most surfaces and 2K only for the weapon in view. Sample each surface once (one projection), not three times.
 - Characters cost through their surfaces and skinning: keep each one to a few surfaces and use LODs.
 
@@ -56,6 +56,7 @@ The presets live in `godot/scripts/graphics.gd`. The `Settings` autoload applies
 | Volumetric fog | off | off | where the map uses it |
 | Sun shadows | 2048 atlas, softest-cheapest filter, 50% range | 4096, soft low, 80% range | 4096, soft medium, full range |
 | Anisotropic filtering | 2× | 4× | 16× |
+| Lightmap sampling | bilinear | bilinear | bicubic |
 
 The player can pick any render scale from 50% to native in the settings menu. Below native, Low upscales with FSR 1 (about 0.3 ms on the reference card) and Medium and High with FSR 2 (sharper, but about 1.5 ms of fixed cost, so it only pays off on faster cards).
 
@@ -88,3 +89,4 @@ GPU time on Medium at 1080p on the reference card, average over viewpoints (wors
 | Sky lighting, haze, and grading | 4.90 (5.08) ms | 5.67 (5.87) ms | 4.92 (5.31) ms |
 | PBR weapons, muzzle plume and smoke | 4.98 (5.21) ms | 5.72 (6.01) ms | 4.93 (5.32) ms |
 | Modelled props | 4.99 (5.21) ms | 5.81 (6.05) ms | 4.99 (5.35) ms |
+| Baked lightmaps | 5.06 (5.25) ms | 5.97 (6.19) ms | 5.15 (5.49) ms |

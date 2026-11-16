@@ -1,32 +1,35 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://b4tlawva8wv17"]
 
 [ext_resource type="PackedScene" path="res://scenes/player.tscn" id="1_player"]
-[ext_resource type="Material" path="res://materials/world/range_floor.tres" id="m_floor"]
-[ext_resource type="Material" path="res://materials/world/range_wall.tres" id="m_wall"]
-[ext_resource type="Material" path="res://materials/world/range_cover.tres" id="m_cover"]
-[ext_resource type="Material" path="res://materials/world/range_platform.tres" id="m_platform"]
-[ext_resource type="Material" path="res://materials/world/range_tunnel.tres" id="m_tunnel"]
-[ext_resource type="Material" path="res://materials/world/range_crate.tres" id="m_crate"]
+[ext_resource type="LightmapGIData" uid="uid://bo87p12pwjuom" path="res://scenes/main.lmbake" id="2_fv21b"]
 [ext_resource type="PackedScene" path="res://scenes/props/target_dummy.tscn" id="4_dummy"]
+[ext_resource type="ArrayMesh" path="res://assets/maps/main/Map.res" id="5_dgi5k"]
 [ext_resource type="PackedScene" path="res://scenes/ui/pause_menu.tscn" id="5_pause"]
+[ext_resource type="ArrayMesh" path="res://assets/maps/main/MapMetal.res" id="9_j8jky"]
 [ext_resource type="PackedScene" path="res://scenes/props/weapon_rack.tscn" id="9_rack"]
 [ext_resource type="PackedScene" path="res://scenes/props/sentry.tscn" id="10_sentry"]
-[ext_resource type="PackedScene" path="res://assets/weapons/m4/m4.glb" id="11_m4"]
-[ext_resource type="PackedScene" path="res://assets/weapons/ak47/ak47.glb" id="12_ak47"]
-[ext_resource type="PackedScene" path="res://assets/weapons/pdw9/pdw9.glb" id="13_pdw9"]
-[ext_resource type="PackedScene" path="res://assets/weapons/m870/m870.glb" id="14_m870"]
-[ext_resource type="PackedScene" path="res://assets/weapons/m40/m40.glb" id="15_m40"]
-[ext_resource type="PackedScene" path="res://assets/weapons/pistol/pistol.glb" id="16_pistol"]
+[ext_resource type="PackedScene" uid="uid://f4nuvi0vah4o" path="res://assets/weapons/m4/m4.glb" id="11_m4"]
+[ext_resource type="PackedScene" uid="uid://cyygpfwlyiqpr" path="res://assets/weapons/ak47/ak47.glb" id="12_ak47"]
+[ext_resource type="PackedScene" uid="uid://dmc57n0wq6djd" path="res://assets/weapons/pdw9/pdw9.glb" id="13_pdw9"]
+[ext_resource type="PackedScene" uid="uid://db06ijyhm84qu" path="res://assets/weapons/m870/m870.glb" id="14_m870"]
+[ext_resource type="PackedScene" uid="uid://cgsrcdi5ss4rb" path="res://assets/weapons/m40/m40.glb" id="15_m40"]
+[ext_resource type="PackedScene" uid="uid://ccmnn0ufjhdla" path="res://assets/weapons/pistol/pistol.glb" id="16_pistol"]
 [ext_resource type="PackedScene" path="res://scenes/ui/hud.tscn" id="19_hud"]
-[ext_resource type="Texture2D" path="res://assets/skies/range_day.hdr" id="20_sky"]
-[ext_resource type="PackedScene" path="res://assets/props/barrel_blue/barrel_blue.gltf" id="p_barrel_blue"]
-[ext_resource type="PackedScene" path="res://assets/props/barrel_red/barrel_red.gltf" id="p_barrel_red"]
-[ext_resource type="PackedScene" path="res://assets/props/barrel_steel/barrel_steel.gltf" id="p_barrel_steel"]
-[ext_resource type="PackedScene" path="res://assets/props/barrier/barrier.gltf" id="p_barrier"]
-[ext_resource type="PackedScene" path="res://assets/props/crate/crate.gltf" id="p_crate"]
-[ext_resource type="PackedScene" path="res://assets/props/military_crate/military_crate.gltf" id="p_military_crate"]
-[ext_resource type="PackedScene" path="res://assets/props/tyre/tyre.gltf" id="p_tyre"]
-[ext_resource type="PackedScene" path="res://assets/props/utility_box/utility_box.gltf" id="p_utility_box"]
+[ext_resource type="Texture2D" uid="uid://c21lj1e3rpr52" path="res://assets/skies/range_day.hdr" id="20_sky"]
+[ext_resource type="Material" path="res://materials/world/range_cover.tres" id="m_cover"]
+[ext_resource type="Material" path="res://materials/world/range_crate.tres" id="m_crate"]
+[ext_resource type="Material" path="res://materials/world/range_floor.tres" id="m_floor"]
+[ext_resource type="Material" path="res://materials/world/range_platform.tres" id="m_platform"]
+[ext_resource type="Material" path="res://materials/world/range_tunnel.tres" id="m_tunnel"]
+[ext_resource type="Material" path="res://materials/world/range_wall.tres" id="m_wall"]
+[ext_resource type="PackedScene" uid="uid://1n24gf2ivekm" path="res://assets/props/barrel_blue/barrel_blue.gltf" id="p_barrel_blue"]
+[ext_resource type="PackedScene" uid="uid://bouhhxxxokimq" path="res://assets/props/barrel_red/barrel_red.gltf" id="p_barrel_red"]
+[ext_resource type="PackedScene" uid="uid://bajabhpp86tw6" path="res://assets/props/barrel_steel/barrel_steel.gltf" id="p_barrel_steel"]
+[ext_resource type="PackedScene" uid="uid://cayar0f4m6ipg" path="res://assets/props/barrier/barrier.gltf" id="p_barrier"]
+[ext_resource type="PackedScene" uid="uid://cw3bhh3if7on2" path="res://assets/props/crate/crate.gltf" id="p_crate"]
+[ext_resource type="PackedScene" uid="uid://6gxyxjfrt8n5" path="res://assets/props/military_crate/military_crate.gltf" id="p_military_crate"]
+[ext_resource type="PackedScene" uid="uid://b1p1uago5j3cy" path="res://assets/props/tyre/tyre.gltf" id="p_tyre"]
+[ext_resource type="PackedScene" uid="uid://330cd5sbdyvp" path="res://assets/props/utility_box/utility_box.gltf" id="p_utility_box"]
 
 [sub_resource type="PanoramaSkyMaterial" id="SkyMat"]
 panorama = ExtResource("20_sky")
@@ -58,323 +61,317 @@ fog_sky_affect = 0.0
 adjustment_enabled = true
 adjustment_contrast = 1.05
 adjustment_saturation = 1.05
+metadata/_graphics_authored = {
+"glow": true,
+"ssao": true,
+"volumetric_fog": false
+}
 
-[node name="Main" type="Node3D"]
+[node name="Main" type="Node3D" unique_id=451316195]
 
-[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1119738171]
 environment = SubResource("Env")
 
-[node name="Sun" type="DirectionalLight3D" parent="."]
-rotation = Vector3(-0.836, 0.6, 0)
+[node name="LightmapGI" type="LightmapGI" parent="." unique_id=416227241]
+max_texture_size = 4096
+light_data = ExtResource("2_fv21b")
+
+[node name="Sun" type="DirectionalLight3D" parent="." unique_id=166713039]
+transform = Transform3D(0.8253356, -0.41894627, 0.37855667, 0, 0.670436, 0.7419673, -0.5646425, -0.61237204, 0.5533347, 0, 0, 0)
 light_color = Color(1, 0.96, 0.9, 1)
 light_energy = 2.0
-shadow_blur = 1.2
 shadow_enabled = true
-directional_shadow_max_distance = 90.0
+shadow_blur = 1.2
+directional_shadow_max_distance = 72.0
+metadata/_graphics_authored = {
+"shadow_distance": 90.0
+}
 
-[node name="Map" type="CSGCombiner3D" parent="."]
+[node name="Map" type="CSGCombiner3D" parent="." unique_id=316904005]
+visible = false
 use_collision = true
 metadata/surface = "concrete"
+metadata/csg_baked = true
 
-[node name="MapWood" type="CSGCombiner3D" parent="."]
+[node name="Floor" type="CSGBox3D" parent="Map" unique_id=1382492506]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
+size = Vector3(64, 1, 64)
+material = ExtResource("m_floor")
+
+[node name="WallNorth" type="CSGBox3D" parent="Map" unique_id=926288563]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3, -32.5)
+size = Vector3(66, 6, 1)
+material = ExtResource("m_wall")
+
+[node name="WallSouth" type="CSGBox3D" parent="Map" unique_id=1273880526]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3, 32.5)
+size = Vector3(66, 6, 1)
+material = ExtResource("m_wall")
+
+[node name="WallEast" type="CSGBox3D" parent="Map" unique_id=838495656]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 32.5, 3, 0)
+size = Vector3(1, 6, 64)
+material = ExtResource("m_wall")
+
+[node name="WallWest" type="CSGBox3D" parent="Map" unique_id=2081416431]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -32.5, 3, 0)
+size = Vector3(1, 6, 64)
+material = ExtResource("m_wall")
+
+[node name="CoverTallA" type="CSGBox3D" parent="Map" unique_id=1828815232]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10, 1.5, 10)
+size = Vector3(0.8, 3, 5)
+material = ExtResource("m_wall")
+
+[node name="CoverTallB" type="CSGBox3D" parent="Map" unique_id=124117027]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -14, 1.5, -2)
+size = Vector3(6, 3, 0.8)
+material = ExtResource("m_wall")
+
+[node name="TunnelLeft" type="CSGBox3D" parent="Map" unique_id=1493428051]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -11.5, 0.95, -18)
+size = Vector3(1, 1.9, 4)
+material = ExtResource("m_tunnel")
+
+[node name="TunnelRight" type="CSGBox3D" parent="Map" unique_id=688887132]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8.5, 0.95, -18)
+size = Vector3(1, 1.9, 4)
+material = ExtResource("m_tunnel")
+
+[node name="TunnelRoof" type="CSGBox3D" parent="Map" unique_id=1486527316]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10, 1.65, -18)
+size = Vector3(4, 0.5, 4)
+material = ExtResource("m_tunnel")
+
+[node name="MapMesh" type="MeshInstance3D" parent="." unique_id=506400248]
+mesh = ExtResource("5_dgi5k")
+metadata/csg_visual = true
+
+[node name="MapWood" type="CSGCombiner3D" parent="." unique_id=443765915]
 visible = false
 use_collision = true
 metadata/surface = "wood"
 
-[node name="CoverBlockers" type="CSGCombiner3D" parent="."]
+[node name="CrateA" type="CSGBox3D" parent="MapWood" unique_id=404729012]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -18, 0.45, 14)
+size = Vector3(1.2, 0.9, 1.2)
+material = ExtResource("m_crate")
+
+[node name="CrateB" type="CSGBox3D" parent="MapWood" unique_id=850254171]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16.8, 0.45, 14)
+size = Vector3(1.2, 0.9, 1.2)
+material = ExtResource("m_crate")
+
+[node name="CrateStack" type="CSGBox3D" parent="MapWood" unique_id=1956384867]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -18, 1.35, 14)
+size = Vector3(1.2, 0.9, 1.2)
+material = ExtResource("m_crate")
+
+[node name="CoverBlockers" type="CSGCombiner3D" parent="." unique_id=286134309]
 visible = false
 use_collision = true
 metadata/surface = "concrete"
 
-[node name="MapMetal" type="CSGCombiner3D" parent="."]
-use_collision = true
-metadata/surface = "metal"
-
-[node name="Floor" type="CSGBox3D" parent="Map"]
-position = Vector3(0, -0.5, 0)
-size = Vector3(64, 1, 64)
-material = ExtResource("m_floor")
-
-[node name="WallNorth" type="CSGBox3D" parent="Map"]
-position = Vector3(0, 3, -32.5)
-size = Vector3(66, 6, 1)
-material = ExtResource("m_wall")
-
-[node name="WallSouth" type="CSGBox3D" parent="Map"]
-position = Vector3(0, 3, 32.5)
-size = Vector3(66, 6, 1)
-material = ExtResource("m_wall")
-
-[node name="WallEast" type="CSGBox3D" parent="Map"]
-position = Vector3(32.5, 3, 0)
-size = Vector3(1, 6, 64)
-material = ExtResource("m_wall")
-
-[node name="WallWest" type="CSGBox3D" parent="Map"]
-position = Vector3(-32.5, 3, 0)
-size = Vector3(1, 6, 64)
-material = ExtResource("m_wall")
-
-[node name="CoverLowA" type="CSGBox3D" parent="CoverBlockers"]
-position = Vector3(-4, 0.6, 6)
+[node name="CoverLowA" type="CSGBox3D" parent="CoverBlockers" unique_id=919152594]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4, 0.6, 6)
 size = Vector3(3, 1.2, 0.6)
 material = ExtResource("m_cover")
 
-[node name="CoverLowB" type="CSGBox3D" parent="CoverBlockers"]
-position = Vector3(5, 0.6, 2)
+[node name="CoverLowB" type="CSGBox3D" parent="CoverBlockers" unique_id=849060042]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5, 0.6, 2)
 size = Vector3(3, 1.2, 0.6)
 material = ExtResource("m_cover")
 
-[node name="CoverLowC" type="CSGBox3D" parent="CoverBlockers"]
-position = Vector3(0, 0.6, -6)
+[node name="CoverLowC" type="CSGBox3D" parent="CoverBlockers" unique_id=723420570]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, -6)
 size = Vector3(4, 1.2, 0.6)
 material = ExtResource("m_cover")
 
-[node name="CoverTallA" type="CSGBox3D" parent="Map"]
-position = Vector3(10, 1.5, 10)
-size = Vector3(0.8, 3, 5)
-material = ExtResource("m_wall")
+[node name="MapMetal" type="CSGCombiner3D" parent="." unique_id=2095986034]
+visible = false
+use_collision = true
+metadata/surface = "metal"
+metadata/csg_baked = true
 
-[node name="CoverTallB" type="CSGBox3D" parent="Map"]
-position = Vector3(-14, 1.5, -2)
-size = Vector3(6, 3, 0.8)
-material = ExtResource("m_wall")
-
-[node name="CrateA" type="CSGBox3D" parent="MapWood"]
-position = Vector3(-18, 0.45, 14)
-size = Vector3(1.2, 0.9, 1.2)
-material = ExtResource("m_crate")
-
-[node name="CrateB" type="CSGBox3D" parent="MapWood"]
-position = Vector3(-16.8, 0.45, 14)
-size = Vector3(1.2, 0.9, 1.2)
-material = ExtResource("m_crate")
-
-[node name="CrateStack" type="CSGBox3D" parent="MapWood"]
-position = Vector3(-18, 1.35, 14)
-size = Vector3(1.2, 0.9, 1.2)
-material = ExtResource("m_crate")
-
-[node name="Platform" type="CSGBox3D" parent="MapMetal"]
-position = Vector3(16, 1.5, -16)
+[node name="Platform" type="CSGBox3D" parent="MapMetal" unique_id=1036807548]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 1.5, -16)
 size = Vector3(8, 3, 8)
 material = ExtResource("m_platform")
 
-[node name="Ramp" type="CSGBox3D" parent="MapMetal"]
-position = Vector3(16, 1.28, -8.8)
-rotation = Vector3(0.436332, 0, 0)
+[node name="Ramp" type="CSGBox3D" parent="MapMetal" unique_id=347988204]
+transform = Transform3D(1, 0, 0, 0, 0.90630794, -0.42261797, 0, 0.42261797, 0.90630794, 16, 1.28, -8.8)
 size = Vector3(4, 0.4, 7.6)
 material = ExtResource("m_platform")
 
-[node name="TunnelLeft" type="CSGBox3D" parent="Map"]
-position = Vector3(-11.5, 0.95, -18)
-size = Vector3(1, 1.9, 4)
-material = ExtResource("m_tunnel")
+[node name="MapMetalMesh" type="MeshInstance3D" parent="." unique_id=2060591155]
+mesh = ExtResource("9_j8jky")
+metadata/csg_visual = true
 
-[node name="TunnelRight" type="CSGBox3D" parent="Map"]
-position = Vector3(-8.5, 0.95, -18)
-size = Vector3(1, 1.9, 4)
-material = ExtResource("m_tunnel")
+[node name="Props3D" type="Node3D" parent="." unique_id=1455878939]
 
-[node name="TunnelRoof" type="CSGBox3D" parent="Map"]
-position = Vector3(-10, 1.65, -18)
-size = Vector3(4, 0.5, 4)
-material = ExtResource("m_tunnel")
+[node name="CoverLowABarrier0" parent="Props3D" unique_id=231175705 instance=ExtResource("p_barrier")]
+transform = Transform3D(0.9615, 0, 0, 0, 1.0811, 0, 0, 0, 1.3636, -4.75, 0, 6)
 
-[node name="Props3D" type="Node3D" parent="."]
+[node name="CoverLowABarrier1" parent="Props3D" unique_id=1987781523 instance=ExtResource("p_barrier")]
+transform = Transform3D(-0.9615, 0, -9.872438e-06, 0, 1.0811, 0, 6.961241e-06, 0, -1.3636, -3.25, 0, 6)
 
-[node name="CoverLowABarrier0" parent="Props3D" instance=ExtResource("p_barrier")]
-position = Vector3(-4.75, 0, 6)
-scale = Vector3(0.9615, 1.0811, 1.3636)
+[node name="CoverLowBBarrier0" parent="Props3D" unique_id=2073276543 instance=ExtResource("p_barrier")]
+transform = Transform3D(0.9615, 0, 0, 0, 1.0811, 0, 0, 0, 1.3636, 4.25, 0, 2)
 
-[node name="CoverLowABarrier1" parent="Props3D" instance=ExtResource("p_barrier")]
-position = Vector3(-3.25, 0, 6)
-rotation = Vector3(0, 3.1416, 0)
-scale = Vector3(0.9615, 1.0811, 1.3636)
+[node name="CoverLowBBarrier1" parent="Props3D" unique_id=131399108 instance=ExtResource("p_barrier")]
+transform = Transform3D(-0.9615, 0, -9.872438e-06, 0, 1.0811, 0, 6.961241e-06, 0, -1.3636, 5.75, 0, 2)
 
-[node name="CoverLowBBarrier0" parent="Props3D" instance=ExtResource("p_barrier")]
-position = Vector3(4.25, 0, 2)
-scale = Vector3(0.9615, 1.0811, 1.3636)
+[node name="CoverLowCBarrier0" parent="Props3D" unique_id=949188439 instance=ExtResource("p_barrier")]
+transform = Transform3D(0.8547, 0, 0, 0, 1.0811, 0, 0, 0, 1.3636, -1.3333, 0, -6)
 
-[node name="CoverLowBBarrier1" parent="Props3D" instance=ExtResource("p_barrier")]
-position = Vector3(5.75, 0, 2)
-rotation = Vector3(0, 3.1416, 0)
-scale = Vector3(0.9615, 1.0811, 1.3636)
+[node name="CoverLowCBarrier1" parent="Props3D" unique_id=464312865 instance=ExtResource("p_barrier")]
+transform = Transform3D(-0.8547, 0, -9.872438e-06, 0, 1.0811, 0, 6.1880114e-06, 0, -1.3636, 0, 0, -6)
 
-[node name="CoverLowCBarrier0" parent="Props3D" instance=ExtResource("p_barrier")]
-position = Vector3(-1.3333, 0, -6)
-scale = Vector3(0.8547, 1.0811, 1.3636)
+[node name="CoverLowCBarrier2" parent="Props3D" unique_id=561837861 instance=ExtResource("p_barrier")]
+transform = Transform3D(0.8547, 0, 0, 0, 1.0811, 0, 0, 0, 1.3636, 1.3333, 0, -6)
 
-[node name="CoverLowCBarrier1" parent="Props3D" instance=ExtResource("p_barrier")]
-position = Vector3(0, 0, -6)
-rotation = Vector3(0, 3.1416, 0)
-scale = Vector3(0.8547, 1.0811, 1.3636)
+[node name="CrateA0" parent="Props3D" unique_id=840150182 instance=ExtResource("p_crate")]
+transform = Transform3D(1.1321, 0, 0, 0, 0.9783, 0, 0, 0, 1.0256, -18.3, 0, 14)
 
-[node name="CoverLowCBarrier2" parent="Props3D" instance=ExtResource("p_barrier")]
-position = Vector3(1.3333, 0, -6)
-scale = Vector3(0.8547, 1.0811, 1.3636)
+[node name="CrateA1" parent="Props3D" unique_id=2076709892 instance=ExtResource("p_crate")]
+transform = Transform3D(1.1315906, 0, 0.030763382, 0, 0.9783, 0, -0.033957902, 0, 1.0251385, -18.3, 0.45, 14)
 
-[node name="CrateA0" parent="Props3D" instance=ExtResource("p_crate")]
-position = Vector3(-18.3, 0, 14)
-scale = Vector3(1.1321, 0.9783, 1.0256)
+[node name="CrateA2" parent="Props3D" unique_id=501142730 instance=ExtResource("p_crate")]
+transform = Transform3D(1.1321, 0, 0, 0, 0.9783, 0, 0, 0, 1.0256, -17.7, 0, 14)
 
-[node name="CrateA1" parent="Props3D" instance=ExtResource("p_crate")]
-position = Vector3(-18.3, 0.45, 14)
-rotation = Vector3(0, 0.03, 0)
-scale = Vector3(1.1321, 0.9783, 1.0256)
+[node name="CrateA3" parent="Props3D" unique_id=1394489336 instance=ExtResource("p_crate")]
+transform = Transform3D(1.1315906, 0, 0.030763382, 0, 0.9783, 0, -0.033957902, 0, 1.0251385, -17.7, 0.45, 14)
 
-[node name="CrateA2" parent="Props3D" instance=ExtResource("p_crate")]
-position = Vector3(-17.7, 0, 14)
-scale = Vector3(1.1321, 0.9783, 1.0256)
+[node name="CrateB0" parent="Props3D" unique_id=1946131652 instance=ExtResource("p_crate")]
+transform = Transform3D(1.1321, 0, 0, 0, 0.9783, 0, 0, 0, 1.0256, -17.1, 0, 14)
 
-[node name="CrateA3" parent="Props3D" instance=ExtResource("p_crate")]
-position = Vector3(-17.7, 0.45, 14)
-rotation = Vector3(0, 0.03, 0)
-scale = Vector3(1.1321, 0.9783, 1.0256)
+[node name="CrateB1" parent="Props3D" unique_id=1715351590 instance=ExtResource("p_crate")]
+transform = Transform3D(1.1315906, 0, 0.030763382, 0, 0.9783, 0, -0.033957902, 0, 1.0251385, -17.1, 0.45, 14)
 
-[node name="CrateB0" parent="Props3D" instance=ExtResource("p_crate")]
-position = Vector3(-17.1, 0, 14)
-scale = Vector3(1.1321, 0.9783, 1.0256)
+[node name="CrateB2" parent="Props3D" unique_id=621950138 instance=ExtResource("p_crate")]
+transform = Transform3D(1.1321, 0, 0, 0, 0.9783, 0, 0, 0, 1.0256, -16.5, 0, 14)
 
-[node name="CrateB1" parent="Props3D" instance=ExtResource("p_crate")]
-position = Vector3(-17.1, 0.45, 14)
-rotation = Vector3(0, 0.03, 0)
-scale = Vector3(1.1321, 0.9783, 1.0256)
+[node name="CrateB3" parent="Props3D" unique_id=1755611133 instance=ExtResource("p_crate")]
+transform = Transform3D(1.1315906, 0, 0.030763382, 0, 0.9783, 0, -0.033957902, 0, 1.0251385, -16.5, 0.45, 14)
 
-[node name="CrateB2" parent="Props3D" instance=ExtResource("p_crate")]
-position = Vector3(-16.5, 0, 14)
-scale = Vector3(1.1321, 0.9783, 1.0256)
+[node name="CrateStack0" parent="Props3D" unique_id=140868276 instance=ExtResource("p_crate")]
+transform = Transform3D(1.1321, 0, 0, 0, 0.9783, 0, 0, 0, 1.0256, -18.3, 0.9, 14)
 
-[node name="CrateB3" parent="Props3D" instance=ExtResource("p_crate")]
-position = Vector3(-16.5, 0.45, 14)
-rotation = Vector3(0, 0.03, 0)
-scale = Vector3(1.1321, 0.9783, 1.0256)
+[node name="CrateStack1" parent="Props3D" unique_id=1432073191 instance=ExtResource("p_crate")]
+transform = Transform3D(1.1315906, 0, 0.030763382, 0, 0.9783, 0, -0.033957902, 0, 1.0251385, -18.3, 1.35, 14)
 
-[node name="CrateStack0" parent="Props3D" instance=ExtResource("p_crate")]
-position = Vector3(-18.3, 0.9, 14)
-scale = Vector3(1.1321, 0.9783, 1.0256)
+[node name="CrateStack2" parent="Props3D" unique_id=402471062 instance=ExtResource("p_crate")]
+transform = Transform3D(1.1321, 0, 0, 0, 0.9783, 0, 0, 0, 1.0256, -17.7, 0.9, 14)
 
-[node name="CrateStack1" parent="Props3D" instance=ExtResource("p_crate")]
-position = Vector3(-18.3, 1.35, 14)
-rotation = Vector3(0, 0.03, 0)
-scale = Vector3(1.1321, 0.9783, 1.0256)
+[node name="CrateStack3" parent="Props3D" unique_id=1833018749 instance=ExtResource("p_crate")]
+transform = Transform3D(1.1315906, 0, 0.030763382, 0, 0.9783, 0, -0.033957902, 0, 1.0251385, -17.7, 1.35, 14)
 
-[node name="CrateStack2" parent="Props3D" instance=ExtResource("p_crate")]
-position = Vector3(-17.7, 0.9, 14)
-scale = Vector3(1.1321, 0.9783, 1.0256)
+[node name="WallBarrel0" parent="Props3D" unique_id=1360380794 instance=ExtResource("p_barrel_red")]
+transform = Transform3D(0.921061, 0, 0.38941833, 0, 1, 0, -0.38941833, 0, 0.921061, -30.8, 0, -30.6)
 
-[node name="CrateStack3" parent="Props3D" instance=ExtResource("p_crate")]
-position = Vector3(-17.7, 1.35, 14)
-rotation = Vector3(0, 0.03, 0)
-scale = Vector3(1.1321, 0.9783, 1.0256)
+[node name="WallBarrel1" parent="Props3D" unique_id=1284436882 instance=ExtResource("p_barrel_steel")]
+transform = Transform3D(0.4535961, 0, 0.8912074, 0, 1, 0, -0.8912074, 0, 0.4535961, -30, 0, -31)
 
-[node name="WallBarrel0" parent="Props3D" instance=ExtResource("p_barrel_red")]
-position = Vector3(-30.8, 0, -30.6)
-rotation = Vector3(0, 0.4, 0)
+[node name="WallBarrel2" parent="Props3D" unique_id=2130276677 instance=ExtResource("p_barrel_blue")]
+transform = Transform3D(-0.41614684, 0, 0.9092974, 0, 1, 0, -0.9092974, 0, -0.41614684, 30.6, 0, 30.8)
 
-[node name="WallBarrel1" parent="Props3D" instance=ExtResource("p_barrel_steel")]
-position = Vector3(-30, 0, -31)
-rotation = Vector3(0, 1.1, 0)
+[node name="WallTyre0" parent="Props3D" unique_id=415712015 instance=ExtResource("p_tyre")]
+transform = Transform3D(0.16996716, 0, 0.98544973, 0, 1, 0, -0.98544973, 0, 0.16996716, -31.2, 0, 25)
 
-[node name="WallBarrel2" parent="Props3D" instance=ExtResource("p_barrel_blue")]
-position = Vector3(30.6, 0, 30.8)
-rotation = Vector3(0, 2, 0)
+[node name="WallCrate0" parent="Props3D" unique_id=1241584971 instance=ExtResource("p_military_crate")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 29.5, 0, -31.2)
 
-[node name="WallTyre0" parent="Props3D" instance=ExtResource("p_tyre")]
-position = Vector3(-31.2, 0, 25)
-rotation = Vector3(0, 1.4, 0)
+[node name="WallCrate1" parent="Props3D" unique_id=173325694 instance=ExtResource("p_military_crate")]
+transform = Transform3D(0.99875027, 0, 0.04997917, 0, 1, 0, -0.04997917, 0, 0.99875027, 29.5, 0.46, -31.2)
 
-[node name="WallCrate0" parent="Props3D" instance=ExtResource("p_military_crate")]
-position = Vector3(29.5, 0, -31.2)
+[node name="WallUtility" parent="Props3D" unique_id=2096097035 instance=ExtResource("p_utility_box")]
+transform = Transform3D(-3.6199901e-06, 0, -1, 0, 1, 0, 1, 0, -3.6199901e-06, 31.7, 0, 12)
 
-[node name="WallCrate1" parent="Props3D" instance=ExtResource("p_military_crate")]
-position = Vector3(29.5, 0.46, -31.2)
-rotation = Vector3(0, 0.05, 0)
+[node name="Armory" type="Node3D" parent="." unique_id=1354870362]
 
-[node name="WallUtility" parent="Props3D" instance=ExtResource("p_utility_box")]
-position = Vector3(31.7, 0, 12)
-rotation = Vector3(0, -1.5708, 0)
-
-[node name="Armory" type="Node3D" parent="."]
-
-[node name="Rack_m4" parent="Armory" instance=ExtResource("9_rack")]
-transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, -7, 0, 14)
+[node name="Rack_m4" parent="Armory" unique_id=1821848319 instance=ExtResource("9_rack")]
 weapon = "m4"
 display_model = ExtResource("11_m4")
 display_scale = 0.163
+transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, -7, 0, 14)
+collision_layer = 9
 
-[node name="Rack_ak47" parent="Armory" instance=ExtResource("9_rack")]
-transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, -7, 0, 16.2)
+[node name="Rack_ak47" parent="Armory" unique_id=548887637 instance=ExtResource("9_rack")]
 weapon = "ak47"
 display_model = ExtResource("12_ak47")
 display_scale = 0.163
+transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, -7, 0, 16.2)
+collision_layer = 9
 
-[node name="Rack_pdw9" parent="Armory" instance=ExtResource("9_rack")]
-transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, -7, 0, 18.4)
+[node name="Rack_pdw9" parent="Armory" unique_id=1918315886 instance=ExtResource("9_rack")]
 weapon = "pdw9"
 display_model = ExtResource("13_pdw9")
 display_scale = 0.15
+transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, -7, 0, 18.4)
+collision_layer = 9
 
-[node name="Rack_m870" parent="Armory" instance=ExtResource("9_rack")]
-transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, -7, 0, 20.6)
+[node name="Rack_m870" parent="Armory" unique_id=1127045623 instance=ExtResource("9_rack")]
 weapon = "m870"
 display_model = ExtResource("14_m870")
 display_scale = 0.17
+transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, -7, 0, 20.6)
+collision_layer = 9
 
-[node name="Rack_m40" parent="Armory" instance=ExtResource("9_rack")]
-transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, -7, 0, 22.8)
+[node name="Rack_m40" parent="Armory" unique_id=814807905 instance=ExtResource("9_rack")]
 weapon = "m40"
 display_model = ExtResource("15_m40")
 display_scale = 0.15
+transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, -7, 0, 22.8)
+collision_layer = 9
 
-[node name="Rack_m1911" parent="Armory" instance=ExtResource("9_rack")]
-transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, -7, 0, 25)
+[node name="Rack_m1911" parent="Armory" unique_id=1626394570 instance=ExtResource("9_rack")]
 weapon = "m1911"
 display_model = ExtResource("16_pistol")
 display_scale = 0.12
+transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, -7, 0, 25)
+collision_layer = 9
 
-[node name="Sentry" parent="." instance=ExtResource("10_sentry")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 19, 3, -19.5)
+[node name="Sentry" parent="." unique_id=1421555667 instance=ExtResource("10_sentry")]
 range = 32.0
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 19, 3, -19.5)
 
-[node name="Targets" type="Node3D" parent="."]
+[node name="Targets" type="Node3D" parent="." unique_id=1799095863]
 
-[node name="Dummy1" parent="Targets" instance=ExtResource("4_dummy")]
+[node name="Dummy1" parent="Targets" unique_id=739953037 instance=ExtResource("4_dummy")]
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -6, 0, 10)
-weapon = "m4"
 
-[node name="Dummy2" parent="Targets" instance=ExtResource("4_dummy")]
-transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 6, 0, 8)
+[node name="Dummy2" parent="Targets" unique_id=1237370775 instance=ExtResource("4_dummy")]
 weapon = "ak47"
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 6, 0, 8)
 
-[node name="Dummy3" parent="Targets" instance=ExtResource("4_dummy")]
-transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -2, 0, -2)
+[node name="Dummy3" parent="Targets" unique_id=1280583901 instance=ExtResource("4_dummy")]
 weapon = "pdw9"
 crouching = true
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -2, 0, -2)
 
-[node name="Dummy4" parent="Targets" instance=ExtResource("4_dummy")]
-transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 13, 3, -18.5)
+[node name="Dummy4" parent="Targets" unique_id=730309221 instance=ExtResource("4_dummy")]
 weapon = "m40"
 aim_pitch = -6.0
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 13, 3, -18.5)
 
-[node name="Dummy5" parent="Targets" instance=ExtResource("4_dummy")]
-transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -20, 0, -25)
+[node name="Dummy5" parent="Targets" unique_id=811612591 instance=ExtResource("4_dummy")]
 weapon = "m870"
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -20, 0, -25)
 
-[node name="Dummy6" parent="Targets" instance=ExtResource("4_dummy")]
-transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, -28)
-weapon = "m4"
+[node name="Dummy6" parent="Targets" unique_id=1890195991 instance=ExtResource("4_dummy")]
 crouching = true
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, -28)
 
-[node name="Dummy7" parent="Targets" instance=ExtResource("4_dummy")]
-transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 16, 3.0, -16)
+[node name="Dummy7" parent="Targets" unique_id=2131606546 instance=ExtResource("4_dummy")]
 weapon = "m1911"
 aim_pitch = -8.0
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 16, 3, -16)
 
-[node name="Player" parent="." instance=ExtResource("1_player")]
-position = Vector3(0, 0.05, 20)
+[node name="Player" parent="." unique_id=667199353 instance=ExtResource("1_player")]
+base_fov = 69.56998
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.00064452505, 20)
 
-[node name="HUD" parent="." instance=ExtResource("19_hud")]
+[node name="HUD" parent="." unique_id=935833737 instance=ExtResource("19_hud")]
 
-[node name="PauseMenu" parent="." instance=ExtResource("5_pause")]
+[node name="PauseMenu" parent="." unique_id=101402265 instance=ExtResource("5_pause")]
 player_path = NodePath("../Player")

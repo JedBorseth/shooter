@@ -5,9 +5,11 @@ Half the map is described once. Every gameplay element gets a copy rotated
 180 degrees about the origin, so both spawns face the same layout. The player,
 HUD, and pause menu are the same scenes the testing arena (scenes/main.tscn) uses.
 
-Edit the layout here, not in the editor, then regenerate from the repo root:
+Edit the layout here, not in the editor, then regenerate from the repo root
+and bake its meshes and lightmaps (needs a GPU, or Xvfb on a machine with one):
 
     python3 tools/build_slamcity.py
+    tools/bake_lightmaps.sh res://scenes/slamcity.tscn
 """
 import math
 import sys
@@ -345,6 +347,24 @@ for tag, rot in (("A", False), ("B", True)):
     for i, cx in enumerate((-25.4, -10.4)):
         prop(f"Shutter{tag}{i}", "shutter_door", rot, cx, 0, -13.72)
 
+# Ceiling lights inside the open flats and the stores, so the rooms read as lit
+# rooms instead of black boxes. They are Static and only baked: the node's script
+# removes them in the game, so they cost nothing at runtime.
+s.node("InteriorLights", "Node3D", ".", {"script": 'ExtResource("22_baked")'})
+for tag, rot in (("A", False), ("B", True)):
+    for i, (x, y, z, energy) in enumerate(((-20.4, 2.6, -18.0, 3.0), (-15.6, 2.6, -18.0, 3.0),
+                                           (11.0, 3.3, -18.5, 4.0), (17.0, 3.3, -18.5, 4.0))):
+        px, pz = rot_point(x, z, rot)
+        s.node(f"Ceiling{tag}{i}", "OmniLight3D", "InteriorLights", {
+            "position": vec(px, y, pz),
+            "light_color": "Color(1, 0.93, 0.82, 1)",
+            "light_energy": f(energy),
+            "light_bake_mode": "1",
+            "shadow_enabled": "true",
+            "omni_range": "9.0",
+            "light_size": "0.4",
+        })
+
 # Street lamps are visual only.
 for i, (x, z) in enumerate(((-12.6, -7.6), (12.6, 7.6), (12.6, -7.6), (-12.6, 7.6))):
     PROPS_USED.add("street_lamp")
@@ -432,7 +452,8 @@ ext = """[ext_resource type="PackedScene" path="res://scenes/player.tscn" id="1_
 [ext_resource type="PackedScene" path="res://assets/weapons/pistol/pistol.glb" id="16_pistol"]
 [ext_resource type="PackedScene" path="res://scenes/ui/hud.tscn" id="19_hud"]
 [ext_resource type="Script" path="res://scripts/slamcity.gd" id="20_level"]
-[ext_resource type="Texture2D" path="res://assets/skies/slamcity_sunset.hdr" id="21_sky"]"""
+[ext_resource type="Texture2D" path="res://assets/skies/slamcity_sunset.hdr" id="21_sky"]
+[ext_resource type="Script" path="res://scripts/baked_lights.gd" id="22_baked"]"""
 ext += "".join(
     f'\n[ext_resource type="Material" path="res://materials/world/{look}.tres" id="mat_{key}"]'
     for key, look in MATERIALS.items()
@@ -483,6 +504,12 @@ script = ExtResource("20_level")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Env")
+
+[node name="LightmapGI" type="LightmapGI" parent="."]
+quality = 1
+bounces = 3
+environment_mode = 1
+max_texture_size = 4096
 
 [node name="Sun" type="DirectionalLight3D" parent="."]
 rotation = Vector3(-0.49, 2.3, 0)

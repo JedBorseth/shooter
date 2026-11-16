@@ -20,6 +20,9 @@ window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 window/vsync/vsync_mode=2
 
+[editor_plugins]
+enabled=PackedStringArray("res://addons/lightmap_baker/plugin.cfg")
+
 [input]
 move_forward={
 "deadzone": 0.12,
