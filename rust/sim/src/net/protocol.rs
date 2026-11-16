@@ -16,6 +16,7 @@ use glam::{IVec3, Vec2, Vec3};
 
 use super::Tick;
 use super::bits::{BitReader, BitWriter, DecodeError, DecodeResult};
+use crate::look::PITCH_LIMIT;
 use crate::movement::{MoveState, Stance};
 use crate::player::{PlayerInput, PlayerState};
 use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState};
@@ -49,8 +50,15 @@ pub struct InputPacket {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ServerMessage {
-    Welcome { player_id: u8, tick: Tick },
-    Reject { server_version: u16 },
+    Welcome {
+        player_id: u8,
+        tick: Tick,
+        /// Ticks between snapshots, which sets the interpolation delay.
+        snapshot_interval: u8,
+    },
+    Reject {
+        server_version: u16,
+    },
     Snapshot(Snapshot),
 }
 
@@ -157,6 +165,8 @@ impl PlayerInput {
     pub fn quantized(mut self) -> Self {
         let q = |v: f32| (v.clamp(-1.0, 1.0) * WISH_SCALE).round() / WISH_SCALE;
         self.wish = Vec2::new(q(self.wish.x), q(self.wish.y));
+        // The client already clamps; this keeps a tampered pitch off the server.
+        self.pitch = self.pitch.clamp(-PITCH_LIMIT, PITCH_LIMIT);
         self.switch_to = self.switch_to.filter(|slot| *slot < 4);
         self.pickup = self.pickup.filter(|id| valid_weapon(*id));
         self
@@ -177,8 +187,10 @@ impl ClientMessage {
             ClientMessage::Input(packet) => {
                 w.bits(1, TAG_BITS);
                 write_option_tick(&mut w, packet.ack_snapshot);
-                w.varint(packet.first_seq);
+                // Only the newest inputs fit; number the first one actually sent.
                 let count = packet.inputs.len().min(MAX_INPUTS_PER_PACKET);
+                let skipped = (packet.inputs.len() - count) as u32;
+                w.varint(packet.first_seq.wrapping_add(skipped));
                 w.varint(count as u32);
                 let mut previous = None;
                 for input in &packet.inputs[packet.inputs.len() - count..] {
@@ -311,11 +323,16 @@ impl ServerMessage {
     pub fn encode(&self, baseline: &[PlayerView]) -> Vec<u8> {
         let mut w = BitWriter::new();
         match self {
-            ServerMessage::Welcome { player_id, tick } => {
+            ServerMessage::Welcome {
+                player_id,
+                tick,
+                snapshot_interval,
+            } => {
                 w.bits(0, TAG_BITS);
                 w.u16(PROTOCOL_VERSION);
                 w.u8(*player_id);
                 w.u32(*tick);
+                w.u8(*snapshot_interval);
             }
             ServerMessage::Reject { server_version } => {
                 w.bits(1, TAG_BITS);
@@ -347,6 +364,7 @@ impl ServerMessage {
                 Ok(ServerMessage::Welcome {
                     player_id: r.u8()?,
                     tick: r.u32()?,
+                    snapshot_interval: r.u8()?.max(1),
                 })
             }
             1 => Ok(ServerMessage::Reject {
@@ -821,6 +839,36 @@ mod tests {
             bytes.len()
         );
         assert_eq!(ClientMessage::decode(&bytes).unwrap(), msg);
+    }
+
+    #[test]
+    fn oversize_packets_keep_the_newest_inputs_numbered_correctly() {
+        let inputs: Vec<PlayerInput> = (0..20)
+            .map(|i| PlayerInput {
+                yaw: i as f32,
+                ..Default::default()
+            })
+            .collect();
+        let msg = ClientMessage::Input(InputPacket {
+            ack_snapshot: None,
+            first_seq: 100,
+            inputs,
+        });
+        let ClientMessage::Input(decoded) = ClientMessage::decode(&msg.encode()).unwrap() else {
+            panic!("expected input");
+        };
+        assert_eq!(decoded.inputs.len(), MAX_INPUTS_PER_PACKET);
+        assert_eq!(decoded.first_seq, 104);
+        assert_eq!(decoded.inputs[0].yaw, 4.0);
+    }
+
+    #[test]
+    fn tampered_pitch_is_clamped() {
+        let input = PlayerInput {
+            pitch: 3.0,
+            ..Default::default()
+        };
+        assert_eq!(input.quantized().pitch, PITCH_LIMIT);
     }
 
     #[test]

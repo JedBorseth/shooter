@@ -17,7 +17,7 @@
 //! demo ammo refill.
 
 use std::collections::HashMap;
-use std::f32::consts::{FRAC_PI_2, PI};
+use std::f32::consts::PI;
 
 use godot::classes::input::MouseMode;
 use godot::classes::{
@@ -46,7 +46,8 @@ use crate::spring::{Spring, impulse_for_peak, smoothing};
 use crate::target::{HITBOX_LAYER, WORLD_LAYER};
 use crate::viewmodel::{ViewAction, ViewFrame, ViewmodelRig};
 
-const PITCH_LIMIT: f32 = FRAC_PI_2 - 0.01;
+use shooter_sim::look::PITCH_LIMIT;
+
 /// Surface used when a collider has no `surface` metadata.
 const DEFAULT_SURFACE: &str = "concrete";
 

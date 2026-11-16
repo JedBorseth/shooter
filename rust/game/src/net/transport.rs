@@ -13,7 +13,8 @@ use shooter_sim::net::{CHANNEL_RELIABLE, CHANNEL_UNRELIABLE};
 pub enum NetEvent {
     Connect(Gd<ENetPacketPeer>),
     Disconnect(Gd<ENetPacketPeer>),
-    Receive(Gd<ENetPacketPeer>, Vec<u8>),
+    /// A packet and the channel it came on.
+    Receive(Gd<ENetPacketPeer>, Vec<u8>, i32),
 }
 
 /// Drains every pending event without blocking.
@@ -38,7 +39,8 @@ pub fn service(host: &mut Gd<ENetConnection>, events: &mut Vec<NetEvent>) {
             (EventType::DISCONNECT, Some(peer)) => events.push(NetEvent::Disconnect(peer)),
             (EventType::RECEIVE, Some(mut peer)) => {
                 let packet = peer.get_packet().to_vec();
-                events.push(NetEvent::Receive(peer, packet));
+                let channel = event.at(3).try_to::<i32>().unwrap_or(CHANNEL_UNRELIABLE);
+                events.push(NetEvent::Receive(peer, packet, channel));
             }
             (EventType::NONE | EventType::ERROR, _) => return,
             _ => {}

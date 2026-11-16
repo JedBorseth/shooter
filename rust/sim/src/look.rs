@@ -20,6 +20,9 @@ use glam::{Vec2, Vec3};
 
 use crate::fmath;
 
+/// Furthest the view pitches up or down, in radians: just short of straight up.
+pub const PITCH_LIMIT: f32 = std::f32::consts::FRAC_PI_2 - 0.01;
+
 /// Stick response settings.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct StickParams {

@@ -11,7 +11,10 @@
 
 use std::f32::consts::PI;
 
-use godot::classes::{ENetConnection, ENetPacketPeer, Engine, INode3D, Node3D, PackedScene};
+use godot::classes::{
+    ENetConnection, ENetPacketPeer, Engine, INode3D, Node3D, PackedScene,
+    PhysicsRayQueryParameters3D,
+};
 use godot::global::Error;
 use godot::prelude::*;
 use shooter_sim::Vec2;
@@ -22,12 +25,15 @@ use shooter_sim::net::protocol::{
 use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::{CHANNEL_COUNT, DEFAULT_PORT, MAX_PLAYERS, TICK_DT, TICK_RATE, Tick};
 use shooter_sim::player::PlayerParams;
-use shooter_sim::player::{PlayerInput, PlayerState};
+use shooter_sim::player::{self, PlayerInput, PlayerState};
 use shooter_sim::rng;
+use shooter_sim::weapon::WeaponId;
 
 use super::transport::{self, NetEvent};
 use crate::body::{self, BodyParts};
-use crate::convert::to_sim;
+use crate::convert::{to_godot, to_sim};
+use crate::pickup::{INTERACT_LAYER, WeaponPickup};
+use crate::target::WORLD_LAYER;
 
 /// Map nodes that only make sense on a client, or only offline: the local
 /// player and its UI, practice targets, and the sentry turret (it would damage
@@ -35,6 +41,10 @@ use crate::convert::to_sim;
 /// players take weapons from them through their input.
 const CLIENT_ONLY_NODES: [&str; 5] = ["Player", "HUD", "PauseMenu", "Targets", "Sentry"];
 
+/// Seconds a new connection has to say hello.
+const HELLO_TIMEOUT_TICKS: Tick = 5 * TICK_RATE;
+/// A little more than the client's weapon rack reach (`FpsPlayer::interact_distance`).
+const PICKUP_REACH: f32 = 3.0;
 /// Bots get ids from here up, so they never collide with client ids.
 const FIRST_BOT_ID: u8 = 200;
 
@@ -79,6 +89,7 @@ struct ClientSlot {
     inputs: InputQueue,
     /// Newest snapshot the client has acknowledged.
     ack: Option<Tick>,
+    connected_at: Tick,
 }
 
 struct Avatar {
@@ -135,6 +146,7 @@ impl INode3D for NetServer {
             self.handle_event(event);
         }
         self.net_events = events;
+        self.drop_silent_peers();
 
         self.simulate();
         self.tick += 1;
@@ -194,6 +206,7 @@ impl NetServer {
                     player: None,
                     inputs: InputQueue::default(),
                     ack: None,
+                    connected_at: self.tick,
                 });
             }
             NetEvent::Disconnect(peer) => {
@@ -206,7 +219,7 @@ impl NetServer {
                     self.despawn_avatar(id);
                 }
             }
-            NetEvent::Receive(peer, bytes) => {
+            NetEvent::Receive(peer, bytes, _) => {
                 let Some(index) = self.clients.iter().position(|c| c.peer == peer) else {
                     return;
                 };
@@ -246,6 +259,7 @@ impl NetServer {
                 let welcome = ServerMessage::Welcome {
                     player_id: id,
                     tick: self.tick,
+                    snapshot_interval: self.snapshot_interval.clamp(1, 255) as u8,
                 };
                 transport::send_reliable(&mut peer, &welcome.encode(&[]));
                 godot_print!("server: player {id} joined");
@@ -264,6 +278,19 @@ impl NetServer {
                 }
             }
         }
+    }
+
+    /// A connection that never says hello would hold a player slot forever.
+    fn drop_silent_peers(&mut self) {
+        let tick = self.tick;
+        self.clients.retain_mut(|client| {
+            let silent = client.player.is_none()
+                && tick.saturating_sub(client.connected_at) > HELLO_TIMEOUT_TICKS;
+            if silent {
+                client.peer.peer_disconnect_now();
+            }
+            !silent
+        });
     }
 
     fn spawn_avatar(&mut self, id: u8, bot: bool) {
@@ -321,6 +348,13 @@ impl NetServer {
                 client.inputs.take().map(|(_, input)| input).collect()
             };
             for input in &inputs {
+                let mut input = *input;
+                if let Some(weapon) = input.pickup
+                    && !pickup_in_reach(avatar, &input, weapon, &self.params)
+                {
+                    input.pickup = None;
+                }
+                let input = &input;
                 events.clear();
                 // Combat events (shots) are resolved on the server in Phase 3,
                 // with lag compensation; for now remote clients see shots
@@ -411,4 +445,42 @@ fn bot_input(avatar: &Avatar, tick: Tick) -> PlayerInput {
         ..Default::default()
     }
     .quantized()
+}
+
+/// True if the weapon rack the input claims is really under this player's
+/// crosshair and within reach, as the client saw it before the move. Without
+/// this check, a tampered client could take any weapon from anywhere.
+fn pickup_in_reach(
+    avatar: &Avatar,
+    input: &PlayerInput,
+    weapon: WeaponId,
+    params: &PlayerParams,
+) -> bool {
+    let p = &avatar.predicted;
+    if !p.state.alive() {
+        return false;
+    }
+    let eye =
+        to_godot(p.position) + Vector3::UP * params.movement.eye_height(p.state.movement.stance);
+    let direction = to_godot(player::aim_direction(input.yaw, input.pitch, Vec2::ZERO));
+    let Some(mut space) = avatar
+        .parts
+        .body
+        .get_world_3d()
+        .and_then(|world| world.get_direct_space_state())
+    else {
+        return false;
+    };
+    let exclude: Array<Rid> = array![avatar.parts.body.get_rid()];
+    let Some(query) = PhysicsRayQueryParameters3D::create_ex(eye, eye + direction * PICKUP_REACH)
+        .collision_mask(WORLD_LAYER | INTERACT_LAYER)
+        .exclude(&exclude)
+        .done()
+    else {
+        return false;
+    };
+    let hit = space.intersect_ray(&query);
+    hit.get_or_nil("collider")
+        .try_to::<Gd<WeaponPickup>>()
+        .is_ok_and(|pickup| pickup.bind().weapon_id() == Some(weapon))
 }

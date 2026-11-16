@@ -19,7 +19,7 @@ use shooter_sim::net::protocol::{
     ClientMessage, InputPacket, PROTOCOL_VERSION, ServerMessage, Snapshot,
 };
 use shooter_sim::net::snapshot_history::SnapshotHistory;
-use shooter_sim::net::{CHANNEL_COUNT, DEFAULT_PORT, TICK_RATE, Tick};
+use shooter_sim::net::{CHANNEL_COUNT, CHANNEL_RELIABLE, DEFAULT_PORT, TICK_RATE, Tick};
 
 use super::remote::{RemotePlayer, RemoteSample};
 use super::transport::{self, NetEvent};
@@ -177,11 +177,13 @@ impl INode for NetClient {
                     transport::send_reliable(&mut peer, &hello.encode());
                 }
                 NetEvent::Disconnect(_) => self.on_disconnected(),
-                NetEvent::Receive(_, bytes) => {
+                NetEvent::Receive(_, bytes, channel) => {
                     self.count_in(bytes.len());
+                    // The handshake is reliable: ENet already resends it, so the
+                    // simulated loss only applies to unreliable traffic.
                     match &mut self.incoming {
-                        Some(link) => link.send(now, bytes),
-                        None => self.handle_packet(&bytes),
+                        Some(link) if channel != CHANNEL_RELIABLE => link.send(now, bytes),
+                        _ => self.handle_packet(&bytes),
                     }
                 }
             }
@@ -317,13 +319,20 @@ impl NetClient {
             }
         };
         match message {
-            ServerMessage::Welcome { player_id, .. } => {
-                if self.status == Status::Joined {
+            ServerMessage::Welcome {
+                player_id,
+                snapshot_interval,
+                ..
+            } => {
+                if self.status != Status::Connecting {
                     return;
                 }
                 godot_print!("net client: joined as player {player_id}");
                 self.status = Status::Joined;
                 self.player_id = Some(player_id);
+                if let Some(clock) = &mut self.clock {
+                    clock.set_interval(u32::from(snapshot_interval));
+                }
                 if let Some(player) = &mut self.player {
                     player.bind_mut().start_prediction();
                 }
@@ -360,6 +369,8 @@ impl NetClient {
         for view in &snapshot.players {
             let index = match self.remotes.iter().position(|r| r.id == view.id) {
                 Some(index) => index,
+                // An old, reordered snapshot may still list a player who has left.
+                None if !newest => continue,
                 None => {
                     let Some(node) = self.spawn_remote(view.id) else {
                         continue;

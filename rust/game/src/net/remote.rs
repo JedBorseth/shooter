@@ -50,6 +50,10 @@ impl From<&PlayerView> for RemoteSample {
 
 impl Interpolate for RemoteSample {
     fn interpolate(&self, to: &Self, t: f32) -> Self {
+        // Respawns and other teleports jump instead of sliding across the map.
+        if self.alive != to.alive || self.position.distance(to.position) > 2.0 {
+            return if t < 0.5 { *self } else { *to };
+        }
         let discrete = if t < 0.5 { self } else { to };
         Self {
             position: self.position.lerp(to.position, t),

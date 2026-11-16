@@ -67,6 +67,21 @@ func _run() -> void:
 		"client starts where the server spawned it"
 	)
 
+	# Weapon rack: player 0 spawns 2 m from the M870 rack (x = -7, z = 20.6).
+	# The server checks the pickup against its own raycast; an honest one
+	# must go through without a correction.
+	player.set_look(PI / 2.0, -0.42)
+	await _ticks(5)
+	Input.action_press("interact")
+	await _ticks(2)
+	Input.action_release("interact")
+	await _ticks(90)
+	_check(
+		player.weapon_key() == "m870",
+		"takes the M870 from the rack online, got %s" % player.weapon_key()
+	)
+	player.set_look(0.0, 0.0)
+
 	# Bot: visible, interpolated, and moving.
 	_check(client.remote_ids().size() == 1, "the bot appears, ids %s" % client.remote_ids())
 	if client.remote_ids().size() == 1:
