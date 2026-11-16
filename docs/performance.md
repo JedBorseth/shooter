@@ -60,7 +60,7 @@ The player can pick any render scale from 50% to native in the settings menu. Be
 
 ## Baseline
 
-`docs/perf/baseline.json`, measured on 2026-11-16 with this benchmark, before the visual overhaul (blockout materials, real-time lighting only):
+Measured on 2026-11-16 with this benchmark, before the visual overhaul (blockout materials, real-time lighting only). `docs/perf/baseline.json` always holds the latest run instead; the history below tracks how each visual change spent the budget.
 
 | Map | Preset | GPU ms (avg) | GPU ms (worst view) | Draw calls (worst view) |
 | --- | --- | ---: | ---: | ---: |
@@ -75,3 +75,12 @@ The player can pick any render scale from 50% to native in the settings menu. Be
 | Zombies, 24 zombies | High | 5.30 | 5.74 | 645 |
 
 Before the presets existed, the game always rendered roughly what High renders now.
+
+## History
+
+GPU time on Medium at 1080p on the reference card, average over viewpoints (worst viewpoint in brackets). Each visual change adds a row.
+
+| Change | Testing Area | Slamcity | Zombies, 24 zombies |
+| --- | ---: | ---: | ---: |
+| Before the overhaul (#27) | 4.27 (4.42) ms | 4.89 (5.00) ms | 4.39 (4.76) ms |
+| PBR world textures | 4.75 (4.89) ms | 5.35 (5.54) ms | 4.68 (5.04) ms |

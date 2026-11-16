@@ -2,11 +2,12 @@
 
 [ext_resource type="PackedScene" path="res://scenes/player.tscn" id="1_player"]
 [ext_resource type="PackedScene" path="res://scenes/ui/hud.tscn" id="19_hud"]
-[ext_resource type="Material" path="res://materials/greybox_floor.tres" id="m_floor"]
-[ext_resource type="Material" path="res://materials/greybox_wall.tres" id="m_wall"]
-[ext_resource type="Material" path="res://materials/greybox_cover.tres" id="m_cover"]
-[ext_resource type="Material" path="res://materials/greybox_crate.tres" id="m_crate"]
-[ext_resource type="Material" path="res://materials/greybox_platform.tres" id="m_platform"]
+[ext_resource type="Material" path="res://materials/world/yard_dirt.tres" id="m_floor"]
+[ext_resource type="Material" path="res://materials/world/yard_wall.tres" id="m_wall"]
+[ext_resource type="Material" path="res://materials/world/yard_pillar.tres" id="m_cover"]
+[ext_resource type="Material" path="res://materials/world/range_crate.tres" id="m_crate"]
+[ext_resource type="Material" path="res://materials/world/barrel_rust.tres" id="m_platform"]
+[ext_resource type="Material" path="res://materials/world/barrel_blue.tres" id="m_barrel_blue"]
 [ext_resource type="PackedScene" path="res://scenes/ui/pause_menu.tscn" id="5_pause"]
 [ext_resource type="PackedScene" path="res://scenes/props/weapon_rack.tscn" id="9_rack"]
 [ext_resource type="PackedScene" path="res://assets/weapons/m4/m4.fbx" id="11_m4"]
@@ -156,7 +157,7 @@ position = Vector3(-3.6, 0.5, -3.6)
 radius = 0.4
 height = 1.0
 sides = 14
-material = ExtResource("m_platform")
+material = ExtResource("m_barrel_blue")
 
 [node name="Barrel2" type="CSGCylinder3D" parent="Barrels"]
 position = Vector3(5.0, 0.5, 4.0)
@@ -170,7 +171,7 @@ position = Vector3(4.2, 0.5, 4.8)
 radius = 0.4
 height = 1.0
 sides = 14
-material = ExtResource("m_platform")
+material = ExtResource("m_barrel_blue")
 
 [node name="Barrel4" type="CSGCylinder3D" parent="Barrels"]
 position = Vector3(-12.0, 0.5, 14.0)
@@ -184,7 +185,7 @@ position = Vector3(13.0, 0.5, -13.0)
 radius = 0.4
 height = 1.0
 sides = 14
-material = ExtResource("m_platform")
+material = ExtResource("m_barrel_blue")
 
 [node name="Barrel6" type="CSGCylinder3D" parent="Barrels"]
 position = Vector3(-18.0, 0.5, -6.0)
@@ -198,7 +199,7 @@ position = Vector3(18.0, 0.5, 7.0)
 radius = 0.4
 height = 1.0
 sides = 14
-material = ExtResource("m_platform")
+material = ExtResource("m_barrel_blue")
 
 [node name="Crates" type="CSGCombiner3D" parent="."]
 use_collision = true
