@@ -124,7 +124,8 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Spawn system: a map's `SpawnPoints` (with an optional `team` metadata) are weighted away from enemies, their line of sight, and recent deaths, with a pull toward the player's own side. Matches start with each team on its own side.
 - [x] Kill feed, scoreboard (Tab), and match timer HUD (`godot/scripts/net/tdm_hud.gd`).
 - [ ] Killcam from the server snapshot buffer.
-- [ ] First real map: a three-lane layout, blocked out with CSG, then modular CC0 kit pieces.
+- [x] First real map: Slamcity rebuilt as a three-lane Team Deathmatch map (alley and rooftop, street, interiors), mirrored so both teams get the same lanes, with spawn points per team and a generator check that no line runs clear between the spawn yards (`tools/build_slamcity.py`).
+- [ ] Modular CC0 kit pieces in place of Slamcity's CSG buildings.
 - [x] Server browser: LAN search, master server list, favorites, direct connect by IP or host name, ping, and leave or lose the connection back to the browser.
 - [x] Lobby flow on the server: warm-up until every player is ready (`--auto-start` skips it).
 - [x] Lobby and loadout menu (L): primary weapon choice (applies from the next spawn) and Ready; opens by itself in the lobby.
@@ -164,7 +165,7 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 - [x] Map props: CC0 Poly Haven models (cars, lamps, crates, barrels, bins, barriers, AC units, shutters) on the existing collision (`tools/build_props.py`).
 - [x] Map meshes: the blockout CSG is baked into meshes with lightmap UVs (`godot/tools/bake_map_meshes.gd`).
 - [x] Building trim on Slamcity: window frames, sills, storefronts, a gutter, and downpipes; road paint, damaged asphalt, manholes, and rain streaks as decals.
-- [ ] A fire escape on the flats (Poly Haven's `modular_fire_escape` needs assembling from its parts).
+- [x] A fire escape on the flats, up to the roof (built in the generator; Poly Haven's `modular_fire_escape` could replace it once assembled from its parts).
 - [x] Characters: one material and two surfaces per character, rest-space fabric and wear detail, and per-zombie skin tone and blood (`shaders/character.gdshader`).
 - [x] Effects and post: spark streaks, debris, soft dust, blood, bullet-hole decals, glowing tracers, ambient dust, and a motion blur option. Depth of field while aiming was left out (it blurs the iron sights).
 

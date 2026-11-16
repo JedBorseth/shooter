@@ -1,7 +1,10 @@
 extends SceneTree
-## Enter Slamcity from the home screen and play it: land at the West spawn, climb the
-## flats' stairs to the walkway, drop into the skate bowl and climb back out, stay
-## inside the boundary walls, and shoot a practice target.
+## Enter Slamcity from the home screen and play its three lanes: land at the West
+## spawn yard, climb the fire escape from the back alley to the flats' roof, drop
+## into the skate bowl and climb back out, cut through the flats' hallway from
+## the street to the alley, follow the interiors from the corner store into the
+## lobby, stay inside the boundary walls, shoot a practice target through the
+## laundromat's window, and check the team spawn points.
 ## godot --headless --path godot --script res://tests/slamcity_test.gd
 
 const SCENE := "res://scenes/slamcity.tscn"
@@ -45,52 +48,70 @@ func _run() -> void:
 	var start := player.global_position
 	await _walk(player, -PI / 2, 60)
 	_check(player.global_position.x > start.x + 3.0, "player walks east from spawn")
-	_check(player.is_on_floor(), "street collision holds the player")
+	_check(player.is_on_floor(), "yard collision holds the player")
 
-	# The north flats' stairs run from the plaza up to the first-floor walkway.
-	await _teleport(player, Vector3(-7, 0.05, -5.6))
-	await _walk(player, 0.0, 180)
+	# North lane: the fire escape climbs from the alley to a landing, then back
+	# over itself to the roof.
+	await _teleport(player, Vector3(-40.6, 0.05, -21.6))
+	await _walk(player, -PI / 2, 120)
 	_check(
-		player.global_position.y > 3.0 and player.global_position.z < -12.0,
-		"stairs reach the walkway, got %s" % player.global_position
+		player.global_position.y > 3.0 and player.global_position.x > -34.6,
+		"the fire escape's first flight reaches the landing, got %s" % player.global_position
 	)
-	await _walk(player, PI / 2, 120)
+	await _teleport(player, Vector3(-33.6, 3.3, -22.8))
+	await _walk(player, PI / 2, 150)
 	_check(
-		player.global_position.y > 3.0 and player.global_position.x < -10.0,
-		"walkway carries the player along the flats, got %s" % player.global_position
+		player.global_position.y > 6.3 and player.global_position.x < -39.5,
+		"the second flight reaches the top landing, got %s" % player.global_position
+	)
+	await _walk(player, PI, 90)
+	_check(
+		player.global_position.y > 6.5 and player.global_position.z > -20.0,
+		"the top landing leads onto the flats' roof, got %s" % player.global_position
 	)
 
-	# Into the skate bowl and back up its ramp.
+	# Middle lane: into the skate bowl and back up its west ramp.
 	await _teleport(player, Vector3(0, 0.6, -2))
 	await _sixtieths(60)
 	_check(
 		player.is_on_floor() and player.global_position.y < -1.6,
 		"bowl floor sits below the plaza, got %s" % player.global_position
 	)
-	await _teleport(player, Vector3(-2.5, -1.75, -2.5))
+	await _teleport(player, Vector3(-1.5, -1.75, -2.5))
 	await _walk(player, PI / 2, 150)
 	_check(
-		player.global_position.y > -0.1 and player.global_position.x < -8.0,
+		player.global_position.y > -0.1 and player.global_position.x < -7.0,
 		"bowl ramp climbs back to the plaza, got %s" % player.global_position
 	)
 
-	# Through a flat: front door, partition doorway, back door to the alley.
-	await _teleport(player, Vector3(-19.4, 0.05, -12.5))
-	await _walk(player, 0.0, 90)
-	_check(player.global_position.z < -15.0, "front door opens into the flat")
+	# Cross path: the hallway through the flats, from the street to the alley.
+	await _teleport(player, Vector3(-31.5, 0.05, -9.5))
+	await _walk(player, 0.0, 150)
+	_check(
+		player.global_position.z < -21.2,
+		"the flats' hallway leads from the street to the alley, got %s" % player.global_position
+	)
+
+	# South lane: from the corner store through the doorway into the lobby.
+	await _teleport(player, Vector3(-40, 0.05, 20.3))
+	await _walk(player, -PI / 2, 150)
+	_check(
+		player.global_position.x > -29.0,
+		"the store's back doorway opens into the lobby, got %s" % player.global_position
+	)
 
 	# Boundary walls keep players in.
-	await _teleport(player, Vector3(-31, 0.05, 20))
+	await _teleport(player, Vector3(-53, 0.05, 20))
 	await _walk(player, PI, 240)
-	_check(player.global_position.z < 26.0, "south wall stops the player")
-	await _teleport(player, Vector3(-28, 0.05, 0))
+	_check(player.global_position.z < 24.6, "the yard's south wall stops the player")
+	await _teleport(player, Vector3(-50, 0.05, 0))
 	await _walk(player, PI / 2, 240)
-	_check(player.global_position.x > -34.0, "west wall stops the player")
+	_check(player.global_position.x > -57.0, "the west wall stops the player")
 
-	# Shoot the target in the corner store, through the open window.
-	var dummy := current_scene.get_node("Targets/StoreCounter") as TargetDummy
+	# Shoot the target in the laundromat through its street window.
+	var dummy := current_scene.get_node("Targets/Laundry") as TargetDummy
 	var health_before := dummy.health()
-	await _teleport(player, Vector3(11, 0.05, -11))
+	await _teleport(player, Vector3(10, 0.05, 6.0))
 	await _sixtieths(10)
 	var eye := (player.get_node("Camera") as Node3D).global_position
 	var to := dummy.global_position + Vector3(0, 1.3, 0) - eye
@@ -101,9 +122,17 @@ func _run() -> void:
 	var health_after := dummy.health()
 	_check(
 		health_after < health_before,
-		"shots land on the store target (%.0f -> %.0f)" % [health_before, health_after]
+		"shots land on the laundromat target (%.0f -> %.0f)" % [health_before, health_after]
 	)
-	_check(current_scene.get_node("Armory").get_child_count() == 12, "both spawns have racks")
+
+	# Team spawn points for the server, the same number on each side.
+	var counts := [0, 0]
+	for point: Node in current_scene.get_node("SpawnPoints").get_children():
+		counts[int(point.get_meta("team"))] += 1
+	_check(
+		counts[0] >= 8 and counts[0] == counts[1], "both teams have spawn points, got %s" % [counts]
+	)
+	_check(current_scene.get_node_or_null("Armory") == null, "Slamcity has no weapon racks")
 	_finish()
 
 

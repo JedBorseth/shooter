@@ -1,9 +1,29 @@
 #!/usr/bin/env python3
-"""Generate godot/scenes/slamcity.tscn, an original city-block blockout map.
+"""Generate godot/scenes/slamcity.tscn: Slamcity, a three-lane Team Deathmatch map
+on an original city block.
 
-Half the map is described once. Every gameplay element gets a copy rotated
-180 degrees about the origin, so both spawns face the same layout. The player,
-HUD, and pause menu are the same scenes the testing arena (scenes/main.tscn) uses.
+The teams spawn in parking yards at the west and east ends, about 100 m apart.
+Three lanes run between them:
+
+- North, the back alley: tight, cluttered, close range. A fire escape climbs to
+  the flats' roof, the map's one high ground, which looks over the street and
+  the alley.
+- Middle, Market Street: long sightlines broken by a stalled box truck, parked
+  cars, barriers, and a bus shelter, around the sunken skate bowl in the plaza
+  at the centre.
+- South, the interiors: a corner store, an apartment lobby, and a laundromat
+  joined by doorways, with windows onto the street.
+
+Cross paths join the lanes: a hallway through the flats, a side street, and the
+auto shop's doors (north), and the shop doors and the laundromat's windows
+(south). The map is mirrored across x = 0, so each team has the same lanes on
+the same side; every gameplay element on the west half is described once and
+copied to the east half. No line runs clear from one spawn yard to the other
+(checked when the scene is written).
+
+The player, HUD, and pause menu are the same scenes the testing arena
+(scenes/main.tscn) uses. The server spawns players at `SpawnPoints` (each with a
+`team` metadata); offline play starts at `Spawns/West`.
 
 Edit the layout here, not in the editor, then regenerate from the repo root
 and bake its meshes and lightmaps (needs a GPU, or Xvfb on a machine with one):
@@ -36,8 +56,6 @@ MATERIALS = {
     "wood": "wood",
     "fabric": "canvas_tan",
     "dumpster": "dumpster_green",
-    "car_red": "car_red",
-    "car_taxi": "car_taxi",
     "car_blue": "car_blue",
     "truck": "truck_white",
     "skyline_a": "skyline_grey",
@@ -45,6 +63,7 @@ MATERIALS = {
     "skyline_c": "skyline_brick",
     "boundary": "boundary",
     "steel": "steel_painted",
+    "yard": "yard_wall",
 }
 
 
@@ -80,10 +99,7 @@ class Scene:
         props = {}
         if not visible:
             props["visible"] = "false"
-        if collision:
-            props["use_collision"] = "true"
-        else:
-            props["use_collision"] = "false"
+        props["use_collision"] = "true" if collision else "false"
         if surface:
             props["metadata/surface"] = f'"{surface}"'
         self.node(name, "CSGCombiner3D", parent, props)
@@ -111,209 +127,327 @@ class Scene:
 
 s = Scene()
 
+# Boxes taller than eye height, for the spawn-to-spawn sightline check.
+SIGHT_BLOCKERS: list[tuple[float, float, float, float]] = []
+EYE = 1.6
 
-def rot_box(x0, x1, z0, z1):
-    return -x1, -x0, -z1, -z0
+
+def mirror_x(x0, x1, mirrored):
+    return (-x1, -x0) if mirrored else (x0, x1)
+
+
+def mbox(name, parent, mirrored, x0, x1, y0, y1, z0, z1, mat, subtract=False, sight=True):
+    """A box on the west half, or its mirror image on the east half."""
+    x0, x1 = mirror_x(x0, x1, mirrored)
+    s.box(name, parent, x0, x1, y0, y1, z0, z1, mat, subtract)
+    if sight and not subtract and y0 <= EYE <= y1:
+        SIGHT_BLOCKERS.append((x0, x1, z0, z1))
 
 
 def both(fn, name, *args, **kw):
-    """Call fn for the authored half and for its 180-degree rotated copy."""
-    fn(name + "A", False, *args, **kw)
-    fn(name + "B", True, *args, **kw)
+    """Call fn for the west half (`W`) and its mirror on the east half (`E`)."""
+    fn(name + "W", False, *args, **kw)
+    fn(name + "E", True, *args, **kw)
 
 
-def pbox(scene_name, parent, rotated, x0, x1, y0, y1, z0, z1, mat, subtract=False):
-    if rotated:
-        x0, x1, z0, z1 = rot_box(x0, x1, z0, z1)
-    s.box(scene_name, parent, x0, x1, y0, y1, z0, z1, mat, subtract)
+def mwedge(name, parent, mirrored, pos, rot_y, points, depth, mat):
+    """A CSGPolygon3D (a profile in local XY, extruded along local -Z) or its
+    mirror image. Handles rotations of 0, PI, and +-PI/2."""
+    x, y, z = pos
+    if mirrored:
+        if abs(rot_y) < 1e-6:
+            x, z, rot_y = -x, z - depth, PI
+        elif abs(rot_y - PI) < 1e-6:
+            x, z, rot_y = -x, z + depth, 0.0
+        elif abs(rot_y + PI / 2) < 1e-6:
+            x = -x - depth
+        elif abs(rot_y - PI / 2) < 1e-6:
+            x = -x + depth
+        else:
+            raise ValueError(rot_y)
+    s.wedge(name, parent, (x, y, z), rot_y, points, depth, mat)
 
 
-# --- Ground ------------------------------------------------------------------
+# Stair flights as ramps of about 30 degrees, profiles for mwedge (counter-
+# clockwise, or the faces point inward and players walk through them): a solid
+# one from the ground, and a slab for the flight that runs over open space.
+FLIGHT_LOW = [(0, 0), (5.6, 0), (5.6, 3.2)]
+FLIGHT_HIGH = [(0, 0), (0.35, 0), (5.6, 3.2), (5.6, 3.4)]
+
+
+# --- Ground ----------------------------------------------------------------------
+# x runs west (-) to east (+); z runs north (-) to south (+).
 s.combiner("Ground", "concrete")
 G = "Ground"
-s.box("Plaza", G, -13, 13, -3, 0, -8, 8, "sidewalk")
-s.box("StreetNorth", G, -34, 34, -3, 0, -26, -8, "asphalt")
-s.box("StreetSouth", G, -34, 34, -3, 0, 8, 26, "asphalt")
-s.box("StreetWest", G, -34, -13, -3, 0, -8, 8, "asphalt")
-s.box("StreetEast", G, 13, 34, -3, 0, -8, 8, "asphalt")
-# The sunken skate bowl in the middle: a lane below the plaza's sightlines.
-s.box("BowlCut", G, -8, 8, -2.0, 0.1, -4, 4, "bowl", subtract=True)
-s.box("BowlFloor", G, -8, 8, -2.0, -1.8, -4, 4, "bowl_floor")
-# Ramps down into the bowl. CSGPolygon3D extrudes along local -Z.
-# Counter-clockwise, or the faces point inward and players walk through them.
-ramp = [(0, -2.0), (5, -2.0), (5, -1.8), (0, 0)]
-s.wedge("BowlRampA", G, (-8, 0, -1), 0, ramp, 3, "bowl")
-s.wedge("BowlRampB", G, (8, 0, 1), PI, ramp, 3, "bowl")
-s.box("GrindRail", G, -2.5, 2.5, -1.8, -1.35, -0.15, 0.15, "metal")
-for tag, rot in (("A", False), ("B", True)):
-    pbox(f"BowlLedge{tag}", G, rot, 1.4, 2.8, -1.8, -0.8, -3.2, -2.2, "bowl")
+s.box("Street", G, -45, 45, -3, 0, -8, 8, "asphalt")
+s.box("SidewalkNorth", G, -45, 45, -3, 0, -11, -8, "sidewalk")
+s.box("SidewalkSouth", G, -45, 45, -3, 0, 8, 11, "sidewalk")
+s.box("Plaza", G, -11, 11, -3, 0.02, -8, 8, "sidewalk")
+s.box("Alley", G, -45, 45, -3, 0, -29, -21, "asphalt")
+s.box("SideStreetWest", G, -17, -12, -3, 0, -21, -11, "asphalt")
+s.box("SideStreetEast", G, 12, 17, -3, 0, -21, -11, "asphalt")
+for tag, x0, x1 in (("West", -57, -45), ("East", 45, 57)):
+    s.box(f"Yard{tag}", G, x0, x1, -3, 0, -29, 25, "asphalt")
+# Under the buildings, so nothing falls through a gap.
+s.box("UnderNorth", G, -45, 45, -3, -0.05, -21, -11, "sidewalk")
+s.box("UnderSouth", G, -45, 45, -3, -0.05, 11, 24, "sidewalk")
 
-# --- Boundary walls and the skyline beyond them ---------------------------------
+# The sunken skate bowl in the middle of the plaza: a low route under the
+# street's sightlines, with ramps at the west and east ends.
+s.box("BowlCut", G, -7, 7, -2.0, 0.1, -4, 4, "bowl", subtract=True)
+s.box("BowlFloor", G, -7, 7, -2.0, -1.8, -4, 4, "bowl_floor")
+ramp = [(0, -2.0), (5, -2.0), (5, -1.8), (0, 0)]
+# The west ramp descends east from the plaza; mwedge mirrors it for the east end.
+mwedge("BowlRampW", G, False, (-7, 0, -1), 0, ramp, 3, "bowl")
+mwedge("BowlRampE", G, True, (-7, 0, -1), 0, ramp, 3, "bowl")
+s.box("GrindRail", G, -2.5, 2.5, -1.8, -1.35, 1.85, 2.15, "metal")
+both(lambda n, m: mbox(n, G, m, -1.4, 0.4, -1.8, -0.8, 2.6, 3.6, "bowl"), "BowlLedge")
+
+# --- Boundary walls and the skyline beyond them ------------------------------------
 s.combiner("Boundary", "concrete")
-s.box("WallNorth", "Boundary", -35, 35, 0, 5, -27, -26, "boundary")
-s.box("WallSouth", "Boundary", -35, 35, 0, 5, 26, 27, "boundary")
-s.box("WallWest", "Boundary", -35, -34, 0, 5, -27, 27, "boundary")
-s.box("WallEast", "Boundary", 34, 35, 0, 5, -27, 27, "boundary")
+B = "Boundary"
+s.box("WallNorth", B, -58, 58, 0, 9, -30, -28.6, "boundary")
+s.box("WallWest", B, -58, -57, 0, 6, -30, 26, "boundary")
+s.box("WallEast", B, 57, 58, 0, 6, -30, 26, "boundary")
+s.box("WallSouthWest", B, -58, -45, 0, 6, 24.6, 26, "boundary")
+s.box("WallSouthEast", B, 45, 58, 0, 6, 24.6, 26, "boundary")
+SIGHT_BLOCKERS.append((-58, 58, -30, -28.6))
 
 s.combiner("Skyline", None, collision=False)
-sky_n = [(-36, -20, 14, "skyline_a"), (-20, -6, 22, "skyline_c"), (-6, 6, 11, "skyline_b"),
-         (6, 22, 18, "skyline_a"), (22, 36, 26, "skyline_c")]
-for i, (x0, x1, h, mat) in enumerate(sky_n):
-    s.box(f"TowerN{i}", "Skyline", x0, x1, 0, h, -40, -27.5, mat)
-    s.box(f"TowerS{i}", "Skyline", -x1, -x0, 0, h, 27.5, 40, mat)
-sky_w = [(-27.5, -10, 16, "skyline_b"), (-10, 10, 9, "skyline_a"), (10, 27.5, 20, "skyline_c")]
-for i, (z0, z1, h, mat) in enumerate(sky_w):
-    s.box(f"TowerW{i}", "Skyline", -48, -35.5, 0, h, z0, z1, mat)
-    s.box(f"TowerE{i}", "Skyline", 35.5, 48, 0, h, -z1, -z0, mat)
+for i, (x0, x1, h, mat) in enumerate([(-62, -40, 16, "skyline_a"), (-40, -18, 24, "skyline_c"),
+                                      (-18, 0, 13, "skyline_b"), (0, 20, 20, "skyline_a"),
+                                      (20, 42, 26, "skyline_c"), (42, 62, 15, "skyline_b")]):
+    s.box(f"TowerN{i}", "Skyline", x0, x1, 0, h, -44, -30.5, mat)
+    s.box(f"TowerS{i}", "Skyline", -x1, -x0, 0, h - 4, 26.5, 40, mat)
+for i, (z0, z1, h, mat) in enumerate([(-30, -10, 18, "skyline_b"), (-10, 8, 11, "skyline_a"),
+                                      (8, 26, 21, "skyline_c")]):
+    s.box(f"TowerW{i}", "Skyline", -72, -58.5, 0, h, z0, z1, mat)
+    s.box(f"TowerE{i}", "Skyline", 58.5, 72, 0, h, z0, z1, mat)
 
 
-# --- Walk-up apartments (north-west, and rotated to the south-east) --------------
-def apartment(name, rot):
+# --- North row: the flats (west and east) and the auto shop (centre) ----------------
+def flats(name, m):
+    """Two-storey walk-up flats from the spawn yard to the side street. A
+    hallway runs through the ground floor from the street to the alley, with a
+    flat off it; the roof is the map's high ground."""
     s.combiner(name, "concrete")
-    b = lambda n, *a, **k: pbox(n, name, rot, *a, **k)  # noqa: E731
-    b("Shell", -28, -8, 0, 6.6, -22, -14, "brick")
-    # Two ground-floor flats are open; the rest of the building is solid.
-    b("FlatsCut", -22.7, -13.3, -0.1, 2.9, -21.7, -14.3, "interior", subtract=True)
-    b("DoorWestCut", -20.0, -18.8, -0.1, 2.3, -14.4, -13.9, "interior", subtract=True)
-    b("WindowWestCut", -22.2, -20.8, 1.0, 2.1, -14.4, -13.9, "interior", subtract=True)
-    b("WindowEastCut", -17.3, -15.9, 1.0, 2.1, -14.4, -13.9, "interior", subtract=True)
-    b("DoorEastCut", -15.2, -14.0, -0.1, 2.3, -14.4, -13.9, "interior", subtract=True)
-    b("BackDoorCut", -21.5, -20.3, -0.1, 2.3, -22.1, -21.6, "interior", subtract=True)
-    b("BackWindowCut", -16.0, -14.4, 1.0, 2.1, -22.1, -21.6, "interior", subtract=True)
-    b("PartitionBack", -18.15, -17.85, 0, 2.9, -21.7, -19.4, "interior")
-    b("PartitionFront", -18.15, -17.85, 0, 2.9, -18.2, -14.3, "interior")
-    b("PartitionHeader", -18.15, -17.85, 2.2, 2.9, -19.4, -18.2, "interior")
-    b("BedWest", -22.5, -20.5, 0, 0.6, -21.5, -19.9, "fabric")
-    b("BedEast", -15.5, -13.5, 0, 0.6, -21.5, -19.9, "fabric")
-    b("Dresser", -17.7, -16.9, 0, 1.2, -21.6, -20.2, "wood")
-    # Painted doors and windows on the closed units.
-    for i, cx in enumerate((-25.4, -10.4)):
-        b(f"FakeDoorGround{i}", cx - 0.6, cx + 0.6, 0, 2.3, -13.96, -13.9, "door")
-    for i, cx in enumerate((-25.4, -20.4, -15.4, -10.4)):
-        b(f"FakeDoorUpper{i}", cx - 0.6, cx + 0.6, 3.2, 5.5, -13.96, -13.9, "door")
-        b(f"FakeWindowUpper{i}", cx + 1.0, cx + 2.4, 4.0, 5.3, -13.96, -13.9, "glass")
-    b("Roof", -28.4, -5.6, 6.6, 6.9, -22.4, -11.6, "trim")
-    b("SignBoard", -23, -13, 6.9, 8.4, -12.0, -11.8, "trim")
+    b = lambda n, *a, **k: mbox(n, name, m, *a, **k)  # noqa: E731
+    b("Shell", -45, -17, 0, 6.5, -21, -11, "brick")
+    b("RoofDeck", -45, -17, 6.5, 6.6, -21, -11, "trim", sight=False)
+    b("HallCut", -33, -30, -0.1, 2.9, -20.7, -11.3, "interior", subtract=True)
+    b("FrontDoorCut", -32.2, -30.8, -0.1, 2.3, -11.4, -10.9, "interior", subtract=True)
+    b("BackDoorCut", -32.2, -30.8, -0.1, 2.3, -21.1, -20.6, "interior", subtract=True)
+    b("FlatCut", -29.7, -22.3, -0.1, 2.9, -20.7, -11.3, "interior", subtract=True)
+    b("FlatDoorCut", -30.1, -29.6, -0.1, 2.3, -17.4, -16.2, "interior", subtract=True)
+    for i, (x0, x1) in enumerate(((-28.5, -27.0), (-25.8, -24.3))):
+        b(f"FlatWindowCut{i}", x0, x1, 1.0, 2.1, -11.4, -10.9, "interior", subtract=True)
+    b("FlatBackWindowCut", -26.6, -25.0, 1.0, 2.1, -21.1, -20.6, "interior", subtract=True)
+    b("Bed", -29.4, -27.4, 0, 0.6, -20.4, -18.8, "fabric")
+    b("Dresser", -23.3, -22.5, 0, 1.2, -20.5, -19.0, "wood")
+    b("Sofa", -27.0, -24.5, 0, 0.8, -15.0, -14.2, "fabric")
+    # Painted doors and windows on the closed units, street side and alley side.
+    for i, cx in enumerate((-41.0, -37.0, -20.0)):
+        b(f"FakeDoor{i}", cx - 0.6, cx + 0.6, 0, 2.3, -10.96, -10.9, "door", sight=False)
+    for i, cx in enumerate((-42.5, -37.5, -32.5, -27.5, -22.5)):
+        b(f"FakeDoorUpper{i}", cx - 0.6, cx + 0.6, 3.4, 5.6, -10.96, -10.9, "door", sight=False)
+        b(f"FakeWindowUpper{i}", cx + 1.0, cx + 2.4, 4.1, 5.4, -10.96, -10.9, "glass", sight=False)
+        b(f"FakeBackWindow{i}", cx + 0.2, cx + 1.6, 4.1, 5.4, -21.1, -21.04, "glass", sight=False)
+    # Roof: a parapet all round (open where the fire escape lands), a stairwell
+    # bulkhead and plant to fight around, and a billboard facing the street.
+    b("ParapetFront", -45, -17, 6.6, 7.6, -11.3, -11, "trim")
+    b("ParapetBackWest", -45, -41.6, 6.6, 7.6, -21, -20.7, "trim")
+    b("ParapetBack", -39.8, -17, 6.6, 7.6, -21, -20.7, "trim")
+    b("ParapetWest", -45, -44.7, 6.6, 7.6, -21, -11, "trim")
+    b("ParapetEast", -17.3, -17, 6.6, 7.6, -21, -11, "trim")
+    b("Bulkhead", -31.5, -28.5, 6.6, 9.0, -19.5, -16.5, "brick")
+    b("BulkheadDoor", -30.6, -29.4, 6.6, 8.8, -16.54, -16.48, "door", sight=False)
+    b("BillboardPostA", -38.2, -37.8, 6.6, 9.4, -13.4, -13.0, "steel")
+    b("BillboardPostB", -34.2, -33.8, 6.6, 9.4, -13.4, -13.0, "steel")
+    b("Billboard", -39.5, -32.5, 8.6, 11.4, -13.3, -13.1, "trim", sight=False)
 
-    walk = name + "Walkway"
-    s.combiner(walk, "metal")
-    w = lambda n, *a, **k: pbox(n, walk, rot, *a, **k)  # noqa: E731
-    w("Deck", -28, -6, 3.0, 3.2, -14, -12, "metal")
-    w("RailTop", -28, -8, 4.05, 4.2, -12.1, -11.95, "metal")
-    w("RailEnd", -28.15, -28, 3.2, 4.2, -14, -12, "metal")
-    for i, x in enumerate((-27.9, -24, -20, -16, -12, -8.1)):
-        w(f"Post{i}", x - 0.05, x + 0.05, 0, 6.6, -12.1, -11.95, "metal")
-    for i, x in enumerate((-26, -22, -18, -14, -10)):
-        w(f"Baluster{i}", x - 0.04, x + 0.04, 3.2, 4.05, -12.08, -11.97, "metal")
-    # Stairs from the walkway down toward the plaza, along +Z.
-    stairs = [(0, 0), (5.6, 0), (0, 3.2)]
-    pos = (8, 0, 12) if rot else (-8, 0, -12)
-    s.wedge("Stairs", walk, pos, PI / 2 if rot else -PI / 2, stairs, 2, "metal")
-    # The landing past the end of the building needs walls on its open sides.
-    w("LandingRailBack", -8, -5.95, 3.2, 4.2, -14.15, -14, "metal")
-    w("LandingRailEast", -6.1, -5.95, 3.2, 4.2, -14, -12, "metal")
+    # Fire escape on the alley wall: a flight up to a landing, a second flight
+    # back over the first to the roof, and railings.
+    fe = name + "FireEscape"
+    s.combiner(fe, "metal")
+    w = lambda n, *a, **k: mbox(n, fe, m, *a, **k)  # noqa: E731
+    mwedge("FlightLow", fe, m, (-40.0, 0, -21.0), 0, FLIGHT_LOW, 1.2, "metal")
+    w("Landing", -34.4, -32.4, 3.0, 3.2, -23.4, -21.0, "metal")
+    mwedge("FlightHigh", fe, m, (-34.4, 3.2, -23.4), PI, FLIGHT_HIGH, 1.2, "metal")
+    w("TopLanding", -41.6, -40.0, 6.4, 6.6, -23.4, -21.0, "metal")
+    w("RailLanding", -32.55, -32.4, 3.2, 4.2, -23.4, -21.0, "metal", sight=False)
+    w("RailLandingOut", -34.4, -32.4, 3.2, 4.2, -23.55, -23.4, "metal", sight=False)
+    w("RailTop", -41.6, -40.0, 6.6, 7.6, -23.55, -23.4, "metal", sight=False)
+    w("RailTopEnd", -41.75, -41.6, 6.6, 7.6, -23.4, -21.0, "metal", sight=False)
+    for i, x in enumerate((-40.0, -37.2, -34.4)):
+        w(f"Post{i}", x - 0.05, x + 0.05, 0, 6.6, -23.45, -23.35, "metal", sight=False)
 
 
-apartment("ApartmentsNorth", False)
-apartment("ApartmentsSouth", True)
-
-
-# --- Corner stores (north-east, and rotated to the south-west) ---------------------
-def store(name, rot):
+def auto_shop():
+    """The centre of the north row: an auto shop with roll-up doors to the
+    street, side doors to the side streets, and a back door to the alley."""
+    name = "AutoShop"
     s.combiner(name, "concrete")
-    b = lambda n, *a, **k: pbox(n, name, rot, *a, **k)  # noqa: E731
-    b("Shell", 8, 20, 0, 4, -22, -15, "brick_blue")
-    b("InteriorCut", 8.3, 19.7, -0.1, 3.6, -21.7, -15.3, "interior", subtract=True)
-    b("DoorCut", 12.5, 13.7, -0.1, 2.4, -15.4, -14.9, "interior", subtract=True)
-    b("WindowWestCut", 9, 12, 0.9, 2.6, -15.4, -14.9, "interior", subtract=True)
-    b("WindowEastCut", 14.4, 19, 0.9, 2.6, -15.4, -14.9, "interior", subtract=True)
-    b("SideDoorCut", 19.6, 20.1, -0.1, 2.4, -19.6, -18.4, "interior", subtract=True)
-    b("Counter", 9, 12.6, 0, 1.1, -19, -18.2, "wood")
-    b("ShelfFront", 14.6, 18.6, 0, 1.8, -18.4, -17.9, "metal")
-    b("ShelfBack", 14.6, 18.6, 0, 1.8, -20.6, -20.1, "metal")
-    b("Fridges", 8.3, 9.1, 0, 2.2, -21.7, -19.4, "glass")
-    b("Awning", 8, 20, 3.0, 3.15, -15, -13.6, "car_red")
-    b("Roof", 7.8, 20.2, 4, 4.3, -22.2, -14.8, "trim")
+    b = lambda n, *a, **k: s.box(n, name, *a, **k)  # noqa: E731
+    b("Shell", -12, 12, 0, 5.0, -21, -11, "brick_blue")
+    SIGHT_BLOCKERS.append((-12, 12, -21, -11))
+    b("InteriorCut", -11.7, 11.7, -0.1, 4.5, -20.7, -11.3, "interior", subtract=True)
+    for i, (x0, x1) in enumerate(((-9.5, -5.5), (5.5, 9.5))):
+        b(f"BayCut{i}", x0, x1, -0.1, 3.2, -11.4, -10.9, "interior", subtract=True)
+    b("BackDoorCut", -0.7, 0.7, -0.1, 2.3, -21.1, -20.6, "interior", subtract=True)
+    for i, x in enumerate((-12.1, 11.6)):
+        b(f"SideDoorCut{i}", x, x + 0.5, -0.1, 2.3, -17.4, -16.2, "interior", subtract=True)
+    # A car up on the lift, workbenches, and tyre stacks inside.
+    b("LiftPostA", -3.2, -2.9, 0, 2.2, -17.5, -17.2, "steel")
+    b("LiftPostB", 2.9, 3.2, 0, 2.2, -17.5, -17.2, "steel")
+    b("LiftArms", -3.2, 3.2, 1.55, 1.7, -18.6, -14.4, "steel")
+    b("LiftedCar", -2.2, 2.2, 1.7, 2.8, -18.4, -14.6, "car_blue")
+    for tag, m in (("W", False), ("E", True)):
+        mbox(f"Bench{tag}", name, m, -11.6, -10.6, 0, 0.95, -20.4, -15.5, "wood")
+        mbox(f"Cabinet{tag}", name, m, -8.0, -6.4, 0, 1.9, -20.6, -20.0, "steel")
+        mbox(f"TyreStack{tag}", name, m, -6.5, -5.5, 0, 1.2, -14.0, -13.0, "trim")
+    b("Roof", -12.3, 12.3, 5.0, 5.3, -21.3, -10.7, "trim")
+    b("SignBoard", -6, 6, 5.3, 6.6, -10.9, -10.7, "trim")
 
 
-store("StoreNorth", False)
-store("StoreSouth", True)
+both(flats, "Flats")
+auto_shop()
 
-# --- Building trim: window frames, sills, storefronts, gutters, and downpipes ------
+
+# --- South row: corner store, apartment lobby, laundromat ----------------------------
+def south_row():
+    """One building front from yard to yard, joined inside by doorways."""
+    name = "SouthRow"
+    s.combiner(name, "concrete")
+    s.box("Shell", name, -45, 45, 0, 4.2, 11, 24, "brick")
+    s.box("InteriorCut", name, -44.7, 44.7, -0.1, 3.6, 11.3, 23.7, "interior", subtract=True)
+    SIGHT_BLOCKERS.append((-45, 45, 23.7, 24))
+    for tag, m in (("W", False), ("E", True)):
+        b = lambda n, *a, **k: mbox(n + tag, name, m, *a, **k)  # noqa: E731
+        # Doors from the spawn yard into the store.
+        for i, (z0, z1) in enumerate(((13.2, 14.6), (19.4, 20.8))):
+            b(f"YardDoorCut{i}", -45.1, -44.6, -0.1, 2.4, z0, z1, "interior", subtract=True)
+        # Street front: doors and windows.
+        b("StoreDoorCut", -38.6, -37.2, -0.1, 2.4, 10.9, 11.4, "interior", subtract=True)
+        for i, (x0, x1) in enumerate(((-43.5, -39.6), (-36.2, -32.4))):
+            b(f"StoreWindowCut{i}", x0, x1, 0.9, 2.6, 10.9, 11.4, "interior", subtract=True)
+        b("LobbyDoorCut", -23.2, -21.8, -0.1, 2.4, 10.9, 11.4, "interior", subtract=True)
+        for i, (x0, x1) in enumerate(((-29.5, -26.8), (-18.8, -16.1))):
+            b(f"LobbyWindowCut{i}", x0, x1, 1.0, 2.2, 10.9, 11.4, "interior", subtract=True)
+        for i, (x0, x1) in enumerate(((-12.5, -7.5), (-6.0, -2.0))):
+            b(f"LaundryWindowCut{i}", x0, x1, 0.6, 2.8, 10.9, 11.4, "interior", subtract=True)
+    s.box("LaundryDoorCut", name, -1.0, 1.0, -0.1, 2.4, 10.9, 11.4, "interior", subtract=True)
+    for tag, m in (("W", False), ("E", True)):
+        b = lambda n, *a, **k: mbox(n + tag, name, m, *a, **k)  # noqa: E731
+        # Party walls with offset doorways, so the route zig-zags.
+        b("WallStoreLobbyA", -31.15, -30.85, 0, 3.6, 11.3, 19.6, "interior")
+        b("WallStoreLobbyB", -31.15, -30.85, 0, 3.6, 21.0, 23.7, "interior")
+        b("WallStoreLobbyHead", -31.15, -30.85, 2.4, 3.6, 19.6, 21.0, "interior", sight=False)
+        b("WallLobbyLaundryA", -14.15, -13.85, 0, 3.6, 11.3, 12.8, "interior")
+        b("WallLobbyLaundryB", -14.15, -13.85, 0, 3.6, 14.2, 23.7, "interior")
+        b("WallLobbyLaundryHead", -14.15, -13.85, 2.4, 3.6, 12.8, 14.2, "interior", sight=False)
+        # Store: shelves, the counter, and fridges.
+        for i, z in enumerate((15.0, 18.0)):
+            b(f"Shelf{i}", -42.5, -36.0, 0, 1.8, z, z + 0.6, "metal")
+        b("Counter", -35.0, -32.0, 0, 1.1, 14.0, 14.8, "wood")
+        b("Fridges", -44.7, -43.9, 0, 2.2, 21.0, 23.7, "glass")
+        # Lobby: mailboxes, a closed stair, and a sofa.
+        b("Mailboxes", -30.85, -29.9, 0, 1.9, 12.0, 15.5, "metal")
+        b("StairBlock", -21.0, -16.0, 0, 3.6, 20.5, 23.7, "interior")
+        b("LobbySofa", -26.0, -23.5, 0, 0.8, 17.5, 18.3, "fabric")
+        # Laundromat: washers back to back down the middle, dryers on the
+        # back wall, and folding tables.
+        for i in range(10):
+            x0 = -12.0 + i * 0.92
+            b(f"Washer{i}", x0, x0 + 0.86, 0, 1.05, 16.2, 17.6, "steel")
+        for i in range(8):
+            x0 = -13.85 + i * 0.98
+            b(f"Dryer{i}", x0, x0 + 0.92, 0, 2.0, 22.9, 23.7, "steel")
+        b("FoldingTable", -4.5, -2.5, 0, 0.9, 20.0, 21.2, "wood")
+    s.box("Roof", name, -45.3, 45.3, 4.2, 4.5, 10.7, 24.3, "trim")
+    for tag, m in (("W", False), ("E", True)):
+        mbox(f"StoreAwning{tag}", name, m, -44.0, -32.0, 2.9, 3.05, 9.6, 11, "fabric", sight=False)
+        mbox(f"LaundryAwning{tag}", name, m, -13.0, -0.5, 3.0, 3.15, 9.8, 11, "car_blue", sight=False)
+
+
+south_row()
+
+
+# --- Building trim: window frames, sills, storefronts, gutters, and downpipes ----------
 # Visual only (no collision), so it never changes movement or cover.
-def frame(name, parent, rot, x0, x1, y0, y1, face_z, out, mat="trim", sill=True):
+def frame(name, parent, m, x0, x1, y0, y1, face_z, out, mat="trim", sill=True):
     """A frame around an opening in a wall whose face is at z = face_z, standing
     out toward +z when out > 0 (or -z when out < 0)."""
     t = 0.07
     z0, z1 = sorted((face_z, face_z + out))
-    pbox(f"{name}Top", parent, rot, x0 - t, x1 + t, y1, y1 + t, z0, z1, mat)
-    pbox(f"{name}Left", parent, rot, x0 - t, x0, y0, y1, z0, z1, mat)
-    pbox(f"{name}Right", parent, rot, x1, x1 + t, y0, y1, z0, z1, mat)
+    mbox(f"{name}Top", parent, m, x0 - t, x1 + t, y1, y1 + t, z0, z1, mat, sight=False)
+    mbox(f"{name}Left", parent, m, x0 - t, x0, y0, y1, z0, z1, mat, sight=False)
+    mbox(f"{name}Right", parent, m, x1, x1 + t, y0, y1, z0, z1, mat, sight=False)
     if sill:
         sz0, sz1 = sorted((face_z, face_z + out * 1.8))
-        pbox(f"{name}Sill", parent, rot, x0 - 0.12, x1 + 0.12, y0 - 0.08, y0, sz0, sz1, "sidewalk")
+        mbox(f"{name}Sill", parent, m, x0 - 0.12, x1 + 0.12, y0 - 0.08, y0, sz0, sz1, "sidewalk", sight=False)
     else:
-        pbox(f"{name}Bottom", parent, rot, x0 - t, x1 + t, y0 - t, y0, z0, z1, mat)
+        mbox(f"{name}Bottom", parent, m, x0 - t, x1 + t, y0 - t, y0, z0, z1, mat, sight=False)
 
 
-def building_trim(tag, rot):
-    name = f"Trim{tag}"
+def building_trim(name, m):
     s.combiner(name, None, collision=False)
-    # Flats, street side: ground-floor windows and every upper window.
-    frame(f"FlatsWinW{tag}", name, rot, -22.2, -20.8, 1.0, 2.1, -14.0, 0.1)
-    frame(f"FlatsWinE{tag}", name, rot, -17.3, -15.9, 1.0, 2.1, -14.0, 0.1)
-    for i, cx in enumerate((-25.4, -20.4, -15.4, -10.4)):
-        frame(f"FlatsUpper{tag}{i}", name, rot, cx + 1.0, cx + 2.4, 4.0, 5.3, -13.9, 0.1)
-        frame(f"FlatsDoor{tag}{i}", name, rot, cx - 0.6, cx + 0.6, 3.2, 5.5, -13.9, 0.08, sill=False)
-    # Flats, alley side.
-    frame(f"FlatsBackWin{tag}", name, rot, -16.0, -14.4, 1.0, 2.1, -22.0, -0.1)
-    # Gutter along the roof edge and downpipes at the corners.
-    pbox(f"Gutter{tag}", name, rot, -28.4, -7.6, 6.45, 6.6, -11.75, -11.55, "steel")
-    for i, x in enumerate((-27.85, -8.15)):
-        pbox(f"Downpipe{tag}{i}", name, rot, x - 0.06, x + 0.06, 0.0, 6.5, -13.95, -13.83, "steel")
-    # Store: dark storefront frames with a kick plate.
-    frame(f"StoreWinW{tag}", name, rot, 9.0, 12.0, 0.9, 2.6, -15.0, 0.08, mat="trim", sill=False)
-    frame(f"StoreWinE{tag}", name, rot, 14.4, 19.0, 0.9, 2.6, -15.0, 0.08, mat="trim", sill=False)
-    frame(f"StoreDoor{tag}", name, rot, 12.5, 13.7, 0.0, 2.4, -15.0, 0.08, mat="trim", sill=False)
-    pbox(f"StoreKick{tag}", name, rot, 8.0, 20.0, 0.0, 0.35, -15.0, -14.92, "trim")
-    for i, x in enumerate((8.12, 19.88)):
-        pbox(f"StorePipe{tag}{i}", name, rot, x - 0.05, x + 0.05, 0.0, 3.9, -14.95, -14.85, "steel")
+    t = name
+    # Flats: the flat's windows on both sides, and every upper window.
+    for i, (x0, x1) in enumerate(((-28.5, -27.0), (-25.8, -24.3))):
+        frame(f"{t}FlatWin{i}", name, m, x0, x1, 1.0, 2.1, -11.0, -0.1)
+    frame(f"{t}FlatBack", name, m, -26.6, -25.0, 1.0, 2.1, -21.0, -0.1)
+    for i, cx in enumerate((-42.5, -37.5, -32.5, -27.5, -22.5)):
+        frame(f"{t}Upper{i}", name, m, cx + 1.0, cx + 2.4, 4.1, 5.4, -10.9, -0.1)
+        frame(f"{t}UpperDoor{i}", name, m, cx - 0.6, cx + 0.6, 3.4, 5.6, -10.9, -0.08, sill=False)
+    frame(f"{t}HallDoor", name, m, -32.2, -30.8, 0.0, 2.3, -11.0, -0.08, sill=False)
+    # Gutter along the flats' roof edge, and downpipes.
+    mbox(f"{t}Gutter", name, m, -45.2, -16.8, 6.45, 6.6, -10.85, -10.65, "steel", sight=False)
+    for i, x in enumerate((-44.85, -17.15)):
+        mbox(f"{t}Downpipe{i}", name, m, x - 0.06, x + 0.06, 0.0, 6.5, -10.95, -10.83, "steel", sight=False)
+    # South row storefronts: dark frames and kick plates.
+    for i, (x0, x1) in enumerate(((-43.5, -39.6), (-36.2, -32.4), (-12.5, -7.5), (-6.0, -2.0))):
+        y0, y1 = (0.6, 2.8) if x0 > -14 else (0.9, 2.6)
+        frame(f"{t}Shop{i}", name, m, x0, x1, y0, y1, 11.0, -0.08, sill=False)
+    for i, (x0, x1) in enumerate(((-29.5, -26.8), (-18.8, -16.1))):
+        frame(f"{t}Lobby{i}", name, m, x0, x1, 1.0, 2.2, 11.0, -0.1)
+    frame(f"{t}StoreDoor", name, m, -38.6, -37.2, 0.0, 2.4, 11.0, -0.08, sill=False)
+    frame(f"{t}LobbyDoor", name, m, -23.2, -21.8, 0.0, 2.4, 11.0, -0.08, sill=False)
+    mbox(f"{t}KickStore", name, m, -44.0, -32.0, 0.0, 0.35, 10.92, 11.0, "trim", sight=False)
+    mbox(f"{t}KickLaundry", name, m, -13.0, -0.5, 0.0, 0.35, 10.92, 11.0, "trim", sight=False)
+    for i, x in enumerate((-44.88, -31.0, -14.0)):
+        mbox(f"{t}Pipe{i}", name, m, x - 0.05, x + 0.05, 0.0, 4.1, 10.85, 10.95, "steel", sight=False)
 
 
-building_trim("A", False)
-building_trim("B", True)
+both(building_trim, "Trim")
+frame("TrimLaundryDoor", "TrimW", False, -1.0, 1.0, 0.0, 2.4, 11.0, -0.08, sill=False)
+frame("TrimShopBayW", "TrimW", False, -9.5, -5.5, 0.0, 3.2, -11.0, 0.08, sill=False)
+frame("TrimShopBayE", "TrimW", False, 5.5, 9.5, 0.0, 3.2, -11.0, 0.08, sill=False)
 
-# --- Street furniture, vehicles, and alley clutter ------------------------------------
-s.combiner("Props", "concrete")
-s.combiner("PropsMetal", "metal")
-s.combiner("PropsWood", "wood")
-
-
-def car(name, rot, cx, cz, along_x, mat, length=4.4, width=1.9):
-    hx, hz = (length / 2, width / 2) if along_x else (width / 2, length / 2)
-    cx2, cz2 = (1.2, 0.85) if along_x else (0.85, 1.2)
-    pbox(name + "Body", "PropsMetal", rot, cx - hx, cx + hx, 0.2, 1.1, cz - hz, cz + hz, mat)
-    pbox(name + "Cabin", "PropsMetal", rot, cx - cx2, cx + cx2, 1.1, 1.7, cz - cz2, cz + cz2, "glass")
-
-
+# --- Props: street furniture, vehicles, and clutter ------------------------------------
 # Props are CC0 Poly Haven models (tools/build_props.py). Each one that should
 # block players and bullets gets a box in a hidden combiner, so collision stays
 # as simple as the blockout and bullets still report a surface.
+s.combiner("Props", "concrete")
+s.combiner("PropsMetal", "metal")
+s.combiner("PropsWood", "wood")
 s.combiner("Blockers", "metal", visible=False)
 s.combiner("BlockersWood", "wood", visible=False)
+s.combiner("BlockersConcrete", "concrete", visible=False)
 s.node("Props3D", "Node3D", ".")
 PROPS_USED = set()
 
 
-def rot_point(x, z, rotated):
-    return (-x, -z) if rotated else (x, z)
+def mpoint(x, z, m):
+    return (-x, z) if m else (x, z)
 
 
-def prop(name, model, rotated, x, y, z, yaw=0.0, scale=1.0):
+def prop(name, model, m, x, y, z, yaw=0.0, scale=1.0):
+    """A prop at (x, y, z) turned `yaw` on the west half, or its mirror image."""
     PROPS_USED.add(model)
-    px, pz = rot_point(x, z, rotated)
+    px, pz = mpoint(x, z, m)
     props = {"position": vec(px, y, pz)}
-    yaw = yaw + (PI if rotated else 0.0)
+    # Mirroring across x flips the facing: yaw becomes -yaw.
+    yaw = -yaw if m else yaw
     if yaw:
         props["rotation"] = vec(0, yaw, 0)
     if scale != 1.0:
@@ -321,76 +455,126 @@ def prop(name, model, rotated, x, y, z, yaw=0.0, scale=1.0):
     s.node(name, None, "Props3D", props, instance=f"p_{model}")
 
 
-def blocker(name, rotated, x0, x1, y0, y1, z0, z1, wood=False):
-    pbox(name, "BlockersWood" if wood else "Blockers", rotated, x0, x1, y0, y1, z0, z1, "trim")
+def blocker(name, m, x0, x1, y0, y1, z0, z1, kind="metal"):
+    parent = {"metal": "Blockers", "wood": "BlockersWood", "concrete": "BlockersConcrete"}[kind]
+    mbox(name, parent, m, x0, x1, y0, y1, z0, z1, "trim")
 
 
-def car(name, rot, cx, cz, along_x):
+def car(name, m, cx, cz, along_x):
     hx, hz = (2.2, 0.95) if along_x else (0.95, 2.2)
-    blocker(name + "Block", rot, cx - hx, cx + hx, 0, 1.4, cz - hz, cz + hz)
-    prop(name, "covered_car", rot, cx, 0, cz, PI / 2 if along_x else 0.0)
+    blocker(name + "Block", m, cx - hx, cx + hx, 0, 1.4, cz - hz, cz + hz)
+    prop(name, "covered_car", m, cx, 0, cz, PI / 2 if along_x else 0.0)
 
 
-def crate_stack(name, rot, x0, z0, wood=True):
-    """Four wooden crates in place of a 1.2 m blockout crate."""
-    blocker(name + "Block", rot, x0, x0 + 1.2, 0, 0.92, z0, z0 + 1.2, wood=True)
+def barrier(name, m, cx, cz, along_x=True):
+    hx, hz = (0.78, 0.22) if along_x else (0.22, 0.78)
+    blocker(name + "Block", m, cx - hx, cx + hx, 0, 1.1, cz - hz, cz + hz, "concrete")
+    prop(name, "barrier", m, cx, 0, cz, 0.0 if along_x else PI / 2)
+
+
+def crate_stack(name, m, x0, z0):
+    """Four wooden crates in a 1.2 m block."""
+    blocker(name + "Block", m, x0, x0 + 1.2, 0, 0.92, z0, z0 + 1.2, "wood")
     for i, (dx, dy) in enumerate(((0.32, 0), (0.88, 0), (0.32, 0.46), (0.88, 0.46))):
-        prop(f"{name}{i}", "crate", rot, x0 + dx, dy, z0 + 0.6, (i % 2) * 0.06)
+        prop(f"{name}{i}", "crate", m, x0 + dx, dy, z0 + 0.6, (i % 2) * 0.06)
 
 
-for tag, rot in (("A", False), ("B", True)):
-    # Vehicles break up the lanes in front of the buildings.
-    car(f"Sedan{tag}", rot, -22, -10, True)
-    pbox(f"BoxTruck{tag}", "PropsMetal", rot, -1, 5, 0.3, 3.0, -12.2, -9.8, "truck")
-    pbox(f"BoxTruckCab{tag}", "PropsMetal", rot, 5, 6.8, 0.3, 2.2, -12.1, -9.9, "car_blue")
-    car(f"Taxi{tag}", rot, 27, -10.5, True)
-    car(f"Hatch{tag}", rot, 24.5, -19, False)
-    car(f"Coupe{tag}", rot, 30.5, -20, False)
-    # The kiosk blocks the straight line between the two spawns.
-    pbox(f"Kiosk{tag}", "Props", rot, -12, -10, 0, 2.6, -1.5, 1.5, "brick_blue")
-    pbox(f"KioskRoof{tag}", "Props", rot, -12.3, -9.7, 2.6, 2.8, -1.8, 1.8, "trim")
-    pbox(f"PlanterNW{tag}", "Props", rot, -12, -9, 0, 0.8, -7, -5.8, "sidewalk")
-    pbox(f"PlanterSW{tag}", "Props", rot, -12, -9, 0, 0.8, 5.8, 7, "sidewalk")
-    pbox(f"BenchN{tag}", "PropsWood", rot, -5, -2, 0, 0.5, -6.6, -6, "wood")
-    # Alley behind the buildings.
-    pbox(f"Dumpster{tag}", "PropsMetal", rot, -25, -23.2, 0, 1.3, -24.9, -23.6, "dumpster")
-    pbox(f"DumpsterGap{tag}", "PropsMetal", rot, 0.5, 2.3, 0, 1.3, -21, -19.7, "dumpster")
-    blocker(f"AcUnit{tag}Block", rot, -14, -12.8, 0, 1.0, -23.2, -22)
-    prop(f"AcUnit{tag}", "aircon", rot, -13.4, 0, -22.6, PI)
-    crate_stack(f"CrateLow{tag}", rot, -5, -25)
-    crate_stack(f"CrateSide{tag}", rot, -3.8, -25)
-    blocker(f"CrateHigh{tag}Block", rot, -5, -3.8, 0.92, 1.84, -25, -23.8, wood=True)
-    prop(f"CrateHigh{tag}", "military_crate", rot, -4.4, 0.92, -24.4, 0.1)
-    pbox(f"Pallets{tag}", "PropsWood", rot, 14, 16, 0, 0.6, -25, -23.5, "wood")
-    pbox(f"NewsBoxes{tag}", "PropsMetal", rot, 6.2, 7.4, 0, 1.1, -14.6, -14.0, "car_blue")
-    blocker(f"Hydrant{tag}Block", rot, -30.3, -29.9, 0, 0.8, -9.3, -8.9)
-    prop(f"Hydrant{tag}", "hydrant", rot, -30.1, 0, -9.1, 0.4)
+def small(name, model, m, x, z, yaw=0.0, half=0.3, height=0.9, y=0.0):
+    blocker(name + "Block", m, x - half, x + half, y, y + height, z - half, z + half)
+    prop(name, model, m, x, y, z, yaw)
 
-    # Clutter against walls: bins, barrels, tyres, boxes, and the alley's lights.
-    for i, (x, z, yaw) in enumerate(((-27.3, -13.5, 0.3), (-8.7, -13.5, -0.4), (5.5, -14.3, 0.9))):
-        blocker(f"Bin{tag}{i}Block", rot, x - 0.3, x + 0.3, 0, 0.9, z - 0.3, z + 0.3)
-        prop(f"Bin{tag}{i}", "trash_can", rot, x, 0, z, yaw)
-    for i, (x, z, model) in enumerate(((-26.0, -24.6, "barrel_red"), (-22.5, -24.7, "barrel_steel"),
-                                        (-21.8, -25.2, "barrel_blue"), (16.8, -25.0, "barrel_steel"))):
-        blocker(f"Barrel{tag}{i}Block", rot, x - 0.3, x + 0.3, 0, 0.9, z - 0.3, z + 0.3)
-        prop(f"Barrel{tag}{i}", model, rot, x, 0, z, i * 1.3)
-    prop(f"Tyre{tag}0", "tyre", rot, -7.2, 0, -25.4, 0.2)
-    prop(f"Tyre{tag}1", "tyre", rot, -7.6, 0, -25.3, 0.5)
-    blocker(f"Tyres{tag}Block", rot, -7.9, -6.9, 0, 0.6, -25.6, -25.0)
-    blocker(f"Boxes{tag}Block", rot, -2.3, -1.4, 0, 0.68, -25.4, -24.7, wood=True)
-    prop(f"Box{tag}0", "cardboard_box", rot, -1.9, 0, -25.0, 0.2)
-    prop(f"Box{tag}1", "cardboard_box", rot, -1.85, 0.34, -25.05, -0.3)
-    blocker(f"Utility{tag}Block", rot, 20.0, 20.45, 0, 1.12, -21.6, -21.0)
-    prop(f"Utility{tag}", "utility_box", rot, 20.22, 0, -21.3, -PI / 2)
-    prop(f"SecurityLightFlats{tag}", "security_light", rot, -20.0, 3.2, -22.0, PI)
-    prop(f"SecurityLightStore{tag}", "security_light", rot, 14.0, 2.9, -22.0, PI)
-    # Roof plant on the flats and the store, seen from the walkway and the streets.
-    for i, (x, y, z) in enumerate(((-25.5, 6.9, -18.5), (-24.5, 6.9, -18.5), (-11.5, 6.9, -20.0),
-                                   (11.0, 4.3, -20.5), (17.0, 4.3, -18.0))):
-        prop(f"RoofAc{tag}{i}", "aircon", rot, x, y, z, PI if i % 2 else 0.0)
-    # Roller shutters over the closed ground-floor doors of the flats.
-    for i, cx in enumerate((-25.4, -10.4)):
-        prop(f"Shutter{tag}{i}", "shutter_door", rot, cx, 0, -13.72)
+
+for t, m in (("W", False), ("E", True)):
+    # -- Spawn yard: parked cars and a low wall screen the mouth of the street.
+    car(f"YardCarA{t}", m, -52.5, -18.0, False)
+    car(f"YardCarB{t}", m, -50.0, 14.5, False)
+    car(f"YardCarC{t}", m, -53.5, 21.0, True)
+    mbox(f"YardWall{t}", "Props", m, -48.2, -47.8, 0, 1.15, -6.0, 6.0, "yard")
+    mbox(f"YardWallCap{t}", "Props", m, -48.3, -47.7, 1.15, 1.25, -6.1, 6.1, "trim", sight=False)
+    crate_stack(f"YardCrates{t}", m, -51.5, -26.5)
+    small(f"YardBarrel{t}", "barrel_steel", m, -46.2, -26.8)
+    prop(f"YardLight{t}", "security_light", m, -44.95, 3.2, -22.5, PI / 2)
+
+    # -- Market Street: the stalled truck, parked cars, barriers, the kiosk,
+    # planters, and a bus shelter break up the long lines.
+    mbox(f"BoxTruck{t}", "PropsMetal", m, -29.0, -22.4, 0.3, 3.1, -6.6, -4.0, "truck")
+    mbox(f"BoxTruckCab{t}", "PropsMetal", m, -22.4, -20.6, 0.3, 2.3, -6.5, -4.1, "car_blue")
+    mbox(f"Van{t}", "PropsMetal", m, -35.6, -30.0, 0.3, 2.7, 3.2, 5.6, "truck")
+    mbox(f"VanCab{t}", "PropsMetal", m, -37.2, -35.6, 0.3, 2.1, 3.3, 5.5, "car_blue")
+    car(f"StreetCarA{t}", m, -24.5, 6.0, True)
+    car(f"StreetCarB{t}", m, -16.5, -6.4, True)
+    for i, (x, z, along) in enumerate(((-33.0, -2.0, False), (-19.5, 3.0, False), (-19.5, 4.7, False),
+                                        (-41.0, -9.0, True))):
+        barrier(f"Barrier{t}{i}", m, x, z, along)
+    # Newsstands at each end of the plaza, islands in the middle of the road.
+    mbox(f"Kiosk{t}", "Props", m, -14.0, -12.0, 0, 2.6, -3.2, 3.6, "brick_blue")
+    mbox(f"KioskRoof{t}", "Props", m, -14.3, -11.7, 2.6, 2.8, -3.5, 3.9, "trim", sight=False)
+    mbox(f"PlanterN{t}", "Props", m, -11.0, -8.0, 0, 0.8, -7.4, -6.2, "sidewalk")
+    mbox(f"PlanterS{t}", "Props", m, -11.0, -8.0, 0, 0.8, 6.2, 7.4, "sidewalk")
+    mbox(f"BenchN{t}", "PropsWood", m, -6.0, -3.0, 0, 0.5, -6.6, -6.0, "wood")
+    mbox(f"ShelterRoof{t}", "PropsMetal", m, -41.0, -36.0, 2.5, 2.65, 8.4, 10.6, "steel", sight=False)
+    mbox(f"ShelterBack{t}", "PropsMetal", m, -41.0, -36.0, 0.2, 2.5, 10.4, 10.55, "glass", sight=False)
+    # The shelter's end is an advert panel, not glass: it closes the line
+    # down the south sidewalk.
+    mbox(f"ShelterAd{t}", "PropsMetal", m, -41.1, -40.9, 0.0, 2.5, 8.3, 10.4, "trim")
+    # An advertising column does the same for the north sidewalk.
+    mbox(f"AdColumn{t}", "Props", m, -21.1, -19.9, 0, 2.9, -10.1, -8.9, "brick_blue")
+    mbox(f"AdColumnCap{t}", "Props", m, -21.25, -19.75, 2.9, 3.1, -10.25, -8.75, "trim", sight=False)
+    mbox(f"ShelterBench{t}", "PropsWood", m, -40.4, -36.6, 0, 0.5, 9.8, 10.3, "wood")
+    mbox(f"NewsBoxes{t}", "PropsMetal", m, -26.0, -24.8, 0, 1.1, 9.0, 9.6, "car_blue")
+    small(f"Hydrant{t}", "hydrant", m, -30.1, -9.1, 0.4, half=0.2, height=0.8)
+    for i, (x, z, yaw) in enumerate(((-43.0, -10.4, 0.3), (-18.4, -10.4, -0.4), (-30.0, 10.4, 0.9))):
+        small(f"Bin{t}{i}", "trash_can", m, x, z, yaw)
+    small(f"Utility{t}", "utility_box", m, -24.0, -10.6, PI, half=0.25, height=1.12)
+
+    # -- Back alley: dumpsters, crates, pallets, barrels, and AC units; a
+    # delivery van in the middle splits the alley in two.
+    if not m:
+        mbox("AlleyVan", "PropsMetal", False, -3.4, 3.4, 0.3, 2.6, -25.6, -22.8, "truck", sight=False)
+        SIGHT_BLOCKERS.append((-3.4, 3.4, -25.6, -22.8))
+        mbox("AlleyVanCab", "PropsMetal", False, 3.4, 4.9, 0.3, 2.0, -25.5, -22.9, "car_blue", sight=False)
+    mbox(f"DumpsterA{t}", "PropsMetal", m, -27.5, -25.7, 0, 1.3, -27.9, -26.6, "dumpster")
+    mbox(f"DumpsterB{t}", "PropsMetal", m, -8.0, -6.2, 0, 1.3, -22.4, -21.1, "dumpster")
+    crate_stack(f"AlleyCratesA{t}", m, -36.0, -27.9)
+    crate_stack(f"AlleyCratesB{t}", m, -34.8, -27.9)
+    blocker(f"AlleyCrateHigh{t}Block", m, -36.0, -34.8, 0.92, 1.84, -27.9, -26.7, "wood")
+    prop(f"AlleyCrateHigh{t}", "military_crate", m, -35.4, 0.92, -27.3, 0.1)
+    crate_stack(f"AlleyCratesC{t}", m, -16.0, -24.6)
+    mbox(f"Pallets{t}", "PropsWood", m, -21.0, -19.0, 0, 0.6, -27.9, -26.4, "wood")
+    for i, (x, z, model) in enumerate(((-24.6, -27.5, "barrel_red"), (-24.0, -26.9, "barrel_steel"),
+                                        (-12.8, -27.5, "barrel_blue"), (-43.5, -21.6, "barrel_steel"))):
+        small(f"Barrel{t}{i}", model, m, x, z, i * 1.3)
+    for i, x in enumerate((-29.0, -14.0)):
+        small(f"AlleyAc{t}{i}", "aircon", m, x, -21.4, PI, half=0.4, height=0.95)
+    prop(f"TyreA{t}", "tyre", m, -10.2, 0, -27.6, 0.2)
+    prop(f"TyreB{t}", "tyre", m, -10.6, 0, -27.5, 0.5)
+    blocker(f"Tyres{t}Block", m, -10.9, -9.9, 0, 0.6, -27.9, -27.2)
+    for i, (x, z) in enumerate(((-3.0, -27.6), (-2.6, -27.0))):
+        prop(f"Box{t}{i}", "cardboard_box", m, x, 0, z, 0.2 + i * 0.5)
+    blocker(f"Boxes{t}Block", m, -3.3, -2.3, 0, 0.6, -27.9, -26.7, "wood")
+    prop(f"AlleyLightFlats{t}", "security_light", m, -26.0, 3.2, -21.0, PI)
+    prop(f"AlleyLightShop{t}", "security_light", m, -6.0, 3.0, -21.0, PI)
+    for i, cx in enumerate((-41.0, -37.0, -20.0)):
+        prop(f"Shutter{t}{i}", "shutter_door", m, cx, 0, -10.72)
+
+    # -- Rooftop: plant to fight around.
+    for i, (x, z) in enumerate(((-43.0, -18.5), (-24.0, -19.5), (-20.5, -14.0))):
+        small(f"RoofAc{t}{i}", "aircon", m, x, z, PI if i % 2 else 0.0, half=0.4, height=0.95, y=6.6)
+    for i, (x, z) in enumerate(((-6.0, -17.0), (6.0, -14.0))):
+        if not m:
+            prop(f"ShopRoofAc{i}", "aircon", False, x, 5.3, z, 0.0)
+    for i, (x, z) in enumerate(((-38.0, 17.5), (-20.0, 14.5), (-6.0, 19.0))):
+        prop(f"SouthRoofAc{t}{i}", "aircon", m, x, 4.5, z, PI / 2)
+
+    # -- Interiors.
+    small(f"LaundryBasket{t}", "cardboard_box", m, -8.5, 13.0, 0.4, half=0.25, height=0.34)
+    small(f"StoreBin{t}", "trash_can", m, -44.2, 12.0, 0.0)
+    crate_stack(f"StoreStock{t}", m, -44.6, 16.6)
+
+# Street lamps along the sidewalks (visual only).
+for t, m in (("W", False), ("E", True)):
+    for i, (x, z, yaw) in enumerate(((-38.0, -10.6, 0.0), (-24.0, 10.6, PI), (-11.5, -7.6, 0.0), (-11.5, 7.6, PI))):
+        prop(f"Lamp{t}{i}", "street_lamp", m, x, 0, z, yaw)
 
 # --- Decals: road paint, wear, and grime ---------------------------------------------
 # CC0 ambientCG decals (tools/build_decals.py). Road paint is grey in the texture
@@ -399,11 +583,11 @@ s.node("Decals", "Node3D", ".")
 DECALS_USED = set()
 
 
-def decal(name, texture, rotated, x, y, z, size, yaw=0.0, pitch=0.0, modulate=(1, 1, 1, 1)):
+def decal(name, texture, m, x, y, z, size, yaw=0.0, pitch=0.0, modulate=(1, 1, 1, 1)):
     DECALS_USED.add(texture)
-    px, pz = rot_point(x, z, rotated)
+    px, pz = mpoint(x, z, m)
     props = {"position": vec(px, y, pz)}
-    yaw = yaw + (PI if rotated else 0.0)
+    yaw = -yaw if m else yaw
     if yaw or pitch:
         props["rotation"] = vec(pitch, yaw, 0)
     props["size"] = vec(*size)
@@ -416,35 +600,40 @@ def decal(name, texture, rotated, x, y, z, size, yaw=0.0, pitch=0.0, modulate=(1
 
 WHITE = (0.92, 0.92, 0.9, 0.9)
 YELLOW = (0.95, 0.75, 0.25, 0.9)
-for tag, rot in (("A", False), ("B", True)):
-    # Dashed centre lines down the street in front of the buildings, and crossings
-    # where it meets the plaza.
-    for i, x in enumerate((-30, -24, -18, 18, 24, 30)):
-        decal(f"Dashes{tag}{i}", "lane_dashes", rot, x, 0, -11.2, (2.0, 1.0, 6.0), PI / 2, 0, YELLOW)
-    decal(f"CrossingWest{tag}", "crosswalk", rot, -15.0, 0, -11.0, (3.5, 1.0, 5.6), 0, 0, WHITE)
-    decal(f"CrossingEast{tag}", "crosswalk", rot, 15.0, 0, -11.0, (3.5, 1.0, 5.6), 0, 0, WHITE)
-    decal(f"EdgeLine{tag}", "edge_lines", rot, -24.0, 0, 3.0, (4.0, 1.0, 8.0), 0, 0, WHITE)
+for t, m in (("W", False), ("E", True)):
+    # Dashed centre line down Market Street, crossings at the plaza and the
+    # yard, and edge lines.
+    for i, x in enumerate((-42, -36, -30, -24, -18)):
+        decal(f"Dashes{t}{i}", "lane_dashes", m, x, 0, 0.0, (2.0, 1.0, 6.0), PI / 2, 0, YELLOW)
+    for i, z in enumerate((-5.4, 0.0, 5.4)):
+        decal(f"CrossPlaza{t}{i}", "crosswalk", m, -16.2, 0, z, (3.5, 1.0, 5.6), 0, 0, WHITE)
+        decal(f"CrossYard{t}{i}", "crosswalk", m, -43.6, 0, z, (3.5, 1.0, 5.6), 0, 0, WHITE)
+    for i, x in enumerate((-38.0, -26.0)):
+        decal(f"EdgeN{t}{i}", "edge_lines", m, x, 0, -7.4, (4.0, 1.0, 8.0), PI / 2, 0, WHITE)
     # Patched and broken asphalt, and manholes.
-    for i, (x, z, yaw, scale) in enumerate(((-30, -3, 0.4, 3.5), (-19, -24.6, 1.1, 2.8), (5, -24.2, 2.0, 3.0),
-                                            (26, -12.5, 0.7, 3.2), (-6, -11.5, 2.6, 2.5))):
-        decal(f"Damage{tag}{i}", "asphalt_damage", rot, x, 0, z, (scale, 1.0, scale), yaw)
-    decal(f"ManholeA{tag}", "manhole", rot, -20.0, 0, -11.6, (1.2, 0.6, 1.2), 0.3)
-    decal(f"ManholeB{tag}", "manhole", rot, 21.0, 0, -9.0, (1.2, 0.6, 1.2), 1.2)
+    for i, (x, z, yaw, scale) in enumerate(((-32, -3, 0.4, 3.5), (-22, -25.0, 1.1, 2.8), (-6, -24.2, 2.0, 3.0),
+                                            (-26, 5.5, 0.7, 3.2), (-51, 2.0, 2.6, 3.0), (-15, -16.0, 1.6, 2.5))):
+        decal(f"Damage{t}{i}", "asphalt_damage", m, x, 0, z, (scale, 1.0, scale), yaw)
+    decal(f"ManholeA{t}", "manhole", m, -28.0, 0, 2.6, (1.2, 0.6, 1.2), 0.3)
+    decal(f"ManholeB{t}", "manhole", m, -30.0, 0, -24.5, (1.2, 0.6, 1.2), 1.2)
     # Rain streaks down the walls under the roof edges.
-    for i, (x, y, z, toward_z) in enumerate(((-24.0, 5.2, -13.9, 1), (-12.0, 5.2, -13.9, 1), (-20.0, 4.8, -22.1, -1),
-                                             (-12.0, 4.8, -22.1, -1), (11.0, 2.6, -14.9, 1), (17.5, 2.6, -22.1, -1))):
-        pitch = PI / 2 if toward_z > 0 else -PI / 2
-        decal(f"Drips{tag}{i}", "drips", rot, x, y, z, (2.4, 0.6, 3.0), 0, pitch, (0.6, 0.58, 0.55, 0.85))
+    for i, (x, y, z, toward) in enumerate(((-36.0, 5.2, -10.9, 1), (-24.0, 5.2, -10.9, 1),
+                                           (-30.0, 4.8, -21.1, -1), (-20.0, 4.8, -21.1, -1),
+                                           (-40.0, 3.0, 10.9, -1), (-26.0, 3.0, 10.9, -1))):
+        pitch = PI / 2 if toward > 0 else -PI / 2
+        decal(f"Drips{t}{i}", "drips", m, x, y, z, (2.4, 0.6, 3.0), 0, pitch, (0.6, 0.58, 0.55, 0.85))
 
-# Ceiling lights inside the open flats and the stores, so the rooms read as lit
-# rooms instead of black boxes. They are Static and only baked: the node's script
-# removes them in the game, so they cost nothing at runtime.
+# Ceiling lights inside the flat, the hallway, the shop, and the south row, so
+# the rooms read as lit rooms instead of black boxes. They are Static and only
+# baked: the node's script removes them in the game, so they cost nothing at
+# runtime.
 s.node("InteriorLights", "Node3D", ".", {"script": 'ExtResource("22_baked")'})
-for tag, rot in (("A", False), ("B", True)):
-    for i, (x, y, z, energy) in enumerate(((-20.4, 2.6, -18.0, 3.0), (-15.6, 2.6, -18.0, 3.0),
-                                           (11.0, 3.3, -18.5, 4.0), (17.0, 3.3, -18.5, 4.0))):
-        px, pz = rot_point(x, z, rot)
-        s.node(f"Ceiling{tag}{i}", "OmniLight3D", "InteriorLights", {
+LIGHTS = [(-26.0, 2.6, -16.0, 3.0), (-31.5, 2.6, -16.0, 2.0), (-38.0, 3.3, 17.5, 4.0),
+          (-22.5, 3.3, 17.5, 3.5), (-8.0, 3.3, 17.0, 4.0), (-7.0, 4.2, -16.0, 4.0)]
+for t, m in (("W", False), ("E", True)):
+    for i, (x, y, z, energy) in enumerate(LIGHTS):
+        px, pz = mpoint(x, z, m)
+        s.node(f"Ceiling{t}{i}", "OmniLight3D", "InteriorLights", {
             "position": vec(px, y, pz),
             "light_color": "Color(1, 0.93, 0.82, 1)",
             "light_energy": f(energy),
@@ -453,12 +642,6 @@ for tag, rot in (("A", False), ("B", True)):
             "omni_range": "9.0",
             "light_size": "0.4",
         })
-
-# Street lamps are visual only.
-for i, (x, z) in enumerate(((-12.6, -7.6), (12.6, 7.6), (12.6, -7.6), (-12.6, 7.6))):
-    PROPS_USED.add("street_lamp")
-    s.node(f"Lamp{i}", None, "Props3D", {"position": vec(x, 0, z), "rotation": vec(0, (i % 2) * PI, 0)},
-           instance="p_street_lamp")
 
 
 def label(name, pos, rot_y, text, size, color):
@@ -477,42 +660,42 @@ def label(name, pos, rot_y, text, size, color):
 
 
 s.node("Signs", "Node3D", ".")
-label("SkylineNorth", (14, 12, -27.4), 0, "SLAMCITY", 400, (1, 0.35, 0.2))
-label("SkylineSouth", (-14, 12, 27.4), PI, "SLAMCITY", 400, (1, 0.35, 0.2))
-label("StoreNorth", (14, 3.55, -14.95), 0, "CORNER STORE 24H", 72, (1, 0.9, 0.6))
-label("StoreSouth", (-14, 3.55, 14.95), PI, "CORNER STORE 24H", 72, (1, 0.9, 0.6))
-label("FlatsNorth", (-18, 7.65, -11.74), 0, "SLAMCITY FLATS", 100, (0.55, 0.85, 1))
-label("FlatsSouth", (18, 7.65, 11.74), PI, "SLAMCITY FLATS", 100, (0.55, 0.85, 1))
+label("SkylineNorth", (0, 13, -30.4), 0, "SLAMCITY", 420, (1, 0.35, 0.2))
+label("ShopSign", (0, 5.95, -10.68), 0, "SLAM AUTO REPAIR", 80, (0.95, 0.95, 0.9))
+label("LaundrySign", (0, 3.6, 10.98), PI, "SUDS LAUNDRY", 64, (0.6, 0.9, 1))
+for t, x in (("W", -38.0), ("E", 38.0)):
+    label(f"StoreSign{t}", (x, 3.55, 10.98), PI, "CORNER STORE 24H", 64, (1, 0.9, 0.6))
+    label(f"FlatsSign{t}", (x / 38.0 * 31.0, 6.1, -10.88), 0, "SLAMCITY FLATS", 90, (0.55, 0.85, 1))
+    label(f"Billboard{t}", (x / 38.0 * 36.0, 10.0, -13.05), 0, "SLAM COLA", 150, (1, 0.3, 0.25))
 
-# --- Spawns, armoury, and practice targets ------------------------------------------
+# --- Spawns ---------------------------------------------------------------------
+# The server picks among SpawnPoints by safety (tdm::choose_spawn); each has a
+# team: 0 spawns in the west yard, 1 in the east. The first few of each team are
+# its start positions. Offline play starts at Spawns/West.
+s.node("SpawnPoints", "Node3D", ".")
+SPAWN_ORDER = [(-53, 0), (-53, -4), (-53, 4), (-53, -9), (-53, 9), (-51, -13),
+               (-55, -23), (-50, -25), (-54, 17), (-47, 18), (-41, -25), (-41, 18), (-55, 0)]
+for team, m, yaw in ((0, False, -PI / 2), (1, True, PI / 2)):
+    for i, (x, z) in enumerate(SPAWN_ORDER):
+        px, pz = mpoint(x, z, m)
+        s.node(f"Team{team}_{i:02d}", "Marker3D", "SpawnPoints", {
+            "position": vec(px, 0.05, pz), "rotation": vec(0, yaw, 0), "metadata/team": str(team),
+        })
+
 s.node("Spawns", "Node3D", ".")
-s.node("West", "Marker3D", "Spawns", {"position": vec(-31, 0.05, 0), "rotation": vec(0, -PI / 2, 0)})
-s.node("East", "Marker3D", "Spawns", {"position": vec(31, 0.05, 0), "rotation": vec(0, PI / 2, 0)})
+s.node("West", "Marker3D", "Spawns", {"position": vec(-53, 0.05, 0), "rotation": vec(0, -PI / 2, 0)})
+s.node("East", "Marker3D", "Spawns", {"position": vec(53, 0.05, 0), "rotation": vec(0, PI / 2, 0)})
 
-RACKS = [("m4", "11_m4", 0.163), ("ak47", "12_ak47", 0.163), ("pdw9", "13_pdw9", 0.15),
-         ("m870", "14_m870", 0.17), ("m40", "15_m40", 0.15), ("m1911", "16_pistol", 0.12)]
-s.node("Armory", "Node3D", ".")
-for side, x, ry in (("West", -33.2, PI / 2), ("East", 33.2, -PI / 2)):
-    for i, (weapon, res, scale) in enumerate(RACKS):
-        z = -5.5 + i * 2.2
-        if side == "East":
-            z = -z
-        s.node(f"Rack{side}_{weapon}", None, "Armory", {
-            "position": vec(x, 0, z), "rotation": vec(0, ry, 0),
-            "weapon": f'"{weapon}"', "display_model": f'ExtResource("{res}")',
-            "display_scale": f(scale),
-        }, instance="9_rack")
-
+# Practice targets for offline play, on the east half (the server removes them).
 DUMMIES = [
-    ("Walkway", (20, 3.2, 13), 0, "m40", {"aim_pitch": "-6.0"}),
+    ("Truck", (21.0, 0, -2.6), PI / 2, "m870", {"crouching": "true"}),
+    ("Kiosk", (15.2, 0, 2.5), PI / 2, "ak47", {}),
     ("Bowl", (4.5, -1.8, -2), PI / 2, "pdw9", {}),
-    ("StoreCounter", (11, 0, -20), PI, "m1911", {}),
-    ("Alley", (0, 0, -24), PI / 2, "m4", {"crouching": "true"}),
-    ("Kiosk", (13.2, 0, 2.5), PI / 2, "ak47", {}),
-    ("Truck", (-8, 0, 11), PI / 2, "m870", {"crouching": "true"}),
-    ("StoreSouth", (-11, 0, 17), 0, "m4", {}),
-    ("EastStreet", (29, 0, 5), PI / 2, "ak47", {}),
-    ("Flat", (-16, 0, -17), PI, "m870", {}),
+    ("Rooftop", (30.0, 6.6, -12.4), PI / 2, "m40", {"aim_pitch": "-6.0"}),
+    ("Alley", (14.0, 0, -24.5), PI / 2, "m4", {"crouching": "true"}),
+    ("Laundry", (9.0, 0, 18.5), PI / 2, "m4", {}),
+    ("StoreCounter", (34.0, 0, 16.0), PI / 2, "m1911", {}),
+    ("Shop", (8.5, 0, -16.0), PI / 2, "ak47", {}),
 ]
 s.node("Targets", "Node3D", ".")
 for name, pos, ry, weapon, extra in DUMMIES:
@@ -524,21 +707,47 @@ for name, pos, ry, weapon, extra in DUMMIES:
     s.node(name, None, "Targets", props, instance="4_dummy")
 
 # --- Player, HUD, pause menu: the same as the testing arena (scenes/main.tscn) ----------
-s.node("Player", None, ".", {"position": vec(-31, 0.05, 0), "rotation": vec(0, -PI / 2, 0)},
+s.node("Player", None, ".", {"position": vec(-53, 0.05, 0), "rotation": vec(0, -PI / 2, 0)},
        instance="1_player")
 s.node("HUD", None, ".", instance="19_hud")
 s.node("PauseMenu", None, ".", {"player_path": 'NodePath("../Player")'}, instance="5_pause")
 
+
+# --- Checks ----------------------------------------------------------------------
+def segment_hits_box(p, q, box):
+    """Whether the 2D segment p-q passes through the axis-aligned box."""
+    x0, x1, z0, z1 = box
+    t0, t1 = 0.0, 1.0
+    for a, b, lo, hi in ((p[0], q[0], x0, x1), (p[1], q[1], z0, z1)):
+        d = b - a
+        if abs(d) < 1e-9:
+            if a < lo or a > hi:
+                return False
+            continue
+        u0, u1 = (lo - a) / d, (hi - a) / d
+        if u0 > u1:
+            u0, u1 = u1, u0
+        t0, t1 = max(t0, u0), min(t1, u1)
+        if t0 > t1:
+            return False
+    return True
+
+
+def check_spawn_sightlines():
+    """No spawn point may see an enemy spawn point at eye height."""
+    west = [(x, z) for x, z in SPAWN_ORDER]
+    east = [(-x, z) for x, z in SPAWN_ORDER]
+    clear = [(p, q) for p in west for q in east
+             if not any(segment_hits_box(p, q, b) for b in SIGHT_BLOCKERS)]
+    if clear:
+        raise SystemExit(f"open sightlines between the spawns: {clear[:5]}")
+
+
+check_spawn_sightlines()
+
 ext = """[ext_resource type="PackedScene" path="res://scenes/player.tscn" id="1_player"]
 [ext_resource type="PackedScene" path="res://scenes/props/target_dummy.tscn" id="4_dummy"]
 [ext_resource type="PackedScene" path="res://scenes/ui/pause_menu.tscn" id="5_pause"]
-[ext_resource type="PackedScene" path="res://scenes/props/weapon_rack.tscn" id="9_rack"]
-[ext_resource type="PackedScene" path="res://assets/weapons/m4/m4.glb" id="11_m4"]
-[ext_resource type="PackedScene" path="res://assets/weapons/ak47/ak47.glb" id="12_ak47"]
-[ext_resource type="PackedScene" path="res://assets/weapons/pdw9/pdw9.glb" id="13_pdw9"]
-[ext_resource type="PackedScene" path="res://assets/weapons/m870/m870.glb" id="14_m870"]
-[ext_resource type="PackedScene" path="res://assets/weapons/m40/m40.glb" id="15_m40"]
-[ext_resource type="PackedScene" path="res://assets/weapons/pistol/pistol.glb" id="16_pistol"]
 [ext_resource type="PackedScene" path="res://scenes/ui/hud.tscn" id="19_hud"]
 [ext_resource type="Script" path="res://scripts/slamcity.gd" id="20_level"]
 [ext_resource type="Texture2D" path="res://assets/skies/slamcity_sunset.hdr" id="21_sky"]
@@ -611,7 +820,7 @@ light_color = Color(1, 0.8, 0.6, 1)
 light_energy = 2.2
 shadow_enabled = true
 shadow_blur = 1.5
-directional_shadow_max_distance = 90.0"""
+directional_shadow_max_distance = 110.0"""
 
 text = "\n\n".join(["[gd_scene format=3]", ext, env, root, *s.nodes]) + "\n"
 out.write_text(text)

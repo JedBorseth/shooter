@@ -23,8 +23,14 @@ if [[ -z "${DISPLAY:-}" ]]; then
 	cmd=(xvfb-run -a -s "-screen 0 1600x900x24" "${cmd[@]}")
 fi
 list="$(IFS=,; echo "${scenes[*]}")"
-# The editor rewrites project.godot in its own verbose format; keep ours.
-cp project.godot "$repo/.project.godot.bak"
+# The editor rewrites project.godot in its own verbose format, and re-saves
+# the menu theme and the bus layout with new ids; keep ours.
+keep=(project.godot ui/menu_theme.tres default_bus_layout.tres)
+for file in "${keep[@]}"; do
+	cp "$file" "$repo/.bake-keep-$(basename "$file")"
+done
 BAKE_LIGHTMAPS="$list" "${cmd[@]}" 2>&1 | grep -E "lightmap baker" || true
-mv "$repo/.project.godot.bak" project.godot
+for file in "${keep[@]}"; do
+	mv "$repo/.bake-keep-$(basename "$file")" "$file"
+done
 grep -q "light_data" "${scenes[@]/#res:\/\//}" || { echo "bake failed" >&2; exit 1; }

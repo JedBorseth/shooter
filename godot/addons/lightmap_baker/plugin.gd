@@ -31,7 +31,8 @@ func _bake(path: String) -> bool:
 	print("lightmap baker: ", path)
 	EditorInterface.open_scene_from_path(path)
 	var root: Node = null
-	for i in 120:
+	# A big map takes a while to open the first time after its meshes change.
+	for i in 600:
 		await _frames(5)
 		root = EditorInterface.get_edited_scene_root()
 		if root != null and root.scene_file_path == path:
