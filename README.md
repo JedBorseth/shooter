@@ -104,6 +104,16 @@ cd rust && cargo build -p shooter-game -p shooter-master
 cd .. && godot --headless --path godot --script res://tests/server_browser_test.gd
 ```
 
+### Performance
+
+Every change to how the game looks is measured with the rendering benchmark, which visits fixed viewpoints on each map (Zombies with a 24-zombie horde) at the Low, Medium, and High graphics presets. It needs a GPU:
+
+```sh
+tools/benchmark.sh --out after.json --compare before.json
+```
+
+The budget, the baseline numbers, and how to read them are in [docs/performance.md](docs/performance.md).
+
 GDScript is linted and formatted with [gdtoolkit](https://github.com/Scony/godot-gdscript-toolkit):
 
 ```sh

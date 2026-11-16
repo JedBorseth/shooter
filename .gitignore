@@ -10,3 +10,4 @@ rust/target/
 
 # Python asset-pipeline caches.
 __pycache__/
+benchmark.json

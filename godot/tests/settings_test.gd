@@ -27,6 +27,7 @@ func _run() -> void:
 	_check_fov(settings)
 	_check_validation(settings)
 	_check_round_trip(settings)
+	_check_graphics(settings)
 	await _check_menu(settings)
 
 	settings.reset_to_defaults()
@@ -151,6 +152,59 @@ func _check_round_trip(settings: Node) -> void:
 	_check(player.ads_sensitivity_scale == 1.0, "player ads_sensitivity_scale set")
 	player.free()
 	settings.apply_to_player(null)
+	settings.reset_to_defaults()
+
+
+func _check_graphics(settings: Node) -> void:
+	_check(settings.graphics_quality == 1, "graphics default to Medium")
+	settings.set_setting(&"graphics_quality", 7)
+	_check(settings.graphics_quality == 1, "an unknown preset falls back to Medium")
+
+	# A map's environment and sun, adopted as they enter the tree.
+	var env := Environment.new()
+	env.ssao_enabled = true
+	env.glow_enabled = true
+	var world := WorldEnvironment.new()
+	world.environment = env
+	var sun := DirectionalLight3D.new()
+	sun.directional_shadow_max_distance = 100.0
+	root.add_child(world)
+	root.add_child(sun)
+	_check(env.ssao_enabled and env.glow_enabled, "Medium keeps the map's SSAO and glow")
+	_check(is_equal_approx(sun.directional_shadow_max_distance, 80.0), "Medium shadows reach 80%")
+
+	settings.set_graphics_preset(0)
+	_check(settings.graphics_quality == 0, "Low selected")
+	_check(is_equal_approx(settings.render_scale, 0.77), "Low picks a 77% render scale")
+	_check(root.scaling_3d_mode == Viewport.SCALING_3D_MODE_FSR, "Low upscales with FSR 1")
+	_check(root.msaa_3d == Viewport.MSAA_DISABLED, "upscaling turns MSAA off")
+	_check(root.screen_space_aa == Viewport.SCREEN_SPACE_AA_FXAA, "FSR 1 keeps FXAA")
+	_check(not env.ssao_enabled and not env.glow_enabled, "Low turns SSAO and glow off")
+	_check(is_equal_approx(sun.directional_shadow_max_distance, 50.0), "Low shadows reach 50%")
+
+	settings.set_graphics_preset(2)
+	_check(is_equal_approx(settings.render_scale, 1.0), "High renders at native resolution")
+	_check(env.ssao_enabled and env.glow_enabled, "High restores the authored SSAO and glow")
+	_check(not env.volumetric_fog_enabled, "a preset never adds an effect the map lacks")
+	_check(root.msaa_3d == Viewport.MSAA_2X, "High uses 2x MSAA")
+	_check(
+		is_equal_approx(sun.directional_shadow_max_distance, 100.0), "High shadows at full range"
+	)
+
+	settings.set_setting(&"render_scale", 0.67)
+	_check(root.scaling_3d_mode == Viewport.SCALING_3D_MODE_FSR2, "High upscales with FSR 2")
+	_check(root.screen_space_aa == Viewport.SCREEN_SPACE_AA_DISABLED, "FSR 2 replaces SMAA")
+	settings.set_setting(&"render_scale", 0.2)
+	_check(is_equal_approx(settings.render_scale, 0.5), "render scale clamps to 50%")
+
+	settings.save_settings()
+	settings.graphics_quality = 0
+	settings.render_scale = 1.0
+	settings.load_settings()
+	_check(settings.graphics_quality == 2, "graphics quality round-trips")
+	_check(is_equal_approx(settings.render_scale, 0.5), "render scale round-trips")
+	world.free()
+	sun.free()
 	settings.reset_to_defaults()
 
 

@@ -9,6 +9,8 @@ extends Node
 ## Emitted after any setting changes, including on load and reset.
 signal changed
 
+const GraphicsQuality := preload("res://scripts/graphics.gd")
+
 ## Radians of view rotation per screen pixel at a sensitivity of 1.0.
 const BASE_MOUSE_SENSITIVITY := 0.0022
 ## Frame caps offered in the menu. 0 means unlimited.
@@ -25,6 +27,8 @@ const DEFAULTS := {
 	&"vsync": true,
 	&"max_fps": 0,
 	&"show_fps": true,
+	&"graphics_quality": GraphicsQuality.Preset.MEDIUM,
+	&"render_scale": 1.0,
 	&"master_volume": 1.0,
 	&"weapons_volume": 0.8,
 	&"effects_volume": 0.8,
@@ -35,9 +39,25 @@ const DEFAULTS := {
 ## Config file section for each setting.
 const SECTIONS := {
 	"controls": [&"mouse_sensitivity", &"ads_sensitivity"],
-	"video": [&"fov", &"camera_motion", &"fullscreen", &"vsync", &"max_fps", &"show_fps"],
+	"video":
+	[
+		&"fov",
+		&"camera_motion",
+		&"fullscreen",
+		&"vsync",
+		&"max_fps",
+		&"show_fps",
+		&"graphics_quality",
+		&"render_scale",
+	],
 	"audio": [&"master_volume", &"weapons_volume", &"effects_volume", &"ui_volume"],
 	"multiplayer": [&"master_server"],
+}
+
+## Allowed values of each int setting.
+const INT_OPTIONS := {
+	&"max_fps": MAX_FPS_OPTIONS,
+	&"graphics_quality": [0, 1, 2],
 }
 
 ## Allowed range of each float setting.
@@ -49,6 +69,7 @@ const RANGES := {
 	&"weapons_volume": Vector2(0.0, 1.0),
 	&"effects_volume": Vector2(0.0, 1.0),
 	&"ui_volume": Vector2(0.0, 1.0),
+	&"render_scale": Vector2(0.5, 1.0),
 }
 
 ## Audio bus driven by each volume setting.
@@ -76,6 +97,10 @@ var vsync: bool = DEFAULTS[&"vsync"]
 var max_fps: int = DEFAULTS[&"max_fps"]
 ## Read by the HUD.
 var show_fps: bool = DEFAULTS[&"show_fps"]
+## A `GraphicsQuality.Preset`.
+var graphics_quality: int = DEFAULTS[&"graphics_quality"]
+## Fraction of the window the 3D view renders at; FSR 2 upscales below 1.0.
+var render_scale: float = DEFAULTS[&"render_scale"]
 ## Linear bus volumes, 0 to 1.
 var master_volume: float = DEFAULTS[&"master_volume"]
 var weapons_volume: float = DEFAULTS[&"weapons_volume"]
@@ -98,7 +123,18 @@ func _init() -> void:
 
 
 func _ready() -> void:
+	get_tree().node_added.connect(_on_node_added)
 	load_settings()
+
+
+## Picks a graphics preset together with that preset's render scale, as the
+## menu does. `set_setting(&"graphics_quality", ...)` alone keeps the scale.
+func set_graphics_preset(preset: int) -> void:
+	set_setting(&"graphics_quality", preset)
+	set_setting(
+		&"render_scale",
+		GraphicsQuality.DEFAULT_RENDER_SCALE[clampi(preset, 0, GraphicsQuality.NAMES.size() - 1)]
+	)
 
 
 func _exit_tree() -> void:
@@ -196,6 +232,9 @@ func _apply(key: StringName) -> void:
 			AudioServer.set_bus_mute(bus, volume <= 0.0)
 		return
 	match key:
+		&"graphics_quality", &"render_scale":
+			if is_inside_tree():
+				GraphicsQuality.apply(get_tree(), graphics_quality, render_scale)
 		&"max_fps":
 			Engine.max_fps = max_fps
 		&"fullscreen":
@@ -235,7 +274,7 @@ func _sanitize(key: StringName, value: Variant) -> Variant:
 		TYPE_BOOL:
 			return value if value is bool else default
 		TYPE_INT:
-			return int(value) if number and int(value) in MAX_FPS_OPTIONS else default
+			return int(value) if number and int(value) in INT_OPTIONS[key] else default
 		TYPE_FLOAT:
 			if not number or is_nan(float(value)):
 				return default
@@ -246,6 +285,11 @@ func _sanitize(key: StringName, value: Variant) -> Variant:
 				var text := String(value).strip_edges().left(255)
 				return text if not text.is_empty() else default
 	return default
+
+
+func _on_node_added(node: Node) -> void:
+	if node is WorldEnvironment or node is DirectionalLight3D:
+		GraphicsQuality.adopt(node, graphics_quality)
 
 
 func _mark_dirty() -> void:
