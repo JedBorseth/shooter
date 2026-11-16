@@ -1,7 +1,9 @@
 extends Control
-## UI-only globe projection. Neither this screen nor its assets reference gameplay.
+## UI-only globe projection. The menu loads no gameplay: START GAME asks the
+## title screen to load the Zombies arena (every map plays there for now).
 
 signal back_requested
+signal play_requested(map_name: String)
 
 const ASSETS := "res://assets/zombies/"
 const ORANGE := Color("e88b36")
@@ -24,6 +26,7 @@ var _globe: ColorRect
 var _material: ShaderMaterial
 var _heading: Label
 var _solo: Button
+var _start: Button
 var _map_buttons: Array[Button] = []
 var _markers: Array[Button] = []
 var _marker_labels: Array[Label] = []
@@ -118,6 +121,10 @@ func _build_selector() -> void:
 		_markers.append(marker)
 		var caption := _label(_selector, MAPS[i]["name"], Vector2.ZERO, 19, WHITE)
 		_marker_labels.append(caption)
+	_start = _button(_selector, "START GAME", Vector2(110, 560), Vector2(400, 64), 42)
+	_start.name = "Start"
+	_start.add_theme_color_override("font_color", ORANGE)
+	_start.pressed.connect(start_game)
 	var previous := _button(_selector, "<", Vector2(680, 745), Vector2(56, 48), 32)
 	previous.name = "Previous"
 	previous.pressed.connect(func() -> void: select_map(posmod(selected_map - 1, MAPS.size())))
@@ -146,6 +153,20 @@ func select_map(index: int) -> void:
 	for i in _map_buttons.size():
 		_map_buttons[i].add_theme_color_override("font_color", ORANGE if i == index else WHITE)
 		_marker_labels[i].modulate = ORANGE if i == index else WHITE
+
+
+func start_game() -> void:
+	if _start.disabled:
+		return
+	_start.disabled = true
+	_start.text = "LOADING…"
+	play_requested.emit(MAPS[selected_map]["name"])
+
+
+## Re-enables START GAME after a failed load.
+func reset_start() -> void:
+	_start.disabled = false
+	_start.text = "START GAME"
 
 
 func go_back() -> void:

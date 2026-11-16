@@ -116,6 +116,10 @@ jobs:
         run: godot --headless --path godot --script res://tests/settings_test.gd
       - name: Run secret laser test
         run: godot --headless --path godot --script res://tests/secret_laser_test.gd
+      - name: Run Zombies test
+        run: godot --headless --path godot --script res://tests/zombies_test.gd
+      - name: Run Zombies menu test
+        run: godot --headless --path godot --script res://tests/zombies_menu_test.gd
       # Starts a dedicated server process and joins it over UDP on localhost
       # through a simulated lossy, jittery link.
       - name: Run netcode test

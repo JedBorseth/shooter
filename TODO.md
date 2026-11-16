@@ -125,6 +125,18 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [ ] Lobby flow: ready-up and a pre-match lobby on the server.
 - [ ] Player names: send a name in the hello, show it in the kill feed and scoreboard, and count players by name in the server browser.
 
+## Zombies
+
+Done: rounds with a growing, toughening horde, zombies that walk straight at the player (walk, jog, and run gaits) with a scratch attack, the two-hit rule, points for hits and kills, a round counter, points and game-over HUD, and a night arena (`godot/scenes/zombies_arena.tscn`, rules in `rust/sim/src/zombies.rs`).
+
+- [ ] Spend points: wall weapons with prices, ammo refills that cost points, doors that open new areas.
+- [ ] Power-ups that drop from kills (max ammo, insta-kill, double points, nuke).
+- [ ] Zombie sounds (groans, attack, death) and a round-change sting. Needs CC0 audio.
+- [ ] Barriers at the spawn points that zombies tear down and players rebuild for points.
+- [ ] Downed state and revives for co-op, once Zombies runs on the dedicated server.
+- [ ] Playable versions of the menu's maps; today every map loads the one arena.
+- [ ] A cheaper zombie for big hordes: fewer material surfaces or a LOD, and animation at a reduced rate far away. 24 soldiers on screen cost about half the frame rate on a GTX 1060.
+
 ## Phase 5: online services (all self-hosted)
 
 - [ ] Nakama (self-hosted, Docker Compose) for accounts, parties, and matchmaking. Use the `nakama-godot` client.

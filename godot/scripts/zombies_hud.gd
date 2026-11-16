@@ -1,0 +1,227 @@
+extends Control
+## Zombies HUD: the round number, points with "+N" popups, the countdown
+## between rounds, zombies left, and the game-over screen. Driven by
+## ZombieDirector signals; the rules live in Rust (rust/sim/src/zombies.rs).
+
+const TITLE_SCENE := "res://scenes/title_screen.tscn"
+const FONT_PATH := "res://assets/zombies/agency_bold.ttf"
+const BLOOD := Color(0.62, 0.05, 0.03)
+const POINTS_COLOR := Color(1.0, 0.86, 0.45)
+## Seconds each "+N" popup floats.
+const POPUP_TIME := 0.9
+const MAX_POPUPS := 8
+
+@export var director_path: NodePath
+@export var player_path: NodePath
+
+var _director: ZombieDirector
+var _player: FpsPlayer
+var _font: Font
+var _round_label: Label
+var _points_label: Label
+var _left_label: Label
+var _banner: Label
+var _banner_time := 0.0
+var _round_flash := 0.0
+## Each popup: {"label": Label, "age": float}.
+var _popups: Array[Dictionary] = []
+var _game_over: Control
+var _summary: Label
+var _again: Button
+
+
+func _ready() -> void:
+	_director = get_node_or_null(director_path) as ZombieDirector
+	_player = get_node_or_null(player_path) as FpsPlayer
+	_font = load(FONT_PATH) as Font
+	_round_label = _label(110, BLOOD)
+	_round_label.name = "Round"
+	_place(_round_label, Vector2(0, 1), Rect2(26, -250, 400, 130))
+	_points_label = _label(44, POINTS_COLOR)
+	_points_label.name = "Points"
+	_points_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_place(_points_label, Vector2(1, 1), Rect2(-292, -176, 260, 56))
+	_left_label = _label(22, Color(1, 1, 1, 0.75))
+	_left_label.name = "ZombiesLeft"
+	_place(_left_label, Vector2(0, 1), Rect2(30, -116, 400, 30))
+	_banner = _label(58, Color(0.9, 0.85, 0.8))
+	_banner.name = "Banner"
+	_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_place(_banner, Vector2(0.5, 0), Rect2(-400, 110, 800, 76))
+	_build_game_over()
+	if _director == null:
+		return
+	_director.round_started.connect(_on_round_started)
+	_director.round_cleared.connect(_on_round_cleared)
+	_director.points_awarded.connect(_on_points)
+	_director.game_over.connect(_on_game_over)
+	_round_label.text = _tally(_director.round())
+	_show_banner("GET READY", 3.0)
+
+
+func _process(delta: float) -> void:
+	if _director == null:
+		return
+	_round_flash = maxf(_round_flash - delta, 0.0)
+	if _game_over.visible and Input.mouse_mode != Input.MOUSE_MODE_VISIBLE:
+		# Closing the pause menu recaptures the mouse; the game is over.
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		if _player != null:
+			_player.set_input_enabled(false)
+	# Flash white when a round starts, then settle back to blood red.
+	var flash := absf(sin(_round_flash * 14.0)) * minf(_round_flash, 1.0)
+	_round_label.add_theme_color_override("font_color", BLOOD.lerp(Color.WHITE, flash))
+	_points_label.text = str(_director.points())
+	if _director.is_fighting():
+		_left_label.text = "ZOMBIES LEFT  %d" % _director.remaining()
+	elif not _director.is_over():
+		_left_label.text = "NEXT ROUND IN  %d" % ceili(_director.break_left())
+	_left_label.visible = not _director.is_over()
+
+	_banner_time = maxf(_banner_time - delta, 0.0)
+	_banner.modulate.a = clampf(_banner_time / 0.6, 0.0, 1.0)
+
+	for popup in _popups:
+		popup.age += delta
+		var label: Label = popup.label
+		var t: float = popup.age / POPUP_TIME
+		label.offset_top = -214.0 - 60.0 * t
+		label.offset_bottom = label.offset_top + 34.0
+		label.modulate.a = 1.0 - t * t
+	for popup in _popups.filter(func(p: Dictionary) -> bool: return p.age >= POPUP_TIME):
+		(popup.label as Label).queue_free()
+	_popups = _popups.filter(func(p: Dictionary) -> bool: return p.age < POPUP_TIME)
+
+
+## Rounds 1 to 5 as tally marks, later rounds as numbers.
+func _tally(round_number: int) -> String:
+	if round_number <= 0:
+		return ""
+	if round_number <= 5:
+		return "I".repeat(round_number)
+	return str(round_number)
+
+
+func _on_round_started(round_number: int) -> void:
+	_round_label.text = _tally(round_number)
+	_round_flash = 2.0
+	_show_banner("ROUND %d" % round_number, 2.5)
+
+
+func _on_round_cleared(round_number: int) -> void:
+	_show_banner("ROUND %d SURVIVED" % round_number, 3.0)
+
+
+func _on_points(points: int, _total: int) -> void:
+	var popup := _label(28, POINTS_COLOR)
+	popup.text = "+%d" % points
+	_place(popup, Vector2(1, 1), Rect2(-150 - randf() * 70.0, -214, 120, 34))
+	_popups.append({"label": popup, "age": 0.0})
+	while _popups.size() > MAX_POPUPS:
+		(_popups.pop_front().label as Label).queue_free()
+
+
+func _on_game_over(round_number: int) -> void:
+	var rounds := "ROUND" if round_number == 1 else "ROUNDS"
+	_summary.text = (
+		"YOU SURVIVED %d %s\n\nKILLS  %d     HEADSHOTS  %d     POINTS  %d"
+		% [
+			round_number,
+			rounds,
+			_director.kills(),
+			_director.headshots(),
+			_director.points(),
+		]
+	)
+	_game_over.show()
+	if _player != null:
+		_player.set_input_enabled(false)
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_again.grab_focus()
+
+
+func is_game_over_shown() -> bool:
+	return _game_over.visible
+
+
+func play_again() -> void:
+	get_tree().reload_current_scene()
+
+
+func go_home() -> void:
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	get_tree().change_scene_to_file(TITLE_SCENE)
+
+
+## Anchors `control` to a point of the screen (0 to 1 on each axis) and
+## places `rect` relative to it.
+func _place(control: Control, anchor: Vector2, rect: Rect2) -> void:
+	control.anchor_left = anchor.x
+	control.anchor_right = anchor.x
+	control.anchor_top = anchor.y
+	control.anchor_bottom = anchor.y
+	control.offset_left = rect.position.x
+	control.offset_top = rect.position.y
+	control.offset_right = rect.end.x
+	control.offset_bottom = rect.end.y
+
+
+func _show_banner(text: String, seconds: float) -> void:
+	_banner.text = text
+	_banner_time = seconds
+
+
+func _build_game_over() -> void:
+	_game_over = ColorRect.new()
+	_game_over.name = "GameOver"
+	(_game_over as ColorRect).color = Color(0.05, 0.0, 0.0, 0.72)
+	_game_over.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_game_over.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(_game_over)
+	var column := VBoxContainer.new()
+	column.set_anchors_preset(Control.PRESET_CENTER)
+	column.alignment = BoxContainer.ALIGNMENT_CENTER
+	column.add_theme_constant_override("separation", 18)
+	column.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	column.grow_vertical = Control.GROW_DIRECTION_BOTH
+	_game_over.add_child(column)
+	var title := _label(110, BLOOD, column)
+	title.text = "GAME OVER"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_summary = _label(30, Color(0.9, 0.88, 0.84), column)
+	_summary.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var buttons := HBoxContainer.new()
+	buttons.alignment = BoxContainer.ALIGNMENT_CENTER
+	buttons.add_theme_constant_override("separation", 24)
+	column.add_child(buttons)
+	_again = _button("PLAY AGAIN", buttons)
+	_again.name = "PlayAgain"
+	_again.pressed.connect(play_again)
+	var home := _button("MAIN MENU", buttons)
+	home.name = "MainMenu"
+	home.pressed.connect(go_home)
+	_game_over.hide()
+
+
+func _label(font_size: int, color: Color, parent: Node = self) -> Label:
+	var label := Label.new()
+	if _font != null:
+		label.add_theme_font_override("font", _font)
+	label.add_theme_font_size_override("font_size", font_size)
+	label.add_theme_color_override("font_color", color)
+	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+	label.add_theme_constant_override("outline_size", maxi(font_size / 8, 4))
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(label)
+	return label
+
+
+func _button(text: String, parent: Node) -> Button:
+	var button := Button.new()
+	button.text = text
+	button.custom_minimum_size = Vector2(240, 56)
+	if _font != null:
+		button.add_theme_font_override("font", _font)
+	button.add_theme_font_size_override("font_size", 30)
+	parent.add_child(button)
+	return button

@@ -69,7 +69,15 @@ UAL1_ANIMATIONS = [
     "Pistol_Reload",
     "Pistol_Shoot",
 ]
-UAL2_ANIMATIONS = ["Slide_Start", "Slide_Loop", "Slide_Exit", "Hit_Knockback"]
+UAL2_ANIMATIONS = [
+    "Slide_Start",
+    "Slide_Loop",
+    "Slide_Exit",
+    "Hit_Knockback",
+    "Zombie_Idle_Loop",
+    "Zombie_Walk_Fwd_Loop",
+    "Zombie_Scratch",
+]
 
 # Body regions by the bone a vertex mostly follows (UAL1 bone names).
 REGION_OF_BONE = {

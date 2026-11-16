@@ -19,14 +19,17 @@ pub enum Team {
     Allies,
     /// Everyone else until teams exist: charcoal, red-orange accents.
     Enemies,
+    /// The undead in Zombies: grey-green skin, faded and blood-stained
+    /// uniforms, and glowing orange eyes behind the goggles.
+    Zombies,
 }
 
 impl Team {
     pub fn from_index(index: i32) -> Self {
-        if index == 0 {
-            Team::Allies
-        } else {
-            Team::Enemies
+        match index {
+            0 => Team::Allies,
+            2 => Team::Zombies,
+            _ => Team::Enemies,
         }
     }
 }
@@ -40,6 +43,16 @@ pub const ROLES: [&str; 11] = [
 fn colour(team: Team, role: &str) -> Color {
     let rgb = |r, g, b| Color::from_rgb(r, g, b);
     match (team, role) {
+        // Rotting skin, also where the face mask was, so the head is bare.
+        (Team::Zombies, "skin" | "mask") => rgb(0.5, 0.56, 0.44),
+        (Team::Zombies, "uniform") => rgb(0.36, 0.33, 0.26),
+        (Team::Zombies, "pants") => rgb(0.27, 0.25, 0.2),
+        (Team::Zombies, "gloves") => rgb(0.42, 0.47, 0.37),
+        (Team::Zombies, "boots") => rgb(0.12, 0.1, 0.09),
+        (Team::Zombies, "vest") => rgb(0.24, 0.23, 0.18),
+        (Team::Zombies, "webbing") => rgb(0.19, 0.18, 0.14),
+        // Blood-soaked armbands.
+        (Team::Zombies, "accent") => rgb(0.36, 0.03, 0.02),
         (_, "skin") => rgb(0.6, 0.43, 0.33),
         (_, "visor") => rgb(0.04, 0.05, 0.06),
         (Team::Allies, "uniform") => rgb(0.56, 0.51, 0.39),
@@ -81,9 +94,21 @@ pub fn material(team: Team, role: &str) -> Option<Gd<StandardMaterial3D>> {
     }))
 }
 
+/// Gear zombies have lost: the helmet and goggles. Their eyes glow instead
+/// (`SoldierRig` adds them).
+fn hidden(team: Team, role: &str) -> bool {
+    team == Team::Zombies && matches!(role, "helmet" | "visor")
+}
+
 fn build(team: Team, role: &str) -> Gd<StandardMaterial3D> {
     let mut m = StandardMaterial3D::new_gd();
     m.set_name(&format!("{team:?}_{role}"));
+    if hidden(team, role) {
+        // Alpha scissor at zero alpha discards every pixel, shadows included.
+        m.set_transparency(godot::classes::base_material_3d::Transparency::ALPHA_SCISSOR);
+        m.set_albedo(Color::from_rgba(0.0, 0.0, 0.0, 0.0));
+        return m;
+    }
     let c = colour(team, role);
     m.set_albedo(c);
     m.set_roughness(match role {
@@ -92,12 +117,23 @@ fn build(team: Team, role: &str) -> Gd<StandardMaterial3D> {
         _ => 0.88,
     });
     m.set_specular(if role == "visor" { 0.55 } else { 0.35 });
-    if role == "accent" {
+    if role == "accent" && team != Team::Zombies {
         // A little self-light keeps the team colour readable in shade.
         m.set_feature(Feature::EMISSION, true);
         m.set_emission(c);
         m.set_emission_energy_multiplier(0.35);
     }
+    m
+}
+
+/// A zombie's glowing eyes: unshaded and bright enough to bloom.
+pub fn zombie_eye_material() -> Gd<StandardMaterial3D> {
+    let mut m = StandardMaterial3D::new_gd();
+    m.set_shading_mode(ShadingMode::UNSHADED);
+    m.set_albedo(Color::from_rgb(1.0, 0.62, 0.15));
+    m.set_feature(Feature::EMISSION, true);
+    m.set_emission(Color::from_rgb(1.0, 0.5, 0.08));
+    m.set_emission_energy_multiplier(6.0);
     m
 }
 

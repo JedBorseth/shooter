@@ -6,10 +6,12 @@ const ARENA_PATH := "res://scenes/main.tscn"
 const NUKETOWN_PATH := "res://scenes/nuketown.tscn"
 const SLAMCITY_PATH := "res://scenes/slamcity.tscn"
 const BROWSER_PATH := "res://scenes/server_browser.tscn"
+const ZOMBIES_PATH := "res://scenes/zombies_arena.tscn"
 
 var _loading := false
 var _scene_path := ARENA_PATH
 var _destination := "testing arena"
+var _zombies_menu: Node
 
 @onready var _testing: Button = $Margin/Layout/Menu/TestingArea
 @onready var _status: Label = $Margin/Layout/Status
@@ -67,16 +69,23 @@ func _open_zombies() -> void:
 		_status.text = "Unable to open Zombies menu."
 		return
 	var zombies := scene.instantiate()
+	_zombies_menu = zombies
 	$Background.hide()
 	$Margin.hide()
 	add_child(zombies)
-	zombies.back_requested.connect(
-		func() -> void:
-			zombies.queue_free()
-			$Background.show()
-			$Margin.show()
-			$Margin/Layout/Menu/Zombies.grab_focus()
+	zombies.back_requested.connect(_close_zombies)
+	zombies.play_requested.connect(
+		func(_map_name: String) -> void: _start_scene(ZOMBIES_PATH, "Zombies")
 	)
+
+
+func _close_zombies() -> void:
+	if _zombies_menu != null:
+		_zombies_menu.queue_free()
+		_zombies_menu = null
+	$Background.show()
+	$Margin.show()
+	$Margin/Layout/Menu/Zombies.grab_focus()
 
 
 func _start_testing() -> void:
@@ -134,5 +143,7 @@ func _loading_failed(reason: String) -> void:
 	_loading = false
 	_set_buttons_disabled(false)
 	_status.text = "Unable to open %s. Please try again." % _destination
+	if _zombies_menu != null:
+		_close_zombies()
 	_testing.grab_focus()
 	push_error("%s: %s" % [_destination, reason])

@@ -16,6 +16,8 @@ mod spring;
 mod target;
 mod viewmodel;
 mod weapon_data;
+mod zombie;
+mod zombie_director;
 
 /// The only unsafe code in the crate: godot-rust requires the entry point to be
 /// an `unsafe impl`, since Godot calls into it through the C ABI.

@@ -14,6 +14,9 @@ const GAMEPAD_CONTROLS := (
 @export var player_path: NodePath
 ## Replaces the keyboard controls line when set (levels without the pause menu).
 @export_multiline var controls_text := ""
+## Multiplayer kill scoring (popups and medals). Zombies turns it off and shows
+## its own points.
+@export var score_feed := true
 
 var _controls_left := CONTROLS_TIME
 var _controls_forced := false
@@ -36,15 +39,19 @@ var _controls_forced := false
 
 
 func _ready() -> void:
+	if not score_feed:
+		_score_feed.queue_free()
+		_score_feed = null
 	if _player == null:
 		return
 	_player.hit_confirmed.connect(_on_hit)
-	_player.scored.connect(_score_feed.add_award)
+	if _score_feed != null:
+		_player.scored.connect(_score_feed.add_award)
+		_score_feed.player = _player
 	_player.damaged.connect(_damage.on_damaged)
 	_player.respawned.connect(func() -> void: _controls_left = 0.0)
 	_damage.player = _player
 	_scope.player = _player
-	_score_feed.player = _player
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -113,8 +120,9 @@ func _process(delta: float) -> void:
 	_health.value = _player.health()
 	_health.modulate.a = 1.0 if _player.health() < _player.max_health() else 0.35
 
-	_death.visible = not alive
-	if not alive:
+	# Without respawns (Zombies) the mode shows its own end screen.
+	_death.visible = not alive and _player.auto_respawn
+	if _death.visible:
 		_death.text = "YOU DIED\nRespawning in %.1f" % _player.respawn_time_left()
 
 	# Convert the spread cone to pixels so the crosshair shows where shots can land.
