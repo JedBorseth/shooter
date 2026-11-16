@@ -10,6 +10,10 @@ Gunshots are split into three layers that the game plays together:
 - ``body``: the first ~200 ms below 1.5 kHz. The punch.
 - ``tail``: everything after that, faded in from 60 ms. The echo.
 
+A weapon can also borrow echoes from other recordings when its own is dry, get a
+synthesized low boom, and be soft-clipped for density (see ``Echo``, ``Boom``,
+and ``drive_db``).
+
 The split is a Linkwitz-Riley crossover and a complementary fade, so the three
 layers played at 0 dB add back up to the original recording. Each layer then
 gets its own volume in game, and the tail plays one at a time so full auto does
@@ -20,7 +24,7 @@ Sources are bart's Free Firearm Sound Library (CC0):
 https://opengameart.org/content/the-free-firearm-sound-library
 Download ``Prepared SFX Library.7z`` and extract it, then run:
 
-    uv run tools/build_weapon_audio.py layers "<path>/Prepared SFX Library"
+    uv run tools/build_weapon_audio.py layers "<path>/Prepared SFX Library" [--only m40]
     uv run tools/build_weapon_audio.py trim
 
 ``trim`` removes leading silence from every other sound in godot/assets/audio.
@@ -63,6 +67,35 @@ MAX_SECOND_HIT_DB = -8.0
 
 
 @dataclass(frozen=True)
+class Echo:
+    """Other recordings whose echoes are mixed into a weapon's tail, when its own
+    recording is too dry."""
+
+    # (folder, file) pairs in the library.
+    sources: tuple[tuple[str, str], ...]
+    # Rumble below this is wind and mic handling, not echo.
+    highpass_hz: float
+    # Level of the echo's first second (after it fades in) relative to the
+    # weapon's opening loudness.
+    gain_db: float
+    # The echo fades in over this window, in seconds from the shot, so the other
+    # gun's own blast stays out. The weapon's own tail covers the gap.
+    fade_in: tuple[float, float] = (0.15, 0.35)
+
+
+@dataclass(frozen=True)
+class Boom:
+    """A synthesized low thump mixed under the shot: a sine sweeping down to
+    ``end_hz``. Small speakers barely play the real muzzle blast, so this puts
+    weight where they can."""
+
+    start_hz: float
+    end_hz: float
+    decay: float
+    gain_db: float
+
+
+@dataclass(frozen=True)
 class Weapon:
     key: str
     folder: str
@@ -71,6 +104,15 @@ class Weapon:
     # RMS of the first 150 ms, in dBFS. Matches the single-file shots these layers
     # replaced, so the weapons keep the balance they were mixed at.
     loudness_db: float
+    echo: Echo | None = None
+    boom: Boom | None = None
+    # Soft-clips the shot's peaks by about this much. A crisp crack peaks far
+    # above its average level, which caps how loud it can be; saturation trades
+    # that peak for density and grit.
+    drive_db: float = 0.0
+    # Also write ``<key>_fire.ogg``, the whole shot in one file, for other
+    # players' positional gunfire.
+    remote_fire: bool = False
 
 
 GUNS = (
@@ -85,7 +127,23 @@ GUNS = (
         -20.6,
     ),
     Weapon("m870", "Mossberg", ("N_26P", "N_30P"), 1.6, -15.5),
-    Weapon("m40", "Tikka", ("W_29P", "W_24P"), 1.8, -16.9),
+    # The Mosin's crack is the sharpest of the bolt actions, but it was recorded
+    # dry, so the Tikka and Springfield echoes roll on under it. The boom and the
+    # drive give it weight on small speakers. Saturated, it hits the peak limit
+    # at about this loudness; the view's `fire_volume_db` sets the final level.
+    Weapon(
+        "m40",
+        "Mosin Nagant",
+        ("M_21P",),
+        2.6,
+        -19.5,
+        echo=Echo(
+            (("Tikka", "W_29P"), ("1917", "B_24P")), highpass_hz=90.0, gain_db=-12.0
+        ),
+        boom=Boom(start_hz=120.0, end_hz=48.0, decay=0.11, gain_db=-12.0),
+        drive_db=9.0,
+        remote_fire=True,
+    ),
 )
 
 
@@ -196,6 +254,37 @@ def split(shot: np.ndarray) -> dict[str, np.ndarray]:
     }
 
 
+def highpass(x: np.ndarray, hz: float) -> np.ndarray:
+    sos = signal.butter(4, hz, "high", fs=RATE, output="sos")
+    return signal.sosfilt(sos, x, axis=0)
+
+
+def boom(spec: Boom, n: int) -> np.ndarray:
+    """A stereo sine sweep with a 2 ms attack and an exponential decay."""
+    t = np.arange(n) / RATE
+    hz = spec.end_hz + (spec.start_hz - spec.end_hz) * np.exp(-t / 0.035)
+    wave = np.sin(2 * np.pi * np.cumsum(hz) / RATE)
+    wave *= np.exp(-t / spec.decay) * (1.0 - np.exp(-t / 0.002))
+    return np.repeat(wave[:, None], 2, axis=1)
+
+
+def collect(library: Path, folder: str, files: tuple[str, ...], length: float):
+    shots = []
+    for name in files:
+        x = read(library / folder / f"{name}.wav")
+        for onset in find_shots(x, min_gap=length * 0.6):
+            shots.append(cut_shot(x, onset, length))
+    return shots
+
+
+def whole(layer: dict[str, np.ndarray]) -> np.ndarray:
+    """The layers summed back into one shot, as the game plays them at 0 dB."""
+    shot = layer["tail"].copy()
+    early = layer["snap"] + layer["body"]
+    shot[: len(early)] += early
+    return shot
+
+
 def rms(x: np.ndarray, seconds: float) -> float:
     head = x[: int(seconds * RATE)]
     return float(np.sqrt(np.mean(head**2)))
@@ -229,33 +318,81 @@ def write(path: Path, data: np.ndarray, *, ogg: bool) -> None:
         )
 
 
-def build_layers(library: Path) -> None:
+def build_layers(library: Path, only: set[str]) -> None:
     for gun in GUNS:
-        shots = []
-        for name in gun.files:
-            x = read(library / gun.folder / f"{name}.wav")
-            for onset in find_shots(x, min_gap=gun.tail_seconds * 0.6):
-                shots.append(cut_shot(x, onset, gun.tail_seconds))
+        if only and gun.key not in only:
+            continue
+        shots = collect(library, gun.folder, gun.files, gun.tail_seconds)
         if not shots:
             sys.exit(f"{gun.key}: no clean shots found")
         shots = shots[:MAX_VARIATIONS]
+        if gun.boom:
+            # Relative to each shot's own opening, before the loudness match.
+            thump = boom(gun.boom, len(shots[0]))
+            thump *= 10 ** (gun.boom.gain_db / 20) / rms(thump, 0.15)
+            shots = [s + thump[: len(s)] * rms(s, 0.15) for s in shots]
+        if gun.drive_db:
+            drive = 10 ** (gun.drive_db / 20)
+            shots = [np.tanh(s * drive / np.abs(s).max()) for s in shots]
 
         # Match each shot's opening loudness, then the weapon's loudness to the old mix.
         target = 10 ** (gun.loudness_db / 20)
         shots = [s * target / rms(s, 0.15) for s in shots]
-        headroom = 10 ** (-1 / 20) / max(np.abs(s).max() for s in shots)
-        shots = [s * min(1.0, headroom) for s in shots]
+        layers = [split(s) for s in shots]
+
+        if gun.echo:
+            echoes = [
+                shot
+                for folder, name in gun.echo.sources
+                for shot in collect(library, folder, (name,), gun.tail_seconds)
+            ]
+            if not echoes:
+                sys.exit(f"{gun.key}: no clean echo shots found")
+            gain = target * 10 ** (gun.echo.gain_db / 20)
+            a, b = (int(t * RATE) for t in gun.echo.fade_in)
+            fade = np.ones(len(echoes[0]))
+            fade[:a] = 0.0
+            fade[a:b] = raised_cosine(b - a)
+            own = [layer["tail"] for layer in layers]
+            tails = []
+            for i, e in enumerate(echoes[:MAX_VARIATIONS]):
+                echo = highpass(e, gun.echo.highpass_hz) * fade[: len(e), None]
+                # Level by the echo's first second, where it is loudest.
+                echo *= gain / rms(echo[b:], 1.0)
+                tail = own[i % len(own)].copy()
+                tail[: len(echo)] += echo
+                tails.append(tail)
+            # The game picks each layer's variation on its own, so the counts may
+            # differ; pairing them here only sets the peak and the remote shot.
+            for i, layer in enumerate(layers):
+                layer["tail"] = tails[i % len(tails)]
+            peak = max(
+                *(np.abs(whole(layer)).max() for layer in layers),
+                *(np.abs(tail).max() for tail in tails),
+            )
+        else:
+            tails = [layer["tail"] for layer in layers]
+            peak = max(np.abs(s).max() for s in shots)
+        headroom = min(1.0, 10 ** (-1 / 20) / peak)
 
         out = WEAPONS / gun.key
-        if out.exists():
-            shutil.rmtree(out)
-        for i, shot in enumerate(shots, start=1):
-            for layer, data in split(shot).items():
-                write(
-                    out / f"{layer}_{i}.{'ogg' if layer == 'tail' else 'wav'}",
-                    data,
-                    ogg=layer == "tail",
-                )
+        files = {}
+        for i, layer in enumerate(layers, start=1):
+            files[f"snap_{i}.wav"] = layer["snap"]
+            files[f"body_{i}.wav"] = layer["body"]
+        for i, tail in enumerate(tails, start=1):
+            files[f"tail_{i}.ogg"] = tail
+        # Remove sounds this build no longer makes, but keep the .import files of
+        # the ones it rewrites, so their Godot UIDs stay the same.
+        for old in out.glob("*") if out.exists() else []:
+            if old.name.removesuffix(".import") not in files:
+                old.unlink()
+        for name, data in files.items():
+            write(out / name, data * headroom, ogg=name.endswith(".ogg"))
+        if gun.remote_fire:
+            write(
+                WEAPONS / f"{gun.key}_fire.ogg", whole(layers[0]) * headroom, ogg=True
+            )
         print(f"{gun.key}: {len(shots)} variations, {gun.tail_seconds:.1f} s tail")
 
 
@@ -303,10 +440,13 @@ def main() -> None:
     layers.add_argument(
         "library", type=Path, help='the extracted "Prepared SFX Library" folder'
     )
+    layers.add_argument(
+        "--only", nargs="+", default=[], metavar="KEY", help="rebuild only these guns"
+    )
     sub.add_parser("trim", help="trim leading silence from every other sound")
     args = parser.parse_args()
     if args.command == "layers":
-        build_layers(args.library)
+        build_layers(args.library, set(args.only))
     else:
         layered = {gun.key for gun in GUNS}
         paths = [
