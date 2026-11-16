@@ -6,14 +6,30 @@ How the game should look, and how the characters (other players, range dummies, 
 
 ## The look
 
-The game uses clean, low-poly modern military art: flat colours, hard edges, and no photographic textures. This matches the Quaternius guns the arsenal already uses. A small team can make this style look finished, and it renders fast.
+The game aims for **grounded stylized realism**: real materials (brick, concrete, painted steel, worn wood) on simple, readable shapes, under clean light. Surfaces use CC0 PBR texture sets, so they read as what they are up close. Shapes stay low-poly and hard-edged, so silhouettes and sightlines stay clear and the game stays cheap to run (see [performance.md](performance.md)).
 
-Rules for every character and prop:
+Rules for every character, prop, and map:
 
 - **Read the team at a glance.** The two teams differ in value first: allies wear light tan and olive, enemies wear dark charcoal. They differ in hue second: allies have a blue accent and enemies a red-orange accent, on the helmet band and the armbands. Value contrast survives colour blindness, fog, and distance; the accent confirms it up close.
 - **Make the head obvious.** A helmet with a coloured band, dark goggles, and a face mask give the head a shape and colour that differ from the torso, so headshots are aimable at range.
 - **Keep shapes simple.** Gear is a few dozen faceted triangles each: a helmet dome, a plate carrier with three magazine pouches and a radio, a belt with side pouches, knee pads, and armbands. Avoid noisy camouflage patterns that break up the silhouette.
 - **Keep accents rare.** The team colour appears only on the helmet band and armbands, with a little self-light so it reads in shade. Everything else is muted.
+- **Texture detail stays quiet.** A texture adds material, not noise: no high-contrast patterns, decals, or graffiti where players look for enemies. Characters must stay the most contrasting thing in a scene.
+
+### World surfaces
+
+![Slamcity and the Testing Area before (left) and after (right) the PBR world textures](media/world-textures.jpg)
+
+Level geometry uses one shader, `godot/shaders/world.gdshader`. It projects a texture set in world space from the axis each face points along most, so boxes need no UVs, textures never stretch when a box is resized, and each pixel samples its textures once. Low-frequency noise varies brightness and roughness across large surfaces, so repeats don't show, and walls darken toward the ground with grime.
+
+`tools/build_textures.py` holds the whole library:
+
+- **Texture sets** (`godot/assets/textures/<set>/`): pinned CC0 sets from [ambientCG](https://ambientcg.com) at 1024², packed into an albedo, an OpenGL normal map, and an ORM map (R ambient occlusion, G roughness, B metallic). A set marked `grey` stores brightness only, so one set serves many paint colours.
+- **Looks** (`godot/materials/world/<look>.tres`): a set plus a tint, the texture's size in metres, roughness and metallic scales, and how much grime. Maps reference looks by name; `tools/build_slamcity.py` maps each blockout role to one.
+
+To add a surface, add a set or a look to the tool, run it, import, and run it again with `--fix-imports` (its docstring has the commands). Textures import VRAM compressed with mipmaps; normal maps use two-channel compression, and the shader rebuilds their blue channel.
+
+Curved shapes switch projection axis where their normal turns past 45°, which shows as a seam on strongly patterned textures. Use calm textures on cylinders, or give modelled props their own UVs.
 
 ### Palette
 
@@ -38,7 +54,7 @@ There are no teams in the game yet. Until Team Deathmatch lands (Phase 4), every
 | Bones | 60 | 53 (Godot's humanoid profile) |
 | Materials | One per palette role, shared by every character of a team | 11 roles |
 | Draw calls per character | 12 | 11 surfaces plus the weapon |
-| Textures | None | None |
+| Textures | None yet (world surfaces are textured; characters are next) | None |
 
 Godot generates LODs for the meshes at import, so distant soldiers cost less.
 

@@ -3,7 +3,7 @@
 
 Half the map is described once. Every gameplay element gets a copy rotated
 180 degrees about the origin, so both spawns face the same layout. The player,
-HUD, and pause menu are copied from the testing arena (scenes/main.tscn).
+HUD, and pause menu are the same scenes the testing arena (scenes/main.tscn) uses.
 
 Edit the layout here, not in the editor, then regenerate from the repo root:
 
@@ -15,32 +15,33 @@ from pathlib import Path
 
 repo = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).resolve().parent.parent
 out = repo / "godot/scenes/slamcity.tscn"
-hud_src = (repo / "godot/scenes/main.tscn").read_text().splitlines()
 
 PI = math.pi
 
+# Blockout role -> surface look in godot/materials/world/ (tools/build_textures.py).
 MATERIALS = {
-    "asphalt": (0.24, 0.25, 0.27),
-    "sidewalk": (0.6, 0.58, 0.54),
-    "bowl": (0.68, 0.68, 0.7),
-    "bowl_floor": (0.5, 0.52, 0.56),
-    "brick": (0.55, 0.3, 0.24),
-    "brick_blue": (0.38, 0.42, 0.5),
-    "interior": (0.74, 0.69, 0.58),
-    "trim": (0.2, 0.2, 0.22),
-    "door": (0.13, 0.38, 0.4),
-    "glass": (0.12, 0.2, 0.28),
-    "metal": (0.36, 0.38, 0.41),
-    "wood": (0.55, 0.45, 0.3),
-    "fabric": (0.62, 0.55, 0.42),
-    "dumpster": (0.2, 0.36, 0.25),
-    "car_red": (0.6, 0.15, 0.12),
-    "car_taxi": (0.85, 0.64, 0.15),
-    "car_blue": (0.2, 0.3, 0.55),
-    "truck": (0.82, 0.82, 0.8),
-    "skyline_a": (0.46, 0.44, 0.42),
-    "skyline_b": (0.34, 0.33, 0.35),
-    "skyline_c": (0.52, 0.36, 0.3),
+    "asphalt": "asphalt",
+    "sidewalk": "sidewalk",
+    "bowl": "skate_concrete",
+    "bowl_floor": "skate_floor",
+    "brick": "brick_red",
+    "brick_blue": "brick_blue",
+    "interior": "plaster_warm",
+    "trim": "trim_dark",
+    "door": "door_teal",
+    "glass": "glass",
+    "metal": "steel_painted",
+    "wood": "wood",
+    "fabric": "canvas_tan",
+    "dumpster": "dumpster_green",
+    "car_red": "car_red",
+    "car_taxi": "car_taxi",
+    "car_blue": "car_blue",
+    "truck": "truck_white",
+    "skyline_a": "skyline_grey",
+    "skyline_b": "skyline_dark",
+    "skyline_c": "skyline_brick",
+    "boundary": "boundary",
 }
 
 
@@ -89,7 +90,7 @@ class Scene:
         }
         if subtract:
             props["operation"] = "2"
-        props["material"] = f'SubResource("mat_{mat}")'
+        props["material"] = f'ExtResource("mat_{mat}")'
         self.node(name, "CSGBox3D", parent, props)
 
     def wedge(self, name, parent, pos, rot_y, points, depth, mat):
@@ -99,7 +100,7 @@ class Scene:
             props["rotation"] = vec(0, rot_y, 0)
         props["polygon"] = f"PackedVector2Array({poly})"
         props["depth"] = f(depth)
-        props["material"] = f'SubResource("mat_{mat}")'
+        props["material"] = f'ExtResource("mat_{mat}")'
         self.node(name, "CSGPolygon3D", parent, props)
 
 
@@ -144,10 +145,10 @@ for tag, rot in (("A", False), ("B", True)):
 
 # --- Boundary walls and the skyline beyond them ---------------------------------
 s.combiner("Boundary", "concrete")
-s.box("WallNorth", "Boundary", -35, 35, 0, 5, -27, -26, "skyline_b")
-s.box("WallSouth", "Boundary", -35, 35, 0, 5, 26, 27, "skyline_b")
-s.box("WallWest", "Boundary", -35, -34, 0, 5, -27, 27, "skyline_b")
-s.box("WallEast", "Boundary", 34, 35, 0, 5, -27, 27, "skyline_b")
+s.box("WallNorth", "Boundary", -35, 35, 0, 5, -27, -26, "boundary")
+s.box("WallSouth", "Boundary", -35, 35, 0, 5, 26, 27, "boundary")
+s.box("WallWest", "Boundary", -35, -34, 0, 5, -27, 27, "boundary")
+s.box("WallEast", "Boundary", 34, 35, 0, 5, -27, 27, "boundary")
 
 s.combiner("Skyline", None, collision=False)
 sky_n = [(-36, -20, 14, "skyline_a"), (-20, -6, 22, "skyline_c"), (-6, 6, 11, "skyline_b"),
@@ -340,24 +341,15 @@ for name, pos, ry, weapon, extra in DUMMIES:
     props.update(extra)
     s.node(name, None, "Targets", props, instance="4_dummy")
 
-# --- Player, HUD, pause menu: copied from the testing arena ---------------------------
-start = next(i for i, l in enumerate(hud_src) if l.startswith('[node name="Player"'))
-hud_nodes = "\n".join(hud_src[start:]).replace(
-    "position = Vector3(0, 0.05, 20)",
-    f"position = {vec(-31, 0.05, 0)}\nrotation = {vec(0, -PI / 2, 0)}",
-)
-hud_subs_start = next(i for i, l in enumerate(hud_src) if l.startswith('[sub_resource type="ShaderMaterial" id="Mat_vignette"'))
-hud_subs_end = next(i for i, l in enumerate(hud_src) if l.startswith("[node "))
-hud_subs = "\n".join(hud_src[hud_subs_start:hud_subs_end]).strip()
+# --- Player, HUD, pause menu: the same as the testing arena (scenes/main.tscn) ----------
+s.node("Player", None, ".", {"position": vec(-31, 0.05, 0), "rotation": vec(0, -PI / 2, 0)},
+       instance="1_player")
+s.node("HUD", None, ".", instance="19_hud")
+s.node("PauseMenu", None, ".", {"player_path": 'NodePath("../Player")'}, instance="5_pause")
 
 ext = """[ext_resource type="PackedScene" path="res://scenes/player.tscn" id="1_player"]
-[ext_resource type="Script" path="res://scripts/hud.gd" id="2_hud"]
-[ext_resource type="Script" path="res://scripts/crosshair.gd" id="3_crosshair"]
 [ext_resource type="PackedScene" path="res://scenes/props/target_dummy.tscn" id="4_dummy"]
 [ext_resource type="PackedScene" path="res://scenes/ui/pause_menu.tscn" id="5_pause"]
-[ext_resource type="Script" path="res://scripts/scope_overlay.gd" id="6_scope"]
-[ext_resource type="Script" path="res://scripts/damage_overlay.gd" id="7_damage"]
-[ext_resource type="Shader" path="res://shaders/damage_vignette.gdshader" id="8_vignette"]
 [ext_resource type="PackedScene" path="res://scenes/props/weapon_rack.tscn" id="9_rack"]
 [ext_resource type="PackedScene" path="res://assets/weapons/m4/m4.fbx" id="11_m4"]
 [ext_resource type="PackedScene" path="res://assets/weapons/ak47/ak47.fbx" id="12_ak47"]
@@ -365,18 +357,12 @@ ext = """[ext_resource type="PackedScene" path="res://scenes/player.tscn" id="1_
 [ext_resource type="PackedScene" path="res://assets/weapons/m870/m870.fbx" id="14_m870"]
 [ext_resource type="PackedScene" path="res://assets/weapons/m40/m40.fbx" id="15_m40"]
 [ext_resource type="PackedScene" path="res://assets/weapons/pistol/pistol.fbx" id="16_pistol"]
-[ext_resource type="Script" path="res://scripts/score_feed.gd" id="17_score"]
-[ext_resource type="AudioStream" path="res://assets/audio/ui/medal.ogg" id="18_medal"]
-[ext_resource type="Shader" path="res://shaders/greybox.gdshader" id="19_greybox"]
+[ext_resource type="PackedScene" path="res://scenes/ui/hud.tscn" id="19_hud"]
 [ext_resource type="Script" path="res://scripts/slamcity.gd" id="20_level"]"""
-
-mats = []
-for key, (r, g, b) in MATERIALS.items():
-    mats.append(
-        f'[sub_resource type="ShaderMaterial" id="mat_{key}"]\n'
-        f'shader = ExtResource("19_greybox")\n'
-        f"shader_parameter/base_color = Color({r}, {g}, {b}, 1)"
-    )
+ext += "".join(
+    f'\n[ext_resource type="Material" path="res://materials/world/{look}.tres" id="mat_{key}"]'
+    for key, look in MATERIALS.items()
+)
 
 env = """[sub_resource type="ProceduralSkyMaterial" id="SkyMat"]
 sky_top_color = Color(0.27, 0.4, 0.62, 1)
@@ -409,8 +395,6 @@ light_energy = 1.3
 shadow_enabled = true
 directional_shadow_max_distance = 90.0"""
 
-text = "\n\n".join(
-    ["[gd_scene format=3]", ext, *mats, env, hud_subs, root, *s.nodes, hud_nodes.strip()]
-) + "\n"
+text = "\n\n".join(["[gd_scene format=3]", ext, env, root, *s.nodes]) + "\n"
 out.write_text(text)
 print(f"wrote {out} ({len(s.nodes)} map nodes)")

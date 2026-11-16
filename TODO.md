@@ -146,6 +146,18 @@ Done: rounds with a growing, toughening horde, zombies that walk straight at the
 - [ ] Server allocation: Nakama match handler starts or assigns a dedicated server and hands its address to players. Agones on Kubernetes later.
 - [ ] Server-side validation and anti-cheat basics: speed and fire-rate checks, view-angle sanity checks. (Input rate limits are done: `InputQueue` credit. Fire rate already follows from the server running the weapon simulation itself.)
 
+## Visual overhaul
+
+Grounded stylized realism: real materials and props on simple shapes, inside the GPU budget in [docs/performance.md](docs/performance.md). Every step shows benchmark numbers before and after.
+
+- [x] Graphics presets and the rendering benchmark.
+- [x] PBR world textures: a CC0 texture library and one world-space surface shader for every map (`tools/build_textures.py`, `godot/shaders/world.gdshader`).
+- [ ] Lighting: baked lightmaps, reflection probes, CC0 sky images, and colour grading per map.
+- [ ] Weapons: PBR materials, smoothed shading, baked wear, better muzzle flash and smoke.
+- [ ] Map models: replace blockout boxes with modelled building parts and props.
+- [ ] Characters: textured soldier, zombie variants, fewer surfaces per character.
+- [ ] Effects and post: impact debris, blood, dust, depth of field when aiming, motion blur option.
+
 ## Phase 6 and later: production polish
 
 - [ ] Post-processing pass: color grading LUT, motion blur option, depth of field during ADS for scoped weapons.
