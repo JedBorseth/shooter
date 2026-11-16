@@ -378,6 +378,31 @@ impl NetClient {
         d
     }
 
+    /// The weapons a loadout may use as its primary, as dictionaries with
+    /// `key` and `name`, in weapon table order.
+    #[func]
+    fn loadout_weapons() -> Array<VarDictionary> {
+        shooter_sim::weapon::table()
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| {
+                u8::try_from(*i).is_ok_and(|i| crate::net::server::is_loadout_primary(WeaponId(i)))
+            })
+            .map(|(_, def)| {
+                let mut d = VarDictionary::new();
+                d.set("key", &GString::from(def.key.as_str()));
+                d.set("name", &GString::from(def.name.as_str()));
+                d
+            })
+            .collect()
+    }
+
+    /// The primary weapon key we spawn with.
+    #[func]
+    fn loadout(&self) -> GString {
+        self.primary.clone()
+    }
+
     /// A player's name, or "" if unknown.
     #[func]
     fn name_of(&self, id: i32) -> GString {

@@ -22,6 +22,9 @@ extends Node
 ##
 ## From the menus: the server browser calls `join`, and leaving a server or
 ## losing the connection calls `leave`, which returns to the server browser.
+## The title screen's Team Deathmatch setup calls `start_local_match`, which
+## runs a dedicated server in a background process and joins it; leaving
+## stops that server.
 
 const SERVER_SCENE := "res://scenes/server.tscn"
 const ARENA_SCENE := "res://scenes/main.tscn"
@@ -36,7 +39,11 @@ const TITLE_SCENE := "res://scenes/title_screen.tscn"
 const REMOTE_PLAYER_SCENE := "res://scenes/remote_player.tscn"
 const OVERLAY_SCRIPT := "res://scripts/net/net_overlay.gd"
 const STATUS_SCRIPT := "res://scripts/net/net_status.gd"
+const TDM_HUD_SCRIPT := "res://scripts/net/tdm_hud.gd"
 const DEFAULT_PORT := 27015
+## Port of the server `start_local_match` runs, away from the default so it
+## does not clash with a server already running on this machine.
+const LOCAL_PORT := 27035
 const OFFLINE_ONLY_NODES := ["Targets", "Sentry", "SecretLaser"]
 
 ## Set by `leave`: the title screen opens the server browser and shows
@@ -45,6 +52,8 @@ var return_to_browser := false
 var browser_message := ""
 
 var _client: NetClient
+## Process id of the server `start_local_match` started, or -1.
+var _local_server_pid := -1
 
 
 func _ready() -> void:
@@ -102,13 +111,67 @@ func join(target: String, options: Dictionary = {}, arena: PackedScene = null) -
 	_attach_client(main, target, options)
 
 
+## Starts a dedicated server in a background process with `options` (`map`,
+## `bots`, `score_limit`, `time_limit` in minutes) and joins it. The server
+## does not answer server browsers.
+func start_local_match(options: Dictionary) -> void:
+	stop_local_server()
+	var map := String(options.get("map", "slamcity"))
+	var args := PackedStringArray(["--headless"])
+	if OS.has_feature("editor"):
+		args.append_array(["--path", ProjectSettings.globalize_path("res://")])
+	(
+		args
+		. append_array(
+			[
+				"--",
+				"--server",
+				"--port",
+				str(LOCAL_PORT),
+				"--query-port",
+				"-1",
+				"--name",
+				"Local match",
+				"--map",
+				map,
+				"--bots",
+				str(int(options.get("bots", 0))),
+				"--score-limit",
+				str(int(options.get("score_limit", 75))),
+				"--time-limit",
+				str(float(options.get("time_limit", 10))),
+			]
+		)
+	)
+	_local_server_pid = OS.create_process(OS.get_executable_path(), args)
+	if _local_server_pid <= 0:
+		push_error("Net.start_local_match: cannot start the server process")
+		return
+	join("127.0.0.1:%d" % LOCAL_PORT, {"map": map, "name": "Local match"})
+
+
+## Stops the server `start_local_match` started, if it is still running.
+func stop_local_server() -> void:
+	if _local_server_pid > 0:
+		OS.kill(_local_server_pid)
+	_local_server_pid = -1
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_PREDELETE:
+		stop_local_server()
+
+
 ## Leaves the server (if any) and returns to the server browser, which shows
-## `message` (empty when the player left on purpose).
+## `message` (empty when the player left on purpose). A local match returns
+## to the title screen instead, and its server stops.
 func leave(message := "") -> void:
 	if is_online():
 		_client.queue_free()
 	_client = null
-	return_to_browser = true
+	var local := _local_server_pid > 0
+	stop_local_server()
+	return_to_browser = not local
 	browser_message = message
 	Settings.flush()
 	get_tree().change_scene_to_file(TITLE_SCENE)
@@ -190,3 +253,10 @@ func _attach_client(main: Node, target: String, options: Dictionary) -> void:
 	status.set("player", player)
 	status.set("server_label", String(options.get("name", "%s:%d" % [client.address, client.port])))
 	main.add_child(status)
+
+	var tdm_hud := CanvasLayer.new()
+	tdm_hud.name = "TdmHud"
+	tdm_hud.set_script(load(TDM_HUD_SCRIPT))
+	tdm_hud.set("client", client)
+	tdm_hud.set("player", player)
+	main.add_child(tdm_hud)
