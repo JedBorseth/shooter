@@ -46,7 +46,7 @@ Each phase ends with something playable.
    - ✅ Gamepad: bindings, radial deadzone and response curve, turn boost at full deflection, rumble, aim assist (slowdown and rotational) in `rust/sim/src/look.rs`.
    - ✅ Arcade retune: about 35% less aim recoil with faster recovery on every weapon, a visual-only camera punch per weapon, harder weapon kick with roll, popping hit markers, larger muzzle flashes, mailbox vsync.
    - ✅ Crisp pass: 120 Hz simulation tick, recoil without tick lag, faster stops, jump buffering and coyote time, quicker ADS, sprint-out and weapon switches, SMAA, lighter lighting, FOV kicks on slides and kills, target flinch and topple.
-   - ✅ Arcade scoring: kill points with headshot, longshot, point-blank, collateral, multi-kill and streak bonuses (rules in `rust/sim/src/score.rs`, ready to move to the server), "+N" popups, medal banners with a chime, score and K/D in the HUD. Weapons bus gets a short reverb tail and low-end EQ.
+   - ✅ Arcade scoring: kill points with headshot, longshot, point-blank, collateral, multi-kill and streak bonuses (rules in `rust/sim/src/score.rs`, ready to move to the server), "+N" popups, medal banners with a chime, score and K/D in the HUD.
    - Next: hands and authored animations, reverb zones, gamepad settings in the menu, LMG.
 
 2. **Netcode core.** Server-authoritative 120 Hz tick (the same `TICK_RATE` the client simulates at), with snapshots sent at 60 Hz. Clients send input with tick numbers. The client predicts its own movement and replays inputs when the server corrects it. Remote players render about 100 ms behind with snapshot interpolation. Snapshots are delta-compressed over ENet (UDP).
