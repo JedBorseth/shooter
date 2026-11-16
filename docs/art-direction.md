@@ -31,6 +31,20 @@ To add a surface, add a set or a look to the tool, run it, import, and run it ag
 
 Curved shapes switch projection axis where their normal turns past 45°, which shows as a seam on strongly patterned textures. Use calm textures on cylinders, or give modelled props their own UVs.
 
+### Light
+
+![Slamcity, the Testing Area, and Zombies before (left) and after (right) the lighting pass](media/lighting.jpg)
+
+Each map is lit by a CC0 sky image (an HDRI from [Poly Haven](https://polyhaven.com), downloaded by `tools/build_skies.py` into `godot/assets/skies/`) and one directional light standing in for its sun or moon. The tool prints where the sun sits in each image; the map rotates its sky (`Environment.sky_rotation`) so the sun lines up with its light, and tilts the light to the same elevation. The sky also lights the shade (ambient light from the sky), so shadows pick up its colour instead of a flat grey.
+
+| Map | Sky | Mood |
+| --- | --- | --- |
+| Testing Area | `kloofendal_48d_partly_cloudy_puresky` | Clear midday with clouds, high sun, light haze |
+| Slamcity | `qwantani_late_afternoon_puresky` | Late afternoon: a warm sun, long shadows, warm haze that fades the skyline. The light stands at 28°, above the sky's own sun (19°), so the streets stay lit |
+| Zombies | `qwantani_moon_noon_puresky` | Moonlit night with stars, blue moonlight, dim fog, and street lamps that flicker (`scripts/lamp_flicker.gd`) |
+
+Each map grades its image lightly with the environment's contrast and saturation adjustments. Zombies adds volumetric fog, which only the High preset draws.
+
 ### Palette
 
 Each surface of the model is named after a palette role. `rust/game/src/character/palette.rs` maps each role to a colour per team.

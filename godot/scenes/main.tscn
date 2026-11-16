@@ -18,24 +18,38 @@
 [ext_resource type="PackedScene" path="res://assets/weapons/m40/m40.fbx" id="15_m40"]
 [ext_resource type="PackedScene" path="res://assets/weapons/pistol/pistol.fbx" id="16_pistol"]
 [ext_resource type="PackedScene" path="res://scenes/ui/hud.tscn" id="19_hud"]
+[ext_resource type="Texture2D" path="res://assets/skies/range_day.hdr" id="20_sky"]
 
-[sub_resource type="ProceduralSkyMaterial" id="SkyMat"]
-sky_top_color = Color(0.3, 0.44, 0.62, 1)
-sky_horizon_color = Color(0.68, 0.7, 0.72, 1)
-ground_bottom_color = Color(0.16, 0.15, 0.14, 1)
-ground_horizon_color = Color(0.68, 0.7, 0.72, 1)
+[sub_resource type="PanoramaSkyMaterial" id="SkyMat"]
+panorama = ExtResource("20_sky")
 
 [sub_resource type="Sky" id="Sky"]
 sky_material = SubResource("SkyMat")
+radiance_size = 2
 
 [sub_resource type="Environment" id="Env"]
 background_mode = 2
 sky = SubResource("Sky")
+sky_rotation = Vector3(0, 1.576, 0)
 ambient_light_source = 3
+ambient_light_energy = 1.1
 reflected_light_source = 2
 tonemap_mode = 4
 ssao_enabled = true
+ssao_radius = 1.4
+ssao_intensity = 1.6
 glow_enabled = true
+glow_intensity = 0.4
+glow_bloom = 0.03
+glow_hdr_threshold = 1.2
+fog_enabled = true
+fog_light_color = Color(0.7, 0.78, 0.88, 1)
+fog_density = 0.003
+fog_aerial_perspective = 0.5
+fog_sky_affect = 0.0
+adjustment_enabled = true
+adjustment_contrast = 1.05
+adjustment_saturation = 1.05
 
 [node name="Main" type="Node3D"]
 
@@ -43,8 +57,10 @@ glow_enabled = true
 environment = SubResource("Env")
 
 [node name="Sun" type="DirectionalLight3D" parent="."]
-rotation = Vector3(-0.9, 0.6, 0)
-light_energy = 1.2
+rotation = Vector3(-0.836, 0.6, 0)
+light_color = Color(1, 0.96, 0.9, 1)
+light_energy = 2.0
+shadow_blur = 1.2
 shadow_enabled = true
 directional_shadow_max_distance = 90.0
 

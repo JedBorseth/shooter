@@ -16,21 +16,42 @@
 [ext_resource type="PackedScene" path="res://assets/weapons/pistol/pistol.fbx" id="16_pistol"]
 [ext_resource type="PackedScene" path="res://scenes/zombies/zombie.tscn" id="20_zombie"]
 [ext_resource type="Script" path="res://scripts/zombies_hud.gd" id="21_zhud"]
+[ext_resource type="Texture2D" path="res://assets/skies/zombies_night.hdr" id="22_sky"]
+[ext_resource type="Script" path="res://scripts/lamp_flicker.gd" id="23_flicker"]
+
+[sub_resource type="PanoramaSkyMaterial" id="SkyMat"]
+panorama = ExtResource("22_sky")
+energy_multiplier = 0.35
+
+[sub_resource type="Sky" id="Sky"]
+sky_material = SubResource("SkyMat")
+radiance_size = 1
 
 [sub_resource type="Environment" id="Env"]
-background_mode = 1
-background_color = Color(0.02, 0.025, 0.04, 1)
+background_mode = 2
+sky = SubResource("Sky")
+sky_rotation = Vector3(0, 0.236, 0)
 ambient_light_source = 2
-ambient_light_color = Color(0.32, 0.38, 0.5, 1)
-ambient_light_energy = 0.55
+ambient_light_color = Color(0.3, 0.37, 0.52, 1)
+ambient_light_energy = 0.5
+reflected_light_source = 2
 tonemap_mode = 4
 glow_enabled = true
 glow_intensity = 0.9
 glow_bloom = 0.08
 fog_enabled = true
-fog_light_color = Color(0.05, 0.06, 0.08, 1)
-fog_density = 0.035
-fog_sky_affect = 0.0
+fog_light_color = Color(0.05, 0.065, 0.09, 1)
+fog_density = 0.03
+fog_sky_affect = 0.35
+volumetric_fog_enabled = true
+volumetric_fog_density = 0.012
+volumetric_fog_albedo = Color(0.75, 0.8, 0.9, 1)
+volumetric_fog_length = 40.0
+volumetric_fog_ambient_inject = 0.15
+volumetric_fog_sky_affect = 0.0
+adjustment_enabled = true
+adjustment_contrast = 1.08
+adjustment_saturation = 0.92
 
 [sub_resource type="StandardMaterial3D" id="Mat_lamp"]
 albedo_color = Color(1, 0.72, 0.4, 1)
@@ -49,7 +70,7 @@ height = 0.44
 environment = SubResource("Env")
 
 [node name="Moon" type="DirectionalLight3D" parent="."]
-rotation = Vector3(-0.85, -0.7, 0)
+rotation = Vector3(-1.059, -0.7, 0)
 light_color = Color(0.62, 0.72, 1, 1)
 light_energy = 0.45
 shadow_enabled = true
@@ -254,6 +275,8 @@ position = Vector3(0, 4.15, 0)
 mesh = SubResource("Mesh_lamp")
 
 [node name="Light" type="OmniLight3D" parent="Lamps/Lamp0"]
+script = ExtResource("23_flicker")
+seed = 3
 position = Vector3(0, 4.0, 0)
 light_color = Color(1, 0.66, 0.36, 1)
 light_energy = 2.2
@@ -277,6 +300,8 @@ position = Vector3(0, 4.15, 0)
 mesh = SubResource("Mesh_lamp")
 
 [node name="Light" type="OmniLight3D" parent="Lamps/Lamp1"]
+script = ExtResource("23_flicker")
+seed = 10
 position = Vector3(0, 4.0, 0)
 light_color = Color(1, 0.66, 0.36, 1)
 light_energy = 2.2
@@ -300,6 +325,8 @@ position = Vector3(0, 4.15, 0)
 mesh = SubResource("Mesh_lamp")
 
 [node name="Light" type="OmniLight3D" parent="Lamps/Lamp2"]
+script = ExtResource("23_flicker")
+seed = 17
 position = Vector3(0, 4.0, 0)
 light_color = Color(1, 0.66, 0.36, 1)
 light_energy = 2.2
@@ -323,6 +350,8 @@ position = Vector3(0, 4.15, 0)
 mesh = SubResource("Mesh_lamp")
 
 [node name="Light" type="OmniLight3D" parent="Lamps/Lamp3"]
+script = ExtResource("23_flicker")
+seed = 24
 position = Vector3(0, 4.0, 0)
 light_color = Color(1, 0.66, 0.36, 1)
 light_energy = 2.2
@@ -346,6 +375,8 @@ position = Vector3(0, 4.15, 0)
 mesh = SubResource("Mesh_lamp")
 
 [node name="Light" type="OmniLight3D" parent="Lamps/Lamp4"]
+script = ExtResource("23_flicker")
+seed = 31
 position = Vector3(0, 4.0, 0)
 light_color = Color(1, 0.66, 0.36, 1)
 light_energy = 2.2

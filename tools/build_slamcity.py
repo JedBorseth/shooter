@@ -358,29 +358,48 @@ ext = """[ext_resource type="PackedScene" path="res://scenes/player.tscn" id="1_
 [ext_resource type="PackedScene" path="res://assets/weapons/m40/m40.fbx" id="15_m40"]
 [ext_resource type="PackedScene" path="res://assets/weapons/pistol/pistol.fbx" id="16_pistol"]
 [ext_resource type="PackedScene" path="res://scenes/ui/hud.tscn" id="19_hud"]
-[ext_resource type="Script" path="res://scripts/slamcity.gd" id="20_level"]"""
+[ext_resource type="Script" path="res://scripts/slamcity.gd" id="20_level"]
+[ext_resource type="Texture2D" path="res://assets/skies/slamcity_sunset.hdr" id="21_sky"]"""
 ext += "".join(
     f'\n[ext_resource type="Material" path="res://materials/world/{look}.tres" id="mat_{key}"]'
     for key, look in MATERIALS.items()
 )
 
-env = """[sub_resource type="ProceduralSkyMaterial" id="SkyMat"]
-sky_top_color = Color(0.27, 0.4, 0.62, 1)
-sky_horizon_color = Color(0.86, 0.68, 0.52, 1)
-ground_bottom_color = Color(0.16, 0.15, 0.14, 1)
-ground_horizon_color = Color(0.86, 0.68, 0.52, 1)
+# Late-afternoon light: a CC0 sky image (tools/build_skies.py) rotated so its sun
+# lines up with the Sun node, warm haze for depth, and the sky lighting the shade.
+env = """[sub_resource type="PanoramaSkyMaterial" id="SkyMat"]
+panorama = ExtResource("21_sky")
 
 [sub_resource type="Sky" id="Sky"]
 sky_material = SubResource("SkyMat")
+radiance_size = 2
 
 [sub_resource type="Environment" id="Env"]
 background_mode = 2
 sky = SubResource("Sky")
+sky_rotation = Vector3(0, 3.243, 0)
 ambient_light_source = 3
+ambient_light_sky_contribution = 1.0
+ambient_light_energy = 1.15
 reflected_light_source = 2
 tonemap_mode = 4
 ssao_enabled = true
-glow_enabled = true"""
+ssao_radius = 1.4
+ssao_intensity = 1.6
+glow_enabled = true
+glow_intensity = 0.5
+glow_bloom = 0.04
+glow_hdr_threshold = 1.2
+fog_enabled = true
+fog_light_color = Color(0.86, 0.7, 0.55, 1)
+fog_light_energy = 0.7
+fog_sun_scatter = 0.2
+fog_density = 0.0018
+fog_aerial_perspective = 0.35
+fog_sky_affect = 0.0
+adjustment_enabled = true
+adjustment_contrast = 1.06
+adjustment_saturation = 1.08"""
 
 root = """[node name="Slamcity" type="Node3D"]
 script = ExtResource("20_level")
@@ -389,10 +408,11 @@ script = ExtResource("20_level")
 environment = SubResource("Env")
 
 [node name="Sun" type="DirectionalLight3D" parent="."]
-rotation = Vector3(-0.62, 2.3, 0)
-light_color = Color(1, 0.9, 0.78, 1)
-light_energy = 1.3
+rotation = Vector3(-0.49, 2.3, 0)
+light_color = Color(1, 0.8, 0.6, 1)
+light_energy = 2.2
 shadow_enabled = true
+shadow_blur = 1.5
 directional_shadow_max_distance = 90.0"""
 
 text = "\n\n".join(["[gd_scene format=3]", ext, env, root, *s.nodes]) + "\n"
