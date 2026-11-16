@@ -240,6 +240,24 @@ def fix_imports() -> None:
         if new != text:
             path.write_text(new)
             count += 1
+    # Props get lightmap UVs at import (LightmapGI bakes them); weapons and
+    # characters move, so they take no part in the bake.
+    for path in sorted(props.glob("*/*.gltf.import")):
+        text = path.read_text()
+        new = text.replace("meshes/light_baking=1", "meshes/light_baking=2").replace(
+            "meshes/lightmap_texel_size=0.2", "meshes/lightmap_texel_size=0.1"
+        )
+        if new != text:
+            path.write_text(new)
+            count += 1
+    for path in sorted(WEAPONS.glob("*/*.glb.import")) + [
+        REPO / "godot/assets/characters/soldier/soldier.glb.import"
+    ]:
+        text = path.read_text()
+        new = text.replace("meshes/light_baking=1", "meshes/light_baking=0")
+        if new != text:
+            path.write_text(new)
+            count += 1
     for path in sorted(WEAPONS.glob("*/*.glb.import")):
         key = path.name.removesuffix(".glb.import")
         material = f"res://assets/weapons/{key}/{key}.tres"

@@ -28,6 +28,8 @@
 
 # Ready-to-play Nuketown resources; PNG textures use the image rule above.
 godot/assets/maps/nuketown/generated/*.bin filter=lfs diff=lfs merge=lfs -text
+# Lightmap UV caches: committed so every machine gets the UVs the baked lightmaps were made for.
+*.unwrap_cache filter=lfs diff=lfs merge=lfs -text
 # Prop geometry from tools/build_props.py.
 godot/assets/props/*/*.bin filter=lfs diff=lfs merge=lfs -text
 godot/assets/maps/nuketown/generated/*.gltf filter=lfs diff=lfs merge=lfs -text
