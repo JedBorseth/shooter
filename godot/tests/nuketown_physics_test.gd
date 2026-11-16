@@ -244,7 +244,8 @@ func _stair_ramps(world: Node3D, player: FpsPlayer) -> void:
 				if not ramp_hit.is_empty() and ramp_hit.get("position").y > tread_y + 0.03:
 					movement_only += 1
 		_check(
-			above == samples, "%s stays above every tread sample (%d/%d)" % [name, above, samples]
+			samples > 0 and above == samples,
+			"%s stays above every tread sample (%d/%d)" % [name, above, samples]
 		)
 		_check(
 			movement_only > samples / 2,
@@ -410,7 +411,7 @@ func _floor_seams(world: Node3D) -> void:
 		{
 			"label": "living room seam",
 			"inside": Vector2(15.5, -6.0),
-			"outside": Vector2(17.6, -6.0)
+			"outside": Vector2(18.6, -6.0)
 		},
 		{"label": "hearth seam", "inside": Vector2(20.0, -10.6), "outside": Vector2(20.0, -9.0)},
 		{
