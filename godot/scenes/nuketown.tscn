@@ -1,10 +1,10 @@
-[gd_scene load_steps=9 format=3]
+[gd_scene format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/player.tscn" id="1_player"]
-[ext_resource type="Script" path="res://scripts/hud.gd" id="2_hud"]
-[ext_resource type="Script" path="res://scripts/crosshair.gd" id="3_crosshair"]
+[ext_resource type="PackedScene" path="res://scenes/ui/hud.tscn" id="2_hud"]
 [ext_resource type="PackedScene" path="res://assets/maps/nuketown/generated/nuketown_world.scn" id="5_world"]
 [ext_resource type="Script" path="res://scripts/nuketown.gd" id="6_level"]
+[ext_resource type="Script" path="res://scripts/secret_laser.gd" id="7_secret"]
 
 [sub_resource type="ProceduralSkyMaterial" id="SkyMat"]
 sky_top_color = Color(0.3, 0.44, 0.62, 1)
@@ -44,63 +44,11 @@ directional_shadow_max_distance = 90.0
 [node name="Player" parent="." instance=ExtResource("1_player")]
 position = Vector3(0, 0.05, 20)
 
-[node name="HUD" type="CanvasLayer" parent="."]
-script = ExtResource("2_hud")
-player_path = NodePath("../Player")
+[node name="HUD" parent="." instance=ExtResource("2_hud")]
+controls_text = "WASD move   Shift sprint (toggle)   C / Ctrl crouch (slide while sprinting)   Space jump   LMB fire   RMB aim   R reload   1 / 2 / wheel switch   F take weapon   Esc release mouse"
 
-[node name="Crosshair" type="Control" parent="HUD"]
-layout_mode = 3
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-script = ExtResource("3_crosshair")
-
-[node name="Readout" type="Label" parent="HUD"]
-offset_left = 24.0
-offset_top = 20.0
-theme_override_font_sizes/font_size = 16
-text = "Standing"
-
-[node name="Controls" type="Label" parent="HUD"]
-anchors_preset = 2
-anchor_top = 1.0
-anchor_bottom = 1.0
-offset_left = 24.0
-offset_top = -48.0
-offset_right = 1300.0
-offset_bottom = -20.0
-grow_vertical = 0
-theme_override_colors/font_color = Color(1, 1, 1, 0.7)
-theme_override_font_sizes/font_size = 14
-text = "WASD move   Shift sprint (toggle)   C / Ctrl crouch (slide while sprinting)   Space jump   LMB fire   RMB aim   R reload   1 / 2 / wheel switch   Esc release mouse"
-
-[node name="Ammo" type="VBoxContainer" parent="HUD"]
-anchors_preset = 3
-anchor_left = 1.0
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -260.0
-offset_top = -110.0
-offset_right = -32.0
-offset_bottom = -28.0
-grow_horizontal = 0
-grow_vertical = 0
-alignment = 2
-
-[node name="Weapon" type="Label" parent="HUD/Ammo"]
-theme_override_colors/font_color = Color(1, 1, 1, 0.75)
-theme_override_font_sizes/font_size = 18
-horizontal_alignment = 2
-text = "M4A1"
-
-[node name="Count" type="Label" parent="HUD/Ammo"]
-theme_override_font_sizes/font_size = 34
-horizontal_alignment = 2
-text = "30 / 120"
+[node name="SecretLaser" type="Node3D" parent="."]
+script = ExtResource("7_secret")
 
 [node name="ReturnToMenu" type="Button" parent="HUD"]
 offset_left = 24.0

@@ -9,6 +9,8 @@
 [ext_resource type="PackedScene" path="res://scenes/weapons/m870_view.tscn" id="7_m870"]
 [ext_resource type="PackedScene" path="res://scenes/weapons/m40_view.tscn" id="8_m40"]
 [ext_resource type="PackedScene" path="res://scenes/characters/fp_arms.tscn" id="9_arms"]
+[ext_resource type="PackedScene" path="res://scenes/weapons/laser_view.tscn" id="10_laser"]
+[ext_resource type="PackedScene" path="res://scenes/effects/laser_beam.tscn" id="11_beam"]
 
 [sub_resource type="CapsuleShape3D" id="Capsule_body"]
 radius = 0.35
@@ -24,6 +26,7 @@ floor_constant_speed = true
 floor_snap_length = 0.3
 impact_scene = ExtResource("3_impact")
 tracer_scene = ExtResource("4_tracer")
+beam_scene = ExtResource("11_beam")
 
 [node name="Collision" type="CollisionShape3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
@@ -61,5 +64,7 @@ near = 0.03
 [node name="M870" parent="Camera/Viewmodel" instance=ExtResource("7_m870")]
 
 [node name="M40" parent="Camera/Viewmodel" instance=ExtResource("8_m40")]
+
+[node name="Laser" parent="Camera/Viewmodel" instance=ExtResource("10_laser")]
 
 [node name="Arms" parent="Camera/Viewmodel" instance=ExtResource("9_arms")]

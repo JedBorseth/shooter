@@ -12,6 +12,8 @@ const GAMEPAD_CONTROLS := (
 )
 
 @export var player_path: NodePath
+## Replaces the keyboard controls line when set (levels without the pause menu).
+@export_multiline var controls_text := ""
 
 var _controls_left := CONTROLS_TIME
 var _controls_forced := false
@@ -29,7 +31,7 @@ var _controls_forced := false
 @onready var _damage: Control = $Damage
 @onready var _scope: Control = $Scope
 @onready var _hit_sound: AudioStreamPlayer = $HitSound
-@onready var _keyboard_controls := _controls.text
+@onready var _keyboard_controls := controls_text if controls_text != "" else _controls.text
 @onready var _score_feed: Control = $ScoreFeed
 
 

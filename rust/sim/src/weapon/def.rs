@@ -158,6 +158,10 @@ pub struct WeaponDef {
     /// Draw a tracer for every Nth round of the player's own fire. 0 = never.
     #[serde(default)]
     pub tracer_every: u8,
+    /// An energy weapon: every shot draws a solid beam to the hit point instead
+    /// of tracers, and no shell casings come out.
+    #[serde(default)]
+    pub beam: bool,
 }
 
 fn one() -> u8 {
@@ -267,8 +271,10 @@ macro_rules! builtin_files {
 
 /// The weapon files in `godot/data/weapons`, compiled in.
 pub fn builtin() -> Vec<WeaponDef> {
-    parse_all(builtin_files!["ak47", "m1911", "m40", "m4", "m870", "pdw9"])
-        .expect("built-in weapon files are valid")
+    parse_all(builtin_files![
+        "ak47", "laser", "m1911", "m40", "m4", "m870", "pdw9"
+    ])
+    .expect("built-in weapon files are valid")
 }
 
 static TABLE: LazyLock<RwLock<&'static [WeaponDef]>> =
@@ -309,7 +315,10 @@ mod tests {
     #[test]
     fn builtin_table_is_sorted_and_complete() {
         let keys: Vec<_> = table().iter().map(|d| d.key.as_str()).collect();
-        assert_eq!(keys, ["ak47", "m1911", "m4", "m40", "m870", "pdw9"]);
+        assert_eq!(
+            keys,
+            ["ak47", "laser", "m1911", "m4", "m40", "m870", "pdw9"]
+        );
         assert_eq!(WeaponId::expect("m4").def().name, "M4A1");
     }
 
@@ -327,9 +336,21 @@ mod tests {
         assert_eq!(m4.pellets, 1);
         assert_eq!(m4.cycle_time, 0.0);
         assert!(m4.scope.is_none());
+        assert!(!m4.beam);
         let shotgun = WeaponId::expect("m870").def();
         assert_eq!(shotgun.pellets, 8);
         assert!(matches!(shotgun.reload, Reload::PerRound { .. }));
+    }
+
+    #[test]
+    fn laser_kills_in_one_hit_anywhere() {
+        let laser = WeaponId::expect("laser").def();
+        assert!(laser.beam);
+        assert_eq!(laser.fire_mode, FireMode::Auto);
+        assert!(laser.damage_at(0.0) >= 1000.0);
+        assert!(laser.damage_at(laser.range) >= 1000.0);
+        assert_eq!(laser.spread.hip, 0.0);
+        assert!(laser.recoil.pattern.iter().all(|kick| *kick == Vec2::ZERO));
     }
 
     #[test]
