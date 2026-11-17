@@ -32,6 +32,7 @@ func _run() -> void:
 	for i in 5:
 		await physics_frame
 	_check(server.has_bot_navigation(), "the bots bake a navigation mesh")
+	_check(server.bot_lane_count() == 3, "Slamcity gives the bots its three lanes")
 	_check(server.player_count() == bots, "%d bots join, got %d" % [bots, server.player_count()])
 	var teams := [0, 0]
 	for i in bots:
@@ -57,6 +58,10 @@ func _run() -> void:
 	# A minute is short enough for one side to win it outright, so this only
 	# asks that more than one bot gets kills.
 	_check(killers >= 2, "kills come from several bots, %d of %d" % [killers, bots])
+	var tactics: Dictionary = server.bot_tactics()
+	print("bots: tactics %s" % tactics)
+	_check(int(tactics.lanes) >= bots, "the bots follow the lanes, %d routes" % tactics.lanes)
+	_check(int(tactics.cover) >= 1, "hurt bots take cover, %d times" % tactics.cover)
 	server.queue_free()
 	_finish()
 

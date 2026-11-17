@@ -70,6 +70,17 @@ const ATTACK_CHASE: f32 = 12.0;
 const DETOUR_BEYOND: f32 = 35.0;
 /// A detour point counts as reached within this many metres.
 const DETOUR_RADIUS: f32 = 4.0;
+/// Health below which a bot under fire breaks off to find cover.
+const COVER_HEALTH: f32 = 45.0;
+/// Longest a bot stays in cover, in seconds (it leaves once healed).
+const COVER_SECONDS: f32 = 4.0;
+/// How far a bot looks for cover, in metres.
+const COVER_RANGE: (f32, f32) = (3.5, 9.0);
+/// Chance a bot with no objective follows one of the map's lanes rather
+/// than roaming.
+const LANE_CHANCE: f32 = 0.75;
+/// A teammate this close to a lane's points counts as on that lane, metres.
+const LANE_RADIUS: f32 = 9.0;
 
 /// What the server wants a bot to go for (Capture the Flag).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -203,6 +214,15 @@ impl BotNavigation {
             .unwrap_or_default()
     }
 
+    /// The point on the mesh nearest `to`.
+    pub fn closest_point(&mut self, to: Vector3) -> Vector3 {
+        let args = [self.map.to_variant(), to.to_variant()];
+        self.server
+            .call("map_get_closest_point", &args)
+            .try_to::<Vector3>()
+            .unwrap_or(to)
+    }
+
     /// A random point on the mesh.
     pub fn random_point(&mut self) -> Vector3 {
         let args = [self.map.to_variant(), 1.to_variant(), false.to_variant()];
@@ -248,6 +268,9 @@ pub struct BotWorld<'a> {
     pub space: &'a mut Gd<PhysicsDirectSpaceState3D>,
     /// Spawn points on each team's side, for goals on the enemy's side.
     pub team_spawns: &'a [Vec<Vector3>; 2],
+    /// The map's lanes (`BotLanes`), each a line of points from the west
+    /// (team 0's side) to the east.
+    pub lanes: &'a [Vec<Vector3>],
 }
 
 pub struct BotBrain {
@@ -263,6 +286,12 @@ pub struct BotBrain {
     /// Where the last shot that hurt this bot came from, and the tick.
     hurt_from: Option<(u8, Vector3, Tick)>,
     goal: Option<Vector3>,
+    /// Lane points still to visit, in order, before the enemy's side.
+    route: Vec<Vector3>,
+    /// A spot out of the enemy's sight, and the tick to leave it by.
+    cover: Option<(Vector3, Tick)>,
+    /// After a goal turned out unreachable: no new goal before this tick.
+    replan_at: Tick,
     path: Vec<Vector3>,
     next_waypoint: usize,
     repath_at: Tick,
@@ -279,6 +308,10 @@ pub struct BotBrain {
     /// whether this life already picked (or finished) one.
     detour: Option<Vector3>,
     detour_picked: bool,
+    /// Lanes taken and times in cover, over the bot's life on the server
+    /// (tests).
+    pub lanes_taken: u32,
+    pub covers_taken: u32,
 }
 
 #[derive(Default)]
@@ -301,6 +334,9 @@ impl BotBrain {
             last_seen: None,
             hurt_from: None,
             goal: None,
+            route: Vec::new(),
+            cover: None,
+            replan_at: 0,
             path: Vec::new(),
             next_waypoint: 0,
             repath_at: 0,
@@ -314,6 +350,8 @@ impl BotBrain {
             counter: 0,
             detour: None,
             detour_picked: false,
+            lanes_taken: 0,
+            covers_taken: 0,
         }
     }
 
@@ -325,6 +363,8 @@ impl BotBrain {
         self.last_seen = None;
         self.hurt_from = None;
         self.goal = None;
+        self.route.clear();
+        self.cover = None;
         self.path.clear();
         self.stuck_since = (Vector3::ZERO, tick);
         self.held = Held::default();
@@ -374,6 +414,22 @@ impl BotBrain {
                 .copied()
         });
         let mut want = Want::default();
+        // Hurt and under fire: break off and get out of sight to heal. A
+        // runner (a flag carrier) keeps running.
+        let running = objective.is_some_and(|o| o.kind == ObjectiveKind::Run);
+        if self.cover.is_none() && self.skill != Skill::Easy && !running {
+            self.consider_cover(me, state, target.as_ref(), world);
+        }
+        if let Some((spot, until)) = self.cover {
+            if tick >= until || state.state.health >= 90.0 || running {
+                self.cover = None;
+                self.goal = None;
+            } else {
+                self.hide(me, spot, target.as_ref(), state, world, &skill, &mut want);
+                self.unstick(me, tick, &mut want);
+                return self.press(want, state);
+            }
+        }
         match (self.engagement, target) {
             (Some(mut engagement), Some(target)) if self.in_sight => {
                 engagement.update(&skill, TICK_DT);
@@ -535,6 +591,108 @@ impl BotBrain {
         }
     }
 
+    /// Starts taking cover when hurt badly and recently shot, picking a spot
+    /// nearby that the threat (the target, or whoever shot us) cannot see.
+    fn consider_cover(
+        &mut self,
+        me: &BotPlayer,
+        state: &Predicted,
+        target: Option<&BotPlayer>,
+        world: &mut BotWorld,
+    ) {
+        let tick = world.tick;
+        let shot_at = self
+            .hurt_from
+            .filter(|(_, _, t)| tick.saturating_sub(*t) < TICK_RATE * 3 / 2);
+        if state.state.health >= COVER_HEALTH || shot_at.is_none() {
+            return;
+        }
+        let threat = match (target, shot_at) {
+            (Some(target), _) => target.eye(world.params),
+            (None, Some((_, from, _))) => from,
+            (None, None) => return,
+        };
+        if let Some(spot) = self.find_cover(me, threat, world) {
+            let until = tick + (COVER_SECONDS * TICK_RATE as f32) as Tick;
+            self.cover = Some((spot, until));
+            self.covers_taken += 1;
+            self.set_goal(spot, tick);
+        }
+    }
+
+    /// The nearest reachable spot within [`COVER_RANGE`] where a standing
+    /// player's chest is hidden from `threat`, not toward it.
+    fn find_cover(
+        &mut self,
+        me: &BotPlayer,
+        threat: Vector3,
+        world: &mut BotWorld,
+    ) -> Option<Vector3> {
+        let start = self.random() * std::f32::consts::TAU;
+        let mut best: Option<(Vector3, f32)> = None;
+        for k in 0..12 {
+            let angle = start + k as f32 * std::f32::consts::TAU / 12.0;
+            let reach = COVER_RANGE.0 + self.random() * (COVER_RANGE.1 - COVER_RANGE.0);
+            let probe = me.feet + Vector3::new(angle.cos(), 0.0, angle.sin()) * reach;
+            let spot = world.navigation.closest_point(probe);
+            let distance = horizontal_distance(spot, me.feet);
+            if distance < 2.0 || (spot.y - me.feet.y).abs() > 1.5 {
+                continue;
+            }
+            // Not closer to the threat than we are now.
+            if horizontal_distance(spot, threat) < horizontal_distance(me.feet, threat) - 1.0 {
+                continue;
+            }
+            if best.is_some_and(|(_, d)| d <= distance) {
+                continue;
+            }
+            if clear_line(world.space, threat, spot + Vector3::UP * 1.2) {
+                continue;
+            }
+            best = Some((spot, distance));
+        }
+        best.map(|(spot, _)| spot)
+    }
+
+    /// Runs to the cover spot, then crouches there, reloads, and watches for
+    /// the threat.
+    #[allow(clippy::too_many_arguments)]
+    fn hide(
+        &mut self,
+        me: &BotPlayer,
+        spot: Vector3,
+        target: Option<&BotPlayer>,
+        state: &Predicted,
+        world: &mut BotWorld,
+        skill: &SkillParams,
+        want: &mut Want,
+    ) {
+        let weapon = state.state.combat.weapon();
+        let def = weapon.id.def();
+        let direction = (horizontal_distance(spot, me.feet) > 1.2)
+            .then(|| self.toward(me, world, spot))
+            .flatten();
+        if let Some(direction) = direction {
+            let mut view = look::bearing(Vec3::ZERO, Vec3::new(direction.x, 0.0, direction.z));
+            view.y = 0.0;
+            self.look = bot::turn_toward(self.look, view, skill.turn_rate * 0.7, TICK_DT);
+            want.wish = bot::wish_toward(self.look.x, direction);
+            want.sprint = want.wish.y > 0.8;
+        } else {
+            want.wish = Vec2::ZERO;
+            want.crouch = true;
+            // Face where the threat would come from.
+            let from = target.map(|t| t.feet).or(self.hurt_from.map(|(_, f, _)| f));
+            if let Some(from) = from {
+                let mut view = look::bearing(to_sim(me.eye(world.params)), to_sim(from));
+                view.y = 0.0;
+                self.look = bot::turn_toward(self.look, view, skill.turn_rate * 0.6, TICK_DT);
+            }
+        }
+        want.reload = weapon.reserve > 0 && weapon.magazine < def.magazine;
+        want.fire = false;
+    }
+
     /// No enemy in sight: go for the objective, hunt the last enemy seen,
     /// face whoever shot us, or walk toward a goal.
     fn roam(
@@ -548,6 +706,14 @@ impl BotBrain {
     ) {
         let tick = world.tick;
         let memory = (MEMORY_SECONDS * TICK_RATE as f32) as Tick;
+        // Searched where the enemy was last seen, and they are gone: stop
+        // going back there.
+        if self
+            .last_seen
+            .is_some_and(|(spot, _)| horizontal_distance(spot, me.feet) < 2.0)
+        {
+            self.last_seen = None;
+        }
         // Without an objective, chase the last enemy seen. Defenders chase
         // only near their spot, attackers only near themselves, and runners
         // never: the objective comes first.
@@ -585,9 +751,10 @@ impl BotBrain {
                 self.toward(me, world, goal)
             }
             _ => {
-                if self
-                    .goal
-                    .is_none_or(|g| horizontal_distance(g, me.feet) < 2.0)
+                if tick >= self.replan_at
+                    && self
+                        .goal
+                        .is_none_or(|g| horizontal_distance(g, me.feet) < 2.0)
                 {
                     let goal = self.pick_goal(me, world);
                     self.set_goal(goal, tick);
@@ -674,13 +841,15 @@ impl BotBrain {
     fn follow_path(&mut self, me: &BotPlayer, world: &mut BotWorld) -> Option<Vec3> {
         let tick = world.tick;
         if tick >= self.repath_at || self.path.is_empty() {
-            let goal = self.goal.unwrap_or(me.feet);
+            let goal = self.goal?;
             self.path = world.navigation.path(me.feet, goal);
             self.next_waypoint = 1.min(self.path.len());
             self.repath_at = tick + (REPATH_SECONDS * TICK_RATE as f32) as Tick;
             if self.path.len() < 2 {
-                // Unreachable: try somewhere else next tick.
+                // Unreachable: drop the route and plan again in a moment.
                 self.goal = None;
+                self.route.clear();
+                self.replan_at = tick + TICK_RATE / 2;
             }
         }
         while self.next_waypoint < self.path.len()
@@ -722,12 +891,76 @@ impl BotBrain {
 
     /// Somewhere to go: the enemy's side half the time, anywhere otherwise.
     fn pick_goal(&mut self, me: &BotPlayer, world: &mut BotWorld) -> Vector3 {
+        // The next point of the lane being followed, or a new lane: the one
+        // with the fewest teammates on it.
+        if !self.route.is_empty() {
+            return self.route.remove(0);
+        }
+        if !world.lanes.is_empty() && self.random() < LANE_CHANCE {
+            self.route = self.lane_route(me, world);
+            if !self.route.is_empty() {
+                self.lanes_taken += 1;
+                return self.route.remove(0);
+            }
+        }
         let enemy_side = &world.team_spawns[usize::from(1 - me.team.min(1))];
         if !enemy_side.is_empty() && self.random() < 0.45 {
             let i = (self.random() * enemy_side.len() as f32) as usize;
             return enemy_side[i.min(enemy_side.len() - 1)];
         }
         world.navigation.random_point()
+    }
+
+    /// The rest of the least crowded lane, from where the bot is toward the
+    /// enemy's side, then a spawn there. Empty at the far end already.
+    fn lane_route(&mut self, me: &BotPlayer, world: &mut BotWorld) -> Vec<Vector3> {
+        let mut best: Option<(usize, f32)> = None;
+        for (i, lane) in world.lanes.iter().enumerate() {
+            let crowd = world
+                .players
+                .iter()
+                .filter(|p| p.alive && p.id != me.id && p.team == me.team)
+                .filter(|p| {
+                    lane.iter()
+                        .any(|q| horizontal_distance(*q, p.feet) < LANE_RADIUS)
+                })
+                .count() as f32;
+            let score = crowd + self.random() * 0.9;
+            if best.is_none_or(|(_, b)| score < b) {
+                best = Some((i, score));
+            }
+        }
+        let Some((lane, _)) = best else {
+            return Vec::new();
+        };
+        // Lanes run west to east, and team 0 starts in the west. Players on
+        // their own side (free-for-all) head for the far end.
+        let eastward = match me.team {
+            0 => true,
+            1 => false,
+            _ => me.feet.x < 0.0,
+        };
+        let mut points = world.lanes[lane].clone();
+        if !eastward {
+            points.reverse();
+        }
+        let ahead = |p: &Vector3| {
+            if eastward {
+                p.x > me.feet.x + 3.0
+            } else {
+                p.x < me.feet.x - 3.0
+            }
+        };
+        let mut route: Vec<Vector3> = points.into_iter().filter(ahead).collect();
+        if route.is_empty() {
+            return route;
+        }
+        let enemy_side = &world.team_spawns[usize::from(eastward)];
+        if !enemy_side.is_empty() {
+            let i = (self.random() * enemy_side.len() as f32) as usize;
+            route.push(enemy_side[i.min(enemy_side.len() - 1)]);
+        }
+        route
     }
 
     /// Jumps when the bot stops getting anywhere, and gives up on the goal if
