@@ -79,6 +79,17 @@ func _gunshots(player: FpsPlayer) -> void:
 			if sound != null and sound.stream != null:
 				layers += 1
 		_check(layers == 3, "%s gunshot has snap, body and tail layers" % view.name)
+		# Every real gun has an action; magazine-fed guns ring when nearly empty.
+		var key: String = view.get("weapon")
+		if key == "laser":
+			continue
+		var mech := view.get_node_or_null("GunshotMech") as AudioStreamPlayer
+		_check(mech != null and mech.stream != null, "%s has a mechanical layer" % view.name)
+		if key not in ["m40", "m870"]:
+			var hollow := view.get_node_or_null("GunshotHollow") as AudioStreamPlayer
+			_check(
+				hollow != null and hollow.stream != null, "%s has a last-rounds layer" % view.name
+			)
 
 
 func _movement(player: FpsPlayer) -> void:

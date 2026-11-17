@@ -27,8 +27,14 @@ Download ``Prepared SFX Library.7z`` and extract it, then run:
 
     uv run tools/build_weapon_audio.py layers "<path>/Prepared SFX Library" [--only m40]
     uv run tools/build_weapon_audio.py trim
+    uv run tools/build_weapon_audio.py mech
 
 ``trim`` removes leading silence from every other sound in godot/assets/audio.
+
+``mech`` synthesizes two more layers per gun, with no source recordings:
+``mech``, the bolt carrier or slide slamming home and its spring, played
+under every shot; and ``hollow``, the ring of a nearly empty magazine, played
+over the last few rounds. Both are seeded, so a rebuild writes the same files.
 Then open the Godot editor (or run ``godot --headless --import``) to import the
 new files.
 """
@@ -560,6 +566,135 @@ def trim(paths: list[Path], keep: float = 0.001) -> None:
         print(f"{path.relative_to(ROOT)}: trimmed {lead * 1000:.1f} ms")
 
 
+# --- Synthesized mechanical layers ------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Mech:
+    """One gun's action noise. Frequencies are the metal parts' ringing modes."""
+
+    key: str
+    modes: tuple[float, ...]
+    # Seconds each mode rings for (exponential decay constant).
+    ring: float
+    # The return spring's twang: frequency (Hz), or 0 for none.
+    spring: float
+    # Seconds between the bolt going back and slamming home, or 0 for a
+    # single impact (bolt and pump guns: the firing pin and trigger only).
+    return_delay: float
+    # The hollow last-rounds ring: the magazine body's resonance (Hz), or 0
+    # for guns that load another way (tube, internal magazine).
+    hollow: float
+    # Overall level of the clack, 1 = rifle.
+    level: float = 1.0
+
+
+MECHS = (
+    Mech("m4", (2100, 3400, 5200, 7600), 0.012, 480, 0.038, 1150),
+    Mech("br3", (2300, 3650, 5500, 8000), 0.011, 520, 0.034, 1200),
+    Mech("ak47", (1500, 2600, 4100, 6300), 0.016, 380, 0.045, 950, level=1.15),
+    Mech("lsw6", (1300, 2250, 3500, 5600), 0.018, 320, 0.050, 820, level=1.2),
+    Mech("pdw9", (2600, 4100, 6200, 8800), 0.009, 600, 0.028, 1450, level=0.85),
+    Mech("m1911", (2900, 4600, 7000), 0.008, 700, 0.030, 1700, level=0.8),
+    Mech("m40", (3200, 5600), 0.006, 0, 0.0, 0, level=0.5),
+    Mech("m870", (2400, 3900), 0.007, 0, 0.0, 0, level=0.5),
+)
+
+MECH_VARIATIONS = 4
+HOLLOW_VARIATIONS = 3
+
+
+def decay(n: int, tau: float) -> np.ndarray:
+    return np.exp(-np.arange(n) / (tau * RATE))
+
+
+def click(
+    rng: np.random.Generator, n: int, tau: float, low: float, high: float
+) -> np.ndarray:
+    """A short tick: decaying noise between `low` and `high` Hz."""
+    noise = rng.standard_normal(n) * decay(n, tau)
+    sos = signal.butter(2, (low, high), "bandpass", fs=RATE, output="sos")
+    return signal.sosfilt(sos, noise)
+
+
+def impact(rng: np.random.Generator, mech: Mech, n: int, strength: float) -> np.ndarray:
+    """One metal-on-metal hit: a tick that excites the gun's ringing modes."""
+    t = np.arange(n) / RATE
+    out = click(rng, n, 0.0012, 1_200.0, 7_000.0) * 0.35
+    for i, hz in enumerate(mech.modes):
+        hz *= rng.uniform(0.96, 1.04)
+        amp = rng.uniform(0.5, 1.0) / (1 + 0.6 * i)
+        tau = mech.ring * rng.uniform(0.8, 1.2) / (1 + 0.25 * i)
+        out += (
+            amp * np.sin(2 * np.pi * hz * t + rng.uniform(0, 2 * np.pi)) * decay(n, tau)
+        )
+    return out * strength
+
+
+def spring(rng: np.random.Generator, hz: float, n: int) -> np.ndarray:
+    """A coil spring's short twang, gliding down as it settles."""
+    t = np.arange(n) / RATE
+    glide = hz * rng.uniform(0.95, 1.05) * (1 + 0.08 * np.exp(-t / 0.01))
+    phase = 2 * np.pi * np.cumsum(glide) / RATE
+    # A little inharmonic buzz from the coils rubbing.
+    buzz = 0.3 * np.sin(2.76 * phase)
+    return (np.sin(phase) + buzz) * decay(n, 0.03) * 0.25
+
+
+def mech_sound(mech: Mech, seed: int) -> np.ndarray:
+    rng = np.random.default_rng(seed)
+    n = int(0.16 * RATE)
+    out = impact(rng, mech, n, 0.7)
+    if mech.return_delay > 0:
+        start = int(mech.return_delay * rng.uniform(0.92, 1.08) * RATE)
+        out[start:] += impact(rng, mech, n - start, 1.0)
+    if mech.spring > 0:
+        out += spring(rng, mech.spring, n)
+    # Fade the last 20 ms so nothing clicks at the end.
+    fade = int(0.02 * RATE)
+    out[-fade:] *= np.linspace(1.0, 0.0, fade)
+    return out / np.max(np.abs(out)) * 0.7 * mech.level
+
+
+def hollow_sound(mech: Mech, seed: int) -> np.ndarray:
+    """The ping of a nearly empty magazine: a tick through a comb filter (the
+    hollow box) plus a long, bright ring from the spring and follower."""
+    rng = np.random.default_rng(seed)
+    n = int(0.22 * RATE)
+    t = np.arange(n) / RATE
+    excite = click(rng, n, 0.002, 300.0, 3_000.0)
+    f0 = mech.hollow * rng.uniform(0.97, 1.03)
+    delay = max(2, int(RATE / f0))
+    feedback = 0.9
+    # Karplus-Strong: averaging inside the loop damps the upper harmonics
+    # first, so the box rings dull and hollow instead of buzzing.
+    box = np.copy(excite)
+    for i in range(delay + 1, n):
+        box[i] += feedback * 0.5 * (box[i - delay] + box[i - delay - 1])
+    box *= decay(n, 0.05)
+    ping_hz = f0 * rng.uniform(2.4, 2.7)
+    ping = np.sin(2 * np.pi * ping_hz * t) * decay(n, 0.07) * 0.5
+    out = box / np.max(np.abs(box)) + ping
+    fade = int(0.03 * RATE)
+    out[-fade:] *= np.linspace(1.0, 0.0, fade)
+    return out / np.max(np.abs(out)) * 0.6
+
+
+def build_mech() -> None:
+    for mech in MECHS:
+        base = sum(ord(c) for c in mech.key) * 101
+        for i in range(MECH_VARIATIONS):
+            path = WEAPONS / mech.key / f"mech_{i + 1}.wav"
+            write(path, mech_sound(mech, base + i), ogg=False)
+            print(path.relative_to(ROOT))
+        if mech.hollow <= 0:
+            continue
+        for i in range(HOLLOW_VARIATIONS):
+            path = WEAPONS / mech.key / f"hollow_{i + 1}.wav"
+            write(path, hollow_sound(mech, base + 50 + i), ogg=False)
+            print(path.relative_to(ROOT))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -573,11 +708,14 @@ def main() -> None:
         "--only", nargs="+", default=[], metavar="KEY", help="rebuild only these guns"
     )
     sub.add_parser("trim", help="trim leading silence from every other sound")
+    sub.add_parser("mech", help="synthesize the mechanical and last-rounds layers")
     args = parser.parse_args()
     if args.command == "layers":
         build_layers(args.library, set(args.only))
+    elif args.command == "mech":
+        build_mech()
     else:
-        layered = {gun.key for gun in GUNS}
+        layered = {gun.key for gun in GUNS} | {mech.key for mech in MECHS}
         paths = [
             p
             for p in sorted(AUDIO.rglob("*"))

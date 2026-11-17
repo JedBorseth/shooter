@@ -1303,10 +1303,11 @@ impl FpsPlayer {
                 self.fire_shot(weapon, aim_offset, shot);
                 self.rumble_on_fire(weapon);
                 let ads = self.state.combat.ads;
-                let low = self.state.combat.weapon().magazine <= def.low_ammo();
+                let rounds_left = self.state.combat.weapon().magazine;
+                let low = rounds_left <= def.low_ammo();
                 let mut rig = self.viewmodel.bind_mut();
                 let eject = def.cycle_time <= 0.0 && !def.beam;
-                let punch = rig.on_fired(weapon, ads, eject);
+                let punch = rig.on_fired(weapon, ads, eject, rounds_left);
                 if low {
                     rig.on_low_ammo(weapon);
                 }

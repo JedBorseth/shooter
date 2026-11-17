@@ -137,6 +137,17 @@ pub struct WeaponView {
     #[export]
     #[init(val = -3.0)]
     tail_db: f32,
+    /// The action under every shot (bolt carrier or slide slamming home, and
+    /// its spring), in dB from `fire_volume_db`. A suppressor leaves it alone,
+    /// so suppressed fire is mostly this.
+    #[export]
+    #[init(val = -10.0)]
+    mech_db: f32,
+    /// The hollow ring of a nearly empty magazine, in dB from
+    /// `fire_volume_db` on the last round. Quieter for earlier rounds.
+    #[export]
+    #[init(val = -8.0)]
+    hollow_db: f32,
     /// Borrow another weapon's gunshot layers (its key), for a weapon without
     /// its own recordings; empty uses this weapon's.
     #[export]
@@ -765,7 +776,8 @@ impl WeaponView {
         self.base().get_transform() * local
     }
 
-    pub fn on_fired(&mut self) {
+    /// A shot left `rounds_left` in a magazine of `magazine`.
+    pub fn on_fired(&mut self, rounds_left: u16, magazine: u16) {
         // Cheap variation without a random generator: rotate by a golden-angle step.
         let next = self.flash_count.wrapping_add(1);
         let roll = (next as f32 * 2.399_963) % (2.0 * PI);
@@ -779,7 +791,7 @@ impl WeaponView {
         self.since_shot = 0.0;
 
         if let Some(gunshot) = &mut self.gunshot {
-            gunshot.play();
+            gunshot.play(rounds_left, magazine);
         }
     }
 
@@ -813,7 +825,31 @@ impl WeaponView {
         // One echo at a time: each shot cuts the last one's tail, so full
         // auto stays tight instead of piling up reverb.
         let tail = layer("tail", "GunshotTail", tail_db, 1)?;
+        // Optional layers live with the weapon's own model key first (a gun
+        // that borrows another's shot still has its own action).
+        let own = format!("res://assets/audio/weapons/{}", self.weapon);
+        let (mech_db, hollow_db) = (self.mech_db, self.hollow_db);
+        let mut optional = |name: &str, node: &str, offset_db: f32| {
+            [&own, &dir].into_iter().find_map(|d| {
+                let stream = audio::variations(&format!("{d}/{name}"), 1.03)?;
+                let mut player = AudioStreamPlayer::new_alloc();
+                player.set_name(node);
+                player.set_stream(&stream);
+                player.set_volume_db(self.fire_volume_db + offset_db);
+                player.set_bus("Weapons");
+                player.set_max_polyphony(3);
+                self.base_mut().add_child(&player);
+                Some(player)
+            })
+        };
+        let mech = optional("mech", "GunshotMech", mech_db);
+        let hollow = optional("hollow", "GunshotHollow", hollow_db).map(|player| {
+            let volume = player.get_volume_db();
+            (player, volume)
+        });
         Some(Gunshot {
+            mech,
+            hollow,
             pitch,
             volumes: [
                 snap.get_volume_db(),
@@ -846,6 +882,11 @@ impl WeaponView {
 /// The layers of one gunshot, played together. Each picks its own recording,
 /// so a few source shots combine into many different-sounding ones.
 struct Gunshot {
+    /// The action under every shot, if the weapon has one.
+    mech: Option<Gd<AudioStreamPlayer>>,
+    /// The last-rounds ring, if the weapon has a detachable magazine, and
+    /// its volume on the last round.
+    hollow: Option<(Gd<AudioStreamPlayer>, f32)>,
     pitch: f32,
     /// Each layer's volume as built, before any suppressor.
     volumes: [f32; 3],
@@ -867,13 +908,48 @@ impl Gunshot {
         }
     }
 
-    fn play(&mut self) {
+    /// Plays a shot that left `rounds_left` in a magazine of `magazine`.
+    fn play(&mut self, rounds_left: u16, magazine: u16) {
         let pitch = randf_range(0.96, 1.04) as f32 * self.pitch;
         for player in [&mut self.snap, &mut self.body, &mut self.tail] {
             player.set_pitch_scale(pitch);
             player.play();
         }
+        if let Some(mech) = &mut self.mech {
+            mech.play();
+        }
+        if let (Some((hollow, base)), Some(ring)) =
+            (&mut self.hollow, hollow_ring(rounds_left, magazine))
+        {
+            hollow.set_volume_db(*base + ring.volume_db);
+            hollow.set_pitch_scale(ring.pitch);
+            hollow.play();
+        }
     }
+}
+
+/// How the last-rounds ring sounds for one shot: louder and a touch higher as
+/// the magazine empties.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct HollowRing {
+    volume_db: f32,
+    pitch: f32,
+}
+
+/// The ring for a shot that left `rounds_left` of `magazine`, or None while
+/// the magazine is still full enough to sound solid. The ring covers the last
+/// fifth of the magazine, at least two and at most five rounds.
+fn hollow_ring(rounds_left: u16, magazine: u16) -> Option<HollowRing> {
+    let span = (magazine / 5).clamp(2, 5);
+    if magazine < 4 || rounds_left >= span {
+        return None;
+    }
+    // 0 on the first ringing shot, 1 on the last round.
+    let t = f32::from(span - 1 - rounds_left) / f32::from((span - 1).max(1));
+    Some(HollowRing {
+        volume_db: -9.0 * (1.0 - t),
+        pitch: 1.0 + 0.06 * t,
+    })
 }
 
 #[derive(Clone, Debug)]
@@ -1189,7 +1265,13 @@ impl ViewmodelRig {
     /// A shot was fired: kicks the weapon model and returns this weapon's camera
     /// punch (degrees). Self-loading weapons eject a shell right away; bolt and
     /// pump weapons eject when they cycle.
-    pub fn on_fired(&mut self, weapon: WeaponId, ads: f32, eject: bool) -> Vector3 {
+    pub fn on_fired(
+        &mut self,
+        weapon: WeaponId,
+        ads: f32,
+        eject: bool,
+        rounds_left: u16,
+    ) -> Vector3 {
         let Some(mut view) = self.view(weapon) else {
             return Vector3::ZERO;
         };
@@ -1197,7 +1279,7 @@ impl ViewmodelRig {
             let v = view.bind();
             (v.kick_strength * (1.0 - 0.4 * ads), v.camera_punch)
         };
-        view.bind_mut().on_fired();
+        view.bind_mut().on_fired(rounds_left, weapon.def().magazine);
         self.shots = self.shots.wrapping_add(1);
         let roll = if self.shots.is_multiple_of(2) {
             1.0
@@ -1521,5 +1603,25 @@ impl ViewmodelRig {
             });
             arms.bind_mut().follow(hold, support);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_hollow_ring_covers_the_last_rounds_and_builds_to_the_last() {
+        // A 30-round magazine rings on its last five shots.
+        assert_eq!(hollow_ring(5, 30), None);
+        let first = hollow_ring(4, 30).expect("rings with four left");
+        let last = hollow_ring(0, 30).expect("rings on the last round");
+        assert_eq!(last.volume_db, 0.0);
+        assert!(first.volume_db < last.volume_db);
+        assert!(first.pitch < last.pitch);
+        // A pistol's 8 rounds ring on the last two; tiny magazines never.
+        assert!(hollow_ring(1, 8).is_some());
+        assert_eq!(hollow_ring(2, 8), None);
+        assert_eq!(hollow_ring(0, 2), None);
     }
 }
