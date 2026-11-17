@@ -35,6 +35,12 @@ uniform bool viewmodel = false;
 // A greyscale fabric weave (the canvas texture set), repeated per metre.
 uniform sampler2D weave : hint_default_white, filter_linear_mipmap, repeat_enable;
 uniform float weave_scale = 9.0;
+// Surface relief in metres: the weave and creases on cloth, and the grain on
+// gloves and boots. Drawn as bump mapping from screen-space derivatives, so it
+// needs no tangents, UVs, or extra textures.
+uniform float weave_depth = 0.0006;
+uniform float fold_depth = 0.004;
+uniform float grain_depth = 0.00025;
 // 1 for zombies: rotting skin variation, grime, and blood.
 uniform float zombie = 0.0;
 // Per character, so a crowd does not look cloned.
@@ -82,6 +88,19 @@ float noise(vec3 p) {
 	);
 }
 
+// Perturbs the view-space normal by a height field `h` (metres), from its
+// screen-space derivatives (Mikkelsen, "Bump Mapping Unparametrized Surfaces
+// on the GPU").
+vec3 bump(vec3 position, vec3 normal, float h) {
+	vec3 dpdx = dFdx(position);
+	vec3 dpdy = dFdy(position);
+	vec3 r1 = cross(dpdy, normal);
+	vec3 r2 = cross(normal, dpdx);
+	float det = dot(dpdx, r1);
+	vec3 grad = sign(det) * (dFdx(h) * r1 + dFdy(h) * r2);
+	return normalize(abs(det) * normal - grad);
+}
+
 void fragment() {
 	vec3 base = palette[role].rgb;
 	float rough = role_roughness[role];
@@ -92,10 +111,29 @@ void fragment() {
 	vec2 plane = facing.x > facing.y && facing.x > facing.z
 		? rest.zy
 		: (facing.y > facing.z ? rest.xz : rest.xy);
+	float height = 0.0;
 	if (cloth) {
 		float weave_value = texture(weave, plane * weave_scale).r;
 		base *= mix(0.84, 1.12, weave_value);
 		rough = clamp(rough + (weave_value - 0.5) * 0.12, 0.0, 1.0);
+		// Creases: long soft folds around the limbs, different per character.
+		float folds = noise(rest * vec3(9.0, 26.0, 9.0) + variant * 3.7);
+		height = weave_value * weave_depth + folds * fold_depth;
+		// The crease bottoms catch less light.
+		base *= 0.92 + 0.08 * folds;
+	} else if (role == GLOVES || role == BOOTS) {
+		// Fine grain on synthetic leather, with smoother worn patches that shine.
+		// Fades out once a grain is smaller than a pixel, so it never shimmers.
+		float footprint = length(fwidth(rest));
+		float grain = noise(rest * 420.0) * (1.0 - smoothstep(0.0015, 0.004, footprint));
+		// Creases in the leather over the knuckles and palm.
+		float crease = noise(rest * vec3(140.0, 60.0, 140.0));
+		crease = 1.0 - abs(crease * 2.0 - 1.0);
+		float worn = smoothstep(0.55, 0.8, noise(rest * 22.0 + variant));
+		height = (grain * grain_depth + crease * crease * grain_depth * 3.0) * (1.0 - 0.5 * worn);
+		base *= 0.9 + 0.1 * crease;
+		rough = clamp(rough - 0.22 * worn - 0.1 * grain, 0.3, 1.0);
+		base *= 1.0 + 0.12 * worn;
 	}
 
 	// Fading and wear, different on every character.
@@ -123,6 +161,8 @@ void fragment() {
 		rough = mix(rough, 0.3, clamp(blood, 0.0, 1.0));
 	}
 
+	// Outside any branch: derivatives need every pixel of the 2x2 quad.
+	NORMAL = bump(VERTEX, NORMAL, height);
 	ALBEDO = base;
 	ROUGHNESS = rough;
 	SPECULAR = role == VISOR ? 0.55 : 0.35;

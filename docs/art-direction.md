@@ -31,6 +31,18 @@ To add a surface, add a set or a look to the tool, run it, import, and run it ag
 
 Curved shapes switch projection axis where their normal turns past 45°, which shows as a seam on strongly patterned textures. Use calm textures on cylinders, or give modelled props their own UVs.
 
+### Skyline windows
+
+![Slamcity's skyline before (left) and after (right) the windows](media/skyline-windows.jpg)
+
+The skyline buildings beyond the boundary are plain boxes, so `world.gdshader` draws their windows: a look with a `windows` entry in `tools/build_textures.py` gets a grid of framed windows with sills on every wall above the ground floor. Behind each pane is a room that exists only in the shader (interior mapping): the view ray is intersected with a box behind the glass, and the wall, floor, or ceiling it hits is coloured, with a door or shelf on the back wall, blinds drawn part way in some windows, and a few rooms lit warmer than the rest. Every room differs by a hash of its cell, the glass reflects the sky through the engine's own specular light, and the edges are antialiased from screen-space derivatives so distant windows do not shimmer. It costs no geometry or textures, and parallax makes the rooms move correctly as the player walks past.
+
+Windows stay off the buildings players fight around: a fake window there could read as a firing position.
+
+### Character relief
+
+`shaders/character.gdshader` bumps the normal from a height field, using screen-space derivatives (no tangents or UVs needed): the canvas weave and soft creases around the limbs on cloth, and a leather grain with creases on gloves and boots that fades out before it gets smaller than a pixel. It reuses the weave sample the shader already took, so it adds no texture reads.
+
 ### Props
 
 ![Covered cars, street lamps, crates, bins, barrels, jersey barriers, and roof plant across the three maps](media/map-props.jpg)

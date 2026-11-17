@@ -8,9 +8,9 @@ Measured at 1920×1080 on a GTX 1060 3GB, the reference card. The budget is GPU 
 
 | Preset | GPU budget | Leaves room for | Today (worst view) |
 | --- | --- | --- | --- |
-| Low | 4 ms | weaker cards and laptops at 60 fps | 2.8 ms |
-| Medium (default) | 8 ms | 60 fps with plenty of headroom, 100+ fps on the reference card | 5.0 ms |
-| High | 12 ms | 60 fps | 7.1 ms |
+| Low | 4 ms | weaker cards and laptops at 60 fps | 3.5 ms |
+| Medium (default) | 8 ms | 60 fps with plenty of headroom, 100+ fps on the reference card | 6.8 ms |
+| High | 12 ms | 60 fps | 9.2 ms |
 
 Rules for a pull request that changes visuals:
 
@@ -22,6 +22,7 @@ Rules of thumb for this renderer on this card, from the measurements below:
 
 - Cost is per pixel, not per triangle. Draw calls and triangle counts at today's scale barely move GPU time; full-screen effects (SSAO, MSAA, glow, soft shadows) do.
 - Bake lighting instead of computing it live. No SDFGI, VoxelGI, or screen-space reflections. Volumetric fog is High only.
+- Fake detail in the shader is cheap where it covers little of the screen: the skyline's windows and the rooms behind them (interior mapping, about 40 ALU operations and no texture reads) cost about 0.2 ms on Medium in Slamcity.
 - Decals cost per pixel they cover: Slamcity's 44 (road paint, damage, manholes, drips) cost about 0.3 ms on Medium. Keep them few and small.
 - Reflection probes are expensive here: four small interior probes in Slamcity cost about 0.8 ms whenever a room filled the screen, and one probe over the whole block cost 0.7 ms everywhere. Baked lightmaps light the interiors instead (`tools/bake_lightmaps.sh`).
 - Textures are compressed on the GPU (BPTC/S3TC), with mipmaps, 1K for most surfaces and 2K only for the weapon in view. Sample each surface once (one projection), not three times.
@@ -97,3 +98,5 @@ GPU time on Medium at 1080p on the reference card, average over viewpoints (wors
 | Effects (sparks, debris, dust, tracers, ambient dust) | 5.05 (5.23) ms | 5.95 (6.11) ms | 5.15 (5.55) ms |
 | Slamcity decals and building trim | 5.07 (5.26) ms | 6.31 (6.54) ms | 5.19 (5.60) ms |
 | Three-lane Slamcity (new map, twice the size; new viewpoints) | 5.11 (5.20) ms | 6.49 (6.65) ms | 5.20 (5.52) ms |
+| `main` before the fidelity pass (weapons, modes, and penetration since) | 5.06 (5.24) ms | 6.44 (6.61) ms | 5.25 (5.62) ms |
+| Skyline windows with fake rooms, cloth and glove relief | 5.16 (5.34) ms | 6.66 (6.82) ms | 5.34 (5.76) ms |
