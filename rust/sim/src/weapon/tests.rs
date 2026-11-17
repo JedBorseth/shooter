@@ -383,6 +383,38 @@ fn pickup_replaces_the_matching_slot() {
 }
 
 #[test]
+fn an_empty_primary_slot_cannot_be_drawn_until_filled() {
+    let mut s = CombatState::new([id("m4"), id("m1911")]).without(Slot::Primary);
+    assert_eq!(s.active, 1, "starts on the sidearm");
+    assert!(!s.carries(id("m4")));
+    s.action = Action::Ready;
+    let switch = CombatInput {
+        switch_to: Some(0),
+        ..Default::default()
+    };
+    run(&mut s, switch, CombatContext::default(), 30);
+    assert_eq!(s.active, 1, "nothing to switch to");
+    assert_eq!(s.action, Action::Ready);
+    // Refilling does not fill the empty slot.
+    s.refill_ammo(&mut Vec::new());
+    assert!(!s.slots[0].carried);
+    // Buying the weapon whose id the empty slot still holds takes it.
+    let events = run(
+        &mut s,
+        CombatInput {
+            pickup: Some(id("m4")),
+            ..Default::default()
+        },
+        CombatContext::default(),
+        1,
+    );
+    assert!(events.contains(&CombatEvent::Switched { weapon: id("m4") }));
+    assert!(s.carries(id("m4")));
+    assert_eq!(s.active, 0);
+    assert_eq!(s.weapon().magazine, id("m4").def().magazine);
+}
+
+#[test]
 fn picking_up_a_carried_weapon_refills_ammo() {
     let mut s = ready();
     s.slots[1].reserve = 3;

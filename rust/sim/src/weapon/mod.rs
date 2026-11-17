@@ -34,6 +34,9 @@ pub struct WeaponState {
     pub id: WeaponId,
     pub magazine: u16,
     pub reserve: u16,
+    /// False for an empty slot (Zombies starts with only a sidearm). `id`
+    /// then means nothing.
+    pub carried: bool,
 }
 
 impl WeaponState {
@@ -43,6 +46,7 @@ impl WeaponState {
             id,
             magazine: def.magazine,
             reserve: def.reserve,
+            carried: true,
         }
     }
 }
@@ -141,6 +145,25 @@ impl CombatState {
         }
     }
 
+    /// Empties `slot` (for example the primary, to start with only a
+    /// sidearm) and draws the other weapon if that slot was in hand.
+    pub fn without(mut self, slot: Slot) -> Self {
+        let index = slot.index();
+        self.slots[usize::from(index)].carried = false;
+        if self.active == index {
+            self.active = 1 - index;
+            self.action = Action::Raising {
+                remaining: self.def().raise_time,
+            };
+        }
+        self
+    }
+
+    /// Whether `weapon` is in one of the slots.
+    pub fn carries(&self, weapon: WeaponId) -> bool {
+        self.slots.iter().any(|s| s.carried && s.id == weapon)
+    }
+
     pub fn weapon(&self) -> &WeaponState {
         &self.slots[usize::from(self.active)]
     }
@@ -180,7 +203,7 @@ impl CombatState {
     /// server-side debug command, not client input.
     pub fn refill_ammo(&mut self, events: &mut Vec<CombatEvent>) {
         let chamber_empty = self.weapon().magazine == 0;
-        for slot in &mut self.slots {
+        for slot in self.slots.iter_mut().filter(|s| s.carried) {
             *slot = WeaponState::full(slot.id);
         }
         self.reload_queued = false;
@@ -411,7 +434,7 @@ pub fn step(
 
 fn pick_up(state: &mut CombatState, weapon: WeaponId, events: &mut Vec<CombatEvent>) {
     let def = weapon.def();
-    if let Some(slot) = state.slots.iter_mut().find(|s| s.id == weapon) {
+    if let Some(slot) = state.slots.iter_mut().find(|s| s.carried && s.id == weapon) {
         slot.reserve = slot.reserve.max(def.reserve);
         events.push(CombatEvent::PickedUp { weapon });
         return;
@@ -433,7 +456,7 @@ fn pick_up(state: &mut CombatState, weapon: WeaponId, events: &mut Vec<CombatEve
 
 fn request_switch(state: &mut CombatState, input: &CombatInput) {
     let Some(to) = input.switch_to else { return };
-    if usize::from(to) >= state.slots.len() {
+    if !state.slots.get(usize::from(to)).is_some_and(|s| s.carried) {
         return;
     }
     let already_going = match state.action {

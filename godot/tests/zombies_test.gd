@@ -148,7 +148,16 @@ func _economy() -> void:
 	var player := arena.get_node("Player") as FpsPlayer
 	await _sixtieths(20)
 
-	# The PDW-9 on the north wall costs 1000; the player starts with 500 (and an M4).
+	# The player starts with only the M1911, and 500 points.
+	_check(
+		player.weapon_key() == "m1911",
+		"Zombies starts with the M1911, got %s" % player.weapon_key()
+	)
+	Input.action_press("weapon_1")
+	await _sixtieths(30)
+	Input.action_release("weapon_1")
+	_check(player.weapon_key() == "m1911", "and has no primary to switch to")
+	# The PDW-9 on the north wall costs 1000.
 	player.global_position = Vector3(-2, 0.05, -21.6)
 	player.set_look(0.0, -0.45)
 	await _sixtieths(4)

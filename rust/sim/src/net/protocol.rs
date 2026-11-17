@@ -31,7 +31,7 @@ use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState}
 // Version 5 added Team Deathmatch: names, teams, ready-up, loadouts, the
 // match clock, and the scoreboard. Version 6 added burst fire to the
 // predicted combat state, and version 7 mantling to the movement state.
-pub const PROTOCOL_VERSION: u16 = 7;
+pub const PROTOCOL_VERSION: u16 = 8;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
 pub const MAX_INPUTS_PER_PACKET: usize = 24;
 /// Wish vectors are sent as signed bytes; prediction must use the same values.
@@ -1137,6 +1137,7 @@ fn write_combat_state(w: &mut BitWriter, c: &CombatState) {
         write_weapon(w, slot.id);
         w.u16(slot.magazine);
         w.u16(slot.reserve);
+        w.bool(slot.carried);
     }
     w.bits(u32::from(c.active), 2);
     match c.action {
@@ -1193,11 +1194,12 @@ fn read_combat_state(r: &mut BitReader) -> DecodeResult<CombatState> {
             id: read_weapon(r)?,
             magazine: r.u16()?,
             reserve: r.u16()?,
+            carried: r.bool()?,
         })
     };
     let slots = [slot()?, slot()?];
     let active = r.bits(2)? as u8;
-    if usize::from(active) >= slots.len() {
+    if !slots.get(usize::from(active)).is_some_and(|s| s.carried) {
         return Err(DecodeError::Invalid("active slot"));
     }
     let action = match r.bits(3)? {
