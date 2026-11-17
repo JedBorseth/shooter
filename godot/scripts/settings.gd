@@ -58,6 +58,8 @@ const REBINDABLE := {
 	&"inspect": "Inspect weapon",
 	&"loadout": "Loadout",
 	&"scoreboard": "Scoreboard",
+	&"chat": "Chat",
+	&"team_chat": "Team chat",
 }
 
 ## Xbox-style names of gamepad buttons, by `JoyButton`.

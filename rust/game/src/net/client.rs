@@ -369,6 +369,10 @@ impl NetClient {
     /// a flag that went home by itself).
     #[signal]
     fn flag_played(flag: i32, play: GString, player: i32);
+    /// A chat message from player `from` (named `name`), to everyone or to
+    /// their team.
+    #[signal]
+    fn chat_received(from: i32, name: GString, text: GString, team: bool);
 
     /// Hardpoint: the live zone moved, or changed hands.
     #[signal]
@@ -606,6 +610,17 @@ impl NetClient {
     #[func]
     fn team_of(&self, id: i32) -> i32 {
         self.entry(id).map_or(-1, |e| i32::from(e.team))
+    }
+
+    /// Sends a chat message to everyone, or with `team` to our team. The
+    /// server cleans and rate-limits it, and echoes it back to us.
+    #[func]
+    fn send_chat(&mut self, text: GString, team: bool) {
+        let text = text.to_string();
+        if text.trim().is_empty() {
+            return;
+        }
+        self.send_reliable(&ClientMessage::Chat { text, team });
     }
 
     /// Tells the server we are ready (or not) to start the match.
@@ -923,6 +938,15 @@ impl NetClient {
                 // The server owns prop damage: clients only show the states
                 // it sends, never damage props themselves online.
                 self.props.apply_state(&PropSnapshot { id, stage, impulse });
+            }
+            GameEvent::Chat { from, text, team } => {
+                let name = self.name_of(i32::from(from));
+                self.signals().chat_received().emit(
+                    i32::from(from),
+                    &name,
+                    &GString::from(text.as_str()),
+                    team,
+                );
             }
         }
     }

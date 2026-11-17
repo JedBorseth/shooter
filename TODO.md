@@ -114,7 +114,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [ ] Replays on slopes: `body::place` restores the body's floor contact but not its remembered floor normal, so a correction replayed on the ramp may drift and correct again. Add a ramp run to `godot/tests/net_test.gd` and restore the floor normal if it shows up.
 - [x] Reliable game events on the reliable ENet channel: hits, damage, kills (`NetClient.kill_reported`, ready for a kill feed), and score.
 - [x] Reliable events for Phase 4: joins and leaves with player names and teams, the match phase and clock, and the scoreboard.
-- [ ] Chat.
+- [x] Chat: Enter to everyone, Y to your team (`shooter_sim::chat` cleans and rate-limits messages on the server).
 - [x] Hit reactions for third parties: `PlayerView` carries a wrapping hit count and the latest hit's heading, so everyone sees the flinch.
 - [x] Validate view ticks against the shooter's round trip: `LagHistory::rewind_target_for` rewinds no further than the ENet round trip plus 0.25 s of interpolation slack explains (and never past the 300 ms cap).
 - [ ] Bandwidth: send the owner's full state only when it differs from what the client predicted, or delta-compress it like remote players (about 60 kbps down and 27 kbps up per client today, with 60 Hz snapshots and 120 Hz inputs).

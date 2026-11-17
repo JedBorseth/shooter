@@ -76,6 +76,9 @@ func _input(event: InputEvent) -> void:
 		return
 	var pause := event.is_action_pressed(PAUSE_ACTION)
 	if not is_open():
+		# Esc in a text field (chat) belongs to the field.
+		if pause and get_viewport().gui_get_focus_owner() is LineEdit:
+			return
 		if pause and not title_menu:
 			get_viewport().set_input_as_handled()
 			open()

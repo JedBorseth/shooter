@@ -5,6 +5,7 @@
 //! and can be unit-tested without the engine.
 
 pub mod bot;
+pub mod chat;
 pub mod ctf;
 pub mod fmath;
 pub mod gun_game;

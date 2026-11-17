@@ -117,6 +117,14 @@ loadout={
 "deadzone": 0.2,
 "events": [Object(InputEventKey,"physical_keycode":76), Object(InputEventJoypadButton,"device":-1,"button_index":11,"pressed":true)]
 }
+chat={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":4194309)]
+}
+team_chat={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":89)]
+}
 refill_ammo={
 "deadzone": 0.2,
 "events": [Object(InputEventKey,"physical_keycode":84)]

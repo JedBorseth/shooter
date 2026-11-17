@@ -53,6 +53,7 @@ use godot::classes::{
 use godot::global::Error;
 use godot::prelude::*;
 use shooter_sim::bot::Skill;
+use shooter_sim::chat::{self, ChatLimiter};
 use shooter_sim::ctf::{FlagEvent, FlagPlayer, FlagRules, FlagState, Flags};
 use shooter_sim::gun_game::{self, Progress, Step};
 use shooter_sim::hardpoint::{HardpointRules, HardpointState, HillTime, Holder, Zone};
@@ -266,6 +267,8 @@ struct ClientSlot {
     ready: bool,
     /// The primary weapon for the next spawn.
     primary: WeaponId,
+    /// Chat rate limit.
+    chat: ChatLimiter,
 }
 
 struct Avatar {
@@ -461,6 +464,9 @@ impl INode3D for NetServer {
             }
         }
         self.drop_silent_peers();
+        for client in &mut self.clients {
+            client.chat.tick(TICK_DT);
+        }
 
         if self.navigation_pending && self.tick >= 2 {
             self.navigation_pending = false;
@@ -779,6 +785,7 @@ impl NetServer {
                     outbox: Vec::new(),
                     ready: false,
                     primary: default_primary(),
+                    chat: ChatLimiter::default(),
                 });
             }
             NetEvent::Disconnect(peer) => {
@@ -895,6 +902,40 @@ impl NetServer {
                     avatar.primary = primary;
                 }
             }
+            ClientMessage::Chat { text, team } => self.relay_chat(index, &text, team),
+        }
+    }
+
+    /// Passes a chat message on, cleaned and rate limited: to everyone, or to
+    /// the sender's team (in Free-for-all, a team message reaches only the
+    /// sender).
+    fn relay_chat(&mut self, index: usize, text: &str, team: bool) {
+        let Some(from) = self.clients[index].player else {
+            return;
+        };
+        let Some(text) = chat::clean_message(text) else {
+            return;
+        };
+        if !self.clients[index].chat.allow() {
+            return;
+        }
+        let event = GameEvent::Chat { from, text, team };
+        if !team {
+            self.broadcast_event(&event);
+            return;
+        }
+        let Some(sender) = self.avatars.iter().find(|a| a.id == from) else {
+            return;
+        };
+        let side = self.side(sender);
+        let recipients: Vec<u8> = self
+            .avatars
+            .iter()
+            .filter(|a| self.side(a) == side)
+            .map(|a| a.id)
+            .collect();
+        for id in recipients {
+            self.send_event(id, event.clone());
         }
     }
 

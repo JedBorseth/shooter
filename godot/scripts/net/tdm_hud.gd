@@ -12,6 +12,7 @@ extends CanvasLayer
 ##   team, or in Gun Game one table ordered by weapon;
 ## - the lobby, countdown, and results banners, and in Gun Game a callout for
 ##   each new weapon;
+## - chat, bottom left: Enter to talk to everyone, Y to your team;
 ## - the loadout menu (L, or D-pad up), which also holds the Ready button in
 ##   the lobby. It opens by itself when we join a lobby. A new primary applies
 ##   from the next spawn. Gun Game has no loadouts: the menu shows the ladder.
@@ -27,6 +28,9 @@ const ENEMY := Color("ff7a5c")
 const FEED_SECONDS := 6.0
 const FEED_LINES := 5
 const CALLOUT_SECONDS := 2.2
+## Seconds a chat line stays up, and how many show at once.
+const CHAT_SECONDS := 10.0
+const CHAT_LINES := 6
 ## A line for each loadout weapon; weapons not listed show only their name.
 const WEAPON_ROLES := {
 	"m4": "Assault rifle. Accurate, all-round.",
@@ -71,6 +75,10 @@ var _callout: Label
 var _sub_callout: Label
 var _callout_left := 0.0
 var _is_ready := false
+var _chat_log: VBoxContainer
+var _chat_input: LineEdit
+## The message being typed goes to our team only.
+var _chat_team := false
 var _opened_for_lobby := false
 ## Gun Game: every player's last known level, to call out changes, and the
 ## match phase they were seen in.
@@ -86,6 +94,7 @@ func _ready() -> void:
 	if client == null:
 		return
 	client.kill_reported.connect(_on_kill)
+	client.chat_received.connect(_on_chat)
 	client.match_changed.connect(_refresh_board)
 	client.roster_changed.connect(_refresh_board)
 	client.scoreboard_changed.connect(_refresh_board)
@@ -94,6 +103,12 @@ func _ready() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not _joined():
 		return
+	if not _chat_input.visible and not _menu.visible:
+		for action: StringName in [&"chat", &"team_chat"]:
+			if event.is_action_pressed(action):
+				get_viewport().set_input_as_handled()
+				open_chat(action == &"team_chat")
+				return
 	if event.is_action_pressed(&"loadout"):
 		get_viewport().set_input_as_handled()
 		_set_menu_open(not _menu.visible)
@@ -137,6 +152,7 @@ func _process(delta: float) -> void:
 	_ladder_box.visible = ffa
 	_menu_eyebrow.text = String(info.get("mode_name", "Team Deathmatch")).to_upper()
 	_menu_title.text = "Weapon ladder" if ffa else "Loadout"
+	_age_chat(delta)
 
 	if phase == "lobby" and not _opened_for_lobby:
 		_opened_for_lobby = true
@@ -613,6 +629,7 @@ func _build() -> void:
 	_build_score_bar()
 	_build_banners()
 	_build_feed()
+	_build_chat()
 	_build_board()
 	_build_menu()
 
@@ -690,6 +707,103 @@ func _build_feed() -> void:
 	_feed.alignment = BoxContainer.ALIGNMENT_BEGIN
 	_feed.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_feed)
+
+
+# --- Chat ------------------------------------------------------------------------
+
+
+func _build_chat() -> void:
+	var box := VBoxContainer.new()
+	box.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
+	box.position = Vector2(24, -330)
+	box.custom_minimum_size = Vector2(520, 0)
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(box)
+	_chat_log = VBoxContainer.new()
+	_chat_log.add_theme_constant_override("separation", 2)
+	_chat_log.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(_chat_log)
+	_chat_input = LineEdit.new()
+	_chat_input.max_length = 120
+	_chat_input.custom_minimum_size = Vector2(520, 36)
+	_chat_input.visible = false
+	MenuStyle.style_line_edit(_chat_input)
+	_chat_input.text_submitted.connect(_send_chat)
+	_chat_input.gui_input.connect(_on_chat_key)
+	box.add_child(_chat_input)
+
+
+## Starts typing a message: to everyone, or with `team`, to our team.
+func open_chat(team: bool) -> void:
+	_chat_team = team
+	_chat_input.placeholder_text = "Team message" if team else "Message everyone"
+	_chat_input.text = ""
+	_chat_input.visible = true
+	_chat_input.grab_focus.call_deferred()
+	if player != null and is_instance_valid(player):
+		player.set_input_enabled(false)
+	# Show the recent lines while typing.
+	for line in _chat_log.get_children():
+		line.modulate.a = 1.0
+
+
+func _close_chat() -> void:
+	_chat_input.visible = false
+	_chat_input.release_focus()
+	if player != null and is_instance_valid(player) and not _menu.visible:
+		player.set_input_enabled(true)
+
+
+func _send_chat(text: String) -> void:
+	if text.strip_edges() != "":
+		client.send_chat(text, _chat_team)
+	_close_chat()
+
+
+func _on_chat_key(event: InputEvent) -> void:
+	if event.is_action_pressed(&"ui_cancel"):
+		_chat_input.accept_event()
+		_close_chat()
+
+
+## Whether a message is being typed (tests).
+func is_chatting() -> bool:
+	return _chat_input.visible
+
+
+## The chat lines on screen, oldest first (tests).
+func chat_lines() -> PackedStringArray:
+	var lines := PackedStringArray()
+	for line: Label in _chat_log.get_children():
+		lines.append(line.text)
+	return lines
+
+
+func _on_chat(from: int, name: String, text: String, team: bool) -> void:
+	var line := Label.new()
+	line.text = "%s%s:  %s" % ["[TEAM] " if team else "", name, text]
+	line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	line.custom_minimum_size.x = 520
+	var ffa: bool = client.match_info().get("free_for_all", false)
+	var colour := ALLY if from == client.player_id() or (team and not ffa) else Color.WHITE
+	line.add_theme_color_override("font_color", colour)
+	line.add_theme_font_size_override("font_size", 17)
+	line.add_theme_constant_override("outline_size", 6)
+	line.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+	line.set_meta(&"left", CHAT_SECONDS)
+	_chat_log.add_child(line)
+	while _chat_log.get_child_count() > CHAT_LINES:
+		var oldest := _chat_log.get_child(0)
+		_chat_log.remove_child(oldest)
+		oldest.queue_free()
+
+
+func _age_chat(delta: float) -> void:
+	for line in _chat_log.get_children():
+		var left: float = float(line.get_meta(&"left", 0.0)) - delta
+		line.set_meta(&"left", left)
+		# Kept (dimmed out) for the chat history while typing.
+		line.modulate.a = 1.0 if _chat_input.visible else clampf(left / 0.8, 0.0, 1.0)
 
 
 func _build_board() -> void:
