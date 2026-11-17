@@ -156,7 +156,9 @@ func _check_audio(zombies: Node) -> void:
 		not hover.playing and zombies.get("_next_hover_time_msec") == next_time,
 		"moving to another button cannot bypass hover cooldown"
 	)
-	await create_timer(0.45).timeout
+	# The cooldown runs on the wall clock, and CI steps frames faster than real time.
+	while Time.get_ticks_msec() <= next_time:
+		await process_frame
 	zombies.get_node("Canvas/Back").mouse_entered.emit()
 	_check(hover.playing, "hover can play again after cooldown")
 	var replay_time: int = zombies.get("_next_hover_time_msec")
