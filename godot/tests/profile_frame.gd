@@ -90,6 +90,12 @@ func _run() -> void:
 		["no first-person weapon", _visible.bind(_player.get_node_or_null("Head"), false)],
 		["anisotropic filtering off", _aniso.bind(Viewport.ANISOTROPY_DISABLED)],
 		["half render scale (bilinear)", _scale.bind(0.5)],
+		# What the map's own content costs (each is n/a where a map has none).
+		["no decals", _visible.bind(scene.get_node_or_null("Decals"), false)],
+		["no particle effects", _visible.bind(scene.get_node_or_null("Effects"), false)],
+		["no props", _visible.bind(scene.get_node_or_null("Props"), false)],
+		["no skyline (far chunk)", _hide_meshes.bind(scene, "far")],
+		["no small-detail chunks", _hide_meshes.bind(scene, "_detail")],
 	]
 	for variant: Array in variants:
 		var change: Callable = variant[1]
@@ -221,6 +227,21 @@ func _visible(node: Node, on: bool) -> Variant:
 		return null
 	node.set("visible", on)
 	return func() -> void: node.set("visible", not on)
+
+
+## Hides every mesh whose name contains `part` (the city's chunks).
+func _hide_meshes(scene: Node, part: String) -> Variant:
+	var hidden: Array[Node3D] = []
+	for node in scene.find_children("*", "MeshInstance3D", true, false):
+		var mesh := node as MeshInstance3D
+		if part in String(mesh.name) and mesh.visible:
+			mesh.visible = false
+			hidden.append(mesh)
+	if hidden.is_empty():
+		return null
+	return func() -> void:
+		for mesh in hidden:
+			mesh.visible = true
 
 
 func _env_or(key: String, fallback: String) -> String:
