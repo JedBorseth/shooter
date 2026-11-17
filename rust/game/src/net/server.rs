@@ -43,7 +43,7 @@ use shooter_sim::net::discovery::{ServerInfo, query_port_for};
 use shooter_sim::net::input_queue::InputQueue;
 use shooter_sim::net::lag::{self, LagHistory, Pellet, Target};
 use shooter_sim::net::protocol::{
-    ClientMessage, GameEvent, MAX_EVENTS_PER_MESSAGE, OwnState, PROTOCOL_VERSION, PlayerView,
+    self, ClientMessage, GameEvent, MAX_EVENTS_PER_MESSAGE, OwnState, PROTOCOL_VERSION, PlayerView,
     Predicted, ScoreRow, ServerMessage, Snapshot,
 };
 use shooter_sim::net::snapshot_history::SnapshotHistory;
@@ -215,6 +215,10 @@ struct Avatar {
     /// Tick of the latest spawn: shots rewound to before it cannot hit this life.
     spawned_at: Tick,
     score: ScoreState,
+    /// Hits taken (wrapping) and the latest one's heading, for everyone's
+    /// flinch (see `PlayerView::hits`).
+    hits: u8,
+    hit_heading: u8,
 }
 
 /// A shot fired this tick, waiting to be checked.
@@ -627,6 +631,8 @@ impl NetServer {
             respawn_in: 0.0,
             spawned_at: self.tick,
             score: ScoreState::default(),
+            hits: 0,
+            hit_heading: 0,
         });
         let event = joined_event(self.avatars.last().expect("just pushed"));
         self.broadcast_event(&event);
@@ -1009,6 +1015,9 @@ impl NetServer {
             if let Some(brain) = &mut victim.brain {
                 brain.on_hurt(shot.shooter, shot.eye, self.tick);
             }
+            let travel = victim.predicted.position - origin;
+            victim.hits = victim.hits.wrapping_add(1);
+            victim.hit_heading = protocol::heading_to_u8(travel.x, travel.z);
             self.send_event(
                 shot.shooter,
                 GameEvent::Hit {
@@ -1240,7 +1249,11 @@ impl NetServer {
         let mut views: Vec<PlayerView> = self
             .avatars
             .iter()
-            .map(|a| PlayerView::from_state(a.id, &a.predicted, a.yaw, a.pitch))
+            .map(|a| PlayerView {
+                hits: a.hits,
+                hit_heading: a.hit_heading,
+                ..PlayerView::from_state(a.id, &a.predicted, a.yaw, a.pitch)
+            })
             .collect();
         views.sort_by_key(|v| v.id);
         self.history.insert(self.tick, views.clone());

@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use godot::classes::{AudioStream, AudioStreamPlayer3D, INode3D, Label3D, Node3D, ResourceLoader};
 use godot::prelude::*;
 pub use shooter_sim::net::lag::RemoteSample;
+use shooter_sim::net::protocol;
 use shooter_sim::weapon::{Reload, Slot, WeaponId};
 
 use crate::character::rig::{SoldierFrame, SoldierRig};
@@ -32,6 +33,9 @@ pub struct RemotePlayer {
     name_label: OnReady<Gd<Label3D>>,
 
     shots_fired: Option<u32>,
+    hits: Option<u8>,
+    /// Flinches played from snapshots (tests).
+    hits_seen: u32,
     /// Last drawn feet position and the velocity estimated from it.
     last_position: Option<Vector3>,
     velocity: Vector3,
@@ -71,6 +75,12 @@ impl RemotePlayer {
     }
 
     /// A small predicted flinch away from the local player's hit.
+    /// Hits this player was seen to take, from the snapshots (tests).
+    #[func]
+    fn hits_seen(&self) -> u32 {
+        self.hits_seen
+    }
+
     #[func]
     pub fn react_to_hit(&mut self, direction: Vector3, killed: bool) {
         self.rig.bind_mut().hit(direction, killed);
@@ -139,6 +149,15 @@ impl RemotePlayer {
         self.rig.bind_mut().update(&frame, delta);
         // The server rewinds exactly this pose when it checks our shots.
         self.hitboxes.bind_mut().set_pose(s.hitbox_pose());
+
+        // A hit from anyone: flinch away from it (or fall away, if it killed).
+        let hit = self.hits.is_some_and(|last| s.hits != last);
+        self.hits = Some(s.hits);
+        if hit {
+            self.hits_seen += 1;
+            let (x, z) = protocol::hit_direction(s.hit_heading);
+            self.rig.bind_mut().hit(Vector3::new(x, 0.0, z), !s.alive);
+        }
 
         let fired = self.shots_fired.is_some_and(|last| s.shots_fired > last);
         self.shots_fired = Some(s.shots_fired);
