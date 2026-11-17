@@ -65,7 +65,7 @@ func _run() -> void:
 				var yaw := deg_to_rad(angle[1] as float)
 				var pitch := deg_to_rad(angle[2] as float)
 				var dir := Vector3(sin(yaw) * cos(pitch), sin(pitch), cos(yaw) * cos(pitch))
-				var dist := radius / tan(deg_to_rad(camera.fov * 0.5)) * (angle[3] as float) * 1.08
+				var dist := radius / tan(deg_to_rad(camera.fov * 0.5)) * (angle[3] as float) * 0.62
 				var aim := centre
 				if angle[0] == "receiver":
 					# The middle third: the receiver, the grip, and the magazine.
@@ -88,8 +88,9 @@ func _show_parts(view: Node3D) -> void:
 	if mesh == null or not mesh.has_node("World"):
 		return
 	for part: Node in mesh.get_children():
-		if part is Node3D:
-			(part as Node3D).visible = part.name not in ["World", "MagazineSpare", "OpticRail"]
+		# The rail keeps whatever the view set: it carries a built-in optic.
+		if part is Node3D and part.name != "OpticRail":
+			(part as Node3D).visible = part.name not in ["World", "MagazineSpare"]
 
 
 ## A neutral grey studio: sky light, a key light with shadows, and a fill.

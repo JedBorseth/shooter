@@ -139,6 +139,10 @@ func _check_view(key: String, view: Node3D) -> void:
 		_check(
 			sights != null and sights.get("style") == "reflex", "%s: carries a reflex sight" % key
 		)
+		_check(
+			sights != null and (sights.get("glow") as Color).a > 0.0,
+			"%s: the reflex sight has a lit dot" % key
+		)
 	for part: String in WEAPONS[key]:
 		_check(view.has_node("Model/Mesh/" + part), "%s: has %s" % [key, part])
 	_check(

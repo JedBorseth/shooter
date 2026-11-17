@@ -77,12 +77,17 @@ func _first_person(player: FpsPlayer, weapon: String) -> void:
 		await _sixtieths(2)
 		Input.action_release("weapon_2")
 	else:
-		player.give_weapon(weapon)
+		if not player.give_weapon(weapon):
+			push_error("capture_weapons: no weapon `%s`" % weapon)
+			return
 		Input.action_press("weapon_1")
 		await _sixtieths(2)
 		Input.action_release("weapon_1")
 	player.refill_all_ammo()
 	await _sixtieths(80)
+	if player.weapon_key() != weapon:
+		push_error("capture_weapons: holding `%s`, not `%s`" % [player.weapon_key(), weapon])
+		return
 	await _shot("%s_1hip" % tag)
 	Input.action_press("aim")
 	await _sixtieths(45)

@@ -31,6 +31,7 @@ style = "reflex"
 rear_base = -0.0245
 front_base = -0.0245
 front_z = 0.0
+glow = Color(1, 0.12, 0.06, 1)
 
 [node name="Muzzle" type="Marker3D" parent="."]
 position = Vector3(0.0000, -0.0533, -0.6622)
