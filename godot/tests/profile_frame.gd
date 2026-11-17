@@ -11,13 +11,21 @@ extends SceneTree
 ##   PROFILE_MAP     testing, slamcity, or zombies (default slamcity).
 ##   PROFILE_VIEW    index of the benchmark viewpoint (default: the first).
 ##   PROFILE_PRESET  low, medium, or high (default medium).
-##   PROFILE_FRAMES  frames measured per variant (default 90).
-##   PROFILE_ONLY    measure only the variants whose names contain this text.
+##   PROFILE_FRAMES  frames measured per round (default 90).
+##   PROFILE_ROUNDS  rounds per variant, each beside its own full-frame
+##                   measurement (default 4).
+##   PROFILE_SHADER  "res://a.gdshader=/abs/other.gdshader[,res://b...=...][;...]":
+##                   also measures, as one variant per ";"-separated entry,
+##                   each listed shader with the other file's code in its
+##                   place (to price a shader change in the same run).
+##   PROFILE_ONLY    measure only the variants whose label contains this text
+##                   (several texts separated by |).
 
 const Benchmark := preload("res://tests/benchmark.gd")
 const WARMUP := 30
 
 var _frames := 90
+var _rounds := 4
 var _player: FpsPlayer
 var _view: Array
 var _env: Environment
@@ -35,6 +43,9 @@ func _run() -> void:
 	var frames := OS.get_environment("PROFILE_FRAMES")
 	if frames.is_valid_int():
 		_frames = maxi(int(frames), 10)
+	var rounds := OS.get_environment("PROFILE_ROUNDS")
+	if rounds.is_valid_int():
+		_rounds = maxi(int(rounds), 1)
 	if not Benchmark.MAPS.has(map) or not Benchmark.PRESET_KEYS.has(preset):
 		push_error("profile_frame: unknown map or preset")
 		quit(1)
@@ -68,7 +79,7 @@ func _run() -> void:
 
 	print("frame cost on %s, %s, %s" % [RenderingServer.get_video_adapter_name(), map, preset])
 	var base := await _measure()
-	print("%-34s %6.2f ms" % ["everything on", base])
+	print("%-38s %6.2f ms" % ["everything on", base])
 	var lens: CanvasLayer = _settings.get("_lens")
 	var hud := scene.get_node_or_null("HUD") as CanvasItem
 	var variants: Array[Array] = [
@@ -102,19 +113,53 @@ func _run() -> void:
 		["no props", _visible.bind(scene.get_node_or_null("Props"), false)],
 		["no skyline (far chunk)", _hide_meshes.bind(scene, "far")],
 		["no small-detail chunks", _hide_meshes.bind(scene, "_detail")],
+		["no lens dirt", _env_set.bind(&"glow_map_strength", 0.0)],
+		["glow without its two widest levels", _glow_wide_off],
+		[
+			"glow screen blend",
+			_env_set.bind(&"glow_blend_mode", Environment.GLOW_BLEND_MODE_SCREEN)
+		],
+		["temporal antialiasing in place of SMAA", _taa],
+		["nothing changed (noise check)", func() -> Variant: return func() -> void: pass],
 	]
+	for entry: String in OS.get_environment("PROFILE_SHADER").split(";", false):
+		var swaps := entry.split(",", false)
+		var label := (
+			"shader "
+			+ ", ".join(Array(swaps).map(func(swap: String) -> String: return swap.get_file()))
+		)
+		variants.append([label, _shader_code.bind(swaps)])
 	var only := OS.get_environment("PROFILE_ONLY")
+	if not only.is_empty():
+		var wanted := Array(only.split("|"))
+		variants = variants.filter(
+			func(v: Array) -> bool: return wanted.any(func(w: String) -> bool: return w in v[0])
+		)
+	# Each variant is measured in several short rounds, alternating with the
+	# full frame, and the cost is the median of the differences between each
+	# round and the full frame measured right beside it. GPU time drifts by a
+	# few tenths of a millisecond over a run (clocks, heat), and other programs
+	# on the GPU inflate a stretch of frames now and then; a single comparison
+	# against the first measurement would read either as a cost.
 	for variant: Array in variants:
-		if not only.is_empty() and not (variant[0] as String).contains(only):
-			continue
 		var change: Callable = variant[1]
-		var undo: Variant = change.call()
-		if undo == null:
-			print("%-34s      n/a" % variant[0])
+		var costs := PackedFloat64Array()
+		var with := PackedFloat64Array()
+		var applies := true
+		for round in _rounds:
+			var without := await _measure()
+			var undo: Variant = change.call()
+			if undo == null:
+				applies = false
+				break
+			var measured := await _measure()
+			(undo as Callable).call()
+			with.append(measured)
+			costs.append(measured - without)
+		if not applies:
+			print("%-38s      n/a" % variant[0])
 			continue
-		var cost := await _measure()
-		print("%-34s %6.2f ms  (%+.2f)" % [variant[0], cost, cost - base])
-		(undo as Callable).call()
+		print("%-38s %6.2f ms  (%+.2f)" % [variant[0], _median(with), _median(costs)])
 	_settings.reset_to_defaults()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://profile_settings.cfg"))
 	quit()
@@ -122,6 +167,15 @@ func _run() -> void:
 
 ## The median GPU time over the measured frames: a shader that compiles when a
 ## variant first draws stalls a frame or two, which would skew an average.
+func _median(values: PackedFloat64Array) -> float:
+	var sorted := values.duplicate()
+	sorted.sort()
+	var middle := sorted.size() / 2
+	if sorted.size() % 2 == 1:
+		return sorted[middle]
+	return (sorted[middle - 1] + sorted[middle]) * 0.5
+
+
 func _measure() -> float:
 	await _hold(WARMUP)
 	var times := PackedFloat64Array()
@@ -196,7 +250,8 @@ func _glow_bicubic(on: bool) -> Variant:
 	if _env == null or not _env.glow_enabled:
 		return null
 	RenderingServer.environment_glow_set_use_bicubic_upscale(on)
-	return func() -> void: RenderingServer.environment_glow_set_use_bicubic_upscale(not on)
+	# The preset's own setting comes back when the preset is applied again.
+	return func() -> void: _settings.set_graphics_preset(_settings.graphics_quality)
 
 
 func _glow_coarse() -> Variant:
@@ -229,6 +284,49 @@ func _shadow_filter(quality: int) -> Variant:
 	)
 	# The preset's own filter comes back when the preset is applied again.
 	return func() -> void: _settings.set_graphics_preset(_settings.graphics_quality)
+
+
+func _glow_wide_off() -> Variant:
+	if _env == null or not _env.glow_enabled:
+		return null
+	var was: Array[float] = [_env.get_glow_level(5), _env.get_glow_level(6)]
+	_env.set_glow_level(5, 0.0)
+	_env.set_glow_level(6, 0.0)
+	return func() -> void:
+		_env.set_glow_level(5, was[0])
+		_env.set_glow_level(6, was[1])
+
+
+func _taa() -> Variant:
+	if root.use_taa:
+		return null
+	var aa := root.screen_space_aa
+	var msaa := root.msaa_3d
+	root.use_taa = true
+	root.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
+	root.msaa_3d = Viewport.MSAA_DISABLED
+	return func() -> void:
+		root.use_taa = false
+		root.screen_space_aa = aa
+		root.msaa_3d = msaa
+
+
+func _shader_code(swaps: PackedStringArray) -> Variant:
+	var undo: Array[Callable] = []
+	for swap: String in swaps:
+		var parts := swap.split("=")
+		var shader := load(parts[0]) as Shader
+		var code := FileAccess.get_file_as_string(parts[1])
+		if shader == null or code.is_empty():
+			continue
+		var was := shader.code
+		shader.code = code
+		undo.append(func() -> void: shader.code = was)
+	if undo.is_empty():
+		return null
+	return func() -> void:
+		for step: Callable in undo:
+			step.call()
 
 
 func _visible(node: Node, on: bool) -> Variant:

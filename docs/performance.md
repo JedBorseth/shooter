@@ -61,7 +61,11 @@ PROFILE_MAP=slamcity PROFILE_VIEW=1 PROFILE_PRESET=medium \
   --audio-driver Dummy --script res://tests/profile_frame.gd
 ```
 
-It prints the median GPU time of each variant, so a shader that compiles when a variant first draws does not skew it. Differences under about 0.1 ms are noise.
+It measures each variant in several short rounds, each right beside a measurement of the full frame, and prints the median difference: GPU time drifts over a run, and other programs on the GPU inflate a stretch of frames now and then, which a single comparison would read as a cost. Within a round it takes the median frame, so a shader that compiles when a variant first draws does not skew it. The last line, "nothing changed", shows the noise left. `PROFILE_ROUNDS` (default 4) and `PROFILE_FRAMES` (per round, default 90) trade time for precision, and `PROFILE_ONLY` picks variants by label (several separated by `|`).
+
+To price a shader change, `PROFILE_SHADER` also measures shaders with another file's code in their place, in the same run: `PROFILE_SHADER="res://shaders/a.gdshader=/path/a_new.gdshader,res://shaders/b.gdshader=/path/b_new.gdshader"` is one variant that swaps both (separate variants with `;`).
+
+`godot/tests/capture_picture.gd` saves the screenshots the lighting and post-processing reviews use: views into the sun, surfaces at a grazing angle, soldiers on the ground, eight consecutive frames of a slow turn (for shimmer), and the screen feedback states. See its header for how to run it.
 
 ## Graphics presets
 
