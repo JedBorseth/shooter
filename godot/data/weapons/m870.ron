@@ -12,6 +12,7 @@
     reserve: 30,
     damage: (near: 20, far: 6, falloff_start: 6, falloff_end: 16, headshot: 1.2),
     range: 60,
+    penetration: 0.08,
     reload: PerRound(start: 0.45, per_round: 0.5, end: 0.45),
     ads_time: 0.18,
     sprint_out_time: 0.15,

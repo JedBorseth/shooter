@@ -61,6 +61,7 @@ use super::discovery::QueryResponder;
 use super::transport::{self, NetEvent};
 use crate::body::{self, BodyParts};
 use crate::convert::{to_godot, to_sim};
+use crate::penetration;
 use crate::pickup::{INTERACT_LAYER, WeaponPickup};
 use crate::target::WORLD_LAYER;
 
@@ -958,15 +959,29 @@ impl NetServer {
                 let offset =
                     shot.aim_offset + weapon::pellet_offset(shot.weapon, shot.shot, pellet);
                 let direction = player::aim_direction(shot.yaw, shot.pitch, offset).normalize();
-                let to = shot.eye + to_godot(direction) * def.range;
-                // Walls do not move, so they are tested in the present.
-                let max_distance = world_hit(&mut space, shot.eye, to)
-                    .map_or(def.range, |hit| shot.eye.distance_to(hit));
-                Pellet {
-                    origin,
-                    direction,
-                    max_distance,
+                // Walls do not move, so they are tested in the present. The
+                // pellet may go on through thin ones, weaker.
+                let path = penetration::trace(
+                    &mut space,
+                    shot.eye,
+                    to_godot(direction),
+                    def.range,
+                    WORLD_LAYER,
+                    &Array::new(),
+                    def.penetration,
+                );
+                let mut pellet = Pellet::new(origin, direction, shot.eye.distance_to(path.end));
+                let mut scale = 1.0;
+                let mut walls = pellet.walls.iter_mut();
+                for hit in &path.hits {
+                    if hit.damage_scale < scale
+                        && let Some(wall) = walls.next()
+                    {
+                        scale = hit.damage_scale;
+                        *wall = (shot.eye.distance_to(hit.position), scale);
+                    }
                 }
+                pellet
             })
             .collect();
 

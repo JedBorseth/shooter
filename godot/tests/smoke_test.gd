@@ -61,6 +61,7 @@ func _run() -> void:
 	await _shotgun(main, player)
 	await _sniper(main, player)
 	await _burst_and_lmg(main, player)
+	await _penetration(main, player)
 	await _health(player)
 	await _sentry(main, player)
 	await _gamepad(main, player)
@@ -458,6 +459,46 @@ func _score(main: Node, player: FpsPlayer) -> void:
 
 
 ## Spawns a fresh dummy straight ahead and aims at its chest.
+## Rounds go through thin cover, weaker, and stop in thick walls.
+func _penetration(main: Node, player: FpsPlayer) -> void:
+	player.give_weapon("m4")
+	await _sixtieths(60)
+	var dummy := await _dummy_ahead(main, player, 8.0)
+	var dealt := func(wall: Node3D) -> float:
+		await _sixtieths(5)
+		var before: float = dummy.health()
+		await _tap("fire")
+		await _sixtieths(10)
+		var damage := before - float(dummy.health())
+		wall.queue_free()
+		await _sixtieths(40)
+		return damage
+	var open: float = await dealt.call(Node3D.new())
+	var plank: float = await dealt.call(_wall(main, player, 0.04, "wood"))
+	var concrete: float = await dealt.call(_wall(main, player, 0.3, "concrete"))
+	_check(open > 0.0, "an open shot hits the dummy, %.1f damage" % open)
+	_check(
+		plank > open * 0.5 and plank < open,
+		"a rifle round goes through a plank, weaker: %.1f of %.1f" % [plank, open]
+	)
+	_check(concrete == 0.0, "but not through 30 cm of concrete, %.1f damage" % concrete)
+	dummy.queue_free()
+
+
+## A wall `thickness` metres thick, 4 m in front of the player.
+func _wall(main: Node, player: FpsPlayer, thickness: float, surface: String) -> Node3D:
+	var wall := StaticBody3D.new()
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(3, 3, thickness)
+	shape.shape = box
+	wall.add_child(shape)
+	wall.set_meta("surface", surface)
+	main.add_child(wall)
+	wall.global_position = player.global_position + Vector3(0, 1.5, -4)
+	return wall
+
+
 func _dummy_ahead(main: Node, player: FpsPlayer, distance: float) -> Node3D:
 	player.global_position = Vector3(0, 0.05, 20)
 	player.set_look(0.0, 0.0)

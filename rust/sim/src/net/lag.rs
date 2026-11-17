@@ -25,6 +25,7 @@ use super::protocol::PlayerView;
 use super::{TICK_RATE, Tick};
 use crate::hitbox::{self, HitboxPose};
 use crate::movement::Stance;
+use crate::penetration::MAX_WALLS;
 use crate::weapon::{WeaponDef, WeaponId};
 
 /// The furthest back a shot is checked, in seconds. Covers the 100 ms
@@ -187,6 +188,31 @@ pub struct Pellet {
     /// Unit direction.
     pub direction: Vec3,
     pub max_distance: f32,
+    /// Walls the pellet went through on the way: how far along each one ends,
+    /// and the damage multiplier from there on (see `crate::penetration`).
+    /// Unused entries are infinitely far.
+    pub walls: [(f32, f32); MAX_WALLS],
+}
+
+impl Pellet {
+    /// A pellet stopped by the first wall at `max_distance`.
+    pub fn new(origin: Vec3, direction: Vec3, max_distance: f32) -> Self {
+        Self {
+            origin,
+            direction,
+            max_distance,
+            walls: [(f32::INFINITY, 1.0); MAX_WALLS],
+        }
+    }
+
+    /// The damage multiplier for a hit `distance` metres along the pellet.
+    pub fn damage_scale_at(&self, distance: f32) -> f32 {
+        self.walls
+            .iter()
+            .rev()
+            .find(|(end, _)| *end <= distance)
+            .map_or(1.0, |(_, scale)| *scale)
+    }
 }
 
 /// A player a shot may hit, posed at the rewound tick.
@@ -231,7 +257,9 @@ pub fn resolve_shot(def: &WeaponDef, pellets: &[Pellet], targets: &[Target]) -> 
         let Some((id, hit)) = nearest else {
             continue;
         };
-        let damage = def.damage_at(hit.distance) * hit.zone.damage_scale(def.damage.headshot);
+        let damage = def.damage_at(hit.distance)
+            * hit.zone.damage_scale(def.damage.headshot)
+            * pellet.damage_scale_at(hit.distance);
         let headshot = hit.zone == hitbox::HitZone::Head;
         match hits.iter_mut().find(|h| h.id == id) {
             Some(entry) => {
@@ -284,11 +312,7 @@ mod tests {
     fn chest_shot_at(x: f32) -> Pellet {
         let origin = Vec3::new(0.0, 1.3, 0.0);
         let target = Vec3::new(x, 1.3, -10.0);
-        Pellet {
-            origin,
-            direction: (target - origin).normalize(),
-            max_distance: 100.0,
-        }
+        Pellet::new(origin, (target - origin).normalize(), 100.0)
     }
 
     fn targets_at(history: &LagHistory, tick: f64) -> Vec<Target> {
@@ -394,10 +418,12 @@ mod tests {
         let origin = Vec3::new(0.0, 1.5, 0.0);
         let pellets: Vec<Pellet> = [1.7, 1.3, 1.0, 3.0]
             .iter()
-            .map(|y| Pellet {
-                origin,
-                direction: (Vec3::new(0.0, *y, -5.0) - origin).normalize(),
-                max_distance: 50.0,
+            .map(|y| {
+                Pellet::new(
+                    origin,
+                    (Vec3::new(0.0, *y, -5.0) - origin).normalize(),
+                    50.0,
+                )
             })
             .collect();
         let hits = resolve_shot(def, &pellets, &targets);
@@ -419,6 +445,17 @@ mod tests {
             })
             .collect();
         assert!(resolve_shot(def, &blocked, &targets).is_empty());
+
+        // Through a plank 2 m out, the same pellets land weaker.
+        let through: Vec<Pellet> = pellets
+            .iter()
+            .map(|p| Pellet {
+                walls: [(2.05, 0.7), (f32::INFINITY, 1.0)],
+                ..*p
+            })
+            .collect();
+        let weaker = resolve_shot(def, &through, &targets);
+        assert!((weaker[0].damage - hits[0].damage * 0.7).abs() < 1e-3);
     }
 
     #[test]

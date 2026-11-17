@@ -49,6 +49,7 @@ use crate::aim_assist::{AIM_ASSIST_GROUP, AimAssistTarget};
 use crate::audio;
 use crate::body::{self, BodyParts};
 use crate::convert::{to_godot, to_sim};
+use crate::penetration;
 use crate::pickup::{INTERACT_LAYER, WeaponPickup};
 use crate::spring::{Spring, impulse_for_peak, smoothing};
 use crate::target::{HITBOX_LAYER, WORLD_LAYER};
@@ -83,13 +84,6 @@ const LATCHED_ACTIONS: [&str; 10] = [
     "interact",
     "refill_ammo",
 ];
-
-/// What a ray hit: position, normal, and collider.
-struct RayHit {
-    position: Vector3,
-    normal: Vector3,
-    collider: Option<Gd<Node>>,
-}
 
 #[derive(GodotClass)]
 #[class(init, base = CharacterBody3D)]
@@ -1005,25 +999,19 @@ impl FpsPlayer {
             + Vector3::UP * self.params.movement.eye_height(self.state.movement.stance)
     }
 
-    fn ray(&self, from: Vector3, to: Vector3, mask: u32) -> Option<RayHit> {
+    /// The collider a ray from `from` to `to` meets first.
+    fn ray(&self, from: Vector3, to: Vector3, mask: u32) -> Option<Gd<Node>> {
         let mut space = self.base().get_world_3d()?.get_direct_space_state()?;
         let exclude: Array<Rid> = array![self.base().get_rid()];
         let query = PhysicsRayQueryParameters3D::create_ex(from, to)
             .collision_mask(mask)
             .exclude(&exclude)
             .done()?;
-        let hit = space.intersect_ray(&query);
-        if hit.is_empty() {
-            return None;
-        }
-        Some(RayHit {
-            position: hit.get_or_nil("position").try_to::<Vector3>().unwrap_or(to),
-            normal: hit
-                .get_or_nil("normal")
-                .try_to::<Vector3>()
-                .unwrap_or(Vector3::UP),
-            collider: hit.get_or_nil("collider").try_to::<Gd<Node>>().ok(),
-        })
+        space
+            .intersect_ray(&query)
+            .get_or_nil("collider")
+            .try_to::<Gd<Node>>()
+            .ok()
     }
 
     /// The weapon pickup or device under the crosshair, within reach.
@@ -1033,14 +1021,11 @@ impl FpsPlayer {
         }
         let from = self.eye_position();
         let direction = to_godot(player::aim_direction(self.yaw, self.pitch, Vec2::ZERO));
-        let Some(collider) = self
-            .ray(
-                from,
-                from + direction * self.interact_distance,
-                WORLD_LAYER | INTERACT_LAYER,
-            )
-            .and_then(|hit| hit.collider)
-        else {
+        let Some(collider) = self.ray(
+            from,
+            from + direction * self.interact_distance,
+            WORLD_LAYER | INTERACT_LAYER,
+        ) else {
             return;
         };
         match collider.try_cast::<WeaponPickup>() {
@@ -1360,51 +1345,69 @@ impl FpsPlayer {
         let mut targets: Vec<(Gd<Node>, f32, bool, Vector3, f32)> = Vec::new();
         let mut first_end = None;
 
+        let Some(mut space) = self
+            .base()
+            .get_world_3d()
+            .and_then(|world| world.get_direct_space_state())
+        else {
+            return;
+        };
+        let exclude: Array<Rid> = array![self.base().get_rid()];
+
         for pellet in 0..def.pellets {
             let offset = aim_offset + weapon::pellet_offset(weapon, shot, pellet);
             let direction = to_godot(player::aim_direction(self.yaw, self.pitch, offset));
-            let to = origin + direction * def.range;
-            let hit = self.ray(origin, to, WORLD_LAYER | HITBOX_LAYER);
-            let end = hit.as_ref().map(|h| h.position).unwrap_or(to);
-            first_end.get_or_insert(end);
-            let Some(hit) = hit else { continue };
-
-            // Teammates take no damage online, so they confirm no hits either.
-            let target = hit
-                .collider
-                .as_ref()
-                .and_then(find_damageable)
-                .filter(|t| !t.has_meta("friendly") || !t.get_meta("friendly").booleanize());
-            if let (Some(collider), Some(target)) = (&hit.collider, target) {
-                // Untagged damageable colliders (the sentry) count as the chest.
-                let zone = HitZone::from_name(
-                    &collider
-                        .get_meta_ex("hit_zone")
-                        .default(&"chest".to_variant())
-                        .done()
-                        .to_string(),
-                )
-                .unwrap_or(HitZone::Chest);
-                let headshot = zone == HitZone::Head;
-                let distance = origin.distance_to(hit.position);
-                let damage = def.damage_at(distance) * zone.damage_scale(def.damage.headshot);
-                match targets
-                    .iter_mut()
-                    .find(|(t, ..)| t.instance_id() == target.instance_id())
-                {
-                    Some(entry) => {
-                        entry.1 += damage;
-                        entry.2 |= headshot;
+            // Through thin cover, losing damage at each wall.
+            let path = penetration::trace(
+                &mut space,
+                origin,
+                direction,
+                def.range,
+                WORLD_LAYER | HITBOX_LAYER,
+                &exclude,
+                def.penetration,
+            );
+            first_end.get_or_insert(path.end);
+            for hit in path.hits {
+                // Teammates take no damage online, so they confirm no hits either.
+                let target =
+                    hit.collider.as_ref().and_then(find_damageable).filter(|t| {
+                        !t.has_meta("friendly") || !t.get_meta("friendly").booleanize()
+                    });
+                if let (Some(collider), Some(target)) = (&hit.collider, target) {
+                    // Untagged damageable colliders (the sentry) count as the chest.
+                    let zone = HitZone::from_name(
+                        &collider
+                            .get_meta_ex("hit_zone")
+                            .default(&"chest".to_variant())
+                            .done()
+                            .to_string(),
+                    )
+                    .unwrap_or(HitZone::Chest);
+                    let headshot = zone == HitZone::Head;
+                    let distance = origin.distance_to(hit.position);
+                    let damage = def.damage_at(distance)
+                        * zone.damage_scale(def.damage.headshot)
+                        * hit.damage_scale;
+                    match targets
+                        .iter_mut()
+                        .find(|(t, ..)| t.instance_id() == target.instance_id())
+                    {
+                        Some(entry) => {
+                            entry.1 += damage;
+                            entry.2 |= headshot;
+                        }
+                        None => targets.push((target, damage, headshot, direction, distance)),
                     }
-                    None => targets.push((target, damage, headshot, direction, distance)),
+                    let surface =
+                        surface_meta(Some(collider)).unwrap_or_else(|| "flesh".to_owned());
+                    self.spawn_impact(hit.position, hit.normal, false, &surface);
+                } else {
+                    let surface = surface_of(hit.collider.as_ref());
+                    // Shotguns leave a decal for only some pellets to limit clutter.
+                    let decal = def.pellets == 1 || pellet % 3 == 0;
+                    self.spawn_impact(hit.position, hit.normal, decal, &surface);
                 }
-                let surface = surface_meta(Some(collider)).unwrap_or_else(|| "flesh".to_owned());
-                self.spawn_impact(hit.position, hit.normal, false, &surface);
-            } else {
-                let surface = surface_of(hit.collider.as_ref());
-                // Shotguns leave a decal for only some pellets to limit clutter.
-                let decal = def.pellets == 1 || pellet % 3 == 0;
-                self.spawn_impact(hit.position, hit.normal, decal, &surface);
             }
         }
 
@@ -1531,7 +1534,7 @@ impl FpsPlayer {
         let feet = self.current_position + Vector3::UP * 0.1;
         let surface = self
             .ray(feet, feet + Vector3::DOWN * 0.5, WORLD_LAYER)
-            .map(|hit| surface_of(hit.collider.as_ref()))
+            .map(|collider| surface_of(Some(&collider)))
             .unwrap_or_else(|| DEFAULT_SURFACE.to_owned());
         let path = format!("res://assets/audio/footsteps/{surface}");
         let Some(stream) = self.sound(&path, 1.08) else {
@@ -1725,7 +1728,7 @@ fn line_of_sight(
 }
 
 /// Walks up from a hit collider to the first node that can take damage.
-fn find_damageable(collider: &Gd<Node>) -> Option<Gd<Node>> {
+pub(crate) fn find_damageable(collider: &Gd<Node>) -> Option<Gd<Node>> {
     let mut node = Some(collider.clone());
     while let Some(current) = node {
         if current.has_method("apply_damage") {
@@ -1749,7 +1752,7 @@ fn surface_meta(collider: Option<&Gd<Node>>) -> Option<String> {
 }
 
 /// Like [`surface_meta`], defaulting to concrete for untagged world geometry.
-fn surface_of(collider: Option<&Gd<Node>>) -> String {
+pub(crate) fn surface_of(collider: Option<&Gd<Node>>) -> String {
     surface_meta(collider).unwrap_or_else(|| DEFAULT_SURFACE.to_owned())
 }
 

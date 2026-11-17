@@ -10,6 +10,7 @@
     reserve: 120,
     damage: (near: 36, far: 26, falloff_start: 28, falloff_end: 55, headshot: 1.4),
     range: 400,
+    penetration: 0.32,
     reload: Magazine(time: 2.3, empty_time: 2.8),
     ads_time: 0.22,
     sprint_out_time: 0.17,
