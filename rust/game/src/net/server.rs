@@ -383,7 +383,11 @@ impl INode3D for NetServer {
             self.rules.score_limit = self.snd_rules.rounds_to_win;
             self.rules.time_limit = None;
         }
-        godot_print!("server: running {}", self.game.label());
+        godot_print!(
+            "server: build {}, protocol {PROTOCOL_VERSION}, running {}",
+            crate::build_info::label(),
+            self.game.label()
+        );
         self.spawn_rules = SpawnRules::for_mode(&self.game);
         if self.game == Mode::CaptureTheFlag {
             // Longer than Team Deathmatch, so clearing a base buys time to
@@ -784,6 +788,7 @@ impl NetServer {
             players: 0,
             max_players: MAX_PLAYERS as u8,
             bots: 0,
+            build: crate::build_info::BUILD.to_owned(),
         };
         match QueryResponder::bind(query_port, info, &self.master_server.to_string()) {
             Ok(responder) => {
@@ -913,6 +918,7 @@ impl NetServer {
                     tick: self.tick,
                     snapshot_interval: self.snapshot_interval.clamp(1, 255) as u8,
                     mode: self.game,
+                    server_build: crate::build_info::BUILD.to_owned(),
                 };
                 transport::send_reliable(&mut peer, &welcome.encode(&[]));
                 // Everyone already here, then the newcomer for everyone.

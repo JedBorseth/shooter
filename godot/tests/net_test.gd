@@ -65,6 +65,10 @@ func _run() -> void:
 	if not client.is_joined():
 		_finish()
 		return
+	_check(
+		client.server_build() == GameBuild.build(),
+		"the welcome names the server's build, got %s" % client.server_build()
+	)
 	await _ticks(60)
 	await _play_match(client)
 	var spawn := player.global_position

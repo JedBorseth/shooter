@@ -161,7 +161,7 @@ func _fill(item: TreeItem, server: Dictionary) -> void:
 	)
 	var label: String = server.label if server.label != "" else server.address
 	item.set_text(Column.NAME, server.get("name", label) if online else label)
-	item.set_tooltip_text(Column.NAME, server.address)
+	item.set_tooltip_text(Column.NAME, server_tooltip(server))
 	item.set_text(Column.MAP, server.get("map", "") if online else "")
 	item.set_text(Column.MODE, server.get("mode", "") if online else "")
 	match server.state:
@@ -191,6 +191,15 @@ func _fill(item: TreeItem, server: Dictionary) -> void:
 		item.set_custom_color(Column.PING, _ping_color(server.ping_ms))
 		if server.players >= server.max_players:
 			item.set_custom_color(Column.PLAYERS, UiTheme.HARM)
+
+
+## The name column's tooltip: the address, and the build the server runs.
+static func server_tooltip(server: Dictionary) -> String:
+	var build: String = server.get("build", "")
+	if build.is_empty():
+		return server.address
+	var note := "same as yours" if build == GameBuild.build() else "yours is %s" % GameBuild.build()
+	return "%s\nBuild %s (%s)" % [server.address, build, note]
 
 
 ## Why `server` (another protocol version) cannot be joined, with "%s" for

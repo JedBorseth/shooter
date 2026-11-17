@@ -68,6 +68,7 @@ func _ready() -> void:
 		button.focus_entered.connect(_describe.bind(button))
 		button.mouse_entered.connect(_describe.bind(button))
 	_menu.get_node("TeamDeathmatch").grab_focus()
+	$Margin/Layout/Footer/Build.text = "Build %s" % GameBuild.label()
 	# Back from a server (left, or the connection failed): straight to the browser.
 	if Net.return_to_browser:
 		var message := Net.browser_message

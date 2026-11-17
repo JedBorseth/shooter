@@ -6,6 +6,7 @@ extends CanvasLayer
 signal closed
 
 const GraphicsQuality := preload("res://scripts/graphics.gd")
+const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 
 const PAUSE_ACTION := &"pause"
 const CLICK_SOUND := "res://assets/audio/ui/click.ogg"
@@ -45,6 +46,7 @@ var _owns_pause := false
 @onready var _sections: VBoxContainer = %Sections
 @onready var _scroll: ScrollContainer = %Scroll
 @onready var _hint: Label = %Hint
+@onready var _build: Label = %Build
 @onready var _resume_button: Button = %ResumeButton
 @onready var _settings_button: Button = %SettingsButton
 
@@ -64,6 +66,7 @@ func _ready() -> void:
 	Input.joy_connection_changed.connect(_controller_changed)
 	Settings.changed.connect(_on_settings_changed)
 
+	_build.add_theme_color_override("font_color", UiTheme.TEXT_FAINT)
 	_root.hide()
 	_on_settings_changed()
 
@@ -115,6 +118,7 @@ func open() -> void:
 	_sync_controls()
 	_show_main()
 	%LeaveButton.text = "Leave server" if Net.is_online() else "Main menu"
+	_build.text = build_text()
 	_root.show()
 	_focus(_resume_button)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -127,9 +131,19 @@ func open() -> void:
 
 func open_options() -> void:
 	_sync_controls()
+	_build.text = build_text()
 	_root.show()
 	_show_settings()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+## This game's build, and the server's when we are on one.
+func build_text() -> String:
+	var text := "BUILD %s" % GameBuild.label()
+	var client := Net.client()
+	if client != null and not client.server_build().is_empty():
+		text += "   •   SERVER %s" % client.server_build()
+	return text
 
 
 func _back() -> void:

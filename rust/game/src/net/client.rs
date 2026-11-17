@@ -33,11 +33,12 @@ use shooter_sim::gun_game;
 use shooter_sim::hardpoint::Holder;
 use shooter_sim::hitbox::HitboxPose;
 use shooter_sim::net::conditioner::{LinkConditioner, LinkSettings};
+use shooter_sim::net::discovery::clean_text;
 use shooter_sim::net::interpolation::{InterpolationBuffer, SnapshotClock};
 use shooter_sim::net::prediction::Reconciled;
 use shooter_sim::net::protocol::{
-    ClientMessage, FlagPlay, FlagStatus, FlagView, GameEvent, InputPacket, PROTOCOL_VERSION,
-    ScoreRow, ServerMessage, Snapshot, ZoneView,
+    ClientMessage, FlagPlay, FlagStatus, FlagView, GameEvent, InputPacket, MAX_BUILD_BYTES,
+    PROTOCOL_VERSION, ScoreRow, ServerMessage, Snapshot, ZoneView,
 };
 use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::{CHANNEL_COUNT, CHANNEL_RELIABLE, DEFAULT_PORT, TICK_RATE, Tick};
@@ -133,6 +134,8 @@ pub struct NetClient {
     score_limit: u32,
     /// The server's game, from its welcome.
     mode: Mode,
+    /// The server's build, from its welcome.
+    server_build: String,
     /// Hardpoint: the map's zones, the live one, who holds it, and the
     /// server tick it moves on.
     zones: Vec<ZoneView>,
@@ -700,6 +703,13 @@ impl NetClient {
         true
     }
 
+    /// Which build the server runs (a tag or short commit hash), or "" before
+    /// it welcomes us.
+    #[func]
+    fn server_build(&self) -> GString {
+        self.server_build.as_str().into()
+    }
+
     /// True once the server accepted us.
     #[func]
     fn is_joined(&self) -> bool {
@@ -791,12 +801,18 @@ impl NetClient {
                 player_id,
                 snapshot_interval,
                 mode,
+                server_build,
                 ..
             } => {
                 if self.status != Status::Connecting {
                     return;
                 }
-                godot_print!("net client: joined as player {player_id}");
+                self.server_build = clean_text(&server_build, MAX_BUILD_BYTES);
+                godot_print!(
+                    "net client: joined as player {player_id} (server build {}, ours {})",
+                    self.server_build,
+                    crate::build_info::BUILD
+                );
                 self.status = Status::Joined;
                 self.player_id = Some(player_id);
                 self.mode = mode;

@@ -20,6 +20,11 @@ func _run() -> void:
 	if title == null:
 		_finish()
 		return
+	var build_label := (title.get_node("Margin/Layout/Footer/Build") as Label).text
+	_check(
+		not GameBuild.build().is_empty() and GameBuild.build() in build_label,
+		"the title screen shows the build, got %s" % build_label
+	)
 	var menu := title.get_node("Margin/Layout/Menu")
 	var routes := menu.get_children().filter(func(node: Node) -> bool: return node is Button)
 	var testing := menu.get_node("TestingArea") as Button
