@@ -47,7 +47,8 @@ use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState}
 // bits), rounds (event tags grew to 5 bits), and who is alive on the
 // scoreboard.
 // Version 16 added the server's build name to the welcome.
-pub const PROTOCOL_VERSION: u16 = 16;
+// Version 17 added Free-for-all.
+pub const PROTOCOL_VERSION: u16 = 17;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -1242,6 +1243,7 @@ fn write_mode(w: &mut BitWriter, mode: &Mode) {
         Mode::CaptureTheFlag => w.bits(2, MODE_TAG_BITS),
         Mode::Hardpoint => w.bits(3, MODE_TAG_BITS),
         Mode::SearchAndDestroy => w.bits(4, MODE_TAG_BITS),
+        Mode::FreeForAll => w.bits(5, MODE_TAG_BITS),
     }
 }
 
@@ -1254,6 +1256,7 @@ fn read_mode(r: &mut BitReader) -> DecodeResult<Mode> {
         2 => Ok(Mode::CaptureTheFlag),
         3 => Ok(Mode::Hardpoint),
         4 => Ok(Mode::SearchAndDestroy),
+        5 => Ok(Mode::FreeForAll),
         _ => Err(DecodeError::Invalid("mode")),
     }
 }

@@ -139,8 +139,32 @@ func _run() -> void:
 		setup.back_requested.emit()
 		await process_frame
 		_check(gun_game.has_focus(), "Back returns focus to Gun Game")
+	var ffa := menu.get_node("FreeForAll") as Button
+	_check(routes[2] == ffa and not ffa.disabled, "Free-for-all is the third route")
+	ffa.pressed.emit()
+	await process_frame
+	setup = title.get_node_or_null("TdmSetup")
+	_check(setup != null, "Free-for-all opens its setup")
+	if setup != null:
+		var options: Dictionary = setup.options()
+		_check(
+			(
+				options
+				== {
+					"mode": "ffa",
+					"map": "slamcity",
+					"bots": 7,
+					"bot_skill": "normal",
+					"score_limit": 30,
+					"time_limit": 10
+				}
+			),
+			"the default Free-for-all is 8 players to 30 kills, got %s" % options
+		)
+		setup.back_requested.emit()
+		await process_frame
 	var ctf := menu.get_node("CaptureTheFlag") as Button
-	_check(routes[2] == ctf and not ctf.disabled, "Capture the Flag is the third route")
+	_check(routes[3] == ctf and not ctf.disabled, "Capture the Flag is the fourth route")
 	ctf.pressed.emit()
 	await process_frame
 	setup = title.get_node_or_null("TdmSetup")
@@ -165,7 +189,7 @@ func _run() -> void:
 		await process_frame
 		_check(ctf.has_focus(), "Back returns focus to Capture the Flag")
 	var hardpoint := menu.get_node("Hardpoint") as Button
-	_check(routes[3] == hardpoint, "Hardpoint is the fourth route")
+	_check(routes[4] == hardpoint, "Hardpoint is the fifth route")
 	hardpoint.pressed.emit()
 	await process_frame
 	setup = title.get_node_or_null("TdmSetup")
@@ -180,7 +204,7 @@ func _run() -> void:
 		await process_frame
 		_check(hardpoint.has_focus(), "closing the setup focuses Hardpoint again")
 	var snd := menu.get_node("SearchAndDestroy") as Button
-	_check(routes[4] == snd and not snd.disabled, "Search and Destroy is the fifth route")
+	_check(routes[5] == snd and not snd.disabled, "Search and Destroy is the sixth route")
 	snd.pressed.emit()
 	await process_frame
 	setup = title.get_node_or_null("TdmSetup")

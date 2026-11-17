@@ -7,6 +7,9 @@ extends SceneTree
 ## godot --headless --path godot --script res://tests/bots_test.gd
 
 const SECONDS := 60
+## Loaded at run time: preloading needs the autoloads a test script lacks.
+const SERVER_SCENE := "res://scenes/server.tscn"
+const SLAMCITY := "res://scenes/slamcity.tscn"
 
 ## A port per process, so test runs in parallel on one machine don't meet.
 var _port := 30000 + OS.get_process_id() % 20000
@@ -19,8 +22,8 @@ func _initialize() -> void:
 
 func _run() -> void:
 	var bots := int(OS.get_environment("BOTS")) if OS.get_environment("BOTS") != "" else 6
-	var server := (load("res://scenes/server.tscn") as PackedScene).instantiate() as NetServer
-	server.map_scene = load("res://scenes/slamcity.tscn") as PackedScene
+	var server := (load(SERVER_SCENE) as PackedScene).instantiate() as NetServer
+	server.map_scene = load(SLAMCITY) as PackedScene
 	server.map_name = "Slamcity"
 	server.port = _port
 	server.query_port = -1
@@ -64,7 +67,39 @@ func _run() -> void:
 	_check(int(tactics.lanes) >= bots, "the bots follow the lanes, %d routes" % tactics.lanes)
 	_check(int(tactics.cover) >= 1, "hurt bots take cover, %d times" % tactics.cover)
 	server.queue_free()
+	await process_frame
+	await _free_for_all()
 	_finish()
+
+
+## Free-for-all: four bots hunt each other to a kill limit of three, and the
+## match ends with the player who got there as the winner.
+func _free_for_all() -> void:
+	var server := (load(SERVER_SCENE) as PackedScene).instantiate() as NetServer
+	server.map_scene = load(SLAMCITY) as PackedScene
+	server.map_name = "Slamcity"
+	server.port = _port
+	server.query_port = -1
+	server.bots = 4
+	server.bot_skill = "normal"
+	server.mode = "ffa"
+	server.score_limit = 3
+	server.auto_start = true
+	root.add_child(server)
+	for i in 90 * Engine.physics_ticks_per_second:
+		await physics_frame
+		if server.match_phase() == "ended":
+			break
+	_check(server.match_phase() == "ended", "Free-for-all: a bot reaches the kill limit")
+	var winner := server.match_winner()
+	_check(
+		winner >= 200 and server.player_kills(winner) >= 3,
+		(
+			"the winner is the bot that got there, %d with %d kills"
+			% [winner, server.player_kills(winner)]
+		)
+	)
+	server.queue_free()
 
 
 func _check(ok: bool, description: String) -> void:

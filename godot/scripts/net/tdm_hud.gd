@@ -87,7 +87,7 @@ var _opened_for_lobby := false
 ## match phase they were seen in.
 var _levels := {}
 var _levels_phase := ""
-## "tdm", "ctf", "hardpoint", or "gungame", as the server last said.
+## "tdm", "ctf", "hardpoint", "gungame", "ffa", or "snd", as the server last said.
 var _mode := ""
 
 
@@ -135,9 +135,13 @@ func _process(delta: float) -> void:
 		_hint.position.y = 146.0 if _mode == "hardpoint" else 84.0
 		_refresh_board()
 	var ffa: bool = info.get("free_for_all", false)
+	# Gun Game's weapon ladder; plain Free-for-all keeps loadouts.
+	var ladder: bool = info.mode == "gungame"
 	var snd: bool = info.mode == "snd"
-	if ffa:
+	if ladder:
 		_update_ladder_bar(info)
+	elif ffa:
+		_update_kills_bar(info)
 	else:
 		var my_team: int = info.my_team
 		var scores: PackedInt32Array = info.scores
@@ -158,10 +162,10 @@ func _process(delta: float) -> void:
 	_update_banner(phase, info)
 	_age_feed(delta)
 	_age_callout(delta)
-	_loadout_box.visible = not ffa
-	_ladder_box.visible = ffa
+	_loadout_box.visible = not ladder
+	_ladder_box.visible = ladder
 	_menu_eyebrow.text = String(info.get("mode_name", "Team Deathmatch")).to_upper()
-	_menu_title.text = "Weapon ladder" if ffa else "Loadout"
+	_menu_title.text = "Weapon ladder" if ladder else "Loadout"
 	_age_chat(delta)
 
 	if phase == "lobby" and not _opened_for_lobby:
@@ -181,12 +185,12 @@ func _process(delta: float) -> void:
 	var alive := player == null or not is_instance_valid(player) or player.is_alive()
 	# Gun Game has no loadout to change between lives, and Search and
 	# Destroy's own HUD says what to do while dead in a match.
-	var dead_hint := not alive and not ffa and not snd
+	var dead_hint := not alive and not ladder and not snd
 	_hint.visible = not _menu.visible and (phase == "lobby" or dead_hint)
 	if phase == "lobby":
 		_hint.text = (
 			"WARM-UP  ·  %s  ·  [L] %s and ready"
-			% [_ready_count(), "weapon ladder" if ffa else "loadout"]
+			% [_ready_count(), "weapon ladder" if ladder else "loadout"]
 		)
 	else:
 		_hint.text = "[L] change loadout for your next spawn"
@@ -195,7 +199,7 @@ func _process(delta: float) -> void:
 	elif snd:
 		_menu_status.text = "Applies at once before a round starts, otherwise next round."
 	else:
-		_menu_status.text = "" if ffa else "Applies from your next spawn."
+		_menu_status.text = "" if ladder else "Applies from your next spawn."
 
 
 func _joined() -> bool:
@@ -259,7 +263,9 @@ func _update_banner(phase: String, info: Dictionary) -> void:
 	match phase:
 		"countdown":
 			_banner.text = "MATCH STARTS IN %d" % int(ceil(info.seconds_left))
-			if info.get("free_for_all", false):
+			if info.mode == "ffa":
+				_sub_banner.text = "Free-for-all  ·  first to %d kills" % info.score_limit
+			elif info.get("free_for_all", false):
 				var kills: int = info.get("kills_per_weapon", 1)
 				_sub_banner.text = (
 					"Gun Game  ·  %d kill%s with each of %d weapons  ·  every player for themselves"
@@ -414,7 +420,7 @@ func _feed_notice(text: String, colour: Color) -> void:
 ## Calls out level changes from the scoreboard: our new weapon in the middle
 ## of the screen, and anyone reaching the final weapon in the kill feed.
 func _check_levels(info: Dictionary) -> void:
-	if not info.get("free_for_all", false):
+	if info.mode != "gungame":
 		return
 	# A match starts everyone at the bottom: forget the last one's levels before
 	# its reset arrives, so it is not called out as everyone being set back.
@@ -522,7 +528,19 @@ func _refresh_board() -> void:
 			_board_cell(table, "BOT" if entry.bot else str(entry.ping), MenuStyle.TEXT_DIM)
 
 
-## Gun Game's scoreboard: everyone in one table, furthest up the ladder first.
+## Free-for-all's score bar: our kills, and the most anyone else has.
+func _update_kills_bar(info: Dictionary) -> void:
+	var best_other := 0
+	for entry: Dictionary in client.roster():
+		if entry.me:
+			_ally_score.text = str(entry.kills)
+		else:
+			best_other = maxi(best_other, int(entry.kills))
+	_enemy_score.text = str(best_other)
+	_limit.text = "FIRST TO %d KILLS" % info.score_limit if info.score_limit > 0 else ""
+
+
+## One table for everyone: Gun Game shows weapons, Free-for-all scores.
 func _refresh_ladder_board() -> void:
 	var table := _board_tables[0]
 	for child in table.get_children():
@@ -533,9 +551,10 @@ func _refresh_ladder_board() -> void:
 	_board_tables[1].visible = false
 	var roster := client.roster()
 	var levels: int = client.match_info().score_limit
+	var ladder: bool = client.match_info().mode == "gungame"
 	_board_headers[0].text = "EVERY PLAYER FOR THEMSELVES"
 	_board_headers[0].add_theme_color_override("font_color", MenuStyle.TEXT)
-	for heading in ["NAME", "WEAPON", "K", "D", "PING"]:
+	for heading in ["NAME", "WEAPON" if ladder else "SCORE", "K", "D", "PING"]:
 		_board_cell(table, heading, MenuStyle.TEXT_FAINT, 14)
 	for entry: Dictionary in roster:
 		var colour := Color.WHITE if entry.me else MenuStyle.TEXT
@@ -544,7 +563,7 @@ func _refresh_ladder_board() -> void:
 			name_text += "  [BOT]"
 		_board_cell(table, name_text, colour, 18, entry.me)
 		var weapon := "%d/%d  %s" % [int(entry.level) + 1, levels, entry.weapon]
-		_board_cell(table, weapon, ALLY if entry.me else ENEMY)
+		_board_cell(table, weapon if ladder else str(entry.score), ALLY if entry.me else ENEMY)
 		_board_cell(table, str(entry.kills), colour)
 		_board_cell(table, str(entry.deaths), colour)
 		_board_cell(table, "BOT" if entry.bot else str(entry.ping), MenuStyle.TEXT_DIM)

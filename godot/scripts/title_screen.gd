@@ -15,13 +15,15 @@ const SETUP_BUTTONS := {
 	"ctf": "CaptureTheFlag",
 	"hardpoint": "Hardpoint",
 	"gungame": "GunGame",
+	"ffa": "FreeForAll",
 	"snd": "SearchAndDestroy",
 }
 ## The short tag on the right of each route, and the line the status shows
 ## while it has focus.
 const ROUTES := {
 	"TeamDeathmatch": ["TEAMS", "Two teams race to the kill limit."],
-	"GunGame": ["FREE FOR ALL", "Up eight weapons, one kill at a time."],
+	"GunGame": ["LADDER", "Up eight weapons, one kill at a time."],
+	"FreeForAll": ["FREE FOR ALL", "Every player for themselves, first to the kill limit."],
 	"CaptureTheFlag": ["OBJECTIVE", "Bring the enemy flag home to your own."],
 	"Hardpoint": ["OBJECTIVE", "Hold the moving zone to score."],
 	"SearchAndDestroy": ["ONE LIFE", "Rounds with one life each."],
@@ -145,8 +147,8 @@ func _open_multiplayer(message := "") -> void:
 	)
 
 
-## Opens the local match setup for `mode` ("tdm", "ctf", "hardpoint", "gungame", or
-## "snd") as a card beside the menu, closing any card already open.
+## Opens the local match setup for `mode` ("tdm", "ctf", "hardpoint", "gungame",
+## "ffa", or "snd") as a card beside the menu, closing any card already open.
 func _open_setup(mode: String) -> void:
 	if _loading:
 		return
