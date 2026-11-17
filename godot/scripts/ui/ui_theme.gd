@@ -206,6 +206,20 @@ static func _labels(theme: Theme) -> void:
 	theme.set_constant(&"shadow_offset_y", &"HudText", 1)
 	theme.set_constant(&"shadow_offset_x", &"HudText", 0)
 	theme.set_constant(&"shadow_outline_size", &"HudText", 4)
+	_variation(theme, &"Wordmark", &"Label")
+	theme.set_font(&"font", &"Wordmark", tracked(DISPLAY, 2))
+	theme.set_font_size(&"font_size", &"Wordmark", 56)
+	# A key or button name in a prompt ("ENTER Select"): small outlined cap.
+	_variation(theme, &"KeyCap", &"Label")
+	theme.set_font(&"font", &"KeyCap", font(DISPLAY))
+	theme.set_font_size(&"font_size", &"KeyCap", 13)
+	theme.set_color(&"font_color", &"KeyCap", TEXT)
+	theme.set_stylebox(&"normal", &"KeyCap", outlined(Color(0, 0, 0, 0.35), TEXT_DIM, 1, 7.0, 2.0))
+	# A short tag on the right of a menu route ("FREE ROAM").
+	_variation(theme, &"RouteTag", &"Label")
+	theme.set_font(&"font", &"RouteTag", tracked(LABEL, 1))
+	theme.set_font_size(&"font_size", &"RouteTag", 13)
+	theme.set_color(&"font_color", &"RouteTag", TEXT_FAINT)
 	theme.set_stylebox(&"normal", &"TooltipPanel", plate(PLATE_STRONG, 10.0, 6.0))
 	theme.set_stylebox(&"panel", &"TooltipPanel", plate(PLATE_STRONG, 10.0, 6.0))
 	theme.set_color(&"font_color", &"TooltipLabel", TEXT)
@@ -272,16 +286,30 @@ static func _buttons(theme: Theme) -> void:
 
 	# A destination in a menu list. The toggled (current) one turns route green.
 	_variation(theme, &"RouteButton", &"Button")
-	theme.set_font_size(&"font_size", &"RouteButton", 24)
+	theme.set_font_size(&"font_size", &"RouteButton", 21)
 	_button_styles(
 		theme,
 		&"RouteButton",
-		plate(PLATE, 20.0, 12.0),
-		plate(PLATE_HOVER, 20.0, 12.0),
-		plate(ROUTE, 20.0, 12.0),
+		plate(PLATE, 20.0, 6.0),
+		plate(PLATE_HOVER, 20.0, 6.0),
+		plate(ROUTE, 20.0, 6.0),
 	)
 	_button_colors(theme, &"RouteButton", TEXT, TEXT)
 	theme.set_color(&"icon_normal_color", &"RouteButton", ROUTE_LIGHT)
+	theme.set_color(&"icon_hover_color", &"RouteButton", ROUTE_LIGHT)
+	theme.set_color(&"icon_focus_color", &"RouteButton", ROUTE_LIGHT)
+
+	# The route that is open right now (its setup card is showing): route green.
+	_variation(theme, &"RouteButtonCurrent", &"RouteButton")
+	_button_styles(
+		theme,
+		&"RouteButtonCurrent",
+		plate(ROUTE, 20.0, 6.0),
+		plate(ROUTE.lightened(0.08), 20.0, 6.0),
+		plate(ROUTE, 20.0, 6.0),
+	)
+	for key: StringName in [&"icon_normal_color", &"icon_hover_color", &"icon_focus_color"]:
+		theme.set_color(key, &"RouteButtonCurrent", TEXT)
 
 	# Small choice chip (team size, bot skill, limits). Chosen: white keyline.
 	_variation(theme, &"ChipButton", &"Button")

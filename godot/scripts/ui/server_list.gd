@@ -9,7 +9,7 @@ signal favorite_toggled(server: Dictionary)
 
 enum Column { FAVORITE, NAME, MAP, MODE, PLAYERS, PING }
 
-const MenuStyle := preload("res://scripts/ui/menu_style.gd")
+const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 
 const TITLES := ["", "SERVER", "MAP", "MODE", "PLAYERS", "PING"]
 const WIDTHS := [44, 0, 200, 170, 170, 110]
@@ -41,40 +41,34 @@ func _ready() -> void:
 
 
 func _style() -> void:
-	var background := MenuStyle.box(Color(0.03, 0.05, 0.07, 0.86), MenuStyle.PANEL_BORDER)
-	background.content_margin_left = 0
-	background.content_margin_right = 0
+	var background := UiTheme.outlined(UiTheme.PLATE_STRONG, UiTheme.HAIRLINE, 1, 0.0, 4.0)
 	add_theme_stylebox_override("panel", background)
 	var focus := StyleBoxFlat.new()
 	focus.draw_center = false
-	focus.border_color = Color(MenuStyle.ACCENT, 0.5)
+	focus.border_color = Color(UiTheme.ACCENT, 0.5)
 	focus.set_border_width_all(1)
 	add_theme_stylebox_override("focus", focus)
-	var selected := MenuStyle.box(Color("1e3943"), MenuStyle.ACCENT, 3)
-	selected.set_border_width_all(0)
+	# The chosen server: lighter plate with a white tab on the left.
+	var selected := UiTheme.plate(UiTheme.PLATE_CHOSEN, 0.0, 0.0)
+	selected.border_color = UiTheme.TEXT
 	selected.border_width_left = 3
 	add_theme_stylebox_override("selected", selected)
 	add_theme_stylebox_override("selected_focus", selected)
-	var hovered := StyleBoxFlat.new()
-	hovered.bg_color = Color("14232d")
+	var hovered := UiTheme.plate(UiTheme.PLATE_HOVER, 0.0, 0.0)
 	add_theme_stylebox_override("hovered", hovered)
 	add_theme_stylebox_override("hovered_dimmed", hovered)
 	add_theme_stylebox_override("hovered_selected", selected)
 	add_theme_stylebox_override("hovered_selected_focus", selected)
-	var title := MenuStyle.box(Color("101c25"), MenuStyle.PANEL_BORDER, 0)
-	title.border_width_left = 0
-	title.border_width_top = 0
-	title.content_margin_left = 12
-	title.content_margin_right = 12
-	title.content_margin_top = 10
-	title.content_margin_bottom = 10
+	var title := UiTheme.outlined(Color(0, 0, 0, 0.25), UiTheme.HAIRLINE, 0, 12.0, 10.0)
+	title.border_width_bottom = 1
 	var title_hover := title.duplicate() as StyleBoxFlat
-	title_hover.bg_color = Color("172a35")
+	title_hover.bg_color = UiTheme.PLATE_HOVER
 	add_theme_stylebox_override("title_button_normal", title)
 	add_theme_stylebox_override("title_button_hover", title_hover)
 	add_theme_stylebox_override("title_button_pressed", title_hover)
-	add_theme_color_override("title_button_color", MenuStyle.TEXT_DIM)
-	add_theme_color_override("font_color", MenuStyle.TEXT)
+	add_theme_font_override("title_button_font", UiTheme.tracked(UiTheme.LABEL, 1))
+	add_theme_color_override("title_button_color", UiTheme.TEXT_DIM)
+	add_theme_color_override("font_color", UiTheme.TEXT)
 	add_theme_color_override("font_selected_color", Color.WHITE)
 	add_theme_color_override("font_hovered_color", Color.WHITE)
 	add_theme_color_override("font_hovered_selected_color", Color.WHITE)
@@ -186,17 +180,17 @@ func _fill(item: TreeItem, server: Dictionary) -> void:
 	item.set_text_alignment(Column.PING, HORIZONTAL_ALIGNMENT_RIGHT)
 	if not online or not compatible:
 		for column in Column.values():
-			item.set_custom_color(column, MenuStyle.TEXT_FAINT)
+			item.set_custom_color(column, UiTheme.TEXT_FAINT)
 	if online and not compatible:
 		var newer: bool = server.get("newer", false)
 		item.set_text(Column.MODE, "Newer version" if newer else "Older version")
 		item.set_tooltip_text(Column.NAME, version_note(server) % "This server")
 	elif online:
-		item.set_custom_color(Column.MAP, MenuStyle.TEXT_DIM)
-		item.set_custom_color(Column.MODE, MenuStyle.TEXT_DIM)
+		item.set_custom_color(Column.MAP, UiTheme.TEXT_DIM)
+		item.set_custom_color(Column.MODE, UiTheme.TEXT_DIM)
 		item.set_custom_color(Column.PING, _ping_color(server.ping_ms))
 		if server.players >= server.max_players:
-			item.set_custom_color(Column.PLAYERS, MenuStyle.ERROR)
+			item.set_custom_color(Column.PLAYERS, UiTheme.HARM)
 
 
 ## Why `server` (another protocol version) cannot be joined, with "%s" for
@@ -212,7 +206,7 @@ func _ping_color(ping_ms: float) -> Color:
 		return Color("8fd694")
 	if ping_ms < 120.0:
 		return Color("e6c86e")
-	return MenuStyle.ERROR
+	return UiTheme.HARM
 
 
 ## A five-pointed star icon, filled or outlined, antialiased by supersampling.

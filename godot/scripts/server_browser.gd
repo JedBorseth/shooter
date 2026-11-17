@@ -10,7 +10,7 @@ signal back_requested
 
 enum Tab { INTERNET, LAN, FAVORITES }
 
-const MenuStyle := preload("res://scripts/ui/menu_style.gd")
+const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const ServerListScript := preload("res://scripts/ui/server_list.gd")
 ## Kept as a path so opening the browser does not load the arena.
 ## Seconds a LAN scan shows "Searching" before it says nothing was found.
@@ -56,11 +56,10 @@ func _ready() -> void:
 	for i in _tabs.size():
 		_tabs[i].button_group = group
 		_tabs[i].pressed.connect(_set_tab.bind(i))
-	for button: Button in [%Back, _refresh, _connect, _favorite, _join, %InternetTab, %LanTab]:
-		MenuStyle.style_button(button, true)
-	MenuStyle.style_button(%FavoritesTab, true)
-	MenuStyle.style_line_edit(_address)
-	_join.add_theme_color_override("font_color", MenuStyle.ACCENT)
+	for button: Button in [%Back, _refresh, _connect, _favorite]:
+		button.theme_type_variation = &"QuietButton"
+	for button: Button in [%Back, _refresh, _connect, _favorite, _join] + _tabs:
+		button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 
 	%Back.pressed.connect(_back)
 	_refresh.pressed.connect(_refresh_tab)
@@ -179,7 +178,7 @@ func _update_status() -> void:
 		_status.text = "Asking %s…" % _direct_target
 		return
 	if _error != "":
-		_status.add_theme_color_override("font_color", MenuStyle.ERROR)
+		_status.add_theme_color_override("font_color", UiTheme.HARM)
 		_status.text = _error
 		return
 	var servers := _visible_servers()

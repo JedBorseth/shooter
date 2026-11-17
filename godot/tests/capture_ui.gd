@@ -6,6 +6,8 @@ extends SceneTree
 ## in-match HUD, scoreboard, kill feed, results).
 ## Needs a GPU and a display (or Xvfb). CAPTURE_PHASE picks one group
 ## (menus, arena, zombies, tdm, clean, art); without it every group runs.
+## CAPTURE_PHASE=stills shoots each map from its spawn instead, to pick the
+## title backdrop and match card pictures in `assets/ui/`.
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
 ##     --audio-driver Dummy --script res://tests/capture_ui.gd
 
@@ -35,6 +37,8 @@ func _run() -> void:
 		await _clean()
 	if _wants("art"):
 		await _art()
+	if _phase == "stills":
+		await _stills()
 	quit()
 
 
@@ -366,6 +370,32 @@ func _art() -> void:
 		_look_at(zp, (zombies[i] as Node3D).global_position + Vector3(0, 1.2, 0))
 		await _frames(6)
 		await _shot("art_zombies_%d" % i)
+
+
+## Map stills for the title backdrop and the match card: each map from above
+## its player spawn in eight directions, at eye height and from higher up.
+## Only on request (CAPTURE_PHASE=stills).
+func _stills() -> void:
+	for map: String in ["slamcity", "nuketown", "main"]:
+		var scene := await _open("res://scenes/%s.tscn" % map)
+		await _seconds(1.5)
+		for layer: CanvasLayer in root.find_children("*", "CanvasLayer", true, false):
+			layer.visible = false
+		var player := scene.get_node("Player") as Node3D
+		(player.get_node("Camera/Viewmodel") as Node3D).visible = false
+		var eye := Camera3D.new()
+		eye.fov = 62
+		scene.add_child(eye)
+		eye.make_current()
+		var base := player.global_position
+		for height: float in [1.7, 6.0]:
+			for i in 8:
+				var yaw := i * TAU / 8.0
+				var from := base + Vector3(0, height, 0)
+				var tilt := -0.08 if height < 3.0 else -0.3
+				eye.look_at_from_position(from, from + Vector3(-sin(yaw), tilt, -cos(yaw)))
+				await _frames(6)
+				await _shot("still_%s_%d_%d" % [map, int(height), i])
 
 
 func _bounds(node: Node) -> AABB:

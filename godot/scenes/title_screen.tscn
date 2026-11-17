@@ -1,10 +1,24 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scripts/title_screen.gd" id="1_menu"]
-[ext_resource type="Shader" path="res://shaders/title_background.gdshader" id="2_background"]
+[ext_resource type="Texture2D" path="res://assets/ui/title_backdrop.jpg" id="2_backdrop"]
+[ext_resource type="Texture2D" path="res://assets/ui/icons/arrow_right.svg" id="3_arrow"]
 
-[sub_resource type="ShaderMaterial" id="Background"]
-shader = ExtResource("2_background")
+[sub_resource type="Gradient" id="SideFade"]
+offsets = PackedFloat32Array(0, 0.42, 1)
+colors = PackedColorArray(0.043, 0.051, 0.063, 0.94, 0.043, 0.051, 0.063, 0.7, 0.043, 0.051, 0.063, 0.35)
+
+[sub_resource type="GradientTexture2D" id="SideFadeTexture"]
+gradient = SubResource("SideFade")
+fill_to = Vector2(1, 0)
+
+[sub_resource type="Gradient" id="FloorFade"]
+colors = PackedColorArray(0.043, 0.051, 0.063, 0, 0.043, 0.051, 0.063, 0.85)
+
+[sub_resource type="GradientTexture2D" id="FloorFadeTexture"]
+gradient = SubResource("FloorFade")
+fill_from = Vector2(0, 0)
+fill_to = Vector2(0, 1)
 
 [node name="TitleScreen" type="Control"]
 layout_mode = 3
@@ -13,11 +27,9 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_colors/font_color = Color(0.88, 0.93, 0.94, 1)
 script = ExtResource("1_menu")
 
-[node name="Background" type="ColorRect" parent="."]
-material = SubResource("Background")
+[node name="Background" type="TextureRect" parent="."]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -25,6 +37,33 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
+texture = ExtResource("2_backdrop")
+expand_mode = 1
+stretch_mode = 6
+
+[node name="Shade" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = SubResource("SideFadeTexture")
+expand_mode = 1
+
+[node name="FloorShade" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -180.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+texture = SubResource("FloorFadeTexture")
+expand_mode = 1
 
 [node name="Margin" type="MarginContainer" parent="."]
 layout_mode = 1
@@ -33,157 +72,239 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+mouse_filter = 2
 theme_override_constants/margin_left = 64
-theme_override_constants/margin_top = 48
+theme_override_constants/margin_top = 40
 theme_override_constants/margin_right = 64
-theme_override_constants/margin_bottom = 40
+theme_override_constants/margin_bottom = 32
 
 [node name="Layout" type="VBoxContainer" parent="Margin"]
 layout_mode = 2
-theme_override_constants/separation = 16
+mouse_filter = 2
+theme_override_constants/separation = 6
 
-[node name="Build" type="Label" parent="Margin/Layout"]
+[node name="Brand" type="HBoxContainer" parent="Margin/Layout"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.51, 0.85, 0.79, 1)
-theme_override_font_sizes/font_size = 16
-text = "SHOOTER  /  DEVELOPMENT BUILD"
+theme_override_constants/separation = 2
+
+[node name="Title" type="Label" parent="Margin/Layout/Brand"]
+layout_mode = 2
+theme_type_variation = &"Wordmark"
+text = "SHOOTER"
+
+[node name="Dot" type="Label" parent="Margin/Layout/Brand"]
+layout_mode = 2
+theme_type_variation = &"Wordmark"
+theme_override_colors/font_color = Color(1, 0.745, 0.102, 1)
+text = "."
 
 [node name="TopSpace" type="Control" parent="Margin/Layout"]
 layout_mode = 2
 size_flags_vertical = 3
 mouse_filter = 2
 
-[node name="Title" type="Label" parent="Margin/Layout"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 88
-text = "SHOOTER"
-
-[node name="Subtitle" type="Label" parent="Margin/Layout"]
-layout_mode = 2
-theme_override_colors/font_color = Color(0.57, 0.66, 0.71, 1)
-theme_override_font_sizes/font_size = 20
-text = "Choose your deployment."
-
 [node name="Menu" type="VBoxContainer" parent="Margin/Layout"]
-custom_minimum_size = Vector2(480, 0)
+custom_minimum_size = Vector2(500, 0)
 layout_mode = 2
 size_flags_horizontal = 0
-theme_override_constants/separation = 6
-theme_override_colors/font_color = Color(0.88, 0.93, 0.94, 1)
+theme_override_constants/separation = 4
 
-[node name="TestingArea" type="Button" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(480, 48)
-layout_mode = 2
-mouse_default_cursor_shape = 2
-theme_override_colors/font_color = Color(0.88, 0.97, 0.95, 1)
-theme_override_font_sizes/font_size = 24
-text = "Testing Area    →"
-alignment = 0
-
-[node name="TeamDeathmatch" type="Button" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(480, 48)
-layout_mode = 2
-mouse_default_cursor_shape = 2
-theme_override_colors/font_color = Color(0.88, 0.97, 0.95, 1)
-theme_override_font_sizes/font_size = 24
-text = "Team Deathmatch    →"
-alignment = 0
-
-[node name="GunGame" type="Button" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(480, 48)
-layout_mode = 2
-mouse_default_cursor_shape = 2
-theme_override_colors/font_color = Color(0.88, 0.97, 0.95, 1)
-theme_override_font_sizes/font_size = 24
-text = "Gun Game    →"
-alignment = 0
-
-[node name="CaptureTheFlag" type="Button" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(480, 48)
-layout_mode = 2
-mouse_default_cursor_shape = 2
-theme_override_colors/font_color = Color(0.88, 0.97, 0.95, 1)
-theme_override_font_sizes/font_size = 24
-text = "Capture the Flag    →"
-alignment = 0
-
-[node name="Hardpoint" type="Button" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(480, 48)
-layout_mode = 2
-mouse_default_cursor_shape = 2
-theme_override_colors/font_color = Color(0.88, 0.97, 0.95, 1)
-theme_override_font_sizes/font_size = 24
-text = "Hardpoint    →"
-alignment = 0
-
-[node name="SearchAndDestroy" type="Button" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(480, 48)
-layout_mode = 2
-mouse_default_cursor_shape = 2
-theme_override_colors/font_color = Color(0.88, 0.97, 0.95, 1)
-theme_override_font_sizes/font_size = 24
-text = "Search and Destroy    →"
-alignment = 0
-
-[node name="Slamcity" type="Button" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(480, 48)
-layout_mode = 2
-mouse_default_cursor_shape = 2
-theme_override_colors/font_color = Color(0.88, 0.97, 0.95, 1)
-theme_override_font_sizes/font_size = 24
-text = "Slamcity    →"
-alignment = 0
-
-[node name="Nuketown" type="Button" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(480, 48)
-layout_mode = 2
-mouse_default_cursor_shape = 2
-theme_override_colors/font_color = Color(0.88, 0.97, 0.95, 1)
-theme_override_font_sizes/font_size = 24
-text = "Nuketown    →"
-alignment = 0
-
-[node name="Multiplayer" type="Button" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(480, 48)
-layout_mode = 2
-mouse_default_cursor_shape = 2
-theme_override_colors/font_color = Color(0.88, 0.97, 0.95, 1)
-theme_override_colors/font_disabled_color = Color(0.43, 0.51, 0.56, 1)
-theme_override_font_sizes/font_size = 24
-text = "Multiplayer    →"
-alignment = 0
-
-[node name="Zombies" type="Button" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(480, 48)
-layout_mode = 2
-mouse_default_cursor_shape = 2
-theme_override_colors/font_disabled_color = Color(0.43, 0.51, 0.56, 1)
-theme_override_font_sizes/font_size = 24
-text = "Zombies    →"
-alignment = 0
-
-[node name="Options" type="Button" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(480, 48)
-layout_mode = 2
-mouse_default_cursor_shape = 2
-theme_override_font_sizes/font_size = 24
-text = "Options    →"
-alignment = 0
-
-[node name="Status" type="Label" parent="Margin/Layout"]
+[node name="MatchHeading" type="Label" parent="Margin/Layout/Menu"]
 custom_minimum_size = Vector2(0, 28)
 layout_mode = 2
-theme_override_colors/font_color = Color(0.57, 0.66, 0.71, 1)
-theme_override_font_sizes/font_size = 18
-text = "Movement, weapons, and target practice."
+theme_type_variation = &"Eyebrow"
+text = "VS BOTS"
+vertical_alignment = 2
+
+[node name="TeamDeathmatch" type="Button" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(500, 40)
+layout_mode = 2
+mouse_default_cursor_shape = 2
+theme_type_variation = &"RouteButton"
+text = "Team Deathmatch"
+icon = ExtResource("3_arrow")
+alignment = 0
+icon_alignment = 2
+
+[node name="GunGame" type="Button" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(500, 40)
+layout_mode = 2
+mouse_default_cursor_shape = 2
+theme_type_variation = &"RouteButton"
+text = "Gun Game"
+icon = ExtResource("3_arrow")
+alignment = 0
+icon_alignment = 2
+
+[node name="CaptureTheFlag" type="Button" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(500, 40)
+layout_mode = 2
+mouse_default_cursor_shape = 2
+theme_type_variation = &"RouteButton"
+text = "Capture the Flag"
+icon = ExtResource("3_arrow")
+alignment = 0
+icon_alignment = 2
+
+[node name="Hardpoint" type="Button" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(500, 40)
+layout_mode = 2
+mouse_default_cursor_shape = 2
+theme_type_variation = &"RouteButton"
+text = "Hardpoint"
+icon = ExtResource("3_arrow")
+alignment = 0
+icon_alignment = 2
+
+[node name="SearchAndDestroy" type="Button" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(500, 40)
+layout_mode = 2
+mouse_default_cursor_shape = 2
+theme_type_variation = &"RouteButton"
+text = "Search and Destroy"
+icon = ExtResource("3_arrow")
+alignment = 0
+icon_alignment = 2
+
+[node name="MoreHeading" type="Label" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+theme_type_variation = &"Eyebrow"
+text = "ONLINE AND CO-OP"
+vertical_alignment = 2
+
+[node name="Multiplayer" type="Button" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(500, 40)
+layout_mode = 2
+mouse_default_cursor_shape = 2
+theme_type_variation = &"RouteButton"
+text = "Server Browser"
+icon = ExtResource("3_arrow")
+alignment = 0
+icon_alignment = 2
+
+[node name="Zombies" type="Button" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(500, 40)
+layout_mode = 2
+mouse_default_cursor_shape = 2
+theme_type_variation = &"RouteButton"
+text = "Zombies"
+icon = ExtResource("3_arrow")
+alignment = 0
+icon_alignment = 2
+
+[node name="PracticeHeading" type="Label" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+theme_type_variation = &"Eyebrow"
+text = "PRACTICE"
+vertical_alignment = 2
+
+[node name="TestingArea" type="Button" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(500, 40)
+layout_mode = 2
+mouse_default_cursor_shape = 2
+theme_type_variation = &"RouteButton"
+text = "Testing Area"
+icon = ExtResource("3_arrow")
+alignment = 0
+icon_alignment = 2
+
+[node name="Slamcity" type="Button" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(500, 40)
+layout_mode = 2
+mouse_default_cursor_shape = 2
+theme_type_variation = &"RouteButton"
+text = "Slamcity"
+icon = ExtResource("3_arrow")
+alignment = 0
+icon_alignment = 2
+
+[node name="Nuketown" type="Button" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(500, 40)
+layout_mode = 2
+mouse_default_cursor_shape = 2
+theme_type_variation = &"RouteButton"
+text = "Nuketown"
+icon = ExtResource("3_arrow")
+alignment = 0
+icon_alignment = 2
+
+[node name="SystemGap" type="Control" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(0, 8)
+layout_mode = 2
+mouse_filter = 2
+
+[node name="System" type="HBoxContainer" parent="Margin/Layout/Menu"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Options" type="Button" parent="Margin/Layout/Menu/System"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_default_cursor_shape = 2
+theme_type_variation = &"QuietButton"
+text = "Options"
+
+[node name="Quit" type="Button" parent="Margin/Layout/Menu/System"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_default_cursor_shape = 2
+theme_type_variation = &"QuietButton"
+text = "Quit"
+
+[node name="Status" type="Label" parent="Margin/Layout"]
+custom_minimum_size = Vector2(500, 26)
+layout_mode = 2
+size_flags_horizontal = 0
+theme_type_variation = &"DimLabel"
+vertical_alignment = 2
+autowrap_mode = 3
 
 [node name="BottomSpace" type="Control" parent="Margin/Layout"]
 layout_mode = 2
 size_flags_vertical = 3
 mouse_filter = 2
 
-[node name="Footer" type="Label" parent="Margin/Layout"]
+[node name="Footer" type="HBoxContainer" parent="Margin/Layout"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.43, 0.53, 0.58, 1)
-theme_override_font_sizes/font_size = 16
-text = "MOUSE / KEYBOARD / CONTROLLER"
+theme_override_constants/separation = 8
+
+[node name="SelectKey" type="Label" parent="Margin/Layout/Footer"]
+layout_mode = 2
+theme_type_variation = &"KeyCap"
+text = "ENTER"
+
+[node name="SelectHint" type="Label" parent="Margin/Layout/Footer"]
+layout_mode = 2
+theme_type_variation = &"DimLabel"
+text = "Select"
+
+[node name="HintGap" type="Control" parent="Margin/Layout/Footer"]
+custom_minimum_size = Vector2(14, 0)
+layout_mode = 2
+mouse_filter = 2
+
+[node name="BackKey" type="Label" parent="Margin/Layout/Footer"]
+layout_mode = 2
+theme_type_variation = &"KeyCap"
+text = "ESC"
+
+[node name="BackHint" type="Label" parent="Margin/Layout/Footer"]
+layout_mode = 2
+theme_type_variation = &"DimLabel"
+text = "Back"
+
+[node name="FooterSpace" type="Control" parent="Margin/Layout/Footer"]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+
+[node name="Build" type="Label" parent="Margin/Layout/Footer"]
+layout_mode = 2
+theme_type_variation = &"FaintLabel"
+text = "Development build"
