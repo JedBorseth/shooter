@@ -961,6 +961,11 @@ thread_local! {
         RefCell::new(HashMap::new());
 }
 
+pub fn clear_cache() {
+    SIGHT_MESHES.with_borrow_mut(|cache| cache.clear());
+    CUT_MESHES.with_borrow_mut(|cache| cache.clear());
+}
+
 /// Removes every triangle whose centre lies inside one of `boxes` from the
 /// meshes under `root`. The boxes are in `space`'s coordinates.
 fn cut_meshes(root: &Gd<Node>, space: &Gd<Node3D>, boxes: &[Aabb]) {

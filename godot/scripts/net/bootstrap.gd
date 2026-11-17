@@ -111,6 +111,7 @@ func client() -> NetClient:
 ## `options` may set `name` (shown while connecting) and the link simulation
 ## (`lag`, `jitter`, `loss`).
 func join(target: String, options: Dictionary = {}, arena: PackedScene = null) -> void:
+	print("net join: target=", target, " map=", options.get("map", "Arena"))
 	var tree := get_tree()
 	var main := tree.current_scene
 	if main == null or main.get_node_or_null("Player") == null:
@@ -123,6 +124,7 @@ func join(target: String, options: Dictionary = {}, arena: PackedScene = null) -
 			return
 		await tree.scene_changed
 		main = tree.current_scene
+	print("net join: scene ready; attaching client")
 	_attach_client(main, target, options)
 
 
@@ -136,7 +138,8 @@ func start_local_match(options: Dictionary) -> void:
 	_local_pause_file = OS.get_user_data_dir().path_join("local-pause-%d" % OS.get_process_id())
 	DirAccess.remove_absolute(_local_pause_file)
 	var map := String(options.get("map", "slamcity"))
-	var args := PackedStringArray(["--headless"])
+	var server_log := OS.get_user_data_dir().path_join("logs/local-server.log")
+	var args := PackedStringArray(["--headless", "--log-file", server_log])
 	if OS.has_feature("editor"):
 		args.append_array(["--path", ProjectSettings.globalize_path("res://")])
 	(

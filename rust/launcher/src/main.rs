@@ -8,7 +8,9 @@
 //! `shooter-launcher serve` does the same for a dedicated server and keeps it
 //! running, switching builds whenever the server is empty.
 
+mod crash;
 mod fetch;
+mod logs;
 mod manifest;
 mod platform;
 mod self_update;
@@ -51,6 +53,13 @@ struct Common {
 
 #[derive(clap::Args)]
 struct PlayArgs {
+    /// HTTPS crash collector on the master host. Empty disables uploads.
+    #[arg(
+        long,
+        env = "SHOOTER_CRASH_URL",
+        default_value = "https://borseth.ddns.net/shooter/crashes"
+    )]
+    crash_url: String,
     /// Start the installed build without checking for a new one.
     #[arg(long)]
     offline: bool,
@@ -138,9 +147,18 @@ fn play(dir: &Path, manifest_source: &str, args: PlayArgs, launcher_exe: &Path) 
     };
     let exe = store.exe_path(&installed);
     let build_dir = store.build_dir(&installed.build);
+    let log_dir = dir.join(platform).join("logs");
     // Let the next launcher run update while this game is open.
     drop(store);
-    launch(&installed, &exe, &build_dir, &args.game_args)
+    crash::retry_pending(&log_dir, &args.crash_url);
+    launch(
+        &installed,
+        &exe,
+        &build_dir,
+        &log_dir,
+        &args.crash_url,
+        &args.game_args,
+    )
 }
 
 /// Installs the newest build (and launcher) if this machine does not have them.
@@ -168,6 +186,8 @@ fn launch(
     installed: &Installed,
     exe: &Path,
     build_dir: &Path,
+    log_dir: &Path,
+    crash_url: &str,
     game_args: &[OsString],
 ) -> Result<()> {
     if !exe.is_file() {
@@ -181,21 +201,22 @@ fn launch(
     println!("Starting build {}.", installed.build);
     let mut command = Command::new(exe);
     command.current_dir(build_dir);
+    command.arg("--verbose");
+    let mut log = logs::SessionLog::open(log_dir, &installed.build)?;
+    log.capture(&mut command)?;
+    command.env("RUST_BACKTRACE", "1");
     if !game_args.is_empty() {
         command.arg("--").args(game_args);
     }
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        Err(command.exec()).with_context(|| format!("starting {}", exe.display()))
+    let status = command
+        .status()
+        .with_context(|| format!("starting {}", exe.display()))?;
+    log.finish(status)?;
+    if !status.success() {
+        crash::report(&log.path, crash_url);
+        bail!("game exited with {status}; log: {}", log.path.display());
     }
-    #[cfg(not(unix))]
-    {
-        command
-            .spawn()
-            .with_context(|| format!("starting {}", exe.display()))?;
-        Ok(())
-    }
+    Ok(())
 }
 
 /// Double-clicking the launcher on Windows opens a console that closes as soon

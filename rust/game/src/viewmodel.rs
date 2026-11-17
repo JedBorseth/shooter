@@ -1157,6 +1157,10 @@ thread_local! {
 
 const WEAPON_SCENE_DIR: &str = "res://scenes/weapons";
 
+pub fn clear_cache() {
+    WEAPON_SCENES.with_borrow_mut(|cache| cache.clear());
+}
+
 /// The weapon view scene for a weapon: `scenes/weapons/<key>_view.tscn`, or any
 /// scene in that folder whose root `weapon` property is the key.
 pub fn weapon_scene(id: WeaponId) -> Option<Gd<PackedScene>> {
