@@ -9,9 +9,9 @@
 //! The server decides hits and kills and sends them as reliable game events:
 //! the client passes them to the local player (kill confirmations, score,
 //! damage taken) and emits `kill_reported` for every kill, for a kill feed.
-//! It also keeps the Team Deathmatch state the HUD shows: who is playing on
+//! It also keeps the match state the HUD shows: the mode, who is playing on
 //! which team (`roster`), the match phase, clock, and team scores
-//! (`match_info`), and the scoreboard.
+//! (`match_info`), and the scoreboard, with each player's Gun Game level.
 //! With the F4 hitbox overlay on, it also draws, in white, the hitboxes the
 //! server rewound for each of our shots, next to the ones drawn here.
 //!
@@ -23,6 +23,7 @@ use std::collections::VecDeque;
 use godot::classes::{ENetConnection, ENetPacketPeer, INode, PackedScene, Time};
 use godot::global::Error;
 use godot::prelude::*;
+use shooter_sim::gun_game;
 use shooter_sim::hitbox::HitboxPose;
 use shooter_sim::net::conditioner::{LinkConditioner, LinkSettings};
 use shooter_sim::net::interpolation::{InterpolationBuffer, SnapshotClock};
@@ -32,7 +33,7 @@ use shooter_sim::net::protocol::{
 };
 use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::{CHANNEL_COUNT, CHANNEL_RELIABLE, DEFAULT_PORT, TICK_RATE, Tick};
-use shooter_sim::tdm::{Phase, TEAM_COUNT, Team};
+use shooter_sim::tdm::{Mode, Phase, TEAM_COUNT, Team};
 use shooter_sim::weapon::WeaponId;
 
 use super::remote::{RemotePlayer, RemoteSample};
@@ -116,6 +117,8 @@ pub struct NetClient {
     match_ends_at: Option<Tick>,
     team_scores: [u32; TEAM_COUNT],
     score_limit: u32,
+    /// The server's game, from its welcome.
+    mode: Mode,
 }
 
 struct RosterEntry {
@@ -320,18 +323,31 @@ impl NetClient {
     fn scoreboard_changed();
 
     /// Every player, ourselves included, as dictionaries with `id`, `name`,
-    /// `team`, `bot`, `me`, `score`, `kills`, `deaths`, `ping`, and `ready`,
-    /// sorted by team and then by score.
+    /// `team`, `bot`, `me`, `score`, `kills`, `deaths`, `ping`, `ready`, and
+    /// for Gun Game `level`, `level_kills`, and `weapon` (the name of the
+    /// weapon on their level). Sorted by team and then by score, or in Gun
+    /// Game by how far up the ladder, with the winner first once it ends.
     #[func]
     fn roster(&self) -> Array<VarDictionary> {
         let mut entries: Vec<&RosterEntry> = self.roster.iter().collect();
-        entries.sort_by(|a, b| {
-            (a.team, std::cmp::Reverse(a.row.score), a.id).cmp(&(
-                b.team,
-                std::cmp::Reverse(b.row.score),
-                b.id,
-            ))
-        });
+        if self.mode.free_for_all() {
+            // The winner tops the results even when they only won a tie by
+            // getting there first, which the rows cannot show.
+            let winner = match self.match_phase {
+                Some(Phase::Ended { winner }) => winner,
+                _ => None,
+            };
+            entries.sort_by_key(|e| {
+                (
+                    Some(e.id) != winner,
+                    std::cmp::Reverse((e.row.level, e.row.level_kills, e.row.kills)),
+                    e.row.deaths,
+                    e.id,
+                )
+            });
+        } else {
+            entries.sort_by_key(|e| (e.team, std::cmp::Reverse(e.row.score), e.id));
+        }
         entries
             .into_iter()
             .map(|e| {
@@ -346,17 +362,29 @@ impl NetClient {
                 d.set("deaths", e.row.deaths);
                 d.set("ping", i32::from(e.row.ping_ms));
                 d.set("ready", e.row.ready);
+                d.set("level", i32::from(e.row.level));
+                d.set("level_kills", i32::from(e.row.level_kills));
+                let weapon = gun_game::weapon(e.row.level).def();
+                d.set("weapon", &GString::from(weapon.name.as_str()));
                 d
             })
             .collect()
     }
 
-    /// The match as a dictionary: `phase` ("lobby", "countdown", "playing",
-    /// "ended", or "" before the server said), `seconds_left`, `scores` (per
-    /// team), `score_limit`, `winner` (a team, -1 for a draw), and `my_team`.
+    /// The match as a dictionary: `mode` ("tdm" or "gungame"), `mode_name`,
+    /// `free_for_all`, `phase` ("lobby", "countdown", "playing", "ended", or
+    /// "" before the server said), `seconds_left`, `scores` (per team),
+    /// `score_limit`, `winner` (a team, or in free-for-all modes a player id;
+    /// -1 for a draw), `my_team`, and for Gun Game `kills_per_weapon`.
     #[func]
     fn match_info(&self) -> VarDictionary {
         let mut d = VarDictionary::new();
+        d.set("mode", self.mode.key());
+        d.set("mode_name", self.mode.label());
+        d.set("free_for_all", self.mode.free_for_all());
+        if let Mode::GunGame(rules) = self.mode {
+            d.set("kills_per_weapon", i32::from(rules.kills_per_weapon));
+        }
         let (phase, winner) = match self.match_phase {
             None => ("", -1),
             Some(Phase::Lobby) => ("lobby", -1),
@@ -409,6 +437,14 @@ impl NetClient {
                 d.set("attachments", &attachments);
                 d
             })
+            .collect()
+    }
+
+    /// The Gun Game ladder: weapon names in the order players climb them.
+    #[func]
+    fn gun_game_ladder() -> PackedStringArray {
+        (0..gun_game::LEVELS)
+            .map(|level| GString::from(gun_game::weapon(level).def().name.as_str()))
             .collect()
     }
 
@@ -541,6 +577,7 @@ impl NetClient {
             ServerMessage::Welcome {
                 player_id,
                 snapshot_interval,
+                mode,
                 ..
             } => {
                 if self.status != Status::Connecting {
@@ -549,6 +586,7 @@ impl NetClient {
                 godot_print!("net client: joined as player {player_id}");
                 self.status = Status::Joined;
                 self.player_id = Some(player_id);
+                self.mode = mode;
                 if let Some(clock) = &mut self.clock {
                     clock.set_interval(u32::from(snapshot_interval));
                 }
@@ -725,7 +763,8 @@ impl NetClient {
         let Some(entry) = self.roster.iter().find(|e| e.id == id) else {
             return;
         };
-        let friendly = self.local_team() == Some(entry.team);
+        // Without teams, everyone else is an enemy.
+        let friendly = !self.mode.free_for_all() && self.local_team() == Some(entry.team);
         let name = entry.name.clone();
         let mut node = self.remotes[index].node.clone();
         let mut remote = node.bind_mut();

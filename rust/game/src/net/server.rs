@@ -17,6 +17,12 @@
 //! from enemies, spawns players with the loadout they chose, and sends the
 //! roster, the match state, and the scoreboard as game events.
 //!
+//! Or it runs Gun Game (`shooter_sim::gun_game`, `mode = "gungame"`): every
+//! player for themselves on the same match clock, everyone carrying only
+//! their weapon on the ladder. Kills swap a player's weapon for the next one
+//! on the spot, a fall takes one back, and the first player through the last
+//! weapon wins.
+//!
 //! With a bot skill set, its bots play the match (`super::bots`): they walk
 //! a navigation mesh baked from the map, look for enemies, and aim and shoot
 //! through the same inputs players send. Without one, bots are scripted
@@ -39,6 +45,7 @@ use godot::classes::{
 use godot::global::Error;
 use godot::prelude::*;
 use shooter_sim::bot::Skill;
+use shooter_sim::gun_game::{self, Progress, Step};
 use shooter_sim::net::discovery::{ServerInfo, query_port_for};
 use shooter_sim::net::input_queue::InputQueue;
 use shooter_sim::net::lag::{self, LagHistory, Pellet, Target};
@@ -51,9 +58,9 @@ use shooter_sim::net::{CHANNEL_COUNT, DEFAULT_PORT, MAX_PLAYERS, TICK_DT, TICK_R
 use shooter_sim::player::{self, PlayerEvent, PlayerInput, PlayerParams, PlayerState};
 use shooter_sim::score::{Kill, ScoreRules, ScoreState};
 use shooter_sim::tdm::{
-    self, MatchRules, MatchState, Phase, SpawnPoint, SpawnRules, Team, Threat, Transition,
+    self, MatchRules, MatchState, Mode, Phase, SpawnPoint, SpawnRules, Team, Threat, Transition,
 };
-use shooter_sim::weapon::{self, CombatEvent, Slot, WeaponId};
+use shooter_sim::weapon::{self, CombatEvent, CombatState, Slot, WeaponId};
 use shooter_sim::{Vec2, Vec3, rng};
 
 use super::bots::{BotBrain, BotNavigation, BotPlayer, BotWorld};
@@ -149,6 +156,14 @@ pub struct NetServer {
     /// servers that should just run).
     #[export]
     auto_start: bool,
+    /// The game: "tdm" (Team Deathmatch) or "gungame".
+    #[export]
+    #[init(val = GString::from("tdm"))]
+    mode: GString,
+    /// Gun Game: kills a player needs with each weapon to move up.
+    #[export]
+    #[init(val = 2)]
+    kills_per_weapon: i32,
 
     host: Option<Gd<ENetConnection>>,
     clients: Vec<ClientSlot>,
@@ -164,6 +179,8 @@ pub struct NetServer {
     spawn: Vector3,
     responder: Option<QueryResponder>,
     rules: MatchRules,
+    /// The game, parsed from `mode` when the server starts.
+    game: Mode,
     match_state: MatchState,
     spawn_points: Vec<SpawnPoint>,
     spawn_rules: SpawnRules,
@@ -219,6 +236,8 @@ struct Avatar {
     /// flinch (see `PlayerView::hits`).
     hits: u8,
     hit_heading: u8,
+    /// Gun Game: this player's place on the weapon ladder.
+    progress: Progress,
 }
 
 /// A shot fired this tick, waiting to be checked.
@@ -249,9 +268,29 @@ impl INode3D for NetServer {
             time_limit: self.time_limit_minutes.max(0.1) * 60.0,
             ..MatchRules::default()
         };
+        self.game = match Mode::parse(&self.mode.to_string()) {
+            Some(Mode::GunGame(_)) => Mode::GunGame(gun_game::Rules {
+                kills_per_weapon: self.kills_per_weapon.clamp(1, 255) as u8,
+            }),
+            Some(mode) => mode,
+            None => {
+                godot_warn!(
+                    "server: unknown mode \"{}\", running Team Deathmatch",
+                    self.mode
+                );
+                Mode::TeamDeathmatch
+            }
+        };
+        godot_print!("server: running {}", self.game.label());
         self.load_map();
         if self.spawn_points.is_empty() {
             self.spawn_points = fallback_spawns(self.spawn);
+        }
+        if self.game.free_for_all() {
+            // Every spawn is anyone's: no sides without teams.
+            for point in &mut self.spawn_points {
+                point.team = None;
+            }
         }
 
         let mut host = ENetConnection::new_gd();
@@ -388,6 +427,36 @@ impl NetServer {
             .map_or(-1, |a| i64::from(a.score.kills))
     }
 
+    /// A player's place on the Gun Game ladder (tests), or -1 if absent.
+    #[func]
+    fn player_level(&self, id: i32) -> i32 {
+        self.avatars
+            .iter()
+            .find(|a| i32::from(a.id) == id)
+            .map_or(-1, |a| i32::from(a.progress.level))
+    }
+
+    /// The weapon key a player holds (tests), or "" if absent.
+    #[func]
+    fn player_weapon(&self, id: i32) -> GString {
+        self.avatars
+            .iter()
+            .find(|a| i32::from(a.id) == id)
+            .map_or_else(GString::new, |a| {
+                GString::from(a.predicted.state.combat.weapon().id.def().key.as_str())
+            })
+    }
+
+    /// The winner of the match that just ended: a team, or a player id in
+    /// free-for-all modes; -1 for a draw or no result yet.
+    #[func]
+    fn match_winner(&self) -> i32 {
+        match self.match_state.phase {
+            Phase::Ended { winner } => winner.map_or(-1, i32::from),
+            _ => -1,
+        }
+    }
+
     /// A team's kills this match.
     #[func]
     fn team_score(&self, team: i32) -> i64 {
@@ -416,7 +485,7 @@ impl NetServer {
             game_port,
             name: self.server_name.to_string(),
             map: self.map_name.to_string(),
-            mode: "Team Deathmatch".to_owned(),
+            mode: self.game.label().to_owned(),
             players: 0,
             max_players: MAX_PLAYERS as u8,
             bots: 0,
@@ -538,6 +607,7 @@ impl NetServer {
                     player_id: id,
                     tick: self.tick,
                     snapshot_interval: self.snapshot_interval.clamp(1, 255) as u8,
+                    mode: self.game,
                 };
                 transport::send_reliable(&mut peer, &welcome.encode(&[]));
                 // Everyone already here, then the newcomer for everyone.
@@ -608,7 +678,12 @@ impl NetServer {
         for avatar in &self.avatars {
             counts[usize::from(avatar.team)] += 1;
         }
-        let team = tdm::assign_team(counts, u8::from(bot));
+        // Without teams, everyone is on team 0.
+        let team = if self.game.free_for_all() {
+            0
+        } else {
+            tdm::assign_team(counts, u8::from(bot))
+        };
         let mut parts = body::build_body(&format!("Player{id}"));
         self.base_mut().add_child(&parts.body);
         let predicted = Predicted {
@@ -633,11 +708,13 @@ impl NetServer {
             score: ScoreState::default(),
             hits: 0,
             hit_heading: 0,
+            progress: Progress::default(),
         });
         let event = joined_event(self.avatars.last().expect("just pushed"));
         self.broadcast_event(&event);
-        // Before a match the team starts together; during one, somewhere safe.
-        let start = !self.match_state.scoring();
+        // Before a match the team starts together; during one, or without
+        // teams, somewhere safe.
+        let start = !self.match_state.scoring() && !self.game.free_for_all();
         let slot = counts[usize::from(team)];
         self.respawn(id, start.then_some(slot));
         self.next_scoreboard = self.tick;
@@ -659,6 +736,7 @@ impl NetServer {
             return;
         };
         let tick = self.tick;
+        let gun_game = matches!(self.game, Mode::GunGame(_));
         let avatar = &mut self.avatars[index];
         if let Some(brain) = &mut avatar.brain {
             // Bots pick a new primary every life.
@@ -669,9 +747,18 @@ impl NetServer {
             }
             brain.on_spawn(point.yaw, tick);
         }
-        let loadout = [avatar.primary, WeaponId::expect("m1911")];
+        let loadout = if gun_game {
+            gun_game::weapon(avatar.progress.level)
+        } else {
+            avatar.primary
+        };
+        let mut state = PlayerState::new([loadout, WeaponId::expect("m1911")]);
+        if gun_game {
+            // Gun Game: the ladder's weapon and nothing else.
+            state.combat = CombatState::only(loadout);
+        }
         avatar.predicted = Predicted {
-            state: PlayerState::new(loadout),
+            state,
             position: point.position,
             on_floor: false,
         };
@@ -692,13 +779,13 @@ impl NetServer {
             .filter(|a| a.id != me.id && a.predicted.state.alive())
             .map(|a| Threat {
                 position: a.predicted.position,
-                enemy: a.team != me.team,
+                enemy: self.hostile(a, me),
             })
             .collect();
         let eyes: Vec<Vector3> = self
             .avatars
             .iter()
-            .filter(|a| a.team != me.team && a.predicted.state.alive())
+            .filter(|a| self.hostile(a, me) && a.predicted.state.alive())
             .map(|a| {
                 let stance = a.predicted.state.movement.stance;
                 to_godot(a.predicted.position)
@@ -796,7 +883,7 @@ impl NetServer {
             .iter()
             .map(|a| BotPlayer {
                 id: a.id,
-                team: a.team,
+                team: self.side(a),
                 alive: a.predicted.state.alive(),
                 feet: to_godot(a.predicted.position),
                 stance: a.predicted.state.movement.stance,
@@ -812,6 +899,8 @@ impl NetServer {
             .base()
             .get_world_3d()
             .and_then(|world| world.get_direct_space_state());
+        // Gun Game hands out weapons by the ladder only.
+        let racks = !matches!(self.game, Mode::GunGame(_));
         for avatar in &mut self.avatars {
             let inputs: Vec<(PlayerInput, Option<f64>)> = if avatar.bot {
                 let input = match (&mut avatar.brain, &mut self.navigation, &mut space) {
@@ -856,7 +945,7 @@ impl NetServer {
             for (input, view_tick) in &inputs {
                 let mut input = *input;
                 if let Some(weapon) = input.pickup
-                    && !pickup_in_reach(avatar, &input, weapon, &self.params)
+                    && (!racks || !pickup_in_reach(avatar, &input, weapon, &self.params))
                 {
                     input.pickup = None;
                 }
@@ -917,6 +1006,7 @@ impl NetServer {
         }
         for id in fall_deaths {
             self.record_death(id);
+            self.on_suicide(id);
         }
         for id in respawns {
             self.respawn(id, None);
@@ -943,6 +1033,7 @@ impl NetServer {
             return;
         }
         let shooter_team = shooter.team;
+        let shooter_side = self.side(shooter);
         let Some(mut space) = shooter
             .parts
             .body
@@ -977,7 +1068,7 @@ impl NetServer {
             // No friendly fire: bullets pass through teammates.
             .filter(|a| {
                 a.id != shot.shooter
-                    && a.team != shooter_team
+                    && self.side(a) != shooter_side
                     && a.predicted.state.alive()
                     && f64::from(a.spawned_at) <= rewind
             })
@@ -1050,11 +1141,14 @@ impl NetServer {
                 });
                 self.record_death(hit.id);
                 let victim_team = self.avatars.iter().find(|a| a.id == hit.id).map(|a| a.team);
-                if let Some(victim_team) = victim_team
-                    && let Some(end) =
+                let end = match self.game {
+                    Mode::GunGame(rules) => self.climb(shot.shooter, &rules),
+                    Mode::TeamDeathmatch => victim_team.and_then(|victim_team| {
                         self.match_state
                             .on_kill(&self.rules, Some(shooter_team), victim_team)
-                {
+                    }),
+                };
+                if let Some(end) = end {
                     self.on_transition(end);
                 } else {
                     self.broadcast_match();
@@ -1116,7 +1210,13 @@ impl NetServer {
         }
         let all_ready = self.auto_start || humans.iter().all(|c| c.ready);
         let phase = self.match_state.phase;
-        let transition = self.match_state.tick(&self.rules, TICK_DT, all_ready);
+        let leader = match self.game {
+            Mode::TeamDeathmatch => self.match_state.team_leader(),
+            Mode::GunGame(_) => gun_game::leader(self.avatars.iter().map(|a| (a.id, a.progress))),
+        };
+        let transition = self
+            .match_state
+            .tick(&self.rules, TICK_DT, all_ready, leader);
         if let Some(transition) = transition {
             self.on_transition(transition);
         } else if self.match_state.phase != phase {
@@ -1129,7 +1229,9 @@ impl NetServer {
             Transition::Started => {
                 godot_print!("server: match started");
                 self.recent_deaths.clear();
-                // Everyone starts fresh on their own side, in join order.
+                // Everyone starts fresh on their own side, in join order;
+                // without teams, each somewhere away from the others.
+                let free_for_all = self.game.free_for_all();
                 let mut slots = [0; tdm::TEAM_COUNT];
                 let mut order: Vec<(Team, u8)> =
                     self.avatars.iter().map(|a| (a.team, a.id)).collect();
@@ -1137,9 +1239,10 @@ impl NetServer {
                 for (team, id) in order {
                     if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) {
                         avatar.score = ScoreState::default();
+                        avatar.progress = Progress::default();
                     }
                     let slot = &mut slots[usize::from(team)];
-                    self.respawn(id, Some(*slot));
+                    self.respawn(id, (!free_for_all).then_some(*slot));
                     *slot += 1;
                 }
                 let ids: Vec<u8> = self.avatars.iter().map(|a| a.id).collect();
@@ -1154,12 +1257,22 @@ impl NetServer {
                 }
             }
             Transition::Ended { winner } => {
-                godot_print!(
-                    "server: match over, {} ({} to {})",
-                    winner.map_or("a draw".to_owned(), |t| format!("team {} won", t + 1)),
-                    self.match_state.scores[0],
-                    self.match_state.scores[1]
-                );
+                if self.game.free_for_all() {
+                    let name = winner
+                        .and_then(|id| self.avatars.iter().find(|a| a.id == id))
+                        .map(|a| a.name.clone());
+                    godot_print!(
+                        "server: match over, {}",
+                        name.map_or("a draw".to_owned(), |name| format!("{name} won"))
+                    );
+                } else {
+                    godot_print!(
+                        "server: match over, {} ({} to {})",
+                        winner.map_or("a draw".to_owned(), |t| format!("team {} won", t + 1)),
+                        self.match_state.scores[0],
+                        self.match_state.scores[1]
+                    );
+                }
                 // Ready-up again only before the first match of a session.
                 for client in &mut self.clients {
                     client.ready = true;
@@ -1179,7 +1292,10 @@ impl NetServer {
             phase: state.phase,
             ends_at,
             scores: state.scores,
-            score_limit: self.rules.score_limit,
+            score_limit: match self.game {
+                Mode::TeamDeathmatch => self.rules.score_limit,
+                Mode::GunGame(_) => u32::from(gun_game::LEVELS),
+            },
         }
     }
 
@@ -1205,10 +1321,59 @@ impl NetServer {
                         transport::round_trip_ms(&c.peer).clamp(0.0, 9999.0) as u16
                     }),
                     ready: client.is_none_or(|c| c.ready),
+                    level: a.progress.level,
+                    level_kills: a.progress.kills,
                 }
             })
             .collect();
         self.broadcast_event(&GameEvent::Scoreboard { rows });
+    }
+
+    /// Who a player fights for: their team, or in free-for-all modes
+    /// themselves (their id; bots read it as a team).
+    fn side(&self, avatar: &Avatar) -> u8 {
+        if self.game.free_for_all() {
+            avatar.id
+        } else {
+            avatar.team
+        }
+    }
+
+    /// Whether `a` and `b` are enemies.
+    fn hostile(&self, a: &Avatar, b: &Avatar) -> bool {
+        a.id != b.id && self.side(a) != self.side(b)
+    }
+
+    /// Gun Game: a kill by `id` counts toward their weapon. Moving up swaps
+    /// the weapon in their hands for the next one, and the last weapon's last
+    /// kill wins the match.
+    fn climb(&mut self, id: u8, rules: &gun_game::Rules) -> Option<Transition> {
+        if !self.match_state.scoring() {
+            return None;
+        }
+        let avatar = self.avatars.iter_mut().find(|a| a.id == id)?;
+        self.next_scoreboard = self.tick;
+        match avatar.progress.on_kill(rules, self.tick) {
+            Step::Counted => None,
+            Step::Promoted => {
+                let weapon = gun_game::weapon(avatar.progress.level);
+                avatar.predicted.state.combat.rearm(weapon);
+                None
+            }
+            Step::Won => Some(self.match_state.finish(&self.rules, Some(id))),
+        }
+    }
+
+    /// Gun Game: a player killed themselves (a fall) and drops a weapon. They
+    /// are dead, so the lower weapon comes with the respawn.
+    fn on_suicide(&mut self, id: u8) {
+        if !matches!(self.game, Mode::GunGame(_)) || !self.match_state.scoring() {
+            return;
+        }
+        if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) {
+            avatar.progress.on_suicide(self.tick);
+            self.next_scoreboard = self.tick;
+        }
     }
 
     fn client_of(&self, id: u8) -> Option<&ClientSlot> {

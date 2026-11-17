@@ -13,6 +13,8 @@ var _scene_path := ARENA_PATH
 var _destination := "testing arena"
 var _zombies_menu: Node
 var _tdm_setup: Node
+## The menu button that opened the match setup, focused again when it closes.
+var _setup_button := "TeamDeathmatch"
 
 @onready var _testing: Button = $Margin/Layout/Menu/TestingArea
 @onready var _status: Label = $Margin/Layout/Status
@@ -28,7 +30,8 @@ func _ready() -> void:
 	$Margin/Layout/Menu/Slamcity.pressed.connect(
 		func() -> void: _start_scene(SLAMCITY_PATH, "Slamcity")
 	)
-	$Margin/Layout/Menu/TeamDeathmatch.pressed.connect(_open_tdm)
+	$Margin/Layout/Menu/TeamDeathmatch.pressed.connect(_open_setup.bind("tdm"))
+	$Margin/Layout/Menu/GunGame.pressed.connect(_open_setup.bind("gungame"))
 	$Margin/Layout/Menu/Multiplayer.pressed.connect(_open_multiplayer)
 	$Margin/Layout/Menu/Zombies.pressed.connect(_open_zombies)
 	_testing.grab_focus()
@@ -62,13 +65,16 @@ func _open_multiplayer(message := "") -> void:
 	)
 
 
-func _open_tdm() -> void:
+## Opens the local match setup for `mode` ("tdm" or "gungame").
+func _open_setup(mode: String) -> void:
 	if _loading:
 		return
 	var setup := Control.new()
 	setup.set_script(load("res://scripts/tdm_setup.gd"))
+	setup.set("mode", mode)
 	setup.name = "TdmSetup"
 	_tdm_setup = setup
+	_setup_button = "GunGame" if mode == "gungame" else "TeamDeathmatch"
 	$Margin.hide()
 	add_child(setup)
 	setup.back_requested.connect(_close_tdm)
@@ -80,7 +86,7 @@ func _close_tdm() -> void:
 		_tdm_setup.queue_free()
 		_tdm_setup = null
 	$Margin.show()
-	$Margin/Layout/Menu/TeamDeathmatch.grab_focus()
+	($Margin/Layout/Menu.get_node(_setup_button) as Button).grab_focus()
 
 
 func _start_tdm(options: Dictionary) -> void:
@@ -149,7 +155,7 @@ func _start_scene(path: String, destination: String) -> void:
 
 func _set_buttons_disabled(disabled: bool) -> void:
 	for name: String in [
-		"TestingArea", "TeamDeathmatch", "Slamcity", "Nuketown", "Multiplayer", "Zombies"
+		"TestingArea", "TeamDeathmatch", "GunGame", "Slamcity", "Nuketown", "Multiplayer", "Zombies"
 	]:
 		($Margin/Layout/Menu.get_node(name) as Button).disabled = disabled
 

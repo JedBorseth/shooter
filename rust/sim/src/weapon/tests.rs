@@ -629,3 +629,60 @@ fn holding_the_trigger_waits_out_the_delay_between_bursts() {
     );
     assert!(fired_at[3] - fired_at[2] >= 24 + 8, "{fired_at:?}");
 }
+
+#[test]
+fn rearming_hands_over_one_loaded_weapon_and_raises_it() {
+    let mut s = ready();
+    tap_fire(&mut s, 2, 10);
+    let fired = s.shots_fired;
+    assert!(fired > 0);
+    s.fire_held = true;
+    s.rearm(id("m870"));
+    assert_eq!(s.slots[0], WeaponState::full(id("m870")));
+    assert!(!s.slots[1].carried, "the sidearm is gone");
+    assert_eq!(s.active, 0);
+    assert!(matches!(s.action, Action::Raising { .. }));
+    assert_eq!(s.ads, 0.0);
+    assert_eq!(s.recoil, Vec2::ZERO);
+    // Shot numbers keep counting, and a held trigger stays held.
+    assert_eq!(s.shots_fired, fired);
+    assert!(s.fire_held);
+}
+
+#[test]
+fn a_lone_sidearm_is_drawn_and_never_switches_away() {
+    let mut s = CombatState::only(id("m1911"));
+    assert_eq!(s.active, 1);
+    assert_eq!(s.def().key, "m1911");
+    assert!(!s.slots[0].carried);
+    s.action = Action::Ready;
+    let events = run(
+        &mut s,
+        CombatInput {
+            switch_to: Some(0),
+            ..Default::default()
+        },
+        CombatContext::default(),
+        20,
+    );
+    assert!(events.is_empty());
+    assert_eq!(s.active, 1);
+}
+
+#[test]
+fn a_lone_primary_never_switches() {
+    let mut s = CombatState::only(id("m40"));
+    s.action = Action::Ready;
+    let events = run(
+        &mut s,
+        CombatInput {
+            switch_to: Some(1),
+            ..Default::default()
+        },
+        CombatContext::default(),
+        20,
+    );
+    assert!(events.is_empty());
+    assert_eq!(s.active, 0);
+    assert_eq!(s.action, Action::Ready);
+}

@@ -42,6 +42,7 @@ func _run() -> void:
 			(
 				options
 				== {
+					"mode": "tdm",
 					"map": "slamcity",
 					"bots": 11,
 					"bot_skill": "normal",
@@ -54,6 +55,31 @@ func _run() -> void:
 		setup.back_requested.emit()
 		await process_frame
 		_check(title.get_node_or_null("TdmSetup") == null, "Back closes the setup")
+	var gun_game := menu.get_node("GunGame") as Button
+	_check(menu.get_child(2) == gun_game and not gun_game.disabled, "Gun Game is the third option")
+	gun_game.pressed.emit()
+	await process_frame
+	setup = title.get_node_or_null("TdmSetup")
+	_check(setup != null, "Gun Game opens its setup")
+	if setup != null:
+		var options: Dictionary = setup.options()
+		_check(
+			(
+				options
+				== {
+					"mode": "gungame",
+					"map": "slamcity",
+					"bots": 7,
+					"bot_skill": "normal",
+					"kills_per_weapon": 2,
+					"time_limit": 10
+				}
+			),
+			"the default Gun Game is eight players on Slamcity, got %s" % options
+		)
+		setup.back_requested.emit()
+		await process_frame
+		_check(gun_game.has_focus(), "Back returns focus to Gun Game")
 	for i in 5:
 		await process_frame
 	for path: String in [

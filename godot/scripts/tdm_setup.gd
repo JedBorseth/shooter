@@ -1,8 +1,10 @@
 extends Control
-## Team Deathmatch setup on the title screen: name, map, team size (bots fill
-## the empty places), kill limit, and time limit. Start runs a local dedicated
-## server with those rules and joins it (`Net.start_local_match`). UI only: it
-## loads no gameplay.
+## Local match setup on the title screen, for Team Deathmatch (`mode` "tdm":
+## name, map, team size, bots, kill limit, and time limit) or Gun Game
+## ("gungame": name, map, player count, bots, kills per weapon, and time
+## limit). Bots fill the empty places. Start runs a local dedicated server with
+## those rules and joins it (`Net.start_local_match`). UI only: it loads no
+## gameplay. Set `mode` before adding it to the tree.
 
 signal back_requested
 signal start_requested(options: Dictionary)
@@ -13,18 +15,27 @@ const TEAM_SIZES := [1, 2, 3, 4, 5, 6]
 const SCORE_LIMITS := [25, 50, 75, 100]
 const TIME_LIMITS := [5, 10, 15, 20]
 const BOT_SKILLS := [["Easy", "easy"], ["Normal", "normal"], ["Hard", "hard"]]
+const PLAYER_COUNTS := [2, 4, 6, 8, 10, 12]
+const KILLS_PER_WEAPON := [1, 2, 3]
+
+## "tdm" or "gungame".
+var mode := "tdm"
 
 var _name: LineEdit
 var _map: OptionButton
 var _team_size: OptionButton
 var _score_limit: OptionButton
+var _players: OptionButton
+var _kills_per_weapon: OptionButton
 var _time_limit: OptionButton
 var _bot_skill: OptionButton
 var _start: Button
 
 
 func _ready() -> void:
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	# Offsets too: anchors alone leave a new Control zero-sized, which pins
+	# the panel to the top-left corner.
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_build()
 	_start.grab_focus.call_deferred()
 
@@ -37,14 +48,28 @@ func _unhandled_input(event: InputEvent) -> void:
 
 ## The chosen rules, as `Net.start_local_match` takes them.
 func options() -> Dictionary:
+	if _gun_game():
+		return {
+			"mode": "gungame",
+			"map": MAPS[_map.selected][1],
+			"bots": PLAYER_COUNTS[_players.selected] - 1,
+			"bot_skill": BOT_SKILLS[_bot_skill.selected][1],
+			"kills_per_weapon": KILLS_PER_WEAPON[_kills_per_weapon.selected],
+			"time_limit": TIME_LIMITS[_time_limit.selected],
+		}
 	var team_size: int = TEAM_SIZES[_team_size.selected]
 	return {
+		"mode": "tdm",
 		"map": MAPS[_map.selected][1],
 		"bots": team_size * 2 - 1,
 		"bot_skill": BOT_SKILLS[_bot_skill.selected][1],
 		"score_limit": SCORE_LIMITS[_score_limit.selected],
 		"time_limit": TIME_LIMITS[_time_limit.selected],
 	}
+
+
+func _gun_game() -> bool:
+	return mode == "gungame"
 
 
 func _on_start() -> void:
@@ -56,7 +81,7 @@ func _on_start() -> void:
 
 func _build() -> void:
 	var center := CenterContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(center)
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = Vector2(560, 0)
@@ -72,11 +97,18 @@ func _build() -> void:
 	eyebrow.add_theme_font_size_override("font_size", 15)
 	layout.add_child(eyebrow)
 	var title := Label.new()
-	title.text = "Team Deathmatch"
+	title.text = "Gun Game" if _gun_game() else "Team Deathmatch"
 	title.add_theme_font_size_override("font_size", 36)
 	layout.add_child(title)
 	var detail := Label.new()
-	detail.text = "Two teams race to the kill limit. Bots fill the empty places."
+	if _gun_game():
+		detail.text = (
+			"Every player for themselves, up eight weapons from the LSW-6 to the M1911."
+			+ " Kills move you up, a fall moves you down. Bots fill the empty places."
+		)
+	else:
+		detail.text = "Two teams race to the kill limit. Bots fill the empty places."
+	detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	detail.add_theme_color_override("font_color", MenuStyle.TEXT_DIM)
 	detail.add_theme_font_size_override("font_size", 17)
 	layout.add_child(detail)
@@ -88,13 +120,26 @@ func _build() -> void:
 	MenuStyle.style_line_edit(_name)
 	_row(layout, "Name", _name)
 	_map = _choice(layout, "Map", MAPS.map(func(m: Array) -> String: return m[0]), 0)
-	_team_size = _choice(
-		layout, "Teams", TEAM_SIZES.map(func(n: int) -> String: return "%dv%d" % [n, n]), 5
-	)
+	if _gun_game():
+		_players = _choice(
+			layout, "Players", PLAYER_COUNTS.map(func(n: int) -> String: return str(n)), 3
+		)
+	else:
+		_team_size = _choice(
+			layout, "Teams", TEAM_SIZES.map(func(n: int) -> String: return "%dv%d" % [n, n]), 5
+		)
 	_bot_skill = _choice(layout, "Bots", BOT_SKILLS.map(func(s: Array) -> String: return s[0]), 1)
-	_score_limit = _choice(
-		layout, "Kill limit", SCORE_LIMITS.map(func(n: int) -> String: return str(n)), 2
-	)
+	if _gun_game():
+		_kills_per_weapon = _choice(
+			layout,
+			"Kills per weapon",
+			KILLS_PER_WEAPON.map(func(n: int) -> String: return str(n)),
+			1
+		)
+	else:
+		_score_limit = _choice(
+			layout, "Kill limit", SCORE_LIMITS.map(func(n: int) -> String: return str(n)), 2
+		)
 	_time_limit = _choice(
 		layout, "Time limit", TIME_LIMITS.map(func(n: int) -> String: return "%d min" % n), 1
 	)
@@ -115,7 +160,7 @@ func _row(layout: VBoxContainer, label_text: String, control: Control) -> void:
 	row.add_theme_constant_override("separation", 16)
 	var label := Label.new()
 	label.text = label_text
-	label.custom_minimum_size = Vector2(140, 0)
+	label.custom_minimum_size = Vector2(180, 0)
 	label.add_theme_color_override("font_color", MenuStyle.TEXT)
 	label.add_theme_font_size_override("font_size", 19)
 	row.add_child(label)

@@ -6,6 +6,7 @@
 
 pub mod bot;
 pub mod fmath;
+pub mod gun_game;
 pub mod hitbox;
 pub mod look;
 pub mod movement;
