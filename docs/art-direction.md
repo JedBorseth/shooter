@@ -195,7 +195,7 @@ Each third-person kit also carries `BodyFar`, the same character decimated to ab
 
 ### Character detail
 
-![An ally squad on the range at 10 m, an ally crouched, an enemy sprinting, close-ups of an ally's bare face and an enemy's balaclava, and a zombie](media/characters-v3.jpg)
+![The zombie horde, two zombies up close, an ally and an enemy in boots, and an enemy's bare head under the helmet](media/characters-v4.jpg)
 
 `shaders/character.gdshader` reads the kit's atlas and:
 
@@ -292,5 +292,7 @@ To review sights, capture every weapon at the hip and aimed: `CAPTURE_DIR=/path/
 
 ## Zombies and other characters
 
-Zombies use the same skeleton and pipeline. The `zombie` kit in `tools/build_character_assets.py` is the soldier's body and clothes without the kit, with bare hands. `SoldierRig` plays the Universal Animation Library 2 zombie clips (`Zombie_Idle_Loop`, `Zombie_Walk_Fwd_Loop`, `Zombie_Scratch`) when `zombie` is set, adds glowing eyes, and the zombie palette gives sickly skin, grime, and blood that differ per zombie. To add another character, add a kit to `KITS` (its MakeHuman body, clothes, and gear) and a scene that instances its model under a `SoldierRig`.
+Zombies use the same skeleton and pipeline. Four zombie kits in `tools/build_character_assets.py` are four different people in their own clothes: a young man in a sweater and cargo trousers (`zombie`), a heavy middle-aged man in work overalls (`zombie_b`), an old man in a jacket and jeans (`zombie_c`), and a slim young man in a T-shirt and jeans (`zombie_d`). Each has its own MakeHuman body, skin, and atlas, with bare hands and no kit. Zombie kits are not tinted: their clothes keep the garments' own colours (`Kit::Zombie` in `palette.rs`), and the shader adds sickly skin, grime, and blood that differ per zombie.
+
+`scenes/characters/zombie_body.tscn` lists the other bodies in `SoldierRig.variants`, and each zombie wears one of the four, picked from its seed. `SoldierRig` plays the Universal Animation Library 2 zombie clips when `zombie` is set and adds glowing eyes. To add another character, add a kit to `KITS` (its MakeHuman body, clothes, and gear), and either a scene that instances its model under a `SoldierRig` or an entry in a rig's `variants`.
 

@@ -129,7 +129,7 @@ void fragment() {
 		glow = palette[role].rgb * emission_energy;
 	}
 	if (rim_energy > 0.0) {
-		float rim = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 4.0);
+		float rim = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 6.0);
 		glow += rim_colour * rim * rim_energy;
 	}
 	EMISSION = glow;

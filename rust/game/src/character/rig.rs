@@ -128,6 +128,10 @@ pub struct SoldierRig {
     /// and no weapon. Set before the rig enters the tree.
     #[export]
     zombie: bool,
+    /// Other bodies this character may wear instead of `Model` (zombies): one
+    /// is picked per character, `Model` included.
+    #[export]
+    variants: Array<Gd<PackedScene>>,
 
     #[init(node = "Model")]
     model: OnReady<Gd<Node3D>>,
@@ -168,6 +172,7 @@ impl INode3D for SoldierRig {
     fn ready(&mut self) {
         self.was_alive = true;
         self.ik = 1.0;
+        self.pick_body();
         let Some(skeleton) = self.skeleton() else {
             godot_error!("SoldierRig: no GeneralSkeleton under Model");
             return;
@@ -233,6 +238,34 @@ impl INode3D for SoldierRig {
 
 #[godot_api]
 impl SoldierRig {
+    /// Swaps `Model` for one of `variants`, chosen by this character's seed.
+    fn pick_body(&mut self) {
+        if self.variants.is_empty() {
+            return;
+        }
+        let seed = self.base().instance_id().to_i64().unsigned_abs();
+        let pick = (seed / 7 % (self.variants.len() as u64 + 1)) as usize;
+        if pick == 0 {
+            return;
+        }
+        let Some(scene) = self.variants.get(pick - 1) else {
+            return;
+        };
+        let Some(mut body) = scene.try_instantiate_as::<Node3D>() else {
+            godot_error!("SoldierRig: a body variant is not a Node3D scene");
+            return;
+        };
+        let mut old = self.model.clone();
+        body.set_transform(old.get_transform());
+        let index = old.get_index();
+        self.base_mut().remove_child(&old);
+        old.queue_free();
+        body.set_name("Model");
+        self.base_mut().add_child(&body);
+        self.base_mut().move_child(&body, index);
+        *self.model = body;
+    }
+
     /// The world position of the weapon's muzzle, or the chest if unarmed.
     #[func]
     pub fn muzzle_position(&self) -> Vector3 {

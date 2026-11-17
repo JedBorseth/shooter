@@ -56,8 +56,13 @@ const TINTED: [&str; 9] = [
 pub enum Kit {
     Soldier,
     Arms,
-    Zombie,
+    /// One of the zombie bodies (0 to 3: `zombie`, `zombie_b`, ...). Zombie
+    /// kits keep their clothes' own colours: no role is tinted.
+    Zombie(u8),
 }
+
+/// The zombie kits' directories, in `Kit::Zombie` order.
+const ZOMBIE_KITS: [&str; 4] = ["zombie", "zombie_b", "zombie_c", "zombie_d"];
 
 impl Kit {
     pub fn from_material_name(name: &str) -> Option<Self> {
@@ -65,8 +70,11 @@ impl Kit {
             // Models built before the atlas used a single `character` material.
             "character" | "character_soldier" => Some(Kit::Soldier),
             "character_arms" => Some(Kit::Arms),
-            "character_zombie" => Some(Kit::Zombie),
-            _ => None,
+            _ => {
+                let dir = name.strip_prefix("character_")?;
+                let i = ZOMBIE_KITS.iter().position(|k| *k == dir)?;
+                Some(Kit::Zombie(i as u8))
+            }
         }
     }
 
@@ -74,7 +82,7 @@ impl Kit {
         match self {
             Kit::Soldier => "soldier",
             Kit::Arms => "arms",
-            Kit::Zombie => "zombie",
+            Kit::Zombie(i) => ZOMBIE_KITS[usize::from(i).min(ZOMBIE_KITS.len() - 1)],
         }
     }
 }
@@ -99,23 +107,24 @@ pub fn colour(team: Team, role: &str) -> Color {
         (Team::Zombies, "accent") => rgb(0.36, 0.03, 0.02),
         // Allies: tan combat shirt and trousers, coyote and ranger-green kit.
         (Team::Allies, "uniform") => rgb(0.6, 0.53, 0.4),
-        (Team::Allies, "pants") => rgb(0.55, 0.49, 0.37),
+        (Team::Allies, "pants") => rgb(0.5, 0.45, 0.34),
         (Team::Allies, "gloves") => rgb(0.24, 0.21, 0.17),
         (Team::Allies, "boots") => rgb(0.46, 0.38, 0.28),
         (Team::Allies, "mask") => rgb(0.5, 0.46, 0.36),
         (Team::Allies, "helmet") => rgb(0.52, 0.46, 0.34),
-        (Team::Allies, "vest") => rgb(0.5, 0.44, 0.32),
+        (Team::Allies, "vest") => rgb(0.45, 0.4, 0.29),
         (Team::Allies, "webbing") => rgb(0.4, 0.4, 0.3),
         (Team::Allies, "accent") => rgb(0.16, 0.56, 1.0),
-        // Enemies: charcoal shirt and trousers, black kit.
+        // Enemies: charcoal shirt and trousers, near-black kit, and a lighter
+        // helmet so the head reads apart from the body.
         (Team::Enemies, "uniform") => rgb(0.22, 0.23, 0.24),
         (Team::Enemies, "pants") => rgb(0.2, 0.21, 0.22),
-        (Team::Enemies, "gloves") => rgb(0.1, 0.1, 0.1),
-        (Team::Enemies, "boots") => rgb(0.11, 0.1, 0.095),
-        (Team::Enemies, "mask") => rgb(0.12, 0.12, 0.13),
-        (Team::Enemies, "helmet") => rgb(0.15, 0.155, 0.16),
-        (Team::Enemies, "vest") => rgb(0.13, 0.135, 0.14),
-        (Team::Enemies, "webbing") => rgb(0.11, 0.115, 0.12),
+        (Team::Enemies, "gloves") => rgb(0.15, 0.15, 0.15),
+        (Team::Enemies, "boots") => rgb(0.14, 0.13, 0.12),
+        (Team::Enemies, "mask") => rgb(0.17, 0.17, 0.18),
+        (Team::Enemies, "helmet") => rgb(0.225, 0.235, 0.225),
+        (Team::Enemies, "vest") => rgb(0.15, 0.155, 0.16),
+        (Team::Enemies, "webbing") => rgb(0.16, 0.165, 0.17),
         (Team::Enemies, "accent") => rgb(1.0, 0.24, 0.1),
         // Untinted roles keep the atlas colour.
         _ => rgb(1.0, 1.0, 1.0),
@@ -210,7 +219,10 @@ fn build_character(team: Team, kit: Kit, viewmodel: bool) -> Gd<ShaderMaterial> 
     m.set_shader(&load::<Shader>("res://shaders/character.gdshader"));
     let mut colours: PackedColorArray = ROLES.iter().map(|role| colour(team, role)).collect();
     colours.resize(16);
-    let (tinted, hidden_mask, emissive) = role_masks(team);
+    let (mut tinted, hidden_mask, emissive) = role_masks(team);
+    if matches!(kit, Kit::Zombie(_)) {
+        tinted = 0;
+    }
     m.set_shader_parameter("palette", &colours.to_variant());
     m.set_shader_parameter("tinted_roles", &tinted.to_variant());
     m.set_shader_parameter("hidden_roles", &hidden_mask.to_variant());
@@ -309,6 +321,16 @@ mod tests {
             // Skin under a covering is hidden; bare skin is shown.
             assert_eq!(worn != 0, hidden & LOWER_FACE != 0, "seed {seed}");
         }
+    }
+
+    #[test]
+    fn every_zombie_kit_is_found_by_its_material() {
+        for (i, dir) in ZOMBIE_KITS.iter().enumerate() {
+            let kit = Kit::from_material_name(&format!("character_{dir}"));
+            assert_eq!(kit, Some(Kit::Zombie(i as u8)));
+            assert_eq!(kit.unwrap().dir(), *dir);
+        }
+        assert_eq!(Kit::from_material_name("character_zombie_z"), None);
     }
 
     #[test]
