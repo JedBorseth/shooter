@@ -686,3 +686,54 @@ fn a_lone_primary_never_switches() {
     assert_eq!(s.active, 0);
     assert_eq!(s.action, Action::Ready);
 }
+
+#[test]
+fn holding_the_trigger_through_a_reload_keeps_the_fire_rate() {
+    let mut s = ready();
+    let ctx = CombatContext::default();
+    let mut fired_at = Vec::new();
+    let mut reloaded_at = None;
+    // Hold fire long enough to empty the magazine, reload, and keep spraying.
+    for tick in 0..600 {
+        let mut events = Vec::new();
+        step(&mut s, &fire(), &ctx, DT, &mut events);
+        if shots(&events) > 0 {
+            fired_at.push(tick);
+        }
+        if reloaded_at.is_none()
+            && events
+                .iter()
+                .any(|e| matches!(e, CombatEvent::ReloadFinished { .. }))
+        {
+            reloaded_at = Some(tick);
+        }
+    }
+    let reloaded_at = reloaded_at.expect("the magazine should reload");
+    assert!(fired_at.iter().any(|&t| t > reloaded_at), "{fired_at:?}");
+    // 750 RPM is one round every 4.8 ticks at 60 Hz, so shots are never closer than 4.
+    for pair in fired_at.windows(2) {
+        assert!(pair[1] - pair[0] >= 4, "{fired_at:?}");
+    }
+}
+
+#[test]
+fn holding_the_trigger_through_a_switch_keeps_the_fire_rate() {
+    let mut s = ready();
+    let ctx = CombatContext::default();
+    let mut fired_at = Vec::new();
+    for tick in 0..300 {
+        let input = CombatInput {
+            fire: true,
+            switch_to: (tick == 10).then_some(1).or((tick == 60).then_some(0)),
+            ..Default::default()
+        };
+        let mut events = Vec::new();
+        step(&mut s, &input, &ctx, DT, &mut events);
+        if shots(&events) > 0 && s.active == 0 {
+            fired_at.push(tick);
+        }
+    }
+    for pair in fired_at.windows(2) {
+        assert!(pair[1] - pair[0] >= 4, "{fired_at:?}");
+    }
+}
