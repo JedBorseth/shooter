@@ -6,11 +6,12 @@ extends SceneTree
 ## kills alone score nothing, and that the zone moves on after its minute.
 ## godot --headless --path godot --script res://tests/hardpoint_test.gd
 
-const PORT := 27988
 ## A little more than one zone's minute, so the zone has moved once.
 const SECONDS := 64
 
 var _failures := 0
+## A port per process, so test runs in parallel on one machine don't meet.
+var _port := 30000 + OS.get_process_id() % 20000
 
 
 func _initialize() -> void:
@@ -23,7 +24,7 @@ func _run() -> void:
 	server.map_scene = load("res://scenes/slamcity.tscn") as PackedScene
 	server.map_name = "Slamcity"
 	server.mode = "hardpoint"
-	server.port = PORT
+	server.port = _port
 	server.query_port = -1
 	server.bots = bots
 	server.bot_skill = "normal"
