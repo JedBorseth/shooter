@@ -1833,30 +1833,32 @@ impl FpsPlayer {
         let action = match combat.action {
             Action::Ready => ViewAction::Ready,
             Action::Reloading { remaining, empty } => {
-                let total = match def.reload {
-                    Reload::Magazine {
-                        time, empty_time, ..
-                    } => {
-                        if empty {
-                            empty_time
-                        } else {
-                            time
-                        }
-                    }
-                    Reload::PerRound { .. } => 1.0,
-                };
-                ViewAction::Reloading(progress(remaining, total))
+                let total = def.reload.magazine_time(empty).unwrap_or(remaining);
+                ViewAction::Reloading {
+                    elapsed: (total - remaining).max(0.0),
+                    empty,
+                }
             }
-            // Round-by-round: tilt in, hold while loading, tilt back out.
+            // Round-by-round: the time into the current stage.
             Action::Loading { remaining, stage } => {
-                let Reload::PerRound { start, end, .. } = def.reload else {
+                let Reload::PerRound {
+                    start,
+                    per_round,
+                    end,
+                } = def.reload
+                else {
                     return self.frame_with(ads, ViewAction::Ready);
                 };
-                ViewAction::Reloading(match stage {
-                    LoadStage::Opening => 0.5 * progress(remaining, start),
-                    LoadStage::Round => 0.5,
-                    LoadStage::Closing => 0.5 + 0.5 * progress(remaining, end),
-                })
+                let length = match stage {
+                    LoadStage::Opening => start,
+                    LoadStage::Round => per_round,
+                    LoadStage::Closing => end,
+                };
+                ViewAction::Loading {
+                    stage,
+                    elapsed: (length - remaining).clamp(0.0, length),
+                    length,
+                }
             }
             Action::Cycling { remaining } => {
                 ViewAction::Cycling(progress(remaining, def.cycle_time))
@@ -1901,7 +1903,6 @@ impl FpsPlayer {
             sprinting: self.state.movement.sprinting,
             on_floor: self.env.on_floor,
             action,
-            empty_reload: matches!(combat.action, Action::Reloading { empty: true, .. }),
             empty: combat.weapon().magazine == 0,
         }
     }

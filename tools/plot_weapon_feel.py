@@ -56,14 +56,27 @@ def load(path: Path) -> dict[str, dict[str, np.ndarray]]:
         for key in items[0]:
             values = [r[key] for r in items]
             try:
+                if key == "foley":
+                    raise ValueError
                 cols[key] = np.array([float(v) for v in values])
             except ValueError:
-                cols[key] = np.array(values)
+                cols[key] = np.array(values, dtype=object)
         # Where the sights point minus where shots go (aim relative to camera).
         cols["sight_err_pitch"] = cols["sight_pitch"] - (cols["aim_pitch"] - cols["cam_pitch"])
         cols["sight_err_yaw"] = cols["sight_yaw"] + (cols["aim_yaw"] - cols["cam_yaw"])
         out[name] = cols
     return out
+
+
+def mark_foley(ax, c):
+    """Draws each foley event as a dashed line with its name."""
+    if "foley" not in c:
+        return
+    for t, names in zip(c["t"], c["foley"]):
+        if isinstance(names, str) and names:
+            ax.axvline(t, color="#8c564b", ls="--", lw=0.8, alpha=0.7)
+            ax.text(t, 0.02, names.replace("|", " "), rotation=90, fontsize=6,
+                    transform=ax.get_xaxis_transform(), color="#8c564b", va="bottom")
 
 
 def shade_labels(ax, c):
@@ -124,8 +137,14 @@ def plot(name: str, c: dict[str, np.ndarray], out: Path) -> None:
     ax.set_xlabel("seconds")
     ax.legend(fontsize=7, loc="lower right")
 
+    if "hand_x" in c and np.ptp(c["hand_y"]) > 1e-4:
+        for key, color in (("hand_x", "#17becf"), ("hand_y", "#bcbd22"), ("hand_z", "#e377c2")):
+            axes[0].plot(t, (c[key] - c[key][0]) * 1000.0, color=color, ls=":",
+                         label=f"support {key} (mm)")
+        axes[0].legend(fontsize=7, loc="lower right")
     for ax in axes:
         shade_labels(ax, c)
+        mark_foley(ax, c)
         ax.grid(alpha=0.3)
     fig.suptitle(name)
     fig.tight_layout()

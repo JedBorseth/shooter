@@ -49,6 +49,8 @@ var _label := ""
 var _t := 0.0
 var _frame := 0
 var _turn := Vector2.ZERO
+## Foley events the weapon emitted since the last row.
+var _foley: PackedStringArray = []
 
 
 func _initialize() -> void:
@@ -76,10 +78,13 @@ func _run() -> void:
 			"scenario,label,t,ads,action,magazine,fov,"
 			+ "vm_x,vm_y,vm_z,vm_pitch,vm_yaw,vm_roll,"
 			+ "cam_pitch,cam_yaw,cam_roll,aim_pitch,aim_yaw,look_pitch,"
-			+ "sight_pitch,sight_yaw,speed"
+			+ "sight_pitch,sight_yaw,speed,hand_x,hand_y,hand_z,foley"
 		)
 	)
 	process_frame.connect(_record)
+	for child in _rig.get_children():
+		if child is WeaponView:
+			child.connect("foley_event", func(name: StringName) -> void: _foley.append(name))
 	var only := OS.get_environment("SCENARIOS")
 	var scenarios := SCENARIOS
 	if not only.is_empty():
@@ -172,6 +177,11 @@ func _record() -> void:
 		"%.4f" % sight.y,
 		"%.3f" % _player.horizontal_speed(),
 	]
+	var hand := Vector3.ZERO
+	if view != null and view.has_node("GripLeft"):
+		hand = (view.get_node("GripLeft") as Node3D).position
+	row.append_array(["%.4f" % hand.x, "%.4f" % hand.y, "%.4f" % hand.z, "|".join(_foley)])
+	_foley.clear()
 	_file.store_line(",".join(row.map(func(v: Variant) -> String: return str(v))))
 	_rows += 1
 	if not _frames_dir.is_empty() and _rows % _frame_every == 0:
