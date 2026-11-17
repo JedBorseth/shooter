@@ -95,14 +95,16 @@ func _arena() -> void:
 	await _shot("arena_02_pause")
 	pause.call("_show_settings")
 	await _frames(10)
-	await _shot("arena_03_settings_top")
-	var scroll := pause.get_node("%Scroll") as ScrollContainer
-	scroll.scroll_vertical = 520
+	await _shot("arena_03_settings_controls")
+	var tabs := pause.get("_tabs") as TabBar
+	for i in range(1, tabs.tab_count):
+		tabs.current_tab = i
+		await _frames(5)
+		await _shot("arena_04_settings_%d_%s" % [i, tabs.get_tab_title(i).to_lower()])
+	tabs.current_tab = 2
+	(pause.get("_sliders")[&"fov"] as Control).grab_focus()
 	await _frames(5)
-	await _shot("arena_04_settings_middle")
-	scroll.scroll_vertical = 100000
-	await _frames(5)
-	await _shot("arena_05_settings_bottom")
+	await _shot("arena_05_settings_focused")
 	pause.call("close")
 	await _frames(10)
 

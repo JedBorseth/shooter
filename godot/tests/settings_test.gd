@@ -316,19 +316,38 @@ func _check_menu(settings: Node) -> void:
 	await process_frame
 	_check((menu.get_node("%SettingsPage") as Control).visible, "Settings opens the settings page")
 	var tabs: TabBar = menu._tabs
-	_check(tabs.tab_count == 3, "options has Controls, Graphics, and General tabs")
-	_check(menu._tab_sections[0].visible, "Controls opens first")
-	tabs.current_tab = 1
 	_check(
-		menu._tab_sections[1].visible and not menu._tab_sections[0].visible,
+		tabs.tab_count == 5, "settings has Controls, Keybinds, Graphics, Audio, and General tabs"
+	)
+	_check(menu._tab_sections[0].visible, "Controls opens first")
+	tabs.current_tab = 2
+	_check(
+		menu._tab_sections[2].visible and not menu._tab_sections[0].visible,
 		"Graphics is shown independently of Controls"
 	)
 	_check(menu._toggles[&"fullscreen"].is_visible_in_tree(), "Graphics includes fullscreen")
-	tabs.current_tab = 2
+	menu._sliders[&"fov"].focus_entered.emit()
+	_check(
+		(
+			menu.get_node("%InfoTitle").text == "Field of view"
+			and menu.get_node("%InfoDefault").text == "DEFAULT  102°"
+		),
+		"the pane explains the focused setting and its default"
+	)
+	var next_tab := InputEventJoypadButton.new()
+	next_tab.button_index = JOY_BUTTON_RIGHT_SHOULDER
+	next_tab.pressed = true
+	Input.parse_input_event(next_tab)
+	await process_frame
+	_check(tabs.current_tab == 3, "RB moves to the next tab, got %d" % tabs.current_tab)
+	_check(menu._sliders[&"master_volume"].is_visible_in_tree(), "Audio includes the master volume")
+	tabs.current_tab = 4
 	_check(menu._player_name.is_visible_in_tree(), "General includes player name")
 	menu._player_name.text = "Menu player"
 	menu._player_name.text_submitted.emit("Menu player")
 	_check(settings.player_name == "Menu player", "player name edits apply")
+	tabs.current_tab = 1
+	_check(menu._bind_buttons[&"jump"].is_visible_in_tree(), "Keybinds lists the bindings")
 	tabs.current_tab = 0
 	var sliders: Array[Node] = menu.find_children("*", "HSlider", true, false)
 	_check(sliders.size() == 13, "thirteen sliders, got %d" % sliders.size())
@@ -348,6 +367,7 @@ func _check_menu(settings: Node) -> void:
 	)
 
 	# Rebind jump from the menu: click its button, then press K.
+	tabs.current_tab = 1
 	var jump_button: Button = menu._bind_buttons[&"jump"]
 	_check(jump_button.text == "Space", "the jump row shows Space, got '%s'" % jump_button.text)
 	jump_button.pressed.emit()

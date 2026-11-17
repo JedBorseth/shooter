@@ -132,7 +132,8 @@ func _refresh_pips() -> void:
 		var box := _ally_pips if i == 0 else _enemy_pips
 		for child in box.get_children():
 			child.queue_free()
-		if team < 0:
+		# No team yet (my_team -1) leaves both rows empty; 1 - -1 would be 2.
+		if team < 0 or team > 1:
 			continue
 		var colour := ALLY if i == 0 else ENEMY
 		# The living first, nearest the score.
