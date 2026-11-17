@@ -284,6 +284,27 @@ func _step_fixtures(world: Node3D, player: FpsPlayer) -> Node3D:
 		ledge["position"].y < 20.6 and player.is_grounded(),
 		"one-metre edge stays a fall (y %.2f)" % ledge["position"].y
 	)
+	# Isolated vertical thresholds catch snags independently of imported ramps.
+	for i in 3:
+		var height: float = [0.05, 0.15, 0.28][i]
+		var x := float(i - 1) * 10.0
+		_box(fixture, "Threshold%d" % i, Vector3(x, 20.0 + height / 2.0, -3), Vector3(2, height, 6))
+	for i in 3:
+		await physics_frame
+	for i in 3:
+		var height: float = [0.05, 0.15, 0.28][i]
+		var x := float(i - 1) * 10.0
+		var result := await _walk_fixture(player, Vector3(x, 20.1, 2), 0.0, 120)
+		_check(result["position"].z < -2.0, "walk over %.2f m threshold: %s" % [height, result])
+		_check(result["max_y"] >= 20.0 + height - 0.02, "reach threshold top")
+		_check(result["camera_dy"] < 0.12, "threshold camera eases upward: %s" % result)
+	var wall := await _walk_fixture(player, Vector3(-8, 20.1, 3), 0.0, 100)
+	_check(wall["position"].z > 1.0 and wall["max_y"] < 20.1, "one-metre obstacle stays a wall")
+	# A low ceiling leaves standing room on the floor, but none above a step.
+	_box(fixture, "Ceiling", Vector3(10, 21.95, 0), Vector3(3, 0.2, 5))
+	await physics_frame
+	var ceiling := await _walk_fixture(player, Vector3(10, 20.1, 2), 0.0, 100)
+	_check(ceiling["position"].z > 0.0, "step-up cannot clip through a low ceiling")
 	return fixture
 
 
@@ -305,12 +326,18 @@ func _walk_fixture(player: FpsPlayer, start: Vector3, yaw: float, frames: int) -
 	for i in 30:
 		await physics_frame
 	var peak := player.global_position.y
+	var camera: Camera3D = player.get_node("Camera")
+	var previous_y := camera.global_position.y
+	var camera_dy := 0.0
 	Input.action_press("move_forward")
 	for i in frames:
 		await physics_frame
+		await process_frame
 		peak = maxf(peak, player.global_position.y)
+		camera_dy = maxf(camera_dy, absf(camera.global_position.y - previous_y))
+		previous_y = camera.global_position.y
 	Input.action_release("move_forward")
-	return {"position": player.global_position, "max_y": peak}
+	return {"position": player.global_position, "max_y": peak, "camera_dy": camera_dy}
 
 
 ## No step-up remount teleport: the same duration of stair travel must not cover

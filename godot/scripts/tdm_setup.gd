@@ -8,7 +8,7 @@ signal back_requested
 signal start_requested(options: Dictionary)
 
 const MenuStyle := preload("res://scripts/ui/menu_style.gd")
-const MAPS := [["Slamcity", "slamcity"], ["Testing Arena", "arena"]]
+const MAPS := [["Slamcity", "slamcity"], ["Nuketown", "nuketown"], ["Testing Arena", "arena"]]
 const TEAM_SIZES := [1, 2, 3, 4, 5, 6]
 const SCORE_LIMITS := [25, 50, 75, 100]
 const TIME_LIMITS := [5, 10, 15, 20]
