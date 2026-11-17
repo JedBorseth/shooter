@@ -260,6 +260,13 @@ pub struct FpsPlayer {
     /// right). Each shot's climb lands over a few frames, like a hand
     /// riding the kick.
     pending_climb: Vec2,
+    /// Climb applied to the view this frame, so the weapon's look sway can
+    /// tell the player's own turning from the recoil's.
+    climb_step: Vec2,
+    /// Look angles (yaw, pitch) at the last rendered frame, and the player's
+    /// own turn rate since then (radians a second: yaw left, pitch up).
+    last_look: Vector2,
+    look_velocity: Vector2,
     /// FOV offset as a fraction of the FOV.
     fov_kick: Spring<f32>,
     spawn: Transform3D,
@@ -466,11 +473,13 @@ impl ICharacterBody3D for FpsPlayer {
         let fast = movement.sprinting || movement.stance == Stance::Sliding;
         let sprint_target = if fast { self.sprint_fov_scale } else { 1.0 };
         self.fov_sprint += (sprint_target - self.fov_sprint) * smoothing(8.0, dt);
-        let ads_zoom = 1.0 + (combat.def().ads_fov_scale - 1.0) * ads;
+        // The zoom eases in and out with the weapon (see `viewmodel::ads_ease`).
+        let ads_zoom = 1.0 + (combat.def().ads_fov_scale - 1.0) * crate::viewmodel::ads_ease(ads);
         self.fov_kick.step(FOV_KICK_STIFFNESS, FOV_KICK_DAMPING, dt);
         let fov = self.base_fov * self.fov_sprint * ads_zoom * (1.0 + self.fov_kick.value);
 
         self.punch.step(PUNCH_STIFFNESS, PUNCH_DAMPING, dt);
+        self.climb_step = Vec2::ZERO;
         if alive {
             self.apply_climb(dt);
         } else {
@@ -483,6 +492,20 @@ impl ICharacterBody3D for FpsPlayer {
             let eye = feet + Vector3::UP * self.eye_height;
             self.apply_stick_look(eye, ads, dt);
         }
+
+        // The player's own turning this frame (mouse, stick, aim assist),
+        // without the recoil climb, for the weapon's look sway.
+        let turned = Vector2::new(
+            self.yaw - self.last_look.x + self.climb_step.y,
+            self.pitch - self.last_look.y - self.climb_step.x,
+        );
+        self.last_look = Vector2::new(self.yaw, self.pitch);
+        self.look_velocity = if dt > 0.0 && alive {
+            // A teleport or respawn is not a turn.
+            (turned / dt).clamp(Vector2::splat(-30.0), Vector2::splat(30.0))
+        } else {
+            Vector2::ZERO
+        };
 
         let (bob, bob_roll, tilt) = self.camera_motion_offsets(dt, ads);
         let death_roll = self.death_blend * 0.45;
@@ -1327,6 +1350,7 @@ impl FpsPlayer {
             self.pending_climb * smoothing(CLIMB_RATE, dt)
         };
         self.pending_climb -= step;
+        self.climb_step += step;
         self.turn(-step.y, step.x);
     }
 
@@ -1811,14 +1835,31 @@ impl FpsPlayer {
     fn frame_with(&self, ads: f32, action: ViewAction) -> ViewFrame {
         let combat = &self.state.combat;
         let velocity = self.state.movement.velocity;
+        // Velocity in the view's frame: x right, y up, z forward.
+        let (sin, cos) = self.yaw.sin_cos();
+        let local = Vector3::new(
+            velocity.x * cos - velocity.z * sin,
+            velocity.y,
+            -(velocity.x * sin + velocity.z * cos),
+        );
+        let def = combat.def();
+        let stance = self.state.movement.stance;
         ViewFrame {
+            look_velocity: self.look_velocity,
+            velocity: local,
+            stride_phase: self.stride.phase(),
+            sprint_out: if def.sprint_out_time > 0.0 {
+                (combat.sprint_out / def.sprint_out_time).clamp(0.0, 1.0)
+            } else {
+                0.0
+            },
+            crouched: stance == Stance::Crouching,
+            sliding: stance == Stance::Sliding,
             weapon: combat.weapon().id,
             ads,
             scope: combat.scope_amount(),
             visible: self.state.alive(),
             sprinting: self.state.movement.sprinting,
-            speed_ratio: Vec3::new(velocity.x, 0.0, velocity.z).length()
-                / self.params.movement.walk_speed,
             on_floor: self.env.on_floor,
             action,
             empty_reload: matches!(combat.action, Action::Reloading { empty: true, .. }),
