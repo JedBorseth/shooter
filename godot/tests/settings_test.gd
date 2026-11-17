@@ -265,6 +265,8 @@ func _check_menu(settings: Node) -> void:
 	_check(not menu.is_open(), "menu starts closed")
 	_check(menu.process_mode == Node.PROCESS_MODE_ALWAYS, "menu always processes")
 
+	var start := _joy(JOY_BUTTON_START)
+	_check(InputMap.event_is_action(start, &"pause"), "controller Menu button opens pause")
 	await _press(&"pause")
 	_check(menu.is_open(), "pause opens the menu")
 	_check(paused, "opening the offline menu freezes the tree")
@@ -275,6 +277,21 @@ func _check_menu(settings: Node) -> void:
 	(menu.get_node("%SettingsButton") as Button).pressed.emit()
 	await process_frame
 	_check((menu.get_node("%SettingsPage") as Control).visible, "Settings opens the settings page")
+	var tabs: TabBar = menu._tabs
+	_check(tabs.tab_count == 3, "options has Controls, Graphics, and General tabs")
+	_check(menu._tab_sections[0].visible, "Controls opens first")
+	tabs.current_tab = 1
+	_check(
+		menu._tab_sections[1].visible and not menu._tab_sections[0].visible,
+		"Graphics is shown independently of Controls"
+	)
+	_check(menu._toggles[&"fullscreen"].is_visible_in_tree(), "Graphics includes fullscreen")
+	tabs.current_tab = 2
+	_check(menu._player_name.is_visible_in_tree(), "General includes player name")
+	menu._player_name.text = "Menu player"
+	menu._player_name.text_submitted.emit("Menu player")
+	_check(settings.player_name == "Menu player", "player name edits apply")
+	tabs.current_tab = 0
 	var sliders: Array[Node] = menu.find_children("*", "HSlider", true, false)
 	_check(sliders.size() == 11, "eleven sliders, got %d" % sliders.size())
 	var toggle_count := menu.find_children("*", "CheckButton", true, false).size()
@@ -304,6 +321,13 @@ func _check_menu(settings: Node) -> void:
 	await process_frame
 	_check(_bound(&"jump") == KEY_K, "pressing K binds jump to K")
 	_check(jump_button.text == "K", "and the row shows it, got '%s'" % jump_button.text)
+
+	jump_button.pressed.emit()
+	await _press(&"ui_cancel")
+	_check(menu.is_open() and jump_button.text == "K", "cancel keeps binding and menu open")
+	jump_button.pressed.emit()
+	menu._process(11.0)
+	_check(menu._capturing.is_empty() and jump_button.text == "K", "capture times out safely")
 
 	(menu.get_node("%ResetButton") as Button).pressed.emit()
 	_check(

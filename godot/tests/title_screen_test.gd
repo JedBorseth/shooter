@@ -30,6 +30,25 @@ func _run() -> void:
 	_check(not (menu.get_node("Nuketown") as Button).disabled, "Nuketown is a home-screen option")
 	_check(not (menu.get_node("Multiplayer") as Button).disabled, "Multiplayer opens its browser")
 	_check(not (menu.get_node("Zombies") as Button).disabled, "Zombies opens its menu")
+	var options_button := menu.get_node("Options") as Button
+	_check(not options_button.disabled, "Options is available on the main menu")
+	options_button.pressed.emit()
+	await process_frame
+	var options_menu: CanvasLayer = title.get_node_or_null("PauseMenu")
+	_check(
+		options_menu != null and options_menu.is_open(),
+		"Options opens directly from the title screen"
+	)
+	_check(not paused, "title options never pause the scene tree")
+	if options_menu != null:
+		_check(
+			options_menu.get_node("%SettingsPage").visible, "title options goes straight to tabs"
+		)
+		_check(not options_menu.get_node("%MainPage").visible, "title options has no pause actions")
+		options_menu.get_node("%BackButton").pressed.emit()
+		await process_frame
+		_check(options_button.has_focus(), "Back returns focus to Options")
+		_check(Input.mouse_mode == Input.MOUSE_MODE_VISIBLE, "Back keeps the menu cursor free")
 	var tdm := menu.get_node("TeamDeathmatch") as Button
 	_check(menu.get_child(1) == tdm and not tdm.disabled, "Team Deathmatch is the second option")
 	tdm.pressed.emit()
