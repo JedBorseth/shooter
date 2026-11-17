@@ -3,15 +3,16 @@
 //! Two teams race to a score limit before the clock runs out. Other modes
 //! ([`Mode`]) reuse the clock and the phases: Capture the Flag is two teams
 //! scoring captures instead of kills (`crate::ctf`), Hardpoint is two teams
-//! scoring by holding the live zone (`crate::hardpoint`), and Gun Game is
-//! every player for themselves (`crate::gun_game`). A match goes through
-//! these phases:
+//! scoring by holding the live zone (`crate::hardpoint`), Gun Game is every
+//! player for themselves (`crate::gun_game`), and in Search and Destroy
+//! (`crate::snd`) the score counts rounds won and there is no match clock. A
+//! match goes through these phases:
 //!
 //! - [`Phase::Lobby`]: players join, pick a loadout, and can run around and
 //!   shoot, but nothing counts. It ends when every human player is ready.
 //! - [`Phase::Countdown`]: a few seconds to get ready. Everyone respawns at
 //!   their team's side when it ends.
-//! - [`Phase::Playing`]: kills score for the team.
+//! - [`Phase::Playing`]: kills (or rounds) score for the team.
 //! - [`Phase::Ended`]: the result screen, then the next match counts down.
 //!
 //! The server runs this; clients only show what it sends
@@ -39,11 +40,13 @@ pub enum Mode {
     /// Two teams score by holding the live zone; kills do not score
     /// ([`crate::hardpoint`]).
     Hardpoint,
+    /// Rounds with one life each: attackers against defenders.
+    SearchAndDestroy,
 }
 
 impl Mode {
     /// Parses a mode name as servers take it on the command line ("tdm",
-    /// "gungame", "ctf", or "hardpoint"), with default rules.
+    /// "gungame", "ctf", "hardpoint", or "snd"), with default rules.
     pub fn parse(name: &str) -> Option<Self> {
         match name.trim().to_ascii_lowercase().as_str() {
             "" | "tdm" | "teamdeathmatch" | "team_deathmatch" => Some(Self::TeamDeathmatch),
@@ -52,6 +55,7 @@ impl Mode {
                 Some(Self::CaptureTheFlag)
             }
             "hardpoint" | "hp" => Some(Self::Hardpoint),
+            "snd" | "searchanddestroy" | "search_and_destroy" => Some(Self::SearchAndDestroy),
             _ => None,
         }
     }
@@ -63,6 +67,7 @@ impl Mode {
             Self::GunGame(_) => "gungame",
             Self::CaptureTheFlag => "ctf",
             Self::Hardpoint => "hardpoint",
+            Self::SearchAndDestroy => "snd",
         }
     }
 
@@ -73,6 +78,7 @@ impl Mode {
             Self::GunGame(_) => "Gun Game",
             Self::CaptureTheFlag => "Capture the Flag",
             Self::Hardpoint => "Hardpoint",
+            Self::SearchAndDestroy => "Search and Destroy",
         }
     }
 
@@ -102,10 +108,11 @@ impl Mode {
 /// Tunable match rules.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MatchRules {
-    /// Kills a team needs to win.
+    /// Points (kills, or rounds) a team needs to win.
     pub score_limit: u32,
-    /// Seconds of play before the team ahead wins (a draw if level).
-    pub time_limit: f32,
+    /// Seconds of play before the team ahead wins (a draw if level), or
+    /// `None` for no clock.
+    pub time_limit: Option<f32>,
     /// Seconds between everyone being ready and the start.
     pub countdown: f32,
     /// Seconds the result screen stays up before the next countdown.
@@ -116,7 +123,7 @@ impl Default for MatchRules {
     fn default() -> Self {
         Self {
             score_limit: 75,
-            time_limit: 10.0 * 60.0,
+            time_limit: Some(10.0 * 60.0),
             countdown: 5.0,
             results: 15.0,
         }
@@ -152,7 +159,8 @@ pub enum Transition {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MatchState {
     pub phase: Phase,
-    /// Seconds left in the current phase (0 in the lobby, which has no clock).
+    /// Seconds left in the current phase (0 in the lobby, and while playing
+    /// without a time limit).
     pub time_left: f32,
     pub scores: [u32; TEAM_COUNT],
 }
@@ -198,11 +206,13 @@ impl MatchState {
                     return None;
                 }
                 self.phase = Phase::Playing;
-                self.time_left = rules.time_limit;
+                self.time_left = rules.time_limit.unwrap_or(0.0);
                 self.scores = [0; TEAM_COUNT];
                 Some(Transition::Started)
             }
             Phase::Playing => {
+                // Without a clock only the score ends the match.
+                rules.time_limit?;
                 self.time_left -= dt;
                 if self.time_left > 0.0 {
                     return None;
@@ -234,9 +244,27 @@ impl MatchState {
             return None;
         }
         let killer = killer_team.filter(|t| *t != victim_team && usize::from(*t) < TEAM_COUNT)?;
-        let score = &mut self.scores[usize::from(killer)];
+        self.add_point(rules, killer)
+    }
+
+    /// Scores a point (a round won) for `team`. Returns the end of the match
+    /// if it reached the score limit.
+    pub fn add_point(&mut self, rules: &MatchRules, team: Team) -> Option<Transition> {
+        if !self.scoring() || usize::from(team) >= TEAM_COUNT {
+            return None;
+        }
+        let score = &mut self.scores[usize::from(team)];
         *score += 1;
-        (*score >= rules.score_limit).then(|| self.finish(rules, Some(killer)))
+        (*score >= rules.score_limit).then(|| self.finish(rules, Some(team)))
+    }
+
+    /// Whether the clock is running out this phase.
+    pub fn has_clock(&self, rules: &MatchRules) -> bool {
+        match self.phase {
+            Phase::Lobby => false,
+            Phase::Playing => rules.time_limit.is_some(),
+            Phase::Countdown | Phase::Ended { .. } => true,
+        }
     }
 
     /// Counts a flag capture by `team` (Capture the Flag). Returns the end of
@@ -486,7 +514,7 @@ mod tests {
     fn rules() -> MatchRules {
         MatchRules {
             score_limit: 3,
-            time_limit: 10.0,
+            time_limit: Some(10.0),
             countdown: 2.0,
             results: 4.0,
         }
@@ -676,6 +704,41 @@ mod tests {
         assert!(!Mode::Hardpoint.free_for_all());
         assert!(Mode::TeamDeathmatch.kills_score());
         assert!(!Mode::Hardpoint.kills_score());
+    }
+
+    #[test]
+    fn without_a_time_limit_only_points_end_the_match() {
+        let rules = MatchRules {
+            time_limit: None,
+            ..rules()
+        };
+        let mut state = MatchState {
+            phase: Phase::Playing,
+            time_left: 0.0,
+            scores: [0, 0],
+        };
+        assert!(!state.has_clock(&rules));
+        for _ in 0..1000 {
+            assert_eq!(state.tick(&rules, 0.1, false, Some(0)), None);
+        }
+        state.add_point(&rules, 1);
+        state.add_point(&rules, 1);
+        assert_eq!(
+            state.add_point(&rules, 1),
+            Some(Transition::Ended { winner: Some(1) })
+        );
+        assert!(state.has_clock(&rules));
+    }
+
+    #[test]
+    fn search_and_destroy_has_a_key_and_a_name() {
+        for mode in [Mode::TeamDeathmatch, Mode::SearchAndDestroy] {
+            assert_eq!(Mode::parse(mode.key()), Some(mode));
+        }
+        assert_eq!(Mode::parse("SND"), Some(Mode::SearchAndDestroy));
+        assert_eq!(Mode::parse("demolition"), None);
+        assert_eq!(Mode::SearchAndDestroy.label(), "Search and Destroy");
+        assert!(!Mode::SearchAndDestroy.free_for_all());
     }
 
     #[test]

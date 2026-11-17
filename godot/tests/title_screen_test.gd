@@ -142,6 +142,35 @@ func _run() -> void:
 		setup.back_requested.emit()
 		await process_frame
 		_check(hardpoint.has_focus(), "closing the setup focuses Hardpoint again")
+	var snd := menu.get_node("SearchAndDestroy") as Button
+	_check(menu.get_child(5) == snd and not snd.disabled, "Search and Destroy is the sixth option")
+	snd.pressed.emit()
+	await process_frame
+	setup = title.get_node_or_null("TdmSetup")
+	_check(setup != null, "Search and Destroy opens its setup")
+	if setup != null:
+		var options: Dictionary = setup.options()
+		_check(
+			(
+				options
+				== {
+					"mode": "snd",
+					"map": "slamcity",
+					"bots": 11,
+					"bot_skill": "normal",
+					"rounds_to_win": 6
+				}
+			),
+			"the default Search and Destroy is 6v6 to six rounds on Slamcity, got %s" % options
+		)
+		setup.back_requested.emit()
+		await process_frame
+		_check(snd.has_focus(), "Back returns focus to Search and Destroy")
+	var last := menu.get_child(menu.get_child_count() - 1) as Control
+	_check(
+		last.get_global_rect().end.y <= title.get_viewport_rect().size.y,
+		"every menu button fits on a 900 px screen"
+	)
 	for i in 5:
 		await process_frame
 	for path: String in [

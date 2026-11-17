@@ -6,7 +6,7 @@ extends Node
 ##   --server [--port N] [--bots N] [--bot-skill easy|normal|hard] [--bot-damage]
 ##            [--name NAME] [--master HOST[:PORT]]
 ##            [--query-port N] [--map arena|nuketown|slamcity]
-##            [--mode tdm|ctf|hardpoint|gungame] [--kills-per-weapon N]
+##            [--mode tdm|ctf|hardpoint|gungame|snd] [--kills-per-weapon N] [--rounds N]
 ##            [--score-limit N] [--time-limit MINUTES] [--auto-start]
 ##                                    run as a dedicated server (use with --headless);
 ##                                    with --bot-skill the bots play the match; without
@@ -18,7 +18,8 @@ extends Node
 ##                                    Team Deathmatch to N kills (75), Capture the
 ##                                    Flag to N captures (3), Hardpoint to N points
 ##                                    (250), or MINUTES (10), or Gun Game with N
-##                                    kills per weapon (2);
+##                                    kills per weapon (2), or Search and Destroy to
+##                                    N rounds (6);
 ##                                    --auto-start skips the lobby's ready-up.
 ##   --directory HOST[:PORT]          developer override for the Internet directory;
 ##                                    not saved between launches
@@ -31,9 +32,10 @@ extends Node
 ##
 ## From the menus: the server browser calls `join`, and leaving a server or
 ## losing the connection calls `leave`, which returns to the server browser.
-## The title screen's Team Deathmatch, Capture the Flag, Hardpoint, and Gun
-## Game setups call `start_local_match`, which runs a dedicated server in a
-## background process and joins it; leaving stops that server.
+## The title screen's Team Deathmatch, Capture the Flag, Hardpoint, Gun Game,
+## and Search and Destroy setups call `start_local_match`, which runs a
+## dedicated server in a background process and joins it; leaving stops that
+## server.
 
 const SERVER_SCENE := "res://scenes/server.tscn"
 const ARENA_SCENE := "res://scenes/main.tscn"
@@ -51,6 +53,7 @@ const STATUS_SCRIPT := "res://scripts/net/net_status.gd"
 const TDM_HUD_SCRIPT := "res://scripts/net/tdm_hud.gd"
 const CTF_VIEW_SCRIPT := "res://scripts/net/ctf_view.gd"
 const HARDPOINT_VIEW_SCRIPT := "res://scripts/net/hardpoint_view.gd"
+const SND_HUD_SCRIPT := "res://scripts/net/snd_hud.gd"
 const DEFAULT_PORT := 27015
 ## Port of the server `start_local_match` runs, away from the default so it
 ## does not clash with a server already running on this machine.
@@ -124,9 +127,10 @@ func join(target: String, options: Dictionary = {}, arena: PackedScene = null) -
 
 
 ## Starts a dedicated server in a background process with `options` (`mode`,
-## "tdm", "gungame", or "hardpoint"; `map`, `bots`, `bot_skill`, `score_limit`
-## (0 for the mode's usual limit), `kills_per_weapon`, `time_limit` in
-## minutes) and joins it. The server does not answer server browsers.
+## "tdm", "ctf", "hardpoint", "gungame", or "snd"; `map`, `bots`,
+## `bot_skill`, `score_limit` (0 for the mode's usual limit),
+## `kills_per_weapon`, `time_limit` in minutes, `rounds_to_win`) and joins it.
+## The server does not answer server browsers.
 func start_local_match(options: Dictionary) -> void:
 	stop_local_server()
 	_local_pause_file = OS.get_user_data_dir().path_join("local-pause-%d" % OS.get_process_id())
@@ -163,6 +167,8 @@ func start_local_match(options: Dictionary) -> void:
 				str(int(options.get("kills_per_weapon", 2))),
 				"--time-limit",
 				str(float(options.get("time_limit", 10))),
+				"--rounds",
+				str(int(options.get("rounds_to_win", 6))),
 			]
 		)
 	)
@@ -252,6 +258,8 @@ func _start_server(options: Dictionary) -> void:
 	server.mode = String(options.get("mode", "tdm"))
 	if options.has("kills-per-weapon"):
 		server.kills_per_weapon = clampi(int(options["kills-per-weapon"]), 1, 10)
+	if options.has("rounds"):
+		server.rounds_to_win = maxi(int(options["rounds"]), 1)
 	server.auto_start = options.has("auto-start")
 	server.pause_file = String(options.get("pause-file", ""))
 	if not server.pause_file.is_empty():
@@ -330,3 +338,10 @@ func _attach_client(main: Node, target: String, options: Dictionary) -> void:
 	hardpoint.set("client", client)
 	hardpoint.set("player", player)
 	main.add_child(hardpoint)
+	# Rounds, who is left alive, and spectating; idle outside Search and Destroy.
+	var snd_hud := CanvasLayer.new()
+	snd_hud.name = "SndHud"
+	snd_hud.set_script(load(SND_HUD_SCRIPT))
+	snd_hud.set("client", client)
+	snd_hud.set("player", player)
+	main.add_child(snd_hud)
