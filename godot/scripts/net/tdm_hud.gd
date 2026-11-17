@@ -2,7 +2,8 @@ extends CanvasLayer
 ## Match HUD, added by `Net` when joining a server:
 ##
 ## - the score bar: our team's kills, the clock, and the enemy's kills, with
-##   the kill limit beneath. In Gun Game: our place on the weapon ladder, the
+##   the kill limit beneath (in Search and Destroy, rounds won, the round's
+##   clock, and the rounds to win). In Gun Game: our place on the weapon ladder, the
 ##   clock, and the best of everyone else's, with the kills to the next weapon
 ##   beneath;
 ## - the kill feed, top right, in team colours (in Gun Game we are the only
@@ -15,11 +16,13 @@ extends CanvasLayer
 ## - chat, bottom left: Enter to talk to everyone, Y to your team;
 ## - the loadout menu (L, or D-pad up), which also holds the Ready button in
 ##   the lobby. It opens by itself when we join a lobby. A new primary applies
-##   from the next spawn. Gun Game has no loadouts: the menu shows the ladder.
+##   from the next spawn (in Search and Destroy, at once during a round's
+##   freeze). Gun Game has no loadouts: the menu shows the ladder.
 ##
 ## Hardpoint's own pieces (the zone, its marker, and the calls) are in
 ## `hardpoint_view.gd`; here it adds a TIME column (seconds on the hill) to
-## the scoreboard and moves the hint below the zone strip.
+## the scoreboard and moves the hint below the zone strip. Search and Destroy
+## adds its round HUD beside this one (`snd_hud.gd`).
 
 const MenuStyle := preload("res://scripts/ui/menu_style.gd")
 
@@ -132,6 +135,7 @@ func _process(delta: float) -> void:
 		_hint.position.y = 146.0 if _mode == "hardpoint" else 84.0
 		_refresh_board()
 	var ffa: bool = info.get("free_for_all", false)
+	var snd: bool = info.mode == "snd"
 	if ffa:
 		_update_ladder_bar(info)
 	else:
@@ -142,9 +146,15 @@ func _process(delta: float) -> void:
 			_enemy_score.text = str(scores[1 - my_team])
 		_limit.text = ""
 		if info.score_limit > 0:
-			var goal: String = {"ctf": "CAPTURES", "hardpoint": "POINTS"}.get(info.mode, "KILLS")
+			var goal: String = {"ctf": "CAPTURES", "hardpoint": "POINTS", "snd": "ROUNDS"}.get(
+				info.mode, "KILLS"
+			)
 			_limit.text = "FIRST TO %d %s" % [info.score_limit, goal]
 	_clock.text = _clock_text(phase, info.seconds_left)
+	if snd and phase == "playing":
+		# The round's clock, while it runs.
+		var round := client.round_info()
+		_clock.text = _clock_text(phase, round.seconds_left) if round.phase == "live" else ""
 	_update_banner(phase, info)
 	_age_feed(delta)
 	_age_callout(delta)
@@ -169,8 +179,10 @@ func _process(delta: float) -> void:
 	)
 
 	var alive := player == null or not is_instance_valid(player) or player.is_alive()
-	# Gun Game has no loadout to change between lives.
-	_hint.visible = not _menu.visible and (phase == "lobby" or (not alive and not ffa))
+	# Gun Game has no loadout to change between lives, and Search and
+	# Destroy's own HUD says what to do while dead in a match.
+	var dead_hint := not alive and not ffa and not snd
+	_hint.visible = not _menu.visible and (phase == "lobby" or dead_hint)
 	if phase == "lobby":
 		_hint.text = (
 			"WARM-UP  ·  %s  ·  [L] %s and ready"
@@ -180,6 +192,8 @@ func _process(delta: float) -> void:
 		_hint.text = "[L] change loadout for your next spawn"
 	if phase == "lobby":
 		_menu_status.text = _ready_count()
+	elif snd:
+		_menu_status.text = "Applies at once before a round starts, otherwise next round."
 	else:
 		_menu_status.text = "" if ffa else "Applies from your next spawn."
 
@@ -255,6 +269,8 @@ func _update_banner(phase: String, info: Dictionary) -> void:
 				_sub_banner.text = "Capture the Flag  ·  first to %d captures" % info.score_limit
 			elif info.mode == "hardpoint":
 				_sub_banner.text = "Hardpoint  ·  first to %d points" % info.score_limit
+			elif info.mode == "snd":
+				_sub_banner.text = "Search and Destroy  ·  first to %d rounds" % info.score_limit
 			else:
 				_sub_banner.text = "Team Deathmatch  ·  first to %d kills" % info.score_limit
 		"ended":
@@ -482,10 +498,14 @@ func _refresh_board() -> void:
 		_board_headers[i].add_theme_color_override("font_color", colour)
 		for heading: String in headings:
 			_board_cell(table, heading, MenuStyle.TEXT_FAINT, 14)
+		var snd: bool = info.mode == "snd"
 		for entry: Dictionary in client.roster():
 			if entry.team != team:
 				continue
 			var name_colour := Color.WHITE if entry.me else MenuStyle.TEXT
+			# In Search and Destroy the dead sit out the round.
+			if snd and not entry.alive:
+				name_colour = MenuStyle.TEXT_FAINT
 			var name_text: String = entry.name
 			if entry.bot:
 				name_text += "  [BOT]"

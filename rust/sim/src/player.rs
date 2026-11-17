@@ -32,6 +32,25 @@ pub struct PlayerInput {
     pub view_tick: Option<f64>,
 }
 
+impl PlayerInput {
+    /// This input with movement, firing, and pickups taken out, as during a
+    /// round's freeze: the player can still look around, aim, reload, and
+    /// switch weapons. The server and the predicting client apply the same
+    /// filter.
+    pub fn held_still(self) -> Self {
+        Self {
+            wish: Vec2::ZERO,
+            jump: false,
+            sprint: false,
+            crouch: false,
+            fire: false,
+            pickup: None,
+            view_tick: None,
+            ..self
+        }
+    }
+}
+
 /// Health rules. Damage itself comes from weapons (applied by whoever runs the
 /// hit test) and from falling.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -472,5 +491,34 @@ mod tests {
         let mut params = PlayerParams::default();
         params.health.max_health = 150.0;
         assert_eq!(PlayerState::spawned(&params).health, 150.0);
+    }
+
+    #[test]
+    fn a_held_still_input_keeps_only_looking_aiming_and_weapon_handling() {
+        let input = PlayerInput {
+            wish: Vec2::new(0.5, 1.0),
+            yaw: 1.25,
+            pitch: -0.3,
+            jump: true,
+            sprint: true,
+            crouch: true,
+            fire: true,
+            aim: true,
+            reload: true,
+            switch_to: Some(1),
+            pickup: Some(WeaponId::expect("ak47")),
+            view_tick: Some(12.5),
+        };
+        assert_eq!(
+            input.held_still(),
+            PlayerInput {
+                yaw: 1.25,
+                pitch: -0.3,
+                aim: true,
+                reload: true,
+                switch_to: Some(1),
+                ..Default::default()
+            }
+        );
     }
 }

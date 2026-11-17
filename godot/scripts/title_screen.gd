@@ -7,6 +7,14 @@ const NUKETOWN_PATH := "res://scenes/nuketown.tscn"
 const SLAMCITY_PATH := "res://scenes/slamcity.tscn"
 const BROWSER_PATH := "res://scenes/server_browser.tscn"
 const ZOMBIES_PATH := "res://scenes/zombies_arena.tscn"
+## The menu button for each local match mode.
+const SETUP_BUTTONS := {
+	"tdm": "TeamDeathmatch",
+	"ctf": "CaptureTheFlag",
+	"hardpoint": "Hardpoint",
+	"gungame": "GunGame",
+	"snd": "SearchAndDestroy",
+}
 
 var _loading := false
 var _scene_path := ARENA_PATH
@@ -35,6 +43,7 @@ func _ready() -> void:
 	$Margin/Layout/Menu/GunGame.pressed.connect(_open_setup.bind("gungame"))
 	$Margin/Layout/Menu/CaptureTheFlag.pressed.connect(_open_setup.bind("ctf"))
 	$Margin/Layout/Menu/Hardpoint.pressed.connect(_open_setup.bind("hardpoint"))
+	$Margin/Layout/Menu/SearchAndDestroy.pressed.connect(_open_setup.bind("snd"))
 	$Margin/Layout/Menu/Multiplayer.pressed.connect(_open_multiplayer)
 	$Margin/Layout/Menu/Zombies.pressed.connect(_open_zombies)
 	_testing.grab_focus()
@@ -84,7 +93,8 @@ func _open_multiplayer(message := "") -> void:
 	)
 
 
-## Opens the local match setup for `mode` ("tdm", "ctf", "hardpoint", or "gungame").
+## Opens the local match setup for `mode` ("tdm", "ctf", "hardpoint", "gungame", or
+## "snd").
 func _open_setup(mode: String) -> void:
 	if _loading:
 		return
@@ -93,9 +103,7 @@ func _open_setup(mode: String) -> void:
 	setup.set("mode", mode)
 	setup.name = "TdmSetup"
 	_tdm_setup = setup
-	_setup_button = ({"gungame": "GunGame", "ctf": "CaptureTheFlag", "hardpoint": "Hardpoint"}.get(
-		mode, "TeamDeathmatch"
-	))
+	_setup_button = SETUP_BUTTONS[mode]
 	$Margin.hide()
 	add_child(setup)
 	setup.back_requested.connect(_close_tdm)
@@ -181,6 +189,7 @@ func _set_buttons_disabled(disabled: bool) -> void:
 		"GunGame",
 		"CaptureTheFlag",
 		"Hardpoint",
+		"SearchAndDestroy",
 		"Slamcity",
 		"Nuketown",
 		"Multiplayer",

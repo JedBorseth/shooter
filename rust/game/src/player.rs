@@ -219,6 +219,9 @@ pub struct FpsPlayer {
     latched: [bool; LATCHED_ACTIONS.len()],
     interact_held: bool,
     input_enabled: bool,
+    /// Held still by the match (a Search and Destroy round's freeze): the
+    /// player can look and aim but not move or fire.
+    movement_locked: bool,
     env: MoveEnv,
     /// Floor contact after the last move; the next tick's `MoveEnv::on_floor`.
     on_floor: bool,
@@ -789,6 +792,19 @@ impl FpsPlayer {
         self.interact_held = enabled && Input::singleton().is_action_pressed("interact");
     }
 
+    /// Holds the player still (true) or lets them go: they can still look,
+    /// aim, reload, and switch weapons. Online, the server applies the same
+    /// filter (`PlayerInput::held_still`).
+    #[func]
+    pub fn set_movement_locked(&mut self, locked: bool) {
+        self.movement_locked = locked;
+    }
+
+    #[func]
+    fn is_movement_locked(&self) -> bool {
+        self.movement_locked
+    }
+
     /// Moves the player instantly and points them along `yaw`, keeping weapons,
     /// health, and score (map secrets, tests). Offline only: online, the server
     /// owns the player's position.
@@ -988,7 +1004,10 @@ impl FpsPlayer {
             };
         }
         let input = Input::singleton();
-        let wish = input.get_vector("move_left", "move_right", "move_back", "move_forward");
+        let mut wish = input.get_vector("move_left", "move_right", "move_back", "move_forward");
+        if self.movement_locked {
+            wish = Vector2::ZERO;
+        }
         self.wish = wish;
         let mut held = |action: &str| input.is_action_pressed(action) | self.take_latched(action);
 
@@ -1038,7 +1057,7 @@ impl FpsPlayer {
             None
         };
 
-        PlayerInput {
+        let input = PlayerInput {
             wish: Vec2::new(wish.x, wish.y),
             yaw: self.yaw,
             pitch: self.pitch,
@@ -1055,6 +1074,11 @@ impl FpsPlayer {
             } else {
                 None
             },
+        };
+        if self.movement_locked {
+            input.held_still()
+        } else {
+            input
         }
     }
 

@@ -4,7 +4,8 @@ extends Control
 ## ("ctf": the same, with a capture limit instead of a kill limit), Hardpoint
 ## ("hardpoint": the same, with a points limit), or Gun Game
 ## ("gungame": name, map, player count, bots, kills per weapon, and time
-## limit). Bots fill the empty places. Start runs a local dedicated server with
+## limit), or Search and Destroy ("snd": name, team size, bots, and rounds to
+## win, on Slamcity). Bots fill the empty places. Start runs a local dedicated server with
 ## those rules and joins it (`Net.start_local_match`). UI only: it loads no
 ## gameplay. Set `mode` before adding it to the tree.
 
@@ -13,6 +14,9 @@ signal start_requested(options: Dictionary)
 
 const MenuStyle := preload("res://scripts/ui/menu_style.gd")
 const MAPS := [["Slamcity", "slamcity"], ["Nuketown", "nuketown"], ["Testing Arena", "arena"]]
+## Search and Destroy needs a map with attacking and defending sides.
+const SND_MAPS := [["Slamcity", "slamcity"]]
+const ROUNDS_TO_WIN := [4, 6, 8]
 const TEAM_SIZES := [1, 2, 3, 4, 5, 6]
 const SCORE_LIMITS := [25, 50, 75, 100]
 const CAPTURE_LIMITS := [1, 3, 5, 10]
@@ -23,7 +27,7 @@ const BOT_SKILLS := [["Easy", "easy"], ["Normal", "normal"], ["Hard", "hard"]]
 const PLAYER_COUNTS := [2, 4, 6, 8, 10, 12]
 const KILLS_PER_WEAPON := [1, 2, 3]
 
-## "tdm", "ctf", "hardpoint", or "gungame".
+## "tdm", "ctf", "hardpoint", "gungame", or "snd".
 var mode := "tdm"
 
 var _name: LineEdit
@@ -33,6 +37,7 @@ var _score_limit: OptionButton
 var _players: OptionButton
 var _kills_per_weapon: OptionButton
 var _time_limit: OptionButton
+var _rounds: OptionButton
 var _bot_skill: OptionButton
 var _start: Button
 
@@ -63,6 +68,14 @@ func options() -> Dictionary:
 			"time_limit": TIME_LIMITS[_time_limit.selected],
 		}
 	var team_size: int = TEAM_SIZES[_team_size.selected]
+	if _snd():
+		return {
+			"mode": "snd",
+			"map": SND_MAPS[_map.selected][1],
+			"bots": team_size * 2 - 1,
+			"bot_skill": BOT_SKILLS[_bot_skill.selected][1],
+			"rounds_to_win": ROUNDS_TO_WIN[_rounds.selected],
+		}
 	var limits := SCORE_LIMITS
 	if _ctf():
 		limits = CAPTURE_LIMITS
@@ -90,6 +103,10 @@ func _hardpoint() -> bool:
 	return mode == "hardpoint"
 
 
+func _snd() -> bool:
+	return mode == "snd"
+
+
 func _on_start() -> void:
 	var name := _name.text.strip_edges()
 	if name != "":
@@ -115,9 +132,15 @@ func _build() -> void:
 	eyebrow.add_theme_font_size_override("font_size", 15)
 	layout.add_child(eyebrow)
 	var title := Label.new()
-	title.text = ({"gungame": "Gun Game", "ctf": "Capture the Flag", "hardpoint": "Hardpoint"}.get(
-		mode, "Team Deathmatch"
-	))
+	title.text = (
+		{
+			"gungame": "Gun Game",
+			"ctf": "Capture the Flag",
+			"hardpoint": "Hardpoint",
+			"snd": "Search and Destroy",
+		}
+		. get(mode, "Team Deathmatch")
+	)
 	title.add_theme_font_size_override("font_size", 36)
 	layout.add_child(title)
 	var detail := Label.new()
@@ -136,6 +159,11 @@ func _build() -> void:
 			"Hold the live zone to score a point a second; it moves every minute."
 			+ " Bots fill the empty places."
 		)
+	elif _snd():
+		detail.text = (
+			"Rounds with one life each. The attackers wipe out the defenders, or the"
+			+ " defenders hold out until time runs out. Bots fill the empty places."
+		)
 	else:
 		detail.text = "Two teams race to the kill limit. Bots fill the empty places."
 	detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -149,7 +177,8 @@ func _build() -> void:
 	_name.placeholder_text = "Player"
 	MenuStyle.style_line_edit(_name)
 	_row(layout, "Name", _name)
-	_map = _choice(layout, "Map", MAPS.map(func(m: Array) -> String: return m[0]), 0)
+	var maps := SND_MAPS if _snd() else MAPS
+	_map = _choice(layout, "Map", maps.map(func(m: Array) -> String: return m[0]), 0)
 	if _gun_game():
 		_players = _choice(
 			layout, "Players", PLAYER_COUNTS.map(func(n: int) -> String: return str(n)), 3
@@ -174,13 +203,18 @@ func _build() -> void:
 		_score_limit = _choice(
 			layout, "Point limit", POINT_LIMITS.map(func(n: int) -> String: return str(n)), 2
 		)
+	elif _snd():
+		_rounds = _choice(
+			layout, "Rounds to win", ROUNDS_TO_WIN.map(func(n: int) -> String: return str(n)), 1
+		)
 	else:
 		_score_limit = _choice(
 			layout, "Kill limit", SCORE_LIMITS.map(func(n: int) -> String: return str(n)), 2
 		)
-	_time_limit = _choice(
-		layout, "Time limit", TIME_LIMITS.map(func(n: int) -> String: return "%d min" % n), 1
-	)
+	if not _snd():
+		_time_limit = _choice(
+			layout, "Time limit", TIME_LIMITS.map(func(n: int) -> String: return "%d min" % n), 1
+		)
 
 	var spacer := Control.new()
 	spacer.custom_minimum_size = Vector2(0, 8)

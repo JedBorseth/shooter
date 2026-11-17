@@ -18,6 +18,7 @@ pub mod penetration;
 pub mod player;
 pub mod rng;
 pub mod score;
+pub mod snd;
 pub mod tdm;
 pub mod weapon;
 pub mod zombies;

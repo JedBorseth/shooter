@@ -16,6 +16,8 @@
 //! emits `flag_played` for every take, drop, return, and capture.
 //! In Hardpoint it also keeps the map's zones, the live one, and who holds it
 //! (`hardpoint_info`).
+//! In Search and Destroy it also keeps the round (`round_info`), and holds
+//! the local player still during a round's freeze, as the server does.
 //! With the F4 hitbox overlay on, it also draws, in white, the hitboxes the
 //! server rewound for each of our shots, next to the ones drawn here.
 //!
@@ -39,6 +41,7 @@ use shooter_sim::net::protocol::{
 };
 use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::{CHANNEL_COUNT, CHANNEL_RELIABLE, DEFAULT_PORT, TICK_RATE, Tick};
+use shooter_sim::snd::{RoundEnd, RoundPhase};
 use shooter_sim::tdm::{Mode, Phase, TEAM_COUNT, Team};
 use shooter_sim::weapon::WeaponId;
 
@@ -142,6 +145,17 @@ pub struct NetClient {
     props_retry: u32,
     /// Population last sent to the props manager.
     props_population: Option<i32>,
+    /// The current Search and Destroy round, while a match is being played.
+    round: Option<Round>,
+}
+
+#[derive(Clone, Copy)]
+struct Round {
+    number: u32,
+    phase: RoundPhase,
+    ends_at: Tick,
+    attackers: Team,
+    halftime_after: u32,
 }
 
 struct RosterEntry {
@@ -378,13 +392,17 @@ impl NetClient {
     #[signal]
     fn hardpoint_changed();
 
+    /// A Search and Destroy round changed phase.
+    #[signal]
+    fn round_changed();
+
     /// Every player, ourselves included, as dictionaries with `id`, `name`,
     /// `team`, `bot`, `me`, `score`, `kills`, `deaths`, `ping`, `ready`,
-    /// for Capture the Flag `captures` and `returns`, for Hardpoint
-    /// `hill_seconds`, and for Gun Game
-    /// `level`, `level_kills`, and `weapon` (the name of the weapon on their
-    /// level). Sorted by team and then by score, or in Gun Game by how far up
-    /// the ladder, with the winner first once it ends.
+    /// `alive`, for Capture the Flag `captures` and `returns`, for Hardpoint
+    /// `hill_seconds`, and for Gun Game `level`, `level_kills`, and `weapon`
+    /// (the name of the weapon on their level). Sorted by team and then by
+    /// score, or in Gun Game by how far up the ladder, with the winner first
+    /// once it ends.
     #[func]
     fn roster(&self) -> Array<VarDictionary> {
         let mut entries: Vec<&RosterEntry> = self.roster.iter().collect();
@@ -427,14 +445,17 @@ impl NetClient {
                 let weapon = gun_game::weapon(e.row.level).def();
                 d.set("weapon", &GString::from(weapon.name.as_str()));
                 d.set("hill_seconds", e.row.hill_seconds);
+                d.set("alive", e.row.alive);
                 d
             })
             .collect()
     }
 
-    /// The match as a dictionary: `mode` ("tdm", "ctf", "hardpoint", or "gungame"), `mode_name`,
-    /// `free_for_all`, `phase` ("lobby", "countdown", "playing", "ended", or
-    /// "" before the server said), `seconds_left`, `scores` (per team),
+    /// The match as a dictionary: `mode` ("tdm", "ctf", "hardpoint",
+    /// "gungame", or "snd"), `mode_name`, `free_for_all`, `phase` ("lobby",
+    /// "countdown", "playing", "ended", or "" before the server said),
+    /// `seconds_left` (0 without a clock), `scores` (per team: kills,
+    /// captures, points, or rounds won),
     /// `score_limit`, `winner` (a team, or in free-for-all modes a player id;
     /// -1 for a draw), `my_team`, and for Gun Game `kills_per_weapon`.
     #[func]
@@ -455,11 +476,7 @@ impl NetClient {
         };
         d.set("phase", phase);
         d.set("winner", winner);
-        let seconds_left = match (self.match_ends_at, self.newest) {
-            (Some(end), Some(now)) => f64::from(end.saturating_sub(now)) / f64::from(TICK_RATE),
-            _ => 0.0,
-        };
-        d.set("seconds_left", seconds_left);
+        d.set("seconds_left", self.seconds_until(self.match_ends_at));
         let scores: PackedInt32Array = self.team_scores.iter().map(|s| *s as i32).collect();
         d.set("scores", &scores);
         d.set("score_limit", self.score_limit);
@@ -548,6 +565,46 @@ impl NetClient {
             _ => -1.0,
         };
         d.set("seconds_to_move", seconds);
+        d
+    }
+
+    /// The Search and Destroy round as a dictionary: `number` (0 when no
+    /// round is on), `phase` ("freeze", "live", "over", or ""),
+    /// `seconds_left`, `attacking` (whether our team attacks), `winner` (the
+    /// team that took the round, or -1), `reason` ("eliminated" or "time"),
+    /// and `halftime` (whether the teams swap sides after this round).
+    #[func]
+    fn round_info(&self) -> VarDictionary {
+        let mut d = VarDictionary::new();
+        let Some(round) = self.round else {
+            d.set("number", 0);
+            d.set("phase", "");
+            d.set("seconds_left", 0.0);
+            d.set("attacking", false);
+            d.set("winner", -1);
+            d.set("reason", "");
+            d.set("halftime", false);
+            return d;
+        };
+        let (phase, winner, reason) = match round.phase {
+            RoundPhase::Freeze => ("freeze", -1, ""),
+            RoundPhase::Live => ("live", -1, ""),
+            RoundPhase::Over { winner, reason } => (
+                "over",
+                i32::from(winner),
+                match reason {
+                    RoundEnd::Eliminated => "eliminated",
+                    RoundEnd::Time => "time",
+                },
+            ),
+        };
+        d.set("number", round.number);
+        d.set("phase", phase);
+        d.set("seconds_left", self.seconds_until(Some(round.ends_at)));
+        d.set("attacking", self.local_team() == Some(round.attackers));
+        d.set("winner", winner);
+        d.set("reason", reason);
+        d.set("halftime", round.number == round.halftime_after);
         d
     }
 
@@ -885,6 +942,10 @@ impl NetClient {
                 if phase == Phase::Playing && self.match_phase != Some(Phase::Playing) {
                     self.props.reset();
                 }
+                if matches!(phase, Phase::Lobby | Phase::Countdown) {
+                    // Between matches there is no round.
+                    self.set_round(None);
+                }
                 self.match_phase = Some(phase);
                 self.match_ends_at = ends_at;
                 self.team_scores = scores;
@@ -934,6 +995,19 @@ impl NetClient {
                 self.zone_moves_at = moves_at;
                 self.signals().hardpoint_changed().emit();
             }
+            GameEvent::Round {
+                number,
+                phase,
+                ends_at,
+                attackers,
+                halftime_after,
+            } => self.set_round(Some(Round {
+                number,
+                phase,
+                ends_at,
+                attackers,
+                halftime_after,
+            })),
             GameEvent::PropState { id, stage, impulse } => {
                 // The server owns prop damage: clients only show the states
                 // it sends, never damage props themselves online.
@@ -972,6 +1046,29 @@ impl NetClient {
         if self.props_population != Some(population) {
             self.props.set_population(population);
             self.props_population = Some(population);
+        }
+    }
+
+    /// Keeps the round, and holds the local player still during its freeze.
+    /// The server lets go when the freeze ends, before this event arrives,
+    /// so the first inputs after it are never held back there.
+    fn set_round(&mut self, round: Option<Round>) {
+        let changed = self.round.map(|r| (r.number, r.phase)) != round.map(|r| (r.number, r.phase));
+        self.round = round;
+        let frozen = round.is_some_and(|r| r.phase == RoundPhase::Freeze);
+        if let Some(player) = &mut self.player {
+            player.bind_mut().set_movement_locked(frozen);
+        }
+        if changed {
+            self.signals().round_changed().emit();
+        }
+    }
+
+    /// Seconds from the newest snapshot to `tick`, or 0.
+    fn seconds_until(&self, tick: Option<Tick>) -> f64 {
+        match (tick, self.newest) {
+            (Some(end), Some(now)) => f64::from(end.saturating_sub(now)) / f64::from(TICK_RATE),
+            _ => 0.0,
         }
     }
 
@@ -1196,6 +1293,7 @@ impl NetClient {
             self.props.set_population(0);
             self.props_population = Some(0);
         }
+        self.set_round(None);
         self.signals().roster_changed().emit();
         self.signals().match_changed().emit();
         self.signals().hardpoint_changed().emit();

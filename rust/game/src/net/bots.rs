@@ -266,10 +266,11 @@ pub struct BotWorld<'a> {
     pub params: &'a PlayerParams,
     pub navigation: &'a mut BotNavigation,
     pub space: &'a mut Gd<PhysicsDirectSpaceState3D>,
-    /// Spawn points on each team's side, for goals on the enemy's side.
+    /// Spawn points on each team's own side, by team, for goals on the
+    /// enemy's side. Teams can change sides (Search and Destroy's halftime).
     pub team_spawns: &'a [Vec<Vector3>; 2],
-    /// The map's lanes (`BotLanes`), each a line of points from the west
-    /// (team 0's side) to the east.
+    /// The map's lanes (`BotLanes`), each a line of points from the west to
+    /// the east.
     pub lanes: &'a [Vec<Vector3>],
 }
 
@@ -933,12 +934,24 @@ impl BotBrain {
         let Some((lane, _)) = best else {
             return Vec::new();
         };
-        // Lanes run west to east, and team 0 starts in the west. Players on
-        // their own side (free-for-all) head for the far end.
-        let eastward = match me.team {
-            0 => true,
-            1 => false,
-            _ => me.feet.x < 0.0,
+        // Lanes run west to east. A team heads away from its own spawns,
+        // wherever they are this round; without sides (free-for-all) team 0
+        // heads east.
+        let team = usize::from(me.team.min(1));
+        let mean_x = |points: &[Vector3]| {
+            (!points.is_empty())
+                .then(|| points.iter().map(|p| p.x).sum::<f32>() / points.len() as f32)
+        };
+        let eastward = match (
+            mean_x(&world.team_spawns[team]),
+            mean_x(&world.team_spawns[1 - team]),
+        ) {
+            (Some(own), Some(enemy)) => own < enemy,
+            _ => match me.team {
+                0 => true,
+                1 => false,
+                _ => me.feet.x < 0.0,
+            },
         };
         let mut points = world.lanes[lane].clone();
         if !eastward {
@@ -955,7 +968,7 @@ impl BotBrain {
         if route.is_empty() {
             return route;
         }
-        let enemy_side = &world.team_spawns[usize::from(eastward)];
+        let enemy_side = &world.team_spawns[1 - team];
         if !enemy_side.is_empty() {
             let i = (self.random() * enemy_side.len() as f32) as usize;
             route.push(enemy_side[i.min(enemy_side.len() - 1)]);

@@ -111,7 +111,9 @@ that server. **Gun Game** does the same for a free-for-all up a ladder of eight 
 [Gun Game](#gun-game)). **Capture the Flag** does the same for two teams scoring captures (see
 [Capture the Flag](#capture-the-flag)). **Hardpoint** does the same for two teams fighting over one zone at a time: hold
 it to score a point a second while nobody from the other team is in it; it moves every minute (see
-[Hardpoint](#hardpoint)). **Slamcity** is the team map, a city block with three lanes
+[Hardpoint](#hardpoint)), and **Search and Destroy** for rounds with one life each on Slamcity
+(your name, team size, bot skill, and rounds to win; see
+[Search and Destroy](#search-and-destroy)). **Slamcity** is the team map, a city block with three lanes
 between parking-yard spawns at each end: a back alley with a fire escape up to the flats'
 roof (the high ground), Market Street around a sunken skate bowl, and a run of interiors
 (corner store, apartment lobby, laundromat) with windows onto the street. Offline it has
@@ -244,6 +246,10 @@ Bots play the mode: a carrier runs the flag home and shoots on the move; the two
 ### Gun Game
 
 `--mode gungame` runs Gun Game instead (`shooter_sim::gun_game`): every player for themselves, with no loadouts. Everyone starts with the LSW-6 and climbs the ladder LSW-6, AK-47, M4A1, BR-3, PDW-9, M870, M40, M1911. Each kill with the current weapon counts toward the next (`--kills-per-weapon N`, 2 by default); the kill that moves a player up swaps the weapon in their hands on the spot, with a full magazine. A fall costs one weapon. The first player to score their kills with the M1911 wins; if the clock (`--time-limit`) runs out first, the player furthest up the ladder wins, and of players level with each other, the one who got there first. Weapon racks do nothing in Gun Game. Bots play it too, and the scoreboard lists everyone in one table by weapon.
+
+### Search and Destroy
+
+`--mode snd` runs Search and Destroy instead: rounds with one life each, to `--rounds N` round wins (6). One team attacks from side 0 of the map (Slamcity's west yard) and the other defends from side 1. Each round opens with a five-second freeze (look around and change loadout, but no moving or firing), then 1:45 of play. Wiping out the other team wins the round; if the clock runs out, the defenders win it. The dead spectate a living teammate over the shoulder (Fire switches teammates) until the next round. The teams swap sides once, after one round fewer than the rounds to win. The charge and its two sites come next (see TODO.md).
 
 It listens for players on UDP port 27015 (`--port N` to change) and answers server browsers on the next port, 27016 (`--query-port N` to change). To run several servers on one machine, step the game port by 2 (27015, 27017, …) so the LAN search finds them all.
 

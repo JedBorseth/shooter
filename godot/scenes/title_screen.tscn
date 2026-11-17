@@ -116,6 +116,15 @@ theme_override_font_sizes/font_size = 24
 text = "Hardpoint    →"
 alignment = 0
 
+[node name="SearchAndDestroy" type="Button" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(480, 48)
+layout_mode = 2
+mouse_default_cursor_shape = 2
+theme_override_colors/font_color = Color(0.88, 0.97, 0.95, 1)
+theme_override_font_sizes/font_size = 24
+text = "Search and Destroy    →"
+alignment = 0
+
 [node name="Slamcity" type="Button" parent="Margin/Layout/Menu"]
 custom_minimum_size = Vector2(480, 48)
 layout_mode = 2

@@ -49,6 +49,12 @@ pub struct RemotePlayer {
     foley: Option<Foley>,
     friendly: bool,
     reload_sounds: HashMap<WeaponId, Option<Gd<AudioStream>>>,
+    /// View angles and life from the last drawn sample, for spectating.
+    yaw: f32,
+    pitch: f32,
+    #[init(val = true)]
+    alive: bool,
+    stance_eye: f32,
 }
 
 #[godot_api]
@@ -69,6 +75,23 @@ impl RemotePlayer {
     }
 
     /// The character, for tests.
+    /// The view yaw and pitch last drawn, in radians (spectator cameras).
+    #[func]
+    fn view_angles(&self) -> Vector2 {
+        Vector2::new(self.yaw, self.pitch)
+    }
+
+    /// Eye height above the feet for the stance last drawn.
+    #[func]
+    fn eye_height(&self) -> f32 {
+        self.stance_eye
+    }
+
+    #[func]
+    fn is_alive(&self) -> bool {
+        self.alive
+    }
+
     #[func]
     fn soldier(&self) -> Gd<SoldierRig> {
         self.rig.clone()
@@ -174,6 +197,10 @@ impl RemotePlayer {
     pub fn apply(&mut self, s: &RemoteSample, delta: f32) {
         let position = to_godot(s.position);
         self.base_mut().set_global_position(position);
+        self.yaw = s.yaw;
+        self.pitch = s.pitch;
+        self.alive = s.alive;
+        self.stance_eye = MoveParams::default().eye_height(s.stance);
 
         // Velocity from the drawn motion (snapshots carry no velocity). A jump
         // in position (respawn) restarts the estimate.

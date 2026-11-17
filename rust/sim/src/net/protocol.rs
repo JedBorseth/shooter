@@ -27,6 +27,7 @@ use crate::look::PITCH_LIMIT;
 use crate::movement::{MoveState, Stance};
 use crate::player::{PlayerInput, PlayerState};
 use crate::score::{Award, ScoreTotals, Scored};
+use crate::snd::{RoundEnd, RoundPhase};
 use crate::tdm::{MAX_NAME_CHARS, Mode, Phase, TEAM_COUNT, Team};
 use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState};
 
@@ -37,12 +38,15 @@ use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState}
 // Version 8 added empty weapon slots, version 9 hit flinches for every
 // player, version 10 the game mode (Gun Game), player winners, and ladder
 // levels, version 11 Capture the Flag: the flags, flag plays and awards,
-// and captures and returns on the scoreboard, and version 12 Hardpoint: the
+// and captures and returns on the scoreboard, version 12 Hardpoint: the
 // zones, who holds the live one, the objective awards, and time on the hill
 // on the scoreboard.
 // Version 13 added interactive prop state events (damageable map props).
 // Version 14 added text chat.
-pub const PROTOCOL_VERSION: u16 = 14;
+// Version 15 added Search and Destroy: its mode (the mode field grew to 3
+// bits), rounds (event tags grew to 5 bits), and who is alive on the
+// scoreboard.
+pub const PROTOCOL_VERSION: u16 = 15;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
 pub const MAX_INPUTS_PER_PACKET: usize = 24;
 /// Wish vectors are sent as signed bytes; prediction must use the same values.
@@ -172,8 +176,10 @@ pub enum GameEvent {
     /// To everyone: a player left.
     Left { id: u8 },
     /// To everyone: the match phase or the team scores changed. `ends_at` is
-    /// the server tick the phase's clock runs out (none in the lobby). In
-    /// Gun Game the scores stay 0 and `score_limit` is the number of weapons.
+    /// the server tick the phase's clock runs out (none in the lobby, or
+    /// while playing a mode without a match clock, as Search and Destroy).
+    /// In Gun Game the scores stay 0 and `score_limit` is the number of
+    /// weapons.
     Match {
         phase: Phase,
         ends_at: Option<Tick>,
@@ -219,6 +225,16 @@ pub enum GameEvent {
     /// A chat message from player `from`, cleaned by the server. `team`
     /// messages go only to the sender's team.
     Chat { from: u8, text: String, team: bool },
+    /// To everyone, in Search and Destroy: the round changed. `ends_at` is
+    /// the server tick the phase's clock runs out. The teams swap sides after
+    /// round `halftime_after`.
+    Round {
+        number: u32,
+        phase: RoundPhase,
+        ends_at: Tick,
+        attackers: Team,
+        halftime_after: u32,
+    },
 }
 
 /// One flag as clients see it.
@@ -280,6 +296,7 @@ pub struct ScoreRow {
     pub returns: u32,
     /// Hardpoint: whole seconds spent in the live zone this match.
     pub hill_seconds: u32,
+    pub alive: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -747,7 +764,8 @@ impl ServerMessage {
 // ---------------------------------------------------------------------------
 // Reliable game events
 
-const EVENT_TAG_BITS: u32 = 4;
+/// Bits for an event's tag; room for 32 kinds of event.
+const EVENT_TAG_BITS: u32 = 5;
 
 fn write_event(w: &mut BitWriter, event: &GameEvent) {
     match event {
@@ -874,6 +892,7 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
                 w.varint(row.captures);
                 w.varint(row.returns);
                 w.varint(row.hill_seconds);
+                w.bool(row.alive);
             }
         }
         GameEvent::Spawned { yaw } => {
@@ -953,6 +972,34 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
             w.u8(*from);
             w.bool(*team);
             write_string(w, text, chat::MAX_BYTES);
+        }
+        GameEvent::Round {
+            number,
+            phase,
+            ends_at,
+            attackers,
+            halftime_after,
+        } => {
+            w.bits(16, EVENT_TAG_BITS);
+            w.varint(*number);
+            match phase {
+                RoundPhase::Freeze => w.bits(0, 2),
+                RoundPhase::Live => w.bits(1, 2),
+                RoundPhase::Over { winner, reason } => {
+                    w.bits(2, 2);
+                    w.bits(u32::from(*winner), 1);
+                    w.bits(
+                        match reason {
+                            RoundEnd::Eliminated => 0,
+                            RoundEnd::Time => 1,
+                        },
+                        2,
+                    );
+                }
+            }
+            w.u32(*ends_at);
+            w.bits(u32::from(*attackers), 1);
+            w.varint(*halftime_after);
         }
     }
 }
@@ -1067,6 +1114,7 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
                     captures: r.varint()?,
                     returns: r.varint()?,
                     hill_seconds: r.varint()?,
+                    alive: r.bool()?,
                 });
             }
             Ok(GameEvent::Scoreboard { rows })
@@ -1145,30 +1193,58 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
                 team,
             })
         }
+        16 => {
+            let number = r.varint()?;
+            let phase = match r.bits(2)? {
+                0 => RoundPhase::Freeze,
+                1 => RoundPhase::Live,
+                2 => RoundPhase::Over {
+                    winner: r.bits(1)? as Team,
+                    reason: match r.bits(2)? {
+                        0 => RoundEnd::Eliminated,
+                        1 => RoundEnd::Time,
+                        _ => return Err(DecodeError::Invalid("round end")),
+                    },
+                },
+                _ => return Err(DecodeError::Invalid("round phase")),
+            };
+            Ok(GameEvent::Round {
+                number,
+                phase,
+                ends_at: r.u32()?,
+                attackers: r.bits(1)? as Team,
+                halftime_after: r.varint()?,
+            })
+        }
         _ => Err(DecodeError::Invalid("event tag")),
     }
 }
 
+/// Bits for a mode's tag; room for eight modes.
+const MODE_TAG_BITS: u32 = 3;
+
 fn write_mode(w: &mut BitWriter, mode: &Mode) {
     match mode {
-        Mode::TeamDeathmatch => w.bits(0, 2),
-        Mode::Hardpoint => w.bits(3, 2),
+        Mode::TeamDeathmatch => w.bits(0, MODE_TAG_BITS),
         Mode::GunGame(rules) => {
-            w.bits(1, 2);
+            w.bits(1, MODE_TAG_BITS);
             w.u8(rules.kills_per_weapon);
         }
-        Mode::CaptureTheFlag => w.bits(2, 2),
+        Mode::CaptureTheFlag => w.bits(2, MODE_TAG_BITS),
+        Mode::Hardpoint => w.bits(3, MODE_TAG_BITS),
+        Mode::SearchAndDestroy => w.bits(4, MODE_TAG_BITS),
     }
 }
 
 fn read_mode(r: &mut BitReader) -> DecodeResult<Mode> {
-    match r.bits(2)? {
+    match r.bits(MODE_TAG_BITS)? {
         0 => Ok(Mode::TeamDeathmatch),
         1 => Ok(Mode::GunGame(gun_game::Rules {
             kills_per_weapon: r.u8()?.max(1),
         })),
         2 => Ok(Mode::CaptureTheFlag),
         3 => Ok(Mode::Hardpoint),
+        4 => Ok(Mode::SearchAndDestroy),
         _ => Err(DecodeError::Invalid("mode")),
     }
 }
@@ -2176,6 +2252,7 @@ mod tests {
                         captures: 2,
                         returns: 5,
                         hill_seconds: 74,
+                        alive: true,
                     },
                     ScoreRow {
                         id: 203,
@@ -2212,6 +2289,40 @@ mod tests {
                 holder: Holder::Neutral,
                 moves_at: Some(1),
             },
+            GameEvent::Round {
+                number: 1,
+                phase: RoundPhase::Freeze,
+                ends_at: 600,
+                attackers: 0,
+                halftime_after: 5,
+            },
+            GameEvent::Round {
+                number: 7,
+                phase: RoundPhase::Live,
+                ends_at: 1_234_567,
+                attackers: 1,
+                halftime_after: 5,
+            },
+            GameEvent::Round {
+                number: 11,
+                phase: RoundPhase::Over {
+                    winner: 1,
+                    reason: RoundEnd::Time,
+                },
+                ends_at: 99,
+                attackers: 0,
+                halftime_after: 3,
+            },
+            GameEvent::Round {
+                number: 2,
+                phase: RoundPhase::Over {
+                    winner: 0,
+                    reason: RoundEnd::Eliminated,
+                },
+                ends_at: 5,
+                attackers: 0,
+                halftime_after: 5,
+            },
         ]);
         let bytes = msg.encode(&[]);
         assert_eq!(ServerMessage::decode(&bytes, |_| None).unwrap(), msg);
@@ -2226,6 +2337,7 @@ mod tests {
             }),
             Mode::CaptureTheFlag,
             Mode::Hardpoint,
+            Mode::SearchAndDestroy,
         ] {
             let msg = ServerMessage::Welcome {
                 player_id: 3,

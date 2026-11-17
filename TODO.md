@@ -163,6 +163,16 @@ Done: rounds with a growing, toughening horde, zombies that walk straight at the
 - [x] A cheaper zombie for big hordes: two surfaces per character instead of eleven (a 24-zombie horde draws about 195 calls instead of 630).
 - [x] Animate distant zombies at a reduced rate: every second frame beyond 18 m and every fourth beyond 32 m, staggered across zombies.
 
+## Search and Destroy
+
+Rounds with one life each (`rust/sim/src/snd.rs`, `--mode snd`), on Slamcity. Classic rules: the attackers plant a charge at site A or B, the defenders stop them or defuse it.
+
+- [x] Rounds: attackers and defenders, a freeze, 1:45 of play, wipe-outs and time wins, the dead sit out until the next round, joiners wait for it, and the teams swap sides at halftime. Round wins are the match score (first to 6).
+- [x] Spectating a living teammate after death, alive pips beside the score bar, round banners, and a Mode choice in the local match setup.
+- [ ] The charge: one attacker carries it (dropped on death, picked up by attackers), a 4-second plant at site A (east apartment lobby) or B (east back alley), a 45-second fuse, and a 7-second defuse that resets if interrupted. An interact hold bit in `PlayerInput`; movement held still while planting or defusing.
+- [ ] Bots play the objective: attackers take the charge to a site and plant, defenders hold the sites and defuse.
+- [ ] Plant and defuse scores and medals (Clutch, Ace, Wire Cutter), round stings, and the charge's beeps.
+
 ## Phase 5: online services (all self-hosted)
 
 - [ ] Nakama (self-hosted, Docker Compose) for accounts, parties, and matchmaking. Use the `nakama-godot` client.
@@ -197,7 +207,7 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 - [ ] Progression: XP, levels, weapon unlocks.
 - [x] Gun Game: free-for-all up a ladder of the eight weapons, with a local match button on the title screen (`rust/sim/src/gun_game.rs`).
 - [x] Capture the Flag: flags, takes, drops, returns, and captures on the server (`rust/sim/src/ctf.rs`), bots that attack, defend, return, and carry, flag markers and calls on the client (`godot/scripts/net/ctf_view.gd`), and a title screen button.
-- [ ] More modes: Domination, Search and Destroy, Free-for-all. Free-for-all can reuse Gun Game's teamless server path (`Mode::free_for_all`).
+- [ ] More modes: Domination, Free-for-all. Free-for-all can reuse Gun Game's teamless server path (`Mode::free_for_all`). (Search and Destroy has its own section.)
 - [ ] Gun Game: a melee weapon, so a knife kill can set the victim back a weapon as in the classic rules; a sound for each new weapon.
 - [ ] Capture the Flag: halftime side swap, overtime on a draw, and a carrier speed or weapon penalty if playtests call for one.
 
