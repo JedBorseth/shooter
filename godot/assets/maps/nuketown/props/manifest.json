@@ -1,0 +1,6641 @@
+{
+  "entities": [
+    {
+      "id": 0,
+      "model": "dest_nt_nuked_female_02_d0",
+      "position": [
+        -15.155342,
+        -1.4478,
+        -6.550939
+      ],
+      "rotation_degrees": [
+        0.0,
+        72.6,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_02",
+      "source_index": 179,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_female_02",
+        "model": "dest_nt_nuked_female_02_d0",
+        "angles": "0 72.6 0",
+        "target": "pf109_auto2",
+        "origin": "-596.667 257.911 -57",
+        "guid": "01A97AA0"
+      }
+    },
+    {
+      "id": 1,
+      "model": "dest_nt_nuked_female_03_d0",
+      "position": [
+        -22.964623,
+        2.00025,
+        -18.405475
+      ],
+      "rotation_degrees": [
+        0.0,
+        26.9,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_03",
+      "source_index": 181,
+      "source_keys": {
+        "origin": "-904.119 724.625 78.75",
+        "target": "pf110_auto2",
+        "angles": "0 26.9 0",
+        "model": "dest_nt_nuked_female_03_d0",
+        "destructibledef": "dest_nt_nuked_female_03",
+        "targetname": "destructible",
+        "classname": "script_model",
+        "guid": "825FA9AA"
+      }
+    },
+    {
+      "id": 2,
+      "model": "dest_nt_nuked_female_02_d0",
+      "position": [
+        -28.831794,
+        1.9558,
+        -16.548989
+      ],
+      "rotation_degrees": [
+        0.0,
+        254.9,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_02",
+      "source_index": 183,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_female_02",
+        "model": "dest_nt_nuked_female_02_d0",
+        "angles": "0 254.9 0",
+        "target": "pf111_auto2",
+        "origin": "-1135.11 651.535 77",
+        "guid": "01A97AA0"
+      }
+    },
+    {
+      "id": 3,
+      "model": "dest_nt_nuked_female_02_d0",
+      "position": [
+        -20.161047,
+        2.0066,
+        -14.261084
+      ],
+      "rotation_degrees": [
+        0.0,
+        160.4,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_02",
+      "source_index": 185,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_female_02",
+        "model": "dest_nt_nuked_female_02_d0",
+        "angles": "0 160.4 0",
+        "target": "pf112_auto2",
+        "origin": "-793.742 561.46 79",
+        "guid": "01A97AA0"
+      }
+    },
+    {
+      "id": 4,
+      "model": "dest_nt_nuked_female_01_d0",
+      "position": [
+        -10.26094,
+        -1.58242,
+        -12.36693
+      ],
+      "rotation_degrees": [
+        0.0,
+        267.4,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_01",
+      "source_index": 187,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_female_01",
+        "model": "dest_nt_nuked_female_01_d0",
+        "origin": "-403.974 486.887 -62.3",
+        "angles": "0 267.4 0",
+        "target": "pf113_auto1",
+        "guid": "C936D5CB"
+      }
+    },
+    {
+      "id": 5,
+      "model": "dest_nt_nuked_female_03_d0",
+      "position": [
+        -12.513843,
+        -1.45415,
+        -14.020597
+      ],
+      "rotation_degrees": [
+        0.0,
+        176.4,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_03",
+      "source_index": 189,
+      "source_keys": {
+        "origin": "-492.671 551.992 -57.25",
+        "target": "pf114_auto2",
+        "angles": "0 176.4 0",
+        "model": "dest_nt_nuked_female_03_d0",
+        "destructibledef": "dest_nt_nuked_female_03",
+        "targetname": "destructible",
+        "classname": "script_model",
+        "guid": "825FA9AA"
+      }
+    },
+    {
+      "id": 6,
+      "model": "dest_nt_nuked_female_02_d0",
+      "position": [
+        30.229048,
+        1.9558,
+        -12.623114
+      ],
+      "rotation_degrees": [
+        0.0,
+        196.5,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_02",
+      "source_index": 191,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_female_02",
+        "model": "dest_nt_nuked_female_02_d0",
+        "angles": "0 196.5 0",
+        "target": "pf115_auto2",
+        "origin": "1190.12 496.973 77",
+        "guid": "01A97AA0"
+      }
+    },
+    {
+      "id": 7,
+      "model": "dest_nt_nuked_female_02_d0",
+      "position": [
+        28.44165,
+        2.0193,
+        -3.30327
+      ],
+      "rotation_degrees": [
+        0.0,
+        270.0,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_02",
+      "source_index": 193,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_female_02",
+        "model": "dest_nt_nuked_female_02_d0",
+        "angles": "0 270 0",
+        "target": "pf116_auto2",
+        "origin": "1119.75 130.05 79.5",
+        "guid": "01A97AA0"
+      }
+    },
+    {
+      "id": 8,
+      "model": "dest_nt_nuked_female_02_d0",
+      "position": [
+        15.682316,
+        2.0193,
+        -7.92828
+      ],
+      "rotation_degrees": [
+        0.0,
+        91.8,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_02",
+      "source_index": 195,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_female_02",
+        "model": "dest_nt_nuked_female_02_d0",
+        "angles": "0 91.8 0",
+        "target": "pf117_auto2",
+        "origin": "617.414 312.137 79.5",
+        "guid": "01A97AA0"
+      }
+    },
+    {
+      "id": 9,
+      "model": "dest_nt_nuked_female_03_d0",
+      "position": [
+        -21.369401,
+        -1.44145,
+        -16.806748
+      ],
+      "rotation_degrees": [
+        0.0,
+        178.6,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_03",
+      "source_index": 197,
+      "source_keys": {
+        "origin": "-841.315 661.683 -56.75",
+        "target": "pf118_auto2",
+        "angles": "0 178.6 0",
+        "model": "dest_nt_nuked_female_03_d0",
+        "destructibledef": "dest_nt_nuked_female_03",
+        "targetname": "destructible",
+        "classname": "script_model",
+        "guid": "825FA9AA"
+      }
+    },
+    {
+      "id": 10,
+      "model": "dest_nt_nuked_female_01_d0",
+      "position": [
+        26.88082,
+        -1.4605,
+        -9.818802
+      ],
+      "rotation_degrees": [
+        0.0,
+        73.6,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_01",
+      "source_index": 199,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_female_01",
+        "model": "dest_nt_nuked_female_01_d0",
+        "origin": "1058.3 386.567 -57.5",
+        "angles": "0 73.6 0",
+        "target": "pf119_auto1",
+        "guid": "C936D5CB"
+      }
+    },
+    {
+      "id": 11,
+      "model": "dest_nt_nuked_female_01_d0",
+      "position": [
+        -25.082043,
+        -1.4605,
+        -13.275589
+      ],
+      "rotation_degrees": [
+        0.0,
+        211.3,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_01",
+      "source_index": 201,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_female_01",
+        "model": "dest_nt_nuked_female_01_d0",
+        "origin": "-987.482 522.661 -57.5",
+        "angles": "0 211.3 0",
+        "target": "pf120_auto1",
+        "guid": "C936D5CB"
+      }
+    },
+    {
+      "id": 12,
+      "model": "dest_nt_nuked_female_02_d0",
+      "position": [
+        27.592274,
+        -1.4478,
+        -4.130319
+      ],
+      "rotation_degrees": [
+        0.0,
+        47.1,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_02",
+      "source_index": 203,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_female_02",
+        "model": "dest_nt_nuked_female_02_d0",
+        "angles": "0 47.1 0",
+        "target": "pf121_auto2",
+        "origin": "1086.31 162.611 -57",
+        "guid": "01A97AA0"
+      }
+    },
+    {
+      "id": 13,
+      "model": "dest_nt_nuked_male_01_d0",
+      "position": [
+        20.508671,
+        -1.44272,
+        -11.190376
+      ],
+      "rotation_degrees": [
+        0.0,
+        220.1,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_male_01",
+      "source_index": 205,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_male_01",
+        "model": "dest_nt_nuked_male_01_d0",
+        "origin": "807.428 440.566 -56.8",
+        "angles": "0 220.1 0",
+        "target": "pf122_auto2",
+        "guid": "896A261C"
+      }
+    },
+    {
+      "id": 14,
+      "model": "dest_nt_nuked_male_01_d0",
+      "position": [
+        14.931949,
+        -1.4732,
+        -14.487068
+      ],
+      "rotation_degrees": [
+        0.0,
+        209.4,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_male_01",
+      "source_index": 207,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_male_01",
+        "model": "dest_nt_nuked_male_01_d0",
+        "origin": "587.872 570.357 -58",
+        "angles": "0 209.4 0",
+        "target": "pf123_auto2",
+        "guid": "896A261C"
+      }
+    },
+    {
+      "id": 15,
+      "model": "dest_nt_nuked_female_03_d0",
+      "position": [
+        -13.641781,
+        -1.63195,
+        -22.320047
+      ],
+      "rotation_degrees": [
+        0.0,
+        33.0,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_03",
+      "source_index": 209,
+      "source_keys": {
+        "origin": "-537.078 878.742 -64.25",
+        "target": "pf124_auto2",
+        "angles": "0 33 0",
+        "model": "dest_nt_nuked_female_03_d0",
+        "destructibledef": "dest_nt_nuked_female_03",
+        "targetname": "destructible",
+        "classname": "script_model",
+        "guid": "825FA9AA"
+      }
+    },
+    {
+      "id": 16,
+      "model": "dest_nt_nuked_male_01_d0",
+      "position": [
+        -17.204563,
+        -1.4478,
+        -1.690345
+      ],
+      "rotation_degrees": [
+        0.0,
+        327.8,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_male_01",
+      "source_index": 211,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_male_01",
+        "model": "dest_nt_nuked_male_01_d0",
+        "origin": "-677.345 66.549 -57",
+        "angles": "0 327.8 0",
+        "target": "pf125_auto2",
+        "guid": "896A261C"
+      }
+    },
+    {
+      "id": 17,
+      "model": "dest_nt_nuked_male_01_d0",
+      "position": [
+        -22.051137,
+        -1.4351,
+        -7.580655
+      ],
+      "rotation_degrees": [
+        0.0,
+        147.8,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_male_01",
+      "source_index": 213,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_male_01",
+        "model": "dest_nt_nuked_male_01_d0",
+        "origin": "-868.155 298.451 -56.5",
+        "angles": "0 147.8 0",
+        "target": "pf126_auto2",
+        "guid": "896A261C"
+      }
+    },
+    {
+      "id": 18,
+      "model": "dest_nt_nuked_male_01_d0",
+      "position": [
+        -24.64341,
+        2.0066,
+        -12.597511
+      ],
+      "rotation_degrees": [
+        0.0,
+        323.9,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_male_01",
+      "source_index": 215,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_male_01",
+        "model": "dest_nt_nuked_male_01_d0",
+        "origin": "-970.213 495.965 79",
+        "angles": "0 323.9 0",
+        "target": "pf127_auto2",
+        "guid": "896A261C"
+      }
+    },
+    {
+      "id": 19,
+      "model": "dest_nt_nuked_female_03_d0",
+      "position": [
+        -12.855829,
+        2.01295,
+        -14.855114
+      ],
+      "rotation_degrees": [
+        0.0,
+        348.1,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_03",
+      "source_index": 217,
+      "source_keys": {
+        "origin": "-506.135 584.847 79.25",
+        "target": "pf128_auto2",
+        "angles": "0 348.1 0",
+        "model": "dest_nt_nuked_female_03_d0",
+        "destructibledef": "dest_nt_nuked_female_03",
+        "targetname": "destructible",
+        "classname": "script_model",
+        "guid": "825FA9AA"
+      }
+    },
+    {
+      "id": 20,
+      "model": "dest_nt_nuked_female_02_d0",
+      "position": [
+        26.991056,
+        2.0193,
+        -9.156268
+      ],
+      "rotation_degrees": [
+        0.0,
+        99.8,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_02",
+      "source_index": 219,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_female_02",
+        "model": "dest_nt_nuked_female_02_d0",
+        "angles": "0 99.8 0",
+        "target": "pf129_auto2",
+        "origin": "1062.64 360.483 79.5",
+        "guid": "01A97AA0"
+      }
+    },
+    {
+      "id": 21,
+      "model": "dest_nt_nuked_male_01_d0",
+      "position": [
+        34.348166,
+        -1.6002,
+        -12.415012
+      ],
+      "rotation_degrees": [
+        0.0,
+        200.0,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_male_01",
+      "source_index": 221,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_male_01",
+        "model": "dest_nt_nuked_male_01_d0",
+        "origin": "1352.29 488.78 -63",
+        "angles": "0 200 0",
+        "target": "pf130_auto2",
+        "guid": "896A261C"
+      }
+    },
+    {
+      "id": 22,
+      "model": "dest_nt_nuked_female_05_d0",
+      "position": [
+        16.837203,
+        -1.502923,
+        -7.301662
+      ],
+      "rotation_degrees": [
+        1.19247,
+        97.911,
+        -8.51754
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_05",
+      "source_index": 224,
+      "source_keys": {
+        "angles": "1.19247 97.911 -8.51754",
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_female_05",
+        "model": "dest_nt_nuked_female_05_d0",
+        "target": "pf131_auto2",
+        "origin": "662.882 287.467 -59.1702",
+        "guid": "A573289A"
+      }
+    },
+    {
+      "id": 23,
+      "model": "dest_nt_nuked_female_05_d0",
+      "position": [
+        -17.300118,
+        -1.3589,
+        -7.898816
+      ],
+      "rotation_degrees": [
+        0.0,
+        185.1,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_05",
+      "source_index": 226,
+      "source_keys": {
+        "angles": "0 185.1 0",
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_female_05",
+        "model": "dest_nt_nuked_female_05_d0",
+        "target": "pf132_auto2",
+        "origin": "-681.107 310.977 -53.5",
+        "guid": "A573289A"
+      }
+    },
+    {
+      "id": 24,
+      "model": "dest_nt_nuked_female_05_d0",
+      "position": [
+        -21.642857,
+        2.099772,
+        -9.34908
+      ],
+      "rotation_degrees": [
+        2.79435,
+        183.603,
+        0.175948
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_05",
+      "source_index": 228,
+      "source_keys": {
+        "angles": "2.79435 183.603 0.175948",
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_female_05",
+        "model": "dest_nt_nuked_female_05_d0",
+        "target": "pf133_auto2",
+        "origin": "-852.081 368.074 82.6682",
+        "guid": "A573289A"
+      }
+    },
+    {
+      "id": 25,
+      "model": "dest_nt_nuked_male_03_d0",
+      "position": [
+        22.312122,
+        -1.44145,
+        -9.302242
+      ],
+      "rotation_degrees": [
+        0.0,
+        104.3,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_male_03",
+      "source_index": 230,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_male_03",
+        "model": "dest_nt_nuked_male_03_d0",
+        "angles": "0 104.3 0",
+        "target": "pf134_auto3",
+        "origin": "878.43 366.23 -56.75",
+        "guid": "98666413"
+      }
+    },
+    {
+      "id": 26,
+      "model": "dest_nt_nuked_female_01_d0",
+      "position": [
+        17.102658,
+        2.0066,
+        -0.224973
+      ],
+      "rotation_degrees": [
+        0.0,
+        265.2,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_01",
+      "source_index": 232,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_female_01",
+        "model": "dest_nt_nuked_female_01_d0",
+        "origin": "673.333 8.85721 79",
+        "angles": "0 265.2 0",
+        "target": "pf135_auto1",
+        "guid": "C936D5CB"
+      }
+    },
+    {
+      "id": 27,
+      "model": "dest_nt_nuked_female_01_d0",
+      "position": [
+        -15.113635,
+        2.0066,
+        -6.508902
+      ],
+      "rotation_degrees": [
+        0.0,
+        194.7,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_01",
+      "source_index": 234,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_female_01",
+        "model": "dest_nt_nuked_female_01_d0",
+        "origin": "-595.025 256.256 79",
+        "angles": "0 194.7 0",
+        "target": "pf136_auto1",
+        "guid": "C936D5CB"
+      }
+    },
+    {
+      "id": 28,
+      "model": "dest_nt_nuked_male_03_d0",
+      "position": [
+        16.661714,
+        -1.500861,
+        -8.200542
+      ],
+      "rotation_degrees": [
+        358.232,
+        97.9136,
+        -13.3709
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_male_03",
+      "source_index": 236,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_male_03",
+        "model": "dest_nt_nuked_male_03_d0",
+        "angles": "358.232 97.9136 -13.3709",
+        "target": "pf137_auto3",
+        "origin": "655.973 322.856 -59.089",
+        "guid": "98666413"
+      }
+    },
+    {
+      "id": 29,
+      "model": "dest_nt_nuked_female_05_d0",
+      "position": [
+        -20.30415,
+        -1.42875,
+        -13.332282
+      ],
+      "rotation_degrees": [
+        0.0,
+        183.3,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_05",
+      "source_index": 238,
+      "source_keys": {
+        "angles": "0 183.3 0",
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_female_05",
+        "model": "dest_nt_nuked_female_05_d0",
+        "target": "pf138_auto2",
+        "origin": "-799.376 524.893 -56.25",
+        "guid": "A573289A"
+      }
+    },
+    {
+      "id": 30,
+      "model": "dest_nt_nuked_male_01_d0",
+      "position": [
+        31.947104,
+        1.96342,
+        -8.962873
+      ],
+      "rotation_degrees": [
+        0.0,
+        106.5,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_male_01",
+      "source_index": 245,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_male_01",
+        "model": "dest_nt_nuked_male_01_d0",
+        "origin": "1257.76 352.869 77.3",
+        "angles": "0 106.5 0",
+        "target": "pf139_auto2",
+        "guid": "896A261C"
+      }
+    },
+    {
+      "id": 31,
+      "model": "dest_nt_nuked_male_01_d0",
+      "position": [
+        -30.012132,
+        1.96342,
+        -13.344881
+      ],
+      "rotation_degrees": [
+        0.0,
+        247.7,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_male_01",
+      "source_index": 247,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_male_01",
+        "model": "dest_nt_nuked_male_01_d0",
+        "origin": "-1181.58 525.389 77.3",
+        "angles": "0 247.7 0",
+        "target": "pf140_auto2",
+        "guid": "896A261C"
+      }
+    },
+    {
+      "id": 32,
+      "model": "dest_nt_nuked_male_01_d0",
+      "position": [
+        23.424718,
+        2.0066,
+        -10.24669
+      ],
+      "rotation_degrees": [
+        0.0,
+        41.1,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_male_01",
+      "source_index": 249,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_male_01",
+        "model": "dest_nt_nuked_male_01_d0",
+        "origin": "922.233 403.413 79",
+        "angles": "0 41.1 0",
+        "target": "pf141_auto2",
+        "guid": "896A261C"
+      }
+    },
+    {
+      "id": 33,
+      "model": "dest_nt_nuked_male_01_d0",
+      "position": [
+        19.113398,
+        2.0066,
+        -3.202711
+      ],
+      "rotation_degrees": [
+        0.0,
+        236.1,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_male_01",
+      "source_index": 251,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_male_01",
+        "model": "dest_nt_nuked_male_01_d0",
+        "origin": "752.496 126.091 79",
+        "angles": "0 236.1 0",
+        "target": "pf142_auto2",
+        "guid": "896A261C"
+      }
+    },
+    {
+      "id": 34,
+      "model": "dest_nt_nuked_female_05_d0",
+      "position": [
+        23.280751,
+        -1.37922,
+        -10.717378
+      ],
+      "rotation_degrees": [
+        0.0,
+        284.3,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_05",
+      "source_index": 254,
+      "source_keys": {
+        "angles": "0 284.3 0",
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_female_05",
+        "model": "dest_nt_nuked_female_05_d0",
+        "target": "pf143_auto2",
+        "origin": "916.565 421.944 -54.3",
+        "guid": "A573289A"
+      }
+    },
+    {
+      "id": 35,
+      "model": "dest_nt_nuked_male_03_d0",
+      "position": [
+        -19.418351,
+        -1.45415,
+        -15.867558
+      ],
+      "rotation_degrees": [
+        0.0,
+        324.3,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_male_03",
+      "source_index": 256,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_male_03",
+        "model": "dest_nt_nuked_male_03_d0",
+        "angles": "0 324.3 0",
+        "target": "pf144_auto3",
+        "origin": "-764.502 624.707 -57.25",
+        "guid": "98666413"
+      }
+    },
+    {
+      "id": 36,
+      "model": "veh_t6_nuketown_2020_car01_clean",
+      "position": [
+        10.42924,
+        -1.4986,
+        26.7716
+      ],
+      "rotation_degrees": [
+        0.2,
+        180.4,
+        0.001396
+      ],
+      "targetname": "destructible",
+      "destructibledef": "veh_nuketown_2020_destructible_car_01",
+      "source_index": 257,
+      "source_keys": {
+        "angles": "0.2 180.4 0.00139636",
+        "model": "veh_t6_nuketown_2020_car01_clean",
+        "classname": "script_model",
+        "origin": "410.6 -1054 -59",
+        "destructibledef": "veh_nuketown_2020_destructible_car_01",
+        "targetname": "destructible",
+        "bakeshadow": "1",
+        "guid": "5AC7F197"
+      }
+    },
+    {
+      "id": 37,
+      "model": "dest_nt_nuked_male_01_d0",
+      "position": [
+        -12.261012,
+        -1.535102,
+        22.966477
+      ],
+      "rotation_degrees": [
+        359.879,
+        92.0999,
+        0.042078
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_male_01",
+      "source_index": 259,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_male_01",
+        "model": "dest_nt_nuked_male_01_d0",
+        "origin": "-482.717 -904.192 -60.4371",
+        "angles": "359.879 92.0999 0.0420777",
+        "target": "pf154_auto2",
+        "guid": "896A261C"
+      }
+    },
+    {
+      "id": 38,
+      "model": "nt_2020_wall_clock_02_seconds",
+      "position": [
+        23.005263,
+        0.90805,
+        -4.844644
+      ],
+      "rotation_degrees": [
+        1e-05,
+        105.0,
+        -0.000306
+      ],
+      "targetname": "second_hand",
+      "destructibledef": "",
+      "source_index": 260,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "nt_2020_wall_clock_02_seconds",
+        "spawnflags": "2",
+        "targetname": "second_hand",
+        "origin": "905.719 190.734 35.75",
+        "angles": "1.00179e-005 105 -0.00030565",
+        "guid": "F0C13BB5"
+      }
+    },
+    {
+      "id": 39,
+      "model": "nt_2020_wall_clock_02_minutes",
+      "position": [
+        23.005263,
+        0.90805,
+        -4.844644
+      ],
+      "rotation_degrees": [
+        0.0,
+        105.0,
+        0.0
+      ],
+      "targetname": "minute_hand",
+      "destructibledef": "",
+      "source_index": 261,
+      "source_keys": {
+        "angles": "0 105 0",
+        "origin": "905.719 190.734 35.75",
+        "targetname": "minute_hand",
+        "spawnflags": "2",
+        "model": "nt_2020_wall_clock_02_minutes",
+        "classname": "script_model",
+        "guid": "7DBC99C0"
+      }
+    },
+    {
+      "id": 40,
+      "model": "nt_2020_wall_clock_02_hours",
+      "position": [
+        23.005263,
+        0.90805,
+        -4.844644
+      ],
+      "rotation_degrees": [
+        0.0,
+        105.0,
+        0.0
+      ],
+      "targetname": "hour_hand",
+      "destructibledef": "",
+      "source_index": 262,
+      "source_keys": {
+        "angles": "0 105 0",
+        "classname": "script_model",
+        "model": "nt_2020_wall_clock_02_hours",
+        "origin": "905.719 190.734 35.75",
+        "targetname": "hour_hand",
+        "spawnflags": "2",
+        "guid": "2665BF10"
+      }
+    },
+    {
+      "id": 41,
+      "model": "nt_2020_wall_clock_01_seconds",
+      "position": [
+        14.740128,
+        0.4318,
+        -8.678088
+      ],
+      "rotation_degrees": [
+        1e-05,
+        15.0,
+        -0.000306
+      ],
+      "targetname": "second_hand",
+      "destructibledef": "",
+      "source_index": 263,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "nt_2020_wall_clock_01_seconds",
+        "spawnflags": "2",
+        "targetname": "second_hand",
+        "origin": "580.32 341.657 17",
+        "angles": "1.00179e-005 15 -0.00030565",
+        "guid": "38465CDB"
+      }
+    },
+    {
+      "id": 42,
+      "model": "nt_2020_wall_clock_01_minutes",
+      "position": [
+        14.740128,
+        0.4318,
+        -8.678088
+      ],
+      "rotation_degrees": [
+        0.0,
+        15.0,
+        0.0
+      ],
+      "targetname": "minute_hand",
+      "destructibledef": "",
+      "source_index": 264,
+      "source_keys": {
+        "angles": "0 15 0",
+        "origin": "580.32 341.657 17",
+        "targetname": "minute_hand",
+        "spawnflags": "2",
+        "model": "nt_2020_wall_clock_01_minutes",
+        "classname": "script_model",
+        "guid": "15453B83"
+      }
+    },
+    {
+      "id": 43,
+      "model": "nt_2020_wall_clock_01_hours",
+      "position": [
+        14.740128,
+        0.4318,
+        -8.678088
+      ],
+      "rotation_degrees": [
+        0.0,
+        15.0,
+        0.0
+      ],
+      "targetname": "hour_hand",
+      "destructibledef": "",
+      "source_index": 265,
+      "source_keys": {
+        "angles": "0 15 0",
+        "classname": "script_model",
+        "model": "nt_2020_wall_clock_01_hours",
+        "origin": "580.32 341.657 17",
+        "targetname": "hour_hand",
+        "spawnflags": "2",
+        "guid": "ED4F5EE0"
+      }
+    },
+    {
+      "id": 44,
+      "model": "nt_2020_wall_clock_02_seconds",
+      "position": [
+        23.005237,
+        -3.82905,
+        -4.84472
+      ],
+      "rotation_degrees": [
+        0.3,
+        285.0,
+        180.0
+      ],
+      "targetname": "second_hand",
+      "destructibledef": "",
+      "source_index": 266,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "nt_2020_wall_clock_02_seconds",
+        "spawnflags": "2",
+        "targetname": "second_hand",
+        "origin": "905.718 190.737 -150.75",
+        "angles": "0.3 285 180",
+        "guid": "F0C13BB5"
+      }
+    },
+    {
+      "id": 45,
+      "model": "nt_2020_wall_clock_02_minutes",
+      "position": [
+        23.005237,
+        -3.82905,
+        -4.84472
+      ],
+      "rotation_degrees": [
+        0.30001,
+        285.0,
+        -180.0
+      ],
+      "targetname": "minute_hand",
+      "destructibledef": "",
+      "source_index": 267,
+      "source_keys": {
+        "angles": "0.30001 285 -180",
+        "origin": "905.718 190.737 -150.75",
+        "targetname": "minute_hand",
+        "spawnflags": "2",
+        "model": "nt_2020_wall_clock_02_minutes",
+        "classname": "script_model",
+        "guid": "7DBC99C0"
+      }
+    },
+    {
+      "id": 46,
+      "model": "nt_2020_wall_clock_02_hours",
+      "position": [
+        23.005237,
+        -3.82905,
+        -4.84472
+      ],
+      "rotation_degrees": [
+        0.30001,
+        285.0,
+        -180.0
+      ],
+      "targetname": "hour_hand",
+      "destructibledef": "",
+      "source_index": 268,
+      "source_keys": {
+        "angles": "0.30001 285 -180",
+        "classname": "script_model",
+        "model": "nt_2020_wall_clock_02_hours",
+        "origin": "905.718 190.737 -150.75",
+        "targetname": "hour_hand",
+        "spawnflags": "2",
+        "guid": "2665BF10"
+      }
+    },
+    {
+      "id": 47,
+      "model": "dest_electronic_outlet01_d0",
+      "position": [
+        12.982118,
+        -0.89662,
+        -9.395866
+      ],
+      "rotation_degrees": [
+        0.0,
+        105.2,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_electronic_outlet01",
+      "source_index": 269,
+      "source_keys": {
+        "angles": "0 105.2 0",
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_electronic_outlet01",
+        "model": "dest_electronic_outlet01_d0",
+        "origin": "511.107 369.916 -35.3",
+        "guid": "5709FDD6"
+      }
+    },
+    {
+      "id": 48,
+      "model": "veh_t6_nuketown_2020_car02_whole",
+      "position": [
+        -1.5113,
+        -1.6764,
+        -20.4216
+      ],
+      "rotation_degrees": [
+        0.0,
+        297.4,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "veh_nuketown_2020_destructible_car_02",
+      "source_index": 276,
+      "source_keys": {
+        "angles": "0 297.4 0",
+        "model": "veh_t6_nuketown_2020_car02_whole",
+        "classname": "script_model",
+        "origin": "-59.5 804 -66",
+        "destructibledef": "veh_nuketown_2020_destructible_car_02",
+        "targetname": "destructible",
+        "bakeshadow": "1",
+        "guid": "5AC7F197"
+      }
+    },
+    {
+      "id": 49,
+      "model": "dest_nt_nuked_male_01_d0",
+      "position": [
+        -0.02062,
+        -1.6637,
+        -20.679562
+      ],
+      "rotation_degrees": [
+        0.0,
+        293.9,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_male_01",
+      "source_index": 278,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_male_01",
+        "model": "dest_nt_nuked_male_01_d0",
+        "origin": "-0.811794 814.156 -65.5",
+        "angles": "0 293.9 0",
+        "target": "pf371_auto2",
+        "guid": "896A261C"
+      }
+    },
+    {
+      "id": 50,
+      "model": "nt_2020_sign_numbers_small",
+      "position": [
+        -5.179009,
+        -0.24765,
+        -13.770204
+      ],
+      "rotation_degrees": [
+        0.0,
+        34.6,
+        180.0
+      ],
+      "targetname": "counter_tens",
+      "destructibledef": "",
+      "source_index": 280,
+      "source_keys": {
+        "targetname": "counter_tens",
+        "origin": "-203.898 542.134 -9.75",
+        "model": "nt_2020_sign_numbers_small",
+        "classname": "script_model",
+        "angles": "0 34.6 180",
+        "guid": "31C41F5C"
+      }
+    },
+    {
+      "id": 51,
+      "model": "nt_2020_sign_numbers_small",
+      "position": [
+        -4.959477,
+        -0.24765,
+        -13.921638
+      ],
+      "rotation_degrees": [
+        0.0,
+        34.6,
+        180.0
+      ],
+      "targetname": "counter_ones",
+      "destructibledef": "",
+      "source_index": 281,
+      "source_keys": {
+        "targetname": "counter_ones",
+        "classname": "script_model",
+        "model": "nt_2020_sign_numbers_small",
+        "origin": "-195.255 548.096 -9.75",
+        "angles": "0 34.6 180",
+        "guid": "A7AE6BF7"
+      }
+    },
+    {
+      "id": 52,
+      "model": "nt_sign_population",
+      "position": [
+        -5.969,
+        -1.5621,
+        -13.2715
+      ],
+      "rotation_degrees": [
+        0.0,
+        34.6,
+        0.0
+      ],
+      "targetname": "nuketown_tv",
+      "destructibledef": "",
+      "source_index": 282,
+      "source_keys": {
+        "angles": "0 34.6 0",
+        "classname": "script_model",
+        "model": "nt_sign_population",
+        "origin": "-235 522.5 -61.5",
+        "targetname": "nuketown_tv",
+        "guid": "10F2CA83"
+      }
+    },
+    {
+      "id": 53,
+      "model": "nt_2020_moving_chair_01",
+      "position": [
+        4.93268,
+        -1.5367,
+        -14.44244
+      ],
+      "rotation_degrees": [
+        2.52112,
+        21.0791,
+        -3.6909
+      ],
+      "targetname": "",
+      "destructibledef": "",
+      "source_index": 283,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "nt_2020_moving_chair_01",
+        "origin": "194.2 568.6 -60.5",
+        "angles": "2.52112 21.0791 -3.6909",
+        "script_gameobjectname": "twar dom hq sd dem",
+        "guid": "DED90AA3"
+      }
+    },
+    {
+      "id": 54,
+      "model": "dest_nt_nuked_male_01_d0",
+      "position": [
+        1.074372,
+        -0.9144,
+        -9.786544
+      ],
+      "rotation_degrees": [
+        0.0,
+        13.6,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_male_01",
+      "source_index": 285,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_male_01",
+        "model": "dest_nt_nuked_male_01_d0",
+        "origin": "42.2981 385.297 -36",
+        "angles": "0 13.6 0",
+        "target": "pf373_auto2",
+        "guid": "896A261C"
+      }
+    },
+    {
+      "id": 55,
+      "model": "dest_nt_nuked_female_01_d0",
+      "position": [
+        -4.302963,
+        -1.5494,
+        24.824969
+      ],
+      "rotation_degrees": [
+        0.0,
+        135.0,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_01",
+      "source_index": 287,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_female_01",
+        "model": "dest_nt_nuked_female_01_d0",
+        "origin": "-169.408 -977.361 -61",
+        "angles": "0 135 0",
+        "target": "pf375_auto1",
+        "guid": "C936D5CB"
+      }
+    },
+    {
+      "id": 56,
+      "model": "dest_nt_nuked_male_01_d0",
+      "position": [
+        -4.7371,
+        -1.5621,
+        10.14222
+      ],
+      "rotation_degrees": [
+        0.0,
+        180.0,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_male_01",
+      "source_index": 289,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_male_01",
+        "model": "dest_nt_nuked_male_01_d0",
+        "origin": "-186.5 -399.3 -61.5",
+        "angles": "0 180 0",
+        "target": "pf376_auto2",
+        "guid": "896A261C"
+      }
+    },
+    {
+      "id": 57,
+      "model": "dest_nt_nuked_female_03_d0",
+      "position": [
+        6.48622,
+        -1.56083,
+        9.339224
+      ],
+      "rotation_degrees": [
+        0.0,
+        181.8,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_03",
+      "source_index": 291,
+      "source_keys": {
+        "origin": "255.363 -367.686 -61.45",
+        "target": "pf377_auto2",
+        "angles": "0 181.8 0",
+        "model": "dest_nt_nuked_female_03_d0",
+        "destructibledef": "dest_nt_nuked_female_03",
+        "targetname": "destructible",
+        "classname": "script_model",
+        "guid": "825FA9AA"
+      }
+    },
+    {
+      "id": 58,
+      "model": "veh_t6_nuketown_2020_car02_whole",
+      "position": [
+        0.93218,
+        -1.6764,
+        22.73808
+      ],
+      "rotation_degrees": [
+        0.0,
+        37.4,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "veh_nuketown_2020_destructible_car_02",
+      "source_index": 292,
+      "source_keys": {
+        "angles": "0 37.4 0",
+        "model": "veh_t6_nuketown_2020_car02_whole",
+        "classname": "script_model",
+        "origin": "36.7 -895.2 -66",
+        "destructibledef": "veh_nuketown_2020_destructible_car_02",
+        "targetname": "destructible",
+        "bakeshadow": "1",
+        "guid": "5AC7F197"
+      }
+    },
+    {
+      "id": 59,
+      "model": "veh_t6_nuketown_2020_car01_clean",
+      "position": [
+        0.8128,
+        -1.4224,
+        11.9888
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "veh_nuketown_2020_destructible_car_01",
+      "source_index": 293,
+      "source_keys": {
+        "model": "veh_t6_nuketown_2020_car01_clean",
+        "classname": "script_model",
+        "origin": "32 -472 -56",
+        "destructibledef": "veh_nuketown_2020_destructible_car_01",
+        "targetname": "destructible",
+        "bakeshadow": "1",
+        "guid": "5AC7F197"
+      }
+    },
+    {
+      "id": 60,
+      "model": "nt_2020_bookshelf_02",
+      "position": [
+        3.873271,
+        -1.51765,
+        -14.149959
+      ],
+      "rotation_degrees": [
+        0.0,
+        15.0,
+        0.0
+      ],
+      "targetname": "",
+      "destructibledef": "",
+      "source_index": 295,
+      "source_keys": {
+        "angles": "0 15 0",
+        "classname": "script_model",
+        "model": "nt_2020_bookshelf_02",
+        "origin": "152.491 557.085 -59.75",
+        "script_gameobjectname": "twar dom hq sd dem",
+        "guid": "EB3FBE45"
+      }
+    },
+    {
+      "id": 61,
+      "model": "nt_nuketown_sign_topper",
+      "position": [
+        1.3208,
+        13.8176,
+        41.4528
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "targetname": "nuketown_sign_topper",
+      "destructibledef": "",
+      "source_index": 298,
+      "source_keys": {
+        "spawnflags": "2",
+        "targetname": "nuketown_sign_topper",
+        "classname": "script_model",
+        "model": "nt_nuketown_sign_topper",
+        "origin": "52 -1632 544",
+        "guid": "AE308750"
+      }
+    },
+    {
+      "id": 62,
+      "model": "nt_nuketown_sign_needle",
+      "position": [
+        1.2954,
+        6.6548,
+        40.8305
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "targetname": "nuketown_sign_needle",
+      "destructibledef": "",
+      "source_index": 299,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "nuketown_sign_needle",
+        "model": "nt_nuketown_sign_needle",
+        "origin": "51 -1607.5 262",
+        "guid": "DC116D0F"
+      }
+    },
+    {
+      "id": 63,
+      "model": "nt_2020_flag_raven_01",
+      "position": [
+        -10.4521,
+        7.1882,
+        114.9604
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "targetname": "ending_flag",
+      "destructibledef": "",
+      "source_index": 302,
+      "source_keys": {
+        "origin": "-411.5 -4526 283",
+        "model": "nt_2020_flag_raven_01",
+        "classname": "script_model",
+        "targetname": "ending_flag",
+        "spawnflags": "2",
+        "guid": "6DD6ED3D"
+      }
+    },
+    {
+      "id": 64,
+      "model": "nt_2020_flag_fair_01",
+      "position": [
+        12.9159,
+        7.1882,
+        43.434
+      ],
+      "rotation_degrees": [
+        360.0,
+        5e-06,
+        5e-06
+      ],
+      "targetname": "ending_flag",
+      "destructibledef": "",
+      "source_index": 303,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "nt_2020_flag_fair_01",
+        "origin": "508.5 -1710 283",
+        "angles": "360 5.00896e-006 5.00896e-006",
+        "targetname": "ending_flag",
+        "spawnflags": "2",
+        "guid": "65A67349"
+      }
+    },
+    {
+      "id": 65,
+      "model": "nt_2020_flag_canada_01",
+      "position": [
+        -10.4521,
+        7.1882,
+        49.9364
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "targetname": "ending_flag",
+      "destructibledef": "",
+      "source_index": 304,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "nt_2020_flag_canada_01",
+        "origin": "-411.5 -1966 283",
+        "targetname": "ending_flag",
+        "spawnflags": "2",
+        "guid": "BC1649C0"
+      }
+    },
+    {
+      "id": 66,
+      "model": "nt_2020_flag_germany_01",
+      "position": [
+        12.9159,
+        7.1882,
+        49.9364
+      ],
+      "rotation_degrees": [
+        360.0,
+        5e-06,
+        5e-06
+      ],
+      "targetname": "ending_flag",
+      "destructibledef": "",
+      "source_index": 305,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "nt_2020_flag_germany_01",
+        "origin": "508.5 -1966 283",
+        "angles": "360 5.00896e-006 5.00896e-006",
+        "targetname": "ending_flag",
+        "spawnflags": "2",
+        "guid": "7EBFB49D"
+      }
+    },
+    {
+      "id": 67,
+      "model": "nt_2020_flag_england_01",
+      "position": [
+        -10.4521,
+        7.1882,
+        56.4388
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "targetname": "ending_flag",
+      "destructibledef": "",
+      "source_index": 306,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "nt_2020_flag_england_01",
+        "origin": "-411.5 -2222 283",
+        "targetname": "ending_flag",
+        "spawnflags": "2",
+        "guid": "2166B8E3"
+      }
+    },
+    {
+      "id": 68,
+      "model": "nt_2020_flag_china_01",
+      "position": [
+        12.9159,
+        7.1882,
+        56.4388
+      ],
+      "rotation_degrees": [
+        360.0,
+        5e-06,
+        5e-06
+      ],
+      "targetname": "ending_flag",
+      "destructibledef": "",
+      "source_index": 307,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "nt_2020_flag_china_01",
+        "origin": "508.5 -2222 283",
+        "angles": "360 5.00896e-006 5.00896e-006",
+        "targetname": "ending_flag",
+        "spawnflags": "2",
+        "guid": "186C9A03"
+      }
+    },
+    {
+      "id": 69,
+      "model": "nt_2020_flag_japan_01",
+      "position": [
+        -10.4521,
+        7.1882,
+        62.9412
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "targetname": "ending_flag",
+      "destructibledef": "",
+      "source_index": 308,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "nt_2020_flag_japan_01",
+        "origin": "-411.5 -2478 283",
+        "targetname": "ending_flag",
+        "spawnflags": "2",
+        "guid": "FF17ABF8"
+      }
+    },
+    {
+      "id": 70,
+      "model": "nt_2020_flag_ethiopia_01",
+      "position": [
+        12.9159,
+        7.1882,
+        62.9412
+      ],
+      "rotation_degrees": [
+        360.0,
+        5e-06,
+        5e-06
+      ],
+      "targetname": "ending_flag",
+      "destructibledef": "",
+      "source_index": 309,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "nt_2020_flag_ethiopia_01",
+        "origin": "508.5 -2478 283",
+        "angles": "360 5.00896e-006 5.00896e-006",
+        "modelscale": "1",
+        "targetname": "ending_flag",
+        "spawnflags": "2",
+        "guid": "19E480AD"
+      }
+    },
+    {
+      "id": 71,
+      "model": "nt_2020_flag_brazil_01",
+      "position": [
+        -10.4521,
+        7.1882,
+        69.4436
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "targetname": "ending_flag",
+      "destructibledef": "",
+      "source_index": 310,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "nt_2020_flag_brazil_01",
+        "origin": "-411.5 -2734 283",
+        "targetname": "ending_flag",
+        "spawnflags": "2",
+        "guid": "14A39DBB"
+      }
+    },
+    {
+      "id": 72,
+      "model": "nt_2020_flag_spain_01",
+      "position": [
+        12.9159,
+        7.1882,
+        69.4436
+      ],
+      "rotation_degrees": [
+        360.0,
+        5e-06,
+        5e-06
+      ],
+      "targetname": "ending_flag",
+      "destructibledef": "",
+      "source_index": 311,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "nt_2020_flag_spain_01",
+        "origin": "508.5 -2734 283",
+        "angles": "360 5.00896e-006 5.00896e-006",
+        "targetname": "ending_flag",
+        "spawnflags": "2",
+        "guid": "B5B21BFF"
+      }
+    },
+    {
+      "id": 73,
+      "model": "nt_2020_flag_australia_01",
+      "position": [
+        -10.4521,
+        7.1882,
+        88.9508
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "targetname": "ending_flag",
+      "destructibledef": "",
+      "source_index": 312,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "nt_2020_flag_australia_01",
+        "origin": "-411.5 -3502 283",
+        "targetname": "ending_flag",
+        "spawnflags": "2",
+        "guid": "16093208"
+      }
+    },
+    {
+      "id": 74,
+      "model": "nt_2020_flag_france_01",
+      "position": [
+        12.9159,
+        7.1882,
+        88.9508
+      ],
+      "rotation_degrees": [
+        360.0,
+        5e-06,
+        5e-06
+      ],
+      "targetname": "ending_flag",
+      "destructibledef": "",
+      "source_index": 313,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "nt_2020_flag_france_01",
+        "origin": "508.5 -3502 283",
+        "angles": "360 5.00896e-006 5.00896e-006",
+        "targetname": "ending_flag",
+        "spawnflags": "2",
+        "guid": "AE945087"
+      }
+    },
+    {
+      "id": 75,
+      "model": "nt_2020_flag_arabia_01",
+      "position": [
+        -10.4521,
+        7.1882,
+        95.4532
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "targetname": "ending_flag",
+      "destructibledef": "",
+      "source_index": 314,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "nt_2020_flag_arabia_01",
+        "origin": "-411.5 -3758 283",
+        "targetname": "ending_flag",
+        "spawnflags": "2",
+        "guid": "22FB01B8"
+      }
+    },
+    {
+      "id": 76,
+      "model": "nt_2020_flag_egypt_01",
+      "position": [
+        12.9159,
+        7.1882,
+        95.4532
+      ],
+      "rotation_degrees": [
+        360.0,
+        5e-06,
+        5e-06
+      ],
+      "targetname": "ending_flag",
+      "destructibledef": "",
+      "source_index": 315,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "nt_2020_flag_egypt_01",
+        "origin": "508.5 -3758 283",
+        "angles": "360 5.00896e-006 5.00896e-006",
+        "targetname": "ending_flag",
+        "spawnflags": "2",
+        "guid": "F62D5134"
+      }
+    },
+    {
+      "id": 77,
+      "model": "nt_2020_flag_korea_01",
+      "position": [
+        -10.4521,
+        7.1882,
+        101.9556
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "targetname": "ending_flag",
+      "destructibledef": "",
+      "source_index": 316,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "nt_2020_flag_korea_01",
+        "origin": "-411.5 -4014 283",
+        "targetname": "ending_flag",
+        "spawnflags": "2",
+        "guid": "B62AE793"
+      }
+    },
+    {
+      "id": 78,
+      "model": "nt_2020_flag_syria_01",
+      "position": [
+        12.9159,
+        7.1882,
+        101.9556
+      ],
+      "rotation_degrees": [
+        360.0,
+        5e-06,
+        5e-06
+      ],
+      "targetname": "ending_flag",
+      "destructibledef": "",
+      "source_index": 317,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "nt_2020_flag_syria_01",
+        "origin": "508.5 -4014 283",
+        "angles": "360 5.00896e-006 5.00896e-006",
+        "targetname": "ending_flag",
+        "spawnflags": "2",
+        "guid": "F6293926"
+      }
+    },
+    {
+      "id": 79,
+      "model": "nt_2020_flag_greece_01",
+      "position": [
+        -10.4521,
+        7.1882,
+        108.458
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "targetname": "ending_flag",
+      "destructibledef": "",
+      "source_index": 318,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "nt_2020_flag_greece_01",
+        "origin": "-411.5 -4270 283",
+        "targetname": "ending_flag",
+        "spawnflags": "2",
+        "guid": "2B566AEE"
+      }
+    },
+    {
+      "id": 80,
+      "model": "nt_2020_flag_switzerland_01",
+      "position": [
+        12.9159,
+        7.1882,
+        108.458
+      ],
+      "rotation_degrees": [
+        360.0,
+        5e-06,
+        5e-06
+      ],
+      "targetname": "ending_flag",
+      "destructibledef": "",
+      "source_index": 319,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "nt_2020_flag_switzerland_01",
+        "origin": "508.5 -4270 283",
+        "angles": "360 5.00896e-006 5.00896e-006",
+        "targetname": "ending_flag",
+        "spawnflags": "2",
+        "guid": "5B6EF09B"
+      }
+    },
+    {
+      "id": 81,
+      "model": "nt_2020_flag_usa_01",
+      "position": [
+        -10.4521,
+        7.1882,
+        43.434
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "targetname": "ending_flag",
+      "destructibledef": "",
+      "source_index": 320,
+      "source_keys": {
+        "targetname": "ending_flag",
+        "origin": "-411.5 -1710 283",
+        "model": "nt_2020_flag_usa_01",
+        "classname": "script_model",
+        "spawnflags": "2",
+        "guid": "3863585A"
+      }
+    },
+    {
+      "id": 82,
+      "model": "nt_2020_flag_treyarch_01",
+      "position": [
+        12.931902,
+        7.1882,
+        117.452902
+      ],
+      "rotation_degrees": [
+        0.0,
+        1e-05,
+        0.0
+      ],
+      "targetname": "ending_flag",
+      "destructibledef": "",
+      "source_index": 321,
+      "source_keys": {
+        "angles": "0 1.00179e-005 0",
+        "targetname": "ending_flag",
+        "classname": "script_model",
+        "model": "nt_2020_flag_treyarch_01",
+        "origin": "509.13 -4624.13 283",
+        "spawnflags": "2",
+        "guid": "6A70BD68"
+      }
+    },
+    {
+      "id": 83,
+      "model": "dest_nt_nuked_male_03_d0",
+      "position": [
+        20.492999,
+        -1.449901,
+        -3.632708
+      ],
+      "rotation_degrees": [
+        359.054,
+        136.013,
+        -9.22269
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_male_03",
+      "source_index": 323,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_male_03",
+        "model": "dest_nt_nuked_male_03_d0",
+        "angles": "359.054 136.013 -9.22269",
+        "target": "pf993_auto3",
+        "origin": "806.811 143.02 -57.0827",
+        "guid": "98666413"
+      }
+    },
+    {
+      "id": 84,
+      "model": "dest_nt_nuked_male_03_d0",
+      "position": [
+        -19.229375,
+        -1.470459,
+        -8.533587
+      ],
+      "rotation_degrees": [
+        359.555,
+        144.288,
+        -4.72988
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_male_03",
+      "source_index": 325,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_male_03",
+        "model": "dest_nt_nuked_male_03_d0",
+        "angles": "359.555 144.288 -4.72988",
+        "target": "pf994_auto3",
+        "origin": "-757.062 335.968 -57.8921",
+        "guid": "98666413"
+      }
+    },
+    {
+      "id": 85,
+      "model": "dest_nt_nuked_female_05_d0",
+      "position": [
+        -15.375052,
+        2.0066,
+        -12.670841
+      ],
+      "rotation_degrees": [
+        0.0,
+        10.7,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_05",
+      "source_index": 327,
+      "source_keys": {
+        "angles": "0 10.7 0",
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_female_05",
+        "model": "dest_nt_nuked_female_05_d0",
+        "target": "pf995_auto2",
+        "origin": "-605.317 498.852 79",
+        "guid": "A573289A"
+      }
+    },
+    {
+      "id": 86,
+      "model": "veh_t6_nuketown_2020_car02_whole",
+      "position": [
+        -17.5387,
+        -1.44653,
+        -0.22098
+      ],
+      "rotation_degrees": [
+        0.0,
+        340.0,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "veh_nuketown_2020_destructible_car_02",
+      "source_index": 330,
+      "source_keys": {
+        "angles": "0 340 0",
+        "model": "veh_t6_nuketown_2020_car02_whole",
+        "classname": "script_model",
+        "origin": "-690.5 8.7 -56.95",
+        "destructibledef": "veh_nuketown_2020_destructible_car_02",
+        "targetname": "destructible",
+        "bakeshadow": "1",
+        "guid": "5AC7F197"
+      }
+    },
+    {
+      "id": 87,
+      "model": "nt_2020_moving_couch_01",
+      "position": [
+        3.89636,
+        -1.25984,
+        -20.83816
+      ],
+      "rotation_degrees": [
+        0.103529,
+        95.0,
+        -90.0778
+      ],
+      "targetname": "",
+      "destructibledef": "",
+      "source_index": 331,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "nt_2020_moving_couch_01",
+        "angles": "0.103529 95 -90.0778",
+        "origin": "153.4 820.4 -49.6",
+        "script_gameobjectname": "twar dom hq sd dem",
+        "guid": "27DE4AA4"
+      }
+    },
+    {
+      "id": 88,
+      "model": "nt_2020_moving_chair_01",
+      "position": [
+        3.51028,
+        -0.2286,
+        -21.37918
+      ],
+      "rotation_degrees": [
+        358.484,
+        270.785,
+        -177.753
+      ],
+      "targetname": "",
+      "destructibledef": "",
+      "source_index": 332,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "nt_2020_moving_chair_01",
+        "origin": "138.2 841.7 -9",
+        "angles": "358.484 270.785 -177.753",
+        "script_gameobjectname": "twar dom hq sd dem",
+        "guid": "4D974C35"
+      }
+    },
+    {
+      "id": 89,
+      "model": "p_glo_cardboardbox_4",
+      "position": [
+        3.5306,
+        -0.71882,
+        -23.4188
+      ],
+      "rotation_degrees": [
+        0.0,
+        98.6,
+        0.0
+      ],
+      "targetname": "",
+      "destructibledef": "",
+      "source_index": 333,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "p_glo_cardboardbox_4",
+        "angles": "0 98.6 0",
+        "origin": "139 922 -28.3",
+        "script_gameobjectname": "twar dom hq sd dem",
+        "guid": "96556340"
+      }
+    },
+    {
+      "id": 90,
+      "model": "p_glo_cardboardbox_4",
+      "position": [
+        3.5179,
+        -0.23622,
+        -23.88362
+      ],
+      "rotation_degrees": [
+        0.0,
+        75.4,
+        0.0
+      ],
+      "targetname": "",
+      "destructibledef": "",
+      "source_index": 334,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "p_glo_cardboardbox_4",
+        "angles": "0 75.4 0",
+        "origin": "138.5 940.3 -9.3",
+        "script_gameobjectname": "twar dom hq sd dem",
+        "guid": "75AD898B"
+      }
+    },
+    {
+      "id": 91,
+      "model": "p_glo_cardboardbox_4",
+      "position": [
+        3.44424,
+        -0.2286,
+        -21.31822
+      ],
+      "rotation_degrees": [
+        0.896124,
+        75.373,
+        -2.03962
+      ],
+      "targetname": "",
+      "destructibledef": "",
+      "source_index": 335,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "p_glo_cardboardbox_4",
+        "angles": "0.896124 75.373 -2.03962",
+        "origin": "135.6 839.3 -9",
+        "script_gameobjectname": "twar dom hq sd dem",
+        "guid": "01328042"
+      }
+    },
+    {
+      "id": 92,
+      "model": "nt_2020_moving_chair_01",
+      "position": [
+        4.5339,
+        -1.64846,
+        -20.39112
+      ],
+      "rotation_degrees": [
+        359.611,
+        77.996,
+        0.54221
+      ],
+      "targetname": "",
+      "destructibledef": "",
+      "source_index": 336,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "nt_2020_moving_chair_01",
+        "origin": "178.5 802.8 -64.9",
+        "angles": "359.611 77.996 0.54221",
+        "script_gameobjectname": "twar dom hq sd dem",
+        "guid": "742202CA"
+      }
+    },
+    {
+      "id": 93,
+      "model": "p_glo_cardboardbox_4",
+      "position": [
+        4.87426,
+        -0.69596,
+        -20.32
+      ],
+      "rotation_degrees": [
+        292.4,
+        165.2,
+        180.0
+      ],
+      "targetname": "",
+      "destructibledef": "",
+      "source_index": 337,
+      "source_keys": {
+        "origin": "191.9 800 -27.4",
+        "model": "p_glo_cardboardbox_4",
+        "classname": "script_model",
+        "angles": "292.4 165.2 180",
+        "script_gameobjectname": "twar dom hq sd dem",
+        "guid": "B9B0E65B"
+      }
+    },
+    {
+      "id": 94,
+      "model": "p_glo_cardboardbox_4",
+      "position": [
+        3.89128,
+        -0.83058,
+        -20.45716
+      ],
+      "rotation_degrees": [
+        0.0,
+        259.2,
+        0.0
+      ],
+      "targetname": "",
+      "destructibledef": "",
+      "source_index": 338,
+      "source_keys": {
+        "origin": "153.2 805.4 -32.7",
+        "model": "p_glo_cardboardbox_4",
+        "classname": "script_model",
+        "script_gameobjectname": "twar dom hq sd dem",
+        "angles": "0 259.2 0",
+        "guid": "49F83162"
+      }
+    },
+    {
+      "id": 95,
+      "model": "p_glo_cardboardbox_4",
+      "position": [
+        3.85318,
+        -0.3429,
+        -20.4851
+      ],
+      "rotation_degrees": [
+        0.0,
+        88.6,
+        0.0
+      ],
+      "targetname": "",
+      "destructibledef": "",
+      "source_index": 339,
+      "source_keys": {
+        "origin": "151.7 806.5 -13.5",
+        "model": "p_glo_cardboardbox_4",
+        "classname": "script_model",
+        "script_gameobjectname": "twar dom hq sd dem",
+        "angles": "0 88.6 0",
+        "guid": "71A491BB"
+      }
+    },
+    {
+      "id": 96,
+      "model": "nt_2020_dolly_01",
+      "position": [
+        4.28498,
+        -1.62306,
+        -19.8755
+      ],
+      "rotation_degrees": [
+        359.611,
+        167.996,
+        0.54221
+      ],
+      "targetname": "",
+      "destructibledef": "",
+      "source_index": 340,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "nt_2020_dolly_01",
+        "origin": "168.7 782.5 -63.9",
+        "angles": "359.611 167.996 0.54221",
+        "script_gameobjectname": "twar dom hq sd dem",
+        "guid": "90A35712"
+      }
+    },
+    {
+      "id": 97,
+      "model": "p_glo_cardboardbox_4",
+      "position": [
+        3.556,
+        -0.71882,
+        -24.0792
+      ],
+      "rotation_degrees": [
+        0.0,
+        180.0,
+        0.0
+      ],
+      "targetname": "",
+      "destructibledef": "",
+      "source_index": 341,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "p_glo_cardboardbox_4",
+        "angles": "0 180 0",
+        "origin": "140 948 -28.3",
+        "script_gameobjectname": "twar dom hq sd dem",
+        "guid": "404080F4"
+      }
+    },
+    {
+      "id": 98,
+      "model": "dest_nt_nuked_female_01_d0",
+      "position": [
+        52.478178,
+        -1.6256,
+        -5.764022
+      ],
+      "rotation_degrees": [
+        0.0,
+        264.5,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_01",
+      "source_index": 343,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_female_01",
+        "model": "dest_nt_nuked_female_01_d0",
+        "origin": "2066.07 226.93 -64",
+        "angles": "0 264.5 0",
+        "target": "pf1171_auto1",
+        "guid": "C936D5CB"
+      }
+    },
+    {
+      "id": 99,
+      "model": "dest_nt_nuked_male_01_d0",
+      "position": [
+        48.321722,
+        -1.54305,
+        -8.751595
+      ],
+      "rotation_degrees": [
+        0.0,
+        191.9,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_male_01",
+      "source_index": 345,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_male_01",
+        "model": "dest_nt_nuked_male_01_d0",
+        "origin": "1902.43 344.551 -60.75",
+        "angles": "0 191.9 0",
+        "target": "pf1172_auto2",
+        "guid": "896A261C"
+      }
+    },
+    {
+      "id": 100,
+      "model": "dest_nt_nuked_female_02_d0",
+      "position": [
+        27.433778,
+        -1.567617,
+        -1.866943
+      ],
+      "rotation_degrees": [
+        358.589,
+        336.243,
+        -3.20307
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_02",
+      "source_index": 347,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_female_02",
+        "model": "dest_nt_nuked_female_02_d0",
+        "angles": "358.589 336.243 -3.20307",
+        "target": "pf1173_auto2",
+        "origin": "1080.07 73.5017 -61.7172",
+        "guid": "01A97AA0"
+      }
+    },
+    {
+      "id": 101,
+      "model": "dest_nt_nuked_female_03_d0",
+      "position": [
+        44.194222,
+        -1.63195,
+        -1.715595
+      ],
+      "rotation_degrees": [
+        0.0,
+        238.9,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_03",
+      "source_index": 349,
+      "source_keys": {
+        "origin": "1739.93 67.5431 -64.25",
+        "target": "pf1174_auto2",
+        "angles": "0 238.9 0",
+        "model": "dest_nt_nuked_female_03_d0",
+        "destructibledef": "dest_nt_nuked_female_03",
+        "targetname": "destructible",
+        "classname": "script_model",
+        "guid": "825FA9AA"
+      }
+    },
+    {
+      "id": 102,
+      "model": "dest_nt_nuked_female_02_d0",
+      "position": [
+        14.184122,
+        -1.6256,
+        -0.865462
+      ],
+      "rotation_degrees": [
+        0.0,
+        229.6,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_02",
+      "source_index": 351,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_female_02",
+        "model": "dest_nt_nuked_female_02_d0",
+        "angles": "0 229.6 0",
+        "target": "pf1175_auto2",
+        "origin": "558.43 34.0733 -64",
+        "guid": "01A97AA0"
+      }
+    },
+    {
+      "id": 103,
+      "model": "dest_nt_nuked_female_03_d0",
+      "position": [
+        29.258768,
+        -1.61924,
+        -23.291673
+      ],
+      "rotation_degrees": [
+        359.628,
+        18.7021,
+        -0.319931
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_03",
+      "source_index": 353,
+      "source_keys": {
+        "origin": "1151.92 916.995 -63.7496",
+        "target": "pf1176_auto2",
+        "angles": "359.628 18.7021 -0.319931",
+        "model": "dest_nt_nuked_female_03_d0",
+        "destructibledef": "dest_nt_nuked_female_03",
+        "targetname": "destructible",
+        "classname": "script_model",
+        "guid": "825FA9AA"
+      }
+    },
+    {
+      "id": 104,
+      "model": "dest_nt_nuked_male_01_d0",
+      "position": [
+        4.347566,
+        -1.623263,
+        -23.874578
+      ],
+      "rotation_degrees": [
+        0.891422,
+        266.411,
+        0.683035
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_male_01",
+      "source_index": 355,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_male_01",
+        "model": "dest_nt_nuked_male_01_d0",
+        "origin": "171.164 939.944 -63.908",
+        "angles": "0.891422 266.411 0.683035",
+        "target": "pf1177_auto2",
+        "guid": "896A261C"
+      }
+    },
+    {
+      "id": 105,
+      "model": "dest_nt_nuked_female_02_d0",
+      "position": [
+        -50.979832,
+        -1.61544,
+        -11.926062
+      ],
+      "rotation_degrees": [
+        0.0,
+        76.6,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_02",
+      "source_index": 357,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_female_02",
+        "model": "dest_nt_nuked_female_02_d0",
+        "angles": "0 76.6 0",
+        "target": "pf1178_auto2",
+        "origin": "-2007.08 469.53 -63.6",
+        "guid": "01A97AA0"
+      }
+    },
+    {
+      "id": 106,
+      "model": "dest_nt_nuked_male_01_d0",
+      "position": [
+        -40.384222,
+        -1.62179,
+        -14.715744
+      ],
+      "rotation_degrees": [
+        0.0,
+        38.9,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_male_01",
+      "source_index": 359,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_male_01",
+        "model": "dest_nt_nuked_male_01_d0",
+        "origin": "-1589.93 579.36 -63.85",
+        "angles": "0 38.9 0",
+        "target": "pf1179_auto2",
+        "guid": "896A261C"
+      }
+    },
+    {
+      "id": 107,
+      "model": "dest_nt_nuked_female_03_d0",
+      "position": [
+        -34.227262,
+        -1.604983,
+        -25.48001
+      ],
+      "rotation_degrees": [
+        2.27044,
+        157.884,
+        -2.11067
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_03",
+      "source_index": 361,
+      "source_keys": {
+        "origin": "-1347.53 1003.15 -63.1883",
+        "target": "pf1180_auto2",
+        "angles": "2.27044 157.884 -2.11067",
+        "model": "dest_nt_nuked_female_03_d0",
+        "destructibledef": "dest_nt_nuked_female_03",
+        "targetname": "destructible",
+        "classname": "script_model",
+        "guid": "825FA9AA"
+      }
+    },
+    {
+      "id": 108,
+      "model": "dest_nt_nuked_female_01_d0",
+      "position": [
+        38.932612,
+        -1.4478,
+        -25.696672
+      ],
+      "rotation_degrees": [
+        0.0,
+        321.5,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_01",
+      "source_index": 363,
+      "source_keys": {
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_female_01",
+        "model": "dest_nt_nuked_female_01_d0",
+        "origin": "1532.78 1011.68 -57",
+        "angles": "0 321.5 0",
+        "target": "pf1192_auto1",
+        "guid": "C936D5CB"
+      }
+    },
+    {
+      "id": 109,
+      "model": "nt_2020_bookshelf_03",
+      "position": [
+        3.58394,
+        -1.65989,
+        -23.13686
+      ],
+      "rotation_degrees": [
+        0.0,
+        90.0,
+        0.0
+      ],
+      "targetname": "",
+      "destructibledef": "",
+      "source_index": 364,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "nt_2020_bookshelf_03",
+        "origin": "141.1 910.9 -65.35",
+        "script_gameobjectname": "twar dom hq sd dem",
+        "angles": "0 90 0",
+        "guid": "59882A3E"
+      }
+    },
+    {
+      "id": 110,
+      "model": "veh_t6_nuketown_2020_car02_whole",
+      "position": [
+        14.1351,
+        -1.4859,
+        -15.71752
+      ],
+      "rotation_degrees": [
+        0.858294,
+        194.8,
+        -0.002995
+      ],
+      "targetname": "destructible",
+      "destructibledef": "veh_nuketown_2020_destructible_car_02",
+      "source_index": 365,
+      "source_keys": {
+        "angles": "0.858294 194.8 -0.00299525",
+        "model": "veh_t6_nuketown_2020_car02_whole",
+        "classname": "script_model",
+        "origin": "556.5 618.8 -58.5",
+        "destructibledef": "veh_nuketown_2020_destructible_car_02",
+        "targetname": "destructible",
+        "script_gameobjectname": "hq",
+        "guid": "D7AF96DE"
+      }
+    },
+    {
+      "id": 111,
+      "model": "dest_nt_nuked_female_05_d0",
+      "position": [
+        21.703055,
+        -1.4351,
+        -3.994429
+      ],
+      "rotation_degrees": [
+        0.0,
+        272.1,
+        0.0
+      ],
+      "targetname": "destructible",
+      "destructibledef": "dest_nt_nuked_female_05",
+      "source_index": 372,
+      "source_keys": {
+        "angles": "0 272.1 0",
+        "classname": "script_model",
+        "targetname": "destructible",
+        "destructibledef": "dest_nt_nuked_female_05",
+        "model": "dest_nt_nuked_female_05_d0",
+        "target": "pf1238_auto2",
+        "origin": "854.451 157.261 -56.5",
+        "guid": "A573289A"
+      }
+    },
+    {
+      "id": 112,
+      "model": "t6_wpn_supply_drop_hq",
+      "position": [
+        0.534266,
+        -1.2827,
+        -2.228626
+      ],
+      "rotation_degrees": [
+        0.0,
+        195.0,
+        0.0
+      ],
+      "targetname": "pf1240_auto1",
+      "destructibledef": "",
+      "source_index": 592,
+      "source_keys": {
+        "script_index": "1",
+        "angles": "0 195 0",
+        "origin": "21.0341 87.7412 -50.5",
+        "model": "t6_wpn_supply_drop_hq",
+        "classname": "script_model",
+        "script_gameobjectname": "hq",
+        "targetname": "pf1240_auto1",
+        "guid": "901F6586"
+      }
+    },
+    {
+      "id": 113,
+      "model": "prop_suitcase_bomb",
+      "position": [
+        0.516158,
+        -0.866648,
+        -2.209838
+      ],
+      "rotation_degrees": [
+        359.802,
+        285.002,
+        -4e-05
+      ],
+      "targetname": "hq_hardpoint",
+      "destructibledef": "",
+      "source_index": 594,
+      "source_keys": {
+        "script_index": "1",
+        "angles": "359.802 285.002 -4.0265e-005",
+        "classname": "script_model",
+        "model": "prop_suitcase_bomb",
+        "origin": "20.3212 87.0015 -34.12",
+        "script_gameobjectname": "hq",
+        "targetname": "hq_hardpoint",
+        "target": "pf1240_auto1",
+        "guid": "37A9E46F"
+      }
+    },
+    {
+      "id": 114,
+      "model": "t6_wpn_supply_drop_hq",
+      "position": [
+        -14.867636,
+        -1.02362,
+        -4.481627
+      ],
+      "rotation_degrees": [
+        0.0,
+        160.0,
+        0.0
+      ],
+      "targetname": "pf1241_auto1",
+      "destructibledef": "",
+      "source_index": 595,
+      "source_keys": {
+        "script_index": "5",
+        "angles": "0 160 0",
+        "origin": "-585.34 176.442 -40.3",
+        "model": "t6_wpn_supply_drop_hq",
+        "classname": "script_model",
+        "script_gameobjectname": "hq",
+        "targetname": "pf1241_auto1",
+        "guid": "901F6586"
+      }
+    },
+    {
+      "id": 115,
+      "model": "prop_suitcase_bomb",
+      "position": [
+        -14.893239,
+        -0.607568,
+        -4.476623
+      ],
+      "rotation_degrees": [
+        359.802,
+        250.002,
+        -4e-05
+      ],
+      "targetname": "hq_hardpoint",
+      "destructibledef": "",
+      "source_index": 597,
+      "source_keys": {
+        "script_index": "5",
+        "angles": "359.802 250.002 -4.02048e-005",
+        "classname": "script_model",
+        "model": "prop_suitcase_bomb",
+        "origin": "-586.348 176.245 -23.92",
+        "script_gameobjectname": "hq",
+        "targetname": "hq_hardpoint",
+        "target": "pf1241_auto1",
+        "guid": "37A9E46F"
+      }
+    },
+    {
+      "id": 116,
+      "model": "t6_wpn_supply_drop_hq",
+      "position": [
+        -17.436033,
+        -1.0033,
+        -10.712196
+      ],
+      "rotation_degrees": [
+        0.0,
+        70.0,
+        0.0
+      ],
+      "targetname": "pf1242_auto1",
+      "destructibledef": "",
+      "source_index": 598,
+      "source_keys": {
+        "script_index": "2",
+        "angles": "0 70 0",
+        "origin": "-686.458 421.74 -39.5",
+        "model": "t6_wpn_supply_drop_hq",
+        "classname": "script_model",
+        "script_gameobjectname": "hq",
+        "targetname": "pf1242_auto1",
+        "guid": "901F6586"
+      }
+    },
+    {
+      "id": 117,
+      "model": "prop_suitcase_bomb",
+      "position": [
+        -17.441037,
+        -0.587248,
+        -10.737799
+      ],
+      "rotation_degrees": [
+        359.802,
+        160.002,
+        -4e-05
+      ],
+      "targetname": "hq_hardpoint",
+      "destructibledef": "",
+      "source_index": 600,
+      "source_keys": {
+        "script_index": "2",
+        "angles": "359.802 160.002 -4.01675e-005",
+        "classname": "script_model",
+        "model": "prop_suitcase_bomb",
+        "origin": "-686.655 422.748 -23.12",
+        "script_gameobjectname": "hq",
+        "targetname": "hq_hardpoint",
+        "target": "pf1242_auto1",
+        "guid": "37A9E46F"
+      }
+    },
+    {
+      "id": 118,
+      "model": "t6_wpn_supply_drop_hq",
+      "position": [
+        13.791336,
+        -1.08712,
+        -10.758399
+      ],
+      "rotation_degrees": [
+        0.0,
+        15.0,
+        0.0
+      ],
+      "targetname": "pf1243_auto1",
+      "destructibledef": "",
+      "source_index": 601,
+      "source_keys": {
+        "script_index": "6",
+        "angles": "0 15 0",
+        "origin": "542.966 423.559 -42.8",
+        "model": "t6_wpn_supply_drop_hq",
+        "classname": "script_model",
+        "script_gameobjectname": "hq",
+        "targetname": "pf1243_auto1",
+        "guid": "901F6586"
+      }
+    },
+    {
+      "id": 119,
+      "model": "prop_suitcase_bomb",
+      "position": [
+        13.809447,
+        -0.671068,
+        -10.777195
+      ],
+      "rotation_degrees": [
+        359.802,
+        105.002,
+        -4e-05
+      ],
+      "targetname": "hq_hardpoint",
+      "destructibledef": "",
+      "source_index": 603,
+      "source_keys": {
+        "script_index": "6",
+        "angles": "359.802 105.002 -4.02076e-005",
+        "classname": "script_model",
+        "model": "prop_suitcase_bomb",
+        "origin": "543.679 424.299 -26.42",
+        "script_gameobjectname": "hq",
+        "targetname": "hq_hardpoint",
+        "target": "pf1243_auto1",
+        "guid": "37A9E46F"
+      }
+    },
+    {
+      "id": 120,
+      "model": "t6_wpn_supply_drop_hq",
+      "position": [
+        18.261101,
+        -1.0033,
+        -4.853076
+      ],
+      "rotation_degrees": [
+        0.0,
+        105.0,
+        0.0
+      ],
+      "targetname": "pf1244_auto1",
+      "destructibledef": "",
+      "source_index": 604,
+      "source_keys": {
+        "script_index": "3",
+        "angles": "0 105 0",
+        "origin": "718.941 191.066 -39.5",
+        "model": "t6_wpn_supply_drop_hq",
+        "classname": "script_model",
+        "script_gameobjectname": "hq",
+        "targetname": "pf1244_auto1",
+        "guid": "901F6586"
+      }
+    },
+    {
+      "id": 121,
+      "model": "prop_suitcase_bomb",
+      "position": [
+        18.242305,
+        -0.587248,
+        -4.871187
+      ],
+      "rotation_degrees": [
+        359.802,
+        195.002,
+        -4e-05
+      ],
+      "targetname": "hq_hardpoint",
+      "destructibledef": "",
+      "source_index": 606,
+      "source_keys": {
+        "script_index": "3",
+        "angles": "359.802 195.002 -4.01848e-005",
+        "classname": "script_model",
+        "model": "prop_suitcase_bomb",
+        "origin": "718.201 191.779 -23.12",
+        "script_gameobjectname": "hq",
+        "targetname": "hq_hardpoint",
+        "target": "pf1244_auto1",
+        "guid": "37A9E46F"
+      }
+    },
+    {
+      "id": 122,
+      "model": "prop_suitcase_bomb",
+      "position": [
+        -32.3342,
+        -1.5621,
+        -20.5486
+      ],
+      "rotation_degrees": [
+        0.0,
+        251.7,
+        0.0
+      ],
+      "targetname": "sd_bomb",
+      "destructibledef": "",
+      "source_index": 618,
+      "source_keys": {
+        "angles": "0 251.7 0",
+        "classname": "script_model",
+        "model": "prop_suitcase_bomb",
+        "targetname": "sd_bomb",
+        "origin": "-1273 809 -61.5",
+        "script_gameobjectname": "sd",
+        "spawnflags": "4",
+        "guid": "4CF6E28C"
+      }
+    },
+    {
+      "id": 123,
+      "model": "prop_suitcase_bomb",
+      "position": [
+        0.355425,
+        -1.64846,
+        -3.4036
+      ],
+      "rotation_degrees": [
+        359.697,
+        3.1e-05,
+        -0.005945
+      ],
+      "targetname": "sab_bomb",
+      "destructibledef": "",
+      "source_index": 625,
+      "source_keys": {
+        "angles": "359.697 3.13998e-005 -0.0059451",
+        "spawnflags": "4",
+        "script_gameobjectname": "sab",
+        "origin": "13.9931 134 -64.9",
+        "targetname": "sab_bomb",
+        "model": "prop_suitcase_bomb",
+        "classname": "script_model",
+        "guid": "3AF5186D"
+      }
+    },
+    {
+      "id": 124,
+      "model": "p_glo_bomb_stack",
+      "position": [
+        1.48844,
+        -1.74244,
+        0.640116
+      ],
+      "rotation_degrees": [
+        359.793,
+        16.0001,
+        0.794018
+      ],
+      "targetname": "pf1251_auto1",
+      "destructibledef": "",
+      "source_index": 628,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "p_glo_bomb_stack",
+        "angles": "359.793 16.0001 0.794018",
+        "origin": "58.6 -25.2014 -68.6",
+        "script_exploder": "12512",
+        "script_gameobjectname": "bombzone",
+        "spawnflags": "5",
+        "targetname": "pf1251_auto1",
+        "target": "pf1251_auto2",
+        "guid": "9CD403D5"
+      }
+    },
+    {
+      "id": 125,
+      "model": "p_glo_bomb_stack_d",
+      "position": [
+        1.48844,
+        -1.74498,
+        0.64008
+      ],
+      "rotation_degrees": [
+        359.793,
+        16.0001,
+        0.794018
+      ],
+      "targetname": "exploder",
+      "destructibledef": "",
+      "source_index": 629,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "p_glo_bomb_stack_d",
+        "angles": "359.793 16.0001 0.794018",
+        "origin": "58.6 -25.2 -68.7",
+        "spawnflags": "4",
+        "targetname": "exploder",
+        "script_exploder": "12512",
+        "guid": "0244A2F0"
+      }
+    },
+    {
+      "id": 126,
+      "model": "p_glo_bomb_stack_d",
+      "position": [
+        21.41982,
+        -1.4478,
+        -15.72514
+      ],
+      "rotation_degrees": [
+        0.0,
+        286.2,
+        0.0
+      ],
+      "targetname": "exploder",
+      "destructibledef": "",
+      "source_index": 636,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "p_glo_bomb_stack_d",
+        "angles": "0 286.2 0",
+        "origin": "843.3 619.1 -57",
+        "spawnflags": "5",
+        "targetname": "exploder",
+        "script_exploder": "12521",
+        "guid": "066E8C9B"
+      }
+    },
+    {
+      "id": 127,
+      "model": "p_glo_bomb_stack",
+      "position": [
+        21.41982,
+        -1.4478,
+        -15.72514
+      ],
+      "rotation_degrees": [
+        0.0,
+        286.2,
+        0.0
+      ],
+      "targetname": "pf1252_auto1",
+      "destructibledef": "",
+      "source_index": 637,
+      "source_keys": {
+        "target": "pf1252_auto2",
+        "targetname": "pf1252_auto1",
+        "spawnflags": "5",
+        "script_gameobjectname": "bombzone",
+        "script_exploder": "12521",
+        "origin": "843.3 619.1 -57",
+        "angles": "0 286.2 0",
+        "model": "p_glo_bomb_stack",
+        "classname": "script_model",
+        "guid": "FF296800"
+      }
+    },
+    {
+      "id": 128,
+      "model": "t6_wpn_supply_drop_hq",
+      "position": [
+        1.055751,
+        -1.20806,
+        -22.055176
+      ],
+      "rotation_degrees": [
+        0.529581,
+        15.0003,
+        -0.722026
+      ],
+      "targetname": "pf1253_auto1",
+      "destructibledef": "",
+      "source_index": 641,
+      "source_keys": {
+        "script_index": "4",
+        "angles": "0.529581 15.0003 -0.722026",
+        "origin": "41.565 868.314 -47.5614",
+        "model": "t6_wpn_supply_drop_hq",
+        "classname": "script_model",
+        "script_gameobjectname": "hq",
+        "targetname": "pf1253_auto1",
+        "guid": "901F6586"
+      }
+    },
+    {
+      "id": 129,
+      "model": "prop_suitcase_bomb",
+      "position": [
+        1.076213,
+        -0.792434,
+        -22.080017
+      ],
+      "rotation_degrees": [
+        0.523975,
+        105.007,
+        0.529588
+      ],
+      "targetname": "hq_hardpoint",
+      "destructibledef": "",
+      "source_index": 643,
+      "source_keys": {
+        "script_index": "4",
+        "angles": "0.523975 105.007 0.529588",
+        "classname": "script_model",
+        "model": "prop_suitcase_bomb",
+        "origin": "42.3706 869.292 -31.1982",
+        "script_gameobjectname": "hq",
+        "targetname": "hq_hardpoint",
+        "target": "pf1253_auto1",
+        "guid": "37A9E46F"
+      }
+    },
+    {
+      "id": 130,
+      "model": "p_glo_bomb_stack_d",
+      "position": [
+        1.4859,
+        -1.7272,
+        0.6477
+      ],
+      "rotation_degrees": [
+        0.0,
+        16.0,
+        0.0
+      ],
+      "targetname": "exploder",
+      "destructibledef": "",
+      "source_index": 707,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "p_glo_bomb_stack_d",
+        "angles": "0 16 0",
+        "origin": "58.5 -25.5 -68",
+        "spawnflags": "5",
+        "targetname": "exploder",
+        "script_exploder": "13001",
+        "guid": "51AB472D"
+      }
+    },
+    {
+      "id": 131,
+      "model": "p_glo_bomb_stack",
+      "position": [
+        1.4859,
+        -1.7272,
+        0.6477
+      ],
+      "rotation_degrees": [
+        0.0,
+        16.0,
+        0.0
+      ],
+      "targetname": "pf1300_auto1",
+      "destructibledef": "",
+      "source_index": 708,
+      "source_keys": {
+        "target": "pf1300_auto2",
+        "targetname": "pf1300_auto1",
+        "spawnflags": "5",
+        "script_gameobjectname": "bombzone_dem",
+        "script_exploder": "13001",
+        "origin": "58.5 -25.5 -68",
+        "angles": "0 16 0",
+        "model": "p_glo_bomb_stack",
+        "classname": "script_model",
+        "guid": "A9E0083E"
+      }
+    },
+    {
+      "id": 132,
+      "model": "p_glo_bomb_stack_d",
+      "position": [
+        21.424646,
+        -1.4478,
+        -15.722854
+      ],
+      "rotation_degrees": [
+        0.0,
+        285.9,
+        0.0
+      ],
+      "targetname": "exploder",
+      "destructibledef": "",
+      "source_index": 713,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "p_glo_bomb_stack_d",
+        "angles": "0 285.9 0",
+        "origin": "843.49 619.01 -57",
+        "spawnflags": "5",
+        "targetname": "exploder",
+        "script_exploder": "13011",
+        "guid": "51AB472D"
+      }
+    },
+    {
+      "id": 133,
+      "model": "p_glo_bomb_stack",
+      "position": [
+        21.424646,
+        -1.4478,
+        -15.722854
+      ],
+      "rotation_degrees": [
+        0.0,
+        285.9,
+        0.0
+      ],
+      "targetname": "pf1301_auto1",
+      "destructibledef": "",
+      "source_index": 714,
+      "source_keys": {
+        "target": "pf1301_auto2",
+        "targetname": "pf1301_auto1",
+        "spawnflags": "5",
+        "script_gameobjectname": "bombzone_dem",
+        "script_exploder": "13011",
+        "origin": "843.49 619.01 -57",
+        "angles": "0 285.9 0",
+        "model": "p_glo_bomb_stack",
+        "classname": "script_model",
+        "guid": "A9E0083E"
+      }
+    },
+    {
+      "id": 134,
+      "model": "p_glo_bomb_stack_d",
+      "position": [
+        1.0541,
+        -1.6383,
+        -22.0218
+      ],
+      "rotation_degrees": [
+        0.0,
+        18.4,
+        0.0
+      ],
+      "targetname": "exploder",
+      "destructibledef": "",
+      "source_index": 719,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "p_glo_bomb_stack_d",
+        "angles": "0 18.4 0",
+        "origin": "41.5 867 -64.5",
+        "spawnflags": "5",
+        "targetname": "exploder",
+        "script_exploder": "13021",
+        "guid": "51AB472D"
+      }
+    },
+    {
+      "id": 135,
+      "model": "p_glo_bomb_stack",
+      "position": [
+        1.0541,
+        -1.6383,
+        -22.0218
+      ],
+      "rotation_degrees": [
+        0.0,
+        18.4,
+        0.0
+      ],
+      "targetname": "pf1302_auto1",
+      "destructibledef": "",
+      "source_index": 720,
+      "source_keys": {
+        "target": "pf1302_auto2",
+        "targetname": "pf1302_auto1",
+        "spawnflags": "5",
+        "script_gameobjectname": "bombzone_dem",
+        "script_exploder": "13021",
+        "origin": "41.5 867 -64.5",
+        "angles": "0 18.4 0",
+        "model": "p_glo_bomb_stack",
+        "classname": "script_model",
+        "guid": "A9E0083E"
+      }
+    },
+    {
+      "id": 136,
+      "model": "fxanim_mp_nuked2025_sprinkler_mod",
+      "position": [
+        -44.2214,
+        1.524,
+        -30.6832
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "targetname": "fxanim",
+      "destructibledef": "",
+      "source_index": 1271,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "fxanim_mp_nuked2025_sprinkler_mod",
+        "origin": "-1741 1208 60",
+        "targetname": "fxanim",
+        "spawnflags": "2",
+        "fxanim_wait": "1",
+        "fxanim_scene_1": "sprinkler",
+        "fxanim_fx_1": "fx_water_fire_sprinkler_thin",
+        "fxanim_fx_1_tag": "fx_01_jnt",
+        "fxanim_fx_2": "fx_water_fire_sprinkler_thin",
+        "fxanim_fx_2_tag": "fx_02_jnt",
+        "fxanim_fx_3": "fx_water_fire_sprinkler_thin",
+        "fxanim_fx_3_tag": "fx_03_jnt",
+        "guid": "1F06E17F"
+      }
+    },
+    {
+      "id": 137,
+      "model": "fxanim_mp_nuked2025_dome_mod",
+      "position": [
+        1.524,
+        17.78,
+        131.572
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "targetname": "fxanim",
+      "destructibledef": "",
+      "source_index": 1272,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "fxanim_mp_nuked2025_dome_mod",
+        "origin": "60 -5180 700",
+        "targetname": "fxanim",
+        "spawnflags": "2",
+        "fxanim_scene_1": "dome",
+        "fxanim_waittill_1": "fxanim_dome_explode_start",
+        "guid": "B1F70E15"
+      }
+    },
+    {
+      "id": 138,
+      "model": "fxanim_mp_nuked2025_gate_sign02_mod",
+      "position": [
+        -6.0706,
+        -0.762,
+        15.3797
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "targetname": "fxanim",
+      "destructibledef": "",
+      "source_index": 1273,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "fxanim_mp_nuked2025_gate_sign02_mod",
+        "origin": "-239 -605.5 -30",
+        "targetname": "fxanim",
+        "spawnflags": "2",
+        "fxanim_wait": "1",
+        "fxanim_scene_1": "gate_sign",
+        "guid": "1E210818"
+      }
+    },
+    {
+      "id": 139,
+      "model": "fxanim_mp_nuked2025_gate_sign03_mod",
+      "position": [
+        7.747,
+        -0.76835,
+        15.3797
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "targetname": "fxanim",
+      "destructibledef": "",
+      "source_index": 1274,
+      "source_keys": {
+        "fxanim_scene_1": "gate_sign",
+        "fxanim_wait": "2",
+        "spawnflags": "2",
+        "targetname": "fxanim",
+        "origin": "305 -605.5 -30.25",
+        "model": "fxanim_mp_nuked2025_gate_sign03_mod",
+        "classname": "script_model",
+        "guid": "E346ECA8"
+      }
+    },
+    {
+      "id": 140,
+      "model": "fxanim_mp_nuked2025_carwash_hoses_mod",
+      "position": [
+        -22.546564,
+        1.86055,
+        -2.597404
+      ],
+      "rotation_degrees": [
+        0.0,
+        250.1,
+        0.0
+      ],
+      "targetname": "fxanim",
+      "destructibledef": "",
+      "source_index": 1275,
+      "source_keys": {
+        "classname": "script_model",
+        "model": "fxanim_mp_nuked2025_carwash_hoses_mod",
+        "origin": "-887.66 102.26 73.25",
+        "targetname": "fxanim",
+        "spawnflags": "2",
+        "fxanim_wait": "1",
+        "fxanim_scene_1": "carwash_hoses",
+        "angles": "0 250.1 0",
+        "guid": "56FFDA29"
+      }
+    }
+  ],
+  "loose": [
+    {
+      "id": 141,
+      "model": "nt_2020_dish_mug",
+      "position": [
+        27.172413,
+        0.0635,
+        -3.046324
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        154.999996
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_dish_mug_2992"
+    },
+    {
+      "id": 142,
+      "model": "nt_2020_dish_mug",
+      "position": [
+        22.746564,
+        -0.57277,
+        -10.736631
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        90.800009
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_dish_mug_2993"
+    },
+    {
+      "id": 143,
+      "model": "nt_2020_dish_mug",
+      "position": [
+        22.87839,
+        -0.57277,
+        -9.420327
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -89.200037
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_dish_mug_2994"
+    },
+    {
+      "id": 144,
+      "model": "nt_2020_dish_mug",
+      "position": [
+        22.970083,
+        -0.57277,
+        -9.902469
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        90.800009
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_dish_mug_2995"
+    },
+    {
+      "id": 145,
+      "model": "nt_2020_dish_mug",
+      "position": [
+        22.65487,
+        -0.57277,
+        -10.254514
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -89.200037
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_dish_mug_2996"
+    },
+    {
+      "id": 146,
+      "model": "nt_2020_dish_mug",
+      "position": [
+        27.424887,
+        -0.38862,
+        -11.324869
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        154.999996
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_dish_mug_2997"
+    },
+    {
+      "id": 147,
+      "model": "nt_2020_dish_mug",
+      "position": [
+        27.094942,
+        0.0635,
+        -2.942438
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -15.200004
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_dish_mug_2998"
+    },
+    {
+      "id": 148,
+      "model": "nt_2020_dish_mug",
+      "position": [
+        27.217371,
+        0.0635,
+        -2.859049
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -15.200004
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_dish_mug_2999"
+    },
+    {
+      "id": 149,
+      "model": "nt_2020_dish_mug",
+      "position": [
+        27.065985,
+        0.0635,
+        -3.149295
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        154.999996
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_dish_mug_3000"
+    },
+    {
+      "id": 150,
+      "model": "p_pent_coffeemug",
+      "position": [
+        -20.937728,
+        -2.9591,
+        -17.74609
+      ],
+      "rotation_degrees": [
+        179.999991,
+        0.0,
+        -59.999995
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_pent_coffeemug_3001"
+    },
+    {
+      "id": 151,
+      "model": "p_pent_coffeemug",
+      "position": [
+        27.581861,
+        -0.92202,
+        -9.826016
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        49.200011
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_pent_coffeemug_3002"
+    },
+    {
+      "id": 152,
+      "model": "p_pent_coffeemug",
+      "position": [
+        -20.843951,
+        -2.9591,
+        -17.855234
+      ],
+      "rotation_degrees": [
+        179.999991,
+        0.0,
+        -59.999995
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_pent_coffeemug_3003"
+    },
+    {
+      "id": 153,
+      "model": "p_pent_coffeemug",
+      "position": [
+        -20.825994,
+        0.0635,
+        -17.718939
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -59.999995
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_pent_coffeemug_3004"
+    },
+    {
+      "id": 154,
+      "model": "p_pent_coffeemug",
+      "position": [
+        -21.078647,
+        -0.38608,
+        -17.529784
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        12.760999
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_pent_coffeemug_3005"
+    },
+    {
+      "id": 155,
+      "model": "p_pent_coffeemug",
+      "position": [
+        27.581861,
+        -4.17322,
+        -9.826016
+      ],
+      "rotation_degrees": [
+        179.999991,
+        0.0,
+        49.200011
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_pent_coffeemug_3006"
+    },
+    {
+      "id": 156,
+      "model": "p_pent_coffeemug",
+      "position": [
+        -20.916722,
+        -2.9591,
+        -17.603293
+      ],
+      "rotation_degrees": [
+        179.999991,
+        0.0,
+        -59.999995
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_pent_coffeemug_3007"
+    },
+    {
+      "id": 157,
+      "model": "p_pent_coffeemug",
+      "position": [
+        -20.843951,
+        0.0635,
+        -17.855234
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -59.999995
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_pent_coffeemug_3008"
+    },
+    {
+      "id": 158,
+      "model": "p_pent_coffeemug",
+      "position": [
+        -20.916722,
+        0.0635,
+        -17.603293
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -59.999995
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_pent_coffeemug_3009"
+    },
+    {
+      "id": 159,
+      "model": "p_pent_coffeemug",
+      "position": [
+        -21.093988,
+        -0.38862,
+        -17.702961
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -24.17498
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_pent_coffeemug_3010"
+    },
+    {
+      "id": 160,
+      "model": "p_pent_coffeemug",
+      "position": [
+        -20.937728,
+        0.0635,
+        -17.74609
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -59.999995
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_pent_coffeemug_3011"
+    },
+    {
+      "id": 161,
+      "model": "p_pent_coffeemug",
+      "position": [
+        -20.825994,
+        -2.9591,
+        -17.718939
+      ],
+      "rotation_degrees": [
+        179.999991,
+        0.0,
+        -59.999995
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_pent_coffeemug_3012"
+    },
+    {
+      "id": 162,
+      "model": "nt_2020_planter01",
+      "position": [
+        -24.25949,
+        2.0066,
+        -11.775922
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        159.899988
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_planter01_3013"
+    },
+    {
+      "id": 163,
+      "model": "nt_2020_planter01",
+      "position": [
+        28.131008,
+        2.0066,
+        -8.934476
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        14.900001
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_planter01_3014"
+    },
+    {
+      "id": 164,
+      "model": "nt_2020_planter01",
+      "position": [
+        15.47688,
+        -1.4478,
+        -8.645931
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        14.900001
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_planter01_3015"
+    },
+    {
+      "id": 165,
+      "model": "nt_2020_planter01",
+      "position": [
+        19.926249,
+        2.0066,
+        -3.353003
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        105.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_planter01_3016"
+    },
+    {
+      "id": 166,
+      "model": "dub_rest_vase_alone",
+      "position": [
+        -16.936669,
+        2.9591,
+        -12.01232
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        23.462996
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "dub_rest_vase_alone_3017"
+    },
+    {
+      "id": 167,
+      "model": "dub_rest_vase_alone",
+      "position": [
+        -20.226959,
+        -0.6096,
+        -14.413534
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -61.737001
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "dub_rest_vase_alone_3018"
+    },
+    {
+      "id": 168,
+      "model": "dub_rest_vase_alone",
+      "position": [
+        -25.74163,
+        -0.381,
+        -14.46779
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -61.737001
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "dub_rest_vase_alone_3019"
+    },
+    {
+      "id": 169,
+      "model": "p_jun_fruit_apple",
+      "position": [
+        22.865714,
+        -0.54483,
+        -10.576585
+      ],
+      "rotation_degrees": [
+        5.9e-05,
+        -64.799985,
+        162.399987
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_jun_fruit_apple_3020"
+    },
+    {
+      "id": 170,
+      "model": "p_jun_fruit_apple",
+      "position": [
+        22.759239,
+        -0.54483,
+        -9.580372
+      ],
+      "rotation_degrees": [
+        5.3e-05,
+        -64.799992,
+        -17.600021
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_jun_fruit_apple_3021"
+    },
+    {
+      "id": 171,
+      "model": "p_jun_fruit_apple",
+      "position": [
+        22.535717,
+        -0.54483,
+        -10.414533
+      ],
+      "rotation_degrees": [
+        5.3e-05,
+        -64.799992,
+        -17.600021
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_jun_fruit_apple_3022"
+    },
+    {
+      "id": 172,
+      "model": "p_jun_fruit_apple",
+      "position": [
+        -20.805496,
+        -0.33528,
+        -17.292523
+      ],
+      "rotation_degrees": [
+        3.5e-05,
+        -64.799985,
+        -52.600004
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_jun_fruit_apple_3023"
+    },
+    {
+      "id": 173,
+      "model": "p_jun_fruit_apple",
+      "position": [
+        23.089236,
+        -0.54483,
+        -9.742424
+      ],
+      "rotation_degrees": [
+        5.9e-05,
+        -64.799985,
+        162.399987
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_jun_fruit_apple_3024"
+    },
+    {
+      "id": 174,
+      "model": "p_jun_fruit_bananas_single",
+      "position": [
+        23.002139,
+        -0.56769,
+        -10.597362
+      ],
+      "rotation_degrees": [
+        6.25872,
+        -15.58301,
+        -6.799006
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_jun_fruit_bananas_single_3025"
+    },
+    {
+      "id": 175,
+      "model": "p_jun_fruit_bananas_single",
+      "position": [
+        22.399295,
+        -0.56769,
+        -10.393756
+      ],
+      "rotation_degrees": [
+        6.25872,
+        -15.583012,
+        173.199992
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_jun_fruit_bananas_single_3026"
+    },
+    {
+      "id": 176,
+      "model": "p_jun_fruit_bananas_single",
+      "position": [
+        23.225658,
+        -0.56769,
+        -9.763201
+      ],
+      "rotation_degrees": [
+        6.25872,
+        -15.58301,
+        -6.799006
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_jun_fruit_bananas_single_3027"
+    },
+    {
+      "id": 177,
+      "model": "p_jun_fruit_bananas_single",
+      "position": [
+        -20.929167,
+        -0.35814,
+        -17.353738
+      ],
+      "rotation_degrees": [
+        6.258721,
+        -15.583013,
+        138.201009
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_jun_fruit_bananas_single_3028"
+    },
+    {
+      "id": 178,
+      "model": "p_jun_fruit_bananas_single",
+      "position": [
+        22.622814,
+        -0.56769,
+        -9.559595
+      ],
+      "rotation_degrees": [
+        6.25872,
+        -15.583012,
+        173.199992
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_jun_fruit_bananas_single_3029"
+    },
+    {
+      "id": 179,
+      "model": "p6_pak_food_sauce_01",
+      "position": [
+        -20.203922,
+        -0.6096,
+        -14.577061
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        57.936991
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p6_pak_food_sauce_01_3030"
+    },
+    {
+      "id": 180,
+      "model": "p_glo_books_single",
+      "position": [
+        -18.870473,
+        2.237994,
+        -14.509623
+      ],
+      "rotation_degrees": [
+        -2e-06,
+        10.899998,
+        159.999995
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_glo_books_single_3031"
+    },
+    {
+      "id": 181,
+      "model": "p_glo_books_single",
+      "position": [
+        -19.798564,
+        3.977894,
+        -14.850111
+      ],
+      "rotation_degrees": [
+        -4e-06,
+        10.899998,
+        -20.000015
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_glo_books_single_3032"
+    },
+    {
+      "id": 182,
+      "model": "p_glo_books_single",
+      "position": [
+        -24.265458,
+        3.217418,
+        -9.587306
+      ],
+      "rotation_degrees": [
+        3e-06,
+        -26.599998,
+        159.999995
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_glo_books_single_3033"
+    },
+    {
+      "id": 183,
+      "model": "p_glo_books_single",
+      "position": [
+        -19.267348,
+        2.7432,
+        -14.755673
+      ],
+      "rotation_degrees": [
+        139.299987,
+        -89.999989,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_glo_books_single_3034"
+    },
+    {
+      "id": 184,
+      "model": "p_glo_books_single",
+      "position": [
+        21.364042,
+        -1.1938,
+        -8.388731
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        105.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_glo_books_single_3035"
+    },
+    {
+      "id": 185,
+      "model": "p_glo_books_single",
+      "position": [
+        21.081364,
+        -1.1938,
+        -9.44372
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        105.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_glo_books_single_3036"
+    },
+    {
+      "id": 186,
+      "model": "nt_2020_ashtray_01",
+      "position": [
+        25.454863,
+        -0.5461,
+        -15.624963
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        105.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_ashtray_01_3037"
+    },
+    {
+      "id": 187,
+      "model": "nt_2020_ashtray_01",
+      "position": [
+        -20.262214,
+        -0.6096,
+        -14.767483
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -109.999992
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_ashtray_01_3038"
+    },
+    {
+      "id": 188,
+      "model": "nt_2020_ashtray_01",
+      "position": [
+        22.739172,
+        -0.57277,
+        -10.077247
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        90.800009
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_ashtray_01_3039"
+    },
+    {
+      "id": 189,
+      "model": "nt_2020_ashtray_01",
+      "position": [
+        20.496174,
+        -0.54356,
+        -10.754233
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -98.599996
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_ashtray_01_3040"
+    },
+    {
+      "id": 190,
+      "model": "nt_2020_ashtray_01",
+      "position": [
+        27.598877,
+        2.8321,
+        -9.370364
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        15.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_ashtray_01_3041"
+    },
+    {
+      "id": 191,
+      "model": "nt_2020_ashtray_01",
+      "position": [
+        -18.435828,
+        2.6162,
+        -14.416811
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -42.399998
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_ashtray_01_3042"
+    },
+    {
+      "id": 192,
+      "model": "nt_2020_ashtray_01",
+      "position": [
+        20.91464,
+        -0.508,
+        -9.737192
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        69.999993
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_ashtray_01_3043"
+    },
+    {
+      "id": 193,
+      "model": "nt_2020_ashtray_01",
+      "position": [
+        -24.39002,
+        2.84734,
+        -9.645345
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        10.000001
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_ashtray_01_3044"
+    },
+    {
+      "id": 194,
+      "model": "nt_2020_ashtray_01",
+      "position": [
+        -24.611482,
+        2.91084,
+        -11.965127
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        99.999994
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_ashtray_01_3045"
+    },
+    {
+      "id": 195,
+      "model": "p_rus_stapler",
+      "position": [
+        27.819858,
+        2.8321,
+        -9.771482
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -164.999994
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_rus_stapler_3046"
+    },
+    {
+      "id": 196,
+      "model": "p_rus_stapler",
+      "position": [
+        -25.060021,
+        2.91084,
+        -12.134876
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -113.800015
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_rus_stapler_3047"
+    },
+    {
+      "id": 197,
+      "model": "p_rus_tape_dispenser",
+      "position": [
+        -24.944756,
+        2.91084,
+        -12.17455
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        99.999994
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_rus_tape_dispenser_3048"
+    },
+    {
+      "id": 198,
+      "model": "p_rus_tape_dispenser",
+      "position": [
+        27.872435,
+        2.8321,
+        -9.654057
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        15.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_rus_tape_dispenser_3049"
+    },
+    {
+      "id": 199,
+      "model": "p_pent_manila_folder_2",
+      "position": [
+        27.556461,
+        2.83845,
+        -10.009074
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        87.199987
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_pent_manila_folder_2_3050"
+    },
+    {
+      "id": 200,
+      "model": "p_pent_manila_folder_2",
+      "position": [
+        -24.839777,
+        2.90322,
+        -11.681689
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        159.999995
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_pent_manila_folder_2_3051"
+    },
+    {
+      "id": 201,
+      "model": "nt_2020_wall_meter_01",
+      "position": [
+        20.213904,
+        -0.03302,
+        -0.467848
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -74.999999
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_wall_meter_01_3052"
+    },
+    {
+      "id": 202,
+      "model": "nt_2020_wall_meter_01",
+      "position": [
+        -23.9522,
+        0.24638,
+        -0.730392
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -109.999992
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_wall_meter_01_3053"
+    },
+    {
+      "id": 203,
+      "model": "nt_2020_wall_meter_01",
+      "position": [
+        27.275535,
+        0.04318,
+        -12.510236
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        105.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_wall_meter_01_3054"
+    },
+    {
+      "id": 204,
+      "model": "nt_2020_wall_meter_01",
+      "position": [
+        22.730434,
+        -0.01905,
+        -11.292408
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        105.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_wall_meter_01_3055"
+    },
+    {
+      "id": 205,
+      "model": "nt_2020_wall_meter_01",
+      "position": [
+        -19.596151,
+        0.0127,
+        -17.897069
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        69.999993
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_wall_meter_01_3056"
+    },
+    {
+      "id": 206,
+      "model": "nt_2020_wall_meter_01",
+      "position": [
+        22.876103,
+        -0.01905,
+        -19.115075
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -74.999999
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_wall_meter_01_3057"
+    },
+    {
+      "id": 207,
+      "model": "nt_2020_wall_meter_01",
+      "position": [
+        46.051217,
+        -0.5461,
+        -10.708487
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        17.999999
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_wall_meter_01_3058"
+    },
+    {
+      "id": 208,
+      "model": "nt_2020_wall_meter_01",
+      "position": [
+        -21.911208,
+        -0.09652,
+        -8.231708
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -109.999992
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_wall_meter_01_3059"
+    },
+    {
+      "id": 209,
+      "model": "nt_2020_wall_meter_01",
+      "position": [
+        18.281802,
+        -0.03302,
+        0.049856
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -74.999999
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_wall_meter_01_3060"
+    },
+    {
+      "id": 210,
+      "model": "nt_2020_wall_meter_01",
+      "position": [
+        -24.795938,
+        0.27178,
+        -5.875884
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        159.999995
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_wall_meter_01_3061"
+    },
+    {
+      "id": 211,
+      "model": "p6_zm_nuked_table_art",
+      "position": [
+        21.931224,
+        2.36982,
+        -10.63912
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -146.000006
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p6_zm_nuked_table_art_3062"
+    },
+    {
+      "id": 212,
+      "model": "p6_zm_nuked_table_art",
+      "position": [
+        -20.224699,
+        3.07975,
+        -15.037639
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -1.000012
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p6_zm_nuked_table_art_3063"
+    },
+    {
+      "id": 213,
+      "model": "nt_2020_sculpture_01",
+      "position": [
+        24.509222,
+        3.5052,
+        -11.400892
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        15.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_sculpture_01_3064"
+    },
+    {
+      "id": 214,
+      "model": "nt_2020_sculpture_01",
+      "position": [
+        -18.662574,
+        2.6162,
+        -14.499361
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -42.399998
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_sculpture_01_3065"
+    },
+    {
+      "id": 215,
+      "model": "nt_2020_sculpture_01",
+      "position": [
+        21.487385,
+        -0.508,
+        -8.286623
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        69.999993
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_sculpture_01_3066"
+    },
+    {
+      "id": 216,
+      "model": "nt_2020_remote_control_02",
+      "position": [
+        -25.223242,
+        2.921,
+        -12.07262
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -155.499994
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_remote_control_02_3067"
+    },
+    {
+      "id": 217,
+      "model": "nt_2020_remote_control_02",
+      "position": [
+        27.313127,
+        2.8448,
+        -10.456088
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -35.500004
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_remote_control_02_3068"
+    },
+    {
+      "id": 218,
+      "model": "nt_2020_remote_control_02",
+      "position": [
+        -19.647688,
+        -0.9906,
+        -8.732342
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -109.999992
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_remote_control_02_3069"
+    },
+    {
+      "id": 219,
+      "model": "nt_2020_remote_control_02",
+      "position": [
+        14.065352,
+        2.96545,
+        -7.859599
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -35.500004
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_remote_control_02_3070"
+    },
+    {
+      "id": 220,
+      "model": "nt_2020_remote_control_02",
+      "position": [
+        21.163738,
+        -0.50165,
+        -8.645601
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        137.10001
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_remote_control_02_3071"
+    },
+    {
+      "id": 221,
+      "model": "nt_2020_remote_control_01",
+      "position": [
+        21.14837,
+        -0.4953,
+        -9.522409
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        58.9
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_remote_control_01_3072"
+    },
+    {
+      "id": 222,
+      "model": "nt_2020_remote_control_01",
+      "position": [
+        -20.029576,
+        -0.9906,
+        -8.871331
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -109.999992
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_remote_control_01_3073"
+    },
+    {
+      "id": 223,
+      "model": "nt_2020_remote_control_01",
+      "position": [
+        22.151645,
+        2.8448,
+        -4.129431
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -35.500004
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_remote_control_01_3074"
+    },
+    {
+      "id": 224,
+      "model": "nt_2020_remote_control_01",
+      "position": [
+        -14.162836,
+        2.4384,
+        -12.439371
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -166.999997
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_remote_control_01_3075"
+    },
+    {
+      "id": 225,
+      "model": "nt_2020_remote_control_01",
+      "position": [
+        23.681106,
+        3.2131,
+        -10.909453
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        55.399999
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_remote_control_01_3076"
+    },
+    {
+      "id": 226,
+      "model": "nt_2020_clock_table",
+      "position": [
+        -15.728645,
+        2.9083,
+        -6.522059
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -77.300003
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_clock_table_3077"
+    },
+    {
+      "id": 227,
+      "model": "nt_2020_clock_table",
+      "position": [
+        22.648444,
+        4.191,
+        -10.764241
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        109.300007
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_clock_table_3078"
+    },
+    {
+      "id": 228,
+      "model": "p_rus_duct_tape",
+      "position": [
+        20.85749,
+        -0.127,
+        -10.922026
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        177.800001
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_rus_duct_tape_3079"
+    },
+    {
+      "id": 229,
+      "model": "p_rus_duct_tape",
+      "position": [
+        21.819591,
+        -0.5461,
+        -11.232414
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -64.000006
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_rus_duct_tape_3080"
+    },
+    {
+      "id": 230,
+      "model": "p_rus_duct_tape",
+      "position": [
+        25.573228,
+        -0.5461,
+        -15.183332
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -92.200006
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_rus_duct_tape_3081"
+    },
+    {
+      "id": 231,
+      "model": "p_rus_duct_tape",
+      "position": [
+        20.563078,
+        -0.127,
+        -10.843158
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        15.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_rus_duct_tape_3082"
+    },
+    {
+      "id": 232,
+      "model": "p_rus_duct_tape",
+      "position": [
+        25.651968,
+        -0.5461,
+        -14.888921
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        105.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_rus_duct_tape_3083"
+    },
+    {
+      "id": 233,
+      "model": "p_rus_duct_tape",
+      "position": [
+        21.642146,
+        -0.5461,
+        -11.158575
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        177.800001
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_rus_duct_tape_3084"
+    },
+    {
+      "id": 234,
+      "model": "p_rus_duct_tape",
+      "position": [
+        21.110093,
+        -0.127,
+        -10.994974
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        177.800001
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_rus_duct_tape_3085"
+    },
+    {
+      "id": 235,
+      "model": "p_rus_duct_tape",
+      "position": [
+        21.501125,
+        -0.47752,
+        -11.007725
+      ],
+      "rotation_degrees": [
+        -90.000043,
+        100.999995,
+        15.000004
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_rus_duct_tape_3086"
+    },
+    {
+      "id": 236,
+      "model": "p_rus_duct_tape",
+      "position": [
+        21.347734,
+        -0.5461,
+        -11.079683
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        15.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_rus_duct_tape_3087"
+    },
+    {
+      "id": 237,
+      "model": "p_rus_duct_tape",
+      "position": [
+        25.499313,
+        -0.5461,
+        -15.360777
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        26.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_rus_duct_tape_3088"
+    },
+    {
+      "id": 238,
+      "model": "p_rus_duct_tape",
+      "position": [
+        20.716469,
+        -0.05842,
+        -10.771175
+      ],
+      "rotation_degrees": [
+        -90.000043,
+        100.999995,
+        15.000004
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_rus_duct_tape_3089"
+    },
+    {
+      "id": 239,
+      "model": "p_rus_duct_tape",
+      "position": [
+        25.779476,
+        -0.0381,
+        -14.491818
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -92.200006
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_rus_duct_tape_3090"
+    },
+    {
+      "id": 240,
+      "model": "p_rus_duct_tape",
+      "position": [
+        25.462992,
+        -0.0381,
+        -15.692856
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -92.200006
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_rus_duct_tape_3091"
+    },
+    {
+      "id": 241,
+      "model": "nt_2020_cans_single02",
+      "position": [
+        25.694894,
+        -0.0381,
+        -14.866214
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        115.799997
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_cans_single02_3092"
+    },
+    {
+      "id": 242,
+      "model": "nt_2020_cans_single02",
+      "position": [
+        21.686977,
+        0.3937,
+        -11.167973
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -154.19999
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_cans_single02_3093"
+    },
+    {
+      "id": 243,
+      "model": "nt_2020_cans_single02",
+      "position": [
+        20.25297,
+        -0.5461,
+        -10.817911
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        26.999999
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_cans_single02_3094"
+    },
+    {
+      "id": 244,
+      "model": "nt_2020_cans_single02",
+      "position": [
+        25.56383,
+        0.4953,
+        -15.228139
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -64.200022
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_cans_single02_3095"
+    },
+    {
+      "id": 245,
+      "model": "nt_2020_cans_single02",
+      "position": [
+        20.724419,
+        0.3937,
+        -10.883747
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -154.19999
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_cans_single02_3096"
+    },
+    {
+      "id": 246,
+      "model": "nt_2020_cans_single02",
+      "position": [
+        25.848056,
+        0.4953,
+        -14.265605
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -64.200022
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_cans_single02_3097"
+    },
+    {
+      "id": 247,
+      "model": "nt_2020_cans_single02",
+      "position": [
+        20.746949,
+        -0.5461,
+        -10.937113
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        26.999999
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_cans_single02_3098"
+    },
+    {
+      "id": 248,
+      "model": "nt_2020_cans_single02",
+      "position": [
+        25.794463,
+        -0.5461,
+        -14.288136
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        116.999993
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_cans_single02_3099"
+    },
+    {
+      "id": 249,
+      "model": "nt_2020_cans_single02",
+      "position": [
+        25.630124,
+        -0.0381,
+        -15.088184
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -63.000019
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_cans_single02_3100"
+    },
+    {
+      "id": 250,
+      "model": "nt_2020_cans_single02",
+      "position": [
+        25.913842,
+        -0.5461,
+        -13.794156
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        116.999993
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_cans_single02_3101"
+    },
+    {
+      "id": 251,
+      "model": "nt_2020_cans_single03",
+      "position": [
+        20.599121,
+        -0.54356,
+        -10.86071
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -98.599996
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_cans_single03_3102"
+    },
+    {
+      "id": 252,
+      "model": "nt_2020_cans_single03",
+      "position": [
+        25.776428,
+        0.49784,
+        -14.414754
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        170.199995
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_cans_single03_3103"
+    },
+    {
+      "id": 253,
+      "model": "nt_2020_cans_single03",
+      "position": [
+        25.870915,
+        -0.54356,
+        -14.140307
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -8.600017
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_cans_single03_3104"
+    },
+    {
+      "id": 254,
+      "model": "nt_2020_cans_single03",
+      "position": [
+        25.990296,
+        -0.54356,
+        -13.646328
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -8.600017
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_cans_single03_3105"
+    },
+    {
+      "id": 255,
+      "model": "nt_2020_cans_single03",
+      "position": [
+        25.55367,
+        -0.03556,
+        -15.235986
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        171.399991
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_cans_single03_3106"
+    },
+    {
+      "id": 256,
+      "model": "nt_2020_cans_single03",
+      "position": [
+        20.873568,
+        0.39624,
+        -10.955274
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        80.199999
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_cans_single03_3107"
+    },
+    {
+      "id": 257,
+      "model": "nt_2020_cans_single03",
+      "position": [
+        21.118018,
+        -0.54356,
+        -11.073359
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        80.199999
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_cans_single03_3108"
+    },
+    {
+      "id": 258,
+      "model": "nt_2020_cans_single03",
+      "position": [
+        20.624037,
+        -0.54356,
+        -10.954156
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        80.199999
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_cans_single03_3109"
+    },
+    {
+      "id": 259,
+      "model": "nt_2020_cans_single03",
+      "position": [
+        20.105142,
+        -0.54356,
+        -10.741482
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -98.599996
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_cans_single03_3110"
+    },
+    {
+      "id": 260,
+      "model": "p_glo_cardboardbox_3",
+      "position": [
+        2.30981,
+        1.27762,
+        -5.578704
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -75.001016
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_glo_cardboardbox_3_3111"
+    },
+    {
+      "id": 261,
+      "model": "p_glo_cardboardbox_3",
+      "position": [
+        2.955214,
+        0.21082,
+        -7.026987
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        14.998901
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_glo_cardboardbox_3_3112"
+    },
+    {
+      "id": 262,
+      "model": "p_glo_cardboardbox_4",
+      "position": [
+        3.349498,
+        1.50241,
+        -6.075528
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        14.998901
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_glo_cardboardbox_4_3113"
+    },
+    {
+      "id": 263,
+      "model": "p_glo_cardboardbox_4",
+      "position": [
+        4.491177,
+        0.66294,
+        -7.359624
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        14.998901
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "p_glo_cardboardbox_4_3114"
+    },
+    {
+      "id": 264,
+      "model": "nt_2020_shuffleboard_puck_02",
+      "position": [
+        51.089306,
+        -1.54305,
+        -6.176112
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        16.200003
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_shuffleboard_puck_02_3115"
+    },
+    {
+      "id": 265,
+      "model": "nt_2020_shuffleboard_puck_02",
+      "position": [
+        48.315879,
+        -1.54305,
+        -13.378129
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        16.200003
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_shuffleboard_puck_02_3116"
+    },
+    {
+      "id": 266,
+      "model": "nt_2020_shuffleboard_puck_02",
+      "position": [
+        48.539654,
+        -1.54305,
+        -13.859739
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        16.200003
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_shuffleboard_puck_02_3117"
+    },
+    {
+      "id": 267,
+      "model": "nt_2020_shuffleboard_puck_02",
+      "position": [
+        46.840394,
+        -1.54305,
+        -14.086815
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        16.200003
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_shuffleboard_puck_02_3118"
+    },
+    {
+      "id": 268,
+      "model": "nt_2020_shuffleboard_puck_01",
+      "position": [
+        48.137319,
+        -1.54305,
+        -13.127889
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        16.200003
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_shuffleboard_puck_01_3119"
+    },
+    {
+      "id": 269,
+      "model": "nt_2020_shuffleboard_puck_01",
+      "position": [
+        48.095408,
+        -1.54305,
+        -14.114221
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        16.200003
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_shuffleboard_puck_01_3120"
+    },
+    {
+      "id": 270,
+      "model": "nt_2020_shuffleboard_puck_01",
+      "position": [
+        49.277525,
+        -1.54305,
+        -5.629859
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        16.200003
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_shuffleboard_puck_01_3121"
+    },
+    {
+      "id": 271,
+      "model": "nt_2020_shuffleboard_puck_01",
+      "position": [
+        49.053242,
+        -1.54305,
+        -12.501321
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        16.200003
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "source_node": "nt_2020_shuffleboard_puck_01_3122"
+    }
+  ],
+  "models": {
+    "dest_electronic_outlet01_d0": "res://assets/maps/nuketown/props/models/dest_electronic_outlet01_d0.gltf",
+    "dest_nt_nuked_female_01_arm_left": "res://assets/maps/nuketown/props/models/dest_nt_nuked_female_01_arm_left.gltf",
+    "dest_nt_nuked_female_01_arm_right": "res://assets/maps/nuketown/props/models/dest_nt_nuked_female_01_arm_right.gltf",
+    "dest_nt_nuked_female_01_d0": "res://assets/maps/nuketown/props/models/dest_nt_nuked_female_01_d0.gltf",
+    "dest_nt_nuked_female_01_head": "res://assets/maps/nuketown/props/models/dest_nt_nuked_female_01_head.gltf",
+    "dest_nt_nuked_female_02_arm_left": "res://assets/maps/nuketown/props/models/dest_nt_nuked_female_02_arm_left.gltf",
+    "dest_nt_nuked_female_02_arm_right": "res://assets/maps/nuketown/props/models/dest_nt_nuked_female_02_arm_right.gltf",
+    "dest_nt_nuked_female_02_d0": "res://assets/maps/nuketown/props/models/dest_nt_nuked_female_02_d0.gltf",
+    "dest_nt_nuked_female_02_head": "res://assets/maps/nuketown/props/models/dest_nt_nuked_female_02_head.gltf",
+    "dest_nt_nuked_female_03_arm_left": "res://assets/maps/nuketown/props/models/dest_nt_nuked_female_03_arm_left.gltf",
+    "dest_nt_nuked_female_03_arm_right": "res://assets/maps/nuketown/props/models/dest_nt_nuked_female_03_arm_right.gltf",
+    "dest_nt_nuked_female_03_d0": "res://assets/maps/nuketown/props/models/dest_nt_nuked_female_03_d0.gltf",
+    "dest_nt_nuked_female_03_head": "res://assets/maps/nuketown/props/models/dest_nt_nuked_female_03_head.gltf",
+    "dest_nt_nuked_female_05_arm_left": "res://assets/maps/nuketown/props/models/dest_nt_nuked_female_05_arm_left.gltf",
+    "dest_nt_nuked_female_05_arm_right": "res://assets/maps/nuketown/props/models/dest_nt_nuked_female_05_arm_right.gltf",
+    "dest_nt_nuked_female_05_d0": "res://assets/maps/nuketown/props/models/dest_nt_nuked_female_05_d0.gltf",
+    "dest_nt_nuked_female_05_head": "res://assets/maps/nuketown/props/models/dest_nt_nuked_female_05_head.gltf",
+    "dest_nt_nuked_male_01_arm_left": "res://assets/maps/nuketown/props/models/dest_nt_nuked_male_01_arm_left.gltf",
+    "dest_nt_nuked_male_01_arm_right": "res://assets/maps/nuketown/props/models/dest_nt_nuked_male_01_arm_right.gltf",
+    "dest_nt_nuked_male_01_d0": "res://assets/maps/nuketown/props/models/dest_nt_nuked_male_01_d0.gltf",
+    "dest_nt_nuked_male_01_head": "res://assets/maps/nuketown/props/models/dest_nt_nuked_male_01_head.gltf",
+    "dest_nt_nuked_male_03_arm_left": "res://assets/maps/nuketown/props/models/dest_nt_nuked_male_03_arm_left.gltf",
+    "dest_nt_nuked_male_03_arm_right": "res://assets/maps/nuketown/props/models/dest_nt_nuked_male_03_arm_right.gltf",
+    "dest_nt_nuked_male_03_d0": "res://assets/maps/nuketown/props/models/dest_nt_nuked_male_03_d0.gltf",
+    "dest_nt_nuked_male_03_head": "res://assets/maps/nuketown/props/models/dest_nt_nuked_male_03_head.gltf",
+    "dub_rest_vase_alone": "res://assets/maps/nuketown/props/models/dub_rest_vase_alone.gltf",
+    "fxanim_mp_nuked2025_banner01_mod": "res://assets/maps/nuketown/props/models/fxanim_mp_nuked2025_banner01_mod.gltf",
+    "fxanim_mp_nuked2025_carwash_hoses_mod": "res://assets/maps/nuketown/props/models/fxanim_mp_nuked2025_carwash_hoses_mod.gltf",
+    "fxanim_mp_nuked2025_display_glass_mod": "res://assets/maps/nuketown/props/models/fxanim_mp_nuked2025_display_glass_mod.gltf",
+    "fxanim_mp_nuked2025_dome_mod": "res://assets/maps/nuketown/props/models/fxanim_mp_nuked2025_dome_mod.gltf",
+    "fxanim_mp_nuked2025_gate_sign02_mod": "res://assets/maps/nuketown/props/models/fxanim_mp_nuked2025_gate_sign02_mod.gltf",
+    "fxanim_mp_nuked2025_gate_sign03_mod": "res://assets/maps/nuketown/props/models/fxanim_mp_nuked2025_gate_sign03_mod.gltf",
+    "fxanim_mp_nuked2025_sprinkler_mod": "res://assets/maps/nuketown/props/models/fxanim_mp_nuked2025_sprinkler_mod.gltf",
+    "fxanim_mp_nuked2025_sprinkler_track_mod": "res://assets/maps/nuketown/props/models/fxanim_mp_nuked2025_sprinkler_track_mod.gltf",
+    "nt_2020_ashtray_01": "res://assets/maps/nuketown/props/models/nt_2020_ashtray_01.gltf",
+    "nt_2020_bookshelf_02": "res://assets/maps/nuketown/props/models/nt_2020_bookshelf_02.gltf",
+    "nt_2020_bookshelf_03": "res://assets/maps/nuketown/props/models/nt_2020_bookshelf_03.gltf",
+    "nt_2020_cans_single02": "res://assets/maps/nuketown/props/models/nt_2020_cans_single02.gltf",
+    "nt_2020_cans_single03": "res://assets/maps/nuketown/props/models/nt_2020_cans_single03.gltf",
+    "nt_2020_clock_table": "res://assets/maps/nuketown/props/models/nt_2020_clock_table.gltf",
+    "nt_2020_dish_mug": "res://assets/maps/nuketown/props/models/nt_2020_dish_mug.gltf",
+    "nt_2020_dolly_01": "res://assets/maps/nuketown/props/models/nt_2020_dolly_01.gltf",
+    "nt_2020_flag_arabia_01": "res://assets/maps/nuketown/props/models/nt_2020_flag_arabia_01.gltf",
+    "nt_2020_flag_australia_01": "res://assets/maps/nuketown/props/models/nt_2020_flag_australia_01.gltf",
+    "nt_2020_flag_brazil_01": "res://assets/maps/nuketown/props/models/nt_2020_flag_brazil_01.gltf",
+    "nt_2020_flag_canada_01": "res://assets/maps/nuketown/props/models/nt_2020_flag_canada_01.gltf",
+    "nt_2020_flag_china_01": "res://assets/maps/nuketown/props/models/nt_2020_flag_china_01.gltf",
+    "nt_2020_flag_egypt_01": "res://assets/maps/nuketown/props/models/nt_2020_flag_egypt_01.gltf",
+    "nt_2020_flag_england_01": "res://assets/maps/nuketown/props/models/nt_2020_flag_england_01.gltf",
+    "nt_2020_flag_ethiopia_01": "res://assets/maps/nuketown/props/models/nt_2020_flag_ethiopia_01.gltf",
+    "nt_2020_flag_fair_01": "res://assets/maps/nuketown/props/models/nt_2020_flag_fair_01.gltf",
+    "nt_2020_flag_france_01": "res://assets/maps/nuketown/props/models/nt_2020_flag_france_01.gltf",
+    "nt_2020_flag_germany_01": "res://assets/maps/nuketown/props/models/nt_2020_flag_germany_01.gltf",
+    "nt_2020_flag_greece_01": "res://assets/maps/nuketown/props/models/nt_2020_flag_greece_01.gltf",
+    "nt_2020_flag_japan_01": "res://assets/maps/nuketown/props/models/nt_2020_flag_japan_01.gltf",
+    "nt_2020_flag_korea_01": "res://assets/maps/nuketown/props/models/nt_2020_flag_korea_01.gltf",
+    "nt_2020_flag_raven_01": "res://assets/maps/nuketown/props/models/nt_2020_flag_raven_01.gltf",
+    "nt_2020_flag_spain_01": "res://assets/maps/nuketown/props/models/nt_2020_flag_spain_01.gltf",
+    "nt_2020_flag_switzerland_01": "res://assets/maps/nuketown/props/models/nt_2020_flag_switzerland_01.gltf",
+    "nt_2020_flag_syria_01": "res://assets/maps/nuketown/props/models/nt_2020_flag_syria_01.gltf",
+    "nt_2020_flag_treyarch_01": "res://assets/maps/nuketown/props/models/nt_2020_flag_treyarch_01.gltf",
+    "nt_2020_flag_usa_01": "res://assets/maps/nuketown/props/models/nt_2020_flag_usa_01.gltf",
+    "nt_2020_moving_chair_01": "res://assets/maps/nuketown/props/models/nt_2020_moving_chair_01.gltf",
+    "nt_2020_moving_couch_01": "res://assets/maps/nuketown/props/models/nt_2020_moving_couch_01.gltf",
+    "nt_2020_planter01": "res://assets/maps/nuketown/props/models/nt_2020_planter01.gltf",
+    "nt_2020_remote_control_01": "res://assets/maps/nuketown/props/models/nt_2020_remote_control_01.gltf",
+    "nt_2020_remote_control_02": "res://assets/maps/nuketown/props/models/nt_2020_remote_control_02.gltf",
+    "nt_2020_sculpture_01": "res://assets/maps/nuketown/props/models/nt_2020_sculpture_01.gltf",
+    "nt_2020_shuffleboard_puck_01": "res://assets/maps/nuketown/props/models/nt_2020_shuffleboard_puck_01.gltf",
+    "nt_2020_shuffleboard_puck_02": "res://assets/maps/nuketown/props/models/nt_2020_shuffleboard_puck_02.gltf",
+    "nt_2020_sign_numbers_small": "res://assets/maps/nuketown/props/models/nt_2020_sign_numbers_small.gltf",
+    "nt_2020_wall_clock_01": "res://assets/maps/nuketown/props/models/nt_2020_wall_clock_01.gltf",
+    "nt_2020_wall_clock_01_hours": "res://assets/maps/nuketown/props/models/nt_2020_wall_clock_01_hours.gltf",
+    "nt_2020_wall_clock_01_minutes": "res://assets/maps/nuketown/props/models/nt_2020_wall_clock_01_minutes.gltf",
+    "nt_2020_wall_clock_01_seconds": "res://assets/maps/nuketown/props/models/nt_2020_wall_clock_01_seconds.gltf",
+    "nt_2020_wall_clock_02": "res://assets/maps/nuketown/props/models/nt_2020_wall_clock_02.gltf",
+    "nt_2020_wall_clock_02_hours": "res://assets/maps/nuketown/props/models/nt_2020_wall_clock_02_hours.gltf",
+    "nt_2020_wall_clock_02_minutes": "res://assets/maps/nuketown/props/models/nt_2020_wall_clock_02_minutes.gltf",
+    "nt_2020_wall_clock_02_seconds": "res://assets/maps/nuketown/props/models/nt_2020_wall_clock_02_seconds.gltf",
+    "nt_2020_wall_meter_01": "res://assets/maps/nuketown/props/models/nt_2020_wall_meter_01.gltf",
+    "nt_nuketown_sign": "res://assets/maps/nuketown/props/models/nt_nuketown_sign.gltf",
+    "nt_nuketown_sign_base": "res://assets/maps/nuketown/props/models/nt_nuketown_sign_base.gltf",
+    "nt_nuketown_sign_needle": "res://assets/maps/nuketown/props/models/nt_nuketown_sign_needle.gltf",
+    "nt_nuketown_sign_topper": "res://assets/maps/nuketown/props/models/nt_nuketown_sign_topper.gltf",
+    "nt_sign_population": "res://assets/maps/nuketown/props/models/nt_sign_population.gltf",
+    "nt_sign_population_vcs": "res://assets/maps/nuketown/props/models/nt_sign_population_vcs.gltf",
+    "p6_pak_food_sauce_01": "res://assets/maps/nuketown/props/models/p6_pak_food_sauce_01.gltf",
+    "p6_zm_nuked_table_art": "res://assets/maps/nuketown/props/models/p6_zm_nuked_table_art.gltf",
+    "p_glo_bomb_stack": "res://assets/maps/nuketown/props/models/p_glo_bomb_stack.gltf",
+    "p_glo_bomb_stack_d": "res://assets/maps/nuketown/props/models/p_glo_bomb_stack_d.gltf",
+    "p_glo_books_single": "res://assets/maps/nuketown/props/models/p_glo_books_single.gltf",
+    "p_glo_cardboardbox_3": "res://assets/maps/nuketown/props/models/p_glo_cardboardbox_3.gltf",
+    "p_glo_cardboardbox_4": "res://assets/maps/nuketown/props/models/p_glo_cardboardbox_4.gltf",
+    "p_jun_fruit_apple": "res://assets/maps/nuketown/props/models/p_jun_fruit_apple.gltf",
+    "p_jun_fruit_bananas_single": "res://assets/maps/nuketown/props/models/p_jun_fruit_bananas_single.gltf",
+    "p_pent_coffeemug": "res://assets/maps/nuketown/props/models/p_pent_coffeemug.gltf",
+    "p_pent_manila_folder_2": "res://assets/maps/nuketown/props/models/p_pent_manila_folder_2.gltf",
+    "p_rus_duct_tape": "res://assets/maps/nuketown/props/models/p_rus_duct_tape.gltf",
+    "p_rus_stapler": "res://assets/maps/nuketown/props/models/p_rus_stapler.gltf",
+    "p_rus_tape_dispenser": "res://assets/maps/nuketown/props/models/p_rus_tape_dispenser.gltf",
+    "prop_suitcase_bomb": "res://assets/maps/nuketown/props/models/prop_suitcase_bomb.gltf",
+    "t6_wpn_supply_drop_hq": "res://assets/maps/nuketown/props/models/t6_wpn_supply_drop_hq.gltf",
+    "veh_t6_engine_part1": "res://assets/maps/nuketown/props/models/veh_t6_engine_part1.gltf",
+    "veh_t6_engine_part3": "res://assets/maps/nuketown/props/models/veh_t6_engine_part3.gltf",
+    "veh_t6_nuketown_2020_car01_clean": "res://assets/maps/nuketown/props/models/veh_t6_nuketown_2020_car01_clean.gltf",
+    "veh_t6_nuketown_2020_car01_whole": "res://assets/maps/nuketown/props/models/veh_t6_nuketown_2020_car01_whole.gltf",
+    "veh_t6_nuketown_2020_car02_clean": "res://assets/maps/nuketown/props/models/veh_t6_nuketown_2020_car02_clean.gltf",
+    "veh_t6_nuketown_2020_car02_whole": "res://assets/maps/nuketown/props/models/veh_t6_nuketown_2020_car02_whole.gltf"
+  },
+  "static_duplicates": [],
+  "skipped": [
+    {
+      "model": "veh_t6_nuketown_2020_car02_clean",
+      "targetname": "nuke_animated_car02",
+      "source_index": 296,
+      "reason": "hidden_outro_copy",
+      "source_keys": {
+        "classname": "script_model",
+        "model": "veh_t6_nuketown_2020_car02_clean",
+        "spawnflags": "2",
+        "origin": "37.8 -894.44 -66.5",
+        "targetname": "nuke_animated_car02",
+        "angles": "0 37.4 0",
+        "guid": "E1E286BB"
+      }
+    },
+    {
+      "model": "veh_t6_nuketown_2020_car01_clean",
+      "targetname": "nuke_animated_car01",
+      "source_index": 297,
+      "reason": "hidden_outro_copy",
+      "source_keys": {
+        "classname": "script_model",
+        "model": "veh_t6_nuketown_2020_car01_clean",
+        "spawnflags": "2",
+        "origin": "32 -472 -56",
+        "targetname": "nuke_animated_car01",
+        "guid": "9C77A2DB"
+      }
+    },
+    {
+      "model": "fxanim_mp_nuked2025_display_glass_mod",
+      "targetname": "nuke_display_glass_client",
+      "source_index": 301,
+      "reason": "hidden_outro_copy",
+      "source_keys": {
+        "classname": "script_model",
+        "model": "fxanim_mp_nuked2025_display_glass_mod",
+        "origin": "32 -472.5 -56",
+        "spawnflags": "2",
+        "targetname": "nuke_display_glass_client",
+        "guid": "A6869204"
+      }
+    },
+    {
+      "model": "mp_flag_neutral",
+      "targetname": "ctf_flag_allies",
+      "source_index": 616,
+      "reason": "missing_gltf_geometry",
+      "source_keys": {
+        "script_team": "allies",
+        "spawnflags": "4",
+        "script_gameobjectname": "ctf",
+        "origin": "1230 677 -63.3",
+        "targetname": "ctf_flag_allies",
+        "model": "mp_flag_neutral",
+        "classname": "script_model",
+        "guid": "D0DE2370"
+      }
+    },
+    {
+      "model": "mp_flag_neutral",
+      "targetname": "ctf_flag_axis",
+      "source_index": 623,
+      "reason": "missing_gltf_geometry",
+      "source_keys": {
+        "angles": "0 159 0",
+        "script_team": "axis",
+        "spawnflags": "4",
+        "script_gameobjectname": "ctf",
+        "origin": "-1248.93 303.458 -59.6",
+        "targetname": "ctf_flag_axis",
+        "model": "mp_flag_neutral",
+        "classname": "script_model",
+        "guid": "114E055B"
+      }
+    },
+    {
+      "model": "tag_origin",
+      "targetname": "player_tv_position",
+      "source_index": 793,
+      "reason": "placeholder_model",
+      "source_keys": {
+        "classname": "script_model",
+        "angles": "8.20201 125.009 -0.854177",
+        "origin": "-195.5 419.5 -58.5",
+        "model": "tag_origin",
+        "targetname": "player_tv_position",
+        "guid": "019BAFF0"
+      }
+    }
+  ],
+  "unsupported_gametypes": [
+    "dm",
+    "tdm"
+  ],
+  "notes": [
+    "Entities retain every authored source key; the runtime filters gametypes.",
+    "Entities whose gametype keys are only dm/tdm are skipped as unsupported.",
+    "Bomb/tablet objective-mode assets missing from the OAT dump are listed in unresolved; the CLI exits nonzero unless --allow-unresolved is passed."
+  ],
+  "unresolved": [
+    {
+      "kind": "material",
+      "name": "mc/mtl_t6_wpn_briefcase_bomb",
+      "detail": "OAT material metadata not found"
+    },
+    {
+      "kind": "material",
+      "name": "mc/mtl_t6_wpn_briefcase_bomb_detail",
+      "detail": "OAT material metadata not found"
+    },
+    {
+      "kind": "material",
+      "name": "mc/mtl_t6_wpn_laster_cutter",
+      "detail": "OAT material metadata not found"
+    },
+    {
+      "kind": "material",
+      "name": "mc/mtl_t6_wpn_briefcase_bomb_alpha",
+      "detail": "OAT material metadata not found"
+    },
+    {
+      "kind": "material",
+      "name": "mc/mtl_t6_wpn_tablet",
+      "detail": "OAT material metadata not found"
+    },
+    {
+      "kind": "texture",
+      "name": "../images/mtl_t6_wpn_supply_drop_nml.dds",
+      "detail": "DDS source not found"
+    }
+  ],
+  "source": {
+    "map": "mp_nuketown_2020",
+    "entity_file": "mp_nuketown_2020_entities.txt",
+    "static_placements": 2992,
+    "dynamic_placements": 131
+  },
+  "units": "meters",
+  "coordinates": "x,z,-y",
+  "source_units_to_meters": 0.0254,
+  "counts": {
+    "entities": 141,
+    "loose": 131,
+    "models": 108,
+    "static_duplicates": 0,
+    "skipped": 6,
+    "unresolved": 6,
+    "nodes": 371,
+    "triangles": 202845,
+    "textures": 156
+  }
+}

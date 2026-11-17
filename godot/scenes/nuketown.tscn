@@ -9,6 +9,8 @@
 
 [ext_resource type="PackedScene" path="res://scenes/ui/pause_menu.tscn" id="8_pause"]
 
+[ext_resource type="Script" path="res://scripts/nuketown_props.gd" id="10_props"]
+
 [sub_resource type="PanoramaSkyMaterial" id="SkyMat"]
 panorama = ExtResource("9_sky")
 
@@ -185,3 +187,6 @@ predelay_ms = 8.0
 outdoor = "day"
 outdoor_db = -16.0
 indoor_db = -14.0
+
+[node name="Props" type="Node3D" parent="."]
+script = ExtResource("10_props")

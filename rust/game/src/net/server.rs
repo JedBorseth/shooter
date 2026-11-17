@@ -76,6 +76,7 @@ use shooter_sim::{Vec2, Vec3, rng};
 
 use super::bots::{BotBrain, BotNavigation, BotObjective, BotPlayer, BotWorld};
 use super::discovery::QueryResponder;
+use super::props::{PropExplosion, PropSnapshot, PropsBridge};
 use super::transport::{self, NetEvent};
 use crate::body::{self, BodyParts};
 use crate::convert::{to_godot, to_sim};
@@ -121,6 +122,11 @@ const DEFEND_RADIUS: f32 = 6.0;
 const ZONE_SPAWN_THREATS: usize = 2;
 /// Seconds a Hardpoint bot holds one spot in the zone.
 const ZONE_SPOT_SECONDS: u32 = 4;
+/// Height above a player's feet that an explosion is checked against.
+const EXPLOSION_TARGET_HEIGHT: f32 = 1.0;
+/// How far short of a player a wall or prop must be to absorb an explosion.
+/// Keeps the exploding prop's own surface from blocking the blast.
+const BLAST_CLEARANCE: f32 = 0.15;
 
 #[derive(GodotClass)]
 #[class(init, base = Node3D)]
@@ -232,6 +238,13 @@ pub struct NetServer {
     zones: Vec<Zone>,
     hardpoint_rules: HardpointRules,
     hardpoint: HardpointState,
+    /// The map's interactive props manager, when the map has one.
+    props: PropsBridge,
+    /// Population last sent to the props manager, to avoid redundant calls.
+    props_population: Option<i32>,
+    /// Ticks until looking for the props manager again (maps without props
+    /// never pay more than a group lookup every couple of seconds).
+    props_retry: u32,
 }
 
 struct ClientSlot {
@@ -297,6 +310,15 @@ struct Shot {
     /// The shooter's round trip in seconds (players only), which bounds how
     /// far back their view tick may be.
     rtt: Option<f32>,
+}
+
+/// One pellet's hit on a damageable prop, before player hits are known.
+struct PropHit {
+    id: u16,
+    /// Distance from the eye, to compare with player hits.
+    distance: f32,
+    direction: Vec3,
+    damage: f32,
 }
 
 #[godot_api]
@@ -450,6 +472,7 @@ impl INode3D for NetServer {
         self.update_flags();
         self.update_hardpoint();
         self.update_match();
+        self.update_props();
         self.tick += 1;
         if self
             .tick
@@ -730,6 +753,11 @@ impl NetServer {
         }
         map.set_process_mode(godot::classes::node::ProcessMode::PAUSABLE);
         self.base_mut().add_child(&map);
+        // Groups register when a node enters the tree, so find the props
+        // manager after the map is a child.
+        self.props = PropsBridge::discover_under(&map);
+        self.props_population = None;
+        self.props_retry = 0;
     }
 
     fn handle_event(&mut self, event: NetEvent) {
@@ -828,6 +856,11 @@ impl NetServer {
                     self.send_event(id, zones);
                     let status = self.hardpoint_event();
                     self.send_event(id, status);
+                }
+                // A late joiner needs the props as they are now: everyone
+                // already here saw each change as it happened.
+                for state in self.props.snapshot_states() {
+                    self.send_event(id, prop_event(&state));
                 }
                 godot_print!("server: player {id} \"{name}\" joined");
             }
@@ -1272,6 +1305,9 @@ impl NetServer {
         };
         let def = shot.weapon.def();
         let origin = to_sim(shot.eye);
+        // Maps without props skip the metadata walk entirely.
+        let track_props = self.props.is_active();
+        let mut prop_hits: Vec<PropHit> = Vec::new();
         let pellets: Vec<Pellet> = (0..def.pellets)
             .map(|pellet| {
                 let offset =
@@ -1297,6 +1333,18 @@ impl NetServer {
                     {
                         scale = hit.damage_scale;
                         *wall = (shot.eye.distance_to(hit.position), scale);
+                    }
+                    // Props are hit in the present like walls; whether the
+                    // pellet reached one is decided below, once player hits
+                    // are known.
+                    if track_props && let Some(id) = prop_id_of(hit.collider.as_ref()) {
+                        let distance = shot.eye.distance_to(hit.position);
+                        prop_hits.push(PropHit {
+                            id,
+                            distance,
+                            direction,
+                            damage: def.damage_at(distance) * hit.damage_scale,
+                        });
                     }
                 }
                 pellet
@@ -1339,7 +1387,8 @@ impl NetServer {
         let mut kills = Vec::new();
         let mut carrier_kills = 0;
         let mut objective_kills = Vec::new();
-        for hit in lag::resolve_shot(def, &pellets, &targets) {
+        let hits = lag::resolve_shot(def, &pellets, &targets);
+        for hit in &hits {
             let Some(victim) = self.avatars.iter_mut().find(|a| a.id == hit.id) else {
                 continue;
             };
@@ -1436,6 +1485,7 @@ impl NetServer {
                 }
             }
         }
+        self.damage_props(shot.shooter, shot.weapon, &prop_hits, &hits);
         // Points only count in a match, not in the lobby's warm-up.
         if !kills.is_empty() && self.match_state.scoring() {
             let rules = self.score_rules;
@@ -1454,6 +1504,221 @@ impl NetServer {
             );
             let totals = shooter.score.totals();
             self.send_event(shot.shooter, GameEvent::Score { awards, totals });
+        }
+    }
+
+    /// Damages the props this shot struck, once player hits are known. A
+    /// pellet that hit a player closer than the prop never reached it. The
+    /// manager owns prop health and stages; what it queues is broadcast on
+    /// the next tick.
+    fn damage_props(
+        &self,
+        attacker: u8,
+        weapon: WeaponId,
+        prop_hits: &[PropHit],
+        target_hits: &[lag::TargetHit],
+    ) {
+        if prop_hits.is_empty() || !self.props.is_active() {
+            return;
+        }
+        // Conservative: if anyone was hit closer than a prop, the prop is
+        // behind cover from the shooter's point of view on that pellet.
+        let nearest_player = target_hits
+            .iter()
+            .map(|hit| hit.distance)
+            .fold(f32::INFINITY, f32::min);
+        let mut totals: Vec<(u16, f32, Vec3)> = Vec::new();
+        for hit in prop_hits {
+            if hit.distance >= nearest_player || hit.damage <= 0.0 {
+                continue;
+            }
+            match totals.iter_mut().find(|(id, _, _)| *id == hit.id) {
+                Some((_, damage, impulse)) => {
+                    *damage += hit.damage;
+                    *impulse += hit.direction * hit.damage;
+                }
+                None => totals.push((hit.id, hit.damage, hit.direction * hit.damage)),
+            }
+        }
+        for (id, damage, impulse) in totals {
+            self.props
+                .damage_prop(id, damage, impulse, attacker, weapon);
+        }
+    }
+
+    /// Drains the props manager once a tick: population, changed prop states
+    /// for every client, and explosions to apply to players.
+    fn update_props(&mut self) {
+        if !self.props.is_active() {
+            if self.props_retry > 0 {
+                self.props_retry -= 1;
+                return;
+            }
+            self.props_retry = 2 * TICK_RATE;
+            // The map manager may have been added after the map loaded (or a
+            // map without props may stay that way).
+            if let Some(map) = self.base().get_child(0) {
+                self.props = PropsBridge::discover_under(&map);
+                // A replacement manager needs the population again.
+                self.props_population = None;
+            }
+            if !self.props.is_active() {
+                return;
+            }
+        }
+        let population = self.avatars.len().min(i32::MAX as usize) as i32;
+        if self.props_population != Some(population) {
+            self.props.set_population(population);
+            self.props_population = Some(population);
+        }
+        for state in self.props.drain_events() {
+            self.broadcast_event(&prop_event(&state));
+        }
+        for blast in self.props.drain_explosions() {
+            self.resolve_explosion(&blast);
+        }
+    }
+
+    /// Resets every prop and tells clients only the ones that changed. Called
+    /// when a match starts and when the server falls back to the lobby, so a
+    /// fresh match never inherits last match's debris.
+    fn reset_props(&mut self) {
+        if !self.props.is_active() {
+            return;
+        }
+        let before = self.props.snapshot_states();
+        self.props.reset();
+        // The reset may queue the same changes as events; the diff below is
+        // complete, so drop them to avoid sending every change twice.
+        let _ = self.props.drain_events();
+        for state in self.props.snapshot_states() {
+            let previous = before.iter().find(|old| old.id == state.id);
+            if previous != Some(&state) {
+                self.broadcast_event(&prop_event(&state));
+            }
+        }
+    }
+
+    /// Applies one prop explosion on the server: distance falloff, obstruction
+    /// by the map, no friendly fire (but self-damage counts), kill credit, and
+    /// the same scoring paths as gunfire. Prop-to-prop damage stays in the
+    /// manager's chain reaction, so this never feeds back into it.
+    fn resolve_explosion(&mut self, blast: &PropExplosion) {
+        if matches!(
+            self.match_state.phase,
+            Phase::Countdown | Phase::Ended { .. }
+        ) {
+            return;
+        }
+        if !(blast.radius.is_finite() && blast.radius > 0.0)
+            || !(blast.damage.is_finite() && blast.damage > 0.0)
+            || !blast.position.is_finite()
+        {
+            return;
+        }
+        let attacker = blast
+            .attacker
+            .filter(|id| self.avatars.iter().any(|a| a.id == *id));
+        let attacker_team =
+            attacker.and_then(|id| self.avatars.iter().find(|a| a.id == id).map(|a| a.team));
+        let Some(mut space) = self
+            .base()
+            .get_world_3d()
+            .and_then(|world| world.get_direct_space_state())
+        else {
+            return;
+        };
+        let origin = to_godot(blast.position);
+        let mut victims: Vec<(u8, f32, f32)> = Vec::new();
+        for avatar in &self.avatars {
+            if !avatar.predicted.state.alive() {
+                continue;
+            }
+            let self_hit = Some(avatar.id) == attacker;
+            // No friendly fire, but the player who set it off can hurt
+            // themselves.
+            if !self_hit && attacker_team.is_some_and(|team| team == avatar.team) {
+                continue;
+            }
+            let chest = to_godot(avatar.predicted.position) + Vector3::UP * EXPLOSION_TARGET_HEIGHT;
+            let distance = origin.distance_to(chest);
+            if distance > blast.radius {
+                continue;
+            }
+            let blocked = world_hit(&mut space, origin, chest)
+                .is_some_and(|hit| origin.distance_to(hit) + BLAST_CLEARANCE < distance);
+            if blocked {
+                continue;
+            }
+            let damage =
+                blast.damage + (blast.outer_damage - blast.damage) * (distance / blast.radius);
+            if damage > 0.0 {
+                victims.push((avatar.id, distance, damage));
+            }
+        }
+
+        let weapon = blast.weapon.unwrap_or_else(default_primary);
+        let mut kills = Vec::new();
+        for (id, distance, damage) in victims {
+            let Some(victim) = self.avatars.iter_mut().find(|a| a.id == id) else {
+                continue;
+            };
+            let killed =
+                player::apply_damage(&mut victim.predicted.state, damage, false, &mut Vec::new());
+            if let Some(attacker) = attacker
+                && let Some(brain) = &mut victim.brain
+            {
+                brain.on_hurt(attacker, to_godot(blast.position), self.tick);
+            }
+            self.send_event(
+                id,
+                GameEvent::Hurt {
+                    // Blasts with no player behind them use an id no roster
+                    // has; the HUD only uses the damage and direction.
+                    attacker: attacker.unwrap_or(u8::MAX),
+                    from: blast.position,
+                    damage,
+                    killed,
+                },
+            );
+            if killed {
+                let credited = attacker.filter(|attacker| *attacker != id);
+                self.broadcast_event(&GameEvent::Kill {
+                    killer: credited.unwrap_or(id),
+                    victim: id,
+                    weapon,
+                    headshot: false,
+                });
+                self.record_death(id);
+                if credited.is_some() {
+                    kills.push(Kill {
+                        distance,
+                        headshot: false,
+                    });
+                }
+                let victim_team = self.avatars.iter().find(|a| a.id == id).map(|a| a.team);
+                let killer_team = credited.and(attacker_team);
+                if let Some(victim_team) = victim_team
+                    && let Some(end) =
+                        self.match_state
+                            .on_kill(&self.rules, killer_team, victim_team)
+                {
+                    self.on_transition(end);
+                } else {
+                    self.broadcast_match();
+                }
+            }
+        }
+        // Points only count in a match, and only for a credited attacker.
+        if !kills.is_empty() && self.match_state.scoring() {
+            let rules = self.score_rules;
+            if let Some(attacker) = attacker
+                && let Some(shooter) = self.avatars.iter_mut().find(|a| a.id == attacker)
+            {
+                let awards = shooter.score.on_shot_kills(&rules, &kills);
+                let totals = shooter.score.totals();
+                self.send_event(attacker, GameEvent::Score { awards, totals });
+            }
         }
     }
 
@@ -1495,6 +1760,8 @@ impl NetServer {
         if humans.is_empty() && !self.auto_start {
             if self.match_state.phase != Phase::Lobby {
                 self.match_state.reset();
+                // Back in the lobby, put the map back the way it started.
+                self.reset_props();
             }
             return;
         }
@@ -1550,6 +1817,7 @@ impl NetServer {
                         },
                     );
                 }
+                self.reset_props();
             }
             Transition::Ended { winner } => {
                 if self.game.free_for_all() {
@@ -2166,6 +2434,26 @@ fn bot_input(avatar: &Avatar, tick: Tick) -> PlayerInput {
     .quantized()
 }
 
+/// The damageable prop a collider belongs to, from `prop_id` metadata on it
+/// or any of its ancestors.
+fn prop_id_of(collider: Option<&Gd<Node>>) -> Option<u16> {
+    let mut node = collider.cloned();
+    while let Some(current) = node {
+        let id = current
+            .get_meta_ex("prop_id")
+            .default(&Variant::nil())
+            .done()
+            .try_to::<i32>()
+            .ok()
+            .and_then(|id| u16::try_from(id).ok());
+        if id.is_some() {
+            return id;
+        }
+        node = current.get_parent();
+    }
+    None
+}
+
 /// Where a ray from `from` to `to` first meets the map, if it does. Players
 /// are on their own layer, so only walls, floors, and props count.
 fn world_hit(
@@ -2224,6 +2512,15 @@ fn joined_event(avatar: &Avatar) -> GameEvent {
         name: avatar.name.clone(),
         team: avatar.team,
         bot: avatar.bot,
+    }
+}
+
+/// A prop state as the reliable event clients apply.
+fn prop_event(state: &PropSnapshot) -> GameEvent {
+    GameEvent::PropState {
+        id: state.id,
+        stage: state.stage,
+        impulse: state.impulse,
     }
 }
 

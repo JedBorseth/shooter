@@ -6,6 +6,7 @@
 mod bots;
 mod client;
 mod discovery;
+mod props;
 mod remote;
 mod server;
 mod transport;
