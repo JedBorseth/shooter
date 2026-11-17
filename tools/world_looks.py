@@ -149,7 +149,7 @@ SLAMCITY_LOOKS: dict[str, dict] = {
     "tile_laundry_floor": _t("tiles_floor", 1.6, (0.6, 0.66, 0.72), grime=0.0),
     "tile_store": _t("tiles_floor", 2.0, (0.86, 0.86, 0.83), grime=0.0),
     "tile_hall": _t("tiles_floor", 1.2, (0.72, 0.6, 0.5), grime=0.0),
-    "terrazzo": _t("terrazzo", 0.8, (0.62, 0.6, 0.58), grime=0.0),
+    "terrazzo": _t("terrazzo", 2.5, (0.62, 0.6, 0.58), grime=0.0),
     "checker": _t("tiles_floor", 1.2, (0.95, 0.94, 0.9), grime=0.0, checker=(0.3, (0.08, 0.08, 0.09))),
     # Wood
     "wood": _t("planks", 2.0, (1.0, 0.95, 0.88)),
@@ -180,7 +180,9 @@ SLAMCITY_LOOKS: dict[str, dict] = {
     "roof_corrugated": _t("corrugated", 2.0, (0.58, 0.6, 0.62), metal=0.6, grime=0.0),
     # The platform canopy is seen at a glancing angle down its length, where
     # fine ribs shimmer: a coarser scale.
-    "canopy_corrugated": _t("corrugated", 3.5, (0.56, 0.58, 0.6), metal=0.5, grime=0.0),
+    "canopy_corrugated": _t("corrugated", 3.5, (0.56, 0.58, 0.6), metal=0.2, rough=1.3, grime=0.0),
+    # The derailed car: painted steel, dirtier toward the alley it lies in.
+    "train_wreck": _t("painted_metal", 2.5, (0.58, 0.59, 0.6), metal=0.6, grime=0.35),
     "roof_tank": _t("corrugated", 1.5, (0.38, 0.33, 0.3), metal=0.4, grime=0.0),
     # Painted and bare metal
     "girder": _t("painted_metal", 2.0, (0.2, 0.33, 0.26), metal=0.5, rough=0.8, grime=0.35),
@@ -215,7 +217,7 @@ SLAMCITY_LOOKS: dict[str, dict] = {
     "barrier_yellow": _t("painted_metal", 1.5, (0.95, 0.72, 0.08), rough=0.6, metal=0.0, grime=0.5),
     "safety_yellow": _t("painted_metal", 1.5, (0.95, 0.76, 0.12), rough=0.7, metal=0.0, grime=0.3),
     "seat_vinyl": _t("canvas", 0.8, (0.34, 0.38, 0.38), rough=0.5, grime=0.0),
-    "train_interior": _t("painted_metal", 2.0, (0.8, 0.78, 0.7), rough=0.5, metal=0.0, grime=0.2),
+    "train_interior": _t("plaster", 3.0, (0.8, 0.78, 0.7), rough=0.7, grime=0.0),
     # Awnings
     "awning_red": _t("canvas", 1.5, (0.72, 0.1, 0.1), stripes=(0.32, (0.92, 0.9, 0.86))),
     "awning_green": _t("canvas", 1.5, (0.12, 0.42, 0.24), stripes=(0.32, (0.92, 0.9, 0.84))),
@@ -252,11 +254,11 @@ SLAMCITY_LOOKS: dict[str, dict] = {
     "fabric_green": _p((0.22, 0.34, 0.24), 0.9), "rug_red": _p((0.45, 0.1, 0.08), 0.95),
     "foliage": _p((0.16, 0.3, 0.1), 0.8), "bark": _p((0.24, 0.18, 0.12), 0.9),
     "soil": _p((0.12, 0.09, 0.07), 1.0), "trash_bag": _p((0.03, 0.03, 0.035), 0.3),
-    "train_wreck": _p((0.6, 0.61, 0.62), 0.45, 1),
+    "paper_litter": _p((0.55, 0.54, 0.5), 0.95), "paper_brown": _p((0.42, 0.33, 0.24), 0.95),
     "pipe_blue": _p((0.15, 0.3, 0.6), 0.5), "pipe_yellow": _p((0.85, 0.7, 0.1), 0.5),
     "lamp_shade": _p((0.14, 0.26, 0.2), 0.4), "terracotta": _p((0.6, 0.3, 0.2), 0.8),
     "rust": _p((0.3, 0.13, 0.06), 0.9), "underbody": _p((0.42, 0.38, 0.33), 0.9),
-    "glass_shard": _p((0.45, 0.5, 0.52), 0.05), "soot": _p((0.16, 0.145, 0.13), 0.95),
+    "glass_shard": _p((0.7, 0.75, 0.77), 0.04), "soot": _p((0.16, 0.145, 0.13), 0.95),
 
     "light_lens": _p((0.9, 0.9, 0.88), 0.08), "tail_lens": _p((0.55, 0.02, 0.02), 0.1),
     "sign_white": _p((0.92, 0.92, 0.9), 0.5), "train_stripe": _p((0.72, 0.05, 0.1), 0.4),

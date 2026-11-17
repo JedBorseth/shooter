@@ -13,5 +13,5 @@ shader_parameter/orm_tex = ExtResource("4_orm")
 shader_parameter/textured = true
 shader_parameter/tile_size = 3.5
 shader_parameter/use_vertex_color = true
-shader_parameter/metallic_scale = 0.5
+shader_parameter/metallic_scale = 0
 shader_parameter/grime = 0

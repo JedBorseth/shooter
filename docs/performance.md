@@ -128,3 +128,5 @@ GPU time on Medium at 1080p on the reference card, average over viewpoints (wors
 | Corrected grade table, Slamcity grade, lighter vignette, haze in the Testing Area | 5.12 (5.27) ms | 6.53 (6.65) ms | 5.31 (5.76) ms |
 | Slamcity rebuilt: a lightmapped dusk block under an elevated railway (same viewpoints; the water-jet and wreck close-ups, measured apart, are 7.2 to 7.4 ms) | 5.02 (5.17) ms | 7.27 (7.47) ms | 5.21 (5.66) ms |
 | Slamcity's road markings as painted geometry instead of decals (71 to 47 decals) | | 7.04 (7.26) ms | |
+
+Slamcity's 7.0 ms on Medium is about 0.5 ms more than the old map, over the usual 5% step. It was accepted for the rebuild: the rest is the denser map's own shading (decals, the skyline, small detail, and props are about 0.15 ms each), and the next cut would remove visible detail.

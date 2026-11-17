@@ -422,13 +422,15 @@ def _wreck_damage(b, hw, hl, floor, roof, windows, win_y):
                 (x + 0.28, roof - 0.18 - drop * 0.8, z + 0.24)], "steel_galv", detail=True)
     # Glass from the broken windows: on the floor by the door bays and on the
     # seats, small and glossy so it catches the light.
-    for k in range(34):
+    for k in range(70):
         side = rng.choice((-1, 1))
-        on_seat = k % 3 == 0
-        x = side * (rng.uniform(1.0, 1.3) if on_seat else rng.uniform(0.25, 0.9))
+        on_seat = k % 4 == 0
+        # Most of it under the window bays it fell from.
+        bay = rng.choice([w for w in windows if (w[0] + w[1]) / 2 > L.TORN_TO])
+        x = side * (rng.uniform(1.0, 1.3) if on_seat else rng.uniform(0.3, 0.9))
         y = floor + (0.475 if on_seat else 0.012)
-        z = rng.uniform(L.TORN_TO + 0.5, hl - 0.5)
-        r = rng.uniform(0.03, 0.07)
+        z = rng.uniform(bay[0], bay[1])
+        r = rng.uniform(0.05, 0.12)
         b.hull([(x, y, z), (x + r, y, z + r * 0.4), (x + r * 0.3, y, z - r), (x + r * 0.4, y + 0.004, z)],
                "glass_shard", detail=True)
     for s in (-1, 1):
@@ -1660,7 +1662,10 @@ def platform_shelter(b: Model, length=3.6):
         b.box(x - 0.04, x + 0.04, 2.3, 2.45, -0.8, 0.82, "steel_galv")
         b.box(x - 0.015, x + 0.015, 0.15, 2.3, -0.8, 0.82, "glass_clear")
     b.box(-hl - 0.1, hl + 0.1, 2.4, 2.55, -1.0, 1.0, "fascia_station", bevel=0.02)
-    b.box(-hl + 0.1, hl - 0.1, 2.39, 2.4, -0.7, 0.7, "lamp_tube")
+    # Two tubes, not one glowing slab: a panel the size of the roof bloomed
+    # over the posters.
+    for z in (-0.35, 0.35):
+        b.box(-hl + 0.2, hl - 0.2, 2.37, 2.4, z - 0.04, z + 0.04, "lamp_tube")
     b.box(-hl + 0.3, hl - 0.3, 0.42, 0.48, -0.78, -0.35, "wood", bevel=0.01)
     for x in (-hl + 0.5, hl - 0.5):
         b.box(x - 0.03, x + 0.03, 0.0, 0.42, -0.7, -0.4, "steel_dark")
@@ -1737,12 +1742,14 @@ def litter(b: Model, seed=0):
     for k in range(5):
         x, z = rng.uniform(-1.2, 1.2), rng.uniform(-1.2, 1.2)
         a = rng.uniform(0, PI)
-        w, d = rng.uniform(0.12, 0.3), rng.uniform(0.1, 0.22)
+        # Real-sized scraps (a receipt, a flyer, a wrapper), some bent up.
+        w, d = rng.uniform(0.05, 0.12), rng.uniform(0.04, 0.1)
         c, s_ = math.cos(a), math.sin(a)
-        pts = [(x + c * u - s_ * v, 0.004 + 0.01 * (k % 2), z + s_ * u + c * v)
+        lift = 0.03 if k % 2 else 0.0
+        pts = [(x + c * u - s_ * v, 0.004 + (lift if u > 0 else 0.0), z + s_ * u + c * v)
                for u, v in ((-w, -d), (w, -d), (w, d), (-w, d))]
-        pts += [(px, py + 0.006, pz) for px, py, pz in pts]
-        b.hull(pts, rng.choice(["newspaper_stack", "goods_white", "goods_red", "fabric_white"]), detail=True)
+        pts += [(px, py + 0.004, pz) for px, py, pz in pts]
+        b.hull(pts, rng.choice(["newspaper_stack", "paper_litter", "paper_brown"]), detail=True)
     x, z = rng.uniform(-1, 1), rng.uniform(-1, 1)
     b.cyl("x", x - 0.06, x + 0.06, (0.033, z), 0.033, rng.choice(["goods_red", "goods_green", "chrome"]),
           sides=8, detail=True)

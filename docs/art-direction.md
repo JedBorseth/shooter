@@ -68,11 +68,11 @@ Slamcity is a city block at dusk cut by an elevated railway. Every surface of it
 
 Hardpoint rotates through five zones on the mirror line: the Ticket Hall, Under the El, the Roadworks in the pit, the Back Alley, and the Platforms. Every move goes at least 16 m to a zone whose footprint does not touch the last one's (`check_hardpoint_hops`), so the fight moves across the map instead of a room over or a floor up, and the south storefronts, the avenue, and the alley take turns as the approach.
 
-The map's set pieces are the derailed car, nose-down in the alley with its roof crushed, its sides torn and sooted, and a bogie hanging by its cables, and the burst water main in the roadworks pit (`godot/scenes/effects/water_spray.tscn`): a column of thin velocity-aligned streaks with a little mist and splash, about 1 ms of GPU time when it fills the screen on Medium (the `slamcity_closeups` benchmark views watch both).
+The map's set pieces are the derailed car, nose-down in the alley with its roof crushed, its painted steel torn and scorched at the nose, and a bogie hanging by its cables, and the burst water main in the roadworks pit (`godot/scenes/effects/water_spray.tscn`): a column of thin velocity-aligned streaks with a little mist and splash, about 1 ms of GPU time when it fills the screen on Medium (the `slamcity_closeups` benchmark views watch both).
 
 #### Decals and trim
 
-Slamcity's surfaces carry CC0 ambientCG decals (`tools/build_decals.py` packs them into `godot/assets/textures/decals/`): worn crossings, dashed centre lines, and edge lines (grey in the texture, painted white or yellow by the Decal's modulate), patched and broken asphalt, manholes, rain streaks under the roof edges, parking bays in the yards, and puddles and oil stains the tool generates (their ORM map makes puddles nearly mirror-smooth, so they catch the sky). Following the rule that texture detail stays quiet, there is no graffiti where players look for enemies.
+Slamcity's road markings (the crossings, centre lines, edge lines, and parking bays) are thin painted strips in the city mesh, baked into the lightmap: as decals they cost about a third of a millisecond. Its other surfaces carry CC0 ambientCG decals (`tools/build_decals.py` packs them into `godot/assets/textures/decals/`): patched and broken asphalt, manholes, rain streaks under the roof edges, and puddles and oil stains the tool generates (their ORM map makes puddles nearly mirror-smooth, so they catch the sky). Following the rule that texture detail stays quiet, there is no graffiti where players look for enemies.
 
 Visual trim has no collision, so it never changes movement or cover: window frames, sills, lintels, cornices, quoins, and downpipes on the buildings.
 
