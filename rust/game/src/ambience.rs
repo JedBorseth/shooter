@@ -7,6 +7,13 @@
 //! tone in. Air conditioners hum and lamps buzz from where they stand, found by
 //! the prop they were instanced from, so a map gets them without placing any.
 //!
+//! On top of the beds, the world moves: wind gusts sweep past and loose metal
+//! rattles somewhere nearby every so often (outdoors; muffled like the bed
+//! indoors). A map can also set `distant_battle` for a fight far beyond its
+//! edges: real far-away recordings of the game's guns in bursts, and now and
+//! then a distant explosion, from 250-400 m out, one voice at a time. It is off
+//! by default, so on multiplayer maps every gunshot you hear is a real one.
+//!
 //! Beds play on the Ambience bus, which ducks under gunfire (a compressor keyed
 //! from the Weapons bus) and sits low enough never to cover a footstep. Nothing
 //! starts until there is a camera, so the dedicated server never plays any.
@@ -14,12 +21,13 @@
 use godot::classes::audio_stream_player_3d::AttenuationModel;
 use godot::classes::{
     AudioEffectLowPassFilter, AudioServer, AudioStream, AudioStreamOggVorbis, AudioStreamPlayer,
-    AudioStreamPlayer3D, INode3D, Node, Node3D, ResourceLoader,
+    AudioStreamPlayer3D, AudioStreamRandomizer, INode3D, Node, Node3D, ResourceLoader,
 };
 use godot::global::randf_range;
 use godot::prelude::*;
 
 use crate::acoustics::zone_at;
+use crate::audio;
 
 const AMBIENCE_DIR: &str = "res://assets/audio/ambience";
 const BUS: &str = "Ambience";
@@ -34,6 +42,39 @@ const INDOOR_OUTDOOR_DB: f32 = 9.0;
 const BLEND_RATE: f32 = 1.8;
 /// Silence, in dB, for a bed faded all the way out.
 const SILENT_DB: f32 = -60.0;
+
+/// The guns of the distant battle (their `far` recordings), and whether each
+/// fires bursts.
+const BATTLE_GUNS: [(&str, bool); 6] = [
+    ("m4", true),
+    ("ak47", true),
+    ("lsw6", true),
+    ("pdw9", true),
+    ("br3", false),
+    ("m40", false),
+];
+
+/// A horizontal offset of `distance` metres in a random direction, `rise`
+/// metres up.
+fn around(distance: f32, rise: f32) -> Vector3 {
+    let angle = randf_range(0.0, std::f64::consts::TAU) as f32;
+    Vector3::new(angle.sin() * distance, rise, angle.cos() * distance)
+}
+
+/// A one-shot's takes (`ambience/<name>_N.ogg`).
+fn one_shot(name: &str) -> Option<Gd<AudioStreamRandomizer>> {
+    thread_local! {
+        static CACHE: std::cell::RefCell<std::collections::HashMap<String, Option<Gd<AudioStreamRandomizer>>>> =
+            std::cell::RefCell::new(std::collections::HashMap::new());
+    }
+    CACHE.with(|cache| {
+        cache
+            .borrow_mut()
+            .entry(name.to_owned())
+            .or_insert_with(|| audio::variations(&format!("{AMBIENCE_DIR}/{name}"), 1.06))
+            .clone()
+    })
+}
 
 /// Props that make a sound: a part of their scene path, the loop, its level,
 /// and how far it carries (metres).
@@ -66,6 +107,27 @@ pub struct Soundscape {
     #[export]
     #[init(val = true)]
     prop_sounds: bool,
+    /// Wind gusts and loose debris now and then, outdoors.
+    #[export]
+    #[init(val = true)]
+    one_shots: bool,
+    /// A fight far beyond the map: distant bursts and explosions.
+    #[export]
+    distant_battle: bool,
+
+    /// One-shot players: a gust (non-positional, on the outdoor bus), debris
+    /// and the distant battle (positional), and when each plays next.
+    gust_player: Option<Gd<AudioStreamPlayer>>,
+    debris_player: Option<Gd<AudioStreamPlayer3D>>,
+    battle_player: Option<Gd<AudioStreamPlayer3D>>,
+    next_one_shot: f32,
+    next_battle: f32,
+    /// A burst in progress: rounds left, seconds between them, and the gun.
+    burst: Option<(u32, f32, usize)>,
+    battle_guns: Vec<Option<Gd<AudioStreamRandomizer>>>,
+    /// One-shots and battle sounds played (tests).
+    one_shots_played: u32,
+    battle_played: u32,
 
     started: bool,
     /// 0 outdoors, 1 indoors, blended.
@@ -94,6 +156,8 @@ impl INode3D for Soundscape {
         let t = 1.0 - (-BLEND_RATE * delta as f32).exp();
         self.indoors += (target - self.indoors) * t;
         self.apply_blend();
+        self.update_one_shots(listener, delta as f32);
+        self.update_battle(listener, delta as f32);
     }
 
     fn exit_tree(&mut self) {
@@ -120,6 +184,17 @@ impl Soundscape {
             .collect()
     }
 
+    /// One-shots (gusts and debris) and distant battle sounds played (tests).
+    #[func]
+    fn one_shots_heard(&self) -> u32 {
+        self.one_shots_played
+    }
+
+    #[func]
+    fn battle_heard(&self) -> u32 {
+        self.battle_played
+    }
+
     /// The props' looping sounds (tests).
     #[func]
     fn emitters(&self) -> Array<Gd<AudioStreamPlayer3D>> {
@@ -138,7 +213,126 @@ impl Soundscape {
         if self.prop_sounds {
             self.attach_prop_sounds();
         }
+        if self.one_shots {
+            let mut gust = AudioStreamPlayer::new_alloc();
+            gust.set_name("Gust");
+            gust.set_bus(OUTDOOR_BUS);
+            self.base_mut().add_child(&gust);
+            self.gust_player = Some(gust);
+            self.debris_player = Some(self.positional("Debris", 2));
+            self.next_one_shot = randf_range(4.0, 10.0) as f32;
+        }
+        if self.distant_battle {
+            self.battle_player = Some(self.positional("DistantBattle", 3));
+            self.battle_guns = BATTLE_GUNS
+                .iter()
+                .map(|(key, _)| {
+                    audio::variations(&format!("res://assets/audio/weapons/{key}/far"), 1.04)
+                })
+                .collect();
+            self.next_battle = randf_range(2.0, 6.0) as f32;
+        }
         self.apply_blend();
+    }
+
+    fn positional(&mut self, name: &str, polyphony: i32) -> Gd<AudioStreamPlayer3D> {
+        let mut player = AudioStreamPlayer3D::new_alloc();
+        player.set_name(name);
+        player.set_bus(BUS);
+        player.set_as_top_level(true);
+        // Levels are set per sound; distance is in the recordings.
+        player.set_attenuation_model(AttenuationModel::DISABLED);
+        player.set_max_polyphony(polyphony);
+        self.base_mut().add_child(&player);
+        player
+    }
+
+    /// A gust or a rattle of debris every 7-18 s, outdoors.
+    fn update_one_shots(&mut self, listener: Vector3, dt: f32) {
+        if self.gust_player.is_none() {
+            return;
+        }
+        self.next_one_shot -= dt;
+        if self.next_one_shot > 0.0 {
+            return;
+        }
+        self.next_one_shot = randf_range(7.0, 18.0) as f32;
+        if self.indoors > 0.7 {
+            return;
+        }
+        if randf_range(0.0, 1.0) < 0.7 {
+            let level = self.outdoor_db + 3.0;
+            if let (Some(stream), Some(player)) = (one_shot("gust"), self.gust_player.as_mut()) {
+                player.set_stream(&stream);
+                player.set_volume_db(level);
+                player.play();
+            }
+        } else if let (Some(stream), Some(player)) =
+            (one_shot("debris"), self.debris_player.as_mut())
+        {
+            let at = listener + around(randf_range(10.0, 25.0) as f32, 1.0);
+            player.set_global_position(at);
+            player.set_stream(&stream);
+            player.set_volume_db(-20.0);
+            player.play();
+        }
+        self.one_shots_played += 1;
+    }
+
+    /// The distant battle: a burst from one gun every 4-15 s, sometimes an
+    /// explosion, always far beyond the map.
+    fn update_battle(&mut self, listener: Vector3, dt: f32) {
+        if self.battle_player.is_none() {
+            return;
+        }
+        self.next_battle -= dt;
+        if self.next_battle > 0.0 {
+            return;
+        }
+        // Inside, the battle is barely there.
+        let level = -14.0 - 10.0 * self.indoors;
+        match self.burst {
+            Some((left, gap, gun)) if left > 0 => {
+                let stream = self.battle_guns.get(gun).cloned().flatten();
+                if let (Some(stream), Some(player)) = (stream, self.battle_player.as_mut()) {
+                    player.set_stream(&stream);
+                    player.set_volume_db(level);
+                    player.play();
+                }
+                self.battle_played += 1;
+                self.burst = Some((left - 1, gap, gun));
+                self.next_battle = gap * randf_range(0.85, 1.2) as f32;
+            }
+            _ => {
+                self.burst = None;
+                self.next_battle = randf_range(4.0, 15.0) as f32;
+                let at = listener + around(randf_range(250.0, 400.0) as f32, 0.0);
+                if let Some(player) = self.battle_player.as_mut() {
+                    player.set_global_position(at);
+                }
+                if randf_range(0.0, 1.0) < 0.18 {
+                    if let (Some(stream), Some(player)) =
+                        (one_shot("explosion_far"), self.battle_player.as_mut())
+                    {
+                        player.set_stream(&stream);
+                        player.set_volume_db(level + 2.0);
+                        player.play();
+                    }
+                    self.battle_played += 1;
+                } else {
+                    let gun = (randf_range(0.0, BATTLE_GUNS.len() as f64) as usize)
+                        .min(BATTLE_GUNS.len() - 1);
+                    let (_, automatic) = BATTLE_GUNS[gun];
+                    let (rounds, gap) = if automatic {
+                        (randf_range(3.0, 9.0) as u32, randf_range(0.08, 0.11) as f32)
+                    } else {
+                        (randf_range(1.0, 4.0) as u32, randf_range(0.4, 0.9) as f32)
+                    };
+                    self.burst = Some((rounds, gap, gun));
+                    self.next_battle = 0.0;
+                }
+            }
+        }
     }
 
     fn bed(&mut self, name: &str, bus: &str, node: &str) -> Option<Gd<AudioStreamPlayer>> {

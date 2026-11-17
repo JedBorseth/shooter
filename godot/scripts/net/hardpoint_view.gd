@@ -24,7 +24,7 @@ const WALL_HEIGHT := 1.4
 const CALL_SECONDS := 2.6
 const FONT_HEAVY := preload("res://assets/fonts/BarlowCondensed-ExtraBold.ttf")
 const FONT_BOLD := preload("res://assets/fonts/BarlowCondensed-Bold.ttf")
-const CALL_SOUND := preload("res://assets/audio/ui/medal.ogg")
+const CALL_SOUND := preload("res://assets/audio/ui/hardpoint_call.ogg")
 
 const WALL_SHADER := """
 shader_type spatial;

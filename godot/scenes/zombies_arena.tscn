@@ -1224,4 +1224,5 @@ player_path = NodePath("../Player")
 [node name="Soundscape" type="Soundscape" parent="."]
 outdoor = "night"
 outdoor_db = -6.0
+distant_battle = true
 indoor_db = -14.0
