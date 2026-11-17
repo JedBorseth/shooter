@@ -1,0 +1,39 @@
+{
+  "triangles": 9615,
+  "nodes": [
+    "Body",
+    "Hammer",
+    "MagRelease",
+    "Magazine",
+    "Magazine/Rounds",
+    "MagazineSpare",
+    "MagazineSpare/RoundsSpare",
+    "Safety",
+    "Slide",
+    "Slide/SightGlow",
+    "SlideStop",
+    "Trigger"
+  ],
+  "markers": {
+    "Muzzle": [
+      0.0,
+      -0.0143,
+      -0.1783
+    ],
+    "Ejection": [
+      0.0102,
+      -0.0131,
+      -0.0425
+    ],
+    "GripRight": [
+      -0.0,
+      -0.0833,
+      0.0098
+    ],
+    "GripLeft": [
+      -0.0,
+      -0.102,
+      0.0217
+    ]
+  }
+}

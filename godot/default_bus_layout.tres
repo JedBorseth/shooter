@@ -1,4 +1,4 @@
-[gd_resource type="AudioBusLayout" format=3]
+[gd_resource type="AudioBusLayout" format=3 uid="uid://dbbsal3b6btwb"]
 
 [sub_resource type="AudioEffectCompressor" id="AudioEffectCompressor_mix"]
 resource_name = "MixCompressor"
@@ -6,7 +6,6 @@ threshold = -20.0
 ratio = 3.0
 gain = 4.0
 attack_us = 5000.0
-release_ms = 250.0
 
 [sub_resource type="AudioEffectHardLimiter" id="AudioEffectHardLimiter_j3pel"]
 resource_name = "Limiter"

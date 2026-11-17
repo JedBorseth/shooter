@@ -1,0 +1,42 @@
+{
+  "triangles": 18804,
+  "nodes": [
+    "Body",
+    "ChargingHandle",
+    "MagRelease",
+    "Magazine",
+    "Magazine/Rounds",
+    "MagazineSpare",
+    "MagazineSpare/RoundsSpare",
+    "OpticRail",
+    "Selector",
+    "Trigger"
+  ],
+  "markers": {
+    "Muzzle": [
+      0.0,
+      -0.0412,
+      -0.4129
+    ],
+    "Ejection": [
+      0.012,
+      -0.0305,
+      0.0579
+    ],
+    "OpticMount": [
+      -0.0,
+      -0.006,
+      0.0424
+    ],
+    "GripRight": [
+      -0.0,
+      -0.1305,
+      0.1718
+    ],
+    "GripLeft": [
+      0.0,
+      -0.0607,
+      -0.1475
+    ]
+  }
+}

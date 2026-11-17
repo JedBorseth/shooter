@@ -12,32 +12,27 @@ size = Vector2(0.2, 0.2)
 [node name="AK47" type="WeaponView"]
 weapon = "ak47"
 grip_rake = 25.0
-hip_position = Vector3(0.1, -0.078, -0.448)
-ads_position = Vector3(0, 0, -0.1)
+hip_position = Vector3(0.095, -0.085, -0.235)
+ads_position = Vector3(0, 0, -0.075)
 sprint_position = Vector3(-0.04, 0.015, 0.03)
 sprint_rotation = Vector3(-4, 22, 24)
-pivot = Vector3(0, -0.102, 0.278)
+pivot = Vector3(0, -0.126, 0.16)
 albedo_boost = 1.0
 kick_strength = 1.55
 camera_punch = Vector3(0.4, 0.15, 0.9)
 
 [node name="Model" type="Node3D" parent="."]
-position = Vector3(0, -0.1522, 0.2771)
-rotation = Vector3(0, 1.5707964, 0)
-scale = Vector3(0.163, 0.163, 0.163)
 
 [node name="Mesh" parent="Model" instance=ExtResource("1_model")]
 
-[node name="Sights" type="IronSights" parent="."]
-style = "ak"
-rear_z = -0.008
-front_z = -0.322
-rear_base = -0.0204
-front_base = -0.0487
-cuts = Array[AABB]([AABB(-0.03, -0.048, -0.334, 0.06, 0.048, 0.034)])
+[node name="MagazineSpare" parent="Model/Mesh"]
+visible = false
+
+[node name="OpticRail" parent="Model/Mesh"]
+visible = false
 
 [node name="Muzzle" type="Marker3D" parent="."]
-position = Vector3(0, -0.0576, -0.3505)
+position = Vector3(0.0000, -0.0412, -0.4129)
 
 [node name="Flash" type="MeshInstance3D" parent="Muzzle"]
 cast_shadow = 0
@@ -49,7 +44,7 @@ light_energy = 4.0
 omni_range = 8.0
 
 [node name="Ejection" type="Marker3D" parent="."]
-position = Vector3(0.013, -0.0544, 0.1304)
+position = Vector3(0.0120, -0.0305, 0.0579)
 
 [node name="ReloadSound" type="AudioStreamPlayer" parent="."]
 stream = ExtResource("3_reload")
@@ -62,7 +57,10 @@ volume_db = -6.0
 bus = &"Weapons"
 
 [node name="GripRight" type="Marker3D" parent="."]
-position = Vector3(0, -0.117, 0.05)
+position = Vector3(-0.0000, -0.1305, 0.1718)
 
 [node name="GripLeft" type="Marker3D" parent="."]
-position = Vector3(0, -0.072, -0.09)
+position = Vector3(0.0000, -0.0607, -0.1475)
+
+[node name="OpticMount" type="Marker3D" parent="."]
+position = Vector3(-0.0000, -0.0060, 0.0424)
