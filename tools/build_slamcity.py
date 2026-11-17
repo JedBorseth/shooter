@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Generate godot/scenes/slamcity.tscn: Slamcity, a three-lane Team Deathmatch map
-on an original city block.
+"""Generate godot/scenes/slamcity.tscn: Slamcity, a three-lane team map (Team
+Deathmatch and Capture the Flag) on an original city block.
 
 The teams spawn in parking yards at the west and east ends, about 100 m apart.
 Three lanes run between them:
@@ -23,7 +23,8 @@ copied to the east half. No line runs clear from one spawn yard to the other
 
 The player, HUD, and pause menu are the same scenes the testing arena
 (scenes/main.tscn) uses. The server spawns players at `SpawnPoints` (each with a
-`team` metadata); offline play starts at `Spawns/West`.
+`team` metadata) and, in Capture the Flag, puts each team's flag at its
+`Flags` marker; offline play starts at `Spawns/West`.
 
 Edit the layout here, not in the editor, then regenerate from the repo root
 and bake its meshes and lightmaps (needs a GPU, or Xvfb on a machine with one):
@@ -673,6 +674,8 @@ for t, x in (("W", -38.0), ("E", 38.0)):
 # team: 0 spawns in the west yard, 1 in the east. The first few of each team are
 # its start positions. Offline play starts at Spawns/West.
 s.node("SpawnPoints", "Node3D", ".")
+# Off the spawn line, so a fresh spawn does not look straight at the pole.
+FLAG_X, FLAG_Z = -50.5, -2.0
 SPAWN_ORDER = [(-53, 0), (-53, -4), (-53, 4), (-53, -9), (-53, 9), (-51, -13),
                (-55, -23), (-50, -25), (-54, 17), (-47, 18), (-41, -25), (-41, 18), (-55, 0)]
 for team, m, yaw in ((0, False, -PI / 2), (1, True, PI / 2)):
@@ -681,6 +684,16 @@ for team, m, yaw in ((0, False, -PI / 2), (1, True, PI / 2)):
         s.node(f"Team{team}_{i:02d}", "Marker3D", "SpawnPoints", {
             "position": vec(px, 0.05, pz), "rotation": vec(0, yaw, 0), "metadata/team": str(team),
         })
+
+# Capture the Flag: each team's flag stands in its own spawn yard, behind the
+# low wall that screens the mouth of Market Street, where all three lanes meet.
+# The server reads the `team` metadata; Team Deathmatch ignores these.
+s.node("Flags", "Node3D", ".")
+for team, m in ((0, False), (1, True)):
+    px, pz = mpoint(FLAG_X, FLAG_Z, m)
+    s.node(f"Team{team}", "Marker3D", "Flags", {
+        "position": vec(px, 0, pz), "metadata/team": str(team),
+    })
 
 s.node("Spawns", "Node3D", ".")
 s.node("West", "Marker3D", "Spawns", {"position": vec(-53, 0.05, 0), "rotation": vec(0, -PI / 2, 0)})

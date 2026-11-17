@@ -12,6 +12,8 @@
 //! It also keeps the match state the HUD shows: the mode, who is playing on
 //! which team (`roster`), the match phase, clock, and team scores
 //! (`match_info`), and the scoreboard, with each player's Gun Game level.
+//! In Capture the Flag it also keeps where both flags are (`flag_info`), and
+//! emits `flag_played` for every take, drop, return, and capture.
 //! With the F4 hitbox overlay on, it also draws, in white, the hitboxes the
 //! server rewound for each of our shots, next to the ones drawn here.
 //!
@@ -29,7 +31,8 @@ use shooter_sim::net::conditioner::{LinkConditioner, LinkSettings};
 use shooter_sim::net::interpolation::{InterpolationBuffer, SnapshotClock};
 use shooter_sim::net::prediction::Reconciled;
 use shooter_sim::net::protocol::{
-    ClientMessage, GameEvent, InputPacket, PROTOCOL_VERSION, ScoreRow, ServerMessage, Snapshot,
+    ClientMessage, FlagPlay, FlagStatus, FlagView, GameEvent, InputPacket, PROTOCOL_VERSION,
+    ScoreRow, ServerMessage, Snapshot,
 };
 use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::{CHANNEL_COUNT, CHANNEL_RELIABLE, DEFAULT_PORT, TICK_RATE, Tick};
@@ -117,6 +120,8 @@ pub struct NetClient {
     roster: Vec<RosterEntry>,
     match_phase: Option<Phase>,
     match_ends_at: Option<Tick>,
+    /// Capture the Flag: both flags, by team.
+    flags: Option<[FlagView; TEAM_COUNT]>,
     team_scores: [u32; TEAM_COUNT],
     score_limit: u32,
     /// The server's game, from its welcome.
@@ -341,11 +346,18 @@ impl NetClient {
     #[signal]
     fn scoreboard_changed();
 
+    /// Capture the Flag: something happened to team `flag`'s flag. `play` is
+    /// "taken", "dropped", "returned", or "captured"; `player` did it (-1 for
+    /// a flag that went home by itself).
+    #[signal]
+    fn flag_played(flag: i32, play: GString, player: i32);
+
     /// Every player, ourselves included, as dictionaries with `id`, `name`,
-    /// `team`, `bot`, `me`, `score`, `kills`, `deaths`, `ping`, `ready`, and
-    /// for Gun Game `level`, `level_kills`, and `weapon` (the name of the
-    /// weapon on their level). Sorted by team and then by score, or in Gun
-    /// Game by how far up the ladder, with the winner first once it ends.
+    /// `team`, `bot`, `me`, `score`, `kills`, `deaths`, `ping`, `ready`,
+    /// for Capture the Flag `captures` and `returns`, and for Gun Game
+    /// `level`, `level_kills`, and `weapon` (the name of the weapon on their
+    /// level). Sorted by team and then by score, or in Gun Game by how far up
+    /// the ladder, with the winner first once it ends.
     #[func]
     fn roster(&self) -> Array<VarDictionary> {
         let mut entries: Vec<&RosterEntry> = self.roster.iter().collect();
@@ -379,6 +391,8 @@ impl NetClient {
                 d.set("score", e.row.score);
                 d.set("kills", e.row.kills);
                 d.set("deaths", e.row.deaths);
+                d.set("captures", e.row.captures);
+                d.set("returns", e.row.returns);
                 d.set("ping", i32::from(e.row.ping_ms));
                 d.set("ready", e.row.ready);
                 d.set("level", i32::from(e.row.level));
@@ -390,7 +404,7 @@ impl NetClient {
             .collect()
     }
 
-    /// The match as a dictionary: `mode` ("tdm" or "gungame"), `mode_name`,
+    /// The match as a dictionary: `mode` ("tdm", "ctf", or "gungame"), `mode_name`,
     /// `free_for_all`, `phase` ("lobby", "countdown", "playing", "ended", or
     /// "" before the server said), `seconds_left`, `scores` (per team),
     /// `score_limit`, `winner` (a team, or in free-for-all modes a player id;
@@ -423,6 +437,48 @@ impl NetClient {
         d.set("score_limit", self.score_limit);
         d.set("my_team", self.local_team().map_or(-1, i32::from));
         d
+    }
+
+    /// Capture the Flag: both flags, by team, as dictionaries with `team`,
+    /// `status` ("home", "carried", or "dropped"), `carrier` (a player id, or
+    /// -1), `home` (its base), `position` (where to draw it now: its base,
+    /// where it lies, or its carrier's feet as drawn here), and
+    /// `return_seconds` (until a dropped flag goes home). Empty in other modes.
+    #[func]
+    fn flag_info(&self) -> Array<VarDictionary> {
+        let Some(flags) = &self.flags else {
+            return Array::new();
+        };
+        flags
+            .iter()
+            .enumerate()
+            .map(|(team, flag)| {
+                let mut d = VarDictionary::new();
+                d.set("team", team as i32);
+                let home = to_godot(flag.home);
+                d.set("home", home);
+                let (status, carrier, position, seconds) = match flag.status {
+                    FlagStatus::Home => ("home", -1, home, 0.0),
+                    FlagStatus::Carried { by } => (
+                        "carried",
+                        i32::from(by),
+                        self.carrier_feet(by).unwrap_or(home),
+                        0.0,
+                    ),
+                    FlagStatus::Dropped { at, returns_at } => {
+                        let left = self.newest.map_or(0.0, |now| {
+                            f64::from(returns_at.saturating_sub(now)) / f64::from(TICK_RATE)
+                        });
+                        ("dropped", -1, to_godot(at), left)
+                    }
+                };
+                d.set("status", status);
+                d.set("carrier", carrier);
+                d.set("position", position);
+                d.set("return_seconds", seconds);
+                d
+            })
+            .collect()
     }
 
     /// The weapons a loadout may use as its primary, as dictionaries with
@@ -764,7 +820,35 @@ impl NetClient {
                     player.bind_mut().set_look(yaw, 0.0);
                 }
             }
+            GameEvent::Flags { flags } => {
+                self.flags = Some(flags);
+            }
+            GameEvent::FlagPlay { flag, play, player } => {
+                let play = match play {
+                    FlagPlay::Taken => "taken",
+                    FlagPlay::Dropped => "dropped",
+                    FlagPlay::Returned => "returned",
+                    FlagPlay::Captured => "captured",
+                };
+                self.signals().flag_played().emit(
+                    i32::from(flag),
+                    &GString::from(play),
+                    player.map_or(-1, i32::from),
+                );
+            }
         }
+    }
+
+    /// Where a flag carrier's feet are drawn: our own player, or a remote
+    /// player as interpolated.
+    fn carrier_feet(&self, id: u8) -> Option<Vector3> {
+        if Some(id) == self.player_id {
+            return self.player.as_ref().map(|p| p.get_global_position());
+        }
+        self.remotes
+            .iter()
+            .find(|r| r.id == id)
+            .map(|r| r.node.bind().feet())
     }
 
     fn entry(&self, id: i32) -> Option<&RosterEntry> {
@@ -968,6 +1052,7 @@ impl NetClient {
         }
         self.roster.clear();
         self.match_phase = None;
+        self.flags = None;
         self.signals().roster_changed().emit();
         self.signals().match_changed().emit();
     }

@@ -6,7 +6,7 @@ extends Node
 ##   --server [--port N] [--bots N] [--bot-skill easy|normal|hard] [--bot-damage]
 ##            [--name NAME] [--master HOST[:PORT]]
 ##            [--query-port N] [--map arena|nuketown|slamcity]
-##            [--mode tdm|gungame] [--kills-per-weapon N]
+##            [--mode tdm|ctf|gungame] [--kills-per-weapon N]
 ##            [--score-limit N] [--time-limit MINUTES] [--auto-start]
 ##                                    run as a dedicated server (use with --headless);
 ##                                    with --bot-skill the bots play the match; without
@@ -15,8 +15,9 @@ extends Node
 ##                                    Server browsers see NAME; with --master the
 ##                                    server stays listed on that master server.
 ##                                    Browsers query UDP port N+1 (or --query-port).
-##                                    Team Deathmatch to N kills (75) or MINUTES (10),
-##                                    or Gun Game with N kills per weapon (2);
+##                                    Team Deathmatch to N kills (75), Capture the
+##                                    Flag to N captures (3), or MINUTES (10), or
+##                                    Gun Game with N kills per weapon (2);
 ##                                    --auto-start skips the lobby's ready-up.
 ##   --directory HOST[:PORT]          developer override for the Internet directory;
 ##                                    not saved between launches
@@ -29,9 +30,9 @@ extends Node
 ##
 ## From the menus: the server browser calls `join`, and leaving a server or
 ## losing the connection calls `leave`, which returns to the server browser.
-## The title screen's Team Deathmatch and Gun Game setups call
-## `start_local_match`, which runs a dedicated server in a background process
-## and joins it; leaving stops that server.
+## The title screen's Team Deathmatch, Capture the Flag, and Gun Game setups
+## call `start_local_match`, which runs a dedicated server in a background
+## process and joins it; leaving stops that server.
 
 const SERVER_SCENE := "res://scenes/server.tscn"
 const ARENA_SCENE := "res://scenes/main.tscn"
@@ -47,6 +48,7 @@ const REMOTE_PLAYER_SCENE := "res://scenes/remote_player.tscn"
 const OVERLAY_SCRIPT := "res://scripts/net/net_overlay.gd"
 const STATUS_SCRIPT := "res://scripts/net/net_status.gd"
 const TDM_HUD_SCRIPT := "res://scripts/net/tdm_hud.gd"
+const CTF_VIEW_SCRIPT := "res://scripts/net/ctf_view.gd"
 const DEFAULT_PORT := 27015
 ## Port of the server `start_local_match` runs, away from the default so it
 ## does not clash with a server already running on this machine.
@@ -153,7 +155,7 @@ func start_local_match(options: Dictionary) -> void:
 				"--mode",
 				String(options.get("mode", "tdm")),
 				"--score-limit",
-				str(int(options.get("score_limit", 75))),
+				str(int(options.get("score_limit", 0))),
 				"--kills-per-weapon",
 				str(int(options.get("kills_per_weapon", 2))),
 				"--time-limit",
@@ -239,8 +241,9 @@ func _start_server(options: Dictionary) -> void:
 		server.server_name = options["name"]
 	server.master_server = options.get("master", "")
 	server.query_port = int(options.get("query-port", 0))
+	# 0 (or none) keeps the mode's usual limit.
 	if options.has("score-limit"):
-		server.score_limit = maxi(int(options["score-limit"]), 1)
+		server.score_limit = maxi(int(options["score-limit"]), 0)
 	if options.has("time-limit"):
 		server.time_limit_minutes = maxf(float(options["time-limit"]), 0.1)
 	server.mode = String(options.get("mode", "tdm"))
@@ -307,3 +310,12 @@ func _attach_client(main: Node, target: String, options: Dictionary) -> void:
 	tdm_hud.set("client", client)
 	tdm_hud.set("player", player)
 	main.add_child(tdm_hud)
+
+	# Flags, flag markers, and flag calls; it shows nothing outside Capture the Flag.
+	var ctf := Node3D.new()
+	ctf.name = "CtfView"
+	ctf.set_script(load(CTF_VIEW_SCRIPT))
+	ctf.set("client", client)
+	ctf.set("player", player)
+	ctf.set("hud", tdm_hud)
+	main.add_child(ctf)

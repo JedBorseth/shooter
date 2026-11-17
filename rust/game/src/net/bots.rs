@@ -1,4 +1,4 @@
-//! Team Deathmatch bots on the dedicated server.
+//! Bots on the dedicated server, for Team Deathmatch and Capture the Flag.
 //!
 //! A bot plays through the same `PlayerInput` a client sends, so it moves and
 //! shoots by the players' rules. Each tick its [`BotBrain`] decides that input:
@@ -13,6 +13,10 @@
 //!   enemy was last seen, a spot on the enemy's side, or anywhere on the map.
 //!   It sprints when nothing is happening, and jumps or picks a new goal when
 //!   stuck.
+//! - **Objectives** (Capture the Flag): the server hands each bot a
+//!   [`BotObjective`] every tick: run a flag somewhere, hunt toward a spot, or
+//!   hold one. A bot running a flag keeps moving while it fights; the others
+//!   stop to fight as usual.
 //!
 //! The aim model and skill levels are engine-free (`shooter_sim::bot`). The
 //! navigation mesh is baked when the server loads its map, from the map's
@@ -49,6 +53,74 @@ const MEMORY_SECONDS: f32 = 4.0;
 const STUCK_SECONDS: f32 = 1.2;
 /// Aim down sights beyond this range (not with a shotgun).
 const ADS_RANGE: f32 = 12.0;
+/// Within this many metres of an objective, a bot walks straight at it
+/// instead of following the path (flags are touched, not just reached).
+const OBJECTIVE_APPROACH: f32 = 2.5;
+/// A held spot counts as reached within this many metres.
+const HOLD_RADIUS: f32 = 1.5;
+/// An attacker this close to its objective rushes it like a runner, shooting
+/// on the move instead of stopping to fight.
+const RUSH_RADIUS: f32 = 12.0;
+/// A defender chases an enemy it lost sight of only this close to its spot.
+const DEFEND_CHASE: f32 = 18.0;
+/// An attacker chases an enemy it lost sight of only this close to itself.
+const ATTACK_CHASE: f32 = 12.0;
+/// Objectives farther than this get a detour through the middle of the map,
+/// so attackers spread over the lanes instead of all taking the shortest.
+const DETOUR_BEYOND: f32 = 35.0;
+/// A detour point counts as reached within this many metres.
+const DETOUR_RADIUS: f32 = 4.0;
+
+/// What the server wants a bot to go for (Capture the Flag).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BotObjective {
+    pub goal: Vector3,
+    pub kind: ObjectiveKind,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ObjectiveKind {
+    /// Get there whatever happens: keep moving while fighting (a carrier
+    /// running home, a bot going for a dropped flag).
+    Run,
+    /// Head there, but stop to fight and chase what it sees on the way.
+    Hunt,
+    /// Stand guard there.
+    Hold,
+}
+
+impl BotObjective {
+    pub fn run(goal: Vector3) -> Self {
+        Self {
+            goal,
+            kind: ObjectiveKind::Run,
+        }
+    }
+
+    pub fn hunt(goal: Vector3) -> Self {
+        Self {
+            goal,
+            kind: ObjectiveKind::Hunt,
+        }
+    }
+
+    pub fn hold(goal: Vector3) -> Self {
+        Self {
+            goal,
+            kind: ObjectiveKind::Hold,
+        }
+    }
+
+    /// Whether a bot at `feet` keeps moving to this objective through a
+    /// fight: always when running, and when hunting once it is close.
+    fn rushes(&self, feet: Vector3) -> bool {
+        match self.kind {
+            ObjectiveKind::Run => true,
+            ObjectiveKind::Hunt => horizontal_distance(self.goal, feet) < RUSH_RADIUS,
+            ObjectiveKind::Hold => false,
+        }
+    }
+}
 
 /// The navigation mesh bots walk on, baked from the map's collision.
 pub struct BotNavigation {
@@ -203,6 +275,10 @@ pub struct BotBrain {
     /// Toggles and taps need a release between presses.
     held: Held,
     counter: u32,
+    /// The detour on the way to a far objective, picked once a life, and
+    /// whether this life already picked (or finished) one.
+    detour: Option<Vector3>,
+    detour_picked: bool,
 }
 
 #[derive(Default)]
@@ -236,6 +312,8 @@ impl BotBrain {
             pause_until: 0,
             held: Held::default(),
             counter: 0,
+            detour: None,
+            detour_picked: false,
         }
     }
 
@@ -250,6 +328,8 @@ impl BotBrain {
         self.path.clear();
         self.stuck_since = (Vector3::ZERO, tick);
         self.held = Held::default();
+        self.detour = None;
+        self.detour_picked = false;
     }
 
     /// Someone shot this bot from `from`.
@@ -262,12 +342,14 @@ impl BotBrain {
         rng::unit(self.seed, self.counter)
     }
 
-    /// Decides this tick's input for the bot `me`, whose state is `state`.
+    /// Decides this tick's input for the bot `me`, whose state is `state`,
+    /// going for `objective` if the server gave one.
     pub fn think(
         &mut self,
         me: &BotPlayer,
         state: &Predicted,
         world: &mut BotWorld,
+        objective: Option<BotObjective>,
     ) -> PlayerInput {
         let skill = self.skill.params();
         let tick = world.tick;
@@ -297,12 +379,21 @@ impl BotBrain {
                 engagement.update(&skill, TICK_DT);
                 self.engagement = Some(engagement);
                 self.fight(&engagement, &target, eye, state, world, &skill, &mut want);
+                // A runner shoots on the move instead of strafing in place.
+                if let Some(objective) = objective
+                    && objective.rushes(me.feet)
+                    && let Some(direction) = self.toward(me, world, objective.goal)
+                {
+                    want.wish = bot::wish_toward(self.look.x, direction);
+                    want.crouch = false;
+                    want.aim = false;
+                }
             }
             _ => {
                 if target.is_none() {
                     self.engagement = None;
                 }
-                self.roam(me, state, world, &skill, &mut want);
+                self.roam(me, state, world, &skill, objective, &mut want);
             }
         }
         self.unstick(me, tick, &mut want);
@@ -444,50 +535,69 @@ impl BotBrain {
         }
     }
 
-    /// No enemy in sight: hunt the last one seen, face whoever shot us, or
-    /// walk toward a goal.
+    /// No enemy in sight: go for the objective, hunt the last enemy seen,
+    /// face whoever shot us, or walk toward a goal.
     fn roam(
         &mut self,
         me: &BotPlayer,
         state: &Predicted,
         world: &mut BotWorld,
         skill: &SkillParams,
+        objective: Option<BotObjective>,
         want: &mut Want,
     ) {
         let tick = world.tick;
         let memory = (MEMORY_SECONDS * TICK_RATE as f32) as Tick;
-        if let Some((spot, seen)) = self.last_seen
+        // Without an objective, chase the last enemy seen. Defenders chase
+        // only near their spot, attackers only near themselves, and runners
+        // never: the objective comes first.
+        let chase = |spot: Vector3| match objective {
+            None => true,
+            Some(o) => match o.kind {
+                ObjectiveKind::Run => false,
+                ObjectiveKind::Hold => o.goal.distance_to(spot) < DEFEND_CHASE,
+                ObjectiveKind::Hunt => me.feet.distance_to(spot) < ATTACK_CHASE,
+            },
+        };
+        let hunting = if let Some((spot, seen)) = self.last_seen
             && tick.saturating_sub(seen) < memory
-            && self.goal.is_none_or(|g| g.distance_to(spot) > 3.0)
+            && chase(spot)
         {
-            self.set_goal(spot, tick);
-        }
-        if self
-            .goal
-            .is_none_or(|g| horizontal_distance(g, me.feet) < 2.0)
-        {
-            let goal = self.pick_goal(me, world);
-            self.set_goal(goal, tick);
-        }
-        if tick >= self.repath_at || self.path.is_empty() {
-            let goal = self.goal.unwrap_or(me.feet);
-            self.path = world.navigation.path(me.feet, goal);
-            self.next_waypoint = 1.min(self.path.len());
-            self.repath_at = tick + (REPATH_SECONDS * TICK_RATE as f32) as Tick;
-            if self.path.len() < 2 {
-                // Unreachable: try somewhere else next tick.
-                self.goal = None;
+            if self.goal.is_none_or(|g| g.distance_to(spot) > 3.0) {
+                self.set_goal(spot, tick);
             }
-        }
-        while self.next_waypoint < self.path.len()
-            && horizontal_distance(self.path[self.next_waypoint], me.feet) < WAYPOINT_RADIUS
-        {
-            self.next_waypoint += 1;
-        }
-        let Some(waypoint) = self.path.get(self.next_waypoint).copied() else {
+            true
+        } else {
+            false
+        };
+        let direction = match objective {
+            Some(objective) if !hunting => {
+                if objective.kind == ObjectiveKind::Hold
+                    && horizontal_distance(objective.goal, me.feet) < HOLD_RADIUS
+                {
+                    self.guard(me, world, skill, objective.goal, want);
+                    return;
+                }
+                let goal = match objective.kind {
+                    ObjectiveKind::Hunt => self.detour_to(me, world, objective.goal),
+                    _ => objective.goal,
+                };
+                self.toward(me, world, goal)
+            }
+            _ => {
+                if self
+                    .goal
+                    .is_none_or(|g| horizontal_distance(g, me.feet) < 2.0)
+                {
+                    let goal = self.pick_goal(me, world);
+                    self.set_goal(goal, tick);
+                }
+                self.follow_path(me, world)
+            }
+        };
+        let Some(direction) = direction else {
             return;
         };
-        let direction = to_sim(waypoint - me.feet);
         // Look where we are going; turn toward a shot from behind first.
         let mut goal_view = look::bearing(Vec3::ZERO, Vec3::new(direction.x, 0.0, direction.z));
         goal_view.y = 0.0;
@@ -515,6 +625,99 @@ impl BotBrain {
     fn set_goal(&mut self, goal: Vector3, tick: Tick) {
         self.goal = Some(goal);
         self.repath_at = tick;
+    }
+
+    /// The direction to walk toward `goal`: along the navigation mesh, and
+    /// straight at it for the last couple of metres. `None` when there is
+    /// nowhere to go (no path yet, or already there).
+    fn toward(&mut self, me: &BotPlayer, world: &mut BotWorld, goal: Vector3) -> Option<Vec3> {
+        if horizontal_distance(goal, me.feet) < OBJECTIVE_APPROACH
+            && (goal.y - me.feet.y).abs() < 1.5
+        {
+            let direction = to_sim(goal - me.feet);
+            return (Vec3::new(direction.x, 0.0, direction.z).length() > 0.2).then_some(direction);
+        }
+        // A goal that moved (a carrier on the run) needs a fresh path.
+        if self.goal.is_none_or(|g| g.distance_to(goal) > 2.0) {
+            self.set_goal(goal, world.tick);
+        }
+        self.follow_path(me, world)
+    }
+
+    /// Where to head for `goal`: the first time this life that a far goal
+    /// comes up, a random point in the middle third of the way there (on the
+    /// navigation mesh) to pass through first; then the goal itself.
+    fn detour_to(&mut self, me: &BotPlayer, world: &mut BotWorld, goal: Vector3) -> Vector3 {
+        if !self.detour_picked {
+            self.detour_picked = true;
+            let span = goal - me.feet;
+            let length = horizontal_distance(goal, me.feet);
+            if length > DETOUR_BEYOND {
+                let axis = Vector3::new(span.x, 0.0, span.z) / length;
+                self.detour = (0..12).map(|_| world.navigation.random_point()).find(|p| {
+                    let along = (*p - me.feet).dot(axis) / length;
+                    (0.3..0.7).contains(&along)
+                });
+            }
+        }
+        match self.detour {
+            Some(detour) if horizontal_distance(detour, me.feet) > DETOUR_RADIUS => detour,
+            _ => {
+                self.detour = None;
+                goal
+            }
+        }
+    }
+
+    /// The direction to the next waypoint on the path to `self.goal`,
+    /// repathing every couple of seconds.
+    fn follow_path(&mut self, me: &BotPlayer, world: &mut BotWorld) -> Option<Vec3> {
+        let tick = world.tick;
+        if tick >= self.repath_at || self.path.is_empty() {
+            let goal = self.goal.unwrap_or(me.feet);
+            self.path = world.navigation.path(me.feet, goal);
+            self.next_waypoint = 1.min(self.path.len());
+            self.repath_at = tick + (REPATH_SECONDS * TICK_RATE as f32) as Tick;
+            if self.path.len() < 2 {
+                // Unreachable: try somewhere else next tick.
+                self.goal = None;
+            }
+        }
+        while self.next_waypoint < self.path.len()
+            && horizontal_distance(self.path[self.next_waypoint], me.feet) < WAYPOINT_RADIUS
+        {
+            self.next_waypoint += 1;
+        }
+        let waypoint = self.path.get(self.next_waypoint).copied()?;
+        Some(to_sim(waypoint - me.feet))
+    }
+
+    /// Stands guard at a held spot: crouched now and then, looking around
+    /// slowly, and turning toward a shot.
+    fn guard(
+        &mut self,
+        me: &BotPlayer,
+        world: &BotWorld,
+        skill: &SkillParams,
+        spot: Vector3,
+        want: &mut Want,
+    ) {
+        let tick = world.tick;
+        if tick >= self.strafe_until {
+            // A new direction to watch every couple of seconds.
+            let seconds = 1.5 + self.random() * 2.0;
+            self.strafe_until = tick + (seconds * TICK_RATE as f32) as Tick;
+            self.strafe = (self.random() - 0.5) * std::f32::consts::TAU;
+        }
+        let mut goal_view = Vec2::new(self.strafe, 0.0);
+        if let Some((_, from, t)) = self.hurt_from
+            && tick.saturating_sub(t) < TICK_RATE * 2
+        {
+            goal_view = look::bearing(to_sim(me.eye(world.params)), to_sim(from));
+        }
+        self.look = bot::turn_toward(self.look, goal_view, skill.turn_rate * 0.4, TICK_DT);
+        let _ = spot;
+        want.crouch = rng::unit(self.seed, tick / (TICK_RATE * 6)) < 0.4;
     }
 
     /// Somewhere to go: the enemy's side half the time, anywhere otherwise.

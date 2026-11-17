@@ -12,10 +12,14 @@
 //! server applies the damage, keeps score, and tells the players involved
 //! through reliable [`GameEvent`]s.
 //!
-//! It runs Team Deathmatch (`shooter_sim::tdm`): it puts each player on a
-//! team, keeps the match clock and the team scores, picks spawn points away
-//! from enemies, spawns players with the loadout they chose, and sends the
-//! roster, the match state, and the scoreboard as game events.
+//! It runs Team Deathmatch or Capture the Flag (`shooter_sim::tdm`): it puts
+//! each player on a team, keeps the match clock and the team scores, picks
+//! spawn points away from enemies, spawns players with the loadout they chose,
+//! and sends the roster, the match state, and the scoreboard as game events.
+//! In Capture the Flag it also runs the flags (`shooter_sim::ctf`): each
+//! team's flag sits at the map's `Flags` marker for that team (or among its
+//! spawn points), and the server decides every take, drop, return, and
+//! capture and tells everyone.
 //!
 //! Or it runs Gun Game (`shooter_sim::gun_game`, `mode = "gungame"`): every
 //! player for themselves on the same match clock, everyone carrying only
@@ -45,25 +49,26 @@ use godot::classes::{
 use godot::global::Error;
 use godot::prelude::*;
 use shooter_sim::bot::Skill;
+use shooter_sim::ctf::{FlagEvent, FlagPlayer, FlagRules, FlagState, Flags};
 use shooter_sim::gun_game::{self, Progress, Step};
 use shooter_sim::net::discovery::{ServerInfo, query_port_for};
 use shooter_sim::net::input_queue::InputQueue;
 use shooter_sim::net::lag::{self, LagHistory, Pellet, Target};
 use shooter_sim::net::protocol::{
-    self, ClientMessage, GameEvent, MAX_EVENTS_PER_MESSAGE, OwnState, PROTOCOL_VERSION, PlayerView,
-    Predicted, ScoreRow, ServerMessage, Snapshot,
+    self, ClientMessage, FlagPlay, FlagStatus, FlagView, GameEvent, MAX_EVENTS_PER_MESSAGE,
+    OwnState, PROTOCOL_VERSION, PlayerView, Predicted, ScoreRow, ServerMessage, Snapshot,
 };
 use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::{CHANNEL_COUNT, DEFAULT_PORT, MAX_PLAYERS, TICK_DT, TICK_RATE, Tick};
 use shooter_sim::player::{self, PlayerEvent, PlayerInput, PlayerParams, PlayerState};
-use shooter_sim::score::{Kill, ScoreRules, ScoreState};
+use shooter_sim::score::{Award, Kill, ScoreRules, ScoreState, Scored};
 use shooter_sim::tdm::{
     self, MatchRules, MatchState, Mode, Phase, SpawnPoint, SpawnRules, Team, Threat, Transition,
 };
 use shooter_sim::weapon::{self, CombatEvent, CombatState, Slot, WeaponId};
 use shooter_sim::{Vec2, Vec3, rng};
 
-use super::bots::{BotBrain, BotNavigation, BotPlayer, BotWorld};
+use super::bots::{BotBrain, BotNavigation, BotObjective, BotPlayer, BotWorld};
 use super::discovery::QueryResponder;
 use super::transport::{self, NetEvent};
 use crate::body::{self, BodyParts};
@@ -97,6 +102,14 @@ const RECENT_DEATH_SECONDS: u32 = 5;
 const SCOREBOARD_INTERVAL: Tick = TICK_RATE;
 /// Height of the point enemies must see for a spawn to count as watched.
 const SPAWN_CHECK_HEIGHT: f32 = 1.5;
+/// Fewest seconds a dead player waits to respawn in Capture the Flag.
+const CTF_RESPAWN_SECONDS: f32 = 5.0;
+/// Farthest below a carrier's feet a dropped flag looks for the floor.
+const FLAG_DROP_FALL: f32 = 12.0;
+/// Seconds a Capture the Flag defender bot holds one spot near its flag.
+const DEFEND_SPOT_SECONDS: u32 = 7;
+/// Metres from its flag a defender bot patrols.
+const DEFEND_RADIUS: f32 = 6.0;
 
 #[derive(GodotClass)]
 #[class(init, base = Node3D)]
@@ -148,9 +161,9 @@ pub struct NetServer {
     /// direct connects only.
     #[export]
     master_server: GString,
-    /// Kills a team needs to win.
+    /// Points a team needs to win: kills in Team Deathmatch, captures in
+    /// Capture the Flag. 0 uses the mode's usual limit.
     #[export]
-    #[init(val = 75)]
     score_limit: i32,
     /// Minutes of play before the team ahead wins.
     #[export]
@@ -160,7 +173,8 @@ pub struct NetServer {
     /// servers that should just run).
     #[export]
     auto_start: bool,
-    /// The game: "tdm" (Team Deathmatch) or "gungame".
+    /// The game: "tdm" (Team Deathmatch), "ctf" (Capture the Flag), or
+    /// "gungame".
     #[export]
     #[init(val = GString::from("tdm"))]
     mode: GString,
@@ -195,6 +209,11 @@ pub struct NetServer {
     /// The navigation mesh bots walk, when they play.
     navigation: Option<BotNavigation>,
     navigation_pending: bool,
+    /// Capture the Flag: both flags (none in Team Deathmatch).
+    flags: Option<Flags>,
+    flag_rules: FlagRules,
+    /// The map's flag bases, if it marks them.
+    flag_homes: Option<[Vec3; tdm::TEAM_COUNT]>,
 }
 
 struct ClientSlot {
@@ -267,11 +286,6 @@ impl INode3D for NetServer {
         // Headless, nothing paces the main loop; don't spin a core.
         Engine::singleton().set_max_fps(TICK_RATE as i32 * 2);
         self.spawn = Vector3::new(0.0, 0.05, 20.0);
-        self.rules = MatchRules {
-            score_limit: self.score_limit.max(1) as u32,
-            time_limit: self.time_limit_minutes.max(0.1) * 60.0,
-            ..MatchRules::default()
-        };
         self.game = match Mode::parse(&self.mode.to_string()) {
             Some(Mode::GunGame(_)) => Mode::GunGame(gun_game::Rules {
                 kills_per_weapon: self.kills_per_weapon.clamp(1, 255) as u8,
@@ -285,7 +299,22 @@ impl INode3D for NetServer {
                 Mode::TeamDeathmatch
             }
         };
+        let score_limit = match self.score_limit {
+            limit if limit > 0 => limit as u32,
+            _ => self.game.default_score_limit(),
+        };
+        self.rules = MatchRules {
+            score_limit,
+            time_limit: self.time_limit_minutes.max(0.1) * 60.0,
+            ..MatchRules::default()
+        };
         godot_print!("server: running {}", self.game.label());
+        self.spawn_rules = SpawnRules::for_mode(&self.game);
+        if self.game == Mode::CaptureTheFlag {
+            // Longer than Team Deathmatch, so clearing a base buys time to
+            // take its flag before the defenders are back.
+            self.respawn_delay = self.respawn_delay.max(CTF_RESPAWN_SECONDS);
+        }
         self.load_map();
         if self.spawn_points.is_empty() {
             self.spawn_points = fallback_spawns(self.spawn);
@@ -295,6 +324,18 @@ impl INode3D for NetServer {
             for point in &mut self.spawn_points {
                 point.team = None;
             }
+        }
+        if self.game == Mode::CaptureTheFlag {
+            let homes = self
+                .flag_homes
+                .unwrap_or_else(|| fallback_flag_homes(&self.spawn_points));
+            self.flags = Some(Flags::new(homes));
+            godot_print!(
+                "server: flags at {} and {}, first to {} captures",
+                to_godot(homes[0]),
+                to_godot(homes[1]),
+                self.rules.score_limit
+            );
         }
 
         let mut host = ENetConnection::new_gd();
@@ -365,6 +406,7 @@ impl INode3D for NetServer {
             self.navigation = map.and_then(|map| BotNavigation::bake(&mut parent, &map));
         }
         self.simulate();
+        self.update_flags();
         self.update_match();
         self.tick += 1;
         if self
@@ -471,7 +513,60 @@ impl NetServer {
         }
     }
 
-    /// A team's kills this match.
+    /// Capture the Flag (tests and debugging): where team `team`'s flag is,
+    /// "home", "carried", or "dropped", or "" in other modes.
+    #[func]
+    fn flag_status(&self, team: i32) -> GString {
+        let Some(flags) = &self.flags else {
+            return GString::new();
+        };
+        let Ok(team) = Team::try_from(team) else {
+            return GString::new();
+        };
+        GString::from(match flags.flag(team).state {
+            FlagState::Home => "home",
+            FlagState::Carried { .. } => "carried",
+            FlagState::Dropped { .. } => "dropped",
+        })
+    }
+
+    /// Captures a player has made this match (tests), or -1 if absent.
+    #[func]
+    fn player_captures(&self, id: i32) -> i64 {
+        self.avatars
+            .iter()
+            .find(|a| i32::from(a.id) == id)
+            .map_or(-1, |a| i64::from(a.score.captures))
+    }
+
+    /// Debug: moves a player's feet to `position` (tests).
+    #[func]
+    fn debug_teleport(&mut self, id: i32, position: Vector3) {
+        let params = self.params;
+        if let Some(avatar) = self.avatars.iter_mut().find(|a| i32::from(a.id) == id) {
+            avatar.predicted.position = to_sim(position);
+            body::place(&mut avatar.parts, &params.movement, &avatar.predicted);
+        }
+    }
+
+    /// Debug: kills a player where they stand (tests).
+    #[func]
+    fn debug_kill(&mut self, id: i32) {
+        let Ok(id) = u8::try_from(id) else { return };
+        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
+            return;
+        };
+        let health = avatar.predicted.state.health;
+        player::apply_damage(
+            &mut avatar.predicted.state,
+            health + 1.0,
+            false,
+            &mut Vec::new(),
+        );
+        self.record_death(id);
+    }
+
+    /// Points a team has this match: kills, or captures in Capture the Flag.
     #[func]
     fn team_score(&self, team: i32) -> i64 {
         usize::try_from(team)
@@ -535,6 +630,7 @@ impl NetServer {
             self.spawn = player.get_position();
         }
         self.spawn_points = map_spawns(&map);
+        self.flag_homes = map_flags(&map);
         for name in CLIENT_ONLY_NODES {
             if let Some(node) = map.get_node_or_null(name) {
                 node.free();
@@ -632,6 +728,9 @@ impl NetServer {
                 self.balance_bots();
                 let event = self.match_event();
                 self.send_event(id, event);
+                if let Some(event) = self.flags_event() {
+                    self.send_event(id, event);
+                }
                 godot_print!("server: player {id} \"{name}\" joined");
             }
             ClientMessage::Input(packet) => {
@@ -910,6 +1009,7 @@ impl NetServer {
                 team_spawns[usize::from(team.min(1))].push(to_godot(point.position));
             }
         }
+        let objectives = self.bot_objectives();
         let mut space = self
             .base()
             .get_world_3d()
@@ -933,7 +1033,11 @@ impl NetServer {
                             space,
                             team_spawns: &team_spawns,
                         };
-                        brain.think(&me, &avatar.predicted, &mut world)
+                        let objective = objectives
+                            .iter()
+                            .find(|(id, _)| *id == avatar.id)
+                            .and_then(|(_, o)| *o);
+                        brain.think(&me, &avatar.predicted, &mut world, objective)
                     }
                     _ => bot_input(avatar, tick),
                 };
@@ -1122,6 +1226,7 @@ impl NetServer {
         }
 
         let mut kills = Vec::new();
+        let mut carrier_kills = 0;
         for hit in lag::resolve_shot(def, &pellets, &targets) {
             let Some(victim) = self.avatars.iter_mut().find(|a| a.id == hit.id) else {
                 continue;
@@ -1162,6 +1267,15 @@ impl NetServer {
                     distance: hit.distance,
                     headshot: hit.headshot,
                 });
+                // The flag drops on the next flag update; it is still on them.
+                if self
+                    .flags
+                    .as_ref()
+                    .and_then(|f| f.carried_by(hit.id))
+                    .is_some_and(|flag| flag == shooter_team)
+                {
+                    carrier_kills += 1;
+                }
                 self.broadcast_event(&GameEvent::Kill {
                     killer: shot.shooter,
                     victim: hit.id,
@@ -1176,6 +1290,8 @@ impl NetServer {
                         self.match_state
                             .on_kill(&self.rules, Some(shooter_team), victim_team)
                     }),
+                    // Only captures score for the team.
+                    Mode::CaptureTheFlag => None,
                 };
                 if let Some(end) = end {
                     self.on_transition(end);
@@ -1190,7 +1306,10 @@ impl NetServer {
             let Some(shooter) = self.avatars.iter_mut().find(|a| a.id == shot.shooter) else {
                 return;
             };
-            let awards = shooter.score.on_shot_kills(&rules, &kills);
+            let mut awards = shooter.score.on_shot_kills(&rules, &kills);
+            for _ in 0..carrier_kills {
+                awards.extend(shooter.score.on_flag_play(&rules, Award::CarrierKill));
+            }
             let totals = shooter.score.totals();
             self.send_event(shot.shooter, GameEvent::Score { awards, totals });
         }
@@ -1240,7 +1359,7 @@ impl NetServer {
         let all_ready = self.auto_start || humans.iter().all(|c| c.ready);
         let phase = self.match_state.phase;
         let leader = match self.game {
-            Mode::TeamDeathmatch => self.match_state.team_leader(),
+            Mode::TeamDeathmatch | Mode::CaptureTheFlag => self.match_state.team_leader(),
             Mode::GunGame(_) => gun_game::leader(self.avatars.iter().map(|a| (a.id, a.progress))),
         };
         let transition = self
@@ -1258,6 +1377,7 @@ impl NetServer {
             Transition::Started => {
                 godot_print!("server: match started");
                 self.recent_deaths.clear();
+                self.reset_flags();
                 // Everyone starts fresh on their own side, in join order;
                 // without teams, each somewhere away from the others.
                 let free_for_all = self.game.free_for_all();
@@ -1306,6 +1426,7 @@ impl NetServer {
                 for client in &mut self.clients {
                     client.ready = true;
                 }
+                self.reset_flags();
             }
             Transition::NextCountdown => {}
         }
@@ -1322,7 +1443,7 @@ impl NetServer {
             ends_at,
             scores: state.scores,
             score_limit: match self.game {
-                Mode::TeamDeathmatch => self.rules.score_limit,
+                Mode::TeamDeathmatch | Mode::CaptureTheFlag => self.rules.score_limit,
                 Mode::GunGame(_) => u32::from(gun_game::LEVELS),
             },
         }
@@ -1352,6 +1473,8 @@ impl NetServer {
                     ready: client.is_none_or(|c| c.ready),
                     level: a.progress.level,
                     level_kills: a.progress.kills,
+                    captures: a.score.captures,
+                    returns: a.score.returns,
                 }
             })
             .collect();
@@ -1403,6 +1526,232 @@ impl NetServer {
             avatar.progress.on_suicide(self.tick);
             self.next_scoreboard = self.tick;
         }
+    }
+
+    /// Capture the Flag: moves the flags with their carriers and decides
+    /// takes, drops, returns, and captures, then pays out and tells everyone.
+    fn update_flags(&mut self) {
+        let Some(flags) = &mut self.flags else {
+            return;
+        };
+        let players: Vec<FlagPlayer> = self
+            .avatars
+            .iter()
+            .map(|a| FlagPlayer {
+                id: a.id,
+                team: a.team,
+                alive: a.predicted.state.alive(),
+                position: a.predicted.position,
+            })
+            .collect();
+        let before = *flags;
+        let mut events = Vec::new();
+        flags.tick(
+            &self.flag_rules,
+            TICK_DT,
+            self.match_state.scoring(),
+            &players,
+            &mut events,
+        );
+        for event in events {
+            self.on_flag_event(event);
+        }
+        if self.flags.is_some_and(|f| status_changed(&before, &f))
+            && let Some(event) = self.flags_event()
+        {
+            self.broadcast_event(&event);
+        }
+    }
+
+    fn on_flag_event(&mut self, event: FlagEvent) {
+        let team_of =
+            |avatars: &[Avatar], id: u8| avatars.iter().find(|a| a.id == id).map(|a| a.team);
+        let (flag, play, player, award) = match event {
+            FlagEvent::Taken {
+                flag,
+                by,
+                from_base,
+            } => (
+                flag,
+                FlagPlay::Taken,
+                Some(by),
+                // Only from the base, so dropping and retaking pays nothing.
+                from_base.then_some(Award::FlagTaken),
+            ),
+            FlagEvent::Dropped { flag, by, at } => {
+                let floor = self.floor_below(to_godot(at));
+                if let Some(flags) = &mut self.flags {
+                    flags.settle(flag, to_sim(floor));
+                }
+                (flag, FlagPlay::Dropped, Some(by), None)
+            }
+            FlagEvent::Returned { flag, by } => {
+                (flag, FlagPlay::Returned, by, by.map(|_| Award::FlagReturn))
+            }
+            FlagEvent::Captured { flag, by } => {
+                (flag, FlagPlay::Captured, Some(by), Some(Award::FlagCapture))
+            }
+        };
+        godot_print!(
+            "server: team {} flag {play:?}{}",
+            flag + 1,
+            player.map_or(String::new(), |p| format!(" by player {p}"))
+        );
+        self.broadcast_event(&GameEvent::FlagPlay { flag, play, player });
+        if let Some(id) = player
+            && let Some(award) = award
+        {
+            self.pay_flag_play(id, award);
+        }
+        if play == FlagPlay::Captured
+            && let Some(team) = player.and_then(|id| team_of(&self.avatars, id))
+        {
+            match self.match_state.on_capture(&self.rules, team) {
+                Some(end) => self.on_transition(end),
+                None => self.broadcast_match(),
+            }
+        }
+        self.next_scoreboard = self.tick;
+    }
+
+    /// Scores a flag play for a player and tells them.
+    fn pay_flag_play(&mut self, id: u8, award: Award) {
+        let rules = self.score_rules;
+        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
+            return;
+        };
+        let Some(scored) = avatar.score.on_flag_play(&rules, award) else {
+            return;
+        };
+        let totals = avatar.score.totals();
+        let awards: Vec<Scored> = vec![scored];
+        self.send_event(id, GameEvent::Score { awards, totals });
+    }
+
+    /// Where something dropped at `at` lands: the floor under it, or `at`.
+    fn floor_below(&self, at: Vector3) -> Vector3 {
+        let Some(mut space) = self
+            .base()
+            .get_world_3d()
+            .and_then(|world| world.get_direct_space_state())
+        else {
+            return at;
+        };
+        let from = at + Vector3::UP * 0.5;
+        world_hit(&mut space, from, at - Vector3::UP * FLAG_DROP_FALL).unwrap_or(at)
+    }
+
+    /// Both flags home, for the start and end of a match.
+    fn reset_flags(&mut self) {
+        let Some(flags) = &mut self.flags else {
+            return;
+        };
+        flags.reset();
+        if let Some(event) = self.flags_event() {
+            self.broadcast_event(&event);
+        }
+    }
+
+    /// Where both flags are, for clients (Capture the Flag only).
+    fn flags_event(&self) -> Option<GameEvent> {
+        let flags = self.flags.as_ref()?;
+        let view = |team: usize| {
+            let flag = &flags.flags[team];
+            FlagView {
+                home: flag.home,
+                status: match flag.state {
+                    FlagState::Home => FlagStatus::Home,
+                    FlagState::Carried { by } => FlagStatus::Carried { by },
+                    FlagState::Dropped { at, return_in } => FlagStatus::Dropped {
+                        at,
+                        returns_at: self.tick + (return_in.max(0.0) * TICK_RATE as f32) as Tick,
+                    },
+                },
+            }
+        };
+        Some(GameEvent::Flags {
+            flags: [view(0), view(1)],
+        })
+    }
+
+    /// What each playing bot should go for in Capture the Flag (nothing in
+    /// Team Deathmatch, where bots roam and hunt).
+    ///
+    /// - A carrier runs the flag home.
+    /// - When a team's flag lies dropped, its two nearest bots go to return it.
+    /// - Otherwise a third of each team (at least one bot in teams of three or
+    ///   more) defends: it holds spots near its flag, or chases the enemy
+    ///   carrying it. The rest attack: they go for the enemy's flag, or
+    ///   escort the teammate carrying it.
+    fn bot_objectives(&self) -> Vec<(u8, Option<BotObjective>)> {
+        let Some(flags) = &self.flags else {
+            return Vec::new();
+        };
+        let position = |id: u8| {
+            self.avatars
+                .iter()
+                .find(|a| a.id == id)
+                .map(|a| to_godot(a.predicted.position))
+        };
+        let mut out = Vec::new();
+        for team in 0..tdm::TEAM_COUNT as Team {
+            let own = flags.flag(team);
+            let enemy = flags.flag(1 - team);
+            let mut bots: Vec<&Avatar> = self
+                .avatars
+                .iter()
+                .filter(|a| a.team == team && a.brain.is_some())
+                .collect();
+            bots.sort_unstable_by_key(|a| a.id);
+            let team_size = self.avatars.iter().filter(|a| a.team == team).count();
+            // The bots nearest the team's dropped flag go to return it.
+            let returners: Vec<u8> = match own.state {
+                FlagState::Dropped { at, .. } => {
+                    let mut by_distance: Vec<(f32, u8)> = bots
+                        .iter()
+                        .map(|a| (a.predicted.position.distance(at), a.id))
+                        .collect();
+                    by_distance.sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
+                    by_distance.iter().take(2).map(|(_, id)| *id).collect()
+                }
+                _ => Vec::new(),
+            };
+            for (i, bot) in bots.iter().enumerate() {
+                let defender = team_size >= 3 && i % 3 == 0;
+                let objective = if flags.carried_by(bot.id).is_some() {
+                    BotObjective::run(to_godot(own.home))
+                } else if returners.contains(&bot.id) {
+                    BotObjective::run(to_godot(own.position))
+                } else if defender {
+                    match own.state {
+                        FlagState::Carried { by } => {
+                            BotObjective::hunt(position(by).unwrap_or(to_godot(own.home)))
+                        }
+                        _ => BotObjective::hold(self.defend_spot(bot.id, own.home)),
+                    }
+                } else {
+                    match enemy.state {
+                        FlagState::Carried { by } => {
+                            BotObjective::hunt(position(by).unwrap_or(to_godot(own.home)))
+                        }
+                        // Attackers grab a dropped flag as urgently as a returner.
+                        FlagState::Dropped { at, .. } => BotObjective::run(to_godot(at)),
+                        FlagState::Home => BotObjective::hunt(to_godot(enemy.home)),
+                    }
+                };
+                out.push((bot.id, Some(objective)));
+            }
+        }
+        out
+    }
+
+    /// A spot near `home` for defender `id` to hold, changing every few
+    /// seconds.
+    fn defend_spot(&self, id: u8, home: Vec3) -> Vector3 {
+        let period = self.tick / (DEFEND_SPOT_SECONDS * TICK_RATE);
+        let angle = rng::unit(u32::from(id), period) * std::f32::consts::TAU;
+        let offset = Vector3::new(angle.cos(), 0.0, angle.sin()) * DEFEND_RADIUS;
+        to_godot(home) + offset
     }
 
     fn client_of(&self, id: u8) -> Option<&ClientSlot> {
@@ -1644,4 +1993,66 @@ fn fallback_spawns(start: Vector3) -> Vec<SpawnPoint> {
             ]
         })
         .collect()
+}
+
+/// The map's flag bases for Capture the Flag: `Node3D` children of a `Flags`
+/// node with a `team` metadata of 0 or 1. `None` unless both teams have one.
+fn map_flags(map: &Gd<Node>) -> Option<[Vec3; tdm::TEAM_COUNT]> {
+    let parent = map
+        .get_node_or_null("Flags")
+        .and_then(|n| n.try_cast::<Node3D>().ok())?;
+    let base = parent.get_transform();
+    let mut homes: [Option<Vec3>; tdm::TEAM_COUNT] = [None; tdm::TEAM_COUNT];
+    for child in parent.get_children().iter_shared() {
+        let Ok(marker) = child.try_cast::<Node3D>() else {
+            continue;
+        };
+        let team = marker
+            .get_meta_ex("team")
+            .default(&(-1).to_variant())
+            .done()
+            .try_to::<i32>()
+            .ok()
+            .and_then(|t| usize::try_from(t).ok())
+            .filter(|t| *t < tdm::TEAM_COUNT);
+        if let Some(team) = team {
+            homes[team] = Some(to_sim((base * marker.get_transform()).origin));
+        }
+    }
+    Some([homes[0]?, homes[1]?])
+}
+
+/// Flag bases for maps that mark none: the middle of each team's spawn
+/// points (or of all of them, for a team without its own).
+fn fallback_flag_homes(points: &[SpawnPoint]) -> [Vec3; tdm::TEAM_COUNT] {
+    let centre = |team: Team| {
+        let own: Vec<Vec3> = points
+            .iter()
+            .filter(|p| p.team == Some(team))
+            .map(|p| p.position)
+            .collect();
+        let chosen: Vec<Vec3> = if own.is_empty() {
+            points.iter().map(|p| p.position).collect()
+        } else {
+            own
+        };
+        chosen.iter().copied().sum::<Vec3>() / chosen.len().max(1) as f32
+    };
+    [centre(0), centre(1)]
+}
+
+/// Whether a flag changed hands or place in a way clients must hear about
+/// (not just a carrier walking, or a dropped flag's clock running down).
+fn status_changed(before: &Flags, after: &Flags) -> bool {
+    before.flags.iter().zip(&after.flags).any(|(a, b)| {
+        !matches!((a.state, b.state), (FlagState::Home, FlagState::Home))
+            && !matches!(
+                (a.state, b.state),
+                (FlagState::Carried { by: x }, FlagState::Carried { by: y }) if x == y
+            )
+            && !matches!(
+                (a.state, b.state),
+                (FlagState::Dropped { at: x, .. }, FlagState::Dropped { at: y, .. }) if x == y
+            )
+    })
 }

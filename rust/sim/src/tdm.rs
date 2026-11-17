@@ -1,8 +1,10 @@
 //! Team Deathmatch: teams, the match clock and score, and where players spawn.
 //!
 //! Two teams race to a kill limit before the clock runs out. Other modes
-//! ([`Mode`]) reuse the clock and the phases; Gun Game is every player for
-//! themselves (`crate::gun_game`). A match goes through these phases:
+//! ([`Mode`]) reuse the clock and the phases: Capture the Flag is two teams
+//! scoring captures instead of kills (`crate::ctf`), and Gun Game is every
+//! player for themselves (`crate::gun_game`). A match goes through these
+//! phases:
 //!
 //! - [`Phase::Lobby`]: players join, pick a loadout, and can run around and
 //!   shoot, but nothing counts. It ends when every human player is ready.
@@ -30,15 +32,21 @@ pub enum Mode {
     TeamDeathmatch,
     /// Every player for themselves, up a ladder of weapons.
     GunGame(gun_game::Rules),
+    /// Two teams score by carrying the enemy's flag home; kills score
+    /// nothing for the team.
+    CaptureTheFlag,
 }
 
 impl Mode {
-    /// Parses a mode name as servers take it on the command line ("tdm" or
-    /// "gungame"), with default rules.
+    /// Parses a mode name as servers take it on the command line ("tdm",
+    /// "gungame", or "ctf"), with default rules.
     pub fn parse(name: &str) -> Option<Self> {
         match name.trim().to_ascii_lowercase().as_str() {
             "" | "tdm" | "teamdeathmatch" | "team_deathmatch" => Some(Self::TeamDeathmatch),
             "gungame" | "gun_game" | "gun-game" => Some(Self::GunGame(gun_game::Rules::default())),
+            "ctf" | "capturetheflag" | "capture_the_flag" | "capture-the-flag" => {
+                Some(Self::CaptureTheFlag)
+            }
             _ => None,
         }
     }
@@ -48,6 +56,7 @@ impl Mode {
         match self {
             Self::TeamDeathmatch => "tdm",
             Self::GunGame(_) => "gungame",
+            Self::CaptureTheFlag => "ctf",
         }
     }
 
@@ -56,6 +65,7 @@ impl Mode {
         match self {
             Self::TeamDeathmatch => "Team Deathmatch",
             Self::GunGame(_) => "Gun Game",
+            Self::CaptureTheFlag => "Capture the Flag",
         }
     }
 
@@ -63,6 +73,16 @@ impl Mode {
     /// everyone is on team 0.
     pub fn free_for_all(&self) -> bool {
         matches!(self, Self::GunGame(_))
+    }
+
+    /// The usual team score limit when the server is not given one: kills in
+    /// Team Deathmatch, captures in Capture the Flag (Gun Game ends on its
+    /// last weapon instead).
+    pub fn default_score_limit(&self) -> u32 {
+        match self {
+            Self::CaptureTheFlag => 3,
+            _ => 75,
+        }
     }
 }
 
@@ -206,6 +226,17 @@ impl MatchState {
         (*score >= rules.score_limit).then(|| self.finish(rules, Some(killer)))
     }
 
+    /// Counts a flag capture by `team` (Capture the Flag). Returns the end of
+    /// the match if it reached the score limit.
+    pub fn on_capture(&mut self, rules: &MatchRules, team: Team) -> Option<Transition> {
+        if !self.scoring() || usize::from(team) >= TEAM_COUNT {
+            return None;
+        }
+        let score = &mut self.scores[usize::from(team)];
+        *score += 1;
+        (*score >= rules.score_limit).then(|| self.finish(rules, Some(team)))
+    }
+
     /// Returns to the lobby, for when every human has left.
     pub fn reset(&mut self) {
         *self = Self::default();
@@ -278,6 +309,9 @@ pub struct SpawnRules {
     pub side_bonus: f32,
     /// Penalty for a spawn on the enemy's side.
     pub enemy_side_penalty: f32,
+    /// Never spawn on the enemy's side while any other point exists, however
+    /// dangerous (Capture the Flag: the enemy's side is where their flag is).
+    pub own_side_only: bool,
 }
 
 impl Default for SpawnRules {
@@ -292,6 +326,21 @@ impl Default for SpawnRules {
             teammate_bonus: 4.0,
             side_bonus: 10.0,
             enemy_side_penalty: 30.0,
+            own_side_only: false,
+        }
+    }
+}
+
+impl SpawnRules {
+    /// The spawn rules for a mode. Capture the Flag keeps each team at its
+    /// own base, near the flag it defends, instead of wherever is safest.
+    pub fn for_mode(mode: &Mode) -> Self {
+        match mode {
+            Mode::CaptureTheFlag => Self {
+                own_side_only: true,
+                ..Self::default()
+            },
+            _ => Self::default(),
         }
     }
 }
@@ -320,7 +369,12 @@ pub fn choose_spawn(
 ) -> Option<usize> {
     // Safety tiers beat soft bonuses: clear, watched, enemy nearby, occupied.
     let mut best: Option<(usize, u8, f32)> = None;
+    let enemy_side = |p: &SpawnPoint| p.team.is_some_and(|t| t != team);
+    let skip_enemy_side = rules.own_side_only && points.iter().any(|p| !enemy_side(p));
     for (i, point) in points.iter().enumerate() {
+        if skip_enemy_side && enemy_side(point) {
+            continue;
+        }
         let mut score = 0.0;
         let mut danger = 0;
         score += match point.team {
@@ -505,6 +559,60 @@ mod tests {
             state.tick(&rules(), 0.1, false, Some(7)),
             Some(Transition::Ended { winner: Some(7) })
         );
+    }
+
+    #[test]
+    fn captures_score_for_the_team_and_can_end_the_match() {
+        let rules = MatchRules {
+            score_limit: 2,
+            ..rules()
+        };
+        let mut state = MatchState {
+            phase: Phase::Playing,
+            time_left: 10.0,
+            scores: [0, 0],
+        };
+        assert_eq!(state.on_capture(&rules, 1), None);
+        assert_eq!(
+            state.on_capture(&rules, 1),
+            Some(Transition::Ended { winner: Some(1) })
+        );
+        assert_eq!(state.scores, [0, 2]);
+        // Captures count only while playing.
+        let mut lobby = MatchState::default();
+        assert_eq!(lobby.on_capture(&rules, 0), None);
+        assert_eq!(lobby.scores, [0, 0]);
+    }
+
+    #[test]
+    fn capture_the_flag_parses_and_keeps_teams() {
+        for name in ["ctf", "CaptureTheFlag", "capture_the_flag"] {
+            assert_eq!(Mode::parse(name), Some(Mode::CaptureTheFlag), "{name}");
+        }
+        let ctf = Mode::CaptureTheFlag;
+        assert_eq!(Mode::parse(ctf.key()), Some(ctf));
+        assert_eq!(ctf.label(), "Capture the Flag");
+        assert!(!ctf.free_for_all());
+        assert_eq!(ctf.default_score_limit(), 3);
+        assert_eq!(Mode::TeamDeathmatch.default_score_limit(), 75);
+    }
+
+    #[test]
+    fn capture_the_flag_spawns_stay_at_the_own_base() {
+        // Two enemies camp the own base; TDM would send the player across
+        // the map, CTF keeps them home.
+        let points = [point(0.0, Some(0)), point(100.0, Some(1))];
+        let enemy = Threat {
+            position: Vec3::new(3.0, 0.0, 0.0),
+            enemy: true,
+        };
+        let threats = [enemy, enemy];
+        let choose = |mode| {
+            let rules = SpawnRules::for_mode(&mode);
+            choose_spawn(&points, 0, &threats, &[], &rules, |_| 0, 3).unwrap()
+        };
+        assert_eq!(choose(Mode::TeamDeathmatch), 1);
+        assert_eq!(choose(Mode::CaptureTheFlag), 0);
     }
 
     #[test]

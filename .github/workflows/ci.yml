@@ -171,6 +171,10 @@ jobs:
       # the weapon ladder and swap their weapon, and the clock ends the match.
       - name: Run Gun Game test
         run: godot --headless --path godot --script res://tests/gun_game_test.gd
+      # Capture the Flag on Slamcity in a server in the test process: the
+      # flag rules with hand-placed players, then a 6v6 of bots that take a flag.
+      - name: Run Capture the Flag test
+        run: godot --headless --path godot --script res://tests/ctf_test.gd
       # The benchmark needs a GPU to measure anything; this run only keeps the
       # script, its maps, and every graphics preset loading. See docs/performance.md.
       - name: Run benchmark script (no GPU)
