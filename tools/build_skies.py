@@ -30,6 +30,7 @@ USER_AGENT = "shooter-asset-pipeline"
 SKIES = {
     "range_day": "kloofendal_48d_partly_cloudy_puresky",
     "slamcity_sunset": "qwantani_late_afternoon_puresky",
+    "slamcity_dusk": "kloppenheim_06_puresky",
     "zombies_night": "qwantani_moon_noon_puresky",
 }
 

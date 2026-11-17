@@ -22,10 +22,10 @@ Rules for every character, prop, and map:
 
 Level geometry uses one shader, `godot/shaders/world.gdshader`. It projects a texture set in world space from the axis each face points along most, so boxes need no UVs, textures never stretch when a box is resized, and each pixel samples its textures once. Low-frequency noise varies brightness and roughness across large surfaces, so repeats don't show, and walls darken toward the ground with grime.
 
-`tools/build_textures.py` holds the whole library:
+`tools/build_textures.py` builds the library from the tables in `tools/world_looks.py`:
 
 - **Texture sets** (`godot/assets/textures/<set>/`): pinned CC0 sets from [ambientCG](https://ambientcg.com) at 1024², packed into an albedo, an OpenGL normal map, and an ORM map (R ambient occlusion, G roughness, B metallic). A set marked `grey` stores brightness only, so one set serves many paint colours.
-- **Looks** (`godot/materials/world/<look>.tres`): a set plus a tint, the texture's size in metres, roughness and metallic scales, and how much grime. Maps reference looks by name; `tools/build_slamcity.py` maps each blockout role to one.
+- **Looks** (`godot/materials/world/<look>.tres`): a set plus a tint, the texture's size in metres, roughness and metallic scales, and how much grime. Maps reference looks by name. Slamcity has its own look table, `SLAMCITY_LOOKS` in `tools/world_looks.py` (see Slamcity below).
 
 To add a surface, add a set or a look to the tool, run it, import, and run it again with `--fix-imports` (its docstring has the commands). Textures import VRAM compressed with mipmaps; normal maps use two-channel compression, and the shader rebuilds their blue channel.
 
@@ -35,9 +35,9 @@ Curved shapes switch projection axis where their normal turns past 45°, which s
 
 ![Slamcity's skyline before (left) and after (right) the windows](media/skyline-windows.jpg)
 
-The skyline buildings beyond the boundary are plain boxes, so `world.gdshader` draws their windows: a look with a `windows` entry in `tools/build_textures.py` gets a grid of framed windows with sills on every wall above the ground floor. Behind each pane is a room that exists only in the shader (interior mapping): the view ray is intersected with a box behind the glass, and the wall, floor, or ceiling it hits is coloured, with a door or shelf on the back wall, blinds drawn part way in some windows, and a few rooms lit warmer than the rest. Every room differs by a hash of its cell, the glass reflects the sky through the engine's own specular light, and the edges are antialiased from screen-space derivatives so distant windows do not shimmer. It costs no geometry or textures, and parallax makes the rooms move correctly as the player walks past.
+The skyline buildings beyond the boundary are plain boxes, so the world shader draws their windows: a look with a `windows` entry in `tools/world_looks.py` uses the `world_windows.gdshader` variant and gets a grid of framed windows with sills on every wall above the ground floor. Behind each pane is a room that exists only in the shader (interior mapping): the view ray is intersected with a box behind the glass, and the wall, floor, or ceiling it hits is coloured, with a door or shelf on the back wall, blinds drawn part way in some windows, and a few rooms lit warmer than the rest. Every room differs by a hash of its cell, the glass reflects the sky through the engine's own specular light, and the edges are antialiased from screen-space derivatives so distant windows do not shimmer. It costs no geometry or textures, and parallax makes the rooms move correctly as the player walks past.
 
-Windows stay off the buildings players fight around: a fake window there could read as a firing position.
+On the buildings players fight around, a fake window could read as a firing position. Slamcity's panes there keep their blinds drawn and their rooms dim (see Slamcity below); elsewhere, keep fake windows off those buildings.
 
 ### Character relief
 
@@ -51,17 +51,30 @@ Props are CC0 models from [Poly Haven](https://polyhaven.com/models), built by `
 
 Props never change how a map plays. Each one that should block players or bullets stands on a box in a hidden CSG combiner (`Blockers`, `CoverBlockers`, or the map's existing combiners, now hidden), so collision stays exactly as simple as the blockout and impacts still report a surface. Crate stacks are scaled to fill their old blockout box; jersey barriers are scaled to fill the old low cover.
 
-### Decals and trim
+### Slamcity
 
-![The three-lane Slamcity: Market Street from the west yard, the flats' roof over the street, the back alley with the fire escape, and the laundromat](media/slamcity-lanes.jpg)
+![Slamcity: Slam Junction over the avenue, the derailed car in the alley, a platform, the avenue from the platform, the diner, and the climb up the derailed car's aisle](media/slamcity-junction.jpg)
 
-Slamcity is a three-lane Team Deathmatch map (`tools/build_slamcity.py`): the back alley with a fire escape up to the flats' roof, Market Street around the skate bowl, and joined interiors with windows onto the street, mirrored so both teams get the same lanes.
+Slamcity is a city block at dusk cut by an elevated railway. Every surface of it is generated, so the whole map is rebuilt from code:
 
-![Slamcity with road paint, manholes, damaged asphalt, and framed windows and storefronts](media/decals-trim.jpg)
+- `tools/slamcity_layout.py` is the one description of the map: collision, visual parts (bevelled boxes, hulls, cylinders, tubes, 3D and neon letters, pictures from the sign atlas, and window panes), placed models, props, decals, baked lights, spawns, lanes, and zones. Walls are written once with their doors and windows (`Wall`), and the east half is the west half mirrored, with its own signs and colours (`Side`).
+- `tools/slamcity_models.py` models the cars, buses, trucks, the train, water towers, the shop interiors, and the street furniture from the same primitives. Solid stairs are one stepped extrusion (the `extrude` part: any flat polygon swept along a vector, its caps split into convex pieces), so their sides bake without seams. `tools/build_slamcity_city.py` runs in Blender, builds every part and model, merges them by chunk (a 3 x 2 grid, a finer grid for small things, and the skyline) and by material, and writes `godot/assets/maps/slamcity/city.gltf`. Each chunk also gets a shadow-only twin with all its opaque geometry in one surface.
+- Looks come from `tools/world_looks.py`. Textured looks that share a texture set and scale share one material, their tint in the vertex colour; plain colours and lights fold into three palette materials. About 50 materials cover the map. `godot/tools/slamcity_import.gd` swaps them in at import.
+- Windows players cannot use are panes with a room behind the glass (`shaders/window_pane.gdshader`, the same interior mapping as the skyline). On the buildings players fight around, their blinds are drawn and the rooms dim, so they never read as firing positions.
+- `tools/build_slamcity_signs.py` draws every billboard, poster, shop sign, package, and route map into one atlas. Every brand and name on them is made up.
+- `tools/build_slamcity.py` writes the scene and refuses a layout that fails `tools/slamcity_checks.py`: collision must be mirrored; no spawn point may be in sight of the enemy's spawns, roof, platform, train, or diner roof; no line longer than 60 m may run clear down the avenue or the alley, longer than 50 m between the teams' high ground (lines that thread both rows of the stalled train's windows are allowed: keyholes, not lanes), or longer than 35 m from a platform down its side of the avenue; at least 15 spawn points must hide from the team's own high ground and 8 from an enemy inside the team's half. Every solid collider blocks sight in these checks, the derailed car's tilted boxes included. CI runs them (`tools/test_slamcity_layout.py`), with hashes that catch a scene, mesh, or lightmap left stale against the layout; `godot/tests/slamcity_test.gd` checks the spawn sightlines again with real physics rays and bakes a navigation mesh to prove bots can reach every zone and flag.
 
-Slamcity's surfaces carry CC0 ambientCG decals (`tools/build_decals.py` packs them into `godot/assets/textures/decals/`): worn crossings, dashed centre lines, and edge lines (grey in the texture, painted white or yellow by the Decal's modulate), patched and broken asphalt, manholes, and rain streaks under the roof edges. Following the rule that texture detail stays quiet, there is no graffiti where players look for enemies.
+![Slamcity's plan: the spawn yards at each end, the back alley, the tenements and pawn shops, the avenue, Slam Junction and the wreck on the mirror line, the storefronts and the ticket hall, with spawns, flags, Hardpoint zones, and bot lanes](media/slamcity-plan.jpg)
 
-Its buildings get trim that has no collision, so it never changes movement or cover: window frames and stone sills on the flats, dark storefront frames and a kick plate on the stores, a gutter along the flats' roof, and downpipes on the corners (`building_trim` in `tools/build_slamcity.py`).
+Hardpoint rotates through five zones on the mirror line: the Ticket Hall, Under the El, the Roadworks in the pit, the Back Alley, and the Platforms. Every move goes at least 16 m to a zone whose footprint does not touch the last one's (`check_hardpoint_hops`), so the fight moves across the map instead of a room over or a floor up, and the south storefronts, the avenue, and the alley take turns as the approach.
+
+The map's set pieces are the derailed car, nose-down in the alley with its roof crushed, its sides torn and sooted, and a bogie hanging by its cables, and the burst water main in the roadworks pit (`godot/scenes/effects/water_spray.tscn`): a column of thin velocity-aligned streaks with a little mist and splash, about 1 ms of GPU time when it fills the screen on Medium (the `slamcity_closeups` benchmark views watch both).
+
+#### Decals and trim
+
+Slamcity's surfaces carry CC0 ambientCG decals (`tools/build_decals.py` packs them into `godot/assets/textures/decals/`): worn crossings, dashed centre lines, and edge lines (grey in the texture, painted white or yellow by the Decal's modulate), patched and broken asphalt, manholes, rain streaks under the roof edges, parking bays in the yards, and puddles and oil stains the tool generates (their ORM map makes puddles nearly mirror-smooth, so they catch the sky). Following the rule that texture detail stays quiet, there is no graffiti where players look for enemies.
+
+Visual trim has no collision, so it never changes movement or cover: window frames, sills, lintels, cornices, quoins, and downpipes on the buildings.
 
 ### Light
 
@@ -72,7 +85,7 @@ Each map is lit by a CC0 sky image (an HDRI from [Poly Haven](https://polyhaven.
 | Map | Sky | Mood |
 | --- | --- | --- |
 | Testing Area | `kloofendal_48d_partly_cloudy_puresky` | Clear midday with clouds, high sun, light haze |
-| Slamcity | `qwantani_late_afternoon_puresky` | Late afternoon: a warm sun, long shadows, warm haze that fades the skyline. The light stands at 28°, above the sky's own sun (19°), so the streets stay lit |
+| Slamcity | `kloppenheim_06_puresky` | Dusk: a low sun due south behind the storefronts (12°, above the sky's own 5° so the streets keep some light), long shadows, warm haze, and neon, lit windows, and street lamps baked into the lightmap |
 | Zombies | `qwantani_moon_noon_puresky` | Moonlit night with stars, blue moonlight, dim fog, and street lamps that flicker (`scripts/lamp_flicker.gd`) |
 
 ![Before (left) and after (right) the baked lightmaps: Slamcity's street, a corner store, the alley, and the Testing Area](media/lightmaps.jpg)
@@ -99,7 +112,7 @@ The final picture of a map is set in `godot/scripts/looks.gd`, not in its scene,
 | --- | --- |
 | Testing Area | Crisp midday: firm contrast, cool shadows, warm highlights, slightly muted colour |
 | Zombies | Cold night: muted colour, blue shadows, warm lamp highlights, shadows kept readable |
-| Slamcity | Late afternoon: firmer contrast, cool shadows against the warm sun. Grade only: its environment stays as its generator writes it |
+| Slamcity | Dusk: firmer contrast, cool shade against warm lamp and sun light. Its environment overrides keep bloom to the neon, the lamps, and the lit windows (`glow_hdr_threshold` 1.3), so sunlit surfaces never glare |
 
 Nuketown is not listed and keeps the look authored in its scene.
 

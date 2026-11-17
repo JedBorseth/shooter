@@ -36,6 +36,7 @@ SURFACE_DECALS = {
     "asphalt_damage": ("AsphaltDamage001", False),
     "manhole": ("ManholeCover010", False),
     "drips": ("Leaking016B", False),
+    "parking_lines": ("RoadLines019B", True),
 }
 
 
@@ -85,6 +86,33 @@ def value_noise(size: int, cells: int, rng: np.random.Generator) -> np.ndarray:
     ) * f[:, None]
 
 
+def wet_patches(rng: np.random.Generator) -> None:
+    """Puddles and oil stains: noise-edged blobs. Their ORM texture makes them
+    smooth (puddles nearly mirror-smooth), so they catch the sky."""
+    size = 512
+    y, x = np.mgrid[0:size, 0:size] / (size - 1) * 2 - 1
+    for name, colour, opacity, rough in (("puddle", (0.16, 0.16, 0.17), 0.55, 0.04),
+                                          ("oil_stain", (0.07, 0.06, 0.05), 0.8, 0.3)):
+        edge = np.hypot(x * 1.0, y * 1.25) + (value_noise(size, 5, rng) - 0.5) * 0.5 \
+            + (value_noise(size, 17, rng) - 0.5) * 0.15
+        alpha = np.clip((0.78 - edge) / 0.12, 0, 1) * opacity
+        if name == "oil_stain":
+            alpha *= 0.6 + 0.4 * value_noise(size, 9, rng)
+        rgba = np.zeros((size, size, 4), np.float32)
+        rgba[..., :3] = colour
+        rgba[..., 3] = alpha
+        Image.fromarray((rgba * 255).astype(np.uint8), "RGBA").save(OUT / f"{name}_albedo.png", optimize=True)
+        normal = np.zeros((size, size, 3), np.uint8)
+        normal[...] = (128, 128, 255)
+        Image.fromarray(normal, "RGB").save(OUT / f"{name}_normal.png", optimize=True)
+        orm = np.zeros((size, size, 4), np.float32)
+        orm[..., 0] = 1.0
+        orm[..., 1] = rough
+        orm[..., 3] = alpha
+        Image.fromarray((orm * 255).astype(np.uint8), "RGBA").save(OUT / f"{name}_orm.png", optimize=True)
+        print(f"{name}: generated")
+
+
 def main() -> None:
     rng = np.random.default_rng(7)
     y, x = np.mgrid[0:SIZE, 0:SIZE] / (SIZE - 1) * 2 - 1
@@ -122,6 +150,7 @@ def main() -> None:
     Image.fromarray(rgb, "RGB").save(OUT / "bullet_hole_normal.png")
     for name, (asset, grey) in SURFACE_DECALS.items():
         fetch_decal(name, asset, grey)
+    wet_patches(rng)
     print(f"wrote {OUT}")
 
 

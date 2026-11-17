@@ -38,81 +38,15 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from world_looks import LOOKS, SETS  # noqa: E402
+
 REPO = Path(__file__).resolve().parent.parent
 TEXTURES = REPO / "godot/assets/textures"
 MATERIALS = REPO / "godot/materials/world"
 CACHE = Path.home() / ".cache/shooter-textures"
 SIZE = 1024
 USER_AGENT = "shooter-asset-pipeline"
-
-# Texture sets: name -> (ambientCG asset id, options). `grey` stores the albedo
-# as brightness only, so one set serves several colours through the tint.
-SETS: dict[str, tuple[str, dict]] = {
-    "asphalt": ("Road012A", {}),
-    "brick": ("Bricks051", {}),
-    "brick_painted": ("Bricks060", {"grey": True}),
-    "canvas": ("Fabric061", {"grey": True}),
-    "concrete_floor": ("Concrete047A", {}),
-    "concrete_panels": ("Concrete031", {}),
-    "concrete_smooth": ("Concrete034", {"grey": True}),
-    "concrete_stained": ("Concrete036", {}),
-    "corrugated": ("CorrugatedSteel005", {}),
-    "container": ("CorrugatedSteel006C", {"grey": True}),
-    "dirt": ("Ground103", {}),
-    "painted_metal": ("Metal046A", {"grey": True}),
-    "planks": ("Planks023A", {}),
-    "plaster": ("Plaster001", {"grey": True}),
-    "rusty_paint": ("PaintedMetal006", {}),
-    "tread_plate": ("DiamondPlate007D", {}),
-}
-
-# Surface looks: name -> parameters for world.gdshader. `set` is a key of SETS
-# or None for a plain colour. `size` is metres per texture repeat. `tint`
-# multiplies the albedo. `rough`/`metal` scale the ORM channels (a set with no
-# metalness map reads as 0). `grime` darkens walls toward the ground.
-LOOKS: dict[str, dict] = {
-    # Slamcity
-    "asphalt": {"set": "asphalt", "size": 4.0, "tint": (0.85, 0.85, 0.85), "grime": 0.0},
-    "sidewalk": {"set": "concrete_panels", "size": 3.0, "tint": (0.95, 0.93, 0.9), "grime": 0.0},
-    "skate_concrete": {"set": "concrete_smooth", "size": 4.0, "tint": (0.78, 0.78, 0.8), "rough": 0.8},
-    "skate_floor": {"set": "concrete_smooth", "size": 4.0, "tint": (0.58, 0.6, 0.64), "rough": 0.75},
-    "brick_red": {"set": "brick", "size": 2.2, "tint": (0.95, 0.88, 0.85)},
-    "brick_blue": {"set": "brick_painted", "size": 2.2, "tint": (0.42, 0.48, 0.58)},
-    "plaster_warm": {"set": "plaster", "size": 3.0, "tint": (0.86, 0.8, 0.68), "grime": 0.15},
-    "trim_dark": {"set": "painted_metal", "size": 2.0, "tint": (0.17, 0.17, 0.19), "metal": 0.2},
-    "door_teal": {"set": "painted_metal", "size": 1.5, "tint": (0.12, 0.42, 0.44), "metal": 0.0, "rough": 0.8},
-    "glass": {"set": None, "tint": (0.05, 0.08, 0.11), "rough": 0.12, "metal": 0.0, "specular": 0.35},
-    "steel_painted": {"set": "painted_metal", "size": 2.0, "tint": (0.4, 0.42, 0.45), "metal": 0.6},
-    "wood": {"set": "planks", "size": 2.0, "tint": (1.0, 0.95, 0.88)},
-    "canvas_tan": {"set": "canvas", "size": 1.5, "tint": (0.74, 0.65, 0.48)},
-    "dumpster_green": {"set": "painted_metal", "size": 1.5, "tint": (0.2, 0.4, 0.26), "metal": 0.0, "rough": 0.85},
-    "car_red": {"set": None, "tint": (0.62, 0.1, 0.08), "rough": 0.3, "metal": 0.4, "specular": 0.7},
-    "car_taxi": {"set": None, "tint": (0.9, 0.62, 0.1), "rough": 0.3, "metal": 0.4, "specular": 0.7},
-    "car_blue": {"set": None, "tint": (0.14, 0.24, 0.52), "rough": 0.3, "metal": 0.4, "specular": 0.7},
-    "truck_white": {"set": "painted_metal", "size": 2.0, "tint": (0.88, 0.88, 0.86), "metal": 0.0, "rough": 0.7},
-    # Skyline buildings beyond the boundary: windows with fake rooms behind them.
-    "skyline_grey": {"set": "plaster", "size": 4.0, "tint": (0.8, 0.74, 0.64), "grime": 0.0,
-                     "windows": {"cell": (2.0, 3.2), "rect": (0.2, 0.28, 0.84), "frame": (0.3, 0.3, 0.31)}},
-    "skyline_dark": {"set": "concrete_panels", "size": 6.0, "tint": (0.55, 0.55, 0.58), "grime": 0.0,
-                     "windows": {"cell": (2.0, 3.4), "rect": (0.1, 0.18, 0.9), "frame": (0.12, 0.12, 0.13)}},
-    "skyline_brick": {"set": "brick", "size": 4.0, "tint": (0.75, 0.7, 0.68), "grime": 0.0,
-                      "windows": {"cell": (2.0, 3.0), "rect": (0.27, 0.3, 0.8), "frame": (0.85, 0.83, 0.78)}},
-    "boundary": {"set": "concrete_panels", "size": 4.0, "tint": (0.9, 0.9, 0.94)},
-    # Testing Area
-    "range_floor": {"set": "concrete_floor", "size": 4.0, "tint": (0.8, 0.8, 0.82), "grime": 0.0},
-    "range_wall": {"set": "concrete_panels", "size": 4.0, "tint": (1.35, 1.33, 1.3)},
-    "range_cover": {"set": "concrete_smooth", "size": 2.0, "tint": (0.86, 0.5, 0.2)},
-    "range_platform": {"set": "tread_plate", "size": 2.0, "tint": (0.75, 0.82, 0.9), "metal": 1.0},
-    "range_tunnel": {"set": "container", "size": 2.5, "tint": (0.36, 0.44, 0.26), "metal": 0.5},
-    "range_crate": {"set": "planks", "size": 1.5, "tint": (1.0, 0.92, 0.78)},
-    # Zombies arena
-    "yard_dirt": {"set": "dirt", "size": 4.0, "tint": (0.7, 0.68, 0.64), "grime": 0.0},
-    "yard_wall": {"set": "concrete_stained", "size": 4.0, "tint": (0.72, 0.72, 0.74), "grime": 0.5},
-    "yard_pillar": {"set": "brick", "size": 2.2, "tint": (0.72, 0.62, 0.58), "grime": 0.4},
-    "barrel_rust": {"set": "rusty_paint", "size": 1.2, "tint": (0.85, 0.85, 0.85), "metal": 0.7, "grime": 0.0},
-    "barrel_blue": {"set": "container", "size": 1.2, "tint": (0.18, 0.3, 0.52), "metal": 0.6, "grime": 0.0},
-}
-
 
 # Defaults for a look's `windows`: the grid cell in metres (column, storey), the
 # glass inside a cell (side margin, sill height, head height, as fractions), the
@@ -188,7 +122,8 @@ def color(rgb) -> str:
 
 def write_look(name: str, look: dict) -> None:
     lines = ['[gd_resource type="ShaderMaterial" format=3]', ""]
-    lines.append('[ext_resource type="Shader" path="res://shaders/world.gdshader" id="1_shader"]')
+    shader = "world_windows" if "windows" in look else "world"
+    lines.append(f'[ext_resource type="Shader" path="res://shaders/{shader}.gdshader" id="1_shader"]')
     tex_set = look.get("set")
     if tex_set:
         for i, kind in enumerate(("albedo", "normal", "orm"), start=2):
@@ -302,6 +237,32 @@ def fix_imports() -> None:
     print(f"updated {count} import files")
 
 
+def macro_noise(size: int = 512) -> None:
+    """The world shader's large-scale brightness variation, as a tiling texture
+    (one fetch per pixel instead of two octaves of value noise in the shader):
+    16 cells of smooth value noise across the image plus 64 finer ones."""
+    rng = np.random.default_rng(11)
+
+    def octave(cells: int) -> np.ndarray:
+        grid = rng.random((cells, cells))
+        t = np.arange(size) / size * cells
+        i = t.astype(int)
+        f = t - i
+        f = f * f * (3 - 2 * f)
+        j = (i + 1) % cells
+        a, b = grid[i][:, i], grid[i][:, j]
+        c, d = grid[j][:, i], grid[j][:, j]
+        top = a * (1 - f[None, :]) + b * f[None, :]
+        bottom = c * (1 - f[None, :]) + d * f[None, :]
+        return top * (1 - f[:, None]) + bottom * f[:, None]
+
+    noise = octave(16) * 0.65 + octave(64) * 0.35
+    out = TEXTURES / "noise"
+    out.mkdir(parents=True, exist_ok=True)
+    Image.fromarray((noise * 255).astype(np.uint8), "L").save(out / "macro.png", optimize=True)
+    print("noise: macro.png")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--fix-imports", action="store_true", help="only patch .import files")
@@ -310,6 +271,7 @@ def main() -> None:
     if args.fix_imports:
         fix_imports()
         return
+    macro_noise()
     for name, (asset, options) in SETS.items():
         if args.only and name not in args.only:
             continue

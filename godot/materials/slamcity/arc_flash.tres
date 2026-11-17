@@ -1,0 +1,9 @@
+[gd_resource type="ShaderMaterial" format=3]
+
+[ext_resource type="Shader" path="res://shaders/beacon.gdshader" id="1_shader"]
+
+[resource]
+shader = ExtResource("1_shader")
+shader_parameter/color = Color(0.65, 0.8, 1, 1)
+shader_parameter/rate = 4.7
+shader_parameter/energy = 14

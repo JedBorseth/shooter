@@ -15,8 +15,8 @@ extends SceneTree
 ## longer).
 ## godot --headless --path godot --script res://tests/ctf_test.gd
 
-const FLAG_0 := Vector3(-50.5, 0.05, -2)
-const FLAG_1 := Vector3(50.5, 0.05, -2)
+const FLAG_0 := Vector3(-44.5, 0.05, 0.5)
+const FLAG_1 := Vector3(44.5, 0.05, 0.5)
 
 ## A port per process, so test runs in parallel on one machine don't meet.
 var _port := 30000 + OS.get_process_id() % 20000

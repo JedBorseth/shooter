@@ -37,3 +37,7 @@ godot/assets/maps/nuketown/generated/*.scn filter=lfs diff=lfs merge=lfs -text
 
 # Interactive Nuketown model geometry.
 godot/assets/maps/nuketown/props/models/*.bin filter=lfs diff=lfs merge=lfs -text
+
+# Slamcity's meshes from tools/build_slamcity_city.py.
+godot/assets/maps/slamcity/*.bin filter=lfs diff=lfs merge=lfs -text
+godot/assets/maps/slamcity/*.gltf filter=lfs diff=lfs merge=lfs -text
