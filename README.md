@@ -25,8 +25,8 @@ The plan, decisions, and reference projects are in [docs/roadmap.md](docs/roadma
 - `rust/game/`: the GDExtension that exposes the simulation to Godot: `FpsPlayer` (input, gamepad look and aim assist, hitscan, tracers, footsteps, camera, prediction), `AimAssistTarget`, `ViewmodelRig` and `WeaponView` (procedural weapon motion, muzzle flash, ejected shells, sounds), `WeaponPickup` (weapon racks), `Sentry` (a turret that shoots back), `TargetDummy` (an armed soldier), `Zombie` and `ZombieDirector` (Zombies mode), the characters in `rust/game/src/character/` (`SoldierRig` with its animation tree, `SoldierPoser` for aim and hand IK, `FpArms`, team palettes), `HitboxRig` (hit zones as physics shapes, F4 overlay), and networking in `rust/game/src/net/`: `NetServer` (the dedicated server, which also resolves every shot, applies damage, and keeps score), `NetClient`, `RemotePlayer` (other players, interpolated), and `ServerBrowser` (finds servers for the server browser; the server side answers its queries). Sound: see [Sound](#sound).
 - `rust/master/`: `shooter-master`, the master server that lists dedicated servers for the in-game server browser.
 - `rust/launcher/`: `shooter-launcher`, which keeps the latest nightly build installed and starts it, and keeps a dedicated server on the latest build (see [Play the latest build](#play-the-latest-build)).
-- `godot/shaders/`: viewmodel projection (own FOV, never clips walls), muzzle flash, damage vignette, and the blockout grid.
-- `godot/scripts/`: GDScript for the HUD, scope and damage overlays, pause and settings menu (`Settings` autoload), the title screen and server browser, impacts, tracers, and the `Net` autoload that starts a server or client from command-line options or the server browser (`godot/scripts/net/`).
+- `godot/shaders/`: viewmodel projection (own FOV, never clips walls), muzzle flash, damage vignette, the lens pass, and the blockout grid.
+- `godot/scripts/`: GDScript for the HUD, scope and damage overlays, pause and settings menu (`Settings` autoload), graphics presets (`graphics.gd`), each map's graded look (`looks.gd`), the lens pass (`lens.gd`), the title screen and server browser, impacts, tracers, and the `Net` autoload that starts a server or client from command-line options or the server browser (`godot/scripts/net/`).
 - `docs/`: roadmap, [art direction](docs/art-direction.md) (the look, the character pipeline, hit zones), and design notes.
 - `tools/build_weapon_audio.py`: builds the layered gunshot sounds from bart's CC0 firearm library and trims dead air from the other sounds. Run it with `uv run`; its docstring explains the steps.
 - `tools/build_world_audio.py`: builds the grass, carpet, gravel, and tile footsteps and the glass impacts from CC0 packs, and synthesizes the ambience loops (`uv run`; see its docstring).
@@ -202,7 +202,7 @@ Every change to how the game looks is measured with the rendering benchmark, whi
 tools/benchmark.sh --out after.json --compare before.json
 ```
 
-The budget, the baseline numbers, and how to read them are in [docs/performance.md](docs/performance.md).
+The budget, the baseline numbers, and how to read them are in [docs/performance.md](docs/performance.md). `godot/tests/profile_frame.gd` breaks one frame's GPU time down by feature, to show where a new effect can be paid back.
 
 GDScript is linted and formatted with [gdtoolkit](https://github.com/Scony/godot-gdscript-toolkit):
 

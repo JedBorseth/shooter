@@ -10,6 +10,7 @@ extends Node
 signal changed
 
 const GraphicsQuality := preload("res://scripts/graphics.gd")
+const Lens := preload("res://scripts/lens.gd")
 
 ## Radians of view rotation per screen pixel at a sensitivity of 1.0.
 const BASE_MOUSE_SENSITIVITY := 0.0022
@@ -111,6 +112,7 @@ const DEFAULTS := {
 	&"graphics_quality": GraphicsQuality.Preset.MEDIUM,
 	&"render_scale": 1.0,
 	&"motion_blur": false,
+	&"lens_effects": true,
 	&"master_volume": 1.0,
 	&"weapons_volume": 0.8,
 	&"effects_volume": 0.8,
@@ -147,6 +149,7 @@ const SECTIONS := {
 		&"graphics_quality",
 		&"render_scale",
 		&"motion_blur",
+		&"lens_effects",
 	],
 	"audio":
 	[
@@ -229,6 +232,9 @@ var graphics_quality: int = DEFAULTS[&"graphics_quality"]
 var render_scale: float = DEFAULTS[&"render_scale"]
 ## Camera and object motion blur (scripts/motion_blur.gd). Off by default.
 var motion_blur: bool = DEFAULTS[&"motion_blur"]
+## The vignette and film grain of the lens pass (scripts/lens.gd). Sharpening
+## follows the graphics preset.
+var lens_effects: bool = DEFAULTS[&"lens_effects"]
 ## Linear bus volumes, 0 to 1.
 var master_volume: float = DEFAULTS[&"master_volume"]
 var weapons_volume: float = DEFAULTS[&"weapons_volume"]
@@ -253,6 +259,8 @@ var key_bindings := {}
 
 var _dirty := false
 var _save_timer := Timer.new()
+## The full-screen lens pass; none on a dedicated server.
+var _lens: Lens
 
 
 func _init() -> void:
@@ -265,6 +273,9 @@ func _init() -> void:
 
 func _ready() -> void:
 	get_tree().node_added.connect(_on_node_added)
+	if not _headless():
+		_lens = Lens.new()
+		add_child(_lens)
 	load_settings()
 
 
@@ -529,9 +540,11 @@ func _apply(key: StringName) -> void:
 				get_tree().call_group(
 					&"audio_environment", &"set_panning_strength", panning_strength()
 				)
-		&"graphics_quality", &"render_scale", &"motion_blur":
+		&"graphics_quality", &"render_scale", &"motion_blur", &"lens_effects":
 			if is_inside_tree():
 				GraphicsQuality.apply(get_tree(), graphics_quality, render_scale, motion_blur)
+			if _lens != null:
+				_lens.configure(graphics_quality, lens_effects)
 		&"max_fps":
 			Engine.max_fps = max_fps
 		&"fullscreen":

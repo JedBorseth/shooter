@@ -84,7 +84,31 @@ Each map also has a baked LightmapGI: three bounces of sunlight and sky light, s
 
 Rebake a map after changing its geometry or light. Lights that exist only to be baked (Slamcity's ceiling lights in the flats and stores) sit under a node with `scripts/baked_lights.gd`, which removes them in the game: their light is already in the lightmap and its probes, which also light characters.
 
-Each map grades its image lightly with the environment's contrast and saturation adjustments. Zombies adds volumetric fog, which only the High preset draws.
+Zombies adds volumetric fog, which only the High preset draws.
+
+### The graded picture
+
+![The Testing Area and Zombies before (left) and after (right) the grade, the bloom change, and the lens](media/graded-picture.jpg)
+
+The final picture of a map is set in `godot/scripts/looks.gd`, not in its scene, so a map that a tool regenerates keeps it. For each listed map it holds:
+
+- **Environment overrides**: exposure, bloom, and haze. Bloom lifts only what is brighter than white (`glow_bloom` is 0), so lamps, muzzle flashes, and the sky's sun glow without a veil over the whole picture. Zombies makes up for the lost veil with exposure, so the horde reads as well as before.
+- **A colour grade**: an S-curve on brightness around a pivot, a toe that deepens the darkest shadows, a cool tint in the shadows and a warm one in the highlights that both fade out at black and white, and a little less saturation. `Looks.build_lut` turns the grade into a 32³ look-up table when the map loads, and the renderer samples it inside the tonemap pass, so a grade costs nothing per frame. Tune a grade offline against a screenshot before you try it in the engine: the maths is a few lines.
+
+| Map | Grade |
+| --- | --- |
+| Testing Area | Crisp midday: firm contrast, cool shadows, warm highlights, slightly muted colour |
+| Zombies | Cold night: muted colour, blue shadows, warm lamp highlights, shadows kept readable |
+
+Slamcity and Nuketown are not listed yet and keep the look authored in their scenes.
+
+On top of that, for every map:
+
+- **The lens** (`scripts/lens.gd`): a vignette and a little film grain, and on High a contrast-adaptive sharpening pass. The vignette deepens slightly while aiming, and `suppress()` closes it in for a moment (for rounds passing close).
+- **Health**: the colour drains from the picture as health falls from 70% to 10% and comes back as it regenerates. Death is grey. This uses the tonemap pass's saturation, so it works on every preset.
+- **Texture sharpness**: Medium and High read slightly sharper mipmaps.
+
+What each of these costs is in [performance.md](performance.md).
 
 ### Weapons
 

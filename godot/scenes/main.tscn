@@ -63,11 +63,6 @@ fog_sky_affect = 0.0
 adjustment_enabled = true
 adjustment_contrast = 1.05
 adjustment_saturation = 1.05
-metadata/_graphics_authored = {
-"glow": true,
-"ssao": true,
-"volumetric_fog": false
-}
 
 [node name="Main" type="Node3D" unique_id=451316195]
 
@@ -84,10 +79,7 @@ light_color = Color(1, 0.96, 0.9, 1)
 light_energy = 2.0
 shadow_enabled = true
 shadow_blur = 1.2
-directional_shadow_max_distance = 72.0
-metadata/_graphics_authored = {
-"shadow_distance": 90.0
-}
+directional_shadow_max_distance = 90.0
 
 [node name="Map" type="CSGCombiner3D" parent="." unique_id=316904005]
 visible = false
