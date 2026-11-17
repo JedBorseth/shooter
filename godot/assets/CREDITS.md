@@ -1,6 +1,6 @@
 # Asset credits
 
-Gameplay assets below are CC0 (public domain), except the Barlow Condensed font, which is under the SIL Open Font License 1.1. No attribution is required, but we list them anyway.
+Gameplay assets below are CC0 (public domain), except the Barlow and Chakra Petch fonts, which are under the SIL Open Font License 1.1. No attribution is required, but we list them anyway.
 
 | Asset | Files | Source | License |
 | --- | --- | --- | --- |
@@ -21,7 +21,8 @@ Gameplay assets below are CC0 (public domain), except the Barlow Condensed font,
 | Hurt Sound Effects by EZduzziteh (`hurt_01`, `hurt_04`) | `audio/player/hurt_1.ogg`, `audio/player/hurt_2.ogg` | [OpenGameArt](https://opengameart.org/content/hurt-sound-effects) | CC0 |
 | Equipment Clicks III by LFA (bolt-action rifle segment, 2.03 s to 3.08 s) | `audio/player/bolt_cycle.ogg` | [OpenGameArt](https://opengameart.org/content/equipment-clicks-iii) | CC0 |
 | Shotgun Reload Sound Effects by zer0_sol (`Rack`) | `audio/player/shotgun_pump.ogg` | [OpenGameArt](https://opengameart.org/content/shotgun-reload-sound-effects) | CC0 |
-| Barlow Condensed (Bold, ExtraBold) by The Barlow Project Authors, used for the score feed and medals | `fonts/BarlowCondensed-Bold.ttf`, `fonts/BarlowCondensed-ExtraBold.ttf` (license in `fonts/OFL.txt`) | [Google Fonts](https://github.com/google/fonts/tree/main/ofl/barlowcondensed) | OFL-1.1 |
+| Barlow Condensed (Bold, ExtraBold) and Barlow (Medium, SemiBold) by The Barlow Project Authors: sentences, the score feed, and medals | `fonts/Barlow*.ttf` (license in `fonts/OFL.txt`) | [Google Fonts](https://github.com/google/fonts/tree/main/ofl) | OFL-1.1 |
+| Chakra Petch (Medium, SemiBold, Bold) by The Chakra Petch Project Authors: titles, buttons, labels, and HUD numerals | `fonts/ChakraPetch-*.ttf` (license in `fonts/OFL-ChakraPetch.txt`) | [Google Fonts](https://github.com/google/fonts/tree/main/ofl/chakrapetch) | OFL-1.1 |
 | Prism Laser sounds, synthesized for this project by `tools/make_laser_sounds.py` (frequency sweeps and decaying partials, standard library only) | `audio/weapons/laser/{snap,body,tail}_1..3.wav`, `audio/player/phase.wav` | Original | CC0 |
 | Medal chime, synthesized for this project with ffmpeg (two decaying sine tones, E6 then B6, with a quiet E7 shimmer; command in the commit that added it) | `audio/ui/medal.ogg` | Original | CC0 |
 | PBR texture sets from ambientCG by Lennart Demes: `Road012A`, `Bricks051`, `Bricks060`, `Fabric061`, `Concrete047A`, `Concrete031`, `Concrete034`, `Concrete036`, `CorrugatedSteel005`, `CorrugatedSteel006C`, `Ground103`, `Metal046A`, `Planks023A`, `Plaster001`, `PaintedMetal006`, `DiamondPlate007D` (1K, repacked by `tools/build_textures.py`) | `textures/<set>/{albedo,normal,orm}.jpg` | [ambientCG](https://ambientcg.com) | CC0 |

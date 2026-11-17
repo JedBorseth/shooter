@@ -31,6 +31,7 @@ The plan, decisions, and reference projects are in [docs/roadmap.md](docs/roadma
 - `tools/build_weapon_audio.py`: builds the layered gunshot sounds from bart's CC0 firearm library and trims dead air from the other sounds. Run it with `uv run`; its docstring explains the steps.
 - `tools/build_world_audio.py`: builds the grass, carpet, gravel, and tile footsteps and the glass impacts from CC0 packs, and synthesizes the ambience loops (`uv run`; see its docstring).
 - `tools/build_textures.py` and `tools/build_skies.py`: the CC0 world texture library and sky images (run with `uv run`). `tools/bake_lightmaps.sh`: bakes each map's lightmaps (needs a GPU). `tools/build_props.py`: builds the map props from CC0 Poly Haven models in Blender. `tools/build_weapons.py`: rebuilds the guns as PBR models in Blender (`blender -b --python tools/build_weapons.py`; needs Blender 4.2+ with numpy). See [docs/art-direction.md](docs/art-direction.md).
+- The UI theme is `godot/scripts/ui/ui_theme.gd` (colours, Chakra Petch and Barlow type, and a style for every control), applied to every screen by the `UiThemeLoader` autoload; `godot/tests/capture_ui.gd` captures every menu and HUD for review.
 - `tools/build_character_assets.py`: builds the soldier (uniform regions, helmet, goggles, plate carrier, belt, pads, armbands, first-person arms) and the trimmed animation sets from Quaternius's CC0 Universal Animation Library. Run it with `uv run`; see [docs/art-direction.md](docs/art-direction.md).
 
 ## Play the latest build
