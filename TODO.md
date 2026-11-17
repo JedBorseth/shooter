@@ -36,7 +36,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 
 - [x] First-person arms attached to the weapons: the soldier's arms mesh, with IK onto `GripRight`/`GripLeft` markers on each weapon view (`rust/game/src/character/arms.rs`).
 - [x] Moving parts: `tools/build_weapons.py` splits each gun's magazine, pump, bolt, or slide into its own node, and keyframed clips (`MAG_OUT`, `PUMP_BACK`, `BOLT_LIFT`, ... in `rust/game/src/viewmodel.rs`) drive them from the simulation's reload and cycle progress: the magazine drops out and back in with the support hand on it (and a bolt-release slap after an empty reload), the pump and the hand slide back, the bolt lifts and draws, and the pistol slide kicks and locks back when empty.
-- [ ] Keyframed draw animations, and hand animation for the bolt.
+- [x] Keyframed draw and holster animations (a press check on the pistol), and the firing hand working the bolt.
 - [x] Bullet tracers: own tracers every Nth round (`tracer_every` in the weapon file). The sentry already uses the same tracer scene, as remote players will.
 - [x] Shell ejection particles from an ejection-port marker on each `WeaponView`.
 - [ ] Bullet penetration through thin cover, with per-material damage reduction (`rust/sim` rules, `rust/game` raycasts).

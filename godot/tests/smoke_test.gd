@@ -308,6 +308,20 @@ func _sniper(main: Node, player: FpsPlayer) -> void:
 	Input.action_release("aim")
 	await _sixtieths(30)
 	dummy.queue_free()
+	# Working the bolt: the firing hand leaves the grip for the handle and comes back.
+	var grip := player.get_node("Camera/Viewmodel/M40/GripRight") as Node3D
+	await _sixtieths(60)
+	var rest := grip.position
+	await _tap("fire")
+	var furthest := 0.0
+	for i in 90:
+		furthest = maxf(furthest, grip.position.distance_to(rest))
+		await _sixtieths(1)
+	_check(furthest > 0.03, "the firing hand works the bolt, %.3f m" % furthest)
+	_check(
+		grip.position.distance_to(rest) < 0.001,
+		"and returns to the grip, off by %.3f m" % grip.position.distance_to(rest)
+	)
 
 
 func _burst_and_lmg(main: Node, player: FpsPlayer) -> void:
