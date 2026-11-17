@@ -160,8 +160,11 @@ jobs:
     strategy:
       matrix:
         include:
+          # Not ubuntu-latest: a library linked against a newer glibc fails
+          # to load on older distros (Debian 13 has 2.41), including the
+          # dedicated server host. 24.04 ships glibc 2.39.
           - platform: linux
-            os: ubuntu-latest
+            os: ubuntu-24.04
           - platform: windows
             os: windows-latest
           - platform: macos
@@ -180,6 +183,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust
+          # Keyed by image so build scripts cached on a newer glibc never run here.
+          key: ${{ matrix.os }}
           save-if: ${{ env.SAVE_CACHE }}
       - name: Build
         run: |
@@ -191,6 +196,14 @@ jobs:
               cargo build --locked --profile "$CARGO_PROFILE" -p shooter-game -p shooter-master -p shooter-launcher
               cp "target/$CARGO_PROFILE/libshooter_game.so" "target/$CARGO_PROFILE/shooter-master" ../out/
               cp "target/$CARGO_PROFILE/shooter-launcher" ../out/shooter-launcher-linux-x86_64
+              # Fail if a binary needs a glibc newer than 2.39 (see the matrix).
+              newest=$(objdump -T ../out/libshooter_game.so ../out/shooter-master ../out/shooter-launcher-linux-x86_64 \
+                | grep -o 'GLIBC_[0-9.]*' | sort -u -V | tail -n 1)
+              echo "Newest glibc symbol: $newest"
+              if [ "$(printf '%s\n' "$newest" GLIBC_2.39 | sort -V | tail -n 1)" != GLIBC_2.39 ]; then
+                echo "::error::Linux binaries need $newest; the baseline is GLIBC_2.39" >&2
+                exit 1
+              fi
               ;;
             windows)
               cargo build --locked --profile "$CARGO_PROFILE" -p shooter-game -p shooter-launcher
