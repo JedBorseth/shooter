@@ -163,7 +163,13 @@ impl Surface {
         }
     }
 
-    /// The impact look and sound (`scripts/impact.gd`, `assets/audio/impacts`).
+    /// The impact sound set (`assets/audio/impacts/<key>_N`): every
+    /// surface has its own.
+    pub fn impact_sound_key(self) -> &'static str {
+        self.key()
+    }
+
+    /// The impact look (`scripts/impact.gd`).
     pub fn impact_key(self) -> &'static str {
         match self {
             Self::Grass | Self::Gravel | Self::Carpet => "dirt",

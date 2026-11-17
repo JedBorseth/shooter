@@ -1,7 +1,8 @@
 extends Node3D
-## Bullet impact: glowing sparks, chips of debris, a soft dust puff, a
-## bullet-hole decal, and a sound, all chosen by the surface that was hit
-## (`surface` metadata on the collider). On flesh: blood droplets and mist.
+## Bullet impact: glowing sparks, chips of debris, a soft dust puff, and a
+## bullet-hole decal, all chosen by the surface that was hit (`surface`
+## metadata on the collider). On flesh: blood droplets and mist. The sound
+## plays from the shot tracer's pooled voices (`bullets.rs`), not from here.
 
 const LIFETIME := 8.0
 
@@ -63,15 +64,10 @@ const SURFACES := {
 	},
 }
 
-## Which numbered files exist per surface. Only paths are cached, so no
-## resource outlives the scene at exit.
-static var _paths := {}
-
 @onready var _sparks: GPUParticles3D = $Sparks
 @onready var _dust: GPUParticles3D = $Dust
 @onready var _debris: GPUParticles3D = $Debris
 @onready var _decal: Decal = $Decal
-@onready var _sound: AudioStreamPlayer3D = $Sound
 
 
 func setup(normal: Vector3, with_decal: bool, surface: String = "concrete") -> void:
@@ -98,32 +94,4 @@ func setup(normal: Vector3, with_decal: bool, surface: String = "concrete") -> v
 	_dust.restart()
 	_debris.restart()
 
-	var stream := _sound_for(surface)
-	if stream != null:
-		_sound.stream = stream
-		_sound.play()
 	get_tree().create_timer(LIFETIME).timeout.connect(queue_free)
-
-
-func _sound_for(surface: String) -> AudioStream:
-	var paths: PackedStringArray = _paths_for(surface)
-	if paths.is_empty():
-		return null
-	# The .ogg files are cached by ResourceLoader; the randomizer is cheap.
-	var randomizer := AudioStreamRandomizer.new()
-	randomizer.random_pitch = 1.1
-	for path in paths:
-		randomizer.add_stream(-1, load(path))
-	return randomizer
-
-
-static func _paths_for(surface: String) -> PackedStringArray:
-	if not _paths.has(surface):
-		var found := PackedStringArray()
-		for i in range(1, 9):
-			var path := "res://assets/audio/impacts/%s_%d.ogg" % [surface, i]
-			if not ResourceLoader.exists(path):
-				break
-			found.append(path)
-		_paths[surface] = found
-	return _paths[surface]

@@ -52,6 +52,41 @@ synthesized into `assets/audio/foley/`.
 Other players' reloads play the same recordings at their position, at the same
 fractions of the reload (`weapon_foley::remote_reload_cues`).
 
+## Bullets
+
+Snapshots say that another player fired, not where the round went, so the
+client rebuilds each remote shot as a ray: `ShotTracer::trace` (`bullets.rs`)
+casts from in front of the shooter's eye along their view direction against
+the world and the hit zones, and returns a `ShotRay` (muzzle, origin,
+direction, end, and what it hit: position, normal, surface, body or world).
+The local player adds the tracer (it does not exist on the dedicated server);
+`RemotePlayer` traces each round it sees fired, at most three a snapshot and
+twelve a frame across everyone.
+
+Every traced shot is also emitted as `ShotTracer.shot_traced(muzzle, end,
+normal, surface, hit, weapon)`. Effects that want tracers or impact puffs for
+other players' shots connect to that signal (find the node in group
+`shot_tracer`) instead of casting their own rays.
+
+What the listener hears of a traced shot:
+
+- **Near miss.** A round whose path passes within 3.5 m of the camera, and
+  more than 2 m from the shooter, plays a crack (supersonic rifle rounds: an
+  N-wave shock, its ground reflection, and a late slap) or a whiz (pistol,
+  9 mm, buckshot: a Doppler-swept whistle) at the closest point, when the
+  bullet gets there (850 or 330 m/s), louder the closer it passes. It calls
+  `suppress(strength)` on group `lens` (0 to 1, less for subsonic rounds), so
+  the picture closes in with the sound.
+- **Impact.** Within 40 m of the listener, the round's impact plays at the
+  hit, on the surface's own set (eight takes per surface; flesh for a hit
+  zone). Metal, concrete, and tile ricochet 15% of the time.
+
+All impact sounds, the local player's own included, play from the tracer's
+pool of ten positional voices taken in turn; the impact effect scene is
+visual only.
+
+The sounds are synthesized by `tools/build_world_audio.py bullets`.
+
 ## Reviewing sound without listening
 
 `tools/audio_report.py files OUT <paths>` writes a waveform and spectrogram

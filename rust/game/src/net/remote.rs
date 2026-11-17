@@ -10,11 +10,13 @@
 
 use godot::classes::{INode3D, Label3D};
 use godot::prelude::*;
+use shooter_sim::look;
 use shooter_sim::movement::{MoveParams, Stance};
 pub use shooter_sim::net::lag::RemoteSample;
 use shooter_sim::net::protocol;
 use shooter_sim::weapon::{Reload, WeaponId};
 
+use crate::bullets::ShotTracer;
 use crate::character::rig::{SoldierFrame, SoldierRig};
 use crate::convert::{to_godot, to_sim};
 use crate::footsteps::{Foley, Motion, RemoteReload};
@@ -248,13 +250,25 @@ impl RemotePlayer {
             self.rig.bind_mut().hit(Vector3::new(x, 0.0, z), !s.alive);
         }
 
-        let fired = self.shots_fired.is_some_and(|last| s.shots_fired > last);
+        let fired = self
+            .shots_fired
+            .map_or(0, |last| s.shots_fired.wrapping_sub(last));
         self.shots_fired = Some(s.shots_fired);
-        if fired && s.alive {
+        if fired > 0 && fired < 64 && s.alive {
             self.rig.bind_mut().fire();
             let muzzle = self.rig.bind().muzzle_position();
             if let Some(gunfire) = &mut self.gunfire {
                 gunfire.fire(s.weapon, muzzle);
+            }
+            // Each round, traced on this client for its near miss and impact
+            // (and for effects, through `shot_traced`). A snapshot rarely
+            // carries more than one; at most three are traced.
+            let eye = position + Vector3::UP * self.stance_eye;
+            let direction = to_godot(look::view_direction(s.yaw, s.pitch));
+            if let Some(mut tracer) = ShotTracer::find(&self.base().get_tree()) {
+                for _ in 0..fired.min(3) {
+                    tracer.bind_mut().trace(s.weapon, eye, direction, muzzle);
+                }
             }
         }
 
