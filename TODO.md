@@ -39,7 +39,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Keyframed draw and holster animations (a press check on the pistol), and the firing hand working the bolt.
 - [x] Bullet tracers: own tracers every Nth round (`tracer_every` in the weapon file). The sentry already uses the same tracer scene, as remote players will.
 - [x] Shell ejection particles from an ejection-port marker on each `WeaponView`.
-- [ ] Bullet penetration through thin cover, with per-material damage reduction (`rust/sim` rules, `rust/game` raycasts).
+- [x] Bullet penetration through thin cover, with per-material damage reduction (`shooter_sim::penetration` rules, `rust/game/src/penetration.rs` traces).
 - [x] Per-surface impact effects and sounds (metal, concrete, wood, dirt, flesh), from `surface` metadata on colliders.
 - [x] Data-driven weapon definitions: RON files in `godot/data/weapons/`, loaded at startup and hot-reloaded in debug builds.
 - [x] More weapons: AK-47, PDW-9 SMG (with a red dot), M870 pump shotgun (pellets, shell-by-shell reload), M40 bolt-action sniper (scope overlay).

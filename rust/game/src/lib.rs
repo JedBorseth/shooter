@@ -8,6 +8,7 @@ mod character;
 mod convert;
 mod hitbox_rig;
 mod net;
+mod penetration;
 mod pickup;
 mod player;
 mod sentry;

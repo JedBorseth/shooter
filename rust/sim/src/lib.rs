@@ -10,6 +10,7 @@ pub mod hitbox;
 pub mod look;
 pub mod movement;
 pub mod net;
+pub mod penetration;
 pub mod player;
 pub mod rng;
 pub mod score;

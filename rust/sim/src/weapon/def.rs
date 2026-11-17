@@ -249,6 +249,10 @@ pub struct WeaponDef {
     pub reserve: u16,
     pub damage: Damage,
     pub range: f32,
+    /// Metres of wood a round can go through (see `crate::penetration`).
+    /// 0 stops at the first wall.
+    #[serde(default)]
+    pub penetration: f32,
     pub reload: Reload,
     pub ads_time: f32,
     pub sprint_out_time: f32,
