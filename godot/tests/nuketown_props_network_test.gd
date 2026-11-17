@@ -54,15 +54,16 @@ func _run() -> void:
 	await _ticks(5)
 	var player := _map.get_node("Player") as FpsPlayer
 	var eye: Vector3 = player.global_position + Vector3.UP * 1.6
-	# The server picks the spawn, so shoot whichever car is in plain sight.
-	var car := _car_in_sight(player, eye)
-	_check(car >= 0, "a car is in sight of the spawn at %s" % player.global_position)
+	# The server picks the spawn, so walk until a car body is in plain sight.
+	var sight := await _find_car(player)
+	var car: int = sight[0]
+	_check(car >= 0, "a car comes into sight from the spawn at %s" % player.global_position)
 	if car < 0:
 		_cleanup()
 		return
+	eye = player.global_position + Vector3.UP * 1.6
 	var record: Dictionary = _props.pieces[car]
-	# Low on the body: glass and wheels pass no bullet damage to the car.
-	var target: Vector3 = record.root.global_position + Vector3.UP * 0.5
+	var target: Vector3 = sight[1]
 	Input.action_press("aim")
 	for i in 2400:
 		if record.stage >= 2:
@@ -129,24 +130,66 @@ func _car_bodies() -> Array[int]:
 	return ids
 
 
-## The nearest car body a ray from `eye` reaches with nothing in the way, or -1.
-func _car_in_sight(player: FpsPlayer, eye: Vector3) -> int:
+## Walks the player toward the nearest car until a ray from the eye reaches a
+## car's body (not its glass, wheels, or door, which pass no bullet damage on).
+## Returns [car id, aim point], or [-1, Vector3.ZERO].
+func _find_car(player: FpsPlayer) -> Array:
+	var nearest := -1
+	for id in _car_bodies():
+		var to_car: Vector3 = _props.pieces[id].root.global_position - player.global_position
+		if (
+			nearest < 0
+			or (
+				to_car.length()
+				< (_props.pieces[nearest].root.global_position - player.global_position).length()
+			)
+		):
+			nearest = id
+	var sight := [-1, Vector3.ZERO]
+	for i in 900:
+		sight = _car_in_sight(player)
+		if sight[0] >= 0:
+			break
+		var to: Vector3 = _props.pieces[nearest].root.global_position - player.global_position
+		player.set_look(atan2(-to.x, -to.z), 0.0)
+		Input.action_press("move_forward")
+		if i % 90 == 45:
+			Input.action_press("jump")
+		elif i % 90 == 50:
+			Input.action_release("jump")
+		await physics_frame
+	Input.action_release("move_forward")
+	Input.action_release("jump")
+	await _ticks(30)
+	print("car in sight from %s: %s" % [player.global_position, sight])
+	return _car_in_sight(player) if sight[0] >= 0 else sight
+
+
+## The nearest car body a ray from the eye reaches first, and where it does.
+func _car_in_sight(player: FpsPlayer) -> Array:
+	var eye: Vector3 = player.global_position + Vector3.UP * 1.6
 	var space := player.get_world_3d().direct_space_state
-	var best := -1
+	var best := [-1, Vector3.ZERO]
 	var best_distance := INF
 	for id in _car_bodies():
-		var target: Vector3 = _props.pieces[id].root.global_position + Vector3.UP * 0.5
-		var query := PhysicsRayQueryParameters3D.create(eye, target)
-		query.exclude = [player.get_rid()]
-		var hit := space.intersect_ray(query)
-		var node: Node = hit.get("collider")
-		while node != null and not node.has_meta("prop_id"):
-			node = node.get_parent()
-		var distance := eye.distance_to(target)
-		if node != null and int(node.get_meta("prop_id")) == id and distance < best_distance:
-			best = id
-			best_distance = distance
-	print("car in sight of %s: %d (%.1f m)" % [eye, best, best_distance])
+		var root: Vector3 = _props.pieces[id].root.global_position
+		for height in [0.5, 0.7, 0.9, 0.3, 1.1]:
+			for side in [Vector3.ZERO, Vector3.RIGHT, Vector3.LEFT, Vector3.FORWARD, Vector3.BACK]:
+				var target: Vector3 = root + Vector3.UP * height + side * 0.8
+				var query := PhysicsRayQueryParameters3D.create(eye, target)
+				query.exclude = [player.get_rid()]
+				var hit := space.intersect_ray(query)
+				var node: Node = hit.get("collider")
+				while node != null and not node.has_meta("prop_id"):
+					node = node.get_parent()
+				var distance := eye.distance_to(target)
+				if (
+					node != null
+					and int(node.get_meta("prop_id")) == id
+					and distance < best_distance
+				):
+					best = [id, hit.position]
+					best_distance = distance
 	return best
 
 
@@ -191,7 +234,7 @@ func _check(ok: bool, description: String) -> void:
 
 
 func _cleanup() -> void:
-	for action in ["fire", "aim", "reload"]:
+	for action in ["fire", "aim", "reload", "move_forward", "jump"]:
 		Input.action_release(action)
 	for pid in [_late_pid, _server_pid]:
 		if pid > 0 and OS.is_process_running(pid):
