@@ -1567,7 +1567,7 @@ def south_row(side: Side):
     # The tube lights' glow sits a little under the fittings, so it reaches
     # across the drop ceiling instead of only the patch above each one.
     light(-42.0, 3.1, 15.5, 1.2, (0.95, 0.97, 1.0), 9.0, m)
-    light(-42.0, 3.1, 20.5, 1.2, (0.95, 0.97, 1.0), 9.0, m)
+    # (The back tube is dead: the back of the store falls to the fridges' glow.)
     light(-44.0, 1.4, 23.6, 1.1, (0.8, 0.95, 1.0), 5.0, m, shadow=False)
     light(-38.3, 1.9, 14.0, 0.8, (1.0, 0.85, 0.6), 4.0, m, shadow=False)  # over the counter
     # Inside the diner: booths by the windows, the counter, stools, the kitchen line.
@@ -1650,7 +1650,12 @@ def south_row(side: Side):
         place("ceiling_tube", x, 4.0, 15.0, PI / 2, m)
         place("ceiling_tube", x, 4.0, 20.5, PI / 2, m)
         light(x, 3.1, 15.0, 1.0, (0.92, 0.97, 1.0), 8.0, m)
-        light(x, 3.1, 20.5, 1.0, (0.92, 0.97, 1.0), 8.0, m)
+        if x < -14.0:  # one dead tube at the back
+            light(x, 3.1, 20.5, 1.0, (0.92, 0.97, 1.0), 8.0, m)
+    # Warm street light falling through the storefront windows onto the
+    # floor just inside them: pools by the glass, darker toward the back.
+    for x in (-45.0, -40.0, -31.0, -25.0, -17.0, -11.5):
+        light(x, 3.0, zf + 0.6, 2.2, (1.0, 0.72, 0.42), 6.0, m, kind="spot", yaw=PI, pitch=-0.95, angle=38.0)
     # The diner's roof terrace: neon letters on a steel frame along the front
     # (cover from the avenue), air conditioners, and a water heater.
     r = DINER_ROOF
@@ -1919,7 +1924,12 @@ def derailment():
     EFFECTS.append(("sparks_cable", (1.1, TRACK - 2.25, BREAK_Z - 0.9)))
     PARTS.append({"kind": "cyl", "axis": "y", "a0": TRACK - 2.35, "a1": TRACK - 2.15, "c": (1.1, BREAK_Z - 0.9),
                   "r": 0.05, "look": "arc_flash", "sides": 8, "cap": True})
-    EFFECTS.append(("smoke_plume", (0.0, 0.8, -31.0)))
+    # The nose is still burning: flames and embers on the rubble with a
+    # flickering glow, and a smoke column tall enough to see over the roofs
+    # from both lanes.
+    EFFECTS.append(("crash_fire", (0.4, 1.25, -31.2)))
+    light(0.4, 2.0, -31.2, 2.2, (1.0, 0.52, 0.2), 7.0, shadow=False)  # the fire's glow, baked
+    EFFECTS.append(("smoke_plume", (0.0, 1.4, -31.0)))
 
 
 # --- The spawn yard ----------------------------------------------------------------------

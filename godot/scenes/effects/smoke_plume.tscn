@@ -19,8 +19,8 @@ emission_shape = 1
 emission_sphere_radius = 0.35
 direction = Vector3(0, 1, 0)
 spread = 12.0
-initial_velocity_min = 0.4
-initial_velocity_max = 0.8
+initial_velocity_min = 1.0
+initial_velocity_max = 1.6
 gravity = Vector3(0.15, 0.25, 0)
 damping_min = 0.2
 damping_max = 0.4
@@ -28,10 +28,10 @@ angle_min = -180.0
 angle_max = 180.0
 angular_velocity_min = -12.0
 angular_velocity_max = 12.0
-scale_min = 0.9
-scale_max = 1.5
+scale_min = 2.6
+scale_max = 4.4
 scale_curve = SubResource("Texture_grow")
-color = Color(0.22, 0.21, 0.2, 0.3)
+color = Color(0.11, 0.1, 0.095, 0.62)
 color_ramp = SubResource("Texture_fade")
 
 [sub_resource type="Gradient" id="Gradient_puff"]
@@ -48,7 +48,7 @@ fill_to = Vector2(0.5, 0)
 
 [sub_resource type="StandardMaterial3D" id="Mat_steam"]
 transparency = 1
-shading_mode = 1
+shading_mode = 0
 vertex_color_use_as_albedo = true
 albedo_texture = SubResource("Texture_puff")
 billboard_mode = 3
@@ -60,11 +60,13 @@ particles_anim_loop = false
 material = SubResource("Mat_steam")
 size = Vector2(1, 1)
 
-[node name="SmokePlume" type="GPUParticles3D"]
-amount = 9
-lifetime = 6.0
+[node name="SmokePlume" type="Node3D"]
+
+[node name="Particles" type="GPUParticles3D" parent="."]
+amount = 20
+lifetime = 11.0
 preprocess = 4.0
-visibility_aabb = AABB(-3, -0.5, -3, 6, 7, 6)
+visibility_aabb = AABB(-8, -0.5, -8, 16, 24, 16)
 process_material = SubResource("Process_steam")
 draw_pass_1 = SubResource("Mesh_steam")
 cast_shadow = 0

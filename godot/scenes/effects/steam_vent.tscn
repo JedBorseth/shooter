@@ -60,7 +60,9 @@ particles_anim_loop = false
 material = SubResource("Mat_steam")
 size = Vector2(1, 1)
 
-[node name="SteamVent" type="GPUParticles3D"]
+[node name="SteamVent" type="Node3D"]
+
+[node name="Particles" type="GPUParticles3D" parent="."]
 amount = 9
 lifetime = 4.5
 preprocess = 4.0
