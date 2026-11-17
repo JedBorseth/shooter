@@ -8,9 +8,7 @@
 //! markers, blood, a flinch), but deal no damage here: the server rewinds the
 //! same poses (`shooter_sim::net::lag`) and decides every hit and kill.
 
-use std::collections::HashMap;
-
-use godot::classes::{AudioStream, INode3D, Label3D};
+use godot::classes::{INode3D, Label3D};
 use godot::prelude::*;
 use shooter_sim::movement::{MoveParams, Stance};
 pub use shooter_sim::net::lag::RemoteSample;
@@ -19,10 +17,9 @@ use shooter_sim::weapon::{Reload, WeaponId};
 
 use crate::character::rig::{SoldierFrame, SoldierRig};
 use crate::convert::{to_godot, to_sim};
-use crate::footsteps::{Foley, Motion};
+use crate::footsteps::{Foley, Motion, RemoteReload};
 use crate::gunfire::Gunfire;
 use crate::hitbox_rig::HitboxRig;
-use crate::viewmodel::view_scene_property;
 
 #[derive(GodotClass)]
 #[class(init, base = Node3D)]
@@ -48,7 +45,6 @@ pub struct RemotePlayer {
     gunfire: Option<Gunfire>,
     foley: Option<Foley>,
     friendly: bool,
-    reload_sounds: HashMap<WeaponId, Option<Gd<AudioStream>>>,
     /// View angles and life from the last drawn sample, for spectating.
     yaw: f32,
     pitch: f32,
@@ -267,7 +263,10 @@ impl RemotePlayer {
             .get_viewport()
             .and_then(|v| v.get_camera_3d())
             .map(|c| c.get_global_position());
-        let reload = self.reload_sound(s.weapon);
+        let reload = reload.map(|progress| RemoteReload {
+            weapon: s.weapon,
+            progress,
+        });
         let motion = Motion {
             feet: position,
             velocity: self.velocity,
@@ -283,17 +282,6 @@ impl RemotePlayer {
         if let Some(foley) = &mut self.foley {
             foley.update(&motion, delta, listener, friendly, reload);
         }
-    }
-
-    /// The reload sound the weapon's view scene plays.
-    fn reload_sound(&mut self, weapon: WeaponId) -> Option<Gd<AudioStream>> {
-        self.reload_sounds
-            .entry(weapon)
-            .or_insert_with(|| {
-                view_scene_property(weapon, "ReloadSound", "stream")
-                    .and_then(|v| v.try_to::<Gd<AudioStream>>().ok())
-            })
-            .clone()
     }
 }
 

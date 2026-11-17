@@ -1,11 +1,7 @@
 [gd_scene format=3]
 
 [ext_resource type="PackedScene" path="res://assets/weapons/m870/m870.glb" id="1_model"]
-[ext_resource type="AudioStream" path="res://assets/audio/player/shotgun_pump.ogg" id="3_reload"]
-[ext_resource type="AudioStream" path="res://assets/audio/weapons/dry_fire.ogg" id="4_dry"]
 [ext_resource type="Material" path="res://materials/muzzle_flash.tres" id="5_flash"]
-[ext_resource type="AudioStream" path="res://assets/audio/player/shotgun_pump.ogg" id="6_cycle"]
-[ext_resource type="AudioStream" path="res://assets/audio/weapons/dry_fire.ogg" id="7_round"]
 
 [sub_resource type="QuadMesh" id="Quad_flash"]
 material = ExtResource("5_flash")
@@ -58,27 +54,6 @@ omni_range = 9.0
 
 [node name="Ejection" type="Marker3D" parent="."]
 position = Vector3(0.0136, -0.0474, -0.034)
-
-[node name="ReloadSound" type="AudioStreamPlayer" parent="."]
-stream = ExtResource("3_reload")
-volume_db = -4.0
-bus = &"Weapons"
-
-[node name="DryFireSound" type="AudioStreamPlayer" parent="."]
-stream = ExtResource("4_dry")
-volume_db = -6.0
-bus = &"Weapons"
-
-[node name="CycleSound" type="AudioStreamPlayer" parent="."]
-stream = ExtResource("6_cycle")
-volume_db = -3.0
-bus = &"Weapons"
-
-[node name="RoundSound" type="AudioStreamPlayer" parent="."]
-stream = ExtResource("7_round")
-volume_db = -5.0
-max_polyphony = 2
-bus = &"Weapons"
 
 [node name="GripRight" type="Marker3D" parent="."]
 position = Vector3(0, -0.11, 0.1)

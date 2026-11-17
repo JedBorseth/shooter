@@ -130,10 +130,13 @@ func _check_remote(level: Node3D, player: FpsPlayer, env: AudioEnvironment) -> v
 		var node := remote.get_node(layer) as AudioStreamPlayer3D
 		_check(node.stream != null and node.bus == &"Weapons", "%s is on the Weapons bus" % layer)
 
-	# A reload is heard up close.
-	remote.apply_test_sample(Vector3(0, 0, 25), 0, false, true, 2, true, STEP)
-	await process_frame
-	_check((remote.get_node("Gear") as AudioStreamPlayer3D).playing, "a reload 5 m away is heard")
+	# A reload is heard up close: the magazine comes out a fifth of the way in.
+	var reload_heard := false
+	for i in 60:
+		remote.apply_test_sample(Vector3(0, 0, 25), 0, false, true, 2, true, STEP)
+		await process_frame
+		reload_heard = reload_heard or (remote.get_node("Gear") as AudioStreamPlayer3D).playing
+	_check(reload_heard, "a reload 5 m away is heard")
 	remote.queue_free()
 
 

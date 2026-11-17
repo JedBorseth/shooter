@@ -1474,26 +1474,22 @@ impl FpsPlayer {
                 self.rumble_on_fire(weapon);
                 let ads = self.state.combat.ads;
                 let rounds_left = self.state.combat.weapon().magazine;
-                let low = rounds_left <= def.low_ammo();
                 let mut rig = self.viewmodel.bind_mut();
                 let eject = def.cycle_time <= 0.0 && !def.beam;
+                // The last rounds ring hollow in the gunshot itself (`hollow`).
                 let punch = rig.on_fired(weapon, eject, rounds_left);
-                if low {
-                    rig.on_low_ammo(weapon);
-                }
                 drop(rig);
                 self.kick_camera(punch, ads, shot);
             }
             CombatEvent::DryFire { weapon } => self.viewmodel.bind_mut().on_dry_fire(weapon),
-            CombatEvent::ReloadStarted { weapon, .. } => {
-                self.viewmodel.bind_mut().on_reload(weapon)
-            }
             CombatEvent::RoundLoaded { weapon } => {
                 self.viewmodel.bind_mut().on_round_loaded(weapon)
             }
             CombatEvent::Cycled { weapon } => self.viewmodel.bind_mut().on_cycled(weapon),
             CombatEvent::PickedUp { weapon } => self.viewmodel.bind_mut().on_picked_up(weapon),
-            CombatEvent::ReloadFinished { .. }
+            // The reload's handling sounds follow its animation (`WeaponView`).
+            CombatEvent::ReloadStarted { .. }
+            | CombatEvent::ReloadFinished { .. }
             | CombatEvent::Switched { .. }
             | CombatEvent::MagazineSeated { .. } => {}
         }
