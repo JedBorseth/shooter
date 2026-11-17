@@ -1,7 +1,8 @@
 extends Control
 ## Local match setup on the title screen, for Team Deathmatch (`mode` "tdm":
 ## name, map, team size, bots, kill limit, and time limit), Capture the Flag
-## ("ctf": the same, with a capture limit instead of a kill limit), or Gun Game
+## ("ctf": the same, with a capture limit instead of a kill limit), Hardpoint
+## ("hardpoint": the same, with a points limit), or Gun Game
 ## ("gungame": name, map, player count, bots, kills per weapon, and time
 ## limit). Bots fill the empty places. Start runs a local dedicated server with
 ## those rules and joins it (`Net.start_local_match`). UI only: it loads no
@@ -15,12 +16,14 @@ const MAPS := [["Slamcity", "slamcity"], ["Nuketown", "nuketown"], ["Testing Are
 const TEAM_SIZES := [1, 2, 3, 4, 5, 6]
 const SCORE_LIMITS := [25, 50, 75, 100]
 const CAPTURE_LIMITS := [1, 3, 5, 10]
+## Hardpoint's limits, in points; 250 by default.
+const POINT_LIMITS := [150, 200, 250, 300]
 const TIME_LIMITS := [5, 10, 15, 20]
 const BOT_SKILLS := [["Easy", "easy"], ["Normal", "normal"], ["Hard", "hard"]]
 const PLAYER_COUNTS := [2, 4, 6, 8, 10, 12]
 const KILLS_PER_WEAPON := [1, 2, 3]
 
-## "tdm", "ctf", or "gungame".
+## "tdm", "ctf", "hardpoint", or "gungame".
 var mode := "tdm"
 
 var _name: LineEdit
@@ -60,9 +63,13 @@ func options() -> Dictionary:
 			"time_limit": TIME_LIMITS[_time_limit.selected],
 		}
 	var team_size: int = TEAM_SIZES[_team_size.selected]
-	var limits := CAPTURE_LIMITS if _ctf() else SCORE_LIMITS
+	var limits := SCORE_LIMITS
+	if _ctf():
+		limits = CAPTURE_LIMITS
+	elif _hardpoint():
+		limits = POINT_LIMITS
 	return {
-		"mode": "ctf" if _ctf() else "tdm",
+		"mode": mode if _ctf() or _hardpoint() else "tdm",
 		"map": MAPS[_map.selected][1],
 		"bots": team_size * 2 - 1,
 		"bot_skill": BOT_SKILLS[_bot_skill.selected][1],
@@ -77,6 +84,10 @@ func _gun_game() -> bool:
 
 func _ctf() -> bool:
 	return mode == "ctf"
+
+
+func _hardpoint() -> bool:
+	return mode == "hardpoint"
 
 
 func _on_start() -> void:
@@ -104,7 +115,9 @@ func _build() -> void:
 	eyebrow.add_theme_font_size_override("font_size", 15)
 	layout.add_child(eyebrow)
 	var title := Label.new()
-	title.text = {"gungame": "Gun Game", "ctf": "Capture the Flag"}.get(mode, "Team Deathmatch")
+	title.text = ({"gungame": "Gun Game", "ctf": "Capture the Flag", "hardpoint": "Hardpoint"}.get(
+		mode, "Team Deathmatch"
+	))
 	title.add_theme_font_size_override("font_size", 36)
 	layout.add_child(title)
 	var detail := Label.new()
@@ -117,6 +130,11 @@ func _build() -> void:
 		detail.text = (
 			"Take the enemy's flag and carry it to your own. Your flag must be home to"
 			+ " score. Bots fill the empty places."
+		)
+	elif _hardpoint():
+		detail.text = (
+			"Hold the live zone to score a point a second; it moves every minute."
+			+ " Bots fill the empty places."
 		)
 	else:
 		detail.text = "Two teams race to the kill limit. Bots fill the empty places."
@@ -151,6 +169,10 @@ func _build() -> void:
 	elif _ctf():
 		_score_limit = _choice(
 			layout, "Capture limit", CAPTURE_LIMITS.map(func(n: int) -> String: return str(n)), 1
+		)
+	elif _hardpoint():
+		_score_limit = _choice(
+			layout, "Point limit", POINT_LIMITS.map(func(n: int) -> String: return str(n)), 2
 		)
 	else:
 		_score_limit = _choice(

@@ -20,6 +20,7 @@ use glam::{IVec3, Vec2, Vec3};
 use super::Tick;
 use super::bits::{BitReader, BitWriter, DecodeError, DecodeResult};
 use crate::gun_game;
+use crate::hardpoint::Holder;
 use crate::hitbox::HitboxPose;
 use crate::look::PITCH_LIMIT;
 use crate::movement::{MoveState, Stance};
@@ -34,9 +35,11 @@ use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState}
 // predicted combat state, and version 7 mantling to the movement state.
 // Version 8 added empty weapon slots, version 9 hit flinches for every
 // player, version 10 the game mode (Gun Game), player winners, and ladder
-// levels, and version 11 Capture the Flag: the flags, flag plays and awards,
-// and captures and returns on the scoreboard.
-pub const PROTOCOL_VERSION: u16 = 11;
+// levels, version 11 Capture the Flag: the flags, flag plays and awards,
+// and captures and returns on the scoreboard, and version 12 Hardpoint: the
+// zones, who holds the live one, the objective awards, and time on the hill
+// on the scoreboard.
+pub const PROTOCOL_VERSION: u16 = 12;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
 pub const MAX_INPUTS_PER_PACKET: usize = 24;
 /// Wish vectors are sent as signed bytes; prediction must use the same values.
@@ -53,6 +56,10 @@ pub const MAX_EVENTS_PER_MESSAGE: usize = 64;
 /// Cap on players in one [`GameEvent::Rewound`] or [`GameEvent::Scoreboard`].
 const MAX_REWOUND_POSES: usize = 32;
 const MAX_SCOREBOARD_ROWS: usize = 64;
+/// Cap on zones in one [`GameEvent::HardpointZones`].
+pub const MAX_HARDPOINT_ZONES: usize = 16;
+/// Zone names are at most this many bytes of UTF-8 on the wire.
+const MAX_ZONE_NAME_BYTES: usize = 64;
 
 const TAG_BITS: u32 = 3;
 
@@ -180,6 +187,16 @@ pub enum GameEvent {
         play: FlagPlay,
         player: Option<u8>,
     },
+    /// To everyone (Hardpoint): the map's zones, in the order they go live.
+    /// Sent on joining.
+    HardpointZones { zones: Vec<ZoneView> },
+    /// To everyone (Hardpoint): zone `active` is live until server tick
+    /// `moves_at` (none while the clock is stopped), and `holder` has it.
+    Hardpoint {
+        active: u8,
+        holder: Holder,
+        moves_at: Option<Tick>,
+    },
 }
 
 /// One flag as clients see it.
@@ -213,6 +230,14 @@ pub enum FlagPlay {
     Captured,
 }
 
+/// One Hardpoint zone as clients see it: a box around `center`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ZoneView {
+    pub name: String,
+    pub center: Vec3,
+    pub half_extents: Vec3,
+}
+
 /// One player's line on the scoreboard.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ScoreRow {
@@ -231,6 +256,8 @@ pub struct ScoreRow {
     /// Capture the Flag: flags captured and returned.
     pub captures: u32,
     pub returns: u32,
+    /// Hardpoint: whole seconds spent in the live zone this match.
+    pub hill_seconds: u32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -812,6 +839,7 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
                 w.u8(row.level_kills);
                 w.varint(row.captures);
                 w.varint(row.returns);
+                w.varint(row.hill_seconds);
             }
         }
         GameEvent::Spawned { yaw } => {
@@ -852,6 +880,33 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
             if let Some(player) = player {
                 w.u8(*player);
             }
+        }
+        GameEvent::HardpointZones { zones } => {
+            w.bits(12, EVENT_TAG_BITS);
+            let count = zones.len().min(MAX_HARDPOINT_ZONES);
+            w.varint(count as u32);
+            for zone in &zones[..count] {
+                write_string(w, &zone.name, MAX_ZONE_NAME_BYTES);
+                write_vec3(w, zone.center);
+                write_vec3(w, zone.half_extents);
+            }
+        }
+        GameEvent::Hardpoint {
+            active,
+            holder,
+            moves_at,
+        } => {
+            w.bits(13, EVENT_TAG_BITS);
+            w.u8(*active);
+            match holder {
+                Holder::Neutral => w.bits(0, 2),
+                Holder::Held(team) => {
+                    w.bits(1, 2);
+                    w.bits(u32::from(*team), 1);
+                }
+                Holder::Contested => w.bits(2, 2),
+            }
+            write_option_tick(w, *moves_at);
         }
     }
 }
@@ -965,6 +1020,7 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
                     level_kills: r.u8()?,
                     captures: r.varint()?,
                     returns: r.varint()?,
+                    hill_seconds: r.varint()?,
                 });
             }
             Ok(GameEvent::Scoreboard { rows })
@@ -1001,6 +1057,31 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
             let player = if r.bool()? { Some(r.u8()?) } else { None };
             Ok(GameEvent::FlagPlay { flag, play, player })
         }
+        12 => {
+            let count = r.varint()? as usize;
+            if count > MAX_HARDPOINT_ZONES {
+                return Err(DecodeError::Invalid("zone count"));
+            }
+            let mut zones = Vec::with_capacity(count);
+            for _ in 0..count {
+                zones.push(ZoneView {
+                    name: read_string(r, MAX_ZONE_NAME_BYTES)?,
+                    center: read_finite_vec3(r)?,
+                    half_extents: read_finite_vec3(r)?,
+                });
+            }
+            Ok(GameEvent::HardpointZones { zones })
+        }
+        13 => Ok(GameEvent::Hardpoint {
+            active: r.u8()?,
+            holder: match r.bits(2)? {
+                0 => Holder::Neutral,
+                1 => Holder::Held(r.bits(1)? as Team),
+                2 => Holder::Contested,
+                _ => return Err(DecodeError::Invalid("holder")),
+            },
+            moves_at: read_option_tick(r)?,
+        }),
         _ => Err(DecodeError::Invalid("event tag")),
     }
 }
@@ -1008,6 +1089,7 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
 fn write_mode(w: &mut BitWriter, mode: &Mode) {
     match mode {
         Mode::TeamDeathmatch => w.bits(0, 2),
+        Mode::Hardpoint => w.bits(3, 2),
         Mode::GunGame(rules) => {
             w.bits(1, 2);
             w.u8(rules.kills_per_weapon);
@@ -1023,6 +1105,7 @@ fn read_mode(r: &mut BitReader) -> DecodeResult<Mode> {
             kills_per_weapon: r.u8()?.max(1),
         })),
         2 => Ok(Mode::CaptureTheFlag),
+        3 => Ok(Mode::Hardpoint),
         _ => Err(DecodeError::Invalid("mode")),
     }
 }
@@ -1042,6 +1125,10 @@ fn write_award(w: &mut BitWriter, award: Award) {
         Award::FlagCapture => (8, None),
         Award::FlagReturn => (9, None),
         Award::CarrierKill => (10, None),
+        Award::HardpointCapture => (11, None),
+        Award::HardpointSecure => (12, None),
+        Award::HardpointDefend => (13, None),
+        Award::HardpointAssault => (14, None),
     };
     w.bits(tag, AWARD_TAG_BITS);
     if let Some(n) = count {
@@ -1062,6 +1149,10 @@ fn read_award(r: &mut BitReader) -> DecodeResult<Award> {
         8 => Award::FlagCapture,
         9 => Award::FlagReturn,
         10 => Award::CarrierKill,
+        11 => Award::HardpointCapture,
+        12 => Award::HardpointSecure,
+        13 => Award::HardpointDefend,
+        14 => Award::HardpointAssault,
         _ => return Err(DecodeError::Invalid("award")),
     })
 }
@@ -1906,6 +1997,14 @@ mod tests {
                         award: Award::CarrierKill,
                         points: 100,
                     },
+                    Scored {
+                        award: Award::HardpointCapture,
+                        points: 100,
+                    },
+                    Scored {
+                        award: Award::HardpointAssault,
+                        points: 50,
+                    },
                 ],
                 totals: ScoreTotals {
                     score: 2350,
@@ -1998,12 +2097,42 @@ mod tests {
                         level_kills: 1,
                         captures: 2,
                         returns: 5,
+                        hill_seconds: 74,
                     },
                     ScoreRow {
                         id: 203,
                         ..ScoreRow::default()
                     },
                 ],
+            },
+            GameEvent::HardpointZones {
+                zones: vec![
+                    ZoneView {
+                        name: "Skate Bowl".to_owned(),
+                        center: Vec3::new(0.0, -0.3, 0.0),
+                        half_extents: Vec3::new(7.0, 2.0, 4.0),
+                    },
+                    ZoneView {
+                        name: "Laundromat".to_owned(),
+                        center: Vec3::new(0.0, 1.5, 17.25),
+                        half_extents: Vec3::new(10.0, 1.6, 5.25),
+                    },
+                ],
+            },
+            GameEvent::Hardpoint {
+                active: 1,
+                holder: Holder::Held(1),
+                moves_at: Some(40_000),
+            },
+            GameEvent::Hardpoint {
+                active: 0,
+                holder: Holder::Contested,
+                moves_at: None,
+            },
+            GameEvent::Hardpoint {
+                active: 3,
+                holder: Holder::Neutral,
+                moves_at: Some(1),
             },
         ]);
         let bytes = msg.encode(&[]);
@@ -2018,6 +2147,7 @@ mod tests {
                 kills_per_weapon: 3,
             }),
             Mode::CaptureTheFlag,
+            Mode::Hardpoint,
         ] {
             let msg = ServerMessage::Welcome {
                 player_id: 3,

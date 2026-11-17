@@ -135,6 +135,8 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Lobby flow on the server: warm-up until every player is ready (`--auto-start` skips it).
 - [x] Lobby and loadout menu (L): primary weapon choice (applies from the next spawn) and Ready; opens by itself in the lobby.
 - [x] A Team Deathmatch button on the title screen that runs a local server with bots and joins it.
+- [x] Hardpoint (`--mode hardpoint`, and a title-screen button): one live zone at a time, moving every 60 seconds through the map's `Hardpoints` in a fixed order; a team alone in it scores a point a second, a contested zone scores nothing, first to 250. Capture, securing, defense, and assault awards, time on the hill on the scoreboard, objective bots, spawns kept off the hill, and a zone outline, wall of light, marker, and calls on the client (`rust/sim/src/hardpoint.rs`, `godot/scripts/net/hardpoint_view.gd`). Slamcity's four zones sit on its mirror line: the skate bowl, the auto shop, the laundromat, and the back alley.
+- [ ] Hardpoint follow-ups: overtime when the trailing team is in the zone at the buzzer, announcer voice lines, and zones for the testing arena and Nuketown (they fall back to one zone halfway between the spawns).
 - [x] Player names: sent in the hello (`Settings.player_name`), cleaned by the server, and listed in the roster.
 - [x] Names in the kill feed and scoreboard.
 

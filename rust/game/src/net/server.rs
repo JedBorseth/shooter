@@ -20,6 +20,10 @@
 //! team's flag sits at the map's `Flags` marker for that team (or among its
 //! spawn points), and the server decides every take, drop, return, and
 //! capture and tells everyone.
+//! In Hardpoint (`shooter_sim::hardpoint`) kills do not score; instead it
+//! rotates the live zone through the map's `Hardpoints`, scores the team that
+//! holds it, pays objective awards, and tells everyone which zone is live and
+//! who has it.
 //!
 //! Or it runs Gun Game (`shooter_sim::gun_game`, `mode = "gungame"`): every
 //! player for themselves on the same match clock, everyone carrying only
@@ -51,12 +55,14 @@ use godot::prelude::*;
 use shooter_sim::bot::Skill;
 use shooter_sim::ctf::{FlagEvent, FlagPlayer, FlagRules, FlagState, Flags};
 use shooter_sim::gun_game::{self, Progress, Step};
+use shooter_sim::hardpoint::{HardpointRules, HardpointState, HillTime, Holder, Zone};
 use shooter_sim::net::discovery::{ServerInfo, query_port_for};
 use shooter_sim::net::input_queue::InputQueue;
 use shooter_sim::net::lag::{self, LagHistory, Pellet, Target};
 use shooter_sim::net::protocol::{
     self, ClientMessage, FlagPlay, FlagStatus, FlagView, GameEvent, MAX_EVENTS_PER_MESSAGE,
-    OwnState, PROTOCOL_VERSION, PlayerView, Predicted, ScoreRow, ServerMessage, Snapshot,
+    MAX_HARDPOINT_ZONES, OwnState, PROTOCOL_VERSION, PlayerView, Predicted, ScoreRow,
+    ServerMessage, Snapshot, ZoneView,
 };
 use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::{CHANNEL_COUNT, DEFAULT_PORT, MAX_PLAYERS, TICK_DT, TICK_RATE, Tick};
@@ -110,6 +116,11 @@ const FLAG_DROP_FALL: f32 = 12.0;
 const DEFEND_SPOT_SECONDS: u32 = 7;
 /// Metres from its flag a defender bot patrols.
 const DEFEND_RADIUS: f32 = 6.0;
+/// In Hardpoint, the live zone counts as this many enemies standing at its
+/// centre when choosing a spawn, so nobody spawns on the hill.
+const ZONE_SPAWN_THREATS: usize = 2;
+/// Seconds a Hardpoint bot holds one spot in the zone.
+const ZONE_SPOT_SECONDS: u32 = 4;
 
 #[derive(GodotClass)]
 #[class(init, base = Node3D)]
@@ -162,7 +173,7 @@ pub struct NetServer {
     #[export]
     master_server: GString,
     /// Points a team needs to win: kills in Team Deathmatch, captures in
-    /// Capture the Flag. 0 uses the mode's usual limit.
+    /// Capture the Flag, points in Hardpoint. 0 uses the mode's usual limit.
     #[export]
     score_limit: i32,
     /// Minutes of play before the team ahead wins.
@@ -173,8 +184,8 @@ pub struct NetServer {
     /// servers that should just run).
     #[export]
     auto_start: bool,
-    /// The game: "tdm" (Team Deathmatch), "ctf" (Capture the Flag), or
-    /// "gungame".
+    /// The game: "tdm" (Team Deathmatch), "ctf" (Capture the Flag),
+    /// "hardpoint", or "gungame".
     #[export]
     #[init(val = GString::from("tdm"))]
     mode: GString,
@@ -216,6 +227,11 @@ pub struct NetServer {
     flag_rules: FlagRules,
     /// The map's flag bases, if it marks them.
     flag_homes: Option<[Vec3; tdm::TEAM_COUNT]>,
+    /// Hardpoint: the map's zones in rotation order, the live one, and who
+    /// holds it.
+    zones: Vec<Zone>,
+    hardpoint_rules: HardpointRules,
+    hardpoint: HardpointState,
 }
 
 struct ClientSlot {
@@ -263,6 +279,8 @@ struct Avatar {
     hit_heading: u8,
     /// Gun Game: this player's place on the weapon ladder.
     progress: Progress,
+    /// Hardpoint: time in the live zone this match.
+    hill: HillTime,
 }
 
 /// A shot fired this tick, waiting to be checked.
@@ -342,6 +360,24 @@ impl INode3D for NetServer {
                 self.rules.score_limit
             );
         }
+        self.hardpoint_rules = HardpointRules::default();
+        self.hardpoint = HardpointState::new(&self.hardpoint_rules);
+        if self.game == Mode::Hardpoint && self.zones.is_empty() {
+            self.zones = fallback_zones(&self.spawn_points);
+        }
+        if self.game != Mode::Hardpoint {
+            self.zones.clear();
+        }
+        godot_print!(
+            "server: {} to {}{}",
+            self.game.label(),
+            self.rules.score_limit,
+            if self.zones.is_empty() {
+                String::new()
+            } else {
+                format!(", {} zones", self.zones.len())
+            }
+        );
 
         let mut host = ENetConnection::new_gd();
         let error = host
@@ -412,6 +448,7 @@ impl INode3D for NetServer {
         }
         self.simulate();
         self.update_flags();
+        self.update_hardpoint();
         self.update_match();
         self.tick += 1;
         if self
@@ -518,6 +555,34 @@ impl NetServer {
         }
     }
 
+    /// "tdm", "ctf", "hardpoint", or "gungame".
+    #[func]
+    fn game_mode(&self) -> GString {
+        GString::from(self.game.key())
+    }
+
+    /// Hardpoint: how many zones the map has (0 in other modes).
+    #[func]
+    fn zone_count(&self) -> i32 {
+        self.zones.len() as i32
+    }
+
+    /// Hardpoint: the index of the live zone.
+    #[func]
+    fn active_zone(&self) -> i32 {
+        self.hardpoint.active as i32
+    }
+
+    /// Hardpoint: seconds a player has spent in the live zone this match
+    /// (tests), or -1 if absent.
+    #[func]
+    fn player_hill_seconds(&self, id: i32) -> f64 {
+        self.avatars
+            .iter()
+            .find(|a| i32::from(a.id) == id)
+            .map_or(-1.0, |a| f64::from(a.hill.seconds))
+    }
+
     /// Capture the Flag (tests and debugging): where team `team`'s flag is,
     /// "home", "carried", or "dropped", or "" in other modes.
     #[func]
@@ -590,7 +655,8 @@ impl NetServer {
         d
     }
 
-    /// Points a team has this match: kills, or captures in Capture the Flag.
+    /// Points a team has this match: kills, captures in Capture the Flag, or
+    /// Hardpoint points.
     #[func]
     fn team_score(&self, team: i32) -> i64 {
         usize::try_from(team)
@@ -656,6 +722,7 @@ impl NetServer {
         self.spawn_points = map_spawns(&map);
         self.bot_lanes = map_lanes(&map);
         self.flag_homes = map_flags(&map);
+        self.zones = map_zones(&map);
         for name in CLIENT_ONLY_NODES {
             if let Some(node) = map.get_node_or_null(name) {
                 node.free();
@@ -756,6 +823,12 @@ impl NetServer {
                 if let Some(event) = self.flags_event() {
                     self.send_event(id, event);
                 }
+                if !self.zones.is_empty() {
+                    let zones = self.zones_event();
+                    self.send_event(id, zones);
+                    let status = self.hardpoint_event();
+                    self.send_event(id, status);
+                }
                 godot_print!("server: player {id} \"{name}\" joined");
             }
             ClientMessage::Input(packet) => {
@@ -848,6 +921,7 @@ impl NetServer {
             hits: 0,
             hit_heading: 0,
             progress: Progress::default(),
+            hill: HillTime::default(),
         });
         let event = joined_event(self.avatars.last().expect("just pushed"));
         self.broadcast_event(&event);
@@ -912,7 +986,7 @@ impl NetServer {
     /// The spawn point furthest from trouble for the player at `index`.
     fn safest_spawn(&self, index: usize) -> Option<usize> {
         let me = &self.avatars[index];
-        let threats: Vec<Threat> = self
+        let mut threats: Vec<Threat> = self
             .avatars
             .iter()
             .filter(|a| a.id != me.id && a.predicted.state.alive())
@@ -921,6 +995,13 @@ impl NetServer {
                 enemy: self.hostile(a, me),
             })
             .collect();
+        // The fight is on the hill: keep spawns off it.
+        if let Some(zone) = self.zones.get(self.hardpoint.active) {
+            threats.extend((0..ZONE_SPAWN_THREATS).map(|_| Threat {
+                position: zone.center,
+                enemy: true,
+            }));
+        }
         let eyes: Vec<Vector3> = self
             .avatars
             .iter()
@@ -1257,6 +1338,7 @@ impl NetServer {
 
         let mut kills = Vec::new();
         let mut carrier_kills = 0;
+        let mut objective_kills = Vec::new();
         for hit in lag::resolve_shot(def, &pellets, &targets) {
             let Some(victim) = self.avatars.iter_mut().find(|a| a.id == hit.id) else {
                 continue;
@@ -1313,7 +1395,29 @@ impl NetServer {
                     headshot: hit.headshot,
                 });
                 self.record_death(hit.id);
-                let victim_team = self.avatars.iter().find(|a| a.id == hit.id).map(|a| a.team);
+                let victim = self
+                    .avatars
+                    .iter()
+                    .find(|a| a.id == hit.id)
+                    .map(|a| (a.team, a.predicted.position));
+                if let Some((_, victim_feet)) = victim
+                    && let Some(zone) = self.zones.get(self.hardpoint.active)
+                    && let Some(shooter_feet) = self
+                        .avatars
+                        .iter()
+                        .find(|a| a.id == shot.shooter)
+                        .map(|a| a.predicted.position)
+                    && let Some(award) = self.hardpoint.objective_kill(
+                        &self.hardpoint_rules,
+                        zone,
+                        shooter_team,
+                        shooter_feet,
+                        victim_feet,
+                    )
+                {
+                    objective_kills.push(award);
+                }
+                let victim_team = victim.map(|(team, _)| team);
                 let end = match self.game {
                     Mode::GunGame(rules) => self.climb(shot.shooter, &rules),
                     Mode::TeamDeathmatch => victim_team.and_then(|victim_team| {
@@ -1322,6 +1426,8 @@ impl NetServer {
                     }),
                     // Only captures score for the team.
                     Mode::CaptureTheFlag => None,
+                    // Only holding the zone scores for the team.
+                    Mode::Hardpoint => None,
                 };
                 if let Some(end) = end {
                     self.on_transition(end);
@@ -1340,6 +1446,12 @@ impl NetServer {
             for _ in 0..carrier_kills {
                 awards.extend(shooter.score.on_flag_play(&rules, Award::CarrierKill));
             }
+            let points = self.hardpoint_rules.objective_kill_points;
+            awards.extend(
+                objective_kills
+                    .into_iter()
+                    .map(|award| shooter.score.award(award, points)),
+            );
             let totals = shooter.score.totals();
             self.send_event(shot.shooter, GameEvent::Score { awards, totals });
         }
@@ -1389,7 +1501,9 @@ impl NetServer {
         let all_ready = self.auto_start || humans.iter().all(|c| c.ready);
         let phase = self.match_state.phase;
         let leader = match self.game {
-            Mode::TeamDeathmatch | Mode::CaptureTheFlag => self.match_state.team_leader(),
+            Mode::TeamDeathmatch | Mode::CaptureTheFlag | Mode::Hardpoint => {
+                self.match_state.team_leader()
+            }
             Mode::GunGame(_) => gun_game::leader(self.avatars.iter().map(|a| (a.id, a.progress))),
         };
         let transition = self
@@ -1415,10 +1529,12 @@ impl NetServer {
                 let mut order: Vec<(Team, u8)> =
                     self.avatars.iter().map(|a| (a.team, a.id)).collect();
                 order.sort_unstable();
+                self.hardpoint = HardpointState::new(&self.hardpoint_rules);
                 for (team, id) in order {
                     if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) {
                         avatar.score = ScoreState::default();
                         avatar.progress = Progress::default();
+                        avatar.hill = HillTime::default();
                     }
                     let slot = &mut slots[usize::from(team)];
                     self.respawn(id, (!free_for_all).then_some(*slot));
@@ -1461,7 +1577,131 @@ impl NetServer {
             Transition::NextCountdown => {}
         }
         self.broadcast_match();
+        if !self.zones.is_empty() {
+            let event = self.hardpoint_event();
+            self.broadcast_event(&event);
+        }
         self.next_scoreboard = self.tick;
+    }
+
+    /// Hardpoint: counts who is in the live zone, scores the team holding
+    /// it, pays capture and secure awards, and moves the zone on time. The
+    /// zone rotates in the lobby too, for practice, but nothing scores
+    /// there; it stops through the countdown and the results.
+    fn update_hardpoint(&mut self) {
+        let Some(zone) = self.zones.get(self.hardpoint.active).cloned() else {
+            return;
+        };
+        let phase = self.match_state.phase;
+        if !matches!(phase, Phase::Lobby | Phase::Playing) {
+            return;
+        }
+        let scoring = self.match_state.scoring();
+        let mut presence = [0u32; tdm::TEAM_COUNT];
+        let inside: Vec<bool> = self
+            .avatars
+            .iter()
+            .map(|a| a.predicted.state.alive() && zone.contains(a.predicted.position))
+            .collect();
+        for (avatar, inside) in self.avatars.iter().zip(&inside) {
+            if *inside {
+                presence[usize::from(avatar.team.min(1))] += 1;
+            }
+        }
+        let step = self
+            .hardpoint
+            .tick(&self.hardpoint_rules, self.zones.len(), TICK_DT, presence);
+
+        if scoring {
+            let holder = step.captured.or(self.hardpoint.holder.team());
+            let rules = self.hardpoint_rules;
+            let mut payouts: Vec<(u8, Vec<Scored>)> = Vec::new();
+            for (avatar, inside) in self.avatars.iter_mut().zip(&inside) {
+                let holding = *inside && holder == Some(avatar.team);
+                let mut awards = Vec::new();
+                if holding && step.captured == Some(avatar.team) {
+                    awards.push(
+                        avatar
+                            .score
+                            .award(Award::HardpointCapture, rules.capture_points),
+                    );
+                }
+                if let Some(points) = avatar.hill.tick(&rules, TICK_DT, *inside, holding) {
+                    awards.push(avatar.score.award(Award::HardpointSecure, points));
+                }
+                if !awards.is_empty() {
+                    payouts.push((avatar.id, awards));
+                }
+            }
+            for (id, awards) in payouts {
+                let Some(totals) = self
+                    .avatars
+                    .iter()
+                    .find(|a| a.id == id)
+                    .map(|a| a.score.totals())
+                else {
+                    continue;
+                };
+                self.send_event(id, GameEvent::Score { awards, totals });
+            }
+            let mut ended = None;
+            for (team, points) in step.points.iter().enumerate() {
+                if *points == 0 {
+                    continue;
+                }
+                let end = self
+                    .match_state
+                    .add_points(&self.rules, team as Team, *points);
+                ended = ended.or(end);
+            }
+            if step.points.iter().any(|p| *p > 0) && ended.is_none() {
+                self.broadcast_match();
+            }
+            if step.holder_changed || step.moved {
+                let event = self.hardpoint_event();
+                self.broadcast_event(&event);
+            }
+            if let Some(end) = ended {
+                self.on_transition(end);
+            }
+            return;
+        }
+        if step.holder_changed || step.moved {
+            let event = self.hardpoint_event();
+            self.broadcast_event(&event);
+        }
+    }
+
+    /// Hardpoint: the map's zones, for a client that just joined.
+    fn zones_event(&self) -> GameEvent {
+        GameEvent::HardpointZones {
+            zones: self
+                .zones
+                .iter()
+                .map(|zone| ZoneView {
+                    name: zone.name.clone(),
+                    center: zone.center,
+                    half_extents: zone.half_extents,
+                })
+                .collect(),
+        }
+    }
+
+    /// Hardpoint: the live zone, who has it, and when it moves.
+    fn hardpoint_event(&self) -> GameEvent {
+        let running = matches!(self.match_state.phase, Phase::Lobby | Phase::Playing);
+        let moves_at = running.then(|| {
+            self.tick + (self.hardpoint.time_left.max(0.0) * TICK_RATE as f32).round() as Tick
+        });
+        GameEvent::Hardpoint {
+            active: self.hardpoint.active.min(usize::from(u8::MAX)) as u8,
+            holder: if running {
+                self.hardpoint.holder
+            } else {
+                Holder::Neutral
+            },
+            moves_at,
+        }
     }
 
     fn match_event(&self) -> GameEvent {
@@ -1473,7 +1713,9 @@ impl NetServer {
             ends_at,
             scores: state.scores,
             score_limit: match self.game {
-                Mode::TeamDeathmatch | Mode::CaptureTheFlag => self.rules.score_limit,
+                Mode::TeamDeathmatch | Mode::CaptureTheFlag | Mode::Hardpoint => {
+                    self.rules.score_limit
+                }
                 Mode::GunGame(_) => u32::from(gun_game::LEVELS),
             },
         }
@@ -1505,6 +1747,7 @@ impl NetServer {
                     level_kills: a.progress.kills,
                     captures: a.score.captures,
                     returns: a.score.returns,
+                    hill_seconds: a.hill.whole_seconds(),
                 }
             })
             .collect();
@@ -1714,6 +1957,9 @@ impl NetServer {
     ///   carrying it. The rest attack: they go for the enemy's flag, or
     ///   escort the teammate carrying it.
     fn bot_objectives(&self) -> Vec<(u8, Option<BotObjective>)> {
+        if let Some(zone) = self.zones.get(self.hardpoint.active) {
+            return self.zone_objectives(zone);
+        }
         let Some(flags) = &self.flags else {
             return Vec::new();
         };
@@ -1770,6 +2016,48 @@ impl NetServer {
                     }
                 };
                 out.push((bot.id, Some(objective)));
+            }
+        }
+        out
+    }
+
+    /// Hardpoint: three of every four bots on a team hold spots inside the
+    /// live zone, each moving to a new spot every few seconds; the rest hunt
+    /// around its edges for enemies on their way in.
+    fn zone_objectives(&self, zone: &Zone) -> Vec<(u8, Option<BotObjective>)> {
+        let period = self.tick / (ZONE_SPOT_SECONDS * TICK_RATE);
+        let mut out = Vec::new();
+        for team in 0..tdm::TEAM_COUNT as Team {
+            let mut bots: Vec<u8> = self
+                .avatars
+                .iter()
+                .filter(|a| a.team == team && a.brain.is_some())
+                .map(|a| a.id)
+                .collect();
+            bots.sort_unstable();
+            for (i, id) in bots.into_iter().enumerate() {
+                let a = rng::unit(u32::from(id), period * 2);
+                let b = rng::unit(u32::from(id), period * 2 + 1);
+                let floor = zone.floor() + 0.3;
+                let objective = if i % 4 == 3 {
+                    // A spot just outside the zone, on a random side.
+                    let angle = a * std::f32::consts::TAU;
+                    let reach = zone.half_extents.x.max(zone.half_extents.z) + 6.0;
+                    BotObjective::hunt(to_godot(Vec3::new(
+                        zone.center.x + angle.cos() * reach,
+                        floor,
+                        zone.center.z + angle.sin() * reach,
+                    )))
+                } else {
+                    let reach_x = (zone.half_extents.x - 1.0).max(0.3);
+                    let reach_z = (zone.half_extents.z - 1.0).max(0.3);
+                    BotObjective::hold(to_godot(Vec3::new(
+                        zone.center.x + (a * 2.0 - 1.0) * reach_x,
+                        floor,
+                        zone.center.z + (b * 2.0 - 1.0) * reach_z,
+                    )))
+                };
+                out.push((id, Some(objective)));
             }
         }
         out
@@ -2111,4 +2399,69 @@ fn status_changed(before: &Flags, after: &Flags) -> bool {
                 (FlagState::Dropped { at: x, .. }, FlagState::Dropped { at: y, .. }) if x == y
             )
     })
+}
+
+/// The map's Hardpoint zones, in rotation order: `Node3D` children of a
+/// `Hardpoints` node, each a box centred on the node with its full size in a
+/// `size` metadata (a `Vector3`, default 10 x 4 x 10 m) and its HUD name in a
+/// `label` metadata (default: the node's name).
+fn map_zones(map: &Gd<Node>) -> Vec<Zone> {
+    let Some(parent) = map
+        .get_node_or_null("Hardpoints")
+        .and_then(|n| n.try_cast::<Node3D>().ok())
+    else {
+        return Vec::new();
+    };
+    let base = parent.get_transform();
+    parent
+        .get_children()
+        .iter_shared()
+        .filter_map(|child| child.try_cast::<Node3D>().ok())
+        .take(MAX_HARDPOINT_ZONES)
+        .map(|point| {
+            let transform = base * point.get_transform();
+            let size = point
+                .get_meta_ex("size")
+                .default(&Vector3::new(10.0, 4.0, 10.0).to_variant())
+                .done()
+                .try_to::<Vector3>()
+                .unwrap_or(Vector3::new(10.0, 4.0, 10.0));
+            let name = point
+                .get_meta_ex("label")
+                .default(&point.get_name().to_variant())
+                .done()
+                .try_to::<GString>()
+                .map(|label| label.to_string())
+                .unwrap_or_else(|_| point.get_name().to_string());
+            Zone {
+                name,
+                center: to_sim(transform.origin),
+                half_extents: to_sim(size.abs() * 0.5),
+            }
+        })
+        .collect()
+}
+
+/// One zone for maps without `Hardpoints`: halfway between the teams' spawns.
+fn fallback_zones(spawns: &[SpawnPoint]) -> Vec<Zone> {
+    let side = |team: Team| {
+        let points: Vec<Vec3> = spawns
+            .iter()
+            .filter(|p| p.team == Some(team))
+            .map(|p| p.position)
+            .collect();
+        (!points.is_empty()).then(|| points.iter().sum::<Vec3>() / points.len() as f32)
+    };
+    let Some(center) = side(0)
+        .zip(side(1))
+        .map(|(a, b)| (a + b) * 0.5)
+        .or_else(|| spawns.first().map(|p| p.position))
+    else {
+        return Vec::new();
+    };
+    vec![Zone {
+        name: "Midfield".to_owned(),
+        center: center + Vec3::new(0.0, 1.5, 0.0),
+        half_extents: Vec3::new(5.0, 2.0, 5.0),
+    }]
 }

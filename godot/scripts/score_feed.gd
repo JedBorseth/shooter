@@ -6,7 +6,8 @@ extends Control
 ##
 ## Medals are drawn here, not loaded as images: each family has its own emblem
 ## shape (hexagon for multi-kills, a starred disc for streaks, a diamond for
-## collaterals) and the colour climbs a tier ladder as the feat gets rarer.
+## collaterals, a shield with a flag on a zone for Hardpoint captures) and the
+## colour climbs a tier ladder as the feat gets rarer.
 
 ## Seconds after the last award before the running "+N" total fades.
 const TOTAL_HOLD := 2.2
@@ -32,6 +33,7 @@ const AMBER := Color(1.0, 0.76, 0.25)
 const EMBER := Color(1.0, 0.42, 0.2)
 const VIOLET := Color(0.74, 0.45, 1.0)
 const TEAL := Color(0.3, 0.9, 0.84)
+const SKY := Color(0.45, 0.78, 1.0)
 
 const FONT_HEAVY := preload("res://assets/fonts/BarlowCondensed-ExtraBold.ttf")
 const FONT_BOLD := preload("res://assets/fonts/BarlowCondensed-Bold.ttf")
@@ -342,6 +344,17 @@ func _draw_emblem(
 			var cloth := PackedVector2Array([Vector2(-11, -21), Vector2(18, -13), Vector2(-11, -4)])
 			draw_polygon(cloth, _vertical_gradient(cloth, tier.lightened(0.6), tier, alpha))
 			draw_circle(Vector2(-12, -23), 2.5, light, true, -1.0, true)
+		"hardpoint":
+			# A flag planted in a zone seen from above at an angle.
+			var light := Color(tier.lightened(0.4), alpha)
+			var zone := PackedVector2Array(
+				[Vector2(-24, 14), Vector2(0, 4), Vector2(24, 14), Vector2(0, 24), Vector2(-24, 14)]
+			)
+			draw_polyline(zone, light, 2.5, true)
+			draw_line(Vector2(0, 14), Vector2(0, -24), Color(1, 1, 1, alpha), 2.5, true)
+			draw_colored_polygon(
+				PackedVector2Array([Vector2(1, -24), Vector2(20, -17), Vector2(1, -10)]), light
+			)
 		_:
 			var star := _star(5, EMBLEM_R * 0.45, EMBLEM_R * 0.19, Vector2.ZERO)
 			draw_colored_polygon(star, Color(tier, alpha))
@@ -374,6 +387,8 @@ func _emblem_shape(family: String, r: float) -> PackedVector2Array:
 			return _regular(4, r * 1.12, -PI / 2.0)
 		"flag":
 			return _regular(5, r * 1.04, -PI / 2.0)
+		"hardpoint":
+			return _regular(5, r * 1.04, PI / 2.0)
 		_:
 			return _regular(8, r, PI / 8.0)
 
@@ -388,6 +403,8 @@ func _family(label: String) -> String:
 		return "multi"
 	if label == "Collateral":
 		return "collateral"
+	if label.begins_with("Hardpoint"):
+		return "hardpoint"
 	return "other"
 
 
@@ -413,6 +430,8 @@ func _tier_color(label: String) -> Color:
 			return AMBER if n < 10 else (EMBER if n < 15 else VIOLET)
 		"collateral":
 			return TEAL
+		"hardpoint":
+			return SKY
 	return GOLD
 
 

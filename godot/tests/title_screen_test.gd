@@ -127,6 +127,21 @@ func _run() -> void:
 		setup.back_requested.emit()
 		await process_frame
 		_check(ctf.has_focus(), "Back returns focus to Capture the Flag")
+	var hardpoint := menu.get_node("Hardpoint") as Button
+	_check(menu.get_child(4) == hardpoint, "Hardpoint is the fifth option")
+	hardpoint.pressed.emit()
+	await process_frame
+	setup = title.get_node_or_null("TdmSetup")
+	_check(setup != null, "Hardpoint opens the setup")
+	if setup != null:
+		var options: Dictionary = setup.options()
+		_check(
+			options.mode == "hardpoint" and options.score_limit == 250,
+			"the setup opens on Hardpoint to 250 points, got %s" % options
+		)
+		setup.back_requested.emit()
+		await process_frame
+		_check(hardpoint.has_focus(), "closing the setup focuses Hardpoint again")
 	for i in 5:
 		await process_frame
 	for path: String in [

@@ -15,6 +15,10 @@ extends CanvasLayer
 ## - the loadout menu (L, or D-pad up), which also holds the Ready button in
 ##   the lobby. It opens by itself when we join a lobby. A new primary applies
 ##   from the next spawn. Gun Game has no loadouts: the menu shows the ladder.
+##
+## Hardpoint's own pieces (the zone, its marker, and the calls) are in
+## `hardpoint_view.gd`; here it adds a TIME column (seconds on the hill) to
+## the scoreboard and moves the hint below the zone strip.
 
 const MenuStyle := preload("res://scripts/ui/menu_style.gd")
 
@@ -72,6 +76,8 @@ var _opened_for_lobby := false
 ## match phase they were seen in.
 var _levels := {}
 var _levels_phase := ""
+## "tdm", "ctf", "hardpoint", or "gungame", as the server last said.
+var _mode := ""
 
 
 func _ready() -> void:
@@ -105,6 +111,11 @@ func _process(delta: float) -> void:
 		return
 	var info := client.match_info()
 	var phase: String = info.phase
+	if info.mode != _mode:
+		_mode = info.mode
+		# Hardpoint's zone strip sits under the score bar; the hint goes below it.
+		_hint.position.y = 146.0 if _mode == "hardpoint" else 84.0
+		_refresh_board()
 	var ffa: bool = info.get("free_for_all", false)
 	if ffa:
 		_update_ladder_bar(info)
@@ -116,7 +127,7 @@ func _process(delta: float) -> void:
 			_enemy_score.text = str(scores[1 - my_team])
 		_limit.text = ""
 		if info.score_limit > 0:
-			var goal := "CAPTURES" if info.mode == "ctf" else "KILLS"
+			var goal: String = {"ctf": "CAPTURES", "hardpoint": "POINTS"}.get(info.mode, "KILLS")
 			_limit.text = "FIRST TO %d %s" % [info.score_limit, goal]
 	_clock.text = _clock_text(phase, info.seconds_left)
 	_update_banner(phase, info)
@@ -226,6 +237,8 @@ func _update_banner(phase: String, info: Dictionary) -> void:
 				)
 			elif info.mode == "ctf":
 				_sub_banner.text = "Capture the Flag  ·  first to %d captures" % info.score_limit
+			elif info.mode == "hardpoint":
+				_sub_banner.text = "Hardpoint  ·  first to %d points" % info.score_limit
 			else:
 				_sub_banner.text = "Team Deathmatch  ·  first to %d kills" % info.score_limit
 		"ended":
@@ -435,6 +448,9 @@ func _refresh_board() -> void:
 	# Our team on top.
 	var order := [my_team, 1 - my_team] if my_team >= 0 else [0, 1]
 	var scores: PackedInt32Array = client.match_info().scores
+	var hardpoint: bool = info.mode == "hardpoint"
+	if hardpoint:
+		headings.insert(headings.size() - 1, "TIME")
 	for i in 2:
 		var team: int = order[i]
 		var table := _board_tables[i]
@@ -464,6 +480,9 @@ func _refresh_board() -> void:
 				_board_cell(table, str(entry.get("returns", 0)), name_colour)
 			_board_cell(table, str(entry.kills), name_colour)
 			_board_cell(table, str(entry.deaths), name_colour)
+			if hardpoint:
+				var hill := int(entry.get("hill_seconds", 0))
+				_board_cell(table, "%d:%02d" % [hill / 60, hill % 60], name_colour)
 			_board_cell(table, "BOT" if entry.bot else str(entry.ping), MenuStyle.TEXT_DIM)
 
 

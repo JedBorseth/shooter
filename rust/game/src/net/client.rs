@@ -14,6 +14,8 @@
 //! (`match_info`), and the scoreboard, with each player's Gun Game level.
 //! In Capture the Flag it also keeps where both flags are (`flag_info`), and
 //! emits `flag_played` for every take, drop, return, and capture.
+//! In Hardpoint it also keeps the map's zones, the live one, and who holds it
+//! (`hardpoint_info`).
 //! With the F4 hitbox overlay on, it also draws, in white, the hitboxes the
 //! server rewound for each of our shots, next to the ones drawn here.
 //!
@@ -26,13 +28,14 @@ use godot::classes::{ENetConnection, ENetPacketPeer, INode, PackedScene, Time};
 use godot::global::Error;
 use godot::prelude::*;
 use shooter_sim::gun_game;
+use shooter_sim::hardpoint::Holder;
 use shooter_sim::hitbox::HitboxPose;
 use shooter_sim::net::conditioner::{LinkConditioner, LinkSettings};
 use shooter_sim::net::interpolation::{InterpolationBuffer, SnapshotClock};
 use shooter_sim::net::prediction::Reconciled;
 use shooter_sim::net::protocol::{
     ClientMessage, FlagPlay, FlagStatus, FlagView, GameEvent, InputPacket, PROTOCOL_VERSION,
-    ScoreRow, ServerMessage, Snapshot,
+    ScoreRow, ServerMessage, Snapshot, ZoneView,
 };
 use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::{CHANNEL_COUNT, CHANNEL_RELIABLE, DEFAULT_PORT, TICK_RATE, Tick};
@@ -126,6 +129,12 @@ pub struct NetClient {
     score_limit: u32,
     /// The server's game, from its welcome.
     mode: Mode,
+    /// Hardpoint: the map's zones, the live one, who holds it, and the
+    /// server tick it moves on.
+    zones: Vec<ZoneView>,
+    active_zone: u8,
+    holder: Holder,
+    zone_moves_at: Option<Tick>,
 }
 
 struct RosterEntry {
@@ -352,9 +361,14 @@ impl NetClient {
     #[signal]
     fn flag_played(flag: i32, play: GString, player: i32);
 
+    /// Hardpoint: the live zone moved, or changed hands.
+    #[signal]
+    fn hardpoint_changed();
+
     /// Every player, ourselves included, as dictionaries with `id`, `name`,
     /// `team`, `bot`, `me`, `score`, `kills`, `deaths`, `ping`, `ready`,
-    /// for Capture the Flag `captures` and `returns`, and for Gun Game
+    /// for Capture the Flag `captures` and `returns`, for Hardpoint
+    /// `hill_seconds`, and for Gun Game
     /// `level`, `level_kills`, and `weapon` (the name of the weapon on their
     /// level). Sorted by team and then by score, or in Gun Game by how far up
     /// the ladder, with the winner first once it ends.
@@ -399,12 +413,13 @@ impl NetClient {
                 d.set("level_kills", i32::from(e.row.level_kills));
                 let weapon = gun_game::weapon(e.row.level).def();
                 d.set("weapon", &GString::from(weapon.name.as_str()));
+                d.set("hill_seconds", e.row.hill_seconds);
                 d
             })
             .collect()
     }
 
-    /// The match as a dictionary: `mode` ("tdm", "ctf", or "gungame"), `mode_name`,
+    /// The match as a dictionary: `mode` ("tdm", "ctf", "hardpoint", or "gungame"), `mode_name`,
     /// `free_for_all`, `phase` ("lobby", "countdown", "playing", "ended", or
     /// "" before the server said), `seconds_left`, `scores` (per team),
     /// `score_limit`, `winner` (a team, or in free-for-all modes a player id;
@@ -479,6 +494,48 @@ impl NetClient {
                 d
             })
             .collect()
+    }
+
+    /// Hardpoint, as a dictionary: `zones` (each with `name`, `center`, and
+    /// `size`, in rotation order; empty in other modes), `active` and `next`
+    /// (indices into `zones`), `holder` ("neutral", "ally", "enemy", or
+    /// "contested"), and `seconds_to_move` (-1 while the clock is stopped).
+    #[func]
+    fn hardpoint_info(&self) -> VarDictionary {
+        let mut d = VarDictionary::new();
+        let zones: Array<VarDictionary> = self
+            .zones
+            .iter()
+            .map(|zone| {
+                let mut entry = VarDictionary::new();
+                entry.set("name", &GString::from(zone.name.as_str()));
+                entry.set("center", to_godot(zone.center));
+                entry.set("size", to_godot(zone.half_extents * 2.0));
+                entry
+            })
+            .collect();
+        d.set("zones", &zones);
+        let active = usize::from(self.active_zone);
+        d.set("active", active as i32);
+        let next = if self.zones.is_empty() {
+            0
+        } else {
+            (active + 1) % self.zones.len()
+        };
+        d.set("next", next as i32);
+        let holder = match self.holder {
+            Holder::Neutral => "neutral",
+            Holder::Contested => "contested",
+            Holder::Held(team) if Some(team) == self.local_team() => "ally",
+            Holder::Held(_) => "enemy",
+        };
+        d.set("holder", holder);
+        let seconds = match (self.zone_moves_at, self.newest) {
+            (Some(at), Some(now)) => f64::from(at.saturating_sub(now)) / f64::from(TICK_RATE),
+            _ => -1.0,
+        };
+        d.set("seconds_to_move", seconds);
+        d
     }
 
     /// The weapons a loadout may use as its primary, as dictionaries with
@@ -836,6 +893,20 @@ impl NetClient {
                     player.map_or(-1, i32::from),
                 );
             }
+            GameEvent::HardpointZones { zones } => {
+                self.zones = zones;
+                self.signals().hardpoint_changed().emit();
+            }
+            GameEvent::Hardpoint {
+                active,
+                holder,
+                moves_at,
+            } => {
+                self.active_zone = active;
+                self.holder = holder;
+                self.zone_moves_at = moves_at;
+                self.signals().hardpoint_changed().emit();
+            }
         }
     }
 
@@ -1053,8 +1124,12 @@ impl NetClient {
         self.roster.clear();
         self.match_phase = None;
         self.flags = None;
+        self.zones.clear();
+        self.holder = Holder::Neutral;
+        self.zone_moves_at = None;
         self.signals().roster_changed().emit();
         self.signals().match_changed().emit();
+        self.signals().hardpoint_changed().emit();
     }
 
     fn count_in(&mut self, bytes: usize) {

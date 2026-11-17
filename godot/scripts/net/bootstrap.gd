@@ -6,7 +6,7 @@ extends Node
 ##   --server [--port N] [--bots N] [--bot-skill easy|normal|hard] [--bot-damage]
 ##            [--name NAME] [--master HOST[:PORT]]
 ##            [--query-port N] [--map arena|nuketown|slamcity]
-##            [--mode tdm|ctf|gungame] [--kills-per-weapon N]
+##            [--mode tdm|ctf|hardpoint|gungame] [--kills-per-weapon N]
 ##            [--score-limit N] [--time-limit MINUTES] [--auto-start]
 ##                                    run as a dedicated server (use with --headless);
 ##                                    with --bot-skill the bots play the match; without
@@ -16,8 +16,9 @@ extends Node
 ##                                    server stays listed on that master server.
 ##                                    Browsers query UDP port N+1 (or --query-port).
 ##                                    Team Deathmatch to N kills (75), Capture the
-##                                    Flag to N captures (3), or MINUTES (10), or
-##                                    Gun Game with N kills per weapon (2);
+##                                    Flag to N captures (3), Hardpoint to N points
+##                                    (250), or MINUTES (10), or Gun Game with N
+##                                    kills per weapon (2);
 ##                                    --auto-start skips the lobby's ready-up.
 ##   --directory HOST[:PORT]          developer override for the Internet directory;
 ##                                    not saved between launches
@@ -30,9 +31,9 @@ extends Node
 ##
 ## From the menus: the server browser calls `join`, and leaving a server or
 ## losing the connection calls `leave`, which returns to the server browser.
-## The title screen's Team Deathmatch, Capture the Flag, and Gun Game setups
-## call `start_local_match`, which runs a dedicated server in a background
-## process and joins it; leaving stops that server.
+## The title screen's Team Deathmatch, Capture the Flag, Hardpoint, and Gun
+## Game setups call `start_local_match`, which runs a dedicated server in a
+## background process and joins it; leaving stops that server.
 
 const SERVER_SCENE := "res://scenes/server.tscn"
 const ARENA_SCENE := "res://scenes/main.tscn"
@@ -49,6 +50,7 @@ const OVERLAY_SCRIPT := "res://scripts/net/net_overlay.gd"
 const STATUS_SCRIPT := "res://scripts/net/net_status.gd"
 const TDM_HUD_SCRIPT := "res://scripts/net/tdm_hud.gd"
 const CTF_VIEW_SCRIPT := "res://scripts/net/ctf_view.gd"
+const HARDPOINT_VIEW_SCRIPT := "res://scripts/net/hardpoint_view.gd"
 const DEFAULT_PORT := 27015
 ## Port of the server `start_local_match` runs, away from the default so it
 ## does not clash with a server already running on this machine.
@@ -122,8 +124,9 @@ func join(target: String, options: Dictionary = {}, arena: PackedScene = null) -
 
 
 ## Starts a dedicated server in a background process with `options` (`mode`,
-## `map`, `bots`, `bot_skill`, `score_limit`, `kills_per_weapon`, `time_limit`
-## in minutes) and joins it. The server does not answer server browsers.
+## "tdm", "gungame", or "hardpoint"; `map`, `bots`, `bot_skill`, `score_limit`
+## (0 for the mode's usual limit), `kills_per_weapon`, `time_limit` in
+## minutes) and joins it. The server does not answer server browsers.
 func start_local_match(options: Dictionary) -> void:
 	stop_local_server()
 	_local_pause_file = OS.get_user_data_dir().path_join("local-pause-%d" % OS.get_process_id())
@@ -319,3 +322,11 @@ func _attach_client(main: Node, target: String, options: Dictionary) -> void:
 	ctf.set("player", player)
 	ctf.set("hud", tdm_hud)
 	main.add_child(ctf)
+
+	# The live zone, its marker, and the calls; it shows nothing outside Hardpoint.
+	var hardpoint := Node3D.new()
+	hardpoint.name = "HardpointView"
+	hardpoint.set_script(load(HARDPOINT_VIEW_SCRIPT))
+	hardpoint.set("client", client)
+	hardpoint.set("player", player)
+	main.add_child(hardpoint)
