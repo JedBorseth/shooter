@@ -41,7 +41,7 @@ On the buildings players fight around, a fake window could read as a firing posi
 
 ### Character relief
 
-`shaders/character.gdshader` bumps the normal from a height field, using screen-space derivatives (no tangents or UVs needed): the canvas weave and soft creases around the limbs on cloth, and a leather grain with creases on gloves and boots that fades out before it gets smaller than a pixel. It reuses the weave sample the shader already took, so it adds no texture reads.
+Characters carry their detail in baked maps, not in the shader. `tools/build_character_assets.py` bakes each kit into one texture atlas: albedo, a tangent-space normal map (cloth folds, ripstop, MOLLE webbing, Cordura, stitching, and leather grain), and ORM (ambient occlusion, roughness, metallic). See [Building a character](#building-a-character).
 
 ### Props
 
@@ -163,66 +163,66 @@ Depth of field while aiming was tried and left out: the weapon is drawn into a t
 
 ### Palette
 
-Every vertex of the model carries its palette role. `rust/game/src/character/palette.rs` maps each role to a colour per team, and `shaders/character.gdshader` draws all of them with one material per team.
+Every vertex of a character carries its palette role. Cloth and gear roles are *tinted*: the atlas holds only their shading detail, centred on mid grey, and `rust/game/src/character/palette.rs` gives each team a colour per role. Skin, eyes, lenses, and hardware (`metal`) keep the atlas colour. `shaders/character.gdshader` draws every role of a kit with one material per team.
 
 | Role | Allies | Enemies |
 | --- | --- | --- |
-| `uniform`, `pants` | tan (0.56, 0.51, 0.39) | charcoal (0.20, 0.21, 0.22) |
-| `vest`, `webbing`, `helmet` | olive (0.40, 0.39, 0.28) | near black (0.11, 0.12, 0.12) |
-| `gloves`, `boots`, `mask` | dark brown and olive | black |
-| `skin` | (0.60, 0.43, 0.33) | same |
-| `visor` | glossy near black | same |
+| `uniform`, `pants` | tan (0.60, 0.53, 0.40) | charcoal (0.22, 0.23, 0.24) |
+| `vest`, `helmet` | coyote (0.50, 0.44, 0.32) | near black (0.13, 0.14, 0.15) |
+| `webbing` | ranger green (0.40, 0.40, 0.30) | near black (0.11, 0.12, 0.12) |
+| `gloves`, `boots`, `mask` | brown and tan | black |
+| `skin`, `eyes`, `visor`, `metal` | the atlas colour | same |
 | `accent` | blue (0.16, 0.56, 1.0) | red-orange (1.0, 0.24, 0.10) |
 
-There are no teams in the game yet. Until Team Deathmatch lands (Phase 4), every other player and every range dummy uses the enemy palette, and the player's own first-person arms use the ally palette.
+Teams differ in value first and in accent hue second. A faint rim in each team's accent colour (strongest for the dark enemies) keeps a silhouette apart from a dark background at night and indoors.
 
 ### Budgets
 
 | Item | Budget | Soldier today |
 | --- | --- | --- |
-| Third-person triangles | 15k | 14.5k (body 13.7k, gear 0.8k) |
+| Third-person triangles | 25k | 20.9k in one mesh (body, uniform, kit); 4.2k past 15 m. Zombie: 11.4k; 3.4k past 15 m |
 | Bones | 60 | 53 (Godot's humanoid profile) |
-| Materials | One per team, shared by every character of that team | 1 (`shaders/character.gdshader`, 11 roles) |
-| Draw calls per character | 4 | 2 (body and gear) plus the weapon |
-| Textures | Shared, small | The canvas weave from the world texture library |
+| Materials | One per team and kit, shared by every character of that team | 1 (`shaders/character.gdshader`, 13 roles) |
+| Draw calls per character | 2 | 1 plus the weapon |
+| Textures | One atlas per kit | 2048 px albedo, normal, and ORM, VRAM-compressed (about 11 MB with mipmaps) |
 
-Godot generates LODs for the meshes at import, so distant soldiers cost less.
+Each third-person kit also carries `BodyFar`, the same character decimated to about a fifth of its triangles on the same atlas. `SoldierRig` draws it instead of `Body` past 15 m (visibility ranges with a 1 m margin). Godot also generates LODs for both meshes at import, but its simplifier does poorly on a kit of many small parts, so the far mesh is what makes distant characters cheap. Zombies use a stronger LOD bias, because a horde is two dozen bodies at mid range.
 
 ### Character detail
 
-![Both teams on the range, an ally up close, and the zombie horde with a close-up](media/characters-v2.jpg)
+![An ally squad on the range at 10 m, an ally crouched, an enemy sprinting, close-ups of an ally's bare face and an enemy's balaclava, and a zombie](media/characters-v3.jpg)
 
-`tools/build_character_assets.py` merges each of the soldier's meshes (body, gear, first-person arms) into one surface. Each vertex stores its rest-pose position (UV and UV2.x) and its palette role (UV2.y). `shaders/character.gdshader` then:
+`shaders/character.gdshader` reads the kit's atlas and:
 
-- colours each role from the team palette, and collapses roles a team does not wear (a zombie's helmet and goggles) to a point, shadows included;
-- adds detail in rest-pose space, so it sticks to the body while it animates: a fabric weave on cloth, faded patches that differ per character, and dirt toward the feet;
-- for zombies, varies the skin tone per zombie and adds blood, so a horde does not look cloned.
+- colours each tinted role from the team palette, with faded patches that differ per character;
+- collapses to a point, shadows included, the roles a team does not wear (a zombie's helmet, eye protection, plate carrier, and belt) and the part groups a character does not wear (`hidden_parts`: a balaclava, a neck gaiter, or a bare face, and the skin each covering replaces);
+- varies the skin tone per character, and for zombies adds sickly skin, grime, and blood.
 
-The per-character seed is an instance uniform (`variant`, set by `SoldierRig`), so every character of a team still shares one material. A 24-zombie horde went from about 630 draw calls to about 195.
+The per-character seed is an instance uniform (`variant` and `hidden_parts`, set by `SoldierRig`), so every character of a team still shares one material.
 
 ## Building a character
 
 ### Sources
 
-Characters start from Quaternius's [Universal Animation Library](https://opengameart.org/content/universal-animation-library) and [Universal Animation Library 2](https://opengameart.org/content/universal-animation-library-2), both CC0. The free Standard tiers include a mannequin on a humanoid rig and about 90 animations: locomotion, crouch, jumps, slides, deaths, hit reactions, pistol aim poses, and zombie moves.
+- The skeleton, rest pose, and animations: Quaternius's [Universal Animation Library](https://opengameart.org/content/universal-animation-library) and [Universal Animation Library 2](https://opengameart.org/content/universal-animation-library-2), both CC0. The free Standard tiers include a mannequin on a humanoid rig and about 90 animations.
+- The body, skin, eyes, and clothes: [MakeHuman](https://static.makehumancommunity.org/assets/assetpacks/index.html) CC0 asset packs, built with MPFB 2 (MakeHuman for Blender, GPL-3.0, used only as a build tool). The tool pins each download by hash. The MakeHuman file server refuses a bare browser user agent, so the tool sends `curl/8.0`.
+- The kit (helmet with cover and mounts, glasses, balaclava and neck gaiter, plate carrier with pouches, magazines, radio and straps, belt and holster, knee pads, knuckle guards, team bands): modelled in Blender Python by `tools/blender_gear.py`.
 
 ### Pipeline
 
-1. Download both Standard zips and extract them.
-2. Run the asset builder:
+1. Download the two animation libraries' Standard zips and extract them under `~/.cache/ual-src` (or pass `--ual1` and `--ual2`).
+2. Run the asset builder: `uv run tools/build_character_assets.py`. It downloads and checks its other sources, installs MPFB 2 into a private Blender profile, and runs `tools/blender_characters.py` in Blender, which:
+   - builds a MakeHuman human (`KITS` in the tool sets its proportions, skin, and clothes) and dresses it;
+   - fits the body and clothes onto the soldier skeleton bone by bone, so the game's bones, rest pose, and proportions never change (`godot/tests/character_models_test.gd` checks every bone against `tests/data/soldier_skeleton.json`);
+   - transfers skin weights from the mannequin, models the kit around the body (`tools/blender_gear.py`), and removes skin and cloth that the kit always covers;
+   - packs every part into one atlas and bakes albedo, normal (procedural fabric, webbing, and grain), roughness, metallic, occlusion, and palette-role maps.
 
-   ```sh
-   uv run tools/build_character_assets.py \
-       "<UAL1>/Godot/AnimationLibrary_Godot_Standard.glb" \
-       "<UAL2>/Unreal-Godot/UAL2_Standard.glb"
-   ```
+   The tool then writes `soldier/soldier.glb` (one mesh, `Body`, and its far copy, `BodyFar`, with one material `character_soldier`, on the original skeleton) and its atlas, `soldier/soldier_{albedo,normal,orm}.png`; `arms/arms.glb`, the sleeves and gloves for the first-person view; and `zombie/zombie.glb` with its own atlas: the same body and clothes with bare hands and no kit, so nothing under a helmet or plates is cut away. `scenes/characters/zombie_body.tscn` wears it, and `scenes/zombies/zombie.tscn` instances that. It also writes `animations/ual1.glb` and `animations/ual2.glb`: the animations the game uses, on each library's own skeleton. `--kits soldier` rebuilds one kit, and `--reuse` reassembles from the last bake without Blender.
+3. Import in Godot (open the editor, or run `godot --headless --path godot --import`). The `.import` files retarget the files onto Godot's `SkeletonProfileHumanoid` with `bone_map_ual1.tres` and `bone_map_ual2.tres`. Bones get the profile's names (`Hips`, `RightHand`, ...) under a skeleton named `%GeneralSkeleton`, and bone axes are normalised. Animations from either library then play on the soldier. Clips whose names end in `_Loop` lose the suffix and loop.
 
-   It writes three files to `godot/assets/characters/`:
-   - `soldier/soldier.glb`: the soldier. The mannequin's triangles are split into surfaces by the bone each one follows (skin, uniform, gloves, pants, boots). The gear is lofted around the body from its own vertices, so it fits the body and is skinned to the same bones. A separate `ArmsFP` mesh holds only the arms, for the first-person view.
-   - `animations/ual1.glb` and `animations/ual2.glb`: the animations the game uses, on each library's own skeleton, with everything else stripped out.
-3. Import in Godot (open the editor, or run `godot --headless --path godot --import`). The `.import` files retarget all three files onto Godot's `SkeletonProfileHumanoid` with `bone_map_ual1.tres` and `bone_map_ual2.tres`. Bones get the profile's names (`Hips`, `RightHand`, ...) under a skeleton named `%GeneralSkeleton`, and bone axes are normalised. Animations from either library then play on the soldier. The animation files import as `AnimationLibrary` resources. Clips whose names end in `_Loop` lose the suffix and loop.
+Each vertex stores its palette role and its part group in UV2. To add an animation, add its name to `UAL1_ANIMATIONS` or `UAL2_ANIMATIONS` in the tool and run it again.
 
-To add an animation, add its name to `UAL1_ANIMATIONS` or `UAL2_ANIMATIONS` in the tool and run it again. To use a different body or animation pack on another rig, give its file a bone map: in the import dock, select the `Skeleton3D`, choose **Retarget > Bone Map > New BoneMap**, and set the profile to `SkeletonProfileHumanoid`. Name its materials after palette roles so team colours apply.
+To review the characters, capture both teams at several distances and in several lights, mid-animation poses, turntables, wireframes, the first-person arms, and the horde: `CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 --script res://tests/capture_characters.gd` (needs a GPU and a display, or Xvfb).
 
 ### Runtime
 
@@ -239,7 +239,7 @@ The scenes that use the soldier:
 
 ![First-person arms: M4 at the hip, aimed, sprinting, and reloading, the pistol aimed, and the M870 pump](media/first-person-arms.jpg)
 
-`FpArms` (`arms.rs`) uses the same model, poser, and grip markers. It shows only the arms mesh, draws it with the viewmodel shader (its own FOV, so it never clips into walls), and anchors the shoulders behind and below the camera. The viewmodel rig moves the weapon, and the hands follow it. During a reload the support hand leaves the weapon to fetch a magazine.
+`FpArms` (`arms.rs`) uses the same poser and grip markers on its own model, `arms/arms.glb`, which holds only the sleeves and gloves. It draws them with the viewmodel shader (its own FOV, so it never clips into walls), and anchors the shoulders behind and below the camera. The viewmodel rig moves the weapon, and the hands follow it. During a reload the support hand leaves the weapon to fetch a magazine.
 
 ## Hit zones
 
@@ -287,8 +287,5 @@ To review sights, capture every weapon at the hip and aimed: `CAPTURE_DIR=/path/
 
 ## Zombies and other characters
 
-A Zombies mode would use the same skeleton and pipeline. Universal Animation Library 2 already includes `Zombie_Idle_Loop`, `Zombie_Walk_Fwd_Loop`, and `Zombie_Scratch`. To add a zombie:
+Zombies use the same skeleton and pipeline. The `zombie` kit in `tools/build_character_assets.py` is the soldier's body and clothes without the kit, with bare hands. `SoldierRig` plays the Universal Animation Library 2 zombie clips (`Zombie_Idle_Loop`, `Zombie_Walk_Fwd_Loop`, `Zombie_Scratch`) when `zombie` is set, adds glowing eyes, and the zombie palette gives sickly skin, grime, and blood that differ per zombie. To add another character, add a kit to `KITS` (its MakeHuman body, clothes, and gear) and a scene that instances its model under a `SoldierRig`.
 
-1. Add those clips to the tool's list.
-2. Give a zombie body its own palette, or make a new body and give it a bone map.
-3. Build an animation tree from those clips. The soldier's poser is optional, because zombies don't carry weapons.

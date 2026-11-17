@@ -1,58 +1,63 @@
-// One material for a whole character (body, gear, or first-person arms). Each
-// vertex carries its palette role and rest-pose position (see
-// write_merged_mesh in tools/build_character_assets.py), so a team needs one
-// material instead of eleven, and a character draws in one call per mesh.
+// One material for a whole character kit (soldier, first-person arms, or
+// zombies), so every character of a team draws in one call per mesh.
 //
-// Detail is computed in rest-pose space, so it sticks to the body while it
-// animates: a fabric weave on cloth, mottling that differs per character
-// (`variant`), dirt toward the feet, and for zombies a sickly skin tone and
-// blood. Roles in `hidden_roles` collapse to a point (a zombie's lost helmet
-// and goggles), shadows included.
+// tools/build_character_assets.py bakes each kit into one texture atlas:
+// albedo, a tangent-space normal map, and ORM (occlusion, roughness,
+// metallic). Each vertex also carries its palette role and its part group
+// (UV2 = (role + 0.5) / 16, (group + 0.5) / 16).
+//
+// - Tinted roles (cloth, gear, gloves, boots) store only shading detail in the
+//   albedo, centred on 0.5; the team's palette colour gives the hue and value.
+//   Other roles (skin, eyes, lenses, hardware) use the albedo as it is.
+// - Roles in `hidden_roles` and part groups in the per-character `hidden_parts`
+//   collapse to a point, shadows included: a zombie's lost helmet, or the
+//   heads and kit a soldier is not wearing.
+// - Per character (`variant`): skin tone, wear, and for zombies blood.
 shader_type spatial;
 render_mode cull_back, diffuse_burley, specular_schlick_ggx;
 
 #include "res://shaders/viewmodel_projection.gdshaderinc"
 
-const int ROLE_COUNT = 11;
+const int ROLE_COUNT = 16;
 const int SKIN = 0;
-const int UNIFORM = 1;
-const int GLOVES = 2;
-const int PANTS = 3;
-const int BOOTS = 4;
-const int MASK = 5;
 const int VISOR = 7;
-const int VEST = 8;
-const int WEBBING = 9;
+const int EYES = 11;
 
-uniform vec4 palette[11] : source_color;
-uniform float role_roughness[11];
+uniform vec4 palette[16] : source_color;
+// Bit i set: role i is coloured by the palette (its albedo is detail only).
+uniform int tinted_roles = 0;
 // Bit i set: role i is not drawn.
 uniform int hidden_roles = 0;
 // Bit i set: role i glows a little in its own colour (team accents).
 uniform int emissive_roles = 0;
 uniform float emission_energy = 0.35;
+// Bit i set: role i is bare skin (tone varies per character).
+uniform int skin_roles = 1;
 uniform bool viewmodel = false;
-// A greyscale fabric weave (the canvas texture set), repeated per metre.
-uniform sampler2D weave : hint_default_white, filter_linear_mipmap, repeat_enable;
-uniform float weave_scale = 9.0;
-// Surface relief in metres: the weave and creases on cloth, and the grain on
-// gloves and boots. Drawn as bump mapping from screen-space derivatives, so it
-// needs no tangents, UVs, or extra textures.
-uniform float weave_depth = 0.0006;
-uniform float fold_depth = 0.004;
-uniform float grain_depth = 0.00025;
-// 1 for zombies: rotting skin variation, grime, and blood.
+
+uniform sampler2D albedo_texture : source_color, filter_linear_mipmap_anisotropic, hint_default_white;
+uniform sampler2D normal_texture : hint_normal, filter_linear_mipmap_anisotropic;
+uniform sampler2D orm_texture : hint_default_white, filter_linear_mipmap_anisotropic;
+uniform float normal_strength = 1.0;
+// How much each character's skin tone wanders from the texture's.
+uniform float skin_variation = 0.18;
+// A faint rim in the team colour so silhouettes hold in the dark.
+uniform vec3 rim_colour : source_color = vec3(0.0);
+uniform float rim_energy = 0.0;
+// 1 for zombies: sickly skin, grime, and blood.
 uniform float zombie = 0.0;
+
 // Per character, so a crowd does not look cloned.
 instance uniform float variant = 0.0;
+// Bit g set: part group g is not drawn (heads, masks, and kit variants).
+instance uniform int hidden_parts = 0;
 
-varying vec3 rest;
 varying flat int role;
 
 void vertex() {
-	rest = vec3(UV, UV2.x);
-	role = clamp(int(UV2.y * 16.0), 0, ROLE_COUNT - 1);
-	if (((hidden_roles >> role) & 1) != 0) {
+	role = clamp(int(UV2.x * 16.0), 0, ROLE_COUNT - 1);
+	int group = clamp(int(UV2.y * 16.0), 0, 15);
+	if (((hidden_roles >> role) & 1) != 0 || ((hidden_parts >> group) & 1) != 0) {
 		VERTEX = vec3(0.0);
 	}
 	// Writing POSITION anywhere makes Godot use it everywhere, so both branches set it.
@@ -63,110 +68,69 @@ void vertex() {
 	}
 }
 
-float hash(vec3 p) {
-	p = fract(p * 0.1031);
-	p += dot(p, p.zyx + 31.32);
-	return fract((p.x + p.y) * p.z);
+float hash(vec2 p) {
+	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+	p3 += dot(p3, p3.yzx + 33.33);
+	return fract((p3.x + p3.y) * p3.z);
 }
 
-float noise(vec3 p) {
-	vec3 i = floor(p);
-	vec3 f = fract(p);
+float noise(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
 	f = f * f * (3.0 - 2.0 * f);
-	return mix(
-		mix(
-			mix(hash(i), hash(i + vec3(1.0, 0.0, 0.0)), f.x),
-			mix(hash(i + vec3(0.0, 1.0, 0.0)), hash(i + vec3(1.0, 1.0, 0.0)), f.x),
-			f.y
-		),
-		mix(
-			mix(hash(i + vec3(0.0, 0.0, 1.0)), hash(i + vec3(1.0, 0.0, 1.0)), f.x),
-			mix(hash(i + vec3(0.0, 1.0, 1.0)), hash(i + vec3(1.0, 1.0, 1.0)), f.x),
-			f.y
-		),
-		f.z
-	);
-}
-
-// Perturbs the view-space normal by a height field `h` (metres), from its
-// screen-space derivatives (Mikkelsen, "Bump Mapping Unparametrized Surfaces
-// on the GPU").
-vec3 bump(vec3 position, vec3 normal, float h) {
-	vec3 dpdx = dFdx(position);
-	vec3 dpdy = dFdy(position);
-	vec3 r1 = cross(dpdy, normal);
-	vec3 r2 = cross(normal, dpdx);
-	float det = dot(dpdx, r1);
-	vec3 grad = sign(det) * (dFdx(h) * r1 + dFdy(h) * r2);
-	return normalize(abs(det) * normal - grad);
+	return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
 }
 
 void fragment() {
-	vec3 base = palette[role].rgb;
-	float rough = role_roughness[role];
-	bool cloth = role == UNIFORM || role == PANTS || role == VEST || role == WEBBING || role == MASK;
-
-	// Weave, projected along the rest-pose axis the surface faces most.
-	vec3 facing = abs(cross(dFdx(rest), dFdy(rest)));
-	vec2 plane = facing.x > facing.y && facing.x > facing.z
-		? rest.zy
-		: (facing.y > facing.z ? rest.xz : rest.xy);
-	float height = 0.0;
-	if (cloth) {
-		float weave_value = texture(weave, plane * weave_scale).r;
-		base *= mix(0.84, 1.12, weave_value);
-		rough = clamp(rough + (weave_value - 0.5) * 0.12, 0.0, 1.0);
-		// Creases: long soft folds around the limbs, different per character.
-		float folds = noise(rest * vec3(9.0, 26.0, 9.0) + variant * 3.7);
-		height = weave_value * weave_depth + folds * fold_depth;
-		// The crease bottoms catch less light.
-		base *= 0.92 + 0.08 * folds;
-	} else if (role == GLOVES || role == BOOTS) {
-		// Fine grain on synthetic leather, with smoother worn patches that shine.
-		// Fades out once a grain is smaller than a pixel, so it never shimmers.
-		float footprint = length(fwidth(rest));
-		float grain = noise(rest * 420.0) * (1.0 - smoothstep(0.0015, 0.004, footprint));
-		// Creases in the leather over the knuckles and palm.
-		float crease = noise(rest * vec3(140.0, 60.0, 140.0));
-		crease = 1.0 - abs(crease * 2.0 - 1.0);
-		float worn = smoothstep(0.55, 0.8, noise(rest * 22.0 + variant));
-		height = (grain * grain_depth + crease * crease * grain_depth * 3.0) * (1.0 - 0.5 * worn);
-		base *= 0.9 + 0.1 * crease;
-		rough = clamp(rough - 0.22 * worn - 0.1 * grain, 0.3, 1.0);
-		base *= 1.0 + 0.12 * worn;
+	vec3 tex = texture(albedo_texture, UV).rgb;
+	vec3 orm = texture(orm_texture, UV).rgb;
+	vec3 base;
+	if (((tinted_roles >> role) & 1) != 0) {
+		// Detail centred on 0.5 times the team colour, a little faded or darkened
+		// per character so a squad's kit is not uniform.
+		float wear = noise(UV * 24.0 + variant * 5.3);
+		base = palette[role].rgb * tex * 2.0 * (0.92 + 0.16 * wear);
+	} else {
+		base = tex;
 	}
-
-	// Fading and wear, different on every character.
-	float mottle = noise(rest * 3.5 + variant * 7.13);
-	if (role != VISOR) {
-		base *= 0.9 + 0.2 * mottle;
+	if (((skin_roles >> role) & 1) != 0) {
+		// Per character: darker or lighter, warmer or cooler.
+		float tone = fract(variant * 0.618) * 2.0 - 1.0;
+		float warm = fract(variant * 0.377) * 2.0 - 1.0;
+		base *= 1.0 + tone * skin_variation;
+		base *= vec3(1.0 + warm * 0.04, 1.0, 1.0 - warm * 0.05);
+		if (zombie > 0.0) {
+			float rot = noise(UV * 40.0 + variant * 2.1);
+			vec3 sick = mix(vec3(0.62, 0.7, 0.55), vec3(0.75, 0.66, 0.6), fract(variant * 0.813));
+			base *= mix(sick, sick * 0.7, rot * 0.6);
+		}
 	}
-	// Dirt and dust toward the feet.
-	float feet = 1.0 - smoothstep(0.05, 0.7, rest.y);
-	float dirt = role == BOOTS || role == PANTS ? 0.4 : 0.2;
-	base *= 1.0 - dirt * feet * (0.6 + 0.4 * mottle);
-
+	float rough = orm.g;
+	float metal = orm.b;
 	if (zombie > 0.0) {
-		if (role == SKIN || role == MASK || role == GLOVES) {
-			float tone = fract(variant * 0.618);
-			base *= mix(vec3(0.82, 0.95, 0.78), vec3(1.08, 1.0, 0.92), tone);
-		}
-		float splatter = noise(rest * 5.0 + vec3(variant * 3.1)) * 0.7
-			+ noise(rest * 13.0 - vec3(variant)) * 0.3;
-		float blood = smoothstep(0.66, 0.74, splatter) * zombie;
-		if (role != SKIN) {
-			blood *= 1.0 + smoothstep(1.0, 1.4, rest.y);
-		}
-		base = mix(base, vec3(0.2, 0.025, 0.015), clamp(blood, 0.0, 1.0) * 0.7);
-		rough = mix(rough, 0.3, clamp(blood, 0.0, 1.0));
+		float splatter = noise(UV * 18.0 + vec2(variant * 3.1, variant * 1.7)) * 0.7
+			+ noise(UV * 60.0 - vec2(variant)) * 0.3;
+		float blood = smoothstep(0.62, 0.72, splatter) * zombie;
+		base = mix(base, vec3(0.19, 0.02, 0.012), blood * 0.8);
+		rough = mix(rough, 0.25, blood);
+		// Grime over everything.
+		base *= 0.85 + 0.15 * noise(UV * 9.0 + variant);
 	}
-
-	// Outside any branch: derivatives need every pixel of the 2x2 quad.
-	NORMAL = bump(VERTEX, NORMAL, height);
 	ALBEDO = base;
+	AO = orm.r;
+	AO_LIGHT_AFFECT = 0.6;
 	ROUGHNESS = rough;
-	SPECULAR = role == VISOR ? 0.55 : 0.35;
+	METALLIC = metal;
+	SPECULAR = role == EYES || role == VISOR ? 0.6 : 0.4;
+	NORMAL_MAP = texture(normal_texture, UV).rgb;
+	NORMAL_MAP_DEPTH = normal_strength;
+	vec3 glow = vec3(0.0);
 	if (((emissive_roles >> role) & 1) != 0) {
-		EMISSION = palette[role].rgb * emission_energy;
+		glow = palette[role].rgb * emission_energy;
 	}
+	if (rim_energy > 0.0) {
+		float rim = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 4.0);
+		glow += rim_colour * rim * rim_energy;
+	}
+	EMISSION = glow;
 }

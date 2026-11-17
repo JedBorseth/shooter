@@ -12,6 +12,7 @@ extends SceneTree
 ##   PROFILE_VIEW    index of the benchmark viewpoint (default: the first).
 ##   PROFILE_PRESET  low, medium, or high (default medium).
 ##   PROFILE_FRAMES  frames measured per variant (default 90).
+##   PROFILE_ONLY    measure only the variants whose names contain this text.
 
 const Benchmark := preload("res://tests/benchmark.gd")
 const WARMUP := 30
@@ -89,6 +90,11 @@ func _run() -> void:
 		["no HUD", _visible.bind(hud, false)],
 		["no first-person weapon", _visible.bind(_player.get_node_or_null("Head"), false)],
 		["anisotropic filtering off", _aniso.bind(Viewport.ANISOTROPY_DISABLED)],
+		["no third-person characters", _characters.bind(scene, false)],
+		["characters cast no shadows", _characters.bind(scene, true)],
+		["characters frozen (no skinning)", _freeze_characters.bind(scene)],
+		["characters at their lowest detail", _characters_lod.bind(scene)],
+		["characters with a plain material", _characters_plain.bind(scene)],
 		["half render scale (bilinear)", _scale.bind(0.5)],
 		# What the map's own content costs (each is n/a where a map has none).
 		["no decals", _visible.bind(scene.get_node_or_null("Decals"), false)],
@@ -97,7 +103,10 @@ func _run() -> void:
 		["no skyline (far chunk)", _hide_meshes.bind(scene, "far")],
 		["no small-detail chunks", _hide_meshes.bind(scene, "_detail")],
 	]
+	var only := OS.get_environment("PROFILE_ONLY")
 	for variant: Array in variants:
+		if not only.is_empty() and not (variant[0] as String).contains(only):
+			continue
 		var change: Callable = variant[1]
 		var undo: Variant = change.call()
 		if undo == null:
@@ -242,6 +251,81 @@ func _hide_meshes(scene: Node, part: String) -> Variant:
 	return func() -> void:
 		for mesh in hidden:
 			mesh.visible = true
+
+
+## Hides every third-person character (soldiers, bots, dummies, zombies), or
+## with `shadows_only` stops them casting shadows.
+func _characters(scene: Node, shadows_only: bool) -> Variant:
+	var meshes: Array[MeshInstance3D] = []
+	for rig: Node in scene.find_children("*", "SoldierRig", true, false):
+		for node: Node in rig.find_children("*", "MeshInstance3D", true, false):
+			var mesh := node as MeshInstance3D
+			if mesh.visible:
+				meshes.append(mesh)
+	if meshes.is_empty():
+		return null
+	var was: Array[int] = []
+	for mesh in meshes:
+		was.append(mesh.cast_shadow)
+		if shadows_only:
+			mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		else:
+			mesh.visible = false
+	return func() -> void:
+		for i in meshes.size():
+			meshes[i].visible = true
+			meshes[i].cast_shadow = was[i] as GeometryInstance3D.ShadowCastingSetting
+
+
+## Draws every character at its coarsest level of detail: what is left of
+## their cost is not triangles.
+func _characters_lod(scene: Node) -> Variant:
+	var meshes: Array[MeshInstance3D] = []
+	for rig: Node in scene.find_children("*", "SoldierRig", true, false):
+		for node: Node in rig.find_children("*", "MeshInstance3D", true, false):
+			meshes.append(node as MeshInstance3D)
+	if meshes.is_empty():
+		return null
+	var was: Array[float] = []
+	for mesh in meshes:
+		was.append(mesh.lod_bias)
+		mesh.lod_bias = 0.001
+	return func() -> void:
+		for i in meshes.size():
+			meshes[i].lod_bias = was[i]
+
+
+## Draws every character with one plain opaque material: what that saves is
+## the cost of the character shader itself.
+func _characters_plain(scene: Node) -> Variant:
+	var meshes: Array[MeshInstance3D] = []
+	for rig: Node in scene.find_children("*", "SoldierRig", true, false):
+		var body := rig.find_child("Body", true, false) as MeshInstance3D
+		if body != null and body.visible:
+			meshes.append(body)
+	if meshes.is_empty():
+		return null
+	var plain := StandardMaterial3D.new()
+	var was: Array[Material] = []
+	for mesh in meshes:
+		was.append(mesh.get_surface_override_material(0))
+		mesh.set_surface_override_material(0, plain)
+	return func() -> void:
+		for i in meshes.size():
+			meshes[i].set_surface_override_material(0, was[i])
+
+
+## Stops every character's animation, so their skeletons stop changing and
+## the renderer stops skinning them: what is left of their cost is drawing.
+func _freeze_characters(scene: Node) -> Variant:
+	var rigs := scene.find_children("*", "SoldierRig", true, false)
+	if rigs.is_empty():
+		return null
+	for rig: Node in rigs:
+		rig.process_mode = Node.PROCESS_MODE_DISABLED
+	return func() -> void:
+		for rig: Node in rigs:
+			rig.process_mode = Node.PROCESS_MODE_INHERIT
 
 
 func _env_or(key: String, fallback: String) -> String:
