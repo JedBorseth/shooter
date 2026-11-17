@@ -313,9 +313,12 @@ impl CombatState {
             _ => (def.spread.ads_sway, 1.0),
         };
         let t = self.sway_time;
+        // A slow wander plus a breath (about 0.35 Hz, mostly vertical).
         let pattern = Vec2::new(
-            fmath::sin(t * 1.7) * 0.6 + fmath::sin(t * 0.9 + 0.4) * 0.4,
-            fmath::sin(t * 1.1 + 1.0) * 0.7 + fmath::cos(t * 0.6) * 0.3,
+            fmath::sin(t * 1.7) * 0.5 + fmath::sin(t * 0.9 + 0.4) * 0.3 + fmath::sin(t * 2.2) * 0.3,
+            fmath::sin(t * 1.1 + 1.0) * 0.6
+                + fmath::cos(t * 0.6) * 0.3
+                + fmath::sin(t * 2.2 + 0.8) * 0.1,
         );
         pattern * amplitude.to_radians() * breath * self.ads
     }

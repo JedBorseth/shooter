@@ -8,7 +8,8 @@ extends SceneTree
 ##     --script res://tests/capture_weapon_feel.gd
 ## Frame strips as well (needs a GPU and a display or Xvfb): set FRAMES_DIR,
 ## and optionally SCENARIOS (for example `spray_ads,reload_m4`) to run only
-## some scenarios. Every frame of each scenario is saved as a PNG.
+## some scenarios. Every frame of each scenario is saved as a PNG, or every
+## Nth with FRAME_EVERY=N.
 
 const SCENARIOS := [
 	"ads_m4",
@@ -37,6 +38,8 @@ const SCENARIOS := [
 
 var _out := OS.get_environment("TRACE_DIR")
 var _frames_dir := OS.get_environment("FRAMES_DIR")
+var _frame_every := maxi(1, int(OS.get_environment("FRAME_EVERY")))
+var _rows := 0
 var _player: FpsPlayer
 var _camera: Camera3D
 var _rig: Node3D
@@ -170,7 +173,8 @@ func _record() -> void:
 		"%.3f" % _player.horizontal_speed(),
 	]
 	_file.store_line(",".join(row.map(func(v: Variant) -> String: return str(v))))
-	if not _frames_dir.is_empty():
+	_rows += 1
+	if not _frames_dir.is_empty() and _rows % _frame_every == 0:
 		_save_frame.call_deferred()
 
 

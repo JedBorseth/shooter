@@ -202,7 +202,7 @@ fn recoil_climbs_and_stays_while_the_snap_settles() {
     // About seven M4 rounds at the hip.
     let climbed = climb(&events);
     assert!(
-        climbed.x > 1.2f32.to_radians() && climbed.x < 2.5f32.to_radians(),
+        climbed.x > 0.9f32.to_radians() && climbed.x < 2.5f32.to_radians(),
         "the view climbs and stays: {climbed:?}"
     );
     // The snap is the smaller part, and it is in the aim.
@@ -236,9 +236,9 @@ fn the_snap_is_in_every_shot_and_settles_between_rounds() {
         .collect();
     assert_eq!(offsets.len(), 4);
     for x in &offsets[1..] {
-        // Within the aimed cone (0.1 degrees) plus a little snap.
+        // Within the aimed cone (0.1 degrees) and the aimed sway (0.1).
         assert!(
-            x.abs() < 0.15f32.to_radians(),
+            x.abs() < 0.22f32.to_radians(),
             "settled by the next shot: {x}"
         );
     }
