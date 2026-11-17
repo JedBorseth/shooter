@@ -14,4 +14,4 @@ shader_parameter/textured = true
 shader_parameter/tile_size = 2
 shader_parameter/use_vertex_color = true
 shader_parameter/metallic_scale = 1
-shader_parameter/grime = 0.6
+shader_parameter/grime = 0.1
