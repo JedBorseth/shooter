@@ -32,6 +32,13 @@ from events placed modulo the loop length, so it repeats without a seam:
 
     uv run tools/build_world_audio.py footsteps --kenney "<path>/Impact Sounds"
     uv run tools/build_world_audio.py ambience
+    uv run tools/build_world_audio.py bullets
+
+``bullets`` synthesizes what a passing or landing round sounds like, seeded:
+supersonic cracks (an N-wave shock and its reflections), subsonic whizzes (a
+Doppler-swept whistle), ricochets, and impact takes 4-8 for every surface,
+layered over the recorded takes 1-3 (debris grains, a ring for metal and tile,
+a short reflection tail), plus new grass, tile, gravel, carpet, and flesh sets.
 
 Download Kenney's Impact Sounds from https://kenney.nl/assets/impact-sounds
 (the site hands out a signed link per download) and pass the extracted folder.
@@ -152,7 +159,10 @@ def footsteps(kenney: Path) -> None:
     gravel = read_mono(pack.read("gravel.ogg"))
     stone = read_mono(pack.read("stone01.ogg"))
     for i, (ratio, tone) in enumerate(((1.0, 0.0), (0.93, -2.0), (1.07, 1.5), (1.14, -1.0))):
-        write_step(FOOTSTEPS / f"gravel_{i + 1}.ogg", match(trim(tilted(pitched(gravel, ratio), tone), 0.45), target))
+        write_step(
+            FOOTSTEPS / f"gravel_{i + 1}.ogg",
+            match(trim(tilted(pitched(gravel, ratio), tone), 0.45), target),
+        )
     concrete = kenney_takes("footstep_concrete")
     tile = [
         tilted(stone, 2.0),
@@ -397,15 +407,338 @@ def ambience() -> None:
         write_loop(name, build(np.random.default_rng(1000 + seed), seconds))
 
 
+# --- Bullets: cracks, whizzes, ricochets, and layered impacts ------------------
+
+BULLETS = AUDIO / "bullets"
+
+
+def env_decay(n: int, tau: float, rate: int = RATE) -> np.ndarray:
+    return np.exp(-np.arange(n) / (tau * rate))
+
+
+def bandpass(x: np.ndarray, lo: float, hi: float, order: int = 2, rate: int = RATE) -> np.ndarray:
+    return signal.sosfilt(signal.butter(order, (lo, hi), "band", fs=rate, output="sos"), x)
+
+
+def lowpass(x: np.ndarray, hz: float, order: int = 2, rate: int = RATE) -> np.ndarray:
+    return signal.sosfilt(signal.butter(order, hz, "low", fs=rate, output="sos"), x)
+
+
+def highpass(x: np.ndarray, hz: float, order: int = 2, rate: int = RATE) -> np.ndarray:
+    return signal.sosfilt(signal.butter(order, hz, "high", fs=rate, output="sos"), x)
+
+
+def normalized(x: np.ndarray, peak: float) -> np.ndarray:
+    return x / (np.abs(x).max() + 1e-12) * peak
+
+
+def crack(rng: np.random.Generator) -> np.ndarray:
+    """A supersonic bullet passing close: its shock wave is an N-wave, a jump
+    up, a straight fall through zero, and a jump back, lasting a fraction of
+    a millisecond (longer for a bigger round or a nearer pass). Heard, that is
+    a dry, very loud whip-crack; behind it the shock's grazing reflection off
+    the ground and a short scatter of air. The muzzle report arrives later, by
+    the speed of sound, from the gunfire module."""
+    n = int(0.32 * RATE)
+    out = np.zeros(n)
+    length = int(rng.uniform(0.00028, 0.00055) * RATE) + 2
+    at = int(0.002 * RATE)
+    wave = np.linspace(1.0, -1.0, length)
+    out[at : at + length] += wave
+    # The shock front is not a perfect step: a few tens of microseconds of rise.
+    out = lowpass(out, rng.uniform(14_000, 18_000), 2)
+    body = bandpass(rng.standard_normal(n), 900, 4_000) * env_decay(n, 0.004)
+    body[:at] = 0
+    out = normalized(out, 1.0) + 0.35 * normalized(body, 1.0)
+    # Air scatter: bright noise dying in ~10 ms.
+    hiss = highpass(rng.standard_normal(n), 2_000) * env_decay(n, rng.uniform(0.007, 0.012))
+    hiss[:at] = 0
+    out += 0.25 * normalized(hiss, 1.0)
+    # The shock off the ground or a wall, a little later and darker.
+    delay = int(rng.uniform(0.006, 0.02) * RATE)
+    reflection = lowpass(np.roll(out, delay), 5_000) * 10 ** (rng.uniform(-10, -6) / 20)
+    reflection[:delay] = 0
+    out += reflection
+    # A distant slap from the far side of the space.
+    late = int(rng.uniform(0.11, 0.18) * RATE)
+    slap = lowpass(np.roll(out, late), 3_500) * 10 ** (-16 / 20)
+    slap[:late] = 0
+    out += slap
+    fade = int(0.04 * RATE)
+    out[-fade:] *= np.linspace(1, 0, fade)
+    return normalized(out, 0.95)
+
+
+def whiz(rng: np.random.Generator) -> np.ndarray:
+    """A subsonic round (pistol, SMG, buckshot) passing: no shock, just the
+    turbulent whistle of the bullet, rising as it comes and falling as it
+    goes (Doppler), loudest at the closest point."""
+    seconds = rng.uniform(0.32, 0.42)
+    n = int(seconds * RATE)
+    t = np.arange(n) / RATE
+    centre = rng.uniform(0.14, 0.2)
+    width = rng.uniform(0.035, 0.055)
+    shape = np.exp(-(((t - centre) / width) ** 2))
+    # Pitch falls through the pass: 1/(1 - v cos) with the angle sweeping.
+    f_hi, f_lo = rng.uniform(2_400, 3_200), rng.uniform(800, 1_100)
+    f = f_lo + (f_hi - f_lo) * (1 - 1 / (1 + np.exp(-(t - centre) / (width * 0.6))))
+    noise = rng.standard_normal(n)
+    # A time-varying band-pass, in blocks.
+    out = np.zeros(n)
+    block = 256
+    zi = None
+    for a in range(0, n, block):
+        sos = signal.butter(2, (f[a] * 0.7, f[a] * 1.4), "band", fs=RATE, output="sos")
+        if zi is None:
+            zi = signal.sosfilt_zi(sos) * 0
+        out[a : a + block], zi = signal.sosfilt(sos, noise[a : a + block], zi=zi)
+    tone = np.sin(2 * np.pi * np.cumsum(f * 0.9) / RATE)
+    out = normalized(out, 1.0) + 0.3 * tone
+    out *= shape
+    return normalized(out, 0.85)
+
+
+def ricochet(rng: np.random.Generator) -> np.ndarray:
+    """A bullet glancing off and spinning away: a hard ping, then a falling,
+    wobbling whine as the tumbling fragment leaves."""
+    seconds = rng.uniform(0.5, 0.75)
+    n = int(seconds * RATE)
+    t = np.arange(n) / RATE
+    f0, f1 = rng.uniform(3_200, 4_200), rng.uniform(1_400, 2_000)
+    wobble = 1 + 0.04 * np.sin(2 * np.pi * rng.uniform(5, 9) * t)
+    f = (f0 * (f1 / f0) ** (t / seconds)) * wobble
+    phase = 2 * np.pi * np.cumsum(f) / RATE
+    whine = np.sin(phase) + 0.35 * np.sin(2.01 * phase) + 0.15 * rng.standard_normal(n)
+    whine = bandpass(whine, 900, 7_000)
+    swell = np.minimum(t / 0.03, 1.0) * np.exp(-t / (seconds * 0.45))
+    ping = bandpass(rng.standard_normal(n), 2_500, 9_000) * env_decay(n, 0.003)
+    out = 0.8 * normalized(whine * swell, 1.0) + normalized(ping, 1.0)
+    fade = int(0.05 * RATE)
+    out[-fade:] *= np.linspace(1, 0, fade)
+    return normalized(out, 0.8)
+
+
+def grains(
+    rng: np.random.Generator,
+    n: int,
+    count: int,
+    spread: float,
+    lo: float,
+    hi: float,
+    tau: float,
+) -> np.ndarray:
+    """Debris falling: short filtered bursts at Poisson-spaced times."""
+    out = np.zeros(n)
+    at = 0.0
+    for _ in range(count):
+        at += rng.exponential(spread / count)
+        a = int(at * RATE)
+        if a >= n:
+            break
+        length = n - a
+        burst = bandpass(rng.standard_normal(length), lo, hi) * env_decay(length, tau * rng.uniform(0.6, 1.4))
+        out[a:] += burst * rng.uniform(0.3, 1.0) * np.exp(-at / (spread * 0.8))
+    return out
+
+
+def room_tail(
+    x: np.ndarray,
+    rng: np.random.Generator,
+    seconds: float,
+    gain_db: float,
+    cutoff: float,
+) -> np.ndarray:
+    """A short reflection tail: the hit through decaying noise."""
+    n = len(x)
+    ir = rng.standard_normal(int(seconds * RATE)) * env_decay(int(seconds * RATE), seconds / 5)
+    ir = highpass(lowpass(ir, cutoff), 250)
+    wet = signal.fftconvolve(x, ir)[:n]
+    return normalized(wet, np.abs(x).max() * 10 ** (gain_db / 20))
+
+
+def modal(rng: np.random.Generator, n: int, freqs: list[float], tau: float) -> np.ndarray:
+    t = np.arange(n) / RATE
+    out = np.zeros(n)
+    for i, f in enumerate(freqs):
+        out += (
+            np.sin(2 * np.pi * f * rng.uniform(0.97, 1.03) * t + rng.uniform(0, 6.3))
+            * env_decay(n, tau / (1 + 0.4 * i))
+            / (1 + i)
+        )
+    return out
+
+
+def flesh(rng: np.random.Generator) -> np.ndarray:
+    """A round into a body: a dull wet thump, a slap at the skin, and a short
+    squelch, with no ring."""
+    n = int(0.28 * RATE)
+    t = np.arange(n) / RATE
+    f = rng.uniform(80, 100) * (1 + 0.8 * np.exp(-t / 0.012))
+    thump = np.sin(2 * np.pi * np.cumsum(f) / RATE) * env_decay(n, rng.uniform(0.035, 0.05))
+    body = lowpass(rng.standard_normal(n), 320) * env_decay(n, 0.04)
+    slap = bandpass(rng.standard_normal(n), 1_400, 3_200) * env_decay(n, 0.0025)
+    squelch = bandpass(rng.standard_normal(n), 500, 1_300) * env_decay(n, 0.022)
+    squelch *= 1 + 0.6 * np.sin(2 * np.pi * rng.uniform(30, 50) * t)
+    out = (
+        1.0 * normalized(thump, 1)
+        + 0.7 * normalized(body, 1)
+        + 0.6 * normalized(slap, 1)
+        + 0.4 * normalized(squelch, 1)
+    )
+    fade = int(0.04 * RATE)
+    out[-fade:] *= np.linspace(1, 0, fade)
+    return normalized(out, 0.9)
+
+
+def read48(path: Path) -> np.ndarray:
+    x, rate = sf.read(path)
+    if x.ndim > 1:
+        x = x.mean(axis=1)
+    if rate != RATE:
+        x = signal.resample_poly(x, RATE, rate)
+    return x
+
+
+# Each surface's impact takes: (base Kenney takes it starts from, or None for
+# fully synthetic, and how it is layered). Takes 1-3 of the old sets are kept
+# as recorded; this writes takes 4-8 from them, so a rebuild reads only the
+# originals and writes the same files.
+IMPACT_TAKES = 8
+
+
+def impact_layers(surface: str, base: np.ndarray | None, rng: np.random.Generator) -> np.ndarray:
+    n = int(0.6 * RATE)
+    hit = np.zeros(n)
+    if base is not None:
+        b = pitched_48(base, rng.uniform(0.9, 1.1))[:n]
+        hit[: len(b)] += normalized(b, 1.0)
+    if surface == "concrete":
+        hit += 0.5 * normalized(grains(rng, n, 15, 0.08, 2_000, 9_000, 0.004), 1)
+        hit += 0.3 * normalized(bandpass(rng.standard_normal(n), 300, 2_000) * env_decay(n, 0.01), 1)
+        hit += room_tail(hit, rng, 0.3, -20, 5_000)
+    elif surface == "tile":
+        hit += 0.5 * normalized(modal(rng, n, [2_600, 3_900, 5_300], 0.03), 1)
+        hit += 0.5 * normalized(grains(rng, n, 10, 0.06, 2_500, 10_000, 0.003), 1)
+        hit += room_tail(hit, rng, 0.35, -18, 6_000)
+    elif surface == "metal":
+        hit += 0.7 * normalized(
+            modal(
+                rng,
+                n,
+                [
+                    rng.uniform(900, 1_400),
+                    rng.uniform(2_300, 3_000),
+                    rng.uniform(4_200, 5_200),
+                ],
+                0.15,
+            ),
+            1,
+        )
+        hit += room_tail(hit, rng, 0.5, -16, 6_000)
+    elif surface == "wood":
+        hit += 0.45 * normalized(grains(rng, n, 10, 0.07, 800, 4_000, 0.006), 1)
+        hit += 0.4 * normalized(modal(rng, n, [rng.uniform(250, 400), rng.uniform(700, 900)], 0.03), 1)
+        hit += room_tail(hit, rng, 0.35, -20, 3_000)
+    elif surface == "dirt":
+        hit += 0.6 * normalized(lowpass(rng.standard_normal(n), 1_200) * env_decay(n, 0.03), 1)
+        hit += 0.5 * normalized(grains(rng, n, 18, 0.18, 500, 3_500, 0.008), 1)
+    elif surface == "grass":
+        hit = lowpass(hit, 3_500)
+        hit += 0.6 * normalized(lowpass(rng.standard_normal(n), 900) * env_decay(n, 0.025), 1)
+        hit += 0.4 * normalized(grains(rng, n, 20, 0.15, 1_500, 6_000, 0.01), 1)
+    elif surface == "gravel":
+        hit += 0.8 * normalized(grains(rng, n, 30, 0.2, 1_500, 8_000, 0.005), 1)
+    elif surface == "carpet":
+        hit = lowpass(hit, 2_000)
+        hit += 0.5 * normalized(lowpass(rng.standard_normal(n), 600) * env_decay(n, 0.02), 1)
+    elif surface == "glass":
+        hit += 0.8 * normalized(grains(rng, n, 35, 0.35, 3_000, 12_000, 0.006), 1)
+        hit += 0.3 * normalized(modal(rng, n, [3_100, 4_700, 6_900], 0.05), 1)
+    elif surface == "flesh":
+        hit = flesh(rng)
+    # Trim to where it has died away.
+    level = np.abs(hit)
+    alive = np.flatnonzero(level > level.max() * 10 ** (-50 / 20))
+    end = min(n, (alive[-1] if len(alive) else n) + int(0.02 * RATE))
+    hit = hit[:end]
+    fade = min(int(0.03 * RATE), len(hit) // 3)
+    hit[-fade:] *= np.linspace(1, 0, fade)
+    return hit
+
+
+def pitched_48(x: np.ndarray, ratio: float) -> np.ndarray:
+    up, down = int(round(1000 / ratio)), 1000
+    return signal.resample_poly(x, up, down)
+
+
+# Which recorded set a new surface starts from.
+IMPACT_BASE = {
+    "concrete": "concrete",
+    "tile": "concrete",
+    "metal": "metal",
+    "wood": "wood",
+    "dirt": "dirt",
+    "grass": "dirt",
+    "gravel": "dirt",
+    "carpet": "dirt",
+    "glass": "glass",
+    "flesh": None,
+}
+
+
+def write_ogg(path: Path, x: np.ndarray) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(path, np.clip(x, -1, 1).astype(np.float32), RATE, format="OGG", subtype="VORBIS")
+
+
+def bullets() -> None:
+    """Cracks, whizzes, and ricochets in audio/bullets/, and impact takes 4-8
+    (and new grass, tile, gravel, and carpet sets) in audio/impacts/."""
+    BULLETS.mkdir(parents=True, exist_ok=True)
+    for i in range(1, 7):
+        rng = np.random.default_rng(7_000 + i)
+        # PCM: Vorbis would smear the shock front.
+        sf.write(
+            BULLETS / f"crack_{i}.wav",
+            crack(rng).astype(np.float32),
+            RATE,
+            subtype="PCM_16",
+        )
+        write_ogg(BULLETS / f"whiz_{i}.ogg", whiz(np.random.default_rng(7_100 + i)))
+    for i in range(1, 5):
+        write_ogg(BULLETS / f"ricochet_{i}.ogg", ricochet(np.random.default_rng(7_200 + i)))
+    print(f"  {BULLETS.relative_to(REPO)}: 6 cracks, 6 whizzes, 4 ricochets")
+    for surface, base_key in IMPACT_BASE.items():
+        bases = [read48(IMPACTS / f"{base_key}_{k}.ogg") for k in (1, 2, 3)] if base_key else []
+        # Sets that are new start their numbering at 1; the old ones keep 1-3.
+        first = 4 if base_key == surface else 1
+        if surface == "flesh":
+            first = 1
+        for i in range(first, IMPACT_TAKES + 1):
+            rng = np.random.default_rng(sum(map(ord, surface)) * 31 + i)
+            base = bases[i % len(bases)] if bases else None
+            x = impact_layers(surface, base, rng)
+            write_ogg(IMPACTS / f"{surface}_{i}.ogg", normalized(x, 0.8))
+        print(f"  impacts/{surface}: takes {first}-{IMPACT_TAKES}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
     steps = sub.add_parser("footsteps")
-    steps.add_argument("--kenney", type=Path, required=True, help="extracted Kenney Impact Sounds folder")
+    steps.add_argument(
+        "--kenney",
+        type=Path,
+        required=True,
+        help="extracted Kenney Impact Sounds folder",
+    )
     sub.add_parser("ambience")
+    sub.add_parser("bullets", help="bullet cracks, whizzes, ricochets, and layered impacts")
     args = parser.parse_args()
     if args.command == "footsteps":
         footsteps(args.kenney)
+    elif args.command == "bullets":
+        bullets()
     else:
         ambience()
 

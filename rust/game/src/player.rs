@@ -49,6 +49,7 @@ use crate::acoustics::AudioEnvironment;
 use crate::aim_assist::{AIM_ASSIST_GROUP, AimAssistTarget};
 use crate::audio;
 use crate::body::{self, BodyParts};
+use crate::bullets::ShotTracer;
 use crate::convert::{to_godot, to_sim};
 use crate::footsteps::{self, Gait, Stride};
 use crate::penetration;
@@ -331,6 +332,11 @@ impl ICharacterBody3D for FpsPlayer {
             let mut acoustics = AudioEnvironment::new_alloc();
             acoustics.set_name("AudioEnvironment");
             self.base_mut().add_child(&acoustics);
+            // Other players' shots, traced for their near misses and impacts,
+            // and the pool every impact sound plays from.
+            let mut tracer = ShotTracer::new_alloc();
+            tracer.set_name("ShotTracer");
+            self.base_mut().add_child(&tracer);
         }
     }
 
@@ -1575,7 +1581,7 @@ impl FpsPlayer {
                             ],
                         );
                         let surface = surface_of(Some(collider));
-                        self.spawn_impact(hit.position, hit.normal, false, &surface);
+                        self.spawn_impact(hit.position, hit.normal, false, &surface, &surface);
                         continue;
                     }
                     // Untagged damageable colliders (the sentry) count as the chest.
@@ -1602,12 +1608,18 @@ impl FpsPlayer {
                     }
                     let surface =
                         surface_meta(Some(collider)).unwrap_or_else(|| "flesh".to_owned());
-                    self.spawn_impact(hit.position, hit.normal, false, &surface);
+                    self.spawn_impact(hit.position, hit.normal, false, &surface, &surface);
                 } else {
                     let surface = surface_at(hit.collider.as_ref(), hit.face_index);
                     // Shotguns leave a decal for only some pellets to limit clutter.
                     let decal = def.pellets == 1 || pellet % 3 == 0;
-                    self.spawn_impact(hit.position, hit.normal, decal, surface.impact_key());
+                    self.spawn_impact(
+                        hit.position,
+                        hit.normal,
+                        decal,
+                        surface.impact_key(),
+                        surface.key(),
+                    );
                 }
             }
         }
@@ -1685,7 +1697,16 @@ impl FpsPlayer {
         tracer.call("setup", &[start.to_variant(), end.to_variant()]);
     }
 
-    fn spawn_impact(&mut self, position: Vector3, normal: Vector3, decal: bool, surface: &str) {
+    /// An impact effect on `surface` (its look), and the impact sound of
+    /// `sound` (a `Surface` key: every surface has its own set).
+    fn spawn_impact(
+        &mut self,
+        position: Vector3,
+        normal: Vector3,
+        decal: bool,
+        surface: &str,
+        sound: &str,
+    ) {
         let Some(mut impact) = self
             .impact_scene
             .instantiate()
@@ -1698,6 +1719,10 @@ impl FpsPlayer {
         };
         parent.add_child(&impact);
         impact.set_global_position(position);
+        // The effect is visual; its sound plays from the tracer's pool.
+        if let Some(mut tracer) = self.base().try_get_node_as::<ShotTracer>("ShotTracer") {
+            tracer.bind_mut().impact(position, GString::from(sound));
+        }
         impact.call(
             "setup",
             &[

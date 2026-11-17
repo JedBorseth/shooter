@@ -74,6 +74,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Reverb zones on maps: `ReverbZone` boxes (`rust/game/src/acoustics.rs`) in the testing arena's tunnel and Slamcity's flats, auto shop, and south-row rooms. The reverb follows the listener rather than each source (unlike `Area3D` reverb buses), so it also covers the player's own gunfire. Nuketown has zones for the two houses' ground floors; the Zombies arena has none yet.
 - [x] Weapon handling heard beat by beat: real CC0 recordings (magazine out and in, bolt release, charging handle, pump, bolt, shells, dry fire) per weapon, played from `WeaponView`'s `foley_event` signal and timed to land on the animation's contact, plus shared draw, holster, aim, inspect, and pickup layers (`weapon_foley.rs`, `tools/build_weapon_audio.py foley`, `docs/audio.md`). Other players' reloads play the same beats at their position.
 - [x] Positional audio for impacts and the sentry's gunfire.
+- [x] Other players' rounds traced on the client (`bullets.rs`, `ShotTracer.shot_traced` for effects): near misses crack (rifles) or whiz (pistols, SMGs, buckshot) past the listener and suppress the lens, rounds landing near the listener are heard, metal and concrete ricochet, and every impact plays from a pool of ten voices. Eight impact takes per surface with debris and reflection layers, and designed flesh hits.
 - [x] Occlusion for positional audio, including other players' gunfire: a ray from the camera to every playing `AudioStreamPlayer3D`; a sound behind a wall plays 9 dB quieter through a low-pass copy of its bus.
 - [x] **good first task** Kill confirmation sound for hit markers.
 - [x] Other players' footsteps, jumps, landings, slides, mantles, and reloads, positional, with an audible range per gait (`rust/game/src/footsteps.rs`). Teammates are quieter than enemies, and your own steps are quieter than both.
@@ -205,8 +206,8 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 
 ## Phase 6 and later: production polish
 
-- [x] Post-processing pass: a colour grade per map as a look-up table built in code (`godot/scripts/looks.gd`; Testing Area, Zombies, and Slamcity), bloom that lifts only what is bright, a lens pass with a vignette, film grain, and sharpening on High (`godot/scripts/lens.gd`), and colour that drains as health drops. (Motion blur is an option; depth of field while aiming was left out because it blurs the iron sights.)
-- [ ] A look for Nuketown in `godot/scripts/looks.gd`, and environment overrides for Slamcity once its rebuild lands (it has a grade only).
+- [x] Post-processing pass: a colour grade per map as a look-up table built in code (`godot/scripts/looks.gd`; Testing Area and Zombies so far), bloom that lifts only what is bright, a lens pass with a vignette, film grain, and sharpening on High (`godot/scripts/lens.gd`), and colour that drains as health drops. (Motion blur is an option; depth of field while aiming was left out because it blurs the iron sights.)
+- [ ] Looks for Slamcity and Nuketown in `godot/scripts/looks.gd`, once Slamcity's rebuild lands.
 - [ ] Lighting pass: baked lightmaps or SDFGI tuning per map, volumetric fog, reflection probes.
 - [ ] Performance budget and profiling: target 144 FPS on a mid-range GPU, CPU frame time per system.
 - [ ] Loadouts and a create-a-class screen.

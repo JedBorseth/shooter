@@ -11,9 +11,9 @@ uniform sampler2D screen_texture : hint_screen_texture, repeat_disable, filter_n
 // 0 leaves the picture as it is; 1 is the strongest sharpening.
 uniform float sharpen : hint_range(0.0, 1.0) = 0.45;
 // How far the corners darken, as a fraction of their brightness.
-uniform float vignette : hint_range(0.0, 1.0) = 0.13;
+uniform float vignette : hint_range(0.0, 1.0) = 0.22;
 // Film grain strength, as a fraction of full brightness.
-uniform float grain : hint_range(0.0, 0.2) = 0.014;
+uniform float grain : hint_range(0.0, 0.2) = 0.022;
 // 0 to 1 while aiming down sights: the edges darken a little more.
 uniform float aim : hint_range(0.0, 1.0) = 0.0;
 // 0 to 1 just after rounds pass close: the edges close in.
@@ -47,15 +47,14 @@ void fragment() {
 
 	// Vignette: wider than tall, so the corners go first.
 	vec2 centred = (SCREEN_UV - 0.5) * vec2(1.0, 0.82);
-	float edge = smoothstep(0.45, 0.95, length(centred) * 1.55);
+	float edge = smoothstep(0.32, 0.86, length(centred) * 1.55);
 	float shade = vignette + aim * 0.16 + suppression * 0.45;
 	colour *= 1.0 - edge * clamp(shade, 0.0, 0.9);
 
-	// Grain: strongest in the mid-tones, gone in black and in white.
-	float luma = clamp(dot(colour, vec3(0.2126, 0.7152, 0.0722)), 0.0, 1.0);
-	// Grain a pixel and a half wide reads as film; single pixels read as sensor noise.
-	float noise = hash(floor(FRAGCOORD.xy / 1.5) + vec2(tick * 37.0, tick * 91.0)) - 0.5;
-	colour += noise * grain * (0.25 + 3.0 * luma * (1.0 - luma));
+	// Grain: strongest in the mid-tones, gone in white.
+	float luma = dot(colour, vec3(0.2126, 0.7152, 0.0722));
+	float noise = hash(FRAGCOORD.xy + vec2(tick * 37.0, tick * 91.0)) - 0.5;
+	colour += noise * grain * (1.0 - luma * 0.7);
 
 	COLOR = vec4(colour, 1.0);
 }

@@ -158,14 +158,9 @@ static func adopt(node: Node, preset: int) -> void:
 			}
 			authored = _take_stale(env, authored)
 			# After the stale values: these two are not in old scenes' metadata.
-			if not env.adjustment_enabled:
-				# Adjustments are always on (see _apply_vitality): a map that
-				# authored none gets neutral values.
-				env.adjustment_brightness = 1.0
-				env.adjustment_contrast = 1.0
-				env.adjustment_saturation = 1.0
-			authored["saturation"] = env.adjustment_saturation
-			authored["contrast"] = env.adjustment_contrast
+			authored["adjustment"] = env.adjustment_enabled
+			authored["saturation"] = env.adjustment_saturation if env.adjustment_enabled else 1.0
+			authored["contrast"] = env.adjustment_contrast if env.adjustment_enabled else 1.0
 			_authored[id] = authored
 	elif node is DirectionalLight3D:
 		var light := node as DirectionalLight3D
@@ -236,9 +231,6 @@ static func set_vitality(tree: SceneTree, vitality: float) -> void:
 
 
 static func _apply_vitality(env: Environment, authored: Dictionary) -> void:
-	# Adjustments stay on at full health too (at their neutral or authored
-	# values): turning them on in mid-fight would make the renderer build a
-	# new tonemap shader, a hitch at the worst moment.
-	env.adjustment_enabled = true
+	env.adjustment_enabled = authored["adjustment"] or _vitality < 1.0
 	env.adjustment_saturation = authored["saturation"] * lerpf(0.22, 1.0, _vitality)
 	env.adjustment_contrast = authored["contrast"] * lerpf(1.12, 1.0, _vitality)

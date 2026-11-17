@@ -7,6 +7,7 @@ mod ambience;
 mod audio;
 mod body;
 mod build_info;
+mod bullets;
 mod character;
 mod convert;
 mod footsteps;
