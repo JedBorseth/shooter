@@ -10,9 +10,10 @@ Gunshots are split into three layers that the game plays together:
 - ``body``: the first ~200 ms below 1.5 kHz. The punch.
 - ``tail``: everything after that, faded in from 60 ms. The echo.
 
-A weapon can also borrow echoes from other recordings when its own is dry, get a
-synthesized low boom, and be soft-clipped for density (see ``Echo``, ``Boom``,
-and ``drive_db``).
+A weapon can also lay a recording from down the range under its near shot, get
+a synthesized outdoor tail and low body, darken its tail with distance, and be
+soft-clipped for density (see ``Blend``, ``Room``, ``Weight``, ``air_hz``, and
+``drive_db``).
 
 The split is a Linkwitz-Riley crossover and a complementary fade, so the three
 layers played at 0 dB add back up to the original recording. Each layer then
@@ -35,6 +36,7 @@ new files.
 from __future__ import annotations
 
 import argparse
+import itertools
 import shutil
 import subprocess
 import sys
@@ -67,48 +69,76 @@ MAX_SECOND_HIT_DB = -8.0
 
 
 @dataclass(frozen=True)
-class Echo:
-    """Other recordings whose echoes are mixed into a weapon's tail, when its own
-    recording is too dry."""
+class Blend:
+    """Recordings from down the range, laid under a weapon's near-microphone shot.
 
-    # (folder, file) pairs in the library.
-    sources: tuple[tuple[str, str], ...]
-    # Rumble below this is wind and mic handling, not echo.
-    highpass_hz: float
-    # Level of the echo's first second (after it fades in) relative to the
-    # weapon's opening loudness.
+    A microphone beside the shooter catches a crisp crack but little of the
+    muzzle blast and terrain echo that make a big rifle sound big. A microphone
+    forward of the shooter catches both. It also hears the bullet's own crack
+    about 25 ms before the blast, so each of these shots is cut at its blast
+    (see ``find_blasts``). Blend shot ``i % n`` goes under near shot ``i``, so
+    list recordings of the same rifles in the same order.
+    """
+
+    # "Folder/File" names in the library.
+    files: tuple[str, ...]
+    # The blast's peak relative to the near shot's peak.
     gain_db: float
-    # The echo fades in over this window, in seconds from the shot, so the other
-    # gun's own blast stays out. The weapon's own tail covers the gap.
-    fade_in: tuple[float, float] = (0.15, 0.35)
+    # The near shot fades out over this window, in seconds from the shot, so its
+    # own dry reflections do not flam against the blend's.
+    near_fade: tuple[float, float] = (0.05, 0.16)
 
 
 @dataclass(frozen=True)
-class Boom:
-    """A synthesized low thump mixed under the shot: a sine sweeping down to
-    ``end_hz``. Small speakers barely play the real muzzle blast, so this puts
-    weight where they can."""
+class Room:
+    """A synthesized outdoor tail: the shot's first 250 ms through decaying
+    stereo noise whose highs die before its lows. It fills the gap between the
+    blast and the first terrain echo and widens the roll."""
 
-    start_hz: float
-    end_hz: float
-    decay: float
+    # Level of the room's first half second (after it fades in) relative to the
+    # shot's opening loudness.
     gain_db: float
+    high_decay: float = 0.25
+    low_decay: float = 0.5
+    # Fades in over this window, in seconds from the shot, so the crack stays dry.
+    fade_in: tuple[float, float] = (0.03, 0.15)
+
+
+@dataclass(frozen=True)
+class Weight:
+    """Low body under the shot, where the recordings have little and small
+    speakers can still play it: band-passed noise that follows the shot's own
+    envelope, plus a short tone falling from ``start_hz`` to ``end_hz``."""
+
+    # Relative to the shot's opening loudness.
+    gain_db: float
+    band_hz: tuple[float, float] = (75.0, 230.0)
+    start_hz: float = 190.0
+    end_hz: float = 72.0
+    # Seconds for the body (noise) and the thump (tone) to fall by 1/e.
+    decay: float = 0.12
+    thump_decay: float = 0.08
 
 
 @dataclass(frozen=True)
 class Weapon:
     key: str
-    folder: str
+    # "Folder/File" names in the library.
     files: tuple[str, ...]
     tail_seconds: float
     # RMS of the first 150 ms, in dBFS. Matches the single-file shots these layers
     # replaced, so the weapons keep the balance they were mixed at.
     loudness_db: float
-    echo: Echo | None = None
-    boom: Boom | None = None
+    blend: Blend | None = None
+    room: Room | None = None
+    weight: Weight | None = None
+    # The tail darkens to this low-pass cutoff from 0.3 s to 1 s, as distance
+    # absorbs the highs, and isolated ticks in it (a struck target, a hard
+    # reflection) are tamed. 0 leaves the tail as recorded.
+    air_hz: float = 0.0
     # Soft-clips the shot's peaks by about this much. A crisp crack peaks far
     # above its average level, which caps how loud it can be; saturation trades
-    # that peak for density and grit.
+    # that peak for density.
     drive_db: float = 0.0
     # Also write ``<key>_fire.ogg``, the whole shot in one file, for other
     # players' positional gunfire.
@@ -116,32 +146,40 @@ class Weapon:
 
 
 GUNS = (
-    Weapon("m4", "AR-15", ("D_32P", "D_24P"), 1.1, -19.6),
-    Weapon("m1911", "1911", ("A_34P", "A_42P"), 0.9, -17.3),
-    Weapon("ak47", "AK-47", ("C_27P", "C_28P", "C_29P", "C_36P"), 1.1, -20.8),
+    Weapon("m4", ("AR-15/D_32P", "AR-15/D_24P"), 1.1, -19.6),
+    Weapon("m1911", ("1911/A_34P", "1911/A_42P"), 0.9, -17.3),
+    Weapon(
+        "ak47",
+        ("AK-47/C_27P", "AK-47/C_28P", "AK-47/C_29P", "AK-47/C_36P"),
+        1.1,
+        -20.8,
+    ),
     Weapon(
         "pdw9",
-        "Carl Gustav M45",
-        ("G_20P", "G_22P", "G_31P", "G_33P", "G_35P"),
+        tuple(
+            f"Carl Gustav M45/{name}"
+            for name in ("G_20P", "G_22P", "G_31P", "G_33P", "G_35P")
+        ),
         0.9,
         -20.6,
     ),
-    Weapon("m870", "Mossberg", ("N_26P", "N_30P"), 1.6, -15.5),
-    # The Mosin's crack is the sharpest of the bolt actions, but it was recorded
-    # dry, so the Tikka and Springfield echoes roll on under it. The boom and the
-    # drive give it weight on small speakers. Saturated, it hits the peak limit
-    # at about this loudness; the view's `fire_volume_db` sets the final level.
+    Weapon("m870", ("Mossberg/N_26P", "Mossberg/N_30P"), 1.6, -15.5),
+    # The M40 is a Remington 700 in .308; the closest recordings are the Tikka T3
+    # and the Springfield 1917, both bolt actions in .30-06. The crack comes from
+    # beside the shooter, the blast and the rolling echo from down the range,
+    # each over its own rifle. The weight puts chest under it. Driven, it comes
+    # close to the peak limit at this loudness, which keeps the remote shot as
+    # loud as the others; the view's `fire_volume_db` sets the final level.
     Weapon(
         "m40",
-        "Mosin Nagant",
-        ("M_21P",),
-        2.6,
-        -19.5,
-        echo=Echo(
-            (("Tikka", "W_29P"), ("1917", "B_24P")), highpass_hz=90.0, gain_db=-12.0
-        ),
-        boom=Boom(start_hz=120.0, end_hz=48.0, decay=0.11, gain_db=-12.0),
-        drive_db=9.0,
+        ("Tikka/W_29P", "1917/B_24P"),
+        3.2,
+        -17.0,
+        blend=Blend(("Tikka/W_24P", "1917/B_16P"), gain_db=-4.0),
+        room=Room(gain_db=-22.0),
+        weight=Weight(gain_db=-5.0),
+        air_hz=3_000.0,
+        drive_db=6.0,
         remote_fire=True,
     ),
 )
@@ -259,20 +297,130 @@ def highpass(x: np.ndarray, hz: float) -> np.ndarray:
     return signal.sosfilt(sos, x, axis=0)
 
 
-def boom(spec: Boom, n: int) -> np.ndarray:
-    """A stereo sine sweep with a 2 ms attack and an exponential decay."""
+def find_blasts(x: np.ndarray, min_gap: float) -> list[int]:
+    """Returns the onset of each muzzle blast in a recording made down the range.
+
+    There the bullet's crack arrives first, then a quiet gap, then the blast. The
+    blast is the loudest point of each event; its onset is the start of the run
+    above -18 dB of that peak, which the gap before it breaks.
+    """
+    mono = np.abs(x).max(axis=1)
+    hop = RATE // 2000
+    env = mono[: len(mono) // hop * hop].reshape(-1, hop).max(axis=1)
+    loud = np.flatnonzero(env > env.max() * 10 ** (-20 / 20))
+    gap = int(min_gap * 2000)
+    events = [int(loud[0])] + [
+        int(j) for i, j in itertools.pairwise(loud) if j - i > gap
+    ]
+    blasts = []
+    for event in events:
+        window = env[event : event + 120]  # 60 ms
+        peak = int(np.argmax(window))
+        start = peak
+        while start > 0 and window[start - 1] > window[peak] * 10 ** (-18 / 20):
+            start -= 1
+        # Refine to the first sample within 24 dB of the peak.
+        lo = (event + max(start - 2, 0)) * hop
+        span = mono[lo : (event + peak + 1) * hop]
+        level = window[peak] * 10 ** (-24 / 20)
+        blasts.append(lo + int(np.flatnonzero(span > level)[0]))
+    return blasts
+
+
+def blend(near: np.ndarray, under: np.ndarray, spec: Blend) -> np.ndarray:
+    """The near shot's crack over the blend shot's blast and echo, both trimmed
+    of rumble and matched by peak. The blast lands 1.5 ms after the crack."""
+    near, under = highpass(near, 35.0), highpass(under, 35.0)
+    fade = np.zeros(len(near))
+    a, b = (int(t * RATE) for t in spec.near_fade)
+    fade[:a] = 1.0
+    fade[a:b] = raised_cosine(b - a)[::-1]
+    near = near * fade[:, None] / np.abs(near).max()
+    under = under * 10 ** (spec.gain_db / 20) / np.abs(under).max()
+    delay = int(0.0015 * RATE)
+    shot = near.copy()
+    shot[delay:] += under[: len(shot) - delay]
+    return shot
+
+
+def room(shot: np.ndarray, spec: Room, seed: int) -> np.ndarray:
+    """The ``Room`` tail for one shot. Seeded, so rebuilds are identical."""
+    n = len(shot)
     t = np.arange(n) / RATE
-    hz = spec.end_hz + (spec.start_hz - spec.end_hz) * np.exp(-t / 0.035)
-    wave = np.sin(2 * np.pi * np.cumsum(hz) / RATE)
-    wave *= np.exp(-t / spec.decay) * (1.0 - np.exp(-t / 0.002))
-    return np.repeat(wave[:, None], 2, axis=1)
+    noise = np.random.default_rng(seed).standard_normal((n, 2))
+    bright = signal.butter(2, (300.0, 2_500.0), "band", fs=RATE, output="sos")
+    dark = signal.butter(2, (60.0, 500.0), "band", fs=RATE, output="sos")
+    ir = signal.sosfilt(bright, noise, axis=0) * np.exp(-t / spec.high_decay)[:, None]
+    ir += (
+        1.6 * signal.sosfilt(dark, noise, axis=0) * np.exp(-t / spec.low_decay)[:, None]
+    )
+    attack = int(0.03 * RATE)
+    ir[:attack] *= raised_cosine(attack)[:, None]
+    early = shot[: int(0.25 * RATE)]
+    wet = np.stack(
+        [signal.fftconvolve(early[:, c], ir[:, c])[:n] for c in range(2)], axis=1
+    )
+    a, b = (int(s * RATE) for s in spec.fade_in)
+    gate = np.ones(n)
+    gate[:a] = 0.0
+    gate[a:b] = raised_cosine(b - a)
+    wet *= gate[:, None]
+    return wet * rms(shot, 0.15) * 10 ** (spec.gain_db / 20) / rms(wet[b:], 0.5)
 
 
-def collect(library: Path, folder: str, files: tuple[str, ...], length: float):
+def weight(shot: np.ndarray, spec: Weight, seed: int) -> np.ndarray:
+    """The ``Weight`` layer for one shot. Seeded, so rebuilds are identical."""
+    n = len(shot)
+    t = np.arange(n) / RATE
+    smooth = signal.butter(2, 40.0, "low", fs=RATE, output="sos")
+    envelope = np.clip(signal.sosfilt(smooth, np.abs(shot).max(axis=1)), 0.0, None)
+    envelope *= np.exp(-t / spec.decay)
+    band = signal.butter(2, spec.band_hz, "band", fs=RATE, output="sos")
+    noise = np.random.default_rng(seed).standard_normal((n, 2))
+    body = signal.sosfilt(band, noise, axis=0) * envelope[:, None]
+    hz = spec.end_hz + (spec.start_hz - spec.end_hz) * np.exp(-t / 0.04)
+    thump = np.sin(2 * np.pi * np.cumsum(hz) / RATE)
+    thump *= np.exp(-t / spec.thump_decay) * (1.0 - np.exp(-t / 0.0015))
+    thump = np.repeat(thump[:, None], 2, axis=1)
+    low = body / rms(body, 0.15) + 0.8 * thump / rms(thump, 0.15)
+    return low * rms(shot, 0.15) * 10 ** (spec.gain_db / 20) / rms(low, 0.15)
+
+
+def declick(shot: np.ndarray, start: float = 0.3) -> np.ndarray:
+    """Tames isolated ticks in the tail: wherever the level above 1.5 kHz jumps
+    more than 9 dB over its running median, that band is turned down to it."""
+    high = signal.sosfiltfilt(
+        signal.butter(2, 1_500.0, "high", fs=RATE, output="sos"), shot, axis=0
+    )
+    hop = RATE // 500
+    n = len(shot) // hop
+    frames = np.sqrt((high[: n * hop] ** 2).mean(axis=1).reshape(n, hop).mean(axis=1))
+    median = signal.medfilt(frames, 51)
+    gain = np.minimum(1.0, median * 10 ** (9 / 20) / np.maximum(frames, 1e-12))
+    gain[: int(start * 500)] = 1.0
+    # Widen each dip by a frame on both sides so the tick's edges go too.
+    gain = np.minimum.reduce([gain, np.roll(gain, 1), np.roll(gain, -1)])
+    gain = np.interp(np.arange(len(shot)), np.arange(n) * hop + hop / 2, gain)
+    return shot - high + high * gain[:, None]
+
+
+def darken(shot: np.ndarray, hz: float) -> np.ndarray:
+    """Crossfades the shot into a low-passed copy of itself from 0.3 s to 1 s."""
+    dark = signal.sosfilt(
+        signal.butter(2, hz, "low", fs=RATE, output="sos"), shot, axis=0
+    )
+    mix = np.ones(len(shot))
+    a, b = int(0.3 * RATE), int(1.0 * RATE)
+    mix[:a] = 0.0
+    mix[a:b] = raised_cosine(b - a)
+    return shot + (dark - shot) * mix[:, None]
+
+
+def collect(library: Path, files: tuple[str, ...], length: float, find=find_shots):
     shots = []
     for name in files:
-        x = read(library / folder / f"{name}.wav")
-        for onset in find_shots(x, min_gap=length * 0.6):
+        x = read(library / f"{name}.wav")
+        for onset in find(x, min_gap=length * 0.6):
             shots.append(cut_shot(x, onset, length))
     return shots
 
@@ -322,15 +470,28 @@ def build_layers(library: Path, only: set[str]) -> None:
     for gun in GUNS:
         if only and gun.key not in only:
             continue
-        shots = collect(library, gun.folder, gun.files, gun.tail_seconds)
+        shots = collect(library, gun.files, gun.tail_seconds)
         if not shots:
             sys.exit(f"{gun.key}: no clean shots found")
         shots = shots[:MAX_VARIATIONS]
-        if gun.boom:
-            # Relative to each shot's own opening, before the loudness match.
-            thump = boom(gun.boom, len(shots[0]))
-            thump *= 10 ** (gun.boom.gain_db / 20) / rms(thump, 0.15)
-            shots = [s + thump[: len(s)] * rms(s, 0.15) for s in shots]
+        if gun.blend:
+            under = collect(library, gun.blend.files, gun.tail_seconds, find_blasts)
+            if not under:
+                sys.exit(f"{gun.key}: no blasts found in the blend recordings")
+            shots = [
+                blend(s, under[i % len(under)], gun.blend) for i, s in enumerate(shots)
+            ]
+        if gun.room:
+            shots = [s + room(s, gun.room, seed=i) for i, s in enumerate(shots)]
+        if gun.weight:
+            shots = [s + weight(s, gun.weight, seed=i) for i, s in enumerate(shots)]
+        if gun.air_hz:
+            shots = [darken(declick(s), gun.air_hz) for s in shots]
+        if gun.blend or gun.room:
+            # The parts were cut at the same length; fade out what they added.
+            fade_out = int(0.15 * len(shots[0]))
+            for s in shots:
+                s[-fade_out:] *= raised_cosine(fade_out)[::-1, None]
         if gun.drive_db:
             drive = 10 ** (gun.drive_db / 20)
             shots = [np.tanh(s * drive / np.abs(s).max()) for s in shots]
@@ -339,40 +500,8 @@ def build_layers(library: Path, only: set[str]) -> None:
         target = 10 ** (gun.loudness_db / 20)
         shots = [s * target / rms(s, 0.15) for s in shots]
         layers = [split(s) for s in shots]
-
-        if gun.echo:
-            echoes = [
-                shot
-                for folder, name in gun.echo.sources
-                for shot in collect(library, folder, (name,), gun.tail_seconds)
-            ]
-            if not echoes:
-                sys.exit(f"{gun.key}: no clean echo shots found")
-            gain = target * 10 ** (gun.echo.gain_db / 20)
-            a, b = (int(t * RATE) for t in gun.echo.fade_in)
-            fade = np.ones(len(echoes[0]))
-            fade[:a] = 0.0
-            fade[a:b] = raised_cosine(b - a)
-            own = [layer["tail"] for layer in layers]
-            tails = []
-            for i, e in enumerate(echoes[:MAX_VARIATIONS]):
-                echo = highpass(e, gun.echo.highpass_hz) * fade[: len(e), None]
-                # Level by the echo's first second, where it is loudest.
-                echo *= gain / rms(echo[b:], 1.0)
-                tail = own[i % len(own)].copy()
-                tail[: len(echo)] += echo
-                tails.append(tail)
-            # The game picks each layer's variation on its own, so the counts may
-            # differ; pairing them here only sets the peak and the remote shot.
-            for i, layer in enumerate(layers):
-                layer["tail"] = tails[i % len(tails)]
-            peak = max(
-                *(np.abs(whole(layer)).max() for layer in layers),
-                *(np.abs(tail).max() for tail in tails),
-            )
-        else:
-            tails = [layer["tail"] for layer in layers]
-            peak = max(np.abs(s).max() for s in shots)
+        tails = [layer["tail"] for layer in layers]
+        peak = max(np.abs(s).max() for s in shots)
         headroom = min(1.0, 10 ** (-1 / 20) / peak)
 
         out = WEAPONS / gun.key
