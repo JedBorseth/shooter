@@ -324,6 +324,10 @@ func _attach_client(main: Node, target: String, options: Dictionary) -> void:
 	tdm_hud.set("client", client)
 	tdm_hud.set("player", player)
 	main.add_child(tdm_hud)
+	# Match stings: start, result, time warning, and rounds.
+	var stings := MatchStings.new()
+	stings.client = client
+	main.add_child(stings)
 
 	# Flags, flag markers, and flag calls; it shows nothing outside Capture the Flag.
 	var ctf := Node3D.new()

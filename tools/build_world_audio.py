@@ -34,6 +34,7 @@ from events placed modulo the loop length, so it repeats without a seam:
     uv run tools/build_world_audio.py ambience
     uv run tools/build_world_audio.py bullets
     uv run tools/build_world_audio.py player
+    uv run tools/build_world_audio.py stings
 
 ``bullets`` synthesizes what a passing or landing round sounds like, seeded:
 supersonic cracks (an N-wave shock and its reflections), subsonic whizzes (a
@@ -46,6 +47,11 @@ and kill markers (a dry tick, a struck-helmet ring, a thump and short ding),
 being hit, a heartbeat, breathing (normal and hurt), tinnitus, a death fall,
 a jump's push-off, a mantle's hands on the ledge, and the gear and cloth
 layers under footsteps.
+
+``stings`` synthesizes the match stings (start, win, loss, draw, round start,
+round win and loss, the time warning, the hardpoint call: drums, a riser, and
+brass-like chords that open as they swell) and the world's one-shots (wind
+gusts, loose metal rattling, distant explosions).
 
 Download Kenney's Impact Sounds from https://kenney.nl/assets/impact-sounds
 (the site hands out a signed link per download) and pass the extracted folder.
@@ -966,6 +972,182 @@ def player() -> None:
         print(f"  audio/player/{kind}: 4")
 
 
+# --- Match stings and world one-shots ----------------------------------------
+
+
+def brass(t: np.ndarray, freqs: list[float], attack: float, release: float, bright: float) -> np.ndarray:
+    """A brass-like chord: detuned saws through a low-pass that opens with the
+    swell, so it blooms rather than buzzes."""
+    n = len(t)
+    x = np.zeros(n)
+    for f in freqs:
+        for detune in (0.997, 1.0, 1.004):
+            x += signal.sawtooth(2 * np.pi * f * detune * t + np.random.default_rng(int(f)).uniform(0, 6))
+    swell = np.minimum(t / attack, 1.0) ** 2 * np.exp(-np.maximum(t - attack, 0) / release)
+    # A time-varying low-pass, approximated by blending a dark and a bright copy.
+    dark = lowpass(x, 400)
+    light = lowpass(x, bright)
+    return (dark + (light - dark) * swell) * swell
+
+
+def drum_hit(t: np.ndarray, hz: float, decay: float) -> np.ndarray:
+    """A big low drum: a falling sine with a noise skin."""
+    n = len(t)
+    f = hz * (1 + 1.5 * np.exp(-t / 0.02))
+    body = np.sin(2 * np.pi * np.cumsum(f) / RATE) * np.exp(-t / decay)
+    skin = lowpass(np.random.default_rng(int(hz * 10)).standard_normal(n), 1_500) * np.exp(-t / 0.03)
+    return body + 0.4 * skin
+
+
+def riser(t: np.ndarray, length: float) -> np.ndarray:
+    """Filtered noise rising into the hit."""
+    n = len(t)
+    noise = np.random.default_rng(int(length * 1000)).standard_normal(n)
+    shape = np.clip(t / length, 0, 1) ** 3 * (t < length)
+    return bandpass(noise, 300, 6_000) * shape
+
+
+def sting(kind: str) -> np.ndarray:
+    seconds = {
+        "match_start": 3.2,
+        "win": 3.6,
+        "loss": 3.6,
+        "draw": 3.0,
+        "round_start": 1.8,
+        "round_win": 2.2,
+        "round_loss": 2.2,
+        "time_warning": 1.1,
+        "hardpoint_call": 0.7,
+    }[kind]
+    n = int(seconds * RATE)
+    t = np.arange(n) / RATE
+    x = np.zeros(n)
+
+    def at(sound: np.ndarray, start: float, gain: float = 1.0) -> None:
+        a = int(start * RATE)
+        x[a:] += gain * sound[: n - a]
+
+    def tt(start: float) -> np.ndarray:
+        return np.maximum(t - start, 0)
+
+    if kind == "match_start":
+        # A riser into two drum hits and a low brass chord with a ringing bell.
+        at(riser(t, 0.9), 0.0, 0.3)
+        at(drum_hit(t, 55, 0.5), 0.9)
+        at(drum_hit(t, 49, 0.6), 1.25, 0.9)
+        at(brass(t, [73.4, 110.0, 146.8, 220.0], 0.25, 1.2, 2_500), 0.9, 0.35)
+        at(modal(np.random.default_rng(1), n, [440, 1_046, 1_580], 0.8), 0.9, 0.15)
+    elif kind in ("win", "round_win"):
+        short = kind == "round_win"
+        at(drum_hit(t, 55, 0.5), 0.0)
+        # D major, rising a fourth: a resolved, open chord.
+        at(brass(t, [73.4, 146.8, 185.0, 220.0], 0.3, 0.9 if short else 1.4, 3_000), 0.0, 0.4)
+        at(brass(t, [98.0, 196.0, 246.9, 293.7], 0.35, 0.8 if short else 1.5, 3_500), 0.45 if short else 0.7, 0.35)
+    elif kind in ("loss", "round_loss"):
+        short = kind == "round_loss"
+        at(drum_hit(t, 46, 0.7), 0.0)
+        # D minor, falling: dark and heavy.
+        at(brass(t, [73.4, 146.8, 174.6, 220.0], 0.35, 1.0 if short else 1.6, 1_600), 0.0, 0.4)
+        at(brass(t, [65.4, 130.8, 155.6, 196.0], 0.4, 0.9 if short else 1.6, 1_300), 0.5 if short else 0.8, 0.35)
+    elif kind == "draw":
+        at(drum_hit(t, 50, 0.5), 0.0)
+        at(brass(t, [73.4, 146.8, 196.0, 220.0], 0.35, 1.3, 2_200), 0.0, 0.4)
+    elif kind == "round_start":
+        at(riser(t, 0.5), 0.0, 0.3)
+        at(drum_hit(t, 52, 0.45), 0.5)
+        at(brass(t, [73.4, 110.0, 146.8], 0.2, 0.7, 2_200), 0.5, 0.3)
+    elif kind == "time_warning":
+        # Two short radio-style pulses over a low thud: time is short.
+        for k in range(2):
+            gate = np.clip(np.minimum(t / 0.004, (0.12 - t) / 0.01), 0, 1)
+            beep = np.sin(2 * np.pi * 1_320 * t) * gate
+            at(beep, 0.25 * k, 0.35)
+        at(drum_hit(t, 60, 0.25), 0.0, 0.6)
+    elif kind == "hardpoint_call":
+        for k, f in enumerate((990, 1_320)):
+            gate = np.clip(np.minimum(t / 0.003, (0.09 - t) / 0.008), 0, 1)
+            chirp = np.sin(2 * np.pi * f * t) * gate * np.exp(-t / 0.08)
+            at(chirp, 0.11 * k, 0.5)
+        at(bandpass(np.random.default_rng(3).standard_normal(n), 1_000, 4_000) * np.exp(-t / 0.01), 0.0, 0.2)
+    fade = int(0.08 * RATE)
+    x[-fade:] *= np.linspace(1, 0, fade)
+    stereo = np.stack([x, np.roll(x, int(0.0007 * RATE))], axis=1)
+    return normalized(stereo, 0.8)
+
+
+def gust(rng: np.random.Generator) -> np.ndarray:
+    """A wind gust: a few seconds of rising and falling wind, whistling a
+    little at its peak, moving across the field of view."""
+    seconds = rng.uniform(3.0, 5.5)
+    n = int(seconds * RATE)
+    t = np.linspace(0, 1, n)
+    shape = np.sin(np.pi * t ** rng.uniform(0.6, 1.0)) ** 2
+    out = np.zeros((n, 2))
+    whistle_hz = rng.uniform(500, 900)
+    for ch in range(2):
+        low = shaped_noise(rng, n, band(60, 900, 1.3))
+        high = shaped_noise(rng, n, band(500, 3_000, 1.0))
+        whistle = bandpass(rng.standard_normal(n), whistle_hz * 0.95, whistle_hz * 1.05)
+        out[:, ch] = low * shape + 0.4 * high * shape**2 + 0.25 * normalized(whistle, 1) * shape**3
+    pan = np.linspace(rng.uniform(-0.6, 0), rng.uniform(0, 0.6), n)
+    out[:, 0] *= 1 - pan
+    out[:, 1] *= 1 + pan
+    return normalized(out, 0.6)
+
+
+def debris(rng: np.random.Generator) -> np.ndarray:
+    """Something loose in the wind: a tin rattling or a sheet of metal
+    knocking, a few hits."""
+    n = int(rng.uniform(0.8, 1.6) * RATE)
+    out = np.zeros(n)
+    at_s = 0.0
+    freqs = [rng.uniform(600, 1_200), rng.uniform(1_800, 2_600), rng.uniform(3_000, 4_500)]
+    while at_s < n / RATE - 0.1:
+        a = int(at_s * RATE)
+        out[a:] += rng.uniform(0.3, 1.0) * modal(rng, n - a, freqs, rng.uniform(0.04, 0.12))
+        at_s += rng.exponential(0.18)
+    fade = int(0.1 * RATE)
+    out[-fade:] *= np.linspace(1, 0, fade)
+    return normalized(out, 0.6)
+
+
+def explosion_far(rng: np.random.Generator) -> np.ndarray:
+    """A distant explosion: a low thump and a long rolling rumble, the highs
+    gone with distance, with an echo off far terrain."""
+    n = int(rng.uniform(3.0, 4.5) * RATE)
+    t = np.arange(n) / RATE
+    thump = sine_sweep(n, 70, 32, 0.15) * env_decay(n, 0.35)
+    rumble = lowpass(rng.standard_normal(n), 300) * np.exp(-t / rng.uniform(0.8, 1.3)) * (1 - np.exp(-t / 0.05))
+    x = normalized(thump, 1) + 1.2 * normalized(rumble, 1)
+    x = lowpass(x, 450, order=4)
+    echo = int(rng.uniform(0.6, 1.2) * RATE)
+    x[echo:] += 0.35 * lowpass(x[: n - echo], 200)
+    fade = int(0.3 * RATE)
+    x[-fade:] *= np.linspace(1, 0, fade)
+    return normalized(x, 0.8)
+
+
+def stings_and_world() -> None:
+    """Match stings in audio/ui/ and world one-shots in audio/ambience/."""
+    for kind in (
+        "match_start",
+        "win",
+        "loss",
+        "draw",
+        "round_start",
+        "round_win",
+        "round_loss",
+        "time_warning",
+        "hardpoint_call",
+    ):
+        write_ogg(UI / f"{kind}.ogg", sting(kind))
+    print("  audio/ui: match stings")
+    for name, make, takes in (("gust", gust, 4), ("debris", debris, 4), ("explosion_far", explosion_far, 3)):
+        for i in range(1, takes + 1):
+            write_ogg(AMBIENCE / f"{name}_{i}.ogg", make(np.random.default_rng(sum(map(ord, name)) * 17 + i)))
+        print(f"  audio/ambience/{name}: {takes}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -979,6 +1161,7 @@ def main() -> None:
     sub.add_parser("ambience")
     sub.add_parser("bullets", help="bullet cracks, whizzes, ricochets, and layered impacts")
     sub.add_parser("player", help="hit and kill markers, health, breath, and body sounds")
+    sub.add_parser("stings", help="match stings and world one-shots")
     args = parser.parse_args()
     if args.command == "footsteps":
         footsteps(args.kenney)
@@ -986,6 +1169,8 @@ def main() -> None:
         bullets()
     elif args.command == "player":
         player()
+    elif args.command == "stings":
+        stings_and_world()
     else:
         ambience()
 

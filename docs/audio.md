@@ -176,6 +176,24 @@ thump with a short ding for a kill; a headshot kill plays the ring under the
 kill, so it is never lost. All of these are synthesized by
 `tools/build_world_audio.py player`.
 
+## The world and the match
+
+Each map's `Soundscape` (`ambience.rs`) plays an outdoor bed and an indoor
+room tone that cross-fade at reverb zones, the hum and buzz of props, and
+one-shots every 7 to 18 s outdoors: wind gusts that sweep across, or loose
+metal rattling 10 to 25 m away. A map can set `distant_battle` for a fight far
+beyond its edges: bursts of the game's own guns' far recordings and now and
+then a distant explosion, 250 to 400 m out, one voice. The Testing Area and
+the Zombies arena have it; multiplayer maps do not, so every gunshot heard in
+a match is real.
+
+`MatchStings` (`godot/scripts/net/match_stings.gd`, added with the match HUD)
+plays short drum, riser, and brass cues: when a match goes live, its result
+(win, loss, draw), a warning at 30 seconds left, and in Search and Destroy
+each round's start and result. Hardpoint calls its zone moves with a two-tone
+radio chirp of its own. There is no announcer voice: no CC0 recordings good
+enough were found.
+
 ## Reviewing sound without listening
 
 `tools/audio_report.py files OUT <paths>` writes a waveform and spectrogram
