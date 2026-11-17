@@ -286,14 +286,16 @@ def helmet(head_top: float, head_centre: Vector, head_size: Vector) -> list[bpy.
     n = (p - c).normalized()
     out.append(rounded_box("counterweight", p + n * 0.014, (0.08, 0.026, 0.05), "webbing", "cordura", bevel=0.01, rigid="DEF-head"))
     # Team band around the cover.
-    band = []
+    # Both edges lie on the shell, just over the cover, so the band hugs it.
+    band, upper = [], []
     for i in range(segs):
         a = 2 * math.pi * i / segs
         e0 = bottom(a)
         e = e0 + (math.radians(88) - e0) * 0.3
-        q = point(a, e)
-        band.append(q + (q - c).normalized() * 0.0105)
-    verts = band + [q + Vector((0, 0, 0.018)) + (q - c).normalized() * -0.001 for q in band]
+        for ring, elevation in ((band, e), (upper, e + 0.02 / rz)):
+            q = point(a, elevation)
+            ring.append(q + (q - c).normalized() * 0.008)
+    verts = band + upper
     out.append(new_object("helmet_band", verts, grid_faces(2, segs, closed=True), "accent", "band", rigid="DEF-head"))
     out[-1].modifiers.new("s", "SOLIDIFY").thickness = 0.0025
     apply_modifiers(out[-1])
@@ -302,18 +304,22 @@ def helmet(head_top: float, head_centre: Vector, head_size: Vector) -> list[bpy.
     for sx in (-1, 1):
         a = sx * math.radians(78)
         top_p = point(a, bottom(a))
-        jaw = Vector((sx * 0.055, head_centre.y - 0.035, head_centre.z - 0.105))
-        mid = Vector((sx * (rx - 0.012), head_centre.y - 0.01, head_centre.z - 0.05))
-        pts = [top_p, mid, jaw]
+        jaw = Vector((sx * 0.05, head_centre.y - 0.035, head_centre.z - 0.105))
+        mid = Vector((sx * (rx - 0.018), head_centre.y - 0.01, head_centre.z - 0.05))
+        # The two halves meet under the chin at a buckle.
+        chin = Vector((sx * 0.012, head_centre.y - 0.045, head_centre.z - 0.118))
+        pts = [top_p, mid, jaw, chin]
         verts = []
         for q in pts:
             side = Vector((0, 1, 0)).cross((q - head_centre).normalized()).normalized() * 0.008
             verts.extend([q - side, q + side])
-        faces = [(0, 1, 3, 2), (2, 3, 5, 4)]
+        faces = [(0, 1, 3, 2), (2, 3, 5, 4), (4, 5, 7, 6)]
         s = new_object(f"chinstrap_{sx}", verts, faces, "webbing", "strap", rigid="DEF-head")
         s.modifiers.new("s", "SOLIDIFY").thickness = 0.002
         apply_modifiers(s)
         out.append(s)
+    out.append(rounded_box("chin_buckle", (0.0, head_centre.y - 0.046, head_centre.z - 0.119), (0.03, 0.012, 0.016), "metal", "polymer",
+                           bevel=0.003, rigid="DEF-head"))
     return out
 
 
@@ -740,4 +746,41 @@ def watch(body: Body, elbow: Vector, wrist: Vector, side: str = "L") -> list[bpy
                            rigid=f"DEF-forearm.{side}"))
     out.append(rounded_box(f"watch_face_{side}", hit + top * 0.0205, (0.03, 0.03, 0.0015), "visor", "lens", bevel=0.0005, frame=f,
                            rigid=f"DEF-forearm.{side}"))
+    return out
+
+
+def tube(name: str, a: Vector, b: Vector, ra: float, rb: float, role: str, material: str, segments: int = 16, **props):
+    """An open tapered tube from `a` (radius `ra`) to `b` (radius `rb`), with
+    a little thickness: a boot shaft or a bloused trouser leg."""
+    axis = (b - a).normalized()
+    u = Vector((0, -1, 0)) - axis * axis.dot(Vector((0, -1, 0)))
+    u = u.normalized() if u.length > 1e-6 else axis.orthogonal().normalized()
+    v = axis.cross(u)
+    verts = []
+    for end, r in ((a, ra), (b, rb)):
+        for k in range(segments):
+            t = 2 * math.pi * k / segments
+            verts.append(end + (u * math.cos(t) + v * math.sin(t)) * r)
+    obj = new_object(name, verts, grid_faces(2, segments, closed=True), role, material, **props)
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    bm.to_mesh(obj.data)
+    bm.free()
+    thicken(obj, 0.004, bevel=0.0015, segments=1, offset=1.0)
+    smooth(obj, 50)
+    return obj
+
+
+def boot_shafts(body: Body, legs: dict[str, tuple[Vector, Vector]]) -> list[bpy.types.Object]:
+    """Combat boot shafts over the shoes, 18 cm up the shin from the ankle,
+    with the trouser leg bloused over the top: the shoes become boots."""
+    out = []
+    for side, (knee, ankle) in legs.items():
+        down = (ankle - knee).normalized()
+        bottom, top = ankle + down * 0.012, ankle - down * 0.18
+        out.append(tube(f"boot_shaft_{side}", bottom, top, 0.05, 0.056, "boots", "boots",
+                        bones=[f"DEF-shin.{side}", f"DEF-foot.{side}"]))
+        out.append(tube(f"blouse_{side}", top - down * 0.004, top - down * 0.034, 0.062, 0.058, "pants", "pants",
+                        bones=[f"DEF-shin.{side}"]))
     return out

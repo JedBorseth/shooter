@@ -441,6 +441,13 @@ def asset_paths(src: dict[str, Path]) -> dict[str, str]:
         "gloves": src["gloves01"] / "clothes/toigo_gloves_short/toigo_gloves_short.mhclo",
         "eyes": sys_ / "eyes/low-poly/low-poly.mhclo",
         "skin_young_caucasian_male": sys_ / "skins/young_caucasian_male/young_caucasian_male.mhmat",
+        # Civilian clothes and bodies for the zombies.
+        "overalls": sys_ / "clothes/male_worksuit01/male_worksuit01.mhclo",
+        "jacket": sys_ / "clothes/male_casualsuit05/male_casualsuit05.mhclo",
+        "tshirt": sys_ / "clothes/male_casualsuit06/male_casualsuit06.mhclo",
+        "skin_middleage_african_male": sys_ / "skins/middleage_african_male/middleage_african_male.mhmat",
+        "skin_old_caucasian_male": sys_ / "skins/old_caucasian_male/old_caucasian_male.mhmat",
+        "skin_young_asian_male": sys_ / "skins/young_asian_male/young_asian_male.mhmat",
     }
     for name, path in files.items():
         if not path.exists():
@@ -457,9 +464,9 @@ GREY = (0.5, 0.5, 0.5)
 MATERIALS = {
     "uniform": {"use_diffuse": False, "use_bump": False, "colour": GREY,
                 "detail": {"kind": "ripstop", "strength": 0.3, "distance": 0.0012}, "roughness": 0.9},
-    "pants": {"detail": {"kind": "ripstop", "strength": 0.15, "distance": 0.0012}, "roughness": 0.9},
+    "pants": {"use_diffuse": False, "colour": GREY, "detail": {"kind": "ripstop", "strength": 0.15, "distance": 0.0012}, "roughness": 0.9},
     "gloves": {"detail": {"kind": "grain", "scale": 700, "strength": 0.25, "distance": 0.001}, "roughness": 0.6},
-    "boots": {"detail": {"kind": "grain", "scale": 500, "strength": 0.3, "distance": 0.001}, "roughness": 0.72},
+    "boots": {"use_diffuse": False, "colour": GREY, "detail": {"kind": "grain", "scale": 500, "strength": 0.3, "distance": 0.001}, "roughness": 0.72},
     "skin": {"roughness": 0.5},
     "eyes": {"roughness": 0.08},
     "helmet": {"colour": GREY, "detail": {"kind": "cordura", "strength": 0.3, "distance": 0.001, "fade": 0.35}, "roughness": 0.72},
@@ -474,6 +481,8 @@ MATERIALS = {
     "polymer": {"colour": (0.05, 0.05, 0.048), "detail": {"kind": "grit", "scale": 500, "strength": 0.15, "distance": 0.0005, "fade": 0.15}, "roughness": 0.5},
     "metal": {"colour": (0.06, 0.06, 0.062), "detail": {"kind": "grit", "scale": 800, "strength": 0.1, "distance": 0.0003, "fade": 0.2}, "roughness": 0.42, "metallic": 0.6},
     "lens": {"colour": (0.045, 0.05, 0.055), "roughness": 0.06},
+    # Zombies' clothes: the garment's own texture, worn matte.
+    "civilian": {"detail": {"kind": "grain", "scale": 400, "strength": 0.15, "distance": 0.001}, "roughness": 0.92},
 }
 
 KITS = {
@@ -506,6 +515,7 @@ KITS = {
                 "plate_carrier": [1.1, 1.4],
                 "belt": 0.99,
                 "knee_pads": 0,
+                "boot_shafts": 0,
                 "arm_bands": 0,
                 "knuckles": 0,
             },
@@ -558,15 +568,75 @@ KITS = {
             },
             "skin": "skin_young_caucasian_male",
             "parts": [
-                {"asset": "cargo", "role": "pants", "subdiv": 1},
-                {"asset": "shirt", "role": "uniform", "tighten": 0.018, "decimate": 0.75},
-                {"asset": "boots", "role": "boots", "decimate": 0.4},
+                {"asset": "cargo", "role": "pants", "material": "civilian", "subdiv": 1},
+                {"asset": "shirt", "role": "uniform", "material": "civilian", "tighten": 0.018, "decimate": 0.75},
+                {"asset": "boots", "role": "boots", "material": "civilian", "decimate": 0.4},
                 {"asset": "eyes", "role": "eyes", "type": "Eyes"},
             ],
             "keep_body": {"bones": ["DEF-head", "DEF-neck", "DEF-hand.", "DEF-f_", "DEF-thumb."], "threshold": 0.35},
             "body_decimate": 0.32,
         },
         "density": {"skin": 3.0, "eyes": 2.0},
+        "size": 2048,
+        "far_ratio": 0.3,
+        "tinted": False,
+        "meshes": {"Body": None},
+    },
+    # More of the undead, each a different person in their own clothes. Zombie
+    # kits keep their clothes' colours (no team tint); the shader adds grime
+    # and blood per zombie. SoldierRig picks one per zombie.
+    "zombie_b": {
+        "spec": {
+            "macro": {"gender": 1.0, "age": 0.75, "muscle": 0.5, "weight": 0.75, "height": 0.55,
+                      "race": {"caucasian": 0.0, "african": 1.0, "asian": 0.0}},
+            "skin": "skin_middleage_african_male",
+            "parts": [
+                {"asset": "overalls", "role": "uniform", "material": "civilian"},
+                {"asset": "eyes", "role": "eyes", "type": "Eyes"},
+            ],
+            "keep_body": {"bones": ["DEF-head", "DEF-neck", "DEF-hand.", "DEF-f_", "DEF-thumb.", "DEF-forearm.", "DEF-upper_arm."],
+                          "threshold": 0.35},
+            "body_decimate": 0.32,
+        },
+        "tinted": False,
+        "density": {"skin": 2.5, "eyes": 2.0},
+        "size": 2048,
+        "far_ratio": 0.3,
+        "meshes": {"Body": None},
+    },
+    "zombie_c": {
+        "spec": {
+            "macro": {"gender": 1.0, "age": 0.95, "muscle": 0.3, "weight": 0.45, "height": 0.5,
+                      "race": {"caucasian": 1.0, "african": 0.0, "asian": 0.0}},
+            "skin": "skin_old_caucasian_male",
+            "parts": [
+                {"asset": "jacket", "role": "uniform", "material": "civilian"},
+                {"asset": "eyes", "role": "eyes", "type": "Eyes"},
+            ],
+            "keep_body": {"bones": ["DEF-head", "DEF-neck", "DEF-hand.", "DEF-f_", "DEF-thumb."], "threshold": 0.35},
+            "body_decimate": 0.32,
+        },
+        "tinted": False,
+        "density": {"skin": 2.5, "eyes": 2.0},
+        "size": 2048,
+        "far_ratio": 0.3,
+        "meshes": {"Body": None},
+    },
+    "zombie_d": {
+        "spec": {
+            "macro": {"gender": 1.0, "age": 0.4, "muscle": 0.55, "weight": 0.4, "height": 0.5,
+                      "race": {"caucasian": 0.0, "african": 0.0, "asian": 1.0}},
+            "skin": "skin_young_asian_male",
+            "parts": [
+                {"asset": "tshirt", "role": "uniform", "material": "civilian"},
+                {"asset": "eyes", "role": "eyes", "type": "Eyes"},
+            ],
+            "keep_body": {"bones": ["DEF-head", "DEF-neck", "DEF-hand.", "DEF-f_", "DEF-thumb.", "DEF-forearm.", "DEF-upper_arm."],
+                          "threshold": 0.35},
+            "body_decimate": 0.32,
+        },
+        "tinted": False,
+        "density": {"skin": 2.5, "eyes": 2.0},
         "size": 2048,
         "far_ratio": 0.3,
         "meshes": {"Body": None},
@@ -638,15 +708,16 @@ def write_kit_model(name: str, ual: Gltf, meshes: dict[str, list[dict]], path: P
     w.save(path)
 
 
-def write_textures(name: str, work: Path, out_dir: Path) -> None:
-    """albedo (tinted roles reduced to detail centred on 0.5), normal, and ORM."""
+def write_textures(name: str, work: Path, out_dir: Path, tinted: bool = True) -> None:
+    """albedo (tinted roles reduced to detail centred on 0.5, unless the kit
+    keeps its colours), normal, and ORM."""
     albedo = np.asarray(Image.open(work / "albedo.png").convert("RGB"), dtype=np.float32) / 255.0
     role_map = np.asarray(Image.open(work / "role.png").convert("L"), dtype=np.float32) / 255.0
     roles = np.clip((role_map * 16.0).astype(int), 0, 15)
     linear = srgb_to_linear(albedo)
     lum = linear @ np.array([0.2126, 0.7152, 0.0722], np.float32)
     for i, role in enumerate(ROLES):
-        if role not in TINTED:
+        if not tinted or role not in TINTED:
             continue
         mask = roles == i
         if not mask.any():
@@ -725,7 +796,7 @@ def main() -> None:
         if kit.get("far_ratio"):
             meshes["BodyFar"] = load_parts(work, "mesh_far.npz")
         write_kit_model(name, ual1, meshes, out_dir / f"{name}.glb")
-        write_textures(name, work, out_dir)
+        write_textures(name, work, out_dir, kit.get("tinted", True))
     if not args.no_animations:
         build_animations(ual1, UAL1_ANIMATIONS, OUT / "animations" / "ual1.glb")
         build_animations(Gltf(args.ual2), UAL2_ANIMATIONS, OUT / "animations" / "ual2.glb")

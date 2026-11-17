@@ -130,6 +130,8 @@ def make_human(spec: dict, assets: dict[str, str]):
         obj["source"] = part["asset"]
         obj["role"] = part["role"]
         obj["group"] = part.get("group", 0)
+        if part.get("material"):
+            obj["material"] = part["material"]
         clothes.append(obj)
     if spec.get("skin"):
         HumanService.set_character_skin(assets[spec["skin"]], human, skin_type="MAKESKIN")
@@ -842,6 +844,8 @@ def build_kit(spec: dict, human, clothes, ual, head_pieces=()) -> list:
         out += gear.knee_pads(body, {s: frames[f"DEF-shin.{s}"][0] for s in "LR"})
     if "arm_bands" in want:
         out += gear.arm_bands(body, {s: (frames[f"DEF-upper_arm.{s}"][0], frames[f"DEF-forearm.{s}"][0]) for s in "LR"})
+    if "boot_shafts" in want:
+        out += gear.boot_shafts(body, {s: (frames[f"DEF-shin.{s}"][0], frames[f"DEF-foot.{s}"][0]) for s in "LR"})
     if "cuffs" in want:
         out += gear.cuffs(body, {s: (frames[f"DEF-forearm.{s}"][0], frames[f"DEF-hand.{s}"][0]) for s in "LR"})
     if "watch" in want:

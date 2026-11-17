@@ -135,8 +135,8 @@ func _run() -> void:
 			zombie_material.get_shader_parameter("albedo_texture") if zombie_material else null
 		)
 		_check(
-			albedo != null and albedo.resource_path.contains("zombie_albedo"),
-			"a zombie uses the zombie atlas (got %s)" % (albedo.resource_path if albedo else "none")
+			albedo != null and albedo.resource_path.contains("/characters/zombie"),
+			"a zombie uses a zombie atlas (got %s)" % (albedo.resource_path if albedo else "none")
 		)
 	zombie.queue_free()
 	await process_frame
