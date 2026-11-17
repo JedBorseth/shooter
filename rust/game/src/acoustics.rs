@@ -35,8 +35,9 @@ use std::collections::HashMap;
 
 use godot::classes::audio_stream_player_3d::AttenuationModel;
 use godot::classes::{
-    AudioEffectHighShelfFilter, AudioEffectLowPassFilter, AudioEffectReverb, AudioServer,
-    AudioStreamPlayer3D, AudioStreamRandomizer, INode, INode3D, PhysicsRayQueryParameters3D,
+    AudioEffectAmplify, AudioEffectHighShelfFilter, AudioEffectLowPassFilter, AudioEffectReverb,
+    AudioServer, AudioStreamPlayer3D, AudioStreamRandomizer, INode, INode3D,
+    PhysicsRayQueryParameters3D,
 };
 use godot::prelude::*;
 
@@ -54,9 +55,31 @@ const SLAPBACK_MIN: f32 = 3.0;
 /// Speed of sound, m/s.
 pub const SPEED_OF_SOUND: f32 = 343.0;
 
+/// Loudness priority: close gunfire (the local player's own, or anyone's
+/// within `DUCK_RANGE` metres) turns these buses down by these many dB, so
+/// the loud, important sound stays clear without a bus compressor pumping
+/// everything. It lets go over `DUCK_RELEASE` seconds.
+const DUCKED_BUSES: [(&str, f32); 2] = [("Footsteps", 4.0), ("WeaponsDistant", 6.0)];
+pub const DUCK_RANGE: f32 = 15.0;
+const DUCK_RELEASE: f32 = 0.35;
+const DUCK_NAME: &str = "PriorityDuck";
+
 thread_local! {
     /// How far indoors the listener is, 0 to 1, blended.
     static LISTENER_INDOORS: std::cell::Cell<f32> = const { std::cell::Cell::new(0.0) };
+    /// The strongest duck asked for since the environment last looked.
+    static DUCK_REQUEST: std::cell::Cell<f32> = const { std::cell::Cell::new(0.0) };
+}
+
+/// Asks for the loudness-priority duck at `strength` (0 to 1): the local
+/// player's shot is 1, another player's falls off over `DUCK_RANGE`.
+pub fn request_duck(strength: f32) {
+    DUCK_REQUEST.with(|c| c.set(c.get().max(strength.clamp(0.0, 1.0))));
+}
+
+/// The duck strength of gunfire `distance` metres from the listener.
+pub fn duck_for_distance(distance: f32) -> f32 {
+    (1.0 - distance / DUCK_RANGE).clamp(0.0, 1.0)
 }
 
 /// How far indoors the current listener is: 0 outdoors, 1 inside a reverb
@@ -230,6 +253,8 @@ pub struct AudioEnvironment {
     echoes: Vec<Gd<AudioStreamPlayer3D>>,
     next_echo: usize,
     pending_echoes: Vec<(f32, Gd<AudioStreamRandomizer>, Vector3, f32)>,
+    /// The loudness-priority duck now, 0 to 1.
+    duck: f32,
     base: Base<Node>,
 }
 
@@ -278,12 +303,14 @@ impl INode for AudioEnvironment {
         self.update_occlusion(listener, forward, delta);
         self.update_walls(listener);
         self.update_echoes(delta);
+        self.update_duck(delta);
     }
 
     fn exit_tree(&mut self) {
         // Leave the buses as the project defines them for the next scene.
         set_reverb(None);
         LISTENER_INDOORS.with(|c| c.set(0.0));
+        set_duck(0.0);
         for source in self.sources.values_mut() {
             if source.player.is_instance_valid() {
                 source.player.set_bus(&source.bus);
@@ -362,6 +389,12 @@ impl AudioEnvironment {
             .count() as i32
     }
 
+    /// The loudness-priority duck now, 0 to 1 (tests).
+    #[func]
+    fn duck_amount(&self) -> f32 {
+        self.duck
+    }
+
     /// The reverb mixed in now (wet, 0 outdoors), for tests and debugging.
     #[func]
     fn reverb_wet(&self) -> f32 {
@@ -410,6 +443,17 @@ impl AudioEnvironment {
             }
         }
         queued
+    }
+
+    fn update_duck(&mut self, delta: f32) {
+        let asked = DUCK_REQUEST.with(|c| c.replace(0.0));
+        let released = self.duck * (-delta / DUCK_RELEASE).exp();
+        let next = asked.max(released);
+        let next = if next < 0.01 { 0.0 } else { next };
+        if next != self.duck {
+            self.duck = next;
+            set_duck(next);
+        }
     }
 
     /// One wall ray a frame, in turn around the listener.
@@ -717,6 +761,40 @@ pub fn zone_at(tree: &Gd<SceneTree>, point: Vector3) -> Option<Gd<ReverbZone>> {
         .filter_map(|node| node.try_cast::<ReverbZone>().ok())
         .filter(|zone| zone.bind().contains(point))
         .min_by(|a, b| a.bind().volume().total_cmp(&b.bind().volume()))
+}
+
+/// Turns the ducked buses down by their share of `amount` (0 to 1), with an
+/// amplifier of this module's own, so their volume settings stay as set.
+fn set_duck(amount: f32) {
+    let mut server = AudioServer::singleton();
+    for (bus, depth) in DUCKED_BUSES {
+        let index = server.get_bus_index(bus);
+        if index < 0 {
+            continue;
+        }
+        let existing = (0..server.get_bus_effect_count(index)).find(|&i| {
+            server
+                .get_bus_effect(index, i)
+                .is_some_and(|e| e.get_name() == DUCK_NAME)
+        });
+        let slot = match existing {
+            Some(slot) => slot,
+            None if amount <= 0.0 => continue,
+            None => {
+                let mut effect = AudioEffectAmplify::new_gd();
+                effect.set_name(DUCK_NAME);
+                server.add_bus_effect(index, &effect);
+                server.get_bus_effect_count(index) - 1
+            }
+        };
+        if let Some(mut effect) = server
+            .get_bus_effect(index, slot)
+            .and_then(|e| e.try_cast::<AudioEffectAmplify>().ok())
+        {
+            effect.set_volume_db(-depth * amount);
+        }
+        server.set_bus_effect_enabled(index, slot, amount > 0.0);
+    }
 }
 
 /// Puts `reverb` on the reverb buses, or turns their zone reverb off.

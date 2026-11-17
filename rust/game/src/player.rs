@@ -54,6 +54,7 @@ use crate::convert::{to_godot, to_sim};
 use crate::footsteps::{self, Gait, Stride};
 use crate::penetration;
 use crate::pickup::{INTERACT_LAYER, WeaponPickup};
+use crate::player_sounds::{BodyFrame, PlayerSounds};
 use crate::spring::{Spring, impulse_for_peak, smoothing};
 use crate::surfaces::{Surface, surface_at};
 use crate::target::{HITBOX_LAYER, WORLD_LAYER};
@@ -295,6 +296,8 @@ pub struct FpsPlayer {
     /// Max Ammo (Zombies) asked for a refill on the next tick.
     refill_requested: bool,
     sounds: HashMap<String, Option<Gd<AudioStreamRandomizer>>>,
+    /// Breath, heart, being hit, and the body's moves (`player_sounds`).
+    player_sounds: Option<Gd<PlayerSounds>>,
     /// The last gameplay input came from a gamepad (not the mouse or keyboard).
     gamepad: bool,
     gamepad_device: i32,
@@ -337,6 +340,10 @@ impl ICharacterBody3D for FpsPlayer {
             let mut tracer = ShotTracer::new_alloc();
             tracer.set_name("ShotTracer");
             self.base_mut().add_child(&tracer);
+            let mut body = PlayerSounds::new_alloc();
+            body.set_name("PlayerSounds");
+            self.base_mut().add_child(&body);
+            self.player_sounds = Some(body);
         }
     }
 
@@ -442,6 +449,21 @@ impl ICharacterBody3D for FpsPlayer {
             self.handle_event(event);
         }
         self.events = events;
+        if let Some(mut body) = self.player_sounds.clone() {
+            let movement = self.state.movement;
+            body.bind_mut().update(
+                BodyFrame {
+                    alive: self.state.alive(),
+                    health: self.state.health / self.params.health.max_health.max(1.0),
+                    sprinting: movement.sprinting,
+                    on_floor: self.env.on_floor,
+                    rising: movement.velocity.y,
+                    mantling: movement.mantling(),
+                    holding_breath: self.state.combat.holding_breath,
+                },
+                dt,
+            );
+        }
 
         // Online, the server respawns the player and the next snapshot moves them.
         if !self.state.alive() && self.prediction.is_none() && self.auto_respawn {
@@ -1451,7 +1473,9 @@ impl FpsPlayer {
         match *event {
             PlayerEvent::Damaged { amount, fall } => {
                 self.flinch.velocity += if fall { -0.6 } else { 0.4 } * (amount / 30.0).min(1.5);
-                self.play_body("res://assets/audio/player/hurt", -2.0);
+                if let Some(mut body) = self.player_sounds.clone() {
+                    body.bind_mut().on_damaged(amount, fall);
+                }
                 self.signals().damaged().emit(amount, from, fall);
             }
             PlayerEvent::Died => {
@@ -1459,6 +1483,9 @@ impl FpsPlayer {
                 // Online, the server counts deaths and sends the totals.
                 if self.prediction.is_none() {
                     self.score.on_death();
+                }
+                if let Some(mut body) = self.player_sounds.clone() {
+                    body.bind_mut().on_died();
                 }
                 self.signals().died().emit();
             }
@@ -1751,7 +1778,11 @@ impl FpsPlayer {
         if self.stride.advance(moved, gait)
             && let Some(gait) = gait
         {
-            self.play_footstep(gait.sound().level_db + footsteps::OWN_STEP_DB);
+            let volume = gait.sound().level_db + footsteps::OWN_STEP_DB;
+            self.play_footstep(volume);
+            if let Some(mut body) = self.player_sounds.clone() {
+                body.bind_mut().on_step(gait, volume);
+            }
         }
     }
 

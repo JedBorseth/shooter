@@ -153,7 +153,10 @@ func _check_remote(level: Node3D, player: FpsPlayer, env: AudioEnvironment) -> v
 	_check(remote.shots_heard() - shots == 1, "then it is")
 	for layer in ["ShotMid", "ShotFar"]:
 		var node := remote.get_node(layer) as AudioStreamPlayer3D
-		_check(node.stream != null and node.bus == &"Weapons", "%s is on the Weapons bus" % layer)
+		_check(
+			node.stream != null and node.bus == &"WeaponsDistant",
+			"%s is on the WeaponsDistant bus" % layer
+		)
 	_check(
 		(remote.get_node("ShotFar") as AudioStreamPlayer3D).playing,
 		"the far layer plays from 150 m"
