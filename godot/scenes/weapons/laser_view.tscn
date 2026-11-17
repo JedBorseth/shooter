@@ -1,8 +1,6 @@
 [gd_scene format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/weapons/laser_model.tscn" id="1_model"]
-[ext_resource type="AudioStream" path="res://assets/audio/weapons/m4_reload.ogg" id="2_reload"]
-[ext_resource type="AudioStream" path="res://assets/audio/weapons/dry_fire.ogg" id="3_dry"]
 [ext_resource type="Shader" path="res://shaders/muzzle_flash.gdshader" id="4_flash"]
 
 [sub_resource type="ShaderMaterial" id="Mat_flash"]
@@ -47,17 +45,6 @@ mesh = SubResource("Quad_flash")
 light_color = Color(1, 0.35, 0.9, 1)
 light_energy = 1.5
 omni_range = 4.0
-
-[node name="ReloadSound" type="AudioStreamPlayer" parent="."]
-stream = ExtResource("2_reload")
-volume_db = -6.0
-pitch_scale = 1.6
-bus = &"Weapons"
-
-[node name="DryFireSound" type="AudioStreamPlayer" parent="."]
-stream = ExtResource("3_dry")
-volume_db = -6.0
-bus = &"Weapons"
 
 [node name="GripRight" type="Marker3D" parent="."]
 position = Vector3(0, -0.135, 0.05)

@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["numpy>=2", "scipy>=1.14", "soundfile>=0.12"]
+# dependencies = ["numpy>=2", "scipy>=1.14", "soundfile>=0.12", "remotezip>=0.12"]
 # ///
 """Builds the layered gunshot sounds and trims dead air from the other sounds.
 
@@ -35,6 +35,18 @@ Download ``Prepared SFX Library.7z`` and extract it, then run:
 ``mech``, the bolt carrier or slide slamming home and its spring, played
 under every shot; and ``hollow``, the ring of a nearly empty magazine, played
 over the last few rounds. Both are seeded, so a rebuild writes the same files.
+
+    uv run tools/build_weapon_audio.py foley [--cache DIR]
+
+``foley`` builds every weapon's handling sounds (see ``FOLEY``): magazine out
+and in, bolt release, charging handle, pump, bolt, shell, and dry fire, cut
+from the library's raw master tracks (24-bit, 192 kHz). That archive is
+3.3 GB; the build reads only the ~70 tracks it needs out of it with HTTP range
+requests, checks each against a pinned SHA-256, and keeps them in ``--cache``
+(default ``~/.cache/shooter-weapon-foley``). It also synthesizes the shared
+handling layers in ``audio/foley/`` (cloth, gear rattle, aim, draw, holster,
+inspect, and the held breath).
+
 Then open the Godot editor (or run ``godot --headless --import``) to import the
 new files.
 """
@@ -695,6 +707,645 @@ def build_mech() -> None:
             print(path.relative_to(ROOT))
 
 
+# --- Recorded handling foley -------------------------------------------------------
+
+RAW_URL = (
+    "https://archive.org/download/the-free-firearm-sound-effects-library-by-still-north-media/"
+    "Raw%20Master%20Tracks.zip"
+)
+# The tracks the foley uses, pinned. Names are the library's ("D_5" is the
+# AR-15's "detach loaded mag"; see its Master Sheet.xlsx).
+RAW_SHA256 = {
+    "A_2": "c7cd68b66f6c6505a802b0329f7c4450f766738166da873b0c39301b5011311a",
+    "A_3": "5ebf1cda0505b028eb476abba459abb89001410e8a840e769f0218494c6951d9",
+    "A_4": "ca37fc9d4d3287f04c54d78494e91b6152a7f699905a8ad258c6041f6d86e805",
+    "A_5": "fedb6a77f9a8498e3fe2700520d19e63c6d370a4a413469d93584937d140586e",
+    "A_11": "0f6b0416ec21d451d3c7d7fd9e34880d7e01a6ee2c3bbf7eadbb47d9a4543fb9",
+    "A_15": "ce489e1d1498c305af735944f7ec81fdd7c1f9f4c53de7d32c0dc0add9297521",
+    "A_16": "2d035ebdd1168a81fec45ec49dac8061d2111a97677a1424b17650207d0a3e50",
+    "A_17": "f8efeaa34db613c101e8f9c45b3c5532900bd71b6fd9b960906f90dd935535cd",
+    "C_3": "5932801193bc7973fd0ff647f12557e3543c1debee1639a266b99275db92c859",
+    "C_7": "8220013b137bdc58559d4612f67159bc562776408dceb995b63b1b1f973a182e",
+    "C_10": "13657ef36e69f13bf405fc42a92ff9a5e5c08333c5dca51e2ad56b45d351d988",
+    "C_11": "c40234bd04873c6d9d35293ed5d447f0aef63d6f55dc63905e9633bb83d8ec10",
+    "C_12": "6c5956e5adb3f5f244b977d570d502541dd2aa24a2473ad596b139a8446b70f3",
+    "C_13": "f9382d1b612e28b339a34da9d394f87e1ba8eb2b9bc2edd90664e907e12fc1bc",
+    "C_14": "c749e112212b1fca4ecc35ff2d632c562909ab361a92de46984cdf6e0ce4a2f2",
+    "D_2": "bcb27aee224d9411850d13e2272068fc8ac0de61139cd8853d02ba52b9976098",
+    "D_3": "c2fbf179ce53996c853faaa5057a40a8850c3d8ab699d855512f5b03deb26b54",
+    "D_4": "9e45a5131b9e40a35e4e91fcd2f87bfabe36740a5cf6c53170149ce9774d517c",
+    "D_5": "62a5e9f9ab2a24593e11971cee001570ad35a3c6d5564b685efebf619e240734",
+    "D_9": "033136bf37d3d5927fe41124a503472b7ac9ec2e73d10f6e18d7c9b335e1a5e9",
+    "D_10": "4c670afe1df9c1515228d18952d0716a89dd69d46c7ae666448c2aab8830361f",
+    "D_11": "f2adb3893620768cf7210c569293bb14ec71a31a3903f7a6459fbbb9faf5233c",
+    "D_13": "3b004930080fd0a5b7869a6d2b15d41dccedc6b5061d78a0c175b692dbf62882",
+    "D_14": "ba74449533da8672c57ef5166e682fdc87e049f12293683290112e3c5c8ed8b4",
+    "D_15": "10b9aa2fb828c700dd864068ad75a587ae6d330d50ec726c65f8cc2002c5c21f",
+    "D_16": "30b2dbe251166e05a1dad44afb03a93fb1e3607e1a46ba17ba71114a1f11f166",
+    "D_19": "7b5d15953abab1cebd729fbc16f3cd053c173326ff04f02875e259975d3721e1",
+    "D_20": "6f569716de8e616f1381f6a95ff58616fb0539eefbf3b85eae58bd04a6164ff9",
+    "G_2": "04a4c4d9c84cc2bad87d53a7e6059aa55f1859bac827f92690de9eed90aa6ab6",
+    "G_3": "6f0aac659c3c61760966f6e0fdbd7fd7cc07afa2433f5042c23b0eb2674acc41",
+    "G_8": "12a1583d5c7e24bfe25f94c03306112f25d3935114f8a95d3f1c51d4a09b1983",
+    "G_9": "eab6e91d75a17500c8a6c7bb7d3514efbb084e29034048b6034008969392973b",
+    "G_10": "654fa0216dbb485b10cdc1efd53062a3f37643be44fd800dcf43eb66b4994fac",
+    "H_0": "0e34635cbacf06cc4bcb272d41cfc7312dad630dfc913663339c506aeb4f5419",
+    "H_1": "a7016bd7cdae1c5e28e4bebaaf2a4f312761aef31de73b6a3b4995b17cdbcc39",
+    "H_4": "50165ecb5876fcd3647d4963ad4d7abd38ab862ae7059b5f86525ef531c244c1",
+    "H_5": "c671dfcb97fb8806029c4dfba74967b885717dcdd277031469c137ff36e63539",
+    "H_7": "a0766febdbb3158531f1f7f19216d449609f2a5cf6d35b8b9324f68b47264c8d",
+    "K_0": "48788ea1864fc1ad1e04ba136505a2ce6f6d8d3ced181d63c593969e727b10bf",
+    "K_1": "25154cd61afe9937db4c994d341849e7c06760a906eb0ead72a2c8b8bb28dbd2",
+    "K_4": "55d6756dfc3aa17c30a20eab57d1d88fe74f01d0737864214c7aa11bb83e488d",
+    "K_5": "8cf87a884a272a6725e8cdc69765c119749c9e9fe55cc5094d30ae2b6ed546a7",
+    "K_13": "aba1522a68bc52311198b2fb0504e30dfa765f8922069711d769fb5f51a923d2",
+    "M_2": "0d966c11d74084e1c86bdd4fb42ee7a1963b47d14c8e40602027683ed5f04ae6",
+    "M_3": "4b9f4c6494d6297e294de52059d44be1a1a664e378b2304ca8f7741ea0e4bb07",
+    "M_4": "cbfd642c9f45a0c5f527d3e9024e315372283e681114e948c55845b2a84c6ce0",
+    "M_5": "e80f95b8f61cf1ae3d131e32807babd6052acd2a191d05973645f2f87fd34f22",
+    "M_6": "e07bf482c60ba4e6b19034252109c363b8a6da68f3f27fab7fd6fc92738b5dfd",
+    "M_7": "19b461b5ff7b6fe1101b9ec938efbbc0928de84bb810707b68e798910cac8eb7",
+    "N_4": "fc96890f5417df670ebbcd0130d3a2b3bd340ed301a07bb2e463e667c80f2226",
+    "N_5": "78bcc5bd16e6601746a119810583ab6d4aa4be6ebcc738bb7545a76fea01696f",
+    "N_6": "a83f34871874fb68baab0a6519fdb6f4041b4f60c431753e34663053399b9c18",
+    "N_7": "1dd752adc78552732a70d0457e7331956b75bf4cad903bf794533e7aac885900",
+    "N_8": "f83aff424a5cf98d072df034bfea362aff4693fe857c667d9137d176118292c4",
+    "N_9": "2f22d25e3b518ce6ed2566f0a64f85178fce86b2c41770d58a87085c5c09694b",
+    "N_10": "1ace8231d72defc091dd2aa0ab4e75d3c0ef74d979e8d00e5fd3e6015b217bf3",
+    "N_11": "11483baf447a16b2490e131b0f469b04d09673005e5ced9ddc96b94f8cf6ad0a",
+    "N_13": "8670b57c903d41c53ff3d96808ba0b19aa14d3a871c252bc3fc08476f300376e",
+    "N_14": "a9127ad355ec06776424c4e01758163a87ea0a6a5397c53eda9edb642b8c8e8a",
+    "O_0": "667c1543384d71ca1da96525307424d4bffdb735d6d0a34b36605eb1cbf120f8",
+    "O_1": "b7b9aadf0dcf7c22a90627fcf2e8152cd25990d9e8dc79219b4d3eb89ba5a043",
+    "O_2": "f8a13b6da4d2e0eeeb2d2c0f22557a21686601db8e12e34d5a99928fc34efbd1",
+    "O_4": "a6c88bdc8ceca31e673533fad093001acbaca753dcbbb3f3186b22590a073621",
+    "O_5": "51c1a930f80b4887936dc3b37e9b5c4f66018ec8d2e36db4d7d3a8186bbfb81e",
+    "O_6": "99f8498b877fbf15d70f9b28abd8e651c47f4088e9d0172ed2a51ab2770b573a",
+    "O_7": "0325a998b3662cb4174f78ebaea666c5d487d5cfbfa5a65a0a262fb07070a5f6",
+    "O_8": "a1e631d720bc13f3487036c77dbb2ea25a2485ceadf8c517fd46d0dd5ccd9b49",
+    "O_13": "fcf941e422648c3e79234eb7bfdc0c3d0c6bcd2179f316731e2f59ece602df8c",
+    "P_0": "fb02d60d729d70b3da56727f0541e0b62c69cc25ee0ab88b657ce120a36f2404",
+    "P_6": "4c52b8362f8d7a1dba660057429394b0732cc305d338d685e07a84fa4532ea56",
+    "P_7": "4b242622a98e67dfa7346ec622abaebe39f4cc885c95361292d079a20b3d3bcc",
+    "P_8": "a7847ce4bb40fd95ca070f5adc715cd373f0a67c8c0bcd68e1949b9f8dd36dc8",
+    "T_1": "8368fc9dc72777be626bf7950feaf4bc70cd913b42cc58c9411fd0a96129a1da",
+    "T_2": "98ca462f1919ce51d4a90e59947749192bee54dc740ec3b33367a9bbaf54007a",
+    "T_3": "77df7cf90ba9f7439f221cfa5980e6f0de05e474d4da5f237ac75b455d6ed025",
+    "T_4": "dfa8a0110f42ac0b6df1f4692cc92a72aadf2a68e37fbf04d0e9e36df61016cf",
+    "T_5": "7c7b84ab952a848de7a2c1461707f8bbd88e7d1796e031bd22d9739e6c1ce8a9",
+    "T_6": "f899de24cf2db832422aa52a609a5d98394d7ec2a2ec32b4450b7a4a19c3ceae",
+    "U_3": "0bebb8aac48eca00c9c4ae62ed040d54fe2a94fb40bfb35093925b11d20e6be3",
+    "U_4": "8172fdf6acdc67a11cd002adcdbbc97ff740941da473ef694a64f7b0e5c367e0",
+    "U_5": "559699ef501024d14f603b6d2659be45c8fb470a860876a558a242f512500e08",
+    "W_2": "c47740a3c953aafecbf789b9a17b79a1d5d03cb69d0dc886b198c4a6b0823a9d",
+    "W_3": "07d8057d699fb8d4c212bff46fea18a54cb2bbbc6a84b6c02cefc7902843086a",
+    "W_4": "d729617d95f850ee24fa7bc73c84f2add1ccb7f46727e544c53dc6caf02c5bce",
+    "W_5": "49e45e146d8610c02a39ecfe8e38e20cc88f81a02e79c1b72544a7445b4a69b2",
+    "W_6": "492f1696b219e28d3252ea298865b03218c37f34e835b45736d6840d1c8b6313",
+    "W_7": "92293a0a68fe5674056fa37bd5f5f0e3f4b1122bd7f59216aa826bf545cc87ca",
+    "W_9": "f7f942b85647f6762ae464951efaa3e19a30606c4ed259855981dc35f2f50e83",
+    "W_10": "2ca89bc1169c372d5f5455f76f9942d8ee70e704bb823fe02e5b681da6e667e2",
+    "W_11": "7c15ee89670fdb5574f8de84789875474dc20d953e6f458da16c0d0793852c59",
+    "W_12": "1dd59cb8cceab4f2dca6e0d94683c3b9900d6effd020b0d68e7d91d1f110309f",
+    "W_13": "8a99e3aa8460c2db6712676448c6777541c2268af6310583f5dc2204efad2f0b",
+    "X_2": "2e95e0c128affaab0c1e60c98840937067e08cc7aeba4eb3a429584de42becb2",
+    "X_3": "2717b865144964fce84b165f33c91784e872d768932d64215d1908e32dd5faed",
+    "X_4": "dff1bc49877c11c4168498221aeb280366c963d56704aac43a5565e8022ab4c2",
+    "X_5": "6abd03535fe5e194b605b1cb6833d29b2dbe9475346f44b84a8f6d74c03f23d3",
+    "X_11": "ecdd5b1755c56ce4e6aa125e9efb723b61820a892609a2b1e6a90d91698983f3",
+    "X_16": "377dd6eb0b89bf36e6aaad290f733c1b328d6f2b8ea884923cb6a6d06dd34875",
+    "X_17": "3c9fd371a63044536c594e2b4931faf4b1703de23926cf4e38aacc00842d6540",
+    "X_19": "d44a7ba58ac09b112b89bfb9faa672ab02a1cac2b37323ee0dcd944bfdfa262a",
+}
+
+FOLEY_RATE = 48_000
+FOLEY_TAKES = 4
+
+
+@dataclass(frozen=True)
+class Src:
+    """Takes cut from one raw track: every event in it (or those listed in
+    ``pick``, 0-based), resampled by ``pitch`` (above 1 is higher and
+    shorter), with ``high_db`` of high shelf above 3 kHz for a weapon's own
+    colour."""
+
+    track: str
+    pitch: float = 1.0
+    pick: tuple[int, ...] | None = None
+    high_db: float = 0.0
+
+
+def srcs(*tracks: str, pitch: float = 1.0, high_db: float = 0.0) -> tuple[Src, ...]:
+    return tuple(Src(t, pitch, None, high_db) for t in tracks)
+
+
+# Longest a take of each event may run, in seconds.
+FOLEY_LENGTH = {
+    "mag_out": 0.8,
+    "mag_in": 0.7,
+    "bolt_release": 0.45,
+    "charge": 0.9,
+    "shell_in": 0.6,
+    "pump_back": 0.6,
+    "pump_forward": 0.6,
+    "bolt_up": 0.45,
+    "bolt_back": 0.55,
+    "bolt_forward": 0.55,
+    "bolt_down": 0.45,
+    "dry": 0.35,
+}
+
+# Where each take's loudest hit sits, in seconds from its start (the
+# magazine seating, the bolt slamming home). The game starts the sound that
+# long before the moment the animation makes contact, so the hit lands on it
+# (`weapon_foley::lead` in the game reads the same table).
+FOLEY_ALIGN = {
+    "mag_out": 0.06,
+    "mag_in": 0.14,
+    "bolt_release": 0.02,
+    "charge": 0.22,
+    "shell_in": 0.12,
+    "pump_back": 0.08,
+    "pump_forward": 0.08,
+    "bolt_up": 0.05,
+    "bolt_back": 0.08,
+    "bolt_forward": 0.08,
+    "bolt_down": 0.04,
+    "dry": 0.005,
+}
+
+# Each weapon's handling, from the recordings closest to it. Where the library
+# has no such gun, the nearest action stands in, pitched and coloured so no
+# two weapons share a voice.
+FOLEY: dict[str, dict[str, tuple[Src, ...]]] = {
+    "m4": {  # AR-15
+        "mag_out": srcs("D_5", "D_3"),
+        "mag_in": srcs("D_4", "D_2"),
+        "bolt_release": srcs("D_13", "D_11"),
+        "charge": srcs("D_14", "D_15"),
+        "dry": srcs("D_16"),
+    },
+    "br3": {  # a heavier box-magazine rifle: Tikka magazine, SKS action
+        "mag_out": srcs("W_5", "W_3", pitch=0.96),
+        "mag_in": srcs("W_4", "W_2", pitch=0.96),
+        "bolt_release": srcs("U_4", "D_13", pitch=0.94, high_db=-2.0),
+        "charge": srcs("U_5", "U_3"),
+        "dry": srcs("D_16", pitch=0.94),
+    },
+    "ak47": {
+        "mag_out": (*srcs("C_11"), *srcs("G_9", pitch=0.86, high_db=-2.0)),
+        "mag_in": (*srcs("C_10"), *srcs("G_8", pitch=0.86, high_db=-2.0)),
+        "charge": srcs("C_14", "C_12"),
+        "bolt_release": srcs("C_13"),
+        "dry": srcs("C_7"),
+    },
+    "lsw6": {  # belt-box LMG: drum and heavy box magazines, slow heavy bolt
+        "mag_out": srcs("N_11", "P_7", pitch=0.9),
+        "mag_in": srcs("P_6", "N_10", pitch=0.9),
+        "charge": srcs("P_8", "P_0", pitch=0.92),
+        "bolt_release": srcs("C_13", pitch=0.86, high_db=-3.0),
+        "dry": srcs("C_7", pitch=0.88),
+    },
+    "pdw9": {  # 9 mm SMG: Carl Gustav M45
+        "mag_out": srcs("G_9", "X_5", pitch=1.04),
+        "mag_in": srcs("G_8", "X_4", pitch=1.04),
+        "charge": srcs("G_10", "G_2"),
+        "bolt_release": srcs("D_11", pitch=1.12, high_db=2.0),
+        "dry": srcs("G_3"),
+    },
+    "m1911": {
+        "mag_out": srcs("A_5", "A_3"),
+        "mag_in": srcs("A_4", "A_2"),
+        "bolt_release": srcs("A_11", "A_16", "A_15"),
+        "charge": srcs("A_17", "X_17"),
+        "dry": srcs("X_19"),
+    },
+    "m870": {  # pump: Benelli Nova, Charles Daly, Winchester Model 12
+        "pump_back": srcs("O_4", "O_0", "H_4", "K_0"),
+        "pump_forward": srcs("O_5", "O_1", "H_5", "K_1"),
+        "shell_in": srcs("O_7", "K_13", "H_7"),
+        "dry": srcs("O_8"),
+    },
+    "m40": {  # bolt action: Tikka T3, Savage 10, Mosin
+        "bolt_up": srcs("W_6", "T_1", "M_2"),
+        "bolt_back": srcs("W_9", "T_3", "W_7", "M_4"),
+        "bolt_forward": srcs("W_12", "T_5", "W_11", "M_6"),
+        "bolt_down": srcs("T_6", "M_7"),
+        "mag_out": srcs("W_5", "W_3"),
+        "mag_in": srcs("W_4", "W_2"),
+        "dry": srcs("W_13"),
+    },
+}
+
+
+def fetch_raw(cache: Path, names: set[str]) -> dict[str, Path]:
+    """The raw tracks in ``names``, downloaded on first use by range requests
+    into the 3.3 GB archive, and checked against their pinned hashes."""
+    import hashlib
+
+    cache.mkdir(parents=True, exist_ok=True)
+    paths = {name: cache / f"{name}.wav" for name in names}
+    missing = [n for n, p in paths.items() if not p.exists()]
+    if missing:
+        from remotezip import RemoteZip
+
+        with RemoteZip(RAW_URL) as archive:
+            members = {
+                info.filename.rsplit("/", 1)[-1]: info.filename
+                for info in archive.infolist()
+                if not info.filename.startswith("__MACOSX")
+            }
+            for name in sorted(missing):
+                data = archive.read(members[f"{name}.wav"])
+                paths[name].write_bytes(data)
+                print(f"fetched {name} ({len(data) / 1e6:.1f} MB)")
+    for name, path in paths.items():
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        if digest != RAW_SHA256[name]:
+            sys.exit(f"{name}: hash mismatch, delete {path} and rebuild")
+    return paths
+
+
+def events(x: np.ndarray, rate: int) -> list[tuple[int, int]]:
+    """Start and end samples of each handling sound in a raw track: runs above
+    the noise floor (and within 36 dB of the loudest), split by 150 ms of
+    quiet. Each starts 4 ms before its first sample within 30 dB of its own
+    peak and ends once it has fallen 50 dB below it, or to the noise."""
+    mono = np.abs(x).max(axis=1)
+    hop = rate // 1000
+    env = mono[: len(mono) // hop * hop].reshape(-1, hop).max(axis=1)
+    noise = np.percentile(env, 20)
+    threshold = max(env.max() * 10 ** (-36 / 20), noise * 10 ** (14 / 20))
+    loud = np.flatnonzero(env > threshold)
+    runs: list[list[int]] = []
+    for i in loud:
+        if runs and i - runs[-1][1] <= 150:
+            runs[-1][1] = int(i)
+        else:
+            runs.append([int(i), int(i)])
+    found = []
+    for a, b in runs:
+        peak = env[a : b + 1].max()
+        if peak < env.max() * 10 ** (-14 / 20) or b - a < 8:
+            continue  # handling noise between takes
+        start = a + int(np.flatnonzero(env[a : b + 1] > peak * 10 ** (-30 / 20))[0]) - 4
+        floor = max(peak * 10 ** (-50 / 20), noise * 1.6)
+        end = b
+        while end + 1 < len(env) and env[end + 1] > floor:
+            end += 1
+        found.append((max(start, 0) * hop, (end + 30) * hop))
+    return found
+
+
+def high_shelf(x: np.ndarray, gain_db: float, hz: float = 3_000.0) -> np.ndarray:
+    if gain_db == 0.0:
+        return x
+    high = signal.sosfilt(
+        signal.butter(2, hz, "high", fs=FOLEY_RATE, output="sos"), x, axis=0
+    )
+    return x + high * (10 ** (gain_db / 20) - 1.0)
+
+
+def align(take: np.ndarray, at: float) -> np.ndarray:
+    """Moves the loudest 2 ms of ``take`` to ``at`` seconds: trims what comes
+    before it, or pads with silence."""
+    hop = int(0.002 * FOLEY_RATE)
+    frames = (
+        np.abs(take[: len(take) // hop * hop]).max(axis=1).reshape(-1, hop).max(axis=1)
+    )
+    peak = int(np.argmax(frames)) * hop
+    want = int(at * FOLEY_RATE)
+    if peak > want:
+        take = take[peak - want :].copy()
+        fade = min(int(0.006 * FOLEY_RATE), want)
+        if fade > 0:
+            take[:fade] *= raised_cosine(fade)[:, None]
+        return take
+    return np.vstack([np.zeros((want - peak, take.shape[1])), take])
+
+
+def foley_take(
+    raw: np.ndarray, rate: int, span: tuple[int, int], src: Src, event: str
+) -> np.ndarray:
+    a, b = span
+    # Room for the lead-in before the hit, then the event's longest length.
+    cut = raw[a : min(b, a + int((FOLEY_LENGTH[event] + 0.4) * rate / src.pitch))]
+    # To 48 kHz and the pitch in one resample: fewer samples play higher.
+    target = int(len(cut) * FOLEY_RATE / rate / src.pitch)
+    take = signal.resample(cut, target, axis=0)
+    take = align(take, FOLEY_ALIGN[event])[: int(FOLEY_LENGTH[event] * FOLEY_RATE)]
+    take = highpass(take, 60.0)
+    take = high_shelf(take, src.high_db)
+    fade_in = int(0.002 * FOLEY_RATE)
+    take[:fade_in] *= raised_cosine(fade_in)[:, None]
+    fade = min(int(0.04 * FOLEY_RATE), len(take) // 3)
+    take[-fade:] *= raised_cosine(fade)[::-1, None]
+    # Takes of one event match on their loudest 30 ms, so none jumps out.
+    hop = int(0.03 * FOLEY_RATE)
+    frames = take[: len(take) // hop * hop].reshape(-1, hop, 2)
+    loudest = (
+        np.sqrt((frames**2).mean(axis=(1, 2))).max() if len(frames) else rms(take, 1)
+    )
+    take *= 10 ** (-16 / 20) / max(loudest, 1e-9)
+    return take * min(1.0, 10 ** (-1 / 20) / np.abs(take).max())
+
+
+def build_weapon_foley(cache: Path) -> None:
+    names = {
+        s.track for events_ in FOLEY.values() for ss in events_.values() for s in ss
+    }
+    tracks = fetch_raw(cache, names)
+    loaded: dict[str, tuple[np.ndarray, int, list[tuple[int, int]]]] = {}
+    for key, table in FOLEY.items():
+        out = WEAPONS / key / "foley"
+        files: dict[str, np.ndarray] = {}
+        for event, sources in table.items():
+            takes = []
+            # Round-robin over the sources, so each event mixes recordings.
+            per_source = []
+            for src in sources:
+                if src.track not in loaded:
+                    raw, rate = sf.read(
+                        tracks[src.track], always_2d=True, dtype="float64"
+                    )
+                    loaded[src.track] = (raw, rate, events(raw, rate))
+                raw, rate, spans = loaded[src.track]
+                picked = [spans[i] for i in src.pick] if src.pick else spans
+                per_source.append(
+                    [foley_take(raw, rate, s, src, event) for s in picked]
+                )
+            for group in itertools.zip_longest(*per_source):
+                takes.extend(t for t in group if t is not None)
+            if not takes:
+                sys.exit(f"{key}/{event}: no takes found")
+            for i, take in enumerate(takes[:FOLEY_TAKES], start=1):
+                files[f"{event}_{i}.ogg"] = take
+        for old in out.glob("*") if out.exists() else []:
+            if old.name.removesuffix(".import") not in files:
+                old.unlink()
+        for name, data in files.items():
+            write(out / name, data, ogg=True)
+        print(
+            f"{key}: {', '.join(sorted({n.rsplit('_', 1)[0] for n in files}))} ({len(files)} takes)"
+        )
+
+
+# --- Synthesized shared handling layers -----------------------------------------------
+
+FOLEY_DIR = AUDIO / "foley"
+
+
+def pink(rng: np.random.Generator, n: int) -> np.ndarray:
+    spectrum = np.fft.rfft(rng.standard_normal(n))
+    f = np.maximum(np.fft.rfftfreq(n, 1 / FOLEY_RATE), 20.0)
+    return np.fft.irfft(spectrum / np.sqrt(f), n)
+
+
+def cloth(
+    rng: np.random.Generator, seconds: float, low: float = 250.0, high: float = 3_800.0
+) -> np.ndarray:
+    """Fabric sliding on fabric: band-passed pink noise whose level flutters
+    with the weave catching (a 25-70 Hz random envelope), swelling and dying."""
+    n = int(seconds * FOLEY_RATE)
+    noise = signal.sosfilt(
+        signal.butter(2, (low, high), "band", fs=FOLEY_RATE, output="sos"), pink(rng, n)
+    )
+    flutter = np.abs(
+        signal.sosfilt(
+            signal.butter(2, rng.uniform(25, 70), "low", fs=FOLEY_RATE, output="sos"),
+            rng.standard_normal(n),
+        )
+    )
+    flutter /= flutter.max() + 1e-9
+    t = np.linspace(0, 1, n)
+    peak = rng.uniform(0.3, 0.45)
+    shape = np.where(
+        t < peak, np.sin(0.5 * np.pi * t / peak) ** 2, np.exp(-(t - peak) / 0.22)
+    )
+    x = noise * (0.35 + 0.65 * flutter) * shape
+    return x / (np.abs(x).max() + 1e-9)
+
+
+def tick(rng: np.random.Generator, n: int, hz: float, tau: float) -> np.ndarray:
+    """A small metal part knocking: a click into two inharmonic modes."""
+    t = np.arange(n) / FOLEY_RATE
+    x = click(rng, n, 0.0006, 2_000.0, 9_000.0) * 0.6
+    for ratio, amp in ((1.0, 1.0), (2.76, 0.45)):
+        x += (
+            amp
+            * np.sin(2 * np.pi * hz * ratio * t + rng.uniform(0, 6.28))
+            * decay(n, tau / ratio)
+        )
+    return x
+
+
+def rattle(rng: np.random.Generator, seconds: float, count: int) -> np.ndarray:
+    """Sling swivels and kit knocking: a few ticks at random 10-45 ms gaps."""
+    n = int(seconds * FOLEY_RATE)
+    x = np.zeros(n)
+    at = int(rng.uniform(0.0, 0.03) * FOLEY_RATE)
+    for _ in range(count):
+        if at >= n:
+            break
+        length = n - at
+        x[at:] += tick(
+            rng, length, rng.uniform(2_200, 5_200), rng.uniform(0.006, 0.02)
+        ) * rng.uniform(0.4, 1.0)
+        at += int(rng.uniform(0.010, 0.045) * FOLEY_RATE)
+    return x / (np.abs(x).max() + 1e-9)
+
+
+def thump(
+    rng: np.random.Generator, seconds: float, hz: float, tau: float
+) -> np.ndarray:
+    """A hand closing on the gun: a short low knock."""
+    n = int(seconds * FOLEY_RATE)
+    t = np.arange(n) / FOLEY_RATE
+    f = hz * (1 + 0.6 * np.exp(-t / 0.01))
+    x = np.sin(2 * np.pi * np.cumsum(f) / FOLEY_RATE) * decay(n, tau)
+    x += (
+        signal.sosfilt(
+            signal.butter(2, 900, "low", fs=FOLEY_RATE, output="sos"),
+            rng.standard_normal(n),
+        )
+        * decay(n, tau * 0.5)
+        * 0.5
+    )
+    return x / (np.abs(x).max() + 1e-9)
+
+
+def breath(rng: np.random.Generator, seconds: float, inhale: bool) -> np.ndarray:
+    """Air through the mouth: noise through two vowel-like resonances (about
+    800 Hz and 2.2 kHz) and a little hiss, rising for an inhale and falling
+    away for an exhale."""
+    n = int(seconds * FOLEY_RATE)
+    noise = pink(rng, n)
+    x = np.zeros(n)
+    for centre, width, amp in (
+        (rng.uniform(700, 900), 0.35, 1.0),
+        (rng.uniform(1_900, 2_400), 0.3, 0.6),
+        (5_500, 0.5, 0.2),
+    ):
+        lo, hi = centre * (1 - width), centre * (1 + width)
+        x += amp * signal.sosfilt(
+            signal.butter(2, (lo, hi), "band", fs=FOLEY_RATE, output="sos"), noise
+        )
+    t = np.linspace(0, 1, n)
+    shape = (
+        np.sin(np.pi * t**0.8) ** 1.5
+        if inhale
+        else np.sin(np.pi * np.minimum(t * 2.5, 1.0) / 2) * np.exp(-t * 2.2)
+    )
+    x *= shape
+    return x / (np.abs(x).max() + 1e-9)
+
+
+def stereo(x: np.ndarray, rng: np.random.Generator, width: float = 0.25) -> np.ndarray:
+    """Mono to stereo with a small, random left-right offset."""
+    pan = rng.uniform(-width, width)
+    return np.stack([x * (1 - pan), x * (1 + pan)], axis=1) * 0.5**0.5
+
+
+def mixed(*parts: tuple[np.ndarray, float, float]) -> np.ndarray:
+    """Sums (sound, start seconds, gain dB) parts into one."""
+    n = max(int(at * FOLEY_RATE) + len(x) for x, at, _ in parts)
+    out = np.zeros(n)
+    for x, at, gain in parts:
+        a = int(at * FOLEY_RATE)
+        out[a : a + len(x)] += x * 10 ** (gain / 20)
+    return out
+
+
+SHARED_FOLEY_TAKES = 4
+
+
+def shared_foley() -> dict[str, list[np.ndarray]]:
+    """The handling layers every weapon shares, ``FOLEY_TAKES`` takes each."""
+    sounds: dict[str, list[np.ndarray]] = {}
+
+    def add(name: str, make) -> None:
+        base = sum(ord(c) for c in name) * 977
+        sounds[name] = []
+        for i in range(SHARED_FOLEY_TAKES):
+            rng = np.random.default_rng(base + i)
+            x = make(rng)
+            fade = int(0.02 * FOLEY_RATE)
+            x[-fade:] *= np.linspace(1, 0, fade)
+            x = stereo(x / (np.abs(x).max() + 1e-9) * 0.7, rng)
+            sounds[name].append(x)
+
+    # Raising to the eye: a short sleeve swish and the sling swivel.
+    add(
+        "ads_in",
+        lambda r: mixed(
+            (cloth(r, r.uniform(0.16, 0.22)), 0, 0),
+            (rattle(r, 0.12, 2), r.uniform(0.05, 0.09), -9),
+        ),
+    )
+    add(
+        "ads_out",
+        lambda r: mixed(
+            (cloth(r, r.uniform(0.14, 0.2), 200, 3_000), 0, -2),
+            (rattle(r, 0.1, 1), r.uniform(0.06, 0.1), -14),
+        ),
+    )
+    # Drawing: a long swish, the kit rattling, and the hands closing on it.
+    add(
+        "draw",
+        lambda r: mixed(
+            (cloth(r, r.uniform(0.32, 0.4)), 0, 0),
+            (rattle(r, 0.2, 4), r.uniform(0.1, 0.16), -6),
+            (thump(r, 0.12, r.uniform(110, 140), 0.03), r.uniform(0.24, 0.3), -4),
+        ),
+    )
+    add(
+        "holster",
+        lambda r: mixed(
+            (cloth(r, r.uniform(0.26, 0.34), 200, 3_000), 0, 0),
+            (rattle(r, 0.18, 3), r.uniform(0.05, 0.1), -8),
+        ),
+    )
+    add(
+        "inspect",
+        lambda r: mixed(
+            (cloth(r, r.uniform(0.5, 0.65)), 0, -2),
+            (rattle(r, 0.2, 3), r.uniform(0.3, 0.4), -8),
+            (cloth(r, 0.4, 300, 4_000), 1.3, -4),
+            (rattle(r, 0.15, 2), 1.45, -10),
+        ),
+    )
+    # A hand going to a pouch between magazine out and in.
+    add(
+        "pouch",
+        lambda r: mixed(
+            (cloth(r, r.uniform(0.25, 0.35), 180, 2_500), 0, 0),
+            (rattle(r, 0.12, 2), r.uniform(0.12, 0.2), -12),
+        ),
+    )
+    # Held breath on a scope: a quick inhale, and the breath let go.
+    add("breath_hold", lambda r: breath(r, r.uniform(0.45, 0.55), inhale=True))
+    add("breath_release", lambda r: breath(r, r.uniform(0.7, 0.85), inhale=False))
+    return sounds
+
+
+def laser_foley() -> dict[str, list[np.ndarray]]:
+    """The prism laser's power cell: an electronic clunk and a whine."""
+
+    def sweep(r, seconds, f0, f1):
+        n = int(seconds * FOLEY_RATE)
+        t = np.linspace(0, 1, n)
+        f = f0 * (f1 / f0) ** t
+        x = np.sin(2 * np.pi * np.cumsum(f) / FOLEY_RATE) + 0.3 * np.sin(
+            2 * np.pi * np.cumsum(f * 2.01) / FOLEY_RATE
+        )
+        return x * np.sin(np.pi * t) ** 0.5
+
+    def make(kind, r):
+        if kind == "mag_out":
+            return mixed(
+                (tick(r, 4_000, 1_800, 0.02), 0, 0),
+                (sweep(r, 0.22, 1_800, 500), 0.02, -8),
+            )
+        if kind == "mag_in":
+            return mixed(
+                (sweep(r, 0.18, 500, 1_900), 0, -8),
+                (tick(r, 4_000, 2_400, 0.025), 0.17, 0),
+                (thump(r, 0.08, 160, 0.02), 0.17, -6),
+            )
+        if kind == "bolt_release":
+            return mixed(
+                (sweep(r, 0.5, 300, 2_600), 0, -6),
+                (tick(r, 3_000, 3_200, 0.02), 0.48, -4),
+            )
+        return tick(r, 4_000, 3_000, 0.008)
+
+    out = {}
+    for kind in ("mag_out", "mag_in", "bolt_release", "dry"):
+        out[kind] = []
+        for i in range(3):
+            r = np.random.default_rng(8_100 + i + 10 * len(kind))
+            x = make(kind, r)
+            out[kind].append(stereo(x / (np.abs(x).max() + 1e-9) * 0.6, r, 0.1))
+    return out
+
+
+def build_shared_foley() -> None:
+    def put(folder: Path, sounds: dict[str, list[np.ndarray]]) -> None:
+        names = {
+            f"{k}_{i}.ogg" for k, v in sounds.items() for i in range(1, len(v) + 1)
+        }
+        for old in folder.glob("*") if folder.exists() else []:
+            if old.name.removesuffix(".import") not in names:
+                old.unlink()
+        for kind, takes in sounds.items():
+            for i, take in enumerate(takes, start=1):
+                write(folder / f"{kind}_{i}.ogg", take, ogg=True)
+        print(f"{folder.relative_to(ROOT)}: {', '.join(sorted(sounds))}")
+
+    put(FOLEY_DIR, shared_foley())
+    put(WEAPONS / "laser" / "foley", laser_foley())
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -709,17 +1360,29 @@ def main() -> None:
     )
     sub.add_parser("trim", help="trim leading silence from every other sound")
     sub.add_parser("mech", help="synthesize the mechanical and last-rounds layers")
+    foley = sub.add_parser("foley", help="cut handling sounds from the raw tracks")
+    foley.add_argument(
+        "--cache",
+        type=Path,
+        default=Path.home() / ".cache" / "shooter-weapon-foley",
+        help="where the raw tracks are kept between builds",
+    )
     args = parser.parse_args()
     if args.command == "layers":
         build_layers(args.library, set(args.only))
     elif args.command == "mech":
         build_mech()
+    elif args.command == "foley":
+        build_weapon_foley(args.cache)
+        build_shared_foley()
     else:
         layered = {gun.key for gun in GUNS} | {mech.key for mech in MECHS}
         paths = [
             p
             for p in sorted(AUDIO.rglob("*"))
-            if p.suffix in {".ogg", ".wav"} and p.parent.name not in layered
+            if p.suffix in {".ogg", ".wav"}
+            and p.parent.name not in layered
+            and "foley" not in p.parts
         ]
         trim(paths)
 

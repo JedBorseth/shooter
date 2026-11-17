@@ -23,6 +23,7 @@ mod surfaces;
 mod target;
 mod viewmodel;
 mod weapon_data;
+mod weapon_foley;
 mod zombie;
 mod zombie_director;
 

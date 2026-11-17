@@ -1,8 +1,6 @@
 [gd_scene format=3]
 
 [ext_resource type="PackedScene" path="res://assets/weapons/m4/m4.glb" id="1_model"]
-[ext_resource type="AudioStream" path="res://assets/audio/weapons/m4_reload.ogg" id="3_reload"]
-[ext_resource type="AudioStream" path="res://assets/audio/weapons/dry_fire.ogg" id="4_dry"]
 [ext_resource type="Material" path="res://materials/muzzle_flash.tres" id="5_flash"]
 
 [sub_resource type="QuadMesh" id="Quad_flash"]
@@ -50,16 +48,6 @@ omni_range = 8.0
 
 [node name="Ejection" type="Marker3D" parent="."]
 position = Vector3(0.0196, -0.067, -0.081)
-
-[node name="ReloadSound" type="AudioStreamPlayer" parent="."]
-stream = ExtResource("3_reload")
-volume_db = -4.0
-bus = &"Weapons"
-
-[node name="DryFireSound" type="AudioStreamPlayer" parent="."]
-stream = ExtResource("4_dry")
-volume_db = -6.0
-bus = &"Weapons"
 
 [node name="GripRight" type="Marker3D" parent="."]
 position = Vector3(0, -0.15, -0.005)

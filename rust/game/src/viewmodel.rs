@@ -15,7 +15,7 @@ use godot::classes::{
 use godot::global::randf_range;
 use godot::prelude::*;
 use shooter_sim::rng;
-use shooter_sim::weapon::{Attachment, Slot, WeaponId};
+use shooter_sim::weapon::{Attachment, Reload, Slot, WeaponId};
 
 use godot::classes::light_3d::Param;
 
@@ -24,6 +24,7 @@ use crate::character::arms::FpArms;
 use crate::character::poser::Grips;
 use crate::sights::IronSights;
 use crate::spring::{Spring, damping_for, impulse_for_peak, smoothing};
+use crate::weapon_foley::{self, WeaponFoley};
 
 /// One rendered frame of state the rig animates from.
 #[derive(Clone, Copy, Debug)]
@@ -269,13 +270,6 @@ pub struct WeaponView {
     flash: OnReady<Gd<MeshInstance3D>>,
     #[init(node = "Muzzle/FlashLight")]
     flash_light: OnReady<Gd<OmniLight3D>>,
-    #[init(node = "ReloadSound")]
-    reload_sound: OnReady<Gd<AudioStreamPlayer>>,
-    #[init(node = "DryFireSound")]
-    dry_fire_sound: OnReady<Gd<AudioStreamPlayer>>,
-    /// Optional: bolt or pump sound, and the sound of one round going in.
-    cycle_sound: Option<Gd<AudioStreamPlayer>>,
-    round_sound: Option<Gd<AudioStreamPlayer>>,
     /// Built from `assets/audio/weapons/<weapon>/` when the view is ready.
     gunshot: Option<Gunshot>,
     /// Optional marker where shells leave the weapon.
@@ -316,6 +310,10 @@ pub struct WeaponView {
     bolt_handle: Option<Vector3>,
     /// 0..1: how far the firing hand has gone to the bolt (turns the grip).
     bolt_hand: f32,
+    /// The action and aim of the last animated frame, for `foley_event`.
+    foley_last: Option<(ViewAction, f32)>,
+    /// Plays the handling sounds (`weapon_foley`), first person only.
+    foley: Option<Gd<WeaponFoley>>,
 }
 
 /// One moving part: the node, its rest transform, and the transform from its
@@ -494,8 +492,6 @@ impl INode3D for WeaponView {
         if let Some(sights) = self.base().try_get_node_as::<Node>("Sights") {
             convert_to_viewmodel_materials(&sights, &shader, 1.0);
         }
-        self.cycle_sound = self.base().try_get_node_as("CycleSound");
-        self.round_sound = self.base().try_get_node_as("RoundSound");
         self.ejection = self.base().try_get_node_as("Ejection");
         if self.id.is_none() {
             godot_error!("WeaponView: unknown weapon `{}`", self.weapon);
@@ -512,6 +508,7 @@ impl INode3D for WeaponView {
         let pending = self.pending_attachment.take();
         self.set_attachment(pending);
         self.find_parts();
+        self.add_foley();
     }
 
     fn process(&mut self, delta: f64) {
@@ -530,7 +527,113 @@ impl INode3D for WeaponView {
     }
 }
 
+#[godot_api]
 impl WeaponView {
+    /// A handling beat of the weapon: `mag_out`, `mag_in`, `bolt_release`,
+    /// `charge`, `shell_in`, `pump_back`, `pump_forward`, `bolt_up`,
+    /// `bolt_back`, `bolt_forward`, `bolt_down`, `draw`, `holster`,
+    /// `ads_in`, `ads_out`, or `inspect`. Sounds (`weapon_foley`) play from
+    /// it. Each event with a contact (the magazine seating, the bolt slamming
+    /// home) is emitted `weapon_foley::lead(name)` seconds before it.
+    #[signal]
+    fn foley_event(name: StringName);
+}
+
+/// When the handling beats happen, as fractions of their action: (fraction
+/// of the contact, event). Reloads by magazine; the bolt release only after
+/// an empty one.
+const RELOAD_FOLEY: [(f32, &str); 2] = [(0.2, "mag_out"), (0.69, "mag_in")];
+const EMPTY_RELOAD_FOLEY: (f32, &str) = (0.82, "bolt_release");
+/// A pump cycle (`PUMP_BACK`: fully back at 0.42, home at 0.82) and a bolt
+/// cycle (`BOLT_LIFT` and `BOLT_BACK`).
+const PUMP_FOLEY: [(f32, &str); 2] = [(0.42, "pump_back"), (0.82, "pump_forward")];
+const BOLT_FOLEY: [(f32, &str); 4] = [
+    (0.24, "bolt_up"),
+    (0.42, "bolt_back"),
+    (0.66, "bolt_forward"),
+    (0.84, "bolt_down"),
+];
+
+impl WeaponView {
+    fn add_foley(&mut self) {
+        let mut foley = WeaponFoley::new_alloc();
+        foley.set_name("Foley");
+        foley.bind_mut().weapon = self.weapon.clone();
+        self.base_mut().add_child(&foley);
+        let callable = foley.callable("play");
+        self.base_mut().connect("foley_event", &callable);
+        self.foley = Some(foley);
+    }
+
+    /// Emits `foley_event`.
+    pub fn foley(&mut self, name: &str) {
+        self.base_mut()
+            .emit_signal("foley_event", &[StringName::from(name).to_variant()]);
+    }
+
+    /// Emits the handling beats this frame passed: reload, cycle, draw,
+    /// holster, and raising to or lowering from the eye.
+    fn emit_foley(&mut self, frame: &ViewFrame) {
+        let Some(def) = self.id.map(|id| id.def()) else {
+            return;
+        };
+        let (last, last_ads) = self.foley_last.unwrap_or((ViewAction::Ready, frame.ads));
+        self.foley_last = Some((frame.action, frame.ads));
+        // Progress through the same action as last frame, or "before it began".
+        let before = |now: ViewAction| match (last, now) {
+            (ViewAction::Reloading(p), ViewAction::Reloading(_))
+            | (ViewAction::Cycling(p), ViewAction::Cycling(_))
+            | (ViewAction::Raising(p), ViewAction::Raising(_))
+            | (ViewAction::Lowering(p), ViewAction::Lowering(_)) => p,
+            _ => -1.0,
+        };
+        let mut cues: Vec<&str> = Vec::new();
+        let mut pass = |p0: f32, p1: f32, keys: &[(f32, &'static str)], duration: f32| {
+            for &(hit, name) in keys {
+                let at = weapon_foley::emit_fraction(name, hit, duration);
+                if weapon_foley::crossed(p0, p1, at) {
+                    cues.push(name);
+                }
+            }
+        };
+        match frame.action {
+            ViewAction::Reloading(p) => {
+                if let Reload::Magazine {
+                    time, empty_time, ..
+                } = def.reload
+                {
+                    let duration = if frame.empty_reload { empty_time } else { time };
+                    pass(before(frame.action), p, &RELOAD_FOLEY, duration);
+                    if frame.empty_reload {
+                        pass(before(frame.action), p, &[EMPTY_RELOAD_FOLEY], duration);
+                    }
+                }
+            }
+            ViewAction::Cycling(p) if def.cycle_time <= 0.0 => {
+                // A self-loading weapon charged after a switch cut its reload.
+                pass(before(frame.action), p, &[(0.6, "charge")], 0.35);
+            }
+            ViewAction::Cycling(p) => {
+                let pump = self
+                    .parts
+                    .as_ref()
+                    .map_or(def.pellets > 1, |p| p.pump.is_some());
+                let keys: &[(f32, &str)] = if pump { &PUMP_FOLEY } else { &BOLT_FOLEY };
+                pass(before(frame.action), p, keys, def.cycle_time);
+            }
+            ViewAction::Raising(p) => pass(before(frame.action), p, &[(0.0, "draw")], 1.0),
+            ViewAction::Lowering(p) => pass(before(frame.action), p, &[(0.0, "holster")], 1.0),
+            ViewAction::Ready => {}
+        }
+        if frame.ads > last_ads && last_ads < 0.05 && frame.ads >= 0.05 {
+            cues.push("ads_in");
+        } else if frame.ads < last_ads && last_ads > 0.95 && frame.ads <= 0.95 {
+            cues.push("ads_out");
+        }
+        for name in cues {
+            self.foley(name);
+        }
+    }
     pub fn weapon_id(&self) -> Option<WeaponId> {
         self.id
     }
@@ -576,6 +679,7 @@ impl WeaponView {
     /// the bolt through a cycle, and the pistol's slide after each shot and
     /// when empty.
     pub fn animate(&mut self, frame: &ViewFrame) {
+        self.emit_foley(frame);
         let Some(mut parts) = self.parts.take() else {
             return;
         };
@@ -1005,8 +1109,12 @@ impl WeaponView {
         }
     }
 
-    pub fn on_reload(&mut self) {
-        self.reload_sound.play();
+    /// Ammunition or a weapon picked up: magazines into pouches (a new
+    /// weapon also gets its draw from the raise).
+    pub fn on_picked_up(&mut self) {
+        if let Some(foley) = &mut self.foley {
+            foley.bind_mut().play("pickup".into());
+        }
     }
 
     fn load_gunshot(&mut self) -> Option<Gunshot> {
@@ -1073,19 +1181,19 @@ impl WeaponView {
     }
 
     pub fn on_dry_fire(&mut self) {
-        self.dry_fire_sound.play();
-    }
-
-    pub fn on_cycled(&mut self) {
-        if let Some(sound) = &mut self.cycle_sound {
-            sound.play();
+        if let Some(foley) = &mut self.foley {
+            foley.bind_mut().play("dry".into());
         }
     }
 
+    /// One round pushed into the tube.
     pub fn on_round_loaded(&mut self) {
-        if let Some(sound) = &mut self.round_sound {
-            sound.play();
-        }
+        self.foley("shell_in");
+    }
+
+    /// The inspect started.
+    pub fn on_inspect(&mut self) {
+        self.foley("inspect");
     }
 }
 
@@ -1436,7 +1544,6 @@ pub struct ViewmodelRig {
     /// Seconds until a bolt or pump ejects its shell.
     pending_shell: Option<(WeaponId, f32)>,
     shell_sound: Option<Gd<AudioStreamPlayer>>,
-    low_ammo_sound: Option<Gd<AudioStreamPlayer>>,
     cycle_kick: f32,
     pickup_dip: f32,
     /// Seconds into a weapon inspect, or `None`.
@@ -1480,7 +1587,6 @@ impl INode3D for ViewmodelRig {
         }
         self.arms = self.base().try_get_node_as::<FpArms>("Arms");
         self.shell_sound = self.make_player("res://assets/audio/player/shell", -16.0);
-        self.low_ammo_sound = self.make_player("res://assets/audio/player/low_ammo", -10.0);
     }
 }
 
@@ -1521,10 +1627,7 @@ impl ViewmodelRig {
     }
 
     pub fn on_cycled(&mut self, weapon: WeaponId) {
-        if let Some(mut view) = self.view(weapon) {
-            view.bind_mut().on_cycled();
-        }
-        // The spent case comes out about a third of the way through a bolt or
+        // The bolt or pump sounds come from the view as it animates. The spent case comes out about a third of the way through a bolt or
         // pump cycle. A self-loading weapon's charge has no case to throw.
         if weapon.def().cycle_time > 0.0 {
             self.pending_shell = Some((weapon, weapon.def().cycle_time * 0.35));
@@ -1538,16 +1641,13 @@ impl ViewmodelRig {
         self.cycle_kick = 1.0;
     }
 
-    pub fn on_low_ammo(&mut self, _weapon: WeaponId) {
-        if let Some(sound) = &mut self.low_ammo_sound {
-            sound.play();
-        }
-    }
-
     /// Turns the weapon over to look at it (the inspect key). Any action
     /// stops it.
     pub fn start_inspect(&mut self) {
         self.inspect = Some(0.0);
+        if let Some(mut view) = self.active.and_then(|w| self.view(w)) {
+            view.bind_mut().on_inspect();
+        }
     }
 
     /// Whether an inspect is playing (tests).
@@ -1557,7 +1657,7 @@ impl ViewmodelRig {
 
     pub fn on_picked_up(&mut self, weapon: WeaponId) {
         if let Some(mut view) = self.view(weapon) {
-            view.bind_mut().on_reload();
+            view.bind_mut().on_picked_up();
         }
         self.pickup_dip = 1.0;
     }
@@ -1656,12 +1756,6 @@ impl ViewmodelRig {
         }
         if clink && let Some(sound) = &mut self.shell_sound {
             sound.play();
-        }
-    }
-
-    pub fn on_reload(&mut self, weapon: WeaponId) {
-        if let Some(mut view) = self.view(weapon) {
-            view.bind_mut().on_reload();
         }
     }
 

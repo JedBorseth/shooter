@@ -16,14 +16,16 @@ use std::collections::HashMap;
 
 use godot::classes::audio_stream_player_3d::AttenuationModel;
 use godot::classes::{
-    AudioStream, AudioStreamPlayer3D, AudioStreamRandomizer, Node3D, PhysicsRayQueryParameters3D,
+    AudioStreamPlayer3D, AudioStreamRandomizer, Node3D, PhysicsRayQueryParameters3D,
 };
 use godot::prelude::*;
 use shooter_sim::movement::Stance;
+use shooter_sim::weapon::{Reload, WeaponId};
 
 use crate::audio;
 use crate::surfaces::{Surface, surface_at};
 use crate::target::WORLD_LAYER;
+use crate::weapon_foley;
 
 /// How someone is moving on the ground, from quietest to loudest.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -156,10 +158,19 @@ pub struct Foley {
     pushed_off: bool,
     stance: Stance,
     mantling: bool,
-    reloading: bool,
+    /// The reload's progress last frame, below 0 when not reloading.
+    reload_progress: f32,
     sounds: HashMap<String, Option<Gd<AudioStreamRandomizer>>>,
     /// Steps played (tests).
     pub steps_played: u32,
+}
+
+/// Another player's reload in progress: the weapon, and how far through
+/// its animation it is (0 to 1).
+#[derive(Clone, Copy, Debug)]
+pub struct RemoteReload {
+    pub weapon: WeaponId,
+    pub progress: f32,
 }
 
 /// What a player is doing this frame, as far as their sounds go.
@@ -192,7 +203,7 @@ impl Foley {
         Self {
             steps: make("Steps", "Footsteps", 3),
             body: make("BodyFoley", "Footsteps", 2),
-            gear: make("Gear", "Effects", 1),
+            gear: make("Gear", weapon_foley::BUS, 2),
             stride: Stride::default(),
             was_on_floor: true,
             air_time: 0.0,
@@ -200,7 +211,7 @@ impl Foley {
             pushed_off: false,
             stance: Stance::Standing,
             mantling: false,
-            reloading: false,
+            reload_progress: -1.0,
             sounds: HashMap::new(),
             steps_played: 0,
         }
@@ -208,14 +219,14 @@ impl Foley {
 
     /// Advances by one frame of `delta` seconds. `listener` is the camera,
     /// `friendly` whether this player is on the listener's team, and `reload`
-    /// the weapon's reload sound.
+    /// the reload in progress, if any.
     pub fn update(
         &mut self,
         motion: &Motion,
         delta: f32,
         listener: Option<Vector3>,
         friendly: bool,
-        reload: Option<Gd<AudioStream>>,
+        reload: Option<RemoteReload>,
     ) {
         let speed = Vector2::new(motion.velocity.x, motion.velocity.z).length();
         let (team_db, team_range) = if friendly {
@@ -230,7 +241,7 @@ impl Foley {
 
         if !motion.alive {
             self.was_on_floor = motion.on_floor;
-            self.reloading = false;
+            self.reload_progress = -1.0;
             return;
         }
 
@@ -290,17 +301,35 @@ impl Foley {
         }
         self.mantling = motion.mantling;
 
-        if motion.reloading
-            && !self.reloading
-            && let (Some(stream), Some(db)) = (reload, level(-6.0, RELOAD_RANGE))
-        {
-            self.gear
-                .set_global_position(motion.feet + Vector3::UP * 1.2);
-            self.gear.set_stream(&stream);
-            self.gear.set_volume_db(db);
-            self.gear.play();
+        // The reload's beats, as the first-person one plays them.
+        match reload.filter(|_| motion.reloading) {
+            Some(reload) => {
+                let magazine = matches!(reload.weapon.def().reload, Reload::Magazine { .. });
+                for &(at, event) in weapon_foley::remote_reload_cues(magazine, false) {
+                    if weapon_foley::crossed(self.reload_progress, reload.progress, at)
+                        && let Some(db) = level(-6.0, RELOAD_RANGE)
+                    {
+                        self.play_gear(reload.weapon, event, motion.feet, db);
+                    }
+                }
+                self.reload_progress = reload.progress;
+            }
+            None => self.reload_progress = -1.0,
         }
-        self.reloading = motion.reloading;
+    }
+
+    fn play_gear(&mut self, weapon: WeaponId, event: &str, feet: Vector3, volume_db: f32) {
+        let key = format!("{}:{event}", weapon.def().model_key());
+        let stream = self
+            .sounds
+            .entry(key)
+            .or_insert_with(|| weapon_foley::remote_sound(weapon.def().model_key(), event))
+            .clone();
+        let Some(stream) = stream else { return };
+        self.gear.set_global_position(feet + Vector3::UP * 1.2);
+        self.gear.set_stream(&stream);
+        self.gear.set_volume_db(volume_db);
+        self.gear.play();
     }
 
     fn play_step(&mut self, feet: Vector3, volume_db: f32) {
