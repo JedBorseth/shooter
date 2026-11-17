@@ -756,6 +756,11 @@ for t, m in (("W", False), ("E", True)):
 reverb_zone("AutoShop", (0, 2.25, -16), (23.4, 4.5, 9.4), 0.6, 0.35, 0.3, 25.0)
 reverb_zone("Laundry", (0, 1.8, 17.5), (27.7, 3.6, 12.4), 0.45, 0.45, 0.24, 15.0)
 
+# --- Ambience (rust/game/src/ambience.rs) ------------------------------------------------
+# City traffic and wind outside, room tone in the zones above; the air conditioners
+# hum and the lamps buzz on their own.
+s.node("Soundscape", "Soundscape", ".", {"outdoor": '"city"', "outdoor_db": f(-15.0), "indoor_db": f(-14.0)})
+
 # --- Player, HUD, pause menu: the same as the testing arena (scenes/main.tscn) ----------
 s.node("Player", None, ".", {"position": vec(-53, 0.05, 0), "rotation": vec(0, -PI / 2, 0)},
        instance="1_player")

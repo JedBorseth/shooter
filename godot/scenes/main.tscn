@@ -401,3 +401,8 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.00064452505, 20)
 
 [node name="PauseMenu" parent="." unique_id=101402265 instance=ExtResource("5_pause")]
 player_path = NodePath("../Player")
+
+[node name="Soundscape" type="Soundscape" parent="."]
+outdoor = "day"
+outdoor_db = -20.0
+indoor_db = -18.0

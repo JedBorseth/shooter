@@ -13,6 +13,8 @@ pub struct TraceHit {
     pub position: Vector3,
     pub normal: Vector3,
     pub collider: Option<Gd<Node>>,
+    /// The hit triangle of a mesh collider, for its material (-1 if none).
+    pub face_index: i32,
     /// Damage multiplier at this hit (1 before any wall).
     pub damage_scale: f32,
 }
@@ -140,6 +142,7 @@ fn cast(
             .try_to::<Vector3>()
             .unwrap_or(Vector3::UP),
         collider: hit.get_or_nil("collider").try_to::<Gd<Node>>().ok(),
+        face_index: hit.get_or_nil("face_index").try_to::<i32>().unwrap_or(-1),
         damage_scale: 1.0,
     };
     Some((hit, rid))

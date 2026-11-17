@@ -50,9 +50,11 @@ use crate::aim_assist::{AIM_ASSIST_GROUP, AimAssistTarget};
 use crate::audio;
 use crate::body::{self, BodyParts};
 use crate::convert::{to_godot, to_sim};
+use crate::footsteps::{self, Gait, Stride};
 use crate::penetration;
 use crate::pickup::{INTERACT_LAYER, WeaponPickup};
 use crate::spring::{Spring, impulse_for_peak, smoothing};
+use crate::surfaces::{Surface, surface_at};
 use crate::target::{HITBOX_LAYER, WORLD_LAYER};
 use crate::viewmodel::{ViewAction, ViewFrame, ViewmodelRig};
 
@@ -248,9 +250,10 @@ pub struct FpsPlayer {
     spawn: Transform3D,
     respawn_in: f32,
     death_blend: f32,
-    /// Metres walked since the last footstep.
-    stride: f32,
-    stride_length: f32,
+    /// Metres walked toward the next footstep.
+    stride: Stride,
+    /// What the last footstep landed on (tests).
+    last_surface: Surface,
     bob_blend: f32,
     tilt: f32,
     land_dip: Spring<f32>,
@@ -513,6 +516,12 @@ impl FpsPlayer {
     /// also get a HUD banner.
     #[signal]
     fn scored(points: i64, label: GString, medal: bool);
+
+    /// The surface the last footstep landed on (tests).
+    #[func]
+    fn footstep_surface(&self) -> GString {
+        self.last_surface.key().into()
+    }
 
     /// Match score so far.
     #[func]
@@ -1459,10 +1468,10 @@ impl FpsPlayer {
                         surface_meta(Some(collider)).unwrap_or_else(|| "flesh".to_owned());
                     self.spawn_impact(hit.position, hit.normal, false, &surface);
                 } else {
-                    let surface = surface_of(hit.collider.as_ref());
+                    let surface = surface_at(hit.collider.as_ref(), hit.face_index);
                     // Shotguns leave a decal for only some pellets to limit clutter.
                     let decal = def.pellets == 1 || pellet % 3 == 0;
-                    self.spawn_impact(hit.position, hit.normal, decal, &surface);
+                    self.spawn_impact(hit.position, hit.normal, decal, surface.impact_key());
                 }
             }
         }
@@ -1563,36 +1572,32 @@ impl FpsPlayer {
         );
     }
 
-    /// Steps once per stride on the ground. Stride length shortens with speed so
-    /// cadence rises when sprinting; crouching is quieter.
+    /// Steps once per stride on the ground, with the gait rules every player
+    /// shares (`footsteps::Gait`): sprinting strides longer and louder,
+    /// crouching and slow walking (aiming down sights) are quieter.
     fn advance_footsteps(&mut self, moved: f32) {
         let movement = self.state.movement;
         if !self.env.on_floor || movement.stance == Stance::Sliding || !self.state.alive() {
             return;
         }
-        let (length, volume) = match movement.stance {
-            Stance::Crouching => (1.25, -14.0),
-            _ if movement.sprinting => (2.3, 0.0),
-            _ => (1.9, -5.0),
-        };
-        self.stride_length = length;
-        self.stride += moved;
-        if self.stride >= length {
-            self.stride -= length;
-            self.play_footstep(volume);
-        }
-        if moved < 0.001 {
-            self.stride = (self.stride - 0.02).max(0.0);
+        let speed = Vector2::new(movement.velocity.x, movement.velocity.z).length();
+        let gait = Gait::of(
+            movement.stance,
+            movement.sprinting,
+            speed,
+            self.params.movement.walk_speed,
+        );
+        if self.stride.advance(moved, gait)
+            && let Some(gait) = gait
+        {
+            self.play_footstep(gait.sound().level_db + footsteps::OWN_STEP_DB);
         }
     }
 
     fn play_footstep(&mut self, volume_db: f32) {
-        let feet = self.current_position + Vector3::UP * 0.1;
-        let surface = self
-            .ray(feet, feet + Vector3::DOWN * 0.5, WORLD_LAYER)
-            .map(|collider| surface_of(Some(&collider)))
-            .unwrap_or_else(|| DEFAULT_SURFACE.to_owned());
-        let path = format!("res://assets/audio/footsteps/{surface}");
+        let surface = footsteps::floor_surface(&self.to_gd().upcast(), self.current_position);
+        self.last_surface = surface;
+        let path = format!("res://assets/audio/footsteps/{}", surface.footstep_key());
         let Some(stream) = self.sound(&path, 1.08) else {
             return;
         };
@@ -1643,7 +1648,7 @@ impl FpsPlayer {
 
         // One dip per footstep: the stride phase drives the bob, so the camera
         // and the footstep sounds stay in sync.
-        let phase = self.stride / self.stride_length.max(0.1) * PI;
+        let phase = self.stride.phase() * PI;
         let amount = self.bob_blend * (1.0 - 0.85 * ads);
         let bob = Vector2::new(
             (phase * 0.5).sin() * 0.012 * amount,
@@ -1751,8 +1756,10 @@ impl FpsPlayer {
         self.fov_sprint = 1.0;
         self.punch = Spring::default();
         self.fov_kick = Spring::default();
-        self.stride = 0.0;
-        self.stride_length = 2.0;
+        self.stride = Stride {
+            travelled: 0.0,
+            length: 2.0,
+        };
         self.assist.reset();
         self.assist_target = None;
         let stance = self.state.movement.stance;

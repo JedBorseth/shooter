@@ -1195,6 +1195,21 @@ fn scene_weapon_key(scene: &Gd<PackedScene>) -> Option<String> {
         })
 }
 
+/// A property of a node in a weapon's view scene (`"."` is the root), read
+/// without instancing it. None when the scene leaves it at its default.
+pub fn view_scene_property(id: WeaponId, node: &str, property: &str) -> Option<Variant> {
+    let state = weapon_scene(id)?.get_state()?;
+    let index = if node == "." {
+        0
+    } else {
+        let name = StringName::from(node);
+        (0..state.get_node_count()).find(|&i| state.get_node_name(i) == name)?
+    };
+    (0..state.get_node_property_count(index))
+        .find(|&i| state.get_node_property_name(index, i) == property)
+        .map(|i| state.get_node_property_value(index, i))
+}
+
 /// A weapon view set up as a third-person weapon, not yet in the tree.
 pub fn instantiate_world_weapon(id: WeaponId) -> Option<Gd<WeaponView>> {
     let mut view = weapon_scene(id)?

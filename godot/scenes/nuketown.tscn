@@ -162,3 +162,26 @@ offset_bottom = 108.0
 text = "← Home"
 
 [node name="PauseMenu" parent="." instance=ExtResource("8_pause")]
+
+[node name="ReverbZones" type="Node3D" parent="."]
+
+[node name="BlueHouse" type="ReverbZone" parent="ReverbZones"]
+position = Vector3(22, 0.18, -9.5)
+size = Vector3(14, 3.25, 14)
+room_size = 0.35
+damping = 0.6
+wet = 0.18
+predelay_ms = 8.0
+
+[node name="YellowHouse" type="ReverbZone" parent="ReverbZones"]
+position = Vector3(-19.5, 0.18, -11)
+size = Vector3(12, 3.25, 12)
+room_size = 0.35
+damping = 0.6
+wet = 0.18
+predelay_ms = 8.0
+
+[node name="Soundscape" type="Soundscape" parent="."]
+outdoor = "day"
+outdoor_db = -16.0
+indoor_db = -14.0
