@@ -614,10 +614,15 @@ def ground():
     for m in (False, True):
         deco(-60, -48, -0.1, STREET, -32, 25, "asphalt_yard", m, faces="top")
         deco(-48, -11, -0.1, STREET, -8, 8, "asphalt", m, faces="top")
-        deco(-11, 0, -0.1, STREET, -8, -3.5, "asphalt", m, faces="top")
-        deco(-11, 0, -0.1, STREET, 3.5, 8, "asphalt", m, faces="top")
-        deco(-11, -6, -0.1, STREET, -3.5, -1.5, "asphalt", m, faces="top")
-        deco(-11, -6, -0.1, STREET, 1.5, 3.5, "asphalt", m, faces="top")
+        # Round the pit: the road beside the ramp is one piece with the road
+        # beyond it (as separate strips they baked near-white).
+        deco(-11, -6, -0.1, STREET, -8, -1.5, "asphalt", m, faces="top")
+        deco(-11, -6, -0.1, STREET, 1.5, 8, "asphalt", m, faces="top")
+        deco(-6, 0, -0.1, STREET, -8, -3.5, "asphalt", m, faces="top")
+        deco(-6, 0, -0.1, STREET, 3.5, 8, "asphalt", m, faces="top")
+        # Timber facing on the cut sides of the ramp down into the pit.
+        for z0, z1 in ((-1.52, -1.5), (1.5, 1.52)):
+            prism([(-11, STREET), (-6, STREET), (-6, PIT)], "z", z0, z1, "pit_wall", None, m)
         deco(-48, 0, -0.1, STREET, -32, -22, "alley_concrete", m, faces="top")
         deco(-8, 0, -0.1, STREET, -22, -11, "cobble", m, faces="top")
         # A drain channel down the middle of the alley.
@@ -1169,9 +1174,7 @@ def railway():
         # Stumps of the columns the derailed car broke.
         for z, top in ((-17.0, 3.1), (-27.0, 2.0)):
             column(-1.8, z, STREET, top, m)
-            for k in range(3):
-                deco(-2.05 + k * 0.2, -1.9 + k * 0.2, top, top + 0.25 + 0.2 * (k % 2), z - 0.25, z + 0.2,
-                     "girder", m, detail=True)
+            broken_flanges(-1.8, z, top, m)
         for z in (-40.0, -52.0, 32.0, 40.0):
             column(-1.8, z, 0.0, 4.2, m, collide=False)
     # Cross girders over the columns.
@@ -1201,6 +1204,31 @@ def railway():
     place("train_car", 0, TRACK, 0, 0.0)
     for z in (-6.0, 0.0, 6.0):
         light(0, 8.85, z, 1.2, (0.9, 0.95, 1.0), 5.0, shadow=False)
+
+
+def broken_flanges(x, z, top, m):
+    """The torn top of a column the derailed car snapped: flange plates bent
+    outward, and bolts sheared off onto the ground below."""
+    rng = random.Random(int(z * 10))
+    for k, a in enumerate((0.3, 2.2, 4.1)):
+        a += rng.uniform(-0.3, 0.3)
+        ox, oz = math.cos(a), math.sin(a)       # outward
+        tx, tz = -oz, ox                       # along the plate
+        tilt = math.radians(rng.uniform(20, 40))
+        length = rng.uniform(0.3, 0.45)
+        bx, bz = x + ox * 0.24, z + oz * 0.24
+        tipx, tipy, tipz = bx + ox * length * math.sin(tilt), top + length * math.cos(tilt), bz + oz * length * math.sin(tilt)
+        pts = []
+        for d in (0.0, 0.025):
+            pts += [(bx - tx * 0.13 + ox * d, top, bz - tz * 0.13 + oz * d),
+                    (bx + tx * 0.13 + ox * d, top, bz + tz * 0.13 + oz * d),
+                    (tipx + tx * 0.09 + ox * d, tipy, tipz + tz * 0.09 + oz * d),
+                    (tipx - tx * 0.06 + ox * d, tipy - 0.05, tipz - tz * 0.06 + oz * d)]
+        PARTS.append({"kind": "hull", "look": "girder", "points": [(mx(px, m), py, pz) for px, py, pz in pts],
+                      "detail": True})
+    for k in range(4):
+        bx, bz = x + rng.uniform(-0.9, 0.9), z + rng.uniform(-0.9, 0.9)
+        cyl(bx, STREET, STREET + 0.03, bz, 0.025, "rust", m, sides=6, detail=True)
 
 
 def column(x, z, y0, y1, m=False, collide=True):
