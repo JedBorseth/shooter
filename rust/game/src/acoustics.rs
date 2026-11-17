@@ -3,10 +3,18 @@
 //!
 //! **Reverb zones.** A map marks its tunnels and rooms with `ReverbZone` boxes.
 //! While the camera is inside one, `AudioEnvironment` blends a reverb onto the
-//! Weapons and Effects buses toward that zone's settings, and back off outside.
-//! Judging by the listener rather than by each source (as `Area3D` reverb
-//! buses do) also covers the player's own gunfire, which is not positional,
-//! and a fight in one room is heard in that room's acoustics.
+//! Effects and Footsteps buses toward that zone's settings, and back off
+//! outside. Judging by the listener rather than by each source (as `Area3D`
+//! reverb buses do) covers sounds that are not positional, and a fight in one
+//! room is heard in that room's acoustics. Gunshots carry their own baked
+//! tails, outdoor and indoor, so the Weapons bus gets no engine reverb on top:
+//! [`listener_indoors`] says which tail to play.
+//!
+//! **Slapback.** Outdoors, a shot answers off the nearest walls: the
+//! environment keeps the distance to the walls around the listener (one ray
+//! a frame, in turn over eight directions), and [`AudioEnvironment::slapback`]
+//! plays a distant copy of the shot at the two nearest within 45 m, delayed
+//! by the sound's round trip.
 //!
 //! **Occlusion.** Every playing `AudioStreamPlayer3D` is checked against the
 //! world with a ray from the listener. A sound behind a wall gets quieter and
@@ -25,16 +33,37 @@
 
 use std::collections::HashMap;
 
+use godot::classes::audio_stream_player_3d::AttenuationModel;
 use godot::classes::{
     AudioEffectHighShelfFilter, AudioEffectLowPassFilter, AudioEffectReverb, AudioServer,
-    AudioStreamPlayer3D, INode, INode3D, PhysicsRayQueryParameters3D,
+    AudioStreamPlayer3D, AudioStreamRandomizer, INode, INode3D, PhysicsRayQueryParameters3D,
 };
 use godot::prelude::*;
 
 use crate::target::WORLD_LAYER;
 
-/// Buses the zone reverb is blended onto.
-const REVERB_BUSES: [&str; 3] = ["Weapons", "Effects", "Footsteps"];
+/// Buses the zone reverb is blended onto. Not Weapons: gunshots have their
+/// own indoor tails.
+const REVERB_BUSES: [&str; 2] = ["Effects", "Footsteps"];
+/// Directions around the listener whose nearest wall is tracked, for slapback.
+const WALL_DIRECTIONS: usize = 8;
+/// Walls further than this give no slapback (metres).
+const SLAPBACK_RANGE: f32 = 45.0;
+/// Walls closer than this are part of the shot itself.
+const SLAPBACK_MIN: f32 = 3.0;
+/// Speed of sound, m/s.
+pub const SPEED_OF_SOUND: f32 = 343.0;
+
+thread_local! {
+    /// How far indoors the listener is, 0 to 1, blended.
+    static LISTENER_INDOORS: std::cell::Cell<f32> = const { std::cell::Cell::new(0.0) };
+}
+
+/// How far indoors the current listener is: 0 outdoors, 1 inside a reverb
+/// zone, blended over about a quarter second. Gunshots pick their tail by it.
+pub fn listener_indoors() -> f32 {
+    LISTENER_INDOORS.with(|c| c.get())
+}
 /// Name of the reverb effect this module adds to each bus.
 const REVERB_NAME: &str = "ZoneReverb";
 /// How fast the reverb follows the listener between zones, per second.
@@ -42,8 +71,12 @@ const REVERB_BLEND_RATE: f32 = 4.0;
 
 /// Seconds between occlusion checks of one playing source.
 const OCCLUSION_INTERVAL: f32 = 0.1;
-/// Most occlusion rays cast per frame, beyond sources that just started.
+/// Most occlusion rays cast per frame, and a few more for sounds that just
+/// started once those are spent. Sounds that start together within
+/// `SHARE_VERDICT_DISTANCE` of each other share one ray.
 const OCCLUSION_RAYS_PER_FRAME: usize = 12;
+const OCCLUSION_FRESH_RAYS: usize = 4;
+const SHARE_VERDICT_DISTANCE: f32 = 1.5;
 /// A wall closer than this to the source still lets it through: an impact on
 /// the near face of a wall is not behind that wall.
 const OCCLUSION_SLACK: f32 = 0.4;
@@ -186,6 +219,17 @@ pub struct AudioEnvironment {
     panning: f32,
     /// Round-robin position for occlusion rays.
     cursor: usize,
+    /// How far indoors the listener is, blended (see `listener_indoors`).
+    indoors: f32,
+    /// Distance to the nearest wall in each of `WALL_DIRECTIONS` directions
+    /// (infinite for none), and which direction is checked next.
+    walls: [f32; WALL_DIRECTIONS],
+    next_wall: usize,
+    /// Slapback voices, and reflections waiting for their round trip:
+    /// (seconds left, stream, where, level).
+    echoes: Vec<Gd<AudioStreamPlayer3D>>,
+    next_echo: usize,
+    pending_echoes: Vec<(f32, Gd<AudioStreamRandomizer>, Vector3, f32)>,
     base: Base<Node>,
 }
 
@@ -193,6 +237,16 @@ pub struct AudioEnvironment {
 impl INode for AudioEnvironment {
     fn ready(&mut self) {
         self.base_mut().add_to_group(GROUP);
+        self.walls = [f32::INFINITY; WALL_DIRECTIONS];
+        for i in 0..2 {
+            let mut echo = AudioStreamPlayer3D::new_alloc();
+            echo.set_name(&format!("Slapback{i}"));
+            echo.set_bus("Weapons");
+            echo.set_attenuation_model(AttenuationModel::DISABLED);
+            echo.set_max_polyphony(2);
+            self.base_mut().add_child(&echo);
+            self.echoes.push(echo);
+        }
         // Settings knows the mix; it also calls `set_panning_strength` later.
         if let Some(settings) = self.base().get_node_or_null("/root/Settings")
             && settings.has_method("panning_strength")
@@ -222,11 +276,14 @@ impl INode for AudioEnvironment {
         let delta = delta as f32;
         self.update_reverb(listener, delta);
         self.update_occlusion(listener, forward, delta);
+        self.update_walls(listener);
+        self.update_echoes(delta);
     }
 
     fn exit_tree(&mut self) {
         // Leave the buses as the project defines them for the next scene.
         set_reverb(None);
+        LISTENER_INDOORS.with(|c| c.set(0.0));
         for source in self.sources.values_mut() {
             if source.player.is_instance_valid() {
                 source.player.set_bus(&source.bus);
@@ -289,6 +346,22 @@ impl AudioEnvironment {
             .map_or(0.0, |s| s.occlusion)
     }
 
+    /// How far indoors the listener is, 0 to 1 (tests).
+    #[func]
+    fn indoors_amount(&self) -> f32 {
+        self.indoors
+    }
+
+    /// How many of the tracked directions have a wall close enough to
+    /// answer a shot (tests).
+    #[func]
+    fn walls_in_reach(&self) -> i32 {
+        self.walls
+            .iter()
+            .filter(|d| (SLAPBACK_MIN..=SLAPBACK_RANGE).contains(*d))
+            .count() as i32
+    }
+
     /// The reverb mixed in now (wet, 0 outdoors), for tests and debugging.
     #[func]
     fn reverb_wet(&self) -> f32 {
@@ -297,6 +370,102 @@ impl AudioEnvironment {
 }
 
 impl AudioEnvironment {
+    /// The scene's environment, if the local player made one.
+    pub fn find(tree: &Gd<SceneTree>) -> Option<Gd<AudioEnvironment>> {
+        tree.get_first_node_in_group(GROUP)
+            .and_then(|n| n.try_cast::<AudioEnvironment>().ok())
+    }
+
+    /// Plays `stream` (a shot as heard from a distance) off the nearest two
+    /// walls around the listener, each delayed by its round trip, when
+    /// outdoors. Returns how many reflections were queued.
+    pub fn slapback(&mut self, stream: &Gd<AudioStreamRandomizer>, level_db: f32) -> usize {
+        if self.indoors > 0.5 {
+            return 0;
+        }
+        let Some((listener, _)) = self.listener() else {
+            return 0;
+        };
+        let mut near: Vec<(f32, usize)> = self
+            .walls
+            .iter()
+            .enumerate()
+            .filter(|(_, d)| d.is_finite() && **d >= SLAPBACK_MIN && **d <= SLAPBACK_RANGE)
+            .map(|(i, d)| (*d, i))
+            .collect();
+        near.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let mut queued = 0;
+        for (distance, index) in near.into_iter().take(self.echoes.len()) {
+            let at = listener + wall_direction(index) * distance;
+            // Quieter the further the wall: 6 dB per doubling past 5 m.
+            let fall = -6.0 * (distance / 5.0).max(1.0).log2();
+            if self.pending_echoes.len() < 4 {
+                self.pending_echoes.push((
+                    2.0 * distance / SPEED_OF_SOUND,
+                    stream.clone(),
+                    at,
+                    level_db + fall,
+                ));
+                queued += 1;
+            }
+        }
+        queued
+    }
+
+    /// One wall ray a frame, in turn around the listener.
+    fn update_walls(&mut self, listener: Vector3) {
+        let Some(mut space) = self
+            .base()
+            .get_viewport()
+            .and_then(|v| v.find_world_3d())
+            .and_then(|w| w.get_direct_space_state())
+        else {
+            return;
+        };
+        let index = self.next_wall % WALL_DIRECTIONS;
+        self.next_wall = index + 1;
+        // At head height, a little up, so low kerbs do not count as walls.
+        let from = listener + Vector3::UP * 0.3;
+        let to = from + wall_direction(index) * SLAPBACK_RANGE;
+        self.walls[index] = PhysicsRayQueryParameters3D::create_ex(from, to)
+            .collision_mask(WORLD_LAYER)
+            .done()
+            .and_then(|query| {
+                space
+                    .intersect_ray(&query)
+                    .get_or_nil("position")
+                    .try_to::<Vector3>()
+                    .ok()
+            })
+            .map_or(f32::INFINITY, |hit| from.distance_to(hit));
+    }
+
+    fn update_echoes(&mut self, delta: f32) {
+        if self.pending_echoes.is_empty() {
+            return;
+        }
+        let mut due = Vec::new();
+        self.pending_echoes.retain_mut(|(left, stream, at, level)| {
+            *left -= delta;
+            if *left <= 0.0 {
+                due.push((stream.clone(), *at, *level));
+                false
+            } else {
+                true
+            }
+        });
+        for (stream, at, level) in due {
+            let index = self.next_echo % self.echoes.len().max(1);
+            self.next_echo = index + 1;
+            if let Some(echo) = self.echoes.get_mut(index) {
+                echo.set_global_position(at);
+                echo.set_stream(&stream);
+                echo.set_volume_db(level);
+                echo.play();
+            }
+        }
+    }
+
     /// The camera's position and view direction.
     fn listener(&self) -> Option<(Vector3, Vector3)> {
         let camera = self.base().get_viewport()?.get_camera_3d()?;
@@ -306,6 +475,9 @@ impl AudioEnvironment {
 
     fn update_reverb(&mut self, listener: Vector3, delta: f32) {
         let zone = zone_at(&self.base().get_tree(), listener);
+        let inside = if zone.is_some() { 1.0 } else { 0.0 };
+        self.indoors += (inside - self.indoors) * (1.0 - (-8.0 * delta).exp());
+        LISTENER_INDOORS.with(|c| c.set(self.indoors));
         let target = zone.map(|z| z.bind().settings());
         let current = match (self.reverb, target) {
             (None, None) => return,
@@ -338,6 +510,8 @@ impl AudioEnvironment {
 
         let ids: Vec<InstanceId> = self.sources.keys().copied().collect();
         let mut budget = OCCLUSION_RAYS_PER_FRAME;
+        let mut fresh_budget = OCCLUSION_FRESH_RAYS;
+        let mut verdicts: Vec<(Vector3, bool)> = Vec::new();
         let count = ids.len().max(1);
         for step in 0..ids.len() {
             let id = ids[(self.cursor + step) % count];
@@ -388,12 +562,35 @@ impl AudioEnvironment {
                 facing < BEHIND_ENTER
             };
             source.next_check -= delta;
-            if source.next_check < 0.0 && (just_started || budget > 0) {
-                if !just_started {
-                    budget -= 1;
+            if source.next_check < 0.0 {
+                // Sounds that start together near one spot (a shotgun's
+                // pellets on a wall) share one ray's verdict.
+                let shared = just_started
+                    .then(|| {
+                        verdicts
+                            .iter()
+                            .find(|(at, _)| at.distance_to(position) < SHARE_VERDICT_DISTANCE)
+                    })
+                    .flatten()
+                    .map(|(_, blocked)| *blocked);
+                if let Some(verdict) = shared {
+                    source.blocked = verdict;
+                    source.next_check = OCCLUSION_INTERVAL;
+                } else if budget > 0 || (just_started && fresh_budget > 0) {
+                    // A sound that just started gets its first verdict now,
+                    // from a small budget of its own, so it does not start
+                    // unmuffled behind a wall.
+                    if budget > 0 {
+                        budget -= 1;
+                    } else {
+                        fresh_budget -= 1;
+                    }
+                    source.next_check = OCCLUSION_INTERVAL;
+                    source.blocked = blocked(&mut space, listener, position);
+                    if just_started && verdicts.len() < 8 {
+                        verdicts.push((position, source.blocked));
+                    }
                 }
-                source.next_check = OCCLUSION_INTERVAL;
-                source.blocked = blocked(&mut space, listener, position);
             }
             let target = if source.blocked { 1.0 } else { 0.0 };
             source.occlusion = if just_started {
@@ -406,6 +603,12 @@ impl AudioEnvironment {
         }
         self.cursor = (self.cursor + 1) % count;
     }
+}
+
+/// The horizontal direction of wall check `index` (of `WALL_DIRECTIONS`).
+fn wall_direction(index: usize) -> Vector3 {
+    let angle = index as f32 * std::f32::consts::TAU / WALL_DIRECTIONS as f32;
+    Vector3::new(angle.sin(), 0.0, angle.cos())
 }
 
 /// True if the world blocks the line from the listener to a sound, short of

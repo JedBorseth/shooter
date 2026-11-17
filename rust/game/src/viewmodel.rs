@@ -19,6 +19,7 @@ use shooter_sim::weapon::{Attachment, LoadStage, Slot, WeaponId};
 
 use godot::classes::light_3d::Param;
 
+use crate::acoustics::{self, AudioEnvironment};
 use crate::audio;
 use crate::character::arms::FpArms;
 use crate::character::poser::Grips;
@@ -979,8 +980,9 @@ impl WeaponView {
         }
         self.since_shot = 0.0;
 
+        let tree = self.base().get_tree();
         if let Some(gunshot) = &mut self.gunshot {
-            gunshot.play(rounds_left, magazine);
+            gunshot.play(rounds_left, magazine, &tree);
         }
     }
 
@@ -1016,8 +1018,12 @@ impl WeaponView {
         let snap = layer("snap", "GunshotSnap", snap_db, 4)?;
         let body = layer("body", "GunshotBody", body_db, 4)?;
         // One echo at a time: each shot cuts the last one's tail, so full
-        // auto stays tight instead of piling up reverb.
+        // auto stays tight instead of piling up reverb. Outdoors and indoors
+        // each have their own, cross-faded by where the listener is.
         let tail = layer("tail", "GunshotTail", tail_db, 1)?;
+        let tail_indoor = layer("tail_indoor", "GunshotTailIndoor", tail_db, 1);
+        // The shot as heard from down the range, for its slapback off walls.
+        let distant = audio::variations(&format!("{dir}/mid"), 1.0);
         // Optional layers live with the weapon's own model key first (a gun
         // that borrows another's shot still has its own action).
         let own = format!("res://assets/audio/weapons/{}", self.weapon);
@@ -1052,6 +1058,9 @@ impl WeaponView {
             snap,
             body,
             tail,
+            tail_indoor,
+            distant,
+            suppressed: false,
         })
     }
 
@@ -1076,11 +1085,17 @@ struct Gunshot {
     snap: Gd<AudioStreamPlayer>,
     body: Gd<AudioStreamPlayer>,
     tail: Gd<AudioStreamPlayer>,
+    /// The tail indoors (a room's early reflections and decay, no terrain echo).
+    tail_indoor: Option<Gd<AudioStreamPlayer>>,
+    /// The shot from a distance, played off nearby walls outdoors.
+    distant: Option<Gd<AudioStreamRandomizer>>,
+    suppressed: bool,
 }
 
 impl Gunshot {
     /// A suppressor takes the crack off and most of the echo.
     fn set_suppressed(&mut self, on: bool) {
+        self.suppressed = on;
         let cut = if on { [14.0, 7.0, 12.0] } else { [0.0; 3] };
         for ((player, volume), cut) in [&mut self.snap, &mut self.body, &mut self.tail]
             .into_iter()
@@ -1092,11 +1107,36 @@ impl Gunshot {
     }
 
     /// Plays a shot that left `rounds_left` in a magazine of `magazine`.
-    fn play(&mut self, rounds_left: u16, magazine: u16) {
+    fn play(&mut self, rounds_left: u16, magazine: u16, tree: &Gd<SceneTree>) {
         let pitch = randf_range(0.96, 1.04) as f32 * self.pitch;
-        for player in [&mut self.snap, &mut self.body, &mut self.tail] {
+        for player in [&mut self.snap, &mut self.body] {
             player.set_pitch_scale(pitch);
             player.play();
+        }
+        // Outdoors the terrain echo, indoors the room: cross-faded by how far
+        // indoors the listener is (`acoustics::listener_indoors`).
+        let indoors = match &self.tail_indoor {
+            Some(_) => acoustics::listener_indoors(),
+            None => 0.0,
+        };
+        let base_tail = self.volumes[2] - if self.suppressed { 12.0 } else { 0.0 };
+        for (player, share) in [
+            (Some(&mut self.tail), 1.0 - indoors),
+            (self.tail_indoor.as_mut(), indoors),
+        ] {
+            let Some(player) = player else { continue };
+            if share > 0.02 {
+                player.set_volume_db(base_tail + 20.0 * share.log10());
+                player.set_pitch_scale(pitch);
+                player.play();
+            }
+        }
+        // Outdoors, the shot answers off the nearest walls.
+        if let (Some(distant), Some(mut environment)) =
+            (&self.distant, AudioEnvironment::find(tree))
+        {
+            let level = self.volumes[0] - 8.0 - if self.suppressed { 10.0 } else { 0.0 };
+            environment.bind_mut().slapback(distant, level);
         }
         if let Some(mech) = &mut self.mech {
             mech.play();

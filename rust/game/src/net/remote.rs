@@ -16,6 +16,7 @@ pub use shooter_sim::net::lag::RemoteSample;
 use shooter_sim::net::protocol;
 use shooter_sim::weapon::{Reload, WeaponId};
 
+use crate::acoustics::zone_at;
 use crate::bullets::ShotTracer;
 use crate::character::rig::{SoldierFrame, SoldierRig};
 use crate::convert::{to_godot, to_sim};
@@ -250,6 +251,9 @@ impl RemotePlayer {
             self.rig.bind_mut().hit(Vector3::new(x, 0.0, z), !s.alive);
         }
 
+        if let Some(gunfire) = &mut self.gunfire {
+            gunfire.update(delta);
+        }
         let fired = self
             .shots_fired
             .map_or(0, |last| s.shots_fired.wrapping_sub(last));
@@ -257,8 +261,14 @@ impl RemotePlayer {
         if fired > 0 && fired < 64 && s.alive {
             self.rig.bind_mut().fire();
             let muzzle = self.rig.bind().muzzle_position();
+            let listener = self
+                .base()
+                .get_viewport()
+                .and_then(|v| v.get_camera_3d())
+                .map(|c| c.get_global_position());
+            let indoors = zone_at(&self.base().get_tree(), muzzle).is_some();
             if let Some(gunfire) = &mut self.gunfire {
-                gunfire.fire(s.weapon, muzzle);
+                gunfire.fire(s.weapon, muzzle, listener, indoors);
             }
             // Each round, traced on this client for its near miss and impact
             // (and for effects, through `shot_traced`). A snapshot rarely

@@ -1,7 +1,8 @@
 extends SceneTree
 ## Headless test of room reverb and sound occlusion with the real player: walks
-## the camera into and out of a reverb zone and checks the Weapons bus reverb,
-## then plays a sound behind a wall and checks it is muffled until the wall goes.
+## the camera into and out of a reverb zone and checks the Effects bus reverb
+## (the Weapons bus has none: gunshots carry their own indoor tails), then
+## plays a sound behind a wall and checks it is muffled until the wall goes.
 ## Run from the repo root: godot --headless --path godot --script res://tests/acoustics_test.gd
 
 const PLAYER_SCENE := preload("res://scenes/player.tscn")
@@ -35,19 +36,27 @@ func _run() -> void:
 	# Reverb follows the camera into and out of the zone.
 	await _sixtieths(30)
 	_check(env.reverb_wet() == 0.0, "no reverb outdoors (%.3f)" % env.reverb_wet())
-	_check(not _reverb_enabled(), "the Weapons bus reverb is off outdoors")
+	_check(not _reverb_enabled(), "the Effects bus reverb is off outdoors")
 	player.teleport(Vector3(20, 0.05, 0), 0.0)
 	await _sixtieths(90)
 	_check(env.reverb_wet() > 0.25, "reverb inside the zone (%.3f)" % env.reverb_wet())
-	_check(_reverb_enabled(), "the Weapons bus reverb is on inside the zone")
+	_check(_reverb_enabled(), "the Effects bus reverb is on inside the zone")
+	_check(not _reverb_enabled("Weapons"), "no engine reverb on the Weapons bus")
+	_check(
+		env.indoors_amount() > 0.9, "gunshots take their indoor tail (%.2f)" % env.indoors_amount()
+	)
 	player.teleport(Vector3(0, 0.05, 0), 0.0)
 	await _sixtieths(150)
 	_check(env.reverb_wet() == 0.0, "reverb fades out after leaving (%.3f)" % env.reverb_wet())
-	_check(not _reverb_enabled(), "the Weapons bus reverb is off again")
+	_check(not _reverb_enabled(), "the Effects bus reverb is off again")
 
 	# A sound behind a wall is muffled; one on the near face is not.
 	var wall := _solid(level, Vector3(0, 1.5, -5), Vector3(8, 4, 0.3))
 	await _sixtieths(5)
+	# The wall 5 m ahead answers a shot (slapback); the eight directions are
+	# checked one a frame.
+	await _sixtieths(10)
+	_check(env.walls_in_reach() >= 1, "a wall 5 m away is in reach for slapback")
 	var behind := _looping_sound(level, Vector3(0, 1.5, -10))
 	var on_face := _looping_sound(level, Vector3(2, 1.5, -4.84))
 	await _sixtieths(30)
@@ -76,8 +85,8 @@ func _run() -> void:
 	_finish()
 
 
-func _reverb_enabled() -> bool:
-	var bus := AudioServer.get_bus_index("Weapons")
+func _reverb_enabled(bus_name := "Effects") -> bool:
+	var bus := AudioServer.get_bus_index(bus_name)
 	for i in AudioServer.get_bus_effect_count(bus):
 		if AudioServer.get_bus_effect(bus, i).resource_name == "ZoneReverb":
 			return AudioServer.is_bus_effect_enabled(bus, i)

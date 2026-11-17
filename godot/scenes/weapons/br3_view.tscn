@@ -9,8 +9,6 @@ size = Vector2(0.18, 0.18)
 
 [node name="BR3" type="WeaponView"]
 weapon = "br3"
-sound_from = "m4"
-fire_pitch = 1.06
 grip_rake = 18.0
 hip_position = Vector3(0.1, -0.084, -0.4)
 ads_position = Vector3(0, 0, -0.08)

@@ -19,6 +19,38 @@ around a shot answers it, and handling is heard beat by beat.
 `AudioEnvironment` (`acoustics.rs`) adds filtered copies of buses on demand:
 `"<bus> (occluded)"` (low-pass) and `"<bus> (behind)"` (high shelf).
 
+## Gunshots
+
+Every gun has its own recordings (`tools/build_weapon_audio.py layers`), from
+the raw master tracks of the CC0 Free Firearm Sound Library. The BR-3 is an
+SKS and the LSW-6 a Mosin-Nagant (a full-power rifle round), so no weapon
+borrows another's voice.
+
+The local player's shot is five layers, each picked from five takes on its
+own, so automatic fire does not repeat:
+
+| Layer | What it is |
+| --- | --- |
+| `snap` | The first 200 ms above 1.5 kHz: the crack, from the microphone beside the muzzle. |
+| `body` | The first 200 ms below 1.5 kHz: the blast and chest, from the microphone behind the shooter, with a synthesized low thump and body under it. |
+| `tail` / `tail_indoor` | Outdoors the recorded terrain echo with a synthesized room; indoors a synthesized room (early reflections, 0.55 s decay). `WeaponView` cross-fades them by `acoustics::listener_indoors()`. |
+| `mech` | The action cycling (synthesized). |
+| `hollow` | The last rounds' ring (synthesized). |
+
+Outdoors, a shot also answers off the two nearest walls within 45 m: the
+`AudioEnvironment` tracks the walls around the listener with one ray a frame
+over eight directions and plays the gun's `mid` recording at each wall,
+delayed by the round trip at 343 m/s.
+
+Other players' shots (`gunfire.rs`) play at their muzzle when the sound gets
+there (distance / 343 m/s). Up to about 50 m they use the same snap, body,
+and tail (the indoor tail if the shooter is in a reverb zone); from about 25
+to 200 m the `mid` recording, and beyond about 100 m the `far` one, both made
+from microphones down the range and cross-faded by distance
+(`gunfire::layer_weights`), falling 6 dB per doubling.
+
+The Weapons bus has no engine reverb: the tails are baked.
+
 ## Weapon handling (foley)
 
 `WeaponView` (`viewmodel.rs`) emits `foley_event(name: StringName)` at each
