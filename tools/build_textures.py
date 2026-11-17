@@ -90,9 +90,13 @@ LOOKS: dict[str, dict] = {
     "car_taxi": {"set": None, "tint": (0.9, 0.62, 0.1), "rough": 0.3, "metal": 0.4, "specular": 0.7},
     "car_blue": {"set": None, "tint": (0.14, 0.24, 0.52), "rough": 0.3, "metal": 0.4, "specular": 0.7},
     "truck_white": {"set": "painted_metal", "size": 2.0, "tint": (0.88, 0.88, 0.86), "metal": 0.0, "rough": 0.7},
-    "skyline_grey": {"set": "concrete_stained", "size": 6.0, "tint": (0.85, 0.83, 0.82), "grime": 0.0},
-    "skyline_dark": {"set": "concrete_panels", "size": 6.0, "tint": (0.55, 0.55, 0.58), "grime": 0.0},
-    "skyline_brick": {"set": "brick", "size": 4.0, "tint": (0.75, 0.7, 0.68), "grime": 0.0},
+    # Skyline buildings beyond the boundary: windows with fake rooms behind them.
+    "skyline_grey": {"set": "plaster", "size": 4.0, "tint": (0.8, 0.74, 0.64), "grime": 0.0,
+                     "windows": {"cell": (2.0, 3.2), "rect": (0.2, 0.28, 0.84), "frame": (0.3, 0.3, 0.31)}},
+    "skyline_dark": {"set": "concrete_panels", "size": 6.0, "tint": (0.55, 0.55, 0.58), "grime": 0.0,
+                     "windows": {"cell": (2.0, 3.4), "rect": (0.1, 0.18, 0.9), "frame": (0.12, 0.12, 0.13)}},
+    "skyline_brick": {"set": "brick", "size": 4.0, "tint": (0.75, 0.7, 0.68), "grime": 0.0,
+                      "windows": {"cell": (2.0, 3.0), "rect": (0.27, 0.3, 0.8), "frame": (0.85, 0.83, 0.78)}},
     "boundary": {"set": "concrete_panels", "size": 4.0, "tint": (0.9, 0.9, 0.94)},
     # Testing Area
     "range_floor": {"set": "concrete_floor", "size": 4.0, "tint": (0.8, 0.8, 0.82), "grime": 0.0},
@@ -108,6 +112,14 @@ LOOKS: dict[str, dict] = {
     "barrel_rust": {"set": "rusty_paint", "size": 1.2, "tint": (0.85, 0.85, 0.85), "metal": 0.7, "grime": 0.0},
     "barrel_blue": {"set": "container", "size": 1.2, "tint": (0.18, 0.3, 0.52), "metal": 0.6, "grime": 0.0},
 }
+
+
+# Defaults for a look's `windows`: the grid cell in metres (column, storey), the
+# glass inside a cell (side margin, sill height, head height, as fractions), the
+# frame colour, the rooms' brightness, the share of lit rooms, and the lowest
+# height with windows.
+WINDOWS = {"cell": (2.0, 3.2), "rect": (0.24, 0.3, 0.82), "frame": (0.2, 0.2, 0.21),
+           "light": 0.22, "lit": 0.2, "min_y": 2.0}
 
 
 def download(asset: str) -> zipfile.ZipFile:
@@ -198,6 +210,16 @@ def write_look(name: str, look: dict) -> None:
     lines.append(f"shader_parameter/metallic_scale = {look.get('metal', 1.0):g}")
     lines.append(f"shader_parameter/specular = {look.get('specular', 0.5):g}")
     lines.append(f"shader_parameter/grime = {look.get('grime', 0.3):g}")
+    if "windows" in look:
+        # Window grid with fake rooms behind it (see world.gdshader).
+        w = {**WINDOWS, **look["windows"]}
+        lines.append("shader_parameter/windows = true")
+        lines.append(f"shader_parameter/window_cell = Vector2({w['cell'][0]:g}, {w['cell'][1]:g})")
+        lines.append("shader_parameter/window_rect = Vector3(%s)" % ", ".join(f"{v:g}" for v in w["rect"]))
+        lines.append(f"shader_parameter/frame_color = {color(w['frame'])}")
+        lines.append(f"shader_parameter/room_light = {w['light']:g}")
+        lines.append(f"shader_parameter/lit_rooms = {w['lit']:g}")
+        lines.append(f"shader_parameter/window_min_y = {w['min_y']:g}")
     MATERIALS.mkdir(parents=True, exist_ok=True)
     (MATERIALS / f"{name}.tres").write_text("\n".join(lines) + "\n")
 

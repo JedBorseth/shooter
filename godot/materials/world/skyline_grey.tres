@@ -1,19 +1,26 @@
 [gd_resource type="ShaderMaterial" format=3]
 
 [ext_resource type="Shader" path="res://shaders/world.gdshader" id="1_shader"]
-[ext_resource type="Texture2D" path="res://assets/textures/concrete_stained/albedo.jpg" id="2_albedo"]
-[ext_resource type="Texture2D" path="res://assets/textures/concrete_stained/normal.jpg" id="3_normal"]
-[ext_resource type="Texture2D" path="res://assets/textures/concrete_stained/orm.jpg" id="4_orm"]
+[ext_resource type="Texture2D" path="res://assets/textures/plaster/albedo.jpg" id="2_albedo"]
+[ext_resource type="Texture2D" path="res://assets/textures/plaster/normal.jpg" id="3_normal"]
+[ext_resource type="Texture2D" path="res://assets/textures/plaster/orm.jpg" id="4_orm"]
 
 [resource]
 shader = ExtResource("1_shader")
-shader_parameter/tint = Color(0.85, 0.83, 0.82, 1)
+shader_parameter/tint = Color(0.8, 0.74, 0.64, 1)
 shader_parameter/albedo_tex = ExtResource("2_albedo")
 shader_parameter/normal_tex = ExtResource("3_normal")
 shader_parameter/orm_tex = ExtResource("4_orm")
 shader_parameter/textured = true
-shader_parameter/tile_size = 6
+shader_parameter/tile_size = 4
 shader_parameter/roughness_scale = 1
 shader_parameter/metallic_scale = 1
 shader_parameter/specular = 0.5
 shader_parameter/grime = 0
+shader_parameter/windows = true
+shader_parameter/window_cell = Vector2(2, 3.2)
+shader_parameter/window_rect = Vector3(0.2, 0.28, 0.84)
+shader_parameter/frame_color = Color(0.3, 0.3, 0.31, 1)
+shader_parameter/room_light = 0.22
+shader_parameter/lit_rooms = 0.2
+shader_parameter/window_min_y = 2

@@ -174,6 +174,8 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 - [x] A fire escape on the flats, up to the roof (built in the generator; Poly Haven's `modular_fire_escape` could replace it once assembled from its parts).
 - [x] Characters: one material and two surfaces per character, rest-space fabric and wear detail, and per-zombie skin tone and blood (`shaders/character.gdshader`).
 - [x] Effects and post: spark streaks, debris, soft dust, blood, bullet-hole decals, glowing tracers, ambient dust, and a motion blur option. Depth of field while aiming was left out (it blurs the iron sights).
+- [x] Skyline windows with fake rooms behind them (interior mapping in `world.gdshader`), and bump-mapped cloth, leather, and creases on characters.
+- [ ] First-person arms: a higher-detail glove and sleeve model. The UAL mannequin's hands are the most visible low-poly surface in the game.
 
 ## Phase 6 and later: production polish
 
