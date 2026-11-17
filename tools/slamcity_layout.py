@@ -253,6 +253,12 @@ def prop(model, x, y, z, yaw=0.0, m=False, scale=1.0):
     PROPS.append((model, (mx(x, m), y, z), myaw(yaw, m), scale))
 
 
+def road_paint(x0, x1, z0, z1, look, m=False):
+    """A painted line on the road at street level: 4 mm of geometry, so it
+    bakes into the lightmap and costs nothing at runtime, unlike a decal."""
+    deco(x0, x1, STREET, STREET + 0.004, z0, z1, look, m, faces="top")
+
+
 def decal(texture, x, y, z, size, yaw=0.0, pitch=0.0, modulate=(1, 1, 1, 1), m=False):
     if not pitch:
         # Flat on the ground: project only a little way, so each decal touches
@@ -1341,15 +1347,15 @@ def avenue(side: Side):
     blocker(-9.55, -9.25, WALK, 3.0, 8.45, 8.75, m)
     place("planter_tree", -47.0, WALK, 9.5, 1.3, m)
     blocker(-47.6, -46.4, WALK, 0.6, 8.9, 10.1, m, "concrete")
-    # Road paint.
-    WHITE = (0.92, 0.92, 0.9, 0.9)
-    YELLOW = (0.95, 0.75, 0.25, 0.9)
-    for i, x in enumerate((-45.0, -39.0, -33.0, -27.0, -21.0)):
-        decal("lane_dashes", x, 0, 0.0, (2.0, 1.0, 6.0), PI / 2, 0, YELLOW, m)
-    for i, z in enumerate((-5.4, 0.0, 5.4)):
-        decal("crosswalk", -14.2, 0, z, (3.5, 1.0, 5.6), 0, 0, WHITE, m)
-    decal("edge_lines", -26.0, 0, -7.4, (4.0, 1.0, 8.0), PI / 2, 0, WHITE, m)
-    decal("edge_lines", -38.0, 0, 7.4, (4.0, 1.0, 8.0), -PI / 2, 0, WHITE, m)
+    # Road paint, as painted strips on the road rather than decals: the decals
+    # covered most of the avenue's pixels and cost about 0.25 ms on Medium.
+    for x in (-45.0, -39.0, -33.0, -27.0, -21.0):
+        road_paint(x - 1.5, x + 1.5, -0.06, 0.06, "paint_yellow", m)
+    for k in range(18):
+        z = -8.1 + 0.25 + k * 0.9
+        road_paint(-15.7, -12.7, z, z + 0.45, "paint_white", m)
+    road_paint(-30.0, -22.0, -7.46, -7.34, "paint_white", m)
+    road_paint(-42.0, -34.0, 7.34, 7.46, "paint_white", m)
     for x, z, yaw, s in ((-32, -3, 0.4, 3.5), (-26, 5.5, 0.7, 3.2), (-41, 6.2, 2.6, 3.0),
                          (-19, -5.0, 1.6, 2.5)):
         decal("asphalt_damage", x, 0, z, (s, 1.0, s), yaw, m=m)
@@ -1933,8 +1939,9 @@ def yard(side: Side):
         place("cone", x, STREET, z, 0.0, m)
     place("bus_stop_pole", -50.8, STREET, 5.6, 0.0, m)
     place("fence", -60.0, STREET, -1.0, PI / 2, m, length=15.0)
-    for x in (-54.0, -50.0):
-        decal("parking_lines", x, 0, -15.0, (4.0, 1.0, 6.0), 0, m=m)
+    for x in (-56.0, -52.0, -48.0):
+        road_paint(x - 0.06, x + 0.06, -17.5, -12.5, "paint_white", m)
+    road_paint(-56.06, -47.94, -17.62, -17.5, "paint_white", m)
     decal("oil_stain", -56.0, 0, -6.0, (3.0, 0.6, 5.0), 0.0, m=m)
     for z in (-20.0, 8.0):
         place("yard_lamp", -59.6, STREET, z, PI / 2, m)

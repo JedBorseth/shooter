@@ -24,7 +24,7 @@ Rules of thumb for this renderer on this card, from the measurements below:
 - Bake lighting instead of computing it live. No SDFGI, VoxelGI, or screen-space reflections. Volumetric fog is High only.
 - Fake detail in the shader is cheap where it covers little of the screen: the skyline's windows and the rooms behind them (interior mapping, about 40 ALU operations and no texture reads) cost about 0.2 ms on Medium in Slamcity.
 - Code compiled into a shader costs even when a uniform skips it (register pressure): the skyline's windows live in their own variant (`world_windows.gdshader`). One texture fetch beats a few octaves of hashed noise.
-- Decals cost per pixel they cover and per lighting cluster they touch: keep them few and small, and keep ground decals shallow (Slamcity projects them 0.4 m deep).
+- Decals cost per pixel they cover and per lighting cluster they touch: keep them few and small, and keep ground decals shallow (Slamcity projects them 0.4 m deep). Paint long road markings as thin geometry instead: Slamcity's 71 decals cost about 0.36 ms on Medium, and moving its markings into the mesh saved about 0.15 ms.
 - Transparent particles cost a lot up close: one steam vent filling the view cost 0.15–0.5 ms on Medium. Use few, small particles, and no proximity fade.
 - Slamcity's city mesh is merged per chunk and material (about 50 materials), and each chunk casts its shadows through one merged shadow-only twin. Small things sit in a 16 m grid of chunks hidden beyond 40 m; a visibility range only works when a mesh's origin is near its geometry.
 - Reflection probes are expensive here: four small interior probes in Slamcity cost about 0.8 ms whenever a room filled the screen, and one probe over the whole block cost 0.7 ms everywhere. Baked lightmaps light the interiors instead (`tools/bake_lightmaps.sh`).
@@ -127,3 +127,4 @@ GPU time on Medium at 1080p on the reference card, average over viewpoints (wors
 | AK-47 and M1911 rebuilt from the classic weapons pack, racks show world models | 5.15 (5.30) ms | 6.55 (6.68) ms | 5.39 (5.88) ms |
 | Corrected grade table, Slamcity grade, lighter vignette, haze in the Testing Area | 5.12 (5.27) ms | 6.53 (6.65) ms | 5.31 (5.76) ms |
 | Slamcity rebuilt: a lightmapped dusk block under an elevated railway (same viewpoints; the water-jet and wreck close-ups, measured apart, are 7.2 to 7.4 ms) | 5.02 (5.17) ms | 7.27 (7.47) ms | 5.21 (5.66) ms |
+| Slamcity's road markings as painted geometry instead of decals (71 to 47 decals) | | 7.04 (7.26) ms | |

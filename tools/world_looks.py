@@ -172,6 +172,9 @@ SLAMCITY_LOOKS: dict[str, dict] = {
     # Roofs
     # Rolled bitumen sheets, a metre wide, each a slightly different shade.
     "roof_tar": _t("asphalt", 3.0, (0.42, 0.41, 0.4), grime=0.0, stripes=(1.0, (0.3, 0.29, 0.29))),
+    # Road paint: worn by the concrete's own texture.
+    "paint_white": _t("concrete_smooth", 1.5, (0.9, 0.9, 0.86), grime=0.0, rough=0.9),
+    "paint_yellow": _t("concrete_smooth", 1.5, (0.92, 0.72, 0.22), grime=0.0, rough=0.9),
     "roof_gravel": _t("gravel", 1.6, (0.66, 0.64, 0.6), grime=0.0),
     "roof_pavers": _t("concrete_panels", 1.4, (0.8, 0.77, 0.72), grime=0.0),
     "roof_corrugated": _t("corrugated", 2.0, (0.58, 0.6, 0.62), metal=0.6, grime=0.0),
