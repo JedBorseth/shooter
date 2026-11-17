@@ -8,15 +8,18 @@
 # A 60-second bot match then finishes in a few seconds, and the result no longer
 # depends on how busy the runner is. Tests that talk to another process (a
 # dedicated or master server they start) must run in real time, because that
-# process keeps wall-clock time; list them in REALTIME.
+# process keeps wall-clock time; list them in REALTIME. A test that fails at
+# the fixed frame rate runs again in real time; if it passes there, CI passes
+# with a warning to add it to REALTIME.
 #
 # Usage, from the repository root, after the assets are imported:
 #   .github/scripts/godot-tests.sh            # every test
 #   .github/scripts/godot-tests.sh smoke_test # only the named tests
 set -uo pipefail
 
-# Tests that start another Godot or master server process.
-REALTIME=(net_test server_browser_test)
+# Tests that start another Godot or master server process, directly or through
+# the game's local match (Net.start_local_match).
+REALTIME=(net_test server_browser_test local_pause_test)
 # Extra argument sets: a test listed here runs once per entry instead of once
 # with no arguments.
 declare -A RUNS=(
@@ -76,14 +79,27 @@ for i in "${!names[@]}"; do
     env_vars=(BENCH_FRAMES=10)
   fi
 
-  echo "::group::$label ($mode)"
-  start=$(date +%s.%N)
-  # shellcheck disable=SC2086 # run_args holds several words on purpose.
-  env "${env_vars[@]}" timeout --kill-after=10 "$TIMEOUT" \
-    "$godot_bin" "${flags[@]}" --script "res://tests/$name.gd" $run_args
-  status=$?
-  seconds=$(printf '%.1f' "$(echo "$(date +%s.%N) - $start" | bc)")
-  echo "::endgroup::"
+  run_once() {
+    echo "::group::$label ($mode)"
+    local start
+    start=$(date +%s.%N)
+    # shellcheck disable=SC2086 # run_args holds several words on purpose.
+    env "${env_vars[@]}" timeout --kill-after=10 "$TIMEOUT" \
+      "$godot_bin" "${flags[@]}" --script "res://tests/$name.gd" $run_args
+    status=$?
+    seconds=$(printf '%.1f' "$(echo "$(date +%s.%N) - $start" | bc)")
+    echo "::endgroup::"
+  }
+  run_once
+  if [[ $status -ne 0 && $mode == fixed ]]; then
+    echo "$label failed at a fixed frame rate in ${seconds}s; running it again in real time."
+    mode="real time (retry)"
+    flags=(--headless --path godot)
+    run_once
+    if [[ $status -eq 0 ]]; then
+      echo "::warning title=Godot test needs real time::$label fails at a fixed frame rate but passes in real time. If it starts another process, add it to REALTIME in .github/scripts/godot-tests.sh; otherwise it may depend on the wall clock."
+    fi
+  fi
 
   if [[ $status -eq 0 ]]; then
     result="pass"

@@ -37,4 +37,4 @@ Run tests locally the same way CI does, from the repository root, after building
 .github/scripts/godot-tests.sh smoke_test bots_test   # only these
 ```
 
-A test that starts another process, such as a dedicated or master server, must run in real time, because that process keeps wall-clock time. Add it to `REALTIME` in `.github/scripts/godot-tests.sh`. A test that needs several argument sets goes in `RUNS` in the same file.
+A test that starts another process, such as a dedicated or master server, must run in real time, because that process keeps wall-clock time. Add it to `REALTIME` in `.github/scripts/godot-tests.sh`. That includes tests that call `Net.start_local_match`, which starts a child server. If a test fails at the fixed frame rate, the script runs it again in real time; when that passes, CI passes with a warning that names the test. A test that needs several argument sets goes in `RUNS` in the same file.

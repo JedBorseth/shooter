@@ -92,8 +92,10 @@ jobs:
         run: cargo test --locked
 
   # The simulation must behave the same on every platform the client and server
-  # run on, so its tests also run on Windows and macOS. These use the runner's
-  # preinstalled stable Rust, which saves a toolchain download.
+  # run on, so its tests also run on Windows and macOS. Every Rust job installs
+  # the current stable toolchain rather than using the runner's preinstalled one:
+  # that version differs between runner images, and each difference misses the
+  # Rust cache.
   rust-test:
     name: Rust tests (${{ matrix.name }})
     strategy:
@@ -111,6 +113,7 @@ jobs:
         working-directory: rust
     steps:
       - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust
@@ -128,6 +131,7 @@ jobs:
       - uses: ./.github/actions/lfs-pull
         with:
           save: ${{ env.SAVE_CACHE }}
+      - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust
@@ -168,9 +172,9 @@ jobs:
         working-directory: rust
     steps:
       - uses: actions/checkout@v7
-      - name: Add the Intel macOS target
-        if: matrix.platform == 'macos'
-        run: rustup target add x86_64-apple-darwin
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos' && 'aarch64-apple-darwin, x86_64-apple-darwin' || '' }}
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust
