@@ -654,8 +654,9 @@ def ground():
     for m in (False, True):
         # On the cross girders at z = +-9.5, facing the road between them.
         for face, yaw in ((-9.25, 0.0), (9.25, PI)):
-            place("girder_lamp", -4.2, 4.8, face, yaw, m)
-            light(-4.2, 4.3, face * 0.94, 1.1, (1.0, 0.68, 0.32), 9.0, m)
+            for x in (-4.2, -1.0):
+                place("girder_lamp", x, 4.8, face, yaw, m)
+                light(x, 4.3, face * 0.94, 3.5, (1.0, 0.68, 0.32), 12.0, m)
     # The water main has burst: a split along its top throws a jet higher
     # than the barriers, seen down the avenue from both ends, and the street
     # round the pit runs wet.
@@ -1214,9 +1215,21 @@ def railway():
 
 
 def broken_flanges(x, z, top, m):
-    """The torn top of a column the derailed car snapped: flange plates bent
-    outward, and bolts sheared off onto the ground below."""
+    """The torn top of a column the derailed car snapped: its flanges and web
+    end in jagged points at different heights, flange plates bent outward,
+    and bolts sheared off onto the ground below."""
     rng = random.Random(int(z * 10))
+    # Jagged ends on the two flanges (along x) and the web between them.
+    for z0, z1 in ((z - 0.3, z - 0.24), (z + 0.24, z + 0.3), (z - 0.06, z + 0.06)):
+        cuts = sorted(rng.uniform(-0.25, 0.25) for _ in range(2))
+        xs = [-0.3, cuts[0], cuts[1], 0.3] if z1 - z0 < 0.1 else [-0.28, cuts[0], cuts[1], 0.28]
+        for a, b in zip(xs, xs[1:]):
+            peak = rng.uniform(0.08, 0.32)
+            mid = rng.uniform(a, b)
+            pts = [(x + px, py, pz) for pz in (z0, z1)
+                   for px, py in ((a, top), (b, top), (mid, top + peak))]
+            PARTS.append({"kind": "hull", "look": "girder",
+                          "points": [(mx(px, m), py, pz) for px, py, pz in pts], "detail": True})
     for a in (0.3, 2.2, 4.1):
         a += rng.uniform(-0.3, 0.3)
         ox, oz = math.cos(a), math.sin(a)       # outward
@@ -1740,10 +1753,11 @@ def ticket_hall():
             blocker(x - 0.3, x + 0.3, WALK, 1.0, 21.0, 21.8, m)
     deco(-8.0, 8.0, 0.0, WALK, zf, zb - 0.35, "terrazzo", faces="top")
     # Brass divider strips set in the terrazzo, every 1.2 m both ways.
-    for k in range(1, 14):
-        x = -8.0 + k * 1.2
+    # On the texture's own repeat lines (world x and z multiples of 1.2 m).
+    for k in range(-6, 7):
+        x = k * 1.2
         deco(x - 0.006, x + 0.006, WALK, WALK + 0.002, zf, zb - 0.35, "brass", faces="top", detail=True)
-    z = zf + 1.2
+    z = math.ceil(zf / 1.2) * 1.2
     while z < zb - 0.5:
         deco(-8.0, 8.0, WALK, WALK + 0.002, z - 0.006, z + 0.006, "brass", faces="top", detail=True)
         z += 1.2
