@@ -1,5 +1,6 @@
 {
-  "triangles": 18804,
+  "triangles": 16578,
+  "world_triangles": 16578,
   "nodes": [
     "Body",
     "ChargingHandle",
@@ -10,7 +11,8 @@
     "MagazineSpare/RoundsSpare",
     "OpticRail",
     "Selector",
-    "Trigger"
+    "Trigger",
+    "World"
   ],
   "markers": {
     "Muzzle": [

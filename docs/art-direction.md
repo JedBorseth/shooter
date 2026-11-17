@@ -121,7 +121,7 @@ The weapons are being rebuilt from detailed CC0 source models, one family at a t
 1. Imports the rigged source in its rest pose. Every face goes to the part its bone moves, so the magazine, the slide, the hammer, and the rounds in the magazine come out as their own nodes.
 2. Turns it to face -Z, scales it to the real weapon's length and sight radius, puts the rear sight's aiming point (the top of the notch) on the origin, and pitches it so the front post's tip lies on the -Z axis. Aimed, the post sits level in the notch exactly where the camera points, which is where shots land.
 3. Repacks the source's maps into the game's layout at 2048 px: sRGB colour, an OpenGL normal map (the sources are DirectX style), and ORM (occlusion, roughness, metallic). The source's own UVs stay.
-4. Exports `<key>.glb` in metres with one material for the weapon (`<key>.tres`), the shared cartridge material on the rounds, and the shared tritium glow on night sights, then writes the marker positions (`Muzzle`, `Ejection`, `OpticMount`, `GripRight`, `GripLeft`) into the view scene and a summary (`<key>.json`: triangles, nodes, markers).
+4. Exports `<key>.glb` in metres with one material for the weapon (`<key>.tres`), the shared cartridge material on the rounds, and the shared tritium glow on night sights, and `World`, every fixed part merged into one node for other players' weapons and racks (the magazine stays separate for third-person reloads), then writes the marker positions (`Muzzle`, `Ejection`, `OpticMount`, `GripRight`, `GripLeft`) into the view scene and a summary (`<key>.json`: triangles, nodes, markers).
 
 Parts each rebuilt weapon exports (origins at the part's pivot, so a trigger or hammer turns about its pin):
 

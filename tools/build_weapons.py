@@ -377,6 +377,38 @@ def spare_magazine(objects: dict):
             objects["MagazineSpare/" + child.name] = child
 
 
+# Parts that stay their own nodes on other players' weapons and on racks:
+# the magazine comes out in a third-person reload, the rail shows with an
+# optic. Everything else is merged into `World`.
+WORLD_SEPARATE = ("Magazine", "MagazineSpare", "OpticRail")
+
+
+def world_mesh(objects: dict):
+    """`World`: every fixed part merged into one node, for other players'
+    weapons and racks (two draw calls instead of ten). Hidden in first person."""
+    copies = []
+    for path, obj in objects.items():
+        if path.split("/")[0] in WORLD_SEPARATE:
+            continue
+        dup = obj.copy()
+        dup.data = obj.data.copy()
+        bpy.context.scene.collection.objects.link(dup)
+        dup.parent = None
+        dup.matrix_world = obj.matrix_world.copy()
+        copies.append(dup)
+    bpy.context.view_layer.update()
+    bpy.ops.object.select_all(action="DESELECT")
+    for dup in copies:
+        dup.select_set(True)
+    bpy.context.view_layer.objects.active = copies[0]
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+    bpy.ops.object.join()
+    world = bpy.context.view_layer.objects.active
+    world.name = "World"
+    world.data.name = "World"
+    objects["World"] = world
+
+
 def load_pixels(path: Path, color: bool) -> np.ndarray:
     image = bpy.data.images.load(str(path))
     image.colorspace_settings.name = "sRGB" if color else "Non-Color"
@@ -556,14 +588,21 @@ def build(key: str):
     for path, obj in objects.items():
         if path.endswith("Rounds"):
             cartridge_uvs(obj, row=spec.get("cartridge", 0))
+    bpy.context.view_layer.update()
+    world_mesh(objects)
     if spec.get("spare"):
         spare_magazine(objects)
     matrix = to_view(spec)
     markers = {}
     for name, where in spec["markers"].items():
         markers[name] = godot(matrix @ source_point(spec, source, where))
-    tris = sum(sum(len(p.vertices) - 2 for p in o.data.polygons) for o in objects.values())
-    log(f"  {tris} triangles in {len(objects)} nodes")
+    def count(paths):
+        return sum(sum(len(p.vertices) - 2 for p in objects[k].data.polygons) for k in paths)
+
+    first = [k for k in objects if k != "World" and not k.startswith("MagazineSpare")]
+    world = ["World"] + [k for k in objects if k.split("/")[0] in ("Magazine", "OpticRail")]
+    tris, world_tris = count(first), count(world)
+    log(f"  {tris} triangles in first person, {world_tris} for other players, {len(objects)} nodes")
     stem = spec["dir"] if spec["dir"] != key else key
     export(objects, out / f"{stem}.glb")
     build_textures(stem, spec, out)
@@ -574,6 +613,7 @@ def build(key: str):
         json.dumps(
             {
                 "triangles": tris,
+                "world_triangles": world_tris,
                 "nodes": sorted(objects),
                 "markers": {k: [round(c, 4) for c in v] for k, v in markers.items()},
             },

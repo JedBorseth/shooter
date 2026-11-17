@@ -500,6 +500,7 @@ impl INode3D for WeaponView {
         }
         self.flash.set_visible(false);
         self.flash_light.set_visible(false);
+        self.show_world_parts(false);
         self.build_muzzle_effects(true);
         let pending = self.pending_attachment.take();
         self.set_attachment(pending);
@@ -817,6 +818,35 @@ impl WeaponView {
         }
     }
 
+    /// Models from tools/build_weapons.py carry `World`, every fixed part
+    /// merged into one mesh. Third person draws that and the magazine (the
+    /// only part a third-person reload moves); first person draws the parts.
+    fn show_world_parts(&self, world: bool) {
+        let Some(mesh) = self.base().try_get_node_as::<Node3D>("Model/Mesh") else {
+            return;
+        };
+        if !mesh.has_node("World") {
+            return;
+        }
+        for child in mesh.get_children().iter_shared() {
+            let Ok(mut part) = child.try_cast::<Node3D>() else {
+                continue;
+            };
+            let name = part.get_name().to_string();
+            match name.as_str() {
+                "World" => part.set_visible(world),
+                // Hidden until an optic shows it, and the spare stays hidden.
+                "OpticRail" | "MagazineSpare" => {}
+                "Magazine" => {
+                    if let Some(mut rounds) = part.try_get_node_as::<Node3D>("Rounds") {
+                        rounds.set_visible(!world);
+                    }
+                }
+                _ => part.set_visible(!world),
+            }
+        }
+    }
+
     /// Shows or hides one of the model's parts, if it has it.
     fn show_part(&self, name: &str, visible: bool) {
         if let Some(mut node) = self
@@ -838,6 +868,7 @@ impl WeaponView {
     /// dark), a flash that faces the camera, a shorter flash light, and no
     /// gunshot layers.
     fn ready_world(&mut self) {
+        self.show_world_parts(true);
         brighten_materials(&self.model.clone().upcast(), self.albedo_boost.sqrt());
         if let Some(material) = self.flash.get_active_material(0)
             && let Ok(mut world) = material.duplicate_resource().try_cast::<ShaderMaterial>()

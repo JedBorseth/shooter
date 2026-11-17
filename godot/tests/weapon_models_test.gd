@@ -57,6 +57,27 @@ func _run() -> void:
 		_check_view(key, view)
 		view.queue_free()
 		await process_frame
+		# Other players' weapons draw the merged model, not the parts.
+		var world := (
+			(load("res://scenes/weapons/%s_view.tscn" % key) as PackedScene).instantiate() as Node3D
+		)
+		world.set("world_model", true)
+		root.add_child(world)
+		await process_frame
+		_check(
+			(world.get_node("Model/Mesh/World") as Node3D).visible,
+			"%s: third person draws the merged model" % key
+		)
+		_check(
+			not (world.get_node("Model/Mesh/Body") as Node3D).visible,
+			"%s: third person hides the separate parts" % key
+		)
+		_check(
+			(world.get_node("Model/Mesh/Magazine") as Node3D).visible,
+			"%s: third person keeps the magazine for reloads" % key
+		)
+		world.queue_free()
+		await process_frame
 	await _check_racks()
 	print("weapon models test: %d failure(s)" % _failures)
 	quit(1 if _failures > 0 else 0)
@@ -71,6 +92,10 @@ func _check_view(key: String, view: Node3D) -> void:
 	_check(view.get_node_or_null("Sights") == null, "%s: aims with the model's own sights" % key)
 	for part: String in WEAPONS[key]:
 		_check(view.has_node("Model/Mesh/" + part), "%s: has %s" % [key, part])
+	_check(
+		not (view.get_node("Model/Mesh/World") as Node3D).visible,
+		"%s: first person hides the merged model" % key
+	)
 	var spare := view.get_node_or_null("Model/Mesh/MagazineSpare") as Node3D
 	_check(spare != null and not spare.visible, "%s: the spare magazine starts hidden" % key)
 	for marker: String in MARKERS:

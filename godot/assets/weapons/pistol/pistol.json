@@ -1,5 +1,6 @@
 {
-  "triangles": 9615,
+  "triangles": 8529,
+  "world_triangles": 8529,
   "nodes": [
     "Body",
     "Hammer",
@@ -12,7 +13,8 @@
     "Slide",
     "Slide/SightGlow",
     "SlideStop",
-    "Trigger"
+    "Trigger",
+    "World"
   ],
   "markers": {
     "Muzzle": [
