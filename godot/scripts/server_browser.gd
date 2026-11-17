@@ -11,6 +11,7 @@ signal back_requested
 enum Tab { INTERNET, LAN, FAVORITES }
 
 const MenuStyle := preload("res://scripts/ui/menu_style.gd")
+const ServerListScript := preload("res://scripts/ui/server_list.gd")
 ## Kept as a path so opening the browser does not load the arena.
 ## Seconds a LAN scan shows "Searching" before it says nothing was found.
 const LAN_SEARCH_SECONDS := 1.5
@@ -259,7 +260,7 @@ func _check_direct() -> void:
 				var target := _direct_target
 				_direct_target = ""
 				if not server.compatible:
-					_error = "%s runs a different version of the game." % server.name
+					_error = ServerListScript.version_note(server) % server.name
 				elif server.players >= server.max_players:
 					_error = "%s is full." % server.name
 				else:

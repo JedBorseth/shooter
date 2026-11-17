@@ -1,0 +1,24 @@
+# A dedicated server that stays on the latest nightly build.
+#
+# Install (as the user that runs the server):
+#   curl -fLo ~/.local/bin/shooter-launcher \
+#     https://github.com/JedBorseth/shooter/releases/download/nightly/shooter-launcher-linux-x86_64
+#   chmod +x ~/.local/bin/shooter-launcher
+#   cp tools/shooter-server.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now shooter-server
+#   loginctl enable-linger "$USER"     # keep it running after you log out
+#
+# Edit the server options after `--` in ExecStart. Logs: journalctl --user -u shooter-server
+[Unit]
+Description=Shooter dedicated server (follows the nightly build)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+ExecStart=%h/.local/bin/shooter-launcher serve -- --name Borseth --master 127.0.0.1:27010 --map nuketown --bots 3
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

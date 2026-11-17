@@ -440,6 +440,8 @@ impl ServerBrowser {
                 d.set("max_players", i32::from(info.max_players));
                 d.set("bots", i32::from(info.bots));
                 d.set("compatible", info.protocol == PROTOCOL_VERSION);
+                // A newer server means this game is out of date: the launcher fixes that.
+                d.set("newer", info.protocol > PROTOCOL_VERSION);
             } else {
                 d.set("compatible", true);
             }
