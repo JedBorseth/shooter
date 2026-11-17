@@ -98,13 +98,15 @@ func _reload_case(weapon: String, empty: bool) -> void:
 		_names(events) == expected,
 		"%s reload plays %s in order, got %s" % [label, expected, _names(events)]
 	)
-	# The magazine is out early and seated late in the reload.
+	# The magazine is out early and seated part-way through: it seats when the
+	# rules count its rounds (`mag_in` in the weapon file), 40 to 60 percent
+	# into a reload, and its sound starts a little before that.
 	if events.size() >= 2:
 		var length := _time - _reload_began(start)
 		start = _reload_began(start)
 		_check(events[0][0] - start < length * 0.35, "%s: magazine out early" % label)
 		_check(
-			events[1][0] - start > length * 0.45 and events[1][0] - start < length * 0.8,
+			events[1][0] - start > length * 0.3 and events[1][0] - start < length * 0.8,
 			"%s: magazine in late (%.2f of %.2f s)" % [label, events[1][0] - start, length]
 		)
 

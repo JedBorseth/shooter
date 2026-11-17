@@ -15,7 +15,7 @@ use godot::classes::{
 use godot::global::randf_range;
 use godot::prelude::*;
 use shooter_sim::rng;
-use shooter_sim::weapon::{Attachment, Reload, Slot, WeaponId};
+use shooter_sim::weapon::{Attachment, LoadStage, Slot, WeaponId};
 
 use godot::classes::light_3d::Param;
 
@@ -24,6 +24,10 @@ use crate::character::arms::FpArms;
 use crate::character::poser::Grips;
 use crate::sights::IronSights;
 use crate::spring::{Spring, damping_for, impulse_for_peak, smoothing};
+use crate::weapon_clips::{
+    self, Anchors, BOLT_BACK, BOLT_LIFT, ClipKind, ClipPose, MagazineReload, PUMP_BACK, Pose,
+    keyed, smoothstep,
+};
 use crate::weapon_foley::{self, WeaponFoley};
 
 /// One rendered frame of state the rig animates from.
@@ -39,8 +43,6 @@ pub struct ViewFrame {
     pub sprinting: bool,
     pub on_floor: bool,
     pub action: ViewAction,
-    /// The reload in progress started from an empty magazine.
-    pub empty_reload: bool,
     /// The magazine is empty (a pistol's slide locks back).
     pub empty: bool,
     /// The player's own turn rate (radians a second: `x` yaw left, `y`
@@ -61,8 +63,19 @@ pub struct ViewFrame {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ViewAction {
     Ready,
+    /// A magazine reload, `elapsed` seconds in; `empty` started from an
+    /// empty magazine.
+    Reloading {
+        elapsed: f32,
+        empty: bool,
+    },
+    /// A shell-by-shell reload: `elapsed` seconds into a stage of `length`.
+    Loading {
+        stage: LoadStage,
+        elapsed: f32,
+        length: f32,
+    },
     /// Progress 0..1.
-    Reloading(f32),
     Lowering(f32),
     Raising(f32),
     /// Working the bolt or pump.
@@ -143,11 +156,6 @@ fn stride_bob(theta: f32, amount: f32, sprint: f32) -> (Vector3, Vector3) {
         (walk_pos + run_pos * sprint) * amount,
         (walk_rot + run_rot * sprint) * amount,
     )
-}
-
-fn smoothstep(t: f32) -> f32 {
-    let t = t.clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
 }
 
 /// The scale the suppressor and foregrip models are built at (the older
@@ -310,10 +318,10 @@ pub struct WeaponView {
     bolt_handle: Option<Vector3>,
     /// 0..1: how far the firing hand has gone to the bolt (turns the grip).
     bolt_hand: f32,
-    /// The action and aim of the last animated frame, for `foley_event`.
-    foley_last: Option<(ViewAction, f32)>,
     /// Plays the handling sounds (`weapon_foley`), first person only.
     foley: Option<Gd<WeaponFoley>>,
+    /// An optional `ChargingHandle` marker: where the hand charges the weapon.
+    charging_handle: Option<Vector3>,
 }
 
 /// One moving part: the node, its rest transform, and the transform from its
@@ -381,76 +389,13 @@ impl Part {
 #[derive(Default)]
 struct MovingParts {
     magazine: Option<Part>,
+    /// A copy of the magazine: the fresh one brought in during a reload.
+    fresh_magazine: Option<Part>,
     pump: Option<Part>,
     bolt: Option<Part>,
     slide: Option<Part>,
 }
 
-/// Piecewise-linear keyframes `(time, value)`, eased between keys.
-fn keyed(keys: &[(f32, f32)], t: f32) -> f32 {
-    let Some(first) = keys.first() else {
-        return 0.0;
-    };
-    if t <= first.0 {
-        return first.1;
-    }
-    for pair in keys.windows(2) {
-        let ((t0, v0), (t1, v1)) = (pair[0], pair[1]);
-        if t <= t1 {
-            let u = smoothstep((t - t0) / (t1 - t0).max(1e-4));
-            return v0 + (v1 - v0) * u;
-        }
-    }
-    keys.last().map_or(0.0, |k| k.1)
-}
-
-/// A weapon inspect, in seconds: (time, pitch, yaw, roll in degrees, and x, y
-/// offsets in metres). Turn the left side up to the eye, hold, roll over to
-/// look at the top, hold, and settle back.
-const INSPECT_KEYS: [(f32, [f32; 5]); 7] = [
-    (0.0, [0.0, 0.0, 0.0, 0.0, 0.0]),
-    (0.4, [8.0, 42.0, -30.0, -0.05, 0.03]),
-    (1.15, [10.0, 46.0, -32.0, -0.05, 0.035]),
-    (1.55, [12.0, -10.0, 20.0, 0.015, 0.01]),
-    (2.1, [11.0, -11.0, 21.0, 0.015, 0.01]),
-    (2.55, [-4.0, 2.0, -3.0, 0.0, -0.005]),
-    (2.75, [0.0, 0.0, 0.0, 0.0, 0.0]),
-];
-
-/// The pose at `t` from `keys` (time, then pitch, yaw, roll in degrees and
-/// x, y offsets): rotation (degrees) and offset.
-fn key_pose(keys: &[(f32, [f32; 5])], t: f32) -> (Vector3, Vector3) {
-    let channel = |i: usize| {
-        let keys: Vec<(f32, f32)> = keys.iter().map(|(time, v)| (*time, v[i])).collect();
-        keyed(&keys, t)
-    };
-    (
-        Vector3::new(channel(0), channel(1), channel(2)),
-        Vector3::new(channel(3), channel(4), 0.0),
-    )
-}
-
-/// The magazine's distance out of the well over a reload: eased out, dropped
-/// away, a fresh one brought up, and seated.
-const MAG_OUT: [(f32, f32); 8] = [
-    (0.12, 0.0),
-    (0.28, 0.07),
-    (0.4, 0.42),
-    (0.52, 0.42),
-    (0.63, 0.07),
-    (0.69, -0.004),
-    (0.72, 0.0),
-    (1.0, 0.0),
-];
-/// How far the support hand has gone to the magazine over a reload.
-const HAND_ON_MAG: [(f32, f32); 4] = [(0.08, 0.0), (0.18, 1.0), (0.7, 1.0), (0.82, 0.0)];
-/// After an empty reload: the support hand slaps the bolt release.
-const BOLT_SLAP: [(f32, f32); 4] = [(0.74, 0.0), (0.82, 1.0), (0.86, 1.0), (0.94, 0.0)];
-/// A pump: back, held, and forward, over a cycle.
-const PUMP_BACK: [(f32, f32); 4] = [(0.12, 0.0), (0.42, 1.0), (0.52, 1.0), (0.82, 0.0)];
-/// A bolt: lift, draw back, push forward, and turn down, over a cycle.
-const BOLT_LIFT: [(f32, f32); 4] = [(0.08, 0.0), (0.24, 1.0), (0.7, 1.0), (0.84, 0.0)];
-const BOLT_BACK: [(f32, f32); 4] = [(0.24, 0.0), (0.42, 1.0), (0.5, 1.0), (0.66, 0.0)];
 /// The firing hand on the bolt handle: off the grip just before the bolt
 /// lifts, back once it has turned down.
 const BOLT_HAND: [(f32, f32); 4] = [(0.0, 0.0), (0.09, 1.0), (0.8, 1.0), (0.94, 0.0)];
@@ -461,21 +406,6 @@ const BOLT_HAND_OFFSET: Vector3 = Vector3::new(0.012, -0.03, 0.03);
 const BOLT_HAND_RAKE: f32 = 35.0;
 /// A pistol's press check over its draw: the slide eased back and let go.
 const PRESS_CHECK: [(f32, f32); 4] = [(0.5, 0.0), (0.64, 1.0), (0.72, 1.0), (0.8, 0.0)];
-
-/// A draw, over the raise (fraction, then pitch, yaw, roll in degrees and
-/// x, y offsets in metres): up from low right, rolled in, a slight
-/// overshoot as it settles on the shoulder.
-const DRAW_KEYS: [(f32, [f32; 5]); 4] = [
-    (0.0, [-24.0, -10.0, 24.0, 0.05, -0.13]),
-    (0.6, [5.0, 2.0, -5.0, 0.0, 0.012]),
-    (0.82, [-1.5, -0.5, 1.5, 0.0, -0.003]),
-    (1.0, [0.0, 0.0, 0.0, 0.0, 0.0]),
-];
-/// A holster, over the lower: dipped and rolled out to the left.
-const HOLSTER_KEYS: [(f32, [f32; 5]); 2] = [
-    (0.0, [0.0, 0.0, 0.0, 0.0, 0.0]),
-    (1.0, [-26.0, 10.0, -20.0, -0.04, -0.16]),
-];
 
 #[godot_api]
 impl INode3D for WeaponView {
@@ -539,21 +469,6 @@ impl WeaponView {
     fn foley_event(name: StringName);
 }
 
-/// When the handling beats happen, as fractions of their action: (fraction
-/// of the contact, event). Reloads by magazine; the bolt release only after
-/// an empty one.
-const RELOAD_FOLEY: [(f32, &str); 2] = [(0.2, "mag_out"), (0.69, "mag_in")];
-const EMPTY_RELOAD_FOLEY: (f32, &str) = (0.82, "bolt_release");
-/// A pump cycle (`PUMP_BACK`: fully back at 0.42, home at 0.82) and a bolt
-/// cycle (`BOLT_LIFT` and `BOLT_BACK`).
-const PUMP_FOLEY: [(f32, &str); 2] = [(0.42, "pump_back"), (0.82, "pump_forward")];
-const BOLT_FOLEY: [(f32, &str); 4] = [
-    (0.24, "bolt_up"),
-    (0.42, "bolt_back"),
-    (0.66, "bolt_forward"),
-    (0.84, "bolt_down"),
-];
-
 impl WeaponView {
     fn add_foley(&mut self) {
         let mut foley = WeaponFoley::new_alloc();
@@ -565,75 +480,6 @@ impl WeaponView {
         self.foley = Some(foley);
     }
 
-    /// Emits `foley_event`.
-    pub fn foley(&mut self, name: &str) {
-        self.base_mut()
-            .emit_signal("foley_event", &[StringName::from(name).to_variant()]);
-    }
-
-    /// Emits the handling beats this frame passed: reload, cycle, draw,
-    /// holster, and raising to or lowering from the eye.
-    fn emit_foley(&mut self, frame: &ViewFrame) {
-        let Some(def) = self.id.map(|id| id.def()) else {
-            return;
-        };
-        let (last, last_ads) = self.foley_last.unwrap_or((ViewAction::Ready, frame.ads));
-        self.foley_last = Some((frame.action, frame.ads));
-        // Progress through the same action as last frame, or "before it began".
-        let before = |now: ViewAction| match (last, now) {
-            (ViewAction::Reloading(p), ViewAction::Reloading(_))
-            | (ViewAction::Cycling(p), ViewAction::Cycling(_))
-            | (ViewAction::Raising(p), ViewAction::Raising(_))
-            | (ViewAction::Lowering(p), ViewAction::Lowering(_)) => p,
-            _ => -1.0,
-        };
-        let mut cues: Vec<&str> = Vec::new();
-        let mut pass = |p0: f32, p1: f32, keys: &[(f32, &'static str)], duration: f32| {
-            for &(hit, name) in keys {
-                let at = weapon_foley::emit_fraction(name, hit, duration);
-                if weapon_foley::crossed(p0, p1, at) {
-                    cues.push(name);
-                }
-            }
-        };
-        match frame.action {
-            ViewAction::Reloading(p) => {
-                if let Reload::Magazine {
-                    time, empty_time, ..
-                } = def.reload
-                {
-                    let duration = if frame.empty_reload { empty_time } else { time };
-                    pass(before(frame.action), p, &RELOAD_FOLEY, duration);
-                    if frame.empty_reload {
-                        pass(before(frame.action), p, &[EMPTY_RELOAD_FOLEY], duration);
-                    }
-                }
-            }
-            ViewAction::Cycling(p) if def.cycle_time <= 0.0 => {
-                // A self-loading weapon charged after a switch cut its reload.
-                pass(before(frame.action), p, &[(0.6, "charge")], 0.35);
-            }
-            ViewAction::Cycling(p) => {
-                let pump = self
-                    .parts
-                    .as_ref()
-                    .map_or(def.pellets > 1, |p| p.pump.is_some());
-                let keys: &[(f32, &str)] = if pump { &PUMP_FOLEY } else { &BOLT_FOLEY };
-                pass(before(frame.action), p, keys, def.cycle_time);
-            }
-            ViewAction::Raising(p) => pass(before(frame.action), p, &[(0.0, "draw")], 1.0),
-            ViewAction::Lowering(p) => pass(before(frame.action), p, &[(0.0, "holster")], 1.0),
-            ViewAction::Ready => {}
-        }
-        if frame.ads > last_ads && last_ads < 0.05 && frame.ads >= 0.05 {
-            cues.push("ads_in");
-        } else if frame.ads < last_ads && last_ads > 0.95 && frame.ads <= 0.95 {
-            cues.push("ads_out");
-        }
-        for name in cues {
-            self.foley(name);
-        }
-    }
     pub fn weapon_id(&self) -> Option<WeaponId> {
         self.id
     }
@@ -660,81 +506,93 @@ impl WeaponView {
                     (min.z + max.z) * 0.5 + 0.01,
                 )
             });
+        let magazine = Part::find(&view, "Magazine");
+        let fresh_magazine = magazine.as_ref().and_then(|mag| {
+            let mut copy = mag.node.duplicate_node();
+            copy.set_name("FreshMagazine");
+            copy.set_visible(false);
+            mag.node.get_parent()?.add_child(&copy);
+            Part::find(&view, "FreshMagazine")
+        });
+        self.charging_handle = self
+            .base()
+            .try_get_node_as::<Node3D>("ChargingHandle")
+            .map(|m| m.get_position());
         self.parts = Some(MovingParts {
-            magazine: Part::find(&view, "Magazine"),
+            magazine,
+            fresh_magazine,
             pump: Part::find(&view, "Pump"),
             bolt,
             slide: Part::find(&view, "Slide"),
         });
     }
 
-    /// Whether this weapon's magazine comes out in a reload (so the support
-    /// hand follows it instead of letting go).
-    pub fn has_magazine(&self) -> bool {
-        self.parts.as_ref().is_some_and(|p| p.magazine.is_some())
+    /// The points the hands reach for in this weapon's clips.
+    pub fn anchors(&self, kind: ClipKind) -> Anchors {
+        let mag_rest = self
+            .parts
+            .as_ref()
+            .and_then(|p| p.magazine.as_ref())
+            .map(Part::rest_in_view);
+        Anchors::new(
+            kind,
+            self.hand_rest.unwrap_or_default(),
+            mag_rest,
+            self.charging_handle,
+        )
     }
 
-    /// Poses the moving parts and the support hand's grip for this frame:
-    /// the magazine and the hand through a reload, the pump with the hand and
-    /// the bolt through a cycle, and the pistol's slide after each shot and
-    /// when empty.
-    pub fn animate(&mut self, frame: &ViewFrame) {
-        self.emit_foley(frame);
+    /// Poses the moving parts and the hands for this frame: the magazines,
+    /// bolt, slide, and support hand from the clip playing (`clip`), the pump
+    /// with the hand and the bolt with the firing hand through a cycle, and
+    /// the pistol's slide after each shot and when empty.
+    pub fn animate(&mut self, frame: &ViewFrame, clip: &ClipPose) {
         let Some(mut parts) = self.parts.take() else {
             return;
         };
         let rest_hand = self.hand_rest.unwrap_or_default();
-        let mut hand = None;
+        let mut hand = clip.hand;
         let mut right_hand = None;
-        // The magazine drops down and a little forward, along its own length.
-        let mag_dir = Vector3::new(0.0, -1.0, -0.25).normalized();
         if let Some(mag) = &mut parts.magazine {
-            let (out, on_mag, slap) = match frame.action {
-                ViewAction::Reloading(p) => (
-                    keyed(&MAG_OUT, p),
-                    keyed(&HAND_ON_MAG, p),
-                    if frame.empty_reload {
-                        keyed(&BOLT_SLAP, p)
-                    } else {
-                        0.0
-                    },
-                ),
-                _ => (0.0, 0.0, 0.0),
-            };
-            mag.pose(mag_dir * out, 0.0, Vector3::ZERO);
-            // The hand holds the magazine's base, then reaches up to the receiver.
-            let grab = mag.rest_in_view() + Vector3::new(0.0, -0.04, 0.0) + mag_dir * out;
-            let slap_at = Vector3::new(0.035, -0.035, mag.rest_in_view().z + 0.03);
-            let target = rest_hand.lerp(grab, on_mag).lerp(slap_at, slap);
-            if on_mag > 0.0 || slap > 0.0 {
-                hand = Some(target);
+            let shown = clip.old_mag.is_some();
+            if mag.node.is_visible() != shown {
+                mag.node.set_visible(shown);
             }
+            mag.pose(clip.old_mag.unwrap_or_default(), 0.0, Vector3::ZERO);
+        }
+        if let Some(fresh) = &mut parts.fresh_magazine {
+            let shown = clip.fresh_mag.is_some();
+            if fresh.node.is_visible() != shown {
+                fresh.node.set_visible(shown);
+            }
+            fresh.pose(clip.fresh_mag.unwrap_or_default(), 0.0, Vector3::ZERO);
         }
         if let Some(pump) = &mut parts.pump {
-            let back = match frame.action {
-                ViewAction::Cycling(p) => keyed(&PUMP_BACK, p) * 0.075,
-                _ => 0.0,
+            let drawn = match frame.action {
+                ViewAction::Cycling(p) => keyed(&PUMP_BACK, p),
+                _ => clip.pump.unwrap_or(0.0),
             };
+            let back = drawn * 0.075;
             // The pump slides back toward the shooter, the hand with it.
             pump.pose(Vector3::new(0.0, 0.0, back), 0.0, Vector3::ZERO);
-            if back > 0.0 {
+            if back > 0.0 && clip.pump.is_none() {
                 hand = Some(rest_hand + Vector3::new(0.0, 0.0, back));
             }
         }
         if let Some(bolt) = &mut parts.bolt {
-            let (lift, back) = match frame.action {
-                ViewAction::Cycling(p) => (keyed(&BOLT_LIFT, p), keyed(&BOLT_BACK, p)),
-                _ => (0.0, 0.0),
+            let ((lift, back), reach) = match (frame.action, clip.bolt) {
+                (ViewAction::Cycling(p), _) => (
+                    (keyed(&BOLT_LIFT, p), keyed(&BOLT_BACK, p)),
+                    keyed(&BOLT_HAND, p),
+                ),
+                (_, Some(worked)) => (worked, clip.bolt_hand),
+                _ => ((0.0, 0.0), clip.bolt_hand),
             };
             let center = bolt.rest_in_view();
             // Up about the bore, then back along it.
             let pivot = Vector3::new(0.0, center.y - 0.005, center.z);
             bolt.pose(Vector3::new(0.0, 0.0, back * 0.065), lift * 1.1, pivot);
             // The firing hand leaves the grip, works the handle, and comes back.
-            let reach = match frame.action {
-                ViewAction::Cycling(p) => keyed(&BOLT_HAND, p),
-                _ => 0.0,
-            };
             if let (Some(handle), Some(rest)) = (self.bolt_handle, self.right_rest)
                 && reach > 0.0
             {
@@ -745,13 +603,18 @@ impl WeaponView {
         }
         if let Some(slide) = &mut parts.slide {
             let kick = (1.0 - (self.since_shot / 0.07)).clamp(0.0, 1.0);
-            let locked = frame.empty && !matches!(frame.action, ViewAction::Reloading(_));
+            let reloading = matches!(frame.action, ViewAction::Reloading { .. });
+            let locked = frame.empty && !reloading;
             // Drawn: a press check, the slide eased back and let go.
             let check = match frame.action {
                 ViewAction::Raising(p) => keyed(&PRESS_CHECK, p) * 0.45,
                 _ => 0.0,
             };
-            let back = if locked { 1.0 } else { kick.max(check) };
+            let back = match clip.slide {
+                Some(held) => held.max(kick),
+                None if locked => 1.0,
+                None => kick.max(check),
+            };
             slide.pose(Vector3::new(0.0, 0.0, back * 0.028), 0.0, Vector3::ZERO);
         }
         if let Some(mut marker) = self.base().try_get_node_as::<Node3D>("GripLeft") {
@@ -764,6 +627,18 @@ impl WeaponView {
             marker.set_position(right_hand.unwrap_or(rest));
         }
         self.parts = Some(parts);
+    }
+
+    /// Emits a foley event for a beat of a clip (see the `foley_event`
+    /// signal). Deferred to the end of the frame: the beat is found while the
+    /// player is updating its view, and a listener may want to ask the player
+    /// something.
+    pub fn foley(&mut self, name: &str) {
+        let args = [
+            "foley_event".to_variant(),
+            StringName::from(name).to_variant(),
+        ];
+        self.base_mut().call_deferred("emit_signal", &args);
     }
 
     /// Asks for an attachment on a view that is not in the tree yet.
@@ -1185,16 +1060,6 @@ impl WeaponView {
             foley.bind_mut().play("dry".into());
         }
     }
-
-    /// One round pushed into the tube.
-    pub fn on_round_loaded(&mut self) {
-        self.foley("shell_in");
-    }
-
-    /// The inspect started.
-    pub fn on_inspect(&mut self) {
-        self.foley("inspect");
-    }
 }
 
 /// The layers of one gunshot, played together. Each picks its own recording,
@@ -1555,8 +1420,12 @@ pub struct ViewmodelRig {
     foot: f32,
     last_stride: f32,
     sprint_blend: f32,
-    reload_blend: f32,
-    reload_progress: f32,
+    /// Where the last frame's clip was, to fire each beat once: which clip,
+    /// and its time (seconds, or progress for cycles and switches).
+    beat_clock: Option<(BeatClip, f32)>,
+    /// The shotgun reload in progress began with an empty tube (it pumps at
+    /// the end).
+    loading_from_empty: bool,
     /// Shot kick: position (metres) and rotation (radians: pitch, yaw, roll).
     kick_pos: Spring,
     kick_rot: Spring,
@@ -1634,10 +1503,8 @@ impl ViewmodelRig {
         }
     }
 
-    pub fn on_round_loaded(&mut self, weapon: WeaponId) {
-        if let Some(mut view) = self.view(weapon) {
-            view.bind_mut().on_round_loaded();
-        }
+    /// A shell went into the tube (its sound is the clip's `shell_in` beat).
+    pub fn on_round_loaded(&mut self, _weapon: WeaponId) {
         self.cycle_kick = 1.0;
     }
 
@@ -1645,9 +1512,6 @@ impl ViewmodelRig {
     /// stops it.
     pub fn start_inspect(&mut self) {
         self.inspect = Some(0.0);
-        if let Some(mut view) = self.active.and_then(|w| self.view(w)) {
-            view.bind_mut().on_inspect();
-        }
     }
 
     /// Whether an inspect is playing (tests).
@@ -1759,6 +1623,132 @@ impl ViewmodelRig {
         }
     }
 
+    /// The clip playing this frame: a reload or an inspect moving the
+    /// weapon, its magazines, and the hands; or everything at rest.
+    fn clip(&mut self, frame: &ViewFrame) -> ClipPose {
+        let def = frame.weapon.def();
+        let kind = ClipKind::of(def);
+        let Some(view) = self.view(frame.weapon) else {
+            return ClipPose::rest();
+        };
+        let anchors = view.bind().anchors(kind);
+        match frame.action {
+            ViewAction::Reloading { elapsed, empty } => MagazineReload::new(def, empty)
+                .map_or_else(ClipPose::rest, |clip| clip.pose(elapsed, &anchors)),
+            ViewAction::Loading {
+                stage,
+                elapsed,
+                length,
+            } => {
+                // Remember whether the tube was empty when the reload began:
+                // then it ends with a pump.
+                if !matches!(self.beat_clock, Some((BeatClip::Loading(_), _))) {
+                    self.loading_from_empty = frame.empty;
+                }
+                weapon_clips::shotgun_pose(
+                    stage,
+                    elapsed,
+                    length,
+                    self.loading_from_empty,
+                    &anchors,
+                )
+            }
+            _ => match self.inspect {
+                Some(t) => weapon_clips::inspect_pose(t, kind, &anchors),
+                None => ClipPose::rest(),
+            },
+        }
+    }
+
+    /// Plays the beats the clips crossed since the last frame: a foley event
+    /// for each (the `foley_event` signal on the view) and its jolt. Also
+    /// stops the reload sound when a switch cuts the reload short.
+    fn play_beats(&mut self, frame: &ViewFrame, view: &mut Gd<WeaponView>) {
+        let def = frame.weapon.def();
+        let kind = ClipKind::of(def);
+        let (clip, now) = match frame.action {
+            ViewAction::Reloading { elapsed, empty } => (BeatClip::Reload { empty }, elapsed),
+            ViewAction::Loading {
+                stage,
+                elapsed,
+                length,
+            } => (BeatClip::Loading(stage), elapsed / length.max(1e-3)),
+            ViewAction::Cycling(p) => (BeatClip::Cycle, p),
+            ViewAction::Lowering(p) => (BeatClip::Lower, p),
+            ViewAction::Raising(p) => (BeatClip::Raise, p),
+            ViewAction::Ready => match self.inspect {
+                Some(t) => (BeatClip::Inspect, t),
+                None => (BeatClip::Idle, 0.0),
+            },
+        };
+        let since = match self.beat_clock {
+            Some((last, t)) if last == clip && t <= now => t,
+            _ => -1.0,
+        };
+        self.beat_clock = Some((clip, now));
+        // Each beat's contact (and jolt) is at `at`; its sound starts
+        // `weapon_foley::lead` seconds earlier so the hit lands on the contact.
+        // `span` converts seconds to this clip's time units.
+        let crossed = |at: f32| since < at && at <= now;
+        let mut sounds: Vec<&'static str> = Vec::new();
+        let mut jolts: Vec<(Vector3, Vector3)> = Vec::new();
+        let mut beat = |at: f32, span: f32, name: &'static str, pos: Vector3, rot: Vector3| {
+            if crossed(weapon_foley::emit_fraction(name, at, span)) {
+                sounds.push(name);
+            }
+            if crossed(at) && (pos != Vector3::ZERO || rot != Vector3::ZERO) {
+                jolts.push((pos, rot));
+            }
+        };
+        match clip {
+            BeatClip::Reload { empty } => {
+                if let Some(reload) = MagazineReload::new(def, empty) {
+                    for b in reload.beats() {
+                        beat(b.at, 1.0, b.name, b.jolt_pos, b.jolt_rot);
+                    }
+                }
+            }
+            BeatClip::Loading(stage) => {
+                let length = match frame.action {
+                    ViewAction::Loading { length, .. } => length,
+                    _ => 1.0,
+                };
+                for &(at, name) in weapon_clips::shotgun_beats(stage, self.loading_from_empty) {
+                    let jolt = (Vector3::new(0.0, 0.002, 0.0), Vector3::new(-0.6, 0.0, 0.8));
+                    beat(at, length, name, jolt.0, jolt.1);
+                }
+            }
+            BeatClip::Cycle => {
+                let length = if def.cycle_time > 0.0 {
+                    def.cycle_time
+                } else {
+                    0.35
+                };
+                for &(at, name) in weapon_clips::cycle_beats(kind) {
+                    beat(at, length, name, Vector3::ZERO, Vector3::ZERO);
+                }
+            }
+            BeatClip::Lower if since < 0.0 => sounds.push("holster"),
+            BeatClip::Raise if since < 0.0 => sounds.push("draw"),
+            BeatClip::Inspect if since < 0.0 => sounds.push("inspect"),
+            _ => {}
+        }
+        if frame.ads > self.last_ads && self.last_ads <= 0.001 {
+            sounds.push("ads_in");
+        } else if frame.ads < self.last_ads && self.last_ads >= 0.999 {
+            sounds.push("ads_out");
+        }
+        for name in sounds {
+            view.bind_mut().foley(name);
+        }
+        let scale = 1.0 - 0.5 * ads_ease(frame.ads);
+        for (pos, rot) in jolts {
+            self.kick_pos.velocity += peak_impulse(pos * scale, KICK_POS_STIFFNESS, KICK_POS_ZETA);
+            let rot = Vector3::new(rot.x.to_radians(), rot.y.to_radians(), rot.z.to_radians());
+            self.kick_rot.velocity += peak_impulse(rot * scale, KICK_ROT_STIFFNESS * 0.5, 0.5);
+        }
+    }
+
     pub fn on_dry_fire(&mut self, weapon: WeaponId) {
         if let Some(mut view) = self.view(weapon) {
             view.bind_mut().on_dry_fire();
@@ -1778,22 +1768,6 @@ impl ViewmodelRig {
         self.update_shells(dt);
         // Hidden while dead, and once the scope overlay covers the screen.
         let shown = frame.visible && frame.scope < 0.85;
-        let base = base_weapon(frame.weapon);
-        for view in &mut self.views {
-            let show = shown && view.bind().weapon_id() == Some(base);
-            if show {
-                let mut v = view.bind_mut();
-                v.set_attachment(frame.weapon.def().attachment);
-                v.animate(frame);
-            }
-            if view.is_visible() != show {
-                view.set_visible(show);
-            }
-        }
-        self.active = Some(frame.weapon);
-        let Some(mut view) = self.view(frame.weapon) else {
-            return;
-        };
         self.time += dt;
         // An inspect plays out unless the player does anything else.
         if let Some(t) = self.inspect {
@@ -1803,9 +1777,26 @@ impl ViewmodelRig {
                 || !frame.visible
                 || self.kick_pos.value.length() > 0.004;
             let t = t + dt;
-            self.inspect = (!busy && t < INSPECT_KEYS[INSPECT_KEYS.len() - 1].0).then_some(t);
+            self.inspect = (!busy && t < weapon_clips::INSPECT_LENGTH).then_some(t);
         }
-        let inspect = self.inspect.map(|t| key_pose(&INSPECT_KEYS, t));
+        let clip = self.clip(frame);
+        let base = base_weapon(frame.weapon);
+        for view in &mut self.views {
+            let show = shown && view.bind().weapon_id() == Some(base);
+            if show {
+                let mut v = view.bind_mut();
+                v.set_attachment(frame.weapon.def().attachment);
+                v.animate(frame, &clip);
+            }
+            if view.is_visible() != show {
+                view.set_visible(show);
+            }
+        }
+        self.active = Some(frame.weapon);
+        let Some(mut view) = self.view(frame.weapon) else {
+            return;
+        };
+        self.play_beats(frame, &mut view);
 
         let ads = ads_ease(frame.ads);
         let hip_amount = 1.0 - ads;
@@ -1919,23 +1910,26 @@ impl ViewmodelRig {
             .step(LAND_STIFFNESS, damping_for(LAND_STIFFNESS, LAND_ZETA), dt);
         let land = self.land.value * (1.0 - 0.6 * ads);
 
-        // Reload: dip and roll the weapon over the reload's duration; much
+        // The clip playing (reload, inspect) moves the whole weapon; much
         // less aimed, so the sights stay up through an aimed reload.
-        let (reload_target, progress) = match frame.action {
-            ViewAction::Reloading(p) => (1.0, p),
-            _ => (0.0, self.reload_progress),
+        let clip_pose = clip.weapon;
+        let clip_scale = if matches!(
+            frame.action,
+            ViewAction::Reloading { .. } | ViewAction::Loading { .. }
+        ) {
+            1.0 - 0.6 * ads
+        } else {
+            1.0
         };
-        self.reload_progress = progress;
-        self.reload_blend += (reload_target - self.reload_blend) * smoothing(12.0, dt);
-        let dip =
-            (PI * self.reload_progress).sin().max(0.0) * self.reload_blend * (1.0 - 0.6 * ads);
 
         // Switching: holster the old weapon, draw the new one.
-        let (switch_rot, switch_pos) = match frame.action {
-            ViewAction::Lowering(p) => key_pose(&HOLSTER_KEYS, p),
-            ViewAction::Raising(p) => key_pose(&DRAW_KEYS, p),
-            _ => (Vector3::ZERO, Vector3::ZERO),
+        let kind = ClipKind::of(frame.weapon.def());
+        let switch = match frame.action {
+            ViewAction::Lowering(p) => weapon_clips::pose_at(weapon_clips::holster_keys(kind), p),
+            ViewAction::Raising(p) => weapon_clips::pose_at(weapon_clips::draw_keys(kind), p),
+            _ => Pose::ZERO,
         };
+        let (switch_rot, switch_pos) = (switch.rot, switch.pos);
 
         // Bolt or pump: a quick push and roll, peaking mid-cycle, mostly kept
         // off the sight line when aimed. A loaded shell gives a small bump.
@@ -1972,11 +1966,8 @@ impl ViewmodelRig {
             position += Vector3::new(0.0, -0.006, 0.006) * hip_amount;
         }
         position += cycle_pos * cycle + Vector3::new(0.0, -0.02 * bump, 0.01 * bump);
-        // Reload: tilt the magazine well toward the camera and bring the weapon inward.
-        position += Vector3::new(-0.03 * dip, 0.015 * dip, 0.02 * dip) + switch_pos;
-
-        let (ins_rot, ins_pos) = inspect.unwrap_or_default();
-        position += ins_pos;
+        position += clip_pose.pos * clip_scale + switch_pos;
+        let ins_rot = clip_pose.rot * clip_scale;
         let deg = |v: f32| v.to_radians();
         let motion = self.sway_rot.value + self.kick_rot.value;
         let pitch = deg(ins_rot.x)
@@ -1985,7 +1976,6 @@ impl ViewmodelRig {
             + motion.x
             + land.x
             + deg(-3.0) * arc
-            + deg(10.0) * dip
             + deg(switch_rot.x)
             + deg(cycle_rot.x) * cycle
             + deg(4.0) * bump;
@@ -2000,7 +1990,6 @@ impl ViewmodelRig {
             + deg(bob_rot.z + breathe_rot.z)
             + motion.z
             + deg(7.0) * arc_roll
-            + deg(32.0) * dip
             + deg(switch_rot.z)
             + deg(cycle_rot.z) * cycle;
 
@@ -2013,16 +2002,8 @@ impl ViewmodelRig {
         view.set_transform(Transform3D::new(basis, origin));
 
         if let Some(arms) = &mut self.arms {
-            // The support hand leaves the weapon for the middle of a reload,
-            // unless it is busy with the magazine (it follows the grip marker).
-            let p = self.reload_progress;
-            let support = if view.bind().has_magazine() {
-                0.0
-            } else {
-                self.reload_blend
-                    * smoothstep((p - 0.1) / 0.15)
-                    * (1.0 - smoothstep((p - 0.62) / 0.2))
-            };
+            // The hands follow the grip markers, which the clips move.
+            let support = 0.0;
             let hold = shown.then(|| {
                 let mut grips = view.bind().grips();
                 grips.pistol = frame.weapon.def().slot == Slot::Secondary;
@@ -2041,6 +2022,18 @@ fn peak_impulse(peak: Vector3, stiffness: f32, zeta: f32) -> Vector3 {
         impulse_for_peak(peak.y, stiffness, c),
         impulse_for_peak(peak.z, stiffness, c),
     )
+}
+
+/// Which clip a beat clock is timing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BeatClip {
+    Idle,
+    Reload { empty: bool },
+    Loading(LoadStage),
+    Cycle,
+    Lower,
+    Raise,
+    Inspect,
 }
 
 /// Walk speed (m/s) the bob is scaled to; the movement rules' walk speed.

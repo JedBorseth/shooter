@@ -22,6 +22,7 @@ mod spring;
 mod surfaces;
 mod target;
 mod viewmodel;
+mod weapon_clips;
 mod weapon_data;
 mod weapon_foley;
 mod zombie;

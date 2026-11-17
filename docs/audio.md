@@ -22,7 +22,10 @@ around a shot answers it, and handling is heard beat by beat.
 ## Weapon handling (foley)
 
 `WeaponView` (`viewmodel.rs`) emits `foley_event(name: StringName)` at each
-handling beat. The names are the contract between the animation and the sound:
+handling beat. The beats come from the keyed clips in `weapon_clips.rs`
+(contacts in seconds, built from each weapon's reload timings; each sound is
+emitted `weapon_foley::lead` seconds before its contact, at the end of that
+frame). The names are the contract between the animation and the sound:
 
 `mag_out`, `mag_in`, `bolt_release`, `charge`, `shell_in`, `pump_back`,
 `pump_forward`, `bolt_up`, `bolt_back`, `bolt_forward`, `bolt_down`, `draw`,
