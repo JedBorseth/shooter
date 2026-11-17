@@ -45,6 +45,7 @@ use shooter_sim::score::{Kill, ScoreRules, ScoreState, ScoreTotals, Scored};
 use shooter_sim::weapon::{self, Action, CombatEvent, FireMode, LoadStage, Reload, Slot, WeaponId};
 use shooter_sim::{Vec2, Vec3, rng};
 
+use crate::acoustics::AudioEnvironment;
 use crate::aim_assist::{AIM_ASSIST_GROUP, AimAssistTarget};
 use crate::audio;
 use crate::body::{self, BodyParts};
@@ -297,6 +298,10 @@ impl ICharacterBody3D for FpsPlayer {
 
         if !Engine::singleton().is_editor_hint() {
             Input::singleton().set_mouse_mode(MouseMode::CAPTURED);
+            // Reverb zones and occlusion are judged from this player's camera.
+            let mut acoustics = AudioEnvironment::new_alloc();
+            acoustics.set_name("AudioEnvironment");
+            self.base_mut().add_child(&acoustics);
         }
     }
 

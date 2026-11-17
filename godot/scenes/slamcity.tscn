@@ -4354,6 +4354,88 @@ transform = Transform3D(-3.6199901e-06, 0, 1, 0, 1, 0, -1, 0, -3.6199901e-06, 34
 weapon = "ak47"
 transform = Transform3D(-3.6199901e-06, 0, 1, 0, 1, 0, -1, 0, -3.6199901e-06, 8.5, 0, -16)
 
+[node name="ReverbZones" type="Node3D" parent="." unique_id=795425564]
+
+[node name="FlatsHallW" type="ReverbZone" parent="ReverbZones" unique_id=2135525362]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -31.5, 1.45, -16)
+size = Vector3(3, 2.9, 9.4)
+room_size = 0.35
+damping = 0.4
+wet = 0.28
+predelay_ms = 10.0
+
+[node name="FlatW" type="ReverbZone" parent="ReverbZones" unique_id=423946139]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -26, 1.45, -16)
+size = Vector3(7.4, 2.9, 9.4)
+room_size = 0.4
+damping = 0.6
+wet = 0.2
+predelay_ms = 12.0
+
+[node name="StoreW" type="ReverbZone" parent="ReverbZones" unique_id=947876999]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -37.9, 1.8, 17.5)
+size = Vector3(13.6, 3.6, 12.4)
+room_size = 0.45
+damping = 0.5
+wet = 0.22
+predelay_ms = 15.0
+
+[node name="LobbyW" type="ReverbZone" parent="ReverbZones" unique_id=1497871144]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -22.5, 1.8, 17.5)
+size = Vector3(16.7, 3.6, 12.4)
+room_size = 0.5
+damping = 0.35
+wet = 0.27
+predelay_ms = 18.0
+
+[node name="FlatsHallE" type="ReverbZone" parent="ReverbZones" unique_id=203694312]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 31.5, 1.45, -16)
+size = Vector3(3, 2.9, 9.4)
+room_size = 0.35
+damping = 0.4
+wet = 0.28
+predelay_ms = 10.0
+
+[node name="FlatE" type="ReverbZone" parent="ReverbZones" unique_id=255555737]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 26, 1.45, -16)
+size = Vector3(7.4, 2.9, 9.4)
+room_size = 0.4
+damping = 0.6
+wet = 0.2
+predelay_ms = 12.0
+
+[node name="StoreE" type="ReverbZone" parent="ReverbZones" unique_id=1863673106]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 37.9, 1.8, 17.5)
+size = Vector3(13.6, 3.6, 12.4)
+room_size = 0.45
+damping = 0.5
+wet = 0.22
+predelay_ms = 15.0
+
+[node name="LobbyE" type="ReverbZone" parent="ReverbZones" unique_id=1250797845]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 22.5, 1.8, 17.5)
+size = Vector3(16.7, 3.6, 12.4)
+room_size = 0.5
+damping = 0.35
+wet = 0.27
+predelay_ms = 18.0
+
+[node name="AutoShop" type="ReverbZone" parent="ReverbZones" unique_id=302142728]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.25, -16)
+size = Vector3(23.4, 4.5, 9.4)
+room_size = 0.6
+damping = 0.35
+wet = 0.3
+predelay_ms = 25.0
+
+[node name="Laundry" type="ReverbZone" parent="ReverbZones" unique_id=885310972]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.8, 17.5)
+size = Vector3(27.7, 3.6, 12.4)
+room_size = 0.45
+damping = 0.45
+wet = 0.24
+predelay_ms = 15.0
+
 [node name="Player" parent="." unique_id=903104255 instance=ExtResource("1_player")]
 base_fov = 69.56998
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -53, 0.00064452505, 0)
