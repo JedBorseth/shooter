@@ -35,8 +35,41 @@ const WEAPONS := {
 		"Trigger",
 		"MagRelease"
 	],
+	"pdw9":
+	[
+		"Body",
+		"Magazine",
+		"Magazine/Rounds",
+		"MagazineSpare",
+		"ChargingHandle",
+		"BoltCarrier",
+		"Selector",
+		"Trigger",
+		"MagRelease",
+		"OpticRail"
+	],
+	"br3":
+	[
+		"Body",
+		"Magazine",
+		"Magazine/Rounds",
+		"MagazineSpare",
+		"ChargingHandle",
+		"BoltCarrier",
+		"BoltStop",
+		"Safety",
+		"Selector",
+		"Trigger",
+		"MagRelease",
+		"OpticRail"
+	],
+	"m40":
+	["Body", "Scope", "Bolt", "BoltStop", "Magazine", "Magazine/Rounds", "Safety", "Trigger"],
 }
 const MARKERS := ["Muzzle", "Ejection", "GripRight", "GripLeft"]
+## Weapons aimed with their own iron sights; the others carry a reflex sight
+## (the scene's IronSights node) or, the M40, a scope on the sight line.
+const IRON_SIGHTS := ["ak47", "pistol"]
 ## How far (metres) the front sight's tip may sit off the sight line.
 const SIGHT_TOLERANCE := 0.0006
 
@@ -73,9 +106,17 @@ func _run() -> void:
 			"%s: third person hides the separate parts" % key
 		)
 		_check(
-			(world.get_node("Model/Mesh/Magazine") as Node3D).visible,
-			"%s: third person keeps the magazine for reloads" % key
+			not (world.get_node("Model/Mesh/Magazine") as Node3D).visible,
+			"%s: third person draws the magazine in the merged model" % key
 		)
+		# Every copy of a gun shares the imported material, so racks and other
+		# players' weapons do not each carry their own.
+		var merged := world.get_node("Model/Mesh/World") as MeshInstance3D
+		_check(
+			merged.get_surface_override_material(0) == null,
+			"%s: third person keeps the shared material" % key
+		)
+		_check(merged.lod_bias < 1.0, "%s: third person switches to coarser LODs sooner" % key)
 		world.queue_free()
 		await process_frame
 	await _check_racks()
@@ -89,15 +130,28 @@ func _check_view(key: String, view: Node3D) -> void:
 		model.transform.is_equal_approx(Transform3D.IDENTITY),
 		"%s: the model sits on the view's origin, unscaled" % key
 	)
-	_check(view.get_node_or_null("Sights") == null, "%s: aims with the model's own sights" % key)
+	if key in IRON_SIGHTS:
+		_check(
+			view.get_node_or_null("Sights") == null, "%s: aims with the model's own sights" % key
+		)
+	elif key != "m40":
+		var sights := view.get_node_or_null("Sights")
+		_check(
+			sights != null and sights.get("style") == "reflex", "%s: carries a reflex sight" % key
+		)
+		_check(
+			sights != null and (sights.get("glow") as Color).a > 0.0,
+			"%s: the reflex sight has a lit dot" % key
+		)
 	for part: String in WEAPONS[key]:
 		_check(view.has_node("Model/Mesh/" + part), "%s: has %s" % [key, part])
 	_check(
 		not (view.get_node("Model/Mesh/World") as Node3D).visible,
 		"%s: first person hides the merged model" % key
 	)
-	var spare := view.get_node_or_null("Model/Mesh/MagazineSpare") as Node3D
-	_check(spare != null and not spare.visible, "%s: the spare magazine starts hidden" % key)
+	if "MagazineSpare" in WEAPONS[key]:
+		var spare := view.get_node_or_null("Model/Mesh/MagazineSpare") as Node3D
+		_check(spare != null and not spare.visible, "%s: the spare magazine starts hidden" % key)
 	for marker: String in MARKERS:
 		_check(view.has_node(marker), "%s: has the %s marker" % [key, marker])
 	var muzzle := (view.get_node("Muzzle") as Node3D).position
@@ -111,6 +165,8 @@ func _check_view(key: String, view: Node3D) -> void:
 			at.y < -0.02 and absf(at.x) < 0.01,
 			"%s: %s is under the sight line (%s)" % [key, grip, at]
 		)
+	if key not in IRON_SIGHTS:
+		return
 	# A pistol's front sight rides on its slide.
 	var sight_part := "Model/Mesh/Slide" if view.has_node("Model/Mesh/Slide") else "Model/Mesh/Body"
 	var tip := _front_sight_tip(view.get_node(sight_part) as MeshInstance3D, view, muzzle.z)
@@ -143,6 +199,11 @@ func _check_racks() -> void:
 		var display := rack.get_node("Display") as Node3D
 		var meshes := display.find_children("*", "MeshInstance3D", true, false)
 		_check(meshes.size() > 0, "%s shows its weapon" % rack.name)
+		var shadows := meshes.filter(
+			func(m: MeshInstance3D) -> bool:
+				return m.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		)
+		_check(shadows.is_empty(), "%s: the weapon on it casts no shadow" % rack.name)
 	main.queue_free()
 	await process_frame
 

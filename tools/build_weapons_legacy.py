@@ -48,7 +48,7 @@ import numpy as np
 REPO = Path(__file__).resolve().parent.parent
 WEAPONS_DIR = REPO / "godot/assets/weapons"
 # Weapons, then the attachments fitted to them in loadouts.
-ALL = ["m4", "pdw9", "m870", "m40", "lsw6", "br3", "suppressor", "foregrip"]
+ALL = ["m4", "m870", "lsw6", "suppressor", "foregrip"]
 SIZES = {"suppressor": 512, "foregrip": 512}
 DEFAULT_SIZE = 2048
 
@@ -57,10 +57,7 @@ DEFAULT_SIZE = 2048
 PARTS = {
     "m4": {"Magazine": "lowest"},
     "lsw6": {"Magazine": "lowest"},
-    "pdw9": {"Magazine": "lowest"},
-    "br3": {"Magazine": "lowest"},
     "m870": {"Pump": (1.3, 2.42, -0.12, 0.2)},
-    "m40": {"Bolt": (0.22, 0.32, 0.12, 0.36)},
 }
 
 # Pack material -> class. Every class has a base colour (linear), roughness,

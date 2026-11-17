@@ -12,11 +12,11 @@ weapon = "m40"
 grip_rake = 38.0
 fire_volume_db = -2.5
 tail_db = 0.0
-hip_position = Vector3(0.12, -0.11, -0.3)
-ads_position = Vector3(0, 0, -0.06)
+hip_position = Vector3(0.11, -0.1, -0.16)
+ads_position = Vector3(0, 0, -0.07)
 sprint_position = Vector3(-0.04, 0.015, 0.03)
 sprint_rotation = Vector3(-4, 22, 24)
-pivot = Vector3(0, -0.096, 0.015)
+pivot = Vector3(0, -0.115, 0.03)
 albedo_boost = 1.0
 kick_strength = 3.0
 camera_punch = Vector3(1.0, 0.25, 1.4)
@@ -26,14 +26,11 @@ shell_color = Color(0.85, 0.62, 0.25, 1)
 shell_size = Vector2(0.006, 0.032)
 
 [node name="Model" type="Node3D" parent="."]
-position = Vector3(0, -0.081, -0.045)
-rotation = Vector3(0, 1.5707964, 0)
-scale = Vector3(0.15, 0.15, 0.15)
 
 [node name="Mesh" parent="Model" instance=ExtResource("1_model")]
 
 [node name="Muzzle" type="Marker3D" parent="."]
-position = Vector3(0, -0.0315, -0.825)
+position = Vector3(0.0000, -0.0494, -0.7373)
 
 [node name="Flash" type="MeshInstance3D" parent="Muzzle"]
 cast_shadow = 0
@@ -45,10 +42,10 @@ light_energy = 4.5
 omni_range = 9.0
 
 [node name="Ejection" type="Marker3D" parent="."]
-position = Vector3(0.012, -0.036, -0.135)
+position = Vector3(0.0140, -0.0450, -0.1250)
 
 [node name="GripRight" type="Marker3D" parent="."]
-position = Vector3(0, -0.075, -0.08)
+position = Vector3(-0.0000, -0.1150, 0.0300)
 
 [node name="GripLeft" type="Marker3D" parent="."]
-position = Vector3(0, -0.062, -0.33)
+position = Vector3(0.0000, -0.0800, -0.3600)
