@@ -18,6 +18,10 @@ const MAX_FPS_OPTIONS: Array[int] = [0, 60, 120, 144, 165, 240]
 ## Seconds to wait after the last change before writing the file.
 const SAVE_DELAY := 0.75
 
+## Shared public host for discovery and future account/matchmaking services.
+const SERVICE_HOST := "borseth.ddns.net"
+const DEFAULT_DIRECTORY := SERVICE_HOST + ":27010"
+
 const DEFAULTS := {
 	&"mouse_sensitivity": 1.0,
 	&"ads_sensitivity": 1.0,
@@ -34,7 +38,7 @@ const DEFAULTS := {
 	&"weapons_volume": 0.8,
 	&"effects_volume": 0.8,
 	&"ui_volume": 0.7,
-	&"master_server": "50.67.76.237:27010",
+	&"master_server": DEFAULT_DIRECTORY,
 	&"player_name": "Player",
 	&"loadout_primary": "m4",
 }
@@ -55,7 +59,7 @@ const SECTIONS := {
 		&"motion_blur",
 	],
 	"audio": [&"master_volume", &"weapons_volume", &"effects_volume", &"ui_volume"],
-	"multiplayer": [&"master_server", &"player_name", &"loadout_primary"],
+	"multiplayer": [&"player_name", &"loadout_primary"],
 }
 
 ## Allowed values of each int setting.
@@ -113,7 +117,8 @@ var weapons_volume: float = DEFAULTS[&"weapons_volume"]
 var effects_volume: float = DEFAULTS[&"effects_volume"]
 var ui_volume: float = DEFAULTS[&"ui_volume"]
 ## Master server (`host[:port]`) the server browser lists internet servers
-## from. Blank values from older installs use the public directory.
+## from. Runtime only: --directory HOST[:PORT] overrides the shared default.
+## Legacy saved addresses are ignored so old installs follow the public hostname.
 var master_server: String = DEFAULTS[&"master_server"]
 ## The name other players see (the server cuts it to 16 characters).
 var player_name: String = DEFAULTS[&"player_name"]
@@ -135,6 +140,17 @@ func _init() -> void:
 func _ready() -> void:
 	get_tree().node_added.connect(_on_node_added)
 	load_settings()
+
+
+## Client developer override, separate from --master (server registration).
+## This is deliberately not saved: the next ordinary launch uses the public host.
+static func directory_address(args: PackedStringArray) -> String:
+	for i in args.size():
+		if args[i] == "--directory" and i + 1 < args.size():
+			var address := args[i + 1].strip_edges()
+			if not address.is_empty() and not address.begins_with("--"):
+				return address
+	return DEFAULT_DIRECTORY
 
 
 ## Picks a graphics preset together with that preset's render scale, as the
@@ -185,6 +201,7 @@ func set_setting(key: StringName, value: Variant) -> void:
 func reset_to_defaults() -> void:
 	for key: StringName in DEFAULTS:
 		set(key, DEFAULTS[key])
+	master_server = directory_address(OS.get_cmdline_user_args())
 	apply_all()
 	_mark_dirty()
 	changed.emit()
@@ -202,6 +219,7 @@ func load_settings() -> void:
 				config.get_value(section, key, DEFAULTS[key]) if err == OK else DEFAULTS[key]
 			)
 			set(key, _sanitize(key, stored))
+	master_server = directory_address(OS.get_cmdline_user_args())
 	_dirty = false
 	_save_timer.stop()
 	apply_all()

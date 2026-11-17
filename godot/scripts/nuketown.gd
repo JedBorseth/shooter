@@ -29,6 +29,34 @@ func prepare_server() -> void:
 	_spawn_yaw = float(spawn["yaw"])
 	$Player.position = Vector3(float(point[0]), float(point[1]), float(point[2]))
 	$Player.rotation.y = _spawn_yaw
+	_prepare_spawn_points()
+
+
+## Validated deathmatch points cover both yards, houses, and lanes. The six
+## outermost ground points on each side are starts; all points allow respawns.
+## Idempotent: both server and offline scene initialization call preparation.
+func _prepare_spawn_points() -> void:
+	if has_node("SpawnPoints"):
+		return
+	var parent := Node3D.new()
+	parent.name = "SpawnPoints"
+	add_child(parent)
+	var ground: Array[Marker3D] = []
+	var data: Dictionary = JSON.parse_string(
+		FileAccess.get_file_as_string("res://data/nuketown_spawns.json")
+	)
+	for spawn: Dictionary in data["spawns"]:
+		var point: Array = spawn["position"]
+		var marker := Marker3D.new()
+		marker.position = Vector3(float(point[0]), float(point[1]), float(point[2]))
+		marker.rotation.y = float(spawn["yaw"])
+		parent.add_child(marker)
+		if marker.position.y < 1.0:
+			ground.append(marker)
+	ground.sort_custom(func(a: Marker3D, b: Marker3D) -> bool: return a.position.x < b.position.x)
+	for slot in mini(6, ground.size() / 2):
+		ground[slot].set_meta("team", 0)
+		ground[ground.size() - 1 - slot].set_meta("team", 1)
 
 
 func _ready() -> void:

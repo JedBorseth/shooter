@@ -251,6 +251,12 @@ pub fn step(
         forward,
     );
 
+    // Jump cancels a crouch when the standing capsule has headroom. Keep the
+    // jump buffer intact so the same press can also jump (or mantle).
+    if state.jump_buffer > 0.0 && state.stance == Stance::Crouching && env.can_stand {
+        state.stance = Stance::Standing;
+    }
+
     // Jumping at a ledge in reach while moving toward it climbs over it.
     if state.jump_buffer > 0.0
         && wish.y > 0.3
@@ -622,6 +628,51 @@ mod tests {
         assert!(!s.sprinting, "letting go of forward ends the sprint");
         run(&mut s, forward(), MoveEnv::default(), 10);
         assert!(!s.sprinting, "sprint does not resume without a new press");
+    }
+
+    #[test]
+    fn jumping_from_crouch_stands_and_jumps_when_clear() {
+        let mut state = MoveState {
+            stance: Stance::Crouching,
+            ..MoveState::default()
+        };
+        run(
+            &mut state,
+            MoveInput {
+                jump: true,
+                ..MoveInput::default()
+            },
+            MoveEnv::default(),
+            1,
+        );
+        assert_eq!(state.stance, Stance::Standing);
+        assert!(state.velocity.y > 0.0);
+    }
+
+    #[test]
+    fn crouch_jump_respects_a_low_ceiling_and_buffers_until_clear() {
+        let mut state = MoveState {
+            stance: Stance::Crouching,
+            ..MoveState::default()
+        };
+        let input = MoveInput {
+            jump: true,
+            ..MoveInput::default()
+        };
+        run(
+            &mut state,
+            input,
+            MoveEnv {
+                can_stand: false,
+                ..MoveEnv::default()
+            },
+            1,
+        );
+        assert_eq!(state.stance, Stance::Crouching);
+        assert_eq!(state.velocity.y, 0.0);
+        run(&mut state, input, MoveEnv::default(), 1);
+        assert_eq!(state.stance, Stance::Standing);
+        assert!(state.velocity.y > 0.0);
     }
 
     #[test]

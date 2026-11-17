@@ -25,6 +25,7 @@ func _run() -> void:
 
 	_check_buses()
 	_check_fov(settings)
+	_check_directory(settings)
 	_check_validation(settings)
 	_check_round_trip(settings)
 	_check_graphics(settings)
@@ -34,6 +35,32 @@ func _run() -> void:
 	settings.flush()
 	_remove(TEST_PATH)
 	_finish()
+
+
+func _check_directory(settings: Node) -> void:
+	_check(
+		settings.directory_address([]) == "borseth.ddns.net:27010",
+		"public directory uses the shared hostname"
+	)
+	_check(
+		settings.directory_address(["--directory", "127.0.0.1:27985"]) == "127.0.0.1:27985",
+		"developer flag overrides the directory"
+	)
+	for args: PackedStringArray in [
+		["--directory"], ["--directory", "  "], ["--directory", "--connect", "localhost"]
+	]:
+		_check(
+			settings.directory_address(args) == settings.DEFAULT_DIRECTORY,
+			"missing developer address keeps the default"
+		)
+	var config := ConfigFile.new()
+	config.set_value("multiplayer", "master_server", "50.67.76.237:27010")
+	config.save(TEST_PATH)
+	settings.load_settings()
+	_check(
+		settings.master_server == settings.DEFAULT_DIRECTORY,
+		"legacy saved IP migrates to the shared hostname"
+	)
 
 
 func _check_buses() -> void:
@@ -137,7 +164,16 @@ func _check_round_trip(settings: Node) -> void:
 	_check(fresh.max_fps == 144, "max_fps round-trips, got %d" % fresh.max_fps)
 	_check(is_equal_approx(fresh.weapons_volume, 0.4), "weapons_volume round-trips")
 	_check(fresh.ui_volume == 0.7, "untouched setting keeps its default")
-	_check(fresh.master_server == "custom.example:27010", "custom master is preserved")
+	_check(
+		fresh.master_server == settings.DEFAULT_DIRECTORY,
+		"runtime directory overrides are not persisted"
+	)
+	var saved := ConfigFile.new()
+	saved.load(TEST_PATH)
+	_check(
+		not saved.has_section_key("multiplayer", "master_server"),
+		"directory is not a saved player setting"
+	)
 	fresh.free()
 
 	# Apply to a stand-in for the Rust player.
@@ -222,7 +258,7 @@ func _check_menu(settings: Node) -> void:
 
 	await _press(&"pause")
 	_check(menu.is_open(), "pause opens the menu")
-	_check(not paused, "opening the menu does not pause the tree")
+	_check(paused, "opening the offline menu freezes the tree")
 	_check(Input.mouse_mode == Input.MOUSE_MODE_VISIBLE, "opening the menu frees the mouse")
 	var focused := root.gui_get_focus_owner()
 	_check(focused != null and focused.name == "ResumeButton", "Resume has focus on open")
@@ -256,11 +292,11 @@ func _check_menu(settings: Node) -> void:
 		"Esc on settings goes back"
 	)
 	await _press(&"pause")
-	_check(not menu.is_open(), "Esc on the main page closes the menu")
+	_check(not menu.is_open() and not paused, "Esc closes the menu and resumes the tree")
 
 	menu.open()
 	(menu.get_node("%ResumeButton") as Button).pressed.emit()
-	_check(not menu.is_open(), "Resume closes the menu")
+	_check(not menu.is_open() and not paused, "Resume closes the menu and resumes the tree")
 	menu.queue_free()
 	# Let the audio server release the click sound before exit.
 	await create_timer(0.2).timeout

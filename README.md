@@ -191,7 +191,7 @@ It listens for players on UDP port 27015 (`--port N` to change) and answers serv
 In the game, **Multiplayer** on the title screen opens the server browser:
 
 - **LAN** lists every server on your network (and on your own machine), with its map, players, bots, and ping.
-- **Internet** opens by default and lists the servers on the public Borseth directory at `50.67.76.237:27010`. You can enter a different directory address in the field at the top; the browser remembers it. Blank settings from older installs use the public directory.
+- **Internet** opens by default and lists the servers on the public Borseth directory at `borseth.ddns.net:27010`. The address is preset for every player; legacy saved directory addresses are ignored. For development, launch with `godot --path godot -- --directory 127.0.0.1:27010` (or pass `--directory HOST[:PORT]` to the exported client). This override applies only to that launch.
 - **Favorites** lists servers you starred, online or not. Click a server's star, or select it and press **Add favorite**.
 - **Direct connect** takes an IP or host name with an optional port. The browser asks the server first, then joins. If the server does not answer queries (only its game port is open), the button changes to **Join anyway**.
 
@@ -199,7 +199,7 @@ Double-click a server, or select it and press Enter or **Join**. If the server r
 
 To play over the internet, the server's host forwards UDP 27015 and 27016 to the server machine, or both players join the same VPN (Tailscale, WireGuard). Then the other player uses Direct connect with the host's address.
 
-To expose the public Borseth host, forward UDP 27010 (directory), 27015 (game), and 27016 (server details) to the same machine. Its directory uses `shooter-master --public-ip 50.67.76.237`; its co-hosted game server registers with `--name Borseth --master 127.0.0.1:27010`. The directory rewrites only loopback registrations to the configured public IP, preserving the query port. This avoids depending on router NAT loopback. If its public IP changes, update both the host configuration and the default `master_server` in `godot/scripts/settings.gd`.
+To expose the public Borseth host, forward UDP 27010 (directory), 27015 (game), and 27016 (server details) to the same machine. Its directory uses `shooter-master --public-ip <current-public-ip>`; its co-hosted game server registers with `--name Borseth --master 127.0.0.1:27010`. The directory rewrites only loopback registrations to the configured public IP, preserving the query port. This avoids depending on router NAT loopback. If its public IP changes, update the DNS record and the host configuration; clients keep using the same hostname. `borseth.ddns.net` is the common public entry point for discovery and future account, progression, and matchmaking services. Those future services are not implemented by the current UDP directory.
 
 ### Master server
 

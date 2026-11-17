@@ -52,6 +52,9 @@ func _run() -> void:
 			),
 			"the default local match is 6v6 Slamcity with normal bots, got %s" % options
 		)
+		var maps: OptionButton = setup.get("_map")
+		maps.select(1)
+		_check(setup.options()["map"] == "nuketown", "Nuketown selection starts the Nuketown map")
 		setup.back_requested.emit()
 		await process_frame
 		_check(title.get_node_or_null("TdmSetup") == null, "Back closes the setup")

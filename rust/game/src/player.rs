@@ -228,6 +228,8 @@ pub struct FpsPlayer {
     pitch: f32,
     wish: Vector2,
     previous_position: Vector3,
+    step_offset: f32,
+    previous_step_offset: f32,
     current_position: Vector3,
     previous_recoil: Vec2,
     previous_sway: Vec2,
@@ -361,6 +363,9 @@ impl ICharacterBody3D for FpsPlayer {
             &input,
             &mut events,
         );
+        self.previous_step_offset = self.step_offset;
+        self.step_offset *= (-14.0 * dt).exp();
+        self.step_offset -= outcome.step_height;
         self.state = predicted.state;
         self.on_floor = predicted.on_floor;
         self.env = outcome.env;
@@ -402,7 +407,10 @@ impl ICharacterBody3D for FpsPlayer {
         let dt = delta as f32;
         let fraction = Engine::singleton().get_physics_interpolation_fraction() as f32;
         let feet = self.previous_position.lerp(self.current_position, fraction)
-            + to_godot(self.smoothing.update(dt));
+            + to_godot(self.smoothing.update(dt))
+            + Vector3::UP
+                * (self.previous_step_offset
+                    + (self.step_offset - self.previous_step_offset) * fraction);
         let combat = &self.state.combat;
         // Recoil kicks show on the first frame after the shot's tick instead of
         // easing in across a tick; only recovery is interpolated.
@@ -746,6 +754,8 @@ impl FpsPlayer {
             on_floor: false,
         };
         body::place(&mut self.parts(), &self.params.movement, &placed);
+        self.step_offset = 0.0;
+        self.previous_step_offset = 0.0;
         self.previous_position = position;
         self.current_position = position;
         self.yaw = yaw;
@@ -1683,6 +1693,8 @@ impl FpsPlayer {
 
     fn reset_view(&mut self) {
         let position = self.base().get_global_position();
+        self.step_offset = 0.0;
+        self.previous_step_offset = 0.0;
         self.previous_position = position;
         self.current_position = position;
         self.previous_recoil = Vec2::ZERO;

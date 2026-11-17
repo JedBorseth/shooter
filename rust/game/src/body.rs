@@ -48,6 +48,8 @@ pub fn check_tick_rate() -> bool {
 pub struct TickOutcome {
     /// What the simulation saw before moving.
     pub env: MoveEnv,
+    /// Discrete step rise, removed from the camera and eased back in.
+    pub step_height: f32,
 }
 
 /// Advances `p` by one input: simulation step, then collision. `p.on_floor`
@@ -72,13 +74,75 @@ pub fn tick(
         apply_stance_shape(parts, movement, p.state.movement.stance);
     }
 
+    let start = parts.body.get_global_transform();
     parts.body.set_velocity(to_godot(requested));
     parts.body.move_and_slide();
+    let step_height = if env.on_floor && requested.y <= 0.0 && !p.state.movement.mantling() {
+        step_up(&mut parts.body, start, to_godot(requested))
+    } else {
+        0.0
+    };
     // Walls and floors clip the velocity; keep the clipped value as next tick's state.
     p.state.movement.velocity = to_sim(parts.body.get_velocity());
     p.position = to_sim(parts.body.get_global_position());
-    p.on_floor = parts.body.is_on_floor();
-    TickOutcome { env }
+    p.on_floor = step_height > 0.0 || parts.body.is_on_floor();
+    TickOutcome { env, step_height }
+}
+
+/// Retry a blocked grounded move along a collision-tested up/forward/down path.
+/// The forward distance is exactly one tick: no remount boost or wall climbing.
+fn step_up(body: &mut Gd<CharacterBody3D>, start: Transform3D, velocity: Vector3) -> f32 {
+    const HEIGHT: f32 = 0.3;
+    let motion = Vector3::new(velocity.x, 0.0, velocity.z) * TICK_DT;
+    if motion.length_squared() < 0.000001 {
+        return 0.0;
+    }
+    let normal_move = body.get_global_position() - start.origin;
+    let progress = Vector3::new(normal_move.x, 0.0, normal_move.z).dot(motion.normalized());
+    if progress >= motion.length() * 0.95 {
+        return 0.0;
+    }
+    // Check the whole capsule, including ceilings, before committing any move.
+    if body.test_move(start, Vector3::UP * HEIGHT) {
+        return 0.0;
+    }
+    let mut raised = start;
+    raised.origin += Vector3::UP * HEIGHT;
+    if body.test_move(raised, motion) {
+        return 0.0;
+    }
+    raised.origin += motion;
+    // Probe just beyond the capsule's leading rim. A centre-only downward
+    // sweep meets the vertical riser before it can see the tread beneath it.
+    let Some(mut space) = body.get_world_3d().and_then(|w| w.get_direct_space_state()) else {
+        return 0.0;
+    };
+    let probe = raised.origin + motion.normalized() * 0.37;
+    let exclude: Array<Rid> = array![body.get_rid()];
+    let Some(query) = PhysicsRayQueryParameters3D::create_ex(probe, probe - Vector3::UP * HEIGHT)
+        .collision_mask(WORLD_LAYER)
+        .exclude(&exclude)
+        .done()
+    else {
+        return 0.0;
+    };
+    let hit = space.intersect_ray(&query);
+    let (Ok(top), Ok(normal)) = (
+        hit.get_or_nil("position").try_to::<Vector3>(),
+        hit.get_or_nil("normal").try_to::<Vector3>(),
+    ) else {
+        return 0.0;
+    };
+    let rise = top.y + 0.001 - start.origin.y;
+    if !(0.001..=HEIGHT).contains(&rise)
+        || normal.dot(Vector3::UP) < body.get_floor_max_angle().cos()
+        || body.test_move(raised, Vector3::DOWN * (HEIGHT - rise))
+    {
+        return 0.0;
+    }
+    body.set_global_position(start.origin + motion + Vector3::UP * rise);
+    body.set_velocity(Vector3::new(velocity.x, 0.0, velocity.z));
+    rise
 }
 
 /// The height of a ledge in front of the player they could climb onto: a

@@ -261,6 +261,10 @@ pub struct Threat {
 /// How [`choose_spawn`] weighs a spawn point.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SpawnRules {
+    /// Keep enemies outside this distance whenever a safer point exists.
+    pub min_enemy_distance: f32,
+    /// Keep living players outside this radius to avoid overlapping bodies.
+    pub occupied_radius: f32,
     /// Enemies closer than this make a spawn worse, linearly.
     pub enemy_radius: f32,
     /// Penalty for each enemy that can see the spawn.
@@ -279,6 +283,8 @@ pub struct SpawnRules {
 impl Default for SpawnRules {
     fn default() -> Self {
         Self {
+            min_enemy_distance: 8.0,
+            occupied_radius: 1.5,
             enemy_radius: 25.0,
             seen_penalty: 60.0,
             death_radius: 8.0,
@@ -299,6 +305,9 @@ const SPAWN_NOISE: f32 = 2.0;
 /// `seed` breaks ties between equally good spawns, so players don't all
 /// stack on one point.
 ///
+/// Clear points always beat watched points, points near enemies, and occupied
+/// points (in that order). If every point is dangerous, choose the least bad
+/// available tier; team preference never prevents a safe spawn flip.
 /// Returns `None` only when there are no spawn points.
 pub fn choose_spawn(
     points: &[SpawnPoint],
@@ -309,9 +318,11 @@ pub fn choose_spawn(
     mut seen_by_enemies: impl FnMut(usize) -> u32,
     seed: u32,
 ) -> Option<usize> {
-    let mut best: Option<(usize, f32)> = None;
+    // Safety tiers beat soft bonuses: clear, watched, enemy nearby, occupied.
+    let mut best: Option<(usize, u8, f32)> = None;
     for (i, point) in points.iter().enumerate() {
         let mut score = 0.0;
+        let mut danger = 0;
         score += match point.team {
             Some(t) if t == team => rules.side_bonus,
             Some(_) => -rules.enemy_side_penalty,
@@ -319,6 +330,11 @@ pub fn choose_spawn(
         };
         for threat in threats {
             let distance = threat.position.distance(point.position);
+            if distance < rules.occupied_radius {
+                danger = 3;
+            } else if threat.enemy && distance < rules.min_enemy_distance {
+                danger = danger.max(2);
+            }
             if distance >= rules.enemy_radius {
                 continue;
             }
@@ -334,18 +350,18 @@ pub fn choose_spawn(
                 score -= rules.death_penalty;
             }
         }
-        // Raycasts are the expensive part: skip them for spawns that cannot
-        // win even unseen and with the most noise.
-        if best.is_none_or(|(_, b)| score + SPAWN_NOISE > b) {
-            score -= rules.seen_penalty * seen_by_enemies(i) as f32;
+        // Every candidate needs a visibility tier before comparing soft scores.
+        let seen = seen_by_enemies(i);
+        if seen > 0 {
+            danger = danger.max(1);
         }
-        // A little noise so equal spawns take turns.
+        score -= rules.seen_penalty * seen as f32;
         score += rng::unit(seed, i as u32) * SPAWN_NOISE;
-        if best.is_none_or(|(_, b)| score > b) {
-            best = Some((i, score));
+        if best.is_none_or(|(_, d, b)| danger < d || (danger == d && score > b)) {
+            best = Some((i, danger, score));
         }
     }
-    best.map(|(i, _)| i)
+    best.map(|(i, _, _)| i)
 }
 
 /// The spawn points for the start of a match: the team's own side, spread out
@@ -550,6 +566,70 @@ mod tests {
         assert_eq!(choose(0, &[]), 0);
         assert_eq!(choose(1, &[]), 2);
         assert_eq!(choose(0, &[Vec3::ZERO, Vec3::ZERO]), 1);
+    }
+
+    #[test]
+    fn safety_beats_team_bias_and_teammate_bonuses() {
+        let points = [point(0.0, Some(0)), point(60.0, Some(1))];
+        let friends = vec![
+            Threat {
+                position: Vec3::X * 10.0,
+                enemy: false
+            };
+            20
+        ];
+        for seed in 0..100 {
+            assert_eq!(
+                choose_spawn(
+                    &points,
+                    0,
+                    &friends,
+                    &[],
+                    &SpawnRules::default(),
+                    |i| u32::from(i == 0),
+                    seed
+                ),
+                Some(1)
+            );
+        }
+    }
+
+    #[test]
+    fn enemies_force_a_flip_even_when_the_home_spawn_is_hidden() {
+        let points = [point(0.0, Some(0)), point(60.0, Some(1))];
+        let enemies = [Threat {
+            position: Vec3::X * 4.0,
+            enemy: true,
+        }];
+        assert_eq!(
+            choose_spawn(&points, 0, &enemies, &[], &SpawnRules::default(), |_| 0, 1),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn occupied_spawns_lose_even_when_the_other_point_is_watched() {
+        let points = [point(0.0, Some(0)), point(60.0, Some(1))];
+        for enemy in [false, true] {
+            let players = [Threat {
+                position: Vec3::ZERO,
+                enemy,
+            }];
+            assert_eq!(
+                choose_spawn(&points, 0, &players, &[], &SpawnRules::default(), |_| 1, 1),
+                Some(1)
+            );
+        }
+    }
+
+    #[test]
+    fn dangerous_maps_still_return_a_spawn_and_empty_maps_return_none() {
+        let points = [point(0.0, None), point(60.0, None)];
+        let choose = |points: &[SpawnPoint]| {
+            choose_spawn(points, 0, &[], &[], &SpawnRules::default(), |_| 1, 1)
+        };
+        assert!(choose(&points).is_some());
+        assert_eq!(choose(&[]), None);
     }
 
     #[test]

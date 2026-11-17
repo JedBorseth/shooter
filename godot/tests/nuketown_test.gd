@@ -9,6 +9,22 @@ func _initialize() -> void:
 
 
 func _run() -> void:
+	# The dedicated server prepares the map before adding it to the scene tree.
+	var packed := load("res://scenes/nuketown.tscn") as PackedScene
+	var server_map := packed.instantiate()
+	server_map.prepare_server()
+	server_map.prepare_server()
+	_check(
+		server_map.get_node("SpawnPoints").get_child_count() == 29,
+		"server reads 29 validated map spawns"
+	)
+	var counts := [0, 0]
+	for marker: Node3D in server_map.get_node("SpawnPoints").get_children():
+		var team: int = marker.get_meta("team", -1)
+		if team >= 0:
+			counts[team] += 1
+	_check(counts == [6, 6], "six distinct starting points per team")
+	server_map.free()
 	change_scene_to_file("res://scenes/title_screen.tscn")
 	await process_frame
 	await process_frame
@@ -30,6 +46,28 @@ func _run() -> void:
 		_check(current_scene.get_node_or_null("HUD/" + name) != null, "HUD includes " + name)
 	var player := current_scene.get_node("Player") as FpsPlayer
 	await physics_frame
+	for marker: Node3D in current_scene.get_node("SpawnPoints").get_children():
+		var floor_ray := PhysicsRayQueryParameters3D.create(
+			marker.global_position + Vector3.UP * 0.2,
+			marker.global_position + Vector3.DOWN * 0.6,
+			1
+		)
+		var space := player.get_world_3d().direct_space_state
+		_check(
+			not space.intersect_ray(floor_ray).is_empty(),
+			"spawn has nearby floor: %s" % marker.position
+		)
+		var capsule := CapsuleShape3D.new()
+		capsule.radius = 0.35
+		capsule.height = 1.8
+		var query := PhysicsShapeQueryParameters3D.new()
+		query.shape = capsule
+		query.transform.origin = marker.global_position + Vector3.UP * 0.95
+		query.collision_mask = 1
+		_check(
+			space.intersect_shape(query).is_empty(),
+			"spawn has body clearance: %s" % marker.position
+		)
 	var start_y := player.position.y
 	var ray := PhysicsRayQueryParameters3D.create(
 		player.global_position + Vector3.UP * 0.25, player.global_position + Vector3.DOWN * 4.0, 1

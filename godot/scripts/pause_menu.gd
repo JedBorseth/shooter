@@ -1,6 +1,6 @@
 extends CanvasLayer
 ## Pause and settings menu. Opening it frees the mouse and turns off player input
-## but leaves the scene tree running, because a multiplayer match never pauses.
+## and freezes offline/local matches. Remote multiplayer keeps running.
 ## Settings apply live through the `Settings` autoload and save when the menu closes.
 
 const GraphicsQuality := preload("res://scripts/graphics.gd")
@@ -23,6 +23,7 @@ var _scale_option: OptionButton
 var _click: AudioStreamPlayer
 var _hover: AudioStreamPlayer
 var _quiet := false
+var _owns_pause := false
 
 @onready var _root: Control = %Root
 @onready var _title: Label = %Title
@@ -94,16 +95,32 @@ func open() -> void:
 	_focus(_resume_button)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_set_player_input(false)
+	if not Net.is_online() or Net.is_local_match():
+		_owns_pause = not get_tree().paused
+		Net.set_local_paused(true)
+		get_tree().paused = true
 
 
 func close() -> void:
 	if not is_open():
 		return
+	_release_pause()
 	get_viewport().gui_release_focus()
 	_root.hide()
 	Settings.flush()
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	_set_player_input(true)
+
+
+func _release_pause() -> void:
+	if _owns_pause:
+		Net.set_local_paused(false)
+		get_tree().paused = false
+		_owns_pause = false
+
+
+func _exit_tree() -> void:
+	_release_pause()
 
 
 func _set_player_input(enabled: bool) -> void:
@@ -143,6 +160,7 @@ func _show_settings() -> void:
 
 ## Online: back to the server browser. Offline: back to the title screen.
 func _leave() -> void:
+	_release_pause()
 	Settings.flush()
 	if Net.is_online():
 		Net.leave()

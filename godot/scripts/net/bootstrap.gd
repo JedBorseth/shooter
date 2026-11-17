@@ -18,6 +18,8 @@ extends Node
 ##                                    Team Deathmatch to N kills (75) or MINUTES (10),
 ##                                    or Gun Game with N kills per weapon (2);
 ##                                    --auto-start skips the lobby's ready-up.
+##   --directory HOST[:PORT]          developer override for the Internet directory;
+##                                    not saved between launches
 ##   --connect HOST[:PORT] [--lag MS] [--jitter MS] [--loss PERCENT]
 ##                                    join a server; lag, jitter, and loss are
 ##                                    simulated in each direction for testing
@@ -59,6 +61,7 @@ var browser_message := ""
 var _client: NetClient
 ## Process id of the server `start_local_match` started, or -1.
 var _local_server_pid := -1
+var _local_pause_file := ""
 
 
 func _ready() -> void:
@@ -121,6 +124,8 @@ func join(target: String, options: Dictionary = {}, arena: PackedScene = null) -
 ## in minutes) and joins it. The server does not answer server browsers.
 func start_local_match(options: Dictionary) -> void:
 	stop_local_server()
+	_local_pause_file = OS.get_user_data_dir().path_join("local-pause-%d" % OS.get_process_id())
+	DirAccess.remove_absolute(_local_pause_file)
 	var map := String(options.get("map", "slamcity"))
 	var args := PackedStringArray(["--headless"])
 	if OS.has_feature("editor"):
@@ -135,6 +140,8 @@ func start_local_match(options: Dictionary) -> void:
 				str(LOCAL_PORT),
 				"--query-port",
 				"-1",
+				"--pause-file",
+				_local_pause_file,
 				"--name",
 				"Local match",
 				"--map",
@@ -166,6 +173,25 @@ func stop_local_server() -> void:
 	if _local_server_pid > 0:
 		OS.kill(_local_server_pid)
 	_local_server_pid = -1
+	if not _local_pause_file.is_empty():
+		DirAccess.remove_absolute(_local_pause_file)
+	_local_pause_file = ""
+
+
+## Only matches launched by this client may pause their dedicated process.
+func is_local_match() -> bool:
+	return _local_server_pid > 0
+
+
+func set_local_paused(value: bool) -> void:
+	if not is_local_match():
+		return
+	if value:
+		var file := FileAccess.open(_local_pause_file, FileAccess.WRITE)
+		if file != null:
+			file.close()
+	else:
+		DirAccess.remove_absolute(_local_pause_file)
 
 
 func _notification(what: int) -> void:
@@ -177,6 +203,7 @@ func _notification(what: int) -> void:
 ## `message` (empty when the player left on purpose). A local match returns
 ## to the title screen instead, and its server stops.
 func leave(message := "") -> void:
+	get_tree().paused = false
 	if is_online():
 		_client.queue_free()
 	_client = null
@@ -220,6 +247,9 @@ func _start_server(options: Dictionary) -> void:
 	if options.has("kills-per-weapon"):
 		server.kills_per_weapon = clampi(int(options["kills-per-weapon"]), 1, 10)
 	server.auto_start = options.has("auto-start")
+	server.pause_file = String(options.get("pause-file", ""))
+	if not server.pause_file.is_empty():
+		server.process_mode = Node.PROCESS_MODE_ALWAYS
 	var previous := tree.current_scene
 	tree.root.add_child(server)
 	tree.current_scene = server
@@ -241,6 +271,8 @@ func _attach_client(main: Node, target: String, options: Dictionary) -> void:
 
 	var client := NetClient.new()
 	client.name = "NetClient"
+	if is_local_match():
+		client.process_mode = Node.PROCESS_MODE_ALWAYS
 	client.address = target.get_slice(":", 0) if target != "" else "127.0.0.1"
 	client.port = int(target.get_slice(":", 1)) if target.contains(":") else DEFAULT_PORT
 	client.player_path = player.get_path()

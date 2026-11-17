@@ -40,6 +40,7 @@ func _run() -> void:
 	_check(player.is_on_floor(), "player lands on the floor")
 
 	await _spawning(director)
+	await _pause(director, player)
 	await _chase(director, player)
 	await _shooting(director, player)
 	await _round_two(director)
@@ -56,6 +57,27 @@ func _spawning(director: ZombieDirector) -> void:
 	_check(director.remaining() == 6, "round 1 sends 6 zombies, got %d" % director.remaining())
 	await _sixtieths(10)
 	_check(director.zombies().size() >= 1, "a zombie spawns at the start of the round")
+
+
+func _pause(director: ZombieDirector, player: FpsPlayer) -> void:
+	var menu: CanvasLayer = current_scene.get_node("PauseMenu")
+	var positions: Array[Vector3] = []
+	for zombie: Zombie in director.zombies():
+		positions.append(zombie.global_position)
+	var count := director.zombies().size()
+	var health := player.health()
+	menu.open()
+	_check(paused, "Zombies pause freezes the scene tree")
+	await create_timer(1.0).timeout
+	_check(director.zombies().size() == count, "no zombies spawn while paused")
+	for i in count:
+		_check(
+			director.zombies()[i].global_position == positions[i],
+			"zombie stays frozen while paused"
+		)
+	_check(player.health() == health, "player takes no damage while paused")
+	menu.close()
+	_check(not paused, "resuming Zombies unfreezes the scene tree")
 
 
 func _chase(director: ZombieDirector, player: FpsPlayer) -> void:

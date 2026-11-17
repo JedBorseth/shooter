@@ -96,32 +96,6 @@ layout_mode = 2
 theme_override_font_sizes/font_size = 19
 text = "Refresh"
 
-[node name="MasterRow" type="HBoxContainer" parent="Margin/Layout"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_constants/separation = 8
-
-[node name="MasterLabel" type="Label" parent="Margin/Layout/MasterRow"]
-layout_mode = 2
-theme_override_colors/font_color = Color(0.57, 0.66, 0.71, 1)
-theme_override_font_sizes/font_size = 17
-text = "Master server"
-
-[node name="MasterAddress" type="LineEdit" parent="Margin/Layout/MasterRow"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 44)
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_font_sizes/font_size = 18
-placeholder_text = "host[:port] of a master server, for example 203.0.113.7"
-
-[node name="MasterApply" type="Button" parent="Margin/Layout/MasterRow"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(120, 44)
-layout_mode = 2
-theme_override_font_sizes/font_size = 18
-text = "Use"
-
 [node name="List" type="Tree" parent="Margin/Layout"]
 unique_name_in_owner = true
 layout_mode = 2
