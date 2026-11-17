@@ -105,7 +105,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Reliable game events on the reliable ENet channel: hits, damage, kills (`NetClient.kill_reported`, ready for a kill feed), and score.
 - [x] Reliable events for Phase 4: joins and leaves with player names and teams, the match phase and clock, and the scoreboard.
 - [ ] Chat.
-- [ ] Hit reactions for third parties: other clients see a victim flinch only when it dies. Send the hit direction to everyone, or add a "hit this tick" bit to `PlayerView`.
+- [x] Hit reactions for third parties: `PlayerView` carries a wrapping hit count and the latest hit's heading, so everyone sees the flinch.
 - [ ] Validate view ticks against what the server expects (its snapshot send time plus RTT and the client's interpolation delay), so a tampered client cannot pick the most favourable moment within the 300 ms rewind window.
 - [ ] Bandwidth: send the owner's full state only when it differs from what the client predicted, or delta-compress it like remote players (about 60 kbps down and 27 kbps up per client today, with 60 Hz snapshots and 120 Hz inputs).
 

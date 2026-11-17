@@ -235,6 +235,10 @@ func _shoot_bot(player: FpsPlayer, client: NetClient, bot: RemotePlayer) -> void
 		)
 	)
 	_check(int(stats.hits_confirmed) >= 4, "the server confirms hits on the moving bot")
+	_check(
+		bot.hits_seen() >= 3,
+		"snapshots carry the hits, so everyone sees the flinch, %d seen" % bot.hits_seen()
+	)
 	_check(int(stats.kills_confirmed) >= 1, "the server confirms the kill")
 	_check(player.score() >= 100, "the server's kill points reach the HUD, %d" % player.score())
 	var info := client.match_info()

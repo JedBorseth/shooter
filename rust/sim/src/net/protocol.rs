@@ -31,7 +31,7 @@ use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState}
 // Version 5 added Team Deathmatch: names, teams, ready-up, loadouts, the
 // match clock, and the scoreboard. Version 6 added burst fire to the
 // predicted combat state, and version 7 mantling to the movement state.
-pub const PROTOCOL_VERSION: u16 = 8;
+pub const PROTOCOL_VERSION: u16 = 9;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
 pub const MAX_INPUTS_PER_PACKET: usize = 24;
 /// Wish vectors are sent as signed bytes; prediction must use the same values.
@@ -225,6 +225,24 @@ pub struct PlayerView {
     pub shots_fired: u32,
     /// Climbing over a ledge.
     pub mantling: bool,
+    /// Hits taken so far (wrapping); an increase means the player was hit, so
+    /// everyone sees the flinch.
+    pub hits: u8,
+    /// The horizontal direction the latest hit travelled, in 1/256 turns
+    /// (see [`hit_direction`]).
+    pub hit_heading: u8,
+}
+
+/// A horizontal direction (`x`, `z`) as 1/256 turns, for `hit_heading`.
+pub fn heading_to_u8(x: f32, z: f32) -> u8 {
+    let turns = x.atan2(z) / std::f32::consts::TAU;
+    (turns * 256.0).round().rem_euclid(256.0) as u8
+}
+
+/// The unit direction (`x`, `z`) of a `hit_heading`.
+pub fn hit_direction(heading: u8) -> (f32, f32) {
+    let angle = f32::from(heading) / 256.0 * std::f32::consts::TAU;
+    (angle.sin(), angle.cos())
 }
 
 impl PlayerView {
@@ -244,6 +262,8 @@ impl PlayerView {
             alive: p.state.alive(),
             shots_fired: combat.shots_fired,
             mantling: p.state.movement.mantling(),
+            hits: 0,
+            hit_heading: 0,
         }
     }
 
@@ -1027,6 +1047,12 @@ fn write_view_delta(w: &mut BitWriter, v: &PlayerView, base: &PlayerView) {
     if shots != 0 {
         w.varint(shots);
     }
+    let hit = (v.hits, v.hit_heading) != (base.hits, base.hit_heading);
+    w.bool(hit);
+    if hit {
+        w.u8(v.hits);
+        w.u8(v.hit_heading);
+    }
 }
 
 fn read_view_delta(r: &mut BitReader, base: &PlayerView) -> DecodeResult<PlayerView> {
@@ -1055,6 +1081,10 @@ fn read_view_delta(r: &mut BitReader, base: &PlayerView) -> DecodeResult<PlayerV
     }
     if r.bool()? {
         v.shots_fired = base.shots_fired.wrapping_add(r.varint()?);
+    }
+    if r.bool()? {
+        v.hits = r.u8()?;
+        v.hit_heading = r.u8()?;
     }
     Ok(v)
 }
@@ -1469,6 +1499,51 @@ mod tests {
         let bytes = snapshot.encode(&[]);
         let decoded = ServerMessage::decode(&bytes, |_| None).unwrap();
         assert_eq!(decoded, snapshot);
+    }
+
+    #[test]
+    fn hits_ride_in_the_view_delta() {
+        let p = sample_state(30);
+        let a = PlayerView::from_state(3, &p, 0.5, -0.1);
+        let full = ServerMessage::Snapshot(Snapshot {
+            tick: 100,
+            baseline: None,
+            own: None,
+            players: vec![a],
+        });
+        assert_eq!(
+            ServerMessage::decode(&full.encode(&[]), |_| None).unwrap(),
+            full
+        );
+        let mut hit = a;
+        hit.hits = a.hits.wrapping_add(1);
+        hit.hit_heading = heading_to_u8(-1.0, 0.0);
+        let delta = ServerMessage::Snapshot(Snapshot {
+            tick: 101,
+            baseline: Some(100),
+            own: None,
+            players: vec![hit],
+        });
+        let baseline = [a];
+        let decoded = ServerMessage::decode(&delta.encode(&baseline), |_| Some(&baseline[..]));
+        assert_eq!(decoded.unwrap(), delta);
+    }
+
+    #[test]
+    fn hit_headings_round_trip() {
+        for (x, z) in [
+            (0.0, 1.0),
+            (1.0, 0.0),
+            (0.0, -1.0),
+            (-0.6, -0.8),
+            (0.28, 0.96),
+        ] {
+            let (rx, rz) = hit_direction(heading_to_u8(x, z));
+            assert!(
+                (rx - x).abs() < 0.02 && (rz - z).abs() < 0.02,
+                "{x},{z} -> {rx},{rz}"
+            );
+        }
     }
 
     #[test]
