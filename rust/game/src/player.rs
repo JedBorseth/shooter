@@ -42,7 +42,7 @@ use shooter_sim::net::prediction::{ErrorSmoothing, Prediction, Reconciled};
 use shooter_sim::net::protocol::{OwnState, Predicted};
 use shooter_sim::player::{self, PlayerEvent, PlayerInput, PlayerParams, PlayerState};
 use shooter_sim::score::{Kill, ScoreRules, ScoreState, ScoreTotals, Scored};
-use shooter_sim::weapon::{self, Action, CombatEvent, FireMode, LoadStage, Reload, WeaponId};
+use shooter_sim::weapon::{self, Action, CombatEvent, FireMode, LoadStage, Reload, Slot, WeaponId};
 use shooter_sim::{Vec2, Vec3, rng};
 
 use crate::aim_assist::{AIM_ASSIST_GROUP, AimAssistTarget};
@@ -140,6 +140,11 @@ pub struct FpsPlayer {
     #[export]
     #[init(val = true)]
     allow_refill: bool,
+    /// Spawn with a primary weapon. Off in Zombies, which starts with only
+    /// the sidearm.
+    #[export]
+    #[init(val = true)]
+    start_with_primary: bool,
     /// How far away weapon racks can be used, in metres.
     #[export]
     #[init(val = 2.6)]
@@ -275,7 +280,7 @@ impl ICharacterBody3D for FpsPlayer {
         let rid = self.base().get_rid();
         self.headroom.add_exception_rid(rid);
         self.base_mut().add_to_group("players");
-        self.state = PlayerState::spawned(&self.params);
+        self.state = self.spawned_state();
 
         self.yaw = self.base().get_rotation().y;
         self.base_mut().set_rotation(Vector3::ZERO);
@@ -666,7 +671,7 @@ impl FpsPlayer {
             return GString::new();
         };
         let name = &id.def().name;
-        let owned = self.state.combat.slots.iter().any(|s| s.id == id);
+        let owned = self.state.combat.carries(id);
         let cost = self.pickup_cost(id);
         if cost == 0 {
             return if owned {
@@ -1055,7 +1060,7 @@ impl FpsPlayer {
     /// What taking `id` from the pickup under the crosshair costs: its price,
     /// or half for ammo of a weapon already carried.
     fn pickup_cost(&self, id: WeaponId) -> i64 {
-        if self.state.combat.slots.iter().any(|s| s.id == id) {
+        if self.state.combat.carries(id) {
             self.look_price / 2
         } else {
             self.look_price
@@ -1650,8 +1655,17 @@ impl FpsPlayer {
         }
     }
 
+    /// A fresh player state: full health and the starting weapons.
+    fn spawned_state(&self) -> PlayerState {
+        let mut state = PlayerState::spawned(&self.params);
+        if !self.start_with_primary {
+            state.combat = state.combat.without(Slot::Primary);
+        }
+        state
+    }
+
     fn respawn(&mut self) {
-        self.state = PlayerState::spawned(&self.params);
+        self.state = self.spawned_state();
         let spawn = self.spawn;
         let mut body = self.base_mut();
         body.set_global_position(spawn.origin);

@@ -143,7 +143,7 @@ Done: rounds with a growing, toughening horde, zombies that walk straight at the
 
 - [x] Spend points: wall weapons with prices, ammo at half price, and debris over two gates that opens side yards with their own spawns and wall weapons (`scripts/zombies_door.gd`; the director is the wallet).
 - [x] Power-ups that drop from kills: Max Ammo, Insta-Kill, Double Points, and a nuke (rules in `rust/sim/src/zombies.rs`, tokens in `scripts/zombies_power_up.gd`).
-- [ ] Start Zombies with only the M1911 (needs an empty primary slot in `CombatState`).
+- [x] Start Zombies with only the M1911 (`WeaponState::carried`; an empty slot cannot be drawn until a weapon is bought).
 - [x] Zombie sounds (groans, attacks, deaths; CC0, `tools/build_zombie_audio.py`) and round stings (synthesized).
 - [x] Barriers: zombies spawn outside and tear the boards off their window; players rebuild them for points (`scripts/zombies_barrier.gd`).
 - [ ] Downed state and revives for co-op, once Zombies runs on the dedicated server.
