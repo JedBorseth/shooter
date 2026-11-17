@@ -197,5 +197,5 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 - [ ] Dedicated server build: a Linux export preset with `dedicated_server=true` (done, exported by the Build workflow), packaged as a Docker image and pushed to GitHub Container Registry from the Build workflow.
 - [x] Determinism test in CI: record an input sequence, run it through `shooter_sim::player::step` twice (and on each OS in the build matrix), and compare state hashes. Catches prediction desyncs before netcode depends on them. (`rust/sim/tests/determinism.rs`)
 - [ ] Visual and performance checks on a GPU runner: run `capture_screens.gd` and a scripted fly-through that records frame times, on a self-hosted runner with a GPU, for trusted branches only.
-- [ ] **good first task** A `justfile` or Makefile with `build`, `run`, `test`, `screens` targets.
+- [x] A `justfile` with `build`, `run`, `test` (the tests listed in CI), `screens`, and `ci` recipes.
 - [ ] **good first task** Editor plugin or script that measures a weapon model's sight line and muzzle to fill in `WeaponView` offsets automatically (what was done by hand for the M4 and M1911).
