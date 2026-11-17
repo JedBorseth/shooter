@@ -199,6 +199,11 @@ pub struct WeaponView {
     since_shot: f32,
     /// Where the support hand rests on this weapon (after any foregrip).
     hand_rest: Option<Vector3>,
+    /// Where the firing hand rests, and the bolt handle it reaches for.
+    right_rest: Option<Vector3>,
+    bolt_handle: Option<Vector3>,
+    /// 0..1: how far the firing hand has gone to the bolt (turns the grip).
+    bolt_hand: f32,
 }
 
 /// One moving part: the node, its rest transform, and the transform from its
@@ -207,6 +212,8 @@ struct Part {
     node: Gd<Node3D>,
     rest: Transform3D,
     to_view: Transform3D,
+    /// The part's current transform in view space (after `pose`).
+    current: Transform3D,
 }
 
 impl Part {
@@ -214,11 +221,33 @@ impl Part {
         let node = view.try_get_node_as::<Node3D>(&format!("Model/Mesh/{name}"))?;
         let parent = node.get_parent_node_3d()?;
         let to_view = view.get_global_transform().affine_inverse() * parent.get_global_transform();
+        let rest = node.get_transform();
         Some(Part {
-            rest: node.get_transform(),
+            current: to_view * rest,
+            rest,
             node,
             to_view,
         })
+    }
+
+    /// Where a view-space point on the part at rest is now.
+    fn track(&self, point: Vector3) -> Vector3 {
+        self.current * ((self.to_view * self.rest).affine_inverse() * point)
+    }
+
+    /// The part's bounds at rest, in view space: (min, max).
+    fn bounds_in_view(&self) -> Option<(Vector3, Vector3)> {
+        let mesh = self.node.clone().try_cast::<MeshInstance3D>().ok()?;
+        let aabb = mesh.get_aabb();
+        let to_view = self.to_view * self.rest;
+        let mut min = Vector3::splat(f32::MAX);
+        let mut max = Vector3::splat(f32::MIN);
+        for i in 0..8 {
+            let corner = to_view * aabb.get_corner(i);
+            min = min.coord_min(corner);
+            max = max.coord_max(corner);
+        }
+        Some((min, max))
     }
 
     /// Rest position in view space.
@@ -233,6 +262,7 @@ impl Part {
         let spin = Basis::from_axis_angle(Vector3::BACK, turn);
         let rotated = Transform3D::new(spin, pivot - spin * pivot) * rest;
         let moved = Transform3D::new(rotated.basis, rotated.origin + offset);
+        self.current = moved;
         self.node
             .set_transform(self.to_view.affine_inverse() * moved);
     }
@@ -277,10 +307,11 @@ const INSPECT_KEYS: [(f32, [f32; 5]); 7] = [
     (2.75, [0.0, 0.0, 0.0, 0.0, 0.0]),
 ];
 
-/// The inspect pose at `t` seconds: rotation (degrees) and offset.
-fn inspect_pose(t: f32) -> (Vector3, Vector3) {
+/// The pose at `t` from `keys` (time, then pitch, yaw, roll in degrees and
+/// x, y offsets): rotation (degrees) and offset.
+fn key_pose(keys: &[(f32, [f32; 5])], t: f32) -> (Vector3, Vector3) {
     let channel = |i: usize| {
-        let keys: Vec<(f32, f32)> = INSPECT_KEYS.iter().map(|(time, v)| (*time, v[i])).collect();
+        let keys: Vec<(f32, f32)> = keys.iter().map(|(time, v)| (*time, v[i])).collect();
         keyed(&keys, t)
     };
     (
@@ -310,6 +341,31 @@ const PUMP_BACK: [(f32, f32); 4] = [(0.12, 0.0), (0.42, 1.0), (0.52, 1.0), (0.82
 /// A bolt: lift, draw back, push forward, and turn down, over a cycle.
 const BOLT_LIFT: [(f32, f32); 4] = [(0.08, 0.0), (0.24, 1.0), (0.7, 1.0), (0.84, 0.0)];
 const BOLT_BACK: [(f32, f32); 4] = [(0.24, 0.0), (0.42, 1.0), (0.5, 1.0), (0.66, 0.0)];
+/// The firing hand on the bolt handle: off the grip just before the bolt
+/// lifts, back once it has turned down.
+const BOLT_HAND: [(f32, f32); 4] = [(0.0, 0.0), (0.09, 1.0), (0.8, 1.0), (0.94, 0.0)];
+/// From the handle to where the hand's grip centre sits (the fingers wrap
+/// it from behind and below).
+const BOLT_HAND_OFFSET: Vector3 = Vector3::new(0.012, -0.03, 0.03);
+/// Extra rake (degrees) for the hand on the handle.
+const BOLT_HAND_RAKE: f32 = 35.0;
+/// A pistol's press check over its draw: the slide eased back and let go.
+const PRESS_CHECK: [(f32, f32); 4] = [(0.5, 0.0), (0.64, 1.0), (0.72, 1.0), (0.8, 0.0)];
+
+/// A draw, over the raise (fraction, then pitch, yaw, roll in degrees and
+/// x, y offsets in metres): up from low right, rolled in, a slight
+/// overshoot as it settles on the shoulder.
+const DRAW_KEYS: [(f32, [f32; 5]); 4] = [
+    (0.0, [-24.0, -10.0, 24.0, 0.05, -0.13]),
+    (0.6, [5.0, 2.0, -5.0, 0.0, 0.012]),
+    (0.82, [-1.5, -0.5, 1.5, 0.0, -0.003]),
+    (1.0, [0.0, 0.0, 0.0, 0.0, 0.0]),
+];
+/// A holster, over the lower: dipped and rolled out to the left.
+const HOLSTER_KEYS: [(f32, [f32; 5]); 2] = [
+    (0.0, [0.0, 0.0, 0.0, 0.0, 0.0]),
+    (1.0, [-26.0, 10.0, -20.0, -0.04, -0.16]),
+];
 
 #[godot_api]
 impl INode3D for WeaponView {
@@ -372,10 +428,26 @@ impl WeaponView {
             .try_get_node_as::<Node3D>("GripLeft")
             .map(|m| m.get_position());
         let view = self.to_gd().upcast::<Node3D>();
+        self.right_rest = self
+            .base()
+            .try_get_node_as::<Node3D>("GripRight")
+            .map(|m| m.get_position());
+        let bolt = Part::find(&view, "Bolt");
+        // The handle is the bolt's far right end, halfway up.
+        self.bolt_handle = bolt
+            .as_ref()
+            .and_then(Part::bounds_in_view)
+            .map(|(min, max)| {
+                Vector3::new(
+                    max.x - 0.006,
+                    (min.y + max.y) * 0.5,
+                    (min.z + max.z) * 0.5 + 0.01,
+                )
+            });
         self.parts = Some(MovingParts {
             magazine: Part::find(&view, "Magazine"),
             pump: Part::find(&view, "Pump"),
-            bolt: Part::find(&view, "Bolt"),
+            bolt,
             slide: Part::find(&view, "Slide"),
         });
     }
@@ -396,6 +468,7 @@ impl WeaponView {
         };
         let rest_hand = self.hand_rest.unwrap_or_default();
         let mut hand = None;
+        let mut right_hand = None;
         // The magazine drops down and a little forward, along its own length.
         let mag_dir = Vector3::new(0.0, -1.0, -0.25).normalized();
         if let Some(mag) = &mut parts.magazine {
@@ -440,15 +513,38 @@ impl WeaponView {
             // Up about the bore, then back along it.
             let pivot = Vector3::new(0.0, center.y - 0.005, center.z);
             bolt.pose(Vector3::new(0.0, 0.0, back * 0.065), lift * 1.1, pivot);
+            // The firing hand leaves the grip, works the handle, and comes back.
+            let reach = match frame.action {
+                ViewAction::Cycling(p) => keyed(&BOLT_HAND, p),
+                _ => 0.0,
+            };
+            if let (Some(handle), Some(rest)) = (self.bolt_handle, self.right_rest)
+                && reach > 0.0
+            {
+                let on_handle = bolt.track(handle) + BOLT_HAND_OFFSET;
+                right_hand = Some(rest.lerp(on_handle, reach));
+            }
+            self.bolt_hand = reach;
         }
         if let Some(slide) = &mut parts.slide {
             let kick = (1.0 - (self.since_shot / 0.07)).clamp(0.0, 1.0);
             let locked = frame.empty && !matches!(frame.action, ViewAction::Reloading(_));
-            let back = if locked { 1.0 } else { kick };
+            // Drawn: a press check, the slide eased back and let go.
+            let check = match frame.action {
+                ViewAction::Raising(p) => keyed(&PRESS_CHECK, p) * 0.45,
+                _ => 0.0,
+            };
+            let back = if locked { 1.0 } else { kick.max(check) };
             slide.pose(Vector3::new(0.0, 0.0, back * 0.028), 0.0, Vector3::ZERO);
         }
         if let Some(mut marker) = self.base().try_get_node_as::<Node3D>("GripLeft") {
             marker.set_position(hand.unwrap_or(rest_hand));
+        }
+        if let (Some(rest), Some(mut marker)) = (
+            self.right_rest,
+            self.base().try_get_node_as::<Node3D>("GripRight"),
+        ) {
+            marker.set_position(right_hand.unwrap_or(rest));
         }
         self.parts = Some(parts);
     }
@@ -557,7 +653,9 @@ impl WeaponView {
 
     /// Where the hands hold this weapon, in its own space.
     pub fn grips(&self) -> Grips {
-        crate::character::rig::grips_of(&self.to_gd().upcast(), self.grip_rake)
+        // On the bolt the hand turns palm-down over the handle.
+        let rake = self.grip_rake + BOLT_HAND_RAKE * self.bolt_hand;
+        crate::character::rig::grips_of(&self.to_gd().upcast(), rake)
     }
 
     /// Third-person setup: brightened standard materials (the low-poly pack is
@@ -1053,7 +1151,6 @@ pub struct ViewmodelRig {
     sprint_blend: f32,
     reload_blend: f32,
     reload_progress: f32,
-    switch_drop: f32,
     /// x: pitch up (radians), y: roll (radians), z: push back (metres).
     kick: Spring,
     /// Shots fired, to alternate the kick's roll direction.
@@ -1298,7 +1395,7 @@ impl ViewmodelRig {
             let t = t + dt;
             self.inspect = (!busy && t < INSPECT_KEYS[INSPECT_KEYS.len() - 1].0).then_some(t);
         }
-        let inspect = self.inspect.map(inspect_pose);
+        let inspect = self.inspect.map(|t| key_pose(&INSPECT_KEYS, t));
 
         let ads = smoothstep(frame.ads);
         let hip_amount = 1.0 - ads;
@@ -1341,13 +1438,12 @@ impl ViewmodelRig {
         self.reload_blend += (reload_target - self.reload_blend) * smoothing(12.0, dt);
         let dip = (PI * self.reload_progress).sin().max(0.0) * self.reload_blend;
 
-        // Switching: drop the old weapon out of view, raise the new one.
-        let drop_target = match frame.action {
-            ViewAction::Lowering(p) => smoothstep(p),
-            ViewAction::Raising(p) => 1.0 - smoothstep(p),
-            _ => 0.0,
+        // Switching: holster the old weapon, draw the new one.
+        let (switch_rot, switch_pos) = match frame.action {
+            ViewAction::Lowering(p) => key_pose(&HOLSTER_KEYS, p),
+            ViewAction::Raising(p) => key_pose(&DRAW_KEYS, p),
+            _ => (Vector3::ZERO, Vector3::ZERO),
         };
-        self.switch_drop = drop_target;
 
         // Bolt or pump: a quick push and roll, peaking mid-cycle. A loaded shell
         // gives a small bump.
@@ -1378,11 +1474,7 @@ impl ViewmodelRig {
         position += Vector3::new(0.0, self.land.value.y * 0.1, 0.0);
         position += cycle_pos * cycle + Vector3::new(0.0, -0.02 * bump, 0.01 * bump);
         // Reload: tilt the magazine well toward the camera and bring the weapon inward.
-        position += Vector3::new(
-            -0.03 * dip,
-            0.015 * dip - 0.28 * self.switch_drop,
-            0.02 * dip,
-        );
+        position += Vector3::new(-0.03 * dip, 0.015 * dip, 0.02 * dip) + switch_pos;
 
         let (ins_rot, ins_pos) = inspect.unwrap_or_default();
         position += ins_pos;
@@ -1391,14 +1483,18 @@ impl ViewmodelRig {
             + deg(sprint_rot.x) * sprint
             + self.kick.value.x * 0.35
             + deg(10.0) * dip
-            - deg(35.0) * self.switch_drop
+            + deg(switch_rot.x)
             + deg(cycle_rot.x) * cycle
             + deg(4.0) * bump;
-        let yaw = deg(ins_rot.y) + deg(sprint_rot.y) * sprint + deg(cycle_rot.y) * cycle;
+        let yaw = deg(ins_rot.y)
+            + deg(switch_rot.y)
+            + deg(sprint_rot.y) * sprint
+            + deg(cycle_rot.y) * cycle;
         let roll = deg(ins_rot.z)
             + deg(sprint_rot.z) * sprint
             + bob_roll
             + deg(32.0) * dip
+            + deg(switch_rot.z)
             + self.kick.value.y * 0.25
             + deg(cycle_rot.z) * cycle;
 
