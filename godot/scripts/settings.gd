@@ -21,10 +21,71 @@ const SAVE_DELAY := 0.75
 ## Shared public host for discovery and future account/matchmaking services.
 const SERVICE_HOST := "borseth.ddns.net"
 const DEFAULT_DIRECTORY := SERVICE_HOST + ":27010"
+## Base stick turn rates (degrees per second) at a stick sensitivity of 1.0.
+const STICK_YAW_SPEED := 200.0
+const STICK_PITCH_SPEED := 150.0
+
+## Actions the player can rebind, with their names in the menu. Only keyboard
+## and mouse bindings change; gamepad bindings stay as they are.
+const REBINDABLE := {
+	&"move_forward": "Move forward",
+	&"move_back": "Move back",
+	&"move_left": "Move left",
+	&"move_right": "Move right",
+	&"jump": "Jump",
+	&"sprint": "Sprint",
+	&"crouch": "Crouch / slide",
+	&"fire": "Fire",
+	&"aim": "Aim",
+	&"reload": "Reload",
+	&"weapon_1": "Primary weapon",
+	&"weapon_2": "Secondary weapon",
+	&"interact": "Interact",
+	&"inspect": "Inspect weapon",
+	&"loadout": "Loadout",
+	&"scoreboard": "Scoreboard",
+}
+
+## Xbox-style names of gamepad buttons, by `JoyButton`.
+const JOY_BUTTON_NAMES := {
+	JOY_BUTTON_A: "A",
+	JOY_BUTTON_B: "B",
+	JOY_BUTTON_X: "X",
+	JOY_BUTTON_Y: "Y",
+	JOY_BUTTON_BACK: "View",
+	JOY_BUTTON_GUIDE: "Guide",
+	JOY_BUTTON_START: "Menu",
+	JOY_BUTTON_LEFT_STICK: "LS",
+	JOY_BUTTON_RIGHT_STICK: "RS",
+	JOY_BUTTON_LEFT_SHOULDER: "LB",
+	JOY_BUTTON_RIGHT_SHOULDER: "RB",
+	JOY_BUTTON_DPAD_UP: "D-pad up",
+	JOY_BUTTON_DPAD_DOWN: "D-pad down",
+	JOY_BUTTON_DPAD_LEFT: "D-pad left",
+	JOY_BUTTON_DPAD_RIGHT: "D-pad right",
+}
+
+const MOUSE_BUTTON_NAMES := {
+	MOUSE_BUTTON_LEFT: "LMB",
+	MOUSE_BUTTON_RIGHT: "RMB",
+	MOUSE_BUTTON_MIDDLE: "MMB",
+	MOUSE_BUTTON_WHEEL_UP: "Wheel up",
+	MOUSE_BUTTON_WHEEL_DOWN: "Wheel down",
+	MOUSE_BUTTON_XBUTTON1: "Mouse 4",
+	MOUSE_BUTTON_XBUTTON2: "Mouse 5",
+}
 
 const DEFAULTS := {
 	&"mouse_sensitivity": 1.0,
 	&"ads_sensitivity": 1.0,
+	&"invert_mouse_y": false,
+	&"invert_stick_y": false,
+	&"stick_sensitivity": 1.0,
+	&"stick_deadzone": 0.1,
+	&"stick_curve": 2.0,
+	&"aim_assist": true,
+	&"aim_assist_strength": 1.0,
+	&"rumble": true,
 	&"fov": 102.0,
 	&"camera_motion": true,
 	&"fullscreen": false,
@@ -45,7 +106,17 @@ const DEFAULTS := {
 
 ## Config file section for each setting.
 const SECTIONS := {
-	"controls": [&"mouse_sensitivity", &"ads_sensitivity"],
+	"controls": [&"mouse_sensitivity", &"ads_sensitivity", &"invert_mouse_y"],
+	"gamepad":
+	[
+		&"invert_stick_y",
+		&"stick_sensitivity",
+		&"stick_deadzone",
+		&"stick_curve",
+		&"aim_assist",
+		&"aim_assist_strength",
+		&"rumble",
+	],
 	"video":
 	[
 		&"fov",
@@ -72,6 +143,10 @@ const INT_OPTIONS := {
 const RANGES := {
 	&"mouse_sensitivity": Vector2(0.1, 5.0),
 	&"ads_sensitivity": Vector2(0.3, 2.0),
+	&"stick_sensitivity": Vector2(0.3, 2.5),
+	&"stick_deadzone": Vector2(0.02, 0.3),
+	&"stick_curve": Vector2(1.0, 3.0),
+	&"aim_assist_strength": Vector2(0.0, 1.5),
 	&"fov": Vector2(80.0, 120.0),
 	&"master_volume": Vector2(0.0, 1.0),
 	&"weapons_volume": Vector2(0.0, 1.0),
@@ -95,6 +170,16 @@ var path := "user://settings.cfg"
 var mouse_sensitivity: float = DEFAULTS[&"mouse_sensitivity"]
 ## Sensitivity multiplier while aiming down sights.
 var ads_sensitivity: float = DEFAULTS[&"ads_sensitivity"]
+var invert_mouse_y: bool = DEFAULTS[&"invert_mouse_y"]
+## Gamepad look: inversion, turn rate multiplier, inner deadzone, response
+## curve exponent, aim assist and its strength, and vibration.
+var invert_stick_y: bool = DEFAULTS[&"invert_stick_y"]
+var stick_sensitivity: float = DEFAULTS[&"stick_sensitivity"]
+var stick_deadzone: float = DEFAULTS[&"stick_deadzone"]
+var stick_curve: float = DEFAULTS[&"stick_curve"]
+var aim_assist: bool = DEFAULTS[&"aim_assist"]
+var aim_assist_strength: float = DEFAULTS[&"aim_assist_strength"]
+var rumble: bool = DEFAULTS[&"rumble"]
 ## Horizontal field of view in degrees at 16:9. See `vertical_fov`.
 var fov: float = DEFAULTS[&"fov"]
 ## Head bob and strafe tilt.
@@ -124,6 +209,10 @@ var master_server: String = DEFAULTS[&"master_server"]
 var player_name: String = DEFAULTS[&"player_name"]
 ## Weapon key of the primary to spawn with in Team Deathmatch.
 var loadout_primary: String = DEFAULTS[&"loadout_primary"]
+
+## Keyboard and mouse bindings changed from the defaults: action to a
+## serialized event (see `_event_to_value`).
+var key_bindings := {}
 
 var _dirty := false
 var _save_timer := Timer.new()
@@ -182,6 +271,125 @@ func apply_to_player(player: Node) -> void:
 	player.set(&"ads_sensitivity_scale", ads_sensitivity)
 	player.set(&"base_fov", vertical_fov())
 	player.set(&"camera_motion", camera_motion)
+	player.set(&"mouse_invert_y", invert_mouse_y)
+	player.set(&"stick_invert_y", invert_stick_y)
+	player.set(&"stick_yaw_speed", STICK_YAW_SPEED * stick_sensitivity)
+	player.set(&"stick_pitch_speed", STICK_PITCH_SPEED * stick_sensitivity)
+	player.set(&"stick_deadzone", stick_deadzone)
+	player.set(&"stick_curve", stick_curve)
+	player.set(&"aim_assist", aim_assist)
+	player.set(&"aim_assist_strength", aim_assist_strength)
+	player.set(&"rumble", rumble)
+
+
+## The key or button bound to `action`, for prompts ("F", "LMB", or with
+## `gamepad`, "X"). On a gamepad, interact shares the reload button.
+func key_label(action: StringName, gamepad := false) -> String:
+	if gamepad and action == &"interact":
+		action = &"reload"
+	if not InputMap.has_action(action):
+		return "?"
+	for event: InputEvent in InputMap.action_get_events(action):
+		if gamepad and event is InputEventJoypadButton:
+			var button := (event as InputEventJoypadButton).button_index
+			return JOY_BUTTON_NAMES.get(button, "Button %d" % button)
+		if not gamepad and (event is InputEventKey or event is InputEventMouseButton):
+			return event_label(event)
+	return "?"
+
+
+## A keyboard or mouse event's name, as the menu shows it.
+func event_label(event: InputEvent) -> String:
+	if event is InputEventMouseButton:
+		var button := (event as InputEventMouseButton).button_index
+		return MOUSE_BUTTON_NAMES.get(button, "Mouse %d" % button)
+	if event is InputEventKey:
+		var key := event as InputEventKey
+		var code := key.physical_keycode if key.physical_keycode != KEY_NONE else key.keycode
+		if not _headless() and key.physical_keycode != KEY_NONE:
+			var label := DisplayServer.keyboard_get_label_from_physical(key.physical_keycode)
+			if label != KEY_NONE:
+				code = label
+		return OS.get_keycode_string(code)
+	return "?"
+
+
+## The keyboard or mouse event bound to `action`, or null.
+func binding(action: StringName) -> InputEvent:
+	for event: InputEvent in InputMap.action_get_events(action):
+		if event is InputEventKey or event is InputEventMouseButton:
+			return event
+	return null
+
+
+## Binds `action` to a key or mouse button, in place of its current keyboard
+## or mouse binding. An action that had the same key gets this one's old key,
+## so nothing is left unbound.
+func rebind(action: StringName, event: InputEvent) -> void:
+	if not REBINDABLE.has(action):
+		push_error("'%s' cannot be rebound." % action)
+		return
+	var value: Variant = _event_to_value(event)
+	if value == null:
+		return
+	var old := binding(action)
+	for other: StringName in REBINDABLE:
+		var current := binding(other)
+		if other != action and current != null and _event_to_value(current) == value:
+			if old == null:
+				_set_binding(other, null)
+			else:
+				_set_binding(other, _event_to_value(old))
+	_set_binding(action, value)
+	_mark_dirty()
+	changed.emit()
+
+
+func _set_binding(action: StringName, value: Variant) -> void:
+	for event: InputEvent in InputMap.action_get_events(action):
+		if event is InputEventKey or event is InputEventMouseButton:
+			InputMap.action_erase_event(action, event)
+	var event := _value_to_event(value)
+	if event != null:
+		InputMap.action_add_event(action, event)
+	key_bindings[action] = value
+
+
+## A key or mouse button as `["key", physical keycode]` or `["mouse", button]`,
+## or null for anything else.
+static func _event_to_value(event: InputEvent) -> Variant:
+	if event is InputEventKey:
+		var key := event as InputEventKey
+		var code := key.physical_keycode if key.physical_keycode != KEY_NONE else key.keycode
+		return ["key", int(code)]
+	if event is InputEventMouseButton:
+		return ["mouse", int((event as InputEventMouseButton).button_index)]
+	return null
+
+
+static func _value_to_event(value: Variant) -> InputEvent:
+	if not (value is Array and value.size() == 2 and value[1] is int):
+		return null
+	match value[0]:
+		"key":
+			var key := InputEventKey.new()
+			key.physical_keycode = value[1]
+			return key
+		"mouse":
+			var mouse := InputEventMouseButton.new()
+			mouse.button_index = value[1]
+			return mouse
+	return null
+
+
+## Puts every action back to the project's bindings, then applies `key_bindings`.
+func _apply_key_bindings() -> void:
+	InputMap.load_from_project_settings()
+	var stored := key_bindings.duplicate()
+	key_bindings.clear()
+	for action: Variant in stored:
+		if REBINDABLE.has(action) and InputMap.has_action(action):
+			_set_binding(action, stored[action])
 
 
 ## Validates, stores, and applies one setting, then schedules a save.
@@ -202,6 +410,8 @@ func reset_to_defaults() -> void:
 	for key: StringName in DEFAULTS:
 		set(key, DEFAULTS[key])
 	master_server = directory_address(OS.get_cmdline_user_args())
+	key_bindings.clear()
+	_apply_key_bindings()
 	apply_all()
 	_mark_dirty()
 	changed.emit()
@@ -220,6 +430,11 @@ func load_settings() -> void:
 			)
 			set(key, _sanitize(key, stored))
 	master_server = directory_address(OS.get_cmdline_user_args())
+	key_bindings.clear()
+	if err == OK and config.has_section("keys"):
+		for action: String in config.get_section_keys("keys"):
+			key_bindings[StringName(action)] = config.get_value("keys", action)
+	_apply_key_bindings()
 	_dirty = false
 	_save_timer.stop()
 	apply_all()
@@ -231,6 +446,8 @@ func save_settings() -> Error:
 	for section: String in SECTIONS:
 		for key: StringName in SECTIONS[section]:
 			config.set_value(section, key, get(key))
+	for action: StringName in key_bindings:
+		config.set_value("keys", action, key_bindings[action])
 	var err := config.save(path)
 	if err != OK:
 		push_warning("Could not save %s (%s)." % [path, error_string(err)])

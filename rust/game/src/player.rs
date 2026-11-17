@@ -170,6 +170,9 @@ pub struct FpsPlayer {
     stick_curve: f32,
     #[export]
     stick_invert_y: bool,
+    /// Mouse up looks down.
+    #[export]
+    mouse_invert_y: bool,
     /// Controller aim assist: slowdown and rotational, never a snap. Mouse
     /// aiming never gets it.
     #[export]
@@ -319,8 +322,13 @@ impl ICharacterBody3D for FpsPlayer {
                     let zoom = self.camera.get_fov() / self.base_fov
                         * (1.0 + (self.ads_sensitivity_scale - 1.0) * ads);
                     let delta = motion.get_screen_relative() * self.mouse_sensitivity * zoom;
+                    let dy = if self.mouse_invert_y {
+                        -delta.y
+                    } else {
+                        delta.y
+                    };
                     self.yaw -= delta.x;
-                    self.pitch = (self.pitch - delta.y).clamp(-PITCH_LIMIT, PITCH_LIMIT);
+                    self.pitch = (self.pitch - dy).clamp(-PITCH_LIMIT, PITCH_LIMIT);
                 }
                 return;
             }
@@ -660,14 +668,17 @@ impl FpsPlayer {
     }
 
     /// Prompt for the pickup or device in front of the player, or empty.
+    /// Devices write `{key}` where the interact key goes.
     #[func]
     fn interact_prompt(&self) -> GString {
+        let key = self.key_label("interact");
         if let Some(device) = &self.look_device {
             let mut device = device.clone();
-            return device
+            let prompt = device
                 .call("interact_prompt", &[])
                 .try_to::<GString>()
                 .unwrap_or_default();
+            return GString::from(&prompt.to_string().replace("{key}", &key));
         }
         let Some(id) = self.look_target else {
             return GString::new();
@@ -677,9 +688,9 @@ impl FpsPlayer {
         let cost = self.pickup_cost(id);
         if cost == 0 {
             return if owned {
-                GString::from(&format!("[F] Refill {name} ammo"))
+                GString::from(&format!("[{key}] Refill {name} ammo"))
             } else {
-                GString::from(&format!("[F] Take {name}"))
+                GString::from(&format!("[{key}] Take {name}"))
             };
         }
         let what = if owned {
@@ -688,10 +699,32 @@ impl FpsPlayer {
             name.clone()
         };
         if self.wallet_points() >= cost {
-            GString::from(&format!("[F] Buy {what}: {cost}"))
+            GString::from(&format!("[{key}] Buy {what}: {cost}"))
         } else {
             GString::from(&format!("{what}: {cost} points"))
         }
+    }
+
+    /// The key or button bound to `action`, for prompts: the gamepad's when
+    /// that is in use. From the Settings autoload, which knows the bindings.
+    fn key_label(&self, action: &str) -> String {
+        let label = self
+            .base()
+            .get_node_or_null("/root/Settings")
+            .map(|mut settings| {
+                settings
+                    .call(
+                        "key_label",
+                        &[
+                            StringName::from(action).to_variant(),
+                            self.gamepad.to_variant(),
+                        ],
+                    )
+                    .to_string()
+            });
+        label
+            .filter(|l| !l.is_empty())
+            .unwrap_or_else(|| "F".to_owned())
     }
 
     /// Fills every carried weapon's ammo on the next tick (Zombies' Max Ammo).
@@ -948,11 +981,17 @@ impl FpsPlayer {
         let sprint = held("sprint");
         let crouch = held("crouch");
         let fire = held("fire");
-        let reload = held("reload");
+        let mut reload = held("reload");
         let next = held("weapon_next");
         let slot_1 = held("weapon_1");
         let slot_2 = held("weapon_2");
-        let interact_down = held("interact");
+        let mut interact_down = held("interact");
+        // On a gamepad the reload button uses whatever is in front of the
+        // player (a rack, a door), and reloads otherwise.
+        if self.gamepad && reload && (self.look_device.is_some() || self.look_target.is_some()) {
+            interact_down = true;
+            reload = false;
+        }
         let mut interact = interact_down && !self.interact_held;
         self.interact_held = interact_down;
         if interact && let Some(device) = &self.look_device {

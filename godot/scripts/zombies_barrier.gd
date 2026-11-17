@@ -53,7 +53,7 @@ func tear() -> bool:
 
 
 func interact_prompt() -> String:
-	return "[F] Rebuild barrier" if _boards < BOARDS else ""
+	return "[{key}] Rebuild barrier" if _boards < BOARDS else ""
 
 
 func interact(_player: Node) -> void:

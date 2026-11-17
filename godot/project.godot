@@ -70,11 +70,11 @@ weapon_next={
 }
 weapon_1={
 "deadzone": 0.2,
-"events": [Object(InputEventKey,"physical_keycode":49)]
+"events": [Object(InputEventKey,"physical_keycode":49), Object(InputEventJoypadButton,"device":-1,"button_index":13,"pressed":true)]
 }
 weapon_2={
 "deadzone": 0.2,
-"events": [Object(InputEventKey,"physical_keycode":50)]
+"events": [Object(InputEventKey,"physical_keycode":50), Object(InputEventJoypadButton,"device":-1,"button_index":14,"pressed":true)]
 }
 interact={
 "deadzone": 0.2,

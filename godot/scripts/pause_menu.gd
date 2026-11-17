@@ -20,6 +20,9 @@ var _toggles: Dictionary[StringName, CheckButton] = {}
 var _fps_option: OptionButton
 var _quality_option: OptionButton
 var _scale_option: OptionButton
+## One button per rebindable action, and the action waiting for a key.
+var _bind_buttons: Dictionary[StringName, Button] = {}
+var _capturing: StringName = &""
 var _click: AudioStreamPlayer
 var _hover: AudioStreamPlayer
 var _quiet := false
@@ -56,6 +59,9 @@ func _ready() -> void:
 
 func _input(event: InputEvent) -> void:
 	if event.is_echo():
+		return
+	if _capturing != &"":
+		_capture(event)
 		return
 	var pause := event.is_action_pressed(PAUSE_ACTION)
 	if not is_open():
@@ -195,6 +201,31 @@ func _build_settings() -> void:
 		0.05,
 		func(v: float) -> String: return "%.2f×" % v
 	)
+	_add_toggle(controls, &"invert_mouse_y", "Invert mouse Y")
+
+	var gamepad := _add_section("Gamepad")
+	_add_slider(gamepad, &"stick_sensitivity", "Look sensitivity", 0.05, sensitivity)
+	_add_slider(gamepad, &"stick_deadzone", "Deadzone", 0.01, percent)
+	_add_slider(
+		gamepad,
+		&"stick_curve",
+		"Response curve",
+		0.1,
+		func(v: float) -> String: return "Linear" if v < 1.05 else "%.1f" % v
+	)
+	_add_toggle(gamepad, &"invert_stick_y", "Invert stick Y")
+	_add_toggle(gamepad, &"aim_assist", "Aim assist")
+	_add_slider(gamepad, &"aim_assist_strength", "Aim assist strength", 0.05, percent)
+	_add_toggle(gamepad, &"rumble", "Vibration")
+
+	var keys := _add_section("Key bindings")
+	for action: StringName in Settings.REBINDABLE:
+		var button := Button.new()
+		button.custom_minimum_size = Vector2(150, 0)
+		button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		button.pressed.connect(_start_capture.bind(action))
+		_add_row(keys, Settings.REBINDABLE[action], button)
+		_bind_buttons[action] = button
 
 	var video := _add_section("Video")
 	_add_slider(
@@ -327,8 +358,38 @@ func _highlight_row(panel: PanelContainer, label: Label, on: bool) -> void:
 		label.remove_theme_color_override(&"font_color")
 
 
+## Waits for the next key or mouse button to bind to `action`.
+func _start_capture(action: StringName) -> void:
+	_capturing = action
+	_bind_buttons[action].text = "Press a key…"
+
+
+## Binds the captured key or mouse button. Escape, or any gamepad button,
+## cancels.
+func _capture(event: InputEvent) -> void:
+	var key := event as InputEventKey
+	var mouse := event as InputEventMouseButton
+	var cancel := (
+		(key != null and key.pressed and key.physical_keycode == KEY_ESCAPE)
+		or (event is InputEventJoypadButton and event.is_pressed())
+	)
+	var chosen := (key != null and key.pressed) or (mouse != null and mouse.pressed)
+	if not (cancel or chosen):
+		return
+	get_viewport().set_input_as_handled()
+	var action := _capturing
+	_capturing = &""
+	if not cancel:
+		Settings.rebind(action, event)
+	_sync_controls()
+	_focus(_bind_buttons[action])
+
+
 ## Shows the current Settings values without feeding changes back.
 func _sync_controls() -> void:
+	for action: StringName in _bind_buttons:
+		var bound := Settings.binding(action)
+		_bind_buttons[action].text = "—" if bound == null else Settings.event_label(bound)
 	for key: StringName in _sliders:
 		var v: float = Settings.get(key)
 		_sliders[key].set_value_no_signal(v)

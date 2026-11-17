@@ -29,7 +29,7 @@ func interact_prompt() -> String:
 		return ""
 	var wallet := get_tree().get_first_node_in_group("zombies_wallet")
 	if wallet != null and int(wallet.points()) >= price:
-		return "[F] %s: %d" % [description, price]
+		return "[{key}] %s: %d" % [description, price]
 	return "%s: %d points" % [description, price]
 
 
