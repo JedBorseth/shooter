@@ -9,15 +9,49 @@ around a shot answers it, and handling is heard beat by beat.
 | Bus | Sends to | What plays on it |
 | --- | --- | --- |
 | Master | | Hard limiter at -0.5 dBFS. |
-| Weapons | Master | Gunshot layers, yours and everyone else's. Keys the ambience ducker. |
+| Weapons | Master | Gunshot layers, yours and everyone else's (near). Keys the ambience ducker. No engine reverb: tails are baked. |
+| WeaponsDistant | Weapons | Other players' mid and far gunfire. Ducked by close gunfire. |
 | Effects | Master | Impacts, shells, landing and hurt sounds. Room reverb indoors. |
 | WeaponFoley | Effects | Weapon handling (`weapon_foley.rs`). Its own bus so a reload never ducks the ambience. |
 | Footsteps | Master | Everyone's steps and body sounds. |
 | Ambience | Master | Beds and prop emitters, ducked by gunfire. |
 | UI | Master | Menus, hit markers, medals. |
+| Player | Master | Your own breath, heartbeat, being hit, ringing ears, death. Never muffled. |
 
 `AudioEnvironment` (`acoustics.rs`) adds filtered copies of buses on demand:
 `"<bus> (occluded)"` (low-pass) and `"<bus> (behind)"` (high shelf).
+
+### Loudness priority and the health muffle
+
+Rather than a compressor that pumps everything, close gunfire asks for a
+duck (`acoustics::request_duck`): your own shot at full strength, anyone
+else's falling off to nothing at 15 m. The environment turns Footsteps down
+4 dB and WeaponsDistant 6 dB by that amount, with an amplifier of its own
+(`PriorityDuck`) so the volume settings stay as set, and lets go over 0.35 s.
+Reloads and other handling never duck anything.
+
+Below half health, `PlayerSounds` (`player_sounds.rs`) closes a low-pass
+(`HealthMuffle`) on Weapons, Effects, Footsteps, and Ambience, from open to
+1.2 kHz near death; the Player bus stays clear, so the heartbeat and breath
+come forward. Death sweeps it to 350 Hz; health coming back opens it over
+about a second.
+
+### Voice budget
+
+Every sound plays from a fixed pool; nothing is instantiated per shot:
+
+| Source | Voices |
+| --- | --- |
+| Your gun (snap, body, tail, indoor tail, mech, hollow) | 6 players, 1 to 4 voices each |
+| Your weapon's handling (`WeaponFoley`) | 4 per view |
+| Each other player: gunfire (snap, body, tail, mid, far), steps, body, reload | 8 players |
+| Impacts and ricochets, everyone's (`ShotTracer`) | 10 |
+| Near misses | 2 |
+| Slapback | 2 |
+| Your body (breath, heart, hurt, ears, moves, step gear) | 6 |
+
+Delayed sounds (speed of sound, bullet flight, slapback) wait in bounded
+queues (8, 16, and 4 entries).
 
 ## Gunshots
 
@@ -121,6 +155,26 @@ pool of ten positional voices taken in turn; the impact effect scene is
 visual only.
 
 The sounds are synthesized by `tools/build_world_audio.py bullets`.
+
+## The player and feedback
+
+`PlayerSounds` (`player_sounds.rs`, local player only) plays:
+
+- breathing after 2.5 s of sprinting, and recovery breaths after it for up to
+  4 s; hurt breathing below 35% health; the held breath on a scope;
+- a heartbeat below 40% health, racing from one every 0.95 s to 0.55 s;
+- being hit (a blunt thump, the flesh hit, kit jolted, no voice), with ringing
+  ears after a hit of 45 or more, and a body fall on death;
+- a jump's push-off, hands on a ledge when mantling, and the kit and cloth
+  under each step (louder when sprinting, none when crouched).
+
+Other players' sprints carry the same kit rattle, and their jumps and mantles
+the same sounds, at their position.
+
+The HUD plays a dry tick for a hit, a struck-helmet ring for a headshot, and a
+thump with a short ding for a kill; a headshot kill plays the ring under the
+kill, so it is never lost. All of these are synthesized by
+`tools/build_world_audio.py player`.
 
 ## Reviewing sound without listening
 

@@ -25,7 +25,7 @@ use godot::global::randf_range;
 use godot::prelude::*;
 use shooter_sim::weapon::WeaponId;
 
-use crate::acoustics::SPEED_OF_SOUND;
+use crate::acoustics::{self, SPEED_OF_SOUND};
 use crate::audio;
 use crate::viewmodel::view_scene_property;
 
@@ -43,6 +43,8 @@ const FAR_REFERENCE: f32 = 120.0;
 /// Level of the mid and far layers against the near ones at the reference.
 const MID_DB: f32 = -1.0;
 const FAR_DB: f32 = 2.0;
+/// The bus distant layers play on; it sends into Weapons.
+const DISTANT_BUS: &str = "WeaponsDistant";
 /// Shots waiting for their sound to arrive, at most.
 const PENDING_MAX: usize = 8;
 
@@ -117,6 +119,11 @@ impl Gunfire {
             owner.add_child(&player);
             player
         };
+        let mut mid = make("ShotMid", AttenuationModel::DISABLED, 1.0, 2);
+        let mut far = make("ShotFar", AttenuationModel::DISABLED, 1.0, 2);
+        // Distant fire gives way to close fire (`acoustics::request_duck`).
+        mid.set_bus(DISTANT_BUS);
+        far.set_bus(DISTANT_BUS);
         Self {
             snap: make(
                 "ShotSnap",
@@ -134,8 +141,8 @@ impl Gunfire {
             tail: make("ShotTail", AttenuationModel::INVERSE_DISTANCE, FAR_UNIT, 1),
             // Their level comes from `distance_db`; the recordings are already
             // dark with distance.
-            mid: make("ShotMid", AttenuationModel::DISABLED, 1.0, 2),
-            far: make("ShotFar", AttenuationModel::DISABLED, 1.0, 2),
+            mid,
+            far,
             guns: HashMap::new(),
             pending: Vec::new(),
             shots_played: 0,
@@ -204,6 +211,7 @@ impl Gunfire {
         };
         let pitch = randf_range(0.97, 1.03) as f32 * gun.pitch;
         let (near, mid, far) = layer_weights(distance);
+        acoustics::request_duck(acoustics::duck_for_distance(distance));
         let gain = |w: f32| 20.0 * w.max(1e-4).log10();
         let tail = if indoors {
             gun.tail_indoor.as_ref().or(gun.tail.as_ref())

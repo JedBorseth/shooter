@@ -36,6 +36,9 @@ var _low_fill := UiTheme.plate(UiTheme.HARM, 0.0, 0.0)
 var _mag_fill := UiTheme.plate(UiTheme.TEXT, 0.0, 0.0)
 var _mag_low_fill := UiTheme.plate(UiTheme.ENEMY, 0.0, 0.0)
 
+## Hit marker sounds by name, built on first use.
+var _markers := {}
+
 @onready var _player: FpsPlayer = get_node_or_null(player_path) as FpsPlayer
 @onready var _crosshair: Control = $Crosshair
 @onready var _readout: Label = $Readout
@@ -56,6 +59,8 @@ var _mag_low_fill := UiTheme.plate(UiTheme.ENEMY, 0.0, 0.0)
 @onready var _damage: Control = $Damage
 @onready var _scope: Control = $Scope
 @onready var _hit_sound: AudioStreamPlayer = $HitSound
+## A second voice, for the headshot ring under a headshot kill.
+@onready var _head_sound: AudioStreamPlayer = _make_head_sound()
 @onready var _keyboard_controls := controls_text if controls_text != "" else _controls.text
 @onready var _score_feed: Control = $ScoreFeed
 
@@ -76,6 +81,14 @@ func _ready() -> void:
 	_scope.player = _player
 
 
+func _make_head_sound() -> AudioStreamPlayer:
+	var player := AudioStreamPlayer.new()
+	player.bus = &"UI"
+	player.volume_db = _hit_sound.volume_db - 2.0
+	add_child(player)
+	return player
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("toggle_controls"):
 		_controls_forced = not _controls.visible
@@ -84,13 +97,28 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _on_hit(killed: bool, headshot: bool) -> void:
 	_crosshair.show_hit(killed, headshot)
-	var path := (
-		"res://assets/audio/impacts/%s.ogg"
-		% ("kill" if killed else ("headshot" if headshot else "hitmarker"))
-	)
-	if ResourceLoader.exists(path):
-		_hit_sound.stream = load(path)
-		_hit_sound.play()
+	# A dry tick for a hit, a struck-helmet ring for a headshot, a thump and
+	# a short ding for a kill; a headshot kill plays both, so neither is lost.
+	_hit_sound.stream = _marker("kill" if killed else ("hit_head" if headshot else "hit"))
+	_hit_sound.play()
+	if killed and headshot:
+		_head_sound.stream = _marker("hit_head")
+		_head_sound.play()
+
+
+## The takes of a hit marker sound (`res://assets/audio/ui/<marker>_N.wav`),
+## picked at random each time without the same take twice in a row.
+func _marker(marker: String) -> AudioStream:
+	if not _markers.has(marker):
+		var randomizer := AudioStreamRandomizer.new()
+		randomizer.random_pitch = 1.03
+		for i in range(1, 9):
+			var path := "res://assets/audio/ui/%s_%d.wav" % [marker, i]
+			if not ResourceLoader.exists(path):
+				break
+			randomizer.add_stream(-1, load(path))
+		_markers[marker] = randomizer
+	return _markers[marker]
 
 
 func _process(delta: float) -> void:

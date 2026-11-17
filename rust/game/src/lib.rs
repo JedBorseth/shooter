@@ -17,6 +17,7 @@ mod net;
 mod penetration;
 mod pickup;
 mod player;
+mod player_sounds;
 mod sentry;
 mod sights;
 mod spring;

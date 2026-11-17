@@ -254,6 +254,14 @@ impl Foley {
                 let sound = gait.sound();
                 if let Some(db) = level(sound.level_db, sound.range) {
                     self.play_step(motion.feet, db);
+                    // A sprinting soldier's kit rattles with every stride.
+                    if gait == Gait::Sprint {
+                        self.play_body(
+                            "res://assets/audio/player/step_gear",
+                            motion.feet,
+                            db - 7.0,
+                        );
+                    }
                 }
             }
         }
@@ -267,7 +275,7 @@ impl Foley {
             if !self.pushed_off && self.air_time < 0.2 && motion.velocity.y > 1.0 {
                 self.pushed_off = true;
                 if let Some(db) = level(-4.0, Gait::Walk.sound().range) {
-                    self.play_step(motion.feet, db);
+                    self.play_body("res://assets/audio/player/jump", motion.feet, db);
                 }
             }
         } else if !self.was_on_floor {
@@ -295,9 +303,9 @@ impl Foley {
 
         if motion.mantling
             && !self.mantling
-            && let Some(db) = level(-8.0, MANTLE_RANGE)
+            && let Some(db) = level(-4.0, MANTLE_RANGE)
         {
-            self.play_body("res://assets/audio/player/land", motion.feet, db);
+            self.play_body("res://assets/audio/player/mantle", motion.feet, db);
         }
         self.mantling = motion.mantling;
 

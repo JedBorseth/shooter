@@ -1131,6 +1131,8 @@ impl Gunshot {
                 player.play();
             }
         }
+        // Your own shot is the loudest thing there is: duck what matters less.
+        acoustics::request_duck(1.0);
         // Outdoors, the shot answers off the nearest walls.
         if let (Some(distant), Some(mut environment)) =
             (&self.distant, AudioEnvironment::find(tree))

@@ -33,12 +33,19 @@ from events placed modulo the loop length, so it repeats without a seam:
     uv run tools/build_world_audio.py footsteps --kenney "<path>/Impact Sounds"
     uv run tools/build_world_audio.py ambience
     uv run tools/build_world_audio.py bullets
+    uv run tools/build_world_audio.py player
 
 ``bullets`` synthesizes what a passing or landing round sounds like, seeded:
 supersonic cracks (an N-wave shock and its reflections), subsonic whizzes (a
 Doppler-swept whistle), ricochets, and impact takes 4-8 for every surface,
 layered over the recorded takes 1-3 (debris grains, a ring for metal and tile,
 a short reflection tail), plus new grass, tile, gravel, carpet, and flesh sets.
+
+``player`` synthesizes the feedback and body sounds, seeded: hit, headshot,
+and kill markers (a dry tick, a struck-helmet ring, a thump and short ding),
+being hit, a heartbeat, breathing (normal and hurt), tinnitus, a death fall,
+a jump's push-off, a mantle's hands on the ledge, and the gear and cloth
+layers under footsteps.
 
 Download Kenney's Impact Sounds from https://kenney.nl/assets/impact-sounds
 (the site hands out a signed link per download) and pass the extracted folder.
@@ -722,6 +729,243 @@ def bullets() -> None:
         print(f"  impacts/{surface}: takes {first}-{IMPACT_TAKES}")
 
 
+# --- Player and feedback: hits, health, breath, body --------------------------
+
+PLAYER = AUDIO / "player"
+UI = AUDIO / "ui"
+
+
+def sine_sweep(n: int, f0: float, f1: float, tau: float) -> np.ndarray:
+    """A tone gliding from f0 toward f1 with time constant tau."""
+    t = np.arange(n) / RATE
+    f = f1 + (f0 - f1) * np.exp(-t / tau)
+    return np.sin(2 * np.pi * np.cumsum(f) / RATE)
+
+
+def tick_click(rng: np.random.Generator, n: int, hz: float, tau: float) -> np.ndarray:
+    """A dry, hard click: a short burst of noise around `hz`."""
+    return bandpass(rng.standard_normal(n), hz * 0.6, min(hz * 1.6, 20_000)) * env_decay(n, tau)
+
+
+def hit_marker(rng: np.random.Generator) -> np.ndarray:
+    """A hit landing: a dry plastic-metal tick over a short low knock."""
+    n = int(0.14 * RATE)
+    tick = tick_click(rng, n, rng.uniform(4_200, 4_800), 0.004)
+    knock = sine_sweep(n, 260, 180, 0.01) * env_decay(n, 0.025)
+    out = normalized(tick, 1) + 0.55 * normalized(knock, 1)
+    fade = int(0.03 * RATE)
+    out[-fade:] *= np.linspace(1, 0, fade)
+    return normalized(out, 0.8)
+
+
+def head_marker(rng: np.random.Generator) -> np.ndarray:
+    """A headshot: the tick, brighter, with a short hard ring (a struck
+    helmet), so it reads apart from a body hit without a chime."""
+    n = int(0.25 * RATE)
+    base = hit_marker(rng)
+    ring = modal(rng, n, [rng.uniform(3_000, 3_300), rng.uniform(5_000, 5_300), 7_400], 0.06)
+    out = np.zeros(n)
+    out[: len(base)] += base
+    out += 0.45 * normalized(ring, 1)
+    fade = int(0.04 * RATE)
+    out[-fade:] *= np.linspace(1, 0, fade)
+    return normalized(out, 0.85)
+
+
+def kill_marker(rng: np.random.Generator) -> np.ndarray:
+    """A kill: the tick, a low thump under it, and a short metallic ding
+    whose partials (1.2, 2.7, 4.1 kHz) die in a tenth of a second."""
+    n = int(0.42 * RATE)
+    base = hit_marker(rng)
+    thump = sine_sweep(n, 120, 72, 0.03) * env_decay(n, 0.07)
+    ding = modal(rng, n, [1_200, 2_700, 4_100], 0.12)
+    ding[: int(0.012 * RATE)] *= np.linspace(0, 1, int(0.012 * RATE))
+    out = np.zeros(n)
+    out[: len(base)] += base
+    out += 0.8 * normalized(thump, 1)
+    d = int(0.008 * RATE)
+    out[d:] += 0.5 * normalized(ding, 1)[: n - d]
+    fade = int(0.05 * RATE)
+    out[-fade:] *= np.linspace(1, 0, fade)
+    return normalized(out, 0.9)
+
+
+def hit_taken(rng: np.random.Generator) -> np.ndarray:
+    """Being hit: a round into your own body, heard from inside. A deep blunt
+    thump, the wet flesh hit, gear and cloth jolted, and a short low
+    pressure swell; no voice."""
+    n = int(0.45 * RATE)
+    thump = sine_sweep(n, rng.uniform(90, 110), 48, 0.05) * env_decay(n, 0.09)
+    out = 1.0 * normalized(thump, 1)
+    meat = flesh(rng)
+    out[: len(meat)] += 0.7 * meat
+    out += 0.3 * normalized(grains(rng, n, 6, 0.08, 2_500, 6_000, 0.008), 1)
+    rumble = lowpass(rng.standard_normal(n), 140) * env_decay(n, 0.12)
+    out += 0.5 * normalized(rumble, 1)
+    fade = int(0.05 * RATE)
+    out[-fade:] *= np.linspace(1, 0, fade)
+    return normalized(out, 0.9)
+
+
+def heartbeat(rng: np.random.Generator) -> np.ndarray:
+    """One heartbeat, lub-dub: two low thumps 160 ms apart, the second softer."""
+    n = int(0.5 * RATE)
+    out = np.zeros(n)
+    for at, gain, hz in ((0.0, 1.0, 58.0), (0.16, 0.7, 52.0)):
+        a = int(at * RATE)
+        m = n - a
+        beat = sine_sweep(m, hz * 1.5, hz, 0.02) * env_decay(m, 0.06) * (1 - env_decay(m, 0.004))
+        beat += 0.25 * lowpass(rng.standard_normal(m), 120) * env_decay(m, 0.03)
+        out[a:] += gain * beat
+    return normalized(out, 0.95)
+
+
+def breath_sound(rng: np.random.Generator, seconds: float, inhale: bool, heavy: float) -> np.ndarray:
+    """Air through the mouth: noise through vowel-like resonances; `heavy`
+    0 to 1 lowers the formants, roughens it, and adds a little voice."""
+    n = int(seconds * RATE)
+    noise = rng.standard_normal(n)
+    out = np.zeros(n)
+    f1 = rng.uniform(650, 850) * (1 - 0.15 * heavy)
+    f2 = rng.uniform(1_800, 2_300) * (1 - 0.1 * heavy)
+    for centre, width, amp in ((f1, 0.35, 1.0), (f2, 0.3, 0.55), (5_000, 0.45, 0.25)):
+        out += amp * bandpass(noise, centre * (1 - width), centre * (1 + width))
+    t = np.linspace(0, 1, n)
+    if inhale:
+        shape = np.sin(np.pi * t**0.7) ** 1.4
+    else:
+        shape = np.sin(np.pi * np.minimum(t * 3.0, 1.0) / 2) * np.exp(-t * 2.5)
+    rough = 1 + heavy * 0.35 * np.sin(2 * np.pi * rng.uniform(18, 28) * t * seconds)
+    voice = heavy * 0.12 * np.sin(2 * np.pi * np.cumsum(np.full(n, rng.uniform(110, 140))) / RATE)
+    out = normalized(out, 1) * rough + voice
+    return normalized(out * shape, 0.8)
+
+
+def tinnitus(rng: np.random.Generator) -> np.ndarray:
+    """Ringing ears after a heavy hit: a thin 3.8 kHz tone that fades over
+    2.5 s, with a faint beating partner."""
+    n = int(2.6 * RATE)
+    t = np.arange(n) / RATE
+    tone = np.sin(2 * np.pi * 3_800 * t) + 0.3 * np.sin(2 * np.pi * 3_806 * t)
+    shape = np.minimum(t / 0.05, 1) * np.exp(-t / 0.9)
+    return normalized(tone * shape, 0.5)
+
+
+def death_sound(rng: np.random.Generator) -> np.ndarray:
+    """Going down: a body and its kit hitting the ground, under a low falling
+    pressure swell."""
+    n = int(1.4 * RATE)
+    out = np.zeros(n)
+    for at, gain in ((0.32, 1.0), (0.46, 0.55)):
+        a = int(at * RATE)
+        m = n - a
+        fall = sine_sweep(m, 95, 55, 0.04) * env_decay(m, 0.08)
+        fall += 0.6 * lowpass(rng.standard_normal(m), 500) * env_decay(m, 0.05)
+        fall += 0.3 * grains(rng, m, 8, 0.15, 2_000, 6_000, 0.008)
+        out[a:] += gain * normalized(fall, 1)
+    t = np.arange(n) / RATE
+    swell = sine_sweep(n, 70, 30, 0.6) * np.sin(np.pi * np.minimum(t / 1.4, 1)) ** 2
+    out += 0.4 * normalized(swell, 1)
+    fade = int(0.1 * RATE)
+    out[-fade:] *= np.linspace(1, 0, fade)
+    return normalized(out, 0.9)
+
+
+def push_off(rng: np.random.Generator) -> np.ndarray:
+    """A jump: a boot scuffing off the ground, cloth, and kit bouncing."""
+    n = int(0.35 * RATE)
+    scuff = bandpass(rng.standard_normal(n), 400, 4_000) * env_decay(n, 0.025)
+    swish = bandpass(rng.standard_normal(n), 300, 3_000) * np.sin(np.pi * np.linspace(0, 1, n)) ** 2
+    rattle = grains(rng, n, 5, 0.12, 2_500, 6_000, 0.01)
+    out = normalized(scuff, 1) + 0.5 * normalized(swish, 1) + 0.45 * normalized(rattle, 1)
+    return normalized(out, 0.8)
+
+
+def mantle_sound(rng: np.random.Generator) -> np.ndarray:
+    """Climbing over a ledge: two hands slapping onto it, cloth dragging, and
+    kit knocking."""
+    n = int(0.7 * RATE)
+    out = np.zeros(n)
+    for at in (0.0, rng.uniform(0.06, 0.1)):
+        a = int(at * RATE)
+        m = n - a
+        slap = bandpass(rng.standard_normal(m), 600, 3_500) * env_decay(m, 0.012)
+        slap += 0.6 * sine_sweep(m, 220, 150, 0.01) * env_decay(m, 0.02)
+        out[a:] += normalized(slap, 1)
+    t = np.linspace(0, 1, n)
+    drag = bandpass(rng.standard_normal(n), 250, 2_500) * np.sin(np.pi * t) ** 1.5
+    out += 0.6 * normalized(drag, 1)
+    out += 0.4 * normalized(grains(rng, n, 6, 0.4, 2_500, 6_000, 0.01), 1)
+    fade = int(0.05 * RATE)
+    out[-fade:] *= np.linspace(1, 0, fade)
+    return normalized(out, 0.8)
+
+
+def step_gear(rng: np.random.Generator) -> np.ndarray:
+    """What rides on a soldier with every step: magazines and buckles
+    knocking (2-5 kHz ticks 10-40 ms apart) and a sling slapping."""
+    n = int(0.16 * RATE)
+    out = np.zeros(n)
+    at = 0.0
+    for _ in range(int(rng.integers(2, 5))):
+        a = int(at * RATE)
+        if a >= n:
+            break
+        out[a:] += rng.uniform(0.4, 1) * modal(rng, n - a, [rng.uniform(2_000, 5_000)], 0.012)
+        at += rng.uniform(0.01, 0.04)
+    out += 0.3 * normalized(bandpass(rng.standard_normal(n), 200, 1_200) * env_decay(n, 0.02), 1)
+    return normalized(out, 0.8)
+
+
+def step_cloth(rng: np.random.Generator) -> np.ndarray:
+    """Trousers and jacket swishing with a stride."""
+    n = int(rng.uniform(0.18, 0.26) * RATE)
+    t = np.linspace(0, 1, n)
+    x = bandpass(rng.standard_normal(n), 300, 3_500) * np.sin(np.pi * t) ** 2
+    x *= 0.5 + 0.5 * np.abs(lowpass(rng.standard_normal(n), 40)) / 0.05
+    return normalized(x, 0.7)
+
+
+def write_wav(path: Path, x: np.ndarray) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(path, np.clip(x, -1, 1).astype(np.float32), RATE, subtype="PCM_16")
+
+
+def player() -> None:
+    """Hit, headshot, and kill markers (audio/ui/), and being hit, heartbeat,
+    breathing, tinnitus, death, jump, mantle, and step layers (audio/player/)."""
+    makers = (
+        (UI, "hit", hit_marker, 4, True),
+        (UI, "hit_head", head_marker, 3, True),
+        (UI, "kill", kill_marker, 3, True),
+        (PLAYER, "hit_taken", hit_taken, 4, False),
+        (PLAYER, "heartbeat", heartbeat, 2, False),
+        (PLAYER, "tinnitus", tinnitus, 1, False),
+        (PLAYER, "death", death_sound, 2, False),
+        (PLAYER, "jump", push_off, 4, False),
+        (PLAYER, "mantle", mantle_sound, 3, False),
+        (PLAYER, "step_gear", step_gear, 6, False),
+        (PLAYER, "step_cloth", step_cloth, 6, False),
+    )
+    for folder, name, make, takes, wav in makers:
+        for i in range(1, takes + 1):
+            rng = np.random.default_rng(sum(map(ord, name)) * 101 + i)
+            x = make(rng)
+            path = folder / f"{name}_{i}.{'wav' if wav else 'ogg'}"
+            (write_wav if wav else write_ogg)(path, x)
+        print(f"  {folder.relative_to(REPO)}/{name}: {takes}")
+    for kind, heavy, inhale, seconds in (
+        ("breath_in", 0.2, True, 0.42),
+        ("breath_out", 0.2, False, 0.5),
+        ("breath_hurt_in", 0.8, True, 0.55),
+        ("breath_hurt_out", 0.8, False, 0.7),
+    ):
+        for i in range(1, 5):
+            rng = np.random.default_rng(sum(map(ord, kind)) * 131 + i)
+            write_ogg(PLAYER / f"{kind}_{i}.ogg", breath_sound(rng, seconds * rng.uniform(0.9, 1.1), inhale, heavy))
+        print(f"  audio/player/{kind}: 4")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -734,11 +978,14 @@ def main() -> None:
     )
     sub.add_parser("ambience")
     sub.add_parser("bullets", help="bullet cracks, whizzes, ricochets, and layered impacts")
+    sub.add_parser("player", help="hit and kill markers, health, breath, and body sounds")
     args = parser.parse_args()
     if args.command == "footsteps":
         footsteps(args.kenney)
     elif args.command == "bullets":
         bullets()
+    elif args.command == "player":
+        player()
     else:
         ambience()
 
