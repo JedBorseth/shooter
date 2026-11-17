@@ -16,3 +16,4 @@ shader_parameter/use_vertex_color = true
 shader_parameter/metallic_scale = 0.5
 shader_parameter/grime = 0.1
 shader_parameter/normal_strength = 1
+shader_parameter/anti_tile = 0

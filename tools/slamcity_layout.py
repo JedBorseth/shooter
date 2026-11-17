@@ -2099,6 +2099,10 @@ def skyline():
             look = rng.choice(looks)
             deco(x, x + w, STREET, h, d0, d1, look, chunk="far")
             deco(x - 0.15, x + w + 0.15, STREET, 4.2, d0 - 0.15, d1 + 0.15, "stone_base", chunk="far")
+            # String courses every few storeys, so the walls read as built,
+            # not as slabs.
+            for yb in [y for y in (13.0, 22.6, 32.2, 41.8) if y < h - 3.0]:
+                deco(x - 0.12, x + w + 0.12, yb, yb + 0.35, d0 - 0.12, d1 + 0.12, "trim_dark", chunk="far")
             if rng.random() < 0.3:
                 deco(x - 0.05, x + w + 0.05, h - 1.2, h - 0.9, d0 - 0.05, d1 + 0.05, "lamp_warm_sign", chunk="far")
             deco(x - 0.2, x + w + 0.2, h, h + 0.6, d0 - 0.2, d1 + 0.2, "trim_dark", chunk="far")
@@ -2114,6 +2118,12 @@ def skyline():
             # A penthouse for the lift machinery, and sometimes an aerial or a tank.
             px = x + rng.uniform(0.25, 0.6) * w
             deco(px - 1.6, px + 1.6, top, top + 2.6, d0 + 2.0, d0 + 5.0, "stone_base", chunk="far")
+            # Rooftop plant: condensers and vent stacks.
+            for k in range(rng.randint(2, 4)):
+                cx = x + rng.uniform(1.0, w - 2.0)
+                cz = rng.uniform(d0 + 6.0, max(d0 + 6.5, d1 - 2.0))
+                deco(cx, cx + rng.uniform(1.0, 2.2), top, top + rng.uniform(0.8, 1.6), cz, cz + rng.uniform(0.8, 1.6),
+                     rng.choice(("steel_galv", "trim_dark", "stone_base")), chunk="far")
             roll = rng.random()
             if roll < 0.35:
                 place("water_tower", x + w * 0.72, top, (d0 + d1) / 2, rng.uniform(0, 3), chunk="far")

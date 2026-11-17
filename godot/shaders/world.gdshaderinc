@@ -25,6 +25,11 @@ uniform float grime_height = 0.7;
 // Road dust (vehicle paint): low on vertical faces the albedo turns toward
 // dust and the finish goes matt, in blotches.
 uniform float dust : hint_range(0.0, 1.0) = 0.0;
+// Breaks up visible tiling on big isotropic surfaces (asphalt, concrete,
+// plaster): a second albedo sample, rotated and at another scale, blended in
+// patches by the world noise. One extra texture fetch where it is on. Leave it
+// off for anything with courses or a grid (brick, tile), which rotation breaks.
+uniform float anti_tile : hint_range(0.0, 1.0) = 0.0;
 uniform float floor_height = 0.0;
 
 #ifdef WORLD_WINDOWS
@@ -110,7 +115,13 @@ void fragment() {
 	float metal = 0.0;
 	vec3 surface_normal = n;
 	if (textured) {
-		albedo *= texture(albedo_tex, uv).rgb;
+		vec3 base = texture(albedo_tex, uv).rgb;
+		if (anti_tile > 0.0) {
+			vec2 uv2 = vec2(uv.y, -uv.x) * 0.63 + vec2(0.37, 0.71);
+			float patches = texture(world_noise, world_position.xz * 0.021 + world_position.y * 0.013).r;
+			base = mix(base, texture(albedo_tex, uv2).rgb, anti_tile * smoothstep(0.35, 0.65, patches));
+		}
+		albedo *= base;
 		vec3 orm = texture(orm_tex, uv).rgb;
 		ao = orm.r;
 		rough = orm.g;
