@@ -45,7 +45,7 @@ env:
   GODOT_VERSION: 4.7.2
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
-  SAVE_CACHE: ${{ github.ref == 'refs/heads/main' || github.head_ref == 't3/faster-ci-pipeline' }} # TEMP: measure warm runs
+  SAVE_CACHE: ${{ github.ref == 'refs/heads/main' }}
   CARGO_PROFILE: ${{ github.ref_type == 'tag' && 'release' || 'ci' }}
 
 jobs:
