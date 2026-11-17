@@ -9,6 +9,7 @@
 [node name="Hitboxes" type="HitboxRig" parent="."]
 
 [node name="Name" type="Label3D" parent="."]
+visible = false
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.15, 0)
 billboard = 1
 no_depth_test = true

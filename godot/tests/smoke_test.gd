@@ -7,6 +7,7 @@ extends SceneTree
 ## Run from the repo root: godot --headless --path godot --script res://tests/smoke_test.gd
 
 const DUMMY_SCENE := preload("res://scenes/props/target_dummy.tscn")
+const REMOTE_SCENE := preload("res://scenes/remote_player.tscn")
 
 var _failures: PackedStringArray = []
 var _hits := 0
@@ -92,6 +93,18 @@ func _gunshots(player: FpsPlayer) -> void:
 			)
 
 
+## Labels over characters must not show through walls, or they give away
+## where people are: a dummy's health is hidden by walls, and a remote player's
+## name stays hidden until the roster says they are a teammate.
+func _labels_hide_behind_walls(dummy: Node) -> void:
+	var health := dummy.get_node("HealthLabel") as Label3D
+	_check(not health.no_depth_test, "a dummy's health label is hidden by walls")
+	var remote := REMOTE_SCENE.instantiate()
+	var name_label := remote.get_node("Name") as Label3D
+	_check(not name_label.visible, "a remote player's name starts hidden")
+	remote.free()
+
+
 func _movement(player: FpsPlayer) -> void:
 	var start := player.global_position
 	Input.action_press("move_forward")
@@ -137,6 +150,7 @@ func _combat(main: Node, player: FpsPlayer) -> void:
 	var dummy := DUMMY_SCENE.instantiate() as TargetDummy
 	main.add_child(dummy)
 	dummy.global_position = player.global_position + Vector3(0, 0, -8)
+	_labels_hide_behind_walls(dummy)
 	player.set_look(0.0, atan2(1.1 - 1.68, 8.0))
 	await _sixtieths(30)
 

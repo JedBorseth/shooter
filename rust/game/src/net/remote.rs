@@ -187,7 +187,9 @@ impl RemotePlayer {
             .set_team_index(if friendly { 0 } else { 1 });
         self.base_mut().set_meta("friendly", &friendly.to_variant());
         self.friendly = friendly;
-        // Names show through walls, so only teammates get one.
+        // Names show through walls, so only teammates get one. The label starts
+        // hidden (remote_player.tscn) so nobody's name shows before the roster
+        // says which side they are on.
         self.name_label
             .set_modulate(Color::from_rgb(0.55, 0.78, 1.0));
         self.name_label.set_visible(friendly);
