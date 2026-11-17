@@ -24,7 +24,8 @@ copied to the east half. No line runs clear from one spawn yard to the other
 The player, HUD, and pause menu are the same scenes the testing arena
 (scenes/main.tscn) uses. The server spawns players at `SpawnPoints` (each with a
 `team` metadata) and, in Capture the Flag, puts each team's flag at its
-`Flags` marker; offline play starts at `Spawns/West`.
+`Flags` marker, and Hardpoint rotates through the zones under `Hardpoints`;
+offline play starts at `Spawns/West`.
 
 Edit the layout here, not in the editor, then regenerate from the repo root
 and bake its meshes and lightmaps (needs a GPU, or Xvfb on a machine with one):
@@ -693,6 +694,22 @@ for team, m in ((0, False), (1, True)):
     px, pz = mpoint(FLAG_X, FLAG_Z, m)
     s.node(f"Team{team}", "Marker3D", "Flags", {
         "position": vec(px, 0, pz), "metadata/team": str(team),
+    })
+
+# --- Hardpoint zones ----------------------------------------------------------------
+# In rotation order. Each is a box centred on its marker, `size` across, named by
+# `label` on the HUD (server: map_zones). All four sit on the mirror line, so
+# neither team is closer to any of them.
+HARDPOINTS = [
+    ("P1_SkateBowl", "Skate Bowl", (0, -0.1, 0), (14, 4, 8)),
+    ("P2_AutoShop", "Auto Shop", (0, 2, -16), (20, 4, 9)),
+    ("P3_Laundromat", "Laundromat", (0, 1.8, 17.5), (22, 3.6, 11.8)),
+    ("P4_BackAlley", "Back Alley", (0, 2, -24.8), (20, 4, 7.2)),
+]
+s.node("Hardpoints", "Node3D", ".")
+for name, text, (x, y, z), (sx, sy, sz) in HARDPOINTS:
+    s.node(name, "Marker3D", "Hardpoints", {
+        "position": vec(x, y, z), "metadata/size": vec(sx, sy, sz), "metadata/label": f'"{text}"',
     })
 
 s.node("Spawns", "Node3D", ".")

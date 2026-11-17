@@ -1,10 +1,11 @@
-//! Team Deathmatch: teams, the match clock and score, and where players spawn.
+//! Team matches: teams, the match clock and score, and where players spawn.
 //!
-//! Two teams race to a kill limit before the clock runs out. Other modes
+//! Two teams race to a score limit before the clock runs out. Other modes
 //! ([`Mode`]) reuse the clock and the phases: Capture the Flag is two teams
-//! scoring captures instead of kills (`crate::ctf`), and Gun Game is every
-//! player for themselves (`crate::gun_game`). A match goes through these
-//! phases:
+//! scoring captures instead of kills (`crate::ctf`), Hardpoint is two teams
+//! scoring by holding the live zone (`crate::hardpoint`), and Gun Game is
+//! every player for themselves (`crate::gun_game`). A match goes through
+//! these phases:
 //!
 //! - [`Phase::Lobby`]: players join, pick a loadout, and can run around and
 //!   shoot, but nothing counts. It ends when every human player is ready.
@@ -35,11 +36,14 @@ pub enum Mode {
     /// Two teams score by carrying the enemy's flag home; kills score
     /// nothing for the team.
     CaptureTheFlag,
+    /// Two teams score by holding the live zone; kills do not score
+    /// ([`crate::hardpoint`]).
+    Hardpoint,
 }
 
 impl Mode {
     /// Parses a mode name as servers take it on the command line ("tdm",
-    /// "gungame", or "ctf"), with default rules.
+    /// "gungame", "ctf", or "hardpoint"), with default rules.
     pub fn parse(name: &str) -> Option<Self> {
         match name.trim().to_ascii_lowercase().as_str() {
             "" | "tdm" | "teamdeathmatch" | "team_deathmatch" => Some(Self::TeamDeathmatch),
@@ -47,6 +51,7 @@ impl Mode {
             "ctf" | "capturetheflag" | "capture_the_flag" | "capture-the-flag" => {
                 Some(Self::CaptureTheFlag)
             }
+            "hardpoint" | "hp" => Some(Self::Hardpoint),
             _ => None,
         }
     }
@@ -57,6 +62,7 @@ impl Mode {
             Self::TeamDeathmatch => "tdm",
             Self::GunGame(_) => "gungame",
             Self::CaptureTheFlag => "ctf",
+            Self::Hardpoint => "hardpoint",
         }
     }
 
@@ -66,6 +72,7 @@ impl Mode {
             Self::TeamDeathmatch => "Team Deathmatch",
             Self::GunGame(_) => "Gun Game",
             Self::CaptureTheFlag => "Capture the Flag",
+            Self::Hardpoint => "Hardpoint",
         }
     }
 
@@ -76,13 +83,19 @@ impl Mode {
     }
 
     /// The usual team score limit when the server is not given one: kills in
-    /// Team Deathmatch, captures in Capture the Flag (Gun Game ends on its
-    /// last weapon instead).
+    /// Team Deathmatch, captures in Capture the Flag, points in Hardpoint
+    /// (Gun Game ends on its last weapon instead).
     pub fn default_score_limit(&self) -> u32 {
         match self {
             Self::CaptureTheFlag => 3,
+            Self::Hardpoint => 250,
             _ => 75,
         }
+    }
+
+    /// Whether a kill scores a point for the killer's team.
+    pub fn kills_score(&self) -> bool {
+        matches!(self, Self::TeamDeathmatch)
     }
 }
 
@@ -234,6 +247,22 @@ impl MatchState {
         }
         let score = &mut self.scores[usize::from(team)];
         *score += 1;
+        (*score >= rules.score_limit).then(|| self.finish(rules, Some(team)))
+    }
+
+    /// Adds objective points to `team`'s score (Hardpoint). Returns the end
+    /// of the match if they reached the score limit.
+    pub fn add_points(
+        &mut self,
+        rules: &MatchRules,
+        team: Team,
+        points: u32,
+    ) -> Option<Transition> {
+        if !self.scoring() || points == 0 || usize::from(team) >= TEAM_COUNT {
+            return None;
+        }
+        let score = &mut self.scores[usize::from(team)];
+        *score = (*score + points).min(rules.score_limit);
         (*score >= rules.score_limit).then(|| self.finish(rules, Some(team)))
     }
 
@@ -616,6 +645,21 @@ mod tests {
     }
 
     #[test]
+    fn objective_points_score_and_end_the_match() {
+        let mut state = MatchState::default();
+        assert_eq!(state.add_points(&rules(), 0, 2), None);
+        assert_eq!(state.scores, [0, 0]);
+        state.phase = Phase::Playing;
+        assert_eq!(state.add_points(&rules(), 1, 2), None);
+        assert_eq!(
+            state.add_points(&rules(), 1, 5),
+            Some(Transition::Ended { winner: Some(1) })
+        );
+        // Capped at the limit.
+        assert_eq!(state.scores, [0, 3]);
+    }
+
+    #[test]
     fn modes_parse_from_their_keys() {
         assert_eq!(Mode::parse(""), Some(Mode::TeamDeathmatch));
         assert_eq!(Mode::parse("tdm"), Some(Mode::TeamDeathmatch));
@@ -625,6 +669,13 @@ mod tests {
         assert_eq!(gun_game.label(), "Gun Game");
         assert!(!Mode::TeamDeathmatch.free_for_all());
         assert_eq!(Mode::parse("domination"), None);
+        assert_eq!(Mode::parse("hardpoint"), Some(Mode::Hardpoint));
+        assert_eq!(Mode::parse("HP"), Some(Mode::Hardpoint));
+        assert_eq!(Mode::Hardpoint.key(), "hardpoint");
+        assert_eq!(Mode::Hardpoint.label(), "Hardpoint");
+        assert!(!Mode::Hardpoint.free_for_all());
+        assert!(Mode::TeamDeathmatch.kills_score());
+        assert!(!Mode::Hardpoint.kills_score());
     }
 
     #[test]

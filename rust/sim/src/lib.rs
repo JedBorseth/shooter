@@ -8,6 +8,7 @@ pub mod bot;
 pub mod ctf;
 pub mod fmath;
 pub mod gun_game;
+pub mod hardpoint;
 pub mod hitbox;
 pub mod look;
 pub mod movement;

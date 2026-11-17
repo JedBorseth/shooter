@@ -86,6 +86,14 @@ pub enum Award {
     FlagReturn,
     /// Killed the enemy carrying your flag.
     CarrierKill,
+    /// Hardpoint: took the live zone for the team.
+    HardpointCapture,
+    /// Hardpoint: a few more seconds holding the zone.
+    HardpointSecure,
+    /// Hardpoint: a kill on or near the zone the team held last.
+    HardpointDefend,
+    /// Hardpoint: a kill on or near a zone the team did not hold.
+    HardpointAssault,
 }
 
 impl Award {
@@ -101,6 +109,7 @@ impl Award {
                 | Award::FlagCapture
                 | Award::FlagReturn
                 | Award::CarrierKill
+                | Award::HardpointCapture
         )
     }
 
@@ -121,6 +130,10 @@ impl Award {
             Award::FlagCapture => "Flag Capture".to_owned(),
             Award::FlagReturn => "Flag Return".to_owned(),
             Award::CarrierKill => "Carrier Kill".to_owned(),
+            Award::HardpointCapture => "Hardpoint Captured".to_owned(),
+            Award::HardpointSecure => "Securing Hardpoint".to_owned(),
+            Award::HardpointDefend => "Hardpoint Defense".to_owned(),
+            Award::HardpointAssault => "Hardpoint Assault".to_owned(),
         }
     }
 }
@@ -253,6 +266,12 @@ impl ScoreState {
         self.kills = totals.kills;
         self.deaths = totals.deaths;
         self.streak = totals.streak;
+    }
+
+    /// Pays an award that is not a kill (objective play).
+    pub fn award(&mut self, award: Award, points: u32) -> Scored {
+        self.score += points;
+        Scored { award, points }
     }
 
     /// Ends the current streak and chain.
@@ -418,5 +437,15 @@ mod tests {
         assert!(Award::Collateral.is_medal());
         assert!(Award::MultiKill(2).is_medal());
         assert!(Award::Streak(5).is_medal());
+        assert!(Award::HardpointCapture.is_medal());
+        assert!(!Award::HardpointSecure.is_medal());
+    }
+
+    #[test]
+    fn objective_awards_add_to_the_score_only() {
+        let mut s = ScoreState::default();
+        let scored = s.award(Award::HardpointSecure, 50);
+        assert_eq!(scored.points, 50);
+        assert_eq!((s.score, s.kills, s.streak), (50, 0, 0));
     }
 }
