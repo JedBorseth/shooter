@@ -28,6 +28,7 @@ func _run() -> void:
 	settings.reset_to_defaults()
 
 	_check_grades()
+	_check_table_sampling()
 	_check_looks()
 	_check_stale_metadata()
 	_check_tools_opt_out()
@@ -65,6 +66,30 @@ func _check_grades() -> void:
 		_check(rising, "%s: the grade never darkens a brighter grey" % scene)
 		var red := Looks.graded(Color(0.8, 0.2, 0.2), grade)
 		_check(red.r > red.g and red.r > red.b, "%s: red is still red" % scene)
+		var dark := Looks.graded(Color(0.04, 0.04, 0.04), grade)
+		_check(dark.g > 0.004, "%s: deep shadows darken but do not clip to black" % scene)
+		var hot := Looks.graded(Color(1.0, 0.75, 0.1), grade)
+		_check(
+			hot.r <= 1.0001 and hot.r > hot.g and hot.g > hot.b,
+			"%s: a bright saturated colour fits the range and keeps its hue" % scene
+		)
+
+
+## The renderer reads the table at texel centres (see Looks.texel_input).
+func _check_table_sampling() -> void:
+	var size := Looks.LUT_SIZE
+	_check(is_equal_approx(Looks.texel_input(0), 0.5 / size), "the first texel is half a step in")
+	_check(is_equal_approx(Looks.texel_input(size - 1), 1.0), "the last texel is white")
+	var slices := Looks.lut_slices({})
+	_check(slices.size() == size, "the table has one slice per step of blue")
+	var worst := 0.0
+	for index: int in [1, size / 2, size - 2]:
+		var texel := slices[index].get_pixel(index, index)
+		var expected := (index + 0.5) / size
+		worst = maxf(worst, absf(texel.r - expected))
+		worst = maxf(worst, absf(texel.g - expected))
+		worst = maxf(worst, absf(texel.b - expected))
+	_check(worst < 0.003, "an empty grade's table is the identity at texel centres")
 
 
 func _check_looks() -> void:
@@ -80,7 +105,8 @@ func _check_looks() -> void:
 			"%s: the grade is a %d-cubed look-up table" % [scene, Looks.LUT_SIZE]
 		)
 		_check(Looks.lut_for(scene) == lut, "%s: the table is built once" % scene)
-		_check(is_zero_approx(env.glow_bloom), "%s: bloom lifts only what is bright" % scene)
+		if Looks.MAPS[scene].get("env", {}).has("glow_bloom"):
+			_check(is_zero_approx(env.glow_bloom), "%s: bloom lifts only what is bright" % scene)
 	var plain := Environment.new()
 	plain.glow_bloom = 0.04
 	_check(not Looks.apply(plain, "res://scenes/unlisted.tscn"), "an unlisted map has no look")
@@ -178,7 +204,15 @@ func _check_vitality() -> void:
 		),
 		"full health restores the map's own saturation and contrast"
 	)
-	_check(not plain_env.adjustment_enabled, "and turns a plain map's adjustments off again")
+	_check(
+		(
+			plain_env.adjustment_enabled
+			and is_equal_approx(plain_env.adjustment_saturation, 1.0)
+			and is_equal_approx(plain_env.adjustment_contrast, 1.0)
+			and is_equal_approx(plain_env.adjustment_brightness, 1.0)
+		),
+		"and leaves a plain map's adjustments on at neutral values"
+	)
 	world.free()
 	plain.free()
 
