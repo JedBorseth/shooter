@@ -82,6 +82,12 @@ thread_local! {
         RefCell::new(HashMap::new());
 }
 
+/// Release engine objects before GDExtension shutdown, rather than at thread exit.
+pub fn clear_cache() {
+    MATERIALS.with_borrow_mut(|cache| cache.clear());
+    CHARACTER.with_borrow_mut(|cache| cache.clear());
+}
+
 /// The shared material for a team's role, or None for an unknown role.
 pub fn material(team: Team, role: &str) -> Option<Gd<StandardMaterial3D>> {
     let role = *ROLES.iter().find(|r| **r == role)?;

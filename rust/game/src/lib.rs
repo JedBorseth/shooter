@@ -46,5 +46,13 @@ mod entry {
         fn on_main_loop_frame() {
             crate::weapon_data::poll();
         }
+
+        fn on_stage_deinit(stage: InitStage) {
+            if matches!(stage, InitStage::MainLoop | InitStage::Scene) {
+                crate::viewmodel::clear_cache();
+                crate::sights::clear_cache();
+                crate::character::palette::clear_cache();
+            }
+        }
     }
 }

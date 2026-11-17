@@ -1,0 +1,13 @@
+[Unit]
+Description=Shooter private crash inbox on the master host
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 %h/.local/share/shooter-crashes/crash_receiver.py --dir %h/.local/share/shooter-crashes/reports
+Restart=on-failure
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077
+
+[Install]
+WantedBy=default.target
