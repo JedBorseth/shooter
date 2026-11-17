@@ -16,13 +16,12 @@ In those cases, say in the final reply what you left unpublished.
 
 ## Repository facts
 
-- Default branch: `main`. A ruleset ("Protect main") requires a pull request, requires the CI jobs and `Export clients` to pass, and requires the branch to be up to date with `main` before merging. GitHub auto-merge therefore waits for those checks. You still confirm every check yourself, including the ones the ruleset does not list.
+- Default branch: `main`. A ruleset ("Protect main") requires a pull request and passing checks. GitHub auto-merge waits for them. You still confirm every check yourself, including the ones the ruleset does not list.
 - Merge method: squash. The repository deletes the head branch after a merge, so do not pass `--delete-branch` (it fails in a worktree because `main` is checked out elsewhere).
-- CI comes from two workflows, and every check from both must pass:
-  - `CI` (`.github/workflows/ci.yml`): Rust fmt and clippy, Rust tests on Linux, Windows, and macOS, GDScript lint and format, and a headless Godot smoke test.
-  - `Build` (`.github/workflows/build.yml`): GDExtension builds and client exports for Linux, Windows, and macOS. This is the slowest workflow.
+- CI is one workflow, `CI` (`.github/workflows/ci.yml`): lint and tests on Linux, Rust tests on Windows and macOS, every headless Godot test, GDExtension builds, and client exports. Its last job, `CI passed`, passes only when every other job did; that is the check the ruleset requires. [docs/ci.md](../../../docs/ci.md) describes the pipeline.
+- Godot tests are discovered: every `godot/tests/*_test.gd` runs in CI. Add a test by adding the file; do not edit `ci.yml` for it. Tests step the game at a fixed frame rate; a test that starts another process (a dedicated or master server) must be listed in `REALTIME` in `.github/scripts/godot-tests.sh`.
 - The repository is public. Never write "slambox" in any form in commits, PR titles, or PR bodies. Call the machine "Josh's dev box" or leave it out.
-- Other agents work in parallel and land their own PRs. Merge one PR at a time, and always rebase onto the latest `main` before you merge.
+- Other agents work in parallel and land their own PRs. If `main` has a merge queue, it tests each PR on top of the latest `main` for you. Without one, merge one PR at a time and rebase onto the latest `main` before you merge.
 
 ## Steps
 
@@ -38,7 +37,7 @@ Fix failures before you push. Run only what applies:
 
 - Rust changed: from `rust/`, run `cargo fmt --all`, `cargo clippy --all-targets --locked -- -D warnings`, and `cargo test --locked`.
 - GDScript changed: `pipx run --spec gdtoolkit==4.5.0 gdlint godot/scripts godot/tests` and `pipx run --spec gdtoolkit==4.5.0 gdformat --check godot/scripts godot/tests`.
-- Scenes, assets, or the extension changed: if Godot is installed, build the extension (`cargo build -p shooter-game`) and run `godot --headless --path godot --script res://tests/smoke_test.gd`. Otherwise leave it to CI.
+- Scenes, assets, or the extension changed: if Godot is installed, build the extension (`cargo build -p shooter-game`) and run the Godot tests you touched from the repository root, the way CI does: `.github/scripts/godot-tests.sh smoke_test <other_test> ...`. Otherwise leave it to CI.
 
 Leave the client export builds to CI.
 
@@ -64,7 +63,7 @@ The body has a short summary of what changed and why, a "Testing" section listin
 
 In T3 Code, link the PR to the thread with `link_pull_request` right after you create it.
 
-Then turn on auto-merge, so GitHub merges as soon as the required checks pass on an up-to-date branch:
+Then turn on auto-merge, so GitHub merges (or, with a merge queue, queues the PR) as soon as the required checks pass:
 
 ```sh
 gh pr merge <number> --auto --squash
@@ -76,7 +75,7 @@ Skip auto-merge if the user asked you to hold the PR.
 
 Get the head commit: `git rev-parse HEAD`.
 
-- In T3 Code: call `watch_pull_request` on the PR and end your turn. You are woken when checks finish. Do not poll, sleep, or run `gh pr checks --watch` there. A wake that says "required checks passed" can arrive while slower checks (the macOS build, the client export) are still running. On every wake, run `gh pr checks <number>`. If anything is still pending, end your turn again; the watch stays on.
+- In T3 Code: call `watch_pull_request` on the PR and end your turn. You are woken when checks finish. Do not poll, sleep, or run `gh pr checks --watch` there. A wake that says "required checks passed" can arrive before every job has finished. On every wake, run `gh pr checks <number>`. If anything is still pending, end your turn again; the watch stays on.
 - Elsewhere: `gh pr checks <number> --watch --fail-fast --interval 30`, with a timeout of at least 30 minutes.
 
 The checks are done when every check on the current head commit has finished. If none are listed yet, the workflows have not registered; wait, do not treat that as green. `success`, `skipped`, and `neutral` count as passing.
@@ -94,14 +93,22 @@ Never disable, skip, or weaken a check, lint rule, or test to get green. If a ch
 
 ### 7. Make sure the PR is current, then merge
 
-Before you merge, check that `main` has not moved since your last push:
+First check whether `main` has a merge queue:
+
+```sh
+gh api graphql -f query='{repository(owner:"JedBorseth",name:"shooter"){mergeQueue(branch:"main"){id}}}' -q '.data.repository.mergeQueue.id'
+```
+
+**With a merge queue** (the command prints an ID): do not rebase just because `main` moved. Auto-merge puts the PR in the queue once its checks pass, and the queue runs CI on the PR merged with the latest `main` before landing it. Rebase only when the PR has conflicts (`gh pr view <number> --json mergeable` shows `CONFLICTING`) or the queue removes it for a failure; then fix, push, and go back to step 5. Wait for the PR to merge the same way you waited for checks.
+
+**Without a merge queue** (the command prints nothing): before you merge, check that `main` has not moved since your last push:
 
 ```sh
 git fetch origin
 git merge-base --is-ancestor origin/main HEAD && echo current || echo behind
 ```
 
-If it is behind, go back to step 3. The ruleset blocks a stale branch anyway, and CI must pass on the rebased commit. If someone else pushed to your branch (for example, GitHub's "Update branch" merge), run `git pull --ff-only` first and look at what they changed.
+If it is behind, go back to step 3. CI must pass on the rebased commit. If someone else pushed to your branch (for example, GitHub's "Update branch" merge), run `git pull --ff-only` first and look at what they changed.
 
 Do not merge if the PR is a draft, has a "changes requested" review, or the user asked you to hold it.
 

@@ -194,7 +194,7 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 
 - [x] GitHub Actions CI: `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`, gdlint and gdformat, and the headless smoke test (download Godot 4.7.2 in the job).
 - [x] Release builds: export presets for Linux, Windows, and macOS clients, exported on `main` and published on `v*` tags.
-- [ ] Dedicated server build: a Linux export preset with `dedicated_server=true` (done, exported by the Build workflow), packaged as a Docker image and pushed to GitHub Container Registry from the Build workflow.
+- [ ] Dedicated server build: a Linux export preset with `dedicated_server=true` (done, exported by CI), packaged as a Docker image and pushed to GitHub Container Registry from CI.
 - [x] Determinism test in CI: record an input sequence, run it through `shooter_sim::player::step` twice (and on each OS in the build matrix), and compare state hashes. Catches prediction desyncs before netcode depends on them. (`rust/sim/tests/determinism.rs`)
 - [ ] Visual and performance checks on a GPU runner: run `capture_screens.gd` and a scripted fly-through that records frame times, on a self-hosted runner with a GPU, for trusted branches only.
 - [ ] **good first task** A `justfile` or Makefile with `build`, `run`, `test`, `screens` targets.

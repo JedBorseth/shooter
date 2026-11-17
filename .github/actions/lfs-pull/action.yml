@@ -1,7 +1,13 @@
 name: Pull Git LFS files
 description: >-
   Fetches the LFS objects for the checked-out commit through the Actions cache,
-  so repeated runs don't spend the repository's LFS bandwidth.
+  so repeated runs don't spend the repository's LFS bandwidth. Only runs on main
+  save the cache: each copy is about 600 MB, and pull requests saving their own
+  would push main's caches out of the repository's 10 GB limit.
+inputs:
+  save:
+    description: Save the cache when this run had to fetch new objects
+    default: "false"
 runs:
   using: composite
   steps:
@@ -10,7 +16,8 @@ runs:
       # hashFiles only sees files inside the workspace.
       run: git lfs ls-files --long | cut -d ' ' -f1 | sort > .lfs-objects.txt
     - name: Restore LFS cache
-      uses: actions/cache@v6
+      id: restore
+      uses: actions/cache/restore@v6
       with:
         path: .git/lfs
         key: lfs-${{ hashFiles('.lfs-objects.txt') }}
@@ -18,3 +25,9 @@ runs:
     - name: Pull LFS files
       shell: bash
       run: git lfs pull
+    - name: Save LFS cache
+      if: inputs.save == 'true' && steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: .git/lfs
+        key: lfs-${{ hashFiles('.lfs-objects.txt') }}

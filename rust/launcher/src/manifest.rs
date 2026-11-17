@@ -1,4 +1,4 @@
-//! `latest.json`: what the Build workflow published last, and where to get it.
+//! `latest.json`: what the CI workflow published last, and where to get it.
 //!
 //! The workflow writes the manifest next to the build zips (see
 //! `.github/scripts/write-manifest.sh`). File names in it are relative to the

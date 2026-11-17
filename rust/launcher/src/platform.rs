@@ -1,4 +1,4 @@
-//! Platform names, as the Build workflow uses them in file names and in the
+//! Platform names, as the CI workflow uses them in file names and in the
 //! manifest.
 
 /// The client build for the machine the launcher runs on.
