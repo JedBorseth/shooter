@@ -117,10 +117,14 @@ that server. **Gun Game** does the same for a free-for-all up a ladder of eight 
 it to score a point a second while nobody from the other team is in it; it moves every minute (see
 [Hardpoint](#hardpoint)), and **Search and Destroy** for rounds with one life each on Slamcity
 (your name, team size, bot skill, and rounds to win; see
-[Search and Destroy](#search-and-destroy)). **Slamcity** is the team map, a city block with three lanes
-between parking-yard spawns at each end: a back alley with a fire escape up to the flats'
-roof (the high ground), Market Street around a sunken skate bowl, and a run of interiors
-(corner store, apartment lobby, laundromat) with windows onto the street. Offline it has
+[Search and Destroy](#search-and-destroy)). **Slamcity** is the team map, a city block cut by an elevated railway at dusk, with
+transit-depot spawn yards at each end and three lanes between them: a back alley with fire
+escapes up to the tenements' roofs (the high ground), Slam Avenue around a stalled bus, a
+jack-knifed truck, and a roadworks pit under the station, and a run of storefronts (corner store,
+diner with a roof terrace, laundromat) opening onto the station's ticket hall. Slam Junction
+stands over the avenue: each team has its own platform, reached from the alley and the ticket
+hall, and the way across is through a stalled train. A second car came off the viaduct and lies
+nose-down in the alley, its aisle a climb from the alley up to the tracks. Offline it has
 practice targets on the far half. It ships in every build. **Testing Area** loads the
 existing arena on selection. **Server Browser** opens the server browser (see [Play online](#play-online)). **Zombies**
 opens a Black Ops 2 inspired menu: **Solo** leads to a rotating globe with five
@@ -238,7 +242,7 @@ Servers run Team Deathmatch by default: two teams, to 75 kills or 10 minutes (`-
 
 ![Capture the Flag on Slamcity: our flag and capture ring at the spawn yard with the enemy flag's TAKE marker, a capture call with flag lines in the kill feed, and the scoreboard with captures and returns](docs/media/capture-the-flag.jpg)
 
-Each team has a flag at its base; on Slamcity it stands in the team's spawn yard, behind the low wall at the mouth of Market Street, inside a ring that marks the capture zone. Walk over the enemy's flag to take it, and carry it into your own ring to capture it and score. Your own flag must be at home for that, so when both teams hold each other's flag, someone has to kill the other carrier first. A carrier who dies drops the flag where they fell. Touch your own dropped flag to send it home at once; left alone, it goes home after 30 seconds. Kills do not score for the team, only captures, to 3 captures or 10 minutes; a level score at the whistle is a draw.
+Each team has a flag at its base; on Slamcity it stands at the mouth of Slam Avenue in front of the team's spawn yard, inside a ring that marks the capture zone. Walk over the enemy's flag to take it, and carry it into your own ring to capture it and score. Your own flag must be at home for that, so when both teams hold each other's flag, someone has to kill the other carrier first. A carrier who dies drops the flag where they fell. Touch your own dropped flag to send it home at once; left alone, it goes home after 30 seconds. Kills do not score for the team, only captures, to 3 captures or 10 minutes; a level score at the whistle is a draw.
 
 Markers over each flag say what to do there (TAKE, DEFEND, RETURN, KILL the carrier, ESCORT a teammate who has it, and CAPTURE at your own base while you carry the enemy's), with the distance, and stay on the screen's edge when the flag is behind you. Beside the score bar, a flag icon for each team shows HOME, TAKEN, or the time until a dropped flag goes home. Every take, drop, return, and capture gets a call, a chime, and a line in the kill feed. Personal score: 100 for taking the flag from its base, 500 for a capture, 100 for a return, and 100 on top of the kill for killing the enemy carrying your flag; the scoreboard adds captures and returns.
 

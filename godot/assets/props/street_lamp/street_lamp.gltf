@@ -167,14 +167,14 @@
 		{
 			"bufferView":0,
 			"componentType":5126,
-			"count":3153,
+			"count":2141,
 			"max":[
-				0.3523496985435486,
-				3.8702213764190674,
+				0.353046715259552,
+				3.869856834411621,
 				0.19193099439144135
 			],
 			"min":[
-				-0.3523496985435486,
+				-0.353046715259552,
 				0,
 				-0.19193099439144135
 			],
@@ -183,25 +183,25 @@
 		{
 			"bufferView":1,
 			"componentType":5126,
-			"count":3153,
+			"count":2141,
 			"type":"VEC3"
 		},
 		{
 			"bufferView":2,
 			"componentType":5126,
-			"count":3153,
+			"count":2141,
 			"type":"VEC2"
 		},
 		{
 			"bufferView":3,
 			"componentType":5126,
-			"count":3153,
+			"count":2141,
 			"type":"VEC4"
 		},
 		{
 			"bufferView":4,
 			"componentType":5123,
-			"count":11757,
+			"count":7344,
 			"type":"SCALAR"
 		},
 		{
@@ -209,13 +209,13 @@
 			"componentType":5126,
 			"count":34,
 			"max":[
-				0.1721118688583374,
-				3.509549617767334,
+				0.17296549677848816,
+				3.509551525115967,
 				0.17235641181468964
 			],
 			"min":[
-				-0.1721118837594986,
-				3.1379904747009277,
+				-0.17125825583934784,
+				3.1379923820495605,
 				-0.17243394255638123
 			],
 			"type":"VEC3"
@@ -247,133 +247,133 @@
 		{
 			"bufferView":10,
 			"componentType":5126,
-			"count":49,
+			"count":31,
 			"max":[
-				0.029986370354890823,
-				3.3015146255493164,
-				0.03009544499218464
+				0.03083999827504158,
+				3.303745746612549,
+				0.030703173950314522
 			],
 			"min":[
-				-0.030053192749619484,
-				3.227102041244507,
-				-0.030102061107754707
+				-0.029956307262182236,
+				3.2271039485931396,
+				-0.03133605420589447
 			],
 			"type":"VEC3"
 		},
 		{
 			"bufferView":11,
 			"componentType":5126,
-			"count":49,
+			"count":31,
 			"type":"VEC3"
 		},
 		{
 			"bufferView":12,
 			"componentType":5126,
-			"count":49,
+			"count":31,
 			"type":"VEC2"
 		},
 		{
 			"bufferView":13,
 			"componentType":5126,
-			"count":49,
+			"count":31,
 			"type":"VEC4"
 		},
 		{
 			"bufferView":14,
 			"componentType":5123,
-			"count":192,
+			"count":108,
 			"type":"SCALAR"
 		}
 	],
 	"bufferViews":[
 		{
 			"buffer":0,
-			"byteLength":37836,
+			"byteLength":25692,
 			"byteOffset":0,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":37836,
-			"byteOffset":37836,
+			"byteLength":25692,
+			"byteOffset":25692,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":25224,
-			"byteOffset":75672,
+			"byteLength":17128,
+			"byteOffset":51384,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":50448,
-			"byteOffset":100896,
+			"byteLength":34256,
+			"byteOffset":68512,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":23514,
-			"byteOffset":151344,
+			"byteLength":14688,
+			"byteOffset":102768,
 			"target":34963
 		},
 		{
 			"buffer":0,
 			"byteLength":408,
-			"byteOffset":174860,
+			"byteOffset":117456,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":408,
-			"byteOffset":175268,
+			"byteOffset":117864,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":272,
-			"byteOffset":175676,
+			"byteOffset":118272,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":544,
-			"byteOffset":175948,
+			"byteOffset":118544,
 			"target":34962
 		},
 		{
 			"buffer":0,
 			"byteLength":96,
-			"byteOffset":176492,
+			"byteOffset":119088,
 			"target":34963
 		},
 		{
 			"buffer":0,
-			"byteLength":588,
-			"byteOffset":176588,
+			"byteLength":372,
+			"byteOffset":119184,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":588,
-			"byteOffset":177176,
+			"byteLength":372,
+			"byteOffset":119556,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":392,
-			"byteOffset":177764,
+			"byteLength":248,
+			"byteOffset":119928,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":784,
-			"byteOffset":178156,
+			"byteLength":496,
+			"byteOffset":120176,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":384,
-			"byteOffset":178940,
+			"byteLength":216,
+			"byteOffset":120672,
 			"target":34963
 		}
 	],
@@ -385,7 +385,7 @@
 	],
 	"buffers":[
 		{
-			"byteLength":179324,
+			"byteLength":120888,
 			"uri":"street_lamp.bin"
 		}
 	]

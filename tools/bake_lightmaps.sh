@@ -34,3 +34,11 @@ for file in "${keep[@]}"; do
 	mv "$repo/.bake-keep-$(basename "$file")" "$file"
 done
 grep -q "light_data" "${scenes[@]/#res:\/\//}" || { echo "bake failed" >&2; exit 1; }
+# Record which generated mesh each map was baked with (Slamcity: city.hash), so
+# CI can tell a stale lightmap (tools/test_slamcity_layout.py).
+for scene in "${scenes[@]}"; do
+	name="$(basename "$scene" .tscn)"
+	if [[ -f "assets/maps/$name/city.hash" ]]; then
+		cp "assets/maps/$name/city.hash" "scenes/$name.bake.hash"
+	fi
+done

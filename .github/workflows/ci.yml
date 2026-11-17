@@ -104,6 +104,12 @@ jobs:
           python -m unittest discover -s tools -p "test_import_nuketown_props.py" -v
           test -f tools/test_crash_receiver.py
           python -m unittest discover -s tools -p "test_crash_receiver.py" -v
+      # Slamcity's layout rules (mirrored collision, spawn safety, no long open
+      # lines) and whether the committed scene was written from the current layout.
+      - name: Slamcity layout tests
+        run: |
+          test -f tools/test_slamcity_layout.py
+          python -m unittest discover -s tools -p "test_slamcity_layout.py" -v
       - name: Rust format
         working-directory: rust
         run: cargo fmt --all --check
