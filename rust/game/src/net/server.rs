@@ -274,6 +274,9 @@ struct Shot {
     aim_offset: Vec2,
     shot: u32,
     view_tick: Option<f64>,
+    /// The shooter's round trip in seconds (players only), which bounds how
+    /// far back their view tick may be.
+    rtt: Option<f32>,
 }
 
 #[godot_api]
@@ -1017,7 +1020,7 @@ impl NetServer {
         // Gun Game hands out weapons by the ladder only.
         let racks = !matches!(self.game, Mode::GunGame(_));
         for avatar in &mut self.avatars {
-            let inputs: Vec<(PlayerInput, Option<f64>)> = if avatar.bot {
+            let inputs: Vec<(PlayerInput, Option<f64>, Option<f32>)> = if avatar.bot {
                 let input = match (&mut avatar.brain, &mut self.navigation, &mut space) {
                     (Some(brain), Some(navigation), Some(space)) => {
                         let me = players
@@ -1041,7 +1044,7 @@ impl NetServer {
                     }
                     _ => bot_input(avatar, tick),
                 };
-                vec![(input, None)]
+                vec![(input, None, None)]
             } else {
                 let Some(client) = self
                     .clients
@@ -1051,17 +1054,18 @@ impl NetServer {
                     continue;
                 };
                 let inputs: Vec<PlayerInput> = client.inputs.take().map(|(_, i)| i).collect();
+                let rtt = (transport::round_trip_ms(&client.peer) / 1000.0) as f32;
                 inputs
                     .into_iter()
                     .map(|input| {
                         if input.view_tick.is_some() {
                             client.view_tick = input.view_tick;
                         }
-                        (input, client.view_tick)
+                        (input, client.view_tick, Some(rtt))
                     })
                     .collect()
             };
-            for (input, view_tick) in &inputs {
+            for (input, view_tick, rtt) in &inputs {
                 let mut input = *input;
                 if let Some(weapon) = input.pickup
                     && (!racks || !pickup_in_reach(avatar, &input, weapon, &self.params))
@@ -1099,6 +1103,7 @@ impl NetServer {
                                 aim_offset,
                                 shot,
                                 view_tick: *view_tick,
+                                rtt: *rtt,
                             });
                         }
                         // Only falls kill inside the step; shots are resolved below.
@@ -1194,7 +1199,9 @@ impl NetServer {
             })
             .collect();
 
-        let rewind = self.lag.rewind_target(self.tick, shot.view_tick);
+        let rewind = self
+            .lag
+            .rewind_target_for(self.tick, shot.view_tick, shot.rtt);
         let targets: Vec<Target> = self
             .avatars
             .iter()

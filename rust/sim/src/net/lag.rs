@@ -35,6 +35,11 @@ use crate::weapon::{WeaponDef, WeaponId};
 pub const MAX_REWIND: f32 = 0.3;
 /// [`MAX_REWIND`] in ticks.
 pub const MAX_REWIND_TICKS: u32 = TICK_RATE * 3 / 10;
+
+/// Seconds, beyond the round trip, that a client may draw remote players in
+/// the past: the interpolation delay (about 0.1 s, more with jitter) and time
+/// queued before the server runs the input.
+pub const VIEW_SLACK: f32 = 0.25;
 /// Ticks of history kept: comfortably more than the rewind cap.
 const HISTORY_TICKS: Tick = TICK_RATE;
 
@@ -143,8 +148,21 @@ impl LagHistory {
     /// rewind cap and to the newest snapshot. Without a view tick (bots, or a
     /// client that sent none) shots are checked at the newest snapshot.
     pub fn rewind_target(&self, now: Tick, view_tick: Option<f64>) -> f64 {
+        self.rewind_target_for(now, view_tick, None)
+    }
+
+    /// Like [`rewind_target`](Self::rewind_target), but also no further back
+    /// than the shooter's round trip (`rtt`, seconds) and the most a client's
+    /// interpolation delay and input queue add ([`VIEW_SLACK`]) explain. An
+    /// honest client's view tick always fits; a tampered one cannot pick an
+    /// older, more favourable moment inside the rewind cap.
+    pub fn rewind_target_for(&self, now: Tick, view_tick: Option<f64>, rtt: Option<f32>) -> f64 {
         let newest = f64::from(self.newest_tick().unwrap_or(now).min(now));
-        let oldest = f64::from(now.saturating_sub(MAX_REWIND_TICKS));
+        let mut oldest = f64::from(now.saturating_sub(MAX_REWIND_TICKS));
+        if let Some(rtt) = rtt.filter(|r| r.is_finite() && *r >= 0.0) {
+            let explained = f64::from((rtt + VIEW_SLACK) * TICK_RATE as f32);
+            oldest = oldest.max(f64::from(now) - explained);
+        }
         view_tick
             .filter(|t| t.is_finite())
             .map_or(newest, |t| t.clamp(oldest.min(newest), newest))
@@ -456,6 +474,29 @@ mod tests {
             .collect();
         let weaker = resolve_shot(def, &through, &targets);
         assert!((weaker[0].damage - hits[0].damage * 0.7).abs() < 1e-3);
+    }
+
+    #[test]
+    fn view_ticks_older_than_the_round_trip_explains_are_clamped() {
+        let mut history = LagHistory::default();
+        for tick in 0..=200 {
+            history.record(tick, vec![view(1, 0.0, 0.0, true)]);
+        }
+        let now = 200;
+        // 30 ms of ping and 0.25 s of slack explain 33.6 ticks of view delay.
+        let floor = f64::from(now) - f64::from((0.03 + VIEW_SLACK) * TICK_RATE as f32);
+        let honest = f64::from(now) - 20.0;
+        assert_eq!(
+            history.rewind_target_for(now, Some(honest), Some(0.03)),
+            honest
+        );
+        let tampered = f64::from(now) - 34.0;
+        assert!((history.rewind_target_for(now, Some(tampered), Some(0.03)) - floor).abs() < 1e-6);
+        // A slow connection is still held to the rewind cap.
+        let capped = history.rewind_target_for(now, Some(0.0), Some(1.0));
+        assert_eq!(capped, f64::from(now - MAX_REWIND_TICKS));
+        // Without a round trip, only the cap applies.
+        assert_eq!(history.rewind_target(now, Some(tampered)), tampered);
     }
 
     #[test]
