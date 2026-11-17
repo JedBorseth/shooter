@@ -5,8 +5,8 @@
 shader_type canvas_item;
 render_mode unshaded;
 
-uniform float vignette : hint_range(0.0, 1.0) = 0.22;
-uniform float grain : hint_range(0.0, 0.2) = 0.022;
+uniform float vignette : hint_range(0.0, 1.0) = 0.13;
+uniform float grain : hint_range(0.0, 0.2) = 0.014;
 uniform float aim : hint_range(0.0, 1.0) = 0.0;
 uniform float suppression : hint_range(0.0, 1.0) = 0.0;
 uniform float tick = 0.0;
@@ -19,9 +19,10 @@ float hash(vec2 p) {
 
 void fragment() {
 	vec2 centred = (SCREEN_UV - 0.5) * vec2(1.0, 0.82);
-	float edge = smoothstep(0.32, 0.86, length(centred) * 1.55);
+	float edge = smoothstep(0.45, 0.95, length(centred) * 1.55);
 	float shade = edge * clamp(vignette + aim * 0.16 + suppression * 0.45, 0.0, 0.9);
-	float noise = hash(FRAGCOORD.xy + vec2(tick * 37.0, tick * 91.0)) - 0.5;
+	// Grain a pixel and a half wide reads as film; single pixels read as sensor noise.
+	float noise = hash(floor(FRAGCOORD.xy / 1.5) + vec2(tick * 37.0, tick * 91.0)) - 0.5;
 	// A speck is white or black; how strongly it shows is the grain.
 	float speck = abs(noise) * 2.0 * grain;
 	float alpha = shade + speck * (1.0 - shade);
