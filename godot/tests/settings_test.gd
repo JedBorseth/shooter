@@ -4,6 +4,7 @@ extends SceneTree
 ## Run from the repo root: godot --headless --path godot --script res://tests/settings_test.gd
 
 const TEST_PATH := "user://settings_test.cfg"
+const SETTINGS_SCRIPT := preload("res://scripts/settings.gd")
 
 var _failures: PackedStringArray = []
 
@@ -29,6 +30,7 @@ func _run() -> void:
 	_check_validation(settings)
 	_check_round_trip(settings)
 	_check_graphics(settings)
+	_check_bindings(settings)
 	await _check_menu(settings)
 
 	settings.reset_to_defaults()
@@ -152,7 +154,7 @@ func _check_round_trip(settings: Node) -> void:
 	)
 
 	# A fresh instance reads only what is in the file.
-	var fresh: Node = (load("res://scripts/settings.gd") as GDScript).new()
+	var fresh: Node = SETTINGS_SCRIPT.new()
 	fresh.path = TEST_PATH
 	fresh.load_settings()
 	_check(
@@ -186,6 +188,13 @@ func _check_round_trip(settings: Node) -> void:
 	_check(is_equal_approx(player.base_fov, settings.vertical_fov()), "player base_fov is vertical")
 	_check(player.camera_motion == false, "player camera_motion set")
 	_check(player.ads_sensitivity_scale == 1.0, "player ads_sensitivity_scale set")
+	settings.set_setting(&"invert_mouse_y", true)
+	settings.set_setting(&"stick_sensitivity", 1.5)
+	settings.set_setting(&"aim_assist", false)
+	settings.apply_to_player(player)
+	_check(player.mouse_invert_y, "invert mouse Y reaches the player")
+	_check(is_equal_approx(player.stick_yaw_speed, 300.0), "stick sensitivity scales the turn rate")
+	_check(not player.aim_assist, "aim assist can be turned off")
 	player.free()
 	settings.apply_to_player(null)
 	settings.reset_to_defaults()
@@ -256,6 +265,8 @@ func _check_menu(settings: Node) -> void:
 	_check(not menu.is_open(), "menu starts closed")
 	_check(menu.process_mode == Node.PROCESS_MODE_ALWAYS, "menu always processes")
 
+	var start := _joy(JOY_BUTTON_START)
+	_check(InputMap.event_is_action(start, &"pause"), "controller Menu button opens pause")
 	await _press(&"pause")
 	_check(menu.is_open(), "pause opens the menu")
 	_check(paused, "opening the offline menu freezes the tree")
@@ -266,19 +277,57 @@ func _check_menu(settings: Node) -> void:
 	(menu.get_node("%SettingsButton") as Button).pressed.emit()
 	await process_frame
 	_check((menu.get_node("%SettingsPage") as Control).visible, "Settings opens the settings page")
+	var tabs: TabBar = menu._tabs
+	_check(tabs.tab_count == 3, "options has Controls, Graphics, and General tabs")
+	_check(menu._tab_sections[0].visible, "Controls opens first")
+	tabs.current_tab = 1
+	_check(
+		menu._tab_sections[1].visible and not menu._tab_sections[0].visible,
+		"Graphics is shown independently of Controls"
+	)
+	_check(menu._toggles[&"fullscreen"].is_visible_in_tree(), "Graphics includes fullscreen")
+	tabs.current_tab = 2
+	_check(menu._player_name.is_visible_in_tree(), "General includes player name")
+	menu._player_name.text = "Menu player"
+	menu._player_name.text_submitted.emit("Menu player")
+	_check(settings.player_name == "Menu player", "player name edits apply")
+	tabs.current_tab = 0
 	var sliders: Array[Node] = menu.find_children("*", "HSlider", true, false)
-	_check(sliders.size() == 7, "seven sliders, got %d" % sliders.size())
-	_check(menu.find_children("*", "CheckButton", true, false).size() == 5, "five toggles")
+	_check(sliders.size() == 11, "eleven sliders, got %d" % sliders.size())
+	var toggle_count := menu.find_children("*", "CheckButton", true, false).size()
+	_check(toggle_count == 9, "nine toggles, got %d" % toggle_count)
 
 	# Drive a slider and a toggle like a player would.
-	var fov_slider := sliders[2] as HSlider
+	var fov_slider: HSlider = menu._sliders[&"fov"]
 	fov_slider.value = 110.0
 	_check(settings.fov == 110.0, "FOV slider changes the setting, got %s" % settings.fov)
-	var toggles: Array[Node] = menu.find_children("*", "CheckButton", true, false)
-	(toggles[0] as CheckButton).button_pressed = false
+	(menu._toggles[&"camera_motion"] as CheckButton).button_pressed = false
 	_check(settings.camera_motion == false, "camera motion toggle changes the setting")
 	settings.set_setting(&"mouse_sensitivity", 3.0)
-	_check(is_equal_approx((sliders[0] as HSlider).value, 3.0), "slider follows outside changes")
+	_check(
+		is_equal_approx((menu._sliders[&"mouse_sensitivity"] as HSlider).value, 3.0),
+		"slider follows outside changes"
+	)
+
+	# Rebind jump from the menu: click its button, then press K.
+	var jump_button: Button = menu._bind_buttons[&"jump"]
+	_check(jump_button.text == "Space", "the jump row shows Space, got '%s'" % jump_button.text)
+	jump_button.pressed.emit()
+	_check(jump_button.text == "Press a key…", "the row waits for a key")
+	var k := InputEventKey.new()
+	k.physical_keycode = KEY_K
+	k.pressed = true
+	Input.parse_input_event(k)
+	await process_frame
+	_check(_bound(&"jump") == KEY_K, "pressing K binds jump to K")
+	_check(jump_button.text == "K", "and the row shows it, got '%s'" % jump_button.text)
+
+	jump_button.pressed.emit()
+	await _press(&"ui_cancel")
+	_check(menu.is_open() and jump_button.text == "K", "cancel keeps binding and menu open")
+	jump_button.pressed.emit()
+	menu._process(11.0)
+	_check(menu._capturing.is_empty() and jump_button.text == "K", "capture times out safely")
 
 	(menu.get_node("%ResetButton") as Button).pressed.emit()
 	_check(
@@ -300,6 +349,49 @@ func _check_menu(settings: Node) -> void:
 	menu.queue_free()
 	# Let the audio server release the click sound before exit.
 	await create_timer(0.2).timeout
+
+
+## Rebinding: the key moves, a clash swaps, bindings save and load, and reset
+## restores the project's keys.
+func _check_bindings(settings: Node) -> void:
+	_check(settings.key_label(&"interact") == "F", "interact is F")
+	_check(settings.key_label(&"interact", true) == "X", "on a gamepad, interact is X")
+	_check(settings.key_label(&"fire") == "LMB", "fire is the left mouse button")
+	settings.rebind(&"jump", _key(KEY_J))
+	_check(_bound(&"jump") == KEY_J, "jump rebinds to J")
+	_check(InputMap.action_has_event(&"jump", _joy(JOY_BUTTON_A)), "the gamepad binding stays")
+	settings.rebind(&"crouch", _key(KEY_J))
+	_check(_bound(&"crouch") == KEY_J, "crouch takes J")
+	_check(_bound(&"jump") == KEY_C, "and jump gets crouch's C, got %d" % _bound(&"jump"))
+	_check(settings.save_settings() == OK, "bindings save")
+	InputMap.load_from_project_settings()
+	var fresh: Node = SETTINGS_SCRIPT.new()
+	fresh.path = TEST_PATH
+	fresh.load_settings()
+	_check(_bound(&"crouch") == KEY_J and _bound(&"jump") == KEY_C, "bindings load")
+	fresh.free()
+	settings.reset_to_defaults()
+	_check(_bound(&"jump") == KEY_SPACE, "reset puts Space back on jump")
+
+
+## The physical key bound to `action`, or KEY_NONE.
+func _bound(action: StringName) -> int:
+	for event: InputEvent in InputMap.action_get_events(action):
+		if event is InputEventKey:
+			return (event as InputEventKey).physical_keycode
+	return KEY_NONE
+
+
+func _key(code: Key) -> InputEventKey:
+	var event := InputEventKey.new()
+	event.physical_keycode = code
+	return event
+
+
+func _joy(button: JoyButton) -> InputEventJoypadButton:
+	var event := InputEventJoypadButton.new()
+	event.button_index = button
+	return event
 
 
 func _press(action: StringName) -> void:
@@ -337,3 +429,6 @@ class _FakePlayer:
 	var ads_sensitivity_scale := 0.0
 	var base_fov := 0.0
 	var camera_motion := true
+	var mouse_invert_y := false
+	var stick_yaw_speed := 0.0
+	var aim_assist := true

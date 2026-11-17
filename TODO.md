@@ -80,10 +80,11 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Settings: mouse sensitivity, ADS sensitivity multiplier, FOV, camera motion, volume sliders, window, vsync, and frame cap, saved in `user://settings.cfg`.
 - [x] Graphics presets (Low, Medium, High) and a render scale with FSR upscaling, applied to every map (`godot/scripts/graphics.gd`).
 - [x] A rendering benchmark with a GPU budget per preset, run before and after every visual change (`tools/benchmark.sh`, `docs/performance.md`).
-- [ ] Invert Y and keybind remapping.
+- [x] Invert Y and keybind remapping (Settings → Key bindings; saved in the `keys` section of `settings.cfg`).
 - [x] Gamepad support: bindings, stick deadzones and response curve, turn boost, rumble, and aim assist (slowdown and rotational, on by default for gamepads only; no snap).
-- [ ] Gamepad settings in the settings menu: look speed, deadzones, curve, invert Y, aim assist toggle and strength, rumble (currently exported properties on `FpsPlayer`).
-- [ ] Button prompts with controller glyphs instead of text, and D-pad bindings for weapon slots. A gamepad binding for interact (weapon racks).
+- [x] Gamepad settings in the settings menu: look speed, deadzone, curve, invert Y, aim assist toggle and strength, vibration.
+- [x] D-pad left and right pick the weapon slots, and the reload button (X) interacts when something is in front of the player. Prompts name the bound key or button.
+- [ ] Button prompts with controller glyph images instead of button names.
 - [x] **good first task** Show the controls overlay only for the first minute, or toggle it with F1.
 
 ## Phase 2: netcode core (in progress)

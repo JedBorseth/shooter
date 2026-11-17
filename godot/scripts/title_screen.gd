@@ -24,6 +24,7 @@ func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	set_process(false)
 	_testing.pressed.connect(_start_testing)
+	$Margin/Layout/Menu/Options.pressed.connect(_open_options)
 	$Margin/Layout/Menu/Nuketown.pressed.connect(
 		func() -> void: _start_scene(NUKETOWN_PATH, "Nuketown")
 	)
@@ -43,6 +44,22 @@ func _ready() -> void:
 		Net.return_to_browser = false
 		Net.browser_message = ""
 		_open_multiplayer(message)
+
+
+func _open_options() -> void:
+	if _loading:
+		return
+	var options := (load("res://scenes/ui/pause_menu.tscn") as PackedScene).instantiate()
+	options.title_menu = true
+	$Margin.hide()
+	add_child(options)
+	options.closed.connect(
+		func() -> void:
+			options.queue_free()
+			$Margin.show()
+			$Margin/Layout/Menu/Options.grab_focus()
+	)
+	options.open_options()
 
 
 func _open_multiplayer(message := "") -> void:
@@ -155,7 +172,14 @@ func _start_scene(path: String, destination: String) -> void:
 
 func _set_buttons_disabled(disabled: bool) -> void:
 	for name: String in [
-		"TestingArea", "TeamDeathmatch", "GunGame", "Slamcity", "Nuketown", "Multiplayer", "Zombies"
+		"TestingArea",
+		"TeamDeathmatch",
+		"GunGame",
+		"Slamcity",
+		"Nuketown",
+		"Multiplayer",
+		"Zombies",
+		"Options"
 	]:
 		($Margin/Layout/Menu.get_node(name) as Button).disabled = disabled
 

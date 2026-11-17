@@ -3,6 +3,8 @@ extends CanvasLayer
 ## and freezes offline/local matches. Remote multiplayer keeps running.
 ## Settings apply live through the `Settings` autoload and save when the menu closes.
 
+signal closed
+
 const GraphicsQuality := preload("res://scripts/graphics.gd")
 
 const PAUSE_ACTION := &"pause"
@@ -11,6 +13,16 @@ const HOVER_SOUND := "res://assets/audio/ui/hover.ogg"
 const UI_BUS := &"UI"
 
 @export var player_path: NodePath
+@export var title_menu := false
+
+var _tabs: TabBar
+var _tab_sections: Array[VBoxContainer] = []
+var _bind_buttons: Dictionary[StringName, Button] = {}
+var _capturing: StringName
+var _capture_time := 0.0
+var _binding_hint: Label
+var _controller_status: Label
+var _player_name: LineEdit
 
 var _player: Node
 var _sliders: Dictionary[StringName, HSlider] = {}
@@ -47,7 +59,8 @@ func _ready() -> void:
 	%LeaveButton.pressed.connect(_leave)
 	%QuitButton.pressed.connect(_quit)
 	%ResetButton.pressed.connect(Settings.reset_to_defaults)
-	%BackButton.pressed.connect(_show_main)
+	%BackButton.pressed.connect(_back)
+	Input.joy_connection_changed.connect(_controller_changed)
 	Settings.changed.connect(_on_settings_changed)
 
 	_root.hide()
@@ -55,11 +68,14 @@ func _ready() -> void:
 
 
 func _input(event: InputEvent) -> void:
+	if is_open() and not _capturing.is_empty():
+		_capture_input(event)
+		return
 	if event.is_echo():
 		return
 	var pause := event.is_action_pressed(PAUSE_ACTION)
 	if not is_open():
-		if pause:
+		if pause and not title_menu:
 			get_viewport().set_input_as_handled()
 			open()
 		return
@@ -70,12 +86,16 @@ func _input(event: InputEvent) -> void:
 			return  # Let the dropdown close itself.
 	get_viewport().set_input_as_handled()
 	if _settings_page.visible:
-		_show_main()
+		_back()
 	else:
 		close()
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	if not _capturing.is_empty():
+		_capture_time -= delta
+		if _capture_time <= 0.0:
+			_cancel_capture("Binding cancelled. Select a binding to try again.")
 	# Keep the cursor free while open, even if something else tries to capture it.
 	if is_open() and Input.mouse_mode != Input.MOUSE_MODE_VISIBLE:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -101,15 +121,33 @@ func open() -> void:
 		get_tree().paused = true
 
 
+func open_options() -> void:
+	_sync_controls()
+	_root.show()
+	_show_settings()
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+func _back() -> void:
+	_cancel_capture()
+	if title_menu:
+		close()
+	else:
+		_show_main()
+
+
 func close() -> void:
 	if not is_open():
 		return
+	_cancel_capture()
+	_save_player_name()
 	_release_pause()
 	get_viewport().gui_release_focus()
 	_root.hide()
 	Settings.flush()
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if title_menu else Input.MOUSE_MODE_CAPTURED
 	_set_player_input(true)
+	closed.emit()
 
 
 func _release_pause() -> void:
@@ -147,15 +185,13 @@ func _show_main() -> void:
 func _show_settings() -> void:
 	_main_page.hide()
 	_settings_page.show()
-	_title.text = "SETTINGS"
-	_hint.text = "ESC  BACK      CHANGES SAVE AUTOMATICALLY"
+	_title.text = "OPTIONS"
+	_hint.text = "ESC / B  BACK   •   CHANGES SAVE AUTOMATICALLY"
 	# Fit the scroll area to short windows.
 	var available := get_viewport().get_visible_rect().size.y - 330.0
-	_scroll.custom_minimum_size.y = maxf(
-		minf(_sections.get_combined_minimum_size().y, available), 200.0
-	)
+	_scroll.custom_minimum_size.y = maxf(minf(available, 520.0), 120.0)
 	_scroll.scroll_vertical = 0
-	_focus(_sliders[&"mouse_sensitivity"])
+	_focus(_tabs)
 
 
 ## Online: back to the server browser. Offline: back to the title screen.
@@ -186,6 +222,14 @@ func _build_settings() -> void:
 	var sensitivity := func(v: float) -> String: return "%.2f" % v
 	var percent := func(v: float) -> String: return "%d%%" % roundi(v * 100.0)
 
+	_tabs = TabBar.new()
+	_tabs.name = "OptionsTabs"
+	_tabs.focus_mode = Control.FOCUS_ALL
+	for title: String in ["Controls", "Graphics", "General"]:
+		_tabs.add_tab(title)
+	_settings_page.add_child(_tabs)
+	_settings_page.move_child(_tabs, 0)
+	_tabs.tab_changed.connect(_select_tab)
 	var controls := _add_section("Controls")
 	_add_slider(controls, &"mouse_sensitivity", "Mouse sensitivity", 0.05, sensitivity)
 	_add_slider(
@@ -196,37 +240,143 @@ func _build_settings() -> void:
 		func(v: float) -> String: return "%.2f×" % v
 	)
 
-	var video := _add_section("Video")
+	_add_toggle(controls, &"invert_mouse_y", "Invert mouse Y")
+	_add_slider(controls, &"stick_sensitivity", "Controller look speed", 0.05, sensitivity)
+	_add_slider(controls, &"stick_deadzone", "Stick deadzone", 0.01, percent)
+	_add_toggle(controls, &"invert_stick_y", "Invert controller Y axis")
+	_add_slider(controls, &"stick_curve", "Response curve", 0.1, sensitivity)
+	_add_toggle(controls, &"aim_assist", "Aim assist")
+	_add_slider(controls, &"aim_assist_strength", "Aim assist strength", 0.05, percent)
+	_add_toggle(controls, &"rumble", "Vibration")
+	_controller_status = Label.new()
+	_controller_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	controls.add_child(_controller_status)
+	_controller_changed(0, false)
+	_binding_hint = Label.new()
+	_binding_hint.text = ("Choose a binding, then press a key or mouse button. Conflicts swap.")
+	_binding_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	controls.add_child(_binding_hint)
+	_build_bindings(controls)
+
+	var video := _add_section("Graphics")
 	_add_slider(
 		video, &"fov", "Field of view", 1.0, func(v: float) -> String: return "%d°" % roundi(v)
 	)
-	_add_toggle(video, &"camera_motion", "Camera motion")
 	_add_toggle(video, &"fullscreen", "Fullscreen")
 	_add_toggle(video, &"vsync", "VSync")
 	_add_fps_option(video)
-	_add_toggle(video, &"show_fps", "Show FPS counter")
 	_add_graphics_options(video)
 
-	var audio := _add_section("Audio")
+	var audio := _add_section("General")
+	_player_name = LineEdit.new()
+	_player_name.max_length = 16
+	_player_name.custom_minimum_size.x = 220
+	_player_name.text_submitted.connect(func(_text: String) -> void: _save_player_name())
+	_player_name.focus_exited.connect(_save_player_name)
+	_add_row(audio, "Player name", _player_name)
+	_add_toggle(audio, &"camera_motion", "Camera motion")
+	_add_toggle(audio, &"show_fps", "Show FPS counter")
 	_add_slider(audio, &"master_volume", "Master", 0.01, percent)
 	_add_slider(audio, &"weapons_volume", "Weapons", 0.01, percent)
 	_add_slider(audio, &"effects_volume", "Effects", 0.01, percent)
 	_add_slider(audio, &"ui_volume", "Interface", 0.01, percent)
+	_select_tab(0)
 
 
 func _add_section(title: String) -> VBoxContainer:
 	var section := VBoxContainer.new()
 	section.add_theme_constant_override(&"separation", 2)
-	if _sections.get_child_count() > 0:
-		var gap := Control.new()
-		gap.custom_minimum_size.y = 10
-		_sections.add_child(gap)
-	var header := Label.new()
-	header.theme_type_variation = &"SectionHeader"
-	header.text = title.to_upper()
-	_sections.add_child(header)
+	section.name = title
 	_sections.add_child(section)
+	_tab_sections.append(section)
 	return section
+
+
+func _select_tab(index: int) -> void:
+	_cancel_capture()
+	for i in _tab_sections.size():
+		_tab_sections[i].visible = i == index
+	_scroll.scroll_vertical = 0
+
+
+func _save_player_name() -> void:
+	Settings.set_setting(&"player_name", _player_name.text)
+	_player_name.text = Settings.player_name
+
+
+func _controller_changed(_device: int, _connected: bool) -> void:
+	var devices := Input.get_connected_joypads()
+	_controller_status.text = (
+		"Controller: " + Input.get_joy_name(devices[0])
+		if not devices.is_empty()
+		else "No controller connected. Connect one anytime; bindings are saved for later."
+	)
+
+
+func _build_bindings(section: VBoxContainer) -> void:
+	var heading := Label.new()
+	heading.text = "ACTION                         KEYBOARD / MOUSE          CONTROLLER"
+	heading.theme_type_variation = &"HintLabel"
+	section.add_child(heading)
+	for action: StringName in Settings.REBINDABLE:
+		var button := Button.new()
+		button.custom_minimum_size.x = 150
+		button.pressed.connect(_start_capture.bind(action))
+		_bind_buttons[action] = button
+		var gamepad := Label.new()
+		gamepad.custom_minimum_size.x = 130
+		gamepad.text = _gamepad_label(action)
+		_add_row(section, Settings.REBINDABLE[action], button, gamepad)
+
+
+func _gamepad_label(action: StringName) -> String:
+	for event: InputEvent in InputMap.action_get_events(action):
+		if event is InputEventJoypadMotion:
+			match event.axis:
+				JOY_AXIS_LEFT_X, JOY_AXIS_LEFT_Y:
+					return "Left stick"
+				JOY_AXIS_TRIGGER_LEFT:
+					return "LT"
+				JOY_AXIS_TRIGGER_RIGHT:
+					return "RT"
+	var label := Settings.key_label(action, true)
+	return "—" if label == "?" else label
+
+
+func _start_capture(action: StringName) -> void:
+	_capturing = action
+	_capture_time = 10.0
+	_bind_buttons[action].text = "Press a key…"
+	_binding_hint.text = "Press a key or mouse button. Esc / B cancels. Conflicts swap bindings."
+
+
+func _cancel_capture(message := "") -> void:
+	if _capturing.is_empty():
+		return
+	var action := _capturing
+	_capturing = &""
+	_sync_controls()
+	_binding_hint.text = message if not message.is_empty() else "Binding cancelled."
+	_focus(_bind_buttons[action])
+
+
+func _capture_input(event: InputEvent) -> void:
+	if event.is_echo():
+		return
+	if event.is_action_pressed(&"ui_cancel") or event.is_action_pressed(PAUSE_ACTION):
+		get_viewport().set_input_as_handled()
+		_cancel_capture()
+		return
+	var chosen := (event is InputEventKey or event is InputEventMouseButton) and event.is_pressed()
+	if not chosen:
+		return
+	get_viewport().set_input_as_handled()
+	var action := _capturing
+	_capturing = &""
+	Settings.rebind(action, event)
+	_sync_controls()
+	_binding_hint.text = "Binding saved. Any conflicting key was swapped with the previous binding."
+	_focus(_bind_buttons[action])
 
 
 func _add_slider(
@@ -335,6 +485,11 @@ func _sync_controls() -> void:
 		_value_labels[key].text = _value_formats[key].call(v)
 	for key: StringName in _toggles:
 		_toggles[key].set_pressed_no_signal(Settings.get(key))
+	if _player_name != null and not _player_name.has_focus():
+		_player_name.text = Settings.player_name
+	for action: StringName in _bind_buttons:
+		var bound := Settings.binding(action)
+		_bind_buttons[action].text = "—" if bound == null else Settings.event_label(bound)
 	_fps_option.select(_fps_option.get_item_index(Settings.max_fps))
 	_quality_option.select(_quality_option.get_item_index(Settings.graphics_quality))
 	_scale_option.select(_closest_scale(Settings.render_scale))

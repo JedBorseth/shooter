@@ -549,6 +549,24 @@ func _gamepad(main: Node, player: FpsPlayer) -> void:
 			)
 		dummy.global_position = player.global_position + Vector3(0, 0, -10)
 	player.aim_assist = true
+	dummy.queue_free()
+
+	# On a gamepad, the reload button (X) takes a weapon from a rack in front.
+	var rack := main.get_node("Armory/Rack_pdw9") as Node3D
+	player.global_position = rack.global_position + Vector3(1.6, 0, 0)
+	await _sixtieths(2)
+	var to := (
+		rack.global_position + Vector3(0, 1.0, 0) - (player.global_position + Vector3(0, 1.68, 0))
+	)
+	player.set_look(atan2(-to.x, -to.z), atan2(to.y, Vector2(to.x, to.z).length()))
+	await _sixtieths(3)
+	_check(
+		player.interact_prompt() == "[X] Take PDW-9",
+		"gamepad prompts name the button, got '%s'" % player.interact_prompt()
+	)
+	await _tap("reload")
+	await _sixtieths(40)
+	_check(player.weapon_key() == "pdw9", "X takes the weapon, got %s" % player.weapon_key())
 
 
 ## Reads a whole-number field such as `reserve` from a weapon's data file.
