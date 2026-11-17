@@ -4,8 +4,9 @@ extends Control
 ## ("ctf": the same, with a capture limit instead of a kill limit), Hardpoint
 ## ("hardpoint": the same, with a points limit), or Gun Game
 ## ("gungame": name, map, player count, bots, kills per weapon, and time
-## limit), or Search and Destroy ("snd": name, team size, bots, and rounds to
-## win, on Slamcity). Bots fill the empty places. Start runs a local dedicated server with
+## limit), Free-for-all ("ffa": name, map, player count, bots, kill limit,
+## and time limit), or Search and Destroy ("snd": name, team size, bots, and
+## rounds to win, on Slamcity). Bots fill the empty places. Start runs a local dedicated server with
 ## those rules and joins it (`Net.start_local_match`). UI only: it loads no
 ## gameplay. Set `mode` before adding it to the tree.
 ##
@@ -30,6 +31,8 @@ const TIME_LIMITS := [5, 10, 15, 20]
 const BOT_SKILLS := [["Easy", "easy"], ["Normal", "normal"], ["Hard", "hard"]]
 const PLAYER_COUNTS := [2, 4, 6, 8, 10, 12]
 const KILLS_PER_WEAPON := [1, 2, 3]
+## Free-for-all kill limits, per player.
+const FFA_SCORE_LIMITS := [10, 20, 30, 50]
 
 ## Pictures for the map header, by map id.
 const MAP_PICTURES := {
@@ -40,13 +43,14 @@ const MAP_PICTURES := {
 const MODE_NAMES := {
 	"tdm": "Team Deathmatch",
 	"gungame": "Gun Game",
+	"ffa": "Free-for-all",
 	"ctf": "Capture the Flag",
 	"hardpoint": "Hardpoint",
 	"snd": "Search and Destroy",
 }
 const CARD_WIDTH := 560.0
 
-## "tdm", "ctf", "hardpoint", "gungame", or "snd".
+## "tdm", "ctf", "hardpoint", "gungame", "ffa", or "snd".
 var mode := "tdm"
 
 var _name: LineEdit
@@ -90,6 +94,15 @@ func options() -> Dictionary:
 			"kills_per_weapon": KILLS_PER_WEAPON[_kills_per_weapon.selected],
 			"time_limit": TIME_LIMITS[_time_limit.selected],
 		}
+	if _ffa():
+		return {
+			"mode": "ffa",
+			"map": MAPS[_map.selected][1],
+			"bots": PLAYER_COUNTS[_players.selected] - 1,
+			"bot_skill": BOT_SKILLS[_bot_skill.selected][1],
+			"score_limit": FFA_SCORE_LIMITS[_score_limit.selected],
+			"time_limit": TIME_LIMITS[_time_limit.selected],
+		}
 	var team_size: int = TEAM_SIZES[_team_size.selected]
 	if _snd():
 		return {
@@ -128,6 +141,10 @@ func _hardpoint() -> bool:
 
 func _snd() -> bool:
 	return mode == "snd"
+
+
+func _ffa() -> bool:
+	return mode == "ffa"
 
 
 func _maps() -> Array:
@@ -226,7 +243,7 @@ func _build() -> void:
 	_map = _chips(rows, "Map", _maps().map(func(m: Array) -> String: return m[0]), 0)
 	_map.item_selected.connect(_show_map)
 	_show_map(0)
-	if _gun_game():
+	if _gun_game() or _ffa():
 		_players = _chips(
 			rows, "Players", PLAYER_COUNTS.map(func(n: int) -> String: return str(n)), 3
 		)
@@ -246,6 +263,10 @@ func _build() -> void:
 	elif _hardpoint():
 		_score_limit = _chips(
 			rows, "Points", POINT_LIMITS.map(func(n: int) -> String: return str(n)), 2
+		)
+	elif _ffa():
+		_score_limit = _chips(
+			rows, "Kills", FFA_SCORE_LIMITS.map(func(n: int) -> String: return str(n)), 2
 		)
 	elif _snd():
 		_rounds = _chips(
@@ -304,6 +325,11 @@ func _detail() -> String:
 		return (
 			"Hold the live zone to score a point a second; it moves every minute."
 			+ " Bots fill the empty places."
+		)
+	if _ffa():
+		return (
+			"Every player for themselves, with your own loadout: first to the kill limit"
+			+ " wins. Bots fill the empty places."
 		)
 	if _snd():
 		return (

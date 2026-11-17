@@ -1562,6 +1562,8 @@ impl NetServer {
             );
         }
 
+        // Whether this shot scores, decided before its kills can end the match.
+        let scoring = self.match_state.scoring();
         let mut kills = Vec::new();
         let mut carrier_kills = 0;
         let mut objective_kills = Vec::new();
@@ -1657,6 +1659,7 @@ impl NetServer {
                     Mode::CaptureTheFlag => None,
                     // Only holding the zone scores for the team.
                     Mode::Hardpoint => None,
+                    Mode::FreeForAll => self.free_for_all_end(shot.shooter, kills.len()),
                 };
                 if let Some(end) = end {
                     self.on_transition(end);
@@ -1666,8 +1669,9 @@ impl NetServer {
             }
         }
         self.damage_props(shot.shooter, shot.weapon, &prop_hits, &hits);
-        // Points only count in a match, not in the lobby's warm-up.
-        if !kills.is_empty() && self.match_state.scoring() {
+        // Points only count in a match, not in the lobby's warm-up. The kill
+        // that ends a match still counts.
+        if !kills.is_empty() && scoring {
             let rules = self.score_rules;
             let Some(shooter) = self.avatars.iter_mut().find(|a| a.id == shot.shooter) else {
                 return;
@@ -1838,6 +1842,7 @@ impl NetServer {
         }
 
         let weapon = blast.weapon.unwrap_or_else(default_primary);
+        let scoring = self.match_state.scoring();
         let mut kills = Vec::new();
         for (id, distance, damage) in victims {
             let Some(victim) = self.avatars.iter_mut().find(|a| a.id == id) else {
@@ -1878,19 +1883,23 @@ impl NetServer {
                 }
                 let victim_team = self.avatars.iter().find(|a| a.id == id).map(|a| a.team);
                 let killer_team = credited.and(attacker_team);
-                if let Some(victim_team) = victim_team
-                    && let Some(end) =
+                let end = match (self.game, credited) {
+                    (Mode::FreeForAll, Some(killer)) => self.free_for_all_end(killer, kills.len()),
+                    _ => victim_team.and_then(|victim_team| {
                         self.match_state
                             .on_kill(&self.rules, killer_team, victim_team)
-                {
+                    }),
+                };
+                if let Some(end) = end {
                     self.on_transition(end);
                 } else {
                     self.broadcast_match();
                 }
             }
         }
-        // Points only count in a match, and only for a credited attacker.
-        if !kills.is_empty() && self.match_state.scoring() {
+        // Points only count in a match, and only for a credited attacker. The
+        // kill that ends a match still counts.
+        if !kills.is_empty() && scoring {
             let rules = self.score_rules;
             if let Some(attacker) = attacker
                 && let Some(shooter) = self.avatars.iter_mut().find(|a| a.id == attacker)
@@ -1954,6 +1963,9 @@ impl NetServer {
             | Mode::Hardpoint
             | Mode::SearchAndDestroy => self.match_state.team_leader(),
             Mode::GunGame(_) => gun_game::leader(self.avatars.iter().map(|a| (a.id, a.progress))),
+            Mode::FreeForAll => {
+                tdm::kill_leader(self.avatars.iter().map(|a| (a.id, a.score.kills)))
+            }
         };
         let transition = self
             .match_state
@@ -2209,7 +2221,8 @@ impl NetServer {
                 Mode::TeamDeathmatch
                 | Mode::CaptureTheFlag
                 | Mode::Hardpoint
-                | Mode::SearchAndDestroy => self.rules.score_limit,
+                | Mode::SearchAndDestroy
+                | Mode::FreeForAll => self.rules.score_limit,
                 Mode::GunGame(_) => u32::from(gun_game::LEVELS),
             },
         }
@@ -2289,6 +2302,23 @@ impl NetServer {
     /// Gun Game: a kill by `id` counts toward their weapon. Moving up swaps
     /// the weapon in their hands for the next one, and the last weapon's last
     /// kill wins the match.
+    /// Free-for-all: ends the match if `killer` reached the kill limit with
+    /// `pending` kills not yet in their score (they are added after the shot
+    /// or blast resolves).
+    fn free_for_all_end(&mut self, killer: u8, pending: usize) -> Option<Transition> {
+        if !self.match_state.scoring() {
+            return None;
+        }
+        let kills = self
+            .avatars
+            .iter()
+            .find(|a| a.id == killer)
+            .map_or(0, |a| a.score.kills)
+            + pending as u32;
+        (kills >= self.rules.score_limit)
+            .then(|| self.match_state.finish(&self.rules, Some(killer)))
+    }
+
     fn climb(&mut self, id: u8, rules: &gun_game::Rules) -> Option<Transition> {
         if !self.match_state.scoring() {
             return None;

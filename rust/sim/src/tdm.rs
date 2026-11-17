@@ -42,11 +42,14 @@ pub enum Mode {
     Hardpoint,
     /// Rounds with one life each: attackers against defenders.
     SearchAndDestroy,
+    /// Every player for themselves, with their own loadout: the first to
+    /// the kill limit wins, or whoever has the most kills when time runs out.
+    FreeForAll,
 }
 
 impl Mode {
     /// Parses a mode name as servers take it on the command line ("tdm",
-    /// "gungame", "ctf", "hardpoint", or "snd"), with default rules.
+    /// "gungame", "ctf", "hardpoint", "snd", or "ffa"), with default rules.
     pub fn parse(name: &str) -> Option<Self> {
         match name.trim().to_ascii_lowercase().as_str() {
             "" | "tdm" | "teamdeathmatch" | "team_deathmatch" => Some(Self::TeamDeathmatch),
@@ -56,6 +59,7 @@ impl Mode {
             }
             "hardpoint" | "hp" => Some(Self::Hardpoint),
             "snd" | "searchanddestroy" | "search_and_destroy" => Some(Self::SearchAndDestroy),
+            "ffa" | "freeforall" | "free_for_all" | "free-for-all" => Some(Self::FreeForAll),
             _ => None,
         }
     }
@@ -68,6 +72,7 @@ impl Mode {
             Self::CaptureTheFlag => "ctf",
             Self::Hardpoint => "hardpoint",
             Self::SearchAndDestroy => "snd",
+            Self::FreeForAll => "ffa",
         }
     }
 
@@ -79,22 +84,25 @@ impl Mode {
             Self::CaptureTheFlag => "Capture the Flag",
             Self::Hardpoint => "Hardpoint",
             Self::SearchAndDestroy => "Search and Destroy",
+            Self::FreeForAll => "Free-for-all",
         }
     }
 
     /// Whether every other player is an enemy. Teams then mean nothing:
     /// everyone is on team 0.
     pub fn free_for_all(&self) -> bool {
-        matches!(self, Self::GunGame(_))
+        matches!(self, Self::GunGame(_) | Self::FreeForAll)
     }
 
     /// The usual team score limit when the server is not given one: kills in
-    /// Team Deathmatch, captures in Capture the Flag, points in Hardpoint
-    /// (Gun Game ends on its last weapon instead).
+    /// Team Deathmatch, captures in Capture the Flag, points in Hardpoint,
+    /// and each player's kills in Free-for-all (Gun Game ends on its last
+    /// weapon instead).
     pub fn default_score_limit(&self) -> u32 {
         match self {
             Self::CaptureTheFlag => 3,
             Self::Hardpoint => 250,
+            Self::FreeForAll => 30,
             _ => 75,
         }
     }
@@ -317,6 +325,25 @@ impl MatchState {
     }
 }
 
+/// Free-for-all: the player with the most kills, if no one is level with
+/// them (and someone has a kill).
+pub fn kill_leader(players: impl IntoIterator<Item = (u8, u32)>) -> Option<u8> {
+    let mut best: Option<(u8, u32)> = None;
+    let mut tied = false;
+    for (id, kills) in players {
+        match best {
+            Some((_, top)) if kills < top => {}
+            Some((_, top)) if kills == top => tied = true,
+            _ => {
+                best = Some((id, kills));
+                tied = false;
+            }
+        }
+    }
+    best.filter(|(_, kills)| !tied && *kills > 0)
+        .map(|(id, _)| id)
+}
+
 /// The team a new player joins: the smaller one, or `tie` when level. Humans
 /// break ties toward team 0 and bots toward team 1, so a server's bots start
 /// across from its first human.
@@ -510,6 +537,18 @@ pub const MAX_NAME_CHARS: usize = 16;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn free_for_all_is_led_by_the_most_kills() {
+        assert_eq!(kill_leader([(1, 3), (2, 5), (3, 4)]), Some(2));
+        assert_eq!(kill_leader([(1, 5), (2, 5)]), None, "level");
+        assert_eq!(kill_leader([(1, 0), (2, 0)]), None, "no kills yet");
+        let ffa = Mode::parse("ffa").unwrap();
+        assert!(ffa.free_for_all());
+        assert!(!ffa.kills_score());
+        assert_eq!((ffa.key(), ffa.label()), ("ffa", "Free-for-all"));
+        assert_eq!(ffa.default_score_limit(), 30);
+    }
 
     fn rules() -> MatchRules {
         MatchRules {
