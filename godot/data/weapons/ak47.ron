@@ -1,5 +1,6 @@
-// AK-47-style rifle: slower and harder-hitting than the M4 (3-shot kill up
-// close), with a stronger climb that pulls right.
+// AK-47-style rifle: slower and harder-hitting than the M4 (3-shot kill to
+// 12 m), but it falls off further (5 hits past about 42 m) and its climb is
+// heavier, with an early hook to the right.
 (
     name: "AK-47",
     slot: Primary,
@@ -7,7 +8,7 @@
     rounds_per_minute: 600,
     magazine: 30,
     reserve: 120,
-    damage: (near: 34, far: 25, falloff_start: 22, falloff_end: 45, headshot: 1.4),
+    damage: (near: 34, far: 24, falloff_start: 12, falloff_end: 45, headshot: 1.4),
     range: 400,
     penetration: 0.36,
     reload: Magazine(time: 2.4, empty_time: 2.9, mag_in: Some(1.45)),
@@ -15,21 +16,21 @@
     sprint_out_time: 0.25,
     raise_time: 0.46,
     lower_time: 0.3,
-    spread: (hip: 2.5, hip_moving: 4.5, air: 6.5, ads: 0.05, bloom: 0.3, bloom_max: 2.5, ads_sway: 0.06),
+    spread: (hip: 2.5, hip_moving: 4.5, air: 6.5, ads: 0.05, bloom: 0.3, bloom_max: 2.5, ads_sway: 0.09),
     ads_fov_scale: 0.8,
     ads_move_scale: 0.58,
     move_scale: 0.97,
     recoil: (
         pattern: [
-            (0.49, 0.03), (0.46, 0.1), (0.42, 0.13), (0.39, 0.16),
-            (0.36, 0.2), (0.33, 0.1), (0.31, -0.07), (0.3, -0.16),
-            (0.29, 0.07), (0.29, 0.2), (0.29, 0.13), (0.29, 0.03),
+            (0.34, 0.04), (0.38, 0.14), (0.4, 0.18), (0.4, 0.12),
+            (0.38, 0.02), (0.37, -0.1), (0.36, -0.16), (0.36, -0.06),
+            (0.35, 0.1), (0.35, 0.16), (0.34, 0.08), (0.34, 0.12),
         ],
         jitter: (0.05, 0.09),
         ads_scale: 0.7,
-        kick_return: 0.3,
-        recovery_delay: 0.0,
-        recovery_rate: 13.0,
+        kick_return: 0.45,
+        recovery_delay: 0.02,
+        recovery_rate: 20.0,
     ),
     tracer_every: 3,
     attachments: [RedDot, Acog, Suppressor, Grip, ExtendedMag],

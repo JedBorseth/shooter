@@ -76,7 +76,7 @@ const FOV_KICK_DAMPING: f32 = 22.0;
 /// pitch punch: a heavy shot reads as a thump without moving the aim.
 const SHOT_ZOOM_PULSE: f32 = 0.006;
 /// How fast a shot's recoil climb lands on the view, in 1/seconds.
-const CLIMB_RATE: f32 = 55.0;
+const CLIMB_RATE: f32 = 90.0;
 
 /// Actions whose presses are remembered until the next physics tick, so a tap
 /// shorter than one tick (or a mouse-wheel step) is never lost.
@@ -274,6 +274,9 @@ pub struct FpsPlayer {
     death_blend: f32,
     /// Metres walked toward the next footstep.
     stride: Stride,
+    /// Which foot the stride is on (0 or 1), and the stride phase last frame.
+    stride_foot: f32,
+    last_stride_phase: f32,
     /// What the last footstep landed on (tests).
     last_surface: Surface,
     bob_blend: f32,
@@ -1335,7 +1338,12 @@ impl FpsPlayer {
     /// which look sensitivity follows.
     fn aim_zoom(&self) -> f32 {
         let combat = &self.state.combat;
-        1.0 + (combat.def().ads_fov_scale - 1.0) * combat.ads
+        let ads = crate::viewmodel::ads_ease(combat.ads);
+        let aimed_fov = self.base_fov * (1.0 + (combat.def().ads_fov_scale - 1.0) * ads);
+        // The ratio of the screen's half-widths, so a pixel of mouse travel
+        // covers the same share of the screen at any zoom.
+        let half = |fov: f32| (fov.to_radians() * 0.5).tan();
+        half(aimed_fov) / half(self.base_fov).max(1e-4)
     }
 
     /// Turns the view by the recoil climb still pending, a share per frame.
@@ -1507,7 +1515,10 @@ impl FpsPlayer {
         } else {
             1.0
         };
-        let roll = degrees.z * side * (0.55 + 0.45 * rng::unit(shot, 102)) * scale;
+        // Aimed, the roll is small: the sight picture should read as the gun
+        // kicking, not the world shaking.
+        let roll_scale = 1.0 - 0.7 * ads;
+        let roll = degrees.z * side * (0.55 + 0.45 * rng::unit(shot, 102)) * roll_scale;
         let impulse = |deg: f32| impulse_for_peak(deg.to_radians(), PUNCH_STIFFNESS, PUNCH_DAMPING);
         self.punch.velocity.z += impulse(roll);
         self.kick_fov(-degrees.x * SHOT_ZOOM_PULSE * scale);
@@ -1777,13 +1788,20 @@ impl FpsPlayer {
 
         // One dip per footstep: the stride phase drives the bob, so the camera
         // and the footstep sounds stay in sync.
-        let phase = self.stride.phase() * PI;
+        // Two steps make one sideways sway; tracking which foot is down keeps
+        // the sway and roll continuous across each footstep.
+        let step = self.stride.phase();
+        if step + 0.5 < self.last_stride_phase {
+            self.stride_foot = 1.0 - self.stride_foot;
+        }
+        self.last_stride_phase = step;
+        let theta = (step + self.stride_foot) * PI;
         let amount = self.bob_blend * (1.0 - 0.85 * ads);
         let bob = Vector2::new(
-            (phase * 0.5).sin() * 0.012 * amount,
-            -phase.sin().abs() * 0.022 * amount,
+            theta.sin() * 0.012 * amount,
+            -theta.sin().abs() * 0.022 * amount,
         );
-        let roll = (phase * 0.5).sin() * 0.004 * amount;
+        let roll = theta.sin() * 0.004 * amount;
         (bob, roll, self.tilt)
     }
 

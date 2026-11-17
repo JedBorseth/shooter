@@ -100,24 +100,33 @@ mod tests {
     #[test]
     fn classes_keep_their_identity() {
         let at = |key: &str, d: f32| ttk(def(key), d, HitZone::Chest, 100.0).unwrap();
-        // Rifles: 200-320 ms everywhere.
+        // Rifles: 200-400 ms everywhere. The AK wins up close, the M4 at
+        // mid and long range.
         for key in ["m4", "ak47"] {
             for d in [5.0, 20.0, 50.0] {
                 let t = at(key, d);
-                assert!((0.18..=0.33).contains(&t), "{key} at {d} m: {t}");
+                assert!((0.18..=0.41).contains(&t), "{key} at {d} m: {t}");
             }
         }
+        assert!(at("ak47", 8.0) < at("m4", 8.0));
+        assert!(at("m4", 20.0) < at("ak47", 20.0));
+        assert!(at("m4", 50.0) < at("ak47", 50.0));
         // The burst rifle kills in one burst only up close.
         assert!(at("br3", 10.0) < 0.16);
         assert!(at("br3", 25.0) > 0.3);
         // The LMG is the same at every range.
         assert_eq!(at("lsw6", 5.0), at("lsw6", 70.0));
-        // The SMG wins up close and loses at range.
+        // The SMG wins to 15 m and loses at range.
         assert!(at("pdw9", 5.0) < at("m4", 5.0));
+        assert!(at("pdw9", 15.0) < at("m4", 15.0));
         assert!(at("pdw9", 30.0) > at("m4", 30.0));
-        // The shotgun one-shots to about 8 m.
-        assert_eq!(at("m870", 7.0), 0.0);
-        assert!(at("m870", 12.0) > 0.0);
+        // The shotgun one-shots to about 8 m and two-shots to about 12 m.
+        assert_eq!(at("m870", 8.0), 0.0);
+        assert!(at("m870", 10.0) > 0.0);
+        assert_eq!(
+            shots_to_kill(def("m870"), 12.0, HitZone::Chest, 100.0),
+            Some(2)
+        );
         // The sniper one-shots the chest anywhere.
         assert_eq!(at("m40", 100.0), 0.0);
     }

@@ -110,9 +110,9 @@ fn same_inputs_give_bit_identical_state() {
 /// The hash a reference run produced. CI runs this on Linux, Windows, and
 /// macOS, so a platform whose float math differs fails here before players
 /// see mispredictions. If a deliberate simulation change moves it, update it.
-// Weapon rules: reloads seat part-way and survive a sprint, recoil splits
-// into a climb and a settling snap, hip fire blooms, new handling times.
-const REFERENCE_HASH: u64 = 0x48c4_3300_a043_314d;
+// Weapon tuning: recoil patterns that ramp up, a stronger settling snap,
+// and new damage ranges for the AK-47, PDW-9, and M870.
+const REFERENCE_HASH: u64 = 0xd235_f968_1aa0_71c9;
 
 #[test]
 fn state_matches_the_reference_on_every_platform() {

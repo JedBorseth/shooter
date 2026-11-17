@@ -655,7 +655,7 @@ mod tests {
         assert!(m4.scope.is_none());
         assert!(!m4.beam);
         let shotgun = WeaponId::expect("m870").def();
-        assert_eq!(shotgun.pellets, 8);
+        assert_eq!(shotgun.pellets, 10);
         assert!(matches!(shotgun.reload, Reload::PerRound { .. }));
     }
 
