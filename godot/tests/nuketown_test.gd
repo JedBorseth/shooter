@@ -42,7 +42,9 @@ func _run() -> void:
 		_finish()
 		return
 	_check(true, "home button enters Nuketown")
-	for name in ["Health", "Damage", "Scope", "ScoreFeed", "HitSound"]:
+	for name in [
+		"HealthBlock/Row/Column/Health", "AmmoBlock", "Damage", "Scope", "ScoreFeed", "HitSound"
+	]:
 		_check(current_scene.get_node_or_null("HUD/" + name) != null, "HUD includes " + name)
 	var player := current_scene.get_node("Player") as FpsPlayer
 	await physics_frame

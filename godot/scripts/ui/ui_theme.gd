@@ -116,9 +116,14 @@ static func focus_ring() -> StyleBoxFlat:
 
 ## Soft dark shade behind a HUD cluster.
 static func shade() -> StyleBoxFlat:
-	var style := plate(SHADE, 12.0, 6.0)
-	style.shadow_color = SHADE
-	style.shadow_size = 18
+	# A soft blob, not a box: light fill, rounded, and a wide shadow of the same
+	# tone feathers the edge into the scene.
+	var tone := Color(0, 0, 0, 0.3)
+	var style := plate(tone, 14.0, 8.0)
+	style.set_corner_radius_all(22)
+	style.corner_detail = 12
+	style.shadow_color = tone
+	style.shadow_size = 30
 	return style
 
 

@@ -2,6 +2,14 @@ extends CanvasLayer
 ## Heads-up display: crosshair, hit markers and sounds, score popups and
 ## medals, ammo with low-ammo warnings, health, damage feedback, scope overlay,
 ## pickup prompts, the death screen, and a movement readout for tuning.
+##
+## Health sits bottom left and the ammo cluster (weapon silhouette and name, big
+## magazine count, reserve, magazine bar) bottom right, each on a soft shade.
+## Prompts show their key as a key cap: "[F] Take M870" reads F, then the text.
+
+const UiTheme := preload("res://scripts/ui/ui_theme.gd")
+## White weapon silhouettes by weapon key; weapons without one show only the name.
+const WEAPON_ICONS := "res://assets/ui/weapons/%s.png"
 
 ## Seconds the controls line stays up after spawning; F1 toggles it.
 const CONTROLS_TIME := 60.0
@@ -20,17 +28,31 @@ const GAMEPAD_CONTROLS := (
 
 var _controls_left := CONTROLS_TIME
 var _controls_forced := false
+var _icon_key := ""
+## The longest respawn wait seen this death, to fill the respawn bar.
+var _respawn_total := 0.0
+var _health_fill := UiTheme.plate(UiTheme.TEXT, 0.0, 0.0)
+var _low_fill := UiTheme.plate(UiTheme.HARM, 0.0, 0.0)
+var _mag_fill := UiTheme.plate(UiTheme.TEXT, 0.0, 0.0)
+var _mag_low_fill := UiTheme.plate(UiTheme.ENEMY, 0.0, 0.0)
 
 @onready var _player: FpsPlayer = get_node_or_null(player_path) as FpsPlayer
 @onready var _crosshair: Control = $Crosshair
 @onready var _readout: Label = $Readout
 @onready var _controls: Label = $Controls
-@onready var _weapon: Label = $Ammo/Weapon
-@onready var _ammo: Label = $Ammo/Count
-@onready var _warning: Label = $Warning
-@onready var _prompt: Label = $Prompt
-@onready var _health: ProgressBar = $Health
-@onready var _death: Label = $Death
+@onready var _weapon: Label = $AmmoBlock/Ammo/Top/Weapon
+@onready var _weapon_icon: TextureRect = $AmmoBlock/Ammo/Top/WeaponIcon
+@onready var _magazine: Label = $AmmoBlock/Ammo/Count/Magazine
+@onready var _reserve: Label = $AmmoBlock/Ammo/Count/Reserve
+@onready var _mag_bar: ProgressBar = $AmmoBlock/Ammo/MagBar
+@onready var _warning: Control = $Warning
+@onready var _prompt: Control = $Prompt
+@onready var _health: ProgressBar = $HealthBlock/Row/Column/Health
+@onready var _health_value: Label = $HealthBlock/Row/Column/HealthValue
+@onready var _health_block: Control = $HealthBlock
+@onready var _death: Control = $Death
+@onready var _death_detail: Label = $Death/Detail
+@onready var _respawn_bar: ProgressBar = $Death/RespawnBar
 @onready var _damage: Control = $Damage
 @onready var _scope: Control = $Scope
 @onready var _hit_sound: AudioStreamPlayer = $HitSound
@@ -77,9 +99,9 @@ func _process(delta: float) -> void:
 	var show_fps: bool = Settings.show_fps
 	_readout.visible = show_fps
 	_readout.text = (
-		"%s   %.1f m/s   %d fps"
+		"%s   %.1f M/S   %d FPS"
 		% [
-			_player.movement_state(),
+			_player.movement_state().to_upper(),
 			_player.horizontal_speed(),
 			Engine.get_frames_per_second(),
 		]
@@ -90,40 +112,40 @@ func _process(delta: float) -> void:
 
 	var alive := _player.is_alive()
 	var scoped := _player.scope_amount() >= 0.85
-	_weapon.text = _player.weapon_name()
+	_update_ammo()
 	var magazine := _player.magazine()
 	var reserve := _player.reserve()
 	var low := magazine <= _player.low_ammo_threshold()
-	_ammo.text = "%d / %d" % [magazine, reserve]
-	_ammo.modulate = Color(1, 0.35, 0.3) if low else Color.WHITE
 
 	_warning.visible = alive and not scoped
 	if _player.is_reloading():
-		_warning.text = "RELOADING"
-		_warning.modulate = Color(1, 1, 1, 0.8)
+		_show_prompt(_warning, "RELOADING", UiTheme.TEXT_DIM)
 	elif magazine == 0 and reserve == 0:
-		_warning.text = "NO AMMO"
-		_warning.modulate = Color(1, 0.3, 0.25)
+		_show_prompt(_warning, "NO AMMO", UiTheme.HARM)
 	elif low and reserve > 0:
-		_warning.text = "[R] RELOAD"
-		_warning.modulate = Color(1, 0.85, 0.3)
+		_show_prompt(_warning, "[%s] RELOAD" % Settings.key_label(&"reload"), UiTheme.ACCENT)
 	elif low:
-		_warning.text = "LOW AMMO"
-		_warning.modulate = Color(1, 0.5, 0.3)
+		_show_prompt(_warning, "LOW AMMO", UiTheme.ENEMY)
 	else:
 		_warning.visible = false
 
-	_prompt.text = _player.interact_prompt()
-	_prompt.visible = alive and _prompt.text != ""
+	var prompt := _player.interact_prompt()
+	_prompt.visible = alive and prompt != ""
+	if _prompt.visible:
+		_show_prompt(_prompt, prompt, UiTheme.TEXT)
 
-	_health.max_value = _player.max_health()
-	_health.value = _player.health()
-	_health.modulate.a = 1.0 if _player.health() < _player.max_health() else 0.35
+	_update_health()
 
 	# Without respawns (Zombies) the mode shows its own end screen.
 	_death.visible = not alive and _player.auto_respawn
 	if _death.visible:
-		_death.text = "YOU DIED\nRespawning in %.1f" % _player.respawn_time_left()
+		var left := _player.respawn_time_left()
+		_respawn_total = maxf(_respawn_total, left)
+		_death_detail.text = "Respawning in %.1f" % left
+		_respawn_bar.max_value = maxf(_respawn_total, 0.01)
+		_respawn_bar.value = _respawn_total - left
+	else:
+		_respawn_total = 0.0
 
 	# Convert the spread cone to pixels so the crosshair shows where shots can land.
 	# Shotguns add their pellet cone, so the crosshair matches the pattern.
@@ -134,3 +156,50 @@ func _process(delta: float) -> void:
 		spread += _player.pellet_spread_radians()
 	_crosshair.gap = tan(spread) * pixels_per_unit
 	_crosshair.alpha = 0.0 if not alive else 1.0 - clampf(_player.ads_amount() * 1.5, 0.0, 1.0)
+
+
+func _update_ammo() -> void:
+	_weapon.text = _player.weapon_name().to_upper()
+	var key := _player.weapon_key()
+	if key != _icon_key:
+		_icon_key = key
+		var path := WEAPON_ICONS % key
+		_weapon_icon.texture = load(path) as Texture2D if ResourceLoader.exists(path) else null
+		_weapon_icon.visible = _weapon_icon.texture != null
+	var magazine := _player.magazine()
+	var low := magazine <= _player.low_ammo_threshold()
+	_magazine.text = str(magazine)
+	_magazine.add_theme_color_override(&"font_color", UiTheme.ENEMY if low else UiTheme.TEXT)
+	_reserve.text = "/%d" % _player.reserve()
+	_mag_bar.max_value = maxi(_player.magazine_size(), 1)
+	_mag_bar.value = magazine
+	_mag_bar.add_theme_stylebox_override(&"fill", _mag_low_fill if low else _mag_fill)
+
+
+func _update_health() -> void:
+	var health := _player.health()
+	var full := _player.max_health()
+	_health.max_value = full
+	_health.value = health
+	_health_value.text = str(ceili(health))
+	var hurt := health < full * 0.35
+	_health.add_theme_stylebox_override(&"fill", _low_fill if hurt else _health_fill)
+	_health_value.add_theme_color_override(&"font_color", UiTheme.HARM if hurt else UiTheme.TEXT)
+	# Quiet at full health; fully up once hurt.
+	_health_block.modulate.a = 1.0 if health < full else 0.55
+
+
+## Shows `text` in a prompt row. A leading "[KEY]" becomes the row's key cap.
+func _show_prompt(row: Control, text: String, colour: Color) -> void:
+	var key := ""
+	if text.begins_with("["):
+		var close := text.find("]")
+		if close > 0:
+			key = text.substr(1, close - 1)
+			text = text.substr(close + 1).strip_edges()
+	var cap := row.get_node("Key") as Label
+	cap.text = key
+	cap.visible = key != ""
+	var label := row.get_node("Text") as Label
+	label.text = text
+	label.add_theme_color_override(&"font_color", colour)

@@ -43,14 +43,14 @@ func _ready() -> void:
 	_font = load(FONT_PATH) as Font
 	_round_label = _label(110, BLOOD)
 	_round_label.name = "Round"
-	_place(_round_label, Vector2(0, 1), Rect2(26, -250, 400, 130))
+	_place(_round_label, Vector2(0, 1), Rect2(36, -300, 400, 130))
 	_points_label = _label(44, POINTS_COLOR)
 	_points_label.name = "Points"
 	_points_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_place(_points_label, Vector2(1, 1), Rect2(-292, -176, 260, 56))
+	_place(_points_label, Vector2(1, 1), Rect2(-300, -212, 260, 56))
 	_left_label = _label(22, Color(1, 1, 1, 0.75))
 	_left_label.name = "ZombiesLeft"
-	_place(_left_label, Vector2(0, 1), Rect2(30, -116, 400, 30))
+	_place(_left_label, Vector2(0, 1), Rect2(40, -160, 400, 30))
 	_banner = _label(58, Color(0.9, 0.85, 0.8))
 	_banner.name = "Banner"
 	_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -58,7 +58,7 @@ func _ready() -> void:
 	_power_ups = _label(30, POWER_UP_COLOR)
 	_power_ups.name = "PowerUps"
 	_power_ups.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_place(_power_ups, Vector2(0.5, 1), Rect2(-300, -150, 600, 40))
+	_place(_power_ups, Vector2(0.5, 1), Rect2(-300, -170, 600, 40))
 	_build_game_over()
 	_sting = AudioStreamPlayer.new()
 	_sting.bus = &"UI"
@@ -109,7 +109,7 @@ func _process(delta: float) -> void:
 		popup.age += delta
 		var label: Label = popup.label
 		var t: float = popup.age / POPUP_TIME
-		label.offset_top = -214.0 - 60.0 * t
+		label.offset_top = -250.0 - 60.0 * t
 		label.offset_bottom = label.offset_top + 34.0
 		label.modulate.a = 1.0 - t * t
 	for popup in _popups.filter(func(p: Dictionary) -> bool: return p.age >= POPUP_TIME):
@@ -147,7 +147,7 @@ func _on_round_cleared(round_number: int) -> void:
 func _on_points(points: int, _total: int) -> void:
 	var popup := _label(28, POINTS_COLOR)
 	popup.text = "+%d" % points
-	_place(popup, Vector2(1, 1), Rect2(-150 - randf() * 70.0, -214, 120, 34))
+	_place(popup, Vector2(1, 1), Rect2(-150 - randf() * 70.0, -250, 120, 34))
 	_popups.append({"label": popup, "age": 0.0})
 	while _popups.size() > MAX_POPUPS:
 		(_popups.pop_front().label as Label).queue_free()
@@ -156,7 +156,7 @@ func _on_points(points: int, _total: int) -> void:
 func _on_spent(points: int, _total: int) -> void:
 	var popup := _label(28, SPEND_COLOR)
 	popup.text = "-%d" % points
-	_place(popup, Vector2(1, 1), Rect2(-150, -214, 120, 34))
+	_place(popup, Vector2(1, 1), Rect2(-150, -250, 120, 34))
 	_popups.append({"label": popup, "age": 0.0})
 
 
