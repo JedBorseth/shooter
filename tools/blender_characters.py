@@ -842,6 +842,10 @@ def build_kit(spec: dict, human, clothes, ual, head_pieces=()) -> list:
         out += gear.knee_pads(body, {s: frames[f"DEF-shin.{s}"][0] for s in "LR"})
     if "arm_bands" in want:
         out += gear.arm_bands(body, {s: (frames[f"DEF-upper_arm.{s}"][0], frames[f"DEF-forearm.{s}"][0]) for s in "LR"})
+    if "cuffs" in want:
+        out += gear.cuffs(body, {s: (frames[f"DEF-forearm.{s}"][0], frames[f"DEF-hand.{s}"][0]) for s in "LR"})
+    if "watch" in want:
+        out += gear.watch(body, frames["DEF-forearm.L"][0], frames["DEF-hand.L"][0])
     if "knuckles" in want:
         out += gear.knuckles(body, {s: (frames[f"DEF-hand.{s}"][0], frames[f"DEF-f_middle.01.{s}"][0]) for s in "LR"})
     # Skin and coverings under the helmet are never seen.
@@ -908,6 +912,13 @@ def main():
         else:
             transfer_weights(o, mannequin, allowed=tuple(o["bones"]))
     parts += kit
+    only = spec.get("keep_only")
+    if only:
+        # A kit of part of the body (the first-person arms): everything else goes,
+        # so the whole atlas is spent on what is drawn.
+        for o in parts:
+            keep_body_region(o, tuple(only["bones"]), only["threshold"])
+        parts = [o for o in parts if len(o.data.polygons) > 0]
     roles = config["roles"]
     for o in parts:
         settings = config["materials"].get(o["material"], {})

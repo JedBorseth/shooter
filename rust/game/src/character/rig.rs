@@ -18,10 +18,10 @@ use godot::classes::{
 };
 use godot::prelude::*;
 use shooter_sim::movement::Stance;
-use shooter_sim::weapon::{Slot, WeaponId};
+use shooter_sim::weapon::WeaponId;
 
 use super::palette::{self, Team};
-use super::poser::{Grips, PoseInput, SoldierPoser, WeaponPlacement};
+use super::poser::{Grips, Hold, PoseInput, SoldierPoser, WeaponPlacement};
 use crate::spring::{Spring, impulse_for_peak, smoothing};
 use crate::viewmodel::{self, WeaponView};
 
@@ -43,8 +43,8 @@ const RUN_BLEND_LIMIT: f32 = 4.0;
 const MAX_LEG_TURN: f32 = 75.0 * PI / 180.0;
 
 /// Weapon offsets from the eyes, in the aim frame (+X right, +Y up, -Z along the aim).
-const ADS_OFFSET: Vector3 = Vector3::new(0.034, -0.045, -0.13);
-const HIP_OFFSET: Vector3 = Vector3::new(0.085, -0.13, -0.15);
+const ADS_OFFSET: Vector3 = Vector3::new(0.034, -0.045, -0.09);
+const HIP_OFFSET: Vector3 = Vector3::new(0.085, -0.13, -0.11);
 const SPRINT_OFFSET: Vector3 = Vector3::new(0.03, -0.3, -0.16);
 /// Degrees: pitch, yaw, roll.
 const HIP_ROTATION: Vector3 = Vector3::new(0.0, 3.0, -6.0);
@@ -588,7 +588,12 @@ impl SoldierRig {
             * (smoothstep((p - 0.1) / 0.15) * (1.0 - smoothstep((p - 0.6) / 0.2)));
         let grips = self.weapon.as_ref().map(|(id, view)| {
             let mut g = view.bind().grips();
-            g.pistol = id.def().slot == Slot::Secondary;
+            g.hold = Hold::of(id.def());
+            if g.hold == Hold::Handguard {
+                // Mid-handguard rather than at the muzzle end of it, so the
+                // support elbow bends and drops under the weapon.
+                g.left.z += SUPPORT_BACK;
+            }
             g
         });
         PoseInput {
@@ -601,6 +606,8 @@ impl SoldierRig {
             weapon_in_hand: !frame.alive,
             support_off,
             support_target: RELOAD_REACH,
+            // Trigger discipline: off the trigger while sprinting or reloading.
+            trigger_off: self.sprint.max(self.reload_blend),
         }
     }
 
@@ -797,6 +804,10 @@ impl SoldierRig {
         tree
     }
 }
+
+/// How far (m) a third-person soldier's support hand sits behind the
+/// weapon's `GripLeft` marker on a rifle handguard.
+const SUPPORT_BACK: f32 = 0.08;
 
 /// Distance (m) past which a character draws its far mesh, and the
 /// hysteresis around it. At 15 m a soldier is about 150 pixels tall at 1080p,
