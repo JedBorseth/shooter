@@ -6,9 +6,10 @@ extends SceneTree
 ## server keeps its tick rate. BOTS=12 runs a full 6v6; SKILL sets the skill.
 ## godot --headless --path godot --script res://tests/bots_test.gd
 
-const PORT := 27996
 const SECONDS := 60
 
+## A port per process, so test runs in parallel on one machine don't meet.
+var _port := 30000 + OS.get_process_id() % 20000
 var _failures := 0
 
 
@@ -21,7 +22,7 @@ func _run() -> void:
 	var server := (load("res://scenes/server.tscn") as PackedScene).instantiate() as NetServer
 	server.map_scene = load("res://scenes/slamcity.tscn") as PackedScene
 	server.map_name = "Slamcity"
-	server.port = PORT
+	server.port = _port
 	server.query_port = -1
 	server.bots = bots
 	server.bot_skill = (

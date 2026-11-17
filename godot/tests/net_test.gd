@@ -8,9 +8,10 @@ extends SceneTree
 ## on failure.
 ## Run from the repo root: godot --headless --path godot --script res://tests/net_test.gd
 
-const PORT := 27999
 const REMOTE_PLAYER_SCENE := preload("res://scenes/remote_player.tscn")
 
+## A port per process, so test runs in parallel on one machine don't meet.
+var _port := 30000 + OS.get_process_id() % 20000
 var _failures: PackedStringArray = []
 var _server_pid := -1
 
@@ -28,7 +29,7 @@ func _run() -> void:
 			"--",
 			"--server",
 			"--port",
-			str(PORT),
+			str(_port),
 			"--bots",
 			"1",
 		]
@@ -46,7 +47,7 @@ func _run() -> void:
 	var player := main.get_node("Player") as FpsPlayer
 	var client := NetClient.new()
 	client.address = "127.0.0.1"
-	client.port = PORT
+	client.port = _port
 	client.player_path = player.get_path()
 	client.remote_player_scene = REMOTE_PLAYER_SCENE
 	client.player_name = "Tester"

@@ -6,11 +6,12 @@ extends SceneTree
 ## the spot, and that the match ends with a winner (or a draw) by the clock.
 ## godot --headless --path godot --script res://tests/gun_game_test.gd
 
-const PORT := 27997
 const BOTS := 6
 const MINUTES := 0.75
 const LADDER := ["lsw6", "ak47", "m4", "br3", "pdw9", "m870", "m40", "m1911"]
 
+## A port per process, so test runs in parallel on one machine don't meet.
+var _port := 30000 + OS.get_process_id() % 20000
 var _failures := 0
 
 
@@ -22,7 +23,7 @@ func _run() -> void:
 	var server := (load("res://scenes/server.tscn") as PackedScene).instantiate() as NetServer
 	server.map_scene = load("res://scenes/slamcity.tscn") as PackedScene
 	server.map_name = "Slamcity"
-	server.port = PORT
+	server.port = _port
 	server.query_port = -1
 	server.bots = BOTS
 	server.bot_skill = "normal"
