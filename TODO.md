@@ -66,7 +66,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Damage feedback when the player is hit: red vignette, directional indicator, hit sounds.
 - [x] Audio buses (Master, Weapons, Effects, UI) with a compressor on Weapons and a limiter on Master.
 - [x] Layered gunshots (snap, body, and tail, each picked from several recordings) with no dead air before the transient. Rebuild them with `tools/build_weapon_audio.py`.
-- [ ] A per-shot mechanical layer (bolt and spring clack) for each gun, and a hollow last-rounds layer for the final few shots in a magazine.
+- [x] A per-shot mechanical layer (bolt and spring clack) for each gun, and a hollow last-rounds layer for the final few shots in a magazine: synthesized by `tools/build_weapon_audio.py mech` into `mech_*.wav` and `hollow_*.wav`, played by `WeaponView` (`mech_db`, `hollow_db`). The ring covers the last fifth of a magazine (two to five rounds) and builds to the last round. Replace them with recordings when we have good CC0 ones.
 - [ ] Reverb zones on maps (`Area3D` reverb buses for the tunnel and indoor spaces).
 - [x] Positional audio for impacts and the sentry's gunfire.
 - [ ] Occlusion for positional audio, and other players' gunfire once multiplayer exists.
