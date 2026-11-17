@@ -33,6 +33,7 @@ func _ready() -> void:
 	)
 	$Margin/Layout/Menu/TeamDeathmatch.pressed.connect(_open_setup.bind("tdm"))
 	$Margin/Layout/Menu/GunGame.pressed.connect(_open_setup.bind("gungame"))
+	$Margin/Layout/Menu/CaptureTheFlag.pressed.connect(_open_setup.bind("ctf"))
 	$Margin/Layout/Menu/Multiplayer.pressed.connect(_open_multiplayer)
 	$Margin/Layout/Menu/Zombies.pressed.connect(_open_zombies)
 	_testing.grab_focus()
@@ -82,7 +83,7 @@ func _open_multiplayer(message := "") -> void:
 	)
 
 
-## Opens the local match setup for `mode` ("tdm" or "gungame").
+## Opens the local match setup for `mode` ("tdm", "ctf", or "gungame").
 func _open_setup(mode: String) -> void:
 	if _loading:
 		return
@@ -91,7 +92,7 @@ func _open_setup(mode: String) -> void:
 	setup.set("mode", mode)
 	setup.name = "TdmSetup"
 	_tdm_setup = setup
-	_setup_button = "GunGame" if mode == "gungame" else "TeamDeathmatch"
+	_setup_button = {"gungame": "GunGame", "ctf": "CaptureTheFlag"}.get(mode, "TeamDeathmatch")
 	$Margin.hide()
 	add_child(setup)
 	setup.back_requested.connect(_close_tdm)
@@ -175,6 +176,7 @@ func _set_buttons_disabled(disabled: bool) -> void:
 		"TestingArea",
 		"TeamDeathmatch",
 		"GunGame",
+		"CaptureTheFlag",
 		"Slamcity",
 		"Nuketown",
 		"Multiplayer",

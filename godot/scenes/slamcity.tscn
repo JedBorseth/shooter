@@ -4301,6 +4301,16 @@ metadata/team = 1
 transform = Transform3D(-3.6199901e-06, 0, 1, 0, 1, 0, -1, 0, -3.6199901e-06, 55, 0.05, 0)
 metadata/team = 1
 
+[node name="Flags" type="Node3D" parent="."]
+
+[node name="Team0" type="Marker3D" parent="Flags"]
+position = Vector3(-50.5, 0, -2)
+metadata/team = 0
+
+[node name="Team1" type="Marker3D" parent="Flags"]
+position = Vector3(50.5, 0, -2)
+metadata/team = 1
+
 [node name="Spawns" type="Node3D" parent="." unique_id=1951512785]
 
 [node name="West" type="Marker3D" parent="Spawns" unique_id=1009801866]

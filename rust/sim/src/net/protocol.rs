@@ -33,9 +33,10 @@ use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState}
 // match clock, and the scoreboard. Version 6 added burst fire to the
 // predicted combat state, and version 7 mantling to the movement state.
 // Version 8 added empty weapon slots, version 9 hit flinches for every
-// player, and version 10 the game mode (Gun Game), player winners, and
-// ladder levels.
-pub const PROTOCOL_VERSION: u16 = 10;
+// player, version 10 the game mode (Gun Game), player winners, and ladder
+// levels, and version 11 Capture the Flag: the flags, flag plays and awards,
+// and captures and returns on the scoreboard.
+pub const PROTOCOL_VERSION: u16 = 11;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
 pub const MAX_INPUTS_PER_PACKET: usize = 24;
 /// Wish vectors are sent as signed bytes; prediction must use the same values.
@@ -168,6 +169,48 @@ pub enum GameEvent {
     Scoreboard { rows: Vec<ScoreRow> },
     /// To one player: they (re)spawned facing `yaw` (radians).
     Spawned { yaw: f32 },
+    /// To everyone (Capture the Flag): where both flags are, whenever either
+    /// changes hands. Indexed by team.
+    Flags { flags: [FlagView; TEAM_COUNT] },
+    /// To everyone (Capture the Flag): something happened to team `flag`'s
+    /// flag, for the announcer and the feed. `player` did it (none for a flag
+    /// that went home by itself).
+    FlagPlay {
+        flag: Team,
+        play: FlagPlay,
+        player: Option<u8>,
+    },
+}
+
+/// One flag as clients see it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FlagView {
+    /// Where its base is.
+    pub home: Vec3,
+    pub status: FlagStatus,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum FlagStatus {
+    Home,
+    /// Carried by player `by`; clients draw it on that player.
+    Carried {
+        by: u8,
+    },
+    /// Lying at `at` until server tick `returns_at`, when it goes home.
+    Dropped {
+        at: Vec3,
+        returns_at: Tick,
+    },
+}
+
+/// What happened to a flag ([`GameEvent::FlagPlay`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FlagPlay {
+    Taken,
+    Dropped,
+    Returned,
+    Captured,
 }
 
 /// One player's line on the scoreboard.
@@ -185,6 +228,9 @@ pub struct ScoreRow {
     /// that weapon so far (0 in other modes).
     pub level: u8,
     pub level_kills: u8,
+    /// Capture the Flag: flags captured and returned.
+    pub captures: u32,
+    pub returns: u32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -764,11 +810,48 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
                 w.bool(row.ready);
                 w.u8(row.level);
                 w.u8(row.level_kills);
+                w.varint(row.captures);
+                w.varint(row.returns);
             }
         }
         GameEvent::Spawned { yaw } => {
             w.bits(9, EVENT_TAG_BITS);
             w.f32(*yaw);
+        }
+        GameEvent::Flags { flags } => {
+            w.bits(10, EVENT_TAG_BITS);
+            for flag in flags {
+                write_vec3(w, flag.home);
+                match flag.status {
+                    FlagStatus::Home => w.bits(0, 2),
+                    FlagStatus::Carried { by } => {
+                        w.bits(1, 2);
+                        w.u8(by);
+                    }
+                    FlagStatus::Dropped { at, returns_at } => {
+                        w.bits(2, 2);
+                        write_vec3(w, at);
+                        w.varint(returns_at);
+                    }
+                }
+            }
+        }
+        GameEvent::FlagPlay { flag, play, player } => {
+            w.bits(11, EVENT_TAG_BITS);
+            w.bits(u32::from(*flag), 1);
+            w.bits(
+                match play {
+                    FlagPlay::Taken => 0,
+                    FlagPlay::Dropped => 1,
+                    FlagPlay::Returned => 2,
+                    FlagPlay::Captured => 3,
+                },
+                2,
+            );
+            w.bool(player.is_some());
+            if let Some(player) = player {
+                w.u8(*player);
+            }
         }
     }
 }
@@ -880,6 +963,8 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
                     ready: r.bool()?,
                     level: r.u8()?,
                     level_kills: r.u8()?,
+                    captures: r.varint()?,
+                    returns: r.varint()?,
                 });
             }
             Ok(GameEvent::Scoreboard { rows })
@@ -887,6 +972,35 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
         9 => Ok(GameEvent::Spawned {
             yaw: read_finite(r)?,
         }),
+        10 => {
+            let mut read_flag = || -> DecodeResult<FlagView> {
+                let home = read_finite_vec3(r)?;
+                let status = match r.bits(2)? {
+                    0 => FlagStatus::Home,
+                    1 => FlagStatus::Carried { by: r.u8()? },
+                    2 => FlagStatus::Dropped {
+                        at: read_finite_vec3(r)?,
+                        returns_at: r.varint()?,
+                    },
+                    _ => return Err(DecodeError::Invalid("flag status")),
+                };
+                Ok(FlagView { home, status })
+            };
+            Ok(GameEvent::Flags {
+                flags: [read_flag()?, read_flag()?],
+            })
+        }
+        11 => {
+            let flag = r.bits(1)? as Team;
+            let play = match r.bits(2)? {
+                0 => FlagPlay::Taken,
+                1 => FlagPlay::Dropped,
+                2 => FlagPlay::Returned,
+                _ => FlagPlay::Captured,
+            };
+            let player = if r.bool()? { Some(r.u8()?) } else { None };
+            Ok(GameEvent::FlagPlay { flag, play, player })
+        }
         _ => Err(DecodeError::Invalid("event tag")),
     }
 }
@@ -898,6 +1012,7 @@ fn write_mode(w: &mut BitWriter, mode: &Mode) {
             w.bits(1, 2);
             w.u8(rules.kills_per_weapon);
         }
+        Mode::CaptureTheFlag => w.bits(2, 2),
     }
 }
 
@@ -907,9 +1022,12 @@ fn read_mode(r: &mut BitReader) -> DecodeResult<Mode> {
         1 => Ok(Mode::GunGame(gun_game::Rules {
             kills_per_weapon: r.u8()?.max(1),
         })),
+        2 => Ok(Mode::CaptureTheFlag),
         _ => Err(DecodeError::Invalid("mode")),
     }
 }
+
+const AWARD_TAG_BITS: u32 = 4;
 
 fn write_award(w: &mut BitWriter, award: Award) {
     let (tag, count) = match award {
@@ -920,15 +1038,19 @@ fn write_award(w: &mut BitWriter, award: Award) {
         Award::Collateral => (4, None),
         Award::MultiKill(n) => (5, Some(n)),
         Award::Streak(n) => (6, Some(n)),
+        Award::FlagTaken => (7, None),
+        Award::FlagCapture => (8, None),
+        Award::FlagReturn => (9, None),
+        Award::CarrierKill => (10, None),
     };
-    w.bits(tag, 3);
+    w.bits(tag, AWARD_TAG_BITS);
     if let Some(n) = count {
         w.varint(n);
     }
 }
 
 fn read_award(r: &mut BitReader) -> DecodeResult<Award> {
-    Ok(match r.bits(3)? {
+    Ok(match r.bits(AWARD_TAG_BITS)? {
         0 => Award::Kill,
         1 => Award::Headshot,
         2 => Award::Longshot,
@@ -936,6 +1058,10 @@ fn read_award(r: &mut BitReader) -> DecodeResult<Award> {
         4 => Award::Collateral,
         5 => Award::MultiKill(r.varint()?),
         6 => Award::Streak(r.varint()?),
+        7 => Award::FlagTaken,
+        8 => Award::FlagCapture,
+        9 => Award::FlagReturn,
+        10 => Award::CarrierKill,
         _ => return Err(DecodeError::Invalid("award")),
     })
 }
@@ -1764,6 +1890,22 @@ mod tests {
                         award: Award::Streak(10),
                         points: 100,
                     },
+                    Scored {
+                        award: Award::FlagTaken,
+                        points: 100,
+                    },
+                    Scored {
+                        award: Award::FlagCapture,
+                        points: 500,
+                    },
+                    Scored {
+                        award: Award::FlagReturn,
+                        points: 100,
+                    },
+                    Scored {
+                        award: Award::CarrierKill,
+                        points: 100,
+                    },
                 ],
                 totals: ScoreTotals {
                     score: 2350,
@@ -1793,6 +1935,31 @@ mod tests {
             },
             GameEvent::Left { id: 201 },
             GameEvent::Spawned { yaw: -2.5 },
+            GameEvent::Flags {
+                flags: [
+                    FlagView {
+                        home: Vec3::new(-50.5, 0.0, 0.0),
+                        status: FlagStatus::Carried { by: 203 },
+                    },
+                    FlagView {
+                        home: Vec3::new(50.5, 0.0, 0.0),
+                        status: FlagStatus::Dropped {
+                            at: Vec3::new(3.0, -1.8, 2.0),
+                            returns_at: 77_000,
+                        },
+                    },
+                ],
+            },
+            GameEvent::FlagPlay {
+                flag: 1,
+                play: FlagPlay::Captured,
+                player: Some(4),
+            },
+            GameEvent::FlagPlay {
+                flag: 0,
+                play: FlagPlay::Returned,
+                player: None,
+            },
             GameEvent::Match {
                 phase: Phase::Lobby,
                 ends_at: None,
@@ -1829,6 +1996,8 @@ mod tests {
                         ready: true,
                         level: 7,
                         level_kills: 1,
+                        captures: 2,
+                        returns: 5,
                     },
                     ScoreRow {
                         id: 203,
@@ -1848,6 +2017,7 @@ mod tests {
             Mode::GunGame(gun_game::Rules {
                 kills_per_weapon: 3,
             }),
+            Mode::CaptureTheFlag,
         ] {
             let msg = ServerMessage::Welcome {
                 player_id: 3,

@@ -6,7 +6,8 @@ extends CanvasLayer
 ##   clock, and the best of everyone else's, with the kills to the next weapon
 ##   beneath;
 ## - the kill feed, top right, in team colours (in Gun Game we are the only
-##   ally), which also says when someone reaches the final weapon;
+##   ally), which also says when someone reaches the final weapon, and in
+##   Capture the Flag lists flag plays (`add_feed_line`, from `ctf_view.gd`);
 ## - the scoreboard, held open with Tab (Back on a gamepad): one table per
 ##   team, or in Gun Game one table ordered by weapon;
 ## - the lobby, countdown, and results banners, and in Gun Game a callout for
@@ -113,7 +114,10 @@ func _process(delta: float) -> void:
 		if my_team >= 0 and scores.size() == 2:
 			_ally_score.text = str(scores[my_team])
 			_enemy_score.text = str(scores[1 - my_team])
-		_limit.text = "FIRST TO %d" % info.score_limit if info.score_limit > 0 else ""
+		_limit.text = ""
+		if info.score_limit > 0:
+			var goal := "CAPTURES" if info.mode == "ctf" else "KILLS"
+			_limit.text = "FIRST TO %d %s" % [info.score_limit, goal]
 	_clock.text = _clock_text(phase, info.seconds_left)
 	_update_banner(phase, info)
 	_age_feed(delta)
@@ -220,6 +224,8 @@ func _update_banner(phase: String, info: Dictionary) -> void:
 					"Gun Game  ·  %d kill%s with each of %d weapons  ·  every player for themselves"
 					% [kills, "" if kills == 1 else "s", info.score_limit]
 				)
+			elif info.mode == "ctf":
+				_sub_banner.text = "Capture the Flag  ·  first to %d captures" % info.score_limit
 			else:
 				_sub_banner.text = "Team Deathmatch  ·  first to %d kills" % info.score_limit
 		"ended":
@@ -271,11 +277,23 @@ func _ready_count() -> String:
 # --- Kill feed ---------------------------------------------------------------
 
 
+## Adds a line to the feed: `parts` are [text, colour] pairs, left to right,
+## with an optional third `true` for small print. `mine` highlights it
+## (something we did, or that happened to us).
+func add_feed_line(parts: Array, mine := false) -> void:
+	var line := HBoxContainer.new()
+	line.alignment = BoxContainer.ALIGNMENT_END
+	line.add_theme_constant_override("separation", 10)
+	for part: Array in parts:
+		var size := 15 if part.size() > 2 and part[2] else 18
+		line.add_child(_feed_label(String(part[0]), part[1], size))
+	_push_feed_line(line, mine)
+
+
 func _on_kill(killer: int, victim: int, weapon: String, headshot: bool) -> void:
 	var line := HBoxContainer.new()
 	line.alignment = BoxContainer.ALIGNMENT_END
 	line.add_theme_constant_override("separation", 10)
-	line.set_meta(&"left", FEED_SECONDS)
 	if killer != victim and killer >= 0:
 		line.add_child(_feed_label(client.name_of(killer), _team_colour(killer)))
 	var how := weapon.to_upper()
@@ -283,7 +301,12 @@ func _on_kill(killer: int, victim: int, weapon: String, headshot: bool) -> void:
 		how += "  ◎"
 	line.add_child(_feed_label(how, Color(0.85, 0.88, 0.9, 0.85), 15))
 	line.add_child(_feed_label(client.name_of(victim), _team_colour(victim)))
-	if killer == client.player_id() or victim == client.player_id():
+	_push_feed_line(line, killer == client.player_id() or victim == client.player_id())
+
+
+func _push_feed_line(line: HBoxContainer, mine: bool) -> void:
+	line.set_meta(&"left", FEED_SECONDS)
+	if mine:
 		var style := StyleBoxFlat.new()
 		style.bg_color = Color(1, 1, 1, 0.08)
 		var panel := PanelContainer.new()
@@ -405,6 +428,10 @@ func _refresh_board() -> void:
 	_board_headers[1].visible = true
 	_board_tables[1].visible = true
 	var my_team: int = info.my_team
+	var ctf: bool = info.mode == "ctf"
+	var headings := ["NAME", "SCORE", "K", "D", "PING"]
+	if ctf:
+		headings = ["NAME", "SCORE", "CAPS", "RET", "K", "D", "PING"]
 	# Our team on top.
 	var order := [my_team, 1 - my_team] if my_team >= 0 else [0, 1]
 	var scores: PackedInt32Array = client.match_info().scores
@@ -412,14 +439,16 @@ func _refresh_board() -> void:
 		var team: int = order[i]
 		var table := _board_tables[i]
 		for child in table.get_children():
+			table.remove_child(child)
 			child.queue_free()
+		table.columns = headings.size()
 		var colour := ALLY if team == my_team else ENEMY
 		var team_score := scores[team] if scores.size() == 2 else 0
 		_board_headers[i].text = (
 			"%s   %d" % ["YOUR TEAM" if team == my_team else "ENEMY", team_score]
 		)
 		_board_headers[i].add_theme_color_override("font_color", colour)
-		for heading in ["NAME", "SCORE", "K", "D", "PING"]:
+		for heading: String in headings:
 			_board_cell(table, heading, MenuStyle.TEXT_FAINT, 14)
 		for entry: Dictionary in client.roster():
 			if entry.team != team:
@@ -430,6 +459,9 @@ func _refresh_board() -> void:
 				name_text += "  [BOT]"
 			_board_cell(table, name_text, name_colour, 18, entry.me)
 			_board_cell(table, str(entry.score), name_colour)
+			if ctf:
+				_board_cell(table, str(entry.get("captures", 0)), name_colour)
+				_board_cell(table, str(entry.get("returns", 0)), name_colour)
 			_board_cell(table, str(entry.kills), name_colour)
 			_board_cell(table, str(entry.deaths), name_colour)
 			_board_cell(table, "BOT" if entry.bot else str(entry.ping), MenuStyle.TEXT_DIM)
@@ -439,7 +471,9 @@ func _refresh_board() -> void:
 func _refresh_ladder_board() -> void:
 	var table := _board_tables[0]
 	for child in table.get_children():
+		table.remove_child(child)
 		child.queue_free()
+	table.columns = 5
 	_board_headers[1].visible = false
 	_board_tables[1].visible = false
 	var roster := client.roster()
@@ -471,7 +505,7 @@ func _board_cell(
 	if bold:
 		label.add_theme_constant_override("outline_size", 4)
 		label.add_theme_color_override("font_outline_color", ALLY.darkened(0.6))
-	var column := table.get_child_count() % 5
+	var column := table.get_child_count() % table.columns
 	if column != 0:
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		# Wide enough for Gun Game's weapon column.

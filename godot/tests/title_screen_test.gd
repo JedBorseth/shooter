@@ -102,6 +102,31 @@ func _run() -> void:
 		setup.back_requested.emit()
 		await process_frame
 		_check(gun_game.has_focus(), "Back returns focus to Gun Game")
+	var ctf := menu.get_node("CaptureTheFlag") as Button
+	_check(menu.get_child(3) == ctf and not ctf.disabled, "Capture the Flag is the fourth option")
+	ctf.pressed.emit()
+	await process_frame
+	setup = title.get_node_or_null("TdmSetup")
+	_check(setup != null, "Capture the Flag opens its setup")
+	if setup != null:
+		var options: Dictionary = setup.options()
+		_check(
+			(
+				options
+				== {
+					"mode": "ctf",
+					"map": "slamcity",
+					"bots": 11,
+					"bot_skill": "normal",
+					"score_limit": 3,
+					"time_limit": 10
+				}
+			),
+			"the default Capture the Flag is 6v6 on Slamcity to 3 captures, got %s" % options
+		)
+		setup.back_requested.emit()
+		await process_frame
+		_check(ctf.has_focus(), "Back returns focus to Capture the Flag")
 	for i in 5:
 		await process_frame
 	for path: String in [

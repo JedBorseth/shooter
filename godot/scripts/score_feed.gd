@@ -335,6 +335,13 @@ func _draw_emblem(
 				PackedVector2Array([Vector2(30, -15), Vector2(22, -15.5), Vector2(25.5, -8.5)]),
 				Color(1, 1, 1, alpha)
 			)
+		"flag":
+			# A pennant on a pole.
+			var light := Color(tier.lightened(0.45), alpha)
+			draw_line(Vector2(-12, -22), Vector2(-12, 22), light, 3.0, true)
+			var cloth := PackedVector2Array([Vector2(-11, -21), Vector2(18, -13), Vector2(-11, -4)])
+			draw_polygon(cloth, _vertical_gradient(cloth, tier.lightened(0.6), tier, alpha))
+			draw_circle(Vector2(-12, -23), 2.5, light, true, -1.0, true)
 		_:
 			var star := _star(5, EMBLEM_R * 0.45, EMBLEM_R * 0.19, Vector2.ZERO)
 			draw_colored_polygon(star, Color(tier, alpha))
@@ -365,11 +372,16 @@ func _emblem_shape(family: String, r: float) -> PackedVector2Array:
 			return _regular(24, r * 0.98, 0.0)
 		"collateral":
 			return _regular(4, r * 1.12, -PI / 2.0)
+		"flag":
+			return _regular(5, r * 1.04, -PI / 2.0)
 		_:
 			return _regular(8, r, PI / 8.0)
 
 
 func _family(label: String) -> String:
+	# Before "multi": "Carrier Kill" ends with "Kill" but is a flag play.
+	if label.begins_with("Flag ") or label == "Carrier Kill":
+		return "flag"
 	if label.ends_with("Streak"):
 		return "streak"
 	if label.ends_with("Kill"):

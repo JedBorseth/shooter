@@ -71,7 +71,8 @@ map, team size from 1v1 to 6v6 with bots in the empty places, bot skill, kill li
 starts a dedicated server for it in the background, and joins it; leaving the match stops
 that server. **Gun Game** does the same for a free-for-all up a ladder of eight weapons
 (your name, the map, 2 to 12 players, bot skill, kills per weapon, and time limit; see
-[Gun Game](#gun-game)). **Slamcity** is the Team Deathmatch map, a city block with three lanes
+[Gun Game](#gun-game)). **Capture the Flag** does the same for two teams scoring captures (see
+[Capture the Flag](#capture-the-flag)). **Slamcity** is the team map, a city block with three lanes
 between parking-yard spawns at each end: a back alley with a fire escape up to the flats'
 roof (the high ground), Market Street around a sunken skate bowl, and a run of interiors
 (corner store, apartment lobby, laundromat) with windows onto the street. Offline it has
@@ -178,9 +179,19 @@ Multiplayer runs on a dedicated server, even on one machine. The server is the s
 godot --headless --path godot -- --server --name "Friday 1v1" --map nuketown --bots 3
 ```
 
-`--map arena` (default), `--map nuketown`, and `--map slamcity` select the server map. Browser joins load that same map; command-line clients can pass `--map nuketown` with `--connect`. Servers reject clients that speak another protocol version (10 since Gun Game).
+`--map arena` (default), `--map nuketown`, and `--map slamcity` select the server map. Browser joins load that same map; command-line clients can pass `--map nuketown` with `--connect`. Servers reject clients that speak another protocol version (11 since Capture the Flag).
 
-Servers run Team Deathmatch: two teams, to 75 kills or 10 minutes (`--score-limit N`, `--time-limit MINUTES`). With `--bot-skill easy|normal|hard`, `--bots N` adds bots that play the match: they walk a navigation mesh the server bakes from the map, notice enemies in their field of view with a clear line of sight, and aim with a reaction time, a turn-rate limit, and an aim error that shrinks while they track. Each player who joins takes a bot's place, so teams stay at the size the server started with. Without `--bot-skill`, bots are scripted targets that strafe and fire bursts (`--bot-damage` lets those hurt). Players warm up in a lobby until everyone has pressed Ready in the loadout menu (L), then a countdown starts the match. `--auto-start` skips the ready-up. After the results, the next match counts down by itself.
+Servers run Team Deathmatch by default: two teams, to 75 kills or 10 minutes (`--score-limit N`, `--time-limit MINUTES`). `--mode ctf` runs Capture the Flag instead, to 3 captures (see below). With `--bot-skill easy|normal|hard`, `--bots N` adds bots that play the match: they walk a navigation mesh the server bakes from the map, notice enemies in their field of view with a clear line of sight, and aim with a reaction time, a turn-rate limit, and an aim error that shrinks while they track. Each player who joins takes a bot's place, so teams stay at the size the server started with. Without `--bot-skill`, bots are scripted targets that strafe and fire bursts (`--bot-damage` lets those hurt). Players warm up in a lobby until everyone has pressed Ready in the loadout menu (L), then a countdown starts the match. `--auto-start` skips the ready-up. After the results, the next match counts down by itself.
+
+### Capture the Flag
+
+![Capture the Flag on Slamcity: our flag and capture ring at the spawn yard with the enemy flag's TAKE marker, a capture call with flag lines in the kill feed, and the scoreboard with captures and returns](docs/media/capture-the-flag.jpg)
+
+Each team has a flag at its base; on Slamcity it stands in the team's spawn yard, behind the low wall at the mouth of Market Street, inside a ring that marks the capture zone. Walk over the enemy's flag to take it, and carry it into your own ring to capture it and score. Your own flag must be at home for that, so when both teams hold each other's flag, someone has to kill the other carrier first. A carrier who dies drops the flag where they fell. Touch your own dropped flag to send it home at once; left alone, it goes home after 30 seconds. Kills do not score for the team, only captures, to 3 captures or 10 minutes; a level score at the whistle is a draw.
+
+Markers over each flag say what to do there (TAKE, DEFEND, RETURN, KILL the carrier, ESCORT a teammate who has it, and CAPTURE at your own base while you carry the enemy's), with the distance, and stay on the screen's edge when the flag is behind you. Beside the score bar, a flag icon for each team shows HOME, TAKEN, or the time until a dropped flag goes home. Every take, drop, return, and capture gets a call, a chime, and a line in the kill feed. Personal score: 100 for taking the flag from its base, 500 for a capture, 100 for a return, and 100 on top of the kill for killing the enemy carrying your flag; the scoreboard adds captures and returns.
+
+Bots play the mode: a carrier runs the flag home and shoots on the move; the two bots nearest their team's dropped flag go to return it; a third of each team (in teams of three or more) defends, holding spots near its flag or chasing the enemy who has it; the rest attack, each taking a random route through the middle of the map so they spread over the lanes, or escort the teammate with the flag. The rules are in `rust/sim/src/ctf.rs`; a map marks each team's flag with a `Flags/Team0` and `Flags/Team1` marker (with a `team` metadata), and maps without them put each flag among its team's spawn points.
 
 ### Gun Game
 

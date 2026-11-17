@@ -28,6 +28,12 @@ pub struct ScoreRules {
     /// Every `streak_step` kills without dying awards a streak medal.
     pub streak_step: u32,
     pub streak: u32,
+    /// Capture the Flag: points for taking the enemy's flag, capturing it,
+    /// returning your own, and killing the enemy carrying yours.
+    pub flag_taken: u32,
+    pub flag_capture: u32,
+    pub flag_return: u32,
+    pub carrier_kill: u32,
 }
 
 impl Default for ScoreRules {
@@ -44,6 +50,10 @@ impl Default for ScoreRules {
             multikill: 50,
             streak_step: 5,
             streak: 100,
+            flag_taken: 100,
+            flag_capture: 500,
+            flag_return: 100,
+            carrier_kill: 100,
         }
     }
 }
@@ -68,6 +78,14 @@ pub enum Award {
     MultiKill(u32),
     /// Kills without dying, in multiples of the streak step.
     Streak(u32),
+    /// Capture the Flag: took the enemy's flag.
+    FlagTaken,
+    /// Carried the enemy's flag home.
+    FlagCapture,
+    /// Sent your own dropped flag home.
+    FlagReturn,
+    /// Killed the enemy carrying your flag.
+    CarrierKill,
 }
 
 impl Award {
@@ -77,7 +95,12 @@ impl Award {
     pub fn is_medal(self) -> bool {
         matches!(
             self,
-            Award::Collateral | Award::MultiKill(_) | Award::Streak(_)
+            Award::Collateral
+                | Award::MultiKill(_)
+                | Award::Streak(_)
+                | Award::FlagCapture
+                | Award::FlagReturn
+                | Award::CarrierKill
         )
     }
 
@@ -94,6 +117,10 @@ impl Award {
             Award::MultiKill(4) => "Quad Kill".to_owned(),
             Award::MultiKill(n) => format!("{n}x Multi Kill"),
             Award::Streak(n) => format!("{n} Kill Streak"),
+            Award::FlagTaken => "Flag Taken".to_owned(),
+            Award::FlagCapture => "Flag Capture".to_owned(),
+            Award::FlagReturn => "Flag Return".to_owned(),
+            Award::CarrierKill => "Carrier Kill".to_owned(),
         }
     }
 }
@@ -122,6 +149,9 @@ pub struct ScoreState {
     pub deaths: u32,
     /// Kills since the last death.
     pub streak: u32,
+    /// Capture the Flag: flags captured and returned.
+    pub captures: u32,
+    pub returns: u32,
     /// Kills in the current multi-kill chain.
     chain: u32,
     /// Seconds left to extend the chain.
@@ -187,6 +217,27 @@ impl ScoreState {
         awards
     }
 
+    /// Scores a Capture the Flag play: [`Award::FlagTaken`],
+    /// [`Award::FlagCapture`], [`Award::FlagReturn`], or
+    /// [`Award::CarrierKill`]. Other awards score nothing.
+    pub fn on_flag_play(&mut self, rules: &ScoreRules, award: Award) -> Option<Scored> {
+        let points = match award {
+            Award::FlagTaken => rules.flag_taken,
+            Award::FlagCapture => {
+                self.captures += 1;
+                rules.flag_capture
+            }
+            Award::FlagReturn => {
+                self.returns += 1;
+                rules.flag_return
+            }
+            Award::CarrierKill => rules.carrier_kill,
+            _ => return None,
+        };
+        self.score += points;
+        Some(Scored { award, points })
+    }
+
     pub fn totals(&self) -> ScoreTotals {
         ScoreTotals {
             score: self.score,
@@ -232,6 +283,24 @@ mod tests {
         let out = s.on_shot_kills(&ScoreRules::default(), &[BODY]);
         assert_eq!(awards(&out), [Award::Kill]);
         assert_eq!((s.score, s.kills, s.streak), (100, 1, 1));
+    }
+
+    #[test]
+    fn flag_plays_pay_and_count() {
+        let rules = ScoreRules::default();
+        let mut s = ScoreState::default();
+        let taken = s.on_flag_play(&rules, Award::FlagTaken).unwrap();
+        assert_eq!(taken.points, rules.flag_taken);
+        s.on_flag_play(&rules, Award::FlagCapture);
+        s.on_flag_play(&rules, Award::FlagReturn);
+        s.on_flag_play(&rules, Award::CarrierKill);
+        assert_eq!(s.on_flag_play(&rules, Award::Headshot), None);
+        assert_eq!((s.captures, s.returns, s.kills), (1, 1, 0));
+        assert_eq!(
+            s.score,
+            rules.flag_taken + rules.flag_capture + rules.flag_return + rules.carrier_kill
+        );
+        assert!(Award::FlagCapture.is_medal() && !Award::FlagTaken.is_medal());
     }
 
     #[test]
