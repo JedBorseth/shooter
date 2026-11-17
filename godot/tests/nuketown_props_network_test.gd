@@ -152,17 +152,19 @@ func _find_car(player: FpsPlayer) -> Array:
 			break
 		var to: Vector3 = _props.pieces[nearest].root.global_position - player.global_position
 		player.set_look(atan2(-to.x, -to.z), 0.0)
+		# No jumping: the player would mantle onto the car it walks toward.
 		Input.action_press("move_forward")
-		if i % 90 == 45:
-			Input.action_press("jump")
-		elif i % 90 == 50:
-			Input.action_release("jump")
 		await physics_frame
 	Input.action_release("move_forward")
-	Input.action_release("jump")
+	if sight[0] < 0:
+		return sight
+	# Let the player stop, then aim from where it stands. If coasting to a
+	# stop lost the clear line, the point found while walking is still on the
+	# body and only a step away.
 	await _ticks(30)
-	print("car in sight from %s: %s" % [player.global_position, sight])
-	return _car_in_sight(player) if sight[0] >= 0 else sight
+	var settled := _car_in_sight(player)
+	print("car in sight from %s: %s, settled %s" % [player.global_position, sight, settled])
+	return settled if settled[0] >= 0 else sight
 
 
 ## The nearest car body a ray from the eye reaches first, and where it does.
@@ -234,7 +236,7 @@ func _check(ok: bool, description: String) -> void:
 
 
 func _cleanup() -> void:
-	for action in ["fire", "aim", "reload", "move_forward", "jump"]:
+	for action in ["fire", "aim", "reload", "move_forward"]:
 		Input.action_release(action)
 	for pid in [_late_pid, _server_pid]:
 		if pid > 0 and OS.is_process_running(pid):
