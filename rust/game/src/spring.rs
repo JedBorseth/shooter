@@ -33,6 +33,33 @@ where
     }
 }
 
+impl<T> Spring<T>
+where
+    T: Copy
+        + Add<Output = T>
+        + AddAssign
+        + Sub<Output = T>
+        + Mul<f32, Output = T>
+        + Neg<Output = T>,
+{
+    /// Like [`Spring::step`], pulled toward `target` instead of zero: the value
+    /// follows a moving target with lag and overshoot.
+    pub fn step_toward(&mut self, target: T, stiffness: f32, damping: f32, dt: f32) {
+        let steps = (dt * 1000.0).ceil().max(1.0);
+        let h = dt / steps;
+        for _ in 0..steps as u32 {
+            self.velocity += ((target - self.value) * stiffness - self.velocity * damping) * h;
+            self.value += self.velocity * h;
+        }
+    }
+}
+
+/// Damping for a spring of `stiffness` with damping ratio `zeta` (1 is
+/// critical: the fastest return without overshoot).
+pub fn damping_for(stiffness: f32, zeta: f32) -> f32 {
+    2.0 * zeta * stiffness.sqrt()
+}
+
 /// The velocity impulse that makes an underdamped spring at rest overshoot to
 /// `peak` before settling. Lets kicks be tuned as angles instead of velocities.
 pub fn impulse_for_peak(peak: f32, stiffness: f32, damping: f32) -> f32 {
@@ -68,6 +95,16 @@ mod tests {
         }
         assert!((peak - 0.01).abs() < 0.0005, "peak {peak}");
         assert!(spring.value.abs() < 0.0005, "settles: {}", spring.value);
+    }
+
+    #[test]
+    fn spring_follows_a_target_and_settles_on_it() {
+        let mut spring = Spring::<f32>::default();
+        let (k, c) = (150.0, damping_for(150.0, 0.7));
+        for _ in 0..120 {
+            spring.step_toward(2.0, k, c, 1.0 / 120.0);
+        }
+        assert!((spring.value - 2.0).abs() < 0.01, "{}", spring.value);
     }
 
     #[test]

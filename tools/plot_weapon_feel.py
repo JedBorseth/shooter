@@ -33,7 +33,7 @@ REFERENCE = {
     "ads_m4": [("ads_time", 0.22, 0.28, "M4-class aim-in, eased"),
                ("vm_roll", 4.0, 8.0, "|roll| arc peak mid-transition, deg")],
     "spray_ads_m4": [("vm_z", 15.0, 25.0, "per-shot push back, mm"),
-                     ("sight_err", -0.05, 0.05, "sights vs bullet path, deg")],
+                     ("sight_err", -0.2, 0.2, "aimed reticle bounce peak, deg (mean ~0)")],
     "spray_hip_m4": [("vm_z", 15.0, 30.0, "per-shot push back, mm")],
     "flick_hip": [("vm_yaw", -2.5, 2.5, "look sway lag, deg (hip)")],
     "flick_ads": [("vm_yaw", -0.5, 0.5, "look sway lag, deg (aimed)")],
