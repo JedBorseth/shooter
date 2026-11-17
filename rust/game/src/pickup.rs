@@ -5,6 +5,7 @@
 //! points and its ammo half that, paid from the `zombies_wallet` group's
 //! node (`ZombieDirector::spend`).
 
+use godot::classes::geometry_instance_3d::ShadowCastingSetting;
 use godot::classes::{IStaticBody3D, Label3D, MeshInstance3D, Node3D, PackedScene, StaticBody3D};
 use godot::prelude::*;
 use shooter_sim::weapon::WeaponId;
@@ -57,7 +58,9 @@ impl IStaticBody3D for WeaponPickup {
         };
         if let Some(view) = instantiate_world_weapon(id) {
             display.add_child(&view);
-            lay_on_side(&view.upcast());
+            let view = view.upcast::<Node3D>();
+            lay_on_side(&view);
+            rack_meshes(&view.upcast());
             return;
         }
         let model = self
@@ -90,6 +93,18 @@ fn lay_on_side(view: &Gd<Node3D>) {
     let centre = (min + max) * 0.5;
     // In the parent: x = -local z, y = local x, z = -local y.
     view.set_position(Vector3::new(centre.z, -min.x + 0.003, centre.y));
+}
+
+/// Turns off shadow casting for every mesh under `node`: a gun lying on a
+/// table hides nearly all of its own shadow, but every shadow cascade would
+/// still draw its triangles.
+fn rack_meshes(node: &Gd<Node>) {
+    for child in node.get_children().iter_shared() {
+        if let Ok(mut mesh) = child.clone().try_cast::<MeshInstance3D>() {
+            mesh.set_cast_shadows_setting(ShadowCastingSetting::OFF);
+        }
+        rack_meshes(&child);
+    }
 }
 
 /// The bounds of every mesh under `node`, in the space `to_space` maps `node` into.

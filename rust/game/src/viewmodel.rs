@@ -9,8 +9,8 @@ use std::f32::consts::{PI, TAU};
 
 use godot::classes::{
     AudioStreamPlayer, AudioStreamRandomizer, BaseMaterial3D, Curve, CurveTexture, CylinderMesh,
-    GpuParticles3D, Gradient, GradientTexture1D, INode3D, Material, MeshInstance3D, Node3D,
-    OmniLight3D, ParticleProcessMaterial, QuadMesh, Shader, ShaderMaterial,
+    GeometryInstance3D, GpuParticles3D, Gradient, GradientTexture1D, INode3D, Material,
+    MeshInstance3D, Node3D, OmniLight3D, ParticleProcessMaterial, QuadMesh, Shader, ShaderMaterial,
 };
 use godot::global::randf_range;
 use godot::prelude::*;
@@ -509,10 +509,14 @@ impl WeaponView {
             });
         let magazine = Part::find(&view, "Magazine");
         let fresh_magazine = magazine.as_ref().and_then(|mag| {
-            let mut copy = mag.node.duplicate_node();
-            copy.set_name("FreshMagazine");
-            copy.set_visible(false);
-            mag.node.get_parent()?.add_child(&copy);
+            // Found again after an optic lowers the weapon: reuse the copy.
+            let mut parent = mag.node.get_parent()?;
+            if !parent.has_node("FreshMagazine") {
+                let mut copy = mag.node.duplicate_node();
+                copy.set_name("FreshMagazine");
+                copy.set_visible(false);
+                parent.add_child(&copy);
+            }
             Part::find(&view, "FreshMagazine")
         });
         self.charging_handle = self
@@ -691,7 +695,9 @@ impl WeaponView {
             _ => 0.0,
         };
         self.set_sight_drop(drop);
-        self.show_part("OpticRail", optic);
+        // The rail shows under an optic, and always under a built-in one.
+        let built_in = self.base().has_node("Sights");
+        self.show_part("OpticRail", optic || built_in);
         let mut iron = self.base().try_get_node_as::<IronSights>("Sights");
         if let Some(iron) = &mut iron {
             iron.set_visible(!optic);
@@ -805,9 +811,9 @@ impl WeaponView {
         }
     }
 
-    /// Models from tools/build_weapons.py carry `World`, every fixed part
-    /// merged into one mesh. Third person draws that and the magazine (the
-    /// only part a third-person reload moves); first person draws the parts.
+    /// Models from tools/build_weapons.py carry `World`, the weapon merged
+    /// into one mesh (nothing moves on a third-person weapon). Third person
+    /// draws that; first person draws the separate parts.
     fn show_world_parts(&self, world: bool) {
         let Some(mesh) = self.base().try_get_node_as::<Node3D>("Model/Mesh") else {
             return;
@@ -824,11 +830,6 @@ impl WeaponView {
                 "World" => part.set_visible(world),
                 // Hidden until an optic shows it, and the spare stays hidden.
                 "OpticRail" | "MagazineSpare" => {}
-                "Magazine" => {
-                    if let Some(mut rounds) = part.try_get_node_as::<Node3D>("Rounds") {
-                        rounds.set_visible(!world);
-                    }
-                }
                 _ => part.set_visible(!world),
             }
         }
@@ -856,7 +857,17 @@ impl WeaponView {
     /// gunshot layers.
     fn ready_world(&mut self) {
         self.show_world_parts(true);
-        brighten_materials(&self.model.clone().upcast(), self.albedo_boost.sqrt());
+        if let Some(mut world) = self
+            .base()
+            .try_get_node_as::<GeometryInstance3D>("Model/Mesh/World")
+        {
+            world.set_lod_bias(WORLD_LOD_BIAS);
+        }
+        // A boost of 1 keeps the shared materials, so racks and other
+        // players' copies of a gun draw with one material, not one each.
+        if (self.albedo_boost - 1.0).abs() > f32::EPSILON {
+            brighten_materials(&self.model.clone().upcast(), self.albedo_boost.sqrt());
+        }
         if let Some(material) = self.flash.get_active_material(0)
             && let Ok(mut world) = material.duplicate_resource().try_cast::<ShaderMaterial>()
         {
@@ -1342,6 +1353,10 @@ fn brighten_materials(root: &Gd<Node>, boost: f32) {
         brighten_materials(&child, boost);
     }
 }
+
+/// Third-person weapons switch to their coarser LODs this much sooner than
+/// other meshes: a gun is small next to the player holding it.
+const WORLD_LOD_BIAS: f32 = 0.35;
 
 /// Instances a model scene (an attachment's), or none if it is missing.
 fn instance_model(path: &str) -> Option<Gd<Node3D>> {

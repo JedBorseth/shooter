@@ -1,0 +1,37 @@
+{
+  "triangles": 16090,
+  "world_triangles": 3015,
+  "nodes": [
+    "Body",
+    "Bolt",
+    "BoltStop",
+    "Magazine",
+    "Magazine/Rounds",
+    "Safety",
+    "Scope",
+    "Trigger",
+    "World"
+  ],
+  "markers": {
+    "Muzzle": [
+      0.0,
+      -0.0494,
+      -0.7373
+    ],
+    "Ejection": [
+      0.014,
+      -0.045,
+      -0.125
+    ],
+    "GripRight": [
+      -0.0,
+      -0.115,
+      0.03
+    ],
+    "GripLeft": [
+      0.0,
+      -0.08,
+      -0.36
+    ]
+  }
+}

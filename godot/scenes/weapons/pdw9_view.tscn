@@ -10,32 +10,30 @@ size = Vector2(0.16, 0.16)
 [node name="PDW9" type="WeaponView"]
 weapon = "pdw9"
 grip_rake = 15.0
-hip_position = Vector3(0.1, -0.087, -0.36)
-ads_position = Vector3(0, 0, -0.06)
+hip_position = Vector3(0.1, -0.07, -0.26)
+ads_position = Vector3(0, 0, -0.09)
 sprint_position = Vector3(-0.04, 0.01, 0.03)
 sprint_rotation = Vector3(-8, 25, 22)
-pivot = Vector3(0, -0.108, 0.06)
+pivot = Vector3(0, -0.197, 0.118)
 albedo_boost = 1.0
 kick_strength = 1.0
 camera_punch = Vector3(0.22, 0.1, 0.6)
 
 [node name="Model" type="Node3D" parent="."]
-position = Vector3(0, -0.158, 0.06)
-rotation = Vector3(0, 1.5707964, 0)
-scale = Vector3(0.15, 0.15, 0.15)
 
 [node name="Mesh" parent="Model" instance=ExtResource("1_model")]
 
+[node name="MagazineSpare" parent="Model/Mesh"]
+visible = false
+
 [node name="Sights" type="IronSights" parent="."]
 style = "reflex"
-rear_z = -0.09
-front_z = -0.09
-rear_base = -0.0224
-front_base = -0.0224
-glow = Color(1, 0.12, 0.06, 1)
+rear_base = -0.018
+front_base = -0.018
+front_z = 0.0
 
 [node name="Muzzle" type="Marker3D" parent="."]
-position = Vector3(0, -0.0725, -0.2775)
+position = Vector3(0.0000, -0.0799, -0.2891)
 
 [node name="Flash" type="MeshInstance3D" parent="Muzzle"]
 cast_shadow = 0
@@ -47,10 +45,13 @@ light_energy = 3.5
 omni_range = 7.0
 
 [node name="Ejection" type="Marker3D" parent="."]
-position = Vector3(0.015, -0.0455, -0.015)
+position = Vector3(0.0157, -0.0625, -0.0072)
 
 [node name="GripRight" type="Marker3D" parent="."]
-position = Vector3(0, -0.143, 0.05)
+position = Vector3(-0.0000, -0.1968, 0.1183)
 
 [node name="GripLeft" type="Marker3D" parent="."]
-position = Vector3(0, -0.138, -0.075)
+position = Vector3(0.0000, -0.1086, -0.1659)
+
+[node name="OpticMount" type="Marker3D" parent="."]
+position = Vector3(0.0000, -0.0273, -0.0000)

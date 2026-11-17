@@ -122,6 +122,7 @@ WEAPONS = {
         # An M1911 is 216 mm long with a 165 mm sight radius.
         "scale": 0.93,
         "sight": {"rear": (0.0106, 0.0895), "front": (-0.1667, 0.0878)},
+        "cartridge": 1,
         "parts": {
             "SLIDE": "Slide",
             "MAGAZINE": "Magazine",
@@ -148,6 +149,112 @@ WEAPONS = {
             "GripLeft": (0.035, -0.02),
         },
         "spare": True,
+    },
+    "pdw9": {
+        "dir": "pdw9",
+        "scene": "pdw9",
+        "fbx": CLASSIC / "MP5/SKM_MP5.fbx",
+        "textures": [CLASSIC / f"MP5/T_MP5_{s}.png" for s in ("C", "N", "RMAO")],
+        "normal_dx": True,
+        # An MP5A5 is 700 mm long with its stock out; 9x19 mm rounds.
+        "scale": 0.98,
+        "cartridge": 1,
+        # It carries a reflex sight on the claw mount (the scene's IronSights
+        # node): the sight line runs 18 mm over the mount's top, level.
+        "sight": {"rear": (-0.1207, 0.2008), "front": (-0.37, 0.2008)},
+        "parts": {
+            "MAGASINE": "Magazine",
+            "BULLET": "Magazine/Rounds",
+            "BOLT": "ChargingHandle",
+            "BOLT_02": "BoltCarrier",
+            "SELECTOR": "Selector",
+            "TRIGGER": "Trigger",
+            "MAGASINE_RELEASE": "MagRelease",
+            None: "OpticRail",
+        },
+        "pivots": {"Selector": "SELECTOR", "Trigger": "TRIGGER", "MagRelease": "MAGASINE_RELEASE"},
+        "markers": {
+            "Muzzle": "FX_FIRE",
+            "Ejection": (-0.016, -0.128, 0.137),
+            "OpticMount": "ATTACH_SCOPE",
+            "GripRight": (0.0, 0.0),
+            "GripLeft": (-0.29, 0.09),
+        },
+        "spare": True,
+    },
+    "br3": {
+        "dir": "br3",
+        "scene": "br3",
+        "fbx": CLASSIC / "M14/SKM_M14.fbx",
+        "textures": [CLASSIC / f"M14/T_M14_{s}.png" for s in ("C", "N", "RMAO")],
+        "normal_dx": True,
+        # An M14 is 1118 mm long; 7.62x51 mm rounds.
+        "scale": 1.02,
+        "cartridge": 0,
+        # A reflex sight on the forward rail, high enough to clear the rear
+        # aperture sight.
+        "sight": {"rear": (-0.2, 0.105), "front": (-0.6, 0.105)},
+        "parts": {
+            "MAGAZINE": "Magazine",
+            "BULLET_01": "Magazine/Rounds",
+            "BULLET_02": "Magazine/Rounds",
+            "BULLET_03": "Magazine/Rounds",
+            "OPERATING_HANDLE": "ChargingHandle",
+            "BOLT": "BoltCarrier",
+            "BOLT_STOP": "BoltStop",
+            "SAFETY": "Safety",
+            "SELECTOR": "Selector",
+            "TRIGGER": "Trigger",
+            "MAGAZINE_RELEASE": "MagRelease",
+            None: "OpticRail",
+        },
+        "pivots": {
+            "Safety": "SAFETY",
+            "Selector": "SELECTOR",
+            "Trigger": "TRIGGER",
+            "MagRelease": "MAGAZINE_RELEASE",
+            "BoltStop": "BOLT_STOP",
+        },
+        "markers": {
+            "Muzzle": "FX_FIRE",
+            "Ejection": (-0.012, -0.17, 0.06),
+            "OpticMount": (-0.2, 0.081),
+            "GripRight": (0.02, -0.02),
+            "GripLeft": (-0.36, 0.02),
+        },
+        "spare": True,
+    },
+    "m40": {
+        "dir": "m40",
+        "scene": "m40",
+        "fbx": CLASSIC / "M700/SKM_M700.fbx",
+        "textures": [CLASSIC / f"M700/T_M700_{s}.png" for s in ("C", "N", "RMAO")],
+        "normal_dx": True,
+        # A Remington 700 pattern: 1117 mm with a 24 inch barrel.
+        "scale": 1.0,
+        "cartridge": 0,
+        # The scope's axis, 28 mm over the rail (medium rings): the sight
+        # line, level. The scope is built by `riflescope`.
+        "sight": {"rear": (0.0, 0.080), "front": (-0.3, 0.080)},
+        "scope": {"rail": 0.052, "rings": (-0.19, -0.09)},
+        "parts": {
+            "MAGAZINE": "Magazine",
+            "BULLET_01": "Magazine/Rounds",
+            "BULLET_02": "Magazine/Rounds",
+            "BOLT": "Bolt",
+            "BOLT_STOP": "BoltStop",
+            "SAFETY": "Safety",
+            "TRIGGER": "Trigger",
+            None: "Body",
+        },
+        "pivots": {"Safety": "SAFETY", "Trigger": "TRIGGER", "BoltStop": "BOLT_STOP"},
+        "markers": {
+            "Muzzle": "FX_FIRE",
+            "Ejection": (-0.014, -0.125, 0.035),
+            "GripRight": (0.03, -0.035),
+            "GripLeft": (-0.36, 0.0),
+        },
+        "spare": False,
     },
 }
 
@@ -241,6 +348,8 @@ def face_parts(obj, spec: dict) -> list[str]:
 
 
 def material_kind(name: str) -> str:
+    if name in ("Optics", "Lens"):
+        return name
     if any(m in name for m in CARTRIDGE_MATERIALS):
         return "Cartridge"
     if any(m in name for m in GLOW_MATERIALS):
@@ -377,18 +486,131 @@ def spare_magazine(objects: dict):
             objects["MagazineSpare/" + child.name] = child
 
 
-# Parts that stay their own nodes on other players' weapons and on racks:
-# the magazine comes out in a third-person reload, the rail shows with an
-# optic. Everything else is merged into `World`.
-WORLD_SEPARATE = ("Magazine", "MagazineSpare", "OpticRail")
+def revolve(bm, profile, segments, uv, v0=0.0, cap_start=False, cap_end=False):
+    """Adds a surface of revolution about +Y to `bm`: `profile` is (y, radius)
+    from back to front. UVs wrap u around and run v along the length."""
+    rings = []
+    for y, r in profile:
+        rings.append([bm.verts.new((r * np.sin(2 * np.pi * i / segments), y, r * np.cos(2 * np.pi * i / segments)))
+                      for i in range(segments)])
+    length = 0.0
+    vs = [v0]
+    for (y0, r0), (y1, r1) in zip(profile, profile[1:]):
+        length += float(np.hypot(y1 - y0, r1 - r0))
+        vs.append(v0 + length * 4.0)
+    for k, (a, b) in enumerate(zip(rings, rings[1:])):
+        for i in range(segments):
+            j = (i + 1) % segments
+            face = bm.faces.new((a[i], b[i], b[j], a[j]))
+            for loop, (uu, vv) in zip(face.loops, ((i, vs[k]), (i, vs[k + 1]), (i + 1, vs[k + 1]), (i + 1, vs[k]))):
+                loop[uv].uv = (uu / segments, vv)
+    for cap, ring, flip in ((cap_start, rings[0], True), (cap_end, rings[-1], False)):
+        if cap:
+            face = bm.faces.new(list(reversed(ring)) if flip else ring)
+            for loop in face.loops:
+                loop[uv].uv = (0.5 + loop.vert.co.x * 4, 0.5 + loop.vert.co.z * 4)
+    return rings
+
+
+def riflescope(spec: dict) -> bpy.types.Object:
+    """A hunting-pattern riflescope in view space (the sight line is its
+    axis, +Y forward): eyepiece with a rubber eye guard and power ring,
+    30 mm tube, a saddle with elevation and windage turrets, a 40 mm
+    objective bell with its sunshade, two rings and their bases down to the
+    rail, and coated lenses at both ends."""
+    scale = spec["scale"]
+    rail = (spec["scope"]["rail"] - spec["sight"]["rear"][1]) * scale
+    ring_ys = [-(y - spec["sight"]["rear"][0]) * scale for y in spec["scope"]["rings"]]
+    bm = bmesh.new()
+    uv = bm.loops.layers.uv.new("UV_0")
+    seg = 48
+    body = [
+        (-0.012, 0.0172), (-0.011, 0.0196), (-0.004, 0.0205), (0.016, 0.0205), (0.018, 0.0192),
+        (0.040, 0.0192), (0.041, 0.0198), (0.062, 0.0198), (0.063, 0.0185), (0.078, 0.0152),
+        (0.125, 0.0152), (0.127, 0.0172), (0.163, 0.0172), (0.165, 0.0152), (0.226, 0.0152),
+        (0.256, 0.0236), (0.300, 0.0236), (0.302, 0.0244), (0.322, 0.0244), (0.323, 0.0226),
+    ]
+    revolve(bm, body, seg, uv)
+    # The bore of the eyepiece and the sunshade, so the lenses sit recessed.
+    revolve(bm, [(-0.012, 0.0172), (-0.006, 0.0168)], seg, uv)
+    revolve(bm, [(0.323, 0.0226), (0.314, 0.0222)], seg, uv)
+    # Power ring grip and turret caps: ribs around the ring.
+    for k in range(18):
+        a = 2 * np.pi * k / 18
+        c, sn = np.cos(a), np.sin(a)
+        verts = []
+        for (dy, dr) in ((0.042, 0.0198), (0.061, 0.0198), (0.061, 0.0206), (0.042, 0.0206)):
+            for da in (-0.035, 0.035):
+                verts.append((dr * np.sin(a + da), dy, dr * np.cos(a + da)))
+        bmesh.ops.convex_hull(bm, input=[bm.verts.new(v) for v in verts])
+    # Turrets: elevation on top, windage on the right.
+    turret_y = 0.145
+    for axis in ("z", "x"):
+        prof = [(0.0165, 0.0115), (0.030, 0.0115), (0.0305, 0.0128), (0.041, 0.0128), (0.042, 0.0118)]
+        rings = revolve(bm, prof, 32, uv, cap_end=True)
+        verts = [v for ring in rings for v in ring]
+        # Built along +Y about the origin; stand it up on the saddle.
+        rot = Matrix.Rotation(-np.pi / 2, 4, "X") if axis == "z" else Matrix.Rotation(-np.pi / 2, 4, "Z")
+        bmesh.ops.transform(bm, matrix=Matrix.Translation((0, turret_y, 0)) @ rot, verts=verts)
+    # Rings and their bases.
+    for y in ring_ys:
+        rings = revolve(bm, [(y - 0.008, 0.0152), (y - 0.008, 0.0188), (y + 0.008, 0.0188), (y + 0.008, 0.0152)], seg, uv)
+        base = bmesh.ops.create_cube(bm, size=1.0)["verts"]
+        bmesh.ops.scale(bm, vec=(0.022, 0.014, abs(rail) - 0.012), verts=base)
+        bmesh.ops.translate(bm, vec=(0.0, y, rail + (abs(rail) - 0.012) / 2), verts=base)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-6)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if len(f.verts) > 4])
+    lens_bm = bmesh.new()
+    lens_uv = lens_bm.loops.layers.uv.new("UV_0")
+    for y, r in ((-0.006, 0.0168), (0.314, 0.0222)):
+        verts = [lens_bm.verts.new((r * np.sin(2 * np.pi * i / seg), y, r * np.cos(2 * np.pi * i / seg))) for i in range(seg)]
+        face = lens_bm.faces.new(verts if y > 0 else list(reversed(verts)))
+        for loop in face.loops:
+            loop[lens_uv].uv = (0.5, 0.5)
+    bmesh.ops.triangulate(lens_bm, faces=lens_bm.faces)
+    mesh = bpy.data.meshes.new("Scope")
+    bm.to_mesh(mesh)
+    bm.free()
+    lens = bpy.data.meshes.new("ScopeLens")
+    lens_bm.to_mesh(lens)
+    lens_bm.free()
+    obj = bpy.data.objects.new("Scope", mesh)
+    bpy.context.scene.collection.objects.link(obj)
+    lens_obj = bpy.data.objects.new("ScopeLens", lens)
+    bpy.context.scene.collection.objects.link(lens_obj)
+    optics = bpy.data.materials.get("Optics") or bpy.data.materials.new("Optics")
+    glass = bpy.data.materials.get("Lens") or bpy.data.materials.new("Lens")
+    obj.data.materials.append(optics)
+    lens_obj.data.materials.append(glass)
+    bpy.ops.object.select_all(action="DESELECT")
+    obj.select_set(True)
+    lens_obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.join()
+    for poly in obj.data.polygons:
+        poly.use_smooth = True
+    obj.data.set_sharp_from_angle(angle=np.radians(40.0))
+    return obj
+
+
+# Parts left out of `World`: the spare magazine stays hidden, and the rail
+# shows only under an optic. Everything else, the magazine included (other
+# players' reloads move the hand, not the magazine), is merged.
+WORLD_SEPARATE = ("MagazineSpare", "OpticRail")
+# Seen from a few metres away, `World` keeps this share of the triangles
+# (the normal map keeps the detail), and Godot's LODs take it further.
+WORLD_DECIMATE = 0.2
 
 
 def world_mesh(objects: dict):
-    """`World`: every fixed part merged into one node, for other players'
-    weapons and racks (two draw calls instead of ten). Hidden in first person."""
+    """`World`: the weapon merged into one node, for other players' weapons
+    and racks (one draw call per material instead of one per part). Hidden
+    in first person."""
     copies = []
     for path, obj in objects.items():
-        if path.split("/")[0] in WORLD_SEPARATE:
+        # Rounds and tritium dots are too small to see on another player.
+        if path.split("/")[0] in WORLD_SEPARATE or path.endswith(("Rounds", "SightGlow")):
             continue
         dup = obj.copy()
         dup.data = obj.data.copy()
@@ -406,6 +628,19 @@ def world_mesh(objects: dict):
     world = bpy.context.view_layer.objects.active
     world.name = "World"
     world.data.name = "World"
+    # One surface per material: lenses take the optics' finish at a distance.
+    names = [slot.material.name if slot.material else "" for slot in world.material_slots]
+    if "Lens" in names and "Optics" in names:
+        lens, optics = names.index("Lens"), names.index("Optics")
+        for poly in world.data.polygons:
+            if poly.material_index == lens:
+                poly.material_index = optics
+        world.active_material_index = lens
+        bpy.ops.object.material_slot_remove()
+    decimate = world.modifiers.new("Decimate", "DECIMATE")
+    decimate.ratio = WORLD_DECIMATE
+    decimate.use_collapse_triangulate = True
+    bpy.ops.object.modifier_apply(modifier=decimate.name)
     objects["World"] = world
 
 
@@ -491,6 +726,14 @@ IMPORT_SUBRESOURCES = """_subresources={{
 "Glow": {{
 "use_external/enabled": true,
 "use_external/path": "{shared}/glow_tritium.tres"
+}},
+"Lens": {{
+"use_external/enabled": true,
+"use_external/path": "{shared}/lens.tres"
+}},
+"Optics": {{
+"use_external/enabled": true,
+"use_external/path": "{shared}/optics.tres"
 }},
 "Weapon": {{
 "use_external/enabled": true,
@@ -588,6 +831,8 @@ def build(key: str):
     for path, obj in objects.items():
         if path.endswith("Rounds"):
             cartridge_uvs(obj, row=spec.get("cartridge", 0))
+    if "scope" in spec:
+        objects["Scope"] = riflescope(spec)
     bpy.context.view_layer.update()
     world_mesh(objects)
     if spec.get("spare"):
@@ -600,7 +845,7 @@ def build(key: str):
         return sum(sum(len(p.vertices) - 2 for p in objects[k].data.polygons) for k in paths)
 
     first = [k for k in objects if k != "World" and not k.startswith("MagazineSpare")]
-    world = ["World"] + [k for k in objects if k.split("/")[0] in ("Magazine", "OpticRail")]
+    world = ["World"] + [k for k in objects if k.split("/")[0] == "OpticRail"]
     tris, world_tris = count(first), count(world)
     log(f"  {tris} triangles in first person, {world_tris} for other players, {len(objects)} nodes")
     stem = spec["dir"] if spec["dir"] != key else key
@@ -685,6 +930,42 @@ roughness_texture = ExtResource("2_orm")
 roughness_texture_channel = 1
 normal_enabled = true
 normal_texture = ExtResource("3_normal")
+"""
+    )
+    # Optics: black hard-anodised aluminium with a fine matte grain.
+    grain = rng.random((size, size)).astype(np.float32)
+    soft = resize(np.repeat(np.repeat(rng.random((size // 8, size // 8, 1)).astype(np.float32), 8, 0), 8, 1), size)[..., 0]
+    optic_albedo = np.repeat((0.028 + 0.01 * grain + 0.008 * soft)[..., None], 3, axis=2)
+    optic_orm = np.stack([np.ones_like(grain), 0.42 + 0.08 * grain + 0.06 * soft, np.full_like(grain, 0.35)], axis=2)
+    save_png(out / "optics_albedo.png", optic_albedo, srgb=True)
+    save_png(out / "optics_orm.png", optic_orm, srgb=False)
+    (out / "optics.tres").write_text(
+        f"""[gd_resource type="StandardMaterial3D" format=3]
+
+[ext_resource type="Texture2D" path="{SHARED}/optics_albedo.png" id="1_albedo"]
+[ext_resource type="Texture2D" path="{SHARED}/optics_orm.png" id="2_orm"]
+[ext_resource type="Texture2D" path="{SHARED}/flat_normal.png" id="3_normal"]
+
+[resource]
+albedo_texture = ExtResource("1_albedo")
+metallic = 1.0
+metallic_texture = ExtResource("2_orm")
+metallic_texture_channel = 2
+roughness_texture = ExtResource("2_orm")
+roughness_texture_channel = 1
+normal_enabled = true
+normal_texture = ExtResource("3_normal")
+"""
+    )
+    # Coated glass: dark, glossy, a little green-blue in the reflection.
+    (out / "lens.tres").write_text(
+        """[gd_resource type="StandardMaterial3D" format=3]
+
+[resource]
+albedo_color = Color(0.02, 0.035, 0.04, 1)
+metallic = 0.9
+metallic_specular = 0.9
+roughness = 0.04
 """
     )
     (out / "glow_tritium.tres").write_text(
