@@ -373,7 +373,7 @@ def _wreck_damage(b, hw, hl, floor, roof, windows, win_y):
     b.hull([(x, y, z) for x, y, z in (
         (-hw, roof, nose + 1.6), (hw, roof, nose + 1.6), (-hw * 0.9, roof + 0.12, nose + 1.0),
         (hw * 0.85, roof + 0.18, nose + 0.9), (-hw * 0.7, roof - 0.55, nose + 0.05), (hw * 0.75, roof - 0.4, nose),
-        (0.1, roof - 0.15, nose - 0.08), (-hw, roof - 0.25, nose + 0.5), (hw, roof - 0.3, nose + 0.6))], "train_wreck")
+        (0.1, roof - 0.15, nose - 0.08), (-hw, roof - 0.25, nose + 0.5), (hw, roof - 0.3, nose + 0.6))], "train_scorched")
     # Sheet peeling outward along the tear, top to bottom, on both sides.
     for s in (-1, 1):
         x = s * hw
@@ -382,7 +382,7 @@ def _wreck_damage(b, hw, hl, floor, roof, windows, win_y):
             back = rng.uniform(0.25, 0.55)
             b.hull([(x, y0, L.TORN_TO), (x, y1, L.TORN_TO), (x + out, (y0 + y1) / 2 + rng.uniform(-0.2, 0.2),
                     L.TORN_TO - back), (x + out * 0.4, y0 + 0.05, L.TORN_TO - back * 0.6),
-                    (x - s * 0.02, y1, L.TORN_TO + 0.02)], "train_wreck", detail=True)
+                    (x - s * 0.02, y1, L.TORN_TO + 0.02)], "train_scorched", detail=True)
         # Creases in the side ahead of the tear, where it buckled.
         for k in range(3):
             z = L.TORN_TO + 0.6 + k * 0.7
@@ -420,38 +420,22 @@ def _wreck_damage(b, hw, hl, floor, roof, windows, win_y):
         b.hull([(x - 0.3, roof - 0.16, z - 0.25), (x + 0.3, roof - 0.16, z - 0.25), (x - 0.3, roof - 0.18, z - 0.22),
                 (x - 0.28, roof - 0.16 - drop, z + 0.25), (x + 0.3, roof - 0.16 - drop * 0.8, z + 0.27),
                 (x + 0.28, roof - 0.18 - drop * 0.8, z + 0.24)], "steel_galv", detail=True)
-    # Glass from the broken windows: on the floor by the door bays and on the
-    # seats, small and glossy so it catches the light.
-    for k in range(70):
+    # Glass from the broken windows, in drifts under the bays it fell from and
+    # on the seats: small, dark, and glossy, so it shows as glints, tipped at
+    # random so they catch the light.
+    for k in range(150):
         side = rng.choice((-1, 1))
-        on_seat = k % 4 == 0
-        # Most of it under the window bays it fell from.
+        on_seat = k % 5 == 0
         bay = rng.choice([w for w in windows if (w[0] + w[1]) / 2 > L.TORN_TO])
-        x = side * (rng.uniform(1.0, 1.3) if on_seat else rng.uniform(0.3, 0.9))
+        x = side * (rng.uniform(1.0, 1.3) if on_seat else rng.uniform(0.6, 1.0) - rng.random() ** 2 * 0.4)
         y = floor + (0.475 if on_seat else 0.012)
         z = rng.uniform(bay[0], bay[1])
-        r = rng.uniform(0.05, 0.12)
-        b.hull([(x, y, z), (x + r, y, z + r * 0.4), (x + r * 0.3, y, z - r), (x + r * 0.4, y + 0.004, z)],
+        r = rng.uniform(0.015, 0.05)
+        tip = r * math.tan(math.radians(rng.uniform(5, 20)))
+        b.hull([(x, y, z), (x + r, y + tip, z + r * 0.4), (x + r * 0.3, y, z - r), (x + r * 0.4, y + 0.003, z)],
                "glass_shard", detail=True)
-    for s in (-1, 1):
-        x = s * (hw - 0.1)
-        ring = [i * 2 * PI / 9 for i in range(9)]
-        b.hull([(x - s * 0.002 * (k % 2), roof - 0.28 + math.sin(t) * 0.2 * rng.uniform(0.6, 1.0),
-                 L.TORN_TO + 1.2 + math.cos(t) * 1.1 * rng.uniform(0.7, 1.0)) for k, t in enumerate(ring)],
-               "soot", detail=True)
-    # Soot blooming up the sides and over the roof from the nose.
-    for s in (-1, 1):
-        x = s * (hw + 0.012)
-        # Kept to the solid bands above and below the windows and the pillar
-        # by the tear, so none of it hangs across an opening.
-        for cz, cy, rz, ry in ((L.TORN_TO + 0.75, roof - 0.28, 0.68, 0.24), (L.TORN_TO + 2.6, roof - 0.3, 0.8, 0.22),
-                               (L.TORN_TO + 0.23, (floor + roof) / 2, 0.18, 1.0),
-                               (L.TORN_TO + 3.6, floor + 0.45, 0.9, 0.32)):
-            ring = [i * 2 * PI / 9 for i in range(9)]
-            b.hull([(x + s * 0.002 * (k % 2), cy + math.sin(t) * ry * rng.uniform(0.6, 1.0),
-                     cz + math.cos(t) * rz * rng.uniform(0.7, 1.0)) for k, t in enumerate(ring)], "soot", detail=True)
-    b.hull([(x, roof + 0.21, z) for x in (-hw * 0.6, hw * 0.6) for z in (nose + 1.4, nose + 3.6)]
-           + [(0.0, roof + 0.215, nose + 4.2)], "soot", detail=True)
+    # (No soot shapes: hard-edged dark polygons read as black hexagons. The
+    # nose's torn steel is drawn darker instead, in "train_scorched".)
 
 
 @model
@@ -467,7 +451,8 @@ def train_car(b: Model, wrecked=False):
     if wrecked:
         # The tilted car takes plain steel: the world shader's projection
         # would streak its corrugated texture along the slope.
-        b = _Relook(b, {"train_corrugated": "train_wreck", "train_steel": "train_wreck", "train_roof": "train_wreck"})
+        b = _Relook(b, {"train_corrugated": "train_wreck", "train_steel": "train_wreck", "train_roof": "train_wreck",
+                        "trim_black": "underbody"})
     doors = L.TRAIN_DOORS
     windows = L.TRAIN_WINDOWS
     win_y = (L.PLATFORM + 0.88 - L.TRACK, L.PLATFORM + 1.92 - L.TRACK)

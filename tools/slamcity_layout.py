@@ -649,6 +649,13 @@ def ground():
         PARTS.append({"kind": "cyl", "axis": "z", "a0": z - 0.08, "a1": z + 0.08, "c": (0, PIT + 0.42),
                       "r": 0.5, "look": "steel_dark", "sides": 20, "cap": True})
     clip(-0.42, 0.42, PIT, PIT + 0.84, -3.5, 3.5, "metal", sight=False)
+    # Sodium lamps under the girders over the avenue: the passage under the
+    # el was crushed to black, where players need to be seen.
+    for m in (False, True):
+        # On the cross girders at z = +-9.5, facing the road between them.
+        for face, yaw in ((-9.25, 0.0), (9.25, PI)):
+            place("girder_lamp", -4.2, 4.8, face, yaw, m)
+            light(-4.2, 4.3, face * 0.94, 1.1, (1.0, 0.68, 0.32), 9.0, m)
     # The water main has burst: a split along its top throws a jet higher
     # than the barriers, seen down the avenue from both ends, and the street
     # round the pit runs wet.
@@ -1173,7 +1180,7 @@ def railway():
         column(-1.8, 22.5, WALK, 4.2, m)
         # Stumps of the columns the derailed car broke.
         for z, top in ((-17.0, 3.1), (-27.0, 2.0)):
-            column(-1.8, z, STREET, top, m)
+            column(-1.8, z, STREET, top, m, head=False)
             broken_flanges(-1.8, z, top, m)
         for z in (-40.0, -52.0, 32.0, 40.0):
             column(-1.8, z, 0.0, 4.2, m, collide=False)
@@ -1210,7 +1217,7 @@ def broken_flanges(x, z, top, m):
     """The torn top of a column the derailed car snapped: flange plates bent
     outward, and bolts sheared off onto the ground below."""
     rng = random.Random(int(z * 10))
-    for k, a in enumerate((0.3, 2.2, 4.1)):
+    for a in (0.3, 2.2, 4.1):
         a += rng.uniform(-0.3, 0.3)
         ox, oz = math.cos(a), math.sin(a)       # outward
         tx, tz = -oz, ox                       # along the plate
@@ -1224,15 +1231,16 @@ def broken_flanges(x, z, top, m):
                     (bx + tx * 0.13 + ox * d, top, bz + tz * 0.13 + oz * d),
                     (tipx + tx * 0.09 + ox * d, tipy, tipz + tz * 0.09 + oz * d),
                     (tipx - tx * 0.06 + ox * d, tipy - 0.05, tipz - tz * 0.06 + oz * d)]
-        PARTS.append({"kind": "hull", "look": "girder", "points": [(mx(px, m), py, pz) for px, py, pz in pts],
+        PARTS.append({"kind": "hull", "look": "rail_steel", "points": [(mx(px, m), py, pz) for px, py, pz in pts],
                       "detail": True})
     for k in range(4):
         bx, bz = x + rng.uniform(-0.9, 0.9), z + rng.uniform(-0.9, 0.9)
         cyl(bx, STREET, STREET + 0.03, bz, 0.025, "rust", m, sides=6, detail=True)
 
 
-def column(x, z, y0, y1, m=False, collide=True):
-    """A riveted steel column with a base and a flared head."""
+def column(x, z, y0, y1, m=False, collide=True, head=True):
+    """A riveted steel column with a base and a flared head (no head on a
+    snapped stump)."""
     if collide:
         clip(x - 0.3, x + 0.3, y0, y1, z - 0.3, z + 0.3, "metal", m)
     deco(x - 0.28, x + 0.28, y0, y1, z - 0.06, z + 0.06, "girder", m, bevel=0.01)
@@ -1240,7 +1248,8 @@ def column(x, z, y0, y1, m=False, collide=True):
     deco(x - 0.3, x + 0.3, y0, y1, z - 0.3, z - 0.24, "girder", m)
     deco(x - 0.3, x + 0.3, y0, y1, z + 0.24, z + 0.3, "girder", m)
     deco(x - 0.45, x + 0.45, y0, y0 + 0.35, z - 0.45, z + 0.45, "stone_base", m, bevel=0.04)
-    deco(x - 0.42, x + 0.42, y1 - 0.12, y1, z - 0.42, z + 0.42, "girder", m)
+    if head:
+        deco(x - 0.42, x + 0.42, y1 - 0.12, y1, z - 0.42, z + 0.42, "girder", m)
 
 
 # --- The north passage under the railway ---------------------------------------------------
@@ -1730,6 +1739,14 @@ def ticket_hall():
             place("turnstile", x, WALK, 21.4, 0.0, m)
             blocker(x - 0.3, x + 0.3, WALK, 1.0, 21.0, 21.8, m)
     deco(-8.0, 8.0, 0.0, WALK, zf, zb - 0.35, "terrazzo", faces="top")
+    # Brass divider strips set in the terrazzo, every 1.2 m both ways.
+    for k in range(1, 14):
+        x = -8.0 + k * 1.2
+        deco(x - 0.006, x + 0.006, WALK, WALK + 0.002, zf, zb - 0.35, "brass", faces="top", detail=True)
+    z = zf + 1.2
+    while z < zb - 0.5:
+        deco(-8.0, 8.0, WALK, WALK + 0.002, z - 0.006, z + 0.006, "brass", faces="top", detail=True)
+        z += 1.2
     solid(-8.0, 8.0, STREET, 4.9, zb - 0.35, zb, "brick_dark")
     deco(-8.0, 8.0, WALK, 4.6, zb - 0.36, zb - 0.35, "tile_subway")
     deco(-8.0, 8.0, WALK, 1.2, zb - 0.37, zb - 0.36, "tile_green")
