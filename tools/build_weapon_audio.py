@@ -10,10 +10,17 @@ Gunshots are split into three layers that the game plays together:
 - ``body``: the first ~200 ms below 1.5 kHz. The punch.
 - ``tail``: everything after that, faded in from 60 ms. The echo.
 
-A weapon can also lay a recording from down the range under its near shot, get
-a synthesized outdoor tail and low body, darken its tail with distance, and be
-soft-clipped for density (see ``Blend``, ``Room``, ``Weight``, ``air_hz``, and
-``drive_db``).
+Each gun's own shot lays the near microphone's crack over the recording from
+behind the shooter (where the shooter's ears are: the blast, the chest, the
+real terrain echo), with a synthesized outdoor room and low body, a darker
+tail with distance, and soft-clipping for density (see ``Blend``, ``Room``,
+``Weight``, ``air_hz``, and ``drive_db``). Two more layers per gun:
+
+- ``tail_indoor``: the shot through a synthesized room (early reflections and
+  a 0.55 s decay, no terrain echo), played instead of ``tail`` when the
+  listener is inside a reverb zone.
+- ``mid`` and ``far``: real recordings of the gun from down the range, cut at
+  the blast, for other players' gunfire heard from across the map.
 
 The split is a Linkwitz-Riley crossover and a complementary fade, so the three
 layers played at 0 dB add back up to the original recording. Each layer then
@@ -21,11 +28,11 @@ gets its own volume in game, and the tail plays one at a time so full auto does
 not smear. Every shot is cut so its first sample is the transient: no dead air
 between the click and the sound.
 
-Sources are bart's Free Firearm Sound Library (CC0):
-https://opengameart.org/content/the-free-firearm-sound-library
-Download ``Prepared SFX Library.7z`` and extract it, then run:
+Sources are the raw master tracks (24-bit, 192 kHz) of bart's Free Firearm
+Sound Library (CC0), fetched and checked like the foley (below):
+https://archive.org/details/the-free-firearm-sound-effects-library-by-still-north-media
 
-    uv run tools/build_weapon_audio.py layers "<path>/Prepared SFX Library" [--only m40]
+    uv run tools/build_weapon_audio.py layers [--cache DIR] [--only m40]
     uv run tools/build_weapon_audio.py trim
     uv run tools/build_weapon_audio.py mech
 
@@ -41,8 +48,8 @@ over the last few rounds. Both are seeded, so a rebuild writes the same files.
 ``foley`` builds every weapon's handling sounds (see ``FOLEY``): magazine out
 and in, bolt release, charging handle, pump, bolt, shell, and dry fire, cut
 from the library's raw master tracks (24-bit, 192 kHz). That archive is
-3.3 GB; the build reads only the ~70 tracks it needs out of it with HTTP range
-requests, checks each against a pinned SHA-256, and keeps them in ``--cache``
+3.3 GB; ``layers`` and ``foley`` read only the tracks they need out of it with
+HTTP range requests, checks each against a pinned SHA-256, and keeps them in ``--cache``
 (default ``~/.cache/shooter-weapon-foley``). It also synthesizes the shared
 handling layers in ``audio/foley/`` (cloth, gear rattle, aim, draw, holster,
 inspect, and the held breath).
@@ -105,6 +112,10 @@ class Blend:
     # The near shot fades out over this window, in seconds from the shot, so its
     # own dry reflections do not flam against the blend's.
     near_fade: tuple[float, float] = (0.05, 0.16)
+    # Recordings from behind the shooter hear no bullet crack before the
+    # blast, so their shots are found like near ones ("shots"); down-range
+    # recordings are cut at the blast ("blasts").
+    find: str = "blasts"
 
 
 @dataclass(frozen=True)
@@ -158,47 +169,124 @@ class Weapon:
     # above its average level, which caps how loud it can be; saturation trades
     # that peak for density.
     drive_db: float = 0.0
-    # Also write ``<key>_fire.ogg``, the whole shot in one file, for other
-    # players' positional gunfire.
-    remote_fire: bool = False
+    # Recordings from mid and far distance in front of the shooter (raw track
+    # names), for other players' gunfire heard from across the map: written as
+    # ``mid_N.ogg`` and ``far_N.ogg``. With no mid recordings, the far ones
+    # serve both (filtered less for mid).
+    mid: tuple[str, ...] = ()
+    far: tuple[str, ...] = ()
+    # Takes to keep (each layer is picked on its own in game, so 5 takes give
+    # 125 different shots before pitch).
+    takes: int = 5
 
 
+# Every gun is cut from the library's raw master tracks (24-bit, 192 kHz; see
+# ``RAW_SHA256``). The near microphone beside the muzzle gives the crack; the
+# one behind the shooter, where a shooter's own ears are, gives the blast, the
+# chest, and the real terrain echo, faded in under the crack. Where the
+# library has no such gun, the closest one stands in, with its own voice: the
+# BR-3 is an SKS (7.62x39 carbine), and the LSW-6 a Mosin-Nagant (a full-power
+# 7.62x54R rifle round, as a light machine gun fires), weighted and driven.
 GUNS = (
-    Weapon("m4", ("AR-15/D_32P", "AR-15/D_24P"), 1.1, -19.6),
-    Weapon("m1911", ("1911/A_34P", "1911/A_42P"), 0.9, -17.3),
+    Weapon(
+        "m4",
+        ("D_31", "D_32"),
+        1.6,
+        -19.6,
+        blend=Blend(("D_27", "D_29"), gain_db=-5.0, find="shots"),
+        room=Room(gain_db=-26.0),
+        weight=Weight(gain_db=-6.0, start_hz=170.0, end_hz=68.0),
+        drive_db=2.0,
+        mid=("D_23", "D_24"),
+        far=("D_25", "D_26"),
+    ),
+    Weapon(
+        "br3",
+        ("U_12", "U_14"),
+        1.6,
+        -19.8,
+        blend=Blend(("U_13", "U_15"), gain_db=-5.0, find="shots"),
+        room=Room(gain_db=-26.0),
+        weight=Weight(gain_db=-6.0, start_hz=165.0, end_hz=64.0),
+        drive_db=3.0,
+        far=("U_16", "U_18"),
+    ),
     Weapon(
         "ak47",
-        ("AK-47/C_27P", "AK-47/C_28P", "AK-47/C_29P", "AK-47/C_36P"),
-        1.1,
-        -20.8,
+        ("C_25", "C_28"),
+        1.6,
+        -20.0,
+        blend=Blend(("C_39", "C_42"), gain_db=-4.0, find="shots"),
+        room=Room(gain_db=-25.0),
+        weight=Weight(gain_db=-5.0, start_hz=160.0, end_hz=60.0),
+        drive_db=3.0,
+        mid=("C_31", "C_37"),
+        far=("C_17", "C_23", "C_24"),
+    ),
+    Weapon(
+        "lsw6",
+        ("M_19", "M_21"),
+        2.2,
+        -18.5,
+        blend=Blend(("M_20", "M_22"), gain_db=-3.0, find="shots"),
+        room=Room(gain_db=-23.0),
+        weight=Weight(gain_db=-5.0, start_hz=150.0, end_hz=55.0, decay=0.14),
+        air_hz=3_500.0,
+        drive_db=5.0,
+        mid=("M_24", "M_26"),
+        far=("M_23", "M_25"),
     ),
     Weapon(
         "pdw9",
-        tuple(
-            f"Carl Gustav M45/{name}"
-            for name in ("G_20P", "G_22P", "G_31P", "G_33P", "G_35P")
-        ),
-        0.9,
+        ("G_25", "G_31"),
+        1.3,
         -20.6,
+        blend=Blend(("G_26", "G_32"), gain_db=-6.0, find="shots"),
+        room=Room(gain_db=-27.0),
+        weight=Weight(gain_db=-8.0, start_hz=190.0, end_hz=80.0, decay=0.08),
+        mid=("G_14", "G_20"),
+        far=("G_13", "G_19"),
     ),
-    Weapon("m870", ("Mossberg/N_26P", "Mossberg/N_30P"), 1.6, -15.5),
-    # The M40 is a Remington 700 in .308; the closest recordings are the Tikka T3
-    # and the Springfield 1917, both bolt actions in .30-06. The crack comes from
-    # beside the shooter, the blast and the rolling echo from down the range,
-    # each over its own rifle. The weight puts chest under it. Driven, it comes
-    # close to the peak limit at this loudness, which keeps the remote shot as
-    # loud as the others; the view's `fire_volume_db` sets the final level.
+    Weapon(
+        "m1911",
+        ("A_41", "A_42"),
+        1.3,
+        -17.3,
+        blend=Blend(("A_35", "A_36"), gain_db=-5.0, find="shots"),
+        room=Room(gain_db=-26.0),
+        weight=Weight(gain_db=-6.0, start_hz=180.0, end_hz=70.0, decay=0.09),
+        mid=("A_33", "A_34"),
+        far=("A_39", "A_40"),
+    ),
+    # A pump 12 gauge: the Benelli Nova, and the Charles Daly for more takes.
+    Weapon(
+        "m870",
+        ("O_19", "O_21", "H_19", "H_21"),
+        2.0,
+        -15.5,
+        blend=Blend(("O_18", "O_20", "H_18", "H_20"), gain_db=-3.0, find="shots"),
+        room=Room(gain_db=-23.0),
+        weight=Weight(gain_db=-4.0, start_hz=140.0, end_hz=50.0, decay=0.14),
+        air_hz=3_500.0,
+        drive_db=4.0,
+        mid=("O_14", "O_16"),
+        far=("O_15", "O_17"),
+    ),
+    # The M40 is a Remington 700 in .308; the closest recordings are the Tikka
+    # T3 and the Springfield 1917, both bolt actions in .30-06. The weight puts
+    # chest under it; driven, it stays as loud as the others at its peak limit.
     Weapon(
         "m40",
-        ("Tikka/W_29P", "1917/B_24P"),
+        ("W_27", "W_29", "B_23", "B_24"),
         3.2,
         -17.0,
-        blend=Blend(("Tikka/W_24P", "1917/B_16P"), gain_db=-4.0),
+        blend=Blend(("W_26", "W_28", "B_17", "B_18"), gain_db=-3.0, find="shots"),
         room=Room(gain_db=-22.0),
         weight=Weight(gain_db=-5.0),
         air_hz=3_000.0,
         drive_db=6.0,
-        remote_fire=True,
+        mid=("W_22", "W_24"),
+        far=("W_23", "W_25", "B_21", "B_22"),
     ),
 )
 
@@ -434,13 +522,20 @@ def darken(shot: np.ndarray, hz: float) -> np.ndarray:
     return shot + (dark - shot) * mix[:, None]
 
 
-def collect(library: Path, files: tuple[str, ...], length: float, find=find_shots):
-    shots = []
+def collect(
+    tracks: dict[str, Path], files: tuple[str, ...], length: float, find=find_shots
+):
+    """Shots from each raw track in turn, interleaved, so the first few takes
+    come from different recordings."""
+    per_file = []
     for name in files:
-        x = read(library / f"{name}.wav")
-        for onset in find(x, min_gap=length * 0.6):
-            shots.append(cut_shot(x, onset, length))
-    return shots
+        x = read(tracks[name])
+        per_file.append(
+            [cut_shot(x, onset, length) for onset in find(x, min_gap=length * 0.6)]
+        )
+    return [
+        s for group in itertools.zip_longest(*per_file) for s in group if s is not None
+    ]
 
 
 def whole(layer: dict[str, np.ndarray]) -> np.ndarray:
@@ -484,18 +579,80 @@ def write(path: Path, data: np.ndarray, *, ogg: bool) -> None:
         )
 
 
-def build_layers(library: Path, only: set[str]) -> None:
+def indoor_tail(
+    shot: np.ndarray, seed: int, rt60: float = 0.55, gain_db: float = -9.0
+) -> np.ndarray:
+    """The shot as a room answers it, for when the listener is indoors: its
+    first 150 ms through a synthesized room (six early reflections 6-45 ms
+    apart, then a dense decay with ``rt60`` seconds to fall 60 dB, darker as
+    it goes), with none of the outdoor terrain echo. Starts with the first
+    reflection; the dry crack and punch are the snap and body layers."""
+    rng = np.random.default_rng(seed)
+    n = int(rt60 * 1.4 * RATE)
+    t = np.arange(n) / RATE
+    ir = rng.standard_normal((n, 2)) * np.exp(-6.9 * t / rt60)[:, None]
+    ir[: int(0.004 * RATE)] = 0.0
+    dense = ir.std()
+    for delay, gain in (
+        (0.006, -3),
+        (0.011, -5),
+        (0.017, -6),
+        (0.024, -8),
+        (0.033, -10),
+        (0.045, -12),
+    ):
+        at = int(delay * RATE) + int(rng.integers(0, 30))
+        ir[at] += 10 ** (gain / 20) * dense * 40 * rng.choice([-1.0, 1.0], 2)
+    ir = signal.sosfilt(
+        signal.butter(2, 6_000, "low", fs=RATE, output="sos"), ir, axis=0
+    )
+    ir = highpass(ir, 90.0)
+    early = shot[: int(0.15 * RATE)]
+    wet = np.stack(
+        [signal.fftconvolve(early[:, c], ir[:, c])[:n] for c in range(2)], axis=1
+    )
+    wet *= rms(shot, 0.15) * 10 ** (gain_db / 20) / max(rms(wet, 0.3), 1e-12)
+    fade = int(0.1 * n)
+    wet[-fade:] *= raised_cosine(fade)[::-1, None]
+    return wet
+
+
+def distant(x: np.ndarray, cutoff: float) -> np.ndarray:
+    """A shot heard from across the map, for another player's gunfire: mono,
+    rumble trimmed, the highs above ``cutoff`` taken by the air."""
+    mono = x.mean(axis=1)
+    mono = signal.sosfilt(signal.butter(2, 45.0, "high", fs=RATE, output="sos"), mono)
+    mono = signal.sosfilt(signal.butter(2, cutoff, "low", fs=RATE, output="sos"), mono)
+    fade = int(0.15 * len(mono))
+    mono[-fade:] *= raised_cosine(fade)[::-1]
+    return mono[:, None]
+
+
+# Opening loudness (RMS of the first 300 ms) of the mid and far layers; the
+# game sets their level by distance.
+MID_DB = -20.0
+FAR_DB = -22.0
+
+
+def build_layers(cache: Path, only: set[str]) -> None:
+    names = set()
+    for gun in GUNS:
+        names.update(gun.files, gun.mid, gun.far)
+        if gun.blend:
+            names.update(gun.blend.files)
+    tracks = fetch_raw(cache, names)
     for gun in GUNS:
         if only and gun.key not in only:
             continue
-        shots = collect(library, gun.files, gun.tail_seconds)
+        shots = collect(tracks, gun.files, gun.tail_seconds)
         if not shots:
             sys.exit(f"{gun.key}: no clean shots found")
-        shots = shots[:MAX_VARIATIONS]
+        shots = shots[: gun.takes]
         if gun.blend:
-            under = collect(library, gun.blend.files, gun.tail_seconds, find_blasts)
+            finder = find_shots if gun.blend.find == "shots" else find_blasts
+            under = collect(tracks, gun.blend.files, gun.tail_seconds, finder)
             if not under:
-                sys.exit(f"{gun.key}: no blasts found in the blend recordings")
+                sys.exit(f"{gun.key}: no shots found in the blend recordings")
             shots = [
                 blend(s, under[i % len(under)], gun.blend) for i, s in enumerate(shots)
             ]
@@ -518,29 +675,53 @@ def build_layers(library: Path, only: set[str]) -> None:
         target = 10 ** (gun.loudness_db / 20)
         shots = [s * target / rms(s, 0.15) for s in shots]
         layers = [split(s) for s in shots]
-        tails = [layer["tail"] for layer in layers]
+        indoors = [indoor_tail(s, seed=100 + i) for i, s in enumerate(shots)]
         peak = max(np.abs(s).max() for s in shots)
         headroom = min(1.0, 10 ** (-1 / 20) / peak)
 
-        out = WEAPONS / gun.key
         files = {}
         for i, layer in enumerate(layers, start=1):
-            files[f"snap_{i}.wav"] = layer["snap"]
-            files[f"body_{i}.wav"] = layer["body"]
-        for i, tail in enumerate(tails, start=1):
-            files[f"tail_{i}.ogg"] = tail
-        # Remove sounds this build no longer makes, but keep the .import files of
-        # the ones it rewrites, so their Godot UIDs stay the same.
+            files[f"snap_{i}.wav"] = layer["snap"] * headroom
+            files[f"body_{i}.wav"] = layer["body"] * headroom
+            files[f"tail_{i}.ogg"] = layer["tail"] * headroom
+            files[f"tail_indoor_{i}.ogg"] = indoors[i - 1] * headroom
+        # Other players' gunfire from mid and far away: real recordings from
+        # down the range, cut at the blast (the bullet's crack, which reaches
+        # a microphone down range first, is the near-miss system's job).
+        far = collect(tracks, gun.far, gun.tail_seconds * 1.4, find_blasts)[: gun.takes]
+        mid = (
+            collect(tracks, gun.mid, gun.tail_seconds * 1.2, find_blasts)[: gun.takes]
+            if gun.mid
+            else far
+        )
+        for kind, takes, cutoff, level in (
+            ("mid", mid, 7_000.0, MID_DB),
+            ("far", far, 3_200.0, FAR_DB),
+        ):
+            for i, take in enumerate(takes, start=1):
+                x = distant(take, cutoff)
+                x *= 10 ** (level / 20) / max(rms(x, 0.3), 1e-12)
+                files[f"{kind}_{i}.ogg"] = x * min(
+                    1.0, 10 ** (-1 / 20) / np.abs(x).max()
+                )
+
+        out = WEAPONS / gun.key
+        # Remove sounds this build no longer makes (the mechanical layers are
+        # another command's), but keep the .import files of the ones it
+        # rewrites, so their Godot UIDs stay the same.
         for old in out.glob("*") if out.exists() else []:
-            if old.name.removesuffix(".import") not in files:
+            name = old.name.removesuffix(".import")
+            if (
+                old.is_file()
+                and name not in files
+                and not name.startswith(("mech_", "hollow_"))
+            ):
                 old.unlink()
         for name, data in files.items():
-            write(out / name, data * headroom, ogg=name.endswith(".ogg"))
-        if gun.remote_fire:
-            write(
-                WEAPONS / f"{gun.key}_fire.ogg", whole(layers[0]) * headroom, ogg=True
-            )
-        print(f"{gun.key}: {len(shots)} variations, {gun.tail_seconds:.1f} s tail")
+            write(out / name, data, ogg=name.endswith(".ogg"))
+        print(
+            f"{gun.key}: {len(shots)} takes, {len(mid)} mid, {len(far)} far, {gun.tail_seconds:.1f} s tail"
+        )
 
 
 # Sounds whose quiet lead-in is room noise rather than part of the sound.
@@ -716,6 +897,92 @@ RAW_URL = (
 # The tracks the foley uses, pinned. Names are the library's ("D_5" is the
 # AR-15's "detach loaded mag"; see its Master Sheet.xlsx).
 RAW_SHA256 = {
+    "D_23": "e225dd40d167c060f8c4ac179edacf8b378ba927f47ee9bda8945d49d9a098ef",
+    "D_24": "90d1281cb35c68b0e51b149c661a901a985078d5c0916a1152fe1ef4bc160393",
+    "D_25": "baddab3d3cbcbbbd732e17c3bf4064149dac8d2a19d5041d410f970f7c6ef583",
+    "D_26": "5cb886ae2d39f37d0e56a03bd675976ce71dd2401853e80133d83572ad1e64d8",
+    "D_27": "fd73be68139b8bcd27a31539e639cc6047996d9103747fe1f8b57ca988eaa079",
+    "D_29": "80d222c919c9e749cb436b8c8562696d0a6b756fdd7fc5d8590adec62495095a",
+    "D_31": "448000e06cee112cc726a11c74ad4a61dbcdf07ca7cba6d3934ecc03c105d3f4",
+    "D_32": "63e28f9b5144c557c0c288bb84ec1a5a4180fbd4c3d3f36d3cf681822f4229f2",
+    "C_17": "325a353108dc987ecc22ed424e40f394d82b53b9680ff8469be0870cd01ffd8a",
+    "C_23": "3f4bd0fd77079b510c123ed8cc255bf8ceabd4ad78accc92878dcc6e6ec6bf10",
+    "C_24": "7f6aa6f422b5591a0396e2bcdfa916a58532ddf33bedec4a4765053fbe409ae5",
+    "C_25": "17cf3e4589b344c5dfa15ffd5e8ac4fc5cbd40afc191d1a70d17add384cb99f5",
+    "C_26": "2bf393fc3c0a725d5b152be71f0395c0fef1b792f55279a06d129d8f843eeecf",
+    "C_28": "da2e211bf619e145e7d9d69ce5c8b4c48b66b8df694657c1945abd87ef2fb89f",
+    "C_29": "53a2d3a756df4c22f97900ebd80e189e98d9b6263e5dc926d299695f33350c61",
+    "C_31": "dbe9e1f78ba983ea2afdc8e982f895b04b57aafe78ef9f3e8e08f9d59ee8bcf8",
+    "C_37": "366ee79c9dc66a468f3400f5b5e59b390cea1155213a66a553f4a0973c505b1b",
+    "C_39": "2109bd8c65c35ce43aa1ace88db542b4a739843254fe922d9df255f37417cf18",
+    "C_40": "2eb68bf77fcd28208a50b4b030132bbf05d76cec4b4d5b1680ac4b8be2d99ea6",
+    "C_42": "a234a8817d6632f423ba1d31083746b8eba2e31c684c9a7e6b3deb5a2b86c5d8",
+    "U_12": "68b6b884fccaf3399fc2450a8547cc05becf03f144a191611793609190384875",
+    "U_13": "cb08e05b97493e16d8ba95bb9c5ab7cbc8d3a1c70d61db63325ed8deb992e091",
+    "U_14": "529ea6776bd2c69cd522a875aaf66c84532a5f97bd8fbf289ba166dbba7e6abf",
+    "U_15": "cf8b8aa7db6c9238e3b549f07afbd6eb6a6dc2c9da237fe17181ba02f3a736f9",
+    "U_16": "6311873faa78dc848c3c3969f71031c46a0588549e29e1dba5c8ec21ab7a63a2",
+    "U_18": "2f85ed40c54c95634cc93d3e73fcd26e27979bfa4ffe0714d4448ac6105ea092",
+    "M_19": "f5cd0521f2fc7bc7c564e19200d6501f96f6e846f6ad82aeccdd79a38efe1906",
+    "M_20": "5a270e6e2703b7c519f59b929a358ebbf05f57bf1d0dc3bdfc12ae6a2fedd353",
+    "M_21": "4c793971e03ce2e149df8cb135e19c7f0f43550f5d549fd80709b2979da9bd90",
+    "M_22": "8cac126efb0815059a6fac184ddbea45c366102eef5eaee4d0a3efbe743f8e8c",
+    "M_23": "cd059ad7c0214d1980979937479d725f0f0a66e9c93f3f7fc4cf43ca89435b50",
+    "M_24": "dfa7c0e0f0e48d300402a4a91403b52c3dc4fdd5d3b3f3eaa0b33f02195dec2c",
+    "M_25": "d7945f8117299a676f9c5ad92b27c2ae4de9acfc4761d27359a6a816c46291d0",
+    "M_26": "97307b8c5250eff9708070099dd4bb872cd70906439625332909c4807af31391",
+    "G_13": "1da1df8f99e8146b37ebe4920cb401bb10535539d582e24e1e5ce38577d47be9",
+    "G_14": "cf27f7ba4e7b1378d498c4e2e28891a5135665d890958b399cba2fec430d3399",
+    "G_19": "aa83a168a6a22781f14d0aa284609ae10930917ede6f044986975ce9def8459c",
+    "G_20": "e4c1915ef88232469afcbf8dbbdc385aebcb2512a7556a033541c393a64acf41",
+    "G_25": "85155c72ba34ad287e69cb6e4be0952da1b510e9d9468eba2208aa5c37a64803",
+    "G_26": "26d9e685cde2dadcb8f1f81842fc827811a52d3a12396071134ea3749e3ee54e",
+    "G_27": "d5e35a7b8f2a3ec27300c81e04cb7a8ffb1fc2b2e52bc918e320fd3a76e507dd",
+    "G_31": "bf00453e3f3c9e70cac67a01b6817ed142082e1354895cb3b9f0857f8b3533cd",
+    "G_32": "6ec28e20391f0201bb87b7d1054e30fe4c913e5ff92c270e7e7d09257f99595f",
+    "G_33": "351e84f1f87929eeb23aa08166e77b9f4135b7424f91b220298f5b39cd22029a",
+    "A_33": "16b45845ae5808b9e5b79467a887fe97ce01d3b0afa8d845f863ef8aec8cc706",
+    "A_34": "7db3651d9424d7cc8f110b59f1d270debf731db26c06264cf2cf35061bbcc285",
+    "A_35": "94b3d496d4d4c7b21eace26b67e22082998962ce669be9a156784fcde9ebf74e",
+    "A_36": "94120f8e5d99b46f6424d3cd059f1de63449271921e557dec6fef9586163b76d",
+    "A_39": "151656e4d4ff8c403f9b175a91e26ce00efee5a5f5f84054dd9ebc0bc59f2bf1",
+    "A_40": "fe1484e5202371deb91785b96d2edc1f2ddd7243bc66a1d71dd10f8c6eaa2a11",
+    "A_41": "2a35d1c24f25f54d70cbd328d63b5c82ed93eef31d8265b37a83ba50d23a2ea1",
+    "A_42": "ee25a5bf6734b329b48a04e8039b01f3f36a12baeb6f680850e823d4082ce038",
+    "O_14": "f2f1617c8335ae9ae0d307354b569ef348b8722efcd930ecbae7e94d0b3c8e69",
+    "O_15": "001437328cb7a55b2c6676941fff82dba772340f981f6e6483d91d445b384580",
+    "O_16": "f68d77a4233752b54c57d0db576b4047ecefda6f0b5716358e2de599335b5559",
+    "O_17": "05cb5374600dae880f2731599a34af08f01f7442bb58a29a56c345abd2ce647e",
+    "O_18": "f583a6efcabcbbe0b09229378544807f5ab39516479f20f7e7fe9955bd05f84b",
+    "O_19": "1d86b0ffffbc7cb58875c078f089f81799be0cd0a1d3aa828138fef717096810",
+    "O_20": "2416f40e7f4e67bb8bbb4e84ec620831b800165aa03a801873ceee83181c824c",
+    "O_21": "92088ad40a7f3d5ba064163aca3c5d407f3a34c7e5fb4599bb59450d93865f9a",
+    "H_18": "b16848c9bb072d0a23d6aba93bde2c126f903a8797f891f1bcda7d3ec5eb1d12",
+    "H_19": "8716f6785d317427b2dc145886cfb9c2c1a4e0c02ed10f605f6b6bd9d539360a",
+    "H_20": "f990f2a9d74aef7f9d4c571484d36fb5e12e825486d4e020af1da2ed27ac7338",
+    "H_21": "3ec9ba08553b74f040b2f6b62a609bb722c03a1e5368527b06a5512fbcbe3be8",
+    "W_22": "a4e96f6ab5daf1171d5ea8527855f31a88691bb8bd1c841b80b792d3f2ae5a49",
+    "W_23": "0eb2b6bacd2ea73a8935f4dbe849d4b8ebbf40f70551a6141665925b112a91a7",
+    "W_24": "edc39c78d5e86d835f86a68da808c0a3692c2e306570244f1b31015fb747aea7",
+    "W_25": "945b3770c591bddf24bbd0fcb0a3af4b38f4f11ce3e5b6bfd341a70a3764ee81",
+    "W_26": "1fec0eb42af2e495c8eb93bb1bfb9c1efef38d68bc3f5ce2f3063cde27deee5a",
+    "W_27": "dfaa2adf6e6b70dbcc72d24480fd39e4635252d298400ed3b804a1e3bb84a9f6",
+    "W_28": "8657f22dce4dc3068b4112239e75786ab5da3604301abfe859b6aae9896b2a50",
+    "W_29": "053dd28a06668f9e6be0b4cfd4dfa607fd2c4f2243242aebe8e186bd083c307f",
+    "B_17": "0f3faad1f0ab5933a79e0e3446678161259c04126e6a9c6e2c3c3f8813ead435",
+    "B_18": "8d464d2d5aaac11f840579a17d5607410a5c8812733f53354a08dd798914b208",
+    "B_21": "b1179b313d7de5c3d2965d7510d4e8ab2abadd940ef84bdaf472c3bc65f09a04",
+    "B_22": "c2d27ce2e67e0c6bfaaad7fc0702fe90e25e798038fbf2f5c001648bb2353ee6",
+    "B_23": "b5dd7005c24fb47b2f27d9f44d5370b6db1146c136d045d6fc45694086daf051",
+    "B_24": "724247816283342661d9a8bdc8bbc06183ec319e3675ad5e43a5a76c8d75ddda",
+    "T_28": "85608666643dca2c557959aabbadc633c7fba642ee199fbba29b3707df7f36eb",
+    "T_29": "060e36321b1ef90fd2a57d4f43405834d7276defa8fd7dea00c2b491e47a1fb0",
+    "T_30": "9228e5d7e4ac3cddc59a060ca5eb13b1818db1ad4cf02892451469b02d1306ec",
+    "T_31": "a1067ae109854bd0f2aeb28521f5d5ed5e1b4f9d42f8dbdc0d0b186c09e82e7c",
+    "X_42": "ccf634db090f48c05d3950c08c700cc684ce81d265fa3d10dc36e23274a741ea",
+    "X_43": "6730f4c38d9a93bd5b98414cf691203a12ba3cd48dc164be8aca66c325c5e4c5",
+    "X_44": "2c429a54b0e7cb7b0f06473577152bdf7ea953f62b9a6a24c607e500a80314ce",
+    "X_45": "f706952331cfaa3a7fb950aa558ab3b1de4c6f53a174ba03fb49ddffeaad7a08",
     "A_2": "c7cd68b66f6c6505a802b0329f7c4450f766738166da873b0c39301b5011311a",
     "A_3": "5ebf1cda0505b028eb476abba459abb89001410e8a840e769f0218494c6951d9",
     "A_4": "ca37fc9d4d3287f04c54d78494e91b6152a7f699905a8ad258c6041f6d86e805",
@@ -1351,9 +1618,12 @@ def main() -> None:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     sub = parser.add_subparsers(dest="command", required=True)
-    layers = sub.add_parser("layers", help="build snap/body/tail layers for every gun")
+    layers = sub.add_parser("layers", help="build every gun's gunshot layers")
     layers.add_argument(
-        "library", type=Path, help='the extracted "Prepared SFX Library" folder'
+        "--cache",
+        type=Path,
+        default=Path.home() / ".cache" / "shooter-weapon-foley",
+        help="where the raw tracks are kept between builds",
     )
     layers.add_argument(
         "--only", nargs="+", default=[], metavar="KEY", help="rebuild only these guns"
@@ -1369,7 +1639,7 @@ def main() -> None:
     )
     args = parser.parse_args()
     if args.command == "layers":
-        build_layers(args.library, set(args.only))
+        build_layers(args.cache, set(args.only))
     elif args.command == "mech":
         build_mech()
     elif args.command == "foley":

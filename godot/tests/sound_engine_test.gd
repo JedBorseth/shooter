@@ -125,10 +125,39 @@ func _check_remote(level: Node3D, player: FpsPlayer, env: AudioEnvironment) -> v
 	for fired in [0, 1, 2]:
 		remote.apply_test_sample(at, 0, false, true, fired, false, STEP)
 		await process_frame
+	# 15 m away, the report arrives 44 ms later, at the speed of sound.
+	_check(remote.shots_heard() - shots == 0, "the shots are not heard before their sound arrives")
+	for i in 12:
+		remote.apply_test_sample(at, 0, false, true, 2, false, STEP)
+		await process_frame
 	_check(remote.shots_heard() - shots == 2, "two shots, two gunshots")
 	for layer in ["ShotSnap", "ShotBody", "ShotTail"]:
 		var node := remote.get_node(layer) as AudioStreamPlayer3D
 		_check(node.stream != null and node.bus == &"Weapons", "%s is on the Weapons bus" % layer)
+	# From 150 m, the recordings from down the range play instead, half a
+	# second later.
+	var far_at := Vector3(0, 0, -130)
+	remote.apply_test_sample(far_at, 0, false, true, 2, false, STEP)
+	await process_frame
+	shots = remote.shots_heard()
+	remote.apply_test_sample(far_at, 0, false, true, 3, false, STEP)
+	await process_frame
+	# Snapshots step the remote by STEP (a sixtieth) each.
+	for i in 18:
+		remote.apply_test_sample(far_at, 0, false, true, 3, false, STEP)
+		await process_frame
+	_check(remote.shots_heard() == shots, "a shot 150 m away is not heard for 0.3 s")
+	for i in 20:
+		remote.apply_test_sample(far_at, 0, false, true, 3, false, STEP)
+		await process_frame
+	_check(remote.shots_heard() - shots == 1, "then it is")
+	for layer in ["ShotMid", "ShotFar"]:
+		var node := remote.get_node(layer) as AudioStreamPlayer3D
+		_check(node.stream != null and node.bus == &"Weapons", "%s is on the Weapons bus" % layer)
+	_check(
+		(remote.get_node("ShotFar") as AudioStreamPlayer3D).playing,
+		"the far layer plays from 150 m"
+	)
 
 	# A reload is heard up close: the magazine comes out a fifth of the way in.
 	var reload_heard := false
