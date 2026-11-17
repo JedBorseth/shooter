@@ -29,6 +29,7 @@ const VIEWS := [
 	["19_diner_terrace", Vector3(-34.0, 4.65, 21.0), -PI / 2 + 0.75, 0.0],
 	["20_station_from_alley", Vector3(-12.0, 0.05, -24.5), -2.45, 0.22],
 	["21_diner_kitchen", Vector3(-26.5, 0.2, 19.6), PI / 2 + 0.55, -0.02],
+	["22_crash_fire", Vector3(-12.0, 0.05, -29.0), -PI / 2 + 0.1, 0.35],
 ]
 
 var _out := OS.get_environment("CAPTURE_DIR")

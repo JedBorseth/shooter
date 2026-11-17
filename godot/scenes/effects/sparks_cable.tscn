@@ -32,7 +32,9 @@ particles_anim_loop = false
 material = SubResource("Mat_spark")
 size = Vector2(0.025, 0.12)
 
-[node name="SparksCable" type="GPUParticles3D"]
+[node name="SparksCable" type="Node3D"]
+
+[node name="Particles" type="GPUParticles3D" parent="."]
 amount = 24
 lifetime = 2.4
 explosiveness = 0.92

@@ -115,6 +115,14 @@ def _g(color, glow):
     return {"color": color, "glow": glow}
 
 
+# Texture sets whose materials break up their tiling (world.gdshaderinc's
+# anti_tile: a second, rotated sample blended in patches). Only sets with no
+# courses or grid, which rotation would break: not brick, tile, or planks.
+ANTI_TILE: dict[str, float] = {
+    "asphalt": 0.85, "concrete_stained": 0.8, "concrete_floor": 0.8, "plaster": 0.7, "terrazzo": 0.9,
+    "gravel": 0.8, "dirt": 0.8,
+}
+
 SLAMCITY_LOOKS: dict[str, dict] = {
     # Ground
     "asphalt": _t("asphalt", 4.0, (0.78, 0.78, 0.8), grime=0.0),

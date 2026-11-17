@@ -99,18 +99,32 @@ CAR_COLORS = ["car_red", "car_blue", "car_green", "car_white", "car_grey", "car_
 
 def _car(b: Model, look, length=4.5, width=1.82, taxi=False, wrecked=False):
     hl, hw = length / 2, width / 2
-    # Lower body: bumpers to the belt line, rounded at the ends, riding above
-    # the tyres so they show.
-    lower = [(-hl, 0.36), (-hl, 0.72), (-hl + 0.25, 0.86), (-0.95, 0.92), (hl - 1.1, 0.9),
-             (hl - 0.1, 0.78), (hl, 0.62), (hl, 0.36), (hl - 0.2, 0.3), (-hl + 0.2, 0.3)]
-    # Rounded shoulders: the sides tuck in toward the belt line and the sill.
+    wheels = (-hl + 0.85, hl - 0.85)
+    # The body above the wheels: bumpers to the belt line, rounded at the
+    # ends, its flanks bowed out at the shoulder and tucked in at the sill.
+    sill = 0.6
+    upper = [(-hl, sill), (-hl, 0.72), (-hl + 0.12, 0.8), (-hl + 0.3, 0.87), (-0.95, 0.92), (0.2, 0.92),
+             (hl - 1.1, 0.9), (hl - 0.5, 0.86), (hl - 0.12, 0.79), (hl, 0.68), (hl, sill)]
     pts = []
-    for z, y in lower:
-        inset = 0.07 if y > 0.8 else 0.035 if y < 0.33 else 0.0
-        pts += [(-hw + inset, y, z), (hw - inset, y, z)]
-    for z, y in ((-hl + 0.1, 0.55), (hl - 0.1, 0.55), (0.0, 0.6)):
-        pts += [(-hw - 0.015, y, z), (hw + 0.015, y, z)]
+    for z, y in upper:
+        for s_ in (-1, 1):
+            pts.append((s_ * (hw - (0.08 if y > 0.85 else 0.0)), y, z))
+    for z in (-hl + 0.15, -0.6, 0.6, hl - 0.15):
+        for s_ in (-1, 1):
+            pts.append((s_ * (hw + 0.02), 0.74, z))
     b.hull(pts, look)
+    # Skirts between and beyond the wheel arches, and a dark well behind each
+    # wheel, so the wheels sit in real openings.
+    arch = 0.44
+    edges = [-hl + 0.04, wheels[0] - arch, wheels[0] + arch, wheels[1] - arch, wheels[1] + arch, hl - 0.04]
+    for z0, z1 in zip(edges[::2], edges[1::2]):
+        b.box(-hw + 0.03, hw - 0.03, 0.3, sill + 0.02, z0, z1, look, bevel=0.04)
+    for z in wheels:
+        b.box(-hw + 0.28, hw - 0.28, 0.2, sill + 0.05, z - arch, z + arch, "rubber")
+        for s_ in (-1, 1):
+            lip = [(s_ * (hw + 0.008), 0.3 + math.sin(t) * arch, z + math.cos(t) * arch)
+                   for t in [k * PI / 8 for k in range(9)]]
+            b.tube(lip, 0.018, "trim_black", sides=5)
     # A crease along the flanks and a shut line round each door.
     for s_ in (-1, 1):
         b.box(s_ * (hw + 0.012) - 0.006, s_ * (hw + 0.012) + 0.006, 0.66, 0.68, -hl + 0.5, hl - 0.5, "trim_black",
@@ -136,12 +150,10 @@ def _car(b: Model, look, length=4.5, width=1.82, taxi=False, wrecked=False):
         for (za, ya), (zb, yb) in (((0.55, 1.38), (1.22, 0.92)), ((-0.18, 1.38), (-0.18, 0.92)),
                                    ((-0.95, 1.38), (-1.42, 0.92))):
             b.tube([(s_ * (hw - 0.235), ya, za), (s_ * (hw - 0.105), yb, zb)], 0.045, look, sides=6, detail=False)
-    # Wheels standing proud of the body, with dark arches behind them.
-    for z in (-hl + 0.85, hl - 0.85):
+    # Wheels in the arches, their faces just inside the flank.
+    for z in wheels:
         for s_ in (-1, 1):
-            b.wheel(s_ * (hw - 0.1), 0.33, z, 0.33, 0.24)
-            b.prism([(z - 0.48, 0.3), (z - 0.4, 0.62), (z, 0.74), (z + 0.4, 0.62), (z + 0.48, 0.3)],
-                    s_ * (hw - 0.02), s_ * (hw + 0.012), "rubber", detail=True)
+            b.wheel(s_ * (hw - 0.13), 0.33, z, 0.33, 0.22)
     # Sills, bumpers, lights, mirrors, the grille and plate.
     for s_ in (-1, 1):
         b.box(s_ * hw - 0.015 * s_, s_ * hw + 0.01 * s_, 0.3, 0.4, -hl + 1.35, hl - 1.35, "trim_black",

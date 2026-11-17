@@ -106,7 +106,9 @@ scale_max = 0.3
 color = Color(0.72, 0.78, 0.82, 0.35)
 color_ramp = SubResource("Texture_fade")
 
-[node name="WaterSpray" type="GPUParticles3D"]
+[node name="WaterSpray" type="Node3D"]
+
+[node name="Particles" type="GPUParticles3D" parent="."]
 amount = 40
 lifetime = 1.2
 preprocess = 3.0

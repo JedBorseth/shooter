@@ -508,7 +508,8 @@ class Materials:
                       "shader_parameter/use_vertex_color = true",
                       f"shader_parameter/metallic_scale = {spec.get('metal', 1.0):g}",
                       f"shader_parameter/grime = {spec.get('grime', 0.3):g}",
-                      f"shader_parameter/normal_strength = {spec.get('normal', 1.0):g}"]
+                      f"shader_parameter/normal_strength = {spec.get('normal', 1.0):g}",
+                      f"shader_parameter/anti_tile = {W.ANTI_TILE.get(spec['set'], 0.0):g}"]
             if spec.get("stripes"):
                 width, col = spec["stripes"]
                 lines += [f"shader_parameter/stripe_width = {width:g}",
