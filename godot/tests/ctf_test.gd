@@ -15,10 +15,11 @@ extends SceneTree
 ## longer).
 ## godot --headless --path godot --script res://tests/ctf_test.gd
 
-const PORT := 27994
 const FLAG_0 := Vector3(-50.5, 0.05, -2)
 const FLAG_1 := Vector3(50.5, 0.05, -2)
 
+## A port per process, so test runs in parallel on one machine don't meet.
+var _port := 30000 + OS.get_process_id() % 20000
 var _failures := 0
 
 
@@ -37,7 +38,7 @@ func _server(bots: int, skill: String) -> NetServer:
 	var server := (load("res://scenes/server.tscn") as PackedScene).instantiate() as NetServer
 	server.map_scene = load("res://scenes/slamcity.tscn") as PackedScene
 	server.map_name = "Slamcity"
-	server.port = PORT
+	server.port = _port
 	server.query_port = -1
 	server.mode = "ctf"
 	server.bots = bots

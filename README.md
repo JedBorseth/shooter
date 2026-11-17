@@ -152,6 +152,11 @@ The T refill key is off in this mode. Esc opens the pause menu.
 
 ## Test
 
+With [`just`](https://github.com/casey/just) installed, `just ci` runs what CI
+checks (formatting, lints, Rust tests, and every headless Godot test), and
+`just` lists the other recipes: `build`, `run`, `server`, `test-one NAME`,
+`screens`, and `bench`. By hand:
+
 ```sh
 cd rust && cargo test && cargo clippy --all-targets
 cd .. && godot --headless --path godot --script res://tests/smoke_test.gd
