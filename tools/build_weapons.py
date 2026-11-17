@@ -56,6 +56,7 @@ WEAPONS_DIR = REPO / "godot/assets/weapons"
 SCENES_DIR = REPO / "godot/scenes/weapons"
 SOURCES = Path.home() / ".cache/shooter-weapons/sources"
 CLASSIC = SOURCES / "classic_weapons_pack_v1.1/WeaponsPack"
+GUNS = SOURCES / "guns_explosives/Guns&Explosives"
 SHARED = "res://assets/weapons/shared"
 TEXTURE_SIZE = 2048
 
@@ -83,7 +84,91 @@ TEXTURE_SIZE = 2048
 #                  source space
 #   spare          also export `MagazineSpare`, a second magazine with its
 #                  rounds, for reloads that bring a fresh one up
+#   forward        "+Y" for packs that face +Y with +X to the right (the
+#                  default is -Y with +X to the left)
+#   rounds         for a magazine modelled empty: adds the top rounds as
+#                  bone "ROUNDS" (map it to `Magazine/Rounds`). `profile` is
+#                  a CARTRIDGE_PROFILES key, `back` the (y, z) in source
+#                  space of the top round's case head, `count` rounds
+#                  stacked down and staggered left and right
 WEAPONS = {
+    "m4": {
+        "dir": "m4",
+        "scene": "m4",
+        "fbx": GUNS / "M4A1/M4A1.fbx",
+        "textures": {
+            "color": GUNS / "M4A1/M4A1_Base_Color.png",
+            "normal": GUNS / "M4A1/M4A1_Normal.png",
+            "metallic": GUNS / "M4A1/M4A1_Metallic.png",
+            "roughness": GUNS / "M4A1/M4A1_Roughness.png",
+        },
+        "forward": "+Y",
+        # An M4A1 is 838 mm long with the stock out (the source's 859 mm).
+        "scale": 0.976,
+        "cartridge": 0,
+        # The flip-up rear aperture's centre and the front post's tip.
+        "sight": {"rear": (-0.0693, 0.0774), "front": (0.3452, 0.0828)},
+        "rounds": {"profile": "5.56", "back": (0.024, 0.001), "count": 3},
+        "parts": {
+            "Magazine": "Magazine",
+            "ROUNDS": "Magazine/Rounds",
+            "Charging_Handle": "ChargingHandle",
+            "Ejector_2": "BoltCarrier",
+            "Ejector_Lid": "DustCover",
+            "Firemode_Selector": "Selector",
+            "Trigger": "Trigger",
+            "Sight_2": "RearSight",
+        },
+        "pivots": {
+            "DustCover": "Ejector_Lid",
+            "Selector": "Firemode_Selector",
+            "Trigger": "Trigger",
+            # The leaf's hinge, at the bottom of the leaf.
+            "RearSight": (-0.0693, 0.0565),
+        },
+        "markers": {
+            "Muzzle": (0.5359, 0.0209),
+            # The port's rear edge, on the right side.
+            "Ejection": (0.016, 0.006, 0.026),
+            "OpticMount": (0.02, 0.0512),
+            "GripRight": (-0.06, -0.045),
+            "GripLeft": (0.2, 0.005),
+        },
+        "spare": True,
+    },
+    "m870": {
+        "dir": "m870",
+        "scene": "m870",
+        "fbx": GUNS / "Shotgun/Shotgun.fbx",
+        "textures": {
+            "color": GUNS / "Shotgun/Shotgun_Base_Color.png",
+            "normal": GUNS / "Shotgun/Shotgun_Normal_DirectX.png",
+            "metallic": GUNS / "Shotgun/Shotgun_Metallic.png",
+            "roughness": GUNS / "Shotgun/Shotgun_Roughness.png",
+        },
+        "normal_dx": True,
+        "forward": "+Y",
+        # A pump gun with a 230 mm receiver and an 18 inch barrel.
+        "scale": 0.9,
+        "cartridge": 2,
+        # Aimed down the flat top of the receiver at the bead.
+        "sight": {"rear": (-0.29, 0.0467), "front": (0.3767, 0.0513)},
+        "parts": {
+            "Fore_Stock": "Pump",
+            # The bolt face in the port rides back with the pump.
+            "Ejection_Port": "Pump/BoltCarrier",
+            "Trigger": "Trigger",
+        },
+        "pivots": {"Trigger": "Trigger"},
+        "markers": {
+            "Muzzle": (0.4052, 0.0292),
+            # The port's rear edge, on the right side.
+            "Ejection": (0.014, -0.29, 0.026),
+            "GripRight": (-0.47, -0.035),
+            "GripLeft": (0.06, -0.018),
+        },
+        "spare": False,
+    },
     "ak47": {
         "dir": "ak47",
         "scene": "ak47",
@@ -106,6 +191,49 @@ WEAPONS = {
         "markers": {
             "Muzzle": "FX_FIRE",
             # The port's rear edge, on the right side.
+            "Ejection": (-0.014, -0.15, 0.112),
+            "OpticMount": "ATTACH_SCOPE",
+            "GripRight": (-0.016, -0.004),
+            "GripLeft": (-0.39, 0.075),
+        },
+        "spare": True,
+    },
+    "lsw6": {
+        "dir": "lsw6",
+        "scene": "lsw6",
+        # An RPK pattern, derived from the AK-47: the barrel 175 mm longer,
+        # a bipod under the front sight, and a 75-round drum.
+        "fbx": CLASSIC / "AK47/SKM_AK47.fbx",
+        "textures": [CLASSIC / f"AK47/T_AK47_{s}.png" for s in ("C", "N", "RMAO")],
+        "normal_dx": True,
+        "scale": 0.855,
+        # Everything ahead of the gas block moves forward (source -Y): the
+        # bare barrel between it and the front sight stretches.
+        "stretch": {"from": -0.56, "by": -0.205},
+        "sight": {"rear": (-0.218, 0.1472), "front": (-0.8773, 0.1441)},
+        "drum": {"tower": "MAGAZINE", "rounds": "7.62x39"},
+        "bipod": {"at": -0.80},
+        "parts": {
+            "MAGAZINE": "DropMagazine",
+            "BULLET": "DropMagazine",
+            "DRUM": "Magazine",
+            "ROUNDS": "Magazine/Rounds",
+            "BIPOD": "Bipod",
+            "SLIDE": "ChargingHandle",
+            "SELECTOR": "Selector",
+            "TRIGGER": "Trigger",
+            "EJECTOR": "MagRelease",
+            None: "OpticRail",
+        },
+        "pivots": {
+            "Magazine": "MAGAZINE",
+            "Selector": "SELECTOR",
+            "Trigger": "TRIGGER",
+            "MagRelease": "EJECTOR",
+        },
+        "drop": ["DropMagazine"],
+        "markers": {
+            "Muzzle": "FX_FIRE",
             "Ejection": (-0.014, -0.15, 0.112),
             "OpticMount": "ATTACH_SCOPE",
             "GripRight": (-0.016, -0.004),
@@ -273,23 +401,43 @@ def reset():
 
 class Source:
     """The imported source: one mesh object in source space, its bones'
-    head positions, and the bone that moves each vertex."""
+    head positions, and the bone that moves each vertex.
+
+    Packs that split the moving parts into separate objects instead of
+    rigging them (no armature) work the same way: each object counts as a
+    bone named after it, with its origin as the bone's head."""
 
     def __init__(self, spec: dict):
         bpy.ops.import_scene.fbx(filepath=str(spec["fbx"]))
-        armature = next(o for o in bpy.data.objects if o.type == "ARMATURE")
-        self.bones = {b.name: armature.matrix_world @ b.head_local for b in armature.data.bones}
+        armature = next((o for o in bpy.data.objects if o.type == "ARMATURE"), None)
         meshes = [o for o in bpy.data.objects if o.type == "MESH"]
+        if armature is not None:
+            self.bones = {b.name: armature.matrix_world @ b.head_local for b in armature.data.bones}
+        else:
+            self.bones = {o.name: o.matrix_world.translation.copy() for o in meshes}
         for obj in meshes:
             for mod in list(obj.modifiers):
                 obj.modifiers.remove(mod)
-            obj.parent = None
-            obj.matrix_world = armature.matrix_world @ obj.matrix_parent_inverse @ obj.matrix_basis
+            if armature is not None:
+                obj.parent = None
+                obj.matrix_world = armature.matrix_world @ obj.matrix_parent_inverse @ obj.matrix_basis
+            else:
+                world = obj.matrix_world.copy()
+                obj.parent = None
+                obj.matrix_world = world
+                obj.vertex_groups.clear()
+                group = obj.vertex_groups.new(name=obj.name)
+                group.add([v.index for v in obj.data.vertices], 1.0, "REPLACE")
             # Faces with no bone get a group of their own.
             if not obj.vertex_groups:
                 group = obj.vertex_groups.new(name="<none>")
                 group.add([v.index for v in obj.data.vertices], 1.0, "REPLACE")
-        bpy.data.objects.remove(armature)
+            # Faces with no material take the weapon's.
+            if not obj.material_slots or not any(slot.material for slot in obj.material_slots):
+                obj.data.materials.clear()
+                obj.data.materials.append(bpy.data.materials.get("Source") or bpy.data.materials.new("Source"))
+        for obj in [o for o in bpy.data.objects if o.type not in ("MESH",)]:
+            bpy.data.objects.remove(obj)
         bpy.ops.object.select_all(action="DESELECT")
         for obj in meshes:
             obj.select_set(True)
@@ -298,16 +446,30 @@ class Source:
             bpy.ops.object.join()
         self.obj = bpy.context.view_layer.objects.active
         bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+        triangulate_ngons(self.obj)
+
+
+def triangulate_ngons(obj):
+    """Splits faces of five or more corners (tangents need tris or quads),
+    keeping the custom normals."""
+    if not any(len(p.vertices) > 4 for p in obj.data.polygons):
+        return
+    mod = obj.modifiers.new("Triangulate", "TRIANGULATE")
+    mod.min_vertices = 5
+    mod.keep_custom_normals = True
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.modifier_apply(modifier=mod.name)
 
 
 def to_view(spec: dict) -> Matrix:
     """Source space -> Blender space of the export: turned to face +Y (glTF
     -Z) with +X to the right, scaled to metres, sight origin at zero."""
     (ry, rz), (fy, fz) = spec["sight"]["rear"], spec["sight"]["front"]
-    # The packs face -Y with +X to the left; turn them around.
-    turn = Matrix.Rotation(np.pi, 4, "Z")
+    # Most packs face -Y with +X to the left; turn those around.
+    facing = 1.0 if spec.get("forward") == "+Y" else -1.0
+    turn = Matrix.Identity(4) if facing > 0 else Matrix.Rotation(np.pi, 4, "Z")
     # Pitch about X so the front post's tip is level with the rear sight.
-    pitch = Matrix.Rotation(np.arctan2(fz - rz, ry - fy), 4, "X")
+    pitch = Matrix.Rotation(np.arctan2(-facing * (fz - rz), facing * (fy - ry)), 4, "X")
     return turn @ Matrix.Scale(spec["scale"], 4) @ pitch @ Matrix.Translation((0.0, -ry, -rz))
 
 
@@ -392,6 +554,9 @@ def set_materials(objects: dict, key: str):
     shared = {}
     for name in ("Weapon", "Cartridge", "Glow"):
         shared[name] = bpy.data.materials.new(name)
+    # Parts the tool models (a drum, a bipod) use the shared optics finish.
+    for name in ("Optics", "Lens"):
+        shared[name] = bpy.data.materials.get(name) or bpy.data.materials.new(name)
     for obj in objects.values():
         kinds = [material_kind(s.material.name if s.material else "") for s in obj.material_slots]
         used = sorted({kinds[p.material_index] for p in obj.data.polygons})
@@ -450,7 +615,9 @@ def place(objects: dict, spec: dict, source: Source) -> dict[str, Vector]:
         obj.data.transform(matrix)
         name = path.split("/")[-1]
         if name in pivots:
-            origin = matrix @ source.bones[pivots[name]]
+            where = pivots[name]
+            point = source.bones[where] if isinstance(where, str) else source_point(spec, source, where)
+            origin = matrix @ point
         else:
             co = [v.co for v in obj.data.vertices]
             lo = Vector([min(c[i] for c in co) for i in range(3)])
@@ -510,6 +677,217 @@ def revolve(bm, profile, segments, uv, v0=0.0, cap_start=False, cap_end=False):
             for loop in face.loops:
                 loop[uv].uv = (0.5 + loop.vert.co.x * 4, 0.5 + loop.vert.co.z * 4)
     return rings
+
+# Cartridge outlines, (distance from the case head, radius) in metres, head
+# to tip: rim, extractor groove, body, shoulder, neck, and the bullet's ogive.
+CARTRIDGE_PROFILES = {
+    "7.62x39": [
+        (0.0, 0.0035), (0.0, 0.0056), (0.0015, 0.0056), (0.0017, 0.0047), (0.0030, 0.0047),
+        (0.0036, 0.0055), (0.0305, 0.0051), (0.0330, 0.0043), (0.0387, 0.0043), (0.0387, 0.0039),
+        (0.0450, 0.0036), (0.0520, 0.0024), (0.0555, 0.0010), (0.0560, 0.0),
+    ],
+    "5.56": [
+        (0.0, 0.0030), (0.0, 0.0048), (0.0011, 0.0048), (0.0013, 0.0040), (0.0024, 0.0040),
+        (0.0030, 0.0048), (0.0365, 0.0045), (0.0395, 0.0032), (0.0447, 0.0032), (0.0447, 0.0029),
+        (0.0500, 0.0025), (0.0540, 0.0016), (0.0565, 0.0007), (0.0574, 0.0),
+    ],
+}
+
+
+def add_rounds(source: Source, spec: dict):
+    """Adds the top rounds of a magazine the source models empty, as bone
+    "ROUNDS" with the cartridge material: the top round at `back`, the next
+    ones each a case width lower and staggered to the other side."""
+    info = spec["rounds"]
+    profile = CARTRIDGE_PROFILES[info["profile"]]
+    facing = 1.0 if spec.get("forward") == "+Y" else -1.0
+    scale = spec["scale"]
+    by, bz = info["back"]
+    bm = bmesh.new()
+    uv = bm.loops.layers.uv.new("UV_0")
+    width = max(r for _, r in profile) * 2.0 / scale
+    for k in range(info.get("count", 2)):
+        prof = [(by + facing * d / scale, r / scale) for d, r in profile]
+        rings = revolve(bm, prof, 12, uv)
+        verts = [v for ring in rings for v in ring]
+        # Stacked down, staggered left and right like a double-column magazine.
+        x = (0.5 if k % 2 == 0 else -0.5) * width * 0.86
+        z = bz - width * 0.5 - k * width * 0.5
+        bmesh.ops.translate(bm, vec=(x, 0.0, z), verts=verts)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-7)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if len(f.verts) > 4])
+    mesh = bpy.data.meshes.new("Rounds")
+    bm.to_mesh(mesh)
+    bm.free()
+    for poly in mesh.polygons:
+        poly.use_smooth = True
+    obj = bpy.data.objects.new("Rounds", mesh)
+    bpy.context.scene.collection.objects.link(obj)
+    obj.data.materials.append(bpy.data.materials.get("BULLETS") or bpy.data.materials.new("BULLETS"))
+    group = obj.vertex_groups.new(name="ROUNDS")
+    group.add([v.index for v in mesh.vertices], 1.0, "REPLACE")
+    bpy.ops.object.select_all(action="DESELECT")
+    source.obj.select_set(True)
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = source.obj
+    bpy.ops.object.join()
+    source.obj = bpy.context.view_layer.objects.active
+
+
+def stretch(source: Source, info: dict):
+    """Moves everything ahead of `from` (source y; the pack faces -Y) by
+    `by`, bones included: the faces that cross it, the bare barrel,
+    stretch."""
+    cut, by = info["from"], info["by"]
+    for v in source.obj.data.vertices:
+        if v.co.y < cut:
+            v.co.y += by
+    for name, head in source.bones.items():
+        if head.y < cut:
+            head.y += by
+
+
+def to_source(spec: dict, anchor: Vector):
+    """A function from metres in a weapon-local frame (+X right, +Y forward,
+    +Z up) to the source's space around `anchor`."""
+    facing = 1.0 if spec.get("forward") == "+Y" else -1.0
+    scale = spec["scale"]
+
+    def convert(p):
+        return Vector((facing * p[0] / scale, facing * p[1] / scale, p[2] / scale)) + anchor
+
+    return convert
+
+
+def add_part(source: Source, bm, group: str, material: str):
+    """Joins the bmesh `bm` (already in source space) into the source as
+    bone `group` with `material`."""
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-7)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if len(f.verts) > 4])
+    mesh = bpy.data.meshes.new(group)
+    bm.to_mesh(mesh)
+    bm.free()
+    for poly in mesh.polygons:
+        poly.use_smooth = True
+    mesh.set_sharp_from_angle(angle=np.radians(35.0))
+    obj = bpy.data.objects.new(group, mesh)
+    bpy.context.scene.collection.objects.link(obj)
+    obj.data.materials.append(bpy.data.materials.get(material) or bpy.data.materials.new(material))
+    obj.vertex_groups.new(name=group).add([v.index for v in mesh.vertices], 1.0, "REPLACE")
+    bpy.ops.object.select_all(action="DESELECT")
+    source.obj.select_set(True)
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = source.obj
+    bpy.ops.object.join()
+    source.obj = bpy.context.view_layer.objects.active
+
+
+def box(bm, uv, lo, hi, convert, bevel=0.0):
+    """An axis-aligned box from `lo` to `hi` (weapon-local metres)."""
+    verts = bmesh.ops.create_cube(bm, size=1.0)["verts"]
+    size = [h - l for l, h in zip(lo, hi)]
+    centre = [(l + h) / 2 for l, h in zip(lo, hi)]
+    for v in verts:
+        p = [centre[i] + v.co[i] * size[i] for i in range(3)]
+        v.co = convert(p)
+    if bevel > 0.0:
+        edges = list({e for v in verts for e in v.link_edges})
+        bmesh.ops.bevel(bm, geom=edges, offset=bevel, segments=2, affect="EDGES", profile=0.5)
+    for f in bm.faces:
+        for loop in f.loops:
+            loop[uv].uv = (0.5 + loop.vert.co.x * 8, 0.5 + loop.vert.co.y * 8)
+
+
+def add_drum(source: Source, spec: dict):
+    """A 75-round drum in place of the box magazine (bone "DRUM"): a feed
+    tower into the magazine well, the drum hanging below it with its axis
+    across the gun, a winding key on the left face, ribs pressed into both
+    faces, and the top rounds in the tower's lips (bone "ROUNDS")."""
+    info = spec["drum"]
+    # The tower goes where the box magazine's top was: its rear edge, on
+    # the centre line, at the magazine well.
+    obj = source.obj
+    group = obj.vertex_groups[info["tower"]].index
+    mag = [v.co for v in obj.data.vertices if any(g.group == group and g.weight > 0.5 for g in v.groups)]
+    top = max(c.z for c in mag)
+    lips = [c for c in mag if c.z > top - 0.02]
+    facing = 1.0 if spec.get("forward") == "+Y" else -1.0
+    rear = min(c.y * facing for c in lips) * facing
+    anchor = Vector((0.0, rear, top))
+    convert = to_source(spec, anchor)
+    bm = bmesh.new()
+    uv = bm.loops.layers.uv.new("UV_0")
+    # The tower: from the magazine catch down into the drum, slightly
+    # forward-raked like the box magazine it replaces.
+    box(bm, uv, (-0.0135, 0.0, -0.080), (0.0135, 0.062, 0.0), convert, bevel=0.0025)
+    # The drum: 170 mm across, 76 mm thick, axis along X, its rim under
+    # the tower.
+    radius, half = 0.085, 0.038
+    cy, cz = 0.040, -0.070 - radius
+    seg = 40
+    # Each face: a raised hub, a recessed band, a pressed rib, and the
+    # rolled rim; the rim seam runs round the middle of the edge.
+    face = [
+        (0.0, 0.0), (0.0, 0.018), (0.0025, 0.021), (0.0025, 0.040), (0.0010, 0.042), (0.0010, 0.050),
+        (0.0025, 0.052), (0.0025, 0.066), (0.0, 0.069), (0.0, radius - 0.007), (0.004, radius),
+    ]
+    rim = [(-half + d, r) for d, r in face]
+    rim += [(-0.0012, radius), (-0.0006, radius + 0.0012), (0.0006, radius + 0.0012), (0.0012, radius)]
+    rim += [(half - d, r) for d, r in reversed(face)]
+    profile = rim
+    rings = revolve(bm, profile, seg, uv)
+    verts = [v for ring in rings for v in ring]
+    turn = Matrix.Rotation(-np.pi / 2, 4, "Z")
+    for v in verts:
+        local = turn @ v.co
+        v.co = convert((local.x, cy + local.y, cz + local.z))
+    # The winding key: a hub and a folding lever on the left face.
+    key = revolve(bm, [(0.0, 0.0), (0.0, 0.016), (0.010, 0.016), (0.012, 0.010), (0.012, 0.0)], 20, uv)
+    verts = [v for ring in key for v in ring]
+    for v in verts:
+        local = Matrix.Rotation(np.pi / 2, 4, "Z") @ v.co
+        v.co = convert((-half + local.x, cy + local.y, cz + local.z))
+    box(bm, uv, (-half - 0.016, -0.004 + cy, cz - 0.004), (-half - 0.010, 0.034 + cy, cz + 0.004), convert, 0.0015)
+    add_part(source, bm, "DRUM", "Optics")
+    # Rounds in the tower's lips.
+    profile = CARTRIDGE_PROFILES[info["rounds"]]
+    bm = bmesh.new()
+    uv = bm.loops.layers.uv.new("UV_0")
+    width = max(r for _, r in profile) * 2.0
+    for k in range(2):
+        rings = revolve(bm, profile, 12, uv)
+        x = (0.5 if k % 2 == 0 else -0.5) * width * 0.86
+        for ring in rings:
+            for v in ring:
+                p = (v.co.x + x, v.co.y + 0.004, v.co.z - width * 0.5 - k * width * 0.5)
+                v.co = convert(p)
+    add_part(source, bm, "ROUNDS", "BULLETS")
+
+
+def add_bipod(source: Source, spec: dict):
+    """A folded bipod (bone "BIPOD"): a clamp around the barrel at `at`
+    (source y) and two legs folded back under the barrel."""
+    barrel = source.bones["FX_FIRE"]
+    anchor = Vector((0.0, spec["bipod"]["at"], barrel.z))
+    convert = to_source(spec, anchor)
+    bm = bmesh.new()
+    uv = bm.loops.layers.uv.new("UV_0")
+    # The clamp: a short collar around the barrel.
+    collar = revolve(bm, [(-0.012, 0.0095), (-0.012, 0.0125), (0.012, 0.0125), (0.012, 0.0095)], 24, uv)
+    for ring in collar:
+        for v in ring:
+            v.co = convert((v.co.x, v.co.y, v.co.z))
+    # The yoke under the collar, and two legs folded back along the barrel,
+    # splayed a little.
+    box(bm, uv, (-0.018, -0.010, -0.024), (0.018, 0.010, -0.011), convert, 0.002)
+    for side in (-1.0, 1.0):
+        x = side * 0.013
+        box(bm, uv, (x - 0.004, -0.250, -0.028), (x + 0.004, 0.0, -0.020), convert, 0.0015)
+        # The feet: small spurs at the rear ends.
+        box(bm, uv, (x - 0.007, -0.262, -0.034), (x + 0.007, -0.246, -0.018), convert, 0.002)
+    add_part(source, bm, "BIPOD", "Optics")
 
 
 def riflescope(spec: dict) -> bpy.types.Object:
@@ -677,14 +1055,28 @@ def save_png(path: Path, rgb: np.ndarray, srgb: bool):
 
 
 def build_textures(key: str, spec: dict, out: Path):
-    color_path, normal_path, rmao_path = spec["textures"]
+    textures = spec["textures"]
+    if isinstance(textures, dict):
+        # Separate maps: colour, normal, metallic, roughness, and occlusion
+        # if the pack has one.
+        color_path, normal_path = textures["color"], textures["normal"]
+    else:
+        color_path, normal_path, rmao_path = textures
     # Blender reads sRGB PNG pixels as stored, so colour copies straight over.
     color = resize(load_pixels(color_path, True), TEXTURE_SIZE)[..., :3]
     normal = resize(load_pixels(normal_path, False), TEXTURE_SIZE)[..., :3].copy()
     if spec.get("normal_dx"):
         normal[..., 1] = 1.0 - normal[..., 1]
-    rmao = resize(load_pixels(rmao_path, False), TEXTURE_SIZE)
-    orm = np.stack([rmao[..., 2], rmao[..., 0], rmao[..., 1]], axis=2)
+    if isinstance(textures, dict):
+        def channel(key, default):
+            if key not in textures:
+                return np.full((TEXTURE_SIZE, TEXTURE_SIZE), default, np.float32)
+            return resize(load_pixels(textures[key], False), TEXTURE_SIZE)[..., 0]
+
+        orm = np.stack([channel("ao", 1.0), channel("roughness", 0.5), channel("metallic", 0.0)], axis=2)
+    else:
+        rmao = resize(load_pixels(rmao_path, False), TEXTURE_SIZE)
+        orm = np.stack([rmao[..., 2], rmao[..., 0], rmao[..., 1]], axis=2)
     log("  roughness mean", float(orm[..., 1].mean()), "metal mean", float(orm[..., 2].mean()),
         "ao mean", float(orm[..., 0].mean()))
     save_png(out / f"{key}_albedo.png", color, srgb=True)
@@ -823,6 +1215,14 @@ def build(key: str):
     out = WEAPONS_DIR / spec["dir"]
     out.mkdir(parents=True, exist_ok=True)
     source = Source(spec)
+    if "stretch" in spec:
+        stretch(source, spec["stretch"])
+    if "rounds" in spec:
+        add_rounds(source, spec)
+    if "drum" in spec:
+        add_drum(source, spec)
+    if "bipod" in spec:
+        add_bipod(source, spec)
     objects = split(source.obj, spec)
     for name in spec.get("drop", []):
         bpy.data.objects.remove(objects.pop(name))

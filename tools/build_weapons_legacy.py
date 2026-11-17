@@ -2,7 +2,7 @@
 source packs (tools/build_weapons.py). Turns the flat-colour gun pack models
 into PBR weapons. Runs inside Blender:
 
-    blender -b --python tools/build_weapons_legacy.py [-- m4 pdw9 ...]
+    blender -b --python tools/build_weapons_legacy.py [-- lsw6 ...]
 
 For each weapon in godot/assets/weapons/<key>/<key>.fbx it writes, next to the
 FBX (which stays the source):
@@ -48,16 +48,14 @@ import numpy as np
 REPO = Path(__file__).resolve().parent.parent
 WEAPONS_DIR = REPO / "godot/assets/weapons"
 # Weapons, then the attachments fitted to them in loadouts.
-ALL = ["m4", "m870", "lsw6", "suppressor", "foregrip"]
+ALL = ["lsw6", "suppressor", "foregrip"]
 SIZES = {"suppressor": 512, "foregrip": 512}
 DEFAULT_SIZE = 2048
 
 # Moving parts, as Blender-space boxes (x0, x1, z0, z1) that contain the loose
 # piece, or "lowest" for the piece that reaches lowest (a box magazine).
 PARTS = {
-    "m4": {"Magazine": "lowest"},
     "lsw6": {"Magazine": "lowest"},
-    "m870": {"Pump": (1.3, 2.42, -0.12, 0.2)},
 }
 
 # Pack material -> class. Every class has a base colour (linear), roughness,

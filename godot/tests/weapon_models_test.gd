@@ -9,6 +9,33 @@ extends SceneTree
 
 ## Weapon view scene -> the model nodes its animations and reloads use.
 const WEAPONS := {
+	"m4":
+	[
+		"Body",
+		"Magazine",
+		"Magazine/Rounds",
+		"MagazineSpare",
+		"ChargingHandle",
+		"BoltCarrier",
+		"DustCover",
+		"Selector",
+		"Trigger",
+		"RearSight"
+	],
+	"m870": ["Body", "Pump", "Pump/BoltCarrier", "Trigger"],
+	"lsw6":
+	[
+		"Body",
+		"Bipod",
+		"Magazine",
+		"Magazine/Rounds",
+		"MagazineSpare",
+		"ChargingHandle",
+		"Selector",
+		"Trigger",
+		"MagRelease",
+		"OpticRail"
+	],
 	"ak47":
 	[
 		"Body",
@@ -69,7 +96,10 @@ const WEAPONS := {
 const MARKERS := ["Muzzle", "Ejection", "GripRight", "GripLeft"]
 ## Weapons aimed with their own iron sights; the others carry a reflex sight
 ## (the scene's IronSights node) or, the M40, a scope on the sight line.
-const IRON_SIGHTS := ["ak47", "pistol"]
+const IRON_SIGHTS := ["m4", "m870", "lsw6", "ak47", "pistol"]
+## How far behind the muzzle the front sight sits, at most (the M4A1's post
+## stands on the gas block, well back from its flash hider).
+const FRONT_SIGHT_REACH := {"m4": 0.23}
 ## How far (metres) the front sight's tip may sit off the sight line.
 const SIGHT_TOLERANCE := 0.0006
 
@@ -105,8 +135,9 @@ func _run() -> void:
 			not (world.get_node("Model/Mesh/Body") as Node3D).visible,
 			"%s: third person hides the separate parts" % key
 		)
+		var magazine := world.get_node_or_null("Model/Mesh/Magazine") as Node3D
 		_check(
-			not (world.get_node("Model/Mesh/Magazine") as Node3D).visible,
+			magazine == null or not magazine.visible,
 			"%s: third person draws the magazine in the merged model" % key
 		)
 		# Every copy of a gun shares the imported material, so racks and other
@@ -169,7 +200,8 @@ func _check_view(key: String, view: Node3D) -> void:
 		return
 	# A pistol's front sight rides on its slide.
 	var sight_part := "Model/Mesh/Slide" if view.has_node("Model/Mesh/Slide") else "Model/Mesh/Body"
-	var tip := _front_sight_tip(view.get_node(sight_part) as MeshInstance3D, view, muzzle.z)
+	var reach: float = FRONT_SIGHT_REACH.get(key, 0.12)
+	var tip := _front_sight_tip(view.get_node(sight_part) as MeshInstance3D, view, muzzle.z, reach)
 	_check(
 		absf(tip) < SIGHT_TOLERANCE,
 		"%s: the front sight's tip is on the sight line (%.4f m off)" % [key, tip]
@@ -178,7 +210,7 @@ func _check_view(key: String, view: Node3D) -> void:
 
 ## Height of the highest point of the body near the centre line in the last
 ## stretch before the muzzle: the front sight post's tip.
-func _front_sight_tip(body: MeshInstance3D, view: Node3D, muzzle_z: float) -> float:
+func _front_sight_tip(body: MeshInstance3D, view: Node3D, muzzle_z: float, reach: float) -> float:
 	var to_view := view.global_transform.affine_inverse() * body.global_transform
 	var top := -INF
 	var mesh := body.mesh
@@ -186,7 +218,7 @@ func _front_sight_tip(body: MeshInstance3D, view: Node3D, muzzle_z: float) -> fl
 		var vertices: PackedVector3Array = mesh.surface_get_arrays(surface)[Mesh.ARRAY_VERTEX]
 		for v in vertices:
 			var p := to_view * v
-			if absf(p.x) < 0.0015 and p.z < muzzle_z + 0.12 and p.y > -0.05:
+			if absf(p.x) < 0.0015 and p.z < muzzle_z + reach and p.y > -0.05:
 				top = maxf(top, p.y)
 	return top
 
