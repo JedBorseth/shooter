@@ -149,6 +149,12 @@ fn smoothstep(t: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
+/// The scale the suppressor and foregrip models are built at (the older
+/// gun pack's), for weapons whose own model is in metres.
+const LEGACY_ATTACHMENT_SCALE: f32 = 0.163;
+/// Height an optic needs between its mount and its sight line.
+const OPTIC_CLEARANCE: f32 = 0.018;
+
 /// Seconds an ejected shell stays visible.
 const SHELL_LIFETIME: f32 = 0.8;
 /// Enough for 0.8 s of the fastest automatic (900 rounds a minute) and a margin.
@@ -295,6 +301,9 @@ pub struct WeaponView {
     pending_attachment: Option<Attachment>,
     /// Where the left hand held the weapon before a foregrip moved it.
     grip_left_rest: Option<Vector3>,
+    /// How far the weapon hangs below the sight line because an optic sits
+    /// above its own sights (see `set_sight_drop`).
+    sight_drop: f32,
     suppressed: bool,
     /// The model's moving parts (see `tools/build_weapons.py`), found when ready.
     parts: Option<MovingParts>,
@@ -498,6 +507,7 @@ impl INode3D for WeaponView {
         }
         self.flash.set_visible(false);
         self.flash_light.set_visible(false);
+        self.show_world_parts(false);
         self.build_muzzle_effects(true);
         let pending = self.pending_attachment.take();
         self.set_attachment(pending);
@@ -679,8 +689,29 @@ impl WeaponView {
         }
         let mut parts = Node3D::new_alloc();
         parts.set_name("Attachment");
-        let scale = self.model.get_scale().x;
         let optic = matches!(attachment, Some(Attachment::RedDot | Attachment::Acog));
+        // Models built in metres (tools/build_weapons.py) sit unscaled; the
+        // older pack models are about 1/6 scale, and so are the suppressor
+        // and foregrip models.
+        let model_scale = self.model.get_scale().x;
+        let scale = if (model_scale - 1.0).abs() < 1e-3 {
+            LEGACY_ATTACHMENT_SCALE
+        } else {
+            model_scale
+        };
+        // An optic on a weapon with a mount (and no built-in iron sight
+        // node) sits on the mount, high enough to clear it: the weapon drops
+        // that far below the sight line, so the optic is what lines up.
+        let mount = self
+            .base()
+            .try_get_node_as::<Node3D>("OpticMount")
+            .map(|m| m.get_position() + Vector3::new(0.0, self.sight_drop, 0.0));
+        let drop = match (optic, mount) {
+            (true, Some(m)) => (m.y + OPTIC_CLEARANCE).max(0.0),
+            _ => 0.0,
+        };
+        self.set_sight_drop(drop);
+        self.show_part("OpticRail", optic);
         let mut iron = self.base().try_get_node_as::<IronSights>("Sights");
         if let Some(iron) = &mut iron {
             iron.set_visible(!optic);
@@ -722,18 +753,21 @@ impl WeaponView {
                 }
             }
             Some(Attachment::RedDot | Attachment::Acog) => {
-                let (rear_z, base, size) = iron
-                    .as_ref()
-                    .map(|s| s.bind().placement())
-                    .unwrap_or((0.0, -0.022, 1.0));
-                let (style, z, glow) = if attachment == Some(Attachment::Acog) {
-                    ("acog", rear_z - 0.03, Color::from_rgba(1.0, 0.25, 0.1, 1.0))
+                let acog = attachment == Some(Attachment::Acog);
+                // From the iron sights: in front of the rear sight. From a
+                // mount: centred on it.
+                let (z, base, size) = match (&iron, mount) {
+                    (Some(s), _) => {
+                        let (rear_z, base, size) = s.bind().placement();
+                        (rear_z - if acog { 0.03 } else { 0.09 }, base, size)
+                    }
+                    (None, Some(m)) => (m.z + if acog { 0.017 } else { 0.0 }, m.y - drop, 1.0),
+                    (None, None) => (-0.09, -0.022, 1.0),
+                };
+                let (style, glow) = if acog {
+                    ("acog", Color::from_rgba(1.0, 0.25, 0.1, 1.0))
                 } else {
-                    (
-                        "reflex",
-                        rear_z - 0.09,
-                        Color::from_rgba(1.0, 0.12, 0.06, 1.0),
-                    )
+                    ("reflex", Color::from_rgba(1.0, 0.12, 0.06, 1.0))
                 };
                 let mut sights = IronSights::optic(style, z, base, size, glow);
                 sights.set_name("Optic");
@@ -754,6 +788,82 @@ impl WeaponView {
         }
     }
 
+    /// Lowers the weapon (its model and markers) `drop` metres below the
+    /// sight line, from wherever it was.
+    fn set_sight_drop(&mut self, drop: f32) {
+        let delta = drop - self.sight_drop;
+        if delta.abs() < 1e-6 {
+            return;
+        }
+        self.sight_drop = drop;
+        let down = Vector3::new(0.0, -delta, 0.0);
+        for name in [
+            "Model",
+            "Muzzle",
+            "Ejection",
+            "GripRight",
+            "GripLeft",
+            "OpticMount",
+        ] {
+            if let Some(mut node) = self.base().try_get_node_as::<Node3D>(name) {
+                let at = node.get_position();
+                node.set_position(at + down);
+            }
+        }
+        for rest in [
+            &mut self.hand_rest,
+            &mut self.right_rest,
+            &mut self.grip_left_rest,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            *rest += down;
+        }
+        if self.parts.is_some() {
+            self.find_parts();
+        }
+    }
+
+    /// Models from tools/build_weapons.py carry `World`, every fixed part
+    /// merged into one mesh. Third person draws that and the magazine (the
+    /// only part a third-person reload moves); first person draws the parts.
+    fn show_world_parts(&self, world: bool) {
+        let Some(mesh) = self.base().try_get_node_as::<Node3D>("Model/Mesh") else {
+            return;
+        };
+        if !mesh.has_node("World") {
+            return;
+        }
+        for child in mesh.get_children().iter_shared() {
+            let Ok(mut part) = child.try_cast::<Node3D>() else {
+                continue;
+            };
+            let name = part.get_name().to_string();
+            match name.as_str() {
+                "World" => part.set_visible(world),
+                // Hidden until an optic shows it, and the spare stays hidden.
+                "OpticRail" | "MagazineSpare" => {}
+                "Magazine" => {
+                    if let Some(mut rounds) = part.try_get_node_as::<Node3D>("Rounds") {
+                        rounds.set_visible(!world);
+                    }
+                }
+                _ => part.set_visible(!world),
+            }
+        }
+    }
+
+    /// Shows or hides one of the model's parts, if it has it.
+    fn show_part(&self, name: &str, visible: bool) {
+        if let Some(mut node) = self
+            .base()
+            .try_get_node_as::<Node3D>(&format!("Model/Mesh/{name}"))
+        {
+            node.set_visible(visible);
+        }
+    }
+
     /// Where the hands hold this weapon, in its own space.
     pub fn grips(&self) -> Grips {
         // On the bolt the hand turns palm-down over the handle.
@@ -765,6 +875,7 @@ impl WeaponView {
     /// dark), a flash that faces the camera, a shorter flash light, and no
     /// gunshot layers.
     fn ready_world(&mut self) {
+        self.show_world_parts(true);
         brighten_materials(&self.model.clone().upcast(), self.albedo_boost.sqrt());
         if let Some(material) = self.flash.get_active_material(0)
             && let Ok(mut world) = material.duplicate_resource().try_cast::<ShaderMaterial>()

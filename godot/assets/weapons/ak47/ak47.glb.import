@@ -41,6 +41,15 @@ materials/extract_format=0
 materials/extract_path=""
 _subresources={
 "materials": {
+"Cartridge": {
+"use_external/enabled": true,
+"use_external/fallback_path": "res://assets/weapons/shared/cartridge.tres",
+"use_external/path": "res://assets/weapons/shared/cartridge.tres"
+},
+"Glow": {
+"use_external/enabled": true,
+"use_external/path": "res://assets/weapons/shared/glow_tritium.tres"
+},
 "Weapon": {
 "use_external/enabled": true,
 "use_external/fallback_path": "res://assets/weapons/ak47/ak47.tres",

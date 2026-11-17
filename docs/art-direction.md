@@ -114,14 +114,25 @@ What each of these costs is in [performance.md](performance.md).
 
 ![Every weapon at the hip, the M4 firing, its smoke, and the weapon racks](media/weapon-materials.jpg)
 
-The guns keep the CC0 gun pack's shapes. `tools/build_weapons.py` runs in Blender (`blender -b --python tools/build_weapons.py`) and turns each pack model into a PBR weapon:
+The weapons are being rebuilt from detailed CC0 source models, one family at a time. Rebuilt so far: the AK-47 and the M1911, from Stein Games' Free Classic Weapons Pack (rigged, about 10k to 17k triangles, 2K PBR textures). The others still use the low-poly pack with the old baked textures (`tools/build_weapons_legacy.py`).
 
-1. Weld, triangulate, and smooth-shade with hard edges above 35°, so flat panels stay crisp and round parts read round.
-2. Unwrap into one UV set and bake, with Cycles: a tangent-space normal map from a Bevel node (rounded edges without extra triangles), ambient occlusion, an edge mask, and which pack material every texel came from.
-3. Paint each class in numpy: steel, coated steel that wears through to bare metal at the edges, polymer and wood that lighten where hands rub them, and dark glass. Fine noise breaks up colour and roughness, and cavities collect dirt.
-4. Export `<key>.glb` (one material, so one draw call per gun) with `<key>_albedo.png`, `<key>_normal.png`, `<key>_orm.png`, and the material `<key>.tres`. Each `.glb.import` points the model at that material; `tools/build_textures.py --fix-imports` sets that up and compresses the textures.
+`tools/build_weapons.sh` rebuilds the set in one command. `tools/fetch_weapon_sources.py` downloads the source packs (pinned by size and SHA-256, cached in `~/.cache/shooter-weapons/sources`), and `tools/build_weapons.py` runs in Blender and, for each weapon in its `WEAPONS` table:
 
-The `.glb` lines up exactly with the pack's `.fbx` (which stays as the source), so the iron sights, grips, and muzzles need no changes. The first-person shader reads the normal and ORM maps; third-person guns use the material directly.
+1. Imports the rigged source in its rest pose. Every face goes to the part its bone moves, so the magazine, the slide, the hammer, and the rounds in the magazine come out as their own nodes.
+2. Turns it to face -Z, scales it to the real weapon's length and sight radius, puts the rear sight's aiming point (the top of the notch) on the origin, and pitches it so the front post's tip lies on the -Z axis. Aimed, the post sits level in the notch exactly where the camera points, which is where shots land.
+3. Repacks the source's maps into the game's layout at 2048 px: sRGB colour, an OpenGL normal map (the sources are DirectX style), and ORM (occlusion, roughness, metallic). The source's own UVs stay.
+4. Exports `<key>.glb` in metres with one material for the weapon (`<key>.tres`), the shared cartridge material on the rounds, and the shared tritium glow on night sights, and `World`, every fixed part merged into one node for other players' weapons and racks (the magazine stays separate for third-person reloads), then writes the marker positions (`Muzzle`, `Ejection`, `OpticMount`, `GripRight`, `GripLeft`) into the view scene and a summary (`<key>.json`: triangles, nodes, markers).
+
+Parts each rebuilt weapon exports (origins at the part's pivot, so a trigger or hammer turns about its pin):
+
+| Weapon | Nodes |
+| --- | --- |
+| AK-47 | `Body`, `Magazine` (with its `Rounds`), `MagazineSpare` (hidden, for a reload that brings a fresh one up), `ChargingHandle` (the bolt carrier and its handle), `Selector`, `Trigger`, `MagRelease`, `OpticRail` (shown only with an optic) |
+| M1911 | `Body`, `Slide` (with the front sight's `SightGlow`), `Magazine` (with its `Rounds`), `MagazineSpare`, `Hammer`, `SlideStop`, `Safety`, `Trigger`, `MagRelease` |
+
+These weapons aim with their own modelled sights, so their view scenes have no `IronSights` node. An optic sits on the `OpticMount` marker; when the mount is too low for it, the weapon hangs that much lower (`WeaponView::set_sight_drop`), so the optic's dot is on the sight line and the iron sights show in the bottom of its window. Weapon racks show the same third-person weapon other players carry, laid on its side (`WeaponPickup`).
+
+`godot/tests/weapon_models_test.gd` checks every rebuilt weapon's parts and markers and that its front sight's tip is within 0.6 mm of the sight line. `godot/tests/capture_weapons.gd` captures each weapon at the hip, aimed, mid-reload, and inspected, in other players' hands, and on the racks, for reviewing.
 
 Each shot shows a flash with ragged petals that change every shot, a short plume along the barrel seen from the side, and every few shots a puff of grey smoke that drifts up and fades in the world (`shaders/muzzle_flash.gdshader`, `shaders/muzzle_smoke.gdshader`, built in `WeaponView`).
 

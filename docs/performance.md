@@ -120,3 +120,4 @@ GPU time on Medium at 1080p on the reference card, average over viewpoints (wors
 | `main` before the fidelity pass (weapons, modes, and penetration since) | 5.06 (5.24) ms | 6.44 (6.61) ms | 5.25 (5.62) ms |
 | Skyline windows with fake rooms, cloth and glove relief | 5.16 (5.34) ms | 6.66 (6.82) ms | 5.34 (5.76) ms |
 | Graded picture, lens pass, sharper mipmaps, bilinear glow upscale | 5.17 (5.34) ms | 6.60 (6.85) ms | 5.35 (5.82) ms |
+| AK-47 and M1911 rebuilt from the classic weapons pack, racks show world models | 5.15 (5.30) ms | 6.55 (6.68) ms | 5.39 (5.88) ms |
