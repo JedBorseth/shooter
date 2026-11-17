@@ -149,7 +149,8 @@ SLAMCITY_LOOKS: dict[str, dict] = {
     "tile_laundry_floor": _t("tiles_floor", 1.6, (0.6, 0.66, 0.72), grime=0.0),
     "tile_store": _t("tiles_floor", 2.0, (0.86, 0.86, 0.83), grime=0.0),
     "tile_hall": _t("tiles_floor", 1.2, (0.72, 0.6, 0.5), grime=0.0),
-    "terrazzo": _t("terrazzo", 2.5, (0.62, 0.6, 0.58), grime=0.0),
+    # One texture repeat per 1.2 m panel between the floor's brass strips.
+    "terrazzo": _t("terrazzo", 1.2, (0.62, 0.6, 0.58), grime=0.0),
     "checker": _t("tiles_floor", 1.2, (0.95, 0.94, 0.9), grime=0.0, checker=(0.3, (0.08, 0.08, 0.09))),
     # Wood
     "wood": _t("planks", 2.0, (1.0, 0.95, 0.88)),
@@ -180,9 +181,11 @@ SLAMCITY_LOOKS: dict[str, dict] = {
     "roof_corrugated": _t("corrugated", 2.0, (0.58, 0.6, 0.62), metal=0.6, grime=0.0),
     # The platform canopy is seen at a glancing angle down its length, where
     # fine ribs shimmer: a coarser scale.
-    "canopy_corrugated": _t("corrugated", 3.5, (0.56, 0.58, 0.6), metal=0.2, rough=1.3, grime=0.0),
+    "canopy_corrugated": _t("corrugated", 3.5, (0.42, 0.43, 0.45), metal=0.2, rough=1.3, grime=0.0),
     # The derailed car: painted steel, dirtier toward the alley it lies in.
     "train_wreck": _t("painted_metal", 2.5, (0.58, 0.59, 0.6), metal=0.6, grime=0.35),
+    # Its torn, burnt nose: the same steel, darkened by the fire.
+    "train_scorched": _t("painted_metal", 2.5, (0.22, 0.2, 0.19), metal=0.3, grime=0.35),
     "roof_tank": _t("corrugated", 1.5, (0.38, 0.33, 0.3), metal=0.4, grime=0.0),
     # Painted and bare metal
     "girder": _t("painted_metal", 2.0, (0.2, 0.33, 0.26), metal=0.5, rough=0.8, grime=0.35),
@@ -207,8 +210,10 @@ SLAMCITY_LOOKS: dict[str, dict] = {
     "safe_green": _t("painted_metal", 1.0, (0.2, 0.3, 0.24), metal=0.3),
     "truck_white": {"color": (0.86, 0.86, 0.84), "rough": 0.55, "paint": True},
     "vending_red": _t("painted_metal", 1.5, (0.7, 0.08, 0.08)),
-    "train_corrugated": _t("container", 1.5, (0.8, 0.81, 0.83), metal=0.9, rough=0.6, grime=0.3),
-    "train_steel": _t("painted_metal", 3.0, (0.76, 0.78, 0.8), metal=0.9, rough=0.5, grime=0.2),
+    # Stainless fluting at its real pitch, cool and only half metallic, so it
+    # does not band warm in the low sun like a fence.
+    "train_corrugated": _t("container", 0.6, (0.72, 0.75, 0.79), metal=0.35, rough=0.9, grime=0.2),
+    "train_steel": _t("painted_metal", 2.5, (0.74, 0.76, 0.78), metal=0.6, grime=0.2),
     "train_roof": _t("painted_metal", 2.0, (0.4, 0.4, 0.42), grime=0.0),
     "train_floor": _t("metal_plates", 1.5, (0.5, 0.46, 0.44), grime=0.0),
     # Plastics and paint on the hero props, so they take grime like the walls.
@@ -258,7 +263,7 @@ SLAMCITY_LOOKS: dict[str, dict] = {
     "pipe_blue": _p((0.15, 0.3, 0.6), 0.5), "pipe_yellow": _p((0.85, 0.7, 0.1), 0.5),
     "lamp_shade": _p((0.14, 0.26, 0.2), 0.4), "terracotta": _p((0.6, 0.3, 0.2), 0.8),
     "rust": _p((0.3, 0.13, 0.06), 0.9), "underbody": _p((0.42, 0.38, 0.33), 0.9),
-    "glass_shard": _p((0.7, 0.75, 0.77), 0.04), "soot": _p((0.16, 0.145, 0.13), 0.95),
+    "glass_shard": _p((0.05, 0.07, 0.07), 0.05), "soot": _p((0.16, 0.145, 0.13), 0.95),
 
     "light_lens": _p((0.9, 0.9, 0.88), 0.08), "tail_lens": _p((0.55, 0.02, 0.02), 0.1),
     "sign_white": _p((0.92, 0.92, 0.9), 0.5), "train_stripe": _p((0.72, 0.05, 0.1), 0.4),
@@ -289,7 +294,7 @@ SLAMCITY_LOOKS: dict[str, dict] = {
     "window_shop": {"special": "pane", "room_light": 0.45, "lit": 1.0, "depth": 3.0, "blinds": 0.0},
     "window_office": {"special": "pane", "room_light": 0.5, "lit": 1.0, "depth": 2.5, "blinds": 0.0},
     "window_dark": {"special": "pane", "room_light": 0.05, "lit": 0.0, "depth": 2.0, "blinds": 0.8},
-    "glass_clear": {"special": "glass", "color": (0.75, 0.85, 0.85), "alpha": 0.18},
+    "glass_clear": {"special": "glass", "color": (0.75, 0.85, 0.85), "alpha": 0.26},
     "glass_tint": {"special": "glass", "color": (0.05, 0.07, 0.08), "alpha": 0.72},
     "glass_booth": {"special": "glass", "color": (0.7, 0.8, 0.75), "alpha": 0.25},
     "glass_fridge": {"special": "glass", "color": (0.85, 0.92, 1.0), "alpha": 0.12},
