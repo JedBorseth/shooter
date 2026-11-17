@@ -1,0 +1,35 @@
+name: Import Godot assets
+description: >-
+  Restores the editor's import cache (godot/.godot) from an earlier run, then
+  imports the project headless. Godot compares every source file's hash with
+  the cache and re-imports only what changed, so a warm import takes seconds
+  instead of about four minutes. Needs the LFS files, Godot, and the Linux
+  GDExtension in place first. Only runs on main save the cache.
+inputs:
+  version:
+    description: Godot version, for example 4.7.2
+    required: true
+  save:
+    description: Save the cache when the import changed anything
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - name: Restore import cache
+      id: restore
+      uses: actions/cache/restore@v6
+      with:
+        path: godot/.godot
+        # Any change to an asset or its import settings changes the key. An older
+        # cache is still a good start: Godot re-imports only the files that differ.
+        key: godot-import-v1-${{ inputs.version }}-${{ hashFiles('.lfs-objects.txt', 'godot/**/*.import') }}
+        restore-keys: godot-import-v1-${{ inputs.version }}-
+    - name: Import assets
+      shell: bash
+      run: .github/scripts/import-assets.sh
+    - name: Save import cache
+      if: inputs.save == 'true' && steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: godot/.godot
+        key: godot-import-v1-${{ inputs.version }}-${{ hashFiles('.lfs-objects.txt', 'godot/**/*.import') }}

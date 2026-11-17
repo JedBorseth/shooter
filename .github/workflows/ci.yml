@@ -1,13 +1,41 @@
 name: CI
 
+# One workflow checks, tests, and builds every pull request, merge queue entry,
+# and push to main, and exports playable Linux, Windows, and macOS clients plus a
+# headless Linux dedicated server, so anyone can download a pull request's build
+# and play it before it merges. Tags (v*) also publish the builds as a GitHub
+# Release. Runners are free for public repositories.
+#
+# Each build also carries the Shooter launcher (rust/launcher) for every
+# platform and a latest.json manifest that describes the build. Every push to
+# main publishes them as the rolling `nightly` pre-release, which the launcher
+# follows to keep players and servers on the newest build.
+#
+# The "CI passed" job at the end is the one check branch protection needs: it
+# passes only when every other job passed, so jobs can be added, split, or
+# renamed without touching the ruleset.
+#
+# Speed notes (see docs/ci.md):
+# - Only runs on main save caches. Pull requests restore main's caches and
+#   never evict them.
+# - Godot's import cache (godot/.godot) is restored, so the import re-imports
+#   only changed assets instead of every asset.
+# - Godot tests step the game at a fixed frame rate, as fast as the CPU allows.
+# - Pull request and main builds use the `ci` Cargo profile (no LTO); tags use
+#   `release`.
+
 on:
   pull_request:
+  merge_group:
   push:
     branches: [main]
+    tags: ["v*"]
   workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  # A new push to a pull request replaces its old run. Runs on main and tags
+  # finish, so main always saves fresh caches and builds.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -17,171 +45,308 @@ env:
   GODOT_VERSION: 4.7.2
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
+  SAVE_CACHE: ${{ github.ref == 'refs/heads/main' }}
+  CARGO_PROFILE: ${{ github.ref_type == 'tag' && 'release' || 'ci' }}
 
 jobs:
-  rust-lint:
-    name: Rust (fmt, clippy)
+  # Everything that runs quickly on Linux, in one job so a busy queue has fewer
+  # jobs to start. The fastest checks run first.
+  checks:
+    name: Lint and test (Linux)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: rust
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: rust
-      - run: cargo fmt --all --check
-      - run: cargo clippy --all-targets --locked -- -D warnings
-
-  # Public repository, so every runner OS is free. The simulation must behave the
-  # same on every platform the client and server run on, so test on all three.
-  rust-test:
-    name: Rust tests (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: rust
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: rust
-      - run: cargo test --locked
-
-  # The "Protect main" ruleset requires a check named "Rust (fmt, clippy, test)".
-  # Lint and the per-OS tests run as separate jobs, so this job reports that one
-  # name and passes only when all of them passed.
-  rust:
-    name: Rust (fmt, clippy, test)
-    if: ${{ always() }}
-    needs: [rust-lint, rust-test]
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Require every Rust job to pass
-        env:
-          LINT: ${{ needs.rust-lint.result }}
-          TEST: ${{ needs.rust-test.result }}
-        run: |
-          echo "rust-lint: $LINT, rust-test: $TEST"
-          test "$LINT" = success && test "$TEST" = success
-
-  gdscript:
-    name: GDScript (lint, format)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       # pipx ships with the runner image.
-      - run: pipx run --spec gdtoolkit==4.5.0 gdlint godot/scripts godot/tests
-      - run: pipx run --spec gdtoolkit==4.5.0 gdformat --check godot/scripts godot/tests
-
-  # The importer's geometry and material rules are pure Python, so they run
-  # without Godot, LFS, or the raw game export. Keep this job small and scoped
-  # to tools/test_import_nuketown.py.
-  python-importer:
-    name: Python importer tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
+      - name: GDScript lint
+        run: pipx run --spec gdtoolkit==4.5.0 gdlint godot/scripts godot/tests
+      - name: GDScript format
+        run: pipx run --spec gdtoolkit==4.5.0 gdformat --check godot/scripts godot/tests
+      # The importer's geometry and material rules are pure Python, so they run
+      # without Godot, LFS, or the raw game export.
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install test dependencies
-        run: python -m pip install "Pillow>=11,<13" "numpy>=2,<3"
-      - name: Run importer regression tests
+      - name: Python importer tests
         run: |
+          python -m pip install --quiet "Pillow>=11,<13" "numpy>=2,<3"
           # discover exits 0 when the pattern matches nothing, so fail loudly
           # if the test file is renamed or removed.
           test -f tools/test_import_nuketown.py
           python -m unittest discover -s tools -p "test_import_nuketown.py" -v
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Rust format
+        working-directory: rust
+        run: cargo fmt --all --check
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+          save-if: ${{ env.SAVE_CACHE }}
+      - name: Clippy
+        working-directory: rust
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Rust tests
+        working-directory: rust
+        run: cargo test --locked
 
-  smoke:
-    name: Godot smoke test (headless)
+  # The simulation must behave the same on every platform the client and server
+  # run on, so its tests also run on Windows and macOS. These use the runner's
+  # preinstalled stable Rust, which saves a toolchain download.
+  rust-test:
+    name: Rust tests (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+          - name: macOS
+            os: macos-latest
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v7
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+          save-if: ${{ env.SAVE_CACHE }}
+      - run: cargo test --locked
+
+  # Headless game tests. Every godot/tests/*_test.gd runs; see
+  # .github/scripts/godot-tests.sh.
+  godot:
+    name: Godot tests (headless)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/lfs-pull
-      - uses: dtolnay/rust-toolchain@stable
+        with:
+          save: ${{ env.SAVE_CACHE }}
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust
+          save-if: ${{ env.SAVE_CACHE }}
       - name: Build the GDExtension and the master server
         working-directory: rust
         run: cargo build --locked -p shooter-game -p shooter-master
       - uses: ./.github/actions/setup-godot
         with:
           version: ${{ env.GODOT_VERSION }}
-      - name: Import assets
-        run: .github/scripts/import-assets.sh
-      - name: Run smoke test
-        run: godot --headless --path godot --script res://tests/smoke_test.gd
-      # Enters Slamcity from the home screen and walks, climbs, and shoots through it.
-      - name: Run Slamcity test
-        run: godot --headless --path godot --script res://tests/slamcity_test.gd
-      - name: Run Nuketown navigation and collision test
-        run: godot --headless --path godot --script res://tests/nuketown_test.gd
-      # Drives the real player up and down both houses' stairs without jumping,
-      # and checks the blue house's interior floor lanes and hearth.
-      - name: Run Nuketown physics test
-        run: godot --headless --path godot --script res://tests/nuketown_physics_test.gd
-      # Measures the real camera while climbing the blue stairs: reach the
-      # upper floor, no per-frame teleport spikes, normal walking speed.
-      - name: Run Nuketown climb smoothness test
-        run: godot --headless --path godot --script res://tests/nuketown_climb_test.gd
-      - name: Run settings test
-        run: godot --headless --path godot --script res://tests/settings_test.gd
-      - name: Run secret laser test
-        run: godot --headless --path godot --script res://tests/secret_laser_test.gd
-      # Walks the player into and out of a reverb zone, and plays a sound
-      # behind a wall to check it is muffled until the wall goes.
-      - name: Run acoustics test
-        run: godot --headless --path godot --script res://tests/acoustics_test.gd
-      - name: Run Zombies test
-        run: godot --headless --path godot --script res://tests/zombies_test.gd
-      - name: Run Zombies menu test
-        run: godot --headless --path godot --script res://tests/zombies_menu_test.gd
-      # Starts a dedicated server process and joins it over UDP on localhost
-      # through a simulated lossy, jittery link.
-      - name: Run netcode test
-        run: godot --headless --path godot --script res://tests/net_test.gd
-      # Starts a master server and a dedicated server, finds it on the LAN and
-      # Internet tabs of the server browser, and joins it from the list.
-      - name: Run server browser test
-        run: godot --headless --path godot --script res://tests/server_browser_test.gd -- --directory 127.0.0.1:27985
-      - name: Run Nuketown server browser test
-        run: godot --headless --path godot --script res://tests/server_browser_test.gd -- --nuketown --directory 127.0.0.1:27985
-      - name: Run local pause test
-        run: godot --headless --path godot --script res://tests/local_pause_test.gd
-      - name: Run title screen test
-        run: godot --headless --path godot --script res://tests/title_screen_test.gd
-      # Six bots play a minute of Team Deathmatch on Slamcity in a server in
-      # the test process: they navigate, find each other, and score kills.
-      - name: Run bots test
-        run: godot --headless --path godot --script res://tests/bots_test.gd
-      # Six bots play 45 seconds of Gun Game on Slamcity: kills move them up
-      # the weapon ladder and swap their weapon, and the clock ends the match.
-      - name: Run Gun Game test
-        run: godot --headless --path godot --script res://tests/gun_game_test.gd
-      # Capture the Flag on Slamcity in a server in the test process: the
-      # flag rules with hand-placed players, then a 6v6 of bots that take a flag.
-      - name: Run Capture the Flag test
-        run: godot --headless --path godot --script res://tests/ctf_test.gd
-      # The benchmark needs a GPU to measure anything; this run only keeps the
-      # script, its maps, and every graphics preset loading. See docs/performance.md.
-      - name: Run benchmark script (no GPU)
-        run: godot --headless --path godot --script res://tests/benchmark.gd
+      - uses: ./.github/actions/godot-import
+        with:
+          version: ${{ env.GODOT_VERSION }}
+          save: ${{ env.SAVE_CACHE }}
+      - name: Run Godot tests
+        run: .github/scripts/godot-tests.sh
+
+  # Release libraries for the client exports. Merge queue runs skip these and the
+  # export: the pull request already built them, and the push to main builds
+  # them again.
+  lib:
+    name: GDExtension (${{ matrix.platform }})
+    if: github.event_name != 'merge_group'
+    strategy:
+      matrix:
+        include:
+          - platform: linux
+            os: ubuntu-latest
+          - platform: windows
+            os: windows-latest
+          - platform: macos
+            os: macos-latest
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v7
+      - name: Add the Intel macOS target
+        if: matrix.platform == 'macos'
+        run: rustup target add x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+          save-if: ${{ env.SAVE_CACHE }}
+      - name: Build
+        run: |
+          set -euo pipefail
+          mkdir -p ../out
+          case "${{ matrix.platform }}" in
+            linux)
+              # The master server ships in the Linux dedicated server zip.
+              cargo build --locked --profile "$CARGO_PROFILE" -p shooter-game -p shooter-master -p shooter-launcher
+              cp "target/$CARGO_PROFILE/libshooter_game.so" "target/$CARGO_PROFILE/shooter-master" ../out/
+              cp "target/$CARGO_PROFILE/shooter-launcher" ../out/shooter-launcher-linux-x86_64
+              ;;
+            windows)
+              cargo build --locked --profile "$CARGO_PROFILE" -p shooter-game -p shooter-launcher
+              cp "target/$CARGO_PROFILE/shooter_game.dll" ../out/
+              cp "target/$CARGO_PROFILE/shooter-launcher.exe" ../out/shooter-launcher-windows-x86_64.exe
+              ;;
+            macos)
+              # One cargo run builds both architectures in parallel.
+              cargo build --locked --profile "$CARGO_PROFILE" -p shooter-game -p shooter-launcher \
+                --target aarch64-apple-darwin --target x86_64-apple-darwin
+              lipo -create -output ../out/libshooter_game.dylib \
+                "target/aarch64-apple-darwin/$CARGO_PROFILE/libshooter_game.dylib" \
+                "target/x86_64-apple-darwin/$CARGO_PROFILE/libshooter_game.dylib"
+              lipo -create -output ../out/shooter-launcher-macos-universal \
+                "target/aarch64-apple-darwin/$CARGO_PROFILE/shooter-launcher" \
+                "target/x86_64-apple-darwin/$CARGO_PROFILE/shooter-launcher"
+              codesign --force --sign - ../out/shooter-launcher-macos-universal
+              ;;
+          esac
+          ls -l ../out
+      - uses: actions/upload-artifact@v7
+        with:
+          name: lib-${{ matrix.platform }}
+          path: out/*
+          if-no-files-found: error
+          retention-days: 3
+
+  export:
+    name: Export builds
+    if: github.event_name != 'merge_group'
+    needs: lib
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/lfs-pull
+      - uses: ./.github/actions/setup-godot
+        with:
+          version: ${{ env.GODOT_VERSION }}
+          templates: "true"
+      - name: Download libraries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: lib-*
+          path: libs
+          merge-multiple: true
+      - name: Place libraries
+        run: |
+          set -euo pipefail
+          # shooter.gdextension loads target/release for exports. The editor loads
+          # the debug entry, so point that at the same Linux build: scenes that
+          # use Rust classes must load during import and export.
+          mkdir -p rust/target/release rust/target/debug master
+          cp libs/libshooter_game.so libs/shooter_game.dll libs/libshooter_game.dylib rust/target/release/
+          cp libs/libshooter_game.so rust/target/debug/
+          install -m 755 libs/shooter-master master/shooter-master
+      - uses: ./.github/actions/godot-import
+        with:
+          version: ${{ env.GODOT_VERSION }}
+      - name: Name the build
+        id: meta
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            echo "name=shooter-${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=shooter-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Export
         env:
-          BENCH_FRAMES: "10"
+          NAME: ${{ steps.meta.outputs.name }}
+        run: |
+          set -euo pipefail
+          export_preset() {
+            local preset="$1" out="$2"
+            mkdir -p "$(dirname "$out")"
+            godot --headless --path godot --export-release "$preset" "$out"
+            test -e "$out"
+          }
+          export_preset "Linux" "$PWD/builds/linux/shooter.x86_64"
+          export_preset "Windows Desktop" "$PWD/builds/windows/shooter.exe"
+          # Headless dedicated server: runs as a server on start, no rendering or audio.
+          export_preset "Linux Server" "$PWD/builds/server/shooter-server.x86_64"
+          cp master/shooter-master builds/server/shooter-master
+          mkdir -p dist
+          # Zip the three builds while Godot exports macOS.
+          pids=()
+          (cd builds/linux && zip -qr "../../dist/${NAME}-linux-x86_64.zip" .) & pids+=($!)
+          (cd builds/windows && zip -qr "../../dist/${NAME}-windows-x86_64.zip" .) & pids+=($!)
+          (cd builds/server && zip -qr "../../dist/${NAME}-server-linux-x86_64.zip" .) & pids+=($!)
+          # macOS exports straight to a zipped, ad-hoc signed .app.
+          export_preset "macOS" "$PWD/dist/${NAME}-macos-universal.zip"
+          for pid in "${pids[@]}"; do wait "$pid"; done
+          install -m 755 libs/shooter-launcher-linux-x86_64 libs/shooter-launcher-windows-x86_64.exe \
+            libs/shooter-launcher-macos-universal dist/
+          ls -lh dist
+      - name: Write manifest
+        run: .github/scripts/write-manifest.sh dist "${{ steps.meta.outputs.name }}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.meta.outputs.name }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+          # The files are already zips; compressing again only costs time.
+          compression-level: 0
+      # The launcher follows this release. Runs on main only, never for pull requests.
+      - name: Publish nightly
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: .github/scripts/publish-nightly.sh dist
+      - name: Publish release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v3
+        with:
+          files: dist/*
+          generate_release_notes: true
+
+  gate:
+    name: CI passed
+    if: ${{ !cancelled() }}
+    needs: [checks, rust-test, godot, lib, export]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      checks: write
+    steps:
+      - name: Check every job
+        id: result
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Job results: $RESULTS"
+          # Skipped is fine: merge queue runs skip the library builds and export.
+          if [[ " $RESULTS " == *" failure "* || " $RESULTS " == *" cancelled "* ]]; then
+            echo "conclusion=failure" >> "$GITHUB_OUTPUT"
+          else
+            echo "conclusion=success" >> "$GITHUB_OUTPUT"
+          fi
+      # Temporary, until the "Protect main" ruleset requires only "CI passed":
+      # report the job names it requires today, which this workflow no longer
+      # has. Delete this step once the ruleset changes.
+      - name: Report the ruleset's old check names
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          CONCLUSION: ${{ steps.result.outputs.conclusion }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          for name in "Rust (fmt, clippy)" "Rust tests (ubuntu-latest)" \
+            "Rust tests (windows-latest)" "Rust tests (macos-latest)" \
+            "GDScript (lint, format)" "Godot smoke test (headless)" "Export clients"; do
+            gh api --silent -X POST "repos/$GITHUB_REPOSITORY/check-runs" \
+              -f name="$name" -f head_sha="$SHA" -f status=completed \
+              -f conclusion="$CONCLUSION" -f details_url="$RUN_URL" \
+              -f "output[title]=Reported by CI passed" \
+              -f "output[summary]=This job now runs inside the CI workflow. See $RUN_URL."
+          done
+      - name: Require every job to pass
+        run: test "${{ steps.result.outputs.conclusion }}" = success

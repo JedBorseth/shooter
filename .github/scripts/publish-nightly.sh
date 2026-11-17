@@ -13,7 +13,7 @@ build=$(jq -r .build "$dist/latest.json")
 
 if ! gh release view "$tag" >/dev/null 2>&1; then
   gh release create "$tag" --prerelease --target "$GITHUB_SHA" --title "Nightly" \
-    --notes "Created by the Build workflow."
+    --notes "Created by the CI workflow."
 fi
 
 previous=$(gh release download "$tag" --pattern latest.json --output - 2>/dev/null |
