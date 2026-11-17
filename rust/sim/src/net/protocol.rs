@@ -19,6 +19,7 @@ use glam::{IVec3, Vec2, Vec3};
 
 use super::Tick;
 use super::bits::{BitReader, BitWriter, DecodeError, DecodeResult};
+use crate::chat;
 use crate::gun_game;
 use crate::hardpoint::Holder;
 use crate::hitbox::HitboxPose;
@@ -40,7 +41,8 @@ use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState}
 // zones, who holds the live one, the objective awards, and time on the hill
 // on the scoreboard.
 // Version 13 added interactive prop state events (damageable map props).
-pub const PROTOCOL_VERSION: u16 = 13;
+// Version 14 added text chat.
+pub const PROTOCOL_VERSION: u16 = 14;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
 pub const MAX_INPUTS_PER_PACKET: usize = 24;
 /// Wish vectors are sent as signed bytes; prediction must use the same values.
@@ -85,6 +87,11 @@ pub enum ClientMessage {
     /// always the M1911).
     Loadout {
         primary: WeaponId,
+    },
+    /// A chat message, to everyone or only to our team.
+    Chat {
+        text: String,
+        team: bool,
     },
 }
 
@@ -209,6 +216,9 @@ pub enum GameEvent {
         /// Direction and strength of the hit that changed it.
         impulse: Vec3,
     },
+    /// A chat message from player `from`, cleaned by the server. `team`
+    /// messages go only to the sender's team.
+    Chat { from: u8, text: String, team: bool },
 }
 
 /// One flag as clients see it.
@@ -461,6 +471,11 @@ impl ClientMessage {
                 w.bits(4, TAG_BITS);
                 write_weapon(&mut w, *primary);
             }
+            ClientMessage::Chat { text, team } => {
+                w.bits(5, TAG_BITS);
+                w.bool(*team);
+                write_string(&mut w, text, chat::MAX_BYTES);
+            }
         }
         w.finish()
     }
@@ -508,6 +523,13 @@ impl ClientMessage {
             4 => Ok(ClientMessage::Loadout {
                 primary: read_weapon(&mut r)?,
             }),
+            5 => {
+                let team = r.bool()?;
+                Ok(ClientMessage::Chat {
+                    text: read_string(&mut r, chat::MAX_BYTES)?,
+                    team,
+                })
+            }
             _ => Err(DecodeError::Invalid("client message tag")),
         }
     }
@@ -926,6 +948,12 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
             w.u8(*stage);
             write_vec3(w, *impulse);
         }
+        GameEvent::Chat { from, text, team } => {
+            w.bits(15, EVENT_TAG_BITS);
+            w.u8(*from);
+            w.bool(*team);
+            write_string(w, text, chat::MAX_BYTES);
+        }
     }
 }
 
@@ -1106,6 +1134,15 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
                 id,
                 stage: r.u8()?,
                 impulse: read_finite_vec3(r)?,
+            })
+        }
+        15 => {
+            let from = r.u8()?;
+            let team = r.bool()?;
+            Ok(GameEvent::Chat {
+                from,
+                text: read_string(r, chat::MAX_BYTES)?,
+                team,
             })
         }
         _ => Err(DecodeError::Invalid("event tag")),
@@ -2095,6 +2132,11 @@ mod tests {
                 stage: 255,
                 impulse: Vec3::new(-1.5, 2.25, -0.125),
             },
+            GameEvent::Chat {
+                from: 7,
+                text: "nice shot".to_owned(),
+                team: false,
+            },
             GameEvent::Match {
                 phase: Phase::Lobby,
                 ends_at: None,
@@ -2251,6 +2293,10 @@ mod tests {
                 name: "Josh".to_owned(),
             },
             ClientMessage::Ready { ready: true },
+            ClientMessage::Chat {
+                text: "gg ünïcode".to_owned(),
+                team: true,
+            },
             ClientMessage::Loadout {
                 primary: WeaponId::expect("ak47"),
             },

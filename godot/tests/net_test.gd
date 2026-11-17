@@ -156,7 +156,39 @@ func _run() -> void:
 			% [stats.ping_ms, stats.snapshots, stats.kbps_in, stats.kbps_out]
 		)
 	)
+	await _chat(client)
 	_finish()
+
+
+## Chat: a message comes back from the server cleaned up, and a flood is cut
+## to what is left of the rate limit's burst.
+func _chat(client: NetClient) -> void:
+	var hud: CanvasLayer = (load("res://scripts/net/tdm_hud.gd") as GDScript).new()
+	hud.client = client
+	root.add_child(hud)
+	var received: Array[String] = []
+	client.chat_received.connect(
+		func(_from: int, name: String, text: String, team: bool) -> void:
+			received.append("%s%s: %s" % ["(team) " if team else "", name, text])
+	)
+	client.send_chat("  good game\n  ", false)
+	client.send_chat("on me", true)
+	await _ticks(60)
+	_check(
+		received == ["Tester: good game", "(team) Tester: on me"],
+		"chat comes back from the server, cleaned, got %s" % [received]
+	)
+	_check(
+		hud.chat_lines() == PackedStringArray(["Tester:  good game", "[TEAM] Tester:  on me"]),
+		"the HUD shows the messages, got %s" % [hud.chat_lines()]
+	)
+	received.clear()
+	for i in 8:
+		client.send_chat("spam %d" % i, false)
+	await _ticks(60)
+	_check(
+		received.size() == 2, "the rate limit drops a flood, %d of 8 got through" % received.size()
+	)
 
 
 ## Checks the roster and the lobby, readies up, and waits out the countdown.
