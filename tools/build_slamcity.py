@@ -706,6 +706,31 @@ for name, pos, ry, weapon, extra in DUMMIES:
     props.update(extra)
     s.node(name, None, "Targets", props, instance="4_dummy")
 
+# --- Reverb zones: the rooms' acoustics (rust/game/src/acoustics.rs) ---------------------
+# While the camera is inside one, gunfire and effects get that room's reverb.
+s.node("ReverbZones", "Node3D", ".")
+REVERB_ROOMS = [
+    # name, centre, size, room_size, damping, wet, predelay_ms
+    ("FlatsHall", (-31.5, 1.45, -16), (3, 2.9, 9.4), 0.35, 0.4, 0.28, 10.0),
+    ("Flat", (-26, 1.45, -16), (7.4, 2.9, 9.4), 0.4, 0.6, 0.2, 12.0),
+    ("Store", (-37.9, 1.8, 17.5), (13.6, 3.6, 12.4), 0.45, 0.5, 0.22, 15.0),
+    ("Lobby", (-22.5, 1.8, 17.5), (16.7, 3.6, 12.4), 0.5, 0.35, 0.27, 18.0),
+]
+
+
+def reverb_zone(name, pos, size, room, damping, wet, predelay):
+    s.node(name, "ReverbZone", "ReverbZones", {
+        "position": vec(*pos), "size": vec(*size), "room_size": f(room),
+        "damping": f(damping), "wet": f(wet), "predelay_ms": f(predelay),
+    })
+
+
+for t, m in (("W", False), ("E", True)):
+    for name, (x, y, z), size, *settings in REVERB_ROOMS:
+        reverb_zone(name + t, (-x if m else x, y, z), size, *settings)
+reverb_zone("AutoShop", (0, 2.25, -16), (23.4, 4.5, 9.4), 0.6, 0.35, 0.3, 25.0)
+reverb_zone("Laundry", (0, 1.8, 17.5), (27.7, 3.6, 12.4), 0.45, 0.45, 0.24, 15.0)
+
 # --- Player, HUD, pause menu: the same as the testing arena (scenes/main.tscn) ----------
 s.node("Player", None, ".", {"position": vec(-53, 0.05, 0), "rotation": vec(0, -PI / 2, 0)},
        instance="1_player")

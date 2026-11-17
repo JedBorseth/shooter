@@ -1,6 +1,7 @@
 //! GDExtension entry point. Godot classes defined here wrap the engine-free
 //! simulation in `shooter-sim`.
 
+mod acoustics;
 mod aim_assist;
 mod audio;
 mod body;

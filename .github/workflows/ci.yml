@@ -145,6 +145,10 @@ jobs:
         run: godot --headless --path godot --script res://tests/settings_test.gd
       - name: Run secret laser test
         run: godot --headless --path godot --script res://tests/secret_laser_test.gd
+      # Walks the player into and out of a reverb zone, and plays a sound
+      # behind a wall to check it is muffled until the wall goes.
+      - name: Run acoustics test
+        run: godot --headless --path godot --script res://tests/acoustics_test.gd
       - name: Run Zombies test
         run: godot --headless --path godot --script res://tests/zombies_test.gd
       - name: Run Zombies menu test

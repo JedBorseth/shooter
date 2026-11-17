@@ -67,9 +67,9 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Audio buses (Master, Weapons, Effects, UI) with a compressor on Weapons and a limiter on Master.
 - [x] Layered gunshots (snap, body, and tail, each picked from several recordings) with no dead air before the transient. Rebuild them with `tools/build_weapon_audio.py`.
 - [x] A per-shot mechanical layer (bolt and spring clack) for each gun, and a hollow last-rounds layer for the final few shots in a magazine: synthesized by `tools/build_weapon_audio.py mech` into `mech_*.wav` and `hollow_*.wav`, played by `WeaponView` (`mech_db`, `hollow_db`). The ring covers the last fifth of a magazine (two to five rounds) and builds to the last round. Replace them with recordings when we have good CC0 ones.
-- [ ] Reverb zones on maps (`Area3D` reverb buses for the tunnel and indoor spaces).
+- [x] Reverb zones on maps: `ReverbZone` boxes (`rust/game/src/acoustics.rs`) in the testing arena's tunnel and Slamcity's flats, auto shop, and south-row rooms. The reverb follows the listener rather than each source (unlike `Area3D` reverb buses), so it also covers the player's own gunfire. Nuketown and the Zombies arena have none yet.
 - [x] Positional audio for impacts and the sentry's gunfire.
-- [ ] Occlusion for positional audio, and other players' gunfire once multiplayer exists.
+- [x] Occlusion for positional audio, including other players' gunfire: a ray from the camera to every playing `AudioStreamPlayer3D`; a sound behind a wall plays 9 dB quieter through a low-pass copy of its bus.
 - [x] **good first task** Kill confirmation sound for hit markers.
 - [x] Hit markers pop in and settle; kill markers are larger, thicker, and red.
 - [x] Score popups (+100, headshot and longshot bonuses) and medals at the crosshair.

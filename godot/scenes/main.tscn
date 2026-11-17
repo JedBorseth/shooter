@@ -383,6 +383,16 @@ weapon = "m1911"
 aim_pitch = -8.0
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 16, 3, -16)
 
+[node name="ReverbZones" type="Node3D" parent="." unique_id=1351527726]
+
+[node name="Tunnel" type="ReverbZone" parent="ReverbZones" unique_id=224551738]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10, 0.9, -18)
+size = Vector3(2.2, 1.8, 4)
+room_size = 0.3
+damping = 0.2
+wet = 0.35
+predelay_ms = 5.0
+
 [node name="Player" parent="." unique_id=667199353 instance=ExtResource("1_player")]
 base_fov = 69.56998
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.00064452505, 20)
