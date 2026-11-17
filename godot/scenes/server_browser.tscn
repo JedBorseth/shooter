@@ -12,6 +12,16 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_browser")
 
+[node name="Shade" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.043, 0.051, 0.063, 0.88)
+
 [node name="Margin" type="MarginContainer" parent="."]
 layout_mode = 1
 anchors_preset = 15
@@ -38,14 +48,12 @@ theme_override_constants/separation = 2
 
 [node name="Eyebrow" type="Label" parent="Margin/Layout/Header/Titles"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.51, 0.85, 0.79, 1)
-theme_override_font_sizes/font_size = 16
-text = "SHOOTER  /  MULTIPLAYER"
+theme_type_variation = &"Eyebrow"
+text = "MULTIPLAYER"
 
 [node name="Title" type="Label" parent="Margin/Layout/Header/Titles"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.88, 0.93, 0.94, 1)
-theme_override_font_sizes/font_size = 56
+theme_type_variation = &"DisplayTitle"
 text = "SERVER BROWSER"
 
 [node name="Back" type="Button" parent="Margin/Layout/Header"]
@@ -64,7 +72,7 @@ theme_override_constants/separation = 8
 unique_name_in_owner = true
 custom_minimum_size = Vector2(150, 48)
 layout_mode = 2
-theme_override_font_sizes/font_size = 19
+theme_type_variation = &"TabButton"
 toggle_mode = true
 text = "Internet"
 
@@ -72,7 +80,7 @@ text = "Internet"
 unique_name_in_owner = true
 custom_minimum_size = Vector2(150, 48)
 layout_mode = 2
-theme_override_font_sizes/font_size = 19
+theme_type_variation = &"TabButton"
 toggle_mode = true
 text = "LAN"
 
@@ -80,7 +88,7 @@ text = "LAN"
 unique_name_in_owner = true
 custom_minimum_size = Vector2(150, 48)
 layout_mode = 2
-theme_override_font_sizes/font_size = 19
+theme_type_variation = &"TabButton"
 toggle_mode = true
 text = "Favorites"
 
@@ -112,8 +120,7 @@ script = ExtResource("2_list")
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 26)
 layout_mode = 2
-theme_override_colors/font_color = Color(0.57, 0.66, 0.71, 1)
-theme_override_font_sizes/font_size = 17
+theme_type_variation = &"DimLabel"
 text = "Searching…"
 
 [node name="Footer" type="HBoxContainer" parent="Margin/Layout"]
@@ -122,9 +129,8 @@ theme_override_constants/separation = 8
 
 [node name="DirectLabel" type="Label" parent="Margin/Layout/Footer"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.57, 0.66, 0.71, 1)
-theme_override_font_sizes/font_size = 17
-text = "Direct connect"
+theme_type_variation = &"Eyebrow"
+text = "DIRECT CONNECT"
 
 [node name="Address" type="LineEdit" parent="Margin/Layout/Footer"]
 unique_name_in_owner = true
@@ -157,13 +163,13 @@ text = "Add favorite"
 unique_name_in_owner = true
 custom_minimum_size = Vector2(220, 52)
 layout_mode = 2
-theme_override_font_sizes/font_size = 21
+theme_type_variation = &"PrimaryButton"
 disabled = true
 text = "Join"
 
 [node name="Hint" type="Label" parent="Margin/Layout"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_colors/font_color = Color(0.43, 0.53, 0.58, 1)
+theme_type_variation = &"FaintLabel"
 theme_override_font_sizes/font_size = 15
 text = "DOUBLE-CLICK OR ENTER TO JOIN      F5  REFRESH      ESC  BACK"

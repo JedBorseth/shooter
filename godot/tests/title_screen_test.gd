@@ -21,16 +21,26 @@ func _run() -> void:
 		_finish()
 		return
 	var menu := title.get_node("Margin/Layout/Menu")
+	var routes := menu.get_children().filter(func(node: Node) -> bool: return node is Button)
 	var testing := menu.get_node("TestingArea") as Button
-	_check(menu.get_child(0) == testing, "Testing Area is the first option")
+	_check(not testing.disabled, "Testing Area is enabled")
 	_check(
-		not testing.disabled and testing.has_focus(), "Testing Area is enabled and keyboard focused"
+		(menu.get_node("TeamDeathmatch") as Button).has_focus(),
+		"Team Deathmatch has keyboard focus at launch"
+	)
+	_check(
+		(menu.get_node("TeamDeathmatch/Tag") as Label).text == "TEAMS",
+		"each route shows a short tag"
+	)
+	_check(
+		title.get_node("Margin/Layout/Status").text == "Two teams race to the kill limit.",
+		"the status describes the focused route"
 	)
 	_check(not (menu.get_node("Slamcity") as Button).disabled, "Slamcity is a home-screen option")
 	_check(not (menu.get_node("Nuketown") as Button).disabled, "Nuketown is a home-screen option")
 	_check(not (menu.get_node("Multiplayer") as Button).disabled, "Multiplayer opens its browser")
 	_check(not (menu.get_node("Zombies") as Button).disabled, "Zombies opens its menu")
-	var options_button := menu.get_node("Options") as Button
+	var options_button := title.get_node("%Options") as Button
 	_check(not options_button.disabled, "Options is available on the main menu")
 	options_button.pressed.emit()
 	await process_frame
@@ -50,11 +60,13 @@ func _run() -> void:
 		_check(options_button.has_focus(), "Back returns focus to Options")
 		_check(Input.mouse_mode == Input.MOUSE_MODE_VISIBLE, "Back keeps the menu cursor free")
 	var tdm := menu.get_node("TeamDeathmatch") as Button
-	_check(menu.get_child(1) == tdm and not tdm.disabled, "Team Deathmatch is the second option")
+	_check(routes[0] == tdm and not tdm.disabled, "Team Deathmatch is the first route")
 	tdm.pressed.emit()
 	await process_frame
 	var setup := title.get_node_or_null("TdmSetup")
 	_check(setup != null, "Team Deathmatch opens its setup")
+	_check(title.get_node("Margin").visible, "the setup is a card beside the menu")
+	_check(tdm.theme_type_variation == &"RouteButtonCurrent", "the open mode's route turns green")
 	if setup != null:
 		var options: Dictionary = setup.options()
 		_check(
@@ -71,14 +83,34 @@ func _run() -> void:
 			),
 			"the default local match is 6v6 Slamcity with normal bots, got %s" % options
 		)
-		var maps: OptionButton = setup.get("_map")
-		maps.select(1)
+		var maps: HBoxContainer = setup.get("_map")
+		(maps.get_child(1) as Button).pressed.emit()
 		_check(setup.options()["map"] == "nuketown", "Nuketown selection starts the Nuketown map")
+		_check(
+			(setup.get("_map_title") as Label).text == "Nuketown", "the card shows the chosen map"
+		)
+		maps.call("select", 2)
+		_check(setup.options()["map"] == "arena", "select() chooses a map like an OptionButton")
 		setup.back_requested.emit()
 		await process_frame
 		_check(title.get_node_or_null("TdmSetup") == null, "Back closes the setup")
+		_check(tdm.theme_type_variation == &"RouteButton", "closing the setup clears the route")
+	tdm.pressed.emit()
+	await process_frame
+	(menu.get_node("CaptureTheFlag") as Button).pressed.emit()
+	await process_frame
+	var cards := title.get_children().filter(
+		func(node: Node) -> bool: return node.name == "TdmSetup"
+	)
+	_check(
+		cards.size() == 1 and cards[0].get("mode") == "ctf",
+		"choosing another mode replaces the open card"
+	)
+	_check(tdm.theme_type_variation == &"RouteButton", "only the open mode's route is green")
+	cards[0].back_requested.emit()
+	await process_frame
 	var gun_game := menu.get_node("GunGame") as Button
-	_check(menu.get_child(2) == gun_game and not gun_game.disabled, "Gun Game is the third option")
+	_check(routes[1] == gun_game and not gun_game.disabled, "Gun Game is the second route")
 	gun_game.pressed.emit()
 	await process_frame
 	setup = title.get_node_or_null("TdmSetup")
@@ -103,7 +135,7 @@ func _run() -> void:
 		await process_frame
 		_check(gun_game.has_focus(), "Back returns focus to Gun Game")
 	var ctf := menu.get_node("CaptureTheFlag") as Button
-	_check(menu.get_child(3) == ctf and not ctf.disabled, "Capture the Flag is the fourth option")
+	_check(routes[2] == ctf and not ctf.disabled, "Capture the Flag is the third route")
 	ctf.pressed.emit()
 	await process_frame
 	setup = title.get_node_or_null("TdmSetup")
@@ -128,7 +160,7 @@ func _run() -> void:
 		await process_frame
 		_check(ctf.has_focus(), "Back returns focus to Capture the Flag")
 	var hardpoint := menu.get_node("Hardpoint") as Button
-	_check(menu.get_child(4) == hardpoint, "Hardpoint is the fifth option")
+	_check(routes[3] == hardpoint, "Hardpoint is the fourth route")
 	hardpoint.pressed.emit()
 	await process_frame
 	setup = title.get_node_or_null("TdmSetup")
@@ -143,7 +175,7 @@ func _run() -> void:
 		await process_frame
 		_check(hardpoint.has_focus(), "closing the setup focuses Hardpoint again")
 	var snd := menu.get_node("SearchAndDestroy") as Button
-	_check(menu.get_child(5) == snd and not snd.disabled, "Search and Destroy is the sixth option")
+	_check(routes[4] == snd and not snd.disabled, "Search and Destroy is the fifth route")
 	snd.pressed.emit()
 	await process_frame
 	setup = title.get_node_or_null("TdmSetup")

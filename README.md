@@ -102,8 +102,11 @@ godot --editor --path godot     # open the editor
 
 Rebuild with `cargo build` after changing Rust code. The editor hot-reloads the extension.
 
-Launch opens a lightweight title menu. **Testing Area**, the first option, loads the
-existing arena on selection. **Team Deathmatch** sets up a local match (the mode, your name, the
+Launch opens a lightweight title menu over a still of Slamcity, with its routes in three
+groups: matches against bots, online and co-op, and practice. Focus starts on **Team Deathmatch**;
+the line under the menu says what the focused route does. A match mode opens its setup as a card
+beside the menu: a picture of the chosen map and a row of choice chips per rule, then
+**Start match**. **Team Deathmatch** sets up a local match (your name, the
 map, team size from 1v1 to 6v6 with bots in the empty places, bot skill, score limit, and time limit),
 starts a dedicated server for it in the background, and joins it; leaving the match stops
 that server. **Gun Game** does the same for a free-for-all up a ladder of eight weapons
@@ -117,7 +120,8 @@ it to score a point a second while nobody from the other team is in it; it moves
 between parking-yard spawns at each end: a back alley with a fire escape up to the flats'
 roof (the high ground), Market Street around a sunken skate bowl, and a run of interiors
 (corner store, apartment lobby, laundromat) with windows onto the street. Offline it has
-practice targets on the far half. It ships in every build. **Multiplayer** opens the server browser (see [Play online](#play-online)). **Zombies**
+practice targets on the far half. It ships in every build. **Testing Area** loads the
+existing arena on selection. **Server Browser** opens the server browser (see [Play online](#play-online)). **Zombies**
 opens a Black Ops 2 inspired menu: **Solo** leads to a rotating globe with five
 selectable map locations. Use the list, map markers, or arrow buttons to select;
 drag the globe to rotate, and use Back or Esc to return. **START GAME** loads the
@@ -183,7 +187,7 @@ The netcode test starts a dedicated server process with a bot, joins it over UDP
 godot --headless --path godot --script res://tests/net_test.gd
 ```
 
-The server browser test starts a master server and a dedicated server that lists itself on it, opens **Multiplayer** from the title screen, finds the server on the LAN and Internet tabs with its name, players, and ping, saves it as a favorite, checks that a direct connect to a silent address offers "Join anyway", joins from the list, and leaves through the pause menu. It needs the master binary:
+The server browser test starts a master server and a dedicated server that lists itself on it, opens **Server Browser** from the title screen, finds the server on the LAN and Internet tabs with its name, players, and ping, saves it as a favorite, checks that a direct connect to a silent address offers "Join anyway", joins from the list, and leaves through the pause menu. It needs the master binary:
 
 ```sh
 cd rust && cargo build -p shooter-game -p shooter-master
@@ -207,8 +211,8 @@ uvx --from gdtoolkit==4.5.0 gdformat godot/scripts godot/tests
 uvx --from gdtoolkit==4.5.0 gdlint godot/scripts godot/tests
 ```
 
-The title screen test checks that startup leaves arena resources unloaded, then
-selects Testing Area and verifies the transition. Add `-- --startup-only` to check
+The title screen test checks the menu's routes and match setup cards, that startup leaves
+arena resources unloaded, then selects Testing Area and verifies the transition. Add `-- --startup-only` to check
 just the menu without a Rust extension build.
 
 To review visuals, capture a set of first-person screenshots (every weapon at the hip and aimed, firing, sprint, reload, shotgun pump, sniper scope, tracers, impacts, racks, damage, death). This needs a GPU:
@@ -253,7 +257,7 @@ Bots play the mode: a carrier runs the flag home and shoots on the move; the two
 
 It listens for players on UDP port 27015 (`--port N` to change) and answers server browsers on the next port, 27016 (`--query-port N` to change). To run several servers on one machine, step the game port by 2 (27015, 27017, …) so the LAN search finds them all.
 
-In the game, **Multiplayer** on the title screen opens the server browser:
+In the game, **Server Browser** on the title screen opens the server browser:
 
 - **LAN** lists every server on your network (and on your own machine), with its map, players, bots, and ping.
 - **Internet** opens by default and lists the servers on the public Borseth directory at `borseth.ddns.net:27010`. The address is preset for every player; legacy saved directory addresses are ignored. For development, launch with `godot --path godot -- --directory 127.0.0.1:27010` (or pass `--directory HOST[:PORT]` to the exported client). This override applies only to that launch.

@@ -8,11 +8,15 @@ extends Control
 ## win, on Slamcity). Bots fill the empty places. Start runs a local dedicated server with
 ## those rules and joins it (`Net.start_local_match`). UI only: it loads no
 ## gameplay. Set `mode` before adding it to the tree.
+##
+## It is a card on the right of the title screen: a picture of the chosen map,
+## then one row of choice chips per rule, then Start.
 
 signal back_requested
 signal start_requested(options: Dictionary)
 
-const MenuStyle := preload("res://scripts/ui/menu_style.gd")
+const UiTheme := preload("res://scripts/ui/ui_theme.gd")
+const ChipRow := preload("res://scripts/ui/chip_row.gd")
 const MAPS := [["Slamcity", "slamcity"], ["Nuketown", "nuketown"], ["Testing Arena", "arena"]]
 ## Search and Destroy needs a map with attacking and defending sides.
 const SND_MAPS := [["Slamcity", "slamcity"]]
@@ -27,25 +31,44 @@ const BOT_SKILLS := [["Easy", "easy"], ["Normal", "normal"], ["Hard", "hard"]]
 const PLAYER_COUNTS := [2, 4, 6, 8, 10, 12]
 const KILLS_PER_WEAPON := [1, 2, 3]
 
+## Pictures for the map header, by map id.
+const MAP_PICTURES := {
+	"slamcity": "res://assets/ui/maps/slamcity.jpg",
+	"nuketown": "res://assets/ui/maps/nuketown.jpg",
+	"arena": "res://assets/ui/maps/arena.jpg",
+}
+const MODE_NAMES := {
+	"tdm": "Team Deathmatch",
+	"gungame": "Gun Game",
+	"ctf": "Capture the Flag",
+	"hardpoint": "Hardpoint",
+	"snd": "Search and Destroy",
+}
+const CARD_WIDTH := 560.0
+
 ## "tdm", "ctf", "hardpoint", "gungame", or "snd".
 var mode := "tdm"
 
 var _name: LineEdit
-var _map: OptionButton
-var _team_size: OptionButton
-var _score_limit: OptionButton
-var _players: OptionButton
-var _kills_per_weapon: OptionButton
-var _time_limit: OptionButton
-var _rounds: OptionButton
-var _bot_skill: OptionButton
+var _map: ChipRow
+var _team_size: ChipRow
+var _score_limit: ChipRow
+var _players: ChipRow
+var _kills_per_weapon: ChipRow
+var _time_limit: ChipRow
+var _rounds: ChipRow
+var _bot_skill: ChipRow
 var _start: Button
+var _picture: TextureRect
+var _map_title: Label
 
 
 func _ready() -> void:
 	# Offsets too: anchors alone leave a new Control zero-sized, which pins
 	# the panel to the top-left corner.
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# Only the card takes the mouse: the title menu beside it stays usable.
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_build()
 	_start.grab_focus.call_deferred()
 
@@ -107,6 +130,16 @@ func _snd() -> bool:
 	return mode == "snd"
 
 
+func _maps() -> Array:
+	return SND_MAPS if _snd() else MAPS
+
+
+func _show_map(index: int) -> void:
+	var map: Array = _maps()[index]
+	_map_title.text = map[0]
+	_picture.texture = load(MAP_PICTURES[map[1]]) as Texture2D
+
+
 func _on_start() -> void:
 	var name := _name.text.strip_edges()
 	if name != "":
@@ -115,152 +148,184 @@ func _on_start() -> void:
 
 
 func _build() -> void:
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(center)
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(560, 0)
-	panel.add_theme_stylebox_override("panel", MenuStyle.panel())
-	center.add_child(panel)
+	var margin := MarginContainer.new()
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for side: String in ["left", "right"]:
+		margin.add_theme_constant_override("margin_" + side, 64)
+	margin.add_theme_constant_override("margin_top", 40)
+	margin.add_theme_constant_override("margin_bottom", 72)
+	add_child(margin)
+	var card := PanelContainer.new()
+	card.name = "Card"
+	card.add_theme_stylebox_override("panel", UiTheme.plate(UiTheme.PLATE_STRONG, 16.0, 16.0))
+	card.custom_minimum_size = Vector2(CARD_WIDTH, 0)
+	card.size_flags_horizontal = Control.SIZE_SHRINK_END
+	card.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	margin.add_child(card)
 	var layout := VBoxContainer.new()
-	layout.add_theme_constant_override("separation", 12)
-	panel.add_child(layout)
+	layout.add_theme_constant_override("separation", 10)
+	card.add_child(layout)
 
+	# Map picture with the mode and map name over its lower edge.
+	var header := Control.new()
+	header.custom_minimum_size = Vector2(0, 236)
+	header.clip_contents = true
+	layout.add_child(header)
+	_picture = TextureRect.new()
+	_picture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_picture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	_picture.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	header.add_child(_picture)
+	var fade := TextureRect.new()
+	var gradient := Gradient.new()
+	gradient.set_color(0, Color(UiTheme.INK, 0.0))
+	gradient.set_color(1, Color(UiTheme.INK, 0.9))
+	var fade_texture := GradientTexture2D.new()
+	fade_texture.gradient = gradient
+	fade_texture.fill_from = Vector2(0, 0.35)
+	fade_texture.fill_to = Vector2(0, 1)
+	fade.texture = fade_texture
+	fade.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	fade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	header.add_child(fade)
+	var caption := VBoxContainer.new()
+	caption.add_theme_constant_override("separation", 0)
+	caption.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
+	caption.offset_left = 16
+	caption.offset_bottom = -10
+	caption.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	header.add_child(caption)
 	var eyebrow := Label.new()
-	eyebrow.text = "LOCAL MATCH"
-	eyebrow.add_theme_color_override("font_color", MenuStyle.ACCENT)
-	eyebrow.add_theme_font_size_override("font_size", 15)
-	layout.add_child(eyebrow)
-	var title := Label.new()
-	title.text = (
-		{
-			"gungame": "Gun Game",
-			"ctf": "Capture the Flag",
-			"hardpoint": "Hardpoint",
-			"snd": "Search and Destroy",
-		}
-		. get(mode, "Team Deathmatch")
-	)
-	title.add_theme_font_size_override("font_size", 36)
-	layout.add_child(title)
+	eyebrow.text = "LOCAL MATCH  ·  %s" % MODE_NAMES.get(mode, "Team Deathmatch").to_upper()
+	eyebrow.theme_type_variation = &"Eyebrow"
+	eyebrow.add_theme_color_override("font_color", UiTheme.ACCENT)
+	caption.add_child(eyebrow)
+	_map_title = Label.new()
+	_map_title.theme_type_variation = &"Heading"
+	_map_title.add_theme_font_size_override("font_size", 40)
+	caption.add_child(_map_title)
+
 	var detail := Label.new()
-	if _gun_game():
-		detail.text = (
-			"Every player for themselves, up eight weapons from the LSW-6 to the M1911."
-			+ " Kills move you up, a fall moves you down. Bots fill the empty places."
-		)
-	elif _ctf():
-		detail.text = (
-			"Take the enemy's flag and carry it to your own. Your flag must be home to"
-			+ " score. Bots fill the empty places."
-		)
-	elif _hardpoint():
-		detail.text = (
-			"Hold the live zone to score a point a second; it moves every minute."
-			+ " Bots fill the empty places."
-		)
-	elif _snd():
-		detail.text = (
-			"Rounds with one life each. The attackers wipe out the defenders, or the"
-			+ " defenders hold out until time runs out. Bots fill the empty places."
-		)
-	else:
-		detail.text = "Two teams race to the kill limit. Bots fill the empty places."
+	detail.text = _detail()
+	detail.theme_type_variation = &"DimLabel"
 	detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	detail.add_theme_color_override("font_color", MenuStyle.TEXT_DIM)
-	detail.add_theme_font_size_override("font_size", 17)
 	layout.add_child(detail)
 
+	var rows := GridContainer.new()
+	rows.columns = 2
+	rows.add_theme_constant_override("h_separation", 16)
+	rows.add_theme_constant_override("v_separation", 8)
+	layout.add_child(rows)
 	_name = LineEdit.new()
 	_name.text = Settings.player_name
 	_name.max_length = 16
 	_name.placeholder_text = "Player"
-	MenuStyle.style_line_edit(_name)
-	_row(layout, "Name", _name)
-	var maps := SND_MAPS if _snd() else MAPS
-	_map = _choice(layout, "Map", maps.map(func(m: Array) -> String: return m[0]), 0)
+	_name.custom_minimum_size = Vector2(0, 38)
+	_row(rows, "Name", _name)
+	_map = _chips(rows, "Map", _maps().map(func(m: Array) -> String: return m[0]), 0)
+	_map.item_selected.connect(_show_map)
+	_show_map(0)
 	if _gun_game():
-		_players = _choice(
-			layout, "Players", PLAYER_COUNTS.map(func(n: int) -> String: return str(n)), 3
+		_players = _chips(
+			rows, "Players", PLAYER_COUNTS.map(func(n: int) -> String: return str(n)), 3
 		)
 	else:
-		_team_size = _choice(
-			layout, "Teams", TEAM_SIZES.map(func(n: int) -> String: return "%dv%d" % [n, n]), 5
+		_team_size = _chips(
+			rows, "Teams", TEAM_SIZES.map(func(n: int) -> String: return "%dv%d" % [n, n]), 5
 		)
-	_bot_skill = _choice(layout, "Bots", BOT_SKILLS.map(func(s: Array) -> String: return s[0]), 1)
+	_bot_skill = _chips(rows, "Bots", BOT_SKILLS.map(func(s: Array) -> String: return s[0]), 1)
 	if _gun_game():
-		_kills_per_weapon = _choice(
-			layout,
-			"Kills per weapon",
-			KILLS_PER_WEAPON.map(func(n: int) -> String: return str(n)),
-			1
+		_kills_per_weapon = _chips(
+			rows, "Kills each", KILLS_PER_WEAPON.map(func(n: int) -> String: return str(n)), 1
 		)
 	elif _ctf():
-		_score_limit = _choice(
-			layout, "Capture limit", CAPTURE_LIMITS.map(func(n: int) -> String: return str(n)), 1
+		_score_limit = _chips(
+			rows, "Captures", CAPTURE_LIMITS.map(func(n: int) -> String: return str(n)), 1
 		)
 	elif _hardpoint():
-		_score_limit = _choice(
-			layout, "Point limit", POINT_LIMITS.map(func(n: int) -> String: return str(n)), 2
+		_score_limit = _chips(
+			rows, "Points", POINT_LIMITS.map(func(n: int) -> String: return str(n)), 2
 		)
 	elif _snd():
-		_rounds = _choice(
-			layout, "Rounds to win", ROUNDS_TO_WIN.map(func(n: int) -> String: return str(n)), 1
+		_rounds = _chips(
+			rows, "Rounds", ROUNDS_TO_WIN.map(func(n: int) -> String: return str(n)), 1
 		)
 	else:
-		_score_limit = _choice(
-			layout, "Kill limit", SCORE_LIMITS.map(func(n: int) -> String: return str(n)), 2
+		_score_limit = _chips(
+			rows, "Kills", SCORE_LIMITS.map(func(n: int) -> String: return str(n)), 2
 		)
 	if not _snd():
-		_time_limit = _choice(
-			layout, "Time limit", TIME_LIMITS.map(func(n: int) -> String: return "%d min" % n), 1
+		_time_limit = _chips(
+			rows, "Minutes", TIME_LIMITS.map(func(n: int) -> String: return str(n)), 1
 		)
 
-	var spacer := Control.new()
-	spacer.custom_minimum_size = Vector2(0, 8)
-	layout.add_child(spacer)
-	_start = _button(layout, "Start match    →")
-	_start.name = "Start"
-	_start.pressed.connect(_on_start)
-	var back := _button(layout, "Back")
+	var actions := HBoxContainer.new()
+	actions.add_theme_constant_override("separation", 8)
+	layout.add_child(actions)
+	var back := Button.new()
 	back.name = "Back"
+	back.text = "Back"
+	back.theme_type_variation = &"QuietButton"
+	back.custom_minimum_size = Vector2(110, 52)
+	back.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	back.pressed.connect(back_requested.emit)
+	actions.add_child(back)
+	_start = Button.new()
+	_start.name = "Start"
+	_start.text = "START MATCH"
+	_start.theme_type_variation = &"PrimaryButton"
+	_start.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_start.icon = load("res://assets/ui/icons/arrow_right.svg") as Texture2D
+	_start.icon_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_start.add_theme_color_override("icon_normal_color", UiTheme.ACCENT_INK)
+	_start.add_theme_color_override("icon_hover_color", UiTheme.ACCENT_INK)
+	_start.add_theme_color_override("icon_focus_color", UiTheme.ACCENT_INK)
+	_start.add_theme_color_override("icon_pressed_color", UiTheme.ACCENT_INK)
+	_start.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_start.custom_minimum_size = Vector2(0, 52)
+	_start.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	_start.pressed.connect(_on_start)
+	actions.add_child(_start)
 
 
-func _row(layout: VBoxContainer, label_text: String, control: Control) -> void:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 16)
+func _detail() -> String:
+	if _gun_game():
+		return (
+			"Every player for themselves, up eight weapons from the LSW-6 to the M1911."
+			+ " Kills move you up, a fall moves you down. Bots fill the empty places."
+		)
+	if _ctf():
+		return (
+			"Take the enemy's flag and carry it to your own. Your flag must be home to"
+			+ " score. Bots fill the empty places."
+		)
+	if _hardpoint():
+		return (
+			"Hold the live zone to score a point a second; it moves every minute."
+			+ " Bots fill the empty places."
+		)
+	if _snd():
+		return (
+			"Rounds with one life each. The attackers wipe out the defenders, or the"
+			+ " defenders hold out until time runs out. Bots fill the empty places."
+		)
+	return "Two teams race to the kill limit. Bots fill the empty places."
+
+
+func _row(rows: GridContainer, label_text: String, control: Control) -> void:
 	var label := Label.new()
-	label.text = label_text
-	label.custom_minimum_size = Vector2(180, 0)
-	label.add_theme_color_override("font_color", MenuStyle.TEXT)
-	label.add_theme_font_size_override("font_size", 19)
-	row.add_child(label)
+	label.text = label_text.to_upper()
+	label.theme_type_variation = &"Eyebrow"
+	label.custom_minimum_size = Vector2(96, 0)
+	rows.add_child(label)
 	control.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	control.custom_minimum_size = Vector2(0, 44)
-	row.add_child(control)
-	layout.add_child(row)
+	rows.add_child(control)
 
 
-func _choice(
-	layout: VBoxContainer, label_text: String, items: Array, selected: int
-) -> OptionButton:
-	var option := OptionButton.new()
-	for item: String in items:
-		option.add_item(item)
-	option.selected = selected
-	option.add_theme_font_size_override("font_size", 18)
-	MenuStyle.style_button(option, true)
-	_row(layout, label_text, option)
-	return option
-
-
-func _button(layout: VBoxContainer, text: String) -> Button:
-	var button := Button.new()
-	button.text = text
-	button.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	button.custom_minimum_size = Vector2(0, 56)
-	button.add_theme_font_size_override("font_size", 22)
-	MenuStyle.style_button(button)
-	layout.add_child(button)
-	return button
+func _chips(rows: GridContainer, label_text: String, items: Array, chosen: int) -> ChipRow:
+	var chips := ChipRow.new()
+	chips.name = label_text.capitalize().replace(" ", "")
+	chips.setup(items, chosen)
+	_row(rows, label_text, chips)
+	return chips
