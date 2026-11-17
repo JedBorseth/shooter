@@ -117,8 +117,9 @@ pub struct FpsPlayer {
     #[init(val = 0.025)]
     kill_fov_kick: f32,
     /// Fraction of each weapon's camera punch kept while fully aimed down sights.
+    /// High, because aimed the view carries the kick: the gun stays put on screen.
     #[export]
-    #[init(val = 0.6)]
+    #[init(val = 0.9)]
     ads_punch_scale: f32,
     /// Head bob and strafe or slide tilt. Landing and damage still move the camera.
     #[export]
@@ -1351,7 +1352,7 @@ impl FpsPlayer {
                 let low = rounds_left <= def.low_ammo();
                 let mut rig = self.viewmodel.bind_mut();
                 let eject = def.cycle_time <= 0.0 && !def.beam;
-                let punch = rig.on_fired(weapon, ads, eject, rounds_left);
+                let punch = rig.on_fired(weapon, eject, rounds_left);
                 if low {
                     rig.on_low_ammo(weapon);
                 }

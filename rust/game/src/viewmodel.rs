@@ -55,6 +55,24 @@ pub enum ViewAction {
     Cycling(f32),
 }
 
+/// How the weapon model wears one shot's kick spring, as (pitch up and roll in
+/// radians, push back in metres).
+///
+/// The camera carries the climb (the sim's aim recoil plus the camera punch),
+/// and the weapon is parented to the camera, so it rides up with the view. On
+/// top of that the gun only shoves back into the shoulder and tips a little at
+/// the hip. Aimed, it hardly turns at all, so the sights stay on the sight line
+/// and never cover the target.
+fn recoil_pose(kick: Vector3, ads: f32) -> (f32, f32, f32) {
+    let turn = 1.0 - 0.95 * ads;
+    let back = 1.0 - 0.35 * ads;
+    (
+        kick.x * 0.15 * turn,
+        kick.y * 0.12 * turn,
+        kick.z * 0.4 * back,
+    )
+}
+
 fn smoothstep(t: f32) -> f32 {
     let t = t.clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
@@ -88,8 +106,8 @@ pub struct WeaponView {
     #[export]
     #[init(val = Vector3::new(-12.0, 35.0, 10.0))]
     sprint_rotation: Vector3,
-    /// Kick impulse scale for this weapon's model. Kept large: the gun should look
-    /// violent while the aim recoil in `shooter-sim` stays small and learnable.
+    /// Kick impulse scale for this weapon's model: how hard it shoves back and,
+    /// at the hip, tips up. The view climb comes from the camera, not the model.
     #[export]
     #[init(val = 1.0)]
     kick_strength: f32,
@@ -1265,19 +1283,13 @@ impl ViewmodelRig {
     /// A shot was fired: kicks the weapon model and returns this weapon's camera
     /// punch (degrees). Self-loading weapons eject a shell right away; bolt and
     /// pump weapons eject when they cycle.
-    pub fn on_fired(
-        &mut self,
-        weapon: WeaponId,
-        ads: f32,
-        eject: bool,
-        rounds_left: u16,
-    ) -> Vector3 {
+    pub fn on_fired(&mut self, weapon: WeaponId, eject: bool, rounds_left: u16) -> Vector3 {
         let Some(mut view) = self.view(weapon) else {
             return Vector3::ZERO;
         };
         let (strength, punch) = {
             let v = view.bind();
-            (v.kick_strength * (1.0 - 0.4 * ads), v.camera_punch)
+            (v.kick_strength, v.camera_punch)
         };
         view.bind_mut().on_fired(rounds_left, weapon.def().magazine);
         self.shots = self.shots.wrapping_add(1);
@@ -1552,7 +1564,8 @@ impl ViewmodelRig {
         let mut position = hip + (aim - hip) * ads;
         position += sprint_pos * sprint;
         position += bob_offset + Vector3::new(0.0, breathe, 0.0);
-        position += Vector3::new(0.0, 0.0, self.kick.value.z * 0.4);
+        let (kick_pitch, kick_roll, kick_back) = recoil_pose(self.kick.value, ads);
+        position += Vector3::new(0.0, 0.0, kick_back);
         position += Vector3::new(0.0, self.land.value.y * 0.1, 0.0);
         position += cycle_pos * cycle + Vector3::new(0.0, -0.02 * bump, 0.01 * bump);
         // Reload: tilt the magazine well toward the camera and bring the weapon inward.
@@ -1563,7 +1576,7 @@ impl ViewmodelRig {
         let deg = |v: f32| v.to_radians();
         let pitch = deg(ins_rot.x)
             + deg(sprint_rot.x) * sprint
-            + self.kick.value.x * 0.35
+            + kick_pitch
             + deg(10.0) * dip
             + deg(switch_rot.x)
             + deg(cycle_rot.x) * cycle
@@ -1577,10 +1590,13 @@ impl ViewmodelRig {
             + bob_roll
             + deg(32.0) * dip
             + deg(switch_rot.z)
-            + self.kick.value.y * 0.25
+            + kick_roll
             + deg(cycle_rot.z) * cycle;
 
-        // Rotate around the pivot rather than the sight origin.
+        // Rotate around the pivot (the firing hand) at the hip. Aimed, turn
+        // about the rear sight instead, so what is left of the kick tips the
+        // front sight a hair without lifting the sight picture off the eye.
+        let pivot = pivot * hip_amount;
         let basis = Basis::from_euler(EulerOrder::YXZ, Vector3::new(pitch, yaw, roll));
         let origin = position + pivot - basis * pivot;
         view.set_transform(Transform3D::new(basis, origin));
@@ -1609,6 +1625,41 @@ impl ViewmodelRig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The kick spring's level under sustained fire: impulses of `velocity`
+    /// every `interval` seconds against a spring of stiffness 260.
+    fn sustained_kick(velocity: Vector3, interval: f32) -> Vector3 {
+        velocity / interval / 260.0
+    }
+
+    #[test]
+    fn aimed_recoil_keeps_the_sights_on_the_sight_line() {
+        // The hardest-kicking automatic (AK, strength 1.55) at 600 rpm, plus
+        // a single shotgun blast at its spring peak (strength 2.75).
+        let spray = sustained_kick(Vector3::new(2.2, 0.9, 1.1) * 1.55, 0.1);
+        let blast = Vector3::new(2.2, 0.9, 1.1) * 2.75 * 0.03;
+        for kick in [spray, blast] {
+            let (pitch, roll, back) = recoil_pose(kick, 1.0);
+            assert!(
+                pitch.to_degrees() < 0.1,
+                "aimed pitch {}",
+                pitch.to_degrees()
+            );
+            assert!(roll.to_degrees() < 0.1, "aimed roll {}", roll.to_degrees());
+            // It still shoves back into the shoulder.
+            assert!(back > 0.005, "aimed push back {back}");
+            let (hip_pitch, _, hip_back) = recoil_pose(kick, 0.0);
+            assert!(hip_pitch > pitch * 5.0);
+            assert!(hip_back > back);
+            // At the hip the muzzle tips, but stays well short of the old
+            // 3-to-4-degree climb that raised the gun into the view.
+            assert!(
+                hip_pitch.to_degrees() < 2.0,
+                "hip pitch {}",
+                hip_pitch.to_degrees()
+            );
+        }
+    }
 
     #[test]
     fn the_hollow_ring_covers_the_last_rounds_and_builds_to_the_last() {
