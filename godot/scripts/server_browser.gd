@@ -60,6 +60,7 @@ func _ready() -> void:
 		button.theme_type_variation = &"QuietButton"
 	for button: Button in [%Back, _refresh, _connect, _favorite, _join] + _tabs:
 		button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	%Eyebrow.text = "MULTIPLAYER  /  BUILD %s" % GameBuild.build()
 
 	%Back.pressed.connect(_back)
 	_refresh.pressed.connect(_refresh_tab)

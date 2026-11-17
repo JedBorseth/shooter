@@ -339,6 +339,7 @@ mod tests {
                 players: 2,
                 max_players: 12,
                 bots: 3,
+                build: String::new(),
             };
             server
                 .send_to(&Packet::Info { nonce, info }.encode(), from)

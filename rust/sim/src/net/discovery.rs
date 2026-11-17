@@ -49,6 +49,8 @@ pub const LAN_QUERY_PORTS: RangeInclusive<u16> = DEFAULT_QUERY_PORT..=DEFAULT_QU
 pub const MAX_NAME_BYTES: usize = 32;
 pub const MAX_MAP_BYTES: usize = 24;
 pub const MAX_MODE_BYTES: usize = 16;
+/// Longest build name (a tag or short commit hash), in bytes.
+pub const MAX_BUILD_BYTES: usize = 32;
 /// Servers in one [`Packet::List`] (6 bytes each).
 pub const MAX_LIST_ENTRIES: usize = 150;
 
@@ -74,6 +76,10 @@ pub struct ServerInfo {
     pub players: u8,
     pub max_players: u8,
     pub bots: u8,
+    /// Which build the server runs (a tag or short commit hash). Sent last,
+    /// so older clients, which ignore trailing bytes, still read the rest;
+    /// empty from servers older than the field.
+    pub build: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -144,6 +150,7 @@ impl Packet {
                 w.u8(info.players);
                 w.u8(info.max_players);
                 w.u8(info.bots);
+                w.text(&info.build, MAX_BUILD_BYTES);
             }
             Packet::Heartbeat { token } => {
                 w.u8(KIND_HEARTBEAT);
@@ -216,6 +223,11 @@ impl Packet {
                     players: r.u8()?,
                     max_players: r.u8()?,
                     bots: r.u8()?,
+                    build: if r.0.is_empty() {
+                        String::new()
+                    } else {
+                        r.text(MAX_BUILD_BYTES)?
+                    },
                 },
             },
             KIND_HEARTBEAT => Packet::Heartbeat { token: r.u64()? },
@@ -774,6 +786,7 @@ mod tests {
             players: 1,
             max_players: 12,
             bots: 3,
+            build: "abc1234".into(),
         }
     }
 
@@ -829,6 +842,7 @@ mod tests {
             name: "n".repeat(100),
             map: "m".repeat(100),
             mode: "x".repeat(100),
+            build: "b".repeat(100),
             ..info(1)
         };
         let reply = Packet::Info {
@@ -837,6 +851,22 @@ mod tests {
         };
         assert!(reply.encode().len() < REQUEST_SIZE);
         assert!(Packet::Challenge { nonce: 1, token: 1 }.encode().len() < REQUEST_SIZE);
+    }
+
+    #[test]
+    fn info_without_a_build_still_decodes() {
+        // Servers older than the build field end the reply after `bots`.
+        let packet = Packet::Info {
+            nonce: 1,
+            info: info(1),
+        };
+        let mut bytes = packet.encode();
+        bytes.truncate(bytes.len() - 1 - "abc1234".len());
+        let Ok(Packet::Info { info: old, .. }) = Packet::decode(&bytes) else {
+            panic!("an info without a build did not decode");
+        };
+        assert_eq!(old.build, "");
+        assert_eq!(old.name, "Friday 1v1");
     }
 
     #[test]

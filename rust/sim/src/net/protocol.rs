@@ -46,7 +46,10 @@ use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState}
 // Version 15 added Search and Destroy: its mode (the mode field grew to 3
 // bits), rounds (event tags grew to 5 bits), and who is alive on the
 // scoreboard.
-pub const PROTOCOL_VERSION: u16 = 15;
+// Version 16 added the server's build name to the welcome.
+pub const PROTOCOL_VERSION: u16 = 16;
+/// Longest build name a welcome carries, in bytes.
+pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
 pub const MAX_INPUTS_PER_PACKET: usize = 24;
 /// Wish vectors are sent as signed bytes; prediction must use the same values.
@@ -117,6 +120,9 @@ pub enum ServerMessage {
         snapshot_interval: u8,
         /// The game the server runs, with its rules.
         mode: Mode,
+        /// Which build the server runs (a tag or short commit hash), so
+        /// players can tell when it differs from theirs.
+        server_build: String,
     },
     Reject {
         server_version: u16,
@@ -691,6 +697,7 @@ impl ServerMessage {
                 tick,
                 snapshot_interval,
                 mode,
+                server_build,
             } => {
                 w.bits(0, TAG_BITS);
                 w.u16(PROTOCOL_VERSION);
@@ -698,6 +705,7 @@ impl ServerMessage {
                 w.u32(*tick);
                 w.u8(*snapshot_interval);
                 write_mode(&mut w, mode);
+                write_string(&mut w, server_build, MAX_BUILD_BYTES);
             }
             ServerMessage::Reject { server_version } => {
                 w.bits(1, TAG_BITS);
@@ -739,6 +747,7 @@ impl ServerMessage {
                     tick: r.u32()?,
                     snapshot_interval: r.u8()?.max(1),
                     mode: read_mode(&mut r)?,
+                    server_build: read_string(&mut r, MAX_BUILD_BYTES)?,
                 })
             }
             1 => Ok(ServerMessage::Reject {
@@ -2344,6 +2353,7 @@ mod tests {
                 tick: 77_000,
                 snapshot_interval: 2,
                 mode,
+                server_build: "abc1234".to_owned(),
             };
             assert_eq!(
                 ServerMessage::decode(&msg.encode(&[]), |_| None).unwrap(),

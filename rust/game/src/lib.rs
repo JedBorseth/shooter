@@ -6,6 +6,7 @@ mod aim_assist;
 mod ambience;
 mod audio;
 mod body;
+mod build_info;
 mod character;
 mod convert;
 mod footsteps;

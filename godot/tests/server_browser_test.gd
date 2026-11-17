@@ -120,6 +120,11 @@ func _run() -> void:
 	var list: Tree = browser.get_node("%List")
 	var key := _select_row(list)
 	_check(key != "", "a row can be selected")
+	var selected: Dictionary = list.selected_server()
+	_check(
+		selected.get("build", "") == GameBuild.build(),
+		"the server's query reply names its build, got %s" % selected.get("build", "")
+	)
 	var join_button := browser.get_node("%Join") as Button
 	_check(not join_button.disabled, "Join is enabled for a reachable server")
 	(browser.get_node("%Favorite") as Button).pressed.emit()
