@@ -42,6 +42,7 @@ use shooter_sim::net::{CHANNEL_COUNT, CHANNEL_RELIABLE, DEFAULT_PORT, TICK_RATE,
 use shooter_sim::tdm::{Mode, Phase, TEAM_COUNT, Team};
 use shooter_sim::weapon::WeaponId;
 
+use super::props::{PropSnapshot, PropsBridge};
 use super::remote::{RemotePlayer, RemoteSample};
 use super::transport::{self, NetEvent};
 use crate::convert::to_godot;
@@ -135,6 +136,12 @@ pub struct NetClient {
     active_zone: u8,
     holder: Holder,
     zone_moves_at: Option<Tick>,
+    /// The map's interactive props manager, when the map has one.
+    props: PropsBridge,
+    /// Physics ticks until trying to find the props manager again.
+    props_retry: u32,
+    /// Population last sent to the props manager.
+    props_population: Option<i32>,
 }
 
 struct RosterEntry {
@@ -180,6 +187,7 @@ impl INode for NetClient {
         self.base_mut().set_physics_process_priority(1);
         crate::body::check_tick_rate();
         self.clock = Some(SnapshotClock::new(self.interpolation_ms / 1000.0));
+        self.props = PropsBridge::discover_in_tree(&self.base().get_tree());
         let path = self.player_path.clone();
         self.player = self.base().try_get_node_as::<FpsPlayer>(&path);
         if self.player.is_none() {
@@ -237,6 +245,7 @@ impl INode for NetClient {
         };
         let paused = self.base().get_tree().is_paused();
         let now = Time::singleton().get_ticks_usec() as f64 / 1e6;
+        self.sync_props();
 
         if !paused {
             for bytes in std::mem::take(&mut self.paused_packets) {
@@ -858,6 +867,9 @@ impl NetClient {
                 scores,
                 score_limit,
             } => {
+                if phase == Phase::Playing && self.match_phase != Some(Phase::Playing) {
+                    self.props.reset();
+                }
                 self.match_phase = Some(phase);
                 self.match_ends_at = ends_at;
                 self.team_scores = scores;
@@ -907,6 +919,35 @@ impl NetClient {
                 self.zone_moves_at = moves_at;
                 self.signals().hardpoint_changed().emit();
             }
+            GameEvent::PropState { id, stage, impulse } => {
+                // The server owns prop damage: clients only show the states
+                // it sends, never damage props themselves online.
+                self.props.apply_state(&PropSnapshot { id, stage, impulse });
+            }
+        }
+    }
+
+    /// Finds the props manager if the map has one and it is not loaded yet,
+    /// and keeps its population equal to the roster (bots included).
+    fn sync_props(&mut self) {
+        if !self.props.is_active() {
+            if self.props_retry == 0 {
+                self.props = PropsBridge::discover_in_tree(&self.base().get_tree());
+                // A replacement manager needs the population again.
+                self.props_population = None;
+                // Maps without props need no quicker retry than this.
+                self.props_retry = 2 * TICK_RATE;
+            } else {
+                self.props_retry -= 1;
+            }
+            if !self.props.is_active() {
+                return;
+            }
+        }
+        let population = self.roster.len().min(i32::MAX as usize) as i32;
+        if self.props_population != Some(population) {
+            self.props.set_population(population);
+            self.props_population = Some(population);
         }
     }
 
@@ -1127,6 +1168,10 @@ impl NetClient {
         self.zones.clear();
         self.holder = Holder::Neutral;
         self.zone_moves_at = None;
+        if self.props.is_active() {
+            self.props.set_population(0);
+            self.props_population = Some(0);
+        }
         self.signals().roster_changed().emit();
         self.signals().match_changed().emit();
         self.signals().hardpoint_changed().emit();

@@ -1440,6 +1440,23 @@ impl FpsPlayer {
                         !t.has_meta("friendly") || !t.get_meta("friendly").booleanize()
                     });
                 if let (Some(collider), Some(target)) = (&hit.collider, target) {
+                    // World props do not award character hit/kill confirmations.
+                    // Online their manager ignores this predicted hit; the server
+                    // owns damage.
+                    if target.has_method("apply_prop_hit") {
+                        let distance = origin.distance_to(hit.position);
+                        let mut prop = target;
+                        prop.call(
+                            "apply_prop_hit",
+                            &[
+                                (def.damage_at(distance) * hit.damage_scale).to_variant(),
+                                direction.to_variant(),
+                            ],
+                        );
+                        let surface = surface_of(Some(collider));
+                        self.spawn_impact(hit.position, hit.normal, false, &surface);
+                        continue;
+                    }
                     // Untagged damageable colliders (the sentry) count as the chest.
                     let zone = HitZone::from_name(
                         &collider

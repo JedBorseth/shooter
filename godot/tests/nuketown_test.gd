@@ -93,7 +93,11 @@ func _run() -> void:
 	_check(player.position.distance_to(start) > 1.0, "player can walk through Nuketown")
 	_check(player.position.y > start_y - 2.0, "walking does not fall through geometry")
 	_check(
-		current_scene.get_node("World").get_child_count() > 3000, "map includes the placed props"
+		(
+			current_scene.get_node("World").get_child_count() >= 2992
+			and current_scene.get_node("Props").pieces.size() >= 131
+		),
+		"map includes the placed props"
 	)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	await _click(current_scene.get_node("HUD/ReturnToMenu") as Button)

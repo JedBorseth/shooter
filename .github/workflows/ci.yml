@@ -73,7 +73,9 @@ jobs:
           # discover exits 0 when the pattern matches nothing, so fail loudly
           # if the test file is renamed or removed.
           test -f tools/test_import_nuketown.py
+          test -f tools/test_import_nuketown_props.py
           python -m unittest discover -s tools -p "test_import_nuketown.py" -v
+          python -m unittest discover -s tools -p "test_import_nuketown_props.py" -v
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
