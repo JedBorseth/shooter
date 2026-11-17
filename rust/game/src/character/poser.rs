@@ -79,9 +79,42 @@ pub struct Grips {
     pub left: Vector3,
     /// Pistol grip rake in degrees: how far the grip leans back from vertical.
     pub rake: f32,
-    /// One-handed weapons: the support hand cups the firing hand instead of
-    /// holding a handguard.
-    pub pistol: bool,
+    /// What the support hand holds, which also sets how each hand closes.
+    pub hold: Hold,
+}
+
+/// What the support hand holds.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Hold {
+    /// A rifle's handguard, from below.
+    #[default]
+    Handguard,
+    /// A shotgun's pump.
+    Pump,
+    /// One-handed weapons: the support hand cups the firing hand.
+    Pistol,
+}
+
+impl Hold {
+    /// The hold for a weapon: sidearms are pistols, multi-pellet guns pumps.
+    pub fn of(def: &shooter_sim::weapon::WeaponDef) -> Self {
+        if def.slot == shooter_sim::weapon::Slot::Secondary {
+            Hold::Pistol
+        } else if def.pellets > 1 {
+            Hold::Pump
+        } else {
+            Hold::Handguard
+        }
+    }
+
+    /// How the support hand closes for this hold.
+    fn support_shape(self) -> HandShape {
+        match self {
+            Hold::Handguard => HANDGUARD,
+            Hold::Pump => PUMP,
+            Hold::Pistol => CUP,
+        }
+    }
 }
 
 impl Default for Grips {
@@ -90,7 +123,7 @@ impl Default for Grips {
             right: Vector3::new(0.0, -0.15, 0.0),
             left: Vector3::new(0.0, -0.06, -0.28),
             rake: 22.0,
-            pistol: false,
+            hold: Hold::Handguard,
         }
     }
 }
@@ -106,7 +139,7 @@ impl Grips {
                 Vector3::new(-0.02, 0.19, -0.98),
                 Vector3::new(-1.0, 0.04, 0.03),
             );
-        let left = if self.pistol {
+        let left = if self.hold == Hold::Pistol {
             ik::basis_from_y_z(
                 Vector3::new(0.31, 0.11, -0.95),
                 Vector3::new(0.65, 0.7, 0.29),
@@ -122,17 +155,53 @@ impl Grips {
     }
 }
 
-/// Grip curl per finger joint in degrees (flexion is +X on every finger bone
-/// after the humanoid retarget): proximal, intermediate, distal. The trigger
-/// finger stays straighter, and the thumb wraps less.
-const CURL: [(&str, [f32; 3]); 5] = [
-    ("Index", [55.0, 70.0, 40.0]),
-    ("Middle", [75.0, 85.0, 50.0]),
-    ("Ring", [80.0, 85.0, 50.0]),
-    ("Little", [85.0, 85.0, 50.0]),
-    ("Thumb", [10.0, 25.0, 30.0]),
+/// How a hand closes: flexion in degrees per joint (+X on every finger bone
+/// after the humanoid retarget) for the index, middle, ring, and little
+/// fingers (proximal, intermediate, distal) and the thumb (metacarpal,
+/// proximal, distal). Written per kind of grip, not per weapon model, so the
+/// hands fit whatever mesh a weapon gets.
+type HandShape = [[f32; 3]; 5];
+const FINGERS: [&str; 5] = ["Index", "Middle", "Ring", "Little", "Thumb"];
+
+/// The firing hand on a pistol grip (about 30 mm deep): the lower three
+/// fingers wrap it, the index rests on the trigger, the thumb closes over
+/// the far side.
+const FIRING_HAND: HandShape = [
+    [25.0, 45.0, 20.0],
+    [70.0, 80.0, 45.0],
+    [75.0, 80.0, 45.0],
+    [80.0, 80.0, 45.0],
+    [20.0, 35.0, 30.0],
 ];
-const TRIGGER_FINGER: [f32; 3] = [30.0, 40.0, 15.0];
+/// The trigger finger laid straight along the frame, off the trigger, while
+/// sprinting or reloading.
+const INDEX_OFF_TRIGGER: [f32; 3] = [4.0, 6.0, 4.0];
+/// The support hand under a rifle handguard (about 45 mm across): a loose C
+/// with the fingertips up the far side and the thumb along the near side.
+const HANDGUARD: HandShape = [
+    [38.0, 45.0, 25.0],
+    [44.0, 50.0, 28.0],
+    [48.0, 50.0, 28.0],
+    [52.0, 50.0, 28.0],
+    [12.0, 15.0, 10.0],
+];
+/// The support hand round a shotgun's pump: a firmer wrap to drive it.
+const PUMP: HandShape = [
+    [55.0, 60.0, 35.0],
+    [60.0, 65.0, 35.0],
+    [62.0, 65.0, 35.0],
+    [65.0, 65.0, 35.0],
+    [25.0, 25.0, 15.0],
+];
+/// The support hand on a pistol: fingers wrapped over the firing hand's, the
+/// thumb forward along the frame under the firing thumb.
+const CUP: HandShape = [
+    [50.0, 55.0, 30.0],
+    [55.0, 60.0, 35.0],
+    [58.0, 60.0, 35.0],
+    [60.0, 60.0, 35.0],
+    [0.0, 5.0, 5.0],
+];
 
 /// Where the grip sits in each hand's bone space (from the wrist).
 const RIGHT_PALM: Vector3 = Vector3::new(0.0, 0.085, 0.035);
@@ -170,6 +239,9 @@ pub struct PoseInput {
     pub support_off: f32,
     /// Where the support hand goes when it lets go, in weapon space.
     pub support_target: Vector3,
+    /// The trigger finger comes off the trigger by this much (0..1): sprinting
+    /// or reloading.
+    pub trigger_off: f32,
 }
 
 #[derive(GodotClass)]
@@ -180,8 +252,9 @@ pub struct SoldierPoser {
     /// The weapon node the hands hold.
     pub weapon: Option<Gd<Node3D>>,
     bones: Option<[i32; 12]>,
-    /// Finger bones with their full-grip rotation, both hands.
-    fingers: Vec<(i32, Quaternion)>,
+    /// Finger bones of both hands: bone, rest rotation, right hand, finger
+    /// (index into `FINGERS`), and joint.
+    fingers: Vec<(i32, Quaternion, bool, usize, usize)>,
     /// The weapon's transform relative to the right hand, captured when the
     /// weapon starts following the hand.
     in_hand: Option<Transform3D>,
@@ -264,9 +337,22 @@ impl ISkeletonModifier3D for SoldierPoser {
             self.solved = [None, None];
             return;
         }
-        for &(finger, grip) in &self.fingers {
-            let pose = skel.get_bone_pose_rotation(finger);
-            skel.set_bone_pose_rotation(finger, pose.slerp(grip, weight));
+        let support = grips.hold.support_shape();
+        let trigger_off = input.trigger_off.clamp(0.0, 1.0);
+        for &(index, rest, right, finger, joint) in &self.fingers {
+            let angle = if right {
+                if finger == 0 {
+                    let on = FIRING_HAND[0][joint];
+                    on + (INDEX_OFF_TRIGGER[joint] - on) * trigger_off
+                } else {
+                    FIRING_HAND[finger][joint]
+                }
+            } else {
+                support[finger][joint]
+            };
+            let grip = rest * Quaternion::from_axis_angle(Vector3::RIGHT, angle.to_radians());
+            let pose = skel.get_bone_pose_rotation(index);
+            skel.set_bone_pose_rotation(index, pose.slerp(grip, weight));
         }
         let (right_basis, left_basis) = grips.hand_bases();
         // Elbow hints in the weapon's frame: the firing elbow down and out, the
@@ -338,24 +424,17 @@ impl SoldierPoser {
             self.bones = Some(found);
             self.fingers.clear();
             for side in ["Left", "Right"] {
-                for (finger, angles) in CURL {
-                    let joints: [&str; 3] = if finger == "Thumb" {
+                for (f, finger) in FINGERS.iter().enumerate() {
+                    let joints: [&str; 3] = if *finger == "Thumb" {
                         ["Metacarpal", "Proximal", "Distal"]
                     } else {
                         ["Proximal", "Intermediate", "Distal"]
                     };
-                    let angles = if side == "Right" && finger == "Index" {
-                        TRIGGER_FINGER
-                    } else {
-                        angles
-                    };
-                    for (joint, angle) in joints.iter().zip(angles) {
+                    for (j, joint) in joints.iter().enumerate() {
                         let index = skel.find_bone(&format!("{side}{finger}{joint}"));
                         if index >= 0 {
                             let rest = skel.get_bone_rest(index).basis.get_quaternion();
-                            let curl =
-                                Quaternion::from_axis_angle(Vector3::RIGHT, angle.to_radians());
-                            self.fingers.push((index, rest * curl));
+                            self.fingers.push((index, rest, side == "Right", f, j));
                         }
                     }
                 }
@@ -420,4 +499,34 @@ fn apply_global_rotation(skel: &mut Gd<Skeleton3D>, bone: i32, rotation: Quatern
         bone,
         Transform3D::new(Basis::from_quaternion(rotation) * pose.basis, pose.origin),
     );
+}
+
+#[cfg(test)]
+mod hold_tests {
+    use super::*;
+    use shooter_sim::weapon::WeaponId;
+
+    #[test]
+    fn each_weapon_class_gets_its_hold() {
+        let hold = |key: &str| Hold::of(WeaponId::by_key(key).expect(key).def());
+        assert_eq!(hold("m1911"), Hold::Pistol);
+        assert_eq!(hold("m870"), Hold::Pump);
+        for key in ["m4", "ak47", "m40", "pdw9"] {
+            assert_eq!(hold(key), Hold::Handguard, "{key}");
+        }
+    }
+
+    #[test]
+    fn support_hands_close_less_than_a_fist() {
+        // A handguard is wider than a pistol grip: the support fingers stay
+        // more open than the firing hand's wrapped fingers.
+        for finger in 1..4 {
+            let support: f32 = HANDGUARD[finger].iter().sum();
+            let firing: f32 = FIRING_HAND[finger].iter().sum();
+            assert!(support < firing, "finger {finger}");
+        }
+        let on: f32 = FIRING_HAND[0].iter().sum();
+        let off: f32 = INDEX_OFF_TRIGGER.iter().sum();
+        assert!(off < on * 0.3, "off the trigger the index lies straight");
+    }
 }

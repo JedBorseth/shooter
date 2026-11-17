@@ -714,3 +714,30 @@ def knuckles(body: Body, hands: dict[str, tuple[Vector, Vector]]) -> list[bpy.ty
         out.append(rounded_box(f"knuckle_{side}", hit + top * 0.006, (0.026, 0.07, 0.01), "gloves", "rubber", bevel=0.004, frame=f,
                                rigid=f"DEF-hand.{side}"))
     return out
+
+
+def cuffs(body: Body, arms: dict[str, tuple[Vector, Vector]]) -> list[bpy.types.Object]:
+    """A sewn cuff at the end of each sleeve, over the glove's gauntlet."""
+    out = []
+    for side, (elbow, wrist) in arms.items():
+        along = (wrist - elbow).normalized()
+        out.append(band(body, f"cuff_{side}", wrist - along * 0.045, along, Vector((0, 0, 1)), 0.04, 0.005, 0.004,
+                        "uniform", "cordura", segments=20, reach=0.12, rigid=f"DEF-forearm.{side}"))
+    return out
+
+
+def watch(body: Body, elbow: Vector, wrist: Vector, side: str = "L") -> list[bpy.types.Object]:
+    """A field watch on the support wrist, over the sleeve: a nylon strap and a
+    polymer case with a dark face on the back of the forearm."""
+    along = (wrist - elbow).normalized()
+    centre = wrist - along * 0.085
+    out = [band(body, f"watch_strap_{side}", centre, along, Vector((0, 0, 1)), 0.02, 0.009, 0.003, "webbing", "strap",
+                segments=20, reach=0.12, rigid=f"DEF-forearm.{side}")]
+    top = Vector((0, 0, 1))
+    hit = body.surface(centre + top * 0.3, -top, centre)
+    f = Matrix((along, top.cross(along).normalized(), top)).transposed()
+    out.append(rounded_box(f"watch_case_{side}", hit + top * 0.014, (0.042, 0.04, 0.012), "metal", "polymer", bevel=0.004, frame=f,
+                           rigid=f"DEF-forearm.{side}"))
+    out.append(rounded_box(f"watch_face_{side}", hit + top * 0.0205, (0.03, 0.03, 0.0015), "visor", "lens", bevel=0.0005, frame=f,
+                           rigid=f"DEF-forearm.{side}"))
+    return out

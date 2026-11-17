@@ -519,6 +519,31 @@ KITS = {
         "far_ratio": 0.2,
         "meshes": {"Body": None},
     },
+    # The first-person arms: the soldier's sleeves and gloves at full density,
+    # with sleeve cuffs, a watch, and knuckle guards, on an atlas of their own.
+    "arms": {
+        "spec": {
+            "macro": {
+                "gender": 1.0,
+                "age": 0.5,
+                "muscle": 0.7,
+                "weight": 0.55,
+                "height": 0.6,
+                "race": {"caucasian": 0.8, "african": 0.1, "asian": 0.1},
+            },
+            "skin": "skin_young_caucasian_male",
+            "parts": [
+                {"asset": "shirt", "role": "uniform", "tighten": 0.01},
+                {"asset": "gloves", "role": "gloves"},
+                {"asset": "eyes", "role": "eyes", "type": "Eyes"},
+            ],
+            "keep_body": {"bones": ["DEF-head", "DEF-neck"], "threshold": 0.35},
+            "gear": {"cuffs": 0, "watch": 0, "knuckles": 0},
+            "keep_only": {"bones": ["DEF-upper_arm.", "DEF-forearm.", "DEF-hand.", "DEF-f_", "DEF-thumb."], "threshold": 0.5},
+        },
+        "size": 2048,
+        "meshes": {"ArmsFP": None},
+    },
     # The undead: the same body and clothes with bare hands and no kit, so
     # nothing under a helmet or plates is cut away.
     "zombie": {
@@ -547,9 +572,6 @@ KITS = {
         "meshes": {"Body": None},
     },
 }
-
-ARM_BONES = ("DEF-upper_arm.", "DEF-forearm.", "DEF-hand.", "DEF-f_", "DEF-thumb.")
-
 
 def bake_kit(name: str, kit: dict, cache: Path, ual1: Path, assets: dict[str, str]) -> Path:
     work = cache / "work" / name
@@ -598,34 +620,6 @@ def load_parts(work: Path, name: str = "mesh.npz") -> list[dict]:
             }
         )
     return parts
-
-
-def subset(part: dict, keep_triangle: np.ndarray) -> dict:
-    tris = part["indices"][keep_triangle]
-    used, remap = np.unique(tris, return_inverse=True)
-    out = dict(part)
-    for key in ("positions", "normals", "tangents", "uvs", "weights"):
-        out[key] = part[key][used]
-    out["indices"] = remap.reshape(-1, 3)
-    return out
-
-
-def arm_parts(parts: list[dict]) -> list[dict]:
-    """The sleeves and gloves only: triangles whose every corner mostly follows
-    an arm bone."""
-    out = []
-    for p in parts:
-        if p["role"] not in ("uniform", "gloves", "accent"):
-            continue
-        bones = np.array(p["bones"])
-        dominant = bones[p["weights"].argmax(axis=1)]
-        arm = np.char.startswith(dominant, ARM_BONES[0])
-        for prefix in ARM_BONES[1:]:
-            arm |= np.char.startswith(dominant, prefix)
-        keep = arm[p["indices"]].all(axis=1)
-        if keep.any():
-            out.append(subset(p, keep))
-    return out
 
 
 def write_kit_model(name: str, ual: Gltf, meshes: dict[str, list[dict]], path: Path) -> None:
@@ -732,9 +726,6 @@ def main() -> None:
             meshes["BodyFar"] = load_parts(work, "mesh_far.npz")
         write_kit_model(name, ual1, meshes, out_dir / f"{name}.glb")
         write_textures(name, work, out_dir)
-        if name == "soldier":
-            # Until the arms kit has its own model: the soldier's sleeves and gloves.
-            write_kit_model("soldier", ual1, {"ArmsFP": arm_parts(parts)}, OUT / "arms" / "arms.glb")
     if not args.no_animations:
         build_animations(ual1, UAL1_ANIMATIONS, OUT / "animations" / "ual1.glb")
         build_animations(Gltf(args.ual2), UAL2_ANIMATIONS, OUT / "animations" / "ual2.glb")

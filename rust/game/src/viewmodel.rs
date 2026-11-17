@@ -15,7 +15,7 @@ use godot::classes::{
 use godot::global::randf_range;
 use godot::prelude::*;
 use shooter_sim::rng;
-use shooter_sim::weapon::{Attachment, LoadStage, Slot, WeaponId};
+use shooter_sim::weapon::{Attachment, LoadStage, WeaponId};
 
 use godot::classes::light_3d::Param;
 
@@ -2048,7 +2048,7 @@ impl ViewmodelRig {
             let support = 0.0;
             let hold = shown.then(|| {
                 let mut grips = view.bind().grips();
-                grips.pistol = frame.weapon.def().slot == Slot::Secondary;
+                grips.hold = crate::character::poser::Hold::of(frame.weapon.def());
                 (view.clone().upcast::<Node3D>(), grips)
             });
             arms.bind_mut().follow(hold, support);
