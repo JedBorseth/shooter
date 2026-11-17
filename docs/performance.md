@@ -9,8 +9,8 @@ Measured at 1920×1080 on a GTX 1060 3GB, the reference card. The budget is GPU 
 | Preset | GPU budget | Leaves room for | Today (worst view) |
 | --- | --- | --- | --- |
 | Low | 4 ms | weaker cards and laptops at 60 fps | 3.4 ms |
-| Medium (default) | 8 ms | 60 fps with plenty of headroom, 100+ fps on the reference card | 6.9 ms |
-| High | 12 ms | 60 fps | 9.5 ms |
+| Medium (default) | 8 ms | 60 fps with plenty of headroom, 100+ fps on the reference card | 6.7 ms |
+| High | 12 ms | 60 fps | 9.3 ms |
 
 Rules for a pull request that changes visuals:
 
@@ -26,6 +26,7 @@ Rules of thumb for this renderer on this card, from the measurements below:
 - Decals cost per pixel they cover: Slamcity's 44 (road paint, damage, manholes, drips) cost about 0.3 ms on Medium. Keep them few and small.
 - Reflection probes are expensive here: four small interior probes in Slamcity cost about 0.8 ms whenever a room filled the screen, and one probe over the whole block cost 0.7 ms everywhere. Baked lightmaps light the interiors instead (`tools/bake_lightmaps.sh`).
 - A full-screen pass is never free on this card. Measured on Medium in Slamcity: sun shadows 1.2 ms, glow 1.1 ms, SSAO 0.9 ms, SMAA 0.7 ms (FXAA would be 0.3 ms), fog 0.1 to 0.3 ms. A canvas pass over the whole screen costs about 0.13 ms when it only blends, and about 0.5 ms when it reads the screen (a copy, then five samples per pixel). That is why the lens sharpens on High only.
+- Ambient occlusion is the wrong tool for grounding a crowd: turning SSAO on in the Zombies arena cost 0.7 ms on Medium and 1.9 ms on High (where it runs at full resolution), for a horde that mostly needs a dark patch under each pair of feet.
 - Bicubic upscaling of the glow costs about 0.35 ms for a difference that shows only on strong, wide glows. Low and Medium upscale it bilinearly.
 - The colour grade is free: a look-up table sampled inside the tonemap pass the renderer already runs. So is the colour draining at low health (the same pass's saturation).
 - A negative mipmap bias sharpens distant textures for almost nothing (within measurement noise), as long as anisotropic filtering is on.
@@ -121,3 +122,4 @@ GPU time on Medium at 1080p on the reference card, average over viewpoints (wors
 | Skyline windows with fake rooms, cloth and glove relief | 5.16 (5.34) ms | 6.66 (6.82) ms | 5.34 (5.76) ms |
 | Graded picture, lens pass, sharper mipmaps, bilinear glow upscale | 5.17 (5.34) ms | 6.60 (6.85) ms | 5.35 (5.82) ms |
 | AK-47 and M1911 rebuilt from the classic weapons pack, racks show world models | 5.15 (5.30) ms | 6.55 (6.68) ms | 5.39 (5.88) ms |
+| Corrected grade table, Slamcity grade, lighter vignette, haze in the Testing Area | 5.12 (5.27) ms | 6.53 (6.65) ms | 5.31 (5.76) ms |

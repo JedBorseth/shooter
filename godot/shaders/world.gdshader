@@ -54,7 +54,9 @@ varying vec3 world_normal;
 
 void vertex() {
 	world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	world_normal = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
+	// The normal matrix, not the model matrix: props are rotated and scaled
+	// unevenly, which would tilt their normals.
+	world_normal = normalize(MODEL_NORMAL_MATRIX * NORMAL);
 }
 
 // Sine-free hash (Dave Hoskins), cheaper than fract(sin()) on most GPUs.
