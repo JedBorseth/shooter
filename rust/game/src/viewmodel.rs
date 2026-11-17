@@ -1927,11 +1927,7 @@ mod tests {
             damping_for(KICK_ROT_STIFFNESS, KICK_ROT_ZETA),
             0.08,
         );
-        assert!(
-            spring.value.x.abs() < 0.05,
-            "{}",
-            spring.value.x
-        );
+        assert!(spring.value.x.abs() < 0.05, "{}", spring.value.x);
         // At the hip the muzzle always tips up, and the roll changes side
         // from shot to shot without a fixed alternation.
         let hip: Vec<Vector3> = (0..32).map(|i| shot_kick(i, 1.35, 0.0).1).collect();
