@@ -10,6 +10,7 @@ config/icon="res://assets/icon.svg"
 
 [autoload]
 
+UiThemeLoader="*res://scripts/ui/ui_theme_loader.gd"
 Settings="*res://scripts/settings.gd"
 Net="*res://scripts/net/bootstrap.gd"
 

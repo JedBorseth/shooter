@@ -24,8 +24,8 @@ if [[ -z "${DISPLAY:-}" ]]; then
 fi
 list="$(IFS=,; echo "${scenes[*]}")"
 # The editor rewrites project.godot in its own verbose format, and re-saves
-# the menu theme and the bus layout with new ids; keep ours.
-keep=(project.godot ui/menu_theme.tres default_bus_layout.tres)
+# the bus layout with new ids; keep ours.
+keep=(project.godot default_bus_layout.tres)
 for file in "${keep[@]}"; do
 	cp "$file" "$repo/.bake-keep-$(basename "$file")"
 done
