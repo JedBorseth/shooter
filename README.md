@@ -24,12 +24,47 @@ The plan, decisions, and reference projects are in [docs/roadmap.md](docs/roadma
 - `rust/sim/`: engine-independent, deterministic simulation: Zombies rules (`zombies.rs`: rounds, horde size and health, gaits, the straight-line chase, attacks, the two-hit rule, points), movement, weapons (fire rate, falloff, recoil patterns, spread, pellets, bolt and pump cycling, magazine and shell-by-shell reloads, ADS, scope sway and hold breath, switching, pickups), health (regeneration, fall damage, death), hit zones (head, chest, stomach, arms, legs, posed from stance and view angles, with damage multipliers), the combined per-player step that the client predicts and the server runs, and gamepad look (stick shaping, aim assist). `rust/sim/src/net/` holds the netcode core: the bit-packed wire protocol with delta compression, the server's input queue (with an input rate cap), client prediction and reconciliation, snapshot interpolation, lag compensation (hitbox history, rewind, and shot resolution), a network condition simulator, and server discovery (`discovery.rs`: the query and master server packets, and the browser's logic). No Godot types, so the client and the dedicated server share it and it can be unit-tested on its own.
 - `rust/game/`: the GDExtension that exposes the simulation to Godot: `FpsPlayer` (input, gamepad look and aim assist, hitscan, tracers, footsteps, camera, prediction), `AimAssistTarget`, `ViewmodelRig` and `WeaponView` (procedural weapon motion, muzzle flash, ejected shells, sounds), `WeaponPickup` (weapon racks), `Sentry` (a turret that shoots back), `TargetDummy` (an armed soldier), `Zombie` and `ZombieDirector` (Zombies mode), the characters in `rust/game/src/character/` (`SoldierRig` with its animation tree, `SoldierPoser` for aim and hand IK, `FpArms`, team palettes), `HitboxRig` (hit zones as physics shapes, F4 overlay), and networking in `rust/game/src/net/`: `NetServer` (the dedicated server, which also resolves every shot, applies damage, and keeps score), `NetClient`, `RemotePlayer` (other players, interpolated), and `ServerBrowser` (finds servers for the server browser; the server side answers its queries).
 - `rust/master/`: `shooter-master`, the master server that lists dedicated servers for the in-game server browser.
+- `rust/launcher/`: `shooter-launcher`, which keeps the latest nightly build installed and starts it, and keeps a dedicated server on the latest build (see [Play the latest build](#play-the-latest-build)).
 - `godot/shaders/`: viewmodel projection (own FOV, never clips walls), muzzle flash, damage vignette, and the blockout grid.
 - `godot/scripts/`: GDScript for the HUD, scope and damage overlays, pause and settings menu (`Settings` autoload), the title screen and server browser, impacts, tracers, and the `Net` autoload that starts a server or client from command-line options or the server browser (`godot/scripts/net/`).
 - `docs/`: roadmap, [art direction](docs/art-direction.md) (the look, the character pipeline, hit zones), and design notes.
 - `tools/build_weapon_audio.py`: builds the layered gunshot sounds from bart's CC0 firearm library and trims dead air from the other sounds. Run it with `uv run`; its docstring explains the steps.
 - `tools/build_textures.py` and `tools/build_skies.py`: the CC0 world texture library and sky images (run with `uv run`). `tools/bake_lightmaps.sh`: bakes each map's lightmaps (needs a GPU). `tools/build_props.py`: builds the map props from CC0 Poly Haven models in Blender. `tools/build_weapons.py`: rebuilds the guns as PBR models in Blender (`blender -b --python tools/build_weapons.py`; needs Blender 4.2+ with numpy). See [docs/art-direction.md](docs/art-direction.md).
 - `tools/build_character_assets.py`: builds the soldier (uniform regions, helmet, goggles, plate carrier, belt, pads, armbands, first-person arms) and the trimmed animation sets from Quaternius's CC0 Universal Animation Library. Run it with `uv run`; see [docs/art-direction.md](docs/art-direction.md).
+
+## Play the latest build
+
+Every merge to `main` publishes a build to the [nightly release](https://github.com/JedBorseth/shooter/releases/tag/nightly). The Shooter launcher installs it for you: each time you start it, it checks for a newer build, downloads it if there is one (about 300 MB), checks it, and starts the game. Without a connection it starts the build you already have. You do not need Git, Rust, or Godot.
+
+- **Windows:** download [shooter-launcher-windows-x86_64.exe](https://github.com/JedBorseth/shooter/releases/download/nightly/shooter-launcher-windows-x86_64.exe) and double-click it. The first time, Windows says it protected your PC because the launcher is not signed: click **More info**, then **Run anyway**.
+- **macOS** (Apple Silicon or Intel), in Terminal:
+
+  ```sh
+  curl -fLo ~/shooter-launcher https://github.com/JedBorseth/shooter/releases/download/nightly/shooter-launcher-macos-universal
+  chmod +x ~/shooter-launcher && ~/shooter-launcher
+  ```
+
+  Start it again with `~/shooter-launcher`. Downloading with `curl` keeps macOS from blocking the unsigned launcher.
+- **Linux** (x86_64):
+
+  ```sh
+  curl -fLo ~/.local/bin/shooter-launcher https://github.com/JedBorseth/shooter/releases/download/nightly/shooter-launcher-linux-x86_64
+  chmod +x ~/.local/bin/shooter-launcher && shooter-launcher
+  ```
+
+The launcher updates itself too. Builds are kept in `%LOCALAPPDATA%\Shooter` (Windows), `~/Library/Application Support/Shooter` (macOS), or `~/.local/share/shooter` (Linux): the current build and the one before it. Options:
+
+| Option | What it does |
+| --- | --- |
+| `--offline` | Start the installed build without checking for a new one. |
+| `--previous` | Start the build before the current one, if the latest is broken. |
+| `--dir PATH` | Keep builds somewhere else (`SHOOTER_DIR`). |
+| `--manifest URL` | Follow builds published somewhere else (`SHOOTER_MANIFEST`): a URL or a path to a `latest.json`. |
+| `-- ARGS` | Pass the rest to the game, for example `shooter-launcher -- --connect 10.0.0.5`. |
+
+A server that runs a newer build turns older games away; the server browser marks it **Newer version**. Restart the launcher to update. To run a dedicated server that updates itself, see [Run a server that stays up to date](#run-a-server-that-stays-up-to-date).
+
+If you work from a source checkout instead, `tools/dev-sync.sh` pulls, fetches the LFS assets, rebuilds the Rust code, reimports the assets, and starts the game in one step (`--no-run` to skip starting it; `GODOT=/path/to/godot` if Godot is not on your PATH).
 
 ## Set up a Linux playtest machine
 
@@ -230,12 +265,22 @@ The server decides every hit. Each firing input carries the moment the client wa
 
 The Build workflow also exports a headless Linux dedicated server (`shooter-<version>-server-linux-x86_64.zip`), with the master server binary next to it. It starts as a server on its own; pass `-- --port N --bots N --name NAME --master HOST` to configure it.
 
+### Run a server that stays up to date
+
+`shooter-launcher serve` runs the dedicated server from the latest nightly build and keeps it there. Every 5 minutes (`--check-minutes N`) it checks for a new build and downloads it while the old server keeps running. When nobody is connected (bots do not count), it stops the old server and starts the new one, so the server and freshly updated games always speak the same protocol. If the server exits, the launcher starts it again. Server options go after `--`:
+
+```sh
+shooter-launcher serve -- --name "Friday 1v1" --map nuketown --bots 3 --master 127.0.0.1:27010
+```
+
+It reads the server's player count through its query port, which it works out from `--port` or `--query-port`. [`tools/shooter-server.service`](tools/shooter-server.service) is a systemd user unit for it, with install steps. The master server is not part of this: keep running it as before.
+
 ## CI and builds
 
 GitHub Actions runs two workflows:
 
 - **CI** (`.github/workflows/ci.yml`) runs on every pull request and push to `main`: `cargo fmt` and `clippy -D warnings`, `cargo test` on Linux, Windows, and macOS, gdlint and gdformat, and the headless smoke test against Godot 4.7.2.
-- **Build** (`.github/workflows/build.yml`) exports playable clients and a headless Linux dedicated server on every pull request and every push to `main`: Linux, Windows, universal macOS, and server zips appear as artifacts on the workflow run, so you can play a PR before it merges. The macOS app is ad-hoc signed, not notarized, so macOS asks before opening it. Pushing a `v*` tag publishes the zips as a GitHub Release.
+- **Build** (`.github/workflows/build.yml`) exports playable clients and a headless Linux dedicated server on every pull request and every push to `main`: Linux, Windows, universal macOS, and server zips appear as artifacts on the workflow run, so you can play a PR before it merges. The macOS app is ad-hoc signed, not notarized, so macOS asks before opening it. Each build also includes the launcher for each platform and `latest.json`, which lists every file with its size and SHA-256 (`.github/scripts/write-manifest.sh`). On `main`, the workflow then replaces the files on the `nightly` pre-release with this build (`.github/scripts/publish-nightly.sh`), uploading `latest.json` last so the launcher never sees a half-published build. Pushing a `v*` tag publishes the same files as a GitHub Release.
 
 To cut a release:
 

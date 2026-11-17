@@ -96,7 +96,12 @@ func _process(delta: float) -> void:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		return
 	if status.begins_with("rejected"):
-		_leave("%s runs a different version of the game. Update to join it." % server_label)
+		_leave(
+			(
+				"%s runs a different version of the game. Restart the Shooter launcher to update."
+				% server_label
+			)
+		)
 	elif status == "disconnected":
 		if _joined:
 			_leave("Lost the connection to %s." % server_label)

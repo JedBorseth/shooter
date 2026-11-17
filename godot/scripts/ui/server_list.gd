@@ -188,14 +188,23 @@ func _fill(item: TreeItem, server: Dictionary) -> void:
 		for column in Column.values():
 			item.set_custom_color(column, MenuStyle.TEXT_FAINT)
 	if online and not compatible:
-		item.set_text(Column.MODE, "Other version")
-		item.set_tooltip_text(Column.NAME, "This server runs a different version of the game.")
+		var newer: bool = server.get("newer", false)
+		item.set_text(Column.MODE, "Newer version" if newer else "Older version")
+		item.set_tooltip_text(Column.NAME, version_note(server) % "This server")
 	elif online:
 		item.set_custom_color(Column.MAP, MenuStyle.TEXT_DIM)
 		item.set_custom_color(Column.MODE, MenuStyle.TEXT_DIM)
 		item.set_custom_color(Column.PING, _ping_color(server.ping_ms))
 		if server.players >= server.max_players:
 			item.set_custom_color(Column.PLAYERS, MenuStyle.ERROR)
+
+
+## Why `server` (another protocol version) cannot be joined, with "%s" for
+## its name. A newer server means this game is out of date.
+static func version_note(server: Dictionary) -> String:
+	if server.get("newer", false):
+		return "%s runs a newer version of the game. Restart the Shooter launcher to update."
+	return "%s runs an older version of the game."
 
 
 func _ping_color(ping_ms: float) -> Color:
