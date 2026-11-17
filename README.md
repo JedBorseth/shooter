@@ -69,7 +69,9 @@ Launch opens a lightweight title menu. **Testing Area**, the first option, loads
 existing arena on selection. **Team Deathmatch** sets up a local match (your name, the
 map, team size from 1v1 to 6v6 with bots in the empty places, bot skill, kill limit, and time limit),
 starts a dedicated server for it in the background, and joins it; leaving the match stops
-that server. **Slamcity** is the Team Deathmatch map, a city block with three lanes
+that server. **Gun Game** does the same for a free-for-all up a ladder of eight weapons
+(your name, the map, 2 to 12 players, bot skill, kills per weapon, and time limit; see
+[Gun Game](#gun-game)). **Slamcity** is the Team Deathmatch map, a city block with three lanes
 between parking-yard spawns at each end: a back alley with a fire escape up to the flats'
 roof (the high ground), Market Street around a sunken skate bowl, and a run of interiors
 (corner store, apartment lobby, laundromat) with windows onto the street. Offline it has
@@ -176,9 +178,13 @@ Multiplayer runs on a dedicated server, even on one machine. The server is the s
 godot --headless --path godot -- --server --name "Friday 1v1" --map nuketown --bots 3
 ```
 
-`--map arena` (default), `--map nuketown`, and `--map slamcity` select the server map. Browser joins load that same map; command-line clients can pass `--map nuketown` with `--connect`. Protocol 5 rejects older clients.
+`--map arena` (default), `--map nuketown`, and `--map slamcity` select the server map. Browser joins load that same map; command-line clients can pass `--map nuketown` with `--connect`. Servers reject clients that speak another protocol version (10 since Gun Game).
 
 Servers run Team Deathmatch: two teams, to 75 kills or 10 minutes (`--score-limit N`, `--time-limit MINUTES`). With `--bot-skill easy|normal|hard`, `--bots N` adds bots that play the match: they walk a navigation mesh the server bakes from the map, notice enemies in their field of view with a clear line of sight, and aim with a reaction time, a turn-rate limit, and an aim error that shrinks while they track. Each player who joins takes a bot's place, so teams stay at the size the server started with. Without `--bot-skill`, bots are scripted targets that strafe and fire bursts (`--bot-damage` lets those hurt). Players warm up in a lobby until everyone has pressed Ready in the loadout menu (L), then a countdown starts the match. `--auto-start` skips the ready-up. After the results, the next match counts down by itself.
+
+### Gun Game
+
+`--mode gungame` runs Gun Game instead (`shooter_sim::gun_game`): every player for themselves, with no loadouts. Everyone starts with the LSW-6 and climbs the ladder LSW-6, AK-47, M4A1, BR-3, PDW-9, M870, M40, M1911. Each kill with the current weapon counts toward the next (`--kills-per-weapon N`, 2 by default); the kill that moves a player up swaps the weapon in their hands on the spot, with a full magazine. A fall costs one weapon. The first player to score their kills with the M1911 wins; if the clock (`--time-limit`) runs out first, the player furthest up the ladder wins, and of players level with each other, the one who got there first. Weapon racks do nothing in Gun Game. Bots play it too, and the scoreboard lists everyone in one table by weapon.
 
 It listens for players on UDP port 27015 (`--port N` to change) and answers server browsers on the next port, 27016 (`--query-port N` to change). To run several servers on one machine, step the game port by 2 (27015, 27017, …) so the LAN search finds them all.
 

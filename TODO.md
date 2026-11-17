@@ -181,7 +181,9 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 - [ ] Performance budget and profiling: target 144 FPS on a mid-range GPU, CPU frame time per system.
 - [ ] Loadouts and a create-a-class screen.
 - [ ] Progression: XP, levels, weapon unlocks.
-- [ ] More modes: Domination, Search and Destroy, Free-for-all.
+- [x] Gun Game: free-for-all up a ladder of the eight weapons, with a local match button on the title screen (`rust/sim/src/gun_game.rs`).
+- [ ] More modes: Domination, Search and Destroy, Free-for-all. Free-for-all can reuse Gun Game's teamless server path (`Mode::free_for_all`).
+- [ ] Gun Game: a melee weapon, so a knife kill can set the victim back a weapon as in the classic rules; a sound for each new weapon.
 
 ## Tooling
 

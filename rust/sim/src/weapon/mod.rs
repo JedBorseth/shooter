@@ -225,6 +225,34 @@ impl CombatState {
         });
     }
 
+    /// A loadout of `weapon` alone, fully loaded and being drawn, with the
+    /// other slot empty (Gun Game).
+    pub fn only(weapon: WeaponId) -> Self {
+        let empty = match weapon.def().slot {
+            Slot::Primary => Slot::Secondary,
+            Slot::Secondary => Slot::Primary,
+        };
+        Self::new([weapon, weapon]).without(empty)
+    }
+
+    /// Takes away whatever the player carries and hands them `weapon` alone
+    /// ([`CombatState::only`]), coming up as if just drawn. Gun Game's server
+    /// does this when a kill moves a player up the ladder.
+    ///
+    /// The shot counter, breath, and scope sway carry on, so shot numbers stay
+    /// unique and seeds never repeat. A held trigger stays held, so a
+    /// semi-automatic weapon does not fire until it is pressed again.
+    pub fn rearm(&mut self, weapon: WeaponId) {
+        *self = Self {
+            shots_fired: self.shots_fired,
+            fire_held: self.fire_held,
+            sway_time: self.sway_time,
+            breath: self.breath,
+            winded: self.winded,
+            ..Self::only(weapon)
+        };
+    }
+
     /// How far into a scope the player is: 0 unless the weapon has one.
     pub fn scope_amount(&self) -> f32 {
         if self.def().scope.is_some() {

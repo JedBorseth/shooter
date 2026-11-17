@@ -6,6 +6,7 @@ extends Node
 ##   --server [--port N] [--bots N] [--bot-skill easy|normal|hard] [--bot-damage]
 ##            [--name NAME] [--master HOST[:PORT]]
 ##            [--query-port N] [--map arena|nuketown|slamcity]
+##            [--mode tdm|gungame] [--kills-per-weapon N]
 ##            [--score-limit N] [--time-limit MINUTES] [--auto-start]
 ##                                    run as a dedicated server (use with --headless);
 ##                                    with --bot-skill the bots play the match; without
@@ -14,7 +15,8 @@ extends Node
 ##                                    Server browsers see NAME; with --master the
 ##                                    server stays listed on that master server.
 ##                                    Browsers query UDP port N+1 (or --query-port).
-##                                    Team Deathmatch to N kills (75) or MINUTES (10);
+##                                    Team Deathmatch to N kills (75) or MINUTES (10),
+##                                    or Gun Game with N kills per weapon (2);
 ##                                    --auto-start skips the lobby's ready-up.
 ##   --connect HOST[:PORT] [--lag MS] [--jitter MS] [--loss PERCENT]
 ##                                    join a server; lag, jitter, and loss are
@@ -25,9 +27,9 @@ extends Node
 ##
 ## From the menus: the server browser calls `join`, and leaving a server or
 ## losing the connection calls `leave`, which returns to the server browser.
-## The title screen's Team Deathmatch setup calls `start_local_match`, which
-## runs a dedicated server in a background process and joins it; leaving
-## stops that server.
+## The title screen's Team Deathmatch and Gun Game setups call
+## `start_local_match`, which runs a dedicated server in a background process
+## and joins it; leaving stops that server.
 
 const SERVER_SCENE := "res://scenes/server.tscn"
 const ARENA_SCENE := "res://scenes/main.tscn"
@@ -114,9 +116,9 @@ func join(target: String, options: Dictionary = {}, arena: PackedScene = null) -
 	_attach_client(main, target, options)
 
 
-## Starts a dedicated server in a background process with `options` (`map`,
-## `bots`, `bot_skill`, `score_limit`, `time_limit` in minutes) and joins it.
-## The server does not answer server browsers.
+## Starts a dedicated server in a background process with `options` (`mode`,
+## `map`, `bots`, `bot_skill`, `score_limit`, `kills_per_weapon`, `time_limit`
+## in minutes) and joins it. The server does not answer server browsers.
 func start_local_match(options: Dictionary) -> void:
 	stop_local_server()
 	var map := String(options.get("map", "slamcity"))
@@ -141,8 +143,12 @@ func start_local_match(options: Dictionary) -> void:
 				str(int(options.get("bots", 0))),
 				"--bot-skill",
 				String(options.get("bot_skill", "normal")),
+				"--mode",
+				String(options.get("mode", "tdm")),
 				"--score-limit",
 				str(int(options.get("score_limit", 75))),
+				"--kills-per-weapon",
+				str(int(options.get("kills_per_weapon", 2))),
 				"--time-limit",
 				str(float(options.get("time_limit", 10))),
 			]
@@ -210,6 +216,9 @@ func _start_server(options: Dictionary) -> void:
 		server.score_limit = maxi(int(options["score-limit"]), 1)
 	if options.has("time-limit"):
 		server.time_limit_minutes = maxf(float(options["time-limit"]), 0.1)
+	server.mode = String(options.get("mode", "tdm"))
+	if options.has("kills-per-weapon"):
+		server.kills_per_weapon = clampi(int(options["kills-per-weapon"]), 1, 10)
 	server.auto_start = options.has("auto-start")
 	var previous := tree.current_scene
 	tree.root.add_child(server)

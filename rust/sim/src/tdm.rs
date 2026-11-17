@@ -1,7 +1,8 @@
 //! Team Deathmatch: teams, the match clock and score, and where players spawn.
 //!
-//! Two teams race to a kill limit before the clock runs out. A match goes
-//! through these phases:
+//! Two teams race to a kill limit before the clock runs out. Other modes
+//! ([`Mode`]) reuse the clock and the phases; Gun Game is every player for
+//! themselves (`crate::gun_game`). A match goes through these phases:
 //!
 //! - [`Phase::Lobby`]: players join, pick a loadout, and can run around and
 //!   shoot, but nothing counts. It ends when every human player is ready.
@@ -15,11 +16,55 @@
 
 use glam::Vec3;
 
-use crate::rng;
+use crate::{gun_game, rng};
 
 /// A team index: 0 or 1.
 pub type Team = u8;
 pub const TEAM_COUNT: usize = 2;
+
+/// The game a server runs.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Mode {
+    /// Two teams race to a kill limit.
+    #[default]
+    TeamDeathmatch,
+    /// Every player for themselves, up a ladder of weapons.
+    GunGame(gun_game::Rules),
+}
+
+impl Mode {
+    /// Parses a mode name as servers take it on the command line ("tdm" or
+    /// "gungame"), with default rules.
+    pub fn parse(name: &str) -> Option<Self> {
+        match name.trim().to_ascii_lowercase().as_str() {
+            "" | "tdm" | "teamdeathmatch" | "team_deathmatch" => Some(Self::TeamDeathmatch),
+            "gungame" | "gun_game" | "gun-game" => Some(Self::GunGame(gun_game::Rules::default())),
+            _ => None,
+        }
+    }
+
+    /// The short name [`Mode::parse`] takes.
+    pub fn key(&self) -> &'static str {
+        match self {
+            Self::TeamDeathmatch => "tdm",
+            Self::GunGame(_) => "gungame",
+        }
+    }
+
+    /// The name players see, as in server browsers.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::TeamDeathmatch => "Team Deathmatch",
+            Self::GunGame(_) => "Gun Game",
+        }
+    }
+
+    /// Whether every other player is an enemy. Teams then mean nothing:
+    /// everyone is on team 0.
+    pub fn free_for_all(&self) -> bool {
+        matches!(self, Self::GunGame(_))
+    }
+}
 
 /// Tunable match rules.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -51,9 +96,10 @@ pub enum Phase {
     Lobby,
     Countdown,
     Playing,
-    /// `winner` is `None` for a draw.
+    /// `winner` is a team in Team Deathmatch and a player id in free-for-all
+    /// modes; `None` is a draw.
     Ended {
-        winner: Option<Team>,
+        winner: Option<u8>,
     },
 }
 
@@ -63,8 +109,9 @@ pub enum Phase {
 pub enum Transition {
     /// The countdown ended: respawn everyone at their side and reset scores.
     Started,
-    /// The clock or the score limit ended the match.
-    Ended { winner: Option<Team> },
+    /// The clock or the score limit ended the match (`winner` as in
+    /// [`Phase::Ended`]).
+    Ended { winner: Option<u8> },
     /// The results are over; the next match counts down.
     NextCountdown,
 }
@@ -94,8 +141,16 @@ impl MatchState {
     }
 
     /// Advances the clock. `all_ready` is whether every human player is ready
-    /// (and there is at least one); it only matters in the lobby.
-    pub fn tick(&mut self, rules: &MatchRules, dt: f32, all_ready: bool) -> Option<Transition> {
+    /// (and there is at least one); it only matters in the lobby. `leader`
+    /// wins if the clock runs out: [`MatchState::team_leader`] in Team
+    /// Deathmatch, the player furthest ahead in other modes.
+    pub fn tick(
+        &mut self,
+        rules: &MatchRules,
+        dt: f32,
+        all_ready: bool,
+        leader: Option<u8>,
+    ) -> Option<Transition> {
         match self.phase {
             Phase::Lobby => {
                 if all_ready {
@@ -119,7 +174,7 @@ impl MatchState {
                 if self.time_left > 0.0 {
                     return None;
                 }
-                Some(self.end(rules, self.leader()))
+                Some(self.finish(rules, leader))
             }
             Phase::Ended { .. } => {
                 self.time_left -= dt;
@@ -148,7 +203,7 @@ impl MatchState {
         let killer = killer_team.filter(|t| *t != victim_team && usize::from(*t) < TEAM_COUNT)?;
         let score = &mut self.scores[usize::from(killer)];
         *score += 1;
-        (*score >= rules.score_limit).then(|| self.end(rules, Some(killer)))
+        (*score >= rules.score_limit).then(|| self.finish(rules, Some(killer)))
     }
 
     /// Returns to the lobby, for when every human has left.
@@ -156,7 +211,8 @@ impl MatchState {
         *self = Self::default();
     }
 
-    fn leader(&self) -> Option<Team> {
+    /// The team with more kills, or `None` when level.
+    pub fn team_leader(&self) -> Option<Team> {
         match self.scores[0].cmp(&self.scores[1]) {
             std::cmp::Ordering::Greater => Some(0),
             std::cmp::Ordering::Less => Some(1),
@@ -164,7 +220,9 @@ impl MatchState {
         }
     }
 
-    fn end(&mut self, rules: &MatchRules, winner: Option<Team>) -> Transition {
+    /// Ends the match now with `winner` (as in [`Phase::Ended`]), for modes
+    /// whose win the server decides.
+    pub fn finish(&mut self, rules: &MatchRules, winner: Option<u8>) -> Transition {
         self.phase = Phase::Ended { winner };
         self.time_left = rules.results;
         Transition::Ended { winner }
@@ -338,7 +396,8 @@ mod tests {
     fn run(state: &mut MatchState, seconds: f32, all_ready: bool) -> Vec<Transition> {
         let mut out = Vec::new();
         for _ in 0..(seconds * 10.0).round() as u32 {
-            out.extend(state.tick(&rules(), 0.1, all_ready));
+            let leader = state.team_leader();
+            out.extend(state.tick(&rules(), 0.1, all_ready, leader));
         }
         out
     }
@@ -348,7 +407,7 @@ mod tests {
         let mut state = MatchState::default();
         assert!(run(&mut state, 30.0, false).is_empty());
         assert_eq!(state.phase, Phase::Lobby);
-        state.tick(&rules(), 0.1, true);
+        state.tick(&rules(), 0.1, true, None);
         assert_eq!(state.phase, Phase::Countdown);
         assert_eq!(run(&mut state, 2.05, false), vec![Transition::Started]);
         assert_eq!(state.phase, Phase::Playing);
@@ -405,6 +464,43 @@ mod tests {
         assert_eq!(state.scores, [4, 4]);
         run(&mut state, 2.05, false);
         assert_eq!(state.scores, [0, 0]);
+    }
+
+    #[test]
+    fn the_server_can_end_a_match_for_a_player() {
+        let mut state = MatchState {
+            phase: Phase::Playing,
+            time_left: 10.0,
+            scores: [0, 0],
+        };
+        assert_eq!(
+            state.finish(&rules(), Some(42)),
+            Transition::Ended { winner: Some(42) }
+        );
+        assert_eq!(state.phase, Phase::Ended { winner: Some(42) });
+        assert_eq!(state.time_left, rules().results);
+        // When the clock runs out, the leader the server names wins.
+        let mut state = MatchState {
+            phase: Phase::Playing,
+            time_left: 0.05,
+            scores: [0, 0],
+        };
+        assert_eq!(
+            state.tick(&rules(), 0.1, false, Some(7)),
+            Some(Transition::Ended { winner: Some(7) })
+        );
+    }
+
+    #[test]
+    fn modes_parse_from_their_keys() {
+        assert_eq!(Mode::parse(""), Some(Mode::TeamDeathmatch));
+        assert_eq!(Mode::parse("tdm"), Some(Mode::TeamDeathmatch));
+        let gun_game = Mode::parse("GunGame").unwrap();
+        assert!(gun_game.free_for_all());
+        assert_eq!(Mode::parse(gun_game.key()), Some(gun_game));
+        assert_eq!(gun_game.label(), "Gun Game");
+        assert!(!Mode::TeamDeathmatch.free_for_all());
+        assert_eq!(Mode::parse("domination"), None);
     }
 
     #[test]

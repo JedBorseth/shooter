@@ -19,19 +19,23 @@ use glam::{IVec3, Vec2, Vec3};
 
 use super::Tick;
 use super::bits::{BitReader, BitWriter, DecodeError, DecodeResult};
+use crate::gun_game;
 use crate::hitbox::HitboxPose;
 use crate::look::PITCH_LIMIT;
 use crate::movement::{MoveState, Stance};
 use crate::player::{PlayerInput, PlayerState};
 use crate::score::{Award, ScoreTotals, Scored};
-use crate::tdm::{MAX_NAME_CHARS, Phase, TEAM_COUNT, Team};
+use crate::tdm::{MAX_NAME_CHARS, Mode, Phase, TEAM_COUNT, Team};
 use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState};
 
 /// Bumped whenever the wire format changes; mismatched clients are rejected.
 // Version 5 added Team Deathmatch: names, teams, ready-up, loadouts, the
 // match clock, and the scoreboard. Version 6 added burst fire to the
 // predicted combat state, and version 7 mantling to the movement state.
-pub const PROTOCOL_VERSION: u16 = 9;
+// Version 8 added empty weapon slots, version 9 hit flinches for every
+// player, and version 10 the game mode (Gun Game), player winners, and
+// ladder levels.
+pub const PROTOCOL_VERSION: u16 = 10;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
 pub const MAX_INPUTS_PER_PACKET: usize = 24;
 /// Wish vectors are sent as signed bytes; prediction must use the same values.
@@ -91,6 +95,8 @@ pub enum ServerMessage {
         tick: Tick,
         /// Ticks between snapshots, which sets the interpolation delay.
         snapshot_interval: u8,
+        /// The game the server runs, with its rules.
+        mode: Mode,
     },
     Reject {
         server_version: u16,
@@ -150,7 +156,8 @@ pub enum GameEvent {
     /// To everyone: a player left.
     Left { id: u8 },
     /// To everyone: the match phase or the team scores changed. `ends_at` is
-    /// the server tick the phase's clock runs out (none in the lobby).
+    /// the server tick the phase's clock runs out (none in the lobby). In
+    /// Gun Game the scores stay 0 and `score_limit` is the number of weapons.
     Match {
         phase: Phase,
         ends_at: Option<Tick>,
@@ -174,6 +181,10 @@ pub struct ScoreRow {
     pub ping_ms: u16,
     /// Ready to start, in the lobby (bots always are).
     pub ready: bool,
+    /// Gun Game: the player's place on the weapon ladder, and kills with
+    /// that weapon so far (0 in other modes).
+    pub level: u8,
+    pub level_kills: u8,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -555,12 +566,14 @@ impl ServerMessage {
                 player_id,
                 tick,
                 snapshot_interval,
+                mode,
             } => {
                 w.bits(0, TAG_BITS);
                 w.u16(PROTOCOL_VERSION);
                 w.u8(*player_id);
                 w.u32(*tick);
                 w.u8(*snapshot_interval);
+                write_mode(&mut w, mode);
             }
             ServerMessage::Reject { server_version } => {
                 w.bits(1, TAG_BITS);
@@ -601,6 +614,7 @@ impl ServerMessage {
                     player_id: r.u8()?,
                     tick: r.u32()?,
                     snapshot_interval: r.u8()?.max(1),
+                    mode: read_mode(&mut r)?,
                 })
             }
             1 => Ok(ServerMessage::Reject {
@@ -726,7 +740,10 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
             };
             w.bits(tag, 2);
             if let Some(winner) = winner {
-                w.bits(winner.map_or(0, |t| u32::from(t) + 1), 2);
+                w.bool(winner.is_some());
+                if let Some(winner) = winner {
+                    w.u8(winner);
+                }
             }
             write_option_tick(w, *ends_at);
             for score in scores {
@@ -745,6 +762,8 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
                 w.varint(row.deaths);
                 w.u16(row.ping_ms);
                 w.bool(row.ready);
+                w.u8(row.level);
+                w.u8(row.level_kills);
             }
         }
         GameEvent::Spawned { yaw } => {
@@ -830,12 +849,7 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
                 1 => Phase::Countdown,
                 2 => Phase::Playing,
                 _ => Phase::Ended {
-                    winner: match r.bits(2)? {
-                        0 => None,
-                        1 => Some(0),
-                        2 => Some(1),
-                        _ => return Err(DecodeError::Invalid("winner")),
-                    },
+                    winner: if r.bool()? { Some(r.u8()?) } else { None },
                 },
             };
             let ends_at = read_option_tick(r)?;
@@ -864,6 +878,8 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
                     deaths: r.varint()?,
                     ping_ms: r.u16()?,
                     ready: r.bool()?,
+                    level: r.u8()?,
+                    level_kills: r.u8()?,
                 });
             }
             Ok(GameEvent::Scoreboard { rows })
@@ -872,6 +888,26 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
             yaw: read_finite(r)?,
         }),
         _ => Err(DecodeError::Invalid("event tag")),
+    }
+}
+
+fn write_mode(w: &mut BitWriter, mode: &Mode) {
+    match mode {
+        Mode::TeamDeathmatch => w.bits(0, 2),
+        Mode::GunGame(rules) => {
+            w.bits(1, 2);
+            w.u8(rules.kills_per_weapon);
+        }
+    }
+}
+
+fn read_mode(r: &mut BitReader) -> DecodeResult<Mode> {
+    match r.bits(2)? {
+        0 => Ok(Mode::TeamDeathmatch),
+        1 => Ok(Mode::GunGame(gun_game::Rules {
+            kills_per_weapon: r.u8()?.max(1),
+        })),
+        _ => Err(DecodeError::Invalid("mode")),
     }
 }
 
@@ -1775,6 +1811,13 @@ mod tests {
                 scores: [3, 3],
                 score_limit: 1,
             },
+            // Gun Game: a player wins.
+            GameEvent::Match {
+                phase: Phase::Ended { winner: Some(203) },
+                ends_at: Some(10),
+                scores: [0, 0],
+                score_limit: 8,
+            },
             GameEvent::Scoreboard {
                 rows: vec![
                     ScoreRow {
@@ -1784,6 +1827,8 @@ mod tests {
                         deaths: 4,
                         ping_ms: 38,
                         ready: true,
+                        level: 7,
+                        level_kills: 1,
                     },
                     ScoreRow {
                         id: 203,
@@ -1794,6 +1839,27 @@ mod tests {
         ]);
         let bytes = msg.encode(&[]);
         assert_eq!(ServerMessage::decode(&bytes, |_| None).unwrap(), msg);
+    }
+
+    #[test]
+    fn welcomes_carry_the_mode() {
+        for mode in [
+            Mode::TeamDeathmatch,
+            Mode::GunGame(gun_game::Rules {
+                kills_per_weapon: 3,
+            }),
+        ] {
+            let msg = ServerMessage::Welcome {
+                player_id: 3,
+                tick: 77_000,
+                snapshot_interval: 2,
+                mode,
+            };
+            assert_eq!(
+                ServerMessage::decode(&msg.encode(&[]), |_| None).unwrap(),
+                msg
+            );
+        }
     }
 
     #[test]

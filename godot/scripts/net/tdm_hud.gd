@@ -1,14 +1,19 @@
 extends CanvasLayer
-## Team Deathmatch HUD, added by `Net` when joining a server:
+## Match HUD, added by `Net` when joining a server:
 ##
 ## - the score bar: our team's kills, the clock, and the enemy's kills, with
-##   the kill limit beneath;
-## - the kill feed, top right, in team colours;
-## - the scoreboard, held open with Tab (Back on a gamepad);
-## - the lobby, countdown, and results banners;
+##   the kill limit beneath. In Gun Game: our place on the weapon ladder, the
+##   clock, and the best of everyone else's, with the kills to the next weapon
+##   beneath;
+## - the kill feed, top right, in team colours (in Gun Game we are the only
+##   ally), which also says when someone reaches the final weapon;
+## - the scoreboard, held open with Tab (Back on a gamepad): one table per
+##   team, or in Gun Game one table ordered by weapon;
+## - the lobby, countdown, and results banners, and in Gun Game a callout for
+##   each new weapon;
 ## - the loadout menu (L, or D-pad up), which also holds the Ready button in
 ##   the lobby. It opens by itself when we join a lobby. A new primary applies
-##   from the next spawn.
+##   from the next spawn. Gun Game has no loadouts: the menu shows the ladder.
 
 const MenuStyle := preload("res://scripts/ui/menu_style.gd")
 
@@ -16,6 +21,7 @@ const ALLY := Color("7cc4ff")
 const ENEMY := Color("ff7a5c")
 const FEED_SECONDS := 6.0
 const FEED_LINES := 5
+const CALLOUT_SECONDS := 2.2
 ## A line for each loadout weapon; weapons not listed show only their name.
 const WEAPON_ROLES := {
 	"m4": "Assault rifle. Accurate, all-round.",
@@ -50,8 +56,21 @@ var _attachments := {}
 var _attachment_row: HBoxContainer
 var _ready_button: Button
 var _menu_status: Label
+var _menu_eyebrow: Label
+var _menu_title: Label
+var _loadout_box: VBoxContainer
+var _ladder_box: VBoxContainer
+var _ladder_labels: Array[Label] = []
+var _ladder_marked := -1
+var _callout: Label
+var _sub_callout: Label
+var _callout_left := 0.0
 var _is_ready := false
 var _opened_for_lobby := false
+## Gun Game: every player's last known level, to call out changes, and the
+## match phase they were seen in.
+var _levels := {}
+var _levels_phase := ""
 
 
 func _ready() -> void:
@@ -85,15 +104,24 @@ func _process(delta: float) -> void:
 		return
 	var info := client.match_info()
 	var phase: String = info.phase
-	var my_team: int = info.my_team
-	var scores: PackedInt32Array = info.scores
-	if my_team >= 0 and scores.size() == 2:
-		_ally_score.text = str(scores[my_team])
-		_enemy_score.text = str(scores[1 - my_team])
-	_limit.text = "FIRST TO %d" % info.score_limit if info.score_limit > 0 else ""
+	var ffa: bool = info.get("free_for_all", false)
+	if ffa:
+		_update_ladder_bar(info)
+	else:
+		var my_team: int = info.my_team
+		var scores: PackedInt32Array = info.scores
+		if my_team >= 0 and scores.size() == 2:
+			_ally_score.text = str(scores[my_team])
+			_enemy_score.text = str(scores[1 - my_team])
+		_limit.text = "FIRST TO %d" % info.score_limit if info.score_limit > 0 else ""
 	_clock.text = _clock_text(phase, info.seconds_left)
 	_update_banner(phase, info)
 	_age_feed(delta)
+	_age_callout(delta)
+	_loadout_box.visible = not ffa
+	_ladder_box.visible = ffa
+	_menu_eyebrow.text = String(info.get("mode_name", "Team Deathmatch")).to_upper()
+	_menu_title.text = "Weapon ladder" if ffa else "Loadout"
 
 	if phase == "lobby" and not _opened_for_lobby:
 		_opened_for_lobby = true
@@ -105,19 +133,71 @@ func _process(delta: float) -> void:
 
 	var results := phase == "ended"
 	_board.visible = results or (Input.is_action_pressed(&"scoreboard") and not _menu.visible)
-	_board_title.text = _results_title(info) if results else "TEAM DEATHMATCH"
+	_board_title.text = (
+		_results_title(info) if results else String(info.get("mode_name", "")).to_upper()
+	)
 
 	var alive := player == null or not is_instance_valid(player) or player.is_alive()
-	_hint.visible = not _menu.visible and (phase == "lobby" or not alive)
+	# Gun Game has no loadout to change between lives.
+	_hint.visible = not _menu.visible and (phase == "lobby" or (not alive and not ffa))
 	if phase == "lobby":
-		_hint.text = "WARM-UP  ·  %s  ·  [L] loadout and ready" % _ready_count()
+		_hint.text = (
+			"WARM-UP  ·  %s  ·  [L] %s and ready"
+			% [_ready_count(), "weapon ladder" if ffa else "loadout"]
+		)
 	else:
 		_hint.text = "[L] change loadout for your next spawn"
-	_menu_status.text = _ready_count() if phase == "lobby" else "Applies from your next spawn."
+	if phase == "lobby":
+		_menu_status.text = _ready_count()
+	else:
+		_menu_status.text = "" if ffa else "Applies from your next spawn."
 
 
 func _joined() -> bool:
 	return client != null and is_instance_valid(client) and client.is_joined()
+
+
+## Gun Game's score bar: our level and the best of everyone else's, out of
+## the ladder's length, and what the next kill does.
+func _update_ladder_bar(info: Dictionary) -> void:
+	var levels: int = info.score_limit
+	var me := {}
+	var best_other := -1
+	for entry: Dictionary in client.roster():
+		if entry.me:
+			me = entry
+		else:
+			best_other = maxi(best_other, int(entry.level))
+	if me.is_empty() or levels <= 0:
+		_ally_score.text = ""
+		_enemy_score.text = ""
+		_limit.text = ""
+		return
+	var level: int = me.level
+	_mark_ladder(level)
+	_ally_score.text = "%d/%d" % [level + 1, levels]
+	_enemy_score.text = "%d/%d" % [best_other + 1, levels] if best_other >= 0 else ""
+	var to_go: int = maxi(int(info.get("kills_per_weapon", 1)) - int(me.level_kills), 1)
+	var ladder := NetClient.gun_game_ladder()
+	var next := "WIN" if level + 1 >= levels else ladder[mini(level + 1, ladder.size() - 1)]
+	_limit.text = (
+		"%s  ·  %d KILL%s TO %s"
+		% [String(me.weapon).to_upper(), to_go, "" if to_go == 1 else "S", next.to_upper()]
+	)
+
+
+## Highlights our weapon on the ladder in the menu, and dims the ones behind us.
+func _mark_ladder(level: int) -> void:
+	if level == _ladder_marked:
+		return
+	_ladder_marked = level
+	for i in _ladder_labels.size():
+		var colour := MenuStyle.TEXT
+		if i == level:
+			colour = MenuStyle.ACCENT
+		elif i < level:
+			colour = MenuStyle.TEXT_FAINT
+		_ladder_labels[i].add_theme_color_override("font_color", colour)
 
 
 func _clock_text(phase: String, seconds_left: float) -> String:
@@ -134,7 +214,14 @@ func _update_banner(phase: String, info: Dictionary) -> void:
 	match phase:
 		"countdown":
 			_banner.text = "MATCH STARTS IN %d" % int(ceil(info.seconds_left))
-			_sub_banner.text = "Team Deathmatch  ·  first to %d kills" % info.score_limit
+			if info.get("free_for_all", false):
+				var kills: int = info.get("kills_per_weapon", 1)
+				_sub_banner.text = (
+					"Gun Game  ·  %d kill%s with each of %d weapons  ·  every player for themselves"
+					% [kills, "" if kills == 1 else "s", info.score_limit]
+				)
+			else:
+				_sub_banner.text = "Team Deathmatch  ·  first to %d kills" % info.score_limit
 		"ended":
 			_banner.text = _results_title(info)
 			_sub_banner.text = "Next match in %d" % int(ceil(info.seconds_left))
@@ -144,16 +231,29 @@ func _update_banner(phase: String, info: Dictionary) -> void:
 	_banner.visible = _banner.text != ""
 	_sub_banner.visible = _sub_banner.text != ""
 	if phase == "ended":
-		var won: bool = info.winner == info.my_team
+		var won := _we_won(info)
 		_banner.modulate = ALLY if won else (ENEMY if info.winner >= 0 else Color.WHITE)
 	else:
 		_banner.modulate = Color.WHITE
 
 
+## Whether the match's winner is our team, or in Gun Game us.
+func _we_won(info: Dictionary) -> bool:
+	if info.winner < 0:
+		return false
+	if info.get("free_for_all", false):
+		return info.winner == client.player_id()
+	return info.winner == info.my_team
+
+
 func _results_title(info: Dictionary) -> String:
 	if info.winner < 0:
 		return "DRAW"
-	return "VICTORY" if info.winner == info.my_team else "DEFEAT"
+	if _we_won(info):
+		return "VICTORY"
+	if info.get("free_for_all", false):
+		return "%s WINS" % String(client.name_of(info.winner)).to_upper()
+	return "DEFEAT"
 
 
 func _ready_count() -> String:
@@ -221,8 +321,74 @@ func _age_feed(delta: float) -> void:
 
 
 func _team_colour(id: int) -> Color:
-	var team := client.team_of(id)
-	return ALLY if team == client.match_info().my_team else ENEMY
+	var info := client.match_info()
+	if info.get("free_for_all", false):
+		return ALLY if id == client.player_id() else ENEMY
+	return ALLY if client.team_of(id) == info.my_team else ENEMY
+
+
+## A line in the kill feed that is not a kill.
+func _feed_notice(text: String, colour: Color) -> void:
+	var line := HBoxContainer.new()
+	line.alignment = BoxContainer.ALIGNMENT_END
+	line.set_meta(&"left", FEED_SECONDS)
+	line.add_child(_feed_label(text, colour, 16))
+	_feed.add_child(line)
+	while _feed.get_child_count() > FEED_LINES:
+		var oldest := _feed.get_child(0)
+		_feed.remove_child(oldest)
+		oldest.queue_free()
+
+
+# --- Gun Game callouts ---------------------------------------------------------
+
+
+## Calls out level changes from the scoreboard: our new weapon in the middle
+## of the screen, and anyone reaching the final weapon in the kill feed.
+func _check_levels(info: Dictionary) -> void:
+	if not info.get("free_for_all", false):
+		return
+	# A match starts everyone at the bottom: forget the last one's levels before
+	# its reset arrives, so it is not called out as everyone being set back.
+	if info.phase != _levels_phase:
+		if info.phase == "playing":
+			_levels.clear()
+		_levels_phase = info.phase
+	var playing: bool = info.phase == "playing"
+	var last: int = int(info.score_limit) - 1
+	for entry: Dictionary in client.roster():
+		var id: int = entry.id
+		var level: int = entry.level
+		var before: int = _levels.get(id, -1)
+		_levels[id] = level
+		if before < 0 or before == level or not playing:
+			continue
+		if entry.me:
+			if level > before:
+				_show_callout(
+					String(entry.weapon).to_upper(), "WEAPON %d / %d" % [level + 1, last + 1]
+				)
+			else:
+				_show_callout("SET BACK", String(entry.weapon).to_upper(), ENEMY)
+		if level == last and before < last:
+			var who := "YOU ARE" if entry.me else "%s IS" % String(entry.name).to_upper()
+			_feed_notice("%s ON THE FINAL WEAPON" % who, ALLY if entry.me else ENEMY)
+
+
+func _show_callout(text: String, sub: String, colour := Color.WHITE) -> void:
+	_callout.text = text
+	_callout.modulate = colour
+	_sub_callout.text = sub
+	_callout_left = CALLOUT_SECONDS
+
+
+func _age_callout(delta: float) -> void:
+	_callout_left = maxf(_callout_left - delta, 0.0)
+	var alpha := clampf(_callout_left / 0.5, 0.0, 1.0)
+	_callout.modulate.a = alpha
+	_sub_callout.modulate.a = alpha
+	_callout.visible = _callout_left > 0.0
+	_sub_callout.visible = _callout.visible
 
 
 # --- Scoreboard ----------------------------------------------------------------
@@ -231,7 +397,14 @@ func _team_colour(id: int) -> Color:
 func _refresh_board() -> void:
 	if client == null or not is_instance_valid(client):
 		return
-	var my_team: int = client.match_info().my_team
+	var info := client.match_info()
+	_check_levels(info)
+	if info.get("free_for_all", false):
+		_refresh_ladder_board()
+		return
+	_board_headers[1].visible = true
+	_board_tables[1].visible = true
+	var my_team: int = info.my_team
 	# Our team on top.
 	var order := [my_team, 1 - my_team] if my_team >= 0 else [0, 1]
 	var scores: PackedInt32Array = client.match_info().scores
@@ -262,6 +435,32 @@ func _refresh_board() -> void:
 			_board_cell(table, "BOT" if entry.bot else str(entry.ping), MenuStyle.TEXT_DIM)
 
 
+## Gun Game's scoreboard: everyone in one table, furthest up the ladder first.
+func _refresh_ladder_board() -> void:
+	var table := _board_tables[0]
+	for child in table.get_children():
+		child.queue_free()
+	_board_headers[1].visible = false
+	_board_tables[1].visible = false
+	var roster := client.roster()
+	var levels: int = client.match_info().score_limit
+	_board_headers[0].text = "EVERY PLAYER FOR THEMSELVES"
+	_board_headers[0].add_theme_color_override("font_color", MenuStyle.TEXT)
+	for heading in ["NAME", "WEAPON", "K", "D", "PING"]:
+		_board_cell(table, heading, MenuStyle.TEXT_FAINT, 14)
+	for entry: Dictionary in roster:
+		var colour := Color.WHITE if entry.me else MenuStyle.TEXT
+		var name_text: String = entry.name
+		if entry.bot:
+			name_text += "  [BOT]"
+		_board_cell(table, name_text, colour, 18, entry.me)
+		var weapon := "%d/%d  %s" % [int(entry.level) + 1, levels, entry.weapon]
+		_board_cell(table, weapon, ALLY if entry.me else ENEMY)
+		_board_cell(table, str(entry.kills), colour)
+		_board_cell(table, str(entry.deaths), colour)
+		_board_cell(table, "BOT" if entry.bot else str(entry.ping), MenuStyle.TEXT_DIM)
+
+
 func _board_cell(
 	table: GridContainer, text: String, colour: Color, size := 18, bold := false
 ) -> void:
@@ -272,9 +471,11 @@ func _board_cell(
 	if bold:
 		label.add_theme_constant_override("outline_size", 4)
 		label.add_theme_color_override("font_outline_color", ALLY.darkened(0.6))
-	if table.get_child_count() % 5 != 0:
+	var column := table.get_child_count() % 5
+	if column != 0:
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		label.custom_minimum_size = Vector2(70, 0)
+		# Wide enough for Gun Game's weapon column.
+		label.custom_minimum_size = Vector2(150 if column == 1 else 70, 0)
 	else:
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	table.add_child(label)
@@ -291,8 +492,10 @@ func _set_menu_open(open: bool) -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open else Input.MOUSE_MODE_CAPTURED
 	if open:
 		var current: Button = _weapon_buttons.get(String(client.loadout()))
-		if current != null:
+		if _loadout_box.visible and current != null:
 			current.grab_focus.call_deferred()
+		elif _ready_button.visible:
+			_ready_button.grab_focus.call_deferred()
 
 
 func _choose(key: String) -> void:
@@ -406,6 +609,18 @@ func _build_banners() -> void:
 	_sub_banner.position = Vector2(-400, -268)
 	_sub_banner.custom_minimum_size = Vector2(800, 0)
 	_root.add_child(_sub_banner)
+	_callout = _bar_label("", Color.WHITE, 40)
+	_callout.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	_callout.position = Vector2(-400, -220)
+	_callout.custom_minimum_size = Vector2(800, 0)
+	_callout.visible = false
+	_root.add_child(_callout)
+	_sub_callout = _bar_label("", MenuStyle.ACCENT, 18)
+	_sub_callout.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	_sub_callout.position = Vector2(-400, -170)
+	_sub_callout.custom_minimum_size = Vector2(800, 0)
+	_sub_callout.visible = false
+	_root.add_child(_sub_callout)
 	_hint = _bar_label("", MenuStyle.ACCENT, 17)
 	_hint.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
 	_hint.position = Vector2(-400, 84)
@@ -473,16 +688,51 @@ func _build_menu() -> void:
 	layout.add_theme_constant_override("separation", 10)
 	panel.add_child(layout)
 
-	var eyebrow := Label.new()
-	eyebrow.text = "TEAM DEATHMATCH"
-	eyebrow.add_theme_color_override("font_color", MenuStyle.ACCENT)
-	eyebrow.add_theme_font_size_override("font_size", 15)
-	layout.add_child(eyebrow)
-	var title := Label.new()
-	title.text = "Loadout"
-	title.add_theme_font_size_override("font_size", 34)
-	layout.add_child(title)
+	_menu_eyebrow = Label.new()
+	_menu_eyebrow.text = "TEAM DEATHMATCH"
+	_menu_eyebrow.add_theme_color_override("font_color", MenuStyle.ACCENT)
+	_menu_eyebrow.add_theme_font_size_override("font_size", 15)
+	layout.add_child(_menu_eyebrow)
+	_menu_title = Label.new()
+	_menu_title.text = "Loadout"
+	_menu_title.add_theme_font_size_override("font_size", 34)
+	layout.add_child(_menu_title)
+	_build_ladder(layout)
+	_loadout_box = VBoxContainer.new()
+	_loadout_box.add_theme_constant_override("separation", 10)
+	layout.add_child(_loadout_box)
+	_build_loadout(_loadout_box)
 
+	var spacer := Control.new()
+	spacer.custom_minimum_size = Vector2(0, 8)
+	layout.add_child(spacer)
+	_menu_status = Label.new()
+	_menu_status.add_theme_color_override("font_color", MenuStyle.TEXT_DIM)
+	_menu_status.add_theme_font_size_override("font_size", 16)
+	layout.add_child(_menu_status)
+	var buttons := HBoxContainer.new()
+	buttons.add_theme_constant_override("separation", 10)
+	layout.add_child(buttons)
+	_ready_button = Button.new()
+	_ready_button.text = "READY"
+	_ready_button.custom_minimum_size = Vector2(0, 52)
+	_ready_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_ready_button.add_theme_font_size_override("font_size", 20)
+	MenuStyle.style_button(_ready_button)
+	_ready_button.pressed.connect(_toggle_ready)
+	buttons.add_child(_ready_button)
+	var close := Button.new()
+	close.text = "Close  [L]"
+	close.custom_minimum_size = Vector2(0, 52)
+	close.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	close.add_theme_font_size_override("font_size", 20)
+	MenuStyle.style_button(close)
+	close.pressed.connect(_set_menu_open.bind(false))
+	buttons.add_child(close)
+
+
+## The loadout choices: a primary weapon, its attachment, and the sidearm.
+func _build_loadout(layout: VBoxContainer) -> void:
 	var group := ButtonGroup.new()
 	# Weapons with a description first, in that order, then any others.
 	var weapons := NetClient.loadout_weapons()
@@ -519,29 +769,26 @@ func _build_menu() -> void:
 	sidearm.add_theme_font_size_override("font_size", 16)
 	layout.add_child(sidearm)
 
-	var spacer := Control.new()
-	spacer.custom_minimum_size = Vector2(0, 8)
-	layout.add_child(spacer)
-	_menu_status = Label.new()
-	_menu_status.add_theme_color_override("font_color", MenuStyle.TEXT_DIM)
-	_menu_status.add_theme_font_size_override("font_size", 16)
-	layout.add_child(_menu_status)
-	var buttons := HBoxContainer.new()
-	buttons.add_theme_constant_override("separation", 10)
-	layout.add_child(buttons)
-	_ready_button = Button.new()
-	_ready_button.text = "READY"
-	_ready_button.custom_minimum_size = Vector2(0, 52)
-	_ready_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_ready_button.add_theme_font_size_override("font_size", 20)
-	MenuStyle.style_button(_ready_button)
-	_ready_button.pressed.connect(_toggle_ready)
-	buttons.add_child(_ready_button)
-	var close := Button.new()
-	close.text = "Close  [L]"
-	close.custom_minimum_size = Vector2(0, 52)
-	close.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	close.add_theme_font_size_override("font_size", 20)
-	MenuStyle.style_button(close)
-	close.pressed.connect(_set_menu_open.bind(false))
-	buttons.add_child(close)
+
+## Gun Game's ladder, top to bottom, with our weapon marked as it changes.
+func _build_ladder(layout: VBoxContainer) -> void:
+	_ladder_box = VBoxContainer.new()
+	_ladder_box.add_theme_constant_override("separation", 4)
+	_ladder_box.visible = false
+	layout.add_child(_ladder_box)
+	var detail := Label.new()
+	detail.text = (
+		"No loadouts: everyone climbs the same weapons. Kills move you up, a fall"
+		+ " moves you down, and the last weapon's last kill wins."
+	)
+	detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	detail.add_theme_color_override("font_color", MenuStyle.TEXT_DIM)
+	detail.add_theme_font_size_override("font_size", 16)
+	_ladder_box.add_child(detail)
+	var ladder := NetClient.gun_game_ladder()
+	for i in ladder.size():
+		var label := Label.new()
+		label.text = "%d   %s" % [i + 1, ladder[i]]
+		label.add_theme_font_size_override("font_size", 20)
+		_ladder_box.add_child(label)
+		_ladder_labels.append(label)

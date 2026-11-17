@@ -165,6 +165,10 @@ jobs:
       # the test process: they navigate, find each other, and score kills.
       - name: Run bots test
         run: godot --headless --path godot --script res://tests/bots_test.gd
+      # Six bots play 45 seconds of Gun Game on Slamcity: kills move them up
+      # the weapon ladder and swap their weapon, and the clock ends the match.
+      - name: Run Gun Game test
+        run: godot --headless --path godot --script res://tests/gun_game_test.gd
       # The benchmark needs a GPU to measure anything; this run only keeps the
       # script, its maps, and every graphics preset loading. See docs/performance.md.
       - name: Run benchmark script (no GPU)
