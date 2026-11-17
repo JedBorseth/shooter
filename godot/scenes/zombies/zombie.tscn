@@ -1,6 +1,6 @@
 [gd_scene format=3]
 
-[ext_resource type="PackedScene" path="res://scenes/characters/soldier.tscn" id="1_soldier"]
+[ext_resource type="PackedScene" path="res://scenes/characters/zombie_body.tscn" id="1_soldier"]
 [ext_resource type="AudioStream" path="res://assets/audio/zombies/groan_1.ogg" id="groan_1"]
 [ext_resource type="AudioStream" path="res://assets/audio/zombies/groan_2.ogg" id="groan_2"]
 [ext_resource type="AudioStream" path="res://assets/audio/zombies/groan_3.ogg" id="groan_3"]

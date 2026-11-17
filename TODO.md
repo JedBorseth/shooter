@@ -207,6 +207,8 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 - [x] Characters: one material and two surfaces per character, rest-space fabric and wear detail, and per-zombie skin tone and blood (`shaders/character.gdshader`).
 - [x] Effects and post: spark streaks, debris, soft dust, blood, bullet-hole decals, glowing tracers, ambient dust, and a motion blur option. Depth of field while aiming was left out (it blurs the iron sights).
 - [x] Skyline windows with fake rooms behind them (interior mapping in `world.gdshader`), and bump-mapped cloth, leather, and creases on characters.
+- [x] Soldiers as believable people: a MakeHuman body fitted to the existing skeleton, a combat shirt and trousers, modelled kit (helmet with cover and mounts, glasses, balaclava or neck gaiter or a bare face per character, plate carrier with pouches, magazines and a radio, belt and holster, knee pads), all in one mesh with one baked texture atlas and a team tint (`tools/build_character_assets.py`).
+- [ ] Zombies as distinct civilian bodies and outfits with torn cloth and wounds, from the same pipeline.
 - [ ] First-person arms: a higher-detail glove and sleeve model. The UAL mannequin's hands are the most visible low-poly surface in the game.
 
 ## Phase 6 and later: production polish

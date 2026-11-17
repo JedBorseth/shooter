@@ -14,7 +14,7 @@ use godot::classes::{
     AnimationLibrary, AnimationNode, AnimationNodeAnimation, AnimationNodeBlend2,
     AnimationNodeBlendSpace1D, AnimationNodeBlendTree, AnimationNodeOneShot,
     AnimationNodeTimeScale, AnimationNodeTransition, AnimationRootNode, AnimationTree,
-    BoneAttachment3D, INode3D, MeshInstance3D, Node3D, Skeleton3D, SphereMesh, StandardMaterial3D,
+    BoneAttachment3D, INode3D, MeshInstance3D, Node3D, ShaderMaterial, Skeleton3D, SphereMesh,
 };
 use godot::prelude::*;
 use shooter_sim::movement::Stance;
@@ -133,9 +133,9 @@ pub struct SoldierRig {
     model: OnReady<Gd<Node3D>>,
     tree: Option<Gd<AnimationTree>>,
     poser: Option<Gd<SoldierPoser>>,
-    /// Body and gear, for the hit flash overlay.
+    /// The body meshes (near and far), for the hit flash overlay.
     meshes: Vec<Gd<MeshInstance3D>>,
-    flash_material: Option<Gd<StandardMaterial3D>>,
+    flash_material: Option<Gd<ShaderMaterial>>,
     weapon: Option<(WeaponId, Gd<WeaponView>)>,
     applied_team: Option<Team>,
 
@@ -177,28 +177,33 @@ impl INode3D for SoldierRig {
         skeleton.clone().upcast::<Node>().add_child(&poser);
         self.poser = Some(poser);
 
-        // A zombie's gear includes its hidden helmet, which the overlay would
-        // draw as a ghost: flash only its body.
-        let flashing: &[&str] = if self.zombie {
-            &["Body"]
-        } else {
-            &["Body", "Gear"]
-        };
-        for name in flashing {
-            if let Some(mesh) = skeleton.try_get_node_as::<MeshInstance3D>(*name) {
-                self.meshes.push(mesh);
+        // Every kit is one mesh, `Body`, and a decimated copy, `BodyFar`, drawn
+        // in its place past FAR_DISTANCE (tools/build_character_assets.py).
+        let far = skeleton.try_get_node_as::<MeshInstance3D>("BodyFar");
+        if let Some(mut body) = skeleton.try_get_node_as::<MeshInstance3D>("Body") {
+            if far.is_some() {
+                body.set_visibility_range_end(FAR_DISTANCE);
+                body.set_visibility_range_end_margin(FAR_MARGIN);
             }
+            self.meshes.push(body);
         }
-        if let Some(mut arms) = skeleton.try_get_node_as::<MeshInstance3D>("ArmsFP") {
-            arms.set_visible(false);
+        if let Some(mut far) = far {
+            far.set_visibility_range_begin(FAR_DISTANCE);
+            far.set_visibility_range_begin_margin(FAR_MARGIN);
+            self.meshes.push(far);
         }
         self.flash_material = Some(palette::hit_flash_material());
         self.apply_team();
         // A per-character seed for the shader's wear, skin tone, and blood.
-        let variant = (self.base().instance_id().to_i64().unsigned_abs() % 1009) as f32 * 0.0731;
+        let seed = self.base().instance_id().to_i64().unsigned_abs();
+        let variant = (seed % 1009) as f32 * 0.0731;
         for child in skeleton.get_children().iter_shared() {
             if let Ok(mut mesh) = child.try_cast::<MeshInstance3D>() {
                 mesh.set_instance_shader_parameter("variant", &variant.to_variant());
+                if self.zombie {
+                    // A horde is many bodies at mid range: drop detail sooner.
+                    mesh.set_lod_bias(ZOMBIE_LOD_BIAS);
+                }
             }
         }
         if self.zombie {
@@ -215,7 +220,7 @@ impl INode3D for SoldierRig {
             self.flash = (self.flash - dt * 6.0).max(0.0);
             let alpha = (self.flash * 0.6).min(0.9);
             if let Some(material) = &mut self.flash_material {
-                material.set_albedo(Color::from_rgba(1.0, 0.25, 0.1, alpha));
+                palette::set_flash(material, alpha);
             }
             if self.flash == 0.0 {
                 for mesh in &mut self.meshes {
@@ -616,8 +621,12 @@ impl SoldierRig {
         let Some(skeleton) = self.skeleton() else {
             return;
         };
+        // The kit this character wears (face coverings), from a per-character seed.
+        let seed = self.base().instance_id().to_i64().unsigned_abs();
+        let hidden_parts = palette::hidden_parts(seed, team);
         for child in skeleton.get_children().iter_shared() {
-            if let Ok(mesh) = child.try_cast::<MeshInstance3D>() {
+            if let Ok(mut mesh) = child.try_cast::<MeshInstance3D>() {
+                mesh.set_instance_shader_parameter("hidden_parts", &hidden_parts.to_variant());
                 recolour(mesh, team);
             }
         }
@@ -789,6 +798,16 @@ impl SoldierRig {
     }
 }
 
+/// Distance (m) past which a character draws its far mesh, and the
+/// hysteresis around it. At 15 m a soldier is about 150 pixels tall at 1080p,
+/// where the baked normal map carries the detail the far mesh drops.
+const FAR_DISTANCE: f32 = 15.0;
+const FAR_MARGIN: f32 = 1.0;
+
+/// LOD bias for zombies (1 is the default): a horde is two dozen bodies at
+/// mid range, where the lower levels of detail look the same.
+const ZOMBIE_LOD_BIAS: f32 = 0.2;
+
 /// Eye offsets from the head bone, in skeleton space (the model faces +Z there).
 const EYE_SPREAD: f32 = 0.034;
 const EYE_UP: f32 = 0.075;
@@ -882,7 +901,7 @@ fn zombie_graph() -> Gd<AnimationNodeBlendTree> {
     graph
 }
 
-/// Swaps each surface's imported material for the team's material of the same role.
+/// Swaps each surface's imported material for the team's material of its kit.
 fn recolour(mut mesh: Gd<MeshInstance3D>, team: Team) {
     let Some(source) = mesh.get_mesh() else {
         return;
@@ -891,12 +910,10 @@ fn recolour(mut mesh: Gd<MeshInstance3D>, team: Team) {
         let Some(material) = source.surface_get_material(surface) else {
             continue;
         };
-        let role = material.get_name().to_string();
-        if role == "character" {
-            let character = palette::character_material(team, false);
+        if let Some(character) =
+            palette::material_for(&material.get_name().to_string(), team, false)
+        {
             mesh.set_surface_override_material(surface, &character);
-        } else if let Some(team_material) = palette::material(team, &role) {
-            mesh.set_surface_override_material(surface, &team_material);
         }
     }
 }

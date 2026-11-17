@@ -1,50 +1,60 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["numpy>=2"]
+# dependencies = ["numpy>=2", "pillow>=11"]
 # ///
-"""Builds the soldier character and its animation sets from Quaternius's
-Universal Animation Library (CC0).
+"""Builds the game's characters and their animation sets.
 
-Sources (download the free Standard zips and extract them):
+Run it with no arguments:
 
-- Universal Animation Library: https://opengameart.org/content/universal-animation-library
-  (``Godot/AnimationLibrary_Godot_Standard.glb``)
-- Universal Animation Library 2: https://opengameart.org/content/universal-animation-library-2
-  (``Unreal-Godot/UAL2_Standard.glb``)
+    uv run tools/build_character_assets.py
 
-Then run:
+It downloads its pinned CC0 sources into a cache (``--cache``, by default
+``~/.cache/shooter-characters``), checks their hashes, installs MPFB 2
+(MakeHuman for Blender) into a private Blender profile there, and then:
 
-    uv run tools/build_character_assets.py <path to AnimationLibrary_Godot_Standard.glb> \\
-        <path to UAL2_Standard.glb>
+1. Runs ``tools/blender_characters.py`` in Blender for each kit (the soldier,
+   the first-person arms, the zombies). It builds MakeHuman humans, dresses
+   them, models the gear, fits everything onto the soldier skeleton with its
+   weights, packs every part into one texture atlas, and bakes albedo, normal,
+   roughness, occlusion, and palette-role maps.
+2. Writes each kit as glTF on the original skeleton (copied node for node
+   from Quaternius's Universal Animation Library, so the game's bones, rest
+   pose, and proportions never change), one mesh with one material
+   (``character_<kit>``), and its atlas as ``<kit>_{albedo,normal,orm}.png``.
+3. Writes ``animations/ual1.glb`` and ``animations/ual2.glb``: the animations
+   the game uses, on the libraries' own skeletons, with everything else
+   stripped.
 
-It writes three files to ``godot/assets/characters/``:
+The animation libraries are not downloaded: get the free Standard zips of
+Universal Animation Library (https://opengameart.org/content/universal-animation-library)
+and Universal Animation Library 2
+(https://opengameart.org/content/universal-animation-library-2), extract them,
+and pass ``--ual1 .../Godot/AnimationLibrary_Godot_Standard.glb`` and
+``--ual2 .../Unreal-Godot/UAL2_Standard.glb`` (defaults: under ``~/.cache/ual-src``).
 
-- ``soldier/soldier.glb``: the mannequin as a soldier. The body is split into
-  surfaces by the bone each triangle follows (skin, uniform, gloves, pants,
-  boots), and low-poly gear is added on the same skin: helmet with a team band,
-  goggles, plate carrier with pouches, belt, knee pads, and team armbands. Gear is
-  lofted around the body itself, so it fits and deforms with it. A third mesh,
-  ``ArmsFP``, holds only the arms (sleeves, gloves, armbands) for the first-person
-  view. Material names are palette roles that the game recolours per team.
-- ``animations/ual1.glb`` and ``animations/ual2.glb``: the animations the game
-  uses, on the libraries' own skeletons, with everything else stripped.
-
-Godot retargets all three onto its humanoid skeleton profile when it imports
-them (see the ``.import`` files and ``bone_map_*.tres``), so animations from either
-library play on the soldier. Open the editor or run ``godot --headless --import``
-after this script.
+Godot retargets every file onto its humanoid skeleton profile when it imports
+them (see the ``.import`` files and ``bone_map_*.tres``). Open the editor or run
+``godot --headless --import`` afterwards. ``--kits soldier`` rebuilds one kit;
+``--reuse`` skips Blender and reassembles from the last bake.
 """
 
 from __future__ import annotations
 
 import argparse
 import copy
+import hashlib
 import json
+import os
+import shutil
 import struct
+import subprocess
+import urllib.request
+import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
+from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "godot" / "assets" / "characters"
@@ -80,32 +90,7 @@ UAL2_ANIMATIONS = [
     "ClimbUp_1m_RM",
 ]
 
-# Body regions by the bone a vertex mostly follows (UAL1 bone names).
-REGION_OF_BONE = {
-    "DEF-head": "skin",
-    "DEF-neck": "skin",
-    "DEF-spine.001": "uniform",
-    "DEF-spine.002": "uniform",
-    "DEF-spine.003": "uniform",
-    "DEF-shoulder.L": "uniform",
-    "DEF-shoulder.R": "uniform",
-    "DEF-upper_arm.L": "uniform",
-    "DEF-upper_arm.R": "uniform",
-    "DEF-forearm.L": "uniform",
-    "DEF-forearm.R": "uniform",
-    "DEF-hips": "pants",
-    "DEF-thigh.L": "pants",
-    "DEF-thigh.R": "pants",
-    "DEF-shin.L": "pants",
-    "DEF-shin.R": "pants",
-    "DEF-foot.L": "boots",
-    "DEF-foot.R": "boots",
-    "DEF-toe.L": "boots",
-    "DEF-toe.R": "boots",
-}
-ARM_BONES = ("DEF-upper_arm.", "DEF-forearm.", "DEF-hand.", "DEF-f_", "DEF-thumb.")
-
-# Palette roles, in material order. The game recolours them per team.
+# Palette roles, in the order the game numbers them (rust/game/src/character/palette.rs).
 ROLES = [
     "skin",
     "uniform",
@@ -118,21 +103,34 @@ ROLES = [
     "vest",
     "webbing",
     "accent",
+    "eyes",
+    "metal",
 ]
-# Colours the file ships with (the default team), so it also reads in other tools.
-DEFAULT_COLOURS = {
-    "skin": (0.62, 0.45, 0.34),
-    "uniform": (0.36, 0.38, 0.27),
-    "gloves": (0.12, 0.12, 0.11),
-    "pants": (0.33, 0.34, 0.25),
-    "boots": (0.16, 0.13, 0.1),
-    "mask": (0.2, 0.21, 0.17),
-    "helmet": (0.3, 0.32, 0.23),
-    "visor": (0.05, 0.06, 0.07),
-    "vest": (0.27, 0.29, 0.2),
-    "webbing": (0.2, 0.21, 0.15),
-    "accent": (0.15, 0.45, 0.85),
+# Roles whose albedo is shading detail only; the game colours them per team.
+TINTED = {"uniform", "gloves", "pants", "boots", "mask", "helmet", "vest", "webbing", "accent"}
+
+MH = "https://files.makehumancommunity.org/asset_packs"
+# name: (url, sha256). Every MakeHuman pack here is CC0 (its packs/*.json
+# lists each item's licence); MPFB's code is GPL-3.0 but only runs the build.
+SOURCES = {
+    "mpfb": (
+        "https://extensions.blender.org/download/sha256:c075b3e9b94b8e5556a5f03f4653602d02ea306de08126e8f55ed6dee28a2dad/add-on-mpfb-v2.0.18.zip",
+        "c075b3e9b94b8e5556a5f03f4653602d02ea306de08126e8f55ed6dee28a2dad",
+    ),
+    "makehuman_system_assets": (
+        f"{MH}/makehuman_system_assets/makehuman_system_assets_cc0.zip",
+        "b542127a8e25547c7c29c19f2d1d2adb9a664c80396ecd694095dbc8028a0107",
+    ),
+    "skins02": (f"{MH}/skins02/skins02_cc0.zip", "1613f1ef3afca53094511d26620ed7cf1d2dedc29ed3d384d60bdebe250698ae"),
+    "pants01": (f"{MH}/pants01/pants01_cc0.zip", "e4e0ec60db34f279be291a83cfd7b342a7c5cf09bb7676682a5f39f4f6ac4ad9"),
+    "shirts01": (f"{MH}/shirts01/shirts01_cc0.zip", "a5a723b0e84a109bb190fcfeac7f1de4138d875da3e30fe5b3340eac9f38bcd3"),
+    "shoes01": (f"{MH}/shoes01/shoes01_cc0.zip", "ded3f70428505eabbf1f6d7b5f61196a7366ef20757103d276ad0ed336c35ada"),
+    "gloves01": (f"{MH}/gloves01/gloves01_cc0.zip", "ecdaee1d02749d17352791d415cb622a883350cc8a4b90eda3725aef35d9afb2"),
+    "hands01": (f"{MH}/hands01/hands01_cc0.zip", "b874210dc3a9a179b73a3dd04976bc27521f47f985d106ce46fb45a480ee1701"),
 }
+# The MakeHuman file server answers a bare "Mozilla/5.0" with HTTP 466.
+USER_AGENT = "curl/8.0"
+
 
 COMPONENT = {
     np.dtype(np.int8): 5120,
@@ -239,93 +237,82 @@ class Writer:
         print(f"wrote {path.relative_to(ROOT)} ({path.stat().st_size / 1e6:.2f} MB)")
 
 
-@dataclass
-class Surface:
-    """One primitive: vertices with skinning, triangle indices, and a material role."""
-
-    role: str
-    positions: np.ndarray
-    normals: np.ndarray
-    joints: np.ndarray
-    weights: np.ndarray
-    indices: np.ndarray
-
-    def compacted(self) -> Surface:
-        used, remap = np.unique(self.indices, return_inverse=True)
-        return Surface(
-            self.role,
-            self.positions[used],
-            self.normals[used],
-            self.joints[used],
-            self.weights[used],
-            remap.reshape(-1, 3).astype(np.uint32),
-        )
-
-
-def write_merged_mesh(w: Writer, name: str, surfaces: list[Surface]) -> int:
-    """All surfaces as one primitive with the shared `character` material, so a
-    character draws in one call per mesh. Each vertex carries its rest-pose
-    position (UV = x, y; UV2.x = z), for detail that sticks to the body while it
-    animates, and its palette role (UV2.y = (index + 0.5) / 16), which
-    shaders/character.gdshader colours per team."""
-    positions, normals, joints, weights, indices, uv0, uv1 = [], [], [], [], [], [], []
+def write_character_mesh(w: Writer, name: str, parts: list[dict], joint_names: list[str]) -> tuple[int, int]:
+    """Every part as one primitive with the kit's one material, so a character
+    draws in one call. TEXCOORD_0 is the atlas; TEXCOORD_1 is the palette role
+    and the part group ((index + 0.5) / 16 each), which shaders/character.gdshader
+    reads. Returns the mesh index and the triangle count."""
+    positions, normals, tangents, uvs, roles, joints, weights, indices = [], [], [], [], [], [], [], []
     base = 0
-    for s in surfaces:
-        s = s.compacted()
-        if len(s.indices) == 0:
-            continue
-        n = len(s.positions)
-        positions.append(s.positions)
-        normals.append(s.normals)
-        joints.append(s.joints)
-        weights.append(s.weights)
-        indices.append(s.indices + base)
-        uv0.append(s.positions[:, :2])
-        role = (ROLES.index(s.role) + 0.5) / 16.0
-        uv1.append(np.column_stack([s.positions[:, 2], np.full(n, role)]))
+    for part in parts:
+        n = len(part["positions"])
+        positions.append(part["positions"])
+        normals.append(part["normals"])
+        tangents.append(part["tangents"])
+        uvs.append(part["uvs"])
+        role = (ROLES.index(part["role"]) + 0.5) / 16.0
+        group = (part["group"] + 0.5) / 16.0
+        roles.append(np.tile([role, group], (n, 1)))
+        j, wt = top_influences(part["weights"], part["bones"], joint_names)
+        joints.append(j)
+        weights.append(wt)
+        indices.append(part["indices"] + base)
         base += n
     pos = np.concatenate(positions).astype(np.float32)
+    nrm = np.concatenate(normals)
+    nrm /= np.linalg.norm(nrm, axis=1, keepdims=True)
+    tan = np.concatenate(tangents)
+    tan[:, :3] /= np.maximum(np.linalg.norm(tan[:, :3], axis=1, keepdims=True), 1e-9)
     index_type = np.uint16 if len(pos) < 65536 else np.uint32
+    tris = np.concatenate(indices)
     primitive = {
         "attributes": {
             "POSITION": w.add(pos, 34962, bounds=True),
-            "NORMAL": w.add(np.concatenate(normals).astype(np.float32), 34962),
-            "TEXCOORD_0": w.add(np.concatenate(uv0).astype(np.float32), 34962),
-            "TEXCOORD_1": w.add(np.concatenate(uv1).astype(np.float32), 34962),
+            "NORMAL": w.add(nrm.astype(np.float32), 34962),
+            "TANGENT": w.add(tan.astype(np.float32), 34962),
+            "TEXCOORD_0": w.add(np.concatenate(uvs).astype(np.float32), 34962),
+            "TEXCOORD_1": w.add(np.concatenate(roles).astype(np.float32), 34962),
             "JOINTS_0": w.add(np.concatenate(joints).astype(np.uint8), 34962),
             "WEIGHTS_0": w.add(np.concatenate(weights).astype(np.float32), 34962),
         },
-        "indices": w.add(np.concatenate(indices).reshape(-1).astype(index_type), 34963),
-        "material": len(ROLES),
+        "indices": w.add(tris.reshape(-1).astype(index_type), 34963),
+        "material": 0,
     }
     w.doc.setdefault("meshes", []).append({"name": name, "primitives": [primitive]})
+    return len(w.doc["meshes"]) - 1, len(tris)
+
+
+def top_influences(weights: np.ndarray, bones: list[str], joint_names: list[str]) -> tuple[np.ndarray, np.ndarray]:
+    """The four strongest bones per vertex, as skin joint indices, normalised."""
+    index = np.array([joint_names.index(b) for b in bones])
+    order = np.argsort(-weights, axis=1)[:, :4]
+    if order.shape[1] < 4:
+        order = np.pad(order, ((0, 0), (0, 4 - order.shape[1])))
+    top = np.take_along_axis(weights, order, axis=1)
+    top = np.where(top > 1e-3, top, 0.0)
+    total = top.sum(axis=1, keepdims=True)
+    if np.any(total <= 0):
+        raise SystemExit("a vertex has no bone weights")
+    joints = np.where(top > 0, index[order], 0)
+    return joints, top / total
+
+
+def write_stub_mesh(w: Writer, joint: int) -> int:
+    """A one-triangle mesh on one bone, so the importer builds the skeleton."""
+    prim = {
+        "attributes": {
+            "POSITION": w.add(np.array([[0, 0, 0], [0.001, 0, 0], [0, 0.001, 0]], np.float32), 34962, bounds=True),
+            "JOINTS_0": w.add(np.array([[joint, 0, 0, 0]] * 3, np.uint8), 34962),
+            "WEIGHTS_0": w.add(np.array([[1.0, 0, 0, 0]] * 3, np.float32), 34962),
+        },
+        "indices": w.add(np.array([0, 1, 2], np.uint16), 34963),
+        "material": 0,
+    }
+    w.doc.setdefault("meshes", []).append({"name": "Stub", "primitives": [prim]})
     return len(w.doc["meshes"]) - 1
 
 
-def write_mesh(w: Writer, name: str, surfaces: list[Surface]) -> int:
-    primitives = []
-    for s in surfaces:
-        s = s.compacted()
-        if len(s.indices) == 0:
-            continue
-        index_type = np.uint16 if len(s.positions) < 65536 else np.uint32
-        primitives.append(
-            {
-                "attributes": {
-                    "POSITION": w.add(s.positions.astype(np.float32), 34962, bounds=True),
-                    "NORMAL": w.add(s.normals.astype(np.float32), 34962),
-                    "JOINTS_0": w.add(s.joints.astype(np.uint8), 34962),
-                    "WEIGHTS_0": w.add(s.weights.astype(np.float32), 34962),
-                },
-                "indices": w.add(s.indices.reshape(-1).astype(index_type), 34963),
-                "material": ROLES.index(s.role),
-            }
-        )
-    w.doc.setdefault("meshes", []).append({"name": name, "primitives": primitives})
-    return len(w.doc["meshes"]) - 1
-
-
-def copy_rig(src: Gltf, w: Writer) -> None:
+def copy_rig(src: Gltf, w: Writer, material: str = "character") -> None:
     """Copies every node (same indices), the skin, and the scene. Meshes are
     attached by the caller."""
     nodes = copy.deepcopy(src.json["nodes"])
@@ -343,23 +330,9 @@ def copy_rig(src: Gltf, w: Writer) -> None:
     ]
     w.doc["scenes"] = copy.deepcopy(src.json["scenes"])
     w.doc["scene"] = src.json.get("scene", 0)
+    # The game swaps in a team's shaders/character.gdshader material by name.
     w.doc["materials"] = [
-        {
-            "name": role,
-            "pbrMetallicRoughness": {
-                "baseColorFactor": [*DEFAULT_COLOURS[role], 1.0],
-                "metallicFactor": 0.0,
-                "roughnessFactor": 0.4 if role == "visor" else 0.85,
-            },
-        }
-        for role in ROLES
-    ] + [
-        {
-            # Every merged mesh (write_merged_mesh). The game swaps in a team's
-            # shaders/character.gdshader material.
-            "name": "character",
-            "pbrMetallicRoughness": {"baseColorFactor": [0.4, 0.4, 0.4, 1.0], "metallicFactor": 0.0},
-        }
+        {"name": material, "pbrMetallicRoughness": {"baseColorFactor": [0.5, 0.5, 0.5, 1.0], "metallicFactor": 0.0}}
     ]
 
 
@@ -409,487 +382,306 @@ def copy_animations(src: Gltf, w: Writer, names: list[str]) -> None:
     w.doc["animations"] = out
 
 
-# --- Body ---------------------------------------------------------------------
+# --- Sources ----------------------------------------------------------------------
 
 
-@dataclass
-class Body:
-    """The source mannequin's vertices merged from its primitives, in bind pose."""
-
-    positions: np.ndarray
-    normals: np.ndarray
-    joints: np.ndarray
-    weights: np.ndarray
-    triangles: np.ndarray
-    dominant: np.ndarray
-    joint_names: list[str]
-    bone_heads: dict[str, np.ndarray]
-
-    @classmethod
-    def load(cls, src: Gltf) -> Body:
-        positions, normals, joints, weights, triangles = [], [], [], [], []
-        base = 0
-        for prim in src.json["meshes"][0]["primitives"]:
-            attrs = prim["attributes"]
-            pos = src.accessor(attrs["POSITION"]).astype(np.float64)
-            positions.append(pos)
-            normals.append(src.accessor(attrs["NORMAL"]).astype(np.float64))
-            joints.append(src.accessor(attrs["JOINTS_0"]).astype(np.int64))
-            weights.append(src.accessor(attrs["WEIGHTS_0"]).astype(np.float64))
-            triangles.append(src.accessor(prim["indices"]).reshape(-1, 3).astype(np.int64) + base)
-            base += len(pos)
-        joints_a = np.concatenate(joints)
-        weights_a = np.concatenate(weights)
-        dominant = joints_a[np.arange(len(joints_a)), weights_a.argmax(axis=1)]
-        names = src.joint_names()
-        heads = {name: world_matrix(src, src.node_index(name))[:3, 3] for name in names}
-        return cls(
-            np.concatenate(positions),
-            np.concatenate(normals),
-            joints_a,
-            weights_a,
-            np.concatenate(triangles),
-            dominant,
-            names,
-            heads,
-        )
-
-    def bone(self, name: str) -> int:
-        return self.joint_names.index(name)
-
-    def vertices_of(self, *prefixes: str) -> np.ndarray:
-        """Indices of vertices that mostly follow a bone whose name starts with a prefix."""
-        names = np.array(self.joint_names)[self.dominant]
-        mask = np.zeros(len(names), dtype=bool)
-        for p in prefixes:
-            mask |= np.char.startswith(names, p)
-        return np.nonzero(mask)[0]
-
-    def triangle_bones(self) -> list[str]:
-        """The bone each triangle follows: the majority of its corners' bones."""
-        out = []
-        for tri in self.dominant[self.triangles]:
-            values, counts = np.unique(tri, return_counts=True)
-            out.append(self.joint_names[values[counts.argmax()]])
-        return out
-
-    def surface(self, role: str, triangles: np.ndarray) -> Surface:
-        return Surface(role, self.positions, self.normals, self.joints, self.weights, triangles)
+def fetch(cache: Path) -> dict[str, Path]:
+    """Downloads and extracts every pinned source; returns name -> directory."""
+    out = {}
+    for name, (url, digest) in SOURCES.items():
+        archive = cache / "downloads" / f"{name}.zip"
+        if not archive.exists() or sha256(archive) != digest:
+            archive.parent.mkdir(parents=True, exist_ok=True)
+            print(f"downloading {name}")
+            request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+            with urllib.request.urlopen(request) as response, open(archive, "wb") as f:
+                shutil.copyfileobj(response, f)
+            if sha256(archive) != digest:
+                raise SystemExit(f"{name}: unexpected sha256 {sha256(archive)}")
+        target = cache / "src" / name
+        if not target.exists():
+            with zipfile.ZipFile(archive) as z:
+                z.extractall(target)
+        out[name] = target
+    return out
 
 
-def world_matrix(src: Gltf, index: int) -> np.ndarray:
-    nodes = src.json["nodes"]
-    parent = {c: i for i, n in enumerate(nodes) for c in n.get("children", [])}
-    m = local_matrix(nodes[index])
-    while index in parent:
-        index = parent[index]
-        m = local_matrix(nodes[index]) @ m
-    return m
+def sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
-def local_matrix(node: dict) -> np.ndarray:
-    if "matrix" in node:
-        return np.array(node["matrix"], dtype=np.float64).reshape(4, 4).T
-    x, y, z, w = node.get("rotation", [0, 0, 0, 1])
-    r = np.array(
-        [
-            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
-            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
-            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
-        ]
+def blender_env(cache: Path) -> dict[str, str]:
+    env = dict(os.environ)
+    env["BLENDER_USER_RESOURCES"] = str(cache / "blender-user")
+    return env
+
+
+def install_mpfb(cache: Path, src: dict[str, Path]) -> None:
+    if (cache / "blender-user" / "extensions" / "user_default" / "mpfb").exists():
+        return
+    subprocess.run(
+        ["blender", "-b", "--factory-startup", "--command", "extension", "install-file",
+         "-r", "user_default", "-e", str(cache / "downloads" / "mpfb.zip")],
+        env=blender_env(cache),
+        check=True,
     )
-    m = np.eye(4)
-    m[:3, :3] = r * np.array(node.get("scale", [1, 1, 1]))
-    m[:3, 3] = node.get("translation", [0, 0, 0])
-    return m
 
 
-# --- Gear -----------------------------------------------------------------------
+def asset_paths(src: dict[str, Path]) -> dict[str, str]:
+    """Short names for the MakeHuman assets the kits use."""
+    sys_ = src["makehuman_system_assets"]
+    files = {
+        "cargo": src["pants01"] / "clothes/cortu_cargo_pants/cortu_cargo_pants.mhclo",
+        "shirt": src["shirts01"] / "clothes/toigo_fisherman_sweater/toigo_fisherman_sweater.mhclo",
+        "boots": sys_ / "clothes/shoes03/shoes03.mhclo",
+        "gloves": src["gloves01"] / "clothes/toigo_gloves_short/toigo_gloves_short.mhclo",
+        "eyes": sys_ / "eyes/low-poly/low-poly.mhclo",
+        "skin_young_caucasian_male": sys_ / "skins/young_caucasian_male/young_caucasian_male.mhmat",
+    }
+    for name, path in files.items():
+        if not path.exists():
+            raise SystemExit(f"missing asset {name}: {path}")
+    return {k: str(v) for k, v in files.items()}
 
 
-@dataclass
-class Shape:
-    """Flat-shaded gear geometry before skinning."""
+# --- Kits -------------------------------------------------------------------------
 
-    role: str
-    positions: list[np.ndarray] = field(default_factory=list)
+# How each material is baked (tools/blender_characters.py): procedural relief
+# ("detail"), roughness, metallic, and for untinted roles their colour. Tinted
+# roles bake in grey; the game colours them per team.
+GREY = (0.5, 0.5, 0.5)
+MATERIALS = {
+    "uniform": {"use_diffuse": False, "use_bump": False, "colour": GREY,
+                "detail": {"kind": "ripstop", "strength": 0.3, "distance": 0.0012}, "roughness": 0.9},
+    "pants": {"detail": {"kind": "ripstop", "strength": 0.15, "distance": 0.0012}, "roughness": 0.9},
+    "gloves": {"detail": {"kind": "grain", "scale": 700, "strength": 0.25, "distance": 0.001}, "roughness": 0.6},
+    "boots": {"detail": {"kind": "grain", "scale": 500, "strength": 0.3, "distance": 0.001}, "roughness": 0.72},
+    "skin": {"roughness": 0.5},
+    "eyes": {"roughness": 0.08},
+    "helmet": {"colour": GREY, "detail": {"kind": "cordura", "strength": 0.3, "distance": 0.001, "fade": 0.35}, "roughness": 0.72},
+    "molle": {"colour": GREY, "detail": {"kind": "molle", "strength": 0.6, "distance": 0.0025}, "roughness": 0.85},
+    "cordura": {"colour": GREY, "detail": {"kind": "cordura", "strength": 0.35, "distance": 0.0012}, "roughness": 0.76},
+    "strap": {"colour": GREY, "detail": {"kind": "strap", "strength": 0.4, "distance": 0.001}, "roughness": 0.66},
+    "velcro": {"colour": (0.45, 0.45, 0.45), "detail": {"kind": "velcro", "strength": 0.4, "distance": 0.001}, "roughness": 0.95},
+    "band": {"colour": GREY, "detail": {"kind": "strap", "strength": 0.3, "distance": 0.0008, "fade": 0.1}, "roughness": 0.6},
+    "knit": {"colour": GREY, "detail": {"kind": "knit", "strength": 0.2, "distance": 0.0008, "cavity": 0.12, "fade": 0.15}, "roughness": 0.95},
+    "plastic": {"colour": GREY, "detail": {"kind": "grit", "scale": 300, "strength": 0.15, "distance": 0.0006}, "roughness": 0.55},
+    "rubber": {"colour": GREY, "detail": {"kind": "grain", "scale": 900, "strength": 0.2, "distance": 0.0006}, "roughness": 0.7},
+    "polymer": {"colour": (0.05, 0.05, 0.048), "detail": {"kind": "grit", "scale": 500, "strength": 0.15, "distance": 0.0005, "fade": 0.15}, "roughness": 0.5},
+    "metal": {"colour": (0.06, 0.06, 0.062), "detail": {"kind": "grit", "scale": 800, "strength": 0.1, "distance": 0.0003, "fade": 0.2}, "roughness": 0.42, "metallic": 0.6},
+    "lens": {"colour": (0.045, 0.05, 0.055), "roughness": 0.06},
+}
 
-    def tri(self, a, b, c) -> None:
-        self.positions.extend([np.asarray(a, float), np.asarray(b, float), np.asarray(c, float)])
+KITS = {
+    "soldier": {
+        "spec": {
+            "macro": {
+                "gender": 1.0,
+                "age": 0.5,
+                "muscle": 0.7,
+                "weight": 0.55,
+                "height": 0.6,
+                "race": {"caucasian": 0.8, "african": 0.1, "asian": 0.1},
+            },
+            "skin": "skin_young_caucasian_male",
+            "parts": [
+                {"asset": "cargo", "role": "pants", "subdiv": 1, "tighten": 0.016},
+                {"asset": "shirt", "role": "uniform", "tighten": 0.012, "decimate": 0.75},
+                {"asset": "boots", "role": "boots", "decimate": 0.4},
+                {"asset": "gloves", "role": "gloves", "decimate": 0.35},
+                {"asset": "eyes", "role": "eyes", "type": "Eyes"},
+            ],
+            "keep_body": {"bones": ["DEF-head", "DEF-neck"], "threshold": 0.35},
+            "body_decimate": 0.32,
+            "gear": {
+                "helmet": 0,
+                "glasses": 0,
+                "balaclava": 0,
+                "gaiter": 0,
+                "cover_decimate": 0.4,
+                "plate_carrier": [1.1, 1.4],
+                "belt": 0.99,
+                "knee_pads": 0,
+                "arm_bands": 0,
+                "knuckles": 0,
+            },
+        },
+        "density": {"skin": 3.0, "eyes": 2.0},
+        # Face coverings and the skin they replace never occlude each other.
+        "ao_rounds": [[[0, 3, 4], [0, 3, 4]], [[1], [0, 1]], [[2], [0, 2]]],
+        "size": 2048,
+        "poses": [["Crouch_Idle_Loop", 10], ["Sprint_Loop", 6]],
+        # BodyFar, past FAR_DISTANCE in rig.rs: about a fifth of the triangles.
+        "far_ratio": 0.2,
+        "meshes": {"Body": None},
+    },
+    # The undead: the same body and clothes with bare hands and no kit, so
+    # nothing under a helmet or plates is cut away.
+    "zombie": {
+        "spec": {
+            "macro": {
+                "gender": 1.0,
+                "age": 0.5,
+                "muscle": 0.45,
+                "weight": 0.5,
+                "height": 0.6,
+                "race": {"caucasian": 0.8, "african": 0.1, "asian": 0.1},
+            },
+            "skin": "skin_young_caucasian_male",
+            "parts": [
+                {"asset": "cargo", "role": "pants", "subdiv": 1},
+                {"asset": "shirt", "role": "uniform", "tighten": 0.018, "decimate": 0.75},
+                {"asset": "boots", "role": "boots", "decimate": 0.4},
+                {"asset": "eyes", "role": "eyes", "type": "Eyes"},
+            ],
+            "keep_body": {"bones": ["DEF-head", "DEF-neck", "DEF-hand.", "DEF-f_", "DEF-thumb."], "threshold": 0.35},
+            "body_decimate": 0.32,
+        },
+        "density": {"skin": 3.0, "eyes": 2.0},
+        "size": 2048,
+        "far_ratio": 0.3,
+        "meshes": {"Body": None},
+    },
+}
 
-    def quad(self, a, b, c, d) -> None:
-        self.tri(a, b, c)
-        self.tri(a, c, d)
-
-
-def ring_samples(points: np.ndarray, centre: np.ndarray, u: np.ndarray, v: np.ndarray, segs: int):
-    """Largest distance from `centre` in the (u, v) plane per angle bin, filled in
-    across empty bins."""
-    rel = points - centre
-    pu, pv = rel @ u, rel @ v
-    angles = np.arctan2(pv, pu)
-    radii = np.hypot(pu, pv)
-    bins = ((angles + np.pi) / (2 * np.pi) * segs).astype(int) % segs
-    out = np.full(segs, np.nan)
-    for b in range(segs):
-        sel = radii[bins == b]
-        if len(sel):
-            out[b] = sel.max()
-    if np.all(np.isnan(out)):
-        raise SystemExit("no vertices near a gear ring")
-    good = np.nonzero(~np.isnan(out))[0]
-    for b in np.nonzero(np.isnan(out))[0]:
-        dist = np.minimum(np.abs(good - b), segs - np.abs(good - b))
-        out[b] = out[good[dist.argmin()]]
-    return out
-
-
-def loft(
-    points: np.ndarray,
-    origin: np.ndarray,
-    axis: np.ndarray,
-    stations: list[float],
-    segs: int,
-    offset: float | list[float],
-    band: float,
-    arc: tuple[float, float] | None = None,
-    up_hint: np.ndarray | None = None,
-) -> np.ndarray:
-    """Rings around `axis` that wrap the given points, pushed out by `offset`.
-
-    Returns rings[station][segment] positions. Angle 0 points along `u`, which is
-    the up hint (default +Z, the character's front) made perpendicular to the axis.
-    With `arc`, only angles in that range (radians) are kept, for open shapes.
-    """
-    axis = axis / np.linalg.norm(axis)
-    hint = np.array([0.0, 0.0, 1.0]) if up_hint is None else up_hint
-    u = hint - axis * (hint @ axis)
-    u /= np.linalg.norm(u)
-    v = np.cross(axis, u)
-    offsets = offset if isinstance(offset, list) else [offset] * len(stations)
-    rings = []
-    for t, off in zip(stations, offsets):
-        centre_on_axis = origin + axis * t
-        rel = points - centre_on_axis
-        near = points[np.abs(rel @ axis) < band]
-        # Centre the ring on the points' middle in the plane.
-        mid = near.mean(axis=0)
-        centre = centre_on_axis + u * ((mid - centre_on_axis) @ u) + v * ((mid - centre_on_axis) @ v)
-        radii = ring_samples(near, centre, u, v, 72)
-        ring = []
-        count = segs if arc is None else segs + 1
-        for i in range(count):
-            if arc is None:
-                a = -np.pi + 2 * np.pi * i / segs
-            else:
-                a = arc[0] + (arc[1] - arc[0]) * i / segs
-            k = int((a + np.pi) / (2 * np.pi) * 72) % 72
-            # Widest of the neighbouring bins, so thin gaps don't dent the shell.
-            r = max(radii[(k + d) % 72] for d in (-2, -1, 0, 1, 2)) + off
-            ring.append(centre + (u * np.cos(a) + v * np.sin(a)) * r)
-        rings.append(np.array(ring))
-    return np.array(rings)
-
-
-def skin_rings(shape: Shape, rings: np.ndarray, closed: bool) -> None:
-    stations, count = rings.shape[:2]
-    for s in range(stations - 1):
-        for i in range(count if closed else count - 1):
-            j = (i + 1) % count
-            a, b, c, d = rings[s][i], rings[s][j], rings[s + 1][j], rings[s + 1][i]
-            shape.quad(a, b, c, d)
-
-
-def lip(shape: Shape, outer: np.ndarray, inset: float, centre: np.ndarray, closed: bool, flip: bool) -> None:
-    """A rim from a ring inward toward `centre`, giving the shell a visible thickness."""
-    inner = outer + (centre - outer) * inset
-    count = len(outer)
-    for i in range(count if closed else count - 1):
-        j = (i + 1) % count
-        if flip:
-            shape.quad(outer[i], inner[i], inner[j], outer[j])
-        else:
-            shape.quad(outer[j], inner[j], inner[i], outer[i])
+ARM_BONES = ("DEF-upper_arm.", "DEF-forearm.", "DEF-hand.", "DEF-f_", "DEF-thumb.")
 
 
-def cap(shape: Shape, ring: np.ndarray, apex: np.ndarray) -> None:
-    for i in range(len(ring)):
-        j = (i + 1) % len(ring)
-        shape.tri(ring[i], ring[j], apex)
-
-
-def box(shape: Shape, centre, size, frame: np.ndarray | None = None) -> None:
-    """An axis-aligned box (or one in `frame`'s columns)."""
-    frame = np.eye(3) if frame is None else frame
-    h = np.asarray(size, float) / 2
-    corners = {}
-    for sx in (-1, 1):
-        for sy in (-1, 1):
-            for sz in (-1, 1):
-                corners[(sx, sy, sz)] = np.asarray(centre) + frame @ (h * np.array([sx, sy, sz]))
-    c = corners
-    shape.quad(c[(1, -1, -1)], c[(1, 1, -1)], c[(1, 1, 1)], c[(1, -1, 1)])
-    shape.quad(c[(-1, -1, 1)], c[(-1, 1, 1)], c[(-1, 1, -1)], c[(-1, -1, -1)])
-    shape.quad(c[(-1, 1, -1)], c[(-1, 1, 1)], c[(1, 1, 1)], c[(1, 1, -1)])
-    shape.quad(c[(-1, -1, 1)], c[(-1, -1, -1)], c[(1, -1, -1)], c[(1, -1, 1)])
-    shape.quad(c[(-1, -1, 1)], c[(1, -1, 1)], c[(1, 1, 1)], c[(-1, 1, 1)])
-    shape.quad(c[(1, -1, -1)], c[(-1, -1, -1)], c[(-1, 1, -1)], c[(1, 1, -1)])
-
-
-def shape_surface(body: Body, shape: Shape, bones: list[str], outward_from: np.ndarray | None) -> Surface:
-    """Flat-shaded triangles, each corner skinned like the nearest body vertex that
-    follows one of `bones`. Faces are wound to point away from `outward_from` (a
-    point, or None to keep the winding as built)."""
-    pos = np.array(shape.positions)
-    tris = pos.reshape(-1, 3, 3)
-    normals = np.cross(tris[:, 1] - tris[:, 0], tris[:, 2] - tris[:, 0])
-    if outward_from is not None:
-        centres = tris.mean(axis=1)
-        flip = np.einsum("ij,ij->i", normals, centres - outward_from) < 0
-        tris[flip] = tris[flip][:, ::-1]
-        normals[flip] *= -1
-    lengths = np.linalg.norm(normals, axis=1, keepdims=True)
-    keep = lengths[:, 0] > 1e-10
-    tris, normals = tris[keep], normals[keep] / lengths[keep]
-    pos = tris.reshape(-1, 3)
-    norm = np.repeat(normals, 3, axis=0)
-    candidates = body.vertices_of(*bones)
-    cand_pos = body.positions[candidates]
-    nearest = np.array([candidates[np.argmin(((cand_pos - p) ** 2).sum(axis=1))] for p in pos])
-    joints = body.joints[nearest]
-    weights = body.weights[nearest]
-    # Drop influences from bones outside the list, then renormalise.
-    allowed = {body.bone(n) for n in body.joint_names if n.startswith(tuple(bones))}
-    mask = np.vectorize(lambda j: j in allowed)(joints)
-    weights = np.where(mask, weights, 0.0)
-    totals = weights.sum(axis=1, keepdims=True)
-    weights = np.where(totals > 0, weights / np.maximum(totals, 1e-9), 0.0)
-    # A corner with no allowed influence follows the first listed bone.
-    lone = totals[:, 0] <= 0
-    joints[lone] = 0
-    joints[lone, 0] = body.bone(next(n for n in body.joint_names if n.startswith(bones[0])))
-    weights[lone] = [1.0, 0.0, 0.0, 0.0]
-    indices = np.arange(len(pos), dtype=np.uint32).reshape(-1, 3)
-    return Surface(shape.role, pos, norm, joints, weights, indices)
-
-
-def build_gear(body: Body) -> list[Surface]:
-    up = np.array([0.0, 1.0, 0.0])
-    surfaces = []
-
-    # Helmet: a low-poly dome over the head, cut higher at the brow than at the
-    # back and sides, with a rim and a thin band in the team colour.
-    head = body.positions[body.vertices_of("DEF-head")]
-    upper = head[head[:, 1] > 1.66]
-    centre = np.array([0.0, 1.705, (upper[:, 2].min() + upper[:, 2].max()) / 2])
-    radii = np.array(
-        [
-            np.abs(upper[:, 0]).max() + 0.034,
-            head[:, 1].max() - centre[1] + 0.03,
-            (upper[:, 2].max() - upper[:, 2].min()) / 2 + 0.034,
-        ]
+def bake_kit(name: str, kit: dict, cache: Path, ual1: Path, assets: dict[str, str]) -> Path:
+    work = cache / "work" / name
+    work.mkdir(parents=True, exist_ok=True)
+    config = {
+        "ual1": str(ual1),
+        "out": str(work),
+        "assets": assets,
+        "spec": kit["spec"],
+        "roles": ROLES,
+        "materials": MATERIALS,
+        "density": kit.get("density", {}),
+        "size": kit["size"],
+        "ao_samples": 48,
+        "ao_rounds": kit.get("ao_rounds"),
+        "poses": kit.get("poses", []),
+        "far_ratio": kit.get("far_ratio"),
+    }
+    (work / "config.json").write_text(json.dumps(config, indent=1))
+    subprocess.run(
+        ["blender", "-b", "--python-exit-code", "1", "--python", str(ROOT / "tools" / "blender_characters.py"),
+         "--", str(work / "config.json")],
+        env=blender_env(cache),
+        check=True,
     )
-    segs = 14
-
-    def dome_ring(elevation: np.ndarray) -> np.ndarray:
-        """Points on the dome at an elevation (radians) per segment."""
-        out = []
-        for i in range(segs):
-            a = 2 * np.pi * i / segs  # 0 faces +Z, the character's front
-            e = elevation[i]
-            out.append(
-                centre
-                + np.array(
-                    [
-                        np.sin(a) * np.cos(e) * radii[0],
-                        np.sin(e) * radii[1],
-                        np.cos(a) * np.cos(e) * radii[2],
-                    ]
-                )
-            )
-        return np.array(out)
-
-    angles = 2 * np.pi * np.arange(segs) / segs
-    front = np.maximum(0.0, np.cos(angles)) ** 2
-    # The bottom edge: over the ears and the back of the neck, up at the brow.
-    bottom = np.radians(-14.0) + front * np.radians(30.0)
-    levels = [bottom]
-    for t in (0.18, 0.3, 0.55, 0.78):
-        levels.append(bottom + (np.radians(84.0) - bottom) * t)
-    rings = [dome_ring(e) for e in levels]
-    helmet = Shape("helmet")
-    accent = Shape("accent")
-    for k in range(len(rings) - 1):
-        target = accent if k == 1 else helmet
-        for i in range(segs):
-            j = (i + 1) % segs
-            target.quad(rings[k][i], rings[k][j], rings[k + 1][j], rings[k + 1][i])
-    cap(helmet, rings[-1], centre + np.array([0.0, radii[1], 0.0]))
-    # Rim: a short flare out and down, then a lip back in, for thickness.
-    flare = centre + (rings[0] - centre) * np.array([1.07, 1.0, 1.07]) - np.array([0, 0.008, 0])
-    for i in range(segs):
-        j = (i + 1) % segs
-        helmet.quad(flare[i], flare[j], rings[0][j], rings[0][i])
-    inner = centre + (flare - centre) * np.array([0.9, 1.0, 0.9])
-    for i in range(segs):
-        j = (i + 1) % segs
-        helmet.quad(inner[i], inner[j], flare[j], flare[i])
-    surfaces.append(shape_surface(body, helmet, ["DEF-head"], centre - np.array([0, 0.05, 0])))
-    surfaces.append(shape_surface(body, accent, ["DEF-head"], centre))
-
-    # Goggles over the eyes, and a strap around the back of the head.
-    origin = np.array([0.0, 0.0, 0.0])
-    goggles = Shape("visor")
-    g = loft(head, origin, up, [1.664, 1.704], 8, [0.011, 0.01], 0.014, arc=(-0.95, 0.95))
-    for i in range(8):
-        goggles.quad(g[0][i], g[0][i + 1], g[1][i + 1], g[1][i])
-    # Frame: a lip around the lenses, so they read from the side.
-    for k, d in ((0, -1.0), (1, 1.0)):
-        rim = g[k] + np.array([0.0, 0.005 * d, 0.0])
-        for i in range(8):
-            goggles.quad(g[k][i], g[k][i + 1], rim[i + 1], rim[i])
-    strap = loft(head, origin, up, [1.672, 1.69], 10, 0.008, 0.014, arc=(0.95, 2 * np.pi - 0.95))
-    for i in range(10):
-        goggles.quad(strap[0][i], strap[0][i + 1], strap[1][i + 1], strap[1][i])
-    surfaces.append(shape_surface(body, goggles, ["DEF-head"], centre - np.array([0, 0.03, 0])))
-
-    # Face mask: covers the lower face and neck.
-    mask = Shape("mask")
-    neck_head = body.positions[body.vertices_of("DEF-head", "DEF-neck")]
-    m = loft(neck_head, origin, up, [1.49, 1.545, 1.59, 1.628], 12, [0.008, 0.007, 0.006, 0.005], 0.012)
-    skin_rings(mask, m, True)
-    surfaces.append(shape_surface(body, mask, ["DEF-head", "DEF-neck"], np.array([0.0, 1.57, centre[2]])))
-
-    # Plate carrier: a shell around the chest and belly with a rim top and bottom.
-    torso = body.positions[body.vertices_of("DEF-spine")]
-    stations = [1.05, 1.12, 1.2, 1.28, 1.35, 1.41]
-    vest_rings = loft(torso, origin, up, stations, 14, 0.03, 0.03)
-    # Armholes: pull the top ring's sides down to the second-highest ring.
-    for i in range(14):
-        a = -np.pi + 2 * np.pi * i / 14
-        side = abs(np.sin(a))  # 1 at the sides (+-X), 0 front and back
-        if side > 0.8:
-            vest_rings[-1][i] = vest_rings[-2][i] + up * 0.02
-    vest = Shape("vest")
-    skin_rings(vest, vest_rings, True)
-    torso_centre = np.array([0.0, 1.22, torso[:, 2].mean()])
-    lip(vest, vest_rings[-1], 0.18, np.array([0.0, vest_rings[-1][0][1], torso_centre[2]]), True, False)
-    lip(vest, vest_rings[0], 0.15, np.array([0.0, vest_rings[0][0][1], torso_centre[2]]), True, True)
-    surfaces.append(shape_surface(body, vest, ["DEF-spine"], torso_centre))
-
-    # Pouches on the front of the carrier and the belt.
-    webbing = Shape("webbing")
-    front_z = vest_rings[1][:, 2].max()
-    for x in (-0.09, 0.0, 0.09):
-        box(webbing, (x, 1.135, front_z + 0.02), (0.07, 0.11, 0.05))
-        box(webbing, (x, 1.195, front_z + 0.022), (0.075, 0.018, 0.056))  # flap
-    radio = Shape("webbing")
-    box(radio, (0.1, 1.33, front_z + 0.012), (0.05, 0.09, 0.03))
-    surfaces.append(shape_surface(body, webbing, ["DEF-spine.001", "DEF-spine.002"], torso_centre))
-    surfaces.append(shape_surface(body, radio, ["DEF-spine.003"], torso_centre))
-
-    # Belt around the hips, with two side pouches.
-    hips = body.positions[body.vertices_of("DEF-hips", "DEF-spine.001")]
-    belt_rings = loft(hips, origin, up, [0.94, 0.99], 14, 0.018, 0.025)
-    belt = Shape("webbing")
-    skin_rings(belt, belt_rings, True)
-    hip_centre = np.array([0.0, 0.965, hips[:, 2].mean()])
-    lip(belt, belt_rings[1], 0.12, np.array([0.0, belt_rings[1][0][1], hip_centre[2]]), True, False)
-    lip(belt, belt_rings[0], 0.12, np.array([0.0, belt_rings[0][0][1], hip_centre[2]]), True, True)
-    for x in (-0.17, 0.17):
-        box(belt, (x, 0.93, hip_centre[2] - 0.02), (0.05, 0.1, 0.09))
-    surfaces.append(shape_surface(body, belt, ["DEF-hips"], hip_centre))
-
-    # Knee pads: half shells over the front of each knee.
-    for side, sign in (("L", 1.0), ("R", -1.0)):
-        knee = body.bone_heads[f"DEF-shin.{side}"]
-        leg = body.positions[body.vertices_of(f"DEF-shin.{side}", f"DEF-thigh.{side}")]
-        pad_rings = loft(leg, knee, up, [-0.06, -0.01, 0.05], 5, 0.016, 0.03, arc=(-1.0, 1.0))
-        pad = Shape("webbing")
-        for s in range(2):
-            for i in range(5):
-                pad.quad(pad_rings[s][i], pad_rings[s][i + 1], pad_rings[s + 1][i + 1], pad_rings[s + 1][i])
-        surfaces.append(shape_surface(body, pad, [f"DEF-shin.{side}"], knee - np.array([0, 0, 0.05])))
-
-    surfaces.extend(armbands(body))
-    return merge_by_role(surfaces)
+    return work
 
 
-def armbands(body: Body) -> list[Surface]:
-    out = []
-    for side in ("L", "R"):
-        shoulder = body.bone_heads[f"DEF-upper_arm.{side}"]
-        elbow = body.bone_heads[f"DEF-forearm.{side}"]
-        axis = elbow - shoulder
-        length = np.linalg.norm(axis)
-        arm = body.positions[body.vertices_of(f"DEF-upper_arm.{side}")]
-        rings = loft(arm, shoulder, axis, [length * 0.36, length * 0.52], 10, 0.012, 0.03, up_hint=np.array([0.0, 1.0, 0.0]))
-        band = Shape("accent")
-        skin_rings(band, rings, True)
-        mid = shoulder + axis / length * length * 0.44
-        out.append(shape_surface(body, band, [f"DEF-upper_arm.{side}"], mid))
-    return out
-
-
-def merge_by_role(surfaces: list[Surface]) -> list[Surface]:
-    merged: dict[str, list[Surface]] = {}
-    for s in surfaces:
-        merged.setdefault(s.role, []).append(s)
-    out = []
-    for role, parts in merged.items():
-        base = 0
-        indices = []
-        for p in parts:
-            indices.append(p.indices + base)
-            base += len(p.positions)
-        out.append(
-            Surface(
-                role,
-                np.concatenate([p.positions for p in parts]),
-                np.concatenate([p.normals for p in parts]),
-                np.concatenate([p.joints for p in parts]),
-                np.concatenate([p.weights for p in parts]),
-                np.concatenate(indices),
-            )
+def load_parts(work: Path, name: str = "mesh.npz") -> list[dict]:
+    data = np.load(work / name)
+    parts = []
+    for k in range(int(data["count"])):
+        role, group, obj = (str(x) for x in data[f"p{k}_meta"])
+        parts.append(
+            {
+                "name": obj,
+                "role": role,
+                "group": int(group),
+                "positions": data[f"p{k}_positions"],
+                "normals": data[f"p{k}_normals"],
+                "tangents": data[f"p{k}_tangents"],
+                "uvs": data[f"p{k}_uvs"],
+                "weights": data[f"p{k}_weights"],
+                "bones": [str(b) for b in data[f"p{k}_bones"]],
+                "indices": data[f"p{k}_indices"],
+            }
         )
+    return parts
+
+
+def subset(part: dict, keep_triangle: np.ndarray) -> dict:
+    tris = part["indices"][keep_triangle]
+    used, remap = np.unique(tris, return_inverse=True)
+    out = dict(part)
+    for key in ("positions", "normals", "tangents", "uvs", "weights"):
+        out[key] = part[key][used]
+    out["indices"] = remap.reshape(-1, 3)
     return out
 
 
-# --- Outputs --------------------------------------------------------------------
+def arm_parts(parts: list[dict]) -> list[dict]:
+    """The sleeves and gloves only: triangles whose every corner mostly follows
+    an arm bone."""
+    out = []
+    for p in parts:
+        if p["role"] not in ("uniform", "gloves", "accent"):
+            continue
+        bones = np.array(p["bones"])
+        dominant = bones[p["weights"].argmax(axis=1)]
+        arm = np.char.startswith(dominant, ARM_BONES[0])
+        for prefix in ARM_BONES[1:]:
+            arm |= np.char.startswith(dominant, prefix)
+        keep = arm[p["indices"]].all(axis=1)
+        if keep.any():
+            out.append(subset(p, keep))
+    return out
 
 
-def body_surfaces(body: Body) -> tuple[list[Surface], list[Surface]]:
-    """Third-person body surfaces by region, and the first-person arm surfaces."""
-    bones = body.triangle_bones()
-    regions: dict[str, list[int]] = {}
-    arms: dict[str, list[int]] = {}
-    for t, bone in enumerate(bones):
-        role = "gloves" if bone.startswith(("DEF-hand.", "DEF-f_", "DEF-thumb.")) else REGION_OF_BONE.get(bone)
-        if role is None:
-            raise SystemExit(f"no region for bone {bone}")
-        regions.setdefault(role, []).append(t)
-        corners = np.array(body.joint_names)[body.dominant[body.triangles[t]]]
-        if all(str(c).startswith(ARM_BONES) for c in corners):
-            arms.setdefault(role, []).append(t)
-    third = [body.surface(r, body.triangles[np.array(ts)]) for r, ts in regions.items()]
-    first = [body.surface(r, body.triangles[np.array(ts)]) for r, ts in arms.items()]
-    return third, first
-
-
-def build_soldier(src: Gltf) -> None:
-    body = Body.load(src)
+def write_kit_model(name: str, ual: Gltf, meshes: dict[str, list[dict]], path: Path) -> None:
     w = Writer()
-    copy_rig(src, w)
-    third, first = body_surfaces(body)
-    gear = build_gear(body)
-    attach_mesh(w, src, "Mannequin", write_merged_mesh(w, "Body", third), "Rig")
-    w.doc["nodes"][src.node_index("Mannequin")]["name"] = "Body"
-    attach_mesh(w, src, "Gear", write_merged_mesh(w, "Gear", gear), "Rig")
-    fp = first + [s for s in armbands(body)]
-    attach_mesh(w, src, "ArmsFP", write_merged_mesh(w, "ArmsFP", merge_by_role(fp)), "Rig")
-    tris = sum(len(s.compacted().indices) for s in third + gear)
-    print(f"soldier: {tris} triangles third-person, {len(body.joint_names)} bones")
-    w.save(OUT / "soldier" / "soldier.glb")
+    copy_rig(ual, w, material=f"character_{name}")
+    joint_names = ual.joint_names()
+    for mesh_name, parts in meshes.items():
+        index, tris = write_character_mesh(w, mesh_name, parts, joint_names)
+        if mesh_name == "Body" and "Mannequin" in [n["name"] for n in ual.json["nodes"]]:
+            attach_mesh(w, ual, "Mannequin", index, "Rig")
+            w.doc["nodes"][ual.node_index("Mannequin")]["name"] = "Body"
+        else:
+            attach_mesh(w, ual, mesh_name, index, "Rig")
+        print(f"{name}/{mesh_name}: {tris} triangles, {sum(len(p['positions']) for p in parts)} vertices")
+    # Unused nodes of the source (its mannequin) stay meshless.
+    w.save(path)
+
+
+def write_textures(name: str, work: Path, out_dir: Path) -> None:
+    """albedo (tinted roles reduced to detail centred on 0.5), normal, and ORM."""
+    albedo = np.asarray(Image.open(work / "albedo.png").convert("RGB"), dtype=np.float32) / 255.0
+    role_map = np.asarray(Image.open(work / "role.png").convert("L"), dtype=np.float32) / 255.0
+    roles = np.clip((role_map * 16.0).astype(int), 0, 15)
+    linear = srgb_to_linear(albedo)
+    lum = linear @ np.array([0.2126, 0.7152, 0.0722], np.float32)
+    for i, role in enumerate(ROLES):
+        if role not in TINTED:
+            continue
+        mask = roles == i
+        if not mask.any():
+            continue
+        mean = float(np.median(lum[mask]))
+        detail = np.clip(lum[mask] / max(mean, 1e-4) * 0.5, 0.0, 1.0)
+        linear[mask] = detail[:, None]
+    out_dir.mkdir(parents=True, exist_ok=True)
+    save_rgb(linear_to_srgb(linear), out_dir / f"{name}_albedo.png")
+    shutil.copy(work / "normal.png", out_dir / f"{name}_normal.png")
+    ao = np.asarray(Image.open(work / "ao.png").convert("L"), dtype=np.float32) / 255.0
+    rough = np.asarray(Image.open(work / "rough.png").convert("L"), dtype=np.float32) / 255.0
+    metal = np.asarray(Image.open(work / "metal.png").convert("L"), dtype=np.float32) / 255.0
+    save_rgb(np.dstack([ao, rough, metal]), out_dir / f"{name}_orm.png")
+
+
+def srgb_to_linear(c: np.ndarray) -> np.ndarray:
+    return np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+
+
+def linear_to_srgb(c: np.ndarray) -> np.ndarray:
+    return np.where(c <= 0.0031308, c * 12.92, 1.055 * np.power(np.maximum(c, 0), 1 / 2.4) - 0.055)
+
+
+def save_rgb(a: np.ndarray, path: Path) -> None:
+    Image.fromarray((np.clip(a, 0, 1) * 255 + 0.5).astype(np.uint8), "RGB").save(path, optimize=True)
+    print(f"wrote {path.relative_to(ROOT)}")
+
+
 
 
 def build_animations(src: Gltf, names: list[str], path: Path) -> None:
@@ -897,35 +689,55 @@ def build_animations(src: Gltf, names: list[str], path: Path) -> None:
     skeleton), and the listed animations."""
     w = Writer()
     copy_rig(src, w)
-    w.doc["materials"] = w.doc["materials"][:1]
     root = src.json["skins"][0]["joints"][0]
-    tri = Surface(
-        "skin",
-        np.array([[0, 0, 0], [0.001, 0, 0], [0, 0.001, 0]], float),
-        np.array([[0, 0, 1]] * 3, float),
-        np.zeros((3, 4), int),
-        np.array([[1.0, 0, 0, 0]] * 3),
-        np.array([[0, 1, 2]]),
-    )
-    tri.joints[:, 0] = src.json["skins"][0]["joints"].index(root)
-    mesh_node = next(
-        n["name"] for n in src.json["nodes"] if "mesh" in n
-    )
-    attach_mesh(w, src, mesh_node, write_mesh(w, "Stub", [tri]), "Rig")
+    mesh_node = next(n["name"] for n in src.json["nodes"] if "mesh" in n)
+    attach_mesh(w, src, mesh_node, write_stub_mesh(w, src.json["skins"][0]["joints"].index(root)), "Rig")
     copy_animations(src, w, names)
     w.save(path)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("ual1", type=Path, help="AnimationLibrary_Godot_Standard.glb")
-    parser.add_argument("ual2", type=Path, help="UAL2_Standard.glb")
+    ual_src = Path.home() / ".cache" / "ual-src"
+    parser.add_argument(
+        "--ual1",
+        type=Path,
+        default=ual_src / "x" / "Animation Library[Standard]" / "Godot" / "AnimationLibrary_Godot_Standard.glb",
+    )
+    parser.add_argument(
+        "--ual2",
+        type=Path,
+        default=ual_src / "y" / "Universal Animation Library 2 [Standard]" / "Unreal-Godot" / "UAL2_Standard.glb",
+    )
+    parser.add_argument("--cache", type=Path, default=Path.home() / ".cache" / "shooter-characters")
+    parser.add_argument("--kits", default=",".join(KITS), help="comma-separated kits to build")
+    parser.add_argument("--reuse", action="store_true", help="reassemble from the last bake, skipping Blender")
+    parser.add_argument("--no-animations", action="store_true")
     args = parser.parse_args()
     ual1 = Gltf(args.ual1)
-    ual2 = Gltf(args.ual2)
-    build_soldier(ual1)
-    build_animations(ual1, UAL1_ANIMATIONS, OUT / "animations" / "ual1.glb")
-    build_animations(ual2, UAL2_ANIMATIONS, OUT / "animations" / "ual2.glb")
+    src = fetch(args.cache)
+    install_mpfb(args.cache, src)
+    assets = asset_paths(src)
+    for name in args.kits.split(","):
+        kit = KITS[name]
+        work = args.cache / "work" / name
+        if not args.reuse:
+            work = bake_kit(name, kit, args.cache, args.ual1, assets)
+        parts = load_parts(work)
+        out_dir = OUT / name
+        meshes = {}
+        for mesh_name, select in kit["meshes"].items():
+            meshes[mesh_name] = parts if select is None else select(parts)
+        if kit.get("far_ratio"):
+            meshes["BodyFar"] = load_parts(work, "mesh_far.npz")
+        write_kit_model(name, ual1, meshes, out_dir / f"{name}.glb")
+        write_textures(name, work, out_dir)
+        if name == "soldier":
+            # Until the arms kit has its own model: the soldier's sleeves and gloves.
+            write_kit_model("soldier", ual1, {"ArmsFP": arm_parts(parts)}, OUT / "arms" / "arms.glb")
+    if not args.no_animations:
+        build_animations(ual1, UAL1_ANIMATIONS, OUT / "animations" / "ual1.glb")
+        build_animations(Gltf(args.ual2), UAL2_ANIMATIONS, OUT / "animations" / "ual2.glb")
 
 
 if __name__ == "__main__":

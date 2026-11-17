@@ -34,7 +34,7 @@ Rules of thumb for this renderer on this card, from the measurements below:
 - The colour grade is free: a look-up table sampled inside the tonemap pass the renderer already runs. So is the colour draining at low health (the same pass's saturation).
 - A negative mipmap bias sharpens distant textures for almost nothing (within measurement noise), as long as anisotropic filtering is on.
 - Textures are compressed on the GPU (BPTC/S3TC), with mipmaps, 1K for most surfaces and 2K only for the weapon in view. Sample each surface once (one projection), not three times.
-- Characters cost through their surfaces and skinning: keep each one to a few surfaces and use LODs.
+- Characters cost through their triangles at range more than through skinning or shading. Freezing every character's animation (no skinning) saved nothing measurable on Slamcity, and a plain material saved 0.03 ms. Drawing them at their coarsest level of detail saved 0.06 ms. Keep each character to one surface. Give it a decimated far mesh (`BodyFar`, drawn past 15 m), because Godot's automatic LODs simplify a kit of many small parts poorly. `tests/profile_frame.gd` measures all of these (`PROFILE_ONLY=characters`).
 
 ## Run the benchmark
 
@@ -128,5 +128,6 @@ GPU time on Medium at 1080p on the reference card, average over viewpoints (wors
 | Corrected grade table, Slamcity grade, lighter vignette, haze in the Testing Area | 5.12 (5.27) ms | 6.53 (6.65) ms | 5.31 (5.76) ms |
 | Slamcity rebuilt: a lightmapped dusk block under an elevated railway (same viewpoints; the water-jet and wreck close-ups, measured apart, are 7.2 to 7.4 ms) | 5.02 (5.17) ms | 7.27 (7.47) ms | 5.21 (5.66) ms |
 | Slamcity's road markings as painted geometry instead of decals (71 to 47 decals) | | 7.04 (7.26) ms | |
+| Soldiers rebuilt as MakeHuman people in modelled kit on one baked atlas, zombies on their own kit, far meshes past 15 m (characters alone: 0.11 to 0.09 ms on Slamcity; the same `main` measured alongside: 5.02, 7.07, 5.19 ms) | 4.99 (5.09) ms | 7.05 (7.30) ms | 5.14 (5.55) ms |
 
 Slamcity's 7.0 ms on Medium is about 0.5 ms more than the old map, over the usual 5% step. It was accepted for the rebuild: the rest is the denser map's own shading (decals, the skyline, small detail, and props are about 0.15 ms each), and the next cut would remove visible detail.

@@ -5,8 +5,7 @@
 //! The viewmodel rig moves the weapon; the arms follow it.
 
 use godot::classes::{
-    AnimationLibrary, AnimationPlayer, INode3D, MeshInstance3D, Node3D, Shader, ShaderMaterial,
-    Skeleton3D,
+    AnimationLibrary, AnimationPlayer, INode3D, MeshInstance3D, Node3D, Skeleton3D,
 };
 use godot::prelude::*;
 
@@ -139,33 +138,18 @@ impl FpArms {
     }
 }
 
-/// Replaces the arms' materials with viewmodel-shader copies of the team's colours.
+/// Replaces the arms' materials with the team's viewmodel-shader material.
 fn viewmodel_colours(mesh: &mut Gd<MeshInstance3D>, team: Team) {
     let Some(source) = mesh.get_mesh() else {
         return;
     };
-    let shader = load::<Shader>("res://shaders/viewmodel.gdshader");
     for surface in 0..source.get_surface_count() {
         let Some(material) = source.surface_get_material(surface) else {
             continue;
         };
-        let role = material.get_name().to_string();
-        if role == "character" {
-            let character = palette::character_material(team, true);
+        if let Some(character) = palette::material_for(&material.get_name().to_string(), team, true)
+        {
             mesh.set_surface_override_material(surface, &character);
-            continue;
         }
-        let Some(colour) = palette::material(team, &role) else {
-            continue;
-        };
-        let mut vm = ShaderMaterial::new_gd();
-        vm.set_shader(&shader);
-        vm.set_shader_parameter("albedo", &colour.get_albedo().to_variant());
-        vm.set_shader_parameter("roughness", &colour.get_roughness().to_variant());
-        if role == "accent" {
-            vm.set_shader_parameter("emission", &colour.get_emission().to_variant());
-            vm.set_shader_parameter("emission_energy", &0.35.to_variant());
-        }
-        mesh.set_surface_override_material(surface, &vm);
     }
 }
