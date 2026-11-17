@@ -1,21 +1,26 @@
 //! Weapons: definitions (loaded from data files) and the per-tick combat state machine.
 //!
-//! Classic Call of Duty rules: firing or aiming ends a sprint, a short
-//! "sprint-out" delay follows before the first shot, sprinting cancels a reload,
-//! and the view kicks along a fixed recoil pattern that recovers toward the
-//! original aim once the trigger is released. Bolt and pump weapons cycle after
-//! each shot; shotguns load shell by shell and firing interrupts the reload.
-//! Scoped weapons sway, and holding breath steadies them for a few seconds.
+//! Modern Call of Duty rules: firing or aiming ends a sprint, and a short
+//! "sprint-out" delay follows before the first shot. A reload carries on
+//! through a sprint and can be aimed through; its rounds count once the fresh
+//! magazine seats, part-way through. Bolt and pump weapons cycle after each
+//! shot (and finish a cycle cut short by a switch when drawn again); shotguns
+//! load shell by shell and firing interrupts the reload. Every weapon sways a
+//! little when aimed; scopes sway more, and holding breath steadies them.
 //!
-//! Recoil follows the arcade split: the aim kick here is small and recovers
-//! quickly, so sprays stay controllable. The weapon model kick and camera punch
-//! in `shooter-game` carry most of the violence, and never move the aim.
+//! Recoil kicks the view along a fixed per-weapon pattern with hashed
+//! variation. Most of each kick climbs and stays (the player pulls down to
+//! hold a spray on target); a smaller snap settles back after the shot. Both
+//! are aim, so the sights and the screen centre always show where the next
+//! round goes. Hip fire blooms with each shot. Crouching steadies the kick
+//! and the hip cone.
 //!
 //! Like movement, this is deterministic: spread, pellets, and recoil jitter are
 //! hashed from the player's shot counter, and scope sway is a function of
 //! accumulated tick time, so client prediction and the server agree.
 
 mod def;
+pub mod ttk;
 
 use std::f32::consts::TAU;
 
@@ -34,6 +39,10 @@ pub struct WeaponState {
     pub id: WeaponId,
     pub magazine: u16,
     pub reserve: u16,
+    /// The chamber is empty though rounds are loaded: a bolt or pump cycle,
+    /// or the charge after an empty reload, was cut short by a switch. The
+    /// weapon works its action when it is next drawn.
+    pub needs_cycle: bool,
     /// False for an empty slot (Zombies starts with only a sidearm). `id`
     /// then means nothing.
     pub carried: bool,
@@ -46,6 +55,7 @@ impl WeaponState {
             id,
             magazine: def.magazine,
             reserve: def.reserve,
+            needs_cycle: false,
             carried: true,
         }
     }
@@ -102,8 +112,12 @@ pub struct CombatState {
     /// Consecutive shots in the current spray, indexes the recoil pattern.
     pub burst: u16,
     pub since_shot: f32,
-    /// Aim offset from recoil, in radians: `x` pitch up, `y` yaw right.
+    /// Aim offset from the recoil snap that settles back, in radians: `x`
+    /// pitch up, `y` yaw right. The climb that stays is reported with each
+    /// shot ([`CombatEvent::Fired`]) and turns the view itself.
     pub recoil: Vec2,
+    /// Extra hip-fire cone from recent shots, in degrees.
+    pub bloom: f32,
     /// Total shots fired; seeds spread, pellets, and jitter deterministically.
     pub shots_fired: u32,
     pub fire_held: bool,
@@ -134,6 +148,7 @@ impl CombatState {
             burst: 0,
             since_shot: f32::MAX,
             recoil: Vec2::ZERO,
+            bloom: 0.0,
             shots_fired: 0,
             fire_held: false,
             sway_time: 0.0,
@@ -177,6 +192,10 @@ impl CombatState {
         let spread = &self.def().spread;
         let mut hip =
             spread.hip + (spread.hip_moving - spread.hip) * ctx.move_ratio.clamp(0.0, 1.0);
+        if ctx.crouched {
+            hip *= CROUCH_HIP_SPREAD;
+        }
+        hip += self.bloom;
         if ctx.airborne {
             hip = hip.max(spread.air);
         }
@@ -253,6 +272,19 @@ impl CombatState {
         };
     }
 
+    /// Whether a magazine reload has seated its fresh magazine (its rounds
+    /// count; what is left is the charge and re-shoulder).
+    pub fn magazine_seated(&self) -> bool {
+        let Action::Reloading { remaining, empty } = self.action else {
+            return false;
+        };
+        let reload = self.def().reload;
+        match (reload.magazine_time(empty), reload.mag_in()) {
+            (Some(total), Some(mag_in)) => total - remaining >= mag_in,
+            _ => false,
+        }
+    }
+
     /// How far into a scope the player is: 0 unless the weapon has one.
     pub fn scope_amount(&self) -> f32 {
         if self.def().scope.is_some() {
@@ -262,25 +294,30 @@ impl CombatState {
         }
     }
 
-    /// Scope sway in radians (`x` pitch up, `y` yaw right). The camera and the
-    /// shot both use it, so the reticle always shows where the round goes.
+    /// Aimed sway in radians (`x` pitch up, `y` yaw right): a slow drift
+    /// while aimed, larger through a scope. The camera and the shot both use
+    /// it, so the sights always show where the round goes.
     pub fn scope_sway(&self) -> Vec2 {
-        let Some(scope) = self.def().scope else {
-            return Vec2::ZERO;
-        };
-        let breath = if self.holding_breath {
-            0.1
-        } else if self.winded > 0.0 {
-            1.8
-        } else {
-            1.0
+        let def = self.def();
+        let (amplitude, breath) = match def.scope {
+            Some(scope) if scope.sway > 0.0 => {
+                let breath = if self.holding_breath {
+                    0.1
+                } else if self.winded > 0.0 {
+                    1.8
+                } else {
+                    1.0
+                };
+                (scope.sway, breath)
+            }
+            _ => (def.spread.ads_sway, 1.0),
         };
         let t = self.sway_time;
         let pattern = Vec2::new(
             fmath::sin(t * 1.7) * 0.6 + fmath::sin(t * 0.9 + 0.4) * 0.4,
             fmath::sin(t * 1.1 + 1.0) * 0.7 + fmath::cos(t * 0.6) * 0.3,
         );
-        pattern * scope.sway.to_radians() * breath * self.ads
+        pattern * amplitude.to_radians() * breath * self.ads
     }
 }
 
@@ -298,11 +335,19 @@ pub struct CombatInput {
     pub pickup: Option<WeaponId>,
 }
 
+/// Seconds past the fire interval that hip-fire bloom holds before shrinking.
+const BLOOM_HOLD: f32 = 0.1;
+
+/// Hip cone multiplier while crouched.
+const CROUCH_HIP_SPREAD: f32 = 0.8;
+
 /// Movement facts the weapon reacts to.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct CombatContext {
     pub sprinting: bool,
     pub airborne: bool,
+    /// Crouched (not sliding): a steadier kick and a tighter hip cone.
+    pub crouched: bool,
     /// Horizontal speed relative to walk speed.
     pub move_ratio: f32,
 }
@@ -312,10 +357,15 @@ pub enum CombatEvent {
     /// A shot left the barrel. `aim_offset` (radians, `x` pitch up, `y` yaw right)
     /// is recoil, spread, and sway relative to the view direction. Each of the
     /// weapon's pellets adds [`pellet_offset`]`(weapon, shot, i)` to it.
+    ///
+    /// `climb` (radians, same axes) is the part of this shot's kick that
+    /// stays: the shooter's client turns its view by it, as if the mouse had
+    /// moved, so later shots leave from the climbed aim.
     Fired {
         weapon: WeaponId,
         aim_offset: Vec2,
         shot: u32,
+        climb: Vec2,
     },
     DryFire {
         weapon: WeaponId,
@@ -323,6 +373,11 @@ pub enum CombatEvent {
     ReloadStarted {
         weapon: WeaponId,
         empty: bool,
+    },
+    /// The fresh magazine seated during a magazine reload: its rounds count
+    /// from now, even if the rest of the reload is cut short.
+    MagazineSeated {
+        weapon: WeaponId,
     },
     /// One round went in during a round-by-round reload.
     RoundLoaded {
@@ -383,12 +438,9 @@ pub fn step(
     }
 
     if ctx.sprinting {
+        // A reload carries on through a sprint; a burst does not.
         state.sprint_out = state.def().sprint_out_time;
-        state.reload_queued = false;
-        if state.is_reloading() {
-            // Classic rule: sprinting interrupts a reload; rounds already loaded stay.
-            state.action = Action::Ready;
-        }
+        state.burst_left = 0;
     } else {
         state.sprint_out = (state.sprint_out - dt).max(0.0);
     }
@@ -398,7 +450,7 @@ pub fn step(
 
     let def = state.def();
     // A reload can't cut a bolt or pump cycle short: it waits for the cycle to end.
-    if input.reload && !ctx.sprinting {
+    if input.reload {
         if matches!(state.action, Action::Cycling { .. }) {
             state.reload_queued = true;
         } else {
@@ -420,7 +472,11 @@ pub fn step(
         state.action = Action::Ready;
     }
 
-    let aim_allowed = matches!(state.action, Action::Ready | Action::Cycling { .. });
+    // Aiming works through a reload and a bolt or pump cycle, not a switch.
+    let aim_allowed = !matches!(
+        state.action,
+        Action::Lowering { .. } | Action::Raising { .. }
+    );
     let can_aim = input.aim && !ctx.sprinting && aim_allowed;
     let ads_step = dt / def.ads_time;
     state.ads = if can_aim {
@@ -429,6 +485,10 @@ pub fn step(
         (state.ads - ads_step).max(0.0)
     };
     update_breath(state, input.hold_breath, dt);
+    // Bloom holds through a spray and shrinks once the trigger rests.
+    if state.since_shot > def.fire_interval() + BLOOM_HOLD {
+        state.bloom = (state.bloom - def.spread.bloom_recovery * dt).max(0.0);
+    }
 
     let ready = matches!(state.action, Action::Ready) && !ctx.sprinting && state.sprint_out <= 0.0;
     if trigger && ready && state.cooldown <= 0.0 {
@@ -451,7 +511,6 @@ pub fn step(
     } else if state.weapon().magazine == 0
         && matches!(state.action, Action::Ready)
         && state.cooldown <= 0.0
-        && !ctx.sprinting
     {
         // Auto-reload once the last round's cooldown has passed.
         try_start_reload(state, events);
@@ -471,6 +530,7 @@ fn pick_up(state: &mut CombatState, weapon: WeaponId, events: &mut Vec<CombatEve
     state.slots[usize::from(slot)] = WeaponState::full(weapon);
     state.active = slot;
     state.burst = 0;
+    state.bloom = 0.0;
     state.burst_left = 0;
     state.cooldown = 0.0;
     state.ads = 0.0;
@@ -487,13 +547,32 @@ fn request_switch(state: &mut CombatState, input: &CombatInput) {
     if !state.slots.get(usize::from(to)).is_some_and(|s| s.carried) {
         return;
     }
-    let already_going = match state.action {
-        Action::Lowering { to: target, .. } => target == to,
-        _ => to == state.active,
-    };
-    if already_going {
-        return;
+    match state.action {
+        Action::Lowering { to: target, .. } if target == to => return,
+        // Changed their mind: bring the weapon in hand back up from as far
+        // as it got, instead of lowering it all the way and drawing it again.
+        Action::Lowering { remaining, .. } if to == state.active => {
+            let def = state.def();
+            let lowered = 1.0 - (remaining / def.lower_time.max(1e-3)).clamp(0.0, 1.0);
+            state.action = Action::Raising {
+                remaining: def.raise_time * lowered,
+            };
+            return;
+        }
+        Action::Lowering { .. } => {}
+        _ if to == state.active => return,
+        Action::Cycling { .. } => {
+            // The round is not chambered yet: work the action when next drawn.
+            state.slots[usize::from(state.active)].needs_cycle = true;
+        }
+        Action::Reloading { empty: true, .. } if state.magazine_seated() => {
+            // An empty reload cut off before the charge.
+            state.slots[usize::from(state.active)].needs_cycle = true;
+        }
+        _ => {}
     }
+    state.burst_left = 0;
+    state.reload_queued = false;
     state.action = Action::Lowering {
         remaining: state.def().lower_time,
         to,
@@ -504,22 +583,30 @@ fn advance_action(state: &mut CombatState, dt: f32, events: &mut Vec<CombatEvent
     match state.action {
         Action::Ready => {}
         Action::Reloading { remaining, empty } => {
+            let was_seated = state.magazine_seated();
             let remaining = remaining - dt;
-            if remaining > 0.0 {
-                state.action = Action::Reloading { remaining, empty };
-                return;
+            state.action = Action::Reloading { remaining, empty };
+            if !was_seated && (remaining <= 0.0 || state.magazine_seated()) {
+                // The fresh magazine is in: its rounds count from here, even
+                // if the rest of the reload is cut short.
+                let slot = &mut state.slots[usize::from(state.active)];
+                let take = slot
+                    .id
+                    .def()
+                    .magazine
+                    .saturating_sub(slot.magazine)
+                    .min(slot.reserve);
+                slot.magazine += take;
+                slot.reserve -= take;
+                events.push(CombatEvent::MagazineSeated { weapon: slot.id });
             }
-            let slot = &mut state.slots[usize::from(state.active)];
-            let take = slot
-                .id
-                .def()
-                .magazine
-                .saturating_sub(slot.magazine)
-                .min(slot.reserve);
-            slot.magazine += take;
-            slot.reserve -= take;
-            state.action = Action::Ready;
-            events.push(CombatEvent::ReloadFinished { weapon: slot.id });
+            if remaining <= 0.0 {
+                let slot = &mut state.slots[usize::from(state.active)];
+                // An empty reload ends with the charge: a round is chambered.
+                slot.needs_cycle = false;
+                state.action = Action::Ready;
+                events.push(CombatEvent::ReloadFinished { weapon: slot.id });
+            }
         }
         Action::Loading { remaining, stage } => {
             let remaining = remaining - dt;
@@ -580,7 +667,7 @@ fn advance_action(state: &mut CombatState, dt: f32, events: &mut Vec<CombatEvent
             state.active = to;
             state.burst = 0;
             state.burst_left = 0;
-            state.burst_left = 0;
+            state.bloom = 0.0;
             state.cooldown = 0.0;
             state.action = Action::Raising {
                 remaining: state.def().raise_time,
@@ -594,11 +681,33 @@ fn advance_action(state: &mut CombatState, dt: f32, events: &mut Vec<CombatEvent
             state.action = if remaining > 0.0 {
                 Action::Raising { remaining }
             } else {
-                Action::Ready
+                finish_cycle_on_draw(state, events)
             };
         }
     }
 }
+
+/// The action a weapon is in once drawn: ready, or working the bolt or pump
+/// (or charging) if a switch cut that short.
+fn finish_cycle_on_draw(state: &mut CombatState, events: &mut Vec<CombatEvent>) -> Action {
+    let slot = &mut state.slots[usize::from(state.active)];
+    if !std::mem::take(&mut slot.needs_cycle) || slot.magazine == 0 {
+        return Action::Ready;
+    }
+    let def = slot.id.def();
+    // Self-loading weapons charge in about the time a bolt would take.
+    let remaining = if def.cycle_time > 0.0 {
+        def.cycle_time
+    } else {
+        CHARGE_TIME
+    };
+    events.push(CombatEvent::Cycled { weapon: slot.id });
+    Action::Cycling { remaining }
+}
+
+/// Seconds to pull the charging handle of a self-loading weapon whose empty
+/// reload was cut off before the charge.
+const CHARGE_TIME: f32 = 0.35;
 
 fn try_start_reload(state: &mut CombatState, events: &mut Vec<CombatEvent>) {
     let weapon = *state.weapon();
@@ -610,8 +719,11 @@ fn try_start_reload(state: &mut CombatState, events: &mut Vec<CombatEvent>) {
         return;
     }
     let empty = weapon.magazine == 0;
+    state.burst_left = 0;
     state.action = match def.reload {
-        Reload::Magazine { time, empty_time } => Action::Reloading {
+        Reload::Magazine {
+            time, empty_time, ..
+        } => Action::Reloading {
             remaining: if empty { empty_time } else { time },
             empty,
         },
@@ -628,19 +740,27 @@ fn try_start_reload(state: &mut CombatState, events: &mut Vec<CombatEvent>) {
 
 fn update_breath(state: &mut CombatState, hold: bool, dt: f32) {
     state.winded = (state.winded - dt).max(0.0);
-    let scope = state.def().scope.filter(|_| state.ads > 0.5);
     state.holding_breath = false;
-    if let Some(scope) = scope {
+    if state.ads > 0.5 {
         state.sway_time += dt;
-        if hold && state.winded <= 0.0 && state.breath > 0.0 {
-            state.holding_breath = true;
-            state.breath -= dt / scope.hold_breath;
-            if state.breath <= 0.0 {
-                state.breath = 0.0;
-                state.winded = scope.breath_recovery;
-            }
-            return;
+    }
+    // Only a scope with sway can be steadied.
+    let scope = state
+        .def()
+        .scope
+        .filter(|s| s.sway > 0.0 && s.hold_breath > 0.0 && state.ads > 0.5);
+    if let Some(scope) = scope
+        && hold
+        && state.winded <= 0.0
+        && state.breath > 0.0
+    {
+        state.holding_breath = true;
+        state.breath -= dt / scope.hold_breath;
+        if state.breath <= 0.0 {
+            state.breath = 0.0;
+            state.winded = scope.breath_recovery;
         }
+        return;
     }
     if state.winded <= 0.0 && !hold {
         // Breath comes back in about two seconds once the button is let go.
@@ -657,11 +777,7 @@ fn fire(state: &mut CombatState, ctx: &CombatContext, events: &mut Vec<CombatEve
     let angle = rng::unit(seed, 1) * TAU;
     let radius = rng::unit(seed, 2).sqrt() * cone;
     let spread = Vec2::new(fmath::sin(angle), fmath::cos(angle)) * radius;
-    events.push(CombatEvent::Fired {
-        weapon: state.weapon().id,
-        aim_offset: state.recoil + spread + state.scope_sway(),
-        shot: seed,
-    });
+    let aim_offset = state.recoil + spread + state.scope_sway();
 
     let recoil = &def.recoil;
     let base = recoil.pattern[usize::from(state.burst).min(recoil.pattern.len() - 1)];
@@ -669,11 +785,23 @@ fn fire(state: &mut CombatState, ctx: &CombatContext, events: &mut Vec<CombatEve
         rng::signed(seed, 3) * recoil.jitter.x,
         rng::signed(seed, 4) * recoil.jitter.y,
     );
-    let scale = 1.0 + (recoil.ads_scale - 1.0) * state.ads;
-    state.recoil += Vec2::new(
+    let mut scale = 1.0 + (recoil.ads_scale - 1.0) * state.ads;
+    if ctx.crouched {
+        scale *= recoil.crouch_scale;
+    }
+    let kick = Vec2::new(
         (base.x + jitter.x).to_radians(),
         (base.y + jitter.y).to_radians(),
     ) * scale;
+    state.recoil += kick * recoil.kick_return;
+    events.push(CombatEvent::Fired {
+        weapon: state.weapon().id,
+        aim_offset,
+        shot: seed,
+        climb: kick * (1.0 - recoil.kick_return),
+    });
+    let spread_def = &def.spread;
+    state.bloom = (state.bloom + spread_def.bloom).min(spread_def.bloom_max);
 
     let slot = &mut state.slots[usize::from(state.active)];
     slot.magazine -= 1;
@@ -699,11 +827,15 @@ fn fire(state: &mut CombatState, ctx: &CombatContext, events: &mut Vec<CombatEve
 }
 
 fn recover(state: &mut CombatState, dt: f32) {
-    let recoil = &state.def().recoil;
-    if state.since_shot < state.def().fire_interval() + recoil.recovery_delay {
+    let def = state.def();
+    let recoil = &def.recoil;
+    // The pattern starts over once the trigger has rested a moment.
+    if state.since_shot >= def.fire_interval() + recoil.recovery_delay.max(0.05) {
+        state.burst = 0;
+    }
+    if state.since_shot < recoil.recovery_delay {
         return;
     }
-    state.burst = 0;
     state.recoil *= fmath::exp(-recoil.recovery_rate * dt);
     if state.recoil.length_squared() < 1e-8 {
         state.recoil = Vec2::ZERO;

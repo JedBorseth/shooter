@@ -71,13 +71,45 @@ impl Slot {
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
 pub enum Reload {
     /// Swap the whole magazine. The empty reload also chambers a round.
-    Magazine { time: f32, empty_time: f32 },
+    /// `mag_in` is the second (from the start of either reload) the fresh
+    /// magazine seats and its rounds count; a reload cut short after that
+    /// keeps them. Without it, 60% of the tactical reload.
+    Magazine {
+        time: f32,
+        empty_time: f32,
+        #[serde(default)]
+        mag_in: Option<f32>,
+    },
     /// Load one round at a time (shotguns). Firing interrupts it.
     PerRound {
         start: f32,
         per_round: f32,
         end: f32,
     },
+}
+
+impl Reload {
+    fn mag_in_of(time: f32, mag_in: Option<f32>) -> f32 {
+        mag_in.unwrap_or(time * 0.6)
+    }
+
+    /// Seconds into a magazine reload when the fresh magazine seats.
+    pub fn mag_in(&self) -> Option<f32> {
+        match *self {
+            Reload::Magazine { time, mag_in, .. } => Some(Reload::mag_in_of(time, mag_in)),
+            Reload::PerRound { .. } => None,
+        }
+    }
+
+    /// Total seconds of a magazine reload (`empty` or tactical).
+    pub fn magazine_time(&self, empty: bool) -> Option<f32> {
+        match *self {
+            Reload::Magazine {
+                time, empty_time, ..
+            } => Some(if empty { empty_time } else { time }),
+            Reload::PerRound { .. } => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
@@ -98,9 +130,54 @@ pub struct Spread {
     pub hip_moving: f32,
     pub air: f32,
     pub ads: f32,
+    /// Hip-fire bloom: degrees added to the hip cone per shot, up to
+    /// `bloom_max`, shrinking at `bloom_recovery` degrees a second.
+    #[serde(default)]
+    pub bloom: f32,
+    #[serde(default)]
+    pub bloom_max: f32,
+    #[serde(default = "default_bloom_recovery")]
+    pub bloom_recovery: f32,
+    /// Idle sway while aimed, in degrees (scopes use [`ScopeDef::sway`]).
+    #[serde(default = "default_ads_sway")]
+    pub ads_sway: f32,
+}
+
+fn default_bloom_recovery() -> f32 {
+    6.0
+}
+
+fn default_ads_sway() -> f32 {
+    0.05
+}
+
+/// Damage multipliers for hits that are not on the head (which uses
+/// [`Damage::headshot`]). The chest always counts 1.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
+pub struct Zones {
+    pub stomach: f32,
+    pub arm: f32,
+    pub leg: f32,
+}
+
+impl Default for Zones {
+    fn default() -> Self {
+        Self {
+            stomach: 1.0,
+            arm: 0.9,
+            leg: 0.85,
+        }
+    }
 }
 
 /// Recoil kicks are in degrees: `x` is pitch up, `y` is yaw right.
+///
+/// Each kick splits in two. Most of it climbs: the view turns and stays
+/// turned, as if the player had moved the mouse, so pulling down against a
+/// spray holds the aim where the player put it. The rest (`kick_return`) is a
+/// snap that settles back at `recovery_rate` once `recovery_delay` has passed
+/// since the shot. Both are part of the aim, so the centre of the screen is
+/// always where the next round goes.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 pub struct RecoilDef {
     /// Kick per consecutive shot; the last entry repeats.
@@ -109,10 +186,24 @@ pub struct RecoilDef {
     pub jitter: Vec2,
     /// Kick multiplier while fully aimed down sights.
     pub ads_scale: f32,
-    /// Seconds without firing before the view starts to settle.
+    /// Fraction of each kick that settles back after the shot.
+    #[serde(default = "default_kick_return")]
+    pub kick_return: f32,
+    /// Seconds after a shot before its snap starts to settle.
     pub recovery_delay: f32,
-    /// How quickly the view returns to the original aim, in 1/seconds.
+    /// How quickly the snap settles, in 1/seconds.
     pub recovery_rate: f32,
+    /// Kick multiplier while crouched.
+    #[serde(default = "default_crouch_scale")]
+    pub crouch_scale: f32,
+}
+
+fn default_kick_return() -> f32 {
+    0.35
+}
+
+fn default_crouch_scale() -> f32 {
+    0.85
 }
 
 /// A magnified optic: the HUD draws a scope overlay and the aim sways.
@@ -215,9 +306,15 @@ impl Attachment {
             Attachment::ExtendedMag => {
                 def.magazine = (f32::from(def.magazine) * 1.5).round() as u16;
                 def.reload = match def.reload {
-                    Reload::Magazine { time, empty_time } => Reload::Magazine {
+                    Reload::Magazine {
+                        time,
+                        empty_time,
+                        mag_in,
+                    } => Reload::Magazine {
                         time: time + 0.2,
                         empty_time: empty_time + 0.2,
+                        // The longer magazine takes a moment more to line up.
+                        mag_in: Some(Reload::mag_in_of(time, mag_in) + 0.15),
                     },
                     other => other,
                 };
@@ -248,6 +345,9 @@ pub struct WeaponDef {
     pub magazine: u16,
     pub reserve: u16,
     pub damage: Damage,
+    /// Body-zone multipliers; defaults to chest and stomach 1, arms 0.9, legs 0.85.
+    #[serde(default)]
+    pub zones: Zones,
     pub range: f32,
     /// Metres of wood a round can go through (see `crate::penetration`).
     /// 0 stops at the first wall.
@@ -316,6 +416,18 @@ impl WeaponDef {
         d.near + (d.far - d.near) * t
     }
 
+    /// Damage multiplier for a hit on `zone`.
+    pub fn zone_scale(&self, zone: crate::hitbox::HitZone) -> f32 {
+        use crate::hitbox::HitZone;
+        match zone {
+            HitZone::Head => self.damage.headshot,
+            HitZone::Chest => 1.0,
+            HitZone::Stomach => self.zones.stomach,
+            HitZone::Arm => self.zones.arm,
+            HitZone::Leg => self.zones.leg,
+        }
+    }
+
     /// Rounds below which the HUD warns and the weapon clicks.
     pub fn low_ammo(&self) -> u16 {
         (self.magazine / 4).max(1)
@@ -337,6 +449,17 @@ impl WeaponDef {
         }
         if self.ads_time <= 0.0 {
             problems.push("ads_time must be positive");
+        }
+        if let Some(mag_in) = self.reload.mag_in()
+            && let Reload::Magazine {
+                time, empty_time, ..
+            } = self.reload
+            && !(0.0..time.min(empty_time)).contains(&mag_in)
+        {
+            problems.push("reload.mag_in must come before the end of both reloads");
+        }
+        if !(0.0..=1.0).contains(&self.recoil.kick_return) {
+            problems.push("recoil.kick_return must be between 0 and 1");
         }
         if self.damage.falloff_end < self.damage.falloff_start {
             problems.push("damage.falloff_end must not be before falloff_start");
@@ -495,6 +618,33 @@ mod tests {
         assert_eq!(m4.damage_at(10.0), 30.0);
         assert_eq!(m4.damage_at(37.5), 25.5);
         assert_eq!(m4.damage_at(100.0), 21.0);
+    }
+
+    #[test]
+    fn zone_multipliers_default_and_set_identity() {
+        use crate::hitbox::HitZone;
+        let m4 = WeaponId::expect("m4").def();
+        assert_eq!(m4.zone_scale(HitZone::Head), m4.damage.headshot);
+        assert_eq!(m4.zone_scale(HitZone::Chest), 1.0);
+        assert_eq!(m4.zone_scale(HitZone::Stomach), 1.0);
+        assert!(m4.zone_scale(HitZone::Leg) < m4.zone_scale(HitZone::Arm));
+        assert!(m4.zone_scale(HitZone::Arm) < 1.0);
+        // The sniper kills in one shot only to the head or upper chest.
+        let m40 = WeaponId::expect("m40").def();
+        assert!(m40.damage_at(50.0) * m40.zone_scale(HitZone::Chest) >= 100.0);
+        assert!(m40.damage_at(50.0) * m40.zone_scale(HitZone::Stomach) < 100.0);
+        assert!(m40.damage_at(50.0) * m40.zone_scale(HitZone::Leg) < 100.0);
+    }
+
+    #[test]
+    fn every_weapon_seats_its_magazine_before_the_reload_ends() {
+        for def in table() {
+            if let (Some(mag_in), Some(time)) =
+                (def.reload.mag_in(), def.reload.magazine_time(false))
+            {
+                assert!(mag_in > 0.3 * time && mag_in < 0.8 * time, "{}", def.key);
+            }
+        }
     }
 
     #[test]

@@ -72,6 +72,11 @@ const PUNCH_DAMPING: f32 = 48.0;
 /// short zoom-in "thump" on kills.
 const FOV_KICK_STIFFNESS: f32 = 220.0;
 const FOV_KICK_DAMPING: f32 = 22.0;
+/// Zoom pulse per shot, as a fraction of the FOV per degree of the weapon's
+/// pitch punch: a heavy shot reads as a thump without moving the aim.
+const SHOT_ZOOM_PULSE: f32 = 0.006;
+/// How fast a shot's recoil climb lands on the view, in 1/seconds.
+const CLIMB_RATE: f32 = 55.0;
 
 /// Actions whose presses are remembered until the next physics tick, so a tap
 /// shorter than one tick (or a mouse-wheel step) is never lost.
@@ -118,10 +123,10 @@ pub struct FpsPlayer {
     #[export]
     #[init(val = 0.025)]
     kill_fov_kick: f32,
-    /// Fraction of each weapon's camera punch kept while fully aimed down sights.
-    /// High, because aimed the view carries the kick: the gun stays put on screen.
+    /// Fraction of each weapon's camera punch (a roll and a small zoom pulse;
+    /// neither moves the screen centre off the aim) kept while fully aimed.
     #[export]
-    #[init(val = 0.9)]
+    #[init(val = 0.7)]
     ads_punch_scale: f32,
     /// Head bob and strafe or slide tilt. Landing and damage still move the camera.
     #[export]
@@ -244,10 +249,17 @@ pub struct FpsPlayer {
     previous_recoil: Vec2,
     previous_sway: Vec2,
     previous_ads: f32,
+    /// Aim pitch, aim yaw, and look pitch from the last rendered frame.
+    aim_angles: Vector3,
     eye_height: f32,
     fov_sprint: f32,
-    /// Visual-only camera offset: x pitch up, y yaw left, z roll (radians).
+    /// Visual-only camera roll from each shot (radians, in `z`). Only roll,
+    /// so the screen centre stays on the aim.
     punch: Spring,
+    /// Recoil climb still to turn the view by (radians: `x` pitch up, `y` yaw
+    /// right). Each shot's climb lands over a few frames, like a hand
+    /// riding the kick.
+    pending_climb: Vec2,
     /// FOV offset as a fraction of the FOV.
     fov_kick: Spring<f32>,
     spawn: Transform3D,
@@ -329,10 +341,11 @@ impl ICharacterBody3D for FpsPlayer {
             Ok(motion) => {
                 if captured {
                     // Screen-relative motion ignores window stretch; scaling by the
-                    // FOV keeps aim speed consistent when zoomed in (ADS, scopes).
+                    // aim zoom keeps aim speed consistent through sights and
+                    // scopes. Sprint and slide FOV changes and kill pulses do
+                    // not change it.
                     let ads = self.state.combat.ads;
-                    let zoom = self.camera.get_fov() / self.base_fov
-                        * (1.0 + (self.ads_sensitivity_scale - 1.0) * ads);
+                    let zoom = self.aim_zoom() * (1.0 + (self.ads_sensitivity_scale - 1.0) * ads);
                     let delta = motion.get_screen_relative() * self.mouse_sensitivity * zoom;
                     let dy = if self.mouse_invert_y {
                         -delta.y
@@ -458,6 +471,11 @@ impl ICharacterBody3D for FpsPlayer {
         let fov = self.base_fov * self.fov_sprint * ads_zoom * (1.0 + self.fov_kick.value);
 
         self.punch.step(PUNCH_STIFFNESS, PUNCH_DAMPING, dt);
+        if alive {
+            self.apply_climb(dt);
+        } else {
+            self.pending_climb = Vec2::ZERO;
+        }
         self.land_dip.step(90.0, 13.0, dt);
         self.flinch.step(160.0, 16.0, dt);
 
@@ -470,12 +488,18 @@ impl ICharacterBody3D for FpsPlayer {
         let death_roll = self.death_blend * 0.45;
         let eye = self.eye_height * (1.0 - self.death_blend * 0.75);
 
-        // Aim (look plus simulated recoil and sway) and the visual punch stay
-        // separate: the punch moves the camera for feel, but bullets follow the aim.
+        // The camera looks along the aim (look plus the simulated recoil snap
+        // and sway), so the screen centre and the sights are where bullets
+        // go. The visual punch only rolls the view.
         let punch = self.punch.value;
+        self.aim_angles = Vector3::new(
+            self.pitch + recoil.x + sway.x,
+            self.yaw - recoil.y - sway.y,
+            self.pitch,
+        );
         let view = Vector3::new(
-            self.pitch + recoil.x + sway.x + self.flinch.value + punch.x,
-            self.yaw - recoil.y - sway.y + punch.y,
+            self.pitch + recoil.x + sway.x + self.flinch.value,
+            self.yaw - recoil.y - sway.y,
             punch.z + bob_roll + tilt + death_roll,
         );
         let basis = Basis::from_euler(EulerOrder::YXZ, view);
@@ -849,6 +873,13 @@ impl FpsPlayer {
     #[func]
     fn view_yaw(&self) -> f32 {
         self.yaw
+    }
+
+    /// Where shots go this frame, for feel traces (tests): aim pitch and yaw
+    /// in radians (look plus the simulated recoil and sway), and look pitch.
+    #[func]
+    fn aim_angles(&self) -> Vector3 {
+        self.aim_angles
     }
 
     /// True while the last gameplay input came from a gamepad.
@@ -1247,8 +1278,7 @@ impl FpsPlayer {
         if stick != Vec2::ZERO {
             self.gamepad = true;
         }
-        let zoom = self.camera.get_fov() / self.base_fov;
-        let mut rates = self.stick_look.rates(stick, &params, delta) * zoom;
+        let mut rates = self.stick_look.rates(stick, &params, delta) * self.aim_zoom();
 
         let assist_on = self.gamepad
             && self.aim_assist
@@ -1276,6 +1306,28 @@ impl FpsPlayer {
             self.assist_target = None;
         }
         self.turn(-rates.x * delta, rates.y * delta);
+    }
+
+    /// The world FOV multiplier from aiming down sights alone (1 at the hip),
+    /// which look sensitivity follows.
+    fn aim_zoom(&self) -> f32 {
+        let combat = &self.state.combat;
+        1.0 + (combat.def().ads_fov_scale - 1.0) * combat.ads
+    }
+
+    /// Turns the view by the recoil climb still pending, a share per frame.
+    fn apply_climb(&mut self, dt: f32) {
+        if self.pending_climb == Vec2::ZERO {
+            return;
+        }
+        // About 90% lands within 40 ms.
+        let step = if self.pending_climb.length() < 1e-5 {
+            self.pending_climb
+        } else {
+            self.pending_climb * smoothing(CLIMB_RATE, dt)
+        };
+        self.pending_climb -= step;
+        self.turn(-step.y, step.x);
     }
 
     /// Turns the view (yaw left and pitch up, in radians).
@@ -1382,8 +1434,10 @@ impl FpsPlayer {
                 weapon,
                 aim_offset,
                 shot,
+                climb,
             } => {
                 let def = weapon.def();
+                self.pending_climb += climb;
                 self.fire_shot(weapon, aim_offset, shot);
                 self.rumble_on_fire(weapon);
                 let ads = self.state.combat.ads;
@@ -1407,7 +1461,9 @@ impl FpsPlayer {
             }
             CombatEvent::Cycled { weapon } => self.viewmodel.bind_mut().on_cycled(weapon),
             CombatEvent::PickedUp { weapon } => self.viewmodel.bind_mut().on_picked_up(weapon),
-            CombatEvent::ReloadFinished { .. } | CombatEvent::Switched { .. } => {}
+            CombatEvent::ReloadFinished { .. }
+            | CombatEvent::Switched { .. }
+            | CombatEvent::MagazineSeated { .. } => {}
         }
     }
 
@@ -1416,17 +1472,21 @@ impl FpsPlayer {
         self.fov_kick.velocity += impulse_for_peak(peak, FOV_KICK_STIFFNESS, FOV_KICK_DAMPING);
     }
 
-    /// Adds one shot's camera punch. `degrees` is the peak pitch, yaw jitter, and roll.
+    /// Adds one shot's camera punch: a roll whose side and size vary per shot
+    /// (hashed, so no metronome), and a small zoom pulse. `degrees.z` is the
+    /// peak roll; `degrees.x`, the weapon's pitch punch, sizes the pulse.
+    /// Neither moves the screen centre: the sim's recoil turns the view.
     fn kick_camera(&mut self, degrees: Vector3, ads: f32, shot: u32) {
         let scale = 1.0 + (self.ads_punch_scale - 1.0) * ads;
-        let roll_sign = if shot.is_multiple_of(2) { 1.0 } else { -1.0 };
-        let peak = Vector3::new(
-            degrees.x,
-            degrees.y * rng::signed(shot, 101),
-            degrees.z * roll_sign,
-        ) * scale;
+        let side = if rng::unit(shot, 101) < 0.5 {
+            -1.0
+        } else {
+            1.0
+        };
+        let roll = degrees.z * side * (0.55 + 0.45 * rng::unit(shot, 102)) * scale;
         let impulse = |deg: f32| impulse_for_peak(deg.to_radians(), PUNCH_STIFFNESS, PUNCH_DAMPING);
-        self.punch.velocity += Vector3::new(impulse(peak.x), impulse(peak.y), impulse(peak.z));
+        self.punch.velocity.z += impulse(roll);
+        self.kick_fov(-degrees.x * SHOT_ZOOM_PULSE * scale);
     }
 
     /// Hitscan from the eye along the view direction plus recoil, spread, and
@@ -1498,9 +1558,7 @@ impl FpsPlayer {
                     .unwrap_or(HitZone::Chest);
                     let headshot = zone == HitZone::Head;
                     let distance = origin.distance_to(hit.position);
-                    let damage = def.damage_at(distance)
-                        * zone.damage_scale(def.damage.headshot)
-                        * hit.damage_scale;
+                    let damage = def.damage_at(distance) * def.zone_scale(zone) * hit.damage_scale;
                     match targets
                         .iter_mut()
                         .find(|(t, ..)| t.instance_id() == target.instance_id())
@@ -1713,7 +1771,9 @@ impl FpsPlayer {
             Action::Ready => ViewAction::Ready,
             Action::Reloading { remaining, empty } => {
                 let total = match def.reload {
-                    Reload::Magazine { time, empty_time } => {
+                    Reload::Magazine {
+                        time, empty_time, ..
+                    } => {
                         if empty {
                             empty_time
                         } else {
@@ -1802,6 +1862,7 @@ impl FpsPlayer {
         self.eye_height = self.params.movement.eye_height(Stance::Standing);
         self.fov_sprint = 1.0;
         self.punch = Spring::default();
+        self.pending_climb = Vec2::ZERO;
         self.fov_kick = Spring::default();
         self.stride = Stride {
             travelled: 0.0,

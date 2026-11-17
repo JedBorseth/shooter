@@ -142,6 +142,7 @@ impl PlayerState {
             // The weapon is lowered while climbing, as while sprinting.
             sprinting: self.movement.sprinting || self.movement.mantling(),
             airborne: !env.on_floor,
+            crouched: self.movement.stance == crate::movement::Stance::Crouching,
             move_ratio: speed / params.walk_speed,
         }
     }

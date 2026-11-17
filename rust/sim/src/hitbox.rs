@@ -37,18 +37,6 @@ impl HitZone {
         HitZone::Leg,
     ];
 
-    /// Damage multiplier for this zone. The head uses the weapon's own headshot
-    /// multiplier. Limbs take a little less, so a body shot is always worth the
-    /// aim but a leg shot never costs a whole extra bullet at full damage.
-    pub fn damage_scale(self, headshot: f32) -> f32 {
-        match self {
-            HitZone::Head => headshot,
-            HitZone::Chest | HitZone::Stomach => 1.0,
-            HitZone::Arm => 0.9,
-            HitZone::Leg => 0.85,
-        }
-    }
-
     /// Name used in collider metadata (`hit_zone`) and debug output.
     pub fn name(self) -> &'static str {
         match self {
@@ -486,14 +474,10 @@ mod tests {
     }
 
     #[test]
-    fn zone_names_round_trip_and_scales() {
+    fn zone_names_round_trip() {
         for zone in HitZone::ALL {
             assert_eq!(HitZone::from_name(zone.name()), Some(zone));
         }
-        assert_eq!(HitZone::Head.damage_scale(1.4), 1.4);
-        assert_eq!(HitZone::Chest.damage_scale(1.4), 1.0);
-        assert!(HitZone::Leg.damage_scale(1.4) < HitZone::Arm.damage_scale(1.4));
-        assert!(HitZone::Arm.damage_scale(1.4) < 1.0);
     }
 
     #[test]

@@ -43,6 +43,20 @@ fn aim() -> CombatInput {
     }
 }
 
+fn reload() -> CombatInput {
+    CombatInput {
+        reload: true,
+        ..Default::default()
+    }
+}
+
+fn switch(slot: u8) -> CombatInput {
+    CombatInput {
+        switch_to: Some(slot),
+        ..Default::default()
+    }
+}
+
 fn shots(events: &[CombatEvent]) -> usize {
     events
         .iter()
@@ -135,57 +149,149 @@ fn sprinting_blocks_fire_then_sprint_out_delays_it() {
     let events = run(&mut s, fire(), sprint, 30);
     assert_eq!(shots(&events), 0);
 
-    // 0.15 s sprint-out is 9 ticks at 60 Hz.
-    let events = run(&mut s, fire(), CombatContext::default(), 8);
+    // The sprint-out (0.22 s on the M4) holds the first shot.
+    let ticks = (s.def().sprint_out_time / DT).ceil() as usize;
+    let events = run(&mut s, fire(), CombatContext::default(), ticks - 1);
     assert_eq!(shots(&events), 0);
     let events = run(&mut s, fire(), CombatContext::default(), 2);
     assert_eq!(shots(&events), 1);
 }
 
 #[test]
-fn sprinting_cancels_reload() {
+fn a_reload_carries_on_through_a_sprint() {
     let mut s = ready();
     s.slots[0].magazine = 10;
-    run(
-        &mut s,
-        CombatInput {
-            reload: true,
-            ..Default::default()
-        },
-        CombatContext::default(),
-        30,
-    );
+    run(&mut s, reload(), CombatContext::default(), 30);
     assert!(s.is_reloading());
-    run(
-        &mut s,
-        CombatInput::default(),
-        CombatContext {
-            sprinting: true,
-            ..Default::default()
-        },
-        1,
-    );
+    let sprint = CombatContext {
+        sprinting: true,
+        ..Default::default()
+    };
+    run(&mut s, CombatInput::default(), sprint, 150);
     assert!(!s.is_reloading());
-    assert_eq!(s.weapon().magazine, 10);
+    assert_eq!(s.weapon().magazine, 30);
 }
 
 #[test]
-fn recoil_climbs_then_recovers() {
+fn a_reload_can_start_while_sprinting() {
     let mut s = ready();
-    run(&mut s, fire(), CombatContext::default(), 30);
-    let peak = s.recoil;
-    // About seven M4 rounds: the aim climbs, but stays small. The weapon kick
-    // and camera punch in `shooter-game` carry the visual violence.
+    s.slots[0].magazine = 10;
+    let sprint = CombatContext {
+        sprinting: true,
+        ..Default::default()
+    };
+    run(&mut s, reload(), sprint, 1);
+    assert!(s.is_reloading());
+}
+
+/// Sum of the climb every shot in `events` reported.
+fn climb(events: &[CombatEvent]) -> Vec2 {
+    events
+        .iter()
+        .map(|e| match e {
+            CombatEvent::Fired { climb, .. } => *climb,
+            _ => Vec2::ZERO,
+        })
+        .sum()
+}
+
+#[test]
+fn recoil_climbs_and_stays_while_the_snap_settles() {
+    let mut s = ready();
+    let events = run(&mut s, fire(), CombatContext::default(), 30);
+    // About seven M4 rounds at the hip.
+    let climbed = climb(&events);
     assert!(
-        peak.x > 1.5f32.to_radians(),
-        "view climbs during a spray: {peak:?}"
+        climbed.x > 1.2f32.to_radians() && climbed.x < 2.5f32.to_radians(),
+        "the view climbs and stays: {climbed:?}"
     );
-    assert!(
-        peak.x < 3f32.to_radians(),
-        "aim recoil stays small (the punch is visual): {peak:?}"
-    );
-    run(&mut s, CombatInput::default(), CombatContext::default(), 90);
-    assert!(s.recoil.length() < peak.length() * 0.01);
+    // The snap is the smaller part, and it is in the aim.
+    assert!(s.recoil.x > 0.0 && s.recoil.x < climbed.x);
+    run(&mut s, CombatInput::default(), CombatContext::default(), 30);
+    assert!(s.recoil.length() < 0.01f32.to_radians(), "{:?}", s.recoil);
+}
+
+#[test]
+fn the_snap_is_in_every_shot_and_settles_between_rounds() {
+    // Semi-automatic: each round leaves from the settled aim if the trigger
+    // waits a quarter second.
+    let mut s = ready_with(["m4", "m1911"]);
+    s.active = 1;
+    s.ads = 1.0;
+    let mut events = Vec::new();
+    for i in 0..60 {
+        let input = CombatInput {
+            fire: i % 15 == 0,
+            aim: true,
+            ..Default::default()
+        };
+        step(&mut s, &input, &CombatContext::default(), DT, &mut events);
+    }
+    let offsets: Vec<f32> = events
+        .iter()
+        .filter_map(|e| match e {
+            CombatEvent::Fired { aim_offset, .. } => Some(aim_offset.x),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(offsets.len(), 4);
+    for x in &offsets[1..] {
+        // Within the aimed cone (0.1 degrees) plus a little snap.
+        assert!(
+            x.abs() < 0.15f32.to_radians(),
+            "settled by the next shot: {x}"
+        );
+    }
+}
+
+#[test]
+fn shots_vary_from_round_to_round() {
+    let mut s = ready();
+    let events = run(&mut s, fire(), CombatContext::default(), 60);
+    let yaws: Vec<f32> = events
+        .iter()
+        .filter_map(|e| match e {
+            CombatEvent::Fired { climb, .. } => Some(climb.y),
+            _ => None,
+        })
+        .collect();
+    let distinct = yaws
+        .windows(2)
+        .filter(|w| (w[0] - w[1]).abs() > 1e-5)
+        .count();
+    assert!(distinct >= yaws.len() - 2, "{yaws:?}");
+}
+
+#[test]
+fn crouching_steadies_the_kick_and_the_hip_cone() {
+    let crouched = CombatContext {
+        crouched: true,
+        ..Default::default()
+    };
+    let mut standing = ready();
+    let mut low = ready();
+    let up = climb(&run(&mut standing, fire(), CombatContext::default(), 30));
+    let down = climb(&run(&mut low, fire(), crouched, 30));
+    assert!(down.x < up.x * 0.9, "{down:?} vs {up:?}");
+    let fresh = ready();
+    assert!(fresh.spread_degrees(&crouched) < fresh.spread_degrees(&CombatContext::default()));
+}
+
+#[test]
+fn hip_fire_blooms_and_recovers() {
+    let mut s = ready();
+    let ctx = CombatContext::default();
+    let before = s.spread_degrees(&ctx);
+    run(&mut s, fire(), ctx, 40);
+    let during = s.spread_degrees(&ctx);
+    assert!(during > before + 0.5, "{before} -> {during}");
+    run(&mut s, CombatInput::default(), ctx, 60);
+    assert!((s.spread_degrees(&ctx) - before).abs() < 1e-4);
+    // Aimed, the bloom does not open the cone.
+    let mut aimed = ready();
+    aimed.ads = 1.0;
+    aimed.bloom = 2.0;
+    assert_eq!(aimed.spread_degrees(&ctx), aimed.def().spread.ads);
 }
 
 #[test]
@@ -356,11 +462,178 @@ fn scope_sways_and_holding_breath_steadies_it() {
 }
 
 #[test]
-fn unscoped_weapons_never_sway() {
+fn every_weapon_sways_a_little_when_aimed() {
     let mut s = ready();
-    run(&mut s, aim(), CombatContext::default(), 60);
     assert_eq!(s.scope_sway(), Vec2::ZERO);
+    run(&mut s, aim(), CombatContext::default(), 90);
+    let sway = s.scope_sway();
+    assert!(sway != Vec2::ZERO);
+    assert!(sway.length() < 0.1f32.to_radians(), "{sway:?}");
     assert_eq!(s.scope_amount(), 0.0);
+    // Only a scope can be steadied with breath.
+    let held = CombatInput {
+        aim: true,
+        hold_breath: true,
+        ..Default::default()
+    };
+    run(&mut s, held, CombatContext::default(), 10);
+    assert!(!s.holding_breath);
+}
+
+#[test]
+fn aiming_works_through_a_reload() {
+    let mut s = ready();
+    s.slots[0].magazine = 10;
+    run(&mut s, reload(), CombatContext::default(), 1);
+    run(&mut s, aim(), CombatContext::default(), 30);
+    assert!(s.is_reloading());
+    assert_eq!(s.ads, 1.0);
+}
+
+#[test]
+fn rounds_count_once_the_magazine_seats() {
+    let mut s = ready();
+    s.slots[0].magazine = 10;
+    let events = run(&mut s, reload(), CombatContext::default(), 1);
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, CombatEvent::ReloadStarted { .. }))
+    );
+    let mag_in = s.def().reload.mag_in().unwrap();
+    let before = ((mag_in / DT) as usize).saturating_sub(2);
+    run(
+        &mut s,
+        CombatInput::default(),
+        CombatContext::default(),
+        before,
+    );
+    assert_eq!(s.weapon().magazine, 10);
+    let events = run(&mut s, CombatInput::default(), CombatContext::default(), 4);
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, CombatEvent::MagazineSeated { .. }))
+    );
+    assert_eq!(s.weapon().magazine, 30);
+    assert!(s.is_reloading(), "the re-shoulder is still to come");
+    // A switch now keeps the fresh magazine.
+    run(&mut s, switch(1), CombatContext::default(), 1);
+    run(
+        &mut s,
+        CombatInput::default(),
+        CombatContext::default(),
+        120,
+    );
+    assert_eq!(s.slots[0].magazine, 30);
+    assert_eq!(s.slots[0].reserve, 120 - 20);
+}
+
+#[test]
+fn an_empty_reload_cut_before_the_charge_charges_when_drawn() {
+    let mut s = ready();
+    s.slots[0].magazine = 0;
+    run(&mut s, reload(), CombatContext::default(), 1);
+    let mag_in = s.def().reload.mag_in().unwrap();
+    run(
+        &mut s,
+        CombatInput::default(),
+        CombatContext::default(),
+        (mag_in / DT) as usize + 2,
+    );
+    assert_eq!(s.weapon().magazine, 30);
+    run(&mut s, switch(1), CombatContext::default(), 1);
+    assert!(s.slots[0].needs_cycle);
+    run(
+        &mut s,
+        CombatInput::default(),
+        CombatContext::default(),
+        120,
+    );
+    let events = run(&mut s, switch(0), CombatContext::default(), 1);
+    assert!(events.is_empty());
+    let events = run(
+        &mut s,
+        CombatInput::default(),
+        CombatContext::default(),
+        120,
+    );
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, CombatEvent::Cycled { .. }))
+    );
+    assert!(!s.slots[0].needs_cycle);
+}
+
+#[test]
+fn a_switch_never_skips_a_bolt_cycle() {
+    let mut s = ready_with(["m40", "m1911"]);
+    run(&mut s, fire(), CombatContext::default(), 1);
+    assert!(matches!(s.action, Action::Cycling { .. }));
+    run(&mut s, switch(1), CombatContext::default(), 1);
+    run(&mut s, CombatInput::default(), CombatContext::default(), 90);
+    run(&mut s, switch(0), CombatContext::default(), 1);
+    let mut events = Vec::new();
+    let mut ready_after = 0;
+    for tick in 0..400 {
+        // Semi-automatic: keep tapping.
+        let tap = CombatInput {
+            fire: tick % 2 == 0,
+            ..Default::default()
+        };
+        step(&mut s, &tap, &CombatContext::default(), DT, &mut events);
+        if shots(&events) > 0 {
+            ready_after = tick;
+            break;
+        }
+    }
+    let def = s.def();
+    let minimum = def.raise_time + def.cycle_time;
+    assert!(
+        ready_after as f32 * DT >= minimum - 2.0 * DT,
+        "fired {ready_after} ticks after the draw began; needs {minimum} s"
+    );
+}
+
+#[test]
+fn reselecting_the_weapon_in_hand_brings_it_back_up() {
+    let mut s = ready();
+    run(&mut s, switch(1), CombatContext::default(), 6);
+    assert!(matches!(s.action, Action::Lowering { .. }));
+    run(&mut s, switch(0), CombatContext::default(), 1);
+    let Action::Raising { remaining } = s.action else {
+        panic!("expected a raise, got {:?}", s.action);
+    };
+    assert!(remaining < s.def().raise_time * 0.5, "{remaining}");
+    assert_eq!(s.active, 0);
+}
+
+#[test]
+fn a_burst_is_dropped_by_a_reload() {
+    let mut s = ready_with(["br3", "m1911"]);
+    s.slots[0].magazine = 10;
+    // Tap a burst, then reload before it finishes.
+    let mut events = Vec::new();
+    step(&mut s, &fire(), &CombatContext::default(), DT, &mut events);
+    step(
+        &mut s,
+        &reload(),
+        &CombatContext::default(),
+        DT,
+        &mut events,
+    );
+    let fired = shots(&events);
+    run(
+        &mut s,
+        CombatInput::default(),
+        CombatContext::default(),
+        300,
+    );
+    let events = run(&mut s, CombatInput::default(), CombatContext::default(), 60);
+    assert_eq!(shots(&events), 0, "no leftover rounds after the reload");
+    assert!(fired <= 3);
+    assert_eq!(s.burst_left, 0);
 }
 
 #[test]
@@ -622,12 +895,16 @@ fn holding_the_trigger_waits_out_the_delay_between_bursts() {
             fired_at.push(tick);
         }
     }
-    // Bursts of three, 1/15 s apart, then at least 0.2 s before the next.
+    // Bursts of three at the fire rate, then the delay before the next.
     assert!(
         fired_at.len() >= 6 && fired_at.len() % 3 == 0,
         "{fired_at:?}"
     );
-    assert!(fired_at[3] - fired_at[2] >= 24 + 8, "{fired_at:?}");
+    let FireMode::Burst { delay, .. } = id.def().fire_mode else {
+        panic!("the BR-3 fires bursts");
+    };
+    let gap = ((delay + id.def().fire_interval()) * 120.0) as usize;
+    assert!(fired_at[3] - fired_at[2] >= gap, "{fired_at:?}");
 }
 
 #[test]

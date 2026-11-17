@@ -1,22 +1,22 @@
-// BR-3 bullpup: a three-round burst. One burst kills up close (36 damage a
-// round); two at range. A short pause after each burst keeps it from
-// out-firing the automatics.
+// BR-3 bullpup: a three-round burst. One whole burst kills inside 15 m (34
+// damage a round); past that it takes a fourth round, so a second burst. A
+// short pause after each burst keeps it from out-firing the automatics.
 (
     name: "BR-3",
     slot: Primary,
-    fire_mode: Burst(rounds: 3, delay: 0.2),
-    rounds_per_minute: 900,
+    fire_mode: Burst(rounds: 3, delay: 0.16),
+    rounds_per_minute: 800,
     magazine: 30,
     reserve: 120,
-    damage: (near: 36, far: 26, falloff_start: 28, falloff_end: 55, headshot: 1.4),
+    damage: (near: 34, far: 25, falloff_start: 15, falloff_end: 40, headshot: 1.4),
     range: 400,
     penetration: 0.32,
-    reload: Magazine(time: 2.3, empty_time: 2.8),
-    ads_time: 0.22,
-    sprint_out_time: 0.17,
-    raise_time: 0.36,
-    lower_time: 0.22,
-    spread: (hip: 2.4, hip_moving: 4.2, air: 6.0, ads: 0.0),
+    reload: Magazine(time: 2.3, empty_time: 2.8, mag_in: Some(1.35)),
+    ads_time: 0.25,
+    sprint_out_time: 0.23,
+    raise_time: 0.42,
+    lower_time: 0.28,
+    spread: (hip: 2.4, hip_moving: 4.2, air: 6.0, ads: 0.0, bloom: 0.3, bloom_max: 1.8, ads_sway: 0.05),
     ads_fov_scale: 0.78,
     ads_move_scale: 0.6,
     move_scale: 0.98,
@@ -24,8 +24,9 @@
         pattern: [(0.3, 0.02), (0.34, -0.05), (0.38, 0.06), (0.3, 0.0)],
         jitter: (0.04, 0.06),
         ads_scale: 0.7,
-        recovery_delay: 0.06,
-        recovery_rate: 11.0,
+        kick_return: 0.35,
+        recovery_delay: 0.0,
+        recovery_rate: 14.0,
     ),
     tracer_every: 3,
     attachments: [Acog, Suppressor, Grip, ExtendedMag],

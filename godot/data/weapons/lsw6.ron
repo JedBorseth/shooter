@@ -1,6 +1,7 @@
-// LSW-6 light support weapon: a 75-round magazine and steady sustained fire
-// (33 damage up close, 4-shot kill at range), paid for with slow handling: a
-// long aim, a slow sprint-out, a heavy step, and a long reload.
+// LSW-6 light support weapon: a 75-round magazine and steady sustained fire.
+// Four hits kill at every range (30 up close, 25 at the far end), paid for
+// with slow handling: a long aim, a slow sprint-out, a heavy step, and a long
+// reload.
 (
     name: "LSW-6",
     slot: Primary,
@@ -8,15 +9,15 @@
     rounds_per_minute: 650,
     magazine: 75,
     reserve: 225,
-    damage: (near: 33, far: 25, falloff_start: 30, falloff_end: 60, headshot: 1.35),
+    damage: (near: 30, far: 25, falloff_start: 30, falloff_end: 60, headshot: 1.35),
     range: 400,
     penetration: 0.45,
-    reload: Magazine(time: 4.8, empty_time: 5.6),
-    ads_time: 0.36,
-    sprint_out_time: 0.32,
-    raise_time: 0.6,
-    lower_time: 0.35,
-    spread: (hip: 3.4, hip_moving: 6.0, air: 8.0, ads: 0.05),
+    reload: Magazine(time: 4.8, empty_time: 5.6, mag_in: Some(3.3)),
+    ads_time: 0.42,
+    sprint_out_time: 0.38,
+    raise_time: 0.7,
+    lower_time: 0.4,
+    spread: (hip: 3.4, hip_moving: 6.0, air: 8.0, ads: 0.05, bloom: 0.2, bloom_max: 2.5, ads_sway: 0.08),
     ads_fov_scale: 0.8,
     ads_move_scale: 0.45,
     move_scale: 0.88,
@@ -28,8 +29,9 @@
         ],
         jitter: (0.05, 0.09),
         ads_scale: 0.65,
-        recovery_delay: 0.1,
-        recovery_rate: 8.0,
+        kick_return: 0.25,
+        recovery_delay: 0.0,
+        recovery_rate: 12.0,
     ),
     tracer_every: 4,
     attachments: [RedDot, Acog, Suppressor, Grip, ExtendedMag],

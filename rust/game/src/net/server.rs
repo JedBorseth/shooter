@@ -1402,6 +1402,7 @@ impl NetServer {
                             weapon,
                             aim_offset,
                             shot,
+                            ..
                         }) => {
                             let p = &avatar.predicted;
                             let eye = to_godot(p.position)
