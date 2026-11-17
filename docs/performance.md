@@ -8,9 +8,9 @@ Measured at 1920×1080 on a GTX 1060 3GB, the reference card. The budget is GPU 
 
 | Preset | GPU budget | Leaves room for | Today (worst view) |
 | --- | --- | --- | --- |
-| Low | 4 ms | weaker cards and laptops at 60 fps | 3.5 ms |
-| Medium (default) | 8 ms | 60 fps with plenty of headroom, 100+ fps on the reference card | 6.8 ms |
-| High | 12 ms | 60 fps | 9.2 ms |
+| Low | 4 ms | weaker cards and laptops at 60 fps | 3.4 ms |
+| Medium (default) | 8 ms | 60 fps with plenty of headroom, 100+ fps on the reference card | 6.9 ms |
+| High | 12 ms | 60 fps | 9.5 ms |
 
 Rules for a pull request that changes visuals:
 
@@ -25,6 +25,10 @@ Rules of thumb for this renderer on this card, from the measurements below:
 - Fake detail in the shader is cheap where it covers little of the screen: the skyline's windows and the rooms behind them (interior mapping, about 40 ALU operations and no texture reads) cost about 0.2 ms on Medium in Slamcity.
 - Decals cost per pixel they cover: Slamcity's 44 (road paint, damage, manholes, drips) cost about 0.3 ms on Medium. Keep them few and small.
 - Reflection probes are expensive here: four small interior probes in Slamcity cost about 0.8 ms whenever a room filled the screen, and one probe over the whole block cost 0.7 ms everywhere. Baked lightmaps light the interiors instead (`tools/bake_lightmaps.sh`).
+- A full-screen pass is never free on this card. Measured on Medium in Slamcity: sun shadows 1.2 ms, glow 1.1 ms, SSAO 0.9 ms, SMAA 0.7 ms (FXAA would be 0.3 ms), fog 0.1 to 0.3 ms. A canvas pass over the whole screen costs about 0.13 ms when it only blends, and about 0.5 ms when it reads the screen (a copy, then five samples per pixel). That is why the lens sharpens on High only.
+- Bicubic upscaling of the glow costs about 0.35 ms for a difference that shows only on strong, wide glows. Low and Medium upscale it bilinearly.
+- The colour grade is free: a look-up table sampled inside the tonemap pass the renderer already runs. So is the colour draining at low health (the same pass's saturation).
+- A negative mipmap bias sharpens distant textures for almost nothing (within measurement noise), as long as anisotropic filtering is on.
 - Textures are compressed on the GPU (BPTC/S3TC), with mipmaps, 1K for most surfaces and 2K only for the weapon in view. Sample each surface once (one projection), not three times.
 - Characters cost through their surfaces and skinning: keep each one to a few surfaces and use LODs.
 
@@ -45,20 +49,35 @@ Narrow a run with `BENCH_MAPS=slamcity`, `BENCH_PRESETS=medium`, or `BENCH_FRAME
 
 When a PR changes the look on purpose, it updates `docs/perf/baseline.json` with its own run, so the next PR compares against it.
 
+To see where a frame's time goes, run the cost breakdown. It holds one benchmark viewpoint and turns one thing off (or swaps it for a cheaper setting) at a time: antialiasing, ambient occlusion, glow, fog, the grade, sun shadows and their filter and splits, the lens pass, anisotropic filtering, and the render scale. Use it to find where a new effect can be paid back.
+
+```sh
+PROFILE_MAP=slamcity PROFILE_VIEW=1 PROFILE_PRESET=medium \
+  xvfb-run -a -s "-screen 0 1920x1080x24" godot --path godot --resolution 1920x1080 \
+  --audio-driver Dummy --script res://tests/profile_frame.gd
+```
+
+It prints the median GPU time of each variant, so a shader that compiles when a variant first draws does not skew it. Differences under about 0.1 ms are noise.
+
 ## Graphics presets
 
-The presets live in `godot/scripts/graphics.gd`. The `Settings` autoload applies them to the viewport and to every map's `WorldEnvironment` and sun as they load. Presets only turn effects down: a map's authored look is what High shows.
+The presets live in `godot/scripts/graphics.gd`. The `Settings` autoload applies them to the viewport and to every map's `WorldEnvironment` and sun as they load. Presets only turn effects down: a map's authored look is what High shows. A map's look is its scene's Environment plus, for the maps listed in `godot/scripts/looks.gd`, that file's exposure, bloom, haze, and colour grade (see [art-direction.md](art-direction.md#light)).
 
 | | Low | Medium | High |
 | --- | --- | --- | --- |
 | Render scale | 77%, FSR 1 | native | native |
 | Antialiasing | FXAA | SMAA | 2× MSAA + SMAA |
 | SSAO | off | low, half resolution | medium, half resolution |
-| Glow | off | on | on |
+| Glow | off | on, bilinear upscale | on, bicubic upscale |
 | Volumetric fog | off | off | where the map uses it |
 | Sun shadows | 2048 atlas, softest-cheapest filter, 50% range | 4096, soft low, 80% range | 4096, soft medium, full range |
 | Anisotropic filtering | 2× | 4× | 16× |
 | Lightmap sampling | bilinear | bilinear | bicubic |
+| Texture sharpness (mipmap bias) | 0 | −0.35 | −0.25 |
+| Lens (`scripts/lens.gd`) | off | vignette and film grain | vignette, film grain, and sharpening |
+| Colour grade and health colour drain | on | on | on |
+
+The lens is a full-screen pass over the 3D picture, under the HUD. On Medium it blends a vignette and film grain without reading the screen (about 0.13 ms). On High it also sharpens with a contrast-adaptive filter, which needs a copy of the screen (about 0.5 ms). The "Lens effects" setting turns the vignette and grain off; sharpening follows the preset.
 
 Motion blur is a separate setting, off by default (`scripts/motion_blur.gd`, a compositor effect that blurs along the renderer's motion vectors). It costs about 0.45 ms on Low and 0.75 ms on Medium on the reference card, motion vectors included.
 
@@ -100,3 +119,4 @@ GPU time on Medium at 1080p on the reference card, average over viewpoints (wors
 | Three-lane Slamcity (new map, twice the size; new viewpoints) | 5.11 (5.20) ms | 6.49 (6.65) ms | 5.20 (5.52) ms |
 | `main` before the fidelity pass (weapons, modes, and penetration since) | 5.06 (5.24) ms | 6.44 (6.61) ms | 5.25 (5.62) ms |
 | Skyline windows with fake rooms, cloth and glove relief | 5.16 (5.34) ms | 6.66 (6.82) ms | 5.34 (5.76) ms |
+| Graded picture, lens pass, sharper mipmaps, bilinear glow upscale | 5.17 (5.34) ms | 6.60 (6.85) ms | 5.35 (5.82) ms |

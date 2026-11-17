@@ -57,6 +57,7 @@ const DESCRIPTIONS := {
 	&"render_scale":
 	"Draws the 3D world at a lower resolution and scales it up. The HUD stays sharp.",
 	&"motion_blur": "Blurs fast camera turns.",
+	&"lens_effects": "Darkens the corners of the picture and adds a little film grain.",
 	&"master_volume": "Every sound in the game.",
 	&"weapons_volume": "Gunfire, reloads, and weapon handling.",
 	&"effects_volume": "Impacts, explosions, and other effects.",
@@ -650,6 +651,7 @@ func _add_graphics_options(section: VBoxContainer) -> void:
 	)
 	_add_row(section, "Render scale", _scale_option, null, &"render_scale")
 	_add_toggle(section, &"motion_blur", "Motion blur")
+	_add_toggle(section, &"lens_effects", "Lens effects")
 
 
 ## Adds a labelled row around `control`. The row lights up while `control` has

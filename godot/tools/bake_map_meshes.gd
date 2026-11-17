@@ -16,6 +16,7 @@ extends SceneTree
 const TEXEL_SIZE := 0.2
 const BAKED := &"csg_baked"
 const VISUAL := &"csg_visual"
+const GraphicsQuality := preload("res://scripts/graphics.gd")
 
 
 func _initialize() -> void:
@@ -23,6 +24,8 @@ func _initialize() -> void:
 
 
 func _run() -> void:
+	# The scenes are saved again: keep graphics presets and looks out of them.
+	GraphicsQuality.managed = false
 	# Keep bake-only lights (scripts/baked_lights.gd) while the scenes are re-saved.
 	Engine.set_meta(&"keep_baked_lights", true)
 	var failures := 0
