@@ -274,7 +274,7 @@ F3 shows or hides the netcode overlay (hidden at first): ping, loss, inputs wait
 
 The server decides every hit. Each firing input carries the moment the client was drawing other players at, and the server rebuilds their hitboxes at that moment from the snapshots it sent (lag compensation, up to 300 ms back), so a shot that hit on your screen hits. Hit markers show at once from your own hitscan; kills, score, medals, and damage you take come from the server. With F4 on in a debug build, the hitboxes the server rewound for each of your shots are drawn in white next to the client's coloured ones.
 
-The Build workflow also exports a headless Linux dedicated server (`shooter-<version>-server-linux-x86_64.zip`), with the master server binary next to it. It starts as a server on its own; pass `-- --port N --bots N --name NAME --master HOST` to configure it.
+CI also exports a headless Linux dedicated server (`shooter-<version>-server-linux-x86_64.zip`), with the master server binary next to it. It starts as a server on its own; pass `-- --port N --bots N --name NAME --master HOST` to configure it.
 
 ### Run a server that stays up to date
 
@@ -288,10 +288,14 @@ It reads the server's player count through its query port, which it works out fr
 
 ## CI and builds
 
-GitHub Actions runs two workflows:
+One GitHub Actions workflow, **CI** (`.github/workflows/ci.yml`), runs on every pull request, merge queue entry, and push to `main`:
 
-- **CI** (`.github/workflows/ci.yml`) runs on every pull request and push to `main`: `cargo fmt` and `clippy -D warnings`, `cargo test` on Linux, Windows, and macOS, gdlint and gdformat, and the headless smoke test against Godot 4.7.2.
-- **Build** (`.github/workflows/build.yml`) exports playable clients and a headless Linux dedicated server on every pull request and every push to `main`: Linux, Windows, universal macOS, and server zips appear as artifacts on the workflow run, so you can play a PR before it merges. The macOS app is ad-hoc signed, not notarized, so macOS asks before opening it. Each build also includes the launcher for each platform and `latest.json`, which lists every file with its size and SHA-256 (`.github/scripts/write-manifest.sh`). On `main`, the workflow then replaces the files on the `nightly` pre-release with this build (`.github/scripts/publish-nightly.sh`), uploading `latest.json` last so the launcher never sees a half-published build. Pushing a `v*` tag publishes the same files as a GitHub Release.
+- `cargo fmt`, `clippy -D warnings`, and `cargo test` on Linux, plus `cargo test` on Windows and macOS.
+- gdlint, gdformat, and the Nuketown importer's Python tests.
+- Every headless Godot test in `godot/tests/*_test.gd` against Godot 4.7.2. A new test file runs without any workflow change.
+- Playable exports: Linux, Windows, universal macOS, and dedicated server zips appear as one artifact on the run, so you can play a PR before it merges. The macOS app is ad-hoc signed, not notarized, so macOS asks before opening it. Each build also includes the launcher for each platform and `latest.json`, which lists every file with its size and SHA-256 (`.github/scripts/write-manifest.sh`). On `main`, the workflow then replaces the files on the `nightly` pre-release with this build (`.github/scripts/publish-nightly.sh`), uploading `latest.json` last so the launcher never sees a half-published build. Pushing a `v*` tag publishes the same files as a GitHub Release.
+
+The last job, **CI passed**, succeeds only when every other job did; it is the check branch protection requires. [docs/ci.md](docs/ci.md) explains how the pipeline stays fast and how to run the Godot tests locally.
 
 To cut a release:
 
