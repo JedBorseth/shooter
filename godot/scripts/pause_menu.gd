@@ -2,6 +2,10 @@ extends CanvasLayer
 ## Pause and settings menu. Opening it frees the mouse and turns off player input
 ## and freezes offline/local matches. Remote multiplayer keeps running.
 ## Settings apply live through the `Settings` autoload and save when the menu closes.
+##
+## Full screen over a blur of the game: the pause page is a short list of
+## routes; the settings page has tabs, a list of setting rows, and a pane that
+## explains the focused or hovered setting.
 
 signal closed
 
@@ -12,6 +16,67 @@ const PAUSE_ACTION := &"pause"
 const CLICK_SOUND := "res://assets/audio/ui/click.ogg"
 const HOVER_SOUND := "res://assets/audio/ui/hover.ogg"
 const UI_BUS := &"UI"
+const TAB_NAMES: Array[String] = ["Controls", "Keybinds", "Graphics", "Audio", "General"]
+## What each tab holds, shown before a setting is picked.
+const TAB_INTROS: Array[String] = [
+	"How the mouse and a controller aim. Pick a setting to see what it does.",
+	"Choose a binding, then press a key or mouse button. A key used by another action swaps with it.",
+	"Display and quality. Every change applies right away.",
+	"Volume for each kind of sound, and how it is mixed.",
+	"Your name, and what the screen shows while you play.",
+]
+## What each setting does, for the pane beside the list.
+const DESCRIPTIONS := {
+	&"mouse_sensitivity": "How far the view turns for each movement of the mouse.",
+	&"ads_sensitivity":
+	"Turn speed while aiming down sights, as a share of your normal sensitivity.",
+	&"invert_mouse_y": "Moving the mouse forward looks down instead of up.",
+	&"stick_sensitivity": "How fast the right stick turns the view.",
+	&"stick_deadzone":
+	"How far a stick must move before it counts. Raise it if the view drifts on its own.",
+	&"invert_stick_y": "Pushing the right stick up looks down.",
+	&"stick_curve":
+	"How the turn speed builds as you push the stick. Higher is finer near the centre.",
+	&"aim_assist": "With a controller, slows your aim over an enemy and follows them a little.",
+	&"aim_assist_strength": "How strongly aim assist slows and follows.",
+	&"rumble": "Controller vibration for shots, hits, and explosions.",
+	&"fov":
+	(
+		"How much of the world you see across the screen. Wider shows more at the edges"
+		+ " and makes targets smaller. Your weapon keeps its own field of view, so it never"
+		+ " stretches."
+	),
+	&"fullscreen": "Fill the screen instead of running in a window.",
+	&"vsync": "Match frames to the display to stop tearing. Adds a little input delay.",
+	&"max_fps": "Cap the frame rate to keep the machine cooler and quieter.",
+	&"graphics_quality":
+	(
+		"Shadows, lighting, and effects in one choice. Lower presets run faster on older"
+		+ " graphics cards."
+	),
+	&"render_scale":
+	"Draws the 3D world at a lower resolution and scales it up. The HUD stays sharp.",
+	&"motion_blur": "Blurs fast camera turns.",
+	&"master_volume": "Every sound in the game.",
+	&"weapons_volume": "Gunfire, reloads, and weapon handling.",
+	&"effects_volume": "Impacts, explosions, and other effects.",
+	&"footsteps_volume": "Footsteps, yours and everyone else's.",
+	&"ambience_volume": "Wind, city noise, and other background sound.",
+	&"ui_volume": "Menu clicks and HUD sounds.",
+	&"audio_mix":
+	(
+		"Headphones keeps full stereo. Speakers narrows it. Competitive also evens out loud"
+		+ " and quiet sounds so footsteps carry."
+	),
+	&"player_name": "The name other players see in the kill feed and on the scoreboard.",
+	&"camera_motion": "Head bob and weapon sway while you move.",
+	&"show_fps": "Shows the frame rate in the corner of the screen.",
+	&"bindings":
+	(
+		"Choose a binding, then press a key or mouse button. A key used by another action"
+		+ " swaps with it."
+	),
+}
 
 @export var player_path: NodePath
 @export var title_menu := false
@@ -24,6 +89,8 @@ var _capture_time := 0.0
 var _binding_hint: Label
 var _controller_status: Label
 var _player_name: LineEdit
+## Default value text, by setting key, for the pane beside the list.
+var _defaults: Dictionary[StringName, String] = {}
 
 var _player: Node
 var _sliders: Dictionary[StringName, HSlider] = {}
@@ -41,6 +108,10 @@ var _owns_pause := false
 
 @onready var _root: Control = %Root
 @onready var _title: Label = %Title
+@onready var _eyebrow: Label = %Eyebrow
+@onready var _info_title: Label = %InfoTitle
+@onready var _info_text: Label = %InfoText
+@onready var _info_default: Label = %InfoDefault
 @onready var _main_page: Control = %MainPage
 @onready var _settings_page: Control = %SettingsPage
 @onready var _sections: VBoxContainer = %Sections
@@ -66,7 +137,6 @@ func _ready() -> void:
 	Input.joy_connection_changed.connect(_controller_changed)
 	Settings.changed.connect(_on_settings_changed)
 
-	_build.add_theme_color_override("font_color", UiTheme.TEXT_FAINT)
 	_root.hide()
 	_on_settings_changed()
 
@@ -86,9 +156,18 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			open()
 		return
+	_open_input(event, pause)
+
+
+## Keys while the menu is open: LB/RB switch tabs, Esc goes back or closes.
+func _open_input(event: InputEvent, pause: bool) -> void:
+	if _settings_page.visible and _tab_step(event) != 0:
+		get_viewport().set_input_as_handled()
+		_tabs.current_tab = wrapi(_tabs.current_tab + _tab_step(event), 0, _tabs.tab_count)
+		return
 	if not (pause or event.is_action_pressed(&"ui_cancel")):
 		return
-	for option: OptionButton in [_fps_option, _quality_option, _scale_option]:
+	for option: OptionButton in [_fps_option, _quality_option, _scale_option, _mix_option]:
 		if option.get_popup().visible:
 			return  # Let the dropdown close itself.
 	get_viewport().set_input_as_handled()
@@ -96,6 +175,25 @@ func _input(event: InputEvent) -> void:
 		_back()
 	else:
 		close()
+
+
+## -1 or 1 when `event` asks for the previous or next tab (LB/RB, Page Up/Down).
+func _tab_step(event: InputEvent) -> int:
+	if not event.is_pressed():
+		return 0
+	if event is InputEventJoypadButton:
+		match event.button_index:
+			JOY_BUTTON_LEFT_SHOULDER:
+				return -1
+			JOY_BUTTON_RIGHT_SHOULDER:
+				return 1
+	if event is InputEventKey:
+		match event.keycode:
+			KEY_PAGEUP:
+				return -1
+			KEY_PAGEDOWN:
+				return 1
+	return 0
 
 
 func _process(delta: float) -> void:
@@ -193,8 +291,9 @@ func _show_main() -> void:
 	var from_settings := _settings_page.visible
 	_settings_page.hide()
 	_main_page.show()
+	_eyebrow.text = ("ONLINE  ·  THE MATCH KEEPS RUNNING" if _match_runs_on() else "SHOOTER")
 	_title.text = "PAUSED"
-	_hint.text = "ESC  RESUME"
+	_hint.text = "Resume"
 	Settings.flush()
 	if from_settings:
 		_focus(_settings_button)
@@ -203,13 +302,29 @@ func _show_main() -> void:
 func _show_settings() -> void:
 	_main_page.hide()
 	_settings_page.show()
-	_title.text = "OPTIONS"
-	_hint.text = "ESC / B  BACK   •   CHANGES SAVE AUTOMATICALLY"
-	# Fit the scroll area to short windows.
-	var available := get_viewport().get_visible_rect().size.y - 330.0
-	_scroll.custom_minimum_size.y = maxf(minf(available, 520.0), 120.0)
+	_eyebrow.text = "SHOOTER" if title_menu else _pause_eyebrow()
+	_title.text = "SETTINGS"
+	_hint.text = "Back      Changes save automatically"
 	_scroll.scroll_vertical = 0
+	_describe(TAB_NAMES[_tabs.current_tab], TAB_INTROS[_tabs.current_tab], "")
 	_focus(_tabs)
+
+
+func _pause_eyebrow() -> String:
+	return "PAUSED  ·  THE MATCH KEEPS RUNNING" if _match_runs_on() else "PAUSED"
+
+
+## Online matches on someone else's server do not pause.
+func _match_runs_on() -> bool:
+	return Net.is_online() and not Net.is_local_match()
+
+
+## Fills the pane beside the list: a setting's name, what it does, and its default.
+func _describe(title: String, text: String, default: String) -> void:
+	_info_title.text = title
+	_info_text.text = text
+	_info_default.text = "DEFAULT  %s" % default.to_upper()
+	_info_default.visible = default != ""
 
 
 ## Online: back to the server browser. Offline: back to the title screen.
@@ -243,12 +358,13 @@ func _build_settings() -> void:
 	_tabs = TabBar.new()
 	_tabs.name = "OptionsTabs"
 	_tabs.focus_mode = Control.FOCUS_ALL
-	for title: String in ["Controls", "Graphics", "General"]:
+	for title: String in TAB_NAMES:
 		_tabs.add_tab(title)
 	_settings_page.add_child(_tabs)
 	_settings_page.move_child(_tabs, 0)
 	_tabs.tab_changed.connect(_select_tab)
 	var controls := _add_section("Controls")
+	_add_heading(controls, "Mouse")
 	_add_slider(controls, &"mouse_sensitivity", "Mouse sensitivity", 0.05, sensitivity)
 	_add_slider(
 		controls,
@@ -257,51 +373,91 @@ func _build_settings() -> void:
 		0.05,
 		func(v: float) -> String: return "%.2f×" % v
 	)
-
 	_add_toggle(controls, &"invert_mouse_y", "Invert mouse Y")
-	_add_slider(controls, &"stick_sensitivity", "Controller look speed", 0.05, sensitivity)
-	_add_slider(controls, &"stick_deadzone", "Stick deadzone", 0.01, percent)
-	_add_toggle(controls, &"invert_stick_y", "Invert controller Y axis")
-	_add_slider(controls, &"stick_curve", "Response curve", 0.1, sensitivity)
-	_add_toggle(controls, &"aim_assist", "Aim assist")
-	_add_slider(controls, &"aim_assist_strength", "Aim assist strength", 0.05, percent)
-	_add_toggle(controls, &"rumble", "Vibration")
+	_add_heading(controls, "Controller")
 	_controller_status = Label.new()
+	_controller_status.theme_type_variation = &"DimLabel"
 	_controller_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	controls.add_child(_controller_status)
 	_controller_changed(0, false)
+	_add_slider(controls, &"stick_sensitivity", "Look speed", 0.05, sensitivity)
+	_add_slider(controls, &"stick_deadzone", "Stick deadzone", 0.01, percent)
+	_add_slider(controls, &"stick_curve", "Response curve", 0.1, sensitivity)
+	_add_toggle(controls, &"invert_stick_y", "Invert Y axis")
+	_add_toggle(controls, &"aim_assist", "Aim assist")
+	_add_slider(controls, &"aim_assist_strength", "Aim assist strength", 0.05, percent)
+	_add_toggle(controls, &"rumble", "Vibration")
+
+	var keybinds := _add_section("Keybinds")
 	_binding_hint = Label.new()
-	_binding_hint.text = ("Choose a binding, then press a key or mouse button. Conflicts swap.")
+	_binding_hint.text = "Choose a binding, then press a key or mouse button. Conflicts swap."
+	_binding_hint.theme_type_variation = &"DimLabel"
 	_binding_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	controls.add_child(_binding_hint)
-	_build_bindings(controls)
+	keybinds.add_child(_binding_hint)
+	_build_bindings(keybinds)
 
 	var video := _add_section("Graphics")
+	_add_heading(video, "Display")
 	_add_slider(
 		video, &"fov", "Field of view", 1.0, func(v: float) -> String: return "%d°" % roundi(v)
 	)
 	_add_toggle(video, &"fullscreen", "Fullscreen")
 	_add_toggle(video, &"vsync", "VSync")
 	_add_fps_option(video)
+	_add_heading(video, "Quality")
 	_add_graphics_options(video)
 
-	var audio := _add_section("General")
-	_player_name = LineEdit.new()
-	_player_name.max_length = 16
-	_player_name.custom_minimum_size.x = 220
-	_player_name.text_submitted.connect(func(_text: String) -> void: _save_player_name())
-	_player_name.focus_exited.connect(_save_player_name)
-	_add_row(audio, "Player name", _player_name)
-	_add_toggle(audio, &"camera_motion", "Camera motion")
-	_add_toggle(audio, &"show_fps", "Show FPS counter")
+	var audio := _add_section("Audio")
+	_add_heading(audio, "Volume")
 	_add_slider(audio, &"master_volume", "Master", 0.01, percent)
 	_add_slider(audio, &"weapons_volume", "Weapons", 0.01, percent)
 	_add_slider(audio, &"effects_volume", "Effects", 0.01, percent)
 	_add_slider(audio, &"footsteps_volume", "Footsteps", 0.01, percent)
 	_add_slider(audio, &"ambience_volume", "Ambience", 0.01, percent)
 	_add_slider(audio, &"ui_volume", "Interface", 0.01, percent)
+	_add_heading(audio, "Output")
 	_add_mix_option(audio)
+
+	var general := _add_section("General")
+	_add_heading(general, "Profile")
+	_player_name = LineEdit.new()
+	_player_name.max_length = 16
+	_player_name.custom_minimum_size = Vector2(260, 34)
+	_player_name.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_player_name.text_submitted.connect(func(_text: String) -> void: _save_player_name())
+	_player_name.focus_exited.connect(_save_player_name)
+	_add_row(general, "Player name", _player_name, null, &"player_name")
+	_add_heading(general, "Interface")
+	_add_toggle(general, &"camera_motion", "Camera motion")
+	_add_toggle(general, &"show_fps", "Show FPS counter")
+	_record_defaults()
 	_select_tab(0)
+
+
+## Remembers each setting's default as text for the pane beside the list.
+func _record_defaults() -> void:
+	for key: StringName in _value_formats:
+		_defaults[key] = _value_formats[key].call(Settings.DEFAULTS[key])
+	for key: StringName in _toggles:
+		_defaults[key] = "On" if Settings.DEFAULTS[key] else "Off"
+	var fps: int = Settings.DEFAULTS[&"max_fps"]
+	_defaults[&"max_fps"] = "Unlimited" if fps == 0 else "%d FPS" % fps
+	_defaults[&"graphics_quality"] = GraphicsQuality.NAMES[Settings.DEFAULTS[&"graphics_quality"]]
+	_defaults[&"render_scale"] = _scale_name(Settings.DEFAULTS[&"render_scale"])
+	_defaults[&"audio_mix"] = Settings.AUDIO_MIXES[Settings.DEFAULTS[&"audio_mix"]]
+
+
+func _scale_name(scale: float) -> String:
+	return "Native" if scale >= 0.999 else "%d%%" % roundi(scale * 100.0)
+
+
+func _add_heading(section: VBoxContainer, title: String) -> void:
+	var heading := Label.new()
+	heading.text = title.to_upper()
+	heading.theme_type_variation = &"SectionHeader"
+	heading.custom_minimum_size.y = 34
+	heading.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	section.add_child(heading)
 
 
 func _add_section(title: String) -> VBoxContainer:
@@ -318,6 +474,7 @@ func _select_tab(index: int) -> void:
 	for i in _tab_sections.size():
 		_tab_sections[i].visible = i == index
 	_scroll.scroll_vertical = 0
+	_describe(TAB_NAMES[index], TAB_INTROS[index], "")
 
 
 func _save_player_name() -> void:
@@ -335,19 +492,38 @@ func _controller_changed(_device: int, _connected: bool) -> void:
 
 
 func _build_bindings(section: VBoxContainer) -> void:
-	var heading := Label.new()
-	heading.text = "ACTION                         KEYBOARD / MOUSE          CONTROLLER"
-	heading.theme_type_variation = &"HintLabel"
-	section.add_child(heading)
+	var heading := HBoxContainer.new()
+	heading.add_theme_constant_override(&"separation", 14)
+	heading.custom_minimum_size.y = 34
+	for column: Array in [["ACTION", 0], ["KEYBOARD / MOUSE", 170], ["CONTROLLER", 150]]:
+		var label := Label.new()
+		label.text = column[0]
+		label.theme_type_variation = &"SectionHeader"
+		label.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+		label.size_flags_vertical = Control.SIZE_FILL
+		if column[1] == 0:
+			label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		elif column[1] == 170:
+			label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		else:
+			label.custom_minimum_size.x = column[1]
+		heading.add_child(label)
+	# Line the column names up with the row contents inside the row margins.
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override(&"margin_left", 16)
+	margin.add_theme_constant_override(&"margin_right", 16)
+	margin.add_child(heading)
+	section.add_child(margin)
 	for action: StringName in Settings.REBINDABLE:
 		var button := Button.new()
-		button.custom_minimum_size.x = 150
+		button.custom_minimum_size = Vector2(170, 34)
 		button.pressed.connect(_start_capture.bind(action))
 		_bind_buttons[action] = button
 		var gamepad := Label.new()
-		gamepad.custom_minimum_size.x = 130
+		gamepad.custom_minimum_size.x = 150
+		gamepad.theme_type_variation = &"DimLabel"
 		gamepad.text = _gamepad_label(action)
-		_add_row(section, Settings.REBINDABLE[action], button, gamepad)
+		_add_row(section, Settings.REBINDABLE[action], button, gamepad, &"bindings")
 
 
 func _gamepad_label(action: StringName) -> String:
@@ -408,14 +584,14 @@ func _add_slider(
 	slider.min_value = limits.x
 	slider.max_value = limits.y
 	slider.step = step
-	slider.custom_minimum_size = Vector2(190, 28)
+	slider.custom_minimum_size = Vector2(300, 28)
 	slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	slider.value_changed.connect(func(v: float) -> void: Settings.set_setting(key, v))
 	var value := Label.new()
 	value.theme_type_variation = &"ValueLabel"
-	value.custom_minimum_size.x = 58
+	value.custom_minimum_size.x = 72
 	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_add_row(section, label, slider, value)
+	_add_row(section, label, slider, value, key)
 	_sliders[key] = slider
 	_value_labels[key] = value
 	_value_formats[key] = format
@@ -423,76 +599,80 @@ func _add_slider(
 
 func _add_toggle(section: VBoxContainer, key: StringName, label: String) -> void:
 	var toggle := CheckButton.new()
-	toggle.text = label
 	toggle.toggled.connect(func(on: bool) -> void: Settings.set_setting(key, on))
-	section.add_child(toggle)
+	_add_row(section, label, toggle, null, key)
 	_toggles[key] = toggle
 
 
 func _add_fps_option(section: VBoxContainer) -> void:
 	_fps_option = OptionButton.new()
-	_fps_option.custom_minimum_size.x = 150
+	_fps_option.custom_minimum_size = Vector2(220, 34)
 	_fps_option.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	for fps: int in Settings.MAX_FPS_OPTIONS:
 		_fps_option.add_item("Unlimited" if fps == 0 else "%d FPS" % fps, fps)
 	_fps_option.item_selected.connect(
 		func(index: int) -> void: Settings.set_setting(&"max_fps", _fps_option.get_item_id(index))
 	)
-	_add_row(section, "Frame rate limit", _fps_option)
+	_add_row(section, "Frame rate limit", _fps_option, null, &"max_fps")
 
 
 func _add_mix_option(section: VBoxContainer) -> void:
 	_mix_option = OptionButton.new()
-	_mix_option.custom_minimum_size.x = 150
+	_mix_option.custom_minimum_size = Vector2(220, 34)
 	_mix_option.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	for i in Settings.AUDIO_MIXES.size():
 		_mix_option.add_item(Settings.AUDIO_MIXES[i], i)
 	_mix_option.item_selected.connect(
 		func(index: int) -> void: Settings.set_setting(&"audio_mix", _mix_option.get_item_id(index))
 	)
-	_add_row(section, "Audio mix", _mix_option)
+	_add_row(section, "Audio mix", _mix_option, null, &"audio_mix")
 
 
 func _add_graphics_options(section: VBoxContainer) -> void:
 	_quality_option = OptionButton.new()
-	_quality_option.custom_minimum_size.x = 150
+	_quality_option.custom_minimum_size = Vector2(220, 34)
 	_quality_option.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	for i in GraphicsQuality.NAMES.size():
 		_quality_option.add_item(GraphicsQuality.NAMES[i], i)
 	_quality_option.item_selected.connect(
 		func(index: int) -> void: Settings.set_graphics_preset(_quality_option.get_item_id(index))
 	)
-	_add_row(section, "Graphics quality", _quality_option)
+	_add_row(section, "Graphics preset", _quality_option, null, &"graphics_quality")
 
 	_scale_option = OptionButton.new()
-	_scale_option.custom_minimum_size.x = 150
+	_scale_option.custom_minimum_size = Vector2(220, 34)
 	_scale_option.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	for i in GraphicsQuality.RENDER_SCALES.size():
-		var scale := GraphicsQuality.RENDER_SCALES[i]
-		_scale_option.add_item("Native" if scale >= 0.999 else "%d%%" % roundi(scale * 100.0), i)
+		_scale_option.add_item(_scale_name(GraphicsQuality.RENDER_SCALES[i]), i)
 	_scale_option.item_selected.connect(
 		func(index: int) -> void:
 			Settings.set_setting(&"render_scale", GraphicsQuality.RENDER_SCALES[index])
 	)
-	_add_row(section, "Render scale", _scale_option)
+	_add_row(section, "Render scale", _scale_option, null, &"render_scale")
 	_add_toggle(section, &"motion_blur", "Motion blur")
 
 
-## Adds a labelled row around `control`. The row shows the same accent bar as the
-## toggle rows while `control` has focus.
+## Adds a labelled row around `control`. The row lights up while `control` has
+## focus, and focus or hover shows setting `key` in the pane beside the list.
 func _add_row(
-	section: VBoxContainer, label: String, control: Control, extra: Control = null
+	section: VBoxContainer,
+	label: String,
+	control: Control,
+	extra: Control = null,
+	key: StringName = &"",
 ) -> void:
 	var panel := PanelContainer.new()
 	panel.theme_type_variation = &"SettingRow"
-	panel.custom_minimum_size.y = 36
+	panel.custom_minimum_size.y = 46
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override(&"separation", 14)
 	var name_label := Label.new()
 	name_label.text = label
+	name_label.theme_type_variation = &"SettingName"
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	row.add_child(name_label)
+	control.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(control)
 	if extra != null:
 		row.add_child(extra)
@@ -500,6 +680,11 @@ func _add_row(
 	section.add_child(panel)
 	control.focus_entered.connect(_highlight_row.bind(panel, name_label, true))
 	control.focus_exited.connect(_highlight_row.bind(panel, name_label, false))
+	var describe := func() -> void:
+		_describe(label, DESCRIPTIONS.get(key, ""), _defaults.get(key, ""))
+	control.focus_entered.connect(describe)
+	control.mouse_entered.connect(describe)
+	panel.mouse_entered.connect(describe)
 
 
 func _highlight_row(panel: PanelContainer, label: Label, on: bool) -> void:

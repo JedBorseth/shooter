@@ -1,6 +1,10 @@
-[gd_scene format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scripts/pause_menu.gd" id="1_script"]
+[ext_resource type="Shader" path="res://shaders/menu_blur.gdshader" id="2_blur"]
+
+[sub_resource type="ShaderMaterial" id="Blur"]
+shader = ExtResource("2_blur")
 
 [node name="PauseMenu" type="CanvasLayer"]
 process_mode = 3
@@ -18,15 +22,7 @@ grow_horizontal = 2
 grow_vertical = 2
 
 [node name="Backdrop" type="ColorRect" parent="Root"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-color = Color(0.012, 0.016, 0.02, 0.74)
-
-[node name="Center" type="CenterContainer" parent="Root"]
+material = SubResource("Blur")
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -34,112 +30,194 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="Panel" type="PanelContainer" parent="Root/Center"]
-custom_minimum_size = Vector2(680, 0)
-layout_mode = 2
+[node name="Margin" type="MarginContainer" parent="Root"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 72
+theme_override_constants/margin_top = 40
+theme_override_constants/margin_right = 72
+theme_override_constants/margin_bottom = 32
 
-[node name="Margin" type="MarginContainer" parent="Root/Center/Panel"]
+[node name="Layout" type="VBoxContainer" parent="Root/Margin"]
 layout_mode = 2
-theme_override_constants/margin_left = 32
-theme_override_constants/margin_top = 26
-theme_override_constants/margin_right = 32
-theme_override_constants/margin_bottom = 22
+theme_override_constants/separation = 6
 
-[node name="Layout" type="VBoxContainer" parent="Root/Center/Panel/Margin"]
-layout_mode = 2
-theme_override_constants/separation = 12
-
-[node name="Eyebrow" type="Label" parent="Root/Center/Panel/Margin/Layout"]
+[node name="Eyebrow" type="Label" parent="Root/Margin/Layout"]
+unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"MenuEyebrow"
-text = "// SHOOTER"
+text = "SHOOTER"
 
-[node name="Title" type="Label" parent="Root/Center/Panel/Margin/Layout"]
+[node name="Title" type="Label" parent="Root/Margin/Layout"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"MenuTitle"
 text = "PAUSED"
 
-[node name="Rule" type="HSeparator" parent="Root/Center/Panel/Margin/Layout"]
+[node name="TitleGap" type="Control" parent="Root/Margin/Layout"]
+custom_minimum_size = Vector2(0, 10)
 layout_mode = 2
 
-[node name="MainPage" type="VBoxContainer" parent="Root/Center/Panel/Margin/Layout"]
+[node name="MainPage" type="VBoxContainer" parent="Root/Margin/Layout"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(440, 0)
 layout_mode = 2
-theme_override_constants/separation = 6
+size_flags_horizontal = 0
+size_flags_vertical = 3
+theme_override_constants/separation = 4
 
-[node name="ResumeButton" type="Button" parent="Root/Center/Panel/Margin/Layout/MainPage"]
+[node name="ResumeButton" type="Button" parent="Root/Margin/Layout/MainPage"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
+theme_type_variation = &"RouteButton"
 text = "Resume"
 alignment = 0
 
-[node name="SettingsButton" type="Button" parent="Root/Center/Panel/Margin/Layout/MainPage"]
+[node name="SettingsButton" type="Button" parent="Root/Margin/Layout/MainPage"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
-text = "Options"
+theme_type_variation = &"RouteButton"
+text = "Settings"
 alignment = 0
 
-[node name="LeaveButton" type="Button" parent="Root/Center/Panel/Margin/Layout/MainPage"]
+[node name="LeaveButton" type="Button" parent="Root/Margin/Layout/MainPage"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
+theme_type_variation = &"RouteButton"
 text = "Main menu"
 alignment = 0
 
-[node name="QuitButton" type="Button" parent="Root/Center/Panel/Margin/Layout/MainPage"]
+[node name="QuitButton" type="Button" parent="Root/Margin/Layout/MainPage"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
+theme_type_variation = &"RouteButton"
 text = "Quit to desktop"
 alignment = 0
 
-[node name="SettingsPage" type="VBoxContainer" parent="Root/Center/Panel/Margin/Layout"]
+[node name="SettingsPage" type="VBoxContainer" parent="Root/Margin/Layout"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
+size_flags_vertical = 3
 theme_override_constants/separation = 14
 
-[node name="Scroll" type="ScrollContainer" parent="Root/Center/Panel/Margin/Layout/SettingsPage"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 540)
+[node name="Body" type="HBoxContainer" parent="Root/Margin/Layout/SettingsPage"]
 layout_mode = 2
-follow_focus = true
-horizontal_scroll_mode = 0
+size_flags_vertical = 3
+theme_override_constants/separation = 36
 
-[node name="Sections" type="VBoxContainer" parent="Root/Center/Panel/Margin/Layout/SettingsPage/Scroll"]
+[node name="Scroll" type="ScrollContainer" parent="Root/Margin/Layout/SettingsPage/Body"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_constants/separation = 2
+follow_focus = true
+horizontal_scroll_mode = 0
 
-[node name="Footer" type="HBoxContainer" parent="Root/Center/Panel/Margin/Layout/SettingsPage"]
+[node name="Gutter" type="MarginContainer" parent="Root/Margin/Layout/SettingsPage/Body/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/margin_right = 16
+
+[node name="Sections" type="VBoxContainer" parent="Root/Margin/Layout/SettingsPage/Body/Scroll/Gutter"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="Info" type="PanelContainer" parent="Root/Margin/Layout/SettingsPage/Body"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(460, 0)
+layout_mode = 2
+size_flags_vertical = 0
+theme_type_variation = &"StrongPanel"
+
+[node name="InfoLayout" type="VBoxContainer" parent="Root/Margin/Layout/SettingsPage/Body/Info"]
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="ResetButton" type="Button" parent="Root/Center/Panel/Margin/Layout/SettingsPage/Footer"]
+[node name="InfoTitle" type="Label" parent="Root/Margin/Layout/SettingsPage/Body/Info/InfoLayout"]
 unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"Heading"
+
+[node name="InfoText" type="Label" parent="Root/Margin/Layout/SettingsPage/Body/Info/InfoLayout"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(412, 0)
+layout_mode = 2
+theme_type_variation = &"DimLabel"
+autowrap_mode = 3
+
+[node name="InfoDefault" type="Label" parent="Root/Margin/Layout/SettingsPage/Body/Info/InfoLayout"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 0
+theme_type_variation = &"KeyCap"
+
+[node name="Actions" type="HBoxContainer" parent="Root/Margin/Layout/SettingsPage"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="ResetButton" type="Button" parent="Root/Margin/Layout/SettingsPage/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
 theme_type_variation = &"SecondaryButton"
 text = "Reset to defaults"
 
-[node name="Spacer" type="Control" parent="Root/Center/Panel/Margin/Layout/SettingsPage/Footer"]
+[node name="Spacer" type="Control" parent="Root/Margin/Layout/SettingsPage/Actions"]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="BackButton" type="Button" parent="Root/Center/Panel/Margin/Layout/SettingsPage/Footer"]
+[node name="BackButton" type="Button" parent="Root/Margin/Layout/SettingsPage/Actions"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(140, 40)
 layout_mode = 2
 theme_type_variation = &"SecondaryButton"
 text = "Back"
 
-[node name="Hint" type="Label" parent="Root/Center/Panel/Margin/Layout"]
-unique_name_in_owner = true
+[node name="Footer" type="HBoxContainer" parent="Root/Margin/Layout"]
 layout_mode = 2
-theme_type_variation = &"HintLabel"
-text = "ESC  RESUME"
+theme_override_constants/separation = 8
 
-[node name="Build" type="Label" parent="Root/Center/Panel/Margin/Layout"]
+[node name="SelectKey" type="Label" parent="Root/Margin/Layout/Footer"]
+layout_mode = 2
+theme_type_variation = &"KeyCap"
+text = "ENTER"
+
+[node name="SelectHint" type="Label" parent="Root/Margin/Layout/Footer"]
+layout_mode = 2
+theme_type_variation = &"DimLabel"
+text = "Select"
+
+[node name="HintGap" type="Control" parent="Root/Margin/Layout/Footer"]
+custom_minimum_size = Vector2(14, 0)
+layout_mode = 2
+
+[node name="BackKey" type="Label" parent="Root/Margin/Layout/Footer"]
+layout_mode = 2
+theme_type_variation = &"KeyCap"
+text = "ESC"
+
+[node name="Hint" type="Label" parent="Root/Margin/Layout/Footer"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_type_variation = &"HintLabel"
-theme_override_font_sizes/font_size = 14
+theme_type_variation = &"DimLabel"
+text = "Resume"
+
+[node name="FooterSpace" type="Control" parent="Root/Margin/Layout/Footer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Build" type="Label" parent="Root/Margin/Layout/Footer"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"FaintLabel"
 text = "BUILD"
