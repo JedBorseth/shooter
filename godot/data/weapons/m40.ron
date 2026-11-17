@@ -1,5 +1,6 @@
-// M40 bolt-action sniper rifle: one-shot kill to the chest at any range, a
-// 3.5x scope with sway that hold-breath (Shift while scoped) steadies.
+// M40 bolt-action sniper rifle: one shot kills to the head or chest at any
+// range; a hit lower down or on a limb needs a second. A 4x scope (0.28 of a
+// 70 degree view) with sway that hold-breath (Shift while scoped) steadies.
 (
     name: "M40",
     slot: Primary,
@@ -9,13 +10,14 @@
     magazine: 5,
     reserve: 25,
     damage: (near: 100, far: 100, falloff_start: 100, falloff_end: 200, headshot: 1.5),
+    zones: (stomach: 0.9, arm: 0.75, leg: 0.7),
     range: 600,
     penetration: 0.6,
-    reload: Magazine(time: 3.0, empty_time: 3.6),
-    ads_time: 0.32,
-    sprint_out_time: 0.28,
-    raise_time: 0.5,
-    lower_time: 0.32,
+    reload: Magazine(time: 3.0, empty_time: 3.6, mag_in: Some(1.9)),
+    ads_time: 0.42,
+    sprint_out_time: 0.36,
+    raise_time: 0.6,
+    lower_time: 0.38,
     spread: (hip: 6.0, hip_moving: 8.0, air: 10.0, ads: 0.0),
     ads_fov_scale: 0.28,
     ads_move_scale: 0.4,
@@ -24,8 +26,9 @@
         pattern: [(2.3, 0.26)],
         jitter: (0.33, 0.4),
         ads_scale: 0.75,
-        recovery_delay: 0.12,
-        recovery_rate: 7.0,
+        kick_return: 0.7,
+        recovery_delay: 0.05,
+        recovery_rate: 8.0,
     ),
     scope: Some((sway: 0.55, hold_breath: 4.0, breath_recovery: 2.5)),
     tracer_every: 1,

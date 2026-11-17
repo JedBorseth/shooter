@@ -305,7 +305,8 @@ func _sniper(main: Node, player: FpsPlayer) -> void:
 	player.give_weapon("m40")
 	await _sixtieths(50)
 	_check(player.weapon_name() == "M40", "sniper equipped, got %s" % player.weapon_name())
-	var dummy := await _dummy_ahead(main, player, 20.0)
+	# The sniper kills with one shot to the head or upper chest only.
+	var dummy := await _dummy_ahead(main, player, 20.0, 1.3)
 	Input.action_press("aim")
 	await _sixtieths(30)
 	_check(player.scope_amount() > 0.99, "sniper scopes in, got %.2f" % player.scope_amount())
@@ -510,14 +511,16 @@ func _wall(main: Node, player: FpsPlayer, thickness: float, surface: String) -> 
 	return wall
 
 
-func _dummy_ahead(main: Node, player: FpsPlayer, distance: float) -> Node3D:
+## A target dummy `distance` metres ahead, with the crosshair at `height`
+## metres up its body (1.1 is the lower chest; 1.3 the upper chest).
+func _dummy_ahead(main: Node, player: FpsPlayer, distance: float, height := 1.1) -> Node3D:
 	player.global_position = Vector3(0, 0.05, 20)
 	player.set_look(0.0, 0.0)
 	await _sixtieths(5)
 	var dummy := DUMMY_SCENE.instantiate() as Node3D
 	main.add_child(dummy)
 	dummy.global_position = player.global_position + Vector3(0, 0, -distance)
-	player.set_look(0.0, atan2(1.1 - 1.68, distance))
+	player.set_look(0.0, atan2(height - 1.68, distance))
 	await _sixtieths(5)
 	return dummy
 

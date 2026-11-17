@@ -48,7 +48,8 @@ use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState}
 // scoreboard.
 // Version 16 added the server's build name to the welcome.
 // Version 17 added Free-for-all.
-pub const PROTOCOL_VERSION: u16 = 17;
+// Version 18 added hip-fire bloom and each slot's pending bolt cycle.
+pub const PROTOCOL_VERSION: u16 = 18;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -1571,6 +1572,7 @@ fn write_combat_state(w: &mut BitWriter, c: &CombatState) {
         write_weapon(w, slot.id);
         w.u16(slot.magazine);
         w.u16(slot.reserve);
+        w.bool(slot.needs_cycle);
         w.bool(slot.carried);
     }
     w.bits(u32::from(c.active), 2);
@@ -1612,6 +1614,7 @@ fn write_combat_state(w: &mut BitWriter, c: &CombatState) {
     w.f32(c.since_shot);
     w.f32(c.recoil.x);
     w.f32(c.recoil.y);
+    w.f32(c.bloom);
     w.u32(c.shots_fired);
     w.bool(c.fire_held);
     w.u8(c.burst_left);
@@ -1628,6 +1631,7 @@ fn read_combat_state(r: &mut BitReader) -> DecodeResult<CombatState> {
             id: read_weapon(r)?,
             magazine: r.u16()?,
             reserve: r.u16()?,
+            needs_cycle: r.bool()?,
             carried: r.bool()?,
         })
     };
@@ -1677,6 +1681,7 @@ fn read_combat_state(r: &mut BitReader) -> DecodeResult<CombatState> {
         burst: r.u16()?,
         since_shot: r.f32()?,
         recoil: Vec2::new(r.f32()?, r.f32()?),
+        bloom: r.f32()?,
         shots_fired: r.u32()?,
         fire_held: r.bool()?,
         burst_left: r.u8()?,

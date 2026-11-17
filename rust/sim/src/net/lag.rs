@@ -276,7 +276,7 @@ pub fn resolve_shot(def: &WeaponDef, pellets: &[Pellet], targets: &[Target]) -> 
             continue;
         };
         let damage = def.damage_at(hit.distance)
-            * hit.zone.damage_scale(def.damage.headshot)
+            * def.zone_scale(hit.zone)
             * pellet.damage_scale_at(hit.distance);
         let headshot = hit.zone == hitbox::HitZone::Head;
         match hits.iter_mut().find(|h| h.id == id) {

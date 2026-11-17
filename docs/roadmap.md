@@ -29,14 +29,14 @@ movement and gunplay, with 6v6 matches on dedicated servers.
 
 These rules apply to every weapon and movement change.
 
-- **Recoil is mostly visual.** Aim recoil (the `recoil` block in each weapon's RON file) stays small, follows a learnable pattern, and recovers quickly. The weapon model kick (`kick_strength`) and the camera punch (`camera_punch`) on each `WeaponView` carry the violence, and never move the aim. Aiming down sights keeps 60% of the punch (`ads_punch_scale` on `FpsPlayer`).
+- **Recoil climbs and the sights tell the truth.** Each kick follows a learnable per-weapon pattern with a little hashed variation. Most of it climbs and stays (the player pulls down to hold a spray), and a small snap settles back after each shot. The screen centre and the sights are always where the next round goes; the camera punch only rolls the view. See [weapons.md](weapons.md).
 - **Every hit is confirmed.** Hit markers pop in oversized and settle, with distinct sounds for body hits, headshots, and kills. Kill markers are larger, thicker, red, and stay up twice as long.
-- **Time-to-kill is about 200 to 300 ms** for primaries at their best range. Reloads, ADS, and sprint-out stay short.
+- **Time-to-kill is about 200 to 300 ms** for primaries at their best range, with each class keeping its own shape over range ([weapons.md](weapons.md)). Handling times follow the class: SMGs aim in under 0.2 s, rifles in about 0.25 s, the LMG and sniper in about 0.4 s.
 - **Input comes first.** The simulation ticks at 120 Hz (`shooter_sim::TICK_RATE`), so a press waits at most about 8 ms for the tick that acts on it. Mouse look applies every rendered frame and never waits for a tick. Recoil kicks show on the first frame after the shot instead of easing in across a tick. Vsync, when on, uses mailbox mode (no tearing, no queued frames).
 - **Forgive the player's timing.** A jump pressed up to 100 ms before landing, or up to 100 ms after walking off a ledge, still happens. Stopping and changing direction take under 200 ms.
 - **Frame rate over fancy lighting.** Greybox maps run without SDFGI and SSIL (about 40% more frames on a GTX 1060 with no visible difference here). Anti-aliasing is 2x MSAA plus SMAA, which is sharper than FXAA. Revisit per map in the lighting pass.
 - **Kills pay off.** Targets flinch away from hits and topple away from the killing shot, and the camera gives a short zoom-in thump.
-- **Avoid simulation mechanics:** weapon inertia, stamina, heavy sway on unscoped weapons, bullet drop at normal ranges, and random recoil.
+- **Avoid simulation mechanics:** stamina, heavy sway on unscoped weapons, bullet drop at normal ranges, and recoil that cannot be learned. The weapon has visual weight (it lags the view and reacts to movement), but that never moves the aim.
 
 ## Phases
 

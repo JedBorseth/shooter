@@ -63,6 +63,8 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 ### Feel and polish
 
 - [x] Camera recoil punch tuned per weapon (`camera_punch` on `WeaponView`, `ads_punch_scale` on `FpsPlayer`), visual only, separate from the aim recoil in the weapon files.
+- [x] Modern weapon rules ([docs/weapons.md](docs/weapons.md)): recoil splits into a climb that stays and a snap that settles, so the sights always show where rounds go and pulling down holds a spray; hashed per-shot camera roll; hip-fire bloom; crouch steadies the kick; aimed idle sway on every weapon; aiming through a reload; reloads that carry on through a sprint and count their rounds when the magazine seats; switches never skip a bolt cycle or an empty-reload charge; per-weapon zone multipliers; class handling times and a time-to-kill table (`rust/sim/src/weapon/ttk.rs`). Look sensitivity follows the aim zoom only, not sprint or slide FOV.
+- [x] Weapon-feel trace: `godot/tests/capture_weapon_feel.gd` records the weapon's pose, the view, and the aim each frame through scripted scenarios; `tools/plot_weapon_feel.py` plots them against reference bands.
 - [x] Damage feedback when the player is hit: red vignette, directional indicator, hit sounds.
 - [x] Audio buses (Master, Weapons, Effects, UI) with a compressor on Weapons and a limiter on Master.
 - [x] Layered gunshots (snap, body, and tail, each picked from several recordings) with no dead air before the transient. Rebuild them with `tools/build_weapon_audio.py`.
