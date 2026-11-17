@@ -606,6 +606,12 @@ impl FpsPlayer {
         i32::from(self.state.combat.def().low_ammo())
     }
 
+    /// Rounds a full magazine of the active weapon holds, attachments included.
+    #[func]
+    fn magazine_size(&self) -> i32 {
+        i32::from(self.state.combat.def().magazine)
+    }
+
     #[func]
     fn is_reloading(&self) -> bool {
         self.state.combat.is_reloading()

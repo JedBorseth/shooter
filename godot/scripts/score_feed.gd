@@ -35,8 +35,8 @@ const VIOLET := Color(0.74, 0.45, 1.0)
 const TEAL := Color(0.3, 0.9, 0.84)
 const SKY := Color(0.45, 0.78, 1.0)
 
-const FONT_HEAVY := preload("res://assets/fonts/BarlowCondensed-ExtraBold.ttf")
-const FONT_BOLD := preload("res://assets/fonts/BarlowCondensed-Bold.ttf")
+const FONT_HEAVY := preload("res://assets/fonts/ChakraPetch-Bold.ttf")
+const FONT_BOLD := preload("res://assets/fonts/ChakraPetch-SemiBold.ttf")
 
 var player: FpsPlayer
 
