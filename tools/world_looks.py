@@ -93,8 +93,9 @@ LOOKS: dict[str, dict] = {
 
 # --- Slamcity -------------------------------------------------------------------------
 # Textured looks: `set`, `size` (metres per repeat), `tint`, and optionally
-# `rough`, `metal`, `grime`, `stripes` ((width in metres, second colour)), and
-# `checker` ((square in metres, second colour)).
+# `rough`, `metal`, `grime`, `stripes` ((width in metres, second colour)),
+# `checker` ((square in metres, second colour)), and `normal` (normal map
+# strength; a look with its own gets its own material).
 # Plain looks: `color`, `rough`, and `metal` (0 or 1); `paint` (vehicles) puts
 # them in a glossy paint material with little macro variation.
 # Glowing looks: `color` and `glow` (emission energy).
@@ -181,7 +182,7 @@ SLAMCITY_LOOKS: dict[str, dict] = {
     "roof_corrugated": _t("corrugated", 2.0, (0.58, 0.6, 0.62), metal=0.6, grime=0.0),
     # The platform canopy is seen at a glancing angle down its length, where
     # fine ribs shimmer: a coarser scale.
-    "canopy_corrugated": _t("corrugated", 3.5, (0.42, 0.43, 0.45), metal=0.2, rough=1.3, grime=0.0),
+    "canopy_corrugated": _t("corrugated", 3.5, (0.42, 0.43, 0.45), metal=0.2, rough=1.8, grime=0.0, normal=0.4),
     # The derailed car: painted steel, dirtier toward the alley it lies in.
     "train_wreck": _t("painted_metal", 2.5, (0.58, 0.59, 0.6), metal=0.6, grime=0.35),
     # Its torn, burnt nose: the same steel, darkened by the fire.
@@ -210,9 +211,11 @@ SLAMCITY_LOOKS: dict[str, dict] = {
     "safe_green": _t("painted_metal", 1.0, (0.2, 0.3, 0.24), metal=0.3),
     "truck_white": {"color": (0.86, 0.86, 0.84), "rough": 0.55, "paint": True},
     "vending_red": _t("painted_metal", 1.5, (0.7, 0.08, 0.08)),
-    # Stainless fluting at its real pitch, cool and only half metallic, so it
-    # does not band warm in the low sun like a fence.
-    "train_corrugated": _t("container", 0.6, (0.72, 0.75, 0.79), metal=0.35, rough=0.9, grime=0.2),
+    # Stainless fluting: painted metal (whose texture is fully metallic; the
+    # container set's is not, and its scratches shrank into wood grain when
+    # tiled finely), with the flutes as fine stripes of a darker tone.
+    "train_corrugated": _t("painted_metal", 2.5, (0.78, 0.8, 0.82), metal=0.6, rough=1.5, grime=0.2,
+                           stripes=(0.07, (0.62, 0.64, 0.67))),
     "train_steel": _t("painted_metal", 2.5, (0.74, 0.76, 0.78), metal=0.6, grime=0.2),
     "train_roof": _t("painted_metal", 2.0, (0.4, 0.4, 0.42), grime=0.0),
     "train_floor": _t("metal_plates", 1.5, (0.5, 0.46, 0.44), grime=0.0),

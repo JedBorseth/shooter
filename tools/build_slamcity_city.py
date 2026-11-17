@@ -462,7 +462,8 @@ class Materials:
                 if s_ == spec["set"] and abs(sz - size) / size < 0.34:
                     size = sz
                     break
-            key = (spec["set"], size, metal, json.dumps(spec.get("stripes")), json.dumps(spec.get("checker")))
+            key = (spec["set"], size, metal, json.dumps(spec.get("stripes")), json.dumps(spec.get("checker")),
+                   spec.get("normal", 1.0))
             if key not in self.groups:
                 name = f"{spec['set']}_{len([k for k in self.groups if k[0] == spec['set']])}"
                 self.groups[key] = name
@@ -506,7 +507,8 @@ class Materials:
                       f"shader_parameter/tile_size = {spec['size']:g}",
                       "shader_parameter/use_vertex_color = true",
                       f"shader_parameter/metallic_scale = {spec.get('metal', 1.0):g}",
-                      f"shader_parameter/grime = {spec.get('grime', 0.3):g}"]
+                      f"shader_parameter/grime = {spec.get('grime', 0.3):g}",
+                      f"shader_parameter/normal_strength = {spec.get('normal', 1.0):g}"]
             if spec.get("stripes"):
                 width, col = spec["stripes"]
                 lines += [f"shader_parameter/stripe_width = {width:g}",

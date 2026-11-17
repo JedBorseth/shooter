@@ -33,7 +33,7 @@ color_ramp = SubResource("Texture_fade")
 
 [sub_resource type="ParticleProcessMaterial" id="Process_mist"]
 emission_shape = 3
-emission_box_extents = Vector3(0.6, 2.0, 0.6)
+emission_box_extents = Vector3(0.6, 0.8, 0.6)
 direction = Vector3(0, 1, 0)
 spread = 30.0
 initial_velocity_min = 0.2
@@ -116,7 +116,7 @@ draw_pass_1 = SubResource("Mesh_streak")
 cast_shadow = 0
 
 [node name="Mist" type="GPUParticles3D" parent="."]
-position = Vector3(0, 2.5, 0)
+position = Vector3(0, 1.2, 0)
 amount = 8
 lifetime = 3.5
 preprocess = 3.0

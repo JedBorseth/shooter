@@ -498,7 +498,9 @@ def train_car(b: Model, wrecked=False):
             b.box(xi0, xi1, floor + 0.46, win_y[0], a, c, "train_interior", detail=True)
             b.box(xi0, xi1, win_y[1], roof - 0.15, a, c, "train_interior", detail=True)
         # A stripe and the line's bullet under the windows.
-        b.box(s * (hw + 0.006), s * (hw - 0.01), 1.55, 1.68, -hl + 0.1, hl - 0.1, "train_stripe")
+        # (On the wreck the stripe stops at the tear: the sheet ahead of it is gone.)
+        b.box(s * (hw + 0.006), s * (hw - 0.01), 1.55, 1.68, (L.TORN_TO + 0.35) if wrecked else -hl + 0.1, hl - 0.1,
+              "train_stripe")
         for z in (-7.8, 7.8):
             b.text("S", s * (hw + 0.01), 2.25, z, s * PI / 2, 0.38, "sign_white", depth=0.006)
         b.cyl("x", s * (hw + 0.0), s * (hw + 0.004), (2.4, 7.8), 0.24, "train_stripe", sides=16,
@@ -1703,7 +1705,7 @@ def scaffold(b: Model):
         for k in range(7):
             z = -hz + 0.1 + k * (2 * hz - 0.2) / 6
             for y in (0.25, 2.5):
-                b.cyl("x", x + s * 0.03, x + s * 0.04, (y, z), 0.025, "chrome", sides=6, detail=True)
+                b.cyl("x", x + s * 0.03, x + s * 0.04, (y, z), 0.012, "steel_galv", sides=6, detail=True)
     b.box(-hx, hx, 2.68, 3.2, -hz + 0.2, hz - 0.2, "pallet_wood", bevel=0.02)
 
 

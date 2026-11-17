@@ -36,10 +36,9 @@ done
 grep -q "light_data" "${scenes[@]/#res:\/\//}" || { echo "bake failed" >&2; exit 1; }
 # The baker can report success and still write a black lightmap (it lost the
 # GPU partway, to another process rendering at the same time).
-godot --headless --path . --script res://tools/check_lightmap.gd -- "${scenes[@]}" 2>&1 |
-	grep "check_lightmap" || true
-godot --headless --path . --script res://tools/check_lightmap.gd -- "${scenes[@]}" >/dev/null 2>&1 ||
-	{ echo "bake failed: a lightmap came out black; bake again with the GPU otherwise idle" >&2; exit 1; }
+check="$(godot --headless --path . --script res://tools/check_lightmap.gd -- "${scenes[@]}" 2>&1)" ||
+	{ grep "check_lightmap" <<<"$check"; echo "bake failed: a lightmap came out black; bake again with the GPU otherwise idle" >&2; exit 1; }
+grep "check_lightmap" <<<"$check"
 # Record which generated mesh each map was baked with (Slamcity: city.hash), so
 # CI can tell a stale lightmap (tools/test_slamcity_layout.py).
 for scene in "${scenes[@]}"; do
