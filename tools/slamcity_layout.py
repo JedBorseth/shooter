@@ -1074,7 +1074,7 @@ def station(side: Side):
         deco(-6.75, -6.25, PLATFORM, PLATFORM + 0.3, z - 0.25, z + 0.25, "girder", m, bevel=0.02)
         tube([(-6.5, 9.0, z), (-1.95, 9.86, z)], 0.07, "girder", m, detail=False)
         tube([(-6.5, 8.6, z), (-5.4, 9.62, z)], 0.04, "girder", m, detail=False)
-    PARTS.append({"kind": "hull", "look": "roof_corrugated", "points": [
+    PARTS.append({"kind": "hull", "look": "canopy_corrugated", "points": [
         (mx(x, m), y, z) for x, y in ((-7.5, 9.62), (-1.95, 9.95), (-1.95, 10.05), (-7.5, 9.72))
         for z in (-11.0, 11.0)]})
     clip(-7.5, -1.95, 9.6, 10.05, -11.0, 11.0, "metal", m, sight=False)
@@ -1514,8 +1514,10 @@ def south_row(side: Side):
     blocker(-41.2, -39.8, WALK, 1.55, 22.2, 23.4, m, "wood")
     place("ceiling_tube", -42.0, 4.0, 15.5, 0.0, m)
     place("ceiling_tube", -42.0, 4.0, 20.5, 0.0, m)
-    light(-42.0, 3.7, 15.5, 1.2, (0.95, 0.97, 1.0), 9.0, m)
-    light(-42.0, 3.7, 20.5, 1.2, (0.95, 0.97, 1.0), 9.0, m)
+    # The tube lights' glow sits a little under the fittings, so it reaches
+    # across the drop ceiling instead of only the patch above each one.
+    light(-42.0, 3.1, 15.5, 1.2, (0.95, 0.97, 1.0), 9.0, m)
+    light(-42.0, 3.1, 20.5, 1.2, (0.95, 0.97, 1.0), 9.0, m)
     light(-44.0, 1.4, 23.6, 1.1, (0.8, 0.95, 1.0), 5.0, m, shadow=False)
     light(-38.3, 1.9, 14.0, 0.8, (1.0, 0.85, 0.6), 4.0, m, shadow=False)  # over the counter
     # Inside the diner: booths by the windows, the counter, stools, the kitchen line.
@@ -1597,8 +1599,8 @@ def south_row(side: Side):
     for x in (-16.5, -11.5):
         place("ceiling_tube", x, 4.0, 15.0, PI / 2, m)
         place("ceiling_tube", x, 4.0, 20.5, PI / 2, m)
-        light(x, 3.7, 15.0, 1.0, (0.92, 0.97, 1.0), 8.0, m)
-        light(x, 3.7, 20.5, 1.0, (0.92, 0.97, 1.0), 8.0, m)
+        light(x, 3.1, 15.0, 1.0, (0.92, 0.97, 1.0), 8.0, m)
+        light(x, 3.1, 20.5, 1.0, (0.92, 0.97, 1.0), 8.0, m)
     # The diner's roof terrace: neon letters on a steel frame along the front
     # (cover from the avenue), air conditioners, and a water heater.
     r = DINER_ROOF

@@ -124,7 +124,7 @@ SLAMCITY_LOOKS: dict[str, dict] = {
     "curb": _t("concrete_smooth", 2.0, (0.8, 0.79, 0.77), grime=0.4),
     "gravel": _t("gravel", 2.0, (0.75, 0.72, 0.68), grime=0.0),
     "ballast": _t("gravel", 1.5, (0.55, 0.52, 0.5), grime=0.0),
-    "pit_wall": _t("planks", 2.0, (0.6, 0.5, 0.4), grime=0.6),
+    "pit_wall": _t("planks", 2.0, (0.7, 0.6, 0.48), grime=0.1),
     "steel_plate": _t("tread_plate", 2.0, (0.62, 0.62, 0.62), metal=0.9, grime=0.0),
     "drain_steel": _t("tread_plate", 1.0, (0.35, 0.35, 0.35), metal=0.9, grime=0.0),
     "tread_plate": _t("tread_plate", 1.5, (0.7, 0.72, 0.74), metal=1.0, grime=0.0),
@@ -149,7 +149,7 @@ SLAMCITY_LOOKS: dict[str, dict] = {
     "tile_laundry_floor": _t("tiles_floor", 1.6, (0.6, 0.66, 0.72), grime=0.0),
     "tile_store": _t("tiles_floor", 2.0, (0.86, 0.86, 0.83), grime=0.0),
     "tile_hall": _t("tiles_floor", 1.2, (0.72, 0.6, 0.5), grime=0.0),
-    "terrazzo": _t("terrazzo", 1.4, (0.62, 0.6, 0.58), grime=0.0),
+    "terrazzo": _t("terrazzo", 0.8, (0.62, 0.6, 0.58), grime=0.0),
     "checker": _t("tiles_floor", 1.2, (0.95, 0.94, 0.9), grime=0.0, checker=(0.3, (0.08, 0.08, 0.09))),
     # Wood
     "wood": _t("planks", 2.0, (1.0, 0.95, 0.88)),
@@ -178,6 +178,9 @@ SLAMCITY_LOOKS: dict[str, dict] = {
     "roof_gravel": _t("gravel", 1.6, (0.66, 0.64, 0.6), grime=0.0),
     "roof_pavers": _t("concrete_panels", 1.4, (0.8, 0.77, 0.72), grime=0.0),
     "roof_corrugated": _t("corrugated", 2.0, (0.58, 0.6, 0.62), metal=0.6, grime=0.0),
+    # The platform canopy is seen at a glancing angle down its length, where
+    # fine ribs shimmer: a coarser scale.
+    "canopy_corrugated": _t("corrugated", 3.5, (0.56, 0.58, 0.6), metal=0.5, grime=0.0),
     "roof_tank": _t("corrugated", 1.5, (0.38, 0.33, 0.3), metal=0.4, grime=0.0),
     # Painted and bare metal
     "girder": _t("painted_metal", 2.0, (0.2, 0.33, 0.26), metal=0.5, rough=0.8, grime=0.35),
