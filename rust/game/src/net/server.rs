@@ -2439,15 +2439,13 @@ fn bot_input(avatar: &Avatar, tick: Tick) -> PlayerInput {
 fn prop_id_of(collider: Option<&Gd<Node>>) -> Option<u16> {
     let mut node = collider.cloned();
     while let Some(current) = node {
-        let id = current
-            .get_meta_ex("prop_id")
-            .default(&Variant::nil())
-            .done()
-            .try_to::<i32>()
-            .ok()
-            .and_then(|id| u16::try_from(id).ok());
-        if id.is_some() {
-            return id;
+        // Reading a missing key logs an error, so check first.
+        if current.has_meta("prop_id") {
+            return current
+                .get_meta("prop_id")
+                .try_to::<i32>()
+                .ok()
+                .and_then(|id| u16::try_from(id).ok());
         }
         node = current.get_parent();
     }
