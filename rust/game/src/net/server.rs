@@ -204,6 +204,8 @@ pub struct NetServer {
     spawn_rules: SpawnRules,
     /// Where players died recently, and when.
     recent_deaths: VecDeque<(Tick, Vec3)>,
+    /// The map's lanes for bots to follow (`BotLanes`), west to east.
+    bot_lanes: Vec<Vec<Vector3>>,
     /// Tick of the next scoreboard update.
     next_scoreboard: Tick,
     /// The navigation mesh bots walk, when they play.
@@ -569,6 +571,25 @@ impl NetServer {
         self.record_death(id);
     }
 
+    /// How many lanes the map gives the bots (tests).
+    #[func]
+    fn bot_lane_count(&self) -> i32 {
+        self.bot_lanes.len() as i32
+    }
+
+    /// Bot tactics so far (tests): `lanes` taken and times in `cover`.
+    #[func]
+    fn bot_tactics(&self) -> VarDictionary {
+        let brains = self.avatars.iter().filter_map(|a| a.brain.as_ref());
+        let (lanes, covers) = brains.fold((0u32, 0u32), |(l, c), b| {
+            (l + b.lanes_taken, c + b.covers_taken)
+        });
+        let mut d = VarDictionary::new();
+        d.set("lanes", lanes);
+        d.set("cover", covers);
+        d
+    }
+
     /// Points a team has this match: kills, or captures in Capture the Flag.
     #[func]
     fn team_score(&self, team: i32) -> i64 {
@@ -633,6 +654,7 @@ impl NetServer {
             self.spawn = player.get_position();
         }
         self.spawn_points = map_spawns(&map);
+        self.bot_lanes = map_lanes(&map);
         self.flag_homes = map_flags(&map);
         for name in CLIENT_ONLY_NODES {
             if let Some(node) = map.get_node_or_null(name) {
@@ -1035,6 +1057,7 @@ impl NetServer {
                             navigation,
                             space,
                             team_spawns: &team_spawns,
+                            lanes: &self.bot_lanes,
                         };
                         let objective = objectives
                             .iter()
@@ -1947,6 +1970,32 @@ pub(crate) fn is_loadout_primary(id: WeaponId) -> bool {
 /// The map's spawn points: `Node3D` children of a `SpawnPoints` node, each
 /// facing the way players should, with an optional `team` metadata (0 or 1;
 /// none or -1 for either team).
+/// The lanes under the map's `BotLanes` node: each child is a lane, and its
+/// children are points (in map space) from the west end to the east.
+fn map_lanes(map: &Gd<Node>) -> Vec<Vec<Vector3>> {
+    let Some(parent) = map
+        .get_node_or_null("BotLanes")
+        .and_then(|n| n.try_cast::<Node3D>().ok())
+    else {
+        return Vec::new();
+    };
+    let base = parent.get_transform();
+    parent
+        .get_children()
+        .iter_shared()
+        .filter_map(|lane| lane.try_cast::<Node3D>().ok())
+        .map(|lane| {
+            let lane_base = base * lane.get_transform();
+            lane.get_children()
+                .iter_shared()
+                .filter_map(|point| point.try_cast::<Node3D>().ok())
+                .map(|point| (lane_base * point.get_transform()).origin)
+                .collect::<Vec<_>>()
+        })
+        .filter(|points| points.len() >= 2)
+        .collect()
+}
+
 fn map_spawns(map: &Gd<Node>) -> Vec<SpawnPoint> {
     let Some(parent) = map
         .get_node_or_null("SpawnPoints")

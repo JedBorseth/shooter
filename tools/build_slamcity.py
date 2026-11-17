@@ -710,6 +710,18 @@ DUMMIES = [
     ("StoreCounter", (34.0, 0, 16.0), PI / 2, "m1911", {}),
     ("Shop", (8.5, 0, -16.0), PI / 2, "ak47", {}),
 ]
+# Lanes for bots to follow (rust/game/src/net/bots.rs), each from west to east.
+BOT_LANES = [
+    ("North", [(-38, -24.5), (-20, -24.5), (0, -24.5), (20, -24.5), (38, -24.5)]),
+    ("Middle", [(-38, 0), (-20, 0), (0, 0), (20, 0), (38, 0)]),
+    ("South", [(-38, 17), (-22, 17), (0, 18), (22, 17), (38, 17)]),
+]
+s.node("BotLanes", "Node3D", ".")
+for lane, points in BOT_LANES:
+    s.node(lane, "Node3D", "BotLanes")
+    for i, (x, z) in enumerate(points):
+        s.node(f"P{i}", "Marker3D", f"BotLanes/{lane}", {"position": vec(x, 0.05, z)})
+
 s.node("Targets", "Node3D", ".")
 for name, pos, ry, weapon, extra in DUMMIES:
     props = {"position": vec(*pos)}
