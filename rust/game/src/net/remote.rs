@@ -1,6 +1,8 @@
 //! Another player as this client sees them: interpolated from snapshots and
-//! drawn as the third-person soldier (`SoldierRig`), with gunfire sound at the
-//! muzzle and hit zones posed from the same snapshot (drawn with F4).
+//! drawn as the third-person soldier (`SoldierRig`), with their gunfire at the
+//! muzzle (`gunfire`), their footsteps, landings, slides, and reloads at their
+//! feet (`footsteps`), and hit zones posed from the same snapshot (drawn with
+//! F4).
 //!
 //! The local player's shots hit these hit zones for instant feedback (hit
 //! markers, blood, a flinch), but deal no damage here: the server rewinds the
@@ -8,15 +10,19 @@
 
 use std::collections::HashMap;
 
-use godot::classes::{AudioStream, AudioStreamPlayer3D, INode3D, Label3D, Node3D, ResourceLoader};
+use godot::classes::{AudioStream, INode3D, Label3D};
 use godot::prelude::*;
+use shooter_sim::movement::{MoveParams, Stance};
 pub use shooter_sim::net::lag::RemoteSample;
 use shooter_sim::net::protocol;
-use shooter_sim::weapon::{Reload, Slot, WeaponId};
+use shooter_sim::weapon::{Reload, WeaponId};
 
 use crate::character::rig::{SoldierFrame, SoldierRig};
-use crate::convert::to_godot;
+use crate::convert::{to_godot, to_sim};
+use crate::footsteps::{Foley, Motion};
+use crate::gunfire::Gunfire;
 use crate::hitbox_rig::HitboxRig;
+use crate::viewmodel::view_scene_property;
 
 #[derive(GodotClass)]
 #[class(init, base = Node3D)]
@@ -27,8 +33,6 @@ pub struct RemotePlayer {
     rig: OnReady<Gd<SoldierRig>>,
     #[init(node = "Hitboxes")]
     hitboxes: OnReady<Gd<HitboxRig>>,
-    #[init(node = "Shot")]
-    shot: OnReady<Gd<AudioStreamPlayer3D>>,
     #[init(node = "Name")]
     name_label: OnReady<Gd<Label3D>>,
 
@@ -41,11 +45,20 @@ pub struct RemotePlayer {
     velocity: Vector3,
     /// Seconds since the current reload started.
     reload_time: Option<f32>,
-    fire_sounds: HashMap<WeaponId, Option<Gd<AudioStream>>>,
+    gunfire: Option<Gunfire>,
+    foley: Option<Foley>,
+    friendly: bool,
+    reload_sounds: HashMap<WeaponId, Option<Gd<AudioStream>>>,
 }
 
 #[godot_api]
-impl INode3D for RemotePlayer {}
+impl INode3D for RemotePlayer {
+    fn ready(&mut self) {
+        let mut owner = self.to_gd().upcast::<Node3D>();
+        self.gunfire = Some(Gunfire::new(&mut owner));
+        self.foley = Some(Foley::new(&mut owner));
+    }
+}
 
 #[godot_api]
 impl RemotePlayer {
@@ -85,6 +98,58 @@ impl RemotePlayer {
     pub fn react_to_hit(&mut self, direction: Vector3, killed: bool) {
         self.rig.bind_mut().hit(direction, killed);
     }
+
+    /// Footsteps this player has made audible to us (tests).
+    #[func]
+    fn steps_heard(&self) -> u32 {
+        self.foley.as_ref().map_or(0, |f| f.steps_played)
+    }
+
+    /// Gunshots played from this player (tests).
+    #[func]
+    fn shots_heard(&self) -> u32 {
+        self.gunfire.as_ref().map_or(0, |g| g.shots_played)
+    }
+
+    /// Applies a made-up snapshot, as if the server sent it (tests): standing
+    /// at `feet` with an M4, `stance` 0 standing, 1 crouching, 2 sliding.
+    #[func]
+    #[allow(clippy::too_many_arguments)]
+    fn apply_test_sample(
+        &mut self,
+        feet: Vector3,
+        stance: i64,
+        sprinting: bool,
+        on_floor: bool,
+        shots_fired: i64,
+        reloading: bool,
+        delta: f32,
+    ) {
+        let Some(weapon) = WeaponId::by_key("m4") else {
+            return;
+        };
+        let sample = RemoteSample {
+            position: to_sim(feet),
+            yaw: 0.0,
+            pitch: 0.0,
+            stance: match stance {
+                1 => Stance::Crouching,
+                2 => Stance::Sliding,
+                _ => Stance::Standing,
+            },
+            sprinting,
+            on_floor,
+            ads: 0.0,
+            weapon,
+            reloading,
+            alive: true,
+            shots_fired: u32::try_from(shots_fired).unwrap_or(0),
+            mantling: false,
+            hits: 0,
+            hit_heading: 0,
+        };
+        self.apply(&sample, delta);
+    }
 }
 
 impl RemotePlayer {
@@ -99,6 +164,7 @@ impl RemotePlayer {
             .bind_mut()
             .set_team_index(if friendly { 0 } else { 1 });
         self.base_mut().set_meta("friendly", &friendly.to_variant());
+        self.friendly = friendly;
         // Names show through walls, so only teammates get one.
         self.name_label
             .set_modulate(Color::from_rgb(0.55, 0.78, 1.0));
@@ -164,31 +230,41 @@ impl RemotePlayer {
         if fired && s.alive {
             self.rig.bind_mut().fire();
             let muzzle = self.rig.bind().muzzle_position();
-            self.shot.set_global_position(muzzle);
-            if let Some(sound) = self.fire_sound(s.weapon) {
-                self.shot.set_stream(&sound);
-                self.shot.play();
+            if let Some(gunfire) = &mut self.gunfire {
+                gunfire.fire(s.weapon, muzzle);
             }
+        }
+
+        let listener = self
+            .base()
+            .get_viewport()
+            .and_then(|v| v.get_camera_3d())
+            .map(|c| c.get_global_position());
+        let reload = self.reload_sound(s.weapon);
+        let motion = Motion {
+            feet: position,
+            velocity: self.velocity,
+            on_floor: s.on_floor,
+            stance: s.stance,
+            sprinting: s.sprinting,
+            alive: s.alive,
+            mantling: s.mantling,
+            reloading: s.reloading,
+            walk_speed: MoveParams::default().walk_speed,
+        };
+        let friendly = self.friendly;
+        if let Some(foley) = &mut self.foley {
+            foley.update(&motion, delta, listener, friendly, reload);
         }
     }
 
-    /// `assets/audio/weapons/<key>_fire.ogg`, or a stand-in for its class.
-    fn fire_sound(&mut self, weapon: WeaponId) -> Option<Gd<AudioStream>> {
-        self.fire_sounds
+    /// The reload sound the weapon's view scene plays.
+    fn reload_sound(&mut self, weapon: WeaponId) -> Option<Gd<AudioStream>> {
+        self.reload_sounds
             .entry(weapon)
             .or_insert_with(|| {
-                let def = weapon.def();
-                let fallback = match def.slot {
-                    Slot::Secondary => "pistol",
-                    _ => "m4",
-                };
-                let mut loader = ResourceLoader::singleton();
-                [def.model_key(), fallback, "ak47"]
-                    .into_iter()
-                    .map(|key| format!("res://assets/audio/weapons/{key}_fire.ogg"))
-                    .find(|path| loader.exists(path))
-                    .and_then(|path| loader.load(&path))
-                    .and_then(|r| r.try_cast::<AudioStream>().ok())
+                view_scene_property(weapon, "ReloadSound", "stream")
+                    .and_then(|v| v.try_to::<Gd<AudioStream>>().ok())
             })
             .clone()
     }

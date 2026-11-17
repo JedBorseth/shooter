@@ -1227,3 +1227,8 @@ player_path = NodePath("../../Player")
 
 [node name="PauseMenu" parent="." unique_id=734708226 instance=ExtResource("5_pause")]
 player_path = NodePath("../Player")
+
+[node name="Soundscape" type="Soundscape" parent="."]
+outdoor = "night"
+outdoor_db = -6.0
+indoor_db = -14.0

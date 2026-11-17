@@ -31,6 +31,7 @@ var _value_formats: Dictionary[StringName, Callable] = {}
 var _toggles: Dictionary[StringName, CheckButton] = {}
 var _fps_option: OptionButton
 var _quality_option: OptionButton
+var _mix_option: OptionButton
 var _scale_option: OptionButton
 var _click: AudioStreamPlayer
 var _hover: AudioStreamPlayer
@@ -279,7 +280,10 @@ func _build_settings() -> void:
 	_add_slider(audio, &"master_volume", "Master", 0.01, percent)
 	_add_slider(audio, &"weapons_volume", "Weapons", 0.01, percent)
 	_add_slider(audio, &"effects_volume", "Effects", 0.01, percent)
+	_add_slider(audio, &"footsteps_volume", "Footsteps", 0.01, percent)
+	_add_slider(audio, &"ambience_volume", "Ambience", 0.01, percent)
 	_add_slider(audio, &"ui_volume", "Interface", 0.01, percent)
+	_add_mix_option(audio)
 	_select_tab(0)
 
 
@@ -420,6 +424,18 @@ func _add_fps_option(section: VBoxContainer) -> void:
 	_add_row(section, "Frame rate limit", _fps_option)
 
 
+func _add_mix_option(section: VBoxContainer) -> void:
+	_mix_option = OptionButton.new()
+	_mix_option.custom_minimum_size.x = 150
+	_mix_option.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	for i in Settings.AUDIO_MIXES.size():
+		_mix_option.add_item(Settings.AUDIO_MIXES[i], i)
+	_mix_option.item_selected.connect(
+		func(index: int) -> void: Settings.set_setting(&"audio_mix", _mix_option.get_item_id(index))
+	)
+	_add_row(section, "Audio mix", _mix_option)
+
+
 func _add_graphics_options(section: VBoxContainer) -> void:
 	_quality_option = OptionButton.new()
 	_quality_option.custom_minimum_size.x = 150
@@ -492,6 +508,7 @@ func _sync_controls() -> void:
 		_bind_buttons[action].text = "—" if bound == null else Settings.event_label(bound)
 	_fps_option.select(_fps_option.get_item_index(Settings.max_fps))
 	_quality_option.select(_quality_option.get_item_index(Settings.graphics_quality))
+	_mix_option.select(_mix_option.get_item_index(Settings.audio_mix))
 	_scale_option.select(_closest_scale(Settings.render_scale))
 
 

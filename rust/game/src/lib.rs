@@ -3,10 +3,13 @@
 
 mod acoustics;
 mod aim_assist;
+mod ambience;
 mod audio;
 mod body;
 mod character;
 mod convert;
+mod footsteps;
+mod gunfire;
 mod hitbox_rig;
 mod net;
 mod penetration;
@@ -15,6 +18,7 @@ mod player;
 mod sentry;
 mod sights;
 mod spring;
+mod surfaces;
 mod target;
 mod viewmodel;
 mod weapon_data;

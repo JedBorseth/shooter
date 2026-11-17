@@ -75,7 +75,7 @@ target_position = Vector3(0, 0.7, 0)
 
 [node name="Footsteps" type="AudioStreamPlayer" parent="."]
 max_polyphony = 2
-bus = &"Effects"
+bus = &"Footsteps"
 
 [node name="BodySounds" type="AudioStreamPlayer" parent="."]
 max_polyphony = 2

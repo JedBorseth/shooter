@@ -67,10 +67,19 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Audio buses (Master, Weapons, Effects, UI) with a compressor on Weapons and a limiter on Master.
 - [x] Layered gunshots (snap, body, and tail, each picked from several recordings) with no dead air before the transient. Rebuild them with `tools/build_weapon_audio.py`.
 - [x] A per-shot mechanical layer (bolt and spring clack) for each gun, and a hollow last-rounds layer for the final few shots in a magazine: synthesized by `tools/build_weapon_audio.py mech` into `mech_*.wav` and `hollow_*.wav`, played by `WeaponView` (`mech_db`, `hollow_db`). The ring covers the last fifth of a magazine (two to five rounds) and builds to the last round. Replace them with recordings when we have good CC0 ones.
-- [x] Reverb zones on maps: `ReverbZone` boxes (`rust/game/src/acoustics.rs`) in the testing arena's tunnel and Slamcity's flats, auto shop, and south-row rooms. The reverb follows the listener rather than each source (unlike `Area3D` reverb buses), so it also covers the player's own gunfire. Nuketown and the Zombies arena have none yet.
+- [x] Reverb zones on maps: `ReverbZone` boxes (`rust/game/src/acoustics.rs`) in the testing arena's tunnel and Slamcity's flats, auto shop, and south-row rooms. The reverb follows the listener rather than each source (unlike `Area3D` reverb buses), so it also covers the player's own gunfire. Nuketown has zones for the two houses' ground floors; the Zombies arena has none yet.
 - [x] Positional audio for impacts and the sentry's gunfire.
 - [x] Occlusion for positional audio, including other players' gunfire: a ray from the camera to every playing `AudioStreamPlayer3D`; a sound behind a wall plays 9 dB quieter through a low-pass copy of its bus.
 - [x] **good first task** Kill confirmation sound for hit markers.
+- [x] Other players' footsteps, jumps, landings, slides, mantles, and reloads, positional, with an audible range per gait (`rust/game/src/footsteps.rs`). Teammates are quieter than enemies, and your own steps are quieter than both.
+- [x] Footstep sets for grass, gravel, tile, and carpet. Untagged geometry gets its surface from the hit triangle's material name (`rust/game/src/surfaces.rs`, Jolt's ray face index), so imported maps need no tagging.
+- [x] Other players' gunfire uses each weapon's own snap, body, and tail layers. The near layers fall off faster than the echo (`rust/game/src/gunfire.rs`).
+- [x] A rear cue: positional sounds behind the listener have their highs shelved down, so front and back sound different.
+- [x] Ambience: per-map outdoor beds and an indoor room tone that cross-fade at reverb zones, prop hums and buzzes, and gunfire ducking (`rust/game/src/ambience.rs`, synthesized by `tools/build_world_audio.py`).
+- [x] Footsteps and Ambience volume sliders, and an Audio mix option (Headphones, Speakers, Competitive).
+- [ ] An HRTF spatializer (for example a Steam Audio GDExtension) to replace stereo panning and the rear shelf, if playtests want more precise elevation and front/back.
+- [ ] Footsteps on water and in puddles, and on stairs (a hollower step).
+- [ ] Other players' weapon switches and bolt or pump cycles, positional.
 - [x] Hit markers pop in and settle; kill markers are larger, thicker, and red.
 - [x] Score popups (+100, headshot and longshot bonuses) and medals at the crosshair.
 

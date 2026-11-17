@@ -43,6 +43,15 @@ const SURFACES := {
 		"decal": Color(0.5, 0.42, 0.34),
 		"dust_scale": 1.6
 	},
+	"glass":
+	{
+		"spark": Color(0.85, 0.92, 1.0),
+		"dust": Color(0.8, 0.85, 0.9, 0.25),
+		"sparks": true,
+		"debris": Color(0.75, 0.85, 0.9),
+		"decal": Color(0.75, 0.8, 0.85),
+		"dust_scale": 0.3
+	},
 	"flesh":
 	{
 		"spark": Color(0.55, 0.05, 0.04),

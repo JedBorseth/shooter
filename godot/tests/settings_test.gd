@@ -28,6 +28,7 @@ func _run() -> void:
 	_check_fov(settings)
 	_check_directory(settings)
 	_check_validation(settings)
+	_check_audio_mix(settings)
 	_check_round_trip(settings)
 	_check_graphics(settings)
 	_check_bindings(settings)
@@ -66,7 +67,7 @@ func _check_directory(settings: Node) -> void:
 
 
 func _check_buses() -> void:
-	for bus: String in ["Master", "Weapons", "Effects", "UI"]:
+	for bus: String in ["Master", "Weapons", "Effects", "UI", "Footsteps", "Ambience"]:
 		_check(AudioServer.get_bus_index(bus) >= 0, "bus %s exists" % bus)
 	var weapons := AudioServer.get_bus_index("Weapons")
 	_check(
@@ -77,12 +78,19 @@ func _check_buses() -> void:
 		),
 		"Weapons bus has a compressor"
 	)
+	var master_effects := AudioServer.get_bus_effect_count(0)
 	_check(
 		(
-			AudioServer.get_bus_effect_count(0) > 0
-			and AudioServer.get_bus_effect(0, 0) is AudioEffectHardLimiter
+			master_effects > 0
+			and AudioServer.get_bus_effect(0, master_effects - 1) is AudioEffectHardLimiter
 		),
-		"Master bus has a hard limiter"
+		"Master bus ends in a hard limiter"
+	)
+	var ambience := AudioServer.get_bus_index("Ambience")
+	var duck := AudioServer.get_bus_effect(ambience, 0) if ambience >= 0 else null
+	_check(
+		duck is AudioEffectCompressor and (duck as AudioEffectCompressor).sidechain == &"Weapons",
+		"Ambience ducks under the Weapons bus"
 	)
 	_check(
 		weapons >= 0 and AudioServer.get_bus_send(weapons) == &"Master", "Weapons sends to Master"
@@ -136,6 +144,36 @@ func _check_validation(settings: Node) -> void:
 		"older installs with a blank master use the public directory"
 	)
 	settings.reset_to_defaults()
+
+
+## The Competitive mix brings footsteps forward, ambience down, and compresses
+## the Master bus; Headphones puts them back.
+func _check_audio_mix(settings: Node) -> void:
+	var footsteps := AudioServer.get_bus_index("Footsteps")
+	var ambience := AudioServer.get_bus_index("Ambience")
+	var base_steps := linear_to_db(settings.footsteps_volume)
+	var base_ambience := linear_to_db(settings.ambience_volume)
+	settings.set_setting(&"audio_mix", 2)
+	_check(
+		is_equal_approx(AudioServer.get_bus_volume_db(footsteps), base_steps + 4.0),
+		"Competitive lifts footsteps 4 dB, got %.2f" % AudioServer.get_bus_volume_db(footsteps)
+	)
+	_check(
+		is_equal_approx(AudioServer.get_bus_volume_db(ambience), base_ambience - 9.0),
+		"Competitive lowers ambience 9 dB"
+	)
+	_check(AudioServer.is_bus_effect_enabled(0, 0), "Competitive compresses the Master bus")
+	_check(settings.panning_strength() > 1.0, "Competitive pans wider")
+	settings.set_setting(&"audio_mix", 1)
+	_check(settings.panning_strength() < 1.0, "Speakers pan narrower")
+	settings.set_setting(&"audio_mix", 0)
+	_check(
+		is_equal_approx(AudioServer.get_bus_volume_db(footsteps), base_steps),
+		"Headphones restores the footsteps level"
+	)
+	_check(not AudioServer.is_bus_effect_enabled(0, 0), "Headphones does not compress")
+	settings.set_setting(&"audio_mix", 7)
+	_check(settings.audio_mix == 0, "an unknown mix falls back to Headphones")
 
 
 func _check_round_trip(settings: Node) -> void:
@@ -293,7 +331,7 @@ func _check_menu(settings: Node) -> void:
 	_check(settings.player_name == "Menu player", "player name edits apply")
 	tabs.current_tab = 0
 	var sliders: Array[Node] = menu.find_children("*", "HSlider", true, false)
-	_check(sliders.size() == 11, "eleven sliders, got %d" % sliders.size())
+	_check(sliders.size() == 13, "thirteen sliders, got %d" % sliders.size())
 	var toggle_count := menu.find_children("*", "CheckButton", true, false).size()
 	_check(toggle_count == 9, "nine toggles, got %d" % toggle_count)
 

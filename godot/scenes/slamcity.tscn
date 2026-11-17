@@ -4436,6 +4436,11 @@ damping = 0.45
 wet = 0.24
 predelay_ms = 15.0
 
+[node name="Soundscape" type="Soundscape" parent="."]
+outdoor = "city"
+outdoor_db = -15.0
+indoor_db = -14.0
+
 [node name="Player" parent="." unique_id=903104255 instance=ExtResource("1_player")]
 base_fov = 69.56998
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -53, 0.00064452505, 0)

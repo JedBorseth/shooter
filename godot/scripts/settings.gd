@@ -18,6 +18,20 @@ const MAX_FPS_OPTIONS: Array[int] = [0, 60, 120, 144, 165, 240]
 ## Seconds to wait after the last change before writing the file.
 const SAVE_DELAY := 0.75
 
+## Audio mixes offered in the menu, by index. Each sets how wide positional
+## sounds pan (a multiplier on Godot's base 3D panning strength, which is tuned
+## for headphones: 0 centred, 1 as tuned), bus offsets in dB on top of the volume
+## sliders, and whether the Master bus compresses (quiet sounds lifted, loud
+## ones held down). Competitive brings footsteps forward and the ambience down.
+const AUDIO_MIXES: Array[String] = ["Headphones", "Speakers", "Competitive"]
+const MIX_PANNING: Array[float] = [1.0, 0.6, 1.5]
+const MIX_BUS_OFFSETS: Array[Dictionary] = [
+	{},
+	{},
+	{&"Footsteps": 4.0, &"Ambience": -9.0, &"Weapons": -3.0},
+]
+const MIX_COMPRESSION: Array[bool] = [false, false, true]
+
 ## Shared public host for discovery and future account/matchmaking services.
 const SERVICE_HOST := "borseth.ddns.net"
 const DEFAULT_DIRECTORY := SERVICE_HOST + ":27010"
@@ -98,7 +112,10 @@ const DEFAULTS := {
 	&"master_volume": 1.0,
 	&"weapons_volume": 0.8,
 	&"effects_volume": 0.8,
+	&"footsteps_volume": 0.9,
+	&"ambience_volume": 0.6,
 	&"ui_volume": 0.7,
+	&"audio_mix": 0,
 	&"master_server": DEFAULT_DIRECTORY,
 	&"player_name": "Player",
 	&"loadout_primary": "m4",
@@ -129,7 +146,16 @@ const SECTIONS := {
 		&"render_scale",
 		&"motion_blur",
 	],
-	"audio": [&"master_volume", &"weapons_volume", &"effects_volume", &"ui_volume"],
+	"audio":
+	[
+		&"master_volume",
+		&"weapons_volume",
+		&"effects_volume",
+		&"footsteps_volume",
+		&"ambience_volume",
+		&"ui_volume",
+		&"audio_mix",
+	],
 	"multiplayer": [&"player_name", &"loadout_primary"],
 }
 
@@ -137,6 +163,7 @@ const SECTIONS := {
 const INT_OPTIONS := {
 	&"max_fps": MAX_FPS_OPTIONS,
 	&"graphics_quality": [0, 1, 2],
+	&"audio_mix": [0, 1, 2],
 }
 
 ## Allowed range of each float setting.
@@ -151,6 +178,8 @@ const RANGES := {
 	&"master_volume": Vector2(0.0, 1.0),
 	&"weapons_volume": Vector2(0.0, 1.0),
 	&"effects_volume": Vector2(0.0, 1.0),
+	&"footsteps_volume": Vector2(0.0, 1.0),
+	&"ambience_volume": Vector2(0.0, 1.0),
 	&"ui_volume": Vector2(0.0, 1.0),
 	&"render_scale": Vector2(0.5, 1.0),
 }
@@ -160,6 +189,8 @@ const BUSES := {
 	&"master_volume": &"Master",
 	&"weapons_volume": &"Weapons",
 	&"effects_volume": &"Effects",
+	&"footsteps_volume": &"Footsteps",
+	&"ambience_volume": &"Ambience",
 	&"ui_volume": &"UI",
 }
 
@@ -200,7 +231,11 @@ var motion_blur: bool = DEFAULTS[&"motion_blur"]
 var master_volume: float = DEFAULTS[&"master_volume"]
 var weapons_volume: float = DEFAULTS[&"weapons_volume"]
 var effects_volume: float = DEFAULTS[&"effects_volume"]
+var footsteps_volume: float = DEFAULTS[&"footsteps_volume"]
+var ambience_volume: float = DEFAULTS[&"ambience_volume"]
 var ui_volume: float = DEFAULTS[&"ui_volume"]
+## An index into AUDIO_MIXES.
+var audio_mix: int = DEFAULTS[&"audio_mix"]
 ## Master server (`host[:port]`) the server browser lists internet servers
 ## from. Runtime only: --directory HOST[:PORT] overrides the shared default.
 ## Legacy saved addresses are ignored so old installs follow the public hostname.
@@ -468,15 +503,30 @@ func apply_all() -> void:
 		_apply(key)
 
 
+## How wide positional sounds pan in the current audio mix. `AudioEnvironment`
+## asks for it when it starts.
+func panning_strength() -> float:
+	return MIX_PANNING[audio_mix]
+
+
 func _apply(key: StringName) -> void:
 	if BUSES.has(key):
 		var bus := AudioServer.get_bus_index(BUSES[key])
 		if bus >= 0:
 			var volume: float = get(key)
-			AudioServer.set_bus_volume_db(bus, linear_to_db(volume))
+			var offset: float = MIX_BUS_OFFSETS[audio_mix].get(BUSES[key], 0.0)
+			AudioServer.set_bus_volume_db(bus, linear_to_db(volume) + offset)
 			AudioServer.set_bus_mute(bus, volume <= 0.0)
 		return
 	match key:
+		&"audio_mix":
+			for volume_key: StringName in BUSES:
+				_apply(volume_key)
+			_apply_mix_compression()
+			if is_inside_tree():
+				get_tree().call_group(
+					&"audio_environment", &"set_panning_strength", panning_strength()
+				)
 		&"graphics_quality", &"render_scale", &"motion_blur":
 			if is_inside_tree():
 				GraphicsQuality.apply(get_tree(), graphics_quality, render_scale, motion_blur)
@@ -492,6 +542,13 @@ func _apply(key: StringName) -> void:
 				DisplayServer.window_set_vsync_mode(
 					DisplayServer.VSYNC_MAILBOX if vsync else DisplayServer.VSYNC_DISABLED
 				)
+
+
+## Turns the Master bus's mix compressor on for mixes that use it.
+func _apply_mix_compression() -> void:
+	for i in AudioServer.get_bus_effect_count(0):
+		if AudioServer.get_bus_effect(0, i).resource_name == "MixCompressor":
+			AudioServer.set_bus_effect_enabled(0, i, MIX_COMPRESSION[audio_mix])
 
 
 func _apply_window_mode() -> void:
