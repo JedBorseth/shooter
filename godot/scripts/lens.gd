@@ -18,8 +18,8 @@ const FULL := preload("res://shaders/lens.gdshader")
 const LITE := preload("res://shaders/lens_lite.gdshader")
 
 ## Corner darkening and grain while "Lens effects" is on.
-const VIGNETTE := 0.22
-const GRAIN := 0.022
+const VIGNETTE := 0.13
+const GRAIN := 0.014
 ## What the lens draws on each graphics preset, Low to High.
 const MODES: Array[Mode] = [Mode.OFF, Mode.LITE, Mode.FULL]
 ## Sharpening strength where the lens reads the screen.

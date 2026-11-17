@@ -204,8 +204,8 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 
 ## Phase 6 and later: production polish
 
-- [x] Post-processing pass: a colour grade per map as a look-up table built in code (`godot/scripts/looks.gd`; Testing Area and Zombies so far), bloom that lifts only what is bright, a lens pass with a vignette, film grain, and sharpening on High (`godot/scripts/lens.gd`), and colour that drains as health drops. (Motion blur is an option; depth of field while aiming was left out because it blurs the iron sights.)
-- [ ] Looks for Slamcity and Nuketown in `godot/scripts/looks.gd`, once Slamcity's rebuild lands.
+- [x] Post-processing pass: a colour grade per map as a look-up table built in code (`godot/scripts/looks.gd`; Testing Area, Zombies, and Slamcity), bloom that lifts only what is bright, a lens pass with a vignette, film grain, and sharpening on High (`godot/scripts/lens.gd`), and colour that drains as health drops. (Motion blur is an option; depth of field while aiming was left out because it blurs the iron sights.)
+- [ ] A look for Nuketown in `godot/scripts/looks.gd`, and environment overrides for Slamcity once its rebuild lands (it has a grade only).
 - [ ] Lighting pass: baked lightmaps or SDFGI tuning per map, volumetric fog, reflection probes.
 - [ ] Performance budget and profiling: target 144 FPS on a mid-range GPU, CPU frame time per system.
 - [ ] Loadouts and a create-a-class screen.
