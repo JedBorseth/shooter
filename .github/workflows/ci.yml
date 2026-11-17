@@ -49,14 +49,40 @@ env:
   CARGO_PROFILE: ${{ github.ref_type == 'tag' && 'release' || 'ci' }}
 
 jobs:
-  # Everything that runs quickly on Linux, in one job so a busy queue has fewer
-  # jobs to start. The fastest checks run first.
-  checks:
-    name: Lint and test (Linux)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+  # Merge queue runs skip the release libraries and the export: the pull request
+  # already built them, and the push to main builds them again.
+  #
+  # Each OS gets one job for its library and its Rust tests, so a busy queue has
+  # fewer jobs to start (macOS runners are the scarcest). The library builds and
+  # uploads first, so the export can use it while the tests run.
+  linux:
+    name: Linux (lint, tests, library)
+    # Not ubuntu-latest: a library linked against a newer glibc fails to load on
+    # older distros (Debian 13 has 2.41), including the dedicated server host.
+    # 24.04 ships glibc 2.39. build-libs.sh checks the shipped binaries.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+          # Keyed by image so build scripts cached on a newer glibc never run here.
+          key: ubuntu-24.04
+          save-if: ${{ env.SAVE_CACHE }}
+      - name: Build the release library
+        if: github.event_name != 'merge_group'
+        run: .github/scripts/build-libs.sh linux
+      - uses: actions/upload-artifact@v7
+        if: github.event_name != 'merge_group'
+        with:
+          name: lib-linux
+          path: out/*
+          if-no-files-found: error
+          retention-days: 3
       # pipx ships with the runner image.
       - name: GDScript lint
         run: pipx run --spec gdtoolkit==4.5.0 gdlint godot/scripts godot/tests
@@ -73,19 +99,12 @@ jobs:
           # discover exits 0 when the pattern matches nothing, so fail loudly
           # if the test file is renamed or removed.
           test -f tools/test_import_nuketown.py
-          test -f tools/test_import_nuketown_props.py
           python -m unittest discover -s tools -p "test_import_nuketown.py" -v
+          test -f tools/test_import_nuketown_props.py
           python -m unittest discover -s tools -p "test_import_nuketown_props.py" -v
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
       - name: Rust format
         working-directory: rust
         run: cargo fmt --all --check
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: rust
-          save-if: ${{ env.SAVE_CACHE }}
       - name: Clippy
         working-directory: rust
         run: cargo clippy --all-targets --locked -- -D warnings
@@ -98,29 +117,47 @@ jobs:
   # the current stable toolchain rather than using the runner's preinstalled one:
   # that version differs between runner images, and each difference misses the
   # Rust cache.
-  rust-test:
-    name: Rust tests (${{ matrix.name }})
+  desktop:
+    name: ${{ matrix.name }} (tests, library)
     strategy:
       fail-fast: false
       matrix:
         include:
           - name: Windows
+            platform: windows
             os: windows-latest
+            targets: ""
           - name: macOS
+            platform: macos
             os: macos-latest
+            targets: aarch64-apple-darwin, x86_64-apple-darwin
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 30
     defaults:
       run:
-        working-directory: rust
+        shell: bash
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.targets }}
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust
           save-if: ${{ env.SAVE_CACHE }}
-      - run: cargo test --locked
+      - name: Build the release library
+        if: github.event_name != 'merge_group'
+        run: .github/scripts/build-libs.sh ${{ matrix.platform }}
+      - uses: actions/upload-artifact@v7
+        if: github.event_name != 'merge_group'
+        with:
+          name: lib-${{ matrix.platform }}
+          path: out/*
+          if-no-files-found: error
+          retention-days: 3
+      - name: Rust tests
+        working-directory: rust
+        run: cargo test --locked
 
   # Headless game tests. Every godot/tests/*_test.gd runs; see
   # .github/scripts/godot-tests.sh.
@@ -151,94 +188,19 @@ jobs:
       - name: Run Godot tests
         run: .github/scripts/godot-tests.sh
 
-  # Release libraries for the client exports. Merge queue runs skip these and the
-  # export: the pull request already built them, and the push to main builds
-  # them again.
-  lib:
-    name: GDExtension (${{ matrix.platform }})
-    if: github.event_name != 'merge_group'
-    strategy:
-      matrix:
-        include:
-          # Not ubuntu-latest: a library linked against a newer glibc fails
-          # to load on older distros (Debian 13 has 2.41), including the
-          # dedicated server host. 24.04 ships glibc 2.39.
-          - platform: linux
-            os: ubuntu-24.04
-          - platform: windows
-            os: windows-latest
-          - platform: macos
-            os: macos-latest
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
-    defaults:
-      run:
-        shell: bash
-        working-directory: rust
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.platform == 'macos' && 'aarch64-apple-darwin, x86_64-apple-darwin' || '' }}
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: rust
-          # Keyed by image so build scripts cached on a newer glibc never run here.
-          key: ${{ matrix.os }}
-          save-if: ${{ env.SAVE_CACHE }}
-      - name: Build
-        run: |
-          set -euo pipefail
-          mkdir -p ../out
-          case "${{ matrix.platform }}" in
-            linux)
-              # The master server ships in the Linux dedicated server zip.
-              cargo build --locked --profile "$CARGO_PROFILE" -p shooter-game -p shooter-master -p shooter-launcher
-              cp "target/$CARGO_PROFILE/libshooter_game.so" "target/$CARGO_PROFILE/shooter-master" ../out/
-              cp "target/$CARGO_PROFILE/shooter-launcher" ../out/shooter-launcher-linux-x86_64
-              # Fail if a binary needs a glibc newer than 2.39 (see the matrix).
-              newest=$(objdump -T ../out/libshooter_game.so ../out/shooter-master ../out/shooter-launcher-linux-x86_64 \
-                | grep -o 'GLIBC_[0-9.]*' | sort -u -V | tail -n 1)
-              echo "Newest glibc symbol: $newest"
-              if [ "$(printf '%s\n' "$newest" GLIBC_2.39 | sort -V | tail -n 1)" != GLIBC_2.39 ]; then
-                echo "::error::Linux binaries need $newest; the baseline is GLIBC_2.39" >&2
-                exit 1
-              fi
-              ;;
-            windows)
-              cargo build --locked --profile "$CARGO_PROFILE" -p shooter-game -p shooter-launcher
-              cp "target/$CARGO_PROFILE/shooter_game.dll" ../out/
-              cp "target/$CARGO_PROFILE/shooter-launcher.exe" ../out/shooter-launcher-windows-x86_64.exe
-              ;;
-            macos)
-              # One cargo run builds both architectures in parallel.
-              cargo build --locked --profile "$CARGO_PROFILE" -p shooter-game -p shooter-launcher \
-                --target aarch64-apple-darwin --target x86_64-apple-darwin
-              lipo -create -output ../out/libshooter_game.dylib \
-                "target/aarch64-apple-darwin/$CARGO_PROFILE/libshooter_game.dylib" \
-                "target/x86_64-apple-darwin/$CARGO_PROFILE/libshooter_game.dylib"
-              lipo -create -output ../out/shooter-launcher-macos-universal \
-                "target/aarch64-apple-darwin/$CARGO_PROFILE/shooter-launcher" \
-                "target/x86_64-apple-darwin/$CARGO_PROFILE/shooter-launcher"
-              codesign --force --sign - ../out/shooter-launcher-macos-universal
-              ;;
-          esac
-          ls -l ../out
-      - uses: actions/upload-artifact@v7
-        with:
-          name: lib-${{ matrix.platform }}
-          path: out/*
-          if-no-files-found: error
-          retention-days: 3
-
+  # Starts with the other jobs: it prepares Godot, the LFS files, and the import
+  # while the libraries build, then picks up each library as soon as its job
+  # uploads it (.github/scripts/wait-for-artifact.sh).
   export:
     name: Export builds
     if: github.event_name != 'merge_group'
-    needs: lib
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     permissions:
       contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/lfs-pull
@@ -246,20 +208,16 @@ jobs:
         with:
           version: ${{ env.GODOT_VERSION }}
           templates: "true"
-      - name: Download libraries
-        uses: actions/download-artifact@v8
-        with:
-          pattern: lib-*
-          path: libs
-          merge-multiple: true
-      - name: Place libraries
+      - name: Wait for the Linux library
+        run: .github/scripts/wait-for-artifact.sh lib-linux "Linux (lint, tests, library)" libs
+      - name: Place the Linux library
         run: |
           set -euo pipefail
           # shooter.gdextension loads target/release for exports. The editor loads
           # the debug entry, so point that at the same Linux build: scenes that
           # use Rust classes must load during import and export.
           mkdir -p rust/target/release rust/target/debug master
-          cp libs/libshooter_game.so libs/shooter_game.dll libs/libshooter_game.dylib rust/target/release/
+          cp libs/libshooter_game.so rust/target/release/
           cp libs/libshooter_game.so rust/target/debug/
           install -m 755 libs/shooter-master master/shooter-master
       - uses: ./.github/actions/godot-import
@@ -284,17 +242,21 @@ jobs:
             godot --headless --path godot --export-release "$preset" "$out"
             test -e "$out"
           }
+          mkdir -p dist
+          pids=()
+          # Each zip runs in the background while Godot exports the next platform.
           export_preset "Linux" "$PWD/builds/linux/shooter.x86_64"
-          export_preset "Windows Desktop" "$PWD/builds/windows/shooter.exe"
+          (cd builds/linux && zip -qr "../../dist/${NAME}-linux-x86_64.zip" .) & pids+=($!)
           # Headless dedicated server: runs as a server on start, no rendering or audio.
           export_preset "Linux Server" "$PWD/builds/server/shooter-server.x86_64"
           cp master/shooter-master builds/server/shooter-master
-          mkdir -p dist
-          # Zip the three builds while Godot exports macOS.
-          pids=()
-          (cd builds/linux && zip -qr "../../dist/${NAME}-linux-x86_64.zip" .) & pids+=($!)
-          (cd builds/windows && zip -qr "../../dist/${NAME}-windows-x86_64.zip" .) & pids+=($!)
           (cd builds/server && zip -qr "../../dist/${NAME}-server-linux-x86_64.zip" .) & pids+=($!)
+          .github/scripts/wait-for-artifact.sh lib-windows "Windows (tests, library)" libs
+          cp libs/shooter_game.dll rust/target/release/
+          export_preset "Windows Desktop" "$PWD/builds/windows/shooter.exe"
+          (cd builds/windows && zip -qr "../../dist/${NAME}-windows-x86_64.zip" .) & pids+=($!)
+          .github/scripts/wait-for-artifact.sh lib-macos "macOS (tests, library)" libs
+          cp libs/libshooter_game.dylib rust/target/release/
           # macOS exports straight to a zipped, ad-hoc signed .app.
           export_preset "macOS" "$PWD/dist/${NAME}-macos-universal.zip"
           for pid in "${pids[@]}"; do wait "$pid"; done
@@ -315,7 +277,6 @@ jobs:
       - name: Publish nightly
         if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         env:
-          GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: .github/scripts/publish-nightly.sh dist
       - name: Publish release
@@ -328,7 +289,7 @@ jobs:
   gate:
     name: CI passed
     if: ${{ !cancelled() }}
-    needs: [checks, rust-test, godot, lib, export]
+    needs: [linux, desktop, godot, export]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -340,7 +301,7 @@ jobs:
           RESULTS: ${{ join(needs.*.result, ' ') }}
         run: |
           echo "Job results: $RESULTS"
-          # Skipped is fine: merge queue runs skip the library builds and export.
+          # Skipped is fine: merge queue runs skip the export.
           if [[ " $RESULTS " == *" failure "* || " $RESULTS " == *" cancelled "* ]]; then
             echo "conclusion=failure" >> "$GITHUB_OUTPUT"
           else

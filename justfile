@@ -42,15 +42,10 @@ check-gd:
 test-one name: build
     {{godot}} --headless --path godot --script res://tests/{{name}}.gd
 
-# Run every headless Godot test CI runs, as listed in .github/workflows/ci.yml.
-test: build
-    #!/usr/bin/env bash
-    set -euo pipefail
-    grep -oE 'godot --headless --path godot --script res://tests/[a-z_]+_test\.gd.*$' .github/workflows/ci.yml |
-    while IFS= read -r command; do
-        echo "== ${command#godot }"
-        eval "{{godot}} ${command#godot }" </dev/null
-    done
+# Run every headless Godot test the way CI does, or only the named ones,
+# for example `just test smoke_test bots_test`.
+test *names: build
+    GODOT={{godot}} .github/scripts/godot-tests.sh {{names}}
 
 # Everything CI checks, except the exports.
 ci: check-rust check-gd test

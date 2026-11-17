@@ -37,7 +37,7 @@ Fix failures before you push. Run only what applies:
 
 - Rust changed: from `rust/`, run `cargo fmt --all`, `cargo clippy --all-targets --locked -- -D warnings`, and `cargo test --locked`.
 - GDScript changed: `pipx run --spec gdtoolkit==4.5.0 gdlint godot/scripts godot/tests` and `pipx run --spec gdtoolkit==4.5.0 gdformat --check godot/scripts godot/tests`.
-- Scenes, assets, or the extension changed: if Godot is installed, build the extension (`cargo build -p shooter-game`) and run the Godot tests you touched from the repository root, the way CI does: `.github/scripts/godot-tests.sh smoke_test <other_test> ...`. Otherwise leave it to CI.
+- Scenes, assets, or the extension changed: if Godot is installed, build the extension (`cargo build -p shooter-game`) and run the Godot tests you touched the way CI does: `just test smoke_test <other_test> ...` (or `.github/scripts/godot-tests.sh smoke_test ...` from the repository root). Otherwise leave it to CI.
 
 Leave the client export builds to CI.
 

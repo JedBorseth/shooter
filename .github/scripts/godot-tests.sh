@@ -6,15 +6,20 @@
 # Tests run with --fixed-fps: Godot steps exactly one physics tick per frame and
 # runs frames as fast as the CPU allows instead of waiting for the wall clock.
 # A 60-second bot match then finishes in a few seconds, and the result no longer
-# depends on how busy the runner is. Tests that talk to another process (a
+# depends on how busy the machine is. Tests that talk to another process (a
 # dedicated or master server they start) must run in real time, because that
 # process keeps wall-clock time; list them in REALTIME. A test that fails at
-# the fixed frame rate runs again in real time; if it passes there, CI passes
-# with a warning to add it to REALTIME.
+# the fixed frame rate runs again in real time; if it passes there, the run
+# passes with a warning to add it to REALTIME.
+#
+# Fixed-rate tests run several at a time (GODOT_TEST_JOBS, default half the
+# CPUs, at most 3). Real-time tests run one after another beside them, because
+# some of them share ports and LAN discovery.
 #
 # Usage, from the repository root, after the assets are imported:
 #   .github/scripts/godot-tests.sh            # every test
 #   .github/scripts/godot-tests.sh smoke_test # only the named tests
+# GODOT names the Godot binary (default: godot).
 set -uo pipefail
 
 # Tests that start another Godot or master server process, directly or through
@@ -31,9 +36,21 @@ TIMEOUT=300
 godot_bin=${GODOT:-godot}
 tick_rate=$(sed -n 's/^common\/physics_ticks_per_second=//p' godot/project.godot)
 tick_rate=${tick_rate:-60}
+cpus=$(nproc 2>/dev/null || echo 2)
+jobs=${GODOT_TEST_JOBS:-$((cpus / 2 > 3 ? 3 : (cpus / 2 < 1 ? 1 : cpus / 2)))}
 
 names=()
 args=()
+modes=()
+add_run() {
+  names+=("$1")
+  args+=("$2")
+  if [[ " ${REALTIME[*]} " == *" $1 "* ]]; then
+    modes+=("real time")
+  else
+    modes+=("fixed")
+  fi
+}
 for path in godot/tests/*_test.gd; do
   name=$(basename "$path" .gd)
   if [[ $# -gt 0 && " $* " != *" $name "* ]]; then
@@ -42,65 +59,101 @@ for path in godot/tests/*_test.gd; do
   if [[ -n "${RUNS[$name]:-}" ]]; then
     IFS='|' read -ra sets <<<"${RUNS[$name]}"
     for set in "${sets[@]}"; do
-      names+=("$name")
-      args+=("$set")
+      add_run "$name" "$set"
     done
   else
-    names+=("$name")
-    args+=("")
+    add_run "$name" ""
   fi
 done
 if [[ $# -eq 0 || " $* " == *" benchmark "* ]]; then
-  names+=(benchmark)
-  args+=("")
+  add_run benchmark ""
 fi
 if [[ ${#names[@]} -eq 0 ]]; then
   echo "::error::No Godot tests matched: $*"
   exit 1
 fi
 
-summary=()
-failed=0
-for i in "${!names[@]}"; do
-  name=${names[$i]}
-  run_args=${args[$i]}
-  label="$name${run_args:+ ${run_args#-- }}"
-  flags=(--headless --path godot)
-  mode="fixed"
-  if [[ " ${REALTIME[*]} " == *" $name "* ]]; then
-    mode="real time"
-  else
-    flags+=(--fixed-fps "$tick_rate")
-  fi
-  env_vars=()
+logs=$(mktemp -d)
+trap 'rm -rf "$logs"' EXIT
+
+label_of() {
+  local run_args=${args[$1]}
+  echo "${names[$1]}${run_args:+ ${run_args#-- }}"
+}
+
+# Runs test $1 in mode $2 ("fixed" or "real time"), writing its output and
+# result under $logs.
+run_one() {
+  local i=$1 mode=$2 name=${names[$1]} start status seconds
+  local flags=(--headless --path godot)
+  [[ $mode == fixed ]] && flags+=(--fixed-fps "$tick_rate")
+  local env_vars=()
   if [[ $name == benchmark ]]; then
     # The benchmark needs a GPU to measure anything; this run only keeps the
     # script, its maps, and every graphics preset loading.
     env_vars=(BENCH_FRAMES=10)
   fi
+  start=$(date +%s%N)
+  # shellcheck disable=SC2086 # the argument set holds several words on purpose.
+  env "${env_vars[@]}" timeout --kill-after=10 "$TIMEOUT" \
+    "$godot_bin" "${flags[@]}" --script "res://tests/$name.gd" ${args[$i]} \
+    </dev/null >>"$logs/$i.log" 2>&1
+  status=$?
+  local tenths=$((($(date +%s%N) - start) / 100000000))
+  seconds="$((tenths / 10)).$((tenths % 10))"
+  echo "$status" >"$logs/$i.status"
+  echo "$seconds" >"$logs/$i.seconds"
+  echo "$mode" >"$logs/$i.mode"
+  if [[ $status -eq 0 ]]; then
+    echo "$(label_of "$i"): pass in ${seconds}s ($mode)"
+  else
+    echo "$(label_of "$i"): FAIL ($status) in ${seconds}s ($mode)"
+  fi
+}
 
-  run_once() {
-    echo "::group::$label ($mode)"
-    local start
-    start=$(date +%s.%N)
-    # shellcheck disable=SC2086 # run_args holds several words on purpose.
-    env "${env_vars[@]}" timeout --kill-after=10 "$TIMEOUT" \
-      "$godot_bin" "${flags[@]}" --script "res://tests/$name.gd" $run_args
-    status=$?
-    seconds=$(printf '%.1f' "$(echo "$(date +%s.%N) - $start" | bc)")
-    echo "::endgroup::"
-  }
-  run_once
-  if [[ $status -ne 0 && $mode == fixed ]]; then
-    echo "$label failed at a fixed frame rate in ${seconds}s; running it again in real time."
-    mode="real time (retry)"
-    flags=(--headless --path godot)
-    run_once
-    if [[ $status -eq 0 ]]; then
-      echo "::warning title=Godot test needs real time::$label fails at a fixed frame rate but passes in real time. If it starts another process, add it to REALTIME in .github/scripts/godot-tests.sh; otherwise it may depend on the wall clock."
+started=$(date +%s)
+realtime=()
+fixed=()
+for i in "${!names[@]}"; do
+  if [[ ${modes[$i]} == fixed ]]; then fixed+=("$i"); else realtime+=("$i"); fi
+done
+echo "Running ${#names[@]} Godot test runs: ${#fixed[@]} at a fixed frame rate, $jobs at a time, and ${#realtime[@]} in real time beside them."
+
+(
+  for i in "${realtime[@]}"; do run_one "$i" "real time"; done
+) &
+realtime_lane=$!
+
+declare -A pool=()
+for i in "${fixed[@]}"; do
+  while [[ ${#pool[@]} -ge $jobs ]]; do
+    wait -n -p finished "${!pool[@]}"
+    unset "pool[$finished]"
+  done
+  run_one "$i" fixed &
+  pool[$!]=1
+done
+wait "${!pool[@]}" "$realtime_lane"
+
+# A fixed-rate failure gets one more try in real time.
+for i in "${fixed[@]}"; do
+  if [[ $(cat "$logs/$i.status") -ne 0 ]]; then
+    printf '\n----- retry in real time -----\n' >>"$logs/$i.log"
+    run_one "$i" "real time (retry)"
+    if [[ $(cat "$logs/$i.status") -eq 0 ]]; then
+      echo "::warning title=Godot test needs real time::$(label_of "$i") fails at a fixed frame rate but passes in real time. If it starts another process, add it to REALTIME in .github/scripts/godot-tests.sh; otherwise it may depend on the wall clock."
     fi
   fi
+done
 
+summary=()
+failed=0
+for i in "${!names[@]}"; do
+  label=$(label_of "$i")
+  status=$(cat "$logs/$i.status")
+  echo "::group::$label ($(cat "$logs/$i.mode"))"
+  cat "$logs/$i.log"
+  echo "::endgroup::"
   if [[ $status -eq 0 ]]; then
     result="pass"
   else
@@ -108,12 +161,11 @@ for i in "${!names[@]}"; do
     failed=$((failed + 1))
     echo "::error title=Godot test failed::$label exited with status $status"
   fi
-  echo "$label: $result in ${seconds}s ($mode)"
-  summary+=("| $label | $result | $seconds | $mode |")
+  summary+=("| $label | $result | $(cat "$logs/$i.seconds") | $(cat "$logs/$i.mode") |")
 done
 
 {
-  echo "### Godot tests"
+  echo "### Godot tests ($(($(date +%s) - started)) s)"
   echo
   echo "| Test | Result | Seconds | Clock |"
   echo "| --- | --- | ---: | --- |"
