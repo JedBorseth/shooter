@@ -110,8 +110,8 @@ fn same_inputs_give_bit_identical_state() {
 /// The hash a reference run produced. CI runs this on Linux, Windows, and
 /// macOS, so a platform whose float math differs fails here before players
 /// see mispredictions. If a deliberate simulation change moves it, update it.
-// Crouched jump presses now stand and jump when headroom permits.
-const REFERENCE_HASH: u64 = 0x8147_0c1f_243d_cdb0;
+// A trigger held through a reload no longer banks shots.
+const REFERENCE_HASH: u64 = 0xb6af_3744_8754_9617;
 
 #[test]
 fn state_matches_the_reference_on_every_platform() {

@@ -372,10 +372,10 @@ pub fn step(
     state.fire_held = input.fire;
     // During a spray a slightly negative cooldown carries into the next shot so the
     // fire rate stays exact even when the interval isn't a whole number of ticks.
+    // The carry never exceeds one tick: a trigger held through a reload, switch or
+    // sprint must not bank time and then dump it as a burst of back-to-back shots.
     state.cooldown -= dt;
-    if !was_firing {
-        state.cooldown = state.cooldown.max(0.0);
-    }
+    state.cooldown = state.cooldown.max(if was_firing { -dt } else { 0.0 });
     state.since_shot += dt;
 
     if let Some(weapon) = input.pickup {
