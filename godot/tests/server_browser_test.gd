@@ -36,7 +36,12 @@ func _run() -> void:
 	var settings: Node = root.get_node("Settings")
 	settings.path = SETTINGS_PATH
 	settings.reset_to_defaults()
-	settings.set_setting(&"master_server", "127.0.0.1:%d" % MASTER_PORT)
+	if not OS.get_cmdline_user_args().has("--directory"):
+		settings.set_setting(&"master_server", "127.0.0.1:%d" % MASTER_PORT)
+	_check(
+		settings.master_server == "127.0.0.1:%d" % MASTER_PORT,
+		"local developer directory is selected"
+	)
 	load("res://scripts/server_browser.gd").storage_path = STORAGE_PATH
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(STORAGE_PATH))
 
@@ -96,10 +101,14 @@ func _run() -> void:
 	# Internet: the server listed itself on the master.
 	(browser.get_node("%InternetTab") as Button).pressed.emit()
 	await process_frame
-	_check((browser.get_node("%MasterRow") as Control).visible, "the master field shows")
-	(browser.get_node("%MasterAddress") as LineEdit).text = "127.0.0.1:%d" % MASTER_PORT
-	(browser.get_node("%MasterApply") as Button).pressed.emit()
-	_check(settings.master_server == "127.0.0.1:%d" % MASTER_PORT, "the master address is saved")
+	_check(
+		browser.find_child("MasterRow", true, false) == null,
+		"directory address is absent from the UI"
+	)
+	_check(
+		settings.master_server == "127.0.0.1:%d" % MASTER_PORT,
+		"developer directory is used without a UI field"
+	)
 	row = await _wait_for_row(browser, 15.0)
 	_check(not row.is_empty(), "the server appears on the Internet tab through the master")
 	_check(

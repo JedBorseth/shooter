@@ -35,8 +35,6 @@ var _join_map_path := ""
 
 @onready var _list: Tree = %List
 @onready var _status: Label = %Status
-@onready var _master_row: Control = %MasterRow
-@onready var _master: LineEdit = %MasterAddress
 @onready var _address: LineEdit = %Address
 @onready var _connect: Button = %Connect
 @onready var _join: Button = %Join
@@ -57,19 +55,14 @@ func _ready() -> void:
 	for i in _tabs.size():
 		_tabs[i].button_group = group
 		_tabs[i].pressed.connect(_set_tab.bind(i))
-	for button: Button in [
-		%Back, _refresh, %MasterApply, _connect, _favorite, _join, %InternetTab, %LanTab
-	]:
+	for button: Button in [%Back, _refresh, _connect, _favorite, _join, %InternetTab, %LanTab]:
 		MenuStyle.style_button(button, true)
 	MenuStyle.style_button(%FavoritesTab, true)
-	MenuStyle.style_line_edit(_master)
 	MenuStyle.style_line_edit(_address)
 	_join.add_theme_color_override("font_color", MenuStyle.ACCENT)
 
 	%Back.pressed.connect(_back)
 	_refresh.pressed.connect(_refresh_tab)
-	%MasterApply.pressed.connect(_apply_master)
-	_master.text_submitted.connect(func(_text: String) -> void: _apply_master())
 	_connect.pressed.connect(_direct_connect)
 	_address.text_submitted.connect(func(_text: String) -> void: _direct_connect())
 	_address.text_changed.connect(_on_address_changed)
@@ -80,10 +73,9 @@ func _ready() -> void:
 	_list.favorite_toggled.connect(_toggle_favorite)
 
 	_load_storage()
-	_master.text = Settings.master_server
 	for address in _favorites:
 		_browser.add_favorite(address)
-	_set_tab(Tab.INTERNET if Settings.master_server != "" else Tab.LAN)
+	_set_tab(Tab.INTERNET)
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
@@ -118,7 +110,6 @@ func _set_tab(tab: int) -> void:
 	_tab = tab as Tab
 	for i in _tabs.size():
 		_tabs[i].set_pressed_no_signal(i == tab)
-	_master_row.visible = _tab == Tab.INTERNET
 	_refresh_tab()
 
 
@@ -143,14 +134,6 @@ func _end_search() -> void:
 	if Time.get_ticks_msec() / 1000.0 - _lan_scanned_at >= LAN_SEARCH_SECONDS - 0.05:
 		_searching = false
 		_update_status()
-
-
-func _apply_master() -> void:
-	Settings.set_setting(&"master_server", _master.text.strip_edges())
-	_master.text = Settings.master_server
-	_error = ""
-	if _tab == Tab.INTERNET:
-		_refresh_tab()
 
 
 func _visible_servers() -> Array:
@@ -219,18 +202,16 @@ func _update_status() -> void:
 
 func _internet_status(online: int) -> String:
 	var master := Settings.master_server
-	if master == "":
-		return "Enter a master server to list internet servers. LAN and direct connect work without one."
 	match _browser.master_status():
 		"resolving", "requesting":
-			return "Asking the master server…"
+			return "Finding internet servers…"
 		"unresolved":
-			return "Cannot find the master server “%s”." % master
+			return "Cannot find the server directory “%s”." % master
 		"failed":
-			return "The master server at %s did not answer." % master
+			return "The server directory at %s did not answer." % master
 	var listed := _visible_servers().size()
 	if listed == 0:
-		return "The master server lists no servers right now."
+		return "No internet servers are listed right now."
 	return "%s listed, %d answered." % [_count(listed, "server"), online]
 
 
@@ -315,7 +296,7 @@ func _start_join(address: String, server_name: String, map_name := "Arena") -> v
 	_join_target = address
 	_join_name = server_name
 	_error = ""
-	for control: Control in [_join, _connect, _favorite, _refresh, %Back, %MasterApply]:
+	for control: Control in [_join, _connect, _favorite, _refresh, %Back]:
 		(control as Button).disabled = true
 	_update_status()
 	# Load the arena on a thread so the browser keeps drawing.
@@ -348,7 +329,7 @@ func _process(_delta: float) -> void:
 func _join_failed(reason: String) -> void:
 	set_process(false)
 	_loading = false
-	for control: Control in [_connect, _refresh, %Back, %MasterApply]:
+	for control: Control in [_connect, _refresh, %Back]:
 		(control as Button).disabled = false
 	push_error("Server browser: %s" % reason)
 	show_error("Could not load the arena. Please try again.")

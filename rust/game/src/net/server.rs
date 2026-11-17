@@ -113,6 +113,9 @@ pub struct NetServer {
     #[export]
     #[init(val = 3.0)]
     respawn_delay: f32,
+    /// Private local-match control file; empty on public dedicated servers.
+    #[export]
+    pause_file: GString,
     /// Whether scripted bots' bursts can hurt players. Off by default, so a
     /// test client is not shot at random. Bots with a skill always can.
     #[export]
@@ -303,6 +306,16 @@ impl INode3D for NetServer {
             self.handle_event(event);
         }
         self.net_events = events;
+        if !self.pause_file.is_empty() {
+            let paused = godot::classes::FileAccess::file_exists(&self.pause_file);
+            self.base().get_tree().set_pause(paused);
+            if paused {
+                // Keep ENet heartbeats alive even during a long local pause.
+                self.send_events();
+                host.flush();
+                return;
+            }
+        }
         self.drop_silent_peers();
 
         if self.navigation_pending && self.tick >= 2 {
@@ -457,6 +470,7 @@ impl NetServer {
                 node.free();
             }
         }
+        map.set_process_mode(godot::classes::node::ProcessMode::PAUSABLE);
         self.base_mut().add_child(&map);
     }
 

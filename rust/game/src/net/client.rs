@@ -105,6 +105,8 @@ pub struct NetClient {
     outgoing: Option<LinkConditioner>,
     incoming: Option<LinkConditioner>,
     net_events: Vec<NetEvent>,
+    /// Reliable gameplay events wait until a local pause ends.
+    paused_packets: Vec<Vec<u8>>,
     stats: Stats,
     /// Whether the server was last told to send rewound hitboxes.
     debug_requested: bool,
@@ -216,8 +218,14 @@ impl INode for NetClient {
         let Some(mut host) = self.host.clone() else {
             return;
         };
+        let paused = self.base().get_tree().is_paused();
         let now = Time::singleton().get_ticks_usec() as f64 / 1e6;
 
+        if !paused {
+            for bytes in std::mem::take(&mut self.paused_packets) {
+                self.handle_packet(&bytes);
+            }
+        }
         let mut events = std::mem::take(&mut self.net_events);
         events.clear();
         transport::service(&mut host, &mut events);
@@ -238,6 +246,12 @@ impl INode for NetClient {
                 }
                 NetEvent::Disconnect(_) => self.on_disconnected(),
                 NetEvent::Receive(_, bytes, channel) => {
+                    if paused {
+                        if channel == CHANNEL_RELIABLE {
+                            self.paused_packets.push(bytes);
+                        }
+                        continue;
+                    }
                     self.count_in(bytes.len());
                     // The handshake is reliable: ENet already resends it, so the
                     // simulated loss only applies to unreliable traffic.
@@ -251,11 +265,13 @@ impl INode for NetClient {
         self.net_events = events;
         if let Some(link) = &mut self.incoming {
             for bytes in link.receive(now) {
-                self.handle_packet(&bytes);
+                if !paused {
+                    self.handle_packet(&bytes);
+                }
             }
         }
 
-        if self.status == Status::Joined {
+        if self.status == Status::Joined && !paused {
             self.send_inputs(now);
             self.send_debug_request();
         }
@@ -269,7 +285,10 @@ impl INode for NetClient {
     }
 
     fn process(&mut self, delta: f64) {
-        if self.status != Status::Joined || self.newest.is_none() {
+        if self.base().get_tree().is_paused()
+            || self.status != Status::Joined
+            || self.newest.is_none()
+        {
             return;
         }
         let Some(clock) = &mut self.clock else {

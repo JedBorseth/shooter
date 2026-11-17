@@ -156,9 +156,11 @@ jobs:
       # Starts a master server and a dedicated server, finds it on the LAN and
       # Internet tabs of the server browser, and joins it from the list.
       - name: Run server browser test
-        run: godot --headless --path godot --script res://tests/server_browser_test.gd
+        run: godot --headless --path godot --script res://tests/server_browser_test.gd -- --directory 127.0.0.1:27985
       - name: Run Nuketown server browser test
-        run: godot --headless --path godot --script res://tests/server_browser_test.gd -- --nuketown
+        run: godot --headless --path godot --script res://tests/server_browser_test.gd -- --nuketown --directory 127.0.0.1:27985
+      - name: Run local pause test
+        run: godot --headless --path godot --script res://tests/local_pause_test.gd
       - name: Run title screen test
         run: godot --headless --path godot --script res://tests/title_screen_test.gd
       # Six bots play a minute of Team Deathmatch on Slamcity in a server in
