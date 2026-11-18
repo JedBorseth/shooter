@@ -92,12 +92,15 @@ func _run() -> void:
 	if hud != null:
 		hud.set("visible", false)
 	_file = FileAccess.open(_out.path_join("trace.csv"), FileAccess.WRITE)
-	_file.store_line(
-		(
-			"scenario,label,t,ads,action,magazine,fov,"
-			+ "vm_x,vm_y,vm_z,vm_pitch,vm_yaw,vm_roll,"
-			+ "cam_pitch,cam_yaw,cam_roll,aim_pitch,aim_yaw,look_pitch,"
-			+ "sight_pitch,sight_yaw,speed,hand_x,hand_y,hand_z,hand_eye,mag_u,mag_v,mag_depth,foley"
+	(
+		_file
+		. store_line(
+			(
+				"scenario,label,t,ads,action,magazine,fov,"
+				+ "vm_x,vm_y,vm_z,vm_pitch,vm_yaw,vm_roll,"
+				+ "cam_pitch,cam_yaw,cam_roll,aim_pitch,aim_yaw,look_pitch,"
+				+ "sight_pitch,sight_yaw,speed,hand_x,hand_y,hand_z,hand_eye,mag_u,mag_v,mag_depth,foley"
+			)
 		)
 	)
 	# Recorded at the end of each frame, after every node has processed, so
