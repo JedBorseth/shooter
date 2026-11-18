@@ -37,14 +37,14 @@ void fragment() {
 	float turn = atan(centred.y, centred.x) / 6.28318 + 0.5;
 	// Smears: some reach far in, some barely past the rim.
 	float smear = rim_noise(turn, 23.0) * 0.6 + rim_noise(turn, 61.0) * 0.4;
-	float reach = intensity * 0.45 + hit * 0.2;
+	float reach = intensity * 0.6 + hit * 0.25;
 	// The corners sit at about 1.31, so the ramp must end there to reach full
 	// strength at all.
 	float start = 1.05 - reach * mix(0.55, 1.25, smear);
 	float mask = smoothstep(start, 1.3, edge);
-	// Reaches full strength at two thirds intensity, so a hurt player sees it
+	// Reaches full strength under half intensity, so a hurt player sees it
 	// well before the last sliver of health.
-	float amount = clamp(intensity * 1.5 + hit, 0.0, 1.0);
+	float amount = clamp(intensity * 2.2 + hit, 0.0, 1.0);
 	// Thicker smears are darker: dried blood, not a red filter.
 	vec3 colour = tint.rgb * mix(1.0, 0.45, smoothstep(0.55, 0.9, smear) * mask);
 	colour = mix(colour, vec3(0.08, 0.0, 0.0), hit * 0.6);
