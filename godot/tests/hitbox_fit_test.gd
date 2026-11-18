@@ -12,14 +12,14 @@ extends SceneTree
 ##   shapes;
 ## - out: how far outside its zone's shapes the 90th-percentile vertex lies, cm.
 ##
-## In every settled state (standing, crouched, sliding, aimed, mid-reload, in
-## the air, each weapon, any pitch, turning) it fails when a zone's axis error
-## passes AXIS_TOLERANCE or its out distance passes OUT_TOLERANCE. Where the hit
-## zones cannot know how far an animation has run (a stride's swing, a reload's
-## reach out and back, a mantle's climb) they hold the cycle's average or the
-## middle, and the looser PHASE bounds guard against regressions. The hit zones
-## are `shooter_sim::hitbox`, the same function the server rewinds; the body is
-## the real SoldierRig and SoldierPoser.
+## In every state it fails when a zone's axis error passes AXIS_TOLERANCE or
+## its out distance passes OUT_TOLERANCE. Snapshots carry each body's stride
+## phase and reload and mantle progress (`hitbox::clock`), so moving, reloading,
+## and climbing bodies are held to the same bounds as still ones; the PHASE
+## table allows a little more only where a pose is blended between measured
+## samples far apart (a pump gun's reach, a mantle's legs). The hit zones are
+## `shooter_sim::hitbox`, the same function the server rewinds; the body is the
+## real SoldierRig and SoldierPoser, driven by the same progress.
 ## Run from the repo root:
 ##   godot --headless --path godot --script res://tests/hitbox_fit_test.gd
 ## It prints every state's numbers (cm, and cover in %); HITBOX_FIT_SHAPES=1
@@ -35,14 +35,16 @@ const DT := 1.0 / 60.0
 ## axes, and nine in ten of its skin's vertices this close to its shapes.
 const AXIS_TOLERANCE := 0.06
 const OUT_TOLERANCE := 0.05
-## Axis bounds (m) per zone where the phase is unknown: mid-stride (the zones
-## hold the stride's average), a reload's reach out and back (they hold the
-## middle, the hand at the pouch), and a mantle's climb (its average).
+## Looser axis bounds (m) for a few zones in some animations: the support
+## arm reaching for a pump gun's shells, and the legs kicking up a ledge.
 const PHASE := {
-	"stride": {"head": 0.13, "chest": 0.13, "stomach": 0.13, "arm": 0.23, "leg": 0.62},
-	"reach": {"arm": 0.45},
-	"climb": {"head": 0.35, "chest": 0.35, "stomach": 0.35, "arm": 0.35, "leg": 0.45},
+	"reach": {"arm": 0.08},
+	"climb": {"leg": 0.09},
 }
+## Stride phases each locomotion loop is measured at, and points through a
+## mantle the climb is measured at (`rust/sim/src/hitbox/poses.rs`).
+const STRIDE_SAMPLES := 16
+const CLIMB_SAMPLES := 17
 ## Skeleton points each base pose records, in body space.
 const POSE_BONES := [
 	"Hips",
@@ -426,19 +428,24 @@ func _point_segment(p: Vector3, a: Vector3, b: Vector3) -> float:
 
 
 ## Writes `rust/sim/src/hitbox/poses.rs` to HITBOX_FIT_DUMP: each base pose the
-## hit zones start from, averaged over its clip, with level aim.
+## hit zones start from, with level aim. Still poses are averaged over their
+## clips; each locomotion loop is measured at STRIDE_SAMPLES stride phases and
+## the climb at CLIMB_SAMPLES points of a mantle, so the hit zones can pose the
+## moment a snapshot names.
 func _generate(world: Node3D) -> void:
 	var bases := [
 		["STAND", {}, Vector3.ZERO, 60, 1],
-		["WALK", {}, Vector3(0, 0, -1.06), 60, 240],
-		["JOG", {}, Vector3(0, 0, -3.0), 60, 240],
-		["SPRINT", {"sprinting": true}, Vector3(0, 0, -6.0), 60, 240],
 		["CROUCH", {"stance": "crouching"}, Vector3.ZERO, 60, 1],
-		["CROUCH_WALK", {"stance": "crouching"}, Vector3(0, 0, -1.2), 60, 240],
 		["SLIDE", {"stance": "sliding"}, Vector3(0, 0, -7.0), 40, 1],
 		["AIR", {"on_floor": false}, Vector3.ZERO, 30, 20],
-		# A mantle up a metre: about 25 frames, from a settled stance.
-		["CLIMB", {}, Vector3.ZERO, 60, 24, {"mantling": true}],
+	]
+	# The standing blend at `gait::STRIDE_POSITIONS`: (m/s, sprinting).
+	var loops := [
+		[{}, Vector3(0, 0, -1.06)],
+		[{}, Vector3(0, 0, -2.0)],
+		[{}, Vector3(0, 0, -3.0)],
+		[{}, Vector3(0, 0, -4.0)],
+		[{"sprinting": true}, Vector3(0, 0, -6.0)],
 	]
 	var out := PackedStringArray()
 	out.append("//! The base poses the hit zones start from, measured from the soldier's")
@@ -453,38 +460,42 @@ func _generate(world: Node3D) -> void:
 	out.append("use super::{BasePose, m, v};")
 	var extra := {}
 	for base: Array in bases:
-		var then: Dictionary = base[5] if base.size() > 5 else {}
-		var avg := await _average_pose(world, base[1], base[2], base[3], base[4], then, extra)
+		var avg := await _average_pose(world, base[1], base[2], base[3], base[4], {}, extra)
 		out.append("")
-		out.append("pub(super) const %s: BasePose = BasePose {" % base[0])
-		out.append("    hips: %s," % _v(avg["Hips"]))
-		out.append(
-			(
-				"    spine: [%s],"
-				% ", ".join(
-					["Spine", "Chest", "UpperChest", "Neck", "Head"].map(
-						func(n: String) -> String: return _v(avg[n])
-					)
-				)
-			)
-		)
-		var head: Basis = avg["head_basis"]
-		out.append("    head: m(%s, %s, %s)," % [_v(head.x), _v(head.y), _v(head.z)])
-		out.append("    shoulders: [%s, %s]," % [_v(avg["LeftUpperArm"]), _v(avg["RightUpperArm"])])
-		out.append("    legs: [")
-		for side in ["Left", "Right"]:
-			out.append(
-				(
-					"        [%s, %s, %s],"
-					% [
-						_v(avg[side + "UpperLeg"]),
-						_v(avg[side + "LowerLeg"]),
-						_v(avg[side + "Foot"])
-					]
-				)
-			)
-		out.append("    ],")
-		out.append("};")
+		out.append("pub(super) const %s: BasePose = %s;" % [base[0], _pose_literal(avg)])
+	out.append("")
+	out.append("/// Locomotion poses per stride phase (`gait`): sample `i` is phase `i / N`.")
+	out.append("pub(super) const STRIDE_SAMPLES: usize = %d;" % STRIDE_SAMPLES)
+	out.append("/// Climb poses through a mantle: sample `i` is progress `i / (N - 1)`.")
+	out.append("pub(super) const CLIMB_SAMPLES: usize = %d;" % CLIMB_SAMPLES)
+	out.append("")
+	out.append("/// The standing blend at each of `gait::STRIDE_POSITIONS`.")
+	out.append("pub(super) const STAND_STRIDES: [[BasePose; STRIDE_SAMPLES]; 5] = [")
+	for l: Array in loops:
+		out.append("[")
+		for i in STRIDE_SAMPLES:
+			var state: Dictionary = l[0].duplicate()
+			state["stride"] = float(i) / STRIDE_SAMPLES
+			var pose := await _average_pose(world, state, l[1], 60, 1, {}, extra)
+			out.append("%s," % _pose_literal(pose))
+		out.append("],")
+	out.append("];")
+	out.append("")
+	out.append("/// The crouched walk (`gait::CROUCH_LOOP`).")
+	out.append("pub(super) const CROUCH_WALK: [BasePose; STRIDE_SAMPLES] = [")
+	for i in STRIDE_SAMPLES:
+		var state := {"stance": "crouching", "stride": float(i) / STRIDE_SAMPLES}
+		var pose := await _average_pose(world, state, Vector3(0, 0, -0.72), 60, 1, {}, extra)
+		out.append("%s," % _pose_literal(pose))
+	out.append("];")
+	out.append("")
+	out.append("/// A mantle's climb.")
+	out.append("pub(super) const CLIMB: [BasePose; CLIMB_SAMPLES] = [")
+	for i in CLIMB_SAMPLES:
+		var state := {"mantling": true, "mantle_progress": float(i) / (CLIMB_SAMPLES - 1)}
+		var pose := await _average_pose(world, state, Vector3.ZERO, 30, 1, {}, extra)
+		out.append("%s," % _pose_literal(pose))
+	out.append("];")
 	out.append("")
 	out.append("/// The head's centre (the middle of its skin) in the head bone's space.")
 	out.append("pub(super) const HEAD_CENTRE: crate::Vec3 = %s;" % _v(extra["head_centre"]))
@@ -502,6 +513,35 @@ func _generate(world: Node3D) -> void:
 	var file := FileAccess.open(_dump_path, FileAccess.WRITE)
 	file.store_string("\n".join(out) + "\n")
 	print("hitbox_fit_test: wrote ", _dump_path)
+
+
+## A measured pose as a Rust `BasePose` expression.
+func _pose_literal(avg: Dictionary) -> String:
+	var spine := ["Spine", "Chest", "UpperChest", "Neck", "Head"].map(
+		func(n: String) -> String: return _v(avg[n])
+	)
+	var head: Basis = avg["head_basis"]
+	var legs := PackedStringArray()
+	for side in ["Left", "Right"]:
+		legs.append(
+			(
+				"[%s, %s, %s]"
+				% [_v(avg[side + "UpperLeg"]), _v(avg[side + "LowerLeg"]), _v(avg[side + "Foot"])]
+			)
+		)
+	return (
+		"BasePose { hips: %s, spine: [%s], head: m(%s, %s, %s), shoulders: [%s, %s], legs: [%s] }"
+		% [
+			_v(avg["Hips"]),
+			", ".join(spine),
+			_v(head.x),
+			_v(head.y),
+			_v(head.z),
+			_v(avg["LeftUpperArm"]),
+			_v(avg["RightUpperArm"]),
+			", ".join(legs),
+		]
+	)
 
 
 func _v(p: Vector3) -> String:

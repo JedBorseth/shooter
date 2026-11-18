@@ -29,6 +29,8 @@ use glam::Vec3;
 use super::interpolation::{Interpolate, lerp_angle};
 use super::protocol::PlayerView;
 use super::{TICK_RATE, Tick};
+use crate::hitbox::clock::Progress;
+use crate::hitbox::gait::lerp_phase;
 use crate::hitbox::{self, Activity, HitboxPose};
 use crate::movement::Stance;
 use crate::penetration::MAX_WALLS;
@@ -76,6 +78,29 @@ pub struct RemoteSample {
     pub meleeing: bool,
     pub hits: u8,
     pub hit_heading: u8,
+    /// Stride phase and reload and mantle progress (`hitbox::clock`).
+    pub progress: Progress,
+}
+
+impl Interpolate for Progress {
+    /// The stride blends the short way round; a reload or mantle that starts
+    /// over between the two snapshots jumps rather than running backward.
+    fn interpolate(&self, to: &Self, t: f32) -> Self {
+        let track = |a: f32, b: f32| {
+            if b >= a {
+                a + (b - a) * t
+            } else if t < 0.5 {
+                a
+            } else {
+                b
+            }
+        };
+        Self {
+            stride: lerp_phase(self.stride, to.stride, t),
+            reload: track(self.reload, to.reload),
+            mantle: track(self.mantle, to.mantle),
+        }
+    }
 }
 
 impl RemoteSample {
@@ -99,6 +124,7 @@ impl RemoteSample {
             meleeing: v.meleeing,
             hits: v.hits,
             hit_heading: v.hit_heading,
+            progress: v.progress(),
         }
     }
 }
@@ -122,6 +148,7 @@ impl Interpolate for RemoteSample {
             yaw: lerp_angle(self.yaw, to.yaw, t),
             pitch: self.pitch + (to.pitch - self.pitch) * t,
             ads: self.ads + (to.ads - self.ads) * t,
+            progress: self.progress.interpolate(&to.progress, t),
             // Shots show once the snapshot that contains them is reached.
             shots_fired: self.shots_fired,
             ..*discrete
@@ -145,6 +172,7 @@ impl RemoteSample {
                 ads: self.ads,
                 velocity: self.velocity,
                 weapon: Some(self.weapon),
+                progress: self.progress,
             },
         })
     }
@@ -454,6 +482,29 @@ mod tests {
     }
 
     #[test]
+    fn progress_blends_between_snapshots() {
+        let a = Progress {
+            stride: 0.9,
+            reload: 0.2,
+            mantle: 0.8,
+        };
+        let b = Progress {
+            stride: 0.1,
+            reload: 0.4,
+            mantle: 0.1,
+        };
+        let mid = a.interpolate(&b, 0.5);
+        assert!(
+            mid.stride.abs() < 1e-5 || (mid.stride - 1.0).abs() < 1e-5,
+            "{mid:?}"
+        );
+        assert!((mid.reload - 0.3).abs() < 1e-5);
+        // A new mantle started: no running backward through the climb.
+        assert_eq!(a.interpolate(&b, 0.25).mantle, 0.8);
+        assert_eq!(a.interpolate(&b, 0.75).mantle, 0.1);
+    }
+
+    #[test]
     fn the_rewound_pose_carries_what_the_body_was_doing() {
         let mut v = view(5, 1.0, 0.3, true);
         v.sprinting = true;
@@ -462,6 +513,9 @@ mod tests {
         v.mantling = true;
         v.ads = 255;
         v.weapon = WeaponId::expect("m870");
+        v.stride = 64;
+        v.reload_progress = 51;
+        v.mantle_progress = 102;
         let pose = RemoteSample::at(10, &v).hitbox_pose().unwrap();
         assert_eq!(
             pose.activity,
@@ -473,6 +527,11 @@ mod tests {
                 ads: 1.0,
                 velocity: Vec3::ZERO,
                 weapon: Some(WeaponId::expect("m870")),
+                progress: Progress {
+                    stride: 0.25,
+                    reload: 0.2,
+                    mantle: 0.4,
+                },
             }
         );
         // The client's hit zones and the server's rewind pose from the same
