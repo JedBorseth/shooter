@@ -222,6 +222,21 @@ const FIRING_HAND: HandShape = HandShape {
     spread: [-4.0, 0.0, 3.0, 7.0],
     oppose: 32.0,
 };
+/// The firing hand on a pistol held in both hands: as on a rifle's pistol
+/// grip, but the trigger finger curled further. A pistol's trigger sits
+/// closer to the grip, so the rifle shape's index ran through the guard and
+/// out the far side, where it stood beside the slide in the sight picture.
+const FIRING_PISTOL: HandShape = HandShape {
+    flex: [
+        [60.0, 90.0, 60.0],
+        [70.0, 80.0, 45.0],
+        [75.0, 80.0, 45.0],
+        [80.0, 80.0, 45.0],
+        [20.0, 30.0, 25.0],
+    ],
+    spread: [-4.0, 0.0, 3.0, 7.0],
+    oppose: 32.0,
+};
 /// The support hand closed on the knife's grip: a fist, fingers together,
 /// with the thumb turned in and wrapped over the fingers.
 const KNIFE_FIST: HandShape = HandShape {
@@ -278,14 +293,16 @@ const HANDGUARD: HandShape = HandShape {
     spread: [-6.0, -1.0, 4.0, 9.0],
     oppose: 38.0,
 };
-/// The support hand round a shotgun's pump: a firmer wrap to drive it, the
-/// fingers closed up together, the thumb laid forward along the near side.
+/// The support hand round a shotgun's pump: the fingers closed up together
+/// and hooked round its far side (bent little at the knuckles, hard at the
+/// middle and end joints), so the fingertips stay below the receiver's top
+/// and off the bead when aimed; the thumb laid forward along the near side.
 const PUMP: HandShape = HandShape {
     flex: [
-        [58.0, 62.0, 35.0],
-        [62.0, 66.0, 36.0],
-        [64.0, 66.0, 36.0],
-        [66.0, 66.0, 36.0],
+        [40.0, 85.0, 55.0],
+        [44.0, 88.0, 55.0],
+        [46.0, 88.0, 55.0],
+        [50.0, 88.0, 55.0],
         [14.0, 25.0, 15.0],
     ],
     spread: [-2.0, 0.0, 2.0, 4.0],
@@ -595,7 +612,12 @@ impl SoldierPoser {
         let grenade = input.grenade.clamp(0.0, 1.0);
         let support = support.lerp(&GRENADE_GRIP, grenade);
         for &(index, rest, right, finger, joint) in &self.fingers {
-            let shape = if right { &FIRING_HAND } else { &support };
+            let firing = if grips.hold == Hold::Pistol {
+                &FIRING_PISTOL
+            } else {
+                &FIRING_HAND
+            };
+            let shape = if right { firing } else { &support };
             let mut flex = shape.flex[finger][joint];
             if right && finger == 0 {
                 flex += (INDEX_OFF_TRIGGER[joint] - flex) * trigger_off;
