@@ -17,6 +17,8 @@ pub struct TraceHit {
     pub face_index: i32,
     /// Damage multiplier at this hit (1 before any wall).
     pub damage_scale: f32,
+    /// Where the round leaves the far side of cover, not where it went in.
+    pub exit: bool,
 }
 
 /// Where a round went: the surfaces it met in order, and where it stopped.
@@ -73,6 +75,7 @@ pub fn trace(
         // The exit hole.
         hits.push(TraceHit {
             damage_scale: round.damage_scale,
+            exit: true,
             ..exit
         });
     }
@@ -144,6 +147,7 @@ fn cast(
         collider: hit.get_or_nil("collider").try_to::<Gd<Node>>().ok(),
         face_index: hit.get_or_nil("face_index").try_to::<i32>().unwrap_or(-1),
         damage_scale: 1.0,
+        exit: false,
     };
     Some((hit, rid))
 }

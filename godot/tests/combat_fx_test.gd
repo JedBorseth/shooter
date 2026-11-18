@@ -58,6 +58,17 @@ func _run() -> void:
 	_check(effects.holes_kept() == 16, "Low trims holes back to 16")
 	settings.set_graphics_preset(1)
 
+	# A round leaving cover blows out a wider hole than one going in.
+	effects.impact(Vector3(2, 1, -9.75), Vector3(0, 0, 1), "wood", true)
+	var entry := _newest_decal(effects)
+	effects.exit_impact(Vector3(3, 1, -9.75), Vector3(0, 0, 1), "concrete", true)
+	var exit := _newest_decal(effects)
+	_check(entry != null and exit != null, "entry and exit holes are kept")
+	if entry != null and exit != null:
+		_check(exit.size.x > entry.size.x * 1.2, "the exit hole is wider")
+		_check(entry.texture_orm != null, "holes carry their own roughness")
+		_check(entry.cull_mask & NO_DECALS_LAYER == 0, "holes skip the characters' layer")
+
 	# Blood: spatter on the wall a metre behind the target, none in the open.
 	var placed: int = effects.splats_placed()
 	effects.blood(Vector3(0, 1.3, -8.75), Vector3(0, 0, -1))
@@ -101,6 +112,16 @@ func _finish() -> void:
 		for failure in _failures:
 			printerr("FAIL: ", failure)
 		quit(1)
+
+
+## The decal placed last: the effects node adds them in order and moves a
+## reused one to the end of the ring, so the latest position wins.
+func _newest_decal(effects: Node) -> Decal:
+	var newest: Decal = null
+	for child in effects.get_children():
+		if child is Decal:
+			newest = child
+	return newest
 
 
 func _check(condition: bool, label: String) -> void:

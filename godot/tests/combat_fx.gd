@@ -176,6 +176,24 @@ func _capture() -> void:
 					_player.global_position = side
 					await process_frame
 			await _shot("%s_blood_after" % preset)
+		# Holes per surface class, close up: a row of each on the wall.
+		if effects != null and effects.has_method("exit_impact"):
+			var looks := ["concrete", "metal", "wood", "glass", "dirt"]
+			for row in looks.size():
+				for column in 4:
+					var at := Vector3(-16.9 + column * 0.24, 2.75 - row * 0.24, -1.6)
+					effects.impact(at, Vector3(0, 0, 1), looks[row], true)
+			for column in 2:
+				effects.exit_impact(
+					Vector3(-15.8 + column * 0.3, 2.5, -1.6), Vector3(0, 0, 1), "concrete", true
+				)
+			var close := Vector3(-16.4, 0.1, -0.2)
+			for frames: int in [3, 8, 20, 50, 100]:
+				for i in frames:
+					_player.global_position = close
+					_player.set_look(0.0, 0.3)
+					await process_frame
+				await _shot("%s_surfaces_%03d" % [preset, frames])
 		# Holes: the player's own burst and other players' rounds.
 		Input.action_press("fire")
 		for i in 90:
