@@ -38,7 +38,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Moving parts: `tools/build_weapons.py` splits each gun's magazine, pump, bolt, or slide into its own node. Keyframed clips in `rust/game/src/weapon_clips.rs` drive them and the hands, built per weapon class from each weapon's own timings in seconds: reloads tilt the weapon to show its left side, pull the magazine with a flick and let it fall, fetch a second magazine mesh, seat it with a jolt exactly when the simulation counts its rounds (`mag_in`), then slap the bolt release (M4), pull the charging handle (other rifles), drop the slide (pistol), or work the bolt (M40) on an empty reload, and re-shoulder with a small overshoot. Shotguns tilt to the loading port, thumb each shell in, and pump after an empty reload. Draws and holsters differ for sidearms and long guns, and the inspect checks the magazine and the chamber. Each beat emits `WeaponView::foley_event` (`mag_out`, `mag_in`, `bolt_release`, `charge`, `shell_in`, `pump_back`, `pump_forward`, `bolt_up`, `bolt_back`, `bolt_forward`, `bolt_down`, `draw`, `holster`, `ads_in`, `ads_out`, `inspect`) for the sounds.
 - [x] Keyframed draw and holster animations (a press check on the pistol), and the firing hand working the bolt.
 - [x] The action's small parts move in first person: bolt carriers (or an AK's handle) with each shot, an AR's bolt locked open on empty until the release, the dust cover, charging handles on a charge or chamber check, triggers, the pistol's hammer and slide stop, and magazine releases.
-- [x] Bullet tracers: own tracers every Nth round (`tracer_every` in the weapon file). The sentry already uses the same tracer scene, as remote players will.
+- [x] Bullet tracers every Nth round (`tracer_every` in the weapon file), for the local player, other players, and the sentry, from one pool.
 - [x] Shell ejection particles from an ejection-port marker on each `WeaponView`.
 - [x] Bullet penetration through thin cover, with per-material damage reduction (`shooter_sim::penetration` rules, `rust/game/src/penetration.rs` traces).
 - [x] Per-surface impact effects and sounds (metal, concrete, wood, dirt, flesh), from `surface` metadata on colliders.
@@ -241,7 +241,7 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 - [ ] Combat effects at modern Call of Duty fidelity (`rust/game/src/effects.rs`, `docs/art-direction.md#effects`):
   - [x] Blood that is dark, wet, and lit instead of glowing, with spatter on the wall behind a close target; bullet holes that stay (pooled per preset, oldest reused first) and never land on characters; other players' rounds draw their impacts.
   - [x] Bullet holes per surface class (four variants each, soot ring, roughness), flipbook dust, debris that lands on the floor, and exit effects where a round penetrates.
-  - [ ] Tracers as camera-facing ribbons with a minimum pixel width, from other players too.
+  - [x] Tracers as camera-facing ribbons with a minimum pixel width, from other players too.
   - [ ] Ejected cases handed to the world: they bounce, land, clink on what they hit, and stay; third-person ejection.
   - [ ] Muzzle flash flipbooks, lit soft smoke, lingering barrel smoke, heat haze on High, and a muzzle light that stays on its side of walls.
   - [ ] An explosion and fire effect with an API for grenades.

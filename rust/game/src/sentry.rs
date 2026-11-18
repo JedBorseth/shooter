@@ -273,7 +273,10 @@ impl Sentry {
         self.flash.set_visible(true);
         self.flash_time = 0.04;
         self.fire_sound.play();
-        if let Some(mut tracer) = self
+        // From the local player's effects pool when there is one.
+        if let Some(mut effects) = crate::effects::CombatEffects::find(&self.base().get_tree()) {
+            effects.bind_mut().tracer(from, end);
+        } else if let Some(mut tracer) = self
             .tracer_scene
             .instantiate()
             .and_then(|n| n.try_cast::<Node3D>().ok())

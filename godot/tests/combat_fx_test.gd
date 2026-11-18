@@ -85,9 +85,29 @@ func _run() -> void:
 	tracer.trace_test_shot("m4", Vector3(3, 1.6, 0), Vector3(0, 0, -1))
 	_check(effects.holes_kept() == holes + 1, "a traced remote round leaves a hole")
 
+	# Other players' tracers: every third round of an M4, every round of the
+	# bolt rifle, none from the shotgun; never more in flight than the budget.
+	var started: int = effects.tracers_started()
+	for i in 6:
+		tracer.trace_test_shot("m4", Vector3(-3, 1.6, 0), Vector3(0, 0, -1))
+	_check(effects.tracers_started() == started + 2, "an M4 shows a tracer every third round")
+	started = effects.tracers_started()
+	tracer.trace_test_shot("m40", Vector3(-3, 1.6, 0), Vector3(0, 0, -1))
+	tracer.trace_test_shot("m870", Vector3(-3, 1.6, 0), Vector3(0, 0, -1))
+	_check(
+		effects.tracers_started() == started + 1, "the bolt rifle traces every round, buckshot none"
+	)
+	for i in 40:
+		effects.tracer(Vector3(0, 1.5, 0), Vector3(0, 1.5, -100))
+	_check(
+		effects.tracers_flying() <= effects.budget()["tracers"],
+		"tracers in flight stay within the budget"
+	)
+
 	# Impacts hide once their particles are done, so an idle pool draws nothing.
 	await _frames(240)
 	_check(effects.impacts_visible() == 0, "finished impacts hide")
+	_check(effects.tracers_flying() == 0, "finished tracers hide")
 
 	# Characters are kept off the decal layer.
 	var soldier := SOLDIER_SCENE.instantiate()

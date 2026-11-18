@@ -194,6 +194,24 @@ func _capture() -> void:
 					_player.set_look(0.0, 0.3)
 					await process_frame
 				await _shot("%s_surfaces_%03d" % [preset, frames])
+		# Tracers from other shooters (a bolt rifle: every round is one): across
+		# the view at 15 m and 45 m, and
+		# one passing close to the camera.
+		var tracer := get_first_node_in_group("shot_tracer")
+		var lanes := [
+			[Vector3(-31, 1.8, -12), Vector3(31, 1.4, -12)],
+			[Vector3(-31, 2.5, -28), Vector3(31, 1.5, -29)],
+			[Vector3(-2, 1.7, -20), Vector3(-13.2, 1.5, 8)],
+		]
+		for i in 40:
+			if i % 12 == 0:
+				for lane: Array in lanes:
+					var eye: Vector3 = lane[0]
+					tracer.trace_test_shot("m40", eye, (lane[1] - eye).normalized())
+			_place(0.0, 0.05)
+			await process_frame
+			if i in [2, 3, 5]:
+				await _shot("%s_tracers_%02d" % [preset, i])
 		# Holes: the player's own burst and other players' rounds.
 		Input.action_press("fire")
 		for i in 90:
