@@ -257,6 +257,15 @@ pub fn step(
         state.stance = Stance::Standing;
     }
 
+    // Jump during a slide is a slide-cancel: stand up with the slide's speed
+    // and sprint on, without leaping. The buffer survives the mantle check, so
+    // a slide into a ledge still climbs it.
+    let slide_cancelled =
+        state.jump_buffer > 0.0 && state.stance == Stance::Sliding && env.can_stand;
+    if slide_cancelled {
+        cancel_slide(state, input, params, wish);
+    }
+
     // Jumping at a ledge in reach while moving toward it climbs over it.
     if state.jump_buffer > 0.0
         && wish.y > 0.3
@@ -275,17 +284,19 @@ pub fn step(
         return mantle(state, forward, params, dt);
     }
 
+    if slide_cancelled {
+        // The press went to the cancel; another press jumps.
+        state.jump_buffer = 0.0;
+    }
+
     let mut jumped = false;
     let grounded = env.on_floor || state.coyote > 0.0;
-    if state.jump_buffer > 0.0 && grounded && state.stance != Stance::Crouching {
+    // Only a standing player jumps: a crouch stands up first (above), and a
+    // slide under a low ceiling holds the press until there is headroom.
+    if state.jump_buffer > 0.0 && grounded && state.stance == Stance::Standing {
         // Consume both windows so one press gives one jump.
         state.jump_buffer = 0.0;
         state.coyote = 0.0;
-        // Jumping out of a slide keeps its momentum.
-        if state.stance == Stance::Sliding {
-            state.stance = Stance::Standing;
-            state.slide_cooldown = params.slide_cooldown;
-        }
         state.velocity.y = params.jump_velocity;
         jumped = true;
     }
@@ -377,16 +388,21 @@ fn update_stance(
             }
         }
         Stance::Sliding => {
-            // Slide-cancel: crouch again to stand up out of the slide with its
-            // speed, sprinting on if still pushing forward.
+            // Crouching again also cancels the slide (as does jump, in `step`).
             if crouch_pressed && env.can_stand {
-                state.stance = Stance::Standing;
-                state.slide_time = 0.0;
-                state.slide_cooldown = params.slide_cooldown;
-                state.sprinting = moving_forward && !input.block_sprint;
+                cancel_slide(state, input, params, wish);
             }
         }
     }
+}
+
+/// Slide-cancel: stand up out of the slide with its speed, sprinting on if
+/// still pushing forward, and start the slide cooldown.
+fn cancel_slide(state: &mut MoveState, input: &MoveInput, params: &MoveParams, wish: Vec2) {
+    state.stance = Stance::Standing;
+    state.slide_time = 0.0;
+    state.slide_cooldown = params.slide_cooldown;
+    state.sprinting = wish.y >= params.sprint_min_forward && !input.block_sprint;
 }
 
 /// One tick of a mantle: rise at a steady speed while pushing forward, with
@@ -1007,5 +1023,91 @@ mod tests {
         assert!(s.sprinting, "a slide-cancel sprints on");
         assert!(speed(&s) > fast * 0.9, "the slide's speed carries over");
         assert!(s.slide_cooldown > 0.0);
+    }
+
+    /// Sprints, then crouches into a slide and slides for a few ticks.
+    fn start_slide(s: &mut MoveState) {
+        let sprint = MoveInput {
+            wish: Vec2::Y,
+            sprint: true,
+            ..Default::default()
+        };
+        run(s, sprint, MoveEnv::default(), 2);
+        run(s, forward(), MoveEnv::default(), 90);
+        let crouch = MoveInput {
+            wish: Vec2::Y,
+            crouch: true,
+            ..Default::default()
+        };
+        run(s, crouch, MoveEnv::default(), 1);
+        run(s, forward(), MoveEnv::default(), 6);
+        assert_eq!(s.stance, Stance::Sliding);
+    }
+
+    #[test]
+    fn jumping_cancels_a_slide_without_leaping() {
+        let mut s = MoveState::default();
+        start_slide(&mut s);
+        let fast = speed(&s);
+        let jump = MoveInput {
+            wish: Vec2::Y,
+            jump: true,
+            ..Default::default()
+        };
+        run(&mut s, jump, MoveEnv::default(), 1);
+        assert_eq!(s.stance, Stance::Standing);
+        assert!(s.sprinting, "a slide-cancel sprints on");
+        assert!(speed(&s) > fast * 0.9, "the slide's speed carries over");
+        assert!(s.slide_cooldown > 0.0);
+        assert_eq!(s.velocity.y, 0.0, "the cancel is not a jump");
+        assert_eq!(s.jump_buffer, 0.0, "the press is spent on the cancel");
+
+        // Holding the button does not jump; a fresh press does.
+        run(&mut s, jump, MoveEnv::default(), 10);
+        assert_eq!(s.velocity.y, 0.0);
+        assert!(s.sprinting);
+        run(&mut s, forward(), MoveEnv::default(), 1);
+        run(&mut s, jump, MoveEnv::default(), 1);
+        assert!(s.velocity.y > 5.0);
+    }
+
+    #[test]
+    fn jumping_in_a_slide_under_a_low_ceiling_waits_for_headroom() {
+        let mut s = MoveState::default();
+        start_slide(&mut s);
+        let low_ceiling = MoveEnv {
+            on_floor: true,
+            can_stand: false,
+            ledge: None,
+        };
+        let jump = MoveInput {
+            wish: Vec2::Y,
+            jump: true,
+            ..Default::default()
+        };
+        run(&mut s, jump, low_ceiling, 1);
+        assert_eq!(s.stance, Stance::Sliding, "no standing up into the ceiling");
+        assert_eq!(s.velocity.y, 0.0);
+        // Clear of the ceiling within the jump buffer, the press cancels the slide.
+        run(&mut s, jump, MoveEnv::default(), 1);
+        assert_eq!(s.stance, Stance::Standing);
+        assert_eq!(s.velocity.y, 0.0);
+    }
+
+    #[test]
+    fn jumping_in_a_slide_at_a_ledge_mantles() {
+        let mut s = MoveState::default();
+        start_slide(&mut s);
+        let ledge = MoveEnv {
+            ledge: Some(1.0),
+            ..Default::default()
+        };
+        let jump = MoveInput {
+            wish: Vec2::Y,
+            jump: true,
+            ..Default::default()
+        };
+        run(&mut s, jump, ledge, 1);
+        assert!(s.mantling());
     }
 }

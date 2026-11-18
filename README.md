@@ -342,7 +342,7 @@ Export presets are in `godot/export_presets.cfg`. The Rust library for each plat
 | Crouch (toggle; slides while sprinting; again to cancel the slide) | C or Ctrl |
 | Mantle (climb a ledge or low wall) | Space while walking at it |
 | Inspect weapon | I |
-| Jump | Space |
+| Jump (during a slide: slide-cancel, standing up with its speed and sprinting on) | Space |
 | Fire / aim down sights | Left / right mouse |
 | Hold breath (while scoped) | Shift |
 | Take weapon or refill ammo at a rack | F |
