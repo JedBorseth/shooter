@@ -75,8 +75,8 @@ func _ready() -> void:
 
 
 func _physics_process(_delta: float) -> void:
-	# Render geometry has no original invisible map-boundary brushes. Recover if
-	# someone walks off the scenery instead of leaving them stranded below it.
+	# The baked boundary keeps players in. Should anyone still get off the
+	# scenery, recover instead of leaving them stranded below it.
 	if not Net.is_online() and not _respawning and $Player.position.y < -20.0:
 		_respawning = true
 		get_tree().reload_current_scene.call_deferred()

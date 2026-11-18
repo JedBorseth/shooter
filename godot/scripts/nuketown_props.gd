@@ -11,6 +11,10 @@ const BLAST_RADIUS := 6.5024
 const BLAST_DAMAGE := 300.0
 const BLAST_OUTER_DAMAGE := 75.0
 const MANNEQUINS_PER_MATCH := 25
+## Scripted models that stay solid, by targetname. The population sign
+## (`nuketown_tv`) only has its screen driven by script; the rest of it is a
+## big, solid billboard in the original map.
+const SOLID_DECORATIONS: Array[String] = ["nuketown_tv"]
 
 var pieces: Dictionary = {}
 var entities: Dictionary = {}
@@ -123,6 +127,11 @@ func _build_entities() -> void:
 		var modes := String(item.source_keys.get("script_gameobjectname", ""))
 		if not modes.is_empty() and not "dm" in modes.split(" ") and not "tdm" in modes.split(" "):
 			continue
+		# Exploder models are the wrecked bomb stacks at the Search and Destroy
+		# and Demolition sites. CoD hides them until that site's bomb goes off,
+		# which never happens in the modes Nuketown supports.
+		if item.targetname == "exploder" and item.source_keys.has("script_exploder"):
+			continue
 		if (
 			String(item.destructibledef).begins_with("dest_nt_nuked_")
 			and not int(item.id) in mannequins
@@ -229,19 +238,8 @@ func _build_decoration(item: Dictionary, root: Node3D, meshes: Array) -> void:
 		_clocks.append({"node": root, "basis": root.basis, "period": period})
 	# Animated decorations and clock hands are visual. Solid script models
 	# retain collision; the tiny hands/dials must not become invisible walls.
-	if item.targetname == "exploder":
-		var id := int(item.id) * PART_STRIDE
-		pieces[id] = {
-			"root": root,
-			"kind": "exploder",
-			"stage": 0,
-			"health": 50.0,
-			"impulse": Vector3.ZERO,
-			"fx": []
-		}
-		for mesh: MeshInstance3D in meshes:
-			_collider(mesh, id, "metal")
-	elif not String(item.model).contains("clock") and item.targetname.is_empty():
+	var solid: bool = item.targetname.is_empty() or item.targetname in SOLID_DECORATIONS
+	if solid and not String(item.model).contains("clock"):
 		for mesh: MeshInstance3D in meshes:
 			if mesh.mesh.get_aabb().size.length() > 0.45:
 				_collider(mesh, -1, "metal")
@@ -315,9 +313,7 @@ func _change(id: int, stage: int, impulse: Vector3, attacker: int, weapon: int) 
 	var previous: int = record.stage
 	apply_state(id, stage, impulse)
 	_events.append({"id": id, "stage": stage, "impulse": impulse})
-	if record.kind == "exploder":
-		_queue_blast(record.root.global_position, attacker, weapon)
-	elif record.kind == "destructible" and previous < record.states.size():
+	if record.kind == "destructible" and previous < record.states.size():
 		var state: Dictionary = record.states[previous]
 		if state.break_notify == "destructible_car_explosion":
 			# Raise the origin above the wreck so its own body does not occlude damage.
@@ -347,11 +343,6 @@ func apply_state(id: int, stage: int, impulse: Vector3) -> void:
 		_set_root_collision(record.root, stage == 0)
 		if stage > 0 and impulse != Vector3.ZERO:
 			_spawn_debris(_meshes(record.root), impulse, id)
-	elif record.kind == "exploder":
-		record.root.visible = stage == 0
-		_set_root_collision(record.root, stage == 0)
-		if stage > 0:
-			FX.burst(_debris, record.root.global_position)
 	else:
 		var old_meshes: Array = []
 		if previous < record.states.size():
