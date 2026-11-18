@@ -38,8 +38,8 @@ use shooter_sim::net::discovery::clean_text;
 use shooter_sim::net::interpolation::{InterpolationBuffer, SnapshotClock};
 use shooter_sim::net::prediction::Reconciled;
 use shooter_sim::net::protocol::{
-    ClientMessage, FlagPlay, FlagStatus, FlagView, GameEvent, InputPacket, MAX_BUILD_BYTES,
-    PROTOCOL_VERSION, ScoreRow, ServerMessage, Snapshot, ZoneView,
+    ClientMessage, FlagPlay, FlagStatus, FlagView, GameEvent, InputPacket, KillCause,
+    MAX_BUILD_BYTES, PROTOCOL_VERSION, ScoreRow, ServerMessage, Snapshot, ZoneView,
 };
 use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::{CHANNEL_COUNT, CHANNEL_RELIABLE, DEFAULT_PORT, TICK_RATE, Tick};
@@ -908,12 +908,12 @@ impl NetClient {
                 victim,
                 weapon,
                 headshot,
-                melee,
+                cause,
             } => {
-                let name = if melee {
-                    GString::from(KNIFE_NAME)
-                } else {
-                    GString::from(&weapon.def().name)
+                let name = match cause {
+                    KillCause::Knife => GString::from(KNIFE_NAME),
+                    KillCause::Equipment(kind) => GString::from(kind.name()),
+                    KillCause::Weapon => GString::from(&weapon.def().name),
                 };
                 self.signals().kill_reported().emit(
                     i32::from(killer),
@@ -1059,6 +1059,16 @@ impl NetClient {
                     &GString::from(text.as_str()),
                     team,
                 );
+            }
+            GameEvent::Blast {
+                owner,
+                shot,
+                kind,
+                at,
+            } => {
+                if let Some(player) = &mut self.player {
+                    player.bind_mut().on_server_blast(owner, shot, kind, at);
+                }
             }
         }
     }
@@ -1252,6 +1262,9 @@ impl NetClient {
             present
         });
 
+        if newest && let (Some(id), Some(player)) = (self.player_id, &mut self.player) {
+            player.bind_mut().on_server_grenades(id, &snapshot.grenades);
+        }
         if let Some(own) = snapshot.own {
             self.stats.server_position = to_godot(own.predicted.position);
             if let Some(player) = &mut self.player {

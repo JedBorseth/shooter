@@ -38,18 +38,21 @@ use godot::classes::{
     PhysicsRayQueryParameters3D, PhysicsShapeQueryParameters3D, ShapeCast3D, SphereShape3D, Time,
 };
 use godot::prelude::*;
+use shooter_sim::equipment::{self, Grenade, Kind};
 use shooter_sim::hitbox::HitZone;
 use shooter_sim::look::{
     self, AimAssist, AimAssistParams, AssistTarget, AssistView, StickLook, StickParams,
 };
 use shooter_sim::melee;
 use shooter_sim::movement::{MoveEnv, Stance};
+use shooter_sim::net::TICK_DT;
 use shooter_sim::net::prediction::{ErrorSmoothing, Prediction, Reconciled};
-use shooter_sim::net::protocol::{self, OwnState, Predicted};
+use shooter_sim::net::protocol::{self, GrenadeView, OwnState, Predicted};
 use shooter_sim::net::subtick;
 use shooter_sim::player::{self, FireAim, PlayerEvent, PlayerInput, PlayerParams, PlayerState};
 use shooter_sim::score::{Kill, ScoreRules, ScoreState, ScoreTotals, Scored};
 use shooter_sim::weapon::{self, Action, CombatEvent, FireMode, LoadStage, Reload, Slot, WeaponId};
+use shooter_sim::zombies;
 use shooter_sim::{Vec2, Vec3, rng};
 
 use crate::acoustics::AudioEnvironment;
@@ -60,12 +63,14 @@ use crate::bullets::ShotTracer;
 use crate::convert::{to_godot, to_sim};
 use crate::effects::CombatEffects;
 use crate::footsteps::{self, Gait, Stride};
+use crate::grenade_view::GrenadeShow;
+use crate::grenades::{self, GrenadeSim, LiveGrenade};
 use crate::penetration;
 use crate::pickup::{INTERACT_LAYER, WeaponPickup};
 use crate::player_sounds::{BodyFrame, PlayerSounds};
 use crate::spring::{Spring, damping_for, impulse_for_peak, smoothing};
 use crate::surfaces::{Surface, surface_at};
-use crate::target::{HITBOX_LAYER, WORLD_LAYER};
+use crate::target::{BODY_LAYER, HITBOX_LAYER, WORLD_LAYER};
 use crate::viewmodel::{ViewAction, ViewFrame, ViewmodelRig};
 
 use shooter_sim::look::PITCH_LIMIT;
@@ -110,18 +115,26 @@ const DEATH_CAMERA_HEIGHT: f32 = 1.5;
 
 /// Actions whose presses are remembered until the next physics tick, so a tap
 /// shorter than one tick (or a mouse-wheel step) is never lost.
-const LATCHED_ACTIONS: [&str; 10] = [
+const LATCHED_ACTIONS: [&str; 11] = [
     "jump",
     "crouch",
     "sprint",
     "fire",
     "reload",
     "melee",
+    "lethal",
     "weapon_1",
     "weapon_2",
     "interact",
     "refill_ammo",
 ];
+
+/// Online: seconds our own grenade, gone off here, stays drawn waiting for
+/// the server's blast (about a round trip).
+const SPENT_GRENADE_HOLD: f32 = 0.5;
+
+/// Online: seconds between the server's grenade positions (its snapshots).
+const SNAPSHOT_GRENADE_INTERVAL: f32 = 2.0 * TICK_DT;
 
 /// After a mouse-wheel step swaps weapons, further wheel input is ignored for
 /// this long, so one flick (several notches, or a high-resolution wheel's
@@ -233,6 +246,11 @@ pub struct FpsPlayer {
     #[export]
     #[init(val = true)]
     start_with_primary: bool,
+    /// Frag grenades at each spawn, offline. Online the server decides by
+    /// mode (`equipment::spawn_lethals`).
+    #[export]
+    #[init(val = 1)]
+    starting_lethals: i32,
     /// How far away weapon racks can be used, in metres.
     #[export]
     #[init(val = 2.6)]
@@ -411,6 +429,16 @@ pub struct FpsPlayer {
     stick_look: StickLook,
     assist: AimAssist,
     assist_target: Option<u64>,
+    /// Offline: every live grenade, ours to set off. Online: only our own
+    /// throws, drawn until the server's grenade takes over.
+    grenades: GrenadeSim,
+    /// Online: our own grenades that went off here before the server's
+    /// blast arrived, held where they lay: shot number, position, seconds left.
+    spent_grenades: Vec<(u32, Vec3, f32)>,
+    /// Online: our player id and the server's grenades, from the latest snapshot.
+    net_id: Option<u8>,
+    server_grenades: Vec<GrenadeView>,
+    grenade_show: GrenadeShow,
 }
 
 #[godot_api]
@@ -586,6 +614,7 @@ impl ICharacterBody3D for FpsPlayer {
             self.handle_event(event);
         }
         self.events = events;
+        self.update_grenades();
         if let Some(mut body) = self.player_sounds.clone() {
             let movement = self.state.movement;
             body.bind_mut().update(
@@ -613,6 +642,7 @@ impl ICharacterBody3D for FpsPlayer {
 
     fn process(&mut self, delta: f64) {
         let dt = delta as f32;
+        self.grenade_show.draw(dt);
         let fraction = Engine::singleton().get_physics_interpolation_fraction() as f32;
         let feet = self.previous_position.lerp(self.current_position, fraction)
             + to_godot(self.smoothing.update(dt))
@@ -1039,6 +1069,19 @@ impl FpsPlayer {
         killed
     }
 
+    /// Frag grenades carried, for the HUD.
+    #[func]
+    fn lethals(&self) -> i32 {
+        i32::from(self.state.combat.lethals)
+    }
+
+    /// Zombies: a new round's frags (`zombies::restock_frags`).
+    #[func]
+    fn restock_lethals(&mut self) {
+        let combat = &mut self.state.combat;
+        combat.lethals = zombies::restock_frags(combat.lethals);
+    }
+
     /// Gives this weapon now, as if taken from a rack (tests and debugging).
     #[func]
     fn give_weapon(&mut self, key: GString) -> bool {
@@ -1155,6 +1198,10 @@ impl FpsPlayer {
         self.prediction = None;
         self.view_tick = None;
         self.predicted_hits.clear();
+        self.grenades.clear();
+        self.spent_grenades.clear();
+        self.server_grenades.clear();
+        self.grenade_show.clear();
     }
 
     pub(crate) fn prediction(&self) -> Option<&Prediction> {
@@ -1311,6 +1358,7 @@ impl FpsPlayer {
         let crouch = held("crouch");
         let fire = held("fire");
         let melee = held("melee");
+        let lethal = held("lethal");
         let mut reload = held("reload");
         let slot_1 = held("weapon_1");
         let slot_2 = held("weapon_2");
@@ -1384,6 +1432,7 @@ impl FpsPlayer {
             pickup: if interact { self.look_target } else { None },
             melee,
             lunge,
+            lethal,
             // A press since the last tick: the server rewinds others to the
             // frame it was clicked on. A knife strike uses the latest view.
             view_tick: match press {
@@ -1689,6 +1738,22 @@ impl FpsPlayer {
                 let from = self.current_position;
                 self.handle_vitals(event, from);
             }
+            // Online the server drops it; offline it falls here.
+            PlayerEvent::GrenadeDropped { kind, fuse, shot } => {
+                if self.prediction.is_none() {
+                    let at = to_sim(self.current_position) + Vec3::Y * 0.4;
+                    self.grenades.add(LiveGrenade {
+                        owner: None,
+                        shot,
+                        grenade: Grenade::dropped(
+                            kind,
+                            at,
+                            self.state.movement.velocity * 0.5,
+                            fuse,
+                        ),
+                    });
+                }
+            }
         }
     }
 
@@ -1759,6 +1824,38 @@ impl FpsPlayer {
                 }
             }
             CombatEvent::MeleeStruck { shot, .. } => self.melee_strike(shot),
+            CombatEvent::Thrown {
+                kind,
+                yaw,
+                pitch,
+                fuse,
+                shot,
+            } => {
+                let eye = self.eye_position();
+                let owner = if self.prediction.is_some() {
+                    self.net_id
+                } else {
+                    None
+                };
+                let carrier = self.state.movement.velocity;
+                if let Some(mut space) = self
+                    .base()
+                    .get_world_3d()
+                    .and_then(|world| world.get_direct_space_state())
+                {
+                    self.grenades.throw(
+                        &mut space,
+                        owner,
+                        shot,
+                        kind,
+                        eye,
+                        (yaw, pitch),
+                        carrier,
+                        fuse,
+                    );
+                }
+            }
+            CombatEvent::ThrowStarted { .. } => {}
             // The reload's handling sounds follow its animation (`WeaponView`).
             CombatEvent::ReloadStarted { .. }
             | CombatEvent::ReloadFinished { .. }
@@ -2472,6 +2569,10 @@ impl FpsPlayer {
                 ViewAction::Raising(progress(remaining, def.raise_time))
             }
             Action::Meleeing { strike_in, .. } => ViewAction::Meleeing { strike_in },
+            // The weapon goes down while a grenade is in hand.
+            Action::Throwing { cooked, .. } => {
+                ViewAction::Lowering((cooked / def.lower_time.max(1e-3)).clamp(0.0, 1.0))
+            }
         };
         self.frame_with(ads, action)
     }
@@ -2516,7 +2617,213 @@ impl FpsPlayer {
         if !self.start_with_primary {
             state.combat = state.combat.without(Slot::Primary);
         }
+        state.combat.lethals = self.starting_lethals.clamp(0, i32::from(u8::MAX)) as u8;
         state
+    }
+
+    /// Flies the grenades this client runs one tick, sets off the ones whose
+    /// fuse ran out (offline only; online the server's blast does), and
+    /// places every grenade model.
+    fn update_grenades(&mut self) {
+        let online = self.prediction.is_some();
+        if self.grenades.live.is_empty()
+            && self.spent_grenades.is_empty()
+            && self.server_grenades.is_empty()
+        {
+            if !self.grenade_show.is_empty() {
+                self.grenade_show.begin();
+                self.grenade_show.end();
+            }
+            return;
+        }
+        if !self.grenades.live.is_empty()
+            && let Some(mut space) = self
+                .base()
+                .get_world_3d()
+                .and_then(|world| world.get_direct_space_state())
+        {
+            let outcome = self.grenades.step(&mut space, TICK_DT);
+            for blast in outcome.blasts {
+                if online {
+                    // Held where it lay until the server's blast arrives.
+                    self.spent_grenades.push((
+                        blast.shot,
+                        blast.grenade.position,
+                        SPENT_GRENADE_HOLD,
+                    ));
+                } else {
+                    self.offline_blast(&mut space, &blast);
+                }
+            }
+        }
+        for spent in &mut self.spent_grenades {
+            spent.2 -= TICK_DT;
+        }
+        self.spent_grenades.retain(|spent| spent.2 > 0.0);
+
+        let Some(mut parent) = self.base().get_parent() else {
+            return;
+        };
+        let own = if online { self.net_id } else { None };
+        self.grenade_show.begin();
+        for live in &self.grenades.live {
+            self.grenade_show.place(
+                &mut parent,
+                (own, live.shot),
+                to_godot(live.grenade.position),
+                TICK_DT,
+            );
+        }
+        for &(shot, at, _) in &self.spent_grenades {
+            self.grenade_show
+                .place(&mut parent, (own, shot), to_godot(at), TICK_DT);
+        }
+        for view in &self.server_grenades {
+            let ours = Some(view.owner) == own
+                && (self.grenades.live.iter().any(|g| g.shot == view.shot)
+                    || self.spent_grenades.iter().any(|s| s.0 == view.shot));
+            if !ours {
+                self.grenade_show.place(
+                    &mut parent,
+                    (Some(view.owner), view.shot),
+                    to_godot(view.position()),
+                    SNAPSHOT_GRENADE_INTERVAL,
+                );
+            }
+        }
+        self.grenade_show.end();
+    }
+
+    /// Offline: a grenade went off. Every damageable body the blast can see
+    /// within its radius takes damage by distance, the player included.
+    fn offline_blast(&mut self, space: &mut Gd<PhysicsDirectSpaceState3D>, blast: &LiveGrenade) {
+        let kind = blast.grenade.kind;
+        let center = to_godot(blast.grenade.position);
+        let radius = equipment::blast_radius(kind);
+        if let Some(mut parent) = self.base().get_parent() {
+            self.grenade_show.remove((None, blast.shot));
+            self.grenade_show.blast(&mut parent, kind, center);
+        }
+        let mut sphere = SphereShape3D::new_gd();
+        sphere.set_radius(radius + 1.0);
+        let mut query = PhysicsShapeQueryParameters3D::new_gd();
+        query.set_shape(&sphere);
+        query.set_transform(Transform3D::new(Basis::IDENTITY, center));
+        query.set_collision_mask(HITBOX_LAYER | BODY_LAYER);
+        let me = self.base().instance_id();
+        let mut targets: Vec<Gd<Node>> = Vec::new();
+        for hit in space
+            .intersect_shape_ex(&query)
+            .max_results(128)
+            .done()
+            .iter_shared()
+        {
+            let Some(target) = hit
+                .get("collider")
+                .and_then(|c| c.try_to::<Gd<Node>>().ok())
+                .as_ref()
+                .and_then(find_damageable)
+            else {
+                continue;
+            };
+            let id = target.instance_id();
+            if id == me
+                || targets.iter().any(|t| t.instance_id() == id)
+                || target.has_method("apply_prop_hit")
+                || (target.has_meta("friendly") && target.get_meta("friendly").booleanize())
+            {
+                continue;
+            }
+            targets.push(target);
+        }
+        let eye = self.eye_position();
+        let mut kills = Vec::new();
+        let mut hit_any = false;
+        for mut target in targets {
+            let mut probe = target.clone();
+            if probe.has_method("is_alive") && !probe.call("is_alive", &[]).booleanize() {
+                continue;
+            }
+            let Ok(node) = target.clone().try_cast::<Node3D>() else {
+                continue;
+            };
+            let feet = node.get_global_position();
+            let chest = feet + Vector3::UP * melee::CHEST_HEIGHT;
+            let distance = center.distance_to(chest);
+            let damage = equipment::blast_damage(kind, distance);
+            if damage <= 0.0 || !grenades::blast_reaches(space, center, feet) {
+                continue;
+            }
+            let killed = target
+                .call("apply_damage", &[damage.to_variant(), false.to_variant()])
+                .try_to::<bool>()
+                .unwrap_or(false);
+            if target.has_method("react_to_hit") {
+                let direction = (chest - center).normalized_or_zero();
+                let force = protocol::HitPart::new(None, damage, false).force;
+                target.call(
+                    "react_to_hit",
+                    &[
+                        direction.to_variant(),
+                        killed.to_variant(),
+                        chest.to_variant(),
+                        (shooter_sim::hitbox::CHEST_SHAPE as i64).to_variant(),
+                        f32::from(force).to_variant(),
+                    ],
+                );
+            }
+            hit_any = true;
+            if killed {
+                kills.push(Kill {
+                    distance: eye.distance_to(chest),
+                    headshot: false,
+                });
+            }
+        }
+        if hit_any {
+            self.signals()
+                .hit_confirmed()
+                .emit(!kills.is_empty(), false);
+        }
+        if !kills.is_empty() {
+            for scored in self.score.on_shot_kills(&self.score_rules, &kills) {
+                self.signals().scored().emit(
+                    scored.points as i64,
+                    &GString::from(scored.award.label().as_str()),
+                    scored.award.is_medal(),
+                );
+            }
+        }
+        // Our own grenade hurts us too.
+        if self.state.alive() {
+            let feet = self.current_position;
+            let distance = center.distance_to(feet + Vector3::UP * melee::CHEST_HEIGHT);
+            let damage = equipment::blast_damage(kind, distance);
+            if damage > 0.0 && grenades::blast_reaches(space, center, feet) {
+                self.take_damage(damage, center);
+            }
+        }
+    }
+
+    /// Online: the server's live grenades, and who we are.
+    pub(crate) fn on_server_grenades(&mut self, own: u8, grenades: &[GrenadeView]) {
+        self.net_id = Some(own);
+        self.server_grenades.clear();
+        self.server_grenades.extend_from_slice(grenades);
+    }
+
+    /// Online: a grenade went off.
+    pub(crate) fn on_server_blast(&mut self, owner: Option<u8>, shot: u32, kind: Kind, at: Vec3) {
+        if owner.is_some() && owner == self.net_id {
+            self.grenades.remove(owner, shot);
+            self.spent_grenades.retain(|spent| spent.0 != shot);
+        }
+        self.server_grenades
+            .retain(|view| !(Some(view.owner) == owner && view.shot == shot));
+        if let Some(mut parent) = self.base().get_parent() {
+            self.grenade_show.remove((owner, shot));
+            self.grenade_show.blast(&mut parent, kind, to_godot(at));
+        }
     }
 
     fn respawn(&mut self) {

@@ -170,8 +170,31 @@ func _run() -> void:
 			% [stats.ping_ms, stats.snapshots, stats.kbps_in, stats.kbps_out]
 		)
 	)
+	await _throw_frag(player, client)
 	await _chat(client)
 	_finish()
+
+
+## A frag thrown online: the throw is predicted with no corrections, the
+## grenade is drawn from the release, and it is gone once the server's blast
+## arrives.
+func _throw_frag(player: FpsPlayer, client: NetClient) -> void:
+	_check(player.lethals() == 1, "one frag online, got %d" % player.lethals())
+	var corrections_before := int(client.stats().corrections)
+	player.set_look(0.0, 0.35)
+	await _ticks(10)
+	Input.action_press("lethal")
+	await _ticks(2)
+	Input.action_release("lethal")
+	await _ticks(60)
+	_check(player.lethals() == 0, "the throw spent it")
+	_check(get_nodes_in_group(&"grenades").size() == 1, "the grenade is drawn online")
+	# The fuse (3 s from the press, at 120 ticks a second) and a round trip.
+	await _ticks(360)
+	_check(get_nodes_in_group(&"grenades").is_empty(), "the server's blast took it away")
+	var corrections := int(client.stats().corrections) - corrections_before
+	_check(corrections == 0, "the throw was predicted with no corrections, got %d" % corrections)
+	player.set_look(0.0, 0.0)
 
 
 ## Chat: a message comes back from the server cleaned up, and a flood is cut

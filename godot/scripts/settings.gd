@@ -102,6 +102,7 @@ const REBINDABLE := {
 	&"aim": "Aim",
 	&"reload": "Reload",
 	&"melee": "Melee",
+	&"lethal": "Lethal (frag grenade)",
 	&"weapon_1": "Primary weapon",
 	&"weapon_2": "Secondary weapon",
 	&"interact": "Interact",

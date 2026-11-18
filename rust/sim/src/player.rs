@@ -32,6 +32,9 @@ pub struct PlayerInput {
     /// (`x`, `z`) from the player's feet to theirs, if one was in range. The
     /// client that pressed melee picks it from what it draws.
     pub lunge: Option<Vec2>,
+    /// The lethal button ([`crate::equipment`]): a press pulls a grenade's
+    /// pin, holding cooks it, letting go throws it.
+    pub lethal: bool,
     /// Online only: the server tick (fractional) this client was drawing other
     /// players at when the input was read. The server rewinds their hitboxes to
     /// it to check this input's shots (`net::lag`). Sent while firing; the
@@ -70,6 +73,7 @@ impl PlayerInput {
             fire: false,
             melee: false,
             lunge: None,
+            lethal: false,
             pickup: None,
             view_tick: None,
             fire_aim: None,
@@ -148,6 +152,8 @@ pub struct PlayerState {
     pub(crate) reload_held: bool,
     /// The melee button was down last tick (a press starts a strike).
     pub melee_held: bool,
+    /// The lethal button was down last tick (a press pulls a pin).
+    pub lethal_held: bool,
 }
 
 impl PlayerState {
@@ -161,6 +167,7 @@ impl PlayerState {
             airborne: false,
             reload_held: false,
             melee_held: false,
+            lethal_held: false,
         }
     }
 
@@ -213,6 +220,13 @@ pub enum PlayerEvent {
         fall: bool,
     },
     Died,
+    /// Died with a grenade's pin out: it falls from their hands, live, with
+    /// `fuse` seconds left. `shot` numbers it like a throw.
+    GrenadeDropped {
+        kind: crate::equipment::Kind,
+        fuse: f32,
+        shot: u32,
+    },
 }
 
 /// Applies damage and reports it. Returns true if this killed the player.
@@ -263,6 +277,13 @@ pub fn step(
         // A jump pressed just before dying must not fire later from the buffer.
         state.movement.jump_buffer = 0.0;
         state.movement.coyote = 0.0;
+        // A grenade cooking in their hand falls, live, instead of being thrown.
+        if let Some((kind, fuse)) = state.combat.live_grenade() {
+            let shot = state.combat.shots_fired;
+            state.combat.shots_fired = shot.wrapping_add(1);
+            state.combat.action = weapon::Action::Ready;
+            events.push(PlayerEvent::GrenadeDropped { kind, fuse, shot });
+        }
         PlayerInput {
             yaw: input.yaw,
             pitch: input.pitch,
@@ -282,6 +303,10 @@ pub fn step(
     // Not while climbing, when the weapon is down anyway.
     let melee = melee_pressed && state.combat.can_melee() && !state.movement.mantling();
     let lunge = input.lunge.filter(|offset| melee && melee::lunges(*offset));
+    let lethal_pressed = input.lethal && !state.lethal_held;
+    state.lethal_held = input.lethal;
+    // Not while climbing, nor in the same tick as a knife.
+    let throw = lethal_pressed && !melee && !state.movement.mantling();
 
     let def = state.combat.def();
     let ads = state.combat.ads;
@@ -321,6 +346,8 @@ pub fn step(
         hold_breath: input.sprint && scoped,
         pickup: input.pickup,
         melee: melee.then(|| (melee::strike_delay(lunge), lunge.is_some())),
+        throw,
+        throw_held: input.lethal,
     };
     let ctx = state.combat_context(env, &params.movement);
     let mut combat = Vec::new();
@@ -506,6 +533,177 @@ mod tests {
         );
     }
 
+    fn thrown(events: &[PlayerEvent]) -> Vec<(f32, u32)> {
+        events
+            .iter()
+            .filter_map(|e| match *e {
+                PlayerEvent::Combat(CombatEvent::Thrown { fuse, shot, .. }) => Some((fuse, shot)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn ticks(seconds: f32) -> usize {
+        (seconds / DT).round() as usize
+    }
+
+    #[test]
+    fn a_tapped_grenade_leaves_after_the_pin_and_wind_up() {
+        use crate::equipment::{FRAG_FUSE, PIN_TIME, RECOVERY, WIND_UP};
+        let mut s = ready_state();
+        assert_eq!(s.combat.lethals, 1);
+        let tap = PlayerInput {
+            lethal: true,
+            ..Default::default()
+        };
+        let events = run(&mut s, tap, MoveEnv::default(), 1);
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, PlayerEvent::Combat(CombatEvent::ThrowStarted { .. })))
+        );
+        assert_eq!(s.combat.lethals, 0, "taken from the pouch at the pin");
+        assert!(s.combat.throwing());
+        let mut events = Vec::new();
+        let mut left_at = None;
+        for tick in 0..ticks(1.0) {
+            let e = run(&mut s, PlayerInput::default(), MoveEnv::default(), 1);
+            if !thrown(&e).is_empty() {
+                left_at = Some(tick + 1);
+            }
+            events.extend(e);
+        }
+        let throws = thrown(&events);
+        assert_eq!(throws.len(), 1, "one throw");
+        let left_at = left_at.unwrap() as f32 * DT;
+        assert!(
+            (left_at - (PIN_TIME + WIND_UP)).abs() <= 2.0 * DT,
+            "left the hand at {left_at}"
+        );
+        let fuse = throws[0].0;
+        assert!(
+            (fuse - (FRAG_FUSE - left_at)).abs() < 2.0 * DT,
+            "fuse {fuse}"
+        );
+        // The weapon comes back up after the throw.
+        run(
+            &mut s,
+            PlayerInput::default(),
+            MoveEnv::default(),
+            ticks(RECOVERY),
+        );
+        assert_eq!(s.combat.action, Action::Ready);
+        // None left: another press does nothing.
+        run(&mut s, PlayerInput::default(), MoveEnv::default(), 1);
+        let events = run(&mut s, tap, MoveEnv::default(), 1);
+        assert!(events.is_empty() && !s.combat.throwing());
+    }
+
+    #[test]
+    fn holding_the_button_cooks_the_fuse_away() {
+        let mut s = ready_state();
+        let hold = PlayerInput {
+            lethal: true,
+            ..Default::default()
+        };
+        run(&mut s, hold, MoveEnv::default(), ticks(2.0));
+        assert!(s.combat.throwing(), "held: still in hand");
+        let events = run(
+            &mut s,
+            PlayerInput::default(),
+            MoveEnv::default(),
+            ticks(0.5),
+        );
+        let throws = thrown(&events);
+        assert_eq!(throws.len(), 1);
+        assert!(
+            throws[0].0 > 0.7 && throws[0].0 < 0.9,
+            "about a second less the wind-up: {}",
+            throws[0].0
+        );
+    }
+
+    #[test]
+    fn a_grenade_cooked_too_long_goes_off_in_the_hand() {
+        let mut s = ready_state();
+        let hold = PlayerInput {
+            lethal: true,
+            ..Default::default()
+        };
+        let events = run(&mut s, hold, MoveEnv::default(), ticks(3.5));
+        let throws = thrown(&events);
+        assert_eq!(throws.len(), 1);
+        assert_eq!(throws[0].0, 0.0, "no fuse left");
+        assert!(!s.combat.throwing());
+    }
+
+    #[test]
+    fn a_throw_holds_fire_aim_switches_and_the_knife_until_the_weapon_is_up() {
+        let mut s = ready_state();
+        s.combat.slots[0].magazine = 10;
+        let reload = PlayerInput {
+            reload: true,
+            ..Default::default()
+        };
+        run(&mut s, reload, MoveEnv::default(), 1);
+        assert!(s.combat.is_reloading());
+        let busy = PlayerInput {
+            lethal: true,
+            fire: true,
+            aim: true,
+            melee: true,
+            switch_to: Some(1),
+            ..Default::default()
+        };
+        // Pressed together, the knife wins; the grenade stays in the pouch.
+        let both = PlayerInput {
+            lethal: true,
+            melee: true,
+            ..Default::default()
+        };
+        run(&mut s, both, MoveEnv::default(), 1);
+        assert!(s.combat.meleeing() && s.combat.lethals == 1);
+        run(&mut s, PlayerInput::default(), MoveEnv::default(), 60);
+        let throw = PlayerInput {
+            lethal: true,
+            ..Default::default()
+        };
+        run(&mut s, throw, MoveEnv::default(), 1);
+        assert!(s.combat.throwing());
+        let events = run(&mut s, busy, MoveEnv::default(), ticks(0.3));
+        assert!(!fired(&events), "no shots with a grenade in hand");
+        assert_eq!(melee_events(&events), (0, 0), "no knife");
+        assert_eq!(s.combat.active, 0, "no switch");
+        assert_eq!(s.combat.ads, 0.0, "no aim");
+        assert!(s.combat.throwing());
+    }
+
+    #[test]
+    fn a_player_who_dies_cooking_drops_the_grenade_live() {
+        let mut s = ready_state();
+        assert!(s.combat.live_grenade().is_none());
+        let hold = PlayerInput {
+            lethal: true,
+            ..Default::default()
+        };
+        run(&mut s, hold, MoveEnv::default(), ticks(1.0));
+        let (_, fuse) = s.combat.live_grenade().expect("pin out");
+        assert!((fuse - (crate::equipment::FRAG_FUSE - 1.0)).abs() < 2.0 * DT);
+        let mut events = Vec::new();
+        apply_damage(&mut s, 200.0, false, &mut events);
+        let events = run(&mut s, hold, MoveEnv::default(), ticks(1.0));
+        let dropped: Vec<f32> = events
+            .iter()
+            .filter_map(|e| match *e {
+                PlayerEvent::GrenadeDropped { fuse, .. } => Some(fuse),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(dropped.len(), 1, "dropped once");
+        assert!((dropped[0] - fuse).abs() < 2.0 * DT);
+        assert!(thrown(&events).is_empty(), "never thrown");
+    }
+
     #[test]
     fn aiming_slows_movement() {
         let mut s = ready_state();
@@ -677,6 +875,7 @@ mod tests {
             pickup: Some(WeaponId::expect("ak47")),
             melee: true,
             lunge: Some(Vec2::new(0.5, -2.0)),
+            lethal: true,
             view_tick: Some(12.5),
             fire_aim: Some(FireAim {
                 yaw: 0.01,
