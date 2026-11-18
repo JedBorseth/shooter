@@ -2,8 +2,11 @@
 
 [ext_resource type="PackedScene" path="res://scenes/player.tscn" id="1_player"]
 [ext_resource type="LightmapGIData" uid="uid://brl4t7h4kwi7r" path="res://scenes/zombies_arena.lmbake" id="2_hkte1"]
-[ext_resource type="PackedScene" path="res://assets/models/map_zombies_arena/map_zombies_arena.gltf" id="5_3o2ur"]
+[ext_resource type="PackedScene" uid="uid://coq43ndqmi2fw" path="res://assets/models/map_zombies_arena/map_zombies_arena.gltf" id="5_3o2ur"]
 [ext_resource type="PackedScene" path="res://scenes/ui/pause_menu.tscn" id="5_pause"]
+[ext_resource type="PackedScene" uid="uid://dvpm7am3lw2x8" path="res://assets/models/map_zombies_dressing/map_zombies_dressing.gltf" id="6_dress"]
+[ext_resource type="Script" uid="uid://dc3lq2kfheq1v" path="res://scripts/map_render.gd" id="7_render"]
+[ext_resource type="Script" uid="uid://b04fff2yvip4k" path="res://scripts/baked_lights.gd" id="8_baked"]
 [ext_resource type="PackedScene" path="res://scenes/props/weapon_rack.tscn" id="9_rack"]
 [ext_resource type="PackedScene" uid="uid://f4nuvi0vah4o" path="res://assets/weapons/m4/m4.glb" id="11_m4"]
 [ext_resource type="PackedScene" uid="uid://cyygpfwlyiqpr" path="res://assets/weapons/ak47/ak47.glb" id="12_ak47"]
@@ -28,7 +31,6 @@
 [ext_resource type="PackedScene" uid="uid://1n24gf2ivekm" path="res://assets/props/barrel_blue/barrel_blue.gltf" id="p_barrel_blue"]
 [ext_resource type="PackedScene" uid="uid://bouhhxxxokimq" path="res://assets/props/barrel_red/barrel_red.gltf" id="p_barrel_red"]
 [ext_resource type="PackedScene" uid="uid://bajabhpp86tw6" path="res://assets/props/barrel_steel/barrel_steel.gltf" id="p_barrel_steel"]
-[ext_resource type="PackedScene" uid="uid://dj6bx0x8mjabk" path="res://assets/props/covered_car/covered_car.gltf" id="p_covered_car"]
 [ext_resource type="PackedScene" uid="uid://cw3bhh3if7on2" path="res://assets/props/crate/crate.gltf" id="p_crate"]
 [ext_resource type="PackedScene" uid="uid://bhx5cy2gsnkiq" path="res://assets/props/street_lamp/street_lamp.gltf" id="p_street_lamp"]
 [ext_resource type="PackedScene" uid="uid://dha6or7eu21pl" path="res://assets/props/trash_can/trash_can.gltf" id="p_trash_can"]
@@ -489,7 +491,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 27.5, 2, 24.55)
 size = Vector3(4, 4, 0.5)
 material = ExtResource("m_wall")
 
-[node name="Architecture" parent="." instance=ExtResource("5_3o2ur")]
+[node name="Architecture" parent="." unique_id=1093995373 instance=ExtResource("5_3o2ur")]
 
 [node name="Barrels" type="CSGCombiner3D" parent="." unique_id=1181650945]
 visible = false
@@ -553,7 +555,7 @@ sides = 14
 material = ExtResource("m_barrel_blue")
 
 [node name="CarBlock" type="CSGBox3D" parent="Barrels" unique_id=1259775438]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -24, 0.7, -5)
+transform = Transform3D(0.998201, 0, 0.059964, 0, 1, 0, -0.059964, 0, 0.998201, -22.75, 0.7, -4)
 size = Vector3(1.8, 1.4, 4.4)
 
 [node name="Bin0Block" type="CSGBox3D" parent="Barrels" unique_id=1554497255]
@@ -745,9 +747,6 @@ transform = Transform3D(0.9800666, 0, 0.19866933, 0, 1, 0, -0.19866933, 0, 0.980
 [node name="Bin1" parent="Props3D" unique_id=935556014 instance=ExtResource("p_trash_can")]
 transform = Transform3D(0.26749888, 0, 0.9635582, 0, 1, 0, -0.9635582, 0, 0.26749888, -25.4, 0, 8)
 
-[node name="Car" parent="Props3D" unique_id=1937425661 instance=ExtResource("p_covered_car")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -24, 0, -5)
-
 [node name="Utility" parent="Props3D" unique_id=114533951 instance=ExtResource("p_utility_box")]
 transform = Transform3D(-3.6199901e-06, 0, -1, 0, 1, 0, 1, 0, -3.6199901e-06, 25.7, 0, -4)
 
@@ -757,17 +756,81 @@ transform = Transform3D(1.25, 0, 0, 0, 1.12, 0, 0, 0, 1.25, -33, 0, -4)
 [node name="YardWestBarrel1" parent="Props3D" unique_id=1671674353 instance=ExtResource("p_barrel_steel")]
 transform = Transform3D(1.25, 0, 0, 0, 1.12, 0, 0, 0, 1.25, -37.5, 0, 10)
 
-[node name="YardWestCar" parent="Props3D" unique_id=589845605 instance=ExtResource("p_covered_car")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -30, 0, 13)
-
 [node name="YardEastBarrel0" parent="Props3D" unique_id=2142286302 instance=ExtResource("p_barrel_red")]
 transform = Transform3D(1.25, 0, 0, 0, 1.12, 0, 0, 0, 1.25, 33, 0, -4)
 
 [node name="YardEastBarrel1" parent="Props3D" unique_id=1508644049 instance=ExtResource("p_barrel_steel")]
 transform = Transform3D(1.25, 0, 0, 0, 1.12, 0, 0, 0, 1.25, 37.5, 0, 10)
 
-[node name="YardEastCar" parent="Props3D" unique_id=1281934447 instance=ExtResource("p_covered_car")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 30, 0, 13)
+[node name="Barricades" type="CSGCombiner3D" parent="." unique_id=1862847570]
+visible = false
+use_collision = true
+metadata/surface = "wood"
+
+[node name="South0" type="CSGBox3D" parent="Barricades" unique_id=694907157]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5, 0.6, 23.415)
+size = Vector3(4.4, 1.2, 0.57)
+
+[node name="South1" type="CSGBox3D" parent="Barricades" unique_id=1902092841]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.2, 0.6, 23.415)
+size = Vector3(4, 1.2, 0.57)
+
+[node name="West" type="CSGBox3D" parent="Barricades" unique_id=1866361764]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -23.415, 0.6, -10)
+size = Vector3(0.57, 1.2, 4)
+
+[node name="East" type="CSGBox3D" parent="Barricades" unique_id=773589234]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 23.415, 0.6, 13.5)
+size = Vector3(0.57, 1.2, 4)
+
+[node name="Dressing" parent="." unique_id=1232776452 instance=ExtResource("6_dress")]
+
+[node name="MapRender" type="Node" parent="." unique_id=44103399]
+script = ExtResource("7_render")
+sun_path = NodePath("../Moon")
+
+[node name="WorkLights" type="Node3D" parent="." unique_id=1674140340]
+script = ExtResource("8_baked")
+
+[node name="Light0" type="SpotLight3D" parent="WorkLights" unique_id=1587360581]
+transform = Transform3D(1, 6.91488e-17, -1.01074e-16, 0, 0.825336, 0.564642, 1.22465e-16, -0.564642, 0.825336, 6.73556e-17, 4.4, -15.55)
+light_color = Color(0.86, 0.92, 1, 1)
+light_energy = 5.0
+light_bake_mode = 1
+shadow_enabled = true
+spot_range = 20.0
+spot_angle = 40.0
+spot_angle_attenuation = 0.8
+
+[node name="Light1" type="SpotLight3D" parent="WorkLights" unique_id=1681889024]
+transform = Transform3D(-1, 0, 0, 0, 0.825336, 0.564642, 0, 0.564642, -0.825336, 0, 4.4, 15.55)
+light_color = Color(0.86, 0.92, 1, 1)
+light_energy = 5.0
+light_bake_mode = 1
+shadow_enabled = true
+spot_range = 20.0
+spot_angle = 40.0
+spot_angle_attenuation = 0.8
+
+[node name="Light2" type="SpotLight3D" parent="WorkLights" unique_id=1562625893]
+transform = Transform3D(-6.12323e-17, -0.564642, 0.825336, 0, 0.825336, 0.564642, -1, 3.45744e-17, -5.05372e-17, -15.55, 4.4, 3.36778e-17)
+light_color = Color(0.86, 0.92, 1, 1)
+light_energy = 5.0
+light_bake_mode = 1
+shadow_enabled = true
+spot_range = 20.0
+spot_angle = 40.0
+spot_angle_attenuation = 0.8
+
+[node name="Light3" type="SpotLight3D" parent="WorkLights" unique_id=1118933721]
+transform = Transform3D(-6.12323e-17, 0.564642, -0.825336, 0, 0.825336, 0.564642, 1, 3.45744e-17, -5.05372e-17, 15.55, 4.4, 3.36778e-17)
+light_color = Color(0.86, 0.92, 1, 1)
+light_energy = 5.0
+light_bake_mode = 1
+shadow_enabled = true
+spot_range = 20.0
+spot_angle = 40.0
+spot_angle_attenuation = 0.8
 
 [node name="Lamps" type="Node3D" parent="." unique_id=2093754381]
 
@@ -1198,10 +1261,11 @@ auto_respawn = false
 allow_refill = false
 start_with_primary = false
 starting_lethals = 2
+stick_yaw_speed = 240.0
+stick_pitch_speed = 180.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.00064452505, 4)
 
 [node name="HUD" parent="." unique_id=1205759811 instance=ExtResource("19_hud")]
-controls = PackedStringArray("move:Move", "sprint:Sprint", "crouch:Crouch / slide", "jump:Jump", "fire:Fire", "aim:Aim", "reload:Reload", "melee:Knife", "lethal:Frag", "weapon_1:Switch weapon", "interact:Buy or refill", "pause:Menu", "toggle_controls:Hide controls")
 score_feed = false
 
 [node name="Zombies" type="Control" parent="HUD" unique_id=649266270]
@@ -1219,8 +1283,7 @@ player_path = NodePath("../../Player")
 [node name="PauseMenu" parent="." unique_id=734708226 instance=ExtResource("5_pause")]
 player_path = NodePath("../Player")
 
-[node name="Soundscape" type="Soundscape" parent="."]
+[node name="Soundscape" type="Soundscape" parent="." unique_id=114031207]
 outdoor = "night"
 outdoor_db = -6.0
 distant_battle = true
-indoor_db = -14.0

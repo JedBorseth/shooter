@@ -69,7 +69,11 @@ The Testing Area is dressed as a working training range, so it reads as a place 
 - **Every slab and panel shaded on its own.** The floor is one quad per 4 m slab and each wall panel one quad, each with its own tint and roughness in its vertex colours, with grime banked toward the walls and cover and broad damp patches. Dark streaks run down from the copings and rust bleeds from the scuppers as thin strips laid over the panels in the same material. Finer grids were tried first: their distant slivers cost 0.3 to 0.6 ms.
 - **Stains without decals.** Oil, scuffs, and tyre tracks are fans and strips in the floor's own material, darkest (and, for oil, glossiest) in the middle and fading to the slab's colour at their rims, so they blend in for no per-pixel cost; a Decal would turn on decal shading for the whole frame.
 
-Anything a player could walk into has a box in the scene's hidden collision (`MapMetal`, `MapWood`, `CoverBlockers`, and `MapDirt` for the sandbags), so collision stays as simple as the blockout's.
+![The Zombies arena before (left) and after (right) its set dressing: the south wall's barricades, the burnt-out car by the west gate, a window bay, and the yard](media/zombies-dressing.jpg)
+
+The Zombies arena (`map_zombies_dressing`) is a compound under siege at night: barricades of sandbags and nailed boards along the walls between the windows, a burnt-out car against the west wall and one in each side yard (Slamcity's car body with its paint burnt to soot and rust), rubble at the walls' feet, boards torn off the windows lying beside the way in, blood dragged in from every window, ammunition cans, packs, helmets, and brass dropped round the middle, wet streaks down the walls from the coping, emergency beacons over the gates, and floodlights clamped to the four big columns. Their light is baked into the lightmap (`WorkLights`, removed in the game by `scripts/baked_lights.gd`), aimed out at the walls the zombies come over, so the barricades and windows read at night for no frame time. The arena's floor is a `_ground` mesh that casts no shadow, and its architecture has a shadow-only twin, like the Testing Area's. The windows' climb-in points, the gates, and the six metres in front of them stay clear.
+
+Anything a player could walk into has a box in the scene's hidden collision (in the Testing Area `MapMetal`, `MapWood`, `CoverBlockers`, and `MapDirt` for the sandbags; in the arena `Barricades` and the cars' blocks), so collision stays as simple as the blockout's.
 
 ### Slamcity
 
