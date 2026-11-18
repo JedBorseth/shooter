@@ -685,6 +685,10 @@ def ground():
         (0.12, top - 0.03, -1.4), (0.12, top - 0.03, -0.62), (0.34, top + 0.1, -1.3), (0.36, top + 0.12, -0.75),
         (0.14, top - 0.01, -1.4), (0.38, top + 0.13, -1.0)]})
     EFFECTS.append(("water_spray", (0.0, top, -1.0)))
+    # The pit is flooding: standing water over the gravel, dark and glossy.
+    for m in (False, True):
+        deco(-6.0, 0.0, PIT + 0.14, PIT + 0.15, -3.4, 3.4, "water_pit", m, faces="top")
+
     # A work lamp clamped to the shoring, so players in the pit can be seen.
     for m in (False, True):
         light(-4.0, PIT + 1.3, -3.0, 0.9, (1.0, 0.86, 0.62), 6.0, m)
