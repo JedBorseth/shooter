@@ -80,40 +80,50 @@ pub fn along(keys: &[KnifeKey], t: f32) -> Transform3D {
 /// landing at `strike`: how far the support hand has left the weapon for the
 /// knife (0..1), and the knife's frame in the view (`ViewmodelRig`) space.
 ///
-/// The hand drops off the handguard, comes up cocked out to the left, and
-/// slashes forward and across to the right as the strike lands, then falls
-/// away and returns to the weapon.
+/// The hand drops off the handguard and comes up cocked out to the left at
+/// arm's length (not at the lens, where the forearm filled the frame), the
+/// blade tipped forward; it slashes forward and across to the right as the
+/// strike lands, and follows through low right, still in view for about a
+/// fifth of a second, before it falls away and returns to the weapon. Call
+/// of Duty's knife reads the same way: the slash crosses the screen and
+/// carries on past the target rather than vanishing at the hit.
 pub fn first_person(t: f32, strike: f32) -> (f32, Transform3D) {
     let v = Vector3::new;
-    let keys: [KnifeKey; 5] = [
+    let keys: [KnifeKey; 6] = [
         (
             -strike,
-            v(-0.12, -0.42, -0.3),
+            v(-0.14, -0.4, -0.36),
             v(0.1, 0.7, -0.7),
             v(1.0, 0.0, 0.0),
         ),
         (
             -strike * 0.3,
-            v(-0.17, -0.05, -0.38),
-            v(0.25, 0.9, -0.35),
+            v(-0.19, -0.1, -0.46),
+            v(0.35, 0.75, -0.55),
             v(1.0, -0.1, -0.2),
         ),
         (
             0.0,
-            v(0.0, -0.1, -0.5),
-            v(0.55, 0.2, -0.8),
+            v(-0.02, -0.11, -0.55),
+            v(0.55, 0.15, -0.82),
             v(1.0, 0.0, 0.3),
         ),
         (
             0.08,
-            v(0.15, -0.19, -0.44),
-            v(0.85, -0.2, -0.45),
+            v(0.12, -0.16, -0.5),
+            v(0.85, -0.15, -0.5),
             v(0.5, -0.6, 0.6),
         ),
         (
-            0.24,
-            v(0.08, -0.45, -0.32),
-            v(0.4, -0.6, -0.6),
+            0.18,
+            v(0.17, -0.2, -0.47),
+            v(0.65, -0.4, -0.65),
+            v(0.2, -0.9, 0.4),
+        ),
+        (
+            0.34,
+            v(0.08, -0.5, -0.32),
+            v(0.3, -0.7, -0.6),
             v(0.0, -1.0, 0.2),
         ),
     ];
@@ -121,8 +131,8 @@ pub fn first_person(t: f32, strike: f32) -> (f32, Transform3D) {
         &[
             (0.0, 0.0),
             (strike * 0.45, 1.0),
-            (strike + 0.16, 1.0),
-            (strike + 0.36, 0.0),
+            (strike + 0.24, 1.0),
+            (strike + 0.42, 0.0),
         ],
         t,
     );
@@ -136,7 +146,7 @@ pub fn first_person(t: f32, strike: f32) -> (f32, Transform3D) {
 pub fn third_person(t: f32) -> (f32, Transform3D) {
     const STRIKE: f32 = 0.12;
     let v = Vector3::new;
-    let keys: [KnifeKey; 4] = [
+    let keys: [KnifeKey; 5] = [
         (
             -STRIKE,
             v(-0.15, -0.2, 0.1),
@@ -161,13 +171,19 @@ pub fn third_person(t: f32) -> (f32, Transform3D) {
             v(0.7, -0.2, -0.7),
             v(0.6, -0.5, 0.6),
         ),
+        (
+            0.22,
+            v(0.26, -0.16, -0.28),
+            v(0.6, -0.45, -0.65),
+            v(0.3, -0.85, 0.4),
+        ),
     ];
     let blend = crate::weapon_clips::keyed(
         &[
             (0.0, 0.0),
             (0.06, 1.0),
-            (STRIKE + 0.16, 1.0),
-            (STRIKE + 0.36, 0.0),
+            (STRIKE + 0.22, 1.0),
+            (STRIKE + 0.4, 0.0),
         ],
         t,
     );

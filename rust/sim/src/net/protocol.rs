@@ -521,7 +521,9 @@ impl HitPart {
     /// which pushes little however much it deals.
     pub fn new(part: Option<u8>, damage: f32, melee: bool) -> Self {
         let force = if melee {
-            2
+            // Enough to tip the body away from the blade as it drops, not
+            // throw it like a shotgun blast.
+            4
         } else {
             (damage / 10.0).round().clamp(1.0, 15.0) as u8
         };
@@ -2731,7 +2733,7 @@ mod tests {
     #[test]
     fn hit_parts_round_trip() {
         for part in 0..crate::hitbox::COUNT as u8 {
-            for (damage, melee, force) in [(30.0, false, 3), (400.0, false, 15), (150.0, true, 2)] {
+            for (damage, melee, force) in [(30.0, false, 3), (400.0, false, 15), (150.0, true, 4)] {
                 let packed = HitPart::new(Some(part), damage, melee);
                 assert_eq!(HitPart::from_u8(packed.to_u8()), packed);
                 assert_eq!(packed.force, force);

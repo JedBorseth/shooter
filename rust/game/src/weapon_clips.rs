@@ -970,7 +970,9 @@ pub fn holster_keys(kind: ClipKind) -> &'static [(f32, Pose)] {
 /// at `strike`: the firing hand swings it down and out to the right, out of
 /// the knife's way, and brings it back up over the recovery.
 pub fn melee_pose(t: f32, strike: f32) -> Pose {
-    let away = Pose::new(-12.0, -8.0, 20.0, 0.035, -0.06, 0.02);
+    // Dropped down and right, rolled out of the knife's way. A steep pitch
+    // here swung the stock and the firing forearm up toward the lens.
+    let away = Pose::new(-6.0, -10.0, 24.0, 0.05, -0.085, 0.02);
     let keys = [
         (0.0, Pose::ZERO),
         (strike * 0.8, away),

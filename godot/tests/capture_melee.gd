@@ -26,6 +26,11 @@ func _run() -> void:
 		quit(1)
 		return
 	DirAccess.make_dir_recursive_absolute(_out)
+	# CAPTURE_PRESET=low|medium|high picks the graphics preset (default high).
+	var settings: Node = root.get_node("Settings")
+	settings.path = "user://capture_melee_settings.cfg"
+	var presets := {"low": 0, "medium": 1, "high": 2}
+	settings.set_graphics_preset(presets.get(OS.get_environment("CAPTURE_PRESET"), 2))
 	var main: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
 	root.add_child(main)
 	var player := main.get_node("Player") as FpsPlayer
@@ -49,12 +54,20 @@ func _first_person(main: Node, player: FpsPlayer, weapon: String) -> void:
 	await _sixtieths(70)
 	var dummy := DUMMY_SCENE.instantiate() as Node3D
 	main.add_child(dummy)
-	dummy.global_position = SPOT + Vector3(0.2, 0, -2.8)
+	# CAPTURE_DUMMY=0 swings at the air instead, with the dummy out of reach.
+	var reach := 2.8 if OS.get_environment("CAPTURE_DUMMY") != "0" else 12.0
+	dummy.global_position = SPOT + Vector3(0.2, 0, -reach)
 	await _sixtieths(10)
 	await _shot("%s_rest" % weapon)
 	Input.action_press("melee")
 	var at := 0
-	for moment: int in MOMENTS:
+	var moments: Array = MOMENTS
+	# CAPTURE_MOMENTS="5,6,7" picks other moments (sixtieths after the press).
+	if OS.get_environment("CAPTURE_MOMENTS") != "":
+		moments = Array(OS.get_environment("CAPTURE_MOMENTS").split(",")).map(
+			func(m: String) -> int: return int(m)
+		)
+	for moment: int in moments:
 		await _sixtieths(moment - at)
 		at = moment
 		if moment > 4:
