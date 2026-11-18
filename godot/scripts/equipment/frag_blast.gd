@@ -1,12 +1,9 @@
 extends Node3D
-## A frag grenade's blast: a flash of light, a short fireball, a grey cloud
-## that rises and thins, thrown dirt, and the bang. It builds its own nodes,
-## plays once, and frees itself.
-##
-## A stand-in until the combat effects' explosion lands: replacing
-## `scenes/equipment/frag_blast.tscn` changes every grenade's blast. The cost
-## is bounded: one unshadowed light for a quarter second and at most 58
-## particles, gone after three seconds.
+## A frag grenade's blast: the bang, and the explosion from the local
+## player's pooled combat effects (`CombatEffects.explosion`: fireball, smoke
+## column, dust, dirt, sparks, flash, scorch mark, and camera shake). Without
+## a local player's effects it falls back to building its own simpler
+## flash, fireball, cloud, and dirt. It plays once and frees itself.
 
 const FIREBALL := 16
 const SMOKE := 14
@@ -20,10 +17,14 @@ const SOUNDS := [
 
 
 func _ready() -> void:
-	_flash()
-	_fireball()
-	_smoke()
-	_debris()
+	var effects := get_tree().get_first_node_in_group(&"combat_effects")
+	if effects != null:
+		effects.explosion(global_position, Vector3.UP, 1.0)
+	else:
+		_flash()
+		_fireball()
+		_smoke()
+		_debris()
 	_bang()
 	get_tree().create_timer(LIFETIME).timeout.connect(queue_free)
 

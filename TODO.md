@@ -246,7 +246,7 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
   - [x] Tracers as camera-facing ribbons with a minimum pixel width, from other players too.
   - [ ] Ejected cases handed to the world: they bounce, land, clink on what they hit, and stay; third-person ejection.
   - [ ] Muzzle flash flipbooks, lit soft smoke, lingering barrel smoke, heat haze on High, and a muzzle light that stays on its side of walls.
-  - [ ] An explosion and fire effect with an API for grenades.
+  - [x] An explosion and fire effect with an API for grenades (`CombatEffects.explosion`, `CombatEffects.fire`); frag grenades use the explosion.
   - [ ] A wound mark where a character was hit (character shader).
 - [x] Skyline windows with fake rooms behind them (interior mapping in `world.gdshader`), and bump-mapped cloth, leather, and creases on characters.
 - [x] Soldiers as believable people: a MakeHuman body fitted to the existing skeleton, a combat shirt and trousers, modelled kit (helmet with cover and mounts, glasses, balaclava or neck gaiter or a bare face per character, plate carrier with pouches, magazines and a radio, belt and holster, knee pads), all in one mesh with one baked texture atlas and a team tint (`tools/build_character_assets.py`).

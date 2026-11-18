@@ -44,6 +44,17 @@ pub const NO_DECALS_LAYER: u32 = 1 << 1;
 const DECAL_CULL_MASK: u32 = 0xF_FFFF & !NO_DECALS_LAYER;
 
 const IMPACT_SCENE: &str = "res://scenes/effects/impact.tscn";
+const EXPLOSION_SCENE: &str = "res://scenes/effects/explosion.tscn";
+const FIRE_SCENE: &str = "res://scenes/effects/fire.tscn";
+/// Explosions playing at once; a fourth reuses the oldest.
+const EXPLOSIONS: usize = 3;
+/// Seconds an explosion's particles last (its smoke column the longest).
+const EXPLOSION_LIFETIME: f32 = 5.5;
+/// A frag's scorch mark across (metres), and how deep it projects.
+const SCORCH_SIZE: f32 = 2.6;
+/// Within this distance (metres) an explosion shakes the camera, hardest
+/// close up.
+pub const SHAKE_RADIUS: f32 = 22.0;
 /// Seconds an impact's particles can last; the node is hidden after this.
 const IMPACT_LIFETIME: f32 = 1.4;
 /// Blood reaches a wall this far behind the target (metres).
@@ -65,6 +76,10 @@ pub struct Budget {
     pub splats: usize,
     /// Tracers in flight at once.
     pub tracers: usize,
+    /// Scorch marks kept on the ground.
+    pub scorches: usize,
+    /// Fires burning at once.
+    pub fires: usize,
 }
 
 /// Low, Medium, High. Holes follow the audit's starting point (16, 48, 96);
@@ -75,18 +90,24 @@ pub const BUDGETS: [Budget; 3] = [
         holes: 16,
         splats: 4,
         tracers: 8,
+        scorches: 4,
+        fires: 2,
     },
     Budget {
         impacts: 20,
         holes: 48,
         splats: 12,
         tracers: 16,
+        scorches: 8,
+        fires: 4,
     },
     Budget {
         impacts: 32,
         holes: 96,
         splats: 24,
         tracers: 24,
+        scorches: 12,
+        fires: 6,
     },
 ];
 
@@ -228,6 +249,15 @@ impl DecalRing {
     }
 }
 
+/// How hard (0 to 1) an explosion `size` times a frag's shakes a camera
+/// `distance` metres away: full within 3 m, falling off to nothing at
+/// [`SHAKE_RADIUS`] (scaled by size).
+pub fn blast_shake(distance: f32, size: f32) -> f32 {
+    let radius = SHAKE_RADIUS * size.max(0.1).sqrt();
+    let t = ((distance - 3.0) / (radius - 3.0)).clamp(0.0, 1.0);
+    (1.0 - t) * (1.0 - t)
+}
+
 /// Where a tracer's streak is after it has flown `travelled` metres of a
 /// path `distance` long: (tail, head) distances from the start. The head
 /// stops at the end of the path and the tail follows it in.
@@ -285,6 +315,16 @@ pub struct CombatEffects {
     next_impact: usize,
     holes: DecalRing,
     splats: DecalRing,
+    explosion_scene: Option<Gd<PackedScene>>,
+    explosions: Vec<Impact>,
+    next_explosion: usize,
+    scorches: DecalRing,
+    scorch_textures: Option<[Gd<Texture2D>; 2]>,
+    /// Explosions played so far (tests).
+    explosions_played: u32,
+    fire_scene: Option<Gd<PackedScene>>,
+    fires: Vec<Gd<Node3D>>,
+    next_fire: usize,
     tracers: Vec<Tracer>,
     next_tracer: usize,
     tracer_mesh: Option<Gd<Mesh>>,
@@ -315,6 +355,14 @@ impl INode3D for CombatEffects {
             tracer.connect("shot_traced", &callable);
         }
         self.scene = try_load::<PackedScene>(IMPACT_SCENE).ok();
+        self.explosion_scene = try_load::<PackedScene>(EXPLOSION_SCENE).ok();
+        self.fire_scene = try_load::<PackedScene>(FIRE_SCENE).ok();
+        let scorch = ["albedo", "orm"].map(|kind| {
+            try_load::<Texture2D>(&format!("res://assets/textures/effects/scorch_{kind}.png")).ok()
+        });
+        if let [Some(albedo), Some(orm)] = scorch {
+            self.scorch_textures = Some([albedo, orm]);
+        }
         self.hole_textures = HOLE_CLASSES
             .iter()
             .map(|class| {
@@ -334,6 +382,14 @@ impl INode3D for CombatEffects {
             if tracer.node.is_visible() {
                 tracer.travelled += TRACER_SPEED * delta;
                 tracer.place();
+            }
+        }
+        for explosion in &mut self.explosions {
+            if explosion.age < EXPLOSION_LIFETIME {
+                explosion.age += delta;
+                if explosion.age >= EXPLOSION_LIFETIME {
+                    explosion.node.set_visible(false);
+                }
             }
         }
         for impact in &mut self.impacts {
@@ -362,6 +418,121 @@ impl CombatEffects {
     #[func]
     pub fn exit_impact(&mut self, position: Vector3, normal: Vector3, look: GString, hole: bool) {
         self.impact_at(position, normal, &look.to_string(), hole, true);
+    }
+
+    /// An explosion at `position` on a surface facing `normal` (up for the
+    /// ground), `size` times a frag grenade's: fireball, smoke column, dust,
+    /// dirt, sparks, and a flash of light, a scorch mark on the surface, and
+    /// a camera shake for the local player by distance. The grenades call
+    /// this; anything else that blows up can too. The caller plays the bang.
+    #[func]
+    pub fn explosion(&mut self, position: Vector3, normal: Vector3, size: f32) {
+        let normal = if normal.length_squared() > 0.0 {
+            normal.normalized()
+        } else {
+            Vector3::UP
+        };
+        let floor = self.floor_below(position + normal * 0.3);
+        let Some(scene) = self.explosion_scene.clone() else {
+            return;
+        };
+        let index = if self.explosions.len() < EXPLOSIONS {
+            let Some(node) = scene
+                .instantiate()
+                .and_then(|n| n.try_cast::<Node3D>().ok())
+            else {
+                return;
+            };
+            self.base_mut().add_child(&node);
+            self.explosions.push(Impact { node, age: 0.0 });
+            self.explosions.len() - 1
+        } else {
+            let index = self.next_explosion % EXPLOSIONS;
+            self.next_explosion = index + 1;
+            index
+        };
+        let explosion = &mut self.explosions[index];
+        explosion.age = 0.0;
+        explosion.node.set_visible(true);
+        explosion.node.set_global_position(position);
+        explosion.node.call(
+            "setup",
+            &[
+                normal.to_variant(),
+                floor.unwrap_or(-1000.0).to_variant(),
+                size.to_variant(),
+            ],
+        );
+        self.explosions_played = self.explosions_played.wrapping_add(1);
+        self.place_scorch(position, normal, size);
+        self.shake_camera(position, size);
+    }
+
+    /// A fire at `position`, `size` times a metre-wide patch, burning for
+    /// `seconds` and then dying down: flames, smoke, embers, and a
+    /// flickering light. Returns the fire node, whose `stop()` puts it out
+    /// early. When every fire in the preset's pool is burning, the oldest
+    /// is moved here.
+    #[func]
+    pub fn fire(&mut self, position: Vector3, size: f32, seconds: f32) -> Option<Gd<Node3D>> {
+        let budget = self.current_budget().fires;
+        while self.fires.len() > budget {
+            if let Some(mut old) = self.fires.pop() {
+                old.queue_free();
+            }
+        }
+        if budget == 0 {
+            return None;
+        }
+        // A fire that has burnt out first, else a new one, else the oldest.
+        let idle = self
+            .fires
+            .iter()
+            .position(|f| !f.clone().call("burning", &[]).booleanize());
+        let index = match idle {
+            Some(index) => index,
+            None if self.fires.len() < budget => {
+                let node = self
+                    .fire_scene
+                    .as_ref()
+                    .and_then(|s| s.instantiate())
+                    .and_then(|n| n.try_cast::<Node3D>().ok())?;
+                self.base_mut().add_child(&node);
+                self.fires.push(node);
+                self.fires.len() - 1
+            }
+            None => {
+                let index = self.next_fire % self.fires.len();
+                self.next_fire = index + 1;
+                index
+            }
+        };
+        let mut fire = self.fires[index].clone();
+        fire.set_visible(true);
+        fire.set_global_position(position);
+        fire.call("start", &[size.to_variant(), seconds.to_variant()]);
+        Some(fire)
+    }
+
+    /// Fires burning or dying down now (tests).
+    #[func]
+    fn fires_burning(&self) -> i64 {
+        self.fires
+            .iter()
+            .filter(|f| (*f).clone().call("burning", &[]).booleanize())
+            .count() as i64
+    }
+
+    /// Explosions played so far (tests).
+    #[func]
+    fn explosions_played(&self) -> i64 {
+        i64::from(self.explosions_played)
+    }
+
+    /// Scorch marks on the ground now (tests).
+    #[func]
+    fn scorches_kept(&self) -> i64 {
+        self.scorches.nodes.len() as i64
     }
 
     /// A tracer round's streak flying from `from` to `to`.
@@ -508,6 +679,8 @@ impl CombatEffects {
             "holes" => b.holes as i64,
             "splats" => b.splats as i64,
             "tracers" => b.tracers as i64,
+            "scorches" => b.scorches as i64,
+            "fires" => b.fires as i64,
         }
     }
 }
@@ -517,6 +690,49 @@ impl CombatEffects {
     pub fn find(tree: &Gd<SceneTree>) -> Option<Gd<CombatEffects>> {
         tree.get_first_node_in_group(GROUP)
             .and_then(|n| n.try_cast::<CombatEffects>().ok())
+    }
+
+    /// The soot an explosion leaves where it went off.
+    fn place_scorch(&mut self, position: Vector3, normal: Vector3, size: f32) {
+        let Some([albedo, orm]) = self.scorch_textures.clone() else {
+            return;
+        };
+        let budget = self.current_budget().scorches;
+        let seed = self.next_seed();
+        let mut parent = self.base().clone();
+        let Some(mut decal) = self
+            .scorches
+            .take_near(position, SCORCH_SIZE * 0.4)
+            .or_else(|| self.scorches.take(&mut parent, budget))
+        else {
+            return;
+        };
+        decal.set_texture(DecalTexture::ALBEDO, &albedo);
+        decal.set_texture(DecalTexture::ORM, &orm);
+        let across = SCORCH_SIZE * size.max(0.2);
+        decal.set_size(Vector3::new(across, 1.2, across));
+        decal.set_normal_fade(0.3);
+        let angle = rng::unit(seed, 29) * std::f32::consts::TAU;
+        decal.set_global_transform(Transform3D::new(basis_along(normal, angle), position));
+    }
+
+    /// Shakes the local player's camera for an explosion `size` times a
+    /// frag's at `position`: hardest close up, nothing past [`SHAKE_RADIUS`].
+    fn shake_camera(&mut self, position: Vector3, size: f32) {
+        let Some(mut player) = self.base().get_parent() else {
+            return;
+        };
+        if !player.has_method("blast_shake") {
+            return;
+        }
+        let Some(camera) = self.base().get_viewport().and_then(|v| v.get_camera_3d()) else {
+            return;
+        };
+        let strength = blast_shake(camera.get_global_position().distance_to(position), size);
+        if strength > 0.0 {
+            // Deferred: a blast can go off inside the player's own update.
+            player.call_deferred("blast_shake", &[strength.to_variant()]);
+        }
     }
 
     fn current_budget(&self) -> Budget {
@@ -735,6 +951,14 @@ mod tests {
         // Arrived: the head waits at the hit while the tail runs in.
         assert_eq!(tracer_span(103.0, 100.0), (103.0 - TRACER_LENGTH, 100.0));
         assert_eq!(tracer_span(100.0 + TRACER_LENGTH, 100.0).0, 100.0);
+    }
+
+    #[test]
+    fn blasts_shake_harder_close_up() {
+        assert_eq!(blast_shake(1.0, 1.0), 1.0);
+        assert!(blast_shake(8.0, 1.0) > blast_shake(15.0, 1.0));
+        assert_eq!(blast_shake(SHAKE_RADIUS, 1.0), 0.0);
+        assert!(blast_shake(15.0, 2.0) > blast_shake(15.0, 1.0));
     }
 
     #[test]

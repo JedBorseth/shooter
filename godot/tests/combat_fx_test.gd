@@ -104,10 +104,40 @@ func _run() -> void:
 		"tracers in flight stay within the budget"
 	)
 
+	# An explosion plays from the pool, leaves one scorch per spot, and a
+	# grenade's blast scene uses it.
+	var played: int = effects.explosions_played()
+	var scorched: int = effects.scorches_kept()
+	effects.explosion(Vector3(4, 0.0, -4), Vector3.UP, 1.0)
+	effects.explosion(Vector3(4.3, 0.0, -4), Vector3.UP, 1.0)
+	_check(effects.explosions_played() == played + 2, "explosions play")
+	_check(effects.scorches_kept() == scorched + 1, "a second blast on the spot reuses its scorch")
+	var blast := (load("res://scenes/equipment/frag_blast.tscn") as PackedScene).instantiate()
+	level.add_child(blast)
+	blast.global_position = Vector3(-4, 0.0, -4)
+	_check(effects.explosions_played() == played + 3, "a frag's blast plays the pooled explosion")
+	for i in 12:
+		effects.explosion(Vector3(i * 3.0 - 18.0, 0.0, -6), Vector3.UP, 1.0)
+	_check(
+		effects.scorches_kept() <= effects.budget()["scorches"], "scorches stay within the budget"
+	)
+
+	# Fires burn from a pool, burn out, and can be put out early.
+	var fire: Node3D = effects.fire(Vector3(-6, 0, -4), 1.0, 0.5)
+	_check(fire != null and effects.fires_burning() >= 1, "a fire burns")
+	for i in effects.budget()["fires"] + 2:
+		effects.fire(Vector3(i * 2.0, 0, -6), 1.0, 30.0)
+	_check(effects.fires_burning() <= effects.budget()["fires"], "fires stay within the budget")
+	for f: Node in effects.get_children():
+		if f.has_method("stop"):
+			f.stop()
+
 	# Impacts hide once their particles are done, so an idle pool draws nothing.
 	await _frames(240)
 	_check(effects.impacts_visible() == 0, "finished impacts hide")
 	_check(effects.tracers_flying() == 0, "finished tracers hide")
+	await _frames(600)
+	_check(effects.fires_burning() == 0, "put-out fires die down")
 
 	# Characters are kept off the decal layer.
 	var soldier := SOLDIER_SCENE.instantiate()

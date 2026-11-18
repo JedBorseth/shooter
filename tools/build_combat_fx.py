@@ -25,6 +25,11 @@ Downloaded (CC0), cached in ~/.cache/shooter-fidelity/combat-vfx/sources:
 
 - smoke_4x4.png: sixteen frames of Unity Labs' WispySmoke01 flipbook, for
   impact dust and gun smoke.
+- explosion_5x5.png: Unity Labs' Explosion02HD flipbook, a fireball burning
+  out into smoke.
+- flame_8x4.png: Unity Labs' SmallFlame01 loop, for fires.
+
+Also generated: scorch_{albedo,orm}.png, the soot a blast leaves.
 """
 
 import io
@@ -333,18 +338,18 @@ def bullet_holes() -> None:
         print(f"hole_{kind}")
 
 # Unity Labs' free VFX flipbooks (CC0, Houdini simulations).
-UNITY_VFX = "https://unity3d.com/files/labs/downloads/vfx/assets01/{0}/{0}-flipbooks.zip"
 SOURCES = Path.home() / ".cache/shooter-fidelity/combat-vfx/sources/unity"
 
 
 def unity_flipbook(name: str, member: str) -> Image.Image:
-    """One atlas from a Unity Labs flipbook zip, downloaded once and cached."""
+    """One atlas from a Unity Labs flipbook zip, downloaded once and cached.
+    `name` is the folder; the zip drops a `-temperature` suffix from it."""
     SOURCES.mkdir(parents=True, exist_ok=True)
-    path = SOURCES / f"{name}-flipbooks.zip"
+    stem = name.removesuffix("-temperature")
+    path = SOURCES / f"{stem}-flipbooks.zip"
     if not path.exists():
-        request = urllib.request.Request(
-            UNITY_VFX.format(name), headers={"User-Agent": "shooter-asset-pipeline"}
-        )
+        url = f"https://unity3d.com/files/labs/downloads/vfx/assets01/{name}/{stem}-flipbooks.zip"
+        request = urllib.request.Request(url, headers={"User-Agent": "shooter-asset-pipeline"})
         with urllib.request.urlopen(request, timeout=300) as response:
             path.write_bytes(response.read())
     with zipfile.ZipFile(path) as archive:
@@ -381,6 +386,56 @@ def smoke_flipbook() -> None:
     print("smoke_4x4")
 
 
+def explosion_flipbook() -> None:
+    """explosion_5x5.png: Unity Labs' Explosion02HD, all 25 frames at 256 px:
+    a fireball that burns out into dark smoke. Its colour stays as rendered
+    (the shader lets the hot frames glow and lights the smoky ones)."""
+    atlas = unity_flipbook("Explosion02HD", "Explosion02HD_5x5.tga")
+    rgba = repack(atlas, 5, list(range(25)), 5, 256)
+    save_rgba(OUT / "explosion_5x5.png", rgba)
+    print("explosion_5x5")
+
+
+def scorch(size: int = 512) -> None:
+    """scorch_{albedo,orm}.png: the soot a blast leaves on the ground, dark at
+    the centre, streaked outward, and broken up at its edge."""
+    rng = np.random.default_rng(55)
+    x, y, r, angle = polar(size)
+    streaks = np.zeros_like(r)
+    for _ in range(40):
+        a0 = rng.uniform(-np.pi, np.pi)
+        w = rng.uniform(0.03, 0.09)
+        reach = rng.uniform(0.55, 0.95)
+        d = np.abs(np.angle(np.exp(1j * (angle - a0))))
+        streaks = np.maximum(streaks, np.clip(1 - d / w, 0, 1) * np.clip(1 - r / reach, 0, 1))
+    noise = fbm(size, rng, 6, 4)
+    body = np.clip(1 - r / (0.55 + 0.25 * noise), 0, 1) ** 0.8
+    soot = np.clip(np.maximum(body, streaks * 0.8) + (noise - 0.5) * 0.4, 0, 1)
+    soot *= np.clip((0.97 - r) / 0.15, 0, 1)
+    shade = 0.03 + 0.07 * fbm(size, rng, 16, 2) * (1 - body)
+    colour = np.stack([shade * 1.05, shade, shade * 0.95], axis=2)
+    alpha = np.clip(soot * 1.15, 0, 1)
+    save_rgba(OUT / "scorch_albedo.png", np.concatenate([colour, alpha[..., None]], axis=2))
+    orm = np.stack([np.ones_like(r), np.full_like(r, 0.95), np.zeros_like(r), alpha], axis=2)
+    save_rgba(OUT / "scorch_orm.png", orm)
+    print("scorch")
+
+
+def flame_flipbook() -> None:
+    """flame_8x4.png: Unity Labs' SmallFlame01 loop, every other one of its
+    64 frames, 128 x 256 px each: a tall flame licking and flickering, for
+    fires (premultiplied over black, so it is drawn additively)."""
+    atlas = unity_flipbook("SmallFlame01-mini-temperature", "SmallFlame01-mini_16x4.tga")
+    frame_w, frame_h = atlas.width // 16, atlas.height // 4
+    out = Image.new("RGBA", (8 * 128, 4 * 256))
+    for slot, index in enumerate(range(0, 64, 2)):
+        x, y = index % 16, index // 16
+        cell = atlas.crop((x * frame_w, y * frame_h, (x + 1) * frame_w, (y + 1) * frame_h))
+        out.paste(cell.resize((128, 256), Image.LANCZOS), ((slot % 8) * 128, (slot // 8) * 256))
+    out.save(OUT / "flame_8x4.png", optimize=True)
+    print("flame_8x4")
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     for i in range(4):
@@ -388,6 +443,9 @@ def main() -> None:
     blood_mist()
     bullet_holes()
     smoke_flipbook()
+    explosion_flipbook()
+    flame_flipbook()
+    scorch()
     print(f"wrote {OUT}")
 
 

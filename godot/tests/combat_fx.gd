@@ -8,7 +8,8 @@ extends SceneTree
 ##   leave, on the Testing Area's tall cover wall, into FX_DIR.
 ## - Firefight (FX_BENCH=1): the local player holds the trigger at the wall
 ##   while four other shooters' rounds (traced as remote shots) land around
-##   it, and GPU time is averaged over the burst at each preset. The
+##   it and a frag grenade's blast goes off every two seconds, and GPU time
+##   is averaged over the burst at each preset. The
 ##   benchmark's views never fire, so this is the number that shows what
 ##   effects cost. Runs on any build: it only presses fire and traces remote
 ##   shots.
@@ -21,6 +22,7 @@ extends SceneTree
 ##   FX_OUT      JSON results file (firefight, optional).
 
 const Benchmark := preload("res://tests/benchmark.gd")
+const BLAST := "res://scenes/equipment/frag_blast.tscn"
 ## The player's feet, looking down -Z at the cover wall (its face at z = -1.6).
 const STAND := Vector3(-14, 0.1, 6)
 ## Where two dummies stand, a metre in front of the wall.
@@ -40,6 +42,7 @@ var _settings: Node
 var _soldiers: Array[Node3D] = []
 var _shots := 0
 var _next_volley := 0.0
+var _next_blast := 0.0
 
 
 func _initialize() -> void:
@@ -88,6 +91,7 @@ func _load() -> void:
 func _unload() -> void:
 	Input.action_release("fire")
 	_next_volley = 0.0
+	_next_blast = 0.0
 	current_scene.queue_free()
 	current_scene = null
 	_player = null
@@ -137,6 +141,23 @@ func _remote_fire() -> void:
 			if _shots % 2 == 0:
 				target = TARGETS[1] + Vector3(sin(_shots * 0.5) * 0.12, 1.3, 0)
 			tracer.trace_test_shot("m4", eye, (target - eye).normalized())
+
+
+## A frag grenade's blast every two seconds in front of the wall, through the
+## grenade's own blast scene, so a build with the stand-in blast and one with
+## the pooled explosion compare directly.
+func _blasts() -> void:
+	if not ResourceLoader.exists(BLAST):
+		return
+	var now := Time.get_ticks_msec() / 1000.0
+	if _next_blast == 0.0:
+		_next_blast = now + 0.5
+	if now < _next_blast:
+		return
+	_next_blast += 2.0
+	var blast := (load(BLAST) as PackedScene).instantiate() as Node3D
+	current_scene.add_child(blast)
+	blast.global_position = Vector3(-12.5, 0.05, 0.6)
 
 
 func _effects() -> Node:
@@ -212,6 +233,24 @@ func _capture() -> void:
 			await process_frame
 			if i in [2, 3, 5]:
 				await _shot("%s_tracers_%02d" % [preset, i])
+		# An explosion in front of the wall, and the scorch it leaves.
+		if effects != null and effects.has_method("explosion"):
+			effects.explosion(Vector3(-12.5, 0.05, 0.6), Vector3.UP, 1.0)
+			var shown := 0
+			for moment: int in [3, 12, 40, 120, 400]:
+				while shown < moment:
+					_place(0.0, -0.1)
+					await process_frame
+					shown += 1
+				await _shot("%s_explosion_%03d" % [preset, moment])
+		# A fire on the ground in front of the wall.
+		if effects != null and effects.has_method("fire"):
+			effects.fire(Vector3(-15.5, 0.05, 1.5), 1.0, 30.0)
+			for moment: int in [40, 41, 90]:
+				for i in 25 if moment != 41 else 1:
+					_place(0.0, -0.12)
+					await process_frame
+				await _shot("%s_fire_%03d" % [preset, moment])
 		# Holes: the player's own burst and other players' rounds.
 		Input.action_press("fire")
 		for i in 90:
@@ -243,6 +282,7 @@ func _bench() -> void:
 		for i in 120:
 			_player.refill_all_ammo()
 			_remote_fire()
+			_blasts()
 			_place(AIM_YAW, AIM_PITCH)
 			await process_frame
 		await _unload()
@@ -260,6 +300,7 @@ func _bench() -> void:
 		for i in frames:
 			_player.refill_all_ammo()
 			_remote_fire()
+			_blasts()
 			_place(AIM_YAW, AIM_PITCH)
 			await process_frame
 			gpu.append(
