@@ -259,7 +259,7 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 - [x] Soldiers as believable people: a MakeHuman body fitted to the existing skeleton, a combat shirt and trousers, modelled kit (helmet with cover and mounts, glasses, balaclava or neck gaiter or a bare face per character, plate carrier with pouches, magazines and a radio, belt and holster, knee pads), all in one mesh with one baked texture atlas and a team tint (`tools/build_character_assets.py`).
 - [x] Zombies as distinct people: five MakeHuman bodies (age, build, skin, one a woman) in their own civilian clothes, picked per zombie (`zombie_body.tscn`, `SoldierRig.variants`).
 - [x] Zombies: painted short hair and stubble per body.
-- [ ] Zombies: torn cloth and painted wounds.
+- [x] Zombies: painted wounds, blood soaked and run from them, a bloody mouth, rips in the cloth, grime and mud, per body (baked, `add_decay`).
 - [x] Soldiers: a modelled combat shirt (knit torso, ripstop raglan sleeves with pockets, elbow pads, cuff tabs, and a zipped mock collar) baked from a high-detail source with folds and stitching (`tools/blender_wardrobe.py`).
 - [x] Soldiers: modelled combat boots (leather foot, toe cap, heel counter, nylon shaft, laces and eyelets, padded collar) baked from high-detail sources, with the trousers bloused over them.
 - [x] Soldiers: five faces (MakeHuman head shapes as blend shapes, each with its skin tone), picked per soldier.

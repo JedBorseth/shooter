@@ -12,7 +12,7 @@
 // - Roles in `hidden_roles` and part groups in the per-character `hidden_parts`
 //   collapse to a point, shadows included: a zombie's lost helmet, or the
 //   heads and kit a soldier is not wearing.
-// - Per character (`variant`): skin tone, wear, and for zombies blood.
+// - Per character (`variant`): skin tone, wear, and for zombies a little grime.
 // - The first-person arms draw with a copy compiled with VIEWMODEL_KEY
 //   (rust/game/src/viewmodel.rs: `first_person_shader`), which adds the
 //   first-person key light the weapon gets; every other character compiles
@@ -118,13 +118,10 @@ void fragment() {
 	float rough = orm.g;
 	float metal = orm.b;
 	if (zombie > 0.0) {
-		float splatter = noise(UV * 18.0 + vec2(variant * 3.1, variant * 1.7)) * 0.7
-			+ noise(UV * 60.0 - vec2(variant)) * 0.3;
-		float blood = smoothstep(0.62, 0.72, splatter) * zombie;
-		base = mix(base, vec3(0.19, 0.02, 0.012), blood * 0.8);
-		rough = mix(rough, 0.25, blood);
-		// Grime over everything.
-		base *= 0.85 + 0.15 * noise(UV * 9.0 + variant);
+		// Wounds, blood, rips, and grime are painted into each zombie body's
+		// atlas (add_decay in tools/blender_characters.py); this only makes
+		// two zombies in the same body a little more or less filthy.
+		base *= 0.9 + 0.1 * noise(UV * 9.0 + variant);
 	}
 	ALBEDO = base;
 	AO = orm.r;
