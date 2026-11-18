@@ -8,10 +8,11 @@ extends Node
 ## cascade instead of one per material. The editor keeps the real meshes
 ## casting, so the lightmap bake sees them.
 ##
-## On the Low preset the map's sun draws two shadow splits instead of its own
-## count (Low's shadows reach only half as far), and the set dressing's small
+## On the Low preset the map's sun draws at most two shadow splits instead of
+## its own count (Low's shadows reach only half as far), and the set dressing's small
 ## detail (`map_*_detail` meshes: litter, brass, weeds) is hidden, so the
-## dressing costs Low nothing over the bare map.
+## dressing costs Low nothing over the bare map. A sky shader with a `detailed`
+## switch (shaders/night_sky.gdshader) drops its cloud and stars.
 
 const GraphicsQuality := preload("res://scripts/graphics.gd")
 
@@ -22,6 +23,7 @@ var _sun: DirectionalLight3D
 var _sun_mode := DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
 var _details: Array[MeshInstance3D] = []
 var _settings: Node
+var _sky: ShaderMaterial
 
 
 func _ready() -> void:
@@ -37,6 +39,12 @@ func _ready() -> void:
 	_sun = get_node_or_null(sun_path) as DirectionalLight3D
 	if _sun != null:
 		_sun_mode = _sun.directional_shadow_mode
+	for env_node in scene.find_children("*", "WorldEnvironment", true, false):
+		var env := (env_node as WorldEnvironment).environment
+		if env != null and env.sky != null and env.sky.sky_material is ShaderMaterial:
+			var material := env.sky.sky_material as ShaderMaterial
+			if material.shader != null and material.shader.code.contains("uniform bool detailed"):
+				_sky = material
 	_settings = get_node_or_null(^"/root/Settings")
 	if _settings != null:
 		_settings.connect(&"changed", _apply_preset)
@@ -47,10 +55,12 @@ func _apply_preset() -> void:
 	var low: bool = int(_settings.get(&"graphics_quality")) == GraphicsQuality.Preset.LOW
 	if _sun != null:
 		_sun.directional_shadow_mode = (
-			DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS if low else _sun_mode
+			mini(_sun_mode, DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS) if low else _sun_mode
 		)
 	for mesh in _details:
 		mesh.visible = not low
+	if _sky != null:
+		_sky.set_shader_parameter(&"detailed", not low)
 
 
 ## Whether the mesh's model has a shadow twin beside it.

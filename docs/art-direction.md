@@ -106,13 +106,19 @@ Visual trim has no collision, so it never changes movement or cover: window fram
 
 ![Slamcity, the Testing Area, and Zombies before (left) and after (right) the lighting pass](media/lighting.jpg)
 
-Each map is lit by a CC0 sky image (an HDRI from [Poly Haven](https://polyhaven.com), downloaded by `tools/build_skies.py` into `godot/assets/skies/`) and one directional light standing in for its sun or moon. The tool prints where the sun sits in each image; the map rotates its sky (`Environment.sky_rotation`) so the sun lines up with its light, and tilts the light to the same elevation. The sky also lights the shade (ambient light from the sky), so shadows pick up its colour instead of a flat grey.
+Each map is lit by a CC0 sky image (Zombies: a sky drawn in code) (an HDRI from [Poly Haven](https://polyhaven.com), downloaded by `tools/build_skies.py` into `godot/assets/skies/`) and one directional light standing in for its sun or moon. The tool prints where the sun sits in each image; the map rotates its sky (`Environment.sky_rotation`) so the sun lines up with its light, and tilts the light to the same elevation. The sky also lights the shade (ambient light from the sky), so shadows pick up its colour instead of a flat grey.
 
 | Map | Sky | Mood |
 | --- | --- | --- |
 | Testing Area | `kloofendal_48d_partly_cloudy_puresky` | Clear midday with clouds, high sun, light haze |
 | Slamcity | `kloppenheim_06_puresky` | Dusk: a low sun due south behind the storefronts (9°, above the sky's own 5° so the streets keep some light), long shadows, warm haze, and neon, lit windows, and street lamps baked into the lightmap |
-| Zombies | `qwantani_moon_noon_puresky` | Moonlit night with stars, blue moonlight, dim fog, and street lamps that flicker (`scripts/lamp_flicker.gd`) |
+| Zombies | Drawn in code (`shaders/night_sky.gdshader`) | Clear night: a moon high in the south-west, stars, thin moonlit cloud, and town glow on the horizon; blue moonlight, dim fog pooled in the side yards and window bays (High), and street lamps that flicker (`scripts/lamp_flicker.gd`) |
+
+![The Testing Area's horizon, and the Zombies yard and sky, before (left) and after (right) the skies drawn in code](media/map-skies.jpg)
+
+Zombies' sky is drawn in code (`shaders/night_sky.gdshader`): a dark gradient with town glow low on the horizon, stars, thin moonlit cloud, and a moon placed wherever the scene's moonlight comes from, so the moon, the shadows, and the baked light always agree (high in the south-west, where the moonlight has always come from: a lower moon was tried, but its longer shadow cascades took in more of the horde and cost 0.07 ms on Medium). The shader reads no textures and never uses time, so the sky's reflections are computed once and the moon shows in the puddles. On Low it draws only the gradient and the moon (`scripts/map_render.gd` turns its `detailed` switch off). On High, fog volumes pool in the side yards and the window bays where the zombies gather.
+
+Beyond the Testing Area's walls lies open country, drawn into its sky (`shaders/day_sky.gdshader`, over the sky image): rolling hills in rings out to 600 m, each ring higher than the one in front so it shows over the walls, tree lines along the middle crests, and more haze the farther a ring stands. It costs a little arithmetic on the sky's own pixels; drawn as geometry, the same country cost 0.15 ms on Medium. The sky's reflections and the lightmap still see the plain sky image.
 
 ![Before (left) and after (right) the baked lightmaps: Slamcity's street, a corner store, the alley, and the Testing Area](media/lightmaps.jpg)
 

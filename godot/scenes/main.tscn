@@ -19,6 +19,7 @@
 [ext_resource type="PackedScene" uid="uid://uqyfh5xlco0r" path="res://assets/weapons/br3/br3.glb" id="18_br3"]
 [ext_resource type="PackedScene" path="res://scenes/ui/hud.tscn" id="19_hud"]
 [ext_resource type="Texture2D" uid="uid://c21lj1e3rpr52" path="res://assets/skies/range_day.hdr" id="20_sky"]
+[ext_resource type="Shader" uid="uid://cg0wji0m4cgxn" path="res://shaders/day_sky.gdshader" id="21_daysky"]
 [ext_resource type="Material" path="res://materials/world/range_cover.tres" id="m_cover"]
 [ext_resource type="Material" path="res://materials/world/range_crate.tres" id="m_crate"]
 [ext_resource type="Material" path="res://materials/world/range_floor.tres" id="m_floor"]
@@ -35,8 +36,9 @@
 [ext_resource type="PackedScene" uid="uid://b1p1uago5j3cy" path="res://assets/props/tyre/tyre.gltf" id="p_tyre"]
 [ext_resource type="PackedScene" uid="uid://330cd5sbdyvp" path="res://assets/props/utility_box/utility_box.gltf" id="p_utility_box"]
 
-[sub_resource type="PanoramaSkyMaterial" id="SkyMat"]
-panorama = ExtResource("20_sky")
+[sub_resource type="ShaderMaterial" id="SkyMat"]
+shader = ExtResource("21_daysky")
+shader_parameter/panorama = ExtResource("20_sky")
 
 [sub_resource type="Sky" id="Sky"]
 sky_material = SubResource("SkyMat")
