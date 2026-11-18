@@ -115,6 +115,33 @@ func _check_looks() -> void:
 		_check(Looks.lut_for(scene) == lut, "%s: the table is built once" % scene)
 		if Looks.MAPS[scene].get("env", {}).has("glow_bloom"):
 			_check(is_zero_approx(env.glow_bloom), "%s: bloom lifts only what is bright" % scene)
+		var sun := DirectionalLight3D.new()
+		var sun_look: Dictionary = Looks.MAPS[scene].get("sun", {})
+		for property: String in sun_look:
+			_check(property in sun, "%s: %s is a DirectionalLight3D property" % [scene, property])
+		_check(
+			Looks.apply_sun(sun, scene) != sun_look.is_empty(), "%s: the sun look applies" % scene
+		)
+		for property: String in sun_look:
+			_check(
+				is_equal_approx(sun.get(property), sun_look[property]),
+				"%s: the sun's %s is set" % [scene, property]
+			)
+		sun.free()
+	var hard := Environment.new()
+	Looks.apply(hard, "res://scenes/main.tscn")
+	_check(
+		hard.tonemap_mode == Environment.TONE_MAPPER_ACES,
+		"the Testing Area's hard daylight uses the filmic curve"
+	)
+	var plain_sun := DirectionalLight3D.new()
+	plain_sun.light_energy = 1.7
+	_check(
+		not Looks.apply_sun(plain_sun, "res://scenes/unlisted.tscn"),
+		"an unlisted map's sun has no look"
+	)
+	_check(is_equal_approx(plain_sun.light_energy, 1.7), "and keeps its authored strength")
+	plain_sun.free()
 	var plain := Environment.new()
 	plain.glow_bloom = 0.04
 	_check(not Looks.apply(plain, "res://scenes/unlisted.tscn"), "an unlisted map has no look")

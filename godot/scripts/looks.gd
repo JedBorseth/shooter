@@ -30,6 +30,8 @@ const LUT_SIZE := 32
 ##          whose scenery around the sun collides.
 ##   wetness  How wet the map's surfaces are, 0 dry to 1 soaked; from 0.5 up,
 ##            puddles collect on the ground (shaders/world.gdshader).
+##   sun    DirectionalLight3D properties to set on the map's sun (its strength
+##          against the sky light sets how hard the daylight is).
 ##
 ## Every listed map also gets the shared bloom in `BLOOM` (unless its `env`
 ## says otherwise) and lens dirt on that bloom (scripts/lens_dirt.gd).
@@ -47,10 +49,25 @@ const MAPS := {
 			"fog_density": 0.0024,
 			"fog_aerial_perspective": 0.85,
 			"fog_sky_affect": 0.3,
+			# Tighter, darker ambient occlusion where things meet the ground.
+			"ssao_radius": 1.0,
+			"ssao_intensity": 2.0,
+			"ssao_detail": 0.8,
+			# Hard daylight: a filmic curve with a real toe and shoulder, a
+			# stronger sun against the sky light (baked light stays as it
+			# was), and less exposure, so sunlit sand and concrete reach near
+			# white while shade goes properly dark.
+			"tonemap_mode": Environment.TONE_MAPPER_ACES,
+			"tonemap_white": 8.0,
+			"tonemap_exposure": 0.82,
+			# More sky light for what the lightmap does not light (soldiers,
+			# the first-person weapon), so they keep their fill in the shade.
+			"ambient_light_energy": 1.35,
 			# The grade below replaces these.
 			"adjustment_contrast": 1.0,
 			"adjustment_saturation": 1.0,
 		},
+		"sun": {"light_energy": 2.9},
 		"grade":
 		{
 			"contrast": 1.3,
@@ -59,7 +76,7 @@ const MAPS := {
 			"shadows": Color(0.94, 0.98, 1.06),
 			"highlights": Color(1.04, 1.0, 0.95),
 			"balance": 0.5,
-			"toe": 0.25,
+			"toe": 0.12,
 		},
 		"flare": 1.0,
 	},
@@ -77,20 +94,29 @@ const MAPS := {
 			"glow_levels/4": 0.5,
 			"glow_levels/5": 0.25,
 			"ssao_light_affect": 0.12,
+			"ssao_radius": 1.0,
+			"ssao_detail": 0.8,
+			# Less sky colour in the near haze and slightly thinner air: the
+			# near street keeps its blacks and only the far blocks and the
+			# skyline fade into the dusk. (Godot's height fog is not used: it
+			# fogs low ground by height alone, near or far.)
+			"fog_aerial_perspective": 0.4,
+			"fog_density": 0.003,
 			# The grade below replaces these.
 			"adjustment_contrast": 1.0,
 			"adjustment_saturation": 1.0,
 		},
 		"grade":
+		# Cool shade and warm light, the colours of an evening street; the toe
 		{
-			# Cool shade and warm light, the colours of an evening street.
-			"contrast": 1.22,
+			# keeps the near street's blacks under the haze.
+			"contrast": 1.3,
 			"pivot": 0.5,
 			"saturation": 1.04,
 			"shadows": Color(0.93, 0.99, 1.07),
 			"highlights": Color(1.07, 1.0, 0.9),
 			"balance": 0.45,
-			"toe": 0.05,
+			"toe": 0.2,
 		},
 		# No sun flare: the dusk sun sits behind the skyline, which has no
 		# collision, so the flare's cover test (rays against the world) cannot
@@ -106,13 +132,15 @@ const MAPS := {
 			# Lamps and muzzle flashes carry the night: a stronger, lower bloom.
 			"glow_intensity": 0.8,
 			"glow_hdr_threshold": 0.85,
+			# A little more sky light, so the walls separate from the night.
+			"ambient_light_energy": 0.75,
 			"adjustment_contrast": 1.0,
 			"adjustment_saturation": 1.0,
 		},
 		"grade":
 		{
-			"contrast": 1.06,
-			"pivot": 0.2,
+			"contrast": 1.12,
+			"pivot": 0.12,
 			"saturation": 0.85,
 			"shadows": Color(0.92, 1.0, 1.08),
 			"highlights": Color(1.05, 1.0, 0.92),
@@ -169,6 +197,14 @@ static func apply(env: Environment, scene_path: String) -> bool:
 		env.adjustment_enabled = true
 		env.adjustment_color_correction = lut_for(scene_path)
 	return true
+
+
+## Sets the look's sun properties on the map's sun. Returns true if it has any.
+static func apply_sun(light: DirectionalLight3D, scene_path: String) -> bool:
+	var sun: Dictionary = MAPS.get(scene_path, {}).get("sun", {})
+	for property: String in sun:
+		light.set(property, sun[property])
+	return not sun.is_empty()
 
 
 ## How wet the map `scene_path` is: 0 for dry.

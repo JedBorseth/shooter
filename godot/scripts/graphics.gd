@@ -250,6 +250,8 @@ static func adopt(node: Node, preset: int) -> void:
 		var light := node as DirectionalLight3D
 		var id := light.get_instance_id()
 		if not _authored.has(id):
+			var scene := node.owner.scene_file_path if node.owner != null else ""
+			Looks.apply_sun(light, scene)
 			var authored := {"shadow_distance": light.directional_shadow_max_distance}
 			_authored[id] = _take_stale(light, authored)
 	else:
