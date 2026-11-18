@@ -1203,7 +1203,7 @@ start_with_primary = false
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.00064452505, 4)
 
 [node name="HUD" parent="." unique_id=1205759811 instance=ExtResource("19_hud")]
-controls_text = "WASD move   Shift sprint (toggle)   C crouch   Space jump   LMB fire   RMB aim   R reload   V knife   1 / 2 / wheel switch   F take weapon or refill ammo   Esc menu   F1 hide"
+controls = PackedStringArray("move:Move", "sprint:Sprint", "crouch:Crouch / slide", "jump:Jump", "fire:Fire", "aim:Aim", "reload:Reload", "melee:Knife", "weapon_1:Switch weapon", "interact:Buy or refill", "pause:Menu", "toggle_controls:Hide controls")
 score_feed = false
 
 [node name="Zombies" type="Control" parent="HUD" unique_id=649266270]
