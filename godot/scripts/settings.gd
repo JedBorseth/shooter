@@ -11,6 +11,7 @@ signal changed
 
 const GraphicsQuality := preload("res://scripts/graphics.gd")
 const Lens := preload("res://scripts/lens.gd")
+const Grounding := preload("res://scripts/grounding.gd")
 
 ## Radians of view rotation per screen pixel at a sensitivity of 1.0.
 const BASE_MOUSE_SENSITIVITY := 0.0022
@@ -607,6 +608,11 @@ func _sanitize(key: StringName, value: Variant) -> Variant:
 func _on_node_added(node: Node) -> void:
 	if node is WorldEnvironment or node is DirectionalLight3D:
 		GraphicsQuality.adopt(node, graphics_quality)
+	elif _lens != null and node is SoldierRig:
+		# Contact shadows are for the eye: the dedicated server has no lens and
+		# skips them.
+		# Deferred: the rig is still entering the tree.
+		Grounding.attach.call_deferred(node as Node3D)
 
 
 func _mark_dirty() -> void:

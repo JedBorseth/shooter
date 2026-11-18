@@ -107,7 +107,9 @@ Zombies adds volumetric fog, which only the High preset draws.
 
 The final picture of a map is set in `godot/scripts/looks.gd`, not in its scene, so a map that a tool regenerates keeps it. For each listed map it holds:
 
-- **Environment overrides**: exposure, bloom, and haze. Bloom lifts only what is brighter than white (`glow_bloom` is 0), so lamps, muzzle flashes, and the sky's sun glow without a veil over the whole picture. Zombies makes up for the lost veil with exposure, so the horde reads as well as before.
+- **Environment overrides**: exposure, haze, and changes to the shared bloom.
+- **Bloom** (`Looks.BLOOM`, the same for every listed map): only what is brighter than white blooms (`glow_bloom` is 0), and the glow is added like light scattered in a lens rather than screened over the picture. A faint wide level gives the sun, lamps, and muzzle flashes a soft halo. Zombies makes up for the lost veil with exposure, and blooms a little lower and stronger, so the horde reads and the lamps carry the night.
+- **Lens dirt** (`scripts/lens_dirt.gd`): smudges and specks built in code from a fixed seed. The glow pass multiplies its bloom by them (`Environment.glow_map`), so the dirt shows only where something bright blooms through it.
 - **A colour grade**: an S-curve on brightness around a pivot, a toe that deepens the darkest shadows without clipping them, a cool tint in the shadows and a warm one in the highlights that both fade out at black and white, and a saturation. A bright colour that would leave the range is pulled toward its own grey, so it keeps its hue. `Looks.build_lut` turns the grade into a 32³ look-up table when the map loads, and the renderer samples it inside the tonemap pass, so a grade costs nothing per frame. Tune a grade offline against a screenshot before you try it in the engine: the maths is a few lines. The renderer reads the table at texel centres with no half-texel correction, so texel *i* must hold the grade of input (*i* + 0.5) / 32 (`Looks.texel_input`); a table built as *i* / 31 darkens every shadow by more than 1% of full brightness.
 
 | Map | Grade |
@@ -120,9 +122,13 @@ Nuketown is not listed and keeps the look authored in its scene.
 
 On top of that, for every map:
 
-- **The lens** (`scripts/lens.gd`): a vignette and a little film grain, and on High a contrast-adaptive sharpening pass. The vignette deepens slightly while aiming, and `suppress()` closes it in for a moment (for rounds passing close).
+- **The lens** (`scripts/lens.gd`): a vignette and a little film grain, and on High a contrast-adaptive sharpening pass. The vignette deepens slightly while aiming. Rounds passing close (`suppress()`) close it in and drain some colour for a moment, and on High also blur the edges of the picture. After death the picture fades down.
+- **The sun in the lens** (`shaders/lens_flare.gdshaderinc`, Medium and High): when a map's sun is in view, a glare around it, a few faint coloured ghosts on the line through the middle of the screen, and the lens dirt lit up near it. Five rays from the camera test whether the sun is hidden, so the flare fades as the sun slips behind an edge instead of blinking off. Each map sets its strength (`flare` in `MAPS`; the night has none).
+- **Contact shadows** (`scripts/grounding.gd`): a soft dark patch on the ground under every soldier and zombie, so they stand on the ground in the shade and where the sun's shadow is soft or far. Each is a flat quad drawn with `shaders/contact_shadow.gdshader` and laid on the ground (tilted to a slope) by a short ray down from the feet a few times a second; it fades as the feet leave the ground and between 60 and 80 m. It reads no depth and is no Decal, so it costs only the pixels it covers.
+- **The scope** (`shaders/scope.gdshader`): one pass that multiplies the picture: black outside the tube, a soft eye-relief shadow that slides to one side as sway and turning move the scope off the eye, a faint coloured fringe at the rim, and glass that darkens toward its edge.
 - **Health**: the colour drains from the picture as health falls from 70% to 10% and comes back as it regenerates. Death is grey. This uses the tonemap pass's saturation, so it works on every preset. The damage vignette (`shaders/damage_vignette.gdshader`) multiplies the edges of the picture toward a dark blood red, so the middle of the screen stays clear and the sky never turns pink.
 - **Texture sharpness**: Medium and High read slightly sharper mipmaps.
+- **World surfaces** (`shaders/world.gdshaderinc`): on High, a fine shared detail normal adds grain and roughness breakup to every textured surface within about 10 m, where the texture alone would blur. Low and Medium compile it out (see [performance.md](performance.md)). A map can be wet (`wetness` in `MAPS`): from Medium up, surfaces darken and turn glossy, and from half wet, puddles collect on the ground. Zombies is just after rain.
 
 What each of these costs is in [performance.md](performance.md).
 

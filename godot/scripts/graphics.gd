@@ -39,6 +39,8 @@ const PRESETS := [
 		"anisotropic": Viewport.ANISOTROPY_2X,
 		"glow_bicubic": false,
 		"mipmap_bias": 0.0,
+		"world_detail": 0,
+		"wet": false,
 	},
 	{
 		"upscaler": Viewport.SCALING_3D_MODE_FSR2,
@@ -56,6 +58,8 @@ const PRESETS := [
 		"anisotropic": Viewport.ANISOTROPY_4X,
 		"glow_bicubic": false,
 		"mipmap_bias": -0.35,
+		"world_detail": 0,
+		"wet": true,
 	},
 	{
 		"upscaler": Viewport.SCALING_3D_MODE_FSR2,
@@ -73,6 +77,8 @@ const PRESETS := [
 		"anisotropic": Viewport.ANISOTROPY_16X,
 		"glow_bicubic": true,
 		"mipmap_bias": -0.25,
+		"world_detail": 1,
+		"wet": true,
 	},
 ]
 
@@ -82,6 +88,10 @@ const PRESETS := [
 const _STALE_AUTHORED := &"_graphics_authored"
 const MotionBlur := preload("res://scripts/motion_blur.gd")
 const Looks := preload("res://scripts/looks.gd")
+## The world surface shaders (both include shaders/world.gdshaderinc).
+const WORLD_SHADER_PATHS: Array[String] = [
+	"res://shaders/world.gdshader", "res://shaders/world_windows.gdshader"
+]
 
 ## One compositor (with the motion blur effect) shared by every map while the
 ## setting is on.
@@ -97,6 +107,65 @@ static var managed := true
 ## How much colour the picture keeps: 1 at full health, 0 when it has drained
 ## (scripts/lens.gd follows the player's health).
 static var _vitality := 1.0
+## How wet the loaded map is (Looks.wetness_for), and whether the preset draws it.
+static var _map_wetness := 0.0
+static var _wet_allowed := true
+## The world shaders, held here: a change to their code must outlive the
+## moments no map is loaded (start-up, between maps), or the next load would
+## read the files again and lose it.
+static var _world_shaders: Array[Shader] = []
+
+
+## Compiles the world shaders' close-up detail in (1) or
+## out (0). Their code changes, so every world material recompiles: a preset
+## change, not something to do per frame. A uniform could switch the detail
+## off, but its code would still slow every pixel (shaders/world.gdshaderinc).
+static func set_world_detail(level: int) -> void:
+	_set_world_define("WORLD_DETAIL", clampi(level, 0, 1))
+
+
+## The level `set_world_detail` last compiled in.
+static func world_detail() -> int:
+	return _world_define("WORLD_DETAIL")
+
+
+## Compiles the world shaders' wet surfaces and puddles in or out, for the map
+## that is loading (its wetness is the `world_wetness` shader global).
+static func set_world_wet(wet: bool) -> void:
+	_set_world_define("WORLD_WET", 1 if wet else 0)
+
+
+static func world_wet() -> bool:
+	return _world_define("WORLD_WET") == 1
+
+
+static func _set_world_define(name: String, value: int) -> void:
+	var line := "#define %s " % name
+	var want := str(value)
+	for shader: Shader in _world_shader_list():
+		var code := shader.code
+		var at := code.find(line)
+		if at < 0:
+			push_error("%s has no %s line" % [shader.resource_path, name])
+			continue
+		var start := at + line.length()
+		var end := code.find("\n", start)
+		if code.substr(start, end - start) != want:
+			shader.code = code.substr(0, start) + want + code.substr(end)
+
+
+static func _world_define(name: String) -> int:
+	var line := "#define %s " % name
+	var code := _world_shader_list()[0].code
+	var at := code.find(line)
+	return int(code.substr(at + line.length(), 1)) if at >= 0 else 0
+
+
+static func _world_shader_list() -> Array[Shader]:
+	if _world_shaders.is_empty():
+		for path: String in WORLD_SHADER_PATHS:
+			_world_shaders.append(load(path) as Shader)
+	return _world_shaders
 
 
 ## Applies a preset and render scale to the engine, the root viewport, and every
@@ -127,6 +196,11 @@ static func apply(
 	RenderingServer.directional_shadow_atlas_set_size(p["shadow_atlas"], true)
 	RenderingServer.directional_soft_shadow_filter_set_quality(p["shadow_filter"])
 	RenderingServer.positional_soft_shadow_filter_set_quality(p["shadow_filter"])
+	# World surfaces: close-up detail on High only.
+	set_world_detail(p["world_detail"])
+	# Wet surfaces cost about 0.3 ms on Low in the Zombies arena: Low stays dry.
+	_wet_allowed = p["wet"]
+	set_world_wet(_wet_allowed and _map_wetness > 0.001)
 	# Bicubic lightmap sampling smooths baked shadows; worth it on High only.
 	RenderingServer.lightmaps_set_bicubic_filter(preset == Preset.HIGH)
 	RenderingServer.environment_set_ssao_quality(
@@ -148,8 +222,13 @@ static func adopt(node: Node, preset: int) -> void:
 		if env == null:
 			return
 		var id := env.get_instance_id()
+		var scene := node.owner.scene_file_path if node.owner != null else ""
+		# Global to every surface, so set each time a map's environment arrives.
+		var wetness := Looks.wetness_for(scene)
+		RenderingServer.global_shader_parameter_set(&"world_wetness", wetness)
+		_map_wetness = wetness
+		set_world_wet(_wet_allowed and wetness > 0.001)
 		if not _authored.has(id):
-			var scene := node.owner.scene_file_path if node.owner != null else ""
 			Looks.apply(env, scene)
 			var authored := {
 				"ssao": env.ssao_enabled,

@@ -155,6 +155,17 @@ debug_hitboxes={
 jolt_physics_3d/queries/enable_ray_cast_face_index=true
 common/physics_ticks_per_second=120
 
+[shader_globals]
+
+world_wetness={
+"type": "float",
+"value": 0.0
+}
+world_detail_normal={
+"type": "sampler2D",
+"value": "res://assets/textures/detail/detail_normal.tres"
+}
+
 [rendering]
 
 occlusion_culling/use_occlusion_culling=true
