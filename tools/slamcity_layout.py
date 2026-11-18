@@ -323,12 +323,20 @@ class Wall:
                 face = self.t1 if self.out > 0 else self.t0
                 self._tube_v(a, y0, y1, face - self.out * 0.06, 0.012)
 
-    def fake(self, a0, a1, y0, y1, lintel=True, sill=True, look="window_room", mullion=True):
-        """A window that cannot be opened: a pane set back in the wall."""
+    def fake(self, a0, a1, y0, y1, lintel=True, sill=True, look="window_room", mullion=True, ac=False):
+        """A window that cannot be opened: a pane set back in the wall, and
+        with `ac` a window air conditioner hung on the wall under it."""
         self.holes.append((a0, a1, y0, y1, False))
         self._frame(a0, a1, y0, y1, sill=sill, lintel=lintel)
         face = self.t1 if self.out > 0 else self.t0
-        plane = face - self.out * 0.12
+        plane = face - self.out * 0.18
+        if ac:
+            # The unit's back against the wall, its top just under the sill.
+            a, t = (a0 + a1) / 2, face + self.out * 0.2
+            if self.axis == "x":
+                prop("aircon", a, y0 - 1.05, t, 0.0 if self.out > 0 else PI, self.m)
+            else:
+                prop("aircon", t, y0 - 1.05, a, PI / 2 if self.out > 0 else -PI / 2, self.m)
         if self.axis == "x":
             pane(a0, a1, y0, y1, plane, "x", self.out, self.m, look)
         else:
@@ -716,7 +724,7 @@ def tenement(side: Side):
     front.fake(-41.4, -37.0, 0.9, 2.75, lintel=False, sill=False, look="window_shop", mullion=False)
     for i in range(9):
         cx = -46.3 + i * 2.9
-        front.fake(cx - 0.6, cx + 0.6, 4.25, 5.95, lintel=True, look="window_curtain")
+        front.fake(cx - 0.6, cx + 0.6, 4.25, 5.95, lintel=True, look="window_curtain", ac=i in (1, 4, 6))
     front.emit()
     deco(*HALL_DOOR, STREET, WALK, z1 - 0.35, z1, "stone_trim", m)
     # Back: the hallway's alley door, the flat's window, and the fire escape's
@@ -1467,7 +1475,8 @@ def south_row(side: Side):
             n = int((a1 - a0) / 2.4)
             for i in range(n):
                 cx = a0 + (i + 0.5) * (a1 - a0) / n
-                wall.fake(cx - 0.55, cx + 0.55, y, y + 1.6, lintel=(key != "diner"), look="window_curtain")
+                wall.fake(cx - 0.55, cx + 0.55, y, y + 1.6, lintel=(key != "diner"), look="window_curtain",
+                          ac=key != "diner" and (i + f_) % 3 == 1)
         wall.emit()
         # Back wall (the boundary).
         solid(a0, a1, STREET, h, zb - 0.35, zb, inner[key], m=m, sight=True)

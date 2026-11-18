@@ -8,7 +8,7 @@ colors = PackedColorArray(1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0)
 gradient = SubResource("Gradient_fade")
 
 [sub_resource type="Curve" id="Curve_grow"]
-_data = [Vector2(0, 0.25), 0.0, 0.9, 0, 0, Vector2(1, 1), 0.0, 0.0, 0, 0]
+_data = [Vector2(0, 0.5), 0.0, 0.6, 0, 0, Vector2(1, 1), 0.0, 0.0, 0, 0]
 point_count = 2
 
 [sub_resource type="CurveTexture" id="Texture_grow"]
@@ -19,19 +19,19 @@ emission_shape = 1
 emission_sphere_radius = 0.9
 direction = Vector3(0, 1, 0)
 spread = 12.0
-initial_velocity_min = 2.5
-initial_velocity_max = 3.5
-gravity = Vector3(0.8, 0.5, 0)
-damping_min = 0.2
-damping_max = 0.4
+initial_velocity_min = 1.2
+initial_velocity_max = 1.8
+gravity = Vector3(0, 0.18, 0.35)
+damping_min = 0.15
+damping_max = 0.3
 angle_min = -180.0
 angle_max = 180.0
 angular_velocity_min = -12.0
 angular_velocity_max = 12.0
-scale_min = 3.0
-scale_max = 5.0
+scale_min = 4.0
+scale_max = 7.0
 scale_curve = SubResource("Texture_grow")
-color = Color(0.16, 0.15, 0.14, 0.5)
+color = Color(0.1, 0.095, 0.09, 0.9)
 color_ramp = SubResource("Texture_fade")
 
 [sub_resource type="Gradient" id="Gradient_puff"]
@@ -48,10 +48,11 @@ fill_to = Vector2(0.5, 0)
 
 [sub_resource type="StandardMaterial3D" id="Mat_steam"]
 transparency = 1
-shading_mode = 2
+shading_mode = 0
 vertex_color_use_as_albedo = true
 albedo_texture = SubResource("Texture_puff")
 billboard_mode = 3
+billboard_keep_scale = true
 particles_anim_h_frames = 1
 particles_anim_v_frames = 1
 particles_anim_loop = false
@@ -63,10 +64,10 @@ size = Vector2(1, 1)
 [node name="SmokePlume" type="Node3D"]
 
 [node name="Particles" type="GPUParticles3D" parent="."]
-amount = 36
-lifetime = 10.0
+amount = 30
+lifetime = 12.0
 preprocess = 4.0
-visibility_aabb = AABB(-8, -0.5, -8, 16, 24, 16)
+visibility_aabb = AABB(-12, -1, -12, 24, 32, 40)
 process_material = SubResource("Process_steam")
 draw_pass_1 = SubResource("Mesh_steam")
 cast_shadow = 0

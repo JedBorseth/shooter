@@ -36,7 +36,7 @@ out = repo / "godot/scenes/slamcity.tscn"
 PI = math.pi
 # The sky turns so its sunset glow sits due south, behind the Sun node.
 SKY_YAW = 0.71
-SUN_PITCH = -0.21
+SUN_PITCH = -0.16
 
 
 def f(v: float) -> str:

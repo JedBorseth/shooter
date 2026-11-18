@@ -85,7 +85,7 @@ Each map is lit by a CC0 sky image (an HDRI from [Poly Haven](https://polyhaven.
 | Map | Sky | Mood |
 | --- | --- | --- |
 | Testing Area | `kloofendal_48d_partly_cloudy_puresky` | Clear midday with clouds, high sun, light haze |
-| Slamcity | `kloppenheim_06_puresky` | Dusk: a low sun due south behind the storefronts (12°, above the sky's own 5° so the streets keep some light), long shadows, warm haze, and neon, lit windows, and street lamps baked into the lightmap |
+| Slamcity | `kloppenheim_06_puresky` | Dusk: a low sun due south behind the storefronts (9°, above the sky's own 5° so the streets keep some light), long shadows, warm haze, and neon, lit windows, and street lamps baked into the lightmap |
 | Zombies | `qwantani_moon_noon_puresky` | Moonlit night with stars, blue moonlight, dim fog, and street lamps that flicker (`scripts/lamp_flicker.gd`) |
 
 ![Before (left) and after (right) the baked lightmaps: Slamcity's street, a corner store, the alley, and the Testing Area](media/lightmaps.jpg)
