@@ -33,6 +33,9 @@ const COOLDOWN := 1.0
 ## The vault floats this far above the spawn, out of sight of the map.
 const VAULT_LIFT := 120.0
 const VAULT_SIZE := Vector3(8.0, 4.0, 8.0)
+## The vault's room and the laser's pedestal, built in Blender (tools/gear_models.py).
+const VAULT_MODEL := preload("res://assets/models/laser_vault/laser_vault.gltf")
+const PEDESTAL_MODEL := preload("res://assets/models/laser_pedestal/laser_pedestal.gltf")
 const GLOW := Color(1.0, 0.18, 0.82)
 
 const GLYPH_SHADER := """
@@ -298,7 +301,8 @@ func _build_vault() -> void:
 	shell.name = "Shell"
 	shell.set_meta("surface", "metal")
 	_vault.add_child(shell)
-	var dark := _material(Color(0.07, 0.07, 0.09), 0.0)
+	# Collision only: the room's look is a model (tools/gear_models.py
+	# `laser_vault`), with the glowing strips and the exit ring built in.
 	var boxes := [
 		[Vector3(0, -t / 2, 0), Vector3(size.x + 2 * t, t, size.z + 2 * t)],
 		[Vector3(0, size.y + t / 2, 0), Vector3(size.x + 2 * t, t, size.z + 2 * t)],
@@ -308,14 +312,8 @@ func _build_vault() -> void:
 		[Vector3(0, size.y / 2, (size.z + t) / 2), Vector3(size.x, size.y, t)],
 	]
 	for box: Array in boxes:
-		_add_box(shell, box[0], box[1], dark, true)
-	# Glowing strips along the bottom and top of every wall.
-	var glow := _material(GLOW, 4.0)
-	for y in [0.03, size.y - 0.03]:
-		_add_box(_vault, Vector3(0, y, -size.z / 2 + 0.03), Vector3(size.x, 0.06, 0.06), glow)
-		_add_box(_vault, Vector3(0, y, size.z / 2 - 0.03), Vector3(size.x, 0.06, 0.06), glow)
-		_add_box(_vault, Vector3(-size.x / 2 + 0.03, y, 0), Vector3(0.06, 0.06, size.z), glow)
-		_add_box(_vault, Vector3(size.x / 2 - 0.03, y, 0), Vector3(0.06, 0.06, size.z), glow)
+		_add_solid(shell, box[0], box[1])
+	_vault.add_child(VAULT_MODEL.instantiate())
 	var light := OmniLight3D.new()
 	light.position = Vector3(0, size.y - 0.6, 0)
 	light.light_color = Color(1.0, 0.75, 0.95)
@@ -350,8 +348,7 @@ func _build_pedestal() -> void:
 	label.outline_size = 8
 	label.modulate = Color(1.0, 0.7, 0.95)
 	pickup.add_child(label)
-	_add_box(pickup, Vector3(0, 0.45, 0), Vector3(0.6, 0.9, 0.6), _material(Color(0.8, 0.8, 0.86)))
-	_add_box(pickup, Vector3(0, 0.92, 0), Vector3(0.64, 0.04, 0.64), _material(GLOW, 5.0))
+	pickup.add_child(PEDESTAL_MODEL.instantiate())
 	_vault.add_child(pickup)
 	_display = laser_model.instantiate() as Node3D
 	_display.scale = Vector3.ONE * 2.2
@@ -365,41 +362,18 @@ func _build_pedestal() -> void:
 
 
 func _build_exit() -> void:
-	var ring := MeshInstance3D.new()
-	var torus := TorusMesh.new()
-	torus.inner_radius = 0.75
-	torus.outer_radius = 0.9
-	torus.material = _material(GLOW, 6.0)
-	ring.mesh = torus
-	ring.position = Vector3(0, 1.1, VAULT_SIZE.z / 2 - 0.15)
-	ring.rotation = Vector3(PI / 2, 0, 0)
-	_vault.add_child(ring)
-	_add_box(
-		_vault,
-		Vector3(0, 0.01, VAULT_SIZE.z / 2 - 0.6),
-		Vector3(1.4, 0.02, 1.0),
-		_material(GLOW, 2.0)
-	)
+	# The glowing ring and the pad before it are part of the vault's model.
 	_add_label(Vector3(0, 2.3, VAULT_SIZE.z / 2 - 0.3), PI, "EXIT", 64, Color.WHITE)
 
 
-func _add_box(
-	parent: Node3D, center: Vector3, size: Vector3, material: Material, solid := false
-) -> void:
-	var mesh := BoxMesh.new()
-	mesh.size = size
-	mesh.material = material
-	var instance := MeshInstance3D.new()
-	instance.mesh = mesh
-	instance.position = center
-	parent.add_child(instance)
-	if solid:
-		var shape := CollisionShape3D.new()
-		var box := BoxShape3D.new()
-		box.size = size
-		shape.shape = box
-		shape.position = center
-		parent.add_child(shape)
+## Collision for a box of the vault's shell.
+func _add_solid(parent: Node3D, center: Vector3, size: Vector3) -> void:
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = size
+	shape.shape = box
+	shape.position = center
+	parent.add_child(shape)
 
 
 func _add_label(position: Vector3, yaw: float, text: String, size: int, color: Color) -> void:
@@ -412,14 +386,3 @@ func _add_label(position: Vector3, yaw: float, text: String, size: int, color: C
 	label.outline_size = 12
 	label.modulate = color
 	_vault.add_child(label)
-
-
-func _material(color: Color, emission := 0.0) -> StandardMaterial3D:
-	var material := StandardMaterial3D.new()
-	material.albedo_color = color
-	material.roughness = 0.4
-	if emission > 0.0:
-		material.emission_enabled = true
-		material.emission = color
-		material.emission_energy_multiplier = emission
-	return material

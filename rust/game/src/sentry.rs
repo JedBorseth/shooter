@@ -59,8 +59,9 @@ pub struct Sentry {
     muzzle: OnReady<Gd<Node3D>>,
     #[init(node = "Head/Muzzle/Flash")]
     flash: OnReady<Gd<OmniLight3D>>,
+    /// The tracking eye's model (its mesh somewhere under this node).
     #[init(node = "Head/Eye")]
-    eye: OnReady<Gd<MeshInstance3D>>,
+    eye: OnReady<Gd<Node3D>>,
     #[init(node = "FireSound")]
     fire_sound: OnReady<Gd<AudioStreamPlayer3D>>,
     #[init(node = "Hitbox")]
@@ -84,13 +85,22 @@ impl INode3D for Sentry {
     fn ready(&mut self) {
         self.health = self.max_health;
         self.flash.set_visible(false);
-        let material = self
+        // The eye is a model: its first mesh gets its own copy of the
+        // material, whose glow `set_eye` turns up as the sentry acquires.
+        let mut mesh = self
             .eye
-            .get_active_material(0)
+            .find_children_ex("*")
+            .type_("MeshInstance3D")
+            .done()
+            .iter_shared()
+            .find_map(|node| node.try_cast::<MeshInstance3D>().ok());
+        let material = mesh
+            .as_ref()
+            .and_then(|mesh| mesh.get_active_material(0))
             .map(|m| m.duplicate_resource())
             .and_then(|m| m.try_cast::<StandardMaterial3D>().ok());
-        if let Some(material) = &material {
-            self.eye.set_material_override(material);
+        if let (Some(mesh), Some(material)) = (&mut mesh, &material) {
+            mesh.set_material_override(material);
         }
         self.eye_material = material;
     }

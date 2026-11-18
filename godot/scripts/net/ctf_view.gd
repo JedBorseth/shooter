@@ -22,6 +22,9 @@ const LABEL_FONT := preload("res://assets/fonts/ChakraPetch-SemiBold.ttf")
 const ALLY := Color("7cc4ff")
 const ENEMY := Color("ff7a5c")
 const POLE_HEIGHT := 2.7
+## Models built in Blender (tools/gear_models.py), POLE_HEIGHT tall.
+const POLE_MODEL := preload("res://assets/models/flag_pole/flag_pole.gltf")
+const PLINTH_MODEL := preload("res://assets/models/flag_plinth/flag_plinth.gltf")
 const CLOTH_SIZE := Vector2(1.25, 0.78)
 ## Matches `ctf::FlagRules::capture_radius`, so the ring shows where to stand.
 const BASE_RADIUS := 2.0
@@ -317,34 +320,11 @@ static func _tones(notes: Array, step: float, ring := 0.5) -> AudioStreamWAV:
 func _build_flag(team: int) -> Node3D:
 	var root := Node3D.new()
 	root.name = "Flag%d" % team
-	var metal := StandardMaterial3D.new()
-	metal.albedo_color = Color(0.72, 0.74, 0.76)
-	metal.metallic = 0.8
-	metal.roughness = 0.35
-
-	var pole := MeshInstance3D.new()
-	var pole_mesh := CylinderMesh.new()
-	pole_mesh.top_radius = 0.028
-	pole_mesh.bottom_radius = 0.034
-	pole_mesh.height = POLE_HEIGHT
-	pole_mesh.radial_segments = 8
-	pole_mesh.rings = 1
-	pole.mesh = pole_mesh
-	pole.material_override = metal
-	pole.position.y = POLE_HEIGHT / 2.0
-	pole.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# The pole, finial, and halyard (tools/gear_models.py `flag_pole`).
+	var pole := POLE_MODEL.instantiate() as Node3D
+	for mesh: Node in pole.find_children("*", "MeshInstance3D", true, false):
+		(mesh as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(pole)
-
-	var finial := MeshInstance3D.new()
-	var ball := SphereMesh.new()
-	ball.radius = 0.06
-	ball.height = 0.12
-	ball.radial_segments = 8
-	ball.rings = 4
-	finial.mesh = ball
-	finial.material_override = metal
-	finial.position.y = POLE_HEIGHT + 0.04
-	root.add_child(finial)
 
 	var cloth := MeshInstance3D.new()
 	var quad := QuadMesh.new()
@@ -401,21 +381,7 @@ func _build_base(team: int) -> Node3D:
 	disc.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(disc)
 
-	var plinth := MeshInstance3D.new()
-	var stand := CylinderMesh.new()
-	stand.top_radius = 0.3
-	stand.bottom_radius = 0.38
-	stand.height = 0.14
-	stand.radial_segments = 12
-	stand.rings = 1
-	plinth.mesh = stand
-	var stone := StandardMaterial3D.new()
-	stone.albedo_color = Color(0.2, 0.22, 0.24)
-	stone.roughness = 0.6
-	stone.metallic = 0.4
-	plinth.material_override = stone
-	plinth.position.y = 0.07
-	root.add_child(plinth)
+	root.add_child(PLINTH_MODEL.instantiate())
 	return root
 
 
