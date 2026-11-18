@@ -8,3 +8,4 @@ pub mod palette;
 pub mod poser;
 pub mod ragdoll;
 pub mod rig;
+pub mod wounds;

@@ -61,8 +61,21 @@ instance uniform int hidden_parts = 0;
 // The skin tone that goes with this soldier's head shape (palette.rs
 // HEAD_TONES), multiplied into the atlas's light skin.
 instance uniform vec3 skin_tone = vec3(1.0);
+// Wound marks (rust/game/src/character/wounds.rs): where this character was
+// hit lately, in the mesh's space, and how strong the mark is now (w).
+instance uniform vec4 wound_0 = vec4(0.0);
+instance uniform vec4 wound_1 = vec4(0.0);
+instance uniform vec4 wound_2 = vec4(0.0);
+instance uniform vec4 wound_3 = vec4(0.0);
+// How far a mark spreads round a hit (m).
+const float WOUND_RADIUS = 0.08;
 
 varying flat int role;
+varying float wounded;
+
+float wound_at(vec3 p, vec4 w) {
+	return w.w * (1.0 - smoothstep(WOUND_RADIUS * 0.3, WOUND_RADIUS, distance(p, w.xyz)));
+}
 
 void vertex() {
 	role = clamp(int(UV2.x * 16.0), 0, ROLE_COUNT - 1);
@@ -70,6 +83,8 @@ void vertex() {
 	if (((hidden_roles >> role) & 1) != 0 || ((hidden_parts >> group) & 1) != 0) {
 		VERTEX = vec3(0.0);
 	}
+	wounded = max(max(wound_at(VERTEX, wound_0), wound_at(VERTEX, wound_1)),
+		max(wound_at(VERTEX, wound_2), wound_at(VERTEX, wound_3)));
 	// Writing POSITION anywhere makes Godot use it everywhere, so both branches set it.
 	if (viewmodel) {
 		POSITION = viewmodel_position(PROJECTION_MATRIX, MODELVIEW_MATRIX, VERTEX);
@@ -122,6 +137,14 @@ void fragment() {
 		// atlas (add_decay in tools/blender_characters.py); this only makes
 		// two zombies in the same body a little more or less filthy.
 		base *= 0.9 + 0.1 * noise(UV * 9.0 + variant);
+	}
+	if (wounded > 0.0) {
+		// A wound: dark blood soaked into cloth or welling on skin, ragged at
+		// the edge, wet near the middle.
+		float edge = noise(UV * 900.0) * 0.5 + noise(UV * 260.0) * 0.5;
+		float mark = smoothstep(0.08, 0.4, wounded + (edge - 0.5) * 0.35);
+		base = mix(base, vec3(0.07, 0.004, 0.003), mark * 0.95);
+		rough = mix(rough, 0.3, smoothstep(0.5, 0.9, wounded) * mark);
 	}
 	ALBEDO = base;
 	AO = orm.r;

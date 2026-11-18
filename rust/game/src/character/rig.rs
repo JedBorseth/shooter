@@ -30,6 +30,7 @@ use shooter_sim::weapon::WeaponId;
 use super::palette::{self, Team};
 use super::poser::{Grips, Hold, PoseInput, Section, SoldierPoser, WeaponPlacement};
 use super::ragdoll::{self, Push, Ragdoll};
+use super::wounds::{self, Wounds};
 use crate::convert::{to_godot, to_godot_basis, to_sim};
 use crate::spring::{Spring, impulse_for_peak, smoothing};
 use crate::viewmodel::{self, WeaponView};
@@ -346,6 +347,8 @@ pub struct SoldierRig {
     /// The latest hit and how long ago (seconds): a death pushes the body
     /// with it.
     last_hit: Option<(Push, f32)>,
+    /// Where it was hit lately, darkened on the body (`wounds.rs`).
+    wounds: Wounds,
     death: Death,
     /// Where the hips were as the ragdoll started and where they are now.
     fall_from: Vector3,
@@ -671,6 +674,12 @@ impl SoldierRig {
         let was_meleeing = self.frame.meleeing;
         if let Some((_, age)) = &mut self.last_hit {
             *age += dt;
+        }
+        if self.wounds.active()
+            && let Some(skeleton) = self.skeleton()
+        {
+            // The dead keep their wounds.
+            self.wounds.update(&skeleton, dt, !frame.alive);
         }
         if !frame.alive {
             // The body is drawn as it was, then falls as a ragdoll: the
@@ -1207,6 +1216,10 @@ impl SoldierRig {
     /// reacting to it (it was already shown, predicted).
     pub fn note_hit(&mut self, push: Push) {
         self.last_hit = Some((push, 0.0));
+        if let (Some(point), Some(skeleton)) = (push.point, self.skeleton()) {
+            self.wounds
+                .add(&skeleton, point, wounds::depth_of(push.force));
+        }
     }
 
     fn pose_input(&self, frame: &SoldierFrame) -> PoseInput {
@@ -1473,6 +1486,7 @@ impl SoldierRig {
         self.death = Death::Alive;
         self.set_contact_shadow(true);
         self.last_hit = None;
+        self.wounds.clear();
         self.lean = Spring::default();
         self.head = Spring::default();
         self.twist = Spring::default();
