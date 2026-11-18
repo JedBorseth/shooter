@@ -18,3 +18,21 @@ vec4 viewmodel_position(mat4 projection_matrix, mat4 modelview_matrix, vec3 vert
 	position.z = mix(position.w, position.z, viewmodel_depth_scale);
 	return position;
 }
+
+// A magnified optic's lens while the player is fully aimed through it, set by
+// the viewmodel rig (ViewmodelRig): its centre as a direction from the eye
+// (x and y per unit of depth), the depth past which the weapon is cut away
+// inside it (just past the reticle), and its radius per unit of depth. All 0
+// when not aimed through one. Inside the lens the eye sees only the zoomed
+// world and the reticle, as through a real prism sight.
+global uniform vec4 viewmodel_scope_lens;
+
+// Whether a first-person fragment at this view-space position lies behind
+// the optic's lens, where it is cut away.
+bool viewmodel_behind_lens(vec3 view_position) {
+	if (viewmodel_scope_lens.w <= 0.0 || -view_position.z <= viewmodel_scope_lens.z) {
+		return false;
+	}
+	vec2 direction = view_position.xy / -view_position.z;
+	return length(direction - viewmodel_scope_lens.xy) < viewmodel_scope_lens.w;
+}

@@ -23,7 +23,7 @@ use crate::acoustics::{self, AudioEnvironment};
 use crate::audio;
 use crate::character::arms::FpArms;
 use crate::character::poser::Grips;
-use crate::sights::IronSights;
+use crate::sights::{self, IronSights};
 use crate::spring::{Spring, damping_for, impulse_for_peak, smoothing};
 use crate::weapon_clips::{
     self, Anchors, BOLT_BACK, BOLT_LIFT, ClipKind, ClipPose, MagazineReload, PUMP_BACK, Pose,
@@ -134,6 +134,22 @@ const SPRINT_LONG_POS: Vector3 = Vector3::new(0.0, 0.02, 0.01);
 
 /// How fast a cut-short clip eases out, in 1/seconds.
 const CLIP_FADE_RATE: f32 = 30.0;
+
+/// An ACOG is built this much larger than the sight's own size, so its
+/// eyepiece fills about half the screen's height when aimed.
+const ACOG_SIZE: f32 = 1.2;
+/// Aimed, how far the eye sits behind an ACOG's eyepiece, in metres: close
+/// enough that the tube frames a large sight picture, far enough that an
+/// aimed shot's shove (`ACOG_AIM_SHOVE`) never brings it inside the near
+/// plane (0.03 m).
+const ACOG_EYE_RELIEF: f32 = 0.045;
+/// Share of an aimed shot's shove toward the eye kept with an ACOG.
+const ACOG_AIM_SHOVE: f32 = 0.35;
+/// How much higher than a red dot an ACOG's mount stands, in metres.
+const ACOG_RISER: f32 = 0.012;
+/// From this aimed amount, the ACOG's body ahead of the eyepiece is hidden:
+/// it is behind the eyepiece's rim or inside its picture.
+const ACOG_BODY_HIDDEN_AT: f32 = 0.9;
 
 /// How far behind the rear sight the aimed weapon turns, in metres.
 const AIM_PIVOT_BACK: f32 = 0.12;
@@ -455,6 +471,12 @@ pub struct WeaponView {
     pending_attachment: Option<Attachment>,
     /// Where the left hand held the weapon before a foregrip moved it.
     grip_left_rest: Option<Vector3>,
+    /// The back of a fitted ACOG's eyepiece along the sight line (view
+    /// space): aimed, the eye sits `ACOG_EYE_RELIEF` behind it.
+    eyepiece_z: Option<f32>,
+    /// A fitted ACOG's lens: (depth along the sight line past which the
+    /// weapon is cut away inside it, its radius), view space.
+    lens: Option<(f32, f32)>,
     /// How far the weapon hangs below the sight line because an optic sits
     /// above its own sights (see `set_sight_drop`).
     sight_drop: f32,
@@ -637,7 +659,7 @@ impl INode3D for WeaponView {
             self.set_attachment(pending);
             return;
         }
-        let shader = load::<Shader>("res://shaders/viewmodel.gdshader");
+        let shader = load::<Shader>(VIEWMODEL_SHADER);
         convert_to_viewmodel_materials(&self.model.clone().upcast(), &shader, self.albedo_boost);
         if let Some(sights) = self.base().try_get_node_as::<Node>("Sights") {
             convert_to_viewmodel_materials(&sights, &shader, 1.0);
@@ -879,6 +901,16 @@ impl WeaponView {
             slide.pose(Vector3::new(0.0, 0.0, back * 0.028), 0.0, Vector3::ZERO);
         }
         self.animate_action(&mut parts, frame, clip);
+        if self.eyepiece_z.is_some()
+            && let Some(mut body) = self
+                .base()
+                .try_get_node_as::<Node3D>(&format!("Attachment/Optic/{}", sights::SIGHT_BODY))
+        {
+            let shown = frame.ads < ACOG_BODY_HIDDEN_AT;
+            if body.is_visible() != shown {
+                body.set_visible(shown);
+            }
+        }
         self.show_shell_in_hand(clip.shell);
         if let Some(mut marker) = self.base().try_get_node_as::<Node3D>("GripLeft") {
             marker.set_position(hand.unwrap_or(rest_hand));
@@ -1048,6 +1080,8 @@ impl WeaponView {
             return;
         }
         self.attachment = attachment;
+        self.eyepiece_z = None;
+        self.lens = None;
         if let Some(mut old) = self.base().get_node_or_null("Attachment") {
             self.base_mut().remove_child(&old);
             old.queue_free();
@@ -1069,8 +1103,15 @@ impl WeaponView {
             .base()
             .try_get_node_as::<Node3D>("OpticMount")
             .map(|m| m.get_position() + Vector3::new(0.0, self.sight_drop, 0.0));
+        // A prism sight stands on a taller mount than a red dot, as on the
+        // real rifle, so the front sight sits below its chevron.
+        let riser = if attachment == Some(Attachment::Acog) {
+            ACOG_RISER
+        } else {
+            0.0
+        };
         let drop = match (optic, mount) {
-            (true, Some(m)) => (m.y + OPTIC_CLEARANCE).max(0.0),
+            (true, Some(m)) => (m.y + OPTIC_CLEARANCE + riser).max(0.0),
             _ => 0.0,
         };
         self.set_sight_drop(drop);
@@ -1137,6 +1178,13 @@ impl WeaponView {
                     (None, Some(m)) => (m.z + if acog { 0.017 } else { 0.0 }, m.y - drop, 1.0),
                     (None, None) => (-0.09, -0.022, 1.0),
                 };
+                let size = if acog { size * ACOG_SIZE } else { size };
+                self.eyepiece_z = acog.then_some(z + sights::ACOG_EYEPIECE * size);
+                // Cut away just past the reticle.
+                self.lens = acog.then_some((
+                    z + (sights::ACOG_RETICLE - 0.003) * size,
+                    sights::ACOG_BORE * size,
+                ));
                 let (style, glow) = if acog {
                     ("acog", Color::from_rgba(1.0, 0.25, 0.1, 1.0))
                 } else {
@@ -1156,9 +1204,23 @@ impl WeaponView {
                 .map(|m| m.get_position());
         }
         if !self.world_model {
-            let shader = load::<Shader>("res://shaders/viewmodel.gdshader");
+            let shader = load::<Shader>(VIEWMODEL_SHADER);
             convert_to_viewmodel_materials(&parts.clone().upcast(), &shader, self.albedo_boost);
+            self.set_lens_clip(self.eyepiece_z.is_some());
         }
+    }
+
+    /// Draws this first-person weapon with the shader that cuts a magnified
+    /// optic's lens out of it (`lens_clipped_shader`), or with the plain one.
+    fn set_lens_clip(&mut self, on: bool) {
+        let plain = load::<Shader>(VIEWMODEL_SHADER);
+        let clipped = lens_clipped_shader(VIEWMODEL_SHADER);
+        let (from, to) = if on {
+            (plain, clipped)
+        } else {
+            (clipped, plain)
+        };
+        swap_shader(&self.to_gd().upcast(), &from, &to);
     }
 
     /// An extended magazine: the magazine (and the fresh one a reload brings
@@ -1661,6 +1723,25 @@ fn shell_mesh(shader: &Gd<Shader>, color: Color, size: Vector2) -> Gd<CylinderMe
 /// Replaces each surface's standard material with the viewmodel shader, copying
 /// its colour, texture, and surface values, so the weapon keeps its look but uses
 /// its own FOV and never clips into walls.
+/// Every surface under `root` drawn with the shader `from` switches to `to`.
+fn swap_shader(root: &Gd<Node>, from: &Gd<Shader>, to: &Gd<Shader>) {
+    for child in root.get_children().iter_shared() {
+        if let Ok(mesh) = child.clone().try_cast::<MeshInstance3D>() {
+            for surface in 0..mesh.get_surface_override_material_count() {
+                let Some(material) = mesh.get_surface_override_material(surface) else {
+                    continue;
+                };
+                if let Ok(mut material) = material.try_cast::<ShaderMaterial>()
+                    && material.get_shader().as_ref() == Some(from)
+                {
+                    material.set_shader(to);
+                }
+            }
+        }
+        swap_shader(&child, from, to);
+    }
+}
+
 pub(crate) fn convert_to_viewmodel_materials(root: &Gd<Node>, shader: &Gd<Shader>, boost: f32) {
     for child in root.get_children().iter_shared() {
         if let Ok(mut mesh) = child.clone().try_cast::<MeshInstance3D>() {
@@ -1816,6 +1897,10 @@ pub fn base_weapon(id: WeaponId) -> WeaponId {
 }
 
 thread_local! {
+    /// Shaders with a magnified optic's lens cut out (`lens_clipped_shader`),
+    /// by the path of the shader they copy.
+    static LENS_SHADERS: std::cell::RefCell<std::collections::HashMap<String, Gd<Shader>>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
     /// Fired-case meshes by name, shared by every weapon that ejects one.
     static CASES: std::cell::RefCell<std::collections::HashMap<String, Gd<Mesh>>> =
         std::cell::RefCell::new(std::collections::HashMap::new());
@@ -1825,7 +1910,40 @@ thread_local! {
 
 const WEAPON_SCENE_DIR: &str = "res://scenes/weapons";
 
+/// The first-person weapon's shader.
+const VIEWMODEL_SHADER: &str = "res://shaders/viewmodel.gdshader";
+
+/// A copy of the first-person shader at `path` whose fragments inside a
+/// magnified optic's lens, past its reticle, are cut away
+/// (`viewmodel_behind_lens` in `shaders/viewmodel_projection.gdshaderinc`),
+/// so through the eyepiece the eye sees only the zoomed world. Only the
+/// local player's weapon and arms use it, and only while an ACOG is fitted:
+/// `discard` would cost every other draw its cheap depth prepass.
+pub(crate) fn lens_clipped_shader(path: &str) -> Gd<Shader> {
+    if let Some(shader) = LENS_SHADERS.with_borrow(|cache| cache.get(path).cloned()) {
+        return shader;
+    }
+    let source = load::<Shader>(path);
+    let code = source.get_code().to_string();
+    let anchor = "void fragment() {";
+    let shader = if code.contains(anchor) {
+        let mut shader = Shader::new_gd();
+        shader.set_code(&code.replacen(
+            anchor,
+            "void fragment() {\n\tif (viewmodel_behind_lens(VERTEX)) {\n\t\tdiscard;\n\t}",
+            1,
+        ));
+        shader
+    } else {
+        godot_warn!("{path}: no fragment() to cut an optic's lens from");
+        source
+    };
+    LENS_SHADERS.with_borrow_mut(|cache| cache.insert(path.to_owned(), shader.clone()));
+    shader
+}
+
 pub fn clear_cache() {
+    LENS_SHADERS.with_borrow_mut(|cache| cache.clear());
     WEAPON_SCENES.with_borrow_mut(|cache| cache.clear());
     CASES.with_borrow_mut(|cache| cache.clear());
 }
@@ -1904,6 +2022,10 @@ pub struct ViewmodelRig {
     base: Base<Node3D>,
 
     views: Vec<Gd<WeaponView>>,
+    /// The `viewmodel_scope_lens` shader global last set.
+    scope_lens: Vector4,
+    /// Whether the arms draw with the lens cut out (an ACOG is fitted).
+    lens_clip: bool,
     /// The player's arms, holding the active view.
     arms: Option<Gd<FpArms>>,
     active: Option<WeaponId>,
@@ -1999,16 +2121,20 @@ impl ViewmodelRig {
         let Some(mut view) = self.view(weapon) else {
             return Vector3::ZERO;
         };
-        let (strength, punch) = {
+        let (strength, punch, eyepiece) = {
             let v = view.bind();
-            (v.kick_strength, v.camera_punch)
+            (v.kick_strength, v.camera_punch, v.eyepiece_z.is_some())
         };
         view.bind_mut()
             .on_fired(rounds_left, weapon.def().magazine, self.last_ads);
         self.shots = self.shots.wrapping_add(1);
         let feel = KickFeel::of(weapon);
         self.kick_zeta = feel.zeta;
-        let (pos, rot) = shot_kick(self.shots, strength, ads_ease(self.last_ads), &feel);
+        let (mut pos, rot) = shot_kick(self.shots, strength, ads_ease(self.last_ads), &feel);
+        if eyepiece {
+            // Aimed, a scope's eyepiece is close to the eye: a smaller shove.
+            pos.z *= 1.0 - (1.0 - ACOG_AIM_SHOVE) * ads_ease(self.last_ads);
+        }
         let rot = Vector3::new(rot.x.to_radians(), rot.y.to_radians(), rot.z.to_radians());
         self.kick_pos.velocity += peak_impulse(pos, KICK_POS_STIFFNESS, KICK_POS_ZETA);
         self.kick_rot.velocity += peak_impulse(rot, KICK_ROT_STIFFNESS, feel.zeta);
@@ -2187,6 +2313,36 @@ impl ViewmodelRig {
         }
         if clink && let Some(sound) = &mut self.shell_sound {
             sound.play();
+        }
+    }
+
+    /// Tells the viewmodel shaders where a fitted ACOG's lens is while the
+    /// player is fully aimed through it, so the weapon and hands inside it
+    /// are cut away (`viewmodel_scope_lens` in
+    /// `shaders/viewmodel_projection.gdshaderinc`).
+    fn update_scope_lens(&mut self, view: &Gd<WeaponView>, frame: &ViewFrame, shown: bool) {
+        let lens = {
+            let v = view.bind();
+            v.eyepiece_z.zip(v.lens)
+        };
+        if lens.is_some() != self.lens_clip {
+            self.lens_clip = lens.is_some();
+            crate::character::palette::clip_first_person_lens(self.lens_clip);
+        }
+        let value = match lens {
+            Some((eyepiece, (cut, radius))) if shown && frame.ads >= ACOG_BODY_HIDDEN_AT => {
+                let to_eye = self.base().get_transform() * view.get_transform();
+                let centre = to_eye * Vector3::new(0.0, 0.0, eyepiece);
+                let depth = (-centre.z).max(1e-3);
+                let cut = -(to_eye * Vector3::new(0.0, 0.0, cut)).z;
+                Vector4::new(centre.x / depth, centre.y / depth, cut, radius / depth)
+            }
+            _ => Vector4::ZERO,
+        };
+        if value != self.scope_lens {
+            self.scope_lens = value;
+            godot::classes::RenderingServer::singleton()
+                .global_shader_parameter_set("viewmodel_scope_lens", &value.to_variant());
         }
     }
 
@@ -2550,10 +2706,19 @@ impl ViewmodelRig {
 
         let (hip, hip_rot, aim, sprint_pos, sprint_rot, pivot, cycle_pos, cycle_rot) = {
             let v = view.bind();
+            // An ACOG puts the eye just behind its eyepiece.
+            let aim = match v.eyepiece_z {
+                Some(eyepiece) => Vector3::new(
+                    v.ads_position.x,
+                    v.ads_position.y,
+                    -ACOG_EYE_RELIEF - eyepiece,
+                ),
+                None => v.ads_position,
+            };
             (
                 v.hip_position,
                 v.hip_rotation,
-                v.ads_position,
+                aim,
                 v.sprint_position,
                 v.sprint_rotation,
                 v.pivot,
@@ -2645,6 +2810,7 @@ impl ViewmodelRig {
             origin += arm - turn * arm;
         }
         view.set_transform(Transform3D::new(basis, origin));
+        self.update_scope_lens(&view, frame, shown);
 
         // The knife path is in the rig's (view) space; the hands want it in
         // the weapon's.

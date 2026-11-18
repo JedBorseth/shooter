@@ -168,11 +168,42 @@ pub fn hidden_parts(seed: u64, team: Team) -> i32 {
 thread_local! {
     static CHARACTER: RefCell<HashMap<(Team, Kit, bool), Gd<ShaderMaterial>>> =
         RefCell::new(HashMap::new());
+    /// Whether first-person materials cut a magnified optic's lens out of the
+    /// hands (`clip_first_person_lens`).
+    static FIRST_PERSON_CLIP: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// Release engine objects before GDExtension shutdown, rather than at thread exit.
 pub fn clear_cache() {
     CHARACTER.with_borrow_mut(|cache| cache.clear());
+}
+
+const CHARACTER_SHADER: &str = "res://shaders/character.gdshader";
+
+/// While the local player's weapon carries a magnified optic, the
+/// first-person arms draw with a copy of `character.gdshader` that cuts the
+/// optic's lens out of the hands (`crate::viewmodel::lens_clipped_shader`),
+/// so the fingers never float in the sight picture. Otherwise, and for
+/// every character in the world, the plain shader: no `discard`, so no cost
+/// to the depth prepass.
+pub fn clip_first_person_lens(on: bool) {
+    FIRST_PERSON_CLIP.with(|clip| clip.set(on));
+    let shader = first_person_shader(on);
+    CHARACTER.with_borrow_mut(|cache| {
+        for ((_, _, viewmodel), material) in cache.iter_mut() {
+            if *viewmodel {
+                material.set_shader(&shader);
+            }
+        }
+    });
+}
+
+fn first_person_shader(clip: bool) -> Gd<Shader> {
+    if clip {
+        crate::viewmodel::lens_clipped_shader(CHARACTER_SHADER)
+    } else {
+        load::<Shader>(CHARACTER_SHADER)
+    }
 }
 
 /// The one material a team's characters of a kit share:
@@ -216,7 +247,11 @@ pub fn role_masks(team: Team) -> (i32, i32, i32) {
 fn build_character(team: Team, kit: Kit, viewmodel: bool) -> Gd<ShaderMaterial> {
     let mut m = ShaderMaterial::new_gd();
     m.set_name(&format!("{team:?}_{kit:?}"));
-    m.set_shader(&load::<Shader>("res://shaders/character.gdshader"));
+    m.set_shader(&if viewmodel {
+        first_person_shader(FIRST_PERSON_CLIP.with(std::cell::Cell::get))
+    } else {
+        load::<Shader>(CHARACTER_SHADER)
+    });
     let mut colours: PackedColorArray = ROLES.iter().map(|role| colour(team, role)).collect();
     colours.resize(16);
     let (mut tinted, hidden_mask, emissive) = role_masks(team);
