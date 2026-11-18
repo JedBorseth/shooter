@@ -10,7 +10,8 @@
 // (GraphicsQuality.set_world_detail): code a uniform switches off still slows
 // every pixel, and Low and Medium cannot spare it. A wet map (WORLD_WET, set
 // as the map loads, and `world_wetness` from scripts/looks.gd) darkens its
-// surfaces and makes them glossy, and collects puddles on the ground.
+// surfaces and makes them glossy, streaks its walls with run-off, and collects
+// puddles on the ground.
 
 
 uniform vec4 tint : source_color = vec4(1.0);
@@ -235,15 +236,23 @@ void fragment() {
 	{
 		// Wet: every surface darkens and turns glossy, the ground more than the
 		// walls. Puddles fill the low patches of a broad noise on the ground:
-		// dark mirrors for the sky and the lamps.
+		// dark mirrors for the sky and the lamps. On walls, rain run-off
+		// leaves narrow vertical streaks that stay wet after the rest dries.
 		float up = smoothstep(0.75, 0.95, n.y);
+		// One noise read serves both: on the ground the broad puddle noise,
+		// on walls the same noise stretched down the wall (cells about 12 cm
+		// across and 2.5 m tall), so streaks cost wet maps no extra fetch.
+		vec2 wet_uv = up > 0.5
+			? world_position.xz * (0.32 / 16.0)
+			: vec2(dot(world_position, u_dir) * 0.52, world_position.y * 0.025);
+		float wet_noise = texture(world_noise, wet_uv).r;
+		float streak = smoothstep(0.56, 0.74, wet_noise) * (1.0 - up);
 		// Walls dry faster than the ground, and unevenly (the same macro noise
-		// as the colour variation, so no extra texture read).
-		float damp = world_wetness * mix(0.2 * (0.5 + noise), 1.0, up);
+		// as the colour variation); the streaks stay soaked.
+		float damp = world_wetness * max(mix(0.2 * (0.5 + noise), 1.0, up), 0.9 * streak);
 		albedo *= 1.0 - 0.35 * damp;
 		rough = mix(rough, rough * 0.35 + 0.05, damp);
-		float depth = texture(world_noise, world_position.xz * (0.32 / 16.0)).r;
-		float puddle = smoothstep(0.54, 0.68, depth + world_wetness * 0.12) * up * step(0.5, world_wetness);
+		float puddle = smoothstep(0.54, 0.68, wet_noise + world_wetness * 0.12) * up * step(0.5, world_wetness);
 		// A darker, soaked rim where the water thins out, before the mirror.
 		float rim = puddle * (1.0 - puddle) * 4.0;
 		albedo *= (1.0 - 0.45 * puddle) * (1.0 - 0.2 * rim);
