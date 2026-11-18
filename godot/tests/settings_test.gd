@@ -223,11 +223,8 @@ func _check_audio_mix(settings: Node) -> void:
 
 func _check_aim_assist(settings: Node) -> void:
 	_check(settings.aim_assist, "aim assist defaults to on")
-	_check(settings.aim_assist_type == 0, "aim assist type defaults to Default")
-	settings.set_setting(&"aim_assist_type", 2)
-	_check(settings.aim_assist_type == 2, "aim assist can be Focusing")
-	settings.set_setting(&"aim_assist_type", 9)
-	_check(settings.aim_assist_type == 0, "an unknown aim assist type falls back to Default")
+	settings.set_setting(&"aim_assist", false)
+	_check(not settings.aim_assist, "aim assist can be switched off")
 	settings.reset_to_defaults()
 
 
@@ -284,12 +281,10 @@ func _check_round_trip(settings: Node) -> void:
 	settings.set_setting(&"invert_mouse_y", true)
 	settings.set_setting(&"stick_sensitivity_level", 8)
 	settings.set_setting(&"aim_assist", false)
-	settings.set_setting(&"aim_assist_type", 3)
 	settings.apply_to_player(player)
 	_check(player.mouse_invert_y, "invert mouse Y reaches the player")
 	_check(is_equal_approx(player.stick_yaw_speed, 200.0 * 1.44), "look speed scales the turn rate")
 	_check(not player.aim_assist, "aim assist can be turned off")
-	_check(player.aim_assist_type == 3, "the aim assist type reaches the player")
 	player.free()
 	settings.apply_to_player(null)
 	settings.reset_to_defaults()
@@ -418,10 +413,6 @@ func _check_menu(settings: Node) -> void:
 	tabs.current_tab = 0
 	var sliders: Array[Node] = menu.find_children("*", "HSlider", true, false)
 	_check(sliders.size() == 12, "twelve sliders, got %d" % sliders.size())
-	_check(
-		menu._assist_option.item_count == 4,
-		"aim assist offers Default, Precision, Focusing, and Legacy"
-	)
 	var toggle_count := menu.find_children("*", "CheckButton", true, false).size()
 	_check(toggle_count == 10, "ten toggles, got %d" % toggle_count)
 
@@ -635,4 +626,3 @@ class _FakePlayer:
 	var stick_yaw_speed := 0.0
 	var aim_assist := true
 	var controller_input := false
-	var aim_assist_type := 0

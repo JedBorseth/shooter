@@ -102,7 +102,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] A rendering benchmark with a GPU budget per preset, run before and after every visual change (`tools/benchmark.sh`, `docs/performance.md`).
 - [x] Invert Y and keybind remapping (Settings → Key bindings; saved in the `keys` section of `settings.cfg`).
 - [x] Gamepad support: bindings, stick deadzones and response curve, turn boost, rumble, and CoD-style aim assist (slowdown, rotational, and target aim assist on zombies; gamepads only, on enemy players and bots too).
-- [x] Gamepad settings in the settings menu: look speed, deadzone, curve, invert Y, aim assist toggle and type (Default, Precision, Focusing, Legacy), vibration.
+- [x] Gamepad settings in the settings menu: look speed, deadzone, curve, invert Y, aim assist toggle, vibration.
 - [x] D-pad left and right pick the weapon slots, and the reload button (X) interacts when something is in front of the player. Prompts name the bound key or button.
 - [x] An input device setting (Keyboard & mouse or Controller) that locks the other device out of play; menus and pause take both, a reminder shows when the locked device is used, and losing the controller pauses the game.
 - [ ] Button prompts with controller glyph images instead of button names.
