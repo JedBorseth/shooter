@@ -467,7 +467,16 @@ impl MagazineReload {
                 Pose::new(12.0, -4.0, 22.0, -0.045, 0.065, 0.04),
                 Pose::new(6.0, 6.0, -6.0, -0.02, 0.05, 0.035),
             ),
-            ClipKind::BoltAction | ClipKind::Shotgun => (
+            // A bolt action's magazine change rolls it clockwise like a
+            // rifle's, the magazine toward the eye, and turns the muzzle
+            // right and away: rolled the other way, its scope's eyepiece
+            // swung into the eye and hid the magazine.
+            ClipKind::BoltAction => (
+                Pose::new(8.0, -12.0, -30.0, -0.04, 0.1, -0.02),
+                Pose::new(10.0, -14.0, -34.0, -0.045, 0.11, -0.025),
+                Pose::new(4.0, 6.0, 12.0, -0.02, 0.045, 0.025),
+            ),
+            ClipKind::Shotgun => (
                 Pose::new(6.0, -4.0, 20.0, -0.045, 0.05, 0.025),
                 Pose::new(8.0, -6.0, 24.0, -0.05, 0.055, 0.025),
                 Pose::new(4.0, 6.0, 12.0, -0.02, 0.045, 0.025),
@@ -1222,6 +1231,21 @@ mod tests {
         assert!(slap.rot.length() < held.rot.length() * 0.7, "less tilt");
         assert!(slap.pos.z < held.pos.z - 0.02, "further from the eye");
         assert!(slap.pos.y < held.pos.y, "lower");
+    }
+
+    #[test]
+    fn a_bolt_action_rolls_its_magazine_toward_the_eye_like_a_rifle() {
+        let r = reload("m40", true);
+        let a = anchors(r.kind);
+        let held = r.pose(r.times().entry, &a).weapon;
+        let rifle = reload("m4", false);
+        let rifle_held = rifle.pose(rifle.times().entry, &anchors(rifle.kind)).weapon;
+        // Clockwise (negative roll), as a rifle: the scope swings away from
+        // the eye and the magazine turns toward it.
+        assert!(held.rot.z < -20.0, "{held:?}");
+        assert_eq!(held.rot.z.signum(), rifle_held.rot.z.signum());
+        // And no nearer the eye than at rest.
+        assert!(held.pos.z <= 0.0);
     }
 
     #[test]
