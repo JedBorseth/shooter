@@ -7,8 +7,8 @@ extends SceneTree
 ## Needs a GPU and a display (or Xvfb):
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
 ##     --script res://tests/capture_characters.gd
-## CAPTURE_SETS picks sections (comma list of lineups, poses, turntable, fp,
-## horde; default all).
+## CAPTURE_SETS picks sections (comma list of lineups, poses, turntable, hands,
+## fp, horde; default all).
 
 const SOLDIER := preload("res://scenes/characters/soldier.tscn")
 const DISTANCES := [2.0, 10.0, 30.0, 60.0]
@@ -37,6 +37,8 @@ func _run() -> void:
 		await _poses()
 	if _wants("turntable"):
 		await _turntable()
+	if _wants("hands"):
+		await _hands()
 	if _wants("fp"):
 		await _first_person()
 	if _wants("horde"):
@@ -268,6 +270,42 @@ func _turntable() -> void:
 			root.get_viewport().debug_draw = Viewport.DEBUG_DRAW_DISABLED
 		soldier.queue_free()
 		await _frames(2)
+	camera.queue_free()
+	await _close(scene)
+
+
+# --- Hands ------------------------------------------------------------------------
+
+
+func _hands() -> void:
+	# Both hands on each kind of hold, close up from outside, above, and below.
+	var scene := await _open("res://scenes/main.tscn")
+	var camera := _camera(scene, 30.0)
+	var soldier := SOLDIER.instantiate() as SoldierRig
+	scene.add_child(soldier)
+	soldier.set_team_index(0)
+	var views := {
+		"out": Vector3(0.5, 0.08, -0.05),
+		"top": Vector3(0.02, 0.5, 0.02),
+		"under": Vector3(0.05, -0.45, -0.1),
+		"front": Vector3(0.1, 0.05, -0.5),
+	}
+	for weapon in ["m4", "m1911", "m870"]:
+		for frame in 50:
+			soldier.drive({"weapon": weapon, "yaw": 0.0, "ads": 1.0}, 1.0 / 60.0)
+			soldier.global_position = Vector3(0, 0, 10)
+			await process_frame
+		for right in [false, true]:
+			var at := soldier.wrist_position(right) + Vector3(0, 0, -0.05)
+			for view: String in views:
+				var offset: Vector3 = views[view]
+				# The outside of the left hand is to the soldier's left (-X).
+				if not right:
+					offset.x = -offset.x
+				var up := Vector3.FORWARD if view in ["top", "under"] else Vector3.UP
+				camera.look_at_from_position(at + offset, at, up)
+				await _shot("hand_%s_%s_%s" % [weapon, "right" if right else "left", view])
+	soldier.queue_free()
 	camera.queue_free()
 	await _close(scene)
 

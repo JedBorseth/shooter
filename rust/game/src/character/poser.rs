@@ -83,6 +83,21 @@ pub struct Grips {
     pub rake: f32,
     /// What the support hand holds, which also sets how each hand closes.
     pub hold: Hold,
+    /// The weapon's cross-section where the support hand holds it. The
+    /// support palm rests on this surface instead of a fixed distance from
+    /// the marker.
+    pub section: Option<Section>,
+}
+
+/// A weapon's cross-section across the barrel, at the support marker's rest
+/// position (weapon space).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Section {
+    /// Where the support marker was when the section was cut.
+    pub marker: Vector3,
+    /// The section's centre (x, y) and half its width and height.
+    pub centre: Vector2,
+    pub half: Vector2,
 }
 
 /// How the support hand closes for a hold.
@@ -101,6 +116,7 @@ impl Default for Grips {
             left: Vector3::new(0.0, -0.06, -0.28),
             rake: 22.0,
             hold: Hold::Handguard,
+            section: None,
         }
     }
 }
@@ -118,68 +134,181 @@ impl Grips {
         .hand_bases();
         (to_godot_basis(right), to_godot_basis(left))
     }
+
+    /// Where the support hand's grip centre goes and where that centre sits
+    /// in the hand (`palm`), given the hand's basis in weapon space. On a
+    /// handguard or pump with a known section, the centre is the section's
+    /// and the palm rests on its surface. The section moves with the marker
+    /// along the barrel (a pump's stroke) and lets go as the marker leaves the
+    /// barrel's line (a reload clip taking the hand away).
+    fn support_contact(&self, hand: Basis) -> (Vector3, Vector3) {
+        let section = match (self.hold, self.section) {
+            (Hold::Pistol, _) | (_, None) => return (self.left, LEFT_PALM),
+            (_, Some(section)) => section,
+        };
+        let moved = Vector2::new(
+            self.left.x - section.marker.x,
+            self.left.y - section.marker.y,
+        );
+        let hold = 1.0 - ((moved.length() - 0.01) / 0.04).clamp(0.0, 1.0);
+        if hold <= 0.0 {
+            return (self.left, LEFT_PALM);
+        }
+        // The palm's normal (the hand's +Z) in weapon space, and how far the
+        // section reaches along it (an ellipse's support).
+        let n = hand * Vector3::BACK;
+        let half = section.half;
+        let reach = ((n.x * half.x).powi(2) + (n.y * half.y).powi(2)).sqrt();
+        let centre = Vector3::new(
+            section.centre.x + moved.x,
+            section.centre.y + moved.y,
+            self.left.z,
+        );
+        let palm = Vector3::new(LEFT_PALM.x, LEFT_PALM.y, reach + PALM_SKIN);
+        (self.left.lerp(centre, hold), LEFT_PALM.lerp(palm, hold))
+    }
 }
 
-/// How a hand closes: flexion in degrees per joint (+X on every finger bone
-/// after the humanoid retarget) for the index, middle, ring, and little
-/// fingers (proximal, intermediate, distal) and the thumb (metacarpal,
-/// proximal, distal). Written per kind of grip, not per weapon model, so the
-/// hands fit whatever mesh a weapon gets.
-type HandShape = [[f32; 3]; 5];
+/// How a hand closes, written per kind of grip, not per weapon model, so the
+/// hands fit whatever mesh a weapon gets:
+///
+/// - `flex`: degrees per joint, toward the palm (+X on every finger bone after
+///   the humanoid retarget), for the index, middle, ring, and little fingers
+///   (proximal, intermediate, distal) and the thumb (metacarpal, proximal,
+///   distal; the thumb's +X swings it across the palm);
+/// - `spread`: degrees at each finger's knuckle, about the palm's normal,
+///   positive toward the little finger's side, so fingers fan or close up;
+/// - `oppose`: degrees at the thumb's base about its own Z, positive turning
+///   the thumb in front of the palm, so it can meet the fingers round a grip.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct HandShape {
+    flex: [[f32; 3]; 5],
+    spread: [f32; 4],
+    oppose: f32,
+}
 const FINGERS: [&str; 5] = ["Index", "Middle", "Ring", "Little", "Thumb"];
 
 /// The firing hand on a pistol grip (about 30 mm deep): the lower three
-/// fingers wrap it, the index rests on the trigger, the thumb closes over
-/// the far side.
-const FIRING_HAND: HandShape = [
-    [25.0, 45.0, 20.0],
-    [70.0, 80.0, 45.0],
-    [75.0, 80.0, 45.0],
-    [80.0, 80.0, 45.0],
-    [20.0, 35.0, 30.0],
-];
-/// The support hand closed on the knife's grip: a fist with the thumb
-/// wrapped over the fingers.
-const KNIFE_FIST: HandShape = [
-    [70.0, 80.0, 45.0],
-    [75.0, 85.0, 45.0],
-    [80.0, 85.0, 45.0],
-    [85.0, 85.0, 45.0],
-    [25.0, 40.0, 35.0],
-];
+/// fingers wrap it, fanning a little toward the little finger as the grip
+/// widens; the index curls round to put its pad on the trigger, so it stays
+/// inside the trigger guard instead of poking out the far side; the thumb
+/// turns in front of the palm and closes over the far side.
+const FIRING_HAND: HandShape = HandShape {
+    flex: [
+        [45.0, 65.0, 35.0],
+        [70.0, 80.0, 45.0],
+        [75.0, 80.0, 45.0],
+        [80.0, 80.0, 45.0],
+        [20.0, 30.0, 25.0],
+    ],
+    spread: [-4.0, 0.0, 3.0, 7.0],
+    oppose: 32.0,
+};
+/// The support hand closed on the knife's grip: a fist, fingers together,
+/// with the thumb turned in and wrapped over the fingers.
+const KNIFE_FIST: HandShape = HandShape {
+    flex: [
+        [70.0, 80.0, 45.0],
+        [75.0, 85.0, 45.0],
+        [80.0, 85.0, 45.0],
+        [85.0, 85.0, 45.0],
+        [25.0, 40.0, 35.0],
+    ],
+    spread: [-2.0, 0.0, 2.0, 4.0],
+    oppose: 40.0,
+};
 /// The trigger finger laid straight along the frame, off the trigger, while
 /// sprinting or reloading.
 const INDEX_OFF_TRIGGER: [f32; 3] = [4.0, 6.0, 4.0];
 /// The support hand under a rifle handguard (about 45 mm across): a loose C
-/// with the fingertips up the far side and the thumb along the near side.
-const HANDGUARD: HandShape = [
-    [55.0, 60.0, 35.0],
-    [60.0, 65.0, 38.0],
-    [62.0, 65.0, 38.0],
-    [65.0, 65.0, 38.0],
-    [20.0, 20.0, 15.0],
-];
-/// The support hand round a shotgun's pump: a firmer wrap to drive it.
-const PUMP: HandShape = [
-    [55.0, 60.0, 35.0],
-    [60.0, 65.0, 35.0],
-    [62.0, 65.0, 35.0],
-    [65.0, 65.0, 35.0],
-    [25.0, 25.0, 15.0],
-];
-/// The support hand on a pistol: fingers wrapped over the firing hand's, the
-/// thumb forward along the frame under the firing thumb.
-const CUP: HandShape = [
-    [62.0, 68.0, 40.0],
-    [66.0, 70.0, 42.0],
-    [68.0, 70.0, 42.0],
-    [70.0, 70.0, 42.0],
-    [15.0, 10.0, 5.0],
-];
+/// with the fingertips up the far side, fanned along the handguard, and the
+/// thumb laid forward along the near side.
+const HANDGUARD: HandShape = HandShape {
+    flex: [
+        [55.0, 60.0, 35.0],
+        [60.0, 65.0, 38.0],
+        [62.0, 65.0, 38.0],
+        [65.0, 65.0, 38.0],
+        [10.0, 20.0, 15.0],
+    ],
+    spread: [-6.0, -1.0, 4.0, 9.0],
+    oppose: 38.0,
+};
+/// The support hand round a shotgun's pump: a firmer wrap to drive it, the
+/// fingers closed up together, the thumb laid forward along the near side.
+const PUMP: HandShape = HandShape {
+    flex: [
+        [58.0, 62.0, 35.0],
+        [62.0, 66.0, 36.0],
+        [64.0, 66.0, 36.0],
+        [66.0, 66.0, 36.0],
+        [14.0, 25.0, 15.0],
+    ],
+    spread: [-2.0, 0.0, 2.0, 4.0],
+    oppose: 45.0,
+};
+/// The support hand on a pistol: fingers wrapped over the firing hand's and
+/// closed up beneath the trigger guard, the thumb turned forward along the
+/// frame under the firing thumb.
+const CUP: HandShape = HandShape {
+    flex: [
+        [62.0, 68.0, 40.0],
+        [66.0, 70.0, 42.0],
+        [68.0, 70.0, 42.0],
+        [70.0, 70.0, 42.0],
+        [20.0, 25.0, 10.0],
+    ],
+    spread: [2.0, 3.0, 5.0, 8.0],
+    oppose: 45.0,
+};
+
+impl HandShape {
+    /// This shape moved toward `other` by `t` (0..1), joint by joint.
+    fn lerp(&self, other: &HandShape, t: f32) -> HandShape {
+        let mix = |a: f32, b: f32| a + (b - a) * t;
+        let mut out = *self;
+        for f in 0..5 {
+            for j in 0..3 {
+                out.flex[f][j] = mix(self.flex[f][j], other.flex[f][j]);
+            }
+        }
+        for f in 0..4 {
+            out.spread[f] = mix(self.spread[f], other.spread[f]);
+        }
+        out.oppose = mix(self.oppose, other.oppose);
+        out
+    }
+
+    /// This shape's rotation for one finger bone, on top of its rest, with
+    /// `flex` degrees of curl. `left` mirrors the axes that change sign
+    /// between the hands.
+    fn joint(&self, finger: usize, joint: usize, left: bool, flex: f32) -> Quaternion {
+        let curl = Quaternion::from_axis_angle(Vector3::RIGHT, flex.to_radians());
+        if joint != 0 {
+            return curl;
+        }
+        // The left hand's +X points toward its little finger and the right
+        // hand's toward its index, so a turn about +Z changes sign between
+        // the hands. On the thumb's base, positive lays the thumb forward
+        // along what the hand holds instead of standing it up beside it
+        // (checked from the outside, above, and below in the hand captures).
+        let side = if left { -1.0 } else { 1.0 };
+        let base = side
+            * if finger == 4 {
+                self.oppose
+            } else {
+                self.spread[finger]
+            };
+        Quaternion::from_axis_angle(Vector3::BACK, base.to_radians()) * curl
+    }
+}
 
 /// Where the grip sits in each hand's bone space (from the wrist).
 const RIGHT_PALM: Vector3 = to_godot(carry::RIGHT_PALM);
 const LEFT_PALM: Vector3 = to_godot(carry::LEFT_PALM);
+/// From the hand bone to the gloved palm's surface, where the palm meets a
+/// handguard.
+const PALM_SKIN: f32 = 0.019;
 
 /// Where the weapon goes this frame.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -328,19 +457,14 @@ impl ISkeletonModifier3D for SoldierPoser {
         let knife = input.knife.clamp(0.0, 1.0);
         let support = support_shape(grips.hold);
         let trigger_off = input.trigger_off.clamp(0.0, 1.0);
+        let support = support.lerp(&KNIFE_FIST, knife);
         for &(index, rest, right, finger, joint) in &self.fingers {
-            let angle = if right {
-                if finger == 0 {
-                    let on = FIRING_HAND[0][joint];
-                    on + (INDEX_OFF_TRIGGER[joint] - on) * trigger_off
-                } else {
-                    FIRING_HAND[finger][joint]
-                }
-            } else {
-                let open = support[finger][joint];
-                open + (KNIFE_FIST[finger][joint] - open) * knife
-            };
-            let grip = rest * Quaternion::from_axis_angle(Vector3::RIGHT, angle.to_radians());
+            let shape = if right { &FIRING_HAND } else { &support };
+            let mut flex = shape.flex[finger][joint];
+            if right && finger == 0 {
+                flex += (INDEX_OFF_TRIGGER[joint] - flex) * trigger_off;
+            }
+            let grip = rest * shape.joint(finger, joint, !right, flex);
             let pose = skel.get_bone_pose_rotation(index);
             skel.set_bone_pose_rotation(index, pose.slerp(grip, weight));
         }
@@ -361,7 +485,8 @@ impl ISkeletonModifier3D for SoldierPoser {
             right_pole,
             weight,
         );
-        let mut left_grip = weapon_skel * grips.left;
+        let (left_point, left_palm) = grips.support_contact(left_basis);
+        let mut left_grip = weapon_skel * left_point;
         let mut left_hand_basis = weapon_skel.basis * left_basis;
         if input.support_off > 0.0 {
             let off = input.support_off.clamp(0.0, 1.0);
@@ -377,7 +502,7 @@ impl ISkeletonModifier3D for SoldierPoser {
         // The knife: the wrist goes where the fist holds the knife at
         // `knife_at`, blended from wherever the hand was.
         let mut left_target =
-            Transform3D::new(left_hand_basis, left_grip - left_hand_basis * LEFT_PALM);
+            Transform3D::new(left_hand_basis, left_grip - left_hand_basis * left_palm);
         if knife > 0.0 {
             let hand = weapon_skel * crate::knife::hand_for(input.knife_at);
             let rotation = left_target
@@ -524,12 +649,85 @@ mod hold_tests {
         // A handguard is wider than a pistol grip: the support fingers stay
         // more open than the firing hand's wrapped fingers.
         for finger in 1..4 {
-            let support: f32 = HANDGUARD[finger].iter().sum();
-            let firing: f32 = FIRING_HAND[finger].iter().sum();
+            let support: f32 = HANDGUARD.flex[finger].iter().sum();
+            let firing: f32 = FIRING_HAND.flex[finger].iter().sum();
             assert!(support < firing, "finger {finger}");
         }
-        let on: f32 = FIRING_HAND[0].iter().sum();
+        let on: f32 = FIRING_HAND.flex[0].iter().sum();
         let off: f32 = INDEX_OFF_TRIGGER.iter().sum();
         assert!(off < on * 0.3, "off the trigger the index lies straight");
+    }
+
+    #[test]
+    fn the_support_palm_rests_on_the_handguard() {
+        let marker = Vector3::new(0.0, -0.08, -0.3);
+        let mut grips = Grips {
+            left: marker,
+            section: Some(Section {
+                marker,
+                centre: Vector2::new(0.0, -0.05),
+                half: Vector2::new(0.02, 0.025),
+            }),
+            ..Grips::default()
+        };
+        // Palm straight up under the handguard: the centre is the section's,
+        // and the palm sits its half height plus the glove below it.
+        let up = ik::basis_from_y_z(Vector3::FORWARD, Vector3::UP);
+        let (point, palm) = grips.support_contact(up);
+        assert!(
+            (point - Vector3::new(0.0, -0.05, -0.3)).length() < 1e-5,
+            "{point:?}"
+        );
+        assert!((palm.z - (0.025 + PALM_SKIN)).abs() < 1e-4, "{palm:?}");
+        // A pump stroke slides the marker along the barrel: still held.
+        grips.left.z -= 0.06;
+        let (point, _) = grips.support_contact(up);
+        assert!(
+            (point - Vector3::new(0.0, -0.05, -0.36)).length() < 1e-5,
+            "{point:?}"
+        );
+        // A reload clip takes the marker away: the hand follows the marker.
+        grips.left = marker + Vector3::new(-0.05, -0.15, 0.1);
+        let (point, palm) = grips.support_contact(up);
+        assert_eq!((point, palm), (grips.left, LEFT_PALM));
+        // Pistols cup the firing hand whatever the weapon's section.
+        grips.left = marker;
+        grips.hold = Hold::Pistol;
+        assert_eq!(grips.support_contact(up), (marker, LEFT_PALM));
+    }
+
+    #[test]
+    fn fingers_fan_and_thumbs_oppose_mirrored_between_hands() {
+        // The little finger fans out further than the index on a handguard.
+        const { assert!(HANDGUARD.spread[3] > HANDGUARD.spread[0]) };
+        for shape in [FIRING_HAND, HANDGUARD, PUMP, CUP, KNIFE_FIST] {
+            assert!(shape.oppose > 0.0, "every grip turns the thumb in");
+            for (finger, joint) in [(0, 0), (3, 0), (4, 0)] {
+                let flex = shape.flex[finger][joint];
+                let right = shape.joint(finger, joint, false, flex);
+                let left = shape.joint(finger, joint, true, flex);
+                // Mirroring across the hand's X axis: the curl is the same,
+                // the turn about the palm normal flips.
+                let mirror = Quaternion::new(right.x, -right.y, -right.z, right.w);
+                assert!(
+                    left.dot(mirror).abs() > 0.9999,
+                    "{finger}: {left:?} vs {right:?}"
+                );
+            }
+        }
+        // Only the knuckle spreads; the other joints just curl.
+        let curl = HANDGUARD.joint(1, 1, false, 40.0);
+        assert_eq!(
+            curl,
+            Quaternion::from_axis_angle(Vector3::RIGHT, 40f32.to_radians())
+        );
+    }
+
+    #[test]
+    fn the_knife_fist_blends_from_the_support_shape() {
+        assert_eq!(HANDGUARD.lerp(&KNIFE_FIST, 0.0), HANDGUARD);
+        assert_eq!(HANDGUARD.lerp(&KNIFE_FIST, 1.0), KNIFE_FIST);
+        let half = HANDGUARD.lerp(&KNIFE_FIST, 0.5);
+        assert!((half.oppose - (HANDGUARD.oppose + KNIFE_FIST.oppose) * 0.5).abs() < 1e-5);
     }
 }
