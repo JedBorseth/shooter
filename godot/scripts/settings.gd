@@ -103,6 +103,7 @@ const REBINDABLE := {
 	&"reload": "Reload",
 	&"melee": "Melee",
 	&"lethal": "Lethal (frag grenade)",
+	&"tactical": "Tactical (flashbang or smoke)",
 	&"weapon_1": "Primary weapon",
 	&"weapon_2": "Secondary weapon",
 	&"interact": "Interact",
@@ -173,6 +174,7 @@ const DEFAULTS := {
 	&"master_server": DEFAULT_DIRECTORY,
 	&"player_name": "Player",
 	&"loadout_primary": "m4",
+	&"loadout_tactical": "flash",
 }
 
 ## Config file section for each setting.
@@ -210,7 +212,7 @@ const SECTIONS := {
 		&"ui_volume",
 		&"audio_mix",
 	],
-	"multiplayer": [&"player_name", &"loadout_primary"],
+	"multiplayer": [&"player_name", &"loadout_primary", &"loadout_tactical"],
 }
 
 ## Allowed values of each int setting.
@@ -307,6 +309,7 @@ var master_server: String = DEFAULTS[&"master_server"]
 var player_name: String = DEFAULTS[&"player_name"]
 ## Weapon key of the primary to spawn with in Team Deathmatch.
 var loadout_primary: String = DEFAULTS[&"loadout_primary"]
+var loadout_tactical: String = DEFAULTS[&"loadout_tactical"]
 
 ## Keyboard and mouse bindings changed from the defaults: action to a
 ## serialized event (see `_event_to_value`).

@@ -3,11 +3,13 @@ extends SceneTree
 ## the arena and on Slamcity, at each graphics preset, the frame's GPU time
 ## with nothing going on, then while three frag blasts go off a third of a
 ## second apart 6 to 10 m ahead (their flash, fireball, dust, and debris).
+## Then a smoke cloud 7 m ahead, fully grown, and the view from inside it.
 ## Prints the mean and the worst frame of each. Needs a GPU:
 ##   xvfb-run -a -s "-screen 0 1920x1080x24" godot --path godot \
 ##     --resolution 1920x1080 --audio-driver Dummy --script res://tests/grenade_cost.gd
 
 const BLAST := preload("res://scenes/equipment/frag_blast.tscn")
+const SMOKE := preload("res://scenes/equipment/smoke_cloud.tscn")
 const VIEWS := {
 	"testing": ["res://scenes/main.tscn", Vector3(0, 0.1, 4), 0.0],
 	"slamcity": ["res://scenes/slamcity.tscn", Vector3(-37, 0.05, 3), -PI / 2],
@@ -36,7 +38,9 @@ func _run() -> void:
 	settings.reset_to_defaults()
 	settings.flush()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://grenade_cost_settings.cfg"))
-	print("map       preset  quiet mean  fight mean  fight worst  (GPU ms)")
+	print(
+		"map       preset  quiet mean  fight mean  fight worst  smoke mean  inside mean  (GPU ms)"
+	)
 	for row in _rows:
 		print(row)
 	quit()
@@ -60,10 +64,31 @@ func _measure(map: String, preset: String) -> void:
 	await _frames(30)
 	var quiet := await _sample(scene, player, spec, false)
 	var fight := await _sample(scene, player, spec, true)
-	_rows.append(
-		(
-			"%-9s %-7s %10.2f  %10.2f  %11.2f"
-			% [map, preset, _mean(quiet), _mean(fight), _worst(fight)]
+	var yaw: float = spec[2]
+	var ahead: Vector3 = spec[1] + Vector3(-sin(yaw), 0, -cos(yaw)) * 7.0
+	var smoke := SMOKE.instantiate() as Node3D
+	scene.add_child(smoke)
+	smoke.global_position = ahead
+	await _frames(200)
+	var cloud := await _sample(scene, player, spec, false)
+	player.teleport(ahead, yaw)
+	await _frames(20)
+	var inside := await _sample(scene, player, spec, false)
+	(
+		_rows
+		. append(
+			(
+				"%-9s %-7s %10.2f  %10.2f  %11.2f  %10.2f  %11.2f"
+				% [
+					map,
+					preset,
+					_mean(quiet),
+					_mean(fight),
+					_worst(fight),
+					_mean(cloud),
+					_mean(inside),
+				]
+			)
 		)
 	)
 	scene.queue_free()

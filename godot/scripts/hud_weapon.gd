@@ -92,6 +92,20 @@ func _draw() -> void:
 		self, Paint.LABEL, str(frags), Vector2(right, frag_line), 16, frag_colour
 	)
 	Paint.grenade(self, Vector2(right - frag_w - 12.0, frag_line - 6.0), 16.0, frag_colour)
+	# The tactical to its left: a can and its count.
+	var tacticals := player.tacticals()
+	var tactical_colour := Color(UiTheme.TEXT, 0.85 if tacticals > 0 else 0.3)
+	var tactical_right := right - frag_w - 34.0
+	var tactical_w := Paint.text_right(
+		self, Paint.LABEL, str(tacticals), Vector2(tactical_right, frag_line), 16, tactical_colour
+	)
+	Paint.canister(
+		self,
+		Vector2(tactical_right - tactical_w - 11.0, frag_line - 6.0),
+		16.0,
+		tactical_colour,
+		player.tactical_key() == "smoke"
+	)
 
 	# Name, with the attachment after it in quieter type.
 	var parts := Paint.split_weapon_name(_key, player.weapon_name())

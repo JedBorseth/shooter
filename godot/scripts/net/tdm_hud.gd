@@ -66,6 +66,8 @@ var _weapon_buttons := {}
 ## Each base weapon's attachment choices (dictionaries with `key` and `name`).
 var _attachments := {}
 var _attachment_row: HBoxContainer
+## The tactical choices (flashbang or smoke), by key.
+var _tactical_buttons := {}
 var _ready_button: Button
 var _menu_status: Label
 var _menu_eyebrow: Label
@@ -639,6 +641,12 @@ func _choose(key: String) -> void:
 	_highlight_loadout()
 
 
+func _choose_tactical(key: String) -> void:
+	if client.choose_tactical(key):
+		Settings.set_setting(&"loadout_tactical", key)
+	_highlight_loadout()
+
+
 ## The base weapon of a loadout key ("m4+grip" -> "m4").
 func _base(key: String) -> String:
 	return key.get_slice("+", 0)
@@ -649,6 +657,10 @@ func _highlight_loadout() -> void:
 	for key: String in _weapon_buttons:
 		var button: Button = _weapon_buttons[key]
 		button.button_pressed = key == _base(current)
+	var tactical := String(client.tactical) if client != null else ""
+	for key: String in _tactical_buttons:
+		var button: Button = _tactical_buttons[key]
+		button.button_pressed = key == tactical
 	_build_attachment_row(current)
 
 
@@ -928,10 +940,25 @@ func _build_loadout(layout: VBoxContainer) -> void:
 	_attachment_row.add_theme_constant_override("separation", 6)
 	layout.add_child(_attachment_row)
 	var sidearm := Label.new()
-	sidearm.text = "Sidearm: M1911"
+	sidearm.text = "Sidearm: M1911    Lethal: Frag"
 	sidearm.add_theme_color_override("font_color", MenuStyle.TEXT_DIM)
 	sidearm.add_theme_font_size_override("font_size", 16)
 	layout.add_child(sidearm)
+	var tactical_row := HBoxContainer.new()
+	tactical_row.add_theme_constant_override("separation", 6)
+	layout.add_child(tactical_row)
+	var tactical_group := ButtonGroup.new()
+	for tactical: Dictionary in NetClient.tacticals():
+		var button := Button.new()
+		button.text = "Tactical: " + String(tactical.name)
+		button.toggle_mode = true
+		button.button_group = tactical_group
+		button.custom_minimum_size = Vector2(0, 38)
+		button.add_theme_font_size_override("font_size", 15)
+		MenuStyle.style_button(button, true)
+		button.pressed.connect(_choose_tactical.bind(String(tactical.key)))
+		tactical_row.add_child(button)
+		_tactical_buttons[String(tactical.key)] = button
 
 
 ## Gun Game's ladder, top to bottom, with our weapon marked as it changes.

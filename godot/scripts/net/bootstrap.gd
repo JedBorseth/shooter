@@ -296,6 +296,7 @@ func _attach_client(main: Node, target: String, options: Dictionary) -> void:
 	client.remote_player_scene = load(REMOTE_PLAYER_SCENE)
 	client.player_name = Settings.player_name
 	client.primary = Settings.loadout_primary
+	client.tactical = Settings.loadout_tactical
 	client.latency_ms = float(options.get("lag", 0))
 	client.jitter_ms = float(options.get("jitter", 0))
 	client.loss_percent = float(options.get("loss", 0))

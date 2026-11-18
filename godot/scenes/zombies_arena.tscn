@@ -1263,6 +1263,7 @@ start_with_primary = false
 starting_lethals = 2
 stick_yaw_speed = 240.0
 stick_pitch_speed = 180.0
+starting_tacticals = 0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.00064452505, 4)
 
 [node name="HUD" parent="." unique_id=1205759811 instance=ExtResource("19_hud")]

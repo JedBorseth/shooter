@@ -156,6 +156,7 @@ impl FpArms {
                     grenade_at: throw.map_or(Transform3D::IDENTITY, |(_, at)| at),
                     grenade_in_hand: throw.is_some_and(|(pose, _)| pose.in_hand),
                     grenade_pinned: throw.is_some_and(|(pose, _)| pose.pinned),
+                    grenade_kind: throw.map_or(Default::default(), |(pose, _)| pose.kind),
                     ..PoseInput::default()
                 };
             }

@@ -99,8 +99,9 @@ pub enum ViewAction {
         strike_in: f32,
     },
     /// A grenade throw with the support hand, 0..1
-    /// (`equipment::throw_progress`); the weapon dips in the firing hand.
-    Throwing(f32),
+    /// (`equipment::throw_progress`), and what it throws; the weapon dips in
+    /// the firing hand.
+    Throwing(f32, shooter_sim::equipment::Kind),
 }
 
 /// One shot's kick on the weapon model, as peaks: (position in metres: `x`
@@ -2705,7 +2706,7 @@ impl ViewmodelRig {
             ViewAction::Raising(p) => (BeatClip::Raise, p),
             ViewAction::Meleeing { .. }
             | ViewAction::FirstRaise { .. }
-            | ViewAction::Throwing(_) => (BeatClip::Idle, 0.0),
+            | ViewAction::Throwing(..) => (BeatClip::Idle, 0.0),
             ViewAction::Ready => match self.inspect {
                 Some(t) => (BeatClip::Inspect, t),
                 None => (BeatClip::Idle, 0.0),
@@ -3082,7 +3083,7 @@ impl ViewmodelRig {
         let switch = match frame.action {
             ViewAction::Lowering(p) => weapon_clips::pose_at(weapon_clips::holster_keys(kind), p),
             ViewAction::Raising(p) => weapon_clips::pose_at(weapon_clips::draw_keys(kind), p),
-            ViewAction::Throwing(p) => weapon_clips::pose_at(
+            ViewAction::Throwing(p, _) => weapon_clips::pose_at(
                 weapon_clips::holster_keys(kind),
                 crate::grenade_hold::weapon_dip(p),
             ),
@@ -3263,8 +3264,8 @@ impl ViewmodelRig {
                 (view.clone().upcast::<Node3D>(), grips)
             });
             let throw = match frame.action {
-                ViewAction::Throwing(p) => {
-                    let pose = crate::grenade_hold::first_person(p);
+                ViewAction::Throwing(p, kind) => {
+                    let pose = crate::grenade_hold::first_person(p, kind);
                     Some((pose, weapon_in_rig * pose.at))
                 }
                 _ => None,

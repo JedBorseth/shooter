@@ -30,6 +30,7 @@ use std::collections::VecDeque;
 use godot::classes::{ENetConnection, ENetPacketPeer, INode, PackedScene, Time};
 use godot::global::Error;
 use godot::prelude::*;
+use shooter_sim::equipment::Kind;
 use shooter_sim::gun_game;
 use shooter_sim::hardpoint::Holder;
 use shooter_sim::hitbox::HitboxPose;
@@ -89,6 +90,11 @@ pub struct NetClient {
     /// the server's default.
     #[export]
     primary: GString,
+    /// The tactical to ask for ("flash" or "smoke"); anything else is a
+    /// flashbang.
+    #[export]
+    #[init(val = GString::from("flash"))]
+    tactical: GString,
     /// The local `FpsPlayer` to predict.
     #[export]
     player_path: NodePath,
@@ -289,7 +295,10 @@ impl INode for NetClient {
                     if let Some(primary) = WeaponId::by_key(&self.primary.to_string())
                         && crate::net::server::is_loadout_primary(primary)
                     {
-                        let loadout = ClientMessage::Loadout { primary };
+                        let loadout = ClientMessage::Loadout {
+                            primary,
+                            tactical: self.tactical_kind(),
+                        };
                         transport::send_reliable(&mut peer, &loadout.encode());
                     }
                 }
@@ -719,8 +728,44 @@ impl NetClient {
             return false;
         };
         self.primary = primary;
-        self.send_reliable(&ClientMessage::Loadout { primary: id });
+        self.send_reliable(&ClientMessage::Loadout {
+            primary: id,
+            tactical: self.tactical_kind(),
+        });
         true
+    }
+
+    /// Picks the tactical ("flash" or "smoke") for our next spawn. Returns
+    /// false for anything else.
+    #[func]
+    fn choose_tactical(&mut self, key: GString) -> bool {
+        let Some(kind) = Kind::by_key(&key.to_string()).filter(|kind| !kind.lethal()) else {
+            return false;
+        };
+        self.tactical = key;
+        let primary = WeaponId::by_key(&self.primary.to_string())
+            .filter(|id| crate::net::server::is_loadout_primary(*id));
+        if let Some(primary) = primary {
+            self.send_reliable(&ClientMessage::Loadout {
+                primary,
+                tactical: kind,
+            });
+        }
+        true
+    }
+
+    /// The tactical every menu offers: key and name pairs.
+    #[func]
+    fn tacticals() -> Array<VarDictionary> {
+        Kind::TACTICALS
+            .iter()
+            .map(|kind| {
+                let mut d = VarDictionary::new();
+                d.set("key", kind.key());
+                d.set("name", kind.name());
+                d
+            })
+            .collect()
     }
 
     /// Which build the server runs (a tag or short commit hash), or "" before
@@ -1318,6 +1363,13 @@ impl NetClient {
             (None, Some(server)) => transport::send_unreliable(server, &bytes),
             (None, None) => {}
         }
+    }
+
+    /// The tactical asked for.
+    fn tactical_kind(&self) -> Kind {
+        Kind::by_key(&self.tactical.to_string())
+            .filter(|kind| !kind.lethal())
+            .unwrap_or(Kind::Flash)
     }
 
     fn on_disconnected(&mut self) {

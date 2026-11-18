@@ -169,6 +169,9 @@ pub struct CombatState {
     pub burst_left: u8,
     /// Frag grenades carried.
     pub lethals: u8,
+    /// The loadout's tactical, and how many are carried.
+    pub tactical: equipment::Kind,
+    pub tacticals: u8,
 }
 
 impl CombatState {
@@ -196,6 +199,8 @@ impl CombatState {
             reload_queued: false,
             burst_left: 0,
             lethals: 1,
+            tactical: equipment::Kind::Flash,
+            tacticals: 1,
         }
     }
 
@@ -226,11 +231,29 @@ impl CombatState {
         self
     }
 
-    /// Whether a grenade can come out now: one is carried, and the hands
-    /// are free (not switching, knifing, or already throwing). It cuts a
-    /// reload or a bolt or pump cycle short, as the knife does.
-    pub fn can_throw(&self) -> bool {
-        self.lethals > 0 && self.can_melee()
+    /// This loadout carrying `count` of the tactical `kind`.
+    pub fn with_tacticals(mut self, kind: equipment::Kind, count: u8) -> Self {
+        self.tactical = kind;
+        self.tacticals = count;
+        self
+    }
+
+    /// How many of `kind` are carried.
+    pub fn carried(&self, kind: equipment::Kind) -> u8 {
+        if kind.lethal() {
+            self.lethals
+        } else if kind == self.tactical {
+            self.tacticals
+        } else {
+            0
+        }
+    }
+
+    /// Whether a grenade of `kind` can come out now: one is carried, and
+    /// the hands are free (not switching, knifing, or already throwing). It
+    /// cuts a reload or a bolt or pump cycle short, as the knife does.
+    pub fn can_throw(&self, kind: equipment::Kind) -> bool {
+        self.carried(kind) > 0 && self.can_melee()
     }
 
     pub fn throwing(&self) -> bool {
@@ -245,8 +268,8 @@ impl CombatState {
                 kind,
                 cooked,
                 release_in,
-            } if release_in.is_none_or(|left| left > 0.0) => {
-                Some((kind, (equipment::FRAG_FUSE - cooked).max(0.0)))
+            } if kind.cooks() && release_in.is_none_or(|left| left > 0.0) => {
+                Some((kind, (kind.fuse() - cooked).max(0.0)))
             }
             _ => None,
         }
@@ -372,7 +395,10 @@ impl CombatState {
             Slot::Primary => Slot::Secondary,
             Slot::Secondary => Slot::Primary,
         };
-        Self::new([weapon, weapon]).without(empty).with_lethals(0)
+        Self::new([weapon, weapon])
+            .without(empty)
+            .with_lethals(0)
+            .with_tacticals(equipment::Kind::Flash, 0)
     }
 
     /// Takes away whatever the player carries and hands them `weapon` alone
@@ -385,6 +411,8 @@ impl CombatState {
     pub fn rearm(&mut self, weapon: WeaponId) {
         *self = Self {
             lethals: self.lethals,
+            tactical: self.tactical,
+            tacticals: self.tacticals,
             shots_fired: self.shots_fired,
             fire_held: self.fire_held,
             sway_time: self.sway_time,
@@ -479,10 +507,11 @@ pub struct CombatInput {
     /// A melee starts this tick: seconds until it strikes, and whether it
     /// lunges. The caller checks [`CombatState::can_melee`] first.
     pub melee: Option<(f32, bool)>,
-    /// The lethal button went down this tick: pull a grenade's pin if one
-    /// can come out ([`CombatState::can_throw`]).
-    pub throw: bool,
-    /// The lethal button is held: the grenade in hand cooks until it is let go.
+    /// A grenade button went down this tick: pull the pin of one of that
+    /// kind if it can come out ([`CombatState::can_throw`]).
+    pub throw: Option<equipment::Kind>,
+    /// The button of the grenade in hand is held: it stays in hand (a frag
+    /// cooks) until it is let go.
     pub throw_held: bool,
 }
 
@@ -653,8 +682,10 @@ pub fn step(
     {
         start_melee(state, strike_in, lunge, events);
     }
-    if input.throw && state.can_throw() {
-        start_throw(state, equipment::Kind::Frag, events);
+    if let Some(kind) = input.throw
+        && state.can_throw(kind)
+    {
+        start_throw(state, kind, events);
     }
 
     let def = state.def();
@@ -952,7 +983,11 @@ fn start_throw(state: &mut CombatState, kind: equipment::Kind, events: &mut Vec<
     }
     state.burst_left = 0;
     state.reload_queued = false;
-    state.lethals -= 1;
+    if kind.lethal() {
+        state.lethals -= 1;
+    } else {
+        state.tacticals -= 1;
+    }
     state.action = Action::Throwing {
         kind,
         cooked: 0.0,
@@ -989,7 +1024,12 @@ fn advance_throw(
         None => None,
     };
     if !was_thrown {
-        let fuse = equipment::FRAG_FUSE - cooked;
+        // A frag's fuse burns from the pin; a tactical's starts as it leaves.
+        let fuse = if kind.cooks() {
+            kind.fuse() - cooked
+        } else {
+            kind.fuse()
+        };
         let cooked_off = fuse <= 0.0 && release_in.is_none_or(|left| left > 0.0);
         if cooked_off {
             // Gone off in the hand: the arm drops from there.

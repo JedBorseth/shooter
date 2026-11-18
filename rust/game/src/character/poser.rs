@@ -423,6 +423,7 @@ pub struct PoseInput {
     pub grenade_at: Transform3D,
     pub grenade_in_hand: bool,
     pub grenade_pinned: bool,
+    pub grenade_kind: shooter_sim::equipment::Kind,
     /// Foot IK: how far (m, world up) the ground under each foot (left,
     /// right) is from the ground the animation stands on, or `None` for no
     /// foot IK (far away, in the air).
@@ -694,7 +695,7 @@ impl SoldierPoser {
             if shown {
                 let hand = skel.get_bone_global_pose(bone(Bone::LEFT_HAND));
                 node.set_global_transform(skel_xform * hand * crate::grenade_hold::in_left_hand());
-                crate::grenade_hold::set_pinned(node, input.grenade_pinned, true);
+                crate::grenade_hold::show(node, input.grenade_kind, input.grenade_pinned);
             }
         }
         self.solved = [
