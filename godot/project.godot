@@ -171,6 +171,10 @@ common/physics_ticks_per_second=120
 
 [shader_globals]
 
+viewmodel_scope_lens={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
 world_wetness={
 "type": "float",
 "value": 0.0

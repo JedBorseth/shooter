@@ -283,14 +283,13 @@ impl Attachment {
                 def.ads_time *= 0.95;
             }
             Attachment::Acog => {
+                // A magnified prism sight: the whole view zooms, and the
+                // weapon and the optic's housing stay on screen around the
+                // eyepiece (no scope overlay), with the weapon's own aimed
+                // sway, which the zoom magnifies.
                 def.ads_fov_scale = (def.ads_fov_scale * 0.55).min(0.45);
                 def.ads_time += 0.06;
                 def.ads_move_scale *= 0.9;
-                def.scope.get_or_insert(ScopeDef {
-                    sway: 0.0,
-                    hold_breath: 0.0,
-                    breath_recovery: 0.0,
-                });
             }
             Attachment::Suppressor => {
                 def.damage.falloff_start *= 0.7;
@@ -640,7 +639,7 @@ mod tests {
         let mag = WeaponId::expect("m4+extmag").def();
         assert_eq!(mag.magazine, 45);
         let acog = WeaponId::expect("ak47+acog").def();
-        assert!(acog.scope.is_some() && acog.ads_fov_scale < 0.5);
+        assert!(acog.scope.is_none() && acog.ads_fov_scale < 0.5);
         let quiet = WeaponId::expect("m4+suppressor").def();
         assert_eq!(quiet.tracer_every, 0);
         assert!(quiet.damage.falloff_end < m4.damage.falloff_end);

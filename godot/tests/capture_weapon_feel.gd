@@ -36,6 +36,10 @@ const SCENARIOS := [
 	"reload_m1911_empty",
 	"reload_m870",
 	"reload_ads_m4",
+	"ads_acog",
+	"spray_ads_acog",
+	"ads_ak47_acog",
+	"ads_pdw9_acog",
 	"reload_fire_m4",
 	"switch",
 	"inspect",
@@ -119,6 +123,8 @@ func _start(scenario: String) -> void:
 	for part in scenario.split("_"):
 		if part in ["m4", "ak47", "br3", "m40", "m870", "lsw6", "pdw9", "m1911"]:
 			weapon = part
+	if "acog" in scenario.split("_"):
+		weapon += "+acog"
 	if weapon == "m1911":
 		Input.action_press("weapon_2")
 		await _sixtieths(2)
@@ -251,6 +257,22 @@ func _spray(sixtieths: int, aimed: bool) -> void:
 	_mark("release")
 	await _sixtieths(60)
 	Input.action_release("aim")
+
+
+func _scenario_ads_acog() -> void:
+	await _scenario_ads_m4()
+
+
+func _scenario_ads_ak47_acog() -> void:
+	await _scenario_ads_m4()
+
+
+func _scenario_ads_pdw9_acog() -> void:
+	await _scenario_ads_m4()
+
+
+func _scenario_spray_ads_acog() -> void:
+	await _spray(36, true)
 
 
 func _scenario_spray_hip_m4() -> void:

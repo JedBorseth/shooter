@@ -398,7 +398,7 @@ In Team Deathmatch the loadout menu (L) also fits one attachment to the primary.
 | Attachment | Effect |
 | --- | --- |
 | Red Dot | A reflex sight in place of the iron sights |
-| ACOG | A 2.5x combat scope (aims through the scope view) |
+| ACOG | A magnified prism sight: aimed, the view zooms and the eye looks through its eyepiece at a lit chevron |
 | Suppressor | Quieter, no muzzle flash or tracers, shorter damage range |
 | Grip | A vertical foregrip: a quarter less recoil |
 | Ext. Mag | Half again as many rounds, a slightly slower reload |

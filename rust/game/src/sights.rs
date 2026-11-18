@@ -115,21 +115,30 @@ impl INode3D for IronSights {
         };
         // Every soldier carrying this weapon shares one mesh and its materials.
         let key = format!("{style:?} {params:?} {:?} {world}", self.glow);
-        let mesh = SIGHT_MESHES.with(|cache| cache.borrow().get(&key).cloned());
-        let mesh = mesh.unwrap_or_else(|| {
-            let mesh = parts_mesh(&style.build(&params), self.glow, world, self.size);
-            SIGHT_MESHES.with(|cache| cache.borrow_mut().insert(key, mesh.clone()));
-            mesh
-        });
-        let mut instance = MeshInstance3D::new_alloc();
-        instance.set_name("SightMesh");
-        instance.set_mesh(&mesh);
-        if !world {
-            instance.set_cast_shadows_setting(
-                godot::classes::geometry_instance_3d::ShadowCastingSetting::OFF,
+        let meshes = SIGHT_MESHES.with(|cache| cache.borrow().get(&key).cloned());
+        let (mesh, body) = meshes.unwrap_or_else(|| {
+            let parts = style.build(&params);
+            let meshes = (
+                parts_mesh(&parts, self.glow, world, self.size),
+                body_mesh(&parts),
             );
+            SIGHT_MESHES.with(|cache| cache.borrow_mut().insert(key, meshes.clone()));
+            meshes
+        });
+        for (name, mesh) in [("SightMesh", Some(mesh)), (SIGHT_BODY, body)] {
+            let Some(mesh) = mesh else {
+                continue;
+            };
+            let mut instance = MeshInstance3D::new_alloc();
+            instance.set_name(name);
+            instance.set_mesh(&mesh);
+            if !world {
+                instance.set_cast_shadows_setting(
+                    godot::classes::geometry_instance_3d::ShadowCastingSetting::OFF,
+                );
+            }
+            self.base_mut().add_child(&instance);
         }
-        self.base_mut().add_child(&instance);
     }
 }
 
@@ -140,8 +149,9 @@ enum Style {
     Shotgun,
     Pistol,
     Reflex,
-    /// A compact prism scope (the ACOG attachment); aiming through it shows
-    /// the scope overlay, so this is what everyone else sees.
+    /// A compact prism scope (the ACOG attachment): aimed, the eye sits just
+    /// behind its eyepiece and looks down the tube at a lit chevron while
+    /// the whole view zooms.
     Acog,
 }
 
@@ -187,6 +197,9 @@ struct Parts {
     steel: Builder,
     glow: Builder,
     glass: Builder,
+    /// Steel of an optic's body ahead of its eyepiece, built as its own mesh
+    /// (`SightBody`) so first person can hide it when fully aimed.
+    body: Builder,
 }
 
 /// AR-15 style: a flip-up aperture between two protective ears, and an
@@ -572,9 +585,13 @@ fn reflex(p: &Params, parts: &mut Parts) {
 fn acog(p: &Params, parts: &mut Parts) {
     let s = p.size;
     let zr = p.rear_z;
-    let b = &mut parts.steel;
     let tube = 0.0125 * s;
     let bottom = -0.0175 * s;
+    let top = 0.0148 * s;
+    // Everything ahead of the eyepiece is the body: aimed, it is hidden
+    // behind the eyepiece's rim or inside its picture, so first person hides
+    // it at full ADS (`Parts::body`) and the eye sees the whole zoomed view.
+    let b = &mut parts.body;
     // Mount from the rail up to the housing.
     b.extrude(
         Axis::X,
@@ -587,14 +604,24 @@ fn acog(p: &Params, parts: &mut Parts) {
         -0.011 * s,
         0.011 * s,
     );
-    // Housing: a squared body with the tube through it.
+    // Housing: a thick tube on a squared foot that carries it on the mount.
+    b.ring(
+        Vector2::ZERO,
+        ACOG_BORE * s,
+        top,
+        zr - 0.05 * s,
+        zr + 0.016 * s,
+        0.0,
+        TAU,
+        36,
+    );
     b.extrude(
         Axis::X,
-        &rect(zr - 0.05 * s, bottom, zr + 0.016 * s, tube * 0.6),
+        &rect(zr - 0.05 * s, bottom, zr + 0.016 * s, -0.0118 * s),
         -0.0145 * s,
         0.0145 * s,
     );
-    // Objective bell at the front and eyepiece at the back.
+    // Objective bell at the front.
     b.ring(
         Vector2::ZERO,
         tube,
@@ -605,45 +632,84 @@ fn acog(p: &Params, parts: &mut Parts) {
         TAU,
         36,
     );
-    b.ring(
-        Vector2::ZERO,
-        0.0105 * s,
-        0.0145 * s,
-        zr + 0.016 * s,
-        zr + 0.034 * s,
-        0.0,
-        TAU,
-        36,
-    );
     // Adjustment turret on top.
-    b.cylinder(
-        Axis::X,
-        v2(zr - 0.02 * s, tube * 0.6),
-        0.005 * s,
-        -0.004 * s,
-        0.004 * s,
-        12,
-    );
     b.extrude(
         Axis::Z,
-        &rect(-0.004 * s, tube * 0.6, 0.004 * s, tube * 0.6 + 0.008 * s),
+        &rect(-0.004 * s, top - 0.001 * s, 0.004 * s, top + 0.007 * s),
         zr - 0.026 * s,
         zr - 0.014 * s,
     );
-    parts.glass.disc(Vector2::ZERO, tube, zr - 0.06 * s, 36);
-    parts
-        .glass
-        .disc(Vector2::ZERO, 0.0105 * s, zr + 0.03 * s, 36);
-    // The lit chevron, a dot at this size.
-    parts.glow.cylinder(
-        Axis::Z,
-        Vector2::ZERO,
-        0.0009 * s,
-        zr - 0.0402 * s,
-        zr - 0.04 * s,
+    b.cylinder(
+        Axis::X,
+        v2(zr - 0.02 * s, top + 0.004 * s),
+        0.005 * s,
+        -0.0045 * s,
+        0.0045 * s,
         12,
     );
+    // The eyepiece: a short tube whose back rim frames the sight picture.
+    // Only the rim is outside the body, so aimed its inside wall never
+    // narrows the picture.
+    let rim = zr + (ACOG_EYEPIECE - 0.003) * s;
+    for (builder, z0, z1) in [
+        (&mut parts.body, zr + 0.016 * s, rim),
+        (&mut parts.steel, rim, zr + ACOG_EYEPIECE * s),
+    ] {
+        builder.ring(
+            Vector2::ZERO,
+            ACOG_BORE * s,
+            0.0145 * s,
+            z0,
+            z1,
+            0.0,
+            TAU,
+            36,
+        );
+    }
+    parts
+        .glass
+        .disc(Vector2::ZERO, ACOG_BORE * s, zr + 0.03 * s, 36);
+    // The reticle, just ahead of the eyepiece: a lit chevron whose tip is the
+    // aim point, on a thin dark post with three drop marks below it.
+    let zt = zr + ACOG_RETICLE * s;
+    let (w, h, t) = (0.0011 * s, 0.0015 * s, 0.0003 * s);
+    parts.glow.extrude(
+        Axis::Z,
+        &[
+            v2(0.0, 0.0),
+            v2(w, -h),
+            v2(w - 1.2 * t, -h),
+            v2(0.0, -1.9 * t),
+            v2(-(w - 1.2 * t), -h),
+            v2(-w, -h),
+        ],
+        zt - 0.0002 * s,
+        zt,
+    );
+    let line = 0.00011 * s;
+    let b = &mut parts.steel;
+    b.extrude(
+        Axis::Z,
+        &rect(-line, -0.0095 * s, line, -h - 0.0005 * s),
+        zt - 0.0002 * s,
+        zt,
+    );
+    for (drop, half) in [(0.0035, 0.0011), (0.0055, 0.0008), (0.0075, 0.0005)] {
+        b.extrude(
+            Axis::Z,
+            &rect(-half * s, -drop * s - line, half * s, -drop * s + line),
+            zt - 0.0002 * s,
+            zt,
+        );
+    }
 }
+
+/// Radius of the ACOG's bore and eyepiece glass, before `size`.
+pub const ACOG_BORE: f32 = 0.0105;
+/// The back of the ACOG's eyepiece, behind `rear_z`, before `size`.
+pub const ACOG_EYEPIECE: f32 = 0.034;
+/// The ACOG's reticle plane, behind `rear_z`, before `size`.
+pub const ACOG_RETICLE: f32 = 0.012;
 
 fn v2(x: f32, y: f32) -> Vector2 {
     Vector2::new(x, y)
@@ -929,11 +995,7 @@ fn parts_mesh(parts: &Parts, glow: Color, world: bool, size: f32) -> Gd<ArrayMes
         mesh.surface_set_material(index, &material);
     };
 
-    let mut steel = StandardMaterial3D::new_gd();
-    steel.set_albedo(STEEL);
-    steel.set_roughness(0.55);
-    steel.set_metallic(0.35);
-    add(&parts.steel, steel.upcast());
+    add(&parts.steel, steel_material());
 
     if glow.a > 0.0 {
         let mut lit = StandardMaterial3D::new_gd();
@@ -954,9 +1016,34 @@ fn parts_mesh(parts: &Parts, glow: Color, world: bool, size: f32) -> Gd<ArrayMes
     mesh
 }
 
+/// The node holding an optic's body ahead of its eyepiece (`Parts::body`).
+pub const SIGHT_BODY: &str = "SightBody";
+
+/// An optic's body, in the sights' steel, or `None` if it has none.
+fn body_mesh(parts: &Parts) -> Option<Gd<ArrayMesh>> {
+    if parts.body.vertices.is_empty() {
+        return None;
+    }
+    let mut mesh = ArrayMesh::new_gd();
+    mesh.add_surface_from_arrays(PrimitiveType::TRIANGLES, &parts.body.arrays());
+    mesh.surface_set_material(0, &steel_material());
+    Some(mesh)
+}
+
+fn steel_material() -> Gd<godot::classes::Material> {
+    let mut steel = StandardMaterial3D::new_gd();
+    steel.set_albedo(STEEL);
+    steel.set_roughness(0.55);
+    steel.set_metallic(0.35);
+    steel.upcast()
+}
+
+/// A built sight's mesh and its optic body's.
+type SightMeshes = (Gd<ArrayMesh>, Option<Gd<ArrayMesh>>);
+
 thread_local! {
     /// Built sights, keyed by everything that shapes them.
-    static SIGHT_MESHES: RefCell<HashMap<String, Gd<ArrayMesh>>> = RefCell::new(HashMap::new());
+    static SIGHT_MESHES: RefCell<HashMap<String, SightMeshes>> = RefCell::new(HashMap::new());
     /// Cut copies of imported meshes, keyed by the source mesh and the cut boxes,
     /// so every soldier carrying a weapon shares one.
     static CUT_MESHES: RefCell<HashMap<(InstanceId, String), Gd<ArrayMesh>>> =
