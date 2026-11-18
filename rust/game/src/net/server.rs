@@ -85,7 +85,10 @@ use shooter_sim::tdm::{
 use shooter_sim::weapon::{self, CombatEvent, CombatState, Slot, WeaponId};
 use shooter_sim::{Vec2, Vec3, rng};
 
-use super::bots::{BotBrain, BotNavigation, BotObjective, BotPlayer, BotWorld};
+use super::bots::{
+    BotBrain, BotGrenade, BotNavigation, BotObjective, BotPlayer, BotSmoke, BotWorld,
+    THROW_CHECKS_PER_TICK,
+};
 use super::discovery::QueryResponder;
 use super::props::{PropExplosion, PropSnapshot, PropsBridge};
 use super::transport::{self, NetEvent};
@@ -270,6 +273,9 @@ pub struct NetServer {
     props_retry: u32,
     /// Every live grenade.
     grenades: GrenadeSim,
+    /// Smoke clouds still hanging: centre and the tick each popped. Only
+    /// bots read them (clients draw their own from the blast).
+    smokes: Vec<(Vec3, Tick)>,
 }
 
 struct ClientSlot {
@@ -775,7 +781,82 @@ impl NetServer {
         let mut d = VarDictionary::new();
         d.set("lanes", lanes);
         d.set("cover", covers);
+        let sum = |f: fn(&BotBrain) -> u32| -> u32 {
+            self.avatars
+                .iter()
+                .filter_map(|a| a.brain.as_ref())
+                .map(f)
+                .sum()
+        };
+        d.set("frags", sum(|b| b.frags_thrown));
+        d.set("tacticals", sum(|b| b.tacticals_thrown));
+        d.set("flights", sum(|b| b.flights));
+        d.set("flashed", sum(|b| b.flashed));
         d
+    }
+
+    /// One bot's state (tests): `blind`, `fleeing`, the enemy it has in
+    /// `sight` (-1 for none), its view `yaw`, and its `frags` thrown. Empty
+    /// for a player or no one.
+    #[func]
+    fn bot_status(&self, id: i32) -> VarDictionary {
+        let mut d = VarDictionary::new();
+        let Some(brain) = self
+            .avatars
+            .iter()
+            .find(|a| i32::from(a.id) == id)
+            .and_then(|a| a.brain.as_ref())
+        else {
+            return d;
+        };
+        d.set("blind", brain.blind_at(self.tick));
+        d.set("fleeing", brain.fleeing());
+        d.set("sight", brain.target_in_sight().map_or(-1, i32::from));
+        d.set("yaw", brain.view().x);
+        d.set("frags", brain.frags_thrown);
+        d
+    }
+
+    /// Debug: a bot takes every grenade chance (tests).
+    #[func]
+    fn debug_bot_grenades(&mut self, id: i32, always: bool) {
+        if let Some(brain) = self
+            .avatars
+            .iter_mut()
+            .find(|a| i32::from(a.id) == id)
+            .and_then(|a| a.brain.as_mut())
+        {
+            brain.always_throw = always;
+        }
+    }
+
+    /// Debug: turns a bot to face `point` level (tests).
+    #[func]
+    fn debug_bot_face(&mut self, id: i32, point: Vector3) {
+        if let Some(avatar) = self.avatars.iter_mut().find(|a| i32::from(a.id) == id)
+            && let Some(brain) = &mut avatar.brain
+        {
+            let mut view = shooter_sim::look::bearing(avatar.predicted.position, to_sim(point));
+            view.y = 0.0;
+            brain.face(view);
+        }
+    }
+
+    /// Debug: lays a live grenade of `kind` ("frag", "flash", "smoke") at
+    /// rest at `position`, thrown by player `owner` (-1 for no one), going
+    /// off in `fuse` seconds (tests).
+    #[func]
+    fn debug_grenade(&mut self, owner: i32, kind: GString, position: Vector3, fuse: f32) {
+        let Some(kind) = equipment::Kind::by_key(&kind.to_string()) else {
+            return;
+        };
+        let mut grenade = equipment::Grenade::dropped(kind, to_sim(position), Vec3::ZERO, fuse);
+        grenade.resting = true;
+        self.grenades.add(LiveGrenade {
+            owner: u8::try_from(owner).ok(),
+            shot: u32::MAX - self.grenades.live.len() as u32,
+            grenade,
+        });
     }
 
     /// The Search and Destroy round being played, from 1, or 0 for none.
@@ -1206,6 +1287,7 @@ impl NetServer {
         self.recent_deaths.clear();
         // A fresh match or round starts with no grenades about.
         self.grenades.clear();
+        self.smokes.clear();
         let free_for_all = self.game.free_for_all();
         let mut slots = [0; tdm::TEAM_COUNT];
         let mut order: Vec<(Team, u8)> = self.avatars.iter().map(|a| (a.team, a.id)).collect();
@@ -1243,6 +1325,12 @@ impl NetServer {
             if let Some(primary) = options.get(pick) {
                 avatar.primary = *primary;
             }
+            // And a tactical: a flashbang or smoke, about half each.
+            avatar.tactical = if rng::unit(u32::from(avatar.id), tick) < 0.5 {
+                equipment::Kind::Flash
+            } else {
+                equipment::Kind::Smoke
+            };
             brain.on_spawn(point.yaw, tick);
         }
         let loadout = if gun_game {
@@ -1425,6 +1513,33 @@ impl NetServer {
                 spawned_at: a.spawned_at,
             })
             .collect();
+        // Live grenades and smoke, for bots.
+        let smoke_ticks = (equipment::SMOKE_SECONDS * TICK_RATE as f32) as Tick;
+        self.smokes
+            .retain(|(_, popped)| tick.saturating_sub(*popped) < smoke_ticks);
+        let smokes: Vec<BotSmoke> = self
+            .smokes
+            .iter()
+            .map(|(center, popped)| BotSmoke {
+                center: *center,
+                age: tick.saturating_sub(*popped) as f32 * TICK_DT,
+            })
+            .collect();
+        let bot_grenades: Vec<BotGrenade> = self
+            .grenades
+            .live
+            .iter()
+            .map(|g| BotGrenade {
+                kind: g.grenade.kind,
+                position: to_godot(g.grenade.position),
+                owner: g.owner,
+                owner_team: g
+                    .owner
+                    .and_then(|id| players.iter().find(|p| p.id == id))
+                    .map(|p| p.team),
+            })
+            .collect();
+        let mut throw_checks = THROW_CHECKS_PER_TICK;
         let objectives = self.bot_objectives();
         let frozen = self.frozen();
         let respawning = self.respawns();
@@ -1451,6 +1566,9 @@ impl NetServer {
                             space,
                             team_spawns: &team_spawns,
                             lanes: &self.bot_lanes,
+                            grenades: &bot_grenades,
+                            smokes: &smokes,
+                            throw_checks: &mut throw_checks,
                         };
                         let objective = objectives
                             .iter()
@@ -1698,6 +1816,13 @@ impl NetServer {
             kind,
             at,
         });
+        match kind {
+            equipment::Kind::Flash => self.flash_bots(space, at),
+            equipment::Kind::Smoke => self
+                .smokes
+                .push((at + Vec3::Y * equipment::SMOKE_HEIGHT, self.tick)),
+            equipment::Kind::Frag => {}
+        }
         if !self.attacks_hurt() {
             return;
         }
@@ -1822,6 +1947,35 @@ impl NetServer {
                 let awards = thrower.score.on_shot_kills(&rules, &kills);
                 let totals = thrower.score.totals();
                 self.send_event(attacker, GameEvent::Score { awards, totals });
+            }
+        }
+    }
+
+    /// A flashbang at `at` blinds every bot whose eyes can see it, by
+    /// distance and how squarely it faces it, as it does players
+    /// (`FpsPlayer::flash_me`). One ray per bot in range.
+    fn flash_bots(&mut self, space: &mut Gd<PhysicsDirectSpaceState3D>, at: Vec3) {
+        let flash = to_godot(at) + Vector3::UP * equipment::BLAST_LIFT;
+        let movement = self.params.movement;
+        let tick = self.tick;
+        for avatar in &mut self.avatars {
+            let Some(brain) = &mut avatar.brain else {
+                continue;
+            };
+            if !avatar.predicted.state.alive() {
+                continue;
+            }
+            let eye = to_godot(avatar.predicted.position)
+                + Vector3::UP * avatar.predicted.state.movement.eye_height(&movement);
+            let to = flash - eye;
+            if to.length() >= equipment::FLASH_RANGE || !grenades::clear_line(space, eye, flash) {
+                continue;
+            }
+            let view = brain.view();
+            let forward = to_godot(shooter_sim::look::view_direction(view.x, view.y));
+            let amount = equipment::flash_amount(to.length(), forward.dot(to.normalized_or_zero()));
+            if amount > 0.02 {
+                brain.on_flashed(amount, tick);
             }
         }
     }
