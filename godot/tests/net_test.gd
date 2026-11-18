@@ -93,6 +93,10 @@ func _run() -> void:
 			soldier.wrist_position(true).distance_to(bot.feet()) > 0.5,
 			"the bot's hands are on its weapon (IK ran)"
 		)
+		_check(
+			bot.get_node("AimAssist").get("enabled") == true,
+			"the enemy bot carries a controller aim assist target"
+		)
 		await _shoot_bot(player, client, bot)
 
 	# Weapon rack: walk west until 2 m from the M870 rack (x = -7, z = 20.6).

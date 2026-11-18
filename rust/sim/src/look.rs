@@ -5,16 +5,22 @@
 //! deterministic across machines. It lives in `shooter-sim` because it is
 //! engine-free math that is easiest to tune with unit tests.
 //!
-//! Aim assist follows the console-shooter model, and never moves the view on
-//! its own:
+//! Aim assist follows Call of Duty's controller aim assist, and has only its
+//! parts:
 //!
-//! - **Slowdown**: stick look turns slower while the crosshair is over or near a
-//!   target, so small corrections are easier.
-//! - **Rotational**: while the player is moving or looking, the view follows a
-//!   fraction of the target's motion relative to the camera. Strafing past a
-//!   target keeps the crosshair closer to it.
+//! - **Slowdown**: stick look turns slower while the crosshair is over or near
+//!   an enemy's body.
+//! - **Rotational**: while the player is moving or looking, the view follows
+//!   60% of the enemy's motion relative to the camera, so strafing past an
+//!   enemy, or an enemy strafing, keeps the crosshair with them.
+//! - **Target aim assist**: starting to aim down sights with a zombie near the
+//!   crosshair eases the view onto it. Like CoD, this is for Zombies only;
+//!   players and bots never get a snap.
 //!
-//! There is no snap-to-target on aiming down sights.
+//! [`AssistType`] mirrors CoD's aim assist types: Default, Precision (slowdown
+//! only on the body), Focusing (strong slowdown that also catches near misses,
+//! no rotational), and Legacy (the older, slightly stronger style). Every part
+//! fades out toward the end of the assist range.
 
 use glam::{Vec2, Vec3};
 
@@ -95,53 +101,147 @@ impl StickLook {
     }
 }
 
-/// Aim assist strength. Values blend from hip to fully aimed down sights.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct AimAssistParams {
-    /// Targets further than this, in metres, get no assist.
-    pub range: f32,
-    /// The assist area around a target, as a multiple of its radius.
-    pub bubble_scale: f32,
-    /// Smallest assist area, in radians, so distant targets still get some.
-    pub min_bubble: f32,
-    /// Stick speed multiplier with the crosshair on the target, at the hip.
-    pub slowdown_hip: f32,
-    /// Stick speed multiplier with the crosshair on the target, aimed.
-    pub slowdown_ads: f32,
-    /// Fraction of the target's relative motion the view follows, at the hip.
-    pub rotation_hip: f32,
-    /// Fraction of the target's relative motion the view follows, aimed.
-    pub rotation_ads: f32,
+/// The aim assist type setting.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AssistType {
+    /// Slowdown as the crosshair nears an enemy, and rotational.
+    #[default]
+    Default,
+    /// Slowdown only with the crosshair on an enemy's body, and rotational.
+    Precision,
+    /// Strong slowdown that also catches near misses. No rotational.
+    Focusing,
+    /// The older style: like Default, slightly stronger.
+    Legacy,
 }
 
-impl Default for AimAssistParams {
-    fn default() -> Self {
-        Self {
-            range: 60.0,
-            bubble_scale: 3.0,
-            min_bubble: 1.5_f32.to_radians(),
-            slowdown_hip: 0.65,
-            slowdown_ads: 0.45,
-            rotation_hip: 0.35,
-            rotation_ads: 0.6,
+impl AssistType {
+    pub const ALL: [Self; 4] = [Self::Default, Self::Precision, Self::Focusing, Self::Legacy];
+
+    /// The type for a setting index (0 Default, 1 Precision, 2 Focusing,
+    /// 3 Legacy). Anything else is Default.
+    pub fn from_index(index: i32) -> Self {
+        match index {
+            1 => Self::Precision,
+            2 => Self::Focusing,
+            3 => Self::Legacy,
+            _ => Self::Default,
+        }
+    }
+
+    /// The tuning for this type.
+    pub fn params(self) -> AimAssistParams {
+        let default = AimAssistParams::default();
+        match self {
+            Self::Default => default,
+            Self::Precision => AimAssistParams {
+                bubble_scale: 1.0,
+                min_bubble: 0.25_f32.to_radians(),
+                slowdown_hip: 0.45,
+                slowdown_ads: 0.3,
+                ..default
+            },
+            Self::Focusing => AimAssistParams {
+                bubble_scale: 3.5,
+                min_bubble: 2_f32.to_radians(),
+                slowdown_hip: 0.35,
+                slowdown_ads: 0.25,
+                rotation_hip: 0.0,
+                rotation_ads: 0.0,
+                ..default
+            },
+            Self::Legacy => AimAssistParams {
+                bubble_scale: 5.5,
+                min_bubble: 3.5_f32.to_radians(),
+                slowdown_hip: 0.45,
+                slowdown_ads: 0.32,
+                rotation_hip: 0.65,
+                rotation_ads: 0.65,
+                ..default
+            },
         }
     }
 }
+
+/// Aim assist tuning. Values named `_hip` and `_ads` blend from the hip to
+/// fully aimed down sights.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AimAssistParams {
+    /// Enemies further than this, in metres, get no assist.
+    pub range: f32,
+    /// Distance in metres where the assist starts fading, to nothing at `range`.
+    pub fade_from: f32,
+    /// The slowdown area around an enemy, as a multiple of their radius. 1 is
+    /// the body alone.
+    pub bubble_scale: f32,
+    /// Smallest margin of the slowdown area past the body, in radians, so
+    /// distant enemies still get some.
+    pub min_bubble: f32,
+    /// Stick speed multiplier with the crosshair on an enemy, at the hip.
+    pub slowdown_hip: f32,
+    /// Stick speed multiplier with the crosshair on an enemy, aimed.
+    pub slowdown_ads: f32,
+    /// Fraction of the enemy's relative motion the view follows, at the hip.
+    pub rotation_hip: f32,
+    /// Fraction of the enemy's relative motion the view follows, aimed.
+    pub rotation_ads: f32,
+    /// Target aim assist (zombies only): the angle from the crosshair to the
+    /// upper body within which starting to aim snaps on, in radians.
+    pub snap_cone: f32,
+    /// How fast the snap closes on the zombie, per second.
+    pub snap_rate: f32,
+    /// How long one snap lasts, in seconds.
+    pub snap_time: f32,
+    /// How much nearer the crosshair another enemy must be before the assist
+    /// moves to them: 0.4 means 40% more weight.
+    pub stickiness: f32,
+}
+
+impl Default for AimAssistParams {
+    /// The Default type.
+    fn default() -> Self {
+        Self {
+            range: 80.0,
+            fade_from: 55.0,
+            bubble_scale: 5.0,
+            min_bubble: 3_f32.to_radians(),
+            slowdown_hip: 0.5,
+            slowdown_ads: 0.35,
+            rotation_hip: 0.6,
+            rotation_ads: 0.6,
+            snap_cone: 7_f32.to_radians(),
+            snap_rate: 10.0,
+            snap_time: 0.18,
+            stickiness: 0.4,
+        }
+    }
+}
+
+/// Where on the body the snap and rotational aim, as a fraction from the
+/// bottom of the capsule's core to its top: the upper chest.
+const UPPER_BODY: f32 = 0.75;
 
 /// A target body as a vertical capsule: the segment from `bottom` to `top`,
 /// inflated by `radius`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AssistTarget {
-    /// Stable identity, so rotational assist only follows one target's motion.
+    /// Stable identity, so the assist stays on one enemy.
     pub id: u64,
     pub bottom: Vec3,
     pub top: Vec3,
     pub radius: f32,
+    /// Target aim assist snaps onto this body when aiming starts (zombies).
+    pub snap: bool,
 }
 
 impl AssistTarget {
     pub fn center(&self) -> Vec3 {
         (self.bottom + self.top) * 0.5
+    }
+
+    /// The upper chest, where the snap lands.
+    pub fn upper_body(&self) -> Vec3 {
+        self.bottom.lerp(self.top, UPPER_BODY)
     }
 }
 
@@ -153,7 +253,7 @@ pub struct AssistView {
     pub pitch: f32,
     /// 0 at the hip, 1 fully aimed down sights.
     pub ads: f32,
-    /// The player is looking or moving. Rotational assist only works then.
+    /// The player is moving or looking. Rotational only works then.
     pub active: bool,
 }
 
@@ -165,7 +265,7 @@ pub struct AssistOutput {
     /// Add to the view angles: `x` yaw (radians, Godot's sign: positive turns
     /// left), `y` pitch up.
     pub rotation: Vec2,
-    /// The target the assist is on, if any.
+    /// The enemy the assist is on, if any.
     pub target: Option<u64>,
 }
 
@@ -177,57 +277,89 @@ impl AssistOutput {
     };
 }
 
-/// Aim assist state: the target being followed and its last bearing.
+/// A snap in progress.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Snap {
+    id: u64,
+    left: f32,
+}
+
+/// Aim assist state: the enemy being followed, its last bearing, and the snap.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct AimAssist {
     tracked: Option<(u64, Vec2)>,
+    snap: Option<Snap>,
+    was_aiming: bool,
 }
 
 impl AimAssist {
-    /// Forgets the followed target, for example when switching to the mouse.
+    /// Forgets the followed enemy and any snap, for example when switching to
+    /// the mouse.
     pub fn reset(&mut self) {
-        self.tracked = None;
+        *self = Self::default();
     }
 
-    /// Picks the target nearest the crosshair and returns the slowdown and
-    /// rotation to apply. `targets` should already be filtered for line of sight.
+    /// Picks the enemy to assist on and returns the slowdown and rotation to
+    /// apply this frame. `targets` should already be filtered for line of
+    /// sight; `dt` is the frame time in seconds.
     pub fn update(
         &mut self,
         view: &AssistView,
         targets: &[AssistTarget],
         params: &AimAssistParams,
+        dt: f32,
     ) -> AssistOutput {
         let forward = view_direction(view.yaw, view.pitch);
+        let aiming = view.ads > 0.001;
+        let started_aiming = aiming && !self.was_aiming;
+        self.was_aiming = aiming;
+
+        let mut rotation = self.snap_step(view, forward, targets, params, started_aiming, dt);
+
+        let current = self.tracked.map(|(id, _)| id);
         let best = targets
             .iter()
             .filter_map(|target| {
                 let weight = target_weight(view.eye, forward, target, params)?;
-                Some((target, weight))
+                let score = if Some(target.id) == current {
+                    weight * (1.0 + params.stickiness)
+                } else {
+                    weight
+                };
+                Some((target, weight, score))
             })
-            .max_by(|a, b| a.1.total_cmp(&b.1));
+            .max_by(|a, b| a.2.total_cmp(&b.2));
 
-        let Some((target, weight)) = best else {
+        let Some((target, weight, _)) = best else {
             self.tracked = None;
-            return AssistOutput::NONE;
+            return AssistOutput {
+                rotation,
+                target: self.snap.map(|s| s.id),
+                ..AssistOutput::NONE
+            };
         };
 
-        let slowdown_full = lerp(params.slowdown_hip, params.slowdown_ads, view.ads);
-        let slowdown = lerp(1.0, slowdown_full, weight);
+        let slowdown = lerp(
+            1.0,
+            lerp(params.slowdown_hip, params.slowdown_ads, view.ads),
+            weight,
+        );
 
-        // The bearing of the target's center changes only when the player or
-        // the target moves, never when the player turns, so following its
-        // change cannot feed back into the player's own look input.
-        let bearing = bearing(view.eye, target.center());
-        let mut rotation = Vec2::ZERO;
+        // Rotational: the bearing of a fixed point on the body changes only
+        // when the player or the enemy moves, never when the player turns, so
+        // following its change cannot feed back into the player's own look.
+        let bearing_now = bearing(view.eye, target.upper_body());
         if let Some((id, previous)) = self.tracked
             && id == target.id
             && view.active
         {
-            let delta = Vec2::new(wrap_angle(bearing.x - previous.x), bearing.y - previous.y);
-            let strength = lerp(params.rotation_hip, params.rotation_ads, view.ads) * weight;
-            rotation = delta * strength;
+            let delta = Vec2::new(
+                wrap_angle(bearing_now.x - previous.x),
+                bearing_now.y - previous.y,
+            );
+            rotation += delta * lerp(params.rotation_hip, params.rotation_ads, view.ads) * weight;
         }
-        self.tracked = Some((target.id, bearing));
+        self.tracked = Some((target.id, bearing_now));
 
         AssistOutput {
             slowdown,
@@ -235,6 +367,75 @@ impl AimAssist {
             target: Some(target.id),
         }
     }
+
+    /// Target aim assist: starts a snap when aiming begins near a zombie, and
+    /// returns this frame's share of a snap in progress.
+    fn snap_step(
+        &mut self,
+        view: &AssistView,
+        forward: Vec3,
+        targets: &[AssistTarget],
+        params: &AimAssistParams,
+        started_aiming: bool,
+        dt: f32,
+    ) -> Vec2 {
+        if started_aiming
+            && params.snap_cone > 0.0
+            && let Some(target) = snap_candidate(view.eye, forward, targets, params)
+        {
+            self.snap = Some(Snap {
+                id: target.id,
+                left: params.snap_time,
+            });
+        }
+        if view.ads <= 0.001 {
+            self.snap = None;
+        }
+        let Some(snap) = &mut self.snap else {
+            return Vec2::ZERO;
+        };
+        let Some(target) = targets.iter().find(|t| t.id == snap.id) else {
+            self.snap = None;
+            return Vec2::ZERO;
+        };
+        let offset = angle_offset(view, target.upper_body());
+        let step_time = dt.min(snap.left);
+        snap.left -= dt;
+        if snap.left <= 0.0 {
+            self.snap = None;
+        }
+        offset * (1.0 - fmath::exp(-params.snap_rate * step_time))
+    }
+}
+
+/// The snappable body whose upper chest is nearest the crosshair inside the
+/// snap cone.
+fn snap_candidate<'a>(
+    eye: Vec3,
+    forward: Vec3,
+    targets: &'a [AssistTarget],
+    params: &AimAssistParams,
+) -> Option<&'a AssistTarget> {
+    targets
+        .iter()
+        .filter(|target| target.snap)
+        .filter_map(|target| {
+            let to = target.upper_body() - eye;
+            let distance = to.length();
+            if distance > params.range || distance < 0.1 {
+                return None;
+            }
+            let angle = fmath::atan2(to.cross(forward).length(), to.dot(forward));
+            (angle <= params.snap_cone).then_some((target, angle))
+        })
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(target, _)| target)
+}
+
+/// The yaw and pitch that would put the crosshair on `point`.
+fn angle_offset(view: &AssistView, point: Vec3) -> Vec2 {
+    let b = bearing(view.eye, point);
+    Vec2::new(wrap_angle(b.x - view.yaw), b.y - view.pitch)
 }
 
 /// Unit view direction for Godot yaw and pitch (yaw 0 looks down -Z).
@@ -252,8 +453,9 @@ pub fn bearing(from: Vec3, to: Vec3) -> Vec2 {
     Vec2::new(yaw, pitch)
 }
 
-/// How strongly a target pulls: 1 with the crosshair on its body, falling to 0
-/// at the edge of its assist area. `None` when out of range or behind.
+/// How strongly an enemy pulls: 1 with the crosshair on their body, falling to
+/// 0 at the edge of their bubble and toward the end of the assist range.
+/// `None` when out of range, behind, or outside the bubble.
 fn target_weight(
     eye: Vec3,
     forward: Vec3,
@@ -264,7 +466,7 @@ fn target_weight(
     if distance > params.range || distance < 0.1 {
         return None;
     }
-    let (along, miss) = ray_segment_distance(eye, forward, target.bottom, target.top);
+    let (along, miss, _) = ray_segment_closest(eye, forward, target.bottom, target.top);
     if along <= 0.0 {
         return None;
     }
@@ -276,12 +478,18 @@ fn target_weight(
         return None;
     }
     let t = 1.0 - off_body / bubble;
-    Some(t * t * (3.0 - 2.0 * t))
+    let fade = if distance > params.fade_from && params.range > params.fade_from {
+        1.0 - (distance - params.fade_from) / (params.range - params.fade_from)
+    } else {
+        1.0
+    };
+    Some(t * t * (3.0 - 2.0 * t) * fade)
 }
 
 /// Closest approach between a ray and a segment. Returns the distance along
-/// the ray to that point and the gap between them.
-fn ray_segment_distance(origin: Vec3, direction: Vec3, a: Vec3, b: Vec3) -> (f32, f32) {
+/// the ray to that point, the gap between them, and the parameter along the
+/// segment (0 at `a`, 1 at `b`).
+fn ray_segment_closest(origin: Vec3, direction: Vec3, a: Vec3, b: Vec3) -> (f32, f32, f32) {
     let segment = b - a;
     let w = origin - a;
     let aa = segment.dot(segment);
@@ -289,7 +497,6 @@ fn ray_segment_distance(origin: Vec3, direction: Vec3, a: Vec3, b: Vec3) -> (f32
     let bw = direction.dot(w);
     let aw = segment.dot(w);
     let denominator = aa - ab * ab;
-    // Parameter along the segment (0..1); the ray parameter follows from it.
     let s = if aa <= f32::EPSILON || denominator.abs() <= f32::EPSILON {
         0.0
     } else {
@@ -298,7 +505,7 @@ fn ray_segment_distance(origin: Vec3, direction: Vec3, a: Vec3, b: Vec3) -> (f32
     let point = a + segment * s;
     let along = (point - origin).dot(direction);
     let closest = origin + direction * along.max(0.0);
-    (along, closest.distance(point))
+    (along, closest.distance(point), s)
 }
 
 fn wrap_angle(angle: f32) -> f32 {
@@ -313,6 +520,7 @@ fn lerp(a: f32, b: f32, t: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::VecDeque;
 
     const DT: f32 = 1.0 / 60.0;
 
@@ -320,20 +528,37 @@ mod tests {
         AssistTarget {
             id,
             bottom: Vec3::new(x, 0.3, z),
-            top: Vec3::new(x, 1.5, z),
+            top: Vec3::new(x, 1.45, z),
             radius: 0.3,
+            snap: false,
         }
     }
 
-    fn view_at(eye: Vec3, look_at: Vec3, active: bool) -> AssistView {
+    fn zombie(id: u64, x: f32, z: f32) -> AssistTarget {
+        AssistTarget {
+            snap: true,
+            ..dummy(id, x, z)
+        }
+    }
+
+    fn view_at(eye: Vec3, look_at: Vec3) -> AssistView {
         let b = bearing(eye, look_at);
         AssistView {
             eye,
             yaw: b.x,
             pitch: b.y,
             ads: 0.0,
-            active,
+            active: false,
         }
+    }
+
+    fn default_params() -> AimAssistParams {
+        AssistType::Default.params()
+    }
+
+    /// Angle from the crosshair to a point.
+    fn miss_angle(view: &AssistView, point: Vec3) -> f32 {
+        angle_offset(view, point).length()
     }
 
     #[test]
@@ -374,129 +599,383 @@ mod tests {
     }
 
     #[test]
+    fn types_from_the_setting() {
+        assert_eq!(AssistType::from_index(0), AssistType::Default);
+        assert_eq!(AssistType::from_index(1), AssistType::Precision);
+        assert_eq!(AssistType::from_index(2), AssistType::Focusing);
+        assert_eq!(AssistType::from_index(3), AssistType::Legacy);
+        assert_eq!(AssistType::from_index(9), AssistType::Default);
+        let focusing = AssistType::Focusing.params();
+        assert_eq!((focusing.rotation_hip, focusing.rotation_ads), (0.0, 0.0));
+        let legacy = AssistType::Legacy.params();
+        assert!(legacy.rotation_hip > default_params().rotation_hip);
+        assert!((default_params().rotation_hip - 0.6).abs() < 1e-6);
+    }
+
+    #[test]
     fn slowdown_is_strongest_on_target_and_fades_out() {
-        let params = AimAssistParams::default();
+        let params = default_params();
         let target = dummy(1, 0.0, -10.0);
-        let eye = Vec3::new(0.0, 1.0, 0.0);
+        let eye = Vec3::new(0.0, 1.6, 0.0);
         let mut assist = AimAssist::default();
 
-        let on = assist.update(&view_at(eye, target.center(), false), &[target], &params);
+        let on = assist.update(&view_at(eye, target.center()), &[target], &params, DT);
         assert_eq!(on.target, Some(1));
         assert!((on.slowdown - params.slowdown_hip).abs() < 1e-5);
 
         let near = assist.update(
-            &view_at(eye, Vec3::new(0.6, 1.0, -10.0), false),
+            &view_at(eye, Vec3::new(0.8, 1.0, -10.0)),
             &[target],
             &params,
+            DT,
         );
         assert!(near.slowdown > on.slowdown && near.slowdown < 1.0);
 
         let off = assist.update(
-            &view_at(eye, Vec3::new(3.0, 1.0, -10.0), false),
+            &view_at(eye, Vec3::new(4.0, 1.0, -10.0)),
             &[target],
             &params,
+            DT,
         );
         assert_eq!(off, AssistOutput::NONE);
     }
 
+    /// Default slows the crosshair as it approaches; Precision only once it is
+    /// on the body; Focusing catches near misses with a stronger slowdown.
+    #[test]
+    fn each_type_slows_where_it_should() {
+        let eye = Vec3::new(0.0, 1.6, 0.0);
+        let target = dummy(1, 0.0, -10.0);
+        let slowdown = |kind: AssistType, look_at: Vec3| {
+            AimAssist::default()
+                .update(&view_at(eye, look_at), &[target], &kind.params(), DT)
+                .slowdown
+        };
+        let near_miss = Vec3::new(0.6, 1.0, -10.0);
+        let on_body = Vec3::new(0.1, 1.0, -10.0);
+        assert!(slowdown(AssistType::Default, near_miss) < 1.0);
+        assert_eq!(slowdown(AssistType::Precision, near_miss), 1.0);
+        assert!(slowdown(AssistType::Precision, on_body) < slowdown(AssistType::Default, on_body));
+        assert!(slowdown(AssistType::Focusing, near_miss) < 1.0);
+        assert!(slowdown(AssistType::Focusing, on_body) < slowdown(AssistType::Precision, on_body));
+    }
+
+    #[test]
+    fn slowdown_area_reaches_past_the_body() {
+        let params = default_params();
+        let eye = Vec3::new(0.0, 1.6, 0.0);
+        for distance in [5.0, 15.0, 40.0] {
+            let target = dummy(1, 0.0, -distance);
+            let edge = (target.radius / distance).atan() + 2.5_f32.to_radians();
+            let mut view = view_at(eye, target.center());
+            view.yaw -= edge;
+            let out = AimAssist::default().update(&view, &[target], &params, DT);
+            assert_eq!(out.target, Some(1), "at {distance} m");
+        }
+    }
+
     #[test]
     fn aiming_down_sights_slows_more() {
-        let params = AimAssistParams::default();
+        let params = default_params();
         let target = dummy(1, 0.0, -10.0);
-        let mut view = view_at(Vec3::new(0.0, 1.0, 0.0), target.center(), false);
+        let mut view = view_at(Vec3::new(0.0, 1.6, 0.0), target.center());
         view.ads = 1.0;
-        let out = AimAssist::default().update(&view, &[target], &params);
+        let out = AimAssist::default().update(&view, &[target], &params, DT);
         assert!((out.slowdown - params.slowdown_ads).abs() < 1e-5);
     }
 
     #[test]
     fn out_of_range_and_behind_get_nothing() {
-        let params = AimAssistParams::default();
-        let eye = Vec3::new(0.0, 1.0, 0.0);
+        let params = default_params();
+        let eye = Vec3::new(0.0, 1.6, 0.0);
         let far = dummy(1, 0.0, -100.0);
         let behind = dummy(2, 0.0, 10.0);
-        let view = view_at(eye, far.center(), true);
-        let out = AimAssist::default().update(&view, &[far, behind], &params);
+        let mut view = view_at(eye, far.center());
+        view.active = true;
+        let out = AimAssist::default().update(&view, &[far, behind], &params, DT);
         assert_eq!(out, AssistOutput::NONE);
     }
 
     #[test]
+    fn fades_toward_the_end_of_range() {
+        let params = default_params();
+        let eye = Vec3::new(0.0, 1.6, 0.0);
+        let slowdown = |distance: f32| {
+            let target = dummy(1, 0.0, -distance);
+            let view = view_at(eye, target.center());
+            AimAssist::default()
+                .update(&view, &[target], &params, DT)
+                .slowdown
+        };
+        assert!((slowdown(30.0) - params.slowdown_hip).abs() < 1e-4);
+        assert!(slowdown(70.0) > slowdown(30.0) && slowdown(70.0) < 1.0);
+    }
+
+    #[test]
     fn picks_the_target_nearest_the_crosshair() {
-        let params = AimAssistParams::default();
-        let eye = Vec3::new(0.0, 1.0, 0.0);
-        let a = dummy(1, 0.5, -10.0);
+        let params = default_params();
+        let eye = Vec3::new(0.0, 1.6, 0.0);
+        let a = dummy(1, 1.2, -10.0);
         let b = dummy(2, -0.1, -10.0);
-        let view = view_at(eye, Vec3::new(0.0, 1.0, -10.0), false);
-        let out = AimAssist::default().update(&view, &[a, b], &params);
+        let view = view_at(eye, Vec3::new(0.0, 1.0, -10.0));
+        let out = AimAssist::default().update(&view, &[a, b], &params, DT);
         assert_eq!(out.target, Some(2));
     }
 
-    /// Strafing past a target: the view follows part of its relative motion,
+    /// Two enemies side by side: once on one, the crosshair drifting a little
+    /// nearer the other does not move the assist across.
+    #[test]
+    fn stays_on_the_current_target() {
+        let params = default_params();
+        let eye = Vec3::new(0.0, 1.6, 0.0);
+        let a = dummy(1, -1.0, -10.0);
+        let b = dummy(2, 1.0, -10.0);
+        let mut assist = AimAssist::default();
+        let look = |x: f32| view_at(eye, Vec3::new(x, 1.0, -10.0));
+        assert_eq!(
+            assist.update(&look(-0.6), &[a, b], &params, DT).target,
+            Some(1)
+        );
+        assert_eq!(
+            assist.update(&look(0.05), &[a, b], &params, DT).target,
+            Some(1)
+        );
+        assert_eq!(
+            assist.update(&look(0.9), &[a, b], &params, DT).target,
+            Some(2)
+        );
+    }
+
+    /// Strafing past an enemy: the view follows 60% of their relative motion,
     /// but only while the player is giving input.
     #[test]
     fn rotation_follows_relative_motion_while_active() {
-        let params = AimAssistParams::default();
+        let params = default_params();
         let target = dummy(1, 0.0, -10.0);
         for active in [true, false] {
             let mut assist = AimAssist::default();
-            let mut eye = Vec3::new(0.0, 1.0, 0.0);
-            let mut view = view_at(eye, target.center(), active);
-            // A short strafe: long enough to matter, short enough that the
-            // crosshair stays in the assist area without stick corrections.
-            for _ in 0..10 {
+            let start = Vec3::new(0.0, 1.6, 0.0);
+            let mut eye = start;
+            let mut view = view_at(eye, target.upper_body());
+            view.active = active;
+            // The first frame finds the target; following starts after it.
+            assist.update(&view, &[target], &params, DT);
+            // Short enough that the 40% left behind stays on the body.
+            for _ in 0..8 {
                 eye.x += 4.0 * DT;
                 view.eye = eye;
-                let out = assist.update(&view, &[target], &params);
+                let out = assist.update(&view, &[target], &params, DT);
                 view.yaw += out.rotation.x;
                 view.pitch += out.rotation.y;
             }
-            let error = (bearing(eye, target.center()).x - view.yaw).abs();
-            let unassisted = bearing(eye, target.center()).x.abs();
+            let start_yaw = bearing(start, target.upper_body()).x;
+            let moved = bearing(eye, target.upper_body()).x - start_yaw;
+            let followed = view.yaw - start_yaw;
             if active {
-                assert!(view.yaw > 0.0, "turns left toward a target on the left");
-                assert!(error < unassisted * 0.8, "{error} vs {unassisted}");
-            } else {
-                assert_eq!(
-                    view.yaw,
-                    bearing(Vec3::new(0.0, 1.0, 0.0), target.center()).x
+                assert!(
+                    (followed / moved - 0.6).abs() < 0.02,
+                    "{followed} of {moved}"
                 );
+            } else {
+                assert_eq!(followed, 0.0);
             }
+        }
+    }
+
+    #[test]
+    fn focusing_has_no_rotational() {
+        let params = AssistType::Focusing.params();
+        let target = dummy(1, 0.0, -10.0);
+        let mut assist = AimAssist::default();
+        let mut view = view_at(Vec3::new(0.0, 1.6, 0.0), target.upper_body());
+        view.active = true;
+        for _ in 0..10 {
+            view.eye.x += 4.0 * DT;
+            let out = assist.update(&view, &[target], &params, DT);
+            assert_eq!(out.rotation, Vec2::ZERO);
         }
     }
 
     /// Turning the view must not create rotation on its own.
     #[test]
     fn turning_alone_adds_no_rotation() {
-        let params = AimAssistParams::default();
+        let params = default_params();
         let target = dummy(1, 0.0, -10.0);
-        let eye = Vec3::new(0.0, 1.0, 0.0);
+        let eye = Vec3::new(0.0, 1.6, 0.0);
         let mut assist = AimAssist::default();
-        let mut view = view_at(eye, target.center(), true);
+        let mut view = view_at(eye, target.upper_body());
+        view.active = true;
         for _ in 0..10 {
             view.yaw += 0.002;
-            let out = assist.update(&view, &[target], &params);
+            let out = assist.update(&view, &[target], &params, DT);
             assert_eq!(out.rotation, Vec2::ZERO);
         }
     }
 
     #[test]
     fn switching_targets_does_not_jump() {
-        let params = AimAssistParams::default();
-        let eye = Vec3::new(0.0, 1.0, 0.0);
+        let params = default_params();
+        let eye = Vec3::new(0.0, 1.6, 0.0);
         let a = dummy(1, 0.0, -10.0);
         let b = dummy(2, 0.0, -20.0);
         let mut assist = AimAssist::default();
-        let view = view_at(eye, a.center(), true);
-        assist.update(&view, &[a], &params);
-        let out = assist.update(&view, &[b], &params);
+        let mut view = view_at(eye, a.upper_body());
+        view.active = true;
+        assist.update(&view, &[a], &params, DT);
+        let out = assist.update(&view, &[b], &params, DT);
         assert_eq!(out.target, Some(2));
         assert_eq!(out.rotation, Vec2::ZERO);
     }
 
+    /// Runs one aim down sights from `start` and returns how far the crosshair
+    /// ends from the target's upper body.
+    fn aim_in(start: AssistView, target: AssistTarget, assist: &mut AimAssist) -> f32 {
+        let params = default_params();
+        let mut view = start;
+        for frame in 0..15 {
+            view.ads = (frame as f32 + 1.0) / 15.0;
+            let out = assist.update(&view, &[target], &params, DT);
+            view.yaw += out.rotation.x;
+            view.pitch += out.rotation.y;
+        }
+        miss_angle(&view, target.upper_body())
+    }
+
+    /// Target aim assist: aiming down sights near a zombie lands on its upper
+    /// body. Players and bots never get a snap.
     #[test]
-    fn wrap_angle_stays_in_range() {
-        use std::f32::consts::PI;
-        assert!((wrap_angle(2.0 * PI - 0.1) + 0.1).abs() < 1e-5);
-        assert!((wrap_angle(-2.0 * PI + 0.1) - 0.1).abs() < 1e-5);
+    fn aiming_snaps_onto_zombies_only() {
+        let eye = Vec3::new(0.0, 1.6, 0.0);
+        let start = view_at(eye, Vec3::new(1.1, 1.0, -15.0));
+        let walker = zombie(1, 0.0, -15.0);
+        let before = miss_angle(&start, walker.upper_body());
+        assert!(before < default_params().snap_cone);
+        let after = aim_in(start, walker, &mut AimAssist::default());
+        assert!(after < before * 0.25, "{after} vs {before}");
+
+        let player = dummy(1, 0.0, -15.0);
+        let unsnapped = aim_in(start, player, &mut AimAssist::default());
+        assert!((unsnapped - before).abs() < 1e-6, "{unsnapped} vs {before}");
+    }
+
+    #[test]
+    fn snap_ignores_zombies_outside_the_cone() {
+        let eye = Vec3::new(0.0, 1.6, 0.0);
+        let walker = zombie(1, 0.0, -10.0);
+        let start = view_at(eye, Vec3::new(3.0, 1.0, -10.0));
+        let before = miss_angle(&start, walker.upper_body());
+        let after = aim_in(start, walker, &mut AimAssist::default());
+        assert!((after - before).abs() < 1e-6);
+    }
+
+    /// A simulated thumb tracks an enemy who strafes back and forth: it sees
+    /// the enemy a reaction time late, under-leads a little, and has a slight
+    /// tremor. Returns the share of frames the crosshair was on the body.
+    fn tracking_share(kind: Option<AssistType>, ads: f32, player_strafes: bool) -> f32 {
+        let params = kind.map(AssistType::params);
+        let stick = StickParams::default();
+        let zoom = if ads > 0.0 { 0.75 } else { 1.0 };
+        let mut eye = Vec3::new(0.0, 1.6, 0.0);
+        let mut x = 0.0_f32;
+        let mut target_velocity = 4.5;
+        let mut player_velocity = 3.0;
+        let mut view = view_at(eye, dummy(1, 0.0, -15.0).upper_body());
+        view.ads = ads;
+        let mut assist = AimAssist::default();
+        let reaction = 9; // frames, 150 ms
+        let mut seen: VecDeque<Vec2> = VecDeque::new();
+        let mut thumb = Vec2::ZERO;
+        let mut rng = 0x2545_f491_u32;
+        let mut noise = || {
+            rng ^= rng << 13;
+            rng ^= rng >> 17;
+            rng ^= rng << 5;
+            (rng as f32 / u32::MAX as f32 - 0.5) * 0.2
+        };
+        let frames = 600;
+        let mut on = 0;
+        for frame in 0..frames {
+            if frame % 50 == 0 && frame > 0 {
+                target_velocity = -target_velocity;
+            }
+            if frame % 70 == 0 && frame > 0 {
+                player_velocity = -player_velocity;
+            }
+            x += target_velocity * DT;
+            if player_strafes {
+                eye.x += player_velocity * DT;
+            }
+            let target = dummy(1, x, -15.0);
+            view.eye = eye;
+
+            seen.push_back(bearing(eye, target.upper_body()));
+            if seen.len() > reaction + 1 {
+                seen.pop_front();
+            }
+            let late = seen[0];
+            let motion = if seen.len() > 1 {
+                Vec2::new(wrap_angle(seen[1].x - seen[0].x), seen[1].y - seen[0].y) / DT
+            } else {
+                Vec2::ZERO
+            };
+            let lead = late + motion * (seen.len() - 1) as f32 * DT * 0.6;
+            let error = Vec2::new(wrap_angle(lead.x - view.yaw), lead.y - view.pitch);
+            let want =
+                (error * 6.0 + motion * 0.6) / Vec2::new(stick.yaw_speed, stick.pitch_speed) / zoom;
+            // Stick right turns yaw down. The thumb sets a raw deflection
+            // through the response curve and cannot move instantly.
+            let raw = Vec2::new(-want.x, want.y).clamp(Vec2::splat(-1.0), Vec2::splat(1.0));
+            let raw = raw.map(|v| {
+                let live = 1.0 - stick.inner_deadzone - stick.outer_deadzone;
+                v.signum() * (stick.inner_deadzone + v.abs().powf(1.0 / stick.curve) * live)
+            }) + Vec2::new(noise(), noise());
+            thumb += (raw - thumb) * (1.0 - (-DT / 0.08).exp());
+            let shaped = shape_stick(thumb, &stick);
+            view.active = player_strafes || shaped != Vec2::ZERO;
+
+            let mut slowdown = 1.0;
+            if let Some(params) = &params {
+                let out = assist.update(&view, &[target], params, DT);
+                slowdown = out.slowdown;
+                view.yaw += out.rotation.x;
+                view.pitch += out.rotation.y;
+            }
+            view.yaw -= shaped.x * stick.yaw_speed * zoom * slowdown * DT;
+            view.pitch += shaped.y * stick.pitch_speed * zoom * slowdown * DT;
+
+            let forward = view_direction(view.yaw, view.pitch);
+            let (_, miss, _) = ray_segment_closest(eye, forward, target.bottom, target.top);
+            if miss <= target.radius {
+                on += 1;
+            }
+        }
+        on as f32 / frames as f32
+    }
+
+    #[test]
+    fn assist_makes_tracking_a_strafing_enemy_easier() {
+        for (ads, strafes) in [(0.0, false), (1.0, false), (1.0, true)] {
+            let off = tracking_share(None, ads, strafes);
+            let share = |kind| tracking_share(Some(kind), ads, strafes);
+            let default = share(AssistType::Default);
+            let precision = share(AssistType::Precision);
+            let focusing = share(AssistType::Focusing);
+            let legacy = share(AssistType::Legacy);
+            println!(
+                "ads {ads} strafing {strafes}: off {off:.2} default {default:.2} \
+                 precision {precision:.2} focusing {focusing:.2} legacy {legacy:.2}"
+            );
+            assert!(default > off * 1.3, "default {default} vs off {off}");
+            assert!(precision > off, "precision {precision} vs off {off}");
+            // Focusing has no rotational, so it only helps a player standing
+            // still; strafing, its slowdown holds the crosshair back.
+            if !strafes {
+                assert!(focusing >= off, "focusing {focusing} vs off {off}");
+            }
+            assert!(
+                legacy >= default * 0.98,
+                "legacy {legacy} vs default {default}"
+            );
+        }
     }
 }

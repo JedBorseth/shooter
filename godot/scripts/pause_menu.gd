@@ -49,8 +49,19 @@ const DESCRIPTIONS := {
 	&"invert_stick_y": "Pushing the right stick up looks down.",
 	&"stick_curve":
 	"How the turn speed builds as you push the stick. Higher is finer near the centre.",
-	&"aim_assist": "With a controller, slows your aim over an enemy and follows them a little.",
-	&"aim_assist_strength": "How strongly aim assist slows and follows.",
+	&"aim_assist":
+	(
+		"With a controller, slows your aim over an enemy and follows them as you move."
+		+ " In Zombies, aiming down sights also snaps onto a zombie near the crosshair."
+		+ " Mouse aiming never gets aim assist."
+	),
+	&"aim_assist_type":
+	(
+		"Default slows your aim as it nears an enemy and follows them as you move."
+		+ " Precision slows only once you are on the enemy. Focusing slows harder, even"
+		+ " on a near miss, but does not follow. Legacy is the older, slightly stronger"
+		+ " style."
+	),
 	&"rumble": "Controller vibration for shots, hits, and explosions.",
 	&"fov":
 	(
@@ -116,6 +127,7 @@ var _toggles: Dictionary[StringName, CheckButton] = {}
 var _fps_option: OptionButton
 var _quality_option: OptionButton
 var _mix_option: OptionButton
+var _assist_option: OptionButton
 var _scale_option: OptionButton
 var _click: AudioStreamPlayer
 var _hover: AudioStreamPlayer
@@ -184,7 +196,7 @@ func _open_input(event: InputEvent, pause: bool) -> void:
 	if not (pause or event.is_action_pressed(&"ui_cancel")):
 		return
 	for option: OptionButton in [
-		_input_option, _fps_option, _quality_option, _scale_option, _mix_option
+		_input_option, _fps_option, _quality_option, _scale_option, _mix_option, _assist_option
 	]:
 		if option.get_popup().visible:
 			return  # Let the dropdown close itself.
@@ -405,7 +417,7 @@ func _build_settings() -> void:
 	_add_slider(controls, &"stick_curve", "Response curve", 0.1, decimal)
 	_add_toggle(controls, &"invert_stick_y", "Invert Y axis")
 	_add_toggle(controls, &"aim_assist", "Aim assist")
-	_add_slider(controls, &"aim_assist_strength", "Aim assist strength", 0.05, percent)
+	_add_assist_option(controls)
 	_add_toggle(controls, &"rumble", "Vibration")
 
 	var keybinds := _add_section("Keybinds")
@@ -466,6 +478,7 @@ func _record_defaults() -> void:
 	_defaults[&"render_scale"] = _scale_name(Settings.DEFAULTS[&"render_scale"])
 	_defaults[&"audio_mix"] = Settings.AUDIO_MIXES[Settings.DEFAULTS[&"audio_mix"]]
 	_defaults[&"input_device"] = Settings.INPUT_DEVICES[Settings.DEFAULTS[&"input_device"]]
+	_defaults[&"aim_assist_type"] = Settings.AIM_ASSIST_TYPES[Settings.DEFAULTS[&"aim_assist_type"]]
 
 
 func _scale_name(scale: float) -> String:
@@ -700,6 +713,19 @@ func _add_fps_option(section: VBoxContainer) -> void:
 	_add_row(section, "Frame rate limit", _fps_option, null, &"max_fps")
 
 
+func _add_assist_option(section: VBoxContainer) -> void:
+	_assist_option = OptionButton.new()
+	_assist_option.custom_minimum_size = Vector2(220, 34)
+	_assist_option.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	for i in Settings.AIM_ASSIST_TYPES.size():
+		_assist_option.add_item(Settings.AIM_ASSIST_TYPES[i], i)
+	_assist_option.item_selected.connect(
+		func(index: int) -> void:
+			Settings.set_setting(&"aim_assist_type", _assist_option.get_item_id(index))
+	)
+	_add_row(section, "Aim assist type", _assist_option, null, &"aim_assist_type")
+
+
 func _add_mix_option(section: VBoxContainer) -> void:
 	_mix_option = OptionButton.new()
 	_mix_option.custom_minimum_size = Vector2(220, 34)
@@ -801,6 +827,7 @@ func _sync_controls() -> void:
 	_fps_option.select(_fps_option.get_item_index(Settings.max_fps))
 	_quality_option.select(_quality_option.get_item_index(Settings.graphics_quality))
 	_mix_option.select(_mix_option.get_item_index(Settings.audio_mix))
+	_assist_option.select(_assist_option.get_item_index(Settings.aim_assist_type))
 	_scale_option.select(_closest_scale(Settings.render_scale))
 
 

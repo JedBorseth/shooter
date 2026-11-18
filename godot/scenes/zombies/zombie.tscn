@@ -89,6 +89,7 @@ zombie = true
 
 [node name="AimAssist" type="AimAssistTarget" parent="."]
 height = 1.77
+snap = true
 
 [node name="Voice" type="AudioStreamPlayer3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6, 0)

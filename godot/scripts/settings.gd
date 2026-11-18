@@ -51,6 +51,9 @@ const SAVE_DELAY := 0.75
 ## sliders, and whether the Master bus compresses (quiet sounds lifted, loud
 ## ones held down). Competitive brings footsteps forward and the ambience down.
 const AUDIO_MIXES: Array[String] = ["Headphones", "Speakers", "Competitive"]
+## Controller aim assist types offered in the menu, by index (the player's
+## `aim_assist_type`, `AssistType` in shooter_sim::look).
+const AIM_ASSIST_TYPES: Array[String] = ["Default", "Precision", "Focusing", "Legacy"]
 const MIX_PANNING: Array[float] = [1.0, 0.6, 1.5]
 const MIX_BUS_OFFSETS: Array[Dictionary] = [
 	{},
@@ -136,7 +139,7 @@ const DEFAULTS := {
 	&"stick_deadzone": 0.1,
 	&"stick_curve": 2.0,
 	&"aim_assist": true,
-	&"aim_assist_strength": 1.0,
+	&"aim_assist_type": 0,
 	&"rumble": true,
 	&"fov": 102.0,
 	&"camera_motion": true,
@@ -171,7 +174,7 @@ const SECTIONS := {
 		&"stick_deadzone",
 		&"stick_curve",
 		&"aim_assist",
-		&"aim_assist_strength",
+		&"aim_assist_type",
 		&"rumble",
 	],
 	"video":
@@ -208,6 +211,7 @@ const INT_OPTIONS := {
 	&"max_fps": MAX_FPS_OPTIONS,
 	&"graphics_quality": [0, 1, 2],
 	&"audio_mix": [0, 1, 2],
+	&"aim_assist_type": [0, 1, 2, 3],
 }
 
 ## Settings saved before sensitivity became a level: config section, old
@@ -222,7 +226,6 @@ const RANGES := {
 	&"ads_sensitivity": Vector2(0.3, 2.0),
 	&"stick_deadzone": Vector2(0.02, 0.3),
 	&"stick_curve": Vector2(1.0, 3.0),
-	&"aim_assist_strength": Vector2(0.0, 1.5),
 	&"fov": Vector2(80.0, 120.0),
 	&"master_volume": Vector2(0.0, 1.0),
 	&"weapons_volume": Vector2(0.0, 1.0),
@@ -254,13 +257,14 @@ var mouse_sensitivity_level: int = DEFAULTS[&"mouse_sensitivity_level"]
 var ads_sensitivity: float = DEFAULTS[&"ads_sensitivity"]
 var invert_mouse_y: bool = DEFAULTS[&"invert_mouse_y"]
 ## Gamepad look: inversion, look speed level, inner deadzone, response curve
-## exponent, aim assist and its strength, and vibration.
+## exponent, aim assist and its type (an index into AIM_ASSIST_TYPES), and
+## vibration.
 var invert_stick_y: bool = DEFAULTS[&"invert_stick_y"]
 var stick_sensitivity_level: int = DEFAULTS[&"stick_sensitivity_level"]
 var stick_deadzone: float = DEFAULTS[&"stick_deadzone"]
 var stick_curve: float = DEFAULTS[&"stick_curve"]
 var aim_assist: bool = DEFAULTS[&"aim_assist"]
-var aim_assist_strength: float = DEFAULTS[&"aim_assist_strength"]
+var aim_assist_type: int = DEFAULTS[&"aim_assist_type"]
 var rumble: bool = DEFAULTS[&"rumble"]
 ## Horizontal field of view in degrees at 16:9. See `vertical_fov`.
 var fov: float = DEFAULTS[&"fov"]
@@ -396,7 +400,7 @@ func apply_to_player(player: Node) -> void:
 	player.set(&"stick_deadzone", stick_deadzone)
 	player.set(&"stick_curve", stick_curve)
 	player.set(&"aim_assist", aim_assist)
-	player.set(&"aim_assist_strength", aim_assist_strength)
+	player.set(&"aim_assist_type", aim_assist_type)
 	player.set(&"rumble", rumble)
 	player.set(&"controller_input", uses_controller())
 
