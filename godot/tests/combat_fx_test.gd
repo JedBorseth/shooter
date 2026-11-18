@@ -1,0 +1,125 @@
+extends SceneTree
+## Headless test of the combat effects pools (`rust/game/src/effects.rs`):
+## bullet holes stay on the wall and recycle oldest first within the preset's
+## budget; a round into someone close to a wall leaves blood spatter on it,
+## and one with no wall behind does not; other players' traced rounds draw
+## their impacts; impacts hide again once their particles are done; and
+## characters draw on the layer decals skip.
+## Run from the repo root: godot --headless --path godot --script res://tests/combat_fx_test.gd
+
+const PLAYER_SCENE := preload("res://scenes/player.tscn")
+const SOLDIER_SCENE := preload("res://scenes/characters/soldier.tscn")
+## `effects::NO_DECALS_LAYER`.
+const NO_DECALS_LAYER := 1 << 1
+
+var _failures: PackedStringArray = []
+
+
+func _initialize() -> void:
+	_run.call_deferred()
+
+
+func _run() -> void:
+	var settings: Node = root.get_node("Settings")
+	settings.path = "user://combat_fx_test_settings.cfg"
+	var level := Node3D.new()
+	root.add_child(level)
+	_solid(level, Vector3(0, -0.5, 0), Vector3(80, 1, 80))
+	# A wall 10 m ahead of the player (its face at z = -9.75).
+	_solid(level, Vector3(0, 2, -10), Vector3(20, 4, 0.5))
+	var player := PLAYER_SCENE.instantiate() as FpsPlayer
+	player.position = Vector3(0, 0.05, 0)
+	level.add_child(player)
+	await _frames(10)
+	var effects: Node = get_first_node_in_group("combat_effects")
+	_check(effects != null, "the local player adds the effects node")
+	if effects == null:
+		_finish()
+		return
+
+	# Holes stay, up to the budget, on every preset.
+	for preset in 3:
+		settings.set_graphics_preset(preset)
+		var budget: Dictionary = effects.budget()
+		for i in budget["holes"] + 10:
+			effects.impact(Vector3(i * 0.05 - 5.0, 1.5, -9.75), Vector3(0, 0, 1), "concrete", true)
+		await _frames(2)
+		_check(
+			effects.holes_kept() == budget["holes"],
+			"preset %d keeps %d holes (kept %d)" % [preset, budget["holes"], effects.holes_kept()]
+		)
+		_check(
+			effects.impacts_visible() <= budget["impacts"],
+			"preset %d plays at most %d impacts at once" % [preset, budget["impacts"]]
+		)
+	# Lowering the preset frees the extra holes on the next one placed.
+	settings.set_graphics_preset(0)
+	effects.impact(Vector3(0, 1, -9.75), Vector3(0, 0, 1), "metal", true)
+	_check(effects.holes_kept() == 16, "Low trims holes back to 16")
+	settings.set_graphics_preset(1)
+
+	# Blood: spatter on the wall a metre behind the target, none in the open.
+	var placed: int = effects.splats_placed()
+	effects.blood(Vector3(0, 1.3, -8.75), Vector3(0, 0, -1))
+	_check(effects.splats_placed() == placed + 1, "a hit a metre from a wall spatters it")
+	effects.blood(Vector3(0, 1.3, -5.0), Vector3(0, 0, -1))
+	_check(effects.splats_placed() == placed + 1, "no spatter with the wall 4.75 m away")
+	effects.blood(Vector3(0, 1.3, -8.75), Vector3(0, 0, 1))
+	_check(effects.splats_placed() == placed + 1, "no spatter when the round flies away from it")
+
+	# Another player's round into the wall draws its impact and keeps a hole.
+	settings.set_graphics_preset(2)
+	var holes: int = effects.holes_kept()
+	var tracer := player.get_node("ShotTracer") as ShotTracer
+	tracer.trace_test_shot("m4", Vector3(3, 1.6, 0), Vector3(0, 0, -1))
+	_check(effects.holes_kept() == holes + 1, "a traced remote round leaves a hole")
+
+	# Impacts hide once their particles are done, so an idle pool draws nothing.
+	await _frames(240)
+	_check(effects.impacts_visible() == 0, "finished impacts hide")
+
+	# Characters are kept off the decal layer.
+	var soldier := SOLDIER_SCENE.instantiate()
+	level.add_child(soldier)
+	await _frames(2)
+	var meshes := soldier.find_children("*", "VisualInstance3D", true, false)
+	var clean := not meshes.is_empty()
+	for mesh: VisualInstance3D in meshes:
+		clean = clean and mesh.layers == NO_DECALS_LAYER
+	_check(clean, "every soldier mesh is on the layer decals skip")
+
+	settings.reset_to_defaults()
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(settings.path))
+	_finish()
+
+
+func _finish() -> void:
+	if _failures.is_empty():
+		print("combat_fx_test: OK")
+		quit(0)
+	else:
+		for failure in _failures:
+			printerr("FAIL: ", failure)
+		quit(1)
+
+
+func _check(condition: bool, label: String) -> void:
+	if not condition:
+		_failures.append(label)
+
+
+func _frames(count: int) -> void:
+	for i in count:
+		await physics_frame
+
+
+func _solid(parent: Node, position: Vector3, size: Vector3) -> StaticBody3D:
+	var body := StaticBody3D.new()
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = size
+	shape.shape = box
+	body.add_child(shape)
+	body.position = position
+	parent.add_child(body)
+	return body

@@ -58,6 +58,7 @@ use crate::audio;
 use crate::body::{self, BodyParts};
 use crate::bullets::ShotTracer;
 use crate::convert::{to_godot, to_sim};
+use crate::effects::CombatEffects;
 use crate::footsteps::{self, Gait, Stride};
 use crate::penetration;
 use crate::pickup::{INTERACT_LAYER, WeaponPickup};
@@ -278,9 +279,6 @@ pub struct FpsPlayer {
     /// and button prompts are on. Off, the sticks are ignored. Set by Settings.
     #[export]
     controller_input: bool,
-    /// Spawned where bullets hit the world.
-    #[export]
-    impact_scene: OnEditor<Gd<PackedScene>>,
     /// Bullet tracer, spawned for every Nth round (`tracer_every` in the weapon file).
     #[export]
     tracer_scene: OnEditor<Gd<PackedScene>>,
@@ -449,6 +447,10 @@ impl ICharacterBody3D for FpsPlayer {
             let mut tracer = ShotTracer::new_alloc();
             tracer.set_name("ShotTracer");
             self.base_mut().add_child(&tracer);
+            // Impacts, blood, and the marks they leave, from pools.
+            let mut effects = CombatEffects::new_alloc();
+            effects.set_name("CombatEffects");
+            self.base_mut().add_child(&effects);
             let mut body = PlayerSounds::new_alloc();
             body.set_name("PlayerSounds");
             self.base_mut().add_child(&body);
@@ -1920,7 +1922,7 @@ impl FpsPlayer {
             let struck_wall = wall.is_some();
             if let Some((position, normal, collider)) = wall {
                 let surface = surface_of(collider.as_ref());
-                self.spawn_impact(position, normal, false, &surface, &surface);
+                self.spawn_impact(position, normal, false, &surface, &surface, forward);
             }
             self.viewmodel
                 .bind_mut()
@@ -1955,7 +1957,14 @@ impl FpsPlayer {
             );
         }
         let normal = -direction;
-        self.spawn_impact(chest - direction * 0.25, normal, false, "flesh", "flesh");
+        self.spawn_impact(
+            chest - direction * 0.25,
+            normal,
+            false,
+            "flesh",
+            "flesh",
+            direction,
+        );
         self.viewmodel.bind_mut().on_melee_struck(true, true);
         self.signals().hit_confirmed().emit(killed, false);
         if self.prediction.is_some() {
@@ -2036,7 +2045,14 @@ impl FpsPlayer {
                             ],
                         );
                         let surface = surface_of(Some(collider));
-                        self.spawn_impact(hit.position, hit.normal, false, &surface, &surface);
+                        self.spawn_impact(
+                            hit.position,
+                            hit.normal,
+                            false,
+                            &surface,
+                            &surface,
+                            direction,
+                        );
                         continue;
                     }
                     // Untagged damageable colliders (the sentry) count as the chest.
@@ -2079,7 +2095,14 @@ impl FpsPlayer {
                     }
                     let surface =
                         surface_meta(Some(collider)).unwrap_or_else(|| "flesh".to_owned());
-                    self.spawn_impact(hit.position, hit.normal, false, &surface, &surface);
+                    self.spawn_impact(
+                        hit.position,
+                        hit.normal,
+                        false,
+                        &surface,
+                        &surface,
+                        direction,
+                    );
                 } else {
                     let surface = surface_at(hit.collider.as_ref(), hit.face_index);
                     // Shotguns leave a decal for only some pellets to limit clutter.
@@ -2090,6 +2113,7 @@ impl FpsPlayer {
                         decal,
                         surface.impact_key(),
                         surface.key(),
+                        direction,
                     );
                 }
             }
@@ -2175,8 +2199,10 @@ impl FpsPlayer {
         tracer.call("setup", &[start.to_variant(), end.to_variant()]);
     }
 
-    /// An impact effect on `surface` (its look), and the impact sound of
-    /// `sound` (a `Surface` key: every surface has its own set).
+    /// An impact effect on `surface` (its look, or a `Surface` tag), and the
+    /// impact sound of `sound` (a `Surface` key: every surface has its own).
+    /// Flesh bleeds along the round's `direction`; the world keeps a bullet
+    /// hole if `decal`.
     fn spawn_impact(
         &mut self,
         position: Vector3,
@@ -2184,31 +2210,26 @@ impl FpsPlayer {
         decal: bool,
         surface: &str,
         sound: &str,
+        direction: Vector3,
     ) {
-        let Some(mut impact) = self
-            .impact_scene
-            .instantiate()
-            .and_then(|n| n.try_cast::<Node3D>().ok())
-        else {
-            return;
-        };
-        let Some(mut parent) = self.base().get_parent() else {
-            return;
-        };
-        parent.add_child(&impact);
-        impact.set_global_position(position);
         // The effect is visual; its sound plays from the tracer's pool.
         if let Some(mut tracer) = self.base().try_get_node_as::<ShotTracer>("ShotTracer") {
             tracer.bind_mut().impact(position, GString::from(sound));
         }
-        impact.call(
-            "setup",
-            &[
-                normal.to_variant(),
-                decal.to_variant(),
-                GString::from(surface).to_variant(),
-            ],
-        );
+        let Some(mut effects) = self
+            .base()
+            .try_get_node_as::<CombatEffects>("CombatEffects")
+        else {
+            return;
+        };
+        let look = Surface::from_tag(surface).map_or("concrete", |s| s.impact_key());
+        if surface == "flesh" {
+            effects.bind_mut().blood(position, direction);
+        } else {
+            effects
+                .bind_mut()
+                .impact(position, normal, GString::from(look), decal);
+        }
     }
 
     /// Steps once per stride on the ground, with the gait rules every player

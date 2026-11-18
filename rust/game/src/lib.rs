@@ -10,6 +10,7 @@ mod build_info;
 mod bullets;
 mod character;
 mod convert;
+mod effects;
 mod footsteps;
 mod gunfire;
 mod hitbox_rig;

@@ -96,6 +96,7 @@ impl INode3D for FpArms {
         self.base_mut().add_child(&knife);
         poser.bind_mut().knife = Some(knife);
         self.poser = Some(poser);
+        crate::effects::keep_decals_off(&self.base().clone().upcast());
     }
 }
 

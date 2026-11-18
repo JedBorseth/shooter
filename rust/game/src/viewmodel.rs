@@ -682,6 +682,7 @@ impl INode3D for WeaponView {
         self.set_attachment(pending);
         self.find_parts();
         self.add_foley();
+        crate::effects::keep_decals_off(&self.base().clone().upcast());
     }
 
     fn process(&mut self, delta: f64) {
@@ -1208,6 +1209,7 @@ impl WeaponView {
             convert_to_viewmodel_materials(&parts.clone().upcast(), &shader, self.albedo_boost);
             self.set_lens_clip(self.eyepiece_z.is_some());
         }
+        crate::effects::keep_decals_off(&parts.upcast());
     }
 
     /// Draws this first-person weapon with the shader that cuts a magnified
