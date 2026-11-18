@@ -8,9 +8,9 @@ Measured at 1920×1080 on a GTX 1060 3GB, the reference card. The budget is GPU 
 
 | Preset | GPU budget | Leaves room for | Today (worst view) |
 | --- | --- | --- | --- |
-| Low | 4 ms | weaker cards and laptops at 60 fps | 3.8 ms (Slamcity; Low varies by up to 2 ms between runs on the shared machine) |
-| Medium (default) | 8 ms | 60 fps with plenty of headroom, 100+ fps on the reference card | 7.3 ms |
-| High | 12 ms | 60 fps | 10.8 ms |
+| Low | 4 ms | weaker cards and laptops at 60 fps | 4.4 ms (Slamcity; over budget since its block layout, #143) |
+| Medium (default) | 8 ms | 60 fps with plenty of headroom, 100+ fps on the reference card | 8.6 ms (Slamcity, the same view; every other map is under 6 ms) |
+| High | 12 ms | 60 fps | 11.9 ms |
 
 Rules for a pull request that changes visuals:
 
@@ -143,5 +143,7 @@ GPU time on Medium at 1080p on the reference card, average over viewpoints (wors
 | Four zombie bodies in their own clothes, combat boots and bloused trousers, a seated helmet band and chin strap, first-person arms on their own atlas | 5.03 (5.19) ms | 7.12 (7.35) ms | 5.20 (5.68) ms |
 | Lens bloom with dirt and a sun flare, contact shadows under characters, wet Zombies, close-up surface detail on High (Medium within +0.08 ms of `main` at every worst view; baseline is the better of two runs per view) | 5.13 (5.30) ms | 7.18 (7.33) ms | 5.28 (5.73) ms |
 | Testing Area and Zombies arena modelled in Blender instead of CSG (`main` measured alongside on the same box: 5.29 (5.51) and 5.41 (5.85) ms) | 5.60 (5.92) ms | | 5.58 (6.04) ms |
+| `main` at 3a4af2db, measured again: #111 and #114–#152 landed without a baseline run (weapon, glove, knife, and character models; Slamcity's smoke, wear, flames, and new block layout around Junction Plaza, #143, with new viewpoints; the new HUD; modelled props and map architecture). Better of two runs per view | 5.60 (5.88) ms | 7.58 (8.50) ms | 5.53 (6.05) ms |
+| Filmic daylight in the Testing Area (ACES, a stronger sun), Slamcity's toe and thinner near haze, Zombies' lower pivot, tighter ambient occlusion (within run-to-run noise of the same `main` on every map) | 5.60 (5.86) ms | 7.62 (8.62) ms | 5.52 (6.04) ms |
 
 Slamcity's 7.0 ms on Medium is about 0.5 ms more than the old map, over the usual 5% step. It was accepted for the rebuild: the rest is the denser map's own shading (decals, the skyline, small detail, and props are about 0.15 ms each), and the next cut would remove visible detail.
