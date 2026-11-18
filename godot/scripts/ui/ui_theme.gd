@@ -411,6 +411,8 @@ static func _inputs(theme: Theme) -> void:
 	theme.set_icon(&"grabber", &"HSlider", _block(Vector2i(10, 22), TEXT))
 	theme.set_icon(&"grabber_highlight", &"HSlider", _block(Vector2i(10, 22), Color.WHITE))
 	theme.set_icon(&"grabber_disabled", &"HSlider", _block(Vector2i(10, 22), TEXT_FAINT))
+	# Step marks on sliders that set whole levels (sensitivity).
+	theme.set_icon(&"tick", &"HSlider", _block(Vector2i(2, 10), TEXT_FAINT))
 
 	var bar_bg := plate(Color(0.957, 0.941, 0.91, 0.14), 0.0, 0.0)
 	var bar_fill := plate(TEXT, 0.0, 0.0)

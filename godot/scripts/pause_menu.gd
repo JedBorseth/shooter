@@ -16,6 +16,8 @@ const PAUSE_ACTION := &"pause"
 const CLICK_SOUND := "res://assets/audio/ui/click.ogg"
 const HOVER_SOUND := "res://assets/audio/ui/hover.ogg"
 const UI_BUS := &"UI"
+## Width of the value beside each slider; fits "14 · VERY HIGH".
+const VALUE_WIDTH := 150
 const TAB_NAMES: Array[String] = ["Controls", "Keybinds", "Graphics", "Audio", "General"]
 ## What each tab holds, shown before a setting is picked.
 const TAB_INTROS: Array[String] = [
@@ -36,11 +38,12 @@ const DESCRIPTIONS := {
 		+ " while you play, so nothing switches by accident and aim assist stays with"
 		+ " controllers. Menus and pause work with both."
 	),
-	&"mouse_sensitivity": "How far the view turns for each movement of the mouse.",
+	&"mouse_sensitivity_level":
+	"How far the view turns for each movement of the mouse. Each step is 20% faster.",
 	&"ads_sensitivity":
 	"Turn speed while aiming down sights, as a share of your normal sensitivity.",
 	&"invert_mouse_y": "Moving the mouse forward looks down instead of up.",
-	&"stick_sensitivity": "How fast the right stick turns the view.",
+	&"stick_sensitivity_level": "How fast the right stick turns the view. Each step is 20% faster.",
 	&"stick_deadzone":
 	"How far a stick must move before it counts. Raise it if the view drifts on its own.",
 	&"invert_stick_y": "Pushing the right stick up looks down.",
@@ -367,7 +370,7 @@ func _focus(control: Control) -> void:
 
 
 func _build_settings() -> void:
-	var sensitivity := func(v: float) -> String: return "%.2f" % v
+	var decimal := func(v: float) -> String: return "%.2f" % v
 	var percent := func(v: float) -> String: return "%d%%" % roundi(v * 100.0)
 
 	_tabs = TabBar.new()
@@ -382,7 +385,7 @@ func _build_settings() -> void:
 	_add_heading(controls, "Input")
 	_add_input_option(controls)
 	_mouse_heading = _add_heading(controls, "Mouse")
-	_add_slider(controls, &"mouse_sensitivity", "Mouse sensitivity", 0.05, sensitivity)
+	_add_level_slider(controls, &"mouse_sensitivity_level", "Mouse sensitivity")
 	_add_slider(
 		controls,
 		&"ads_sensitivity",
@@ -397,9 +400,9 @@ func _build_settings() -> void:
 	_controller_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	controls.add_child(_controller_status)
 	_show_controller_status()
-	_add_slider(controls, &"stick_sensitivity", "Look speed", 0.05, sensitivity)
+	_add_level_slider(controls, &"stick_sensitivity_level", "Look speed")
 	_add_slider(controls, &"stick_deadzone", "Stick deadzone", 0.01, percent)
-	_add_slider(controls, &"stick_curve", "Response curve", 0.1, sensitivity)
+	_add_slider(controls, &"stick_curve", "Response curve", 0.1, decimal)
 	_add_toggle(controls, &"invert_stick_y", "Invert Y axis")
 	_add_toggle(controls, &"aim_assist", "Aim assist")
 	_add_slider(controls, &"aim_assist_strength", "Aim assist strength", 0.05, percent)
@@ -629,9 +632,15 @@ func _capture_input(event: InputEvent) -> void:
 
 
 func _add_slider(
-	section: VBoxContainer, key: StringName, label: String, step: float, format: Callable
-) -> void:
-	var limits: Vector2 = Settings.RANGES[key]
+	section: VBoxContainer,
+	key: StringName,
+	label: String,
+	step: float,
+	format: Callable,
+	limits := Vector2.ZERO,
+) -> HSlider:
+	if limits == Vector2.ZERO:
+		limits = Settings.RANGES[key]
 	var slider := HSlider.new()
 	slider.min_value = limits.x
 	slider.max_value = limits.y
@@ -641,12 +650,35 @@ func _add_slider(
 	slider.value_changed.connect(func(v: float) -> void: Settings.set_setting(key, v))
 	var value := Label.new()
 	value.theme_type_variation = &"ValueLabel"
-	value.custom_minimum_size.x = 72
+	value.custom_minimum_size.x = VALUE_WIDTH
 	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_add_row(section, label, slider, value, key)
 	_sliders[key] = slider
 	_value_labels[key] = value
 	_value_formats[key] = format
+	return slider
+
+
+## A sensitivity slider: whole levels from 1 to Settings.SENSITIVITY_LEVELS,
+## a tick on each, and the level's name beside its number.
+func _add_level_slider(section: VBoxContainer, key: StringName, label: String) -> void:
+	var slider := _add_slider(
+		section,
+		key,
+		label,
+		1.0,
+		sensitivity_text,
+		Vector2(1, Settings.SENSITIVITY_LEVELS),
+	)
+	slider.tick_count = Settings.SENSITIVITY_LEVELS
+	slider.ticks_on_borders = true
+
+
+## A sensitivity level as the menu shows it: "7 · MEDIUM", or just "9".
+func sensitivity_text(level: float) -> String:
+	var whole := roundi(level)
+	var level_name: String = Settings.SENSITIVITY_NAMES.get(whole, "")
+	return str(whole) if level_name.is_empty() else "%d · %s" % [whole, level_name]
 
 
 func _add_toggle(section: VBoxContainer, key: StringName, label: String) -> void:

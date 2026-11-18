@@ -22,8 +22,24 @@ const Lens := preload("res://scripts/lens.gd")
 const Grounding := preload("res://scripts/grounding.gd")
 const InputNotice := preload("res://scripts/ui/input_notice.gd")
 
-## Radians of view rotation per screen pixel at a sensitivity of 1.0.
+## Radians of view rotation per screen pixel at 1× sensitivity.
 const BASE_MOUSE_SENSITIVITY := 0.0022
+## Mouse sensitivity and stick look speed are levels from 1 to
+## SENSITIVITY_LEVELS. Each level turns SENSITIVITY_STEP times faster than the
+## one below, so every step feels like the same change; SENSITIVITY_UNIT_LEVEL
+## turns at the base rate (1×). The default, level 7, is one step above it.
+const SENSITIVITY_LEVELS := 14
+const SENSITIVITY_STEP := 1.2
+const SENSITIVITY_UNIT_LEVEL := 6
+const SENSITIVITY_LEVEL_OPTIONS: Array[int] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+## The levels the menu names; the rest show only their number.
+const SENSITIVITY_NAMES := {
+	1: "VERY LOW",
+	4: "LOW",
+	7: "MEDIUM",
+	11: "HIGH",
+	14: "VERY HIGH",
+}
 ## Frame caps offered in the menu. 0 means unlimited.
 const MAX_FPS_OPTIONS: Array[int] = [0, 60, 120, 144, 165, 240]
 ## Seconds to wait after the last change before writing the file.
@@ -46,7 +62,7 @@ const MIX_COMPRESSION: Array[bool] = [false, false, true]
 ## Shared public host for discovery and future account/matchmaking services.
 const SERVICE_HOST := "borseth.ddns.net"
 const DEFAULT_DIRECTORY := SERVICE_HOST + ":27010"
-## Base stick turn rates (degrees per second) at a stick sensitivity of 1.0.
+## Base stick turn rates (degrees per second) at 1× look speed.
 const STICK_YAW_SPEED := 200.0
 const STICK_PITCH_SPEED := 150.0
 
@@ -112,11 +128,11 @@ const MOUSE_BUTTON_NAMES := {
 
 const DEFAULTS := {
 	&"input_device": InputDevice.KEYBOARD_MOUSE,
-	&"mouse_sensitivity": 1.0,
+	&"mouse_sensitivity_level": 7,
 	&"ads_sensitivity": 1.0,
 	&"invert_mouse_y": false,
 	&"invert_stick_y": false,
-	&"stick_sensitivity": 1.0,
+	&"stick_sensitivity_level": 7,
 	&"stick_deadzone": 0.1,
 	&"stick_curve": 2.0,
 	&"aim_assist": true,
@@ -146,11 +162,12 @@ const DEFAULTS := {
 
 ## Config file section for each setting.
 const SECTIONS := {
-	"controls": [&"input_device", &"mouse_sensitivity", &"ads_sensitivity", &"invert_mouse_y"],
+	"controls":
+	[&"input_device", &"mouse_sensitivity_level", &"ads_sensitivity", &"invert_mouse_y"],
 	"gamepad":
 	[
 		&"invert_stick_y",
-		&"stick_sensitivity",
+		&"stick_sensitivity_level",
 		&"stick_deadzone",
 		&"stick_curve",
 		&"aim_assist",
@@ -186,16 +203,23 @@ const SECTIONS := {
 ## Allowed values of each int setting.
 const INT_OPTIONS := {
 	&"input_device": [InputDevice.KEYBOARD_MOUSE, InputDevice.CONTROLLER],
+	&"mouse_sensitivity_level": SENSITIVITY_LEVEL_OPTIONS,
+	&"stick_sensitivity_level": SENSITIVITY_LEVEL_OPTIONS,
 	&"max_fps": MAX_FPS_OPTIONS,
 	&"graphics_quality": [0, 1, 2],
 	&"audio_mix": [0, 1, 2],
 }
 
+## Settings saved before sensitivity became a level: config section, old
+## key (a float multiplier), and the level setting it becomes.
+const LEGACY_SENSITIVITY := [
+	["controls", &"mouse_sensitivity", &"mouse_sensitivity_level"],
+	["gamepad", &"stick_sensitivity", &"stick_sensitivity_level"],
+]
+
 ## Allowed range of each float setting.
 const RANGES := {
-	&"mouse_sensitivity": Vector2(0.1, 5.0),
 	&"ads_sensitivity": Vector2(0.3, 2.0),
-	&"stick_sensitivity": Vector2(0.3, 2.5),
 	&"stick_deadzone": Vector2(0.02, 0.3),
 	&"stick_curve": Vector2(1.0, 3.0),
 	&"aim_assist_strength": Vector2(0.0, 1.5),
@@ -224,15 +248,15 @@ var path := "user://settings.cfg"
 
 ## An `InputDevice`: the one that plays. The other is locked out of play.
 var input_device: int = DEFAULTS[&"input_device"]
-## Multiplier on BASE_MOUSE_SENSITIVITY.
-var mouse_sensitivity: float = DEFAULTS[&"mouse_sensitivity"]
+## Mouse sensitivity level, 1 to SENSITIVITY_LEVELS. See `sensitivity_scale`.
+var mouse_sensitivity_level: int = DEFAULTS[&"mouse_sensitivity_level"]
 ## Sensitivity multiplier while aiming down sights.
 var ads_sensitivity: float = DEFAULTS[&"ads_sensitivity"]
 var invert_mouse_y: bool = DEFAULTS[&"invert_mouse_y"]
-## Gamepad look: inversion, turn rate multiplier, inner deadzone, response
-## curve exponent, aim assist and its strength, and vibration.
+## Gamepad look: inversion, look speed level, inner deadzone, response curve
+## exponent, aim assist and its strength, and vibration.
 var invert_stick_y: bool = DEFAULTS[&"invert_stick_y"]
-var stick_sensitivity: float = DEFAULTS[&"stick_sensitivity"]
+var stick_sensitivity_level: int = DEFAULTS[&"stick_sensitivity_level"]
 var stick_deadzone: float = DEFAULTS[&"stick_deadzone"]
 var stick_curve: float = DEFAULTS[&"stick_curve"]
 var aim_assist: bool = DEFAULTS[&"aim_assist"]
@@ -334,6 +358,19 @@ func _exit_tree() -> void:
 	flush()
 
 
+## How much faster than the base rate a sensitivity level turns.
+static func sensitivity_scale(level: int) -> float:
+	return pow(SENSITIVITY_STEP, level - SENSITIVITY_UNIT_LEVEL)
+
+
+## The level closest to a turn-rate multiplier, for settings saved as one.
+static func sensitivity_level(scale: float) -> int:
+	if not scale > 0.0:
+		return 1
+	var level := SENSITIVITY_UNIT_LEVEL + log(scale) / log(SENSITIVITY_STEP)
+	return clampi(roundi(level), 1, SENSITIVITY_LEVELS)
+
+
 ## Converts the horizontal FOV at 16:9 to the vertical FOV the camera uses.
 func vertical_fov() -> float:
 	var half := deg_to_rad(fov) * 0.5
@@ -345,14 +382,17 @@ func vertical_fov() -> float:
 func apply_to_player(player: Node) -> void:
 	if player == null or not is_instance_valid(player):
 		return
-	player.set(&"mouse_sensitivity", BASE_MOUSE_SENSITIVITY * mouse_sensitivity)
+	player.set(
+		&"mouse_sensitivity", BASE_MOUSE_SENSITIVITY * sensitivity_scale(mouse_sensitivity_level)
+	)
 	player.set(&"ads_sensitivity_scale", ads_sensitivity)
 	player.set(&"base_fov", vertical_fov())
 	player.set(&"camera_motion", camera_motion)
 	player.set(&"mouse_invert_y", invert_mouse_y)
 	player.set(&"stick_invert_y", invert_stick_y)
-	player.set(&"stick_yaw_speed", STICK_YAW_SPEED * stick_sensitivity)
-	player.set(&"stick_pitch_speed", STICK_PITCH_SPEED * stick_sensitivity)
+	var look_speed := sensitivity_scale(stick_sensitivity_level)
+	player.set(&"stick_yaw_speed", STICK_YAW_SPEED * look_speed)
+	player.set(&"stick_pitch_speed", STICK_PITCH_SPEED * look_speed)
 	player.set(&"stick_deadzone", stick_deadzone)
 	player.set(&"stick_curve", stick_curve)
 	player.set(&"aim_assist", aim_assist)
@@ -555,6 +595,8 @@ func load_settings() -> void:
 		and not Input.get_connected_joypads().is_empty()
 	):
 		input_device = InputDevice.CONTROLLER
+	if err == OK:
+		_migrate_sensitivity(config)
 	master_server = directory_address(OS.get_cmdline_user_args())
 	key_bindings.clear()
 	if err == OK and config.has_section("keys"):
@@ -564,6 +606,23 @@ func load_settings() -> void:
 	_save_timer.stop()
 	apply_all()
 	changed.emit()
+
+
+## Turns a sensitivity saved as a multiplier into the nearest level. The old
+## default (1×) becomes the new default rather than the level below it.
+func _migrate_sensitivity(config: ConfigFile) -> void:
+	for legacy: Array in LEGACY_SENSITIVITY:
+		var section: String = legacy[0]
+		var level_key: StringName = legacy[2]
+		if config.has_section_key(section, level_key):
+			continue
+		var old: Variant = config.get_value(section, legacy[1], null)
+		if not (old is int or old is float) or is_nan(float(old)):
+			continue
+		var level := DEFAULTS[level_key] as int
+		if not is_equal_approx(float(old), 1.0):
+			level = sensitivity_level(float(old))
+		set(level_key, level)
 
 
 func save_settings() -> Error:
