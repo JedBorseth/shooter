@@ -38,12 +38,17 @@ const COLUMNS := [
 ]
 
 var _failures: PackedStringArray = []
+var _sampler: Sampler
 var _player: FpsPlayer
 var _camera: Camera3D
 var _capsule: CapsuleShape3D
 var _rows: Array[PackedStringArray] = []
 var _scenario := ""
 var _time := 0.0
+## Feet at the previous sample: at a fixed frame rate the camera draws the
+## previous tick (interpolation fraction 0), so its eye height is measured
+## from there.
+var _drawn_feet := Vector3.INF
 
 
 func _initialize() -> void:
@@ -54,6 +59,9 @@ func _run() -> void:
 	var world := Node3D.new()
 	root.add_child(world)
 	world.add_child(_floor())
+	_sampler = Sampler.new()
+	_sampler.process_priority = 1000
+	world.add_child(_sampler)
 	_player = PLAYER_SCENE.instantiate() as FpsPlayer
 	_check(_player != null, "the player is an FpsPlayer (Rust extension loaded)")
 	if _player == null:
@@ -72,6 +80,8 @@ func _run() -> void:
 	await _start_and_stop()
 	await _strafe_and_backpedal()
 	await _sprint_in_and_out()
+	await _jump_and_land()
+	await _bunny_hop()
 	await _slide()
 	await _slide_chain()
 	_finish()
@@ -205,6 +215,65 @@ func _sprint_in_and_out() -> void:
 	await _reset()
 
 
+## Walk, jump, and land: the landing takes speed off and the legs recover
+## over about a second (MW: about 0.65x on touchdown, 1.2-1.8 s to recover).
+func _jump_and_land() -> void:
+	await _begin("jump_land")
+	Input.action_press("move_forward")
+	await _record(120)
+	await _press("jump")
+	await _record(240)
+	Input.action_release("move_forward")
+	await _record(30)
+	var rows := _scenario_rows("jump_land")
+	var air := false
+	var landed_at := -1.0
+	var touchdown := 99.0
+	for row: Dictionary in rows:
+		if not row.on_floor:
+			air = true
+		elif air and landed_at < 0.0:
+			landed_at = row.t
+		# The slowest moment just after touching down.
+		if landed_at >= 0.0 and row.t <= landed_at + 0.1:
+			touchdown = minf(touchdown, row.speed)
+	var recovered_at := _first_time(
+		rows, func(r: Dictionary) -> bool: return r.t > landed_at and r.speed >= WALK_SPEED - 0.05
+	)
+	_check(landed_at > 0.0, "the jump lands")
+	_check(touchdown <= WALK_SPEED * 0.8, "touching down takes speed off, %.2f m/s" % touchdown)
+	var recovery := recovered_at - landed_at
+	_check(
+		recovery >= 0.8 and recovery <= 1.6, "the legs recover in 0.8-1.6 s, took %.2f s" % recovery
+	)
+	await _reset()
+
+
+## Sprint and jump again on every landing: each hop loses speed.
+func _bunny_hop() -> void:
+	await _begin("bunny_hop")
+	Input.action_press("move_forward")
+	Input.action_press("sprint")
+	await _record(2)
+	Input.action_release("sprint")
+	await _record(120)
+	var from := _player.global_position
+	for hop in 6:
+		await _press("jump")
+		await _record(4)
+		while not _player.is_on_floor():
+			await _record(1)
+	var covered := _player.global_position.distance_to(from)
+	var seconds: float = _scenario_rows("bunny_hop").back().t - 1.017
+	Input.action_release("move_forward")
+	_check(
+		covered / seconds < SPRINT_SPEED * 0.85,
+		"hopping is slower than running, %.2f m/s" % (covered / seconds)
+	)
+	await _record(30)
+	await _reset()
+
+
 ## Sprint, then slide: it starts near sprint speed and ends in a crouch.
 func _slide() -> void:
 	await _begin("slide")
@@ -300,6 +369,7 @@ func _reset() -> void:
 	for action in ["move_forward", "move_back", "move_right", "sprint", "crouch", "jump", "fire"]:
 		Input.action_release(action)
 	_player.teleport(SPAWN, 0.0)
+	_drawn_feet = Vector3.INF
 	await _ticks(60)
 	if _player.movement_state() != "Standing":
 		await _press("crouch")
@@ -311,12 +381,14 @@ func _ticks(count: int) -> void:
 		await physics_frame
 
 
-## Records `count` ticks. Each sample is taken after the frame's process, so
-## the camera is where it was drawn.
+## Records `count` ticks. Each sample is taken after every other node's
+## process in the frame, so the camera is where it is drawn.
 func _record(count: int) -> void:
 	for i in count:
-		await process_frame
+		await _sampler.processed
 		var feet := _player.global_position
+		var drawn := feet if _drawn_feet == Vector3.INF else _drawn_feet
+		_drawn_feet = feet
 		var basis := _camera.global_transform.basis
 		var euler := basis.get_euler(EULER_ORDER_YXZ)
 		(
@@ -327,7 +399,7 @@ func _record(count: int) -> void:
 						_scenario,
 						"%.5f" % _time,
 						"%.4f" % _player.horizontal_speed(),
-						"%.4f" % (_camera.global_position.y - feet.y),
+						"%.4f" % (_camera.global_position.y - drawn.y),
 						"%.4f" % (_player.shot_origin().y - feet.y),
 						"%.4f" % _capsule.height,
 						"%.4f" % _player.crouch_amount(),
@@ -363,6 +435,7 @@ func _scenario_rows(name: String) -> Array[Dictionary]:
 					"crouch": float(row[6]),
 					"feet": Vector3(float(row[9]), float(row[10]), float(row[11])),
 					"state": row[12],
+					"on_floor": row[13] == "true",
 				}
 			)
 		)
@@ -394,3 +467,12 @@ func _finish() -> void:
 	_write_traces()
 	print("movement test: %d failure(s)" % _failures.size())
 	quit(1 if _failures.size() > 0 else 0)
+
+
+## Signals after its process, which runs after every other node's.
+class Sampler:
+	extends Node
+	signal processed
+
+	func _process(_delta: float) -> void:
+		processed.emit()
