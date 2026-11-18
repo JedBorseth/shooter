@@ -3,8 +3,8 @@
 [ext_resource type="Shader" path="res://shaders/smoke.gdshader" id="1_smoke"]
 
 [sub_resource type="Gradient" id="Gradient_age"]
-offsets = PackedFloat32Array(0, 0.12, 0.6, 1)
-colors = PackedColorArray(0.36, 0.33, 0.3, 0, 0.3, 0.28, 0.26, 0.5, 0.42, 0.43, 0.46, 0.32, 0.5, 0.52, 0.56, 0)
+offsets = PackedFloat32Array(0, 0.1, 0.55, 1)
+colors = PackedColorArray(0.12, 0.11, 0.1, 0, 0.11, 0.1, 0.095, 0.72, 0.3, 0.3, 0.32, 0.45, 0.46, 0.48, 0.52, 0)
 
 [sub_resource type="GradientTexture1D" id="Texture_age"]
 gradient = SubResource("Gradient_age")
@@ -18,9 +18,9 @@ curve = SubResource("Curve_grow")
 
 [sub_resource type="ParticleProcessMaterial" id="Process_smoke"]
 emission_shape = 1
-emission_sphere_radius = 0.9
+emission_sphere_radius = 0.55
 direction = Vector3(0, 1, 0)
-spread = 12.0
+spread = 7.0
 initial_velocity_min = 1.2
 initial_velocity_max = 1.8
 gravity = Vector3(0, 0.18, 0.35)

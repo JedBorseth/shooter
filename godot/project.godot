@@ -194,3 +194,7 @@ world_noise={
 "type": "sampler2D",
 "value": "res://assets/textures/noise/macro.png"
 }
+world_wear={
+"type": "sampler2D",
+"value": "res://assets/textures/noise/wear.png"
+}

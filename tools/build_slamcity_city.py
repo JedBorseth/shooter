@@ -568,7 +568,7 @@ class Materials:
                 'shader = ExtResource("1_shader")', "shader_parameter/textured = false",
                 "shader_parameter/use_vertex_color = true", "shader_parameter/vertex_roughness = true",
                 "shader_parameter/metallic_scale = 0.35", "shader_parameter/specular = 0.6",
-                "shader_parameter/variation = 0.03", "shader_parameter/grime = 0.55",
+                "shader_parameter/variation = 0.03", "shader_parameter/wear = 0.45", "shader_parameter/grime = 0.55",
                 "shader_parameter/grime_height = 0.9", "shader_parameter/dust = 0.8"]) + "\n"
         if name in ("palette", "palette_metal"):
             return "\n".join([
@@ -576,7 +576,8 @@ class Materials:
                 'shader = ExtResource("1_shader")', "shader_parameter/textured = false",
                 "shader_parameter/use_vertex_color = true", "shader_parameter/vertex_roughness = true",
                 f"shader_parameter/metallic_scale = {1.0 if name == 'palette_metal' else 0.0:g}",
-                "shader_parameter/variation = 0.14", "shader_parameter/grime = 0.4"]) + "\n"
+                "shader_parameter/variation = 0.14", "shader_parameter/wear = 1",
+                "shader_parameter/grime = 0.4"]) + "\n"
         if name == "shadow_proxy":
             return '[gd_resource type="StandardMaterial3D" format=3]\n\n[resource]\nshading_mode = 0\n'
         if name == "glow":

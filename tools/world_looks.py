@@ -127,6 +127,10 @@ SLAMCITY_LOOKS: dict[str, dict] = {
     # Ground
     "asphalt": _t("asphalt", 4.0, (0.78, 0.78, 0.8), grime=0.0),
     "asphalt_yard": _t("asphalt", 4.0, (0.66, 0.64, 0.62), grime=0.0),
+    # Wear on the avenue: newer patching darker, and grime washed into the
+    # gutters.
+    "asphalt_patch": _t("asphalt", 4.0, (0.56, 0.56, 0.58), grime=0.0),
+    "gutter": _t("asphalt", 4.0, (0.48, 0.46, 0.43), grime=0.0),
     "alley_concrete": _t("concrete_stained", 3.5, (0.72, 0.7, 0.68), grime=0.0),
     "cobble": _t("cobble", 2.5, (0.92, 0.9, 0.88), grime=0.0),
     "sidewalk": _t("concrete_panels", 3.0, (0.95, 0.93, 0.9), grime=0.0),
