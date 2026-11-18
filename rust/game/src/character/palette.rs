@@ -180,12 +180,12 @@ pub fn clear_cache() {
 
 const CHARACTER_SHADER: &str = "res://shaders/character.gdshader";
 
-/// While the local player's weapon carries a magnified optic, the
-/// first-person arms draw with a copy of `character.gdshader` that cuts the
-/// optic's lens out of the hands (`crate::viewmodel::lens_clipped_shader`),
-/// so the fingers never float in the sight picture. Otherwise, and for
-/// every character in the world, the plain shader: no `discard`, so no cost
-/// to the depth prepass.
+/// The first-person arms draw with a copy of `character.gdshader` that adds
+/// the first-person key light (`crate::viewmodel::first_person_shader`).
+/// While the local player's weapon carries a magnified optic, the copy also
+/// cuts the optic's lens out of the hands, so the fingers never float in the
+/// sight picture. Every character in the world keeps the plain shader: no
+/// key and no `discard`, so no cost to the depth prepass.
 pub fn clip_first_person_lens(on: bool) {
     FIRST_PERSON_CLIP.with(|clip| clip.set(on));
     let shader = first_person_shader(on);
@@ -199,11 +199,7 @@ pub fn clip_first_person_lens(on: bool) {
 }
 
 fn first_person_shader(clip: bool) -> Gd<Shader> {
-    if clip {
-        crate::viewmodel::lens_clipped_shader(CHARACTER_SHADER)
-    } else {
-        load::<Shader>(CHARACTER_SHADER)
-    }
+    crate::viewmodel::first_person_shader(CHARACTER_SHADER, clip)
 }
 
 /// The one material a team's characters of a kit share:

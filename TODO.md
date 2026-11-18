@@ -273,7 +273,8 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 - [ ] A look for Nuketown in `godot/scripts/looks.gd`.
 - [x] Temporal antialiasing on High (in place of 2× MSAA plus SMAA, same cost), close-up detail only on rough non-metal surfaces, a hurt vignette with smears, hit flashes, and a heartbeat, suppression on Low, softer puddles.
 - [x] Eye adaptation on every preset (rays from the camera, no GPU time; slow, within a stop, against each map's own typical light) and a key light for the first-person weapon and arms in the viewmodel shader.
-- [ ] Picture fidelity, next (see the round 11 review): hiding texture repeats with per-material blend layers, contact-hardening sun shadows, daytime volumetric light on High, moving clouds, self-shadowing on the first-person weapon.
+- [x] The first-person key reaches the gloves and sleeves too (a first-person copy of the character shader), and in shade it becomes the sky's light, so the weapon keeps its shape in shade and under a roof. The weapon already takes the sun's shadow.
+- [ ] Picture fidelity, next (see the round 11 review): hiding texture repeats with per-material blend layers, contact-hardening sun shadows, daytime volumetric light on High, moving clouds, self-shadowing on the first-person weapon (the weapon and arms cast no shadow: in the sun's shadow map they would also throw a floating gun's shadow on the ground, since the local player has no body shadow).
 - [ ] Lighting pass: baked lightmaps or SDFGI tuning per map, volumetric fog, reflection probes.
 - [ ] Performance budget and profiling: target 144 FPS on a mid-range GPU, CPU frame time per system.
 - [ ] Loadouts and a create-a-class screen.

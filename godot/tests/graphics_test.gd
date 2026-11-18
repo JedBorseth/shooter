@@ -48,6 +48,7 @@ func _run() -> void:
 	_check_bloom_and_dirt()
 	_check_world_surfaces()
 	await _check_grounding()
+	await _check_first_person_key()
 
 	settings.reset_to_defaults()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_PATH))
@@ -402,20 +403,36 @@ func _check_eye_adaptation(settings: Node) -> void:
 	map.free()
 
 
-## The first-person key light grows as the player turns into the sun, is
-## weaker in shade, and always comes from above the horizon.
+## The first-person key light grows as the player turns into the sun, always
+## comes from above the horizon, and in shade becomes the sky: from above,
+## strongest under open sky, weaker under a roof.
 func _check_viewmodel_key() -> void:
 	_check(
 		ViewmodelLight.key_strength(1.0, 1.0) > ViewmodelLight.key_strength(-1.0, 1.0),
 		"the key is stronger facing into the sun"
 	)
-	_check(
-		ViewmodelLight.key_strength(1.0, 0.0) < ViewmodelLight.key_strength(1.0, 1.0),
-		"and weaker in shade"
-	)
+	_check(is_zero_approx(ViewmodelLight.key_strength(1.0, 0.0)), "the sun has no part in shade")
 	var key := ViewmodelLight.key_direction(Vector3(0, 0.05, -1).normalized(), Vector3.FORWARD)
 	_check(key.y >= ViewmodelLight.MIN_HEIGHT - 0.001, "a low sun still keys from above")
 	_check(key.z > 0.0, "a sun in front keys the weapon from the player's side")
+	_check(is_zero_approx(ViewmodelLight.sky_strength(1.0, 1.0)), "no sky fill in sunlight")
+	_check(
+		ViewmodelLight.sky_strength(0.0, 1.0) > ViewmodelLight.sky_strength(0.0, 0.0),
+		"the sky fills more under open sky than under a roof"
+	)
+	_check(ViewmodelLight.sky_strength(0.0, 0.0) > 0.0, "and a little under a roof")
+	var sky := ViewmodelLight.sky_direction(Vector3.FORWARD)
+	_check(sky.y > 0.7 and sky.z < 0.0, "the sky fills from above and ahead")
+	var shaded := ViewmodelLight.blend(key, Color.ORANGE, 0.0, sky, Color.SKY_BLUE, 1.0)
+	_check(
+		shaded[0].is_equal_approx(sky) and shaded[1] == Color.SKY_BLUE and shaded[2] == 1.0,
+		"in shade the key is the sky's alone"
+	)
+	var half: Array = ViewmodelLight.blend(key, Color.ORANGE, 1.0, sky, Color.SKY_BLUE, 1.0)
+	_check(
+		is_equal_approx(half[2], 2.0) and is_equal_approx(half[0].length(), 1.0),
+		"stepping into shade the key blends the two, its strength the sum"
+	)
 
 
 ## Every graded map gets the shared bloom: only what is brighter than white
@@ -493,6 +510,39 @@ func _check_world_surfaces() -> void:
 
 
 ## One contact shadow per character: a flat patch laid on the ground.
+## The first-person arms take the first-person key (a copy of the character
+## shader compiled with it); soldiers in the world keep the plain shader.
+func _check_first_person_key() -> void:
+	var main: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	root.add_child(main)
+	await process_frame
+	await process_frame
+	var player := main.get_node("Player")
+	var keyed := 0
+	var plain := 0
+	for node: Node in main.find_children("*", "MeshInstance3D", true, false):
+		var mesh := node as MeshInstance3D
+		for surface in mesh.get_surface_override_material_count():
+			var material := mesh.get_surface_override_material(surface) as ShaderMaterial
+			if material == null or material.shader == null:
+				continue
+			var code := material.shader.code
+			if not "UV2.x * 16.0" in code:
+				continue
+			var own := player.is_ancestor_of(mesh) and mesh.name == "ArmsFP"
+			if own:
+				_check("#define VIEWMODEL_KEY" in code, "the first-person arms take the key")
+				keyed += 1
+			elif not "#define VIEWMODEL_KEY" in code:
+				plain += 1
+			else:
+				_check(false, "%s draws with the first-person key" % mesh.get_path())
+	_check(keyed > 0, "the first-person arms draw with the character shader")
+	_check(plain > 0, "soldiers in the world draw without the key")
+	main.queue_free()
+	await process_frame
+
+
 func _check_grounding() -> void:
 	var floor := StaticBody3D.new()
 	var shape := CollisionShape3D.new()
