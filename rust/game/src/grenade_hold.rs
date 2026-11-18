@@ -13,7 +13,7 @@
 use godot::classes::geometry_instance_3d::ShadowCastingSetting;
 use godot::classes::{MeshInstance3D, Node3D};
 use godot::prelude::*;
-use shooter_sim::equipment;
+use shooter_sim::equipment::{self, Kind};
 
 use crate::knife::{KnifeKey, along};
 
@@ -64,6 +64,7 @@ pub struct ThrowPose {
     pub at: Transform3D,
     pub in_hand: bool,
     pub pinned: bool,
+    pub kind: Kind,
 }
 
 /// The hand's blend, whether the grenade is in it, and whether its pin is
@@ -72,20 +73,21 @@ fn phase(p: f32) -> (f32, bool, bool) {
     (blend(p), p < equipment::release_progress(), p < PIN_OUT)
 }
 
-fn pose(keys: &[KnifeKey], p: f32) -> ThrowPose {
+fn pose(keys: &[KnifeKey], p: f32, kind: Kind) -> ThrowPose {
     let (blend, in_hand, pinned) = phase(p);
     ThrowPose {
         blend,
         at: path(keys, p),
         in_hand,
         pinned,
+        kind,
     }
 }
 
 /// The first-person throw at progress `p`, in the view (`ViewmodelRig`)
 /// space: up from below the frame on the left, cocked beside the head, over
 /// and out to the front, then down and away.
-pub fn first_person(p: f32) -> ThrowPose {
+pub fn first_person(p: f32, kind: Kind) -> ThrowPose {
     let v = Vector3::new;
     let release = equipment::release_progress();
     let cocked = equipment::COCKED_PROGRESS;
@@ -133,13 +135,13 @@ pub fn first_person(p: f32) -> ThrowPose {
             v(1.0, 0.0, 0.0),
         ),
     ];
-    pose(&keys, p)
+    pose(&keys, p, kind)
 }
 
 /// The third-person throw at progress `p`, in the space of the weapon at
 /// the hip as seen from the eyes (as `knife::third_person`): a wider,
 /// overhand version of the first-person path.
-pub fn third_person(p: f32) -> ThrowPose {
+pub fn third_person(p: f32, kind: Kind) -> ThrowPose {
     let v = Vector3::new;
     let release = equipment::release_progress();
     let cocked = equipment::COCKED_PROGRESS;
@@ -176,7 +178,7 @@ pub fn third_person(p: f32) -> ThrowPose {
         ),
         (1.0, v(-0.1, -0.4, -0.1), v(0.0, 1.0, 0.0), v(1.0, 0.0, 0.0)),
     ];
-    pose(&keys, p)
+    pose(&keys, p, kind)
 }
 
 /// How far down the weapon dips while the support hand throws, at progress
@@ -185,41 +187,71 @@ pub fn weapon_dip(p: f32) -> f32 {
     crate::weapon_clips::keyed(&[(0.0, 0.0), (0.15, 0.4), (0.8, 0.4), (1.0, 0.0)], p)
 }
 
-/// The frag model, built in Blender by `tools/build_grenade.py`.
-pub const MODEL: &str = "res://assets/equipment/frag/frag.glb";
+/// Each kind's model, built in Blender by `tools/build_grenade.py`.
+pub fn model(kind: Kind) -> &'static str {
+    match kind {
+        Kind::Frag => "res://assets/equipment/frag/frag.glb",
+        Kind::Flash => "res://assets/equipment/flash/flash.glb",
+        Kind::Smoke => "res://assets/equipment/smoke/smoke.glb",
+    }
+}
 
-/// Builds a grenade to carry in the hand, hidden until a throw shows it.
+const KINDS: [Kind; 3] = [Kind::Frag, Kind::Flash, Kind::Smoke];
+
+/// Builds the grenades to carry in the hand: one model of each kind, as
+/// children named by kind, all hidden until a throw shows one.
 pub fn build() -> Gd<Node3D> {
     let mut root = Node3D::new_alloc();
     root.set_name("HeldGrenade");
     root.set_visible(false);
-    match try_load::<PackedScene>(MODEL)
-        .ok()
-        .and_then(|scene| scene.instantiate())
-    {
-        Some(model) => {
-            for mesh in model
-                .find_children_ex("*")
-                .type_("MeshInstance3D")
-                .done()
-                .iter_shared()
-            {
-                if let Ok(mut mesh) = mesh.try_cast::<MeshInstance3D>() {
-                    mesh.set_cast_shadows_setting(ShadowCastingSetting::OFF);
-                }
+    for kind in KINDS {
+        let path = model(kind);
+        let Some(mut model) = try_load::<PackedScene>(path)
+            .ok()
+            .and_then(|scene| scene.instantiate())
+            .and_then(|node| node.try_cast::<Node3D>().ok())
+        else {
+            godot_error!("grenade: cannot load {path}");
+            continue;
+        };
+        for mesh in model
+            .find_children_ex("*")
+            .type_("MeshInstance3D")
+            .done()
+            .iter_shared()
+        {
+            if let Ok(mut mesh) = mesh.try_cast::<MeshInstance3D>() {
+                mesh.set_cast_shadows_setting(ShadowCastingSetting::OFF);
             }
-            root.add_child(&model);
         }
-        None => {
-            godot_error!("grenade: cannot load {MODEL}");
-        }
+        model.set_name(kind.name());
+        model.set_visible(kind == Kind::Frag);
+        root.add_child(&model);
     }
     root
 }
 
-/// Shows or hides the pin (with its ring) on a grenade model built here or
-/// by `GrenadeShow`, which have it as a child node named `Pin`; the spoon
-/// goes with it once the grenade is let go.
+/// Shows only `kind`'s model in a grenade built by [`build`], with its pin
+/// in or out.
+pub fn show(held: &Gd<Node3D>, kind: Kind, pinned: bool) {
+    for other in KINDS {
+        if let Some(mut node) = held
+            .get_node_or_null(other.name())
+            .and_then(|node| node.try_cast::<Node3D>().ok())
+        {
+            let shown = other == kind;
+            if node.is_visible() != shown {
+                node.set_visible(shown);
+            }
+            if shown {
+                set_pinned(&node, pinned, true);
+            }
+        }
+    }
+}
+
+/// Shows or hides the pin (with its ring) on a grenade model, which has it as
+/// a child node named `Pin`; the spoon goes with it once the grenade is let go.
 pub fn set_pinned(grenade: &Gd<Node3D>, pin: bool, spoon: bool) {
     for (name, shown) in [("Pin", pin), ("Spoon", spoon)] {
         if let Some(mut node) = grenade

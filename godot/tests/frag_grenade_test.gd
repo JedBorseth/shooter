@@ -30,6 +30,8 @@ func _run() -> void:
 	await _until_ready(player)
 	await _throw_and_bounce(main, player)
 	await _cook_off(main, player)
+	await _flashbang(main, player)
+	await _smoke(player)
 	_finish()
 
 
@@ -102,6 +104,52 @@ func _cook_off(main: Node, player: FpsPlayer) -> void:
 	hidden.queue_free()
 	wall.queue_free()
 	await _sixtieths(200)
+
+
+## A flashbang thrown a few metres ahead whites the screen out; one behind
+## a wall does nothing.
+func _flashbang(main: Node, player: FpsPlayer) -> void:
+	player.teleport(SPOT, 0.0)
+	player.set_look(0.0, -0.9)
+	await _sixtieths(10)
+	_check(player.tacticals() == 1, "one flashbang at spawn, got %d" % player.tacticals())
+	await _tap("tactical")
+	await _sixtieths(30)
+	player.set_look(0.0, -0.3)
+	_check(player.lethals() == 1, "the tactical leaves the frag in the pouch")
+	await _sixtieths(100)
+	_check(player.is_alive(), "a flashbang hurts no one")
+	_check(player.flash_level() > 0.5, "it whites the screen out, %.2f" % player.flash_level())
+	await _sixtieths(300)
+	_check(player.flash_level() == 0.0, "and the white clears")
+	# Behind a wall: nothing.
+	player.take_damage(500.0, SPOT)
+	await _sixtieths(200)
+	player.teleport(SPOT, 0.0)
+	player.set_look(PI, -0.9)
+	await _sixtieths(10)
+	await _tap("tactical")
+	await _sixtieths(30)
+	var wall := _wall(main, SPOT + Vector3(0, 1.5, 1.2), Vector3(6, 3, 0.4))
+	player.set_look(PI, 0.0)
+	await _sixtieths(100)
+	_check(player.flash_level() == 0.0, "a flash behind a wall leaves the eyes alone")
+	wall.queue_free()
+	await _sixtieths(30)
+
+
+## A smoke grenade pops into a cloud.
+func _smoke(player: FpsPlayer) -> void:
+	player.set("starting_tactical", "smoke")
+	player.take_damage(500.0, SPOT)
+	await _sixtieths(200)
+	player.teleport(SPOT, 0.0)
+	player.set_look(0.0, -0.6)
+	await _sixtieths(10)
+	_check(player.tactical_key() == "smoke", "a smoke grenade this life")
+	await _tap("tactical")
+	await _sixtieths(120)
+	_check(get_nodes_in_group(&"smoke").size() == 1, "it pops into a cloud")
 
 
 ## A solid box of `size` centred at `at`, on the world layer.

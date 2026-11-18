@@ -42,8 +42,59 @@ func _run() -> void:
 	await _hands(player)
 	await _danger(player)
 	await _third_person(main)
+	await _tacticals(main, player)
 	await _throw(main, player)
 	quit()
+
+
+## A flashbang from the thrower's eyes, the flash seen from beside it, and a
+## smoke cloud from outside and inside.
+func _tacticals(main: Node, player: FpsPlayer) -> void:
+	player.teleport(SPOT, 0.0)
+	player.set_look(0.0, -0.8)
+	player.get_node("Camera").make_current()
+	await _sixtieths(20)
+	Input.action_press("tactical")
+	await _sixtieths(10)
+	await _shot("tactical_hand")
+	Input.action_release("tactical")
+	await _sixtieths(20)
+	player.set_look(0.0, -0.2)
+	while player.flash_level() <= 0.0:
+		await physics_frame
+	await _sixtieths(10)
+	await _shot("flash_white")
+	await _sixtieths(150)
+	await _shot("flash_fade")
+	await _sixtieths(120)
+	var camera := Camera3D.new()
+	camera.fov = 70.0
+	main.add_child(camera)
+	var pop := (load("res://scenes/equipment/flash_pop.tscn") as PackedScene).instantiate()
+	main.add_child(pop)
+	pop.global_position = SPOT + Vector3(0, 0, -6)
+	camera.look_at_from_position(SPOT + Vector3(5, 1.7, -2), SPOT + Vector3(0, 0.8, -6))
+	camera.make_current()
+	await _sixtieths(2)
+	await _shot("flash_pop")
+	var smoke := (load("res://scenes/equipment/smoke_cloud.tscn") as PackedScene).instantiate()
+	main.add_child(smoke)
+	smoke.global_position = SPOT + Vector3(0, 0, -8)
+	camera.look_at_from_position(SPOT + Vector3(0, 1.7, 4), SPOT + Vector3(0, 1.5, -8))
+	await _sixtieths(30)
+	await _shot("smoke_early")
+	await _sixtieths(150)
+	await _shot("smoke_full")
+	camera.global_position = SPOT + Vector3(0, 1.7, -8)
+	await _sixtieths(10)
+	await _shot("smoke_inside")
+	camera.global_position = SPOT + Vector3(0, 1.7, -2)
+	await _sixtieths(10)
+	await _shot("smoke_edge")
+	smoke.queue_free()
+	camera.queue_free()
+	player.get_node("Camera").make_current()
+	await _sixtieths(10)
 
 
 ## The first-person throw, frozen at moments from the press.

@@ -123,7 +123,7 @@ const DEATH_CAMERA_HEIGHT: f32 = 1.5;
 
 /// Actions whose presses are remembered until the next physics tick, so a tap
 /// shorter than one tick (or a mouse-wheel step) is never lost.
-const LATCHED_ACTIONS: [&str; 11] = [
+const LATCHED_ACTIONS: [&str; 12] = [
     "jump",
     "crouch",
     "sprint",
@@ -131,6 +131,7 @@ const LATCHED_ACTIONS: [&str; 11] = [
     "reload",
     "melee",
     "lethal",
+    "tactical",
     "weapon_1",
     "weapon_2",
     "interact",
@@ -143,6 +144,8 @@ const BLAST_SHAKE_RANGE: f32 = 25.0;
 const BLAST_RING_RANGE: f32 = 9.0;
 /// The ear ring, a generated tone (`scripts/equipment/ear_ring.gd`).
 const EAR_RING_SCENE: &str = "res://scenes/equipment/ear_ring.tscn";
+/// A flashbang's white-out (`scripts/equipment/flash_overlay.gd`).
+const FLASH_OVERLAY_SCENE: &str = "res://scenes/equipment/flash_overlay.tscn";
 
 /// Online: seconds our own grenade, gone off here, stays drawn waiting for
 /// the server's blast (about a round trip).
@@ -266,6 +269,13 @@ pub struct FpsPlayer {
     #[export]
     #[init(val = 1)]
     starting_lethals: i32,
+    /// The tactical at each spawn, offline ("flash" or "smoke"), and how many.
+    #[export]
+    #[init(val = GString::from("flash"))]
+    starting_tactical: GString,
+    #[export]
+    #[init(val = 1)]
+    starting_tacticals: i32,
     /// How far away weapon racks can be used, in metres.
     #[export]
     #[init(val = 2.6)]
@@ -453,12 +463,13 @@ pub struct FpsPlayer {
     grenades: GrenadeSim,
     /// Online: our own grenades that went off here before the server's
     /// blast arrived, held where they lay: shot number, position, seconds left.
-    spent_grenades: Vec<(u32, Vec3, f32)>,
+    spent_grenades: Vec<(u32, Kind, Vec3, f32)>,
     /// Online: our player id and the server's grenades, from the latest snapshot.
     net_id: Option<u8>,
     server_grenades: Vec<GrenadeView>,
     grenade_show: GrenadeShow,
     ear_ring: Option<Gd<Node>>,
+    flash_overlay: Option<Gd<Node>>,
 }
 
 #[godot_api]
@@ -1118,6 +1129,25 @@ impl FpsPlayer {
             .collect()
     }
 
+    /// Tacticals carried, and which ("flash" or "smoke"), for the HUD.
+    #[func]
+    fn tacticals(&self) -> i32 {
+        i32::from(self.state.combat.tacticals)
+    }
+
+    #[func]
+    fn tactical_key(&self) -> GString {
+        self.state.combat.tactical.key().into()
+    }
+
+    /// How white a flashbang has left the screen, 0 to 1.
+    #[func]
+    fn flash_level(&self) -> f32 {
+        self.flash_overlay
+            .as_ref()
+            .map_or(0.0, |node| node.clone().call("level", &[]).to::<f32>())
+    }
+
     /// Zombies: a new round's frags (`zombies::restock_frags`).
     #[func]
     fn restock_lethals(&mut self) {
@@ -1421,6 +1451,7 @@ impl FpsPlayer {
         let fire = held("fire");
         let melee = held("melee");
         let lethal = held("lethal");
+        let tactical = held("tactical");
         let mut reload = held("reload");
         let slot_1 = held("weapon_1");
         let slot_2 = held("weapon_2");
@@ -1495,6 +1526,7 @@ impl FpsPlayer {
             melee,
             lunge,
             lethal,
+            tactical,
             // A press since the last tick: the server rewinds others to the
             // frame it was clicked on. A knife strike uses the latest view.
             view_tick: match press {
@@ -2675,8 +2707,10 @@ impl FpsPlayer {
             },
             Action::Meleeing { strike_in, .. } => ViewAction::Meleeing { strike_in },
             Action::Throwing {
-                cooked, release_in, ..
-            } => ViewAction::Throwing(equipment::throw_progress(cooked, release_in)),
+                kind,
+                cooked,
+                release_in,
+            } => ViewAction::Throwing(equipment::throw_progress(cooked, release_in), kind),
         };
         self.frame_with(ads, action)
     }
@@ -2723,7 +2757,16 @@ impl FpsPlayer {
         if !self.start_with_primary {
             state.combat = state.combat.without(Slot::Primary);
         }
-        state.combat.lethals = self.starting_lethals.clamp(0, i32::from(u8::MAX)) as u8;
+        let tactical = Kind::by_key(&self.starting_tactical.to_string())
+            .filter(|kind| !kind.lethal())
+            .unwrap_or(Kind::Flash);
+        state.combat = state
+            .combat
+            .with_lethals(self.starting_lethals.clamp(0, i32::from(u8::MAX)) as u8)
+            .with_tacticals(
+                tactical,
+                self.starting_tacticals.clamp(0, i32::from(u8::MAX)) as u8,
+            );
         state
     }
 
@@ -2754,6 +2797,7 @@ impl FpsPlayer {
                     // Held where it lay until the server's blast arrives.
                     self.spent_grenades.push((
                         blast.shot,
+                        blast.grenade.kind,
                         blast.grenade.position,
                         SPENT_GRENADE_HOLD,
                     ));
@@ -2763,9 +2807,9 @@ impl FpsPlayer {
             }
         }
         for spent in &mut self.spent_grenades {
-            spent.2 -= TICK_DT;
+            spent.3 -= TICK_DT;
         }
-        self.spent_grenades.retain(|spent| spent.2 > 0.0);
+        self.spent_grenades.retain(|spent| spent.3 > 0.0);
 
         let Some(mut parent) = self.base().get_parent() else {
             return;
@@ -2776,13 +2820,14 @@ impl FpsPlayer {
             self.grenade_show.place(
                 &mut parent,
                 (own, live.shot),
+                live.grenade.kind,
                 to_godot(live.grenade.position),
                 TICK_DT,
             );
         }
-        for &(shot, at, _) in &self.spent_grenades {
+        for &(shot, kind, at, _) in &self.spent_grenades {
             self.grenade_show
-                .place(&mut parent, (own, shot), to_godot(at), TICK_DT);
+                .place(&mut parent, (own, shot), kind, to_godot(at), TICK_DT);
         }
         for view in &self.server_grenades {
             let ours = Some(view.owner) == own
@@ -2792,6 +2837,7 @@ impl FpsPlayer {
                 self.grenade_show.place(
                     &mut parent,
                     (Some(view.owner), view.shot),
+                    view.kind,
                     to_godot(view.position()),
                     SNAPSHOT_GRENADE_INTERVAL,
                 );
@@ -2810,7 +2856,14 @@ impl FpsPlayer {
             self.grenade_show.remove((None, blast.shot));
             self.grenade_show.blast(&mut parent, kind, center);
         }
-        self.feel_blast(center);
+        match kind {
+            Kind::Frag => self.feel_blast(center),
+            Kind::Flash => {
+                self.flash_me(space, center);
+                return;
+            }
+            Kind::Smoke => return,
+        }
         let mut sphere = SphereShape3D::new_gd();
         sphere.set_radius(radius + 1.0);
         let mut query = PhysicsShapeQueryParameters3D::new_gd();
@@ -2931,7 +2984,58 @@ impl FpsPlayer {
             self.grenade_show.remove((owner, shot));
             self.grenade_show.blast(&mut parent, kind, to_godot(at));
         }
-        self.feel_blast(to_godot(at));
+        match kind {
+            Kind::Frag => self.feel_blast(to_godot(at)),
+            Kind::Flash => {
+                if let Some(mut space) = self
+                    .base()
+                    .get_world_3d()
+                    .and_then(|world| world.get_direct_space_state())
+                {
+                    self.flash_me(&mut space, to_godot(at));
+                }
+            }
+            Kind::Smoke => {}
+        }
+    }
+
+    /// A flashbang at `at`: if the eyes can see it, the screen whites out
+    /// and the ears ring, harder and longer the closer it is and the more
+    /// it is faced (`equipment::flash_amount`).
+    fn flash_me(&mut self, space: &mut Gd<PhysicsDirectSpaceState3D>, at: Vector3) {
+        if !self.state.alive() {
+            return;
+        }
+        let eye = self.eye_position();
+        let flash = at + Vector3::UP * equipment::BLAST_LIFT;
+        if !grenades::clear_line(space, eye, flash) {
+            return;
+        }
+        let to = flash - eye;
+        let forward = to_godot(player::aim_direction(self.yaw, self.pitch, Vec2::ZERO));
+        let facing = forward.dot(to.normalized_or_zero());
+        let amount = equipment::flash_amount(to.length(), facing);
+        if amount <= 0.02 {
+            return;
+        }
+        if self.flash_overlay.is_none() {
+            self.flash_overlay = try_load::<PackedScene>(FLASH_OVERLAY_SCENE)
+                .ok()
+                .and_then(|scene| scene.instantiate());
+            if let Some(node) = self.flash_overlay.clone() {
+                self.base_mut().add_child(&node);
+            }
+        }
+        if let Some(node) = &mut self.flash_overlay {
+            node.call(
+                "flash",
+                &[
+                    amount.to_variant(),
+                    equipment::flash_seconds(amount).to_variant(),
+                ],
+            );
+        }
+        self.ring_ears(amount);
     }
 
     /// A blast at `at`: a controller vibrates, harder the closer it is, and
@@ -2951,6 +3055,11 @@ impl FpsPlayer {
                 .done();
         }
         let ring = (1.0 - distance / BLAST_RING_RANGE).clamp(0.0, 1.0);
+        self.ring_ears(ring);
+    }
+
+    /// Rings in the ears, by `strength` 0 to 1.
+    fn ring_ears(&mut self, ring: f32) {
         if ring > 0.05 {
             if self.ear_ring.is_none() {
                 self.ear_ring = try_load::<PackedScene>(EAR_RING_SCENE)

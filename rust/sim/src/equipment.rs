@@ -1,4 +1,5 @@
-//! Equipment: the frag grenade.
+//! Equipment: the frag grenade (lethal), and the flashbang and smoke
+//! grenade (tacticals).
 //!
 //! Modern Call of Duty rules (Modern Warfare 2019 onward): the lethal sits on
 //! its own button (G, right bumper). Pressing it pulls the pin and lowers the
@@ -19,41 +20,172 @@
 //! When the fuse runs out, everyone within [`FRAG_RADIUS`] whose body the
 //! blast can see takes damage that falls off with distance ([`frag_damage`]).
 //! No friendly fire, but the thrower's own grenade hurts them. Counts follow
-//! each mode ([`spawn_lethals`]).
+//! each mode ([`spawn_lethals`], [`spawn_tacticals`]).
+//!
+//! Tacticals go on a second button (Q, left bumper) and do not cook: their
+//! fuse starts when they leave the hand. A flashbang blinds and deafens
+//! whoever it can see, more the closer they are and the more they face it
+//! ([`flash_amount`]); it hurts no one. A smoke grenade pops into a cloud
+//! that grows to [`SMOKE_RADIUS`], hangs for [`SMOKE_SECONDS`], and blocks
+//! sight through it ([`smoke_blocks`]).
 
 use glam::Vec3;
 
 use crate::look;
 use crate::tdm::Mode;
 
-/// A kind of equipment. Only the frag so far.
+/// A kind of equipment.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Kind {
     #[default]
     Frag,
+    Flash,
+    Smoke,
 }
 
 impl Kind {
+    /// The tacticals a loadout can pick from.
+    pub const TACTICALS: [Kind; 2] = [Kind::Flash, Kind::Smoke];
+
     /// The wire and save code.
     pub fn code(self) -> u8 {
         match self {
             Kind::Frag => 0,
+            Kind::Flash => 1,
+            Kind::Smoke => 2,
         }
     }
 
     pub fn from_code(code: u8) -> Option<Self> {
         match code {
             0 => Some(Kind::Frag),
+            1 => Some(Kind::Flash),
+            2 => Some(Kind::Smoke),
             _ => None,
         }
     }
 
-    /// The name the kill feed shows.
+    /// The key settings and loadouts use.
+    pub fn key(self) -> &'static str {
+        match self {
+            Kind::Frag => "frag",
+            Kind::Flash => "flash",
+            Kind::Smoke => "smoke",
+        }
+    }
+
+    pub fn by_key(key: &str) -> Option<Self> {
+        [Kind::Frag, Kind::Flash, Kind::Smoke]
+            .into_iter()
+            .find(|kind| kind.key() == key)
+    }
+
+    /// The name the kill feed and menus show.
     pub fn name(self) -> &'static str {
         match self {
             Kind::Frag => "Frag",
+            Kind::Flash => "Flashbang",
+            Kind::Smoke => "Smoke",
         }
     }
+
+    /// Lethal (the lethal button) rather than tactical.
+    pub fn lethal(self) -> bool {
+        self == Kind::Frag
+    }
+
+    /// Whether its fuse burns in the hand once the pin is out. Tacticals'
+    /// fuses start when they leave it.
+    pub fn cooks(self) -> bool {
+        self == Kind::Frag
+    }
+
+    /// Seconds from the pin (cooking) or the release (tacticals) to going off.
+    pub fn fuse(self) -> f32 {
+        match self {
+            Kind::Frag => FRAG_FUSE,
+            Kind::Flash => FLASH_FUSE,
+            Kind::Smoke => SMOKE_FUSE,
+        }
+    }
+}
+
+/// Seconds from leaving the hand to a flashbang's bang.
+pub const FLASH_FUSE: f32 = 1.5;
+/// Seconds from leaving the hand to a smoke grenade popping.
+pub const SMOKE_FUSE: f32 = 1.0;
+/// A flashbang reaches this far (metres).
+pub const FLASH_RANGE: f32 = 20.0;
+/// Most seconds a flashbang blinds for (at its strongest), and least.
+pub const FLASH_MAX_SECONDS: f32 = 4.0;
+pub const FLASH_MIN_SECONDS: f32 = 0.6;
+/// Share of the flash that still lands with the flash straight behind.
+pub const FLASH_BEHIND: f32 = 0.3;
+/// A smoke cloud's full radius (metres), how long it takes to grow to it,
+/// how long the cloud hangs, and how long it takes to thin away at the end.
+pub const SMOKE_RADIUS: f32 = 5.0;
+pub const SMOKE_BLOOM: f32 = 2.0;
+pub const SMOKE_SECONDS: f32 = 16.0;
+pub const SMOKE_THIN: f32 = 3.0;
+/// The cloud's centre sits this far above where the grenade lies.
+pub const SMOKE_HEIGHT: f32 = 1.6;
+
+/// How hard a flashbang `distance` metres away hits someone whose view is
+/// `facing` (the cosine between their view and the way to the flash), from
+/// 0 to 1. Nothing past [`FLASH_RANGE`]; the caller checks the flash is in
+/// plain view. Facing it lands it all, turned fully away about a third.
+pub fn flash_amount(distance: f32, facing: f32) -> f32 {
+    if !distance.is_finite() || distance >= FLASH_RANGE {
+        return 0.0;
+    }
+    // Full strength out to about a third of the range, then falling away.
+    let far = (distance / FLASH_RANGE).clamp(0.0, 1.0);
+    let near = 1.0 - far * far;
+    // Anywhere in the middle of the view lands it all.
+    let facing = ((facing.clamp(-1.0, 1.0) + 0.2) / 0.7).clamp(0.0, 1.0);
+    (near * (FLASH_BEHIND + (1.0 - FLASH_BEHIND) * facing)).clamp(0.0, 1.0)
+}
+
+/// Seconds a flash of `amount` (0 to 1) blinds for.
+pub fn flash_seconds(amount: f32) -> f32 {
+    if amount <= 0.0 {
+        return 0.0;
+    }
+    FLASH_MIN_SECONDS + (FLASH_MAX_SECONDS - FLASH_MIN_SECONDS) * amount.clamp(0.0, 1.0)
+}
+
+/// A smoke cloud's radius `age` seconds after it popped: growing over
+/// [`SMOKE_BLOOM`], full, then thinning away over the last [`SMOKE_THIN`]
+/// seconds. Zero once it has gone.
+pub fn smoke_radius(age: f32) -> f32 {
+    if !(0.0..SMOKE_SECONDS).contains(&age) {
+        return 0.0;
+    }
+    let grow = (age / SMOKE_BLOOM).clamp(0.0, 1.0);
+    let grow = 1.0 - (1.0 - grow) * (1.0 - grow);
+    let thin = ((SMOKE_SECONDS - age) / SMOKE_THIN).clamp(0.0, 1.0);
+    SMOKE_RADIUS * grow * (0.4 + 0.6 * thin)
+}
+
+/// Whether a smoke cloud at `center`, `age` seconds old, blocks the line
+/// from `from` to `to`: the line passes through its thick middle, or either
+/// end is inside it.
+pub fn smoke_blocks(center: Vec3, age: f32, from: Vec3, to: Vec3) -> bool {
+    let radius = smoke_radius(age);
+    if radius <= 0.5 {
+        return false;
+    }
+    let thick = radius * 0.8;
+    if from.distance(center) < thick || to.distance(center) < thick {
+        return true;
+    }
+    let line = to - from;
+    let length = line.length();
+    if length < 1e-4 {
+        return false;
+    }
+    let along = ((center - from).dot(line) / (length * length)).clamp(0.0, 1.0);
+    (from + line * along).distance(center) < thick
 }
 
 /// Seconds from the pin to the blast. Modern Call of Duty frags run about
@@ -153,6 +285,7 @@ pub fn frag_damage(distance: f32) -> f32 {
 pub fn blast_damage(kind: Kind, distance: f32) -> f32 {
     match kind {
         Kind::Frag => frag_damage(distance),
+        Kind::Flash | Kind::Smoke => 0.0,
     }
 }
 
@@ -160,6 +293,8 @@ pub fn blast_damage(kind: Kind, distance: f32) -> f32 {
 pub fn blast_radius(kind: Kind) -> f32 {
     match kind {
         Kind::Frag => FRAG_RADIUS,
+        Kind::Flash => FLASH_RANGE,
+        Kind::Smoke => SMOKE_RADIUS,
     }
 }
 
@@ -170,6 +305,11 @@ pub fn spawn_lethals(mode: Mode) -> u8 {
         Mode::GunGame(_) => 0,
         _ => 1,
     }
+}
+
+/// Tacticals a player spawns with in each mode: one a life, none in Gun Game.
+pub fn spawn_tacticals(mode: Mode) -> u8 {
+    spawn_lethals(mode)
 }
 
 /// A surface the grenade ran into during a move.
@@ -553,6 +693,79 @@ mod tests {
         let release = release_progress();
         assert!(release > COCKED_PROGRESS && release < 0.7);
         assert_eq!(throw_progress(2.0, Some(-RECOVERY)), 1.0);
+    }
+
+    #[test]
+    fn a_flash_hits_hardest_close_and_facing_it() {
+        assert_eq!(flash_amount(FLASH_RANGE, 1.0), 0.0);
+        assert!(flash_amount(3.0, 1.0) > 0.9);
+        let facing = flash_amount(8.0, 1.0);
+        let side = flash_amount(8.0, 0.0);
+        let behind = flash_amount(8.0, -1.0);
+        assert!(facing > side && side > behind && behind > 0.0);
+        assert!((behind / facing - FLASH_BEHIND).abs() < 0.05);
+        assert_eq!(flash_seconds(0.0), 0.0);
+        assert_eq!(flash_seconds(1.0), FLASH_MAX_SECONDS);
+    }
+
+    #[test]
+    fn smoke_grows_hangs_and_thins() {
+        assert_eq!(smoke_radius(-0.1), 0.0);
+        assert!(smoke_radius(0.5) < smoke_radius(1.5));
+        assert_eq!(smoke_radius(SMOKE_BLOOM), SMOKE_RADIUS);
+        assert_eq!(smoke_radius(SMOKE_SECONDS * 0.5), SMOKE_RADIUS);
+        assert!(smoke_radius(SMOKE_SECONDS - 0.5) < SMOKE_RADIUS * 0.6);
+        assert_eq!(smoke_radius(SMOKE_SECONDS), 0.0);
+    }
+
+    #[test]
+    fn smoke_blocks_lines_through_its_middle_only() {
+        let c = Vec3::new(0.0, 1.6, 0.0);
+        let age = 5.0;
+        let through = smoke_blocks(
+            c,
+            age,
+            Vec3::new(-10.0, 1.6, 0.0),
+            Vec3::new(10.0, 1.6, 0.0),
+        );
+        assert!(through);
+        let past = smoke_blocks(
+            c,
+            age,
+            Vec3::new(-10.0, 1.6, 6.0),
+            Vec3::new(10.0, 1.6, 6.0),
+        );
+        assert!(!past, "a line clear of the cloud");
+        assert!(
+            smoke_blocks(c, age, c, Vec3::new(30.0, 0.0, 0.0)),
+            "from inside"
+        );
+        assert!(
+            !smoke_blocks(
+                c,
+                0.05,
+                Vec3::new(-10.0, 1.6, 0.0),
+                Vec3::new(10.0, 1.6, 0.0)
+            ),
+            "not yet"
+        );
+        let short = smoke_blocks(
+            c,
+            age,
+            Vec3::new(-10.0, 1.6, 0.0),
+            Vec3::new(-6.0, 1.6, 0.0),
+        );
+        assert!(!short, "a line that stops short of it");
+    }
+
+    #[test]
+    fn kinds_round_trip_and_only_the_frag_cooks() {
+        for kind in [Kind::Frag, Kind::Flash, Kind::Smoke] {
+            assert_eq!(Kind::from_code(kind.code()), Some(kind));
+            assert_eq!(Kind::by_key(kind.key()), Some(kind));
+            assert_eq!(kind.cooks(), kind.lethal());
+        }
+        assert_eq!(blast_damage(Kind::Flash, 0.0), 0.0);
     }
 
     #[test]

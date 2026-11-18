@@ -205,6 +205,7 @@ impl RemotePlayer {
             mantling: false,
             meleeing: false,
             throw: None,
+            throw_kind: Default::default(),
             hits: 0,
             hit_heading: 0,
             hit_part: 0,
@@ -264,6 +265,7 @@ impl RemotePlayer {
             mantling: b("mantling", false),
             meleeing: b("meleeing", false),
             throw: f("throw"),
+            throw_kind: Default::default(),
             hits: get("hits")
                 .and_then(|v| v.try_to::<i64>().ok())
                 .unwrap_or(0) as u8,
@@ -488,6 +490,7 @@ impl RemotePlayer {
             turn: Some((s.progress.turn, s.progress.step)),
             // Snapshots do not say who is planting yet.
             action: s.throw.filter(|_| s.alive).map(|t| (ActionPose::Throw, t)),
+            throw_kind: s.throw_kind,
         };
         match (self.drawn_alive, s.alive) {
             // Dead: the body that died lies where it fell, in the scene's

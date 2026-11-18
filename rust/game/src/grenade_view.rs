@@ -15,10 +15,14 @@ use godot::classes::{Node3D, PackedScene, ResourceLoader};
 use godot::prelude::*;
 use shooter_sim::equipment::{self, Kind};
 
-/// The frag model, built by `tools/build_grenade.py`.
-const FRAG_MODEL: &str = crate::grenade_hold::MODEL;
-/// The blast effect.
-const FRAG_BLAST: &str = "res://scenes/equipment/frag_blast.tscn";
+/// Each kind's effect when it goes off.
+fn blast_scene(kind: Kind) -> &'static str {
+    match kind {
+        Kind::Frag => "res://scenes/equipment/frag_blast.tscn",
+        Kind::Flash => "res://scenes/equipment/flash_pop.tscn",
+        Kind::Smoke => "res://scenes/equipment/smoke_cloud.tscn",
+    }
+}
 
 /// Every drawn grenade is in this group (tests find them by it).
 pub const GRENADE_GROUP: &str = "grenades";
@@ -45,8 +49,22 @@ struct Shown {
 #[derive(Default)]
 pub struct GrenadeShow {
     shown: Vec<Shown>,
-    model: Option<Gd<PackedScene>>,
-    blast: Option<Gd<PackedScene>>,
+    models: Vec<(Kind, Gd<PackedScene>)>,
+    blasts: Vec<(Kind, Gd<PackedScene>)>,
+}
+
+/// A scene from `cache`, loading it into it the first time.
+fn cached(
+    cache: &mut Vec<(Kind, Gd<PackedScene>)>,
+    kind: Kind,
+    path: &str,
+) -> Option<Gd<PackedScene>> {
+    if let Some((_, scene)) = cache.iter().find(|(k, _)| *k == kind) {
+        return Some(scene.clone());
+    }
+    let scene = load_scene(path)?;
+    cache.push((kind, scene.clone()));
+    Some(scene)
 }
 
 fn load_scene(path: &str) -> Option<Gd<PackedScene>> {
@@ -65,7 +83,14 @@ impl GrenadeShow {
 
     /// The grenade `key` is at `at` now; positions arrive `interval` seconds
     /// apart. `parent` holds new models.
-    pub fn place(&mut self, parent: &mut Gd<Node>, key: GrenadeKey, at: Vector3, interval: f32) {
+    pub fn place(
+        &mut self,
+        parent: &mut Gd<Node>,
+        key: GrenadeKey,
+        kind: Kind,
+        at: Vector3,
+        interval: f32,
+    ) {
         if let Some(shown) = self.shown.iter_mut().find(|s| s.key == key) {
             shown.from = shown.node.get_global_position();
             shown.to = at;
@@ -74,12 +99,7 @@ impl GrenadeShow {
             shown.seen = true;
             return;
         }
-        if self.model.is_none() {
-            self.model = load_scene(FRAG_MODEL);
-        }
-        let Some(node) = self
-            .model
-            .as_ref()
+        let Some(node) = cached(&mut self.models, kind, crate::grenade_hold::model(kind))
             .and_then(|scene| scene.instantiate())
             .and_then(|node| node.try_cast::<Node3D>().ok())
         else {
@@ -153,15 +173,7 @@ impl GrenadeShow {
 
     /// Plays `kind`'s blast at `at`, under `parent`.
     pub fn blast(&mut self, parent: &mut Gd<Node>, kind: Kind, at: Vector3) {
-        match kind {
-            Kind::Frag => {}
-        }
-        if self.blast.is_none() {
-            self.blast = load_scene(FRAG_BLAST);
-        }
-        let Some(node) = self
-            .blast
-            .as_ref()
+        let Some(node) = cached(&mut self.blasts, kind, blast_scene(kind))
             .and_then(|scene| scene.instantiate())
             .and_then(|node| node.try_cast::<Node3D>().ok())
         else {

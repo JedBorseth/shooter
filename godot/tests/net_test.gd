@@ -192,8 +192,17 @@ func _throw_frag(player: FpsPlayer, client: NetClient) -> void:
 	# The fuse (3 s from the press, at 120 ticks a second) and a round trip.
 	await _ticks(360)
 	_check(get_nodes_in_group(&"grenades").is_empty(), "the server's blast took it away")
+	# The tactical (a flashbang by default) on its own button.
+	_check(player.tacticals() == 1, "one tactical online, got %d" % player.tacticals())
+	Input.action_press("tactical")
+	await _ticks(2)
+	Input.action_release("tactical")
+	await _ticks(60)
+	_check(player.tacticals() == 0, "the tactical throw spent it")
+	await _ticks(240)
+	_check(get_nodes_in_group(&"grenades").is_empty(), "the server's flashbang went off")
 	var corrections := int(client.stats().corrections) - corrections_before
-	_check(corrections == 0, "the throw was predicted with no corrections, got %d" % corrections)
+	_check(corrections == 0, "the throws were predicted with no corrections, got %d" % corrections)
 	player.set_look(0.0, 0.0)
 
 

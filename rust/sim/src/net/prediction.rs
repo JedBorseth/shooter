@@ -143,6 +143,7 @@ pub fn diverged(a: &Predicted, b: &Predicted) -> bool {
         || a.state.reload_held != b.state.reload_held
         || a.state.melee_held != b.state.melee_held
         || a.state.lethal_held != b.state.lethal_held
+        || a.state.tactical_held != b.state.tactical_held
         || a.state.airborne != b.state.airborne
         || (a.state.health - b.state.health).abs() > 0.01
         || (a.state.fall_speed - b.state.fall_speed).abs() > VELOCITY_TOLERANCE
@@ -258,6 +259,7 @@ fn combat_diverged(a: &CombatState, b: &CombatState) -> bool {
         || a.holding_breath != b.holding_breath
         || a.reload_queued != b.reload_queued
         || a.lethals != b.lethals
+        || (a.tactical, a.tacticals) != (b.tactical, b.tacticals)
         || !close(a.sway_time, b.sway_time)
         || !close(a.breath, b.breath)
         || !close(a.winded, b.winded)

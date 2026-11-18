@@ -54,6 +54,7 @@ fn raw_input(tick: u32) -> PlayerInput {
         melee: tick % 500 == 450 || tick % 500 == 451,
         lunge: (tick % 1000 == 450).then_some(Vec2::new(0.8, -2.6)),
         lethal: (800..860).contains(&(tick % 1200)),
+        tactical: (1100..1110).contains(&(tick % 1500)),
         view_tick: None,
         fire_aim: None,
     }
@@ -234,10 +235,11 @@ fn press_aim_changes_no_state() {
 // steering that never adds speed.
 // Equipment: the script pulls a frag's pin, cooks it, and throws it.
 // The throw then stays in hand through its follow-through.
-const REFERENCE_HASH: u64 = 0x3cf6_f121_6c6f_f3fa;
+// Tacticals: the script throws its flashbang too.
+const REFERENCE_HASH: u64 = 0x5df4_bcb3_f3a9_9afa;
 /// The same for every shot's view angles and aim offset (sub-tick press aims
 /// included).
-const SHOT_REFERENCE_HASH: u64 = 0x5593_cb9c_1d51_ed43;
+const SHOT_REFERENCE_HASH: u64 = 0x711a_2bf6_d434_1119;
 
 #[test]
 fn state_matches_the_reference_on_every_platform() {

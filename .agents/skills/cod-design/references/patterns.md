@@ -164,7 +164,7 @@ the current default:
 | Interact | F (hold) | not bound yet; Call of Duty holds X / Square (tap reloads, hold interacts) |
 | Switch weapon | 1, 2, mouse wheel | Y / Triangle |
 | Scoreboard | Tab | Back / View / touchpad |
-| Lethal, tactical | G for the frag (lethal); the tactical is not built yet | RB for the lethal; LB is free for the tactical |
+| Lethal, tactical | G for the frag (lethal), Q for the tactical (flashbang or smoke) | RB for the lethal, LB for the tactical |
 
 Toggle sprint and toggle crouch are this project's defaults.
 

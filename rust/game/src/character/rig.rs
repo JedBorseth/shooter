@@ -188,6 +188,8 @@ pub struct SoldierFrame {
     /// along it is (0..1). Nothing sets it yet: it is the hook for planting,
     /// defusing, and throwing once snapshots carry them.
     pub action: Option<(ActionPose, f32)>,
+    /// What a throw throws.
+    pub throw_kind: shooter_sim::equipment::Kind,
 }
 
 /// Things a soldier does with their hands instead of the weapon. The hit
@@ -242,6 +244,7 @@ impl Default for SoldierFrame {
             crouch: None,
             turn: None,
             action: None,
+            throw_kind: Default::default(),
         }
     }
 }
@@ -621,6 +624,9 @@ impl SoldierRig {
                 Some("throw") => Some((ActionPose::Throw, f("action_progress", 0.5))),
                 _ => None,
             },
+            throw_kind: get("throw_kind")
+                .and_then(|v| shooter_sim::equipment::Kind::by_key(&v.to_string()))
+                .unwrap_or_default(),
         };
         self.update(&frame, delta);
     }
@@ -1259,7 +1265,7 @@ impl SoldierRig {
         // A throw: the support hand carries the grenade over and out.
         let throw = match frame.action {
             Some((ActionPose::Throw, t)) => {
-                let pose = crate::grenade_hold::third_person(t);
+                let pose = crate::grenade_hold::third_person(t, frame.throw_kind);
                 Some((pose, weapon_from_eyes * pose.at))
             }
             _ => None,
@@ -1304,6 +1310,7 @@ impl SoldierRig {
             grenade_at: throw.map_or(Transform3D::IDENTITY, |(_, at)| at),
             grenade_in_hand: throw.is_some_and(|(pose, _)| pose.in_hand),
             grenade_pinned: throw.is_some_and(|(pose, _)| pose.pinned),
+            grenade_kind: throw.map_or(Default::default(), |(pose, _)| pose.kind),
             feet: (self.feet_on && frame.alive).then_some(self.feet_lift),
         }
     }

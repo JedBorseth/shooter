@@ -289,8 +289,9 @@ struct ClientSlot {
     outbox: Vec<GameEvent>,
     /// Ready to start the match (lobby).
     ready: bool,
-    /// The primary weapon for the next spawn.
+    /// The primary weapon and the tactical for the next spawn.
     primary: WeaponId,
+    tactical: equipment::Kind,
     /// Chat rate limit.
     chat: ChatLimiter,
 }
@@ -305,8 +306,9 @@ struct Avatar {
     bot: bool,
     name: String,
     team: Team,
-    /// The primary weapon this player spawns with.
+    /// The primary weapon and the tactical this player spawns with.
     primary: WeaponId,
+    tactical: equipment::Kind,
     /// A bot that plays the match decides its inputs here.
     brain: Option<BotBrain>,
     respawn_in: f32,
@@ -918,6 +920,7 @@ impl NetServer {
                     outbox: Vec::new(),
                     ready: false,
                     primary: default_primary(),
+                    tactical: equipment::Kind::Flash,
                     chat: ChatLimiter::default(),
                 });
             }
@@ -986,6 +989,10 @@ impl NetServer {
                 let roster: Vec<GameEvent> = self.avatars.iter().map(joined_event).collect();
                 self.clients[index].outbox.extend(roster);
                 self.spawn_avatar(id, false, &name, primary, None);
+                let tactical = self.clients[index].tactical;
+                if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) {
+                    avatar.tactical = tactical;
+                }
                 self.balance_bots();
                 let event = self.match_event();
                 self.send_event(id, event);
@@ -1028,20 +1035,23 @@ impl NetServer {
                 self.clients[index].ready = ready;
                 self.next_scoreboard = self.tick;
             }
-            ClientMessage::Loadout { primary } => {
-                if !is_loadout_primary(primary) {
+            ClientMessage::Loadout { primary, tactical } => {
+                if !is_loadout_primary(primary) || tactical.lethal() {
                     return;
                 }
                 self.clients[index].primary = primary;
+                self.clients[index].tactical = tactical;
                 let freeze = self.round.is_some_and(|r| r.phase == RoundPhase::Freeze);
                 if let Some(id) = self.clients[index].player
                     && let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id)
                 {
                     avatar.primary = primary;
+                    avatar.tactical = tactical;
                     // During a round's freeze a new loadout applies at once.
                     if freeze && avatar.predicted.state.alive() {
                         let movement = avatar.predicted.state.movement;
-                        let lethals = avatar.predicted.state.combat.lethals;
+                        let combat = avatar.predicted.state.combat;
+                        let (lethals, tacticals) = (combat.lethals, combat.tacticals);
                         avatar.predicted.state = PlayerState::new(loadout_for(primary));
                         avatar.predicted.state.movement = movement;
                         avatar.predicted.state.combat = avatar
@@ -1049,6 +1059,7 @@ impl NetServer {
                             .state
                             .combat
                             .with_lethals(lethals)
+                            .with_tacticals(tactical, tacticals)
                             .first_draw();
                     }
                 }
@@ -1139,6 +1150,7 @@ impl NetServer {
             name: name.to_owned(),
             team,
             primary,
+            tactical: equipment::Kind::Flash,
             brain,
             respawn_in: 0.0,
             spawned_at: self.tick,
@@ -1243,7 +1255,10 @@ impl NetServer {
             // Gun Game: the ladder's weapon and nothing else.
             state.combat = CombatState::only(loadout);
         }
-        state.combat.lethals = equipment::spawn_lethals(self.game);
+        state.combat = state
+            .combat
+            .with_lethals(equipment::spawn_lethals(self.game))
+            .with_tacticals(avatar.tactical, equipment::spawn_tacticals(self.game));
         if first {
             state.combat = state.combat.first_draw();
         }

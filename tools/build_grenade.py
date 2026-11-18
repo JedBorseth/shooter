@@ -1,10 +1,19 @@
-"""Build the frag grenade, in Blender.
+"""Build the grenades, in Blender.
 
     blender -b --factory-startup --python tools/build_grenade.py
 
-Writes godot/assets/equipment/frag/frag.glb: a round fragmentation grenade
-of the M67 pattern, 64 mm across, in metres, with the centre of the body at
-the origin and the fuse up (+Y in Godot after the glTF Y-up conversion).
+Writes three models under godot/assets/equipment/, in metres, with the fuse
+up (+Y in Godot after the glTF Y-up conversion):
+
+- `frag/frag.glb`: a round fragmentation grenade of the M67 pattern, 64 mm
+  across, the centre of the body at the origin.
+- `flash/flash.glb`: a flashbang of the M84 pattern, a slim steel tube with
+  rows of vent ports and a pale band.
+- `smoke/smoke.glb`: a smoke grenade of the M18 pattern, a wide olive can
+  with a pale top band and a dark lid.
+
+All three share the same fuse head, spoon, and pull ring, with the fuse's
+base at the same height, so a hand holds each the same way.
 
 Separate nodes so the first-person throw can move them: `Body` (the olive
 steel sphere with its yellow filler band and the fuse well's collar), `Fuse`
@@ -23,7 +32,12 @@ import bpy
 from mathutils import Matrix, Vector
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "godot" / "assets" / "equipment" / "frag" / "frag.glb"
+OUT_DIR = ROOT / "godot" / "assets" / "equipment"
+# Cylinder bodies (flash, smoke): radius and length; the fuse sits on top.
+FLASH_RADIUS = 0.021
+FLASH_LENGTH = 0.11
+SMOKE_RADIUS = 0.031
+SMOKE_LENGTH = 0.1
 
 # Blender axes: +Z up (Godot +Y), +X right, -Y toward the viewer (Godot +Z).
 BODY_RADIUS = 0.032
@@ -171,9 +185,10 @@ def fuse(steel):
     return finish("Fuse", bm, [steel])
 
 
-def spoon(steel):
+def spoon(steel, cylinder=None):
     """The safety lever: a strip over the fuse head and down the +X side of
-    the body, curving with it, slightly crowned across its width."""
+    the body, curving with it (or straight down a can of `cylinder` =
+    (radius, length)), slightly crowned across its width."""
     bm = bmesh.new()
     half_width = 0.0062
     thickness = 0.0011
@@ -184,10 +199,16 @@ def spoon(steel):
     path.append(Vector((FUSE_RADIUS * 1.15, 0.0, FUSE_TOP - 0.003)))
     path.append(Vector((FUSE_RADIUS * 1.3, 0.0, FUSE_BASE + 0.004)))
     # Down the body, a millimetre off it.
-    r = BODY_RADIUS + 0.0018
-    for i in range(12):
-        a = math.radians(62.0 - 92.0 * i / 11)
-        path.append(Vector((r * math.cos(a), 0.0, r * 0.985 * math.sin(a))))
+    if cylinder is None:
+        r = BODY_RADIUS + 0.0018
+        for i in range(12):
+            a = math.radians(62.0 - 92.0 * i / 11)
+            path.append(Vector((r * math.cos(a), 0.0, r * 0.985 * math.sin(a))))
+    else:
+        radius, length = cylinder
+        r = radius + 0.0018
+        for i in range(8):
+            path.append(Vector((r, 0.0, FUSE_BASE - 0.002 - length * 0.8 * i / 7)))
     rings = []
     for i, p in enumerate(path):
         prev = path[max(i - 1, 0)]
@@ -264,22 +285,59 @@ def pin(ring_steel):
     return finish("Pin", bm, [ring_steel])
 
 
-def main() -> None:
-    bpy.ops.wm.read_factory_settings(use_empty=True)
-    # Colours are linear (glTF base colours), not sRGB.
-    olive = material("FragOlive", (0.042, 0.048, 0.022), 0.15, 0.62)
-    band = material("FragBand", (0.55, 0.42, 0.02), 0.0, 0.6)
-    steel = material("FragSteel", (0.07, 0.07, 0.065), 0.8, 0.55)
-    ring = material("FragRing", (0.3, 0.3, 0.29), 1.0, 0.38)
-    body(olive, band, steel)
-    fuse(steel)
-    spoon(steel)
-    pin(ring)
+def can(name, radius, length, shell, band, lid, band_at, vents):
+    """A cylindrical grenade body from the fuse's base down: chamfered ends,
+    a coloured band `band_at` (fraction from the top), and `vents` rows of
+    round ports (flashbang) or a ring of holes in the lid (smoke), modelled
+    as dark insets."""
+    bm = bmesh.new()
+    top = FUSE_BASE
+    bottom = top - length
+    c = 0.0025
+    profile = [
+        (0.0, bottom),
+        (radius - c, bottom),
+        (radius, bottom + c),
+        (radius, top - c),
+        (radius - c, top),
+        (FUSE_RADIUS * 1.05, top),
+        (0.0, top),
+    ]
+    lathe(bm, profile, 36, 0)
+    for face in bm.faces:
+        cz = face.calc_center_median().z
+        from_top = (top - cz) / length
+        if band_at[0] < from_top < band_at[1] and abs(face.normal.z) < 0.5:
+            face.material_index = 1
+        if face.normal.z > 0.9:
+            face.material_index = 2
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-7)
+    finish(name, bm, [shell, band, lid])
+    if vents:
+        # Ports: short dark cylinders set into the wall.
+        holes = bmesh.new()
+        for row in range(vents):
+            z = top - length * (0.3 + 0.45 * row / max(vents - 1, 1))
+            for k in range(8):
+                a = math.tau * (k + 0.5 * row) / 8
+                port = bmesh.ops.create_cone(
+                    holes, cap_ends=True, segments=10, radius1=0.0033, radius2=0.0033, depth=0.002
+                )["verts"]
+                m = (
+                    Matrix.Translation((radius * math.cos(a), radius * math.sin(a), z))
+                    @ Matrix.Rotation(a, 4, "Z")
+                    @ Matrix.Rotation(math.pi / 2, 4, "Y")
+                )
+                bmesh.ops.transform(holes, matrix=m, verts=port)
+        bmesh.ops.recalc_face_normals(holes, faces=holes.faces)
+        finish(name + "Ports", holes, [lid])
 
-    OUT.parent.mkdir(parents=True, exist_ok=True)
+
+def export(out: Path) -> None:
+    out.parent.mkdir(parents=True, exist_ok=True)
     bpy.ops.object.select_all(action="SELECT")
     bpy.ops.export_scene.gltf(
-        filepath=str(OUT),
+        filepath=str(out),
         export_format="GLB",
         use_selection=True,
         export_materials="EXPORT",
@@ -291,7 +349,45 @@ def main() -> None:
         export_skins=False,
         export_morph=False,
     )
-    print(f"[grenade] wrote {OUT.relative_to(ROOT)}", flush=True)
+    print(f"[grenade] wrote {out.relative_to(ROOT)}", flush=True)
+
+
+def main() -> None:
+    # Colours are linear (glTF base colours), not sRGB.
+    def common():
+        bpy.ops.wm.read_factory_settings(use_empty=True)
+        steel = material("FragSteel", (0.07, 0.07, 0.065), 0.8, 0.55)
+        ring = material("FragRing", (0.3, 0.3, 0.29), 1.0, 0.38)
+        return steel, ring
+
+    steel, ring = common()
+    olive = material("FragOlive", (0.042, 0.048, 0.022), 0.15, 0.62)
+    band = material("FragBand", (0.55, 0.42, 0.02), 0.0, 0.6)
+    body(olive, band, steel)
+    fuse(steel)
+    spoon(steel)
+    pin(ring)
+    export(OUT_DIR / "frag" / "frag.glb")
+
+    steel, ring = common()
+    tube = material("FlashSteel", (0.11, 0.115, 0.1), 0.7, 0.5)
+    pale = material("FlashBand", (0.5, 0.48, 0.4), 0.0, 0.65)
+    dark = material("FlashPort", (0.01, 0.01, 0.01), 0.3, 0.8)
+    can("Body", FLASH_RADIUS, FLASH_LENGTH, tube, pale, dark, (0.06, 0.13), 2)
+    fuse(steel)
+    spoon(steel, (FLASH_RADIUS, FLASH_LENGTH))
+    pin(ring)
+    export(OUT_DIR / "flash" / "flash.glb")
+
+    steel, ring = common()
+    drab = material("SmokeOlive", (0.05, 0.058, 0.03), 0.1, 0.7)
+    white = material("SmokeTop", (0.7, 0.7, 0.66), 0.0, 0.6)
+    lid = material("SmokeLid", (0.04, 0.045, 0.025), 0.4, 0.6)
+    can("Body", SMOKE_RADIUS, SMOKE_LENGTH, drab, white, lid, (0.0, 0.16), 0)
+    fuse(steel)
+    spoon(steel, (SMOKE_RADIUS, SMOKE_LENGTH))
+    pin(ring)
+    export(OUT_DIR / "smoke" / "smoke.glb")
 
 
 main()

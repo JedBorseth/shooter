@@ -78,7 +78,10 @@ use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, Weapo
 // carried weapons have not been drawn yet.
 // Version 34 kept the throw in hand through its follow-through and added how
 // far along a throw each body is (`PlayerView::throw`).
-pub const PROTOCOL_VERSION: u16 = 34;
+// Version 35 added the tactical (flashbang or smoke): its button in inputs,
+// the tactical carried in the predicted state, the pick in loadouts, and
+// what each body is throwing.
+pub const PROTOCOL_VERSION: u16 = 35;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -121,10 +124,11 @@ pub enum ClientMessage {
     Ready {
         ready: bool,
     },
-    /// The primary weapon to spawn with from the next spawn on (the sidearm is
-    /// always the M1911).
+    /// The primary weapon and the tactical to spawn with from the next spawn
+    /// on (the sidearm is always the M1911, the lethal a frag).
     Loadout {
         primary: WeaponId,
+        tactical: equipment::Kind,
     },
     /// A chat message, to everyone or only to our team.
     Chat {
@@ -456,6 +460,8 @@ pub struct PlayerView {
     /// Throwing a grenade: 0 when not, otherwise how far along the throw is
     /// as 1 to 255 ([`throw_to_u8`]).
     pub throw: u8,
+    /// What the body is throwing, while it is.
+    pub throw_kind: equipment::Kind,
     /// Hits taken so far (wrapping); an increase means the player was hit, so
     /// everyone sees the flinch.
     pub hits: u8,
@@ -555,6 +561,10 @@ impl PlayerView {
             mantling: p.state.movement.mantling(),
             meleeing: combat.meleeing(),
             throw: throw_to_u8(combat.throw_progress()),
+            throw_kind: match combat.action {
+                Action::Throwing { kind, .. } => kind,
+                _ => equipment::Kind::Frag,
+            },
             hits: 0,
             hit_heading: 0,
             hit_part: 0,
@@ -703,9 +713,10 @@ impl ClientMessage {
                 w.bits(3, TAG_BITS);
                 w.bool(*ready);
             }
-            ClientMessage::Loadout { primary } => {
+            ClientMessage::Loadout { primary, tactical } => {
                 w.bits(4, TAG_BITS);
                 write_weapon(&mut w, *primary);
+                w.bits(u32::from(tactical.code()), EQUIPMENT_BITS);
             }
             ClientMessage::Chat { text, team } => {
                 w.bits(5, TAG_BITS);
@@ -756,9 +767,14 @@ impl ClientMessage {
                 rewound_hitboxes: r.bool()?,
             }),
             3 => Ok(ClientMessage::Ready { ready: r.bool()? }),
-            4 => Ok(ClientMessage::Loadout {
-                primary: read_weapon(&mut r)?,
-            }),
+            4 => {
+                let primary = read_weapon(&mut r)?;
+                let tactical = read_equipment(&mut r)?;
+                if tactical.lethal() {
+                    return Err(DecodeError::Invalid("tactical"));
+                }
+                Ok(ClientMessage::Loadout { primary, tactical })
+            }
             5 => {
                 let team = r.bool()?;
                 Ok(ClientMessage::Chat {
@@ -789,6 +805,7 @@ fn write_input(w: &mut BitWriter, input: &PlayerInput, previous_view: Option<f64
         input.reload,
         input.melee,
         input.lethal,
+        input.tactical,
     ] {
         w.bool(flag);
     }
@@ -910,6 +927,7 @@ fn read_input(r: &mut BitReader, previous_view: Option<f64>) -> DecodeResult<Pla
     let reload = r.bool()?;
     let melee = r.bool()?;
     let lethal = r.bool()?;
+    let tactical = r.bool()?;
     let lunge = if r.bool()? {
         let x = f32::from(r.u16()? as i16);
         let z = f32::from(r.u16()? as i16);
@@ -948,6 +966,7 @@ fn read_input(r: &mut BitReader, previous_view: Option<f64>) -> DecodeResult<Pla
         melee,
         lunge,
         lethal,
+        tactical,
         view_tick,
         fire_aim,
     })
@@ -1789,9 +1808,11 @@ fn write_view_delta(w: &mut BitWriter, v: &PlayerView, base: &PlayerView) {
         w.bool(v.mantling);
         w.bool(v.meleeing);
     }
-    w.bool(v.throw != base.throw);
-    if v.throw != base.throw {
+    let throw_changed = (v.throw, v.throw_kind) != (base.throw, base.throw_kind);
+    w.bool(throw_changed);
+    if throw_changed {
         w.u8(v.throw);
+        w.bits(u32::from(v.throw_kind.code()), EQUIPMENT_BITS);
     }
     let shots = v.shots_fired.wrapping_sub(base.shots_fired);
     w.bool(shots != 0);
@@ -1853,6 +1874,7 @@ fn read_view_delta(r: &mut BitReader, base: &PlayerView) -> DecodeResult<PlayerV
     }
     if r.bool()? {
         v.throw = r.u8()?;
+        v.throw_kind = read_equipment(r)?;
     }
     if r.bool()? {
         v.shots_fired = base.shots_fired.wrapping_add(r.varint()?);
@@ -1882,6 +1904,7 @@ fn write_predicted(w: &mut BitWriter, p: &Predicted) {
     w.bool(s.reload_held);
     w.bool(s.melee_held);
     w.bool(s.lethal_held);
+    w.bool(s.tactical_held);
     w.f32(s.health);
     w.f32(s.since_damage);
     w.f32(s.fall_speed);
@@ -1896,6 +1919,7 @@ fn read_predicted(r: &mut BitReader) -> DecodeResult<Predicted> {
     let reload_held = r.bool()?;
     let melee_held = r.bool()?;
     let lethal_held = r.bool()?;
+    let tactical_held = r.bool()?;
     let health = r.f32()?;
     let since_damage = r.f32()?;
     let fall_speed = r.f32()?;
@@ -1913,6 +1937,7 @@ fn read_predicted(r: &mut BitReader) -> DecodeResult<Predicted> {
             reload_held,
             melee_held,
             lethal_held,
+            tactical_held,
         },
         position,
         on_floor,
@@ -2060,6 +2085,8 @@ fn write_combat_state(w: &mut BitWriter, c: &CombatState) {
     w.bool(c.holding_breath);
     w.bool(c.reload_queued);
     w.u8(c.lethals);
+    w.bits(u32::from(c.tactical.code()), EQUIPMENT_BITS);
+    w.u8(c.tacticals);
 }
 
 fn read_combat_state(r: &mut BitReader) -> DecodeResult<CombatState> {
@@ -2140,6 +2167,8 @@ fn read_combat_state(r: &mut BitReader) -> DecodeResult<CombatState> {
         holding_breath: r.bool()?,
         reload_queued: r.bool()?,
         lethals: r.u8()?,
+        tactical: read_equipment(r)?,
+        tacticals: r.u8()?,
     })
 }
 
@@ -3282,6 +3311,7 @@ mod tests {
             },
             ClientMessage::Loadout {
                 primary: WeaponId::expect("ak47"),
+                tactical: equipment::Kind::Smoke,
             },
         ] {
             assert_eq!(ClientMessage::decode(&msg.encode()).unwrap(), msg);

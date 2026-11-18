@@ -80,6 +80,7 @@ pub struct RemoteSample {
     pub meleeing: bool,
     /// How far along a grenade throw, if throwing (`PlayerView::throw`).
     pub throw: Option<f32>,
+    pub throw_kind: crate::equipment::Kind,
     pub hits: u8,
     pub hit_heading: u8,
     /// Where the latest hit landed and how hard (`protocol::HitPart`).
@@ -132,6 +133,7 @@ impl RemoteSample {
             mantling: v.mantling,
             meleeing: v.meleeing,
             throw: v.throw_progress(),
+            throw_kind: v.throw_kind,
             hits: v.hits,
             hit_heading: v.hit_heading,
             hit_part: v.hit_part,

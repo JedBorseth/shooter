@@ -35,6 +35,9 @@ pub struct PlayerInput {
     /// The lethal button ([`crate::equipment`]): a press pulls a grenade's
     /// pin, holding cooks it, letting go throws it.
     pub lethal: bool,
+    /// The tactical button: a press pulls the tactical's pin, letting go
+    /// throws it (tacticals do not cook).
+    pub tactical: bool,
     /// Online only: the server tick (fractional) this client was drawing other
     /// players at when the input was read. The server rewinds their hitboxes to
     /// it to check this input's shots (`net::lag`). Sent while firing; the
@@ -74,6 +77,7 @@ impl PlayerInput {
             melee: false,
             lunge: None,
             lethal: false,
+            tactical: false,
             pickup: None,
             view_tick: None,
             fire_aim: None,
@@ -154,6 +158,8 @@ pub struct PlayerState {
     pub melee_held: bool,
     /// The lethal button was down last tick (a press pulls a pin).
     pub lethal_held: bool,
+    /// The tactical button was down last tick.
+    pub tactical_held: bool,
 }
 
 impl PlayerState {
@@ -168,6 +174,7 @@ impl PlayerState {
             reload_held: false,
             melee_held: false,
             lethal_held: false,
+            tactical_held: false,
         }
     }
 
@@ -307,8 +314,24 @@ pub fn step(
     let lunge = input.lunge.filter(|offset| melee && melee::lunges(*offset));
     let lethal_pressed = input.lethal && !state.lethal_held;
     state.lethal_held = input.lethal;
-    // Not while climbing, nor in the same tick as a knife.
-    let throw = lethal_pressed && !melee && !state.movement.mantling();
+    let tactical_pressed = input.tactical && !state.tactical_held;
+    state.tactical_held = input.tactical;
+    // Not while climbing, nor in the same tick as a knife. The lethal wins
+    // if both go down at once.
+    let throw = if melee || state.movement.mantling() {
+        None
+    } else if lethal_pressed {
+        Some(crate::equipment::Kind::Frag)
+    } else if tactical_pressed {
+        Some(state.combat.tactical)
+    } else {
+        None
+    };
+    // The grenade in hand stays while its own button is held.
+    let throw_held = match state.combat.action {
+        weapon::Action::Throwing { kind, .. } if !kind.lethal() => input.tactical,
+        _ => input.lethal,
+    };
 
     let def = state.combat.def();
     let ads = state.combat.ads;
@@ -349,7 +372,7 @@ pub fn step(
         pickup: input.pickup,
         melee: melee.then(|| (melee::strike_delay(lunge), lunge.is_some())),
         throw,
-        throw_held: input.lethal,
+        throw_held,
     };
     let ctx = state.combat_context(env, &params.movement);
     let mut combat = Vec::new();
@@ -602,6 +625,35 @@ mod tests {
         run(&mut s, PlayerInput::default(), MoveEnv::default(), 1);
         let events = run(&mut s, tap, MoveEnv::default(), 1);
         assert!(events.is_empty() && !s.combat.throwing());
+    }
+
+    #[test]
+    fn a_tactical_leaves_with_its_whole_fuse_however_long_it_is_held() {
+        use crate::equipment::{FLASH_FUSE, Kind};
+        let mut s = ready_state();
+        assert_eq!((s.combat.tactical, s.combat.tacticals), (Kind::Flash, 1));
+        let hold = PlayerInput {
+            tactical: true,
+            ..Default::default()
+        };
+        run(&mut s, hold, MoveEnv::default(), ticks(2.5));
+        assert!(s.combat.throwing(), "held: still in hand, no cooking");
+        assert_eq!(s.combat.tacticals, 0);
+        assert_eq!(s.combat.lethals, 1, "the frag stays in the pouch");
+        let events = run(
+            &mut s,
+            PlayerInput::default(),
+            MoveEnv::default(),
+            ticks(0.5),
+        );
+        let thrown: Vec<(Kind, f32)> = events
+            .iter()
+            .filter_map(|e| match *e {
+                PlayerEvent::Combat(CombatEvent::Thrown { kind, fuse, .. }) => Some((kind, fuse)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(thrown, vec![(Kind::Flash, FLASH_FUSE)]);
     }
 
     #[test]
@@ -901,6 +953,7 @@ mod tests {
             melee: true,
             lunge: Some(Vec2::new(0.5, -2.0)),
             lethal: true,
+            tactical: true,
             view_tick: Some(12.5),
             fire_aim: Some(FireAim {
                 yaw: 0.01,

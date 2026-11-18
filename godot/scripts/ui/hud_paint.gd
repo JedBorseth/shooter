@@ -319,3 +319,19 @@ static func grenade(item: CanvasItem, at: Vector2, size: float, colour: Color) -
 	item.draw_line(
 		spoon_top, body + Vector2(radius * 1.12, radius * 0.1), colour, maxf(size * 0.08, 1.5)
 	)
+
+
+## A tactical's silhouette centred at `at`, `size` pixels tall: a can with
+## its fuse head and spoon, slim for a flashbang, wide for a smoke grenade.
+static func canister(item: CanvasItem, at: Vector2, size: float, colour: Color, wide: bool) -> void:
+	var half_w := size * (0.3 if wide else 0.2)
+	var body := Rect2(at.x - half_w, at.y - size * 0.22, half_w * 2.0, size * 0.72)
+	item.draw_rect(body, colour)
+	var fuse := Rect2(at.x - size * 0.11, body.position.y - size * 0.2, size * 0.22, size * 0.2)
+	item.draw_rect(fuse, colour)
+	item.draw_line(
+		Vector2(fuse.end.x, fuse.position.y + size * 0.04),
+		Vector2(body.end.x + size * 0.06, body.position.y + size * 0.5),
+		colour,
+		maxf(size * 0.08, 1.5)
+	)
