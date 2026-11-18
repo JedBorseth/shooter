@@ -1,10 +1,15 @@
 extends MeshInstance3D
 ## Bullet tracer: a short glowing streak that flies from the muzzle to the hit
-## point at bullet-like speed, then frees itself.
+## point at bullet-like speed, then frees itself. Players and the sentry draw
+## theirs from the pool in `CombatEffects` (`rust/game/src/effects.rs`); this
+## scene is the fallback where there is none. Both use the camera-facing
+## ribbon in `shaders/tracer.gdshader`.
 
 ## Metres per second. Real rounds are faster; this keeps the streak visible.
 @export var speed: float = 320.0
-@export var length: float = 5.0
+@export var length: float = 7.0
+## True width in metres; the shader keeps at least a pixel and a half.
+@export var width: float = 0.018
 
 var _from: Vector3
 var _direction: Vector3
@@ -33,9 +38,12 @@ func _place() -> void:
 	var head := minf(_travelled, _distance)
 	var tail := clampf(_travelled - length, 0.0, _distance)
 	var span := maxf(head - tail, 0.001)
-	var up := Vector3.UP if absf(_direction.dot(Vector3.UP)) < 0.99 else Vector3.RIGHT
-	var basis := Basis.looking_at(_direction, up)
-	# The mesh is a unit-length box along -Z; stretch it to the visible span.
+	var side := (
+		(_direction.cross(Vector3.UP) if absf(_direction.dot(Vector3.UP)) < 0.99 else Vector3.RIGHT)
+		. normalized()
+	)
+	# The quad's Y runs along the streak (head at +Y), X across it.
 	global_transform = Transform3D(
-		basis.scaled(Vector3(1, 1, span)), _from + _direction * (tail + span * 0.5)
+		Basis(side * width, _direction * span, side.cross(_direction)),
+		_from + _direction * (tail + span * 0.5)
 	)

@@ -2274,19 +2274,33 @@ impl FpsPlayer {
                 self.spawn_streak(&scene, end);
             }
         } else if def.tracer_every > 0 && shot.is_multiple_of(u32::from(def.tracer_every)) {
-            let scene = (*self.tracer_scene).clone();
-            self.spawn_streak(&scene, end);
+            // From the effects pool; the scene is the fallback without one.
+            let start = self.streak_start();
+            match self
+                .base()
+                .try_get_node_as::<CombatEffects>("CombatEffects")
+            {
+                Some(mut effects) => effects.bind_mut().tracer(start, end),
+                None => {
+                    let scene = (*self.tracer_scene).clone();
+                    self.spawn_streak(&scene, end);
+                }
+            }
         }
     }
 
     /// Tracers and beams start near the muzzle: the viewmodel is drawn with its
     /// own FOV, so this is a camera-relative approximation that reads right on
     /// screen.
-    fn spawn_streak(&mut self, scene: &Gd<PackedScene>, end: Vector3) {
+    fn streak_start(&self) -> Vector3 {
         let ads = self.state.combat.ads;
         let hip = Vector3::new(0.09, -0.1, -0.55);
         let aimed = Vector3::new(0.0, -0.05, -0.55);
-        let start = self.camera.get_global_transform() * hip.lerp(aimed, ads);
+        self.camera.get_global_transform() * hip.lerp(aimed, ads)
+    }
+
+    fn spawn_streak(&mut self, scene: &Gd<PackedScene>, end: Vector3) {
+        let start = self.streak_start();
         let Some(mut tracer) = scene
             .instantiate()
             .and_then(|n| n.try_cast::<Node3D>().ok())

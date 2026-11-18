@@ -20,14 +20,16 @@
 //! The local player adds one [`CombatEffects`] to itself, so the dedicated
 //! server, which has no local player, pays nothing for any of it.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 
+use godot::classes::geometry_instance_3d::ShadowCastingSetting;
 use godot::classes::{
-    Decal, INode3D, Node3D, PackedScene, PhysicsRayQueryParameters3D, Texture2D, VisualInstance3D,
-    decal::DecalTexture,
+    Decal, INode3D, Mesh, MeshInstance3D, Node3D, PackedScene, PhysicsRayQueryParameters3D,
+    Texture2D, VisualInstance3D, decal::DecalTexture,
 };
 use godot::prelude::*;
 use shooter_sim::rng;
+use shooter_sim::weapon::WeaponId;
 
 use crate::bullets::ShotTracer;
 use crate::surfaces::Surface;
@@ -61,6 +63,8 @@ pub struct Budget {
     pub holes: usize,
     /// Blood spatters kept on the walls.
     pub splats: usize,
+    /// Tracers in flight at once.
+    pub tracers: usize,
 }
 
 /// Low, Medium, High. Holes follow the audit's starting point (16, 48, 96);
@@ -70,16 +74,19 @@ pub const BUDGETS: [Budget; 3] = [
         impacts: 12,
         holes: 16,
         splats: 4,
+        tracers: 8,
     },
     Budget {
         impacts: 20,
         holes: 48,
         splats: 12,
+        tracers: 16,
     },
     Budget {
         impacts: 32,
         holes: 96,
         splats: 24,
+        tracers: 24,
     },
 ];
 
@@ -91,6 +98,15 @@ const HOLE_CLASSES: [&str; 5] = ["concrete", "metal", "wood", "glass", "dirt"];
 /// wider.
 const HOLE_SIZE: f32 = 0.16;
 const EXIT_HOLE_SCALE: f32 = 1.5;
+const TRACER_SCENE: &str = "res://scenes/effects/tracer.tscn";
+/// How fast a tracer streak travels (m/s). Real rounds fly at 700 to 900 m/s;
+/// this is slow enough to follow, as in Call of Duty.
+pub const TRACER_SPEED: f32 = 320.0;
+/// The streak's length and true width (metres). The shader keeps it at
+/// least a pixel and a half wide at any range.
+pub const TRACER_LENGTH: f32 = 7.0;
+const TRACER_WIDTH: f32 = 0.018;
+
 /// How far below an impact its chips look for a floor to land on (metres).
 const FLOOR_SEARCH: f32 = 4.0;
 
@@ -121,6 +137,19 @@ fn hole_angle(look: &str, up: Vector3, seed: u32) -> f32 {
         std::f32::consts::PI
     };
     flip + rng::signed(seed, 23) * 0.2
+}
+
+/// The quad every tracer draws, with the tracer shader: `tracer.tscn`'s, so
+/// pooled tracers and the scene draw the same streak.
+fn tracer_mesh() -> Option<Gd<Mesh>> {
+    let node = try_load::<PackedScene>(TRACER_SCENE)
+        .ok()?
+        .instantiate()?
+        .try_cast::<MeshInstance3D>()
+        .ok()?;
+    let mesh = node.get_mesh();
+    node.free();
+    mesh
 }
 
 /// A decal's albedo, normal, and ORM maps, `textures/effects/<stem>_*.png`.
@@ -199,6 +228,48 @@ impl DecalRing {
     }
 }
 
+/// Where a tracer's streak is after it has flown `travelled` metres of a
+/// path `distance` long: (tail, head) distances from the start. The head
+/// stops at the end of the path and the tail follows it in.
+pub fn tracer_span(travelled: f32, distance: f32) -> (f32, f32) {
+    let head = travelled.min(distance);
+    let tail = (travelled - TRACER_LENGTH).clamp(0.0, distance);
+    (tail, head)
+}
+
+/// One pooled tracer in flight.
+struct Tracer {
+    node: Gd<MeshInstance3D>,
+    from: Vector3,
+    direction: Vector3,
+    distance: f32,
+    travelled: f32,
+}
+
+impl Tracer {
+    /// Places the streak; false once it has finished.
+    fn place(&mut self) -> bool {
+        let (tail, head) = tracer_span(self.travelled, self.distance);
+        if tail >= self.distance {
+            self.node.set_visible(false);
+            return false;
+        }
+        let span = (head - tail).max(0.001);
+        // The quad's Y runs along the streak, X across it; the shader turns
+        // it to face the camera.
+        let side = basis_along(self.direction, 0.0).col_a();
+        let basis = Basis::from_cols(
+            side * TRACER_WIDTH,
+            self.direction * span,
+            side.cross(self.direction),
+        );
+        let centre = self.from + self.direction * (tail + span * 0.5);
+        self.node
+            .set_global_transform(Transform3D::new(basis, centre));
+        true
+    }
+}
+
 /// One pooled impact effect and how long it has been playing.
 struct Impact {
     node: Gd<Node3D>,
@@ -214,6 +285,13 @@ pub struct CombatEffects {
     next_impact: usize,
     holes: DecalRing,
     splats: DecalRing,
+    tracers: Vec<Tracer>,
+    next_tracer: usize,
+    tracer_mesh: Option<Gd<Mesh>>,
+    /// Rounds traced per weapon (model key), for every Nth tracer round.
+    remote_rounds: HashMap<String, u32>,
+    /// Tracers started so far (tests).
+    tracers_started: u32,
     /// Per `HOLE_CLASSES` entry, its variants' albedo, normal, and ORM maps.
     hole_textures: Vec<Vec<[Gd<Texture2D>; 3]>>,
     splat_textures: Vec<[Gd<Texture2D>; 3]>,
@@ -252,6 +330,12 @@ impl INode3D for CombatEffects {
 
     fn process(&mut self, delta: f64) {
         let delta = delta as f32;
+        for tracer in &mut self.tracers {
+            if tracer.node.is_visible() {
+                tracer.travelled += TRACER_SPEED * delta;
+                tracer.place();
+            }
+        }
         for impact in &mut self.impacts {
             if impact.age < IMPACT_LIFETIME {
                 impact.age += delta;
@@ -280,6 +364,70 @@ impl CombatEffects {
         self.impact_at(position, normal, &look.to_string(), hole, true);
     }
 
+    /// A tracer round's streak flying from `from` to `to`.
+    #[func]
+    pub fn tracer(&mut self, from: Vector3, to: Vector3) {
+        let distance = from.distance_to(to);
+        if distance < 0.5 {
+            return;
+        }
+        let budget = self.current_budget().tracers;
+        while self.tracers.len() > budget {
+            if let Some(mut old) = self.tracers.pop().map(|t| t.node) {
+                old.queue_free();
+            }
+        }
+        if budget == 0 {
+            return;
+        }
+        let index = if self.tracers.len() < budget {
+            if self.tracer_mesh.is_none() {
+                self.tracer_mesh = tracer_mesh();
+            }
+            let Some(mesh) = self.tracer_mesh.clone() else {
+                return;
+            };
+            let mut node = MeshInstance3D::new_alloc();
+            node.set_mesh(&mesh);
+            node.set_cast_shadows_setting(ShadowCastingSetting::OFF);
+            // The shader moves the corners off the thin quad to face the camera.
+            node.set_extra_cull_margin(2.0);
+            self.base_mut().add_child(&node);
+            self.tracers.push(Tracer {
+                node,
+                from,
+                direction: Vector3::FORWARD,
+                distance: 0.0,
+                travelled: 0.0,
+            });
+            self.tracers.len() - 1
+        } else {
+            // The oldest in flight gives way.
+            let index = self.next_tracer % self.tracers.len();
+            self.next_tracer = index + 1;
+            index
+        };
+        let tracer = &mut self.tracers[index];
+        tracer.from = from;
+        tracer.direction = (to - from) / distance;
+        tracer.distance = distance;
+        tracer.travelled = 0.0;
+        tracer.node.set_visible(true);
+        tracer.place();
+        self.tracers_started = self.tracers_started.wrapping_add(1);
+    }
+
+    /// Tracers started so far, and in flight now (tests).
+    #[func]
+    fn tracers_started(&self) -> i64 {
+        i64::from(self.tracers_started)
+    }
+
+    #[func]
+    fn tracers_flying(&self) -> i64 {
+        self.tracers.iter().filter(|t| t.node.is_visible()).count() as i64
+    }
+
     /// A round into someone at `position`, travelling along `direction`:
     /// droplets and mist, and spatter on a wall close behind them.
     #[func]
@@ -306,8 +454,16 @@ impl CombatEffects {
         normal: Vector3,
         surface: StringName,
         hit: bool,
-        _weapon: StringName,
+        weapon: StringName,
     ) {
+        // Every Nth round of each weapon is a tracer, as for the local player.
+        let weapon = weapon.to_string();
+        let every = WeaponId::by_key(&weapon).map_or(0, |w| w.def().tracer_every);
+        let rounds = self.remote_rounds.entry(weapon).or_insert(0);
+        *rounds = rounds.wrapping_add(1);
+        if every > 0 && rounds.is_multiple_of(u32::from(every)) {
+            self.tracer(muzzle, end);
+        }
         if !hit {
             return;
         }
@@ -351,11 +507,18 @@ impl CombatEffects {
             "impacts" => b.impacts as i64,
             "holes" => b.holes as i64,
             "splats" => b.splats as i64,
+            "tracers" => b.tracers as i64,
         }
     }
 }
 
 impl CombatEffects {
+    /// The scene's effects node, if the local player made one.
+    pub fn find(tree: &Gd<SceneTree>) -> Option<Gd<CombatEffects>> {
+        tree.get_first_node_in_group(GROUP)
+            .and_then(|n| n.try_cast::<CombatEffects>().ok())
+    }
+
     fn current_budget(&self) -> Budget {
         let preset = self
             .base()
@@ -561,6 +724,17 @@ mod tests {
             assert!(pair[0].splats <= pair[1].splats);
         }
         assert_eq!(BUDGETS.map(|b| b.holes), [16, 48, 96]);
+    }
+
+    #[test]
+    fn tracer_streaks_run_in_and_stop_at_the_hit() {
+        // Leaving the muzzle: the tail stays at the start.
+        assert_eq!(tracer_span(2.0, 100.0), (0.0, 2.0));
+        // In flight: a full streak.
+        assert_eq!(tracer_span(50.0, 100.0), (50.0 - TRACER_LENGTH, 50.0));
+        // Arrived: the head waits at the hit while the tail runs in.
+        assert_eq!(tracer_span(103.0, 100.0), (103.0 - TRACER_LENGTH, 100.0));
+        assert_eq!(tracer_span(100.0 + TRACER_LENGTH, 100.0).0, 100.0);
     }
 
     #[test]
