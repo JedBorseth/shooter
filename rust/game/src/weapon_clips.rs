@@ -201,6 +201,21 @@ impl Anchors {
     }
 }
 
+/// How far an AK-pattern magazine rocks about its front lip, and a drum.
+const MAG_ROCK: f32 = 16.0;
+const DRUM_ROCK: f32 = 10.0;
+/// How much harder a drum's beats jolt the weapon than a box magazine's.
+const DRUM_HEFT: f32 = 1.6;
+
+/// How much further from the eye an AK-pattern rifle is held for its
+/// magazine change than an AR (metres, view space).
+const AK_CHANGE_OUT: Vector3 = Vector3::new(-0.01, 0.0, -0.12);
+
+/// How much of the magazine-change tilt a rifle gives up for the bolt
+/// release, and how far it moves away from the eye (metres, view space).
+const RELEASE_EASE: f32 = 0.45;
+const RELEASE_AWAY: Vector3 = Vector3::new(0.01, -0.01, -0.035);
+
 /// How far the magazine's base (where the hand grips it) sits below the well.
 const MAG_BASE_DROP: f32 = 0.04;
 
@@ -244,6 +259,11 @@ pub struct ClipPose {
     pub carrier: Option<f32>,
     /// 0..1: the magazine release pressed.
     pub mag_release: f32,
+    /// Radians the old and the fresh magazine are rocked about their front
+    /// lip, base forward: an AK-pattern magazine rocks out, and hooks its
+    /// front lip in the well and rocks back to lock.
+    pub old_mag_rock: f32,
+    pub fresh_mag_rock: f32,
 }
 
 impl ClipPose {
@@ -361,18 +381,23 @@ impl MagazineReload {
     /// The beats, in order, with their foley events.
     pub fn beats(&self) -> Vec<Beat> {
         let t = self.times();
+        // A drum is heavy: it seats with a heave the whole weapon feels.
+        let heft = match self.kind {
+            ClipKind::Rifle { heavy: true, .. } => DRUM_HEFT,
+            _ => 1.0,
+        };
         let mut beats = vec![
             Beat {
                 at: t.out,
                 name: "mag_out",
-                jolt_pos: Vector3::new(0.0, -0.004, 0.0),
+                jolt_pos: Vector3::new(0.0, -0.004, 0.0) * heft,
                 jolt_rot: Vector3::new(-0.8, 0.0, 2.5),
             },
             Beat {
                 at: t.seat,
                 name: "mag_in",
-                jolt_pos: Vector3::new(0.0, 0.007, 0.0),
-                jolt_rot: Vector3::new(-2.2, 0.0, -1.0),
+                jolt_pos: Vector3::new(0.0, 0.007, 0.0) * heft,
+                jolt_rot: Vector3::new(-2.2, 0.0, -1.0) * heft,
             },
         ];
         if self.empty {
@@ -416,11 +441,24 @@ impl MagazineReload {
             // into the lower middle of the frame, muzzle up and right, and
             // canted clockwise, so the well faces the eye while the support
             // hand works.
-            ClipKind::Rifle { heavy, .. } => {
+            ClipKind::Rifle { heavy, charge } => {
                 let k = if heavy { 1.1 } else { 1.0 };
+                // An AK-pattern rifle's deep receiver and long magazine fill
+                // the frame from an AR's distance, with the well below its
+                // corner: held further out, the receiver shrinks toward the
+                // centre and the magazine work rises into view.
+                let out = if charge { AK_CHANGE_OUT } else { Vector3::ZERO };
+                let held = Pose::new(8.0, -10.0, -34.0, -0.05, 0.12, 0.03).scaled(k);
+                let watch = Pose::new(10.0, -13.0, -40.0, -0.055, 0.135, 0.025).scaled(k);
                 (
-                    Pose::new(8.0, -10.0, -34.0, -0.05, 0.12, 0.03).scaled(k),
-                    Pose::new(10.0, -13.0, -40.0, -0.055, 0.135, 0.025).scaled(k),
+                    Pose {
+                        pos: held.pos + out,
+                        ..held
+                    },
+                    Pose {
+                        pos: watch.pos + out,
+                        ..watch
+                    },
                     Pose::new(5.0, 8.0, 14.0, -0.02, 0.06, 0.02).scaled(k),
                 )
             }
@@ -492,8 +530,19 @@ impl MagazineReload {
             let reach = (finish - 0.02).max(seat + 0.05);
             keys.push((reach, action.lerp(watch, 0.4)));
             keys.push((finish_end, action));
+        } else if self.empty && matches!(self.kind, ClipKind::Rifle { .. }) {
+            // A bolt release: once the magazine seats, the rifle eases down
+            // out of the magazine-change tilt and away from the eye while the
+            // hand comes up to slap the catch, so the forearm stays low in the
+            // frame instead of passing in front of the eye.
+            let slap = Pose {
+                rot: watch.rot * (1.0 - RELEASE_EASE),
+                pos: watch.pos * (1.0 - RELEASE_EASE) + RELEASE_AWAY,
+            };
+            keys.push(((seat + 0.1).min(finish - 0.1), watch));
+            keys.push((finish, slap));
         } else if self.empty {
-            // A bolt release or slide drop: held while the hand slaps it.
+            // A slide drop: held while the hand slaps it.
             keys.push((finish, watch));
         }
         let last = keys.last().map_or(watch, |k| k.1);
@@ -523,6 +572,26 @@ impl MagazineReload {
             Some(Vector3::ZERO)
         } else {
             None
+        };
+        // An AK-pattern magazine rocks: base forward about its front lip to
+        // come out, and in on its front lip, then back to lock. A heavy drum
+        // rocks less and seats with a heave.
+        let rocks = matches!(self.kind, ClipKind::Rifle { charge: true, .. });
+        let rock = match self.kind {
+            ClipKind::Rifle { heavy: true, .. } => DRUM_ROCK,
+            _ => MAG_ROCK,
+        }
+        .to_radians();
+        let old_mag_rock = if rocks {
+            rock * keyed(&[(out - 0.14, 0.0), (out, 1.0)], t)
+        } else {
+            0.0
+        };
+        let fresh_mag_rock = if rocks {
+            let hooked = entry + (seat - entry) * 0.45;
+            rock * keyed(&[(hooked, 1.0), (seat, 0.0)], t)
+        } else {
+            0.0
         };
         let pouch = anchors.pouch - anchors.mag_base;
         let fresh_mag = if t >= grab && t < seat {
@@ -636,6 +705,8 @@ impl MagazineReload {
             handle,
             carrier,
             mag_release,
+            old_mag_rock,
+            fresh_mag_rock,
         }
     }
 
@@ -1099,6 +1170,58 @@ mod tests {
             Some(Vector3::new(0.0, -0.08, -0.06)),
             None,
         )
+    }
+
+    #[test]
+    fn ak_magazines_rock_out_and_hook_in_on_their_front_lip() {
+        for key in ["ak47", "lsw6"] {
+            let r = reload(key, false);
+            let a = anchors(r.kind);
+            let t = r.times();
+            assert_eq!(r.pose(0.0, &a).old_mag_rock, 0.0, "{key}");
+            assert!(r.pose(t.out, &a).old_mag_rock > 0.1, "{key}: rocked out");
+            // Fetched rocked, hooked on its lip, then rocked back to lock.
+            assert!(r.pose(t.entry, &a).fresh_mag_rock > 0.1, "{key}");
+            assert_eq!(r.pose(t.seat, &a).fresh_mag_rock, 0.0, "{key}: locked");
+        }
+        let lsw = reload("lsw6", false);
+        let ak = reload("ak47", false);
+        let a = anchors(ak.kind);
+        assert!(
+            lsw.pose(lsw.times().out, &a).old_mag_rock < ak.pose(ak.times().out, &a).old_mag_rock,
+            "a drum rocks less"
+        );
+        // An AR's magazine goes straight in.
+        let m4 = reload("m4", true);
+        let a = anchors(m4.kind);
+        for i in 0..40 {
+            let p = m4.pose(m4.total * i as f32 / 40.0, &a);
+            assert_eq!((p.old_mag_rock, p.fresh_mag_rock), (0.0, 0.0));
+        }
+    }
+
+    #[test]
+    fn a_drum_seats_with_a_heavier_jolt() {
+        let seat = |key: &str| {
+            reload(key, false)
+                .beats()
+                .into_iter()
+                .find(|b| b.name == "mag_in")
+                .expect("a seat")
+        };
+        assert!(seat("lsw6").jolt_rot.length() > seat("ak47").jolt_rot.length() * 1.4);
+    }
+
+    #[test]
+    fn an_ar_eases_down_and_away_for_the_bolt_release() {
+        let r = reload("m4", true);
+        let a = anchors(r.kind);
+        let t = r.times();
+        let held = r.pose(t.seat, &a).weapon;
+        let slap = r.pose(t.finish, &a).weapon;
+        assert!(slap.rot.length() < held.rot.length() * 0.7, "less tilt");
+        assert!(slap.pos.z < held.pos.z - 0.02, "further from the eye");
+        assert!(slap.pos.y < held.pos.y, "lower");
     }
 
     #[test]
