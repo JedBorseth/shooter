@@ -515,6 +515,8 @@ KITS = {
             ],
             "keep_body": {"bones": ["DEF-head", "DEF-neck"], "threshold": 0.35},
             "body_decimate": 0.32,
+            # A close crop under the helmet and stubble on bare faces (paint_hair).
+            "hair": {"colour": (0.12, 0.085, 0.06), "front": 0.05, "nape": 0.055, "density": 0.85, "stubble": 0.65},
             "gear": {
                 "helmet": 0,
                 "glasses": 0,
