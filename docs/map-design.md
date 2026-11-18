@@ -11,7 +11,7 @@ We study real Call of Duty minimaps before drawing a layout. They are
 Activision's images, so they live only on the developer's machine, never in
 this repository:
 
-- `~/.local/share/shooter/map-references/cod-minimaps/by-game/` (about 250
+- `~/.local/share/shooter/map-references/cod-minimaps/by-game/` (about 285
   minimaps from CoD4 to BO6, one contact sheet per game, and `index.json` with
   each file's wiki source).
 - `tools/map_blockout/fetch_cod_minimaps.py` downloads them again from the Call

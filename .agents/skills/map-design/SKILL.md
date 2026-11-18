@@ -17,7 +17,7 @@ The user wants maps that play like real Call of Duty maps. Look at real ones
 first, and say what you take from each.
 
 - Local minimaps: `~/.local/share/shooter/map-references/cod-minimaps/`.
-  `by-game/<game>/<Map>.png` holds about 250 multiplayer minimaps (CoD4 to
+  `by-game/<game>/<Map>.png` holds about 285 multiplayer minimaps (CoD4 to
   BO6), with `by-game/sheet_<game>.jpg` contact sheets and `index.json`. The
   first study's urban sheets are `sheet_a.jpg` to `sheet_d.jpg`.
 - If the folder is missing, rebuild it:
