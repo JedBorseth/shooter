@@ -30,6 +30,7 @@ Rules of thumb for this renderer on this card, from the measurements below:
 - Reflection probes are expensive here: four small interior probes in Slamcity cost about 0.8 ms whenever a room filled the screen, and one probe over the whole block cost 0.7 ms everywhere. Baked lightmaps light the interiors instead (`tools/bake_lightmaps.sh`).
 - A full-screen pass is never free on this card. Measured on Medium in Slamcity: sun shadows 1.2 ms, glow 1.1 ms, SSAO 0.9 ms, SMAA 0.7 ms (FXAA would be 0.3 ms), fog 0.1 to 0.3 ms. A canvas pass over the whole screen costs about 0.13 ms when it only blends, and about 0.5 ms when it reads the screen (a copy, then five samples per pixel). That is why the lens sharpens on High only.
 - Ambient occlusion is the wrong tool for grounding a crowd: turning SSAO on in the Zombies arena cost 0.7 ms on Medium and 1.9 ms on High (where it runs at full resolution), for a horde that mostly needs a dark patch under each pair of feet.
+- Temporal antialiasing (TAA) costs about what 2× MSAA plus SMAA costs at 1080p on this card, measured in place of both on High: 0.6 ms less in the Testing Area, the same in Slamcity (`profile_frame.gd`, "temporal antialiasing in place of SMAA"). Measured on top of them it costs about 1.9 ms. High uses it alone.
 - Bicubic upscaling of the glow costs about 0.35 ms for a difference that shows only on strong, wide glows. Low and Medium upscale it bilinearly.
 - The colour grade is free: a look-up table sampled inside the tonemap pass the renderer already runs. So is the colour draining at low health (the same pass's saturation).
 - A negative mipmap bias sharpens distant textures for almost nothing (within measurement noise), as long as anisotropic filtering is on.
@@ -77,7 +78,7 @@ The presets live in `godot/scripts/graphics.gd`. The `Settings` autoload applies
 | | Low | Medium | High |
 | --- | --- | --- | --- |
 | Render scale | 77%, FSR 1 | native | native |
-| Antialiasing | FXAA | SMAA | 2× MSAA + SMAA |
+| Antialiasing | FXAA | SMAA | temporal (TAA), sharpened by the lens |
 | SSAO | off | low, half resolution | medium, half resolution |
 | Glow | off | on, bilinear upscale | on, bicubic upscale |
 | Volumetric fog | off | off | where the map uses it |

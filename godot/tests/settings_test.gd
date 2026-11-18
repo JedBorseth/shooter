@@ -329,6 +329,7 @@ func _check_graphics(settings: Node) -> void:
 	_check(root.scaling_3d_mode == Viewport.SCALING_3D_MODE_FSR, "Low upscales with FSR 1")
 	_check(root.msaa_3d == Viewport.MSAA_DISABLED, "upscaling turns MSAA off")
 	_check(root.screen_space_aa == Viewport.SCREEN_SPACE_AA_FXAA, "FSR 1 keeps FXAA")
+	_check(not root.use_taa, "Low has no temporal antialiasing")
 	_check(not env.ssao_enabled and not env.glow_enabled, "Low turns SSAO and glow off")
 	_check(is_equal_approx(sun.directional_shadow_max_distance, 50.0), "Low shadows reach 50%")
 
@@ -336,7 +337,14 @@ func _check_graphics(settings: Node) -> void:
 	_check(is_equal_approx(settings.render_scale, 1.0), "High renders at native resolution")
 	_check(env.ssao_enabled and env.glow_enabled, "High restores the authored SSAO and glow")
 	_check(not env.volumetric_fog_enabled, "a preset never adds an effect the map lacks")
-	_check(root.msaa_3d == Viewport.MSAA_2X, "High uses 2x MSAA")
+	_check(
+		(
+			root.use_taa
+			and root.msaa_3d == Viewport.MSAA_DISABLED
+			and root.screen_space_aa == Viewport.SCREEN_SPACE_AA_DISABLED
+		),
+		"High uses temporal antialiasing in place of MSAA and SMAA"
+	)
 	_check(
 		is_equal_approx(sun.directional_shadow_max_distance, 100.0), "High shadows at full range"
 	)
@@ -344,6 +352,7 @@ func _check_graphics(settings: Node) -> void:
 	settings.set_setting(&"render_scale", 0.67)
 	_check(root.scaling_3d_mode == Viewport.SCALING_3D_MODE_FSR2, "High upscales with FSR 2")
 	_check(root.screen_space_aa == Viewport.SCREEN_SPACE_AA_DISABLED, "FSR 2 replaces SMAA")
+	_check(not root.use_taa, "FSR 2 brings its own temporal antialiasing")
 	_check(world.compositor == null, "no motion blur by default")
 	settings.set_setting(&"motion_blur", true)
 	_check(world.compositor != null, "motion blur adds a compositor to the environment")
