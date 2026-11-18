@@ -63,6 +63,16 @@ const PUSH_PER_LEVEL: f32 = 4.0;
 /// A headshot pushes the head this much harder.
 const HEAD_PUSH_SCALE: f32 = 0.85;
 
+/// The hips' cone (degrees). Limits are centred on the pose the body died
+/// in, so a hunched zombie, dying with its hips bent, can come to rest with
+/// a leg raised; wider cones let soldiers prop themselves up on their knees.
+/// Joint frames from the rest pose would fix both (see the workstream report).
+const HIP_SWING: f32 = 60.0;
+/// The shoulders' cone (degrees). Wider let the arms of a body dying with
+/// them reaching fall freely but propped soldiers up on an elbow; joint
+/// frames from the rest pose would fix both (see the workstream report).
+const SHOULDER_SWING: f32 = 80.0;
+
 /// One end of a part's capsule: a bone's origin, moved along the bone's own
 /// +Y (toward its child) by `along` metres.
 #[derive(Clone, Copy)]
@@ -172,7 +182,7 @@ const PARTS: [PartSpec; 12] = [
         mass: 0.03,
         parent: Some(BodyPart::Chest),
         joint: JointKind::Cone {
-            swing: 80.0,
+            swing: SHOULDER_SWING,
             twist: 45.0,
         },
     },
@@ -201,7 +211,7 @@ const PARTS: [PartSpec; 12] = [
         mass: 0.03,
         parent: Some(BodyPart::Chest),
         joint: JointKind::Cone {
-            swing: 80.0,
+            swing: SHOULDER_SWING,
             twist: 45.0,
         },
     },
@@ -230,7 +240,7 @@ const PARTS: [PartSpec; 12] = [
         mass: 0.1,
         parent: Some(BodyPart::Hips),
         joint: JointKind::Cone {
-            swing: 60.0,
+            swing: HIP_SWING,
             twist: 20.0,
         },
     },
@@ -256,7 +266,7 @@ const PARTS: [PartSpec; 12] = [
         mass: 0.1,
         parent: Some(BodyPart::Hips),
         joint: JointKind::Cone {
-            swing: 60.0,
+            swing: HIP_SWING,
             twist: 20.0,
         },
     },

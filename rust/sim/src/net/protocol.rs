@@ -2032,6 +2032,7 @@ fn read_activity(r: &mut BitReader) -> DecodeResult<Activity> {
         } else {
             None
         },
+        hunch: 0.0,
     })
 }
 
@@ -2724,6 +2725,7 @@ mod tests {
                             velocity: Vec3::new(1.5, -0.25, -4.0),
                             weapon: Some(WeaponId(3)),
                             crouch: Some(clock::from_u8(clock::to_u8(0.5))),
+                            hunch: 0.0,
                             progress: Progress {
                                 stride: 0.25,
                                 reload: 51.0 / 255.0,
