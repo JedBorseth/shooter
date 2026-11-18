@@ -65,6 +65,8 @@ pub struct ViewFrame {
     /// the climb is a vault over cover.
     pub mantle_left: f32,
     pub vaulting: bool,
+    /// On a ladder: the hands are on the rungs, so the weapon is put away.
+    pub on_ladder: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -2467,6 +2469,9 @@ pub struct ViewmodelRig {
     /// pose's blend, which hands over to the sprint-out like the sprint pose.
     mantle_total: f32,
     mantle_blend: f32,
+    /// How far the weapon is put away for a ladder; it comes back up over
+    /// the sprint-out once off it.
+    ladder_blend: f32,
     /// Crouched, eased in and out rather than snapped (Black Ops 2's
     /// `posMoveRate`).
     crouch_blend: f32,
@@ -3088,6 +3093,17 @@ impl ViewmodelRig {
         };
         let mantle = self.mantle_blend * hip_amount;
 
+        // A ladder: the hands go to the rungs, so the weapon drops away as
+        // for a switch, and comes back up over the sprint-out (classic IW
+        // and Modern Warfare lower the weapon on ladders).
+        if frame.on_ladder {
+            self.ladder_blend += (1.0 - self.ladder_blend) * smoothing(10.0, dt);
+        } else if frame.sprint_out > 0.0 {
+            self.ladder_blend = self.ladder_blend.min(frame.sprint_out);
+        } else {
+            self.ladder_blend *= 1.0 - smoothing(12.0, dt);
+        }
+
         // A slide: the weapon cants hard left and drops, sprung in with a
         // small overshoot and eased back out (Black Ops 3 and Modern
         // Warfare's slide; Black Ops 2's `vSlideOfs`/`vSlideRot` slot).
@@ -3232,6 +3248,18 @@ impl ViewmodelRig {
                 crate::grenade_hold::weapon_dip(p),
             ),
             _ => Pose::ZERO,
+        };
+        let switch = if self.ladder_blend > 1e-3 {
+            let away = weapon_clips::pose_at(
+                weapon_clips::holster_keys(kind),
+                smoothstep(self.ladder_blend.min(1.0)),
+            );
+            Pose {
+                rot: switch.rot + away.rot,
+                pos: switch.pos + away.pos,
+            }
+        } else {
+            switch
         };
         let present = first_raise.map_or(Pose::ZERO, |(q, _)| {
             weapon_clips::first_raise_present(kind, q)

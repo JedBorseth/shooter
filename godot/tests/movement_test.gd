@@ -33,6 +33,10 @@ const LEDGE := Vector3(120, 0, 0)
 const THIN_WALL := Vector3(140, 0, 0)
 const WINDOW := Vector3(160, 0, 0)
 const LOW_LEDGE := Vector3(180, 0, 0)
+## A ladder up a 4.14 m wall (the Testing Area tower's height), climbed
+## facing -Z, its rungs' face 4 m ahead of the start point.
+const LADDER := Vector3(200, 0, 0)
+const LADDER_TOP := 4.14
 const FACE := 4.0
 ## Trace columns, in the order `_record` writes them.
 const COLUMNS := [
@@ -112,6 +116,10 @@ func _run() -> void:
 	await _vault(THIN_WALL, "vault", false)
 	await _vault(WINDOW, "window", true)
 	await _low_ledge()
+	await _ladder_climb()
+	await _ladder_down()
+	await _ladder_slide()
+	await _ladder_jump()
 	_finish()
 
 
@@ -156,6 +164,13 @@ func _build_course(world: Node3D) -> void:
 	# A 1 m ledge under a ceiling 1.4 m above its top: room only to crouch.
 	_box(body, LOW_LEDGE + Vector3(0, 0.5, -FACE - 1.5), Vector3(6, 1.0, 3))
 	_box(body, LOW_LEDGE + Vector3(0, 2.6, -FACE - 1.6), Vector3(6, 0.4, 3.2))
+	# A wall with a ladder up its face, and the floor on top 3 m deep.
+	_box(body, LADDER + Vector3(0, LADDER_TOP * 0.5, -FACE - 1.5), Vector3(6, LADDER_TOP, 3))
+	var ladder := ClassDB.instantiate("LadderVolume") as Node3D
+	ladder.position = LADDER + Vector3(0, 0, -FACE)
+	ladder.set("length", LADDER_TOP)
+	ladder.set("width", 0.46)
+	world.add_child(ladder)
 
 
 func _box(body: StaticBody3D, center: Vector3, size: Vector3) -> void:
@@ -300,6 +315,122 @@ func _low_ledge() -> void:
 		_player.movement_state() == "Crouching", "and ends crouched, %s" % _player.movement_state()
 	)
 	await _reset()
+
+
+## Walks into a ladder: it is grabbed, climbed at about 2 m/s (classic IW),
+## and stepped off onto the floor at its top.
+func _ladder_climb() -> void:
+	_player.teleport(LADDER + Vector3(0, 0.02, -FACE + 2.0), 0.0)
+	await _ticks(30)
+	await _begin("ladder_climb")
+	Input.action_press("move_forward")
+	for i in 480:
+		await _record(1)
+		if _player.is_grounded() and _player.global_position.y > LADDER_TOP - 0.05:
+			break
+	await _record(20)
+	Input.action_release("move_forward")
+	await _record(30)
+	var rows := _scenario_rows("ladder_climb")
+	var on := rows.filter(func(r: Dictionary) -> bool: return r.state == "Ladder")
+	_check(on.size() > 0, "ladder: walking into the rungs grabs the ladder")
+	var rise := _vertical_speed(on, 0.5, 3.5)
+	_check(absf(rise - 2.0) < 0.1, "ladder: climbs at %.2f m/s (2.0)" % rise)
+	var feet := _player.global_position
+	_check(
+		absf(feet.y - LADDER_TOP) < 0.05, "ladder: steps off onto the top, feet at %.2f" % feet.y
+	)
+	_check(feet.z < LADDER.z - FACE - 0.5, "ladder: and walks on over it, z %.2f" % feet.z)
+	var seconds := on.size() / float(Engine.physics_ticks_per_second)
+	_check(seconds > 1.8 and seconds < 2.8, "ladder: %.2f s on a 4.14 m ladder" % seconds)
+	await _reset()
+
+
+## Walks off the top toward the ladder's open side: grabbed from the top and
+## climbed down to the ground.
+func _ladder_down() -> void:
+	_player.teleport(LADDER + Vector3(0, LADDER_TOP + 0.02, -FACE - 1.2), PI)
+	await _ticks(30)
+	await _begin("ladder_down")
+	Input.action_press("move_forward")
+	for i in 600:
+		await _record(1)
+		if _player.is_grounded() and _player.global_position.y < 0.05:
+			break
+	Input.action_release("move_forward")
+	await _record(30)
+	var rows := _scenario_rows("ladder_down")
+	var on := rows.filter(func(r: Dictionary) -> bool: return r.state == "Ladder")
+	_check(on.size() > 0, "ladder: walking off the top onto it grabs it")
+	var fall := -_vertical_speed(on, 0.5, 3.5)
+	_check(absf(fall - 2.4) < 0.15, "ladder: climbs down at %.2f m/s (2.4)" % fall)
+	var feet := _player.global_position
+	_check(feet.y < 0.05, "ladder: down at the bottom, feet at %.2f" % feet.y)
+	_check(_player.movement_state() == "Standing", "ladder: off it at the bottom")
+	await _reset()
+
+
+## Climbs most of the way and slides down with crouch, MW2019's fast slide.
+func _ladder_slide() -> void:
+	_player.teleport(LADDER + Vector3(0, 0.02, -FACE + 1.0), 0.0)
+	await _ticks(30)
+	await _begin("ladder_slide")
+	Input.action_press("move_forward")
+	while _player.global_position.y < 3.0:
+		await _record(1)
+	Input.action_release("move_forward")
+	await _record(10)
+	await _press("crouch")
+	for i in 240:
+		await _record(1)
+		if _player.is_grounded():
+			break
+	await _record(30)
+	var rows := _scenario_rows("ladder_slide")
+	var fastest := 0.0
+	for i in range(1, rows.size()):
+		var dt: float = rows[i].t - rows[i - 1].t
+		if dt > 0.0:
+			fastest = maxf(fastest, (rows[i - 1].feet.y - rows[i].feet.y) / dt)
+	_check(absf(fastest - 6.0) < 0.3, "ladder: a slide down reaches %.2f m/s (6.0)" % fastest)
+	_check(_player.global_position.y < 0.05, "ladder: and lands at the bottom")
+	_check(_player.movement_state() == "Standing", "ladder: standing, off the ladder")
+	await _reset()
+
+
+## Jumps off partway up: pushes off backward and falls clear.
+func _ladder_jump() -> void:
+	_player.teleport(LADDER + Vector3(0, 0.02, -FACE + 1.0), 0.0)
+	await _ticks(30)
+	await _begin("ladder_jump")
+	Input.action_press("move_forward")
+	while _player.global_position.y < 1.5:
+		await _record(1)
+	Input.action_release("move_forward")
+	await _press("jump")
+	await _record(120)
+	var feet := _player.global_position
+	_check(_player.movement_state() == "Standing", "ladder: a jump lets go")
+	_check(
+		feet.y < 0.05 and feet.z > LADDER.z - FACE + 0.6,
+		"ladder: and pushes off back, z %.2f" % feet.z
+	)
+	await _reset()
+
+
+## Mean vertical speed (m/s) of `rows` while the feet are `from` to `to`
+## metres up (the steady middle of a climb).
+func _vertical_speed(rows: Array, from: float, to: float) -> float:
+	var inside := rows.filter(
+		func(r: Dictionary) -> bool: return r.feet.y >= from and r.feet.y <= to
+	)
+	if inside.size() < 2:
+		return 0.0
+	var a: Dictionary = inside[0]
+	var b: Dictionary = inside[inside.size() - 1]
+	if b.t <= a.t:
+		return 0.0
+	return (b.feet.y - a.feet.y) / (b.t - a.t)
 
 
 ## Crouch and stand in place: the camera, the shot origin, and the capsule

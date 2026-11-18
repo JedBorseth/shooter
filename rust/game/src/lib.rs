@@ -18,6 +18,7 @@ mod grenades;
 mod gunfire;
 mod hitbox_rig;
 mod knife;
+mod ladder;
 mod net;
 mod penetration;
 mod pickup;

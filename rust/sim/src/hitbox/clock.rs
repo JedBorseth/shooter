@@ -44,6 +44,8 @@ pub struct BodyState {
     pub weapon: WeaponId,
     /// Seconds left of a mantle (`MoveState::mantle_time`), 0 when not mantling.
     pub mantle_left: f32,
+    /// On a ladder: the yaw that faces its rungs. The feet stay on it.
+    pub ladder: Option<f32>,
 }
 
 /// One body's animation clocks.
@@ -83,7 +85,19 @@ impl BodyClock {
             && !mantling
             && s.stance != Stance::Sliding
             && speed <= gait::MOVING_SPEED;
-        let (turn, stepped) = self.turning.tick(s.yaw, still, dt);
+        let (turn, stepped, rate) = match s.ladder.filter(|_| s.alive) {
+            // On a ladder the body faces the rungs, and the climb's hands
+            // and feet run on the stride, a cycle every two rungs.
+            Some(ladder) => (
+                self.turning.hold(ladder, s.yaw),
+                0.0,
+                s.velocity.y.abs() / gait::LADDER_STRIDE,
+            ),
+            None => {
+                let (turn, stepped) = self.turning.tick(s.yaw, still, dt);
+                (turn, stepped, rate)
+            }
+        };
         // Moving, the loops' cadence; stepping round on the spot, the step's.
         self.stride = gait::advance_stride(self.stride, rate, dt) + stepped;
         self.stride = self.stride.rem_euclid(1.0);
@@ -184,6 +198,7 @@ mod tests {
             reloading: false,
             weapon: WeaponId::expect("m4"),
             mantle_left: 0.0,
+            ladder: None,
         }
     }
 

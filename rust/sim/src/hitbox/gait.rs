@@ -307,7 +307,28 @@ impl Turning {
         }
         (wrap_angle(yaw - feet), swung / std::f32::consts::PI)
     }
+
+    /// Holds the feet on `feet` (the heading of a ladder being climbed),
+    /// however the aim turns, as far as [`MAX_TURN`] allows. Returns the aim's
+    /// offset from the feet (radians, positive left).
+    pub fn hold(&mut self, feet: f32, yaw: f32) -> f32 {
+        let offset = wrap_angle(yaw - feet).clamp(-MAX_TURN, MAX_TURN);
+        self.feet = Some(wrap_angle(yaw - offset));
+        self.turning = false;
+        self.step = 0.0;
+        offset
+    }
 }
+
+/// The yaw (as `movement::basis_from_yaw` takes it) that faces the
+/// horizontal direction `facing` (`x`, `z`).
+pub fn yaw_of(facing: glam::Vec2) -> f32 {
+    fmath::atan2(-facing.x, -facing.y)
+}
+
+/// Rungs a climb cycle (both hands and both feet once) covers: a stride
+/// is two rungs of 0.3 m.
+pub const LADDER_STRIDE: f32 = 0.6;
 
 /// How far the legs turn from the aim toward the movement, radians (positive
 /// toward the right). Walking backward the legs face away from the movement.

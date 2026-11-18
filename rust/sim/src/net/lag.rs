@@ -87,6 +87,8 @@ pub struct RemoteSample {
     pub hit_part: u8,
     /// Stride phase and reload and mantle progress (`hitbox::clock`).
     pub progress: Progress,
+    /// The way the ladder the body is on is climbed (`x`, `z`), if it is on one.
+    pub ladder: Option<glam::Vec2>,
 }
 
 impl Interpolate for Progress {
@@ -138,6 +140,7 @@ impl RemoteSample {
             hit_heading: v.hit_heading,
             hit_part: v.hit_part,
             progress: v.progress(),
+            ladder: v.ladder_facing(),
         }
     }
 }
@@ -184,7 +187,8 @@ impl RemoteSample {
             stance: self.stance,
             activity: Activity {
                 sprinting: self.sprinting,
-                airborne: !self.on_floor,
+                // On a ladder the zones hang standing, facing the rungs.
+                airborne: !self.on_floor && self.ladder.is_none(),
                 mantling: self.mantling,
                 reloading: self.reloading,
                 ads: self.ads,

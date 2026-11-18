@@ -3218,6 +3218,11 @@ fn body_state(avatar: &Avatar) -> BodyState {
         reloading: p.state.combat.is_reloading(),
         weapon: p.state.combat.weapon().id,
         mantle_left: p.state.movement.mantle_time,
+        ladder: p
+            .state
+            .movement
+            .on_ladder()
+            .then(|| shooter_sim::hitbox::gait::yaw_of(p.state.movement.ladder_facing)),
     }
 }
 

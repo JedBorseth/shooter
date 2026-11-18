@@ -167,6 +167,8 @@ pub struct Foley {
     pushed_off: bool,
     stance: Stance,
     mantling: bool,
+    /// Metres climbed or descended on a ladder since the last rung's sound.
+    rung_travel: f32,
     /// The reload's progress last frame, below 0 when not reloading.
     reload_progress: f32,
     sounds: HashMap<String, Option<Gd<AudioStreamRandomizer>>>,
@@ -193,7 +195,14 @@ pub struct Motion {
     pub mantling: bool,
     pub reloading: bool,
     pub walk_speed: f32,
+    /// On a ladder: a rung rings under each step instead of footfalls.
+    pub ladder: bool,
 }
+
+/// A ladder's rungs ring every this far climbed (the rung spacing).
+pub const RUNG_STEP: f32 = 0.3;
+/// A rung's ring against a walking step's level (dB).
+pub const RUNG_DB: f32 = -2.0;
 
 impl Foley {
     /// Makes the players as children of `owner`.
@@ -220,6 +229,7 @@ impl Foley {
             pushed_off: false,
             stance: Stance::Standing,
             mantling: false,
+            rung_travel: 0.0,
             reload_progress: -1.0,
             sounds: HashMap::new(),
             steps_played: 0,
@@ -254,8 +264,25 @@ impl Foley {
             return;
         }
 
+        // A ladder: a rung rings under each step, and hanging on it is not
+        // falling, so stepping off is not a landing.
+        if motion.ladder {
+            self.rung_travel += motion.velocity.y.abs() * delta;
+            if self.rung_travel >= RUNG_STEP {
+                self.rung_travel -= RUNG_STEP;
+                let walk = Gait::Walk.sound();
+                if let Some(db) = level(walk.level_db + RUNG_DB, walk.range) {
+                    self.play_rung(motion.feet, db);
+                }
+            }
+            self.was_on_floor = true;
+            self.air_time = 0.0;
+            self.fall_speed = 0.0;
+            self.pushed_off = false;
+        }
+
         // Steps.
-        if motion.on_floor {
+        if motion.on_floor && !motion.ladder {
             let gait = Gait::of(motion.stance, motion.sprinting, speed, motion.walk_speed);
             if self.stride.advance(speed * delta, gait)
                 && let Some(gait) = gait
@@ -276,7 +303,7 @@ impl Foley {
         }
 
         // Leaving the ground and landing.
-        if !motion.on_floor {
+        if !motion.on_floor && !motion.ladder {
             self.air_time += delta;
             self.fall_speed = self.fall_speed.max(-motion.velocity.y);
             // The push off of a jump (not a walk off a ledge). Velocity is
@@ -356,6 +383,22 @@ impl Foley {
             return;
         };
         self.steps.set_global_position(feet + Vector3::UP * 0.05);
+        self.steps.set_stream(&stream);
+        self.steps.set_volume_db(volume_db);
+        self.steps.play();
+        self.steps_played += 1;
+    }
+
+    /// A ladder's rung under a foot: a metal step at the hands' height.
+    fn play_rung(&mut self, feet: Vector3, volume_db: f32) {
+        let path = format!(
+            "res://assets/audio/footsteps/{}",
+            Surface::Metal.footstep_key()
+        );
+        let Some(stream) = self.sound(&path, 1.08) else {
+            return;
+        };
+        self.steps.set_global_position(feet + Vector3::UP * 0.6);
         self.steps.set_stream(&stream);
         self.steps.set_volume_db(volume_db);
         self.steps.play();

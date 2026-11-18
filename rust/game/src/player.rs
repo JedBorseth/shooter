@@ -422,6 +422,8 @@ pub struct FpsPlayer {
     last_stride_phase: f32,
     /// What the last footstep landed on (tests).
     last_surface: Surface,
+    /// Metres climbed or descended on a ladder since the last rung's sound.
+    rung_travel: f32,
     bob_blend: f32,
     tilt: f32,
     land_dip: Spring<f32>,
@@ -900,6 +902,7 @@ impl FpsPlayer {
         let label = match movement.stance {
             _ if !self.state.alive() => "Dead",
             _ if movement.mantling() => "Mantling",
+            _ if movement.on_ladder() => "Ladder",
             Stance::Sliding => "Sliding",
             Stance::Crouching => "Crouching",
             Stance::Standing if movement.sprinting => "Sprinting",
@@ -2482,6 +2485,17 @@ impl FpsPlayer {
     /// crouching and slow walking (aiming down sights) are quieter.
     fn advance_footsteps(&mut self, moved: f32) {
         let movement = self.state.movement;
+        if movement.on_ladder() && self.state.alive() {
+            // A rung rings under each step on a ladder.
+            self.rung_travel += movement.velocity.y.abs() * TICK_DT;
+            if self.rung_travel >= footsteps::RUNG_STEP {
+                self.rung_travel -= footsteps::RUNG_STEP;
+                let volume =
+                    Gait::Walk.sound().level_db + footsteps::RUNG_DB + footsteps::OWN_STEP_DB;
+                self.play_rung(volume);
+            }
+            return;
+        }
         if !self.env.on_floor || movement.stance == Stance::Sliding || !self.state.alive() {
             return;
         }
@@ -2501,6 +2515,19 @@ impl FpsPlayer {
                 body.bind_mut().on_step(gait, volume);
             }
         }
+    }
+
+    fn play_rung(&mut self, volume_db: f32) {
+        let path = format!(
+            "res://assets/audio/footsteps/{}",
+            Surface::Metal.footstep_key()
+        );
+        let Some(stream) = self.sound(&path, 1.08) else {
+            return;
+        };
+        self.footsteps.set_stream(&stream);
+        self.footsteps.set_volume_db(volume_db);
+        self.footsteps.play();
     }
 
     fn play_footstep(&mut self, volume_db: f32) {
@@ -2740,6 +2767,7 @@ impl FpsPlayer {
             sliding: stance == Stance::Sliding,
             mantle_left: self.state.movement.mantle_time,
             vaulting: self.state.movement.vaulting,
+            on_ladder: self.state.movement.on_ladder(),
             weapon: combat.weapon().id,
             ads,
             scope: combat.scope_amount(),
