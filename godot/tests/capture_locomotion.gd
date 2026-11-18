@@ -10,6 +10,10 @@ extends SceneTree
 const SOLDIER := preload("res://scenes/characters/soldier.tscn")
 const SPOT := Vector3(0, 0.05, 20)
 const DT := 1.0 / 120.0
+## A reload's progress at each moment of a reload strip (the strip's time is
+## the progress).
+const RELOAD_MOMENTS := [0.0, 0.12, 0.25, 0.37, 0.5, 0.62, 0.75, 0.9]
+const HOLD_WEAPONS := ["m4", "lsw6", "m1911", "m870"]
 
 var _out := OS.get_environment("CAPTURE_DIR")
 var _sets := OS.get_environment("CAPTURE_SETS")
@@ -64,6 +68,13 @@ func _moves() -> Dictionary:
 		"slide": [1.3, [0.25, 0.32, 0.38, 0.5, 0.8, 0.93, 1.0, 1.15], _slide],
 		"start_stop": [1.6, [0.0, 0.12, 0.25, 0.45, 0.9, 1.05, 1.15, 1.4], _start_stop],
 		"step": [0.6, [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.55, 0.6], _on_step],
+		"reload_m4": [1.0, RELOAD_MOMENTS, _reload.bind("m4")],
+		"reload_lsw6": [1.0, RELOAD_MOMENTS, _reload.bind("lsw6")],
+		"reload_m40": [1.0, RELOAD_MOMENTS, _reload.bind("m40")],
+		"reload_m1911": [1.0, RELOAD_MOMENTS, _reload.bind("m1911")],
+		"reload_m870": [1.0, RELOAD_MOMENTS, _reload.bind("m870")],
+		"holds": [1.12, [0.07, 0.21, 0.35, 0.49, 0.63, 0.77, 0.91, 1.05], _holds],
+		"actions": [1.0, [0.0, 0.2, 0.4, 0.5, 0.6, 0.7, 0.8, 0.95], _actions],
 	}
 
 
@@ -73,6 +84,24 @@ func _turn_to(t: float, angle: float) -> Dictionary:
 
 func _spin(t: float) -> Dictionary:
 	return {"weapon": "m4", "yaw": 3.0 * minf(t, 1.0)}
+
+
+func _reload(t: float, weapon: String) -> Dictionary:
+	return {"weapon": weapon, "reload": clampf(t, 0.0, 0.999), "front": true}
+
+
+## Each class at the hip, then sprinting: M4, LSW-6, M1911, M870.
+func _holds(t: float) -> Dictionary:
+	var i := mini(int(t / 0.28), 3)
+	var sprint := fmod(t, 0.28) > 0.14
+	return {"weapon": HOLD_WEAPONS[i], "sprinting": sprint, "front": true, "settle": true}
+
+
+## A plant (to 0.45 s), then a throw.
+func _actions(t: float) -> Dictionary:
+	if t < 0.45:
+		return {"weapon": "m4", "action": "plant", "front": true}
+	return {"weapon": "m4", "action": "throw", "action_progress": (t - 0.45) / 0.5, "front": true}
 
 
 ## Standing on the edge of an 18 cm step (`_strip` builds it).
@@ -141,6 +170,10 @@ func _strip(scene: Node, move: String, spec: Array) -> void:
 	if state_at.call(0.0).get("side", false):
 		_camera.global_position = SPOT + Vector3(5.5, 1.2, 0.0)
 		_camera.look_at(SPOT + Vector3(0, 0.8, 0.0))
+	elif state_at.call(0.0).get("front", false):
+		# Close on the left: the support hand's side.
+		_camera.global_position = SPOT + Vector3(-1.9, 1.4, -0.9)
+		_camera.look_at(SPOT + Vector3(0, 1.05, -0.2))
 	else:
 		_camera.global_position = SPOT + Vector3(1.6, 2.6, -3.2)
 		_camera.look_at(SPOT + Vector3(0, 0.7, 0))
@@ -155,6 +188,10 @@ func _strip(scene: Node, move: String, spec: Array) -> void:
 	var next := 0
 	while next < moments.size() and t <= length + 0.001:
 		if t + 0.0001 >= moments[next]:
+			if state_at.call(t).get("settle", false):
+				for i in 90:
+					rig.drive(state_at.call(t), DT)
+					await process_frame
 			await RenderingServer.frame_post_draw
 			frames.append(root.get_texture().get_image())
 			next += 1

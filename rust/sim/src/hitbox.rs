@@ -319,11 +319,14 @@ fn ground_pose(pose: &HitboxPose, speed: f32) -> BasePose {
 /// reload as the snapshot says.
 fn carry_of(activity: &Activity) -> Carry {
     let on = |b: bool| if b { 1.0 } else { 0.0 };
+    let def = activity.weapon.map(|w| w.def());
     Carry {
         ads: activity.ads,
         sprint: on(activity.sprinting),
         reload: on(activity.reloading),
         reload_progress: activity.progress.reload,
+        class: def.map_or_else(Default::default, carry::CarryClass::of),
+        timing: def.map_or_else(Default::default, carry::ReloadTiming::of),
         ..Carry::default()
     }
 }
@@ -423,7 +426,7 @@ pub fn hitboxes(pose: &HitboxPose) -> [Hitbox; COUNT] {
     let grips = activity
         .weapon
         .map_or_else(Grips::default, |w| Grips::held(w.def()));
-    let targets = carry::hand_targets(weapon, &grips, carry.support_off());
+    let targets = carry::hand_targets(weapon, &grips, carry.support_path(&grips));
     let pole = |p: Vec3| weapon.1 + weapon.0 * p;
     let arm = |(wrist_target, hand): (Vec3, Mat3), side: usize, hint: Vec3| {
         let (elbow, wrist) = solve_arm(shoulders[side], wrist_target, pole(hint));
@@ -813,17 +816,17 @@ mod tests {
 
     #[test]
     fn hands_hold_each_weapon_by_its_grips() {
-        // Rifles hold further forward than pistols, and every gun puts the
-        // firing hand on its own grip: a long gun's left hand reaches further.
-        let reach = |key: &str| {
+        // Every gun puts the hands on its own grips: a long gun's support
+        // hand is out on the handguard, a pistol's round the firing hand.
+        let spread = |key: &str| {
             let b = with(Activity {
                 weapon: WeaponId::by_key(key),
                 ..Activity::default()
             });
-            -(b[LEFT_HAND].b.z - pose(Stance::Standing).feet.z)
+            b[LEFT_HAND].b.distance(b[RIGHT_HAND].b)
         };
-        assert!(reach("m40") > reach("m1911") + 0.1);
-        assert!(reach("m870") > reach("pdw9"));
+        assert!(spread("m40") > spread("m1911") + 0.1);
+        assert!(spread("m870") > spread("pdw9"));
     }
 
     #[test]
