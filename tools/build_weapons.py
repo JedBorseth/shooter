@@ -51,6 +51,9 @@ import bpy
 import numpy as np
 from mathutils import Matrix, Vector
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import weapon_finish
+
 REPO = Path(__file__).resolve().parent.parent
 WEAPONS_DIR = REPO / "godot/assets/weapons"
 SCENES_DIR = REPO / "godot/scenes/weapons"
@@ -161,6 +164,39 @@ WEAPONS = {
         },
         "handle": "rear",
         "spare": True,
+        # The source's maps are flat (one grey, an empty normal map), so the
+        # finish is painted from the geometry (tools/weapon_finish.py).
+        "finish": {
+            "default": "aluminium",
+            "unwrap": True,
+            "bore": (-0.0008, 0.0209),
+            "zones": [
+                # The pack's own metallic map marks the grip and stock.
+                {"zone": "polymer", "source_metal_below": 0.5},
+                {"zone": "bolt", "parts": ["Ejector_2"]},
+                # The rear sight and its leaf, and the front sight's tower.
+                {"zone": "sight", "parts": ["Sight", "Sight_2"]},
+                {"zone": "sight", "parts": ["Barrel"], "y_above": 0.31, "y_below": 0.37, "z_above": 0.04},
+                {"zone": "magazine", "parts": ["Magazine"]},
+                # The quad rail round the barrel is aluminium; the barrel,
+                # the front sight, and the flash hider are steel.
+                {"zone": "aluminium", "parts": ["Barrel"], "y_below": 0.305, "bore_radius_above": 0.014},
+                {"zone": "steel", "parts": ["Barrel", "Ejector_Lid", "Firemode_Selector", "Trigger",
+                                            "Switch1", "Switch2"]},
+            ],
+            # Left side of the lower receiver, the side the player sees:
+            # the selector's positions round its pivot, and the rollmark on
+            # the magazine well.
+            # Letters are larger than a real rollmark's 3 mm, so they stay
+            # legible at the texture's 2.6 texels per millimetre.
+            "font": REPO / "godot/assets/fonts/BarlowCondensed-Bold.ttf",
+            "markings": [
+                {"text": "SAFE", "at": (-0.037, -0.006), "size": 0.0052},
+                {"text": "SEMI", "at": (-0.060, 0.004), "size": 0.0052},
+                {"text": "AUTO", "at": (-0.084, -0.008), "size": 0.0052},
+                {"text": "M4A1 CARBINE\nCAL 5.56 MM", "at": (0.058, -0.016), "size": 0.0072},
+            ],
+        },
     },
     "m870": {
         "dir": "m870",
@@ -1291,6 +1327,19 @@ def build_textures(key: str, spec: dict, out: Path, mask=None):
     save_png(out / f"{key}_orm.png", orm, srgb=False)
 
 
+def save_maps(key: str, out: Path, color: np.ndarray, normal: np.ndarray, orm: np.ndarray):
+    """Writes painted maps (weapon_finish), with the same limits on bare
+    metal as build_textures."""
+    metal = orm[..., 2] > 0.5
+    orm[..., 1] = np.where(metal, np.maximum(orm[..., 1], METAL_ROUGHNESS_MIN), orm[..., 1])
+    color = np.where(metal[..., None], np.minimum(color, BARE_STEEL_MAX), color)
+    log("  roughness mean", float(orm[..., 1].mean()), "metal mean", float(orm[..., 2].mean()),
+        "ao mean", float(orm[..., 0].mean()))
+    save_png(out / f"{key}_albedo.png", color, srgb=True)
+    save_png(out / f"{key}_normal.png", normal, srgb=False)
+    save_png(out / f"{key}_orm.png", orm, srgb=False)
+
+
 def write_material(key: str, out: Path, folder: str):
     base = f"res://assets/weapons/{folder}/{key}"
     (out / f"{key}.tres").write_text(
@@ -1447,6 +1496,10 @@ def build(key: str):
     if "bead" in spec:
         add_bead(source, spec)
     edit_sights(source, spec)
+    if "finish" in spec:
+        metallic = spec["textures"].get("metallic") if isinstance(spec["textures"], dict) else None
+        pixels = load_pixels(metallic, False)[..., 0] if metallic else None
+        weapon_finish.assign_zones(source.obj, spec["finish"], pixels)
     objects = split(source.obj, spec)
     for name in spec.get("drop", []):
         bpy.data.objects.remove(objects.pop(name))
@@ -1455,6 +1508,14 @@ def build(key: str):
     for path, obj in objects.items():
         if path.endswith("Rounds"):
             cartridge_uvs(obj, row=spec.get("cartridge", 0))
+    painted = None
+    if "finish" in spec:
+        bpy.context.view_layer.update()
+        painted = weapon_finish.paint(objects, spec, to_view(spec), TEXTURE_SIZE)
+        for obj in objects.values():
+            attr = obj.data.attributes.get(weapon_finish.ZONE_ATTRIBUTE)
+            if attr is not None:
+                obj.data.attributes.remove(attr)
     if "scope" in spec:
         objects["Scope"] = riflescope(spec)
     bpy.context.view_layer.update()
@@ -1478,7 +1539,10 @@ def build(key: str):
     log(f"  {tris} triangles in first person, {world_tris} for other players, {len(objects)} nodes")
     stem = spec["dir"] if spec["dir"] != key else key
     export(objects, out / f"{stem}.glb")
-    build_textures(stem, spec, out, uv_mask(objects))
+    if painted is not None:
+        save_maps(stem, out, *painted)
+    else:
+        build_textures(stem, spec, out, uv_mask(objects))
     write_material(stem, out, spec["dir"])
     write_import(stem, out, spec["dir"])
     patch_scene(spec, markers)
