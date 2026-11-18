@@ -40,7 +40,7 @@ use godot::classes::{
 use godot::prelude::*;
 use shooter_sim::hitbox::HitZone;
 use shooter_sim::look::{
-    self, AimAssist, AimAssistParams, AssistTarget, AssistType, AssistView, StickLook, StickParams,
+    self, AimAssist, AimAssistParams, AssistTarget, AssistView, StickLook, StickParams,
 };
 use shooter_sim::melee;
 use shooter_sim::movement::{MoveEnv, Stance};
@@ -252,10 +252,6 @@ pub struct FpsPlayer {
     #[export]
     #[init(val = true)]
     aim_assist: bool,
-    /// Aim assist type (`AssistType`): 0 Default, 1 Precision, 2 Focusing,
-    /// 3 Legacy.
-    #[export(range = (0.0, 3.0))]
-    aim_assist_type: i32,
     /// Controller vibration when firing.
     #[export]
     #[init(val = true)]
@@ -1446,10 +1442,9 @@ impl FpsPlayer {
         }
     }
 
-    /// The aim assist tuning for the chosen type, or `None` when it is off.
+    /// The aim assist tuning, or `None` when it is off.
     fn assist_params(&self) -> Option<AimAssistParams> {
-        self.aim_assist
-            .then(|| AssistType::from_index(self.aim_assist_type).params())
+        self.aim_assist.then(AimAssistParams::default)
     }
 
     /// Right-stick look for this rendered frame, with aim assist. Scaled by

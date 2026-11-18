@@ -11,16 +11,15 @@
 //! - **Slowdown**: stick look turns slower while the crosshair is over or near
 //!   an enemy's body.
 //! - **Rotational**: while the player is moving or looking, the view follows
-//!   60% of the enemy's motion relative to the camera, so strafing past an
+//!   part of the enemy's motion relative to the camera, so strafing past an
 //!   enemy, or an enemy strafing, keeps the crosshair with them.
 //! - **Target aim assist**: starting to aim down sights with a zombie near the
 //!   crosshair eases the view onto it. Like CoD, this is for Zombies only;
 //!   players and bots never get a snap.
 //!
-//! [`AssistType`] mirrors CoD's aim assist types: Default, Precision (slowdown
-//! only on the body), Focusing (strong slowdown that also catches near misses,
-//! no rotational), and Legacy (the older, slightly stronger style). Every part
-//! fades out toward the end of the assist range.
+//! There is one tuning, [`AimAssistParams::default`]; the setting only turns
+//! aim assist on or off. Every part fades out toward the end of the assist
+//! range.
 
 use glam::{Vec2, Vec3};
 
@@ -101,68 +100,6 @@ impl StickLook {
     }
 }
 
-/// The aim assist type setting.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum AssistType {
-    /// Slowdown as the crosshair nears an enemy, and rotational.
-    #[default]
-    Default,
-    /// Slowdown only with the crosshair on an enemy's body, and rotational.
-    Precision,
-    /// Strong slowdown that also catches near misses. No rotational.
-    Focusing,
-    /// The older style: like Default, slightly stronger.
-    Legacy,
-}
-
-impl AssistType {
-    pub const ALL: [Self; 4] = [Self::Default, Self::Precision, Self::Focusing, Self::Legacy];
-
-    /// The type for a setting index (0 Default, 1 Precision, 2 Focusing,
-    /// 3 Legacy). Anything else is Default.
-    pub fn from_index(index: i32) -> Self {
-        match index {
-            1 => Self::Precision,
-            2 => Self::Focusing,
-            3 => Self::Legacy,
-            _ => Self::Default,
-        }
-    }
-
-    /// The tuning for this type.
-    pub fn params(self) -> AimAssistParams {
-        let default = AimAssistParams::default();
-        match self {
-            Self::Default => default,
-            Self::Precision => AimAssistParams {
-                bubble_scale: 1.0,
-                min_bubble: 0.25_f32.to_radians(),
-                slowdown_hip: 0.45,
-                slowdown_ads: 0.3,
-                ..default
-            },
-            Self::Focusing => AimAssistParams {
-                bubble_scale: 3.5,
-                min_bubble: 2_f32.to_radians(),
-                slowdown_hip: 0.35,
-                slowdown_ads: 0.25,
-                rotation_hip: 0.0,
-                rotation_ads: 0.0,
-                ..default
-            },
-            Self::Legacy => AimAssistParams {
-                bubble_scale: 5.5,
-                min_bubble: 3.5_f32.to_radians(),
-                slowdown_hip: 0.45,
-                slowdown_ads: 0.32,
-                rotation_hip: 0.65,
-                rotation_ads: 0.65,
-                ..default
-            },
-        }
-    }
-}
-
 /// Aim assist tuning. Values named `_hip` and `_ads` blend from the hip to
 /// fully aimed down sights.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -198,19 +135,18 @@ pub struct AimAssistParams {
 }
 
 impl Default for AimAssistParams {
-    /// The Default type.
     fn default() -> Self {
         Self {
             range: 80.0,
             fade_from: 55.0,
-            bubble_scale: 5.0,
-            min_bubble: 3_f32.to_radians(),
-            slowdown_hip: 0.5,
-            slowdown_ads: 0.35,
-            rotation_hip: 0.6,
-            rotation_ads: 0.6,
+            bubble_scale: 4.0,
+            min_bubble: 2_f32.to_radians(),
+            slowdown_hip: 0.65,
+            slowdown_ads: 0.5,
+            rotation_hip: 0.45,
+            rotation_ads: 0.45,
             snap_cone: 7_f32.to_radians(),
-            snap_rate: 10.0,
+            snap_rate: 7.0,
             snap_time: 0.18,
             stickiness: 0.4,
         }
@@ -553,7 +489,7 @@ mod tests {
     }
 
     fn default_params() -> AimAssistParams {
-        AssistType::Default.params()
+        AimAssistParams::default()
     }
 
     /// Angle from the crosshair to a point.
@@ -599,20 +535,6 @@ mod tests {
     }
 
     #[test]
-    fn types_from_the_setting() {
-        assert_eq!(AssistType::from_index(0), AssistType::Default);
-        assert_eq!(AssistType::from_index(1), AssistType::Precision);
-        assert_eq!(AssistType::from_index(2), AssistType::Focusing);
-        assert_eq!(AssistType::from_index(3), AssistType::Legacy);
-        assert_eq!(AssistType::from_index(9), AssistType::Default);
-        let focusing = AssistType::Focusing.params();
-        assert_eq!((focusing.rotation_hip, focusing.rotation_ads), (0.0, 0.0));
-        let legacy = AssistType::Legacy.params();
-        assert!(legacy.rotation_hip > default_params().rotation_hip);
-        assert!((default_params().rotation_hip - 0.6).abs() < 1e-6);
-    }
-
-    #[test]
     fn slowdown_is_strongest_on_target_and_fades_out() {
         let params = default_params();
         let target = dummy(1, 0.0, -10.0);
@@ -640,33 +562,13 @@ mod tests {
         assert_eq!(off, AssistOutput::NONE);
     }
 
-    /// Default slows the crosshair as it approaches; Precision only once it is
-    /// on the body; Focusing catches near misses with a stronger slowdown.
-    #[test]
-    fn each_type_slows_where_it_should() {
-        let eye = Vec3::new(0.0, 1.6, 0.0);
-        let target = dummy(1, 0.0, -10.0);
-        let slowdown = |kind: AssistType, look_at: Vec3| {
-            AimAssist::default()
-                .update(&view_at(eye, look_at), &[target], &kind.params(), DT)
-                .slowdown
-        };
-        let near_miss = Vec3::new(0.6, 1.0, -10.0);
-        let on_body = Vec3::new(0.1, 1.0, -10.0);
-        assert!(slowdown(AssistType::Default, near_miss) < 1.0);
-        assert_eq!(slowdown(AssistType::Precision, near_miss), 1.0);
-        assert!(slowdown(AssistType::Precision, on_body) < slowdown(AssistType::Default, on_body));
-        assert!(slowdown(AssistType::Focusing, near_miss) < 1.0);
-        assert!(slowdown(AssistType::Focusing, on_body) < slowdown(AssistType::Precision, on_body));
-    }
-
     #[test]
     fn slowdown_area_reaches_past_the_body() {
         let params = default_params();
         let eye = Vec3::new(0.0, 1.6, 0.0);
         for distance in [5.0, 15.0, 40.0] {
             let target = dummy(1, 0.0, -distance);
-            let edge = (target.radius / distance).atan() + 2.5_f32.to_radians();
+            let edge = (target.radius / distance).atan() + 1.5_f32.to_radians();
             let mut view = view_at(eye, target.center());
             view.yaw -= edge;
             let out = AimAssist::default().update(&view, &[target], &params, DT);
@@ -722,8 +624,8 @@ mod tests {
         assert_eq!(out.target, Some(2));
     }
 
-    /// Two enemies side by side: once on one, the crosshair drifting a little
-    /// nearer the other does not move the assist across.
+    /// Two enemies side by side: once on one, the crosshair moving to halfway
+    /// between them does not move the assist across.
     #[test]
     fn stays_on_the_current_target() {
         let params = default_params();
@@ -737,7 +639,7 @@ mod tests {
             Some(1)
         );
         assert_eq!(
-            assist.update(&look(0.05), &[a, b], &params, DT).target,
+            assist.update(&look(0.0), &[a, b], &params, DT).target,
             Some(1)
         );
         assert_eq!(
@@ -746,8 +648,8 @@ mod tests {
         );
     }
 
-    /// Strafing past an enemy: the view follows 60% of their relative motion,
-    /// but only while the player is giving input.
+    /// Strafing past an enemy: the view follows the rotational share of their
+    /// relative motion, but only while the player is giving input.
     #[test]
     fn rotation_follows_relative_motion_while_active() {
         let params = default_params();
@@ -760,8 +662,8 @@ mod tests {
             view.active = active;
             // The first frame finds the target; following starts after it.
             assist.update(&view, &[target], &params, DT);
-            // Short enough that the 40% left behind stays on the body.
-            for _ in 0..8 {
+            // Short enough that the motion left behind stays on the body.
+            for _ in 0..6 {
                 eye.x += 4.0 * DT;
                 view.eye = eye;
                 let out = assist.update(&view, &[target], &params, DT);
@@ -773,26 +675,12 @@ mod tests {
             let followed = view.yaw - start_yaw;
             if active {
                 assert!(
-                    (followed / moved - 0.6).abs() < 0.02,
+                    (followed / moved - params.rotation_hip).abs() < 0.02,
                     "{followed} of {moved}"
                 );
             } else {
                 assert_eq!(followed, 0.0);
             }
-        }
-    }
-
-    #[test]
-    fn focusing_has_no_rotational() {
-        let params = AssistType::Focusing.params();
-        let target = dummy(1, 0.0, -10.0);
-        let mut assist = AimAssist::default();
-        let mut view = view_at(Vec3::new(0.0, 1.6, 0.0), target.upper_body());
-        view.active = true;
-        for _ in 0..10 {
-            view.eye.x += 4.0 * DT;
-            let out = assist.update(&view, &[target], &params, DT);
-            assert_eq!(out.rotation, Vec2::ZERO);
         }
     }
 
@@ -851,7 +739,7 @@ mod tests {
         let before = miss_angle(&start, walker.upper_body());
         assert!(before < default_params().snap_cone);
         let after = aim_in(start, walker, &mut AimAssist::default());
-        assert!(after < before * 0.25, "{after} vs {before}");
+        assert!(after < before * 0.4, "{after} vs {before}");
 
         let player = dummy(1, 0.0, -15.0);
         let unsnapped = aim_in(start, player, &mut AimAssist::default());
@@ -871,8 +759,8 @@ mod tests {
     /// A simulated thumb tracks an enemy who strafes back and forth: it sees
     /// the enemy a reaction time late, under-leads a little, and has a slight
     /// tremor. Returns the share of frames the crosshair was on the body.
-    fn tracking_share(kind: Option<AssistType>, ads: f32, player_strafes: bool) -> f32 {
-        let params = kind.map(AssistType::params);
+    fn tracking_share(assisted: bool, ads: f32, player_strafes: bool) -> f32 {
+        let params = assisted.then(AimAssistParams::default);
         let stick = StickParams::default();
         let zoom = if ads > 0.0 { 0.75 } else { 1.0 };
         let mut eye = Vec3::new(0.0, 1.6, 0.0);
@@ -955,27 +843,10 @@ mod tests {
     #[test]
     fn assist_makes_tracking_a_strafing_enemy_easier() {
         for (ads, strafes) in [(0.0, false), (1.0, false), (1.0, true)] {
-            let off = tracking_share(None, ads, strafes);
-            let share = |kind| tracking_share(Some(kind), ads, strafes);
-            let default = share(AssistType::Default);
-            let precision = share(AssistType::Precision);
-            let focusing = share(AssistType::Focusing);
-            let legacy = share(AssistType::Legacy);
-            println!(
-                "ads {ads} strafing {strafes}: off {off:.2} default {default:.2} \
-                 precision {precision:.2} focusing {focusing:.2} legacy {legacy:.2}"
-            );
-            assert!(default > off * 1.3, "default {default} vs off {off}");
-            assert!(precision > off, "precision {precision} vs off {off}");
-            // Focusing has no rotational, so it only helps a player standing
-            // still; strafing, its slowdown holds the crosshair back.
-            if !strafes {
-                assert!(focusing >= off, "focusing {focusing} vs off {off}");
-            }
-            assert!(
-                legacy >= default * 0.98,
-                "legacy {legacy} vs default {default}"
-            );
+            let off = tracking_share(false, ads, strafes);
+            let on = tracking_share(true, ads, strafes);
+            println!("ads {ads} strafing {strafes}: off {off:.2} on {on:.2}");
+            assert!(on > off * 1.2, "on {on} vs off {off}");
         }
     }
 }
