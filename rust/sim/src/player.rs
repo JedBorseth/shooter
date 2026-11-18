@@ -302,6 +302,7 @@ pub fn step(
             || melee
             || state.combat.meleeing(),
         speed_multiplier: def.move_scale * (1.0 + (def.ads_move_scale - 1.0) * ads),
+        sprint_out_time: def.sprint_out_time,
         lunge,
     };
     let velocity = movement::step(&mut state.movement, &move_input, env, &params.movement, dt);

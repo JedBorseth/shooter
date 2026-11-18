@@ -30,6 +30,9 @@ pub struct MoveInput {
     pub block_sprint: bool,
     /// Scales every ground speed (weapon mobility, aiming down sights).
     pub speed_multiplier: f32,
+    /// Seconds the weapon in hand takes to come up out of a sprint
+    /// (`WeaponDef::sprint_out_time`): the run winds down to a walk over it.
+    pub sprint_out_time: f32,
     /// A melee starts this tick and lunges at a target this far away
     /// (horizontal `x` and `z`, feet to feet). See [`crate::melee`].
     pub lunge: Option<Vec2>,
@@ -45,6 +48,7 @@ impl Default for MoveInput {
             crouch: false,
             block_sprint: false,
             speed_multiplier: 1.0,
+            sprint_out_time: 0.2,
             lunge: None,
         }
     }
@@ -119,6 +123,10 @@ pub struct MoveState {
     /// Horizontal direction (`x`, `z`) of the current mantle, fixed when it
     /// starts so turning mid-climb does not pull the player off the wall.
     pub mantle_dir: Vec2,
+    /// How far into a run the legs are, 0 walking to 1 at full sprint: it
+    /// builds over `sprint_in_time` and winds down over the weapon's
+    /// sprint-out time, and the speed cap follows it.
+    pub sprint_blend: f32,
 }
 
 impl MoveState {
@@ -147,6 +155,16 @@ pub struct MoveParams {
     pub walk_speed: f32,
     pub sprint_speed: f32,
     pub crouch_speed: f32,
+    /// Seconds for a sprint to build to full speed.
+    pub sprint_in_time: f32,
+    /// Share of the sideways input kept while sprinting, so a diagonal
+    /// sprint runs mostly forward.
+    pub sprint_strafe: f32,
+    /// Speed share of a full 45-degree diagonal sprint.
+    pub sprint_diagonal_scale: f32,
+    /// Speed scales for moving sideways and backward (classic IW 0.8, 0.7).
+    pub strafe_scale: f32,
+    pub backpedal_scale: f32,
     /// Fraction of `wish.y` that must point forward to keep sprinting.
     pub sprint_min_forward: f32,
     pub ground_accel: f32,
@@ -198,14 +216,19 @@ impl Default for MoveParams {
     fn default() -> Self {
         Self {
             walk_speed: 5.0,
-            sprint_speed: 7.4,
+            sprint_speed: 6.9,
             crouch_speed: 2.6,
+            sprint_in_time: 0.25,
+            sprint_strafe: 0.5,
+            sprint_diagonal_scale: 0.88,
+            strafe_scale: 0.8,
+            backpedal_scale: 0.7,
             sprint_min_forward: 0.5,
-            ground_accel: 15.0,
+            ground_accel: 8.0,
             air_accel: 2.0,
             air_wish_speed: 1.2,
-            friction: 10.0,
-            stop_speed: 4.0,
+            friction: 6.0,
+            stop_speed: 2.5,
             gravity: 19.0,
             jump_velocity: 6.2,
             jump_buffer_time: 0.1,
@@ -282,6 +305,11 @@ pub fn step(
 ) -> Vec3 {
     let velocity = step_rules(state, input, env, params, dt);
     step_crouch(state, env, params, dt);
+    state.sprint_blend = if state.sprinting {
+        (state.sprint_blend + dt / params.sprint_in_time.max(1e-3)).min(1.0)
+    } else {
+        (state.sprint_blend - dt / input.sprint_out_time.max(0.1)).max(0.0)
+    };
     if !state.sprinting {
         state.sprint_time = 0.0;
     } else if env.on_floor {
@@ -340,7 +368,6 @@ fn step_rules(
 
     let wish = input.wish.clamp_length_max(1.0);
     let (forward, right) = basis_from_yaw(input.yaw);
-    let wish_dir = (forward * wish.y + right * wish.x).normalize_or_zero();
     let horizontal_speed = horizontal(state.velocity).length();
 
     if state.mantling() {
@@ -413,6 +440,18 @@ fn step_rules(
         state.jump_buffer = 0.0;
     }
 
+    // A sprint runs mostly forward: the sideways input turns it less, and a
+    // diagonal sprint is slower than a straight one.
+    let (wish_dir, wish_amount) = if state.sprinting {
+        let sideways = wish.x.abs() / (wish.x.abs() + wish.y.abs()).max(1e-6);
+        let scale = 1.0 - (1.0 - params.sprint_diagonal_scale) * 2.0 * sideways;
+        let dir = Vec2::new(wish.x * params.sprint_strafe, wish.y);
+        (dir, wish.length() * scale.max(0.7))
+    } else {
+        (wish, wish.length() * direction_scale(wish, params))
+    };
+    let wish_dir = (forward * wish_dir.y + right * wish_dir.x).normalize_or_zero();
+
     let mut jumped = false;
     let grounded = env.on_floor || state.coyote > 0.0;
     // Only a standing player jumps: a crouch stands up first (above), and a
@@ -437,7 +476,7 @@ fn step_rules(
         };
         apply_friction(&mut state.velocity, friction, params.stop_speed, dt);
         if state.stance != Stance::Sliding {
-            let wish_speed = wish.length() * max_speed(state, params) * input.speed_multiplier;
+            let wish_speed = wish_amount * max_speed(state, params) * input.speed_multiplier;
             // Scale acceleration by at least `stop_speed`, so slow stances (crouch,
             // aiming) still reach their speed against the stronger low-speed friction.
             accelerate(
@@ -449,7 +488,7 @@ fn step_rules(
             );
         }
     } else {
-        let wish_speed = (wish.length() * max_speed(state, params) * input.speed_multiplier)
+        let wish_speed = (wish_amount * max_speed(state, params) * input.speed_multiplier)
             .min(params.air_wish_speed);
         accelerate(
             &mut state.velocity,
@@ -536,6 +575,10 @@ fn cancel_slide(state: &mut MoveState, input: &MoveInput, params: &MoveParams, w
     state.slide_cooldown = params.slide_cooldown;
     state.sprinting = wish.y >= params.sprint_min_forward && !input.block_sprint;
     state.sprint_time = 0.0;
+    if state.sprinting {
+        // The legs are already moving at a run.
+        state.sprint_blend = 1.0;
+    }
     let cap = params.sprint_speed * input.speed_multiplier;
     let flat = horizontal(state.velocity).clamp_length_max(cap);
     state.velocity = Vec3::new(flat.x, state.velocity.y, flat.z);
@@ -609,16 +652,26 @@ fn tick_slide(state: &mut MoveState, params: &MoveParams, dt: f32) {
 /// speed with the body. Standing up frees it at once, and acceleration
 /// carries the player back up to speed (a slide-cancel keeps its sprint).
 fn max_speed(state: &MoveState, params: &MoveParams) -> f32 {
-    let standing = if state.sprinting {
-        params.sprint_speed
-    } else {
-        params.walk_speed
-    };
+    let run = crouch_ease(state.sprint_blend);
+    let standing = params.walk_speed + (params.sprint_speed - params.walk_speed) * run;
     if state.stance == Stance::Standing {
         return standing;
     }
     let t = crouch_ease(state.crouch);
     standing + (params.crouch_speed - standing) * t
+}
+
+/// The speed scale for a direction of input: full forward, `strafe_scale`
+/// sideways, `backpedal_scale` backward, blended by how much of each.
+fn direction_scale(wish: Vec2, params: &MoveParams) -> f32 {
+    let total = wish.x.abs() + wish.y.abs();
+    if total < 1e-6 {
+        return 1.0;
+    }
+    (wish.x.abs() * params.strafe_scale
+        + wish.y.max(0.0)
+        + (-wish.y).max(0.0) * params.backpedal_scale)
+        / total
 }
 
 fn horizontal(v: Vec3) -> Vec3 {
@@ -1098,35 +1151,117 @@ mod tests {
         assert!(s.velocity.y < before);
     }
 
+    /// Seconds of input `input` until the speed passes `until` (or drops
+    /// to it, when slowing).
+    fn time_to(s: &mut MoveState, input: MoveInput, until: impl Fn(f32) -> bool) -> f32 {
+        let p = MoveParams::default();
+        let mut t = 0.0;
+        while !until(speed(s)) && t < 3.0 {
+            step(s, &input, MoveEnv::default(), &p, crate::TICK_DT);
+            t += crate::TICK_DT;
+        }
+        t
+    }
+
     #[test]
-    fn stops_crisply_at_the_real_tick_rate() {
+    fn walking_starts_and_stops_with_weight() {
         let p = MoveParams::default();
         let mut s = MoveState::default();
-        let ticks = |seconds: f32| (seconds * crate::TICK_RATE as f32) as usize;
-        for _ in 0..ticks(1.0) {
-            step(&mut s, &forward(), MoveEnv::default(), &p, crate::TICK_DT);
-        }
-        assert!((speed(&s) - p.walk_speed).abs() < 0.05, "full speed");
-        for _ in 0..ticks(0.2) {
-            step(
-                &mut s,
-                &MoveInput::default(),
-                MoveEnv::default(),
-                &p,
-                crate::TICK_DT,
-            );
-        }
-        assert_eq!(speed(&s), 0.0, "stopped from a walk within 200 ms");
-
-        // Reaches full walking speed within 150 ms from rest.
-        for _ in 0..ticks(0.15) {
-            step(&mut s, &forward(), MoveEnv::default(), &p, crate::TICK_DT);
+        let start = time_to(&mut s, forward(), |v| v >= p.walk_speed * 0.95);
+        assert!((0.18..=0.26).contains(&start), "to 95% in {start} s");
+        run_at(&mut s, forward(), MoveEnv::default(), 0.5);
+        assert!((speed(&s) - p.walk_speed).abs() < 0.01, "{}", speed(&s));
+        let stop = time_to(&mut s, MoveInput::default(), |v| v <= 0.0);
+        assert!((0.24..=0.32).contains(&stop), "stops in {stop} s");
+        // Reversing: a quick stop against the input, then the usual build
+        // up to the backpedal speed.
+        run_at(&mut s, forward(), MoveEnv::default(), 1.0);
+        let back = MoveInput {
+            wish: Vec2::NEG_Y,
+            ..Default::default()
+        };
+        let full_back = p.walk_speed * p.backpedal_scale * 0.95;
+        let mut reverse = 0.0;
+        // Yaw 0 walks toward -Z, so backward is +Z.
+        while s.velocity.z < full_back && reverse < 3.0 {
+            step(&mut s, &back, MoveEnv::default(), &p, crate::TICK_DT);
+            reverse += crate::TICK_DT;
         }
         assert!(
-            (speed(&s) - p.walk_speed).abs() < 0.05,
-            "speed {}",
-            speed(&s)
+            (0.25..=0.4).contains(&reverse),
+            "turns round in {reverse} s"
         );
+    }
+
+    #[test]
+    fn strafing_and_backpedalling_are_slower() {
+        let p = MoveParams::default();
+        for (wish, expected) in [
+            (Vec2::X, p.walk_speed * p.strafe_scale),
+            (Vec2::NEG_Y, p.walk_speed * p.backpedal_scale),
+            (
+                Vec2::splat(std::f32::consts::FRAC_1_SQRT_2),
+                p.walk_speed * (0.5 + 0.5 * p.strafe_scale),
+            ),
+        ] {
+            let mut s = MoveState::default();
+            run_at(
+                &mut s,
+                MoveInput {
+                    wish,
+                    ..Default::default()
+                },
+                MoveEnv::default(),
+                1.5,
+            );
+            assert!((speed(&s) - expected).abs() < 0.05, "{wish}: {}", speed(&s));
+        }
+    }
+
+    #[test]
+    fn a_sprint_builds_and_winds_down() {
+        let p = MoveParams::default();
+        let mut s = MoveState::default();
+        run_at(&mut s, forward(), MoveEnv::default(), 1.0);
+        let sprint = MoveInput {
+            sprint: true,
+            ..forward()
+        };
+        step(&mut s, &sprint, MoveEnv::default(), &p, TICK);
+        let ramp = time_to(&mut s, forward(), |v| v >= p.sprint_speed * 0.98);
+        assert!((0.2..=0.35).contains(&ramp), "walk to sprint in {ramp} s");
+        // Firing ends the sprint, and the weapon's sprint-out time sets how
+        // fast the run winds down.
+        for (out_time, low, high) in [(0.12, 0.08, 0.2), (0.38, 0.3, 0.45)] {
+            let mut s = s;
+            let fire = MoveInput {
+                block_sprint: true,
+                sprint_out_time: out_time,
+                ..forward()
+            };
+            let down = time_to(&mut s, fire, |v| v <= p.walk_speed + 0.02);
+            assert!(
+                (low..=high).contains(&down),
+                "sprint-out {out_time}: back to a walk in {down} s"
+            );
+        }
+    }
+
+    #[test]
+    fn a_diagonal_sprint_is_slower_than_a_straight_one() {
+        let p = MoveParams::default();
+        let mut s = MoveState::default();
+        let diagonal = MoveInput {
+            wish: Vec2::splat(std::f32::consts::FRAC_1_SQRT_2),
+            sprint: true,
+            ..Default::default()
+        };
+        run_at(&mut s, diagonal, MoveEnv::default(), 2.0);
+        assert!(s.sprinting);
+        let diagonal = p.sprint_speed * p.sprint_diagonal_scale;
+        assert!((speed(&s) - diagonal).abs() < 0.05, "{}", speed(&s));
+        // And it runs mostly forward (-Z at yaw 0), not at 45 degrees.
+        assert!(-s.velocity.z > 1.9 * s.velocity.x.abs(), "{}", s.velocity);
     }
 
     #[test]

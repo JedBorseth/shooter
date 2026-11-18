@@ -2891,10 +2891,10 @@ impl NetServer {
             let snapshot = ServerMessage::Snapshot(Snapshot {
                 tick: self.tick,
                 baseline: baseline.as_ref().map(|(tick, _)| *tick),
-                own: Some(OwnState {
+                own: Some(Box::new(OwnState {
                     last_input: client.inputs.last_applied(),
                     predicted: avatar.predicted,
-                }),
+                })),
                 players: others,
             });
             let base = baseline

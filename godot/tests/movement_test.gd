@@ -13,7 +13,8 @@ extends SceneTree
 const PLAYER_SCENE := preload("res://scenes/player.tscn")
 const SPAWN := Vector3(0, 0.02, 0)
 ## Sprint speed (`MoveParams::sprint_speed`) and the slide's entry ratio.
-const SPRINT_SPEED := 7.4
+const SPRINT_SPEED := 6.9
+const WALK_SPEED := 5.0
 const SLIDE_RATIO := 1.1
 ## `MoveParams::eye_from_top`: the eye sits this far under the capsule's top.
 const EYE_FROM_TOP := 0.12
@@ -68,6 +69,9 @@ func _run() -> void:
 	_check(_player.is_on_floor(), "the player stands on the test floor")
 
 	await _crouch_and_stand()
+	await _start_and_stop()
+	await _strafe_and_backpedal()
+	await _sprint_in_and_out()
 	await _slide()
 	await _slide_chain()
 	_finish()
@@ -126,6 +130,79 @@ func _crouch_and_stand() -> void:
 		up_at - stand >= 0.25 and up_at - stand <= 0.35,
 		"standing takes 0.25-0.35 s, took %.3f s" % (up_at - stand)
 	)
+
+
+## Walk forward from rest, then let go: the body takes a moment to get up to
+## speed and to stop (MW: about 0.2-0.25 s and 0.25-0.3 s).
+func _start_and_stop() -> void:
+	await _begin("start_stop")
+	await _record(12)
+	Input.action_press("move_forward")
+	await _record(120)
+	Input.action_release("move_forward")
+	await _record(60)
+	var rows := _scenario_rows("start_stop")
+	var full_at := _first_time(
+		rows, func(r: Dictionary) -> bool: return r.speed >= WALK_SPEED * 0.95
+	)
+	var stop_at := _first_time(
+		rows, func(r: Dictionary) -> bool: return r.t > 1.0 and r.speed <= 0.01
+	)
+	var start := full_at - 0.1
+	var stop := stop_at - 1.1
+	_check(start >= 0.17 and start <= 0.27, "a walk builds in 0.17-0.27 s, took %.3f s" % start)
+	_check(stop >= 0.22 and stop <= 0.33, "a walk stops in 0.22-0.33 s, took %.3f s" % stop)
+	await _reset()
+
+
+## Strafing and walking backward are slower than forward (IW: 0.8 and 0.7).
+func _strafe_and_backpedal() -> void:
+	await _begin("strafe_back")
+	Input.action_press("move_right")
+	await _record(120)
+	var strafe := _player.horizontal_speed()
+	Input.action_release("move_right")
+	await _record(60)
+	Input.action_press("move_back")
+	await _record(120)
+	var back := _player.horizontal_speed()
+	Input.action_release("move_back")
+	await _record(60)
+	_check(absf(strafe - WALK_SPEED * 0.8) < 0.1, "strafing runs at 0.8 x walk, %.2f m/s" % strafe)
+	_check(absf(back - WALK_SPEED * 0.7) < 0.1, "walking back runs at 0.7 x walk, %.2f m/s" % back)
+	await _reset()
+
+
+## Walk, sprint, then fire: the sprint builds over about a quarter second and
+## winds down over the rifle's sprint-out time.
+func _sprint_in_and_out() -> void:
+	await _begin("sprint_in_out")
+	Input.action_press("move_forward")
+	await _record(120)
+	Input.action_press("sprint")
+	await _record(2)
+	Input.action_release("sprint")
+	await _record(120)
+	Input.action_press("fire")
+	await _record(60)
+	Input.action_release("fire")
+	Input.action_release("move_forward")
+	await _record(60)
+	var rows := _scenario_rows("sprint_in_out")
+	var full_at := _first_time(
+		rows, func(r: Dictionary) -> bool: return r.speed >= SPRINT_SPEED * 0.98
+	)
+	var walk_at := _first_time(
+		rows, func(r: Dictionary) -> bool: return r.t > 2.0 and r.speed <= WALK_SPEED + 0.05
+	)
+	var ramp := full_at - 1.0
+	var wind := walk_at - 2.017
+	_check(ramp >= 0.18 and ramp <= 0.32, "a sprint builds in 0.18-0.32 s, took %.3f s" % ramp)
+	_check(
+		wind >= 0.12 and wind <= 0.3,
+		"a rifle's sprint winds down in 0.12-0.3 s, took %.3f s" % wind
+	)
+	await _reset()
 
 
 ## Sprint, then slide: it starts near sprint speed and ends in a crouch.
@@ -197,6 +274,14 @@ func _slide_chain() -> void:
 	await _reset()
 
 
+## The time of the first row that passes `test`, or a large number.
+func _first_time(rows: Array[Dictionary], test: Callable) -> float:
+	for row in rows:
+		if test.call(row):
+			return row.t
+	return 99.0
+
+
 ## A two-tick press, recorded.
 func _press(action: String) -> void:
 	Input.action_press(action)
@@ -212,7 +297,7 @@ func _begin(name: String) -> void:
 
 ## Back to the spawn, standing still.
 func _reset() -> void:
-	for action in ["move_forward", "sprint", "crouch", "jump"]:
+	for action in ["move_forward", "move_back", "move_right", "sprint", "crouch", "jump", "fire"]:
 		Input.action_release(action)
 	_player.teleport(SPAWN, 0.0)
 	await _ticks(60)
