@@ -101,9 +101,23 @@ client's (`scenes/player.tscn`) do, including player-only blockers on layer 7
 
 ## Camera
 
-A respawn starts every camera offset over: the death slump, landing dip,
-flinch, tilt, and bob. Look sensitivity follows the aim zoom only, not sprint
-or slide FOV or kill pulses.
+| | Here | Reference |
+| --- | --- | --- |
+| Walk bob | 2.2 cm, lowest just after each footfall, 1.2 cm sway and 0.23 degree roll alternating feet | a few cm, a dip at each step |
+| Jump landing | 5 cm dip and a 1.4 degree nod, back in about 0.35 s | about 4 to 6 cm and 1 to 2 degrees over about 0.3 s |
+| Hit flinch | away from the shot: a hit from the right turns the head left and rolls it; from in front tips it up, from behind down | directional |
+| Death | drops with the body for 0.4 s, then rises 1.5 m high and 2.4 m behind where the player fell, facing the killer | third-person death, then a killcam |
+
+The bob runs on the footstep stride phase (`footsteps::Stride`), with the
+foot alternating each step so the sway and roll are continuous. Changing gait
+mid-stride keeps the phase, so neither the bob nor the weapon's stride motion
+jumps. The landing nod and the flinch turn the look itself and spring back,
+so the screen centre, the sights, and the shots never disagree; the flinch's
+roll is visual only. The death camera stops short of walls.
+
+A respawn starts every camera offset over: the death camera, landing dip and
+nod, flinch, tilt, and bob. Look sensitivity follows the aim zoom only, not
+sprint or slide FOV or kill pulses.
 
 ## Checking movement
 

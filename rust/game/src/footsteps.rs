@@ -116,7 +116,13 @@ impl Stride {
             self.travelled = (self.travelled - 0.02).max(0.0);
             return false;
         };
-        self.length = gait.sound().stride;
+        // A new gait changes the stride length mid-step: keep the phase, so
+        // the bob and the weapon's stride motion do not jump.
+        let length = gait.sound().stride;
+        if length != self.length && self.length > 0.0 {
+            self.travelled *= length / self.length;
+        }
+        self.length = length;
         self.travelled += moved;
         if self.travelled >= self.length {
             self.travelled -= self.length;
@@ -469,5 +475,19 @@ mod tests {
         let mut stride = Stride::default();
         assert!(stride.advance(40.0, Some(Gait::Sprint)));
         assert!(!stride.advance(0.1, Some(Gait::Sprint)));
+    }
+
+    #[test]
+    fn a_change_of_gait_keeps_the_stride_phase() {
+        let mut stride = Stride::default();
+        stride.advance(0.0, Some(Gait::Walk));
+        stride.advance(Gait::Walk.sound().stride * 0.4, Some(Gait::Walk));
+        let before = stride.phase();
+        stride.advance(0.0, Some(Gait::Sprint));
+        assert!(
+            (stride.phase() - before).abs() < 1e-5,
+            "{before} -> {}",
+            stride.phase()
+        );
     }
 }
