@@ -32,4 +32,6 @@
     ),
     tracer_every: 3,
     attachments: [Acog, Suppressor, Grip, ExtendedMag],
+    // Hands on the model: GripRight and GripLeft in br3_view.tscn.
+    grips: Some((right: (0, -0.1275, 0.2244), left: (0, -0.0867, -0.1632), rake: 18)),
 )

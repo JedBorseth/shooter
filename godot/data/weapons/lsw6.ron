@@ -35,4 +35,6 @@
     ),
     tracer_every: 4,
     attachments: [RedDot, Acog, Suppressor, Grip, ExtendedMag],
+    // Hands on the model: GripRight and GripLeft in lsw6_view.tscn.
+    grips: Some((right: (0, -0.1301, 0.1721), left: (0, -0.061, -0.1473), rake: 25)),
 )

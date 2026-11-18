@@ -263,7 +263,15 @@ The scenes that use the soldier:
 
 ## Hit zones
 
-`rust/sim/src/hitbox.rs` defines a player's hit zones: a head sphere and capsules for the neck, chest, stomach, hips, arms, and legs. Its inputs are feet position, yaw, pitch, and stance (standing, crouching, sliding). The layouts were measured from the soldier's `Idle`, `Crouch_Idle`, and `Slide` poses. The arms hold a rifle and turn with the pitch.
+`rust/sim/src/hitbox.rs` defines a player's hit zones: a head sphere and capsules for the neck, chest, stomach, hips, arms, and legs. Its inputs are everything a snapshot says about a body: feet position, yaw, pitch, stance (standing, crouching, sliding), and activity (sprinting, in the air, mantling, reloading, aim, and the weapon in hand). What you see is what you hit: the zones follow the drawn soldier in every state another player can be seen in.
+
+- **Base poses.** Each state starts from the skeleton of the animation the character plays in it (`Idle`, the walk, jog, and sprint cycles, `Crouch_Idle` and the crouched walk, `Slide`, `Jump`, and a mantle's climb), averaged over the clip and recorded in `rust/sim/src/hitbox/poses.rs`. Moving, the zones blend the loops by speed as the animation tree does (`rust/sim/src/hitbox/gait.rs`, shared with `SoldierRig`). `godot/tests/hitbox_fit_test.gd` generates `poses.rs` (`HITBOX_FIT_DUMP=$PWD/rust/sim/src/hitbox/poses.rs`, then `cargo fmt`); regenerate it when an animation changes.
+- **Velocity.** Snapshots carry none, so a sample blended between two snapshots takes the velocity from one to the other (`RemoteSample::velocity`). The client's interpolation and the server's rewind blend the same two snapshots, so both get the same velocity. It picks the loop and turns the hips toward a strafe, with the spine turned back to the aim, as the poser does.
+- **Aim.** The pitch bends the spine, neck, and head in the same shares the character's poser uses, so the head and chest lean as drawn.
+- **Arms.** The weapon sits where the character holds it: at the hip, aimed, sprinting, or mid-reload, from the same numbers (`rust/sim/src/hitbox/carry.rs`, which the poser and `SoldierRig` read too). The hands go on that weapon's grips (each weapon file's `grips`, matching its scene's `GripRight` and `GripLeft` markers) and two-bone IK places the elbows, as on the character.
+- What the zones cannot know: where a stride is in its cycle (they hold the cycle's average, so the legs swing up to about 60 cm either side of their zones and the torso bobs about 10 cm), how far a reload has gone (they hold the support hand at the pouch, its middle), how far a mantle has climbed (they hold the climb's average), the rig's smoothing between states (a fraction of a second), and the short hit flinch. A mantle's climb now fades out when the mantle ends, so the body never climbs on after the player is up.
+
+`hitbox_fit_test.gd` poses a remote player through every state (idle, walking, running, sprinting, strafing, backpedalling, crouched and crouch-walking, sliding, aimed, reloading, mantling, in the air, each weapon, pitch from -89° to 89°, turning) and, per zone, measures how far the skeleton's bones are from the capsule axes and how far outside the zone's shapes the skinned mesh lies. In every settled state it fails when a zone's bones stray more than 6 cm from its axes or when one in ten of its vertices lies more than 5 cm outside its shapes. Where the phase is unknown it holds looser regression bounds: mid-stride 13 cm for the head and torso, 23 cm for the arms, 62 cm for the legs; a reload's reach out and back 45 cm for the arms; a climb 35 cm (45 cm for the legs). It also checks that each weapon file's `grips` match its scene's markers. `capture_hitbox_fit.gd` captures the overlay in the same states.
 
 | Zone | Damage |
 | --- | --- |
@@ -274,12 +282,11 @@ The scenes that use the soldier:
 
 With these, the M40 still kills with one shot to the head, chest, or stomach, but not to a limb.
 
-The hitboxes are a pure function of snapshot fields, not of the animated skeleton. The dedicated server never runs animation, and Phase 3's lag compensation has to rebuild the hitboxes a player had several ticks ago. A pure function makes both cheap and identical on every machine. The model is posed to match the shapes, and the debug overlay shows both at once.
+The hitboxes are a pure function of snapshot fields, not of the animated skeleton. The dedicated server never runs animation, and Phase 3's lag compensation has to rebuild the hitboxes a player had several ticks ago. A pure function makes both cheap and identical on every machine: the client's zones and the server's rewind call the same function on the same interpolated snapshot. The debug overlay shows the zones over the model.
 
 - `HitboxRig` (`rust/game/src/hitbox_rig.rs`) turns the shapes into physics bodies on the `hitboxes` layer. Each body carries `hit_zone` metadata, so the player's hitscan gets the zone from whatever it hits.
 - **F4** toggles the overlay in debug builds: every character's hitboxes drawn over it, coloured by zone. Release builds ignore the key, and the overlay is depth tested, so it never shows players through walls.
 - Range dummies block movement with a capsule on the `bodies` layer (layer 5). Bullets ignore that layer and hit the zones.
-- Other players' hitboxes are drawn but not hittable yet. Shots against them resolve on the server together with lag compensation (Phase 3).
 
 ## Weapon sights
 

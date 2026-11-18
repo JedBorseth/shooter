@@ -16,8 +16,11 @@
 //! hit, up to [`MAX_REWIND`] in the past. (Valve, *Latency Compensating
 //! Methods*; Overwatch GDC 2017.)
 //!
-//! Hitboxes come from [`crate::hitbox`], a pure function of position, view
-//! angles, and stance, so rebuilding them from history needs no animation.
+//! Hitboxes come from [`crate::hitbox`], a pure function of a snapshot's
+//! position, view angles, stance, and activity (sprinting, airborne, mantling,
+//! reloading, aim, weapon) and of the velocity between the two snapshots a
+//! sample is blended from, so rebuilding them from history needs no
+//! animation, and the server's rewind poses exactly what the client drew.
 
 use std::collections::VecDeque;
 
@@ -26,7 +29,7 @@ use glam::Vec3;
 use super::interpolation::{Interpolate, lerp_angle};
 use super::protocol::PlayerView;
 use super::{TICK_RATE, Tick};
-use crate::hitbox::{self, HitboxPose};
+use crate::hitbox::{self, Activity, HitboxPose};
 use crate::movement::Stance;
 use crate::penetration::MAX_WALLS;
 use crate::weapon::{WeaponDef, WeaponId};
@@ -53,7 +56,12 @@ const HISTORY_TICKS: Tick = TICK_RATE;
 /// identically.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RemoteSample {
+    /// The server tick this shows (fractional between snapshots).
+    pub tick: f64,
     pub position: Vec3,
+    /// Between two snapshots, the velocity from one to the other (m/s);
+    /// zero on a snapshot itself. Snapshots carry no velocity.
+    pub velocity: Vec3,
     pub yaw: f32,
     pub pitch: f32,
     pub stance: Stance,
@@ -70,10 +78,13 @@ pub struct RemoteSample {
     pub hit_heading: u8,
 }
 
-impl From<&PlayerView> for RemoteSample {
-    fn from(v: &PlayerView) -> Self {
+impl RemoteSample {
+    /// Player `v` in the snapshot sent at `tick`.
+    pub fn at(tick: Tick, v: &PlayerView) -> Self {
         Self {
+            tick: f64::from(tick),
             position: v.position(),
+            velocity: Vec3::ZERO,
             yaw: v.yaw(),
             pitch: v.pitch(),
             stance: v.stance,
@@ -99,8 +110,15 @@ impl Interpolate for RemoteSample {
             return if t < 0.5 { *self } else { *to };
         }
         let discrete = if t < 0.5 { self } else { to };
+        let seconds = (to.tick - self.tick) / f64::from(TICK_RATE);
         Self {
+            tick: self.tick + (to.tick - self.tick) * f64::from(t),
             position: self.position.lerp(to.position, t),
+            velocity: if seconds > 0.0 {
+                (to.position - self.position) / seconds as f32
+            } else {
+                Vec3::ZERO
+            },
             yaw: lerp_angle(self.yaw, to.yaw, t),
             pitch: self.pitch + (to.pitch - self.pitch) * t,
             ads: self.ads + (to.ads - self.ads) * t,
@@ -119,6 +137,15 @@ impl RemoteSample {
             yaw: self.yaw,
             pitch: self.pitch,
             stance: self.stance,
+            activity: Activity {
+                sprinting: self.sprinting,
+                airborne: !self.on_floor,
+                mantling: self.mantling,
+                reloading: self.reloading,
+                ads: self.ads,
+                velocity: self.velocity,
+                weapon: Some(self.weapon),
+            },
         })
     }
 }
@@ -197,9 +224,12 @@ impl LagHistory {
         match (before, after) {
             (Some((from_tick, from)), Some((to_tick, to))) => {
                 let t = (tick - f64::from(from_tick)) / f64::from(to_tick - from_tick);
-                Some(RemoteSample::from(from).interpolate(&RemoteSample::from(to), t as f32))
+                let from = RemoteSample::at(from_tick, from);
+                Some(from.interpolate(&RemoteSample::at(to_tick, to), t as f32))
             }
-            (Some((_, only)), None) | (None, Some((_, only))) => Some(RemoteSample::from(only)),
+            (Some((tick, only)), None) | (None, Some((tick, only))) => {
+                Some(RemoteSample::at(tick, only))
+            }
             (None, None) => None,
         }
     }
@@ -357,7 +387,7 @@ mod tests {
             let x = (tick as f32 * 0.37).sin() * 3.0;
             let v = view(3, x, tick as f32 * 0.05, tick % 50 != 0);
             history.record(tick, vec![v]);
-            buffer.push(tick, RemoteSample::from(&v));
+            buffer.push(tick, RemoteSample::at(tick, &v));
         }
         // The client samples forward in time (its buffer prunes behind it).
         let mut tick = 99.0;
@@ -419,7 +449,44 @@ mod tests {
         assert_eq!(history.newest_tick(), Some(600));
         // Older than the history: holds the oldest snapshot kept.
         let oldest = history.sample(7, 0.0).unwrap();
-        assert_eq!(oldest, history.sample(7, 480.0).unwrap());
+        assert_eq!(oldest.position, history.sample(7, 480.0).unwrap().position);
+        assert_eq!(oldest.velocity, Vec3::ZERO, "held, not moving");
+    }
+
+    #[test]
+    fn the_rewound_pose_carries_what_the_body_was_doing() {
+        let mut v = view(5, 1.0, 0.3, true);
+        v.sprinting = true;
+        v.on_floor = false;
+        v.reloading = true;
+        v.mantling = true;
+        v.ads = 255;
+        v.weapon = WeaponId::expect("m870");
+        let pose = RemoteSample::at(10, &v).hitbox_pose().unwrap();
+        assert_eq!(
+            pose.activity,
+            Activity {
+                sprinting: true,
+                airborne: true,
+                mantling: true,
+                reloading: true,
+                ads: 1.0,
+                velocity: Vec3::ZERO,
+                weapon: Some(WeaponId::expect("m870")),
+            }
+        );
+        // The client's hit zones and the server's rewind pose from the same
+        // sample, so they are the same shapes.
+        let mut history = LagHistory::default();
+        history.record(10, vec![v]);
+        let mut buffer = InterpolationBuffer::<RemoteSample>::default();
+        buffer.push(10, RemoteSample::at(10, &v));
+        let rewound = history
+            .sample(5, 10.0)
+            .and_then(|s| s.hitbox_pose())
+            .unwrap();
+        let drawn = buffer.sample(10.0).and_then(|s| s.hitbox_pose()).unwrap();
+        assert_eq!(hitbox::hitboxes(&rewound), hitbox::hitboxes(&drawn));
     }
 
     #[test]
@@ -433,12 +500,7 @@ mod tests {
     #[test]
     fn pellets_sum_per_target_and_walls_stop_them() {
         let def = WeaponId::expect("m870").def();
-        let pose = HitboxPose {
-            feet: Vec3::new(0.0, 0.0, -5.0),
-            yaw: 0.0,
-            pitch: 0.0,
-            stance: Stance::Standing,
-        };
+        let pose = HitboxPose::new(Vec3::new(0.0, 0.0, -5.0), 0.0, 0.0, Stance::Standing);
         let targets = [Target { id: 1, pose }];
         let origin = Vec3::new(0.0, 1.5, 0.0);
         let pellets: Vec<Pellet> = [1.7, 1.3, 1.0, 3.0]
@@ -509,12 +571,7 @@ mod tests {
     #[test]
     fn the_nearest_target_takes_the_bullet() {
         let def = WeaponId::expect("m4").def();
-        let pose = |z| HitboxPose {
-            feet: Vec3::new(0.0, 0.0, z),
-            yaw: 0.0,
-            pitch: 0.0,
-            stance: Stance::Standing,
-        };
+        let pose = |z| HitboxPose::new(Vec3::new(0.0, 0.0, z), 0.0, 0.0, Stance::Standing);
         let targets = [
             Target {
                 id: 1,

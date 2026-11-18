@@ -221,12 +221,12 @@ impl ICharacterBody3D for Zombie {
         self.moved = moved;
         self.check_stuck(horizontal, moved, dt, target.as_ref());
 
-        let pose = HitboxPose {
-            feet: to_sim(self.base().get_global_position()),
-            yaw: self.yaw,
-            pitch: 0.0,
-            stance: Stance::Standing,
-        };
+        let pose = HitboxPose::new(
+            to_sim(self.base().get_global_position()),
+            self.yaw,
+            0.0,
+            Stance::Standing,
+        );
         self.hitboxes.bind_mut().set_pose(Some(pose));
     }
 }

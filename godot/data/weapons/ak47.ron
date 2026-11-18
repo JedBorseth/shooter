@@ -34,4 +34,6 @@
     ),
     tracer_every: 3,
     attachments: [RedDot, Acog, Suppressor, Grip, ExtendedMag],
+    // Hands on the model: GripRight and GripLeft in ak47_view.tscn.
+    grips: Some((right: (0, -0.1305, 0.1718), left: (0, -0.0607, -0.1475), rake: 25)),
 )
