@@ -24,6 +24,7 @@ use crate::audio;
 use crate::character::arms::FpArms;
 use crate::character::poser::Grips;
 use crate::character::poser::Held;
+use crate::effects::{self, CombatEffects};
 use crate::sights::{self, IronSights};
 use crate::spring::{Spring, damping_for, impulse_for_peak, smoothing};
 use crate::weapon_clips::{
@@ -332,8 +333,11 @@ const GRIP_MOUNT_DROP: f32 = 0.006;
 /// Height an optic needs between its mount and its sight line.
 const OPTIC_CLEARANCE: f32 = 0.018;
 
-/// Seconds an ejected shell stays visible.
+/// Seconds an ejected shell stays visible in the view, where there is no
+/// world to hand it to (`CombatEffects`).
 const SHELL_LIFETIME: f32 = 0.5;
+/// Seconds a case flies in the view before it is handed to the world.
+const SHELL_HANDOFF: f32 = 0.09;
 /// Enough for 0.8 s of the fastest automatic (900 rounds a minute) and a margin.
 const SHELL_POOL: usize = 24;
 
@@ -1446,6 +1450,43 @@ impl WeaponView {
         }
     }
 
+    /// A third-person weapon's fired case, thrown out of its ejection port
+    /// to the right and a little up and back, if the camera is close enough
+    /// to see it.
+    pub fn eject_world_case(&mut self, effects: &mut Gd<CombatEffects>, seed: u32) {
+        let model = self.shell_model.to_string();
+        if model.is_empty() {
+            return;
+        }
+        let Some(port) = self.base().try_get_node_as::<Node3D>("Ejection") else {
+            return;
+        };
+        let at = port.get_global_position();
+        let near = self
+            .base()
+            .get_viewport()
+            .and_then(|v| v.get_camera_3d())
+            .is_some_and(|c| c.get_global_position().distance_to(at) < effects::REMOTE_CASE_RANGE);
+        if !near {
+            return;
+        }
+        let basis = self.base().get_global_basis().orthonormalized();
+        let velocity = basis
+            * Vector3::new(
+                2.2 + rng::unit(seed, 31) * 0.8,
+                0.8 + rng::unit(seed, 32) * 0.6,
+                0.3 + rng::signed(seed, 33) * 0.2,
+            );
+        let spin = Vector3::new(
+            rng::signed(seed, 34) * 25.0,
+            rng::signed(seed, 35) * 10.0,
+            18.0 + rng::unit(seed, 36) * 12.0,
+        );
+        effects
+            .bind_mut()
+            .throw_case(&model, at, velocity, basis, spin);
+    }
+
     /// A muzzle flash with no sound, for third-person weapons.
     pub fn flash_world(&mut self) {
         let roll = (self.flash_count as f32 * 2.399_963) % (2.0 * PI);
@@ -1685,6 +1726,8 @@ fn hollow_ring(rounds_left: u16, magazine: u16) -> Option<HollowRing> {
 #[derive(Clone, Debug)]
 struct Shell {
     mesh: Gd<MeshInstance3D>,
+    /// The case's node in `casings.glb`, for the world's copy of it.
+    model: String,
     position: Vector3,
     velocity: Vector3,
     spin: Vector3,
@@ -2262,9 +2305,13 @@ impl ViewmodelRig {
     /// Throws a casing out of the ejection port, to the right and up. Shells
     /// live in the rig's (camera) space, so they use the viewmodel shader too.
     fn eject_shell(&mut self, view: &Gd<WeaponView>) {
-        let (start, mesh) = {
+        let (start, mesh, model) = {
             let v = view.bind();
-            (v.ejection_point(), v.shell_mesh.clone())
+            (
+                v.ejection_point(),
+                v.shell_mesh.clone(),
+                v.shell_model.to_string(),
+            )
         };
         let Some(mesh) = mesh else { return };
         if self.shells.len() < SHELL_POOL {
@@ -2275,6 +2322,7 @@ impl ViewmodelRig {
             self.base_mut().add_child(&mesh);
             self.shells.push(Shell {
                 mesh,
+                model: String::new(),
                 position: Vector3::ZERO,
                 velocity: Vector3::ZERO,
                 spin: Vector3::ZERO,
@@ -2308,6 +2356,7 @@ impl ViewmodelRig {
         );
         shell.age = 0.0;
         shell.clinked = false;
+        shell.model = model;
     }
 
     fn update_shells(&mut self, dt: f32) {
@@ -2324,6 +2373,13 @@ impl ViewmodelRig {
         }
         let gravity = Vector3::new(0.0, -9.8, 0.0);
         let mut clink = false;
+        // Cases leave the view for the world once clear of the weapon, where
+        // they bounce, land, and stay (`CombatEffects::throw_case`).
+        let tree = self.base().get_tree();
+        let mut effects = CombatEffects::find(&tree);
+        let camera = self.base().get_viewport().and_then(|v| v.get_camera_3d());
+        let world = effects.is_some() && camera.is_some();
+        let mut handed = Vec::new();
         for shell in &mut self.shells {
             if shell.age >= SHELL_LIFETIME {
                 continue;
@@ -2333,6 +2389,18 @@ impl ViewmodelRig {
             shell.position += shell.velocity * dt;
             let rotation = shell.spin * shell.age;
             let basis = Basis::from_euler(EulerOrder::YXZ, rotation);
+            if world && shell.age >= SHELL_HANDOFF && !shell.model.is_empty() {
+                handed.push((
+                    shell.model.clone(),
+                    shell.position,
+                    shell.velocity,
+                    basis,
+                    shell.spin,
+                ));
+                shell.age = SHELL_LIFETIME;
+                shell.mesh.set_visible(false);
+                continue;
+            }
             shell
                 .mesh
                 .set_global_transform(Transform3D::new(basis, shell.position));
@@ -2342,6 +2410,17 @@ impl ViewmodelRig {
             }
             if shell.age >= SHELL_LIFETIME {
                 shell.mesh.set_visible(false);
+            }
+        }
+        if let (Some(effects), Some(camera)) = (effects.as_mut(), camera) {
+            let eye = camera.get_global_transform();
+            for (model, position, velocity, basis, spin) in handed {
+                let (position, velocity) =
+                    effects::viewmodel_to_world(eye, camera.get_fov(), position, velocity);
+                let mut effects = effects.bind_mut();
+                let position = effects.clear_of_walls(eye.origin, position);
+                // The world's case clinks for itself.
+                effects.throw_case(&model, position, velocity, basis, spin);
             }
         }
         if clink && let Some(sound) = &mut self.shell_sound {

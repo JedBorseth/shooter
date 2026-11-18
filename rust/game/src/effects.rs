@@ -24,15 +24,16 @@ use std::collections::{HashMap, VecDeque};
 
 use godot::classes::geometry_instance_3d::ShadowCastingSetting;
 use godot::classes::{
-    Decal, INode3D, Mesh, MeshInstance3D, Node3D, PackedScene, PhysicsRayQueryParameters3D,
-    Texture2D, VisualInstance3D, decal::DecalTexture,
+    AudioStreamPlayer3D, Decal, INode3D, Mesh, MeshInstance3D, Node3D, PackedScene,
+    PhysicsRayQueryParameters3D, Texture2D, VisualInstance3D, decal::DecalTexture,
 };
 use godot::prelude::*;
 use shooter_sim::rng;
 use shooter_sim::weapon::WeaponId;
 
+use crate::audio;
 use crate::bullets::ShotTracer;
-use crate::surfaces::Surface;
+use crate::surfaces::{Surface, surface_at};
 use crate::target::WORLD_LAYER;
 
 /// Group the effects node joins, so anything can find it.
@@ -80,6 +81,8 @@ pub struct Budget {
     pub scorches: usize,
     /// Fires burning at once.
     pub fires: usize,
+    /// Fired cases in the world at once, flying or lying where they fell.
+    pub cases: usize,
 }
 
 /// Low, Medium, High. Holes follow the audit's starting point (16, 48, 96);
@@ -92,6 +95,7 @@ pub const BUDGETS: [Budget; 3] = [
         tracers: 8,
         scorches: 4,
         fires: 2,
+        cases: 12,
     },
     Budget {
         impacts: 20,
@@ -100,6 +104,7 @@ pub const BUDGETS: [Budget; 3] = [
         tracers: 16,
         scorches: 8,
         fires: 4,
+        cases: 24,
     },
     Budget {
         impacts: 32,
@@ -108,6 +113,7 @@ pub const BUDGETS: [Budget; 3] = [
         tracers: 24,
         scorches: 12,
         fires: 6,
+        cases: 40,
     },
 ];
 
@@ -127,6 +133,23 @@ pub const TRACER_SPEED: f32 = 320.0;
 /// least a pixel and a half wide at any range.
 pub const TRACER_LENGTH: f32 = 7.0;
 const TRACER_WIDTH: f32 = 0.018;
+
+/// The fired cases weapons eject (`tools/build_weapons.py`), by node name.
+const CASINGS: &str = "res://assets/weapons/shared/casings.glb";
+/// Seconds a case lies where it fell before it goes.
+pub const CASE_LIFETIME: f32 = 10.0;
+/// Share of a case's speed into a surface kept as it bounces off, and of its
+/// speed along it.
+const CASE_RESTITUTION: f32 = 0.35;
+const CASE_FRICTION: f32 = 0.6;
+/// Below this speed (m/s) after a bounce, a case lies still.
+const CASE_REST_SPEED: f32 = 0.6;
+/// A bounce harder than this (m/s into the surface) clinks.
+const CASE_CLINK_SPEED: f32 = 0.9;
+/// Positional voices for case clinks.
+const CLINK_VOICES: usize = 4;
+/// Other players' cases are thrown only within this distance (metres).
+pub const REMOTE_CASE_RANGE: f32 = 30.0;
 
 /// How far below an impact its chips look for a floor to land on (metres).
 const FLOOR_SEARCH: f32 = 4.0;
@@ -170,6 +193,41 @@ fn tracer_mesh() -> Option<Gd<Mesh>> {
         .ok()?;
     let mesh = node.get_mesh();
     node.free();
+    mesh
+}
+
+/// The vertical FOV the first-person weapon is drawn with
+/// (`viewmodel_projection.gdshaderinc`).
+const VIEWMODEL_FOV: f32 = 55.0;
+
+/// Where something drawn with the first-person weapon's projection at
+/// `point`, moving at `velocity`, appears in the world camera's view: the
+/// same spot on screen at the same depth. Cases handed from the view to the
+/// world go there, so they do not jump.
+pub fn viewmodel_to_world(
+    camera: Transform3D,
+    camera_fov: f32,
+    point: Vector3,
+    velocity: Vector3,
+) -> (Vector3, Vector3) {
+    let scale = (camera_fov.to_radians() * 0.5).tan() / (VIEWMODEL_FOV.to_radians() * 0.5).tan();
+    let inverse = camera.affine_inverse();
+    let view = inverse * point;
+    let motion = inverse.basis * velocity;
+    (
+        camera * Vector3::new(view.x * scale, view.y * scale, view.z),
+        camera.basis * Vector3::new(motion.x * scale, motion.y * scale, motion.z),
+    )
+}
+
+/// A fired case's mesh with its own (world) materials, from `CASINGS`.
+fn world_case_mesh(name: &str) -> Option<Gd<Mesh>> {
+    let root = try_load::<PackedScene>(CASINGS).ok()?.instantiate()?;
+    let mesh = root
+        .find_child(name)
+        .and_then(|n| n.try_cast::<MeshInstance3D>().ok())
+        .and_then(|n| n.get_mesh());
+    root.free();
     mesh
 }
 
@@ -300,6 +358,42 @@ impl Tracer {
     }
 }
 
+/// One fired case in the world.
+struct Case {
+    node: Gd<MeshInstance3D>,
+    position: Vector3,
+    velocity: Vector3,
+    /// Its orientation, and how fast it turns (radians a second, world axes).
+    basis: Basis,
+    spin: Vector3,
+    /// Its radius, so it lies on the ground rather than in it.
+    radius: f32,
+    age: f32,
+    resting: bool,
+    bounces: u8,
+}
+
+/// Where a case bounces: its velocity after meeting a surface with `normal`
+/// at `velocity`. Most of the speed into the surface is lost, and some of
+/// the speed along it.
+pub fn case_bounce(velocity: Vector3, normal: Vector3) -> Vector3 {
+    let into = velocity.dot(normal);
+    let along = velocity - normal * into;
+    along * CASE_FRICTION - normal * into * CASE_RESTITUTION
+}
+
+/// A case come to rest on a surface with `normal`: its long axis (local Y)
+/// laid flat along the surface, as near its tumbling direction as possible.
+fn lying_basis(basis: Basis, normal: Vector3) -> Basis {
+    let axis = basis.col_b();
+    let mut flat = axis - normal * axis.dot(normal);
+    if flat.length_squared() < 1e-4 {
+        flat = basis_along(normal, 0.0).col_a();
+    }
+    let flat = flat.normalized();
+    Basis::from_cols(flat.cross(normal), flat, normal)
+}
+
 /// One pooled impact effect and how long it has been playing.
 struct Impact {
     node: Gd<Node3D>,
@@ -325,6 +419,14 @@ pub struct CombatEffects {
     fire_scene: Option<Gd<PackedScene>>,
     fires: Vec<Gd<Node3D>>,
     next_fire: usize,
+    cases: Vec<Case>,
+    next_case: usize,
+    case_meshes: HashMap<String, Option<Gd<Mesh>>>,
+    clinks: Vec<Gd<AudioStreamPlayer3D>>,
+    next_clink: usize,
+    /// Cases thrown and clinks played so far (tests).
+    cases_thrown: u32,
+    clinks_played: u32,
     tracers: Vec<Tracer>,
     next_tracer: usize,
     tracer_mesh: Option<Gd<Mesh>>,
@@ -357,6 +459,18 @@ impl INode3D for CombatEffects {
         self.scene = try_load::<PackedScene>(IMPACT_SCENE).ok();
         self.explosion_scene = try_load::<PackedScene>(EXPLOSION_SCENE).ok();
         self.fire_scene = try_load::<PackedScene>(FIRE_SCENE).ok();
+        if let Some(stream) = audio::variations("res://assets/audio/player/shell", 1.15) {
+            for i in 0..CLINK_VOICES {
+                let mut voice = AudioStreamPlayer3D::new_alloc();
+                voice.set_name(&format!("Clink{i}"));
+                voice.set_stream(&stream);
+                voice.set_bus("Effects");
+                voice.set_unit_size(2.0);
+                voice.set_max_distance(30.0);
+                self.base_mut().add_child(&voice);
+                self.clinks.push(voice);
+            }
+        }
         let scorch = ["albedo", "orm"].map(|kind| {
             try_load::<Texture2D>(&format!("res://assets/textures/effects/scorch_{kind}.png")).ok()
         });
@@ -378,6 +492,7 @@ impl INode3D for CombatEffects {
 
     fn process(&mut self, delta: f64) {
         let delta = delta as f32;
+        self.update_cases(delta);
         for tracer in &mut self.tracers {
             if tracer.node.is_visible() {
                 tracer.travelled += TRACER_SPEED * delta;
@@ -521,6 +636,139 @@ impl CombatEffects {
             .iter()
             .filter(|f| (*f).clone().call("burning", &[]).booleanize())
             .count() as i64
+    }
+
+    /// A fired case of `model` (a node in `casings.glb`: `Case556`,
+    /// `Shell12`, ...) thrown from `position` at `velocity`, turned to
+    /// `basis` and tumbling at `spin` (radians a second). It bounces off
+    /// what it meets, clinks, lies where it falls for [`CASE_LIFETIME`],
+    /// and goes. The pool reuses the oldest case when full.
+    pub fn throw_case(
+        &mut self,
+        model: &str,
+        position: Vector3,
+        velocity: Vector3,
+        basis: Basis,
+        spin: Vector3,
+    ) {
+        let budget = self.current_budget().cases;
+        while self.cases.len() > budget {
+            if let Some(mut old) = self.cases.pop().map(|c| c.node) {
+                old.queue_free();
+            }
+        }
+        if budget == 0 {
+            return;
+        }
+        let Some(mesh) = self
+            .case_meshes
+            .entry(model.to_string())
+            .or_insert_with(|| world_case_mesh(model))
+            .clone()
+        else {
+            return;
+        };
+        let radius = mesh.get_aabb().size.x * 0.5;
+        let index = if self.cases.len() < budget {
+            let mut node = MeshInstance3D::new_alloc();
+            node.set_cast_shadows_setting(ShadowCastingSetting::OFF);
+            self.base_mut().add_child(&node);
+            self.cases.push(Case {
+                node,
+                position,
+                velocity,
+                basis,
+                spin,
+                radius,
+                age: 0.0,
+                resting: false,
+                bounces: 0,
+            });
+            self.cases.len() - 1
+        } else {
+            let index = self.next_case % self.cases.len();
+            self.next_case = index + 1;
+            index
+        };
+        let case = &mut self.cases[index];
+        case.node.set_mesh(&mesh);
+        case.node.set_visible(true);
+        case.node.set_scale(Vector3::ONE);
+        *case = Case {
+            node: case.node.clone(),
+            position,
+            velocity,
+            basis: basis.orthonormalized(),
+            spin,
+            radius,
+            age: 0.0,
+            resting: false,
+            bounces: 0,
+        };
+        case.node
+            .set_global_transform(Transform3D::new(case.basis, position));
+        self.cases_thrown = self.cases_thrown.wrapping_add(1);
+    }
+
+    /// `point`, or just short of the first wall between `eye` and it: a case
+    /// handed from the view must not start inside a wall the player leans on.
+    pub fn clear_of_walls(&self, eye: Vector3, point: Vector3) -> Vector3 {
+        let Some(mut space) = self
+            .base()
+            .get_world_3d()
+            .and_then(|w| w.get_direct_space_state())
+        else {
+            return point;
+        };
+        let Some(query) = PhysicsRayQueryParameters3D::create_ex(eye, point)
+            .collision_mask(WORLD_LAYER)
+            .done()
+        else {
+            return point;
+        };
+        let hit = space.intersect_ray(&query);
+        match hit.get_or_nil("position").try_to::<Vector3>() {
+            Ok(at) => at + (eye - at).normalized_or_zero() * 0.05,
+            Err(_) => point,
+        }
+    }
+
+    /// Throws a case as `throw_case` does (tests, and scripts).
+    #[func]
+    fn throw_test_case(&mut self, model: GString, position: Vector3, velocity: Vector3) {
+        self.throw_case(
+            &model.to_string(),
+            position,
+            velocity,
+            Basis::IDENTITY,
+            Vector3::new(20.0, 3.0, 9.0),
+        );
+    }
+
+    /// Cases in the world now, and how many lie still (tests).
+    #[func]
+    fn cases_kept(&self) -> i64 {
+        self.cases.iter().filter(|c| c.node.is_visible()).count() as i64
+    }
+
+    #[func]
+    fn cases_resting(&self) -> i64 {
+        self.cases
+            .iter()
+            .filter(|c| c.node.is_visible() && c.resting)
+            .count() as i64
+    }
+
+    /// Cases thrown so far (tests).
+    #[func]
+    fn cases_thrown(&self) -> i64 {
+        i64::from(self.cases_thrown)
+    }
+
+    /// Clinks played so far (tests).
+    #[func]
+    fn clinks_played(&self) -> i64 {
+        i64::from(self.clinks_played)
     }
 
     /// Explosions played so far (tests).
@@ -681,11 +929,109 @@ impl CombatEffects {
             "tracers" => b.tracers as i64,
             "scorches" => b.scorches as i64,
             "fires" => b.fires as i64,
+            "cases" => b.cases as i64,
         }
     }
 }
 
 impl CombatEffects {
+    /// Flies, bounces, and settles every case in the world: one ray a frame
+    /// for each case still moving, none for those lying still.
+    fn update_cases(&mut self, delta: f32) {
+        if self.cases.is_empty() {
+            return;
+        }
+        let space = self
+            .base()
+            .get_world_3d()
+            .and_then(|w| w.get_direct_space_state());
+        let mut clinks = Vec::new();
+        for case in &mut self.cases {
+            if !case.node.is_visible() {
+                continue;
+            }
+            case.age += delta;
+            if case.age >= CASE_LIFETIME {
+                case.node.set_visible(false);
+                continue;
+            }
+            if case.resting {
+                // Shrinks away over its last half second.
+                let left = CASE_LIFETIME - case.age;
+                if left < 0.5 {
+                    case.node.set_scale(Vector3::ONE * (left / 0.5).max(0.01));
+                }
+                continue;
+            }
+            case.velocity += Vector3::DOWN * 9.8 * delta;
+            let next = case.position + case.velocity * delta;
+            let hit = space.clone().and_then(|mut space| {
+                let query = PhysicsRayQueryParameters3D::create_ex(case.position, next)
+                    .collision_mask(WORLD_LAYER)
+                    .done()?;
+                let hit = space.intersect_ray(&query);
+                let at = hit.get_or_nil("position").try_to::<Vector3>().ok()?;
+                let normal = hit
+                    .get_or_nil("normal")
+                    .try_to::<Vector3>()
+                    .unwrap_or(Vector3::UP);
+                let collider = hit.get_or_nil("collider").try_to::<Gd<Node>>().ok();
+                let face = hit.get_or_nil("face_index").try_to::<i32>().unwrap_or(-1);
+                Some((at, normal, surface_at(collider.as_ref(), face)))
+            });
+            match hit {
+                Some((at, normal, surface)) => {
+                    let into = -case.velocity.dot(normal);
+                    if into > CASE_CLINK_SPEED && case.bounces < 3 {
+                        clinks.push((at, surface, into));
+                    }
+                    case.bounces = case.bounces.saturating_add(1);
+                    case.velocity = case_bounce(case.velocity, normal);
+                    case.spin *= 0.5;
+                    case.position = at + normal * case.radius;
+                    // Too slow to bounce again on ground it can lie on.
+                    if case.velocity.length() < CASE_REST_SPEED && normal.y > 0.5 {
+                        case.resting = true;
+                        case.velocity = Vector3::ZERO;
+                        case.basis = lying_basis(case.basis, normal);
+                    }
+                }
+                None => {
+                    case.position = next;
+                    let turn = case.spin * delta;
+                    if turn.length_squared() > 0.0 {
+                        case.basis =
+                            Basis::from_axis_angle(turn.normalized(), turn.length()) * case.basis;
+                    }
+                }
+            }
+            case.node
+                .set_global_transform(Transform3D::new(case.basis, case.position));
+        }
+        for (at, surface, speed) in clinks {
+            self.clink(at, surface, speed);
+        }
+    }
+
+    /// A case's clink where it hit: quieter on soft ground and soft hits.
+    fn clink(&mut self, at: Vector3, surface: Surface, speed: f32) {
+        if self.clinks.is_empty() {
+            return;
+        }
+        let soft = matches!(
+            surface,
+            Surface::Dirt | Surface::Grass | Surface::Carpet | Surface::Flesh
+        );
+        let level = if soft { -20.0 } else { -9.0 };
+        let index = self.next_clink % self.clinks.len();
+        self.next_clink = index + 1;
+        let voice = &mut self.clinks[index];
+        voice.set_global_position(at);
+        voice.set_volume_db(level + ((speed / 3.0).min(1.0) - 1.0) * 8.0);
+        voice.play();
+        self.clinks_played = self.clinks_played.wrapping_add(1);
+    }
+
     /// The scene's effects node, if the local player made one.
     pub fn find(tree: &Gd<SceneTree>) -> Option<Gd<CombatEffects>> {
         tree.get_first_node_in_group(GROUP)
@@ -959,6 +1305,18 @@ mod tests {
         assert!(blast_shake(8.0, 1.0) > blast_shake(15.0, 1.0));
         assert_eq!(blast_shake(SHAKE_RADIUS, 1.0), 0.0);
         assert!(blast_shake(15.0, 2.0) > blast_shake(15.0, 1.0));
+    }
+
+    #[test]
+    fn cases_lose_most_of_their_bounce() {
+        let after = case_bounce(Vector3::new(1.0, -4.0, 0.0), Vector3::UP);
+        assert!((after.y - 4.0 * CASE_RESTITUTION).abs() < 1e-5);
+        assert!((after.x - CASE_FRICTION).abs() < 1e-5);
+        let lying = lying_basis(Basis::IDENTITY, Vector3::UP);
+        assert!(
+            lying.col_b().dot(Vector3::UP).abs() < 1e-5,
+            "the long axis lies flat"
+        );
     }
 
     #[test]

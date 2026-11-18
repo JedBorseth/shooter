@@ -39,7 +39,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Keyframed draw and holster animations (a press check on the pistol), and the firing hand working the bolt.
 - [x] The action's small parts move in first person: bolt carriers (or an AK's handle) with each shot, an AR's bolt locked open on empty until the release, the dust cover, charging handles on a charge or chamber check, triggers, the pistol's hammer and slide stop, and magazine releases.
 - [x] Bullet tracers every Nth round (`tracer_every` in the weapon file), for the local player, other players, and the sentry, from one pool.
-- [x] Shell ejection particles from an ejection-port marker on each `WeaponView`.
+- [x] Fired cases from an ejection-port marker on each `WeaponView`, in first and third person, that land in the world and stay (`CombatEffects::throw_case`).
 - [x] Bullet penetration through thin cover, with per-material damage reduction (`shooter_sim::penetration` rules, `rust/game/src/penetration.rs` traces).
 - [x] Per-surface impact effects and sounds (metal, concrete, wood, dirt, flesh), from `surface` metadata on colliders.
 - [x] Data-driven weapon definitions: RON files in `godot/data/weapons/`, loaded at startup and hot-reloaded in debug builds.
@@ -245,7 +245,7 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
   - [x] Blood that is dark, wet, and lit instead of glowing, with spatter on the wall behind a close target; bullet holes that stay (pooled per preset, oldest reused first) and never land on characters; other players' rounds draw their impacts.
   - [x] Bullet holes per surface class (four variants each, soot ring, roughness), flipbook dust, debris that lands on the floor, and exit effects where a round penetrates.
   - [x] Tracers as camera-facing ribbons with a minimum pixel width, from other players too.
-  - [ ] Ejected cases handed to the world: they bounce, land, clink on what they hit, and stay; third-person ejection.
+  - [x] Ejected cases handed to the world: they bounce, land, clink on what they hit, and stay; third-person ejection.
   - [ ] Muzzle flash flipbooks, lit soft smoke, lingering barrel smoke, heat haze on High, and a muzzle light that stays on its side of walls.
   - [x] An explosion and fire effect with an API for grenades (`CombatEffects.explosion`, `CombatEffects.fire`); frag grenades use the explosion.
   - [ ] A wound mark where a character was hit (character shader).
