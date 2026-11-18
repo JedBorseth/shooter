@@ -1000,10 +1000,19 @@ impl BotBrain {
 
     /// Turns what the bot wants into an input, releasing toggles and taps
     /// between presses.
-    fn press(&mut self, want: Want, state: &Predicted) -> PlayerInput {
+    fn press(&mut self, mut want: Want, state: &Predicted) -> PlayerInput {
         let movement = &state.state.movement;
-        let crouched = movement.stance == Stance::Crouching;
-        let crouch = want.crouch != crouched && !self.held.crouch;
+        // A bot never means to slide. A slide counts as down, so a bot that
+        // wants to crouch doesn't press again and cancel it.
+        let crouched = movement.stance != Stance::Standing;
+        // Crouching while sprinting would slide. Let go of the stick for a
+        // tick instead, which ends the sprint, and crouch on the next one.
+        let ends_sprint = want.crouch && !crouched && movement.sprinting;
+        if ends_sprint {
+            want.wish = Vec2::ZERO;
+            want.sprint = false;
+        }
+        let crouch = want.crouch != crouched && !self.held.crouch && !ends_sprint;
         let sprint = want.sprint && !movement.sprinting && !self.held.sprint;
         let jump = want.jump && !self.held.jump;
         let fire = want.fire && !(self.held.fire && is_semi(state));
@@ -1063,4 +1072,76 @@ fn clear_line(space: &mut Gd<PhysicsDirectSpaceState3D>, from: Vector3, to: Vect
         return false;
     };
     space.intersect_ray(&query).is_empty()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use shooter_sim::movement::MoveEnv;
+    use shooter_sim::player::{self, PlayerState};
+
+    /// Steps a bot that holds `want` through the players' rules on open, flat
+    /// ground, and returns every stance it passed through.
+    fn run(
+        brain: &mut BotBrain,
+        p: &mut Predicted,
+        want: impl Fn() -> Want,
+        ticks: u32,
+    ) -> Vec<Stance> {
+        let params = PlayerParams::default();
+        let env = MoveEnv {
+            on_floor: true,
+            can_stand: true,
+            ledge: None,
+        };
+        let mut stances = Vec::new();
+        for _ in 0..ticks {
+            let input = brain.press(want(), p);
+            player::step(&mut p.state, &input, env, &params, TICK_DT, &mut Vec::new());
+            stances.push(p.state.movement.stance);
+        }
+        stances
+    }
+
+    fn sprinting_bot() -> (BotBrain, Predicted) {
+        let mut brain = BotBrain::new(Skill::Normal, 7);
+        let mut p = Predicted {
+            state: PlayerState::spawned(&PlayerParams::default()),
+            position: Vec3::ZERO,
+            on_floor: true,
+        };
+        let run_in = || Want {
+            wish: Vec2::new(0.0, 1.0),
+            sprint: true,
+            ..Default::default()
+        };
+        run(&mut brain, &mut p, run_in, 120);
+        assert!(p.state.movement.sprinting, "the bot sprints first");
+        (brain, p)
+    }
+
+    #[test]
+    fn a_bot_reaching_cover_at_a_sprint_crouches_without_sliding() {
+        let (mut brain, mut p) = sprinting_bot();
+        let take_cover = || Want {
+            crouch: true,
+            ..Default::default()
+        };
+        let stances = run(&mut brain, &mut p, take_cover, 120);
+        assert!(!stances.contains(&Stance::Sliding), "{stances:?}");
+        assert_eq!(p.state.movement.stance, Stance::Crouching);
+    }
+
+    #[test]
+    fn a_bot_crouching_mid_sprint_crouches_without_sliding() {
+        let (mut brain, mut p) = sprinting_bot();
+        let crouch_running = || Want {
+            wish: Vec2::new(0.0, 1.0),
+            crouch: true,
+            ..Default::default()
+        };
+        let stances = run(&mut brain, &mut p, crouch_running, 120);
+        assert!(!stances.contains(&Stance::Sliding), "{stances:?}");
+        assert_eq!(p.state.movement.stance, Stance::Crouching);
+    }
 }
