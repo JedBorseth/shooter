@@ -10,6 +10,7 @@ extends SceneTree
 ## CAPTURE_SETS picks deaths (comma list of the names below; default all).
 
 const SOLDIER := preload("res://scenes/characters/soldier.tscn")
+const ZOMBIE := preload("res://scenes/characters/zombie_body.tscn")
 ## Seconds after the shot each strip shows.
 const MOMENTS := [0.0, 0.08, 0.17, 0.3, 0.5, 0.8, 1.3, 3.0]
 const SPOT := Vector3(0, 0.05, 20)
@@ -29,6 +30,8 @@ const DEATHS := {
 	"flinch_chest": [Vector3(0, 0, 1), 2, 3.0, {}, true],
 	"flinch_arm": [Vector3(1, 0, 0), 7, 3.0, {}, true],
 	"flinch_leg": [Vector3(0, 0, 1), 10, 3.0, {}, true],
+	"zombie_death": [Vector3(0, 0, 1), 0, 6.0, {"zombie": true}],
+	"zombie_shotgun": [Vector3(1, 0, 0), 2, 15.0, {"zombie": true}],
 }
 ## Seconds after a hit each flinch strip shows.
 const FLINCH_MOMENTS := [0.0, 0.03, 0.06, 0.1, 0.15, 0.22, 0.32, 0.5]
@@ -78,13 +81,15 @@ func _strip(scene: Node, death: String, spec: Array) -> void:
 	var state: Dictionary = spec[3].duplicate()
 	var flinch: bool = spec.size() > 4 and spec[4]
 	var moments: Array = FLINCH_MOMENTS if flinch else MOMENTS
-	var rig := SOLDIER.instantiate() as SoldierRig
+	var zombie: bool = state.get("zombie", false)
+	var rig := (ZOMBIE if zombie else SOLDIER).instantiate() as SoldierRig
 	scene.add_child(rig)
 	var velocity: Vector3 = state.get("velocity", Vector3.ZERO)
 	# Moving bodies start back along their path, so they die in frame.
 	var at := SPOT + Vector3.UP * float(state.get("height", 0.0)) - velocity * 40.0 / 60.0
 	rig.global_position = at
-	state["weapon"] = "m4"
+	if not zombie:
+		state["weapon"] = "m4"
 	state["velocity"] = velocity
 	# Seen from the soldier's right, a little in front, far enough for the fall.
 	if flinch:

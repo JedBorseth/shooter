@@ -183,6 +183,7 @@ impl RemoteSample {
                 weapon: Some(self.weapon),
                 progress: self.progress,
                 crouch: Some(self.crouch),
+                hunch: 0.0,
             },
         })
     }
@@ -546,6 +547,7 @@ mod tests {
                 velocity: Vec3::ZERO,
                 weapon: Some(WeaponId::expect("m870")),
                 crouch: Some(0.0),
+                hunch: 0.0,
                 progress: Progress {
                     stride: 0.25,
                     reload: 0.2,

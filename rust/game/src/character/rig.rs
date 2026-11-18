@@ -218,6 +218,7 @@ impl SoldierFrame {
             weapon: self.weapon,
             progress,
             crouch: self.crouch,
+            hunch: 0.0,
         }
     }
 }
@@ -1068,6 +1069,19 @@ impl SoldierRig {
         }
     }
 
+    /// A zombie rocks back from a heavy hit (`Hit_Knockback`; zombie rigs
+    /// only).
+    pub fn stagger(&mut self) {
+        if let Some(tree) = &mut self.tree
+            && self.zombie
+        {
+            tree.set(
+                "parameters/stagger/request",
+                &(godot::classes::animation_node_one_shot::OneShotRequest::FIRE.ord()).to_variant(),
+            );
+        }
+    }
+
     /// Muzzle flash and a kick for one shot.
     pub fn fire(&mut self) {
         let mut scale = 1.0;
@@ -1773,7 +1787,8 @@ fn add_zombie_eyes(skeleton: &Gd<Skeleton3D>) {
 }
 
 /// The zombie's animation graph: a shamble that blends into a jog and a run
-/// with speed, and a one-shot scratch attack. Deaths are ragdolls.
+/// with speed, a one-shot scratch attack, and a stagger from heavy hits.
+/// Deaths are ragdolls.
 fn zombie_graph() -> Gd<AnimationNodeBlendTree> {
     let mut graph = AnimationNodeBlendTree::new_gd();
     let clip = |name: &str| {
@@ -1807,11 +1822,21 @@ fn zombie_graph() -> Gd<AnimationNodeBlendTree> {
     attack.set_fadein_time(0.08);
     attack.set_fadeout_time(0.25);
     graph.add_node("attack", &attack.upcast::<AnimationNode>());
+    // A heavy hit rocks it back.
+    let mut knockback = clip("ual2/Hit_Knockback");
+    knockback.set_loop_mode(godot::classes::animation::LoopMode::NONE);
+    graph.add_node("stagger_clip", &knockback.upcast::<AnimationNode>());
+    let mut stagger = AnimationNodeOneShot::new_gd();
+    stagger.set_fadein_time(0.05);
+    stagger.set_fadeout_time(0.2);
+    graph.add_node("stagger", &stagger.upcast::<AnimationNode>());
     for (to, port, from) in [
         ("walk_rate", 0, "walk"),
         ("attack", 0, "walk_rate"),
         ("attack", 1, "attack_clip"),
-        ("output", 0, "attack"),
+        ("stagger", 0, "attack"),
+        ("stagger", 1, "stagger_clip"),
+        ("output", 0, "stagger"),
     ] {
         graph.connect_node(to, port, from);
     }

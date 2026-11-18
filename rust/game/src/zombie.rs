@@ -28,6 +28,16 @@ use crate::convert::{to_godot, to_sim};
 use crate::hitbox_rig::HitboxRig;
 use crate::target::{BODY_LAYER, WORLD_LAYER};
 
+/// A zombie standing still is drawn lower on bent knees and less far
+/// forward than one walking: its hit zones take this much of the walking
+/// hunch and this much of a crouch.
+const IDLE_HUNCH: f32 = 0.65;
+const IDLE_CROUCH: f32 = 0.36;
+/// A hit this hard (force level, about a tenth of the damage) staggers a
+/// zombie for this long: it stops, rocks back, then comes on again.
+const STAGGER_FORCE: f32 = 8.0;
+const STAGGER_SECONDS: f32 = 0.5;
+
 /// Collision layer 6 ("barriers"): window boards only zombies bump into.
 pub const BARRIER_LAYER: u32 = 1 << 5;
 
@@ -114,6 +124,8 @@ pub struct Zombie {
     seed: u32,
     /// The dead body has gone to the corpse yard.
     body_left: bool,
+    /// Seconds left of a stagger from a heavy hit.
+    stagger_for: f32,
 }
 
 #[godot_api]
@@ -176,6 +188,13 @@ impl ICharacterBody3D for Zombie {
 
         let position = self.base().get_global_position();
         self.groan(dt);
+        // A heavy hit stops it in its tracks for a moment.
+        if self.stagger_for > 0.0 {
+            self.stagger_for -= dt;
+            self.moved = Vector3::ZERO;
+            self.fall(dt);
+            return;
+        }
         if self.tear_barrier(position, dt) {
             self.moved = Vector3::ZERO;
             return;
@@ -223,11 +242,7 @@ impl ICharacterBody3D for Zombie {
             }
         }
 
-        if self.base().is_on_floor() {
-            self.fall_speed = 0.0;
-        } else {
-            self.fall_speed += GRAVITY * dt;
-        }
+        self.update_fall(dt);
         let velocity = horizontal + Vector3::DOWN * self.fall_speed;
         let mut body = self.base_mut();
         body.set_velocity(velocity);
@@ -237,12 +252,28 @@ impl ICharacterBody3D for Zombie {
         self.moved = moved;
         self.check_stuck(horizontal, moved, dt, target.as_ref());
 
-        let pose = HitboxPose::new(
-            to_sim(self.base().get_global_position()),
-            self.yaw,
-            0.0,
-            Stance::Standing,
-        );
+        // Hunched as the shamble is drawn, so a headshot aims at the head:
+        // walking, bent forward with the head out; standing, lower on bent
+        // knees.
+        let walking = Vector3::new(self.moved.x, 0.0, self.moved.z).length() > 0.3;
+        let (hunch, crouch) = if walking {
+            (1.0, 0.0)
+        } else {
+            (IDLE_HUNCH, IDLE_CROUCH)
+        };
+        let pose = HitboxPose {
+            activity: shooter_sim::hitbox::Activity {
+                hunch,
+                crouch: Some(crouch),
+                ..Default::default()
+            },
+            ..HitboxPose::new(
+                to_sim(self.base().get_global_position()),
+                self.yaw,
+                0.0,
+                Stance::Standing,
+            )
+        };
         self.hitboxes.bind_mut().set_pose(Some(pose));
     }
 }
@@ -309,6 +340,17 @@ impl Zombie {
     ) {
         let push = crate::character::rig::push_of(direction, point, part, force);
         self.rig.bind_mut().hit_at(push, killed);
+        // A heavy round (a shotgun blast, a sniper's) staggers it.
+        if !killed && force >= STAGGER_FORCE && self.stagger_for <= 0.0 {
+            self.stagger_for = STAGGER_SECONDS;
+            self.rig.bind_mut().stagger();
+        }
+    }
+
+    /// Seconds left of a stagger, for tests.
+    #[func]
+    pub fn staggered_for(&self) -> f32 {
+        self.stagger_for.max(0.0)
     }
 
     #[func]
@@ -487,6 +529,24 @@ impl Zombie {
             alive: self.is_alive(),
             ..SoldierFrame::default()
         }
+    }
+
+    /// Gravity on the fall speed this tick.
+    fn update_fall(&mut self, dt: f32) {
+        if self.base().is_on_floor() {
+            self.fall_speed = 0.0;
+        } else {
+            self.fall_speed += GRAVITY * dt;
+        }
+    }
+
+    /// Standing in place (staggered): only falling moves it.
+    fn fall(&mut self, dt: f32) {
+        self.update_fall(dt);
+        let velocity = Vector3::DOWN * self.fall_speed;
+        let mut body = self.base_mut();
+        body.set_velocity(velocity);
+        body.move_and_slide();
     }
 
     /// The closest living player, by straight-line distance.
