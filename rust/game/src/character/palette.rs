@@ -234,7 +234,7 @@ fn build_character(team: Team, kit: Kit, viewmodel: bool) -> Gd<ShaderMaterial> 
     // from a dark background at night and indoors.
     let (rim, energy) = match team {
         Team::Allies => (Color::from_rgb(0.55, 0.7, 0.9), 0.05),
-        Team::Enemies => (Color::from_rgb(0.9, 0.45, 0.3), 0.07),
+        Team::Enemies => (Color::from_rgb(0.9, 0.45, 0.3), 0.12),
         Team::Zombies => (Color::from_rgb(0.5, 0.55, 0.4), 0.03),
     };
     if !viewmodel {

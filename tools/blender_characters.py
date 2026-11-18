@@ -395,6 +395,43 @@ def group_weights(obj) -> tuple[list[str], np.ndarray]:
     return names, w
 
 
+def split_legs(obj, below: float):
+    """Deletes trouser faces that bridge the two legs below height `below`
+    (baggy cloth hanging between the thighs like a web), and gives every leg
+    vertex to one leg only, so each leg moves on its own."""
+    names, w = group_weights(obj)
+
+    def side(s: str) -> np.ndarray:
+        cols = [i for i, n in enumerate(names) if n.startswith((f"DEF-thigh.{s}", f"DEF-shin.{s}", f"DEF-foot.{s}"))]
+        return w[:, cols].sum(axis=1)
+
+    left, right = side("L"), side("R")
+    m = obj.matrix_world
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bm.verts.ensure_lookup_table()
+    gone = []
+    for f in bm.faces:
+        ids = [v.index for v in f.verts]
+        has_l = any(left[i] > 0.25 and left[i] > right[i] for i in ids)
+        has_r = any(right[i] > 0.25 and right[i] > left[i] for i in ids)
+        if has_l and has_r and max((m @ v.co).z for v in f.verts) < below:
+            gone.append(f)
+    bmesh.ops.delete(bm, geom=gone, context="FACES")
+    bm.to_mesh(obj.data)
+    bm.free()
+    names, w = group_weights(obj)
+    left, right = side("L"), side("R")
+    for s, other in (("L", "R"), ("R", "L")):
+        mine = left > right if s == "L" else right > left
+        for g in obj.vertex_groups:
+            if g.name.startswith((f"DEF-thigh.{other}", f"DEF-shin.{other}", f"DEF-foot.{other}")):
+                low = [i for i in np.nonzero(mine & ((left + right) > 0.6))[0].tolist()]
+                if low:
+                    g.remove(low)
+    log(f"{obj.name}: split the legs, {len(gone)} bridging faces removed")
+
+
 def keep_body_region(obj, bones: tuple[str, ...], threshold: float):
     """Deletes the body's vertices that mostly follow other bones: they are
     under clothes, and would only poke through them."""
@@ -890,6 +927,9 @@ def main():
             import blender_gear
 
             blender_gear.tighten(o, human, part["tighten"])
+    for o, part in zip(clothes, spec.get("parts", [])):
+        if part.get("split_legs"):
+            split_legs(o, part["split_legs"])
     keep = spec.get("keep_body")
     if keep:
         keep_body_region(human, tuple(keep["bones"]), keep["threshold"])
