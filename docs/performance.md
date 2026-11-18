@@ -10,7 +10,7 @@ Measured at 1920×1080 on a GTX 1060 3GB, the reference card. The budget is GPU 
 | --- | --- | --- | --- |
 | Low | 4 ms | weaker cards and laptops at 60 fps | 4.4 ms (Slamcity; over budget since its block layout, #143) |
 | Medium (default) | 8 ms | 60 fps with plenty of headroom, 100+ fps on the reference card | 8.6 ms (Slamcity, the same view; every other map is under 6 ms) |
-| High | 12 ms | 60 fps | 11.9 ms |
+| High | 12 ms | 60 fps | 11.8 ms |
 
 Rules for a pull request that changes visuals:
 
@@ -146,5 +146,6 @@ GPU time on Medium at 1080p on the reference card, average over viewpoints (wors
 | Testing Area and Zombies arena modelled in Blender instead of CSG (`main` measured alongside on the same box: 5.29 (5.51) and 5.41 (5.85) ms) | 5.60 (5.92) ms | | 5.58 (6.04) ms |
 | `main` at 3a4af2db, measured again: #111 and #114–#152 landed without a baseline run (weapon, glove, knife, and character models; Slamcity's smoke, wear, flames, and new block layout around Junction Plaza, #143, with new viewpoints; the new HUD; modelled props and map architecture). Better of two runs per view | 5.60 (5.88) ms | 7.58 (8.50) ms | 5.53 (6.05) ms |
 | Filmic daylight in the Testing Area (ACES, a stronger sun), Slamcity's toe and thinner near haze, Zombies' lower pivot, tighter ambient occlusion (within run-to-run noise of the same `main` on every map) | 5.60 (5.86) ms | 7.62 (8.62) ms | 5.52 (6.04) ms |
+| Temporal antialiasing on High in place of 2× MSAA plus SMAA, a hurt vignette with smears, hit flashes, and a heartbeat (hidden at full health), suppression on Low, close-up detail only on rough surfaces, softer puddles (High: 0.35 to 0.46 ms less in the Testing Area and Slamcity, 0.14 ms more in Zombies; `main` measured alongside: 5.61, 7.52, 5.54 ms on Medium) | 5.58 (5.86) ms | 7.47 (8.37) ms | 5.58 (6.10) ms |
 
 Slamcity's 7.0 ms on Medium is about 0.5 ms more than the old map, over the usual 5% step. It was accepted for the rebuild: the rest is the denser map's own shading (decals, the skyline, small detail, and props are about 0.15 ms each), and the next cut would remove visible detail.
