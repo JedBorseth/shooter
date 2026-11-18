@@ -310,6 +310,9 @@ fn stride_bob(theta: f32, amount: f32, sprint: f32) -> (Vector3, Vector3) {
 /// How much longer an extended magazine is than the standard one.
 const EXTENDED_MAGAZINE: f32 = 1.35;
 
+/// The length of a magazine's top, where it meets the well.
+const MAG_TOP_LENGTH: f32 = 0.06;
+
 /// The top of a magazine's meshes in its own space (where it meets the well).
 fn magazine_top(mag: &Gd<Node3D>) -> Option<f32> {
     let mut top: Option<f32> = None;
@@ -555,6 +558,9 @@ pub struct WeaponView {
     foley: Option<Gd<WeaponFoley>>,
     /// An optional `ChargingHandle` marker: where the hand charges the weapon.
     charging_handle: Option<Vector3>,
+    /// The magazine's front lip at the well (view space), which an
+    /// AK-pattern magazine rocks about.
+    mag_lip: Option<Vector3>,
 }
 
 /// One moving part: the node, its rest transform, and the transform from its
@@ -839,6 +845,14 @@ impl WeaponView {
             .as_ref()
             .and_then(Part::bounds_in_view)
             .map(|(min, max)| (min + max) * 0.5);
+        // Where the magazine's front lip meets the well: an AK-pattern
+        // magazine rocks about it. A curved magazine's or a drum's bounds
+        // reach forward below the well, so the lip is taken a magazine top's
+        // length ahead of the rear of its top.
+        self.mag_lip = magazine
+            .as_ref()
+            .and_then(Part::bounds_in_view)
+            .map(|(_, max)| Vector3::new(0.0, max.y, max.z - MAG_TOP_LENGTH));
         // A release on the side of the frame (a pistol's button) is pressed
         // across it; a paddle behind the magazine is pushed toward it.
         let mag_release = Part::find(&view, "MagRelease").and_then(|part| {
@@ -899,14 +913,26 @@ impl WeaponView {
             if mag.node.is_visible() != shown {
                 mag.node.set_visible(shown);
             }
-            mag.pose(clip.old_mag.unwrap_or_default(), 0.0, Vector3::ZERO);
+            let lip = self.mag_lip.unwrap_or_default();
+            mag.pose_about(
+                clip.old_mag.unwrap_or_default(),
+                Vector3::RIGHT,
+                clip.old_mag_rock,
+                lip,
+            );
         }
         if let Some(fresh) = &mut parts.fresh_magazine {
             let shown = clip.fresh_mag.is_some();
             if fresh.node.is_visible() != shown {
                 fresh.node.set_visible(shown);
             }
-            fresh.pose(clip.fresh_mag.unwrap_or_default(), 0.0, Vector3::ZERO);
+            let lip = self.mag_lip.unwrap_or_default();
+            fresh.pose_about(
+                clip.fresh_mag.unwrap_or_default(),
+                Vector3::RIGHT,
+                clip.fresh_mag_rock,
+                lip,
+            );
         }
         if let Some(pump) = &mut parts.pump {
             let drawn = match frame.action {

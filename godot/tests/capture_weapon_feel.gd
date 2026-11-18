@@ -97,7 +97,7 @@ func _run() -> void:
 			"scenario,label,t,ads,action,magazine,fov,"
 			+ "vm_x,vm_y,vm_z,vm_pitch,vm_yaw,vm_roll,"
 			+ "cam_pitch,cam_yaw,cam_roll,aim_pitch,aim_yaw,look_pitch,"
-			+ "sight_pitch,sight_yaw,speed,hand_x,hand_y,hand_z,foley"
+			+ "sight_pitch,sight_yaw,speed,hand_x,hand_y,hand_z,hand_eye,mag_u,mag_v,mag_depth,foley"
 		)
 	)
 	# Recorded at the end of each frame, after every node has processed, so
@@ -205,12 +205,39 @@ func _record() -> void:
 	var hand := Vector3.ZERO
 	if view != null and view.has_node("GripLeft"):
 		hand = (view.get_node("GripLeft") as Node3D).position
-	row.append_array(["%.4f" % hand.x, "%.4f" % hand.y, "%.4f" % hand.z, "|".join(_foley)])
+	# How far the support hand is from the eye: a hand too close fills the screen.
+	var hand_eye := (vm * hand).length() if view != null else 0.0
+	# Where the magazine well is on screen (-1 to 1 across and up; outside
+	# that range it is out of frame), drawn with the weapon's 55 degree FOV.
+	var mag := Vector2(9, 9)
+	var mag_depth := 0.0
+	if view != null and view.has_node("Model/Mesh/Magazine"):
+		var well := vm * _rest_in(view, view.get_node("Model/Mesh/Magazine") as Node3D)
+		mag_depth = -well.z
+		if well.z < -0.01:
+			var half := tan(deg_to_rad(55.0) * 0.5)
+			mag = Vector2(well.x / -well.z / (half * 16.0 / 9.0), well.y / -well.z / half)
+	var tail := [
+		"%.4f" % hand.x,
+		"%.4f" % hand.y,
+		"%.4f" % hand.z,
+		"%.4f" % hand_eye,
+		"%.3f" % mag.x,
+		"%.3f" % mag.y,
+		"%.3f" % mag_depth,
+		"|".join(_foley),
+	]
+	row.append_array(tail)
 	_foley.clear()
 	_file.store_line(",".join(row.map(func(v: Variant) -> String: return str(v))))
 	_rows += 1
 	if not _frames_dir.is_empty() and _rows % _frame_every == 0:
 		_save_frame.call_deferred()
+
+
+## A node's position in `view`'s space.
+func _rest_in(view: Node3D, node: Node3D) -> Vector3:
+	return view.global_transform.affine_inverse() * node.global_position
 
 
 func _save_frame() -> void:
