@@ -188,14 +188,20 @@ Engine side, in `body::tick`:
 | Walk bob | 2.2 cm, lowest just after each footfall, 1.2 cm sway and 0.23 degree roll alternating feet | a few cm, a dip at each step |
 | Jump landing | 5 cm dip and a 1.4 degree nod, back in about 0.35 s | about 4 to 6 cm and 1 to 2 degrees over about 0.3 s |
 | Hit flinch | away from the shot: a hit from the right turns the head left and rolls it; from in front tips it up, from behind down | directional |
-| Death | drops with the body for 0.4 s, then rises 1.5 m high and 2.4 m behind where the player fell, facing the killer | third-person death, then a killcam |
+| Death | our own body falls as a ragdoll; the camera pulls back and up from the eyes to 1.6 m high and 2.6 m behind it, watching it fall for 1.1 s, then turns to the killer with the body in the bottom of the frame | third-person death showing your own body, then a killcam |
 
 The bob runs on the footstep stride phase (`footsteps::Stride`), with the
 foot alternating each step so the sway and roll are continuous. Changing gait
 mid-stride keeps the phase, so neither the bob nor the weapon's stride motion
 jumps. The landing nod and the flinch turn the look itself and spring back,
 so the screen centre, the sights, and the shots never disagree; the flinch's
-roll is visual only. The death camera stops short of walls.
+roll is visual only. The death camera stops short of walls, follows the
+body down a drop, and never dips toward the floor where the body lands. Our
+own body (`FpsPlayer::leave_own_body`) is a soldier posed as we died
+(stance, crouch, aim, weapon), drawn alive for one frame and then dead, so it
+falls as a ragdoll with the killing hit's push and stays in the corpse yard
+like anyone's. It shows once the camera is out of its head, and is never
+built on a dedicated server.
 
 A respawn starts every camera offset over: the death camera, landing dip and
 nod, flinch, tilt, and bob. Look sensitivity follows the aim zoom only, not

@@ -755,8 +755,33 @@ func _death_and_respawn() -> void:
 	await _begin("death")
 	await _record(10)
 	var killer := _player.global_position + Vector3(-8, 0, 0)
+	var eye_y := _player.global_position.y + STAND_EYE
 	_player.take_damage(1000.0, killer)
-	await _record(240)
+	# Our own body falls where we died, and the camera pulls back to watch
+	# it: never dropping toward the floor where it lands.
+	var lowest := INF
+	var watched := 0
+	var lowest_hips := INF
+	var body: Node3D = null
+	for i in 130:
+		await _record(1)
+		lowest = minf(lowest, _camera.global_position.y)
+		if body == null:
+			body = root.find_child("OwnBody", true, false) as Node3D
+		if body != null and i > 30:
+			var hips: Vector3 = body.call("bone_global_transform", "Hips").origin
+			lowest_hips = minf(lowest_hips, hips.y - _player.global_position.y)
+			var to_body := (hips - _camera.global_position).normalized()
+			if -_camera.global_transform.basis.z.dot(to_body) > 0.85:
+				watched += 1
+	_check(body != null, "death leaves our own body")
+	_check(lowest_hips < 0.4, "which falls, hips down to %.2f m" % lowest_hips)
+	_check(body != null and body.visible, "and shows once the camera is clear of it")
+	_check(
+		lowest > eye_y - 0.15, "the death camera never drops toward the floor, lowest %.2f" % lowest
+	)
+	_check(watched > 60, "and watches the body fall, %d of 99 ticks" % watched)
+	await _record(110)
 	var camera := _camera.global_transform
 	var away := camera.origin.distance_to(_player.global_position + Vector3.UP * 1.68)
 	_check(away > 1.5, "the death camera leaves first person, %.2f m away" % away)
