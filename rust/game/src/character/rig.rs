@@ -16,7 +16,8 @@ use godot::classes::{
     AnimationLibrary, AnimationNode, AnimationNodeAnimation, AnimationNodeBlend2,
     AnimationNodeBlendSpace1D, AnimationNodeBlendTree, AnimationNodeOneShot,
     AnimationNodeTimeScale, AnimationNodeTimeSeek, AnimationRootNode, AnimationTree,
-    BoneAttachment3D, INode3D, MeshInstance3D, Node3D, Skeleton3D, SphereMesh,
+    BoneAttachment3D, INode3D, MeshInstance3D, Node3D, PhysicsRayQueryParameters3D, Skeleton3D,
+    SphereMesh,
 };
 use godot::prelude::*;
 use shooter_sim::hitbox::Activity;
@@ -40,6 +41,41 @@ use crate::viewmodel::{self, WeaponView};
 const OFFLINE_CLIMB_SECONDS: f32 = 0.46;
 /// The climb blends out over this long once a mantle ends (seconds).
 const CLIMB_FADE_OUT: f32 = 0.15;
+/// `Slide_Start` plays from where the hips start dropping to where they are
+/// down, sped up so the body is down as soon as the hit zones (seconds of
+/// the clip, and its speed).
+const SLIDE_START_FROM: f32 = 0.08;
+const SLIDE_START_END: f32 = 0.33;
+const SLIDE_START_SPEED: f32 = 2.0;
+/// `Slide_Exit` plays its rise (from this second of the clip to its end)
+/// over this long once a slide ends.
+const SLIDE_EXIT_FROM: f32 = 0.15;
+const SLIDE_EXIT_SECONDS: f32 = 0.25;
+/// `Jump_Start`'s push-off plays from this second of the clip for this long.
+const TAKEOFF_FROM: f32 = 0.06;
+const TAKEOFF_SECONDS: f32 = 0.25;
+/// A landing after this long in the air bends the knees, fully after this
+/// much longer (as the simulation's landing counts it), for this long. The
+/// hit zones do not crouch on landing, so the bend is held to a share of
+/// `Jump_Land`'s deep squat: a knee flex, not a crouch.
+const LANDING_MIN_AIR: f32 = 0.2;
+const LANDING_FULL_AIR: f32 = 0.4;
+const LANDING_SECONDS: f32 = 0.55;
+const LANDING_FROM: f32 = 0.04;
+const LANDING_WEIGHT: f32 = 0.2;
+/// The torso leans into a start and back out of a stop: this many degrees
+/// at this acceleration (m/s², a walk's start), on a soft spring.
+const MOTION_LEAN_DEGREES: f32 = 6.0;
+const MOTION_LEAN_ACCEL: f32 = 8.0;
+const MOTION_LEAN_STIFFNESS: f32 = 60.0;
+const MOTION_LEAN_DAMPING: f32 = 11.0;
+/// Foot IK runs on bodies standing within this distance of the camera (m),
+/// looks for ground this far above and below the feet, and eases at this
+/// rate. Moving bodies' feet follow their stride.
+const FOOT_IK_DISTANCE: f32 = 15.0;
+const FOOT_RAY_UP: f32 = 0.45;
+const FOOT_RAY_DOWN: f32 = 0.3;
+const FOOT_IK_RATE: f32 = 14.0;
 /// Natural ground speed (m/s) of the zombie walk loop, measured from the planted foot.
 const ZOMBIE_WALK_SPEED: f32 = 0.95;
 /// Zombies slower than this play the shamble alone, sped up to their speed.
@@ -223,6 +259,21 @@ pub struct SoldierRig {
     slide: f32,
     air: f32,
     air_time: f32,
+    /// Transitions: seconds since a slide began and since it ended, since a
+    /// jump left the ground, and since a landing (with its strength).
+    slide_for: Option<f32>,
+    slide_exit: Option<f32>,
+    takeoff: Option<f32>,
+    landing: Option<(f32, f32)>,
+    was_sliding: bool,
+    /// Leaning into starts and back from stops: the last velocity in the
+    /// body's frame and the lean it pulls toward.
+    last_local: Option<Vector3>,
+    motion_lean: Spring,
+    /// Foot IK: the ground's height under each foot (left, right) from the
+    /// ground the body stands on, smoothed, and whether it is on.
+    feet_lift: [f32; 2],
+    feet_on: bool,
     sprint: f32,
     reload_blend: f32,
     reload_progress: f32,
@@ -628,14 +679,83 @@ impl SoldierRig {
             Some(blend) => shooter_sim::movement::crouch_ease(blend),
             None => self.crouch + (crouch_target - self.crouch) * smoothing(12.0, dt),
         };
-        self.slide += (slide_target - self.slide) * smoothing(14.0, dt);
-        self.air_time = if frame.on_floor {
-            0.0
+        // A slide drops in with `Slide_Start` (sped up to be down as soon as
+        // the hit zones are) and gets up with `Slide_Exit`.
+        let sliding = frame.stance == Stance::Sliding;
+        if sliding && !self.was_sliding {
+            self.slide_for = Some(0.0);
+            self.slide_exit = None;
+        } else if !sliding && self.was_sliding {
+            self.slide_for = None;
+            self.slide_exit = Some(0.0);
+        }
+        self.was_sliding = sliding;
+        if let Some(t) = &mut self.slide_for {
+            *t += dt;
+        }
+        self.slide_exit = self
+            .slide_exit
+            .map(|t| t + dt)
+            .filter(|t| *t < SLIDE_EXIT_SECONDS);
+        self.slide = if sliding {
+            (self.slide + dt / 0.04).min(1.0)
+        } else if let Some(t) = self.slide_exit {
+            // Up through the exit, then let the stance take over.
+            1.0 - ((t - (SLIDE_EXIT_SECONDS - 0.1)) / 0.1).clamp(0.0, 1.0)
         } else {
-            self.air_time + dt
+            self.slide + (slide_target - self.slide) * smoothing(14.0, dt)
         };
-        let air_target = if self.air_time > 0.12 { 1.0 } else { 0.0 };
-        self.air += (air_target - self.air) * smoothing(10.0, dt);
+
+        // A jump: the push-off of `Jump_Start` as the feet leave the ground,
+        // the air loop, and a landing (`Jump_Land`) as strong as the fall
+        // was long.
+        let was_on_floor = self.air_time <= 0.0;
+        if frame.on_floor {
+            if self.air_time > LANDING_MIN_AIR {
+                let strength = ((self.air_time - LANDING_MIN_AIR) / LANDING_FULL_AIR).min(1.0);
+                self.landing = Some((0.0, strength));
+            }
+            self.air_time = 0.0;
+            self.takeoff = None;
+        } else {
+            if was_on_floor && frame.velocity.y > 1.5 && frame.alive {
+                self.takeoff = Some(0.0);
+            }
+            self.air_time += dt;
+        }
+        self.takeoff = self
+            .takeoff
+            .map(|t| t + dt)
+            .filter(|t| *t < TAKEOFF_SECONDS);
+        self.landing = self
+            .landing
+            .map(|(t, s)| (t + dt, s))
+            .filter(|(t, _)| *t < LANDING_SECONDS);
+        // A jump goes into the air pose at once; anything else (a step off
+        // an edge, stairs) only once it has been in the air a moment.
+        let air_target = if self.takeoff.is_some() || self.air_time > 0.12 {
+            1.0
+        } else {
+            0.0
+        };
+        let rate = if self.takeoff.is_some() { 25.0 } else { 10.0 };
+        self.air += (air_target - self.air) * smoothing(rate, dt);
+
+        // Leaning into a start and back out of a stop.
+        let local_velocity = Basis::from_axis_angle(Vector3::UP, -frame.yaw) * frame.velocity;
+        let local_velocity = Vector3::new(local_velocity.x, 0.0, local_velocity.z);
+        let grounded = frame.on_floor && !sliding && !frame.mantling;
+        let lean_target = match self.last_local {
+            Some(last) if dt > 0.0 && grounded => {
+                let accel = (local_velocity - last) / dt;
+                let lean = accel * (MOTION_LEAN_DEGREES.to_radians() / MOTION_LEAN_ACCEL);
+                lean.limit_length(Some(MOTION_LEAN_DEGREES.to_radians()))
+            }
+            _ => Vector3::ZERO,
+        };
+        self.last_local = Some(local_velocity);
+        self.motion_lean
+            .step_toward(lean_target, MOTION_LEAN_STIFFNESS, MOTION_LEAN_DAMPING, dt);
 
         let stand_position = if moving {
             gait::stand_position(speed, frame.sprinting)
@@ -709,6 +829,7 @@ impl SoldierRig {
         };
         self.ik += (ik_target - self.ik) * smoothing(if frame.alive { 12.0 } else { 20.0 }, dt);
 
+        self.update_feet(frame, moving || self.step > 0.0, dt);
         let input = self.pose_input(frame);
         if let Some(poser) = &mut self.poser {
             poser.bind_mut().input = input;
@@ -763,7 +884,42 @@ impl SoldierRig {
                 set(tree, "stance/blend_amount", stance.to_variant());
 
                 set(tree, "slide/blend_amount", self.slide.to_variant());
+                let start = self.slide_for.map_or(1.0, |t| {
+                    (t * SLIDE_START_SPEED / (SLIDE_START_END - SLIDE_START_FROM)).min(1.0)
+                });
+                set(tree, "slide_in/blend_amount", (1.0 - start).to_variant());
+                let start_at = SLIDE_START_FROM + self.slide_for.unwrap_or(0.0) * SLIDE_START_SPEED;
+                set(
+                    tree,
+                    "slide_start_seek/seek_request",
+                    start_at.min(SLIDE_START_END).to_variant(),
+                );
+                let exit = self.slide_exit.map_or(0.0, |_| 1.0);
+                set(tree, "slide_out/blend_amount", exit.to_variant());
+                let exit_at = SLIDE_EXIT_FROM
+                    + self.slide_exit.unwrap_or(0.0) / SLIDE_EXIT_SECONDS * (0.5 - SLIDE_EXIT_FROM);
+                set(tree, "slide_exit_seek/seek_request", exit_at.to_variant());
                 set(tree, "air/blend_amount", self.air.to_variant());
+                let push = self
+                    .takeoff
+                    .map_or(0.0, |t| 1.0 - (t / TAKEOFF_SECONDS).clamp(0.0, 1.0));
+                set(tree, "jump_in/blend_amount", push.to_variant());
+                set(
+                    tree,
+                    "jump_start_seek/seek_request",
+                    (TAKEOFF_FROM + self.takeoff.unwrap_or(0.0)).to_variant(),
+                );
+                let (land_at, land) = self.landing.map_or((0.0, 0.0), |(t, s)| {
+                    let envelope = (t / 0.04).min(1.0)
+                        * (1.0 - ((t - 0.3) / (LANDING_SECONDS - 0.3)).clamp(0.0, 1.0));
+                    (t, s * envelope * LANDING_WEIGHT)
+                });
+                set(tree, "land/blend_amount", land.to_variant());
+                set(
+                    tree,
+                    "land_seek/seek_request",
+                    (LANDING_FROM + land_at).to_variant(),
+                );
                 let hold = if self.weapon.is_some() && frame.alive {
                     1.0f32
                 } else {
@@ -774,6 +930,54 @@ impl SoldierRig {
             self.was_mantling = frame.mantling;
             tree.advance(f64::from(dt));
         }
+    }
+
+    /// Foot IK for a body near the camera standing on the ground: one ray
+    /// down under each foot finds the ground, and the lifts ease toward it.
+    fn update_feet(&mut self, frame: &SoldierFrame, moving: bool, dt: f32) {
+        let origin = self.base().get_global_position();
+        let near = self
+            .base()
+            .get_viewport()
+            .and_then(|v| v.get_camera_3d())
+            .is_some_and(|c| c.get_global_position().distance_to(origin) < FOOT_IK_DISTANCE);
+        let grounded = frame.alive
+            && frame.on_floor
+            && !frame.mantling
+            && frame.stance != Stance::Sliding
+            && self.air < 0.05;
+        let mut target = [0.0f32; 2];
+        if near && grounded && !moving {
+            let seen = self.poser.as_ref().map(|p| p.bind().feet_seen);
+            let space = self
+                .base()
+                .get_world_3d()
+                .and_then(|w| w.get_direct_space_state());
+            if let (Some(seen), Some(mut space)) = (seen, space) {
+                for (i, foot) in seen.into_iter().enumerate() {
+                    if foot == Vector3::ZERO {
+                        continue;
+                    }
+                    let top = Vector3::new(foot.x, origin.y + FOOT_RAY_UP, foot.z);
+                    let bottom = Vector3::new(foot.x, origin.y - FOOT_RAY_DOWN, foot.z);
+                    let Some(query) = PhysicsRayQueryParameters3D::create_ex(top, bottom)
+                        .collision_mask(1)
+                        .done()
+                    else {
+                        continue;
+                    };
+                    let hit = space.intersect_ray(&query);
+                    if let Some(at) = hit.get("position").and_then(|p| p.try_to::<Vector3>().ok()) {
+                        target[i] = (at.y - origin.y).clamp(-FOOT_RAY_DOWN, FOOT_RAY_UP);
+                    }
+                }
+            }
+        }
+        let k = smoothing(FOOT_IK_RATE, dt);
+        for (lift, target) in self.feet_lift.iter_mut().zip(target) {
+            *lift += (target - *lift) * k;
+        }
+        self.feet_on = self.feet_lift.iter().any(|l| l.abs() > 0.002);
     }
 
     /// The animation progress the body is drawn at: what its hit zones pose.
@@ -949,7 +1153,7 @@ impl SoldierRig {
             lower_yaw: self.lower_yaw,
             turn: if frame.alive { self.turn } else { 0.0 },
             pitch: frame.pitch.clamp(-carry::MAX_PITCH, carry::MAX_PITCH) * slide,
-            lean: self.lean.value + Vector3::new(0.0, 0.0, -0.3) * lunge,
+            lean: self.lean.value + self.motion_lean.value + Vector3::new(0.0, 0.0, -0.3) * lunge,
             head_lean: self.head.value,
             twist: self.twist.value,
             arm_loose: self
@@ -965,6 +1169,7 @@ impl SoldierRig {
             trigger_off: carry.trigger_off(),
             knife: knife.0,
             knife_at: knife.1,
+            feet: (self.feet_on && frame.alive).then_some(self.feet_lift),
         }
     }
 
@@ -1261,8 +1466,39 @@ impl SoldierRig {
         add("stance", AnimationNodeBlend2::new_gd().upcast(), 2.0);
 
         add("slide_clip", clip("ual2/Slide").upcast(), 2.0);
+        // Getting down into a slide and up out of it, each seeked by the rig.
+        let once = |name: &str| {
+            let mut a = clip(name);
+            a.set_loop_mode(godot::classes::animation::LoopMode::NONE);
+            a
+        };
+        add("slide_start_clip", once("ual2/Slide_Start").upcast(), 2.0);
+        add(
+            "slide_start_seek",
+            AnimationNodeTimeSeek::new_gd().upcast(),
+            2.0,
+        );
+        add("slide_in", AnimationNodeBlend2::new_gd().upcast(), 2.5);
+        add("slide_exit_clip", once("ual2/Slide_Exit").upcast(), 2.0);
+        add(
+            "slide_exit_seek",
+            AnimationNodeTimeSeek::new_gd().upcast(),
+            2.0,
+        );
+        add("slide_out", AnimationNodeBlend2::new_gd().upcast(), 2.5);
         add("slide", AnimationNodeBlend2::new_gd().upcast(), 3.0);
         add("jump_clip", clip("ual1/Jump").upcast(), 3.0);
+        // The push-off as a jump leaves the ground, and the landing.
+        add("jump_start_clip", once("ual1/Jump_Start").upcast(), 3.0);
+        add(
+            "jump_start_seek",
+            AnimationNodeTimeSeek::new_gd().upcast(),
+            3.0,
+        );
+        add("jump_in", AnimationNodeBlend2::new_gd().upcast(), 3.5);
+        add("land_clip", once("ual1/Jump_Land").upcast(), 4.0);
+        add("land_seek", AnimationNodeTimeSeek::new_gd().upcast(), 4.0);
+        add("land", AnimationNodeBlend2::new_gd().upcast(), 4.5);
         add("air", AnimationNodeBlend2::new_gd().upcast(), 4.0);
         // A mantle: the whole climb clip over the mantle, seeked to its
         // progress (timeline stretched to one second).
@@ -1292,11 +1528,23 @@ impl SoldierRig {
             ("stance", 0, "stand"),
             ("stance", 1, "crouch"),
             ("slide", 0, "stance"),
-            ("slide", 1, "slide_clip"),
+            ("slide_start_seek", 0, "slide_start_clip"),
+            ("slide_in", 0, "slide_clip"),
+            ("slide_in", 1, "slide_start_seek"),
+            ("slide_exit_seek", 0, "slide_exit_clip"),
+            ("slide_out", 0, "slide_in"),
+            ("slide_out", 1, "slide_exit_seek"),
+            ("slide", 1, "slide_out"),
             ("air", 0, "slide"),
-            ("air", 1, "jump_clip"),
+            ("jump_start_seek", 0, "jump_start_clip"),
+            ("jump_in", 0, "jump_clip"),
+            ("jump_in", 1, "jump_start_seek"),
+            ("air", 1, "jump_in"),
+            ("land_seek", 0, "land_clip"),
+            ("land", 0, "air"),
+            ("land", 1, "land_seek"),
             ("climb_seek", 0, "climb_clip"),
-            ("climb", 0, "air"),
+            ("climb", 0, "land"),
             ("climb", 1, "climb_seek"),
             ("hold", 0, "climb"),
             ("hold", 1, "hold_clip"),
