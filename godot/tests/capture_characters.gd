@@ -8,9 +8,11 @@ extends SceneTree
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
 ##     --script res://tests/capture_characters.gd
 ## CAPTURE_SETS picks sections (comma list of lineups, poses, turntable, hands,
-## fp, horde, bodies, faces; default all).
+## fp, horde, bodies, faces, wounds; default all). CAPTURE_WEAPONS limits the first-person
+## set to some weapons (comma list).
 
 const SOLDIER := preload("res://scenes/characters/soldier.tscn")
+const ZOMBIE_BODY := preload("res://scenes/characters/zombie_body.tscn")
 const DISTANCES := [2.0, 10.0, 30.0, 60.0]
 const TEAMS := ["ally", "enemy"]
 
@@ -47,6 +49,8 @@ func _run() -> void:
 		await _bodies()
 	if _wants("faces"):
 		await _faces()
+	if _wants("wounds"):
+		await _wounds()
 	settings.reset_to_defaults()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://capture_characters.cfg"))
 	quit()
@@ -327,7 +331,10 @@ func _first_person() -> void:
 		layer.visible = false
 	player.set_look(0.0, -0.05)
 	await _sixtieths(60)
-	for weapon in ["m4", "ak47", "m1911", "m870", "m40", "pdw9"]:
+	var weapons := ["m4", "ak47", "m1911", "m870", "m40", "pdw9"]
+	if not OS.get_environment("CAPTURE_WEAPONS").is_empty():
+		weapons = Array(OS.get_environment("CAPTURE_WEAPONS").split(","))
+	for weapon: String in weapons:
 		player.give_weapon(weapon)
 		# A pickup fills its slot; switch to it (the pistol is the second slot).
 		var slot := "weapon_2" if weapon == "m1911" else "weapon_1"
@@ -351,6 +358,9 @@ func _first_person() -> void:
 				await _sixtieths(36)
 				await _shot("fp_%s_inspect_%d" % [weapon, i])
 			await _sixtieths(60)
+	if "m4" not in weapons:
+		await _close(scene)
+		return
 	player.give_weapon("m4")
 	Input.action_press("weapon_1")
 	await _sixtieths(2)
@@ -421,9 +431,7 @@ func _bodies() -> void:
 	var camera := _camera(scene, 40.0)
 	var bodies: Array[SoldierRig] = []
 	for i in 12:
-		var zombie := (
-			(load("res://scenes/characters/zombie_body.tscn") as PackedScene).instantiate()
-		)
+		var zombie := ZOMBIE_BODY.instantiate()
 		scene.add_child(zombie)
 		var rig := zombie as SoldierRig
 		rig.global_position = Vector3(-6.6 + i * 1.2, 0, 10)
@@ -483,6 +491,41 @@ func _faces() -> void:
 			await _shot("faces_%s_%d" % [TEAMS[team], i])
 		for soldier in row:
 			soldier.queue_free()
+		await _frames(2)
+	camera.queue_free()
+	await _close(scene)
+
+
+func _wounds() -> void:
+	# Wound marks (wounds.rs): each team hit in the chest, the shoulder, and
+	# the thigh, and a zombie hit in the chest, a second after the hits.
+	var scene := await _open("res://scenes/main.tscn")
+	var camera := _camera(scene, 35.0)
+	var hits := [Vector3(0.05, 1.3, -0.13), Vector3(-0.2, 1.42, -0.04), Vector3(0.1, 0.75, -0.09)]
+	for i in 3:
+		var rig: SoldierRig
+		if i < 2:
+			rig = SOLDIER.instantiate() as SoldierRig
+			scene.add_child(rig)
+			rig.set_team_index(i)
+		else:
+			rig = ZOMBIE_BODY.instantiate() as SoldierRig
+			scene.add_child(rig)
+		rig.global_position = Vector3(-1.2 + i * 1.2, 0, 10)
+		for frame in 20:
+			rig.drive({"weapon": "" if i == 2 else "m4", "yaw": PI}, 1.0 / 60.0)
+			await process_frame
+		for hit: Vector3 in hits:
+			var at: Vector3 = rig.global_position + Vector3(-hit.x, hit.y, -hit.z)
+			rig.take_hit_at(Vector3(0, 0, -1), false, at, -1, 4.0)
+		for frame in 60:
+			rig.drive({"weapon": "" if i == 2 else "m4", "yaw": PI}, 1.0 / 60.0)
+			await process_frame
+		camera.look_at_from_position(
+			rig.global_position + Vector3(0.25, 1.25, 1.5), rig.global_position + Vector3(0, 1.1, 0)
+		)
+		await _shot("wounds_%d" % i)
+		rig.queue_free()
 		await _frames(2)
 	camera.queue_free()
 	await _close(scene)

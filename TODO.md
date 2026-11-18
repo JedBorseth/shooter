@@ -254,7 +254,7 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
   - [x] Lit muzzle smoke that stays in the world, lingering barrel smoke after sustained fire, and a muzzle light that stays on its side of walls.
   - [ ] Muzzle flash flipbooks per weapon class, soft (depth-faded) smoke in third person, and heat haze on High.
   - [x] An explosion and fire effect with an API for grenades (`CombatEffects.explosion`, `CombatEffects.fire`); frag grenades use the explosion.
-  - [ ] A wound mark where a character was hit (character shader).
+  - [x] A wound mark where a character was hit (character shader, `wounds.rs`).
 - [x] Skyline windows with fake rooms behind them (interior mapping in `world.gdshader`), and bump-mapped cloth, leather, and creases on characters.
 - [x] Soldiers as believable people: a MakeHuman body fitted to the existing skeleton, a combat shirt and trousers, modelled kit (helmet with cover and mounts, glasses, balaclava or neck gaiter or a bare face per character, plate carrier with pouches, magazines and a radio, belt and holster, knee pads), all in one mesh with one baked texture atlas and a team tint (`tools/build_character_assets.py`).
 - [x] Zombies as distinct people: five MakeHuman bodies (age, build, skin, one a woman) in their own civilian clothes, picked per zombie (`zombie_body.tscn`, `SoldierRig.variants`).
