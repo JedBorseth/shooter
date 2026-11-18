@@ -301,22 +301,6 @@ pub fn zombie_eye_material() -> Gd<StandardMaterial3D> {
     m
 }
 
-/// An unshaded additive overlay that tints the whole body when hit.
-pub fn hit_flash_material() -> Gd<ShaderMaterial> {
-    let mut m = ShaderMaterial::new_gd();
-    m.set_shader(&load::<Shader>("res://shaders/character_flash.gdshader"));
-    set_flash(&mut m, 0.0);
-    m
-}
-
-/// The hit flash's strength, 0 (off) to 1.
-pub fn set_flash(material: &mut Gd<ShaderMaterial>, alpha: f32) {
-    material.set_shader_parameter(
-        "colour",
-        &Color::from_rgba(1.0, 0.25, 0.1, alpha).to_variant(),
-    );
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

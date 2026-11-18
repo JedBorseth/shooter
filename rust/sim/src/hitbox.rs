@@ -136,6 +136,42 @@ impl HitboxPose {
 
 /// Number of shapes [`hitboxes`] returns.
 pub const COUNT: usize = 13;
+/// What each shape [`hitboxes`] returns covers, in order: the bone of the
+/// drawn body nearest it. Hit reactions and ragdolls push that bone.
+pub const SHAPE_PARTS: [BodyPart; COUNT] = [
+    BodyPart::Head,
+    BodyPart::Head,
+    BodyPart::Chest,
+    BodyPart::Spine,
+    BodyPart::LeftUpperArm,
+    BodyPart::LeftLowerArm,
+    BodyPart::RightUpperArm,
+    BodyPart::RightLowerArm,
+    BodyPart::LeftUpperLeg,
+    BodyPart::LeftLowerLeg,
+    BodyPart::RightUpperLeg,
+    BodyPart::RightLowerLeg,
+    BodyPart::Hips,
+];
+/// The index of the chest shape in [`hitboxes`] (a knife strike lands there).
+pub const CHEST_SHAPE: usize = 2;
+
+/// The parts a body is cut into for hit reactions and ragdolls.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum BodyPart {
+    Hips,
+    Spine,
+    Chest,
+    Head,
+    LeftUpperArm,
+    LeftLowerArm,
+    RightUpperArm,
+    RightLowerArm,
+    LeftUpperLeg,
+    LeftLowerLeg,
+    RightUpperLeg,
+    RightLowerLeg,
+}
 
 /// One base pose: skeleton points with level aim, in body space.
 #[derive(Clone, Copy)]
@@ -161,14 +197,14 @@ const fn m(x: Vec3, y: Vec3, z: Vec3) -> Mat3 {
 }
 
 /// Radii: head, neck, chest, stomach, upper arm, forearm, thigh, shin.
-const HEAD_RADIUS: f32 = 0.135;
-const NECK_RADIUS: f32 = 0.065;
-const CHEST_RADIUS: f32 = 0.2;
-const STOMACH_RADIUS: f32 = 0.17;
-const UPPER_ARM_RADIUS: f32 = 0.055;
-const FOREARM_RADIUS: f32 = 0.05;
-const THIGH_RADIUS: f32 = 0.085;
-const SHIN_RADIUS: f32 = 0.065;
+pub const HEAD_RADIUS: f32 = 0.135;
+pub const NECK_RADIUS: f32 = 0.065;
+pub const CHEST_RADIUS: f32 = 0.2;
+pub const STOMACH_RADIUS: f32 = 0.17;
+pub const UPPER_ARM_RADIUS: f32 = 0.055;
+pub const FOREARM_RADIUS: f32 = 0.05;
+pub const THIGH_RADIUS: f32 = 0.085;
+pub const SHIN_RADIUS: f32 = 0.065;
 
 impl BasePose {
     fn lerp(&self, to: &BasePose, t: f32) -> BasePose {

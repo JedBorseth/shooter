@@ -313,6 +313,8 @@ struct Avatar {
     /// flinch (see `PlayerView::hits`).
     hits: u8,
     hit_heading: u8,
+    /// Where the latest hit landed and how hard (`protocol::HitPart`).
+    hit_part: u8,
     /// Stride phase and reload and mantle progress, sent in snapshots.
     clock: BodyClock,
     /// Gun Game: this player's place on the weapon ladder.
@@ -1117,6 +1119,7 @@ impl NetServer {
             score: ScoreState::default(),
             hits: 0,
             hit_heading: 0,
+            hit_part: 0,
             clock: BodyClock::default(),
             progress: Progress::default(),
             hill: HillTime::default(),
@@ -1620,6 +1623,7 @@ impl NetServer {
             headshot: false,
             distance: strike.eye.distance_to(chest),
             direction: (feet - strike.feet).normalize_or_zero(),
+            part: shooter_sim::hitbox::CHEST_SHAPE as u8,
         };
         let attack = Attack {
             attacker: strike.attacker,
@@ -1780,6 +1784,8 @@ impl NetServer {
             let travel = victim.predicted.position - origin;
             victim.hits = victim.hits.wrapping_add(1);
             victim.hit_heading = protocol::heading_to_u8(travel.x, travel.z);
+            victim.hit_part =
+                protocol::HitPart::new(Some(hit.part), hit.damage, attack.melee).to_u8();
             self.send_event(
                 attack.attacker,
                 GameEvent::Hit {
@@ -2869,6 +2875,7 @@ impl NetServer {
                 PlayerView {
                     hits: a.hits,
                     hit_heading: a.hit_heading,
+                    hit_part: a.hit_part,
                     ..PlayerView::from_state(a.id, &a.predicted, a.yaw, a.pitch)
                 }
                 .with_progress(a.clock.progress())

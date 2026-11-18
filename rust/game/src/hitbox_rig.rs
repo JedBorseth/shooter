@@ -171,6 +171,8 @@ impl HitboxRig {
         body.set_collision_layer(0);
         body.set_collision_mask(0);
         body.set_meta("hit_zone", &hb.zone.name().to_variant());
+        // Which shape this is, for the hit reaction and the fall.
+        body.set_meta("hit_part", &(index as i64).to_variant());
         body.set_meta("surface", &"flesh".to_variant());
 
         let mut collision = CollisionShape3D::new_alloc();

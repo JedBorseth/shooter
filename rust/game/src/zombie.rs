@@ -22,6 +22,7 @@ use shooter_sim::rng;
 use shooter_sim::zombies::{self, Attack, AttackEvent, ZombieRules};
 
 use crate::aim_assist::AimAssistTarget;
+use crate::character::corpses::{self, CorpseYard};
 use crate::character::rig::{SoldierFrame, SoldierRig, wrap_angle};
 use crate::convert::{to_godot, to_sim};
 use crate::hitbox_rig::HitboxRig;
@@ -65,7 +66,8 @@ pub struct Zombie {
     #[export]
     #[init(val = 1.4)]
     speed: f32,
-    /// Seconds a body stays on the ground before it is removed.
+    /// Seconds before a dead zombie is removed (its voice finishes). Its body
+    /// lies on in the scene's corpse yard.
     #[export]
     #[init(val = 4.0)]
     corpse_time: f32,
@@ -110,6 +112,8 @@ pub struct Zombie {
     anim_frames: u32,
     anim_time: f32,
     seed: u32,
+    /// The dead body has gone to the corpse yard.
+    body_left: bool,
 }
 
 #[godot_api]
@@ -141,10 +145,22 @@ impl ICharacterBody3D for Zombie {
         if !(self.anim_frames + self.seed).is_multiple_of(every) && self.is_alive() {
             return;
         }
+        if self.body_left {
+            return;
+        }
         let frame = self.frame(self.moved);
         let dt = std::mem::take(&mut self.anim_time);
         self.anim_frames = 0;
         self.rig.bind_mut().update(&frame, dt);
+        if !self.is_alive() {
+            // The body falls and lies in the scene's yard, past this node's
+            // own removal.
+            self.body_left = true;
+            let tree = self.base().get_tree();
+            CorpseYard::of(&tree)
+                .bind_mut()
+                .adopt(self.rig.clone(), corpses::ZOMBIE_SECONDS);
+        }
     }
 
     fn physics_process(&mut self, delta: f64) {
@@ -279,10 +295,20 @@ impl Zombie {
         killed
     }
 
-    /// Flinch from a hit travelling along `direction`, or fall away from the killing shot.
+    /// Flinch from a hit travelling along `direction` that landed at `point`
+    /// on hit shape `part` (-1 unknown) with force level `force`, or fall
+    /// with the killing shot's push.
     #[func]
-    pub fn react_to_hit(&mut self, direction: Vector3, killed: bool) {
-        self.rig.bind_mut().hit(direction, killed);
+    pub fn react_to_hit(
+        &mut self,
+        direction: Vector3,
+        killed: bool,
+        point: Vector3,
+        part: i64,
+        force: f32,
+    ) {
+        let push = crate::character::rig::push_of(direction, point, part, force);
+        self.rig.bind_mut().hit_at(push, killed);
     }
 
     #[func]

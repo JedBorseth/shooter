@@ -108,11 +108,21 @@ impl TargetDummy {
         killed
     }
 
-    /// Visual reaction to a hit from a shot travelling along `direction` (world
-    /// space): a flinch, or on a kill, a fall away from the shooter.
+    /// Visual reaction to a hit from a shot travelling along `direction`
+    /// (world space) that landed at `point` on hit shape `part` (-1 unknown)
+    /// with force level `force`: a flinch, or on a kill, a fall with the
+    /// shot's push.
     #[func]
-    pub fn react_to_hit(&mut self, direction: Vector3, killed: bool) {
-        self.rig.bind_mut().hit(direction, killed);
+    pub fn react_to_hit(
+        &mut self,
+        direction: Vector3,
+        killed: bool,
+        point: Vector3,
+        part: i64,
+        force: f32,
+    ) {
+        let push = crate::character::rig::push_of(direction, point, part, force);
+        self.rig.bind_mut().hit_at(push, killed);
     }
 
     #[func]

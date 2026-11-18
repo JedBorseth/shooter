@@ -24,7 +24,8 @@ use shooter_sim::weapon::WeaponId;
 use crate::acoustics::zone_at;
 use crate::aim_assist::AimAssistTarget;
 use crate::bullets::ShotTracer;
-use crate::character::rig::{SoldierFrame, SoldierRig};
+use crate::character::corpses::{self, CorpseYard};
+use crate::character::rig::{SoldierFrame, SoldierRig, push_of};
 use crate::convert::{to_godot, to_sim};
 use crate::footsteps::{Foley, Motion, RemoteReload};
 use crate::gunfire::Gunfire;
@@ -66,6 +67,11 @@ pub struct RemotePlayer {
     #[init(val = true)]
     alive: bool,
     stance_eye: f32,
+    /// Whether the body was last drawn alive (`None` before the first sample).
+    drawn_alive: Option<bool>,
+    /// The team colours the body wears (`SoldierRig::set_team_index`).
+    #[init(val = 1)]
+    team_index: i32,
 }
 
 #[godot_api]
@@ -129,8 +135,16 @@ impl RemotePlayer {
     }
 
     #[func]
-    pub fn react_to_hit(&mut self, direction: Vector3, killed: bool) {
-        self.rig.bind_mut().hit(direction, killed);
+    pub fn react_to_hit(
+        &mut self,
+        direction: Vector3,
+        killed: bool,
+        point: Vector3,
+        part: i64,
+        force: f32,
+    ) {
+        let push = push_of(direction, point, part, force);
+        self.rig.bind_mut().hit_at(push, killed);
     }
 
     /// Footsteps this player has made audible to us (tests).
@@ -186,6 +200,7 @@ impl RemotePlayer {
             meleeing: false,
             hits: 0,
             hit_heading: 0,
+            hit_part: 0,
             progress: Progress::default(),
         };
         let sample = self.with_test_progress(sample, None, delta);
@@ -242,6 +257,7 @@ impl RemotePlayer {
             meleeing: b("meleeing", false),
             hits: 0,
             hit_heading: 0,
+            hit_part: 0,
             progress: Progress::default(),
         };
         let set = TestProgress {
@@ -260,6 +276,9 @@ struct TestProgress {
     reload: Option<f32>,
     mantle: Option<f32>,
 }
+
+/// The body every player wears.
+const SOLDIER_SCENE: &str = "res://scenes/characters/soldier.tscn";
 
 /// A made-up mantle (tests) lasts this long, as a mantle up a metre does.
 const TEST_MANTLE_SECONDS: f32 = 0.42;
@@ -309,6 +328,31 @@ impl RemotePlayer {
         }
     }
 
+    /// Hands the dying body to the corpse yard and puts a fresh one in its
+    /// place, hidden until the player is alive again.
+    fn leave_body(&mut self) {
+        if !self.base().is_inside_tree() {
+            return;
+        }
+        let Some(mut fresh) = try_load::<PackedScene>(SOLDIER_SCENE)
+            .ok()
+            .and_then(|scene| scene.try_instantiate_as::<SoldierRig>())
+        else {
+            godot_error!("RemotePlayer: cannot make a new body from {SOLDIER_SCENE}");
+            return;
+        };
+        let tree = self.base().get_tree();
+        CorpseYard::of(&tree)
+            .bind_mut()
+            .adopt(self.rig.clone(), corpses::SOLDIER_SECONDS);
+        fresh.set_name("Soldier");
+        fresh.set_visible(false);
+        self.base_mut().add_child(&fresh);
+        let team = self.team_index;
+        fresh.bind_mut().set_team_index(team);
+        *self.rig = fresh;
+    }
+
     pub fn set_display_name(&mut self, name: &str) {
         self.name_label.set_text(name);
     }
@@ -316,9 +360,9 @@ impl RemotePlayer {
     /// Teammates wear the allies' colours, show their name, and take no hits
     /// from us; everyone else wears the enemies' colours.
     pub fn set_friendly(&mut self, friendly: bool) {
-        self.rig
-            .bind_mut()
-            .set_team_index(if friendly { 0 } else { 1 });
+        self.team_index = if friendly { 0 } else { 1 };
+        let team = self.team_index;
+        self.rig.bind_mut().set_team_index(team);
         self.base_mut().set_meta("friendly", &friendly.to_variant());
         self.friendly = friendly;
         self.sided = true;
@@ -369,6 +413,23 @@ impl RemotePlayer {
         }
         self.last_position = Some(position);
 
+        // A hit from anyone: flinch away from it, or, if it killed, fall with
+        // its push (before the body is drawn dead below).
+        let hit = self.hits.is_some_and(|last| s.hits != last);
+        self.hits = Some(s.hits);
+        if hit {
+            self.hits_seen += 1;
+            let (x, z) = protocol::hit_direction(s.hit_heading);
+            let part = protocol::HitPart::from_u8(s.hit_part);
+            let push = push_of(
+                Vector3::new(x, 0.0, z),
+                Vector3::ZERO,
+                part.part.map_or(-1, i64::from),
+                f32::from(part.force),
+            );
+            self.rig.bind_mut().hit_at(push, !s.alive);
+        }
+
         // Drawn at the moment of each animation the snapshot names, which is
         // the moment its hit zones are posed at.
         let reload = (s.reloading && s.alive).then_some(s.progress.reload);
@@ -389,18 +450,27 @@ impl RemotePlayer {
             mantle_progress: s.mantling.then_some(s.progress.mantle),
             crouch: Some(s.crouch),
         };
-        self.rig.bind_mut().update(&frame, delta);
+        match (self.drawn_alive, s.alive) {
+            // Dead: the body that died lies where it fell, in the scene's
+            // corpse yard, and a fresh one waits hidden for the respawn.
+            (Some(true), false) => {
+                self.rig.bind_mut().update(&frame, delta);
+                self.leave_body();
+            }
+            (_, false) => {}
+            (_, true) => {
+                if !self.rig.is_visible() {
+                    self.rig.set_visible(true);
+                }
+                self.rig.bind_mut().update(&frame, delta);
+            }
+        }
+        if self.drawn_alive.is_none() && !s.alive {
+            self.rig.set_visible(false);
+        }
+        self.drawn_alive = Some(s.alive);
         // The server rewinds exactly this pose when it checks our shots.
         self.hitboxes.bind_mut().set_pose(s.hitbox_pose());
-
-        // A hit from anyone: flinch away from it (or fall away, if it killed).
-        let hit = self.hits.is_some_and(|last| s.hits != last);
-        self.hits = Some(s.hits);
-        if hit {
-            self.hits_seen += 1;
-            let (x, z) = protocol::hit_direction(s.hit_heading);
-            self.rig.bind_mut().hit(Vector3::new(x, 0.0, z), !s.alive);
-        }
 
         if let Some(gunfire) = &mut self.gunfire {
             gunfire.update(delta);

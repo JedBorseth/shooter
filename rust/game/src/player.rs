@@ -45,7 +45,7 @@ use shooter_sim::look::{
 use shooter_sim::melee;
 use shooter_sim::movement::{MoveEnv, Stance};
 use shooter_sim::net::prediction::{ErrorSmoothing, Prediction, Reconciled};
-use shooter_sim::net::protocol::{OwnState, Predicted};
+use shooter_sim::net::protocol::{self, OwnState, Predicted};
 use shooter_sim::net::subtick;
 use shooter_sim::player::{self, FireAim, PlayerEvent, PlayerInput, PlayerParams, PlayerState};
 use shooter_sim::score::{Kill, ScoreRules, ScoreState, ScoreTotals, Scored};
@@ -99,6 +99,10 @@ const LAND_NOD_STIFFNESS: f32 = 120.0;
 const LAND_NOD_ZETA: f32 = 0.7;
 const FLINCH_STIFFNESS: f32 = 160.0;
 const FLINCH_DAMPING: f32 = 16.0;
+/// One target a shot hit: the node, summed damage, any headshot, the first
+/// pellet's direction and distance, and where it landed (point and hit shape).
+type ShotTarget = (Gd<Node>, f32, bool, Vector3, f32, Vector3, i64);
+
 /// The death camera: how far behind the body and how high it settles.
 const DEATH_CAMERA_BACK: f32 = 2.4;
 const DEATH_CAMERA_HEIGHT: f32 = 1.5;
@@ -1938,9 +1942,16 @@ impl FpsPlayer {
         .try_to::<bool>()
         .unwrap_or(false);
         if target.has_method("react_to_hit") {
+            let force = protocol::HitPart::new(None, melee::DAMAGE, true).force;
             target.call(
                 "react_to_hit",
-                &[direction.to_variant(), killed.to_variant()],
+                &[
+                    direction.to_variant(),
+                    killed.to_variant(),
+                    chest.to_variant(),
+                    (shooter_sim::hitbox::CHEST_SHAPE as i64).to_variant(),
+                    f32::from(force).to_variant(),
+                ],
             );
         }
         let normal = -direction;
@@ -1977,8 +1988,8 @@ impl FpsPlayer {
         let def = weapon.def();
         let origin = self.eye_position();
         // Per target: summed damage, any headshot, direction of the first pellet
-        // to hit, and its distance.
-        let mut targets: Vec<(Gd<Node>, f32, bool, Vector3, f32)> = Vec::new();
+        // to hit, its distance, and where it landed (point and hit shape).
+        let mut targets: Vec<ShotTarget> = Vec::new();
         let mut first_end = None;
 
         let Some(mut space) = self
@@ -2048,7 +2059,23 @@ impl FpsPlayer {
                             entry.1 += damage;
                             entry.2 |= headshot;
                         }
-                        None => targets.push((target, damage, headshot, direction, distance)),
+                        None => {
+                            let part = collider
+                                .get_meta_ex("hit_part")
+                                .default(&(-1i64).to_variant())
+                                .done()
+                                .try_to::<i64>()
+                                .unwrap_or(-1);
+                            targets.push((
+                                target,
+                                damage,
+                                headshot,
+                                direction,
+                                distance,
+                                hit.position,
+                                part,
+                            ));
+                        }
                     }
                     let surface =
                         surface_meta(Some(collider)).unwrap_or_else(|| "flesh".to_owned());
@@ -2070,7 +2097,7 @@ impl FpsPlayer {
 
         let mut confirmed = None;
         let mut kills = Vec::new();
-        for (mut target, damage, headshot, direction, distance) in targets {
+        for (mut target, damage, headshot, direction, distance, point, part) in targets {
             let killed = target
                 .call(
                     "apply_damage",
@@ -2079,9 +2106,16 @@ impl FpsPlayer {
                 .try_to::<bool>()
                 .unwrap_or(false);
             if target.has_method("react_to_hit") {
+                let force = protocol::HitPart::new(None, damage, false).force;
                 target.call(
                     "react_to_hit",
-                    &[direction.to_variant(), killed.to_variant()],
+                    &[
+                        direction.to_variant(),
+                        killed.to_variant(),
+                        point.to_variant(),
+                        part.to_variant(),
+                        f32::from(force).to_variant(),
+                    ],
                 );
             }
             if killed {
