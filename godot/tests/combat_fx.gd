@@ -263,6 +263,26 @@ func _capture() -> void:
 		Input.action_release("fire")
 		await _hold(0.0, -0.02, 120)
 		await _shot("%s_holes" % preset)
+		# The burst's cases on the ground at the player's feet, and the
+		# dummies' own cases from third person.
+		await _hold(-0.5, -1.05, 30)
+		await _shot("%s_cases_feet" % preset)
+		for i in 24:
+			for soldier: Node in [
+				_soldiers[0].get_node("Soldier"), _soldiers[1].get_node("Soldier")
+			]:
+				if i % 3 == 0:
+					soldier.shoot()
+			_player.global_position = Vector3(-13.6, 0.1, 1.4)
+			_player.set_look(0.1, -0.35)
+			await process_frame
+			if i == 4:
+				await _shot("%s_cases_third_person" % preset)
+		for i in 90:
+			_player.global_position = Vector3(-13.6, 0.1, 1.4)
+			_player.set_look(0.1, -0.5)
+			await process_frame
+		await _shot("%s_cases_landed" % preset)
 		await _unload()
 
 

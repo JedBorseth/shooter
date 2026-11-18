@@ -132,6 +132,30 @@ func _run() -> void:
 		if f.has_method("stop"):
 			f.stop()
 
+	# Fired cases fly, clink, and come to rest on the floor, within budget.
+	var clinks: int = effects.clinks_played()
+	effects.throw_test_case("Case556", Vector3(0, 1.2, -3), Vector3(2, 1, 0))
+	await _frames(240)
+	_check(effects.cases_resting() >= 1, "a case comes to rest")
+	_check(effects.clinks_played() > clinks, "a landing case clinks")
+	var lying: Node3D = null
+	for child in effects.get_children():
+		if child is MeshInstance3D and child.mesh != null and child.mesh.get_aabb().size.y > 0.04:
+			lying = child
+	_check(lying != null and absf(lying.global_position.y - 0.005) < 0.01, "it lies on the floor")
+	for i in 60:
+		effects.throw_test_case("Case9mm", Vector3(0, 1.2, -3), Vector3(1, 1, 0))
+	_check(effects.cases_kept() <= effects.budget()["cases"], "cases stay within the budget")
+	# Other players' weapons throw theirs.
+	var thrown: int = effects.cases_thrown()
+	var rifleman := SOLDIER_SCENE.instantiate()
+	level.add_child(rifleman)
+	rifleman.global_position = Vector3(2, 0, -4)
+	rifleman.drive({"weapon": "m4", "on_floor": true}, 1.0 / 60.0)
+	await _frames(2)
+	rifleman.shoot()
+	_check(effects.cases_thrown() == thrown + 1, "a third-person shot throws a case")
+
 	# Impacts hide once their particles are done, so an idle pool draws nothing.
 	await _frames(240)
 	_check(effects.impacts_visible() == 0, "finished impacts hide")

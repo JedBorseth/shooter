@@ -275,6 +275,8 @@ const CAPTURE_FRAMES: u32 = 3;
 #[class(init, base = Node3D)]
 pub struct SoldierRig {
     base: Base<Node3D>,
+    /// Rounds fired, for varied cases.
+    cases: u32,
 
     /// 0: the player's side (tan, blue accents). 1: enemies (charcoal, red-orange).
     #[export]
@@ -1088,6 +1090,16 @@ impl SoldierRig {
         if let Some((id, view)) = &mut self.weapon {
             view.bind_mut().flash_world();
             scale = recoil_scale(id.def());
+        }
+        // Its fired case, into the local player's world pool.
+        self.cases = self.cases.wrapping_add(1);
+        let tree = self.base().get_tree();
+        if let (Some((_, view)), Some(mut effects)) = (
+            self.weapon.clone(),
+            crate::effects::CombatEffects::find(&tree),
+        ) {
+            let mut view = view;
+            view.bind_mut().eject_world_case(&mut effects, self.cases);
         }
         // The gun kicks as hard as the weapon kicks, and the shoulder and
         // spine take some of it.
