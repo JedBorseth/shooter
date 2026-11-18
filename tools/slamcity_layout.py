@@ -540,9 +540,10 @@ def stair(axis, w0, w1, s0, s1, y0, y1, m=False, tread="tread_plate", frame="ste
         near = at(a0, 0.0, 0.0)
         across = (mx(far[0], m) - mx(near[0], m), 0.0, far[2] - near[2])
         PARTS.append({"kind": "extrude", "look": fill, "profile": pts, "offset": across, "caps": caps})
-        # Closed stringers: a sloped board on each side, above the line of the
-        # nosings, so the side reads as a stair, not a stepped wall.
-        board = [(s0, y0), (s0, y0 + 0.28), (s1, y1 + 0.22), (s1, y0)]
+        # Stringers: a sloped steel band on each side along the line of the
+        # nosings, so the side reads as a stair, not a stepped wall; the mass
+        # under it shows its own finish below the band.
+        board = [(s0, y0), (s0, y0 + 0.28), (s1, y1 + 0.22), (s1, y1 - 0.34)]
         for u0, u1 in ((w0 - 0.05, w0), (w1, w1 + 0.05)):
             near, far = at(u0, 0.0, 0.0), at(u1, 0.0, 0.0)
             PARTS.append({"kind": "extrude", "look": frame,
@@ -1439,6 +1440,16 @@ def avenue(side: Side):
         road_paint(-15.7, -12.7, z, z + 0.45, "paint_white", m)
     road_paint(-30.0, -22.0, -7.46, -7.34, "paint_white", m)
     road_paint(-42.0, -34.0, 7.34, 7.46, "paint_white", m)
+    # The avenue's wear, as geometry a few millimetres proud of the road:
+    # gutter grime along the kerbs, a reinstated utility trench, and squares
+    # of newer, darker patching. (Polished wheel tracks were tried: with hard
+    # edges they read as painted stripes.)
+    for z0, z1 in ((-8.0, -7.6), (7.6, 8.0)):
+        deco(-48.0, -11.0, STREET, STREET + 0.0015, z0, z1, "gutter", m, faces="top")
+    deco(-46.0, -17.0, STREET, STREET + 0.002, 6.0, 6.55, "asphalt_patch", m, faces="top")
+    for x0, x1, z0, z1 in ((-36.5, -33.8, -6.2, -4.3), (-24.5, -21.2, 1.0, 2.7), (-43.5, -41.0, -2.5, -0.8),
+                           (-29.6, -27.9, 4.1, 5.4)):
+        deco(x0, x1, STREET, STREET + 0.002, z0, z1, "asphalt_patch", m, faces="top")
     for x, z, yaw, s in ((-32, -3, 0.4, 3.5), (-26, 5.5, 0.7, 3.2), (-41, 6.2, 2.6, 3.0),
                          (-19, -5.0, 1.6, 2.5)):
         decal("asphalt_damage", x, 0, z, (s, 1.0, s), yaw, m=m)
@@ -1973,7 +1984,7 @@ def derailment():
     # flickering glow, and a smoke column tall enough to see over the roofs
     # from both lanes.
     EFFECTS.append(("crash_fire", (0.4, 1.25, -31.2)))
-    light(0.4, 2.0, -31.2, 2.2, (1.0, 0.52, 0.2), 7.0, shadow=False)  # the fire's glow, baked
+    light(0.4, 2.0, -31.2, 1.5, (1.0, 0.52, 0.2), 7.0, shadow=False)  # the fire's glow, baked
     EFFECTS.append(("smoke_plume", (0.0, 1.4, -31.0)))
 
 

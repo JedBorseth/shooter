@@ -17,6 +17,10 @@ uniform vec4 tint : source_color = vec4(1.0);
 // Large-scale brightness variation: tiling value noise, 16 cells across
 // (assets/textures/noise/macro.png, a project shader global).
 global uniform sampler2D world_noise : filter_linear_mipmap, repeat_enable;
+// Smudges and wear for the untextured materials (assets/textures/noise/wear.png,
+// ambientCG SurfaceImperfections008), so painted, plastic, and laminate
+// surfaces are not flat colour.
+global uniform sampler2D world_wear : filter_linear_mipmap, repeat_enable;
 #if WORLD_WET
 // 0 dry to 1 soaked, per map (scripts/looks.gd).
 global uniform float world_wetness;
@@ -41,6 +45,9 @@ uniform float metallic_scale : hint_range(0.0, 1.0) = 1.0;
 uniform float specular : hint_range(0.0, 1.0) = 0.5;
 // Large-scale brightness variation, as a fraction of the albedo.
 uniform float variation : hint_range(0.0, 0.5) = 0.12;
+// Untextured materials only: how strongly the shared wear map marks the
+// albedo and roughness (0 leaves them flat).
+uniform float wear : hint_range(0.0, 1.0) = 0.0;
 // Darkening of walls toward floor_height, fading out over grime_height metres.
 uniform float grime : hint_range(0.0, 1.0) = 0.3;
 uniform float grime_height = 0.7;
@@ -173,6 +180,15 @@ void fragment() {
 		vec3 b = normalize(-v_dir - n * dot(n, -v_dir));
 		surface_normal = normalize(t * nm.x + b * nm.y + n * nm.z);
 	}
+	float worn = 0.0;
+	if (!textured && wear > 0.0) {
+		// 0.5 m per repeat, turned off the projection axes so it lines up with
+		// nothing. Smudges only ever turn the surface rougher and a shade
+		// darker: glossier patches mirror the sky in blotches, like marble.
+		vec2 wuv = mat2(vec2(0.8, 0.6), vec2(-0.6, 0.8)) * (uv * tile_size) * 2.0;
+		worn = (texture(world_wear, wuv).r - 0.54) * wear;
+		albedo *= 1.0 - max(worn, 0.0) * 0.14;
+	}
 
 	// Two octaves of value noise over the floor plan and height: no two walls
 	// or floor bays come out exactly alike.
@@ -185,7 +201,7 @@ void fragment() {
 		// Shared textured materials: the look's roughness scale, halved.
 		rough *= COLOR.a * 2.0;
 	}
-	rough = clamp(rough * roughness_scale + (noise - 0.5) * 0.08, 0.04, 1.0);
+	rough = clamp(rough * roughness_scale + (noise - 0.5) * 0.08 + max(worn, 0.0) * 0.3, 0.04, 1.0);
 
 	// Grime: rain splash and dirt on walls near the ground.
 	float near_floor = 1.0 - smoothstep(floor_height, floor_height + grime_height, world_position.y);

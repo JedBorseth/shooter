@@ -342,7 +342,7 @@ func _check_world_surfaces() -> void:
 	)
 	GraphicsQuality.set_world_wet(false)
 	_check(not GraphicsQuality.world_wet(), "a dry map leaves them out")
-	for name: StringName in [&"world_wetness", &"world_detail_normal"]:
+	for name: StringName in [&"world_wetness", &"world_detail_normal", &"world_wear"]:
 		_check(
 			ProjectSettings.has_setting("shader_globals/%s" % name),
 			"the world shader's global %s is declared" % name
