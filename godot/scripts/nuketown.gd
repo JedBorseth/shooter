@@ -62,7 +62,6 @@ func _prepare_spawn_points() -> void:
 func _ready() -> void:
 	if not has_node("Player"):
 		set_physics_process(false)
-		set_process_unhandled_input(false)
 		return
 	$HUD/ReturnToMenu.pressed.connect(
 		func() -> void:
@@ -73,11 +72,6 @@ func _ready() -> void:
 	)
 	$SecretLaser.place($Player.position, _spawn_yaw)
 	$SecretLaser.laser_taken.connect(_spawn_laser_targets, CONNECT_ONE_SHOT)
-
-
-func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("ui_cancel"):
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 
 func _physics_process(_delta: float) -> void:
