@@ -56,13 +56,13 @@ const TINTED: [&str; 9] = [
 pub enum Kit {
     Soldier,
     Arms,
-    /// One of the zombie bodies (0 to 3: `zombie`, `zombie_b`, ...). Zombie
+    /// One of the zombie bodies (0 to 4: `zombie`, `zombie_b`, ...). Zombie
     /// kits keep their clothes' own colours: no role is tinted.
     Zombie(u8),
 }
 
 /// The zombie kits' directories, in `Kit::Zombie` order.
-const ZOMBIE_KITS: [&str; 4] = ["zombie", "zombie_b", "zombie_c", "zombie_d"];
+const ZOMBIE_KITS: [&str; 5] = ["zombie", "zombie_b", "zombie_c", "zombie_d", "zombie_e"];
 
 impl Kit {
     pub fn from_material_name(name: &str) -> Option<Self> {

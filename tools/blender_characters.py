@@ -486,6 +486,110 @@ def decimate(obj, ratio: float):
     log(f"{obj.name}: {before} -> {len(obj.data.polygons)} faces")
 
 
+# --- Hair and stubble -------------------------------------------------------------
+
+
+def smoothstep(e0, e1, x):
+    t = np.clip((x - e0) / (e1 - e0), 0.0, 1.0)
+    return t * t * (3.0 - 2.0 * t)
+
+
+def paint_hair(human, eyes, spec: dict):
+    """Short hair and stubble, painted rather than modelled: two per-vertex
+    masks on the head, `hair` (the scalp inside a hairline that runs from the
+    forehead over the temples and ears down to the nape) and `stubble` (the
+    jaw, cheeks, and upper lip). The skin bake turns them into fine strands of
+    the hair colour with a little relief (`add_hair`). MakeHuman's hair is
+    alpha-tested cards, which the one opaque character material cannot draw;
+    a close crop reads as hair at game distances without them.
+
+    `spec`: `colour` (sRGB), `front` (hairline height above the eyes, m),
+    `nape` (how far below the eyes it reaches at the back, m), `density`
+    (0..1), and `stubble` (0..1)."""
+    me = human.data
+    co = np.zeros(len(me.vertices) * 3)
+    me.vertices.foreach_get("co", co)
+    co = co.reshape(-1, 3) @ np.array(human.matrix_world.to_3x3()).T + np.array(human.matrix_world.translation)
+    eye = np.array([tuple(eyes.matrix_world @ v.co) for v in eyes.data.vertices])
+    eye_z = float(eye[:, 2].mean())
+    head = np.zeros(len(co))
+    for name in ("DEF-head", "DEF-neck"):
+        g = human.vertex_groups.get(name)
+        if g is None:
+            continue
+        for v in me.vertices:
+            for e in v.groups:
+                if e.group == g.index:
+                    head[v.index] += e.weight
+    on_head = (head > 0.3) & (co[:, 2] > eye_z - 0.16)
+    near = co[on_head & (np.abs(co[:, 2] - eye_z) < 0.03)]
+    front, back = float(near[:, 1].min()), float(near[:, 1].max())
+    # 0 at the face, 1 at the back of the head.
+    u = np.clip((co[:, 1] - front) / max(back - front, 1e-6), 0.0, 1.0)
+    side = np.abs(co[:, 0])
+    hairline = eye_z + spec.get("front", 0.055) - (spec.get("front", 0.055) + spec.get("nape", 0.075)) * smoothstep(0.42, 0.95, u)
+    # Over the ears the line rises; sideburns come down in front of them.
+    ear = smoothstep(0.045, 0.065, side) * smoothstep(0.38, 0.5, u) * (1.0 - smoothstep(0.66, 0.78, u))
+    burns = smoothstep(0.05, 0.065, side) * smoothstep(0.3, 0.36, u) * (1.0 - smoothstep(0.38, 0.42, u))
+    hairline = hairline + 0.035 * ear - 0.03 * burns
+    hair = smoothstep(hairline - 0.006, hairline + 0.006, co[:, 2]) * on_head * spec.get("density", 1.0)
+    # Stubble: the front of the head below the cheekbones, above the jaw line.
+    mouth = (side < 0.026) & (np.abs(co[:, 2] - (eye_z - 0.075)) < 0.009)
+    jaw = smoothstep(eye_z - 0.16, eye_z - 0.13, co[:, 2]) * (1.0 - smoothstep(eye_z - 0.05, eye_z - 0.035, co[:, 2]))
+    stubble = jaw * (1.0 - smoothstep(0.42, 0.55, u)) * on_head * ~mouth * spec.get("stubble", 0.0)
+    for name, values in (("hair", hair), ("stubble", stubble)):
+        attr = me.attributes.get(name) or me.attributes.new(name, "FLOAT", "POINT")
+        attr.data.foreach_set("value", values.astype(np.float32))
+    human["hair_colour"] = list(spec.get("colour", (0.06, 0.045, 0.035)))
+    log(f"{human.name}: hair on {int((hair > 0.5).sum())} vertices, stubble on {int((stubble > 0.2).sum())}")
+
+
+def add_hair(nt, base, normal, colour):
+    """Mixes the painted `hair` and `stubble` masks into a skin material:
+    strands of `colour` (sRGB) over the scalp and a dark shadow of stubble,
+    with a little relief. Returns (base colour, normal)."""
+    n = Nodes(nt)
+    hair_node = nt.nodes.new("ShaderNodeAttribute")
+    hair_node.attribute_name = "hair"
+    stub_node = nt.nodes.new("ShaderNodeAttribute")
+    stub_node.attribute_name = "stubble"
+    # Strands: fine noise stretched along the head (object space, metres).
+    stretch = n.new("ShaderNodeMapping")
+    stretch.inputs["Scale"].default_value = (1.0, 0.35, 1.0)
+    nt.links.new(n.coord, stretch.inputs["Vector"])
+    strands = n.noise(2400.0, 2.0, stretch.outputs[0])
+    clumps = n.noise(180.0, 2.0)
+    cover = n.math("MULTIPLY", hair_node.outputs["Fac"],
+                   n.math("ADD", 0.55, n.math("MULTIPLY", n.math("ADD", strands, n.math("MULTIPLY", clumps, 0.5)), 0.6)), clamp=True)
+    dots = n.math("SUBTRACT", n.math("MULTIPLY", n.noise(3200.0, 1.0), 2.2), 0.9, clamp=True)
+    shadow = n.math("MULTIPLY", stub_node.outputs["Fac"], n.math("ADD", 0.35, n.math("MULTIPLY", dots, 0.5)))
+    lin = [c ** 2.2 for c in colour]
+    tone = n.new("ShaderNodeRGB")
+    tone.outputs[0].default_value = (*lin, 1.0)
+    shade = n.new("ShaderNodeMix")
+    shade.data_type = "RGBA"
+    shade.blend_type = "MULTIPLY"
+    nt.links.new(n.math("ADD", 0.7, n.math("MULTIPLY", strands, 0.6)), shade.inputs["Factor"])
+    nt.links.new(tone.outputs[0], shade.inputs[6])
+    shade.inputs[7].default_value = (0.8, 0.8, 0.8, 1.0)
+    mix = n.new("ShaderNodeMix")
+    mix.data_type = "RGBA"
+    nt.links.new(cover, mix.inputs["Factor"])
+    nt.links.new(base, mix.inputs[6])
+    nt.links.new(shade.outputs[2], mix.inputs[7])
+    darken = n.new("ShaderNodeMix")
+    darken.data_type = "RGBA"
+    darken.blend_type = "MULTIPLY"
+    nt.links.new(n.math("MULTIPLY", shadow, 0.55), darken.inputs["Factor"])
+    nt.links.new(mix.outputs[2], darken.inputs[6])
+    darken.inputs[7].default_value = (*[c * 0.6 for c in lin], 1.0)
+    height = n.math("ADD", n.math("MULTIPLY", cover, strands), n.math("MULTIPLY", shadow, dots))
+    bump = n.new("ShaderNodeBump", Strength=0.35, Distance=0.0005, Height=height)
+    if normal is not None:
+        nt.links.new(normal, bump.inputs["Normal"])
+    return darken.outputs[2], bump.outputs[0]
+
+
 # --- Bake materials ---------------------------------------------------------------
 
 
@@ -547,6 +651,8 @@ def bake_material(obj, role: str, role_index: int, settings: dict) -> bpy.types.
         bump.inputs["Strength"].default_value = settings.get("bump_strength", 0.3)
         links.new(tex.outputs[0], bump.inputs["Height"])
         normal = bump.outputs[0]
+    if "hair" in obj.data.attributes and obj.get("hair_colour"):
+        base, normal = add_hair(nt, base, normal, tuple(obj["hair_colour"]))
     detail = settings.get("detail")
     rough = None
     if detail:
@@ -985,6 +1091,9 @@ def main():
     for o in parts:
         o["material"] = o.get("material", o["role"])
     decimate(human, spec.get("body_decimate", 1.0))
+    if spec.get("hair"):
+        eyes = next(o for o in clothes if o["role"] == "eyes")
+        paint_hair(human, eyes, spec["hair"])
     head_pieces = ()
     gear_spec = spec.get("gear", {})
     if "balaclava" in gear_spec or "gaiter" in gear_spec:

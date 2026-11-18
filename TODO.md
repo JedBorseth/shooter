@@ -216,8 +216,9 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 - [x] Effects and post: spark streaks, debris, soft dust, blood, bullet-hole decals, glowing tracers, ambient dust, and a motion blur option. Depth of field while aiming was left out (it blurs the iron sights).
 - [x] Skyline windows with fake rooms behind them (interior mapping in `world.gdshader`), and bump-mapped cloth, leather, and creases on characters.
 - [x] Soldiers as believable people: a MakeHuman body fitted to the existing skeleton, a combat shirt and trousers, modelled kit (helmet with cover and mounts, glasses, balaclava or neck gaiter or a bare face per character, plate carrier with pouches, magazines and a radio, belt and holster, knee pads), all in one mesh with one baked texture atlas and a team tint (`tools/build_character_assets.py`).
-- [x] Zombies as distinct people: four MakeHuman bodies (age, build, skin) in their own civilian clothes, picked per zombie (`zombie_body.tscn`, `SoldierRig.variants`).
-- [ ] Zombies: torn cloth, modelled wounds, and hair.
+- [x] Zombies as distinct people: five MakeHuman bodies (age, build, skin, one a woman) in their own civilian clothes, picked per zombie (`zombie_body.tscn`, `SoldierRig.variants`).
+- [x] Zombies: painted short hair and stubble per body.
+- [ ] Zombies: torn cloth and painted wounds.
 - [x] First-person arms: their own model and atlas (sleeves with sewn cuffs, gloves with knuckle guards, a field watch), and finger shapes per hold (pistol grip with trigger discipline, rifle handguard, pump, two-handed pistol).
 - [x] First-person gloves and sleeves: modelled seams, palm panels, and knuckle padding, and cloth-simulated sleeve folds, baked from high-detail sources into the arms atlas (`tools/blender_hilo.py`).
 

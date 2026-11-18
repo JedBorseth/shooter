@@ -6,7 +6,8 @@ extends SceneTree
 ## animations, IK, and hit zones were measured on); each draws one mesh with one
 ## surface and one material, plus a decimated far mesh for the third-person
 ## kits; triangle budgets hold; a soldier gets its team's atlas material with a
-## per-character kit; and a zombie wears the zombie kit.
+## per-character kit; a zombie wears the zombie kit; and every zombie body
+## variant is retargeted onto the same skeleton with a compressed atlas.
 ## Run from the repo root:
 ##   godot --headless --path godot --script res://tests/character_models_test.gd
 
@@ -31,8 +32,19 @@ func _run() -> void:
 		["res://assets/characters/soldier/soldier.glb", "Body", SOLDIER_TRIANGLES],
 		["res://assets/characters/arms/arms.glb", "ArmsFP", ARMS_TRIANGLES],
 		["res://assets/characters/zombie/zombie.glb", "Body", ZOMBIE_TRIANGLES],
+		["res://assets/characters/zombie_b/zombie_b.glb", "Body", ZOMBIE_TRIANGLES],
+		["res://assets/characters/zombie_c/zombie_c.glb", "Body", ZOMBIE_TRIANGLES],
+		["res://assets/characters/zombie_d/zombie_d.glb", "Body", ZOMBIE_TRIANGLES],
+		["res://assets/characters/zombie_e/zombie_e.glb", "Body", ZOMBIE_TRIANGLES],
 	]:
 		var path: String = spec[0]
+		# Every kit's atlas imports compressed with mipmaps, like the rest.
+		var atlas := load(path.replace(".glb", "_albedo.png")) as Texture2D
+		var image := atlas.get_image() if atlas != null else null
+		_check(
+			image != null and image.is_compressed() and image.has_mipmaps(),
+			"%s: its atlas is VRAM-compressed with mipmaps" % path
+		)
 		var scene := (load(path) as PackedScene).instantiate()
 		var skeleton := scene.find_child("GeneralSkeleton", true, false) as Skeleton3D
 		_check(skeleton != null, "%s has GeneralSkeleton" % path)

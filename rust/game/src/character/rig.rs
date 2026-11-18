@@ -1247,9 +1247,9 @@ mod body_pick_tests {
     fn regularly_spaced_seeds_reach_every_body() {
         // Godot's instance ids step by fixed strides; every body must show up.
         for stride in [1u64, 2, 7, 8, 64, 4096] {
-            let mut seen = [false; 4];
+            let mut seen = [false; 5];
             for i in 0..40u64 {
-                seen[(splitmix(0x1_0000 + i * stride) % 4) as usize] = true;
+                seen[(splitmix(0x1_0000 + i * stride) % 5) as usize] = true;
             }
             assert!(seen.iter().all(|s| *s), "stride {stride}: {seen:?}");
         }

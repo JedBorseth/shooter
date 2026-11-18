@@ -448,6 +448,9 @@ def asset_paths(src: dict[str, Path]) -> dict[str, str]:
         "skin_middleage_african_male": sys_ / "skins/middleage_african_male/middleage_african_male.mhmat",
         "skin_old_caucasian_male": sys_ / "skins/old_caucasian_male/old_caucasian_male.mhmat",
         "skin_young_asian_male": sys_ / "skins/young_asian_male/young_asian_male.mhmat",
+        "blouse_skirt": sys_ / "clothes/female_elegantsuit01/female_elegantsuit01.mhclo",
+        "ankle_boots": src["shoes01"] / "clothes/toigo_ankle_boots_female/toigo_ankle_boots_female.mhclo",
+        "skin_middleage_caucasian_female": sys_ / "skins/middleage_caucasian_female/middleage_caucasian_female.mhmat",
     }
     for name, path in files.items():
         if not path.exists():
@@ -584,6 +587,8 @@ KITS = {
             ],
             "keep_body": {"bones": ["DEF-head", "DEF-neck", "DEF-hand.", "DEF-f_", "DEF-thumb."], "threshold": 0.35},
             "body_decimate": 0.32,
+            # Short hair and stubble, painted on (paint_hair in blender_characters.py).
+            "hair": {"colour": (0.2, 0.14, 0.09), "front": 0.055, "nape": 0.08, "density": 0.9, "stubble": 0.55},
         },
         "density": {"skin": 3.0, "eyes": 2.0},
         "size": 2048,
@@ -606,10 +611,12 @@ KITS = {
             "keep_body": {"bones": ["DEF-head", "DEF-neck", "DEF-hand.", "DEF-f_", "DEF-thumb.", "DEF-forearm.", "DEF-upper_arm."],
                           "threshold": 0.35},
             "body_decimate": 0.32,
+            # Short hair and stubble, painted on (paint_hair in blender_characters.py).
+            "hair": {"colour": (0.035, 0.03, 0.028), "front": 0.065, "nape": 0.07, "density": 0.95, "stubble": 0.75},
         },
         "tinted": False,
         "density": {"skin": 2.5, "eyes": 2.0},
-        "size": 2048,
+        "size": 1024,
         "far_ratio": 0.3,
         "meshes": {"Body": None},
     },
@@ -624,10 +631,12 @@ KITS = {
             ],
             "keep_body": {"bones": ["DEF-head", "DEF-neck", "DEF-hand.", "DEF-f_", "DEF-thumb."], "threshold": 0.35},
             "body_decimate": 0.32,
+            # Short hair and stubble, painted on (paint_hair in blender_characters.py).
+            "hair": {"colour": (0.55, 0.53, 0.5), "front": 0.09, "nape": 0.06, "density": 0.6, "stubble": 0.45},
         },
         "tinted": False,
         "density": {"skin": 2.5, "eyes": 2.0},
-        "size": 2048,
+        "size": 1024,
         "far_ratio": 0.3,
         "meshes": {"Body": None},
     },
@@ -643,10 +652,36 @@ KITS = {
             "keep_body": {"bones": ["DEF-head", "DEF-neck", "DEF-hand.", "DEF-f_", "DEF-thumb.", "DEF-forearm.", "DEF-upper_arm."],
                           "threshold": 0.35},
             "body_decimate": 0.32,
+            # Short hair and stubble, painted on (paint_hair in blender_characters.py).
+            "hair": {"colour": (0.03, 0.028, 0.03), "front": 0.05, "nape": 0.085, "density": 1.0, "stubble": 0.15},
         },
         "tinted": False,
         "density": {"skin": 2.5, "eyes": 2.0},
-        "size": 2048,
+        "size": 1024,
+        "far_ratio": 0.3,
+        "meshes": {"Body": None},
+    },
+    # A woman in office clothes: a blouse, a pencil skirt, and ankle boots,
+    # with her calves bare.
+    "zombie_e": {
+        "spec": {
+            "macro": {"gender": 0.0, "age": 0.6, "muscle": 0.4, "weight": 0.5, "height": 0.45,
+                      "race": {"caucasian": 1.0, "african": 0.0, "asian": 0.0}},
+            "skin": "skin_middleage_caucasian_female",
+            "parts": [
+                {"asset": "blouse_skirt", "role": "uniform", "material": "civilian"},
+                {"asset": "ankle_boots", "role": "boots", "material": "civilian", "decimate": 0.35},
+                {"asset": "eyes", "role": "eyes", "type": "Eyes"},
+            ],
+            "keep_body": {"bones": ["DEF-head", "DEF-neck", "DEF-hand.", "DEF-f_", "DEF-thumb.", "DEF-shin."],
+                          "threshold": 0.35},
+            "body_decimate": 0.32,
+            # Short hair and stubble, painted on (paint_hair in blender_characters.py).
+            "hair": {"colour": (0.26, 0.13, 0.07), "front": 0.05, "nape": 0.12, "density": 1.0, "stubble": 0.0},
+        },
+        "tinted": False,
+        "density": {"skin": 2.5, "eyes": 2.0},
+        "size": 1024,
         "far_ratio": 0.3,
         "meshes": {"Body": None},
     },
