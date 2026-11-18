@@ -17,7 +17,7 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/hud.tscn" id="19_hud"]
 [ext_resource type="PackedScene" path="res://scenes/zombies/zombie.tscn" id="20_zombie"]
 [ext_resource type="Script" uid="uid://o8q12w3swokr" path="res://scripts/zombies_hud.gd" id="21_zhud"]
-[ext_resource type="Texture2D" uid="uid://bknsvyijt4p6o" path="res://assets/skies/zombies_night.hdr" id="22_sky"]
+[ext_resource type="Shader" uid="uid://cok4ojgcqfr1j" path="res://shaders/night_sky.gdshader" id="22_sky"]
 [ext_resource type="Script" uid="uid://dct36uf5dfgpr" path="res://scripts/lamp_flicker.gd" id="23_flicker"]
 [ext_resource type="PackedScene" path="res://scenes/zombies/door.tscn" id="24_door"]
 [ext_resource type="PackedScene" path="res://scenes/zombies/power_up.tscn" id="25_power_up"]
@@ -37,9 +37,8 @@
 [ext_resource type="PackedScene" uid="uid://b1p1uago5j3cy" path="res://assets/props/tyre/tyre.gltf" id="p_tyre"]
 [ext_resource type="PackedScene" uid="uid://330cd5sbdyvp" path="res://assets/props/utility_box/utility_box.gltf" id="p_utility_box"]
 
-[sub_resource type="PanoramaSkyMaterial" id="SkyMat"]
-panorama = ExtResource("22_sky")
-energy_multiplier = 0.35
+[sub_resource type="ShaderMaterial" id="SkyMat"]
+shader = ExtResource("22_sky")
 
 [sub_resource type="Sky" id="Sky"]
 sky_material = SubResource("SkyMat")
@@ -48,7 +47,6 @@ radiance_size = 1
 [sub_resource type="Environment" id="Env"]
 background_mode = 2
 sky = SubResource("Sky")
-sky_rotation = Vector3(0, 0.236, 0)
 ambient_light_source = 2
 ambient_light_color = Color(0.3, 0.37, 0.52, 1)
 ambient_light_energy = 0.5
@@ -70,6 +68,18 @@ volumetric_fog_sky_affect = 0.0
 adjustment_enabled = true
 adjustment_contrast = 1.08
 adjustment_saturation = 0.92
+
+[sub_resource type="FogMaterial" id="FogYard"]
+density = 0.05
+albedo = Color(0.7, 0.75, 0.85, 1)
+height_falloff = 0.6
+edge_fade = 0.35
+
+[sub_resource type="FogMaterial" id="FogBay"]
+density = 0.08
+albedo = Color(0.7, 0.75, 0.85, 1)
+height_falloff = 0.8
+edge_fade = 0.4
 
 [sub_resource type="StandardMaterial3D" id="Mat_lamp"]
 albedo_color = Color(1, 0.72, 0.4, 1)
@@ -832,6 +842,58 @@ spot_range = 20.0
 spot_angle = 40.0
 spot_angle_attenuation = 0.8
 
+[node name="LowFog" type="Node3D" parent="." unique_id=769474997]
+
+[node name="YardWest" type="FogVolume" parent="LowFog" unique_id=1223936989]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -33.75, 1.2, 4)
+size = Vector3(17, 2.4, 31)
+material = SubResource("FogYard")
+
+[node name="YardEast" type="FogVolume" parent="LowFog" unique_id=1493118416]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 33.75, 1.2, 4)
+size = Vector3(17, 2.4, 31)
+material = SubResource("FogYard")
+
+[node name="Bay0" type="FogVolume" parent="LowFog" unique_id=1277423711]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -14, 1, -27.25)
+size = Vector3(4.6, 2, 4.5)
+material = SubResource("FogBay")
+
+[node name="Bay1" type="FogVolume" parent="LowFog" unique_id=2022620326]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14, 1, -27.25)
+size = Vector3(4.6, 2, 4.5)
+material = SubResource("FogBay")
+
+[node name="Bay2" type="FogVolume" parent="LowFog" unique_id=268898297]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -14, 1, 27.25)
+size = Vector3(4.6, 2, 4.5)
+material = SubResource("FogBay")
+
+[node name="Bay3" type="FogVolume" parent="LowFog" unique_id=2074767251]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14, 1, 27.25)
+size = Vector3(4.6, 2, 4.5)
+material = SubResource("FogBay")
+
+[node name="Bay4" type="FogVolume" parent="LowFog" unique_id=1109628204]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -27.25, 1, -17)
+size = Vector3(4.5, 2, 4.6)
+material = SubResource("FogBay")
+
+[node name="Bay5" type="FogVolume" parent="LowFog" unique_id=1560028872]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -27.25, 1, 22)
+size = Vector3(4.5, 2, 4.6)
+material = SubResource("FogBay")
+
+[node name="Bay6" type="FogVolume" parent="LowFog" unique_id=2001504873]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 27.25, 1, -17)
+size = Vector3(4.5, 2, 4.6)
+material = SubResource("FogBay")
+
+[node name="Bay7" type="FogVolume" parent="LowFog" unique_id=119435849]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 27.25, 1, 22)
+size = Vector3(4.5, 2, 4.6)
+material = SubResource("FogBay")
+
 [node name="Lamps" type="Node3D" parent="." unique_id=2093754381]
 
 [node name="Lamp0" type="Node3D" parent="Lamps" unique_id=1275731576]
@@ -986,9 +1048,10 @@ mesh = SubResource("Mesh_lamp")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.45, 0)
 light_color = Color(1, 0.66, 0.36, 1)
 light_energy = 2.1738472
+light_bake_mode = 1
+shadow_enabled = true
 omni_range = 14.0
-script = ExtResource("23_flicker")
-seed = 5
+script = ExtResource("8_baked")
 
 [node name="Lamp6" type="Node3D" parent="Lamps" unique_id=1426490514]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 34, 0, 2)
@@ -1012,9 +1075,10 @@ mesh = SubResource("Mesh_lamp")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.45, 0)
 light_color = Color(1, 0.66, 0.36, 1)
 light_energy = 2.2780974
+light_bake_mode = 1
+shadow_enabled = true
 omni_range = 14.0
-script = ExtResource("23_flicker")
-seed = 6
+script = ExtResource("8_baked")
 
 [node name="WallWeapons" type="Node3D" parent="." unique_id=1187996272]
 

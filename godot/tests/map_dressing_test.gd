@@ -194,6 +194,17 @@ func _zombies() -> void:
 		func(m: Node) -> String: return String(m.name)
 	)
 	_check("map_zombies_dressing_shadow" in names, "the arena's dressing has a shadow twin")
+	var sky := (
+		(scene.get_node("WorldEnvironment") as WorldEnvironment).environment.sky.sky_material
+		as ShaderMaterial
+	)
+	var settings := root.get_node(^"Settings")
+	settings.set_graphics_preset(GraphicsQuality.Preset.LOW)
+	await process_frame
+	_check(sky.get_shader_parameter(&"detailed") == false, "Low draws the night sky plain")
+	settings.set_graphics_preset(GraphicsQuality.Preset.MEDIUM)
+	await process_frame
+	_check(sky.get_shader_parameter(&"detailed") == true, "Medium draws its cloud and stars")
 	scene.queue_free()
 	await process_frame
 

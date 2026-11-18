@@ -10,8 +10,9 @@ extends EditorScenePostImport
 ## (`map_*_dressing`) comes in chunks; its `_detail` chunks (litter, weeds,
 ## small fittings) cast no shadow, take light from the probes instead of the
 ## lightmap, and hide beyond `DETAIL_RANGE`; `_ground` meshes (a floor and what
-## lies flat on it) bake but cast no shadow. A `_shadow` mesh is a shadow-only
-## twin of a map model's other meshes (see scripts/map_render.gd).
+## lies flat on it) bake but cast no shadow. A
+## `_shadow` mesh is a shadow-only twin of a map model's other meshes (see
+## scripts/map_render.gd).
 
 ## How far a dressing's detail meshes draw, in metres.
 const DETAIL_RANGE := 30.0
