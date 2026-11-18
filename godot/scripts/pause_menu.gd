@@ -38,8 +38,7 @@ const DESCRIPTIONS := {
 		+ " while you play, so nothing switches by accident and aim assist stays with"
 		+ " controllers. Menus and pause work with both."
 	),
-	&"mouse_sensitivity_level":
-	"How far the view turns for each movement of the mouse. Each step is 20% faster.",
+	&"mouse_sensitivity": "How far the view turns for each movement of the mouse.",
 	&"ads_sensitivity":
 	"Turn speed while aiming down sights, as a share of your normal sensitivity.",
 	&"invert_mouse_y": "Moving the mouse forward looks down instead of up.",
@@ -389,7 +388,7 @@ func _build_settings() -> void:
 	_add_heading(controls, "Input")
 	_add_input_option(controls)
 	_mouse_heading = _add_heading(controls, "Mouse")
-	_add_level_slider(controls, &"mouse_sensitivity_level", "Mouse sensitivity")
+	_add_slider(controls, &"mouse_sensitivity", "Mouse sensitivity", 0.05, decimal)
 	_add_slider(
 		controls,
 		&"ads_sensitivity",
@@ -662,7 +661,7 @@ func _add_slider(
 	return slider
 
 
-## A sensitivity slider: whole levels from 1 to Settings.SENSITIVITY_LEVELS,
+## A look speed slider: whole levels from 1 to Settings.SENSITIVITY_LEVELS,
 ## a tick on each, and the level's name beside its number.
 func _add_level_slider(section: VBoxContainer, key: StringName, label: String) -> void:
 	var slider := _add_slider(
@@ -677,11 +676,10 @@ func _add_level_slider(section: VBoxContainer, key: StringName, label: String) -
 	slider.ticks_on_borders = true
 
 
-## A sensitivity level as the menu shows it: "7 · MEDIUM", or just "9".
+## A look speed level as the menu shows it, with its band: "7 · MEDIUM".
 func sensitivity_text(level: float) -> String:
-	var whole := roundi(level)
-	var level_name: String = Settings.SENSITIVITY_NAMES.get(whole, "")
-	return str(whole) if level_name.is_empty() else "%d · %s" % [whole, level_name]
+	var whole := clampi(roundi(level), 1, Settings.SENSITIVITY_LEVELS)
+	return "%d · %s" % [whole, Settings.SENSITIVITY_NAMES[whole - 1]]
 
 
 func _add_toggle(section: VBoxContainer, key: StringName, label: String) -> void:
