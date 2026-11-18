@@ -188,6 +188,8 @@ The Zombies test loads the arena and checks that zombies spawn, walk straight at
 
 The smoke test loads the arena headless and drives the player through movement (toggle sprint, slide, crouch), combat (aim, fire, kill a dummy, reload, switch), the characters (first-person and third-person hands on the grip, every hit zone, headshot and leg damage), a weapon rack, the shotgun (pellets, pump, shell-by-shell reload), the sniper (scope, hold breath), damage, regeneration, death and respawn, fall damage, the sentry, and gamepad look with aim assist. The settings test checks the menu and that settings save and load. Both exit non-zero on failure.
 
+The movement test (`godot/tests/movement_test.gd`) drives the player body on a flat floor through crouching, standing, sliding, and chained slide-cancels, and checks the timings and speeds against the reference in [docs/movement.md](docs/movement.md); set `MOVEMENT_TRACE_DIR` to keep its per-tick traces and plot them with `uv run tools/plot_movement.py`.
+
 The netcode test starts a dedicated server process with a bot, joins it over UDP on localhost through a simulated link (40 ms latency plus 15 ms jitter each way, 5% loss), shoots the strafing bot dead from 14 m with server-side hit detection, sprints, slides, and jumps, and checks that the server confirmed the hits and the kill, that prediction never needed a correction, and that the bot is interpolated:
 
 ```sh
@@ -344,7 +346,7 @@ Export presets are in `godot/export_presets.cfg`. The Rust library for each plat
 | Crouch (toggle; slides while sprinting; again to cancel the slide) | C or Ctrl |
 | Mantle (climb a ledge or low wall) | Space while walking at it |
 | Inspect weapon | I |
-| Jump (during a slide: slide-cancel, standing up with its speed and sprinting on) | Space |
+| Jump (during a slide: slide-cancel, standing up and sprinting on) | Space |
 | Fire / aim down sights | Left / right mouse |
 | Hold breath (while scoped) | Shift |
 | Take weapon or refill ammo at a rack | F |

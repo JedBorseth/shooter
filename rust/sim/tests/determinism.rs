@@ -221,10 +221,12 @@ fn press_aim_changes_no_state() {
 // Weapon tuning, round 4: firing ends a reload once the weapon is back up,
 // heavier patterns for the M4, AK, BR-3, and LSW-6, new damage ranges, and
 // a fuller aimed breath.
-const REFERENCE_HASH: u64 = 0xc5f5_dd55_0e07_1a5c;
+// Movement, round 1: stance changes blend over time, slides are earned and
+// capped, and a mantle keeps the direction it started in.
+const REFERENCE_HASH: u64 = 0xd384_6544_3cf8_3da4;
 /// The same for every shot's view angles and aim offset (sub-tick press aims
 /// included).
-const SHOT_REFERENCE_HASH: u64 = 0x64d4_9e91_ef5c_006f;
+const SHOT_REFERENCE_HASH: u64 = 0x3762_a29c_3255_a18d;
 
 #[test]
 fn state_matches_the_reference_on_every_platform() {

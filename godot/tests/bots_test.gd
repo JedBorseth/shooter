@@ -86,7 +86,11 @@ func _free_for_all() -> void:
 	server.score_limit = 3
 	server.auto_start = true
 	root.add_child(server)
-	for i in 90 * Engine.physics_ticks_per_second:
+	# On main before stance changes took time, a bot got there in 42-66 s
+	# (eight runs); with 0.25-0.3 s crouches the bots' crouch-and-stand
+	# fighting at range runs a little slower, 54-86 s. The budget leaves room
+	# for the slow tail without hiding a match that never ends.
+	for i in 150 * Engine.physics_ticks_per_second:
 		await physics_frame
 		if server.match_phase() == "ended":
 			break

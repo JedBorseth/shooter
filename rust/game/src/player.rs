@@ -328,7 +328,10 @@ pub struct FpsPlayer {
     previous_ads: f32,
     /// Aim pitch, aim yaw, and look pitch from the last rendered frame.
     aim_angles: Vector3,
-    eye_height: f32,
+    /// The crouch blend (`MoveState::crouch`) before the last tick, so the
+    /// eye moves smoothly between ticks along the same blend the capsule,
+    /// hit zones, and shot origin follow.
+    previous_crouch: f32,
     fov_sprint: f32,
     /// Visual-only camera roll from each shot (radians, in `z`). Only roll,
     /// so the screen centre stays on the aim.
@@ -507,6 +510,7 @@ impl ICharacterBody3D for FpsPlayer {
         self.previous_recoil = self.state.combat.recoil;
         self.previous_sway = self.state.combat.scope_sway();
         self.previous_ads = self.state.combat.ads;
+        self.previous_crouch = self.state.movement.crouch;
         let previous_stance = self.state.movement.stance;
         let mut events = std::mem::take(&mut self.events);
         events.clear();
@@ -602,8 +606,8 @@ impl ICharacterBody3D for FpsPlayer {
         self.death_blend += (death_target - self.death_blend) * smoothing(5.0, dt);
 
         let movement = self.state.movement;
-        let target_eye = self.params.movement.eye_height(movement.stance);
-        self.eye_height += (target_eye - self.eye_height) * smoothing(14.0, dt);
+        let crouch = self.previous_crouch + (movement.crouch - self.previous_crouch) * fraction;
+        let eye_height = self.params.movement.eye_height_at(crouch);
 
         let fast = movement.sprinting || movement.stance == Stance::Sliding;
         let sprint_target = if fast { self.sprint_fov_scale } else { 1.0 };
@@ -633,7 +637,7 @@ impl ICharacterBody3D for FpsPlayer {
             .step(SHAKE_STIFFNESS, damping_for(SHAKE_STIFFNESS, 0.5), dt);
 
         if alive && self.input_enabled {
-            let eye = feet + Vector3::UP * self.eye_height;
+            let eye = feet + Vector3::UP * eye_height;
             self.apply_stick_look(eye, ads, dt);
         }
 
@@ -653,7 +657,7 @@ impl ICharacterBody3D for FpsPlayer {
 
         let (bob, bob_roll, tilt) = self.camera_motion_offsets(dt, ads);
         let death_roll = self.death_blend * 0.45;
-        let eye = self.eye_height * (1.0 - self.death_blend * 0.75);
+        let eye = eye_height * (1.0 - self.death_blend * 0.75);
 
         // The camera looks along the aim (look plus the simulated recoil snap
         // and sway), so the screen centre and the sights are where bullets
@@ -749,6 +753,20 @@ impl FpsPlayer {
             self.state.movement.velocity.z,
         )
         .length()
+    }
+
+    /// Where this tick's shots leave from (world space), for movement traces
+    /// (tests): the eye on the simulation's crouch blend.
+    #[func]
+    fn shot_origin(&self) -> Vector3 {
+        self.eye_position()
+    }
+
+    /// How far down the body is, 0 standing to 1 crouched (the simulation's
+    /// crouch blend), for movement traces (tests).
+    #[func]
+    fn crouch_amount(&self) -> f32 {
+        self.state.movement.crouch
     }
 
     /// Floor contact recorded by the last predicted or authoritative movement
@@ -1339,9 +1357,10 @@ impl FpsPlayer {
         }
     }
 
+    /// Where shots leave from: the eye at this tick's crouch blend, as on the
+    /// server (the camera sits on the same blend between ticks).
     fn eye_position(&self) -> Vector3 {
-        self.current_position
-            + Vector3::UP * self.params.movement.eye_height(self.state.movement.stance)
+        self.current_position + Vector3::UP * self.state.movement.eye_height(&self.params.movement)
     }
 
     /// The collider a ray from `from` to `to` meets first.
@@ -2307,20 +2326,32 @@ impl FpsPlayer {
         self.previous_sway = Vec2::ZERO;
         self.previous_ads = 0.0;
 
-        self.eye_height = self.params.movement.eye_height(Stance::Standing);
+        self.previous_crouch = self.state.movement.crouch;
         self.fov_sprint = 1.0;
         self.punch = Spring::default();
         self.pending_climb = Vec2::ZERO;
         self.shake = Spring::default();
         self.fov_kick = Spring::default();
+        // Every camera offset starts over: no death slump, landing dip,
+        // flinch, tilt, or bob carried into the new life.
+        self.death_blend = 0.0;
+        self.land_dip = Spring::default();
+        self.flinch = Spring::default();
+        self.tilt = 0.0;
+        self.bob_blend = 0.0;
+        self.stride_foot = 0.0;
+        self.last_stride_phase = 0.0;
+        self.climb_step = Vec2::ZERO;
+        self.look_velocity = Vector2::ZERO;
+        self.last_look = Vector2::new(self.yaw, self.pitch);
         self.stride = Stride {
             travelled: 0.0,
             length: 2.0,
         };
         self.assist.reset();
         self.assist_target = None;
-        let stance = self.state.movement.stance;
-        body::apply_stance_shape(&mut self.parts(), &self.params.movement, stance);
+        let crouch = self.state.movement.crouch;
+        body::apply_stance_shape(&mut self.parts(), &self.params.movement, crouch);
     }
 }
 
