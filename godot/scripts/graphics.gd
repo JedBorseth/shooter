@@ -42,6 +42,7 @@ const PRESETS := [
 		"mipmap_bias": 0.0,
 		"world_detail": 0,
 		"wet": false,
+		"soft_smoke": false,
 	},
 	{
 		"upscaler": Viewport.SCALING_3D_MODE_FSR2,
@@ -62,6 +63,7 @@ const PRESETS := [
 		"mipmap_bias": -0.35,
 		"world_detail": 0,
 		"wet": true,
+		"soft_smoke": false,
 	},
 	{
 		"upscaler": Viewport.SCALING_3D_MODE_FSR2,
@@ -82,6 +84,7 @@ const PRESETS := [
 		"mipmap_bias": -0.25,
 		"world_detail": 1,
 		"wet": true,
+		"soft_smoke": true,
 	},
 ]
 
@@ -95,6 +98,8 @@ const Looks := preload("res://scripts/looks.gd")
 const WORLD_SHADER_PATHS: Array[String] = [
 	"res://shaders/world.gdshader", "res://shaders/world_windows.gdshader"
 ]
+## Gun smoke (first- and third-person puffs), soft against the world on High.
+const SMOKE_SHADER_PATH := "res://shaders/muzzle_smoke.gdshader"
 
 ## One compositor (with the motion blur effect) shared by every map while the
 ## setting is on.
@@ -121,6 +126,7 @@ static var _wet_allowed := true
 ## moments no map is loaded (start-up, between maps), or the next load would
 ## read the files again and lose it.
 static var _world_shaders: Array[Shader] = []
+static var _smoke_shader: Shader
 
 
 ## Compiles the world shaders' close-up detail in (1) or
@@ -146,10 +152,31 @@ static func world_wet() -> bool:
 	return _world_define("WORLD_WET") == 1
 
 
+## Compiles gun smoke's soft edge against the world in or out (High only:
+## it reads the depth buffer).
+static func set_soft_smoke(soft: bool) -> void:
+	if _smoke_shader == null:
+		_smoke_shader = load(SMOKE_SHADER_PATH) as Shader
+	var shaders: Array[Shader] = [_smoke_shader]
+	_set_define(shaders, "SOFT_SMOKE", 1 if soft else 0)
+
+
+static func soft_smoke() -> bool:
+	if _smoke_shader == null:
+		_smoke_shader = load(SMOKE_SHADER_PATH) as Shader
+	return _smoke_shader.code.contains("#define SOFT_SMOKE 1\n")
+
+
 static func _set_world_define(name: String, value: int) -> void:
+	_set_define(_world_shader_list(), name, value)
+
+
+## Rewrites the `#define <name> <value>` line in each of `shaders`, if it
+## differs; the shaders and their materials recompile.
+static func _set_define(shaders: Array[Shader], name: String, value: int) -> void:
 	var line := "#define %s " % name
 	var want := str(value)
-	for shader: Shader in _world_shader_list():
+	for shader: Shader in shaders:
 		var code := shader.code
 		var at := code.find(line)
 		if at < 0:
@@ -214,6 +241,9 @@ static func apply(
 	# Wet surfaces cost about 0.3 ms on Low in the Zombies arena: Low stays dry.
 	_wet_allowed = p["wet"]
 	set_world_wet(_wet_allowed and _map_wetness > 0.001)
+	# Gun smoke fades where it meets the world on High (free in the measured
+	# firefight there; Low and Medium keep the hard edge).
+	set_soft_smoke(p["soft_smoke"])
 	# Bicubic lightmap sampling smooths baked shadows; worth it on High only.
 	RenderingServer.lightmaps_set_bicubic_filter(preset == Preset.HIGH)
 	RenderingServer.environment_set_ssao_quality(
