@@ -118,14 +118,15 @@ that server. **Gun Game** does the same for a free-for-all up a ladder of eight 
 it to score a point a second while nobody from the other team is in it; it moves every minute (see
 [Hardpoint](#hardpoint)), and **Search and Destroy** for rounds with one life each on Slamcity
 (your name, team size, bot skill, and rounds to win; see
-[Search and Destroy](#search-and-destroy)). **Slamcity** is the team map, a city block cut by an elevated railway at dusk, with
-transit-depot spawn yards at each end and three lanes between them: a back alley with fire
-escapes up to the tenements' roofs (the high ground), Slam Avenue around a stalled bus, a
-jack-knifed truck, and a roadworks pit under the station, and a run of storefronts (corner store,
-diner with a roof terrace, laundromat) opening onto the station's ticket hall. Slam Junction
-stands over the avenue: each team has its own platform, reached from the alley and the ticket
-hall, and the way across is through a stalled train. A second car came off the viaduct and lies
-nose-down in the alley, its aisle a climb from the alley up to the tracks. Offline it has
+[Search and Destroy](#search-and-destroy)). **Slamcity** is the team map, city blocks round an elevated station at dusk, laid
+out from a study of real Call of Duty maps (see [docs/map-design.md](docs/map-design.md)). Each team
+spawns in a bus depot on its own edge, and three routes join them: Slam Avenue into Junction
+Plaza, where a derailed El car lies across the paving under the platforms; the north street
+through the pawn shop into the far market; and the market through the ticket hall into the
+far south street. The tenement, bodega, diner, record store, and subway hall link the routes,
+and each team has a stair up to its own platform, with a stalled train as the way across.
+Red's half is Blue's turned half round, dressed as different places (a hotel, a laundromat,
+the ticket hall). Offline it has
 practice targets on the far half. It ships in every build. **Testing Area** loads the
 existing arena on selection. **Server Browser** opens the server browser (see [Play online](#play-online)). **Zombies**
 opens a Black Ops 2 inspired menu: **Solo** leads to a rotating globe with five

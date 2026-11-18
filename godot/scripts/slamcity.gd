@@ -1,8 +1,8 @@
 extends Node3D
-## Slamcity: an original city block cut by an elevated railway, with tenements,
-## storefronts, and Slam Junction's station over the avenue. The layout is
-## mirrored across x = 0, so the West and East spawns face the same map
-## (tools/slamcity_layout.py).
+## Slamcity: an original city block at dusk round Slam Junction, a station on
+## an elevated railway. Each team's half is the other's turned half round the
+## centre, dressed as different places, so the West and East spawns face the
+## same routes (tools/slamcity_layout.py).
 
 ## The train on the elevated line behind the north skyline: metres a second,
 ## and how far it runs before it comes round again.

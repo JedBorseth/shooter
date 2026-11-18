@@ -165,8 +165,8 @@ for i, d in enumerate(L.DECALS):
     p["cull_mask"] = "1"
     node(f"{d['texture']}{i}", "Decal", "Decals", p)
 
-# Particle effects: steam in the pit, sparks at the viaduct's break, smoke
-# from the derailed car.
+# Particle effects: sparks at the platform's torn edge and smoke from the
+# derailed car.
 node("Effects", "Node3D", ".")
 effects_used = set()
 for i, (scene, pos) in enumerate(L.EFFECTS):
@@ -193,20 +193,22 @@ for i, light in enumerate(L.LIGHTS):
         node(f"Omni{i}", "OmniLight3D", "BakedLights", p)
 
 # --- Markers -------------------------------------------------------------------
-# Spawns: team 0 in the west yard, team 1 in the east. The server picks among
-# them by safety (tdm::choose_spawn); the first few are each team's start.
+# Spawns: team 0 (Blue) in the west depot, team 1 (Red) in the east, each the
+# other's twin turned half round the centre. The server picks among them by
+# safety (tdm::choose_spawn); the first few are each team's start.
 node("SpawnPoints", "Node3D", ".")
 for team, m, yaw in ((0, False, -PI / 2), (1, True, PI / 2)):
     for i, (x, y, z) in enumerate(L.spawn_points()):
+        tx, tz = L.tp(x, z, m)
         node(f"Team{team}_{i:02d}", "Marker3D", "SpawnPoints", {
-            "position": vec(L.mx(x, m), y + 0.05, z), "rotation": vec(0, yaw, 0), "metadata/team": str(team)})
+            "position": vec(tx, y + 0.05, tz), "rotation": vec(0, yaw, 0), "metadata/team": str(team)})
 
-# Capture the Flag: each team's flag stands in its own yard, by the dispatcher's
-# booth at the mouth of the avenue. Team Deathmatch ignores these.
+# Capture the Flag: each team's flag stands in its own depot yard, by the
+# dispatcher's shed at the mouth of the avenue. Team Deathmatch ignores these.
 node("Flags", "Node3D", ".")
 for team, m in ((0, False), (1, True)):
-    node(f"Team{team}", "Marker3D", "Flags", {
-        "position": vec(L.mx(L.FLAG[0], m), 0, L.FLAG[1]), "metadata/team": str(team)})
+    fx, fz = L.tp(*L.FLAG, m)
+    node(f"Team{team}", "Marker3D", "Flags", {"position": vec(fx, 0, fz), "metadata/team": str(team)})
 
 # Hardpoint rotates through these zones (server: map_zones).
 node("Hardpoints", "Node3D", ".")
@@ -217,7 +219,7 @@ for name, label, (x, y, z), size in L.HARDPOINTS:
 node("Spawns", "Node3D", ".")
 x0, _, z0 = L.spawn_points()[0]
 node("West", "Marker3D", "Spawns", {"position": vec(x0, 0.05, z0), "rotation": vec(0, -PI / 2, 0)})
-node("East", "Marker3D", "Spawns", {"position": vec(-x0, 0.05, z0), "rotation": vec(0, PI / 2, 0)})
+node("East", "Marker3D", "Spawns", {"position": vec(-x0, 0.05, -z0), "rotation": vec(0, PI / 2, 0)})
 
 # Lanes for bots to follow (rust/game/src/net/bots.rs), each from west to east.
 node("BotLanes", "Node3D", ".")
@@ -226,7 +228,7 @@ for lane, points in L.BOT_LANES:
     for i, (x, z) in enumerate(points):
         node(f"P{i}", "Marker3D", f"BotLanes/{lane}", {"position": vec(x, 0.05, z)})
 
-# Practice targets for offline play, on the east half (the server removes them).
+# Practice targets for offline play, on Red's half (the server removes them).
 node("Targets", "Node3D", ".")
 for name, pos, ry, weapon, extra in L.TARGETS:
     p = {"position": vec(*pos)}
@@ -248,7 +250,7 @@ def reverb_zone(name, pos, size, room, damping, wet, predelay):
 
 for tag, m in (("W", False), ("E", True)):
     for name, (x, y, z), size, *settings in L.REVERB_ROOMS:
-        reverb_zone(name + tag, (L.mx(x, m), y, z), size, *settings)
+        reverb_zone(name + tag, L.t3(x, y, z, m), size, *settings)
 for name, pos, size, *settings in L.CENTRE_ROOMS:
     reverb_zone(name, pos, size, *settings)
 

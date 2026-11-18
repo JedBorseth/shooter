@@ -157,7 +157,8 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [ ] Killcam from the server snapshot buffer.
 - [x] First real map: Slamcity rebuilt as a three-lane Team Deathmatch map (alley and rooftop, street, interiors), mirrored so both teams get the same lanes, with spawn points per team and a generator check that no line runs clear between the spawn yards (`tools/build_slamcity.py`).
 - [x] Slamcity redesigned as a high-detail procedural city block (`tools/slamcity_layout.py`, built in Blender by `tools/build_slamcity_city.py`): tenements with stairwells, fire escapes, and roofs; Slam Junction's elevated station with a stalled train to cross through; a derailed car lying in the alley as a climb to the tracks; storefronts with furnished interiors and a diner roof terrace; a roadworks pit under the station; neon, an original sign atlas, and a dusk sky. Build-time checks keep collision mirrored, spawns out of enemy sight, and every long line down the avenue and alley broken.
-- [ ] Slamcity: sites for Search and Destroy's charge (the ticket hall and the derailed car's alley are candidates).
+- [x] Slamcity laid out again from studying real Call of Duty minimaps (`tools/map_blockout/`, `docs/map-design.md`): a square block of streets and enterable buildings round Junction Plaza and the derailed car, three routes with their own ranges, and halves balanced by a half turn instead of a mirror.
+- [ ] Slamcity: sites for Search and Destroy's charge (the pawn shop and the ticket hall are candidates).
 - [x] Server browser: LAN search, master server list, favorites, direct connect by IP or host name, ping, and leave or lose the connection back to the browser.
 - [x] Lobby flow on the server: warm-up until every player is ready (`--auto-start` skips it).
 - [x] Lobby and loadout menu (L): primary weapon choice (applies from the next spawn) and Ready; opens by itself in the lobby.
