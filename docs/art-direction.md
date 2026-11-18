@@ -115,16 +115,17 @@ Zombies adds volumetric fog, which only the High preset draws.
 
 The final picture of a map is set in `godot/scripts/looks.gd`, not in its scene, so a map that a tool regenerates keeps it. For each listed map it holds:
 
-- **Environment overrides**: exposure, haze, and changes to the shared bloom.
+- **Environment overrides**: the tone curve, exposure, haze, ambient occlusion, and changes to the shared bloom. The Testing Area uses the ACES filmic curve for hard daylight; Slamcity and Zombies keep AgX, which holds the hue of neon and lamps.
+- **The sun** (`sun`): the map's sun can be set stronger against the sky light. The Testing Area's sun is 3.2 rather than its scene's 2.0, with less exposure, so sunlit ground nears white while shade goes dark; the baked bounce light stays as it was baked.
 - **Bloom** (`Looks.BLOOM`, the same for every listed map): only what is brighter than white blooms (`glow_bloom` is 0), and the glow is added like light scattered in a lens rather than screened over the picture. A faint wide level gives the sun, lamps, and muzzle flashes a soft halo. Zombies makes up for the lost veil with exposure, and blooms a little lower and stronger, so the horde reads and the lamps carry the night.
 - **Lens dirt** (`scripts/lens_dirt.gd`): smudges and specks built in code from a fixed seed. The glow pass multiplies its bloom by them (`Environment.glow_map`), so the dirt shows only where something bright blooms through it.
 - **A colour grade**: an S-curve on brightness around a pivot, a toe that deepens the darkest shadows without clipping them, a cool tint in the shadows and a warm one in the highlights that both fade out at black and white, and a saturation. A bright colour that would leave the range is pulled toward its own grey, so it keeps its hue. `Looks.build_lut` turns the grade into a 32³ look-up table when the map loads, and the renderer samples it inside the tonemap pass, so a grade costs nothing per frame. Tune a grade offline against a screenshot before you try it in the engine: the maths is a few lines. The renderer reads the table at texel centres with no half-texel correction, so texel *i* must hold the grade of input (*i* + 0.5) / 32 (`Looks.texel_input`); a table built as *i* / 31 darkens every shadow by more than 1% of full brightness.
 
 | Map | Grade |
 | --- | --- |
-| Testing Area | Crisp midday: firm contrast, cool shadows, warm highlights, slightly muted colour |
-| Zombies | Cold night: muted colour, blue shadows, warm lamp highlights, shadows kept readable |
-| Slamcity | Dusk: firmer contrast, cool shade against warm lamp and sun light. Its environment overrides keep bloom to the neon, the lamps, and the lit windows (`glow_hdr_threshold` 1.3), so sunlit surfaces never glare |
+| Testing Area | Hard midday: a filmic curve, a strong sun, deep shade, cool shadows, warm highlights |
+| Zombies | Cold night: muted colour, blue shadows, warm lamp highlights, a low pivot and a little more sky light so walls separate from the dark |
+| Slamcity | Dusk: firmer contrast with a toe that keeps the near street's blacks under the haze, and less sky colour in the near haze, so only the distance fades; cool shade against warm lamp and sun light. Its environment overrides keep bloom to the neon, the lamps, and the lit windows (`glow_hdr_threshold` 1.3), so sunlit surfaces never glare |
 
 Nuketown is not listed and keeps the look authored in its scene.
 
