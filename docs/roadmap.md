@@ -68,6 +68,7 @@ Each phase ends with something playable.
 3. **Lag compensation.** The server keeps a hitbox history ring buffer and rewinds to the shooter's view time to check hits. Favor-the-shooter with a rewind cap.
    - ✅ `rust/sim/src/net/lag.rs`: a second of sent snapshots, sampled exactly like the client's interpolation buffer; rewind to the view tick each firing input carries, capped at 300 ms; pellets against every target's hitboxes, stopped by walls tested on the server's map. Unit tests show a strafing target hit where the shooter saw it and missed without the rewind.
    - ✅ F4 draws the server's rewound hitboxes for each of your shots (white) next to the client's.
+   - ✅ Sub-tick fire timing (`rust/sim/src/net/subtick.rs`, protocol 19): the input after a click carries the view angles at the click and the tick being drawn then, so a flick shoots where the player clicked, not where the crosshair was up to a tick later. The predicting client and the server shoot from the same angles; the server only accepts angles the view passed through since the previous input.
    - ✅ The netcode test kills a strafing bot through a 110 ms, 5% loss link.
 4. **Game loop.** Team Deathmatch: spawns, health and damage falloff, kill feed, scoreboard, respawn, match timer, first real map.
    - ✅ Rules on the server (`rust/sim/src/tdm.rs`): two balanced teams, 75 kills or 10 minutes, no friendly fire, lobby with ready-up, countdown, results, and the next match. Kills only score during a match; the lobby is warm-up.

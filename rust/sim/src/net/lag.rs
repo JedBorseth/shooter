@@ -7,7 +7,9 @@
 //! Checking a shot against where targets are on the server "now" would make
 //! every player lead their targets by their ping. Instead each firing input
 //! carries the server tick the client was drawing others at
-//! ([`PlayerInput::view_tick`](crate::player::PlayerInput::view_tick)), and the
+//! ([`PlayerInput::view_tick`](crate::player::PlayerInput::view_tick); for a
+//! click between ticks, the tick drawn on the frame it was clicked on, see
+//! [`super::subtick`]), and the
 //! server rebuilds everyone's hitboxes at that tick from a history of the
 //! snapshots it sent, interpolated exactly as clients interpolate them
 //! ([`RemoteSample`]). Favor the shooter: what they hit on their screen is a
@@ -29,8 +31,9 @@ use crate::movement::Stance;
 use crate::penetration::MAX_WALLS;
 use crate::weapon::{WeaponDef, WeaponId};
 
-/// The furthest back a shot is checked, in seconds. Covers the 100 ms
-/// interpolation delay plus a 200 ms round trip. Shooters with a worse
+/// The furthest back a shot is checked, in seconds. Covers the interpolation
+/// delay (about 50 ms on a clean link, up to about 150 ms while snapshots go
+/// missing) plus a round trip of 150 to 250 ms. Shooters with a worse
 /// connection have to lead their targets by the excess, so a high ping
 /// cannot shoot players who are long gone behind cover on their own screens.
 pub const MAX_REWIND: f32 = 0.3;

@@ -138,6 +138,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Rewind on fire: each firing input carries the client's interpolation tick; the server checks the shot against hitboxes at that tick, capped at 300 ms.
 - [x] Debug visualization: with F4 on, the server's rewound hitboxes for each of your shots are drawn in white next to the client's.
 - [x] Unit tests for rewind math in `rust/sim` (`net::lag`), and a netcode test that kills a strafing bot through a lossy, 110 ms link.
+- [x] Sub-tick fire timing: a click between ticks fires from the view angles and remote-player view tick of the frame it was clicked on, not the next tick's (`net::subtick`, `PlayerInput::fire_aim`). The server accepts press angles only between the previous input's view and this one's; held automatic fire keeps the tick's angles.
 
 ## Phase 4: game loop
 

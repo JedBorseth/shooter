@@ -28,8 +28,25 @@ pub struct PlayerInput {
     /// Online only: the server tick (fractional) this client was drawing other
     /// players at when the input was read. The server rewinds their hitboxes to
     /// it to check this input's shots (`net::lag`). Sent while firing; the
-    /// simulation itself ignores it.
+    /// simulation itself ignores it. On the input that carries a
+    /// [`FireAim`], it is the tick being drawn when the button went down.
     pub view_tick: Option<f64>,
+    /// The view when the fire button went down since the last tick, if it
+    /// did: the first shot fired on this input leaves from it
+    /// ([`Self::shot_view`]). See `net::subtick`.
+    pub fire_aim: Option<FireAim>,
+}
+
+/// Where the player was looking when they pressed fire between two ticks,
+/// relative to this input's view angles: press angle minus tick angle, in
+/// radians. The client captures it on the press event, so a shot leaves from
+/// the frame the player clicked on rather than up to a tick later. The server
+/// only accepts angles between the previous input's view and this one's
+/// (`net::subtick::check`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct FireAim {
+    pub yaw: f32,
+    pub pitch: f32,
 }
 
 impl PlayerInput {
@@ -46,7 +63,19 @@ impl PlayerInput {
             fire: false,
             pickup: None,
             view_tick: None,
+            fire_aim: None,
             ..self
+        }
+    }
+
+    /// View angles (yaw, pitch) a shot fired on this input leaves from,
+    /// before recoil and spread: the press angles when it carries a
+    /// [`FireAim`], otherwise its own. The view itself still ends the tick at
+    /// `yaw` and `pitch`.
+    pub fn shot_view(&self) -> (f32, f32) {
+        match self.fire_aim {
+            Some(aim) => (self.yaw + aim.yaw, self.pitch + aim.pitch),
+            None => (self.yaw, self.pitch),
         }
     }
 }
@@ -257,8 +286,11 @@ pub fn step(
         state.fall_speed = (-velocity.y).max(0.0);
     }
 
+    let (shot_yaw, shot_pitch) = input.shot_view();
     let combat_input = CombatInput {
         fire: input.fire,
+        shot_yaw,
+        shot_pitch,
         aim: input.aim,
         reload: reload_pressed,
         switch_to: input.switch_to,
@@ -509,6 +541,10 @@ mod tests {
             switch_to: Some(1),
             pickup: Some(WeaponId::expect("ak47")),
             view_tick: Some(12.5),
+            fire_aim: Some(FireAim {
+                yaw: 0.01,
+                pitch: 0.0,
+            }),
         };
         assert_eq!(
             input.held_still(),
@@ -521,5 +557,58 @@ mod tests {
                 ..Default::default()
             }
         );
+    }
+
+    #[test]
+    fn a_press_shot_leaves_from_the_press_aim_and_held_fire_from_the_tick() {
+        let mut s = ready_state();
+        let shots = |events: &[PlayerEvent]| -> Vec<(f32, f32)> {
+            events
+                .iter()
+                .filter_map(|e| match *e {
+                    PlayerEvent::Combat(CombatEvent::Fired { yaw, pitch, .. }) => {
+                        Some((yaw, pitch))
+                    }
+                    _ => None,
+                })
+                .collect()
+        };
+        let press = PlayerInput {
+            yaw: 1.0,
+            pitch: 0.2,
+            fire: true,
+            fire_aim: Some(FireAim {
+                yaw: 0.05,
+                pitch: -0.01,
+            }),
+            ..Default::default()
+        };
+        let events = run(&mut s, press, MoveEnv::default(), 1);
+        assert_eq!(shots(&events), vec![(1.05, 0.19)]);
+        // The movement view still ends the tick at the tick's angles.
+        let after_press = s;
+        let mut plain = ready_state();
+        run(
+            &mut plain,
+            PlayerInput {
+                fire_aim: None,
+                ..press
+            },
+            MoveEnv::default(),
+            1,
+        );
+        assert_eq!(after_press, plain);
+
+        // The M4 is automatic: holding on fires from each tick's own angles.
+        let held = PlayerInput {
+            yaw: 1.1,
+            pitch: 0.25,
+            fire: true,
+            ..Default::default()
+        };
+        let events = run(&mut s, held, MoveEnv::default(), 60);
+        let held_shots = shots(&events);
+        assert!(held_shots.len() > 3, "{held_shots:?}");
+        assert!(held_shots.iter().all(|&shot| shot == (1.1, 0.25)));
     }
 }
