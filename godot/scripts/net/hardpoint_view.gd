@@ -22,8 +22,8 @@ const WARN_SECONDS := 10.0
 const WALL_HEIGHT := 1.4
 ## Seconds each call stays up.
 const CALL_SECONDS := 2.6
-const FONT_HEAVY := preload("res://assets/fonts/BarlowCondensed-ExtraBold.ttf")
-const FONT_BOLD := preload("res://assets/fonts/BarlowCondensed-Bold.ttf")
+const FONT_BOLD := preload("res://assets/fonts/ChakraPetch-SemiBold.ttf")
+const MatchBanner := preload("res://scripts/net/match_banner.gd")
 const CALL_SOUND := preload("res://assets/audio/ui/hardpoint_call.ogg")
 
 const WALL_SHADER := """
@@ -63,7 +63,8 @@ var _decal: Decal
 var _layer: CanvasLayer
 var _marker: Control
 var _strip: Control
-var _call: Label
+## Zone calls ("HARDPOINT SECURED"), on the match banner.
+var _call: Control
 var _call_left := 0.0
 var _sound: AudioStreamPlayer
 
@@ -101,17 +102,11 @@ func _ready() -> void:
 	_strip.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_strip.draw.connect(_draw_strip)
 	_layer.add_child(_strip)
-	_call = Label.new()
+	_call = Control.new()
 	_call.name = "ZoneCall"
-	_call.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_call.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	_call.position = Vector2(-450, -205)
-	_call.custom_minimum_size = Vector2(900, 0)
-	_call.add_theme_font_override("font", FONT_HEAVY)
-	_call.add_theme_font_size_override("font_size", 40)
-	_call.add_theme_constant_override("outline_size", 10)
-	_call.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
-	_call.visible = false
+	_call.set_script(MatchBanner)
+	_call.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_call.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_layer.add_child(_call)
 	_sound = AudioStreamPlayer.new()
 	_sound.stream = CALL_SOUND
@@ -145,8 +140,9 @@ func _process(delta: float) -> void:
 	_pulse = maxf(_pulse - delta * 1.5, 0.0)
 	_wall_material.set_shader_parameter("pulse", _pulse)
 	_call_left -= delta
-	_call.visible = _call_left > 0.0
-	_call.modulate.a = clampf(_call_left / 0.5, 0.0, 1.0)
+	_call.callout_alpha = clampf(_call_left / 0.5, 0.0, 1.0)
+	if _call_left <= 0.0:
+		_call.callout = ""
 	_marker.queue_redraw()
 	_strip.queue_redraw()
 
@@ -310,8 +306,8 @@ func _announce(info: Dictionary) -> void:
 
 
 func _say(text: String, colour: Color) -> void:
-	_call.text = text
-	_call.add_theme_color_override("font_color", colour)
+	_call.callout = text
+	_call.callout_colour = colour
 	_call_left = CALL_SECONDS
 	_pulse = 1.0
 	if _sound.is_inside_tree():

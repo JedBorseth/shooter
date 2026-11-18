@@ -49,34 +49,11 @@ func _draw() -> void:
 
 ## One prompt row, centred: an optional key cap, then the text.
 func _draw_prompt(row: Dictionary, baseline: float, text_size: int) -> void:
-	var text: String = row.text
-	var key: String = row.get("key", "")
-	var colour: Color = row.get("colour", UiTheme.TEXT)
-	var cap_h := text_size + 7.0
-	var gap := 9.0
-	var cap_w := 0.0
-	if key != "":
-		cap_w = maxf(cap_h, Paint.text_width(Paint.DISPLAY, key, int(cap_h * 0.62)) + cap_h * 0.55)
-	var text_w := Paint.text_width(Paint.LABEL, text, text_size, 1.0)
-	var total := text_w + (cap_w + gap if key != "" else 0.0)
-	var left := size.x / 2.0 - total / 2.0
-	_band(Rect2(left - 26.0, baseline - cap_h + 2.0, total + 52.0, cap_h + 8.0), 0.34)
-	if key != "":
-		Paint.key_cap(self, key, Vector2(left, baseline - cap_h + 5.0), cap_h)
-		left += cap_w + gap
-	Paint.text(self, Paint.LABEL, text, Vector2(left, baseline), text_size, colour, 1.0)
+	Paint.prompt(self, row, size.x / 2.0, baseline, text_size)
 
 
-## A dark band behind centred text, solid in the middle and fading at the ends.
 func _band(rect: Rect2, alpha: float) -> void:
-	var colour := Color(0, 0, 0, alpha)
-	var edge := minf(60.0, rect.size.x * 0.3)
-	draw_rect(
-		Rect2(rect.position + Vector2(edge, 0), Vector2(rect.size.x - edge * 2.0, rect.size.y)),
-		colour
-	)
-	Paint.fade(self, Rect2(rect.position, Vector2(edge, rect.size.y)), colour, true)
-	Paint.fade(self, Rect2(rect.end.x - edge, rect.position.y, edge, rect.size.y), colour)
+	Paint.band(self, rect, alpha)
 
 
 func _draw_death(at: Vector2) -> void:

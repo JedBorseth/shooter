@@ -253,3 +253,55 @@ static func weapon(
 	)
 	item.draw_texture_rect(icon, rect, false, colour)
 	return size.x
+
+
+## A dark band behind centred text, solid in the middle and fading at the ends.
+static func band(item: CanvasItem, rect: Rect2, alpha: float) -> void:
+	var colour := Color(0, 0, 0, alpha)
+	var edge := minf(60.0, rect.size.x * 0.3)
+	item.draw_rect(
+		Rect2(rect.position + Vector2(edge, 0), Vector2(rect.size.x - edge * 2.0, rect.size.y)),
+		colour
+	)
+	fade(item, Rect2(rect.position, Vector2(edge, rect.size.y)), colour, true)
+	fade(item, Rect2(rect.end.x - edge, rect.position.y, edge, rect.size.y), colour)
+
+
+## A prompt row centred on `centre_x`: an optional key cap, then the text, on
+## a band. `row` holds "text", and optionally "key" and "colour".
+static func prompt(
+	item: CanvasItem,
+	row: Dictionary,
+	centre_x: float,
+	baseline: float,
+	text_size: int,
+	alpha := 1.0
+) -> void:
+	var value: String = row.text
+	var key: String = row.get("key", "")
+	var colour: Color = row.get("colour", UiTheme.TEXT)
+	colour.a *= alpha
+	var cap_h := text_size + 7.0
+	var gap := 9.0
+	var cap_w := 0.0
+	if key != "":
+		cap_w = maxf(cap_h, text_width(DISPLAY, key, int(cap_h * 0.62)) + cap_h * 0.55)
+	var text_w := text_width(LABEL, value, text_size, 1.0)
+	var total := text_w + (cap_w + gap if key != "" else 0.0)
+	var left := centre_x - total / 2.0
+	band(item, Rect2(left - 26.0, baseline - cap_h + 2.0, total + 52.0, cap_h + 8.0), 0.34 * alpha)
+	if key != "":
+		key_cap(item, key, Vector2(left, baseline - cap_h + 5.0), cap_h, alpha)
+		left += cap_w + gap
+	text(item, LABEL, value, Vector2(left, baseline), text_size, colour, 1.0)
+
+
+## Splits a leading "[KEY]" off `value` into a prompt row: {"text", "key", "colour"}.
+static func split_key(value: String, colour := UiTheme.TEXT) -> Dictionary:
+	var key := ""
+	if value.begins_with("["):
+		var close := value.find("]")
+		if close > 0:
+			key = value.substr(1, close - 1)
+			value = value.substr(close + 1).strip_edges()
+	return {"text": value, "key": key, "colour": colour}

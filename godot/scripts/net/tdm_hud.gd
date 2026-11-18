@@ -1,18 +1,21 @@
 extends CanvasLayer
 ## Match HUD, added by `Net` when joining a server:
 ##
-## - the score bar: our team's kills, the clock, and the enemy's kills, with
-##   the kill limit beneath (in Search and Destroy, rounds won, the round's
-##   clock, and the rounds to win). In Gun Game: our place on the weapon ladder, the
-##   clock, and the best of everyone else's, with the kills to the next weapon
-##   beneath;
-## - the kill feed, top right, in team colours (in Gun Game we are the only
-##   ally), which also says when someone reaches the final weapon, and in
-##   Capture the Flag lists flag plays (`add_feed_line`, from `ctf_view.gd`);
-## - the scoreboard, held open with Tab (Back on a gamepad): one table per
-##   team, or in Gun Game one table ordered by weapon;
-## - the lobby, countdown, and results banners, and in Gun Game a callout for
-##   each new weapon;
+## - the score block, top left (`score_block.gd`): the mode and clock, a row
+##   per side with the score and a bar filling toward the limit, and whether
+##   we lead, trail, or are tied (in Search and Destroy, rounds won and the
+##   round's clock). In Free-for-all and Gun Game: ours against the best of
+##   everyone else's, with the kills to the next weapon in Gun Game;
+## - the kill feed, bottom left above health (`kill_feed.gd`): killer, the
+##   weapon's silhouette, a headshot mark, and victim, in team colours (in
+##   Gun Game we are the only ally). It also says when someone reaches the
+##   final weapon, and in Capture the Flag lists flag plays (`add_feed_line`,
+##   from `ctf_view.gd`). A kill on us names the killer on the HUD's death
+##   card;
+## - the scoreboard (`scoreboard.gd`), held open with Tab (Back on a gamepad):
+##   a section per team, or in Gun Game one table ordered by weapon;
+## - the countdown and results banners, a call for each new weapon in Gun
+##   Game, and the loadout hint under the death card (`match_banner.gd`);
 ## - chat, bottom left: Enter to talk to everyone, Y to your team;
 ## - the loadout menu (L, or D-pad up), which also holds the Ready button in
 ##   the lobby. It opens by itself when we join a lobby. A new primary applies
@@ -21,15 +24,18 @@ extends CanvasLayer
 ##
 ## Hardpoint's own pieces (the zone, its marker, and the calls) are in
 ## `hardpoint_view.gd`; here it adds a TIME column (seconds on the hill) to
-## the scoreboard and moves the hint below the zone strip. Search and Destroy
+## the scoreboard. Search and Destroy
 ## adds its round HUD beside this one (`snd_hud.gd`).
 
 const MenuStyle := preload("res://scripts/ui/menu_style.gd")
+const Paint := preload("res://scripts/ui/hud_paint.gd")
+const ScoreBlock := preload("res://scripts/net/score_block.gd")
+const KillFeed := preload("res://scripts/net/kill_feed.gd")
+const MatchBanner := preload("res://scripts/net/match_banner.gd")
+const Scoreboard := preload("res://scripts/net/scoreboard.gd")
 
 const ALLY := Color("7cc4ff")
 const ENEMY := Color("ff7a5c")
-const FEED_SECONDS := 6.0
-const FEED_LINES := 5
 const CALLOUT_SECONDS := 2.2
 ## Seconds a chat line stays up, and how many show at once.
 const CHAT_SECONDS := 10.0
@@ -49,18 +55,12 @@ var client: NetClient
 var player: FpsPlayer
 
 var _root: Control
-var _ally_score: Label
-var _enemy_score: Label
-var _clock: Label
-var _limit: Label
-var _banner: Label
-var _sub_banner: Label
-var _hint: Label
-var _feed: VBoxContainer
-var _board: PanelContainer
-var _board_title: Label
-var _board_tables: Array[GridContainer] = []
-var _board_headers: Array[Label] = []
+## The score block (top left), the banners and hint, the kill feed (bottom
+## left), and the scoreboard: drawn pieces in `scripts/net/`.
+var _score: Control
+var _overlay: Control
+var _feed: Control
+var _board: Control
 var _menu: Control
 var _weapon_buttons := {}
 ## Each base weapon's attachment choices (dictionaries with `key` and `name`).
@@ -74,8 +74,6 @@ var _loadout_box: VBoxContainer
 var _ladder_box: VBoxContainer
 var _ladder_labels: Array[Label] = []
 var _ladder_marked := -1
-var _callout: Label
-var _sub_callout: Label
 var _callout_left := 0.0
 var _is_ready := false
 var _chat_log: VBoxContainer
@@ -131,36 +129,25 @@ func _process(delta: float) -> void:
 	var phase: String = info.phase
 	if info.mode != _mode:
 		_mode = info.mode
-		# Hardpoint's zone strip sits under the score bar; the hint goes below it.
-		_hint.position.y = 146.0 if _mode == "hardpoint" else 84.0
 		_refresh_board()
+	_hide_own_score()
 	var ffa: bool = info.get("free_for_all", false)
 	# Gun Game's weapon ladder; plain Free-for-all keeps loadouts.
 	var ladder: bool = info.mode == "gungame"
 	var snd: bool = info.mode == "snd"
+	_score.mode = String(info.get("mode_name", "Team Deathmatch"))
 	if ladder:
 		_update_ladder_bar(info)
 	elif ffa:
 		_update_kills_bar(info)
 	else:
-		var my_team: int = info.my_team
-		var scores: PackedInt32Array = info.scores
-		if my_team >= 0 and scores.size() == 2:
-			_ally_score.text = str(scores[my_team])
-			_enemy_score.text = str(scores[1 - my_team])
-		_limit.text = ""
-		if info.score_limit > 0:
-			var goal: String = {"ctf": "CAPTURES", "hardpoint": "POINTS", "snd": "ROUNDS"}.get(
-				info.mode, "KILLS"
-			)
-			_limit.text = "FIRST TO %d %s" % [info.score_limit, goal]
-	_clock.text = _clock_text(phase, info.seconds_left)
+		_update_team_bar(info)
+	_score.clock = _clock_text(phase, info.seconds_left)
 	if snd and phase == "playing":
 		# The round's clock, while it runs.
 		var round := client.round_info()
-		_clock.text = _clock_text(phase, round.seconds_left) if round.phase == "live" else ""
+		_score.clock = _clock_text(phase, round.seconds_left) if round.phase == "live" else ""
 	_update_banner(phase, info)
-	_age_feed(delta)
 	_age_callout(delta)
 	_loadout_box.visible = not ladder
 	_ladder_box.visible = ladder
@@ -178,28 +165,82 @@ func _process(delta: float) -> void:
 
 	var results := phase == "ended"
 	_board.visible = results or (Input.is_action_pressed(&"scoreboard") and not _menu.visible)
-	_board_title.text = (
-		_results_title(info) if results else String(info.get("mode_name", "")).to_upper()
-	)
+	# The banner above says the result; the board keeps the mode, in its colour.
+	_board.title = String(info.get("mode_name", "")).to_upper()
+	_board.title_colour = _result_colour(info) if results else MenuStyle.TEXT
+	_board.clock = _score.clock
+	# The banner says the result; the board sits under it.
+	_overlay.banner_y = 0.1 if results else 0.2
 
 	var alive := player == null or not is_instance_valid(player) or player.is_alive()
 	# Gun Game has no loadout to change between lives, and Search and
 	# Destroy's own HUD says what to do while dead in a match.
 	var dead_hint := not alive and not ladder and not snd
-	_hint.visible = not _menu.visible and (phase == "lobby" or dead_hint)
+	var show_hint := not _menu.visible and not _board.visible and (phase == "lobby" or dead_hint)
 	var key := Settings.prompt_key(&"loadout")
+	_overlay.hint = ""
 	if phase == "lobby":
-		_hint.text = (
-			"WARM-UP  ·  %s  ·  [%s] %s and ready"
-			% [_ready_count(), key, "weapon ladder" if ladder else "loadout"]
-		)
+		if show_hint:
+			_overlay.hint = (
+				"[%s] %s and ready  ·  %s"
+				% [key, "Weapon ladder" if ladder else "Loadout", _ready_count()]
+			)
 		_menu_status.text = _ready_count()
 	else:
-		_hint.text = "[%s] change loadout for your next spawn" % key
+		if show_hint:
+			_overlay.hint = "[%s] Change loadout for your next spawn" % key
 		if snd:
 			_menu_status.text = "Applies at once before a round starts, otherwise next round."
 		else:
 			_menu_status.text = "" if ladder else "Applies from your next spawn."
+
+
+## Our own score plate (in the shared HUD) gives the corner to the match's.
+func _hide_own_score() -> void:
+	if player == null or not is_instance_valid(player):
+		return
+	var feed := player.get_parent().get_node_or_null("HUD/ScoreFeed")
+	if feed != null and feed.get("show_score") == true:
+		feed.set("show_score", false)
+
+
+## Team modes: our score and theirs, each filling toward the limit, and
+## whether we lead.
+func _update_team_bar(info: Dictionary) -> void:
+	var my_team: int = info.my_team
+	var scores: PackedInt32Array = info.scores
+	if my_team < 0 or scores.size() != 2:
+		_score.rows = []
+		return
+	var ours := scores[my_team]
+	var theirs := scores[1 - my_team]
+	var limit := float(maxi(int(info.score_limit), 1))
+	_score.rows = [
+		{"value": str(ours), "fill": ours / limit, "colour": ALLY, "ours": true},
+		{"value": str(theirs), "fill": theirs / limit, "colour": ENEMY},
+	]
+	_set_state(info.phase, ours, theirs)
+	_score.footer = ""
+	if info.score_limit > 0:
+		var goal: String = {"ctf": "CAPTURES", "hardpoint": "POINTS", "snd": "ROUNDS"}.get(
+			info.mode, "KILLS"
+		)
+		_score.footer = "FIRST TO %d %s" % [info.score_limit, goal]
+
+
+## Leading, trailing, or tied, while the match is on.
+func _set_state(phase: String, ours: int, theirs: int) -> void:
+	if phase != "playing":
+		_score.state = ""
+	elif ours > theirs:
+		_score.state = "LEADING"
+		_score.state_colour = ALLY
+	elif ours < theirs:
+		_score.state = "TRAILING"
+		_score.state_colour = ENEMY
+	else:
+		_score.state = "TIED"
+		_score.state_colour = MenuStyle.TEXT
 
 
 func _joined() -> bool:
@@ -218,21 +259,39 @@ func _update_ladder_bar(info: Dictionary) -> void:
 		else:
 			best_other = maxi(best_other, int(entry.level))
 	if me.is_empty() or levels <= 0:
-		_ally_score.text = ""
-		_enemy_score.text = ""
-		_limit.text = ""
+		_score.rows = []
+		_score.footer = ""
+		_score.state = ""
 		return
 	var level: int = me.level
 	_mark_ladder(level)
-	_ally_score.text = "%d/%d" % [level + 1, levels]
-	_enemy_score.text = "%d/%d" % [best_other + 1, levels] if best_other >= 0 else ""
+	var rows := [
+		{
+			"value": "%d" % (level + 1),
+			"fill": (level + 1.0) / levels,
+			"colour": ALLY,
+			"ours": true,
+			"label": "YOU",
+		},
+	]
+	if best_other >= 0:
+		(
+			rows
+			. append(
+				{
+					"value": "%d" % (best_other + 1),
+					"fill": (best_other + 1.0) / levels,
+					"colour": ENEMY,
+					"label": "BEST",
+				}
+			)
+		)
+	_score.rows = rows
+	_set_state(info.phase, level, best_other)
 	var to_go: int = maxi(int(info.get("kills_per_weapon", 1)) - int(me.level_kills), 1)
 	var ladder := NetClient.gun_game_ladder()
 	var next := "WIN" if level + 1 >= levels else ladder[mini(level + 1, ladder.size() - 1)]
-	_limit.text = (
-		"%s  ·  %d KILL%s TO %s"
-		% [String(me.weapon).to_upper(), to_go, "" if to_go == 1 else "S", next.to_upper()]
-	)
+	_score.footer = "%d KILL%s TO %s" % [to_go, "" if to_go == 1 else "S", next.to_upper()]
 
 
 ## Highlights our weapon on the ladder in the menu, and dims the ones behind us.
@@ -260,38 +319,39 @@ func _clock_text(phase: String, seconds_left: float) -> String:
 
 
 func _update_banner(phase: String, info: Dictionary) -> void:
+	_overlay.title = ""
+	_overlay.detail = ""
+	_overlay.colour = MenuStyle.TEXT
 	match phase:
 		"countdown":
-			_banner.text = "MATCH STARTS IN %d" % int(ceil(info.seconds_left))
+			_overlay.title = "MATCH STARTS IN %d" % int(ceil(info.seconds_left))
 			if info.mode == "ffa":
-				_sub_banner.text = "Free-for-all  ·  first to %d kills" % info.score_limit
+				_overlay.detail = "Free-for-all  ·  first to %d kills" % info.score_limit
 			elif info.get("free_for_all", false):
 				var kills: int = info.get("kills_per_weapon", 1)
-				_sub_banner.text = (
+				_overlay.detail = (
 					"Gun Game  ·  %d kill%s with each of %d weapons  ·  every player for themselves"
 					% [kills, "" if kills == 1 else "s", info.score_limit]
 				)
 			elif info.mode == "ctf":
-				_sub_banner.text = "Capture the Flag  ·  first to %d captures" % info.score_limit
+				_overlay.detail = "Capture the Flag  ·  first to %d captures" % info.score_limit
 			elif info.mode == "hardpoint":
-				_sub_banner.text = "Hardpoint  ·  first to %d points" % info.score_limit
+				_overlay.detail = "Hardpoint  ·  first to %d points" % info.score_limit
 			elif info.mode == "snd":
-				_sub_banner.text = "Search and Destroy  ·  first to %d rounds" % info.score_limit
+				_overlay.detail = "Search and Destroy  ·  first to %d rounds" % info.score_limit
 			else:
-				_sub_banner.text = "Team Deathmatch  ·  first to %d kills" % info.score_limit
+				_overlay.detail = "Team Deathmatch  ·  first to %d kills" % info.score_limit
 		"ended":
-			_banner.text = _results_title(info)
-			_sub_banner.text = "Next match in %d" % int(ceil(info.seconds_left))
-		_:
-			_banner.text = ""
-			_sub_banner.text = ""
-	_banner.visible = _banner.text != ""
-	_sub_banner.visible = _sub_banner.text != ""
-	if phase == "ended":
-		var won := _we_won(info)
-		_banner.modulate = ALLY if won else (ENEMY if info.winner >= 0 else Color.WHITE)
-	else:
-		_banner.modulate = Color.WHITE
+			_overlay.title = _results_title(info)
+			_overlay.detail = "Next match in %d" % int(ceil(info.seconds_left))
+			_overlay.colour = _result_colour(info)
+
+
+## Blue for a win, red for a loss, white for a draw.
+func _result_colour(info: Dictionary) -> Color:
+	if _we_won(info):
+		return ALLY
+	return ENEMY if info.winner >= 0 else MenuStyle.TEXT
 
 
 ## Whether the match's winner is our team, or in Gun Game us.
@@ -332,66 +392,48 @@ func _ready_count() -> String:
 ## with an optional third `true` for small print. `mine` highlights it
 ## (something we did, or that happened to us).
 func add_feed_line(parts: Array, mine := false) -> void:
-	var line := HBoxContainer.new()
-	line.alignment = BoxContainer.ALIGNMENT_END
-	line.add_theme_constant_override("separation", 10)
-	for part: Array in parts:
-		var size := 15 if part.size() > 2 and part[2] else 18
-		line.add_child(_feed_label(String(part[0]), part[1], size))
-	_push_feed_line(line, mine)
+	_feed.add(parts, mine)
+
+
+## The kill feed's lines, oldest first (tests).
+func feed_lines() -> PackedStringArray:
+	return _feed.lines()
 
 
 func _on_kill(killer: int, victim: int, weapon: String, headshot: bool) -> void:
-	var line := HBoxContainer.new()
-	line.alignment = BoxContainer.ALIGNMENT_END
-	line.add_theme_constant_override("separation", 10)
+	var parts := []
 	if killer != victim and killer >= 0:
-		line.add_child(_feed_label(client.name_of(killer), _team_colour(killer)))
-	var how := weapon.to_upper()
+		parts.append([client.name_of(killer), _team_colour(killer)])
+	var key := _weapon_key(weapon)
+	parts.append({"icon": key, "name": weapon.to_upper()})
 	if headshot:
-		how += "  ◎"
-	line.add_child(_feed_label(how, Color(0.85, 0.88, 0.9, 0.85), 15))
-	line.add_child(_feed_label(client.name_of(victim), _team_colour(victim)))
-	_push_feed_line(line, killer == client.player_id() or victim == client.player_id())
+		parts.append({"headshot": true})
+	parts.append([client.name_of(victim), _team_colour(victim)])
+	var me := client.player_id()
+	_feed.add(parts, killer == me or victim == me)
+	if victim == me and killer != victim and killer >= 0:
+		_name_killer(client.name_of(killer), _team_colour(killer), key)
 
 
-func _push_feed_line(line: HBoxContainer, mine: bool) -> void:
-	line.set_meta(&"left", FEED_SECONDS)
-	if mine:
-		var style := StyleBoxFlat.new()
-		style.bg_color = Color(1, 1, 1, 0.08)
-		var panel := PanelContainer.new()
-		panel.add_theme_stylebox_override("panel", style)
-		panel.size_flags_horizontal = Control.SIZE_SHRINK_END
-		panel.set_meta(&"left", FEED_SECONDS)
-		line.set_meta(&"left", null)
-		panel.add_child(line)
-		_feed.add_child(panel)
-	else:
-		_feed.add_child(line)
-	while _feed.get_child_count() > FEED_LINES:
-		var oldest := _feed.get_child(0)
-		_feed.remove_child(oldest)
-		oldest.queue_free()
+## Tells the shared HUD's death card who killed us.
+func _name_killer(killer_name: String, colour: Color, weapon_key: String) -> void:
+	if player == null or not is_instance_valid(player):
+		return
+	var hud := player.get_parent().get_node_or_null("HUD")
+	if hud != null and hud.has_method("set_killer"):
+		hud.set_killer(killer_name, colour, weapon_key)
 
 
-func _feed_label(text: String, colour: Color, size := 18) -> Label:
-	var label := Label.new()
-	label.text = text
-	label.add_theme_color_override("font_color", colour)
-	label.add_theme_font_size_override("font_size", size)
-	label.add_theme_constant_override("outline_size", 6)
-	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
-	return label
-
-
-func _age_feed(delta: float) -> void:
-	for line in _feed.get_children():
-		var left: float = float(line.get_meta(&"left", 0.0)) - delta
-		line.set_meta(&"left", left)
-		line.modulate.a = clampf(left / 0.6, 0.0, 1.0)
-		if left <= 0.0:
-			line.queue_free()
+## The HUD key for a weapon's display name ("AK-47 Ext. Mag" is `ak47`), or
+## "" for one without a silhouette.
+func _weapon_key(weapon_name: String) -> String:
+	var base := weapon_name.get_slice(" ", 0)
+	if base == "M1911":
+		return "m1911"
+	for weapon: Dictionary in NetClient.loadout_weapons():
+		if String(weapon.name).get_slice(" ", 0) == base:
+			return String(weapon.key).get_slice("+", 0)
+	return ""
 
 
 func _team_colour(id: int) -> Color:
@@ -403,15 +445,7 @@ func _team_colour(id: int) -> Color:
 
 ## A line in the kill feed that is not a kill.
 func _feed_notice(text: String, colour: Color) -> void:
-	var line := HBoxContainer.new()
-	line.alignment = BoxContainer.ALIGNMENT_END
-	line.set_meta(&"left", FEED_SECONDS)
-	line.add_child(_feed_label(text, colour, 16))
-	_feed.add_child(line)
-	while _feed.get_child_count() > FEED_LINES:
-		var oldest := _feed.get_child(0)
-		_feed.remove_child(oldest)
-		oldest.queue_free()
+	_feed.add([[text, colour]])
 
 
 # --- Gun Game callouts ---------------------------------------------------------
@@ -450,19 +484,17 @@ func _check_levels(info: Dictionary) -> void:
 
 
 func _show_callout(text: String, sub: String, colour := Color.WHITE) -> void:
-	_callout.text = text
-	_callout.modulate = colour
-	_sub_callout.text = sub
+	_overlay.callout = text
+	_overlay.callout_detail = sub
+	_overlay.callout_colour = colour
 	_callout_left = CALLOUT_SECONDS
 
 
 func _age_callout(delta: float) -> void:
 	_callout_left = maxf(_callout_left - delta, 0.0)
-	var alpha := clampf(_callout_left / 0.5, 0.0, 1.0)
-	_callout.modulate.a = alpha
-	_sub_callout.modulate.a = alpha
-	_callout.visible = _callout_left > 0.0
-	_sub_callout.visible = _callout.visible
+	_overlay.callout_alpha = clampf(_callout_left / 0.5, 0.0, 1.0)
+	if _callout_left <= 0.0:
+		_overlay.callout = ""
 
 
 # --- Scoreboard ----------------------------------------------------------------
@@ -476,117 +508,112 @@ func _refresh_board() -> void:
 	if info.get("free_for_all", false):
 		_refresh_ladder_board()
 		return
-	_board_headers[1].visible = true
-	_board_tables[1].visible = true
 	var my_team: int = info.my_team
 	var ctf: bool = info.mode == "ctf"
+	var hardpoint: bool = info.mode == "hardpoint"
+	var snd: bool = info.mode == "snd"
 	var headings := ["NAME", "SCORE", "K", "D", "PING"]
 	if ctf:
 		headings = ["NAME", "SCORE", "CAPS", "RET", "K", "D", "PING"]
-	# Our team on top.
-	var order := [my_team, 1 - my_team] if my_team >= 0 else [0, 1]
-	var scores: PackedInt32Array = client.match_info().scores
-	var hardpoint: bool = info.mode == "hardpoint"
 	if hardpoint:
 		headings.insert(headings.size() - 1, "TIME")
-	for i in 2:
-		var team: int = order[i]
-		var table := _board_tables[i]
-		for child in table.get_children():
-			table.remove_child(child)
-			child.queue_free()
-		table.columns = headings.size()
-		var colour := ALLY if team == my_team else ENEMY
-		var team_score := scores[team] if scores.size() == 2 else 0
-		_board_headers[i].text = (
-			"%s   %d" % ["YOUR TEAM" if team == my_team else "ENEMY", team_score]
-		)
-		_board_headers[i].add_theme_color_override("font_color", colour)
-		for heading: String in headings:
-			_board_cell(table, heading, MenuStyle.TEXT_FAINT, 14)
-		var snd: bool = info.mode == "snd"
+	# Our team on top.
+	var order := [my_team, 1 - my_team] if my_team >= 0 else [0, 1]
+	var scores: PackedInt32Array = info.scores
+	var sections := []
+	for team: int in order:
+		var rows := []
 		for entry: Dictionary in client.roster():
 			if entry.team != team:
 				continue
-			var name_colour := Color.WHITE if entry.me else MenuStyle.TEXT
-			# In Search and Destroy the dead sit out the round.
-			if snd and not entry.alive:
-				name_colour = MenuStyle.TEXT_FAINT
-			var name_text: String = entry.name
-			if entry.bot:
-				name_text += "  [BOT]"
-			_board_cell(table, name_text, name_colour, 18, entry.me)
-			_board_cell(table, str(entry.score), name_colour)
+			var cells := [entry.name, str(entry.score)]
 			if ctf:
-				_board_cell(table, str(entry.get("captures", 0)), name_colour)
-				_board_cell(table, str(entry.get("returns", 0)), name_colour)
-			_board_cell(table, str(entry.kills), name_colour)
-			_board_cell(table, str(entry.deaths), name_colour)
+				cells.append(str(entry.get("captures", 0)))
+				cells.append(str(entry.get("returns", 0)))
+			cells.append(str(entry.kills))
+			cells.append(str(entry.deaths))
 			if hardpoint:
 				var hill := int(entry.get("hill_seconds", 0))
-				_board_cell(table, "%d:%02d" % [hill / 60, hill % 60], name_colour)
-			_board_cell(table, "BOT" if entry.bot else str(entry.ping), MenuStyle.TEXT_DIM)
+				cells.append("%d:%02d" % [hill / 60, hill % 60])
+			cells.append("—" if entry.bot else str(entry.ping))
+			(
+				rows
+				. append(
+					{
+						"cells": cells,
+						"me": entry.me,
+						# In Search and Destroy the dead sit out the round.
+						"faint": snd and not entry.alive,
+						"tag": "BOT" if entry.bot else "",
+					}
+				)
+			)
+		(
+			sections
+			. append(
+				{
+					"name": "YOUR TEAM" if team == my_team else "ENEMY",
+					"score": str(scores[team]) if scores.size() == 2 else "",
+					"colour": ALLY if team == my_team else ENEMY,
+					"headings": headings,
+					"rows": rows,
+				}
+			)
+		)
+	_board.sections = sections
 
 
 ## Free-for-all's score bar: our kills, and the most anyone else has.
 func _update_kills_bar(info: Dictionary) -> void:
+	var mine := 0
 	var best_other := 0
 	for entry: Dictionary in client.roster():
 		if entry.me:
-			_ally_score.text = str(entry.kills)
+			mine = int(entry.kills)
 		else:
 			best_other = maxi(best_other, int(entry.kills))
-	_enemy_score.text = str(best_other)
-	_limit.text = "FIRST TO %d KILLS" % info.score_limit if info.score_limit > 0 else ""
+	var limit := float(maxi(int(info.score_limit), 1))
+	_score.rows = [
+		{"value": str(mine), "fill": mine / limit, "colour": ALLY, "ours": true, "label": "YOU"},
+		{"value": str(best_other), "fill": best_other / limit, "colour": ENEMY, "label": "BEST"},
+	]
+	_set_state(info.phase, mine, best_other)
+	_score.footer = "FIRST TO %d KILLS" % info.score_limit if info.score_limit > 0 else ""
 
 
 ## One table for everyone: Gun Game shows weapons, Free-for-all scores.
 func _refresh_ladder_board() -> void:
-	var table := _board_tables[0]
-	for child in table.get_children():
-		table.remove_child(child)
-		child.queue_free()
-	table.columns = 5
-	_board_headers[1].visible = false
-	_board_tables[1].visible = false
-	var roster := client.roster()
 	var levels: int = client.match_info().score_limit
 	var ladder: bool = client.match_info().mode == "gungame"
-	_board_headers[0].text = "EVERY PLAYER FOR THEMSELVES"
-	_board_headers[0].add_theme_color_override("font_color", MenuStyle.TEXT)
-	for heading in ["NAME", "WEAPON" if ladder else "SCORE", "K", "D", "PING"]:
-		_board_cell(table, heading, MenuStyle.TEXT_FAINT, 14)
-	for entry: Dictionary in roster:
-		var colour := Color.WHITE if entry.me else MenuStyle.TEXT
-		var name_text: String = entry.name
-		if entry.bot:
-			name_text += "  [BOT]"
-		_board_cell(table, name_text, colour, 18, entry.me)
+	var rows := []
+	for entry: Dictionary in client.roster():
 		var weapon := "%d/%d  %s" % [int(entry.level) + 1, levels, entry.weapon]
-		_board_cell(table, weapon if ladder else str(entry.score), ALLY if entry.me else ENEMY)
-		_board_cell(table, str(entry.kills), colour)
-		_board_cell(table, str(entry.deaths), colour)
-		_board_cell(table, "BOT" if entry.bot else str(entry.ping), MenuStyle.TEXT_DIM)
-
-
-func _board_cell(
-	table: GridContainer, text: String, colour: Color, size := 18, bold := false
-) -> void:
-	var label := Label.new()
-	label.text = text
-	label.add_theme_color_override("font_color", colour)
-	label.add_theme_font_size_override("font_size", size)
-	if bold:
-		label.add_theme_constant_override("outline_size", 4)
-		label.add_theme_color_override("font_outline_color", ALLY.darkened(0.6))
-	var column := table.get_child_count() % table.columns
-	if column != 0:
-		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		# Wide enough for Gun Game's weapon column.
-		label.custom_minimum_size = Vector2(150 if column == 1 else 70, 0)
-	else:
-		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	table.add_child(label)
+		(
+			rows
+			. append(
+				{
+					"cells":
+					[
+						entry.name,
+						weapon if ladder else str(entry.score),
+						str(entry.kills),
+						str(entry.deaths),
+						"—" if entry.bot else str(entry.ping),
+					],
+					"me": entry.me,
+					"tag": "BOT" if entry.bot else "",
+				}
+			)
+		)
+	_board.sections = [
+		{
+			"name": "EVERY PLAYER FOR THEMSELVES",
+			"score": "",
+			"colour": MenuStyle.TEXT,
+			"headings": ["NAME", "WEAPON" if ladder else "SCORE", "K", "D", "PING"],
+			"rows": rows,
+		}
+	]
 
 
 # --- Loadout and ready ------------------------------------------------------------
@@ -674,76 +701,30 @@ func _build() -> void:
 
 
 func _build_score_bar() -> void:
-	var bar := HBoxContainer.new()
-	bar.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
-	bar.position = Vector2(-160, 14)
-	bar.custom_minimum_size = Vector2(320, 0)
-	bar.alignment = BoxContainer.ALIGNMENT_CENTER
-	bar.add_theme_constant_override("separation", 18)
-	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_root.add_child(bar)
-	_ally_score = _bar_label("0", ALLY, 34)
-	_clock = _bar_label("", Color.WHITE, 26)
-	_clock.custom_minimum_size = Vector2(120, 0)
-	_enemy_score = _bar_label("0", ENEMY, 34)
-	for label in [_ally_score, _clock, _enemy_score]:
-		bar.add_child(label)
-	_limit = _bar_label("", MenuStyle.TEXT_DIM, 13)
-	_limit.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
-	_limit.position = Vector2(-100, 58)
-	_limit.custom_minimum_size = Vector2(200, 0)
-	_root.add_child(_limit)
+	_score = _full_rect(ScoreBlock)
 
 
-func _bar_label(text: String, colour: Color, size: int) -> Label:
-	var label := Label.new()
-	label.text = text
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.custom_minimum_size = Vector2(64, 0)
-	label.add_theme_color_override("font_color", colour)
-	label.add_theme_font_size_override("font_size", size)
-	label.add_theme_constant_override("outline_size", 8)
-	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.75))
-	return label
+## A full-screen drawn piece that lets the mouse through.
+func _full_rect(script: GDScript) -> Control:
+	var piece := Control.new()
+	piece.set_script(script)
+	piece.set_anchors_preset(Control.PRESET_FULL_RECT)
+	piece.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(piece)
+	return piece
 
 
 func _build_banners() -> void:
-	_banner = _bar_label("", Color.WHITE, 54)
-	_banner.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	_banner.position = Vector2(-400, -330)
-	_banner.custom_minimum_size = Vector2(800, 0)
-	_root.add_child(_banner)
-	_sub_banner = _bar_label("", MenuStyle.TEXT, 20)
-	_sub_banner.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	_sub_banner.position = Vector2(-400, -268)
-	_sub_banner.custom_minimum_size = Vector2(800, 0)
-	_root.add_child(_sub_banner)
-	_callout = _bar_label("", Color.WHITE, 40)
-	_callout.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	_callout.position = Vector2(-400, -220)
-	_callout.custom_minimum_size = Vector2(800, 0)
-	_callout.visible = false
-	_root.add_child(_callout)
-	_sub_callout = _bar_label("", MenuStyle.ACCENT, 18)
-	_sub_callout.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	_sub_callout.position = Vector2(-400, -170)
-	_sub_callout.custom_minimum_size = Vector2(800, 0)
-	_sub_callout.visible = false
-	_root.add_child(_sub_callout)
-	_hint = _bar_label("", MenuStyle.ACCENT, 17)
-	_hint.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
-	_hint.position = Vector2(-400, 84)
-	_hint.custom_minimum_size = Vector2(800, 0)
-	_root.add_child(_hint)
+	_overlay = _full_rect(MatchBanner)
 
 
 func _build_feed() -> void:
-	_feed = VBoxContainer.new()
-	_feed.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	# Below the score readout in the top right corner.
-	_feed.position = Vector2(-520, 92)
-	_feed.custom_minimum_size = Vector2(500, 0)
-	_feed.alignment = BoxContainer.ALIGNMENT_BEGIN
+	# Bottom left, above the health cluster.
+	_feed = Control.new()
+	_feed.set_script(KillFeed)
+	_feed.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
+	_feed.position = Vector2(40, -150 - 200)
+	_feed.size = Vector2(520, 200)
 	_feed.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_feed)
 
@@ -754,7 +735,8 @@ func _build_feed() -> void:
 func _build_chat() -> void:
 	var box := VBoxContainer.new()
 	box.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
-	box.position = Vector2(24, -330)
+	# Above the kill feed, which sits above the health cluster.
+	box.position = Vector2(40, -600)
 	box.custom_minimum_size = Vector2(520, 0)
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(box)
@@ -846,32 +828,8 @@ func _age_chat(delta: float) -> void:
 
 
 func _build_board() -> void:
-	_board = PanelContainer.new()
-	_board.add_theme_stylebox_override("panel", MenuStyle.panel())
-	_board.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	_board.custom_minimum_size = Vector2(760, 0)
-	_board.position = Vector2(-380, -222)
+	_board = _full_rect(Scoreboard)
 	_board.visible = false
-	_board.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_root.add_child(_board)
-	var layout := VBoxContainer.new()
-	layout.add_theme_constant_override("separation", 12)
-	_board.add_child(layout)
-	_board_title = Label.new()
-	_board_title.add_theme_color_override("font_color", MenuStyle.ACCENT)
-	_board_title.add_theme_font_size_override("font_size", 15)
-	layout.add_child(_board_title)
-	for i in 2:
-		var header := Label.new()
-		header.add_theme_font_size_override("font_size", 22)
-		layout.add_child(header)
-		_board_headers.append(header)
-		var table := GridContainer.new()
-		table.columns = 5
-		table.add_theme_constant_override("h_separation", 18)
-		table.add_theme_constant_override("v_separation", 4)
-		layout.add_child(table)
-		_board_tables.append(table)
 
 
 func _build_menu() -> void:

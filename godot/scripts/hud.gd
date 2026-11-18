@@ -11,6 +11,7 @@ extends CanvasLayer
 ## tell this one who killed us (`set_killer`).
 
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
+const Paint := preload("res://scripts/ui/hud_paint.gd")
 
 ## Seconds the controls legend stays up after the first spawn; F1 toggles it.
 const CONTROLS_TIME := 14.0
@@ -164,13 +165,13 @@ func _process(delta: float) -> void:
 		elif magazine == 0 and reserve == 0:
 			warning = {"text": "NO AMMO", "colour": UiTheme.HARM}
 		elif low and reserve > 0:
-			warning = _split_key("[%s] RELOAD" % Settings.prompt_key(&"reload"), UiTheme.TEXT)
+			warning = Paint.split_key("[%s] RELOAD" % Settings.prompt_key(&"reload"), UiTheme.TEXT)
 		elif low:
 			warning = {"text": "LOW AMMO", "colour": UiTheme.ENEMY}
 	_centre.warning = warning
 
 	var prompt := _player.interact_prompt()
-	_centre.prompt = _split_key(prompt, UiTheme.TEXT) if alive and prompt != "" else {}
+	_centre.prompt = Paint.split_key(prompt, UiTheme.TEXT) if alive and prompt != "" else {}
 
 	# Without respawns (Zombies) the mode shows its own end screen.
 	_centre.dead = not alive and _player.auto_respawn
@@ -193,17 +194,6 @@ func _process(delta: float) -> void:
 		spread += _player.pellet_spread_radians()
 	_crosshair.gap = tan(spread) * pixels_per_unit
 	_crosshair.alpha = 0.0 if not alive else 1.0 - clampf(_player.ads_amount() * 1.5, 0.0, 1.0)
-
-
-## Splits a leading "[KEY]" off `text` into a prompt row's key cap.
-func _split_key(text: String, colour: Color) -> Dictionary:
-	var key := ""
-	if text.begins_with("["):
-		var close := text.find("]")
-		if close > 0:
-			key = text.substr(1, close - 1)
-			text = text.substr(close + 1).strip_edges()
-	return {"text": text, "key": key, "colour": colour}
 
 
 ## The legend's [key, label] pairs for the current device.

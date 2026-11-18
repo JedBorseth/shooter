@@ -331,3 +331,23 @@ Zombies use the same skeleton and pipeline. Four zombie kits in `tools/build_cha
 
 `scenes/characters/zombie_body.tscn` lists the other bodies in `SoldierRig.variants`, and each zombie wears one of the four, picked from its seed. `SoldierRig` plays the Universal Animation Library 2 zombie clips when `zombie` is set and adds glowing eyes. To add another character, add a kit to `KITS` (its MakeHuman body, clothes, and gear), and either a scene that instances its model under a `SoldierRig` or an entry in a rig's `variants`.
 
+
+## HUD
+
+The HUD follows the modern Call of Duty layout (Modern Warfare 2019 on and Black Ops 6) in our own calm style: small clusters in the corners, square-cornered translucent graphite plates, Chakra Petch numerals with a soft drop shadow, colour on text and thin bars only, and a white keyline for whatever is ours. The pieces draw themselves (`_draw`) with the helpers in `godot/scripts/ui/hud_paint.gd`.
+
+| Where | What | Script |
+| --- | --- | --- |
+| Top left | Match score block: the mode and clock, a row per side with the score and a bar filling toward the limit, and LEADING, TRAILING, or TIED beside the limit. Outside a match, your own score, kills, deaths, and streak | `net/score_block.gd`, `score_feed.gd` |
+| Top centre | Mode pieces: Hardpoint's zone strip, the flags' status in Capture the Flag, and who is alive in Search and Destroy | the mode's view |
+| Top right | Frame rate, when turned on | `hud.gd` |
+| Bottom left | Health (cross, number, segmented bar with a trail after each hit), the kill feed above it (killer, weapon silhouette, headshot mark, victim), and chat above that | `hud_vitals.gd`, `net/kill_feed.gd`, `net/tdm_hud.gd` |
+| Bottom right | Weapon name and attachment, silhouette, big magazine count, smaller reserve, and a tick per round | `hud_weapon.gd` |
+| Centre | Crosshair, hit markers, damage crescents, ammo warnings and prompts with key caps, points and medals | `crosshair.gd`, `damage_overlay.gd`, `hud_centre.gd`, `score_feed.gd` |
+| Upper third | Announcement banners: the title on a dark band with thin wings in the call's colour | `net/match_banner.gd` |
+| Lower third | The death card ("KILLED BY", the killer's name and weapon, the respawn countdown) and the hint under it | `hud_centre.gd`, `net/match_banner.gd` |
+| Bottom edge | The controls legend, from the live bindings, for 14 seconds after the first spawn (F1 toggles it) | `hud_centre.gd` |
+
+Deliberate differences from Call of Duty: health shows as a number and bar, because health here regenerates in steps worth reading; the match state reads LEADING or TRAILING rather than Call of Duty's wording; there is no minimap yet.
+
+Weapon silhouettes in `assets/ui/weapons/` are rendered from the weapon models by `godot/tools/weapon_icons.gd`; run it again after a model changes.

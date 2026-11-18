@@ -17,6 +17,8 @@ extends Node3D
 ## reacts to `NetClient.flag_played`.
 
 const CLOTH_SHADER := preload("res://shaders/flag_cloth.gdshader")
+const MatchBanner := preload("res://scripts/net/match_banner.gd")
+const LABEL_FONT := preload("res://assets/fonts/ChakraPetch-SemiBold.ttf")
 const ALLY := Color("7cc4ff")
 const ENEMY := Color("ff7a5c")
 const POLE_HEIGHT := 2.7
@@ -45,10 +47,9 @@ var _base_materials: Array[StandardMaterial3D] = []
 var _ring_materials: Array[StandardMaterial3D] = []
 var _layer: CanvasLayer
 var _overlay: Control
-var _announce: Label
-var _announce_sub: Label
+## Flag calls and the carrier's hint, on the match banner.
+var _banner: Control
 var _announce_left := 0.0
-var _carry_hint: Label
 var _chime: AudioStreamPlayer
 var _sounds := {}
 ## What the overlay draws this frame.
@@ -124,23 +125,21 @@ func _process(delta: float) -> void:
 			marker.colour = colour
 			_markers.append(marker)
 	# Carrying the enemy's flag: point at home, and say whether we can score.
-	_carry_hint.visible = carrying
+	_banner.hint = ""
 	if carrying:
 		var own: Dictionary = flags[my_team] if my_team >= 0 else flags[0]
 		_markers.append({"position": own.home, "label": "CAPTURE", "colour": ALLY, "pulse": true})
 		if own.status == "home":
-			_carry_hint.text = "YOU HAVE THE FLAG  ·  TAKE IT TO YOUR BASE"
-			_carry_hint.modulate = ALLY
+			_banner.hint = "YOU HAVE THE FLAG  ·  TAKE IT TO YOUR BASE"
+			_banner.hint_colour = ALLY
 		else:
-			_carry_hint.text = "YOUR FLAG MUST BE AT YOUR BASE TO SCORE"
-			_carry_hint.modulate = ENEMY
+			_banner.hint = "YOUR FLAG MUST BE AT YOUR BASE TO SCORE"
+			_banner.hint_colour = ENEMY
 	if _announce_left > 0.0:
 		_announce_left -= delta
-		var alpha := clampf(_announce_left / 0.5, 0.0, 1.0)
-		_announce.modulate.a = alpha
-		_announce_sub.modulate.a = alpha
-		_announce.visible = _announce_left > 0.0
-		_announce_sub.visible = _announce.visible
+		_banner.callout_alpha = clampf(_announce_left / 0.5, 0.0, 1.0)
+		if _announce_left <= 0.0:
+			_banner.callout = ""
 	_overlay.queue_redraw()
 
 
@@ -236,13 +235,10 @@ func _on_flag_played(flag: int, play: String, player_id: int) -> void:
 
 
 func _show_call(title: String, sub: String, colour: Color) -> void:
-	_announce.text = title
-	_announce.modulate = colour
-	_announce_sub.text = sub
-	_announce_sub.modulate = Color.WHITE
+	_banner.callout = title
+	_banner.callout_colour = colour
+	_banner.callout_detail = sub
 	_announce_left = ANNOUNCE_SECONDS
-	_announce.visible = true
-	_announce_sub.visible = sub != ""
 
 
 func _feed(play: String, player_id: int, ours: bool) -> void:
@@ -438,39 +434,16 @@ func _build_overlay() -> void:
 	_overlay.draw.connect(_draw_overlay)
 	_layer.add_child(_overlay)
 
-	_announce = _label(40)
-	_announce.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
-	_announce.position = Vector2(-500, 150)
-	_announce.custom_minimum_size = Vector2(1000, 0)
-	_announce.visible = false
-	_overlay.add_child(_announce)
-	_announce_sub = _label(19)
-	_announce_sub.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
-	_announce_sub.position = Vector2(-500, 202)
-	_announce_sub.custom_minimum_size = Vector2(1000, 0)
-	_announce_sub.visible = false
-	_overlay.add_child(_announce_sub)
-	_carry_hint = _label(20)
-	_carry_hint.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
-	_carry_hint.position = Vector2(-500, -190)
-	_carry_hint.custom_minimum_size = Vector2(1000, 0)
-	_carry_hint.visible = false
-	_overlay.add_child(_carry_hint)
-
-
-func _label(size: int) -> Label:
-	var label := Label.new()
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	label.add_theme_font_size_override("font_size", size)
-	label.add_theme_constant_override("outline_size", 8)
-	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
-	return label
+	_banner = Control.new()
+	_banner.set_script(MatchBanner)
+	_banner.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_overlay.add_child(_banner)
 
 
 func _draw_overlay() -> void:
 	var camera := get_viewport().get_camera_3d()
-	var font := ThemeDB.fallback_font
+	var font: Font = LABEL_FONT
 	var size := _overlay.size
 	if camera != null:
 		for marker: Dictionary in _markers:
