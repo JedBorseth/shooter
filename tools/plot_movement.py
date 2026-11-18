@@ -42,6 +42,7 @@ SPEED_LINES = [
 SPEED_BANDS = {
     "slide": [(SPRINT * 1.0, SPRINT * 1.1, "slide entry, MW ~1.0-1.1x sprint")],
     "slide_chain": [(0.0, SPRINT, "never faster than a sprint on average")],
+    "jump_land": [(WALK * 0.6, WALK * 0.75, "MW touchdown ~0.65 x")],
     "strafe_back": [
         (WALK * 0.8 - 0.05, WALK * 0.8 + 0.05, "IW strafe 0.8 x"),
         (WALK * 0.7 - 0.05, WALK * 0.7 + 0.05, "IW backpedal 0.7 x"),

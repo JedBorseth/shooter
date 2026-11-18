@@ -65,6 +65,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Stance changes take time (0.25 s down, 0.3 s up) on one crouch blend that drives the capsule, the camera, the shot origin, the hit zones, and the third-person body together ([docs/movement.md](docs/movement.md)).
 - [x] Slides are earned (0.3 s of sprint) and start at 1.1x sprint scaled by weapon weight; a slide-cancel keeps no more than sprint speed, so chained cancels cannot outrun a sprint.
 - [x] Ground inertia (0.23 s to a walk, 0.28 s to stop), strafe and backpedal at 0.8x and 0.7x, a 6.9 m/s sprint that builds over 0.25 s and winds down over the weapon's sprint-out time, and slower diagonal sprints.
+- [x] Landings cost speed (0.7x on touchdown, 1.2 s to recover) and make the next jump lower, air strafing adds no speed, and a standing jump can be steered about a metre.
 - [x] A mantle keeps the direction it started in; the server's player bodies collide like the client's; a respawn resets every camera offset.
 
 ### Feel and polish

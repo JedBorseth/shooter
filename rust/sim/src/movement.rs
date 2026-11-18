@@ -127,11 +127,23 @@ pub struct MoveState {
     /// builds over `sprint_in_time` and winds down over the weapon's
     /// sprint-out time, and the speed cap follows it.
     pub sprint_blend: f32,
+    /// Seconds in the air so far (0 on the ground), which sets how hard
+    /// the next landing is.
+    pub air_time: f32,
+    /// Seconds of landing recovery left: the speed cap and the jump are
+    /// reduced while it runs out (`land_recovery_time` after a full jump).
+    pub land_slow: f32,
 }
 
 impl MoveState {
     pub fn mantling(&self) -> bool {
         self.mantle_time > 0.0
+    }
+
+    /// How much landing recovery is left, 1 just after a full jump's landing
+    /// to 0 recovered.
+    pub fn landing_recovery(&self, params: &MoveParams) -> f32 {
+        (self.land_slow / params.land_recovery_time.max(1e-3)).clamp(0.0, 1.0)
     }
 
     /// Capsule height now, from the crouch blend.
@@ -202,6 +214,18 @@ pub struct MoveParams {
     pub slide_down_time: f32,
     /// Distance from the top of the capsule down to the eyes.
     pub eye_from_top: f32,
+    /// Seconds in the air that make a landing count in full (a standing
+    /// jump is about 0.65 s); shorter falls count for their share, and under
+    /// `land_min_air` (a curb, a stair) not at all.
+    pub land_full_air: f32,
+    pub land_min_air: f32,
+    /// Horizontal speed kept on touching down from a full jump.
+    pub land_speed_scale: f32,
+    /// Seconds a full landing takes to recover from, and the speed cap and
+    /// jump strength right after it, easing back to 1 as it runs out.
+    pub land_recovery_time: f32,
+    pub land_max_speed_scale: f32,
+    pub land_jump_scale: f32,
     /// Ledges from this high to `mantle_max` (above the feet) can be climbed.
     pub mantle_min: f32,
     pub mantle_max: f32,
@@ -225,8 +249,8 @@ impl Default for MoveParams {
             backpedal_scale: 0.7,
             sprint_min_forward: 0.5,
             ground_accel: 8.0,
-            air_accel: 2.0,
-            air_wish_speed: 1.2,
+            air_accel: 4.0,
+            air_wish_speed: 2.5,
             friction: 6.0,
             stop_speed: 2.5,
             gravity: 19.0,
@@ -246,6 +270,12 @@ impl Default for MoveParams {
             stand_up_time: 0.3,
             slide_down_time: 0.15,
             eye_from_top: 0.12,
+            land_full_air: 0.6,
+            land_min_air: 0.2,
+            land_speed_scale: 0.7,
+            land_recovery_time: 1.2,
+            land_max_speed_scale: 0.75,
+            land_jump_scale: 0.75,
             mantle_min: 0.5,
             mantle_max: 1.35,
             mantle_base_time: 0.22,
@@ -388,6 +418,7 @@ fn step_rules(
         state.velocity = Vec3::new(carried.x, state.velocity.y, carried.z);
     }
 
+    land(state, env, params, dt);
     tick_slide(state, params, dt);
     update_stance(
         state,
@@ -432,6 +463,8 @@ fn step_rules(
         // A little over the ledge, so the feet clear its edge.
         state.mantle_rise = (height + 0.15) / time;
         state.mantle_dir = Vec2::new(forward.x, forward.z);
+        // Climbing out of a jump is not a landing.
+        state.air_time = 0.0;
         return mantle(state, params, dt);
     }
 
@@ -460,7 +493,10 @@ fn step_rules(
         // Consume both windows so one press gives one jump.
         state.jump_buffer = 0.0;
         state.coyote = 0.0;
-        state.velocity.y = params.jump_velocity;
+        // Right after a landing the legs have less to give: repeated jumps
+        // get lower until the recovery runs out.
+        let recovery = state.landing_recovery(params);
+        state.velocity.y = params.jump_velocity * (1.0 - (1.0 - params.land_jump_scale) * recovery);
         jumped = true;
     }
 
@@ -490,6 +526,7 @@ fn step_rules(
     } else {
         let wish_speed = (wish_amount * max_speed(state, params) * input.speed_multiplier)
             .min(params.air_wish_speed);
+        let before = horizontal(state.velocity).length();
         accelerate(
             &mut state.velocity,
             wish_dir,
@@ -497,6 +534,11 @@ fn step_rules(
             params.air_accel,
             dt,
         );
+        // Steering in the air turns the velocity but never adds speed past
+        // what the jump started with (no air-strafe gain).
+        let cap = before.max(wish_speed);
+        let flat = horizontal(state.velocity).clamp_length_max(cap);
+        state.velocity = Vec3::new(flat.x, state.velocity.y, flat.z);
         state.velocity.y -= params.gravity * dt;
     }
 
@@ -634,6 +676,28 @@ fn lunge(state: &mut MoveState, env: MoveEnv, params: &MoveParams, dt: f32) -> V
     state.velocity
 }
 
+/// Touchdown: a landing after a real fall takes speed off at once and starts
+/// a recovery that holds the speed cap and the jump down for a moment, both
+/// scaled by how long the player was in the air.
+fn land(state: &mut MoveState, env: MoveEnv, params: &MoveParams, dt: f32) {
+    state.land_slow = (state.land_slow - dt).max(0.0);
+    if !env.on_floor {
+        state.air_time += dt;
+        return;
+    }
+    let air = std::mem::take(&mut state.air_time);
+    if air < params.land_min_air {
+        return;
+    }
+    let severity = ((air - params.land_min_air)
+        / (params.land_full_air - params.land_min_air).max(1e-3))
+    .clamp(0.0, 1.0);
+    let keep = 1.0 - (1.0 - params.land_speed_scale) * severity;
+    state.velocity.x *= keep;
+    state.velocity.z *= keep;
+    state.land_slow = state.land_slow.max(params.land_recovery_time * severity);
+}
+
 /// Advances the slide timer and ends the slide, in a crouch, when it runs out or slows down.
 /// Kept separate from `update_stance` so the timer ticks exactly once per step.
 fn tick_slide(state: &mut MoveState, params: &MoveParams, dt: f32) {
@@ -652,6 +716,11 @@ fn tick_slide(state: &mut MoveState, params: &MoveParams, dt: f32) {
 /// speed with the body. Standing up frees it at once, and acceleration
 /// carries the player back up to speed (a slide-cancel keeps its sprint).
 fn max_speed(state: &MoveState, params: &MoveParams) -> f32 {
+    let recovery = 1.0 - (1.0 - params.land_max_speed_scale) * state.landing_recovery(params);
+    recovery * gait_speed(state, params)
+}
+
+fn gait_speed(state: &MoveState, params: &MoveParams) -> f32 {
     let run = crouch_ease(state.sprint_blend);
     let standing = params.walk_speed + (params.sprint_speed - params.walk_speed) * run;
     if state.stance == Stance::Standing {
@@ -1756,5 +1825,129 @@ mod tests {
         let v = step(&mut s, &turned, MoveEnv::default(), &p, TICK);
         assert!(s.mantling());
         assert_eq!(Vec2::new(v.x, v.z), Vec2::new(first.x, first.z));
+    }
+
+    /// Jumps from a run and lands; returns the state on the landing tick.
+    fn jump_and_land(s: &mut MoveState, input: MoveInput) {
+        let p = MoveParams::default();
+        let mut height = 0.0f32;
+        let jump = MoveInput {
+            jump: true,
+            ..input
+        };
+        let v = step(s, &jump, MoveEnv::default(), &p, TICK);
+        height += v.y * TICK;
+        while height > 0.0 {
+            let v = step(s, &input, AIR, &p, TICK);
+            height += v.y * TICK;
+        }
+        s.velocity.y = 0.0;
+        step(s, &input, MoveEnv::default(), &p, TICK);
+    }
+
+    #[test]
+    fn landing_costs_speed_and_recovers() {
+        let p = MoveParams::default();
+        let mut s = MoveState::default();
+        run_at(&mut s, forward(), MoveEnv::default(), 1.0);
+        jump_and_land(&mut s, forward());
+        assert!(
+            speed(&s) < p.walk_speed * 0.8,
+            "slowed on touchdown: {}",
+            speed(&s)
+        );
+        assert!(s.landing_recovery(&p) > 0.9);
+        run_at(&mut s, forward(), MoveEnv::default(), 0.4);
+        assert!(
+            speed(&s) < p.walk_speed * 0.95,
+            "still recovering: {}",
+            speed(&s)
+        );
+        run_at(&mut s, forward(), MoveEnv::default(), 1.2);
+        assert!(
+            (speed(&s) - p.walk_speed).abs() < 0.02,
+            "recovered: {}",
+            speed(&s)
+        );
+    }
+
+    #[test]
+    fn a_curb_is_not_a_landing() {
+        let p = MoveParams::default();
+        let mut s = MoveState::default();
+        run_at(&mut s, forward(), MoveEnv::default(), 1.0);
+        run_at(&mut s, forward(), AIR, 0.1);
+        step(&mut s, &forward(), MoveEnv::default(), &p, TICK);
+        assert_eq!(s.land_slow, 0.0);
+    }
+
+    #[test]
+    fn jumps_straight_after_landing_are_lower() {
+        let p = MoveParams::default();
+        let mut s = MoveState::default();
+        jump_and_land(&mut s, MoveInput::default());
+        step(&mut s, &MoveInput::default(), MoveEnv::default(), &p, TICK);
+        step(&mut s, &jump(), MoveEnv::default(), &p, TICK);
+        assert!(
+            s.velocity.y < p.jump_velocity * 0.8,
+            "a tired second jump: {}",
+            s.velocity.y
+        );
+        // Rested, a full jump again.
+        let mut s = MoveState::default();
+        jump_and_land(&mut s, MoveInput::default());
+        run_at(&mut s, MoveInput::default(), MoveEnv::default(), 1.3);
+        step(&mut s, &jump(), MoveEnv::default(), &p, TICK);
+        // A full jump, less the tick's gravity.
+        assert_eq!(s.velocity.y, p.jump_velocity - p.gravity * TICK);
+    }
+
+    #[test]
+    fn bunny_hopping_loses_speed() {
+        let p = MoveParams::default();
+        let mut s = MoveState::default();
+        let sprint = MoveInput {
+            sprint: true,
+            ..forward()
+        };
+        run_at(&mut s, sprint, MoveEnv::default(), 1.0);
+        for _ in 0..5 {
+            jump_and_land(&mut s, forward());
+        }
+        assert!(speed(&s) < p.walk_speed, "five hops in: {}", speed(&s));
+    }
+
+    #[test]
+    fn air_strafing_gains_no_speed() {
+        let p = MoveParams::default();
+        let mut s = MoveState::default();
+        run_at(&mut s, forward(), MoveEnv::default(), 1.0);
+        let start = speed(&s);
+        s.velocity.y = p.jump_velocity;
+        // Swing the view and strafe with it, the classic air-strafe.
+        for i in 0..ticks(0.65) {
+            let input = MoveInput {
+                wish: Vec2::new(1.0, 0.3),
+                yaw: -(i as f32) * 0.02,
+                ..Default::default()
+            };
+            step(&mut s, &input, AIR, &p, TICK);
+        }
+        assert!(speed(&s) <= start + 1e-4, "{} from {start}", speed(&s));
+    }
+
+    #[test]
+    fn a_standing_jump_can_be_steered() {
+        let p = MoveParams::default();
+        let mut s = MoveState {
+            velocity: Vec3::Y * p.jump_velocity,
+            ..Default::default()
+        };
+        let mut travelled = 0.0;
+        for _ in 0..ticks(0.65) {
+            let v = step(&mut s, &forward(), AIR, &p, TICK);
+            travelled += -v.z * TICK;
+        }
+        assert!((0.6..=1.4).contains(&travelled), "{travelled} m");
     }
 }

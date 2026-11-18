@@ -30,6 +30,22 @@ sprint-out time (read from the weapon file, owned by weapon feel) once it
 ends, so the legs and the gun come out of a run together. While sprinting the
 sideways input counts for half, so a diagonal sprint runs mostly forward.
 
+## Jump, air, and landing
+
+| | Here | Reference |
+| --- | --- | --- |
+| Jump | 6.2 m/s up, gravity 19: about 1 m, 0.65 s | about 1 m |
+| Touchdown after a full jump | keeps 0.7 x horizontal speed | about 0.65 x |
+| Recovery | 1.2 s: speed cap from 0.75 x and jump from 0.75 x back to 1 | about 1.2 to 1.8 s |
+| Air steering | up to 2.5 m/s toward the input (accel 4) | about half a walk |
+| Air strafing | never adds speed | none |
+
+A landing counts by the time in the air: under 0.2 s (a curb, a stair) not at
+all, a full count from 0.6 s. Repeated jumps start inside the last landing's
+recovery, so each is lower and a bunny hop loses speed. Air steering turns
+the velocity but never makes it longer than at takeoff (or the 2.5 m/s steer).
+New state: `MoveState::air_time` and `MoveState::land_slow`.
+
 ## Stance
 
 | | Here | Reference |

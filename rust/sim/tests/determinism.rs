@@ -225,10 +225,12 @@ fn press_aim_changes_no_state() {
 // capped, and a mantle keeps the direction it started in.
 // Movement, round 2: ground inertia, strafe and backpedal scales, and a
 // sprint that builds and winds down.
-const REFERENCE_HASH: u64 = 0xe7f5_b967_1e91_4f1c;
+// Movement, round 3: landings cost speed and recover, tired jumps, and air
+// steering that never adds speed.
+const REFERENCE_HASH: u64 = 0xc6af_afd8_c4f7_6557;
 /// The same for every shot's view angles and aim offset (sub-tick press aims
 /// included).
-const SHOT_REFERENCE_HASH: u64 = 0xb253_5880_e16e_03d5;
+const SHOT_REFERENCE_HASH: u64 = 0xe2ef_ea58_c6c7_b1e6;
 
 #[test]
 fn state_matches_the_reference_on_every_platform() {
