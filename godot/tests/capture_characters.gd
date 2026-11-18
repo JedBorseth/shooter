@@ -8,7 +8,7 @@ extends SceneTree
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
 ##     --script res://tests/capture_characters.gd
 ## CAPTURE_SETS picks sections (comma list of lineups, poses, turntable, hands,
-## fp, horde; default all).
+## fp, horde, bodies; default all).
 
 const SOLDIER := preload("res://scenes/characters/soldier.tscn")
 const DISTANCES := [2.0, 10.0, 30.0, 60.0]
@@ -43,6 +43,8 @@ func _run() -> void:
 		await _first_person()
 	if _wants("horde"):
 		await _horde()
+	if _wants("bodies"):
+		await _bodies()
 	settings.reset_to_defaults()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://capture_characters.cfg"))
 	quit()
@@ -405,6 +407,39 @@ func _horde() -> void:
 	)
 	await _shot("horde_02_side")
 	await _close(arena)
+
+
+# --- Zombie bodies ----------------------------------------------------------------
+
+
+func _bodies() -> void:
+	# A row of zombies in daylight, each wearing the body its seed picks, so
+	# every body shows up: the row from the front, then each face close up.
+	var scene := await _open("res://scenes/main.tscn")
+	var camera := _camera(scene, 40.0)
+	var bodies: Array[SoldierRig] = []
+	for i in 12:
+		var zombie := (
+			(load("res://scenes/characters/zombie_body.tscn") as PackedScene).instantiate()
+		)
+		scene.add_child(zombie)
+		var rig := zombie as SoldierRig
+		rig.global_position = Vector3(-6.6 + i * 1.2, 0, 10)
+		bodies.append(rig)
+	for frame in 30:
+		for rig in bodies:
+			rig.drive({"yaw": PI}, 1.0 / 60.0)
+		await process_frame
+	camera.look_at_from_position(Vector3(0, 1.3, 17.5), Vector3(0, 0.95, 10))
+	await _shot("bodies_row")
+	for i in bodies.size():
+		var at := bodies[i].global_position
+		camera.look_at_from_position(at + Vector3(0.35, 1.45, 1.6), at + Vector3(0, 1.3, 0))
+		await _shot("bodies_face_%02d" % i)
+	for rig in bodies:
+		rig.queue_free()
+	camera.queue_free()
+	await _close(scene)
 
 
 # --- Helpers --------------------------------------------------------------------
