@@ -83,7 +83,9 @@ const FOV_KICK_STIFFNESS: f32 = 220.0;
 const FOV_KICK_DAMPING: f32 = 22.0;
 /// Zoom pulse per shot, as a fraction of the FOV per degree of the weapon's
 /// pitch punch: a heavy shot reads as a thump without moving the aim.
-const SHOT_ZOOM_PULSE: f32 = 0.006;
+const SHOT_ZOOM_PULSE: f32 = 0.015;
+/// The largest shot zoom pulse, as a fraction of the FOV (a shotgun's).
+const SHOT_ZOOM_PULSE_MAX: f32 = 0.02;
 /// How fast a shot's recoil climb lands on the view, in 1/seconds.
 const CLIMB_RATE: f32 = 90.0;
 /// Per-shot camera shake spring.
@@ -1695,7 +1697,7 @@ impl FpsPlayer {
         };
         // Aimed, the roll is small: the sight picture should read as the gun
         // kicking, not the world shaking.
-        let roll_scale = 1.0 - 0.4 * ads;
+        let roll_scale = 1.0 - 0.7 * ads;
         let roll = degrees.z * side * (0.55 + 0.45 * rng::unit(shot, 102)) * roll_scale;
         let impulse = |deg: f32| impulse_for_peak(deg.to_radians(), PUNCH_STIFFNESS, PUNCH_DAMPING);
         self.punch.velocity.z += impulse(roll);
@@ -1709,7 +1711,7 @@ impl FpsPlayer {
             impulse_for_peak(shake.y, SHAKE_STIFFNESS, c),
             0.0,
         );
-        self.kick_fov(-degrees.x * SHOT_ZOOM_PULSE * scale);
+        self.kick_fov(-(degrees.x * SHOT_ZOOM_PULSE * scale).min(SHOT_ZOOM_PULSE_MAX));
     }
 
     /// Everything the knife could reach within `range` (horizontal, feet to

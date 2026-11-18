@@ -1,5 +1,5 @@
 // M870 pump shotgun: 10 pellets, one shot kills to about 9 m and two to
-// about 15 m; loads shell by shell.
+// about 12 m; loads shell by shell.
 // Firing (with a shell loaded) interrupts a reload.
 (
     name: "M870",

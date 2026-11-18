@@ -306,6 +306,19 @@ impl CombatState {
         }
     }
 
+    /// Whether a magazine reload has reached `WeaponDef::reload_ready_at`:
+    /// its rounds are in, a round is chambered, and firing may end it.
+    pub fn reload_ready(&self) -> bool {
+        let Action::Reloading { remaining, empty } = self.action else {
+            return false;
+        };
+        let def = self.def();
+        match (def.reload.magazine_time(empty), def.reload_ready_at(empty)) {
+            (Some(total), Some(ready)) => total - remaining >= ready && self.magazine_seated(),
+            _ => false,
+        }
+    }
+
     /// How far into a scope the player is: 0 unless the weapon has one.
     pub fn scope_amount(&self) -> f32 {
         if self.def().scope.is_some() {
@@ -334,11 +347,12 @@ impl CombatState {
             _ => (def.spread.ads_sway, 1.0),
         };
         let t = self.sway_time;
-        // A slow wander plus a breath (about 0.35 Hz, mostly vertical).
+        // A slow wander plus a breath (0.3 Hz, mostly vertical, the size
+        // of the wander), so the aimed picture is never frozen.
         let pattern = Vec2::new(
-            fmath::sin(t * 1.7) * 0.5 + fmath::sin(t * 0.9 + 0.4) * 0.3 + fmath::sin(t * 1.9) * 0.3,
-            fmath::sin(t * 1.1 + 1.0) * 0.6
-                + fmath::cos(t * 0.6) * 0.3
+            fmath::sin(t * 1.7) * 0.4 + fmath::sin(t * 0.9 + 0.4) * 0.2 + fmath::sin(t * 1.9) * 0.8,
+            fmath::sin(t * 1.1 + 1.0) * 0.5
+                + fmath::cos(t * 0.6) * 0.25
                 + fmath::sin(t * 1.9 + 0.8) * 0.1,
         );
         pattern * amplitude.to_radians() * breath * ads_ease(self.ads)
@@ -533,9 +547,16 @@ pub fn step(
         FireMode::Semi => fire_pressed,
         FireMode::Burst { .. } => state.burst_left > 0 || fire_pressed,
     };
-    // Firing with a round loaded interrupts a shell-by-shell reload.
+    // Firing with a round loaded interrupts a shell-by-shell reload, and a
+    // magazine reload once the weapon is back on the shoulder.
     if trigger && matches!(state.action, Action::Loading { .. }) && state.weapon().magazine > 0 {
         state.action = Action::Ready;
+    }
+    if trigger && state.reload_ready() {
+        let slot = &mut state.slots[usize::from(state.active)];
+        slot.needs_cycle = false;
+        state.action = Action::Ready;
+        events.push(CombatEvent::ReloadFinished { weapon: slot.id });
     }
 
     // Aiming works through a reload and a bolt or pump cycle, not a switch

@@ -380,7 +380,8 @@ func _burst_and_lmg(main: Node, player: FpsPlayer) -> void:
 	player.give_weapon("br3")
 	await _sixtieths(60)
 	_check(player.weapon_name() == "BR-3", "burst rifle equipped, got %s" % player.weapon_name())
-	var dummy := await _dummy_ahead(main, player, 8.0)
+	# One burst kills point-blank (to about 6 m; docs/weapons.md).
+	var dummy := await _dummy_ahead(main, player, 5.0)
 	Input.action_press("aim")
 	await _sixtieths(30)
 	var kills_before := _kills
@@ -390,7 +391,7 @@ func _burst_and_lmg(main: Node, player: FpsPlayer) -> void:
 	_check(
 		player.magazine() == 27, "one tap fires a three-round burst, %d left" % player.magazine()
 	)
-	_check(_kills == kills_before + 1, "one aimed burst to the chest kills at 8 m")
+	_check(_kills == kills_before + 1, "one aimed burst to the chest kills at 5 m")
 	await _sixtieths(20)
 	dummy.queue_free()
 	player.give_weapon("m4+extmag")

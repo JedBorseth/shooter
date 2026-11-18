@@ -97,32 +97,118 @@ pub enum ViewAction {
 /// degree about the rear sight, back on the bullet path within about 70 ms,
 /// before the next round of any automatic: the view's own climb is the
 /// simulation's recoil.
-fn shot_kick(shot: u32, strength: f32, ads: f32, kind: ClipKind) -> (Vector3, Vector3) {
-    // A pump or bolt gun's single heavy shot bucks much harder at the hip; a
-    // pistol flips its muzzle (it pivots high in a light hand).
-    let (hip_lift, hip_back, aim_lift) = match kind {
-        ClipKind::Shotgun | ClipKind::BoltAction => (2.6, 1.5, 0.22),
-        ClipKind::Pistol => (2.4, 1.0, 0.5),
-        ClipKind::Rifle { .. } => (1.2, 1.0, 0.18),
-    };
+fn shot_kick(shot: u32, strength: f32, ads: f32, feel: &KickFeel) -> (Vector3, Vector3) {
     let hip_pos = Vector3::new(
         0.0,
         0.002 * strength,
-        (0.013 * strength * hip_back).min(0.06),
+        (0.013 * strength * feel.hip_back).min(0.06),
     );
-    let aim_pos = Vector3::new(0.0, 0.0015 * strength, (0.017 * strength).min(0.05));
+    // Aimed the gun shoves back into the eye and rises a few millimetres.
+    let aim_pos = Vector3::new(0.0, 0.004 * strength, (0.017 * strength).min(0.05));
     let lift = 0.75 + 0.25 * rng::unit(shot, 31);
     let hip_rot = Vector3::new(
-        (hip_lift * strength * lift).min(9.0),
+        (feel.hip_lift * strength * lift).min(9.0),
         0.4 * strength * rng::signed(shot, 32),
         1.0 * strength * rng::signed(shot, 33),
     );
     let aim_rot = Vector3::new(
-        (aim_lift * strength * lift).min(1.2),
-        0.08 * strength * rng::signed(shot, 35),
-        1.0 * strength * rng::signed(shot, 36),
+        (feel.aim_lift * strength * lift).min(AIM_LIFT_MAX),
+        feel.aim_yaw * strength * rng::signed(shot, 35),
+        feel.aim_roll * strength * rng::signed(shot, 36),
     );
     (hip_pos.lerp(aim_pos, ads), hip_rot.lerp(aim_rot, ads))
+}
+
+/// Added to every weapon's `hip_position`: closer, lower, and further right.
+const HIP_CLOSER: Vector3 = Vector3::new(0.012, -0.01, 0.05);
+/// Added to a long gun's sprint pose: muzzle down and across the body, a
+/// run rather than a high ready (degrees, then metres).
+const SPRINT_LONG_ROT: Vector3 = Vector3::new(-14.0, 3.0, 6.0);
+const SPRINT_LONG_POS: Vector3 = Vector3::new(0.01, -0.03, 0.0);
+
+/// How fast a cut-short clip eases out, in 1/seconds.
+const CLIP_FADE_RATE: f32 = 30.0;
+
+/// How far behind the rear sight the aimed weapon turns, in metres.
+const AIM_PIVOT_BACK: f32 = 0.12;
+
+/// The most an aimed shot tips the front sight, in degrees.
+const AIM_LIFT_MAX: f32 = 1.8;
+
+/// How one weapon's kick looks, on top of its `kick_strength`: the hip lift
+/// and shove, the aimed lift, yaw, and roll (degrees per unit of strength),
+/// and how bouncy the rotation spring is (`KICK_ROT_STIFFNESS`'s zeta).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct KickFeel {
+    pub hip_lift: f32,
+    pub hip_back: f32,
+    pub aim_lift: f32,
+    pub aim_yaw: f32,
+    pub aim_roll: f32,
+    pub zeta: f32,
+}
+
+impl KickFeel {
+    /// Each weapon's character: the M4 is crisp and straight, the AK rough
+    /// and wandering, the LSW-6 heavy and bouncing, the PDW-9 a fast buzz, the
+    /// BR-3 tight, the pump and bolt guns one big buck, and the pistol a flip.
+    pub fn of(weapon: WeaponId) -> Self {
+        let rifle = Self {
+            hip_lift: 1.2,
+            hip_back: 1.0,
+            aim_lift: 0.42,
+            aim_yaw: 0.1,
+            aim_roll: 0.7,
+            zeta: KICK_ROT_ZETA,
+        };
+        match base_weapon(weapon).def().key.as_str() {
+            "ak47" => Self {
+                aim_lift: 0.5,
+                aim_yaw: 0.22,
+                aim_roll: 0.9,
+                zeta: 0.5,
+                ..rifle
+            },
+            "lsw6" => Self {
+                hip_back: 1.2,
+                aim_lift: 0.45,
+                aim_yaw: 0.25,
+                aim_roll: 1.0,
+                zeta: 0.55,
+                ..rifle
+            },
+            "pdw9" => Self {
+                aim_lift: 0.42,
+                aim_yaw: 0.18,
+                aim_roll: 0.5,
+                zeta: 0.8,
+                ..rifle
+            },
+            "br3" => Self {
+                aim_lift: 0.4,
+                aim_yaw: 0.08,
+                aim_roll: 0.6,
+                ..rifle
+            },
+            "m870" | "m40" => Self {
+                hip_lift: 2.6,
+                hip_back: 1.5,
+                aim_lift: 0.58,
+                aim_yaw: 0.1,
+                aim_roll: 0.8,
+                zeta: 0.6,
+            },
+            "m1911" => Self {
+                hip_lift: 2.4,
+                aim_lift: 0.85,
+                aim_yaw: 0.12,
+                aim_roll: 0.8,
+                zeta: 0.6,
+                ..rifle
+            },
+            _ => rifle,
+        }
+    }
 }
 
 /// A share of each kick that builds up under sustained fire and settles
@@ -139,7 +225,7 @@ const JOLT_ZETA: f32 = 0.45;
 /// back in about 100 ms, and slightly underdamped for a small rebound.
 const KICK_POS_STIFFNESS: f32 = 1800.0;
 const KICK_POS_ZETA: f32 = 0.62;
-const KICK_ROT_STIFFNESS: f32 = 1800.0;
+const KICK_ROT_STIFFNESS: f32 = 2600.0;
 const KICK_ROT_ZETA: f32 = 0.7;
 
 /// The aim-down-sights blend as the weapon moves: eased in and out, so it
@@ -213,7 +299,7 @@ const GRIP_MOUNT_DROP: f32 = 0.006;
 const OPTIC_CLEARANCE: f32 = 0.018;
 
 /// Seconds an ejected shell stays visible.
-const SHELL_LIFETIME: f32 = 0.8;
+const SHELL_LIFETIME: f32 = 0.5;
 /// Enough for 0.8 s of the fastest automatic (900 rounds a minute) and a margin.
 const SHELL_POOL: usize = 24;
 
@@ -343,6 +429,8 @@ pub struct WeaponView {
     /// Resolved from `weapon` once the table is loaded.
     id: Option<WeaponId>,
     shell_mesh: Option<Gd<Mesh>>,
+    /// The shell in the support hand while a shotgun loads.
+    shell_in_hand: Option<Gd<MeshInstance3D>>,
 
     flash_time: f32,
     flash_count: u32,
@@ -689,6 +777,7 @@ impl WeaponView {
             };
             slide.pose(Vector3::new(0.0, 0.0, back * 0.028), 0.0, Vector3::ZERO);
         }
+        self.show_shell_in_hand(clip.shell);
         if let Some(mut marker) = self.base().try_get_node_as::<Node3D>("GripLeft") {
             marker.set_position(hand.unwrap_or(rest_hand));
         }
@@ -699,6 +788,32 @@ impl WeaponView {
             marker.set_position(right_hand.unwrap_or(rest));
         }
         self.parts = Some(parts);
+    }
+
+    /// A shell held in the support hand while loading (`ClipPose::shell`),
+    /// lying along the bore the way it goes into the port.
+    fn show_shell_in_hand(&mut self, at: Option<Vector3>) {
+        if self.shell_in_hand.is_none() {
+            let Some(mesh) = at.and(self.shell_mesh.clone()) else {
+                return;
+            };
+            let mut node = MeshInstance3D::new_alloc();
+            node.set_name("ShellInHand");
+            node.set_mesh(&mesh);
+            node.set_cast_shadows_setting(
+                godot::classes::geometry_instance_3d::ShadowCastingSetting::OFF,
+            );
+            // Crimp first (the case model stands on +Y, mouth up).
+            node.set_rotation(Vector3::new(-FRAC_PI_2, 0.0, 0.0));
+            self.base_mut().add_child(&node);
+            self.shell_in_hand = Some(node);
+        }
+        if let Some(node) = &mut self.shell_in_hand {
+            node.set_visible(at.is_some());
+            if let Some(at) = at {
+                node.set_position(at);
+            }
+        }
     }
 
     /// Emits a foley event for a beat of a clip (see the `foley_event`
@@ -1073,14 +1188,15 @@ impl WeaponView {
         // Cheap variation without a random generator: rotate by a golden-angle step.
         let next = self.flash_count.wrapping_add(1);
         let roll = (next as f32 * 2.399_963) % (2.0 * PI);
-        let scale = (0.85 + 0.3 * ((next * 7 % 10) as f32 / 10.0)) * (1.0 - 0.6 * ads);
+        // Aimed the flash still blooms round the front sight.
+        let scale = (0.85 + 0.3 * ((next * 7 % 10) as f32 / 10.0)) * (1.0 - 0.25 * ads);
         self.flash.set_rotation(Vector3::new(0.0, 0.0, roll));
         self.flash.set_scale(Vector3::splat(scale));
         if self.flash_energy == 0.0 {
             self.flash_energy = self.flash_light.get_param(Param::ENERGY);
         }
         self.flash_light
-            .set_param(Param::ENERGY, self.flash_energy * (1.0 - 0.7 * ads));
+            .set_param(Param::ENERGY, self.flash_energy * (1.0 - 0.4 * ads));
         // A suppressor hides the flash.
         if !self.suppressed {
             self.show_flash();
@@ -1615,6 +1731,14 @@ pub struct ViewmodelRig {
     /// Shot kick: position (metres) and rotation (radians: pitch, yaw, roll).
     kick_pos: Spring,
     kick_rot: Spring,
+    /// The clip offset last frame (position, rotation in degrees), eased out
+    /// when a clip is cut short.
+    clip_carry: (Vector3, Vector3),
+    /// The point the clip turns the weapon about (`ClipPose::focus`).
+    clip_focus: Option<Vector3>,
+    /// The current weapon's kick rotation zeta (`KickFeel::zeta`).
+    #[init(val = KICK_ROT_ZETA)]
+    kick_zeta: f32,
     /// The build-up under sustained fire (see `RIDE_SHARE`).
     ride_pos: Spring,
     ride_rot: Spring,
@@ -1676,11 +1800,12 @@ impl ViewmodelRig {
         view.bind_mut()
             .on_fired(rounds_left, weapon.def().magazine, self.last_ads);
         self.shots = self.shots.wrapping_add(1);
-        let kind = ClipKind::of(weapon.def());
-        let (pos, rot) = shot_kick(self.shots, strength, ads_ease(self.last_ads), kind);
+        let feel = KickFeel::of(weapon);
+        self.kick_zeta = feel.zeta;
+        let (pos, rot) = shot_kick(self.shots, strength, ads_ease(self.last_ads), &feel);
         let rot = Vector3::new(rot.x.to_radians(), rot.y.to_radians(), rot.z.to_radians());
         self.kick_pos.velocity += peak_impulse(pos, KICK_POS_STIFFNESS, KICK_POS_ZETA);
-        self.kick_rot.velocity += peak_impulse(rot, KICK_ROT_STIFFNESS, KICK_ROT_ZETA);
+        self.kick_rot.velocity += peak_impulse(rot, KICK_ROT_STIFFNESS, feel.zeta);
         // The ride: a little of every kick that a long spray stacks up. Only
         // the push back and the hip's lift: aimed it would lift the sights.
         let ride_rot = Vector3::new(rot.x * (1.0 - ads_ease(self.last_ads)), 0.0, 0.0);
@@ -1797,15 +1922,20 @@ impl ViewmodelRig {
         self.shells_ejected = self.shells_ejected.wrapping_add(1);
         let seed = self.shells_ejected;
 
+        // Cases fly in the world, not with the view: thrown out to the
+        // right, a little up and forward, so they clear the sight picture
+        // within a few frames instead of arcing up across it.
+        let rig = self.base().get_global_transform();
         let shell = &mut self.shells[index];
         shell.mesh.set_mesh(&mesh);
         shell.mesh.set_visible(true);
-        shell.position = start;
-        shell.velocity = Vector3::new(
-            1.3 + rng::unit(seed, 1) * 0.6,
-            1.0 + rng::unit(seed, 2) * 0.6,
-            0.2 + rng::signed(seed, 3) * 0.2,
-        );
+        shell.position = rig * start;
+        shell.velocity = rig.basis
+            * Vector3::new(
+                2.6 + rng::unit(seed, 1) * 0.6,
+                0.35 + rng::unit(seed, 2) * 0.4,
+                -0.05 + rng::signed(seed, 3) * 0.15,
+            );
         shell.spin = Vector3::new(
             rng::signed(seed, 4) * 25.0,
             rng::signed(seed, 5) * 10.0,
@@ -1827,8 +1957,7 @@ impl ViewmodelRig {
                 Some((weapon, delay))
             };
         }
-        // Gravity is world-down, expressed in the rig's rotating space.
-        let gravity = self.base().get_global_basis().inverse() * Vector3::new(0.0, -9.8, 0.0);
+        let gravity = Vector3::new(0.0, -9.8, 0.0);
         let mut clink = false;
         for shell in &mut self.shells {
             if shell.age >= SHELL_LIFETIME {
@@ -1841,7 +1970,7 @@ impl ViewmodelRig {
             let basis = Basis::from_euler(EulerOrder::YXZ, rotation);
             shell
                 .mesh
-                .set_transform(Transform3D::new(basis, shell.position));
+                .set_global_transform(Transform3D::new(basis, shell.position));
             if !shell.clinked && shell.age > 0.45 {
                 shell.clinked = true;
                 clink = true;
@@ -2054,7 +2183,9 @@ impl ViewmodelRig {
         let hip_amount = 1.0 - ads;
         // Reaching the sights: a small settle as the weapon stops on the eye.
         if frame.ads >= 0.999 && self.last_ads < 0.999 {
-            self.jolt(Vector3::new(0.0, 0.0, -0.008), Vector3::new(-0.4, 0.0, 0.0));
+            // Only along the sight line: a pitch here would put the sights
+            // off the aim point just when the player fires.
+            self.jolt(Vector3::new(0.0, 0.0, -0.008), Vector3::ZERO);
         }
         // On the way up the weapon swings through a small arc: dipped, rolled
         // in, and pulled toward the eye at the middle. Lowering is a quicker,
@@ -2118,12 +2249,16 @@ impl ViewmodelRig {
         let floor = if frame.on_floor { 1.0 } else { 0.0 };
         // Aimed, the look lag is mostly this shift (the turn is clamped hard).
         let look_shift = 0.002 - 0.0008 * ads;
+        // Moving sideways the weapon trails the body: a shove on each start
+        // and stop, and a steady lean while the strafe lasts.
         let sway_pos = Vector3::new(
-            -frame.look_velocity.x * look_shift - change.x * 0.003,
+            -frame.look_velocity.x * look_shift
+                - change.x * 0.008
+                - frame.velocity.x * 0.0015 * floor,
             -frame.look_velocity.y * look_shift * 0.6 - frame.velocity.y * 0.004,
             change.z * 0.003,
         );
-        let limit = Vector3::new(0.015, 0.025, 0.015) * inertia;
+        let limit = Vector3::new(0.025, 0.025, 0.015) * inertia;
         let sway_pos = sway_pos.clamp(-limit, limit);
         let strafe_roll = -frame.velocity.x * 0.005 * floor * inertia;
         // In the air the muzzle tips up on the way up and a little down on
@@ -2150,7 +2285,7 @@ impl ViewmodelRig {
         );
         self.kick_rot.step(
             KICK_ROT_STIFFNESS,
-            damping_for(KICK_ROT_STIFFNESS, KICK_ROT_ZETA),
+            damping_for(KICK_ROT_STIFFNESS, self.kick_zeta),
             dt,
         );
         let ride_c = damping_for(RIDE_STIFFNESS, RIDE_ZETA);
@@ -2216,6 +2351,14 @@ impl ViewmodelRig {
                 v.cycle_rotation,
             )
         };
+        let (sprint_pos, sprint_rot) = if kind == ClipKind::Pistol {
+            (sprint_pos, sprint_rot)
+        } else {
+            (sprint_pos + SPRINT_LONG_POS, sprint_rot + SPRINT_LONG_ROT)
+        };
+        // The hip pose sits closer and lower-right than the scenes' rest, so
+        // the receiver and both hands fill the lower right of the frame.
+        let hip = hip + HIP_CLOSER;
         let mut position = hip + (aim - hip) * ads;
         position += Vector3::new(-0.012, -0.018, 0.02) * arc;
         position += sprint_pos * sprint;
@@ -2227,8 +2370,18 @@ impl ViewmodelRig {
             position += Vector3::new(0.0, -0.006, 0.006) * hip_amount;
         }
         position += cycle_pos * cycle + Vector3::new(0.0, -0.02 * bump, 0.01 * bump);
-        position += clip_pose.pos * clip_scale + switch_pos;
-        let ins_rot = clip_pose.rot * clip_scale;
+        // A clip cut short (firing out of a reload's settle) eases out over
+        // about 100 ms instead of snapping to rest.
+        let (clip_pos, clip_rot) = (clip_pose.pos * clip_scale, clip_pose.rot * clip_scale);
+        if clip_pos == Vector3::ZERO && clip_rot == Vector3::ZERO {
+            let fade = (-dt * CLIP_FADE_RATE).exp();
+            self.clip_carry = (self.clip_carry.0 * fade, self.clip_carry.1 * fade);
+        } else {
+            self.clip_carry = (clip_pos, clip_rot);
+            self.clip_focus = clip.focus;
+        }
+        position += self.clip_carry.0 + switch_pos;
+        let ins_rot = self.clip_carry.1;
         let deg = |v: f32| v.to_radians();
         let motion =
             self.sway_rot.value + self.kick_rot.value + self.ride_rot.value + self.jolt_rot.value;
@@ -2259,11 +2412,23 @@ impl ViewmodelRig {
             + deg(cycle_rot.z) * cycle;
 
         // Rotate around the pivot (the firing hand) at the hip. Aimed, turn
-        // about the rear sight instead, so motion tips the front sight
-        // without lifting the sight picture off the eye.
-        let pivot = pivot * hip_amount;
+        // about a point just behind the rear sight (the cheek on the stock),
+        // so a kick tips the front sight up and lifts the rear a hair,
+        // without taking the sight picture off the eye.
+        let pivot = pivot * hip_amount + Vector3::new(0.0, 0.0, AIM_PIVOT_BACK) * ads;
         let basis = Basis::from_euler(EulerOrder::YXZ, Vector3::new(pitch, yaw, roll));
-        let origin = position + pivot - basis * pivot;
+        let mut origin = position + pivot - basis * pivot;
+        // A clip turns the weapon about its own focus (the magazine well),
+        // not the hip pivot, so the work stays in the same part of the frame
+        // whatever the weapon's length.
+        if let Some(focus) = self.clip_focus {
+            let turn = Basis::from_euler(
+                EulerOrder::YXZ,
+                Vector3::new(deg(ins_rot.x), deg(ins_rot.y), deg(ins_rot.z)),
+            );
+            let arm = focus - pivot;
+            origin += arm - turn * arm;
+        }
         view.set_transform(Transform3D::new(basis, origin));
 
         // The knife path is in the rig's (view) space; the hands want it in
@@ -2321,14 +2486,9 @@ const LAND_ZETA: f32 = 0.5;
 mod tests {
     use super::*;
 
-    const RIFLE: ClipKind = ClipKind::Rifle {
-        charge: false,
-        heavy: false,
-    };
-
     /// Peak of one shot's kick on the weapon, simulated with the kick springs.
     fn kick_peak(shot: u32, strength: f32, ads: f32) -> (Vector3, Vector3) {
-        let (pos, rot) = shot_kick(shot, strength, ads, RIFLE);
+        let (pos, rot) = shot_kick(shot, strength, ads, &KickFeel::of(WeaponId::expect("m4")));
         let mut p = Spring {
             value: Vector3::ZERO,
             velocity: peak_impulse(pos, KICK_POS_STIFFNESS, KICK_POS_ZETA),
@@ -2368,9 +2528,10 @@ mod tests {
             "aimed push back {}",
             pos.z
         );
-        assert!(rot.x.abs() < 0.25, "aimed sights bounce {}", rot.x);
+        // Aimed the front sight tips up visibly, about half a degree.
+        assert!((0.35..=0.75).contains(&rot.x), "aimed sight tip {}", rot.x);
         // The shove peaks within two frames at 60 FPS and is gone in ~120 ms.
-        let (p, _) = shot_kick(7, 1.35, 1.0, RIFLE);
+        let (p, _) = shot_kick(7, 1.35, 1.0, &KickFeel::of(WeaponId::expect("m4")));
         let mut spring = Spring {
             value: Vector3::ZERO,
             velocity: peak_impulse(p, KICK_POS_STIFFNESS, KICK_POS_ZETA),
@@ -2384,39 +2545,58 @@ mod tests {
 
     #[test]
     fn aimed_kick_tips_the_front_sight_up_and_is_back_before_the_next_round() {
-        // Aimed the front sight always kicks up, a fraction of a degree, and
-        // never more than 0.6 degrees even on the heaviest weapons.
+        let m4 = KickFeel::of(WeaponId::expect("m4"));
+        // Aimed the front sight always kicks up visibly, about half a degree
+        // on a rifle, and never past the cap even on the heaviest weapons.
         for i in 0..200 {
-            let (_, rot) = shot_kick(i, 1.55, 1.0, RIFLE);
-            assert!(rot.x > 0.15 && rot.x <= 0.6, "{rot:?}");
+            let (_, rot) = shot_kick(i, 1.35, 1.0, &m4);
+            assert!(rot.x > 0.4 && rot.x <= 0.6, "{rot:?}");
         }
-        assert!(shot_kick(3, 3.0, 1.0, RIFLE).1.x <= 0.6);
+        assert!(shot_kick(3, 9.0, 1.0, &m4).1.x <= AIM_LIFT_MAX + 1e-4);
         // Within 0.05 degrees of the sight line by the next round at 750 rpm.
-        let (_, rot) = shot_kick(5, 1.35, 1.0, RIFLE);
+        let (_, rot) = shot_kick(5, 1.35, 1.0, &m4);
         let mut spring = Spring {
             value: Vector3::ZERO,
-            velocity: peak_impulse(rot, KICK_ROT_STIFFNESS, KICK_ROT_ZETA),
+            velocity: peak_impulse(rot, KICK_ROT_STIFFNESS, m4.zeta),
         };
         spring.step(
             KICK_ROT_STIFFNESS,
-            damping_for(KICK_ROT_STIFFNESS, KICK_ROT_ZETA),
+            damping_for(KICK_ROT_STIFFNESS, m4.zeta),
             0.08,
         );
-        assert!(spring.value.x.abs() < 0.05, "{}", spring.value.x);
-        // A pump gun bucks hard at the hip; a pistol flips its muzzle aimed.
-        let pump = shot_kick(2, 2.75, 0.0, ClipKind::Shotgun);
+        assert!(spring.value.x.abs() < 0.06, "{}", spring.value.x);
+        // A pump gun bucks hard at the hip and aimed; a pistol flips its
+        // muzzle aimed.
+        let m870 = KickFeel::of(WeaponId::expect("m870"));
+        let pump = shot_kick(2, 2.75, 0.0, &m870);
         assert!(pump.1.x > 5.0 && pump.0.z > 0.04, "{pump:?}");
-        let pistol = shot_kick(2, 1.15, 1.0, ClipKind::Pistol);
-        assert!(pistol.1.x > 0.4, "{pistol:?}");
+        assert!(shot_kick(2, 2.75, 1.0, &m870).1.x > 1.1);
+        let m1911 = KickFeel::of(WeaponId::expect("m1911"));
+        let pistol = shot_kick(2, 1.15, 1.0, &m1911);
+        assert!(pistol.1.x > 0.7, "{pistol:?}");
         // At the hip the muzzle always tips up, and the roll changes side
         // from shot to shot without a fixed alternation.
-        let hip: Vec<Vector3> = (0..32).map(|i| shot_kick(i, 1.35, 0.0, RIFLE).1).collect();
+        let hip: Vec<Vector3> = (0..32).map(|i| shot_kick(i, 1.35, 0.0, &m4).1).collect();
         assert!(hip.iter().all(|r| r.x > 0.5));
         let flips = hip
             .windows(2)
             .filter(|w| w[0].z.signum() != w[1].z.signum())
             .count();
         assert!((6..=26).contains(&flips), "{flips} side changes in 31");
+    }
+
+    #[test]
+    fn each_weapon_kicks_its_own_way() {
+        let feel = |k: &str| KickFeel::of(WeaponId::expect(k));
+        // The AK is rougher than the M4: more lift, more wander, bouncier.
+        assert!(feel("ak47").aim_lift > feel("m4").aim_lift);
+        assert!(feel("ak47").aim_yaw > 2.0 * feel("m4").aim_yaw);
+        assert!(feel("ak47").zeta < feel("m4").zeta);
+        // The SMG is a crisp buzz; attachments kick like their weapon.
+        assert!(feel("pdw9").zeta > feel("m4").zeta);
+        for id in WeaponId::all() {
+            assert_eq!(KickFeel::of(id), KickFeel::of(base_weapon(id)));
+        }
     }
 
     #[test]

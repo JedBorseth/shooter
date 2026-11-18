@@ -176,7 +176,7 @@ impl Anchors {
             ClipKind::Pistol => Vector3::new(0.0, -0.1, 0.06),
             _ => Vector3::new(0.0, -0.08, -0.06),
         });
-        let mag_base = mag_rest + Vector3::new(0.0, -0.04, 0.0);
+        let mag_base = mag_rest + Vector3::new(0.0, -MAG_BASE_DROP, 0.0);
         let default_charge = match kind {
             // Behind the rear sight, on top.
             ClipKind::Rifle { charge: false, .. } => Vector3::new(0.0, -0.015, 0.07),
@@ -193,6 +193,16 @@ impl Anchors {
         }
     }
 }
+
+impl Anchors {
+    /// The magazine well: where the magazine meets the weapon.
+    pub fn well(&self) -> Vector3 {
+        self.mag_base + Vector3::new(0.0, MAG_BASE_DROP, 0.0)
+    }
+}
+
+/// How far the magazine's base (where the hand grips it) sits below the well.
+const MAG_BASE_DROP: f32 = 0.04;
 
 /// What a clip does to the weapon at one moment.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -214,6 +224,13 @@ pub struct ClipPose {
     pub slide: Option<f32>,
     /// A pump drawn back, 0..1.
     pub pump: Option<f32>,
+    /// The point on the weapon (view space) the clip turns it about, such as
+    /// the magazine well, so the work stays where the eye can see it
+    /// whatever the weapon's hip pivot; `None` turns about the pivot.
+    pub focus: Option<Vector3>,
+    /// A shotgun shell in the support hand on its way to the loading port
+    /// (view space); `None` hides it.
+    pub shell: Option<Vector3>,
 }
 
 impl ClipPose {
@@ -256,6 +273,9 @@ pub struct MagazineReload {
     /// Seconds: the whole reload, and when the fresh magazine seats.
     pub total: f32,
     pub mag_in: f32,
+    /// When the weapon is back on the shoulder and may fire
+    /// (`WeaponDef::reload_ready_at`).
+    pub ready: f32,
 }
 
 /// The moments of a magazine reload, in seconds.
@@ -279,11 +299,13 @@ impl MagazineReload {
     pub fn new(def: &WeaponDef, empty: bool) -> Option<MagazineReload> {
         let total = def.reload.magazine_time(empty)?;
         let mag_in = def.reload.mag_in()?;
+        let ready = def.reload_ready_at(empty)?;
         Some(MagazineReload {
             kind: ClipKind::of(def),
             empty,
             total,
             mag_in,
+            ready,
         })
     }
 
@@ -304,7 +326,8 @@ impl MagazineReload {
                 (on, on + 0.16)
             }
             (true, _) => {
-                let at = seat + 0.2;
+                // The hand comes off the seated magazine to the release.
+                let at = seat + 0.32;
                 (at, at + 0.06)
             }
             (false, _) => (seat + 0.1, seat + 0.1),
@@ -376,14 +399,16 @@ impl MagazineReload {
     /// the finishing action.
     fn poses(&self) -> (Pose, Pose, Pose) {
         match self.kind {
-            // Turned muzzle-right and canted clockwise, so the left side and
-            // the magazine well face the eye while the support hand works.
+            // Turned about the magazine well (`ClipPose::focus`): lifted
+            // into the lower middle of the frame, muzzle up and right, and
+            // canted clockwise, so the well faces the eye while the support
+            // hand works.
             ClipKind::Rifle { heavy, .. } => {
                 let k = if heavy { 1.1 } else { 1.0 };
                 (
-                    Pose::new(10.0, -16.0, -26.0, -0.01, 0.035, -0.01).scaled(k),
-                    Pose::new(13.0, -20.0, -32.0, -0.015, 0.045, -0.015).scaled(k),
-                    Pose::new(6.0, 10.0, 16.0, -0.01, 0.035, 0.015).scaled(k),
+                    Pose::new(8.0, -10.0, -34.0, -0.05, 0.12, 0.03).scaled(k),
+                    Pose::new(10.0, -13.0, -40.0, -0.055, 0.135, 0.025).scaled(k),
+                    Pose::new(5.0, 8.0, 14.0, -0.02, 0.06, 0.02).scaled(k),
                 )
             }
             ClipKind::Pistol => (
@@ -422,8 +447,9 @@ impl MagazineReload {
         };
         // Back on the shoulder fast (most of the way within about 0.3 s),
         // then a slow settle into the grip until the weapon can fire.
-        let back = reshoulder + (0.6 * (done - reshoulder)).min(0.32);
-        let settle = (done - 0.1).max(back + 0.05);
+        // It is back exactly when the rules let it fire (`reload_ready_at`).
+        let back = self.ready.clamp(reshoulder + 0.05, done);
+        let settle = (done - 0.1).max(back + 0.04);
         let overshoot = held.scaled(-0.05);
         // While the magazine is pulled the weapon rolls toward the hand, and it
         // drifts while the fresh one is fetched.
@@ -458,12 +484,14 @@ impl MagazineReload {
             keys.push((finish, watch));
         }
         let last = keys.last().map_or(watch, |k| k.1);
-        keys.extend([
-            (reshoulder, last),
-            (back, last.scaled(0.12)),
-            (settle, overshoot),
-            (done, Pose::ZERO),
-        ]);
+        keys.push((reshoulder, last));
+        if back + 0.08 <= done {
+            // Back on the shoulder, then a slow settle into the grip that
+            // firing may cut short.
+            keys.push((back, last.scaled(0.12)));
+            keys.push((settle, overshoot));
+        }
+        keys.push((done, Pose::ZERO));
         let weapon = posed(&keys, t);
 
         // The magazine falling away, and the fresh one.
@@ -561,6 +589,8 @@ impl MagazineReload {
             bolt_hand,
             slide,
             pump: None,
+            focus: Some(anchors.well()),
+            shell: None,
         }
     }
 
@@ -680,7 +710,10 @@ pub fn shotgun_pose(
     let p = (elapsed / length.max(1e-3)).clamp(0.0, 1.0);
     // Rolled to show the loading port, muzzle up a little.
     let load = Pose::new(10.0, -6.0, 32.0, -0.05, 0.055, 0.025);
-    let mut pose = ClipPose::rest();
+    let mut pose = ClipPose {
+        focus: Some(anchors.port),
+        ..ClipPose::rest()
+    };
     match stage {
         LoadStage::Opening => {
             pose.weapon = Pose::ZERO.lerp(load, smoothstep(p / 0.8));
@@ -708,6 +741,10 @@ pub fn shotgun_pose(
                 p,
                 |h| shotgun_place(h, anchors),
             );
+            // The shell rides in the fingertips until the thumb pushes it in.
+            if p < SHELL_IN {
+                pose.shell = pose.hand.map(|h| h + SHELL_IN_FINGERS);
+            }
         }
         LoadStage::Closing => {
             let pump = if began_empty {
@@ -727,6 +764,12 @@ pub fn shotgun_pose(
     pose
 }
 
+/// Fraction of a shell stage when the shell is pushed into the port.
+const SHELL_IN: f32 = 0.66;
+/// Where a held shell sits from the support hand's grip point: in the
+/// fingertips, just ahead of the palm.
+const SHELL_IN_FINGERS: Vector3 = Vector3::new(0.0, 0.01, -0.02);
+
 fn shotgun_place(hand: Hand, anchors: &Anchors) -> Vector3 {
     match hand {
         Hand::Port(push) => anchors.port + Vector3::new(0.0, 0.0, -push),
@@ -738,7 +781,7 @@ fn shotgun_place(hand: Hand, anchors: &Anchors) -> Vector3 {
 /// The beats of a shotgun stage, as fractions of the stage.
 pub fn shotgun_beats(stage: LoadStage, began_empty: bool) -> &'static [(f32, &'static str)] {
     match (stage, began_empty) {
-        (LoadStage::Round, _) => &[(0.66, "shell_in")],
+        (LoadStage::Round, _) => &[(SHELL_IN, "shell_in")],
         (LoadStage::Closing, true) => &[(0.27, "pump_back"), (0.67, "pump_forward")],
         _ => &[],
     }
@@ -879,6 +922,7 @@ pub fn inspect_pose(t: f32, kind: ClipKind, anchors: &Anchors) -> ClipPose {
         weapon,
         old_mag,
         hand: hand_position(&hand_keys, t, place),
+        focus: Some(anchors.well()),
         ..ClipPose::rest()
     }
 }

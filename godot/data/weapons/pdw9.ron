@@ -4,7 +4,7 @@
     name: "PDW-9",
     slot: Primary,
     fire_mode: Auto,
-    rounds_per_minute: 900,
+    rounds_per_minute: 1000,
     magazine: 32,
     reserve: 128,
     damage: (near: 25, far: 14, falloff_start: 15, falloff_end: 30, headshot: 1.3),

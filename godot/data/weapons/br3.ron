@@ -1,5 +1,5 @@
-// BR-3 bullpup: a three-round burst. One whole burst kills inside 9 m (34
-// damage a round); past that it takes a fourth round, so a second burst. A
+// BR-3 bullpup: a three-round burst. One whole burst kills inside about 6 m
+// (34 damage a round); past that it takes a fourth round, so a second burst. A
 // short pause after each burst keeps it from out-firing the automatics.
 (
     name: "BR-3",
@@ -8,7 +8,7 @@
     rounds_per_minute: 800,
     magazine: 30,
     reserve: 120,
-    damage: (near: 34, far: 25, falloff_start: 9, falloff_end: 40, headshot: 1.4),
+    damage: (near: 34, far: 25, falloff_start: 4, falloff_end: 40, headshot: 1.4),
     range: 400,
     penetration: 0.32,
     reload: Magazine(time: 2.3, empty_time: 2.8, mag_in: Some(1.5)),
@@ -22,7 +22,7 @@
     move_scale: 0.98,
     recoil: (
         pattern: [
-            (0.26, 0.03), (0.32, -0.08), (0.38, 0.1), (0.32, 0.04),
+            (0.36, 0.04), (0.45, -0.11), (0.53, 0.14), (0.45, 0.06),
         ],
         jitter: (0.04, 0.1),
         ads_scale: 0.7,
