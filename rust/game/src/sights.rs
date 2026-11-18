@@ -4,7 +4,9 @@
 //! when aimed through. `IronSights` cuts those blocks out of the imported mesh and
 //! builds proper sights in their place: an aperture and winged post for the AR,
 //! a notch and hooded post for the AK, a ghost ring and fiber-optic blade for the
-//! shotgun, three-dot sights for the pistol, and a mini reflex sight.
+//! shotgun, and three-dot sights for the pistol. The red dot and the ACOG draw
+//! their modelled housings (tools/weapon_optics.py) round the glass, dot, and
+//! reticle built here, which must line up exactly.
 //!
 //! Everything is in the weapon view's space: metres, the sight line along -Z at
 //! `y = 0`, `+X` right. The rear sight's aperture or notch and the front post's
@@ -118,10 +120,26 @@ impl INode3D for IronSights {
         let meshes = SIGHT_MESHES.with(|cache| cache.borrow().get(&key).cloned());
         let (mesh, body) = meshes.unwrap_or_else(|| {
             let parts = style.build(&params);
-            let meshes = (
-                parts_mesh(&parts, self.glow, world, self.size),
-                body_mesh(&parts),
-            );
+            let mut mesh = parts_mesh(&parts, self.glow, world, self.size);
+            let mut body = body_mesh(&parts);
+            if let Some(model) = style.model() {
+                let place = Transform3D::new(
+                    Basis::from_scale(Vector3::splat(self.size)),
+                    Vector3::new(0.0, 0.0, self.rear_z),
+                );
+                if world {
+                    add_model_surfaces(&mut mesh, model, "World", place);
+                } else if style == Style::Acog {
+                    // The eye guard frames the aimed picture; the rest hides.
+                    add_model_surfaces(&mut mesh, model, "Eyepiece", place);
+                    let mut housing = body.unwrap_or_else(ArrayMesh::new_gd);
+                    add_model_surfaces(&mut housing, model, "Body", place);
+                    body = Some(housing);
+                } else {
+                    add_model_surfaces(&mut mesh, model, "Body", place);
+                }
+            }
+            let meshes = (mesh, body);
             SIGHT_MESHES.with(|cache| cache.borrow_mut().insert(key, meshes.clone()));
             meshes
         });
@@ -166,6 +184,15 @@ impl Style {
             "acog" => Self::Acog,
             _ => return None,
         })
+    }
+
+    /// The modelled housing an optic draws round its glass and reticle.
+    fn model(self) -> Option<&'static str> {
+        match self {
+            Self::Reflex => Some(REFLEX_MODEL),
+            Self::Acog => Some(ACOG_MODEL),
+            _ => None,
+        }
     }
 
     fn build(self, p: &Params) -> Parts {
@@ -526,44 +553,34 @@ fn pistol(p: &Params, parts: &mut Parts) {
     );
 }
 
-/// A mini reflex sight: a low body, a hooded window with a faintly tinted
-/// lens, and an illuminated dot on the sight line.
+/// A riser under a modelled housing, from the rail (`base`) up to the
+/// housing's foot, when the rail sits lower than the foot. `z` is the span
+/// along the sight line, `half` the half width, all before `size` except
+/// `base`.
+fn riser(b: &mut Builder, p: &Params, foot: f32, z: (f32, f32), half: f32) {
+    let s = p.size;
+    if p.rear_base < foot * s - 1e-4 {
+        b.extrude(
+            Axis::X,
+            &rect(
+                p.rear_z + z.0 * s,
+                p.rear_base,
+                p.rear_z + z.1 * s,
+                foot * s,
+            ),
+            -half * s,
+            half * s,
+        );
+    }
+}
+
+/// A red dot: the modelled housing (`REFLEX_MODEL`: body, hooded window,
+/// emitter, buttons, mount), a faintly tinted lens in its window, and an
+/// illuminated dot on the sight line.
 fn reflex(p: &Params, parts: &mut Parts) {
     let s = p.size;
     let zr = p.rear_z;
-    let b = &mut parts.steel;
-    let body_top = -0.0108 * s;
-    // Body, its rear sloping down toward the eye.
-    b.extrude(
-        Axis::X,
-        &[
-            v2(zr + 0.016 * s, p.rear_base),
-            v2(zr - 0.013 * s, p.rear_base),
-            v2(zr - 0.013 * s, body_top),
-            v2(zr + 0.008 * s, body_top),
-            v2(zr + 0.016 * s, body_top - 0.004 * s),
-        ],
-        -0.0135 * s,
-        0.0135 * s,
-    );
-    // The hood: thin at the top, thicker toward the body.
-    b.ring(
-        Vector2::ZERO,
-        REFLEX_LENS * s,
-        0.0142 * s,
-        zr - 0.011 * s,
-        zr + 0.004 * s,
-        -1.12,
-        PI + 1.12,
-        36,
-    );
-    // Brightness buttons on the right side.
-    b.extrude(
-        Axis::Z,
-        &rect(0.0135 * s, -0.0125 * s, 0.0158 * s, -0.0068 * s),
-        zr - 0.002 * s,
-        zr + 0.006 * s,
-    );
+    riser(&mut parts.steel, p, REFLEX_FOOT, (-0.016, 0.0165), 0.0118);
     // The lens fills the hood: one face toward the eye, so the tint is a
     // single layer.
     parts
@@ -582,90 +599,16 @@ fn reflex(p: &Params, parts: &mut Parts) {
     );
 }
 
+/// The ACOG-style prism sight: the modelled housing (`ACOG_MODEL`), the
+/// eyepiece's glass, and the reticle.
 fn acog(p: &Params, parts: &mut Parts) {
     let s = p.size;
     let zr = p.rear_z;
-    let tube = 0.0125 * s;
-    let bottom = -0.0175 * s;
-    let top = 0.0148 * s;
     // Everything ahead of the eyepiece is the body: aimed, it is hidden
     // behind the eyepiece's rim or inside its picture, so first person hides
     // it at full ADS (`Parts::body`) and the eye sees the whole zoomed view.
-    let b = &mut parts.body;
-    // Mount from the rail up to the housing.
-    b.extrude(
-        Axis::X,
-        &rect(
-            zr - 0.046 * s,
-            p.rear_base,
-            zr + 0.012 * s,
-            bottom + 0.002 * s,
-        ),
-        -0.011 * s,
-        0.011 * s,
-    );
-    // Housing: a thick tube on a squared foot that carries it on the mount.
-    b.ring(
-        Vector2::ZERO,
-        ACOG_BORE * s,
-        top,
-        zr - 0.05 * s,
-        zr + 0.016 * s,
-        0.0,
-        TAU,
-        36,
-    );
-    b.extrude(
-        Axis::X,
-        &rect(zr - 0.05 * s, bottom, zr + 0.016 * s, -0.0118 * s),
-        -0.0145 * s,
-        0.0145 * s,
-    );
-    // Objective bell at the front.
-    b.ring(
-        Vector2::ZERO,
-        tube,
-        0.0178 * s,
-        zr - 0.082 * s,
-        zr - 0.05 * s,
-        0.0,
-        TAU,
-        36,
-    );
-    // Adjustment turret on top.
-    b.extrude(
-        Axis::Z,
-        &rect(-0.004 * s, top - 0.001 * s, 0.004 * s, top + 0.007 * s),
-        zr - 0.026 * s,
-        zr - 0.014 * s,
-    );
-    b.cylinder(
-        Axis::X,
-        v2(zr - 0.02 * s, top + 0.004 * s),
-        0.005 * s,
-        -0.0045 * s,
-        0.0045 * s,
-        12,
-    );
-    // The eyepiece: a short tube whose back rim frames the sight picture.
-    // Only the rim is outside the body, so aimed its inside wall never
-    // narrows the picture.
-    let rim = zr + (ACOG_EYEPIECE - 0.003) * s;
-    for (builder, z0, z1) in [
-        (&mut parts.body, zr + 0.016 * s, rim),
-        (&mut parts.steel, rim, zr + ACOG_EYEPIECE * s),
-    ] {
-        builder.ring(
-            Vector2::ZERO,
-            ACOG_BORE * s,
-            0.0145 * s,
-            z0,
-            z1,
-            0.0,
-            TAU,
-            36,
-        );
-    }
+    // The model's body joins the riser there; its eye guard joins the steel.
+    riser(&mut parts.body, p, ACOG_FOOT, (-0.036, 0.026), 0.0125);
     parts
         .glass
         .disc(Vector2::ZERO, ACOG_BORE * s, zr + 0.03 * s, 36);
@@ -703,6 +646,15 @@ fn acog(p: &Params, parts: &mut Parts) {
         );
     }
 }
+
+/// The modelled optic housings (tools/weapon_optics.py), in the optic's
+/// frame at `size` 1: the sight line along -Z, the origin at `rear_z`.
+const REFLEX_MODEL: &str = "res://assets/weapons/optics/reddot.glb";
+const ACOG_MODEL: &str = "res://assets/weapons/optics/acog.glb";
+/// Where each housing's foot meets the rail, at `size` 1 (`riser` fills
+/// down to a lower rail).
+const REFLEX_FOOT: f32 = -0.018;
+const ACOG_FOOT: f32 = -0.025;
 
 /// Radius of the ACOG's bore and eyepiece glass, before `size`.
 pub const ACOG_BORE: f32 = 0.0105;
@@ -1013,6 +965,44 @@ fn parts_mesh(parts: &Parts, glow: Color, world: bool, size: f32) -> Gd<ArrayMes
         glass.set_shader_parameter("radius", &(REFLEX_LENS * size).to_variant());
         add(&parts.glass, glass.upcast());
     }
+    mesh
+}
+
+/// Adds the surfaces of `node` in the model at `path` to `mesh`, moved by
+/// `place`, with their own materials. A uniform scale and a shift leave
+/// normals and tangents as they are.
+fn add_model_surfaces(mesh: &mut Gd<ArrayMesh>, path: &str, node: &str, place: Transform3D) {
+    let Some(source) = model_mesh(path, node) else {
+        godot_error!("IronSights: no `{node}` in {path}");
+        return;
+    };
+    for surface in 0..source.get_surface_count() {
+        let mut arrays = source.surface_get_arrays(surface);
+        let vertices: PackedVector3Array = arrays
+            .at(ArrayType::VERTEX.ord() as usize)
+            .try_to()
+            .unwrap_or_default();
+        let moved: Vec<Vector3> = vertices.as_slice().iter().map(|v| place * *v).collect();
+        arrays.set(
+            ArrayType::VERTEX.ord() as usize,
+            &PackedVector3Array::from(moved.as_slice()).to_variant(),
+        );
+        mesh.add_surface_from_arrays(PrimitiveType::TRIANGLES, &arrays);
+        if let Some(material) = source.surface_get_material(surface) {
+            let index = mesh.get_surface_count() - 1;
+            mesh.surface_set_material(index, &material);
+        }
+    }
+}
+
+/// The mesh of the node `node` in the imported model at `path`.
+fn model_mesh(path: &str, node: &str) -> Option<Gd<Mesh>> {
+    let root = try_load::<PackedScene>(path).ok()?.instantiate()?;
+    let mesh = root
+        .find_child(node)
+        .and_then(|n| n.try_cast::<MeshInstance3D>().ok())
+        .and_then(|m| m.get_mesh());
+    root.free();
     mesh
 }
 

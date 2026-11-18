@@ -1,0 +1,10 @@
+{
+  "triangles": {
+    "Body": 3136,
+    "World": 939
+  },
+  "nodes": [
+    "Body",
+    "World"
+  ]
+}

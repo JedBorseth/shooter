@@ -9,7 +9,8 @@ extends SceneTree
 ## aperture, and the front sight, not the receiver or the rear sight, is what
 ## the eye sees just under it, centred. Every weapon's maps carry real
 ## surface detail (a flat grey colour map and an empty normal map read as
-## plastic). Then every armory rack shows its weapon.
+## plastic). The red dot and the ACOG draw their modelled housings. Then
+## every armory rack shows its weapon.
 ## godot --headless --path godot --script res://tests/weapon_models_test.gd
 
 ## Weapon view scene -> the model nodes its animations and reloads use.
@@ -179,6 +180,7 @@ func _run() -> void:
 		_check_surface_detail(key)
 	_check_casings()
 	_check_attachments()
+	await _check_optics()
 	await _check_racks()
 	print("weapon models test: %d failure(s)" % _failures)
 	quit(1 if _failures > 0 else 0)
@@ -416,6 +418,26 @@ func _check_attachments() -> void:
 			var long := maxf(box.size.y, box.size.z)
 			_check(long > 0.08 and long < 0.2, "%s is %.0f mm long" % [path, long * 1000.0])
 		model.free()
+
+
+func _check_optics() -> void:
+	# The optics draw their modelled housings (tools/weapon_optics.py) round
+	# the glass and reticle built in code: the red dot's in its sight mesh,
+	# the ACOG's eye guard there and the rest in its body.
+	var view := (load("res://scenes/weapons/m4_view.tscn") as PackedScene).instantiate() as Node3D
+	root.add_child(view)
+	await process_frame
+	for optic: Array in [["reddot", "SightMesh", 2000], ["acog", "SightBody", 5000]]:
+		view.call("apply_attachment", optic[0])
+		await process_frame
+		var mesh := view.get_node_or_null("Attachment/Optic/%s" % optic[1]) as MeshInstance3D
+		var triangles := 0 if mesh == null else mesh.mesh.get_faces().size() / 3
+		_check(
+			triangles >= optic[2],
+			"%s: draws its modelled housing (%d triangles)" % [optic[0], triangles]
+		)
+	view.queue_free()
+	await process_frame
 
 
 func _check_racks() -> void:
