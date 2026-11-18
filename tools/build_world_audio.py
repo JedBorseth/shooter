@@ -44,7 +44,7 @@ a short reflection tail), plus new grass, tile, gravel, carpet, and flesh sets.
 
 ``player`` synthesizes the feedback and body sounds, seeded: hit, headshot,
 and kill markers (a dry tick, a struck-helmet ring, a thump and short ding),
-being hit, a heartbeat, breathing (normal and hurt), tinnitus, a death fall,
+being hit, a heartbeat, breathing (normal and hurt), a death fall,
 a jump's push-off, a mantle's hands on the ledge, and the gear and cloth
 layers under footsteps.
 
@@ -797,20 +797,20 @@ def kill_marker(rng: np.random.Generator) -> np.ndarray:
 
 
 def hit_taken(rng: np.random.Generator) -> np.ndarray:
-    """Being hit: a round into your own body, heard from inside. A deep blunt
-    thump, the wet flesh hit, gear and cloth jolted, and a short low
-    pressure swell; no voice."""
-    n = int(0.45 * RATE)
-    thump = sine_sweep(n, rng.uniform(90, 110), 48, 0.05) * env_decay(n, 0.09)
-    out = 1.0 * normalized(thump, 1)
-    meat = flesh(rng)
-    out[: len(meat)] += 0.7 * meat
-    out += 0.3 * normalized(grains(rng, n, 6, 0.08, 2_500, 6_000, 0.008), 1)
-    rumble = lowpass(rng.standard_normal(n), 140) * env_decay(n, 0.12)
-    out += 0.5 * normalized(rumble, 1)
+    """Being hit: a round into your own body, heard from inside. A short, soft
+    blunt thud and the kit jolted. No sub-bass swell, wet flesh layer, or
+    voice, so it says "you were hit" without covering the fight."""
+    n = int(0.22 * RATE)
+    t = np.arange(n) / RATE
+    f = rng.uniform(85, 105) * (1 + 0.5 * np.exp(-t / 0.01))
+    thump = np.sin(2 * np.pi * np.cumsum(f) / RATE) * env_decay(n, 0.045)
+    thump *= 1 - env_decay(n, 0.003)
+    body = lowpass(rng.standard_normal(n), 400) * env_decay(n, 0.03)
+    out = normalized(thump, 1) + 0.5 * normalized(body, 1)
+    out += 0.2 * normalized(grains(rng, n, 4, 0.06, 2_000, 5_000, 0.006), 1)
     fade = int(0.05 * RATE)
     out[-fade:] *= np.linspace(1, 0, fade)
-    return normalized(out, 0.9)
+    return normalized(out, 0.8)
 
 
 def heartbeat(rng: np.random.Generator) -> np.ndarray:
@@ -845,16 +845,6 @@ def breath_sound(rng: np.random.Generator, seconds: float, inhale: bool, heavy: 
     voice = heavy * 0.12 * np.sin(2 * np.pi * np.cumsum(np.full(n, rng.uniform(110, 140))) / RATE)
     out = normalized(out, 1) * rough + voice
     return normalized(out * shape, 0.8)
-
-
-def tinnitus(rng: np.random.Generator) -> np.ndarray:
-    """Ringing ears after a heavy hit: a thin 3.8 kHz tone that fades over
-    2.5 s, with a faint beating partner."""
-    n = int(2.6 * RATE)
-    t = np.arange(n) / RATE
-    tone = np.sin(2 * np.pi * 3_800 * t) + 0.3 * np.sin(2 * np.pi * 3_806 * t)
-    shape = np.minimum(t / 0.05, 1) * np.exp(-t / 0.9)
-    return normalized(tone * shape, 0.5)
 
 
 def death_sound(rng: np.random.Generator) -> np.ndarray:
@@ -939,14 +929,13 @@ def write_wav(path: Path, x: np.ndarray) -> None:
 
 def player() -> None:
     """Hit, headshot, and kill markers (audio/ui/), and being hit, heartbeat,
-    breathing, tinnitus, death, jump, mantle, and step layers (audio/player/)."""
+    breathing, death, jump, mantle, and step layers (audio/player/)."""
     makers = (
         (UI, "hit", hit_marker, 4, True),
         (UI, "hit_head", head_marker, 3, True),
         (UI, "kill", kill_marker, 3, True),
         (PLAYER, "hit_taken", hit_taken, 4, False),
         (PLAYER, "heartbeat", heartbeat, 2, False),
-        (PLAYER, "tinnitus", tinnitus, 1, False),
         (PLAYER, "death", death_sound, 2, False),
         (PLAYER, "jump", push_off, 4, False),
         (PLAYER, "mantle", mantle_sound, 3, False),

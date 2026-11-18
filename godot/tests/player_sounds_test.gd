@@ -1,7 +1,7 @@
 extends SceneTree
 ## Headless test of the local player's body sounds and the mix around them:
-## a long sprint brings breathing, low health brings a heartbeat and closes
-## the health muffle on the world's buses (and healing opens it), a shot
+## a long sprint brings breathing, low health brings a heartbeat but never
+## muffles the world's buses or rings the ears, a shot
 ## ducks footsteps and distant fire and lets go, and the hit, headshot, and
 ## kill markers exist.
 ## Run from the repo root: godot --headless --path godot --script res://tests/player_sounds_test.gd
@@ -31,7 +31,6 @@ func _run() -> void:
 	# Healthy and rested: no breath, no heart, the world open.
 	_check(body.breaths_heard() == 0, "no breathing at rest")
 	_check(body.heartbeats_heard() == 0, "no heartbeat at full health")
-	_check(body.muffle_hz() > 19000.0, "the world is open at full health")
 
 	# A long sprint.
 	Input.action_press("move_forward")
@@ -49,14 +48,13 @@ func _run() -> void:
 	player.take_damage(85.0, player.global_position + Vector3(0, 1, -5))
 	await _seconds(2.0)
 	_check(body.heartbeats_heard() >= 2, "a heartbeat at low health (%d)" % body.heartbeats_heard())
+	for bus in ["Weapons", "Effects", "Footsteps", "Ambience", "Player"]:
+		_check(not _has_low_pass(bus), "the %s bus stays clear when hurt" % bus)
 	_check(
-		body.muffle_hz() < 4000.0, "the world muffled at low health (%.0f Hz)" % body.muffle_hz()
+		not ResourceLoader.exists("res://assets/audio/player/tinnitus_1.ogg"),
+		"no ringing ears when hit"
 	)
-	_check(_muffle_enabled("Weapons"), "the muffle is on the Weapons bus")
-	_check(not _muffle_enabled("Player"), "the Player bus stays clear")
-	# Health regenerates after 4 s without damage, and the world opens.
 	await _seconds(7.5)
-	_check(body.muffle_hz() > 15000.0, "the world opens again (%.0f Hz)" % body.muffle_hz())
 
 	# A shot of your own ducks what matters less, then lets go.
 	Input.action_press("fire")
@@ -76,11 +74,12 @@ func _run() -> void:
 	_finish()
 
 
-func _muffle_enabled(bus_name: String) -> bool:
+func _has_low_pass(bus_name: String) -> bool:
 	var bus := AudioServer.get_bus_index(bus_name)
 	for i in AudioServer.get_bus_effect_count(bus):
-		if AudioServer.get_bus_effect(bus, i).resource_name == "HealthMuffle":
-			return AudioServer.is_bus_effect_enabled(bus, i)
+		var e := AudioServer.get_bus_effect(bus, i)
+		if e is AudioEffectLowPassFilter and AudioServer.is_bus_effect_enabled(bus, i):
+			return true
 	return false
 
 

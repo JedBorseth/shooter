@@ -16,12 +16,12 @@ around a shot answers it, and handling is heard beat by beat.
 | Footsteps | Master | Everyone's steps and body sounds. |
 | Ambience | Master | Beds and prop emitters, ducked by gunfire. |
 | UI | Master | Menus, hit markers, medals. |
-| Player | Master | Your own breath, heartbeat, being hit, ringing ears, death. Never muffled. |
+| Player | Master | Your own breath, heartbeat, being hit, death. |
 
 `AudioEnvironment` (`acoustics.rs`) adds filtered copies of buses on demand:
 `"<bus> (occluded)"` (low-pass) and `"<bus> (behind)"` (high shelf).
 
-### Loudness priority and the health muffle
+### Loudness priority
 
 Rather than a compressor that pumps everything, close gunfire asks for a
 duck (`acoustics::request_duck`): your own shot at full strength, anyone
@@ -30,11 +30,9 @@ else's falling off to nothing at 15 m. The environment turns Footsteps down
 (`PriorityDuck`) so the volume settings stay as set, and lets go over 0.35 s.
 Reloads and other handling never duck anything.
 
-Below half health, `PlayerSounds` (`player_sounds.rs`) closes a low-pass
-(`HealthMuffle`) on Weapons, Effects, Footsteps, and Ambience, from open to
-1.2 kHz near death; the Player bus stays clear, so the heartbeat and breath
-come forward. Death sweeps it to 350 Hz; health coming back opens it over
-about a second.
+Being hurt never dulls your hearing: there is no low-pass on the world's
+buses at low health and no ringing ears after a hit, so footsteps and
+gunfire stay as clear as at full health.
 
 ### Voice budget
 
@@ -163,8 +161,8 @@ The sounds are synthesized by `tools/build_world_audio.py bullets`.
 - breathing after 2.5 s of sprinting, and recovery breaths after it for up to
   4 s; hurt breathing below 35% health; the held breath on a scope;
 - a heartbeat below 40% health, racing from one every 0.95 s to 0.55 s;
-- being hit (a blunt thump, the flesh hit, kit jolted, no voice), with ringing
-  ears after a hit of 45 or more, and a body fall on death;
+- being hit (a short, soft blunt thud and the kit jolted, at -10 dB; -14 dB
+  for a hard landing), and a body fall on death;
 - a jump's push-off, hands on a ledge when mantling, and the kit and cloth
   under each step (louder when sprinting, none when crouched).
 
