@@ -12,7 +12,20 @@ use std::collections::VecDeque;
 use super::TICK_DT;
 use super::{TICK_RATE, Tick};
 
+/// How fast the remembered worst snapshot gap shrinks back once packets stop
+/// going missing: ticks of gap forgotten per tick that passes (0.6 ticks a
+/// second), so a lossy patch keeps the delay wide for several seconds rather
+/// than freezing remote players at every burst.
+const GAP_DECAY: f64 = 0.005;
+
 /// Estimates the server tick and the delayed tick to render remote players at.
+///
+/// The delay is as short as the connection allows: room for one lost snapshot
+/// (two snapshot intervals), widened to the longest recent gap between
+/// snapshots when more go missing, plus a margin for arrival jitter. On a
+/// clean link at 60 Hz snapshots that is about 35 to 50 ms. Every tick of delay
+/// is time an opponent has already moved on the server, so a shorter delay
+/// means less peeker's advantage and fewer deaths after reaching cover.
 #[derive(Clone, Debug)]
 pub struct SnapshotClock {
     /// Estimated current server tick (fractional).
@@ -23,20 +36,29 @@ pub struct SnapshotClock {
     jitter: f64,
     /// Ticks between snapshots the server sends.
     interval: f64,
+    /// Newest snapshot tick received.
+    newest: f64,
+    /// Longest recent gap between snapshots received, in ticks, decaying by
+    /// [`GAP_DECAY`]. Lost snapshots widen it.
+    gap_peak: f64,
     /// Smallest interpolation delay, in ticks.
     min_delay: f64,
     started: bool,
 }
 
 impl SnapshotClock {
-    /// `min_delay` is the interpolation delay in seconds (about 0.1 s is typical).
+    /// `min_delay` is a floor on the interpolation delay in seconds. Zero lets
+    /// the delay follow the connection alone; a floor is only for testing how
+    /// a longer delay plays.
     pub fn new(min_delay: f32) -> Self {
         Self {
             server_tick: 0.0,
             render_tick: 0.0,
             jitter: 0.0,
             interval: 1.0,
-            min_delay: f64::from(min_delay) * f64::from(TICK_RATE),
+            newest: 0.0,
+            gap_peak: 0.0,
+            min_delay: f64::from(min_delay.max(0.0)) * f64::from(TICK_RATE),
             started: false,
         }
     }
@@ -47,6 +69,7 @@ impl SnapshotClock {
         if !self.started {
             self.started = true;
             self.server_tick = tick;
+            self.newest = tick;
             self.render_tick = tick - self.delay();
             return;
         }
@@ -54,9 +77,16 @@ impl SnapshotClock {
         if error.abs() > f64::from(TICK_RATE) / 2.0 {
             // Half a second off: a stall or a server restart. Start over.
             self.server_tick = tick;
+            self.newest = tick;
             self.render_tick = tick - self.delay();
             self.jitter = 0.0;
+            self.gap_peak = 0.0;
             return;
+        }
+        if tick > self.newest {
+            let gap = tick - self.newest;
+            self.gap_peak = gap.max(self.gap_peak - gap * GAP_DECAY);
+            self.newest = tick;
         }
         self.jitter += (error.abs() - self.jitter) * 0.05;
         // Only pull forward fully; late packets nudge the estimate back gently.
@@ -69,9 +99,16 @@ impl SnapshotClock {
         self.interval = f64::from(ticks.max(1));
     }
 
-    /// Interpolation delay in ticks: room for two snapshots plus jitter.
+    /// Interpolation delay in ticks: room for a lost snapshot or the longest
+    /// recent gap between snapshots, whichever is longer, plus jitter.
+    ///
+    /// Right after snapshot T arrives the client renders at T minus the delay;
+    /// the next one arrives a gap later. Remote players keep moving smoothly
+    /// only if the delay covers that gap, so a client that is losing packets
+    /// draws a little further back until the loss stops.
     pub fn delay(&self) -> f64 {
-        self.min_delay.max(self.interval * 2.0 + self.jitter * 2.5)
+        let gap = (self.interval * 2.0).max(self.gap_peak);
+        self.min_delay.max(gap + self.jitter * 2.5)
     }
 
     /// Advances by `dt` seconds and returns the tick to render remote players at.
@@ -99,6 +136,11 @@ impl SnapshotClock {
 
     pub fn jitter_ticks(&self) -> f64 {
         self.jitter
+    }
+
+    /// Longest recent gap between snapshots, in ticks.
+    pub fn gap_ticks(&self) -> f64 {
+        self.gap_peak
     }
 }
 
@@ -211,31 +253,124 @@ mod tests {
         assert_eq!(b.sample(2.0), Some(1.0));
     }
 
-    #[test]
-    fn clock_renders_behind_the_server_and_tracks_it() {
-        let mut clock = SnapshotClock::new(0.1);
+    /// Feeds `seconds` of 60 Hz snapshots (every 2 ticks) through `clock`,
+    /// rendering at 144 fps with arrivals processed on the next frame. A
+    /// snapshot is dropped when `lost(i)` says so and arrives a snapshot late
+    /// when `late(i)` does. Returns the newest snapshot sent and the share of
+    /// frames, after the first second, whose render tick ran past the newest
+    /// snapshot received (remote players frozen).
+    fn run_link(
+        clock: &mut SnapshotClock,
+        first: u32,
+        seconds: u32,
+        lost: impl Fn(u32) -> bool,
+        late: impl Fn(u32) -> bool,
+    ) -> (u32, f64) {
         clock.set_interval(2);
-        let frame = 1.0 / 60.0;
-        let mut render = 0.0;
-        let mut newest = 0;
-        for i in 0..600u32 {
-            // 60 Hz snapshots (every 2 ticks), some a snapshot late.
-            newest = 1000 + 2 * i;
-            let late = 2 * (crate::rng::hash(i, 3) % 2);
-            clock.on_snapshot(newest - late);
-            render = clock.advance(frame);
+        let frame = 1.0 / 144.0;
+        let mut now = f64::from(first) * f64::from(TICK_DT);
+        let mut received = 0u32;
+        let mut frames = 0u32;
+        let mut frozen = 0u32;
+        let mut pending: Vec<(f64, u32)> = Vec::new();
+        let snapshots = seconds * 60;
+        let mut sent = first;
+        let mut next = 0u32;
+        while next < snapshots || !pending.is_empty() {
+            now += frame;
+            while next < snapshots && f64::from(first + 2 * next) * f64::from(TICK_DT) <= now {
+                sent = first + 2 * next;
+                if !lost(next) {
+                    let delay = if late(next) { 2.0 / 60.0 } else { 0.0 };
+                    pending.push((f64::from(sent) * f64::from(TICK_DT) + delay, sent));
+                }
+                next += 1;
+            }
+            pending.sort_by(|a, b| a.0.total_cmp(&b.0));
+            while pending.first().is_some_and(|(at, _)| *at <= now) {
+                let (_, tick) = pending.remove(0);
+                clock.on_snapshot(tick);
+                received = received.max(tick);
+            }
+            let render = clock.advance(frame as f32);
+            // Skip the first second while the clock settles.
+            if f64::from(sent - first) > f64::from(TICK_RATE) {
+                frames += 1;
+                if render > f64::from(received) {
+                    frozen += 1;
+                }
+            }
         }
-        let behind = (clock.server_tick() - render) / f64::from(TICK_RATE);
+        (sent, f64::from(frozen) / f64::from(frames.max(1)))
+    }
+
+    #[test]
+    fn a_clean_link_renders_close_behind_the_server() {
+        let mut clock = SnapshotClock::new(0.0);
+        let (newest, frozen) = run_link(&mut clock, 1000, 10, |_| false, |_| false);
+        let behind = (clock.server_tick() - clock.render_tick()) / f64::from(TICK_RATE);
         assert!(
-            (0.08..0.2).contains(&behind),
-            "renders about 100 ms behind, got {behind:.3} s"
+            (0.03..0.055).contains(&behind),
+            "renders 30 to 55 ms behind, got {behind:.3} s"
         );
+        assert!(frozen == 0.0, "never runs out of snapshots: {frozen:.3}");
         assert!((clock.server_tick() - f64::from(newest)).abs() < f64::from(TICK_RATE) * 0.05);
     }
 
     #[test]
-    fn clock_resyncs_after_a_stall() {
+    fn jitter_widens_the_delay() {
+        let mut clock = SnapshotClock::new(0.0);
+        let late = |i: u32| crate::rng::hash(i, 3) % 2 == 1;
+        let (_, frozen) = run_link(&mut clock, 1000, 10, |_| false, late);
+        let behind = (clock.server_tick() - clock.render_tick()) / f64::from(TICK_RATE);
+        assert!(
+            (0.04..0.12).contains(&behind),
+            "half the snapshots a snapshot late: got {behind:.3} s"
+        );
+        assert!(frozen < 0.01, "remote players barely stall: {frozen:.3}");
+    }
+
+    #[test]
+    fn packet_loss_widens_the_delay_then_it_recovers() {
+        let mut clock = SnapshotClock::new(0.0);
+        // 10% loss, with bursts of up to three snapshots in a row.
+        let lost = |i: u32| {
+            crate::rng::hash(i / 3, 11).is_multiple_of(30)
+                || crate::rng::hash(i, 7).is_multiple_of(15)
+        };
+        let (_, frozen) = run_link(&mut clock, 1000, 10, lost, |_| false);
+        let lossy = clock.delay();
+        assert!(
+            lossy >= 6.0,
+            "covers a three-snapshot gap, got {lossy:.2} ticks"
+        );
+        assert!(
+            frozen < 0.015,
+            "gaps are bridged by blending, not frozen: {frozen:.3}"
+        );
+        // Twenty clean seconds later the delay is back to the clean-link value.
+        let start = 1000 + 2 * 600 + 2;
+        run_link(&mut clock, start, 20, |_| false, |_| false);
+        assert!(clock.delay() < lossy, "{} < {lossy}", clock.delay());
+        assert!(
+            clock.delay() < 5.5,
+            "recovered to {:.2} ticks",
+            clock.delay()
+        );
+    }
+
+    #[test]
+    fn a_floor_holds_the_delay_back() {
         let mut clock = SnapshotClock::new(0.1);
+        run_link(&mut clock, 1000, 5, |_| false, |_| false);
+        assert!((clock.delay() - 12.0).abs() < 1e-4);
+        let behind = (clock.server_tick() - clock.render_tick()) / f64::from(TICK_RATE);
+        assert!((0.09..0.12).contains(&behind), "got {behind:.3} s");
+    }
+
+    #[test]
+    fn clock_resyncs_after_a_stall() {
+        let mut clock = SnapshotClock::new(0.0);
         clock.on_snapshot(100);
         clock.advance(TICK_DT);
         clock.on_snapshot(5000);

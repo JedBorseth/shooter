@@ -4,7 +4,8 @@
 //! client reads server packets, reconciles the player against the newest
 //! snapshot, feeds remote players' states into their interpolation buffers,
 //! and sends every unacknowledged input. Each rendered frame it draws remote
-//! players about 100 ms in the past.
+//! players as little in the past as the connection allows (about 35 to 50 ms
+//! on a clean link; see `SnapshotClock`).
 //!
 //! The server decides hits and kills and sends them as reliable game events:
 //! the client passes them to the local player (kill confirmations, score,
@@ -91,9 +92,11 @@ pub struct NetClient {
     /// Instanced for every other player.
     #[export]
     remote_player_scene: Option<Gd<PackedScene>>,
-    /// How far in the past remote players are drawn, at least, in milliseconds.
+    /// A floor on how far in the past remote players are drawn, in
+    /// milliseconds. Zero lets the delay follow the connection alone (snapshot
+    /// rate, lost snapshots, and jitter); raise it only to try a longer delay.
     #[export]
-    #[init(val = 100.0)]
+    #[init(val = 0.0)]
     interpolation_ms: f32,
     /// Simulated one-way latency, added in each direction (testing only).
     #[export]
@@ -773,6 +776,7 @@ impl NetClient {
             let ms = |ticks: f64| ticks * 1000.0 / f64::from(TICK_RATE);
             d.set("interp_delay_ms", ms(clock.delay()));
             d.set("jitter_ms", ms(clock.jitter_ticks()));
+            d.set("snapshot_gap_ms", ms(clock.gap_ticks()));
         }
         if let Some(player) = &self.player
             && let Some(prediction) = player.bind().prediction()

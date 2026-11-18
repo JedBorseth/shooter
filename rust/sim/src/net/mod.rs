@@ -5,7 +5,9 @@
 //! Model: the dedicated server is authoritative and runs the same fixed tick
 //! as client prediction (`TICK_RATE`), sending snapshots at 60 Hz.
 //! Clients send numbered inputs every tick, predict their own player, and
-//! reconcile against snapshots. Other players render about 100 ms in the past.
+//! reconcile against snapshots. Other players render in the past by as little
+//! as the connection allows: two snapshot intervals plus jitter, about 35 to
+//! 50 ms on a clean link, wider while snapshots go missing.
 //! The transport is Godot's ENet, used only as an unreliable UDP pipe; all
 //! serialization is here.
 

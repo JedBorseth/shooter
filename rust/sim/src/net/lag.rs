@@ -1,8 +1,9 @@
 //! Lag compensation: the server checks each shot against other players as the
 //! shooter saw them.
 //!
-//! A client draws other players about 100 ms in the past (snapshot
-//! interpolation), and its input reaches the server half a round trip later.
+//! A client draws other players a little in the past (snapshot interpolation,
+//! about 35 to 50 ms on a clean link), and its input reaches the server half
+//! a round trip later.
 //! Checking a shot against where targets are on the server "now" would make
 //! every player lead their targets by their ping. Instead each firing input
 //! carries the server tick the client was drawing others at
@@ -37,8 +38,9 @@ pub const MAX_REWIND: f32 = 0.3;
 pub const MAX_REWIND_TICKS: u32 = TICK_RATE * 3 / 10;
 
 /// Seconds, beyond the round trip, that a client may draw remote players in
-/// the past: the interpolation delay (about 0.1 s, more with jitter) and time
-/// queued before the server runs the input.
+/// the past: the interpolation delay (about 0.05 s on a clean link, up to
+/// about 0.15 s while snapshots go missing) and time queued before the server
+/// runs the input.
 pub const VIEW_SLACK: f32 = 0.25;
 /// Ticks of history kept: comfortably more than the rewind cap.
 const HISTORY_TICKS: Tick = TICK_RATE;
