@@ -4,6 +4,10 @@
 //! feet (`footsteps`), and hit zones posed from the same snapshot (drawn with
 //! F4).
 //!
+//! Enemies carry an `AimAssistTarget` sized to their stance, on while they are
+//! alive. Teammates, and anyone before the roster says which side they are on,
+//! get no aim assist.
+//!
 //! The local player's shots hit these hit zones for instant feedback (hit
 //! markers, blood, a flinch), but deal no damage here: the server rewinds the
 //! same poses (`shooter_sim::net::lag`) and decides every hit and kill.
@@ -17,6 +21,7 @@ use shooter_sim::net::protocol;
 use shooter_sim::weapon::{Reload, WeaponId};
 
 use crate::acoustics::zone_at;
+use crate::aim_assist::AimAssistTarget;
 use crate::bullets::ShotTracer;
 use crate::character::rig::{SoldierFrame, SoldierRig};
 use crate::convert::{to_godot, to_sim};
@@ -35,6 +40,8 @@ pub struct RemotePlayer {
     hitboxes: OnReady<Gd<HitboxRig>>,
     #[init(node = "Name")]
     name_label: OnReady<Gd<Label3D>>,
+    #[init(node = "AimAssist")]
+    aim_assist: OnReady<Gd<AimAssistTarget>>,
 
     shots_fired: Option<u32>,
     hits: Option<u8>,
@@ -48,6 +55,8 @@ pub struct RemotePlayer {
     gunfire: Option<Gunfire>,
     foley: Option<Foley>,
     friendly: bool,
+    /// The roster has said which side this player is on.
+    sided: bool,
     /// View angles and life from the last drawn sample, for spectating.
     yaw: f32,
     pitch: f32,
@@ -187,12 +196,20 @@ impl RemotePlayer {
             .set_team_index(if friendly { 0 } else { 1 });
         self.base_mut().set_meta("friendly", &friendly.to_variant());
         self.friendly = friendly;
+        self.sided = true;
+        self.update_aim_assist();
         // Names show through walls, so only teammates get one. The label starts
         // hidden (remote_player.tscn) so nobody's name shows before the roster
         // says which side they are on.
         self.name_label
             .set_modulate(Color::from_rgb(0.55, 0.78, 1.0));
         self.name_label.set_visible(friendly);
+    }
+
+    /// Aim assist is on for living enemies only.
+    fn update_aim_assist(&mut self) {
+        let on = self.sided && !self.friendly && self.alive;
+        self.aim_assist.bind_mut().set_active(on);
     }
 
     pub fn apply(&mut self, s: &RemoteSample, delta: f32) {
@@ -202,6 +219,9 @@ impl RemotePlayer {
         self.pitch = s.pitch;
         self.alive = s.alive;
         self.stance_eye = MoveParams::default().eye_height(s.stance);
+        let height = MoveParams::default().height(s.stance);
+        self.aim_assist.bind_mut().set_body_height(height);
+        self.update_aim_assist();
 
         // Velocity from the drawn motion (snapshots carry no velocity). A jump
         // in position (respawn) restarts the estimate.

@@ -27,6 +27,10 @@ pub struct AimAssistTarget {
     #[export]
     #[init(val = true)]
     enabled: bool,
+    /// Target aim assist snaps onto this body when the player starts aiming
+    /// down sights. Zombies only, as in CoD.
+    #[export]
+    snap: bool,
 }
 
 #[godot_api]
@@ -45,6 +49,11 @@ impl AimAssistTarget {
         self.enabled = enabled;
     }
 
+    /// Changes the capsule height, for a body that crouches.
+    pub fn set_body_height(&mut self, height: f32) {
+        self.height = height.max(0.1);
+    }
+
     /// The capsule in world space, keyed by this node's instance ID.
     pub fn capsule(&self) -> AssistTarget {
         let transform = self.base().get_global_transform();
@@ -56,6 +65,7 @@ impl AimAssistTarget {
             bottom: to_sim(origin + up * radius),
             top: to_sim(origin + up * (self.height - radius)),
             radius,
+            snap: self.snap,
         }
     }
 }

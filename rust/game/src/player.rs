@@ -7,7 +7,8 @@
 //! waits for a physics tick on high-refresh displays.
 //!
 //! Gamepad look also runs every rendered frame: stick shaping, turn boost, and
-//! aim assist (slowdown and rotational) from `shooter_sim::look`.
+//! aim assist (slowdown, rotational, and target aim assist on zombies) from
+//! `shooter_sim::look`.
 //!
 //! The player picks one input device in Settings (`controller_input`), and the
 //! other is locked out: Settings takes its bindings off the input map, and the
@@ -39,7 +40,7 @@ use godot::classes::{
 use godot::prelude::*;
 use shooter_sim::hitbox::HitZone;
 use shooter_sim::look::{
-    self, AimAssist, AimAssistParams, AssistTarget, AssistView, StickLook, StickParams,
+    self, AimAssist, AimAssistParams, AssistTarget, AssistType, AssistView, StickLook, StickParams,
 };
 use shooter_sim::movement::{MoveEnv, Stance};
 use shooter_sim::net::prediction::{ErrorSmoothing, Prediction, Reconciled};
@@ -190,15 +191,14 @@ pub struct FpsPlayer {
     /// Mouse up looks down.
     #[export]
     mouse_invert_y: bool,
-    /// Controller aim assist: slowdown and rotational, never a snap. Mouse
-    /// aiming never gets it.
+    /// Controller aim assist. Mouse aiming never gets it.
     #[export]
     #[init(val = true)]
     aim_assist: bool,
-    /// Scales aim assist: 0 is none, 1 is the default tuning.
-    #[export(range = (0.0, 1.5))]
-    #[init(val = 1.0)]
-    aim_assist_strength: f32,
+    /// Aim assist type (`AssistType`): 0 Default, 1 Precision, 2 Focusing,
+    /// 3 Legacy.
+    #[export(range = (0.0, 3.0))]
+    aim_assist_type: i32,
     /// Controller vibration when firing.
     #[export]
     #[init(val = true)]
@@ -1306,17 +1306,10 @@ impl FpsPlayer {
         }
     }
 
-    fn assist_params(&self) -> AimAssistParams {
-        let k = self.aim_assist_strength.max(0.0);
-        let d = AimAssistParams::default();
-        let slow = |full: f32| (1.0 - (1.0 - full) * k).clamp(0.0, 1.0);
-        AimAssistParams {
-            slowdown_hip: slow(d.slowdown_hip),
-            slowdown_ads: slow(d.slowdown_ads),
-            rotation_hip: (d.rotation_hip * k).min(1.0),
-            rotation_ads: (d.rotation_ads * k).min(1.0),
-            ..d
-        }
+    /// The aim assist tuning for the chosen type, or `None` when it is off.
+    fn assist_params(&self) -> Option<AimAssistParams> {
+        self.aim_assist
+            .then(|| AssistType::from_index(self.aim_assist_type).params())
     }
 
     /// Right-stick look for this rendered frame, with aim assist. Scaled by
@@ -1344,9 +1337,10 @@ impl FpsPlayer {
         let stick = look::shape_stick(raw, &params);
         let mut rates = self.stick_look.rates(stick, &params, delta) * self.aim_zoom();
 
-        let assist_on =
-            self.aim_assist && self.aim_assist_strength > 0.0 && !self.state.movement.sprinting;
-        if assist_on {
+        let assist = self
+            .assist_params()
+            .filter(|_| !self.state.movement.sprinting);
+        if let Some(assist) = assist {
             let moving = input
                 .get_vector("move_left", "move_right", "move_back", "move_forward")
                 .length()
@@ -1358,8 +1352,8 @@ impl FpsPlayer {
                 ads,
                 active: moving || stick != Vec2::ZERO,
             };
-            let targets = self.assist_targets(eye);
-            let out = self.assist.update(&view, &targets, &self.assist_params());
+            let targets = self.assist_targets(eye, assist.range);
+            let out = self.assist.update(&view, &targets, &assist, delta);
             self.assist_target = out.target;
             rates *= out.slowdown;
             self.turn(out.rotation.x, out.rotation.y);
@@ -1405,7 +1399,7 @@ impl FpsPlayer {
     }
 
     /// Enabled aim assist targets in range with a clear line of sight.
-    fn assist_targets(&self, eye: Vector3) -> Vec<AssistTarget> {
+    fn assist_targets(&self, eye: Vector3, range: f32) -> Vec<AssistTarget> {
         let Some(mut space) = self
             .base()
             .get_world_3d()
@@ -1413,7 +1407,6 @@ impl FpsPlayer {
         else {
             return Vec::new();
         };
-        let range = AimAssistParams::default().range;
         let forward = to_godot(look::view_direction(self.yaw, self.pitch));
         let exclude: Array<Rid> = array![self.base().get_rid()];
         self.base()
