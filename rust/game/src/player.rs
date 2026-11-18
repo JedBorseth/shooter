@@ -1459,7 +1459,7 @@ impl FpsPlayer {
                 if speed > 3.0 {
                     let volume = linear_db(((speed - 3.0) / 9.0).clamp(0.25, 1.0));
                     self.play_body("res://assets/audio/player/land", volume);
-                    self.play_footstep(volume - 4.0);
+                    self.play_footstep(volume + footsteps::OWN_STEP_DB);
                 }
             }
             PlayerEvent::Damaged { .. } | PlayerEvent::Died => {
