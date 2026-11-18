@@ -16,6 +16,8 @@ const SPAWN := Vector3(0, 0.02, 0)
 const SPRINT_SPEED := 6.9
 const WALK_SPEED := 5.0
 const SLIDE_RATIO := 1.1
+## `MoveParams::eye_height(Standing)`.
+const STAND_EYE := 1.68
 ## `MoveParams::eye_from_top`: the eye sits this far under the capsule's top.
 const EYE_FROM_TOP := 0.12
 ## Trace columns, in the order `_record` writes them.
@@ -84,6 +86,9 @@ func _run() -> void:
 	await _bunny_hop()
 	await _slide()
 	await _slide_chain()
+	await _walk_bob()
+	await _flinch()
+	await _death_and_respawn()
 	_finish()
 
 
@@ -246,6 +251,22 @@ func _jump_and_land() -> void:
 	_check(
 		recovery >= 0.8 and recovery <= 1.6, "the legs recover in 0.8-1.6 s, took %.2f s" % recovery
 	)
+	# The camera sinks into the landing and the head nods (MW: about 4-6 cm
+	# and 1-2 degrees over about 0.3 s), then both come back.
+	var lowest := 99.0
+	var nod := 0.0
+	for row: Dictionary in rows:
+		if row.t >= landed_at and row.t <= landed_at + 0.5:
+			lowest = minf(lowest, row.camera_eye)
+			nod = minf(nod, row.pitch)
+	var dip := STAND_EYE - lowest
+	_check(dip >= 0.035 and dip <= 0.07, "a jump's landing dips the camera 3.5-7 cm, %.3f m" % dip)
+	_check(
+		rad_to_deg(-nod) >= 0.8 and rad_to_deg(-nod) <= 2.5,
+		"and nods it 0.8-2.5 degrees, %.2f" % rad_to_deg(-nod)
+	)
+	var last: Dictionary = rows.back()
+	_check(absf(last.pitch) < 0.002, "the nod springs back, %.4f rad" % last.pitch)
 	await _reset()
 
 
@@ -351,6 +372,82 @@ func _first_time(rows: Array[Dictionary], test: Callable) -> float:
 	return 99.0
 
 
+## Walking with camera motion on: the bob moves smoothly, with no snap at a
+## footfall, and the head is lowest just after each step.
+func _walk_bob() -> void:
+	_player.camera_motion = true
+	await _begin("walk_bob")
+	Input.action_press("move_forward")
+	await _record(360)
+	Input.action_release("move_forward")
+	await _record(60)
+	_player.camera_motion = false
+	var rows := _scenario_rows("walk_bob")
+	var worst_step := 0.0
+	var worst_roll := 0.0
+	var low := 99.0
+	var high := 0.0
+	for i in range(121, 360):
+		worst_step = maxf(worst_step, absf(rows[i].camera_eye - rows[i - 1].camera_eye))
+		worst_roll = maxf(worst_roll, absf(rows[i].roll - rows[i - 1].roll))
+		low = minf(low, rows[i].camera_eye)
+		high = maxf(high, rows[i].camera_eye)
+	_check(
+		high - low >= 0.01 and high - low <= 0.035, "a walk bobs 1-3.5 cm, %.3f m" % (high - low)
+	)
+	# A snap would jump the whole bob in one tick; a smooth dip moves a few mm.
+	_check(worst_step < 0.004, "the bob never snaps, worst %.4f m a tick" % worst_step)
+	_check(worst_roll < 0.0015, "nor does the roll, worst %.5f rad a tick" % worst_roll)
+	await _reset()
+
+
+## A shot from the right turns the head left, rolls it, and springs back.
+func _flinch() -> void:
+	await _begin("flinch")
+	await _record(10)
+	var yaw := _player.view_yaw()
+	_player.take_damage(20.0, _player.global_position + Vector3(10, 1.5, 0))
+	var peak := 0.0
+	for i in 60:
+		await _record(1)
+		peak = maxf(peak, _player.view_yaw() - yaw)
+	_check(peak > 0.005, "a hit from the right turns the view left, %.4f rad" % peak)
+	_check(
+		absf(_player.view_yaw() - yaw) < 0.001,
+		"and the flinch springs back, %.4f rad" % (_player.view_yaw() - yaw)
+	)
+	await _record(240)
+	await _reset()
+
+
+## Killed by someone 8 m to the left: the camera leaves first person, rises
+## behind the body, and turns to face them; the respawn starts clean.
+func _death_and_respawn() -> void:
+	await _begin("death")
+	await _record(10)
+	var killer := _player.global_position + Vector3(-8, 0, 0)
+	_player.take_damage(1000.0, killer)
+	await _record(240)
+	var camera := _camera.global_transform
+	var away := camera.origin.distance_to(_player.global_position + Vector3.UP * 1.68)
+	_check(away > 1.5, "the death camera leaves first person, %.2f m away" % away)
+	var to_killer := (killer + Vector3.UP * 1.4 - camera.origin).normalized()
+	var facing := -camera.basis.z.dot(to_killer)
+	_check(facing > 0.95, "and faces the killer, %.3f" % facing)
+	# Respawned (offline, after `respawn_delay`): first person, level, upright.
+	await _record(180)
+	_check(_player.is_alive(), "the player respawns")
+	await _record(30)
+	var eye := _camera.global_position.y - _player.global_position.y
+	var euler := _camera.global_transform.basis.get_euler(EULER_ORDER_YXZ)
+	_check(absf(eye - STAND_EYE) < 0.01, "the respawn starts at eye height, %.3f m" % eye)
+	_check(
+		absf(euler.x) < 0.001 and absf(euler.z) < 0.001,
+		"with no death roll or flinch left, pitch %.4f roll %.4f" % [euler.x, euler.z]
+	)
+	await _reset()
+
+
 ## A two-tick press, recorded.
 func _press(action: String) -> void:
 	Input.action_press(action)
@@ -371,6 +468,8 @@ func _reset() -> void:
 	_player.teleport(SPAWN, 0.0)
 	_drawn_feet = Vector3.INF
 	await _ticks(60)
+	# Recoil from a scenario that fired may still be climbing.
+	_player.set_look(0.0, 0.0)
 	if _player.movement_state() != "Standing":
 		await _press("crouch")
 		await _ticks(60)
@@ -436,6 +535,8 @@ func _scenario_rows(name: String) -> Array[Dictionary]:
 					"feet": Vector3(float(row[9]), float(row[10]), float(row[11])),
 					"state": row[12],
 					"on_floor": row[13] == "true",
+					"pitch": float(row[7]),
+					"roll": float(row[8]),
 				}
 			)
 		)

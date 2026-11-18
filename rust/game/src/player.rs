@@ -90,6 +90,18 @@ const SHOT_ZOOM_PULSE_MAX: f32 = 0.02;
 const CLIMB_RATE: f32 = 90.0;
 /// Per-shot camera shake spring.
 const SHAKE_STIFFNESS: f32 = 900.0;
+/// The landing dip: a soft spring, so the body sinks into a landing and comes
+/// back up over about a third of a second.
+const LAND_DIP_STIFFNESS: f32 = 70.0;
+const LAND_DIP_ZETA: f32 = 0.65;
+/// The landing nod (the look tips down and back) and the hit flinch.
+const LAND_NOD_STIFFNESS: f32 = 120.0;
+const LAND_NOD_ZETA: f32 = 0.7;
+const FLINCH_STIFFNESS: f32 = 160.0;
+const FLINCH_DAMPING: f32 = 16.0;
+/// The death camera: how far behind the body and how high it settles.
+const DEATH_CAMERA_BACK: f32 = 2.4;
+const DEATH_CAMERA_HEIGHT: f32 = 1.5;
 
 /// Actions whose presses are remembered until the next physics tick, so a tap
 /// shorter than one tick (or a mouse-wheel step) is never lost.
@@ -364,7 +376,18 @@ pub struct FpsPlayer {
     bob_blend: f32,
     tilt: f32,
     land_dip: Spring<f32>,
+    /// The landing's nod: radians the look is tipped down (springs back).
+    land_nod: Spring<f32>,
+    /// A hit's flinch, in radians: pitch, yaw, and a visual-only roll.
     flinch: Spring<f32>,
+    flinch_yaw: Spring<f32>,
+    flinch_roll: Spring<f32>,
+    /// Where the last shot that hurt us came from, for the death camera.
+    last_attacker: Option<Vector3>,
+    /// Seconds since death, where it happened (feet), and the view then.
+    dead_for: f32,
+    death_feet: Vector3,
+    death_view: Vector2,
     score: ScoreState,
     score_rules: ScoreRules,
     look_target: Option<WeaponId>,
@@ -624,14 +647,33 @@ impl ICharacterBody3D for FpsPlayer {
         } else {
             self.pending_climb = Vec2::ZERO;
         }
-        self.land_dip.step(90.0, 13.0, dt);
-        // A hit's flinch turns the look itself (and springs back), so the
-        // sights and the screen centre stay where shots go, on this machine
-        // and on the server, which sees it in the look angles.
-        let flinch_before = self.flinch.value;
-        self.flinch.step(160.0, 16.0, dt);
+        self.land_dip.step(
+            LAND_DIP_STIFFNESS,
+            damping_for(LAND_DIP_STIFFNESS, LAND_DIP_ZETA),
+            dt,
+        );
+        // A hit's flinch and a landing's nod turn the look itself (and spring
+        // back), so the sights and the screen centre stay where shots go, on
+        // this machine and on the server, which sees it in the look angles.
+        let before = Vector2::new(
+            self.flinch_yaw.value,
+            self.flinch.value - self.land_nod.value,
+        );
+        self.flinch.step(FLINCH_STIFFNESS, FLINCH_DAMPING, dt);
+        self.flinch_yaw.step(FLINCH_STIFFNESS, FLINCH_DAMPING, dt);
+        self.flinch_roll.step(FLINCH_STIFFNESS, FLINCH_DAMPING, dt);
+        self.land_nod.step(
+            LAND_NOD_STIFFNESS,
+            damping_for(LAND_NOD_STIFFNESS, LAND_NOD_ZETA),
+            dt,
+        );
         if alive {
-            self.turn(0.0, self.flinch.value - flinch_before);
+            let after = Vector2::new(
+                self.flinch_yaw.value,
+                self.flinch.value - self.land_nod.value,
+            );
+            let turn = after - before;
+            self.turn(turn.x, turn.y);
         }
         self.shake
             .step(SHAKE_STIFFNESS, damping_for(SHAKE_STIFFNESS, 0.5), dt);
@@ -656,8 +698,7 @@ impl ICharacterBody3D for FpsPlayer {
         };
 
         let (bob, bob_roll, tilt) = self.camera_motion_offsets(dt, ads);
-        let death_roll = self.death_blend * 0.45;
-        let eye = eye_height * (1.0 - self.death_blend * 0.75);
+        let eye = eye_height;
 
         // The camera looks along the aim (look plus the simulated recoil snap
         // and sway), so the screen centre and the sights are where bullets
@@ -671,15 +712,20 @@ impl ICharacterBody3D for FpsPlayer {
         let view = Vector3::new(
             self.pitch + recoil.x + sway.x,
             self.yaw - recoil.y - sway.y,
-            punch.z + bob_roll + tilt + death_roll,
+            punch.z + bob_roll + tilt + self.flinch_roll.value,
         );
         let basis = Basis::from_euler(EulerOrder::YXZ, view);
         let origin = feet
             + Vector3::UP * (eye + bob.y + self.land_dip.value)
             + basis.col_a() * bob.x
             + basis * self.shake.value;
-        self.camera
-            .set_global_transform(Transform3D::new(basis, origin));
+        let first_person = Transform3D::new(basis, origin);
+        let transform = if alive {
+            first_person
+        } else {
+            self.death_camera(first_person, dt)
+        };
+        self.camera.set_global_transform(transform);
         self.camera.set_fov(fov);
 
         let frame = self.view_frame(ads);
@@ -1612,7 +1658,20 @@ impl FpsPlayer {
             PlayerEvent::Combat(combat) => self.handle_combat(combat),
             PlayerEvent::Landed { speed } => {
                 self.viewmodel.bind_mut().on_landed(speed);
-                self.land_dip.velocity -= (speed * 0.03).min(0.45);
+                // The body sinks into a landing and the head nods: about 5 cm
+                // and 1.5 degrees for a jump, more for a longer drop.
+                let dip = ((speed - 2.0) * 0.012).clamp(0.0, 0.1);
+                let nod = ((speed - 2.0) * 0.35).clamp(0.0, 3.0).to_radians();
+                self.land_dip.velocity -= impulse_for_peak(
+                    dip,
+                    LAND_DIP_STIFFNESS,
+                    damping_for(LAND_DIP_STIFFNESS, LAND_DIP_ZETA),
+                );
+                self.land_nod.velocity += impulse_for_peak(
+                    nod,
+                    LAND_NOD_STIFFNESS,
+                    damping_for(LAND_NOD_STIFFNESS, LAND_NOD_ZETA),
+                );
                 if speed > 3.0 {
                     let volume = linear_db(((speed - 3.0) / 9.0).clamp(0.25, 1.0));
                     self.play_body("res://assets/audio/player/land", volume);
@@ -1629,7 +1688,7 @@ impl FpsPlayer {
     fn handle_vitals(&mut self, event: &PlayerEvent, from: Vector3) {
         match *event {
             PlayerEvent::Damaged { amount, fall } => {
-                self.flinch.velocity += if fall { -0.6 } else { 0.4 } * (amount / 30.0).min(1.5);
+                self.flinch_from(amount, fall, from);
                 if let Some(mut body) = self.player_sounds.clone() {
                     body.bind_mut().on_damaged(fall);
                 }
@@ -1637,6 +1696,9 @@ impl FpsPlayer {
             }
             PlayerEvent::Died => {
                 self.respawn_in = self.respawn_delay;
+                self.dead_for = 0.0;
+                self.death_feet = self.current_position;
+                self.death_view = Vector2::new(self.yaw, self.pitch);
                 // Online, the server counts deaths and sends the totals.
                 if self.prediction.is_none() {
                     self.score.on_death();
@@ -2168,6 +2230,83 @@ impl FpsPlayer {
             .clone()
     }
 
+    /// A hit's flinch, away from where it came from: a shot from the right
+    /// turns the head left and rolls it, one from in front tips it up, one
+    /// from behind tips it down. A fall jolts the head down.
+    fn flinch_from(&mut self, amount: f32, fall: bool, from: Vector3) {
+        let strength = (amount / 30.0).min(1.5);
+        if fall {
+            self.flinch.velocity -= 0.6 * strength;
+            return;
+        }
+        self.last_attacker = Some(from);
+        let to = from - self.current_position;
+        let flat = Vector2::new(to.x, to.z);
+        if flat.length_squared() < 1e-4 {
+            self.flinch.velocity += 0.4 * strength;
+            return;
+        }
+        // The attacker in the view's frame: x right, y forward.
+        let (forward, right) = shooter_sim::movement::basis_from_yaw(self.yaw);
+        let dir = flat.normalized();
+        let side = dir.x * right.x + dir.y * right.z;
+        let ahead = dir.x * forward.x + dir.y * forward.z;
+        self.flinch.velocity += 0.4 * strength * ahead.clamp(-0.6, 1.0);
+        // Positive yaw turns left: a hit from the right pushes the head left.
+        self.flinch_yaw.velocity += 0.35 * strength * side;
+        self.flinch_roll.velocity -= 0.5 * strength * side;
+    }
+
+    /// The camera once dead: it drops with the body for a moment, then rises
+    /// behind where the player fell and turns to face whoever killed them
+    /// (or keeps the last view, for a fall), clear of walls. Eased in from
+    /// the first-person view by `death_blend`.
+    fn death_camera(&mut self, first_person: Transform3D, dt: f32) -> Transform3D {
+        self.dead_for += dt;
+        let feet = self.death_feet;
+        let target = self.last_attacker.map_or_else(
+            || {
+                let (forward, _) = shooter_sim::movement::basis_from_yaw(self.death_view.x);
+                feet + to_godot(forward) * 6.0 + Vector3::UP * 1.2
+            },
+            |a| a + Vector3::UP * 1.4,
+        );
+        let flat = Vector3::new(target.x - feet.x, 0.0, target.z - feet.z);
+        let toward = flat.try_normalized().unwrap_or(Vector3::FORWARD);
+        // Drop first (the body falls), then rise and back off.
+        let fall = smoothing(6.0, self.dead_for.min(0.4)) / smoothing(6.0, 0.4);
+        let rise = smoothing(3.0, (self.dead_for - 0.35).max(0.0));
+        let low = feet + Vector3::UP * 0.5;
+        let high = feet - toward * DEATH_CAMERA_BACK + Vector3::UP * DEATH_CAMERA_HEIGHT;
+        let mut wanted = first_person.origin.lerp(low, fall * 0.8).lerp(high, rise);
+        // Not through a wall: stop short of anything between the body and it.
+        let from = feet + Vector3::UP * 0.9;
+        if let Some(hit) = self.ray_point(from, wanted) {
+            wanted = hit + (from - hit).normalized() * 0.25;
+        }
+        let looking = Transform3D::new(Basis::IDENTITY, wanted).looking_at(target);
+        let turn = smoothing(2.5, self.dead_for);
+        let basis = first_person
+            .basis
+            .get_quaternion()
+            .slerp(looking.basis.get_quaternion(), turn);
+        Transform3D::new(Basis::from_quaternion(basis), wanted)
+    }
+
+    /// The point where a ray from `from` to `to` first meets the world.
+    fn ray_point(&self, from: Vector3, to: Vector3) -> Option<Vector3> {
+        let mut space = self.base().get_world_3d()?.get_direct_space_state()?;
+        let exclude: Array<Rid> = array![self.base().get_rid()];
+        let query = PhysicsRayQueryParameters3D::create_ex(from, to)
+            .collision_mask(WORLD_LAYER)
+            .exclude(&exclude)
+            .done()?;
+        space
+            .intersect_ray(&query)
+            .get("position")
+            .and_then(|p| p.try_to::<Vector3>().ok())
+    }
+
     /// Head bob, strafe tilt, and slide tilt: (bob offset, bob roll, tilt) in
     /// metres and radians. Zero when camera motion is turned off.
     fn camera_motion_offsets(&mut self, dt: f32, ads: f32) -> (Vector2, f32, f32) {
@@ -2203,10 +2342,10 @@ impl FpsPlayer {
         self.last_stride_phase = step;
         let theta = (step + self.stride_foot) * PI;
         let amount = self.bob_blend * (1.0 - 0.85 * ads);
-        let bob = Vector2::new(
-            theta.sin() * 0.012 * amount,
-            -theta.sin().abs() * 0.022 * amount,
-        );
+        // The head is lowest just after each footfall, as the knee takes the
+        // weight, and highest mid-stride: a smooth dip, never a snap.
+        let dip = 0.5 + 0.5 * ((step - 0.08) * 2.0 * PI).cos();
+        let bob = Vector2::new(theta.sin() * 0.012 * amount, -dip * 0.022 * amount);
         let roll = theta.sin() * 0.004 * amount;
         (bob, roll, self.tilt)
     }
@@ -2336,7 +2475,12 @@ impl FpsPlayer {
         // flinch, tilt, or bob carried into the new life.
         self.death_blend = 0.0;
         self.land_dip = Spring::default();
+        self.land_nod = Spring::default();
         self.flinch = Spring::default();
+        self.flinch_yaw = Spring::default();
+        self.flinch_roll = Spring::default();
+        self.last_attacker = None;
+        self.dead_for = 0.0;
         self.tilt = 0.0;
         self.bob_blend = 0.0;
         self.stride_foot = 0.0;
