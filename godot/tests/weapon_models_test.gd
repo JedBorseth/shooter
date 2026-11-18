@@ -153,6 +153,7 @@ func _run() -> void:
 		_check(merged.lod_bias < 1.0, "%s: third person switches to coarser LODs sooner" % key)
 		world.queue_free()
 		await process_frame
+	await _check_extended_magazine()
 	_check_casings()
 	_check_attachments()
 	await _check_racks()
@@ -226,6 +227,44 @@ func _front_sight_tip(body: MeshInstance3D, view: Node3D, muzzle_z: float, reach
 			if absf(p.x) < 0.0015 and p.z < muzzle_z + reach and p.y > -0.05:
 				top = maxf(top, p.y)
 	return top
+
+
+## An extended magazine is longer, and still seats where the standard one does.
+func _check_extended_magazine() -> void:
+	for key: String in ["m4", "ak47", "pdw9"]:
+		var view := (
+			(load("res://scenes/weapons/%s_view.tscn" % key) as PackedScene).instantiate() as Node3D
+		)
+		root.add_child(view)
+		await process_frame
+		var mag := view.get_node("Model/Mesh/Magazine") as MeshInstance3D
+		var before := _bounds_in(mag, view)
+		view.call("apply_attachment", "extmag")
+		await process_frame
+		var after := _bounds_in(mag, view)
+		_check(
+			after.size.y > before.size.y * 1.25,
+			(
+				"%s: the extended magazine is longer (%.0f to %.0f mm)"
+				% [key, before.size.y * 1000.0, after.size.y * 1000.0]
+			)
+		)
+		_check(
+			absf(after.end.y - before.end.y) < 0.002,
+			"%s: the extended magazine's top stays in the well" % key
+		)
+		view.call("apply_attachment", "")
+		await process_frame
+		_check(
+			absf(_bounds_in(mag, view).size.y - before.size.y) < 0.001,
+			"%s: taking it off restores the magazine" % key
+		)
+		view.queue_free()
+		await process_frame
+
+
+func _bounds_in(mesh: MeshInstance3D, space: Node3D) -> AABB:
+	return space.global_transform.affine_inverse() * mesh.global_transform * mesh.get_aabb()
 
 
 ## Every weapon names a modelled fired case, and the case is its real size.

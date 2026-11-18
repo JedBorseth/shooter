@@ -145,6 +145,10 @@ Every gun is built from a detailed CC0 source model. From Stein Games' Free Clas
 3. Repacks the source's maps into the game's layout at 2048 px: sRGB colour, an OpenGL normal map (DirectX-style sources are flipped), and ORM (occlusion, roughness, metallic, from the source's packed map or its separate ones). The source's own UVs stay.
 4. Exports `<key>.glb` in metres with one material for the weapon (`<key>.tres`), the shared cartridge material on the rounds, and the shared tritium glow on night sights, and `World`, the whole weapon merged into one node for other players' weapons and racks (nothing moves on them), then writes the marker positions (`Muzzle`, `Ejection`, `OpticMount`, `GripRight`, `GripLeft`) into the view scene and a summary (`<key>.json`: triangles, nodes, markers).
 
+The repacked textures keep weapon steel at a roughness of at least 0.32 and its bare-steel colour at most 0.6 (sRGB), so worn edges read as blued or parkerised steel rather than chrome, and every texture island's colour is grown 16 texels into the empty space round it (`pad_islands`), so mipmaps never pull the gaps' colour onto the edges. Each rifle's view scene also gets a `ChargingHandle` marker where the hand works the handle (the right-hand knob on the AK-47, LSW-6, and BR-3, the left-hand lever on the PDW-9, the T-handle's rear on the M4A1), which the reload clips reach for. The M870 aims over its receiver at a brass bead the tool adds on the barrel's end.
+
+At the hip each long gun is turned 5 degrees inward and rolled 4 degrees (`hip_rotation`, faded out as it comes up to aim), so its side, magazine, and firing hand show rather than only its top. An extended magazine stretches the magazine 35% along its length about its top, so it still seats in the well (`WeaponView::lengthen_magazine`).
+
 Parts each rebuilt weapon exports (origins at the part's pivot, so a trigger or hammer turns about its pin):
 
 | Weapon | Nodes |

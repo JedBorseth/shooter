@@ -178,6 +178,30 @@ fn stride_bob(theta: f32, amount: f32, sprint: f32) -> (Vector3, Vector3) {
     )
 }
 
+/// How much longer an extended magazine is than the standard one.
+const EXTENDED_MAGAZINE: f32 = 1.35;
+
+/// The top of a magazine's meshes in its own space (where it meets the well).
+fn magazine_top(mag: &Gd<Node3D>) -> Option<f32> {
+    let mut top: Option<f32> = None;
+    let mut visit = vec![(mag.clone().upcast::<Node>(), Transform3D::IDENTITY)];
+    while let Some((node, xf)) = visit.pop() {
+        if let Ok(mesh) = node.clone().try_cast::<MeshInstance3D>() {
+            let aabb = mesh.get_aabb();
+            for i in 0..8 {
+                let y = (xf * aabb.get_corner(i)).y;
+                top = Some(top.map_or(y, |t: f32| t.max(y)));
+            }
+        }
+        for child in node.get_children().iter_shared() {
+            if let Ok(c) = child.clone().try_cast::<Node3D>() {
+                visit.push((child, xf * c.get_transform()));
+            }
+        }
+    }
+    top
+}
+
 /// How far below the support hand's grip marker a foregrip's clamp sits: on
 /// the bottom rail of the handguard.
 const GRIP_MOUNT_DROP: f32 = 0.006;
@@ -203,6 +227,11 @@ pub struct WeaponView {
     weapon: GString,
     #[export]
     hip_position: Vector3,
+    /// How the weapon turns at the hip, in degrees (pitch up, yaw left,
+    /// roll), so its side and the firing hand show rather than only its top.
+    /// Fades out as it comes up to aim.
+    #[export]
+    hip_rotation: Vector3,
     #[export]
     #[init(val = Vector3::new(0.0, 0.0, -0.12))]
     ads_position: Vector3,
@@ -493,6 +522,15 @@ impl WeaponView {
     /// home) is emitted `weapon_foley::lead(name)` seconds before it.
     #[signal]
     fn foley_event(name: StringName);
+
+    /// Fits the attachment with this key (`reddot`, `acog`, `suppressor`,
+    /// `grip`, `extmag`), or takes it off for an empty key. For tests and
+    /// captures; the game picks attachments through the weapon's variant.
+    #[func]
+    fn apply_attachment(&mut self, key: GString) {
+        let attachment = Attachment::from_key(&key.to_string());
+        self.set_attachment(attachment);
+    }
 }
 
 impl WeaponView {
@@ -726,6 +764,7 @@ impl WeaponView {
             let fold = if optic { -FRAC_PI_2 } else { 0.0 };
             leaf.set_rotation(Vector3::new(fold, 0.0, 0.0));
         }
+        self.lengthen_magazine(attachment == Some(Attachment::ExtendedMag));
         self.suppressed = attachment == Some(Attachment::Suppressor);
         if let Some(gunshot) = &mut self.gunshot {
             gunshot.set_suppressed(self.suppressed);
@@ -797,6 +836,35 @@ impl WeaponView {
         }
     }
 
+    /// An extended magazine: the magazine (and the fresh one a reload brings
+    /// up) stretched along its length about its top, so it still seats in
+    /// the well. Undone when the attachment changes.
+    fn lengthen_magazine(&mut self, extended: bool) {
+        let stretch = if extended { EXTENDED_MAGAZINE } else { 1.0 };
+        let mut changed = false;
+        for name in ["Model/Mesh/Magazine", "Model/Mesh/FreshMagazine"] {
+            let Some(mut mag) = self.base().try_get_node_as::<Node3D>(name) else {
+                continue;
+            };
+            let Some(top) = magazine_top(&mag) else {
+                continue;
+            };
+            let old = mag.get_scale().y;
+            if (old - stretch).abs() < 1e-4 {
+                continue;
+            }
+            // Keep the top where it is: the origin moves by the change in
+            // the top's offset.
+            let at = mag.get_position();
+            mag.set_position(at + Vector3::new(0.0, top * (old - stretch), 0.0));
+            mag.set_scale(Vector3::new(1.0, stretch, 1.0));
+            changed = true;
+        }
+        if changed && self.parts.is_some() {
+            self.find_parts();
+        }
+    }
+
     /// Lowers the weapon (its model and markers) `drop` metres below the
     /// sight line, from wherever it was.
     fn set_sight_drop(&mut self, drop: f32) {
@@ -813,6 +881,7 @@ impl WeaponView {
             "GripRight",
             "GripLeft",
             "OpticMount",
+            "ChargingHandle",
         ] {
             if let Some(mut node) = self.base().try_get_node_as::<Node3D>(name) {
                 let at = node.get_position();
@@ -2082,10 +2151,11 @@ impl ViewmodelRig {
         self.pickup_dip = (self.pickup_dip - dt * 2.5).max(0.0);
         let bump = smoothstep(self.cycle_kick) * 0.4 + smoothstep(self.pickup_dip) * 0.6;
 
-        let (hip, aim, sprint_pos, sprint_rot, pivot, cycle_pos, cycle_rot) = {
+        let (hip, hip_rot, aim, sprint_pos, sprint_rot, pivot, cycle_pos, cycle_rot) = {
             let v = view.bind();
             (
                 v.hip_position,
+                v.hip_rotation,
                 v.ads_position,
                 v.sprint_position,
                 v.sprint_rotation,
@@ -2111,6 +2181,7 @@ impl ViewmodelRig {
         let motion =
             self.sway_rot.value + self.kick_rot.value + self.ride_rot.value + self.jolt_rot.value;
         let pitch = deg(ins_rot.x)
+            + deg(hip_rot.x) * hip_amount
             + deg(sprint_rot.x) * sprint
             + deg(bob_rot.x + breathe_rot.x)
             + motion.x
@@ -2120,12 +2191,14 @@ impl ViewmodelRig {
             + deg(cycle_rot.x) * cycle
             + deg(4.0) * bump;
         let yaw = deg(ins_rot.y)
+            + deg(hip_rot.y) * hip_amount
             + deg(switch_rot.y)
             + deg(sprint_rot.y) * sprint
             + deg(bob_rot.y + breathe_rot.y)
             + motion.y
             + deg(cycle_rot.y) * cycle;
         let roll = deg(ins_rot.z)
+            + deg(hip_rot.z) * hip_amount
             + deg(sprint_rot.z) * sprint
             + deg(bob_rot.z + breathe_rot.z)
             + motion.z

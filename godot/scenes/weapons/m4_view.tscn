@@ -10,7 +10,8 @@ size = Vector2(0.2, 0.2)
 [node name="M4" type="WeaponView"]
 weapon = "m4"
 grip_rake = 22.0
-hip_position = Vector3(0.1, -0.09, -0.24)
+hip_position = Vector3(0.135, -0.090, -0.24)
+hip_rotation = Vector3(0, 5, 4)
 ads_position = Vector3(0, 0, -0.09)
 sprint_position = Vector3(-0.04, 0.015, 0.03)
 sprint_rotation = Vector3(-4, 22, 24)
@@ -50,3 +51,6 @@ position = Vector3(0.0000, -0.0741, -0.2619)
 
 [node name="OpticMount" type="Marker3D" parent="."]
 position = Vector3(0.0000, -0.0267, -0.0868)
+
+[node name="ChargingHandle" type="Marker3D" parent="."]
+position = Vector3(-0.0007, -0.0340, 0.0380)
