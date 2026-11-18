@@ -1339,7 +1339,7 @@ impl NetServer {
         let mut respawns = Vec::new();
         let tick = self.tick;
         // What bots know about everyone this tick.
-        let players: Vec<BotPlayer> = self
+        let mut players: Vec<BotPlayer> = self
             .avatars
             .iter()
             .map(|a| BotPlayer {
@@ -1348,6 +1348,7 @@ impl NetServer {
                 alive: a.predicted.state.alive(),
                 feet: to_godot(a.predicted.position),
                 stance: a.predicted.state.movement.stance,
+                lane: a.brain.as_ref().and_then(|b| b.lane()),
             })
             .collect();
         // Each team's own side, for bots' goals on the enemy's side.
@@ -1402,7 +1403,13 @@ impl NetServer {
                             .iter()
                             .find(|(id, _)| *id == avatar.id)
                             .and_then(|(_, o)| *o);
-                        brain.think(&me, &avatar.predicted, &mut world, objective)
+                        let input = brain.think(&me, &avatar.predicted, &mut world, objective);
+                        // Bots that think later this tick see the lane this
+                        // one just took.
+                        if let Some(p) = players.iter_mut().find(|p| p.id == avatar.id) {
+                            p.lane = brain.lane();
+                        }
+                        input
                     }
                     _ => bot_input(avatar, tick),
                 };

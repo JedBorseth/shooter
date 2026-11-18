@@ -242,6 +242,9 @@ pub struct BotPlayer {
     pub alive: bool,
     pub feet: Vector3,
     pub stance: Stance,
+    /// The lane a bot is following (`BotWorld::lanes`), if any. Humans have
+    /// none.
+    pub lane: Option<usize>,
 }
 
 impl BotPlayer {
@@ -290,6 +293,8 @@ pub struct BotBrain {
     goal: Option<Vector3>,
     /// Lane points still to visit, in order, before the enemy's side.
     route: Vec<Vector3>,
+    /// The lane `route` follows, so teammates spread over the lanes.
+    lane: Option<usize>,
     /// A spot out of the enemy's sight, and the tick to leave it by.
     cover: Option<(Vector3, Tick)>,
     /// After a goal turned out unreachable: no new goal before this tick.
@@ -354,8 +359,14 @@ impl BotBrain {
             detour: None,
             detour_picked: false,
             lanes_taken: 0,
+            lane: None,
             covers_taken: 0,
         }
+    }
+
+    /// The lane the bot is following, if any.
+    pub fn lane(&self) -> Option<usize> {
+        self.lane
     }
 
     /// The bot respawned facing `yaw`: forget the last life.
@@ -367,6 +378,7 @@ impl BotBrain {
         self.hurt_from = None;
         self.goal = None;
         self.route.clear();
+        self.lane = None;
         self.cover = None;
         self.path.clear();
         self.stuck_since = (Vector3::ZERO, tick);
@@ -866,6 +878,7 @@ impl BotBrain {
                 // Unreachable: drop the route and plan again in a moment.
                 self.goal = None;
                 self.route.clear();
+                self.lane = None;
                 self.replan_at = tick + TICK_RATE / 2;
             }
         }
@@ -913,6 +926,7 @@ impl BotBrain {
         if !self.route.is_empty() {
             return self.route.remove(0);
         }
+        self.lane = None;
         if !world.lanes.is_empty() && self.random() < LANE_CHANCE {
             self.route = self.lane_route(me, world);
             if !self.route.is_empty() {
@@ -930,6 +944,8 @@ impl BotBrain {
 
     /// The rest of the least crowded lane, from where the bot is toward the
     /// enemy's side, then a spawn there. Empty at the far end already.
+    /// Teammates count by the lane they follow: bots leave the spawn
+    /// together, where every lane starts, so where they stand says nothing.
     fn lane_route(&mut self, me: &BotPlayer, world: &mut BotWorld) -> Vec<Vector3> {
         let mut best: Option<(usize, f32)> = None;
         for (i, lane) in world.lanes.iter().enumerate() {
@@ -937,9 +953,11 @@ impl BotBrain {
                 .players
                 .iter()
                 .filter(|p| p.alive && p.id != me.id && p.team == me.team)
-                .filter(|p| {
-                    lane.iter()
-                        .any(|q| horizontal_distance(*q, p.feet) < LANE_RADIUS)
+                .filter(|p| match p.lane {
+                    Some(followed) => followed == i,
+                    None => lane
+                        .iter()
+                        .any(|q| horizontal_distance(*q, p.feet) < LANE_RADIUS),
                 })
                 .count() as f32;
             let score = crowd + self.random() * 0.9;
@@ -984,6 +1002,7 @@ impl BotBrain {
         if route.is_empty() {
             return route;
         }
+        self.lane = Some(lane);
         let enemy_side = &world.team_spawns[1 - team];
         if !enemy_side.is_empty() {
             let i = (self.random() * enemy_side.len() as f32) as usize;
