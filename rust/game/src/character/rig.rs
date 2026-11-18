@@ -244,7 +244,9 @@ impl SoldierRig {
             return;
         }
         let seed = self.base().instance_id().to_i64().unsigned_abs();
-        let pick = (seed / 7 % (self.variants.len() as u64 + 1)) as usize;
+        // Instance ids are spaced regularly, so mix the bits before picking:
+        // otherwise a horde wears only some of the bodies.
+        let pick = (splitmix(seed) % (self.variants.len() as u64 + 1)) as usize;
         if pick == 0 {
             return;
         }
@@ -842,6 +844,14 @@ impl SoldierRig {
 /// weapon's `GripLeft` marker on a rifle handguard.
 const SUPPORT_BACK: f32 = 0.08;
 
+/// A 64-bit mix (SplitMix64's finaliser): spreads regularly spaced seeds.
+fn splitmix(mut x: u64) -> u64 {
+    x = x.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    x = (x ^ (x >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    x = (x ^ (x >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    x ^ (x >> 31)
+}
+
 /// Distance (m) past which a character draws its far mesh, and the
 /// hysteresis around it. At 15 m a soldier is about 150 pixels tall at 1080p,
 /// where the baked normal map carries the detail the far mesh drops.
@@ -997,4 +1007,21 @@ pub fn grips_of(view: &Gd<Node3D>, rake: f32) -> Grips {
         grips.left = m.get_position();
     }
     grips
+}
+
+#[cfg(test)]
+mod body_pick_tests {
+    use super::splitmix;
+
+    #[test]
+    fn regularly_spaced_seeds_reach_every_body() {
+        // Godot's instance ids step by fixed strides; every body must show up.
+        for stride in [1u64, 2, 7, 8, 64, 4096] {
+            let mut seen = [false; 4];
+            for i in 0..40u64 {
+                seen[(splitmix(0x1_0000 + i * stride) % 4) as usize] = true;
+            }
+            assert!(seen.iter().all(|s| *s), "stride {stride}: {seen:?}");
+        }
+    }
 }
