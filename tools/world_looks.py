@@ -289,7 +289,7 @@ SLAMCITY_LOOKS: dict[str, dict] = {
     "neon_blue": _g((0.2, 0.4, 1.0), 15.5), "neon_violet": _g((0.6, 0.3, 1.0), 15.5),
     "neon_yellow": _g((1.0, 0.82, 0.25), 13.8), "neon_orange": _g((1.0, 0.5, 0.12), 13.8),
     "lamp_warm": _g((1.0, 0.84, 0.6), 4.2), "lamp_warm_sign": _g((1.0, 0.9, 0.74), 2.5),
-    "lamp_tube": _g((0.92, 0.96, 1.0), 2.6), "lamp_tube_dim": _g((0.9, 0.95, 1.0), 1.0),
+    "lamp_tube": _g((0.92, 0.96, 1.0), 2.6), "lamp_tube_dim": _g((0.9, 0.95, 1.0), 0.5),
     "baseboard": _p((0.16, 0.13, 0.11), 0.5), "lamp_sodium": _g((1.0, 0.65, 0.3), 4.0),
     "lamp_flood": _g((1.0, 0.95, 0.85), 5.0), "bulb": _g((1.0, 0.74, 0.4), 6.0),
     "fridge_glow": _g((0.85, 0.95, 1.0), 1.4), "screen_blue": _g((0.3, 0.6, 1.0), 1.2),
@@ -308,6 +308,9 @@ SLAMCITY_LOOKS: dict[str, dict] = {
     "window_dark": {"special": "pane", "room_light": 0.05, "lit": 0.0, "depth": 2.0, "blinds": 0.8},
     "glass_clear": {"special": "glass", "color": (0.75, 0.85, 0.85), "alpha": 0.26},
     "glass_tint": {"special": "glass", "color": (0.05, 0.07, 0.08), "alpha": 0.72},
+    # Standing water in the pit: dark and see-through, so the gravel shows
+    # through it and only its gloss catches the sky.
+    "water_pit": {"special": "glass", "color": (0.03, 0.045, 0.045), "alpha": 0.55},
     "glass_booth": {"special": "glass", "color": (0.7, 0.8, 0.75), "alpha": 0.25},
     "glass_fridge": {"special": "glass", "color": (0.85, 0.92, 1.0), "alpha": 0.12},
     "chainlink": {"special": "chainlink"},

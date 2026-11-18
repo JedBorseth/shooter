@@ -253,7 +253,7 @@ def taxi(b: Model):
     _car(b, "car_taxi", length=4.7, taxi=True)
 
 
-def _bus(b: Model, length, livery, height=3.1, doors=((4.2, 1.2), (-0.8, 1.2)), sign="14 SLAM AVE"):
+def _bus(b: Model, length, livery, height=3.1, doors=((5.0, 1.1), (-0.8, 1.2)), sign="14 SLAM AVE"):
     hl, hw = length / 2, 1.27
     body, band = livery
     # The body: rounded along the roof edges and the corners, the front raked
@@ -378,18 +378,41 @@ def box_truck(b: Model, livery=0):
 
 @model
 def delivery_van(b: Model):
+    """A parcel van: one smoothed body (a loft of cross-sections) with a
+    sloped bonnet and windscreen, its arches lifted over the wheels."""
     hw = 1.0
-    body = [(-2.9, 0.35), (-2.9, 2.55), (1.6, 2.6), (2.5, 1.5), (2.9, 1.1), (2.9, 0.35)]
-    b.prism(body, -hw, hw, "car_white")
-    b.prism([(1.62, 1.55), (1.62, 2.45), (2.42, 1.55)], -hw - 0.01, hw + 0.01, "glass_car")
-    b.box(-hw + 0.08, hw - 0.08, 1.6, 2.4, 1.7, 2.45, "glass_car")
+
+    def section(z, yb, yt, ws=1.0):
+        w = hw * ws
+        lo = yb + min(0.14, (yt - yb) * 0.2)
+        hi = yt - min(0.14, (yt - yb) * 0.2)
+        return [(-0.92 * w, yb, z), (0.92 * w, yb, z), (w, lo, z), (w, hi, z),
+                (0.9 * w, yt, z), (-0.9 * w, yt, z), (-w, hi, z), (-w, lo, z)]
+
+    stations = [(-2.95, 0.42, 2.45, 0.95), (-2.8, 0.35, 2.56, 1.0), (-2.4, 0.35, 2.58, 1.0), (-2.2, 0.72, 2.58),
+                (-1.9, 0.88, 2.58), (-1.6, 0.72, 2.58), (-1.4, 0.35, 2.58), (0.6, 0.35, 2.6), (1.35, 0.35, 2.56),
+                (1.6, 0.72, 2.3), (1.9, 0.88, 1.92), (2.2, 0.72, 1.55), (2.45, 0.42, 1.3, 0.98),
+                (2.8, 0.38, 1.12, 0.95), (2.97, 0.42, 0.92, 0.88)]
+    verts, faces = loft([section(*st) for st in stations])
+    b.smooth(verts, faces, "car_white", levels=2)
     for z in (-1.9, 1.9):
+        b.box(-hw + 0.26, hw - 0.26, 0.2, 0.82, z - 0.42, z + 0.42, "rubber")
         for s in (-1, 1):
-            b.wheel(s * (hw - 0.12), 0.36, z, 0.36, 0.24)
+            b.wheel(s * (hw - 0.13), 0.36, z, 0.36, 0.22)
+    # Windscreen along the slope, cab side windows, and the cargo doors.
+    b.hull([(s * (hw - 0.16), y + 0.05, z + 0.05) for s in (-1, 1)
+            for z, y in ((1.42, 2.42), (2.12, 1.66), (1.4, 2.38), (2.08, 1.62))], "glass_car")
     for s in (-1, 1):
-        b.text("SLAM PARCEL", s * (hw + 0.012), 1.4, -0.7, s * PI / 2, 0.36, "bus_orange", depth=0.01)
-    b.box(-hw, hw, 0.3, 0.5, 2.9, 3.0, "trim_black", bevel=0.03)
-    b.box(-hw + 0.05, hw - 0.05, 0.5, 2.4, -2.92, -2.9, "car_white")
+        b.box(s * (hw - 0.06), s * (hw + 0.005), 1.55, 2.25, 0.7, 1.45, "glass_car", detail=True)
+        b.text("SLAM PARCEL", s * (hw + 0.006), 1.45, -0.7, s * PI / 2, 0.36, "bus_orange", depth=0.01)
+    b.box(-0.02, 0.02, 0.5, 2.35, -2.97, -2.93, "trim_black", detail=True)
+    for s in (-1, 1):
+        b.box(s * 0.75 - 0.08, s * 0.75 + 0.08, 0.9, 1.15, -2.98, -2.93, "tail_lens", detail=True)
+        b.box(s * 0.6 - 0.16, s * 0.6 + 0.16, 0.62, 0.75, 2.9, 2.98, "light_lens", detail=True)
+        b.box(s * (hw + 0.03) - 0.04, s * (hw + 0.03) + 0.04, 1.9, 2.1, 1.25, 1.4, "trim_black", detail=True)
+    b.box(-hw * 0.95, hw * 0.95, 0.28, 0.48, 2.85, 3.02, "trim_black", bevel=0.04)
+    b.box(-hw * 0.95, hw * 0.95, 0.28, 0.48, -3.02, -2.85, "trim_black", bevel=0.04)
+    b.box(-0.35, 0.35, 0.5, 0.62, 2.92, 2.99, "trim_black", detail=True)
 
 
 # --- The train ----------------------------------------------------------------------
@@ -402,10 +425,11 @@ def _wreck_damage(b, hw, hl, floor, roof, windows, win_y):
     rng = random.Random(31)
     nose = -hl
     # The roof folded down over the nose.
-    b.hull([(x, y, z) for x, y, z in (
+    b.smooth_hull([(x, y, z) for x, y, z in (
         (-hw, roof, nose + 1.6), (hw, roof, nose + 1.6), (-hw * 0.9, roof + 0.12, nose + 1.0),
         (hw * 0.85, roof + 0.18, nose + 0.9), (-hw * 0.7, roof - 0.55, nose + 0.05), (hw * 0.75, roof - 0.4, nose),
-        (0.1, roof - 0.15, nose - 0.08), (-hw, roof - 0.25, nose + 0.5), (hw, roof - 0.3, nose + 0.6))], "train_scorched")
+        (0.1, roof - 0.15, nose - 0.08), (-hw, roof - 0.25, nose + 0.5), (hw, roof - 0.3, nose + 0.6))], "train_scorched",
+        levels=1)
     # Sheet peeling outward along the tear, top to bottom, on both sides.
     for s in (-1, 1):
         x = s * hw
