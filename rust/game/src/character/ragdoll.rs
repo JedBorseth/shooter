@@ -743,7 +743,7 @@ fn basis_with_x(x: Vector3) -> Basis {
 }
 
 /// Bone indices with every parent before its children.
-fn parents_first(parents: &[i32]) -> Vec<usize> {
+pub(crate) fn parents_first(parents: &[i32]) -> Vec<usize> {
     let depth = |mut b: i32| {
         let mut d = 0;
         while b >= 0 && d < parents.len() {
@@ -758,7 +758,11 @@ fn parents_first(parents: &[i32]) -> Vec<usize> {
 }
 
 /// Every bone's skeleton-space transform from local poses.
-fn globals_of(locals: &[BonePose], parents: &[i32], order: &[usize]) -> Vec<Transform3D> {
+pub(crate) fn globals_of(
+    locals: &[BonePose],
+    parents: &[i32],
+    order: &[usize],
+) -> Vec<Transform3D> {
     let mut globals = vec![Transform3D::IDENTITY; locals.len()];
     for &b in order {
         let (p, r, s) = locals[b];

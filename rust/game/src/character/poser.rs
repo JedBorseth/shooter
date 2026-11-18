@@ -332,6 +332,14 @@ pub struct PoseInput {
     /// Torso lean as a horizontal vector in the character's space (+X right,
     /// -Z forward); its length is the angle in radians.
     pub lean: Vector3,
+    /// The head's tip from a hit, as `lean`, shared by the neck and head.
+    pub head_lean: Vector3,
+    /// The torso's twist from a hit (radians about up, positive left),
+    /// shared by the spine and chest.
+    pub twist: f32,
+    /// How far each hand's grip on the weapon loosens (right, left), 0..1,
+    /// on top of `ik`: an arm hit loosens one.
+    pub arm_loose: [f32; 2],
     pub placement: WeaponPlacement,
     pub grips: Option<Grips>,
     /// 0 lets the animation pose the arms, 1 puts the hands on the weapon.
@@ -429,6 +437,17 @@ impl SoldierPoser {
             rotate_global(skel, bone(Bone::SPINE), axis, angle * 0.5);
             rotate_global(skel, bone(Bone::CHEST), axis, angle * 0.5);
         }
+        if input.twist.abs() > 1e-4 {
+            rotate_global(skel, bone(Bone::SPINE), Vector3::UP, input.twist * 0.4);
+            rotate_global(skel, bone(Bone::CHEST), Vector3::UP, input.twist * 0.6);
+        }
+        let head = Vector3::new(-input.head_lean.x, 0.0, -input.head_lean.z);
+        if let Some(dir) = head.try_normalized() {
+            let axis = Vector3::UP.cross(dir);
+            let angle = head.length();
+            rotate_global(skel, bone(Bone::NECK), axis, angle * 0.4);
+            rotate_global(skel, bone(Bone::HEAD), axis, angle * 0.6);
+        }
 
         // 3. The weapon, in skeleton space.
         let skel_xform = skel.get_global_transform();
@@ -488,7 +507,7 @@ impl SoldierPoser {
             Transform3D::new(weapon_skel.basis * right_basis, weapon_skel * grips.right),
             RIGHT_PALM,
             right_pole,
-            weight,
+            weight * (1.0 - input.arm_loose[0].clamp(0.0, 1.0)),
         );
         let (left_point, left_palm) = grips.support_contact(left_basis);
         let mut left_grip = weapon_skel * left_point;
@@ -529,7 +548,7 @@ impl SoldierPoser {
             left_target,
             Vector3::ZERO,
             left_pole,
-            weight,
+            weight * (1.0 - input.arm_loose[1].clamp(0.0, 1.0)),
         );
         if let Some(node) = &mut self.knife {
             let shown = knife > 0.35;

@@ -69,6 +69,9 @@ pub struct RemotePlayer {
     stance_eye: f32,
     /// Whether the body was last drawn alive (`None` before the first sample).
     drawn_alive: Option<bool>,
+    /// Seconds since each flinch our own hits predicted, oldest first: the
+    /// snapshot that confirms a hit does not flinch the body a second time.
+    predicted: std::collections::VecDeque<f32>,
     /// The team colours the body wears (`SoldierRig::set_team_index`).
     #[init(val = 1)]
     team_index: i32,
@@ -145,6 +148,9 @@ impl RemotePlayer {
     ) {
         let push = push_of(direction, point, part, force);
         self.rig.bind_mut().hit_at(push, killed);
+        if !killed && self.alive {
+            self.predicted.push_back(0.0);
+        }
     }
 
     /// Footsteps this player has made audible to us (tests).
@@ -210,7 +216,8 @@ impl RemotePlayer {
     /// Applies a made-up snapshot from a dictionary (tests): `feet`
     /// (Vector3), `yaw`, `pitch`, `stance` ("standing", "crouching",
     /// "sliding"), `sprinting`, `on_floor`, `ads`, `weapon` (file key),
-    /// `reloading`, `mantling`, `alive`, `crouch` (0..1, the crouch blend;
+    /// `reloading`, `mantling`, `alive`, `hits`, `hit_heading`, `hit_part`
+    /// (the snapshot's hit fields), `crouch` (0..1, the crouch blend;
     /// missing is fully in the stance), and the animation progress
     /// `stride`, `reload_progress`, and `mantle_progress` (0..1). Missing keys
     /// take a standing, living M4 holder's values; missing progress runs as a
@@ -255,9 +262,15 @@ impl RemotePlayer {
             shots_fired: 0,
             mantling: b("mantling", false),
             meleeing: b("meleeing", false),
-            hits: 0,
-            hit_heading: 0,
-            hit_part: 0,
+            hits: get("hits")
+                .and_then(|v| v.try_to::<i64>().ok())
+                .unwrap_or(0) as u8,
+            hit_heading: get("hit_heading")
+                .and_then(|v| v.try_to::<i64>().ok())
+                .unwrap_or(0) as u8,
+            hit_part: get("hit_part")
+                .and_then(|v| v.try_to::<i64>().ok())
+                .unwrap_or(0) as u8,
             progress: Progress::default(),
         };
         let set = TestProgress {
@@ -276,6 +289,10 @@ struct TestProgress {
     reload: Option<f32>,
     mantle: Option<f32>,
 }
+
+/// A predicted flinch waits this long (seconds) for the snapshot that
+/// confirms its hit: a round trip and the interpolation delay, with room.
+const PREDICTED_FLINCH_SECONDS: f32 = 1.0;
 
 /// The body every player wears.
 const SOLDIER_SCENE: &str = "res://scenes/characters/soldier.tscn";
@@ -427,7 +444,24 @@ impl RemotePlayer {
                 part.part.map_or(-1, i64::from),
                 f32::from(part.force),
             );
-            self.rig.bind_mut().hit_at(push, !s.alive);
+            // Our own hit already flinched the body when we fired: the server
+            // confirming it only updates the push a death would take.
+            let confirms_ours = s.alive && self.predicted.pop_front().is_some();
+            if confirms_ours {
+                self.rig.bind_mut().note_hit(push);
+            } else {
+                self.rig.bind_mut().hit_at(push, !s.alive);
+            }
+        }
+        for age in &mut self.predicted {
+            *age += delta;
+        }
+        while self
+            .predicted
+            .front()
+            .is_some_and(|age| *age > PREDICTED_FLINCH_SECONDS)
+        {
+            self.predicted.pop_front();
         }
 
         // Drawn at the moment of each animation the snapshot names, which is

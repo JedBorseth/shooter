@@ -51,6 +51,25 @@ const ZOMBIE_SHAMBLE_LIMIT: f32 = 2.1;
 /// Hit flinch spring (radians of torso lean), as the old target dummy.
 const LEAN_STIFFNESS: f32 = 140.0;
 const LEAN_DAMPING: f32 = 9.0;
+/// Hit reactions, by where the round landed. Peaks are for a rifle round
+/// (force level 3); harder hits react more, up to `MAX_REACTION` times.
+/// A body hit tips the torso along the shot and twists it toward the side hit.
+const TORSO_PEAK_DEGREES: f32 = 9.0;
+const TWIST_PEAK_DEGREES: f32 = 8.0;
+/// A head hit snaps the neck and head along the shot.
+const HEAD_PEAK_DEGREES: f32 = 18.0;
+const HEAD_STIFFNESS: f32 = 220.0;
+const HEAD_DAMPING: f32 = 14.0;
+/// An arm hit loosens that hand on the weapon: its IK drops to this weight
+/// and recovers over `ARM_DROP_SECONDS`.
+const ARM_DROP_WEIGHT: f32 = 0.75;
+const ARM_DROP_SECONDS: f32 = 0.18;
+/// A leg hit buckles the knees: the stance blend dips this far toward a
+/// crouch and springs back.
+const BUCKLE_PEAK: f32 = 0.3;
+const BUCKLE_STIFFNESS: f32 = 90.0;
+const BUCKLE_DAMPING: f32 = 11.0;
+const MAX_REACTION: f32 = 2.0;
 
 /// Arm, hand, and finger bones: the upper-body layer holds them in a gripping
 /// pose under the IK, so the fingers curl around the weapon.
@@ -209,6 +228,15 @@ pub struct SoldierRig {
     /// Weapon kick: x pitch (radians), z push back (metres).
     kick: Spring,
     lean: Spring,
+    /// Hit reactions: the head's tip along a shot (as `lean`), the torso's
+    /// twist (radians, positive turns left), the knees' buckle (stance blend),
+    /// and seconds left of each hand's loosened grip (right, left).
+    head: Spring,
+    twist: Spring<f32>,
+    buckle: Spring<f32>,
+    arm_drop: [f32; 2],
+    /// Hit reactions played (tests).
+    flinches: u32,
     /// The latest hit and how long ago (seconds): a death pushes the body
     /// with it.
     last_hit: Option<(Push, f32)>,
@@ -348,6 +376,47 @@ impl SoldierRig {
     #[func]
     pub fn is_ragdoll(&self) -> bool {
         matches!(self.death, Death::Ragdoll(_))
+    }
+
+    /// Hit reactions played so far (tests).
+    #[func]
+    pub fn flinch_count(&self) -> i64 {
+        i64::from(self.flinches)
+    }
+
+    /// Asks for the next drawn pose, aim and hit reactions included, for
+    /// [`posed_bone_transform`](Self::posed_bone_transform) (tests: Godot
+    /// drops the poser's changes once the frame is skinned).
+    #[func]
+    fn capture_pose(&mut self) {
+        if let Some(poser) = &mut self.poser {
+            let mut p = poser.bind_mut();
+            p.captured = None;
+            p.capture = true;
+        }
+    }
+
+    /// The world transform of a bone in the pose last captured by
+    /// [`capture_pose`](Self::capture_pose), or identity if none (tests).
+    #[func]
+    fn posed_bone_transform(&self, bone: GString) -> Transform3D {
+        let (Some(skeleton), Some(poser)) = (self.skeleton(), &self.poser) else {
+            return Transform3D::IDENTITY;
+        };
+        let p = poser.bind();
+        let Some(locals) = &p.captured else {
+            return Transform3D::IDENTITY;
+        };
+        let index = skeleton.find_bone(&bone);
+        if index < 0 || locals.len() != skeleton.get_bone_count() as usize {
+            return Transform3D::IDENTITY;
+        }
+        let parents: Vec<i32> = (0..skeleton.get_bone_count())
+            .map(|b| skeleton.get_bone_parent(b))
+            .collect();
+        let order = ragdoll::parents_first(&parents);
+        let globals = ragdoll::globals_of(locals, &parents, &order);
+        skeleton.get_global_transform() * globals[index as usize]
     }
 
     /// Whether the body has come to rest after a death (tests).
@@ -596,6 +665,12 @@ impl SoldierRig {
         self.switch_drop = (self.switch_drop - dt * 3.0).max(0.0);
         self.kick.step(260.0, 22.0, dt);
         self.lean.step(LEAN_STIFFNESS, LEAN_DAMPING, dt);
+        self.head.step(HEAD_STIFFNESS, HEAD_DAMPING, dt);
+        self.twist.step(LEAN_STIFFNESS, LEAN_DAMPING, dt);
+        self.buckle.step(BUCKLE_STIFFNESS, BUCKLE_DAMPING, dt);
+        for t in &mut self.arm_drop {
+            *t = (*t - dt).max(0.0);
+        }
         let ik_target = if frame.alive && self.weapon.is_some() {
             1.0
         } else {
@@ -646,7 +721,9 @@ impl SoldierRig {
                     self.mantle_progress.to_variant(),
                 );
                 set(tree, "climb/blend_amount", self.climb.to_variant());
-                set(tree, "stance/blend_amount", self.crouch.to_variant());
+                // A leg hit dips the body toward a crouch for a moment.
+                let stance = (self.crouch + self.buckle.value).clamp(0.0, 1.0);
+                set(tree, "stance/blend_amount", stance.to_variant());
                 set(tree, "slide/blend_amount", self.slide.to_variant());
                 set(tree, "air/blend_amount", self.air.to_variant());
                 let hold = if self.weapon.is_some() && frame.alive {
@@ -712,19 +789,74 @@ impl SoldierRig {
         );
     }
 
-    /// A hit that pushes as `push` says. A kill keeps it for the fall that
-    /// follows once the owner draws the body dead.
+    /// A hit that pushes as `push` says: the part hit reacts (the head
+    /// snaps, the torso tips and twists, an arm loosens its grip, the knees
+    /// buckle). A kill keeps it for the fall that follows once the owner
+    /// draws the body dead.
     pub fn hit_at(&mut self, push: Push, killed: bool) {
-        self.last_hit = Some((push, 0.0));
-        let direction = push.direction;
-        let Some(away) = Vector3::new(direction.x, 0.0, direction.z).try_normalized() else {
+        self.note_hit(push);
+        if killed || !self.frame.alive {
+            return;
+        }
+        let Some(away) = Vector3::new(push.direction.x, 0.0, push.direction.z).try_normalized()
+        else {
             return;
         };
-        if !killed && self.frame.alive {
-            let local = Basis::from_axis_angle(Vector3::UP, -self.frame.yaw) * away;
-            let peak = 7f32.to_radians();
-            self.lean.velocity += local * impulse_for_peak(peak, LEAN_STIFFNESS, LEAN_DAMPING);
+        self.flinches += 1;
+        // In the body's frame: +X right, -Z forward.
+        let local = Basis::from_axis_angle(Vector3::UP, -self.frame.yaw) * away;
+        let scale = (push.force.max(1.0) / DEFAULT_FORCE)
+            .sqrt()
+            .min(MAX_REACTION);
+        let tip =
+            |peak: f32, k: f32, d: f32| local * impulse_for_peak(peak.to_radians() * scale, k, d);
+        use shooter_sim::hitbox::BodyPart as P;
+        match push.part.unwrap_or(P::Chest) {
+            P::Head => {
+                self.head.velocity += tip(HEAD_PEAK_DEGREES, HEAD_STIFFNESS, HEAD_DAMPING);
+                self.lean.velocity += tip(3.0, LEAN_STIFFNESS, LEAN_DAMPING);
+            }
+            P::LeftUpperArm | P::LeftLowerArm | P::RightUpperArm | P::RightLowerArm => {
+                let right = matches!(push.part, Some(P::RightUpperArm | P::RightLowerArm));
+                self.arm_drop[usize::from(!right)] = ARM_DROP_SECONDS;
+                self.lean.velocity += tip(3.0, LEAN_STIFFNESS, LEAN_DAMPING);
+                // The shoulder hit goes back with the round.
+                let side = if right { -1.0 } else { 1.0 };
+                self.twist.velocity += side
+                    * impulse_for_peak(
+                        (TWIST_PEAK_DEGREES * scale).to_radians(),
+                        LEAN_STIFFNESS,
+                        LEAN_DAMPING,
+                    );
+            }
+            P::LeftUpperLeg | P::LeftLowerLeg | P::RightUpperLeg | P::RightLowerLeg => {
+                self.buckle.velocity += impulse_for_peak(
+                    BUCKLE_PEAK * scale.min(1.5),
+                    BUCKLE_STIFFNESS,
+                    BUCKLE_DAMPING,
+                );
+                // The body folds forward over the buckling knee.
+                self.lean.velocity += Vector3::FORWARD
+                    * impulse_for_peak(4f32.to_radians(), LEAN_STIFFNESS, LEAN_DAMPING)
+                    + tip(2.0, LEAN_STIFFNESS, LEAN_DAMPING);
+            }
+            P::Hips | P::Spine | P::Chest => {
+                self.lean.velocity += tip(TORSO_PEAK_DEGREES, LEAN_STIFFNESS, LEAN_DAMPING);
+                // A round from the side turns the torso away from it.
+                self.twist.velocity += -local.x
+                    * impulse_for_peak(
+                        (TWIST_PEAK_DEGREES * scale).to_radians(),
+                        LEAN_STIFFNESS,
+                        LEAN_DAMPING,
+                    );
+            }
         }
+    }
+
+    /// Remembers a hit for the fall a death may follow it with, without
+    /// reacting to it (it was already shown, predicted).
+    pub fn note_hit(&mut self, push: Push) {
+        self.last_hit = Some((push, 0.0));
     }
 
     fn pose_input(&self, frame: &SoldierFrame) -> PoseInput {
@@ -777,6 +909,11 @@ impl SoldierRig {
             lower_yaw: self.lower_yaw,
             pitch: frame.pitch.clamp(-carry::MAX_PITCH, carry::MAX_PITCH) * slide,
             lean: self.lean.value + Vector3::new(0.0, 0.0, -0.3) * lunge,
+            head_lean: self.head.value,
+            twist: self.twist.value,
+            arm_loose: self
+                .arm_drop
+                .map(|t| (1.0 - ARM_DROP_WEIGHT) * (t / ARM_DROP_SECONDS).clamp(0.0, 1.0)),
             placement: WeaponPlacement::FromEyes { offset, rotation },
             grips,
             ik: self.ik,
@@ -949,6 +1086,10 @@ impl SoldierRig {
         self.set_contact_shadow(true);
         self.last_hit = None;
         self.lean = Spring::default();
+        self.head = Spring::default();
+        self.twist = Spring::default();
+        self.buckle = Spring::default();
+        self.arm_drop = [0.0; 2];
         if let Some(poser) = &mut self.poser {
             poser.set_active(true);
             let mut p = poser.bind_mut();
