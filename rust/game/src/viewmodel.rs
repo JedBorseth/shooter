@@ -455,8 +455,11 @@ pub struct WeaponView {
     suppressed: bool,
     /// The model's moving parts (see `tools/build_weapons.py`), found when ready.
     parts: Option<MovingParts>,
-    /// Seconds since the last shot, for the pistol slide's kick.
+    /// Seconds since the last shot: the slide's and bolt's kick, the trigger.
+    #[init(val = 10.0)]
     since_shot: f32,
+    /// Seconds since the dust cover flew open (`None` while closed).
+    cover_open: Option<f32>,
     /// Where the support hand rests on this weapon (after any foregrip).
     hand_rest: Option<Vector3>,
     /// Where the firing hand rests, and the bolt handle it reaches for.
@@ -522,8 +525,14 @@ impl Part {
     /// Moves the part by `offset` (view space) and turns it by `turn` (radians,
     /// about the view's Z axis through `pivot`, a view-space point).
     fn pose(&mut self, offset: Vector3, turn: f32, pivot: Vector3) {
+        self.pose_about(offset, Vector3::BACK, turn, pivot);
+    }
+
+    /// Moves the part by `offset` and turns it by `turn` radians about `axis`
+    /// (view space) through `pivot`.
+    fn pose_about(&mut self, offset: Vector3, axis: Vector3, turn: f32, pivot: Vector3) {
         let rest = self.to_view * self.rest;
-        let spin = Basis::from_axis_angle(Vector3::BACK, turn);
+        let spin = Basis::from_axis_angle(axis, turn);
         let rotated = Transform3D::new(spin, pivot - spin * pivot) * rest;
         let moved = Transform3D::new(rotated.basis, rotated.origin + offset);
         self.current = moved;
@@ -540,6 +549,65 @@ struct MovingParts {
     pump: Option<Part>,
     bolt: Option<Part>,
     slide: Option<Part>,
+    /// The bolt carrier seen through the ejection port: it runs back and
+    /// forward with each shot and locks open on an AR when empty.
+    carrier: Option<Part>,
+    /// The charging handle: drawn back to charge, and on a weapon whose handle
+    /// rides the carrier (no separate `BoltCarrier`), with each shot.
+    handle: Option<Part>,
+    /// An AR's ejection port cover, which flies open on the first shot or
+    /// charge and stays open.
+    dust_cover: Option<Part>,
+    trigger: Option<Part>,
+    /// A pistol's hammer, which falls on each shot and is cocked by the slide.
+    hammer: Option<Part>,
+    /// A pistol's slide stop, which rises while the slide is locked back.
+    slide_stop: Option<Part>,
+    /// The magazine release, and the way it is pressed (view space).
+    mag_release: Option<(Part, Vector3)>,
+}
+
+/// How far a bolt carrier (or an AK's handle on it) runs back with a shot, in
+/// metres.
+const CARRIER_TRAVEL: f32 = 0.05;
+/// The longest a shot's carrier stroke takes, back and home, in seconds; a
+/// faster-firing weapon's stroke fits inside its cycle.
+const CARRIER_STROKE: f32 = 0.065;
+/// How far a trigger turns about its pin when pulled, in degrees.
+const TRIGGER_PULL: f32 = 14.0;
+/// How far a pistol's hammer falls forward on a shot, in degrees.
+const HAMMER_FALL: f32 = 55.0;
+/// How far a slide stop's lever rises to hold the slide, in degrees.
+const SLIDE_STOP_LIFT: f32 = 6.0;
+/// How far a magazine release is pressed in, in metres.
+const MAG_RELEASE_PRESS: f32 = 0.0025;
+/// How far a dust cover swings open, in degrees.
+const DUST_COVER_OPEN: f32 = 110.0;
+/// The dust cover's swing over the seconds after it is knocked open: past
+/// open, a bounce, and still.
+const DUST_COVER_SWING: [(f32, f32); 4] = [(0.0, 0.0), (0.04, 1.1), (0.08, 0.95), (0.12, 1.0)];
+
+/// A shot's stroke of the bolt carrier, 0..1 of its travel, `since` seconds
+/// after the shot of a weapon cycling every `cycle` seconds: back fast, home
+/// a little slower.
+fn carrier_stroke(since: f32, cycle: f32) -> f32 {
+    let stroke = (cycle * 0.8).min(CARRIER_STROKE);
+    let s = since / stroke.max(1e-3);
+    if s < 0.4 {
+        s / 0.4
+    } else if s < 1.0 {
+        1.0 - (s - 0.4) / 0.6
+    } else {
+        0.0
+    }
+}
+
+/// How far the trigger is pulled, 0..1, `since` seconds after a shot of a
+/// weapon cycling every `cycle` seconds: held through automatic fire, then
+/// let out to its reset (a slow weapon's within a moment of the shot).
+fn trigger_pull(since: f32, cycle: f32) -> f32 {
+    let hold = cycle.clamp(0.06, 0.15) + 0.02;
+    1.0 - ((since - hold) / 0.05).clamp(0.0, 1.0)
 }
 
 /// The firing hand on the bolt handle: off the grip just before the bolt
@@ -590,6 +658,9 @@ impl INode3D for WeaponView {
 
     fn process(&mut self, delta: f64) {
         self.since_shot += delta as f32;
+        if let Some(t) = &mut self.cover_open {
+            *t += delta as f32;
+        }
         self.smoke_cooldown -= delta as f32;
         if self.flash_time > 0.0 {
             self.flash_time -= delta as f32;
@@ -678,12 +749,36 @@ impl WeaponView {
             .base()
             .try_get_node_as::<Node3D>("ChargingHandle")
             .map(|m| m.get_position());
+        let mag_center = magazine
+            .as_ref()
+            .and_then(Part::bounds_in_view)
+            .map(|(min, max)| (min + max) * 0.5);
+        // A release on the side of the frame (a pistol's button) is pressed
+        // across it; a paddle behind the magazine is pushed toward it.
+        let mag_release = Part::find(&view, "MagRelease").and_then(|part| {
+            let (min, max) = part.bounds_in_view()?;
+            let at = (min + max) * 0.5;
+            let press = if at.x.abs() > 0.006 {
+                Vector3::new(-at.x.signum(), 0.0, 0.0)
+            } else {
+                let to = mag_center.map_or(-1.0, |m| (m.z - at.z).signum());
+                Vector3::new(0.0, 0.0, to)
+            };
+            Some((part, press))
+        });
         self.parts = Some(MovingParts {
             magazine,
             fresh_magazine,
             pump: Part::find(&view, "Pump"),
             bolt,
             slide: Part::find(&view, "Slide"),
+            carrier: Part::find(&view, "BoltCarrier"),
+            handle: Part::find(&view, "ChargingHandle"),
+            dust_cover: Part::find(&view, "DustCover"),
+            trigger: Part::find(&view, "Trigger"),
+            hammer: Part::find(&view, "Hammer"),
+            slide_stop: Part::find(&view, "SlideStop"),
+            mag_release,
         });
     }
 
@@ -777,6 +872,7 @@ impl WeaponView {
             };
             slide.pose(Vector3::new(0.0, 0.0, back * 0.028), 0.0, Vector3::ZERO);
         }
+        self.animate_action(&mut parts, frame, clip);
         self.show_shell_in_hand(clip.shell);
         if let Some(mut marker) = self.base().try_get_node_as::<Node3D>("GripLeft") {
             marker.set_position(hand.unwrap_or(rest_hand));
@@ -788,6 +884,110 @@ impl WeaponView {
             marker.set_position(right_hand.unwrap_or(rest));
         }
         self.parts = Some(parts);
+    }
+
+    /// The action's small parts: the carrier and charging handle with each
+    /// shot and charge, an AR's bolt locked open on empty and its dust cover,
+    /// the trigger, a pistol's hammer and slide stop, and the magazine
+    /// release.
+    fn animate_action(&mut self, parts: &mut MovingParts, frame: &ViewFrame, clip: &ClipPose) {
+        let def = frame.weapon.def();
+        let kind = ClipKind::of(def);
+        let cycle = 60.0 / def.rounds_per_minute.max(1.0);
+        // Pump and bolt guns are worked by hand; only self-loaders cycle.
+        let self_loading = matches!(kind, ClipKind::Rifle { .. } | ClipKind::Pistol);
+        let stroke = if self_loading {
+            carrier_stroke(self.since_shot, cycle)
+        } else {
+            0.0
+        };
+        let reloading = matches!(frame.action, ViewAction::Reloading { .. });
+        // An AR's bolt locks open on the last round.
+        let locked =
+            matches!(kind, ClipKind::Rifle { charge: false, .. }) && frame.empty && !reloading;
+        let held = clip.carrier.unwrap_or(if locked { 1.0 } else { 0.0 });
+        let charged = clip.handle / weapon_clips::HANDLE_PULL;
+        let has_carrier = parts.carrier.is_some();
+        if let Some(carrier) = &mut parts.carrier {
+            let back = held.max(stroke).max(charged).min(1.0);
+            carrier.pose(
+                Vector3::new(0.0, 0.0, back * CARRIER_TRAVEL),
+                0.0,
+                Vector3::ZERO,
+            );
+        }
+        if let Some(handle) = &mut parts.handle {
+            // A handle on the carrier (an AK's) rides every shot; a separate
+            // one only moves when it is pulled.
+            let rides = if has_carrier {
+                0.0
+            } else {
+                stroke * CARRIER_TRAVEL
+            };
+            handle.pose(
+                Vector3::new(0.0, 0.0, clip.handle.max(rides)),
+                0.0,
+                Vector3::ZERO,
+            );
+        }
+        if let Some(cover) = &mut parts.dust_cover {
+            if self.cover_open.is_none() && (stroke > 0.0 || held > 0.0 || charged > 0.0) {
+                self.cover_open = Some(0.0);
+            }
+            let open = self.cover_open.map_or(0.0, |t| keyed(&DUST_COVER_SWING, t));
+            if let Some((min, max)) = cover.bounds_in_view() {
+                // Hinged along its lower edge, it swings out to the right.
+                let hinge = Vector3::new(max.x - 0.003, min.y + 0.002, 0.0);
+                cover.pose(Vector3::ZERO, -(DUST_COVER_OPEN * open).to_radians(), hinge);
+            }
+        }
+        if let Some(trigger) = &mut parts.trigger
+            && let Some((min, max)) = trigger.bounds_in_view()
+        {
+            // Turned about its pin at the top: the blade swings back.
+            let pin = Vector3::new((min.x + max.x) * 0.5, max.y, (min.z + max.z) * 0.5);
+            let pull = trigger_pull(self.since_shot, cycle);
+            trigger.pose_about(
+                Vector3::ZERO,
+                Vector3::RIGHT,
+                -(TRIGGER_PULL * pull).to_radians(),
+                pin,
+            );
+        }
+        if let Some(hammer) = &mut parts.hammer {
+            // Falls on the shot; the slide running back cocks it again.
+            let fall = if frame.empty {
+                0.0
+            } else {
+                keyed(&[(0.0, 1.0), (0.012, 1.0), (0.035, 0.0)], self.since_shot)
+            };
+            let pin = hammer.rest_in_view();
+            hammer.pose_about(
+                Vector3::ZERO,
+                Vector3::RIGHT,
+                -(HAMMER_FALL * fall).to_radians(),
+                pin,
+            );
+        }
+        if let Some(stop) = &mut parts.slide_stop {
+            let up = clip
+                .slide
+                .unwrap_or(if frame.empty && !reloading { 1.0 } else { 0.0 });
+            let pin = stop.rest_in_view();
+            stop.pose_about(
+                Vector3::ZERO,
+                Vector3::RIGHT,
+                -(SLIDE_STOP_LIFT * up).to_radians(),
+                pin,
+            );
+        }
+        if let Some((release, press)) = &mut parts.mag_release {
+            release.pose(
+                *press * (MAG_RELEASE_PRESS * clip.mag_release),
+                0.0,
+                Vector3::ZERO,
+            );
+        }
     }
 
     /// A shell held in the support hand while loading (`ClipPose::shell`),
@@ -2014,6 +2214,10 @@ impl ViewmodelRig {
                     &anchors,
                 )
             }
+            // A self-loader charged after its empty reload was cut off.
+            ViewAction::Cycling(p) if matches!(kind, ClipKind::Rifle { .. }) => {
+                weapon_clips::charge_pose(p, &anchors)
+            }
             _ => match self.inspect {
                 Some(t) => weapon_clips::inspect_pose(t, kind, &anchors),
                 None => ClipPose::rest(),
@@ -2484,6 +2688,30 @@ const LAND_ZETA: f32 = 0.5;
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_carrier_runs_back_and_home_inside_each_cycle() {
+        for rpm in [450.0, 750.0, 1000.0] {
+            let cycle = 60.0 / rpm;
+            assert_eq!(super::carrier_stroke(0.0, cycle), 0.0);
+            let peak = (cycle * 0.8).min(super::CARRIER_STROKE) * 0.4;
+            assert!((super::carrier_stroke(peak, cycle) - 1.0).abs() < 1e-4);
+            // Home before the next round fires.
+            assert_eq!(super::carrier_stroke(cycle, cycle), 0.0, "{rpm}");
+        }
+    }
+
+    #[test]
+    fn the_trigger_is_held_through_automatic_fire_and_then_reset() {
+        let cycle = 60.0 / 750.0;
+        assert_eq!(super::trigger_pull(0.0, cycle), 1.0);
+        // Still held when the next round fires.
+        assert_eq!(super::trigger_pull(cycle, cycle), 1.0);
+        assert_eq!(super::trigger_pull(cycle + 0.1, cycle), 0.0);
+        // A slow semi-automatic shot is held long enough to see.
+        assert_eq!(super::trigger_pull(0.07, 0.6), 1.0);
+        assert_eq!(super::trigger_pull(10.0, 0.6), 0.0);
+    }
+
     use super::*;
 
     /// Peak of one shot's kick on the weapon, simulated with the kick springs.

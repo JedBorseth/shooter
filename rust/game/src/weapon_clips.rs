@@ -204,6 +204,12 @@ impl Anchors {
 /// How far the magazine's base (where the hand grips it) sits below the well.
 const MAG_BASE_DROP: f32 = 0.04;
 
+/// How far a charging handle is drawn back to charge the weapon, in metres.
+pub const HANDLE_PULL: f32 = 0.06;
+/// How long a released charging handle or bolt takes to slam home, in
+/// seconds.
+const SLAM: f32 = 0.035;
+
 /// What a clip does to the weapon at one moment.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ClipPose {
@@ -231,6 +237,13 @@ pub struct ClipPose {
     /// A shotgun shell in the support hand on its way to the loading port
     /// (view space); `None` hides it.
     pub shell: Option<Vector3>,
+    /// The charging handle drawn back, in metres (0 home).
+    pub handle: f32,
+    /// The bolt carrier held back by the clip, 0..1 of its travel: an AR's
+    /// bolt locked open until the release. `None` leaves it to the shots.
+    pub carrier: Option<f32>,
+    /// 0..1: the magazine release pressed.
+    pub mag_release: f32,
 }
 
 impl ClipPose {
@@ -545,7 +558,7 @@ impl MagazineReload {
             match self.kind {
                 ClipKind::Rifle { charge: true, .. } => {
                     hand_keys.push((finish, Hand::Charge(0.0)));
-                    hand_keys.push((finish_end, Hand::Charge(0.06)));
+                    hand_keys.push((finish_end, Hand::Charge(HANDLE_PULL)));
                     finish_end + 0.22
                 }
                 ClipKind::Rifle { charge: false, .. } => {
@@ -580,6 +593,35 @@ impl MagazineReload {
                 (1.0 - (t - finish) / 0.04).max(0.0)
             }
         });
+        // An empty reload's charge: the handle drawn back with the hand, then
+        // let go to slam home.
+        let handle = match self.kind {
+            ClipKind::Rifle { charge: true, .. } if self.empty => keyed(
+                &[
+                    (finish, 0.0),
+                    (finish_end, HANDLE_PULL),
+                    (finish_end + SLAM, 0.0),
+                ],
+                t,
+            ),
+            _ => 0.0,
+        };
+        // An AR's bolt stays locked open until the release is slapped.
+        let carrier = (matches!(self.kind, ClipKind::Rifle { charge: false, .. }) && self.empty)
+            .then(|| 1.0 - ((t - finish) / SLAM).clamp(0.0, 1.0));
+        // The release pressed as the magazine is pulled.
+        let mag_release = match self.kind {
+            ClipKind::Rifle { .. } | ClipKind::Pistol => keyed(
+                &[
+                    (out - 0.14, 0.0),
+                    (out - 0.08, 1.0),
+                    (out + 0.02, 1.0),
+                    (out + 0.08, 0.0),
+                ],
+                t,
+            ),
+            _ => 0.0,
+        };
         ClipPose {
             weapon,
             old_mag,
@@ -591,6 +633,9 @@ impl MagazineReload {
             pump: None,
             focus: Some(anchors.well()),
             shell: None,
+            handle,
+            carrier,
+            mag_release,
         }
     }
 
@@ -918,11 +963,45 @@ pub fn inspect_pose(t: f32, kind: ClipKind, anchors: &Anchors) -> ClipPose {
             (2.7, Hand::Rest),
         ]);
     }
+    // The release held while the magazine is tugged.
+    let mag_release = if has_mag {
+        keyed(&[(0.5, 0.0), (0.56, 1.0), (0.9, 1.0), (0.96, 0.0)], t)
+    } else {
+        0.0
+    };
     ClipPose {
         weapon,
         old_mag,
         hand: hand_position(&hand_keys, t, place),
         focus: Some(anchors.well()),
+        handle: if kind == ClipKind::Shotgun { 0.0 } else { pull },
+        mag_release,
+        ..ClipPose::rest()
+    }
+}
+
+/// A self-loading weapon charged outside a reload (after an empty reload
+/// was cut off by a switch), `p` 0..1 through the cycle: the support hand
+/// goes to the handle, draws it back, and lets it slam home on the
+/// `charge` beat of `cycle_beats`.
+pub fn charge_pose(p: f32, anchors: &Anchors) -> ClipPose {
+    let handle = keyed(&[(0.25, 0.0), (0.5, HANDLE_PULL), (0.5 + SLAM, 0.0)], p);
+    let hand = hand_position(
+        &[
+            (0.05, Hand::Rest),
+            (0.25, Hand::Charge(0.0)),
+            (0.5, Hand::Charge(HANDLE_PULL)),
+            (0.8, Hand::Rest),
+        ],
+        p,
+        |h| match h {
+            Hand::Charge(pull) => anchors.charge + Vector3::new(0.0, 0.0, pull),
+            _ => anchors.hand_rest,
+        },
+    );
+    ClipPose {
+        hand,
+        handle,
         ..ClipPose::rest()
     }
 }
@@ -1088,6 +1167,55 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn the_action_parts_follow_the_reload_beats() {
+        let beat = |clip: &MagazineReload, name: &str| {
+            clip.beats().iter().find(|b| b.name == name).unwrap().at
+        };
+        // An AR's bolt stays locked open until the release is slapped, then
+        // slams home.
+        let m4 = reload("m4", true);
+        let a = anchors(m4.kind);
+        let release = beat(&m4, "bolt_release");
+        assert_eq!(m4.pose(0.1, &a).carrier, Some(1.0));
+        assert_eq!(m4.pose(release - 0.01, &a).carrier, Some(1.0));
+        assert_eq!(m4.pose(release + 0.05, &a).carrier, Some(0.0));
+        assert_eq!(reload("m4", false).pose(0.5, &a).carrier, None);
+        // A charged rifle's handle is fully back on the charge beat's eve and
+        // home just after it, and still the rest of the time.
+        let ak = reload("ak47", true);
+        let a = anchors(ak.kind);
+        let charge = beat(&ak, "charge");
+        assert!((ak.pose(charge, &a).handle - HANDLE_PULL).abs() < 1e-4);
+        assert_eq!(ak.pose(charge + 0.05, &a).handle, 0.0);
+        assert_eq!(ak.pose(0.5, &a).handle, 0.0);
+        assert_eq!(reload("ak47", false).pose(charge, &a).handle, 0.0);
+        // The magazine release is pressed as the magazine comes out, and let go.
+        for key in ["m4", "ak47", "m1911"] {
+            let clip = reload(key, false);
+            let a = anchors(clip.kind);
+            let out = beat(&clip, "mag_out");
+            assert_eq!(clip.pose(out, &a).mag_release, 1.0, "{key}");
+            assert_eq!(clip.pose(out + 0.3, &a).mag_release, 0.0, "{key}");
+            assert_eq!(clip.pose(0.0, &a).mag_release, 0.0, "{key}");
+        }
+    }
+
+    #[test]
+    fn a_charge_outside_a_reload_draws_the_handle_with_the_hand() {
+        let kind = ClipKind::of(WeaponId::expect("ak47").def());
+        let a = anchors(kind);
+        let pulled = charge_pose(0.5, &a);
+        assert!((pulled.handle - HANDLE_PULL).abs() < 1e-4);
+        let hand = pulled.hand.expect("the hand is on the handle");
+        assert!((hand - (a.charge + Vector3::new(0.0, 0.0, HANDLE_PULL))).length() < 1e-3);
+        // Home on the `charge` beat of the cycle, hand back at rest by the end.
+        let beat = cycle_beats(kind)[0].at;
+        assert_eq!(charge_pose(beat, &a).handle, 0.0);
+        assert_eq!(charge_pose(1.0, &a).hand, None);
+        assert_eq!(charge_pose(0.0, &a).handle, 0.0);
     }
 
     #[test]
