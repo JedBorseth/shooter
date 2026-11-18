@@ -2,15 +2,17 @@
 //! model and skeleton as the third-person character, showing only its arms
 //! mesh, drawn with the viewmodel shader (own FOV, never clips walls), with the
 //! hands solved onto the active weapon's grip markers by [`SoldierPoser`].
-//! The viewmodel rig moves the weapon; the arms follow it.
+//! The viewmodel rig moves the weapon; the arms follow it. The hands are life
+//! size on the longer arms, and the fingers take the weapon's fitted poses
+//! (`WeaponDef::hands`, fitted by [`FpArms::fit_hands`]).
 
+use super::grasp::WeaponFields;
+use super::palette::{self, Team};
+use super::poser::{Grips, HandDepths, Held, PoseInput, SoldierPoser, WeaponPlacement};
 use godot::classes::{
     AnimationLibrary, AnimationPlayer, INode3D, MeshInstance3D, Node3D, Skeleton3D,
 };
 use godot::prelude::*;
-
-use super::palette::{self, Team};
-use super::poser::{Grips, Held, PoseInput, SoldierPoser, WeaponPlacement};
 
 /// Where the support hand reaches during a reload, in weapon space.
 const RELOAD_REACH: Vector3 = Vector3::new(-0.06, -0.3, 0.08);
@@ -39,6 +41,8 @@ pub struct FpArms {
     model: OnReady<Gd<Node3D>>,
     poser: Option<Gd<SoldierPoser>>,
     arms: Option<Gd<MeshInstance3D>>,
+    /// The weapon in hand's grips, as last given (`fit_hands` reads them).
+    grips: Option<Grips>,
 }
 
 #[godot_api]
@@ -87,6 +91,8 @@ impl INode3D for FpArms {
 
         let mut poser = SoldierPoser::new_alloc();
         poser.set_name("Poser");
+        // Only the arms are drawn longer than life.
+        poser.bind_mut().hand_scale = 1.0 / self.scale;
         skeleton.upcast::<Node>().add_child(&poser);
 
         // The knife the support hand swings, drawn like the arms.
@@ -106,6 +112,72 @@ impl INode3D for FpArms {
 
 #[godot_api]
 impl FpArms {
+    /// Fits finger poses to the weapon in hand, from where the hands hold it
+    /// now (an offline tool: `tests/bake_hand_poses.gd`). Returns `right`,
+    /// `left` (15 angles each: index, middle, ring, little, thumb, three
+    /// joints each), `index_off` (3), `right_spread` and `left_spread` (5
+    /// each: every finger's spread, then the thumb's turn), `right_seat` and
+    /// `left_seat` (each hand's move from its marker, weapon space, m), and
+    /// the fitted pose's depths as [`FpArms::hand_depths`] gives them; or an
+    /// empty dictionary when no weapon is held.
+    #[func]
+    pub fn fit_hands(&self) -> VarDictionary {
+        let mut out = VarDictionary::new();
+        let Some((poser, grips, fields)) = self.held_fields() else {
+            return out;
+        };
+        let Some(fit) = poser.bind().fit_hands(&fields, &grips) else {
+            return out;
+        };
+        let flat = |f: &[[f32; 3]]| PackedFloat32Array::from_iter(f.iter().flatten().copied());
+        out.set("right", &flat(&fit.right));
+        out.set("left", &flat(&fit.left));
+        out.set("index_off", &flat(&[fit.index_off]));
+        out.set(
+            "right_spread",
+            &PackedFloat32Array::from(&fit.spreads[0][..]),
+        );
+        out.set(
+            "left_spread",
+            &PackedFloat32Array::from(&fit.spreads[1][..]),
+        );
+        out.set("right_seat", fit.seats[0]);
+        out.set("left_seat", fit.seats[1]);
+        depths_into(&mut out, &fit.depths);
+        out
+    }
+
+    /// How deep the hands' drawn poses go into the weapon in hand, where they
+    /// hold it now (`tests/hand_poses_test.gd`): `finger_depths` (mm, each
+    /// finger: right index to thumb, the right index off the trigger, then
+    /// left index to thumb) and `palm_depth` (mm, right and left), negative
+    /// when clear, both where the hands are aimed; and `reach_miss` (mm,
+    /// right and left), how far the drawn hands fell short of that; or an
+    /// empty dictionary when no weapon is held.
+    #[func]
+    pub fn hand_depths(&self) -> VarDictionary {
+        let mut out = VarDictionary::new();
+        if let Some((poser, grips, fields)) = self.held_fields()
+            && let Some(depths) = poser.bind().hand_depths(&fields, &grips)
+        {
+            depths_into(&mut out, &depths);
+        }
+        out
+    }
+
+    /// Whether both grip markers of the weapon in hand are at rest (no clip,
+    /// pump stroke, or bolt moving a hand), so a pose measured now is the
+    /// held pose.
+    #[func]
+    pub fn hands_settled(&self) -> bool {
+        self.grips.is_some_and(|g| {
+            [g.right, g.left]
+                .iter()
+                .zip(g.rests)
+                .all(|(at, rest)| rest.is_some_and(|r| at.distance_to(r) < 1e-4))
+        })
+    }
+
     /// Where the hand IK last put a wrist (world space), or zero if it is off.
     #[func]
     pub fn wrist_position(&self, right: bool) -> Vector3 {
@@ -136,6 +208,7 @@ impl FpArms {
         {
             arms.set_visible(visible);
         }
+        self.grips = weapon.as_ref().map(|(_, grips)| *grips);
         let Some(poser) = &mut self.poser else {
             return;
         };
@@ -166,6 +239,46 @@ impl FpArms {
             }
         }
     }
+}
+
+impl FpArms {
+    /// The poser, the grips of the weapon it holds, and that weapon's surface
+    /// around its grips (measured now; only the offline tools ask).
+    fn held_fields(&self) -> Option<(Gd<SoldierPoser>, Grips, WeaponFields)> {
+        let poser = self.poser.clone()?;
+        let grips = self.grips?;
+        let view = poser.bind().weapon.clone()?;
+        let (right, left) = view
+            .clone()
+            .try_cast::<crate::viewmodel::WeaponView>()
+            .map(|v| v.bind().grip_rests())
+            .unwrap_or_default();
+        let fields = WeaponFields::measure(
+            &view,
+            right.unwrap_or(grips.right),
+            left.unwrap_or(grips.left),
+        );
+        Some((poser, grips, fields))
+    }
+}
+
+/// Writes a pose's depths into a dictionary, in millimetres: `finger_depths`
+/// (each finger, see [`FpArms::hand_depths`]) and `palm_depth` (right, left).
+fn depths_into(out: &mut VarDictionary, depths: &HandDepths) {
+    let each = depths.fingers[0]
+        .into_iter()
+        .chain([depths.index_off])
+        .chain(depths.fingers[1])
+        .map(|d| d * 1000.0);
+    out.set("finger_depths", &PackedFloat32Array::from_iter(each));
+    out.set(
+        "palm_depth",
+        Vector2::new(depths.palms[0], depths.palms[1]) * 1000.0,
+    );
+    out.set(
+        "reach_miss",
+        Vector2::new(depths.misses[0], depths.misses[1]) * 1000.0,
+    );
 }
 
 /// Replaces the arms' materials with the team's viewmodel-shader material.

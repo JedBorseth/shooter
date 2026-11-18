@@ -27,8 +27,8 @@ use std::f32::consts::TAU;
 use glam::Vec2;
 
 pub use def::{
-    Attachment, Damage, FireMode, LoadError, RecoilDef, Reload, ScopeDef, Slot, Spread, WeaponDef,
-    WeaponId, builtin, install, parse, parse_all, table,
+    Attachment, Damage, FingerFlex, FireMode, HandDef, HandsDef, LoadError, RecoilDef, Reload,
+    ScopeDef, Slot, Spread, WeaponDef, WeaponId, builtin, install, parse, parse_all, table,
 };
 
 use crate::{equipment, fmath, rng};

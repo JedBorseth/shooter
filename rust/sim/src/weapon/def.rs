@@ -384,6 +384,12 @@ pub struct WeaponDef {
     /// follow them (`crate::hitbox`).
     #[serde(default)]
     pub grips: Option<GripsDef>,
+    /// How the hands' fingers close on this weapon, authored per weapon as a
+    /// first-person animator would, so they rest on its surface instead of
+    /// in it. Baked from the weapon's model by `godot/tests/bake_hand_poses.gd`
+    /// and checked against it by `hand_poses_test.gd`.
+    #[serde(default)]
+    pub hands: Option<HandsDef>,
     /// On an attachment variant: the attachment fitted.
     #[serde(skip)]
     pub attachment: Option<Attachment>,
@@ -402,6 +408,56 @@ pub struct GripsDef {
     pub left: [f32; 3],
     /// Degrees the pistol grip leans back from vertical.
     pub rake: f32,
+}
+
+/// One hand's finger curl: degrees per joint (knuckle, middle, tip; the
+/// thumb's base, middle, tip) for the index, middle, ring, and little fingers
+/// and the thumb.
+pub type FingerFlex = [[f32; 3]; 5];
+
+/// One hand on a weapon: its fingers, and how far (weapon space, m) it sits
+/// from where its grip marker puts it, so the palm and knuckles rest on the
+/// weapon instead of in it.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
+pub struct HandDef {
+    pub fingers: FingerFlex,
+    /// Each finger's spread at its knuckle and the thumb's turn across the
+    /// palm (degrees: index, middle, ring, little, thumb), if fitted.
+    #[serde(default)]
+    pub spread: Option<[f32; 5]>,
+    #[serde(default)]
+    pub seat: [f32; 3],
+}
+
+/// A weapon's hand poses (see `WeaponDef::hands`).
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
+pub struct HandsDef {
+    /// The firing hand on the grip, its index on the trigger.
+    pub right: HandDef,
+    /// The firing hand's index laid along the frame, off the trigger
+    /// (sprinting, reloading).
+    pub index_off: [f32; 3],
+    /// The support hand where it holds the weapon.
+    pub left: HandDef,
+    /// The support hand on the vertical foregrip, for weapons that take one.
+    #[serde(default)]
+    pub left_foregrip: Option<HandDef>,
+}
+
+impl WeaponDef {
+    /// The hand poses for this weapon as fitted (right, index off the
+    /// trigger, left), each `None` where the file has none.
+    pub fn finger_poses(&self) -> (Option<HandDef>, Option<[f32; 3]>, Option<HandDef>) {
+        let Some(hands) = self.hands else {
+            return (None, None, None);
+        };
+        let left = if self.attachment == Some(Attachment::Grip) {
+            hands.left_foregrip
+        } else {
+            Some(hands.left)
+        };
+        (Some(hands.right), Some(hands.index_off), left)
+    }
 }
 
 fn one() -> u8 {

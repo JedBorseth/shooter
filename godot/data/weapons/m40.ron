@@ -37,4 +37,13 @@
     attachments: [Suppressor, ExtendedMag],
     // Hands on the model: GripRight and GripLeft in m40_view.tscn.
     grips: Some((right: (0, -0.115, 0.03), left: (0, -0.08, -0.36), rake: 38)),
+    // Finger poses fitted to the model by tests/bake_hand_poses.gd:
+    // curl in degrees per joint (index, middle, ring, little, thumb), each
+    // finger's spread, and the hand's seat off its marker (m). Re-run it
+    // after moving the grips or changing the model.
+    hands: Some((
+        right: (fingers: ((26.5, 32.5, 51.5), (23.5, 23, 64.5), (62, 67.5, 41), (61, 64.5, 39), (-6.5, 6.5, 5)), spread: Some((-4, 0, 3, 7, 32)), seat: (0.012, 0.011, 0.002)),
+        index_off: (4, 6, 4),
+        left: (fingers: ((-3, 69.5, 44), (4.5, 65, 36), (63, 66, 40), (65, 65, 38), (1, 16.5, 13.5)), spread: Some((-12, 11, 4, 9, 38)), seat: (0, -0.001, 0)),
+    )),
 )

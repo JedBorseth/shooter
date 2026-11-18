@@ -31,4 +31,13 @@
     tracer_every: 0,
     // Hands on the model: GripRight and GripLeft in pistol_view.tscn.
     grips: Some((right: (0, -0.0833, 0.0098), left: (0, -0.102, 0.0217), rake: 0)),
+    // Finger poses fitted to the model by tests/bake_hand_poses.gd:
+    // curl in degrees per joint (index, middle, ring, little, thumb), each
+    // finger's spread, and the hand's seat off its marker (m). Re-run it
+    // after moving the grips or changing the model.
+    hands: Some((
+        right: (fingers: ((7, 15, 68), (15, 12, 64.5), (52, 54.5, 64.5), (51, 67.5, 54.5), (-6.5, 5.5, 4)), spread: Some((-4, 0, 3, 7, 32)), seat: (0.004, -0.007, 0.004)),
+        index_off: (4, 6, 4),
+        left: (fingers: ((31.5, 30, 58), (56.5, 59.5, 34.5), (63.5, 66, 39.5), (92, 99, 60.5), (16, 30.5, 18)), spread: Some((2, 1.5, 5, 6, 45)), seat: (-0.002, -0.004, 0.002)),
+    )),
 )
