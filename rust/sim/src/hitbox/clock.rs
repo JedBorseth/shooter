@@ -126,7 +126,12 @@ impl BodyClock {
 /// How long a weapon's reload animation runs, seconds: a magazine's full
 /// reload, or a pump gun's start, four shells, and end.
 pub fn reload_seconds(weapon: WeaponId) -> f32 {
-    match weapon.def().reload {
+    reload_seconds_of(weapon.def())
+}
+
+/// [`reload_seconds`] for a weapon's definition.
+pub fn reload_seconds_of(def: &crate::weapon::WeaponDef) -> f32 {
+    match def.reload {
         Reload::Magazine { time, .. } => time,
         Reload::PerRound {
             start,

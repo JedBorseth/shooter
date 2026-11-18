@@ -66,7 +66,9 @@ use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState}
 // Version 29 added how far each body's aim has turned from its planted feet
 // (`PlayerView::turn`) and how far its legs step in place as the feet swing
 // round (`PlayerView::step`), which the hit zones' legs follow.
-pub const PROTOCOL_VERSION: u16 = 29;
+// Version 30 changed how each class of weapon is carried and reloaded
+// (`hitbox::carry::CarryClass`), which moves the arm hit zones.
+pub const PROTOCOL_VERSION: u16 = 30;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).

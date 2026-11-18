@@ -76,6 +76,32 @@ const FOOT_IK_DISTANCE: f32 = 15.0;
 const FOOT_RAY_UP: f32 = 0.45;
 const FOOT_RAY_DOWN: f32 = 0.3;
 const FOOT_IK_RATE: f32 = 14.0;
+/// Where the support hand goes for an action, in weapon space: low in front
+/// for a plant or defuse, and up and back to throw.
+const PLANT_REACH: shooter_sim::Vec3 = shooter_sim::Vec3::new(-0.1, -0.55, -0.15);
+const THROW_REACH: shooter_sim::Vec3 = shooter_sim::Vec3::new(-0.25, 0.2, 0.3);
+/// A weapon switch lowers the old weapon over this long and raises the new
+/// one over this long (seconds).
+const SWITCH_LOWER_SECONDS: f32 = 0.22;
+const SWITCH_RAISE_SECONDS: f32 = 0.3;
+/// Each shot pushes the shoulder and spine back this far (degrees, at a
+/// rifle's kick).
+const SHOULDER_PUSH_DEGREES: f32 = 1.2;
+/// The weapon file's first kick, in degrees, that the third-person kick is
+/// scaled to: the M4's.
+const REFERENCE_KICK: f32 = 0.3;
+
+/// How hard a weapon kicks in third person, relative to a rifle: its first
+/// kick from the weapon file, within a sensible range.
+fn recoil_scale(def: &shooter_sim::weapon::WeaponDef) -> f32 {
+    let first = def
+        .recoil
+        .pattern
+        .first()
+        .map_or(REFERENCE_KICK, |k| k.length());
+    (first / REFERENCE_KICK).clamp(0.6, 2.2)
+}
+
 /// Natural ground speed (m/s) of the zombie walk loop, measured from the planted foot.
 const ZOMBIE_WALK_SPEED: f32 = 0.95;
 /// Zombies slower than this play the shamble alone, sped up to their speed.
@@ -159,6 +185,22 @@ pub struct SoldierFrame {
     /// step in place (`Progress::turn` and `step`, the server's). Without it
     /// (offline) the rig turns its own feet.
     pub turn: Option<(f32, f32)>,
+    /// Something done with the hands instead of the weapon, and how far
+    /// along it is (0..1). Nothing sets it yet: it is the hook for planting,
+    /// defusing, and throwing once snapshots carry them.
+    pub action: Option<(ActionPose, f32)>,
+}
+
+/// Things a soldier does with their hands instead of the weapon. The hit
+/// zones do not follow these poses (snapshots do not carry them yet).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ActionPose {
+    /// Kneeling over a bomb site, the weapon lowered, both hands at the
+    /// ground in front (Search and Destroy's plant and defuse).
+    Plant,
+    Defuse,
+    /// The weapon lowered and the support arm swinging over to throw.
+    Throw,
 }
 
 impl SoldierFrame {
@@ -199,6 +241,7 @@ impl Default for SoldierFrame {
             mantle_progress: None,
             crouch: None,
             turn: None,
+            action: None,
         }
     }
 }
@@ -284,6 +327,8 @@ pub struct SoldierRig {
     /// Weapon kick: x pitch (radians), z push back (metres).
     kick: Spring,
     lean: Spring,
+    /// The old weapon is lowering before a switch.
+    lowering: bool,
     /// Hit reactions: the head's tip along a shot (as `lean`), the torso's
     /// twist (radians, positive turns left), the knees' buckle (stance blend),
     /// and seconds left of each hand's loosened grip (right, left).
@@ -521,7 +566,8 @@ impl SoldierRig {
     /// "sliding"), `sprinting`, `yaw`, `pitch`, `ads`, `weapon` (file key),
     /// `reload` (progress, or -1), `alive`, `mantling`, `meleeing`, `crouch`
     /// (the simulation's crouch blend, or -1), `turn` (the aim's turn from the
-    /// planted feet; missing turns the rig's own feet). Missing keys keep their
+    /// planted feet; missing turns the rig's own feet), `action` ("plant",
+    /// "defuse", "throw") with `action_progress`. Missing keys keep their
     /// defaults.
     #[func]
     fn drive(&mut self, state: VarDictionary, delta: f32) {
@@ -563,6 +609,12 @@ impl SoldierRig {
             turn: get("turn")
                 .and_then(|v| v.try_to::<f32>().ok())
                 .map(|t| (t, f("step", 0.0))),
+            action: match get("action").map(|v| v.to_string()).as_deref() {
+                Some("plant") => Some((ActionPose::Plant, f("action_progress", 0.5))),
+                Some("defuse") => Some((ActionPose::Defuse, f("action_progress", 0.5))),
+                Some("throw") => Some((ActionPose::Throw, f("action_progress", 0.5))),
+                _ => None,
+            },
         };
         self.update(&frame, delta);
     }
@@ -625,7 +677,7 @@ impl SoldierRig {
         if !was_alive {
             self.revive();
         }
-        self.set_weapon(frame.weapon);
+        self.switch_to(frame.weapon, dt);
 
         // Body yaw. The model inside faces -Z like everything else.
         self.base_mut()
@@ -665,7 +717,11 @@ impl SoldierRig {
             (turn, self.own_turning.step)
         });
 
-        let crouch_target = if frame.stance == Stance::Crouching {
+        let kneeling = matches!(
+            frame.action,
+            Some((ActionPose::Plant | ActionPose::Defuse, _))
+        );
+        let crouch_target = if frame.stance == Stance::Crouching || kneeling {
             1.0
         } else {
             0.0
@@ -678,6 +734,7 @@ impl SoldierRig {
         self.crouch = match frame.crouch {
             // The body goes down and up on the simulation's own curve, the
             // one its capsule, eye, and hit zones follow.
+            Some(_) if kneeling => self.crouch + (1.0 - self.crouch) * smoothing(10.0, dt),
             Some(blend) => shooter_sim::movement::crouch_ease(blend),
             None => self.crouch + (crouch_target - self.crouch) * smoothing(12.0, dt),
         };
@@ -815,7 +872,9 @@ impl SoldierRig {
             _ if frame.meleeing && !was_meleeing && frame.alive => Some(0.0),
             _ => None,
         };
-        self.switch_drop = (self.switch_drop - dt * 3.0).max(0.0);
+        if !self.lowering {
+            self.switch_drop = (self.switch_drop - dt / SWITCH_RAISE_SECONDS).max(0.0);
+        }
         self.kick.step(260.0, 22.0, dt);
         self.lean.step(LEAN_STIFFNESS, LEAN_DAMPING, dt);
         self.head.step(HEAD_STIFFNESS, HEAD_DAMPING, dt);
@@ -1011,14 +1070,24 @@ impl SoldierRig {
 
     /// Muzzle flash and a kick for one shot.
     pub fn fire(&mut self) {
-        if let Some((_, view)) = &mut self.weapon {
+        let mut scale = 1.0;
+        if let Some((id, view)) = &mut self.weapon {
             view.bind_mut().flash_world();
+            scale = recoil_scale(id.def());
         }
+        // The gun kicks as hard as the weapon kicks, and the shoulder and
+        // spine take some of it.
         self.kick.velocity += Vector3::new(
-            impulse_for_peak(4f32.to_radians(), 260.0, 22.0),
+            impulse_for_peak(4f32.to_radians() * scale, 260.0, 22.0),
             0.0,
-            impulse_for_peak(0.035, 260.0, 22.0),
+            impulse_for_peak(0.035 * scale, 260.0, 22.0),
         );
+        self.lean.velocity += Vector3::BACK
+            * impulse_for_peak(
+                (SHOULDER_PUSH_DEGREES * scale).to_radians(),
+                LEAN_STIFFNESS,
+                LEAN_DAMPING,
+            );
     }
 
     /// A hit travelling along `direction` (world), nothing more known: the
@@ -1116,6 +1185,18 @@ impl SoldierRig {
         });
         // The same carry the arm hit zones are posed from, with this rig's
         // smoothed blends, kick, weapon switch, and knife swing on top.
+        let def = self.weapon.as_ref().map(|(id, _)| id.def());
+        // Hands busy with something else: the weapon drops out of the way
+        // as for a knife swing.
+        let (action_drop, action_reach) = match frame.action {
+            Some((ActionPose::Plant | ActionPose::Defuse, _)) => (1.0, Some(PLANT_REACH)),
+            Some((ActionPose::Throw, t)) => (
+                crate::weapon_clips::keyed(&[(0.0, 0.0), (0.15, 1.0), (0.8, 1.0), (1.0, 0.0)], t),
+                Some(THROW_REACH),
+            ),
+            None => (0.0, None),
+        };
+        let swing = swing.max(action_drop);
         let carry = Carry {
             ads: frame.ads,
             sprint: self.sprint,
@@ -1124,7 +1205,17 @@ impl SoldierRig {
             kick: to_sim(self.kick.value),
             switch_drop: self.switch_drop,
             swing,
+            class: def.map_or_else(Default::default, carry::CarryClass::of),
+            timing: def.map_or_else(Default::default, carry::ReloadTiming::of),
         };
+        // The support hand's reload path, from the grips the server poses the
+        // arm zones with.
+        let held = def.map_or_else(carry::Grips::default, carry::Grips::held);
+        let (mut support_target, mut support_off) = carry.support_path(&held);
+        if let Some(reach) = action_reach {
+            support_target = reach;
+            support_off = action_drop;
+        }
         let (offset, rotation) = carry.weapon_offset();
         let (offset, rotation) = (to_godot(offset), to_godot_basis(rotation));
 
@@ -1165,8 +1256,8 @@ impl SoldierRig {
             grips,
             ik: self.ik,
             // The support hand fetches a magazine in the middle of the reload.
-            support_off: carry.support_off(),
-            support_target: to_godot(carry::RELOAD_REACH),
+            support_off,
+            support_target: to_godot(support_target),
             // Trigger discipline: off the trigger while sprinting or reloading.
             trigger_off: carry.trigger_off(),
             knife: knife.0,
@@ -1374,6 +1465,28 @@ impl SoldierRig {
         }
     }
 
+    /// A weapon switch in two parts: the old weapon lowers out of the way,
+    /// then the new one comes up. A first weapon, or one after a respawn,
+    /// appears at once.
+    fn switch_to(&mut self, weapon: Option<WeaponId>, dt: f32) {
+        let held = self.weapon.as_ref().map(|(id, _)| *id);
+        if held == weapon {
+            self.lowering = false;
+            return;
+        }
+        if held.is_none() || weapon.is_none() {
+            self.lowering = false;
+            self.set_weapon(weapon);
+            return;
+        }
+        self.lowering = true;
+        self.switch_drop = (self.switch_drop + dt / SWITCH_LOWER_SECONDS).min(1.0);
+        if self.switch_drop >= 1.0 {
+            self.lowering = false;
+            self.set_weapon(weapon);
+        }
+    }
+
     fn set_weapon(&mut self, weapon: Option<WeaponId>) {
         if self.weapon.as_ref().map(|(id, _)| *id) == weapon {
             return;
@@ -1400,6 +1513,7 @@ impl SoldierRig {
         }
         self.weapon = Some((id, view));
         if had_weapon {
+            // The new weapon comes up from where the old one went.
             self.switch_drop = 1.0;
         }
     }

@@ -484,6 +484,8 @@ impl RemotePlayer {
             mantle_progress: s.mantling.then_some(s.progress.mantle),
             crouch: Some(s.crouch),
             turn: Some((s.progress.turn, s.progress.step)),
+            // Snapshots do not say who is planting or throwing yet.
+            action: None,
         };
         match (self.drawn_alive, s.alive) {
             // Dead: the body that died lies where it fell, in the scene's

@@ -4,7 +4,8 @@ extends SceneTree
 ## aim is more than 60° off and the feet step round. A slide gets down as fast
 ## as the hit zones do, a landing flexes the knees without crouching, and the
 ## torso leans into a start and back from a stop. Standing on the edge of a
-## step, each foot rests on the ground under it. Exits non-zero on failure.
+## step, each foot rests on the ground under it. A weapon switch lowers the old
+## weapon before the new one comes up. Exits non-zero on failure.
 ## Run from the repo root:
 ##   godot --headless --path godot --fixed-fps 120 --script res://tests/locomotion_test.gd
 
@@ -23,6 +24,7 @@ func _run() -> void:
 	await _slide_and_landing()
 	await _lean()
 	await _feet_on_a_step()
+	await _switch()
 	_finish()
 
 
@@ -187,6 +189,26 @@ func _feet_on_a_step() -> void:
 	step.queue_free()
 	ground.queue_free()
 	camera.queue_free()
+
+
+func _switch() -> void:
+	var rig := SOLDIER.instantiate() as SoldierRig
+	root.add_child(rig)
+	for i in 30:
+		rig.drive({"weapon": "m4"}, DT)
+		await process_frame
+	var rifle := rig.weapon_node()
+	var low := rifle.global_position.y
+	for i in 12:
+		rig.drive({"weapon": "m1911"}, DT)
+		await process_frame
+	_check(rig.weapon_node() == rifle, "the old weapon is still in hand 0.1 s into a switch")
+	_check(rifle.global_position.y < low - 0.05, "and lowering")
+	for i in 30:
+		rig.drive({"weapon": "m1911"}, DT)
+		await process_frame
+	_check(rig.weapon_node() != rifle, "the new weapon is out after 0.35 s")
+	rig.queue_free()
 
 
 func _check(condition: bool, label: String) -> void:
