@@ -364,6 +364,19 @@ fn reflex_seat(mount_z: f32, ads_z: f32) -> f32 {
         .clamp(mount_z - REFLEX_RAIL_FORWARD, mount_z + REFLEX_RAIL_BACK)
 }
 
+/// A side plume's length as a multiple of its weapon's flash size, in
+/// first person and in the world, and its height over its length (the
+/// atlas's side frames are drawn for it: tools/build_muzzle_flash.py).
+const PLUME_LENGTH: f32 = 1.6;
+const PLUME_LENGTH_WORLD: f32 = 2.5;
+const PLUME_ASPECT: f32 = 0.5;
+
+/// The flash atlas frame for shot `count`: scrambled, so consecutive shots
+/// rarely repeat a frame (the shader takes it modulo 4).
+fn flash_seed(count: u32) -> f32 {
+    (count.wrapping_mul(2_654_435_761) >> 16) as f32 % 97.0
+}
+
 /// Seconds an ejected shell stays visible in the view, where there is no
 /// world to hand it to (`CombatEffects`).
 const SHELL_LIFETIME: f32 = 0.5;
@@ -509,6 +522,8 @@ pub struct WeaponView {
 
     flash_time: f32,
     flash_count: u32,
+    /// The last shot was fired aimed.
+    flash_aimed: bool,
     /// The flash light's energy as authored (read on the first shot).
     flash_energy: f32,
     /// The flash seen from the side: two crossed quads along the barrel.
@@ -1465,14 +1480,26 @@ impl WeaponView {
         else {
             return;
         };
-        let length = if viewmodel { 0.32 } else { 0.5 };
+        // Each class's plume is as long as its flash is big (the view
+        // scene's `Quad_flash`): a pistol's short, a shotgun's long.
+        let size = self
+            .flash
+            .get_mesh()
+            .and_then(|m| m.try_cast::<QuadMesh>().ok())
+            .map_or(0.2, |q| q.get_size().x);
+        let length = size
+            * if viewmodel {
+                PLUME_LENGTH
+            } else {
+                PLUME_LENGTH_WORLD
+            };
         if let Some(material) = self.flash.get_active_material(0)
             && let Ok(mut side) = material.duplicate_resource().try_cast::<ShaderMaterial>()
         {
             side.set_shader_parameter("shape", &1.to_variant());
             side.set_shader_parameter("viewmodel", &viewmodel.to_variant());
             let mut quad = QuadMesh::new_gd();
-            quad.set_size(Vector2::new(length, length * 0.38));
+            quad.set_size(Vector2::new(length, length * PLUME_ASPECT));
             quad.set_material(&side);
             // Two quads crossed along the barrel (-Z), so the plume shows from
             // above and from the side. The quad's +X points down the barrel.
@@ -1512,13 +1539,17 @@ impl WeaponView {
     /// Flash, plume, and maybe a puff of smoke, for one shot.
     fn show_flash(&mut self) {
         self.flash_count = self.flash_count.wrapping_add(1);
-        let seed = (self.flash_count % 97) as f32;
+        let seed = flash_seed(self.flash_count);
+        let aimed = if self.flash_aimed { 1.0f32 } else { 0.0 };
         self.flash
             .set_instance_shader_parameter("seed", &seed.to_variant());
+        self.flash
+            .set_instance_shader_parameter("aimed", &aimed.to_variant());
         self.flash.set_visible(true);
         self.flash_light.set_visible(true);
         for plume in &mut self.plume {
             plume.set_instance_shader_parameter("seed", &seed.to_variant());
+            plume.set_instance_shader_parameter("aimed", &aimed.to_variant());
             plume.set_visible(true);
         }
         // About three frames at 60 FPS: visible on every shot, yet off again
@@ -1689,6 +1720,12 @@ impl WeaponView {
         }
         self.flash_light
             .set_param(Param::ENERGY, self.flash_energy * (1.0 - 0.4 * ads));
+        // Aimed, the flash draws from the atlas's smaller, tighter frames,
+        // except a shotgun's, whose blast stays big round the bead.
+        let shotgun = self
+            .weapon_id()
+            .is_some_and(|id| ClipKind::of(id.def()) == ClipKind::Shotgun);
+        self.flash_aimed = ads > 0.5 && !shotgun;
         // A suppressor hides the flash.
         if !self.suppressed {
             self.show_flash();
@@ -3466,6 +3503,19 @@ const LAND_ZETA: f32 = 0.5;
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn flash_frames_vary_from_shot_to_shot() {
+        let frames: Vec<u32> = (1..=40).map(|n| super::flash_seed(n) as u32 % 4).collect();
+        for f in 0..4 {
+            assert!(
+                frames.iter().filter(|&&x| x == f).count() >= 5,
+                "{frames:?}"
+            );
+        }
+        let repeats = frames.windows(2).filter(|w| w[0] == w[1]).count();
+        assert!(repeats < 16, "{frames:?}");
+    }
+
     #[test]
     fn a_red_dot_sits_a_tenth_of_a_metre_from_the_eye_within_the_rail() {
         use super::{REFLEX_EYE_DISTANCE, reflex_seat, sights::REFLEX_WINDOW_BEHIND};
