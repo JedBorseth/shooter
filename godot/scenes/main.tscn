@@ -6,7 +6,7 @@
 [ext_resource type="PackedScene" uid="uid://dntgtxe43net8" path="res://assets/models/map_testing_area/map_testing_area.gltf" id="5_dgi5k"]
 [ext_resource type="PackedScene" path="res://scenes/ui/pause_menu.tscn" id="5_pause"]
 [ext_resource type="PackedScene" uid="uid://qwgli5xgme3n" path="res://assets/models/map_testing_dressing/map_testing_dressing.gltf" id="6_dress"]
-[ext_resource type="Script" path="res://scripts/map_render.gd" id="7_render"]
+[ext_resource type="Script" uid="uid://dc3lq2kfheq1v" path="res://scripts/map_render.gd" id="7_render"]
 [ext_resource type="PackedScene" path="res://scenes/props/weapon_rack.tscn" id="9_rack"]
 [ext_resource type="PackedScene" path="res://scenes/props/sentry.tscn" id="10_sentry"]
 [ext_resource type="PackedScene" uid="uid://f4nuvi0vah4o" path="res://assets/weapons/m4/m4.glb" id="11_m4"]

@@ -52,6 +52,9 @@ const VIEWS := {
 			"corner_se": [Vector3(18, 0.1, 18), -2.4, -0.05],
 			"ground_close": [Vector3(-4, 0.1, 3), 0.4, -0.5],
 			"sky_moon": [Vector3(0, 0.1, 0), 0.0, 0.5],
+			"barricade_south": [Vector3(-1, 0.1, 16), PI + 0.2, -0.08],
+			"burnt_car": [Vector3(-16, 0.1, -2), PI / 2 + 0.3, -0.1],
+			"window_close": [Vector3(-10, 0.1, -19), 0.9, -0.1],
 		},
 	},
 }

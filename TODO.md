@@ -239,7 +239,8 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 - [x] Map props: CC0 Poly Haven models (cars, lamps, crates, barrels, bins, barriers, AC units, shutters) on the existing collision (`tools/build_props.py`).
 - [x] Map meshes: the blockout CSG is baked into meshes with lightmap UVs (`godot/tools/bake_map_meshes.gd`).
 - [x] Testing Area set dressing: a control tower, a site office, an ammunition container, target stands and steel, sandbags, pallets, floodlights, cables, drains, litter, and weeds, and every floor slab and wall panel shaded on its own with streaks, stains, and tyre tracks (`tools/map_dressing.py`, `docs/art-direction.md#set-dressing`).
-- [ ] Zombies arena set dressing: barricades, burnt-out vehicles, debris, abandoned gear, emergency and work lights, fog in the low yards.
+- [x] Zombies arena set dressing: barricades, burnt-out cars, rubble and torn boards, blood from the windows, abandoned kit, wet streaks, emergency beacons, and floodlights on the columns (`map_zombies_dressing`).
+- [ ] Map atmosphere: a Zombies night sky with a moon matching the moonlight, fog pooled in the low yards, and a Testing Area sky with depth.
 - [x] Building trim on Slamcity: window frames, sills, storefronts, a gutter, and downpipes; road paint, damaged asphalt, manholes, and rain streaks as decals.
 - [x] A fire escape on the flats, up to the roof (built in the generator; Poly Haven's `modular_fire_escape` could replace it once assembled from its parts).
 - [x] Characters: one material and two surfaces per character, rest-space fabric and wear detail, and per-zombie skin tone and blood (`shaders/character.gdshader`).
