@@ -468,7 +468,7 @@ fn every_weapon_sways_a_little_when_aimed() {
     run(&mut s, aim(), CombatContext::default(), 90);
     let sway = s.scope_sway();
     assert!(sway != Vec2::ZERO);
-    assert!(sway.length() < 0.2f32.to_radians(), "{sway:?}");
+    assert!(sway.length() < 0.25f32.to_radians(), "{sway:?}");
     assert_eq!(s.scope_amount(), 0.0);
     // Only a scope can be steadied with breath.
     let held = CombatInput {
@@ -1013,4 +1013,45 @@ fn holding_the_trigger_through_a_switch_keeps_the_fire_rate() {
     for pair in fired_at.windows(2) {
         assert!(pair[1] - pair[0] >= 4, "{fired_at:?}");
     }
+}
+
+#[test]
+fn firing_ends_a_magazine_reload_once_the_weapon_is_back_up() {
+    for (key, empty) in [("m4", false), ("m4", true), ("ak47", true), ("m40", true)] {
+        let mut s = ready_with([key, "m1911"]);
+        s.slots[0].magazine = if empty { 0 } else { 3 };
+        let def = s.def();
+        let ready = def.reload_ready_at(empty).unwrap();
+        let total = def.reload.magazine_time(empty).unwrap();
+        let mag_in = def.reload.mag_in().unwrap();
+        assert!(ready > mag_in && ready <= total, "{key}: {ready}");
+        run(&mut s, reload(), CombatContext::default(), 1);
+        // Before the weapon is back on the shoulder, the trigger does nothing.
+        let early = ((ready / DT) as usize).saturating_sub(3);
+        run(
+            &mut s,
+            CombatInput::default(),
+            CombatContext::default(),
+            early,
+        );
+        let events = run(&mut s, fire(), CombatContext::default(), 1);
+        assert_eq!(shots(&events), 0, "{key}");
+        assert!(s.is_reloading(), "{key}");
+        // From then on, firing ends the reload and fires.
+        run(&mut s, CombatInput::default(), CombatContext::default(), 4);
+        let events = run(&mut s, fire(), CombatContext::default(), 2);
+        if ready < total - 2.0 * DT {
+            assert!(!s.is_reloading(), "{key}");
+            assert!(
+                events
+                    .iter()
+                    .any(|e| matches!(e, CombatEvent::ReloadFinished { .. }))
+            );
+            assert_eq!(shots(&events), 1, "{key}");
+            assert!(!s.weapon().needs_cycle, "{key}");
+        }
+    }
+    // A bolt action is only ready after the bolt is worked: the very end.
+    let m40 = WeaponId::expect("m40").def();
+    assert_eq!(m40.reload_ready_at(true), m40.reload.magazine_time(true));
 }

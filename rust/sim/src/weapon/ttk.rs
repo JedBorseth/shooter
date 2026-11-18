@@ -14,6 +14,10 @@ const TORSO_RADIUS: f32 = 0.25;
 
 /// Damage one trigger pull deals at `distance` to `zone`.
 pub fn shot_damage(def: &WeaponDef, distance: f32, zone: HitZone) -> f32 {
+    // Rounds stop at the weapon's range (a shotgun's pellets at 60 m).
+    if distance > def.range {
+        return 0.0;
+    }
     let per_pellet = def.damage_at(distance) * def.zone_scale(zone);
     if def.pellets <= 1 {
         return per_pellet;
@@ -111,13 +115,18 @@ mod tests {
         assert!(at("ak47", 8.0) < at("m4", 8.0));
         assert!(at("m4", 20.0) < at("ak47", 20.0));
         assert!(at("m4", 50.0) < at("ak47", 50.0));
-        // The burst rifle kills in one burst only up close.
-        assert!(at("br3", 10.0) < 0.16);
-        // ...but not in the SMG's range.
-        assert!(at("pdw9", 14.0) < at("br3", 14.0));
+        // The burst rifle kills in one burst only point-blank...
+        assert!(at("br3", 5.0) < 0.16);
+        // ...and nothing beats the SMG from there to 15 m.
+        for d in [7.0, 10.0, 15.0] {
+            for key in ["br3", "ak47", "m4", "lsw6"] {
+                assert!(at("pdw9", d) < at(key, d), "{key} at {d} m");
+            }
+        }
         assert!(at("br3", 25.0) > 0.3);
-        // The LMG is the same at every range.
-        assert_eq!(at("lsw6", 5.0), at("lsw6", 70.0));
+        // The LMG kills in four to about 49 m, five beyond.
+        assert_eq!(at("lsw6", 5.0), at("lsw6", 45.0));
+        assert!(at("lsw6", 55.0) > at("lsw6", 45.0));
         // The SMG wins to 15 m and loses at range.
         assert!(at("pdw9", 5.0) < at("m4", 5.0));
         assert!(at("pdw9", 15.0) < at("m4", 15.0));

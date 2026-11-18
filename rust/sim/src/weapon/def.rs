@@ -388,6 +388,12 @@ fn one() -> u8 {
     1
 }
 
+/// Seconds after the seat until a tactical reload can be fired out of.
+pub const RELOAD_READY_TACTICAL: f32 = 0.45;
+/// Seconds after the seat until an empty reload (release or charge, then
+/// the re-shoulder) can be fired out of.
+pub const RELOAD_READY_EMPTY: f32 = 0.8;
+
 impl WeaponDef {
     /// The key of the weapon whose model and sounds this one uses: itself, or
     /// the plain weapon for an attachment variant.
@@ -401,6 +407,22 @@ impl WeaponDef {
 
     pub fn fire_interval(&self) -> f32 {
         60.0 / self.rounds_per_minute
+    }
+
+    /// Seconds into a magazine reload (`empty` or tactical) from which the
+    /// weapon is back on the shoulder with a round chambered: firing then
+    /// ends the reload, cutting its settle short. A tactical reload is ready
+    /// soon after the seat; an empty one after the bolt release or charge; a
+    /// bolt action only at its end, after working the bolt.
+    pub fn reload_ready_at(&self, empty: bool) -> Option<f32> {
+        let total = self.reload.magazine_time(empty)?;
+        let seat = self.reload.mag_in()?;
+        let ready = match (empty, self.cycle_time > 0.0) {
+            (false, _) => seat + RELOAD_READY_TACTICAL,
+            (true, false) => seat + RELOAD_READY_EMPTY,
+            (true, true) => total,
+        };
+        Some(ready.min(total))
     }
 
     /// Body-shot damage per pellet at a distance.

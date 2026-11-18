@@ -16,6 +16,8 @@ const SCENARIOS := [
 	"spray_hip_m4",
 	"spray_ads_m4",
 	"spray_ads_ak47",
+	"spray_ads_pdw9",
+	"spray_ads_lsw6",
 	"taps_m1911",
 	"burst_br3",
 	"shot_m40",
@@ -34,6 +36,7 @@ const SCENARIOS := [
 	"reload_m1911_empty",
 	"reload_m870",
 	"reload_ads_m4",
+	"reload_fire_m4",
 	"switch",
 	"inspect",
 ]
@@ -262,6 +265,14 @@ func _scenario_spray_ads_ak47() -> void:
 	await _spray(96, true)
 
 
+func _scenario_spray_ads_pdw9() -> void:
+	await _spray(96, true)
+
+
+func _scenario_spray_ads_lsw6() -> void:
+	await _spray(96, true)
+
+
 func _taps(count: int, gap: int) -> void:
 	Input.action_press("aim")
 	await _sixtieths(30)
@@ -428,6 +439,21 @@ func _scenario_reload_m870() -> void:
 
 func _scenario_reload_ads_m4() -> void:
 	await _reload(false, true, 160)
+
+
+## A tactical reload fired out of as soon as the rules allow: the trigger is
+## held from the seat onward.
+func _scenario_reload_fire_m4() -> void:
+	await _hold("fire", 12, "fire")
+	await _sixtieths(30)
+	await _hold("reload", 2, "reload")
+	await _sixtieths(80)
+	_mark("fire")
+	Input.action_press("fire")
+	await _sixtieths(60)
+	Input.action_release("fire")
+	_mark("release")
+	await _sixtieths(40)
 
 
 func _scenario_switch() -> void:

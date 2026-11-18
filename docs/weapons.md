@@ -21,6 +21,7 @@ Both parts are aim, and the camera looks along the aim, so the screen centre and
 
 - Aiming takes `ads_time` and works through a reload and a bolt or pump cycle, but not a switch. The aimed amount is eased (`ads_ease`), and the spread, kick scale, sway, zoom, and weapon model all follow the same curve.
 - A magazine reload takes `time` (tactical) or `empty_time` (empty, which ends with the bolt release or charge). Its rounds count at `mag_in` seconds, when the fresh magazine seats; a reload cut short after that keeps them.
+- Once the weapon is back on the shoulder (`WeaponDef::reload_ready_at`: 0.45 s after the seat for a tactical reload, 0.8 s for an empty one, the very end for a bolt action), firing ends the reload and fires: the rest is only the settle into the grip. The first-person clip is back on the shoulder at exactly that moment and eases out when cut.
 - Sprinting does not cancel a reload, and a reload can start while sprinting. Firing ends a sprint and waits `sprint_out_time`.
 - A switch that cuts off a bolt or pump cycle, or an empty reload before its charge, leaves the weapon needing its action worked (`WeaponState::needs_cycle`): it cycles when drawn again, so switching never skips a cycle.
 - Re-selecting the weapon in hand while it is being put away brings it back up from as far as it got.
@@ -42,28 +43,28 @@ The head uses `damage.headshot`. Other zones use the weapon's `zones` (`stomach`
 
 ## Time to kill
 
-Chest hits on a 100-health player with the trigger at the weapon's maximum rate, from `cargo test -p shooter-sim ttk_table -- --nocapture` (`rust/sim/src/weapon/ttk.rs`). Shotgun pellets land in proportion to a 0.25 m torso disc inside the pellet cone. Shots to kill in brackets.
+Chest hits on a 100-health player with the trigger at the weapon's maximum rate, from `cargo test -p shooter-sim ttk_table -- --nocapture` (`rust/sim/src/weapon/ttk.rs`). Shotgun pellets land in proportion to a 0.25 m torso disc inside the pellet cone, and nothing lands past a weapon's `range` (-). Shots to kill in brackets.
 
 | weapon | 5 m | 10 m | 15 m | 20 m | 30 m | 40 m | 50 m | 70 m |
 |---|---|---|---|---|---|---|---|---|
-| ak47 | 200 ms (3) | 200 ms (3) | 300 ms (4) | 300 ms (4) | 300 ms (4) | 300 ms (4) | 400 ms (5) | 400 ms (5) |
-| br3 | 150 ms (3) | 150 ms (3) | 385 ms (4) | 385 ms (4) | 385 ms (4) | 385 ms (4) | 385 ms (4) | 385 ms (4) |
-| lsw6 | 277 ms (4) | 277 ms (4) | 277 ms (4) | 277 ms (4) | 277 ms (4) | 277 ms (4) | 277 ms (4) | 277 ms (4) |
+| ak47 | 200 ms (3) | 300 ms (4) | 300 ms (4) | 300 ms (4) | 300 ms (4) | 300 ms (4) | 400 ms (5) | 400 ms (5) |
+| br3 | 150 ms (3) | 385 ms (4) | 385 ms (4) | 385 ms (4) | 385 ms (4) | 385 ms (4) | 385 ms (4) | 385 ms (4) |
+| lsw6 | 277 ms (4) | 277 ms (4) | 277 ms (4) | 277 ms (4) | 277 ms (4) | 277 ms (4) | 369 ms (5) | 369 ms (5) |
 | m1911 | 300 ms (3) | 300 ms (3) | 300 ms (3) | 450 ms (4) | 450 ms (4) | 450 ms (4) | 450 ms (4) | 450 ms (4) |
 | m4 | 240 ms (4) | 240 ms (4) | 240 ms (4) | 240 ms (4) | 240 ms (4) | 320 ms (5) | 320 ms (5) | 320 ms (5) |
 | m40 | 0 ms (1) | 0 ms (1) | 0 ms (1) | 0 ms (1) | 0 ms (1) | 0 ms (1) | 0 ms (1) | 0 ms (1) |
-| m870 | 0 ms (1) | 550 ms (2) | 1100 ms (3) | 2750 ms (6) | 9350 ms (18) | 17050 ms (32) | 26400 ms (49) | 52250 ms (96) |
-| pdw9 | 200 ms (4) | 200 ms (4) | 200 ms (4) | 267 ms (5) | 467 ms (8) | 467 ms (8) | 467 ms (8) | 467 ms (8) |
+| m870 | 0 ms (1) | 550 ms (2) | 1100 ms (3) | 2750 ms (6) | 9350 ms (18) | 17050 ms (32) | 26400 ms (49) | - |
+| pdw9 | 180 ms (4) | 180 ms (4) | 180 ms (4) | 240 ms (5) | 420 ms (8) | 420 ms (8) | 420 ms (8) | 420 ms (8) |
 
 Identity by class:
 
 | Weapon | Role | Handling (ADS / sprint-out, s) |
 |---|---|---|
 | M4A1 | All-rounder: 4 hits to 30 m, 5 beyond | 0.24 / 0.22 |
-| AK-47 | Hits harder up close (3 to 12 m), falls off further (5 past 42 m), kicks more | 0.27 / 0.25 |
-| BR-3 | One burst kills inside 9 m; a second burst beyond | 0.25 / 0.23 |
-| LSW-6 | Four hits at every range, 75 rounds, slow everything | 0.42 / 0.38 |
-| PDW-9 | Wins to 15 m, falls off past 20 m, quickest handling | 0.19 / 0.16 |
+| AK-47 | Hits harder up close (3 to about 9 m), falls off further (5 past 42 m), kicks more and wanders | 0.27 / 0.25 |
+| BR-3 | One burst kills point-blank (to about 6 m); a second burst beyond | 0.25 / 0.23 |
+| LSW-6 | Four hits to about 49 m, five beyond; 75 rounds, heavy kick, slow everything | 0.42 / 0.38 |
+| PDW-9 | Wins from 7 to 15 m against everything (1000 rpm), falls off past 20 m, quickest handling | 0.19 / 0.16 |
 | M870 | Ten pellets: one shot to about 9 m, two to 12 m; 0.55 s pump | 0.24 / 0.21 |
 | M40 | One shot to head or upper chest at any range | 0.42 / 0.36 |
 | M1911 | Sidearm: 3 hits to 15 m | 0.16 / 0.12 |

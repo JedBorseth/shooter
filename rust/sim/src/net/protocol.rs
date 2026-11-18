@@ -54,7 +54,9 @@ use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState}
 // Version 20 added melee: the button and lunge in inputs, the strike and
 // lunge in the predicted state, who is swinging in player views, and knife
 // kills in the kill feed.
-pub const PROTOCOL_VERSION: u16 = 20;
+// Version 21 changed weapon rules (firing ends a reload once the weapon is
+// back up), so older clients would mispredict.
+pub const PROTOCOL_VERSION: u16 = 21;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).

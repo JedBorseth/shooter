@@ -217,11 +217,14 @@ fn press_aim_changes_no_state() {
 /// The hash a reference run produced. CI runs this on Linux, Windows, and
 /// macOS, so a platform whose float math differs fails here before players
 /// see mispredictions. If a deliberate simulation change moves it, update it.
-// Melee: the script now knifes every few seconds, sometimes with a lunge.
-const REFERENCE_HASH: u64 = 0x52e3_d3c4_b7bf_247b;
+// Melee: the script knifes every few seconds, sometimes with a lunge.
+// Weapon tuning, round 4: firing ends a reload once the weapon is back up,
+// heavier patterns for the M4, AK, BR-3, and LSW-6, new damage ranges, and
+// a fuller aimed breath.
+const REFERENCE_HASH: u64 = 0xc5f5_dd55_0e07_1a5c;
 /// The same for every shot's view angles and aim offset (sub-tick press aims
 /// included).
-const SHOT_REFERENCE_HASH: u64 = 0xb7bf_d803_01ca_2d3b;
+const SHOT_REFERENCE_HASH: u64 = 0x64d4_9e91_ef5c_006f;
 
 #[test]
 fn state_matches_the_reference_on_every_platform() {
