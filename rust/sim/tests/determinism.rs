@@ -223,10 +223,12 @@ fn press_aim_changes_no_state() {
 // a fuller aimed breath.
 // Movement, round 1: stance changes blend over time, slides are earned and
 // capped, and a mantle keeps the direction it started in.
-const REFERENCE_HASH: u64 = 0xd384_6544_3cf8_3da4;
+// Movement, round 2: ground inertia, strafe and backpedal scales, and a
+// sprint that builds and winds down.
+const REFERENCE_HASH: u64 = 0xe7f5_b967_1e91_4f1c;
 /// The same for every shot's view angles and aim offset (sub-tick press aims
 /// included).
-const SHOT_REFERENCE_HASH: u64 = 0x3762_a29c_3255_a18d;
+const SHOT_REFERENCE_HASH: u64 = 0xb253_5880_e16e_03d5;
 
 #[test]
 fn state_matches_the_reference_on_every_platform() {

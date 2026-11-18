@@ -27,7 +27,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-SPRINT = 7.4
+SPRINT = 6.9
 WALK = 5.0
 CROUCH = 2.6
 STAND_EYE = 1.68
@@ -36,12 +36,16 @@ CROUCH_EYE = 0.98
 # Reference lines per panel: (value, label). Bands: (low, high, label).
 SPEED_LINES = [
     (WALK, "walk 5.0"),
-    (SPRINT, "sprint"),
+    (SPRINT, "sprint 6.9"),
     (CROUCH, "crouch 2.6"),
 ]
 SPEED_BANDS = {
     "slide": [(SPRINT * 1.0, SPRINT * 1.1, "slide entry, MW ~1.0-1.1x sprint")],
     "slide_chain": [(0.0, SPRINT, "never faster than a sprint on average")],
+    "strafe_back": [
+        (WALK * 0.8 - 0.05, WALK * 0.8 + 0.05, "IW strafe 0.8 x"),
+        (WALK * 0.7 - 0.05, WALK * 0.7 + 0.05, "IW backpedal 0.7 x"),
+    ],
 }
 EYE_LINES = [(STAND_EYE, "standing eye"), (CROUCH_EYE, "crouched eye")]
 # Shaded time windows: (start, end, label), seconds into the scenario.
@@ -51,6 +55,14 @@ TIME_BANDS = {
         (1.017 + 0.25, 1.017 + 0.35, "MW stand ~0.25-0.35 s"),
     ],
     "slide": [(1.03 + 0.6, 1.03 + 0.7, "MW slide ends ~0.6-0.7 s")],
+    "start_stop": [
+        (0.1 + 0.2, 0.1 + 0.25, "MW to full ~0.2-0.25 s"),
+        (1.1 + 0.25, 1.1 + 0.3, "MW stop ~0.25-0.3 s"),
+    ],
+    "sprint_in_out": [
+        (1.0 + 0.2, 1.0 + 0.3, "MW sprint in ~0.2-0.3 s"),
+        (2.017 + 0.15, 2.017 + 0.25, "rifle sprint-out 0.22 s"),
+    ],
 }
 
 

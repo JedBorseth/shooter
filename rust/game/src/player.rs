@@ -1126,8 +1126,8 @@ impl FpsPlayer {
         });
         self.prediction = Some(prediction);
 
-        if let Reconciled::Corrected { current, .. } = result {
-            body::place(&mut parts, &params.movement, &current);
+        if let Reconciled::Corrected { current, .. } = &result {
+            body::place(&mut parts, &params.movement, current);
             let respawned = !self.state.alive() && current.state.alive();
             self.state = current.state;
             self.on_floor = current.on_floor;

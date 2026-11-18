@@ -61,7 +61,7 @@ use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState}
 // reloading, aim, velocity, weapon) to the debug rewound hitbox poses.
 // Version 23 added each body's stride phase and reload and mantle progress to
 // player views and rewound poses.
-pub const PROTOCOL_VERSION: u16 = 24;
+pub const PROTOCOL_VERSION: u16 = 25;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -328,7 +328,8 @@ pub struct Snapshot {
     /// Tick of the snapshot the remote players are delta-encoded against.
     pub baseline: Option<Tick>,
     /// The receiving player's authoritative state, if they are in the game.
-    pub own: Option<OwnState>,
+    /// Boxed: it is the full simulation state, far larger than the rest.
+    pub own: Option<Box<OwnState>>,
     /// Every other player, sorted by id.
     pub players: Vec<PlayerView>,
 }
@@ -1491,10 +1492,10 @@ fn read_snapshot<'a>(
         None
     };
     let own = if r.bool()? {
-        Some(OwnState {
+        Some(Box::new(OwnState {
             last_input: r.varint()?,
             predicted: read_predicted(r)?,
-        })
+        }))
     } else {
         None
     };
@@ -1704,6 +1705,7 @@ fn write_move_state(w: &mut BitWriter, m: &MoveState) {
     w.f32(m.sprint_time);
     w.f32(m.mantle_dir.x);
     w.f32(m.mantle_dir.y);
+    w.f32(m.sprint_blend);
 }
 
 fn read_move_state(r: &mut BitReader) -> DecodeResult<MoveState> {
@@ -1725,6 +1727,7 @@ fn read_move_state(r: &mut BitReader) -> DecodeResult<MoveState> {
         crouch: r.f32()?,
         sprint_time: r.f32()?,
         mantle_dir: Vec2::new(r.f32()?, r.f32()?),
+        sprint_blend: r.f32()?,
     })
 }
 
@@ -2178,10 +2181,10 @@ mod tests {
         let snapshot = ServerMessage::Snapshot(Snapshot {
             tick: 500,
             baseline: None,
-            own: Some(OwnState {
+            own: Some(Box::new(OwnState {
                 last_input: 42,
                 predicted,
-            }),
+            })),
             players: vec![],
         });
         let bytes = snapshot.encode(&[]);

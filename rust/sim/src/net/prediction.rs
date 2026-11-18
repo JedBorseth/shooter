@@ -47,7 +47,7 @@ struct Entry {
 }
 
 /// What a snapshot did to the prediction.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Reconciled {
     /// Stale or duplicate snapshot; nothing to do.
     Ignored,
@@ -55,7 +55,11 @@ pub enum Reconciled {
     InSync,
     /// The client restarted from the server's state and replayed its inputs.
     /// `previous` is the present-tick position before; `current` the state after.
-    Corrected { previous: Vec3, current: Predicted },
+    /// `current` is boxed: the full simulation state, far larger than the rest.
+    Corrected {
+        previous: Vec3,
+        current: Box<Predicted>,
+    },
 }
 
 impl Prediction {
@@ -128,7 +132,7 @@ impl Prediction {
         }
         Reconciled::Corrected {
             previous,
-            current: state,
+            current: Box::new(state),
         }
     }
 }

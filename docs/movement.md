@@ -11,6 +11,25 @@ The reference is Modern Warfare (2019) and MWII class movement: community
 measurements and the classic IW engine values. Numbers are approximate; the
 aim is the feel, not a copy.
 
+## Ground and sprint
+
+| | Here | Reference |
+| --- | --- | --- |
+| Walk | 5.0 m/s x weapon speed scale (0.88 to 1.05) | rifle walk about 4.7 to 5 m/s |
+| Rest to 95% walk | 0.23 s (accel 8, friction 6) | about 0.2 to 0.25 s |
+| Walk to a stop | 0.28 s (stop speed 2.5) | about 0.25 to 0.3 s |
+| Strafe, backpedal | 0.8 x, 0.7 x | classic IW 0.8, 0.7 |
+| Sprint | 6.9 m/s x weapon speed scale | about 6.5 to 7 m/s |
+| Walk to sprint | 0.22 s (`sprint_blend` over 0.25 s) | about 0.2 to 0.3 s |
+| Sprint to walk | the weapon's `sprint_out_time` (0.12 s pistol to 0.38 s LSW) | heavier guns are slower out |
+| 45-degree diagonal sprint | 0.88 x sprint, turned mostly forward | no full speed on diagonals |
+
+A sprint is a toggle. Its speed cap follows `MoveState::sprint_blend`, which
+builds over `sprint_in_time` while sprinting and winds down over the weapon's
+sprint-out time (read from the weapon file, owned by weapon feel) once it
+ends, so the legs and the gun come out of a run together. While sprinting the
+sideways input counts for half, so a diagonal sprint runs mostly forward.
+
 ## Stance
 
 | | Here | Reference |
@@ -40,7 +59,7 @@ not a ceiling but an overhang's edge over the shoulders is.
 
 | | Here | Reference |
 | --- | --- | --- |
-| Entry speed | 1.1 x sprint x weapon speed scale | about sprint speed, at most 1.1 x |
+| Entry speed | 1.1 x sprint x weapon speed scale (7.6 m/s with a rifle) | about sprint speed, at most 1.1 x |
 | Duration | 0.65 s (holds speed 0.15 s, then friction 1.4) | about 0.6 to 0.7 s |
 | Distance | about 4 m from a rifle sprint | about 3.5 to 4 m |
 | To earn one | 0.3 s of unbroken sprint, 0.5 s on the ground since the last | a short sprint |
