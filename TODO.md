@@ -261,7 +261,8 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 - [x] Zombies: painted short hair and stubble per body.
 - [ ] Zombies: torn cloth and painted wounds.
 - [x] Soldiers: a modelled combat shirt (knit torso, ripstop raglan sleeves with pockets, elbow pads, cuff tabs, and a zipped mock collar) baked from a high-detail source with folds and stitching (`tools/blender_wardrobe.py`).
-- [ ] Soldiers: a modelled combat-boot upper, seams and stitching on the trousers, and 4 to 6 head shapes.
+- [x] Soldiers: modelled combat boots (leather foot, toe cap, heel counter, nylon shaft, laces and eyelets, padded collar) baked from high-detail sources, with the trousers bloused over them.
+- [ ] Soldiers: 4 to 6 head shapes.
 - [x] First-person arms: their own model and atlas (sleeves with sewn cuffs, gloves with knuckle guards, a field watch), and finger shapes per hold (pistol grip with trigger discipline, rifle handguard, pump, two-handed pistol).
 - [x] First-person gloves and sleeves: modelled seams, palm panels, and knuckle padding, and cloth-simulated sleeve folds, baked from high-detail sources into the arms atlas (`tools/blender_hilo.py`).
 

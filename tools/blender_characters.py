@@ -1023,6 +1023,8 @@ def build_kit(spec: dict, human, clothes, ual, head_pieces=()) -> list:
         out += gear.arm_bands(body, {s: (frames[f"DEF-upper_arm.{s}"][0], frames[f"DEF-forearm.{s}"][0]) for s in "LR"})
     if "boot_shafts" in want:
         out += gear.boot_shafts(body, {s: (frames[f"DEF-shin.{s}"][0], frames[f"DEF-foot.{s}"][0]) for s in "LR"})
+    if "blouses" in want:
+        out += gear.blouses(body, {s: (frames[f"DEF-shin.{s}"][0], frames[f"DEF-foot.{s}"][0]) for s in "LR"}, spec["blouses"])
     if "boot_soles" in want:
         out += gear.boot_soles([o for o in clothes if o["role"] == "boots"])
     if "cuffs" in want:
@@ -1082,10 +1084,14 @@ def main():
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         import blender_hilo
 
-        lows, pairs = blender_hilo.build(spec["hilo"], human, rest_frames(ual))
+        lows, pairs = blender_hilo.build(spec["hilo"], human, rest_frames(ual), clothes)
         for o in lows:
             if o.get("bones"):
-                transfer_weights(o, mannequin, allowed=tuple(o["bones"]))
+                transfer_weights(o, mannequin, allowed=tuple(o["bones"]), smooth=4 if o["role"] == "boots" else 0)
+            if o.get("unwrap"):
+                import blender_gear
+
+                blender_gear.unwrap(o)
         clothes += lows
         parts += lows
     keep = spec.get("keep_body")
@@ -1108,6 +1114,11 @@ def main():
         _, *head_pieces = blender_gear.split_head(human, eye_z, eye_z - 0.035)
     for o, part in zip(clothes, spec.get("parts", [])):
         decimate(o, part.get("decimate", 1.0))
+    # Templates that only shaped modelled clothes (the shoe under the boots).
+    for o in [o for o in clothes if o.get("drop")]:
+        clothes.remove(o)
+        parts.remove(o)
+        bpy.data.objects.remove(o)
     kit = build_kit(gear_spec, human, clothes, ual, head_pieces) if gear_spec else []
     for o in kit:
         if o["role"] == "skin":

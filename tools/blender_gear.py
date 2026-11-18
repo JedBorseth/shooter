@@ -788,6 +788,19 @@ def boot_shafts(body: Body, legs: dict[str, tuple[Vector, Vector]]) -> list[bpy.
     return out
 
 
+def blouses(body: Body, legs: dict[str, tuple[Vector, Vector]], height: float) -> list[bpy.types.Object]:
+    """Trouser legs bloused over the tops of modelled boots (blender_wardrobe.py,
+    `height` up the shin from the ankle): a band cast onto the boot's collar and
+    the trouser leg above it."""
+    out = []
+    for side, (knee, ankle) in legs.items():
+        up = (knee - ankle).normalized()
+        centre = ankle + up * (height + 0.008)
+        out.append(band(body, f"blouse_{side}", centre, up, Vector((0, -1, 0)), 0.042, 0.005, 0.004, "pants", "pants",
+                        segments=24, reach=0.09, rigid=f"DEF-shin.{side}"))
+    return out
+
+
 def hull_2d(points: np.ndarray) -> np.ndarray:
     """The convex hull of 2D points, counter-clockwise (monotone chain)."""
     pts = sorted({(round(float(x), 5), round(float(y), 5)) for x, y in points})

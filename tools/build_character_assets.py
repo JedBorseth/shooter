@@ -508,14 +508,15 @@ KITS = {
             "skin": "skin_young_caucasian_male",
             "parts": [
                 {"asset": "cargo", "role": "pants", "subdiv": 1, "tighten": 0.016, "split_legs": 0.82},
-                {"asset": "boots", "role": "boots", "decimate": 0.4},
+                # Only the shape of the foot for the modelled boots.
+                {"asset": "boots", "role": "boots"},
                 {"asset": "gloves", "role": "gloves", "decimate": 0.35},
                 {"asset": "eyes", "role": "eyes", "type": "Eyes"},
             ],
             "keep_body": {"bones": ["DEF-head", "DEF-neck"], "threshold": 0.35},
-            # A modelled combat shirt (tools/blender_wardrobe.py), baked from
-            # its high-detail source.
-            "hilo": {"shirt": {"hem": 1.02, "waist": 1.07, "collar": [1.535, 1.56], "ratio": 0.3}},
+            # A modelled combat shirt and boots (tools/blender_wardrobe.py),
+            # baked from their high-detail sources.
+            "hilo": {"shirt": {"hem": 1.02, "waist": 1.07, "collar": [1.535, 1.56], "ratio": 0.3}, "boots": {"faces": 1150}},
             "body_decimate": 0.32,
             # A close crop under the helmet and stubble on bare faces (paint_hair).
             "hair": {"colour": (0.12, 0.085, 0.06), "front": 0.05, "nape": 0.055, "density": 0.85, "stubble": 0.65},
@@ -528,7 +529,7 @@ KITS = {
                 "plate_carrier": [1.1, 1.4],
                 "belt": 0.99,
                 "knee_pads": 0,
-                "boot_shafts": 0,
+                "blouses": 0.19,
                 "boot_soles": 0,
                 "arm_bands": 0,
                 "knuckles": 0,

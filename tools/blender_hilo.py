@@ -775,7 +775,7 @@ def high_material(name: str, kind: str) -> bpy.types.Material:
     grid.inputs["Scale"].default_value = 900.0 if kind == "glove" else 520.0
     links.new(coord, grid.inputs["Vector"])
     fabric = math_node("MULTIPLY", math_node("ADD", weave.outputs["Fac"], grid.outputs["Fac"]), 0.5)
-    if kind in ("sleeve", "shirt"):
+    if kind in ("sleeve", "shirt", "boot"):
         # Ripstop: a heavier thread every 6 mm both ways.
         rip = nodes.new("ShaderNodeTexBrick")
         rip.inputs["Scale"].default_value = 160.0
@@ -785,7 +785,7 @@ def high_material(name: str, kind: str) -> bpy.types.Material:
         rip.offset = 0.0
         links.new(coord, rip.inputs["Vector"])
         fabric = math_node("ADD", math_node("MULTIPLY", fabric, 0.6), math_node("MULTIPLY", math_node("SUBTRACT", 1.0, rip.outputs["Fac"]), 0.8))
-    if kind == "shirt":
+    if kind in ("shirt", "boot"):
         # The third-person atlas has texels of about 1.5 mm, where a weave
         # only aliases into a grid: the sleeves keep the ripstop's heavier
         # threads, and the torso's knit is a soft grain.
@@ -813,13 +813,13 @@ def high_material(name: str, kind: str) -> bpy.types.Material:
                        math_node("MULTIPLY", velcro.outputs["Fac"], velcro_w))
     bump = nodes.new("ShaderNodeBump")
     # Leather grain reads; the knit and ripstop stay a texture, not a grid.
-    strength = math_node("ADD", 0.06 if kind == "shirt" else 0.12, math_node("MULTIPLY", leather_w, 0.12))
+    strength = math_node("ADD", 0.06 if kind in ("shirt", "boot") else 0.12, math_node("MULTIPLY", leather_w, 0.12))
     links.new(strength, bump.inputs["Strength"])
     bump.inputs["Distance"].default_value = 0.0004
     links.new(height, bump.inputs["Height"])
     links.new(bump.outputs[0], bsdf.inputs["Normal"])
     # Albedo: the panel's value, a touch darker in the weave's recesses.
-    contrast = 0.08 if kind == "shirt" else 0.18
+    contrast = 0.08 if kind in ("shirt", "boot") else 0.18
     shade = math_node("ADD", 1.0 - contrast * 0.8, math_node("MULTIPLY", height, contrast))
     albedo = math_node("MULTIPLY", sep.outputs[0], shade)
     comb = nodes.new("ShaderNodeCombineColor")
@@ -960,7 +960,7 @@ def composite(baked: dict[str, np.ndarray], images: dict[str, bpy.types.Image]):
         log(f"composited {name}: {mask.mean() * 100:.1f}% of the atlas from high-detail meshes")
 
 
-def build(spec: dict, human, frames: dict):
+def build(spec: dict, human, frames: dict, clothes: list = ()):
     """Every glove and sleeve the kit asks for. Returns (game meshes, (game
     mesh, high-detail mesh) pairs)."""
     lows, pairs = [], []
@@ -970,6 +970,17 @@ def build(spec: dict, human, frames: dict):
         lo, hi = blender_wardrobe.combat_shirt(human, frames, **spec["shirt"])
         lows.append(lo)
         pairs.append((lo, hi))
+    if spec.get("boots"):
+        import blender_wardrobe
+
+        # Boots over the fitted shoe, which is then dropped (see main in
+        # blender_characters.py).
+        template = next(o for o in clothes if o.get("source") == "boots")
+        pants = next(o for o in clothes if o.get("role") == "pants")
+        for lo, hi in blender_wardrobe.combat_boots(template, pants, frames, **spec["boots"]):
+            lows.append(lo)
+            pairs.append((lo, hi))
+        template["drop"] = True
     for side in "LR":
         if spec.get("gloves"):
             lo, hi = glove(human, frames, side)
@@ -985,7 +996,7 @@ def build(spec: dict, human, frames: dict):
     # The game meshes keep their forms with fewer triangles: the bake carries
     # the rest.
     for lo in lows:
-        if lo.name.startswith("shirt"):
+        if lo.name.startswith(("shirt", "boot")):
             continue  # decimated once the gear has covered part of it (build_kit)
         ratio = spec.get("glove_ratio" if lo.name.startswith("glove") else "sleeve_ratio", 1.0)
         if ratio < 1.0:
