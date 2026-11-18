@@ -9,8 +9,8 @@ Y-up conversion). `rust/game/src/knife.rs` loads it and puts it in the support
 hand.
 
 The blade is a lofted cross-section (spine, flat, grind line, edge) along a
-clip-point profile, split into the blackened flats and spine and a bright
-sharpened bevel. The grip is a lofted oval with finger grooves, wrapped in
+clip-point profile, split into the blackened flats, spine, and grind and a narrow
+bright sharpened bevel. The grip is a lofted oval with finger grooves, wrapped in
 stacked leather washers with thin dark spacers, between a steel guard with
 rounded quillons and a pommel nut. Everything is built here with bmesh, so
 the knife has no source files to fetch.
@@ -33,6 +33,8 @@ OUT = ROOT / "godot" / "assets" / "weapons" / "knife" / "knife.glb"
 # Blade stations from the guard to the tip: distance along the blade, spine
 # height, grind-line height, edge height, half-thickness at the spine.
 BLADE_BASE = 0.059
+# Height of the bright sharpened (secondary) bevel above the edge, metres.
+SECONDARY_BEVEL = 0.0022
 BLADE = [
     (0.000, 0.0125, -0.0035, -0.0165, 0.0026),
     (0.010, 0.0125, -0.0040, -0.0170, 0.0026),
@@ -99,28 +101,36 @@ def mesh_object(name: str, bm: bmesh.types.BMesh, mat: bpy.types.Material, smoot
 
 
 def blade(coated, steel):
-    """One closed mesh: flats and spine in `coated`, the sharpened bevels in
-    `steel` (material slot 1)."""
+    """One closed mesh: the flats, spine, and primary grind in `coated`, and
+    only the narrow secondary bevel along the edge in `steel` (material slot
+    1). A bright bevel as wide as the grind caught the sun like a mirror and
+    bloomed white in first person; real blackened knives show bare steel
+    only on the last couple of millimetres."""
     bm = bmesh.new()
     rings = []
     for d, spine, grind, edge, t in BLADE:
         y = BLADE_BASE + d
-        # A flat grind: full thickness down to the grind line, then a bevel
-        # that thins to a 0.3 mm edge.
+        # A flat grind: full thickness down to the grind line, a coated
+        # primary bevel, then a short sharpened bevel to a 0.3 mm edge.
+        secondary = edge + SECONDARY_BEVEL
+        st = max(t * SECONDARY_BEVEL / max(grind - edge, 1e-4), 0.00045)
         rings.append(
             [
                 bm.verts.new((-t, y, spine)),
                 bm.verts.new((t, y, spine)),
                 bm.verts.new((t, y, grind)),
+                bm.verts.new((st, y, secondary)),
                 bm.verts.new((0.00015, y, edge)),
                 bm.verts.new((-0.00015, y, edge)),
+                bm.verts.new((-st, y, secondary)),
                 bm.verts.new((-t, y, grind)),
             ]
         )
-    sharpened = {2, 3, 4}
+    sharpened = {3, 4, 5}
+    sides = len(rings[0])
     for a, b in zip(rings, rings[1:]):
-        for p in range(6):
-            q = (p + 1) % 6
+        for p in range(sides):
+            q = (p + 1) % sides
             face = bm.faces.new((a[p], a[q], b[q], b[p]))
             face.material_index = 1 if p in sharpened else 0
     # Close the tip and the ricasso face against the guard.
@@ -221,7 +231,8 @@ def main() -> None:
     bpy.ops.wm.read_factory_settings(use_empty=True)
     # Colours are linear (glTF base colours), not sRGB.
     coated = material("KnifeCoated", (0.008, 0.008, 0.009), 0.55, 0.5)
-    steel = material("KnifeEdge", (0.48, 0.49, 0.52), 1.0, 0.38)
+    # The sharpened edge: honed, not polished, so it glints without blooming.
+    steel = material("KnifeEdge", (0.42, 0.43, 0.45), 1.0, 0.5)
     leather = material("KnifeLeather", (0.073, 0.03, 0.012), 0.0, 0.72)
     spacer = material("KnifeSpacer", (0.003, 0.003, 0.0035), 0.0, 0.85)
     dark = material("KnifeSteel", (0.012, 0.012, 0.013), 0.85, 0.4)
