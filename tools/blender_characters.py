@@ -486,6 +486,78 @@ def decimate(obj, ratio: float):
     log(f"{obj.name}: {before} -> {len(obj.data.polygons)} faces")
 
 
+# --- Head shapes ------------------------------------------------------------------
+
+
+def point_coords(obj) -> np.ndarray:
+    a = np.zeros(len(obj.data.vertices) * 3)
+    obj.data.vertices.foreach_get("co", a)
+    return a.reshape(-1, 3)
+
+
+def point_normals(obj) -> np.ndarray:
+    a = np.zeros(len(obj.data.vertices) * 3)
+    obj.data.vertices.foreach_get("normal", a)
+    return a.reshape(-1, 3)
+
+
+def set_vector_attribute(obj, name: str, values: np.ndarray):
+    me = obj.data
+    attr = me.attributes.get(name) or me.attributes.new(name, "FLOAT_VECTOR", "POINT")
+    attr.data.foreach_set("vector", values.reshape(-1).astype(np.float32))
+
+
+def add_head_shapes(human, clothes, spec: dict, assets: dict[str, str], ual) -> int:
+    """Other faces on the same head, as offsets the game blends between
+    (blend shapes, `head<k>` and `headn<k>` vertex attributes here). Each is
+    the same MakeHuman human built again with other macros (`spec["heads"]`,
+    each merged over `spec["macro"]`) and fitted the same way, so its mesh has
+    the base human's topology. Only the head moves: the offsets are weighted
+    by the head bone's weight, aligned so the eyes stay where they are, and
+    kept from growing out of the helmet above the brow or into the glasses
+    round the eyes."""
+    eyes = next(o for o in clothes if o["role"] == "eyes")
+    base, base_n = point_coords(human), point_normals(human)
+    base_eyes = point_coords(eyes)
+    eye_z = float(base_eyes[:, 2].mean())
+    names, w = group_weights(human)
+    mask = np.clip(w[:, names.index("DEF-head")] if "DEF-head" in names else np.zeros(len(base)), 0.0, 1.0)
+    front = base[:, 1] < (base_eyes[:, 1].mean() + 0.03)
+    for k, macro in enumerate(spec["heads"]):
+        vspec = {key: v for key, v in spec.items() if key not in ("skin", "heads")}
+        merged = json.loads(json.dumps(spec.get("macro", {})))
+        for key, v in macro.items():
+            if key == "race":
+                merged["race"] = dict(v)
+            else:
+                merged[key] = v
+        vspec["macro"] = merged
+        vh, vrig, vclothes = make_human(vspec, assets)
+        fit_to_skeleton(vh, vrig, vclothes, ual)
+        vco = point_coords(vh)
+        if len(vco) != len(base):
+            raise SystemExit(f"head shape {k}: {len(vco)} vertices, the base has {len(base)}")
+        veyes = next(o for o in vclothes if o["role"] == "eyes")
+        de = point_coords(veyes) - base_eyes
+        align = de.mean(axis=0)
+        d = (vco - base - align) * mask[:, None]
+        de = de - align
+        dn = (point_normals(vh) - base_n) * mask[:, None]
+        # Never further out than the base head under the helmet, nor in front
+        # of it at the eyes, where the glasses sit.
+        out = np.einsum("ij,ij->i", d, base_n)
+        capped = (base[:, 2] > eye_z + 0.02) | (front & (np.abs(base[:, 2] - eye_z) < 0.025))
+        d -= np.where(capped & (out > 0), out, 0.0)[:, None] * base_n
+        set_vector_attribute(human, f"head{k}", d)
+        set_vector_attribute(human, f"headn{k}", dn)
+        set_vector_attribute(eyes, f"head{k}", de)
+        set_vector_attribute(eyes, f"headn{k}", np.zeros_like(de))
+        log(f"head shape {k}: largest offset {np.linalg.norm(d, axis=1).max() * 1000:.1f} mm")
+        for o in [vh, *vclothes]:
+            bpy.data.objects.remove(o)
+    return len(spec["heads"])
+
+
 # --- Hair and stubble -------------------------------------------------------------
 
 
@@ -957,6 +1029,15 @@ def export_npz(obj, path: Path, roles: list[str]):
     me.attributes["part_role"].data.foreach_get("value", face_role)
     me.attributes["part_group"].data.foreach_get("value", face_group)
     names, w = group_weights(obj)
+    morphs = []
+    k = 0
+    while f"head{k}" in me.attributes:
+        pos = np.zeros(len(me.vertices) * 3, dtype=np.float32)
+        me.attributes[f"head{k}"].data.foreach_get("vector", pos)
+        nrm_d = np.zeros(len(me.vertices) * 3, dtype=np.float32)
+        me.attributes[f"headn{k}"].data.foreach_get("vector", nrm_d)
+        morphs.append((pos.reshape(-1, 3), nrm_d.reshape(-1, 3)))
+        k += 1
 
     def yup(a):
         return np.column_stack([a[:, 0], a[:, 2], -a[:, 1]])
@@ -977,6 +1058,9 @@ def export_npz(obj, path: Path, roles: list[str]):
         parts[f"p{k}_bones"] = np.array(names)
         parts[f"p{k}_indices"] = inverse.reshape(-1, 3)
         parts[f"p{k}_meta"] = np.array([roles[role], str(group), f"{roles[role]}_{group}"])
+        if morphs:
+            parts[f"p{k}_morph_pos"] = np.stack([yup(mp[vi[sel]]) for mp, _ in morphs])
+            parts[f"p{k}_morph_nrm"] = np.stack([yup(mn[vi[sel]]) for _, mn in morphs])
         log(f"export {roles[role]} group {group}: {len(first)} vertices, {len(faces)} triangles")
         k += 1
     parts["count"] = np.array(k)
@@ -1077,6 +1161,8 @@ def main():
     for o, part in zip(clothes, spec.get("parts", [])):
         if part.get("split_legs"):
             split_legs(o, part["split_legs"])
+    if spec.get("heads"):
+        add_head_shapes(human, clothes, spec, config["assets"], ual)
     pairs = []
     if spec.get("hilo"):
         # Modelled gloves and sleeves with high-detail sources to bake from

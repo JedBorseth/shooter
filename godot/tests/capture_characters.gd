@@ -8,7 +8,7 @@ extends SceneTree
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
 ##     --script res://tests/capture_characters.gd
 ## CAPTURE_SETS picks sections (comma list of lineups, poses, turntable, hands,
-## fp, horde, bodies; default all).
+## fp, horde, bodies, faces; default all).
 
 const SOLDIER := preload("res://scenes/characters/soldier.tscn")
 const DISTANCES := [2.0, 10.0, 30.0, 60.0]
@@ -45,6 +45,8 @@ func _run() -> void:
 		await _horde()
 	if _wants("bodies"):
 		await _bodies()
+	if _wants("faces"):
+		await _faces()
 	settings.reset_to_defaults()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://capture_characters.cfg"))
 	quit()
@@ -438,6 +440,50 @@ func _bodies() -> void:
 		await _shot("bodies_face_%02d" % i)
 	for rig in bodies:
 		rig.queue_free()
+	camera.queue_free()
+	await _close(scene)
+
+
+func _faces() -> void:
+	# Each of the soldier's faces (head shapes and their skin tones,
+	# palette.rs HEAD_TONES), bare-faced, in a row per team, then close up.
+	var tones := [
+		Vector3(1.0, 1.0, 1.0),
+		Vector3(0.42, 0.34, 0.29),
+		Vector3(0.93, 0.85, 0.74),
+		Vector3(0.98, 0.94, 0.9),
+		Vector3(0.68, 0.56, 0.46),
+	]
+	var scene := await _open("res://scenes/main.tscn")
+	var camera := _camera(scene, 30.0)
+	for team in 2:
+		var row: Array[SoldierRig] = []
+		for i in tones.size():
+			var soldier := SOLDIER.instantiate() as SoldierRig
+			scene.add_child(soldier)
+			soldier.set_team_index(team)
+			soldier.global_position = Vector3(-2.4 + i * 1.2, 0, 10)
+			row.append(soldier)
+		for frame in 30:
+			for soldier in row:
+				soldier.drive({"weapon": "m4", "yaw": PI}, 1.0 / 60.0)
+			await process_frame
+		for i in row.size():
+			var body := row[i].find_child("Body", true, false) as MeshInstance3D
+			body.set_instance_shader_parameter("hidden_parts", 6)
+			body.set_instance_shader_parameter("skin_tone", tones[i])
+			for k in body.get_blend_shape_count():
+				body.set_blend_shape_value(k, 1.0 if k + 1 == i else 0.0)
+		await _frames(2)
+		camera.look_at_from_position(Vector3(0, 1.6, 15.5), Vector3(0, 1.45, 10))
+		await _shot("faces_%s_row" % TEAMS[team])
+		for i in row.size():
+			var at := row[i].global_position
+			camera.look_at_from_position(at + Vector3(0.25, 1.62, 1.1), at + Vector3(0, 1.58, 0))
+			await _shot("faces_%s_%d" % [TEAMS[team], i])
+		for soldier in row:
+			soldier.queue_free()
+		await _frames(2)
 	camera.queue_free()
 	await _close(scene)
 

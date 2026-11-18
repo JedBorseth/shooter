@@ -6,14 +6,16 @@ extends SceneTree
 ## animations, IK, and hit zones were measured on); each draws one mesh with one
 ## surface and one material, plus a decimated far mesh for the third-person
 ## kits; triangle budgets hold; a soldier gets its team's atlas material with a
-## per-character kit; a zombie wears the zombie kit; and every zombie body
-## variant is retargeted onto the same skeleton with a compressed atlas.
+## per-character kit and face (head shapes as blend shapes); a zombie wears
+## the zombie kit; and every zombie body variant is retargeted onto the same
+## skeleton with a compressed atlas.
 ## Run from the repo root:
 ##   godot --headless --path godot --script res://tests/character_models_test.gd
 
 const SOLDIER_TRIANGLES := 26000
 const ARMS_TRIANGLES := 26000
 const ZOMBIE_TRIANGLES := 14000
+const SOLDIER_HEAD_SHAPES := 4
 
 var _failures: PackedStringArray = []
 
@@ -123,6 +125,23 @@ func _run() -> void:
 		)
 		_check(
 			body.get_instance_shader_parameter("hidden_parts") != null, "each soldier picks its kit"
+		)
+		# Faces: the soldier's head shapes are blend shapes on the near mesh,
+		# and each soldier picks one with a skin tone (palette.rs HEAD_TONES).
+		_check(
+			body.get_blend_shape_count() == SOLDIER_HEAD_SHAPES,
+			(
+				"the soldier has %d head shapes (has %d)"
+				% [SOLDIER_HEAD_SHAPES, body.get_blend_shape_count()]
+			)
+		)
+		var weights := 0.0
+		for i in body.get_blend_shape_count():
+			weights += body.get_blend_shape_value(i)
+		_check(weights <= 1.0, "a soldier blends at most one head shape")
+		_check(
+			body.get_instance_shader_parameter("skin_tone") is Vector3,
+			"each soldier has a skin tone"
 		)
 		materials.append(material)
 	if materials.size() == 2:
