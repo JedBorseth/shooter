@@ -60,8 +60,11 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Footstep sounds, with surface types and a cadence tied to speed.
 - [x] Fall damage and a landing camera dip scaled by fall speed.
 - [x] Slide camera tilt and slide sound.
-- [x] Slide-cancel: jump (or crouch again) during a slide to stand up with its speed and sprint on, without leaping; the next press jumps. Under a low ceiling the jump waits for headroom, and at a ledge it still mantles. Both start the slide cooldown.
+- [x] Slide-cancel: jump (or crouch again) during a slide to stand up with its speed (up to a sprint) and sprint on, without leaping; the next press jumps. Under a low ceiling the jump waits for headroom, and at a ledge it still mantles. Both start the slide cooldown.
 - [x] **good first task** Head bob and strafe tilt for the camera (small, with a settings toggle).
+- [x] Stance changes take time (0.25 s down, 0.3 s up) on one crouch blend that drives the capsule, the camera, the shot origin, the hit zones, and the third-person body together ([docs/movement.md](docs/movement.md)).
+- [x] Slides are earned (0.3 s of sprint) and start at 1.1x sprint scaled by weapon weight; a slide-cancel keeps no more than sprint speed, so chained cancels cannot outrun a sprint.
+- [x] A mantle keeps the direction it started in; the server's player bodies collide like the client's; a respawn resets every camera offset.
 
 ### Feel and polish
 

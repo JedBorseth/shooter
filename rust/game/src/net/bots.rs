@@ -241,7 +241,8 @@ pub struct BotPlayer {
     pub team: Team,
     pub alive: bool,
     pub feet: Vector3,
-    pub stance: Stance,
+    /// The crouch blend (`MoveState::crouch`), which sets the eye height.
+    pub crouch: f32,
     /// The lane a bot is following (`BotWorld::lanes`), if any. Humans have
     /// none.
     pub lane: Option<usize>,
@@ -249,7 +250,7 @@ pub struct BotPlayer {
 
 impl BotPlayer {
     fn eye(&self, params: &PlayerParams) -> Vector3 {
-        self.feet + Vector3::UP * params.movement.eye_height(self.stance)
+        self.feet + Vector3::UP * params.movement.eye_height_at(self.crouch)
     }
 
     /// Where a bot aims on this player: the head, or the middle of the chest.

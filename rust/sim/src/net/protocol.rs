@@ -61,7 +61,7 @@ use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState}
 // reloading, aim, velocity, weapon) to the debug rewound hitbox poses.
 // Version 23 added each body's stride phase and reload and mantle progress to
 // player views and rewound poses.
-pub const PROTOCOL_VERSION: u16 = 23;
+pub const PROTOCOL_VERSION: u16 = 24;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -360,6 +360,9 @@ pub struct PlayerView {
     pub yaw: u16,
     pub pitch: u16,
     pub stance: Stance,
+    /// How far down the body is between standing and crouched, 0 to 255
+    /// (`MoveState::crouch`): the drawn body and its hit zones follow it.
+    pub crouch: u8,
     pub sprinting: bool,
     pub on_floor: bool,
     /// Aim-down-sights amount, 0 to 255.
@@ -408,6 +411,7 @@ impl PlayerView {
             yaw: angle_to_u16(yaw),
             pitch: angle_to_u16(pitch),
             stance: p.state.movement.stance,
+            crouch: (p.state.movement.crouch.clamp(0.0, 1.0) * 255.0).round() as u8,
             sprinting: p.state.movement.sprinting,
             on_floor: p.on_floor,
             ads: (combat.ads.clamp(0.0, 1.0) * 255.0).round() as u8,
@@ -460,6 +464,11 @@ impl PlayerView {
 
     pub fn ads(&self) -> f32 {
         f32::from(self.ads) / 255.0
+    }
+
+    /// The crouch blend, 0 standing to 1 crouched (`MoveState::crouch`).
+    pub fn crouch(&self) -> f32 {
+        f32::from(self.crouch) / 255.0
     }
 }
 
@@ -1544,6 +1553,7 @@ fn write_view_delta(w: &mut BitWriter, v: &PlayerView, base: &PlayerView) {
     let flags = |p: &PlayerView| {
         (
             p.stance,
+            p.crouch,
             p.sprinting,
             p.on_floor,
             p.ads,
@@ -1558,6 +1568,7 @@ fn write_view_delta(w: &mut BitWriter, v: &PlayerView, base: &PlayerView) {
     w.bool(flags_changed);
     if flags_changed {
         write_stance(w, v.stance);
+        w.u8(v.crouch);
         w.bool(v.sprinting);
         w.bool(v.on_floor);
         w.u8(v.ads);
@@ -1604,6 +1615,7 @@ fn read_view_delta(r: &mut BitReader, base: &PlayerView) -> DecodeResult<PlayerV
     }
     if r.bool()? {
         v.stance = read_stance(r)?;
+        v.crouch = r.u8()?;
         v.sprinting = r.bool()?;
         v.on_floor = r.bool()?;
         v.ads = r.u8()?;
@@ -1688,6 +1700,10 @@ fn write_move_state(w: &mut BitWriter, m: &MoveState) {
     w.f32(m.lunge_time);
     w.f32(m.lunge_velocity.x);
     w.f32(m.lunge_velocity.y);
+    w.f32(m.crouch);
+    w.f32(m.sprint_time);
+    w.f32(m.mantle_dir.x);
+    w.f32(m.mantle_dir.y);
 }
 
 fn read_move_state(r: &mut BitReader) -> DecodeResult<MoveState> {
@@ -1706,6 +1722,9 @@ fn read_move_state(r: &mut BitReader) -> DecodeResult<MoveState> {
         mantle_rise: r.f32()?,
         lunge_time: r.f32()?,
         lunge_velocity: Vec2::new(r.f32()?, r.f32()?),
+        crouch: r.f32()?,
+        sprint_time: r.f32()?,
+        mantle_dir: Vec2::new(r.f32()?, r.f32()?),
     })
 }
 
@@ -1895,6 +1914,10 @@ fn write_activity(w: &mut BitWriter, a: &Activity) {
     w.u8(clock::stride_to_u8(a.progress.stride));
     w.u8(clock::to_u8(a.progress.reload));
     w.u8(clock::to_u8(a.progress.mantle));
+    w.bool(a.crouch.is_some());
+    if let Some(crouch) = a.crouch {
+        w.u8(clock::to_u8(crouch));
+    }
 }
 
 fn read_activity(r: &mut BitReader) -> DecodeResult<Activity> {
@@ -1914,6 +1937,11 @@ fn read_activity(r: &mut BitReader) -> DecodeResult<Activity> {
             stride: clock::stride_from_u8(r.u8()?),
             reload: clock::from_u8(r.u8()?),
             mantle: clock::from_u8(r.u8()?),
+        },
+        crouch: if r.bool()? {
+            Some(clock::from_u8(r.u8()?))
+        } else {
+            None
         },
     })
 }
@@ -2577,6 +2605,7 @@ mod tests {
                             ads: 128.0 / 255.0,
                             velocity: Vec3::new(1.5, -0.25, -4.0),
                             weapon: Some(WeaponId(3)),
+                            crouch: Some(clock::from_u8(clock::to_u8(0.5))),
                             progress: Progress {
                                 stride: 0.25,
                                 reload: 51.0 / 255.0,

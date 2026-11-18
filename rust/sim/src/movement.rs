@@ -108,11 +108,32 @@ pub struct MoveState {
     /// Horizontal velocity of the lunge (`x`, `z`). It stays set for the tick
     /// after the lunge ends, which takes the speed off.
     pub lunge_velocity: Vec2,
+    /// How far down the body is, 0 standing to 1 crouched (or sliding). The
+    /// stance flips at once; this follows it over `crouch_down_time` or
+    /// `stand_up_time`, and drives the capsule, the eye (camera and shot
+    /// origin), the hit zones, and the speed cap together.
+    pub crouch: f32,
+    /// Seconds of unbroken sprint on the ground. A slide has to be earned
+    /// with `slide_min_sprint` of it.
+    pub sprint_time: f32,
+    /// Horizontal direction (`x`, `z`) of the current mantle, fixed when it
+    /// starts so turning mid-climb does not pull the player off the wall.
+    pub mantle_dir: Vec2,
 }
 
 impl MoveState {
     pub fn mantling(&self) -> bool {
         self.mantle_time > 0.0
+    }
+
+    /// Capsule height now, from the crouch blend.
+    pub fn height(&self, params: &MoveParams) -> f32 {
+        params.height_at(self.crouch)
+    }
+
+    /// Eye height above the feet now: where the camera sits and shots leave from.
+    pub fn eye_height(&self, params: &MoveParams) -> f32 {
+        params.eye_height_at(self.crouch)
     }
 
     pub fn lunging(&self) -> bool {
@@ -141,15 +162,26 @@ pub struct MoveParams {
     pub jump_buffer_time: f32,
     /// A jump pressed up to this long after walking off a ledge still happens.
     pub coyote_time: f32,
-    /// Horizontal speed a slide starts at (or the current speed, if faster).
-    pub slide_speed: f32,
+    /// A slide starts at this multiple of the sprint speed (with the
+    /// weapon's speed scale), whatever the speed before it.
+    pub slide_speed_ratio: f32,
     /// Sprint speed fraction required to start a slide.
     pub slide_min_speed_ratio: f32,
+    /// Seconds of unbroken sprint needed before a crouch press slides.
+    pub slide_min_sprint: f32,
     pub slide_duration: f32,
+    /// Seconds at the start of a slide before friction takes hold.
+    pub slide_hold: f32,
     pub slide_friction: f32,
+    /// Seconds on the ground after a slide before the next one.
     pub slide_cooldown: f32,
     pub stand_height: f32,
     pub crouch_height: f32,
+    /// Seconds to go from standing to crouched, and back up.
+    pub crouch_down_time: f32,
+    pub stand_up_time: f32,
+    /// Seconds to drop into a slide (faster than a crouch).
+    pub slide_down_time: f32,
     /// Distance from the top of the capsule down to the eyes.
     pub eye_from_top: f32,
     /// Ledges from this high to `mantle_max` (above the feet) can be climbed.
@@ -178,13 +210,18 @@ impl Default for MoveParams {
             jump_velocity: 6.2,
             jump_buffer_time: 0.1,
             coyote_time: 0.1,
-            slide_speed: 9.5,
+            slide_speed_ratio: 1.1,
             slide_min_speed_ratio: 0.85,
-            slide_duration: 0.75,
+            slide_min_sprint: 0.3,
+            slide_duration: 0.65,
+            slide_hold: 0.15,
             slide_friction: 1.4,
-            slide_cooldown: 0.4,
+            slide_cooldown: 0.5,
             stand_height: 1.8,
             crouch_height: 1.1,
+            crouch_down_time: 0.25,
+            stand_up_time: 0.3,
+            slide_down_time: 0.15,
             eye_from_top: 0.12,
             mantle_min: 0.5,
             mantle_max: 1.35,
@@ -204,10 +241,29 @@ impl MoveParams {
         }
     }
 
-    /// Eye height above the feet for a stance.
+    /// Eye height above the feet for a stance, fully in it.
     pub fn eye_height(&self, stance: Stance) -> f32 {
         self.height(stance) - self.eye_from_top
     }
+
+    /// Capsule height partway down: `crouch` 0 standing to 1 crouched.
+    pub fn height_at(&self, crouch: f32) -> f32 {
+        let t = crouch_ease(crouch);
+        self.stand_height + (self.crouch_height - self.stand_height) * t
+    }
+
+    /// Eye height partway down: `crouch` 0 standing to 1 crouched.
+    pub fn eye_height_at(&self, crouch: f32) -> f32 {
+        self.height_at(crouch) - self.eye_from_top
+    }
+}
+
+/// The shape of a stance change over its crouch blend: starts and ends
+/// gently (smoothstep). The capsule, the eye, the hit zones' and the drawn
+/// body's crouch all follow this one curve.
+pub fn crouch_ease(crouch: f32) -> f32 {
+    let t = crouch.clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
 }
 
 /// Unit vectors for a yaw: (forward, right), on the horizontal plane.
@@ -224,13 +280,53 @@ pub fn step(
     params: &MoveParams,
     dt: f32,
 ) -> Vec3 {
+    let velocity = step_rules(state, input, env, params, dt);
+    step_crouch(state, env, params, dt);
+    if !state.sprinting {
+        state.sprint_time = 0.0;
+    } else if env.on_floor {
+        state.sprint_time += dt;
+    }
+    velocity
+}
+
+/// Moves the crouch blend toward the stance. Standing up waits while there
+/// is no headroom (the stance stays standing, so it finishes once clear).
+fn step_crouch(state: &mut MoveState, env: MoveEnv, params: &MoveParams, dt: f32) {
+    let target = if state.stance == Stance::Standing {
+        0.0
+    } else {
+        1.0
+    };
+    if target > state.crouch {
+        let time = if state.stance == Stance::Sliding {
+            params.slide_down_time
+        } else {
+            params.crouch_down_time
+        };
+        state.crouch = (state.crouch + dt / time.max(1e-3)).min(1.0);
+    } else if target < state.crouch && (env.can_stand || state.mantling()) {
+        state.crouch = (state.crouch - dt / params.stand_up_time.max(1e-3)).max(0.0);
+    }
+}
+
+fn step_rules(
+    state: &mut MoveState,
+    input: &MoveInput,
+    env: MoveEnv,
+    params: &MoveParams,
+    dt: f32,
+) -> Vec3 {
     let jump_pressed = input.jump && !state.jump_held;
     let crouch_pressed = input.crouch && !state.crouch_held;
     let sprint_pressed = input.sprint && !state.sprint_held;
     state.jump_held = input.jump;
     state.crouch_held = input.crouch;
     state.sprint_held = input.sprint;
-    state.slide_cooldown = (state.slide_cooldown - dt).max(0.0);
+    // The cooldown runs only on the ground, so a jump cannot wait it out.
+    if env.on_floor {
+        state.slide_cooldown = (state.slide_cooldown - dt).max(0.0);
+    }
     state.jump_buffer = if jump_pressed {
         params.jump_buffer_time
     } else {
@@ -248,7 +344,7 @@ pub fn step(
     let horizontal_speed = horizontal(state.velocity).length();
 
     if state.mantling() {
-        return mantle(state, forward, params, dt);
+        return mantle(state, params, dt);
     }
 
     if let Some(offset) = input.lunge {
@@ -308,7 +404,8 @@ pub fn step(
         state.mantle_time = time;
         // A little over the ledge, so the feet clear its edge.
         state.mantle_rise = (height + 0.15) / time;
-        return mantle(state, forward, params, dt);
+        state.mantle_dir = Vec2::new(forward.x, forward.z);
+        return mantle(state, params, dt);
     }
 
     if slide_cancelled {
@@ -330,10 +427,13 @@ pub fn step(
 
     if env.on_floor && !jumped {
         state.velocity.y = 0.0;
-        let friction = if state.stance == Stance::Sliding {
-            params.slide_friction
-        } else {
+        let friction = if state.stance != Stance::Sliding {
             params.friction
+        } else if state.slide_time > params.slide_duration - params.slide_hold {
+            // The slide holds its entry speed for a moment before it bleeds off.
+            0.0
+        } else {
+            params.slide_friction
         };
         apply_friction(&mut state.velocity, friction, params.stop_speed, dt);
         if state.stance != Stance::Sliding {
@@ -384,11 +484,13 @@ fn update_stance(
 
     match state.stance {
         Stance::Standing => {
-            let fast_enough =
-                horizontal_speed >= params.sprint_speed * params.slide_min_speed_ratio;
+            // Weapon weight scales the slide like the sprint it comes from.
+            let sprint_speed = params.sprint_speed * input.speed_multiplier;
+            let fast_enough = horizontal_speed >= sprint_speed * params.slide_min_speed_ratio;
             if crouch_pressed
                 && env.on_floor
                 && state.sprinting
+                && state.sprint_time >= params.slide_min_sprint
                 && fast_enough
                 && state.slide_cooldown <= 0.0
             {
@@ -398,7 +500,9 @@ fn update_stance(
                 let dir = horizontal(state.velocity)
                     .try_normalize()
                     .unwrap_or(forward);
-                let speed = horizontal_speed.max(params.slide_speed);
+                // Always the same entry speed: speed carried in from an
+                // earlier slide never stacks on top of it.
+                let speed = sprint_speed * params.slide_speed_ratio;
                 state.velocity = Vec3::new(dir.x * speed, state.velocity.y, dir.z * speed);
             } else if crouch_pressed {
                 state.stance = Stance::Crouching;
@@ -423,25 +527,31 @@ fn update_stance(
     }
 }
 
-/// Slide-cancel: stand up out of the slide with its speed, sprinting on if
-/// still pushing forward, and start the slide cooldown.
+/// Slide-cancel: stand up out of the slide, sprinting on if still pushing
+/// forward, and start the slide cooldown. The slide's speed carries over up
+/// to a sprint, never above it, so chaining cancels cannot outrun a sprint.
 fn cancel_slide(state: &mut MoveState, input: &MoveInput, params: &MoveParams, wish: Vec2) {
     state.stance = Stance::Standing;
     state.slide_time = 0.0;
     state.slide_cooldown = params.slide_cooldown;
     state.sprinting = wish.y >= params.sprint_min_forward && !input.block_sprint;
+    state.sprint_time = 0.0;
+    let cap = params.sprint_speed * input.speed_multiplier;
+    let flat = horizontal(state.velocity).clamp_length_max(cap);
+    state.velocity = Vec3::new(flat.x, state.velocity.y, flat.z);
 }
 
 /// One tick of a mantle: rise at a steady speed while pushing forward, with
 /// no gravity. The engine's collision carries the body up the wall and onto
 /// the top.
-fn mantle(state: &mut MoveState, forward: Vec3, params: &MoveParams, dt: f32) -> Vec3 {
+fn mantle(state: &mut MoveState, params: &MoveParams, dt: f32) -> Vec3 {
     state.mantle_time = (state.mantle_time - dt).max(0.0);
     let rise = if state.mantle_time > 0.0 {
         state.mantle_rise
     } else {
         0.0
     };
+    let forward = Vec3::new(state.mantle_dir.x, 0.0, state.mantle_dir.y);
     state.velocity = forward * params.mantle_forward_speed + Vec3::Y * rise;
     state.velocity
 }
@@ -495,12 +605,20 @@ fn tick_slide(state: &mut MoveState, params: &MoveParams, dt: f32) {
     }
 }
 
+/// The speed cap. Going down, it eases from the standing gait's to the crouch
+/// speed with the body. Standing up frees it at once, and acceleration
+/// carries the player back up to speed (a slide-cancel keeps its sprint).
 fn max_speed(state: &MoveState, params: &MoveParams) -> f32 {
-    match state.stance {
-        Stance::Crouching | Stance::Sliding => params.crouch_speed,
-        Stance::Standing if state.sprinting => params.sprint_speed,
-        Stance::Standing => params.walk_speed,
+    let standing = if state.sprinting {
+        params.sprint_speed
+    } else {
+        params.walk_speed
+    };
+    if state.stance == Stance::Standing {
+        return standing;
     }
+    let t = crouch_ease(state.crouch);
+    standing + (params.crouch_speed - standing) * t
 }
 
 fn horizontal(v: Vec3) -> Vec3 {
@@ -682,7 +800,8 @@ mod tests {
             1,
         );
         assert_eq!(s.stance, Stance::Sliding);
-        assert!(speed(&s) >= p.slide_speed - 0.5);
+        let entry = p.sprint_speed * p.slide_speed_ratio;
+        assert!((speed(&s) - entry).abs() < 0.05, "{}", speed(&s));
 
         run(
             &mut s,
@@ -1138,6 +1257,11 @@ mod tests {
         assert_eq!(s.stance, Stance::Standing);
         assert!(s.sprinting, "a slide-cancel sprints on");
         assert!(speed(&s) > fast * 0.9, "the slide's speed carries over");
+        let p = MoveParams::default();
+        assert!(
+            speed(&s) <= p.sprint_speed + 1e-4,
+            "but only up to a sprint"
+        );
         assert!(s.slide_cooldown > 0.0);
     }
 
@@ -1225,5 +1349,277 @@ mod tests {
         };
         run(&mut s, jump, ledge, 1);
         assert!(s.mantling());
+    }
+
+    const TICK: f32 = crate::TICK_DT;
+
+    fn ticks(seconds: f32) -> usize {
+        (seconds * crate::TICK_RATE as f32).round() as usize
+    }
+
+    fn run_at(state: &mut MoveState, input: MoveInput, env: MoveEnv, seconds: f32) {
+        let params = MoveParams::default();
+        for _ in 0..ticks(seconds) {
+            step(state, &input, env, &params, TICK);
+        }
+    }
+
+    #[test]
+    fn crouching_takes_time_and_the_eye_and_capsule_follow_one_blend() {
+        let p = MoveParams::default();
+        let mut s = MoveState::default();
+        let crouch = MoveInput {
+            crouch: true,
+            ..Default::default()
+        };
+        step(&mut s, &crouch, MoveEnv::default(), &p, TICK);
+        assert_eq!(s.stance, Stance::Crouching, "the stance flips at once");
+        assert!(s.crouch < 0.1, "but the body is still up: {}", s.crouch);
+        run_at(&mut s, MoveInput::default(), MoveEnv::default(), 0.1);
+        let eye = s.eye_height(&p);
+        assert!(
+            eye < p.eye_height(Stance::Standing) - 0.05
+                && eye > p.eye_height(Stance::Crouching) + 0.1,
+            "partway down after 0.1 s: {eye}"
+        );
+        assert!((s.height(&p) - eye - p.eye_from_top).abs() < 1e-5);
+        run_at(&mut s, MoveInput::default(), MoveEnv::default(), 0.16);
+        assert_eq!(s.crouch, 1.0, "fully down in {} s", p.crouch_down_time);
+        assert!((s.eye_height(&p) - p.eye_height(Stance::Crouching)).abs() < 1e-5);
+
+        // Standing up takes a little longer.
+        step(&mut s, &crouch, MoveEnv::default(), &p, TICK);
+        assert_eq!(s.stance, Stance::Standing);
+        run_at(&mut s, MoveInput::default(), MoveEnv::default(), 0.25);
+        assert!(s.crouch > 0.0, "not up yet after 0.25 s");
+        run_at(&mut s, MoveInput::default(), MoveEnv::default(), 0.06);
+        assert_eq!(s.crouch, 0.0);
+    }
+
+    #[test]
+    fn the_speed_cap_follows_the_crouch_blend() {
+        let p = MoveParams::default();
+        let mut s = MoveState::default();
+        run_at(&mut s, forward(), MoveEnv::default(), 1.0);
+        assert!((speed(&s) - p.walk_speed).abs() < 0.05);
+        let crouch = MoveInput {
+            crouch: true,
+            ..forward()
+        };
+        step(&mut s, &crouch, MoveEnv::default(), &p, TICK);
+        assert!(speed(&s) > p.walk_speed - 0.2, "no instant drop to a crawl");
+        run_at(&mut s, forward(), MoveEnv::default(), 0.5);
+        assert!((speed(&s) - p.crouch_speed).abs() < 0.05, "{}", speed(&s));
+    }
+
+    #[test]
+    fn standing_up_waits_under_a_low_ceiling() {
+        let p = MoveParams::default();
+        let mut s = MoveState {
+            stance: Stance::Crouching,
+            crouch: 1.0,
+            ..Default::default()
+        };
+        let low = MoveEnv {
+            can_stand: false,
+            ..Default::default()
+        };
+        // Already standing (it left the crouch under open sky), then walked
+        // under a beam halfway up.
+        s.stance = Stance::Standing;
+        run_at(&mut s, MoveInput::default(), MoveEnv::default(), 0.1);
+        let partway = s.crouch;
+        assert!(partway > 0.0 && partway < 1.0);
+        run_at(&mut s, MoveInput::default(), low, 0.5);
+        assert_eq!(s.crouch, partway, "holds under the beam");
+        run_at(&mut s, MoveInput::default(), MoveEnv::default(), 0.5);
+        assert_eq!(s.crouch, 0.0, "finishes once clear");
+        assert_eq!(s.eye_height(&p), p.eye_height(Stance::Standing));
+    }
+
+    #[test]
+    fn a_slide_has_to_be_earned_with_a_short_sprint() {
+        // Already at sprint speed (say, off a slide-cancel), but the sprint
+        // only just started.
+        let mut s = MoveState {
+            velocity: Vec3::new(0.0, 0.0, -7.4),
+            ..Default::default()
+        };
+        let sprint = MoveInput {
+            sprint: true,
+            ..forward()
+        };
+        run_at(&mut s, sprint, MoveEnv::default(), 0.1);
+        let crouch = MoveInput {
+            crouch: true,
+            ..forward()
+        };
+        run_at(&mut s, crouch, MoveEnv::default(), TICK);
+        assert_eq!(s.stance, Stance::Crouching, "too soon: a plain crouch");
+    }
+
+    #[test]
+    fn weapon_weight_scales_the_slide() {
+        let p = MoveParams::default();
+        for scale in [0.88, 1.0, 1.05] {
+            let mut s = MoveState::default();
+            let sprint = MoveInput {
+                sprint: true,
+                speed_multiplier: scale,
+                ..forward()
+            };
+            run_at(&mut s, sprint, MoveEnv::default(), 1.5);
+            step(
+                &mut s,
+                &MoveInput {
+                    crouch: true,
+                    ..sprint
+                },
+                MoveEnv::default(),
+                &p,
+                TICK,
+            );
+            assert_eq!(
+                s.stance,
+                Stance::Sliding,
+                "a heavy gun still slides: {scale}"
+            );
+            let entry = p.sprint_speed * scale * p.slide_speed_ratio;
+            assert!((speed(&s) - entry).abs() < 0.05, "{scale}: {}", speed(&s));
+        }
+    }
+
+    #[test]
+    fn a_slide_covers_about_four_metres() {
+        let p = MoveParams::default();
+        let mut s = MoveState::default();
+        let sprint = MoveInput {
+            sprint: true,
+            ..forward()
+        };
+        run_at(&mut s, sprint, MoveEnv::default(), 1.5);
+        let crouch = MoveInput {
+            crouch: true,
+            ..forward()
+        };
+        let mut travelled = 0.0;
+        let mut time = 0.0;
+        let mut input = crouch;
+        while time < 2.0 {
+            step(&mut s, &input, MoveEnv::default(), &p, TICK);
+            input = forward();
+            if s.stance != Stance::Sliding {
+                break;
+            }
+            travelled += speed(&s) * TICK;
+            time += TICK;
+        }
+        assert!((0.55..=0.7).contains(&time), "lasts {time} s");
+        assert!((3.4..=4.4).contains(&travelled), "covers {travelled} m");
+    }
+
+    /// Plays one slide-cancel strategy for ten seconds and returns the mean
+    /// ground speed: sprint, slide as soon as allowed, cancel `cancel_after`
+    /// into the slide (by crouch, or by jump and then a real jump), repeat.
+    fn chain_slides(cancel_after: usize, by_jump: bool, hop: bool) -> f32 {
+        let p = MoveParams::default();
+        let mut s = MoveState::default();
+        let mut position = Vec3::ZERO;
+        let mut height = 0.0f32;
+        let mut previous = MoveInput::default();
+        let mut sliding_for = 0;
+        let total = ticks(10.0);
+        // Up to speed first.
+        run_at(
+            &mut s,
+            MoveInput {
+                sprint: true,
+                ..forward()
+            },
+            MoveEnv::default(),
+            1.0,
+        );
+        for i in 0..total {
+            let on_floor = height <= 0.0;
+            let env = MoveEnv {
+                on_floor,
+                ..Default::default()
+            };
+            let mut input = forward();
+            // Mash every button on alternate ticks, so each is a fresh press.
+            let fresh = |held: bool| !held;
+            if s.stance == Stance::Sliding {
+                sliding_for += 1;
+                if sliding_for >= cancel_after {
+                    if by_jump {
+                        input.jump = fresh(previous.jump);
+                    } else {
+                        input.crouch = fresh(previous.crouch);
+                    }
+                }
+            } else {
+                sliding_for = 0;
+                input.sprint = fresh(previous.sprint) && !s.sprinting;
+                input.crouch = s.sprinting && fresh(previous.crouch);
+                input.jump = hop && on_floor && fresh(previous.jump);
+            }
+            let _ = i;
+            let v = step(&mut s, &input, env, &p, TICK);
+            previous = input;
+            position += Vec3::new(v.x, 0.0, v.z) * TICK;
+            height = (height + v.y * TICK).max(0.0);
+            if height <= 0.0 && s.velocity.y < 0.0 {
+                s.velocity.y = 0.0;
+            }
+        }
+        position.length() / (total as f32 * TICK)
+    }
+
+    #[test]
+    fn chained_slide_cancels_never_outrun_a_sprint() {
+        let p = MoveParams::default();
+        let mut worst = (0.0, 0, false, false);
+        for cancel_after in 1..ticks(0.7) {
+            for by_jump in [false, true] {
+                for hop in [false, true] {
+                    let mean = chain_slides(cancel_after, by_jump, hop);
+                    if mean > worst.0 {
+                        worst = (mean, cancel_after, by_jump, hop);
+                    }
+                }
+            }
+        }
+        assert!(
+            worst.0 <= p.sprint_speed * 1.03,
+            "the best chain averages {:.2} m/s ({:?}) against a {} m/s sprint",
+            worst.0,
+            worst,
+            p.sprint_speed
+        );
+    }
+
+    #[test]
+    fn turning_mid_mantle_keeps_climbing_the_same_way() {
+        let p = MoveParams::default();
+        let mut s = MoveState::default();
+        let env = MoveEnv {
+            ledge: Some(1.0),
+            ..Default::default()
+        };
+        let input = MoveInput {
+            wish: Vec2::Y,
+            jump: true,
+            ..Default::default()
+        };
+        let first = step(&mut s, &input, env, &p, TICK);
+        assert!(s.mantling());
+        let turned = MoveInput {
+            wish: Vec2::Y,
+            yaw: 1.5,
+            ..Default::default()
+        };
+        let v = step(&mut s, &turned, MoveEnv::default(), &p, TICK);
+        assert!(s.mantling());
+        assert_eq!(Vec2::new(v.x, v.z), Vec2::new(first.x, first.z));
     }
 }

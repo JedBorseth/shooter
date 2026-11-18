@@ -67,6 +67,8 @@ pub struct RemoteSample {
     pub yaw: f32,
     pub pitch: f32,
     pub stance: Stance,
+    /// The crouch blend, 0 standing to 1 crouched (`MoveState::crouch`).
+    pub crouch: f32,
     pub sprinting: bool,
     pub on_floor: bool,
     pub ads: f32,
@@ -113,6 +115,7 @@ impl RemoteSample {
             yaw: v.yaw(),
             pitch: v.pitch(),
             stance: v.stance,
+            crouch: v.crouch(),
             sprinting: v.sprinting,
             on_floor: v.on_floor,
             ads: v.ads(),
@@ -148,6 +151,7 @@ impl Interpolate for RemoteSample {
             yaw: lerp_angle(self.yaw, to.yaw, t),
             pitch: self.pitch + (to.pitch - self.pitch) * t,
             ads: self.ads + (to.ads - self.ads) * t,
+            crouch: self.crouch + (to.crouch - self.crouch) * t,
             progress: self.progress.interpolate(&to.progress, t),
             // Shots show once the snapshot that contains them is reached.
             shots_fired: self.shots_fired,
@@ -173,6 +177,7 @@ impl RemoteSample {
                 velocity: self.velocity,
                 weapon: Some(self.weapon),
                 progress: self.progress,
+                crouch: Some(self.crouch),
             },
         })
     }
@@ -527,6 +532,7 @@ mod tests {
                 ads: 1.0,
                 velocity: Vec3::ZERO,
                 weapon: Some(WeaponId::expect("m870")),
+                crouch: Some(0.0),
                 progress: Progress {
                     stride: 0.25,
                     reload: 0.2,

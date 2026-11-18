@@ -96,6 +96,10 @@ pub struct SoldierFrame {
     /// (`hitbox::clock`). Without them (offline) the rig keeps its own.
     pub stride: Option<f32>,
     pub mantle_progress: Option<f32>,
+    /// The crouch blend from the simulation (`MoveState::crouch`, 0 standing
+    /// to 1 crouched), which the hit zones follow too. Without it (offline
+    /// dummies) the rig eases between stances on its own.
+    pub crouch: Option<f32>,
 }
 
 impl SoldierFrame {
@@ -112,6 +116,7 @@ impl SoldierFrame {
             velocity: to_sim(self.velocity),
             weapon: self.weapon,
             progress,
+            crouch: self.crouch,
         }
     }
 }
@@ -133,6 +138,7 @@ impl Default for SoldierFrame {
             meleeing: false,
             stride: None,
             mantle_progress: None,
+            crouch: None,
         }
     }
 }
@@ -355,8 +361,8 @@ impl SoldierRig {
     /// Poses the character from a dictionary, for tests and screenshot scripts:
     /// `velocity` (Vector3), `on_floor`, `stance` ("standing", "crouching",
     /// "sliding"), `sprinting`, `yaw`, `pitch`, `ads`, `weapon` (file key),
-    /// `reload` (progress, or -1), `alive`, `mantling`, `meleeing`. Missing
-    /// keys keep their defaults.
+    /// `reload` (progress, or -1), `alive`, `mantling`, `meleeing`, `crouch`
+    /// (the simulation's crouch blend, or -1). Missing keys keep their defaults.
     #[func]
     fn drive(&mut self, state: VarDictionary, delta: f32) {
         let get = |key: &str| state.get(key);
@@ -393,6 +399,7 @@ impl SoldierRig {
             meleeing: b("meleeing", false),
             stride: (f("stride", -1.0) >= 0.0).then(|| f("stride", 0.0)),
             mantle_progress: (f("mantle_progress", -1.0) >= 0.0).then(|| f("mantle_progress", 0.0)),
+            crouch: (f("crouch", -1.0) >= 0.0).then(|| f("crouch", 0.0)),
         };
         self.update(&frame, delta);
     }
@@ -464,7 +471,12 @@ impl SoldierRig {
         } else {
             0.0
         };
-        self.crouch += (crouch_target - self.crouch) * smoothing(12.0, dt);
+        self.crouch = match frame.crouch {
+            // The body goes down and up on the simulation's own curve, the
+            // one its capsule, eye, and hit zones follow.
+            Some(blend) => shooter_sim::movement::crouch_ease(blend),
+            None => self.crouch + (crouch_target - self.crouch) * smoothing(12.0, dt),
+        };
         self.slide += (slide_target - self.slide) * smoothing(14.0, dt);
         self.air_time = if frame.on_floor {
             0.0

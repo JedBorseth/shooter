@@ -92,7 +92,7 @@ impl RemotePlayer {
         Vector2::new(self.yaw, self.pitch)
     }
 
-    /// Eye height above the feet for the stance last drawn.
+    /// Eye height above the feet as last drawn (it follows the crouch blend).
     #[func]
     fn eye_height(&self) -> f32 {
         self.stance_eye
@@ -162,17 +162,19 @@ impl RemotePlayer {
         let Some(weapon) = WeaponId::by_key("m4") else {
             return;
         };
+        let stance = match stance {
+            1 => Stance::Crouching,
+            2 => Stance::Sliding,
+            _ => Stance::Standing,
+        };
         let sample = RemoteSample {
             tick: 0.0,
             position: to_sim(feet),
             velocity: self.test_velocity(feet, delta),
             yaw: 0.0,
             pitch: 0.0,
-            stance: match stance {
-                1 => Stance::Crouching,
-                2 => Stance::Sliding,
-                _ => Stance::Standing,
-            },
+            stance,
+            crouch: if stance == Stance::Standing { 0.0 } else { 1.0 },
             sprinting,
             on_floor,
             ads: 0.0,
@@ -193,7 +195,8 @@ impl RemotePlayer {
     /// Applies a made-up snapshot from a dictionary (tests): `feet`
     /// (Vector3), `yaw`, `pitch`, `stance` ("standing", "crouching",
     /// "sliding"), `sprinting`, `on_floor`, `ads`, `weapon` (file key),
-    /// `reloading`, `mantling`, `alive`, and the animation progress
+    /// `reloading`, `mantling`, `alive`, `crouch` (0..1, the crouch blend;
+    /// missing is fully in the stance), and the animation progress
     /// `stride`, `reload_progress`, and `mantle_progress` (0..1). Missing keys
     /// take a standing, living M4 holder's values; missing progress runs as a
     /// server would run it. Velocity comes from how `feet` moves.
@@ -215,17 +218,19 @@ impl RemotePlayer {
         let feet = get("feet")
             .and_then(|v| v.try_to::<Vector3>().ok())
             .unwrap_or(Vector3::ZERO);
+        let stance = match get("stance").map(|v| v.to_string()).as_deref() {
+            Some("crouching") => Stance::Crouching,
+            Some("sliding") => Stance::Sliding,
+            _ => Stance::Standing,
+        };
         let sample = RemoteSample {
             tick: 0.0,
             position: to_sim(feet),
             velocity: self.test_velocity(feet, delta),
             yaw: f("yaw").unwrap_or(0.0),
             pitch: f("pitch").unwrap_or(0.0),
-            stance: match get("stance").map(|v| v.to_string()).as_deref() {
-                Some("crouching") => Stance::Crouching,
-                Some("sliding") => Stance::Sliding,
-                _ => Stance::Standing,
-            },
+            stance,
+            crouch: f("crouch").unwrap_or(if stance == Stance::Standing { 0.0 } else { 1.0 }),
             sprinting: b("sprinting", false),
             on_floor: b("on_floor", true),
             ads: f("ads").unwrap_or(0.0),
@@ -344,8 +349,8 @@ impl RemotePlayer {
         self.yaw = s.yaw;
         self.pitch = s.pitch;
         self.alive = s.alive;
-        self.stance_eye = MoveParams::default().eye_height(s.stance);
-        let height = MoveParams::default().height(s.stance);
+        self.stance_eye = MoveParams::default().eye_height_at(s.crouch);
+        let height = MoveParams::default().height_at(s.crouch);
         self.aim_assist.bind_mut().set_body_height(height);
         self.update_aim_assist();
 
@@ -382,6 +387,7 @@ impl RemotePlayer {
             meleeing: s.meleeing,
             stride: Some(s.progress.stride),
             mantle_progress: s.mantling.then_some(s.progress.mantle),
+            crouch: Some(s.crouch),
         };
         self.rig.bind_mut().update(&frame, delta);
         // The server rewinds exactly this pose when it checks our shots.

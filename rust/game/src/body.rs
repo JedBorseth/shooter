@@ -21,6 +21,21 @@ use crate::target::WORLD_LAYER;
 /// Collision layer 2 ("players"), as a bit mask.
 pub const PLAYER_LAYER: u32 = 1 << 1;
 
+/// Collision layer 7: walls that stop players but not bullets or zombies
+/// (the Zombies arena's boarded windows).
+pub const PLAYER_BLOCK_LAYER: u32 = 1 << 6;
+
+/// What a player body collides with: walls and floors, solid bodies such as
+/// target dummies, and player-only blockers. `scenes/player.tscn` uses the
+/// same mask (81), so the server's bodies stop where the client's do.
+pub const PLAYER_COLLISION_MASK: u32 =
+    crate::target::WORLD_LAYER | crate::target::BODY_LAYER | PLAYER_BLOCK_LAYER;
+
+/// Radius of the sphere swept up for headroom before standing: as wide as
+/// the capsule (0.35) less a sliver, so a wall the player leans on does not
+/// count as a ceiling but an overhang's edge over the shoulders does.
+pub const HEADROOM_RADIUS: f32 = 0.34;
+
 /// The nodes a simulated body needs besides itself.
 #[derive(Clone)]
 pub struct BodyParts {
@@ -67,11 +82,10 @@ pub fn tick(
         can_stand: !parts.headroom.is_colliding(),
         ledge: find_ledge(parts, &params.movement, p, input.yaw),
     };
-    let previous_stance = p.state.movement.stance;
+    let previous_crouch = p.state.movement.crouch;
     let requested = player::step(&mut p.state, input, env, params, TICK_DT, events);
-    let movement = &params.movement;
-    if movement.height(previous_stance) != movement.height(p.state.movement.stance) {
-        apply_stance_shape(parts, movement, p.state.movement.stance);
+    if previous_crouch != p.state.movement.crouch {
+        apply_stance_shape(parts, &params.movement, p.state.movement.crouch);
     }
 
     let start = parts.body.get_global_transform();
@@ -206,7 +220,7 @@ fn find_ledge(parts: &BodyParts, params: &MoveParams, p: &Predicted, yaw: f32) -
 
 /// Moves the body to a state without simulating (spawns, reconciliation).
 pub fn place(parts: &mut BodyParts, params: &MoveParams, p: &Predicted) {
-    apply_stance_shape(parts, params, p.state.movement.stance);
+    apply_stance_shape(parts, params, p.state.movement.crouch);
     let position = to_godot(p.position);
     parts.body.set_global_position(position);
     sync_floor_contact(&mut parts.body, p.on_floor);
@@ -234,9 +248,10 @@ fn sync_floor_contact(body: &mut Gd<CharacterBody3D>, on_floor: bool) {
     }
 }
 
-/// Resizes the capsule for a stance, keeping its bottom at the body origin (the feet).
-pub fn apply_stance_shape(parts: &mut BodyParts, params: &MoveParams, stance: Stance) {
-    let height = params.height(stance);
+/// Resizes the capsule for a crouch blend (`MoveState::crouch`, 0 standing
+/// to 1 crouched), keeping its bottom at the body origin (the feet).
+pub fn apply_stance_shape(parts: &mut BodyParts, params: &MoveParams, crouch: f32) {
+    let height = params.height_at(crouch);
     if let Some(shape) = parts.collision.get_shape()
         && let Ok(mut capsule) = shape.try_cast::<CapsuleShape3D>()
         && capsule.get_height() != height
@@ -254,8 +269,7 @@ pub fn build_body(name: &str) -> BodyParts {
     let mut body = CharacterBody3D::new_alloc();
     body.set_name(name);
     body.set_collision_layer(PLAYER_LAYER);
-    // Walls and floors, and solid bodies such as target dummies.
-    body.set_collision_mask(crate::target::WORLD_LAYER | crate::target::BODY_LAYER);
+    body.set_collision_mask(PLAYER_COLLISION_MASK);
     body.set_floor_constant_speed_enabled(true);
     body.set_floor_snap_length(0.3);
 
@@ -269,7 +283,7 @@ pub fn build_body(name: &str) -> BodyParts {
     body.add_child(&collision);
 
     let mut sphere = SphereShape3D::new_gd();
-    sphere.set_radius(0.3);
+    sphere.set_radius(HEADROOM_RADIUS);
     let mut headroom = ShapeCast3D::new_alloc();
     headroom.set_name("Headroom");
     headroom.set_enabled(false);

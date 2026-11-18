@@ -115,6 +115,10 @@ pub struct Activity {
     pub weapon: Option<WeaponId>,
     /// How far along the stride, a reload, and a mantle the body is.
     pub progress: clock::Progress,
+    /// How far down the body is between standing and crouched, 0 to 1
+    /// (`MoveState::crouch`), while a stance change is under way. `None`
+    /// takes it from the stance: fully in it.
+    pub crouch: Option<f32>,
 }
 
 impl HitboxPose {
@@ -231,18 +235,41 @@ fn ground_pose(pose: &HitboxPose, speed: f32) -> BasePose {
     let activity = &pose.activity;
     let stride = activity.progress.stride;
     let moving = speed > gait::MOVING_SPEED;
-    match pose.stance {
-        Stance::Sliding => poses::SLIDE,
-        Stance::Crouching if moving => cycle(&poses::CROUCH_WALK, stride),
-        Stance::Crouching => poses::CROUCH,
-        Stance::Standing if moving => {
+    let crouched = || {
+        if moving {
+            cycle(&poses::CROUCH_WALK, stride)
+        } else {
+            poses::CROUCH
+        }
+    };
+    let standing = || {
+        if moving {
             let at = gait::stand_position(speed, activity.sprinting);
             let (a, b, t) = gait::stride_samples(at);
             let loops = cycle(&poses::STAND_STRIDES[a], stride)
                 .lerp(&cycle(&poses::STAND_STRIDES[b], stride), t);
             poses::STAND.lerp(&loops, gait::walk_share(at))
+        } else {
+            poses::STAND
         }
-        Stance::Standing => poses::STAND,
+    };
+    if pose.stance == Stance::Sliding {
+        return poses::SLIDE;
+    }
+    // Partway through a stance change, the body is between the two, as the
+    // drawn character blends them by the same eased amount.
+    let full = if pose.stance == Stance::Crouching {
+        1.0
+    } else {
+        0.0
+    };
+    let down = crate::movement::crouch_ease(activity.crouch.unwrap_or(full));
+    if down <= 0.0 {
+        standing()
+    } else if down >= 1.0 {
+        crouched()
+    } else {
+        standing().lerp(&crouched(), down)
     }
 }
 

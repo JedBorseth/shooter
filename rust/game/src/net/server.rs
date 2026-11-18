@@ -1247,9 +1247,9 @@ impl NetServer {
             .iter()
             .filter(|a| self.hostile(a, me) && a.predicted.state.alive())
             .map(|a| {
-                let stance = a.predicted.state.movement.stance;
+                let movement = &a.predicted.state.movement;
                 to_godot(a.predicted.position)
-                    + Vector3::UP * self.params.movement.eye_height(stance)
+                    + Vector3::UP * movement.eye_height(&self.params.movement)
             })
             .collect();
         let deaths: Vec<Vec3> = self.recent_deaths.iter().map(|(_, p)| *p).collect();
@@ -1347,7 +1347,7 @@ impl NetServer {
                 team: self.side(a),
                 alive: a.predicted.state.alive(),
                 feet: to_godot(a.predicted.position),
-                stance: a.predicted.state.movement.stance,
+                crouch: a.predicted.state.movement.crouch,
                 lane: a.brain.as_ref().and_then(|b| b.lane()),
             })
             .collect();
@@ -1486,8 +1486,7 @@ impl NetServer {
                         }) => {
                             let p = &avatar.predicted;
                             let eye = to_godot(p.position)
-                                + Vector3::UP
-                                    * self.params.movement.eye_height(p.state.movement.stance);
+                                + Vector3::UP * p.state.movement.eye_height(&self.params.movement);
                             shots.push(Shot {
                                 shooter: avatar.id,
                                 eye,
@@ -1503,8 +1502,7 @@ impl NetServer {
                         PlayerEvent::Combat(CombatEvent::MeleeStruck { weapon, shot, .. }) => {
                             let p = &avatar.predicted;
                             let eye = to_godot(p.position)
-                                + Vector3::UP
-                                    * self.params.movement.eye_height(p.state.movement.stance);
+                                + Vector3::UP * p.state.movement.eye_height(&self.params.movement);
                             strikes.push(Melee {
                                 attacker: avatar.id,
                                 feet: p.position,
@@ -3020,8 +3018,7 @@ fn pickup_in_reach(
     if !p.state.alive() {
         return false;
     }
-    let eye =
-        to_godot(p.position) + Vector3::UP * params.movement.eye_height(p.state.movement.stance);
+    let eye = to_godot(p.position) + Vector3::UP * p.state.movement.eye_height(&params.movement);
     let direction = to_godot(player::aim_direction(input.yaw, input.pitch, Vec2::ZERO));
     let Some(mut space) = avatar
         .parts

@@ -52,7 +52,7 @@ radius = 0.35
 height = 1.8
 
 [sub_resource type="SphereShape3D" id="Sphere_headroom"]
-radius = 0.3
+radius = 0.34
 
 [node name="Player" type="FpsPlayer"]
 collision_layer = 2
