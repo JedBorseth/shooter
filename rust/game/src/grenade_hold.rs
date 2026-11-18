@@ -116,15 +116,20 @@ pub fn first_person(p: f32, kind: Kind) -> ThrowPose {
             v(0.2, 0.7, 0.7),
             v(1.0, 0.3, 0.0),
         ),
+        // The hand lets go high, beside the line of sight and close in,
+        // with the forearm standing up under it (as it does cocked), so the
+        // hand and the grenade show as it leaves; the follow-through then
+        // carries the arm forward and down. Reached out far in front, the
+        // forearm lay along the line of sight and hid both.
         (
             release,
-            v(-0.13, -0.05, -0.64),
-            v(0.1, 0.4, -0.9),
-            v(1.0, -0.2, 0.0),
+            v(-0.12, 0.06, -0.42),
+            v(0.1, 0.85, -0.5),
+            v(1.0, -0.1, 0.0),
         ),
         (
             release + 0.1,
-            v(-0.04, -0.29, -0.58),
+            v(-0.03, -0.24, -0.52),
             v(0.3, -0.2, -0.9),
             v(0.6, -0.6, 0.4),
         ),
@@ -145,6 +150,10 @@ pub fn third_person(p: f32, kind: Kind) -> ThrowPose {
     let v = Vector3::new;
     let release = equipment::release_progress();
     let cocked = equipment::COCKED_PROGRESS;
+    // Big enough to read from 20 m: cocked, the hand is up above the helmet
+    // and out behind the shoulder, clear of the body's dark outline; it lets
+    // go with the arm reaching high in front. At eye height in front of the
+    // chest, dark on dark, a throw went unseen at fighting range.
     let keys: [KnifeKey; 6] = [
         (
             0.0,
@@ -154,19 +163,19 @@ pub fn third_person(p: f32, kind: Kind) -> ThrowPose {
         ),
         (
             cocked,
-            v(-0.24, 0.1, 0.12),
+            v(-0.3, 0.22, 0.16),
             v(0.0, 0.7, 0.7),
             v(1.0, 0.0, 0.0),
         ),
         (
             cocked + 0.06,
-            v(-0.24, 0.16, 0.2),
+            v(-0.3, 0.26, 0.22),
             v(0.0, 0.5, 0.9),
             v(1.0, 0.0, 0.0),
         ),
         (
             release,
-            v(-0.06, 0.12, -0.5),
+            v(-0.1, 0.16, -0.48),
             v(0.0, 0.3, -1.0),
             v(1.0, 0.0, 0.0),
         ),
