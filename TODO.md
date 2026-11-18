@@ -49,6 +49,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Hold-breath sway for scoped weapons.
 - [x] Weapon inspect on a key press (I, or D-pad down): a keyframed turn and roll that any action cancels.
 - [x] **good first task** Low-ammo click and a "LOW AMMO" HUD warning.
+- [x] Melee: a knife on its own button (V, R3) with a lunge at enemies within about 3 m, predicted and lag-compensated (`rust/sim/src/melee.rs`), swung in the support hand in first and third person, knife kills in the feed, 130-point knife kills in Zombies, and bots that knife up close.
 
 ### Movement
 
@@ -230,7 +231,8 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 - [x] Gun Game: free-for-all up a ladder of the eight weapons, with a local match button on the title screen (`rust/sim/src/gun_game.rs`).
 - [x] Capture the Flag: flags, takes, drops, returns, and captures on the server (`rust/sim/src/ctf.rs`), bots that attack, defend, return, and carry, flag markers and calls on the client (`godot/scripts/net/ctf_view.gd`), and a title screen button.
 - [ ] More modes: Domination. (Free-for-all is done: `--mode ffa`, on Gun Game's teamless path. Search and Destroy has its own section.)
-- [ ] Gun Game: a melee weapon, so a knife kill can set the victim back a weapon as in the classic rules; a sound for each new weapon.
+- [x] Gun Game: a knife kill sets the victim back a weapon, as in the classic rules.
+- [ ] Gun Game: a sound for each new weapon.
 - [ ] Capture the Flag: halftime side swap, overtime on a draw, and a carrier speed or weapon penalty if playtests call for one.
 
 ## Tooling

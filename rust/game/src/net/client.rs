@@ -54,6 +54,9 @@ use crate::convert::to_godot;
 use crate::hitbox_rig::{self, HitboxRig};
 use crate::player::FpsPlayer;
 
+/// What the kill feed calls a knife kill.
+const KNIFE_NAME: &str = "Knife";
+
 /// Seconds the server's rewound hitboxes stay drawn after a shot.
 const GHOST_SECONDS: f32 = 1.5;
 /// Most rewound hitbox sets drawn at once (an automatic weapon fires many).
@@ -909,8 +912,13 @@ impl NetClient {
                 victim,
                 weapon,
                 headshot,
+                melee,
             } => {
-                let name = GString::from(&weapon.def().name);
+                let name = if melee {
+                    GString::from(KNIFE_NAME)
+                } else {
+                    GString::from(&weapon.def().name)
+                };
                 self.signals().kill_reported().emit(
                     i32::from(killer),
                     i32::from(victim),

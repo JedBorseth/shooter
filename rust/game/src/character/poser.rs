@@ -173,6 +173,15 @@ const FIRING_HAND: HandShape = [
     [80.0, 80.0, 45.0],
     [20.0, 35.0, 30.0],
 ];
+/// The support hand closed on the knife's grip: a fist with the thumb
+/// wrapped over the fingers.
+const KNIFE_FIST: HandShape = [
+    [70.0, 80.0, 45.0],
+    [75.0, 85.0, 45.0],
+    [80.0, 85.0, 45.0],
+    [85.0, 85.0, 45.0],
+    [25.0, 40.0, 35.0],
+];
 /// The trigger finger laid straight along the frame, off the trigger, while
 /// sprinting or reloading.
 const INDEX_OFF_TRIGGER: [f32; 3] = [4.0, 6.0, 4.0];
@@ -242,6 +251,11 @@ pub struct PoseInput {
     /// The trigger finger comes off the trigger by this much (0..1): sprinting
     /// or reloading.
     pub trigger_off: f32,
+    /// The support hand leaves the weapon by this much (0..1) to swing the
+    /// knife, held at `knife_at`.
+    pub knife: f32,
+    /// Where the knife is, in the weapon's space (see `crate::knife`).
+    pub knife_at: Transform3D,
 }
 
 #[derive(GodotClass)]
@@ -261,6 +275,8 @@ pub struct SoldierPoser {
     /// Where the IK last put the wrists (world space): right, left. Godot drops
     /// modified poses after skinning, so this is how tests see the result.
     solved: [Option<Vector3>; 2],
+    /// The knife, put in the support hand while it swings one.
+    pub knife: Option<Gd<Node3D>>,
 }
 
 #[godot_api]
@@ -274,6 +290,13 @@ impl ISkeletonModifier3D for SoldierPoser {
         };
         let input = self.input;
         let bone = |i: usize| bones[i];
+        // Hidden unless a swing below shows it.
+        if let Some(node) = &mut self.knife
+            && node.is_visible()
+            && (input.knife <= 0.35 || input.weapon_in_hand || input.ik <= 0.0)
+        {
+            node.set_visible(false);
+        }
 
         // 1. Hips toward the movement, spine back toward the aim.
         if input.lower_yaw.abs() > 1e-4 {
@@ -337,6 +360,7 @@ impl ISkeletonModifier3D for SoldierPoser {
             self.solved = [None, None];
             return;
         }
+        let knife = input.knife.clamp(0.0, 1.0);
         let support = grips.hold.support_shape();
         let trigger_off = input.trigger_off.clamp(0.0, 1.0);
         for &(index, rest, right, finger, joint) in &self.fingers {
@@ -348,7 +372,8 @@ impl ISkeletonModifier3D for SoldierPoser {
                     FIRING_HAND[finger][joint]
                 }
             } else {
-                support[finger][joint]
+                let open = support[finger][joint];
+                open + (KNIFE_FIST[finger][joint] - open) * knife
             };
             let grip = rest * Quaternion::from_axis_angle(Vector3::RIGHT, angle.to_radians());
             let pose = skel.get_bone_pose_rotation(index);
@@ -385,6 +410,21 @@ impl ISkeletonModifier3D for SoldierPoser {
                     .slerp(fetch.get_quaternion(), off),
             );
         }
+        // The knife: the wrist goes where the fist holds the knife at
+        // `knife_at`, blended from wherever the hand was.
+        let mut left_target =
+            Transform3D::new(left_hand_basis, left_grip - left_hand_basis * LEFT_PALM);
+        if knife > 0.0 {
+            let hand = weapon_skel * crate::knife::hand_for(input.knife_at);
+            let rotation = left_target
+                .basis
+                .get_quaternion()
+                .slerp(hand.basis.orthonormalized().get_quaternion(), knife);
+            left_target = Transform3D::new(
+                Basis::from_quaternion(rotation),
+                left_target.origin.lerp(hand.origin, knife),
+            );
+        }
         self.place_hand(
             &mut skel,
             [
@@ -392,11 +432,21 @@ impl ISkeletonModifier3D for SoldierPoser {
                 bone(Bone::LEFT_LOWER_ARM),
                 bone(Bone::LEFT_HAND),
             ],
-            Transform3D::new(left_hand_basis, left_grip),
-            LEFT_PALM,
+            left_target,
+            Vector3::ZERO,
             left_pole,
             weight,
         );
+        if let Some(node) = &mut self.knife {
+            let shown = knife > 0.35;
+            if node.is_visible() != shown {
+                node.set_visible(shown);
+            }
+            if shown {
+                let hand = skel.get_bone_global_pose(bone(Bone::LEFT_HAND));
+                node.set_global_transform(skel_xform * hand * crate::knife::in_left_hand());
+            }
+        }
         self.solved = [
             Some(skel_xform * skel.get_bone_global_pose(bone(Bone::RIGHT_HAND)).origin),
             Some(skel_xform * skel.get_bone_global_pose(bone(Bone::LEFT_HAND)).origin),

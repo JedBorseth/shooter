@@ -65,6 +65,7 @@ pub struct RemoteSample {
     pub alive: bool,
     pub shots_fired: u32,
     pub mantling: bool,
+    pub meleeing: bool,
     pub hits: u8,
     pub hit_heading: u8,
 }
@@ -84,6 +85,7 @@ impl From<&PlayerView> for RemoteSample {
             alive: v.alive,
             shots_fired: v.shots_fired,
             mantling: v.mantling,
+            meleeing: v.meleeing,
             hits: v.hits,
             hit_heading: v.hit_heading,
         }

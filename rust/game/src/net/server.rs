@@ -62,9 +62,10 @@ use shooter_sim::chat::{self, ChatLimiter};
 use shooter_sim::ctf::{FlagEvent, FlagPlayer, FlagRules, FlagState, Flags};
 use shooter_sim::gun_game::{self, Progress, Step};
 use shooter_sim::hardpoint::{HardpointRules, HardpointState, HillTime, Holder, Zone};
+use shooter_sim::melee;
 use shooter_sim::net::discovery::{ServerInfo, query_port_for};
 use shooter_sim::net::input_queue::InputQueue;
-use shooter_sim::net::lag::{self, LagHistory, Pellet, Target};
+use shooter_sim::net::lag::{self, LagHistory, Pellet, Target, TargetHit};
 use shooter_sim::net::protocol::{
     self, ClientMessage, FlagPlay, FlagStatus, FlagView, GameEvent, MAX_EVENTS_PER_MESSAGE,
     MAX_HARDPOINT_ZONES, OwnState, PROTOCOL_VERSION, PlayerView, Predicted, ScoreRow,
@@ -333,6 +334,39 @@ struct Shot {
     /// The shooter's round trip in seconds (players only), which bounds how
     /// far back their view tick may be.
     rtt: Option<f32>,
+}
+
+/// A knife strike that landed this tick, waiting to be checked.
+struct Melee {
+    attacker: u8,
+    /// Feet and eye after the input that struck.
+    feet: Vec3,
+    eye: Vector3,
+    yaw: f32,
+    weapon: WeaponId,
+    shot: u32,
+    view_tick: Option<f64>,
+    rtt: Option<f32>,
+}
+
+/// Who attacked with what, for applying the hits a shot or strike made.
+struct Attack {
+    attacker: u8,
+    eye: Vector3,
+    /// The weapon in the attacker's hands.
+    weapon: WeaponId,
+    /// The attacker's shot number, which the hit events echo.
+    shot: u32,
+    melee: bool,
+}
+
+/// What lunge checks need to know about each player this tick.
+#[derive(Clone, Copy)]
+struct Fighter {
+    id: u8,
+    side: u8,
+    alive: bool,
+    spawned_at: Tick,
 }
 
 /// One pellet's hit on a damageable prop, before player hits are known.
@@ -1296,6 +1330,7 @@ impl NetServer {
     fn simulate(&mut self) {
         let mut events = Vec::new();
         let mut shots = Vec::new();
+        let mut strikes = Vec::new();
         let mut fall_deaths = Vec::new();
         let mut respawns = Vec::new();
         let tick = self.tick;
@@ -1322,6 +1357,16 @@ impl NetServer {
                 }
             }
         }
+        let fighters: Vec<Fighter> = self
+            .avatars
+            .iter()
+            .map(|a| Fighter {
+                id: a.id,
+                side: self.side(a),
+                alive: a.predicted.state.alive(),
+                spawned_at: a.spawned_at,
+            })
+            .collect();
         let objectives = self.bot_objectives();
         let frozen = self.frozen();
         let respawning = self.respawns();
@@ -1392,6 +1437,21 @@ impl NetServer {
                 // passed through since the last input; the client checked the
                 // same way before predicting the shot.
                 input.fire_aim = subtick::check(Some((avatar.yaw, avatar.pitch)), &input);
+                // A player's lunge must point at an enemy they could see;
+                // otherwise it would be a free dash. Bots aim theirs here.
+                if let Some(offset) = input.lunge
+                    && !avatar.bot
+                    && !lunge_backed(
+                        &self.lag,
+                        tick,
+                        (*view_tick, *rtt),
+                        avatar,
+                        offset,
+                        &fighters,
+                    )
+                {
+                    input.lunge = None;
+                }
                 let input = &input;
                 events.clear();
                 body::tick(
@@ -1429,6 +1489,22 @@ impl NetServer {
                                 rtt: *rtt,
                             });
                         }
+                        PlayerEvent::Combat(CombatEvent::MeleeStruck { weapon, shot, .. }) => {
+                            let p = &avatar.predicted;
+                            let eye = to_godot(p.position)
+                                + Vector3::UP
+                                    * self.params.movement.eye_height(p.state.movement.stance);
+                            strikes.push(Melee {
+                                attacker: avatar.id,
+                                feet: p.position,
+                                eye,
+                                yaw: input.yaw,
+                                weapon,
+                                shot,
+                                view_tick: *view_tick,
+                                rtt: *rtt,
+                            });
+                        }
                         // Only falls kill inside the step; shots are resolved below.
                         PlayerEvent::Died => fall_deaths.push(avatar.id),
                         _ => {}
@@ -1461,6 +1537,88 @@ impl NetServer {
         for shot in shots {
             self.resolve_shot(&shot);
         }
+        for strike in strikes {
+            self.resolve_melee(&strike);
+        }
+    }
+
+    /// Whether attacks hurt anyone right now: not while a match counts down
+    /// or shows its results, nor outside a round's live play.
+    fn attacks_hurt(&self) -> bool {
+        !matches!(
+            self.match_state.phase,
+            Phase::Countdown | Phase::Ended { .. }
+        ) && !self.round.is_some_and(|r| !r.live())
+    }
+
+    /// Checks one knife strike against the other players as the attacker
+    /// saw them: the nearest enemy in reach in front of them, with no wall
+    /// between. A strike that connects kills.
+    fn resolve_melee(&mut self, strike: &Melee) {
+        let Some(attacker) = self.avatars.iter().find(|a| a.id == strike.attacker) else {
+            return;
+        };
+        if attacker.bot && attacker.brain.is_none() && !self.bots_deal_damage {
+            return;
+        }
+        if !self.attacks_hurt() {
+            return;
+        }
+        let side = self.side(attacker);
+        let Some(mut space) = attacker
+            .parts
+            .body
+            .get_world_3d()
+            .and_then(|world| world.get_direct_space_state())
+        else {
+            return;
+        };
+        let rewind = self
+            .lag
+            .rewind_target_for(self.tick, strike.view_tick, strike.rtt);
+        let candidates: Vec<(u8, Vec3)> = self
+            .avatars
+            .iter()
+            .filter(|a| {
+                a.id != strike.attacker
+                    && self.side(a) != side
+                    && a.predicted.state.alive()
+                    && f64::from(a.spawned_at) <= rewind
+            })
+            .filter_map(|a| {
+                let sample = self.lag.sample(a.id, rewind)?;
+                sample.alive.then_some((a.id, sample.position))
+            })
+            .collect();
+        let Some((victim, feet)) = melee::pick(
+            strike.feet,
+            strike.yaw,
+            melee::REACH + melee::SERVER_SLACK,
+            melee::STRIKE_CONE_DEGREES,
+            candidates,
+        ) else {
+            return;
+        };
+        // No knifing through walls: the eye must see the victim's chest.
+        let chest = to_godot(feet) + Vector3::UP * melee::CHEST_HEIGHT;
+        if world_hit(&mut space, strike.eye, chest).is_some() {
+            return;
+        }
+        let hit = TargetHit {
+            id: victim,
+            damage: melee::DAMAGE,
+            headshot: false,
+            distance: strike.eye.distance_to(chest),
+            direction: (feet - strike.feet).normalize_or_zero(),
+        };
+        let attack = Attack {
+            attacker: strike.attacker,
+            eye: strike.eye,
+            weapon: strike.weapon,
+            shot: strike.shot,
+            melee: true,
+        };
+        self.apply_hits(&attack, &[hit]);
     }
 
     /// Checks one shot against the map now and the other players as the
@@ -1481,7 +1639,6 @@ impl NetServer {
         {
             return;
         }
-        let shooter_team = shooter.team;
         let shooter_side = self.side(shooter);
         let Some(mut space) = shooter
             .parts
@@ -1572,13 +1729,32 @@ impl NetServer {
             );
         }
 
-        // Whether this shot scores, decided before its kills can end the match.
+        let hits = lag::resolve_shot(def, &pellets, &targets);
+        let attack = Attack {
+            attacker: shot.shooter,
+            eye: shot.eye,
+            weapon: shot.weapon,
+            shot: shot.shot,
+            melee: false,
+        };
+        self.apply_hits(&attack, &hits);
+        self.damage_props(shot.shooter, shot.weapon, &prop_hits, &hits);
+    }
+
+    /// Applies the hits decided for one attack (a shot's pellets or a knife
+    /// strike): damage, hit and kill events, the mode's rules, and score.
+    fn apply_hits(&mut self, attack: &Attack, hits: &[TargetHit]) {
+        let Some(attacker) = self.avatars.iter().find(|a| a.id == attack.attacker) else {
+            return;
+        };
+        let shooter_team = attacker.team;
+        let origin = to_sim(attack.eye);
+        // Whether this attack scores, decided before its kills can end the match.
         let scoring = self.match_state.scoring();
         let mut kills = Vec::new();
         let mut carrier_kills = 0;
         let mut objective_kills = Vec::new();
-        let hits = lag::resolve_shot(def, &pellets, &targets);
-        for hit in &hits {
+        for hit in hits {
             let Some(victim) = self.avatars.iter_mut().find(|a| a.id == hit.id) else {
                 continue;
             };
@@ -1589,16 +1765,16 @@ impl NetServer {
                 &mut Vec::new(),
             );
             if let Some(brain) = &mut victim.brain {
-                brain.on_hurt(shot.shooter, shot.eye, self.tick);
+                brain.on_hurt(attack.attacker, attack.eye, self.tick);
             }
             let travel = victim.predicted.position - origin;
             victim.hits = victim.hits.wrapping_add(1);
             victim.hit_heading = protocol::heading_to_u8(travel.x, travel.z);
             self.send_event(
-                shot.shooter,
+                attack.attacker,
                 GameEvent::Hit {
                     victim: hit.id,
-                    shot: shot.shot,
+                    shot: attack.shot,
                     damage: hit.damage,
                     headshot: hit.headshot,
                     killed,
@@ -1607,7 +1783,7 @@ impl NetServer {
             self.send_event(
                 hit.id,
                 GameEvent::Hurt {
-                    attacker: shot.shooter,
+                    attacker: attack.attacker,
                     from: origin,
                     damage: hit.damage,
                     killed,
@@ -1628,10 +1804,11 @@ impl NetServer {
                     carrier_kills += 1;
                 }
                 self.broadcast_event(&GameEvent::Kill {
-                    killer: shot.shooter,
+                    killer: attack.attacker,
                     victim: hit.id,
-                    weapon: shot.weapon,
+                    weapon: attack.weapon,
                     headshot: hit.headshot,
+                    melee: attack.melee,
                 });
                 self.record_death(hit.id);
                 let victim = self
@@ -1644,7 +1821,7 @@ impl NetServer {
                     && let Some(shooter_feet) = self
                         .avatars
                         .iter()
-                        .find(|a| a.id == shot.shooter)
+                        .find(|a| a.id == attack.attacker)
                         .map(|a| a.predicted.position)
                     && let Some(award) = self.hardpoint.objective_kill(
                         &self.hardpoint_rules,
@@ -1658,7 +1835,13 @@ impl NetServer {
                 }
                 let victim_team = victim.map(|(team, _)| team);
                 let end = match self.game {
-                    Mode::GunGame(rules) => self.climb(shot.shooter, &rules),
+                    // A knife kill sets the victim back a weapon instead
+                    // (the classic humiliation rule).
+                    Mode::GunGame(_) if attack.melee => {
+                        self.on_humiliated(hit.id);
+                        None
+                    }
+                    Mode::GunGame(rules) => self.climb(attack.attacker, &rules),
                     // Search and Destroy scores rounds, not kills (`update_round`).
                     Mode::SearchAndDestroy => None,
                     Mode::TeamDeathmatch => victim_team.and_then(|victim_team| {
@@ -1669,7 +1852,7 @@ impl NetServer {
                     Mode::CaptureTheFlag => None,
                     // Only holding the zone scores for the team.
                     Mode::Hardpoint => None,
-                    Mode::FreeForAll => self.free_for_all_end(shot.shooter, kills.len()),
+                    Mode::FreeForAll => self.free_for_all_end(attack.attacker, kills.len()),
                 };
                 if let Some(end) = end {
                     self.on_transition(end);
@@ -1678,12 +1861,11 @@ impl NetServer {
                 }
             }
         }
-        self.damage_props(shot.shooter, shot.weapon, &prop_hits, &hits);
         // Points only count in a match, not in the lobby's warm-up. The kill
         // that ends a match still counts.
         if !kills.is_empty() && scoring {
             let rules = self.score_rules;
-            let Some(shooter) = self.avatars.iter_mut().find(|a| a.id == shot.shooter) else {
+            let Some(shooter) = self.avatars.iter_mut().find(|a| a.id == attack.attacker) else {
                 return;
             };
             let mut awards = shooter.score.on_shot_kills(&rules, &kills);
@@ -1697,7 +1879,7 @@ impl NetServer {
                     .map(|award| shooter.score.award(award, points)),
             );
             let totals = shooter.score.totals();
-            self.send_event(shot.shooter, GameEvent::Score { awards, totals });
+            self.send_event(attack.attacker, GameEvent::Score { awards, totals });
         }
     }
 
@@ -1883,6 +2065,7 @@ impl NetServer {
                     victim: id,
                     weapon,
                     headshot: false,
+                    melee: false,
                 });
                 self.record_death(id);
                 if credited.is_some() {
@@ -2348,6 +2531,11 @@ impl NetServer {
 
     /// Gun Game: a player killed themselves (a fall) and drops a weapon. They
     /// are dead, so the lower weapon comes with the respawn.
+    /// Gun Game: a player was knifed and drops a weapon, as for a suicide.
+    fn on_humiliated(&mut self, id: u8) {
+        self.on_suicide(id);
+    }
+
     fn on_suicide(&mut self, id: u8) {
         if !matches!(self.game, Mode::GunGame(_)) || !self.match_state.scoring() {
             return;
@@ -2753,6 +2941,39 @@ fn world_hit(
         .done()?;
     let hit = space.intersect_ray(&query);
     hit.get_or_nil("position").try_to::<Vector3>().ok()
+}
+
+/// How far from where a lunge points an enemy may stand, as the attacker
+/// saw them, for the lunge to count.
+const LUNGE_CHECK_SLACK: f32 = 1.0;
+
+/// True if an enemy stood where `offset` points from `avatar`'s feet, as the
+/// attacker drew them at their view tick (`view`: view tick and round trip).
+/// A lunge with no enemy at its end would be a free dash, so the server drops
+/// it from the input.
+fn lunge_backed(
+    lag: &LagHistory,
+    now: Tick,
+    view: (Option<f64>, Option<f32>),
+    avatar: &Avatar,
+    offset: Vec2,
+    fighters: &[Fighter],
+) -> bool {
+    let rewind = lag.rewind_target_for(now, view.0, view.1);
+    let Some(me) = fighters.iter().find(|f| f.id == avatar.id) else {
+        return false;
+    };
+    let aim = avatar.predicted.position + Vec3::new(offset.x, 0.0, offset.y);
+    fighters
+        .iter()
+        .filter(|f| f.id != me.id && f.side != me.side && f.alive)
+        .filter(|f| f64::from(f.spawned_at) <= rewind)
+        .filter_map(|f| lag.sample(f.id, rewind))
+        .filter(|sample| sample.alive)
+        .any(|sample| {
+            let d = sample.position - aim;
+            Vec2::new(d.x, d.z).length() <= LUNGE_CHECK_SLACK && d.y.abs() <= melee::MAX_RISE
+        })
 }
 
 /// True if the weapon rack the input claims is really under this player's

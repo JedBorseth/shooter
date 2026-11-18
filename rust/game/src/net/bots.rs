@@ -26,6 +26,7 @@ use godot::classes::{ClassDb, Engine, Node, Node3D, Object, PhysicsDirectSpaceSt
 use godot::prelude::*;
 use shooter_sim::bot::{self, Engagement, Skill, SkillParams};
 use shooter_sim::look;
+use shooter_sim::melee;
 use shooter_sim::movement::Stance;
 use shooter_sim::net::Tick;
 use shooter_sim::net::protocol::Predicted;
@@ -322,6 +323,7 @@ struct Held {
     jump: bool,
     fire: bool,
     reload: bool,
+    melee: bool,
 }
 
 impl BotBrain {
@@ -554,6 +556,20 @@ impl BotBrain {
         };
         want.wish = Vec2::new(self.strafe * 0.8, forward);
         want.aim = distance > ADS_RANGE && def.pellets == 1;
+
+        // Close enough to knife, facing them: lunge in, as players do.
+        let reach = horizontal_distance(state_feet(state), target.feet);
+        let facing = bot::view_gap(self.look, bearing) <= 25f32.to_radians();
+        if self.skill != Skill::Easy
+            && engagement.reacted(skill)
+            && facing
+            && reach <= melee::LUNGE_RANGE * 0.8
+            && state.state.combat.can_melee()
+        {
+            want.melee = true;
+            want.lunge = Some(melee::lunge_offset(state.position, to_sim(target.feet)));
+            return;
+        }
         if weapon.magazine == 0 {
             want.reload = true;
             return;
@@ -1017,12 +1033,14 @@ impl BotBrain {
         let jump = want.jump && !self.held.jump;
         let fire = want.fire && !(self.held.fire && is_semi(state));
         let reload = want.reload && !self.held.reload;
+        let melee = want.melee && !self.held.melee;
         self.held = Held {
             sprint,
             crouch,
             jump,
             fire,
             reload,
+            melee,
         };
         PlayerInput {
             wish: want.wish,
@@ -1034,10 +1052,17 @@ impl BotBrain {
             fire,
             aim: want.aim,
             reload,
+            melee,
+            lunge: want.lunge.filter(|_| melee),
             ..Default::default()
         }
         .quantized()
     }
+}
+
+/// A bot's feet, from its own simulation.
+fn state_feet(state: &Predicted) -> Vector3 {
+    to_godot(state.position)
 }
 
 #[derive(Default)]
@@ -1049,6 +1074,8 @@ struct Want {
     fire: bool,
     aim: bool,
     reload: bool,
+    melee: bool,
+    lunge: Option<Vec2>,
 }
 
 /// Whether the trigger must be let go between shots (semi-automatics and bursts).

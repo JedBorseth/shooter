@@ -12,10 +12,10 @@ use shooter_sim::{Vec2, Vec3};
 use shooter_sim::{fmath, rng};
 
 /// A scripted but varied input stream: strafing, turning, sprinting, sliding,
-/// jumping, aiming, firing, reloading, and switching weapons. Each press of
-/// fire carries a press aim somewhere along the turn since the last tick
-/// (some forged past it), checked against the previous input as the server
-/// checks it.
+/// jumping, aiming, firing, reloading, switching weapons, and knifing, with
+/// and without a lunge. Each press of fire carries a press aim somewhere
+/// along the turn since the last tick (some forged past it), checked against
+/// the previous input as the server checks it.
 fn input(tick: u32) -> PlayerInput {
     let raw = raw_input(tick);
     let Some(previous) = tick.checked_sub(1).map(raw_input) else {
@@ -51,6 +51,8 @@ fn raw_input(tick: u32) -> PlayerInput {
         reload: tick % 400 == 300,
         switch_to: (tick % 900 == 600).then_some(((tick / 900) % 2) as u8),
         pickup: None,
+        melee: tick % 500 == 450 || tick % 500 == 451,
+        lunge: (tick % 1000 == 450).then_some(Vec2::new(0.8, -2.6)),
         view_tick: None,
         fire_aim: None,
     }
@@ -215,12 +217,11 @@ fn press_aim_changes_no_state() {
 /// The hash a reference run produced. CI runs this on Linux, Windows, and
 /// macOS, so a platform whose float math differs fails here before players
 /// see mispredictions. If a deliberate simulation change moves it, update it.
-// Weapon tuning, round 3: eased aim for spread and kick, stronger AK and
-// horizontal randomness, later magazine seats, BR-3 and M870 ranges.
-const REFERENCE_HASH: u64 = 0xf6d7_d779_c67f_55ff;
+// Melee: the script now knifes every few seconds, sometimes with a lunge.
+const REFERENCE_HASH: u64 = 0x52e3_d3c4_b7bf_247b;
 /// The same for every shot's view angles and aim offset (sub-tick press aims
 /// included).
-const SHOT_REFERENCE_HASH: u64 = 0x0796_9cee_7386_1773;
+const SHOT_REFERENCE_HASH: u64 = 0xb7bf_d803_01ca_2d3b;
 
 #[test]
 fn state_matches_the_reference_on_every_platform() {

@@ -81,6 +81,10 @@ pub enum ViewAction {
     Raising(f32),
     /// Working the bolt or pump.
     Cycling(f32),
+    /// A knife strike; seconds until it lands (negative after).
+    Meleeing {
+        strike_in: f32,
+    },
 }
 
 /// One shot's kick on the weapon model, as peaks: (position in metres: `x`
@@ -1335,7 +1339,7 @@ fn shell_mesh(shader: &Gd<Shader>, color: Color, size: Vector2) -> Gd<CylinderMe
 /// Replaces each surface's standard material with the viewmodel shader, copying
 /// its colour, texture, and surface values, so the weapon keeps its look but uses
 /// its own FOV and never clips into walls.
-fn convert_to_viewmodel_materials(root: &Gd<Node>, shader: &Gd<Shader>, boost: f32) {
+pub(crate) fn convert_to_viewmodel_materials(root: &Gd<Node>, shader: &Gd<Shader>, boost: f32) {
     for child in root.get_children().iter_shared() {
         if let Ok(mut mesh) = child.clone().try_cast::<MeshInstance3D>() {
             mesh.set_cast_shadows_setting(
@@ -1591,6 +1595,10 @@ pub struct ViewmodelRig {
     pickup_dip: f32,
     /// Seconds into a weapon inspect, or `None`.
     inspect: Option<f32>,
+    /// A knife strike: seconds since it began, and when it lands.
+    melee: Option<(f32, f32)>,
+    knife_swing: Option<Gd<AudioStreamPlayer>>,
+    knife_hit: Option<Gd<AudioStreamPlayer>>,
     time: f32,
     bob_blend: f32,
     /// Which foot the stride is on (0 or 1), and the stride phase last frame,
@@ -1640,6 +1648,8 @@ impl INode3D for ViewmodelRig {
         }
         self.arms = self.base().try_get_node_as::<FpArms>("Arms");
         self.shell_sound = self.make_player("res://assets/audio/player/shell", -16.0);
+        self.knife_swing = self.make_player("res://assets/audio/foley/knife_swing", -4.0);
+        self.knife_hit = self.make_player("res://assets/audio/foley/knife_hit", -1.0);
     }
 }
 
@@ -1701,6 +1711,37 @@ impl ViewmodelRig {
 
     /// Turns the weapon over to look at it (the inspect key). Any action
     /// stops it.
+    /// A knife strike starts; it lands in `strike_in` seconds. `lunge` makes
+    /// it a harder, louder swing.
+    pub fn on_melee(&mut self, lunge: bool, strike_in: f32) {
+        self.inspect = None;
+        self.melee = Some((0.0, strike_in.max(0.05)));
+        if let Some(player) = &mut self.knife_swing {
+            player.set_volume_db(if lunge { -1.0 } else { -4.0 });
+            player.play();
+        }
+    }
+
+    /// The knife strike landed: on a body (`flesh`), on a wall, or on air.
+    pub fn on_melee_struck(&mut self, hit: bool, flesh: bool) {
+        if flesh && let Some(player) = &mut self.knife_hit {
+            player.play();
+        }
+        if hit {
+            // The blade stops dead: a jolt back through the hands.
+            self.kick_pos.velocity += peak_impulse(
+                Vector3::new(0.0, 0.004, 0.014),
+                KICK_POS_STIFFNESS,
+                KICK_POS_ZETA,
+            );
+            self.kick_rot.velocity += peak_impulse(
+                Vector3::new(1.2f32.to_radians(), 0.0, -1.5f32.to_radians()),
+                KICK_ROT_STIFFNESS,
+                KICK_ROT_ZETA,
+            );
+        }
+    }
+
     pub fn start_inspect(&mut self) {
         self.inspect = Some(0.0);
     }
@@ -1878,6 +1919,7 @@ impl ViewmodelRig {
             ViewAction::Cycling(p) => (BeatClip::Cycle, p),
             ViewAction::Lowering(p) => (BeatClip::Lower, p),
             ViewAction::Raising(p) => (BeatClip::Raise, p),
+            ViewAction::Meleeing { .. } => (BeatClip::Idle, 0.0),
             ViewAction::Ready => match self.inspect {
                 Some(t) => (BeatClip::Inspect, t),
                 None => (BeatClip::Idle, 0.0),
@@ -1979,6 +2021,16 @@ impl ViewmodelRig {
             let t = t + dt;
             self.inspect = (!busy && t < weapon_clips::INSPECT_LENGTH).then_some(t);
         }
+        // A strike plays out while the simulation is in it.
+        if let Some((t, strike)) = self.melee {
+            let t = t + dt;
+            let meleeing = matches!(frame.action, ViewAction::Meleeing { .. });
+            let over = t > strike + shooter_sim::melee::RECOVERY + 0.05;
+            self.melee = (frame.visible && !over && (meleeing || t < 0.05)).then_some((t, strike));
+        }
+        let melee_pose = self.melee.map_or(Pose::ZERO, |(t, strike)| {
+            weapon_clips::melee_pose(t, strike)
+        });
         let clip = self.clip(frame);
         let base = base_weapon(frame.weapon);
         for view in &mut self.views {
@@ -2130,7 +2182,7 @@ impl ViewmodelRig {
             ViewAction::Raising(p) => weapon_clips::pose_at(weapon_clips::draw_keys(kind), p),
             _ => Pose::ZERO,
         };
-        let (switch_rot, switch_pos) = (switch.rot, switch.pos);
+        let (switch_rot, switch_pos) = (switch.rot + melee_pose.rot, switch.pos + melee_pose.pos);
 
         // Bolt or pump: a quick push and roll, peaking mid-cycle, mostly kept
         // off the sight line when aimed. A loaded shell gives a small bump.
@@ -2214,6 +2266,13 @@ impl ViewmodelRig {
         let origin = position + pivot - basis * pivot;
         view.set_transform(Transform3D::new(basis, origin));
 
+        // The knife path is in the rig's (view) space; the hands want it in
+        // the weapon's.
+        let weapon_in_rig = view.get_transform().affine_inverse();
+        let knife = self.melee.map(|(t, strike)| {
+            let (blend, local) = crate::knife::first_person(t, strike);
+            (blend, weapon_in_rig * local)
+        });
         if let Some(arms) = &mut self.arms {
             // The hands follow the grip markers, which the clips move.
             let support = 0.0;
@@ -2222,7 +2281,7 @@ impl ViewmodelRig {
                 grips.hold = crate::character::poser::Hold::of(frame.weapon.def());
                 (view.clone().upcast::<Node3D>(), grips)
             });
-            arms.bind_mut().follow(hold, support);
+            arms.bind_mut().follow(hold, support, knife);
         }
     }
 }

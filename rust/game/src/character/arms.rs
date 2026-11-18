@@ -88,6 +88,13 @@ impl INode3D for FpArms {
         let mut poser = SoldierPoser::new_alloc();
         poser.set_name("Poser");
         skeleton.upcast::<Node>().add_child(&poser);
+
+        // The knife the support hand swings, drawn like the arms.
+        let knife = crate::knife::build();
+        let shader = load::<godot::classes::Shader>("res://shaders/viewmodel.gdshader");
+        crate::viewmodel::convert_to_viewmodel_materials(&knife.clone().upcast(), &shader, 1.0);
+        self.base_mut().add_child(&knife);
+        poser.bind_mut().knife = Some(knife);
         self.poser = Some(poser);
     }
 }
@@ -106,8 +113,15 @@ impl FpArms {
 
 impl FpArms {
     /// Holds `weapon` (or hides the arms with None). `support_off` (0..1) takes
-    /// the support hand off the weapon, for reloads.
-    pub fn follow(&mut self, weapon: Option<(Gd<Node3D>, Grips)>, support_off: f32) {
+    /// the support hand off the weapon, for reloads. `knife` puts the support
+    /// hand on the knife instead, by a blend (0..1), with the knife at a
+    /// transform in the weapon's space.
+    pub fn follow(
+        &mut self,
+        weapon: Option<(Gd<Node3D>, Grips)>,
+        support_off: f32,
+        knife: Option<(f32, Transform3D)>,
+    ) {
         let visible = weapon.is_some();
         if let Some(arms) = &mut self.arms
             && arms.is_visible() != visible
@@ -127,6 +141,8 @@ impl FpArms {
                     ik: 1.0,
                     support_off,
                     support_target: RELOAD_REACH,
+                    knife: knife.map_or(0.0, |(blend, _)| blend),
+                    knife_at: knife.map_or(Transform3D::IDENTITY, |(_, at)| at),
                     ..PoseInput::default()
                 };
             }

@@ -43,6 +43,12 @@ https://archive.org/details/the-free-firearm-sound-effects-library-by-still-nort
 under every shot; and ``hollow``, the ring of a nearly empty magazine, played
 over the last few rounds. Both are seeded, so a rebuild writes the same files.
 
+    uv run tools/build_weapon_audio.py knife
+
+``knife`` synthesizes the melee sounds into ``audio/foley/``: the knife's
+swing through the air (``knife_swing``) and its strike landing
+(``knife_hit``). They are also part of ``foley``'s shared layers.
+
     uv run tools/build_weapon_audio.py foley [--cache DIR]
 
 ``foley`` builds every weapon's handling sounds (see ``FOLEY``): magazine out
@@ -1596,6 +1602,79 @@ def laser_foley() -> dict[str, list[np.ndarray]]:
     return out
 
 
+def swoosh(rng: np.random.Generator, seconds: float) -> np.ndarray:
+    """A blade cutting the air: noise through a resonant band that sweeps up
+    as the swing speeds through its middle and falls away, with a thin
+    whistle riding on it."""
+    n = int(seconds * FOLEY_RATE)
+    t = np.linspace(0, 1, n)
+    noise = rng.standard_normal(n)
+    peak = rng.uniform(0.4, 0.55)
+    speed = np.exp(-(((t - peak) / 0.2) ** 2))
+    centre = 500 + 3_200 * speed * rng.uniform(0.85, 1.15)
+    # Time-varying band-pass: short blocks, each filtered at its own centre.
+    out = np.zeros(n)
+    block = 256
+    state = None
+    for a in range(0, n, block):
+        b = min(n, a + block)
+        c = float(centre[(a + b) // 2])
+        sos = signal.butter(2, (c * 0.7, c * 1.4), "band", fs=FOLEY_RATE, output="sos")
+        if state is None:
+            state = np.zeros((sos.shape[0], 2))
+        out[a:b], state = signal.sosfilt(sos, noise[a:b], zi=state)
+    whistle = np.sin(2 * np.pi * np.cumsum(centre * 1.6) / FOLEY_RATE) * 0.12
+    x = (out / (np.abs(out).max() + 1e-9) + whistle) * speed**1.2
+    return x / (np.abs(x).max() + 1e-9)
+
+
+def stab(rng: np.random.Generator) -> np.ndarray:
+    """The strike landing: a dull body thump, a wet tear of filtered noise,
+    and the faint tick of the blade."""
+    n = int(0.3 * FOLEY_RATE)
+    tear = signal.sosfilt(
+        signal.butter(2, (300, 2_400), "band", fs=FOLEY_RATE, output="sos"),
+        pink(rng, n),
+    ) * decay(n, rng.uniform(0.035, 0.05))
+    tear /= np.abs(tear).max() + 1e-9
+    return mixed(
+        (thump(rng, 0.25, rng.uniform(70, 90), 0.06), 0, 0),
+        (tear, 0.004, -3),
+        (tick(rng, int(0.06 * FOLEY_RATE), rng.uniform(3_000, 4_200), 0.01), 0, -16),
+    )
+
+
+def knife_foley() -> dict[str, list[np.ndarray]]:
+    """The melee sounds, ``SHARED_FOLEY_TAKES`` takes each."""
+    sounds: dict[str, list[np.ndarray]] = {}
+    for name, make in (
+        (
+            "knife_swing",
+            lambda r: mixed(
+                (swoosh(r, r.uniform(0.2, 0.26)), 0, 0),
+                (cloth(r, r.uniform(0.18, 0.24)), 0, -10),
+            ),
+        ),
+        ("knife_hit", stab),
+    ):
+        base = sum(ord(c) for c in name) * 977
+        sounds[name] = []
+        for i in range(SHARED_FOLEY_TAKES):
+            rng = np.random.default_rng(base + i)
+            x = make(rng)
+            fade = int(0.02 * FOLEY_RATE)
+            x[-fade:] *= np.linspace(1, 0, fade)
+            sounds[name].append(stereo(x / (np.abs(x).max() + 1e-9) * 0.7, rng))
+    return sounds
+
+
+def build_knife_foley() -> None:
+    for kind, takes in knife_foley().items():
+        for i, take in enumerate(takes, start=1):
+            write(FOLEY_DIR / f"{kind}_{i}.ogg", take, ogg=True)
+    print(f"{FOLEY_DIR.relative_to(ROOT)}: knife_swing, knife_hit")
+
+
 def build_shared_foley() -> None:
     def put(folder: Path, sounds: dict[str, list[np.ndarray]]) -> None:
         names = {
@@ -1609,7 +1688,7 @@ def build_shared_foley() -> None:
                 write(folder / f"{kind}_{i}.ogg", take, ogg=True)
         print(f"{folder.relative_to(ROOT)}: {', '.join(sorted(sounds))}")
 
-    put(FOLEY_DIR, shared_foley())
+    put(FOLEY_DIR, shared_foley() | knife_foley())
     put(WEAPONS / "laser" / "foley", laser_foley())
 
 
@@ -1630,6 +1709,7 @@ def main() -> None:
     )
     sub.add_parser("trim", help="trim leading silence from every other sound")
     sub.add_parser("mech", help="synthesize the mechanical and last-rounds layers")
+    sub.add_parser("knife", help="synthesize the melee swing and strike")
     foley = sub.add_parser("foley", help="cut handling sounds from the raw tracks")
     foley.add_argument(
         "--cache",
@@ -1642,6 +1722,8 @@ def main() -> None:
         build_layers(args.cache, set(args.only))
     elif args.command == "mech":
         build_mech()
+    elif args.command == "knife":
+        build_knife_foley()
     elif args.command == "foley":
         build_weapon_foley(args.cache)
         build_shared_foley()

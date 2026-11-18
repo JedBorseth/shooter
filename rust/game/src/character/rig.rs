@@ -95,6 +95,8 @@ pub struct SoldierFrame {
     pub alive: bool,
     /// Climbing over a ledge: plays the climb once as it starts.
     pub mantling: bool,
+    /// Swinging the knife: each new swing plays the slash once.
+    pub meleeing: bool,
 }
 
 impl Default for SoldierFrame {
@@ -111,6 +113,7 @@ impl Default for SoldierFrame {
             reload: None,
             alive: true,
             mantling: false,
+            meleeing: false,
         }
     }
 }
@@ -153,6 +156,8 @@ pub struct SoldierRig {
     sprint: f32,
     reload_blend: f32,
     reload_progress: f32,
+    /// Seconds into the knife swing playing, if one is.
+    melee: Option<f32>,
     ik: f32,
     switch_drop: f32,
     /// Weapon kick: x pitch (radians), z push back (metres).
@@ -180,6 +185,12 @@ impl INode3D for SoldierRig {
         let mut poser = SoldierPoser::new_alloc();
         poser.set_name("Poser");
         skeleton.clone().upcast::<Node>().add_child(&poser);
+        if !self.zombie {
+            // The knife the support hand swings in a melee.
+            let knife = crate::knife::build();
+            self.base_mut().add_child(&knife);
+            poser.bind_mut().knife = Some(knife);
+        }
         self.poser = Some(poser);
 
         // Every kit is one mesh, `Body`, and a decimated copy, `BodyFar`, drawn
@@ -320,7 +331,8 @@ impl SoldierRig {
     /// Poses the character from a dictionary, for tests and screenshot scripts:
     /// `velocity` (Vector3), `on_floor`, `stance` ("standing", "crouching",
     /// "sliding"), `sprinting`, `yaw`, `pitch`, `ads`, `weapon` (file key),
-    /// `reload` (progress, or -1), `alive`. Missing keys keep their defaults.
+    /// `reload` (progress, or -1), `alive`, `mantling`, `meleeing`. Missing
+    /// keys keep their defaults.
     #[func]
     fn drive(&mut self, state: VarDictionary, delta: f32) {
         let get = |key: &str| state.get(key);
@@ -354,6 +366,7 @@ impl SoldierRig {
             reload: (reload >= 0.0).then_some(reload),
             alive: b("alive", true),
             mantling: b("mantling", false),
+            meleeing: b("meleeing", false),
         };
         self.update(&frame, delta);
     }
@@ -381,6 +394,7 @@ impl SoldierRig {
     /// Advances the character to `frame`.
     pub fn update(&mut self, frame: &SoldierFrame, dt: f32) {
         let was_alive = self.was_alive;
+        let was_meleeing = self.frame.meleeing;
         self.frame = *frame;
         self.was_alive = frame.alive;
         if frame.alive && !was_alive {
@@ -477,6 +491,12 @@ impl SoldierRig {
         };
         self.reload_progress = progress;
         self.reload_blend += (reload_target - self.reload_blend) * smoothing(12.0, dt);
+        self.melee = match self.melee {
+            Some(t) if t + dt < 0.6 && frame.alive => Some(t + dt),
+            // A new swing starts as the flag rises.
+            _ if frame.meleeing && !was_meleeing && frame.alive => Some(0.0),
+            _ => None,
+        };
         self.switch_drop = (self.switch_drop - dt * 3.0).max(0.0);
         self.kick.step(260.0, 22.0, dt);
         self.lean.step(LEAN_STIFFNESS, LEAN_DAMPING, dt);
@@ -600,8 +620,16 @@ impl SoldierRig {
         let sprint = smoothstep(self.sprint);
         let dip = (PI * self.reload_progress).sin().max(0.0) * self.reload_blend;
         let kick = self.kick.value;
+        // A knife swing drops the gun most of the way to the sprint carry
+        // and leans the body into the strike.
+        let swing = self.melee.map_or(0.0, |t| {
+            crate::weapon_clips::keyed(&[(0.0, 0.0), (0.08, 1.0), (0.3, 1.0), (0.5, 0.0)], t)
+        });
+        let lunge = self.melee.map_or(0.0, |t| {
+            crate::weapon_clips::keyed(&[(0.0, 0.0), (0.12, 1.0), (0.34, 0.0)], t)
+        });
         let mut offset = HIP_OFFSET.lerp(ADS_OFFSET, ads);
-        offset += (SPRINT_OFFSET - HIP_OFFSET) * sprint;
+        offset += (SPRINT_OFFSET - HIP_OFFSET) * (sprint + 0.6 * swing).min(1.0);
         offset += Vector3::new(
             -0.04 * dip,
             -0.04 * dip - 0.25 * self.switch_drop,
@@ -610,13 +638,22 @@ impl SoldierRig {
         offset.z += kick.z;
         let deg = |v: f32| v.to_radians();
         let hip = 1.0 - ads;
+        let carry = sprint + 0.5 * swing;
         let pitch =
-            deg(HIP_ROTATION.x) * hip + deg(SPRINT_ROTATION.x) * sprint + kick.x + deg(12.0) * dip
+            deg(HIP_ROTATION.x) * hip + deg(SPRINT_ROTATION.x) * carry + kick.x + deg(12.0) * dip
                 - deg(40.0) * self.switch_drop;
-        let yaw = deg(HIP_ROTATION.y) * hip + deg(SPRINT_ROTATION.y) * sprint;
-        let roll = deg(HIP_ROTATION.z) * hip + deg(SPRINT_ROTATION.z) * sprint + deg(30.0) * dip;
+        let yaw = deg(HIP_ROTATION.y) * hip + deg(SPRINT_ROTATION.y) * carry;
+        let roll = deg(HIP_ROTATION.z) * hip + deg(SPRINT_ROTATION.z) * carry + deg(30.0) * dip;
         let rotation = Basis::from_euler(EulerOrder::YXZ, Vector3::new(pitch, yaw, roll));
 
+        // The slash is keyed from the eyes, where the weapon rests at the hip,
+        // so it stays at head height while the gun drops out of its way.
+        let weapon_from_eyes = Transform3D::new(rotation, offset).affine_inverse()
+            * Transform3D::new(Basis::IDENTITY, HIP_OFFSET);
+        let knife = self.melee.map_or((0.0, Transform3D::IDENTITY), |t| {
+            let (blend, at) = crate::knife::third_person(t);
+            (blend, weapon_from_eyes * at)
+        });
         // The support hand fetches a magazine in the middle of the reload.
         let p = self.reload_progress;
         let support_off = self.reload_blend
@@ -634,7 +671,7 @@ impl SoldierRig {
         PoseInput {
             lower_yaw: self.lower_yaw,
             pitch: frame.pitch.clamp(-1.3, 1.3) * (1.0 - 0.6 * self.slide),
-            lean: self.lean.value,
+            lean: self.lean.value + Vector3::new(0.0, 0.0, -0.3) * lunge,
             placement: WeaponPlacement::FromEyes { offset, rotation },
             grips,
             ik: self.ik,
@@ -643,6 +680,8 @@ impl SoldierRig {
             support_target: RELOAD_REACH,
             // Trigger discipline: off the trigger while sprinting or reloading.
             trigger_off: self.sprint.max(self.reload_blend),
+            knife: knife.0,
+            knife_at: knife.1,
         }
     }
 

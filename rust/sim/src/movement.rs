@@ -30,6 +30,9 @@ pub struct MoveInput {
     pub block_sprint: bool,
     /// Scales every ground speed (weapon mobility, aiming down sights).
     pub speed_multiplier: f32,
+    /// A melee starts this tick and lunges at a target this far away
+    /// (horizontal `x` and `z`, feet to feet). See [`crate::melee`].
+    pub lunge: Option<Vec2>,
 }
 
 impl Default for MoveInput {
@@ -42,6 +45,7 @@ impl Default for MoveInput {
             crouch: false,
             block_sprint: false,
             speed_multiplier: 1.0,
+            lunge: None,
         }
     }
 }
@@ -99,11 +103,20 @@ pub struct MoveState {
     pub mantle_time: f32,
     /// Upward speed while mantling, set when the climb starts.
     pub mantle_rise: f32,
+    /// Seconds left in a melee lunge (0 when not lunging).
+    pub lunge_time: f32,
+    /// Horizontal velocity of the lunge (`x`, `z`). It stays set for the tick
+    /// after the lunge ends, which takes the speed off.
+    pub lunge_velocity: Vec2,
 }
 
 impl MoveState {
     pub fn mantling(&self) -> bool {
         self.mantle_time > 0.0
+    }
+
+    pub fn lunging(&self) -> bool {
+        self.lunge_time > 0.0
     }
 }
 
@@ -236,6 +249,20 @@ pub fn step(
 
     if state.mantling() {
         return mantle(state, forward, params, dt);
+    }
+
+    if let Some(offset) = input.lunge {
+        start_lunge(state, offset, params);
+    }
+    if state.lunging() {
+        return lunge(state, env, params, dt);
+    }
+    if state.lunge_velocity != Vec2::ZERO {
+        // The lunge ended last tick: drop to a walk at the target instead of
+        // sliding on through it.
+        state.lunge_velocity = Vec2::ZERO;
+        let carried = horizontal(state.velocity).clamp_length_max(crate::melee::LUNGE_CARRY_SPEED);
+        state.velocity = Vec3::new(carried.x, state.velocity.y, carried.z);
     }
 
     tick_slide(state, params, dt);
@@ -419,6 +446,41 @@ fn mantle(state: &mut MoveState, forward: Vec3, params: &MoveParams, dt: f32) ->
     state.velocity
 }
 
+/// Throws the player at a melee target `offset` away (see [`crate::melee`]).
+/// A lunge ends a sprint and a slide (in a crouch).
+fn start_lunge(state: &mut MoveState, offset: Vec2, params: &MoveParams) {
+    let travel = crate::melee::lunge_travel(offset);
+    if travel <= 0.01 {
+        return;
+    }
+    let speed = crate::melee::LUNGE_SPEED;
+    state.lunge_velocity = offset.normalize() * speed;
+    state.lunge_time = travel / speed;
+    state.sprinting = false;
+    state.jump_buffer = 0.0;
+    if state.stance == Stance::Sliding {
+        state.stance = Stance::Crouching;
+        state.slide_time = 0.0;
+        state.slide_cooldown = params.slide_cooldown;
+    }
+}
+
+/// One tick of a lunge: straight at the target at the lunge speed, with
+/// gravity as usual. The last tick covers only what is left of the
+/// distance, so every lunge travels exactly as far as it set out to.
+fn lunge(state: &mut MoveState, env: MoveEnv, params: &MoveParams, dt: f32) -> Vec3 {
+    let step = state.lunge_time.min(dt);
+    state.lunge_time = (state.lunge_time - dt).max(0.0);
+    let flat = state.lunge_velocity * (step / dt);
+    let vertical = if env.on_floor {
+        0.0
+    } else {
+        state.velocity.y - params.gravity * dt
+    };
+    state.velocity = Vec3::new(flat.x, vertical, flat.y);
+    state.velocity
+}
+
 /// Advances the slide timer and ends the slide, in a crouch, when it runs out or slows down.
 /// Kept separate from `update_stance` so the timer ticks exactly once per step.
 fn tick_slide(state: &mut MoveState, params: &MoveParams, dt: f32) {
@@ -493,6 +555,60 @@ mod tests {
             wish: Vec2::Y,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn a_lunge_covers_its_distance_at_speed_then_stops_at_the_target() {
+        let params = MoveParams::default();
+        let mut s = MoveState {
+            sprinting: true,
+            ..Default::default()
+        };
+        // A target 3 m ahead and a little to the right (yaw 0 looks down -Z).
+        let offset = Vec2::new(0.4, -3.0);
+        let mut position = Vec3::ZERO;
+        let mut input = MoveInput {
+            lunge: Some(offset),
+            ..Default::default()
+        };
+        let mut ticks = 0;
+        loop {
+            let v = step(&mut s, &input, MoveEnv::default(), &params, DT);
+            input.lunge = None;
+            position += v * DT;
+            ticks += 1;
+            if !s.lunging() {
+                break;
+            }
+            assert!(!s.sprinting, "a lunge ends the sprint");
+        }
+        let travelled = Vec2::new(position.x, position.z);
+        let expected = crate::melee::lunge_travel(offset);
+        assert!((travelled.length() - expected).abs() < 1e-3, "{travelled}");
+        assert!(
+            travelled.normalize().dot(offset.normalize()) > 0.999,
+            "straight at it"
+        );
+        assert!(ticks <= 12, "quick: {ticks} ticks");
+        // The next tick takes the speed off.
+        step(&mut s, &input, MoveEnv::default(), &params, DT);
+        assert!(
+            speed(&s) <= crate::melee::LUNGE_CARRY_SPEED + 1e-4,
+            "{}",
+            speed(&s)
+        );
+    }
+
+    #[test]
+    fn a_lunge_at_a_target_in_reach_does_not_move() {
+        let mut s = MoveState::default();
+        let input = MoveInput {
+            lunge: Some(Vec2::new(0.0, -0.6)),
+            ..Default::default()
+        };
+        run(&mut s, input, MoveEnv::default(), 1);
+        assert!(!s.lunging());
+        assert_eq!(speed(&s), 0.0);
     }
 
     #[test]

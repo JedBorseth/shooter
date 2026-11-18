@@ -137,6 +137,7 @@ impl Prediction {
 pub fn diverged(a: &Predicted, b: &Predicted) -> bool {
     a.on_floor != b.on_floor
         || a.state.reload_held != b.state.reload_held
+        || a.state.melee_held != b.state.melee_held
         || a.state.airborne != b.state.airborne
         || (a.state.health - b.state.health).abs() > 0.01
         || (a.state.fall_speed - b.state.fall_speed).abs() > VELOCITY_TOLERANCE
@@ -156,6 +157,8 @@ fn move_diverged(a: &MoveState, b: &MoveState) -> bool {
         || (a.slide_cooldown - b.slide_cooldown).abs() > TIME_TOLERANCE
         || (a.jump_buffer - b.jump_buffer).abs() > TIME_TOLERANCE
         || (a.coyote - b.coyote).abs() > TIME_TOLERANCE
+        || (a.lunge_time - b.lunge_time).abs() > TIME_TOLERANCE
+        || a.lunge_velocity.distance(b.lunge_velocity) > VELOCITY_TOLERANCE
 }
 
 fn combat_diverged(a: &CombatState, b: &CombatState) -> bool {
@@ -194,6 +197,18 @@ fn combat_diverged(a: &CombatState, b: &CombatState) -> bool {
                 stage: sb,
             },
         ) => sa != sb || !close(ra, rb),
+        (
+            Action::Meleeing {
+                remaining: ra,
+                strike_in: sa,
+                lunge: la,
+            },
+            Action::Meleeing {
+                remaining: rb,
+                strike_in: sb,
+                lunge: lb,
+            },
+        ) => la != lb || !close(ra, rb) || !close(sa, sb),
         _ => true,
     };
     action_diverged

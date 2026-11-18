@@ -90,6 +90,7 @@ const REBINDABLE := {
 	&"fire": "Fire",
 	&"aim": "Aim",
 	&"reload": "Reload",
+	&"melee": "Melee",
 	&"weapon_1": "Primary weapon",
 	&"weapon_2": "Secondary weapon",
 	&"interact": "Interact",

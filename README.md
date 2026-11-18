@@ -348,6 +348,7 @@ Export presets are in `godot/export_presets.cfg`. The Rust library for each plat
 | Hold breath (while scoped) | Shift |
 | Take weapon or refill ammo at a rack | F |
 | Reload | R |
+| Knife (lunges at an enemy up to about 3 m in front) | V |
 | Switch weapon | 1, 2, or mouse wheel |
 | Refill all ammo to max (demo) | T |
 | Pause menu and settings | Esc |
@@ -367,6 +368,7 @@ Gamepads work too (Xbox layout shown; PlayStation and others use the same positi
 | Jump | A |
 | Fire / aim down sights | RT / LT |
 | Reload | X |
+| Knife | R3 (click the right stick) |
 | Switch weapon | Y |
 | Scoreboard (online, hold) | Back / View |
 | Loadout and Ready (online) | D-pad up |

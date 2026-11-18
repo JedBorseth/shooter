@@ -35,13 +35,14 @@ use godot::classes::{
     AudioStreamPlayer, AudioStreamRandomizer, Camera3D, CharacterBody3D, CollisionShape3D, Engine,
     ICharacterBody3D, Input, InputEvent, InputEventJoypadButton, InputEventJoypadMotion,
     InputEventMouseButton, InputEventMouseMotion, Node3D, PackedScene, PhysicsDirectSpaceState3D,
-    PhysicsRayQueryParameters3D, ShapeCast3D,
+    PhysicsRayQueryParameters3D, PhysicsShapeQueryParameters3D, ShapeCast3D, SphereShape3D,
 };
 use godot::prelude::*;
 use shooter_sim::hitbox::HitZone;
 use shooter_sim::look::{
     self, AimAssist, AimAssistParams, AssistTarget, AssistType, AssistView, StickLook, StickParams,
 };
+use shooter_sim::melee;
 use shooter_sim::movement::{MoveEnv, Stance};
 use shooter_sim::net::prediction::{ErrorSmoothing, Prediction, Reconciled};
 use shooter_sim::net::protocol::{OwnState, Predicted};
@@ -90,12 +91,13 @@ const SHAKE_STIFFNESS: f32 = 900.0;
 
 /// Actions whose presses are remembered until the next physics tick, so a tap
 /// shorter than one tick (or a mouse-wheel step) is never lost.
-const LATCHED_ACTIONS: [&str; 10] = [
+const LATCHED_ACTIONS: [&str; 11] = [
     "jump",
     "crouch",
     "sprint",
     "fire",
     "reload",
+    "melee",
     "weapon_next",
     "weapon_1",
     "weapon_2",
@@ -820,6 +822,12 @@ impl FpsPlayer {
         }
     }
 
+    /// Whether a knife strike is under way (tests).
+    #[func]
+    fn is_meleeing(&self) -> bool {
+        self.state.combat.meleeing()
+    }
+
     /// Whether a weapon inspect is playing (tests).
     #[func]
     fn is_inspecting(&self) -> bool {
@@ -1172,6 +1180,7 @@ impl FpsPlayer {
         let sprint = held("sprint");
         let crouch = held("crouch");
         let fire = held("fire");
+        let melee = held("melee");
         let mut reload = held("reload");
         let next = held("weapon_next");
         let slot_1 = held("weapon_1");
@@ -1217,6 +1226,21 @@ impl FpsPlayer {
             None
         };
 
+        // A melee press that will start a strike lunges at the enemy in
+        // front, if one is close enough.
+        let melee_press = melee
+            && !self.state.melee_held
+            && self.state.alive()
+            && self.state.combat.can_melee()
+            && !self.state.movement.mantling()
+            && !self.movement_locked;
+        let lunge = if melee_press {
+            self.lunge_target()
+        } else {
+            None
+        };
+        let attacking = fire || melee || self.state.combat.meleeing();
+
         let input = PlayerInput {
             wish: Vec2::new(wish.x, wish.y),
             yaw: self.yaw,
@@ -1229,10 +1253,19 @@ impl FpsPlayer {
             reload,
             switch_to,
             pickup: if interact { self.look_target } else { None },
+            melee,
+            lunge,
             // A press since the last tick: the server rewinds others to the
-            // frame it was clicked on.
+            // frame it was clicked on. A knife strike uses the latest view.
             view_tick: match press {
-                _ if !fire || self.prediction.is_none() => None,
+                _ if self.prediction.is_none() => None,
+                _ if !fire => {
+                    if attacking {
+                        self.view_tick
+                    } else {
+                        None
+                    }
+                }
                 Some(press) => press.view_tick.or(self.view_tick),
                 None => self.view_tick,
             },
@@ -1570,6 +1603,17 @@ impl FpsPlayer {
             }
             CombatEvent::Cycled { weapon } => self.viewmodel.bind_mut().on_cycled(weapon),
             CombatEvent::PickedUp { weapon } => self.viewmodel.bind_mut().on_picked_up(weapon),
+            CombatEvent::MeleeStarted { lunge, .. } => {
+                let strike_in = match self.state.combat.action {
+                    Action::Meleeing { strike_in, .. } => strike_in,
+                    _ => melee::STRIKE_DELAY,
+                };
+                self.viewmodel.bind_mut().on_melee(lunge, strike_in);
+                if lunge {
+                    self.kick_fov(self.slide_fov_kick * 0.8);
+                }
+            }
+            CombatEvent::MeleeStruck { shot, .. } => self.melee_strike(shot),
             // The reload's handling sounds follow its animation (`WeaponView`).
             CombatEvent::ReloadStarted { .. }
             | CombatEvent::ReloadFinished { .. }
@@ -1611,6 +1655,179 @@ impl FpsPlayer {
             0.0,
         );
         self.kick_fov(-degrees.x * SHOT_ZOOM_PULSE * scale);
+    }
+
+    /// Everything the knife could reach within `range` (horizontal, feet to
+    /// feet): living damageable characters that are not friends, each with
+    /// its feet, and with nothing solid between the eye and its chest.
+    fn melee_candidates(&self, range: f32) -> Vec<(Gd<Node>, Vec3)> {
+        let Some(mut space) = self
+            .base()
+            .get_world_3d()
+            .and_then(|world| world.get_direct_space_state())
+        else {
+            return Vec::new();
+        };
+        let mut sphere = SphereShape3D::new_gd();
+        sphere.set_radius(range + 0.5);
+        let mut query = PhysicsShapeQueryParameters3D::new_gd();
+        query.set_shape(&sphere);
+        query.set_transform(Transform3D::new(
+            Basis::IDENTITY,
+            self.current_position + Vector3::UP,
+        ));
+        query.set_collision_mask(HITBOX_LAYER);
+        let eye = self.eye_position();
+        let me = self.base().instance_id();
+        let mut found: Vec<(Gd<Node>, Vec3)> = Vec::new();
+        for hit in space
+            .intersect_shape_ex(&query)
+            .max_results(64)
+            .done()
+            .iter_shared()
+        {
+            let Some(target) = hit
+                .get("collider")
+                .and_then(|c| c.try_to::<Gd<Node>>().ok())
+                .as_ref()
+                .and_then(find_damageable)
+            else {
+                continue;
+            };
+            let id = target.instance_id();
+            if id == me
+                || found.iter().any(|(t, _)| t.instance_id() == id)
+                || target.has_method("apply_prop_hit")
+                || (target.has_meta("friendly") && target.get_meta("friendly").booleanize())
+            {
+                continue;
+            }
+            let mut probe = target.clone();
+            if probe.has_method("is_alive") && !probe.call("is_alive", &[]).booleanize() {
+                continue;
+            }
+            let Ok(node) = target.clone().try_cast::<Node3D>() else {
+                continue;
+            };
+            let feet = node.get_global_position();
+            // Solid parts of the target itself (a zombie's body) do not hide it.
+            let chest = feet + Vector3::UP * melee::CHEST_HEIGHT;
+            let blocked = self.ray(eye, chest, WORLD_LAYER).is_some_and(|hit| {
+                hit.instance_id() != target.instance_id() && !target.is_ancestor_of(&hit)
+            });
+            if blocked {
+                continue;
+            }
+            found.push((target, to_sim(feet)));
+        }
+        found
+    }
+
+    /// The lunge for a melee pressed now: the offset to the enemy the knife
+    /// goes for, if one is in lunge range in front (see `shooter_sim::melee`).
+    fn lunge_target(&self) -> Option<Vec2> {
+        let feet = to_sim(self.current_position);
+        let candidates = self.melee_candidates(melee::LUNGE_RANGE);
+        let (_, at) = melee::pick(
+            feet,
+            self.yaw,
+            melee::LUNGE_RANGE,
+            melee::LUNGE_CONE_DEGREES,
+            candidates.iter().map(|(t, at)| (t.instance_id(), *at)),
+        )?;
+        let offset = melee::lunge_offset(feet, at);
+        melee::lunges(offset).then_some(offset)
+    }
+
+    /// The knife strike lands (`shot` numbers it): the nearest enemy in reach
+    /// in front of the player takes the knife's damage. Online this predicts
+    /// the hit marker; the server decides the kill. A strike that meets a wall
+    /// instead marks it.
+    fn melee_strike(&mut self, shot: u32) {
+        let feet = to_sim(self.current_position);
+        let eye = self.eye_position();
+        let candidates = self.melee_candidates(melee::REACH);
+        let picked = melee::pick(
+            feet,
+            self.yaw,
+            melee::REACH,
+            melee::STRIKE_CONE_DEGREES,
+            candidates.iter().enumerate().map(|(i, (_, at))| (i, *at)),
+        );
+        let Some((index, at)) = picked else {
+            let forward = to_godot(player::aim_direction(self.yaw, self.pitch, Vec2::ZERO));
+            let wall = self.base().get_world_3d().and_then(|world| {
+                let mut space = world.get_direct_space_state()?;
+                let exclude: Array<Rid> = array![self.base().get_rid()];
+                let query = PhysicsRayQueryParameters3D::create_ex(
+                    eye,
+                    eye + forward * (melee::REACH * 0.8),
+                )
+                .collision_mask(WORLD_LAYER)
+                .exclude(&exclude)
+                .done()?;
+                let hit = space.intersect_ray(&query);
+                let position = hit.get("position")?.try_to::<Vector3>().ok()?;
+                let normal = hit.get("normal")?.try_to::<Vector3>().ok()?;
+                let collider = hit
+                    .get("collider")
+                    .and_then(|c| c.try_to::<Gd<Node>>().ok());
+                Some((position, normal, collider))
+            });
+            let struck_wall = wall.is_some();
+            if let Some((position, normal, collider)) = wall {
+                let surface = surface_of(collider.as_ref());
+                self.spawn_impact(position, normal, false, &surface, &surface);
+            }
+            self.viewmodel
+                .bind_mut()
+                .on_melee_struck(struck_wall, false);
+            return;
+        };
+        let mut target = candidates[index].0.clone();
+        let target_feet = to_godot(at);
+        let chest = target_feet + Vector3::UP * melee::CHEST_HEIGHT;
+        let direction = (target_feet - self.current_position).normalized_or_zero();
+        let killed = if target.has_method("apply_melee") {
+            target.call("apply_melee", &[melee::DAMAGE.to_variant()])
+        } else {
+            target.call(
+                "apply_damage",
+                &[melee::DAMAGE.to_variant(), false.to_variant()],
+            )
+        }
+        .try_to::<bool>()
+        .unwrap_or(false);
+        if target.has_method("react_to_hit") {
+            target.call(
+                "react_to_hit",
+                &[direction.to_variant(), killed.to_variant()],
+            );
+        }
+        let normal = -direction;
+        self.spawn_impact(chest - direction * 0.25, normal, false, "flesh", "flesh");
+        self.viewmodel.bind_mut().on_melee_struck(true, true);
+        self.signals().hit_confirmed().emit(killed, false);
+        if self.prediction.is_some() {
+            self.predicted_hits.push_back(shot);
+            if self.predicted_hits.len() > 64 {
+                self.predicted_hits.pop_front();
+            }
+        }
+        if killed {
+            self.kick_fov(-self.kill_fov_kick);
+            let kill = Kill {
+                distance: eye.distance_to(chest),
+                headshot: false,
+            };
+            for scored in self.score.on_shot_kills(&self.score_rules, &[kill]) {
+                self.signals().scored().emit(
+                    scored.points as i64,
+                    &GString::from(scored.award.label().as_str()),
+                    scored.award.is_medal(),
+                );
+            }
+        }
     }
 
     /// Hitscan from the eye along the shot's view angles (the click's, for a
@@ -1961,6 +2178,7 @@ impl FpsPlayer {
             Action::Raising { remaining } => {
                 ViewAction::Raising(progress(remaining, def.raise_time))
             }
+            Action::Meleeing { strike_in, .. } => ViewAction::Meleeing { strike_in },
         };
         self.frame_with(ads, action)
     }

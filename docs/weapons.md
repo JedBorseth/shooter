@@ -26,6 +26,16 @@ Both parts are aim, and the camera looks along the aim, so the screen centre and
 - Re-selecting the weapon in hand while it is being put away brings it back up from as far as it got.
 - A burst in progress is dropped by a reload, a sprint, or a switch.
 
+## Melee
+
+The knife has its own button (V, or R3 on a gamepad) and works with any weapon in hand. Rules are in `rust/sim/src/melee.rs`.
+
+- A strike kills a full-health player (150 damage). It lands 0.1 s after the press and the weapon is back up 0.45 s after that. It cuts a reload or a bolt or pump cycle short, like a switch: a magazine already seated stays in, and a cut cycle is worked when the strike ends. It cannot start during a switch or a mantle, and it ends a sprint.
+- An enemy within 3.2 m (feet to feet) and 45 degrees of the view is lunged at: the player is thrown at them at 14 m/s, stops 0.9 m short, and strikes on arrival. Without one, the strike reaches 1.5 m in a 70-degree cone either side.
+- The client picks the lunge target from what it draws and sends the offset with the input, so prediction and the server move the attacker the same way. The server drops a lunge that no enemy (rewound to the attacker's view, as for shots) stands within 1 m of, so it cannot be used as a dash. The strike itself is checked like a shot: against rewound players, with 0.5 m of extra reach, and never through a wall.
+- In Zombies the knife does the same 150 damage (one strike kills in round 1) and a knife kill pays 130 points. In Gun Game a knife kill sets the victim back a weapon and does not move the killer up.
+- Bots knife enemies that come within about 2.5 m in front of them.
+
 ## Damage zones
 
 The head uses `damage.headshot`. Other zones use the weapon's `zones` (`stomach`, `arm`, `leg`; default 1, 0.9, 0.85). The M40 kills in one shot only to the head or upper chest (stomach 0.9, arms 0.75, legs 0.7); the PDW-9 is forgiving on limbs.
