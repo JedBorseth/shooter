@@ -2,9 +2,15 @@
 // weapons turn `viewmodel` off: the flash is then drawn in the world and turned
 // to face the camera, so it reads from any side.
 //
-// `shape` 0 is the flash seen down the barrel: a hot core and ragged petals that
-// change every shot (`seed`, set per instance). `shape` 1 is the plume seen from
-// the side: a short cone along the quad's +X.
+// `shape` 0 is the flash seen down the barrel, `shape` 1 the plume seen from the
+// side (along the quad's +X). With a `flipbook` (the firearms' material,
+// materials/muzzle_flash.tres) each is a frame of the rendered flash atlas
+// (tools/build_muzzle_flash.py: front stars, side plumes, and their smaller
+// aimed versions, four of each), picked per shot by `seed` and switched to the
+// aimed row by `aimed`, both set per instance; its heat runs from `color` at
+// the edges to `core_color` in the middle. Without one (the laser) it is drawn
+// in code: a hot core and ragged petals that change every shot, and a short
+// cone for the plume.
 shader_type spatial;
 render_mode blend_add, unshaded, cull_disabled, depth_draw_never, shadows_disabled;
 
@@ -16,7 +22,10 @@ uniform float energy = 3.0;
 uniform float spikes = 4.0;
 uniform bool viewmodel = true;
 uniform int shape = 0;
+uniform bool use_flipbook = false;
+uniform sampler2D flipbook : hint_default_black, filter_linear, repeat_disable;
 instance uniform float seed = 0.0;
+instance uniform float aimed = 0.0;
 
 void vertex() {
 	if (viewmodel) {
@@ -38,7 +47,17 @@ float hash(float n) {
 void fragment() {
 	vec2 p = UV * 2.0 - 1.0;
 	float light = 0.0;
-	if (shape == 0) {
+	if (use_flipbook) {
+		// A 4 x 4 atlas: rows front, side, aimed front, aimed side.
+		float row = float(shape) + (aimed > 0.5 ? 2.0 : 0.0);
+		float column = mod(floor(seed), 4.0);
+		vec2 cell = clamp(UV, vec2(0.004), vec2(0.996));
+		// The atlas holds linear heat; lifted, the thin gas round the core
+		// shows as well as the white-hot middle.
+		float heat = pow(texture(flipbook, (vec2(column, row) + cell) * 0.25).r, 0.6);
+		vec3 tint = mix(color.rgb, core_color.rgb, smoothstep(0.45, 0.95, heat));
+		ALBEDO = tint * energy * heat * 3.2;
+	} else if (shape == 0) {
 		float radius = length(p);
 		float angle = atan(p.y, p.x);
 		// Ragged petals: each spike gets its own length from the shot's seed.
