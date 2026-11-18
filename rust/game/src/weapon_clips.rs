@@ -798,6 +798,20 @@ pub fn holster_keys(kind: ClipKind) -> &'static [(f32, Pose)] {
 }
 
 /// The pose at `t` from fraction keys.
+/// The weapon during a knife strike, `t` seconds in with the strike landing
+/// at `strike`: the firing hand swings it down and out to the right, out of
+/// the knife's way, and brings it back up over the recovery.
+pub fn melee_pose(t: f32, strike: f32) -> Pose {
+    let away = Pose::new(-12.0, -8.0, 20.0, 0.035, -0.06, 0.02);
+    let keys = [
+        (0.0, Pose::ZERO),
+        (strike * 0.8, away),
+        (strike + 0.12, away.scaled(0.95)),
+        (strike + shooter_sim::melee::RECOVERY, Pose::ZERO),
+    ];
+    posed(&keys, t)
+}
+
 pub fn pose_at(keys: &[(f32, Pose)], t: f32) -> Pose {
     posed(keys, t)
 }

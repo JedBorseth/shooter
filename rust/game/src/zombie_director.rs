@@ -337,7 +337,7 @@ impl ZombieDirector {
 
     /// A zombie this director spawned was hit.
     #[func]
-    fn on_zombie_hurt(&mut self, killed: bool, headshot: bool, position: Vector3) {
+    fn on_zombie_hurt(&mut self, killed: bool, headshot: bool, melee: bool, position: Vector3) {
         if killed {
             self.kills += 1;
             if headshot {
@@ -359,7 +359,7 @@ impl ZombieDirector {
         if self.nuking {
             return;
         }
-        let points = i64::from(zombies::points::for_hit(killed, headshot));
+        let points = i64::from(zombies::points::for_hit(killed, headshot, melee));
         self.award(points);
     }
 }

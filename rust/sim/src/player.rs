@@ -5,6 +5,7 @@
 
 use glam::{Vec2, Vec3};
 
+use crate::melee;
 use crate::movement::{self, MoveEnv, MoveInput, MoveParams, MoveState};
 use crate::weapon::{self, CombatContext, CombatEvent, CombatInput, CombatState, WeaponId};
 
@@ -25,6 +26,12 @@ pub struct PlayerInput {
     pub switch_to: Option<u8>,
     /// Take this weapon from the pickup the player is looking at.
     pub pickup: Option<WeaponId>,
+    /// The melee button ([`crate::melee`]); a press swings the knife.
+    pub melee: bool,
+    /// With a melee press: the target to lunge at, as the horizontal offset
+    /// (`x`, `z`) from the player's feet to theirs, if one was in range. The
+    /// client that pressed melee picks it from what it draws.
+    pub lunge: Option<Vec2>,
     /// Online only: the server tick (fractional) this client was drawing other
     /// players at when the input was read. The server rewinds their hitboxes to
     /// it to check this input's shots (`net::lag`). Sent while firing; the
@@ -50,10 +57,10 @@ pub struct FireAim {
 }
 
 impl PlayerInput {
-    /// This input with movement, firing, and pickups taken out, as during a
-    /// round's freeze: the player can still look around, aim, reload, and
-    /// switch weapons. The server and the predicting client apply the same
-    /// filter.
+    /// This input with movement, firing, melee, and pickups taken out, as
+    /// during a round's freeze: the player can still look around, aim,
+    /// reload, and switch weapons. The server and the predicting client apply
+    /// the same filter.
     pub fn held_still(self) -> Self {
         Self {
             wish: Vec2::ZERO,
@@ -61,6 +68,8 @@ impl PlayerInput {
             sprint: false,
             crouch: false,
             fire: false,
+            melee: false,
+            lunge: None,
             pickup: None,
             view_tick: None,
             fire_aim: None,
@@ -137,6 +146,8 @@ pub struct PlayerState {
     pub fall_speed: f32,
     pub airborne: bool,
     pub(crate) reload_held: bool,
+    /// The melee button was down last tick (a press starts a strike).
+    pub melee_held: bool,
 }
 
 impl PlayerState {
@@ -149,6 +160,7 @@ impl PlayerState {
             fall_speed: 0.0,
             airborne: false,
             reload_held: false,
+            melee_held: false,
         }
     }
 
@@ -265,6 +277,11 @@ pub fn step(
 
     let reload_pressed = input.reload && !state.reload_held;
     state.reload_held = input.reload;
+    let melee_pressed = input.melee && !state.melee_held;
+    state.melee_held = input.melee;
+    // Not while climbing, when the weapon is down anyway.
+    let melee = melee_pressed && state.combat.can_melee() && !state.movement.mantling();
+    let lunge = input.lunge.filter(|offset| melee && melee::lunges(*offset));
 
     let def = state.combat.def();
     let ads = state.combat.ads;
@@ -278,8 +295,14 @@ pub fn step(
         // as a fresh sprint press.
         sprint: input.sprint,
         crouch: input.crouch,
-        block_sprint: input.fire || input.aim || reload_pressed || scoped,
+        block_sprint: input.fire
+            || input.aim
+            || reload_pressed
+            || scoped
+            || melee
+            || state.combat.meleeing(),
         speed_multiplier: def.move_scale * (1.0 + (def.ads_move_scale - 1.0) * ads),
+        lunge,
     };
     let velocity = movement::step(&mut state.movement, &move_input, env, &params.movement, dt);
     if !env.on_floor {
@@ -296,6 +319,7 @@ pub fn step(
         switch_to: input.switch_to,
         hold_breath: input.sprint && scoped,
         pickup: input.pickup,
+        melee: melee.then(|| (melee::strike_delay(lunge), lunge.is_some())),
     };
     let ctx = state.combat_context(env, &params.movement);
     let mut combat = Vec::new();
@@ -369,6 +393,114 @@ mod tests {
         assert!(events.is_empty(), "no shot during sprint-out");
         let events = run(&mut s, fire, MoveEnv::default(), 20);
         assert!(fired(&events));
+    }
+
+    fn melee_events(events: &[PlayerEvent]) -> (usize, usize) {
+        let started = events
+            .iter()
+            .filter(|e| matches!(e, PlayerEvent::Combat(CombatEvent::MeleeStarted { .. })))
+            .count();
+        let struck = events
+            .iter()
+            .filter(|e| matches!(e, PlayerEvent::Combat(CombatEvent::MeleeStruck { .. })))
+            .count();
+        (started, struck)
+    }
+
+    #[test]
+    fn a_melee_press_strikes_once_and_holds_the_weapon_down() {
+        let mut s = ready_state();
+        let knife = PlayerInput {
+            melee: true,
+            fire: true,
+            ..Default::default()
+        };
+        let events = run(&mut s, knife, MoveEnv::default(), 1);
+        assert_eq!(melee_events(&events), (1, 0));
+        assert!(s.combat.meleeing());
+        // The strike lands after the delay; holding the button does not swing again.
+        let ticks = (melee::STRIKE_DELAY / DT).round() as usize + 1;
+        let events = run(&mut s, knife, MoveEnv::default(), ticks);
+        assert_eq!(melee_events(&events), (0, 1));
+        assert!(!fired(&events), "no shots during a melee");
+        let recovery = (melee::RECOVERY / DT).round() as usize + 4;
+        let events = run(&mut s, knife, MoveEnv::default(), recovery);
+        assert_eq!(melee_events(&events), (0, 0));
+        assert!(!s.combat.meleeing(), "back up after the recovery");
+        assert!(
+            fired(&events),
+            "the held trigger fires once the weapon is up"
+        );
+    }
+
+    #[test]
+    fn a_lunge_carries_the_player_to_the_target_and_strikes_on_arrival() {
+        let mut s = ready_state();
+        let params = PlayerParams::default();
+        let offset = Vec2::new(0.0, -3.0);
+        let mut input = PlayerInput {
+            melee: true,
+            lunge: Some(offset),
+            ..Default::default()
+        };
+        let mut position = Vec3::ZERO;
+        let mut events = Vec::new();
+        let mut struck_at = None;
+        for tick in 0..30 {
+            events.clear();
+            let v = step(&mut s, &input, MoveEnv::default(), &params, DT, &mut events);
+            position += v * DT;
+            input.lunge = None;
+            if melee_events(&events).1 == 1 {
+                struck_at = Some((tick, position));
+            }
+        }
+        let (tick, at) = struck_at.expect("the strike landed");
+        let travel = melee::lunge_travel(offset);
+        assert!((-at.z - travel).abs() < 0.05, "struck at {at}");
+        assert!(tick >= 1 && tick <= (melee::lunge_time(offset) / DT).ceil() as usize + 1);
+        assert!(
+            -position.z < travel + 0.15,
+            "stops at the target: {position}"
+        );
+    }
+
+    #[test]
+    fn a_lunge_is_ignored_without_a_melee_that_can_start() {
+        let mut s = ready_state();
+        s.combat.action = Action::Raising { remaining: 0.5 };
+        let input = PlayerInput {
+            melee: true,
+            lunge: Some(Vec2::new(0.0, -3.0)),
+            ..Default::default()
+        };
+        let events = run(&mut s, input, MoveEnv::default(), 1);
+        assert_eq!(melee_events(&events), (0, 0), "no knife while drawing");
+        assert!(!s.movement.lunging(), "and no dash");
+    }
+
+    #[test]
+    fn a_melee_cuts_a_reload_short() {
+        let mut s = ready_state();
+        s.combat.slots[0].magazine = 10;
+        let reload = PlayerInput {
+            reload: true,
+            ..Default::default()
+        };
+        run(&mut s, reload, MoveEnv::default(), 1);
+        assert!(s.combat.is_reloading());
+        let knife = PlayerInput {
+            melee: true,
+            ..Default::default()
+        };
+        run(&mut s, knife, MoveEnv::default(), 1);
+        assert!(s.combat.meleeing());
+        run(&mut s, PlayerInput::default(), MoveEnv::default(), 40);
+        assert_eq!(s.combat.action, Action::Ready);
+        assert_eq!(
+            s.combat.slots[0].magazine, 10,
+            "the fresh magazine never seated"
+        );
     }
 
     #[test]
@@ -540,6 +672,8 @@ mod tests {
             reload: true,
             switch_to: Some(1),
             pickup: Some(WeaponId::expect("ak47")),
+            melee: true,
+            lunge: Some(Vec2::new(0.5, -2.0)),
             view_tick: Some(12.5),
             fire_aim: Some(FireAim {
                 yaw: 0.01,

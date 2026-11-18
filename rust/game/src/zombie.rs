@@ -235,7 +235,7 @@ impl ICharacterBody3D for Zombie {
 impl Zombie {
     /// Emitted for every damaging hit, before the zombie reacts.
     #[signal]
-    pub fn hurt(killed: bool, headshot: bool, position: Vector3);
+    pub fn hurt(killed: bool, headshot: bool, melee: bool, position: Vector3);
 
     /// Emitted when one of this zombie's swings lands on a player.
     #[signal]
@@ -244,6 +244,17 @@ impl Zombie {
     /// Applies damage and returns true if this hit killed the zombie.
     #[func]
     pub fn apply_damage(&mut self, amount: f32, headshot: bool) -> bool {
+        self.take_damage(amount, headshot, false)
+    }
+
+    /// A knife strike: damage like [`apply_damage`](Self::apply_damage), and
+    /// a kill pays the knife's points.
+    #[func]
+    pub fn apply_melee(&mut self, amount: f32) -> bool {
+        self.take_damage(amount, false, true)
+    }
+
+    fn take_damage(&mut self, amount: f32, headshot: bool, melee: bool) -> bool {
         if !self.is_alive() {
             return false;
         }
@@ -262,7 +273,9 @@ impl Zombie {
             }
         }
         let position = self.base().get_global_position();
-        self.signals().hurt().emit(killed, headshot, position);
+        self.signals()
+            .hurt()
+            .emit(killed, headshot, melee, position);
         killed
     }
 

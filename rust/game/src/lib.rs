@@ -13,6 +13,7 @@ mod convert;
 mod footsteps;
 mod gunfire;
 mod hitbox_rig;
+mod knife;
 mod net;
 mod penetration;
 mod pickup;

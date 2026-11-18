@@ -176,6 +176,7 @@ impl RemotePlayer {
             alive: true,
             shots_fired: u32::try_from(shots_fired).unwrap_or(0),
             mantling: false,
+            meleeing: false,
             hits: 0,
             hit_heading: 0,
         };
@@ -265,6 +266,7 @@ impl RemotePlayer {
             reload,
             alive: s.alive,
             mantling: s.mantling,
+            meleeing: s.meleeing,
         };
         self.rig.bind_mut().update(&frame, delta);
         // The server rewinds exactly this pose when it checks our shots.

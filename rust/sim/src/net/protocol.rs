@@ -51,7 +51,10 @@ use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState}
 // Version 17 added Free-for-all.
 // Version 18 added hip-fire bloom and each slot's pending bolt cycle.
 // Version 19 added the press aim to inputs (sub-tick fire timing).
-pub const PROTOCOL_VERSION: u16 = 19;
+// Version 20 added melee: the button and lunge in inputs, the strike and
+// lunge in the predicted state, who is swinging in player views, and knife
+// kills in the kill feed.
+pub const PROTOCOL_VERSION: u16 = 20;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -160,8 +163,11 @@ pub enum GameEvent {
     Kill {
         killer: u8,
         victim: u8,
+        /// The weapon in the killer's hands.
         weapon: WeaponId,
         headshot: bool,
+        /// A knife kill ([`crate::melee`]): the feed shows the knife instead.
+        melee: bool,
     },
     /// To one player: awards just earned, if any, and their match totals.
     Score {
@@ -358,6 +364,8 @@ pub struct PlayerView {
     pub shots_fired: u32,
     /// Climbing over a ledge.
     pub mantling: bool,
+    /// Swinging the knife.
+    pub meleeing: bool,
     /// Hits taken so far (wrapping); an increase means the player was hit, so
     /// everyone sees the flinch.
     pub hits: u8,
@@ -395,6 +403,7 @@ impl PlayerView {
             alive: p.state.alive(),
             shots_fired: combat.shots_fired,
             mantling: p.state.movement.mantling(),
+            meleeing: combat.meleeing(),
             hits: 0,
             hit_heading: 0,
         }
@@ -439,10 +448,18 @@ impl PlayerInput {
         self.pitch = self.pitch.clamp(-PITCH_LIMIT, PITCH_LIMIT);
         self.switch_to = self.switch_to.filter(|slot| *slot < 4);
         self.pickup = self.pickup.filter(|id| valid_weapon(*id));
+        self.lunge = self.lunge.and_then(quantize_lunge);
         self.view_tick = self.view_tick.and_then(quantize_view_tick);
         self.fire_aim = self.fire_aim.and_then(subtick::quantize);
         self
     }
+}
+
+/// A lunge offset as the wire carries it (whole millimetres), or `None` if no
+/// honest client would send it.
+fn quantize_lunge(offset: Vec2) -> Option<Vec2> {
+    (offset.is_finite() && offset.length() <= crate::melee::MAX_LUNGE_OFFSET)
+        .then(|| (offset * LUNGE_SCALE).round() / LUNGE_SCALE)
 }
 
 /// A view tick as the wire carries it, or `None` if it cannot be sent.
@@ -580,8 +597,18 @@ fn write_input(w: &mut BitWriter, input: &PlayerInput, previous_view: Option<f64
         input.fire,
         input.aim,
         input.reload,
+        input.melee,
     ] {
         w.bool(flag);
+    }
+    match input.lunge.and_then(quantize_lunge) {
+        Some(offset) => {
+            w.bool(true);
+            let mm = (offset * LUNGE_SCALE).round();
+            w.u16(mm.x as i16 as u16);
+            w.u16(mm.y as i16 as u16);
+        }
+        None => w.bool(false),
     }
     match input.switch_to {
         Some(slot) if slot < 4 => {
@@ -690,6 +717,18 @@ fn read_input(r: &mut BitReader, previous_view: Option<f64>) -> DecodeResult<Pla
     let fire = r.bool()?;
     let aim = r.bool()?;
     let reload = r.bool()?;
+    let melee = r.bool()?;
+    let lunge = if r.bool()? {
+        let x = f32::from(r.u16()? as i16);
+        let z = f32::from(r.u16()? as i16);
+        let offset = Vec2::new(x, z) / LUNGE_SCALE;
+        if offset.length() > crate::melee::MAX_LUNGE_OFFSET {
+            return Err(DecodeError::Invalid("lunge"));
+        }
+        Some(offset)
+    } else {
+        None
+    };
     let switch_to = if r.bool()? {
         Some(r.bits(2)? as u8)
     } else {
@@ -714,6 +753,8 @@ fn read_input(r: &mut BitReader, previous_view: Option<f64>) -> DecodeResult<Pla
         reload,
         switch_to,
         pickup,
+        melee,
+        lunge,
         view_tick,
         fire_aim,
     })
@@ -845,12 +886,14 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
             victim,
             weapon,
             headshot,
+            melee,
         } => {
             w.bits(2, EVENT_TAG_BITS);
             w.u8(*killer);
             w.u8(*victim);
             write_weapon(w, *weapon);
             w.bool(*headshot);
+            w.bool(*melee);
         }
         GameEvent::Score { awards, totals } => {
             w.bits(3, EVENT_TAG_BITS);
@@ -1069,6 +1112,7 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
             victim: r.u8()?,
             weapon: read_weapon(r)?,
             headshot: r.bool()?,
+            melee: r.bool()?,
         }),
         3 => {
             let count = r.varint()? as usize;
@@ -1437,6 +1481,9 @@ fn read_snapshot<'a>(
     })
 }
 
+/// Lunge offsets travel in millimetres.
+const LUNGE_SCALE: f32 = 1000.0;
+
 /// Field groups of a [`PlayerView`], each sent only when it changed.
 fn write_view_delta(w: &mut BitWriter, v: &PlayerView, base: &PlayerView) {
     let changed = v != base;
@@ -1467,6 +1514,7 @@ fn write_view_delta(w: &mut BitWriter, v: &PlayerView, base: &PlayerView) {
             p.reloading,
             p.alive,
             p.mantling,
+            p.meleeing,
         )
     };
     let flags_changed = flags(v) != flags(base);
@@ -1480,6 +1528,7 @@ fn write_view_delta(w: &mut BitWriter, v: &PlayerView, base: &PlayerView) {
         w.bool(v.reloading);
         w.bool(v.alive);
         w.bool(v.mantling);
+        w.bool(v.meleeing);
     }
     let shots = v.shots_fired.wrapping_sub(base.shots_fired);
     w.bool(shots != 0);
@@ -1517,6 +1566,7 @@ fn read_view_delta(r: &mut BitReader, base: &PlayerView) -> DecodeResult<PlayerV
         v.reloading = r.bool()?;
         v.alive = r.bool()?;
         v.mantling = r.bool()?;
+        v.meleeing = r.bool()?;
     }
     if r.bool()? {
         v.shots_fired = base.shots_fired.wrapping_add(r.varint()?);
@@ -1536,6 +1586,7 @@ fn write_predicted(w: &mut BitWriter, p: &Predicted) {
     w.bool(p.on_floor);
     let s = &p.state;
     w.bool(s.reload_held);
+    w.bool(s.melee_held);
     w.f32(s.health);
     w.f32(s.since_damage);
     w.f32(s.fall_speed);
@@ -1548,6 +1599,7 @@ fn read_predicted(r: &mut BitReader) -> DecodeResult<Predicted> {
     let position = read_vec3(r)?;
     let on_floor = r.bool()?;
     let reload_held = r.bool()?;
+    let melee_held = r.bool()?;
     let health = r.f32()?;
     let since_damage = r.f32()?;
     let fall_speed = r.f32()?;
@@ -1563,6 +1615,7 @@ fn read_predicted(r: &mut BitReader) -> DecodeResult<Predicted> {
             fall_speed,
             airborne,
             reload_held,
+            melee_held,
         },
         position,
         on_floor,
@@ -1582,6 +1635,9 @@ fn write_move_state(w: &mut BitWriter, m: &MoveState) {
     w.f32(m.coyote);
     w.f32(m.mantle_time);
     w.f32(m.mantle_rise);
+    w.f32(m.lunge_time);
+    w.f32(m.lunge_velocity.x);
+    w.f32(m.lunge_velocity.y);
 }
 
 fn read_move_state(r: &mut BitReader) -> DecodeResult<MoveState> {
@@ -1598,6 +1654,8 @@ fn read_move_state(r: &mut BitReader) -> DecodeResult<MoveState> {
         coyote: r.f32()?,
         mantle_time: r.f32()?,
         mantle_rise: r.f32()?,
+        lunge_time: r.f32()?,
+        lunge_velocity: Vec2::new(r.f32()?, r.f32()?),
     })
 }
 
@@ -1639,6 +1697,16 @@ fn write_combat_state(w: &mut BitWriter, c: &CombatState) {
         Action::Raising { remaining } => {
             w.bits(5, 3);
             w.f32(remaining);
+        }
+        Action::Meleeing {
+            remaining,
+            strike_in,
+            lunge,
+        } => {
+            w.bits(6, 3);
+            w.f32(remaining);
+            w.f32(strike_in);
+            w.bool(lunge);
         }
     }
     w.f32(c.ads);
@@ -1702,6 +1770,11 @@ fn read_combat_state(r: &mut BitReader) -> DecodeResult<CombatState> {
         }
         5 => Action::Raising {
             remaining: r.f32()?,
+        },
+        6 => Action::Meleeing {
+            remaining: r.f32()?,
+            strike_in: r.f32()?,
+            lunge: r.bool()?,
         },
         _ => return Err(DecodeError::Invalid("action")),
     };
@@ -1876,6 +1949,62 @@ mod tests {
             bytes.len()
         );
         assert_eq!(ClientMessage::decode(&bytes).unwrap(), msg);
+    }
+
+    #[test]
+    fn a_lunging_knife_strike_round_trips_bit_exact() {
+        let params = PlayerParams::default();
+        let mut state = PlayerState::default();
+        state.combat.action = Action::Ready;
+        let knife = PlayerInput {
+            melee: true,
+            lunge: Some(Vec2::new(0.5, -2.5)),
+            ..Default::default()
+        }
+        .quantized();
+        player::step(
+            &mut state,
+            &knife,
+            MoveEnv::default(),
+            &params,
+            1.0 / 120.0,
+            &mut Vec::new(),
+        );
+        assert!(state.combat.meleeing() && state.movement.lunging());
+        let p = Predicted {
+            state,
+            position: Vec3::new(1.0, 0.0, 2.0),
+            on_floor: true,
+        };
+        let mut w = BitWriter::new();
+        write_predicted(&mut w, &p);
+        let bytes = w.finish();
+        let decoded = read_predicted(&mut BitReader::new(&bytes)).unwrap();
+        assert_eq!(decoded, p);
+        assert!(PlayerView::from_state(1, &p, 0.0, 0.0).meleeing);
+    }
+
+    #[test]
+    fn melee_inputs_carry_the_lunge_in_millimetres() {
+        let input = PlayerInput {
+            melee: true,
+            lunge: Some(Vec2::new(0.123_45, -2.987_65)),
+            ..Default::default()
+        }
+        .quantized();
+        assert_eq!(input.lunge, Some(Vec2::new(0.123, -2.988)));
+        let msg = ClientMessage::Input(InputPacket {
+            ack_snapshot: None,
+            first_seq: 5,
+            inputs: vec![input, PlayerInput::default()],
+        });
+        assert_eq!(ClientMessage::decode(&msg.encode()).unwrap(), msg);
+        // No honest client lunges across the map.
+        let dash = PlayerInput {
+            lunge: Some(Vec2::new(0.0, 30.0)),
+            ..Default::default()
+        };
+        assert_eq!(dash.quantized().lunge, None);
     }
 
     #[test]
@@ -2266,6 +2395,7 @@ mod tests {
                 victim: 0,
                 weapon: WeaponId::expect("m40"),
                 headshot: true,
+                melee: false,
             },
             GameEvent::Score {
                 awards: vec![

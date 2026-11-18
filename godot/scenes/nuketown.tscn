@@ -151,7 +151,7 @@ omni_attenuation = 1.5
 position = Vector3(0, 0.05, 20)
 
 [node name="HUD" parent="." instance=ExtResource("2_hud")]
-controls_text = "WASD move   Shift sprint (toggle)   C / Ctrl crouch (slide while sprinting)   Space jump   LMB fire   RMB aim   R reload   1 / 2 / wheel switch   F take weapon   Esc release mouse"
+controls_text = "WASD move   Shift sprint (toggle)   C / Ctrl crouch (slide while sprinting)   Space jump   LMB fire   RMB aim   R reload   V knife   1 / 2 / wheel switch   F take weapon   Esc release mouse"
 
 [node name="SecretLaser" type="Node3D" parent="."]
 script = ExtResource("7_secret")

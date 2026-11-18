@@ -217,12 +217,15 @@ pub mod points {
     pub const KILL: u32 = 60;
     /// A kill with a headshot.
     pub const HEADSHOT_KILL: u32 = 100;
+    /// A kill with the knife: the most a zombie pays.
+    pub const MELEE_KILL: u32 = 130;
 
-    pub fn for_hit(killed: bool, headshot: bool) -> u32 {
-        match (killed, headshot) {
-            (false, _) => HIT,
-            (true, false) => KILL,
-            (true, true) => HEADSHOT_KILL,
+    pub fn for_hit(killed: bool, headshot: bool, melee: bool) -> u32 {
+        match (killed, headshot, melee) {
+            (false, ..) => HIT,
+            (true, _, true) => MELEE_KILL,
+            (true, false, false) => KILL,
+            (true, true, false) => HEADSHOT_KILL,
         }
     }
 }
@@ -575,9 +578,11 @@ mod tests {
 
     #[test]
     fn points_reward_kills_and_headshots() {
-        assert_eq!(points::for_hit(false, true), points::HIT);
-        assert_eq!(points::for_hit(true, false), points::KILL);
-        assert_eq!(points::for_hit(true, true), points::HEADSHOT_KILL);
+        assert_eq!(points::for_hit(false, true, false), points::HIT);
+        assert_eq!(points::for_hit(true, false, false), points::KILL);
+        assert_eq!(points::for_hit(true, true, false), points::HEADSHOT_KILL);
+        assert_eq!(points::for_hit(false, false, true), points::HIT);
+        assert_eq!(points::for_hit(true, false, true), points::MELEE_KILL);
     }
 
     #[test]

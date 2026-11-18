@@ -95,6 +95,14 @@ pub enum Action {
     Raising {
         remaining: f32,
     },
+    /// A knife strike ([`crate::melee`]): seconds until the weapon is back
+    /// up, seconds until the strike lands (negative once it has), and whether
+    /// it lunged.
+    Meleeing {
+        remaining: f32,
+        strike_in: f32,
+        lunge: bool,
+    },
 }
 
 /// Player combat state: loadout, current action, aim, recoil, and breath.
@@ -200,6 +208,19 @@ impl CombatState {
             hip = hip.max(spread.air);
         }
         hip + (spread.ads - hip) * ads_ease(self.ads)
+    }
+
+    /// Whether a melee can start now: not while switching weapons or during
+    /// another melee. A melee cuts a reload or a bolt or pump cycle short.
+    pub fn can_melee(&self) -> bool {
+        !matches!(
+            self.action,
+            Action::Lowering { .. } | Action::Raising { .. } | Action::Meleeing { .. }
+        )
+    }
+
+    pub fn meleeing(&self) -> bool {
+        matches!(self.action, Action::Meleeing { .. })
     }
 
     pub fn is_reloading(&self) -> bool {
@@ -340,6 +361,9 @@ pub struct CombatInput {
     pub hold_breath: bool,
     /// Take this weapon from a pickup or weapon rack this tick.
     pub pickup: Option<WeaponId>,
+    /// A melee starts this tick: seconds until it strikes, and whether it
+    /// lunges. The caller checks [`CombatState::can_melee`] first.
+    pub melee: Option<(f32, bool)>,
 }
 
 /// How aimed the weapon is for its rules and its look, from the linear `ads`
@@ -422,6 +446,19 @@ pub enum CombatEvent {
     PickedUp {
         weapon: WeaponId,
     },
+    /// A knife strike began with `weapon` in hand.
+    MeleeStarted {
+        weapon: WeaponId,
+        lunge: bool,
+    },
+    /// The knife strike landed: whoever runs the hit test checks it now.
+    /// `shot` numbers it in the same series as shots, so the server's
+    /// verdict can be matched to it.
+    MeleeStruck {
+        weapon: WeaponId,
+        shot: u32,
+        lunge: bool,
+    },
 }
 
 /// Offset of one pellet from the shot direction, in radians.
@@ -471,6 +508,11 @@ pub fn step(
 
     request_switch(state, input);
     advance_action(state, dt, events);
+    if let Some((strike_in, lunge)) = input.melee
+        && state.can_melee()
+    {
+        start_melee(state, strike_in, lunge, events);
+    }
 
     let def = state.def();
     // A reload can't cut a bolt or pump cycle short: it waits for the cycle to end.
@@ -496,10 +538,11 @@ pub fn step(
         state.action = Action::Ready;
     }
 
-    // Aiming works through a reload and a bolt or pump cycle, not a switch.
+    // Aiming works through a reload and a bolt or pump cycle, not a switch
+    // or a melee.
     let aim_allowed = !matches!(
         state.action,
-        Action::Lowering { .. } | Action::Raising { .. }
+        Action::Lowering { .. } | Action::Raising { .. } | Action::Meleeing { .. }
     );
     let can_aim = input.aim && !ctx.sprinting && aim_allowed;
     let ads_step = dt / def.ads_time;
@@ -572,6 +615,8 @@ fn request_switch(state: &mut CombatState, input: &CombatInput) {
         return;
     }
     match state.action {
+        // The knife finishes its strike first.
+        Action::Meleeing { .. } => return,
         Action::Lowering { to: target, .. } if target == to => return,
         // Changed their mind: bring the weapon in hand back up from as far
         // as it got, instead of lowering it all the way and drawing it again.
@@ -708,7 +753,66 @@ fn advance_action(state: &mut CombatState, dt: f32, events: &mut Vec<CombatEvent
                 finish_cycle_on_draw(state, events)
             };
         }
+        Action::Meleeing {
+            remaining,
+            strike_in,
+            lunge,
+        } => {
+            let remaining = remaining - dt;
+            let strike_in = strike_in - dt;
+            if strike_in <= 0.0 && strike_in + dt > 0.0 {
+                events.push(CombatEvent::MeleeStruck {
+                    weapon: state.weapon().id,
+                    shot: state.shots_fired,
+                    lunge,
+                });
+                state.shots_fired = state.shots_fired.wrapping_add(1);
+            }
+            state.action = if remaining > 0.0 {
+                Action::Meleeing {
+                    remaining,
+                    strike_in,
+                    lunge,
+                }
+            } else {
+                // Back up; a cycle or charge the knife cut short comes first.
+                finish_cycle_on_draw(state, events)
+            };
+        }
     }
+}
+
+/// Starts a knife strike that lands in `strike_in` seconds. It cuts short a
+/// reload (keeping a magazine already seated) or a bolt or pump cycle, which
+/// is worked once the weapon is back up.
+fn start_melee(
+    state: &mut CombatState,
+    strike_in: f32,
+    lunge: bool,
+    events: &mut Vec<CombatEvent>,
+) {
+    let cut_cycle = match state.action {
+        Action::Cycling { .. } => true,
+        Action::Reloading { empty: true, .. } => state.magazine_seated(),
+        _ => false,
+    };
+    if cut_cycle {
+        state.slots[usize::from(state.active)].needs_cycle = true;
+    }
+    state.burst_left = 0;
+    state.reload_queued = false;
+    // Strikes a tick after the press at the soonest, so the strike always
+    // follows the start.
+    let strike_in = strike_in.max(1e-4);
+    state.action = Action::Meleeing {
+        remaining: strike_in + crate::melee::RECOVERY,
+        strike_in,
+        lunge,
+    };
+    events.push(CombatEvent::MeleeStarted {
+        weapon: state.weapon().id,
+        lunge,
+    });
 }
 
 /// The action a weapon is in once drawn: ready, or working the bolt or pump

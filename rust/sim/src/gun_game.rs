@@ -4,7 +4,8 @@
 //! Kills with it move a player up to the next weapon, in the middle of a life:
 //! the new weapon comes up at once with a full magazine. The first player to
 //! score their kills with the last weapon wins. Dying by your own hand (a
-//! fall) moves you back down one weapon. If the clock runs out first, the
+//! fall), or to an enemy's knife, moves you back down one weapon; a knife
+//! kill does not move the killer up. If the clock runs out first, the
 //! player furthest up the ladder wins, and of players level with each other,
 //! the one who got there first.
 //!
