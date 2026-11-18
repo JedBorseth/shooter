@@ -58,9 +58,42 @@ The captured successful export log is `builds/nuketown/export-log.txt`.
 The home screen now has a **Nuketown** button. It loads the converted map with
 3,123 prop placements, textured materials, shared world/large-prop collision,
 authored deathmatch spawn positions, and the existing FPS player/weapons/HUD.
-Press Escape to release the mouse and click **Home** to return. Falling off the
-exported scenery reloads the map; original invisible CoD boundary brushes were not
-part of this render-geometry export.
+Press Escape to release the mouse and click **Home** to return.
+
+### Collision and mode fixes
+
+The render export carries none of the original player-clip brushes and keeps some
+surfaces that never block anything in Black Ops 2. The bake and the props script
+correct them the way the original map plays:
+
+- **Edge of the map.** BO2 player clip stops you at the outer yard fences and at
+  the street gate under the two swinging Nuketown signs. Without it the gate's
+  end leaves stand open (you could walk straight out under either sign), and a
+  jump clears the low street fences and many yard fences. `tools/bake_nuketown.gd`
+  adds a `Boundary` body: thin walls from 4 m below the ground to 30 m up along
+  the outer fences, across the gate, and round the back of the closed north
+  garage building. It is on the movement layer (as the stair ramps are): bullets pass
+  through it and thrown grenades bounce off it, as they do off CoD's map-edge clip.
+- **Invisible walls.** CoD's `shadowcaster` brushes only shade the baked lighting;
+  they are invisible and non-solid. The export kept them, and the bake used to give
+  them collision: one filled the blue house's open front doorway and two the
+  doorway at the top of its stairs. They are left out of the collision shape now.
+  `caulk_shadow_primary` is caulk, which is solid in CoD, and stays solid.
+- **Population sign.** The big population sign by the yellow house is a script
+  model (its screen is driven by script), and the props script only gave
+  collision to unscripted models. It is solid again, as in BO2. The animated
+  `fxanim` models (the swinging gate signs, the car-wash hoses, the sprinkler) stay
+  non-solid, as client-side animations are in CoD.
+- **Bomb sites.** The wrecked bomb stacks at the Search and Destroy and
+  Demolition sites (`targetname` `exploder` with a `script_exploder` id) are only
+  revealed in CoD when that site's bomb goes off. They showed, and could be shot,
+  in every mode; they are skipped now, like the other objective-mode models.
+
+`godot/tests/nuketown_bounds_test.gd` drives the real player against every edge
+of the boundary (walking and jumping at two places per edge, about twenty of
+which got out before), walks through both doorways, and checks the sign, the
+bomb sites, the interior lighting boxes, and the easter-egg vault. Falling off
+the scenery still reloads the map, as a last resort.
 
 Windows deployment: `C:\Users\JedBorseth\Games\ShooterNuketown`.
 The desktop **Play Shooter.cmd** launches this build. The previous launcher is
@@ -81,6 +114,9 @@ it and keep pushing for under a second to phase into a hidden vault holding the
 **Prism Laser**: full auto, no spread or recoil, and lethal in one hit at any
 range. The glowing ring in the vault leads back out. Taking the laser puts
 target soldiers on the eight spawn points farthest from yours.
+
+The vault sits 120 m above the map. It is only drawn while you are inside it;
+drawn all the time, its lit room showed as a grey box in the sky.
 
 The converted map has no gameplay markers, so `godot/scripts/secret_laser.gd`
 picks the wall at runtime: the first upright surface a ray finds looking back

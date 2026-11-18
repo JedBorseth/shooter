@@ -118,12 +118,15 @@ func enter_vault() -> void:
 	if _vault == null:
 		return
 	in_vault = true
+	_vault.visible = true
 	_phase(vault_spawn(), 0.0)
 	phased.emit(true)
 
 
 func leave_vault() -> void:
 	in_vault = false
+	if _vault != null:
+		_vault.visible = false
 	# Face away from the wall, back into the map.
 	_phase(return_point(), atan2(-wall_normal.x, -wall_normal.z))
 	phased.emit(false)
@@ -295,6 +298,9 @@ func _build_vault() -> void:
 	_vault.name = "Vault"
 	add_child(_vault)
 	_vault.global_position = _vault_origin()
+	# High above the map, the lit room would show as a grey box in the sky.
+	# Only draw it while the player is inside; its collision stays.
+	_vault.visible = in_vault
 	var size := VAULT_SIZE
 	var t := 0.5
 	var shell := StaticBody3D.new()

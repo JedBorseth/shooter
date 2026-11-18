@@ -72,21 +72,47 @@ metadata/_graphics_authored = {
 [node name="Interior" type="Node3D" parent="."]
 
 [node name="BlueAmbient" type="ReflectionProbe" parent="Interior"]
-position = Vector3(22, 0.18, -9.5)
-size = Vector3(14, 3.25, 14)
+position = Vector3(21.749, 0.1, -5.926)
+rotation = Vector3(0, 0.2967, 0)
+size = Vector3(14.45, 3.60, 9.47)
+blend_distance = 0.1
 interior = true
 ambient_mode = 2
 ambient_color = Color(0.5, 0.52, 0.55, 1)
 ambient_color_energy = 0.4
 update_mode = 0
 
+[node name="BlueGarageAmbient" type="ReflectionProbe" parent="Interior"]
+position = Vector3(21.594, 0.425, -14.845)
+rotation = Vector3(0, 0.2967, 0)
+size = Vector3(8.37, 4.25, 7.68)
+blend_distance = 0.1
+interior = true
+ambient_mode = 2
+ambient_color = Color(0.5, 0.52, 0.55, 1)
+ambient_color_energy = 0.55
+update_mode = 0
+
 [node name="YellowAmbient" type="ReflectionProbe" parent="Interior"]
-position = Vector3(-19.5, 0.18, -11)
-size = Vector3(12, 3.25, 12)
+position = Vector3(-19.142, 0.1, -12.48)
+rotation = Vector3(0, -0.3613, 0)
+size = Vector3(14.46, 3.60, 9.64)
+blend_distance = 0.1
 interior = true
 ambient_mode = 2
 ambient_color = Color(0.52, 0.5, 0.46, 1)
 ambient_color_energy = 0.4
+update_mode = 0
+
+[node name="YellowGarageAmbient" type="ReflectionProbe" parent="Interior"]
+position = Vector3(-22.186, 0.7, -4.298)
+rotation = Vector3(0, -0.3613, 0)
+size = Vector3(5.93, 4.80, 7.82)
+blend_distance = 0.1
+interior = true
+ambient_mode = 2
+ambient_color = Color(0.52, 0.5, 0.46, 1)
+ambient_color_energy = 0.55
 update_mode = 0
 
 [node name="BlueLivingLight" type="OmniLight3D" parent="Interior"]

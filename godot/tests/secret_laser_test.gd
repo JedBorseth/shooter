@@ -45,6 +45,8 @@ func _run() -> void:
 	)
 	_check(absf(secret.wall_point.z - 8.0) < 0.05, "wall point at %s" % secret.wall_point)
 	_check(secret.get_node_or_null("Glyph") != null, "the spot is marked on the wall")
+	var room := secret.get_node_or_null("Vault") as Node3D
+	_check(room != null and not room.visible, "the vault is not drawn in the sky over the map")
 
 	# Walking up to the wall without pushing into the spot does nothing.
 	player.teleport(Vector3(0, 0.05, 7.4), 0.0)
@@ -57,6 +59,7 @@ func _run() -> void:
 	_check(secret.in_vault, "pushing into the marked wall phases into the vault")
 	_check(phases == [true], "phased signal fired once, got %s" % [phases])
 	_check(player.global_position.y > 100.0, "the vault is out of the map")
+	_check(room != null and room.visible, "the vault is drawn while the player is in it")
 
 	# The pedestal is straight ahead of the vault spawn.
 	await _sixtieths(10)
@@ -76,6 +79,7 @@ func _run() -> void:
 	await _walk_until(func() -> bool: return not secret.in_vault, 90)
 	await _sixtieths(10)
 	_check(not secret.in_vault, "the exit ring returns to the map")
+	_check(room != null and not room.visible, "the vault hides again after leaving")
 	_check(
 		player.global_position.distance_to(secret.return_point()) < 1.0,
 		"back in front of the wall at %s" % player.global_position

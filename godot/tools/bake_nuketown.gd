@@ -87,6 +87,77 @@ const STAIR_RAMPS: Array[Dictionary] = [
 	},
 ]
 
+## Surfaces that never block anything in the original map. CoD's
+## `shadowcaster` brushes only darken the baked lighting: they are invisible
+## and non-solid, so players walk and shoot through them. The export keeps them
+## (one fills the blue house's open front doorway, two the upstairs doorway),
+## so they stay out of the collision shape. `caulk_shadow_primary` is caulk,
+## which is solid in CoD, and keeps its collision.
+const NON_SOLID_MATERIALS: Array[String] = ["shadowcaster"]
+
+## The playable area's edge, in world X/Z, as a closed loop. The render export
+## has none of the original player-clip brushes, so without this a player can
+## walk past the street gate or jump and mantle over the 2 m yard fences (a jump
+## plus a mantle reaches about 2.35 m). Like CoD's player clip it follows the
+## outer yard fences, crosses the street at the swinging-sign gate, and runs
+## round the back of the closed north garage building, and it rises far above
+## anything a player can stand on. Points are the fence ends from the exported
+## fence models; the building corners sit 0.5 m outside its walls.
+const BOUNDARY: Array[Vector2] = [
+	# The street gate, under the two swinging Nuketown signs.
+	Vector2(-7.6, 15.4),
+	Vector2(9.0, 15.4),
+	# Blue (east) side: the street fence, the front yard, and the back yard.
+	Vector2(9.0, 5.4),
+	Vector2(15.15, 3.7),
+	Vector2(15.8, 6.2),
+	Vector2(16.4, 6.1),
+	Vector2(19.6, 5.2),
+	Vector2(24.5, 3.9),
+	Vector2(32.5, 1.75),
+	Vector2(40.5, -0.35),
+	Vector2(48.5, -2.4),
+	Vector2(53.7, -3.85),
+	Vector2(51.15, -11.7),
+	Vector2(49.1, -18.05),
+	Vector2(45.2, -17.1),
+	Vector2(42.85, -25.05),
+	Vector2(41.45, -29.75),
+	Vector2(41.2, -30.65),
+	Vector2(34.8, -28.8),
+	Vector2(26.75, -26.7),
+	Vector2(18.7, -24.55),
+	Vector2(17.25, -24.2),
+	Vector2(12.05, -26.2),
+	# Round the back of the north garage building.
+	Vector2(16.85, -37.6),
+	Vector2(-0.9, -44.75),
+	Vector2(-15.65, -38.05),
+	Vector2(-10.4, -26.2),
+	# Yellow (west) side: the back yard, the side yard, and the front yard.
+	Vector2(-10.05, -26.35),
+	Vector2(-16.7, -22.0),
+	Vector2(-24.3, -24.9),
+	Vector2(-31.3, -27.45),
+	Vector2(-39.0, -30.2),
+	Vector2(-45.5, -32.5),
+	Vector2(-48.1, -26.4),
+	Vector2(-50.4, -20.1),
+	Vector2(-50.9, -18.75),
+	Vector2(-52.15, -12.9),
+	Vector2(-54.9, -5.35),
+	Vector2(-48.1, -3.1),
+	Vector2(-40.3, -0.45),
+	Vector2(-32.45, 2.15),
+	Vector2(-24.55, 4.7),
+	Vector2(-16.6, 7.2),
+	Vector2(-15.3, 3.7),
+	Vector2(-7.6, 6.4),
+]
+const BOUNDARY_BOTTOM := -4.0
+const BOUNDARY_TOP := 30.0
+const BOUNDARY_THICKNESS := 0.2
+
 var _shapes: Dictionary = {}
 var _count := 0
 
@@ -109,6 +180,7 @@ func _bake() -> void:
 	_copy_meshes(source, Transform3D.IDENTITY, world)
 	_add_floor_patches(world, source)
 	_add_stair_ramps(world)
+	_add_boundary(world)
 	var packed := PackedScene.new()
 	var error := packed.pack(world)
 	if error == OK:
@@ -144,7 +216,7 @@ func _copy_meshes(node: Node, parent_transform: Transform3D, world: Node3D) -> v
 		if str(original.name).begins_with("MapGeometry") or size.length() >= 0.45:
 			var key := original.mesh.get_instance_id()
 			if not _shapes.has(key):
-				_shapes[key] = original.mesh.create_trimesh_shape()
+				_shapes[key] = _solid_shape(original.mesh)
 			var body := StaticBody3D.new()
 			mesh_node.add_child(body)
 			body.owner = world
@@ -155,6 +227,57 @@ func _copy_meshes(node: Node, parent_transform: Transform3D, world: Node3D) -> v
 		_count += 1
 	for child in node.get_children():
 		_copy_meshes(child, transform, world)
+
+
+## The mesh's collision without its non-solid surfaces.
+func _solid_shape(mesh: Mesh) -> ConcavePolygonShape3D:
+	var faces := PackedVector3Array()
+	for surface in mesh.get_surface_count():
+		var material := mesh.surface_get_material(surface)
+		if material != null and material.resource_name in NON_SOLID_MATERIALS:
+			continue
+		var arrays := mesh.surface_get_arrays(surface)
+		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+		if indices.is_empty():
+			faces.append_array(vertices)
+		else:
+			for index in indices:
+				faces.append(vertices[index])
+	var shape := ConcavePolygonShape3D.new()
+	shape.set_faces(faces)
+	return shape
+
+
+## Player clip round the playable area: tall, thin, invisible walls on the
+## movement layer, so bullets pass through and the map's look is unchanged.
+func _add_boundary(world: Node3D) -> void:
+	var body := StaticBody3D.new()
+	body.name = "Boundary"
+	# Movement-only layer, as for the stair ramps: player masks include
+	# BODY_LAYER, hitscan does not.
+	body.collision_layer = 16
+	body.collision_mask = 0
+	body.set_meta("points", PackedVector2Array(BOUNDARY))
+	world.add_child(body)
+	body.owner = world
+	var height := BOUNDARY_TOP - BOUNDARY_BOTTOM
+	for i in BOUNDARY.size():
+		var a := BOUNDARY[i]
+		var b := BOUNDARY[(i + 1) % BOUNDARY.size()]
+		var along := Vector3(b.x - a.x, 0.0, b.y - a.y)
+		var length := along.length()
+		var x_axis := along / length
+		var box := BoxShape3D.new()
+		# Overlap the neighbours by a wall's thickness so corners stay closed.
+		box.size = Vector3(length + BOUNDARY_THICKNESS, height, BOUNDARY_THICKNESS)
+		var shape := CollisionShape3D.new()
+		shape.name = "Edge%d" % i
+		shape.shape = box
+		var middle := Vector3((a.x + b.x) * 0.5, BOUNDARY_BOTTOM + height * 0.5, (a.y + b.y) * 0.5)
+		shape.transform = Transform3D(Basis(x_axis, Vector3.UP, x_axis.cross(Vector3.UP)), middle)
+		body.add_child(shape)
+		shape.owner = world
 
 
 ## Adds the interior floor surfaces the render export omitted, with their

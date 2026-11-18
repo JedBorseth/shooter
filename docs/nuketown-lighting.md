@@ -44,9 +44,17 @@ to the exported Nuketown sun:
 - AgX tonemap with exposure 0.9, contrast 1.06, saturation 1.04; no unrelated
   sunset grading.
 - SSAO for contact darkening, a light haze for distance, and subtle glow.
-- Two `ReflectionProbe`s with local ambient colour inside the houses, so their
-  ceilings and walls read darker than the street without making the shaded
-  exterior black.
+- Four `ReflectionProbe`s with local ambient colour inside the houses' ground
+  floors and garages, so their ceilings and walls read darker than the street
+  without making the shaded exterior black. Each box is turned to its house
+  (17° for the blue house, -20.7° for the yellow one) and its faces sit halfway
+  through the walls, with a 0.1 m blend: the inner faces of the walls get the
+  interior ambient and the outer faces never do. The earlier two boxes were
+  square to the world axes and poked through the walls, so the outside of each
+  garage door had a hard-edged dark rectangle on it, and the yellow garage's
+  back wall a dark band. The garages use a slightly brighter ambient (0.55
+  against 0.4) than the living rooms. `godot/tests/nuketown_bounds_test.gd`
+  checks points inside and outside the rooms.
 - Low-energy warm practical lights in both houses (living room, kitchen,
   hallway, fireplace, staircase) and a cool carport fill, placed near the
   exported light positions and the actual fixtures.

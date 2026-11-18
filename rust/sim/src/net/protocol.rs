@@ -81,7 +81,10 @@ use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, Weapo
 // Version 35 added the tactical (flashbang or smoke): its button in inputs,
 // the tactical carried in the predicted state, the pick in loadouts, and
 // what each body is throwing.
-pub const PROTOCOL_VERSION: u16 = 35;
+// Version 36 changed Nuketown's collision (the map-edge clip, the non-solid
+// shadowcaster doorways, the solid population sign), so older peers would
+// mispredict movement there.
+pub const PROTOCOL_VERSION: u16 = 36;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
