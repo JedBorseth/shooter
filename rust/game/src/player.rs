@@ -62,6 +62,8 @@ use crate::aim_assist::{AIM_ASSIST_GROUP, AimAssistTarget};
 use crate::audio;
 use crate::body::{self, BodyParts};
 use crate::bullets::ShotTracer;
+use crate::character::corpses::{self, CorpseYard};
+use crate::character::rig::{SoldierFrame, SoldierRig, push_of};
 use crate::convert::{to_godot, to_sim};
 use crate::effects::CombatEffects;
 use crate::footsteps::{self, Gait, Stride};
@@ -118,8 +120,19 @@ const FLINCH_DAMPING: f32 = 16.0;
 type ShotTarget = (Gd<Node>, f32, bool, Vector3, f32, Vector3, i64);
 
 /// The death camera: how far behind the body and how high it settles.
-const DEATH_CAMERA_BACK: f32 = 2.4;
-const DEATH_CAMERA_HEIGHT: f32 = 1.5;
+const DEATH_CAMERA_BACK: f32 = 2.6;
+const DEATH_CAMERA_HEIGHT: f32 = 1.6;
+/// How fast the camera pulls back from the eyes (per second, eased), and
+/// how long it watches the body fall before turning to the killer.
+const DEATH_CAMERA_PULL: f32 = 3.5;
+const DEATH_CAMERA_WATCH: f32 = 1.1;
+/// Facing the killer, the look stays this share of the way toward the body,
+/// so the body stays in the bottom of the frame.
+const DEATH_CAMERA_KEEP_BODY: f32 = 0.2;
+/// Our body shows once the camera is this far from the eyes (metres).
+const DEATH_CAMERA_CLEAR: f32 = 0.45;
+/// The body our own death leaves.
+const OWN_BODY_SCENE: &str = "res://scenes/characters/soldier.tscn";
 
 /// Actions whose presses are remembered until the next physics tick, so a tap
 /// shorter than one tick (or a mouse-wheel step) is never lost.
@@ -438,6 +451,14 @@ pub struct FpsPlayer {
     /// Seconds since death, where it happened (feet), and the view then.
     dead_for: f32,
     death_feet: Vector3,
+    /// Our own body, once dead: posed as we died, then a ragdoll in the
+    /// scene's corpse yard (`dying` until it has been drawn alive once), so
+    /// the death camera can watch it fall. Never built on a dedicated server.
+    own_body: Option<Gd<SoldierRig>>,
+    own_body_dying: bool,
+    /// The force level of the last hit taken (`protocol::HitPart::force`),
+    /// for the push our body falls with.
+    last_hit_force: f32,
     death_view: Vector2,
     score: ScoreState,
     score_rules: ScoreRules,
@@ -1858,6 +1879,9 @@ impl FpsPlayer {
         match *event {
             PlayerEvent::Damaged { amount, fall } => {
                 self.flinch_from(amount, fall, from);
+                if !fall {
+                    self.last_hit_force = (amount / 10.0).round().clamp(1.0, 15.0);
+                }
                 if let Some(mut body) = self.player_sounds.clone() {
                     body.bind_mut().on_damaged(fall);
                 }
@@ -1868,6 +1892,7 @@ impl FpsPlayer {
                 self.dead_for = 0.0;
                 self.death_feet = self.current_position;
                 self.death_view = Vector2::new(self.yaw, self.pitch);
+                self.leave_own_body(from);
                 // Online, the server counts deaths and sends the totals.
                 if self.prediction.is_none() {
                     self.score.on_death();
@@ -2589,13 +2614,102 @@ impl FpsPlayer {
             .on_damaged(Vector2::new(side, ahead), strength);
     }
 
-    /// The camera once dead: it drops with the body for a moment, then rises
-    /// behind where the player fell and turns to face whoever killed them
-    /// (or keeps the last view, for a fall), clear of walls. Eased in from
-    /// the first-person view by `death_blend`.
+    /// Leaves our own body where we died: a soldier posed as we were (stance,
+    /// crouch, aim, weapon, velocity), drawn alive for one frame and then
+    /// dead, so it falls as a ragdoll pushed by the killing hit (from
+    /// `from`, the attacker, unless it was a fall) and stays in the corpse
+    /// yard like anyone's. Clients only.
+    fn leave_own_body(&mut self, from: Vector3) {
+        if !crate::character::rig::visuals_enabled() || !self.base().is_inside_tree() {
+            return;
+        }
+        let Some(mut rig) = try_load::<PackedScene>(OWN_BODY_SCENE)
+            .ok()
+            .and_then(|scene| scene.try_instantiate_as::<SoldierRig>())
+        else {
+            godot_error!("FpsPlayer: cannot make our body from {OWN_BODY_SCENE}");
+            return;
+        };
+        rig.set_name("OwnBody");
+        // Hidden until the camera has pulled out of its head.
+        rig.set_visible(false);
+        let tree = self.base().get_tree();
+        let mut yard = CorpseYard::of(&tree);
+        yard.add_child(&rig);
+        rig.set_global_position(self.current_position);
+        rig.bind_mut().set_team_index(0);
+        let frame = self.own_body_frame(true);
+        rig.bind_mut().update(&frame, 0.0);
+        let shot = self.current_position + Vector3::UP * 1.2 - from;
+        let direction = if self.last_attacker.is_some() && shot.length_squared() > 1e-4 {
+            shot.normalized()
+        } else {
+            to_godot(self.state.movement.velocity).normalized_or_zero()
+        };
+        let push = push_of(direction, Vector3::ZERO, -1, self.last_hit_force.max(1.0));
+        rig.bind_mut().hit_at(push, true);
+        self.own_body = Some(rig);
+        self.own_body_dying = true;
+    }
+
+    /// Our state as a soldier frame for our own body.
+    fn own_body_frame(&self, alive: bool) -> SoldierFrame {
+        let movement = &self.state.movement;
+        SoldierFrame {
+            velocity: to_godot(movement.velocity),
+            on_floor: self.on_floor,
+            stance: movement.stance,
+            sprinting: movement.sprinting,
+            yaw: self.yaw,
+            pitch: self.pitch,
+            ads: self.state.combat.ads,
+            weapon: Some(self.state.combat.weapon().id),
+            alive,
+            crouch: Some(movement.crouch),
+            ..SoldierFrame::default()
+        }
+    }
+
+    /// Draws our body dead the frame after it was drawn alive: the poser has
+    /// captured its pose, and the ragdoll takes over in the corpse yard.
+    fn drop_own_body(&mut self, dt: f32) {
+        if !std::mem::take(&mut self.own_body_dying) {
+            return;
+        }
+        let Some(mut rig) = self.own_body.clone().filter(|r| r.is_instance_valid()) else {
+            return;
+        };
+        let frame = self.own_body_frame(false);
+        rig.bind_mut().update(&frame, dt);
+        let tree = self.base().get_tree();
+        CorpseYard::of(&tree)
+            .bind_mut()
+            .adopt(rig, corpses::SOLDIER_SECONDS);
+    }
+
+    /// Where the death camera watches our body: its hips as they fall, or
+    /// where we died without a body.
+    fn own_body_point(&self) -> Vector3 {
+        self.own_body
+            .as_ref()
+            .filter(|r| r.is_instance_valid())
+            .map(|r| r.bind().bone_global_transform("Hips".into()).origin)
+            .filter(|p| *p != Vector3::ZERO)
+            .unwrap_or(self.death_feet + Vector3::UP * 0.9)
+    }
+
+    /// The camera once dead (a third-person death camera, as Modern
+    /// Warfare's): it pulls back and up from the eyes to behind our falling
+    /// body, watching it fall, then turns to face whoever killed us (or
+    /// keeps the last view, for a fall) with the body still in the bottom of
+    /// the frame. It follows the body as it falls and never goes through a
+    /// wall or below the ground. Eased in from the first-person view by
+    /// `death_blend`.
     fn death_camera(&mut self, first_person: Transform3D, dt: f32) -> Transform3D {
         self.dead_for += dt;
-        let feet = self.death_feet;
+        self.drop_own_body(dt);
+        let body = self.own_body_point();
+        let feet = Vector3::new(body.x, self.death_feet.y.min(body.y), body.z);
         let target = self.last_attacker.map_or_else(
             || {
                 let (forward, _) = shooter_sim::movement::basis_from_yaw(self.death_view.x);
@@ -2605,19 +2719,37 @@ impl FpsPlayer {
         );
         let flat = Vector3::new(target.x - feet.x, 0.0, target.z - feet.z);
         let toward = flat.try_normalized().unwrap_or(Vector3::FORWARD);
-        // Drop first (the body falls), then rise and back off.
-        let fall = smoothing(6.0, self.dead_for.min(0.4)) / smoothing(6.0, 0.4);
-        let rise = smoothing(3.0, (self.dead_for - 0.35).max(0.0));
-        let low = feet + Vector3::UP * 0.5;
-        let high = feet - toward * DEATH_CAMERA_BACK + Vector3::UP * DEATH_CAMERA_HEIGHT;
-        let mut wanted = first_person.origin.lerp(low, fall * 0.8).lerp(high, rise);
+        // Back and up from the eyes to behind the body, following it as it
+        // falls: never down to where it lands.
+        let back = smoothing(DEATH_CAMERA_PULL, self.dead_for);
+        let behind =
+            Vector3::new(body.x, feet.y + DEATH_CAMERA_HEIGHT, body.z) - toward * DEATH_CAMERA_BACK;
+        let mut wanted = first_person.origin.lerp(behind, back);
+        wanted.y = wanted.y.max(first_person.origin.y.min(behind.y));
         // Not through a wall: stop short of anything between the body and it.
-        let from = feet + Vector3::UP * 0.9;
+        let from = body + Vector3::UP * 0.3;
         if let Some(hit) = self.ray_point(from, wanted) {
             wanted = hit + (from - hit).normalized() * 0.25;
         }
-        let looking = Transform3D::new(Basis::IDENTITY, wanted).looking_at(target);
-        let turn = smoothing(2.5, self.dead_for);
+        // Shown once the camera is out of its head.
+        if let Some(rig) = &mut self.own_body
+            && rig.is_instance_valid()
+            && !rig.is_visible()
+            && wanted.distance_to(first_person.origin) > DEATH_CAMERA_CLEAR
+        {
+            rig.set_visible(true);
+        }
+        // Watch the body fall, then turn to the killer with the body still
+        // low in the frame.
+        let watch = body + Vector3::UP * 0.2;
+        let turn_to_killer = smoothing(2.5, (self.dead_for - DEATH_CAMERA_WATCH).max(0.0));
+        let look_at = watch.lerp(target.lerp(watch, DEATH_CAMERA_KEEP_BODY), turn_to_killer);
+        let looking = if (look_at - wanted).length_squared() > 1e-4 {
+            Transform3D::new(Basis::IDENTITY, wanted).looking_at(look_at)
+        } else {
+            Transform3D::new(first_person.basis, wanted)
+        };
+        let turn = smoothing(4.0, self.dead_for);
         let basis = first_person
             .basis
             .get_quaternion()
@@ -3144,6 +3276,10 @@ impl FpsPlayer {
         self.flinch_roll = Spring::default();
         self.last_attacker = None;
         self.dead_for = 0.0;
+        // The last body stays in the corpse yard; the next death leaves a new one.
+        self.own_body = None;
+        self.own_body_dying = false;
+        self.last_hit_force = 0.0;
         self.tilt = 0.0;
         self.bob_blend = 0.0;
         self.stride_foot = 0.0;

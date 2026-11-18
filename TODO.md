@@ -124,7 +124,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [ ] Ragdoll joint limits are centred on the pose a body dies in, so a body dying hunched or reaching (zombies most) can come to rest with a limb raised. Joint frames set from the skeleton's rest pose (through `PhysicsServer3D::joint_make_cone_twist` and `joint_make_hinge`, which take explicit frames) would make the limits anatomical; the stiff first moments would then need their own limits around the death pose.
 - [ ] Third-person magazines: the support hand fetches and seats a magazine, but the world model's magazine does not leave the weapon. Moving it (and a fresh one in the hand) needs the world view to run the first-person clip's magazine parts.
 - [ ] Directional gait: strafes still run the forward loop with the hips turned (up to 75°) and backpedals play it in reverse. Authored strafe and backpedal cycles, or orientation warping with leg IK, would read better.
-- [ ] The player's own body in the death camera: the camera drops through where the body falls and then faces the killer with the body behind it, so a local ragdoll would only clip the lens. Needs the death camera to frame the body first.
+- [x] The player's own body in the death camera: a ragdoll of our own body falls where we died, and the camera pulls back to watch it before turning to the killer.
 - [x] Score popups (+100, headshot and longshot bonuses) and medals at the crosshair.
 
 ### Settings and UX
