@@ -1,6 +1,6 @@
 {
   "triangles": 10136,
-  "world_triangles": 1846,
+  "world_triangles": 1847,
   "nodes": [
     "Body",
     "BoltCarrier",
@@ -22,7 +22,7 @@
       -0.5899
     ],
     "Ejection": [
-      0.0156,
+      0.0164,
       -0.0511,
       -0.0728
     ],
@@ -42,7 +42,7 @@
       -0.2619
     ],
     "ChargingHandle": [
-      -0.0007,
+      0.0,
       -0.034,
       0.038
     ]

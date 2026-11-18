@@ -143,7 +143,7 @@ Every gun is built from a detailed CC0 source model. From Stein Games' Free Clas
 `tools/build_weapons.sh` rebuilds the set in one command. `tools/fetch_weapon_sources.py` downloads the source packs (pinned by size and SHA-256, cached in `~/.cache/shooter-weapons/sources`), and `tools/build_weapons.py` runs in Blender and, for each weapon in its `WEAPONS` table:
 
 1. Imports the source in its rest pose. Every face goes to the part its bone moves (or, for a pack that splits parts into separate objects, the object it belongs to), so the magazine, the slide, the hammer, and the rounds in the magazine come out as their own nodes. For a magazine the source models empty, the tool adds the top rounds (`CARTRIDGE_PROFILES`).
-2. Turns it to face -Z, scales it to the real weapon's length and sight radius, puts the rear sight's aiming point (the top of the notch) on the origin, and pitches it so the front post's tip lies on the -Z axis. Aimed, the post sits level in the notch exactly where the camera points, which is where shots land.
+2. Turns it to face -Z, scales it to the real weapon's length and sight radius, puts the rear sight's aiming point (the top of the notch) on the origin, and pitches it so the front post's tip lies on the -Z axis. Aimed, the post sits level in the notch exactly where the camera points, which is where shots land. A source whose sights sit off its centre line (the M4A1's, by 0.8 mm) moves sideways onto the line (`sight.x`), and `sight_edits` reshapes sights too small to read at game scale (see [Weapon sights](#weapon-sights)).
 3. Repacks the source's maps into the game's layout at 2048 px: sRGB colour, an OpenGL normal map (DirectX-style sources are flipped), and ORM (occlusion, roughness, metallic, from the source's packed map or its separate ones). The source's own UVs stay.
 4. Exports `<key>.glb` in metres with one material for the weapon (`<key>.tres`), the shared cartridge material on the rounds, and the shared tritium glow on night sights, and `World`, the whole weapon merged into one node for other players' weapons and racks (nothing moves on them), then writes the marker positions (`Muzzle`, `Ejection`, `OpticMount`, `GripRight`, `GripLeft`) into the view scene and a summary (`<key>.json`: triangles, nodes, markers).
 
@@ -166,7 +166,7 @@ Parts each rebuilt weapon exports (origins at the part's pivot, so a trigger or 
 
 The M4A1, AK-47, LSW-6, and M1911 aim with their own modelled sights and the M870 along its receiver at its bead, so their view scenes have no `IronSights` node. The PDW-9 and BR-3 carry a reflex sight on their rails, with the sight line set at its dot. The M40 aims through a riflescope the tool models (`riflescope`: eyepiece, power ring, 30 mm tube, turrets, objective bell, rings, coated lenses) on its rail; its axis is the sight line. An optic sits on the `OpticMount` marker; when the mount is too low for it, the weapon hangs that much lower (`WeaponView::set_sight_drop`), so the optic's dot is on the sight line and the iron sights show in the bottom of its window. Weapon racks show the same third-person weapon other players carry, laid on its side (`WeaponPickup`), without a shadow (the table hides it, but every shadow cascade would still draw the gun). `World` is decimated to a fifth of the first-person triangles; every copy shares the weapon's imported material, and it drops to Godot's coarser LODs sooner than other meshes (`WORLD_LOD_BIAS`), since a gun is small beside the player holding it.
 
-`godot/tests/weapon_models_test.gd` checks every rebuilt weapon's parts and markers and that its front sight's tip is within 0.6 mm of the sight line. `godot/tests/capture_weapons.gd` captures each weapon at the hip, aimed, mid-reload, and inspected, in other players' hands, and on the racks, for reviewing, and `godot/tests/capture_turntable.gd` renders each model in a neutral studio from six angles, with wireframes, in first person and as `World`.
+`godot/tests/weapon_models_test.gd` checks every rebuilt weapon's parts and markers, that its front sight's tip is within 0.6 mm of the sight line, and, looking from the aimed eye, that the iron sights make a clear picture (see [Weapon sights](#weapon-sights)). `godot/tests/capture_weapons.gd` captures each weapon at the hip, aimed, mid-reload, and inspected, in other players' hands, and on the racks, for reviewing, and `godot/tests/capture_turntable.gd` renders each model in a neutral studio from six angles, with wireframes, in first person and as `World`.
 
 Each shot shows a flash with ragged petals that change every shot, a short plume along the barrel seen from the side, and every few shots a puff of grey smoke that drifts up and fades in the world (`shaders/muzzle_flash.gdshader`, `shaders/muzzle_smoke.gdshader`, built in `WeaponView`).
 
@@ -283,27 +283,28 @@ The hitboxes are a pure function of snapshot fields, not of the animated skeleto
 
 ## Weapon sights
 
-![Aimed down the M4, AK-47, M870, M1911, and PDW-9 sights, and the M4 at the hip](media/iron-sights.jpg)
+![Aimed down the M4A1, AK-47, LSW-6, M870, M1911, PDW-9, and BR-3 sights](media/iron-sights.jpg)
 
-The gun pack models its sights as solid blocks, which look like slabs when you aim through them. `IronSights` (`rust/game/src/sights.rs`) cuts those blocks out of the imported mesh and builds new sights in code, in the same flat-shaded, hard-edged style:
+The M4A1, AK-47, LSW-6, and M1911 aim through the source models' own sights, and the M870 over its receiver at its bead. Modelled at real size, some of those sights are too small to read at game scale: a real post is 2 mm wide, 3 px at half a metre on a 900-line screen. `tools/build_weapons.py` reshapes them in view space (`sight_edits`, `edit_sights`), and moves the M4A1, whose sights sit 0.8 mm left of the source's centre line, onto the line (`sight.x`):
 
-| Style | Weapons | Rear | Front |
-| --- | --- | --- | --- |
-| `ar` | M4A1 | Flip-up aperture between two protective ears | A-frame tower, square post inside U-shaped ears |
-| `ak` | AK-47 | Tangent leaf with a wide U-notch blade | Post inside a round hood that is open at the top |
-| `shotgun` | M870 | Ghost ring between ears | Ramped blade with a red fiber-optic rod |
-| `pistol` | M1911 | Notched blade with two green tritium dots | Post with one tritium dot |
-| `reflex` | PDW-9 | Mini reflex sight: hooded window, coated lens, red dot | |
+| Weapon | Rear | Front |
+| --- | --- | --- |
+| M4A1 | Flip-up leaf, its 2.4 mm precision peep opened to the 4.6 mm close-range aperture | Post thickened from 1.5 to 2.4 mm |
+| AK-47, LSW-6 | Tangent leaf, its U-notch opened from 2.8 to 4 mm | Post thickened from 1.7 to 3.4 mm, inside its hood |
+| M870 | The receiver's top, 13 mm under the eye | A 5 mm brass bead the tool adds on the barrel's end (`add_bead`) |
+| M1911 | Notched blade, as modelled | Post with a green tritium dot, as modelled |
+
+The PDW-9 and BR-3 carry a mini reflex sight (`IronSights` style `reflex`, `rust/game/src/sights.rs`): a hooded window, a coated lens, and a 0.6 mm red dot, about 6 px across aimed, so it stays crisp through the bloom. The same sight is the red dot attachment.
 
 Rules the sights follow:
 
-- **Sight line.** Each weapon scene's origin is on the sight line, so at full ADS the sight line is the camera's axis. An aperture is centred on it. A notch sight follows "equal height, equal light": the front post's tip is level with the top of the rear blade, and the post fills the middle of the notch.
-- **Contrast.** Sight steel is darker than the weapon body, so the sight picture reads against it. Dots and fibers are emissive, so they show in shade and pick up a little glow.
-- **Clear picture.** Each weapon's `ads_position` puts the rear sight close to the eye, so the aperture or notch is large on screen. The support hand holds the handguard low enough to stay out of the sight picture. The AK, M870, M1911, and PDW-9 models sit lower under their sight lines than the pack draws them, so the new sights stand clear of the receiver.
+- **Sight line.** Each weapon scene's origin is on the sight line, so at full ADS the sight line is the camera's axis. An aperture is centred on it. A notch sight follows "equal height, equal light": the front post's tip is level with the top of the rear blade, and the post sits in the middle of the notch with light either side of it.
+- **Readable at game scale.** Posts are 2.4 mm or more, so they show at least 4 px wide aimed; peeps and notches open enough to frame them.
+- **Clear picture.** Nothing in front of the eye covers the front sight. The M870 sits 25 cm out when aimed, its firing hand low on the wrist, so neither the receiver nor the thumb over the wrist rises into the picture; held closer, the thumb came within a centimetre of the eye and the near plane cut it into slivers. Its support hand holds the back half of the pump, within reach of a bent arm.
 
-A `Sights` node in each `scenes/weapons/*_view.tscn` sets the style, the rear and front positions along the sight line, the height of the weapon under each sight, a size scale, the glow colour, and `cuts`: boxes in the view's space. Any triangle of the imported model whose centre lies in a box is removed. The cut meshes and the built sights are cached and shared by every copy of a weapon, including third-person ones.
+`godot/tests/weapon_models_test.gd` traces the picture from where the eye is when aimed: the line just over each front sight must run clear through the rear sight, and a millimetre under its tip, on the line and 0.6 mm either side, the first thing the eye meets must be the front sight itself.
 
-To review sights, capture every weapon at the hip and aimed: `CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 --script res://tests/capture_sights.gd` (needs a GPU and a display, or Xvfb).
+To review sights, capture every weapon at the hip and aimed: `CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 --script res://tests/capture_sights.gd` (needs a GPU and a display, or Xvfb). `LOOK=0.6,0` aims at a bare wall instead of the range's targets, and `WEAPONS=m4,m870` captures only some.
 
 ## Zombies and other characters
 

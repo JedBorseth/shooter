@@ -13,7 +13,7 @@ grip_rake = 45.0
 fire_volume_db = -3.0
 hip_position = Vector3(0.135, -0.090, -0.2)
 hip_rotation = Vector3(0, 5, 4)
-ads_position = Vector3(0, 0, -0.2)
+ads_position = Vector3(0, 0, -0.25)
 sprint_position = Vector3(-0.04, 0.015, 0.03)
 sprint_rotation = Vector3(-4, 22, 24)
 pivot = Vector3(0, -0.073, 0.085)
@@ -46,7 +46,7 @@ omni_range = 9.0
 position = Vector3(0.0126, -0.0306, -0.0003)
 
 [node name="GripRight" type="Marker3D" parent="."]
-position = Vector3(0.0000, -0.0869, 0.1612)
+position = Vector3(0.0000, -0.1139, 0.1610)
 
 [node name="GripLeft" type="Marker3D" parent="."]
-position = Vector3(0.0000, -0.0674, -0.3156)
+position = Vector3(0.0000, -0.0678, -0.2706)
