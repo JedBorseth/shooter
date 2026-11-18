@@ -1,0 +1,11 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/steel_plate.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://assets/models/steel_plate_round/steel_plate_round.gltf" id="2_model"]
+
+[node name="SteelPlate" type="Node3D"]
+script = ExtResource("1_script")
+centre_drop = 0.55
+radius = 0.24
+
+[node name="Model" parent="." instance=ExtResource("2_model")]

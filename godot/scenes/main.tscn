@@ -35,6 +35,9 @@
 [ext_resource type="PackedScene" uid="uid://6gxyxjfrt8n5" path="res://assets/props/military_crate/military_crate.gltf" id="p_military_crate"]
 [ext_resource type="PackedScene" uid="uid://b1p1uago5j3cy" path="res://assets/props/tyre/tyre.gltf" id="p_tyre"]
 [ext_resource type="PackedScene" uid="uid://330cd5sbdyvp" path="res://assets/props/utility_box/utility_box.gltf" id="p_utility_box"]
+[ext_resource type="PackedScene" path="res://scenes/props/steel_plate_round.tscn" id="w_plate_round"]
+[ext_resource type="PackedScene" path="res://scenes/props/steel_plate_silhouette.tscn" id="w_plate_sil"]
+[ext_resource type="PackedScene" path="res://scenes/props/wall_rack.tscn" id="w_wall_rack"]
 
 [sub_resource type="ShaderMaterial" id="SkyMat"]
 shader = ExtResource("21_daysky")
@@ -581,3 +584,25 @@ distant_battle = true
 transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, 25.19, 0, -29.15)
 length = 4.14
 width = 0.46
+
+[node name="SteelPlates" type="Node3D" parent="."]
+
+[node name="Plate0" parent="SteelPlates" instance=ExtResource("w_plate_round")]
+position = Vector3(30.6, 1.8, 4.6)
+rotation = Vector3(0, -1.5707964, 0)
+
+[node name="Plate1" parent="SteelPlates" instance=ExtResource("w_plate_round")]
+position = Vector3(30.6, 1.8, 5.4)
+rotation = Vector3(0, -1.5707964, 0)
+
+[node name="Plate2" parent="SteelPlates" instance=ExtResource("w_plate_sil")]
+position = Vector3(30.6, 1.8, 7.65)
+rotation = Vector3(0, -1.5707964, 0)
+
+[node name="Plate3" parent="SteelPlates" instance=ExtResource("w_plate_round")]
+position = Vector3(30.6, 1.8, 8.35)
+rotation = Vector3(0, -1.5707964, 0)
+
+[node name="WallRack" parent="." instance=ExtResource("w_wall_rack")]
+position = Vector3(29.55, 0, -5.7)
+rotation = Vector3(0, -1.5707964, 0)
