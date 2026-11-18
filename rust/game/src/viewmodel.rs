@@ -23,6 +23,7 @@ use crate::acoustics::{self, AudioEnvironment};
 use crate::audio;
 use crate::character::arms::FpArms;
 use crate::character::poser::Grips;
+use crate::character::poser::Held;
 use crate::sights::{self, IronSights};
 use crate::spring::{Spring, damping_for, impulse_for_peak, smoothing};
 use crate::weapon_clips::{
@@ -59,6 +60,10 @@ pub struct ViewFrame {
     pub sprint_out: f32,
     pub crouched: bool,
     pub sliding: bool,
+    /// Seconds left climbing over a ledge (0 when not mantling), and whether
+    /// the climb is a vault over cover.
+    pub mantle_left: f32,
+    pub vaulting: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -79,6 +84,13 @@ pub enum ViewAction {
     /// Progress 0..1.
     Lowering(f32),
     Raising(f32),
+    /// A first raise (`Raise::First`): `elapsed` seconds into one of
+    /// `length`. A draw over the weapon's `raise_time`, then the action is
+    /// worked.
+    FirstRaise {
+        elapsed: f32,
+        length: f32,
+    },
     /// Working the bolt or pump.
     Cycling(f32),
     /// A knife strike; seconds until it lands (negative after).
@@ -129,8 +141,8 @@ const HIP_LONG_POS: Vector3 = Vector3::new(0.0, 0.04, -0.03);
 const HIP_LONG_ROT: Vector3 = Vector3::new(0.0, 5.0, 3.0);
 /// Added to a long gun's sprint pose: muzzle down and across the body, a
 /// run rather than a high ready (degrees, then metres).
-const SPRINT_LONG_ROT: Vector3 = Vector3::new(-14.0, 3.0, 6.0);
-const SPRINT_LONG_POS: Vector3 = Vector3::new(0.0, 0.02, 0.01);
+const SPRINT_LONG_ROT: Vector3 = Vector3::new(-10.0, -8.0, 4.0);
+const SPRINT_LONG_POS: Vector3 = Vector3::new(0.0, 0.015, -0.04);
 
 /// How fast a cut-short clip eases out, in 1/seconds.
 const CLIP_FADE_RATE: f32 = 30.0;
@@ -2086,6 +2098,25 @@ pub struct ViewmodelRig {
     smoothed_velocity: Vector3,
     last_ads: f32,
     ads_rising: bool,
+    /// The slide pose's blend (`x`), sprung so it lands with a small
+    /// overshoot, and whether the last frame was sliding.
+    slide: Spring<f32>,
+    was_sliding: bool,
+    /// A mantle or vault: its length in seconds (when it started), and the
+    /// pose's blend, which hands over to the sprint-out like the sprint pose.
+    mantle_total: f32,
+    mantle_blend: f32,
+    /// Crouched, eased in and out rather than snapped (Black Ops 2's
+    /// `posMoveRate`).
+    crouch_blend: f32,
+    /// Walking speed's share of the walk pose (`STAND_MOVE`), eased.
+    walk_blend: f32,
+    /// A hit's knock on the weapon: seconds since it, the hit's direction in
+    /// the view (`x` right, `y` ahead), and its strength.
+    damage: Option<(f32, Vector2, f32)>,
+    /// The first raise's work (seconds), while one plays: the bolt, pump,
+    /// charging handle, or slide beats are timed over it.
+    first_work: Option<f32>,
 }
 
 #[godot_api]
@@ -2382,6 +2413,10 @@ impl ViewmodelRig {
             ViewAction::Cycling(p) if matches!(kind, ClipKind::Rifle { .. }) => {
                 weapon_clips::charge_pose(p, &anchors)
             }
+            // A pistol only cycles by hand in a first raise: the slide racked.
+            ViewAction::Cycling(p) if kind == ClipKind::Pistol => {
+                weapon_clips::slide_rack_pose(p, &anchors)
+            }
             _ => match self.inspect {
                 Some(t) => weapon_clips::inspect_pose(t, kind, &anchors),
                 None => ClipPose::rest(),
@@ -2416,7 +2451,7 @@ impl ViewmodelRig {
             ViewAction::Cycling(p) => (BeatClip::Cycle, p),
             ViewAction::Lowering(p) => (BeatClip::Lower, p),
             ViewAction::Raising(p) => (BeatClip::Raise, p),
-            ViewAction::Meleeing { .. } => (BeatClip::Idle, 0.0),
+            ViewAction::Meleeing { .. } | ViewAction::FirstRaise { .. } => (BeatClip::Idle, 0.0),
             ViewAction::Ready => match self.inspect {
                 Some(t) => (BeatClip::Inspect, t),
                 None => (BeatClip::Idle, 0.0),
@@ -2460,7 +2495,9 @@ impl ViewmodelRig {
                 }
             }
             BeatClip::Cycle => {
-                let length = if def.cycle_time > 0.0 {
+                let length = if let Some(work) = self.first_work {
+                    work
+                } else if def.cycle_time > 0.0 {
                     def.cycle_time
                 } else {
                     0.35
@@ -2503,7 +2540,58 @@ impl ViewmodelRig {
             peak_impulse(Vector3::new(-pitch, -dip, 0.0), LAND_STIFFNESS, LAND_ZETA);
     }
 
+    /// A hit knocked the player: the weapon deflects away from it and comes
+    /// back (Black Ops 2's damage kick: out over 100 ms, back over 400 ms),
+    /// mostly at the hip. `from` is the attacker's direction in the view
+    /// (`x` right, `y` ahead), `strength` about 1 for a rifle round.
+    pub fn on_damaged(&mut self, from: Vector2, strength: f32) {
+        self.damage = Some((0.0, from, strength.clamp(0.0, 1.5)));
+    }
+
+    /// The hit's knock now (rotation in degrees: pitch, yaw, roll).
+    fn damage_kick(&mut self, dt: f32) -> Vector3 {
+        let Some((t, from, strength)) = self.damage else {
+            return Vector3::ZERO;
+        };
+        let t = t + dt;
+        let envelope = if t < DAMAGE_DEFLECT {
+            smoothstep(t / DAMAGE_DEFLECT)
+        } else {
+            1.0 - smoothstep((t - DAMAGE_DEFLECT) / DAMAGE_RETURN)
+        };
+        self.damage = (t < DAMAGE_DEFLECT + DAMAGE_RETURN).then_some((t, from, strength));
+        // From ahead the muzzle is knocked up; from the side, turned and
+        // rolled away (Black Ops 2: half the pitch, the roll as yaw and half
+        // as roll).
+        let pitch = DAMAGE_KICK * from.y.clamp(-0.6, 1.0) * 0.5;
+        let roll = DAMAGE_KICK * from.x;
+        Vector3::new(pitch, -roll, roll * 0.5) * strength * envelope
+    }
+
+    /// A first raise as the clips play it: the draw over the weapon's
+    /// `raise_time`, then the action worked (a `Cycling` of the rest), with
+    /// the work's progress and length.
+    fn resolve_first_raise(frame: &ViewFrame) -> (ViewFrame, Option<(f32, f32)>) {
+        let ViewAction::FirstRaise { elapsed, length } = frame.action else {
+            return (*frame, None);
+        };
+        let draw = frame.weapon.def().raise_time.min(length);
+        let work = (length - draw).max(1e-3);
+        let mut out = *frame;
+        if elapsed < draw {
+            out.action = ViewAction::Raising(elapsed / draw.max(1e-3));
+            (out, Some((0.0, work)))
+        } else {
+            let q = ((elapsed - draw) / work).clamp(0.0, 1.0);
+            out.action = ViewAction::Cycling(q);
+            (out, Some((q, work)))
+        }
+    }
+
     pub fn update(&mut self, frame: &ViewFrame, dt: f32) {
+        let (resolved, first_raise) = Self::resolve_first_raise(frame);
+        let frame = &resolved;
+        self.first_work = first_raise.map(|(_, work)| work);
         self.update_shells(dt);
         // Hidden while dead, and once the scope overlay covers the screen.
         let shown = frame.visible && frame.scope < 0.85;
@@ -2580,6 +2668,58 @@ impl ViewmodelRig {
         }
         let sprint = self.sprint_blend * hip_amount;
 
+        // A mantle or vault: the weapon tucks down and right as the support
+        // hand leaves it to plant on the ledge, and comes back up over the
+        // sprint-out, as the sprint pose does (Black Ops 2's `vMantleOfs`
+        // lerps with the climb; Modern Warfare's support hand plants).
+        let mantle_progress = if frame.mantle_left > 0.0 {
+            if self.mantle_total <= 0.0 {
+                self.mantle_total = frame.mantle_left;
+            }
+            self.mantle_blend += (1.0 - self.mantle_blend) * smoothing(16.0, dt);
+            Some(1.0 - frame.mantle_left / self.mantle_total.max(1e-3))
+        } else {
+            self.mantle_total = 0.0;
+            if frame.sprint_out > 0.0 {
+                self.mantle_blend = self.mantle_blend.min(frame.sprint_out * frame.sprint_out);
+            } else {
+                self.mantle_blend *= 1.0 - smoothing(12.0, dt);
+            }
+            None
+        };
+        let mantle = self.mantle_blend * hip_amount;
+
+        // A slide: the weapon cants hard left and drops, sprung in with a
+        // small overshoot and eased back out (Black Ops 3 and Modern
+        // Warfare's slide; Black Ops 2's `vSlideOfs`/`vSlideRot` slot).
+        let sliding = frame.sliding && frame.on_floor;
+        if sliding && !self.was_sliding {
+            // The body hits the ground.
+            self.jolt(
+                Vector3::new(0.0, -0.008, 0.004),
+                Vector3::new(-1.5, 0.0, 2.0),
+            );
+        }
+        self.was_sliding = sliding;
+        let (slide_k, slide_zeta) = if sliding { (110.0, 0.55) } else { (60.0, 0.9) };
+        self.slide.step_toward(
+            if sliding { 1.0 } else { 0.0 },
+            slide_k,
+            damping_for(slide_k, slide_zeta),
+            dt,
+        );
+        let slide = self.slide.value * (1.0 - 0.8 * ads);
+
+        // Crouching lowers and pulls the weapon in, eased (Black Ops 2's
+        // `vDuckedOfs`/`vDuckedRot` at `posMoveRate` 6).
+        let crouch_target = if frame.crouched { 1.0 } else { 0.0 };
+        self.crouch_blend += (crouch_target - self.crouch_blend) * smoothing(POS_MOVE_RATE, dt);
+        // Walking pulls it back a touch and tips it (`vStandMove`/`vStandRot`
+        // at full walk speed).
+        let walk_target = (self.bob_blend.min(1.0) * (1.0 - self.sprint_blend)).max(0.0);
+        self.walk_blend += (walk_target - self.walk_blend) * smoothing(POS_MOVE_RATE, dt);
+        let damage_rot = self.damage_kick(dt) * (1.0 - 0.7 * ads);
+
         // Stride bob, on the same phase as the camera and the footsteps.
         let grounded = frame.on_floor && !frame.sliding;
         let moving = if grounded {
@@ -2622,13 +2762,18 @@ impl ViewmodelRig {
         let sway_pos = Vector3::new(
             -frame.look_velocity.x * look_shift
                 - change.x * 0.008
-                - frame.velocity.x * 0.0015 * floor,
+                - frame.velocity.x * STRAFE_SHIFT * floor,
             -frame.look_velocity.y * look_shift * 0.6 - frame.velocity.y * 0.004,
             change.z * 0.003,
         );
         let limit = Vector3::new(0.025, 0.025, 0.015) * inertia;
         let sway_pos = sway_pos.clamp(-limit, limit);
-        let strafe_roll = -frame.velocity.x * 0.005 * floor * inertia;
+        // Strafing leans the weapon into the move: Black Ops 2's `vStrafeRot`
+        // rolls it about 6 degrees at a full-speed strafe.
+        let strafe_roll = -(frame.velocity.x / WALK_SPEED).clamp(-1.2, 1.2)
+            * STRAFE_ROLL.to_radians()
+            * floor
+            * inertia;
         // In the air the muzzle tips up on the way up and a little down on
         // the way down.
         let air_pitch = if frame.on_floor {
@@ -2685,7 +2830,13 @@ impl ViewmodelRig {
             ViewAction::Raising(p) => weapon_clips::pose_at(weapon_clips::draw_keys(kind), p),
             _ => Pose::ZERO,
         };
-        let (switch_rot, switch_pos) = (switch.rot + melee_pose.rot, switch.pos + melee_pose.pos);
+        let present = first_raise.map_or(Pose::ZERO, |(q, _)| {
+            weapon_clips::first_raise_present(kind, q)
+        });
+        let (switch_rot, switch_pos) = (
+            switch.rot + melee_pose.rot + present.rot,
+            switch.pos + melee_pose.pos + present.pos,
+        );
 
         // Bolt or pump: a quick push and roll, peaking mid-cycle, mostly kept
         // off the sight line when aimed. A loaded shell gives a small bump.
@@ -2747,10 +2898,11 @@ impl ViewmodelRig {
         position += bob_pos + breathe_pos + self.sway_pos.value;
         position += self.kick_pos.value + self.ride_pos.value + self.jolt_pos.value;
         position += Vector3::new(0.0, land.y, 0.0);
-        if frame.crouched {
-            // Crouched, the weapon sits a touch lower and closer.
-            position += Vector3::new(0.0, -0.006, 0.006) * hip_amount;
-        }
+        // Crouched, the weapon sits lower, closer, and a little right; walking
+        // pulls it back a touch. Both at the hip only.
+        position += DUCKED_POS * (self.crouch_blend * hip_amount);
+        position += STAND_MOVE_POS * (self.walk_blend * hip_amount);
+        position += SLIDE_POS * slide + MANTLE_POS * mantle;
         position += cycle_pos * cycle + Vector3::new(0.0, -0.02 * bump, 0.01 * bump);
         // A clip cut short (firing out of a reload's settle) eases out over
         // about 100 ms instead of snapping to rest.
@@ -2776,14 +2928,22 @@ impl ViewmodelRig {
             + deg(-3.0) * arc
             + deg(switch_rot.x)
             + deg(cycle_rot.x) * cycle
-            + deg(4.0) * bump;
+            + deg(4.0) * bump
+            + deg(DUCKED_ROT.x) * self.crouch_blend * hip_amount
+            + deg(STAND_MOVE_ROT.x) * self.walk_blend * hip_amount
+            + deg(SLIDE_ROT.x) * slide
+            + deg(MANTLE_ROT.x) * mantle
+            + deg(damage_rot.x);
         let yaw = deg(ins_rot.y)
             + deg(hip_rot.y) * hip_amount
             + deg(switch_rot.y)
             + deg(sprint_rot.y) * sprint
             + deg(bob_rot.y + breathe_rot.y)
             + motion.y
-            + deg(cycle_rot.y) * cycle;
+            + deg(cycle_rot.y) * cycle
+            + deg(SLIDE_ROT.y) * slide
+            + deg(MANTLE_ROT.y) * mantle
+            + deg(damage_rot.y);
         let roll = deg(ins_rot.z)
             + deg(hip_rot.z) * hip_amount
             + deg(sprint_rot.z) * sprint
@@ -2791,7 +2951,12 @@ impl ViewmodelRig {
             + motion.z
             + deg(7.0) * arc_roll
             + deg(switch_rot.z)
-            + deg(cycle_rot.z) * cycle;
+            + deg(cycle_rot.z) * cycle
+            + deg(DUCKED_ROT.z) * self.crouch_blend * hip_amount
+            + deg(STAND_MOVE_ROT.z) * self.walk_blend * hip_amount
+            + deg(SLIDE_ROT.z) * slide
+            + deg(MANTLE_ROT.z) * mantle
+            + deg(damage_rot.z);
 
         // Rotate around the pivot (the firing hand) at the hip. Aimed, turn
         // about a point just behind the rear sight (the cheek on the stock),
@@ -2817,22 +2982,91 @@ impl ViewmodelRig {
         // The knife path is in the rig's (view) space; the hands want it in
         // the weapon's.
         let weapon_in_rig = view.get_transform().affine_inverse();
-        let knife = self.melee.map(|(t, strike)| {
+        let grips = view.bind().grips();
+        let item = if let Some((t, strike)) = self.melee {
             let (blend, local) = crate::knife::first_person(t, strike);
-            (blend, weapon_in_rig * local)
-        });
+            Some((blend, weapon_in_rig * local, Held::Knife))
+        } else {
+            // The support hand plants on the ledge through a mantle or vault.
+            mantle_progress.map(|m| {
+                let plant = keyed(&[(0.0, 0.0), (0.22, 1.0), (0.78, 1.0), (1.0, 0.0)], m);
+                (
+                    plant * hip_amount,
+                    weapon_in_rig * plant_hand(m, frame.vaulting),
+                    Held::Plant,
+                )
+            })
+        };
         if let Some(arms) = &mut self.arms {
             // The hands follow the grip markers, which the clips move.
-            let support = 0.0;
             let hold = shown.then(|| {
-                let mut grips = view.bind().grips();
+                let mut grips = grips;
                 grips.hold = crate::character::poser::Hold::of(frame.weapon.def());
                 (view.clone().upcast::<Node3D>(), grips)
             });
-            arms.bind_mut().follow(hold, support, knife);
+            arms.bind_mut().follow(hold, 0.0, None, item);
         }
     }
 }
+
+/// The support hand planted on a ledge through a climb, `m` 0..1 through it
+/// (the left hand bone's frame in the view's space): reached out low and
+/// left, palm down and fingers forward, then pressed down and back as the
+/// body rises over it. A vault plants on the cover's top, lower, and the
+/// body carries on past it.
+fn plant_hand(m: f32, vault: bool) -> Transform3D {
+    let (reach, pressed) = if vault {
+        (
+            Vector3::new(-0.13, -0.17, -0.42),
+            Vector3::new(-0.1, -0.3, -0.2),
+        )
+    } else {
+        (
+            Vector3::new(-0.14, -0.16, -0.4),
+            Vector3::new(-0.12, -0.28, -0.3),
+        )
+    };
+    let at = reach.lerp(pressed, smoothstep(m));
+    // Fingers forward and a little out, the palm (+Z) down on the ledge.
+    let fingers = Vector3::new(0.25, -0.15, -1.0).normalized();
+    let palm = Vector3::new(0.1, -1.0, 0.1);
+    let z = (palm - fingers * palm.dot(fingers)).normalized() * PLANT_PALM;
+    let y = fingers;
+    Transform3D::new(Basis::from_cols(y.cross(z), y, z), at)
+}
+
+/// Which way the left hand bone's +Z (`PoseInput` hands) faces from the
+/// palm: 1 out of the palm.
+const PLANT_PALM: f32 = 1.0;
+
+/// Black Ops 2's `posMoveRate`: how fast the stance and walk poses follow, in
+/// 1/seconds.
+const POS_MOVE_RATE: f32 = 6.0;
+/// Crouched, at the hip (Black Ops 2's `vDuckedOfs`/`vDuckedRot` for a rifle:
+/// 1 inch back, 0.3 right, 0.2 down; pitch 2, roll -2).
+const DUCKED_POS: Vector3 = Vector3::new(0.008, -0.005, 0.025);
+const DUCKED_ROT: Vector3 = Vector3::new(2.0, 0.0, -2.0);
+/// Walking at full speed, at the hip (`vStandMove`/`vStandRot`: back 0.2
+/// inch; pitch 2, roll -2).
+const STAND_MOVE_POS: Vector3 = Vector3::new(0.0, 0.0, 0.005);
+const STAND_MOVE_ROT: Vector3 = Vector3::new(2.0, 0.0, -2.0);
+/// The strafe lean (degrees at a full walk-speed strafe) and the shift the
+/// weapon trails by (metres per m/s; `vStrafeMove` is half an inch).
+const STRAFE_ROLL: f32 = 5.0;
+const STRAFE_SHIFT: f32 = 0.0022;
+/// Sliding: canted hard left, dropped, and pulled in (metres, degrees),
+/// as Black Ops 3 and Modern Warfare's slide clips hold a rifle (measured
+/// from footage, roughly).
+const SLIDE_POS: Vector3 = Vector3::new(-0.012, 0.004, 0.012);
+const SLIDE_ROT: Vector3 = Vector3::new(5.0, -3.0, 10.0);
+/// Mantling: tucked down and right, canted out of the planting hand's way.
+const MANTLE_POS: Vector3 = Vector3::new(0.012, -0.015, 0.008);
+const MANTLE_ROT: Vector3 = Vector3::new(-5.0, -4.0, -9.0);
+/// A hit's knock on the weapon (Black Ops 2's `DamageKickAngles`): seconds
+/// out and back, and its size in degrees for a rifle round.
+const DAMAGE_DEFLECT: f32 = 0.1;
+const DAMAGE_RETURN: f32 = 0.4;
+const DAMAGE_KICK: f32 = 4.0;
 
 /// The impulse per axis that makes a spring at rest peak at `peak`.
 fn peak_impulse(peak: Vector3, stiffness: f32, zeta: f32) -> Vector3 {

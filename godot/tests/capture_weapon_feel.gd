@@ -43,6 +43,16 @@ const SCENARIOS := [
 	"reload_fire_m4",
 	"switch",
 	"inspect",
+	"first_raise",
+	"first_raise_bolt",
+	"first_raise_pump",
+	"throw",
+	"throw_quick",
+	"slide",
+	"crouch",
+	"vault",
+	"mantle",
+	"hit",
 ]
 
 var _out := OS.get_environment("TRACE_DIR")
@@ -488,6 +498,115 @@ func _scenario_switch() -> void:
 func _scenario_inspect() -> void:
 	await _hold("inspect", 2, "inspect")
 	await _sixtieths(200)
+
+
+## A weapon off the rack comes up with a first raise, working the action.
+func _first_raise(weapon: String) -> void:
+	await _sixtieths(10)
+	_mark("first_raise")
+	_player.give_weapon(weapon)
+	await _sixtieths(110)
+
+
+func _scenario_first_raise() -> void:
+	await _first_raise("ak47")
+
+
+func _scenario_first_raise_bolt() -> void:
+	await _first_raise("m40")
+
+
+func _scenario_first_raise_pump() -> void:
+	await _first_raise("m870")
+
+
+## A frag cooked for most of a second, then thrown.
+func _scenario_throw() -> void:
+	_player.restock_lethals()
+	await _sixtieths(10)
+	await _hold("lethal", 50, "cook")
+	_mark("throw")
+	await _sixtieths(60)
+
+
+func _scenario_throw_quick() -> void:
+	_player.restock_lethals()
+	await _sixtieths(10)
+	await _hold("lethal", 2, "throw")
+	await _sixtieths(70)
+
+
+func _scenario_slide() -> void:
+	Input.action_press("move_forward")
+	await _hold("sprint", 2, "sprint")
+	await _sixtieths(45)
+	await _hold("crouch", 2, "slide")
+	await _sixtieths(60)
+	Input.action_release("move_forward")
+	_mark("stop")
+	await _sixtieths(40)
+
+
+func _scenario_crouch() -> void:
+	await _hold("crouch", 2, "crouch")
+	await _sixtieths(40)
+	_mark("crouch_walk")
+	Input.action_press("move_forward")
+	await _sixtieths(40)
+	Input.action_release("move_forward")
+	await _hold("crouch", 2, "stand")
+	await _sixtieths(40)
+
+
+## A wall `height` metres tall and `depth` deep, `ahead` metres in front of
+## the spawn, for the climbs; freed when the scenario ends.
+func _obstacle(height: float, depth: float, ahead: float) -> StaticBody3D:
+	var body := StaticBody3D.new()
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(4.0, height, depth)
+	shape.shape = box
+	body.add_child(shape)
+	var mesh := MeshInstance3D.new()
+	var cube := BoxMesh.new()
+	cube.size = box.size
+	mesh.mesh = cube
+	body.add_child(mesh)
+	root.add_child(body)
+	body.global_position = Vector3(0, height * 0.5, 20.0 - ahead - depth * 0.5)
+	await _sixtieths(2)
+	return body
+
+
+func _climb(height: float, depth: float, sprint: bool) -> void:
+	var wall := await _obstacle(height, depth, 3.0)
+	Input.action_press("move_forward")
+	if sprint:
+		await _hold("sprint", 2, "sprint")
+	while _player.global_position.z > 17.0 + 0.7:
+		await _sixtieths(1)
+	await _hold("jump", 6, "climb")
+	await _sixtieths(70)
+	Input.action_release("move_forward")
+	_mark("stop")
+	await _sixtieths(30)
+	wall.queue_free()
+
+
+func _scenario_vault() -> void:
+	await _climb(1.0, 0.3, true)
+
+
+func _scenario_mantle() -> void:
+	await _climb(1.2, 3.0, false)
+
+
+## Shot from the right: the weapon is knocked away and comes back.
+func _scenario_hit() -> void:
+	await _sixtieths(10)
+	_mark("hit")
+	_player.take_damage(25.0, _player.global_position + Vector3(10, 1.5, 0))
+	await _sixtieths(50)
 
 
 ## Waits `count` sixtieths of a second of physics time, whatever the tick rate.

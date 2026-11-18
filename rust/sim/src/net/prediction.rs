@@ -190,8 +190,17 @@ fn combat_diverged(a: &CombatState, b: &CombatState) -> bool {
                 to: tb,
             },
         ) => ta != tb || (ra - rb).abs() > TIME_TOLERANCE,
-        (Action::Raising { remaining: ra }, Action::Raising { remaining: rb })
-        | (Action::Cycling { remaining: ra }, Action::Cycling { remaining: rb }) => !close(ra, rb),
+        (
+            Action::Raising {
+                remaining: ra,
+                kind: ka,
+            },
+            Action::Raising {
+                remaining: rb,
+                kind: kb,
+            },
+        ) => ka != kb || !close(ra, rb),
+        (Action::Cycling { remaining: ra }, Action::Cycling { remaining: rb }) => !close(ra, rb),
         (
             Action::Loading {
                 remaining: ra,

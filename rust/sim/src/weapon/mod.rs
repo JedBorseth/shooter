@@ -46,6 +46,9 @@ pub struct WeaponState {
     /// False for an empty slot (Zombies starts with only a sidearm). `id`
     /// then means nothing.
     pub carried: bool,
+    /// Not drawn yet this game or round, or just picked up: the next draw is
+    /// a first raise ([`Raise::First`]), which works the action.
+    pub fresh: bool,
 }
 
 impl WeaponState {
@@ -57,6 +60,7 @@ impl WeaponState {
             reserve: def.reserve,
             needs_cycle: false,
             carried: true,
+            fresh: false,
         }
     }
 }
@@ -94,6 +98,7 @@ pub enum Action {
     },
     Raising {
         remaining: f32,
+        kind: Raise,
     },
     /// A knife strike ([`crate::melee`]): seconds until the weapon is back
     /// up, seconds until the strike lands (negative once it has), and whether
@@ -111,6 +116,18 @@ pub enum Action {
         cooked: f32,
         release_in: Option<f32>,
     },
+}
+
+/// Which raise brings a weapon up.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Raise {
+    /// An ordinary draw: switching, or coming back from a cancelled switch.
+    #[default]
+    Draw,
+    /// The weapon's first draw of a game or round, or just picked up
+    /// (`WeaponDef::first_raise_time`): the draw ends by working the action,
+    /// as Call of Duty's first raise does.
+    First,
 }
 
 /// Player combat state: loadout, current action, aim, recoil, and breath.
@@ -159,6 +176,7 @@ impl CombatState {
             active: 0,
             action: Action::Raising {
                 remaining: loadout[0].def().raise_time,
+                kind: Raise::Draw,
             },
             ads: 0.0,
             cooldown: 0.0,
@@ -182,6 +200,27 @@ impl CombatState {
     /// This loadout carrying `count` frags.
     pub fn with_lethals(mut self, count: u8) -> Self {
         self.lethals = count;
+        self
+    }
+
+    /// This loadout at the start of a game or round: every weapon carried
+    /// comes up with a first raise the first time it is drawn, the one in
+    /// hand now. Call of Duty plays the first raise at the start of a game
+    /// or round and on a pickup, not on every respawn (Modern Warfare III,
+    /// 2023, after players asked for it off respawns).
+    pub fn first_draw(mut self) -> Self {
+        for slot in &mut self.slots {
+            slot.fresh = slot.carried;
+        }
+        if matches!(
+            self.action,
+            Action::Raising {
+                kind: Raise::Draw,
+                ..
+            }
+        ) {
+            self.action = draw(&mut self);
+        }
         self
     }
 
@@ -214,9 +253,7 @@ impl CombatState {
         self.slots[usize::from(index)].carried = false;
         if self.active == index {
             self.active = 1 - index;
-            self.action = Action::Raising {
-                remaining: self.def().raise_time,
-            };
+            self.action = draw(&mut self);
         }
         self
     }
@@ -286,7 +323,11 @@ impl CombatState {
     pub fn refill_ammo(&mut self, events: &mut Vec<CombatEvent>) {
         let chamber_empty = self.weapon().magazine == 0;
         for slot in self.slots.iter_mut().filter(|s| s.carried) {
-            *slot = WeaponState::full(slot.id);
+            // A weapon not drawn yet keeps its first raise.
+            *slot = WeaponState {
+                fresh: slot.fresh,
+                ..WeaponState::full(slot.id)
+            };
         }
         self.reload_queued = false;
         if self.is_reloading() || matches!(self.action, Action::Ready) {
@@ -697,9 +738,9 @@ fn pick_up(state: &mut CombatState, weapon: WeaponId, events: &mut Vec<CombatEve
     state.cooldown = 0.0;
     state.ads = 0.0;
     state.reload_queued = false;
-    state.action = Action::Raising {
-        remaining: def.raise_time,
-    };
+    // A weapon off the ground comes up with a first raise.
+    state.slots[usize::from(slot)].fresh = true;
+    state.action = draw(state);
     events.push(CombatEvent::PickedUp { weapon });
     events.push(CombatEvent::Switched { weapon });
 }
@@ -720,6 +761,7 @@ fn request_switch(state: &mut CombatState, input: &CombatInput) {
             let lowered = 1.0 - (remaining / def.lower_time.max(1e-3)).clamp(0.0, 1.0);
             state.action = Action::Raising {
                 remaining: def.raise_time * lowered,
+                kind: Raise::Draw,
             };
             return;
         }
@@ -834,17 +876,19 @@ fn advance_action(state: &mut CombatState, dt: f32, events: &mut Vec<CombatEvent
             state.burst_left = 0;
             state.bloom = 0.0;
             state.cooldown = 0.0;
-            state.action = Action::Raising {
-                remaining: state.def().raise_time,
-            };
+            state.action = draw(state);
             events.push(CombatEvent::Switched {
                 weapon: state.weapon().id,
             });
         }
-        Action::Raising { remaining } => {
+        Action::Raising { remaining, kind } => {
             let remaining = remaining - dt;
             state.action = if remaining > 0.0 {
-                Action::Raising { remaining }
+                Action::Raising { remaining, kind }
+            } else if kind == Raise::First {
+                // The first raise worked the action: the chamber is loaded.
+                state.slots[usize::from(state.active)].needs_cycle = false;
+                Action::Ready
             } else {
                 finish_cycle_on_draw(state, events)
             };
@@ -946,6 +990,7 @@ fn advance_throw(
     state.shots_fired = state.shots_fired.wrapping_add(1);
     state.action = Action::Raising {
         remaining: equipment::RECOVERY,
+        kind: Raise::Draw,
     };
 }
 
@@ -984,6 +1029,25 @@ fn start_melee(
 
 /// The action a weapon is in once drawn: ready, or working the bolt or pump
 /// (or charging) if a switch cut that short.
+/// The raise that brings up the weapon in the active slot: a first raise if
+/// it has not been drawn yet ([`WeaponState::fresh`]), otherwise a draw.
+fn draw(state: &mut CombatState) -> Action {
+    let slot = &mut state.slots[usize::from(state.active)];
+    let def = slot.id.def();
+    // A weapon without a first raise of its own just draws.
+    if std::mem::take(&mut slot.fresh) && def.first_raise_time > def.raise_time {
+        Action::Raising {
+            remaining: def.first_raise(),
+            kind: Raise::First,
+        }
+    } else {
+        Action::Raising {
+            remaining: def.raise_time,
+            kind: Raise::Draw,
+        }
+    }
+}
+
 fn finish_cycle_on_draw(state: &mut CombatState, events: &mut Vec<CombatEvent>) -> Action {
     let slot = &mut state.slots[usize::from(state.active)];
     if !std::mem::take(&mut slot.needs_cycle) || slot.magazine == 0 {

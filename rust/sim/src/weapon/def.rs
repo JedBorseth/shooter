@@ -356,6 +356,10 @@ pub struct WeaponDef {
     pub ads_time: f32,
     pub sprint_out_time: f32,
     pub raise_time: f32,
+    /// Seconds of the first raise (a game's or round's first draw, or a
+    /// pickup), which works the action; 0 for none (it is then a draw).
+    #[serde(default)]
+    pub first_raise_time: f32,
     pub lower_time: f32,
     pub spread: Spread,
     /// World FOV multiplier when fully aimed (lower zooms in).
@@ -423,6 +427,12 @@ impl WeaponDef {
 
     pub fn fire_interval(&self) -> f32 {
         60.0 / self.rounds_per_minute
+    }
+
+    /// Seconds of this weapon's first raise: its `first_raise_time`, never
+    /// shorter than a plain draw.
+    pub fn first_raise(&self) -> f32 {
+        self.first_raise_time.max(self.raise_time)
     }
 
     /// Seconds into a magazine reload (`empty` or tactical) from which the

@@ -58,7 +58,8 @@ func _run() -> void:
 	_check(at_release == 30, "the rounds count before the bolt release, got %d" % at_release)
 	_check(not _player.is_reloading(), "the reload has finished")
 
-	# Switch to the sidearm and back.
+	# Switch to the sidearm and back. The sidearm's first draw of the game
+	# is a first raise: it racks the slide.
 	_events.clear()
 	await _tap("weapon_2")
 	await _sixtieths(60)
@@ -66,7 +67,7 @@ func _run() -> void:
 	await _sixtieths(60)
 	names = _events.map(func(e: Array) -> String: return e[0])
 	_check(
-		names == ["holster", "draw", "holster", "draw"],
+		names == ["holster", "draw", "charge", "holster", "draw"],
 		"switching holsters and draws each weapon, got %s" % [names]
 	)
 

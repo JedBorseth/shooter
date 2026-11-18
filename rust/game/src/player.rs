@@ -51,7 +51,9 @@ use shooter_sim::net::protocol::{self, GrenadeView, OwnState, Predicted};
 use shooter_sim::net::subtick;
 use shooter_sim::player::{self, FireAim, PlayerEvent, PlayerInput, PlayerParams, PlayerState};
 use shooter_sim::score::{Kill, ScoreRules, ScoreState, ScoreTotals, Scored};
-use shooter_sim::weapon::{self, Action, CombatEvent, FireMode, LoadStage, Reload, Slot, WeaponId};
+use shooter_sim::weapon::{
+    self, Action, CombatEvent, FireMode, LoadStage, Raise, Reload, Slot, WeaponId,
+};
 use shooter_sim::zombies;
 use shooter_sim::{Vec2, Vec3, rng};
 
@@ -458,7 +460,10 @@ impl ICharacterBody3D for FpsPlayer {
         let rid = self.base().get_rid();
         self.headroom.add_exception_rid(rid);
         self.base_mut().add_to_group("players");
+        // The game's first spawn: each weapon's first draw is a first raise
+        // (later lives just draw).
         self.state = self.spawned_state();
+        self.state.combat = self.state.combat.first_draw();
 
         self.yaw = self.base().get_rotation().y;
         self.base_mut().set_rotation(Vector3::ZERO);
@@ -988,6 +993,13 @@ impl FpsPlayer {
         } else {
             self.respawn_in.max(0.0)
         }
+    }
+
+    /// Whether the weapon in hand is up and idle (tests): not drawing,
+    /// reloading, cycling, knifing, or throwing.
+    #[func]
+    fn weapon_ready(&self) -> bool {
+        self.state.combat.action == Action::Ready
     }
 
     /// Whether a knife strike is under way (tests).
@@ -2492,6 +2504,10 @@ impl FpsPlayer {
         // Positive yaw turns left: a hit from the right pushes the head left.
         self.flinch_yaw.velocity += 0.35 * strength * side;
         self.flinch_roll.velocity -= 0.5 * strength * side;
+        // The weapon is knocked too, away from the hit.
+        self.viewmodel
+            .bind_mut()
+            .on_damaged(Vector2::new(side, ahead), strength);
     }
 
     /// The camera once dead: it drops with the body for a moment, then rises
@@ -2627,9 +2643,16 @@ impl FpsPlayer {
             Action::Lowering { remaining, .. } => {
                 ViewAction::Lowering(progress(remaining, def.lower_time))
             }
-            Action::Raising { remaining } => {
-                ViewAction::Raising(progress(remaining, def.raise_time))
-            }
+            Action::Raising { remaining, kind } => match kind {
+                Raise::Draw => ViewAction::Raising(progress(remaining, def.raise_time)),
+                Raise::First => {
+                    let length = def.first_raise();
+                    ViewAction::FirstRaise {
+                        elapsed: (length - remaining).clamp(0.0, length),
+                        length,
+                    }
+                }
+            },
             Action::Meleeing { strike_in, .. } => ViewAction::Meleeing { strike_in },
             // The weapon goes down while a grenade is in hand.
             Action::Throwing { cooked, .. } => {
@@ -2662,6 +2685,8 @@ impl FpsPlayer {
             },
             crouched: stance == Stance::Crouching,
             sliding: stance == Stance::Sliding,
+            mantle_left: self.state.movement.mantle_time,
+            vaulting: self.state.movement.vaulting,
             weapon: combat.weapon().id,
             ads,
             scope: combat.scope_amount(),

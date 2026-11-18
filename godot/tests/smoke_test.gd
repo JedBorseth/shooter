@@ -318,6 +318,7 @@ func _racks(main: Node, player: FpsPlayer) -> void:
 
 
 func _shotgun(main: Node, player: FpsPlayer) -> void:
+	await _until_ready(player)
 	var dummy := await _dummy_ahead(main, player, 5.0)
 	var hits_before := _hits
 	var kills_before := _kills
@@ -343,6 +344,7 @@ func _shotgun(main: Node, player: FpsPlayer) -> void:
 func _sniper(main: Node, player: FpsPlayer) -> void:
 	player.give_weapon("m40")
 	await _sixtieths(50)
+	await _until_ready(player)
 	_check(player.weapon_name() == "M40", "sniper equipped, got %s" % player.weapon_name())
 	# The sniper kills with one shot to the head or upper chest only.
 	var dummy := await _dummy_ahead(main, player, 20.0, 1.3)
@@ -402,6 +404,7 @@ func _burst_and_lmg(main: Node, player: FpsPlayer) -> void:
 	)
 	player.give_weapon("lsw6")
 	await _sixtieths(90)
+	await _until_ready(player)
 	_check(
 		player.weapon_name() == "LSW-6" and player.magazine() == 75,
 		"the LMG holds 75 rounds, got %s with %d" % [player.weapon_name(), player.magazine()]
@@ -663,3 +666,12 @@ func _check(condition: bool, label: String) -> void:
 func _finish() -> void:
 	print("smoke test: %d failure(s)" % _failures.size())
 	quit(1 if _failures.size() > 0 else 0)
+
+
+## Waits until the weapon in hand is up: the game's first draw, and a
+## pickup, is a first raise.
+func _until_ready(player: FpsPlayer) -> void:
+	for i in 600:
+		if player.weapon_ready():
+			return
+		await physics_frame

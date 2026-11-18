@@ -1041,8 +1041,15 @@ impl NetServer {
                     // During a round's freeze a new loadout applies at once.
                     if freeze && avatar.predicted.state.alive() {
                         let movement = avatar.predicted.state.movement;
+                        let lethals = avatar.predicted.state.combat.lethals;
                         avatar.predicted.state = PlayerState::new(loadout_for(primary));
                         avatar.predicted.state.movement = movement;
+                        avatar.predicted.state.combat = avatar
+                            .predicted
+                            .state
+                            .combat
+                            .with_lethals(lethals)
+                            .first_draw();
                     }
                 }
             }
@@ -1152,7 +1159,8 @@ impl NetServer {
         let start =
             (!self.match_state.scoring() && !self.game.free_for_all()) || self.round.is_some();
         let slot = counts[usize::from(team)];
-        self.respawn(id, start.then_some(slot));
+        // A joiner's first spawn is their first of the game.
+        self.respawn(id, start.then_some(slot), true);
         if self.round.is_some_and(|r| r.phase != RoundPhase::Freeze)
             && let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id)
         {
@@ -1192,15 +1200,16 @@ impl NetServer {
         order.sort_unstable();
         for (team, id) in order {
             let slot = &mut slots[usize::from(team)];
-            self.respawn(id, (!free_for_all).then_some(*slot));
+            self.respawn(id, (!free_for_all).then_some(*slot), true);
             *slot += 1;
         }
     }
 
     /// Brings a player back to life at a spawn point with their loadout.
     /// `start_slot` places them among their team's start spawns instead of
-    /// at the safest spawn.
-    fn respawn(&mut self, id: u8, start_slot: Option<usize>) {
+    /// at the safest spawn. `first` is the player's first spawn of a game or
+    /// round: each weapon's first draw is then a first raise.
+    fn respawn(&mut self, id: u8, start_slot: Option<usize>, first: bool) {
         let Some(index) = self.avatars.iter().position(|a| a.id == id) else {
             return;
         };
@@ -1235,6 +1244,9 @@ impl NetServer {
             state.combat = CombatState::only(loadout);
         }
         state.combat.lethals = equipment::spawn_lethals(self.game);
+        if first {
+            state.combat = state.combat.first_draw();
+        }
         avatar.predicted = Predicted {
             state,
             position: point.position,
@@ -1604,7 +1616,7 @@ impl NetServer {
             self.on_suicide(id);
         }
         for id in respawns {
-            self.respawn(id, None);
+            self.respawn(id, None, false);
         }
         for shot in shots {
             self.resolve_shot(&shot);

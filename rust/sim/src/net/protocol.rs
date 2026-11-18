@@ -32,7 +32,7 @@ use crate::player::{FireAim, PlayerInput, PlayerState};
 use crate::score::{Award, ScoreTotals, Scored};
 use crate::snd::{RoundEnd, RoundPhase};
 use crate::tdm::{MAX_NAME_CHARS, Mode, Phase, TEAM_COUNT, Team};
-use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState};
+use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, WeaponState};
 
 /// Bumped whenever the wire format changes; mismatched clients are rejected.
 // Version 5 added Team Deathmatch: names, teams, ready-up, loadouts, the
@@ -74,7 +74,9 @@ use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState}
 // snapshots, blasts, and kill causes in the kill feed.
 // Version 32 added slides queued in the air and the slide wind-down to the
 // movement state.
-pub const PROTOCOL_VERSION: u16 = 32;
+// Version 33 added the first raise: whether a raise is one, and which
+// carried weapons have not been drawn yet.
+pub const PROTOCOL_VERSION: u16 = 33;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -1957,6 +1959,7 @@ fn write_combat_state(w: &mut BitWriter, c: &CombatState) {
         w.u16(slot.reserve);
         w.bool(slot.needs_cycle);
         w.bool(slot.carried);
+        w.bool(slot.fresh);
     }
     w.bits(u32::from(c.active), 2);
     match c.action {
@@ -1985,9 +1988,10 @@ fn write_combat_state(w: &mut BitWriter, c: &CombatState) {
             w.f32(remaining);
             w.bits(u32::from(to), 2);
         }
-        Action::Raising { remaining } => {
+        Action::Raising { remaining, kind } => {
             w.bits(5, 3);
             w.f32(remaining);
+            w.bool(kind == Raise::First);
         }
         Action::Meleeing {
             remaining,
@@ -2043,6 +2047,7 @@ fn read_combat_state(r: &mut BitReader) -> DecodeResult<CombatState> {
             reserve: r.u16()?,
             needs_cycle: r.bool()?,
             carried: r.bool()?,
+            fresh: r.bool()?,
         })
     };
     let slots = [slot()?, slot()?];
@@ -2078,6 +2083,7 @@ fn read_combat_state(r: &mut BitReader) -> DecodeResult<CombatState> {
         }
         5 => Action::Raising {
             remaining: r.f32()?,
+            kind: if r.bool()? { Raise::First } else { Raise::Draw },
         },
         6 => Action::Meleeing {
             remaining: r.f32()?,

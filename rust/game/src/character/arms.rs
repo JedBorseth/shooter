@@ -10,7 +10,7 @@ use godot::classes::{
 use godot::prelude::*;
 
 use super::palette::{self, Team};
-use super::poser::{Grips, PoseInput, SoldierPoser, WeaponPlacement};
+use super::poser::{Grips, Held, PoseInput, SoldierPoser, WeaponPlacement};
 
 /// Where the support hand reaches during a reload, in weapon space.
 const RELOAD_REACH: Vector3 = Vector3::new(-0.06, -0.3, 0.08);
@@ -114,14 +114,16 @@ impl FpArms {
 
 impl FpArms {
     /// Holds `weapon` (or hides the arms with None). `support_off` (0..1) takes
-    /// the support hand off the weapon, for reloads. `knife` puts the support
-    /// hand on the knife instead, by a blend (0..1), with the knife at a
-    /// transform in the weapon's space.
+    /// the support hand off the weapon, for reloads, toward `support_target`
+    /// in the weapon's space (a magazine pouch if `None`). `item` puts the
+    /// support hand on the knife or planted on a ledge instead, by a blend
+    /// (0..1), at a transform in the weapon's space.
     pub fn follow(
         &mut self,
         weapon: Option<(Gd<Node3D>, Grips)>,
         support_off: f32,
-        knife: Option<(f32, Transform3D)>,
+        support_target: Option<Vector3>,
+        item: Option<(f32, Transform3D, Held)>,
     ) {
         let visible = weapon.is_some();
         if let Some(arms) = &mut self.arms
@@ -141,9 +143,10 @@ impl FpArms {
                     grips: Some(grips),
                     ik: 1.0,
                     support_off,
-                    support_target: RELOAD_REACH,
-                    knife: knife.map_or(0.0, |(blend, _)| blend),
-                    knife_at: knife.map_or(Transform3D::IDENTITY, |(_, at)| at),
+                    support_target: support_target.unwrap_or(RELOAD_REACH),
+                    knife: item.map_or(0.0, |(blend, _, _)| blend),
+                    knife_at: item.map_or(Transform3D::IDENTITY, |(_, at, _)| at),
+                    held: item.map_or(Held::Knife, |(_, _, held)| held),
                     ..PoseInput::default()
                 };
             }
