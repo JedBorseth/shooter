@@ -55,7 +55,13 @@ impl Bone {
     const RIGHT_UPPER_ARM: usize = 9;
     const RIGHT_LOWER_ARM: usize = 10;
     const RIGHT_HAND: usize = 11;
-    const NAMES: [&'static str; 12] = [
+    const LEFT_UPPER_LEG: usize = 12;
+    const LEFT_LOWER_LEG: usize = 13;
+    const LEFT_FOOT: usize = 14;
+    const RIGHT_UPPER_LEG: usize = 15;
+    const RIGHT_LOWER_LEG: usize = 16;
+    const RIGHT_FOOT: usize = 17;
+    const NAMES: [&'static str; BONES] = [
         "Hips",
         "Spine",
         "Chest",
@@ -68,8 +74,20 @@ impl Bone {
         "RightUpperArm",
         "RightLowerArm",
         "RightHand",
+        "LeftUpperLeg",
+        "LeftLowerLeg",
+        "LeftFoot",
+        "RightUpperLeg",
+        "RightLowerLeg",
+        "RightFoot",
     ];
 }
+
+/// Bones the poser resolves.
+const BONES: usize = 18;
+/// Foot IK lowers the hips at most this far (m) so a foot can reach lower
+/// ground: the hit zones stand on flat ground, so the body keeps close to them.
+pub const MAX_PELVIS_DROP: f32 = 0.09;
 
 /// How the hands hold a weapon, in the weapon's space (origin at the rear
 /// sight, -Z toward the muzzle, +Y up, +X right).
@@ -360,6 +378,10 @@ pub struct PoseInput {
     pub knife: f32,
     /// Where the knife is, in the weapon's space (see `crate::knife`).
     pub knife_at: Transform3D,
+    /// Foot IK: how far (m, world up) the ground under each foot (left,
+    /// right) is from the ground the animation stands on, or `None` for no
+    /// foot IK (far away, in the air).
+    pub feet: Option<[f32; 2]>,
 }
 
 #[derive(GodotClass)]
@@ -369,7 +391,10 @@ pub struct SoldierPoser {
     pub input: PoseInput,
     /// The weapon node the hands hold.
     pub weapon: Option<Gd<Node3D>>,
-    bones: Option<[i32; 12]>,
+    bones: Option<[i32; BONES]>,
+    /// Where the animation put each foot (left, right) last frame, world
+    /// space, before foot IK: where the rig looks for the ground.
+    pub feet_seen: [Vector3; 2],
     /// Finger bones of both hands: bone, rest rotation, right hand, finger
     /// (index into `FINGERS`), and joint.
     fingers: Vec<(i32, Quaternion, bool, usize, usize)>,
@@ -410,7 +435,7 @@ impl ISkeletonModifier3D for SoldierPoser {
 }
 
 impl SoldierPoser {
-    fn pose(&mut self, skel: &mut Gd<Skeleton3D>, bones: [i32; 12]) {
+    fn pose(&mut self, skel: &mut Gd<Skeleton3D>, bones: [i32; BONES]) {
         let input = self.input;
         let bone = |i: usize| bones[i];
         // Hidden unless a swing below shows it.
@@ -440,6 +465,16 @@ impl SoldierPoser {
             for (b, share) in TWIST_BONES.into_iter().zip(TWIST_SHARES) {
                 rotate_global(skel, bone(b), Vector3::UP, -twist * share);
             }
+        }
+
+        // 1b. Feet on the ground: the hips drop a little for a lower foot,
+        // and each leg reaches its foot to the ground under it.
+        let skel_xform = skel.get_global_transform();
+        for (i, foot) in [Bone::LEFT_FOOT, Bone::RIGHT_FOOT].into_iter().enumerate() {
+            self.feet_seen[i] = skel_xform * skel.get_bone_global_pose(bone(foot)).origin;
+        }
+        if let Some(lift) = input.feet {
+            self.plant_feet(skel, bones, lift);
         }
 
         // 2. Aim pitch and hit lean. The skeleton faces +Z, so the character's
@@ -585,14 +620,64 @@ impl SoldierPoser {
 }
 
 impl SoldierPoser {
+    /// Lowers the hips for a foot on lower ground and bends each leg so its
+    /// foot lands `lift` metres above (or below) where the animation put it.
+    fn plant_feet(&self, skel: &mut Gd<Skeleton3D>, bones: [i32; BONES], lift: [f32; 2]) {
+        let bone = |i: usize| bones[i];
+        let skel_xform = skel.get_global_transform();
+        let to_skel = skel_xform.basis.inverse();
+        let drop = (-lift[0].min(lift[1])).clamp(0.0, MAX_PELVIS_DROP);
+        if drop > 1e-4 {
+            let hips = skel.get_bone_global_pose(bone(Bone::HIPS));
+            skel.set_bone_global_pose(
+                bone(Bone::HIPS),
+                Transform3D::new(hips.basis, hips.origin - to_skel * (Vector3::UP * drop)),
+            );
+        }
+        let legs = [
+            (Bone::LEFT_UPPER_LEG, Bone::LEFT_LOWER_LEG, Bone::LEFT_FOOT),
+            (
+                Bone::RIGHT_UPPER_LEG,
+                Bone::RIGHT_LOWER_LEG,
+                Bone::RIGHT_FOOT,
+            ),
+        ];
+        for ((upper, lower, foot), lift) in legs.into_iter().zip(lift) {
+            let reach = lift + drop;
+            if reach.abs() < 1e-3 {
+                continue;
+            }
+            let (upper, lower, foot) = (bone(upper), bone(lower), bone(foot));
+            let chain = Chain {
+                root: skel.get_bone_global_pose(upper).origin,
+                mid: skel.get_bone_global_pose(lower).origin,
+                end: skel.get_bone_global_pose(foot).origin,
+            };
+            let target = chain.end + to_skel * (Vector3::UP * reach);
+            // The knee keeps bending the way it bends now (forward).
+            let middle = (chain.root + chain.end) * 0.5;
+            let bend = (chain.mid - middle)
+                .try_normalized()
+                .unwrap_or(Vector3::BACK);
+            let pole = chain.mid + bend * 0.4;
+            let flat = skel.get_bone_global_pose(foot).basis;
+            let solution = ik::solve_two_bone(chain, target, pole);
+            apply_global_rotation(skel, upper, solution.upper);
+            apply_global_rotation(skel, lower, solution.lower);
+            // The foot keeps the angle the animation gave it.
+            let placed = skel.get_bone_global_pose(foot);
+            skel.set_bone_global_pose(foot, Transform3D::new(flat, placed.origin));
+        }
+    }
+
     /// Where the IK last put a wrist (world space), if it ran.
     pub fn solved_wrist(&self, right: bool) -> Option<Vector3> {
         self.solved[usize::from(!right)]
     }
 
-    fn resolve(&mut self, skel: &Gd<Skeleton3D>) -> Option<[i32; 12]> {
+    fn resolve(&mut self, skel: &Gd<Skeleton3D>) -> Option<[i32; BONES]> {
         if self.bones.is_none() {
-            let mut found = [0; 12];
+            let mut found = [0; BONES];
             for (i, name) in Bone::NAMES.iter().enumerate() {
                 let index = skel.find_bone(*name);
                 if index < 0 {

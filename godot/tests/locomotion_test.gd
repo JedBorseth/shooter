@@ -1,7 +1,10 @@
 extends SceneTree
 ## Headless locomotion test for the third-person soldier: standing still, the
 ## aim turns the upper body while the hips stay on the planted feet, until the
-## aim is more than 60° off and the feet step round. Exits non-zero on failure.
+## aim is more than 60° off and the feet step round. A slide gets down as fast
+## as the hit zones do, a landing flexes the knees without crouching, and the
+## torso leans into a start and back from a stop. Standing on the edge of a
+## step, each foot rests on the ground under it. Exits non-zero on failure.
 ## Run from the repo root:
 ##   godot --headless --path godot --fixed-fps 120 --script res://tests/locomotion_test.gd
 
@@ -17,6 +20,9 @@ func _initialize() -> void:
 
 func _run() -> void:
 	await _turn_in_place()
+	await _slide_and_landing()
+	await _lean()
+	await _feet_on_a_step()
 	_finish()
 
 
@@ -67,6 +73,120 @@ func _turn_in_place() -> void:
 		"a 90° turn steps the feet round (hips at %.1f°)" % rad_to_deg(hips)
 	)
 	rig.queue_free()
+
+
+## The drawn bone's world position after driving `state` once.
+func _posed(rig: SoldierRig, bone: String, state: Dictionary) -> Vector3:
+	rig.capture_pose()
+	rig.drive(state, DT)
+	await process_frame
+	await process_frame
+	return rig.posed_bone_transform(bone).origin
+
+
+func _slide_and_landing() -> void:
+	var rig := SOLDIER.instantiate() as SoldierRig
+	root.add_child(rig)
+	var run := {"weapon": "m4", "velocity": Vector3(0, 0, -6.5), "sprinting": true}
+	for i in 40:
+		rig.drive(run, DT)
+		await process_frame
+	var standing := (await _posed(rig, "Hips", run)).y
+	var slide := {"weapon": "m4", "velocity": Vector3(0, 0, -7.0), "stance": "sliding"}
+	# Two drives per sample: 0.15 s is 18 ticks.
+	for i in 8:
+		await _posed(rig, "Hips", slide)
+	var down := (await _posed(rig, "Hips", slide)).y
+	_check(
+		down < standing - 0.35,
+		"a slide is down within 0.15 s (hips %.2f from %.2f)" % [down, standing]
+	)
+	# A fall of 0.6 s, then the landing.
+	var air := {"weapon": "m4", "on_floor": false, "velocity": Vector3(0, -4, 0)}
+	for i in 72:
+		rig.drive(air, DT)
+		await process_frame
+	var still := {"weapon": "m4"}
+	var lowest := INF
+	for i in 30:
+		lowest = minf(lowest, (await _posed(rig, "Hips", still)).y)
+	var stood := standing
+	for i in 60:
+		rig.drive(still, DT)
+		await process_frame
+	stood = (await _posed(rig, "Hips", still)).y
+	var dip := stood - lowest
+	_check(dip > 0.03 and dip < 0.2, "a landing flexes the knees (%.3f m), no deep squat" % dip)
+	rig.queue_free()
+
+
+func _lean() -> void:
+	var rig := SOLDIER.instantiate() as SoldierRig
+	root.add_child(rig)
+	var still := {"weapon": "m4"}
+	for i in 40:
+		rig.drive(still, DT)
+		await process_frame
+	var head0 := await _posed(rig, "Head", still)
+	var hips0 := await _posed(rig, "Hips", still)
+	# Off from standing toward -Z at 8 m/s².
+	var most := 0.0
+	for i in 12:
+		var go := {"weapon": "m4", "velocity": Vector3(0, 0, -8.0 * (i + 1) * 2 * DT)}
+		var head := await _posed(rig, "Head", go)
+		var hips := await _posed(rig, "Hips", go)
+		most = maxf(most, -((head - hips) - (head0 - hips0)).z)
+	_check(most > 0.02, "the torso leans into a start (%.3f m forward)" % most)
+	rig.queue_free()
+
+
+func _feet_on_a_step() -> void:
+	# An 18 cm step under the soldier's left side (the soldier faces -Z, so
+	# its left is -X); the body stands on the step, as its capsule would.
+	var step := StaticBody3D.new()
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(1.0, 0.18, 1.0)
+	shape.shape = box
+	step.add_child(shape)
+	root.add_child(step)
+	step.position = Vector3(-0.5, 0.09, 0)
+	var ground := StaticBody3D.new()
+	var ground_shape := CollisionShape3D.new()
+	var slab := BoxShape3D.new()
+	slab.size = Vector3(10, 1, 10)
+	ground_shape.shape = slab
+	ground_shape.position = Vector3(0, -0.5, 0)
+	ground.add_child(ground_shape)
+	root.add_child(ground)
+	var camera := Camera3D.new()
+	root.add_child(camera)
+	camera.position = Vector3(3, 1.5, 3)
+	camera.make_current()
+	var rig := SOLDIER.instantiate() as SoldierRig
+	root.add_child(rig)
+	rig.position = Vector3(0, 0.18, 0)
+	var still := {"weapon": "m4"}
+	for i in 60:
+		rig.drive(still, DT)
+		await process_frame
+	var left := await _posed(rig, "LeftFoot", still)
+	var right := await _posed(rig, "RightFoot", still)
+	# The animation's ankles stand about 8 cm over the soles.
+	_check(left.y > 0.18 + 0.03, "the foot on the step stays on it (ankle %.3f)" % left.y)
+	_check(
+		right.y < left.y - 0.09,
+		"the foot over the lower ground reaches down toward it (ankle %.3f)" % right.y
+	)
+	var hips := await _posed(rig, "Hips", still)
+	_check(
+		hips.y > 0.18 + 0.87 - 0.095,
+		"the hips drop no more than 9 cm for it (%.3f)" % (hips.y - 0.18)
+	)
+	rig.queue_free()
+	step.queue_free()
+	ground.queue_free()
+	camera.queue_free()
 
 
 func _check(condition: bool, label: String) -> void:
