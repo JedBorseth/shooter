@@ -6,9 +6,10 @@
 //! Grenades are keyed by thrower and shot number, so the thrower's own throw
 //! hands over to the server's grenade without the model popping.
 //!
-//! A blast instances `scenes/equipment/frag_blast.tscn`, whose script owns
-//! the flash, smoke, debris, and sound. It is a stand-in for the combat
-//! effects' explosion; replacing that scene changes every grenade's blast.
+//! A blast instances `scenes/equipment/frag_blast.tscn`, whose script plays
+//! the bang and asks the pooled combat effects for the explosion
+//! (`CombatEffects::explosion`); replacing that scene changes every
+//! grenade's blast.
 
 use godot::classes::{Node3D, PackedScene, ResourceLoader};
 use godot::prelude::*;

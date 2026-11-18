@@ -96,6 +96,12 @@ const SHOT_ZOOM_PULSE_MAX: f32 = 0.02;
 const CLIMB_RATE: f32 = 90.0;
 /// Per-shot camera shake spring.
 const SHAKE_STIFFNESS: f32 = 900.0;
+/// An explosion at your feet: how far the eye rattles (metres), for how
+/// long (seconds), how far the view rolls (degrees), and the FOV pulse.
+const BLAST_SHAKE_METRES: f32 = 0.02;
+const BLAST_SHAKE_TIME: f32 = 0.55;
+const BLAST_ROLL_DEGREES: f32 = 2.5;
+const BLAST_FOV_PULSE: f32 = 0.03;
 /// The landing dip: a soft spring, so the body sinks into a landing and comes
 /// back up over about a third of a second.
 const LAND_DIP_STIFFNESS: f32 = 70.0;
@@ -374,6 +380,10 @@ pub struct FpsPlayer {
     pending_climb: Vec2,
     /// Camera position shake per shot (metres, camera space).
     shake: Spring,
+    /// An explosion's rattle still to come: its strength (0 to 1), which
+    /// fades over [`BLAST_SHAKE_TIME`], and a counter for its jolts.
+    blast: f32,
+    blast_jolts: u32,
     /// Climb applied to the view this frame, so the weapon's look sway can
     /// tell the player's own turning from the recoil's.
     climb_step: Vec2,
@@ -711,6 +721,7 @@ impl ICharacterBody3D for FpsPlayer {
             let turn = after - before;
             self.turn(turn.x, turn.y);
         }
+        self.rattle_blast(dt);
         self.shake
             .step(SHAKE_STIFFNESS, damping_for(SHAKE_STIFFNESS, 0.5), dt);
 
@@ -1153,6 +1164,25 @@ impl FpsPlayer {
     pub(crate) fn set_look(&mut self, yaw: f32, pitch: f32) {
         self.yaw = yaw;
         self.pitch = pitch.clamp(-PITCH_LIMIT, PITCH_LIMIT);
+    }
+
+    /// An explosion nearby (`CombatEffects::explosion`): the camera rattles
+    /// for half a second, `strength` 1 for one at your feet. It moves the eye
+    /// and rolls the view a little; the aim point barely moves.
+    #[func]
+    pub fn blast_shake(&mut self, strength: f32) {
+        let strength = strength.clamp(0.0, 1.0);
+        self.blast = self.blast.max(strength);
+        let roll = BLAST_ROLL_DEGREES
+            * strength
+            * if self.blast_jolts.is_multiple_of(2) {
+                1.0
+            } else {
+                -1.0
+            };
+        self.punch.velocity.z +=
+            impulse_for_peak(roll.to_radians(), PUNCH_STIFFNESS, PUNCH_DAMPING);
+        self.kick_fov(BLAST_FOV_PULSE * strength);
     }
 
     /// Current camera vertical FOV in degrees, for converting angles to pixels.
@@ -1862,6 +1892,24 @@ impl FpsPlayer {
             | CombatEvent::Switched { .. }
             | CombatEvent::MagazineSeated { .. } => {}
         }
+    }
+
+    /// An explosion's rattle: a jolt of eye movement every frame while it
+    /// lasts, smaller as it fades.
+    fn rattle_blast(&mut self, dt: f32) {
+        if self.blast <= 0.0 {
+            return;
+        }
+        self.blast_jolts = self.blast_jolts.wrapping_add(1);
+        let jolt = self.blast_jolts;
+        let size = BLAST_SHAKE_METRES * self.blast;
+        let c = damping_for(SHAKE_STIFFNESS, 0.5);
+        self.shake.velocity += Vector3::new(
+            impulse_for_peak(rng::signed(jolt, 211) * size, SHAKE_STIFFNESS, c),
+            impulse_for_peak(rng::signed(jolt, 212) * size, SHAKE_STIFFNESS, c),
+            0.0,
+        ) * (dt * 60.0).min(1.0);
+        self.blast = (self.blast - dt / BLAST_SHAKE_TIME).max(0.0);
     }
 
     /// Pulses the FOV: positive widens, negative zooms in. `peak` is a fraction of the FOV.
@@ -2869,6 +2917,7 @@ impl FpsPlayer {
         self.punch = Spring::default();
         self.pending_climb = Vec2::ZERO;
         self.shake = Spring::default();
+        self.blast = 0.0;
         self.fov_kick = Spring::default();
         // Every camera offset starts over: no death slump, landing dip,
         // flinch, tilt, or bob carried into the new life.
