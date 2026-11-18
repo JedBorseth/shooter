@@ -455,6 +455,7 @@ func _check_input_device(settings: Node) -> void:
 	_check(not _has_joy_motion(&"look_right"), "keyboard and mouse: the right stick is locked out")
 	_check(InputMap.action_has_event(&"pause", _joy(JOY_BUTTON_START)), "Menu still pauses")
 	_check(InputMap.action_has_event(&"ui_accept", _joy(JOY_BUTTON_A)), "menus still take A")
+	_check(InputMap.action_has_event(&"ui_cancel", _joy(JOY_BUTTON_B)), "and B goes back")
 
 	settings.set_setting(&"input_device", settings.InputDevice.CONTROLLER)
 	_check(settings.uses_controller(), "the controller is picked")

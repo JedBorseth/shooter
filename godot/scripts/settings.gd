@@ -304,6 +304,7 @@ func _ready() -> void:
 		add_child(_lens)
 		var notice := InputNotice.new()
 		notice.name = "InputNotice"
+		notice.settings = self
 		add_child(notice)
 	load_settings()
 
