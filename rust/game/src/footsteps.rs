@@ -59,8 +59,10 @@ pub const TEAMMATE_RANGE: f32 = 0.6;
 
 /// Landing from a jump or a fall: heard further than any step.
 pub const LAND_RANGE: f32 = 32.0;
-/// A slide's scrape.
+/// A slide's scrape. The sample is a loud broadband scrape, so it plays
+/// well below full level: your own at `SLIDE_DB`, others' 3 dB under that.
 pub const SLIDE_RANGE: f32 = 28.0;
+pub const SLIDE_DB: f32 = -9.0;
 /// Climbing over a ledge.
 pub const MANTLE_RANGE: f32 = 20.0;
 /// A reload: close enough to push someone who is reloading.
@@ -295,7 +297,7 @@ impl Foley {
 
         if motion.stance == Stance::Sliding
             && self.stance != Stance::Sliding
-            && let Some(db) = level(-3.0, SLIDE_RANGE)
+            && let Some(db) = level(SLIDE_DB - 3.0, SLIDE_RANGE)
         {
             self.play_body("res://assets/audio/player/slide", motion.feet, db);
         }
