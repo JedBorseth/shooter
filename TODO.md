@@ -67,6 +67,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Ground inertia (0.23 s to a walk, 0.28 s to stop), strafe and backpedal at 0.8x and 0.7x, a 6.9 m/s sprint that builds over 0.25 s and winds down over the weapon's sprint-out time, and slower diagonal sprints.
 - [x] Landings cost speed (0.7x on touchdown, 1.2 s to recover) and make the next jump lower, air strafing adds no speed, and a standing jump can be steered about a metre.
 - [x] Camera: the walk bob dips just after each footfall and never snaps, landings dip about 5 cm and nod the head, a hit flinches away from the shot, and the death camera leaves first person to face the killer.
+- [x] Stepping: 0.45 m steps (IW), step-ups at any angle into a riser, and stairs walked down on the ground at full speed with the camera eased.
 - [x] A mantle keeps the direction it started in; the server's player bodies collide like the client's; a respawn resets every camera offset.
 
 ### Feel and polish

@@ -93,11 +93,33 @@ the old rules the best chain averaged 1.08 x sprint).
 A mantle's direction is fixed when it starts (`MoveState::mantle_dir`), so
 turning mid-climb no longer pulls the player off the wall.
 
-## Collision
+## Collision and stepping
 
-The server's player bodies (`body::build_body`) collide with exactly what the
-client's (`scenes/player.tscn`) do, including player-only blockers on layer 7
-(`body::PLAYER_COLLISION_MASK`).
+| | Here | Reference |
+| --- | --- | --- |
+| Step height | 0.45 m (was 0.3) | classic IW 18 in (0.46 m) |
+| Stairs at an angle | climbed at any angle the input pushes into the risers (tested 0, 45, 60 degrees) | no catching on risers |
+| Going down stairs | stays on the ground at full speed; the camera follows without snapping | grounded |
+
+Engine side, in `body::tick`:
+
+- **Step up.** A grounded move blocked by anything too steep to stand on
+  (including the slanted contact where the capsule's round bottom meets a low
+  riser's edge) is retried up, over, and down, toward the blocking surface's
+  normal rather than along the velocity, so a player running along a riser at
+  a shallow angle still steps up. When a probe past the capsule's rim sees the
+  tread after next, the step goes only to the tread under the body.
+- **Step down.** Walking off a stair's edge, the capsule's round bottom rolls
+  on a contact too steep to count as floor, and the engine's floor snap gives
+  up. When the ground just past the front rim is lower and walkable ground lies
+  within a step below, the body slides down the edge at the rate the steepest
+  walkable slope falls, and stays grounded, so stairs never count as a fall or
+  a landing. The floor snap follows 0.45 m drops.
+- **Camera.** Rises and drops the floor makes faster than any walkable slope
+  could are eased out of the camera (`TickOutcome::step_height`, signed).
+- The server's player bodies (`body::build_body`) collide with exactly what the
+  client's (`scenes/player.tscn`) do, including player-only blockers on layer
+  7 (`body::PLAYER_COLLISION_MASK`).
 
 ## Camera
 
