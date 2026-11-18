@@ -507,6 +507,22 @@ func _check_world_surfaces() -> void:
 			ProjectSettings.has_setting("shader_globals/%s" % name),
 			"the world shader's global %s is declared" % name
 		)
+	# Per-material detail strength (tools/world_looks.py DETAIL).
+	var strengths := {}
+	for path: String in [
+		"res://materials/models/tread_plate_0.tres",
+		"res://materials/models/concrete_floor_0.tres",
+		"res://materials/models/painted_metal_0.tres",
+		"res://materials/world/yard_dirt.tres",
+	]:
+		var detail: Variant = (load(path) as ShaderMaterial).get_shader_parameter(&"detail")
+		strengths[path.get_file().get_basename()] = 1.0 if detail == null else float(detail)
+	_check(is_zero_approx(strengths["tread_plate_0"]), "tread plate takes no close-up detail")
+	_check(
+		strengths["painted_metal_0"] < 0.5 and strengths["concrete_floor_0"] >= 1.0,
+		"paint takes less close-up detail than concrete"
+	)
+	_check(strengths["yard_dirt"] > 1.0, "dirt takes the most")
 
 
 ## One contact shadow per character: a flat patch laid on the ground.

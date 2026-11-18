@@ -39,7 +39,7 @@ import numpy as np
 from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from world_looks import LOOKS, SETS  # noqa: E402
+from world_looks import LOOKS, SETS, detail_for  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 TEXTURES = REPO / "godot/assets/textures"
@@ -139,6 +139,7 @@ def write_look(name: str, look: dict) -> None:
         lines.append('shader_parameter/orm_tex = ExtResource("4_orm")')
         lines.append("shader_parameter/textured = true")
         lines.append(f"shader_parameter/tile_size = {look.get('size', 2.0):g}")
+        lines.append(f"shader_parameter/detail = {look.get('detail', detail_for(tex_set)):g}")
     else:
         lines.append("shader_parameter/textured = false")
     lines.append(f"shader_parameter/roughness_scale = {look.get('rough', 1.0):g}")
@@ -267,13 +268,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--fix-imports", action="store_true", help="only patch .import files")
     parser.add_argument("--only", nargs="*", help="build only these sets")
+    parser.add_argument("--looks", action="store_true", help="only write the materials (sets already built)")
     args = parser.parse_args()
     if args.fix_imports:
         fix_imports()
         return
-    macro_noise()
+    if not args.looks:
+        macro_noise()
     for name, (asset, options) in SETS.items():
-        if args.only and name not in args.only:
+        if args.looks or (args.only and name not in args.only):
             continue
         build_set(name, asset, options)
     for look in LOOKS.values():
