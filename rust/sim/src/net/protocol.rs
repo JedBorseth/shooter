@@ -23,6 +23,7 @@ use super::subtick;
 use crate::chat;
 use crate::gun_game;
 use crate::hardpoint::Holder;
+use crate::hitbox::clock::{self, Progress};
 use crate::hitbox::{Activity, HitboxPose};
 use crate::look::PITCH_LIMIT;
 use crate::movement::{MoveState, Stance};
@@ -58,7 +59,9 @@ use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState}
 // back up), so older clients would mispredict.
 // Version 22 added what each body was doing (sprinting, airborne, mantling,
 // reloading, aim, velocity, weapon) to the debug rewound hitbox poses.
-pub const PROTOCOL_VERSION: u16 = 22;
+// Version 23 added each body's stride phase and reload and mantle progress to
+// player views and rewound poses.
+pub const PROTOCOL_VERSION: u16 = 23;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -376,6 +379,12 @@ pub struct PlayerView {
     /// The horizontal direction the latest hit travelled, in 1/256 turns
     /// (see [`hit_direction`]).
     pub hit_heading: u8,
+    /// Stride phase in 1/256 strides, and reload and mantle progress out of
+    /// 255 (`hitbox::clock`): every client draws the body, and the hit zones
+    /// pose it, at the same moment of each animation.
+    pub stride: u8,
+    pub reload_progress: u8,
+    pub mantle_progress: u8,
 }
 
 /// A horizontal direction (`x`, `z`) as 1/256 turns, for `hit_heading`.
@@ -410,6 +419,28 @@ impl PlayerView {
             meleeing: combat.meleeing(),
             hits: 0,
             hit_heading: 0,
+            stride: 0,
+            reload_progress: 0,
+            mantle_progress: 0,
+        }
+    }
+
+    /// The animation progress this view carries.
+    pub fn progress(&self) -> Progress {
+        Progress {
+            stride: clock::stride_from_u8(self.stride),
+            reload: clock::from_u8(self.reload_progress),
+            mantle: clock::from_u8(self.mantle_progress),
+        }
+    }
+
+    /// This view with the animation progress `p`.
+    pub fn with_progress(self, p: Progress) -> Self {
+        Self {
+            stride: clock::stride_to_u8(p.stride),
+            reload_progress: clock::to_u8(p.reload),
+            mantle_progress: clock::to_u8(p.mantle),
+            ..self
         }
     }
 
@@ -1547,6 +1578,14 @@ fn write_view_delta(w: &mut BitWriter, v: &PlayerView, base: &PlayerView) {
         w.u8(v.hits);
         w.u8(v.hit_heading);
     }
+    let progress = |p: &PlayerView| (p.stride, p.reload_progress, p.mantle_progress);
+    let moved = progress(v) != progress(base);
+    w.bool(moved);
+    if moved {
+        w.u8(v.stride);
+        w.u8(v.reload_progress);
+        w.u8(v.mantle_progress);
+    }
 }
 
 fn read_view_delta(r: &mut BitReader, base: &PlayerView) -> DecodeResult<PlayerView> {
@@ -1580,6 +1619,11 @@ fn read_view_delta(r: &mut BitReader, base: &PlayerView) -> DecodeResult<PlayerV
     if r.bool()? {
         v.hits = r.u8()?;
         v.hit_heading = r.u8()?;
+    }
+    if r.bool()? {
+        v.stride = r.u8()?;
+        v.reload_progress = r.u8()?;
+        v.mantle_progress = r.u8()?;
     }
     Ok(v)
 }
@@ -1848,6 +1892,9 @@ fn write_activity(w: &mut BitWriter, a: &Activity) {
     if let Some(weapon) = a.weapon {
         write_weapon(w, weapon);
     }
+    w.u8(clock::stride_to_u8(a.progress.stride));
+    w.u8(clock::to_u8(a.progress.reload));
+    w.u8(clock::to_u8(a.progress.mantle));
 }
 
 fn read_activity(r: &mut BitReader) -> DecodeResult<Activity> {
@@ -1862,6 +1909,11 @@ fn read_activity(r: &mut BitReader) -> DecodeResult<Activity> {
             Some(read_weapon(r)?)
         } else {
             None
+        },
+        progress: Progress {
+            stride: clock::stride_from_u8(r.u8()?),
+            reload: clock::from_u8(r.u8()?),
+            mantle: clock::from_u8(r.u8()?),
         },
     })
 }
@@ -2135,6 +2187,34 @@ mod tests {
         let baseline = [a];
         let decoded = ServerMessage::decode(&delta.encode(&baseline), |_| Some(&baseline[..]));
         assert_eq!(decoded.unwrap(), delta);
+    }
+
+    #[test]
+    fn animation_progress_rides_in_the_view_delta() {
+        let p = sample_state(30);
+        let a = PlayerView::from_state(3, &p, 0.5, -0.1).with_progress(Progress {
+            stride: 0.25,
+            reload: 0.0,
+            mantle: 0.0,
+        });
+        let baseline = [a];
+        let b = a.with_progress(Progress {
+            stride: 0.75,
+            reload: 0.4,
+            mantle: 0.6,
+        });
+        let delta = ServerMessage::Snapshot(Snapshot {
+            tick: 101,
+            baseline: Some(100),
+            own: None,
+            players: vec![b],
+        });
+        let decoded = ServerMessage::decode(&delta.encode(&baseline), |_| Some(&baseline[..]));
+        assert_eq!(decoded.unwrap(), delta);
+        let progress = b.progress();
+        assert_eq!(progress.stride, 0.75);
+        assert!((progress.reload - 0.4).abs() < 0.5 / 255.0);
+        assert!((progress.mantle - 0.6).abs() < 0.5 / 255.0);
     }
 
     #[test]
@@ -2497,6 +2577,11 @@ mod tests {
                             ads: 128.0 / 255.0,
                             velocity: Vec3::new(1.5, -0.25, -4.0),
                             weapon: Some(WeaponId(3)),
+                            progress: Progress {
+                                stride: 0.25,
+                                reload: 51.0 / 255.0,
+                                mantle: 0.0,
+                            },
                         },
                     },
                 )],

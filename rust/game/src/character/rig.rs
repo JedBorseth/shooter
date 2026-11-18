@@ -15,12 +15,14 @@ use godot::classes::animation_mixer::AnimationCallbackModeProcess;
 use godot::classes::{
     AnimationLibrary, AnimationNode, AnimationNodeAnimation, AnimationNodeBlend2,
     AnimationNodeBlendSpace1D, AnimationNodeBlendTree, AnimationNodeOneShot,
-    AnimationNodeTimeScale, AnimationNodeTransition, AnimationRootNode, AnimationTree,
-    BoneAttachment3D, INode3D, MeshInstance3D, Node3D, ShaderMaterial, Skeleton3D, SphereMesh,
+    AnimationNodeTimeScale, AnimationNodeTimeSeek, AnimationNodeTransition, AnimationRootNode,
+    AnimationTree, BoneAttachment3D, INode3D, MeshInstance3D, Node3D, ShaderMaterial, Skeleton3D,
+    SphereMesh,
 };
 use godot::prelude::*;
 use shooter_sim::hitbox::Activity;
 use shooter_sim::hitbox::carry::{self, Carry};
+use shooter_sim::hitbox::clock::Progress;
 use shooter_sim::hitbox::gait;
 use shooter_sim::movement::Stance;
 use shooter_sim::weapon::WeaponId;
@@ -34,8 +36,10 @@ use crate::viewmodel::{self, WeaponView};
 // The loops' natural ground speeds and the strafe's leg turn are in
 // `shooter_sim::hitbox::gait`, shared with the hit zones. Playback scales to
 // the real speed so feet do not slide.
-/// Playback speed of the climb clip, so it fits a mantle's short climb.
-const CLIMB_RATE: f32 = 1.45;
+/// Without a server's mantle progress (offline), the climb takes this long.
+const OFFLINE_CLIMB_SECONDS: f32 = 0.46;
+/// The climb blends out over this long once a mantle ends (seconds).
+const CLIMB_FADE_OUT: f32 = 0.15;
 /// Natural ground speed (m/s) of the zombie walk loop, measured from the planted foot.
 const ZOMBIE_WALK_SPEED: f32 = 0.95;
 /// Zombies slower than this play the shamble alone, sped up to their speed.
@@ -88,11 +92,17 @@ pub struct SoldierFrame {
     pub mantling: bool,
     /// Swinging the knife: each new swing plays the slash once.
     pub meleeing: bool,
+    /// The stride phase and mantle progress from the server
+    /// (`hitbox::clock`). Without them (offline) the rig keeps its own.
+    pub stride: Option<f32>,
+    pub mantle_progress: Option<f32>,
 }
 
 impl SoldierFrame {
-    /// What the hit zones need of this frame beyond stance and view angles.
-    pub fn activity(&self) -> Activity {
+    /// What the hit zones need of this frame beyond stance and view angles,
+    /// with the animation `progress` the rig drew it at
+    /// ([`SoldierRig::progress`]).
+    pub fn activity(&self, progress: Progress) -> Activity {
         Activity {
             sprinting: self.sprinting,
             airborne: !self.on_floor,
@@ -101,6 +111,7 @@ impl SoldierFrame {
             ads: self.ads,
             velocity: to_sim(self.velocity),
             weapon: self.weapon,
+            progress,
         }
     }
 }
@@ -120,6 +131,8 @@ impl Default for SoldierFrame {
             alive: true,
             mantling: false,
             meleeing: false,
+            stride: None,
+            mantle_progress: None,
         }
     }
 }
@@ -176,6 +189,11 @@ pub struct SoldierRig {
     was_alive: bool,
     life_requested: Option<bool>,
     was_mantling: bool,
+    /// The stride phase and mantle progress drawn (the server's, or the
+    /// rig's own offline), and how far the climb has blended in.
+    stride: f32,
+    mantle_progress: f32,
+    climb: f32,
 }
 
 #[godot_api]
@@ -373,6 +391,8 @@ impl SoldierRig {
             alive: b("alive", true),
             mantling: b("mantling", false),
             meleeing: b("meleeing", false),
+            stride: (f("stride", -1.0) >= 0.0).then(|| f("stride", 0.0)),
+            mantle_progress: (f("mantle_progress", -1.0) >= 0.0).then(|| f("mantle_progress", 0.0)),
         };
         self.update(&frame, delta);
     }
@@ -454,22 +474,41 @@ impl SoldierRig {
         let air_target = if self.air_time > 0.12 { 1.0 } else { 0.0 };
         self.air += (air_target - self.air) * smoothing(10.0, dt);
 
-        let direction = if self.walking_backward { -1.0 } else { 1.0 };
         let stand_position = if moving {
             gait::stand_position(speed, frame.sprinting)
         } else {
             0.0
         };
-        let stand_rate = if moving {
-            (speed / stand_position.max(gait::WALK_SPEED)).clamp(0.5, 1.8) * direction
-        } else {
-            1.0
+        // Every loop runs on one stride phase: the server's, so the body is
+        // drawn at the moment its hit zones are posed at, or offline the
+        // rig's own, run at the loops' cadence.
+        self.stride = frame.stride.unwrap_or_else(|| {
+            let rate = if frame.alive {
+                gait::stride_rate(
+                    to_sim(frame.velocity),
+                    frame.yaw,
+                    frame.stance,
+                    frame.sprinting,
+                    frame.on_floor,
+                    self.walking_backward,
+                )
+            } else {
+                0.0
+            };
+            gait::advance_stride(self.stride, rate, dt)
+        });
+        self.mantle_progress = match frame.mantle_progress {
+            Some(p) => p,
+            None if frame.mantling && !self.was_mantling => 0.0,
+            None if frame.mantling => (self.mantle_progress + dt / OFFLINE_CLIMB_SECONDS).min(1.0),
+            None => self.mantle_progress,
         };
-        let crouch_position = if moving { gait::CROUCH_SPEED } else { 0.0 };
-        let crouch_rate = if moving {
-            (speed / gait::CROUCH_SPEED).clamp(0.6, 2.2) * direction
+        // The climb blends in with the mantle's progress, as the hit zones
+        // blend it, and out over a moment once the player is up.
+        self.climb = if frame.mantling && frame.alive {
+            gait::climb_share(self.mantle_progress)
         } else {
-            1.0
+            (self.climb - dt / CLIMB_FADE_OUT).max(0.0)
         };
 
         // Weapon pose.
@@ -527,10 +566,23 @@ impl SoldierRig {
                 set(tree, "walk/blend_position", position.to_variant());
                 set(tree, "walk_rate/scale", rate.to_variant());
             } else {
-                set(tree, "stand/blend_position", stand_position.to_variant());
-                set(tree, "stand_rate/scale", stand_rate.to_variant());
-                set(tree, "crouch/blend_position", crouch_position.to_variant());
-                set(tree, "crouch_rate/scale", crouch_rate.to_variant());
+                let walk = gait::walk_share(stand_position);
+                set(
+                    tree,
+                    "stand_loops/blend_position",
+                    stand_position.to_variant(),
+                );
+                set(tree, "stand_seek/seek_request", self.stride.to_variant());
+                set(tree, "stand/blend_amount", walk.to_variant());
+                set(tree, "crouch_seek/seek_request", self.stride.to_variant());
+                let crouch_walk = if moving { 1.0f32 } else { 0.0 };
+                set(tree, "crouch/blend_amount", crouch_walk.to_variant());
+                set(
+                    tree,
+                    "climb_seek/seek_request",
+                    self.mantle_progress.to_variant(),
+                );
+                set(tree, "climb/blend_amount", self.climb.to_variant());
                 set(tree, "stance/blend_amount", self.crouch.to_variant());
                 set(tree, "slide/blend_amount", self.slide.to_variant());
                 set(tree, "air/blend_amount", self.air.to_variant());
@@ -541,19 +593,6 @@ impl SoldierRig {
                 };
                 set(tree, "hold/blend_amount", hold.to_variant());
             }
-            // The climb plays as a mantle starts and fades out as it ends, so
-            // the body does not go on climbing once the player is up (the
-            // hit zones hold the climb only while mantling).
-            use godot::classes::animation_node_one_shot::OneShotRequest;
-            if frame.mantling != self.was_mantling && !self.zombie {
-                let request = if frame.mantling {
-                    set(tree, "climb_rate/scale", CLIMB_RATE.to_variant());
-                    OneShotRequest::FIRE
-                } else {
-                    OneShotRequest::FADE_OUT
-                };
-                set(tree, "climb/request", request.ord().to_variant());
-            }
             self.was_mantling = frame.mantling;
             // Only on a change: a request restarts the death clip.
             if self.life_requested != Some(frame.alive) {
@@ -562,6 +601,19 @@ impl SoldierRig {
                 set(tree, "life/transition_request", life.to_variant());
             }
             tree.advance(f64::from(dt));
+        }
+    }
+
+    /// The animation progress the body is drawn at: what its hit zones pose.
+    pub fn progress(&self) -> Progress {
+        Progress {
+            stride: self.stride,
+            reload: self.frame.reload.unwrap_or(0.0),
+            mantle: if self.frame.mantling {
+                self.mantle_progress
+            } else {
+                0.0
+            },
         }
     }
 
@@ -761,58 +813,51 @@ impl SoldierRig {
             a.set_animation(name);
             a
         };
-        let space = |points: &[(&str, f32)]| {
-            let mut s = AnimationNodeBlendSpace1D::new_gd();
-            s.set_min_space(0.0);
-            s.set_max_space(gait::SPRINT_SPEED);
-            for (name, position) in points {
-                let point = name.rsplit('/').next().unwrap_or(name);
-                s.add_blend_point_ex(&clip(name).upcast::<AnimationRootNode>(), *position)
-                    .name(point)
-                    .done();
-            }
-            s
+        // A loop on the shared stride phase: its timeline stretched to one
+        // second and started where its left foot is furthest forward, so a
+        // seek to the phase lands every loop on the same moment of a stride.
+        let stride_clip = |l: &gait::Loop| {
+            let mut a = clip(l.clip);
+            a.set_use_custom_timeline(true);
+            a.set_timeline_length(1.0);
+            a.set_stretch_time_scale(true);
+            a.set_start_offset(f64::from(l.offset * l.seconds));
+            a.set_loop_mode(godot::classes::animation::LoopMode::LINEAR);
+            a
         };
-        add(
-            "stand",
-            space(&[
-                ("ual1/Idle", 0.0),
-                ("ual1/Walk", gait::WALK_SPEED),
-                ("ual1/Jog_Fwd", gait::JOG_SPEED),
-                ("ual1/Sprint", gait::SPRINT_SPEED),
-            ])
-            .upcast(),
-            0.0,
-        );
-        add(
-            "crouch",
-            space(&[
-                ("ual1/Crouch_Idle", 0.0),
-                ("ual1/Crouch_Fwd", gait::CROUCH_SPEED),
-            ])
-            .upcast(),
-            0.0,
-        );
-        add("stand_rate", AnimationNodeTimeScale::new_gd().upcast(), 1.0);
-        add(
-            "crouch_rate",
-            AnimationNodeTimeScale::new_gd().upcast(),
-            1.0,
-        );
+        let mut loops = AnimationNodeBlendSpace1D::new_gd();
+        loops.set_min_space(0.0);
+        loops.set_max_space(gait::SPRINT_SPEED);
+        for l in &gait::STAND_LOOPS {
+            let point = l.clip.rsplit('/').next().unwrap_or(l.clip);
+            loops
+                .add_blend_point_ex(&stride_clip(l).upcast::<AnimationRootNode>(), l.position)
+                .name(point)
+                .done();
+        }
+        add("stand_idle", clip("ual1/Idle").upcast(), 0.0);
+        add("stand_loops", loops.upcast(), 0.0);
+        add("stand_seek", AnimationNodeTimeSeek::new_gd().upcast(), 1.0);
+        add("stand", AnimationNodeBlend2::new_gd().upcast(), 1.5);
+        add("crouch_idle", clip("ual1/Crouch_Idle").upcast(), 0.0);
+        add("crouch_loop", stride_clip(&gait::CROUCH_LOOP).upcast(), 0.0);
+        add("crouch_seek", AnimationNodeTimeSeek::new_gd().upcast(), 1.0);
+        add("crouch", AnimationNodeBlend2::new_gd().upcast(), 1.5);
         add("stance", AnimationNodeBlend2::new_gd().upcast(), 2.0);
         add("slide_clip", clip("ual2/Slide").upcast(), 2.0);
         add("slide", AnimationNodeBlend2::new_gd().upcast(), 3.0);
         add("jump_clip", clip("ual1/Jump").upcast(), 3.0);
         add("air", AnimationNodeBlend2::new_gd().upcast(), 4.0);
-        // A mantle: the climb clip once, sped up to the short climb.
+        // A mantle: the whole climb clip over the mantle, seeked to its
+        // progress (timeline stretched to one second).
         let mut climb = clip("ual2/ClimbUp_1m_RM");
+        climb.set_use_custom_timeline(true);
+        climb.set_timeline_length(1.0);
+        climb.set_stretch_time_scale(true);
         climb.set_loop_mode(godot::classes::animation::LoopMode::NONE);
         add("climb_clip", climb.upcast(), 4.0);
-        add("climb_rate", AnimationNodeTimeScale::new_gd().upcast(), 4.0);
-        let mut climb_shot = AnimationNodeOneShot::new_gd();
-        climb_shot.set_fadein_time(0.06);
-        climb_shot.set_fadeout_time(0.15);
-        add("climb", climb_shot.upcast(), 4.5);
+        add("climb_seek", AnimationNodeTimeSeek::new_gd().upcast(), 4.0);
+        add("climb", AnimationNodeBlend2::new_gd().upcast(), 4.5);
         add("hold_clip", clip("ual1/Pistol_Aim_Neutral").upcast(), 4.0);
         let mut hold = AnimationNodeBlend2::new_gd();
         hold.set_filter_enabled(true);
@@ -832,17 +877,21 @@ impl SoldierRig {
         add("life", life.upcast(), 6.0);
 
         let links = [
-            ("stand_rate", 0, "stand"),
-            ("crouch_rate", 0, "crouch"),
-            ("stance", 0, "stand_rate"),
-            ("stance", 1, "crouch_rate"),
+            ("stand_seek", 0, "stand_loops"),
+            ("stand", 0, "stand_idle"),
+            ("stand", 1, "stand_seek"),
+            ("crouch_seek", 0, "crouch_loop"),
+            ("crouch", 0, "crouch_idle"),
+            ("crouch", 1, "crouch_seek"),
+            ("stance", 0, "stand"),
+            ("stance", 1, "crouch"),
             ("slide", 0, "stance"),
             ("slide", 1, "slide_clip"),
             ("air", 0, "slide"),
             ("air", 1, "jump_clip"),
-            ("climb_rate", 0, "climb_clip"),
+            ("climb_seek", 0, "climb_clip"),
             ("climb", 0, "air"),
-            ("climb", 1, "climb_rate"),
+            ("climb", 1, "climb_seek"),
             ("hold", 0, "climb"),
             ("hold", 1, "hold_clip"),
             ("life", 0, "hold"),

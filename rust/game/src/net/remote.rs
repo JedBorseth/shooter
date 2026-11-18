@@ -14,11 +14,12 @@
 
 use godot::classes::{INode3D, Label3D};
 use godot::prelude::*;
+use shooter_sim::hitbox::clock::{BodyClock, BodyState, Progress};
 use shooter_sim::look;
 use shooter_sim::movement::{MoveParams, Stance};
 pub use shooter_sim::net::lag::RemoteSample;
 use shooter_sim::net::protocol;
-use shooter_sim::weapon::{Reload, WeaponId};
+use shooter_sim::weapon::WeaponId;
 
 use crate::acoustics::zone_at;
 use crate::aim_assist::AimAssistTarget;
@@ -50,8 +51,10 @@ pub struct RemotePlayer {
     /// Last drawn feet position and the velocity estimated from it.
     last_position: Option<Vector3>,
     velocity: Vector3,
-    /// Seconds since the current reload started.
-    reload_time: Option<f32>,
+    /// Made-up samples (tests) have no server clock: this stands in for it.
+    test_clock: BodyClock,
+    /// Seconds left of a made-up mantle (tests).
+    test_mantle_left: Option<f32>,
     gunfire: Option<Gunfire>,
     foley: Option<Foley>,
     friendly: bool,
@@ -181,15 +184,19 @@ impl RemotePlayer {
             meleeing: false,
             hits: 0,
             hit_heading: 0,
+            progress: Progress::default(),
         };
+        let sample = self.with_test_progress(sample, None, delta);
         self.apply(&sample, delta);
     }
 
     /// Applies a made-up snapshot from a dictionary (tests): `feet`
     /// (Vector3), `yaw`, `pitch`, `stance` ("standing", "crouching",
     /// "sliding"), `sprinting`, `on_floor`, `ads`, `weapon` (file key),
-    /// `reloading`, `mantling`, `alive`. Missing keys take a standing,
-    /// living M4 holder's values. Velocity comes from how `feet` moves.
+    /// `reloading`, `mantling`, `alive`, and the animation progress
+    /// `stride`, `reload_progress`, and `mantle_progress` (0..1). Missing keys
+    /// take a standing, living M4 holder's values; missing progress runs as a
+    /// server would run it. Velocity comes from how `feet` moves.
     #[func]
     fn apply_test_state(&mut self, state: VarDictionary, delta: f32) {
         let get = |key: &str| state.get(key);
@@ -230,12 +237,63 @@ impl RemotePlayer {
             meleeing: b("meleeing", false),
             hits: 0,
             hit_heading: 0,
+            progress: Progress::default(),
         };
+        let set = TestProgress {
+            stride: f("stride"),
+            reload: f("reload_progress"),
+            mantle: f("mantle_progress"),
+        };
+        let sample = self.with_test_progress(sample, Some(set), delta);
         self.apply(&sample, delta);
     }
 }
 
+/// Animation progress a test names outright instead of letting it run.
+struct TestProgress {
+    stride: Option<f32>,
+    reload: Option<f32>,
+    mantle: Option<f32>,
+}
+
+/// A made-up mantle (tests) lasts this long, as a mantle up a metre does.
+const TEST_MANTLE_SECONDS: f32 = 0.42;
+
 impl RemotePlayer {
+    /// A made-up sample with the animation progress a server would have sent
+    /// for it (a [`BodyClock`] run on the made-up states), or what `set` names.
+    fn with_test_progress(
+        &mut self,
+        mut s: RemoteSample,
+        set: Option<TestProgress>,
+        delta: f32,
+    ) -> RemoteSample {
+        self.test_mantle_left = match (s.mantling, self.test_mantle_left) {
+            (true, Some(left)) => Some((left - delta).max(0.0)),
+            (true, None) => Some(TEST_MANTLE_SECONDS - delta),
+            (false, _) => None,
+        };
+        let state = BodyState {
+            velocity: s.velocity,
+            yaw: s.yaw,
+            stance: s.stance,
+            sprinting: s.sprinting,
+            on_floor: s.on_floor,
+            alive: s.alive,
+            reloading: s.reloading,
+            weapon: s.weapon,
+            mantle_left: self.test_mantle_left.unwrap_or(0.0),
+        };
+        let mut p = self.test_clock.tick(&state, delta);
+        if let Some(set) = set {
+            p.stride = set.stride.unwrap_or(p.stride);
+            p.reload = set.reload.unwrap_or(p.reload);
+            p.mantle = set.mantle.unwrap_or(p.mantle);
+        }
+        s.progress = p;
+        s
+    }
+
     /// A made-up sample's velocity: how far the feet moved since the last one.
     fn test_velocity(&self, feet: Vector3, delta: f32) -> shooter_sim::Vec3 {
         match self.last_position {
@@ -306,15 +364,9 @@ impl RemotePlayer {
         }
         self.last_position = Some(position);
 
-        self.reload_time = match (s.reloading && s.alive, self.reload_time) {
-            (true, Some(t)) => Some(t + delta),
-            (true, None) => Some(0.0),
-            (false, _) => None,
-        };
-        let reload = self
-            .reload_time
-            .map(|t| (t / reload_duration(s.weapon)).clamp(0.0, 1.0));
-
+        // Drawn at the moment of each animation the snapshot names, which is
+        // the moment its hit zones are posed at.
+        let reload = (s.reloading && s.alive).then_some(s.progress.reload);
         let frame = SoldierFrame {
             velocity: self.velocity,
             on_floor: s.on_floor,
@@ -328,6 +380,8 @@ impl RemotePlayer {
             alive: s.alive,
             mantling: s.mantling,
             meleeing: s.meleeing,
+            stride: Some(s.progress.stride),
+            mantle_progress: s.mantling.then_some(s.progress.mantle),
         };
         self.rig.bind_mut().update(&frame, delta);
         // The server rewinds exactly this pose when it checks our shots.
@@ -398,18 +452,4 @@ impl RemotePlayer {
             foley.update(&motion, delta, listener, friendly, reload);
         }
     }
-}
-
-/// About how long a weapon's reload animation runs, in seconds. Snapshots only
-/// say whether a player is reloading, so the third-person reload paces itself.
-fn reload_duration(weapon: WeaponId) -> f32 {
-    match weapon.def().reload {
-        Reload::Magazine { time, .. } => time,
-        Reload::PerRound {
-            start,
-            per_round,
-            end,
-        } => start + per_round * 4.0 + end,
-    }
-    .max(0.3)
 }

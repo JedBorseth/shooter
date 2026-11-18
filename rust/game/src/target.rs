@@ -70,7 +70,7 @@ impl IStaticBody3D for TargetDummy {
             self.rig.bind_mut().update(&frame, dt);
         }
         let pose = alive.then(|| HitboxPose {
-            activity: frame.activity(),
+            activity: frame.activity(self.rig.bind().progress()),
             ..HitboxPose::new(
                 to_sim(self.base().get_global_position()),
                 frame.yaw,

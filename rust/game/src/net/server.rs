@@ -62,6 +62,7 @@ use shooter_sim::chat::{self, ChatLimiter};
 use shooter_sim::ctf::{FlagEvent, FlagPlayer, FlagRules, FlagState, Flags};
 use shooter_sim::gun_game::{self, Progress, Step};
 use shooter_sim::hardpoint::{HardpointRules, HardpointState, HillTime, Holder, Zone};
+use shooter_sim::hitbox::clock::{BodyClock, BodyState};
 use shooter_sim::melee;
 use shooter_sim::net::discovery::{ServerInfo, query_port_for};
 use shooter_sim::net::input_queue::InputQueue;
@@ -312,6 +313,8 @@ struct Avatar {
     /// flinch (see `PlayerView::hits`).
     hits: u8,
     hit_heading: u8,
+    /// Stride phase and reload and mantle progress, sent in snapshots.
+    clock: BodyClock,
     /// Gun Game: this player's place on the weapon ladder.
     progress: Progress,
     /// Hardpoint: time in the live zone this match.
@@ -1114,6 +1117,7 @@ impl NetServer {
             score: ScoreState::default(),
             hits: 0,
             hit_heading: 0,
+            clock: BodyClock::default(),
             progress: Progress::default(),
             hill: HillTime::default(),
         });
@@ -1512,6 +1516,7 @@ impl NetServer {
                 }
             }
             avatar.score.tick(TICK_DT);
+            avatar.clock.tick(&body_state(avatar), TICK_DT);
             if avatar.bot {
                 let combat = &mut avatar.predicted.state.combat;
                 if combat.weapon().magazine == 0 && combat.weapon().reserve == 0 {
@@ -2855,10 +2860,13 @@ impl NetServer {
         let mut views: Vec<PlayerView> = self
             .avatars
             .iter()
-            .map(|a| PlayerView {
-                hits: a.hits,
-                hit_heading: a.hit_heading,
-                ..PlayerView::from_state(a.id, &a.predicted, a.yaw, a.pitch)
+            .map(|a| {
+                PlayerView {
+                    hits: a.hits,
+                    hit_heading: a.hit_heading,
+                    ..PlayerView::from_state(a.id, &a.predicted, a.yaw, a.pitch)
+                }
+                .with_progress(a.clock.progress())
             })
             .collect();
         views.sort_by_key(|v| v.id);
@@ -2895,6 +2903,22 @@ impl NetServer {
 /// A scripted player: strafes back and forth, crouches and jumps now and
 /// then, and fires bursts toward the spawn, so a single client has something
 /// to watch and shoot at.
+/// What an avatar's animation clocks need of it this tick.
+fn body_state(avatar: &Avatar) -> BodyState {
+    let p = &avatar.predicted;
+    BodyState {
+        velocity: p.state.movement.velocity,
+        yaw: avatar.yaw,
+        stance: p.state.movement.stance,
+        sprinting: p.state.movement.sprinting,
+        on_floor: p.on_floor,
+        alive: p.state.alive(),
+        reloading: p.state.combat.is_reloading(),
+        weapon: p.state.combat.weapon().id,
+        mantle_left: p.state.movement.mantle_time,
+    }
+}
+
 fn bot_input(avatar: &Avatar, tick: Tick) -> PlayerInput {
     let seconds = tick as f32 / TICK_RATE as f32 + f32::from(avatar.id) * 1.7;
     let period = (seconds / 2.5) as u32;
