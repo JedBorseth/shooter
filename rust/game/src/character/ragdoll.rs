@@ -21,9 +21,10 @@ use std::collections::VecDeque;
 
 use godot::classes::cone_twist_joint_3d::Param as ConeParam;
 use godot::classes::hinge_joint_3d::{Flag as HingeFlag, Param as HingeParam};
+use godot::classes::physics_server_3d::ConeTwistJointParam;
 use godot::classes::{
     CapsuleShape3D, CollisionShape3D, ConeTwistJoint3D, HingeJoint3D, Joint3D, Node3D,
-    PhysicsMaterial, RigidBody3D, Skeleton3D,
+    PhysicsMaterial, PhysicsServer3D, RigidBody3D, Skeleton3D,
 };
 use godot::prelude::*;
 use shooter_sim::hitbox::{self, BodyPart};
@@ -63,15 +64,31 @@ const PUSH_PER_LEVEL: f32 = 4.0;
 /// A headshot pushes the head this much harder.
 const HEAD_PUSH_SCALE: f32 = 0.85;
 
-/// The hips' cone (degrees). Limits are centred on the pose the body died
-/// in, so a hunched zombie, dying with its hips bent, can come to rest with
-/// a leg raised; wider cones let soldiers prop themselves up on their knees.
-/// Joint frames from the rest pose would fix both (see the workstream report).
+/// The hips' cone (degrees). While the body topples, the cones are centred
+/// on the pose it died in; once loosened, each is rebuilt with explicit
+/// frames centred on the limb's natural rest (see [`RestFrame`]), so a
+/// hunched zombie no longer comes to rest with a leg or an arm raised.
 const HIP_SWING: f32 = 60.0;
-/// The shoulders' cone (degrees). Wider let the arms of a body dying with
-/// them reaching fall freely but propped soldiers up on an elbow; joint
-/// frames from the rest pose would fix both (see the workstream report).
+/// The shoulders' cone (degrees), about the arm hanging down and a little
+/// out.
 const SHOULDER_SWING: f32 = 80.0;
+/// Seconds over which a rest-centred cone narrows from the swing the limb
+/// has when it is built to its own limit, so limbs settle instead of
+/// snapping into range.
+const SETTLE_SECONDS: f32 = 0.6;
+/// While it settles, a limb is pulled weakly toward its rest (N·m at
+/// half a turn off, less nearer), as slack muscle would let it slump: a
+/// body on its back does not stay balanced on its feet with its knees up.
+const SLUMP_TORQUE: f32 = 20.0;
+/// Seconds the slump lasts after a cone is rebuilt.
+const SLUMP_SECONDS: f32 = 1.2;
+/// Once a cone is rebuilt about the limb's rest, it narrows to this share
+/// of the swing it had while the body toppled: a dead body seldom keeps a
+/// hip flexed or a shoulder raised as far as a living one can.
+const REST_SWING_SHARE: f32 = 0.8;
+/// How far out a hanging arm's rest leans from straight down: this share
+/// of the skeleton's rest arm direction (a T or A pose) on top of down.
+const ARM_HANG_OUT: f32 = 0.35;
 
 /// One end of a part's capsule: a bone's origin, moved along the bone's own
 /// +Y (toward its child) by `along` metres.
@@ -327,11 +344,33 @@ struct Joint {
     limits: (f32, f32),
     /// A hip or knee: loosens later.
     leg: bool,
+    /// Cones: where the limb rests, to rebuild the joint around once loose.
+    rest: Option<RestFrame>,
+    /// The rebuilt cone (a physics server joint), the swing span it started
+    /// with (radians), and seconds since.
+    rebuilt: Option<(Rid, f32, f32)>,
+}
+
+/// A cone joint's natural centre, fixed when the ragdoll starts: the
+/// child's direction at rest in the parent capsule's own frame (the
+/// skeleton's rest pose, with arms hanging instead of out), and the pivot in
+/// the parent capsule's frame. The node joints Godot builds take both frames from
+/// one transform, the death pose; these are made through the physics server
+/// with a frame for each body.
+#[derive(Clone)]
+struct RestFrame {
+    parent: Gd<RigidBody3D>,
+    child: Gd<RigidBody3D>,
+    neutral: Vector3,
+    pivot_parent: Vector3,
 }
 
 impl Joint {
     /// Sets the joint's range to `share` of its full range (0..1).
     fn set_range(&mut self, share: f32) {
+        if self.rebuilt.is_some() {
+            return;
+        }
         match self.kind {
             JointKind::Cone { swing, twist } => {
                 if let Ok(mut cone) = self.node.clone().try_cast::<ConeTwistJoint3D>() {
@@ -351,6 +390,103 @@ impl Joint {
                     hinge.set_param(HingeParam::LIMIT_UPPER, self.limits.1 * share);
                 }
             }
+        }
+    }
+}
+
+impl Joint {
+    /// Rebuilds a loosened cone about the limb's rest (see [`RestFrame`]):
+    /// its swing span starts wide enough for where the limb is now and
+    /// narrows to the cone's own over [`SETTLE_SECONDS`].
+    fn rebuild_at_rest(&mut self) {
+        let (Some(rest), JointKind::Cone { swing, twist }) = (&self.rest, self.kind) else {
+            return;
+        };
+        if self.rebuilt.is_some()
+            || !rest.parent.is_instance_valid()
+            || !rest.child.is_instance_valid()
+        {
+            return;
+        }
+        let parent = rest.parent.get_global_transform();
+        let child = rest.child.get_global_transform();
+        let Some(centre) = (parent.basis * rest.neutral).try_normalized() else {
+            return;
+        };
+        let pivot = parent * rest.pivot_parent;
+        let frame = basis_with_x(centre);
+        // The capsule lies along its own Y.
+        let axis = child.basis.col_b().normalized();
+        let now = centre.angle_to(axis);
+        // The child's frame is the centre's, turned the shortest way onto
+        // the limb as it lies now: no twist to start with.
+        let onto = Basis::from_quaternion(super::ik::rotation_between(centre, axis)) * frame;
+        let local_a = parent.affine_inverse() * Transform3D::new(frame, pivot);
+        let local_b = child.affine_inverse() * Transform3D::new(onto, pivot);
+        let mut server = PhysicsServer3D::singleton();
+        let rid = server.joint_create();
+        server.joint_make_cone_twist(
+            rid,
+            rest.parent.get_rid(),
+            local_a,
+            rest.child.get_rid(),
+            local_b,
+        );
+        server.joint_disable_collisions_between_bodies(rid, true);
+        // A body asleep in a raised pose wakes to settle.
+        for mut body in [rest.parent.clone(), rest.child.clone()] {
+            body.set_sleeping(false);
+        }
+        let start = now.max(swing.to_radians() * REST_SWING_SHARE) + 0.05;
+        server.cone_twist_joint_set_param(rid, ConeTwistJointParam::SWING_SPAN, start);
+        server.cone_twist_joint_set_param(rid, ConeTwistJointParam::TWIST_SPAN, twist.to_radians());
+        self.node.queue_free();
+        self.rebuilt = Some((rid, start, 0.0));
+    }
+
+    /// Narrows a rebuilt cone toward its own swing, and lets the limb slump
+    /// toward its rest.
+    fn settle(&mut self, dt: f32) {
+        let (Some((rid, start, age)), JointKind::Cone { swing, .. }) =
+            (&mut self.rebuilt, self.kind)
+        else {
+            return;
+        };
+        if *age >= SLUMP_SECONDS {
+            return;
+        }
+        *age += dt;
+        if let Some(rest) = &mut self.rest
+            && rest.parent.is_instance_valid()
+            && rest.child.is_instance_valid()
+        {
+            let parent = rest.parent.get_global_transform();
+            let centre = (parent.basis * rest.neutral).normalized_or_zero();
+            let axis = rest.child.get_global_transform().basis.col_b().normalized();
+            let off = axis.angle_to(centre);
+            if let Some(turn) = axis.cross(centre).try_normalized() {
+                let torque = turn * SLUMP_TORQUE * (off / std::f32::consts::PI);
+                rest.child.apply_torque_impulse(torque * dt);
+                rest.parent.apply_torque_impulse(-torque * dt);
+            }
+        }
+        if *age > SETTLE_SECONDS {
+            return;
+        }
+        let t = (*age / SETTLE_SECONDS).clamp(0.0, 1.0);
+        let ease = t * t * (3.0 - 2.0 * t);
+        let span = *start + (swing.to_radians() * REST_SWING_SHARE - *start) * ease;
+        PhysicsServer3D::singleton().cone_twist_joint_set_param(
+            *rid,
+            ConeTwistJointParam::SWING_SPAN,
+            span,
+        );
+    }
+
+    /// Frees a rebuilt cone's server joint.
+    fn free(&mut self) {
+        if let Some((rid, ..)) = self.rebuilt.take() {
+            PhysicsServer3D::singleton().free_rid(rid);
         }
     }
 }
@@ -455,6 +591,16 @@ impl Ragdoll {
         };
         // The body's facing: the skeleton faces +Z.
         let front = (skel_xform.basis * Vector3::BACK).normalized();
+        let rest_globals: Vec<Transform3D> = (0..count as i32)
+            .map(|b| skeleton.get_bone_global_rest(b))
+            .collect();
+        let rest_at = |end: End| -> Option<Vector3> {
+            let b = bone(end.bone);
+            (b >= 0).then(|| {
+                let g = rest_globals[b as usize];
+                g.origin + g.basis.col_b().normalized() * end.along
+            })
+        };
 
         let mut holder = Node3D::new_alloc();
         holder.set_name("Ragdoll");
@@ -520,11 +666,40 @@ impl Ragdoll {
                         | BodyPart::LeftLowerLeg
                         | BodyPart::RightLowerLeg
                 );
+                let rest = matches!(spec.joint, JointKind::Cone { .. })
+                    .then(|| {
+                        let parent_spec = PARTS.iter().find(|p| p.part == parent)?;
+                        let parent_bone = bone(parent_spec.bone);
+                        let (from, to) = (rest_at(spec.from)?, rest_at(spec.to)?);
+                        let (pfrom, pto) = (rest_at(parent_spec.from)?, rest_at(parent_spec.to)?);
+                        let neutral = rest_neutral(spec.part, to - from, pto - pfrom)?;
+                        // At rest, in the parent bone's frame; then in the
+                        // parent capsule's frame as the body died.
+                        let in_bone = rest_globals[parent_bone as usize]
+                            .basis
+                            .orthonormalized()
+                            .inverse()
+                            * neutral;
+                        let world = (skel_xform * globals[parent_bone as usize])
+                            .basis
+                            .orthonormalized()
+                            * in_bone;
+                        let parent_place = parent_body.get_global_transform();
+                        Some(RestFrame {
+                            parent: parent_body.clone(),
+                            child: body.clone(),
+                            neutral: parent_place.basis.orthonormalized().inverse() * world,
+                            pivot_parent: parent_place.affine_inverse() * a,
+                        })
+                    })
+                    .flatten();
                 let mut joint = Joint {
                     node: joint,
                     kind: spec.joint,
                     limits,
                     leg,
+                    rest,
+                    rebuilt: None,
                 };
                 joint.set_range(STIFF_RANGE);
                 joints.push(joint);
@@ -575,6 +750,16 @@ impl Ragdoll {
                 joint.set_range(if joint.leg { legs } else { body });
             }
         }
+        // Loose: each cone moves its centre from the death pose to the
+        // limb's rest, and settles there.
+        let body_loose = self.age >= STIFF_SECONDS + LOOSEN_SECONDS;
+        let legs_loose = self.age >= LEG_STIFF_SECONDS + LEG_LOOSEN_SECONDS;
+        for joint in &mut self.joints {
+            if (joint.leg && legs_loose) || (!joint.leg && body_loose) {
+                joint.rebuild_at_rest();
+            }
+            joint.settle(dt);
+        }
         // Ground drag: capsules roll and skate on contact, so a body that has
         // stopped falling sheds its speed along the ground as cloth and kit
         // would drag.
@@ -589,7 +774,9 @@ impl Ragdoll {
             }
         }
         self.write_pose();
-        let resting = self.age > 0.5 && self.parts.iter().all(|p| p.body.is_sleeping());
+        // Not before every cone has been rebuilt about its rest and settled.
+        let settled = LEG_STIFF_SECONDS + LEG_LOOSEN_SECONDS + SLUMP_SECONDS;
+        let resting = self.age > settled && self.parts.iter().all(|p| p.body.is_sleeping());
         !(resting || self.age > MAX_SECONDS)
     }
 
@@ -609,6 +796,9 @@ impl Ragdoll {
     /// Frees the capsules without touching the pose.
     pub fn discard(mut self) {
         release(self.id);
+        for joint in &mut self.joints {
+            joint.free();
+        }
         if self.holder.is_instance_valid() {
             self.holder.queue_free();
         }
@@ -700,6 +890,21 @@ fn make_joint(
                 (lower, upper),
             )
         }
+    }
+}
+
+/// Where a limb rests relative to its parent, in skeleton rest space, from
+/// the rest directions of the part (`child`, along its capsule) and its
+/// parent: the rest pose's own for the spine, neck, and legs; for the
+/// arms, hanging down the chest and a little out (the rest pose holds them
+/// out to the sides).
+fn rest_neutral(part: BodyPart, child: Vector3, parent: Vector3) -> Option<Vector3> {
+    let child = child.try_normalized()?;
+    match part {
+        BodyPart::LeftUpperArm | BodyPart::RightUpperArm => {
+            (-parent.try_normalized()? + child * ARM_HANG_OUT).try_normalized()
+        }
+        _ => Some(child),
     }
 }
 

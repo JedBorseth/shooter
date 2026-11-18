@@ -1,7 +1,8 @@
 extends SceneTree
 ## Headless zombie test: a zombie's head zone sits on its drawn, hunched head;
 ## a heavy hit staggers it in place while a light one does not; and one killed
-## in the air falls to the floor as a ragdoll. Exits non-zero on failure.
+## in the air falls to the floor as a ragdoll; and bodies come to rest with
+## no limb raised, though zombies die hunched. Exits non-zero on failure.
 ## Run from the repo root:
 ##   godot --headless --path godot --fixed-fps 120 --script res://tests/zombie_reactions_test.gd
 
@@ -30,6 +31,7 @@ func _run() -> void:
 	await _head_zone()
 	await _stagger()
 	await _mid_air_death()
+	await _limbs_rest_down()
 	_finish()
 
 
@@ -83,6 +85,62 @@ func _mid_air_death() -> void:
 	var hips := rig.bone_global_transform("Hips").origin
 	_check(hips.y < 0.5, "a zombie killed in the air falls to the floor (hips %.2f)" % hips.y)
 	zombie.queue_free()
+
+
+## Zombies die hunched, arms reaching. Killed from each side, by a headshot,
+## and by a shotgun, every body ends lying with no knee held up over its hip
+## or hand over its shoulder: the joints settle about the limbs' natural
+## rest, not about the pose each died in.
+func _limbs_rest_down() -> void:
+	var worst_knee := 0.0
+	var worst_hand := 0.0
+	# Travel, hit shape, force: chest hits from each side, a headshot, and a
+	# shotgun blast.
+	var hits := [
+		[Vector3(0, 0, 1), 2, 6.0],
+		[Vector3(0, 0, -1), 2, 6.0],
+		[Vector3(1, 0, 0), 2, 6.0],
+		[Vector3(-1, 0, 0), 2, 6.0],
+		[Vector3(0, 0, 1), 0, 6.0],
+		[Vector3(1, 0, 0), 2, 15.0],
+	]
+	for i in hits.size():
+		var at := Vector3(-15 + i * 6, 0, 10)
+		var zombie := await _zombie(at)
+		var rig := zombie.get_node("Soldier") as SoldierRig
+		zombie.apply_damage(10000.0, false)
+		zombie.react_to_hit(hits[i][0], true, Vector3.ZERO, hits[i][1], hits[i][2])
+		for t in 900:
+			await physics_frame
+			if t > 120 and rig.is_still():
+				break
+		var raised := _raised(rig)
+		print(
+			(
+				"zombie %d: knee %.2f m over its hip, hand %.2f m over its shoulder"
+				% [i, raised.x, raised.y]
+			)
+		)
+		worst_knee = maxf(worst_knee, raised.x)
+		worst_hand = maxf(worst_hand, raised.y)
+		if is_instance_valid(zombie):
+			zombie.queue_free()
+	_check(worst_knee < 0.2, "no knee is left raised over its hip (%.2f m)" % worst_knee)
+	_check(worst_hand < 0.2, "no hand is left raised over its shoulder (%.2f m)" % worst_hand)
+
+
+## How far the highest knee sits above its own hip joint (`x`) and the
+## highest hand above its own shoulder (`y`): a limb held up off a lying body.
+func _raised(rig: SoldierRig) -> Vector2:
+	var y := func(bone: String) -> float: return rig.bone_global_transform(bone).origin.y
+	var knee := maxf(
+		y.call("LeftLowerLeg") - y.call("LeftUpperLeg"),
+		y.call("RightLowerLeg") - y.call("RightUpperLeg")
+	)
+	var hand := maxf(
+		y.call("LeftHand") - y.call("LeftUpperArm"), y.call("RightHand") - y.call("RightUpperArm")
+	)
+	return Vector2(knee, hand)
 
 
 func _check(condition: bool, label: String) -> void:
