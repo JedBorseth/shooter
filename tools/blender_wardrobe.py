@@ -427,3 +427,379 @@ def combat_shirt(human, frames: dict, hem: float = 1.02, collar: tuple[float, fl
     high["ray"] = 0.009
     log(f"shirt: {len(low.data.polygons)} faces, high {len(high.data.polygons)}")
     return low, high
+
+
+# --- Boots ------------------------------------------------------------------------
+
+# Per-vertex properties of the high-detail boot: (albedo, roughness, leather
+# grain, hook-and-loop, knit). Leather below, nylon on the shaft, as on
+# issued desert boots.
+BOOT_PANELS = {
+    "leather": (0.46, 0.66, 1.0, 0.0, 0.0),
+    "nylon": (0.52, 0.8, 0.0, 0.0, 0.0),
+    "suede": (0.5, 0.92, 0.6, 0.0, 0.0),
+    "lace": (0.36, 0.75, 0.0, 0.0, 1.0),
+    "eyelet": (0.18, 0.4, 0.2, 0.0, 0.0),
+    "thread": (0.62, 0.9, 0.0, 0.0, 0.0),
+    "rubber": (0.3, 0.75, 0.3, 0.0, 0.0),
+}
+BOOT_INDEX = {k: i for i, k in enumerate(BOOT_PANELS)}
+# How far the shaft reaches up the shin from the ankle joint.
+BOOT_HEIGHT = 0.19
+
+
+class Foot:
+    """One boot's frame: `a` runs along the foot from the back of the heel
+    (0) to the toe (length), `l` across it (outward positive), and `z` up from
+    the ground. The lacing runs up a profile in the side view (a, z) from the
+    instep over the front of the ankle to the top."""
+
+    def __init__(self, template_pts: np.ndarray, side: str, frames: dict):
+        self.side = side
+        self.sign = 1.0 if side == "L" else -1.0
+        p = template_pts[template_pts[:, 0] * self.sign > 0]
+        self.heel_y = float(p[:, 1].max())
+        self.toe_y = float(p[:, 1].min())
+        self.length = self.heel_y - self.toe_y
+        self.ground = float(p[:, 2].min())
+        self.x0 = float(np.median(p[:, 0]))
+        knee = np.array(tuple(frames[f"DEF-shin.{side}"][0]))
+        ankle = np.array(tuple(frames[f"DEF-foot.{side}"][0]))
+        self.ankle = ankle
+        self.up = hl.unit(knee - ankle)
+        self.top = ankle + self.up * BOOT_HEIGHT
+        self.lace = None
+        self.lace_length = 0.0
+
+    def measure_lacing(self, p: np.ndarray):
+        """The lacing profile, from the boot's own front in the side view:
+        along the top of the instep from where the toe cap would start, then
+        up the front of the shaft."""
+        a, l, z = self.coords(p)
+        mid = np.abs(l) < 0.01
+        L = self.length
+        ankle_z = self.ankle[2] - self.ground
+        top_z = self.top[2] - self.ground
+        instep = []
+        for aa in np.linspace(0.64 * L, 0.5 * L, 6):
+            sel = mid & (np.abs(a - aa) < 0.006)
+            if sel.any():
+                instep.append((aa, float(z[sel].max())))
+        shaft = []
+        for zz in np.linspace(ankle_z + 0.03, top_z - 0.01, 6):
+            sel = mid & (np.abs(z - zz) < 0.006)
+            if sel.any():
+                shaft.append((float(a[sel].max()), zz))
+        self.lace = np.array(instep + shaft)
+        self.lace_length = float(np.linalg.norm(np.diff(self.lace, axis=0), axis=1).sum())
+        log(f"boot {self.side}: lacing {self.lace_length * 1000:.0f} mm over {len(self.lace)} points")
+
+    def coords(self, p: np.ndarray):
+        a = self.heel_y - p[:, 1]
+        l = (p[:, 0] - self.x0) * self.sign
+        z = p[:, 2] - self.ground
+        return a, l, z
+
+    def lace_coords(self, a: np.ndarray, z: np.ndarray):
+        """Distance along the lacing profile and distance from it (in the
+        side view; the surface lies on it at the front)."""
+        best = np.full(len(a), np.inf)
+        s_out = np.zeros(len(a))
+        s0 = 0.0
+        pts = np.stack([a, z], axis=1)
+        for k in range(len(self.lace) - 1):
+            p0, p1 = self.lace[k], self.lace[k + 1]
+            d = p1 - p0
+            length = float(np.linalg.norm(d))
+            t = np.clip(((pts - p0) @ d) / (length * length), 0.0, 1.0)
+            c = p0 + t[:, None] * d
+            dist = np.linalg.norm(pts - c, axis=1)
+            closer = dist < best
+            best = np.where(closer, dist, best)
+            s_out = np.where(closer, s0 + t * length, s_out)
+            s0 += length
+        return s_out, best
+
+
+def boot_shape(p: np.ndarray, n: np.ndarray, foot: Foot, detail: bool):
+    """Displacement along the normal, and the panel each point is on, for a
+    combat boot: a leather foot with a toe cap and heel counter over a rubber
+    rand, a nylon shaft, laces up the front through eyelets, a padded collar,
+    and a pull loop at the back."""
+    a, l, z = foot.coords(p)
+    L = foot.length
+    count = len(p)
+    disp = np.zeros(count)
+    panel = np.full(count, BOOT_INDEX["nylon"])
+    thread = np.zeros(count)
+    noise = Noise(23)
+    top_z = foot.top[2] - foot.ground
+    from_top = top_z - z
+    front = n[:, 1] * -1.0  # facing the toe
+    s, off_profile = foot.lace_coords(a, z)
+    on_front = (off_profile < 0.02) & (front + n[:, 2] > 0.3)
+
+    # The leather foot: everything below a seam that rises from the instep
+    # to the back of the ankle.
+    seam_z = 0.075 + 0.03 * smoothstep(0.55 * L, 0.2 * L, a)
+    leather = z < seam_z
+    panel[leather] = BOOT_INDEX["leather"]
+    disp += smoothstep(seam_z + 0.003, seam_z - 0.003, z) * 0.0008
+    if detail:
+        for d in (-0.003, -0.0065):
+            line = bump(z - seam_z, d, 0.0005)
+            disp -= line * 0.00025
+            thread += line * (np.cos(a * 2 * math.pi / 0.0035 + l * 400) > -0.1)
+    # The toe cap: a second layer over the toe, its edge stitched.
+    cap_d = (0.79 * L) - a + np.abs(l) * 0.25
+    cap = smoothstep(0.002, -0.002, cap_d) * (z < 0.07)
+    disp += cap * 0.0012
+    # The heel counter: a cup round the back of the heel.
+    heel_d = a - (0.16 * L - z * 0.4)
+    counter = smoothstep(0.002, -0.002, heel_d) * (z < 0.085)
+    disp += counter * 0.0012
+    if detail:
+        for dist, mask in ((cap_d, z < 0.07), (heel_d, z < 0.085)):
+            line = bump(dist, 0.004, 0.0005) * mask
+            disp -= line * 0.00025
+            thread += line * (np.cos((z + l) * 2 * math.pi / 0.0035) > -0.1)
+    # The rubber rand round the bottom, above the sole.
+    rand = smoothstep(0.034, 0.03, z)
+    disp += rand * 0.0006
+    if detail:
+        panel[rand > 0.5] = BOOT_INDEX["rubber"]
+        panel[(cap > 0.5) & (rand <= 0.5)] = BOOT_INDEX["suede"]
+        panel[(counter > 0.5) & (rand <= 0.5)] = BOOT_INDEX["suede"]
+
+    # The padded collar: a rolled band round the top.
+    collar = smoothstep(0.03, 0.022, from_top)
+    disp += collar * 0.0016 + bump(from_top, 0.006, 0.006) * 0.0012
+    if detail:
+        line = bump(from_top, 0.026, 0.0005)
+        disp -= line * 0.0003
+        thread += line * (np.cos(np.arctan2(p[:, 1] - foot.ankle[1], p[:, 0] - foot.ankle[0]) * 160) > -0.1)
+        panel[collar > 0.5] = BOOT_INDEX["suede"]
+    # The pull loop at the back of the collar.
+    if detail:
+        back = (n[:, 1] > 0.6) & (np.abs(l) < 0.012) & (from_top < 0.045)
+        disp += back * smoothstep(0.012, 0.008, np.abs(l)) * 0.0016
+
+    # Lacing: a gusseted tongue down the front with a row of eyelets each
+    # side every 19 mm and the laces crossing between them.
+    lace_len = foot.lace_length
+    lace_k = on_front * smoothstep(0.0, 0.01, s) * smoothstep(lace_len + 0.01, lace_len - 0.01, s)
+    half = 0.017
+    tongue = smoothstep(half + 0.004, half - 0.002, np.abs(l)) * lace_k
+    disp -= tongue * 0.0015
+    # The facings either side of the tongue stand proud.
+    facing = bump(np.abs(l), half + 0.007, 0.006) * lace_k
+    disp += facing * 0.0012
+    pitch = 0.019
+    if detail:
+        k = np.round(s / pitch)
+        eye = np.hypot(np.abs(l) - half - 0.004, s - k * pitch)
+        ring = bump(eye, 0.0025, 0.0008) * lace_k
+        disp += ring * 0.0007
+        disp -= bump(eye, 0.0, 0.0012) * lace_k * 0.0006
+        panel[(ring > 0.4)] = BOOT_INDEX["eyelet"]
+        # Two laces, crossing: each runs from one side's eyelet to the
+        # other side's next one.
+        f = (s / pitch) % 1.0
+        across = (2 * f - 1) * (half + 0.004)
+        lace = np.maximum(bump(l - across, 0.0, 0.0022), bump(l + across, 0.0, 0.0022)) * (np.abs(l) < half + 0.004) * lace_k
+        disp += lace * 0.0028
+        panel[lace > 0.45] = BOOT_INDEX["lace"]
+        # Stitching down each facing.
+        line = bump(np.abs(l), half + 0.011, 0.0005) * lace_k
+        disp -= line * 0.00025
+        thread += line * (np.cos(s * 2 * math.pi / 0.0035) > -0.1)
+    else:
+        # The laces' bulk, as one raised band.
+        disp += smoothstep(half + 0.002, half - 0.004, np.abs(l)) * lace_k * 0.0022
+
+    # Creases where the foot flexes at the ball and the ankle.
+    if detail:
+        flex = bump(a, 0.68 * L, 0.014) * smoothstep(0.2, 0.6, n[:, 2]) * (np.abs(l) > 0.012)
+        disp += flex * np.sin(a * 2 * math.pi / 0.009 + l * 60 + noise(p, 0.05) * 1.5) * 0.0003
+        ankle_crease = bump(z, foot.ankle[2] - foot.ground + 0.01, 0.025) * (front > 0.2) * (np.abs(l) > 0.025)
+        disp += ankle_crease * np.sin(z * 2 * math.pi / 0.012 + noise(p, 0.04) * 2.0) * 0.0007
+        thread = np.clip(thread, 0.0, 1.0)
+        panel[thread > 0.5] = BOOT_INDEX["thread"]
+        return disp, np.array(list(BOOT_PANELS.values()))[panel]
+    return disp, None
+
+
+def boot_base(template, leg, foot: Foot, voxel: float):
+    """The fitted shoe united with a shaft round the leg (`leg`, the rig's own
+    mannequin, since the body under the trousers is gone) up to the boot's
+    top, remeshed into one smooth closed shell, the top cut open."""
+    from mathutils.bvhtree import BVHTree
+
+    sign = foot.sign
+    # The shoe below the ankle only: its collar and tongue would stand out of
+    # the shaft as fins.
+    tco = hl.coords(template)
+    shoe = hl.copy_faces(template, (tco[:, 0] * sign) > 0, f"boot_shoe_{foot.side}")
+    bm = bmesh.new()
+    bm.from_mesh(shoe.data)
+    bisect(bm, foot.ankle - foot.up * 0.012, foot.up, list(bm.faces), clear_outer=True)
+    # Capped, so the voxel remesh sees a closed volume.
+    bmesh.ops.holes_fill(bm, edges=[e for e in bm.edges if e.is_boundary], sides=0)
+    bm.to_mesh(shoe.data)
+    bm.free()
+    me = leg.data
+    tree = BVHTree.FromPolygons([leg.matrix_world @ v.co for v in me.vertices], [list(p.vertices) for p in me.polygons])
+    up = Vector(tuple(foot.up))
+    fwd = Vector((0.0, -1.0, 0.0))
+    fwd = (fwd - up * fwd.dot(up)).normalized()
+    side = up.cross(fwd)
+    segs, rings = 32, 12
+    centre = Vector(tuple(foot.ankle))
+    verts = []
+    for r in range(rings):
+        h = -0.01 + (BOOT_HEIGHT + 0.02) * r / (rings - 1)
+        c = centre + up * h
+        # Snug at the ankle, with room for the trousers tucked in above it.
+        ease = 0.006 + 0.006 * float(smoothstep(0.02, BOOT_HEIGHT, h))
+        for i in range(segs):
+            ang = 2 * math.pi * i / segs
+            d = fwd * math.cos(ang) + side * math.sin(ang)
+            hit = tree.ray_cast(c + d * 0.15, -d, 0.15)[0]
+            # (Near the ankle a ray can find the foot instead of the leg.)
+            cap = 0.05 if h < 0.03 else 0.07
+            radius = min(max((hit - c).length, 0.03), cap) if hit is not None else 0.045
+            verts.append(c + d * (radius + ease))
+    faces = [(r * segs + i, r * segs + (i + 1) % segs, (r + 1) * segs + (i + 1) % segs, (r + 1) * segs + i)
+             for r in range(rings - 1) for i in range(segs)]
+    faces.append(tuple(reversed(range(segs))))
+    faces.append(tuple((rings - 1) * segs + i for i in range(segs)))
+    mesh = bpy.data.meshes.new("boot_shaft")
+    mesh.from_pydata([tuple(v) for v in verts], [], faces)
+    mesh.validate()
+    shaft = bpy.data.objects.new("boot_shaft", mesh)
+    bpy.context.scene.collection.objects.link(shaft)
+    for o in bpy.context.selected_objects:
+        o.select_set(False)
+    shoe.select_set(True)
+    shaft.select_set(True)
+    bpy.context.view_layer.objects.active = shoe
+    bpy.ops.object.join()
+    mod = shoe.modifiers.new("remesh", "REMESH")
+    mod.mode = "VOXEL"
+    mod.voxel_size = voxel
+    mod.use_smooth_shade = True
+    before = len(shoe.data.polygons)
+    bpy.ops.object.modifier_apply(modifier=mod.name)
+    log(f"boot {foot.side}: remeshed {before} -> {len(shoe.data.polygons)} faces")
+    for k in list(shoe.keys()):
+        del shoe[k]
+    shoe.vertex_groups.clear()
+    hl.taubin_smooth(shoe, 20)
+    # Blend the shaft into the shoe round the ankle, where they met as a step.
+    co = hl.coords(shoe)
+    h = (co - foot.ankle) @ foot.up
+    hl.taubin_smooth(shoe, 60, mask=bump(h, -0.025, 0.035))
+    # Open the top.
+    bm = bmesh.new()
+    bm.from_mesh(shoe.data)
+    bisect(bm, foot.top, foot.up, list(bm.faces), clear_outer=True)
+    bm.to_mesh(shoe.data)
+    bm.free()
+    shoe.name = f"boot_base_{foot.side}"
+    return shoe
+
+
+def tuck_trousers(pants, boot, foot: Foot):
+    """Tucks the trouser leg into the boot: the hem inside the shaft is
+    deleted (never seen, and wide enough to poke through it), and the cloth
+    just above the top is drawn in under the collar."""
+    from mathutils.bvhtree import BVHTree
+
+    bme = boot.data
+    tree = BVHTree.FromPolygons([boot.matrix_world @ v.co for v in bme.vertices], [list(p.vertices) for p in bme.polygons])
+    co = hl.coords(pants)
+    h = (co - foot.ankle) @ foot.up
+    radial = (co - foot.ankle) - np.outer(h, foot.up)
+    r = np.linalg.norm(radial, axis=1)
+    mine = (r < 0.12) & ((co[:, 0] * foot.sign) > 0)
+    r0 = r.copy()
+    # Taper the leg's last few centimetres in to the boot's top, so the
+    # bloused cuff sits round both evenly.
+    band = mine & (h > BOOT_HEIGHT - 0.04) & (h < BOOT_HEIGHT + 0.08)
+    for i in np.nonzero(band)[0]:
+        at = min(h[i], BOOT_HEIGHT - 0.004)
+        c = foot.ankle + foot.up * at
+        d = radial[i] / max(r[i], 1e-9)
+        hit = tree.ray_cast(Vector(tuple(c + d * 0.15)), Vector(tuple(-d)), 0.15)[0]
+        if hit is None:
+            continue
+        limit = np.linalg.norm(np.array(tuple(hit)) - c) + 0.004
+        k = float(smoothstep(BOOT_HEIGHT + 0.08, BOOT_HEIGHT + 0.02, h[i]))
+        target = min(r[i], limit) * k + r[i] * (1 - k)
+        co[i] = foot.ankle + foot.up * h[i] + d * target
+    hl.set_coords(pants, co)
+    # Everything below the bloused cuff (blender_gear.blouses) goes, with the
+    # cargo trousers' ankle straps, which would hang out under it.
+    inside = mine & (h < BOOT_HEIGHT + 0.015)
+    inside |= mine & (h < BOOT_HEIGHT + 0.09) & (r0 > 0.072)
+    bm = bmesh.new()
+    bm.from_mesh(pants.data)
+    bm.faces.ensure_lookup_table()
+    gone = [f for f in bm.faces if all(inside[v.index] for v in f.verts)]
+    bmesh.ops.delete(bm, geom=gone, context="FACES")
+    loose = [v for v in bm.verts if not v.link_faces]
+    bmesh.ops.delete(bm, geom=loose, context="VERTS")
+    bm.to_mesh(pants.data)
+    bm.free()
+    log(f"{pants.name}: tucked into the {foot.side} boot ({len(gone)} faces inside it removed)")
+
+
+def combat_boots(template, pants, frames: dict, faces: int = 1150):
+    """A combat boot per foot and its high-detail source, built over the
+    fitted shoe `template` and the trouser leg `pants`."""
+    pts = np.array([tuple(template.matrix_world @ v.co) for v in template.data.vertices])
+    leg = next(o for o in bpy.data.objects if o.type == "MESH" and o.name.startswith("Mannequin"))
+    out = []
+    for side in "LR":
+        foot = Foot(pts, side, frames)
+        base = boot_base(template, leg, foot, 0.004)
+        foot.measure_lacing(hl.coords(base))
+        tuck_trousers(pants, base, foot)
+        low = hl.duplicate(base, f"boot_{side}")
+        p, n = hl.coords(low), hl.vertex_normals(low)
+        disp, _ = boot_shape(p, n, foot, detail=False)
+        hl.set_coords(low, p + n * disp[:, None])
+        # Blender's decimation ratio counts triangles.
+        tris = sum(len(poly.vertices) - 2 for poly in low.data.polygons)
+        ratio = faces / max(tris, 1)
+        if ratio < 1.0:
+            mod = low.modifiers.new("decimate", "DECIMATE")
+            mod.ratio = ratio
+            for o in bpy.context.selected_objects:
+                o.select_set(False)
+            low.select_set(True)
+            bpy.context.view_layer.objects.active = low
+            bpy.ops.object.modifier_apply(modifier=mod.name)
+        hl.tuck_boundary(low, 0.004)
+        hl.shade_smooth(low)
+        high = hl.duplicate(base, f"boot_high_{side}")
+        hl.subdivide(high, 2)
+        p, n = hl.coords(high), hl.vertex_normals(high)
+        disp, rows = boot_shape(p, n, foot, detail=True)
+        hl.set_coords(high, p + n * disp[:, None])
+        hl.paint_panels(high, rows)
+        hl.tuck_boundary(high, 0.004)
+        hl.shade_smooth(high)
+        bpy.data.objects.remove(base)
+        for o in (low, high):
+            o["role"] = "boots"
+            o["material"] = "boots"
+            o["group"] = 0
+            o["bones"] = [f"DEF-foot.{side}", f"DEF-toe.{side}", f"DEF-shin.{side}"]
+        low["unwrap"] = True
+        high["kind"] = "boot"
+        high["cage"] = 0.003
+        high["ray"] = 0.007
+        log(f"boot {side}: {len(low.data.polygons)} faces, high {len(high.data.polygons)}")
+        out.append((low, high))
+    return out
