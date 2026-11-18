@@ -10,7 +10,7 @@ Measured at 1920×1080 on a GTX 1060 3GB, the reference card. The budget is GPU 
 | --- | --- | --- | --- |
 | Low | 4 ms | weaker cards and laptops at 60 fps | 4.4 ms (Slamcity; over budget since its block layout, #143) |
 | Medium (default) | 8 ms | 60 fps with plenty of headroom, 100+ fps on the reference card | 8.6 ms (Slamcity, the same view; every other map is under 6 ms) |
-| High | 12 ms | 60 fps | 11.9 ms |
+| High | 12 ms | 60 fps | 11.8 ms |
 
 Rules for a pull request that changes visuals:
 
@@ -30,6 +30,7 @@ Rules of thumb for this renderer on this card, from the measurements below:
 - Reflection probes are expensive here: four small interior probes in Slamcity cost about 0.8 ms whenever a room filled the screen, and one probe over the whole block cost 0.7 ms everywhere. Baked lightmaps light the interiors instead (`tools/bake_lightmaps.sh`).
 - A full-screen pass is never free on this card. Measured on Medium in Slamcity: sun shadows 1.2 ms, glow 1.1 ms, SSAO 0.9 ms, SMAA 0.7 ms (FXAA would be 0.3 ms), fog 0.1 to 0.3 ms. A canvas pass over the whole screen costs about 0.13 ms when it only blends, and about 0.5 ms when it reads the screen (a copy, then five samples per pixel). That is why the lens sharpens on High only.
 - Ambient occlusion is the wrong tool for grounding a crowd: turning SSAO on in the Zombies arena cost 0.7 ms on Medium and 1.9 ms on High (where it runs at full resolution), for a horde that mostly needs a dark patch under each pair of feet.
+- Temporal antialiasing (TAA) costs about what 2× MSAA plus SMAA costs at 1080p on this card, measured in place of both on High: 0.6 ms less in the Testing Area, the same in Slamcity (`profile_frame.gd`, "temporal antialiasing in place of SMAA"). Measured on top of them it costs about 1.9 ms. High uses it alone.
 - Bicubic upscaling of the glow costs about 0.35 ms for a difference that shows only on strong, wide glows. Low and Medium upscale it bilinearly.
 - The colour grade is free: a look-up table sampled inside the tonemap pass the renderer already runs. So is the colour draining at low health (the same pass's saturation).
 - A negative mipmap bias sharpens distant textures for almost nothing (within measurement noise), as long as anisotropic filtering is on.
@@ -77,7 +78,7 @@ The presets live in `godot/scripts/graphics.gd`. The `Settings` autoload applies
 | | Low | Medium | High |
 | --- | --- | --- | --- |
 | Render scale | 77%, FSR 1 | native | native |
-| Antialiasing | FXAA | SMAA | 2× MSAA + SMAA |
+| Antialiasing | FXAA | SMAA | temporal (TAA), sharpened by the lens |
 | SSAO | off | low, half resolution | medium, half resolution |
 | Glow | off | on, bilinear upscale | on, bicubic upscale |
 | Volumetric fog | off | off | where the map uses it |
@@ -85,7 +86,7 @@ The presets live in `godot/scripts/graphics.gd`. The `Settings` autoload applies
 | Anisotropic filtering | 2× | 4× | 16× |
 | Lightmap sampling | bilinear | bilinear | bicubic |
 | Texture sharpness (mipmap bias) | 0 | −0.35 | −0.25 |
-| Lens (`scripts/lens.gd`) | off | vignette, film grain, sun flare | vignette, film grain, sun flare, and sharpening |
+| Lens (`scripts/lens.gd`) | only while rounds pass close or after death (vignette, 0.13 ms then) | vignette, film grain, sun flare | vignette, film grain, sun flare, and sharpening |
 | Close-up detail on world surfaces | off | off | on |
 | Lens dirt on the bloom | (no bloom) | on | on |
 | Wet surfaces and puddles (Zombies) | dry | on | on |
@@ -145,5 +146,6 @@ GPU time on Medium at 1080p on the reference card, average over viewpoints (wors
 | Testing Area and Zombies arena modelled in Blender instead of CSG (`main` measured alongside on the same box: 5.29 (5.51) and 5.41 (5.85) ms) | 5.60 (5.92) ms | | 5.58 (6.04) ms |
 | `main` at 3a4af2db, measured again: #111 and #114–#152 landed without a baseline run (weapon, glove, knife, and character models; Slamcity's smoke, wear, flames, and new block layout around Junction Plaza, #143, with new viewpoints; the new HUD; modelled props and map architecture). Better of two runs per view | 5.60 (5.88) ms | 7.58 (8.50) ms | 5.53 (6.05) ms |
 | Filmic daylight in the Testing Area (ACES, a stronger sun), Slamcity's toe and thinner near haze, Zombies' lower pivot, tighter ambient occlusion (within run-to-run noise of the same `main` on every map) | 5.60 (5.86) ms | 7.62 (8.62) ms | 5.52 (6.04) ms |
+| Temporal antialiasing on High in place of 2× MSAA plus SMAA, a hurt vignette with smears, hit flashes, and a heartbeat (hidden at full health), suppression on Low, close-up detail only on rough surfaces, softer puddles (High: 0.35 to 0.46 ms less in the Testing Area and Slamcity, 0.14 ms more in Zombies; `main` measured alongside: 5.61, 7.52, 5.54 ms on Medium) | 5.58 (5.86) ms | 7.47 (8.37) ms | 5.58 (6.10) ms |
 
 Slamcity's 7.0 ms on Medium is about 0.5 ms more than the old map, over the usual 5% step. It was accepted for the rebuild: the rest is the denser map's own shading (decals, the skyline, small detail, and props are about 0.15 ms each), and the next cut would remove visible detail.
