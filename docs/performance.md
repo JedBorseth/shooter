@@ -8,9 +8,9 @@ Measured at 1920×1080 on a GTX 1060 3GB, the reference card. The budget is GPU 
 
 | Preset | GPU budget | Leaves room for | Today (worst view) |
 | --- | --- | --- | --- |
-| Low | 4 ms | weaker cards and laptops at 60 fps | 3.9 ms |
-| Medium (default) | 8 ms | 60 fps with plenty of headroom, 100+ fps on the reference card | 7.5 ms |
-| High | 12 ms | 60 fps | 10.6 ms |
+| Low | 4 ms | weaker cards and laptops at 60 fps | 3.8 ms (Slamcity; Low varies by up to 2 ms between runs on the shared machine) |
+| Medium (default) | 8 ms | 60 fps with plenty of headroom, 100+ fps on the reference card | 7.3 ms |
+| High | 12 ms | 60 fps | 10.8 ms |
 
 Rules for a pull request that changes visuals:
 
@@ -35,6 +35,9 @@ Rules of thumb for this renderer on this card, from the measurements below:
 - A negative mipmap bias sharpens distant textures for almost nothing (within measurement noise), as long as anisotropic filtering is on.
 - Textures are compressed on the GPU (BPTC/S3TC), with mipmaps, 1K for most surfaces and 2K only for the weapon in view. Sample each surface once (one projection), not three times.
 - Characters cost through their triangles at range more than through skinning or shading. Freezing every character's animation (no skinning) saved nothing measurable on Slamcity, and a plain material saved 0.03 ms. Drawing them at their coarsest level of detail saved 0.06 ms. Keep each character to one surface. Give it a decimated far mesh (`BodyFar`, drawn past 15 m), because Godot's automatic LODs simplify a kit of many small parts poorly. `tests/profile_frame.gd` measures all of these (`PROFILE_ONLY=characters`).
+- Code a shader never runs still costs. A branch on a uniform keeps the registers of the code inside it, so every pixel of the shader runs slower: code for High in the world shader, switched off by a uniform, made Medium 0.07 ms slower, and so did wet surfaces on dry maps. A few lines of close-up detail cost 0.15 to 0.25 ms on Medium. Compile such paths out instead: `GraphicsQuality` rewrites `#define` lines in the world shaders per preset (`WORLD_DETAIL`) and per map (`WORLD_WET`), and the lens swaps to its `_sun` shaders only while it has a flare to draw.
+- Sample with the hardware's own gradients. Explicit-gradient samples (`textureGrad`) with anisotropic filtering made the world shader 0.4 ms slower on Medium, and three extra samples behind a per-pixel branch cost ten times what one plain colour sample does (0.7 ms against 0.06 on High in Slamcity).
+- Two things turn on work for the whole frame, not just the pixels they cover: the first Decal on a map with no other decals (0.14 ms on Medium in the Testing Area), and a material that reads the depth buffer (`hint_depth_texture`), which makes the renderer copy it (about 0.1 ms). The contact shadows under characters avoid both: each is a flat quad laid on the ground by a ray.
 
 ## Run the benchmark
 
@@ -82,7 +85,11 @@ The presets live in `godot/scripts/graphics.gd`. The `Settings` autoload applies
 | Anisotropic filtering | 2× | 4× | 16× |
 | Lightmap sampling | bilinear | bilinear | bicubic |
 | Texture sharpness (mipmap bias) | 0 | −0.35 | −0.25 |
-| Lens (`scripts/lens.gd`) | off | vignette and film grain | vignette, film grain, and sharpening |
+| Lens (`scripts/lens.gd`) | off | vignette, film grain, sun flare | vignette, film grain, sun flare, and sharpening |
+| Close-up detail on world surfaces | off | off | on |
+| Lens dirt on the bloom | (no bloom) | on | on |
+| Wet surfaces and puddles (Zombies) | dry | on | on |
+| Contact shadows under characters | on | on | on |
 | Colour grade and health colour drain | on | on | on |
 
 The lens is a full-screen pass over the 3D picture, under the HUD. On Medium it blends a vignette and film grain without reading the screen (about 0.13 ms). On High it also sharpens with a contrast-adaptive filter, which needs a copy of the screen (about 0.5 ms). The "Lens effects" setting turns the vignette and grain off; sharpening follows the preset.
@@ -134,5 +141,6 @@ GPU time on Medium at 1080p on the reference card, average over viewpoints (wors
 | Slamcity's road markings as painted geometry instead of decals (71 to 47 decals) | | 7.04 (7.26) ms | |
 | Soldiers rebuilt as MakeHuman people in modelled kit on one baked atlas, zombies on their own kit, far meshes past 15 m (characters alone: 0.11 to 0.09 ms on Slamcity; the same `main` measured alongside: 5.02, 7.07, 5.19 ms) | 4.99 (5.09) ms | 7.05 (7.30) ms | 5.14 (5.55) ms |
 | Four zombie bodies in their own clothes, combat boots and bloused trousers, a seated helmet band and chin strap, first-person arms on their own atlas | 5.03 (5.19) ms | 7.12 (7.35) ms | 5.20 (5.68) ms |
+| Lens bloom with dirt and a sun flare, contact shadows under characters, wet Zombies, close-up surface detail on High (Medium within +0.08 ms of `main` at every worst view; baseline is the better of two runs per view) | 5.13 (5.30) ms | 7.18 (7.33) ms | 5.28 (5.73) ms |
 
 Slamcity's 7.0 ms on Medium is about 0.5 ms more than the old map, over the usual 5% step. It was accepted for the rebuild: the rest is the denser map's own shading (decals, the skyline, small detail, and props are about 0.15 ms each), and the next cut would remove visible detail.

@@ -14,7 +14,9 @@ void fragment() {
 	// middle shrinks a little as intensity rises, but never below most of
 	// the screen.
 	float edge = length(centred * vec2(0.85, 1.0));
-	float mask = smoothstep(1.2 - intensity * 0.42, 1.5, edge);
+	// The corners sit at about 1.31, so the ramp must end there to reach full
+	// strength at all.
+	float mask = smoothstep(1.05 - intensity * 0.45, 1.3, edge);
 	// Reaches full strength at two thirds intensity, so a hurt player sees it
 	// well before the last sliver of health.
 	float amount = clamp(intensity * 1.5, 0.0, 1.0);

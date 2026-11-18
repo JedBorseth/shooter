@@ -24,27 +24,28 @@ const LUT_SIZE := 32
 ##     balance    Where the two tints cross, as a brightness.
 ##     toe        Deepens the darkest shadows by up to this fraction, without
 ##                clipping them (0 = none).
+##   flare  How strongly the sun flares in the lens when it is in view and not
+##          hidden (scripts/lens.gd); 0 or missing for none. The cover test
+##          casts rays against the world's collision, so set it only on maps
+##          whose scenery around the sun collides.
+##   wetness  How wet the map's surfaces are, 0 dry to 1 soaked; from 0.5 up,
+##            puddles collect on the ground (shaders/world.gdshader).
+##
+## Every listed map also gets the shared bloom in `BLOOM` (unless its `env`
+## says otherwise) and lens dirt on that bloom (scripts/lens_dirt.gd).
 const MAPS := {
 	"res://scenes/main.tscn":
 	{
 		"env":
+		# Ambient occlusion also darkens direct light a little, which
 		{
-			# Bloom only what is bright: no veil over the whole picture.
-			"glow_bloom": 0.0,
-			"glow_intensity": 0.5,
-			"glow_hdr_threshold": 1.0,
-			"glow_levels/2": 0.5,
-			"glow_levels/3": 0.7,
-			"glow_levels/4": 0.45,
-			"glow_levels/5": 0.2,
-			# Ambient occlusion also darkens direct light a little, which
 			# grounds props and characters in the sun.
 			"ssao_light_affect": 0.15,
 			# Haze: the far wall fades toward the sky instead of meeting it at
 			# a hard line, and the air glows a little toward the sun.
 			"fog_sun_scatter": 0.15,
 			"fog_density": 0.0024,
-			"fog_aerial_perspective": 0.7,
+			"fog_aerial_perspective": 0.85,
 			"fog_sky_affect": 0.3,
 			# The grade below replaces these.
 			"adjustment_contrast": 1.0,
@@ -52,14 +53,15 @@ const MAPS := {
 		},
 		"grade":
 		{
-			"contrast": 1.2,
-			"pivot": 0.5,
+			"contrast": 1.3,
+			"pivot": 0.45,
 			"saturation": 1.08,
 			"shadows": Color(0.94, 0.98, 1.06),
 			"highlights": Color(1.04, 1.0, 0.95),
 			"balance": 0.5,
-			"toe": 0.18,
+			"toe": 0.25,
 		},
+		"flare": 1.0,
 	},
 	"res://scenes/slamcity.tscn":
 	{
@@ -90,6 +92,9 @@ const MAPS := {
 			"balance": 0.45,
 			"toe": 0.05,
 		},
+		# No sun flare: the dusk sun sits behind the skyline, which has no
+		# collision, so the flare's cover test (rays against the world) cannot
+		# see it.
 	},
 	"res://scenes/zombies_arena.tscn":
 	{
@@ -98,13 +103,9 @@ const MAPS := {
 		{
 			# so the horde stays readable without the haze.
 			"tonemap_exposure": 1.3,
-			"glow_bloom": 0.0,
+			# Lamps and muzzle flashes carry the night: a stronger, lower bloom.
 			"glow_intensity": 0.8,
-			"glow_hdr_threshold": 0.9,
-			"glow_levels/2": 0.4,
-			"glow_levels/3": 0.8,
-			"glow_levels/4": 0.6,
-			"glow_levels/5": 0.3,
+			"glow_hdr_threshold": 0.85,
 			"adjustment_contrast": 1.0,
 			"adjustment_saturation": 1.0,
 		},
@@ -118,8 +119,35 @@ const MAPS := {
 			"balance": 0.3,
 			"toe": 0.0,
 		},
+		# Rain has just stopped: damp walls, glossy ground, puddles that catch
+		# the lamps.
+		"wetness": 0.75,
 	},
 }
+
+## Bloom for every listed map: only what is brighter than white blooms (no
+## veil over the whole picture), it adds light the way a lens does rather than
+## screening it, and a faint wide level gives the sun and lamps a soft halo.
+## The two widest levels are tiny textures, so they cost almost nothing.
+const BLOOM := {
+	"glow_blend_mode": Environment.GLOW_BLEND_MODE_ADDITIVE,
+	"glow_bloom": 0.0,
+	"glow_intensity": 0.45,
+	"glow_hdr_threshold": 1.0,
+	"glow_hdr_scale": 2.0,
+	"glow_hdr_luminance_cap": 16.0,
+	"glow_levels/1": 0.0,
+	"glow_levels/2": 0.35,
+	"glow_levels/3": 0.6,
+	"glow_levels/4": 0.5,
+	"glow_levels/5": 0.35,
+	"glow_levels/6": 0.25,
+	"glow_levels/7": 0.12,
+	# Lens dirt lights up where the bloom passes through it.
+	"glow_map_strength": 0.4,
+}
+
+const LensDirt := preload("res://scripts/lens_dirt.gd")
 
 ## Built look-up tables, by scene path.
 static var _luts: Dictionary = {}
@@ -131,6 +159,9 @@ static func apply(env: Environment, scene_path: String) -> bool:
 	if not MAPS.has(scene_path):
 		return false
 	var look: Dictionary = MAPS[scene_path]
+	for property: String in BLOOM:
+		env.set(property, BLOOM[property])
+	env.glow_map = LensDirt.texture()
 	var overrides: Dictionary = look.get("env", {})
 	for property: String in overrides:
 		env.set(property, overrides[property])
@@ -138,6 +169,16 @@ static func apply(env: Environment, scene_path: String) -> bool:
 		env.adjustment_enabled = true
 		env.adjustment_color_correction = lut_for(scene_path)
 	return true
+
+
+## How wet the map `scene_path` is: 0 for dry.
+static func wetness_for(scene_path: String) -> float:
+	return float(MAPS.get(scene_path, {}).get("wetness", 0.0))
+
+
+## How strongly the sun flares on the map `scene_path`: 0 for none.
+static func flare_for(scene_path: String) -> float:
+	return float(MAPS.get(scene_path, {}).get("flare", 0.0))
 
 
 ## The colour look-up table for a map's grade, built once.

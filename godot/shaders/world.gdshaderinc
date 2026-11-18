@@ -1,12 +1,34 @@
 // The world surface shader's body, shared by world.gdshader and
 // world_windows.gdshader (which defines WORLD_WINDOWS for the skyline's
 // windows, so every other surface skips that code entirely).
+//
+// On High (WORLD_DETAIL, set in both shaders), a fine detail normal (a shared
+// noise texture, `world_detail_normal`) adds grain and roughness breakup up
+// close, where the texture alone would blur. (A second, turned colour sample
+// to hide the texture's repeat was tried and dropped: its colour no longer
+// matched the relief that lit it.) The graphics preset compiles this in or out
+// (GraphicsQuality.set_world_detail): code a uniform switches off still slows
+// every pixel, and Low and Medium cannot spare it. A wet map (WORLD_WET, set
+// as the map loads, and `world_wetness` from scripts/looks.gd) darkens its
+// surfaces and makes them glossy, and collects puddles on the ground.
 
 
 uniform vec4 tint : source_color = vec4(1.0);
 // Large-scale brightness variation: tiling value noise, 16 cells across
 // (assets/textures/noise/macro.png, a project shader global).
 global uniform sampler2D world_noise : filter_linear_mipmap, repeat_enable;
+#if WORLD_WET
+// 0 dry to 1 soaked, per map (scripts/looks.gd).
+global uniform float world_wetness;
+#endif
+#if WORLD_DETAIL
+global uniform sampler2D world_detail_normal : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+// The detail texture repeats this many times per metre.
+const float DETAIL_SCALE = 1.9;
+// The detail fades out between these distances from the camera, in metres.
+const float DETAIL_NEAR = 5.0;
+const float DETAIL_FAR = 11.0;
+#endif
 uniform bool textured = true;
 uniform sampler2D albedo_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D normal_tex : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
@@ -115,22 +137,37 @@ void fragment() {
 	float metal = 0.0;
 	vec3 surface_normal = n;
 	if (textured) {
+		// Plain samples with the hardware's own gradients: explicit-gradient
+		// samples with anisotropic filtering cost about 0.4 ms more per frame
+		// at 1080p on a GTX 1060.
 		vec3 base = texture(albedo_tex, uv).rgb;
 		if (anti_tile > 0.0) {
 			vec2 uv2 = vec2(uv.y, -uv.x) * 0.63 + vec2(0.37, 0.71);
 			float patches = texture(world_noise, world_position.xz * 0.021 + world_position.y * 0.013).r;
 			base = mix(base, texture(albedo_tex, uv2).rgb, anti_tile * smoothstep(0.35, 0.65, patches));
 		}
-		albedo *= base;
 		vec3 orm = texture(orm_tex, uv).rgb;
+		// Normal maps import as two-channel (RGTC) textures: rebuild z.
+		vec2 nxy = texture(normal_tex, uv).rg * 2.0 - 1.0;
+		albedo *= base;
 		ao = orm.r;
 		rough = orm.g;
 		metal = orm.b;
-		// Normal maps import as two-channel (RGTC) textures: rebuild z.
 		vec3 nm;
-		nm.xy = texture(normal_tex, uv).rg * 2.0 - 1.0;
+		nm.xy = nxy * normal_strength;
+#if WORLD_DETAIL
+		{
+			// Close-up detail: fine grain in the normal and the roughness,
+			// fading out before it could shimmer.
+			float close = 1.0 - smoothstep(DETAIL_NEAR, DETAIL_FAR, length(world_position - CAMERA_POSITION_WORLD));
+			vec2 d = texture(world_detail_normal, uv * tile_size * DETAIL_SCALE).rg * 2.0 - 1.0;
+			d *= close;
+			nm.xy += d * 0.3 * normal_strength;
+			rough = clamp(rough + (d.x + d.y) * 0.1, 0.04, 1.0);
+			albedo *= 1.0 + (d.x - d.y) * 0.04;
+		}
+#endif
 		nm.z = sqrt(max(1.0 - dot(nm.xy, nm.xy), 0.0));
-		nm.xy *= normal_strength;
 		// Tangent along +u; OpenGL normal maps put +green toward -v (image up).
 		vec3 t = normalize(u_dir - n * dot(n, u_dir));
 		vec3 b = normalize(-v_dir - n * dot(n, -v_dir));
@@ -161,6 +198,24 @@ void fragment() {
 		albedo = mix(albedo, vec3(0.3, 0.27, 0.23), d * 0.75);
 		rough = mix(rough, 0.9, d);
 	}
+
+#if WORLD_WET
+	{
+		// Wet: every surface darkens and turns glossy, the ground more than the
+		// walls. Puddles fill the low patches of a broad noise on the ground:
+		// dark mirrors for the sky and the lamps.
+		float up = smoothstep(0.75, 0.95, n.y);
+		float damp = world_wetness * mix(0.55, 1.0, up);
+		albedo *= 1.0 - 0.35 * damp;
+		rough = mix(rough, rough * 0.35 + 0.05, damp);
+		float depth = texture(world_noise, world_position.xz * (0.32 / 16.0)).r;
+		float puddle = smoothstep(0.6, 0.66, depth + world_wetness * 0.12) * up * step(0.5, world_wetness);
+		albedo *= 1.0 - 0.45 * puddle;
+		rough = mix(rough, 0.02, puddle);
+		metal = mix(metal, 0.0, puddle);
+		surface_normal = normalize(mix(surface_normal, n, puddle));
+	}
+#endif
 
 	metal *= metallic_scale;
 	float spec = specular;
@@ -227,6 +282,8 @@ void fragment() {
 	METALLIC = metal;
 	SPECULAR = spec;
 	AO = ao;
-	AO_LIGHT_AFFECT = 0.25;
+	// Texture AO is for light that comes from all around (sky, bounce); the
+	// sun reaches into a crevice the texture cannot see, so it barely dims it.
+	AO_LIGHT_AFFECT = 0.1;
 	NORMAL = normalize((VIEW_MATRIX * vec4(surface_normal, 0.0)).xyz);
 }

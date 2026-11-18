@@ -22,6 +22,7 @@ extends SceneTree
 ##                   (several texts separated by |).
 
 const Benchmark := preload("res://tests/benchmark.gd")
+const GraphicsQuality := preload("res://scripts/graphics.gd")
 const WARMUP := 30
 
 var _frames := 90
@@ -113,6 +114,10 @@ func _run() -> void:
 		["no props", _visible.bind(scene.get_node_or_null("Props"), false)],
 		["no skyline (far chunk)", _hide_meshes.bind(scene, "far")],
 		["no small-detail chunks", _hide_meshes.bind(scene, "_detail")],
+		["no contact shadows under characters", _contact_shadows.bind(false)],
+		["world surfaces without detail", _world_detail.bind(0)],
+		["world surfaces with detail", _world_detail.bind(1)],
+		["world surfaces dry", _world_dry],
 		["no lens dirt", _env_set.bind(&"glow_map_strength", 0.0)],
 		["glow without its two widest levels", _glow_wide_off],
 		[
@@ -284,6 +289,36 @@ func _shadow_filter(quality: int) -> Variant:
 	)
 	# The preset's own filter comes back when the preset is applied again.
 	return func() -> void: _settings.set_graphics_preset(_settings.graphics_quality)
+
+
+func _contact_shadows(on: bool) -> Variant:
+	var patches := current_scene.find_children("ContactShadow", "Node3D", true, false)
+	if patches.is_empty():
+		return null
+	# Each patch places (and shows) itself on physics ticks: stop those too.
+	var mode := Node.PROCESS_MODE_INHERIT if on else Node.PROCESS_MODE_DISABLED
+	for patch: Node in patches:
+		patch.process_mode = mode
+		(patch as Node3D).visible = on
+	return func() -> void:
+		for patch: Node in patches:
+			patch.process_mode = Node.PROCESS_MODE_INHERIT
+			(patch as Node3D).visible = true
+
+
+func _world_detail(level: int) -> Variant:
+	var was := GraphicsQuality.world_detail()
+	if was == level:
+		return null
+	GraphicsQuality.set_world_detail(level)
+	return func() -> void: GraphicsQuality.set_world_detail(was)
+
+
+func _world_dry() -> Variant:
+	if not GraphicsQuality.world_wet():
+		return null
+	GraphicsQuality.set_world_wet(false)
+	return func() -> void: GraphicsQuality.set_world_wet(true)
 
 
 func _glow_wide_off() -> Variant:

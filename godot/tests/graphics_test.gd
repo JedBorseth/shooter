@@ -2,13 +2,18 @@ extends SceneTree
 ## Headless test for the graded picture: the per-map looks and their colour
 ## look-up tables (scripts/looks.gd), how `GraphicsQuality` adopts a map's
 ## environment (stale metadata from old scenes, tools that opt out, the colour
-## draining with health), and the lens pass's settings (scripts/lens.gd).
+## draining with health), the lens pass's settings (scripts/lens.gd), the
+## bloom and lens dirt every graded map shares, how wet each map is and how
+## the presets scale world surface detail, and the contact shadows under
+## characters (scripts/grounding.gd).
 ## Needs no Rust extension. Exits non-zero on failure.
 ## Run from the repo root: godot --headless --path godot --script res://tests/graphics_test.gd
 
 const GraphicsQuality := preload("res://scripts/graphics.gd")
 const Looks := preload("res://scripts/looks.gd")
 const Lens := preload("res://scripts/lens.gd")
+const LensDirt := preload("res://scripts/lens_dirt.gd")
+const Grounding := preload("res://scripts/grounding.gd")
 const TEST_PATH := "user://graphics_test.cfg"
 
 var _failures: PackedStringArray = []
@@ -34,6 +39,9 @@ func _run() -> void:
 	_check_tools_opt_out()
 	_check_vitality()
 	_check_lens(settings)
+	_check_bloom_and_dirt()
+	_check_world_surfaces()
+	await _check_grounding()
 
 	settings.reset_to_defaults()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_PATH))
@@ -235,6 +243,16 @@ func _check_lens(settings: Node) -> void:
 		is_equal_approx(material.get_shader_parameter(&"vignette"), Lens.VIGNETTE),
 		"with the vignette on"
 	)
+	lens._use_shader(true)
+	_check(
+		(
+			material.shader == Lens.LITE_SUN
+			and is_equal_approx(material.get_shader_parameter(&"vignette"), Lens.VIGNETTE)
+		),
+		"with the sun in view, Medium switches to the lens with the flare and keeps its settings"
+	)
+	lens._use_shader(false)
+	_check(material.shader == Lens.LITE, "and back once the sun is gone")
 	lens.configure(GraphicsQuality.Preset.HIGH, false)
 	_check(material.shader == Lens.FULL, "High sharpens")
 	_check(
@@ -255,6 +273,129 @@ func _check_lens(settings: Node) -> void:
 	settings.lens_effects = true
 	settings.load_settings()
 	_check(not settings.lens_effects, "the lens effects setting round-trips")
+
+
+## Every graded map gets the shared bloom: only what is brighter than white
+## blooms, added like light through a lens, and lit up by the lens dirt.
+func _check_bloom_and_dirt() -> void:
+	for scene: String in Looks.MAPS:
+		var env := Environment.new()
+		Looks.apply(env, scene)
+		_check(
+			env.glow_blend_mode == Environment.GLOW_BLEND_MODE_ADDITIVE,
+			"%s: bloom adds light" % scene
+		)
+		_check(env.glow_hdr_threshold >= 0.8, "%s: only bright pixels bloom" % scene)
+		_check(env.glow_map == LensDirt.texture(), "%s: the bloom lights the lens dirt" % scene)
+		var flare := Looks.flare_for(scene)
+		_check(flare >= 0.0 and flare <= 1.0, "%s: the sun flare is a strength" % scene)
+	_check(is_zero_approx(Looks.flare_for("res://scenes/unlisted.tscn")), "no flare by default")
+	var dirt := LensDirt.build()
+	_check(
+		dirt.get_width() == LensDirt.WIDTH and dirt.get_height() == LensDirt.HEIGHT,
+		"the lens dirt map has its size"
+	)
+	_check(dirt.get_data() == LensDirt.build().get_data(), "the lens dirt is the same every build")
+	# Clean glass keeps most of the bloom; the dirt only adds to it.
+	var lowest := 1.0
+	var highest := 0.0
+	for y in range(0, dirt.get_height(), 4):
+		for x in range(0, dirt.get_width(), 4):
+			var value := dirt.get_pixel(x, y).r
+			lowest = minf(lowest, value)
+			highest = maxf(highest, value)
+	_check(absf(lowest - LensDirt.CLEAN) < 0.01, "clean glass is the dimmest part of the dirt")
+	_check(highest > LensDirt.CLEAN + 0.1, "the dirt has smudges brighter than clean glass")
+
+
+## How wet each map is, and how much surface detail each preset draws.
+func _check_world_surfaces() -> void:
+	_check(
+		Looks.wetness_for("res://scenes/zombies_arena.tscn") >= 0.5,
+		"the Zombies arena is wet enough for puddles"
+	)
+	_check(is_zero_approx(Looks.wetness_for("res://scenes/main.tscn")), "the Testing Area is dry")
+	_check(
+		is_zero_approx(Looks.wetness_for("res://scenes/unlisted.tscn")), "maps are dry by default"
+	)
+	var details: Array[int] = []
+	for preset: Dictionary in GraphicsQuality.PRESETS:
+		details.append(preset["world_detail"])
+	_check(details == [0, 0, 1], "surface detail on High only")
+	var wet: Array[bool] = []
+	for preset: Dictionary in GraphicsQuality.PRESETS:
+		wet.append(preset["wet"])
+	_check(wet == [false, true, true], "wet surfaces from Medium up")
+	GraphicsQuality.set_world_detail(1)
+	_check(GraphicsQuality.world_detail() == 1, "the world shader compiles its detail in")
+	for path: String in GraphicsQuality.WORLD_SHADER_PATHS:
+		_check(
+			(load(path) as Shader).code.contains("#define WORLD_DETAIL 1\n"),
+			"%s: by rewriting its WORLD_DETAIL line" % path
+		)
+	GraphicsQuality.set_world_detail(0)
+	_check(GraphicsQuality.world_detail() == 0, "and out again")
+	GraphicsQuality.set_world_wet(true)
+	_check(
+		GraphicsQuality.world_wet() and GraphicsQuality.world_detail() == 0,
+		"a wet map compiles in wet surfaces, and only those"
+	)
+	GraphicsQuality.set_world_wet(false)
+	_check(not GraphicsQuality.world_wet(), "a dry map leaves them out")
+	for name: StringName in [&"world_wetness", &"world_detail_normal"]:
+		_check(
+			ProjectSettings.has_setting("shader_globals/%s" % name),
+			"the world shader's global %s is declared" % name
+		)
+
+
+## One contact shadow per character: a flat patch laid on the ground.
+func _check_grounding() -> void:
+	var floor := StaticBody3D.new()
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(4, 0.2, 4)
+	shape.shape = box
+	floor.add_child(shape)
+	floor.position = Vector3(0, -0.1, 0)
+	floor.collision_layer = Grounding.WORLD_LAYER
+	root.add_child(floor)
+	var rig := Node3D.new()
+	root.add_child(rig)
+	await physics_frame
+	await physics_frame
+	Grounding.attach(rig)
+	Grounding.attach(rig)
+	var patches := rig.find_children("ContactShadow", "", false, false)
+	_check(patches.size() == 1, "a character gets one contact shadow")
+	var patch := patches[0] as MeshInstance3D if patches.size() == 1 else null
+	_check(patch != null, "the contact shadow is a mesh, not a decal")
+	if patch != null:
+		_check(
+			patch.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF,
+			"the contact shadow casts no shadow of its own"
+		)
+		_check(
+			patch.visible and absf(patch.global_position.y - Grounding.LIFT) < 0.01,
+			"the patch lies on the ground under the feet"
+		)
+		_check(
+			is_equal_approx(patch.get_instance_shader_parameter(&"shown"), 1.0),
+			"with the feet on the ground, the patch shows in full"
+		)
+		rig.position = Vector3(0, 0.5, 0)
+		patch._place()
+		var shown: float = patch.get_instance_shader_parameter(&"shown")
+		_check(
+			shown < 1.0 and shown > 0.0 and absf(patch.global_position.y - Grounding.LIFT) < 0.01,
+			"a jump fades the patch, which stays on the ground"
+		)
+		rig.position = Vector3(10, 0, 0)
+		patch._place()
+		_check(not patch.visible, "with no ground under the feet, there is no patch")
+		_check(patch.visibility_range_end > 0.0, "far contact shadows are not drawn")
+	rig.free()
+	floor.free()
 
 
 func _check(condition: bool, label: String) -> void:
