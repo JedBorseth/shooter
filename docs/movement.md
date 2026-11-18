@@ -79,6 +79,10 @@ not a ceiling but an overhang's edge over the shoulders is.
 | Duration | 0.65 s (holds speed 0.15 s, then friction 1.4) | about 0.6 to 0.7 s |
 | Distance | about 4 m from a rifle sprint | about 3.5 to 4 m |
 | To earn one | 0.3 s of unbroken sprint, 0.5 s on the ground since the last | a short sprint |
+| From the air | crouch while sprinting in the air queues one; it starts on landing if earned and the heading is within about 45 degrees of the view, else the player lands crouched | IW8 `Slide_CanSlideFromAir`: a minimum air speed and a heading within an angle of the view |
+| Steering | strafe turns it up to 1.4 rad/s (80 degrees a second), keeping its speed; the view never steers it | IW8 locks the slide's direction, lets the view turn freely, and lets the strafe input bend it |
+| Wind-down | 0.5 s after it ends, friction eases from 0.3 x back to full | IW8 `slide_outTimeMs` and the slide-out friction scale |
+| Off a ledge | ends after coyote time (0.1 s): standing and sprinting on, as a slide-cancel, or crouched under a low ceiling | IW8 ends a slide that loses the ground |
 
 Every slide starts at the same speed, whatever the speed before it, so speed
 never stacks. A slide-cancel (jump or crouch during the slide) stands up and
@@ -87,6 +91,18 @@ the sprint clock. The cooldown runs only on the ground, so a jump cannot wait
 it out. Chaining slides and cancels as fast as the buttons allow averages no
 more than a plain sprint (`chained_slide_cancels_never_outrun_a_sprint`; on
 the old rules the best chain averaged 1.08 x sprint).
+
+A slide queued in the air is judged on the speed the player fell with, and it
+replaces the landing: the slide's own entry speed takes over and the landing
+recovery is cleared, as IW8's slide start clears the jump state. The earn rules
+still hold, so a jump cannot skip them, and chains of jumps, air slides, and
+cancels at every timing average at most 1.01 x sprint
+(`jump_and_air_slide_chains_never_outrun_a_sprint`). Pressing crouch again in
+the air takes the queued slide back; crouch in the air without a sprint still
+crouches at once. The wind-down follows any slide's end, so its speed fades
+into the crouch instead of snapping to it. New state:
+`MoveState::slide_queued` and `MoveState::slide_out`. IW8's numbers for these
+are not public; ours are tuned by feel and measured in the tests.
 
 ## Mantle and vault
 
