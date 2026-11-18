@@ -53,6 +53,8 @@ from mathutils import Matrix, Vector
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import weapon_finish
+import weapon_m870
+import weapon_shapes
 import weapon_optics
 
 REPO = Path(__file__).resolve().parent.parent
@@ -199,48 +201,12 @@ WEAPONS = {
             ],
         },
     },
+    # Modelled from real dimensions by tools/weapon_m870.py (the pack's
+    # shotgun was a light sporting pump with painted-on ports).
     "m870": {
         "dir": "m870",
         "scene": "m870",
-        "fbx": GUNS / "Shotgun/Shotgun.fbx",
-        "textures": {
-            "color": GUNS / "Shotgun/Shotgun_Base_Color.png",
-            "normal": GUNS / "Shotgun/Shotgun_Normal_DirectX.png",
-            "metallic": GUNS / "Shotgun/Shotgun_Metallic.png",
-            "roughness": GUNS / "Shotgun/Shotgun_Roughness.png",
-        },
-        "normal_dx": True,
-        "forward": "+Y",
-        # The source is light (1.7k triangles): round its barrel, magazine
-        # tube, and pump.
-        "subdivide": {"levels": 1, "crease": 35.0},
-        # A pump gun with a 230 mm receiver and an 18 inch barrel.
-        "scale": 0.9,
-        "cartridge": 2,
-        # Aimed over the receiver at the brass bead the tool adds (2.5 mm
-        # radius on the barrel's top at its muzzle end), the eye 13 mm above
-        # the receiver's flat top so the bead stands clear of it.
-        "sight": {"rear": (-0.29, 0.0600), "front": (0.3767, 0.0541)},
-        "bead": {"at": (0.3767, 0.0513), "radius": 0.0025},
-        "parts": {
-            "Fore_Stock": "Pump",
-            # The bolt face in the port rides back with the pump.
-            "Ejection_Port": "Pump/BoltCarrier",
-            "Trigger": "Trigger",
-            "BEAD": "Body",
-        },
-        "pivots": {"Trigger": "Trigger"},
-        "markers": {
-            "Muzzle": (0.4052, 0.0292),
-            # The port's rear edge, on the right side.
-            "Ejection": (0.014, -0.29, 0.026),
-            # Low on the wrist: higher, the thumb over it rises into the
-            # sight picture.
-            "GripRight": (-0.47, -0.065),
-            # The back half of the pump: further out, the support arm is
-            # straight and its elbow swings past the eye as the gun moves.
-            "GripLeft": (0.01, -0.018),
-        },
+        "model": "m870",
         "spare": False,
     },
     "ak47": {
@@ -463,6 +429,31 @@ WEAPONS = {
             "GripLeft": (-0.36, 0.0),
         },
         "spare": False,
+        # The pack's rifle is a sporting 700 (walnut, a pencil barrel). The
+        # M40 is the military pattern (`militarize`): a heavy barrel, 24 mm
+        # at the muzzle instead of 18; a wider, flat-sided beavertail
+        # forend; a raised cheek piece on two posts; and the stock refinished
+        # as olive glass fibre with a sprayed web.
+        "military": {
+            "barrel": {"ahead_of": -0.50, "axis": (0.0, 0.0304), "within": 0.0125, "scale": 1.33},
+            "forend": {"y": (-0.53, -0.16), "widen": 1.32},
+            "cheek": {"y": (0.035, 0.195), "bottom": (0.0185, 0.0075), "top": (0.0365, 0.0345),
+                      "half": 0.0148, "posts": (0.070, 0.165)},
+        },
+        "finish": {
+            "default": "steel",
+            "unwrap": True,
+            "zones": [
+                {"zone": "bolt", "parts": ["BOLT"]},
+                {"zone": "fibreglass", "parts": ["CHEEK"]},
+                {"zone": "steel", "parts": ["CHEEKPOST"]},
+                # The butt pad, behind the stock.
+                {"zone": "rubber", "y_above": 0.29, "source_wood": False},
+                # The pack's walnut; ahead of the forend's tip, warm texels
+                # on the barrel are not wood.
+                {"zone": "fibreglass", "source_wood": True, "y_above": -0.53},
+            ],
+        },
     },
 }
 
@@ -1071,9 +1062,9 @@ def add_bipod(source: Source, spec: dict):
 
 
 def riflescope(spec: dict) -> bpy.types.Object:
-    """A hunting-pattern riflescope in view space (the sight line is its
-    axis, +Y forward): eyepiece with a rubber eye guard and power ring,
-    30 mm tube, a saddle with elevation and windage turrets, a 40 mm
+    """A tactical riflescope in view space (the sight line is its axis, +Y
+    forward): eyepiece with a rubber eye guard and power ring, 30 mm tube,
+    a saddle with tall target turrets for elevation and windage, a 40 mm
     objective bell with its sunshade, two rings and their bases down to the
     rail, and coated lenses at both ends."""
     scale = spec["scale"]
@@ -1101,10 +1092,13 @@ def riflescope(spec: dict) -> bpy.types.Object:
             for da in (-0.035, 0.035):
                 verts.append((dr * np.sin(a + da), dy, dr * np.cos(a + da)))
         bmesh.ops.convex_hull(bm, input=[bm.verts.new(v) for v in verts])
-    # Turrets: elevation on top, windage on the right.
+    # Target turrets, elevation on top and windage on the right: a wide
+    # knob on a collar, with grip grooves round it and a stepped cap.
     turret_y = 0.145
     for axis in ("z", "x"):
-        prof = [(0.0165, 0.0115), (0.030, 0.0115), (0.0305, 0.0128), (0.041, 0.0128), (0.042, 0.0118)]
+        prof = [(0.0165, 0.0120), (0.026, 0.0120), (0.027, 0.0168), (0.031, 0.0168), (0.0315, 0.0160),
+                (0.0335, 0.0160), (0.034, 0.0168), (0.0375, 0.0168), (0.038, 0.0160), (0.040, 0.0160),
+                (0.0405, 0.0168), (0.047, 0.0168), (0.048, 0.0150), (0.049, 0.0140)]
         rings = revolve(bm, prof, 32, uv, cap_end=True)
         verts = [v for ring in rings for v in ring]
         # Built along +Y about the origin; stand it up on the saddle.
@@ -1477,8 +1471,120 @@ def handle_point(obj, origin: Vector, side: str) -> Vector:
     return sum(tip, Vector()) / len(tip)
 
 
+# Weapons modelled by a tool instead of imported from a pack.
+MODELLED = {"m870": weapon_m870}
+
+
+def militarize(source: Source, spec: dict):
+    """Turns a sporting rifle into its military pattern (`military`), in
+    source space: thickens the free barrel about its axis, widens the
+    forend, and adds a raised cheek piece on two posts (bones "CHEEK" and
+    "CHEEKPOST", in Body). Wood is told apart by the source's colour map."""
+    info = spec["military"]
+    obj = source.obj
+    mesh = obj.data
+    color = load_pixels(spec["textures"][0], True)[..., :3]
+    h, w = color.shape[:2]
+    uv = mesh.uv_layers.active
+    wood = set()
+    for poly in mesh.polygons:
+        mid = np.mean([uv.data[i].uv[:] for i in poly.loop_indices], axis=0)
+        if weapon_finish.is_wood(color[min(int(mid[1] % 1.0 * h), h - 1), min(int(mid[0] % 1.0 * w), w - 1)]):
+            wood.update(poly.vertices)
+    barrel = info["barrel"]
+    ax, az = barrel["axis"]
+    thick = 0
+    for v in mesh.vertices:
+        dx, dz = v.co.x - ax, v.co.z - az
+        if v.co.y < barrel["ahead_of"] and v.index not in wood and np.hypot(dx, dz) < barrel["within"]:
+            v.co.x = ax + dx * barrel["scale"]
+            v.co.z = az + dz * barrel["scale"]
+            thick += 1
+    y0, y1 = info["forend"]["y"]
+    wide = 0
+    for i in wood:
+        v = mesh.vertices[i]
+        if y0 < v.co.y < y1:
+            v.co.x *= info["forend"]["widen"]
+            wide += 1
+    log(f"  military: barrel {thick} vertices thicker, forend {wide} wider")
+    # The cheek piece: a riser following the comb's slope, on two posts.
+    c = info["cheek"]
+    (ya, yb), (ba, bb), (ta, tb) = c["y"], c["bottom"], c["top"]
+    riser = weapon_shapes.side_profile("Cheek", [(ya, ba), (yb, bb), (yb, tb), (ya, ta)], -c["half"], c["half"])
+    weapon_shapes.bevel(riser, 0.004, 3)
+    weapon_shapes.group(riser, "CHEEK")
+    parts = [riser]
+    for y in c["posts"]:
+        top = ba + (bb - ba) * (y - ya) / (yb - ya)
+        post = weapon_shapes.lathe(f"Post{y}", [(-0.012, 0.0), (-0.012, 0.0032), (top + 0.002, 0.0032),
+                                                (top + 0.002, 0.0)], 16, "Z", (0.0, y, 0.0))
+        weapon_shapes.group(post, "CHEEKPOST")
+        parts.append(post)
+    material = obj.material_slots[0].material
+    for part in parts:
+        part.data.materials.append(material)
+        part.data.uv_layers.new(name=mesh.uv_layers.active.name)
+    bpy.ops.object.select_all(action="DESELECT")
+    for part in parts:
+        part.select_set(True)
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.join()
+    source.obj = bpy.context.view_layer.objects.active
+
+
+def build_modelled(key: str):
+    """A weapon its own tool models (MODELLED): its nodes and markers come
+    from the tool, painted (tools/weapon_finish.py) and exported like the
+    others."""
+    spec = WEAPONS[key]
+    tool = MODELLED[spec["model"]]
+    log(key)
+    reset()
+    out = WEAPONS_DIR / spec["dir"]
+    out.mkdir(parents=True, exist_ok=True)
+    objects, points = tool.build()
+    finish = dict(tool.FINISH, font=REPO / "godot/assets/fonts/BarlowCondensed-Bold.ttf")
+    for obj in objects.values():
+        weapon_finish.assign_zones(obj, finish, None)
+    bpy.context.view_layer.update()
+    painted = weapon_finish.paint(objects, {"finish": finish}, tool.view_matrix(), TEXTURE_SIZE)
+    for obj in objects.values():
+        obj.data.attributes.remove(obj.data.attributes[weapon_finish.ZONE_ATTRIBUTE])
+    world_mesh(objects)
+    markers = {name: godot(point) for name, point in points.items()}
+
+    def count(paths):
+        return sum(sum(len(p.vertices) - 2 for p in objects[k].data.polygons) for k in paths)
+
+    tris, world_tris = count([k for k in objects if k != "World"]), count(["World"])
+    log(f"  {tris} triangles in first person, {world_tris} for other players, {len(objects)} nodes")
+    stem = spec["dir"]
+    export(objects, out / f"{stem}.glb")
+    save_maps(stem, out, *painted)
+    write_material(stem, out, spec["dir"])
+    write_import(stem, out, spec["dir"])
+    patch_scene(spec, markers)
+    (out / f"{stem}.json").write_text(
+        json.dumps(
+            {
+                "triangles": tris,
+                "world_triangles": world_tris,
+                "nodes": sorted(objects),
+                "markers": {k: [round(c, 4) for c in v] for k, v in markers.items()},
+            },
+            indent=2,
+        )
+        + "\n"
+    )
+
+
 def build(key: str):
     spec = WEAPONS[key]
+    if "model" in spec:
+        build_modelled(key)
+        return
     log(key)
     reset()
     out = WEAPONS_DIR / spec["dir"]
@@ -1497,10 +1603,17 @@ def build(key: str):
     if "bead" in spec:
         add_bead(source, spec)
     edit_sights(source, spec)
+    if "military" in spec:
+        militarize(source, spec)
     if "finish" in spec:
-        metallic = spec["textures"].get("metallic") if isinstance(spec["textures"], dict) else None
-        pixels = load_pixels(metallic, False)[..., 0] if metallic else None
-        weapon_finish.assign_zones(source.obj, spec["finish"], pixels)
+        textures = spec["textures"]
+        if isinstance(textures, dict):
+            metallic = load_pixels(textures["metallic"], False)[..., 0] if "metallic" in textures else None
+            color = None
+        else:
+            metallic = load_pixels(textures[2], False)[..., 1]
+            color = load_pixels(textures[0], True)[..., :3]
+        weapon_finish.assign_zones(source.obj, spec["finish"], metallic, color)
     objects = split(source.obj, spec)
     for name in spec.get("drop", []):
         bpy.data.objects.remove(objects.pop(name))

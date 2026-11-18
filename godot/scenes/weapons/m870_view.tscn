@@ -31,7 +31,7 @@ shell_size = Vector2(0.009, 0.03)
 [node name="Mesh" parent="Model" instance=ExtResource("1_model")]
 
 [node name="Muzzle" type="Marker3D" parent="."]
-position = Vector3(0.0000, -0.0222, -0.6259)
+position = Vector3(0.0000, -0.0147, -0.6333)
 
 [node name="Flash" type="MeshInstance3D" parent="Muzzle"]
 cast_shadow = 0
@@ -43,10 +43,10 @@ light_energy = 5.0
 omni_range = 9.0
 
 [node name="Ejection" type="Marker3D" parent="."]
-position = Vector3(0.0126, -0.0306, -0.0003)
+position = Vector3(0.0148, -0.0313, -0.0385)
 
 [node name="GripRight" type="Marker3D" parent="."]
-position = Vector3(0.0000, -0.1139, 0.1610)
+position = Vector3(0.0000, -0.1147, 0.1601)
 
 [node name="GripLeft" type="Marker3D" parent="."]
-position = Vector3(0.0000, -0.0678, -0.2706)
+position = Vector3(0.0000, -0.0658, -0.2752)

@@ -34,5 +34,5 @@
     tracer_every: 0,
     attachments: [Suppressor, Grip, ExtendedMag],
     // Hands on the model: GripRight and GripLeft in m870_view.tscn.
-    grips: Some((right: (0, -0.1139, 0.1610), left: (0, -0.0678, -0.2706), rake: 45)),
+    grips: Some((right: (0, -0.1147, 0.1601), left: (0, -0.0658, -0.2752), rake: 45)),
 )

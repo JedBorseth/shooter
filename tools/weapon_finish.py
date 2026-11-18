@@ -25,7 +25,8 @@ A weapon opts in with a `finish` entry in its WEAPONS spec:
 Rules match on the source bone or object a face belongs to (`parts`), its
 centre in source space (`y_below`, `y_above`, `z_below`, `z_above`), its
 distance from the bore (`bore_radius_above`, `bore_radius_below`), and the
-source's own metallic map (`source_metal_below`: the pack's polymer parts).
+source's own metallic map (`source_metal_below`: the pack's polymer parts)
+or colour map (`source_wood`: warm wood furniture to refinish).
 
 How the maps are made:
 
@@ -102,11 +103,11 @@ FINISHES = {
         "color": (0.088, 0.088, 0.085),
         "roughness": 0.66,
         "metallic": 0.0,
-        "bare": ((0.12, 0.12, 0.118), 0.42, 0.0),
-        "wear": 0.6,
+        "bare": ((0.13, 0.13, 0.127), 0.42, 0.0),
+        "wear": 1.0,
         "grime": 0.6,
         "bump": 0.00012,
-        "tint": 0.008,
+        "tint": 0.016,
     },
     # A GI aluminium magazine: a lighter, grey-green dry-film coat that
     # scuffs on every edge from being dropped and stuffed in pouches.
@@ -160,6 +161,32 @@ FINISHES = {
         "bump": 0.00002,
         "tint": 0.004,
     },
+    # Glass-fibre sniper stock: moulded olive drab with a darker sprayed
+    # web (`mottle`: colour, and where the blotch noise passes it).
+    "fibreglass": {
+        "id": 9,
+        "color": (0.27, 0.285, 0.215),
+        "roughness": 0.74,
+        "metallic": 0.0,
+        "bare": ((0.33, 0.34, 0.27), 0.6, 0.0),
+        "wear": 0.5,
+        "grime": 0.8,
+        "bump": 0.00006,
+        "tint": 0.012,
+        "mottle": ((0.19, 0.2, 0.155), 0.58),
+    },
+    # Brass: a shotgun's bead. Polished by handling, never coated.
+    "brass": {
+        "id": 8,
+        "color": (0.62, 0.46, 0.2),
+        "roughness": 0.34,
+        "metallic": 1.0,
+        "bare": ((0.66, 0.5, 0.24), 0.32, 1.0),
+        "wear": 0.0,
+        "grime": 0.3,
+        "bump": 0.00001,
+        "tint": 0.01,
+    },
 }
 ZONE_NAMES = {f["id"]: name for name, f in FINISHES.items()}
 
@@ -195,10 +222,18 @@ def _sample(pixels: np.ndarray, uv) -> float:
     return float(pixels[y, x])
 
 
-def _rule_matches(rule: dict, part: str, centre: Vector, bore_r: float, metal: float) -> bool:
+def is_wood(rgb) -> bool:
+    """Whether a source colour is wood: warm, red over blue."""
+    r, g, b = rgb[0], rgb[1], rgb[2]
+    return r - b > 0.06 and r >= g
+
+
+def _rule_matches(rule: dict, part: str, centre: Vector, bore_r: float, metal: float, wood: bool) -> bool:
     if "parts" in rule and part not in rule["parts"]:
         return False
     if "source_metal_below" in rule and not metal < rule["source_metal_below"]:
+        return False
+    if "source_wood" in rule and wood != rule["source_wood"]:
         return False
     for key, axis, below in (
         ("y_below", 1, True), ("y_above", 1, False), ("z_below", 2, True), ("z_above", 2, False),
@@ -212,9 +247,10 @@ def _rule_matches(rule: dict, part: str, centre: Vector, bore_r: float, metal: f
     return True
 
 
-def assign_zones(obj, finish: dict, metallic: np.ndarray | None):
+def assign_zones(obj, finish: dict, metallic: np.ndarray | None, color: np.ndarray | None = None):
     """Stores each face's finish zone as the face attribute ZONE_ATTRIBUTE.
-    `metallic` is the source's metallic map (rows from the bottom), if any."""
+    `metallic` and `color` are the source's metallic and colour maps (rows
+    from the bottom), if any."""
     mesh = obj.data
     names = {g.index: g.name for g in obj.vertex_groups}
     vertex_bone = []
@@ -237,9 +273,14 @@ def assign_zones(obj, finish: dict, metallic: np.ndarray | None):
         if metallic is not None and uv is not None:
             samples = [_sample(metallic, uv.data[i].uv) for i in poly.loop_indices]
             metal = float(np.median(samples))
+        wood = False
+        if color is not None and uv is not None:
+            mid = np.mean([uv.data[i].uv[:] for i in poly.loop_indices], axis=0)
+            h, w = color.shape[:2]
+            wood = is_wood(color[min(int(mid[1] % 1.0 * h), h - 1), min(int(mid[0] % 1.0 * w), w - 1)])
         zone = default
         for rule in rules:
-            if _rule_matches(rule, part, centre, bore_r, metal):
+            if _rule_matches(rule, part, centre, bore_r, metal, wood):
                 zone = FINISHES[rule["zone"]]["id"]
                 break
         zones.append(zone)
@@ -399,7 +440,7 @@ def _pixels(image) -> np.ndarray:
     return data.reshape(h, w, 4)
 
 
-def _bake(objects: list, material, image, kind: str, samples: int, **kwargs):
+def _bake(objects: list, material, image, kind: str, samples: int, margin: int = BAKE_MARGIN, **kwargs):
     """Bakes `kind` into `image` from every object's `material` faces."""
     tree = material.node_tree
     target = tree.nodes.new("ShaderNodeTexImage")
@@ -411,7 +452,7 @@ def _bake(objects: list, material, image, kind: str, samples: int, **kwargs):
     for obj in objects:
         obj.select_set(True)
     bpy.context.view_layer.objects.active = objects[0]
-    bpy.ops.object.bake(type=kind, margin=BAKE_MARGIN, margin_type="EXTEND", use_clear=True, **kwargs)
+    bpy.ops.object.bake(type=kind, margin=margin, margin_type="EXTEND", use_clear=True, **kwargs)
     return _pixels(image)
 
 
@@ -545,6 +586,22 @@ def unwrap(targets: list, size: int):
     log(f"  unwrapped: {uv_area:.0%} of the texture used, {np.sqrt(uv_area * size * size / (area * 1e6)):.2f} texels/mm")
 
 
+def _grow_labels(labels: np.ndarray, steps: int) -> np.ndarray:
+    """Grows the non-zero labels `steps` texels into the zeros round them,
+    each empty texel taking a neighbour's label as it is (never a mix)."""
+    out = labels.copy()
+    for _ in range(steps):
+        empty = out == 0
+        if not empty.any():
+            break
+        for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            shifted = np.roll(np.roll(out, dy, 0), dx, 1)
+            take = empty & (shifted != 0)
+            out[take] = shifted[take]
+            empty &= ~take
+    return out
+
+
 def bake(objects: dict, finish: dict, view_matrix, size: int) -> dict[str, np.ndarray]:
     """Bakes the masks the finish is composed from, from the placed parts'
     "Weapon" faces. Returns float arrays (rows from the bottom)."""
@@ -569,6 +626,13 @@ def bake(objects: dict, finish: dict, view_matrix, size: int) -> dict[str, np.nd
     n = Nodes(material)
     _edge_material(n, finish.get("wear_radius", WEAR_RADIUS))
     edges = _bake(targets, material, _new_image("Edges", size), "EMIT", 1)
+    # The zones again, without a margin: a margin blends neighbouring
+    # islands, and the blend of two zones' numbers is a third zone. Each
+    # island's label is grown into the gap round it instead.
+    n = Nodes(material)
+    _emit(n, (n.math("DIVIDE", _zone_value(n), 16.0), 0.0, 0.0))
+    labels = _bake(targets, material, _new_image("Zones", size), "EMIT", 1, margin=0)
+    zones = _grow_labels(np.rint(labels[..., 0] * 16.0).astype(np.int32), BAKE_MARGIN)
     n = Nodes(material)
     _noise_material(n)
     noise = _bake(targets, material, _new_image("Noise", size), "EMIT", 1)
@@ -591,12 +655,12 @@ def bake(objects: dict, finish: dict, view_matrix, size: int) -> dict[str, np.nd
     material.node_tree.nodes.clear()
     material.use_nodes = False
     for image in list(bpy.data.images):
-        if image.name in ("Edges", "Noise", "AO", "Normal", "Position"):
+        if image.name in ("Edges", "Noise", "AO", "Normal", "Position", "Zones"):
             bpy.data.images.remove(image)
     maps = {
         "edge": edges[..., 0],
         "up": edges[..., 1],
-        "zone": np.rint(edges[..., 2] * 16.0).astype(np.int32),
+        "zone": zones,
         "grain": noise[..., 0],
         "blotch": noise[..., 1],
         "scratch": noise[..., 2],
@@ -661,6 +725,12 @@ def compose(maps: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
             continue
         tint = (blotch[m] - 0.5) * 2.0 * f["tint"] + (grain[m] - 0.5) * 0.6 * f["tint"]
         color[m] = np.asarray(f["color"], np.float32) + tint[:, None]
+        if "mottle" in f:
+            # A sprayed web: blobs from the blotch noise, freckled by the
+            # grain at their edges.
+            web_color, threshold = f["mottle"]
+            web = _smoothstep(threshold - 0.015, threshold + 0.015, blotch[m] + (grain[m] - 0.5) * 0.08)
+            color[m] = color[m] * (1.0 - web[:, None]) + np.asarray(web_color, np.float32) * web[:, None]
         rough[m] = f["roughness"] + (grain[m] - 0.5) * 0.08 + (blotch[m] - 0.5) * 0.08
         metal[m] = f["metallic"]
         # Wear: the edge mask broken up by blotches so it is patchy, not a
