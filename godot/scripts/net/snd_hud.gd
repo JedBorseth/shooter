@@ -3,14 +3,16 @@ extends CanvasLayer
 ## (which keeps the score bar, kill feed, scoreboard, and loadout menu). It
 ## stays hidden in other modes. It shows:
 ##
-## - the round number and whether we attack or defend, under the score bar;
-## - who is still alive on each team, as pips beside the score bar;
+## - who is still alive on each team, as pips at the top centre, and under
+##   them the round number and whether we attack or defend;
 ## - the round banners: the freeze before each round, and the round's result
 ##   (with a halftime note when the teams are about to swap sides);
 ## - spectating: once we die, a camera follows a living teammate over the
 ##   shoulder until the next round. Fire switches to the next teammate.
 
 const MenuStyle := preload("res://scripts/ui/menu_style.gd")
+const MatchBanner := preload("res://scripts/net/match_banner.gd")
+const LABEL_FONT := preload("res://assets/fonts/ChakraPetch-SemiBold.ttf")
 
 const ALLY := Color("7cc4ff")
 const ENEMY := Color("ff7a5c")
@@ -28,9 +30,8 @@ var player: FpsPlayer
 
 var _root: Control
 var _round_label: Label
-var _banner: Label
-var _sub_banner: Label
-var _hint: Label
+## Round banners and the spectating hint (`match_banner.gd`).
+var _overlay: Control
 var _ally_pips: HBoxContainer
 var _enemy_pips: HBoxContainer
 var _camera: Camera3D
@@ -86,28 +87,27 @@ func _active() -> bool:
 
 
 func _update_banner(round: Dictionary, playing: bool) -> void:
-	_banner.text = ""
-	_sub_banner.text = ""
-	_banner.modulate = Color.WHITE
+	_overlay.title = ""
+	_overlay.detail = ""
+	_overlay.colour = MenuStyle.TEXT
 	if playing:
 		match String(round.phase):
 			"freeze":
-				_banner.text = "ROUND %d" % round.number
+				_overlay.title = "ROUND %d" % round.number
 				var goal := (
 					"ATTACK  ·  Wipe out the defenders"
 					if round.attacking
 					else "DEFEND  ·  Hold out, or wipe out the attackers"
 				)
-				_sub_banner.text = "%s  ·  %d" % [goal, int(ceil(round.seconds_left))]
+				_overlay.detail = "%s  ·  %d" % [goal, int(ceil(round.seconds_left))]
+				_overlay.colour = ENEMY if round.attacking else ALLY
 			"over":
 				var won: bool = round.winner == client.match_info().my_team
-				_banner.text = "ROUND WON" if won else "ROUND LOST"
-				_banner.modulate = ALLY if won else ENEMY
-				_sub_banner.text = _reason_text(round, won)
+				_overlay.title = "ROUND WON" if won else "ROUND LOST"
+				_overlay.colour = ALLY if won else ENEMY
+				_overlay.detail = _reason_text(round, won)
 				if round.halftime:
-					_sub_banner.text += "  ·  Halftime: switching sides"
-	_banner.visible = _banner.text != ""
-	_sub_banner.visible = _sub_banner.text != ""
+					_overlay.detail += "  ·  Halftime: switching sides"
 
 
 func _reason_text(round: Dictionary, won: bool) -> String:
@@ -159,13 +159,12 @@ func _update_spectating(delta: float, in_round: bool) -> void:
 	_dead_for = _dead_for + delta if dead and in_round else 0.0
 	if _dead_for < SPECTATE_DELAY:
 		_stop_spectating()
-		_hint.visible = false
+		_overlay.hint = ""
 		return
 	var teammates := _living_teammates()
 	if teammates.is_empty():
 		_stop_spectating()
-		_hint.text = "YOU DIED  ·  Back next round"
-		_hint.visible = true
+		_overlay.hint = "Back next round"
 		return
 	if not teammates.has(_target) or Input.is_action_just_pressed(&"fire"):
 		var at := teammates.find(_target)
@@ -174,8 +173,10 @@ func _update_spectating(delta: float, in_round: bool) -> void:
 	if remote == null:
 		return
 	_follow(remote, delta)
-	_hint.text = "SPECTATING  %s  ·  [Fire] next teammate" % client.name_of(_target)
-	_hint.visible = true
+	_overlay.hint = (
+		"[%s] Next teammate  ·  Spectating %s"
+		% [Settings.prompt_key(&"fire"), client.name_of(_target)]
+	)
 
 
 ## Ids of living teammates in a stable order.
@@ -251,35 +252,22 @@ func _build() -> void:
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_root)
 
-	_round_label = _label("", Color.WHITE, 15)
+	# Who is alive on each side, top centre, with the round under them.
+	_ally_pips = _pip_row(BoxContainer.ALIGNMENT_END)
+	_ally_pips.position = Vector2(-12 - 240, 24)
+	_enemy_pips = _pip_row(BoxContainer.ALIGNMENT_BEGIN)
+	_enemy_pips.position = Vector2(12, 24)
+	_round_label = _label("", Color.WHITE, 14)
 	_round_label.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
-	_round_label.position = Vector2(-200, 78)
+	_round_label.position = Vector2(-200, 50)
 	_round_label.custom_minimum_size = Vector2(400, 0)
 	_root.add_child(_round_label)
 
-	# Pips sit either side of the score bar (320 px wide, centred).
-	_ally_pips = _pip_row(BoxContainer.ALIGNMENT_END)
-	_ally_pips.position = Vector2(-170 - 240, 24)
-	_enemy_pips = _pip_row(BoxContainer.ALIGNMENT_BEGIN)
-	_enemy_pips.position = Vector2(170, 24)
-
-	_banner = _label("", Color.WHITE, 54)
-	_banner.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	_banner.position = Vector2(-400, -330)
-	_banner.custom_minimum_size = Vector2(800, 0)
-	_root.add_child(_banner)
-	_sub_banner = _label("", MenuStyle.TEXT, 20)
-	_sub_banner.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	_sub_banner.position = Vector2(-400, -268)
-	_sub_banner.custom_minimum_size = Vector2(800, 0)
-	_root.add_child(_sub_banner)
-
-	_hint = _label("", MenuStyle.ACCENT, 17)
-	_hint.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
-	_hint.position = Vector2(-400, -110)
-	_hint.custom_minimum_size = Vector2(800, 0)
-	_hint.visible = false
-	_root.add_child(_hint)
+	_overlay = Control.new()
+	_overlay.set_script(MatchBanner)
+	_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(_overlay)
 
 
 func _pip_row(alignment: BoxContainer.AlignmentMode) -> HBoxContainer:
@@ -299,7 +287,8 @@ func _label(text: String, colour: Color, size: int) -> Label:
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.add_theme_color_override("font_color", colour)
 	label.add_theme_font_size_override("font_size", size)
-	label.add_theme_constant_override("outline_size", 8)
-	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.75))
+	label.add_theme_font_override("font", LABEL_FONT)
+	label.add_theme_constant_override("outline_size", 4)
+	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.6))
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return label
