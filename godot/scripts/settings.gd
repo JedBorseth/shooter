@@ -24,22 +24,34 @@ const InputNotice := preload("res://scripts/ui/input_notice.gd")
 
 ## Radians of view rotation per screen pixel at 1× sensitivity.
 const BASE_MOUSE_SENSITIVITY := 0.0022
-## Mouse sensitivity and stick look speed are levels from 1 to
-## SENSITIVITY_LEVELS. Each level turns SENSITIVITY_STEP times faster than the
-## one below, so every step feels like the same change; SENSITIVITY_UNIT_LEVEL
-## turns at the base rate (1×). The default, level 7, is one step above it.
+## Controller look speed is a level from 1 to SENSITIVITY_LEVELS, as in Call of
+## Duty (Black Ops Cold War uses the same 1 to 14). Each level turns
+## SENSITIVITY_STEP times faster than the one below, so every step feels like
+## the same change; SENSITIVITY_UNIT_LEVEL turns at the base stick rate (1×).
+## The default, level 7, is one step above it. Mouse sensitivity stays a
+## multiplier.
 const SENSITIVITY_LEVELS := 14
 const SENSITIVITY_STEP := 1.2
 const SENSITIVITY_UNIT_LEVEL := 6
 const SENSITIVITY_LEVEL_OPTIONS: Array[int] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
-## The levels the menu names; the rest show only their number.
-const SENSITIVITY_NAMES := {
-	1: "VERY LOW",
-	4: "LOW",
-	7: "MEDIUM",
-	11: "HIGH",
-	14: "VERY HIGH",
-}
+## The band each look speed level falls in, from level 1 up. Like Call of
+## Duty's menus, every level shows its band.
+const SENSITIVITY_NAMES: Array[String] = [
+	"VERY LOW",
+	"VERY LOW",
+	"LOW",
+	"LOW",
+	"LOW",
+	"MEDIUM",
+	"MEDIUM",
+	"MEDIUM",
+	"HIGH",
+	"HIGH",
+	"HIGH",
+	"HIGH",
+	"VERY HIGH",
+	"VERY HIGH",
+]
 ## Frame caps offered in the menu. 0 means unlimited.
 const MAX_FPS_OPTIONS: Array[int] = [0, 60, 120, 144, 165, 240]
 ## Seconds to wait after the last change before writing the file.
@@ -132,7 +144,7 @@ const MOUSE_BUTTON_NAMES := {
 
 const DEFAULTS := {
 	&"input_device": InputDevice.KEYBOARD_MOUSE,
-	&"mouse_sensitivity_level": 7,
+	&"mouse_sensitivity": 1.0,
 	&"ads_sensitivity": 1.0,
 	&"invert_mouse_y": false,
 	&"invert_stick_y": false,
@@ -166,8 +178,7 @@ const DEFAULTS := {
 
 ## Config file section for each setting.
 const SECTIONS := {
-	"controls":
-	[&"input_device", &"mouse_sensitivity_level", &"ads_sensitivity", &"invert_mouse_y"],
+	"controls": [&"input_device", &"mouse_sensitivity", &"ads_sensitivity", &"invert_mouse_y"],
 	"gamepad":
 	[
 		&"invert_stick_y",
@@ -207,7 +218,6 @@ const SECTIONS := {
 ## Allowed values of each int setting.
 const INT_OPTIONS := {
 	&"input_device": [InputDevice.KEYBOARD_MOUSE, InputDevice.CONTROLLER],
-	&"mouse_sensitivity_level": SENSITIVITY_LEVEL_OPTIONS,
 	&"stick_sensitivity_level": SENSITIVITY_LEVEL_OPTIONS,
 	&"max_fps": MAX_FPS_OPTIONS,
 	&"graphics_quality": [0, 1, 2],
@@ -215,15 +225,14 @@ const INT_OPTIONS := {
 	&"aim_assist_type": [0, 1, 2, 3],
 }
 
-## Settings saved before sensitivity became a level: config section, old
-## key (a float multiplier), and the level setting it becomes.
-const LEGACY_SENSITIVITY := [
-	["controls", &"mouse_sensitivity", &"mouse_sensitivity_level"],
-	["gamepad", &"stick_sensitivity", &"stick_sensitivity_level"],
-]
+## Look speed saved by builds before it became a level, as a multiplier.
+const LEGACY_STICK_SENSITIVITY := &"stick_sensitivity"
+## Mouse sensitivity saved by builds that briefly made it a level too.
+const LEGACY_MOUSE_LEVEL := &"mouse_sensitivity_level"
 
 ## Allowed range of each float setting.
 const RANGES := {
+	&"mouse_sensitivity": Vector2(0.1, 5.0),
 	&"ads_sensitivity": Vector2(0.3, 2.0),
 	&"stick_deadzone": Vector2(0.02, 0.3),
 	&"stick_curve": Vector2(1.0, 3.0),
@@ -252,8 +261,8 @@ var path := "user://settings.cfg"
 
 ## An `InputDevice`: the one that plays. The other is locked out of play.
 var input_device: int = DEFAULTS[&"input_device"]
-## Mouse sensitivity level, 1 to SENSITIVITY_LEVELS. See `sensitivity_scale`.
-var mouse_sensitivity_level: int = DEFAULTS[&"mouse_sensitivity_level"]
+## Multiplier on BASE_MOUSE_SENSITIVITY.
+var mouse_sensitivity: float = DEFAULTS[&"mouse_sensitivity"]
 ## Sensitivity multiplier while aiming down sights.
 var ads_sensitivity: float = DEFAULTS[&"ads_sensitivity"]
 var invert_mouse_y: bool = DEFAULTS[&"invert_mouse_y"]
@@ -387,9 +396,7 @@ func vertical_fov() -> float:
 func apply_to_player(player: Node) -> void:
 	if player == null or not is_instance_valid(player):
 		return
-	player.set(
-		&"mouse_sensitivity", BASE_MOUSE_SENSITIVITY * sensitivity_scale(mouse_sensitivity_level)
-	)
+	player.set(&"mouse_sensitivity", BASE_MOUSE_SENSITIVITY * mouse_sensitivity)
 	player.set(&"ads_sensitivity_scale", ads_sensitivity)
 	player.set(&"base_fov", vertical_fov())
 	player.set(&"camera_motion", camera_motion)
@@ -613,21 +620,24 @@ func load_settings() -> void:
 	changed.emit()
 
 
-## Turns a sensitivity saved as a multiplier into the nearest level. The old
-## default (1×) becomes the new default rather than the level below it.
+## Reads sensitivity saved by older builds. Look speed saved as a multiplier
+## becomes the nearest level, and mouse sensitivity saved as a level becomes its
+## multiplier. Either old default becomes the current default.
 func _migrate_sensitivity(config: ConfigFile) -> void:
-	for legacy: Array in LEGACY_SENSITIVITY:
-		var section: String = legacy[0]
-		var level_key: StringName = legacy[2]
-		if config.has_section_key(section, level_key):
-			continue
-		var old: Variant = config.get_value(section, legacy[1], null)
-		if not (old is int or old is float) or is_nan(float(old)):
-			continue
-		var level := DEFAULTS[level_key] as int
-		if not is_equal_approx(float(old), 1.0):
-			level = sensitivity_level(float(old))
-		set(level_key, level)
+	if not config.has_section_key("gamepad", &"stick_sensitivity_level"):
+		var old: Variant = config.get_value("gamepad", LEGACY_STICK_SENSITIVITY, null)
+		if (old is int or old is float) and not is_nan(float(old)):
+			stick_sensitivity_level = (
+				DEFAULTS[&"stick_sensitivity_level"]
+				if is_equal_approx(float(old), 1.0)
+				else sensitivity_level(float(old))
+			)
+	if not config.has_section_key("controls", &"mouse_sensitivity"):
+		var level: Variant = config.get_value("controls", LEGACY_MOUSE_LEVEL, null)
+		if level is int and level in SENSITIVITY_LEVEL_OPTIONS:
+			mouse_sensitivity = (
+				DEFAULTS[&"mouse_sensitivity"] if level == 7 else sensitivity_scale(level)
+			)
 
 
 func save_settings() -> Error:
