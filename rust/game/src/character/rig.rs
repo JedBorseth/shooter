@@ -471,6 +471,14 @@ impl SoldierRig {
             .unwrap_or_else(|| self.base().get_global_position() + Vector3::new(0.0, 1.4, 0.0))
     }
 
+    /// How far the body is down in a crouch (x) and in a slide (y), each 0
+    /// to 1 as drawn, for the patch of contact shadow under the feet
+    /// (`scripts/grounding.gd`), which lengthens as the body gets low.
+    #[func]
+    pub fn stance_blend(&self) -> Vector2 {
+        Vector2::new(self.crouch.clamp(0.0, 1.0), self.slide.clamp(0.0, 1.0))
+    }
+
     /// Horizontal direction (world) the body has fallen toward, or zero
     /// while alive or before it has moved.
     #[func]

@@ -56,10 +56,14 @@ const MAPS := {
 			"fog_density": 0.0024,
 			"fog_aerial_perspective": 0.85,
 			"fog_sky_affect": 0.3,
-			# Tighter, darker ambient occlusion where things meet the ground.
-			"ssao_radius": 1.0,
-			"ssao_intensity": 2.0,
-			"ssao_detail": 0.8,
+			# Tight, dark ambient occlusion where things meet the ground: a
+			# short radius with a strong detail pass draws a crisp contact line
+			# under walls, blocks, and boots instead of a wide grey halo, and
+			# a higher power keeps open ground clean.
+			"ssao_radius": 0.5,
+			"ssao_intensity": 2.8,
+			"ssao_power": 1.9,
+			"ssao_detail": 2.0,
 			# Hard daylight: a filmic curve with a real toe and shoulder, a
 			# stronger sun against the sky light (baked light stays as it
 			# was), and less exposure, so sunlit sand and concrete reach near
@@ -102,8 +106,11 @@ const MAPS := {
 			"glow_levels/4": 0.5,
 			"glow_levels/5": 0.25,
 			"ssao_light_affect": 0.12,
-			"ssao_radius": 1.0,
-			"ssao_detail": 0.8,
+			# Tight contact occlusion, as in the Testing Area.
+			"ssao_radius": 0.5,
+			"ssao_intensity": 2.8,
+			"ssao_power": 1.9,
+			"ssao_detail": 2.0,
 			# Less sky colour in the near haze and slightly thinner air: the
 			# near street keeps its blacks and only the far blocks and the
 			# skyline fade into the dusk. (Godot's height fog is not used: it

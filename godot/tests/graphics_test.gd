@@ -583,12 +583,68 @@ func _check_grounding() -> void:
 			shown < 1.0 and shown > 0.0 and absf(patch.global_position.y - Grounding.LIFT) < 0.01,
 			"a jump fades the patch, which stays on the ground"
 		)
+		rig.position = Vector3.ZERO
+		rig.rotation.y = PI / 2
+		patch._place()
+		var along := -patch.global_basis.z
+		_check(
+			along.normalized().dot(-rig.global_basis.z) > 0.99,
+			"the patch turns to face the way the body faces"
+		)
+		var standing := Grounding.footprint(0.0, 0.0)
+		var crouching := Grounding.footprint(1.0, 0.0)
+		var sliding := Grounding.footprint(0.0, 1.0)
+		_check(
+			crouching["length"] > standing["length"] and sliding["length"] > crouching["length"],
+			"the patch lengthens as the body gets low"
+		)
+		_check(
+			sliding["ahead"] < 0.0 and sliding["darkness"] > standing["darkness"],
+			"a slide lays a darker patch out behind the feet"
+		)
+		_check(
+			absf(along.length() - float(standing["length"])) < 0.01,
+			"standing, the patch is the standing footprint"
+		)
+		await _check_sun(rig, patch)
 		rig.position = Vector3(10, 0, 0)
 		patch._place()
 		_check(not patch.visible, "with no ground under the feet, there is no patch")
 		_check(patch.visibility_range_end > 0.0, "far contact shadows are not drawn")
 	rig.free()
 	floor.free()
+
+
+## In direct sun the patch fades to a core; under a roof it is full.
+func _check_sun(rig: Node3D, patch: MeshInstance3D) -> void:
+	var sun := DirectionalLight3D.new()
+	sun.shadow_enabled = true
+	root.add_child(sun)
+	sun.add_to_group(&"graphics_adopted")
+	sun.look_at(Vector3(-1, -2, -1))
+	rig.position = Vector3.ZERO
+	for i in 30:
+		patch._place()
+	_check(patch.get_instance_shader_parameter(&"sunlit") > 0.95, "in open sun the patch knows it")
+	var roof := StaticBody3D.new()
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(30, 0.2, 30)
+	shape.shape = box
+	roof.add_child(shape)
+	roof.position = Vector3(0, 3, 0)
+	roof.collision_layer = Grounding.WORLD_LAYER
+	root.add_child(roof)
+	await physics_frame
+	patch._place()
+	patch._place()
+	var easing: float = patch.get_instance_shader_parameter(&"sunlit")
+	_check(easing < 0.95 and easing > 0.05, "stepping into shade fades the patch back in")
+	for i in 30:
+		patch._place()
+	_check(patch.get_instance_shader_parameter(&"sunlit") < 0.05, "in shade the patch is full")
+	roof.free()
+	sun.free()
 
 
 func _check(condition: bool, label: String) -> void:
