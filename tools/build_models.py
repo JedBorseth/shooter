@@ -13,6 +13,18 @@ swaps them in for the placeholder materials in the glTF. Models in STANDARD
 (the laser gun, drawn by the viewmodel shader) instead export plain glTF
 materials from STANDARD_LOOKS and import without the script.
 
+A model in gear_models.SPLIT (a map and its set dressing) is written as
+several meshes instead of one: its chunk function sorts each part by where it
+stands, its size, and whether it is detail. A dressing's detail parts
+(litter, weeds, small fittings) go into `<chunk>_detail` meshes that cast no
+shadow and hide beyond a distance, and what lies flat on the floor into a
+`_ground` mesh that casts no shadow. Its other parts also go, all in one
+surface, into a shadow-only `_shadow` twin, so the sun's shadow cascades draw
+it once instead of once per material (see godot/tools/model_import.gd and
+godot/scripts/map_render.gd). A part's colour may also be a list with one
+entry per vertex: multipliers on its look's colour (tint and roughness), for
+stains, streaks, and worn patches that blend into the surface they are on.
+
 Every model is rebuilt each run (they share the material folder).
 """
 
@@ -52,23 +64,86 @@ def standard_material(name: str):
     return mat
 
 
+# Materials a shadow proxy leaves out: light passes them.
+SEE_THROUGH = {"glow", "glass_tint", "glass_clear", "glass_booth", "glass_fridge", "water_pit", "chainlink", "leaves"}
+
+
+class Acc(B.Acc):
+    """B.Acc that also takes one colour per vertex (multipliers on `base`)."""
+
+    def add_piece(self, verts, faces, smooth, uvs, color, base):
+        if isinstance(color, list):
+            start = len(self.colors)
+            self.add(verts, faces, smooth, uvs, base)
+            # glTF stores colours as normalised integers: keep them in 0..1.
+            self.colors[start:] = [tuple(min(max(b * m, 0.0), 1.0) for b, m in zip(base, c)) for c in color]
+        else:
+            self.add(verts, faces, smooth, uvs, color or base)
+
+
 def build(name: str, builder, mats) -> None:
     standard = name in G.STANDARD
     model = M.Model(B.part_geo)
     builder(model)
-    acc: dict[str, B.Acc] = {}
-    for geo in (model.main, model.detail):
+    chunk_of = G.SPLIT.get(name)
+    objects: dict[str, dict[str, Acc]] = {}
+    for detail, geo in ((False, model.main), (True, model.detail)):
         for look, verts, faces, smooth, uvs, color in geo.pieces:
             if not faces:
                 continue
+            obj = name
+            if chunk_of is not None:
+                obj = "_".join(filter(None, (name, chunk_of(_centre(verts), _size(verts), detail))))
+                if detail and name.endswith("_dressing"):
+                    obj += "_detail"
             material, default = (look, (1, 1, 1, 1)) if standard else mats.resolve(look)
-            acc.setdefault(material, B.Acc()).add(verts, faces, smooth, uvs, color or default)
-
+            objects.setdefault(obj, {}).setdefault(material, Acc()).add_piece(verts, faces, smooth, uvs, color,
+                                                                              default)
+            if chunk_of is not None and not detail and not obj.endswith("_ground") and material not in SEE_THROUGH:
+                # The shadow-only twin: every opaque part that casts.
+                objects.setdefault(f"{name}_shadow", {}).setdefault("shadow_proxy", Acc()).add(verts, faces)
+                mats.used.add("shadow_proxy")
     bpy.ops.wm.read_factory_settings(use_empty=True)
+    tris = 0
+    blender_mats: dict = {}
+    for obj_name, acc in sorted(objects.items()):
+        tris += _object(obj_name, acc, standard, blender_mats)
+    out = OUT / name / f"{name}.gltf"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    bpy.ops.export_scene.gltf(
+        filepath=str(out),
+        export_format="GLTF_SEPARATE",
+        export_texcoords=True,
+        export_normals=True,
+        export_materials="EXPORT",
+        export_vertex_color="NONE" if standard else "ACTIVE",
+        export_apply=False,
+        export_yup=True,
+    )
+    materials = len({m for acc in objects.values() for m in acc})
+    B.log(f"  {name}: {tris} triangles, {materials} materials, {len(objects)} meshes")
+
+
+def _size(verts):
+    return tuple(max(v[i] for v in verts) - min(v[i] for v in verts) for i in range(3))
+
+
+def _centre(verts):
+    lo = [min(v[i] for v in verts) for i in range(3)]
+    hi = [max(v[i] for v in verts) for i in range(3)]
+    return tuple((lo[i] + hi[i]) / 2 for i in range(3))
+
+
+def _object(name: str, acc: dict, standard: bool, blender_mats: dict) -> int:
+    """Adds one mesh object, a material slot per material (shared between the
+    model's objects through `blender_mats`); returns its triangle count."""
     mesh = bpy.data.meshes.new(name)
     verts, colors, faces, smooth, mat_index, uv_faces = [], [], [], [], [], []
     for material, a in sorted(acc.items()):
-        mesh.materials.append(standard_material(material) if standard else bpy.data.materials.new(material))
+        if material not in blender_mats:
+            blender_mats[material] = (standard_material(material) if standard
+                                      else bpy.data.materials.new(material))
+        mesh.materials.append(blender_mats[material])
         slot = len(mesh.materials) - 1
         base = len(verts)
         verts.extend(a.verts)
@@ -94,20 +169,19 @@ def build(name: str, builder, mats) -> None:
     mesh.update()
     obj = bpy.data.objects.new(name, mesh)
     bpy.context.scene.collection.objects.link(obj)
-    tris = sum(len(p.vertices) - 2 for p in mesh.polygons)
-    out = OUT / name / f"{name}.gltf"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    bpy.ops.export_scene.gltf(
-        filepath=str(out),
-        export_format="GLTF_SEPARATE",
-        export_texcoords=True,
-        export_normals=True,
-        export_materials="EXPORT",
-        export_vertex_color="NONE" if standard else "ACTIVE",
-        export_apply=False,
-        export_yup=True,
-    )
-    B.log(f"  {name}: {tris} triangles, {len(acc)} materials")
+    return sum(len(p.vertices) - 2 for p in mesh.polygons)
+
+
+def _group_key(look: str):
+    """The key B.Materials files a textured look's material under, or None."""
+    import json  # noqa: PLC0415
+
+    spec = W.SLAMCITY_LOOKS[look]
+    if "set" not in spec:
+        return None
+    metal = round(spec.get("metal", 1.0) * 2) / 2
+    return (spec["set"], spec["size"], metal, json.dumps(spec.get("stripes")), json.dumps(spec.get("checker")),
+            spec.get("normal", 1.0))
 
 
 def main():
@@ -116,9 +190,23 @@ def main():
     M.RECTS = B.RECTS
     B.MATERIALS = MATERIALS
     mats = B.Materials()
-    for name, builder in sorted(G.MODELS.items()):
+    # Set dressing last, so its new looks never renumber the others' materials.
+    for name, builder in sorted(G.MODELS.items(), key=lambda item: (item[0].endswith("_dressing"), item[0])):
         build(name, builder, mats)
     mats.write()
+    # Surfaces broken up per slab or panel need no anti-tiling (two more
+    # texture reads a pixel): each look in G.NO_ANTI_TILE must have its
+    # material to itself.
+    for look in sorted(G.NO_ANTI_TILE):
+        material = mats.resolve(look)[0]
+        shared = [other for other in W.SLAMCITY_LOOKS if other not in G.NO_ANTI_TILE
+                  and other in G.LOOKS and mats.groups.get(_group_key(other)) == material]
+        if shared:
+            raise SystemExit(f"{look}'s material {material} is shared with {shared}")
+        path = MATERIALS / f"{material}.tres"
+        text = path.read_text()
+        path.write_text("\n".join("shader_parameter/anti_tile = 0" if line.startswith("shader_parameter/anti_tile")
+                                   else line for line in text.split("\n")))
     # Project in each model's own space (see the module docstring).
     for path in MATERIALS.glob("*.tres"):
         text = path.read_text()

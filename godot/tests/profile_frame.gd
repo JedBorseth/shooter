@@ -18,6 +18,9 @@ extends SceneTree
 ##                   also measures, as one variant per ";"-separated entry,
 ##                   each listed shader with the other file's code in its
 ##                   place (to price a shader change in the same run).
+##   PROFILE_HIDE    "Path/A,Path/B[;...]": also measures, as one variant per
+##                   ";"-separated entry, the frame with those nodes (paths in
+##                   the map's scene) hidden.
 ##   PROFILE_ONLY    measure only the variants whose label contains this text
 ##                   (several texts separated by |).
 
@@ -114,6 +117,9 @@ func _run() -> void:
 		["no props", _visible.bind(scene.get_node_or_null("Props"), false)],
 		["no skyline (far chunk)", _hide_meshes.bind(scene, "far")],
 		["no small-detail chunks", _hide_meshes.bind(scene, "_detail")],
+		["no set dressing", _visible.bind(scene.get_node_or_null("Dressing"), false)],
+		["set dressing casts no shadows", _no_shadows.bind(scene, "_dressing_")],
+		["architecture casts no shadows", _no_shadows.bind(scene, "map_")],
 		["no contact shadows under characters", _contact_shadows.bind(false)],
 		["world surfaces without detail", _world_detail.bind(0)],
 		["world surfaces with detail", _world_detail.bind(1)],
@@ -134,6 +140,13 @@ func _run() -> void:
 			+ ", ".join(Array(swaps).map(func(swap: String) -> String: return swap.get_file()))
 		)
 		variants.append([label, _shader_code.bind(swaps)])
+	for entry: String in OS.get_environment("PROFILE_HIDE").split(";", false):
+		var nodes: Array[Node] = []
+		for path: String in entry.split(",", false):
+			var node := scene.get_node_or_null(path)
+			if node != null:
+				nodes.append(node)
+		variants.append(["hide " + entry, _hide_nodes.bind(nodes)])
 	var only := OS.get_environment("PROFILE_ONLY")
 	if not only.is_empty():
 		var wanted := Array(only.split("|"))
@@ -384,6 +397,36 @@ func _hide_meshes(scene: Node, part: String) -> Variant:
 	return func() -> void:
 		for mesh in hidden:
 			mesh.visible = true
+
+
+## Hides the given nodes.
+func _hide_nodes(nodes: Array[Node]) -> Variant:
+	var hidden: Array[Node] = nodes.filter(func(n: Node) -> bool: return n.get("visible") == true)
+	if hidden.is_empty():
+		return null
+	for node in hidden:
+		node.set("visible", false)
+	return func() -> void:
+		for node in hidden:
+			node.set("visible", true)
+
+
+## Stops every mesh whose name contains `part` casting shadows.
+func _no_shadows(scene: Node, part: String) -> Variant:
+	var changed: Array[GeometryInstance3D] = []
+	for node in scene.find_children("*", "MeshInstance3D", true, false):
+		var mesh := node as MeshInstance3D
+		if (
+			part in String(mesh.name)
+			and mesh.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		):
+			mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			changed.append(mesh)
+	if changed.is_empty():
+		return null
+	return func() -> void:
+		for mesh in changed:
+			mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 
 
 ## Hides every third-person character (soldiers, bots, dummies, zombies), or

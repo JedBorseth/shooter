@@ -128,7 +128,8 @@ and each team has a stair up to its own platform, with a stalled train as the wa
 Red's half is Blue's turned half round, dressed as different places (a hotel, a laundromat,
 the ticket hall). Offline it has
 practice targets on the far half. It ships in every build. **Testing Area** loads the
-existing arena on selection. **Server Browser** opens the server browser (see [Play online](#play-online)). **Zombies**
+training range: an armoury line, a control tower, target stands and steel, and cover to
+practise movement on. **Server Browser** opens the server browser (see [Play online](#play-online)). **Zombies**
 opens a Black Ops 2 inspired menu: **Solo** leads to a rotating globe with five
 selectable map locations. Use the list, map markers, or arrow buttons to select;
 drag the globe to rotate, and use Back or Esc to return. **START GAME** loads the
