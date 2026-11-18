@@ -1276,6 +1276,7 @@ impl SoldierRig {
             trigger_off: carry.trigger_off(),
             knife: knife.0,
             knife_at: knife.1,
+            held: super::poser::Held::Knife,
             feet: (self.feet_on && frame.alive).then_some(self.feet_lift),
         }
     }

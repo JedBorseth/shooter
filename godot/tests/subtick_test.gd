@@ -49,6 +49,7 @@ func _run() -> void:
 	# Let the player land and draw the weapon.
 	player.set_look(0.0, 0.0)
 	await _frames(120)
+	await _until_ready(player)
 
 	# Looking at the board and pressing fire with no input event (the
 	# trigger held down, as bots and other tests press it) hits it.
@@ -147,3 +148,12 @@ func _check(condition: bool, label: String) -> void:
 func _finish() -> void:
 	print("subtick test: %d failure(s)" % _failures.size())
 	quit(1 if _failures.size() > 0 else 0)
+
+
+## Waits until the weapon in hand is up: the game's first draw, and a
+## pickup, is a first raise.
+func _until_ready(player: FpsPlayer) -> void:
+	for i in 600:
+		if player.weapon_ready():
+			return
+		await physics_frame

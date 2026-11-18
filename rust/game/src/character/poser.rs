@@ -235,6 +235,19 @@ const KNIFE_FIST: HandShape = HandShape {
     spread: [-2.0, 0.0, 2.0, 4.0],
     oppose: 40.0,
 };
+/// The support hand open and planted flat on a ledge: the fingers nearly
+/// straight and spread, the thumb out to the side.
+const PLANTED: HandShape = HandShape {
+    flex: [
+        [12.0, 10.0, 6.0],
+        [10.0, 10.0, 6.0],
+        [12.0, 10.0, 6.0],
+        [15.0, 12.0, 8.0],
+        [5.0, 10.0, 5.0],
+    ],
+    spread: [-7.0, -1.0, 4.0, 9.0],
+    oppose: 8.0,
+};
 /// The trigger finger laid straight along the frame, off the trigger, while
 /// sprinting or reloading.
 const INDEX_OFF_TRIGGER: [f32; 3] = [4.0, 6.0, 4.0];
@@ -339,6 +352,16 @@ pub enum WeaponPlacement {
     FromEyes { offset: Vector3, rotation: Basis },
 }
 
+/// What the support hand holds when it leaves the weapon (`PoseInput::knife`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum Held {
+    #[default]
+    Knife,
+    /// Nothing: the open hand planted on a ledge, `knife_at` being the hand
+    /// bone's own frame.
+    Plant,
+}
+
 /// Everything the poser needs for one frame. Set by the node that owns it.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct PoseInput {
@@ -373,11 +396,13 @@ pub struct PoseInput {
     /// The trigger finger comes off the trigger by this much (0..1): sprinting
     /// or reloading.
     pub trigger_off: f32,
-    /// The support hand leaves the weapon by this much (0..1) to swing the
-    /// knife, held at `knife_at`.
+    /// The support hand leaves the weapon by this much (0..1) for the item
+    /// in `held` (the knife to swing, or the ledge to plant on), at `knife_at`.
     pub knife: f32,
-    /// Where the knife is, in the weapon's space (see `crate::knife`).
+    /// Where the item is, in the weapon's space (see `crate::knife`).
     pub knife_at: Transform3D,
+    /// What the support hand takes when it leaves the weapon.
+    pub held: Held,
     /// Foot IK: how far (m, world up) the ground under each foot (left,
     /// right) is from the ground the animation stands on, or `None` for no
     /// foot IK (far away, in the air).
@@ -441,7 +466,7 @@ impl SoldierPoser {
         // Hidden unless a swing below shows it.
         if let Some(node) = &mut self.knife
             && node.is_visible()
-            && (input.knife <= 0.35 || input.ik <= 0.0)
+            && (input.knife <= 0.35 || input.ik <= 0.0 || input.held != Held::Knife)
         {
             node.set_visible(false);
         }
@@ -533,7 +558,11 @@ impl SoldierPoser {
         let knife = input.knife.clamp(0.0, 1.0);
         let support = support_shape(grips.hold);
         let trigger_off = input.trigger_off.clamp(0.0, 1.0);
-        let support = support.lerp(&KNIFE_FIST, knife);
+        let held_shape = match input.held {
+            Held::Knife => &KNIFE_FIST,
+            Held::Plant => &PLANTED,
+        };
+        let support = support.lerp(held_shape, knife);
         for &(index, rest, right, finger, joint) in &self.fingers {
             let shape = if right { &FIRING_HAND } else { &support };
             let mut flex = shape.flex[finger][joint];
@@ -580,7 +609,11 @@ impl SoldierPoser {
         let mut left_target =
             Transform3D::new(left_hand_basis, left_grip - left_hand_basis * left_palm);
         if knife > 0.0 {
-            let hand = weapon_skel * crate::knife::hand_for(input.knife_at);
+            let hand = weapon_skel
+                * match input.held {
+                    Held::Knife => crate::knife::hand_for(input.knife_at),
+                    Held::Plant => input.knife_at,
+                };
             let rotation = left_target
                 .basis
                 .get_quaternion()
@@ -603,7 +636,7 @@ impl SoldierPoser {
             weight * (1.0 - input.arm_loose[1].clamp(0.0, 1.0)),
         );
         if let Some(node) = &mut self.knife {
-            let shown = knife > 0.35;
+            let shown = knife > 0.35 && input.held == Held::Knife;
             if node.is_visible() != shown {
                 node.set_visible(shown);
             }

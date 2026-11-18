@@ -602,7 +602,7 @@ fn reselecting_the_weapon_in_hand_brings_it_back_up() {
     run(&mut s, switch(1), CombatContext::default(), 6);
     assert!(matches!(s.action, Action::Lowering { .. }));
     run(&mut s, switch(0), CombatContext::default(), 1);
-    let Action::Raising { remaining } = s.action else {
+    let Action::Raising { remaining, .. } = s.action else {
         panic!("expected a raise, got {:?}", s.action);
     };
     assert!(remaining < s.def().raise_time * 0.5, "{remaining}");
@@ -1054,4 +1054,131 @@ fn firing_ends_a_magazine_reload_once_the_weapon_is_back_up() {
     // A bolt action is only ready after the bolt is worked: the very end.
     let m40 = WeaponId::expect("m40").def();
     assert_eq!(m40.reload_ready_at(true), m40.reload.magazine_time(true));
+}
+
+#[test]
+fn the_first_draw_of_a_game_is_a_first_raise_that_holds_fire_longer() {
+    let mut s = CombatState::new([id("m4"), id("m1911")]).first_draw();
+    let def = s.def();
+    let Action::Raising { remaining, kind } = s.action else {
+        panic!("expected a raise, got {:?}", s.action);
+    };
+    assert_eq!(kind, Raise::First);
+    assert!((remaining - def.first_raise()).abs() < 1e-6);
+    assert!(
+        def.first_raise() > def.raise_time + 0.4,
+        "it works the action"
+    );
+    // No shot until the first raise is over.
+    let early = ((def.first_raise() - 0.05) / DT) as usize;
+    assert_eq!(
+        shots(&run(&mut s, fire(), CombatContext::default(), early)),
+        0
+    );
+    run(&mut s, CombatInput::default(), CombatContext::default(), 6);
+    assert_eq!(s.action, Action::Ready);
+    assert!(!s.slots[0].fresh);
+}
+
+#[test]
+fn each_weapon_first_raises_once_and_then_draws() {
+    let mut s = CombatState::new([id("m4"), id("m1911")]).first_draw();
+    run(&mut s, CombatInput::default(), CombatContext::default(), 90);
+    // The sidearm has not been out yet: its first draw is a first raise.
+    run(&mut s, switch(1), CombatContext::default(), 30);
+    assert!(matches!(
+        s.action,
+        Action::Raising {
+            kind: Raise::First,
+            ..
+        }
+    ));
+    run(&mut s, CombatInput::default(), CombatContext::default(), 90);
+    // Back to the rifle: an ordinary draw now.
+    run(&mut s, switch(0), CombatContext::default(), 30);
+    assert!(matches!(
+        s.action,
+        Action::Raising {
+            kind: Raise::Draw,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn a_respawn_draws_and_a_pickup_first_raises() {
+    // Every life after the first just draws.
+    let s = CombatState::new([id("m4"), id("m1911")]);
+    assert!(matches!(
+        s.action,
+        Action::Raising {
+            kind: Raise::Draw,
+            ..
+        }
+    ));
+    let mut s = ready();
+    run(
+        &mut s,
+        CombatInput {
+            pickup: Some(id("m870")),
+            ..Default::default()
+        },
+        CombatContext::default(),
+        1,
+    );
+    let Action::Raising { kind, remaining } = s.action else {
+        panic!("expected a raise, got {:?}", s.action);
+    };
+    assert_eq!(kind, Raise::First);
+    assert!(remaining > id("m870").def().raise_time);
+}
+
+#[test]
+fn the_first_raise_works_an_action_left_unchambered() {
+    let mut s = CombatState::new([id("m40"), id("m1911")]).first_draw();
+    s.slots[0].needs_cycle = true;
+    let events = run(
+        &mut s,
+        CombatInput::default(),
+        CombatContext::default(),
+        120,
+    );
+    assert_eq!(s.action, Action::Ready);
+    assert!(!s.slots[0].needs_cycle);
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, CombatEvent::Cycled { .. }))
+    );
+}
+
+#[test]
+fn a_refill_keeps_an_undrawn_weapons_first_raise() {
+    let mut s = CombatState::new([id("m4"), id("m1911")]).first_draw();
+    run(&mut s, CombatInput::default(), CombatContext::default(), 90);
+    s.refill_ammo(&mut Vec::new());
+    assert!(s.slots[1].fresh, "the sidearm has not been drawn yet");
+    run(&mut s, switch(1), CombatContext::default(), 30);
+    assert!(matches!(
+        s.action,
+        Action::Raising {
+            kind: Raise::First,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn a_weapon_without_a_first_raise_just_draws() {
+    let mut s = CombatState::new([id("laser"), id("m1911")]).first_draw();
+    assert_eq!(id("laser").def().first_raise_time, 0.0);
+    assert!(matches!(
+        s.action,
+        Action::Raising {
+            kind: Raise::Draw,
+            ..
+        }
+    ));
+    run(&mut s, CombatInput::default(), CombatContext::default(), 60);
+    assert_eq!(s.action, Action::Ready);
 }

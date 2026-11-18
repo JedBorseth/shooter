@@ -26,6 +26,7 @@ Both parts are aim, and the camera looks along the aim, so the screen centre and
 - Sprinting does not cancel a reload, and a reload can start while sprinting. Firing ends a sprint and waits `sprint_out_time`.
 - A switch that cuts off a bolt or pump cycle, or an empty reload before its charge, leaves the weapon needing its action worked (`WeaponState::needs_cycle`): it cycles when drawn again, so switching never skips a cycle.
 - Re-selecting the weapon in hand while it is being put away brings it back up from as far as it got.
+- **First raise.** A weapon's first draw of a game or round, and a weapon picked up, comes up with a first raise (`Raise::First`, `first_raise_time`): the draw, then the action worked (an AR's charging handle or an AK's, a pistol's slide racked, the bolt or the pump worked), and it cannot fire until that ends. Later draws, and every respawn after the first, are ordinary draws. This follows Call of Duty's `firstRaiseAnim`, with Modern Warfare III's 2023 rule (it plays at the start of a game or round and on a pickup, not on every life). Times are Black Ops 2's for each class (assault rifles 1.4–1.7 s, SMGs 1.0–1.25 s, LMGs 1.85 s, shotguns 1.65 s, snipers 1.75 s, pistols 0.85–1.1 s) scaled to our faster draws: M4A1 and BR-3 1.1 s, AK-47 1.2 s, PDW-9 0.8 s, LSW-6 1.7 s, M870 1.35 s, M40 1.4 s, M1911 0.8 s. A switch away during a first raise ends it; the weapon just draws next time.
 - A burst in progress is dropped by a reload, a sprint, or a switch.
 
 ## Melee
@@ -48,6 +49,19 @@ The frag grenade is the lethal: G, or RB on a gamepad. Rules are in `rust/sim/sr
 - A player killed with the pin out drops the grenade, live, at their feet.
 - Counts: one frag a life in Team Deathmatch, Free-for-all, Capture the Flag, Hardpoint, and Search and Destroy (so one a round there), refilled at each spawn; none in Gun Game, which hands out guns only. Zombies starts with two and gives two more at the start of each later round, up to four (Black Ops). The practice arena gives one a life; the T refill does not give grenades.
 - Online the server flies every grenade and decides the damage; snapshots carry each live grenade, and a blast event sets off the effect. The thrower's client flies its own throw from the release, through the same rules and the same map, and hands over when the server's grenade arrives.
+
+## First-person animation
+
+The viewmodel (`rust/game/src/viewmodel.rs`, clips in `weapon_clips.rs`) follows the animation set of Call of Duty's weapon files (Black Ops 2's 88 `WEAP_ANIM_*` slots and the offsets the engine blends with them: sprint, slide, mantle, stance, strafe, and damage kick). Each is procedural, timed from the simulation so the clip ends exactly when the rules allow the next action.
+
+- **Slide.** The weapon cants left about 10 degrees, tips up a touch, and pulls in, sprung in with a small overshoot and a thump as the body lands, then eased out; much less when aimed.
+- **Mantle and vault.** The weapon tucks down and right while the support hand leaves it to plant palm-down on the ledge (lower on a vault's cover), pressing down as the body rises; it comes back up over the sprint-out, as the sprint pose does.
+- **Stance and movement.** Crouching eases the weapon down, in, and right (Black Ops 2's `vDuckedOfs`/`vDuckedRot` at `posMoveRate` 6) instead of snapping. Walking pulls it back a touch and tips it (`vStandMove`/`vStandRot`). Strafing leans it into the move by up to 5 degrees (`vStrafeRot` is 6).
+- **Damage kick.** A hit knocks the weapon away from the attacker, out over 100 ms and back over 400 ms (Black Ops 2's `DamageKickAngles`), up to about 4 degrees for a rifle round. Unlike Black Ops 2, it is mostly at the hip: aimed, the sights stay on the bullet path, and the simulation's flinch moves the aim instead.
+- **Sprint.** A long gun runs canted muzzle-down across the lower frame with its stock clear of the eye (`SPRINT_LONG_POS`/`SPRINT_LONG_ROT`).
+- Still to come from the same list: quick and empty raises and drops (for perks and a locked slide), prone and crawl, and a mounted low-ready.
+
+To review them, the weapon-feel capture has a scenario for each (`first_raise`, `first_raise_bolt`, `first_raise_pump`, `throw`, `throw_quick`, `slide`, `crouch`, `vault`, `mantle`, `hit`); see `godot/tests/capture_weapon_feel.gd`.
 
 ## Damage zones
 

@@ -26,6 +26,7 @@ func _run() -> void:
 		_finish()
 		return
 	await _sixtieths(30)
+	await _until_ready(player)
 	await _throw_and_bounce(main, player)
 	await _cook_off(main, player)
 	_finish()
@@ -129,3 +130,12 @@ func _check(condition: bool, label: String) -> void:
 func _finish() -> void:
 	print("frag grenade test: %d failure(s)" % _failures.size())
 	quit(1 if _failures.size() > 0 else 0)
+
+
+## Waits until the weapon in hand is up: the game's first draw, and a
+## pickup, is a first raise.
+func _until_ready(player: FpsPlayer) -> void:
+	for i in 600:
+		if player.weapon_ready():
+			return
+		await physics_frame

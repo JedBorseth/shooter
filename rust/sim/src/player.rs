@@ -366,7 +366,7 @@ pub fn aim_direction(yaw: f32, pitch: f32, offset: Vec2) -> Vec3 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::weapon::Action;
+    use crate::weapon::{Action, Raise};
 
     const DT: f32 = 1.0 / 60.0;
 
@@ -500,7 +500,10 @@ mod tests {
     #[test]
     fn a_lunge_is_ignored_without_a_melee_that_can_start() {
         let mut s = ready_state();
-        s.combat.action = Action::Raising { remaining: 0.5 };
+        s.combat.action = Action::Raising {
+            remaining: 0.5,
+            kind: Raise::Draw,
+        };
         let input = PlayerInput {
             melee: true,
             lunge: Some(Vec2::new(0.0, -3.0)),

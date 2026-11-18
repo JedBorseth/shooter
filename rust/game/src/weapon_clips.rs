@@ -51,14 +51,14 @@ impl Pose {
         pos: Vector3::ZERO,
     };
 
-    const fn new(pitch: f32, yaw: f32, roll: f32, x: f32, y: f32, z: f32) -> Pose {
+    pub const fn new(pitch: f32, yaw: f32, roll: f32, x: f32, y: f32, z: f32) -> Pose {
         Pose {
             rot: Vector3::new(pitch, yaw, roll),
             pos: Vector3::new(x, y, z),
         }
     }
 
-    fn scaled(self, k: f32) -> Pose {
+    pub fn scaled(self, k: f32) -> Pose {
         Pose {
             rot: self.rot * k,
             pos: self.pos * k,
@@ -1006,10 +1006,87 @@ pub fn charge_pose(p: f32, anchors: &Anchors) -> ClipPose {
     }
 }
 
+/// A pistol's slide racked by the support hand (a first raise), `p` 0..1
+/// through the work: the hand comes over the top, pinches the slide's rear,
+/// draws it fully back, and lets it slam home on the `charge` beat of
+/// `cycle_beats`.
+pub fn slide_rack_pose(p: f32, anchors: &Anchors) -> ClipPose {
+    let slide = keyed(&[(0.25, 0.0), (0.5, 1.0), (0.5 + SLAM, 0.0)], p);
+    // The slide's rear serrations, just behind the rear sight (the origin).
+    let rear = Vector3::new(-0.006, -0.008, 0.014);
+    let hand = hand_position(
+        &[
+            (0.05, Hand::Rest),
+            (0.25, Hand::Charge(0.0)),
+            (0.5, Hand::Charge(PISTOL_SLIDE_TRAVEL)),
+            (0.62, Hand::Charge(PISTOL_SLIDE_TRAVEL + 0.03)),
+            (0.85, Hand::Rest),
+        ],
+        p,
+        |h| match h {
+            Hand::Charge(pull) => rear + Vector3::new(-0.01, 0.015, pull),
+            _ => anchors.hand_rest,
+        },
+    );
+    ClipPose {
+        hand,
+        slide: Some(slide),
+        ..ClipPose::rest()
+    }
+}
+
+/// How far a pistol's slide runs back, in metres (as the view draws it).
+const PISTOL_SLIDE_TRAVEL: f32 = 0.028;
+
+/// How a first raise (Call of Duty's `firstRaiseAnim`) turns the weapon
+/// while the action is worked, `p` 0..1 through the work: tipped toward the
+/// working hand and rolled so the action faces the eye, held, and back onto
+/// the shoulder. A bolt or pump gun's own cycle motion does the rest.
+pub fn first_raise_present(kind: ClipKind, p: f32) -> Pose {
+    let shown = keyed(&[(0.0, 0.0), (0.2, 1.0), (0.75, 1.0), (1.0, 0.0)], p);
+    let pose = match kind {
+        // Rolled left, toward the support hand reaching over the top.
+        ClipKind::Rifle { .. } => Pose::new(4.0, 8.0, -6.0, -0.015, 0.015, -0.03),
+        // Turned in and up, the slide toward the support hand.
+        ClipKind::Pistol => Pose::new(8.0, 10.0, 16.0, -0.03, 0.025, 0.02),
+        // Rolled right, the bolt or the ejection port up toward the eye.
+        ClipKind::BoltAction => Pose::new(4.0, 3.0, -10.0, -0.01, 0.015, 0.01),
+        ClipKind::Shotgun => Pose::new(4.0, 4.0, -8.0, -0.015, 0.015, 0.01),
+    };
+    pose.scaled(shown)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use shooter_sim::weapon::WeaponId;
+
+    #[test]
+    fn a_racked_slide_runs_back_and_slams_home() {
+        let a = anchors(ClipKind::Pistol);
+        assert_eq!(slide_rack_pose(0.0, &a).slide, Some(0.0));
+        assert_eq!(slide_rack_pose(0.5, &a).slide, Some(1.0));
+        assert_eq!(slide_rack_pose(0.6, &a).slide, Some(0.0));
+        assert!(slide_rack_pose(0.4, &a).hand.is_some());
+        assert!(slide_rack_pose(1.0, &a).hand.is_none(), "back on the grip");
+    }
+
+    #[test]
+    fn a_first_raise_shows_the_action_and_settles() {
+        for kind in [
+            ClipKind::Rifle {
+                charge: true,
+                heavy: false,
+            },
+            ClipKind::Pistol,
+            ClipKind::BoltAction,
+            ClipKind::Shotgun,
+        ] {
+            assert_eq!(first_raise_present(kind, 0.0), Pose::ZERO);
+            assert!(first_raise_present(kind, 0.5).rot.z.abs() > 5.0);
+            assert_eq!(first_raise_present(kind, 1.0), Pose::ZERO);
+        }
+    }
 
     fn reload(key: &str, empty: bool) -> MagazineReload {
         MagazineReload::new(WeaponId::expect(key).def(), empty).expect("a magazine weapon")

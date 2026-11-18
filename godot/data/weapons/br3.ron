@@ -15,6 +15,8 @@
     ads_time: 0.25,
     sprint_out_time: 0.23,
     raise_time: 0.42,
+    // First raise: Black Ops 2's for the class, scaled to our quicker draws.
+    first_raise_time: 1.1,
     lower_time: 0.28,
     spread: (hip: 2.4, hip_moving: 4.2, air: 6.0, ads: 0.0, bloom: 0.3, bloom_max: 1.8, ads_sway: 0.12),
     ads_fov_scale: 0.78,

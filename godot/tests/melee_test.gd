@@ -31,6 +31,7 @@ func _run() -> void:
 				_kills += 1
 	)
 	await _sixtieths(30)
+	await _until_ready(player)
 	await _lunge(main, player)
 	await _arms_length(main, player)
 	await _out_of_reach(main, player)
@@ -146,3 +147,12 @@ func _check(condition: bool, label: String) -> void:
 func _finish() -> void:
 	print("melee test: %d failure(s)" % _failures.size())
 	quit(1 if _failures.size() > 0 else 0)
+
+
+## Waits until the weapon in hand is up: the game's first draw, and a
+## pickup, is a first raise.
+func _until_ready(player: FpsPlayer) -> void:
+	for i in 600:
+		if player.weapon_ready():
+			return
+		await physics_frame
