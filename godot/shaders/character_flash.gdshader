@@ -6,7 +6,9 @@ render_mode unshaded, blend_add, cull_back, depth_draw_never, shadows_disabled;
 
 uniform vec4 colour : source_color = vec4(1.0, 0.25, 0.1, 0.0);
 
-// Shared with shaders/character.gdshader: set once per character.
+// Shared with shaders/character.gdshader and declared in the same order, so
+// both read the same per-character slots: set once per character.
+instance uniform float variant = 0.0;
 instance uniform int hidden_parts = 0;
 
 void vertex() {
