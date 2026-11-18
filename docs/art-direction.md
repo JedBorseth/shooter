@@ -6,6 +6,8 @@ How the game should look, and how the characters (other players, range dummies, 
 
 ## The look
 
+The target is a **Treyarch Black Ops game (Black Ops 2 and 3) built with the craft of the modern Modern Warfare games**: bold colour, a strong key light, clean readable shapes, and punchy effects, finished with photoreal materials and wear, grounded bounce light, detailed weapons, dense dressing, and effects that linger. Where the two pull apart, readability and colour win. The full target, what to leave out, and how to check a change are in the cod-design skill's [graphics reference](../.agents/skills/cod-design/references/graphics.md).
+
 The game aims for **grounded stylized realism**: real materials (brick, concrete, painted steel, worn wood) on simple, readable shapes, under clean light. Surfaces use CC0 PBR texture sets, so they read as what they are up close. Shapes stay low-poly and hard-edged, so silhouettes and sightlines stay clear and the game stays cheap to run (see [performance.md](performance.md)).
 
 Rules for every character, prop, and map:
