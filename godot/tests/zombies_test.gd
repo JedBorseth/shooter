@@ -252,7 +252,7 @@ func _economy() -> void:
 	_check(director.drops_on_ground() == 0, "walking over a power-up collects it")
 	_check(director.double_points_left() > 29.0, "Double Points runs for 30 seconds")
 	before = director.points()
-	director.on_zombie_hurt(false, false, Vector3.ZERO)
+	director.on_zombie_hurt(false, false, false, Vector3.ZERO)
 	_check(director.points() - before == 20, "Double Points pays 20 for a hit")
 	await _tap("fire")
 	await _sixtieths(10)
