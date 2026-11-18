@@ -119,12 +119,18 @@ fn shot_kick(shot: u32, strength: f32, ads: f32, feel: &KickFeel) -> (Vector3, V
     (hip_pos.lerp(aim_pos, ads), hip_rot.lerp(aim_rot, ads))
 }
 
-/// Added to every weapon's `hip_position`: closer, lower, and further right.
+/// Added to every weapon's `hip_position`: closer and further right.
 const HIP_CLOSER: Vector3 = Vector3::new(0.012, -0.01, 0.05);
+/// Added to a long gun's hip pose on top of `HIP_CLOSER` (metres, then
+/// degrees): raised and pushed out, and turned a little more across the body,
+/// so the rear sight, the receiver, and the firing hand sit in the lower
+/// right of the frame instead of below it (only the handguard showed).
+const HIP_LONG_POS: Vector3 = Vector3::new(0.0, 0.04, -0.03);
+const HIP_LONG_ROT: Vector3 = Vector3::new(0.0, 5.0, 3.0);
 /// Added to a long gun's sprint pose: muzzle down and across the body, a
 /// run rather than a high ready (degrees, then metres).
 const SPRINT_LONG_ROT: Vector3 = Vector3::new(-14.0, 3.0, 6.0);
-const SPRINT_LONG_POS: Vector3 = Vector3::new(0.01, -0.03, 0.0);
+const SPRINT_LONG_POS: Vector3 = Vector3::new(0.0, 0.02, 0.01);
 
 /// How fast a cut-short clip eases out, in 1/seconds.
 const CLIP_FADE_RATE: f32 = 30.0;
@@ -2555,13 +2561,18 @@ impl ViewmodelRig {
                 v.cycle_rotation,
             )
         };
-        let (sprint_pos, sprint_rot) = if kind == ClipKind::Pistol {
-            (sprint_pos, sprint_rot)
+        let (sprint_pos, sprint_rot, hip, hip_rot) = if kind == ClipKind::Pistol {
+            (sprint_pos, sprint_rot, hip, hip_rot)
         } else {
-            (sprint_pos + SPRINT_LONG_POS, sprint_rot + SPRINT_LONG_ROT)
+            (
+                sprint_pos + SPRINT_LONG_POS,
+                sprint_rot + SPRINT_LONG_ROT,
+                hip + HIP_LONG_POS,
+                hip_rot + HIP_LONG_ROT,
+            )
         };
-        // The hip pose sits closer and lower-right than the scenes' rest, so
-        // the receiver and both hands fill the lower right of the frame.
+        // The hip pose sits closer and further right than the scenes' rest,
+        // so the receiver and both hands fill the lower right of the frame.
         let hip = hip + HIP_CLOSER;
         let mut position = hip + (aim - hip) * ads;
         position += Vector3::new(-0.012, -0.018, 0.02) * arc;

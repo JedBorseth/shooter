@@ -20,6 +20,7 @@ Both parts are aim, and the camera looks along the aim, so the screen centre and
 ## Aiming, reloads, and switches
 
 - Aiming takes `ads_time` and works through a reload and a bolt or pump cycle, but not a switch. The aimed amount is eased (`ads_ease`), and the spread, kick scale, sway, zoom, and weapon model all follow the same curve.
+- At the hip a long gun sits in the lower right with its rear sight, receiver, and both hands in frame (the scenes' `hip_position` and `hip_rotation` plus `HIP_CLOSER` and `HIP_LONG_POS`/`HIP_LONG_ROT` in `rust/game/src/viewmodel.rs`), and it sprints muzzle-down across the body, still in the lower frame (`SPRINT_LONG_POS`/`SPRINT_LONG_ROT`), as modern Call of Duty viewmodels do.
 - A magazine reload takes `time` (tactical) or `empty_time` (empty, which ends with the bolt release or charge). Its rounds count at `mag_in` seconds, when the fresh magazine seats; a reload cut short after that keeps them.
 - Once the weapon is back on the shoulder (`WeaponDef::reload_ready_at`: 0.45 s after the seat for a tactical reload, 0.8 s for an empty one, the very end for a bolt action), firing ends the reload and fires: the rest is only the settle into the grip. The first-person clip is back on the shoulder at exactly that moment and eases out when cut.
 - Sprinting does not cancel a reload, and a reload can start while sprinting. Firing ends a sprint and waits `sprint_out_time`.
