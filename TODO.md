@@ -238,7 +238,8 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 - [x] Picture fidelity, first round: bloom added like light through a lens with lens dirt and a sun flare that hides behind cover, contact shadows under characters, close-up surface detail on world surfaces (High), wet surfaces and puddles in Zombies, a scope lens with eye-relief shadow, suppression and death on the lens, and a frame profiler that alternates each variant with the full frame (`godot/tests/profile_frame.gd`).
 - [ ] A look for Nuketown in `godot/scripts/looks.gd`.
 - [x] Temporal antialiasing on High (in place of 2× MSAA plus SMAA, same cost), close-up detail only on rough non-metal surfaces, a hurt vignette with smears, hit flashes, and a heartbeat, suppression on Low, softer puddles.
-- [ ] Picture fidelity, next (see the round 11 review): eye adaptation, hiding texture repeats with per-material blend layers, contact-hardening sun shadows, daytime volumetric light on High, moving clouds, a lit first-person weapon (rim and self-shadow).
+- [x] Eye adaptation on every preset (rays from the camera, no GPU time; slow, within a stop, against each map's own typical light) and a key light for the first-person weapon and arms in the viewmodel shader.
+- [ ] Picture fidelity, next (see the round 11 review): hiding texture repeats with per-material blend layers, contact-hardening sun shadows, daytime volumetric light on High, moving clouds, self-shadowing on the first-person weapon.
 - [ ] Lighting pass: baked lightmaps or SDFGI tuning per map, volumetric fog, reflection probes.
 - [ ] Performance budget and profiling: target 144 FPS on a mid-range GPU, CPU frame time per system.
 - [ ] Loadouts and a create-a-class screen.
