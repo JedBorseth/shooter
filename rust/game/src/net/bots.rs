@@ -13,6 +13,15 @@
 //!   enemy was last seen, a spot on the enemy's side, or anywhere on the map.
 //!   It sprints when nothing is happening, and jumps or picks a new goal when
 //!   stuck.
+//! - **Equipment**: it throws a frag at enemies bunched together or at one
+//!   hiding where it was just seen, cooking it on the harder skills so it
+//!   bursts on time ([`bot::plan_throw`], checked against the map with a
+//!   bounded number of rays, and only one bot checks a throw each tick). A
+//!   bot carrying a flashbang throws it at a hidden enemy; one carrying smoke
+//!   pops it between itself and the threat as it breaks for cover. It runs
+//!   from a live frag that can reach it, is blinded by a flashbang it sees
+//!   (sweeping and firing wildly where its target was), and cannot see
+//!   through smoke.
 //! - **Objectives** (Capture the Flag): the server hands each bot a
 //!   [`BotObjective`] every tick: run a flag somewhere, hunt toward a spot, or
 //!   hold one. A bot running a flag keeps moving while it fights; the others
@@ -25,6 +34,7 @@
 use godot::classes::{ClassDb, Engine, Node, Node3D, Object, PhysicsDirectSpaceState3D, Resource};
 use godot::prelude::*;
 use shooter_sim::bot::{self, Engagement, Skill, SkillParams};
+use shooter_sim::equipment::{self, Collide, Grenade, Kind};
 use shooter_sim::look;
 use shooter_sim::melee;
 use shooter_sim::movement::Stance;
@@ -36,6 +46,7 @@ use shooter_sim::weapon::FireMode;
 use shooter_sim::{TICK_DT, TICK_RATE, Vec2, Vec3, rng};
 
 use crate::convert::{to_godot, to_sim};
+use crate::grenades::{self, SpaceCollide};
 use crate::target::WORLD_LAYER;
 
 /// Bots look for enemies every this many ticks (spread over the bots).
@@ -82,6 +93,34 @@ const COVER_RANGE: (f32, f32) = (3.5, 9.0);
 const LANE_CHANCE: f32 = 0.75;
 /// A teammate this close to a lane's points counts as on that lane, metres.
 const LANE_RADIUS: f32 = 9.0;
+/// Range of a frag throw at enemies, in metres: past the blast's reach of
+/// the thrower, and short enough to land it.
+const FRAG_RANGE: (f32, f32) = (10.0, 28.0);
+/// Range of a flashbang throw at a hidden enemy, in metres.
+const FLASH_THROW_RANGE: (f32, f32) = (7.0, 18.0);
+/// A hiding enemy counts for a grenade this long after it was last seen,
+/// in seconds (and only once out of sight).
+const HIDDEN_FOR: (f32, f32) = (0.3, 3.0);
+/// Enemies seen within this many seconds count toward a group.
+const GROUP_MEMORY: f32 = 1.0;
+/// Seconds between a bot's looks for a grenade chance, and after one it let
+/// pass (its skill's `grenade_chance`).
+const THROW_CHECK_SECONDS: f32 = 1.0;
+const THROW_PASS_SECONDS: f32 = 2.5;
+/// A bot gives up on a throw it has not started within this many seconds
+/// (it could not turn or get its hands free).
+const THROW_GIVE_UP: f32 = 1.2;
+/// The view must be within this many radians of the throw's to pull the pin.
+const THROW_AIM: f32 = 0.03;
+/// How far ahead of the thrower a smoke goes, in metres (between it and the
+/// threat).
+const SMOKE_THROW: (f32, f32) = (4.0, 9.0);
+/// Throw checks the server allows each tick, for all bots together. Each
+/// costs at most [`THROW_CHECK_RAYS`] rays.
+pub const THROW_CHECKS_PER_TICK: u32 = 1;
+/// Most rays one throw check casts: a coarse flight per candidate (two at
+/// most), plus the blast's line to the target.
+const THROW_CHECK_RAYS: usize = 200;
 
 /// What the server wants a bot to go for (Capture the Flag).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -277,6 +316,63 @@ pub struct BotWorld<'a> {
     /// The map's lanes (`BotLanes`), each a line of points from the west to
     /// the east.
     pub lanes: &'a [Vec<Vector3>],
+    /// Every live grenade.
+    pub grenades: &'a [BotGrenade],
+    /// Every smoke cloud.
+    pub smokes: &'a [BotSmoke],
+    /// Throw checks left this tick ([`THROW_CHECKS_PER_TICK`]), shared by
+    /// every bot.
+    pub throw_checks: &'a mut u32,
+}
+
+/// A live grenade, as bots know it.
+#[derive(Clone, Copy, Debug)]
+pub struct BotGrenade {
+    pub kind: Kind,
+    pub position: Vector3,
+    /// The thrower and their side, if anyone threw it.
+    pub owner: Option<u8>,
+    pub owner_team: Option<Team>,
+}
+
+/// A smoke cloud, as bots know it: its centre and seconds since it popped.
+#[derive(Clone, Copy, Debug)]
+pub struct BotSmoke {
+    pub center: Vec3,
+    pub age: f32,
+}
+
+impl BotWorld<'_> {
+    /// Whether smoke hides `to` from `from`.
+    fn smoke_between(&self, from: Vector3, to: Vector3) -> bool {
+        let (from, to) = (to_sim(from), to_sim(to));
+        self.smokes
+            .iter()
+            .any(|s| equipment::smoke_blocks(s.center, s.age, from, to))
+    }
+}
+
+/// A throw under way: turning to it, then holding the button.
+#[derive(Clone, Copy, Debug)]
+struct Throwing {
+    kind: Kind,
+    view: Vec2,
+    /// Ticks to hold the button from the pin.
+    hold: Tick,
+    started: Tick,
+    /// The tick the button went down, once it has, and how many of the
+    /// kind were carried before it.
+    pressed: Option<Tick>,
+    carried: u8,
+}
+
+/// A flashbang's hold on a bot.
+#[derive(Clone, Copy, Debug)]
+struct Blind {
+    from: Tick,
+    until: Tick,
+    /// Where the target was when it went white, to spray at.
+    toward: Option<Vec2>,
 }
 
 pub struct BotBrain {
@@ -316,10 +412,29 @@ pub struct BotBrain {
     /// whether this life already picked (or finished) one.
     detour: Option<Vector3>,
     detour_picked: bool,
+    /// A grenade throw under way.
+    throwing: Option<Throwing>,
+    /// No looking for a grenade chance before this tick.
+    next_throw_check: Tick,
+    /// Enemies seen at the last perception, with where and when.
+    seen: Vec<(u8, Vector3, Tick)>,
+    /// Blinded by a flashbang.
+    blind: Option<Blind>,
+    /// A frag that can reach the bot: when the bot noticed it, and the spot
+    /// on the navigation mesh to run to.
+    danger: Option<(Tick, Vector3)>,
     /// Lanes taken and times in cover, over the bot's life on the server
     /// (tests).
     pub lanes_taken: u32,
     pub covers_taken: u32,
+    /// Grenades thrown (frags, tacticals), times run from a frag, and
+    /// times blinded (tests).
+    pub frags_thrown: u32,
+    pub tacticals_thrown: u32,
+    pub flights: u32,
+    pub flashed: u32,
+    /// Takes every grenade chance, whatever its skill (tests).
+    pub always_throw: bool,
 }
 
 #[derive(Default)]
@@ -362,7 +477,65 @@ impl BotBrain {
             lanes_taken: 0,
             lane: None,
             covers_taken: 0,
+            throwing: None,
+            next_throw_check: 0,
+            seen: Vec::new(),
+            blind: None,
+            danger: None,
+            frags_thrown: 0,
+            tacticals_thrown: 0,
+            flights: 0,
+            flashed: 0,
+            always_throw: false,
         }
+    }
+
+    /// The bot's view (yaw, pitch).
+    pub fn view(&self) -> Vec2 {
+        self.look
+    }
+
+    /// Turns the bot to look at `view` at once (tests).
+    pub fn face(&mut self, view: Vec2) {
+        self.look = view;
+    }
+
+    /// Whether a flashbang still blinds the bot at `tick` (tests).
+    pub fn blind_at(&self, tick: Tick) -> bool {
+        self.blind.is_some_and(|b| tick < b.until)
+    }
+
+    /// Whether the bot is running from a frag (tests).
+    pub fn fleeing(&self) -> bool {
+        self.danger.is_some()
+    }
+
+    /// The enemy the bot is fighting and can see, if any (tests).
+    pub fn target_in_sight(&self) -> Option<u8> {
+        self.engagement.filter(|_| self.in_sight).map(|e| e.target)
+    }
+
+    /// A flashbang landed `amount` (0 to 1, `equipment::flash_amount`) on
+    /// the bot at `tick`: it sees nothing for a while, and sprays where its
+    /// target was.
+    pub fn on_flashed(&mut self, amount: f32, tick: Tick) {
+        let seconds = bot::blinded_for(amount);
+        if seconds <= 0.0 {
+            return;
+        }
+        let until = tick + (seconds * TICK_RATE as f32) as Tick;
+        let toward = self.target_in_sight().map(|_| self.look);
+        if self.blind.is_none_or(|b| b.until < until) {
+            self.blind = Some(Blind {
+                from: tick,
+                until,
+                toward: toward.or(self.blind.and_then(|b| b.toward)),
+            });
+        }
+        self.flashed += 1;
+        self.engagement = None;
+        self.in_sight = false;
+        self.danger = None;
     }
 
     /// The lane the bot is following, if any.
@@ -386,6 +559,11 @@ impl BotBrain {
         self.held = Held::default();
         self.detour = None;
         self.detour_picked = false;
+        self.throwing = None;
+        self.seen.clear();
+        self.blind = None;
+        self.danger = None;
+        self.next_throw_check = tick + TICK_RATE;
     }
 
     /// Someone shot this bot from `from`.
@@ -411,6 +589,9 @@ impl BotBrain {
         let tick = world.tick;
         if !me.alive {
             self.engagement = None;
+            self.throwing = None;
+            self.blind = None;
+            self.danger = None;
             return PlayerInput {
                 yaw: self.look.x,
                 pitch: self.look.y,
@@ -418,8 +599,21 @@ impl BotBrain {
             }
             .quantized();
         }
-        if (tick + u32::from(me.id)).is_multiple_of(PERCEPTION_INTERVAL) {
+        if self.blind.is_some_and(|b| tick >= b.until) {
+            self.blind = None;
+        }
+        let blind = self.blind.is_some();
+        if !blind && (tick + u32::from(me.id)).is_multiple_of(PERCEPTION_INTERVAL) {
             self.perceive(me, world, &skill);
+            self.sense_grenades(me, world);
+        }
+        let look_before = self.look;
+        if blind {
+            let mut want = Want::default();
+            self.stagger(state, tick, &skill, &mut want);
+            self.keep_throwing(state, look_before, tick, &skill, &mut want);
+            self.unstick(me, tick, &mut want);
+            return self.press(want, state);
         }
         let eye = me.eye(world.params);
         let target = self.engagement.and_then(|e| {
@@ -442,6 +636,8 @@ impl BotBrain {
                 self.goal = None;
             } else {
                 self.hide(me, spot, target.as_ref(), state, world, &skill, &mut want);
+                self.flee(me, world, &skill, &mut want);
+                self.keep_throwing(state, look_before, tick, &skill, &mut want);
                 self.unstick(me, tick, &mut want);
                 return self.press(want, state);
             }
@@ -468,8 +664,326 @@ impl BotBrain {
                 self.roam(me, state, world, &skill, objective, &mut want);
             }
         }
+        if self.throwing.is_none()
+            && self.danger.is_none()
+            && !running
+            && (tick + u32::from(me.id)).is_multiple_of(PERCEPTION_INTERVAL)
+        {
+            self.consider_throw(me, state, world, &skill);
+        }
+        self.flee(me, world, &skill, &mut want);
+        self.keep_throwing(state, look_before, tick, &skill, &mut want);
         self.unstick(me, tick, &mut want);
         self.press(want, state)
+    }
+
+    /// Looks for a grenade chance: enemies bunched together (a frag), or one
+    /// hiding where it was just seen (a frag, or a flashbang). A chance the
+    /// bot's skill takes is planned over flat ground first, then checked
+    /// against the map: the flight must end near the target and the blast
+    /// must reach it.
+    fn consider_throw(
+        &mut self,
+        me: &BotPlayer,
+        state: &Predicted,
+        world: &mut BotWorld,
+        skill: &SkillParams,
+    ) {
+        let tick = world.tick;
+        if tick < self.next_throw_check || *world.throw_checks == 0 {
+            return;
+        }
+        let combat = &state.state.combat;
+        let frag = combat.can_throw(Kind::Frag);
+        let flash = combat.tactical == Kind::Flash && combat.can_throw(Kind::Flash);
+        if !frag && !flash {
+            return;
+        }
+        let feet = me.feet;
+        let in_range = |p: Vector3, (near, far): (f32, f32)| {
+            let d = horizontal_distance(p, feet);
+            d >= near && d <= far
+        };
+        let recent = (GROUP_MEMORY * TICK_RATE as f32) as Tick;
+        let group: Vec<Vec3> = self
+            .seen
+            .iter()
+            .filter(|(_, p, t)| tick.saturating_sub(*t) <= recent && in_range(*p, FRAG_RANGE))
+            .map(|(_, p, _)| to_sim(*p))
+            .collect();
+        let hidden = self.last_seen.filter(|(_, t)| {
+            let age = tick.saturating_sub(*t) as f32 * TICK_DT;
+            !self.in_sight && (HIDDEN_FOR.0..=HIDDEN_FOR.1).contains(&age)
+        });
+        let chance = if frag {
+            bot::cluster(&group)
+                .map(|(center, _)| (Kind::Frag, to_godot(center)))
+                .or(hidden
+                    .filter(|(p, _)| in_range(*p, FRAG_RANGE))
+                    .map(|(p, _)| (Kind::Frag, p)))
+        } else {
+            None
+        }
+        .or(hidden
+            .filter(|(p, _)| flash && in_range(*p, FLASH_THROW_RANGE))
+            .map(|(p, _)| (Kind::Flash, p)));
+        let Some((kind, target)) = chance else {
+            return;
+        };
+        if !self.always_throw && self.random() >= skill.grenade_chance {
+            self.next_throw_check = tick + (THROW_PASS_SECONDS * TICK_RATE as f32) as Tick;
+            return;
+        }
+        self.next_throw_check = tick + (THROW_CHECK_SECONDS * TICK_RATE as f32) as Tick;
+        *world.throw_checks -= 1;
+        let eye = state_feet(state)
+            + Vector3::UP * state.state.movement.eye_height(&world.params.movement);
+        let yaw = look::bearing(to_sim(eye), to_sim(target)).x;
+        let hand = grenades::hand_point(world.space, eye, yaw);
+        let margin = skill.cook_margin;
+        let plans = bot::plan_throw(kind, to_sim(hand), to_sim(target), margin);
+        let mut rays = CountingCollide {
+            inner: SpaceCollide {
+                space: &mut *world.space,
+            },
+            left: THROW_CHECK_RAYS,
+        };
+        for plan in plans.iter().filter(|p| p.miss < bot::MAX_MISS).take(2) {
+            let grenade = Grenade::thrown(
+                kind,
+                to_sim(hand),
+                plan.yaw,
+                plan.pitch,
+                Vec3::ZERO,
+                plan.fuse,
+            );
+            let trace = bot::trace_flight(grenade, &mut rays, plan.fuse);
+            if rays.left == 0 {
+                break;
+            }
+            let blast = to_godot(bot::at_time(&trace, plan.fuse));
+            if blast.distance_to(target) > bot::MAX_MISS {
+                continue;
+            }
+            let lands = match kind {
+                // Out of the thrower's own blast, and the blast reaches.
+                Kind::Frag => {
+                    blast.distance_to(feet) > equipment::FRAG_RADIUS
+                        && grenades::blast_reaches(rays.inner.space, blast, target)
+                }
+                _ => grenades::clear_line(
+                    rays.inner.space,
+                    blast + Vector3::UP * equipment::BLAST_LIFT,
+                    target + Vector3::UP * 1.5,
+                ),
+            };
+            if lands {
+                self.start_throw(kind, plan, tick);
+                return;
+            }
+        }
+    }
+
+    fn start_throw(&mut self, kind: Kind, plan: &bot::ThrowPlan, tick: Tick) {
+        self.throwing = Some(Throwing {
+            kind,
+            view: Vec2::new(plan.yaw, plan.pitch),
+            hold: (plan.hold * TICK_RATE as f32).ceil() as Tick,
+            started: tick,
+            pressed: None,
+            carried: 0,
+        });
+    }
+
+    /// Pops smoke between the bot and `threat` as it breaks for cover.
+    fn cover_with_smoke(
+        &mut self,
+        me: &BotPlayer,
+        threat: Vector3,
+        world: &mut BotWorld,
+        state: &Predicted,
+    ) {
+        let combat = &state.state.combat;
+        if combat.tactical != Kind::Smoke || !combat.can_throw(Kind::Smoke) {
+            return;
+        }
+        let distance = horizontal_distance(threat, me.feet);
+        if distance < SMOKE_THROW.0 {
+            return;
+        }
+        let along = (distance * 0.5).clamp(SMOKE_THROW.0, SMOKE_THROW.1);
+        let flat = Vector3::new(threat.x - me.feet.x, 0.0, threat.z - me.feet.z) / distance;
+        let spot = world.navigation.closest_point(me.feet + flat * along);
+        let eye = me.eye(world.params);
+        let plans = bot::plan_throw(Kind::Smoke, to_sim(eye), to_sim(spot), None);
+        if let Some(plan) = plans.first() {
+            self.start_throw(Kind::Smoke, plan, world.tick);
+        }
+    }
+
+    /// Turns to a planned throw and works its button: down once the view is
+    /// on it, held for the cook, then let go. Nothing else is fired, aimed,
+    /// or reloaded meanwhile, and the bot stands to throw (it still runs
+    /// from a frag).
+    fn keep_throwing(
+        &mut self,
+        state: &Predicted,
+        look_before: Vec2,
+        tick: Tick,
+        skill: &SkillParams,
+        want: &mut Want,
+    ) {
+        let Some(mut plan) = self.throwing else {
+            return;
+        };
+        let combat = &state.state.combat;
+        let blind = self.blind.is_some();
+        if !blind {
+            self.look = bot::turn_toward(look_before, plan.view, skill.turn_rate, TICK_DT);
+        }
+        match plan.pressed {
+            None => {
+                if tick.saturating_sub(plan.started) > (THROW_GIVE_UP * TICK_RATE as f32) as Tick
+                    || blind
+                    || self.danger.is_some()
+                {
+                    self.throwing = None;
+                    return;
+                }
+                if bot::view_gap(self.look, plan.view) > THROW_AIM || !combat.can_throw(plan.kind) {
+                    want.fire = false;
+                    return;
+                }
+                plan.pressed = Some(tick);
+                plan.carried = combat.carried(plan.kind);
+            }
+            Some(pressed) => {
+                // Started, and the hands are back: done.
+                if !combat.throwing() && tick > pressed + 1 {
+                    if combat.carried(plan.kind) >= plan.carried {
+                        // It never came out.
+                    } else if plan.kind.lethal() {
+                        self.frags_thrown += 1;
+                    } else {
+                        self.tacticals_thrown += 1;
+                    }
+                    self.throwing = None;
+                    return;
+                }
+            }
+        }
+        let held = plan.pressed.is_some_and(|p| tick < p + plan.hold);
+        if plan.kind.lethal() {
+            want.lethal = held;
+        } else {
+            want.tactical = held;
+        }
+        want.fire = false;
+        want.aim = false;
+        want.reload = false;
+        want.melee = false;
+        want.lunge = None;
+        if self.danger.is_none() {
+            want.wish = Vec2::ZERO;
+            want.sprint = false;
+        }
+        self.throwing = Some(plan);
+    }
+
+    /// Notices frags that can reach the bot: thrown by an enemy (or by the
+    /// bot itself), within [`bot::DANGER_RADIUS`], with the blast's line to
+    /// its body clear. A few rays at most, and only for frags that close.
+    fn sense_grenades(&mut self, me: &BotPlayer, world: &mut BotWorld) {
+        let chest = me.feet + Vector3::UP * 1.1;
+        let mut nearest: Option<(Vector3, f32)> = None;
+        let world_tick = world.tick;
+        for g in world.grenades.iter().filter(|g| g.kind == Kind::Frag) {
+            let theirs = g.owner == Some(me.id) || g.owner_team.is_none_or(|t| t != me.team);
+            let distance = g.position.distance_to(chest);
+            if !theirs
+                || distance > bot::DANGER_RADIUS
+                || nearest.is_some_and(|(_, d)| d <= distance)
+            {
+                continue;
+            }
+            if grenades::blast_reaches(world.space, g.position, me.feet) {
+                nearest = Some((g.position, distance));
+            }
+        }
+        let run_to = |world: &mut BotWorld, at: Vector3, seed: u32| {
+            let away = bot::flee_point(to_sim(me.feet), to_sim(at), seed);
+            world.navigation.closest_point(to_godot(away))
+        };
+        self.danger = match (nearest, self.danger) {
+            (Some((at, _)), Some((since, _))) => Some((since, run_to(world, at, self.seed))),
+            (Some((at, _)), None) => {
+                self.flights += 1;
+                Some((world_tick, run_to(world, at, self.seed)))
+            }
+            (None, Some(_)) => {
+                // Clear of it: plan the way on afresh.
+                self.goal = None;
+                self.path.clear();
+                None
+            }
+            (None, None) => None,
+        };
+    }
+
+    /// Runs from a frag that can reach the bot, once it has had time to
+    /// react: sprinting away, still shooting if it has a target.
+    fn flee(&mut self, me: &BotPlayer, world: &mut BotWorld, skill: &SkillParams, want: &mut Want) {
+        let Some((since, spot)) = self.danger else {
+            return;
+        };
+        let react = (skill.reaction * 0.6 * TICK_RATE as f32) as Tick;
+        if world.tick.saturating_sub(since) < react {
+            return;
+        }
+        let Some(direction) = self.toward(me, world, spot) else {
+            return;
+        };
+        if self.engagement.is_none() || !self.in_sight {
+            let mut view = look::bearing(Vec3::ZERO, Vec3::new(direction.x, 0.0, direction.z));
+            view.y = 0.0;
+            self.look = bot::turn_toward(self.look, view, skill.turn_rate, TICK_DT);
+        }
+        want.wish = bot::wish_toward(self.look.x, direction);
+        want.sprint = want.wish.y > 0.8;
+        want.crouch = false;
+        want.aim = false;
+        want.melee = false;
+        want.lunge = None;
+    }
+
+    /// Blinded: the view sweeps around where the target was (or wherever it
+    /// faced), and with a target it sprays there in bursts; it backs off
+    /// and sidesteps.
+    fn stagger(&mut self, state: &Predicted, tick: Tick, skill: &SkillParams, want: &mut Want) {
+        let Some(blind) = self.blind else {
+            return;
+        };
+        let t = tick.saturating_sub(blind.from) as f32 * TICK_DT;
+        let center = blind.toward.unwrap_or(self.look);
+        let goal = center + bot::blind_wander(rng::hash(self.seed, blind.from), t);
+        self.look = bot::turn_toward(self.look, goal, skill.turn_rate * 0.5, TICK_DT);
+        if tick >= self.strafe_until {
+            self.strafe = if self.random() < 0.5 { -1.0 } else { 1.0 };
+            self.strafe_until = tick + TICK_RATE / 2;
+        }
+        want.wish = Vec2::new(self.strafe * 0.6, -0.5);
+        want.crouch = state.state.movement.stance == Stance::Crouching;
+        let weapon = state.state.combat.weapon();
+        if blind.toward.is_none() || weapon.magazine == 0 {
+            return;
+        }
+        if tick >= self.pause_until && tick >= self.burst_until {
+            let burst = skill.burst * (0.8 + self.random() * 0.8);
+            self.burst_until = tick + (burst * TICK_RATE as f32) as Tick;
+            self.pause_until =
+                self.burst_until + (skill.burst_pause * 1.5 * TICK_RATE as f32) as Tick;
+        }
+        want.fire = tick < self.burst_until;
     }
 
     /// Looks for enemies and picks the one to fight.
@@ -484,6 +998,8 @@ impl BotBrain {
         let current = self.engagement.map(|e| e.target);
         let mut best: Option<(u8, f32, Vector3)> = None;
         let mut current_visible = false;
+        self.seen
+            .retain(|(_, _, t)| tick.saturating_sub(*t) < TICK_RATE * 4);
         for enemy in world
             .players
             .iter()
@@ -501,8 +1017,12 @@ impl BotBrain {
                 || distance < HEARING_RANGE
                 || Some(enemy.id) == attacker
                 || Some(enemy.id) == current;
-            if !noticed || !clear_line(world.space, eye, point) {
+            if !noticed || world.smoke_between(eye, point) || !clear_line(world.space, eye, point) {
                 continue;
+            }
+            match self.seen.iter_mut().find(|(id, _, _)| *id == enemy.id) {
+                Some(entry) => *entry = (enemy.id, enemy.feet, tick),
+                None => self.seen.push((enemy.id, enemy.feet, tick)),
             }
             if Some(enemy.id) == current {
                 current_visible = true;
@@ -647,6 +1167,9 @@ impl BotBrain {
             self.cover = Some((spot, until));
             self.covers_taken += 1;
             self.set_goal(spot, tick);
+            if self.throwing.is_none() {
+                self.cover_with_smoke(me, threat, world, state);
+            }
         }
     }
 
@@ -1074,6 +1597,9 @@ impl BotBrain {
             reload,
             melee,
             lunge: want.lunge.filter(|_| melee),
+            // Held, not tapped: holding cooks, letting go throws.
+            lethal: want.lethal,
+            tactical: want.tactical,
             ..Default::default()
         }
         .quantized()
@@ -1096,6 +1622,25 @@ struct Want {
     reload: bool,
     melee: bool,
     lunge: Option<Vec2>,
+    lethal: bool,
+    tactical: bool,
+}
+
+/// The map as a grenade's world, casting no more than `left` rays: a throw
+/// check stops when its budget runs out.
+struct CountingCollide<'a> {
+    inner: SpaceCollide<'a>,
+    left: usize,
+}
+
+impl Collide for CountingCollide<'_> {
+    fn sweep(&mut self, from: Vec3, to: Vec3) -> Option<equipment::Contact> {
+        if self.left == 0 {
+            return None;
+        }
+        self.left -= 1;
+        self.inner.sweep(from, to)
+    }
 }
 
 /// Whether the trigger must be let go between shots (semi-automatics and bursts).
