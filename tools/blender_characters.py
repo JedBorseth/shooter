@@ -696,6 +696,7 @@ def bake_maps(objs, out: Path, size: int, ao_samples: int, ao_rounds: list | Non
     scene.world.light_settings.distance = 0.2
     groups = sorted({int(o["group"]) for o in objs})
     rounds = ao_rounds or [[groups, groups]]
+    images = {}
     passes = [
         ("albedo", "EMIT", False, 1, None),
         ("normal", "NORMAL", True, 1, None),
@@ -733,6 +734,7 @@ def bake_maps(objs, out: Path, size: int, ao_samples: int, ao_rounds: list | Non
         img.filepath_raw = str(out / f"{name}.png")
         img.file_format = "PNG"
         img.save()
+        images[name] = img
     for o in objs:
         o.hide_render = False
     # Occlusion: each texel from the round that baked its group.
@@ -751,9 +753,11 @@ def bake_maps(objs, out: Path, size: int, ao_samples: int, ao_rounds: list | Non
     img.filepath_raw = str(out / "ao.png")
     img.file_format = "PNG"
     img.save()
+    images["ao"] = img
     for m in {m for o in objs for m in o.data.materials}:
         bsdf = next(n for n in m.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
         bsdf.inputs["Emission Strength"].default_value = 0.0
+    return images
 
 
 def pixels(img) -> np.ndarray:
@@ -930,6 +934,19 @@ def main():
     for o, part in zip(clothes, spec.get("parts", [])):
         if part.get("split_legs"):
             split_legs(o, part["split_legs"])
+    pairs = []
+    if spec.get("hilo"):
+        # Modelled gloves and sleeves with high-detail sources to bake from
+        # (tools/blender_hilo.py), made from the bare arms before they are cut.
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import blender_hilo
+
+        lows, pairs = blender_hilo.build(spec["hilo"], human, rest_frames(ual))
+        for o in lows:
+            if o.get("bones"):
+                transfer_weights(o, mannequin, allowed=tuple(o["bones"]))
+        clothes += lows
+        parts += lows
     keep = spec.get("keep_body")
     if keep:
         keep_body_region(human, tuple(keep["bones"]), keep["threshold"])
@@ -977,8 +994,14 @@ def main():
     by_group: dict[int, list] = {}
     for o in parts:
         by_group.setdefault(int(o.get("group", 0)), []).append(o)
+    baked = None
+    if pairs:
+        pairs = [(lo, hi) for lo, hi in pairs if lo in parts]
+        baked = blender_hilo.bake_pairs(pairs, parts, config["size"], config.get("ao_samples", 64))
     parts = [join_parts(objs, roles) for objs in by_group.values()]
-    bake_maps(parts, out, config["size"], config.get("ao_samples", 64), config.get("ao_rounds"))
+    images = bake_maps(parts, out, config["size"], config.get("ao_samples", 64), config.get("ao_rounds"))
+    if baked is not None:
+        blender_hilo.composite(baked, images)
     joined = join_parts(parts, roles)
     parts = [joined]
     export_npz(joined, out / "mesh.npz", roles)

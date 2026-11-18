@@ -216,7 +216,7 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 - [x] Zombies as distinct people: four MakeHuman bodies (age, build, skin) in their own civilian clothes, picked per zombie (`zombie_body.tscn`, `SoldierRig.variants`).
 - [ ] Zombies: torn cloth, modelled wounds, and hair.
 - [x] First-person arms: their own model and atlas (sleeves with sewn cuffs, gloves with knuckle guards, a field watch), and finger shapes per hold (pistol grip with trigger discipline, rifle handguard, pump, two-handed pistol).
-- [ ] First-person gloves: modelled seams, palm panels, and knuckle padding baked into the arms atlas.
+- [x] First-person gloves and sleeves: modelled seams, palm panels, and knuckle padding, and cloth-simulated sleeve folds, baked from high-detail sources into the arms atlas (`tools/blender_hilo.py`).
 
 ## Phase 6 and later: production polish
 

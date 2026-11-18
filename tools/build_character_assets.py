@@ -462,6 +462,9 @@ def asset_paths(src: dict[str, Path]) -> dict[str, str]:
 # roles bake in grey; the game colours them per team.
 GREY = (0.5, 0.5, 0.5)
 MATERIALS = {
+    # The first-person sleeves' own bake (their albedo, normal, roughness, and
+    # occlusion come from their high-detail source; see tools/blender_hilo.py).
+    "sleeve": {"colour": GREY, "detail": {"kind": "ripstop", "strength": 0.3, "distance": 0.0012}, "roughness": 0.88},
     "uniform": {"use_diffuse": False, "use_bump": False, "colour": GREY,
                 "detail": {"kind": "ripstop", "strength": 0.3, "distance": 0.0012}, "roughness": 0.9},
     "pants": {"use_diffuse": False, "colour": GREY, "detail": {"kind": "ripstop", "strength": 0.15, "distance": 0.0012}, "roughness": 0.9},
@@ -529,8 +532,9 @@ KITS = {
         "far_ratio": 0.2,
         "meshes": {"Body": None},
     },
-    # The first-person arms: the soldier's sleeves and gloves at full density,
-    # with sleeve cuffs, a watch, and knuckle guards, on an atlas of their own.
+    # The first-person arms: modelled gloves and cloth-simulated sleeves with
+    # high-detail sources baked onto them (tools/blender_hilo.py), and a
+    # watch, on an atlas of their own.
     "arms": {
         "spec": {
             "macro": {
@@ -543,14 +547,15 @@ KITS = {
             },
             "skin": "skin_young_caucasian_male",
             "parts": [
-                {"asset": "shirt", "role": "uniform", "tighten": 0.01},
-                {"asset": "gloves", "role": "gloves"},
                 {"asset": "eyes", "role": "eyes", "type": "Eyes"},
             ],
             "keep_body": {"bones": ["DEF-head", "DEF-neck"], "threshold": 0.35},
-            "gear": {"cuffs": 0, "watch": 0, "knuckles": 0},
+            "hilo": {"gloves": True, "sleeves": True, "glove_ratio": 0.62, "sleeve_ratio": 0.42},
+            "gear": {"watch": 0},
             "keep_only": {"bones": ["DEF-upper_arm.", "DEF-forearm.", "DEF-hand.", "DEF-f_", "DEF-thumb."], "threshold": 0.5},
         },
+        # The gloves fill the screen; they get most of the atlas.
+        "density": {"gloves": 4.0},
         "size": 2048,
         "meshes": {"ArmsFP": None},
     },
