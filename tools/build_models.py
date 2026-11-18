@@ -30,6 +30,7 @@ Every model is rebuilt each run (they share the material folder).
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -41,6 +42,7 @@ sys.path.insert(0, str(TOOLS))
 import build_slamcity_city as B  # noqa: E402
 import gear_models as G  # noqa: E402
 import slamcity_models as M  # noqa: E402
+import world_detail as D  # noqa: E402
 import world_looks as W  # noqa: E402
 
 REPO = TOOLS.parent
@@ -184,6 +186,13 @@ def _group_key(look: str):
             spec.get("normal", 1.0))
 
 
+def detail_line(text: str) -> str:
+    """The material line for its texture set's detail strength, if not 1."""
+    found = re.search(r'path="res://assets/textures/([a-z_0-9]+)/albedo', text)
+    strength = D.detail_for(found.group(1) if found else None)
+    return "" if strength == 1.0 else f"shader_parameter/detail = {strength:g}\n"
+
+
 def main():
     W.SLAMCITY_LOOKS.update(G.LOOKS)
     B.RECTS = B.atlas_rects()
@@ -207,11 +216,12 @@ def main():
         text = path.read_text()
         path.write_text("\n".join("shader_parameter/anti_tile = 0" if line.startswith("shader_parameter/anti_tile")
                                    else line for line in text.split("\n")))
-    # Project in each model's own space (see the module docstring).
+    # Project in each model's own space (see the module docstring), and give
+    # each texture set its close-up detail strength (world_detail.DETAIL).
     for path in MATERIALS.glob("*.tres"):
         text = path.read_text()
         if 'path="res://shaders/world.gdshader"' in text:
-            path.write_text(text.rstrip("\n") + "\nshader_parameter/object_space = true\n")
+            path.write_text(text.rstrip("\n") + "\nshader_parameter/object_space = true\n" + detail_line(text))
     import test_models  # noqa: PLC0415
 
     (OUT / "models.hash").write_text(test_models.sources_hash() + "\n")

@@ -18,3 +18,4 @@ shader_parameter/grime = 0.55
 shader_parameter/normal_strength = 1
 shader_parameter/anti_tile = 0
 shader_parameter/object_space = true
+shader_parameter/detail = 0.45

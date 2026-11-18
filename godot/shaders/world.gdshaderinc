@@ -56,10 +56,15 @@ uniform float grime_height = 0.7;
 // dust and the finish goes matt, in blotches.
 uniform float dust : hint_range(0.0, 1.0) = 0.0;
 // Breaks up visible tiling on big isotropic surfaces (asphalt, concrete,
-// plaster): a second albedo sample, rotated and at another scale, blended in
-// patches by the world noise. One extra texture fetch where it is on. Leave it
-// off for anything with courses or a grid (brick, tile), which rotation breaks.
+// plaster): a second albedo sample, shifted by a fraction of a repeat (same
+// scale and the same way up, so its features match the relief and the light
+// baked into the texture), blended in patches by the world noise. One extra
+// texture fetch where it is on.
 uniform float anti_tile : hint_range(0.0, 1.0) = 0.0;
+// How strongly this material takes the close-up detail on High: 1 for broad,
+// rough surfaces, less for ones with their own relief or a smooth finish
+// (tools/world_detail.py DETAIL, written by the material tools).
+uniform float detail : hint_range(0.0, 2.0) = 1.0;
 uniform float floor_height = 0.0;
 
 #ifdef WORLD_WINDOWS
@@ -162,7 +167,10 @@ void fragment() {
 		// at 1080p on a GTX 1060.
 		vec3 base = texture(albedo_tex, uv).rgb;
 		if (anti_tile > 0.0) {
-			vec2 uv2 = vec2(uv.y, -uv.x) * 0.63 + vec2(0.37, 0.71);
+			// Shifted, not turned or scaled: a turned copy's shading fell on
+			// the wrong side of its bumps, and a scaled one's grain did not
+			// match. The same gradients as the first sample, so no extra cost.
+			vec2 uv2 = uv + vec2(0.37, 0.71);
 			float patches = texture(world_noise, world_position.xz * 0.021 + world_position.y * 0.013).r;
 			base = mix(base, texture(albedo_tex, uv2).rgb, anti_tile * smoothstep(0.35, 0.65, patches));
 		}
@@ -185,7 +193,7 @@ void fragment() {
 			float close = 1.0 - smoothstep(DETAIL_NEAR, DETAIL_FAR, length(VERTEX));
 			float grainy = smoothstep(0.45, 0.8, orm.g * roughness_scale) * (1.0 - orm.b * metallic_scale);
 			vec2 d = texture(world_detail_normal, uv * tile_size * DETAIL_SCALE).rg * 2.0 - 1.0;
-			d *= close * grainy;
+			d *= close * grainy * detail;
 			nm.xy += d * 0.3 * normal_strength;
 			rough = clamp(rough + (d.x + d.y) * 0.1, 0.04, 1.0);
 			albedo *= 1.0 + (d.x - d.y) * 0.04;
