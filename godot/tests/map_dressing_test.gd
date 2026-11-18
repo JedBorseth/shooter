@@ -10,6 +10,7 @@ extends SceneTree
 ##   godot --headless --path godot --script res://tests/map_dressing_test.gd
 
 const GraphicsQuality := preload("res://scripts/graphics.gd")
+const EyeAdaptation := preload("res://scripts/eye_adaptation.gd")
 const SCENE := "res://scenes/main.tscn"
 const WORLD_LAYER := 1
 
@@ -95,6 +96,25 @@ func _run() -> void:
 				% [check[0], "" if hit.is_empty() else " (hit %s)" % hit["position"]]
 			)
 		)
+
+	# A camera inside the culvert's roof (standing at its mouth, or in a
+	# capture) must still read it as covered: rays starting inside a shape
+	# miss it, so a thin cover inside the roof catches them.
+	var eye := Vector3(-10, 1.68, -18)
+	var covered := 0
+	for ray: Vector2 in EyeAdaptation.SKY_RAYS:
+		for yaw in [0.0, PI / 2, PI, -PI / 2]:
+			var turn: float = ray.x + yaw
+			var dir := Vector3(-sin(turn) * cos(ray.y), sin(ray.y), -cos(turn) * cos(ray.y))
+			if not _ray(space, eye, eye + dir * EyeAdaptation.SKY_REACH).is_empty():
+				covered += 1
+	_check(
+		covered == EyeAdaptation.SKY_RAYS.size() * 4,
+		(
+			"eye adaptation reads the culvert as covered from inside its roof (%d of %d rays)"
+			% [covered, EyeAdaptation.SKY_RAYS.size() * 4]
+		)
+	)
 
 	var meshes: Array[MeshInstance3D] = []
 	for node in scene.find_children("map_*", "MeshInstance3D", true, false):

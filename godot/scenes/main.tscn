@@ -68,6 +68,9 @@ adjustment_enabled = true
 adjustment_contrast = 1.05
 adjustment_saturation = 1.05
 
+[sub_resource type="BoxShape3D" id="Shape_culvert_cover"]
+size = Vector3(4, 0.02, 4)
+
 [node name="Main" type="Node3D" unique_id=451316195]
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1119738171]
@@ -139,6 +142,14 @@ material = ExtResource("m_tunnel")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10, 1.65, -18)
 size = Vector3(4, 0.5, 4)
 material = ExtResource("m_tunnel")
+
+[node name="SkyCovers" type="StaticBody3D" parent="."]
+collision_mask = 0
+metadata/surface = "concrete"
+
+[node name="Culvert" type="CollisionShape3D" parent="SkyCovers"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10, 1.88, -18)
+shape = SubResource("Shape_culvert_cover")
 
 [node name="Architecture" parent="." unique_id=729538725 instance=ExtResource("5_dgi5k")]
 
