@@ -37,7 +37,12 @@ func _process(_delta: float) -> void:
 			)
 		)
 	if s.has("interp_delay_ms"):
-		lines.append("interp %.0f ms   jitter %.1f ms" % [s.interp_delay_ms, s.jitter_ms])
+		lines.append(
+			(
+				"interp %.0f ms   jitter %.1f ms   gap %.0f ms"
+				% [s.interp_delay_ms, s.jitter_ms, s.snapshot_gap_ms]
+			)
+		)
 	lines.append(
 		"in %.1f kbps   out %.1f kbps   players %d" % [s.kbps_in, s.kbps_out, s.remote_players + 1]
 	)

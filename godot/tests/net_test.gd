@@ -245,8 +245,8 @@ func _play_match(client: NetClient) -> void:
 
 ## Aims down sights at the strafing bot, 14 m away, and fires short M4 bursts
 ## at its stomach as this client draws it, until the server reports a kill.
-## About 100 ms of interpolation plus a 110 ms round trip put the bot a metre
-## or more from where the server has it when each shot arrives, so every hit
+## The interpolation delay plus a 110 ms round trip put the bot most of a
+## metre from where the server has it when each shot arrives, so every hit
 ## depends on the server rewinding the bot to what this client saw.
 func _shoot_bot(player: FpsPlayer, client: NetClient, bot: RemotePlayer) -> void:
 	HitboxRig.set_debug_visible(true)

@@ -114,7 +114,8 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Input packets: each send carries every unacknowledged input (up to 16) to survive packet loss. The server keeps an input queue per player (`shooter_sim::net::input_queue`).
 - [x] Client-side prediction: a history of inputs and resulting states per input; on each snapshot, compare, and on a mismatch restart from the server's state and replay pending inputs through `body::tick`.
 - [x] Smooth error correction: blend visual position after a misprediction instead of snapping.
-- [x] Snapshot interpolation for remote players, rendered about 100 ms in the past, with an adaptive jitter buffer.
+- [x] Snapshot interpolation for remote players, with an adaptive jitter buffer.
+- [x] Interpolation delay sized by the connection, not a fixed 100 ms floor: two snapshot intervals, widened to the longest recent gap between snapshots while packets go missing, plus a jitter margin (`SnapshotClock`). About 35 to 50 ms on a clean link, which cuts peeker's advantage and deaths behind cover by about 50 to 65 ms.
 - [x] Snapshot delta compression against the last acknowledged snapshot. Quantize positions and angles.
 - [x] A determinism test in `rust/sim`: the same input stream gives bit-identical state across runs and in release and debug builds.
 - [x] Network condition simulator (latency, jitter, loss) for local testing, plus a debug overlay (ping, loss, prediction error).
