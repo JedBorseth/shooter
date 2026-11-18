@@ -2,8 +2,9 @@ extends SceneTree
 ## Captures the frag grenade for review: the model up close on the floor,
 ## the first-person throw (pin, cook, release, follow-through) frozen at
 ## several moments, the throw in flight, the danger indicator with a
-## grenade at the player's feet, a third-person throw from the front and the
-## side, and the blast from beside it at several moments. Needs a GPU and a display (or Xvfb):
+## grenade at the player's feet, a third-person throw from the front, the
+## side, and 20 m away, and the blast from beside it at several moments.
+## Needs a GPU and a display (or Xvfb); --fixed-fps 60 gives true timing:
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
 ##     --script res://tests/capture_grenade.gd
 
@@ -151,7 +152,10 @@ func _third_person(main: Node) -> void:
 	for frame in 40:
 		soldier.drive({"weapon": "m4", "yaw": 0.0}, 1.0 / 60.0)
 		await process_frame
-	for view: String in ["front", "side"]:
+	for view: String in ["front", "side", "far"]:
+		# "far" is another player's view from 20 m, at the game's own field
+		# of view, to check the throw reads at fighting range.
+		camera.fov = 58.0 if view == "far" else 40.0
 		for progress: float in THIRD_PERSON:
 			for frame in 12:
 				(
@@ -168,6 +172,8 @@ func _third_person(main: Node) -> void:
 				)
 			if view == "front":
 				camera.look_at_from_position(Vector3(-1.8, 1.4, 7.4), Vector3(0, 1.2, 10))
+			elif view == "far":
+				camera.look_at_from_position(Vector3(-7.0, 1.6, -8.7), Vector3(0, 1.1, 10))
 			else:
 				camera.look_at_from_position(Vector3(3.2, 1.3, 10.2), Vector3(0, 1.2, 10))
 			await _shot("third_%s_%02d" % [view, int(progress * 100.0)])
