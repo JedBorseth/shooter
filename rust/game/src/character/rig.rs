@@ -119,6 +119,10 @@ pub struct SoldierFrame {
     /// to 1 crouched), which the hit zones follow too. Without it (offline
     /// dummies) the rig eases between stances on its own.
     pub crouch: Option<f32>,
+    /// How far the aim has turned from the planted feet and how far the legs
+    /// step in place (`Progress::turn` and `step`, the server's). Without it
+    /// (offline) the rig turns its own feet.
+    pub turn: Option<(f32, f32)>,
 }
 
 impl SoldierFrame {
@@ -158,6 +162,7 @@ impl Default for SoldierFrame {
             stride: None,
             mantle_progress: None,
             crouch: None,
+            turn: None,
         }
     }
 }
@@ -251,6 +256,11 @@ pub struct SoldierRig {
     stride: f32,
     mantle_progress: f32,
     climb: f32,
+    /// Turning in place: the aim's offset from the feet and the in-place
+    /// step drawn, and the rig's own turning offline.
+    turn: f32,
+    step: f32,
+    own_turning: gait::Turning,
 }
 
 #[godot_api]
@@ -457,7 +467,9 @@ impl SoldierRig {
     /// `velocity` (Vector3), `on_floor`, `stance` ("standing", "crouching",
     /// "sliding"), `sprinting`, `yaw`, `pitch`, `ads`, `weapon` (file key),
     /// `reload` (progress, or -1), `alive`, `mantling`, `meleeing`, `crouch`
-    /// (the simulation's crouch blend, or -1). Missing keys keep their defaults.
+    /// (the simulation's crouch blend, or -1), `turn` (the aim's turn from the
+    /// planted feet; missing turns the rig's own feet). Missing keys keep their
+    /// defaults.
     #[func]
     fn drive(&mut self, state: VarDictionary, delta: f32) {
         let get = |key: &str| state.get(key);
@@ -495,6 +507,9 @@ impl SoldierRig {
             stride: (f("stride", -1.0) >= 0.0).then(|| f("stride", 0.0)),
             mantle_progress: (f("mantle_progress", -1.0) >= 0.0).then(|| f("mantle_progress", 0.0)),
             crouch: (f("crouch", -1.0) >= 0.0).then(|| f("crouch", 0.0)),
+            turn: get("turn")
+                .and_then(|v| v.try_to::<f32>().ok())
+                .map(|t| (t, f("step", 0.0))),
         };
         self.update(&frame, delta);
     }
@@ -581,6 +596,22 @@ impl SoldierRig {
         // Positive turns the hips left; moving right turns them right.
         self.lower_yaw += (-leg_turn - self.lower_yaw) * smoothing(10.0, dt);
 
+        // Turning in place: the legs stay on the feet until they step round,
+        // and step in place as they do (`gait::Turning`, the rule the
+        // server's body clock and the hit zones follow). Offline the rig
+        // keeps its own feet and steps its own stride.
+        let mut stepped = 0.0;
+        (self.turn, self.step) = frame.turn.unwrap_or_else(|| {
+            let still = frame.alive
+                && frame.on_floor
+                && !frame.mantling
+                && frame.stance != Stance::Sliding
+                && speed <= gait::MOVING_SPEED;
+            let (turn, strides) = self.own_turning.tick(frame.yaw, still, dt);
+            stepped = strides;
+            (turn, self.own_turning.step)
+        });
+
         let crouch_target = if frame.stance == Stance::Crouching {
             1.0
         } else {
@@ -627,7 +658,7 @@ impl SoldierRig {
             } else {
                 0.0
             };
-            gait::advance_stride(self.stride, rate, dt)
+            (gait::advance_stride(self.stride, rate, dt) + stepped).rem_euclid(1.0)
         });
         self.mantle_progress = match frame.mantle_progress {
             Some(p) => p,
@@ -704,7 +735,13 @@ impl SoldierRig {
                 set(tree, "walk/blend_position", position.to_variant());
                 set(tree, "walk_rate/scale", rate.to_variant());
             } else {
-                let walk = gait::walk_share(stand_position);
+                // Stepping round on the spot plays the walk at the stride, as
+                // the hit zones pose it.
+                let (stand_position, walk) = if stand_position <= 0.0 && self.step > 0.0 {
+                    (gait::WALK_SPEED, self.step * gait::TURN_STEP_WEIGHT)
+                } else {
+                    (stand_position, gait::walk_share(stand_position))
+                };
                 set(
                     tree,
                     "stand_loops/blend_position",
@@ -724,6 +761,7 @@ impl SoldierRig {
                 // A leg hit dips the body toward a crouch for a moment.
                 let stance = (self.crouch + self.buckle.value).clamp(0.0, 1.0);
                 set(tree, "stance/blend_amount", stance.to_variant());
+
                 set(tree, "slide/blend_amount", self.slide.to_variant());
                 set(tree, "air/blend_amount", self.air.to_variant());
                 let hold = if self.weapon.is_some() && frame.alive {
@@ -748,6 +786,8 @@ impl SoldierRig {
             } else {
                 0.0
             },
+            turn: self.turn,
+            step: self.step,
         }
     }
 
@@ -907,6 +947,7 @@ impl SoldierRig {
         let slide = 1.0 - (1.0 - carry::SLIDE_PITCH_SCALE) * self.slide;
         PoseInput {
             lower_yaw: self.lower_yaw,
+            turn: if frame.alive { self.turn } else { 0.0 },
             pitch: frame.pitch.clamp(-carry::MAX_PITCH, carry::MAX_PITCH) * slide,
             lean: self.lean.value + Vector3::new(0.0, 0.0, -0.3) * lunge,
             head_lean: self.head.value,
@@ -1218,6 +1259,7 @@ impl SoldierRig {
         add("crouch_seek", AnimationNodeTimeSeek::new_gd().upcast(), 1.0);
         add("crouch", AnimationNodeBlend2::new_gd().upcast(), 1.5);
         add("stance", AnimationNodeBlend2::new_gd().upcast(), 2.0);
+
         add("slide_clip", clip("ual2/Slide").upcast(), 2.0);
         add("slide", AnimationNodeBlend2::new_gd().upcast(), 3.0);
         add("jump_clip", clip("ual1/Jump").upcast(), 3.0);

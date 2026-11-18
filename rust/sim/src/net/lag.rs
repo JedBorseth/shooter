@@ -103,6 +103,8 @@ impl Interpolate for Progress {
             stride: lerp_phase(self.stride, to.stride, t),
             reload: track(self.reload, to.reload),
             mantle: track(self.mantle, to.mantle),
+            turn: self.turn + crate::hitbox::gait::wrap_angle(to.turn - self.turn) * t,
+            step: self.step + (to.step - self.step) * t,
         }
     }
 }
@@ -499,11 +501,15 @@ mod tests {
             stride: 0.9,
             reload: 0.2,
             mantle: 0.8,
+            turn: 0.0,
+            step: 0.0,
         };
         let b = Progress {
             stride: 0.1,
             reload: 0.4,
             mantle: 0.1,
+            turn: 0.0,
+            step: 0.0,
         };
         let mid = a.interpolate(&b, 0.5);
         assert!(
@@ -544,6 +550,8 @@ mod tests {
                     stride: 0.25,
                     reload: 0.2,
                     mantle: 0.4,
+                    turn: 0.0,
+                    step: 0.0,
                 },
             }
         );

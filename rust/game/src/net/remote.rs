@@ -483,6 +483,7 @@ impl RemotePlayer {
             stride: Some(s.progress.stride),
             mantle_progress: s.mantling.then_some(s.progress.mantle),
             crouch: Some(s.crouch),
+            turn: Some((s.progress.turn, s.progress.step)),
         };
         match (self.drawn_alive, s.alive) {
             // Dead: the body that died lies where it fell, in the scene's
