@@ -1441,7 +1441,9 @@ impl WeaponView {
     pub fn grips(&self) -> Grips {
         // On the bolt the hand turns palm-down over the handle.
         let rake = self.grip_rake + BOLT_HAND_RAKE * self.bolt_hand;
-        crate::character::rig::grips_of(&self.to_gd().upcast(), rake)
+        let mut grips = crate::character::rig::grips_of(&self.to_gd().upcast(), rake);
+        grips.rests = [self.right_rest, self.hand_rest];
+        grips
     }
 
     /// Third-person setup: brightened standard materials (the low-poly pack is

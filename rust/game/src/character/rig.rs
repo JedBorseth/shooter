@@ -1291,10 +1291,16 @@ impl SoldierRig {
             // (`carry::hand_targets`), so the third-person hands stay on the
             // same numbers rather than the measured handguard.
             g.section = None;
-            if g.hold == Hold::Handguard {
+            if g.hold == Hold::Handguard && !g.foregrip {
                 // Mid-handguard rather than at the muzzle end of it, so the
-                // support elbow bends and drops under the weapon.
+                // support elbow bends and drops under the weapon. The fitted
+                // support pose was fitted where the first-person hand holds,
+                // so here the hand keeps the hold's shape. (On a foregrip the
+                // hand stays on the foregrip, where its pose was fitted.)
                 g.left.z += carry::SUPPORT_BACK;
+                g.fingers[1] = None;
+                g.spreads[1] = None;
+                g.seats[1] = Vector3::ZERO;
             }
             g
         });
@@ -1974,7 +1980,7 @@ fn support_section(view: &Gd<Node3D>, marker: Vector3) -> Option<Section> {
     }
     let mut points = Vec::new();
     for tri in super::grasp::shown_triangles(view) {
-        section_points(&tri, marker.z, &mut points);
+        section_points(&tri.corners, marker.z, &mut points);
     }
     let section = section_bounds(&points, marker).map(|(centre, half)| Section {
         marker,

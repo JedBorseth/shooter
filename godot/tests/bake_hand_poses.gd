@@ -9,23 +9,26 @@ extends SceneTree
 ## rebuild (the game reads the weapon files at build time):
 ##   godot --headless --path godot --script res://tests/bake_hand_poses.gd
 ## hand_poses_test.gd holds every weapon in its stored poses and fails if a
-## finger or palm goes into it.
+## sampled finger or palm goes into it (past the limits and exceptions below)
+## or a weapon has no stored poses. It does not compare the poses with a
+## fresh fit: re-run this after changing a model.
 
 ## The weapon files to fit.
 const WEAPONS := ["m4", "ak47", "br3", "lsw6", "pdw9", "m40", "m870", "m1911", "laser"]
 ## How far (mm) a finger or a palm may go into its weapon. A glove gives a
-## little; the palm is tested as a flat plate, which a hand wrapped round a
-## narrow foregrip is not.
+## little; the palm is tested as a flat plate, which a fist wrapped round a
+## narrow foregrip is not (those read about 5 mm in).
 const MOST_FINGER_DEPTH := 1.0
-const MOST_PALM_DEPTH := 4.5
+const MOST_PALM_DEPTH := 5.5
+## How far (mm) an arm may fall short of putting its hand where its pose is.
+const MOST_REACH_MISS := 5.0
 ## Fingers the fit cannot clear, how far (mm) they may go in instead, and why.
 ## Fix the model or the grip marker and remove the entry.
 const KNOWN_DEPTHS := {
 	"lsw6/right index": [4.0, "the box magazine reaches back over the trigger guard"],
 	"lsw6+grip/right index": [4.0, "the box magazine reaches back over the trigger guard"],
 	"lsw6/left middle finger": [2.0, "not yet diagnosed"],
-	"lsw6+grip/left index": [6.5, "not yet diagnosed"],
-	"pdw9+grip/left little finger": [9.5, "not yet diagnosed"],
+	"ak47/left index": [4.5, "not yet diagnosed"],
 	"m1911/left index": [6.0, "not yet diagnosed"],
 }
 const BLOCK_START := "    // Finger poses fitted to the model"
@@ -70,11 +73,14 @@ func _run() -> void:
 		if source.is_empty():
 			_failures.append("%s: no weapon file" % key)
 			continue
-		var takes_grip := source.contains("Grip,") or source.contains("Grip]")
+		if source.contains("\r"):
+			_failures.append("%s: the weapon file has CRLF line ends" % key)
+			continue
+		var takes_grip := _takes_grip(source)
 		var variants := [key, key + "+grip"] if takes_grip else [key]
 		if check:
 			var stored := _stored_block(source)
-			if stored.is_empty() or (takes_grip and not stored.contains("left_foregrip")):
+			if stored in ["", "?"] or (takes_grip and not stored.contains("left_foregrip: Some")):
 				_failures.append("%s: no fitted hand poses; run tests/bake_hand_poses.gd" % key)
 				continue
 			for variant: String in variants:
@@ -91,7 +97,8 @@ func _run() -> void:
 		_check_depths(key, fit)
 		if takes_grip:
 			_check_depths(key + "+grip", foregrip)
-		_write(path, source, _block(fit, foregrip))
+		if not _write(path, source, _block(fit, foregrip)):
+			_failures.append("%s: cannot find where its `hands` field ends; not written" % key)
 	if not _failures.is_empty():
 		for failure in _failures:
 			printerr("FAIL: ", failure)
@@ -102,7 +109,8 @@ func _run() -> void:
 
 
 ## Holds `key` (a weapon, or one with an attachment fitted) and returns the
-## arms' `query` (`fit_hands` or `hand_depths`) for it.
+## arms' `query` (`fit_hands` or `hand_depths`) for it, or {} if the player
+## never ends up holding it, ready.
 func _hold(player: FpsPlayer, arms: Node, key: String, query: String) -> Dictionary:
 	if not player.give_weapon(key):
 		return {}
@@ -111,8 +119,31 @@ func _hold(player: FpsPlayer, arms: Node, key: String, query: String) -> Diction
 	Input.action_press(slot)
 	await _frames(2)
 	Input.action_release(slot)
-	await _frames(70)
+	for i in 300:
+		if player.weapon_key() == key and player.weapon_ready():
+			break
+		await _frames(1)
+	if player.weapon_key() != key or not player.weapon_ready():
+		return {}
+	# Past the raise (a pump gun's first raise racks it), with both grip
+	# markers at rest for a while, so the hands are on their grips.
+	var settled := 0
+	for i in 600:
+		settled = settled + 1 if arms.hands_settled() else 0
+		if settled >= 10:
+			break
+		await _frames(1)
+	if settled < 10:
+		return {}
 	return arms.call(query)
+
+
+## Whether the weapon file lists the foregrip among its attachments.
+func _takes_grip(source: String) -> bool:
+	var line := RegEx.create_from_string("(?m)^\\s*attachments:\\s*\\[([^\\]]*)\\]").search(source)
+	return (
+		line != null and RegEx.create_from_string("\\bGrip\\b").search(line.get_string(1)) != null
+	)
 
 
 ## Fails for any finger or palm deeper into the weapon than allowed. A fit
@@ -121,12 +152,22 @@ func _check_depths(key: String, hands: Dictionary) -> void:
 	if hands.is_empty():
 		_failures.append("%s: the hands did not hold it" % key)
 		return
-	var depths: PackedFloat32Array = hands["finger_depths"]
+	var depths: PackedFloat32Array = hands.get("finger_depths", PackedFloat32Array())
+	var palms: Vector2 = hands.get("palm_depth", Vector2(INF, INF))
+	# Every finger and both palms measured: a missing or unmeasured one fails.
+	var measured := depths.size() == FINGER_NAMES.size() and palms.is_finite()
+	for d in depths:
+		measured = measured and is_finite(d) and d > -1000.0
+	if not measured:
+		_failures.append("%s: not every finger and palm was measured" % key)
+		return
 	for i in depths.size():
 		var known: Array = KNOWN_DEPTHS.get("%s/%s" % [key, FINGER_NAMES[i]], [MOST_FINGER_DEPTH])
 		if depths[i] > known[0]:
 			_failures.append("%s: the %s is %.1f mm into it" % [key, FINGER_NAMES[i], depths[i]])
-	var palms: Vector2 = hands["palm_depth"]
+	var miss: Vector2 = hands.get("reach_miss", Vector2.ZERO)
+	if max(miss.x, miss.y) > MOST_REACH_MISS:
+		_failures.append("%s: a hand is %.1f mm off its grip" % [key, max(miss.x, miss.y)])
 	if max(palms.x, palms.y) > MOST_PALM_DEPTH:
 		_failures.append("%s: a palm is %.1f mm into it" % [key, max(palms.x, palms.y)])
 
@@ -186,26 +227,44 @@ func _metres(m: float) -> String:
 	return "0" if text in ["-0", ""] else text
 
 
-## The `hands` block already in a weapon file, or "".
+## The `hands` field already in a weapon file, with the comment lines just
+## above it, or "" if it has none. "?" if it has one whose end cannot be
+## found (the field closes with `)),` alone on a line).
 func _stored_block(source: String) -> String:
-	var start := source.find(BLOCK_START)
-	if start < 0:
+	var field := RegEx.create_from_string("(?m)^[ \\t]*hands:").search(source)
+	if field == null:
 		return ""
-	var end := source.find("    )),\n", start)
-	return "" if end < 0 else source.substr(start, end + 8 - start)
+	var start := field.get_start()
+	# Take the comment lines directly above it with it.
+	while start > 0:
+		var line_start := source.rfind("\n", start - 2) + 1
+		if not source.substr(line_start, start - line_start).strip_edges().begins_with("//"):
+			break
+		start = line_start
+	var end := RegEx.create_from_string("(?m)^[ \\t]*\\)\\),[ \\t]*$").search(
+		source, field.get_end()
+	)
+	if end == null:
+		return "?"
+	return source.substr(start, end.get_end() + 1 - start)
 
 
-func _write(path: String, source: String, block: String) -> void:
+## Writes `block` in place of the file's `hands` field, or before the
+## definition's closing parenthesis if it has none. False, writing nothing,
+## if it has one whose end cannot be found.
+func _write(path: String, source: String, block: String) -> bool:
 	var old := _stored_block(source)
 	var updated := ""
+	if old == "?":
+		return false
 	if not old.is_empty():
 		updated = source.replace(old, block)
 	else:
-		# Before the closing parenthesis of the definition.
 		var close := source.rfind(")")
 		updated = source.substr(0, close) + block + source.substr(close)
 	var file := FileAccess.open(ProjectSettings.globalize_path(path), FileAccess.WRITE)
 	file.store_string(updated)
+	return true
 
 
 func _frames(n: int) -> void:

@@ -151,7 +151,9 @@ impl FpArms {
     /// hold it now (`tests/hand_poses_test.gd`): `finger_depths` (mm, each
     /// finger: right index to thumb, the right index off the trigger, then
     /// left index to thumb) and `palm_depth` (mm, right and left), negative
-    /// when clear; or an empty dictionary when no weapon is held.
+    /// when clear, both where the hands are aimed; and `reach_miss` (mm,
+    /// right and left), how far the drawn hands fell short of that; or an
+    /// empty dictionary when no weapon is held.
     #[func]
     pub fn hand_depths(&self) -> VarDictionary {
         let mut out = VarDictionary::new();
@@ -161,6 +163,19 @@ impl FpArms {
             depths_into(&mut out, &depths);
         }
         out
+    }
+
+    /// Whether both grip markers of the weapon in hand are at rest (no clip,
+    /// pump stroke, or bolt moving a hand), so a pose measured now is the
+    /// held pose.
+    #[func]
+    pub fn hands_settled(&self) -> bool {
+        self.grips.is_some_and(|g| {
+            [g.right, g.left]
+                .iter()
+                .zip(g.rests)
+                .all(|(at, rest)| rest.is_some_and(|r| at.distance_to(r) < 1e-4))
+        })
     }
 
     /// Where the hand IK last put a wrist (world space), or zero if it is off.
@@ -259,6 +274,10 @@ fn depths_into(out: &mut VarDictionary, depths: &HandDepths) {
     out.set(
         "palm_depth",
         Vector2::new(depths.palms[0], depths.palms[1]) * 1000.0,
+    );
+    out.set(
+        "reach_miss",
+        Vector2::new(depths.misses[0], depths.misses[1]) * 1000.0,
     );
 }
 

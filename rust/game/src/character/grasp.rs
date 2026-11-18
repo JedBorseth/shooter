@@ -20,8 +20,11 @@ use godot::prelude::*;
 const CELL: f32 = 0.004;
 const BAND: f32 = 0.016;
 
-/// Unsigned distance to the weapon's surface on a regular grid, in the
-/// weapon's space, trilinearly sampled.
+/// Distance to the weapon's surface on a regular grid, in the weapon's
+/// space, trilinearly sampled: negative inside a closed part of the weapon
+/// (a receiver, a slide), so a finger buried deep in one reads as inside
+/// rather than as far from its surface. Open parts (a plate modelled as a
+/// single sheet) have no inside, and only their distance counts.
 #[derive(Clone, Debug)]
 pub struct Field {
     origin: Vector3,
@@ -32,20 +35,20 @@ pub struct Field {
 impl Field {
     /// The field of `triangles` over the box `centre ± half`, or `None` if no
     /// triangle comes within the band of it.
-    pub fn from_triangles(
-        triangles: &[[Vector3; 3]],
-        centre: Vector3,
-        half: Vector3,
-    ) -> Option<Self> {
+    pub fn from_triangles(triangles: &[Tri], centre: Vector3, half: Vector3) -> Option<Self> {
         let origin = centre - half;
         let count = |h: f32| ((2.0 * h) / CELL).ceil() as usize + 1;
         let dims = [count(half.x), count(half.y), count(half.z)];
         let far = BAND * BAND;
         let mut dist = vec![far; dims[0] * dims[1] * dims[2]];
+        // Which side of the nearest surface each sample is on: 1 outside,
+        // -1 inside a closed part, 0 not yet known (past the band).
+        let mut side = vec![0i8; dist.len()];
         let lo = origin - Vector3::splat(BAND);
         let hi = centre + half + Vector3::splat(BAND);
         let mut any = false;
-        for tri in triangles {
+        for triangle in triangles {
+            let tri = &triangle.corners;
             let tmin = tri[0].coord_min(tri[1]).coord_min(tri[2]);
             let tmax = tri[0].coord_max(tri[1]).coord_max(tri[2]);
             if tmax.x < lo.x || tmax.y < lo.y || tmax.z < lo.z {
@@ -70,10 +73,15 @@ impl Field {
                 for y in y0..=y1 {
                     for x in x0..=x1 {
                         let p = origin + Vector3::new(x as f32, y as f32, z as f32) * CELL;
-                        let d = distance_squared_to_triangle(p, tri);
+                        let (q, feature) = closest_on_triangle(p, tri);
+                        let d = (p - q).length_squared();
                         let i = (z * dims[1] + y) * dims[0] + x;
                         if d < dist[i] {
                             dist[i] = d;
+                            let inside = triangle
+                                .normals
+                                .is_some_and(|n| (p - q).dot(n.at(feature)) < 0.0);
+                            side[i] = if inside { -1 } else { 1 };
                             any = true;
                         }
                     }
@@ -83,13 +91,49 @@ impl Field {
         if !any {
             return None;
         }
-        for d in &mut dist {
-            *d = d.sqrt();
+        // Past the band, a sample takes the side of the nearest sample that
+        // knows its side (deep inside a thick part is still inside).
+        let mut queue: std::collections::VecDeque<usize> =
+            (0..side.len()).filter(|i| side[*i] != 0).collect();
+        while let Some(i) = queue.pop_front() {
+            let (x, y, z) = (
+                i % dims[0],
+                (i / dims[0]) % dims[1],
+                i / (dims[0] * dims[1]),
+            );
+            let mut visit = |j: usize| {
+                if side[j] == 0 {
+                    side[j] = side[i];
+                    queue.push_back(j);
+                }
+            };
+            if x > 0 {
+                visit(i - 1);
+            }
+            if x + 1 < dims[0] {
+                visit(i + 1);
+            }
+            if y > 0 {
+                visit(i - dims[0]);
+            }
+            if y + 1 < dims[1] {
+                visit(i + dims[0]);
+            }
+            if z > 0 {
+                visit(i - dims[0] * dims[1]);
+            }
+            if z + 1 < dims[2] {
+                visit(i + dims[0] * dims[1]);
+            }
+        }
+        for (d, s) in dist.iter_mut().zip(&side) {
+            *d = d.sqrt() * if *s < 0 { -1.0 } else { 1.0 };
         }
         Some(Self { origin, dims, dist })
     }
 
-    /// Distance from `p` (weapon space) to the surface, at most `BAND`.
+    /// Distance from `p` (weapon space) to the surface, at most `BAND`,
+    /// negative inside a closed part.
     pub fn distance(&self, p: Vector3) -> f32 {
         let g = (p - self.origin) / CELL;
         let (fx, fy, fz) = (g.x.floor(), g.y.floor(), g.z.floor());
@@ -115,43 +159,131 @@ impl Field {
     }
 }
 
-/// Squared distance from `p` to a triangle (Ericson, Real-Time Collision
-/// Detection, 5.1.5).
-fn distance_squared_to_triangle(p: Vector3, [a, b, c]: &[Vector3; 3]) -> f32 {
+/// The part of a triangle a nearest point lies on: a corner, an edge (edge
+/// `i` runs from corner `i` to corner `i + 1`), or the face between.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Feature {
+    Corner(usize),
+    Edge(usize),
+    Face,
+}
+
+/// The point of a triangle nearest `p`, and the part of the triangle it lies
+/// on (Ericson, Real-Time Collision Detection, 5.1.5).
+fn closest_on_triangle(p: Vector3, [a, b, c]: &[Vector3; 3]) -> (Vector3, Feature) {
     let (ab, ac, ap) = (*b - *a, *c - *a, p - *a);
     let (d1, d2) = (ab.dot(ap), ac.dot(ap));
     if d1 <= 0.0 && d2 <= 0.0 {
-        return ap.length_squared();
+        return (*a, Feature::Corner(0));
     }
     let bp = p - *b;
     let (d3, d4) = (ab.dot(bp), ac.dot(bp));
     if d3 >= 0.0 && d4 <= d3 {
-        return bp.length_squared();
+        return (*b, Feature::Corner(1));
     }
     let vc = d1 * d4 - d3 * d2;
     if vc <= 0.0 && d1 >= 0.0 && d3 <= 0.0 {
-        let v = d1 / (d1 - d3);
-        return (p - (*a + ab * v)).length_squared();
+        return (*a + ab * (d1 / (d1 - d3)), Feature::Edge(0));
     }
     let cp = p - *c;
     let (d5, d6) = (ab.dot(cp), ac.dot(cp));
     if d6 >= 0.0 && d5 <= d6 {
-        return cp.length_squared();
+        return (*c, Feature::Corner(2));
     }
     let vb = d5 * d2 - d1 * d6;
     if vb <= 0.0 && d2 >= 0.0 && d6 <= 0.0 {
-        let w = d2 / (d2 - d6);
-        return (p - (*a + ac * w)).length_squared();
+        return (*a + ac * (d2 / (d2 - d6)), Feature::Edge(2));
     }
     let va = d3 * d6 - d5 * d4;
     if va <= 0.0 && (d4 - d3) >= 0.0 && (d5 - d6) >= 0.0 {
-        let w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
-        return (p - (*b + (*c - *b) * w)).length_squared();
+        let t = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+        return (*b + (*c - *b) * t, Feature::Edge(1));
     }
     let denom = 1.0 / (va + vb + vc);
-    let (v, w) = (vb * denom, vc * denom);
-    let q = *a + ab * v + ac * w;
-    (p - q).length_squared()
+    (*a + ab * (vb * denom) + ac * (vc * denom), Feature::Face)
+}
+
+/// A triangle of a weapon's surface, in the weapon's space.
+#[derive(Clone, Copy, Debug)]
+pub struct Tri {
+    pub corners: [Vector3; 3],
+    /// For a triangle of a closed part, which way is out at each of its
+    /// parts; none for an open part, which has no inside.
+    normals: Option<Normals>,
+}
+
+/// Which way is out at each part of a triangle of a closed part: the
+/// angle-weighted pseudo-normals of Bærentzen and Aanæs ("Signed distance
+/// computation using the angle weighted pseudonormal", 2005), so the
+/// triangles that share an edge or a corner agree on which side of it a
+/// point is, and the sign of a distance does not hang on which of them is
+/// nearest by a hair.
+#[derive(Clone, Copy, Debug)]
+struct Normals {
+    face: Vector3,
+    edges: [Vector3; 3],
+    corners: [Vector3; 3],
+}
+
+impl Normals {
+    fn at(&self, feature: Feature) -> Vector3 {
+        match feature {
+            Feature::Corner(i) => self.corners[i],
+            Feature::Edge(i) => self.edges[i],
+            Feature::Face => self.face,
+        }
+    }
+}
+
+impl Tri {
+    /// A triangle of an open part (a single sheet), which has no inside.
+    pub fn open(corners: [Vector3; 3]) -> Self {
+        Self {
+            corners,
+            normals: None,
+        }
+    }
+
+    /// The triangles of a closed part, wound with their fronts outward,
+    /// with the normals that say which side of them is out.
+    fn closed(tris: &[[Vector3; 3]]) -> Vec<Self> {
+        use std::collections::HashMap;
+        let face = |t: &[Vector3; 3]| (t[1] - t[0]).cross(t[2] - t[0]).normalized_or_zero();
+        let mut edges: HashMap<(Key, Key), Vector3> = HashMap::new();
+        let mut corners: HashMap<Key, Vector3> = HashMap::new();
+        for t in tris {
+            let n = face(t);
+            for i in 0..3 {
+                let (a, b, c) = (t[i], t[(i + 1) % 3], t[(i + 2) % 3]);
+                *edges.entry(edge_key(a, b)).or_insert(Vector3::ZERO) += n;
+                // The corner's share: its angle in this triangle.
+                let angle = (b - a).angle_to(c - a);
+                *corners.entry(key(a)).or_insert(Vector3::ZERO) += n * angle;
+            }
+        }
+        tris.iter()
+            .map(|t| Self {
+                corners: *t,
+                normals: Some(Normals {
+                    face: face(t),
+                    edges: std::array::from_fn(|i| edges[&edge_key(t[i], t[(i + 1) % 3])]),
+                    corners: std::array::from_fn(|i| corners[&key(t[i])]),
+                }),
+            })
+            .collect()
+    }
+}
+
+/// A corner's position to a hundredth of a millimetre, so the copies of a
+/// corner a mesh splits at UV seams and hard edges count as one.
+type Key = (i64, i64, i64);
+fn key(p: Vector3) -> Key {
+    let q = |v: f32| (v * 1.0e5).round() as i64;
+    (q(p.x), q(p.y), q(p.z))
+}
+fn edge_key(a: Vector3, b: Vector3) -> (Key, Key) {
+    let (a, b) = (key(a), key(b));
+    if a < b { (a, b) } else { (b, a) }
 }
 
 /// The fields around a weapon's two grips, measured at their rest markers.
@@ -178,8 +310,11 @@ impl WeaponFields {
 }
 
 /// Every triangle of the meshes `view` shows (it and every parent up to it
-/// set visible), in the view's space.
-pub fn shown_triangles(view: &Gd<Node3D>) -> Vec<[Vector3; 3]> {
+/// set visible), in the view's space to a hundredth of a millimetre. A
+/// closed mesh (every edge shared by exactly two triangles) is wound with
+/// its fronts outward (a positive volume), whatever its import's winding,
+/// and knows its inside; an open one does not.
+pub fn shown_triangles(view: &Gd<Node3D>) -> Vec<Tri> {
     let inverse = view.get_global_transform().affine_inverse();
     let mut out = Vec::new();
     for node in view
@@ -199,12 +334,48 @@ pub fn shown_triangles(view: &Gd<Node3D>) -> Vec<[Vector3; 3]> {
             continue;
         };
         let to_view = inverse * mesh_node.get_global_transform();
+        // Rounded, so a hair's difference in where the view sits does not
+        // change the fit.
+        let round = |p: Vector3| (p * 1.0e5).round() / 1.0e5;
         let faces = mesh.get_faces();
-        for tri in faces.as_slice().as_chunks::<3>().0 {
-            out.push([to_view * tri[0], to_view * tri[1], to_view * tri[2]]);
+        let tris: Vec<[Vector3; 3]> = faces
+            .as_slice()
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .map(|t| t.map(|p| round(to_view * p)))
+            .collect();
+        if is_closed(&tris) {
+            let volume: f32 = tris.iter().map(|[a, b, c]| a.dot(b.cross(*c))).sum();
+            let outward: Vec<_> = if volume < 0.0 {
+                tris.iter().map(|[a, b, c]| [*a, *c, *b]).collect()
+            } else {
+                tris
+            };
+            out.extend(Tri::closed(&outward));
+        } else {
+            out.extend(tris.into_iter().map(Tri::open));
         }
     }
     out
+}
+
+/// Whether every edge of `tris` is shared by exactly two of them.
+fn is_closed(tris: &[[Vector3; 3]]) -> bool {
+    if tris.is_empty() {
+        return false;
+    }
+    let mut edges: std::collections::HashMap<_, u32> = std::collections::HashMap::new();
+    for t in tris {
+        for i in 0..3 {
+            let (a, b) = (t[i], t[(i + 1) % 3]);
+            if key(a) == key(b) {
+                continue;
+            }
+            *edges.entry(edge_key(a, b)).or_default() += 1;
+        }
+    }
+    edges.values().all(|n| *n == 2)
 }
 
 /// One finger's bones in its hand's space: each joint's offset from its
@@ -367,15 +538,16 @@ const MOVED: f32 = 1.0e-3;
 /// closes together from nearly straight, each stopping where the finger
 /// beyond it meets the surface (a finger that meets nothing keeps the shape),
 /// then the pose is nudged (`CLEAR_CURL`, `CLEAR_TURN`, wider if that is not
-/// enough) to clear anything still inside. `close` false skips the closing (the trigger finger laid
-/// along the frame keeps its shape and only clears the surface); `wide`
-/// widens the nudge. `joint(j, flex, spread)` is joint `j`'s rotation on top
+/// enough) to clear anything still inside. `close` false skips the closing
+/// (the trigger finger laid along the frame keeps its shape and only clears
+/// the surface); `wide` widens the nudge; `turn` false keeps the spread.
+/// `joint(j, flex, spread)` is joint `j`'s rotation on top
 /// of its rest.
 pub fn fit_finger(
     chain: &Chain,
     contact: &Contact,
     (shape, spread): ([f32; 3], f32),
-    (close, wide): (bool, bool),
+    (close, wide, turn): (bool, bool, bool),
     joint: impl Fn(usize, f32, f32) -> Quaternion,
 ) -> ([f32; 3], f32) {
     let closed = if close {
@@ -388,7 +560,7 @@ pub fn fit_finger(
     let mut best = (closed, spread);
     for widen in CLEAR_WIDEN {
         let reach = widen * if wide { CLEAR_WIDE } else { 1.0 };
-        best = clear(chain, contact, (closed, spread), reach, &joint);
+        best = clear(chain, contact, (closed, spread), (reach, turn), &joint);
         let depth = finger_depth(chain, contact, best.0, best.1, &joint);
         if depth <= CLEAR_ENOUGH {
             break;
@@ -399,16 +571,18 @@ pub fn fit_finger(
 }
 
 /// The pose nearest `(closed, spread)`, within `reach` times `CLEAR_CURL`
-/// and `CLEAR_TURN`, that leaves the finger least far inside the surface.
+/// and `CLEAR_TURN` (no turn at all when `turn` is false), that leaves the
+/// finger least far inside the surface.
 fn clear(
     chain: &Chain,
     contact: &Contact,
     (closed, spread): ([f32; 3], f32),
-    reach: f32,
+    (reach, turn): (f32, bool),
     joint: &impl Fn(usize, f32, f32) -> Quaternion,
 ) -> ([f32; 3], f32) {
     let first = usize::from(chain.thumb);
-    let (curl_reach, turn_reach) = (CLEAR_CURL * reach, CLEAR_TURN * reach);
+    let turn_reach = if turn { CLEAR_TURN * reach } else { 0.0 };
+    let curl_reach = CLEAR_CURL * reach;
     let cost = |flex: [f32; 3], turn: f32| {
         let d = depths(chain, contact, flex, turn, joint);
         let inside: f32 = d.iter().map(|x| (x - TOLERANCE).max(0.0).powi(2)).sum();
@@ -627,7 +801,7 @@ mod tests {
     use super::*;
 
     /// A box from `lo` to `hi` as twelve triangles.
-    fn cuboid(lo: Vector3, hi: Vector3) -> Vec<[Vector3; 3]> {
+    fn cuboid(lo: Vector3, hi: Vector3) -> Vec<Tri> {
         let c = |x: bool, y: bool, z: bool| {
             Vector3::new(
                 if x { hi.x } else { lo.x },
@@ -647,7 +821,24 @@ mod tests {
         ]
         .into_iter()
         .flatten()
-        .collect()
+        .map(|[a, b, cc]| {
+            // Every face wound with its front outward, as a closed mesh is.
+            let centre = (lo + hi) * 0.5;
+            let out = (b - a).cross(cc - a).dot((a + b + cc) / 3.0 - centre) > 0.0;
+            if out { [a, b, cc] } else { [a, cc, b] }
+        })
+        .collect::<Vec<_>>()
+        .pipe_closed()
+    }
+
+    trait PipeClosed {
+        fn pipe_closed(self) -> Vec<Tri>;
+    }
+    impl PipeClosed for Vec<[Vector3; 3]> {
+        fn pipe_closed(self) -> Vec<Tri> {
+            assert!(is_closed(&self));
+            Tri::closed(&self)
+        }
     }
 
     #[test]
@@ -715,7 +906,7 @@ mod tests {
             finger_depth(&finger(), &contact, shape, 0.0, curl) > 0.005,
             "the shape goes in"
         );
-        let (fit, _) = fit_finger(&finger(), &contact, (shape, 0.0), (true, false), curl);
+        let (fit, _) = fit_finger(&finger(), &contact, (shape, 0.0), (true, false, true), curl);
         let depth = finger_depth(&finger(), &contact, fit, 0.0, curl);
         assert!(depth < 0.001, "fitted {fit:?} is {depth} m in");
         // And it rests on the bar rather than standing off it.
@@ -734,7 +925,13 @@ mod tests {
         let contact = contact(&field);
         let shape = [0.0, 0.0, 0.0];
         assert!(finger_depth(&finger(), &contact, shape, 0.0, curl) > 0.001);
-        let (fit, _) = fit_finger(&finger(), &contact, (shape, 0.0), (false, false), curl);
+        let (fit, _) = fit_finger(
+            &finger(),
+            &contact,
+            (shape, 0.0),
+            (false, false, true),
+            curl,
+        );
         assert!(
             finger_depth(&finger(), &contact, fit, 0.0, curl) <= CLEAR_ENOUGH,
             "{fit:?}"
@@ -753,11 +950,67 @@ mod tests {
                 &finger(),
                 &contact(&field),
                 (shape, 3.0),
-                (true, true),
+                (true, true, true),
                 curl
             ),
             (shape, 3.0)
         );
+    }
+
+    #[test]
+    fn a_point_deep_inside_a_closed_part_reads_as_inside() {
+        // A receiver 30 mm thick: its middle is 15 mm from every face,
+        // further than a finger's radius, but inside it.
+        let tris = cuboid(
+            Vector3::new(-0.015, -0.05, -0.1),
+            Vector3::new(0.015, 0.05, 0.1),
+        );
+        let field = Field::from_triangles(&tris, Vector3::ZERO, Vector3::splat(0.06)).unwrap();
+        assert!(
+            field.distance(Vector3::ZERO) < -0.012,
+            "{}",
+            field.distance(Vector3::ZERO)
+        );
+        assert!(field.distance(Vector3::new(0.025, 0.0, 0.0)) > 0.008);
+        // Further in than the band measures, still inside.
+        let thick = cuboid(Vector3::splat(-0.05), Vector3::splat(0.05));
+        let field = Field::from_triangles(&thick, Vector3::ZERO, Vector3::splat(0.06)).unwrap();
+        assert!(field.distance(Vector3::ZERO) < 0.0);
+        // An open sheet has no inside.
+        let sheet = vec![Tri::open([
+            Vector3::new(-0.1, 0.0, -0.1),
+            Vector3::new(0.1, 0.0, -0.1),
+            Vector3::new(0.0, 0.0, 0.1),
+        ])];
+        let field = Field::from_triangles(&sheet, Vector3::ZERO, Vector3::splat(0.03)).unwrap();
+        assert!(field.distance(Vector3::new(0.0, -0.01, 0.0)) > 0.009);
+    }
+
+    #[test]
+    fn points_off_an_edge_or_a_corner_read_as_outside() {
+        // Just past a box's edge and its corner, where the nearest point is
+        // shared by two or three faces, any of which may be nearest.
+        let tris = cuboid(Vector3::splat(-0.02), Vector3::splat(0.02));
+        let field = Field::from_triangles(&tris, Vector3::ZERO, Vector3::splat(0.04)).unwrap();
+        for p in [Vector3::new(0.024, 0.024, 0.0), Vector3::splat(0.024)] {
+            assert!(field.distance(p) > 0.0, "{p:?}: {}", field.distance(p));
+        }
+        for p in [Vector3::new(0.016, 0.016, 0.0), Vector3::splat(0.016)] {
+            assert!(field.distance(p) < 0.0, "{p:?}: {}", field.distance(p));
+        }
+    }
+
+    #[test]
+    fn a_finger_buried_in_a_closed_part_is_inside_it() {
+        let tris = cuboid(
+            Vector3::new(-0.02, -0.05, -0.05),
+            Vector3::new(0.02, 0.15, 0.05),
+        );
+        let field =
+            Field::from_triangles(&tris, Vector3::new(0.0, 0.05, 0.0), Vector3::splat(0.08))
+                .unwrap();
+        let shape = [0.0, 0.0, 0.0];
+        assert!(finger_depth(&finger(), &contact(&field), shape, 0.0, curl) > 0.01);
     }
 
     #[test]

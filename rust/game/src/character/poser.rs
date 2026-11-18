@@ -119,6 +119,9 @@ pub struct Grips {
     pub index_off: Option<[f32; 3]>,
     /// The support hand holds a vertical foregrip, in a fist.
     pub foregrip: bool,
+    /// Where the grip markers rest (right, left) before a clip or a bolt
+    /// moves them: a hand's fitted pose fades as its marker leaves its rest.
+    pub rests: [Option<Vector3>; 2],
 }
 
 /// A weapon's cross-section across the barrel, at the support marker's rest
@@ -166,6 +169,7 @@ impl Default for Grips {
             seats: [Vector3::ZERO; 2],
             index_off: None,
             foregrip: false,
+            rests: [None, None],
         }
     }
 }
@@ -182,20 +186,38 @@ impl Grips {
         self.foregrip = def.attachment == Some(Attachment::Grip);
     }
 
-    /// How each hand closes (firing, support): the hold's shapes, with the
-    /// weapon's fitted finger poses in place of their curl where it has them.
-    fn shapes(&self) -> [HandShape; 2] {
-        let mut out = [firing_shape(self.hold), support_shape(self.hold, self.foregrip)];
-        for ((shape, fitted), spread) in out.iter_mut().zip(self.fingers).zip(self.spreads) {
-            if let Some(flex) = fitted {
-                shape.flex = flex;
+    /// How each hand closes (firing, support): the hold's shapes, moved
+    /// toward the weapon's fitted finger poses by `on` (0..1 per hand, how far
+    /// the hand is on the grip they were fitted to).
+    fn shapes(&self, on: [f32; 2]) -> [HandShape; 2] {
+        let mut out = [
+            firing_shape(self.hold),
+            support_shape(self.hold, self.foregrip),
+        ];
+        for (h, shape) in out.iter_mut().enumerate() {
+            let mut fitted = *shape;
+            if let Some(flex) = self.fingers[h] {
+                fitted.flex = flex;
             }
-            if let Some(spread) = spread {
-                shape.spread.copy_from_slice(&spread[..4]);
-                shape.oppose = spread[4];
+            if let Some(spread) = self.spreads[h] {
+                fitted.spread.copy_from_slice(&spread[..4]);
+                fitted.oppose = spread[4];
             }
+            *shape = shape.lerp(&fitted, on[h]);
         }
         out
+    }
+
+    /// How far each hand is on the grip its fitted pose was fitted to (right,
+    /// left; 0..1): the firing hand's marker leaving its rest (onto a bolt)
+    /// lets go, and the support marker leaving the barrel's line (a reload
+    /// clip) lets go, while a pump's stroke along it does not.
+    fn on_grips(&self) -> [f32; 2] {
+        let right = self.rests[0].map_or(1.0, |rest| {
+            1.0 - ((self.right.distance_to(rest) - 0.01) / 0.04).clamp(0.0, 1.0)
+        });
+        let left = self.rests[1].map_or(1.0, |rest| self.held_at(rest));
+        [right, left]
     }
 
     /// The hand bones' bases in weapon space: +Y toward the knuckles, +Z out of
@@ -473,6 +495,9 @@ pub struct HandDepths {
     pub fingers: [[f32; 5]; 2],
     pub index_off: f32,
     pub palms: [f32; 2],
+    /// How far each drawn hand is from where it was aimed (m): the arm
+    /// falling short of its grip.
+    pub misses: [f32; 2],
 }
 
 /// Where the weapon goes this frame.
@@ -573,9 +598,12 @@ pub struct SoldierPoser {
     /// the skeleton's scale), so this makes the drawn hand agree with them.
     #[init(val = 1.0)]
     pub hand_scale: f32,
-    /// Each hand bone's transform in the weapon's space as last posed (right,
-    /// left), for fitting the weapon's finger poses (`fit_hands`).
+    /// Each hand bone's transform in the weapon's space as last drawn (right,
+    /// left), for checking the weapon's finger poses (`hand_depths`), and
+    /// where the hands were aimed with no seat, for fitting them
+    /// (`fit_hands`). Both clear while no weapon is held.
     held: [Option<Transform3D>; 2],
+    held_target: [Option<Transform3D>; 2],
     /// Set to capture the next pose drawn: every bone's local pose after
     /// this modifier, into `captured` (the ragdoll starts from it).
     pub capture: bool,
@@ -688,6 +716,8 @@ impl SoldierPoser {
         }
 
         // 3. The weapon, in skeleton space.
+        self.held = [None, None];
+        self.held_target = [None, None];
         let skel_xform = skel.get_global_transform();
         let Some(mut weapon) = self.weapon.clone() else {
             return;
@@ -724,8 +754,12 @@ impl SoldierPoser {
         };
         let grenade = input.grenade.clamp(0.0, 1.0);
         // The weapon's own finger poses where its file has them (fitted to
-        // its model), else the hold's shapes.
-        let [mut firing, mut support] = grips.shapes();
+        // its model), else the hold's shapes; and each hand's seat on the
+        // weapon, both as far as the hand is on the grip they were fitted to.
+        let on = grips.on_grips();
+        let on = [on[0], on[1] * (1.0 - input.support_off.clamp(0.0, 1.0))];
+        let seats = [grips.seats[0] * on[0], grips.seats[1] * on[1]];
+        let [mut firing, mut support] = grips.shapes(on);
         let index_off = grips.index_off.unwrap_or(INDEX_OFF_TRIGGER);
         for joint in 0..3 {
             let flex = &mut firing.flex[0][joint];
@@ -759,15 +793,33 @@ impl SoldierPoser {
             ],
             Transform3D::new(
                 weapon_skel.basis * right_basis,
-                weapon_skel * (grips.right + grips.seats[0]),
+                weapon_skel * (grips.right + seats[0]),
             ),
             RIGHT_PALM,
             right_pole,
             weight * (1.0 - input.arm_loose[0].clamp(0.0, 1.0)),
         );
         let (left_point, left_palm) = grips.support_contact(left_basis);
-        let mut left_grip = weapon_skel * (left_point + grips.seats[1]);
+        let mut left_grip = weapon_skel * (left_point + seats[1]);
         let mut left_hand_basis = weapon_skel.basis * left_basis;
+        // Where each hand would go with no seat (weapon space), for fitting
+        // poses from: the same however the stored seat moved it, or however
+        // far the arm reached.
+        // `place_hand` puts the wrist at `grip - basis * palm` (weapon space)
+        // and draws the hand at `hand_scale` of the skeleton, which is
+        // `hand_scale / weapon_scale` of the weapon.
+        let weapon_scale = weapon_skel.basis.col_a().length();
+        let hand_at = |basis: Basis, grip: Vector3, palm: Vector3| {
+            let turn = Basis::from_quaternion(basis.get_quaternion());
+            Transform3D::new(
+                turn.scaled(Vector3::splat(self.hand_scale / weapon_scale)),
+                grip - turn * palm,
+            )
+        };
+        self.held_target = [
+            Some(hand_at(right_basis, grips.right, RIGHT_PALM)),
+            Some(hand_at(left_basis, left_point, left_palm)),
+        ];
         if input.support_off > 0.0 {
             let off = input.support_off.clamp(0.0, 1.0);
             left_grip = left_grip.lerp(weapon_skel * input.support_target, off);
@@ -821,7 +873,7 @@ impl SoldierPoser {
             left_pole,
             weight * (1.0 - input.arm_loose[1].clamp(0.0, 1.0)),
         );
-        // Where the hands ended up on the weapon, for fitting finger poses.
+        // Where the hands ended up on the weapon, for checking the poses.
         let weapon_from_skel = weapon_skel.affine_inverse();
         self.held = [Bone::RIGHT_HAND, Bone::LEFT_HAND]
             .map(|b| Some(weapon_from_skel * skel.get_bone_global_pose(bone(b))));
@@ -910,17 +962,18 @@ impl SoldierPoser {
     /// starting from the hold's shapes. `None` until the hands have held a
     /// weapon.
     pub fn fit_hands(&self, fields: &WeaponFields, grips: &Grips) -> Option<FittedHands> {
-        let [Some(right_at), Some(left_at)] = self.held else {
+        let [Some(right_at), Some(left_at)] = self.held_target else {
             return None;
         };
+        if self.fingers.iter().flatten().any(Option::is_none) {
+            return None;
+        }
         let shapes = [
             firing_shape(grips.hold),
             support_shape(grips.hold, grips.foregrip),
         ];
         let fit = |h: usize, at: Transform3D, field: &grasp::Field, shape: &HandShape| {
             let left = h == 1;
-            // Back where the marker alone puts the hand, then seated anew.
-            let at = Transform3D::new(at.basis, at.origin - grips.seats[h]);
             let knuckles: Vec<_> = self.fingers[h]
                 .iter()
                 .enumerate()
@@ -950,7 +1003,7 @@ impl SoldierPoser {
                     chain,
                     &contact,
                     (shape.flex[f], shape.base(f)),
-                    (true, wide),
+                    (true, wide, true),
                     joint,
                 );
                 depth[f] = grasp::finger_depth(chain, &contact, flex[f], spread[f], joint);
@@ -961,10 +1014,7 @@ impl SoldierPoser {
             fit(0, right_at, fields.right.as_ref()?, &shapes[0]);
         let (left, left_spread, left_seat, left_depth, left_palm) =
             fit(1, left_at, fields.left.as_ref()?, &shapes[1]);
-        let right_at = Transform3D::new(
-            right_at.basis,
-            right_at.origin - grips.seats[0] + right_seat,
-        );
+        let right_at = Transform3D::new(right_at.basis, right_at.origin + right_seat);
         // The index laid along the frame: only kept out of it.
         let (_, index) = self.fingers[0][0].as_ref()?;
         let contact = Contact {
@@ -972,13 +1022,14 @@ impl SoldierPoser {
             hand_to_field: right_at,
             left: false,
         };
-        // Off the trigger the index keeps the spread it has on it.
+        // Off the trigger the index keeps the spread it has on it (the game
+        // blends only its curl).
         let joint = |j: usize, a: f32, s: f32| HandShape::turned(j, false, a, s);
         let (index_off, _) = grasp::fit_finger(
             index,
             &contact,
             (INDEX_OFF_TRIGGER, right_spread[0]),
-            (false, true),
+            (false, true, false),
             joint,
         );
         let index_depth = grasp::finger_depth(index, &contact, index_off, right_spread[0], joint);
@@ -992,20 +1043,39 @@ impl SoldierPoser {
                 fingers: [right_depth, left_depth],
                 index_off: index_depth,
                 palms: [right_palm, left_palm],
+                misses: [0.0; 2],
             },
         })
     }
 
     /// How deep the hands' drawn finger poses (the weapon's fitted poses, or
     /// the hold's shapes where it has none) go into `fields`, where the hands
-    /// were last posed: per hand and finger, the index off the trigger, and
-    /// each palm (m; negative: clear). `None` until the hands have held a
+    /// were last aimed: per hand and finger, the index off the trigger, and
+    /// each palm (m; negative: clear); and how far each drawn hand fell
+    /// short of where it was aimed. `None` until the hands have held a
     /// weapon.
     pub fn hand_depths(&self, fields: &WeaponFields, grips: &Grips) -> Option<HandDepths> {
-        let [Some(right_at), Some(left_at)] = self.held else {
+        let [Some(right_aim), Some(left_aim)] = self.held_target else {
             return None;
         };
-        let shapes = grips.shapes();
+        let [Some(right_drawn), Some(left_drawn)] = self.held else {
+            return None;
+        };
+        if self.fingers.iter().flatten().any(Option::is_none) {
+            return None;
+        }
+        let on = grips.on_grips();
+        // Where the hands are aimed, seat and all: the same every frame,
+        // where the drawn hands sway with the arms by a hair.
+        let seated = |h: usize, aim: Transform3D| {
+            Transform3D::new(aim.basis, aim.origin + grips.seats[h] * on[h])
+        };
+        let (right_at, left_at) = (seated(0, right_aim), seated(1, left_aim));
+        let misses = [
+            right_drawn.origin.distance_to(right_at.origin),
+            left_drawn.origin.distance_to(left_at.origin),
+        ];
+        let shapes = grips.shapes(on);
         let mut fingers = [[f32::MIN; 5]; 2];
         let mut palms = [f32::MIN; 2];
         let mut index_off = f32::MIN;
@@ -1037,6 +1107,7 @@ impl SoldierPoser {
             fingers,
             index_off,
             palms,
+            misses,
         })
     }
 
