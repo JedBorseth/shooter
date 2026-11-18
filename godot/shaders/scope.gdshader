@@ -2,8 +2,9 @@
 // (scripts/scope_overlay.gd). It multiplies the picture, so it never reads the
 // screen: black outside the tube, a soft eye-relief shadow inside the rim that
 // slides toward one side as the scope swings away from the eye, a faint
-// coloured fringe at the rim, and a gentle darkening toward the edge of the
-// glass. The reticle is drawn on top as crisp lines.
+// coloured fringe at the rim, a gentle darkening toward the edge of the
+// glass, and the faint green-amber cast and light loss of coated glass. The
+// reticle is drawn on top as crisp lines.
 shader_type canvas_item;
 render_mode unshaded, blend_mul;
 
@@ -14,6 +15,9 @@ uniform float radius = 0.46;
 uniform vec2 eye = vec2(0.0);
 // Width of the eye-relief shadow, as a fraction of the radius.
 uniform float shadow_width = 0.16;
+// What the glass passes of each colour: a riflescope's coatings pass about
+// nine tenths of the light, a little less blue than green.
+uniform vec3 glass_tint = vec3(0.93, 0.95, 0.88);
 
 void fragment() {
 	vec2 size = 1.0 / SCREEN_PIXEL_SIZE;
@@ -29,6 +33,7 @@ void fragment() {
 	vec3 colour = vec3(1.0 - shadow * 0.92);
 	// The glass darkens a little toward its edge.
 	colour *= 1.0 - 0.18 * d * d;
+	colour *= glass_tint;
 	// Chromatic fringe just inside the rim: blue on the inside, warm on the outside.
 	float rim = smoothstep(0.86, 0.95, d) * (1.0 - smoothstep(0.95, 1.0, d));
 	colour *= mix(vec3(1.0), vec3(0.82, 0.9, 1.0), smoothstep(0.86, 0.93, d) * (1.0 - smoothstep(0.93, 0.97, d)));
