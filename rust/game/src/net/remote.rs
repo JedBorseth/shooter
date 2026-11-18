@@ -210,6 +210,7 @@ impl RemotePlayer {
             hit_heading: 0,
             hit_part: 0,
             progress: Progress::default(),
+            ladder: None,
         };
         let sample = self.with_test_progress(sample, None, delta);
         self.apply(&sample, delta);
@@ -276,6 +277,11 @@ impl RemotePlayer {
                 .and_then(|v| v.try_to::<i64>().ok())
                 .unwrap_or(0) as u8,
             progress: Progress::default(),
+            // `ladder_yaw`: on a ladder climbed facing that yaw.
+            ladder: f("ladder_yaw").map(|yaw| {
+                let (forward, _) = shooter_sim::movement::basis_from_yaw(yaw);
+                shooter_sim::Vec2::new(forward.x, forward.z)
+            }),
         };
         let set = TestProgress {
             stride: f("stride"),
@@ -328,6 +334,7 @@ impl RemotePlayer {
             reloading: s.reloading,
             weapon: s.weapon,
             mantle_left: self.test_mantle_left.unwrap_or(0.0),
+            ladder: s.ladder.map(shooter_sim::hitbox::gait::yaw_of),
         };
         let mut p = self.test_clock.tick(&state, delta);
         if let Some(set) = set {
@@ -491,6 +498,7 @@ impl RemotePlayer {
             // Snapshots do not say who is planting yet.
             action: s.throw.filter(|_| s.alive).map(|t| (ActionPose::Throw, t)),
             throw_kind: s.throw_kind,
+            ladder: s.ladder,
         };
         match (self.drawn_alive, s.alive) {
             // Dead: the body that died lies where it fell, in the scene's
@@ -564,6 +572,7 @@ impl RemotePlayer {
             mantling: s.mantling,
             reloading: s.reloading,
             walk_speed: MoveParams::default().walk_speed,
+            ladder: s.ladder.is_some() && s.alive,
         };
         let friendly = self.friendly;
         if let Some(foley) = &mut self.foley {

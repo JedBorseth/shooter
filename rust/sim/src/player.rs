@@ -195,7 +195,9 @@ impl PlayerState {
         let speed = Vec2::new(self.movement.velocity.x, self.movement.velocity.z).length();
         CombatContext {
             // The weapon is lowered while climbing, as while sprinting.
-            sprinting: self.movement.sprinting || self.movement.mantling(),
+            sprinting: self.movement.sprinting
+                || self.movement.mantling()
+                || self.movement.on_ladder(),
             airborne: !env.on_floor,
             crouched: self.movement.stance == crate::movement::Stance::Crouching,
             move_ratio: speed / params.walk_speed,
@@ -286,6 +288,8 @@ pub fn step(
         state.movement.jump_buffer = 0.0;
         state.movement.coyote = 0.0;
         state.movement.slide_queued = false;
+        // The body falls off a ladder.
+        state.movement.leave_ladder(&params.movement);
         // A grenade cooking in their hand falls, live, instead of being thrown.
         if let Some((kind, fuse)) = state.combat.live_grenade() {
             let shot = state.combat.shots_fired;
@@ -310,7 +314,8 @@ pub fn step(
     let melee_pressed = input.melee && !state.melee_held;
     state.melee_held = input.melee;
     // Not while climbing, when the weapon is down anyway.
-    let melee = melee_pressed && state.combat.can_melee() && !state.movement.mantling();
+    let climbing = state.movement.mantling() || state.movement.on_ladder();
+    let melee = melee_pressed && state.combat.can_melee() && !climbing;
     let lunge = input.lunge.filter(|offset| melee && melee::lunges(*offset));
     let lethal_pressed = input.lethal && !state.lethal_held;
     state.lethal_held = input.lethal;
@@ -318,7 +323,7 @@ pub fn step(
     state.tactical_held = input.tactical;
     // Not while climbing, nor in the same tick as a knife. The lethal wins
     // if both go down at once.
-    let throw = if melee || state.movement.mantling() {
+    let throw = if melee || climbing {
         None
     } else if lethal_pressed {
         Some(crate::equipment::Kind::Frag)
@@ -425,6 +430,7 @@ mod tests {
         ledge: None,
         ledge_low: false,
         vault: None,
+        ladder: None,
     };
 
     #[test]
@@ -879,6 +885,68 @@ mod tests {
         assert_eq!(s.health, 40.0, "no regeneration during the delay");
         run(&mut s, PlayerInput::default(), MoveEnv::default(), 240);
         assert_eq!(s.health, 100.0);
+    }
+
+    /// Hanging on a ladder climbed toward -Z, a metre up it.
+    fn on_a_ladder() -> MoveEnv {
+        MoveEnv {
+            on_floor: false,
+            ladder: Some(crate::movement::Ladder {
+                facing: Vec2::new(0.0, -1.0),
+                depth: 0.0,
+                lateral: 0.0,
+                height: 1.0,
+                length: 4.0,
+            }),
+            ..MoveEnv::default()
+        }
+    }
+
+    #[test]
+    fn on_a_ladder_the_weapon_is_down_and_the_knife_and_grenades_wait() {
+        let mut s = ready_state();
+        let climb = PlayerInput {
+            wish: Vec2::Y,
+            ..Default::default()
+        };
+        run(&mut s, climb, on_a_ladder(), 2);
+        assert!(s.movement.on_ladder());
+        let busy = PlayerInput {
+            wish: Vec2::Y,
+            fire: true,
+            aim: true,
+            ..Default::default()
+        };
+        let events = run(&mut s, busy, on_a_ladder(), 30);
+        assert!(!fired(&events), "no shots from a ladder");
+        assert_eq!(s.combat.ads, 0.0, "no aiming");
+        let knife = PlayerInput {
+            melee: true,
+            lethal: true,
+            ..Default::default()
+        };
+        run(&mut s, knife, on_a_ladder(), 2);
+        assert!(!s.combat.meleeing());
+        assert!(s.combat.throw_progress().is_none());
+    }
+
+    #[test]
+    fn the_dead_fall_off_ladders() {
+        let mut s = ready_state();
+        run(
+            &mut s,
+            PlayerInput {
+                wish: Vec2::Y,
+                ..Default::default()
+            },
+            on_a_ladder(),
+            2,
+        );
+        assert!(s.movement.on_ladder());
+        apply_damage(&mut s, 150.0, false, &mut Vec::new());
+        run(&mut s, PlayerInput::default(), on_a_ladder(), 2);
+        assert!(!s.movement.on_ladder());
+        assert!(s.movement.velocity.y < 0.0, "falling");
     }
 
     #[test]

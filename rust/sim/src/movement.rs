@@ -12,6 +12,10 @@
 
 use glam::{Vec2, Vec3};
 
+mod ladder;
+
+pub use ladder::Ladder;
+
 /// Player intent for one simulation tick. Built from devices on the client and
 /// received over the network on the server.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -68,6 +72,8 @@ pub struct MoveEnv {
     /// Thin cover or a window sill in reach, with clear ground behind it, to
     /// vault over without stopping.
     pub vault: Option<Vault>,
+    /// A ladder in reach (see [`Ladder`]).
+    pub ladder: Option<Ladder>,
 }
 
 /// Something to vault over: its top's height above the feet, and whether
@@ -86,6 +92,7 @@ impl Default for MoveEnv {
             ledge: None,
             ledge_low: false,
             vault: None,
+            ladder: None,
         }
     }
 }
@@ -156,6 +163,13 @@ pub struct MoveState {
     pub slide_queued: bool,
     /// Seconds left of the low-friction wind-down after a slide.
     pub slide_out: f32,
+    /// The way the player faces to climb the ladder they are on (`x`, `z`),
+    /// zero when not on one ([`MoveState::on_ladder`]).
+    pub ladder_facing: Vec2,
+    /// Sliding down the ladder (crouch on a ladder).
+    pub ladder_slide: bool,
+    /// Seconds before a ladder can be grabbed again after letting go.
+    pub ladder_cooldown: f32,
 }
 
 impl MoveState {
@@ -276,6 +290,31 @@ pub struct MoveParams {
     /// Seconds after a vault before a drop counts as a landing, so a vault
     /// keeps its momentum.
     pub vault_landing_grace: f32,
+    /// Ladder climbing speed up and down (m/s).
+    pub ladder_climb_speed: f32,
+    pub ladder_down_speed: f32,
+    /// Top speed and acceleration of a slide down a ladder.
+    pub ladder_slide_speed: f32,
+    pub ladder_slide_accel: f32,
+    /// How far in front of the climbing line a ladder can be grabbed.
+    pub ladder_reach: f32,
+    /// Within this of the top (feet height), the ladder is grabbed from the
+    /// floor it leads to rather than from in front.
+    pub ladder_top_reach: f32,
+    /// The feet climb this far over the top before stepping off onto it.
+    pub ladder_top_clear: f32,
+    /// Seconds and speed of the step off the top.
+    pub ladder_exit_time: f32,
+    pub ladder_exit_speed: f32,
+    /// How hard the body is pulled onto the climbing line (per second of
+    /// offset), and the fastest it moves there.
+    pub ladder_pull: f32,
+    pub ladder_mount_speed: f32,
+    /// A jump off a ladder: speed back from the rungs and up.
+    pub ladder_jump_back: f32,
+    pub ladder_jump_up: f32,
+    /// Seconds after letting go before a ladder can be grabbed again.
+    pub ladder_regrab: f32,
 }
 
 impl Default for MoveParams {
@@ -332,6 +371,22 @@ impl Default for MoveParams {
             vault_time_per_metre: 0.15,
             vault_min_speed: 3.0,
             vault_landing_grace: 0.4,
+            // About a rung (0.3 m) every 0.15 s up; the TODO's 1.5-2 m/s band
+            // from classic IW climbs, a touch quicker down.
+            ladder_climb_speed: 2.0,
+            ladder_down_speed: 2.4,
+            ladder_slide_speed: 6.0,
+            ladder_slide_accel: 14.0,
+            ladder_reach: 0.45,
+            ladder_top_reach: 0.25,
+            ladder_top_clear: 0.06,
+            ladder_exit_time: 0.32,
+            ladder_exit_speed: 2.8,
+            ladder_pull: 10.0,
+            ladder_mount_speed: 2.0,
+            ladder_jump_back: 3.0,
+            ladder_jump_up: 3.0,
+            ladder_regrab: 0.4,
         }
     }
 }
@@ -461,6 +516,19 @@ fn step_rules(
     }
     if state.lunging() {
         return lunge(state, env, params, dt);
+    }
+    if let Some(velocity) = ladder::step(
+        state,
+        env,
+        params,
+        wish,
+        forward,
+        right,
+        jump_pressed,
+        crouch_pressed,
+        dt,
+    ) {
+        return velocity;
     }
     if state.lunge_velocity != Vec2::ZERO {
         // The lunge ended last tick: drop to a walk at the target instead of
@@ -1148,6 +1216,7 @@ mod tests {
             ledge: None,
             ledge_low: false,
             vault: None,
+            ladder: None,
         };
         run(&mut s, crouch, low_ceiling, 1);
         run(&mut s, MoveInput::default(), low_ceiling, 1);
@@ -1308,6 +1377,7 @@ mod tests {
         ledge: None,
         ledge_low: false,
         vault: None,
+        ladder: None,
     };
 
     fn jump() -> MoveInput {
@@ -1524,6 +1594,7 @@ mod tests {
             ledge: None,
             ledge_low: false,
             vault: None,
+            ladder: None,
         };
         run(
             &mut s,
@@ -1708,6 +1779,7 @@ mod tests {
             ledge: None,
             ledge_low: false,
             vault: None,
+            ladder: None,
         };
         let jump = MoveInput {
             wish: Vec2::Y,

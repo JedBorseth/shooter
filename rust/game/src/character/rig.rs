@@ -28,7 +28,7 @@ use shooter_sim::movement::Stance;
 use shooter_sim::weapon::WeaponId;
 
 use super::palette::{self, Team};
-use super::poser::{Grips, Hold, PoseInput, Section, SoldierPoser, WeaponPlacement};
+use super::poser::{Grips, Hold, LadderLimbs, PoseInput, Section, SoldierPoser, WeaponPlacement};
 use super::ragdoll::{self, Push, Ragdoll};
 use super::wounds::{self, Wounds};
 use crate::convert::{to_godot, to_godot_basis, to_sim};
@@ -191,6 +191,9 @@ pub struct SoldierFrame {
     pub action: Option<(ActionPose, f32)>,
     /// What a throw throws.
     pub throw_kind: shooter_sim::equipment::Kind,
+    /// On a ladder: the way it is climbed (`x`, `z`). The body faces the
+    /// rungs with its hands and feet on them, the weapon put away.
+    pub ladder: Option<shooter_sim::Vec2>,
 }
 
 /// Things a soldier does with their hands instead of the weapon. The hit
@@ -212,7 +215,8 @@ impl SoldierFrame {
     pub fn activity(&self, progress: Progress) -> Activity {
         Activity {
             sprinting: self.sprinting,
-            airborne: !self.on_floor,
+            // On a ladder the zones hang standing, facing the rungs.
+            airborne: !self.on_floor && self.ladder.is_none(),
             mantling: self.mantling,
             reloading: self.reload.is_some(),
             ads: self.ads,
@@ -246,6 +250,7 @@ impl Default for SoldierFrame {
             turn: None,
             action: None,
             throw_kind: Default::default(),
+            ladder: None,
         }
     }
 }
@@ -365,6 +370,10 @@ pub struct SoldierRig {
     turn: f32,
     step: f32,
     own_turning: gait::Turning,
+    /// How far the climb on a ladder has blended in, and where its hands
+    /// and feet go this frame.
+    ladder: f32,
+    ladder_limbs: Option<LadderLimbs>,
 }
 
 #[godot_api]
@@ -638,6 +647,12 @@ impl SoldierRig {
             throw_kind: get("throw_kind")
                 .and_then(|v| shooter_sim::equipment::Kind::by_key(&v.to_string()))
                 .unwrap_or_default(),
+            ladder: get("ladder_yaw")
+                .and_then(|v| v.try_to::<f32>().ok())
+                .map(|yaw| {
+                    let (forward, _) = shooter_sim::movement::basis_from_yaw(yaw);
+                    shooter_sim::Vec2::new(forward.x, forward.z)
+                }),
         };
         self.update(&frame, delta);
     }
@@ -736,6 +751,9 @@ impl SoldierRig {
         // keeps its own feet and steps its own stride.
         let mut stepped = 0.0;
         (self.turn, self.step) = frame.turn.unwrap_or_else(|| {
+            if let Some(ladder) = frame.ladder {
+                return (self.own_turning.hold(gait::yaw_of(ladder), frame.yaw), 0.0);
+            }
             let still = frame.alive
                 && frame.on_floor
                 && !frame.mantling
@@ -798,7 +816,8 @@ impl SoldierRig {
         // the air loop, and a landing (`Jump_Land`) as strong as the fall
         // was long.
         let was_on_floor = self.air_time <= 0.0;
-        if frame.on_floor {
+        // Hanging on a ladder is not being in the air.
+        if frame.on_floor || frame.ladder.is_some() {
             if self.air_time > LANDING_MIN_AIR {
                 let strength = ((self.air_time - LANDING_MIN_AIR) / LANDING_FULL_AIR).min(1.0);
                 self.landing = Some((0.0, strength));
@@ -912,12 +931,13 @@ impl SoldierRig {
         for t in &mut self.arm_drop {
             *t = (*t - dt).max(0.0);
         }
-        let ik_target = if frame.alive && self.weapon.is_some() {
+        let ik_target = if frame.alive && self.weapon.is_some() && frame.ladder.is_none() {
             1.0
         } else {
             0.0
         };
         self.ik += (ik_target - self.ik) * smoothing(if frame.alive { 12.0 } else { 20.0 }, dt);
+        self.update_ladder(frame, dt);
 
         self.update_feet(frame, moving || self.step > 0.0, dt);
         let input = self.pose_input(frame);
@@ -1033,6 +1053,7 @@ impl SoldierRig {
             .is_some_and(|c| c.get_global_position().distance_to(origin) < FOOT_IK_DISTANCE);
         let grounded = frame.alive
             && frame.on_floor
+            && frame.ladder.is_none()
             && !frame.mantling
             && frame.stance != Stance::Sliding
             && self.air < 0.05;
@@ -1068,6 +1089,53 @@ impl SoldierRig {
             *lift += (target - *lift) * k;
         }
         self.feet_on = self.feet_lift.iter().any(|l| l.abs() > 0.002);
+    }
+
+    /// On a ladder: blends the climb in (out again once off it), finds the
+    /// rungs, and puts the hands and feet on them at the body's height. The
+    /// weapon is put away while the hands are on the rungs.
+    fn update_ladder(&mut self, frame: &SoldierFrame, dt: f32) {
+        let on = frame.alive && frame.ladder.is_some();
+        let target = if on { 1.0 } else { 0.0 };
+        self.ladder += (target - self.ladder) * smoothing(if on { 14.0 } else { 10.0 }, dt);
+        if self.ladder < 0.01 {
+            self.ladder = 0.0;
+        }
+        if let Some((_, view)) = &mut self.weapon {
+            let shown = self.ladder < 0.5;
+            if view.is_visible() != shown {
+                view.set_visible(shown);
+            }
+        }
+        if self.ladder <= 0.0 {
+            self.ladder_limbs = None;
+            return;
+        }
+        let feet = self.base().get_global_position();
+        let found = self
+            .base()
+            .get_world_3d()
+            .and_then(|w| w.get_direct_space_state())
+            .and_then(|mut space| crate::ladder::find_volume(&mut space, feet));
+        match found {
+            Some((volume, ladder)) => {
+                let (hands, ankles) =
+                    crate::ladder::limb_targets(feet, &ladder, volume.bind().rungs());
+                self.ladder_limbs = Some(LadderLimbs {
+                    weight: self.ladder,
+                    hands,
+                    ankles,
+                    facing: Vector3::new(ladder.facing.x, 0.0, ladder.facing.y),
+                });
+            }
+            // Out of the ladder's reach (stepping off): the limbs keep their
+            // last holds as the climb blends out.
+            None => {
+                if let Some(limbs) = &mut self.ladder_limbs {
+                    limbs.weight = self.ladder;
+                }
+            }
+        }
     }
 
     /// The animation progress the body is drawn at: what its hit zones pose.
@@ -1340,6 +1408,7 @@ impl SoldierRig {
             grenade_pinned: throw.is_some_and(|(pose, _)| pose.pinned),
             grenade_kind: throw.map_or(Default::default(), |(pose, _)| pose.kind),
             feet: (self.feet_on && frame.alive).then_some(self.feet_lift),
+            ladder: self.ladder_limbs.filter(|_| frame.alive),
         }
     }
 

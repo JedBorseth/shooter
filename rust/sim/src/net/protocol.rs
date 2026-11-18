@@ -84,7 +84,10 @@ use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, Weapo
 // Version 36 changed Nuketown's collision (the map-edge clip, the non-solid
 // shadowcaster doorways, the solid population sign), so older peers would
 // mispredict movement there.
-pub const PROTOCOL_VERSION: u16 = 36;
+// Version 37 added ladders: the ladder a player is on, a slide down it, and
+// the regrab delay in the movement state, and the ladder each body faces in
+// player views (`PlayerView::ladder`).
+pub const PROTOCOL_VERSION: u16 = 37;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -486,6 +489,9 @@ pub struct PlayerView {
     /// How far the legs step in place as the feet swing round, out of 255
     /// (`Progress::step`).
     pub step: u8,
+    /// On a ladder: the way it is climbed, in 1/256 turns
+    /// ([`heading_to_u8`] of `MoveState::ladder_facing`).
+    pub ladder: Option<u8>,
 }
 
 /// A throw's progress (0 to 1) as [`PlayerView::throw`]: 0 for none.
@@ -576,7 +582,21 @@ impl PlayerView {
             mantle_progress: 0,
             turn: 0,
             step: 0,
+            ladder: p.state.movement.on_ladder().then(|| {
+                heading_to_u8(
+                    p.state.movement.ladder_facing.x,
+                    p.state.movement.ladder_facing.y,
+                )
+            }),
         }
+    }
+
+    /// The way the ladder this body is on is climbed (`x`, `z`), if it is on one.
+    pub fn ladder_facing(&self) -> Option<Vec2> {
+        self.ladder.map(|heading| {
+            let (x, z) = hit_direction(heading);
+            Vec2::new(x, z)
+        })
     }
 
     /// How far along a throw this body is (0 to 1), if it is throwing.
@@ -1795,6 +1815,7 @@ fn write_view_delta(w: &mut BitWriter, v: &PlayerView, base: &PlayerView) {
             p.alive,
             p.mantling,
             p.meleeing,
+            p.ladder,
         )
     };
     let flags_changed = flags(v) != flags(base);
@@ -1810,6 +1831,10 @@ fn write_view_delta(w: &mut BitWriter, v: &PlayerView, base: &PlayerView) {
         w.bool(v.alive);
         w.bool(v.mantling);
         w.bool(v.meleeing);
+        w.bool(v.ladder.is_some());
+        if let Some(heading) = v.ladder {
+            w.u8(heading);
+        }
     }
     let throw_changed = (v.throw, v.throw_kind) != (base.throw, base.throw_kind);
     w.bool(throw_changed);
@@ -1874,6 +1899,7 @@ fn read_view_delta(r: &mut BitReader, base: &PlayerView) -> DecodeResult<PlayerV
         v.alive = r.bool()?;
         v.mantling = r.bool()?;
         v.meleeing = r.bool()?;
+        v.ladder = if r.bool()? { Some(r.u8()?) } else { None };
     }
     if r.bool()? {
         v.throw = r.u8()?;
@@ -1973,6 +1999,10 @@ fn write_move_state(w: &mut BitWriter, m: &MoveState) {
     w.bool(m.vaulting);
     w.bool(m.slide_queued);
     w.f32(m.slide_out);
+    w.f32(m.ladder_facing.x);
+    w.f32(m.ladder_facing.y);
+    w.bool(m.ladder_slide);
+    w.f32(m.ladder_cooldown);
 }
 
 fn read_move_state(r: &mut BitReader) -> DecodeResult<MoveState> {
@@ -2000,6 +2030,9 @@ fn read_move_state(r: &mut BitReader) -> DecodeResult<MoveState> {
         vaulting: r.bool()?,
         slide_queued: r.bool()?,
         slide_out: r.f32()?,
+        ladder_facing: Vec2::new(r.f32()?, r.f32()?),
+        ladder_slide: r.bool()?,
+        ladder_cooldown: r.f32()?,
     })
 }
 
@@ -2417,6 +2450,45 @@ mod tests {
         let decoded = read_predicted(&mut BitReader::new(&bytes)).unwrap();
         assert_eq!(decoded, p);
         assert!(PlayerView::from_state(1, &p, 0.0, 0.0).meleeing);
+    }
+
+    #[test]
+    fn a_climber_round_trips_and_shows_the_ladder_it_faces() {
+        let mut state = PlayerState::default();
+        state.movement.ladder_facing = Vec2::new(0.6, -0.8);
+        state.movement.ladder_slide = true;
+        state.movement.ladder_cooldown = 0.25;
+        let p = Predicted {
+            state,
+            position: Vec3::new(1.0, 2.0, 3.0),
+            on_floor: false,
+        };
+        let mut w = BitWriter::new();
+        write_predicted(&mut w, &p);
+        let bytes = w.finish();
+        assert_eq!(read_predicted(&mut BitReader::new(&bytes)).unwrap(), p);
+
+        let view = PlayerView::from_state(0, &p, 0.0, 0.0);
+        let base = PlayerView::default();
+        let mut w = BitWriter::new();
+        write_view_delta(&mut w, &view, &base);
+        let bytes = w.finish();
+        let decoded = read_view_delta(&mut BitReader::new(&bytes), &base).unwrap();
+        assert_eq!(decoded, view);
+        let facing = decoded.ladder_facing().expect("on a ladder");
+        assert!(facing.distance(Vec2::new(0.6, -0.8)) < 0.02, "{facing}");
+        // Off the ladder again, the view says so.
+        let mut off = view;
+        off.ladder = None;
+        let mut w = BitWriter::new();
+        write_view_delta(&mut w, &off, &view);
+        let bytes = w.finish();
+        assert_eq!(
+            read_view_delta(&mut BitReader::new(&bytes), &view)
+                .unwrap()
+                .ladder,
+            None
+        );
     }
 
     #[test]

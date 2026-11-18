@@ -75,6 +75,28 @@ func _moves() -> Dictionary:
 		"reload_m870": [1.0, RELOAD_MOMENTS, _reload.bind("m870")],
 		"holds": [1.12, [0.07, 0.21, 0.35, 0.49, 0.63, 0.77, 0.91, 1.05], _holds],
 		"actions": [1.0, [0.0, 0.2, 0.4, 0.5, 0.6, 0.7, 0.8, 0.95], _actions],
+		"ladder":
+		[1.6, [0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.6], _ladder.bind(Vector3(-1.9, 0.9, -1.9))],
+		"ladder_back":
+		[1.6, [0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.6], _ladder.bind(Vector3(-2.6, 1.6, 0.6))],
+	}
+
+
+## Climbing the Testing Area tower's ladder at 2 m/s from 0.4 m up (it is
+## climbed facing +X; its rungs' face is at x 25.19), seen from `eye` off
+## the climber's hips.
+func _ladder(t: float, eye: Vector3) -> Dictionary:
+	var feet := Vector3(25.19 - 0.37, 0.4 + 2.0 * t, -29.15)
+	return {
+		"weapon": "m4",
+		"world_feet": feet,
+		"velocity": Vector3(0, 2.0, 0),
+		"on_floor": false,
+		"yaw": -PI / 2 + 0.3,
+		"pitch": 0.2,
+		"ladder_yaw": -PI / 2,
+		"camera": feet + eye,
+		"look": feet + Vector3(0.1, 1.0, 0),
 	}
 
 
@@ -167,7 +189,9 @@ func _strip(scene: Node, move: String, spec: Array) -> void:
 	rig.global_position = SPOT
 	# Turns are seen from in front and above, where the feet and the aim
 	# both show; moves from the side.
-	if state_at.call(0.0).get("side", false):
+	if state_at.call(0.0).has("camera"):
+		pass
+	elif state_at.call(0.0).get("side", false):
 		_camera.global_position = SPOT + Vector3(5.5, 1.2, 0.0)
 		_camera.look_at(SPOT + Vector3(0, 0.8, 0.0))
 	elif state_at.call(0.0).get("front", false):
@@ -180,6 +204,10 @@ func _strip(scene: Node, move: String, spec: Array) -> void:
 	var step: Node3D = null
 	if state_at.call(0.0).get("step", false):
 		step = _step(scene)
+	if state_at.call(0.0).has("world_feet"):
+		rig.global_position = state_at.call(0.0)["world_feet"]
+		_camera.global_position = state_at.call(0.0)["camera"]
+		_camera.look_at(state_at.call(0.0)["look"])
 	for i in 60:
 		rig.drive(state_at.call(0.0), DT)
 		await process_frame
@@ -196,7 +224,12 @@ func _strip(scene: Node, move: String, spec: Array) -> void:
 			frames.append(root.get_texture().get_image())
 			next += 1
 		var state: Dictionary = state_at.call(t)
-		if state.has("feet"):
+		if state.has("camera"):
+			_camera.global_position = state["camera"]
+			_camera.look_at(state["look"])
+		if state.has("world_feet"):
+			rig.global_position = state["world_feet"]
+		elif state.has("feet"):
 			rig.global_position = SPOT + state["feet"]
 		else:
 			var v: Vector3 = state.get("velocity", Vector3.ZERO)

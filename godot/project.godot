@@ -172,6 +172,7 @@ debug_hitboxes={
 3d_physics/layer_6="barriers"
 3d_physics/layer_7="player_blockers"
 3d_physics/layer_8="ragdoll"
+3d_physics/layer_9="ladders"
 
 [physics]
 3d/physics_engine="Jolt Physics"

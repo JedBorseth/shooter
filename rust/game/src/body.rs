@@ -96,6 +96,7 @@ pub fn tick(
         ledge: climb.ledge,
         ledge_low: climb.ledge_low,
         vault: climb.vault,
+        ladder: find_ladder(parts, p),
     };
     let previous_crouch = p.state.movement.crouch;
     let requested = player::step(&mut p.state, input, env, params, TICK_DT, events);
@@ -104,7 +105,10 @@ pub fn tick(
     }
 
     let start = parts.body.get_global_transform();
-    let grounded = env.on_floor && requested.y <= 0.0 && !p.state.movement.mantling();
+    let grounded = env.on_floor
+        && requested.y <= 0.0
+        && !p.state.movement.mantling()
+        && !p.state.movement.on_ladder();
     parts.body.set_velocity(to_godot(requested));
     parts.body.move_and_slide();
     let mut step_height = if grounded {
@@ -312,7 +316,11 @@ struct Climb {
 /// so both find the same.
 fn find_climb(parts: &BodyParts, params: &MoveParams, p: &Predicted, yaw: f32) -> Climb {
     let movement = &p.state.movement;
-    if !p.state.alive() || movement.mantling() || movement.stance != Stance::Standing {
+    if !p.state.alive()
+        || movement.mantling()
+        || movement.on_ladder()
+        || movement.stance != Stance::Standing
+    {
         return Climb::default();
     }
     let Some(mut space) = parts
@@ -425,6 +433,19 @@ fn find_climb(parts: &BodyParts, params: &MoveParams, p: &Predicted, yaw: f32) -
         vault: Some(Vault { height, low }),
         ..Climb::default()
     }
+}
+
+/// The ladder in reach of the feet, if any (see [`crate::ladder`]). Client and
+/// server load the same map, so both find the same.
+fn find_ladder(parts: &BodyParts, p: &Predicted) -> Option<shooter_sim::movement::Ladder> {
+    if !p.state.alive() {
+        return None;
+    }
+    let mut space = parts
+        .body
+        .get_world_3d()
+        .and_then(|w| w.get_direct_space_state())?;
+    crate::ladder::find(&mut space, to_godot(p.position))
 }
 
 /// Moves the body to a state without simulating (spawns, reconciliation).

@@ -98,6 +98,7 @@ fn run(ticks: u32) -> Run {
             ledge: None,
             ledge_low: false,
             vault: None,
+            ladder: None,
         };
         events.clear();
         let v = player::step(&mut p.state, &input, env, &params, TICK_DT, &mut events);
@@ -198,6 +199,7 @@ fn press_aim_changes_no_state() {
             ledge: None,
             ledge_low: false,
             vault: None,
+            ladder: None,
         };
         let mut q = p;
         events.clear();

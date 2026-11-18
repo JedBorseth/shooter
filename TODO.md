@@ -64,7 +64,9 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 
 - [x] Mantling: jump at a ledge 0.5 to 1.35 m high while moving toward it to climb onto or over it (the engine finds the ledge, `movement::step` climbs; predicted like any move).
 - [x] Vaults over thin cover and through windows that keep the run's speed, mantles by holding jump in the air, and crouch-height mantles that end crouched ([docs/movement.md](docs/movement.md)).
-- [ ] Ladders (`MoveEnv` ladder contact, climb at about 1.5-2 m/s) once a map has them, and mounting the weapon on cover. The Testing Area's control tower has the first ladder, modelled and with collision (`TowerLadder` in `MapMetal`): stiles at x 25.22, z -29.38 to -28.92, rungs every 0.3 m from 0.3 m up, climbed facing +x from the ground to the landing deck at 4.14 m (x 25.3 to 26.4, z -29.85 to -28.45). Ledges a weapon could mount on: the low concrete barriers (1.2 m), the north-west sandbag position (0.84 m), the culvert's sandbags (0.44 m), and the tall block walls' ends (3 m).
+- [x] Ladders: grab, climb at 2 m/s, step off at the top or bottom, slide down with crouch, jump off, weapon lowered (`rust/sim/src/movement/ladder.rs`, `LadderVolume` markup in `rust/game/src/ladder.rs`). The Testing Area's tower ladder is climbable.
+- [ ] Ladders: first-person hands on the rungs (the weapon just drops away now), and ladders on Slamcity and Zombies once their maps want them.
+- [ ] Mounting the weapon on cover. Ledges a weapon could mount on in the Testing Area: the low concrete barriers (1.2 m), the north-west sandbag position (0.84 m), the culvert's sandbags (0.44 m), and the tall block walls' ends (3 m).
 - [x] Third-person mantle animation (UAL2's `ClimbUp_1m_RM`, played once as a mantle starts).
 - [ ] Prone (third stance, `MoveParams` heights, crawl speed). On hold until there is a CC0 crawl animation for third person.
 - [x] Footstep sounds, with surface types and a cadence tied to speed.

@@ -574,6 +574,21 @@ pub struct PoseInput {
     /// right) is from the ground the animation stands on, or `None` for no
     /// foot IK (far away, in the air).
     pub feet: Option<[f32; 2]>,
+    /// On a ladder: hands and feet on its rungs.
+    pub ladder: Option<LadderLimbs>,
+}
+
+/// A climber's hands and feet on a ladder's rungs (world space), from
+/// `crate::ladder::limb_targets`, blended in by `weight`.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct LadderLimbs {
+    pub weight: f32,
+    /// Wrists: right, left.
+    pub hands: [Vector3; 2],
+    /// Ankles: left, right.
+    pub ankles: [Vector3; 2],
+    /// The way the climber faces (world, horizontal).
+    pub facing: Vector3,
 }
 
 #[derive(GodotClass)]
@@ -690,6 +705,9 @@ impl SoldierPoser {
         if let Some(lift) = input.feet {
             self.plant_feet(skel, bones, lift);
         }
+        if let Some(ladder) = input.ladder.filter(|l| l.weight > 0.0) {
+            self.climb_legs(skel, bones, &ladder);
+        }
 
         // 2. Aim pitch and hit lean. The skeleton faces +Z, so the character's
         // right is -X; pitching up turns +Z toward +Y, a negative turn about +X.
@@ -713,6 +731,10 @@ impl SoldierPoser {
             let angle = head.length();
             rotate_global(skel, bone(Bone::NECK), axis, angle * 0.4);
             rotate_global(skel, bone(Bone::HEAD), axis, angle * 0.6);
+        }
+
+        if let Some(ladder) = input.ladder.filter(|l| l.weight > 0.0) {
+            self.climb_arms(skel, bones, &ladder);
         }
 
         // 3. The weapon, in skeleton space.
@@ -1109,6 +1131,85 @@ impl SoldierPoser {
             palms,
             misses,
         })
+    }
+
+    /// Puts the feet on a ladder's rungs: each leg reaches its ankle to the
+    /// rung, the knee bending toward the ladder.
+    fn climb_legs(&self, skel: &mut Gd<Skeleton3D>, bones: [i32; BONES], ladder: &LadderLimbs) {
+        let bone = |i: usize| bones[i];
+        let to_skel = skel.get_global_transform().affine_inverse();
+        let toward = (to_skel.basis * ladder.facing).normalized();
+        let legs = [
+            (Bone::LEFT_UPPER_LEG, Bone::LEFT_LOWER_LEG, Bone::LEFT_FOOT),
+            (
+                Bone::RIGHT_UPPER_LEG,
+                Bone::RIGHT_LOWER_LEG,
+                Bone::RIGHT_FOOT,
+            ),
+        ];
+        let weight = ladder.weight.clamp(0.0, 1.0);
+        for ((upper, lower, foot), ankle) in legs.into_iter().zip(ladder.ankles) {
+            let (upper, lower, foot) = (bone(upper), bone(lower), bone(foot));
+            let chain = Chain {
+                root: skel.get_bone_global_pose(upper).origin,
+                mid: skel.get_bone_global_pose(lower).origin,
+                end: skel.get_bone_global_pose(foot).origin,
+            };
+            let target = chain.end.lerp(to_skel * ankle, weight);
+            let pole = chain.mid + toward * 0.5 + Vector3::UP * 0.2;
+            let flat = skel.get_bone_global_pose(foot).basis;
+            let solution = ik::solve_two_bone(chain, target, pole);
+            apply_global_rotation(skel, upper, solution.upper);
+            apply_global_rotation(skel, lower, solution.lower);
+            let placed = skel.get_bone_global_pose(foot);
+            skel.set_bone_global_pose(foot, Transform3D::new(flat, placed.origin));
+        }
+    }
+
+    /// Puts the hands on a ladder's rungs, fingers over them, elbows down
+    /// and out.
+    fn climb_arms(&self, skel: &mut Gd<Skeleton3D>, bones: [i32; BONES], ladder: &LadderLimbs) {
+        let bone = |i: usize| bones[i];
+        let to_skel = skel.get_global_transform().affine_inverse();
+        let toward = (to_skel.basis * ladder.facing).normalized();
+        let side = Vector3::UP.cross(toward).normalized();
+        let arms = [
+            (
+                [
+                    bone(Bone::RIGHT_UPPER_ARM),
+                    bone(Bone::RIGHT_LOWER_ARM),
+                    bone(Bone::RIGHT_HAND),
+                ],
+                ladder.hands[0],
+                -1.0,
+            ),
+            (
+                [
+                    bone(Bone::LEFT_UPPER_ARM),
+                    bone(Bone::LEFT_LOWER_ARM),
+                    bone(Bone::LEFT_HAND),
+                ],
+                ladder.hands[1],
+                1.0,
+            ),
+        ];
+        // The fingers point at the rungs and a little up, to hook over them.
+        let reach = (toward + Vector3::UP * 0.4).normalized();
+        for (chain, wrist, out) in arms {
+            let mid = skel.get_bone_global_pose(chain[1]).origin;
+            let pole = mid + Vector3::DOWN * 0.5 + side * (0.3 * out) - toward * 0.1;
+            let hand = skel.get_bone_global_pose(chain[2]).basis.orthonormalized();
+            let turn = ik::rotation_between(hand.col_b(), reach);
+            let basis = Basis::from_quaternion(turn) * hand;
+            self.place_hand(
+                skel,
+                chain,
+                Transform3D::new(basis, to_skel * wrist),
+                Vector3::ZERO,
+                pole,
+                ladder.weight.clamp(0.0, 1.0),
+            );
+        }
     }
 
     /// Where the IK last put a wrist (world space), if it ran.

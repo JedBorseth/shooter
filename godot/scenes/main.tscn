@@ -289,8 +289,8 @@ size = Vector3(1.1, 0.14, 1.4)
 material = ExtResource("m_platform")
 
 [node name="TowerLadder" type="CSGBox3D" parent="MapMetal" unique_id=528492677]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 25.22, 2.55, -29.15)
-size = Vector3(0.06, 5.1, 0.5)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 25.22, 2.07, -29.15)
+size = Vector3(0.06, 4.14, 0.5)
 material = ExtResource("m_platform")
 
 [node name="Container" type="CSGBox3D" parent="MapMetal" unique_id=2032954080]
@@ -576,3 +576,8 @@ player_path = NodePath("../Player")
 outdoor_db = -20.0
 indoor_db = -18.0
 distant_battle = true
+
+[node name="TowerLadderClimb" type="LadderVolume" parent="."]
+transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, 25.19, 0, -29.15)
+length = 4.14
+width = 0.46

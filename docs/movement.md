@@ -122,8 +122,36 @@ cover, with clear room over it and ground beyond). The simulation picks a
 mantle over a vault and climbs at a velocity fixed when the climb starts
 (`MoveState::mantle_dir`), so turning mid-climb does not pull the player off
 the wall. `MoveState::vaulting` marks a vault, which carries on over the top
-and ducks through windows at slide speed. Ladders and weapon mounting are not
-done: no map has ladders yet.
+and ducks through windows at slide speed. Weapon mounting is not done.
+
+## Ladders
+
+Classic IW and Modern Warfare (2019) ladders (`rust/sim/src/movement/ladder.rs`).
+
+| | Here | Reference |
+| --- | --- | --- |
+| Grab | move into the rungs from up to 0.45 m in front, on the ground or in the air; or walk off the floor at its top toward its open side | walk into it; step onto it from the top |
+| Climb | toward the rungs climbs up at 2.0 m/s, away from them climbs down at 2.4 m/s, full speed within 60 degrees of straight at or away; no gravity, no strafe | the TODO's 1.5 to 2 m/s band (about a rung every 0.15 s) |
+| Top | the feet climb 6 cm over the top floor, then step onto it over 0.32 s (a 4.14 m ladder takes 2.1 s, rung to floor) | climbs over the top on its own |
+| Bottom | standing on the floor without climbing up lets go | steps off at the bottom |
+| Slide down | crouch drops at up to 6 m/s (accelerating at 14 m/s²); climbing up or crouch again catches it; no fall damage | MW2019's crouch-to-slide down ladders |
+| Jump | pushes off backward (3 m/s back, 3 m/s up), no regrab for 0.4 s | jump lets go |
+| Weapon | lowered (no fire, aim, knife, or grenades; a reload carries on), back up over the weapon's sprint-out | lowered on ladders |
+| Look | free; the body keeps facing the rungs, turning at most 90 degrees at the hips | classic IW caps the look; we do not, so a player stepping on from the top is not turned sideways |
+
+A map marks a ladder with a `LadderVolume` (`rust/game/src/ladder.rs`): a
+node at the ladder's foot on the face of its rungs, -Z pointing the way a
+climber faces, with `length` set to the height of the floor at the top. It
+builds its own catch volume on the "ladders" physics layer (9), and
+`body::tick` reports where the feet are relative to it (`MoveEnv::ladder`):
+one point query a tick. The ladder's own collision must stop at the top
+floor's height so a climber can step over it. New state:
+`MoveState::ladder_facing`, `ladder_slide`, and `ladder_cooldown`;
+snapshots carry the ladder's heading (`PlayerView::ladder`), and the hit
+zones and the third-person body face its rungs (`gait::Turning::hold`).
+Other bodies put their hands and feet on the rungs in diagonal pairs, two
+rungs a move (`ladder::limb_targets`), with the weapon put away; a rung rings
+under each 0.3 m climbed. The Testing Area's tower has the first ladder.
 
 ## Collision and stepping
 
