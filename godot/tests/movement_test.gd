@@ -28,6 +28,12 @@ const STAIR_RISE := 0.2
 const STAIR_TREAD := 0.3
 const STAIR_TOP_DEPTH := 3.0
 const HIGH_STEP := Vector3(-60, 0, 0)
+## Traversal: each obstacle's face is 4 m ahead (-Z) of its start point.
+const LEDGE := Vector3(120, 0, 0)
+const THIN_WALL := Vector3(140, 0, 0)
+const WINDOW := Vector3(160, 0, 0)
+const LOW_LEDGE := Vector3(180, 0, 0)
+const FACE := 4.0
 ## Trace columns, in the order `_record` writes them.
 const COLUMNS := [
 	"scenario",
@@ -102,6 +108,10 @@ func _run() -> void:
 	await _stairs(deg_to_rad(45.0), "stairs_45")
 	await _stairs(deg_to_rad(60.0), "stairs_60")
 	await _high_step()
+	await _hold_jump_mantle()
+	await _vault(THIN_WALL, "vault", false)
+	await _vault(WINDOW, "window", true)
+	await _low_ledge()
 	_finish()
 
 
@@ -136,6 +146,16 @@ func _build_course(world: Node3D) -> void:
 		Vector3(30, top, STAIR_TOP_DEPTH)
 	)
 	_box(body, HIGH_STEP + Vector3(0, 0.2, -3), Vector3(6, 0.4, 2))
+	# A 1.6 m ledge, 3 m deep: out of reach from the ground.
+	_box(body, LEDGE + Vector3(0, 0.8, -FACE - 1.5), Vector3(6, 1.6, 3))
+	# Thin cover: 1 m high, 0.2 m thick.
+	_box(body, THIN_WALL + Vector3(0, 0.5, -FACE - 0.1), Vector3(6, 1.0, 0.2))
+	# A window: a 0.2 m wall with a 1.3 m opening from 0.9 m to 2.2 m.
+	_box(body, WINDOW + Vector3(0, 0.45, -FACE - 0.1), Vector3(6, 0.9, 0.2))
+	_box(body, WINDOW + Vector3(0, 2.6, -FACE - 0.1), Vector3(6, 0.8, 0.2))
+	# A 1 m ledge under a ceiling 1.4 m above its top: room only to crouch.
+	_box(body, LOW_LEDGE + Vector3(0, 0.5, -FACE - 1.5), Vector3(6, 1.0, 3))
+	_box(body, LOW_LEDGE + Vector3(0, 2.6, -FACE - 1.6), Vector3(6, 0.4, 3.2))
 
 
 func _box(body: StaticBody3D, center: Vector3, size: Vector3) -> void:
@@ -206,6 +226,79 @@ func _high_step() -> void:
 	Input.action_release("move_forward")
 	await _record(30)
 	_check(absf(top - 0.4) < 0.03, "a 0.4 m step is walked up, feet at %.2f m" % top)
+	await _reset()
+
+
+## Runs at a 1.6 m ledge, too high to climb from the ground, jumps, and
+## holds jump: the climb starts as soon as the jump brings the ledge into
+## reach, with no second press (MW-style).
+func _hold_jump_mantle() -> void:
+	_player.teleport(LEDGE + Vector3(0, 0.02, 0), 0.0)
+	await _ticks(30)
+	await _begin("hold_jump_mantle")
+	Input.action_press("move_forward")
+	while _player.global_position.z > LEDGE.z - FACE + 1.0:
+		await _record(1)
+	Input.action_press("jump")
+	var climbed := false
+	for i in 120:
+		await _record(1)
+		climbed = climbed or _player.movement_state() == "Mantling"
+	Input.action_release("jump")
+	Input.action_release("move_forward")
+	await _record(30)
+	_check(climbed, "holding jump in the air climbs a 1.6 m ledge")
+	var y := _player.global_position.y
+	_check(absf(y - 1.6) < 0.05, "and ends on top, feet at %.2f m" % y)
+	await _reset()
+
+
+## Sprints at `start`'s obstacle and jumps close to it: the vault goes over
+## without stopping and lands running (ducking through a window when `low`).
+func _vault(start: Vector3, name: String, low: bool) -> void:
+	_player.teleport(start + Vector3(0, 0.02, 2.0), 0.0)
+	await _ticks(30)
+	await _begin(name)
+	Input.action_press("move_forward")
+	await _press("sprint")
+	while _player.global_position.z > start.z - FACE + 0.7:
+		await _record(1)
+	var from := _player.global_position
+	var vaulted := false
+	var ducked := false
+	await _press("jump")
+	for i in 60:
+		await _record(1)
+		vaulted = vaulted or _player.movement_state() == "Mantling"
+		ducked = ducked or _player.crouch_amount() > 0.3
+	var to := _player.global_position
+	var mean := Vector2(to.x - from.x, to.z - from.z).length() / (64.0 / 120.0)
+	Input.action_release("move_forward")
+	await _record(30)
+	_check(vaulted, "%s: the jump vaults" % name)
+	_check(to.z < start.z - FACE - 0.6, "%s: over to the far side, z %.2f" % [name, to.z])
+	_check(mean >= 3.5, "%s: keeps moving through it, %.2f m/s" % [name, mean])
+	_check(ducked == low, "%s: ducks only through a window, ducked %s" % [name, ducked])
+	await _reset()
+
+
+## A ledge under a low ceiling: climbed onto, ending crouched.
+func _low_ledge() -> void:
+	_player.teleport(LOW_LEDGE + Vector3(0, 0.02, 0), 0.0)
+	await _ticks(30)
+	await _begin("low_ledge")
+	Input.action_press("move_forward")
+	while _player.global_position.z > LOW_LEDGE.z - FACE + 0.6:
+		await _record(1)
+	await _press("jump")
+	await _record(90)
+	Input.action_release("move_forward")
+	await _record(30)
+	var y := _player.global_position.y
+	_check(absf(y - 1.0) < 0.05, "a low ledge is climbed, feet at %.2f m" % y)
+	_check(
+		_player.movement_state() == "Crouching", "and ends crouched, %s" % _player.movement_state()
+	)
 	await _reset()
 
 

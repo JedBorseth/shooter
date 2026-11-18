@@ -61,7 +61,7 @@ use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState}
 // reloading, aim, velocity, weapon) to the debug rewound hitbox poses.
 // Version 23 added each body's stride phase and reload and mantle progress to
 // player views and rewound poses.
-pub const PROTOCOL_VERSION: u16 = 26;
+pub const PROTOCOL_VERSION: u16 = 27;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -1708,6 +1708,7 @@ fn write_move_state(w: &mut BitWriter, m: &MoveState) {
     w.f32(m.sprint_blend);
     w.f32(m.air_time);
     w.f32(m.land_slow);
+    w.bool(m.vaulting);
 }
 
 fn read_move_state(r: &mut BitReader) -> DecodeResult<MoveState> {
@@ -1732,6 +1733,7 @@ fn read_move_state(r: &mut BitReader) -> DecodeResult<MoveState> {
         sprint_blend: r.f32()?,
         air_time: r.f32()?,
         land_slow: r.f32()?,
+        vaulting: r.bool()?,
     })
 }
 

@@ -276,6 +276,8 @@ mod tests {
             on_floor: p.on_floor,
             can_stand: true,
             ledge: None,
+            ledge_low: false,
+            vault: None,
         };
         let mut events = Vec::new();
         let v = player::step(

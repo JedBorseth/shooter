@@ -1140,6 +1140,8 @@ mod tests {
             on_floor: true,
             can_stand: true,
             ledge: None,
+            ledge_low: false,
+            vault: None,
         };
         let mut stances = Vec::new();
         for _ in 0..ticks {

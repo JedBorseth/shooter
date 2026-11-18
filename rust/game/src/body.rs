@@ -6,11 +6,11 @@
 //! `scenes/player.tscn`; any difference shows up as mispredictions.
 
 use godot::classes::{
-    CapsuleShape3D, CharacterBody3D, CollisionShape3D, PhysicsDirectSpaceState3D,
-    PhysicsRayQueryParameters3D, ShapeCast3D, SphereShape3D,
+    CapsuleShape3D, CharacterBody3D, CollisionShape3D, PhysicsRayQueryParameters3D, ShapeCast3D,
+    SphereShape3D,
 };
 use godot::prelude::*;
-use shooter_sim::movement::{MoveEnv, MoveParams, Stance};
+use shooter_sim::movement::{MoveEnv, MoveParams, Stance, Vault};
 use shooter_sim::net::protocol::Predicted;
 use shooter_sim::net::{TICK_DT, TICK_RATE};
 use shooter_sim::player::{self, PlayerEvent, PlayerInput, PlayerParams};
@@ -89,10 +89,13 @@ pub fn tick(
     events: &mut Vec<PlayerEvent>,
 ) -> TickOutcome {
     parts.headroom.force_shapecast_update();
+    let climb = find_climb(parts, &params.movement, p, input.yaw);
     let env = MoveEnv {
         on_floor: p.on_floor,
         can_stand: !parts.headroom.is_colliding(),
-        ledge: find_ledge(parts, &params.movement, p, input.yaw),
+        ledge: climb.ledge,
+        ledge_low: climb.ledge_low,
+        vault: climb.vault,
     };
     let previous_crouch = p.state.movement.crouch;
     let requested = player::step(&mut p.state, input, env, params, TICK_DT, events);
@@ -290,23 +293,40 @@ fn step_up(body: &mut Gd<CharacterBody3D>, start: Transform3D, velocity: Vector3
     rise
 }
 
-/// The height of a ledge in front of the player they could climb onto: a
-/// wall within reach at knee height, a top surface `mantle_min` to
-/// `mantle_max` above the feet just past its face, and room to stand on it.
-/// Only looked for while the player could use it (alive, not already
-/// climbing or crouched). Client and server see the same geometry, so both
-/// find the same ledge.
-fn find_ledge(parts: &BodyParts, params: &MoveParams, p: &Predicted, yaw: f32) -> Option<f32> {
+/// What there is to climb in front of the player (`MoveEnv`'s ledge and
+/// vault fields).
+#[derive(Default)]
+struct Climb {
+    ledge: Option<f32>,
+    ledge_low: bool,
+    vault: Option<Vault>,
+}
+
+/// What the player could climb in front of them: a wall within reach at knee
+/// height whose top is `mantle_min` to `mantle_max` above the feet. A top deep
+/// enough to stand on is a ledge to mantle onto (low when there is room only
+/// to crouch there). Thin cover or a window sill up to `vault_max`, with
+/// ground beyond it and room to pass over, is a vault (low when only a ducked
+/// body fits through). Only looked for while the player could use it (alive,
+/// standing, not already climbing). Client and server see the same geometry,
+/// so both find the same.
+fn find_climb(parts: &BodyParts, params: &MoveParams, p: &Predicted, yaw: f32) -> Climb {
     let movement = &p.state.movement;
     if !p.state.alive() || movement.mantling() || movement.stance != Stance::Standing {
-        return None;
+        return Climb::default();
     }
-    let mut space = parts.body.get_world_3d()?.get_direct_space_state()?;
+    let Some(mut space) = parts
+        .body
+        .get_world_3d()
+        .and_then(|w| w.get_direct_space_state())
+    else {
+        return Climb::default();
+    };
     let feet = to_godot(p.position);
     let (forward, _) = shooter_sim::movement::basis_from_yaw(yaw);
     let forward = to_godot(forward);
     let exclude: Array<Rid> = array![parts.body.get_rid()];
-    let ray = |space: &mut Gd<PhysicsDirectSpaceState3D>, from: Vector3, to: Vector3| {
+    let mut ray = |from: Vector3, to: Vector3| {
         let query = PhysicsRayQueryParameters3D::create_ex(from, to)
             .collision_mask(WORLD_LAYER)
             .exclude(&exclude)
@@ -316,37 +336,95 @@ fn find_ledge(parts: &BodyParts, params: &MoveParams, p: &Predicted, yaw: f32) -
     };
     // A wall in front, at knee height.
     let knee = feet + Vector3::UP * (params.mantle_min * 0.8);
-    let wall = ray(&mut space, knee, knee + forward * 0.75)?;
+    let Some(wall) = ray(knee, knee + forward * 0.75) else {
+        return Climb::default();
+    };
+    let face = Vector3::new(wall.x, feet.y, wall.z);
     // Its top, just past the face.
-    let over = Vector3::new(wall.x, feet.y, wall.z) + forward * 0.3;
-    let top = ray(
-        &mut space,
+    let over = face + forward * 0.1;
+    let Some(top) = ray(
         over + Vector3::UP * (params.mantle_max + 0.3),
         over + Vector3::UP * (params.mantle_min * 0.5),
-    )?;
+    ) else {
+        return Climb::default();
+    };
     let height = top.y - feet.y;
     if !(params.mantle_min..=params.mantle_max).contains(&height) {
-        return None;
+        return Climb::default();
     }
-    // Room to stand on top, and nothing between the head and the top.
+    // Nothing between the head and the top.
     let head = feet + Vector3::UP * (height + 0.1);
-    if ray(
-        &mut space,
-        top + Vector3::UP * 0.05,
-        top + Vector3::UP * params.stand_height,
-    )
-    .is_some()
-        || ray(
-            &mut space,
-            Vector3::new(feet.x, top.y + params.stand_height * 0.6, feet.z),
-            top + Vector3::UP * params.stand_height * 0.6,
-        )
-        .is_some()
-        || ray(&mut space, head, Vector3::new(top.x, head.y, top.z)).is_some()
-    {
-        return None;
+    if ray(head, Vector3::new(top.x, head.y, top.z)).is_some() {
+        return Climb::default();
     }
-    Some(height)
+    // Deep enough to stand on: the top carries on half a metre in.
+    let inside = face + forward * 0.45;
+    let deep = ray(
+        inside + Vector3::UP * (height + 0.3),
+        inside + Vector3::UP * (height - 0.15),
+    )
+    .is_some_and(|p| (p.y - top.y).abs() < 0.12);
+    if deep {
+        // Room on top, and no overhang between the player and it.
+        let mut room = |tall: f32| {
+            ray(top + Vector3::UP * 0.05, top + Vector3::UP * tall).is_none()
+                && ray(
+                    Vector3::new(feet.x, top.y + tall * 0.6, feet.z),
+                    top + Vector3::UP * tall * 0.6,
+                )
+                .is_none()
+        };
+        return if room(params.stand_height) {
+            Climb {
+                ledge: Some(height),
+                ..Climb::default()
+            }
+        } else if room(params.crouch_height) {
+            Climb {
+                ledge: Some(height),
+                ledge_low: true,
+                ..Climb::default()
+            }
+        } else {
+            Climb::default()
+        };
+    }
+    if height > params.vault_max {
+        return Climb::default();
+    }
+    // Thin: past it the ground is well below the top, and there is ground
+    // to land on within a short drop.
+    let beyond = face + forward * 0.8;
+    let Some(landing) = ray(
+        beyond + Vector3::UP * (height + 0.1),
+        beyond - Vector3::UP * 1.6,
+    ) else {
+        return Climb::default();
+    };
+    if landing.y > top.y - 0.3 {
+        return Climb::default();
+    }
+    // Room to pass over: clear just above the top all the way across, and a
+    // standing body's height above it unless ducking (a window).
+    let mut clear = |above: f32| {
+        let y = top.y + above;
+        let start = Vector3::new(feet.x, y, feet.z);
+        ray(start, Vector3::new(beyond.x, y, beyond.z)).is_none()
+    };
+    if !clear(0.3) {
+        return Climb::default();
+    }
+    // Ducked unless a standing body fits over the top (a window's head is
+    // in the way); a window must still fit a crouched body.
+    let stand = params.stand_height + 0.25;
+    let low = [0.5, 0.75, 1.0].iter().any(|share| !clear(stand * share));
+    if low && !clear(params.crouch_height + 0.1) {
+        return Climb::default();
+    }
+    Climb {
+        vault: Some(Vault { height, low }),
+        ..Climb::default()
+    }
 }
 
 /// Moves the body to a state without simulating (spawns, reconciliation).
