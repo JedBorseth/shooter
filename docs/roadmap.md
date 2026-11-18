@@ -80,7 +80,7 @@ Each phase ends with something playable.
    - ✅ Bots that play (`--bot-skill`): navigation mesh, perception, human-like aim, and players replacing bots, so a full 6v6 can be played alone. The server keeps its 120 Hz tick with 12 bots.
    - ✅ Gun Game (`--mode gungame`, `rust/sim/src/gun_game.rs`): free-for-all up a ladder of the eight weapons; kills swap the weapon on the server and the client's prediction corrects to it. Protocol 10 sends the mode in the welcome, player winners, and ladder levels on the scoreboard.
 5. **Online services.** Self-hosted Nakama for accounts, parties, and matchmaking. Dockerized headless servers. Agones later, to start servers on demand.
-6. **Polish.** Ragdolls and directional hit reactions, audio occlusion and positional mixing, killcam (replay from the server snapshot buffer), post-processing, server-side anti-cheat (input validation, rate limits).
+6. **Polish.** Ragdolls (done) and directional hit reactions, audio occlusion and positional mixing, killcam (replay from the server snapshot buffer), post-processing, server-side anti-cheat (input validation, rate limits).
 7. **Content.** Weapon classes, attachments, loadouts, progression, more maps.
 
 ## Reference projects

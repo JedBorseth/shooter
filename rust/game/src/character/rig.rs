@@ -15,9 +15,8 @@ use godot::classes::animation_mixer::AnimationCallbackModeProcess;
 use godot::classes::{
     AnimationLibrary, AnimationNode, AnimationNodeAnimation, AnimationNodeBlend2,
     AnimationNodeBlendSpace1D, AnimationNodeBlendTree, AnimationNodeOneShot,
-    AnimationNodeTimeScale, AnimationNodeTimeSeek, AnimationNodeTransition, AnimationRootNode,
-    AnimationTree, BoneAttachment3D, INode3D, MeshInstance3D, Node3D, ShaderMaterial, Skeleton3D,
-    SphereMesh,
+    AnimationNodeTimeScale, AnimationNodeTimeSeek, AnimationRootNode, AnimationTree,
+    BoneAttachment3D, INode3D, MeshInstance3D, Node3D, Skeleton3D, SphereMesh,
 };
 use godot::prelude::*;
 use shooter_sim::hitbox::Activity;
@@ -29,6 +28,7 @@ use shooter_sim::weapon::WeaponId;
 
 use super::palette::{self, Team};
 use super::poser::{Grips, Hold, PoseInput, Section, SoldierPoser, WeaponPlacement};
+use super::ragdoll::{self, Push, Ragdoll};
 use crate::convert::{to_godot, to_godot_basis, to_sim};
 use crate::spring::{Spring, impulse_for_peak, smoothing};
 use crate::viewmodel::{self, WeaponView};
@@ -143,6 +143,30 @@ impl Default for SoldierFrame {
     }
 }
 
+/// Where a death has got to.
+#[derive(Default)]
+enum Death {
+    #[default]
+    Alive,
+    /// Waiting for the poser to capture the pose last drawn (a frame or
+    /// two); `frames` counts the wait.
+    Capturing {
+        push: Option<Push>,
+        velocity: Vector3,
+        frames: u32,
+    },
+    Ragdoll(Ragdoll),
+    /// At rest: the skeleton keeps the last pose.
+    Still,
+}
+
+/// Share of the ground speed a body keeps as it falls.
+const CARRIED_RUN: f32 = 0.6;
+/// A death whose hit is older than this (seconds) falls without its push.
+const HIT_MEMORY: f32 = 1.0;
+/// Frames to wait for the poser's capture before taking the pose without it.
+const CAPTURE_FRAMES: u32 = 3;
+
 #[derive(GodotClass)]
 #[class(init, base = Node3D)]
 pub struct SoldierRig {
@@ -165,9 +189,6 @@ pub struct SoldierRig {
     model: OnReady<Gd<Node3D>>,
     tree: Option<Gd<AnimationTree>>,
     poser: Option<Gd<SoldierPoser>>,
-    /// The body meshes (near and far), for the hit flash overlay.
-    meshes: Vec<Gd<MeshInstance3D>>,
-    flash_material: Option<Gd<ShaderMaterial>>,
     weapon: Option<(WeaponId, Gd<WeaponView>)>,
     applied_team: Option<Team>,
 
@@ -188,12 +209,14 @@ pub struct SoldierRig {
     /// Weapon kick: x pitch (radians), z push back (metres).
     kick: Spring,
     lean: Spring,
-    flash: f32,
-    /// Extra yaw while dying, so the body falls away from the killing shot.
-    death_yaw: f32,
-    death_yaw_target: f32,
+    /// The latest hit and how long ago (seconds): a death pushes the body
+    /// with it.
+    last_hit: Option<(Push, f32)>,
+    death: Death,
+    /// Where the hips were as the ragdoll started and where they are now.
+    fall_from: Vector3,
+    fall_to: Vector3,
     was_alive: bool,
-    life_requested: Option<bool>,
     was_mantling: bool,
     /// The stride phase and mantle progress drawn (the server's, or the
     /// rig's own offline), and how far the climb has blended in.
@@ -226,19 +249,16 @@ impl INode3D for SoldierRig {
         // Every kit is one mesh, `Body`, and a decimated copy, `BodyFar`, drawn
         // in its place past FAR_DISTANCE (tools/build_character_assets.py).
         let far = skeleton.try_get_node_as::<MeshInstance3D>("BodyFar");
-        if let Some(mut body) = skeleton.try_get_node_as::<MeshInstance3D>("Body") {
-            if far.is_some() {
-                body.set_visibility_range_end(FAR_DISTANCE);
-                body.set_visibility_range_end_margin(FAR_MARGIN);
-            }
-            self.meshes.push(body);
+        if let Some(mut body) = skeleton.try_get_node_as::<MeshInstance3D>("Body")
+            && far.is_some()
+        {
+            body.set_visibility_range_end(FAR_DISTANCE);
+            body.set_visibility_range_end_margin(FAR_MARGIN);
         }
         if let Some(mut far) = far {
             far.set_visibility_range_begin(FAR_DISTANCE);
             far.set_visibility_range_begin_margin(FAR_MARGIN);
-            self.meshes.push(far);
         }
-        self.flash_material = Some(palette::hit_flash_material());
         self.apply_team();
         // A per-character seed for the shader's wear, skin tone, and blood.
         let seed = self.base().instance_id().to_i64().unsigned_abs();
@@ -258,22 +278,6 @@ impl INode3D for SoldierRig {
 
         let tree = self.build_tree();
         self.tree = Some(tree);
-    }
-
-    fn process(&mut self, delta: f64) {
-        let dt = delta as f32;
-        if self.flash > 0.0 {
-            self.flash = (self.flash - dt * 6.0).max(0.0);
-            let alpha = (self.flash * 0.6).min(0.9);
-            if let Some(material) = &mut self.flash_material {
-                palette::set_flash(material, alpha);
-            }
-            if self.flash == 0.0 {
-                for mesh in &mut self.meshes {
-                    mesh.set_material_overlay(Option::<&Gd<godot::classes::Material>>::None);
-                }
-            }
-        }
     }
 }
 
@@ -319,15 +323,37 @@ impl SoldierRig {
             .unwrap_or_else(|| self.base().get_global_position() + Vector3::new(0.0, 1.4, 0.0))
     }
 
-    /// Horizontal direction (world) the body is falling toward, or zero while alive.
+    /// Horizontal direction (world) the body has fallen toward, or zero
+    /// while alive or before it has moved.
     #[func]
     pub fn fall_direction(&self) -> Vector3 {
         if self.frame.alive {
             return Vector3::ZERO;
         }
-        // Death01 falls backward: away from where the body faces.
-        let yaw = self.frame.yaw + self.death_yaw;
-        Vector3::new(yaw.sin(), 0.0, yaw.cos())
+        let moved = self.fall_to - self.fall_from;
+        Vector3::new(moved.x, 0.0, moved.z)
+            .try_normalized()
+            .unwrap_or(Vector3::ZERO)
+    }
+
+    /// How far (m) the hips have moved along the ground since the ragdoll
+    /// started (tests).
+    #[func]
+    pub fn fall_distance(&self) -> f32 {
+        let moved = self.fall_to - self.fall_from;
+        Vector3::new(moved.x, 0.0, moved.z).length()
+    }
+
+    /// Whether the body is a ragdoll still moving (tests).
+    #[func]
+    pub fn is_ragdoll(&self) -> bool {
+        matches!(self.death, Death::Ragdoll(_))
+    }
+
+    /// Whether the body has come to rest after a death (tests).
+    #[func]
+    pub fn is_still(&self) -> bool {
+        matches!(self.death, Death::Still)
     }
 
     /// The world transform of a bone of the animated skeleton, for tests.
@@ -416,6 +442,20 @@ impl SoldierRig {
         self.hit(direction, killed);
     }
 
+    /// A hit on shape `part` of `shooter_sim::hitbox::hitboxes` (-1 unknown)
+    /// at `point`, with force level `force` (0 to 15), for tests.
+    #[func]
+    fn take_hit_at(
+        &mut self,
+        direction: Vector3,
+        killed: bool,
+        point: Vector3,
+        part: i64,
+        force: f32,
+    ) {
+        self.hit_at(push_of(direction, point, part, force), killed);
+    }
+
     #[func]
     pub fn set_team_index(&mut self, team: i32) {
         self.team = team;
@@ -428,20 +468,31 @@ impl SoldierRig {
     pub fn update(&mut self, frame: &SoldierFrame, dt: f32) {
         let was_alive = self.was_alive;
         let was_meleeing = self.frame.meleeing;
+        if let Some((_, age)) = &mut self.last_hit {
+            *age += dt;
+        }
+        if !frame.alive {
+            // The body is drawn as it was, then falls as a ragdoll: the
+            // poser keeps its last input, and the tree stops.
+            self.frame.alive = false;
+            self.frame.velocity = frame.velocity;
+            self.was_alive = false;
+            if was_alive {
+                self.begin_death();
+            }
+            self.step_corpse(dt);
+            return;
+        }
         self.frame = *frame;
-        self.was_alive = frame.alive;
-        if frame.alive && !was_alive {
-            self.death_yaw = 0.0;
-            self.death_yaw_target = 0.0;
-            self.lean = Spring::default();
+        self.was_alive = true;
+        if !was_alive {
+            self.revive();
         }
         self.set_weapon(frame.weapon);
 
         // Body yaw. The model inside faces -Z like everything else.
-        self.death_yaw += (self.death_yaw_target - self.death_yaw) * smoothing(14.0, dt);
-        let yaw = frame.yaw + self.death_yaw;
         self.base_mut()
-            .set_global_basis(Basis::from_axis_angle(Vector3::UP, yaw));
+            .set_global_basis(Basis::from_axis_angle(Vector3::UP, frame.yaw));
 
         // Locomotion, in the body's frame: +X right, -Z forward.
         let local = Basis::from_axis_angle(Vector3::UP, -frame.yaw) * frame.velocity;
@@ -606,12 +657,6 @@ impl SoldierRig {
                 set(tree, "hold/blend_amount", hold.to_variant());
             }
             self.was_mantling = frame.mantling;
-            // Only on a change: a request restarts the death clip.
-            if self.life_requested != Some(frame.alive) {
-                self.life_requested = Some(frame.alive);
-                let life = if frame.alive { "alive" } else { "dead" };
-                set(tree, "life/transition_request", life.to_variant());
-            }
             tree.advance(f64::from(dt));
         }
     }
@@ -653,23 +698,29 @@ impl SoldierRig {
         );
     }
 
-    /// A hit travelling along `direction` (world): the torso flinches away and
-    /// the body flashes. On a kill the body turns to fall away from the shot.
+    /// A hit travelling along `direction` (world), nothing more known: the
+    /// torso flinches away. On a kill the body falls with the shot's push.
     pub fn hit(&mut self, direction: Vector3, killed: bool) {
-        self.flash = if killed { 2.0 } else { 1.0 };
-        if let Some(material) = &self.flash_material {
-            for mesh in &mut self.meshes {
-                mesh.set_material_overlay(material);
-            }
-        }
+        self.hit_at(
+            Push {
+                direction,
+                part: None,
+                point: None,
+                force: DEFAULT_FORCE,
+            },
+            killed,
+        );
+    }
+
+    /// A hit that pushes as `push` says. A kill keeps it for the fall that
+    /// follows once the owner draws the body dead.
+    pub fn hit_at(&mut self, push: Push, killed: bool) {
+        self.last_hit = Some((push, 0.0));
+        let direction = push.direction;
         let Some(away) = Vector3::new(direction.x, 0.0, direction.z).try_normalized() else {
             return;
         };
-        if killed {
-            // Death01 falls backward, so face the shooter: forward = -away.
-            let face = away.x.atan2(away.z);
-            self.death_yaw_target = wrap_angle(face - self.frame.yaw);
-        } else {
+        if !killed && self.frame.alive {
             let local = Basis::from_axis_angle(Vector3::UP, -self.frame.yaw) * away;
             let peak = 7f32.to_radians();
             self.lean.velocity += local * impulse_for_peak(peak, LEAN_STIFFNESS, LEAN_DAMPING);
@@ -729,7 +780,6 @@ impl SoldierRig {
             placement: WeaponPlacement::FromEyes { offset, rotation },
             grips,
             ik: self.ik,
-            weapon_in_hand: !frame.alive,
             // The support hand fetches a magazine in the middle of the reload.
             support_off: carry.support_off(),
             support_target: to_godot(carry::RELOAD_REACH),
@@ -737,6 +787,173 @@ impl SoldierRig {
             trigger_off: carry.trigger_off(),
             knife: knife.0,
             knife_at: knife.1,
+        }
+    }
+
+    /// Starts a death: the poser captures the pose drawn this frame, and the
+    /// next step builds the ragdoll from it.
+    fn begin_death(&mut self) {
+        let push = self
+            .last_hit
+            .filter(|(_, age)| *age <= HIT_MEMORY)
+            .map(|(push, _)| push);
+        if let Some(poser) = &mut self.poser {
+            poser.bind_mut().capture = true;
+        }
+        self.death = Death::Capturing {
+            push,
+            velocity: self.frame.velocity,
+            frames: 0,
+        };
+    }
+
+    /// Advances a dead body: builds its ragdoll once the pose is captured,
+    /// writes the ragdoll's pose, and freezes it at rest. The corpse yard
+    /// calls this for bodies it holds.
+    pub fn step_corpse(&mut self, dt: f32) {
+        match std::mem::take(&mut self.death) {
+            Death::Alive => {}
+            Death::Capturing {
+                push,
+                velocity,
+                frames,
+            } => {
+                let captured = self
+                    .poser
+                    .as_mut()
+                    .and_then(|p| p.bind_mut().captured.take());
+                let pose = match captured {
+                    Some(pose) => Some(pose),
+                    None if frames + 1 >= CAPTURE_FRAMES => self.skeleton().map(|s| base_pose(&s)),
+                    None => {
+                        self.death = Death::Capturing {
+                            push,
+                            velocity,
+                            frames: frames + 1,
+                        };
+                        return;
+                    }
+                };
+                self.death = self.start_ragdoll(pose, velocity, push);
+            }
+            Death::Ragdoll(mut ragdoll) => {
+                let moving = ragdoll.step(dt);
+                self.fall_to = ragdoll.hips();
+                if moving {
+                    self.death = Death::Ragdoll(ragdoll);
+                } else {
+                    ragdoll.freeze();
+                    self.death = Death::Still;
+                }
+            }
+            Death::Still => self.death = Death::Still,
+        }
+    }
+
+    /// Stops a moving ragdoll where it is (too many moving, or the body is
+    /// sinking away).
+    pub fn freeze_ragdoll(&mut self) {
+        if let Death::Ragdoll(ragdoll) = std::mem::take(&mut self.death) {
+            self.fall_to = ragdoll.hips();
+            ragdoll.freeze();
+            self.death = Death::Still;
+        } else if matches!(self.death, Death::Alive) {
+            self.death = Death::Alive;
+        }
+    }
+
+    fn start_ragdoll(
+        &mut self,
+        pose: Option<Vec<ragdoll::BonePose>>,
+        velocity: Vector3,
+        push: Option<Push>,
+    ) -> Death {
+        // The poser and the animation stop: the skeleton's own pose is the
+        // body from here on.
+        if let Some(poser) = &mut self.poser {
+            poser.set_active(false);
+            poser.bind_mut().weapon = None;
+        }
+        self.set_contact_shadow(false);
+        // Legs that stop running shed some of the run: a body tumbles on
+        // rather than skating across the ground.
+        let velocity = Vector3::new(
+            velocity.x * CARRIED_RUN,
+            velocity.y,
+            velocity.z * CARRIED_RUN,
+        );
+        self.drop_weapon(velocity);
+        let (Some(pose), Some(skeleton)) = (pose, self.skeleton()) else {
+            return Death::Still;
+        };
+        let owner = self.base().instance_id();
+        let Some(ragdoll) = Ragdoll::start(skeleton, pose, velocity, push, owner) else {
+            return Death::Still;
+        };
+        self.fall_from = ragdoll.hips();
+        self.fall_to = self.fall_from;
+        let cap = if self.zombie {
+            ragdoll::MAX_SIMULATING_ZOMBIES
+        } else {
+            ragdoll::MAX_SIMULATING
+        };
+        for id in ragdoll::admit(owner, cap) {
+            if id == owner {
+                continue;
+            }
+            if let Ok(mut other) = Gd::<SoldierRig>::try_from_instance_id(id) {
+                other.bind_mut().freeze_ragdoll();
+            }
+        }
+        Death::Ragdoll(ragdoll)
+    }
+
+    /// Lets go of the held gun: it falls on its own, into the scene's yard.
+    fn drop_weapon(&mut self, velocity: Vector3) {
+        let Some((_, view)) = self.weapon.take() else {
+            return;
+        };
+        if !self.base().is_inside_tree() {
+            return;
+        }
+        let tree = self.base().get_tree();
+        let seed = splitmix(self.base().instance_id().to_i64().unsigned_abs());
+        let unit = |shift: u32| ((seed >> shift) & 0xff) as f32 / 255.0 * 2.0 - 1.0;
+        let spin = Vector3::new(unit(0), unit(8), unit(16)) * 3.0;
+        let toss = Vector3::new(unit(24), 0.3, unit(32)) * 0.6;
+        super::corpses::drop_weapon(&tree, view.upcast(), velocity + toss, spin);
+    }
+
+    /// The soft patch under the feet (`scripts/grounding.gd`) follows the
+    /// rig, not a ragdoll: it goes off while the body lies.
+    fn set_contact_shadow(&mut self, on: bool) {
+        if let Some(mut patch) = self.base().get_node_or_null("ContactShadow") {
+            patch.set_process_mode(if on {
+                godot::classes::node::ProcessMode::INHERIT
+            } else {
+                godot::classes::node::ProcessMode::DISABLED
+            });
+            if let Ok(mut patch) = patch.try_cast::<Node3D>() {
+                patch.set_visible(on);
+            }
+        }
+    }
+
+    /// Back to life (a respawn in place): the ragdoll goes, and the
+    /// animation and poser take the body again.
+    fn revive(&mut self) {
+        if let Death::Ragdoll(ragdoll) = std::mem::take(&mut self.death) {
+            ragdoll.discard();
+        }
+        self.death = Death::Alive;
+        self.set_contact_shadow(true);
+        self.last_hit = None;
+        self.lean = Spring::default();
+        if let Some(poser) = &mut self.poser {
+            poser.set_active(true);
+            let mut p = poser.bind_mut();
+            p.capture = false;
+            p.captured = None;
         }
     }
 
@@ -881,16 +1098,6 @@ impl SoldierRig {
             hold.set_filter_path(&NodePath::from(&format!("%GeneralSkeleton:{bone}")), true);
         }
         add("hold", hold.upcast(), 5.0);
-        let mut death = clip("ual1/Death01");
-        death.set_loop_mode(godot::classes::animation::LoopMode::NONE);
-        add("death_clip", death.upcast(), 5.0);
-        let mut life = AnimationNodeTransition::new_gd();
-        life.set_input_count(2);
-        life.set_input_name(0, "alive");
-        life.set_input_name(1, "dead");
-        life.set_input_reset(1, true);
-        life.set_xfade_time(0.12);
-        add("life", life.upcast(), 6.0);
 
         let links = [
             ("stand_seek", 0, "stand_loops"),
@@ -910,9 +1117,7 @@ impl SoldierRig {
             ("climb", 1, "climb_seek"),
             ("hold", 0, "climb"),
             ("hold", 1, "hold_clip"),
-            ("life", 0, "hold"),
-            ("life", 1, "death_clip"),
-            ("output", 0, "life"),
+            ("output", 0, "hold"),
         ];
         for (to, port, from) in links {
             graph.connect_node(to, port, from);
@@ -933,6 +1138,37 @@ impl SoldierRig {
         tree.set_active(true);
         tree
     }
+}
+
+/// Force level for a hit with nothing more known (a rifle round).
+const DEFAULT_FORCE: f32 = 3.0;
+
+/// A push from a hit on shape `part` of `shooter_sim::hitbox::hitboxes` (-1
+/// or out of range: unknown) at `point` (zero: unknown), with force level
+/// `force`.
+pub fn push_of(direction: Vector3, point: Vector3, part: i64, force: f32) -> Push {
+    let part = usize::try_from(part)
+        .ok()
+        .and_then(|p| shooter_sim::hitbox::SHAPE_PARTS.get(p).copied());
+    Push {
+        direction,
+        part,
+        point: (point != Vector3::ZERO).then_some(point),
+        force,
+    }
+}
+
+/// Every bone's local pose as the skeleton holds it.
+fn base_pose(skeleton: &Gd<Skeleton3D>) -> Vec<ragdoll::BonePose> {
+    (0..skeleton.get_bone_count())
+        .map(|b| {
+            (
+                skeleton.get_bone_pose_position(b),
+                skeleton.get_bone_pose_rotation(b),
+                skeleton.get_bone_pose_scale(b),
+            )
+        })
+        .collect()
 }
 
 /// A 64-bit mix (SplitMix64's finaliser): spreads regularly spaced seeds.
@@ -989,7 +1225,7 @@ fn add_zombie_eyes(skeleton: &Gd<Skeleton3D>) {
 }
 
 /// The zombie's animation graph: a shamble that blends into a jog and a run
-/// with speed, a one-shot scratch attack, and the death fall.
+/// with speed, and a one-shot scratch attack. Deaths are ragdolls.
 fn zombie_graph() -> Gd<AnimationNodeBlendTree> {
     let mut graph = AnimationNodeBlendTree::new_gd();
     let clip = |name: &str| {
@@ -1023,23 +1259,11 @@ fn zombie_graph() -> Gd<AnimationNodeBlendTree> {
     attack.set_fadein_time(0.08);
     attack.set_fadeout_time(0.25);
     graph.add_node("attack", &attack.upcast::<AnimationNode>());
-    let mut death = clip("ual1/Death01");
-    death.set_loop_mode(godot::classes::animation::LoopMode::NONE);
-    graph.add_node("death_clip", &death.upcast::<AnimationNode>());
-    let mut life = AnimationNodeTransition::new_gd();
-    life.set_input_count(2);
-    life.set_input_name(0, "alive");
-    life.set_input_name(1, "dead");
-    life.set_input_reset(1, true);
-    life.set_xfade_time(0.12);
-    graph.add_node("life", &life.upcast::<AnimationNode>());
     for (to, port, from) in [
         ("walk_rate", 0, "walk"),
         ("attack", 0, "walk_rate"),
         ("attack", 1, "attack_clip"),
-        ("life", 0, "attack"),
-        ("life", 1, "death_clip"),
-        ("output", 0, "life"),
+        ("output", 0, "attack"),
     ] {
         graph.connect_node(to, port, from);
     }

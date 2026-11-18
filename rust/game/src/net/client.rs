@@ -871,7 +871,6 @@ impl NetClient {
     fn apply_event(&mut self, event: GameEvent) {
         match event {
             GameEvent::Hit {
-                victim,
                 shot,
                 headshot,
                 killed,
@@ -884,12 +883,9 @@ impl NetClient {
                 let Some(player) = &mut self.player else {
                     return;
                 };
+                // The body falls with our shot's push once the snapshot that
+                // killed it is drawn: it carries where the shot landed.
                 player.bind_mut().on_server_hit(shot, headshot, killed);
-                // The body falls away from our shot.
-                if killed && let Some(remote) = self.remotes.iter_mut().find(|r| r.id == victim) {
-                    let direction = remote.node.bind().feet() - player.get_global_position();
-                    remote.node.bind_mut().react_to_hit(direction, true);
-                }
             }
             GameEvent::Hurt {
                 from,

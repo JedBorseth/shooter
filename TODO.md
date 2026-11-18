@@ -102,6 +102,8 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [ ] Footsteps on water and in puddles, and on stairs (a hollower step).
 - [ ] Other players' weapon switches and bolt or pump cycles, positional.
 - [x] Hit markers pop in and settle; kill markers are larger, thicker, and red.
+- [x] Ragdoll deaths (`rust/game/src/character/ragdoll.rs`): a killed soldier or zombie becomes twelve jointed capsules from the pose it was drawn in, pushed at the part the killing shot hit (snapshots carry the hit shape and a force level, `protocol::HitPart`), stiff for a moment so it topples with the push, then limp. At most six move at once (four in Zombies), and a body at rest freezes into its skeleton. Bodies and dropped guns stay in the scene's `CorpseYard` after a respawn (30 s for soldiers, 10 s for zombies, at most ten bodies), then sink away. No red hit flash on characters. Clients only: dedicated servers build none.
+- [ ] The player's own body in the death camera: the camera drops through where the body falls and then faces the killer with the body behind it, so a local ragdoll would only clip the lens. Needs the death camera to frame the body first.
 - [x] Score popups (+100, headshot and longshot bonuses) and medals at the crosshair.
 
 ### Settings and UX

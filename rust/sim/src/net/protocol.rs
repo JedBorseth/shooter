@@ -61,7 +61,9 @@ use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState}
 // reloading, aim, velocity, weapon) to the debug rewound hitbox poses.
 // Version 23 added each body's stride phase and reload and mantle progress to
 // player views and rewound poses.
-pub const PROTOCOL_VERSION: u16 = 27;
+// Version 28 added where each body's latest hit landed and how hard
+// (`PlayerView::hit_part`), for hit reactions and ragdoll deaths.
+pub const PROTOCOL_VERSION: u16 = 28;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -383,6 +385,8 @@ pub struct PlayerView {
     /// The horizontal direction the latest hit travelled, in 1/256 turns
     /// (see [`hit_direction`]).
     pub hit_heading: u8,
+    /// Where the latest hit landed and how hard ([`HitPart`]).
+    pub hit_part: u8,
     /// Stride phase in 1/256 strides, and reload and mantle progress out of
     /// 255 (`hitbox::clock`): every client draws the body, and the hit zones
     /// pose it, at the same moment of each animation.
@@ -395,6 +399,45 @@ pub struct PlayerView {
 pub fn heading_to_u8(x: f32, z: f32) -> u8 {
     let turns = x.atan2(z) / std::f32::consts::TAU;
     (turns * 256.0).round().rem_euclid(256.0) as u8
+}
+
+/// Where a hit landed and how hard, packed in a byte for `hit_part`: the
+/// shape it hit (an index into `hitbox::hitboxes`, 15 for unknown) in the low
+/// four bits, and a force level 0 to 15 in the high four. Cosmetic: clients
+/// pick the hit reaction and the ragdoll's push from it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct HitPart {
+    pub part: Option<u8>,
+    /// 0 to 15: about a tenth of the damage dealt, low for a knife.
+    pub force: u8,
+}
+
+impl HitPart {
+    /// The force level of `damage` dealt by a gun, or by a knife (`melee`),
+    /// which pushes little however much it deals.
+    pub fn new(part: Option<u8>, damage: f32, melee: bool) -> Self {
+        let force = if melee {
+            2
+        } else {
+            (damage / 10.0).round().clamp(1.0, 15.0) as u8
+        };
+        Self {
+            part: part.filter(|p| usize::from(*p) < crate::hitbox::COUNT),
+            force,
+        }
+    }
+
+    pub fn to_u8(self) -> u8 {
+        (self.force.min(15) << 4) | self.part.unwrap_or(15).min(15)
+    }
+
+    pub fn from_u8(v: u8) -> Self {
+        let part = v & 15;
+        Self {
+            part: (usize::from(part) < crate::hitbox::COUNT).then_some(part),
+            force: v >> 4,
+        }
+    }
 }
 
 /// The unit direction (`x`, `z`) of a `hit_heading`.
@@ -424,6 +467,7 @@ impl PlayerView {
             meleeing: combat.meleeing(),
             hits: 0,
             hit_heading: 0,
+            hit_part: 0,
             stride: 0,
             reload_progress: 0,
             mantle_progress: 0,
@@ -1584,11 +1628,12 @@ fn write_view_delta(w: &mut BitWriter, v: &PlayerView, base: &PlayerView) {
     if shots != 0 {
         w.varint(shots);
     }
-    let hit = (v.hits, v.hit_heading) != (base.hits, base.hit_heading);
+    let hit = (v.hits, v.hit_heading, v.hit_part) != (base.hits, base.hit_heading, base.hit_part);
     w.bool(hit);
     if hit {
         w.u8(v.hits);
         w.u8(v.hit_heading);
+        w.u8(v.hit_part);
     }
     let progress = |p: &PlayerView| (p.stride, p.reload_progress, p.mantle_progress);
     let moved = progress(v) != progress(base);
@@ -1632,6 +1677,7 @@ fn read_view_delta(r: &mut BitReader, base: &PlayerView) -> DecodeResult<PlayerV
     if r.bool()? {
         v.hits = r.u8()?;
         v.hit_heading = r.u8()?;
+        v.hit_part = r.u8()?;
     }
     if r.bool()? {
         v.stride = r.u8()?;
@@ -2215,6 +2261,7 @@ mod tests {
         let mut hit = a;
         hit.hits = a.hits.wrapping_add(1);
         hit.hit_heading = heading_to_u8(-1.0, 0.0);
+        hit.hit_part = HitPart::new(Some(0), 120.0, false).to_u8();
         let delta = ServerMessage::Snapshot(Snapshot {
             tick: 101,
             baseline: Some(100),
@@ -2252,6 +2299,27 @@ mod tests {
         assert_eq!(progress.stride, 0.75);
         assert!((progress.reload - 0.4).abs() < 0.5 / 255.0);
         assert!((progress.mantle - 0.6).abs() < 0.5 / 255.0);
+    }
+
+    #[test]
+    fn hit_parts_round_trip() {
+        for part in 0..crate::hitbox::COUNT as u8 {
+            for (damage, melee, force) in [(30.0, false, 3), (400.0, false, 15), (150.0, true, 2)] {
+                let packed = HitPart::new(Some(part), damage, melee);
+                assert_eq!(HitPart::from_u8(packed.to_u8()), packed);
+                assert_eq!(packed.force, force);
+            }
+        }
+        assert_eq!(
+            HitPart::from_u8(HitPart::new(None, 30.0, false).to_u8()).part,
+            None
+        );
+        assert_eq!(HitPart::new(Some(99), 30.0, false).part, None);
+        assert_eq!(
+            HitPart::from_u8(0).part,
+            Some(0),
+            "a fresh view reads as the head, force 0"
+        );
     }
 
     #[test]

@@ -68,10 +68,10 @@ func _run() -> void:
 	camera.global_position = zombie.global_position + ahead * 1.3 + Vector3.UP * 1.6
 	camera.look_at(zombie.global_position + Vector3.UP * 1.45)
 	await _shot("zm_05_face")
-	# A hit flash from the front.
-	zombie.react_to_hit(-ahead, false)
+	# A hit from the front.
+	zombie.react_to_hit(-ahead, false, Vector3.ZERO, -1, 3.0)
 	await process_frame
-	await _shot("zm_05_hit_flash")
+	await _shot("zm_05_hit")
 	# Side view of the walk.
 	var side := Vector3(-cos(zombie.facing()), 0, sin(zombie.facing()))
 	camera.global_position = zombie.global_position + side * 3.5 + Vector3.UP * 1.1

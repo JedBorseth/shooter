@@ -336,8 +336,6 @@ pub struct PoseInput {
     pub grips: Option<Grips>,
     /// 0 lets the animation pose the arms, 1 puts the hands on the weapon.
     pub ik: f32,
-    /// While true the weapon follows the right hand instead of the aim (dead).
-    pub weapon_in_hand: bool,
     /// The support hand lets go of the weapon by this much (0..1), for reloads.
     pub support_off: f32,
     /// Where the support hand goes when it lets go, in weapon space.
@@ -363,9 +361,10 @@ pub struct SoldierPoser {
     /// Finger bones of both hands: bone, rest rotation, right hand, finger
     /// (index into `FINGERS`), and joint.
     fingers: Vec<(i32, Quaternion, bool, usize, usize)>,
-    /// The weapon's transform relative to the right hand, captured when the
-    /// weapon starts following the hand.
-    in_hand: Option<Transform3D>,
+    /// Set to capture the next pose drawn: every bone's local pose after
+    /// this modifier, into `captured` (the ragdoll starts from it).
+    pub capture: bool,
+    pub captured: Option<Vec<super::ragdoll::BonePose>>,
     /// Where the IK last put the wrists (world space): right, left. Godot drops
     /// modified poses after skinning, so this is how tests see the result.
     solved: [Option<Vector3>; 2],
@@ -382,35 +381,53 @@ impl ISkeletonModifier3D for SoldierPoser {
         let Some(bones) = self.resolve(&skel) else {
             return;
         };
+        self.pose(&mut skel, bones);
+        if std::mem::take(&mut self.capture) {
+            let pose = (0..skel.get_bone_count())
+                .map(|b| {
+                    (
+                        skel.get_bone_pose_position(b),
+                        skel.get_bone_pose_rotation(b),
+                        skel.get_bone_pose_scale(b),
+                    )
+                })
+                .collect();
+            self.captured = Some(pose);
+        }
+    }
+}
+
+impl SoldierPoser {
+    fn pose(&mut self, skel: &mut Gd<Skeleton3D>, bones: [i32; 12]) {
         let input = self.input;
         let bone = |i: usize| bones[i];
         // Hidden unless a swing below shows it.
         if let Some(node) = &mut self.knife
             && node.is_visible()
-            && (input.knife <= 0.35 || input.weapon_in_hand || input.ik <= 0.0)
+            && (input.knife <= 0.35 || input.ik <= 0.0)
         {
             node.set_visible(false);
         }
 
         // 1. Hips toward the movement, spine back toward the aim.
         if input.lower_yaw.abs() > 1e-4 {
-            rotate_global(&mut skel, bone(Bone::HIPS), Vector3::UP, input.lower_yaw);
+            rotate_global(skel, bone(Bone::HIPS), Vector3::UP, input.lower_yaw);
             for (b, share) in TWIST_BONES.into_iter().zip(TWIST_SHARES) {
-                rotate_global(&mut skel, bone(b), Vector3::UP, -input.lower_yaw * share);
+                rotate_global(skel, bone(b), Vector3::UP, -input.lower_yaw * share);
             }
         }
 
         // 2. Aim pitch and hit lean. The skeleton faces +Z, so the character's
         // right is -X; pitching up turns +Z toward +Y, a negative turn about +X.
         for (b, share) in PITCH_BONES.into_iter().zip(PITCH_SHARES) {
-            rotate_global(&mut skel, bone(b), Vector3::RIGHT, -input.pitch * share);
+            rotate_global(skel, bone(b), Vector3::RIGHT, -input.pitch * share);
         }
         let lean = Vector3::new(-input.lean.x, 0.0, -input.lean.z);
         if let Some(dir) = lean.try_normalized() {
             let axis = Vector3::UP.cross(dir);
             let angle = lean.length();
-            rotate_global(&mut skel, bone(Bone::SPINE), axis, angle * 0.5);
-            rotate_global(&mut skel, bone(Bone::CHEST), axis, angle * 0.5);
+            rotate_global(skel, bone(Bone::SPINE), axis, angle * 0.5);
+            rotate_global(skel, bone(Bone::CHEST), axis, angle * 0.5);
         }
 
         // 3. The weapon, in skeleton space.
@@ -418,30 +435,18 @@ impl ISkeletonModifier3D for SoldierPoser {
         let Some(mut weapon) = self.weapon.clone() else {
             return;
         };
-        let right_hand = skel.get_bone_global_pose(bone(Bone::RIGHT_HAND));
-        let weapon_skel = if input.weapon_in_hand {
-            let rel = *self.in_hand.get_or_insert_with(|| {
-                right_hand.affine_inverse()
-                    * (skel_xform.affine_inverse() * weapon.get_global_transform())
-            });
-            let t = right_hand * rel;
-            weapon.set_global_transform(skel_xform * t);
-            t
-        } else {
-            self.in_hand = None;
-            match input.placement {
-                WeaponPlacement::External => {
-                    skel_xform.affine_inverse() * weapon.get_global_transform()
-                }
-                WeaponPlacement::FromEyes { offset, rotation } => {
-                    let head = skel.get_bone_global_pose(bone(Bone::HEAD));
-                    let eyes = head * EYE_IN_HEAD;
-                    let aim = Basis::from_axis_angle(Vector3::RIGHT, -input.pitch)
-                        * Basis::from_axis_angle(Vector3::UP, std::f32::consts::PI);
-                    let t = Transform3D::new(aim * rotation, eyes + aim * offset);
-                    weapon.set_global_transform(skel_xform * t);
-                    t
-                }
+        let weapon_skel = match input.placement {
+            WeaponPlacement::External => {
+                skel_xform.affine_inverse() * weapon.get_global_transform()
+            }
+            WeaponPlacement::FromEyes { offset, rotation } => {
+                let head = skel.get_bone_global_pose(bone(Bone::HEAD));
+                let eyes = head * EYE_IN_HEAD;
+                let aim = Basis::from_axis_angle(Vector3::RIGHT, -input.pitch)
+                    * Basis::from_axis_angle(Vector3::UP, std::f32::consts::PI);
+                let t = Transform3D::new(aim * rotation, eyes + aim * offset);
+                weapon.set_global_transform(skel_xform * t);
+                t
             }
         };
 
@@ -450,7 +455,7 @@ impl ISkeletonModifier3D for SoldierPoser {
             return;
         };
         let weight = input.ik.clamp(0.0, 1.0);
-        if weight <= 0.0 || input.weapon_in_hand {
+        if weight <= 0.0 {
             self.solved = [None, None];
             return;
         }
@@ -474,7 +479,7 @@ impl ISkeletonModifier3D for SoldierPoser {
         let right_pole = weapon_skel * to_godot(carry::RIGHT_POLE);
         let left_pole = weapon_skel * to_godot(carry::LEFT_POLE);
         self.place_hand(
-            &mut skel,
+            skel,
             [
                 bone(Bone::RIGHT_UPPER_ARM),
                 bone(Bone::RIGHT_LOWER_ARM),
@@ -515,7 +520,7 @@ impl ISkeletonModifier3D for SoldierPoser {
             );
         }
         self.place_hand(
-            &mut skel,
+            skel,
             [
                 bone(Bone::LEFT_UPPER_ARM),
                 bone(Bone::LEFT_LOWER_ARM),

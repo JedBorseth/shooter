@@ -80,6 +80,8 @@ pub struct RemoteSample {
     pub meleeing: bool,
     pub hits: u8,
     pub hit_heading: u8,
+    /// Where the latest hit landed and how hard (`protocol::HitPart`).
+    pub hit_part: u8,
     /// Stride phase and reload and mantle progress (`hitbox::clock`).
     pub progress: Progress,
 }
@@ -127,6 +129,7 @@ impl RemoteSample {
             meleeing: v.meleeing,
             hits: v.hits,
             hit_heading: v.hit_heading,
+            hit_part: v.hit_part,
             progress: v.progress(),
         }
     }
@@ -322,6 +325,9 @@ pub struct TargetHit {
     pub distance: f32,
     /// Direction of the first pellet that hit, for hit reactions.
     pub direction: Vec3,
+    /// The shape the first pellet hit (an index into `hitbox::hitboxes`),
+    /// for hit reactions and the fall.
+    pub part: u8,
 }
 
 /// Checks a shot's pellets against the targets. Each pellet hits the nearest
@@ -360,6 +366,7 @@ pub fn resolve_shot(def: &WeaponDef, pellets: &[Pellet], targets: &[Target]) -> 
                 headshot,
                 distance: hit.distance,
                 direction: pellet.direction,
+                part: hit.index as u8,
             }),
         }
     }
