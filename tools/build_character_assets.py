@@ -498,7 +498,7 @@ KITS = {
             },
             "skin": "skin_young_caucasian_male",
             "parts": [
-                {"asset": "cargo", "role": "pants", "subdiv": 1, "tighten": 0.016},
+                {"asset": "cargo", "role": "pants", "subdiv": 1, "tighten": 0.016, "split_legs": 0.82},
                 {"asset": "shirt", "role": "uniform", "tighten": 0.012, "decimate": 0.75},
                 {"asset": "boots", "role": "boots", "decimate": 0.4},
                 {"asset": "gloves", "role": "gloves", "decimate": 0.35},

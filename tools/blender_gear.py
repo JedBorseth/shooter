@@ -693,7 +693,7 @@ def knee_pads(body: Body, knees: dict[str, Vector]) -> list[bpy.types.Object]:
         # Wrapped close over the kneecap; skinned to both bones so it stays on
         # the knee as it bends.
         pad = band(body, f"knee_pad_{side}", knee + Vector((0, 0, 0.0)), Vector((0, 0, 1)), Vector((0, -1, 0)), 0.1, 0.004, 0.016,
-                   "webbing", "plastic", segments=8, start=-0.8, arc=1.6, reach=0.14, bones=[f"DEF-shin.{side}", f"DEF-thigh.{side}"])
+                   "webbing", "plastic", segments=12, start=-1.5, arc=3.0, reach=0.14, bones=[f"DEF-shin.{side}", f"DEF-thigh.{side}"])
         out.append(pad)
     return out
 

@@ -179,11 +179,11 @@ const INDEX_OFF_TRIGGER: [f32; 3] = [4.0, 6.0, 4.0];
 /// The support hand under a rifle handguard (about 45 mm across): a loose C
 /// with the fingertips up the far side and the thumb along the near side.
 const HANDGUARD: HandShape = [
-    [38.0, 45.0, 25.0],
-    [44.0, 50.0, 28.0],
-    [48.0, 50.0, 28.0],
-    [52.0, 50.0, 28.0],
-    [12.0, 15.0, 10.0],
+    [55.0, 60.0, 35.0],
+    [60.0, 65.0, 38.0],
+    [62.0, 65.0, 38.0],
+    [65.0, 65.0, 38.0],
+    [20.0, 20.0, 15.0],
 ];
 /// The support hand round a shotgun's pump: a firmer wrap to drive it.
 const PUMP: HandShape = [
@@ -196,11 +196,11 @@ const PUMP: HandShape = [
 /// The support hand on a pistol: fingers wrapped over the firing hand's, the
 /// thumb forward along the frame under the firing thumb.
 const CUP: HandShape = [
-    [50.0, 55.0, 30.0],
-    [55.0, 60.0, 35.0],
-    [58.0, 60.0, 35.0],
-    [60.0, 60.0, 35.0],
-    [0.0, 5.0, 5.0],
+    [62.0, 68.0, 40.0],
+    [66.0, 70.0, 42.0],
+    [68.0, 70.0, 42.0],
+    [70.0, 70.0, 42.0],
+    [15.0, 10.0, 5.0],
 ];
 
 /// Where the grip sits in each hand's bone space (from the wrist).
