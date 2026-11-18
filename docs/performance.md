@@ -25,6 +25,7 @@ Rules of thumb for this renderer on this card, from the measurements below:
 - Fake detail in the shader is cheap where it covers little of the screen: the skyline's windows and the rooms behind them (interior mapping, about 40 ALU operations and no texture reads) cost about 0.2 ms on Medium in Slamcity.
 - Code compiled into a shader costs even when a uniform skips it (register pressure): the skyline's windows live in their own variant (`world_windows.gdshader`). One texture fetch beats a few octaves of hashed noise.
 - Decals cost per pixel they cover and per lighting cluster they touch: keep them few and small, and keep ground decals shallow (Slamcity projects them 0.4 m deep). Paint long road markings as thin geometry instead: Slamcity's 71 decals cost about 0.36 ms on Medium, and moving its markings into the mesh saved about 0.15 ms.
+- Combat effects come from fixed pools (`rust/game/src/effects.rs`), bounded per preset, and an impact hides once its particles are done, so an idle pool draws nothing. Big transparent puffs are the expensive part of a fight: the blood mist (three lit 0.55 m quads per hit) cost about 0.25 ms on Medium in the firefight before it was cut from five quads.
 - Transparent particles cost a lot up close: one steam vent filling the view cost 0.15–0.5 ms on Medium. Use few, small particles, and no proximity fade.
 - Slamcity's city mesh is merged per chunk and material (about 50 materials), and each chunk casts its shadows through one merged shadow-only twin. Small things sit in a 16 m grid of chunks hidden beyond 40 m; a visibility range only works when a mesh's origin is near its geometry.
 - Reflection probes are expensive here: four small interior probes in Slamcity cost about 0.8 ms whenever a room filled the screen, and one probe over the whole block cost 0.7 ms everywhere. Baked lightmaps light the interiors instead (`tools/bake_lightmaps.sh`).
@@ -69,6 +70,13 @@ PROFILE_MAP=slamcity PROFILE_VIEW=1 PROFILE_PRESET=medium \
 It measures each variant in several short rounds, each right beside a measurement of the full frame, and prints the median difference: GPU time drifts over a run, and other programs on the GPU inflate a stretch of frames now and then, which a single comparison would read as a cost. Within a round it takes the median frame, so a shader that compiles when a variant first draws does not skew it. The last line, "nothing changed", shows the noise left. `PROFILE_ROUNDS` (default 4) and `PROFILE_FRAMES` (per round, default 90) trade time for precision, and `PROFILE_ONLY` picks variants by label (several separated by `|`).
 
 To price a shader change, `PROFILE_SHADER` also measures shaders with another file's code in their place, in the same run: `PROFILE_SHADER="res://shaders/a.gdshader=/path/a_new.gdshader,res://shaders/b.gdshader=/path/b_new.gdshader"` is one variant that swaps both (separate variants with `;`).
+
+The benchmark's viewpoints never fire, so effects that only appear in a fight are measured with a scripted firefight: `godot/tests/combat_fx.gd` with `FX_BENCH=1` stands the player in front of the Testing Area's tall cover wall, holds the trigger on a range dummy, and has four other shooters' rounds (traced as remote shots, ten a second each) land on the wall and a second dummy, then prints GPU time idle and while firing at each preset. It only presses fire and traces remote shots, so it runs on older builds too: run it on `main` and on the branch, alternating, and compare the firing column. Without `FX_BENCH` it saves frame strips of blood, impacts, and holes into `FX_DIR`.
+
+```sh
+FX_BENCH=1 xvfb-run -a -s "-screen 0 1920x1080x24" godot --path godot --resolution 1920x1080 \
+  --audio-driver Dummy --script res://tests/combat_fx.gd
+```
 
 `godot/tests/capture_picture.gd` saves the screenshots the lighting and post-processing reviews use: views into the sun, surfaces at a grazing angle, soldiers on the ground, eight consecutive frames of a slow turn (for shimmer), and the screen feedback states. See its header for how to run it.
 

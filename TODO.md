@@ -227,6 +227,14 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 - [x] A fire escape on the flats, up to the roof (built in the generator; Poly Haven's `modular_fire_escape` could replace it once assembled from its parts).
 - [x] Characters: one material and two surfaces per character, rest-space fabric and wear detail, and per-zombie skin tone and blood (`shaders/character.gdshader`).
 - [x] Effects and post: spark streaks, debris, soft dust, blood, bullet-hole decals, glowing tracers, ambient dust, and a motion blur option. Depth of field while aiming was left out (it blurs the iron sights).
+- [ ] Combat effects at modern Call of Duty fidelity (`rust/game/src/effects.rs`, `docs/art-direction.md#effects`):
+  - [x] Blood that is dark, wet, and lit instead of glowing, with spatter on the wall behind a close target; bullet holes that stay (pooled per preset, oldest reused first) and never land on characters; other players' rounds draw their impacts.
+  - [ ] Bullet holes per surface class (four variants each, soot ring, roughness), soft flipbook dust, debris that stops on the floor, and exit effects where a round penetrates.
+  - [ ] Tracers as camera-facing ribbons with a minimum pixel width, from other players too.
+  - [ ] Ejected cases handed to the world: they bounce, land, clink on what they hit, and stay; third-person ejection.
+  - [ ] Muzzle flash flipbooks, lit soft smoke, lingering barrel smoke, heat haze on High, and a muzzle light that stays on its side of walls.
+  - [ ] An explosion and fire effect with an API for grenades.
+  - [ ] A wound mark where a character was hit (character shader).
 - [x] Skyline windows with fake rooms behind them (interior mapping in `world.gdshader`), and bump-mapped cloth, leather, and creases on characters.
 - [x] Soldiers as believable people: a MakeHuman body fitted to the existing skeleton, a combat shirt and trousers, modelled kit (helmet with cover and mounts, glasses, balaclava or neck gaiter or a bare face per character, plate carrier with pouches, magazines and a radio, belt and holster, knee pads), all in one mesh with one baked texture atlas and a team tint (`tools/build_character_assets.py`).
 - [x] Zombies as distinct people: five MakeHuman bodies (age, build, skin, one a woman) in their own civilian clothes, picked per zombie (`zombie_body.tscn`, `SoldierRig.variants`).

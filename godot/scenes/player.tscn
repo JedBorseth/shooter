@@ -2,7 +2,6 @@
 
 [ext_resource type="PackedScene" path="res://scenes/weapons/m4_view.tscn" id="1_m4"]
 [ext_resource type="PackedScene" path="res://scenes/weapons/pistol_view.tscn" id="2_pistol"]
-[ext_resource type="PackedScene" path="res://scenes/effects/impact.tscn" id="3_impact"]
 [ext_resource type="PackedScene" path="res://scenes/effects/tracer.tscn" id="4_tracer"]
 [ext_resource type="PackedScene" path="res://scenes/weapons/ak47_view.tscn" id="5_ak47"]
 [ext_resource type="PackedScene" path="res://scenes/weapons/pdw9_view.tscn" id="6_pdw9"]
@@ -59,7 +58,6 @@ collision_layer = 2
 collision_mask = 81
 floor_constant_speed = true
 floor_snap_length = 0.45
-impact_scene = ExtResource("3_impact")
 tracer_scene = ExtResource("4_tracer")
 beam_scene = ExtResource("11_beam")
 

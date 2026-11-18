@@ -316,6 +316,8 @@ impl INode3D for SoldierRig {
 
         let tree = self.build_tree();
         self.tree = Some(tree);
+        // Bullet holes and blood stay on the walls, not on people.
+        crate::effects::keep_decals_off(&self.base().clone().upcast());
     }
 }
 
@@ -1187,6 +1189,7 @@ impl SoldierRig {
         };
         view.set_name("Weapon");
         self.base_mut().add_child(&view);
+        crate::effects::keep_decals_off(&view.clone().upcast());
         if let Some(poser) = &mut self.poser {
             poser.bind_mut().weapon = Some(view.clone().upcast());
         }
