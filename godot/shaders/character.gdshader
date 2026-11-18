@@ -13,10 +13,17 @@
 //   collapse to a point, shadows included: a zombie's lost helmet, or the
 //   heads and kit a soldier is not wearing.
 // - Per character (`variant`): skin tone, wear, and for zombies blood.
+// - The first-person arms draw with a copy compiled with VIEWMODEL_KEY
+//   (rust/game/src/viewmodel.rs: `first_person_shader`), which adds the
+//   first-person key light the weapon gets; every other character compiles
+//   without it and pays nothing.
 shader_type spatial;
 render_mode cull_back, diffuse_burley, specular_schlick_ggx;
 
 #include "res://shaders/viewmodel_projection.gdshaderinc"
+#ifdef VIEWMODEL_KEY
+#include "res://shaders/viewmodel_key.gdshaderinc"
+#endif
 
 const int ROLE_COUNT = 16;
 const int SKIN = 0;
@@ -132,5 +139,9 @@ void fragment() {
 		float rim = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 6.0);
 		glow += rim_colour * rim * rim_energy;
 	}
+#ifdef VIEWMODEL_KEY
+	vec3 n = viewmodel_key_normal(NORMAL_MAP, normal_strength, NORMAL, TANGENT, BINORMAL);
+	glow += viewmodel_key_light(n, VIEW, VIEW_MATRIX, base, rough, metal, orm.r);
+#endif
 	EMISSION = glow;
 }

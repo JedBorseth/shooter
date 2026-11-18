@@ -2128,9 +2128,9 @@ pub fn base_weapon(id: WeaponId) -> WeaponId {
 }
 
 thread_local! {
-    /// Shaders with a magnified optic's lens cut out (`lens_clipped_shader`),
-    /// by the path of the shader they copy.
-    static LENS_SHADERS: std::cell::RefCell<std::collections::HashMap<String, Gd<Shader>>> =
+    /// First-person copies of shaders (`shader_variant`), by the path of the
+    /// shader they copy and what was added.
+    static VARIANT_SHADERS: std::cell::RefCell<std::collections::HashMap<String, Gd<Shader>>> =
         std::cell::RefCell::new(std::collections::HashMap::new());
     /// Fired-case meshes by name, shared by every weapon that ejects one.
     static CASES: std::cell::RefCell<std::collections::HashMap<String, Gd<Mesh>>> =
@@ -2151,30 +2151,72 @@ const VIEWMODEL_SHADER: &str = "res://shaders/viewmodel.gdshader";
 /// local player's weapon and arms use it, and only while an ACOG is fitted:
 /// `discard` would cost every other draw its cheap depth prepass.
 pub(crate) fn lens_clipped_shader(path: &str) -> Gd<Shader> {
-    if let Some(shader) = LENS_SHADERS.with_borrow(|cache| cache.get(path).cloned()) {
+    shader_variant(path, false, true)
+}
+
+/// The shader the local player's first-person arms draw with: a copy of the
+/// character shader at `path` compiled with `VIEWMODEL_KEY`, so the gloves
+/// and sleeves take the same first-person key light as the weapon
+/// (`shaders/viewmodel_key.gdshaderinc`), and with the optic's lens cut out
+/// of it while `clipped`. Characters in the world keep the plain shader and
+/// pay nothing for either.
+pub(crate) fn first_person_shader(path: &str, clipped: bool) -> Gd<Shader> {
+    shader_variant(path, true, clipped)
+}
+
+/// The shader at `path`, copied with the first-person key compiled in
+/// (`keyed`) and the optic's lens cut out (`clipped`).
+fn shader_variant(path: &str, keyed: bool, clipped: bool) -> Gd<Shader> {
+    if !keyed && !clipped {
+        return load::<Shader>(path);
+    }
+    let key = format!("{path}|{keyed}|{clipped}");
+    if let Some(shader) = VARIANT_SHADERS.with_borrow(|cache| cache.get(&key).cloned()) {
         return shader;
     }
     let source = load::<Shader>(path);
-    let code = source.get_code().to_string();
-    let anchor = "void fragment() {";
-    let shader = if code.contains(anchor) {
-        let mut shader = Shader::new_gd();
-        shader.set_code(&code.replacen(
-            anchor,
-            "void fragment() {\n\tif (viewmodel_behind_lens(VERTEX)) {\n\t\tdiscard;\n\t}",
-            1,
-        ));
-        shader
-    } else {
-        godot_warn!("{path}: no fragment() to cut an optic's lens from");
-        source
+    let shader = match variant_code(&source.get_code().to_string(), keyed, clipped) {
+        Some(code) => {
+            let mut shader = Shader::new_gd();
+            shader.set_code(&code);
+            shader
+        }
+        None => {
+            godot_warn!("{path}: no shader_type or fragment() to build a first-person copy from");
+            source
+        }
     };
-    LENS_SHADERS.with_borrow_mut(|cache| cache.insert(path.to_owned(), shader.clone()));
+    VARIANT_SHADERS.with_borrow_mut(|cache| cache.insert(key, shader.clone()));
     shader
 }
 
+/// The code of a first-person copy of a shader (see `shader_variant`), or
+/// `None` if the code has nowhere to put it.
+fn variant_code(code: &str, keyed: bool, clipped: bool) -> Option<String> {
+    let mut code = code.to_owned();
+    if keyed {
+        let anchor = "shader_type spatial;";
+        if !code.contains(anchor) {
+            return None;
+        }
+        code = code.replacen(anchor, "shader_type spatial;\n#define VIEWMODEL_KEY", 1);
+    }
+    if clipped {
+        let anchor = "void fragment() {";
+        if !code.contains(anchor) {
+            return None;
+        }
+        code = code.replacen(
+            anchor,
+            "void fragment() {\n\tif (viewmodel_behind_lens(VERTEX)) {\n\t\tdiscard;\n\t}",
+            1,
+        );
+    }
+    Some(code)
+}
+
 pub fn clear_cache() {
-    LENS_SHADERS.with_borrow_mut(|cache| cache.clear());
+    VARIANT_SHADERS.with_borrow_mut(|cache| cache.clear());
     WEAPON_SCENES.with_borrow_mut(|cache| cache.clear());
     CASES.with_borrow_mut(|cache| cache.clear());
 }
@@ -3367,6 +3409,21 @@ const LAND_ZETA: f32 = 0.5;
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn first_person_copies_key_and_clip_where_asked() {
+        let code = "shader_type spatial;\nvoid fragment() {\n\tALBEDO = vec3(1.0);\n}\n";
+        let keyed = super::variant_code(code, true, false).unwrap();
+        assert!(keyed.starts_with("shader_type spatial;\n#define VIEWMODEL_KEY\n"));
+        assert!(!keyed.contains("discard"));
+        let clipped = super::variant_code(code, false, true).unwrap();
+        assert!(!clipped.contains("VIEWMODEL_KEY"));
+        assert!(clipped.contains("if (viewmodel_behind_lens(VERTEX)) {\n\t\tdiscard;"));
+        let both = super::variant_code(code, true, true).unwrap();
+        assert!(both.contains("VIEWMODEL_KEY") && both.contains("discard"));
+        assert!(super::variant_code("void fragment() {}", true, false).is_none());
+        assert!(super::variant_code("shader_type spatial;", false, true).is_none());
+    }
+
     #[test]
     fn the_carrier_runs_back_and_home_inside_each_cycle() {
         for rpm in [450.0, 750.0, 1000.0] {
