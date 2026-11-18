@@ -77,15 +77,24 @@ func _ready() -> void:
 	for address in _favorites:
 		_browser.add_favorite(address)
 	_set_tab(Tab.INTERNET)
+	_list.grab_focus.call_deferred()
 
 
-func _unhandled_key_input(event: InputEvent) -> void:
-	if _loading:
+## F5 refreshes, LB and RB switch tabs, and Esc or B goes back.
+func _unhandled_input(event: InputEvent) -> void:
+	if _loading or event.is_echo():
 		return
 	var key := event as InputEventKey
-	if key != null and key.pressed and not key.echo and key.keycode == KEY_F5:
+	var pad := event as InputEventJoypadButton
+	if key != null and key.pressed and key.keycode == KEY_F5:
 		get_viewport().set_input_as_handled()
 		_refresh_tab()
+	elif pad != null and pad.pressed and pad.button_index == JOY_BUTTON_LEFT_SHOULDER:
+		get_viewport().set_input_as_handled()
+		_set_tab(posmod(_tab - 1, _tabs.size()))
+	elif pad != null and pad.pressed and pad.button_index == JOY_BUTTON_RIGHT_SHOULDER:
+		get_viewport().set_input_as_handled()
+		_set_tab(posmod(_tab + 1, _tabs.size()))
 	elif event.is_action_pressed(&"ui_cancel"):
 		get_viewport().set_input_as_handled()
 		_back()

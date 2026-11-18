@@ -13,6 +13,7 @@ config/icon="res://assets/icon.svg"
 
 Diagnostics="*res://scripts/diagnostics.gd"
 UiThemeLoader="*res://scripts/ui/ui_theme_loader.gd"
+MenuFocus="*res://scripts/ui/menu_focus.gd"
 Settings="*res://scripts/settings.gd"
 Net="*res://scripts/net/bootstrap.gd"
 
@@ -32,6 +33,15 @@ window/vsync/vsync_mode=2
 enabled=PackedStringArray("res://addons/lightmap_baker/plugin.cfg")
 
 [input]
+
+ui_accept={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"keycode":4194309), Object(InputEventKey,"keycode":4194310), Object(InputEventKey,"keycode":32), Object(InputEventJoypadButton,"device":-1,"button_index":0,"pressed":true)]
+}
+ui_cancel={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"keycode":4194305), Object(InputEventJoypadButton,"device":-1,"button_index":1,"pressed":true)]
+}
 move_forward={
 "deadzone": 0.12,
 "events": [Object(InputEventKey,"physical_keycode":87), Object(InputEventJoypadMotion,"device":-1,"axis":1,"axis_value":-1.0)]

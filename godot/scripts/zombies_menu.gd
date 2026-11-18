@@ -117,6 +117,9 @@ func _build_selector() -> void:
 		marker.expand_icon = true
 		marker.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		marker.tooltip_text = MAPS[i]["name"]
+		# The markers turn out of view with the globe, which would drop focus;
+		# a controller picks maps from the list beside it.
+		marker.focus_mode = Control.FOCUS_NONE
 		marker.pressed.connect(select_map.bind(i))
 		_markers.append(marker)
 		var caption := _label(_selector, MAPS[i]["name"], Vector2.ZERO, 19, WHITE)
