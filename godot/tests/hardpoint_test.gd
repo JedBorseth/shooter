@@ -2,7 +2,7 @@ extends SceneTree
 ## Headless Hardpoint test: runs a dedicated server in this process on
 ## Slamcity in Hardpoint with six bots at normal skill and no players, starts
 ## the match without a ready-up, and checks that the server finds the map's
-## five zones, that the bots go to the live zone and score by holding it, that
+## four zones, that the bots go to the live zone and score by holding it, that
 ## kills alone score nothing, and that the zone moves on after its minute.
 ## godot --headless --path godot --script res://tests/hardpoint_test.gd
 
@@ -33,7 +33,7 @@ func _run() -> void:
 	for i in 5:
 		await physics_frame
 	_check(server.game_mode() == "hardpoint", "the server plays Hardpoint")
-	_check(server.zone_count() == 5, "Slamcity has five zones, got %d" % server.zone_count())
+	_check(server.zone_count() == 4, "Slamcity has four zones, got %d" % server.zone_count())
 	_check(server.active_zone() == 0, "the first zone is live first")
 
 	# Through the countdown and into play.

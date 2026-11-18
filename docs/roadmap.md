@@ -76,6 +76,7 @@ Each phase ends with something playable.
    - ✅ Protocol 5: names in the hello; the roster (`Joined`, `Left`), match phase and clock (`Match`), scoreboard rows, and spawn facing as reliable events. Teammates are drawn in the allies' colours with their names; enemies in the enemies' colours.
    - ✅ HUD: score bar and clock, kill feed, scoreboard, countdown and results, and the loadout and ready menu. The title screen's Team Deathmatch runs a local server with bots.
    - ✅ Slamcity rebuilt as a three-lane map: the back alley with a fire escape to the flats' roof, Market Street around the skate bowl, and joined interiors, with spawn yards at each end.
+   - ✅ Slamcity laid out again from real Call of Duty maps (CoD4 city blocks with BO2 loops, [map-design.md](map-design.md)): 84 x 68 m of streets and enterable buildings round Junction Plaza, three routes, and two halves balanced by a half turn but dressed as different places.
    - ✅ Bots that play (`--bot-skill`): navigation mesh, perception, human-like aim, and players replacing bots, so a full 6v6 can be played alone. The server keeps its 120 Hz tick with 12 bots.
    - ✅ Gun Game (`--mode gungame`, `rust/sim/src/gun_game.rs`): free-for-all up a ladder of the eight weapons; kills swap the weapon on the server and the client's prediction corrects to it. Protocol 10 sends the mode in the welcome, player winners, and ladder levels on the scoreboard.
 5. **Online services.** Self-hosted Nakama for accounts, parties, and matchmaking. Dockerized headless servers. Agones later, to start servers on demand.

@@ -1,8 +1,8 @@
 """Slamcity's layout checks and the committed scene's freshness, for CI.
 
-Runs the checks in tools/slamcity_checks.py (mirrored collision, spawns out of
-the enemy's sight, no long open lines, safe spawns even with the enemy in our
-half), and checks that godot/scenes/slamcity.tscn was written from the
+Runs the checks in tools/slamcity_checks.py (collision the same on both halves
+turned half round, spawns out of the enemy's sight, no long open lines, safe
+spawns even with the enemy in our half), and checks that godot/scenes/slamcity.tscn was written from the
 current layout (its layout_hash metadata) and city.gltf from the current
 layout and models (city.hash), and the lightmap from that mesh
 (slamcity.bake.hash, written by tools/bake_lightmaps.sh). No dependencies:
@@ -25,8 +25,8 @@ class LayoutTests(unittest.TestCase):
     def setUpClass(cls):
         L.build()
 
-    def test_collision_is_mirrored(self):
-        checks.check_mirror()
+    def test_collision_is_twinned(self):
+        checks.check_twin()
 
     def test_spawns_out_of_enemy_sight(self):
         checks.check_spawn_sightlines()
@@ -38,9 +38,12 @@ class LayoutTests(unittest.TestCase):
         self.assertGreaterEqual(checks.check_home_perches(), 15)
         self.assertGreaterEqual(checks.check_incursions(), 8)
 
-    def test_zones_sit_on_the_mirror_line(self):
-        for name, _label, (x, _y, _z), _size in L.HARDPOINTS:
-            self.assertEqual(x, 0, name)
+    def test_zones_are_balanced(self):
+        """Each Hardpoint zone is its own twin (centred on the map's centre) or
+        comes with its twin, so neither team is closer to the rotation."""
+        centres = {(round(x, 3), round(z, 3)) for _n, _l, (x, _y, z), _s in L.HARDPOINTS}
+        for name, _label, (x, _y, z), _size in L.HARDPOINTS:
+            self.assertIn((round(-x, 3) + 0.0, round(-z, 3) + 0.0), {(a + 0.0, b + 0.0) for a, b in centres}, name)
 
     def test_build_is_idempotent(self):
         before = len(L.COLLIDERS)

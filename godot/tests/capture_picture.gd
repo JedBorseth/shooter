@@ -59,23 +59,23 @@ func _run() -> void:
 			await _feedback()
 		_unload()
 	if _wants("slamcity"):
-		await _load("res://scenes/slamcity.tscn", Vector3(-30, 0.05, 6))
+		await _load("res://scenes/slamcity.tscn", Vector3(-30, 0.05, 1))
 		# The first of these spots with the low sun in clear view down a street.
 		await _sun_view(
 			"slamcity_sun",
-			Vector3(-30, 0.05, 6),
+			Vector3(-30, 0.05, 1),
 			[
-				Vector3(-46, 0.05, -1),
-				Vector3(-22, 0.05, 2),
-				Vector3(-46, 0.05, -26.5),
-				Vector3(-34.5, 0.2, 19.5),
+				Vector3(-37, 0.05, 3),
+				Vector3(-14, 0.05, 1),
+				Vector3(-39, 0.05, -29.5),
+				Vector3(-31.5, 0.2, 9.5),
 				Vector3(-5.6, 6.65, -10.5),
-				Vector3(-30, 7.05, -12),
+				Vector3(-24, 3.85, -10),
 			]
 		)
-		await _view("slamcity_grazing", Vector3(-44, 0.05, -24.5), -PI / 2 + 0.25, -0.1)
+		await _view("slamcity_grazing", Vector3(-40, 0.05, -28.0), -PI / 2 + 0.25, -0.1)
 		if _wants("motion"):
-			await _motion("slamcity_motion", Vector3(-30, 0.05, 6), -PI / 2 + 0.3, 0.0)
+			await _motion("slamcity_motion", Vector3(-30, 0.05, 1), -PI / 2 + 0.3, 0.0)
 		_unload()
 	if _wants("zombies"):
 		await _load("res://scenes/zombies_arena.tscn", Vector3(0, 0.1, 0))

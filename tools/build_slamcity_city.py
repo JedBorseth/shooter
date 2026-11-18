@@ -450,14 +450,14 @@ def chunk_of(centre, part) -> str:
     x, _, z = centre
     if part.get("chunk"):
         name = part["chunk"]
-    elif abs(x) > 61.0 or z < -32.5 or z > 25.5:
+    elif abs(x) > 41.5 or abs(z) > 33.5:
         name = "far"
     elif part.get("detail"):
         # Small things go in a finer grid, so each cell can be hidden on its
         # own once the camera is far from it.
-        return f"g{int((x + 64.0) // DETAIL_CELL)}_{int((z + 36.0) // DETAIL_CELL)}_detail"
+        return f"g{int((x + 48.0) // DETAIL_CELL)}_{int((z + 40.0) // DETAIL_CELL)}_detail"
     else:
-        col = "w" if x < -20.0 else "e" if x > 20.0 else "c"
+        col = "w" if x < -14.0 else "e" if x > 14.0 else "c"
         row = "n" if z < 0.0 else "s"
         name = col + row
     return name

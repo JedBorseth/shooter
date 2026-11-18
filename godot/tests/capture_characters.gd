@@ -157,9 +157,9 @@ func _lineups() -> void:
 	# Shade and indoors: Slamcity in the late afternoon.
 	scene = await _open("res://scenes/slamcity.tscn")
 	await _frames(10)
-	# The back alley in the shade of the block, and an upper-floor room (the
-	# benchmark's interior viewpoint).
-	await _lineup(scene, "shade", Vector3(-47.5, 0, -26.6), Vector3(1, 0, 0), DISTANCES)
+	# The north street in the shade of the block, and the platform (the
+	# benchmark's covered viewpoint).
+	await _lineup(scene, "shade", Vector3(-40.0, 0, -28.6), Vector3(1, 0, 0), DISTANCES)
 	await _lineup(scene, "indoor", Vector3(-5.6, 6.65, -10.5), Vector3(0, 0, 1), [2.0, 3.5])
 	await _close(scene)
 	# Night: the Zombies arena under the moon.
