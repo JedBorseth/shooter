@@ -113,6 +113,8 @@ mod tests {
         assert!(at("m4", 50.0) < at("ak47", 50.0));
         // The burst rifle kills in one burst only up close.
         assert!(at("br3", 10.0) < 0.16);
+        // ...but not in the SMG's range.
+        assert!(at("pdw9", 14.0) < at("br3", 14.0));
         assert!(at("br3", 25.0) > 0.3);
         // The LMG is the same at every range.
         assert_eq!(at("lsw6", 5.0), at("lsw6", 70.0));
@@ -120,8 +122,8 @@ mod tests {
         assert!(at("pdw9", 5.0) < at("m4", 5.0));
         assert!(at("pdw9", 15.0) < at("m4", 15.0));
         assert!(at("pdw9", 30.0) > at("m4", 30.0));
-        // The shotgun one-shots to about 8 m and two-shots to about 12 m.
-        assert_eq!(at("m870", 8.0), 0.0);
+        // The shotgun one-shots to about 9 m and two-shots to about 12 m.
+        assert_eq!(at("m870", 9.0), 0.0);
         assert!(at("m870", 10.0) > 0.0);
         assert_eq!(
             shots_to_kill(def("m870"), 12.0, HitZone::Chest, 100.0),

@@ -1,17 +1,17 @@
-// M870 pump shotgun: 10 pellets, one shot kills to about 8 m and two to
-// about 12 m; loads shell by shell.
+// M870 pump shotgun: 10 pellets, one shot kills to about 9 m and two to
+// about 15 m; loads shell by shell.
 // Firing (with a shell loaded) interrupts a reload.
 (
     name: "M870",
     slot: Primary,
     fire_mode: Semi,
     rounds_per_minute: 600,
-    cycle_time: 0.62,
+    cycle_time: 0.55,
     pellets: 10,
     pellet_spread: 2.0,
     magazine: 6,
     reserve: 30,
-    damage: (near: 16, far: 10, falloff_start: 8, falloff_end: 30, headshot: 1.2),
+    damage: (near: 18, far: 10, falloff_start: 10, falloff_end: 30, headshot: 1.2),
     range: 60,
     penetration: 0.08,
     reload: PerRound(start: 0.45, per_round: 0.5, end: 0.45),
@@ -19,7 +19,7 @@
     sprint_out_time: 0.21,
     raise_time: 0.45,
     lower_time: 0.3,
-    spread: (hip: 1.0, hip_moving: 1.5, air: 3.0, ads: 0.0, ads_sway: 0.09),
+    spread: (hip: 1.0, hip_moving: 1.5, air: 3.0, ads: 0.0, ads_sway: 0.13),
     ads_fov_scale: 0.88,
     ads_move_scale: 0.65,
     move_scale: 0.97,
@@ -29,7 +29,7 @@
         ads_scale: 0.8,
         kick_return: 0.65,
         recovery_delay: 0.04,
-        recovery_rate: 10.0,
+        recovery_rate: 16.0,
     ),
     tracer_every: 0,
     attachments: [Suppressor, Grip, ExtendedMag],

@@ -13,7 +13,7 @@
     zones: (stomach: 0.9, arm: 0.75, leg: 0.7),
     range: 600,
     penetration: 0.6,
-    reload: Magazine(time: 3.0, empty_time: 3.6, mag_in: Some(1.9)),
+    reload: Magazine(time: 3.0, empty_time: 3.6, mag_in: Some(1.95)),
     ads_time: 0.42,
     sprint_out_time: 0.36,
     raise_time: 0.6,

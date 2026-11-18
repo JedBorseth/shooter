@@ -55,7 +55,7 @@ use crate::footsteps::{self, Gait, Stride};
 use crate::penetration;
 use crate::pickup::{INTERACT_LAYER, WeaponPickup};
 use crate::player_sounds::{BodyFrame, PlayerSounds};
-use crate::spring::{Spring, impulse_for_peak, smoothing};
+use crate::spring::{Spring, damping_for, impulse_for_peak, smoothing};
 use crate::surfaces::{Surface, surface_at};
 use crate::target::{HITBOX_LAYER, WORLD_LAYER};
 use crate::viewmodel::{ViewAction, ViewFrame, ViewmodelRig};
@@ -79,6 +79,8 @@ const FOV_KICK_DAMPING: f32 = 22.0;
 const SHOT_ZOOM_PULSE: f32 = 0.006;
 /// How fast a shot's recoil climb lands on the view, in 1/seconds.
 const CLIMB_RATE: f32 = 90.0;
+/// Per-shot camera shake spring.
+const SHAKE_STIFFNESS: f32 = 900.0;
 
 /// Actions whose presses are remembered until the next physics tick, so a tap
 /// shorter than one tick (or a mouse-wheel step) is never lost.
@@ -262,6 +264,8 @@ pub struct FpsPlayer {
     /// right). Each shot's climb lands over a few frames, like a hand
     /// riding the kick.
     pending_climb: Vec2,
+    /// Camera position shake per shot (metres, camera space).
+    shake: Spring,
     /// Climb applied to the view this frame, so the weapon's look sway can
     /// tell the player's own turning from the recoil's.
     climb_step: Vec2,
@@ -517,7 +521,16 @@ impl ICharacterBody3D for FpsPlayer {
             self.pending_climb = Vec2::ZERO;
         }
         self.land_dip.step(90.0, 13.0, dt);
+        // A hit's flinch turns the look itself (and springs back), so the
+        // sights and the screen centre stay where shots go, on this machine
+        // and on the server, which sees it in the look angles.
+        let flinch_before = self.flinch.value;
         self.flinch.step(160.0, 16.0, dt);
+        if alive {
+            self.turn(0.0, self.flinch.value - flinch_before);
+        }
+        self.shake
+            .step(SHAKE_STIFFNESS, damping_for(SHAKE_STIFFNESS, 0.5), dt);
 
         if alive && self.input_enabled {
             let eye = feet + Vector3::UP * self.eye_height;
@@ -552,13 +565,15 @@ impl ICharacterBody3D for FpsPlayer {
             self.pitch,
         );
         let view = Vector3::new(
-            self.pitch + recoil.x + sway.x + self.flinch.value,
+            self.pitch + recoil.x + sway.x,
             self.yaw - recoil.y - sway.y,
             punch.z + bob_roll + tilt + death_roll,
         );
         let basis = Basis::from_euler(EulerOrder::YXZ, view);
-        let origin =
-            feet + Vector3::UP * (eye + bob.y + self.land_dip.value) + basis.col_a() * bob.x;
+        let origin = feet
+            + Vector3::UP * (eye + bob.y + self.land_dip.value)
+            + basis.col_a() * bob.x
+            + basis * self.shake.value;
         self.camera
             .set_global_transform(Transform3D::new(basis, origin));
         self.camera.set_fov(fov);
@@ -1546,10 +1561,20 @@ impl FpsPlayer {
         };
         // Aimed, the roll is small: the sight picture should read as the gun
         // kicking, not the world shaking.
-        let roll_scale = 1.0 - 0.7 * ads;
+        let roll_scale = 1.0 - 0.4 * ads;
         let roll = degrees.z * side * (0.55 + 0.45 * rng::unit(shot, 102)) * roll_scale;
         let impulse = |deg: f32| impulse_for_peak(deg.to_radians(), PUNCH_STIFFNESS, PUNCH_DAMPING);
         self.punch.velocity.z += impulse(roll);
+        // A millimetre or two of camera shake: it moves the eye, not the
+        // direction it looks, so the aim point stays put.
+        let size = 0.0018 * (degrees.z / 0.8).min(2.0);
+        let shake = Vector3::new(rng::signed(shot, 103), rng::signed(shot, 104), 0.0) * size;
+        let c = damping_for(SHAKE_STIFFNESS, 0.5);
+        self.shake.velocity += Vector3::new(
+            impulse_for_peak(shake.x, SHAKE_STIFFNESS, c),
+            impulse_for_peak(shake.y, SHAKE_STIFFNESS, c),
+            0.0,
+        );
         self.kick_fov(-degrees.x * SHOT_ZOOM_PULSE * scale);
     }
 
@@ -1975,6 +2000,7 @@ impl FpsPlayer {
         self.fov_sprint = 1.0;
         self.punch = Spring::default();
         self.pending_climb = Vec2::ZERO;
+        self.shake = Spring::default();
         self.fov_kick = Spring::default();
         self.stride = Stride {
             travelled: 0.0,

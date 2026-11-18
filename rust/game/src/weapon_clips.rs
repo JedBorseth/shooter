@@ -238,6 +238,8 @@ enum Hand {
     OldMag,
     /// Where the hand lets the old magazine go.
     LetGo,
+    /// Slid back along the handguard (a re-grip).
+    Regrip,
     FreshMag,
     Pouch,
     Release,
@@ -286,24 +288,26 @@ impl MagazineReload {
     }
 
     fn times(&self) -> Times {
+        // Hand travel takes real time whatever the weapon: a heavy box
+        // magazine is slower to fetch and spends longer lining up.
         let seat = self.mag_in;
-        let out = (seat * 0.3).max(0.18);
+        let heavy = matches!(self.kind, ClipKind::Rifle { heavy: true, .. });
+        let out = (seat * 0.3).clamp(0.18, 0.42);
         let tilt = (out * 0.75).min(0.3);
-        let free = out + (seat - out) * 0.15;
-        let grab = out + (seat - out) * 0.4;
-        let entry = seat - (seat - out) * 0.2;
-        let after = self.total - seat;
+        let free = out + 0.12;
+        let grab = (free + if heavy { 0.5 } else { 0.35 }).min(seat - 0.35);
+        let entry = seat - if heavy { 0.3 } else { 0.18 };
         let (finish, finish_end) = match (self.empty, self.kind) {
             (true, ClipKind::BoltAction) => (seat + 0.3, self.total - 0.25),
             (true, ClipKind::Rifle { charge: true, .. }) => {
-                let on = seat + after * 0.3;
+                let on = seat + 0.3;
                 (on, on + 0.16)
             }
             (true, _) => {
-                let at = seat + after * 0.35;
+                let at = seat + 0.2;
                 (at, at + 0.06)
             }
-            (false, _) => (seat + after * 0.3, seat + after * 0.3),
+            (false, _) => (seat + 0.1, seat + 0.1),
         };
         Times {
             tilt,
@@ -414,26 +418,49 @@ impl MagazineReload {
         let reshoulder = if self.empty {
             finish_end + 0.04
         } else {
-            seat + (done - seat) * 0.35
+            seat + 0.12
         };
-        let settle = (done - 0.1).max(reshoulder + 0.05);
-        let overshoot = held.scaled(-0.06);
-        let mut keys = vec![(0.0, Pose::ZERO), (tilt, held), (out, held), (seat, watch)];
+        // Back on the shoulder fast (most of the way within about 0.3 s),
+        // then a slow settle into the grip until the weapon can fire.
+        let back = reshoulder + (0.6 * (done - reshoulder)).min(0.32);
+        let settle = (done - 0.1).max(back + 0.05);
+        let overshoot = held.scaled(-0.05);
+        // While the magazine is pulled the weapon rolls toward the hand, and it
+        // drifts while the fresh one is fetched.
+        let pull = Pose {
+            rot: held.rot + Vector3::new(1.0, 0.0, -3.5),
+            pos: held.pos + Vector3::new(0.0, -0.004, 0.0),
+        };
+        let drift = Pose {
+            rot: held.lerp(watch, 0.5).rot + Vector3::new(0.8, 1.2, 1.5),
+            pos: held.lerp(watch, 0.5).pos,
+        };
+        let mut keys = vec![
+            (0.0, Pose::ZERO),
+            (tilt, held),
+            ((out - 0.03).max(tilt + 0.01), held),
+            (out + 0.08, pull),
+            (grab, drift),
+            (entry, watch),
+            (seat, watch),
+        ];
         let works_action = matches!(
             self.kind,
             ClipKind::Rifle { charge: true, .. } | ClipKind::BoltAction
         );
         if self.empty && works_action {
             // Turned over to reach the charging handle or the bolt.
-            let reach = (finish - 0.12).max(seat + 0.05);
+            let reach = (finish - 0.02).max(seat + 0.05);
             keys.push((reach, action.lerp(watch, 0.4)));
             keys.push((finish_end, action));
         } else if self.empty {
             // A bolt release or slide drop: held while the hand slaps it.
             keys.push((finish, watch));
         }
+        let last = keys.last().map_or(watch, |k| k.1);
         keys.extend([
-            (reshoulder, keys.last().map_or(watch, |k| k.1)),
+            (reshoulder, last),
+            (back, last.scaled(0.12)),
             (settle, overshoot),
             (done, Pose::ZERO),
         ]);
@@ -458,14 +485,19 @@ impl MagazineReload {
         };
         let pouch = anchors.pouch - anchors.mag_base;
         let fresh_mag = if t >= grab && t < seat {
-            let rise = smoothstep((t - grab) / (entry - grab).max(1e-3));
-            let at_entry = pouch.lerp(dir * 0.07, rise);
-            // The push home accelerates into the seat.
-            let push = ((t - entry) / (seat - entry).max(1e-3)).clamp(0.0, 1.0);
-            Some(if t < entry {
-                at_entry
+            // Up from the pouch in about 0.35 s, lined up under the well
+            // (wobbling a little while it is aligned), then pushed home
+            // accelerating into the seat.
+            let hover = dir * 0.1;
+            let rise_end = (grab + 0.35).min(entry);
+            Some(if t < rise_end {
+                pouch.lerp(hover, smoothstep((t - grab) / (rise_end - grab).max(1e-3)))
+            } else if t < entry {
+                let w = (t - rise_end) * 9.0;
+                hover + Vector3::new(0.004 * w.sin(), 0.003 * (w * 1.3).cos() - 0.003, 0.0)
             } else {
-                dir * 0.07 * (1.0 - push * push)
+                let push = ((t - entry) / (seat - entry).max(1e-3)).clamp(0.0, 1.0);
+                hover * (1.0 - push * push)
             })
         } else {
             None
@@ -545,6 +577,7 @@ impl MagazineReload {
                 Hand::Rest => anchors.hand_rest,
                 Hand::OldMag => anchors.mag_base + old_mag.unwrap_or(mag_dir() * 0.102),
                 Hand::LetGo => anchors.mag_base + mag_dir() * 0.102,
+                Hand::Regrip => anchors.hand_rest + Vector3::new(0.0, -0.015, 0.035),
                 Hand::FreshMag => anchors.mag_base + fresh_mag.unwrap_or(Vector3::ZERO),
                 Hand::Pouch => anchors.pouch,
                 Hand::Release => anchors.release,
@@ -582,18 +615,56 @@ pub const BOLT_BACK: [(f32, f32); 4] = [(0.24, 0.0), (0.42, 1.0), (0.5, 1.0), (0
 /// A pump: back, held, and forward, over a cycle.
 pub const PUMP_BACK: [(f32, f32); 4] = [(0.12, 0.0), (0.42, 1.0), (0.52, 1.0), (0.82, 0.0)];
 
-/// The beats of a bolt or pump cycle, as fractions of the cycle.
-pub fn cycle_beats(kind: ClipKind) -> &'static [(f32, &'static str)] {
+/// The beats of a bolt or pump cycle, as fractions of the cycle, on the
+/// contacts of `PUMP_BACK` and `BOLT_LIFT`/`BOLT_BACK`: the pump hits its
+/// back stop and slams forward; the bolt lifts, draws, and closes.
+pub fn cycle_beats(kind: ClipKind) -> &'static [Beat] {
+    const PUMP: [Beat; 2] = [
+        Beat {
+            at: 0.42,
+            name: "pump_back",
+            jolt_pos: Vector3::new(0.0, 0.0, 0.004),
+            jolt_rot: Vector3::new(0.8, 0.0, 0.4),
+        },
+        Beat {
+            at: 0.82,
+            name: "pump_forward",
+            jolt_pos: Vector3::new(0.0, 0.0, -0.006),
+            jolt_rot: Vector3::new(-1.0, 0.0, -0.5),
+        },
+    ];
+    const BOLT: [Beat; 4] = [
+        Beat::quiet(0.24, "bolt_up"),
+        Beat {
+            at: 0.42,
+            name: "bolt_back",
+            jolt_pos: Vector3::new(0.0, 0.0, 0.003),
+            jolt_rot: Vector3::new(0.4, 0.0, 0.6),
+        },
+        Beat {
+            at: 0.66,
+            name: "bolt_forward",
+            jolt_pos: Vector3::new(0.0, 0.0, -0.004),
+            jolt_rot: Vector3::new(-0.5, 0.0, -0.4),
+        },
+        Beat {
+            at: 0.84,
+            name: "bolt_down",
+            jolt_pos: Vector3::ZERO,
+            jolt_rot: Vector3::new(-0.6, 0.0, -0.8),
+        },
+    ];
+    // A self-loading weapon's charge after a cut-off empty reload.
+    const CHARGE: [Beat; 1] = [Beat {
+        at: 0.55,
+        name: "charge",
+        jolt_pos: Vector3::new(0.0, 0.0, 0.005),
+        jolt_rot: Vector3::new(1.0, -0.6, 1.2),
+    }];
     match kind {
-        ClipKind::Shotgun => &[(0.3, "pump_back"), (0.7, "pump_forward")],
-        ClipKind::BoltAction => &[
-            (0.2, "bolt_up"),
-            (0.4, "bolt_back"),
-            (0.62, "bolt_forward"),
-            (0.8, "bolt_down"),
-        ],
-        // A self-loading weapon's charge after a cut-off empty reload.
-        _ => &[(0.55, "charge")],
+        ClipKind::Shotgun => &PUMP,
+        ClipKind::BoltAction => &BOLT,
+        _ => &CHARGE,
     }
 }
 
@@ -677,21 +748,21 @@ pub fn shotgun_beats(stage: LoadStage, began_empty: bool) -> &'static [(f32, &'s
 /// in, a slight overshoot as it settles on the shoulder.
 pub fn draw_keys(kind: ClipKind) -> &'static [(f32, Pose)] {
     const RIFLE: [(f32, Pose); 4] = [
-        (0.0, Pose::new(-24.0, -10.0, 24.0, 0.05, -0.13, 0.0)),
+        (0.0, LONG_GUN_DOWN),
         (0.6, Pose::new(5.0, 2.0, -5.0, 0.0, 0.012, 0.0)),
         (0.82, Pose::new(-1.5, -0.5, 1.5, 0.0, -0.003, 0.0)),
         (1.0, Pose::ZERO),
     ];
     // A sidearm comes up from low centre, quick and straight.
     const PISTOL: [(f32, Pose); 4] = [
-        (0.0, Pose::new(-35.0, 0.0, 8.0, -0.03, -0.15, 0.03)),
+        (0.0, PISTOL_DOWN),
         (0.55, Pose::new(4.0, 0.0, -2.0, 0.0, 0.01, 0.0)),
         (0.8, Pose::new(-1.0, 0.0, 0.5, 0.0, -0.002, 0.0)),
         (1.0, Pose::ZERO),
     ];
     // Long guns swing up heavier, with more overshoot.
     const HEAVY: [(f32, Pose); 4] = [
-        (0.0, Pose::new(-28.0, -12.0, 28.0, 0.06, -0.15, 0.02)),
+        (0.0, LONG_GUN_DOWN),
         (0.62, Pose::new(6.0, 2.5, -6.0, 0.0, 0.016, 0.0)),
         (0.84, Pose::new(-2.0, -0.6, 2.0, 0.0, -0.004, 0.0)),
         (1.0, Pose::ZERO),
@@ -703,17 +774,22 @@ pub fn draw_keys(kind: ClipKind) -> &'static [(f32, Pose)] {
     }
 }
 
+/// Where a weapon is when fully put away: below the frame. A holster ends
+/// and a draw starts here, so a switch never pops between the two models.
+const LONG_GUN_DOWN: Pose = Pose::new(-45.0, 6.0, -10.0, 0.02, -0.3, 0.04);
+const PISTOL_DOWN: Pose = Pose::new(-45.0, 0.0, 6.0, -0.02, -0.3, 0.04);
+
 /// A holster over the lower (fractions of the lower time).
 pub fn holster_keys(kind: ClipKind) -> &'static [(f32, Pose)] {
     const RIFLE: [(f32, Pose); 3] = [
         (0.0, Pose::ZERO),
         (0.35, Pose::new(-6.0, 4.0, -8.0, -0.01, -0.03, 0.0)),
-        (1.0, Pose::new(-26.0, 10.0, -20.0, -0.04, -0.16, 0.0)),
+        (1.0, LONG_GUN_DOWN),
     ];
     const PISTOL: [(f32, Pose); 3] = [
         (0.0, Pose::ZERO),
         (0.35, Pose::new(-8.0, 0.0, 3.0, 0.0, -0.03, 0.01)),
-        (1.0, Pose::new(-38.0, 0.0, 10.0, -0.02, -0.17, 0.04)),
+        (1.0, PISTOL_DOWN),
     ];
     match kind {
         ClipKind::Pistol => &PISTOL,
@@ -741,7 +817,15 @@ pub fn inspect_pose(t: f32, kind: ClipKind, anchors: &Anchors) -> ClipPose {
         (3.0, Pose::new(-4.0, 2.0, -3.0, 0.0, -0.005, 0.0)),
         (INSPECT_LENGTH, Pose::ZERO),
     ];
-    let weapon = posed(&keys, t);
+    // Held poses drift a little (no frozen holds), weighted in between the
+    // turns.
+    let hold = smoothstep((t - 0.3) / 0.3) * (1.0 - smoothstep((t - 2.7) / 0.3));
+    let mut weapon = posed(&keys, t);
+    weapon.rot += Vector3::new(
+        0.6 * (t * 1.7).sin(),
+        0.8 * (t * 1.3 + 0.5).sin(),
+        0.5 * (t * 2.1).sin(),
+    ) * hold;
     // The magazine check: pulled a finger's width and slapped home.
     let tug = keyed(&[(0.55, 0.0), (0.75, 0.022), (0.9, 0.022), (1.0, 0.0)], t);
     let has_mag = matches!(kind, ClipKind::Rifle { .. } | ClipKind::Pistol);
@@ -756,6 +840,7 @@ pub fn inspect_pose(t: f32, kind: ClipKind, anchors: &Anchors) -> ClipPose {
         Hand::Rest => anchors.hand_rest,
         Hand::OldMag => anchors.mag_base + mag_dir() * tug,
         Hand::Charge(p) => anchors.charge + Vector3::new(0.0, 0.0, p + pull),
+        Hand::Regrip => anchors.hand_rest + Vector3::new(0.0, -0.015, 0.035),
         _ => anchors.hand_rest,
     };
     let mut hand_keys = vec![(0.0, Hand::Rest)];
@@ -766,6 +851,8 @@ pub fn inspect_pose(t: f32, kind: ClipKind, anchors: &Anchors) -> ClipPose {
             (1.35, Hand::Rest),
         ]);
     }
+    // A re-grip as the weapon rolls over: the hand slides back and forward.
+    hand_keys.extend([(1.45, Hand::Regrip), (1.62, Hand::Rest)]);
     if kind != ClipKind::Shotgun {
         hand_keys.extend([
             (1.8, Hand::Rest),

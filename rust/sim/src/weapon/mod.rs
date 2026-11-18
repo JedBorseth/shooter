@@ -199,7 +199,7 @@ impl CombatState {
         if ctx.airborne {
             hip = hip.max(spread.air);
         }
-        hip + (spread.ads - hip) * self.ads
+        hip + (spread.ads - hip) * ads_ease(self.ads)
     }
 
     pub fn is_reloading(&self) -> bool {
@@ -315,12 +315,12 @@ impl CombatState {
         let t = self.sway_time;
         // A slow wander plus a breath (about 0.35 Hz, mostly vertical).
         let pattern = Vec2::new(
-            fmath::sin(t * 1.7) * 0.5 + fmath::sin(t * 0.9 + 0.4) * 0.3 + fmath::sin(t * 2.2) * 0.3,
+            fmath::sin(t * 1.7) * 0.5 + fmath::sin(t * 0.9 + 0.4) * 0.3 + fmath::sin(t * 1.9) * 0.3,
             fmath::sin(t * 1.1 + 1.0) * 0.6
                 + fmath::cos(t * 0.6) * 0.3
-                + fmath::sin(t * 2.2 + 0.8) * 0.1,
+                + fmath::sin(t * 1.9 + 0.8) * 0.1,
         );
-        pattern * amplitude.to_radians() * breath * self.ads
+        pattern * amplitude.to_radians() * breath * ads_ease(self.ads)
     }
 }
 
@@ -336,6 +336,17 @@ pub struct CombatInput {
     pub hold_breath: bool,
     /// Take this weapon from a pickup or weapon rack this tick.
     pub pickup: Option<WeaponId>,
+}
+
+/// How aimed the weapon is for its rules and its look, from the linear `ads`
+/// progress: eased, leaving the hip quickly and slowing onto the sights. The
+/// spread, the kick scale, the sway, the world zoom, and the weapon model all
+/// follow it, so what the sights show matches what the rules do.
+pub fn ads_ease(ads: f32) -> f32 {
+    let t = ads.clamp(0.0, 1.0);
+    let s = t * t * (3.0 - 2.0 * t);
+    let out = 1.0 - (1.0 - t) * (1.0 - t) * (1.0 - t);
+    0.5 * (s + out)
 }
 
 /// Seconds past the fire interval that hip-fire bloom holds before shrinking.
@@ -788,7 +799,7 @@ fn fire(state: &mut CombatState, ctx: &CombatContext, events: &mut Vec<CombatEve
         rng::signed(seed, 3) * recoil.jitter.x,
         rng::signed(seed, 4) * recoil.jitter.y,
     );
-    let mut scale = 1.0 + (recoil.ads_scale - 1.0) * state.ads;
+    let mut scale = 1.0 + (recoil.ads_scale - 1.0) * ads_ease(state.ads);
     if ctx.crouched {
         scale *= recoil.crouch_scale;
     }
