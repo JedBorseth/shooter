@@ -1,6 +1,7 @@
 extends SceneTree
 ## Captures every weapon at the hip and aimed down sights, for reviewing the
-## sights. Set WEAPONS (for example `m4,m1911`) to capture only some.
+## sights. Set WEAPONS (for example `m4,m1911`) to capture only some, and
+## LOOK (`yaw,pitch` in radians) to aim somewhere other than the range.
 ## Needs a GPU and a display (or Xvfb):
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
 ##     --script res://tests/capture_sights.gd
@@ -24,7 +25,12 @@ func _run() -> void:
 	root.add_child(main)
 	var player := main.get_node("Player") as FpsPlayer
 	main.get_node("Sentry").set("enabled", false)
-	player.set_look(0.0, -0.02)
+	var look := OS.get_environment("LOOK")
+	if look.is_empty():
+		player.set_look(0.0, -0.02)
+	else:
+		var parts := look.split(",")
+		player.set_look(float(parts[0]), float(parts[1]))
 	await _sixtieths(60)
 	var weapons := WEAPONS
 	var only := OS.get_environment("WEAPONS")

@@ -73,7 +73,12 @@ TEXTURE_SIZE = 2048
 #                  and of the front post's tip. The rear point becomes the
 #                  view's origin, and the weapon pitches so the line through
 #                  both is the view's -Z axis: aimed, the post tip sits level
-#                  with the notch, exactly on the camera's axis.
+#                  with the notch, exactly on the camera's axis. An
+#                  optional `x` is the sight line's offset from the source's
+#                  centre line, for packs whose sights sit off it.
+#   sight_edits    reshapes the sights for a readable aimed picture (see
+#                  `edit_sights`): `aperture` opens a rear peep, `widen`
+#                  widens a notch or post
 #   parts          source bone -> node path. Faces moved by any other bone
 #                  are `Body`. `None` collects faces with no bone.
 #   pivots         node -> bone whose head is the node's origin; other
@@ -91,6 +96,16 @@ TEXTURE_SIZE = 2048
 #                  a CARTRIDGE_PROFILES key, `back` the (y, z) in source
 #                  space of the top round's case head, `count` rounds
 #                  stacked down and staggered left and right
+# The AK pattern's sights (the AK-47 and the LSW-6). The post is 1.7 mm
+# wide, 3 px at half a metre: thicken it to 3.4 mm, and open the rear notch
+# from 2.8 to 4 mm to keep light either side of it.
+AK_SIGHT_EDITS = [
+    {"kind": "widen", "at": 0.0, "depth": 0.0015,
+     "z": (-0.004, 0.0005), "half": (0.0014, 0.002), "keep": 0.0045},
+    {"kind": "widen", "front": True, "at": 0.0, "depth": 0.004,
+     "z": (-0.0038, 0.0005), "half": (0.00083, 0.0017), "keep": 0.0035},
+]
+
 WEAPONS = {
     "m4": {
         "dir": "m4",
@@ -106,8 +121,18 @@ WEAPONS = {
         # An M4A1 is 838 mm long with the stock out (the source's 859 mm).
         "scale": 0.976,
         "cartridge": 0,
-        # The flip-up rear aperture's centre and the front post's tip.
-        "sight": {"rear": (-0.0693, 0.0774), "front": (0.3452, 0.0828)},
+        # The flip-up rear aperture's centre and the front post's tip. Both
+        # sit 0.8 mm left of the source's centre line.
+        "sight": {"rear": (-0.0693, 0.0774), "front": (0.3452, 0.0828), "x": -0.00079},
+        # The leaf's peep is a 2.4 mm precision aperture: a pinhole in a
+        # large ring at aimed distance. Open it to the 4.6 mm close-range
+        # aperture, and thicken the post to 2.4 mm so it reads inside it.
+        "sight_edits": [
+            {"kind": "aperture", "group": "Sight_2", "at": 0.0014, "depth": 0.0025,
+             "hole": (0.00118, 0.0023), "rim": 0.0046},
+            {"kind": "widen", "front": True, "at": 0.0, "depth": 0.004,
+             "z": (-0.006, 0.0005), "half": (0.00073, 0.0012), "keep": 0.0022},
+        ],
         "rounds": {"profile": "5.56", "back": (0.024, 0.001), "count": 3},
         "parts": {
             "Magazine": "Magazine",
@@ -172,8 +197,12 @@ WEAPONS = {
             "Muzzle": (0.4052, 0.0292),
             # The port's rear edge, on the right side.
             "Ejection": (0.014, -0.29, 0.026),
-            "GripRight": (-0.47, -0.035),
-            "GripLeft": (0.06, -0.018),
+            # Low on the wrist: higher, the thumb over it rises into the
+            # sight picture.
+            "GripRight": (-0.47, -0.065),
+            # The back half of the pump: further out, the support arm is
+            # straight and its elbow swings past the eye as the gun moves.
+            "GripLeft": (0.01, -0.018),
         },
         "spare": False,
     },
@@ -186,6 +215,7 @@ WEAPONS = {
         # An AK-47 is 880 mm long with a 378 mm sight radius.
         "scale": 0.855,
         "sight": {"rear": (-0.218, 0.1472), "front": (-0.6723, 0.1441)},
+        "sight_edits": AK_SIGHT_EDITS,
         "parts": {
             "MAGAZINE": "Magazine",
             "BULLET": "Magazine/Rounds",
@@ -220,6 +250,7 @@ WEAPONS = {
         # bare barrel between it and the front sight stretches.
         "stretch": {"from": -0.56, "by": -0.205},
         "sight": {"rear": (-0.218, 0.1472), "front": (-0.8773, 0.1441)},
+        "sight_edits": AK_SIGHT_EDITS,
         "drum": {"tower": "MAGAZINE", "rounds": "7.62x39"},
         "bipod": {"at": -0.80},
         "parts": {
@@ -477,22 +508,82 @@ def to_view(spec: dict) -> Matrix:
     """Source space -> Blender space of the export: turned to face +Y (glTF
     -Z) with +X to the right, scaled to metres, sight origin at zero."""
     (ry, rz), (fy, fz) = spec["sight"]["rear"], spec["sight"]["front"]
+    rx = spec["sight"].get("x", 0.0)
     # Most packs face -Y with +X to the left; turn those around.
     facing = 1.0 if spec.get("forward") == "+Y" else -1.0
     turn = Matrix.Identity(4) if facing > 0 else Matrix.Rotation(np.pi, 4, "Z")
     # Pitch about X so the front post's tip is level with the rear sight.
     pitch = Matrix.Rotation(np.arctan2(-facing * (fz - rz), facing * (fy - ry)), 4, "X")
-    return turn @ Matrix.Scale(spec["scale"], 4) @ pitch @ Matrix.Translation((0.0, -ry, -rz))
+    return turn @ Matrix.Scale(spec["scale"], 4) @ pitch @ Matrix.Translation((0.0 - rx, -ry, -rz))
+
+
+def sight_radius(spec: dict) -> float:
+    """Metres from the rear sight's aiming point to the front post's tip."""
+    (ry, rz), (fy, fz) = spec["sight"]["rear"], spec["sight"]["front"]
+    return float(np.hypot(fy - ry, fz - rz)) * spec["scale"]
+
+
+def edit_sights(source: Source, spec: dict):
+    """Reshapes the source's sights in view space (metres, the sight line
+    along +Y from the rear sight's aiming point, +X right, +Z up), so the
+    aimed picture reads at game scale. Each edit in `sight_edits` moves the
+    vertices within `depth` of `at` along the line, measured from the rear
+    sight, or from the front sight with `front`; `group` limits it to one
+    source bone or object.
+
+    aperture   opens a peep from radius `hole[0]` to `hole[1]`, squeezing
+               the ring between it and `rim` so the outside keeps its shape.
+    widen      moves the faces of a notch or post in a `z` range sideways,
+               mapping `half[0]` to `half[1]` from the centre and squeezing
+               what lies out to `keep`.
+    """
+    edits = spec.get("sight_edits", [])
+    if not edits:
+        return
+    to_view_space = to_view(spec)
+    back = to_view_space.inverted()
+    front = sight_radius(spec)
+    mesh = source.obj.data
+    for edit in edits:
+        kind = edit["kind"]
+        at = edit["at"] + (front if edit.get("front") else 0.0)
+        group = source.obj.vertex_groups.get(edit["group"]).index if "group" in edit else None
+        moved = 0
+        for v in mesh.vertices:
+            if group is not None and not any(g.group == group and g.weight > 0.5 for g in v.groups):
+                continue
+            p = to_view_space @ v.co
+            if abs(p.y - at) > edit["depth"]:
+                continue
+            if kind == "aperture":
+                (r0, r1), rim = edit["hole"], edit["rim"]
+                r = float(np.hypot(p.x, p.z))
+                if r > rim or r < 1e-6:
+                    continue
+                scaled = r1 + (r - r0) * (rim - r1) / (rim - r0) if r >= r0 else r * r1 / r0
+                p.x *= scaled / r
+                p.z *= scaled / r
+            elif kind == "widen":
+                (h0, h1), keep = edit["half"], edit["keep"]
+                z0, z1 = edit["z"]
+                d = abs(p.x)
+                if not z0 <= p.z <= z1 or d > keep:
+                    continue
+                w = d * h1 / h0 if d <= h0 else h1 + (d - h0) * (keep - h1) / (keep - h0)
+                p.x = w if p.x >= 0 else -w
+            v.co = back @ p
+            moved += 1
+        log(f"  sights: {kind} moved {moved} vertices")
 
 
 def source_point(spec: dict, source: Source, where) -> Vector:
     if isinstance(where, str):
         p = source.bones[where].copy()
-        p.x = 0.0
+        p.x = spec["sight"].get("x", 0.0)
         return p
     if len(where) == 3:
         return Vector(where)
-    return Vector((0.0, where[0], where[1]))
+    return Vector((spec["sight"].get("x", 0.0), where[0], where[1]))
 
 
 def godot(v: Vector) -> tuple[float, float, float]:
@@ -1355,6 +1446,7 @@ def build(key: str):
         add_bipod(source, spec)
     if "bead" in spec:
         add_bead(source, spec)
+    edit_sights(source, spec)
     objects = split(source.obj, spec)
     for name in spec.get("drop", []):
         bpy.data.objects.remove(objects.pop(name))

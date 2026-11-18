@@ -556,11 +556,13 @@ fn reflex(p: &Params, parts: &mut Parts) {
     parts
         .glass
         .disc(Vector2::ZERO, REFLEX_LENS * s, zr - 0.006 * s, 36);
-    // The dot sits just behind the lens, so the tint never dims it.
+    // The dot sits just behind the lens, so the tint never dims it. About
+    // 6 px across aimed: big enough to find, small enough to stay crisp
+    // through the bloom.
     parts.glow.cylinder(
         Axis::Z,
         Vector2::ZERO,
-        0.00085 * s,
+        0.00032 * s,
         zr - 0.0056 * s,
         zr - 0.0054 * s,
         16,
