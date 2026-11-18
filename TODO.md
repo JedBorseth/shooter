@@ -235,7 +235,7 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 - [x] Effects and post: spark streaks, debris, soft dust, blood, bullet-hole decals, glowing tracers, ambient dust, and a motion blur option. Depth of field while aiming was left out (it blurs the iron sights).
 - [ ] Combat effects at modern Call of Duty fidelity (`rust/game/src/effects.rs`, `docs/art-direction.md#effects`):
   - [x] Blood that is dark, wet, and lit instead of glowing, with spatter on the wall behind a close target; bullet holes that stay (pooled per preset, oldest reused first) and never land on characters; other players' rounds draw their impacts.
-  - [ ] Bullet holes per surface class (four variants each, soot ring, roughness), soft flipbook dust, debris that stops on the floor, and exit effects where a round penetrates.
+  - [x] Bullet holes per surface class (four variants each, soot ring, roughness), flipbook dust, debris that lands on the floor, and exit effects where a round penetrates.
   - [ ] Tracers as camera-facing ribbons with a minimum pixel width, from other players too.
   - [ ] Ejected cases handed to the world: they bounce, land, clink on what they hit, and stay; third-person ejection.
   - [ ] Muzzle flash flipbooks, lit soft smoke, lingering barrel smoke, heat haze on High, and a muzzle light that stays on its side of walls.

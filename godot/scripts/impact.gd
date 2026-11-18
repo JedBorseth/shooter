@@ -61,9 +61,16 @@ const SURFACES := {
 
 ## Plays the impact for `surface` (an impact look) on a surface facing
 ## `normal`. Flesh bleeds along `direction`, the round's travel, when given.
-## `puff` raises dust (shotguns raise it for only some pellets).
+## `puff` raises dust (shotguns raise it for only some pellets). Chips land
+## and rest on the floor at height `floor_y`. An `exit` (a round leaving the
+## far side of cover) throws a bigger, faster spray along the round.
 func setup(
-	normal: Vector3, surface: String = "concrete", direction := Vector3.ZERO, puff := true
+	normal: Vector3,
+	surface: String = "concrete",
+	direction := Vector3.ZERO,
+	puff := true,
+	floor_y := -1000.0,
+	exit := false
 ) -> void:
 	var flesh := surface == "flesh"
 	# Point local +Y along the surface normal (particles fly out), or for
@@ -91,8 +98,13 @@ func setup(
 	)
 	(_debris.draw_pass_1.surface_get_material(0) as StandardMaterial3D).albedo_color = look["debris"]
 	(_dust.process_material as ParticleProcessMaterial).color = look["dust"]
-	_dust.amount_ratio = clampf(float(look["dust_scale"]) / 1.6, 0.1, 1.0)
+	_dust.amount_ratio = 1.0 if exit else clampf(float(look["dust_scale"]) / 1.6, 0.25, 1.0)
 	_dust.visible = puff
+	var debris := _debris.process_material as ShaderMaterial
+	debris.set_shader_parameter(&"floor_y", floor_y)
+	debris.set_shader_parameter(&"spread_degrees", 30.0 if exit else 50.0)
+	debris.set_shader_parameter(&"speed_max", 7.0 if exit else 4.5)
+	_debris.amount_ratio = 1.0 if exit else 0.7
 	# Metal rings and sparks; it does not chip.
 	_debris.visible = surface != "metal"
 	_sparks.visible = look["sparks"]

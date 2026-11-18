@@ -83,17 +83,16 @@ pub const BUDGETS: [Budget; 3] = [
     },
 ];
 
-/// The bullet hole's tint per impact look (`Surface::impact_key`): pale
-/// chipped concrete, bare grey metal, light splintered wood.
-fn hole_tint(look: &str) -> Color {
-    match look {
-        "metal" => Color::from_rgb(0.55, 0.55, 0.58),
-        "wood" => Color::from_rgb(0.85, 0.66, 0.45),
-        "dirt" => Color::from_rgb(0.5, 0.42, 0.34),
-        "glass" => Color::from_rgb(0.75, 0.8, 0.85),
-        _ => Color::from_rgb(0.85, 0.83, 0.8),
-    }
-}
+/// The bullet hole set per impact look (`Surface::impact_key`): each has
+/// four variants (`tools/build_combat_fx.py`).
+const HOLE_CLASSES: [&str; 5] = ["concrete", "metal", "wood", "glass", "dirt"];
+/// A bullet hole decal's width (metres): a hole about 1 cm across in a
+/// crater about 7 cm across and a soot ring round it. Exit holes blow out
+/// wider.
+const HOLE_SIZE: f32 = 0.16;
+const EXIT_HOLE_SCALE: f32 = 1.5;
+/// How far below an impact its chips look for a floor to land on (metres).
+const FLOOR_SEARCH: f32 = 4.0;
 
 /// A basis whose +Y is `up` (unit), turned `angle` radians about it.
 fn basis_along(up: Vector3, angle: f32) -> Basis {
@@ -105,6 +104,31 @@ fn basis_along(up: Vector3, angle: f32) -> Basis {
     let x = reference.cross(up).normalized();
     let z = x.cross(up);
     Basis::from_cols(x, up, z) * Basis::from_axis_angle(Vector3::UP, angle)
+}
+
+/// A hole's turn about its normal: any angle, except wood, whose splinters
+/// run along the grain, here taken as level on walls (plank cladding) with a
+/// little wander.
+fn hole_angle(look: &str, up: Vector3, seed: u32) -> f32 {
+    if look != "wood" || up.y.abs() > 0.7 {
+        return rng::unit(seed, 11) * std::f32::consts::TAU;
+    }
+    // basis_along's X is level on a wall, so a turn of 0 or half a turn
+    // lays the splinters along it.
+    let flip = if rng::unit(seed, 19) < 0.5 {
+        0.0
+    } else {
+        std::f32::consts::PI
+    };
+    flip + rng::signed(seed, 23) * 0.2
+}
+
+/// A decal's albedo, normal, and ORM maps, `textures/effects/<stem>_*.png`.
+fn load_maps(stem: &str) -> Option<[Gd<Texture2D>; 3]> {
+    let base = format!("res://assets/textures/effects/{stem}");
+    let [a, n, o] = ["albedo", "normal", "orm"]
+        .map(|kind| try_load::<Texture2D>(&format!("{base}_{kind}.png")).ok());
+    Some([a?, n?, o?])
 }
 
 /// How big a spatter is when the wall is `distance` metres behind the hit:
@@ -190,7 +214,8 @@ pub struct CombatEffects {
     next_impact: usize,
     holes: DecalRing,
     splats: DecalRing,
-    hole_textures: Option<(Gd<Texture2D>, Gd<Texture2D>)>,
+    /// Per `HOLE_CLASSES` entry, its variants' albedo, normal, and ORM maps.
+    hole_textures: Vec<Vec<[Gd<Texture2D>; 3]>>,
     splat_textures: Vec<[Gd<Texture2D>; 3]>,
     /// Effects placed, for varied but repeatable choices.
     placed: u32,
@@ -212,21 +237,17 @@ impl INode3D for CombatEffects {
             tracer.connect("shot_traced", &callable);
         }
         self.scene = try_load::<PackedScene>(IMPACT_SCENE).ok();
-        self.hole_textures =
-            try_load::<Texture2D>("res://assets/textures/decals/bullet_hole_albedo.png")
-                .ok()
-                .zip(
-                    try_load::<Texture2D>("res://assets/textures/decals/bullet_hole_normal.png")
-                        .ok(),
-                );
-        for i in 0..4 {
-            let base = format!("res://assets/textures/effects/blood_splat_{i}");
-            let maps = ["albedo", "normal", "orm"]
-                .map(|kind| try_load::<Texture2D>(&format!("{base}_{kind}.png")).ok());
-            if let [Some(a), Some(n), Some(o)] = maps {
-                self.splat_textures.push([a, n, o]);
-            }
-        }
+        self.hole_textures = HOLE_CLASSES
+            .iter()
+            .map(|class| {
+                (0..4)
+                    .filter_map(|i| load_maps(&format!("hole_{class}_{i}")))
+                    .collect()
+            })
+            .collect();
+        self.splat_textures = (0..4)
+            .filter_map(|i| load_maps(&format!("blood_splat_{i}")))
+            .collect();
     }
 
     fn process(&mut self, delta: f64) {
@@ -248,11 +269,15 @@ impl CombatEffects {
     /// `look` (`Surface::impact_key`), with a bullet hole if `hole`.
     #[func]
     pub fn impact(&mut self, position: Vector3, normal: Vector3, look: GString, hole: bool) {
-        let look = look.to_string();
-        self.play_impact(position, normal, &look, Vector3::ZERO, hole);
-        if hole {
-            self.place_hole(position, normal, &look);
-        }
+        self.impact_at(position, normal, &look.to_string(), hole, false);
+    }
+
+    /// Where a round leaves the far side of cover at `position` (`normal`
+    /// points out along its travel): a wider hole and a bigger spray of
+    /// chips and dust along the round.
+    #[func]
+    pub fn exit_impact(&mut self, position: Vector3, normal: Vector3, look: GString, hole: bool) {
+        self.impact_at(position, normal, &look.to_string(), hole, true);
     }
 
     /// A round into someone at `position`, travelling along `direction`:
@@ -265,7 +290,7 @@ impl CombatEffects {
         } else {
             -direction
         };
-        self.play_impact(position, normal, "flesh", direction, false);
+        self.play_impact(position, normal, "flesh", direction, false, false);
         if direction != Vector3::ZERO {
             self.place_splat(position, direction);
         }
@@ -341,6 +366,36 @@ impl CombatEffects {
         BUDGETS[preset.clamp(0, 2) as usize]
     }
 
+    pub fn impact_at(
+        &mut self,
+        position: Vector3,
+        normal: Vector3,
+        look: &str,
+        hole: bool,
+        exit: bool,
+    ) {
+        self.play_impact(position, normal, look, Vector3::ZERO, hole || exit, exit);
+        if hole {
+            self.place_hole(position, normal, look, exit);
+        }
+    }
+
+    /// The height of the floor under `position`, for chips to land on.
+    fn floor_below(&self, position: Vector3) -> Option<f32> {
+        let mut space = self.base().get_world_3d()?.get_direct_space_state()?;
+        let query = PhysicsRayQueryParameters3D::create_ex(
+            position,
+            position + Vector3::DOWN * FLOOR_SEARCH,
+        )
+        .collision_mask(WORLD_LAYER)
+        .done()?;
+        let hit = space.intersect_ray(&query);
+        hit.get_or_nil("position")
+            .try_to::<Vector3>()
+            .ok()
+            .map(|p| p.y)
+    }
+
     fn play_impact(
         &mut self,
         position: Vector3,
@@ -348,7 +403,13 @@ impl CombatEffects {
         look: &str,
         direction: Vector3,
         puff: bool,
+        exit: bool,
     ) {
+        let floor = if look == "flesh" || look == "metal" {
+            None
+        } else {
+            self.floor_below(position + normal * 0.05)
+        };
         let budget = self.current_budget().impacts;
         while self.impacts.len() > budget {
             if let Some(mut old) = self.impacts.pop().map(|i| i.node) {
@@ -383,6 +444,8 @@ impl CombatEffects {
                 GString::from(look).to_variant(),
                 direction.to_variant(),
                 puff.to_variant(),
+                floor.unwrap_or(-1000.0).to_variant(),
+                exit.to_variant(),
             ],
         );
     }
@@ -392,24 +455,36 @@ impl CombatEffects {
         self.placed
     }
 
-    fn place_hole(&mut self, position: Vector3, normal: Vector3, look: &str) {
-        let Some((albedo, normal_map)) = self.hole_textures.clone() else {
+    fn place_hole(&mut self, position: Vector3, normal: Vector3, look: &str, exit: bool) {
+        let class = HOLE_CLASSES.iter().position(|c| *c == look).unwrap_or(0);
+        let seed = self.next_seed();
+        let Some(maps) = self
+            .hole_textures
+            .get(class)
+            .filter(|v| !v.is_empty())
+            .map(|v| v[(rng::hash(seed, 13) as usize) % v.len()].clone())
+        else {
             return;
         };
         let budget = self.current_budget().holes;
-        let seed = self.next_seed();
         let mut parent = self.base().clone();
         let Some(mut decal) = self.holes.take(&mut parent, budget) else {
             return;
         };
-        decal.set_texture(DecalTexture::ALBEDO, &albedo);
-        decal.set_texture(DecalTexture::NORMAL, &normal_map);
-        decal.set_size(Vector3::new(0.15, 0.2, 0.15));
-        decal.set_modulate(hole_tint(look));
-        let angle = rng::unit(seed, 11) * std::f32::consts::TAU;
+        decal.set_texture(DecalTexture::ALBEDO, &maps[0]);
+        decal.set_texture(DecalTexture::NORMAL, &maps[1]);
+        decal.set_texture(DecalTexture::ORM, &maps[2]);
+        let size = HOLE_SIZE
+            * if exit { EXIT_HOLE_SCALE } else { 1.0 }
+            * (0.9 + 0.2 * rng::unit(seed, 17));
+        decal.set_size(Vector3::new(size, 0.08, size));
+        decal.set_normal_fade(0.5);
         let up = normal.normalized_or_zero();
         let up = if up == Vector3::ZERO { Vector3::UP } else { up };
-        decal.set_global_transform(Transform3D::new(basis_along(up, angle), position));
+        decal.set_global_transform(Transform3D::new(
+            basis_along(up, hole_angle(look, up, seed)),
+            position,
+        ));
     }
 
     /// Continues the round past the target; a wall it meets within

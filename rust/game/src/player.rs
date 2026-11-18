@@ -2107,14 +2107,18 @@ impl FpsPlayer {
                     let surface = surface_at(hit.collider.as_ref(), hit.face_index);
                     // Shotguns leave a decal for only some pellets to limit clutter.
                     let decal = def.pellets == 1 || pellet % 3 == 0;
-                    self.spawn_impact(
-                        hit.position,
-                        hit.normal,
-                        decal,
-                        surface.impact_key(),
-                        surface.key(),
-                        direction,
-                    );
+                    if hit.exit {
+                        self.spawn_exit(hit.position, hit.normal, decal, surface);
+                    } else {
+                        self.spawn_impact(
+                            hit.position,
+                            hit.normal,
+                            decal,
+                            surface.impact_key(),
+                            surface.key(),
+                            direction,
+                        );
+                    }
                 }
             }
         }
@@ -2229,6 +2233,24 @@ impl FpsPlayer {
             effects
                 .bind_mut()
                 .impact(position, normal, GString::from(look), decal);
+        }
+    }
+
+    /// Where a round leaves the far side of cover: the exit hole and its
+    /// spray along the round, and the surface's impact sound.
+    fn spawn_exit(&mut self, position: Vector3, normal: Vector3, decal: bool, surface: Surface) {
+        if let Some(mut tracer) = self.base().try_get_node_as::<ShotTracer>("ShotTracer") {
+            tracer
+                .bind_mut()
+                .impact(position, GString::from(surface.key()));
+        }
+        if let Some(mut effects) = self
+            .base()
+            .try_get_node_as::<CombatEffects>("CombatEffects")
+        {
+            effects
+                .bind_mut()
+                .impact_at(position, normal, surface.impact_key(), decal, true);
         }
     }
 
