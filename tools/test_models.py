@@ -33,7 +33,7 @@ def sources_hash() -> str:
     """A hash of the models' own sources; tools/build_models.py writes it to
     models.hash."""
     digest = hashlib.sha256()
-    for name in ("gear_models.py", "build_models.py"):
+    for name in ("gear_models.py", "map_dressing.py", "build_models.py"):
         digest.update((TOOLS / name).read_bytes())
     return digest.hexdigest()[:16]
 

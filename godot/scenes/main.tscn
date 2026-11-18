@@ -3,11 +3,11 @@
 [ext_resource type="PackedScene" path="res://scenes/player.tscn" id="1_player"]
 [ext_resource type="LightmapGIData" uid="uid://bo87p12pwjuom" path="res://scenes/main.lmbake" id="2_fv21b"]
 [ext_resource type="PackedScene" path="res://scenes/props/target_dummy.tscn" id="4_dummy"]
-[ext_resource type="PackedScene" path="res://assets/models/map_testing_area/map_testing_area.gltf" id="5_dgi5k"]
+[ext_resource type="PackedScene" uid="uid://dntgtxe43net8" path="res://assets/models/map_testing_area/map_testing_area.gltf" id="5_dgi5k"]
 [ext_resource type="PackedScene" path="res://scenes/ui/pause_menu.tscn" id="5_pause"]
+[ext_resource type="PackedScene" uid="uid://qwgli5xgme3n" path="res://assets/models/map_testing_dressing/map_testing_dressing.gltf" id="6_dress"]
+[ext_resource type="Script" path="res://scripts/map_render.gd" id="7_render"]
 [ext_resource type="PackedScene" path="res://scenes/props/weapon_rack.tscn" id="9_rack"]
-[ext_resource type="PackedScene" path="res://assets/weapons/lsw6/lsw6.glb" id="17_lsw6"]
-[ext_resource type="PackedScene" path="res://assets/weapons/br3/br3.glb" id="18_br3"]
 [ext_resource type="PackedScene" path="res://scenes/props/sentry.tscn" id="10_sentry"]
 [ext_resource type="PackedScene" uid="uid://f4nuvi0vah4o" path="res://assets/weapons/m4/m4.glb" id="11_m4"]
 [ext_resource type="PackedScene" uid="uid://cyygpfwlyiqpr" path="res://assets/weapons/ak47/ak47.glb" id="12_ak47"]
@@ -15,6 +15,8 @@
 [ext_resource type="PackedScene" uid="uid://db06ijyhm84qu" path="res://assets/weapons/m870/m870.glb" id="14_m870"]
 [ext_resource type="PackedScene" uid="uid://cgsrcdi5ss4rb" path="res://assets/weapons/m40/m40.glb" id="15_m40"]
 [ext_resource type="PackedScene" uid="uid://ccmnn0ufjhdla" path="res://assets/weapons/pistol/pistol.glb" id="16_pistol"]
+[ext_resource type="PackedScene" uid="uid://cprvs3afyc0ex" path="res://assets/weapons/lsw6/lsw6.glb" id="17_lsw6"]
+[ext_resource type="PackedScene" uid="uid://uqyfh5xlco0r" path="res://assets/weapons/br3/br3.glb" id="18_br3"]
 [ext_resource type="PackedScene" path="res://scenes/ui/hud.tscn" id="19_hud"]
 [ext_resource type="Texture2D" uid="uid://c21lj1e3rpr52" path="res://assets/skies/range_day.hdr" id="20_sky"]
 [ext_resource type="Material" path="res://materials/world/range_cover.tres" id="m_cover"]
@@ -27,6 +29,7 @@
 [ext_resource type="PackedScene" uid="uid://bouhhxxxokimq" path="res://assets/props/barrel_red/barrel_red.gltf" id="p_barrel_red"]
 [ext_resource type="PackedScene" uid="uid://bajabhpp86tw6" path="res://assets/props/barrel_steel/barrel_steel.gltf" id="p_barrel_steel"]
 [ext_resource type="PackedScene" uid="uid://cayar0f4m6ipg" path="res://assets/props/barrier/barrier.gltf" id="p_barrier"]
+[ext_resource type="PackedScene" uid="uid://dj6bx0x8mjabk" path="res://assets/props/covered_car/covered_car.gltf" id="p_covered_car"]
 [ext_resource type="PackedScene" uid="uid://cw3bhh3if7on2" path="res://assets/props/crate/crate.gltf" id="p_crate"]
 [ext_resource type="PackedScene" uid="uid://6gxyxjfrt8n5" path="res://assets/props/military_crate/military_crate.gltf" id="p_military_crate"]
 [ext_resource type="PackedScene" uid="uid://b1p1uago5j3cy" path="res://assets/props/tyre/tyre.gltf" id="p_tyre"]
@@ -135,7 +138,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10, 1.65, -18)
 size = Vector3(4, 0.5, 4)
 material = ExtResource("m_tunnel")
 
-[node name="Architecture" parent="." instance=ExtResource("5_dgi5k")]
+[node name="Architecture" parent="." unique_id=729538725 instance=ExtResource("5_dgi5k")]
 
 [node name="MapWood" type="CSGCombiner3D" parent="." unique_id=443765915]
 visible = false
@@ -155,6 +158,46 @@ material = ExtResource("m_crate")
 [node name="CrateStack" type="CSGBox3D" parent="MapWood" unique_id=1956384867]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -18, 1.35, 14)
 size = Vector3(1.2, 0.9, 1.2)
+material = ExtResource("m_crate")
+
+[node name="TargetStand0" type="CSGBox3D" parent="MapWood" unique_id=831904638]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 30.4, 0.975, 15)
+size = Vector3(0.7, 1.95, 0.9)
+material = ExtResource("m_crate")
+
+[node name="TargetStand1" type="CSGBox3D" parent="MapWood" unique_id=1517140338]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 30.4, 0.975, 17.6)
+size = Vector3(0.7, 1.95, 0.9)
+material = ExtResource("m_crate")
+
+[node name="TargetStand2" type="CSGBox3D" parent="MapWood" unique_id=2079003011]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 30.4, 0.975, 20.2)
+size = Vector3(0.7, 1.95, 0.9)
+material = ExtResource("m_crate")
+
+[node name="TargetStand3" type="CSGBox3D" parent="MapWood" unique_id=977385893]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 30.4, 0.975, 22.8)
+size = Vector3(0.7, 1.95, 0.9)
+material = ExtResource("m_crate")
+
+[node name="TargetStand4" type="CSGBox3D" parent="MapWood" unique_id=1886695303]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 30.4, 0.975, 25.4)
+size = Vector3(0.7, 1.95, 0.9)
+material = ExtResource("m_crate")
+
+[node name="PalletsContainer" type="CSGBox3D" parent="MapWood" unique_id=1671833232]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 28, 0.432, -9)
+size = Vector3(1.2, 0.864, 1.1)
+material = ExtResource("m_crate")
+
+[node name="PalletsContainerLow" type="CSGBox3D" parent="MapWood" unique_id=1212981554]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 26.6, 0.216, -9.2)
+size = Vector3(1.2, 0.432, 1.1)
+material = ExtResource("m_crate")
+
+[node name="PalletsOffice" type="CSGBox3D" parent="MapWood" unique_id=2055313371]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -24.2, 0.288, 30.7)
+size = Vector3(1.2, 0.576, 1)
 material = ExtResource("m_crate")
 
 [node name="CoverBlockers" type="CSGCombiner3D" parent="." unique_id=286134309]
@@ -177,6 +220,16 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, -6)
 size = Vector3(4, 1.2, 0.6)
 material = ExtResource("m_cover")
 
+[node name="SiteOffice" type="CSGBox3D" parent="CoverBlockers" unique_id=1686767570]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -28.4, 1.375, 30.4)
+size = Vector3(6, 2.75, 2.4)
+material = ExtResource("m_cover")
+
+[node name="SiteOfficeSteps" type="CSGBox3D" parent="CoverBlockers" unique_id=149780820]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -28.85, 0.15, 28.825)
+size = Vector3(1.4, 0.3, 0.75)
+material = ExtResource("m_cover")
+
 [node name="MapMetal" type="CSGCombiner3D" parent="." unique_id=2095986034]
 visible = false
 use_collision = true
@@ -191,6 +244,107 @@ material = ExtResource("m_platform")
 transform = Transform3D(1, 0, 0, 0, 0.90630794, -0.42261797, 0, 0.42261797, 0.90630794, 16, 1.28, -8.8)
 size = Vector3(4, 0.4, 7.6)
 material = ExtResource("m_platform")
+
+[node name="TowerLeg0" type="CSGBox3D" parent="MapMetal" unique_id=1811652250]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 26.6, 2, -31.2)
+size = Vector3(0.22, 4, 0.22)
+material = ExtResource("m_platform")
+
+[node name="TowerLeg1" type="CSGBox3D" parent="MapMetal" unique_id=268602477]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 31.2, 2, -31.2)
+size = Vector3(0.22, 4, 0.22)
+material = ExtResource("m_platform")
+
+[node name="TowerLeg2" type="CSGBox3D" parent="MapMetal" unique_id=1187335085]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 26.6, 2, -26.1)
+size = Vector3(0.22, 4, 0.22)
+material = ExtResource("m_platform")
+
+[node name="TowerLeg3" type="CSGBox3D" parent="MapMetal" unique_id=1254324572]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 31.2, 2, -26.1)
+size = Vector3(0.22, 4, 0.22)
+material = ExtResource("m_platform")
+
+[node name="TowerCabin" type="CSGBox3D" parent="MapMetal" unique_id=1227203268]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 28.9, 5.25, -28.65)
+size = Vector3(5.1, 2.5, 5.6)
+material = ExtResource("m_platform")
+
+[node name="TowerLanding" type="CSGBox3D" parent="MapMetal" unique_id=581884142]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 25.85, 4.07, -29.15)
+size = Vector3(1.1, 0.14, 1.4)
+material = ExtResource("m_platform")
+
+[node name="TowerLadder" type="CSGBox3D" parent="MapMetal" unique_id=528492677]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 25.22, 2.55, -29.15)
+size = Vector3(0.06, 5.1, 0.5)
+material = ExtResource("m_platform")
+
+[node name="Container" type="CSGBox3D" parent="MapMetal" unique_id=2032954080]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 30.72, 1.295, -3.97)
+size = Vector3(2.44, 2.59, 6.06)
+material = ExtResource("m_platform")
+
+[node name="SteelTarget0" type="CSGBox3D" parent="MapMetal" unique_id=1005149874]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 30.6, 0.93, 5)
+size = Vector3(0.4, 1.86, 1.6)
+material = ExtResource("m_platform")
+
+[node name="SteelTarget1" type="CSGBox3D" parent="MapMetal" unique_id=869489392]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 30.6, 0.93, 8)
+size = Vector3(0.4, 1.86, 1.6)
+material = ExtResource("m_platform")
+
+[node name="RangeFlag" type="CSGBox3D" parent="MapMetal" unique_id=1908929398]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7, 1.7, 7.6)
+size = Vector3(0.1, 3.4, 0.1)
+material = ExtResource("m_platform")
+
+[node name="GateCarBlock" type="CSGBox3D" parent="MapMetal" unique_id=351851727]
+transform = Transform3D(0.995, 0, 0.1, 0, 1, 0, -0.1, 0, 0.995, 26.6, 0.7, 28.6)
+size = Vector3(1.8, 1.4, 4.4)
+material = ExtResource("m_platform")
+
+[node name="ContainerBarrels" type="CSGBox3D" parent="MapMetal" unique_id=126932254]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 28.55, 0.45, -6.65)
+size = Vector3(1.4, 0.9, 1.5)
+material = ExtResource("m_platform")
+
+[node name="MapDirt" type="CSGCombiner3D" parent="." unique_id=175728938]
+visible = false
+use_collision = true
+metadata/surface = "dirt"
+
+[node name="SandbagsCorner" type="CSGBox3D" parent="MapDirt" unique_id=709146671]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -28.95, 0.42, -25)
+size = Vector3(5.9, 0.84, 0.5)
+material = ExtResource("m_cover")
+
+[node name="SandbagsCulvert0" type="CSGBox3D" parent="MapDirt" unique_id=1033139303]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -12.65, 0.22, -15.6)
+size = Vector3(1.2, 0.44, 0.44)
+material = ExtResource("m_cover")
+
+[node name="SandbagsCulvert1" type="CSGBox3D" parent="MapDirt" unique_id=1281239177]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7.35, 0.22, -15.6)
+size = Vector3(1.2, 0.44, 0.44)
+material = ExtResource("m_cover")
+
+[node name="SandbagsCulvert2" type="CSGBox3D" parent="MapDirt" unique_id=1242101106]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -12.65, 0.22, -20.4)
+size = Vector3(1.2, 0.44, 0.44)
+material = ExtResource("m_cover")
+
+[node name="SandbagsCulvert3" type="CSGBox3D" parent="MapDirt" unique_id=1620703556]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7.35, 0.22, -20.4)
+size = Vector3(1.2, 0.44, 0.44)
+material = ExtResource("m_cover")
+
+[node name="Dressing" parent="." unique_id=1569497570 instance=ExtResource("6_dress")]
+
+[node name="MapRender" type="Node" parent="." unique_id=941123124]
+script = ExtResource("7_render")
+sun_path = NodePath("../Sun")
 
 [node name="Props3D" type="Node3D" parent="." unique_id=1455878939]
 
@@ -272,16 +426,34 @@ transform = Transform3D(0.99875027, 0, 0.04997917, 0, 1, 0, -0.04997917, 0, 0.99
 [node name="WallUtility" parent="Props3D" unique_id=2096097035 instance=ExtResource("p_utility_box")]
 transform = Transform3D(-3.6199901e-06, 0, -1, 0, 1, 0, 1, 0, -3.6199901e-06, 31.7, 0, 12)
 
+[node name="ContainerBarrel0" parent="Props3D" unique_id=359268883 instance=ExtResource("p_barrel_blue")]
+transform = Transform3D(0.8, 0, 0.6, 0, 1, 0, -0.6, 0, 0.8, 28.75, 0, -6.3)
+
+[node name="ContainerBarrel1" parent="Props3D" unique_id=238822100 instance=ExtResource("p_barrel_steel")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 28.85, 0, -7)
+
+[node name="ContainerBarrel2" parent="Props3D" unique_id=790503257 instance=ExtResource("p_barrel_red")]
+transform = Transform3D(0.3, 0, -0.95, 0, 1, 0, 0.95, 0, 0.3, 28.1, 0, -6.7)
+
+[node name="TowerCrate0" parent="Props3D" unique_id=1686980728 instance=ExtResource("p_military_crate")]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 26.9, 0, -30.9)
+
+[node name="TowerUtility" parent="Props3D" unique_id=1252373494 instance=ExtResource("p_utility_box")]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 30.2, 0, -27)
+
+[node name="GateCar" parent="Props3D" unique_id=932986035 instance=ExtResource("p_covered_car")]
+transform = Transform3D(0.995, 0, 0.1, 0, 1, 0, -0.1, 0, 0.995, 26.6, 0, 28.6)
+
 [node name="Armory" type="Node3D" parent="." unique_id=1354870362]
 
-[node name="Rack_br3" parent="Armory" instance=ExtResource("9_rack")]
+[node name="Rack_br3" parent="Armory" unique_id=1309023544 instance=ExtResource("9_rack")]
 weapon = "br3"
 display_model = ExtResource("18_br3")
 display_scale = 0.15
 transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, -7, 0, 11.8)
 collision_layer = 9
 
-[node name="Rack_lsw6" parent="Armory" instance=ExtResource("9_rack")]
+[node name="Rack_lsw6" parent="Armory" unique_id=819814965 instance=ExtResource("9_rack")]
 weapon = "lsw6"
 display_model = ExtResource("17_lsw6")
 display_scale = 0.14
@@ -369,15 +541,17 @@ transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 16, 3, -16)
 [node name="ReverbZones" type="Node3D" parent="." unique_id=1351527726]
 
 [node name="Tunnel" type="ReverbZone" parent="ReverbZones" unique_id=224551738]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10, 0.9, -18)
 size = Vector3(2.2, 1.8, 4)
 room_size = 0.3
 damping = 0.2
 wet = 0.35
 predelay_ms = 5.0
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10, 0.9, -18)
 
 [node name="Player" parent="." unique_id=667199353 instance=ExtResource("1_player")]
 base_fov = 69.56998
+stick_yaw_speed = 240.0
+stick_pitch_speed = 180.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.00064452505, 20)
 
 [node name="HUD" parent="." unique_id=935833737 instance=ExtResource("19_hud")]
@@ -385,8 +559,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.00064452505, 20)
 [node name="PauseMenu" parent="." unique_id=101402265 instance=ExtResource("5_pause")]
 player_path = NodePath("../Player")
 
-[node name="Soundscape" type="Soundscape" parent="."]
-outdoor = "day"
+[node name="Soundscape" type="Soundscape" parent="." unique_id=2029113127]
 outdoor_db = -20.0
-distant_battle = true
 indoor_db = -18.0
+distant_battle = true

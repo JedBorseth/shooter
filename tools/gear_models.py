@@ -21,6 +21,12 @@ from slamcity_models import Model
 PI = math.pi
 
 MODELS: dict = {}
+# Models written as several meshes, one per chunk (see tools/build_models.py):
+# name -> a function of a part's centre giving its chunk's name.
+SPLIT: dict = {}
+# Looks whose material skips the world shader's anti-tiling (see
+# tools/build_models.py): surfaces already broken up some other way.
+NO_ANTI_TILE: set = set()
 
 
 def model(fn):
@@ -535,7 +541,7 @@ def laser_gun(b: Model):
 LOOKS.update({
     "range_slab": _t("concrete_floor", 4.0, (0.8, 0.79, 0.77), grime=0.0),
     "range_joint": {"color": (0.24, 0.23, 0.22), "rough": 0.9},
-    "range_panel": _t("concrete_panels", 4.0, (1.34, 1.32, 1.28), grime=0.3),
+    "range_panel": _t("concrete_panels", 4.0, (0.97, 0.95, 0.9), grime=0.3),
     "range_coping": _t("concrete_smooth", 2.0, (0.92, 0.91, 0.9), grime=0.0),
     "range_block": _t("concrete_smooth", 1.6, (0.8, 0.79, 0.76), grime=0.35),
     "range_block_b": _t("concrete_smooth", 1.6, (0.7, 0.69, 0.67), grime=0.35),
@@ -597,7 +603,8 @@ def map_testing_area(b: Model):
     rng = random.Random(9)
     # The floor: 4 m slabs with sealed joints, and a painted firing line in
     # front of the armoury benches.
-    b.box(-32.0, 32.0, -0.3, 0.0, -32.0, 32.0, "range_slab")
+    # Each slab and wall panel is shaded on its own (tools/map_dressing.py).
+    map_dressing.testing_floor_and_walls(b)
     for k in range(1, 16):
         t = -32.0 + k * 4.0
         b.box(t - 0.006, t + 0.006, 0.0, 0.002, -32.0, 32.0, "range_joint")
@@ -610,11 +617,9 @@ def map_testing_area(b: Model):
     for side, (axis, sign) in enumerate((("z", -1), ("z", 1), ("x", -1), ("x", 1))):
         face = sign * 32.0
         if axis == "z":
-            b.box(-32.5, 32.5, 0.0, 6.0, face, face + sign * 0.5, "range_panel")
             b.box(-32.5, 32.5, 5.85, 6.12, face - sign * 0.1, face + sign * 0.6, "range_coping", bevel=0.02)
             b.box(-32.0, 32.0, 0.0, 0.25, face - sign * 0.02, face, "culvert")
         else:
-            b.box(face, face + sign * 0.5, 0.0, 6.0, -32.0, 32.0, "range_panel")
             b.box(face - sign * 0.1, face + sign * 0.6, 5.85, 6.12, -32.5, 32.5, "range_coping", bevel=0.02)
             b.box(face - sign * 0.02, face, 0.0, 0.25, -32.0, 32.0, "culvert")
         for k in range(1, 16):
@@ -814,3 +819,7 @@ def map_zombies_arena(b: Model):
         b.cyl("y", 3.7, 3.85, (x, z), r + 0.08, "arena_coping", sides=24)
         b.cyl("y", 3.85, 4.0, (x, z), r + 0.03, "arena_coping", sides=24)
         b.cyl("y", 2.1, 2.16, (x, z), r + 0.012, "rust", sides=24)
+
+
+# The maps' set dressing and surface breakup register their models too.
+import map_dressing  # noqa: E402
