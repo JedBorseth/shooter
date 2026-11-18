@@ -1431,6 +1431,12 @@ impl WeaponView {
         }
     }
 
+    /// Where the grip markers rest (firing hand, support hand), before any
+    /// clip or pump stroke moves them.
+    pub fn grip_rests(&self) -> (Option<Vector3>, Option<Vector3>) {
+        (self.right_rest, self.hand_rest)
+    }
+
     /// Where the hands hold this weapon, in its own space.
     pub fn grips(&self) -> Grips {
         // On the bolt the hand turns palm-down over the handle.
@@ -3397,6 +3403,7 @@ impl ViewmodelRig {
             let hold = shown.then(|| {
                 let mut grips = grips;
                 grips.hold = crate::character::poser::Hold::of(frame.weapon.def());
+                grips.fit_to(frame.weapon.def());
                 (view.clone().upcast::<Node3D>(), grips)
             });
             let throw = match frame.action {

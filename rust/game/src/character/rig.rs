@@ -1286,6 +1286,7 @@ impl SoldierRig {
         let grips = self.weapon.as_ref().map(|(id, view)| {
             let mut g = view.bind().grips();
             g.hold = Hold::of(id.def());
+            g.fit_to(id.def());
             // The server poses the arm hit zones from the weapon file's grips
             // (`carry::hand_targets`), so the third-person hands stay on the
             // same numbers rather than the measured handguard.
@@ -1971,30 +1972,9 @@ fn support_section(view: &Gd<Node3D>, marker: Vector3) -> Option<Section> {
             half: Vector2::new(v[5], v[6]),
         });
     }
-    let inverse = view.get_global_transform().affine_inverse();
     let mut points = Vec::new();
-    for node in view
-        .find_children_ex("*")
-        .type_("MeshInstance3D")
-        .owned(false)
-        .done()
-        .iter_shared()
-    {
-        let Ok(mesh_node) = node.try_cast::<godot::classes::MeshInstance3D>() else {
-            continue;
-        };
-        if !shown_under(&mesh_node.clone().upcast(), view) {
-            continue;
-        }
-        let Some(mesh) = mesh_node.get_mesh() else {
-            continue;
-        };
-        let to_view = inverse * mesh_node.get_global_transform();
-        let faces = mesh.get_faces();
-        let corners: Vec<Vector3> = faces.as_slice().iter().map(|p| to_view * *p).collect();
-        for tri in corners.as_chunks::<3>().0 {
-            section_points(tri, marker.z, &mut points);
-        }
+    for tri in super::grasp::shown_triangles(view) {
+        section_points(&tri, marker.z, &mut points);
     }
     let section = section_bounds(&points, marker).map(|(centre, half)| Section {
         marker,
@@ -2012,7 +1992,7 @@ fn support_section(view: &Gd<Node3D>, marker: Vector3) -> Option<Section> {
 
 /// Whether `node` and every parent up to (not including) `root` are set
 /// visible: the parts the weapon shows, whether or not the weapon itself is.
-fn shown_under(node: &Gd<Node3D>, root: &Gd<Node3D>) -> bool {
+pub(super) fn shown_under(node: &Gd<Node3D>, root: &Gd<Node3D>) -> bool {
     let mut at = node.clone();
     loop {
         if at == *root {

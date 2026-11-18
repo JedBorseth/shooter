@@ -38,4 +38,14 @@
     attachments: [Acog, Suppressor, Grip, ExtendedMag],
     // Hands on the model: GripRight and GripLeft in pdw9_view.tscn.
     grips: Some((right: (0, -0.1968, 0.1183), left: (0, -0.1086, -0.1659), rake: 15)),
+    // Finger poses fitted to the model by tests/bake_hand_poses.gd:
+    // curl in degrees per joint (index, middle, ring, little, thumb), each
+    // finger's spread, and the hand's seat off its marker (m). Re-run it
+    // after moving the grips or changing the model.
+    hands: Some((
+        right: (fingers: ((22.5, 17, 51.5), (19, 19, 64.5), (62.5, 67, 39), (62.5, 64.5, 49.5), (-8, 4.5, 4)), spread: Some((-4, 0, 0.5, 7, 34)), seat: (0.003, 0.004, 0.005)),
+        index_off: (4, 6, 4),
+        left: (fingers: ((55, 60, 35), (-2.5, 5, 47.5), (1, 7, 9), (14.5, 43.5, 55.5), (12.5, 32.5, 25.5)), spread: Some((-6, -7, 4, 9, 38)), seat: (-0.008, -0.012, -0.004)),
+        left_foregrip: Some((fingers: ((70, 80, 45), (12, 13.5, 64.5), (-23.5, 13, 9.5), (29.5, 13.5, 64.5), (13, 33.5, 30)), spread: Some((-2, -10, -16, 22, 40)), seat: (-0.011, -0.008, 0.012))),
+    )),
 )

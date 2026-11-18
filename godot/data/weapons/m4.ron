@@ -37,4 +37,14 @@
     attachments: [RedDot, Acog, Suppressor, Grip, ExtendedMag],
     // Hands on the model: GripRight and GripLeft in m4_view.tscn.
     grips: Some((right: (0, -0.1196, -0.0075), left: (0, -0.0741, -0.2619), rake: 22)),
+    // Finger poses fitted to the model by tests/bake_hand_poses.gd:
+    // curl in degrees per joint (index, middle, ring, little, thumb), each
+    // finger's spread, and the hand's seat off its marker (m). Re-run it
+    // after moving the grips or changing the model.
+    hands: Some((
+        right: (fingers: ((14, 19, 51.5), (13.5, 13.5, 64.5), (10.5, 12.5, 13), (61, 66, 39.5), (-8.5, 4.5, 4.5)), spread: Some((-4, 0, 3, 7, 32)), seat: (0.012, -0.011, 0.007)),
+        index_off: (4, 6, 4),
+        left: (fingers: ((10.5, 64, 36.5), (-2, 61.5, 36.5), (39, 41.5, 55.5), (65, 65, 38), (0, 16.5, 14)), spread: Some((-7, 2.5, 4, 9, 38)), seat: (0, -0.007, 0)),
+        left_foregrip: Some((fingers: ((70, 80, 45), (75, 85, 45), (80, 85, 45), (85, 85, 45), (25, 40, 35)), spread: Some((-2, 0, 2, 4, 40)), seat: (0, 0, 0))),
+    )),
 )
