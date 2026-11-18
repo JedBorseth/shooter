@@ -7,8 +7,9 @@ extends SceneTree
 ## point. Seen from the eye when aimed, the iron sights make a clear picture:
 ## the line over the front sight runs free through the rear notch or
 ## aperture, and the front sight, not the receiver or the rear sight, is what
-## the eye sees just under it, centred. Then every armory rack shows its
-## weapon.
+## the eye sees just under it, centred. Every weapon's maps carry real
+## surface detail (a flat grey colour map and an empty normal map read as
+## plastic). Then every armory rack shows its weapon.
 ## godot --headless --path godot --script res://tests/weapon_models_test.gd
 
 ## Weapon view scene -> the model nodes its animations and reloads use.
@@ -117,6 +118,15 @@ const POST_BELOW := 0.001
 const POST_SIDE := 0.0006
 const POST_DEPTH := 0.0025
 
+## Least share of sampled texels whose normal leans off flat, and of
+## neighbouring samples whose brightness steps, for a weapon's maps to count
+## as detailed. The source-repacked guns sit at 0.12 to 0.61 and 0.16 to
+## 0.48; the M4A1's flat source maps were 0.003 and 0.015.
+const NORMAL_DETAIL := 0.08
+const ALBEDO_DETAIL := 0.08
+## Sample every this many texels.
+const DETAIL_STRIDE := 8
+
 var _failures := 0
 
 
@@ -165,6 +175,8 @@ func _run() -> void:
 		world.queue_free()
 		await process_frame
 	await _check_extended_magazine()
+	for key: String in WEAPONS:
+		_check_surface_detail(key)
 	_check_casings()
 	_check_attachments()
 	await _check_racks()
@@ -346,6 +358,36 @@ func _bounds_in(mesh: MeshInstance3D, space: Node3D) -> AABB:
 
 
 ## Every weapon names a modelled fired case, and the case is its real size.
+func _check_surface_detail(key: String) -> void:
+	var base := ProjectSettings.globalize_path("res://assets/weapons/%s/%s" % [key, key])
+	var normal := Image.load_from_file(base + "_normal.png")
+	var albedo := Image.load_from_file(base + "_albedo.png")
+	var leaning := 0
+	var steps := 0
+	var samples := 0
+	for y in range(0, normal.get_height(), DETAIL_STRIDE):
+		for x in range(0, normal.get_width() - DETAIL_STRIDE, DETAIL_STRIDE):
+			var n := normal.get_pixel(x, y)
+			var off := maxf(maxf(absf(n.r - 0.5), absf(n.g - 0.5)), absf(n.b - 1.0))
+			leaning += int(off > 0.05)
+			var step := absf(
+				(
+					albedo.get_pixel(x + DETAIL_STRIDE, y).get_luminance()
+					- albedo.get_pixel(x, y).get_luminance()
+				)
+			)
+			steps += int(step > 0.02)
+			samples += 1
+	_check(
+		float(leaning) / samples >= NORMAL_DETAIL,
+		"%s: normal map has detail (%.3f)" % [key, float(leaning) / samples]
+	)
+	_check(
+		float(steps) / samples >= ALBEDO_DETAIL,
+		"%s: colour map has detail (%.3f)" % [key, float(steps) / samples]
+	)
+
+
 func _check_casings() -> void:
 	var casings := (load(CASINGS) as PackedScene).instantiate()
 	for key: String in WEAPONS:
