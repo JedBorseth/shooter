@@ -480,6 +480,9 @@ MATERIALS = {
     "band": {"colour": GREY, "detail": {"kind": "strap", "strength": 0.3, "distance": 0.0008, "fade": 0.1}, "roughness": 0.6},
     "knit": {"colour": GREY, "detail": {"kind": "knit", "strength": 0.2, "distance": 0.0008, "cavity": 0.12, "fade": 0.15}, "roughness": 0.95},
     "plastic": {"colour": GREY, "detail": {"kind": "grit", "scale": 300, "strength": 0.15, "distance": 0.0006}, "roughness": 0.55},
+    # Boot soles: near-black rubber with a lugged tread.
+    "sole": {"colour": (0.04, 0.038, 0.036), "detail": {"kind": "lugs", "strength": 0.7, "distance": 0.0025, "cavity": 0.3, "fade": 0.1},
+             "roughness": 0.82},
     "rubber": {"colour": GREY, "detail": {"kind": "grain", "scale": 900, "strength": 0.2, "distance": 0.0006}, "roughness": 0.7},
     "polymer": {"colour": (0.05, 0.05, 0.048), "detail": {"kind": "grit", "scale": 500, "strength": 0.15, "distance": 0.0005, "fade": 0.15}, "roughness": 0.5},
     "metal": {"colour": (0.06, 0.06, 0.062), "detail": {"kind": "grit", "scale": 800, "strength": 0.1, "distance": 0.0003, "fade": 0.2}, "roughness": 0.42, "metallic": 0.6},
@@ -519,6 +522,7 @@ KITS = {
                 "belt": 0.99,
                 "knee_pads": 0,
                 "boot_shafts": 0,
+                "boot_soles": 0,
                 "arm_bands": 0,
                 "knuckles": 0,
             },

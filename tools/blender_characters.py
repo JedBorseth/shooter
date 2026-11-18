@@ -249,11 +249,13 @@ def fit_to_skeleton(human, rig, clothes, ual):
 HAND_BONES = ("DEF-hand.", "DEF-f_", "DEF-thumb.")
 
 
-def transfer_weights(obj, mannequin, allowed: tuple[str, ...] | None = None, rigid: str | None = None):
+def transfer_weights(obj, mannequin, allowed: tuple[str, ...] | None = None, rigid: str | None = None, smooth: int = 0):
     """The soldier mannequin's weights, from its nearest surface, for everything
     but the hands; MPFB's own weights for the hands and fingers, which are far
     more detailed than the mannequin's. Gear can limit itself to `allowed` bone
-    prefixes, or follow one bone rigidly."""
+    prefixes, or follow one bone rigidly. `smooth` averages the weights over
+    the mesh that many times, so a thickened shell's inside and outside (joined
+    only at its rim) move as one and never tear apart."""
     if rigid:
         obj.vertex_groups.clear()
         obj.vertex_groups.new(name=rigid).add(list(range(len(obj.data.vertices))), 1.0, "REPLACE")
@@ -314,6 +316,8 @@ def transfer_weights(obj, mannequin, allowed: tuple[str, ...] | None = None, rig
             _, j, _ = tree.find(obj.data.vertices[int(i)].co)
             body[i] = body[j]
     body *= 1.0 - hand_mass[:, None]
+    if smooth:
+        body = smooth_weights(obj, body, smooth)
 
     obj.vertex_groups.clear()
     out_names = [tnames[i] for i in keep] + [names[i] for i in hand_cols]
@@ -323,6 +327,27 @@ def transfer_weights(obj, mannequin, allowed: tuple[str, ...] | None = None, rig
         idx = np.nonzero(weights[:, col] > 1e-4)[0]
         for i in idx:
             g.add([int(i)], float(weights[i, col]), "REPLACE")
+
+
+# How many times skinned gear's weights are averaged over each piece.
+GEAR_WEIGHT_SMOOTHING = 12
+
+
+def smooth_weights(obj, weights: np.ndarray, iterations: int) -> np.ndarray:
+    """Laplacian smoothing of per-vertex weights over the mesh's edges."""
+    edges = np.zeros(len(obj.data.edges) * 2, dtype=np.int64)
+    obj.data.edges.foreach_get("vertices", edges)
+    a, b = edges[0::2], edges[1::2]
+    degree = np.bincount(np.concatenate([a, b]), minlength=len(weights)).astype(np.float64)
+    w = weights.copy()
+    for _ in range(iterations):
+        acc = np.zeros_like(w)
+        np.add.at(acc, a, w[b])
+        np.add.at(acc, b, w[a])
+        mean = np.where(degree[:, None] > 0, acc / np.maximum(degree[:, None], 1.0), w)
+        w = 0.5 * w + 0.5 * mean
+    total = w.sum(axis=1, keepdims=True)
+    return np.where(total > 1e-9, w / np.maximum(total, 1e-9), w)
 
 
 def frame(y: Vector, x: Vector) -> Matrix:
@@ -620,6 +645,11 @@ def add_detail(nt, detail: dict, normal, base, roughness: float):
         height = n.math("ADD", weave, n.math("MULTIPLY", fine, 0.4))
     elif kind == "velcro":
         height = n.math("ADD", n.noise(1800.0, 1.0), n.math("MULTIPLY", fine, 0.5))
+    elif kind == "lugs":
+        # A lugged tread: angled blocks 11 mm apart along the foot, mirrored
+        # between the feet, deep enough to read on the sole's sides.
+        chevron = n.bands(n.math("ADD", y, n.math("MULTIPLY", n.math("ABSOLUTE", x), 0.7)), 0.011, 0.55, 0.1)
+        height = n.math("ADD", chevron, n.math("MULTIPLY", fine, 0.15))
     elif kind == "grain":
         vor = n.new("ShaderNodeTexVoronoi", Scale=detail.get("scale", 600.0))
         nt.links.new(n.coord, vor.inputs["Vector"])
@@ -887,6 +917,8 @@ def build_kit(spec: dict, human, clothes, ual, head_pieces=()) -> list:
         out += gear.arm_bands(body, {s: (frames[f"DEF-upper_arm.{s}"][0], frames[f"DEF-forearm.{s}"][0]) for s in "LR"})
     if "boot_shafts" in want:
         out += gear.boot_shafts(body, {s: (frames[f"DEF-shin.{s}"][0], frames[f"DEF-foot.{s}"][0]) for s in "LR"})
+    if "boot_soles" in want:
+        out += gear.boot_soles([o for o in clothes if o["role"] == "boots"])
     if "cuffs" in want:
         out += gear.cuffs(body, {s: (frames[f"DEF-forearm.{s}"][0], frames[f"DEF-hand.{s}"][0]) for s in "LR"})
     if "watch" in want:
@@ -971,7 +1003,7 @@ def main():
         if o.get("rigid"):
             transfer_weights(o, mannequin, rigid=o["rigid"])
         else:
-            transfer_weights(o, mannequin, allowed=tuple(o["bones"]))
+            transfer_weights(o, mannequin, allowed=tuple(o["bones"]), smooth=GEAR_WEIGHT_SMOOTHING)
     parts += kit
     only = spec.get("keep_only")
     if only:
