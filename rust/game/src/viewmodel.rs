@@ -9,7 +9,7 @@ use std::f32::consts::{FRAC_PI_2, PI, TAU};
 
 use godot::classes::{
     AudioStreamPlayer, AudioStreamRandomizer, BaseMaterial3D, Curve, CurveTexture, CylinderMesh,
-    GeometryInstance3D, GpuParticles3D, Gradient, GradientTexture1D, INode3D, Material,
+    GeometryInstance3D, GpuParticles3D, Gradient, GradientTexture1D, INode3D, Material, Mesh,
     MeshInstance3D, Node3D, OmniLight3D, ParticleProcessMaterial, QuadMesh, Shader, ShaderMaterial,
 };
 use godot::global::randf_range;
@@ -159,9 +159,9 @@ fn stride_bob(theta: f32, amount: f32, sprint: f32) -> (Vector3, Vector3) {
     )
 }
 
-/// The scale the suppressor and foregrip models are built at (the older
-/// gun pack's), for weapons whose own model is in metres.
-const LEGACY_ATTACHMENT_SCALE: f32 = 0.163;
+/// How far below the support hand's grip marker a foregrip's clamp sits: on
+/// the bottom rail of the handguard.
+const GRIP_MOUNT_DROP: f32 = 0.006;
 /// Height an optic needs between its mount and its sight line.
 const OPTIC_CLEARANCE: f32 = 0.018;
 
@@ -228,6 +228,11 @@ pub struct WeaponView {
     #[export]
     #[init(val = Vector2::new(0.005, 0.022))]
     shell_size: Vector2,
+    /// The fired case this weapon ejects: a node of
+    /// `assets/weapons/shared/casings.glb` (`Case556`, `Shell12`, ...). Empty
+    /// falls back to a plain cylinder in `shell_color` and `shell_size`.
+    #[export]
+    shell_model: GString,
     /// Gunshot volume. The layers below are offsets from it, in dB: the crack
     /// above 1.5 kHz, the punch below it, and the echo. At 0/0/0 they add up to
     /// the original recording.
@@ -285,7 +290,7 @@ pub struct WeaponView {
     ejection: Option<Gd<Node3D>>,
     /// Resolved from `weapon` once the table is loaded.
     id: Option<WeaponId>,
-    shell_mesh: Option<Gd<CylinderMesh>>,
+    shell_mesh: Option<Gd<Mesh>>,
 
     flash_time: f32,
     flash_count: u32,
@@ -427,7 +432,8 @@ impl INode3D for WeaponView {
         if self.id.is_none() {
             godot_error!("WeaponView: unknown weapon `{}`", self.weapon);
         }
-        self.shell_mesh = Some(shell_mesh(&shader, self.shell_color, self.shell_size));
+        self.shell_mesh = casing_mesh(&self.shell_model.to_string(), &shader)
+            .or_else(|| Some(shell_mesh(&shader, self.shell_color, self.shell_size).upcast()));
         self.gunshot = self.load_gunshot();
         if self.gunshot.is_none() {
             godot_error!("WeaponView: no gunshot layers for `{}`", self.weapon);
@@ -674,15 +680,6 @@ impl WeaponView {
         let mut parts = Node3D::new_alloc();
         parts.set_name("Attachment");
         let optic = matches!(attachment, Some(Attachment::RedDot | Attachment::Acog));
-        // Models built in metres (tools/build_weapons.py) sit unscaled; the
-        // older pack models are about 1/6 scale, and so are the suppressor
-        // and foregrip models.
-        let model_scale = self.model.get_scale().x;
-        let scale = if (model_scale - 1.0).abs() < 1e-3 {
-            LEGACY_ATTACHMENT_SCALE
-        } else {
-            model_scale
-        };
         // An optic on a weapon with a mount (and no built-in iron sight
         // node) sits on the mount, high enough to clear it: the weapon drops
         // that far below the sight line, so the optic is what lines up.
@@ -721,25 +718,24 @@ impl WeaponView {
                     .try_get_node_as::<Node3D>("Muzzle")
                     .map(|m| m.get_position())
                     .unwrap_or_default();
-                // The model's thread end (x = -0.095) on the muzzle, body forward.
+                // Built in metres with its rear face on the bore at the
+                // origin (tools/build_weapons.py): it threads on at the muzzle.
                 if let Some(mut mesh) =
                     instance_model("res://assets/weapons/suppressor/suppressor.glb")
                 {
-                    mesh.set_rotation(Vector3::new(0.0, PI / 2.0, 0.0));
-                    mesh.set_scale(Vector3::splat(scale));
-                    mesh.set_position(muzzle - Vector3::new(0.0, 0.0, 0.095 * scale));
+                    mesh.set_position(muzzle);
                     parts.add_child(&mesh);
                 }
             }
             Some(Attachment::Grip) => {
                 if let Some(mut marker) = self.base().try_get_node_as::<Node3D>("GripLeft") {
                     let rest = marker.get_position();
-                    // The grip's mount (y = 0.423) just under the handguard.
+                    // Its clamp's top (the model's origin) just under the
+                    // handguard.
                     if let Some(mut mesh) =
                         instance_model("res://assets/weapons/foregrip/foregrip.glb")
                     {
-                        mesh.set_scale(Vector3::splat(scale));
-                        mesh.set_position(rest - Vector3::new(0.0, 0.423 * scale + 0.006, 0.0));
+                        mesh.set_position(rest - Vector3::new(0.0, GRIP_MOUNT_DROP, 0.0));
                         parts.add_child(&mesh);
                     }
                     self.grip_left_rest = Some(rest);
@@ -1206,6 +1202,31 @@ struct Shell {
     clinked: bool,
 }
 
+const CASINGS: &str = "res://assets/weapons/shared/casings.glb";
+
+/// A modelled fired case from `CASINGS`, drawn with the viewmodel shader.
+/// Every weapon that ejects the same case shares one mesh.
+fn casing_mesh(name: &str, shader: &Gd<Shader>) -> Option<Gd<Mesh>> {
+    if name.is_empty() {
+        return None;
+    }
+    if let Some(mesh) = CASES.with(|c| c.borrow().get(name).cloned()) {
+        return Some(mesh);
+    }
+    let root = try_load::<PackedScene>(CASINGS).ok()?.instantiate()?;
+    let node = root.find_child(name)?.try_cast::<MeshInstance3D>().ok();
+    let source = node.as_ref().and_then(|n| n.get_mesh());
+    root.free();
+    let mut mesh = source?.duplicate_resource().try_cast::<Mesh>().ok()?;
+    for surface in 0..mesh.get_surface_count() {
+        if let Some(material) = mesh.surface_get_material(surface) {
+            mesh.surface_set_material(surface, &viewmodel_material(&material, shader, 1.0));
+        }
+    }
+    CASES.with(|c| c.borrow_mut().insert(name.to_string(), mesh.clone()));
+    Some(mesh)
+}
+
 /// A casing: a small cylinder drawn with the viewmodel shader.
 fn shell_mesh(shader: &Gd<Shader>, color: Color, size: Vector2) -> Gd<CylinderMesh> {
     let mut cylinder = CylinderMesh::new_gd();
@@ -1381,6 +1402,9 @@ pub fn base_weapon(id: WeaponId) -> WeaponId {
 }
 
 thread_local! {
+    /// Fired-case meshes by name, shared by every weapon that ejects one.
+    static CASES: std::cell::RefCell<std::collections::HashMap<String, Gd<Mesh>>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
     static WEAPON_SCENES: std::cell::RefCell<std::collections::HashMap<String, Gd<PackedScene>>> =
         std::cell::RefCell::new(std::collections::HashMap::new());
 }
@@ -1389,6 +1413,7 @@ const WEAPON_SCENE_DIR: &str = "res://scenes/weapons";
 
 pub fn clear_cache() {
     WEAPON_SCENES.with_borrow_mut(|cache| cache.clear());
+    CASES.with_borrow_mut(|cache| cache.clear());
 }
 
 /// The weapon view scene for a weapon: `scenes/weapons/<key>_view.tscn`, or any

@@ -94,6 +94,9 @@ const WEAPONS := {
 	["Body", "Scope", "Bolt", "BoltStop", "Magazine", "Magazine/Rounds", "Safety", "Trigger"],
 }
 const MARKERS := ["Muzzle", "Ejection", "GripRight", "GripLeft"]
+const CASINGS := "res://assets/weapons/shared/casings.glb"
+const SUPPRESSOR := "res://assets/weapons/suppressor/suppressor.glb"
+const FOREGRIP := "res://assets/weapons/foregrip/foregrip.glb"
 ## Weapons aimed with their own iron sights; the others carry a reflex sight
 ## (the scene's IronSights node) or, the M40, a scope on the sight line.
 const IRON_SIGHTS := ["m4", "m870", "lsw6", "ak47", "pistol"]
@@ -150,6 +153,8 @@ func _run() -> void:
 		_check(merged.lod_bias < 1.0, "%s: third person switches to coarser LODs sooner" % key)
 		world.queue_free()
 		await process_frame
+	_check_casings()
+	_check_attachments()
 	await _check_racks()
 	print("weapon models test: %d failure(s)" % _failures)
 	quit(1 if _failures > 0 else 0)
@@ -221,6 +226,37 @@ func _front_sight_tip(body: MeshInstance3D, view: Node3D, muzzle_z: float, reach
 			if absf(p.x) < 0.0015 and p.z < muzzle_z + reach and p.y > -0.05:
 				top = maxf(top, p.y)
 	return top
+
+
+## Every weapon names a modelled fired case, and the case is its real size.
+func _check_casings() -> void:
+	var casings := (load(CASINGS) as PackedScene).instantiate()
+	for key: String in WEAPONS:
+		var view := (load("res://scenes/weapons/%s_view.tscn" % key) as PackedScene).instantiate()
+		var case_name: String = view.get("shell_model")
+		var mesh := casings.find_child(case_name) as MeshInstance3D
+		_check(mesh != null, "%s ejects a modelled case (%s)" % [key, case_name])
+		if mesh != null:
+			var length := mesh.get_aabb().size.y
+			_check(
+				length > 0.018 and length < 0.072,
+				"%s: the %s is %.1f mm long" % [key, case_name, length * 1000.0]
+			)
+		view.free()
+	casings.free()
+
+
+## The suppressor and foregrip are built in metres, mounting at their origin.
+func _check_attachments() -> void:
+	for path: String in [SUPPRESSOR, FOREGRIP]:
+		var model := (load(path) as PackedScene).instantiate() as Node3D
+		var body := model.find_child("Body") as MeshInstance3D
+		_check(body != null, "%s has a Body" % path)
+		if body != null:
+			var box := body.get_aabb()
+			var long := maxf(box.size.y, box.size.z)
+			_check(long > 0.08 and long < 0.2, "%s is %.0f mm long" % [path, long * 1000.0])
+		model.free()
 
 
 func _check_racks() -> void:

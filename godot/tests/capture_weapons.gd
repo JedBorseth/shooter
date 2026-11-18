@@ -97,7 +97,10 @@ func _first_person(player: FpsPlayer, weapon: String) -> void:
 	# Mid-reload: the magazine out, or a round going in. Fire a few rounds
 	# first, so there is something to reload.
 	Input.action_press("fire")
-	await _sixtieths(20)
+	# Mid-burst, with a case in the air.
+	await _sixtieths(4)
+	await _shot("%s_0fire" % tag)
+	await _sixtieths(16)
 	Input.action_release("fire")
 	await _sixtieths(40)
 	await _tap("reload")

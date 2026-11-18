@@ -17,6 +17,7 @@ sprint_position = Vector3(-0.04, 0.015, 0.03)
 sprint_rotation = Vector3(-4, 22, 24)
 pivot = Vector3(0, -0.073, 0.085)
 albedo_boost = 1.0
+shell_model = "Shell12"
 kick_strength = 2.75
 camera_punch = Vector3(1.1, 0.3, 1.6)
 cycle_position = Vector3(0, -0.012, 0.045)

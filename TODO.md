@@ -42,7 +42,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Bullet penetration through thin cover, with per-material damage reduction (`shooter_sim::penetration` rules, `rust/game/src/penetration.rs` traces).
 - [x] Per-surface impact effects and sounds (metal, concrete, wood, dirt, flesh), from `surface` metadata on colliders.
 - [x] Data-driven weapon definitions: RON files in `godot/data/weapons/`, loaded at startup and hot-reloaded in debug builds.
-- [ ] Detailed weapon models from CC0 source packs (`tools/build_weapons.sh`): every gun done (the LSW-6 derived from the AK-47 with a longer barrel, bipod, and 75-round drum); the attachments and the ejected cases to follow.
+- [ ] Detailed weapon models from CC0 source packs (`tools/build_weapons.sh`): every gun done (the LSW-6 derived from the AK-47 with a longer barrel, bipod, and 75-round drum); modelled fired cases (brass, lacquered steel, and shotgun shells), suppressor, and foregrip done; the red dot, ACOG, and extended magazine models to follow.
 - [x] More weapons: AK-47, PDW-9 SMG (with a red dot), M870 pump shotgun (pellets, shell-by-shell reload), M40 bolt-action sniper (scope overlay).
 - [x] LMG (LSW-6: 75 rounds, slow aim and reload) and a burst-fire rifle (BR-3: `FireMode::Burst`, three rounds a pull, one burst kills up close).
 - [x] Attachments: red dot, ACOG, suppressor, grip, and extended magazine, as weapon variants (`Attachment::apply`), chosen in the loadout menu, with their parts on the first- and third-person models.

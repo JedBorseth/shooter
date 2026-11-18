@@ -42,7 +42,11 @@ func _run() -> void:
 	var only := OS.get_environment("WEAPONS")
 	if not only.is_empty():
 		weapons = Array(only.split(","))
+	if only.is_empty() or "casings" in only:
+		await _casings(stage, camera)
 	for key: String in weapons:
+		if key == "casings":
+			continue
 		var path := "res://scenes/weapons/%s_view.tscn" % key
 		if not ResourceLoader.exists(path):
 			continue
@@ -80,6 +84,27 @@ func _run() -> void:
 			view.queue_free()
 			await process_frame
 	quit()
+
+
+## Every fired case (assets/weapons/shared/casings.glb) side by side, in
+## the order the file lists them, from the side and from above.
+func _casings(stage: Node3D, camera: Camera3D) -> void:
+	var casings := (load("res://assets/weapons/shared/casings.glb") as PackedScene).instantiate()
+	stage.add_child(casings)
+	var cases := casings.find_children("*", "MeshInstance3D", true, false)
+	for i in cases.size():
+		var mesh := cases[i] as MeshInstance3D
+		mesh.global_transform = Transform3D(
+			Basis.IDENTITY, Vector3((i - cases.size() * 0.5) * 0.03, 0, 0)
+		)
+		print("case ", i, ": ", mesh.name)
+	await process_frame
+	camera.look_at_from_position(Vector3(0, 0.02, 0.32), Vector3(0, 0, 0))
+	await _shot("casings_side")
+	camera.look_at_from_position(Vector3(0.02, 0.25, 0.12), Vector3(0, 0, 0))
+	await _shot("casings_top")
+	casings.queue_free()
+	await process_frame
 
 
 ## Shows the separate first-person parts instead of the merged model.

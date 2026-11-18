@@ -148,6 +148,9 @@ WEAPONS = {
         },
         "normal_dx": True,
         "forward": "+Y",
+        # The source is light (1.7k triangles): round its barrel, magazine
+        # tube, and pump.
+        "subdivide": {"levels": 1, "crease": 35.0},
         # A pump gun with a 230 mm receiver and an 18 inch barrel.
         "scale": 0.9,
         "cartridge": 2,
@@ -735,6 +738,30 @@ def add_rounds(source: Source, spec: dict):
     source.obj = bpy.context.view_layer.objects.active
 
 
+def subdivide(source: Source, info: dict):
+    """Rounds a low-poly source: one or more Catmull-Clark levels, with the
+    edges sharper than `crease` degrees creased so boxy parts keep their
+    corners while barrels and tubes come out round."""
+    obj = source.obj
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    crease = bm.edges.layers.float.get("crease_edge") or bm.edges.layers.float.new("crease_edge")
+    limit = np.radians(info.get("crease", 35.0))
+    for edge in bm.edges:
+        if len(edge.link_faces) != 2 or edge.calc_face_angle(0.0) > limit or edge.seam:
+            edge[crease] = 1.0
+    bm.to_mesh(obj.data)
+    bm.free()
+    mod = obj.modifiers.new("Subdivide", "SUBSURF")
+    mod.levels = mod.render_levels = info.get("levels", 1)
+    mod.uv_smooth = "PRESERVE_CORNERS"
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.modifier_apply(modifier=mod.name)
+    for poly in obj.data.polygons:
+        poly.use_smooth = True
+    obj.data.set_sharp_from_angle(angle=limit)
+
+
 def stretch(source: Source, info: dict):
     """Moves everything ahead of `from` (source y; the pack faces -Y) by
     `by`, bones included: the faces that cross it, the bare barrel,
@@ -1215,6 +1242,8 @@ def build(key: str):
     out = WEAPONS_DIR / spec["dir"]
     out.mkdir(parents=True, exist_ok=True)
     source = Source(spec)
+    if "subdivide" in spec:
+        subdivide(source, spec["subdivide"])
     if "stretch" in spec:
         stretch(source, spec["stretch"])
     if "rounds" in spec:
@@ -1291,7 +1320,10 @@ def build_shared():
     rng = np.random.default_rng(7)
     grain = rng.random((size, size)).astype(np.float32)
     for row, (name, split_at, case, bullet, rough, metal) in enumerate(CARTRIDGES):
-        rows = slice(row * size // 4, (row + 1) * size // 4)
+        # Blender stores pixels bottom row first, and glTF flips V, so the
+        # row the UVs pick (v = 1 - (row + 0.5) / 4) is this many rows from
+        # the end of the array.
+        rows = slice((3 - row) * size // 4, (4 - row) * size // 4)
         is_case = u < split_at
         if name == "shell":
             # Brass head, then the plastic hull: not metal, and the head's
@@ -1381,11 +1413,157 @@ emission_energy_multiplier = 2.0
     )
 
 
+# Attachments the tool models, in metres. Each exports one node, `Body`, in
+# the shared optics finish (black hard-anodised), with its origin where it
+# mounts: the suppressor's rear face on the bore axis (it extends along -Z),
+# the foregrip's clamp top on the rail (it hangs along -Y).
+ATTACHMENTS = ("suppressor", "foregrip")
+
+
+def build_attachment(key: str):
+    reset()
+    bm = bmesh.new()
+    uv = bm.loops.layers.uv.new("UV_0")
+    ident = lambda p: Vector(p)  # noqa: E731 - already in Blender view space
+    if key == "suppressor":
+        # A 172 mm can: a threaded collar with wrench flats, a chamfer up to
+        # the 38 mm tube, three grooves for grip near the rear, a vent ring,
+        # and a stepped front cap round a 9 mm bore.
+        r = 0.019
+        profile = [
+            (0.0, 0.0045), (0.0, 0.0125), (0.010, 0.0125), (0.0115, 0.0135), (0.014, 0.0135),
+            (0.018, r), (0.024, r),
+        ]
+        y = 0.024
+        for _ in range(3):
+            profile += [(y + 0.0006, r - 0.0009), (y + 0.0036, r - 0.0009), (y + 0.0042, r)]
+            y += 0.0085
+        profile += [(0.150, r), (0.1506, r - 0.0012), (0.1534, r - 0.0012), (0.154, r), (0.165, r),
+                    (0.168, r - 0.0012), (0.172, 0.0145), (0.172, 0.0072), (0.1705, 0.0058),
+                    (0.1705, 0.0045), (0.0, 0.0045)]
+        # Built along +Y (forward in Blender view space).
+        revolve(bm, profile, 48, uv)
+        # Wrench flats on the collar.
+        for side in (-1.0, 1.0):
+            box(bm, uv, (side * 0.0125 - 0.0012, 0.001, -0.007), (side * 0.0125 + 0.0012, 0.009, 0.007), ident)
+    elif key == "foregrip":
+        # A rail clamp (picatinny width, 50 mm), a tapered 32 mm grip 95 mm
+        # long with three finger grooves, and a flared end cap.
+        box(bm, uv, (-0.0115, -0.025, -0.012), (0.0115, 0.025, 0.0), ident, 0.0015)
+        box(bm, uv, (-0.0135, -0.010, -0.010), (0.0135, 0.010, -0.002), ident, 0.001)
+        grip = [(0.0, 0.0), (0.0, 0.0145), (0.012, 0.0150)]
+        y = 0.022
+        for _ in range(3):
+            grip += [(y, 0.0158), (y + 0.006, 0.0146), (y + 0.012, 0.0158)]
+            y += 0.016
+        grip += [(0.084, 0.0162), (0.088, 0.0172), (0.095, 0.0172), (0.0975, 0.014), (0.0985, 0.0)]
+        rings = revolve(bm, grip, 36, uv)
+        # Stand it under the clamp: +Y along the grip becomes -Z (down).
+        verts = [v for ring in rings for v in ring]
+        bmesh.ops.transform(bm, matrix=Matrix.Translation((0, 0, -0.010)) @ Matrix.Rotation(-np.pi / 2, 4, "X"), verts=verts)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-7)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if len(f.verts) > 4])
+    mesh = bpy.data.meshes.new("Body")
+    bm.to_mesh(mesh)
+    bm.free()
+    for poly in mesh.polygons:
+        poly.use_smooth = True
+    mesh.set_sharp_from_angle(angle=np.radians(35.0))
+    obj = bpy.data.objects.new("Body", mesh)
+    bpy.context.scene.collection.objects.link(obj)
+    obj.data.materials.append(bpy.data.materials.new("Optics"))
+    out = WEAPONS_DIR / key
+    out.mkdir(parents=True, exist_ok=True)
+    tris = sum(len(p.vertices) - 2 for p in mesh.polygons)
+    log(f"{key}: {tris} triangles")
+    export({"Body": obj}, out / f"{key}.glb")
+    write_import(key, out, key)
+
+
+# Fired cases, (distance from the head, radius) in metres, head to mouth:
+# rim, extractor groove, body, and for bottlenecked rounds the shoulder and
+# neck. `row` is the case's row on the shared cartridge texture
+# (CARTRIDGES); `inner` the mouth's inside radius.
+CASES = {
+    "Case556": {"row": 0, "inner": 0.0028, "profile": [
+        (0.0, 0.0048), (0.0011, 0.0048), (0.0013, 0.0040), (0.0024, 0.0040), (0.0030, 0.0048),
+        (0.0365, 0.0045), (0.0395, 0.0032), (0.0447, 0.0032)]},
+    "Case762x39": {"row": 3, "inner": 0.0039, "profile": [
+        (0.0, 0.0056), (0.0015, 0.0056), (0.0017, 0.0047), (0.0030, 0.0047), (0.0036, 0.0055),
+        (0.0305, 0.0051), (0.0330, 0.0043), (0.0387, 0.0043)]},
+    "Case762x51": {"row": 0, "inner": 0.0039, "profile": [
+        (0.0, 0.0060), (0.0014, 0.0060), (0.0016, 0.0050), (0.0028, 0.0050), (0.0034, 0.0059),
+        (0.0390, 0.0054), (0.0435, 0.0043), (0.0512, 0.0043)]},
+    "Case9mm": {"row": 1, "inner": 0.0045, "profile": [
+        (0.0, 0.00495), (0.0013, 0.00495), (0.0014, 0.00425), (0.0023, 0.00425), (0.0028, 0.00495),
+        (0.01915, 0.00483)]},
+    "Case45": {"row": 1, "inner": 0.0057, "profile": [
+        (0.0, 0.00605), (0.0012, 0.00605), (0.0013, 0.0052), (0.0023, 0.0052), (0.0029, 0.00605),
+        (0.0228, 0.0060)]},
+    # A fired 12-gauge shell: a brass head, then the plastic hull with its
+    # crimp opened out.
+    "Shell12": {"row": 2, "inner": 0.0096, "profile": [
+        (0.0, 0.0112), (0.0015, 0.0112), (0.0017, 0.0104), (0.0160, 0.0104), (0.0163, 0.0102),
+        (0.0650, 0.0101), (0.0680, 0.0104)]},
+}
+
+
+def build_casings():
+    """`shared/casings.glb`: one node per fired case (CASES), standing on
+    +Y (Godot) and centred on its middle, on the shared cartridge texture."""
+    reset()
+    objects = {}
+    cartridge = bpy.data.materials.new("Cartridge")
+    for name, info in CASES.items():
+        bm = bmesh.new()
+        uv = bm.loops.layers.uv.new("UV_0")
+        outline = info["profile"]
+        length = outline[-1][0]
+        # Closed at the head, open at the mouth with the wall's thickness.
+        profile = [(0.0, 0.0)] + outline + [(length, info["inner"]), (length - 0.002, info["inner"])]
+        rings = revolve(bm, profile, 16, uv)
+        row = info["row"]
+        split = CARTRIDGES[row][1]
+        # The whole case lies on the case colour; a shell's hull runs on past
+        # its brass head.
+        reach = 0.96 if CARTRIDGES[row][0] == "shell" else split - 0.03
+        for face in bm.faces:
+            for loop in face.loops:
+                d = min(max(loop.vert.co.y, 0.0), length) / length
+                loop[uv].uv = (0.02 + reach * d, 1.0 - (row + 0.5) / 4.0)
+        verts = [v for ring in rings for v in ring]
+        # Stand it up: +Y (Blender) along the case becomes +Z (up), centred.
+        bmesh.ops.transform(bm, matrix=Matrix.Translation((0, 0, -length / 2)) @ Matrix.Rotation(np.pi / 2, 4, "X"), verts=verts)
+        bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-7)
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if len(f.verts) > 4])
+        mesh = bpy.data.meshes.new(name)
+        bm.to_mesh(mesh)
+        bm.free()
+        for poly in mesh.polygons:
+            poly.use_smooth = True
+        mesh.set_sharp_from_angle(angle=np.radians(50.0))
+        mesh.materials.append(cartridge)
+        obj = bpy.data.objects.new(name, mesh)
+        bpy.context.scene.collection.objects.link(obj)
+        objects[name] = obj
+    out = WEAPONS_DIR / "shared"
+    export(objects, out / "casings.glb")
+    write_import("casings", out, "shared")
+    log("casings:", ", ".join(objects))
+
+
 def main():
     args = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
     build_shared()
-    for key in args or list(WEAPONS):
-        build(key)
+    for key in args or list(WEAPONS) + list(ATTACHMENTS) + ["casings"]:
+        if key == "casings":
+            build_casings()
+        elif key in ATTACHMENTS:
+            build_attachment(key)
+        else:
+            build(key)
     log("done")
 
 
