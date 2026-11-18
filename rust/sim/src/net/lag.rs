@@ -78,6 +78,8 @@ pub struct RemoteSample {
     pub shots_fired: u32,
     pub mantling: bool,
     pub meleeing: bool,
+    /// How far along a grenade throw, if throwing (`PlayerView::throw`).
+    pub throw: Option<f32>,
     pub hits: u8,
     pub hit_heading: u8,
     /// Where the latest hit landed and how hard (`protocol::HitPart`).
@@ -129,6 +131,7 @@ impl RemoteSample {
             shots_fired: v.shots_fired,
             mantling: v.mantling,
             meleeing: v.meleeing,
+            throw: v.throw_progress(),
             hits: v.hits,
             hit_heading: v.hit_heading,
             hit_part: v.hit_part,
@@ -158,6 +161,10 @@ impl Interpolate for RemoteSample {
             ads: self.ads + (to.ads - self.ads) * t,
             crouch: self.crouch + (to.crouch - self.crouch) * t,
             progress: self.progress.interpolate(&to.progress, t),
+            throw: match (self.throw, to.throw) {
+                (Some(a), Some(b)) if b >= a => Some(a + (b - a) * t),
+                _ => discrete.throw,
+            },
             // Shots show once the snapshot that contains them is reached.
             shots_fired: self.shots_fired,
             ..*discrete

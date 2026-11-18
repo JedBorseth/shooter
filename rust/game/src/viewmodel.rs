@@ -98,6 +98,9 @@ pub enum ViewAction {
     Meleeing {
         strike_in: f32,
     },
+    /// A grenade throw with the support hand, 0..1
+    /// (`equipment::throw_progress`); the weapon dips in the firing hand.
+    Throwing(f32),
 }
 
 /// One shot's kick on the weapon model, as peaks: (position in metres: `x`
@@ -2530,7 +2533,9 @@ impl ViewmodelRig {
             ViewAction::Cycling(p) => (BeatClip::Cycle, p),
             ViewAction::Lowering(p) => (BeatClip::Lower, p),
             ViewAction::Raising(p) => (BeatClip::Raise, p),
-            ViewAction::Meleeing { .. } | ViewAction::FirstRaise { .. } => (BeatClip::Idle, 0.0),
+            ViewAction::Meleeing { .. }
+            | ViewAction::FirstRaise { .. }
+            | ViewAction::Throwing(_) => (BeatClip::Idle, 0.0),
             ViewAction::Ready => match self.inspect {
                 Some(t) => (BeatClip::Inspect, t),
                 None => (BeatClip::Idle, 0.0),
@@ -2907,6 +2912,10 @@ impl ViewmodelRig {
         let switch = match frame.action {
             ViewAction::Lowering(p) => weapon_clips::pose_at(weapon_clips::holster_keys(kind), p),
             ViewAction::Raising(p) => weapon_clips::pose_at(weapon_clips::draw_keys(kind), p),
+            ViewAction::Throwing(p) => weapon_clips::pose_at(
+                weapon_clips::holster_keys(kind),
+                crate::grenade_hold::weapon_dip(p),
+            ),
             _ => Pose::ZERO,
         };
         let present = first_raise.map_or(Pose::ZERO, |(q, _)| {
@@ -3083,7 +3092,14 @@ impl ViewmodelRig {
                 grips.hold = crate::character::poser::Hold::of(frame.weapon.def());
                 (view.clone().upcast::<Node3D>(), grips)
             });
-            arms.bind_mut().follow(hold, 0.0, None, item);
+            let throw = match frame.action {
+                ViewAction::Throwing(p) => {
+                    let pose = crate::grenade_hold::first_person(p);
+                    Some((pose, weapon_in_rig * pose.at))
+                }
+                _ => None,
+            };
+            arms.bind_mut().follow(hold, 0.0, None, item, throw);
         }
     }
 }

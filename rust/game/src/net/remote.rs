@@ -25,7 +25,7 @@ use crate::acoustics::zone_at;
 use crate::aim_assist::AimAssistTarget;
 use crate::bullets::ShotTracer;
 use crate::character::corpses::{self, CorpseYard};
-use crate::character::rig::{SoldierFrame, SoldierRig, push_of};
+use crate::character::rig::{ActionPose, SoldierFrame, SoldierRig, push_of};
 use crate::convert::{to_godot, to_sim};
 use crate::footsteps::{Foley, Motion, RemoteReload};
 use crate::gunfire::Gunfire;
@@ -204,6 +204,7 @@ impl RemotePlayer {
             shots_fired: u32::try_from(shots_fired).unwrap_or(0),
             mantling: false,
             meleeing: false,
+            throw: None,
             hits: 0,
             hit_heading: 0,
             hit_part: 0,
@@ -262,6 +263,7 @@ impl RemotePlayer {
             shots_fired: 0,
             mantling: b("mantling", false),
             meleeing: b("meleeing", false),
+            throw: f("throw"),
             hits: get("hits")
                 .and_then(|v| v.try_to::<i64>().ok())
                 .unwrap_or(0) as u8,
@@ -484,8 +486,8 @@ impl RemotePlayer {
             mantle_progress: s.mantling.then_some(s.progress.mantle),
             crouch: Some(s.crouch),
             turn: Some((s.progress.turn, s.progress.step)),
-            // Snapshots do not say who is planting or throwing yet.
-            action: None,
+            // Snapshots do not say who is planting yet.
+            action: s.throw.filter(|_| s.alive).map(|t| (ActionPose::Throw, t)),
         };
         match (self.drawn_alive, s.alive) {
             // Dead: the body that died lies where it fell, in the scene's

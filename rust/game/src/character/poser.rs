@@ -248,6 +248,19 @@ const PLANTED: HandShape = HandShape {
     spread: [-7.0, -1.0, 4.0, 9.0],
     oppose: 8.0,
 };
+/// The support hand round a grenade: fingers curled over the body and the
+/// spoon, the thumb across the top.
+const GRENADE_GRIP: HandShape = HandShape {
+    flex: [
+        [40.0, 50.0, 30.0],
+        [45.0, 55.0, 30.0],
+        [50.0, 55.0, 30.0],
+        [55.0, 55.0, 30.0],
+        [20.0, 25.0, 20.0],
+    ],
+    spread: [-6.0, 0.0, 5.0, 10.0],
+    oppose: 45.0,
+};
 /// The trigger finger laid straight along the frame, off the trigger, while
 /// sprinting or reloading.
 const INDEX_OFF_TRIGGER: [f32; 3] = [4.0, 6.0, 4.0];
@@ -403,6 +416,13 @@ pub struct PoseInput {
     pub knife_at: Transform3D,
     /// What the support hand takes when it leaves the weapon.
     pub held: Held,
+    /// The support hand leaves the weapon by this much (0..1) to throw a
+    /// grenade, which is at `grenade_at` (weapon space) while
+    /// `grenade_in_hand`, with its pin in while `grenade_pinned`.
+    pub grenade: f32,
+    pub grenade_at: Transform3D,
+    pub grenade_in_hand: bool,
+    pub grenade_pinned: bool,
     /// Foot IK: how far (m, world up) the ground under each foot (left,
     /// right) is from the ground the animation stands on, or `None` for no
     /// foot IK (far away, in the air).
@@ -432,6 +452,8 @@ pub struct SoldierPoser {
     solved: [Option<Vector3>; 2],
     /// The knife, put in the support hand while it swings one.
     pub knife: Option<Gd<Node3D>>,
+    /// A grenade, put in the support hand while it throws one.
+    pub grenade: Option<Gd<Node3D>>,
 }
 
 #[godot_api]
@@ -467,6 +489,12 @@ impl SoldierPoser {
         if let Some(node) = &mut self.knife
             && node.is_visible()
             && (input.knife <= 0.35 || input.ik <= 0.0 || input.held != Held::Knife)
+        {
+            node.set_visible(false);
+        }
+        if let Some(node) = &mut self.grenade
+            && node.is_visible()
+            && (input.grenade <= 0.2 || !input.grenade_in_hand || input.ik <= 0.0)
         {
             node.set_visible(false);
         }
@@ -563,6 +591,8 @@ impl SoldierPoser {
             Held::Plant => &PLANTED,
         };
         let support = support.lerp(held_shape, knife);
+        let grenade = input.grenade.clamp(0.0, 1.0);
+        let support = support.lerp(&GRENADE_GRIP, grenade);
         for &(index, rest, right, finger, joint) in &self.fingers {
             let shape = if right { &FIRING_HAND } else { &support };
             let mut flex = shape.flex[finger][joint];
@@ -623,6 +653,17 @@ impl SoldierPoser {
                 left_target.origin.lerp(hand.origin, knife),
             );
         }
+        if grenade > 0.0 {
+            let hand = weapon_skel * crate::grenade_hold::hand_for(input.grenade_at);
+            let rotation = left_target
+                .basis
+                .get_quaternion()
+                .slerp(hand.basis.orthonormalized().get_quaternion(), grenade);
+            left_target = Transform3D::new(
+                Basis::from_quaternion(rotation),
+                left_target.origin.lerp(hand.origin, grenade),
+            );
+        }
         self.place_hand(
             skel,
             [
@@ -643,6 +684,17 @@ impl SoldierPoser {
             if shown {
                 let hand = skel.get_bone_global_pose(bone(Bone::LEFT_HAND));
                 node.set_global_transform(skel_xform * hand * crate::knife::in_left_hand());
+            }
+        }
+        if let Some(node) = &mut self.grenade {
+            let shown = grenade > 0.2 && input.grenade_in_hand;
+            if node.is_visible() != shown {
+                node.set_visible(shown);
+            }
+            if shown {
+                let hand = skel.get_bone_global_pose(bone(Bone::LEFT_HAND));
+                node.set_global_transform(skel_xform * hand * crate::grenade_hold::in_left_hand());
+                crate::grenade_hold::set_pinned(node, input.grenade_pinned, true);
             }
         }
         self.solved = [

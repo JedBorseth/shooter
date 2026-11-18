@@ -1,11 +1,20 @@
 extends SceneTree
 ## Captures the frag grenade for review: the model up close on the floor,
-## the throw in first person at several moments, and the blast from beside
-## it at several moments. Needs a GPU and a display (or Xvfb):
+## the first-person throw (pin, cook, release, follow-through) frozen at
+## several moments, the throw in flight, the danger indicator with a
+## grenade at the player's feet, a third-person throw from the front and the
+## side, and the blast from beside it at several moments. Needs a GPU and a display (or Xvfb):
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
 ##     --script res://tests/capture_grenade.gd
 
+const SOLDIER := preload("res://scenes/characters/soldier.tscn")
 const SPOT := Vector3(0, 0.05, 20)
+## Physics time after the press for each frozen first-person shot, in
+## sixtieths; the button is let go at `RELEASE`.
+const HAND_MOMENTS := [5, 10, 16, 30, 40, 44, 46, 48, 52, 58, 70]
+const RELEASE := 36
+## Throw progress for each third-person shot.
+const THIRD_PERSON := [0.1, 0.3, 0.45, 0.55, 0.6, 0.66, 0.8]
 ## Physics time after the press for each first-person shot, in sixtieths.
 const THROW_MOMENTS := [10, 24, 30, 36, 48, 70]
 ## Physics time after the blast for each shot of it, in sixtieths.
@@ -30,8 +39,89 @@ func _run() -> void:
 	main.get_node("Sentry").set("enabled", false)
 	await _sixtieths(60)
 	await _model(main)
+	await _hands(player)
+	await _danger(player)
+	await _third_person(main)
 	await _throw(main, player)
 	quit()
+
+
+## The first-person throw, frozen at moments from the press.
+func _hands(player: FpsPlayer) -> void:
+	player.teleport(SPOT, 0.0)
+	player.set_look(0.0, 0.05)
+	player.get_node("Camera").make_current()
+	player.restock_lethals()
+	await _sixtieths(40)
+	Input.action_press("lethal")
+	var at := 0
+	for moment: int in HAND_MOMENTS:
+		if moment > RELEASE and at <= RELEASE:
+			await _sixtieths(RELEASE - at)
+			at = RELEASE
+			Input.action_release("lethal")
+		await _sixtieths(moment - at)
+		at = moment
+		Engine.time_scale = 0.0
+		await _shot("hand_%02d" % moment)
+		Engine.time_scale = 1.0
+	# Out of the way before it goes off.
+	player.teleport(SPOT + Vector3(30, 0, 0), 0.0)
+	await _sixtieths(200)
+
+
+## A grenade at the player's feet: the danger indicator and the count.
+func _danger(player: FpsPlayer) -> void:
+	player.teleport(SPOT, 0.0)
+	player.set_look(0.0, 0.0)
+	player.restock_lethals()
+	await _sixtieths(20)
+	player.set_look(PI * 0.75, -1.3)
+	await _sixtieths(5)
+	Input.action_press("lethal")
+	await _sixtieths(2)
+	Input.action_release("lethal")
+	await _sixtieths(60)
+	player.set_look(0.0, 0.0)
+	await _sixtieths(20)
+	await _shot("danger")
+	player.teleport(SPOT + Vector3(30, 0, 0), 0.0)
+	await _sixtieths(200)
+
+
+func _third_person(main: Node) -> void:
+	var camera := Camera3D.new()
+	camera.fov = 40.0
+	main.add_child(camera)
+	camera.make_current()
+	var soldier := SOLDIER.instantiate() as SoldierRig
+	main.add_child(soldier)
+	soldier.global_position = Vector3(0, 0, 10)
+	for frame in 40:
+		soldier.drive({"weapon": "m4", "yaw": 0.0}, 1.0 / 60.0)
+		await process_frame
+	for view: String in ["front", "side"]:
+		for progress: float in THIRD_PERSON:
+			for frame in 12:
+				(
+					soldier
+					. drive(
+						{
+							"weapon": "m4",
+							"yaw": 0.0,
+							"action": "throw",
+							"action_progress": progress,
+						},
+						1.0 / 60.0
+					)
+				)
+			if view == "front":
+				camera.look_at_from_position(Vector3(-1.8, 1.4, 7.4), Vector3(0, 1.2, 10))
+			else:
+				camera.look_at_from_position(Vector3(3.2, 1.3, 10.2), Vector3(0, 1.2, 10))
+			await _shot("third_%s_%02d" % [view, int(progress * 100.0)])
+	soldier.queue_free()
+	camera.queue_free()
 
 
 ## The model on the floor, lit by the arena, from a camera 30 cm away.
@@ -55,6 +145,7 @@ func _model(main: Node) -> void:
 
 
 func _throw(main: Node, player: FpsPlayer) -> void:
+	player.restock_lethals()
 	player.teleport(SPOT, 0.0)
 	player.set_look(0.0, 0.05)
 	player.get_node("Camera").make_current()

@@ -305,3 +305,17 @@ static func split_key(value: String, colour := UiTheme.TEXT) -> Dictionary:
 			key = value.substr(1, close - 1)
 			value = value.substr(close + 1).strip_edges()
 	return {"text": value, "key": key, "colour": colour}
+
+
+## A frag grenade's silhouette centred at `at`, `size` pixels tall: the
+## round body, the fuse head, and the spoon down its side.
+static func grenade(item: CanvasItem, at: Vector2, size: float, colour: Color) -> void:
+	var radius := size * 0.36
+	var body := at + Vector2(0, size * 0.14)
+	item.draw_circle(body, radius, colour)
+	var fuse := Rect2(at.x - size * 0.13, body.y - radius - size * 0.2, size * 0.26, size * 0.24)
+	item.draw_rect(fuse, colour)
+	var spoon_top := Vector2(fuse.end.x, fuse.position.y + size * 0.04)
+	item.draw_line(
+		spoon_top, body + Vector2(radius * 1.12, radius * 0.1), colour, maxf(size * 0.08, 1.5)
+	)

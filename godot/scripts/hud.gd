@@ -81,6 +81,18 @@ func _ready() -> void:
 	_scope.player = _player
 	_health.player = _player
 	_weapon.player = _player
+	_add_grenade_danger()
+
+
+## The grenade danger indicator round the crosshair (`ui/grenade_danger.gd`).
+func _add_grenade_danger() -> void:
+	var danger: Control = (load("res://scripts/ui/grenade_danger.gd") as GDScript).new()
+	danger.name = "GrenadeDanger"
+	danger.set_anchors_preset(Control.PRESET_FULL_RECT)
+	danger.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	danger.set("player", _player)
+	add_child(danger)
+	move_child(danger, _crosshair.get_index() + 1)
 
 
 func _make_head_sound() -> AudioStreamPlayer:

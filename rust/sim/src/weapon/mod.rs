@@ -109,8 +109,10 @@ pub enum Action {
         lunge: bool,
     },
     /// A grenade in hand ([`crate::equipment`]), weapon down: seconds since
-    /// the pin was pulled (the fuse has burned that long), and once the
-    /// button is let go, seconds until it leaves the hand.
+    /// the pin was pulled (the fuse has burned that long until the throw),
+    /// and once the button is let go, seconds until it leaves the hand. That
+    /// goes negative through the follow-through, and the weapon is back up
+    /// at `-equipment::RECOVERY`.
     Throwing {
         kind: equipment::Kind,
         cooked: f32,
@@ -239,9 +241,24 @@ impl CombatState {
     /// seconds left on its fuse. A player who dies holding it drops it live.
     pub fn live_grenade(&self) -> Option<(equipment::Kind, f32)> {
         match self.action {
-            Action::Throwing { kind, cooked, .. } => {
+            Action::Throwing {
+                kind,
+                cooked,
+                release_in,
+            } if release_in.is_none_or(|left| left > 0.0) => {
                 Some((kind, (equipment::FRAG_FUSE - cooked).max(0.0)))
             }
+            _ => None,
+        }
+    }
+
+    /// How far along a throw is, 0 to 1 ([`equipment::throw_progress`]),
+    /// while one is.
+    pub fn throw_progress(&self) -> Option<f32> {
+        match self.action {
+            Action::Throwing {
+                cooked, release_in, ..
+            } => Some(equipment::throw_progress(cooked, release_in)),
             _ => None,
         }
     }
@@ -964,33 +981,40 @@ fn advance_throw(
     else {
         return;
     };
+    let was_thrown = release_in.is_some_and(|left| left <= 0.0);
     let cooked = cooked + dt;
-    let release_in = match release_in {
+    let mut release_in = match release_in {
         Some(left) => Some(left - dt),
         None if !input.throw_held && cooked >= equipment::PIN_TIME => Some(equipment::WIND_UP),
         None => None,
     };
-    let fuse = equipment::FRAG_FUSE - cooked;
-    let thrown = fuse <= 0.0 || release_in.is_some_and(|left| left <= 0.0);
-    if !thrown {
-        state.action = Action::Throwing {
+    if !was_thrown {
+        let fuse = equipment::FRAG_FUSE - cooked;
+        let cooked_off = fuse <= 0.0 && release_in.is_none_or(|left| left > 0.0);
+        if cooked_off {
+            // Gone off in the hand: the arm drops from there.
+            release_in = Some(0.0);
+        }
+        if release_in.is_some_and(|left| left <= 0.0) {
+            events.push(CombatEvent::Thrown {
+                kind,
+                yaw: input.shot_yaw,
+                pitch: input.shot_pitch,
+                fuse: fuse.max(0.0),
+                shot: state.shots_fired,
+            });
+            state.shots_fired = state.shots_fired.wrapping_add(1);
+        }
+    }
+    // The follow-through and the weapon coming back up.
+    state.action = if release_in.is_some_and(|left| left <= -equipment::RECOVERY) {
+        finish_cycle_on_draw(state, events)
+    } else {
+        Action::Throwing {
             kind,
             cooked,
             release_in,
-        };
-        return;
-    }
-    events.push(CombatEvent::Thrown {
-        kind,
-        yaw: input.shot_yaw,
-        pitch: input.shot_pitch,
-        fuse: fuse.max(0.0),
-        shot: state.shots_fired,
-    });
-    state.shots_fired = state.shots_fired.wrapping_add(1);
-    state.action = Action::Raising {
-        remaining: equipment::RECOVERY,
-        kind: Raise::Draw,
+        }
     };
 }
 

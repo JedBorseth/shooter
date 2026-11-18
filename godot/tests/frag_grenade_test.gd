@@ -1,9 +1,10 @@
 extends SceneTree
-## Headless frag grenade test, in the arena: the lethal key throws a grenade
-## that flies out, bounces back off a wall, and goes off after its fuse; a
-## grenade cooked too long goes off in the hand, killing the thrower and a
-## dummy beside them but not one behind a wall; the count drops with each
-## throw and refills on respawn. Exits non-zero on failure.
+## Headless frag grenade test, in the arena: the lethal key brings a grenade
+## up in the support hand and throws it; it flies out without its pin,
+## bounces back off a wall, and goes off after its fuse; a grenade cooked too
+## long goes off in the hand, killing the thrower and a dummy beside them but
+## not one behind a wall; the count drops with each throw and refills on
+## respawn. Exits non-zero on failure.
 ## Run from the repo root: godot --headless --path godot --script res://tests/frag_grenade_test.gd
 
 const DUMMY_SCENE := preload("res://scenes/props/target_dummy.tscn")
@@ -39,11 +40,19 @@ func _throw_and_bounce(main: Node, player: FpsPlayer) -> void:
 	_check(player.lethals() == 1, "one frag at spawn, got %d" % player.lethals())
 	# A wall 4 m ahead, across the throw.
 	var wall := _wall(main, SPOT + Vector3(0, 1.5, -4.0), Vector3(6, 3, 0.4))
+	var held := player.find_child("HeldGrenade", true, false) as Node3D
+	_check(held != null and not held.visible, "the support hand's grenade is put away")
 	await _tap("lethal")
 	_check(player.lethals() == 0, "the press takes the frag from the pouch")
-	await _sixtieths(30)
+	await _sixtieths(14)
+	_check(held != null and held.visible, "the support hand brings the grenade up")
+	await _sixtieths(16)
+	_check(held != null and not held.visible, "and lets it go")
 	var grenades := get_nodes_in_group(&"grenades")
 	_check(grenades.size() == 1, "one grenade is drawn after the throw, got %d" % grenades.size())
+	if grenades.size() == 1:
+		var pin := (grenades[0] as Node).find_child("Pin", true, false) as Node3D
+		_check(pin != null and not pin.visible, "the thrown grenade has no pin")
 	await _sixtieths(60)
 	grenades = get_nodes_in_group(&"grenades")
 	if grenades.size() == 1:
