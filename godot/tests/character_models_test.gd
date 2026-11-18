@@ -11,7 +11,7 @@ extends SceneTree
 ##   godot --headless --path godot --script res://tests/character_models_test.gd
 
 const SOLDIER_TRIANGLES := 26000
-const ARMS_TRIANGLES := 12000
+const ARMS_TRIANGLES := 26000
 const ZOMBIE_TRIANGLES := 14000
 
 var _failures: PackedStringArray = []

@@ -299,6 +299,16 @@ func _first_person() -> void:
 		await _shot("fp_%s_ads" % weapon)
 		Input.action_release("aim")
 		await _sixtieths(20)
+		if weapon in ["m4", "m1911", "m870"]:
+			# The inspect turns the weapon, and the hands on it, toward the eye:
+			# the closest look at the gloves and sleeves a player gets.
+			Input.action_press("inspect")
+			await _sixtieths(2)
+			Input.action_release("inspect")
+			for i in 4:
+				await _sixtieths(36)
+				await _shot("fp_%s_inspect_%d" % [weapon, i])
+			await _sixtieths(60)
 	player.give_weapon("m4")
 	Input.action_press("weapon_1")
 	await _sixtieths(2)
