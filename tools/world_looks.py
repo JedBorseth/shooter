@@ -42,26 +42,6 @@ SETS: dict[str, tuple[str, dict]] = {
     "wood_floor": ("WoodFloor064", {}),
 }
 
-# How strongly each set takes the close-up detail normal on High
-# (world.gdshaderinc's `detail`; 1 when not listed). Broad, rough surfaces
-# (concrete, dirt, plaster, asphalt) take it fully; surfaces with their own
-# strong relief or a smooth finish (brick courses, planks, paint, steel,
-# tiles) take little or none, or they read as hammered foil.
-DETAIL: dict[str, float] = {
-    "asphalt": 1.0, "brick": 0.55, "brick_painted": 0.45, "brick_tan": 0.55, "canvas": 0.4,
-    "cobble": 0.6, "concrete_floor": 1.1, "concrete_panels": 1.0, "concrete_smooth": 0.8,
-    "concrete_stained": 1.1, "container": 0.25, "corrugated": 0.25, "dirt": 1.3, "gravel": 0.5,
-    "metal_plates": 0.25, "painted_metal": 0.25, "planks": 0.45, "plaster": 0.9, "rusty_paint": 0.6,
-    "terrazzo": 0.3, "tiles_floor": 0.15, "tiles_green": 0.15, "tiles_subway": 0.1, "tread_plate": 0.0,
-    "wood_floor": 0.3,
-}
-
-
-def detail_for(texture_set: str | None) -> float:
-    """The detail strength for a texture set (see DETAIL)."""
-    return DETAIL.get(texture_set, 1.0) if texture_set else 1.0
-
-
 # Surface looks: name -> parameters for world.gdshader. `set` is a key of SETS
 # or None for a plain colour. `size` is metres per texture repeat. `tint`
 # multiplies the albedo. `rough`/`metal` scale the ORM channels (a set with no
@@ -136,9 +116,8 @@ def _g(color, glow):
 
 
 # Texture sets whose materials break up their tiling (world.gdshaderinc's
-# anti_tile: a second sample, shifted by a fraction of a repeat, blended in
-# patches). Only sets with no courses or grid, which a shifted copy would
-# double: not brick, tile, or planks.
+# anti_tile: a second, rotated sample blended in patches). Only sets with no
+# courses or grid, which rotation would break: not brick, tile, or planks.
 ANTI_TILE: dict[str, float] = {
     "asphalt": 0.85, "concrete_stained": 0.8, "concrete_floor": 0.8, "plaster": 0.7, "terrazzo": 0.9,
     "gravel": 0.8, "dirt": 0.8,

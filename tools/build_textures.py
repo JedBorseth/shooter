@@ -39,7 +39,8 @@ import numpy as np
 from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from world_looks import LOOKS, SETS, detail_for  # noqa: E402
+from world_detail import detail_for  # noqa: E402
+from world_looks import LOOKS, SETS  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 TEXTURES = REPO / "godot/assets/textures"

@@ -507,7 +507,7 @@ func _check_world_surfaces() -> void:
 			ProjectSettings.has_setting("shader_globals/%s" % name),
 			"the world shader's global %s is declared" % name
 		)
-	# Per-material detail strength (tools/world_looks.py DETAIL).
+	# Per-material detail strength (tools/world_detail.py DETAIL).
 	var strengths := {}
 	for path: String in [
 		"res://materials/models/tread_plate_0.tres",

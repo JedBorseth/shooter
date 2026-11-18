@@ -63,7 +63,7 @@ uniform float dust : hint_range(0.0, 1.0) = 0.0;
 uniform float anti_tile : hint_range(0.0, 1.0) = 0.0;
 // How strongly this material takes the close-up detail on High: 1 for broad,
 // rough surfaces, less for ones with their own relief or a smooth finish
-// (tools/world_looks.py DETAIL, written by the material tools).
+// (tools/world_detail.py DETAIL, written by the material tools).
 uniform float detail : hint_range(0.0, 2.0) = 1.0;
 uniform float floor_height = 0.0;
 
