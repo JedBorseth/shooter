@@ -59,7 +59,7 @@ If a PR for the branch already exists (`gh pr view`), reuse it. Otherwise:
 gh pr create --base main --title "<what changed, plain words>" --body-file <file>
 ```
 
-The body has a short summary of what changed and why, a "Testing" section listing what you ran, and new dependencies or assets with their licenses. End it with the PR attribution line your harness gives you, if any. Do not open it as a draft.
+The body has a short summary of what changed and why, a "Call of Duty reference" section for any feature or visual change (see the [cod-design](../cod-design/SKILL.md) skill), a "Testing" section listing what you ran, and new dependencies or assets with their licenses. End it with the PR attribution line your harness gives you, if any. Do not open it as a draft.
 
 In T3 Code, link the PR to the thread with `link_pull_request` right after you create it.
 
