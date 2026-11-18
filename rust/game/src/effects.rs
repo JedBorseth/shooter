@@ -42,6 +42,8 @@ pub const GROUP: &str = "combat_effects";
 /// project onto every other layer.
 pub const NO_DECALS_LAYER: u32 = 1 << 1;
 /// What decals project onto: everything but [`NO_DECALS_LAYER`].
+/// Group of nodes told about every impact: `struck(position, normal)`.
+const STRUCK_GROUP: &str = "struck";
 const DECAL_CULL_MASK: u32 = 0xF_FFFF & !NO_DECALS_LAYER;
 
 const IMPACT_SCENE: &str = "res://scenes/effects/impact.tscn";
@@ -1102,6 +1104,15 @@ impl CombatEffects {
         self.play_impact(position, normal, look, Vector3::ZERO, hole || exit, exit);
         if hole {
             self.place_hole(position, normal, look, exit);
+        }
+        // Things that react to being struck (the Testing Area's hung steel,
+        // `scripts/steel_plate.gd`) each check whether the round hit them.
+        if !exit && self.base().is_inside_tree() {
+            self.base().get_tree().call_group(
+                STRUCK_GROUP,
+                "struck",
+                &[position.to_variant(), normal.to_variant()],
+            );
         }
     }
 

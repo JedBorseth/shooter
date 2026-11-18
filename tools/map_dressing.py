@@ -308,31 +308,91 @@ def target_stand(b: Model, seed=0, holes=10):
         b.cyl("z", t1, t1 + 0.003, (hx, hy), 0.008, "hole", sides=5, detail=True)
 
 
-def steel_frame(b: Model, plates=((0.0, "round"),), seed=0):
-    """A painted steel target frame: two uprights in sandbagged feet, a cross
-    bar at 1.8 m, and plates hung from it on chains, their faces toward +z,
-    grey with lead splash where they are hit."""
+def steel_frame(b: Model, seed=0):
+    """A painted steel target frame: two uprights in sandbagged feet and a
+    cross bar at 1.8 m, its front toward +z. The plates that hang from it are
+    models of their own (steel_plate_round, steel_plate_silhouette), placed
+    in scenes/main.tscn under the bar, so they can swing when hit
+    (scripts/steel_plate.gd)."""
     rng = random.Random(seed)
     for x in (-0.75, 0.75):
         b.box(x - 0.025, x + 0.025, 0.0, 1.85, -0.025, 0.025, "steel_dark")
         b.box(x - 0.2, x + 0.2, 0.0, 0.015, -0.25, 0.25, "steel_dark")
         _bag(b, x, 0.12, -0.12, PI / 2, rng, length=0.55, height=0.18, depth=0.3)
     b.box(-0.8, 0.8, 1.8, 1.86, -0.03, 0.03, "steel_dark")
-    for px, kind in plates:
-        top = 1.45
-        for dx in (-0.08, 0.08):
-            b.tube([(px + dx, 1.8, 0.0), (px + dx, top, 0.0)], 0.005, "steel_dark", sides=4)
-        if kind == "round":
-            b.cyl("z", -0.006, 0.006, (px, top - 0.2), 0.2, "steel_target", sides=20)
-            centre, spread = (px, top - 0.2), 0.08
-        else:
-            sil = [(px - 0.22, top - 0.6), (px + 0.22, top - 0.6), (px + 0.22, top - 0.2), (px + 0.1, top - 0.14),
-                   (px + 0.1, top), (px - 0.1, top), (px - 0.1, top - 0.14), (px - 0.22, top - 0.2)]
-            b.hull([(x, y, z) for x, y in sil for z in (-0.006, 0.006)], "steel_target")
-            centre, spread = (px, top - 0.35), 0.1
-        for _ in range(9):
-            sx, sy = centre[0] + rng.gauss(0, spread), centre[1] + rng.gauss(0, spread)
-            b.cyl("z", 0.006, 0.008, (sx, sy), rng.uniform(0.012, 0.03), "lead_splash", sides=6, detail=True)
+
+
+def _steel_plate(b: Model, kind: str, seed: int):
+    """A steel plate hung on two chains, origin at the hinge under the frame's
+    bar, the plate 0.35 m below it, its face toward +z, grey with lead splash
+    where it is hit."""
+    rng = random.Random(seed)
+    top = -0.35
+    for dx in (-0.08, 0.08):
+        b.tube([(dx, 0.0, 0.0), (dx, top, 0.0)], 0.005, "steel_dark", sides=4)
+    if kind == "round":
+        b.cyl("z", -0.006, 0.006, (0.0, top - 0.2), 0.2, "steel_target", sides=20)
+        centre, spread = (0.0, top - 0.2), 0.08
+    else:
+        sil = [(-0.22, top - 0.6), (0.22, top - 0.6), (0.22, top - 0.2), (0.1, top - 0.14),
+               (0.1, top), (-0.1, top), (-0.1, top - 0.14), (-0.22, top - 0.2)]
+        b.hull([(x, y, z) for x, y in sil for z in (-0.006, 0.006)], "steel_target")
+        centre, spread = (0.0, top - 0.35), 0.1
+    for _ in range(9):
+        sx, sy = centre[0] + rng.gauss(0, spread), centre[1] + rng.gauss(0, spread)
+        b.cyl("z", 0.006, 0.008, (sx, sy), rng.uniform(0.012, 0.03), "lead_splash", sides=6)
+
+
+@model
+def steel_plate_round(b: Model):
+    """A round steel plate on chains (see _steel_plate)."""
+    _steel_plate(b, "round", 31)
+
+
+@model
+def steel_plate_silhouette(b: Model):
+    """A head-and-shoulders steel plate on chains (see _steel_plate)."""
+    _steel_plate(b, "silhouette", 32)
+
+
+@model
+def wall_rack(b: Model):
+    """A wall-mounted weapon rack for four long guns standing upright: a steel
+    back frame bolted to the wall, a butt shelf with rubber pads at 0.3 m, a
+    cradle bar at 1.15 m with a padded slot per gun, and a locking bar with a
+    padlock across the front. Origin on the ground at the wall, front toward
+    +z, 1.6 m wide; slots at x = -0.6, -0.2, 0.2, 0.6 (scripts/wall_rack.gd
+    stands the guns in them)."""
+    # Back frame: two uprights and three rails, on stand-offs from the wall.
+    for x in (-0.78, 0.78):
+        b.box(x - 0.02, x + 0.02, 0.05, 1.45, 0.0, 0.04, "steel_dark", bevel=0.004)
+        for y in (0.2, 1.3):
+            b.box(x - 0.03, x + 0.03, y - 0.03, y + 0.03, -0.005, 0.0, "steel_galv")
+    for y in (0.27, 0.8, 1.2):
+        b.box(-0.8, 0.8, y - 0.02, y + 0.02, 0.0, 0.04, "steel_dark", bevel=0.004)
+    # Butt shelf: a steel tray with a lip and a rubber pad per slot.
+    b.box(-0.8, 0.8, 0.26, 0.29, 0.04, 0.26, "steel_dark", bevel=0.004)
+    b.box(-0.8, 0.8, 0.29, 0.33, 0.24, 0.26, "steel_dark")
+    for x in (-0.6, -0.2, 0.2, 0.6):
+        b.box(x - 0.07, x + 0.07, 0.29, 0.305, 0.07, 0.23, "rubber", bevel=0.003)
+    for x in (-0.78, 0.78):
+        b.hull([(x - 0.015, 0.29, 0.04), (x + 0.015, 0.29, 0.04), (x - 0.015, 0.29, 0.25),
+                (x + 0.015, 0.29, 0.25), (x - 0.015, 0.6, 0.04), (x + 0.015, 0.6, 0.04)], "steel_dark")
+    # Cradle bar: a padded bar with a notch for each gun, on two brackets.
+    b.box(-0.8, 0.8, 1.13, 1.17, 0.04, 0.2, "steel_dark", bevel=0.004)
+    for x in (-0.78, 0.78):
+        b.box(x - 0.015, x + 0.015, 1.05, 1.17, 0.04, 0.2, "steel_dark")
+    for x0, x1 in ((-0.8, -0.66), (-0.54, -0.26), (-0.14, 0.14), (0.26, 0.54), (0.66, 0.8)):
+        b.box(x0, x1, 1.17, 1.2, 0.06, 0.2, "rubber", bevel=0.004)
+    # The locking bar across the front, hinged at the left, with a padlock.
+    b.cyl("x", -0.78, 0.78, (0.95, 0.24), 0.012, "steel_galv", sides=8)
+    for x in (-0.78, 0.78):
+        b.box(x - 0.02, x + 0.02, 0.91, 0.99, 0.04, 0.26, "steel_dark")
+    b.box(0.7, 0.76, 0.86, 0.92, 0.23, 0.26, "safety_yellow", bevel=0.004)
+    b.tube([(0.71, 0.92, 0.245), (0.71, 0.96, 0.245), (0.75, 0.96, 0.245), (0.75, 0.92, 0.245)], 0.004,
+           "steel_galv", sides=4)
+    # A stencilled label on the top rail.
+    b.text("RIFLES", 0.0, 1.235, 0.041, 0.0, 0.045, "sign_white", depth=0.002)
 
 
 def flag(b: Model, pole_h=3.0, w=1.0, h=0.62, pole_r=0.025, look="flag_red", seed=0, pole_look="steel_galv"):
@@ -788,9 +848,9 @@ def map_testing_dressing(b: Model):
     # Impact area along the east wall: target stands, then steel.
     for k, z in enumerate((15.0, 17.6, 20.2, 22.8, 25.4)):
         place(b, target_stand, (30.4, 0.0, z), -PI / 2, seed=k, holes=6 + k * 3)
-    for k, (z, plates) in enumerate(((5.0, ((-0.4, "round"), (0.4, "round"))),
-                                     (8.0, ((-0.35, "sil"), (0.35, "round"))))):
-        place(b, steel_frame, (30.6, 0.0, z), -PI / 2, plates=plates, seed=10 + k)
+    # The frames only: their plates are steel_plate_* models in the scene.
+    for k, z in enumerate((5.0, 8.0)):
+        place(b, steel_frame, (30.6, 0.0, z), -PI / 2, seed=10 + k)
     b.text("IMPACT AREA", 31.99, 4.2, 15.5, -PI / 2, 0.8, "sign_red", depth=0.006, detail=False)
     # Strike marks on the wall behind the targets.
     for _ in range(70):

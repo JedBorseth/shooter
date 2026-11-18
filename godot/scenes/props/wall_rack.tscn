@@ -1,0 +1,17 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/wall_rack.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://assets/models/wall_rack/wall_rack.gltf" id="2_model"]
+
+[sub_resource type="BoxShape3D" id="Shape_rack"]
+size = Vector3(1.62, 1.45, 0.3)
+
+[node name="WallRack" type="StaticBody3D"]
+script = ExtResource("1_script")
+metadata/surface = "metal"
+
+[node name="Shape" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.725, 0.15)
+shape = SubResource("Shape_rack")
+
+[node name="Model" parent="." instance=ExtResource("2_model")]
