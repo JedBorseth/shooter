@@ -58,6 +58,9 @@ uniform float zombie = 0.0;
 instance uniform float variant = 0.0;
 // Bit g set: part group g is not drawn (heads, masks, and kit variants).
 instance uniform int hidden_parts = 0;
+// The skin tone that goes with this soldier's head shape (palette.rs
+// HEAD_TONES), multiplied into the atlas's light skin.
+instance uniform vec3 skin_tone = vec3(1.0);
 
 varying flat int role;
 
@@ -104,7 +107,7 @@ void fragment() {
 		// Per character: darker or lighter, warmer or cooler.
 		float tone = fract(variant * 0.618) * 2.0 - 1.0;
 		float warm = fract(variant * 0.377) * 2.0 - 1.0;
-		base *= 1.0 + tone * skin_variation;
+		base *= skin_tone * (1.0 + tone * skin_variation);
 		base *= vec3(1.0 + warm * 0.04, 1.0, 1.0 - warm * 0.05);
 		if (zombie > 0.0) {
 			float rot = noise(UV * 40.0 + variant * 2.1);

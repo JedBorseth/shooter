@@ -220,6 +220,26 @@ class Writer:
         self.doc["accessors"].append(accessor)
         return len(self.doc["accessors"]) - 1
 
+    def add_sparse(self, array: np.ndarray) -> int:
+        """A VEC3 float accessor stored sparse: only its non-zero rows (a
+        blend shape moves only the head)."""
+        array = np.ascontiguousarray(array, dtype=np.float32)
+        rows = np.nonzero(np.any(np.abs(array) > 1e-7, axis=1))[0].astype(np.uint32)
+        if len(rows) == 0:
+            rows = np.array([0], dtype=np.uint32)
+        accessor = {"componentType": 5126, "count": int(len(array)), "type": "VEC3"}
+        for kind, data in (("indices", rows), ("values", array[rows])):
+            while len(self.blob) % 4:
+                self.blob.append(0)
+            self.doc["bufferViews"].append({"buffer": 0, "byteOffset": len(self.blob), "byteLength": data.nbytes})
+            self.blob.extend(data.tobytes())
+            accessor.setdefault("sparse", {"count": int(len(rows))})[kind] = {"bufferView": len(self.doc["bufferViews"]) - 1}
+        accessor["sparse"]["indices"]["componentType"] = 5125
+        accessor["min"] = array.min(axis=0).tolist()
+        accessor["max"] = array.max(axis=0).tolist()
+        self.doc["accessors"].append(accessor)
+        return len(self.doc["accessors"]) - 1
+
     def save(self, path: Path) -> None:
         while len(self.blob) % 4:
             self.blob.append(0)
@@ -278,7 +298,19 @@ def write_character_mesh(w: Writer, name: str, parts: list[dict], joint_names: l
         "indices": w.add(tris.reshape(-1).astype(index_type), 34963),
         "material": 0,
     }
-    w.doc.setdefault("meshes", []).append({"name": name, "primitives": [primitive]})
+    mesh = {"name": name, "primitives": [primitive]}
+    if all(part.get("morph_pos") is not None for part in parts) and len(parts[0]["morph_pos"]):
+        # Head shapes (blend shapes): other faces, as offsets from this one.
+        count = len(parts[0]["morph_pos"])
+        targets = []
+        for j in range(count):
+            dp = np.concatenate([part["morph_pos"][j] for part in parts]).astype(np.float32)
+            dn = np.concatenate([part["morph_nrm"][j] for part in parts]).astype(np.float32)
+            targets.append({"POSITION": w.add_sparse(dp), "NORMAL": w.add_sparse(dn)})
+        primitive["targets"] = targets
+        mesh["weights"] = [0.0] * count
+        mesh["extras"] = {"targetNames": [f"head_{j + 1}" for j in range(count)]}
+    w.doc.setdefault("meshes", []).append(mesh)
     return len(w.doc["meshes"]) - 1, len(tris)
 
 
@@ -506,6 +538,15 @@ KITS = {
                 "race": {"caucasian": 0.8, "african": 0.1, "asian": 0.1},
             },
             "skin": "skin_young_caucasian_male",
+            # Other faces on the same head, blended per soldier (blend shapes;
+            # add_head_shapes in blender_characters.py). SoldierRig picks one
+            # and a skin tone to go with it (HEAD_TONES in palette.rs).
+            "heads": [
+                {"age": 0.45, "weight": 0.6, "race": {"caucasian": 0.05, "african": 0.9, "asian": 0.05}},
+                {"age": 0.4, "weight": 0.5, "muscle": 0.6, "race": {"caucasian": 0.1, "african": 0.05, "asian": 0.85}},
+                {"age": 0.78, "weight": 0.7, "muscle": 0.55, "race": {"caucasian": 1.0, "african": 0.0, "asian": 0.0}},
+                {"age": 0.32, "weight": 0.4, "muscle": 0.85, "race": {"caucasian": 0.45, "african": 0.3, "asian": 0.25}},
+            ],
             "parts": [
                 {"asset": "cargo", "role": "pants", "subdiv": 1, "tighten": 0.016, "split_legs": 0.82},
                 # Only the shape of the foot for the modelled boots.
@@ -736,6 +777,8 @@ def load_parts(work: Path, name: str = "mesh.npz") -> list[dict]:
                 "weights": data[f"p{k}_weights"],
                 "bones": [str(b) for b in data[f"p{k}_bones"]],
                 "indices": data[f"p{k}_indices"],
+                "morph_pos": data[f"p{k}_morph_pos"] if f"p{k}_morph_pos" in data else None,
+                "morph_nrm": data[f"p{k}_morph_nrm"] if f"p{k}_morph_nrm" in data else None,
             }
         )
     return parts
@@ -843,7 +886,8 @@ def main() -> None:
         for mesh_name, select in kit["meshes"].items():
             meshes[mesh_name] = parts if select is None else select(parts)
         if kit.get("far_ratio"):
-            meshes["BodyFar"] = load_parts(work, "mesh_far.npz")
+            # Past 15 m a face's shape does not show: no blend shapes there.
+            meshes["BodyFar"] = [{**part, "morph_pos": None, "morph_nrm": None} for part in load_parts(work, "mesh_far.npz")]
         write_kit_model(name, ual1, meshes, out_dir / f"{name}.glb")
         write_textures(name, work, out_dir, kit.get("tinted", True))
     if not args.no_animations:

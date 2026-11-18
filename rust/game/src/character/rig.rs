@@ -1506,9 +1506,22 @@ impl SoldierRig {
         // The kit this character wears (face coverings), from a per-character seed.
         let seed = self.base().instance_id().to_i64().unsigned_abs();
         let hidden_parts = palette::hidden_parts(seed, team);
+        // And a face: a head shape (blend shapes on the soldier's meshes) and
+        // the skin tone that goes with it.
+        let face = palette::face(seed, team);
         for child in skeleton.get_children().iter_shared() {
             if let Ok(mut mesh) = child.try_cast::<MeshInstance3D>() {
                 mesh.set_instance_shader_parameter("hidden_parts", &hidden_parts.to_variant());
+                if let Some(face) = face {
+                    let [r, g, b] = face.tone;
+                    mesh.set_instance_shader_parameter(
+                        "skin_tone",
+                        &Vector3::new(r, g, b).to_variant(),
+                    );
+                    for i in 0..mesh.get_blend_shape_count() {
+                        mesh.set_blend_shape_value(i, face.blend(i as usize));
+                    }
+                }
                 recolour(mesh, team);
             }
         }

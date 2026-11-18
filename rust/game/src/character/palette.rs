@@ -165,6 +165,65 @@ pub fn hidden_parts(seed: u64, team: Team) -> i32 {
     }
 }
 
+/// The soldier's faces: the base head and the head shapes the build tool
+/// stores as blend shapes on its mesh (`heads` in the soldier kit of
+/// `tools/build_character_assets.py`), each with the skin tone that goes with
+/// it, multiplied into the skin's albedo (`skin_tone` in
+/// `shaders/character.gdshader`; the atlas's skin is light).
+pub const HEAD_TONES: [[f32; 3]; 5] = [
+    // The base head: a young man, light-skinned.
+    [1.0, 1.0, 1.0],
+    // Dark-skinned.
+    [0.42, 0.34, 0.29],
+    // East Asian.
+    [0.93, 0.85, 0.74],
+    // Older, light-skinned.
+    [0.98, 0.94, 0.9],
+    // Mixed, olive-brown.
+    [0.68, 0.56, 0.46],
+];
+
+/// One soldier's face: which head shape (0 is the base head, which has no
+/// blend shape), how far toward it (0.7 to 1, so faces fall between the
+/// shapes too), and the skin tone.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Face {
+    pub shape: usize,
+    pub amount: f32,
+    pub tone: [f32; 3],
+}
+
+impl Face {
+    /// The weight of blend shape `index` (shape `index + 1`).
+    pub fn blend(&self, index: usize) -> f32 {
+        if self.shape == index + 1 {
+            self.amount
+        } else {
+            0.0
+        }
+    }
+}
+
+/// A soldier's face from a per-character seed, independent of the face
+/// covering. Zombies keep their own bodies' faces.
+pub fn face(seed: u64, team: Team) -> Option<Face> {
+    if team == Team::Zombies {
+        return None;
+    }
+    // A different mix of the seed's bits than `hidden_parts` uses.
+    let mut x = seed ^ 0x5DEE_CE66_D1CE_4E5B;
+    x = (x ^ (x >> 33)).wrapping_mul(0xFF51_AFD7_ED55_8CCD);
+    x = (x ^ (x >> 33)).wrapping_mul(0xC4CE_B9FE_1A85_EC53);
+    x ^= x >> 33;
+    let shape = (x % HEAD_TONES.len() as u64) as usize;
+    let amount = 0.7 + 0.3 * ((x >> 16) % 1000) as f32 / 999.0;
+    Some(Face {
+        shape,
+        amount,
+        tone: HEAD_TONES[shape],
+    })
+}
+
 thread_local! {
     static CHARACTER: RefCell<HashMap<(Team, Kit, bool), Gd<ShaderMaterial>>> =
         RefCell::new(HashMap::new());
@@ -336,6 +395,22 @@ mod tests {
             // Skin under a covering is hidden; bare skin is shown.
             assert_eq!(worn != 0, hidden & LOWER_FACE != 0, "seed {seed}");
         }
+    }
+
+    #[test]
+    fn every_face_turns_up_and_blends_one_shape() {
+        let mut seen = [false; HEAD_TONES.len()];
+        for seed in 0..200 {
+            let face = face(seed, Team::Allies).unwrap();
+            seen[face.shape] = true;
+            assert!((0.7..=1.0).contains(&face.amount), "seed {seed}");
+            let blended = (0..HEAD_TONES.len() - 1)
+                .filter(|&i| face.blend(i) > 0.0)
+                .count();
+            assert_eq!(blended, usize::from(face.shape > 0), "seed {seed}");
+        }
+        assert!(seen.iter().all(|&s| s), "{seen:?}");
+        assert_eq!(face(7, Team::Zombies), None);
     }
 
     #[test]

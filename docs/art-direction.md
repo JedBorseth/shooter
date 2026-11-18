@@ -257,9 +257,11 @@ Each third-person kit also carries `BodyFar`, the same character decimated to ab
 
 - colours each tinted role from the team palette, with faded patches that differ per character;
 - collapses to a point, shadows included, the roles a team does not wear (a zombie's helmet, eye protection, plate carrier, and belt) and the part groups a character does not wear (`hidden_parts`: a balaclava, a neck gaiter, or a bare face, and the skin each covering replaces);
-- varies the skin tone per character, and for zombies adds sickly skin, grime, and blood.
+- multiplies the skin by the tone that goes with the soldier's face (`skin_tone`), varies it a little more per character, and for zombies adds sickly skin, grime, and blood.
 
-The per-character seed is an instance uniform (`variant` and `hidden_parts`, set by `SoldierRig`), so every character of a team still shares one material.
+The per-character seed is an instance uniform (`variant`, `hidden_parts`, and `skin_tone`, set by `SoldierRig`), so every character of a team still shares one material.
+
+**Faces.** A soldier wears one of five faces. The build makes the same MakeHuman human again with other macros (`heads` in the soldier kit: a dark-skinned man, an East Asian man, an older man, and a lean man of mixed descent), fitted the same way, so each has the base human's topology. It stores each one's difference from the base head as a blend shape on the near mesh, `Body` (`add_head_shapes` in `tools/blender_characters.py`): weighted by the head bone, aligned on the eyes, and never further out than the base head under the helmet or in front of the eyes where the glasses sit. The offsets ride through decimation and the face coverings as vertex attributes, so a balaclava or gaiter takes the face's shape too, and they are written as sparse glTF morph targets. `SoldierRig` picks a face per character (`palette::face`, from its seed, independent of the covering), blends 70 to 100% of the way to it, and sets the skin tone that goes with it (`HEAD_TONES`). The far mesh has no blend shapes: past 15 m a face's shape does not show. `capture_characters.gd`'s `faces` set shows each face bare, per team.
 
 ## Building a character
 
