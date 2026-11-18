@@ -118,7 +118,8 @@ func _run() -> void:
 	)
 	player.set_look(0.0, 0.0)
 
-	# Own movement under 40-55 ms each way and 5% loss: sprint, slide, jump.
+	# Own movement under 40-55 ms each way and 5% loss: sprint, slide,
+	# slide-cancel (jump during the slide), jump.
 	# (The match start moved us once; count corrections from here.)
 	var corrections_before := int(client.stats().corrections)
 	Input.action_press("move_forward")
@@ -130,6 +131,10 @@ func _run() -> void:
 	await _ticks(2)
 	Input.action_release("crouch")
 	await _ticks(40)
+	Input.action_press("jump")
+	await _ticks(2)
+	Input.action_release("jump")
+	await _ticks(20)
 	Input.action_press("jump")
 	await _ticks(2)
 	Input.action_release("jump")

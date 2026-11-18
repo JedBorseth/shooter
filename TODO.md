@@ -58,7 +58,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Footstep sounds, with surface types and a cadence tied to speed.
 - [x] Fall damage and a landing camera dip scaled by fall speed.
 - [x] Slide camera tilt and slide sound.
-- [x] Slide-cancel: crouch again during a slide to stand up with its speed and sprint on; jumping out keeps its momentum. Both start the slide cooldown.
+- [x] Slide-cancel: jump (or crouch again) during a slide to stand up with its speed and sprint on, without leaping; the next press jumps. Under a low ceiling the jump waits for headroom, and at a ledge it still mantles. Both start the slide cooldown.
 - [x] **good first task** Head bob and strafe tilt for the camera (small, with a settings toggle).
 
 ### Feel and polish

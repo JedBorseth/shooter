@@ -144,6 +144,31 @@ func _movement(player: FpsPlayer) -> void:
 		"friction stops the player, got %.2f" % player.horizontal_speed()
 	)
 
+	# Slide-cancel, heading back over the ground just covered: jump during a
+	# slide stands up with its speed and sprints on, without leaving the floor.
+	player.set_look(PI, 0.0)
+	Input.action_press("move_forward")
+	await _tap("sprint")
+	await _sixtieths(60)
+	await _tap("crouch")
+	await _sixtieths(6)
+	_check(
+		player.movement_state() == "Sliding",
+		"crouch while sprinting slides again, got %s" % player.movement_state()
+	)
+	await _tap("jump")
+	_check(
+		player.movement_state() == "Sprinting",
+		"jump cancels the slide into a sprint, got %s" % player.movement_state()
+	)
+	_check(
+		player.horizontal_speed() > 6.5,
+		"the slide-cancel keeps its speed, got %.2f" % player.horizontal_speed()
+	)
+	_check(player.is_on_floor(), "the slide-cancel does not leave the floor")
+	Input.action_release("move_forward")
+	await _sixtieths(60)
+
 
 func _combat(main: Node, player: FpsPlayer) -> void:
 	# A fresh dummy 8 m straight ahead; aim at its chest.
