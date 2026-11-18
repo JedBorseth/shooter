@@ -225,6 +225,90 @@ pub fn backward(right: f32, forward: f32, sprinting: bool, was: bool) -> bool {
     cos < if was { BACKWARD_LEAVE } else { BACKWARD_ENTER }
 }
 
+/// Standing still, the aim may turn this far from the feet (radians) before
+/// they step round to it, as a person turns their upper body first.
+pub const TURN_START: f32 = 60.0 * std::f32::consts::PI / 180.0;
+/// The feet step round at this rate (radians a second) until they are within
+/// [`TURN_STOP`] of the aim.
+pub const TURN_RATE: f32 = 360.0 * std::f32::consts::PI / 180.0;
+pub const TURN_STOP: f32 = 5.0 * std::f32::consts::PI / 180.0;
+/// The aim never gets further than this from the feet: a faster turn drags
+/// them round.
+pub const MAX_TURN: f32 = 90.0 * std::f32::consts::PI / 180.0;
+
+/// Wraps an angle to `[-π, π)`.
+pub fn wrap_angle(a: f32) -> f32 {
+    (a + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI
+}
+
+/// One step of turning in place: the feet's yaw `feet` (world, as the aim's
+/// `yaw`), whether they are stepping round (`turning`), after `dt` seconds.
+/// A body that is not standing still (`still` false) has its feet under the
+/// aim. Returns the new feet yaw and whether they are still turning.
+pub fn turn_feet(feet: f32, yaw: f32, still: bool, turning: bool, dt: f32) -> (f32, bool) {
+    if !still {
+        return (yaw, false);
+    }
+    let offset = wrap_angle(yaw - feet);
+    let turning = turning || offset.abs() > TURN_START;
+    let mut feet = feet;
+    if turning {
+        let step = TURN_RATE * dt;
+        feet += offset.clamp(-step, step);
+    }
+    let offset = wrap_angle(yaw - feet);
+    if offset.abs() > MAX_TURN {
+        feet = yaw - offset.signum() * MAX_TURN;
+    }
+    let offset = wrap_angle(yaw - feet);
+    (wrap_angle(feet), turning && offset.abs() > TURN_STOP)
+}
+
+/// While the feet step round, the legs step in place: the walk loop blended
+/// in up to this much, a stride per half turn of the feet.
+pub const TURN_STEP_WEIGHT: f32 = 0.7;
+/// The step blends in and out at this rate (per second).
+const TURN_STEP_RATE: f32 = 8.0;
+
+/// Turning in place over time: where the feet point, whether they are
+/// stepping round, and how far into the in-place step the legs are.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Turning {
+    feet: Option<f32>,
+    turning: bool,
+    /// 0..1: how far the legs are stepping (see [`TURN_STEP_WEIGHT`]).
+    pub step: f32,
+}
+
+impl Turning {
+    /// One step of `dt` seconds with the aim at `yaw` and the body standing
+    /// `still` or not. Returns the aim's offset from the feet (radians,
+    /// positive left) and the stride the in-place step moves the legs
+    /// through (strides).
+    pub fn tick(&mut self, yaw: f32, still: bool, dt: f32) -> (f32, f32) {
+        let before = self.feet.unwrap_or(yaw);
+        let (feet, turning) = turn_feet(before, yaw, still, self.turning, dt);
+        self.feet = Some(feet);
+        self.turning = turning;
+        let swung = if still {
+            wrap_angle(feet - before).abs()
+        } else {
+            0.0
+        };
+        let target = if dt > 0.0 {
+            (swung / dt / (TURN_RATE * 0.5)).min(1.0)
+        } else {
+            self.step
+        };
+        let rate = TURN_STEP_RATE * dt;
+        self.step += (target - self.step).clamp(-rate, rate);
+        if !still {
+            self.step = 0.0;
+        }
+        (wrap_angle(yaw - feet), swung / std::f32::consts::PI)
+    }
+}
+
 /// How far the legs turn from the aim toward the movement, radians (positive
 /// toward the right). Walking backward the legs face away from the movement.
 pub fn leg_turn(right: f32, forward: f32, backward: bool) -> f32 {
@@ -245,6 +329,37 @@ pub fn leg_turn(right: f32, forward: f32, backward: bool) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn feet_turn_only_past_the_start_and_then_catch_up() {
+        let dt = 1.0 / 120.0;
+        // The aim turns 45°: the feet stay.
+        let (feet, turning) = turn_feet(0.0, 45f32.to_radians(), true, false, dt);
+        assert_eq!((feet, turning), (0.0, false));
+        // Past 60° they step round until within 5° of the aim.
+        let yaw = 70f32.to_radians();
+        let (mut feet, mut turning) = turn_feet(0.0, yaw, true, false, dt);
+        assert!(turning && feet > 0.0);
+        let mut ticks = 1;
+        while turning {
+            (feet, turning) = turn_feet(feet, yaw, true, turning, dt);
+            ticks += 1;
+            assert!(ticks < 120);
+        }
+        assert!(wrap_angle(yaw - feet).abs() <= TURN_STOP + 1e-4);
+        assert!(
+            ticks as f32 * dt < 0.25,
+            "a 70° turn steps round in {ticks} ticks"
+        );
+        // A spin drags the feet so the aim is never more than 90° off.
+        let (feet, _) = turn_feet(0.0, 3.0, true, false, dt);
+        assert!(wrap_angle(3.0 - feet).abs() <= MAX_TURN + 1e-4);
+        // Moving, the feet are under the aim.
+        assert_eq!(turn_feet(1.0, -2.0, false, true, dt), (-2.0, false));
+        // Across ±π the turn goes the short way.
+        let (feet, _) = turn_feet(3.1, -3.1, true, true, dt);
+        assert!(feet > 3.1 || feet < -3.0, "{feet}");
+    }
 
     #[test]
     fn velocity_in_the_body_frame() {

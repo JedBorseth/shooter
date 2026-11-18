@@ -285,6 +285,12 @@ fn ground_pose(pose: &HitboxPose, speed: f32) -> BasePose {
             let loops = cycle(&poses::STAND_STRIDES[a], stride)
                 .lerp(&cycle(&poses::STAND_STRIDES[b], stride), t);
             poses::STAND.lerp(&loops, gait::walk_share(at))
+        } else if activity.progress.step > 0.0 {
+            // Stepping round on the spot: the walk loop at the stride.
+            let (a, b, t) = gait::stride_samples(gait::WALK_SPEED);
+            let walk = cycle(&poses::STAND_STRIDES[a], stride)
+                .lerp(&cycle(&poses::STAND_STRIDES[b], stride), t);
+            poses::STAND.lerp(&walk, activity.progress.step * gait::TURN_STEP_WEIGHT)
         } else {
             poses::STAND
         }
@@ -364,12 +370,19 @@ pub fn hitboxes(pose: &HitboxPose) -> [Hitbox; COUNT] {
     let mut legs = base.legs;
 
     // Moving, the hips turn toward the movement and the spine turns back
-    // toward the aim, so a strafe runs the forward loop sideways.
-    if speed > gait::MOVING_SPEED && pose.stance != Stance::Sliding {
+    // toward the aim, so a strafe runs the forward loop sideways. Standing
+    // still, the hips stay on the planted feet as the aim turns
+    // (`Progress::turn`), and the spine turns the rest.
+    // A strafe turns the hips about themselves; a body turning in place
+    // turns about the feet, which stay planted.
+    let (lower_yaw, pivot) = if speed > gait::MOVING_SPEED && pose.stance != Stance::Sliding {
         let backward = gait::backward(right, forward, activity.sprinting, false);
-        let lower_yaw = -gait::leg_turn(right, forward, backward);
+        (-gait::leg_turn(right, forward, backward), hips)
+    } else {
+        (-activity.progress.turn, Vec3::ZERO)
+    };
+    if lower_yaw.abs() > 1e-4 {
         let turn = Mat3::from_axis_angle(Vec3::Y, lower_yaw);
-        let pivot = hips;
         let about = |p: Vec3| pivot + turn * (p - pivot);
         spine = spine.map(about);
         shoulders = shoulders.map(about);
@@ -888,5 +901,36 @@ mod tests {
         });
         assert_ne!(air[9], stand[9], "the legs tuck in the air");
         assert_ne!(climb[9], air[9], "a mantle's climb wins over the air");
+    }
+
+    #[test]
+    fn standing_still_the_legs_stay_on_the_feet_as_the_aim_turns() {
+        let feet = Vec3::ZERO;
+        let at = |yaw: f32, turn: f32| {
+            hitboxes(&HitboxPose {
+                activity: Activity {
+                    progress: clock::Progress {
+                        turn,
+                        ..Default::default()
+                    },
+                    ..Activity::default()
+                },
+                ..HitboxPose::new(feet, yaw, 0.0, Stance::Standing)
+            })
+        };
+        let square = at(0.0, 0.0);
+        // The aim turned 50° left; the feet have not moved.
+        let turned = at(0.87, 0.87);
+        for leg in 8..12 {
+            assert!(
+                (turned[leg].a - square[leg].a).length() < 1e-3
+                    && (turned[leg].b - square[leg].b).length() < 1e-3,
+                "shape {leg} stays planted: {:?} vs {:?}",
+                turned[leg],
+                square[leg]
+            );
+        }
+        // The head turned with the aim.
+        assert!((turned[0].a - square[0].a).length() > 0.02);
     }
 }

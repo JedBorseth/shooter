@@ -22,6 +22,13 @@ pub struct Progress {
     pub reload: f32,
     /// Through a mantle's climb (0 when not mantling).
     pub mantle: f32,
+    /// How far the aim has turned from the feet, standing still (radians,
+    /// positive to the left; see [`gait::turn_feet`]). The legs and hips stay
+    /// on the feet; the spine turns the rest.
+    pub turn: f32,
+    /// How far the legs are stepping in place as the feet swing round, 0..1
+    /// ([`gait::Turning`]): the walk loop blends in, at `stride`.
+    pub step: f32,
 }
 
 /// What a body is doing this tick, as the clock needs it.
@@ -48,6 +55,7 @@ pub struct BodyClock {
     reload: Option<f32>,
     /// The current mantle's full length, seconds.
     mantle: Option<f32>,
+    turning: gait::Turning,
     progress: Progress,
 }
 
@@ -68,7 +76,17 @@ impl BodyClock {
         } else {
             0.0
         };
-        self.stride = gait::advance_stride(self.stride, rate, dt);
+        let speed = (right * right + forward * forward).sqrt();
+        let mantling = s.mantle_left > 0.0 && s.alive;
+        let still = s.alive
+            && s.on_floor
+            && !mantling
+            && s.stance != Stance::Sliding
+            && speed <= gait::MOVING_SPEED;
+        let (turn, stepped) = self.turning.tick(s.yaw, still, dt);
+        // Moving, the loops' cadence; stepping round on the spot, the step's.
+        self.stride = gait::advance_stride(self.stride, rate, dt) + stepped;
+        self.stride = self.stride.rem_euclid(1.0);
 
         self.reload = match (s.reloading && s.alive, self.reload) {
             (true, Some(t)) => Some(t + dt),
@@ -79,7 +97,6 @@ impl BodyClock {
             .reload
             .map_or(0.0, |t| (t / reload_seconds(s.weapon)).clamp(0.0, 1.0));
 
-        let mantling = s.mantle_left > 0.0 && s.alive;
         self.mantle = match (mantling, self.mantle) {
             (true, Some(total)) => Some(total.max(s.mantle_left)),
             // The first mantling tick has already run one step of it.
@@ -94,6 +111,8 @@ impl BodyClock {
             stride: self.stride,
             reload,
             mantle,
+            turn,
+            step: self.turning.step,
         };
         self.progress
     }
@@ -116,6 +135,15 @@ pub fn reload_seconds(weapon: WeaponId) -> f32 {
         } => start + per_round * 4.0 + end,
     }
     .max(0.3)
+}
+
+/// A turn offset as a snapshot byte: 1/256 turns, signed.
+pub fn turn_to_u8(turn: f32) -> u8 {
+    ((gait::wrap_angle(turn) / std::f32::consts::TAU * 256.0).round() as i32).rem_euclid(256) as u8
+}
+
+pub fn turn_from_u8(value: u8) -> f32 {
+    f32::from(value as i8) / 256.0 * std::f32::consts::TAU
 }
 
 /// A progress (0..1) as a snapshot byte.

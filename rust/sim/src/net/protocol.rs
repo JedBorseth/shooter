@@ -63,7 +63,10 @@ use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState}
 // player views and rewound poses.
 // Version 28 added where each body's latest hit landed and how hard
 // (`PlayerView::hit_part`), for hit reactions and ragdoll deaths.
-pub const PROTOCOL_VERSION: u16 = 28;
+// Version 29 added how far each body's aim has turned from its planted feet
+// (`PlayerView::turn`) and how far its legs step in place as the feet swing
+// round (`PlayerView::step`), which the hit zones' legs follow.
+pub const PROTOCOL_VERSION: u16 = 29;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -393,6 +396,13 @@ pub struct PlayerView {
     pub stride: u8,
     pub reload_progress: u8,
     pub mantle_progress: u8,
+    /// How far the aim has turned from the feet standing still, in 1/256
+    /// turns, signed (`Progress::turn`): the legs stay planted until the
+    /// feet step round.
+    pub turn: u8,
+    /// How far the legs step in place as the feet swing round, out of 255
+    /// (`Progress::step`).
+    pub step: u8,
 }
 
 /// A horizontal direction (`x`, `z`) as 1/256 turns, for `hit_heading`.
@@ -471,6 +481,8 @@ impl PlayerView {
             stride: 0,
             reload_progress: 0,
             mantle_progress: 0,
+            turn: 0,
+            step: 0,
         }
     }
 
@@ -480,6 +492,8 @@ impl PlayerView {
             stride: clock::stride_from_u8(self.stride),
             reload: clock::from_u8(self.reload_progress),
             mantle: clock::from_u8(self.mantle_progress),
+            turn: clock::turn_from_u8(self.turn),
+            step: clock::from_u8(self.step),
         }
     }
 
@@ -489,6 +503,8 @@ impl PlayerView {
             stride: clock::stride_to_u8(p.stride),
             reload_progress: clock::to_u8(p.reload),
             mantle_progress: clock::to_u8(p.mantle),
+            turn: clock::turn_to_u8(p.turn),
+            step: clock::to_u8(p.step),
             ..self
         }
     }
@@ -1635,13 +1651,23 @@ fn write_view_delta(w: &mut BitWriter, v: &PlayerView, base: &PlayerView) {
         w.u8(v.hit_heading);
         w.u8(v.hit_part);
     }
-    let progress = |p: &PlayerView| (p.stride, p.reload_progress, p.mantle_progress);
+    let progress = |p: &PlayerView| {
+        (
+            p.stride,
+            p.reload_progress,
+            p.mantle_progress,
+            p.turn,
+            p.step,
+        )
+    };
     let moved = progress(v) != progress(base);
     w.bool(moved);
     if moved {
         w.u8(v.stride);
         w.u8(v.reload_progress);
         w.u8(v.mantle_progress);
+        w.u8(v.turn);
+        w.u8(v.step);
     }
 }
 
@@ -1683,6 +1709,8 @@ fn read_view_delta(r: &mut BitReader, base: &PlayerView) -> DecodeResult<PlayerV
         v.stride = r.u8()?;
         v.reload_progress = r.u8()?;
         v.mantle_progress = r.u8()?;
+        v.turn = r.u8()?;
+        v.step = r.u8()?;
     }
     Ok(v)
 }
@@ -1969,6 +1997,8 @@ fn write_activity(w: &mut BitWriter, a: &Activity) {
     w.u8(clock::stride_to_u8(a.progress.stride));
     w.u8(clock::to_u8(a.progress.reload));
     w.u8(clock::to_u8(a.progress.mantle));
+    w.u8(clock::turn_to_u8(a.progress.turn));
+    w.u8(clock::to_u8(a.progress.step));
     w.bool(a.crouch.is_some());
     if let Some(crouch) = a.crouch {
         w.u8(clock::to_u8(crouch));
@@ -1992,6 +2022,8 @@ fn read_activity(r: &mut BitReader) -> DecodeResult<Activity> {
             stride: clock::stride_from_u8(r.u8()?),
             reload: clock::from_u8(r.u8()?),
             mantle: clock::from_u8(r.u8()?),
+            turn: clock::turn_from_u8(r.u8()?),
+            step: clock::from_u8(r.u8()?),
         },
         crouch: if r.bool()? {
             Some(clock::from_u8(r.u8()?))
@@ -2280,12 +2312,16 @@ mod tests {
             stride: 0.25,
             reload: 0.0,
             mantle: 0.0,
+            turn: 0.0,
+            step: 0.0,
         });
         let baseline = [a];
         let b = a.with_progress(Progress {
             stride: 0.75,
             reload: 0.4,
             mantle: 0.6,
+            turn: 0.5,
+            step: 0.25,
         });
         let delta = ServerMessage::Snapshot(Snapshot {
             tick: 101,
@@ -2299,6 +2335,9 @@ mod tests {
         assert_eq!(progress.stride, 0.75);
         assert!((progress.reload - 0.4).abs() < 0.5 / 255.0);
         assert!((progress.mantle - 0.6).abs() < 0.5 / 255.0);
+        assert!((progress.turn - 0.5).abs() < std::f32::consts::TAU / 512.0);
+        assert!((progress.step - 0.25).abs() < 0.5 / 255.0);
+        assert!((clock::turn_from_u8(clock::turn_to_u8(-1.2)) + 1.2).abs() < 0.013);
     }
 
     #[test]
@@ -2687,6 +2726,8 @@ mod tests {
                                 stride: 0.25,
                                 reload: 51.0 / 255.0,
                                 mantle: 0.0,
+                                turn: 0.0,
+                                step: 0.0,
                             },
                         },
                     },

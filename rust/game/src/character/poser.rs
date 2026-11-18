@@ -327,6 +327,10 @@ pub struct PoseInput {
     /// Radians the hips turn (positive turns left, seen from above). The spine
     /// turns back by the same amount.
     pub lower_yaw: f32,
+    /// Radians the aim has turned left of the planted feet, standing still:
+    /// the hips turn back about the feet (not about themselves) and the spine
+    /// turns the rest.
+    pub turn: f32,
     /// Aim pitch in radians, up positive.
     pub pitch: f32,
     /// Torso lean as a horizontal vector in the character's space (+X right,
@@ -417,11 +421,24 @@ impl SoldierPoser {
             node.set_visible(false);
         }
 
-        // 1. Hips toward the movement, spine back toward the aim.
+        // 1. Hips toward the movement (or back onto the planted feet), spine
+        // back toward the aim.
+        if input.turn.abs() > 1e-4 {
+            // About the feet, which stay planted: the skeleton's origin.
+            let hips = skel.get_bone_global_pose(bone(Bone::HIPS));
+            let turn = Basis::from_axis_angle(Vector3::UP, -input.turn);
+            skel.set_bone_global_pose(
+                bone(Bone::HIPS),
+                Transform3D::new(turn * hips.basis, turn * hips.origin),
+            );
+        }
         if input.lower_yaw.abs() > 1e-4 {
             rotate_global(skel, bone(Bone::HIPS), Vector3::UP, input.lower_yaw);
+        }
+        let twist = input.lower_yaw - input.turn;
+        if twist.abs() > 1e-4 {
             for (b, share) in TWIST_BONES.into_iter().zip(TWIST_SHARES) {
-                rotate_global(skel, bone(b), Vector3::UP, -input.lower_yaw * share);
+                rotate_global(skel, bone(b), Vector3::UP, -twist * share);
             }
         }
 
