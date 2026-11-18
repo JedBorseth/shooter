@@ -32,6 +32,13 @@ const LUT_SIZE := 32
 ##            puddles collect on the ground (shaders/world.gdshader).
 ##   sun    DirectionalLight3D properties to set on the map's sun (its strength
 ##          against the sky light sets how hard the daylight is).
+##   exposure  How far eye adaptation may move the exposure, in stops
+##             (scripts/eye_adaptation.gd); missing for none:
+##     reference The light level the map was graded at, as the eye's probe
+##               measures it (EyeAdaptation.light_level, typical of the
+##               benchmark views): exposure is unchanged there.
+##     brighter How far a darker spot (an alley, a tunnel) may open up.
+##     darker   How far a brighter spot, or looking into the sun, closes down.
 ##
 ## Every listed map also gets the shared bloom in `BLOOM` (unless its `env`
 ## says otherwise) and lens dirt on that bloom (scripts/lens_dirt.gd).
@@ -68,6 +75,7 @@ const MAPS := {
 			"adjustment_saturation": 1.0,
 		},
 		"sun": {"light_energy": 2.9},
+		"exposure": {"reference": 1.0, "darker": 0.5, "brighter": 0.8},
 		"grade":
 		{
 			"contrast": 1.3,
@@ -106,6 +114,7 @@ const MAPS := {
 			"adjustment_contrast": 1.0,
 			"adjustment_saturation": 1.0,
 		},
+		"exposure": {"reference": 0.3, "darker": 0.5, "brighter": 0.8},
 		"grade":
 		# Cool shade and warm light, the colours of an evening street; the toe
 		{
@@ -137,6 +146,7 @@ const MAPS := {
 			"adjustment_contrast": 1.0,
 			"adjustment_saturation": 1.0,
 		},
+		"exposure": {"reference": 1.0, "darker": 0.0, "brighter": 0.5},
 		"grade":
 		{
 			"contrast": 1.12,
@@ -205,6 +215,19 @@ static func apply_sun(light: DirectionalLight3D, scene_path: String) -> bool:
 	for property: String in sun:
 		light.set(property, sun[property])
 	return not sun.is_empty()
+
+
+## How far eye adaptation may move the exposure on the map `scene_path`:
+## {"reference", "brighter", "darker"}, or empty for none.
+static func adaptation_for(scene_path: String) -> Dictionary:
+	var exposure: Dictionary = MAPS.get(scene_path, {}).get("exposure", {})
+	if exposure.is_empty():
+		return {}
+	return {
+		"reference": float(exposure.get("reference", 1.0)),
+		"brighter": float(exposure.get("brighter", 0.0)),
+		"darker": float(exposure.get("darker", 0.0)),
+	}
 
 
 ## How wet the map `scene_path` is: 0 for dry.

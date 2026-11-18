@@ -31,6 +31,7 @@ Rules of thumb for this renderer on this card, from the measurements below:
 - A full-screen pass is never free on this card. Measured on Medium in Slamcity: sun shadows 1.2 ms, glow 1.1 ms, SSAO 0.9 ms, SMAA 0.7 ms (FXAA would be 0.3 ms), fog 0.1 to 0.3 ms. A canvas pass over the whole screen costs about 0.13 ms when it only blends, and about 0.5 ms when it reads the screen (a copy, then five samples per pixel). That is why the lens sharpens on High only.
 - Ambient occlusion is the wrong tool for grounding a crowd: turning SSAO on in the Zombies arena cost 0.7 ms on Medium and 1.9 ms on High (where it runs at full resolution), for a horde that mostly needs a dark patch under each pair of feet.
 - Temporal antialiasing (TAA) costs about what 2× MSAA plus SMAA costs at 1080p on this card, measured in place of both on High: 0.6 ms less in the Testing Area, the same in Slamcity (`profile_frame.gd`, "temporal antialiasing in place of SMAA"). Measured on top of them it costs about 1.9 ms. High uses it alone.
+- Lights and luminance passes cost every pixel. A shadowless second directional light that lit only the first-person weapon (by cull mask) still cost 0.16 to 0.28 ms on Medium, because every lit pixel of the world loops over it; the key light lives in the viewmodel shader instead. The renderer's auto-exposure cost 0.24 to 0.35 ms on Medium; eye adaptation is estimated with rays on the CPU instead.
 - Bicubic upscaling of the glow costs about 0.35 ms for a difference that shows only on strong, wide glows. Low and Medium upscale it bilinearly.
 - The colour grade is free: a look-up table sampled inside the tonemap pass the renderer already runs. So is the colour draining at low health (the same pass's saturation).
 - A negative mipmap bias sharpens distant textures for almost nothing (within measurement noise), as long as anisotropic filtering is on.
@@ -92,6 +93,8 @@ The presets live in `godot/scripts/graphics.gd`. The `Settings` autoload applies
 | Wet surfaces and puddles (Zombies) | dry | on | on |
 | Contact shadows under characters | on | on | on |
 | Colour grade and health colour drain | on | on | on |
+| Eye adaptation (`scripts/eye_adaptation.gd`, rays, no GPU time) | on | on | on |
+| First-person key light (`scripts/viewmodel_light.gd`) | on | on | on |
 
 The lens is a full-screen pass over the 3D picture, under the HUD. On Medium it blends a vignette and film grain without reading the screen (about 0.13 ms). On High it also sharpens with a contrast-adaptive filter, which needs a copy of the screen (about 0.5 ms). The "Lens effects" setting turns the vignette and grain off; sharpening follows the preset.
 
@@ -148,5 +151,6 @@ GPU time on Medium at 1080p on the reference card, average over viewpoints (wors
 | Filmic daylight in the Testing Area (ACES, a stronger sun), Slamcity's toe and thinner near haze, Zombies' lower pivot, tighter ambient occlusion (within run-to-run noise of the same `main` on every map) | 5.60 (5.86) ms | 7.62 (8.62) ms | 5.52 (6.04) ms |
 | Temporal antialiasing on High in place of 2× MSAA plus SMAA, a hurt vignette with smears, hit flashes, and a heartbeat (hidden at full health), suppression on Low, close-up detail only on rough surfaces, softer puddles (High: 0.35 to 0.46 ms less in the Testing Area and Slamcity, 0.14 ms more in Zombies; `main` measured alongside: 5.61, 7.52, 5.54 ms on Medium) | 5.58 (5.86) ms | 7.47 (8.37) ms | 5.58 (6.10) ms |
 | M4A1 painted from its geometry: anodised, phosphated, and polymer zones, edge wear, markings, fresh UVs (same texture sizes and triangles, 7% more vertices; `main` measured alongside, alternating, better of two runs per view: 5.61 (5.87), 7.51 (8.44), 5.46 (5.97) ms; baseline not refreshed, as tonight's runs of `main` itself sit up to 17% off it on Low) | 5.62 (5.89) ms | 7.53 (8.49) ms | 5.57 (6.09) ms |
+| Eye adaptation from rays on the CPU and a key light for the first-person weapon in its own shader, a slight edge blur while aiming on High (Slamcity's worst Medium view +0.02 to +0.10 ms, other maps within ±0.02 ms; the renderer's auto-exposure and a second directional light, measured first, cost 0.24 to 0.35 and 0.16 to 0.28 ms on Medium) | 5.59 (5.87) ms | 7.56 (8.40) ms | 5.58 (6.10) ms |
 
 Slamcity's 7.0 ms on Medium is about 0.5 ms more than the old map, over the usual 5% step. It was accepted for the rebuild: the rest is the denser map's own shading (decals, the skyline, small detail, and props are about 0.15 ms each), and the next cut would remove visible detail.

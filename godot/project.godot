@@ -171,6 +171,14 @@ common/physics_ticks_per_second=120
 
 [shader_globals]
 
+viewmodel_key={
+"type": "vec4",
+"value": Vector4(0, 1, 0, 0)
+}
+viewmodel_key_color={
+"type": "color",
+"value": Color(1, 1, 1, 1)
+}
 viewmodel_scope_lens={
 "type": "vec4",
 "value": Vector4(0, 0, 0, 0)

@@ -2,8 +2,11 @@ extends SceneTree
 ## Captures the picture for reviewing lighting and post-processing: views into
 ## the sun, surfaces at grazing angles, soldiers standing on the ground, a short
 ## run of consecutive frames while the camera turns slowly (for shimmer and
-## ghosting), and the screen feedback states (aiming, scoped, suppressed, hurt,
-## dead). Benchmark viewpoints are covered by `BENCH_CAPTURE` in benchmark.gd.
+## ghosting), the screen feedback states (aiming, scoped, suppressed, hurt,
+## dead), and eye adaptation: frames after stepping from a bright street into
+## an alley, and the picture's brightness over time while firing (to show it
+## does not pump), written to `adaptation_*.csv`. Benchmark viewpoints are
+## covered by `BENCH_CAPTURE` in benchmark.gd.
 ## Needs a GPU and a display (or Xvfb):
 ##   CAPTURE_DIR=/path/to/out CAPTURE_PRESET=medium godot --path godot \
 ##     --resolution 1920x1080 --audio-driver Dummy --script res://tests/capture_picture.gd
@@ -12,7 +15,7 @@ extends SceneTree
 ##   CAPTURE_DIR     output directory (required).
 ##   CAPTURE_PRESET  low, medium, or high (default medium).
 ##   CAPTURE_ONLY    comma list of groups: testing, slamcity, zombies, motion,
-##                   feedback (default: all).
+##                   feedback, adaptation (default: all).
 
 const Benchmark := preload("res://tests/benchmark.gd")
 ## Consecutive frames saved while the camera turns.
@@ -57,6 +60,8 @@ func _run() -> void:
 			await _motion("testing_motion", Vector3(8, 0.1, 10), -0.6, -0.05)
 		if _wants("feedback"):
 			await _feedback()
+		if _wants("adaptation"):
+			await _firing("adaptation_firing", Vector3(0, 0.1, 4), 0.0, 0.1)
 		_unload()
 	if _wants("slamcity"):
 		await _load("res://scenes/slamcity.tscn", Vector3(-30, 0.05, 1))
@@ -76,6 +81,12 @@ func _run() -> void:
 		await _view("slamcity_grazing", Vector3(-40, 0.05, -28.0), -PI / 2 + 0.25, -0.1)
 		if _wants("motion"):
 			await _motion("slamcity_motion", Vector3(-30, 0.05, 1), -PI / 2 + 0.3, 0.0)
+		if _wants("adaptation"):
+			await _adaptation(
+				"adaptation_alley",
+				[Vector3(-14, 0.05, 1), -PI / 2 + 0.2, 0.1],
+				[Vector3(-24, 3.85, -10), -PI / 2, -0.05]
+			)
 		_unload()
 	if _wants("zombies"):
 		await _load("res://scenes/zombies_arena.tscn", Vector3(0, 0.1, 0))
@@ -181,6 +192,71 @@ func _feedback() -> void:
 	_player.take_damage(100.0, _player.global_position + Vector3(0, 0, 10))
 	await _hold(at, 0.0, -0.05, 40)
 	await _shot("feedback_dead")
+
+
+## Holds a bright view until the eye has settled, then cuts to a dark one and
+## saves frames as the exposure follows; logs the picture's mean brightness.
+func _adaptation(name: String, bright: Array, dark: Array) -> void:
+	await _hold(bright[0], bright[1], bright[2], 240)
+	await _shot(name + "_before")
+	var log := PackedStringArray(["seconds,mean_luma"])
+	var start := Time.get_ticks_msec()
+	var marks: Array[float] = [0.0, 0.5, 1.0, 2.0, 4.0]
+	while not marks.is_empty():
+		await _hold(dark[0], dark[1], dark[2], 1)
+		var seconds := (Time.get_ticks_msec() - start) / 1000.0
+		var image := await _frame()
+		log.append("%.3f,%.4f" % [seconds, _mean_luma(image, false)])
+		if seconds >= marks[0]:
+			image.save_png(_out.path_join("%s_%.1fs.png" % [name, marks[0]]))
+			marks.pop_front()
+	_save_log(name, log)
+
+
+## Fires for a few seconds and logs the mean brightness of the upper half of
+## the picture (the sky and the far wall, away from the muzzle flash).
+func _firing(name: String, at: Vector3, yaw: float, pitch: float) -> void:
+	await _hold(at, yaw, pitch, 180)
+	var log := PackedStringArray(["seconds,firing,upper_luma"])
+	var start := Time.get_ticks_msec()
+	var seconds := 0.0
+	while seconds < 6.0:
+		var firing := seconds >= 1.0 and seconds < 4.0
+		if firing:
+			Input.action_press("fire")
+		else:
+			Input.action_release("fire")
+		# A magazine runs dry in about three seconds of fire.
+		_player.refill_all_ammo()
+		await _hold(at, yaw, pitch, 1)
+		seconds = (Time.get_ticks_msec() - start) / 1000.0
+		var image := await _frame()
+		log.append("%.3f,%d,%.4f" % [seconds, int(firing), _mean_luma(image, true)])
+	Input.action_release("fire")
+	_save_log(name, log)
+
+
+func _frame() -> Image:
+	await RenderingServer.frame_post_draw
+	return root.get_viewport().get_texture().get_image()
+
+
+## Mean brightness (0 to 1) on a coarse grid of the picture, or of its upper
+## half only.
+func _mean_luma(image: Image, upper: bool) -> float:
+	var total := 0.0
+	var count := 0
+	var rows := image.get_height() / 2 if upper else image.get_height()
+	for y in range(8, rows, 16):
+		for x in range(8, image.get_width(), 16):
+			total += image.get_pixel(x, y).get_luminance()
+			count += 1
+	return total / maxf(count, 1)
+
+
+func _save_log(name: String, lines: PackedStringArray) -> void:
+	var file := FileAccess.open(_out.path_join(name + ".csv"), FileAccess.WRITE)
+	file.store_string("\n".join(lines) + "\n")
 
 
 func _hold(at: Vector3, yaw: float, pitch: float, frames: int) -> void:

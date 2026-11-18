@@ -19,6 +19,8 @@ enum InputDevice { KEYBOARD_MOUSE, CONTROLLER }
 
 const GraphicsQuality := preload("res://scripts/graphics.gd")
 const Lens := preload("res://scripts/lens.gd")
+const ViewmodelLight := preload("res://scripts/viewmodel_light.gd")
+const EyeAdaptation := preload("res://scripts/eye_adaptation.gd")
 const Grounding := preload("res://scripts/grounding.gd")
 const InputNotice := preload("res://scripts/ui/input_notice.gd")
 
@@ -332,6 +334,8 @@ func _ready() -> void:
 	if not _headless():
 		_lens = Lens.new()
 		add_child(_lens)
+		add_child(ViewmodelLight.new())
+		add_child(EyeAdaptation.new())
 		var notice := InputNotice.new()
 		notice.name = "InputNotice"
 		notice.settings = self

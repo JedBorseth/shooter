@@ -110,6 +110,10 @@ static var managed := true
 ## How much colour the picture keeps: 1 at full health, 0 when it has drained
 ## (scripts/lens.gd follows the player's health).
 static var _vitality := 1.0
+## Eye adaptation, in stops of exposure over what the map's look was graded at.
+static var _adaptation := 0.0
+## The scene of the map whose environment arrived last.
+static var _map_scene := ""
 ## How wet the loaded map is (Looks.wetness_for), and whether the preset draws it.
 static var _map_wetness := 0.0
 static var _wet_allowed := true
@@ -236,6 +240,7 @@ static func adopt(node: Node, preset: int) -> void:
 		var wetness := Looks.wetness_for(scene)
 		RenderingServer.global_shader_parameter_set(&"world_wetness", wetness)
 		_map_wetness = wetness
+		_map_scene = scene
 		set_world_wet(_wet_allowed and wetness > 0.001)
 		if not _authored.has(id):
 			Looks.apply(env, scene)
@@ -254,6 +259,8 @@ static func adopt(node: Node, preset: int) -> void:
 				env.adjustment_saturation = 1.0
 			authored["saturation"] = env.adjustment_saturation
 			authored["contrast"] = env.adjustment_contrast
+			# Eye adaptation (scripts/eye_adaptation.gd) scales this.
+			authored["exposure"] = env.tonemap_exposure
 			_authored[id] = authored
 	elif node is DirectionalLight3D:
 		var light := node as DirectionalLight3D
@@ -303,11 +310,33 @@ static func _apply_node(node: Node, p: Dictionary) -> void:
 		env.ssao_enabled = authored["ssao"] and p["ssao"]
 		env.glow_enabled = authored["glow"] and p["glow"]
 		env.volumetric_fog_enabled = authored["volumetric_fog"] and p["volumetric_fog"]
+		env.tonemap_exposure = authored["exposure"] * pow(2.0, _adaptation)
 		_apply_vitality(env, authored)
 	elif node is DirectionalLight3D and _authored.has(node.get_instance_id()):
 		var light := node as DirectionalLight3D
 		var authored: Dictionary = _authored[light.get_instance_id()]
 		light.directional_shadow_max_distance = authored["shadow_distance"] * p["shadow_distance"]
+
+
+## The scene of the map being played (its environment arrived last), for
+## per-map settings such as eye adaptation.
+static func map_scene() -> String:
+	return _map_scene
+
+
+## Sets the eye adaptation: `stops` of exposure over what each map's look was
+## graded at. It changes only the tonemap pass's exposure, so it costs nothing.
+static func set_adaptation(tree: SceneTree, stops: float) -> void:
+	if absf(stops - _adaptation) < 0.005:
+		return
+	_adaptation = stops
+	for node: Node in tree.get_nodes_in_group(&"graphics_adopted"):
+		if node is WorldEnvironment:
+			var env := (node as WorldEnvironment).environment
+			if env != null and _authored.has(env.get_instance_id()):
+				env.tonemap_exposure = (
+					_authored[env.get_instance_id()]["exposure"] * pow(2.0, stops)
+				)
 
 
 ## Drains the colour from every map's picture as `vitality` falls from 1 to 0,

@@ -25,6 +25,9 @@ float hash(vec2 p) {
 	return fract((p3.x + p3.y) * p3.z);
 }
 
+// How strongly aiming down sights blurs the periphery, against suppression's 1.
+const float ADS_BLUR = 0.45;
+
 void fragment() {
 	vec2 px = SCREEN_PIXEL_SIZE;
 	vec3 centre = texture(screen_texture, SCREEN_UV).rgb;
@@ -45,15 +48,17 @@ void fragment() {
 
 	vec2 centred = (SCREEN_UV - 0.5) * vec2(1.0, 0.82);
 	float edge = smoothstep(0.45, 0.95, length(centred) * 1.55);
-	// Suppression blurs the edges for a moment: four reads toward the middle,
-	// only while it lasts.
-	if (suppression > 0.01) {
-		vec2 step_uv = (0.5 - SCREEN_UV) * 0.012 * suppression * edge;
+	// Suppression blurs the edges for a moment, and aiming down sights blurs
+	// the periphery a little (never the middle, where the sights are): four
+	// reads toward the middle, only while either lasts.
+	float blur_amount = max(suppression, aim * ADS_BLUR);
+	if (blur_amount > 0.01) {
+		vec2 step_uv = (0.5 - SCREEN_UV) * 0.012 * blur_amount * edge;
 		vec3 blur = texture(screen_texture, SCREEN_UV + step_uv).rgb
 			+ texture(screen_texture, SCREEN_UV + step_uv * 2.0).rgb
 			+ texture(screen_texture, SCREEN_UV - step_uv).rgb
 			+ texture(screen_texture, SCREEN_UV + step_uv * 3.0).rgb;
-		colour = mix(colour, blur * 0.25, clamp(edge * suppression * 1.5, 0.0, 1.0));
+		colour = mix(colour, blur * 0.25, clamp(edge * blur_amount * 1.5, 0.0, 1.0));
 	}
 
 	float aspect = SCREEN_PIXEL_SIZE.y / SCREEN_PIXEL_SIZE.x;
