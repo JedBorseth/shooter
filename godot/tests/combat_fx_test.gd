@@ -155,6 +155,18 @@ func _run() -> void:
 	await _frames(2)
 	rifleman.shoot()
 	_check(effects.cases_thrown() == thrown + 1, "a third-person shot throws a case")
+	# A shooter in view lights the scene with the shot; one behind the wall
+	# does not light the near side of it.
+	var light := rifleman.weapon_node().get_node("Muzzle/FlashLight") as OmniLight3D
+	_check(light.visible, "a shot in view flashes its light")
+	var hidden := SOLDIER_SCENE.instantiate()
+	level.add_child(hidden)
+	hidden.global_position = Vector3(0, 0, -13)
+	hidden.drive({"weapon": "m4", "on_floor": true}, 1.0 / 60.0)
+	await _frames(2)
+	hidden.shoot()
+	var behind := hidden.weapon_node().get_node("Muzzle/FlashLight") as OmniLight3D
+	_check(not behind.visible, "a shot behind a wall keeps its light off")
 
 	# Impacts hide once their particles are done, so an idle pool draws nothing.
 	await _frames(240)

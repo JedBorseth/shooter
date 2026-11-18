@@ -261,7 +261,11 @@ func _capture() -> void:
 			if i == 6 or i == 30 or i == 60:
 				await _shot("%s_firefight_%02d" % [preset, i])
 		Input.action_release("fire")
-		await _hold(0.0, -0.02, 120)
+		# The barrel's wisp after the burst, then the holes it left.
+		for moment: int in [20, 60]:
+			await _hold(0.0, -0.02, 20 if moment == 20 else 40)
+			await _shot("%s_wisp_%02d" % [preset, moment])
+		await _hold(0.0, -0.02, 60)
 		await _shot("%s_holes" % preset)
 		# The burst's cases on the ground at the player's feet, and the
 		# dummies' own cases from third person.

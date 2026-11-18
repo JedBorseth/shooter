@@ -338,6 +338,12 @@ const OPTIC_CLEARANCE: f32 = 0.018;
 const SHELL_LIFETIME: f32 = 0.5;
 /// Seconds a case flies in the view before it is handed to the world.
 const SHELL_HANDOFF: f32 = 0.09;
+/// Rounds in quick succession that heat the barrel enough to smoke once the
+/// firing stops, how fast it cools (rounds a second), and how long the wisp
+/// rises off it (seconds).
+const BARREL_HOT_ROUNDS: f32 = 6.0;
+const BARREL_COOLING: f32 = 2.0;
+const WISP_TIME: f32 = 3.6;
 /// Enough for 0.8 s of the fastest automatic (900 rounds a minute) and a margin.
 const SHELL_POOL: usize = 24;
 
@@ -481,6 +487,12 @@ pub struct WeaponView {
     smoke: Vec<Gd<GpuParticles3D>>,
     smoke_next: usize,
     smoke_cooldown: f32,
+    /// A thin wisp off the barrel after sustained fire, and how hot the
+    /// barrel is (recent rounds, cooling at `BARREL_COOLING` a second).
+    wisp: Option<Gd<GpuParticles3D>>,
+    heat: f32,
+    /// Seconds the wisp has left to follow the barrel.
+    wisp_left: f32,
     /// The attachment fitted (see `set_attachment`), and one asked for before
     /// the view was ready.
     attachment: Option<Attachment>,
@@ -707,6 +719,7 @@ impl INode3D for WeaponView {
             *t += delta as f32;
         }
         self.smoke_cooldown -= delta as f32;
+        self.update_wisp(delta as f32);
         if self.flash_time > 0.0 {
             self.flash_time -= delta as f32;
             if self.flash_time <= 0.0 {
@@ -1421,10 +1434,18 @@ impl WeaponView {
         }
         let shader = load::<Shader>("res://shaders/muzzle_smoke.gdshader");
         for _ in 0..2 {
-            let smoke = smoke_emitter(&shader, viewmodel);
+            let mut smoke = smoke_emitter(&shader, viewmodel);
+            // The first-person weapon's puffs are placed in the world where
+            // the muzzle shows on screen (`place_in_world`), not under it.
+            smoke.set_as_top_level(viewmodel);
             muzzle.add_child(&smoke);
             self.smoke.push(smoke);
         }
+        let mut wisp = wisp_emitter(&shader);
+        wisp.set_as_top_level(true);
+        wisp.set_visible(false);
+        muzzle.add_child(&wisp);
+        self.wisp = Some(wisp);
     }
 
     /// Flash, plume, and maybe a puff of smoke, for one shot.
@@ -1442,8 +1463,13 @@ impl WeaponView {
         // About three frames at 60 FPS: visible on every shot, yet off again
         // between rounds at 750 RPM (80 ms), so automatic fire flickers.
         self.flash_time = 0.05;
+        self.heat += 1.0;
         if self.smoke_cooldown <= 0.0 && !self.smoke.is_empty() {
             let index = self.smoke_next % self.smoke.len();
+            if !self.world_model {
+                let at = self.muzzle_in_world();
+                self.smoke[index].set_global_transform(at);
+            }
             self.smoke[index].restart();
             self.smoke_next = index + 1;
             self.smoke_cooldown = 0.14;
@@ -1487,11 +1513,93 @@ impl WeaponView {
             .throw_case(&model, at, velocity, basis, spin);
     }
 
-    /// A muzzle flash with no sound, for third-person weapons.
+    /// A muzzle flash with no sound, for third-person weapons. Its light
+    /// shows only when the camera can see the muzzle, so a shooter behind a
+    /// wall does not light the near side of it.
     pub fn flash_world(&mut self) {
         let roll = (self.flash_count as f32 * 2.399_963) % (2.0 * PI);
         self.flash.set_rotation(Vector3::new(0.0, 0.0, roll));
         self.show_flash();
+        let seen = self.muzzle_seen();
+        self.flash_light.set_visible(seen);
+    }
+
+    /// Whether the camera has a clear line to this weapon's muzzle.
+    fn muzzle_seen(&self) -> bool {
+        let muzzle = self.flash.get_global_position();
+        let Some(camera) = self.base().get_viewport().and_then(|v| v.get_camera_3d()) else {
+            return true;
+        };
+        let Some(mut space) = self
+            .base()
+            .get_world_3d()
+            .and_then(|w| w.get_direct_space_state())
+        else {
+            return true;
+        };
+        let eye = camera.get_global_position();
+        let Some(query) = godot::classes::PhysicsRayQueryParameters3D::create_ex(eye, muzzle)
+            .collision_mask(crate::target::WORLD_LAYER)
+            .done()
+        else {
+            return true;
+        };
+        space.intersect_ray(&query).is_empty()
+    }
+
+    /// The first-person muzzle's transform in the world as the player sees
+    /// it (`effects::viewmodel_to_world`), for smoke that stays in the world.
+    fn muzzle_in_world(&self) -> Transform3D {
+        let muzzle = self.flash.get_global_transform();
+        let Some(camera) = self.base().get_viewport().and_then(|v| v.get_camera_3d()) else {
+            return muzzle;
+        };
+        let (origin, _) = effects::viewmodel_to_world(
+            camera.get_global_transform(),
+            camera.get_fov(),
+            muzzle.origin,
+            Vector3::ZERO,
+        );
+        Transform3D::new(muzzle.basis.orthonormalized(), origin)
+    }
+
+    /// After a sustained burst, a thin wisp of smoke curls off the barrel
+    /// for a couple of seconds and follows it.
+    fn update_wisp(&mut self, dt: f32) {
+        self.heat = (self.heat - BARREL_COOLING * dt).max(0.0);
+        if self.heat >= BARREL_HOT_ROUNDS && self.since_shot > 0.2 {
+            self.heat = 0.0;
+            self.wisp_left = WISP_TIME;
+            if let Some(wisp) = &mut self.wisp {
+                wisp.set_visible(true);
+                wisp.restart();
+            }
+        }
+        if self.wisp_left <= 0.0 {
+            return;
+        }
+        self.wisp_left -= dt;
+        if self.wisp_left <= 0.0 {
+            // Its last puffs have faded: draw nothing until the next one.
+            if let Some(wisp) = &mut self.wisp {
+                wisp.set_visible(false);
+            }
+            return;
+        }
+        let at = if self.world_model {
+            self.flash.get_global_transform()
+        } else {
+            self.muzzle_in_world()
+        };
+        if let Some(wisp) = &mut self.wisp {
+            wisp.set_global_transform(at);
+            if self.since_shot < 0.05 {
+                // Firing again blows it away.
+                wisp.set_emitting(false);
+                wisp.set_visible(false);
+                self.wisp_left = 0.0;
+            }
+        }
     }
 
     /// Where shells come out, in the view's parent (rig) space.
@@ -1892,9 +2000,11 @@ fn smoke_emitter(shader: &Gd<Shader>, viewmodel: bool) -> Gd<GpuParticles3D> {
     fade_texture.set_gradient(&fade);
     process.set_color_ramp(&fade_texture);
 
-    let mut material = ShaderMaterial::new_gd();
-    material.set_shader(shader);
-    material.set_shader_parameter("viewmodel", &viewmodel.to_variant());
+    // A random angle per puff, which also picks its flipbook frame.
+    process.set_param_min(Parameter::ANGLE, -180.0);
+    process.set_param_max(Parameter::ANGLE, 180.0);
+
+    let material = smoke_material(shader);
     let mut quad = QuadMesh::new_gd();
     let size = if viewmodel { 0.22 } else { 0.4 };
     quad.set_size(Vector2::new(size, size));
@@ -1911,6 +2021,66 @@ fn smoke_emitter(shader: &Gd<Shader>, viewmodel: bool) -> Gd<GpuParticles3D> {
     particles
         .set_cast_shadows_setting(godot::classes::geometry_instance_3d::ShadowCastingSetting::OFF);
     particles.set_visibility_aabb(Aabb::new(Vector3::splat(-4.0), Vector3::splat(8.0)));
+    particles.set_emitting(false);
+    particles
+}
+
+/// The muzzle smoke's material: the lit smoke flipbook.
+fn smoke_material(shader: &Gd<Shader>) -> Gd<ShaderMaterial> {
+    let mut material = ShaderMaterial::new_gd();
+    material.set_shader(shader);
+    if let Ok(texture) =
+        try_load::<godot::classes::Texture2D>("res://assets/textures/effects/smoke_4x4.png")
+    {
+        material.set_shader_parameter("flipbook", &texture.to_variant());
+    }
+    material
+}
+
+/// A thin wisp off a hot barrel: a few small, faint puffs that leave slowly
+/// over a couple of seconds, rise, and curl as they grow.
+fn wisp_emitter(shader: &Gd<Shader>) -> Gd<GpuParticles3D> {
+    use godot::classes::particle_process_material::Parameter;
+    let mut process = ParticleProcessMaterial::new_gd();
+    process.set_direction(Vector3::new(0.0, 1.0, -0.3));
+    process.set_spread(12.0);
+    process.set_param_min(Parameter::INITIAL_LINEAR_VELOCITY, 0.08);
+    process.set_param_max(Parameter::INITIAL_LINEAR_VELOCITY, 0.2);
+    process.set_gravity(Vector3::new(0.03, 0.18, 0.0));
+    process.set_param_min(Parameter::ANGLE, -180.0);
+    process.set_param_max(Parameter::ANGLE, 180.0);
+    process.set_param_min(Parameter::SCALE, 0.6);
+    process.set_param_max(Parameter::SCALE, 1.0);
+    let mut growth = Curve::new_gd();
+    growth.add_point(Vector2::new(0.0, 0.3));
+    growth.add_point(Vector2::new(1.0, 1.0));
+    let mut growth_texture = CurveTexture::new_gd();
+    growth_texture.set_curve(&growth);
+    process.set_param_texture(Parameter::SCALE, &growth_texture);
+    let mut fade = Gradient::new_gd();
+    fade.set_color(0, Color::from_rgba(1.0, 1.0, 1.0, 0.0));
+    fade.add_point(0.2, Color::from_rgba(1.0, 1.0, 1.0, 0.9));
+    let last = fade.get_point_count() - 1;
+    fade.set_color(last, Color::from_rgba(1.0, 1.0, 1.0, 0.0));
+    let mut fade_texture = GradientTexture1D::new_gd();
+    fade_texture.set_gradient(&fade);
+    process.set_color_ramp(&fade_texture);
+
+    let mut quad = QuadMesh::new_gd();
+    quad.set_size(Vector2::new(0.12, 0.12));
+    quad.set_material(&smoke_material(shader));
+
+    let mut particles = GpuParticles3D::new_alloc();
+    particles.set_amount(8);
+    particles.set_lifetime(1.8);
+    particles.set_one_shot(true);
+    particles.set_explosiveness_ratio(0.0);
+    particles.set_use_local_coordinates(false);
+    particles.set_process_material(&process);
+    particles.set_draw_pass_mesh(0, &quad);
+    particles
+        .set_cast_shadows_setting(godot::classes::geometry_instance_3d::ShadowCastingSetting::OFF);
+    particles.set_visibility_aabb(Aabb::new(Vector3::splat(-3.0), Vector3::splat(6.0)));
     particles.set_emitting(false);
     particles
 }
