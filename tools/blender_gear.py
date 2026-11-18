@@ -10,7 +10,8 @@ on them. Each object gets custom properties the builder reads:
 
 - ``role``: its palette role; ``group``: its part group (variants);
 - ``rigid``: one bone it follows rigidly, or ``bones``: bone-name prefixes its
-  transferred weights may use;
+  transferred weights may use (smoothed over the piece, so the two faces of a
+  thickened shell move together);
 - ``material``: the bake material key (procedural relief and colour).
 """
 
@@ -670,13 +671,13 @@ def belt(body: Body, z: float) -> list[bpy.types.Object]:
     out = [band(body, "battle_belt", Vector((0, 0, z)), Vector((0, 0, 1)), Vector((0, -1, 0)), 0.055, 0.008, 0.012,
                 "webbing", "molle", segments=28, bones=hips)]
     fy = body.surface(Vector((0, -0.6, z)), Vector((0, 1, 0))).y
-    out.append(rounded_box("buckle", (0.0, fy - 0.024, z), (0.06, 0.012, 0.045), "metal", "metal", bevel=0.004, bones=hips))
+    out.append(rounded_box("buckle", (0.0, fy - 0.024, z), (0.06, 0.012, 0.045), "metal", "metal", bevel=0.004, rigid="DEF-hips"))
     # Pouches: two pistol magazine pouches front left, a dump pouch at the back.
     for i, x in enumerate((0.07, 0.11)):
         y = body.surface(Vector((x, -0.6, z)), Vector((0, 1, 0))).y
-        out.append(rounded_box(f"pistol_mag_pouch_{i}", (x, y - 0.03, z - 0.01), (0.035, 0.028, 0.085), "webbing", "cordura", bevel=0.006, bones=hips))
+        out.append(rounded_box(f"pistol_mag_pouch_{i}", (x, y - 0.03, z - 0.01), (0.035, 0.028, 0.085), "webbing", "cordura", bevel=0.006, rigid="DEF-hips"))
     by = body.surface(Vector((0, 0.6, z)), Vector((0, -1, 0))).y
-    out.append(rounded_box("dump_pouch", (0.06, by + 0.04, z - 0.04), (0.13, 0.05, 0.12), "webbing", "cordura", bevel=0.015, bones=hips))
+    out.append(rounded_box("dump_pouch", (0.06, by + 0.04, z - 0.04), (0.13, 0.05, 0.12), "webbing", "cordura", bevel=0.015, rigid="DEF-hips"))
     # Holster on the right hip with the pistol's grip showing.
     hx = body.surface(Vector((-0.6, 0.0, z - 0.1)), Vector((1, 0, 0))).x
     tilt = Matrix.Rotation(math.radians(-8), 3, "Y")
@@ -690,8 +691,9 @@ def belt(body: Body, z: float) -> list[bpy.types.Object]:
 def knee_pads(body: Body, knees: dict[str, Vector]) -> list[bpy.types.Object]:
     out = []
     for side, knee in knees.items():
-        # Wrapped close over the kneecap; skinned to both bones so it stays on
-        # the knee as it bends.
+        # Wrapped close over the kneecap and skinned to both bones, so it
+        # stays on the knee as it bends; its weights are smoothed across the
+        # shell (see `smooth_weights`), so it hinges instead of tearing.
         pad = band(body, f"knee_pad_{side}", knee + Vector((0, 0, 0.0)), Vector((0, 0, 1)), Vector((0, -1, 0)), 0.1, 0.004, 0.016,
                    "webbing", "plastic", segments=12, start=-1.5, arc=3.0, reach=0.14, bones=[f"DEF-shin.{side}", f"DEF-thigh.{side}"])
         out.append(pad)
@@ -779,8 +781,98 @@ def boot_shafts(body: Body, legs: dict[str, tuple[Vector, Vector]]) -> list[bpy.
     for side, (knee, ankle) in legs.items():
         down = (ankle - knee).normalized()
         bottom, top = ankle + down * 0.012, ankle - down * 0.18
-        out.append(tube(f"boot_shaft_{side}", bottom, top, 0.05, 0.056, "boots", "boots",
-                        bones=[f"DEF-shin.{side}", f"DEF-foot.{side}"]))
+        out.append(tube(f"boot_shaft_{side}", bottom, top, 0.05, 0.056, "boots", "boots", rigid=f"DEF-shin.{side}"))
         out.append(tube(f"blouse_{side}", top - down * 0.004, top - down * 0.034, 0.062, 0.058, "pants", "pants",
-                        bones=[f"DEF-shin.{side}"]))
+                        rigid=f"DEF-shin.{side}"))
+    return out
+
+
+def hull_2d(points: np.ndarray) -> np.ndarray:
+    """The convex hull of 2D points, counter-clockwise (monotone chain)."""
+    pts = sorted({(round(float(x), 5), round(float(y), 5)) for x, y in points})
+
+    def cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+    lower, upper = [], []
+    for p in pts:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
+            lower.pop()
+        lower.append(p)
+    for p in reversed(pts):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
+            upper.pop()
+        upper.append(p)
+    return np.array(lower[:-1] + upper[:-1])
+
+
+def resample_loop(loop: np.ndarray, n: int) -> np.ndarray:
+    """`n` points evenly spaced along a closed polyline."""
+    closed = np.vstack([loop, loop[:1]])
+    seg = np.linalg.norm(np.diff(closed, axis=0), axis=1)
+    at = np.concatenate([[0.0], np.cumsum(seg)])
+    want = np.linspace(0.0, at[-1], n, endpoint=False)
+    return np.stack([np.interp(want, at, closed[:, i]) for i in range(2)], axis=1)
+
+
+def boot_soles(boots: list, segments: int = 40) -> list[bpy.types.Object]:
+    """A lugged rubber sole under each boot: the boot's footprint 5 mm wider all
+    round, wrapping its lowest 2 cm, with the toe sprung up, a heel block, and
+    the arch cut up between heel and forefoot. The lug pattern is the `sole`
+    material's relief. Skinned to the foot and toe, so it bends at the ball of
+    the foot with the boot."""
+    pts = np.array([tuple(o.matrix_world @ v.co) for o in boots for v in o.data.vertices])
+    out = []
+    for side, sx in (("L", 1.0), ("R", -1.0)):
+        p = pts[pts[:, 0] * sx > 0.0]
+        if len(p) < 16:
+            continue
+        z0 = float(p[:, 2].min())
+        foot = p[p[:, 2] < z0 + 0.03]
+        loop = hull_2d(foot[:, :2])
+        centre = loop.mean(axis=0)
+        loop = resample_loop(loop, segments)
+        out_dir = loop - centre
+        out_dir /= np.linalg.norm(out_dir, axis=1, keepdims=True)
+        y0, y1 = float(loop[:, 1].min()), float(loop[:, 1].max())  # toe (-Y), heel
+        along = (loop[:, 1] - y0) / max(y1 - y0, 1e-6)  # 0 at the toe, 1 at the heel
+
+        def smooth01(e0, e1, t):
+            t = np.clip((t - e0) / (e1 - e0), 0.0, 1.0)
+            return t * t * (3.0 - 2.0 * t)
+
+        spring = 0.012 * (1.0 - smooth01(0.0, 0.22, along))  # toe lifts off the ground
+        arch = 0.007 * smooth01(0.38, 0.46, along) * (1.0 - smooth01(0.66, 0.72, along))
+        rings = [
+            # (outset, height above the boot's lowest point), bottom to top.
+            (0.002, -0.002, True),   # tread face, cut up under the arch
+            (0.005, 0.002, True),    # tread edge
+            (0.0055, 0.013, False),  # midsole wall
+            (0.0045, 0.019, False),  # welt
+            (0.0005, 0.022, False),  # tucked under the upper
+        ]
+        verts = []
+        for outset, height, cut in rings:
+            xy = loop + out_dir * outset
+            z = z0 + height + spring + (arch if cut else 0.0)
+            verts += [Vector((x, y, zz)) for (x, y), zz in zip(xy, np.broadcast_to(z, len(xy)))]
+        faces = grid_faces(len(rings), segments, closed=True)
+        # Caps: the tread and the top, as fans round a centre vertex.
+        bottom_c = len(verts)
+        verts.append(Vector((centre[0], centre[1], z0 - 0.002 + 0.004)))
+        top_c = len(verts)
+        verts.append(Vector((centre[0], centre[1], z0 + 0.022)))
+        top = (len(rings) - 1) * segments
+        for k in range(segments):
+            k2 = (k + 1) % segments
+            faces.append((k2, k, bottom_c))
+            faces.append((top + k, top + k2, top_c))
+        obj = new_object(f"boot_sole_{side}", verts, faces, "metal", "sole", bones=[f"DEF-foot.{side}", f"DEF-toe.{side}"])
+        bm = bmesh.new()
+        bm.from_mesh(obj.data)
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+        bm.to_mesh(obj.data)
+        bm.free()
+        smooth(obj, 50)
+        out.append(obj)
     return out
