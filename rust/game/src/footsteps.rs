@@ -51,8 +51,9 @@ const QUIET_SPEED_RATIO: f32 = 0.72;
 const MIN_STEP_SPEED: f32 = 0.6;
 
 /// The local player hears their own steps this much quieter than someone
-/// else's at the same spot, so enemy steps stand out.
-pub const OWN_STEP_DB: f32 = -4.0;
+/// else's at the same spot, so enemy steps stand out and a player's own
+/// steps never nag.
+pub const OWN_STEP_DB: f32 = -10.0;
 /// Teammates' steps are quieter and carry less far than enemies'.
 pub const TEAMMATE_DB: f32 = -7.0;
 pub const TEAMMATE_RANGE: f32 = 0.6;
@@ -84,10 +85,10 @@ impl Gait {
 
     pub fn sound(self) -> GaitSound {
         let (stride, level_db, range) = match self {
-            Self::Crouch => (1.25, -14.0, 8.0),
-            Self::Quiet => (1.6, -10.0, 14.0),
-            Self::Walk => (1.9, -5.0, 24.0),
-            Self::Sprint => (2.3, 0.0, 36.0),
+            Self::Crouch => (1.25, -20.0, 8.0),
+            Self::Quiet => (1.6, -16.0, 14.0),
+            Self::Walk => (1.9, -11.0, 24.0),
+            Self::Sprint => (2.3, -6.0, 36.0),
         };
         GaitSound {
             stride,
