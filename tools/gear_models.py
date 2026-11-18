@@ -526,3 +526,291 @@ def laser_gun(b: Model):
     b.tube([(0.0, -0.1, 0.03), (0.0, -0.125, 0.025), (0.0, -0.125, -0.02), (0.0, -0.1, -0.025)], 0.003,
            "laser_shell", sides=5, detail=False)
     b.box(-0.015, 0.015, -0.14, -0.09, -0.175, -0.125, "laser_trim", bevel=0.006)
+
+
+# --- Maps ----------------------------------------------------------------------------
+# A model named map_* is a map's static architecture: the import script marks
+# it static so it bakes into the map's lightmap. It sits at the map's origin,
+# so its own space is the world's, and grime gathers at the floor.
+LOOKS.update({
+    "range_slab": _t("concrete_floor", 4.0, (0.8, 0.79, 0.77), grime=0.0),
+    "range_joint": {"color": (0.24, 0.23, 0.22), "rough": 0.9},
+    "range_panel": _t("concrete_panels", 4.0, (1.34, 1.32, 1.28), grime=0.3),
+    "range_coping": _t("concrete_smooth", 2.0, (0.92, 0.91, 0.9), grime=0.0),
+    "range_block": _t("concrete_smooth", 1.6, (0.8, 0.79, 0.76), grime=0.35),
+    "range_block_b": _t("concrete_smooth", 1.6, (0.7, 0.69, 0.67), grime=0.35),
+    "culvert": _t("concrete_stained", 3.0, (0.74, 0.73, 0.72), grime=0.3),
+    "culvert_lining": _t("corrugated", 1.2, (0.55, 0.57, 0.52), metal=0.6, grime=0.0),
+    "tower_steel": _t("painted_metal", 2.0, (0.2, 0.33, 0.52), metal=0.5, rough=0.9, grime=0.3),
+    "tower_panel": _t("corrugated", 1.5, (0.24, 0.38, 0.58), metal=0.5, grime=0.3),
+})
+
+
+def _rx(points, angle, centre):
+    """Points turned about x through `centre` the way a Godot basis with rows
+    (1, 0, 0), (0, cos, -sin), (0, sin, cos) turns them."""
+    c, s = math.cos(angle), math.sin(angle)
+    return [(centre[0] + x, centre[1] + c * y - s * z, centre[2] + s * y + c * z) for x, y, z in points]
+
+
+def _block_wall(b: Model, x0, x1, z0, z1, height, rng):
+    """Interlocking precast blocks, 0.8 m deep and 0.75 m a course, laid in
+    bond along the long axis of the footprint: the tall cover in the range."""
+    along_x = (x1 - x0) >= (z1 - z0)
+    a0, a1 = (x0, x1) if along_x else (z0, z1)
+    courses = round(height / 0.75)
+    for c in range(courses):
+        y0, y1 = c * 0.75, (c + 1) * 0.75
+        edges = [a0]
+        a = a0 + (0.8 if c % 2 else 1.6)
+        while a < a1 - 0.05:
+            edges.append(a)
+            a += 1.6
+        edges.append(a1)
+        for k in range(len(edges) - 1):
+            e0, e1 = edges[k] + 0.006, edges[k + 1] - 0.006
+            look = "range_block" if rng.random() < 0.6 else "range_block_b"
+            if along_x:
+                b.box(e0, e1, y0 + 0.004, y1, z0, z1, look, bevel=0.035)
+            else:
+                b.box(x0, x1, y0 + 0.004, y1, e0, e1, look, bevel=0.035)
+    # The lifting loops on top.
+    a = a0 + 0.8
+    while a < a1:
+        if along_x:
+            b.tube([(a - 0.12, height - 0.02, (z0 + z1) / 2), (a - 0.12, height + 0.08, (z0 + z1) / 2),
+                    (a + 0.12, height + 0.08, (z0 + z1) / 2), (a + 0.12, height - 0.02, (z0 + z1) / 2)],
+                   0.014, "rust", sides=6, detail=False)
+        else:
+            b.tube([((x0 + x1) / 2, height - 0.02, a - 0.12), ((x0 + x1) / 2, height + 0.08, a - 0.12),
+                    ((x0 + x1) / 2, height + 0.08, a + 0.12), ((x0 + x1) / 2, height - 0.02, a + 0.12)],
+                   0.014, "rust", sides=6, detail=False)
+        a += 1.6
+
+
+@model
+def map_testing_area(b: Model):
+    """The Testing Area's architecture (scenes/main.tscn): a 64 m square range
+    of cast slabs inside 6 m precast walls, two block walls for tall cover, a
+    lined culvert, and a steel platform with its ramp. Every surface sits on
+    the collision boxes the scene keeps (hidden CSG)."""
+    rng = random.Random(9)
+    # The floor: 4 m slabs with sealed joints, and a painted firing line in
+    # front of the armoury benches.
+    b.box(-32.0, 32.0, -0.3, 0.0, -32.0, 32.0, "range_slab")
+    for k in range(1, 16):
+        t = -32.0 + k * 4.0
+        b.box(t - 0.006, t + 0.006, 0.0, 0.002, -32.0, 32.0, "range_joint")
+        b.box(-32.0, 32.0, 0.0, 0.002, t - 0.006, t + 0.006, "range_joint")
+    b.box(-6.2, -6.05, 0.0, 0.003, 7.5, 24.0, "paint_yellow")
+    b.box(-31.6, 31.6, 0.0, 0.003, 31.25, 31.4, "paint_yellow")
+    # Perimeter walls: precast panels 4 m wide with grooved joints, a kick
+    # strip, a coping over the top, and a stencilled number on every other
+    # panel. Only the faces inside the range are built.
+    for side, (axis, sign) in enumerate((("z", -1), ("z", 1), ("x", -1), ("x", 1))):
+        face = sign * 32.0
+        if axis == "z":
+            b.box(-32.5, 32.5, 0.0, 6.0, face, face + sign * 0.5, "range_panel")
+            b.box(-32.5, 32.5, 5.85, 6.12, face - sign * 0.1, face + sign * 0.6, "range_coping", bevel=0.02)
+            b.box(-32.0, 32.0, 0.0, 0.25, face - sign * 0.02, face, "culvert")
+        else:
+            b.box(face, face + sign * 0.5, 0.0, 6.0, -32.0, 32.0, "range_panel")
+            b.box(face - sign * 0.1, face + sign * 0.6, 5.85, 6.12, -32.5, 32.5, "range_coping", bevel=0.02)
+            b.box(face - sign * 0.02, face, 0.0, 0.25, -32.0, 32.0, "culvert")
+        for k in range(1, 16):
+            t = -32.0 + k * 4.0
+            if axis == "z":
+                b.box(t - 0.02, t + 0.02, 0.25, 5.85, face - sign * 0.004, face + sign * 0.01, "range_joint")
+            else:
+                b.box(face - sign * 0.004, face + sign * 0.01, 0.25, 5.85, t - 0.02, t + 0.02, "range_joint")
+        letter = "NSWE"[side]
+        for k in range(0, 16, 2):
+            t = -30.0 + k * 4.0
+            yaw = {("z", -1): 0.0, ("z", 1): PI, ("x", -1): PI / 2, ("x", 1): -PI / 2}[(axis, sign)]
+            x, z = (t, face - sign * 0.005) if axis == "z" else (face - sign * 0.005, t)
+            b.text(f"{letter}{k // 2 + 1:02d}", x, 3.6, z, yaw, 0.42, "trim_black", depth=0.004)
+    # Tall cover: block walls on the old boxes.
+    _block_wall(b, 9.6, 10.4, 7.5, 12.5, 3.0, rng)
+    _block_wall(b, -17.0, -11.0, -2.4, -1.6, 3.0, rng)
+    # The culvert: concrete box sides and roof, lined with corrugated steel,
+    # with headwalls at each end.
+    for x0, x1 in ((-12.0, -11.0), (-9.0, -8.0)):
+        b.box(x0, x1, 0.0, 1.4, -20.0, -16.0, "culvert", bevel=0.03)
+    b.box(-12.0, -8.0, 1.4, 1.9, -20.0, -16.0, "culvert", bevel=0.04)
+    b.box(-11.0, -10.98, 0.0, 1.4, -20.0, -16.0, "culvert_lining")
+    b.box(-9.02, -9.0, 0.0, 1.4, -20.0, -16.0, "culvert_lining")
+    b.box(-11.0, -9.0, 1.38, 1.4, -20.0, -16.0, "culvert_lining")
+    for z0, z1 in ((-20.0, -19.85), (-16.15, -16.0)):
+        b.box(-12.03, -10.97, 0.0, 1.93, z0, z1, "range_coping", bevel=0.02)
+        b.box(-9.03, -7.97, 0.0, 1.93, z0, z1, "range_coping", bevel=0.02)
+        b.box(-12.03, -7.97, 1.38, 1.93, z0, z1, "range_coping", bevel=0.02)
+    # The platform: a steel frame clad in ribbed panels, a tread-plate deck
+    # with a painted safety edge.
+    x0, x1, z0, z1, top = 12.0, 20.0, -20.0, -12.0, 3.0
+    b.box(x0 + 0.03, x1 - 0.03, 0.0, top - 0.02, z0 + 0.03, z1 - 0.03, "tower_panel")
+    for x in (x0, 16.0, x1):
+        for z in (z0, -16.0, z1):
+            if x in (x0, x1) or z in (z0, z1):
+                b.box(x - 0.12, x + 0.12, 0.0, top - 0.02, z - 0.12, z + 0.12, "tower_steel", bevel=0.01)
+    for y0_ in (0.0, top - 0.25):
+        b.box(x0 - 0.005, x1 + 0.005, y0_, y0_ + 0.22, z0 - 0.005, z1 + 0.005, "tower_steel", bevel=0.01)
+    b.box(x0, x1, top - 0.02, top, z0, z1, "tread_plate")
+    for (ax0, ax1, az0, az1) in ((x0, x1, z0, z0 + 0.12), (x0, x1, z1 - 0.12, z1), (x0, x0 + 0.12, z0, z1),
+                                (x1 - 0.12, x1, z0, z1)):
+        if az1 == z1 and ax1 - ax0 > 1:
+            # The ramp lands on the north edge: leave its mouth unpainted.
+            b.box(ax0, 14.0, top, top + 0.003, az0, az1, "safety_yellow")
+            b.box(18.0, ax1, top, top + 0.003, az0, az1, "safety_yellow")
+        else:
+            b.box(ax0, ax1, top, top + 0.003, az0, az1, "safety_yellow")
+    # The ramp: the old box (4 x 0.4 x 7.6 m, turned 25 degrees about x),
+    # a tread-plate deck on channel stringers.
+    centre, angle = (16.0, 1.28, -8.8), math.radians(25.0)
+    deck = _rx(_box_points(-2.0, 2.0, 0.14, 0.2, -3.8, 3.8), angle, centre)
+    b.hull(deck, "tread_plate")
+    body = _rx(_box_points(-1.96, 1.96, -0.2, 0.14, -3.8, 3.8), angle, centre)
+    b.hull(body, "tower_steel")
+    for x in (-2.0, 2.0):
+        s = _rx(_box_points(x - 0.05, x + 0.05, -0.2, 0.26, -3.8, 3.8), angle, centre)
+        b.hull(s, "tower_steel")
+    for z in (-3.6, 3.6):
+        strip = _rx(_box_points(-1.95, 1.95, 0.2, 0.203, z - 0.06, z + 0.06), angle, centre)
+        b.hull(strip, "safety_yellow")
+
+
+LOOKS.update({
+    "arena_dirt": _t("dirt", 4.0, (0.66, 0.64, 0.6), grime=0.0),
+    "arena_slab": _t("concrete_stained", 3.0, (0.6, 0.6, 0.61), grime=0.0),
+    "arena_block": _t("brick_painted", 1.4, (0.52, 0.53, 0.55), grime=0.55),
+    "arena_pier": _t("brick", 1.3, (0.66, 0.56, 0.52), grime=0.5),
+    "arena_coping": _t("concrete_smooth", 2.0, (0.55, 0.55, 0.56), grime=0.0),
+    "arena_plaster": _t("plaster", 3.0, (0.5, 0.48, 0.45), grime=0.6),
+    "arena_asphalt": _t("asphalt", 4.0, (0.55, 0.55, 0.56), grime=0.0),
+})
+
+
+def _wall_run(b: Model, axis, t0, t1, a0, a1, height, openings, rng, pier_every=4.0):
+    """A compound wall between t0 and t1 across, a0 to a1 along `axis`
+    ("x": the wall runs along x), `height` tall: rendered block panels between
+    brick piers, a coping, and barbed wire on outriggers along the top.
+    `openings` are (o0, o1, top): gaps from the ground up to `top`, with a
+    concrete lintel over them."""
+    def box(u0, u1, y0, y1, w0, w1, look, bevel=0.0):
+        if axis == "x":
+            b.box(u0, u1, y0, y1, w0, w1, look, bevel=bevel)
+        else:
+            b.box(w0, w1, y0, y1, u0, u1, look, bevel=bevel)
+
+    # Cut the run into pieces round the openings, then panels and piers.
+    cuts = [a0]
+    for o0, o1, _ in sorted(openings):
+        cuts += [o0, o1]
+    cuts.append(a1)
+    for k in range(0, len(cuts), 2):
+        s0, s1 = cuts[k], cuts[k + 1]
+        if s1 - s0 < 0.01:
+            continue
+        u = s0
+        while u < s1 - 0.01:
+            # A pier at each multiple of pier_every, panels between.
+            nxt = min(s1, (math.floor(u / pier_every + 1e-6) + 1) * pier_every)
+            pier = abs(u / pier_every - round(u / pier_every)) < 1e-6 and nxt - u >= 0.45
+            if pier:
+                box(u, u + 0.45, 0.0, height, t0, t1, "arena_pier")
+                u += 0.45
+                continue
+            box(u, nxt, 0.0, height, t0, t1, "arena_block")
+            u = nxt
+    for o0, o1, top in openings:
+        box(o0, o1, top, height, t0, t1, "arena_block")
+        box(o0 - 0.15, o1 + 0.15, top - 0.02, top + 0.25, t0 - 0.03, t1 + 0.03, "arena_coping", bevel=0.02)
+    box(a0, a1, height, height + 0.12, t0 - 0.06, t1 + 0.06, "arena_coping", bevel=0.02)
+    # Barbed wire: an outrigger every 3 m leaning out, three sagging strands.
+    out = 1 if (t0 + t1) / 2 > 0 else -1
+    mid = (t0 + t1) / 2
+    n = max(1, int((a1 - a0) / 3.0))
+    tops = []
+    for k in range(n + 1):
+        u = a0 + (a1 - a0) * k / n
+        p0, p1 = (u, height + 0.1, mid), (u, height + 0.55, mid + out * 0.3)
+        if axis != "x":
+            p0, p1 = (p0[2], p0[1], p0[0]), (p1[2], p1[1], p1[0])
+        b.tube([p0, p1], 0.012, "steel_dark", sides=4)
+        tops.append(u)
+    for f in (0.35, 0.65, 1.0):
+        pts = []
+        for u in tops:
+            p = (u, height + 0.1 + 0.45 * f, mid + out * 0.3 * f)
+            pts.append(p if axis == "x" else (p[2], p[1], p[0]))
+        b.tube(pts, 0.004, "rust", sides=3, sag=0.05)
+
+
+@model
+def map_zombies_arena(b: Model):
+    """The Zombies arena's architecture (scenes/zombies_arena.tscn): a walled
+    yard 48 m square at night, eight boarded window bays with spawn alcoves
+    behind them, a gate east and west into side yards, and eight brick
+    columns. Every surface sits on the collision the scene keeps (hidden
+    CSG)."""
+    rng = random.Random(21)
+    H = 5.0
+    # The yard: packed dirt, broken concrete slabs, gravel along the walls.
+    b.box(-24.0, 24.0, -1.0, 0.0, -24.0, 24.0, "arena_dirt")
+    for _ in range(26):
+        w, d = rng.uniform(1.5, 4.0), rng.uniform(1.5, 4.0)
+        x, z = rng.uniform(-22.0, 22.0 - w), rng.uniform(-22.0, 22.0 - d)
+        b.box(x, x + w, 0.0, 0.025, z, z + d, "arena_slab", bevel=0.01)
+    for x0, x1, z0, z1 in ((-24, 24, -24, -23.2), (-24, 24, 23.2, 24), (-24, -23.2, -24, 24), (23.2, 24, -24, 24)):
+        b.box(x0, x1, 0.0, 0.015, z0, z1, "gravel")
+    # The perimeter: openings for the windows (1.9 m wide, 2.2 m tall) and the
+    # gates (8 m wide, 4 m tall).
+    win = 2.2
+    _wall_run(b, "x", -25.0, -24.0, -25.0, 25.0, H, [(-14.95, -13.05, win), (13.05, 14.95, win)], rng)
+    _wall_run(b, "x", 24.0, 25.0, -25.0, 25.0, H, [(-14.95, -13.05, win), (13.05, 14.95, win)], rng)
+    for t0, t1 in ((-25.0, -24.0), (24.0, 25.0)):
+        _wall_run(b, "z", t0, t1, -24.0, 24.0, H, [(-17.95, -16.05, win), (0.0, 8.0, 4.0), (21.05, 22.95, win)], rng)
+    # Window bays: the sill, and outside it a small walled alcove where the
+    # zombies gather, with rubble on its floor.
+    bays = [((-14.0, -24.5), "z", -1), ((14.0, -24.5), "z", -1), ((-14.0, 24.5), "z", 1), ((14.0, 24.5), "z", 1),
+            ((-24.5, -17.0), "x", -1), ((-24.5, 22.0), "x", -1), ((24.5, -17.0), "x", 1), ((24.5, 22.0), "x", 1)]
+    for (cx, cz), normal, sign in bays:
+        def wbox(a0, a1, y0, y1, d0, d1, look, bevel=0.0):
+            # a: along the wall, d: outward from the wall's centre line.
+            if normal == "z":
+                b.box(cx + a0, cx + a1, y0, y1, *sorted((cz + sign * d0, cz + sign * d1)), look, bevel=bevel)
+            else:
+                b.box(*sorted((cx + sign * d0, cx + sign * d1)), y0, y1, cz + a0, cz + a1, look, bevel=bevel)
+        wbox(-1.0, 1.0, -0.1, 0.03, -0.6, 0.6, "arena_coping", bevel=0.02)
+        wbox(-2.3, 2.3, -1.0, 0.0, 0.5, 5.0, "arena_slab")
+        wbox(-2.8, 2.8, 0.0, 4.0, 5.0, 5.5, "arena_plaster")
+        wbox(-2.8, -2.3, 0.0, 4.0, 0.5, 5.0, "arena_plaster")
+        wbox(2.3, 2.8, 0.0, 4.0, 0.5, 5.0, "arena_plaster")
+        for side in (-1, 1):
+            wbox(side * 2.8 - 0.06, side * 2.3 + 0.06, 4.0, 4.1, 0.5, 5.56, "arena_coping")
+        wbox(-2.86, 2.86, 4.0, 4.1, 5.0, 5.56, "arena_coping")
+        for _ in range(5):
+            a, d = rng.uniform(-1.9, 1.9), rng.uniform(2.0, 4.6)
+            s = rng.uniform(0.12, 0.3)
+            pts = [(rng.uniform(-s, s), rng.uniform(0.0, s * 0.8), rng.uniform(-s, s)) for _ in range(8)]
+            if normal == "z":
+                pts = [(cx + a + px, py, cz + sign * d + pz) for px, py, pz in pts]
+            else:
+                pts = [(cx + sign * d + px, py, cz + a + pz) for px, py, pz in pts]
+            b.hull(pts, "arena_slab")
+    # The side yards: cracked asphalt inside their own walls.
+    for sign in (-1, 1):
+        x0, x1 = sorted((sign * 24.0, sign * 42.5))
+        b.box(x0, x1, -1.0, 0.0, -12.0, 20.0, "arena_asphalt")
+        far = (42.5, 43.5) if sign > 0 else (-43.5, -42.5)
+        _wall_run(b, "z", *far, -12.0, 20.0, H, [], rng)
+        for z0, z1 in ((-12.0, -11.0), (19.0, 20.0)):
+            xa, xb = sorted((sign * 25.0, sign * 42.5))
+            _wall_run(b, "x", z0, z1, xa, xb, H, [], rng)
+    # Brick columns on concrete bases, with a capital and an iron band.
+    for (x, z), r in [((-9, -9), 0.9), ((9, -9), 0.9), ((-9, 9), 0.9), ((9, 9), 0.9), ((0, -15), 1.4),
+                      ((0, 15), 1.4), ((-15, 0), 1.4), ((15, 0), 1.4)]:
+        b.cyl("y", 0.0, 4.0, (x, z), r, "arena_pier", sides=24)
+        b.cyl("y", 0.0, 0.35, (x, z), r + 0.06, "arena_coping", sides=24)
+        b.cyl("y", 3.7, 3.85, (x, z), r + 0.08, "arena_coping", sides=24)
+        b.cyl("y", 3.85, 4.0, (x, z), r + 0.03, "arena_coping", sides=24)
+        b.cyl("y", 2.1, 2.16, (x, z), r + 0.012, "rust", sides=24)

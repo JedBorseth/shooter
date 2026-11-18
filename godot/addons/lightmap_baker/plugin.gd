@@ -37,6 +37,11 @@ func _bake(path: String) -> bool:
 		root = EditorInterface.get_edited_scene_root()
 		if root != null and root.scene_file_path == path:
 			break
+		# The editor can open the scene in a tab but stay on another (the
+		# project's main scene, or one restored from the last session):
+		# asking for an open scene again switches to its tab.
+		if path in EditorInterface.get_open_scenes():
+			EditorInterface.open_scene_from_path(path)
 	if root == null or root.scene_file_path != path:
 		push_error("lightmap baker: could not open %s" % path)
 		return false

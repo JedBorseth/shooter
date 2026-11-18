@@ -2,7 +2,7 @@
 
 [ext_resource type="PackedScene" path="res://scenes/player.tscn" id="1_player"]
 [ext_resource type="LightmapGIData" uid="uid://brl4t7h4kwi7r" path="res://scenes/zombies_arena.lmbake" id="2_hkte1"]
-[ext_resource type="ArrayMesh" path="res://assets/maps/zombies_arena/Map.res" id="5_3o2ur"]
+[ext_resource type="PackedScene" path="res://assets/models/map_zombies_arena/map_zombies_arena.gltf" id="5_3o2ur"]
 [ext_resource type="PackedScene" path="res://scenes/ui/pause_menu.tscn" id="5_pause"]
 [ext_resource type="PackedScene" path="res://scenes/props/weapon_rack.tscn" id="9_rack"]
 [ext_resource type="PackedScene" uid="uid://f4nuvi0vah4o" path="res://assets/weapons/m4/m4.glb" id="11_m4"]
@@ -107,7 +107,6 @@ directional_shadow_max_distance = 40.0
 visible = false
 use_collision = true
 metadata/surface = "concrete"
-metadata/csg_baked = true
 
 [node name="Floor" type="CSGBox3D" parent="Map" unique_id=569484158]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
@@ -490,9 +489,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 27.5, 2, 24.55)
 size = Vector3(4, 4, 0.5)
 material = ExtResource("m_wall")
 
-[node name="MapMesh" type="MeshInstance3D" parent="." unique_id=561737112]
-mesh = ExtResource("5_3o2ur")
-metadata/csg_visual = true
+[node name="Architecture" parent="." instance=ExtResource("5_3o2ur")]
 
 [node name="Barrels" type="CSGCombiner3D" parent="." unique_id=1181650945]
 visible = false

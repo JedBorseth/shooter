@@ -2,9 +2,11 @@
 extends EditorScenePostImport
 ## Import script for the standalone models in assets/models/ (written by
 ## tools/build_models.py). Each surface's material is a placeholder named after
-## a shared material in materials/models/; this swaps the real one in. The
+## a shared material in materials/models/; this swaps the real one in. Most
 ## models are props that can move or vanish, so they take light from a map's
-## lightmap probes rather than baking into it.
+## lightmap probes rather than baking into it; a `map_*` model is a map's
+## static architecture and bakes into its lightmap (import it with static
+## lightmap baking, so it gets lightmap UVs).
 
 
 func _post_import(scene: Node) -> Object:
@@ -21,7 +23,10 @@ func _post_import(scene: Node) -> Object:
 				cache[key] = _material(key)
 			if cache[key] != null:
 				mesh.surface_set_material(i, cache[key])
-		instance.gi_mode = GeometryInstance3D.GI_MODE_DYNAMIC
+		if String(instance.name).begins_with("map_"):
+			instance.gi_mode = GeometryInstance3D.GI_MODE_STATIC
+		else:
+			instance.gi_mode = GeometryInstance3D.GI_MODE_DYNAMIC
 	return scene
 
 
