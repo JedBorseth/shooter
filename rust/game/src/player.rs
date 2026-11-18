@@ -7,8 +7,12 @@
 //! waits for a physics tick on high-refresh displays.
 //!
 //! Gamepad look also runs every rendered frame: stick shaping, turn boost, and
-//! aim assist (slowdown and rotational) from `shooter_sim::look`. Aim assist
-//! only applies while the last input came from a gamepad.
+//! aim assist (slowdown and rotational) from `shooter_sim::look`.
+//!
+//! The player picks one input device in Settings (`controller_input`), and the
+//! other is locked out: Settings takes its bindings off the input map, and the
+//! player ignores mouse look on a controller and stick look on the mouse. Aim
+//! assist and vibration only run on a controller.
 //!
 //! Online, a `NetClient` turns on prediction: every tick's input and result
 //! are recorded, and server snapshots are reconciled against them, replaying
@@ -29,8 +33,8 @@ use godot::classes::input::MouseMode;
 use godot::classes::{
     AudioStreamPlayer, AudioStreamRandomizer, Camera3D, CharacterBody3D, CollisionShape3D, Engine,
     ICharacterBody3D, Input, InputEvent, InputEventJoypadButton, InputEventJoypadMotion,
-    InputEventKey, InputEventMouseButton, InputEventMouseMotion, Node3D, PackedScene,
-    PhysicsDirectSpaceState3D, PhysicsRayQueryParameters3D, ShapeCast3D,
+    InputEventMouseButton, InputEventMouseMotion, Node3D, PackedScene, PhysicsDirectSpaceState3D,
+    PhysicsRayQueryParameters3D, ShapeCast3D,
 };
 use godot::prelude::*;
 use shooter_sim::hitbox::HitZone;
@@ -199,6 +203,10 @@ pub struct FpsPlayer {
     #[export]
     #[init(val = true)]
     rumble: bool,
+    /// A controller plays: mouse look is ignored, and aim assist, vibration,
+    /// and button prompts are on. Off, the sticks are ignored. Set by Settings.
+    #[export]
+    controller_input: bool,
     /// Spawned where bullets hit the world.
     #[export]
     impact_scene: OnEditor<Gd<PackedScene>>,
@@ -302,9 +310,11 @@ pub struct FpsPlayer {
     sounds: HashMap<String, Option<Gd<AudioStreamRandomizer>>>,
     /// Breath, heart, being hit, and the body's moves (`player_sounds`).
     player_sounds: Option<Gd<PlayerSounds>>,
-    /// The last gameplay input came from a gamepad (not the mouse or keyboard).
-    gamepad: bool,
+    /// The controller that last sent input, for vibration.
     gamepad_device: i32,
+    /// `controller_input` as of the last stick look, to drop aim assist's
+    /// state when the device changes.
+    stick_active: bool,
     stick_look: StickLook,
     assist: AimAssist,
     assist_target: Option<u64>,
@@ -358,7 +368,7 @@ impl ICharacterBody3D for FpsPlayer {
         let mut input = Input::singleton();
         let captured = input.get_mouse_mode() == MouseMode::CAPTURED;
 
-        self.track_device(&event);
+        self.track_gamepad(&event);
         for (latched, action) in self.latched.iter_mut().zip(LATCHED_ACTIONS) {
             if event.is_action_pressed(action) {
                 *latched = true;
@@ -366,7 +376,7 @@ impl ICharacterBody3D for FpsPlayer {
         }
         let event = match event.try_cast::<InputEventMouseMotion>() {
             Ok(motion) => {
-                if captured {
+                if captured && !self.controller_input {
                     // Screen-relative motion ignores window stretch; scaling by the
                     // aim zoom keeps aim speed consistent through sights and
                     // scopes. Sprint and slide FOV changes and kill pulses do
@@ -834,7 +844,7 @@ impl FpsPlayer {
                         "key_label",
                         &[
                             StringName::from(action).to_variant(),
-                            self.gamepad.to_variant(),
+                            self.controller_input.to_variant(),
                         ],
                     )
                     .to_string()
@@ -951,10 +961,10 @@ impl FpsPlayer {
         self.aim_angles
     }
 
-    /// True while the last gameplay input came from a gamepad.
+    /// True while a controller plays (the input device setting).
     #[func]
     fn using_gamepad(&self) -> bool {
-        self.gamepad
+        self.controller_input
     }
 
     /// True while controller aim assist is on a target.
@@ -1128,7 +1138,10 @@ impl FpsPlayer {
         let mut interact_down = held("interact");
         // On a gamepad the reload button uses whatever is in front of the
         // player (a rack, a door), and reloads otherwise.
-        if self.gamepad && reload && (self.look_device.is_some() || self.look_target.is_some()) {
+        if self.controller_input
+            && reload
+            && (self.look_device.is_some() || self.look_target.is_some())
+        {
             interact_down = true;
             reload = false;
         }
@@ -1268,40 +1281,16 @@ impl FpsPlayer {
         })
     }
 
-    /// Switches between gamepad and mouse-and-keyboard on deliberate input,
-    /// ignoring stick drift and tiny mouse bumps.
-    fn track_device(&mut self, event: &Gd<InputEvent>) {
-        let gamepad = if let Ok(motion) = event.clone().try_cast::<InputEventJoypadMotion>() {
-            if motion.get_axis_value().abs() < 0.3 {
-                return;
+    /// Remembers which controller is in use, for vibration.
+    fn track_gamepad(&mut self, event: &Gd<InputEvent>) {
+        if let Ok(motion) = event.clone().try_cast::<InputEventJoypadMotion>() {
+            if motion.get_axis_value().abs() >= 0.3 {
+                self.gamepad_device = motion.get_device();
             }
-            self.gamepad_device = motion.get_device();
-            true
-        } else if let Ok(button) = event.clone().try_cast::<InputEventJoypadButton>() {
-            if !button.is_pressed() {
-                return;
-            }
-            self.gamepad_device = button.get_device();
-            true
-        } else if let Ok(motion) = event.clone().try_cast::<InputEventMouseMotion>() {
-            if motion.get_screen_relative().length() < 4.0 {
-                return;
-            }
-            false
-        } else if event.clone().try_cast::<InputEventKey>().is_ok()
-            || event.clone().try_cast::<InputEventMouseButton>().is_ok()
+        } else if let Ok(button) = event.clone().try_cast::<InputEventJoypadButton>()
+            && button.is_pressed()
         {
-            if !event.is_pressed() {
-                return;
-            }
-            false
-        } else {
-            return;
-        };
-        if gamepad != self.gamepad {
-            self.gamepad = gamepad;
-            self.assist.reset();
-            self.assist_target = None;
+            self.gamepad_device = button.get_device();
         }
     }
 
@@ -1333,6 +1322,15 @@ impl FpsPlayer {
     /// Right-stick look for this rendered frame, with aim assist. Scaled by
     /// zoom like the mouse, so aiming down sights turns slower.
     fn apply_stick_look(&mut self, eye: Vector3, ads: f32, delta: f32) {
+        if self.controller_input != self.stick_active {
+            self.stick_active = self.controller_input;
+            self.stick_look = StickLook::default();
+            self.assist.reset();
+            self.assist_target = None;
+        }
+        if !self.controller_input {
+            return;
+        }
         let input = Input::singleton();
         let strength = |action: &str| input.get_action_raw_strength(action);
         let mut raw = Vec2::new(
@@ -1344,15 +1342,10 @@ impl FpsPlayer {
         }
         let params = self.stick_params();
         let stick = look::shape_stick(raw, &params);
-        if stick != Vec2::ZERO {
-            self.gamepad = true;
-        }
         let mut rates = self.stick_look.rates(stick, &params, delta) * self.aim_zoom();
 
-        let assist_on = self.gamepad
-            && self.aim_assist
-            && self.aim_assist_strength > 0.0
-            && !self.state.movement.sprinting;
+        let assist_on =
+            self.aim_assist && self.aim_assist_strength > 0.0 && !self.state.movement.sprinting;
         if assist_on {
             let moving = input
                 .get_vector("move_left", "move_right", "move_back", "move_forward")
@@ -1449,7 +1442,7 @@ impl FpsPlayer {
     }
 
     fn rumble_on_fire(&self, weapon: WeaponId) {
-        if !self.rumble || !self.gamepad {
+        if !self.rumble || !self.controller_input {
             return;
         }
         let def = weapon.def();

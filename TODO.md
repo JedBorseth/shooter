@@ -103,6 +103,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Gamepad support: bindings, stick deadzones and response curve, turn boost, rumble, and aim assist (slowdown and rotational, on by default for gamepads only; no snap).
 - [x] Gamepad settings in the settings menu: look speed, deadzone, curve, invert Y, aim assist toggle and strength, vibration.
 - [x] D-pad left and right pick the weapon slots, and the reload button (X) interacts when something is in front of the player. Prompts name the bound key or button.
+- [x] An input device setting (Keyboard & mouse or Controller) that locks the other device out of play; menus and pause take both, a reminder shows when the locked device is used, and losing the controller pauses the game.
 - [ ] Button prompts with controller glyph images instead of button names.
 - [x] **good first task** Show the controls overlay only for the first minute, or toggle it with F1.
 

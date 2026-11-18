@@ -141,8 +141,14 @@ func _options() -> void:
 	await _press(JOY_BUTTON_LEFT_SHOULDER)
 	_check(tabs.current_tab == 0, "LB opens the previous tab")
 	await _press(JOY_BUTTON_DPAD_DOWN)
+	var device := _focused()
+	_check(
+		device is OptionButton and device.name == "InputDevice",
+		"down moves from the tabs to the first setting, the input device"
+	)
+	await _press(JOY_BUTTON_DPAD_DOWN)
 	var slider := _focused() as HSlider
-	_check(slider != null, "down moves from the tabs to the first setting")
+	_check(slider != null, "down again reaches the first slider")
 	if slider != null:
 		var before := slider.value
 		await _press(JOY_BUTTON_DPAD_RIGHT)

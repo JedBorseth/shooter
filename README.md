@@ -371,7 +371,9 @@ Gamepads work too (Xbox layout shown; PlayStation and others use the same positi
 | Scoreboard (online, hold) | Back / View |
 | Loadout and Ready (online) | D-pad up |
 
-On a gamepad, aim assist slows the right stick near a target and follows part of the target's movement relative to you while you move or look. It never snaps to a target, and the mouse never gets it. The HUD switches its controls hint to whichever device you used last. Stick speed, deadzones, response curve, invert Y, aim assist, and rumble are exported properties on the `Player` node; the settings menu does not show them yet.
+Pick what you play with in Settings → Controls → Input device: Keyboard & mouse (the default) or Controller. The first launch picks Controller if one is plugged in. The device you don't pick is locked out of play: its bindings come off every gameplay action, so a bumped mouse or a controller on the desk can't move, aim, or fire, and aim assist stays with controllers. Pause (Esc or Menu), chat, and every menu work with both, so you can always get back to the setting. Using the locked device in a match shows a short reminder at the top of the screen. If the controller disconnects while it plays, the game pauses (offline) and opens the menu. The HUD's controls line and its prompts name the chosen device's buttons.
+
+On a controller, aim assist slows the right stick near a target and follows part of the target's movement relative to you while you move or look. It never snaps to a target, and the mouse never gets it. Stick speed, deadzone, response curve, invert Y, aim assist and its strength, and vibration are in Settings → Controls.
 
 The arena has target dummies at several ranges: enemy soldiers holding different weapons, some crouched. Head, chest, stomach, arm, and leg hits do different damage (F4 shows the zones). Dummies show their health, fall away from the killing shot, and respawn 3 seconds after being killed. Weapon racks next to the spawn hold every weapon; walk up and press F to swap. The sentry on the raised platform shoots at you when you come within 32 m and can see it; shoot it to knock it out for 10 seconds.
 

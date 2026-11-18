@@ -1,7 +1,12 @@
 extends Node
 ## Player settings (autoload `Settings`). Loads and saves `user://settings.cfg`,
 ## applies the engine-level settings itself (window mode, vsync, frame cap, bus
-## volumes), and pushes the gameplay ones onto the player with `apply_to_player`.
+## volumes, the input map), and pushes the gameplay ones onto the player with
+## `apply_to_player`.
+##
+## The input device (`input_device`) picks keyboard and mouse or a controller
+## for play. The other device's bindings are taken off every gameplay action,
+## so it cannot move, aim, or fire; menus (`ui_*`) and SHARED_ACTIONS take both.
 ##
 ## Read values as properties (`Settings.fov`). Change them through `set_setting`,
 ## which validates the value, applies it, emits `changed`, and saves shortly after.
@@ -9,9 +14,13 @@ extends Node
 ## Emitted after any setting changes, including on load and reset.
 signal changed
 
+## What plays the game, by index into INPUT_DEVICES.
+enum InputDevice { KEYBOARD_MOUSE, CONTROLLER }
+
 const GraphicsQuality := preload("res://scripts/graphics.gd")
 const Lens := preload("res://scripts/lens.gd")
 const Grounding := preload("res://scripts/grounding.gd")
+const InputNotice := preload("res://scripts/ui/input_notice.gd")
 
 ## Radians of view rotation per screen pixel at a sensitivity of 1.0.
 const BASE_MOUSE_SENSITIVITY := 0.0022
@@ -40,6 +49,14 @@ const DEFAULT_DIRECTORY := SERVICE_HOST + ":27010"
 ## Base stick turn rates (degrees per second) at a stick sensitivity of 1.0.
 const STICK_YAW_SPEED := 200.0
 const STICK_PITCH_SPEED := 150.0
+
+const INPUT_DEVICES: Array[String] = ["Keyboard & mouse", "Controller"]
+## Actions that keep both devices' bindings whichever is chosen: a way back to
+## the menu from either, and typing, which needs the keyboard. `ui_*` actions
+## (menu navigation) also keep both.
+const SHARED_ACTIONS: Array[StringName] = [
+	&"pause", &"chat", &"team_chat", &"toggle_controls", &"debug_hitboxes"
+]
 
 ## Actions the player can rebind, with their names in the menu. Only keyboard
 ## and mouse bindings change; gamepad bindings stay as they are.
@@ -94,6 +111,7 @@ const MOUSE_BUTTON_NAMES := {
 }
 
 const DEFAULTS := {
+	&"input_device": InputDevice.KEYBOARD_MOUSE,
 	&"mouse_sensitivity": 1.0,
 	&"ads_sensitivity": 1.0,
 	&"invert_mouse_y": false,
@@ -128,7 +146,7 @@ const DEFAULTS := {
 
 ## Config file section for each setting.
 const SECTIONS := {
-	"controls": [&"mouse_sensitivity", &"ads_sensitivity", &"invert_mouse_y"],
+	"controls": [&"input_device", &"mouse_sensitivity", &"ads_sensitivity", &"invert_mouse_y"],
 	"gamepad":
 	[
 		&"invert_stick_y",
@@ -167,6 +185,7 @@ const SECTIONS := {
 
 ## Allowed values of each int setting.
 const INT_OPTIONS := {
+	&"input_device": [InputDevice.KEYBOARD_MOUSE, InputDevice.CONTROLLER],
 	&"max_fps": MAX_FPS_OPTIONS,
 	&"graphics_quality": [0, 1, 2],
 	&"audio_mix": [0, 1, 2],
@@ -203,6 +222,8 @@ const BUSES := {
 ## File the settings load from and save to. Tests point this elsewhere.
 var path := "user://settings.cfg"
 
+## An `InputDevice`: the one that plays. The other is locked out of play.
+var input_device: int = DEFAULTS[&"input_device"]
 ## Multiplier on BASE_MOUSE_SENSITIVITY.
 var mouse_sensitivity: float = DEFAULTS[&"mouse_sensitivity"]
 ## Sensitivity multiplier while aiming down sights.
@@ -258,6 +279,10 @@ var loadout_primary: String = DEFAULTS[&"loadout_primary"]
 ## serialized event (see `_event_to_value`).
 var key_bindings := {}
 
+## Every binding of each locked gameplay action, both devices', before the
+## unused device's were taken off the input map. Labels and rebinding read it.
+var _all_events: Dictionary[StringName, Array] = {}
+
 var _dirty := false
 var _save_timer := Timer.new()
 ## The full-screen lens pass; none on a dedicated server.
@@ -277,6 +302,10 @@ func _ready() -> void:
 	if not _headless():
 		_lens = Lens.new()
 		add_child(_lens)
+		var notice := InputNotice.new()
+		notice.name = "InputNotice"
+		notice.settings = self
+		add_child(notice)
 	load_settings()
 
 
@@ -329,6 +358,29 @@ func apply_to_player(player: Node) -> void:
 	player.set(&"aim_assist", aim_assist)
 	player.set(&"aim_assist_strength", aim_assist_strength)
 	player.set(&"rumble", rumble)
+	player.set(&"controller_input", uses_controller())
+
+
+## The key or button bound to `action` on the device that plays, for prompts.
+func prompt_key(action: StringName) -> String:
+	return key_label(action, uses_controller())
+
+
+## True when a controller plays and keyboard and mouse are locked out.
+func uses_controller() -> bool:
+	return input_device == InputDevice.CONTROLLER
+
+
+## True if `event` comes from a controller (a button or a stick or trigger).
+static func is_controller_event(event: InputEvent) -> bool:
+	return event is InputEventJoypadButton or event is InputEventJoypadMotion
+
+
+## Every binding of `action`, for both devices, whichever is locked out.
+func action_events(action: StringName) -> Array:
+	if _all_events.has(action):
+		return _all_events[action]
+	return InputMap.action_get_events(action) if InputMap.has_action(action) else []
 
 
 ## The key or button bound to `action`, for prompts ("F", "LMB", or with
@@ -338,7 +390,7 @@ func key_label(action: StringName, gamepad := false) -> String:
 		action = &"reload"
 	if not InputMap.has_action(action):
 		return "?"
-	for event: InputEvent in InputMap.action_get_events(action):
+	for event: InputEvent in action_events(action):
 		if gamepad and event is InputEventJoypadButton:
 			var button := (event as InputEventJoypadButton).button_index
 			return JOY_BUTTON_NAMES.get(button, "Button %d" % button)
@@ -363,9 +415,10 @@ func event_label(event: InputEvent) -> String:
 	return "?"
 
 
-## The keyboard or mouse event bound to `action`, or null.
+## The keyboard or mouse event bound to `action`, or null, even while the
+## keyboard and mouse are locked out.
 func binding(action: StringName) -> InputEvent:
-	for event: InputEvent in InputMap.action_get_events(action):
+	for event: InputEvent in action_events(action):
 		if event is InputEventKey or event is InputEventMouseButton:
 			return event
 	return null
@@ -385,11 +438,9 @@ func rebind(action: StringName, event: InputEvent) -> void:
 	for other: StringName in REBINDABLE:
 		var current := binding(other)
 		if other != action and current != null and _event_to_value(current) == value:
-			if old == null:
-				_set_binding(other, null)
-			else:
-				_set_binding(other, _event_to_value(old))
-	_set_binding(action, value)
+			key_bindings[other] = null if old == null else _event_to_value(old)
+	key_bindings[action] = value
+	_rebuild_input_map()
 	_mark_dirty()
 	changed.emit()
 
@@ -431,14 +482,34 @@ static func _value_to_event(value: Variant) -> InputEvent:
 	return null
 
 
-## Puts every action back to the project's bindings, then applies `key_bindings`.
-func _apply_key_bindings() -> void:
+## Puts every action back to the project's bindings, applies `key_bindings`,
+## then takes the unused device's bindings off the gameplay actions.
+func _rebuild_input_map() -> void:
 	InputMap.load_from_project_settings()
 	var stored := key_bindings.duplicate()
 	key_bindings.clear()
 	for action: Variant in stored:
 		if REBINDABLE.has(action) and InputMap.has_action(action):
 			_set_binding(action, stored[action])
+	_lock_input_device()
+
+
+func _lock_input_device() -> void:
+	_all_events.clear()
+	var controller := uses_controller()
+	for action: StringName in InputMap.get_actions():
+		if action in SHARED_ACTIONS or String(action).begins_with("ui_"):
+			continue
+		var events := InputMap.action_get_events(action)
+		_all_events[action] = events
+		for event: InputEvent in events:
+			var from_controller := is_controller_event(event)
+			var from_desk := event is InputEventKey or event is InputEventMouseButton
+			if (from_controller and not controller) or (from_desk and controller):
+				InputMap.action_erase_event(action, event)
+		# A key or button held through the switch must not stay held.
+		if Input.is_action_pressed(action):
+			Input.action_release(action)
 
 
 ## Validates, stores, and applies one setting, then schedules a save.
@@ -460,7 +531,6 @@ func reset_to_defaults() -> void:
 		set(key, DEFAULTS[key])
 	master_server = directory_address(OS.get_cmdline_user_args())
 	key_bindings.clear()
-	_apply_key_bindings()
 	apply_all()
 	_mark_dirty()
 	changed.emit()
@@ -478,12 +548,18 @@ func load_settings() -> void:
 				config.get_value(section, key, DEFAULTS[key]) if err == OK else DEFAULTS[key]
 			)
 			set(key, _sanitize(key, stored))
+	# First launch with a controller plugged in: play with it.
+	if (
+		not (err == OK and config.has_section_key("controls", "input_device"))
+		and not _headless()
+		and not Input.get_connected_joypads().is_empty()
+	):
+		input_device = InputDevice.CONTROLLER
 	master_server = directory_address(OS.get_cmdline_user_args())
 	key_bindings.clear()
 	if err == OK and config.has_section("keys"):
 		for action: String in config.get_section_keys("keys"):
 			key_bindings[StringName(action)] = config.get_value("keys", action)
-	_apply_key_bindings()
 	_dirty = false
 	_save_timer.stop()
 	apply_all()
@@ -533,6 +609,8 @@ func _apply(key: StringName) -> void:
 			AudioServer.set_bus_mute(bus, volume <= 0.0)
 		return
 	match key:
+		&"input_device":
+			_rebuild_input_map()
 		&"audio_mix":
 			for volume_key: StringName in BUSES:
 				_apply(volume_key)

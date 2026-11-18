@@ -19,7 +19,10 @@ const UI_BUS := &"UI"
 const TAB_NAMES: Array[String] = ["Controls", "Keybinds", "Graphics", "Audio", "General"]
 ## What each tab holds, shown before a setting is picked.
 const TAB_INTROS: Array[String] = [
-	"How the mouse and a controller aim. Pick a setting to see what it does.",
+	(
+		"What you play with, and how it aims. The device you don't pick is locked out"
+		+ " of play. Pick a setting to see what it does."
+	),
 	"Choose a binding, then press a key or mouse button. A key used by another action swaps with it.",
 	"Display and quality. Every change applies right away.",
 	"Volume for each kind of sound, and how it is mixed.",
@@ -27,6 +30,12 @@ const TAB_INTROS: Array[String] = [
 ]
 ## What each setting does, for the pane beside the list.
 const DESCRIPTIONS := {
+	&"input_device":
+	(
+		"Play with keyboard and mouse or with a controller. The other one is locked out"
+		+ " while you play, so nothing switches by accident and aim assist stays with"
+		+ " controllers. Menus and pause work with both."
+	),
 	&"mouse_sensitivity": "How far the view turns for each movement of the mouse.",
 	&"ads_sensitivity":
 	"Turn speed while aiming down sights, as a share of your normal sensitivity.",
@@ -89,6 +98,9 @@ var _capturing: StringName
 var _capture_time := 0.0
 var _binding_hint: Label
 var _controller_status: Label
+var _input_option: OptionButton
+var _mouse_heading: Label
+var _controller_heading: Label
 var _player_name: LineEdit
 ## Default value text, by setting key, for the pane beside the list.
 var _defaults: Dictionary[StringName, String] = {}
@@ -168,7 +180,9 @@ func _open_input(event: InputEvent, pause: bool) -> void:
 		return
 	if not (pause or event.is_action_pressed(&"ui_cancel")):
 		return
-	for option: OptionButton in [_fps_option, _quality_option, _scale_option, _mix_option]:
+	for option: OptionButton in [
+		_input_option, _fps_option, _quality_option, _scale_option, _mix_option
+	]:
 		if option.get_popup().visible:
 			return  # Let the dropdown close itself.
 	get_viewport().set_input_as_handled()
@@ -365,7 +379,9 @@ func _build_settings() -> void:
 	_settings_page.move_child(_tabs, 0)
 	_tabs.tab_changed.connect(_select_tab)
 	var controls := _add_section("Controls")
-	_add_heading(controls, "Mouse")
+	_add_heading(controls, "Input")
+	_add_input_option(controls)
+	_mouse_heading = _add_heading(controls, "Mouse")
 	_add_slider(controls, &"mouse_sensitivity", "Mouse sensitivity", 0.05, sensitivity)
 	_add_slider(
 		controls,
@@ -375,12 +391,12 @@ func _build_settings() -> void:
 		func(v: float) -> String: return "%.2f×" % v
 	)
 	_add_toggle(controls, &"invert_mouse_y", "Invert mouse Y")
-	_add_heading(controls, "Controller")
+	_controller_heading = _add_heading(controls, "Controller")
 	_controller_status = Label.new()
 	_controller_status.theme_type_variation = &"DimLabel"
 	_controller_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	controls.add_child(_controller_status)
-	_controller_changed(0, false)
+	_show_controller_status()
 	_add_slider(controls, &"stick_sensitivity", "Look speed", 0.05, sensitivity)
 	_add_slider(controls, &"stick_deadzone", "Stick deadzone", 0.01, percent)
 	_add_slider(controls, &"stick_curve", "Response curve", 0.1, sensitivity)
@@ -446,19 +462,21 @@ func _record_defaults() -> void:
 	_defaults[&"graphics_quality"] = GraphicsQuality.NAMES[Settings.DEFAULTS[&"graphics_quality"]]
 	_defaults[&"render_scale"] = _scale_name(Settings.DEFAULTS[&"render_scale"])
 	_defaults[&"audio_mix"] = Settings.AUDIO_MIXES[Settings.DEFAULTS[&"audio_mix"]]
+	_defaults[&"input_device"] = Settings.INPUT_DEVICES[Settings.DEFAULTS[&"input_device"]]
 
 
 func _scale_name(scale: float) -> String:
 	return "Native" if scale >= 0.999 else "%d%%" % roundi(scale * 100.0)
 
 
-func _add_heading(section: VBoxContainer, title: String) -> void:
+func _add_heading(section: VBoxContainer, title: String) -> Label:
 	var heading := Label.new()
 	heading.text = title.to_upper()
 	heading.theme_type_variation = &"SectionHeader"
 	heading.custom_minimum_size.y = 34
 	heading.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
 	section.add_child(heading)
+	return heading
 
 
 func _add_section(title: String) -> VBoxContainer:
@@ -483,13 +501,46 @@ func _save_player_name() -> void:
 	_player_name.text = Settings.player_name
 
 
-func _controller_changed(_device: int, _connected: bool) -> void:
+## Losing the last controller while it plays pauses the game (offline) and
+## opens the menu, so the player is not left standing in a fight.
+func _controller_changed(_device: int, connected: bool) -> void:
+	_show_controller_status()
+	if (
+		connected
+		or title_menu
+		or is_open()
+		or not Settings.uses_controller()
+		or not Input.get_connected_joypads().is_empty()
+	):
+		return
+	open()
+	_eyebrow.text = "CONTROLLER DISCONNECTED"
+
+
+func _show_controller_status() -> void:
 	var devices := Input.get_connected_joypads()
-	_controller_status.text = (
-		"Controller: " + Input.get_joy_name(devices[0])
-		if not devices.is_empty()
-		else "No controller connected. Connect one anytime; bindings are saved for later."
+	if not devices.is_empty():
+		_controller_status.text = "Connected: " + Input.get_joy_name(devices[0])
+	elif Settings.uses_controller():
+		_controller_status.text = (
+			"No controller connected. Connect one, or set Input device" + " to Keyboard & mouse."
+		)
+	else:
+		_controller_status.text = "No controller connected. Connect one anytime."
+
+
+func _add_input_option(section: VBoxContainer) -> void:
+	_input_option = OptionButton.new()
+	_input_option.name = "InputDevice"
+	_input_option.custom_minimum_size = Vector2(220, 34)
+	_input_option.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	for i in Settings.INPUT_DEVICES.size():
+		_input_option.add_item(Settings.INPUT_DEVICES[i], i)
+	_input_option.item_selected.connect(
+		func(index: int) -> void:
+			Settings.set_setting(&"input_device", _input_option.get_item_id(index))
 	)
+	_add_row(section, "Input device", _input_option, null, &"input_device")
 
 
 func _build_bindings(section: VBoxContainer) -> void:
@@ -528,7 +579,7 @@ func _build_bindings(section: VBoxContainer) -> void:
 
 
 func _gamepad_label(action: StringName) -> String:
-	for event: InputEvent in InputMap.action_get_events(action):
+	for event: InputEvent in Settings.action_events(action):
 		if event is InputEventJoypadMotion:
 			match event.axis:
 				JOY_AXIS_LEFT_X, JOY_AXIS_LEFT_Y:
@@ -710,6 +761,11 @@ func _sync_controls() -> void:
 	for action: StringName in _bind_buttons:
 		var bound := Settings.binding(action)
 		_bind_buttons[action].text = "—" if bound == null else Settings.event_label(bound)
+	_input_option.select(_input_option.get_item_index(Settings.input_device))
+	var controller := Settings.uses_controller()
+	_mouse_heading.text = "MOUSE" + ("  ·  LOCKED" if controller else "")
+	_controller_heading.text = "CONTROLLER" + ("" if controller else "  ·  LOCKED")
+	_show_controller_status()
 	_fps_option.select(_fps_option.get_item_index(Settings.max_fps))
 	_quality_option.select(_quality_option.get_item_index(Settings.graphics_quality))
 	_mix_option.select(_mix_option.get_item_index(Settings.audio_mix))

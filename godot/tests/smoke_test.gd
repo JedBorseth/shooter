@@ -565,11 +565,20 @@ func _dummy_ahead(main: Node, player: FpsPlayer, distance: float, height := 1.1)
 
 
 func _gamepad(main: Node, player: FpsPlayer) -> void:
+	# On keyboard and mouse (the default) the controller is locked out.
+	_check(not player.using_gamepad(), "keyboard and mouse play by default")
 	player.set_look(0.0, 0.0)
 	Input.action_press("look_right", 1.0)
 	await _sixtieths(30)
 	Input.action_release("look_right")
-	_check(player.using_gamepad(), "right stick switches to gamepad input")
+	_check(player.view_yaw() == 0.0, "the right stick is locked out on keyboard and mouse")
+
+	player.controller_input = true
+	_check(player.using_gamepad(), "the input device setting picks the controller")
+	player.set_look(0.0, 0.0)
+	Input.action_press("look_right", 1.0)
+	await _sixtieths(30)
+	Input.action_release("look_right")
 	_check(
 		player.view_yaw() < -0.5, "right stick turns the view right, yaw %.2f" % player.view_yaw()
 	)
@@ -620,6 +629,7 @@ func _gamepad(main: Node, player: FpsPlayer) -> void:
 	await _tap("reload")
 	await _sixtieths(40)
 	_check(player.weapon_key() == "pdw9", "X takes the weapon, got %s" % player.weapon_key())
+	player.controller_input = false
 
 
 ## Reads a whole-number field such as `reserve` from a weapon's data file.
