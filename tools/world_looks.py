@@ -185,6 +185,7 @@ SLAMCITY_LOOKS: dict[str, dict] = {
     # Road paint: worn by the concrete's own texture.
     "paint_white": _t("concrete_smooth", 1.5, (0.9, 0.9, 0.86), grime=0.0, rough=0.9),
     "paint_yellow": _t("concrete_smooth", 1.5, (0.92, 0.72, 0.22), grime=0.0, rough=0.9),
+    "roof_patch": _t("asphalt", 3.0, (0.3, 0.3, 0.31), grime=0.0),
     "roof_gravel": _t("gravel", 1.6, (0.66, 0.64, 0.6), grime=0.0),
     "roof_pavers": _t("concrete_panels", 1.4, (0.8, 0.77, 0.72), grime=0.0),
     "roof_corrugated": _t("corrugated", 2.0, (0.58, 0.6, 0.62), metal=0.6, grime=0.0),
@@ -223,7 +224,7 @@ SLAMCITY_LOOKS: dict[str, dict] = {
     # container set's is not, and its scratches shrank into wood grain when
     # tiled finely), with the flutes as fine stripes of a darker tone.
     "train_corrugated": _t("painted_metal", 2.5, (0.78, 0.8, 0.82), metal=0.6, rough=1.5, grime=0.2,
-                           stripes=(0.07, (0.62, 0.64, 0.67))),
+                           stripes=(0.035, (0.7, 0.72, 0.75))),
     "train_steel": _t("painted_metal", 2.5, (0.74, 0.76, 0.78), metal=0.6, grime=0.2),
     "train_roof": _t("painted_metal", 2.0, (0.4, 0.4, 0.42), grime=0.0),
     "train_floor": _t("metal_plates", 1.5, (0.5, 0.46, 0.44), grime=0.0),

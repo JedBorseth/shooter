@@ -80,8 +80,8 @@ vertex_color_use_as_albedo = true
 
 [sub_resource type="CylinderMesh" id="Mesh_streak"]
 material = SubResource("Mat_streak")
-top_radius = 0.012
-bottom_radius = 0.025
+top_radius = 0.02
+bottom_radius = 0.04
 height = 0.55
 radial_segments = 4
 rings = 0
@@ -109,7 +109,7 @@ color_ramp = SubResource("Texture_fade")
 [node name="WaterSpray" type="Node3D"]
 
 [node name="Particles" type="GPUParticles3D" parent="."]
-amount = 40
+amount = 64
 lifetime = 1.2
 preprocess = 3.0
 visibility_aabb = AABB(-4, -1, -4, 8, 8, 8)

@@ -107,6 +107,41 @@ def outward(verts, faces, centre):
     return fixed
 
 
+_SMOOTH_CACHE: dict = {}
+
+
+def smooth_geo(verts, faces, levels=2):
+    """A control cage smoothed by Blender's Subdivision Surface (Catmull-Clark):
+    a few dozen cage points become a rounded body (a car's panels, a bus's
+    roof). Faces are rewound to face outward first. Cached per cage."""
+    key = (tuple(tuple(round(c, 4) for c in v) for v in verts), tuple(tuple(f) for f in faces), levels)
+    if key in _SMOOTH_CACHE:
+        return _SMOOTH_CACHE[key]
+    bm = bmesh.new()
+    bv = [bm.verts.new(v) for v in verts]
+    for f in faces:
+        bm.faces.new([bv[i] for i in f])
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    mesh = bpy.data.meshes.new("smooth_cage")
+    bm.to_mesh(mesh)
+    bm.free()
+    obj = bpy.data.objects.new("smooth_cage", mesh)
+    bpy.context.scene.collection.objects.link(obj)
+    mod = obj.modifiers.new("subsurf", "SUBSURF")
+    mod.levels = levels
+    mod.render_levels = levels
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    evaluated = obj.evaluated_get(depsgraph)
+    out = evaluated.to_mesh()
+    out_verts = [tuple(v.co) for v in out.vertices]
+    out_faces = [tuple(p.vertices) for p in out.polygons]
+    evaluated.to_mesh_clear()
+    bpy.data.objects.remove(obj)
+    bpy.data.meshes.remove(mesh)
+    _SMOOTH_CACHE[key] = (out_verts, out_faces)
+    return out_verts, out_faces
+
+
 def extrude_geo(profile, offset, caps=None):
     """A flat polygon (any shape, concave too) swept along `offset`: its two
     caps and a quad per edge, each wound to face outward. `caps` optionally
@@ -365,6 +400,13 @@ def part_geo(part) -> Geo:
         (x0, y0, z0), (x1, y1, z1) = part["min"], part["max"]
         v, f = box_geo(x0, y0, z0, x1, y1, z1, part.get("bevel", 0.0), part.get("faces"))
         g.add(look, v, f)
+    elif kind == "smooth":
+        v, f = smooth_geo(part["verts"], part["faces"], part.get("levels", 2))
+        g.add(look, v, f, smooth=True)
+    elif kind == "smooth_hull":
+        hv, hf = hull_geo(part["points"])
+        v, f = smooth_geo(hv, hf, part.get("levels", 2))
+        g.add(look, v, f, smooth=True)
     elif kind == "extrude":
         v, f = extrude_geo(part["profile"], part["offset"], part.get("caps"))
         g.add(look, v, f)

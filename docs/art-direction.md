@@ -68,7 +68,7 @@ Slamcity is a city block at dusk cut by an elevated railway. Every surface of it
 
 Hardpoint rotates through five zones on the mirror line: the Ticket Hall, Under the El, the Roadworks in the pit, the Back Alley, and the Platforms. Every move goes at least 16 m to a zone whose footprint does not touch the last one's (`check_hardpoint_hops`), so the fight moves across the map instead of a room over or a floor up, and the south storefronts, the avenue, and the alley take turns as the approach.
 
-The map's set pieces are the derailed car, nose-down in the alley with its roof crushed, its painted steel torn and scorched at the nose, and a bogie hanging by its cables, and the burst water main in the roadworks pit (`godot/scenes/effects/water_spray.tscn`): a column of thin velocity-aligned streaks, with mist kept low around the break and a small splash ring, about 1 ms of GPU time when it fills the screen on Medium (the `slamcity_closeups` benchmark views watch both).
+The map's set pieces are the derailed car, nose-down in the alley with its roof crushed, its painted steel torn and scorched at the nose, a bogie hanging by its cables, and its nose still burning (`godot/scenes/effects/crash_fire.tscn`: additive flames and embers over a baked glow, under a smoke column that bends away over the roofs, `smoke_plume.tscn`), and the burst water main in the roadworks pit (`godot/scenes/effects/water_spray.tscn`): a column of thin velocity-aligned streaks, with mist kept low around the break and a small splash ring, about 1 ms of GPU time when it fills the screen on Medium (the `slamcity_closeups` benchmark views watch both).
 
 #### Decals and trim
 

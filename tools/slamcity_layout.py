@@ -532,6 +532,14 @@ def stair(axis, w0, w1, s0, s1, y0, y1, m=False, tread="tread_plate", frame="ste
         near = at(a0, 0.0, 0.0)
         across = (mx(far[0], m) - mx(near[0], m), 0.0, far[2] - near[2])
         PARTS.append({"kind": "extrude", "look": fill, "profile": pts, "offset": across, "caps": caps})
+        # Closed stringers: a sloped board on each side, above the line of the
+        # nosings, so the side reads as a stair, not a stepped wall.
+        board = [(s0, y0), (s0, y0 + 0.28), (s1, y1 + 0.22), (s1, y0)]
+        for u0, u1 in ((w0 - 0.05, w0), (w1, w1 + 0.05)):
+            near, far = at(u0, 0.0, 0.0), at(u1, 0.0, 0.0)
+            PARTS.append({"kind": "extrude", "look": frame,
+                          "profile": [(mx(x, m), y, z) for x, y, z in (at(u0, s_, y_) for s_, y_ in board)],
+                          "offset": (mx(far[0], m) - mx(near[0], m), 0.0, far[2] - near[2])})
     for i in range(n):
         ya = y0 + rise * (i + 1) / n
         sa = s0 + step_run * i
@@ -921,6 +929,19 @@ def tenement_roof(side: Side):
     tube([(-45.0, r + 1.8, -12.6), (-42.0, r + 1.8, -12.6)], 0.006, "cable", m, sag=0.15)
     for k, x in enumerate((-44.4, -43.6, -42.8)):
         place("laundry", x, r + 1.75, -12.6, 0.1 * k, m, variant=k)
+    # Repairs and services across the tar: darker patched squares, a cable
+    # run to the dish, conduit along the parapet, and vent stacks.
+    rng = random.Random(41)
+    for k in range(9):
+        x = rng.uniform(-45.5, -24.0)
+        z = rng.uniform(-20.8, -12.4)
+        w, d = rng.uniform(0.8, 2.2), rng.uniform(0.6, 1.6)
+        deco(x, x + w, r, r + 0.004, z, z + d, "roof_patch", m, faces="top", detail=True)
+    tube([(-38.0, r + 0.03, -20.6), (-38.0, r + 0.03, -17.0), (-31.6, r + 0.03, -17.0)], 0.02, "cable", m, sides=4)
+    tube([(-45.8, r + 0.15, -21.2), (-24.0, r + 0.15, -21.2)], 0.025, "steel_galv", m, sides=6)
+    for x, z in ((-41.0, -14.0), (-27.5, -15.5), (-33.0, -20.8)):
+        cyl(x, r, r + 0.9, z, 0.09, "steel_galv", m, sides=10, detail=True)
+        cyl(x, r + 0.9, r + 1.0, z, 0.16, "steel_galv", m, sides=10, detail=True)
 
 
 def roof_aircon(x, r, z, yaw, m):
@@ -1567,7 +1588,9 @@ def south_row(side: Side):
     # The tube lights' glow sits a little under the fittings, so it reaches
     # across the drop ceiling instead of only the patch above each one.
     light(-42.0, 3.1, 15.5, 1.2, (0.95, 0.97, 1.0), 9.0, m)
-    # (The back tube is dead: the back of the store falls to the fridges' glow.)
+    # The back tube is failing: a dim glow, so the back of the store falls
+    # off toward the fridges without a hard black edge.
+    light(-42.0, 3.1, 20.5, 0.3, (0.95, 0.97, 1.0), 9.0, m)
     light(-44.0, 1.4, 23.6, 1.1, (0.8, 0.95, 1.0), 5.0, m, shadow=False)
     light(-38.3, 1.9, 14.0, 0.8, (1.0, 0.85, 0.6), 4.0, m, shadow=False)  # over the counter
     # Inside the diner: booths by the windows, the counter, stools, the kitchen line.
@@ -1650,8 +1673,17 @@ def south_row(side: Side):
         place("ceiling_tube", x, 4.0, 15.0, PI / 2, m)
         place("ceiling_tube", x, 4.0, 20.5, PI / 2, m)
         light(x, 3.1, 15.0, 1.0, (0.92, 0.97, 1.0), 8.0, m)
-        if x < -14.0:  # one dead tube at the back
-            light(x, 3.1, 20.5, 1.0, (0.92, 0.97, 1.0), 8.0, m)
+        # One tube at the back is failing: dim, not dark.
+        light(x, 3.1, 20.5, 1.0 if x < -14.0 else 0.28, (0.92, 0.97, 1.0), 8.0, m)
+    # Laundry carts parked by the dryers, and stock on the store's side wall.
+    for k, (x, z, yaw) in enumerate(((-12.6, 19.2, 0.3), (-10.6, 21.8, -0.4))):
+        place("laundry_cart", x, WALK, z, yaw, m, seed=k + 1)
+        blocker(x - 0.5, x + 0.5, WALK, 1.0, z - 0.45, z + 0.45, m)
+    place("wall_shelf", -36.4, WALK, 18.2, -PI / 2, m)
+    blocker(-36.85, -36.15, WALK, 2.2, 17.0, 19.4, m, "wood")
+    # A two-seat table in the diner's empty corner past the counter.
+    place("table_chairs", -21.9, WALK, 15.6, PI / 2, m)
+    blocker(-22.35, -21.45, WALK, 0.78, 15.0, 16.2, m, "wood")
     # Warm street light falling through the storefront windows onto the
     # floor just inside them: pools by the glass, darker toward the back.
     for x in (-45.0, -40.0, -31.0, -25.0, -17.0, -11.5):
