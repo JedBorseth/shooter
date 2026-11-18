@@ -1,0 +1,12 @@
+{
+  "triangles": {
+    "Body": 8534,
+    "Eyepiece": 576,
+    "World": 2732
+  },
+  "nodes": [
+    "Body",
+    "Eyepiece",
+    "World"
+  ]
+}

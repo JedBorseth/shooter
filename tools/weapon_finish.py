@@ -14,6 +14,8 @@ A weapon opts in with a `finish` entry in its WEAPONS spec:
             ...
         ],
         "font": path,                    # a TrueType font for the markings
+        "wear_radius": 0.0018,           # optional: width of the edge wear
+        "scratch_depth": 0.25,           # optional: SCRATCH_DEPTH
         "markings": [                    # engraved text on the receiver
             {"text": "SAFE", "at": (y, z), "side": "-x", "size": 0.0052},
             ...
@@ -145,6 +147,19 @@ FINISHES = {
         "bump": 0.00003,
         "tint": 0.005,
     },
+    # Rubber: an optic's eye guard and buttons. Matte black with a fine
+    # grain rather than a grip's stipple (it is seen magnified, aimed).
+    "rubber": {
+        "id": 7,
+        "color": (0.07, 0.07, 0.07),
+        "roughness": 0.86,
+        "metallic": 0.0,
+        "bare": ((0.09, 0.09, 0.09), 0.7, 0.0),
+        "wear": 0.4,
+        "grime": 0.5,
+        "bump": 0.00002,
+        "tint": 0.004,
+    },
 }
 ZONE_NAMES = {f["id"]: name for name, f in FINISHES.items()}
 
@@ -158,6 +173,9 @@ AO_DISTANCE = 0.03
 # which edges wear.
 BEVEL_RADIUS = 0.0007
 WEAR_RADIUS = 0.0018
+# Depth of the fine scratches in the normal map, in tenths of a millimetre.
+# Modelled parts with dense texels (the optics) want them shallower.
+SCRATCH_DEPTH = 0.25
 BAKE_MARGIN = 16
 # Texels between islands of a fresh unwrap.
 UV_MARGIN = 3.0
@@ -321,7 +339,7 @@ def _emit(n: Nodes, rgb):
     n.link(emission.outputs[0], n.out.inputs["Surface"])
 
 
-def _normal_material(n: Nodes):
+def _normal_material(n: Nodes, scratch_depth: float):
     """Rounded edges plus each zone's surface texture as bumps."""
     bevel = n.new("ShaderNodeBevel", Radius=BEVEL_RADIUS)
     bevel.samples = 16
@@ -336,17 +354,17 @@ def _normal_material(n: Nodes):
         height = term if height == 0.0 else n.math("ADD", height, term)
     # Scratches cut into every coated metal surface a little.
     polymer = _zone_is(n, FINISHES["polymer"]["id"])
-    cut = n.math("MULTIPLY", n.math("MULTIPLY", _scratches(n), n.math("SUBTRACT", 1.0, polymer)), -0.25)
+    cut = n.math("MULTIPLY", n.math("MULTIPLY", _scratches(n), n.math("SUBTRACT", 1.0, polymer)), -scratch_depth)
     height = n.math("ADD", height, cut)
     bump = n.new("ShaderNodeBump", Height=height, Normal=bevel.outputs[0], Strength=1.0, Distance=0.0001)
     bsdf = n.new("ShaderNodeBsdfPrincipled", Normal=bump.outputs[0])
     n.link(bsdf.outputs[0], n.out.inputs["Surface"])
 
 
-def _edge_material(n: Nodes):
-    """R: how sharply the surface turns within WEAR_RADIUS (an edge or a
+def _edge_material(n: Nodes, radius: float):
+    """R: how sharply the surface turns within `radius` (an edge or a
     corner), G: how far the shading normal points up, B: the zone."""
-    bevel = n.new("ShaderNodeBevel", Radius=WEAR_RADIUS)
+    bevel = n.new("ShaderNodeBevel", Radius=radius)
     bevel.samples = 16
     geo = n.new("ShaderNodeNewGeometry")
     dot = n.new("ShaderNodeVectorMath", _operation="DOT_PRODUCT")
@@ -549,7 +567,7 @@ def bake(objects: dict, finish: dict, view_matrix, size: int) -> dict[str, np.nd
     if finish.get("unwrap"):
         unwrap(targets, size)
     n = Nodes(material)
-    _edge_material(n)
+    _edge_material(n, finish.get("wear_radius", WEAR_RADIUS))
     edges = _bake(targets, material, _new_image("Edges", size), "EMIT", 1)
     n = Nodes(material)
     _noise_material(n)
@@ -558,7 +576,7 @@ def bake(objects: dict, finish: dict, view_matrix, size: int) -> dict[str, np.nd
     n.link(n.new("ShaderNodeBsdfPrincipled").outputs[0], n.out.inputs["Surface"])
     ao = _bake(targets, material, _new_image("AO", size, (1, 1, 1, 1)), "AO", 64)
     n = Nodes(material)
-    _normal_material(n)
+    _normal_material(n, finish.get("scratch_depth", SCRATCH_DEPTH))
     normal = _bake(targets, material, _new_image("Normal", size, (0.5, 0.5, 1, 1)), "NORMAL", 16,
                    normal_space="TANGENT")
     markings = None
@@ -650,7 +668,7 @@ def compose(maps: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         wear[m] = _smoothstep(0.4, 0.8, edge[m] * (0.25 + 1.3 * blotch[m]) * f["wear"]) * exposed[m]
         # Fine scratches only burnish the coating: they show in reflections
         # (smoother, a touch lighter), not as bare metal.
-        if name != "polymer":
+        if name not in ("polymer", "rubber"):
             rough[m] -= 0.14 * scratch[m]
             color[m] += 0.025 * scratch[m][:, None]
         grime[m] = cavity[m] * f["grime"] * (0.55 + 0.6 * blotch[m])

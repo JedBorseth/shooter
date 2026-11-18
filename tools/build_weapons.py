@@ -53,6 +53,7 @@ from mathutils import Matrix, Vector
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import weapon_finish
+import weapon_optics
 
 REPO = Path(__file__).resolve().parent.parent
 WEAPONS_DIR = REPO / "godot/assets/weapons"
@@ -1817,12 +1818,44 @@ def build_casings():
     log("casings:", ", ".join(objects))
 
 
+# The optic housings' texture: an optic is a sixth of a rifle's size.
+OPTIC_TEXTURE_SIZE = 1024
+
+
+def build_optic(key: str):
+    """The red dot or ACOG housing (tools/weapon_optics.py), painted like
+    the M4A1 (tools/weapon_finish.py), into godot/assets/weapons/optics/."""
+    reset()
+    log(key)
+    objects = weapon_optics.BUILDERS[key]()
+    finish = dict(weapon_optics.FINISH, markings=weapon_optics.MARKINGS[key],
+                  font=REPO / "godot/assets/fonts/BarlowCondensed-Bold.ttf")
+    for obj in objects.values():
+        weapon_finish.assign_zones(obj, finish, None)
+    bpy.context.view_layer.update()
+    painted = weapon_finish.paint(objects, {"finish": finish}, Matrix.Identity(4), OPTIC_TEXTURE_SIZE)
+    for obj in objects.values():
+        obj.data.attributes.remove(obj.data.attributes[weapon_finish.ZONE_ATTRIBUTE])
+    objects["World"] = weapon_optics.world(objects)
+    out = WEAPONS_DIR / "optics"
+    out.mkdir(parents=True, exist_ok=True)
+    tris = {name: sum(len(p.vertices) - 2 for p in obj.data.polygons) for name, obj in objects.items()}
+    log(f"  {tris} triangles")
+    export(objects, out / f"{key}.glb")
+    save_maps(key, out, *painted)
+    write_material(key, out, "optics")
+    write_import(key, out, "optics")
+    (out / f"{key}.json").write_text(json.dumps({"triangles": tris, "nodes": sorted(objects)}, indent=2) + "\n")
+
+
 def main():
     args = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
     build_shared()
-    for key in args or list(WEAPONS) + list(ATTACHMENTS) + ["casings"]:
+    for key in args or list(WEAPONS) + list(ATTACHMENTS) + list(weapon_optics.BUILDERS) + ["casings"]:
         if key == "casings":
             build_casings()
+        elif key in weapon_optics.BUILDERS:
+            build_optic(key)
         elif key in ATTACHMENTS:
             build_attachment(key)
         else:
