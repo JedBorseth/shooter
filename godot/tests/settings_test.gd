@@ -28,6 +28,7 @@ func _run() -> void:
 	_check_fov(settings)
 	_check_directory(settings)
 	_check_validation(settings)
+	_check_sensitivity_levels(settings)
 	_check_audio_mix(settings)
 	_check_round_trip(settings)
 	_check_graphics(settings)
@@ -115,8 +116,10 @@ func _check_fov(settings: Node) -> void:
 func _check_validation(settings: Node) -> void:
 	settings.set_setting(&"fov", 500.0)
 	_check(settings.fov == 120.0, "fov clamps to 120, got %s" % settings.fov)
-	settings.set_setting(&"mouse_sensitivity", "fast")
-	_check(settings.mouse_sensitivity == 1.0, "a non-number falls back to the default")
+	settings.set_setting(&"mouse_sensitivity_level", "fast")
+	_check(settings.mouse_sensitivity_level == 7, "a non-number falls back to the default")
+	settings.set_setting(&"mouse_sensitivity_level", 15)
+	_check(settings.mouse_sensitivity_level == 7, "a level past 14 falls back to the default")
 	settings.set_setting(&"max_fps", 75)
 	_check(
 		settings.max_fps == 0,
@@ -144,6 +147,46 @@ func _check_validation(settings: Node) -> void:
 		settings.master_server == settings.DEFAULTS[&"master_server"],
 		"older installs with a blank master use the public directory"
 	)
+	settings.reset_to_defaults()
+
+
+## Sensitivity is a level from 1 to 14, each 20% faster than the last, with
+## the default one step above the old 1× rate. Multipliers saved by older
+## builds load as the nearest level.
+func _check_sensitivity_levels(settings: Node) -> void:
+	_check(is_equal_approx(settings.sensitivity_scale(6), 1.0), "level 6 is the base rate")
+	_check(is_equal_approx(settings.sensitivity_scale(7), 1.2), "the default is 1.2x")
+	_check(absf(settings.sensitivity_scale(1) - 0.402) < 0.001, "level 1 is about 0.40x")
+	_check(absf(settings.sensitivity_scale(14) - 4.30) < 0.01, "level 14 is about 4.3x")
+	_check(settings.sensitivity_level(1.44) == 8, "1.44x is level 8")
+	_check(settings.sensitivity_level(0.1) == 1, "very slow multipliers clamp to level 1")
+	_check(settings.sensitivity_level(9.0) == 14, "very fast multipliers clamp to level 14")
+
+	var config := ConfigFile.new()
+	config.set_value("controls", "mouse_sensitivity", 2.0)
+	config.set_value("gamepad", "stick_sensitivity", 1.0)
+	config.save(TEST_PATH)
+	settings.load_settings()
+	_check(
+		settings.mouse_sensitivity_level == 10,
+		"an old 2x mouse setting loads as level 10, got %d" % settings.mouse_sensitivity_level
+	)
+	_check(
+		settings.stick_sensitivity_level == 7,
+		"the old default loads as the new default, got %d" % settings.stick_sensitivity_level
+	)
+	settings.save_settings()
+	var saved := ConfigFile.new()
+	saved.load(TEST_PATH)
+	_check(
+		not saved.has_section_key("controls", "mouse_sensitivity"),
+		"the old multiplier key is not saved again"
+	)
+	_check(saved.get_value("controls", "mouse_sensitivity_level") == 10, "the level is saved")
+	config.set_value("controls", "mouse_sensitivity_level", 3)
+	config.save(TEST_PATH)
+	settings.load_settings()
+	_check(settings.mouse_sensitivity_level == 3, "a saved level wins over an old multiplier")
 	settings.reset_to_defaults()
 
 
@@ -178,7 +221,7 @@ func _check_audio_mix(settings: Node) -> void:
 
 
 func _check_round_trip(settings: Node) -> void:
-	settings.set_setting(&"mouse_sensitivity", 2.35)
+	settings.set_setting(&"mouse_sensitivity_level", 11)
 	settings.set_setting(&"fov", 95.0)
 	settings.set_setting(&"camera_motion", false)
 	settings.set_setting(&"max_fps", 144)
@@ -197,8 +240,8 @@ func _check_round_trip(settings: Node) -> void:
 	fresh.path = TEST_PATH
 	fresh.load_settings()
 	_check(
-		is_equal_approx(fresh.mouse_sensitivity, 2.35),
-		"mouse_sensitivity round-trips, got %s" % fresh.mouse_sensitivity
+		fresh.mouse_sensitivity_level == 11,
+		"mouse_sensitivity_level round-trips, got %s" % fresh.mouse_sensitivity_level
 	)
 	_check(fresh.fov == 95.0, "fov round-trips, got %s" % fresh.fov)
 	_check(fresh.camera_motion == false, "camera_motion round-trips")
@@ -221,18 +264,18 @@ func _check_round_trip(settings: Node) -> void:
 	var player := _FakePlayer.new()
 	settings.apply_to_player(player)
 	_check(
-		is_equal_approx(player.mouse_sensitivity, 0.0022 * 2.35),
-		"player mouse_sensitivity scaled by the base rate"
+		is_equal_approx(player.mouse_sensitivity, 0.0022 * pow(1.2, 5)),
+		"player mouse_sensitivity is the base rate times 1.2 per level above 6"
 	)
 	_check(is_equal_approx(player.base_fov, settings.vertical_fov()), "player base_fov is vertical")
 	_check(player.camera_motion == false, "player camera_motion set")
 	_check(player.ads_sensitivity_scale == 1.0, "player ads_sensitivity_scale set")
 	settings.set_setting(&"invert_mouse_y", true)
-	settings.set_setting(&"stick_sensitivity", 1.5)
+	settings.set_setting(&"stick_sensitivity_level", 8)
 	settings.set_setting(&"aim_assist", false)
 	settings.apply_to_player(player)
 	_check(player.mouse_invert_y, "invert mouse Y reaches the player")
-	_check(is_equal_approx(player.stick_yaw_speed, 300.0), "stick sensitivity scales the turn rate")
+	_check(is_equal_approx(player.stick_yaw_speed, 200.0 * 1.44), "look speed scales the turn rate")
 	_check(not player.aim_assist, "aim assist can be turned off")
 	player.free()
 	settings.apply_to_player(null)
@@ -371,10 +414,20 @@ func _check_menu(settings: Node) -> void:
 	_check(settings.fov == 110.0, "FOV slider changes the setting, got %s" % settings.fov)
 	(menu._toggles[&"camera_motion"] as CheckButton).button_pressed = false
 	_check(settings.camera_motion == false, "camera motion toggle changes the setting")
-	settings.set_setting(&"mouse_sensitivity", 3.0)
+	settings.set_setting(&"mouse_sensitivity_level", 3)
 	_check(
-		is_equal_approx((menu._sliders[&"mouse_sensitivity"] as HSlider).value, 3.0),
+		is_equal_approx((menu._sliders[&"mouse_sensitivity_level"] as HSlider).value, 3.0),
 		"slider follows outside changes"
+	)
+	var mouse_value: Label = menu._value_labels[&"mouse_sensitivity_level"]
+	_check(
+		mouse_value.text == "3", "an unnamed level shows its number, got '%s'" % mouse_value.text
+	)
+	(menu._sliders[&"mouse_sensitivity_level"] as HSlider).value = 14.0
+	_check(settings.mouse_sensitivity_level == 14, "the sensitivity slider sets the level")
+	_check(
+		mouse_value.text == "14 · VERY HIGH",
+		"a named level shows its name, got '%s'" % mouse_value.text
 	)
 
 	# Rebind jump from the menu: click its button, then press K.
