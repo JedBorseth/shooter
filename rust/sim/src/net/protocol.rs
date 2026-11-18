@@ -76,7 +76,9 @@ use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, Weapo
 // movement state.
 // Version 33 added the first raise: whether a raise is one, and which
 // carried weapons have not been drawn yet.
-pub const PROTOCOL_VERSION: u16 = 33;
+// Version 34 kept the throw in hand through its follow-through and added how
+// far along a throw each body is (`PlayerView::throw`).
+pub const PROTOCOL_VERSION: u16 = 34;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -451,6 +453,9 @@ pub struct PlayerView {
     pub mantling: bool,
     /// Swinging the knife.
     pub meleeing: bool,
+    /// Throwing a grenade: 0 when not, otherwise how far along the throw is
+    /// as 1 to 255 ([`throw_to_u8`]).
+    pub throw: u8,
     /// Hits taken so far (wrapping); an increase means the player was hit, so
     /// everyone sees the flinch.
     pub hits: u8,
@@ -472,6 +477,11 @@ pub struct PlayerView {
     /// How far the legs step in place as the feet swing round, out of 255
     /// (`Progress::step`).
     pub step: u8,
+}
+
+/// A throw's progress (0 to 1) as [`PlayerView::throw`]: 0 for none.
+pub fn throw_to_u8(progress: Option<f32>) -> u8 {
+    progress.map_or(0, |p| 1 + (p.clamp(0.0, 1.0) * 254.0).round() as u8)
 }
 
 /// A horizontal direction (`x`, `z`) as 1/256 turns, for `hit_heading`.
@@ -544,6 +554,7 @@ impl PlayerView {
             shots_fired: combat.shots_fired,
             mantling: p.state.movement.mantling(),
             meleeing: combat.meleeing(),
+            throw: throw_to_u8(combat.throw_progress()),
             hits: 0,
             hit_heading: 0,
             hit_part: 0,
@@ -553,6 +564,11 @@ impl PlayerView {
             turn: 0,
             step: 0,
         }
+    }
+
+    /// How far along a throw this body is (0 to 1), if it is throwing.
+    pub fn throw_progress(&self) -> Option<f32> {
+        (self.throw > 0).then(|| f32::from(self.throw - 1) / 254.0)
     }
 
     /// The animation progress this view carries.
@@ -1773,6 +1789,10 @@ fn write_view_delta(w: &mut BitWriter, v: &PlayerView, base: &PlayerView) {
         w.bool(v.mantling);
         w.bool(v.meleeing);
     }
+    w.bool(v.throw != base.throw);
+    if v.throw != base.throw {
+        w.u8(v.throw);
+    }
     let shots = v.shots_fired.wrapping_sub(base.shots_fired);
     w.bool(shots != 0);
     if shots != 0 {
@@ -1830,6 +1850,9 @@ fn read_view_delta(r: &mut BitReader, base: &PlayerView) -> DecodeResult<PlayerV
         v.alive = r.bool()?;
         v.mantling = r.bool()?;
         v.meleeing = r.bool()?;
+    }
+    if r.bool()? {
+        v.throw = r.u8()?;
     }
     if r.bool()? {
         v.shots_fired = base.shots_fired.wrapping_add(r.varint()?);
@@ -2512,6 +2535,26 @@ mod tests {
             panic!("expected input");
         };
         assert!(decoded.inputs[0].lethal);
+    }
+
+    #[test]
+    fn a_throw_rides_in_the_view_delta() {
+        let a = PlayerView::from_state(3, &sample_state(30), 0.5, -0.1);
+        assert_eq!(a.throw_progress(), None);
+        let mut throwing = a;
+        throwing.throw = throw_to_u8(Some(0.6));
+        assert!((throwing.throw_progress().unwrap() - 0.6).abs() < 0.01);
+        assert_eq!(throw_to_u8(Some(0.0)), 1, "a throw just begun still shows");
+        let delta = ServerMessage::Snapshot(Snapshot {
+            grenades: Vec::new(),
+            tick: 101,
+            baseline: Some(100),
+            own: None,
+            players: vec![throwing],
+        });
+        let baseline = [a];
+        let decoded = ServerMessage::decode(&delta.encode(&baseline), |_| Some(&baseline[..]));
+        assert_eq!(decoded.unwrap(), delta);
     }
 
     #[test]

@@ -2,7 +2,8 @@ extends Control
 ## The weapon cluster, bottom right: the weapon's name (and attachment) over
 ## its silhouette, a big magazine count beside a smaller reserve, and a strip
 ## with a tick for every round in the magazine (a plain bar for belt-fed
-## weapons). It sits on a shade that fades in from the screen's corner.
+## weapons), and above it the frag grenades carried. It sits on a shade that
+## fades in from the screen's corner.
 ##
 ## Low on ammo, the count and the strip turn red; while reloading they dim.
 
@@ -82,6 +83,15 @@ func _draw() -> void:
 	# Silhouette left of the numbers; it brightens as the weapon comes up.
 	var icon_colour := Color(1, 1, 1, lerpf(0.82, 1.0, _flash))
 	Paint.weapon(self, _key, Vector2(numbers_left - 20.0, baseline - 18.0), 34.0, icon_colour)
+
+	# Frags carried, above the name: a grenade and the count, dim when none.
+	var frags := player.lethals()
+	var frag_colour := Color(UiTheme.TEXT, 0.85 if frags > 0 else 0.3)
+	var frag_line := bottom - 100.0
+	var frag_w := Paint.text_right(
+		self, Paint.LABEL, str(frags), Vector2(right, frag_line), 16, frag_colour
+	)
+	Paint.grenade(self, Vector2(right - frag_w - 12.0, frag_line - 6.0), 16.0, frag_colour)
 
 	# Name, with the attachment after it in quieter type.
 	var parts := Paint.split_weapon_name(_key, player.weapon_name())

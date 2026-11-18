@@ -19,9 +19,10 @@ use crate::target::{BODY_LAYER, WORLD_LAYER};
 /// Players and zombies do not stop it.
 pub const GRENADE_MASK: u32 = WORLD_LAYER | BODY_LAYER;
 
-/// The hand a throw leaves from, relative to the eye: right, down, and
-/// forward a little. A wall closer than that keeps it at the eye.
-const HAND_OFFSET: Vector3 = Vector3::new(0.18, -0.12, -0.25);
+/// Where a throw leaves the support hand, relative to the eye: a little
+/// left and out in front (`grenade_hold::first_person` at the release). A
+/// wall closer than that keeps it at the eye.
+const HAND_OFFSET: Vector3 = Vector3::new(-0.05, -0.03, -0.45);
 
 /// The physics space as a grenade's world: a ray along each move, backed off
 /// by the grenade's radius so it rests on surfaces instead of in them.

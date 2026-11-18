@@ -233,10 +233,11 @@ fn press_aim_changes_no_state() {
 // Movement, round 3: landings cost speed and recover, tired jumps, and air
 // steering that never adds speed.
 // Equipment: the script pulls a frag's pin, cooks it, and throws it.
-const REFERENCE_HASH: u64 = 0x1913_0fdd_c1a8_0ad9;
+// The throw then stays in hand through its follow-through.
+const REFERENCE_HASH: u64 = 0x3cf6_f121_6c6f_f3fa;
 /// The same for every shot's view angles and aim offset (sub-tick press aims
 /// included).
-const SHOT_REFERENCE_HASH: u64 = 0x4ca7_51e6_8d89_97b9;
+const SHOT_REFERENCE_HASH: u64 = 0x5593_cb9c_1d51_ed43;
 
 #[test]
 fn state_matches_the_reference_on_every_platform() {

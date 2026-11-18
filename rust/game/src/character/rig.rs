@@ -76,10 +76,9 @@ const FOOT_IK_DISTANCE: f32 = 15.0;
 const FOOT_RAY_UP: f32 = 0.45;
 const FOOT_RAY_DOWN: f32 = 0.3;
 const FOOT_IK_RATE: f32 = 14.0;
-/// Where the support hand goes for an action, in weapon space: low in front
-/// for a plant or defuse, and up and back to throw.
+/// Where the support hand goes for a plant or defuse, in weapon space: low
+/// in front. A throw follows the grenade's path (`grenade_hold`).
 const PLANT_REACH: shooter_sim::Vec3 = shooter_sim::Vec3::new(-0.1, -0.55, -0.15);
-const THROW_REACH: shooter_sim::Vec3 = shooter_sim::Vec3::new(-0.25, 0.2, 0.3);
 /// A weapon switch lowers the old weapon over this long and raises the new
 /// one over this long (seconds).
 const SWITCH_LOWER_SECONDS: f32 = 0.22;
@@ -374,10 +373,14 @@ impl INode3D for SoldierRig {
         poser.set_name("Poser");
         skeleton.clone().upcast::<Node>().add_child(&poser);
         if !self.zombie {
-            // The knife the support hand swings in a melee.
+            // The knife the support hand swings in a melee, and the grenade
+            // it throws.
             let knife = crate::knife::build();
             self.base_mut().add_child(&knife);
             poser.bind_mut().knife = Some(knife);
+            let grenade = crate::grenade_hold::build();
+            self.base_mut().add_child(&grenade);
+            poser.bind_mut().grenade = Some(grenade);
         }
         self.poser = Some(poser);
 
@@ -1206,7 +1209,7 @@ impl SoldierRig {
             Some((ActionPose::Plant | ActionPose::Defuse, _)) => (1.0, Some(PLANT_REACH)),
             Some((ActionPose::Throw, t)) => (
                 crate::weapon_clips::keyed(&[(0.0, 0.0), (0.15, 1.0), (0.8, 1.0), (1.0, 0.0)], t),
-                Some(THROW_REACH),
+                None,
             ),
             None => (0.0, None),
         };
@@ -1241,6 +1244,14 @@ impl SoldierRig {
             let (blend, at) = crate::knife::third_person(t);
             (blend, weapon_from_eyes * at)
         });
+        // A throw: the support hand carries the grenade over and out.
+        let throw = match frame.action {
+            Some((ActionPose::Throw, t)) => {
+                let pose = crate::grenade_hold::third_person(t);
+                Some((pose, weapon_from_eyes * pose.at))
+            }
+            _ => None,
+        };
         let grips = self.weapon.as_ref().map(|(id, view)| {
             let mut g = view.bind().grips();
             g.hold = Hold::of(id.def());
@@ -1277,6 +1288,10 @@ impl SoldierRig {
             knife: knife.0,
             knife_at: knife.1,
             held: super::poser::Held::Knife,
+            grenade: throw.map_or(0.0, |(pose, _)| pose.blend),
+            grenade_at: throw.map_or(Transform3D::IDENTITY, |(_, at)| at),
+            grenade_in_hand: throw.is_some_and(|(pose, _)| pose.in_hand),
+            grenade_pinned: throw.is_some_and(|(pose, _)| pose.pinned),
             feet: (self.feet_on && frame.alive).then_some(self.feet_lift),
         }
     }

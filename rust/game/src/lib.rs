@@ -12,6 +12,7 @@ mod character;
 mod convert;
 mod effects;
 mod footsteps;
+mod grenade_hold;
 mod grenade_view;
 mod grenades;
 mod gunfire;

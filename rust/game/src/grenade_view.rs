@@ -16,7 +16,7 @@ use godot::prelude::*;
 use shooter_sim::equipment::{self, Kind};
 
 /// The frag model, built by `tools/build_grenade.py`.
-const FRAG_MODEL: &str = "res://assets/equipment/frag/frag.glb";
+const FRAG_MODEL: &str = crate::grenade_hold::MODEL;
 /// The blast effect.
 const FRAG_BLAST: &str = "res://scenes/equipment/frag_blast.tscn";
 
@@ -88,6 +88,8 @@ impl GrenadeShow {
         let mut node = node;
         node.set_name("Grenade");
         node.add_to_group(GRENADE_GROUP);
+        // Thrown: the pin is out and the spoon flew off.
+        crate::grenade_hold::set_pinned(&node, false, false);
         parent.add_child(&node);
         node.set_global_position(at);
         self.shown.push(Shown {
@@ -168,6 +170,13 @@ impl GrenadeShow {
         let mut node = node;
         parent.add_child(&node);
         node.set_global_position(at);
+    }
+
+    /// Where every drawn grenade is now.
+    pub fn positions(&self) -> impl Iterator<Item = Vector3> + '_ {
+        self.shown
+            .iter()
+            .map(|shown| shown.node.get_global_position())
     }
 
     pub fn is_empty(&self) -> bool {

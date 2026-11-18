@@ -68,6 +68,30 @@ pub const WIND_UP: f32 = 0.15;
 /// Seconds from the release until the weapon is back up and can fire.
 pub const RECOVERY: f32 = 0.45;
 
+/// Share of a throw's progress ([`throw_progress`]) reached when the pin is
+/// out and the grenade is held, cocked; it holds there while cooking.
+pub const COCKED_PROGRESS: f32 = 0.45;
+
+/// How far along a throw is, 0 to 1, from the seconds since the pin was
+/// pulled and the seconds until the release (`Action::Throwing`): up to
+/// [`COCKED_PROGRESS`] over the pin pull, held while cooking, then on to 1
+/// through the wind-up, the release, and the follow-through. Everyone draws
+/// the throw from it, the first-person arms and other players' bodies alike.
+pub fn throw_progress(cooked: f32, release_in: Option<f32>) -> f32 {
+    match release_in {
+        None => COCKED_PROGRESS * (cooked / PIN_TIME).clamp(0.0, 1.0),
+        Some(left) => {
+            let since = (WIND_UP - left).max(0.0);
+            COCKED_PROGRESS + (1.0 - COCKED_PROGRESS) * (since / (WIND_UP + RECOVERY)).min(1.0)
+        }
+    }
+}
+
+/// [`throw_progress`] at the moment the grenade leaves the hand.
+pub fn release_progress() -> f32 {
+    throw_progress(PIN_TIME, Some(0.0))
+}
+
 /// Launch speed of an overhand throw, in metres a second, before the
 /// thrower's own velocity is added.
 pub const THROW_SPEED: f32 = 21.0;
@@ -514,6 +538,21 @@ mod tests {
         fly(&mut a, &mut Floor(0.0), 2.0);
         fly(&mut b, &mut Floor(0.0), 2.0);
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn a_throw_progresses_to_the_cock_holds_and_finishes() {
+        assert_eq!(throw_progress(0.0, None), 0.0);
+        assert_eq!(throw_progress(PIN_TIME, None), COCKED_PROGRESS);
+        assert_eq!(
+            throw_progress(2.0, None),
+            COCKED_PROGRESS,
+            "holds while cooking"
+        );
+        assert_eq!(throw_progress(2.0, Some(WIND_UP)), COCKED_PROGRESS);
+        let release = release_progress();
+        assert!(release > COCKED_PROGRESS && release < 0.7);
+        assert_eq!(throw_progress(2.0, Some(-RECOVERY)), 1.0);
     }
 
     #[test]

@@ -137,6 +137,13 @@ const LATCHED_ACTIONS: [&str; 11] = [
     "refill_ammo",
 ];
 
+/// Blasts vibrate a controller out to this far, and ring in the ears inside
+/// this.
+const BLAST_SHAKE_RANGE: f32 = 25.0;
+const BLAST_RING_RANGE: f32 = 9.0;
+/// The ear ring, a generated tone (`scripts/equipment/ear_ring.gd`).
+const EAR_RING_SCENE: &str = "res://scenes/equipment/ear_ring.tscn";
+
 /// Online: seconds our own grenade, gone off here, stays drawn waiting for
 /// the server's blast (about a round trip).
 const SPENT_GRENADE_HOLD: f32 = 0.5;
@@ -451,6 +458,7 @@ pub struct FpsPlayer {
     net_id: Option<u8>,
     server_grenades: Vec<GrenadeView>,
     grenade_show: GrenadeShow,
+    ear_ring: Option<Gd<Node>>,
 }
 
 #[godot_api]
@@ -1096,6 +1104,18 @@ impl FpsPlayer {
     #[func]
     fn lethals(&self) -> i32 {
         i32::from(self.state.combat.lethals)
+    }
+
+    /// Live grenades within a frag's blast of the player, for the HUD's
+    /// danger indicator.
+    #[func]
+    fn danger_grenades(&self) -> PackedVector3Array {
+        let feet = self.current_position;
+        let reach = equipment::FRAG_RADIUS + 1.0;
+        self.grenade_show
+            .positions()
+            .filter(|at| at.distance_to(feet) <= reach)
+            .collect()
     }
 
     /// Zombies: a new round's frags (`zombies::restock_frags`).
@@ -2654,10 +2674,9 @@ impl FpsPlayer {
                 }
             },
             Action::Meleeing { strike_in, .. } => ViewAction::Meleeing { strike_in },
-            // The weapon goes down while a grenade is in hand.
-            Action::Throwing { cooked, .. } => {
-                ViewAction::Lowering((cooked / def.lower_time.max(1e-3)).clamp(0.0, 1.0))
-            }
+            Action::Throwing {
+                cooked, release_in, ..
+            } => ViewAction::Throwing(equipment::throw_progress(cooked, release_in)),
         };
         self.frame_with(ads, action)
     }
@@ -2791,6 +2810,7 @@ impl FpsPlayer {
             self.grenade_show.remove((None, blast.shot));
             self.grenade_show.blast(&mut parent, kind, center);
         }
+        self.feel_blast(center);
         let mut sphere = SphereShape3D::new_gd();
         sphere.set_radius(radius + 1.0);
         let mut query = PhysicsShapeQueryParameters3D::new_gd();
@@ -2910,6 +2930,39 @@ impl FpsPlayer {
         if let Some(mut parent) = self.base().get_parent() {
             self.grenade_show.remove((owner, shot));
             self.grenade_show.blast(&mut parent, kind, to_godot(at));
+        }
+        self.feel_blast(to_godot(at));
+    }
+
+    /// A blast at `at`: a controller vibrates, harder the closer it is, and
+    /// a close one rings in the ears for a moment. The camera's rattle comes
+    /// from the explosion effect (`blast_shake`).
+    fn feel_blast(&mut self, at: Vector3) {
+        if !self.state.alive() {
+            return;
+        }
+        let distance = at.distance_to(self.eye_position());
+        let shake = (1.0 - distance / BLAST_SHAKE_RANGE).clamp(0.0, 1.0);
+        let shake = shake * shake;
+        if self.rumble && self.controller_input && shake > 0.05 {
+            Input::singleton()
+                .start_joy_vibration_ex(self.gamepad_device, 0.4 * shake, 0.9 * shake)
+                .duration(0.25 + 0.35 * shake)
+                .done();
+        }
+        let ring = (1.0 - distance / BLAST_RING_RANGE).clamp(0.0, 1.0);
+        if ring > 0.05 {
+            if self.ear_ring.is_none() {
+                self.ear_ring = try_load::<PackedScene>(EAR_RING_SCENE)
+                    .ok()
+                    .and_then(|scene| scene.instantiate());
+                if let Some(node) = self.ear_ring.clone() {
+                    self.base_mut().add_child(&node);
+                }
+            }
+            if let Some(node) = &mut self.ear_ring {
+                node.call("ring", &[ring.to_variant()]);
+            }
         }
     }
 

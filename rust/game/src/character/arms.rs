@@ -95,6 +95,10 @@ impl INode3D for FpArms {
         crate::viewmodel::convert_to_viewmodel_materials(&knife.clone().upcast(), &shader, 1.0);
         self.base_mut().add_child(&knife);
         poser.bind_mut().knife = Some(knife);
+        let grenade = crate::grenade_hold::build();
+        crate::viewmodel::convert_to_viewmodel_materials(&grenade.clone().upcast(), &shader, 1.0);
+        self.base_mut().add_child(&grenade);
+        poser.bind_mut().grenade = Some(grenade);
         self.poser = Some(poser);
         crate::effects::keep_decals_off(&self.base().clone().upcast());
     }
@@ -124,6 +128,7 @@ impl FpArms {
         support_off: f32,
         support_target: Option<Vector3>,
         item: Option<(f32, Transform3D, Held)>,
+        throw: Option<(crate::grenade_hold::ThrowPose, Transform3D)>,
     ) {
         let visible = weapon.is_some();
         if let Some(arms) = &mut self.arms
@@ -147,6 +152,10 @@ impl FpArms {
                     knife: item.map_or(0.0, |(blend, _, _)| blend),
                     knife_at: item.map_or(Transform3D::IDENTITY, |(_, at, _)| at),
                     held: item.map_or(Held::Knife, |(_, _, held)| held),
+                    grenade: throw.map_or(0.0, |(pose, _)| pose.blend),
+                    grenade_at: throw.map_or(Transform3D::IDENTITY, |(_, at)| at),
+                    grenade_in_hand: throw.is_some_and(|(pose, _)| pose.in_hand),
+                    grenade_pinned: throw.is_some_and(|(pose, _)| pose.pinned),
                     ..PoseInput::default()
                 };
             }
