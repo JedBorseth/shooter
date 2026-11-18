@@ -20,6 +20,14 @@ const SLIDE_RATIO := 1.1
 const STAND_EYE := 1.68
 ## `MoveParams::eye_from_top`: the eye sits this far under the capsule's top.
 const EYE_FROM_TOP := 0.12
+## Where the course starts: stairs with 0.2 m risers and 0.3 m treads up to
+## a 1.2 m landing, then down again, running along X, and a single 0.4 m step.
+const STAIRS := Vector3(60, 0, 0)
+const STAIR_STEPS := 6
+const STAIR_RISE := 0.2
+const STAIR_TREAD := 0.3
+const STAIR_TOP_DEPTH := 3.0
+const HIGH_STEP := Vector3(-60, 0, 0)
 ## Trace columns, in the order `_record` writes them.
 const COLUMNS := [
 	"scenario",
@@ -61,6 +69,7 @@ func _run() -> void:
 	var world := Node3D.new()
 	root.add_child(world)
 	world.add_child(_floor())
+	_build_course(world)
 	_sampler = Sampler.new()
 	_sampler.process_priority = 1000
 	world.add_child(_sampler)
@@ -76,7 +85,7 @@ func _run() -> void:
 	_capsule = (_player.get_node("Collision") as CollisionShape3D).shape as CapsuleShape3D
 	_player.teleport(SPAWN, 0.0)
 	await _ticks(60)
-	_check(_player.is_on_floor(), "the player stands on the test floor")
+	_check(_player.is_grounded(), "the player stands on the test floor")
 
 	await _crouch_and_stand()
 	await _start_and_stop()
@@ -89,6 +98,10 @@ func _run() -> void:
 	await _walk_bob()
 	await _flinch()
 	await _death_and_respawn()
+	await _stairs(0.0, "stairs_0")
+	await _stairs(deg_to_rad(45.0), "stairs_45")
+	await _stairs(deg_to_rad(60.0), "stairs_60")
+	await _high_step()
 	_finish()
 
 
@@ -102,6 +115,98 @@ func _floor() -> StaticBody3D:
 	shape.position = Vector3(0, -0.5, 0)
 	body.add_child(shape)
 	return body
+
+
+func _build_course(world: Node3D) -> void:
+	var body := StaticBody3D.new()
+	world.add_child(body)
+	var top := STAIR_STEPS * STAIR_RISE
+	var top_start := STAIR_STEPS * STAIR_TREAD
+	for i in STAIR_STEPS:
+		var height := (i + 1) * STAIR_RISE
+		# Up toward -Z, then down past the landing.
+		for z in [
+			-(i * STAIR_TREAD + STAIR_TREAD * 0.5),
+			-(top_start * 2 + STAIR_TOP_DEPTH - i * STAIR_TREAD - STAIR_TREAD * 0.5),
+		]:
+			_box(body, STAIRS + Vector3(0, height * 0.5, z), Vector3(30, height, STAIR_TREAD))
+	_box(
+		body,
+		STAIRS + Vector3(0, top * 0.5, -(top_start + STAIR_TOP_DEPTH * 0.5)),
+		Vector3(30, top, STAIR_TOP_DEPTH)
+	)
+	_box(body, HIGH_STEP + Vector3(0, 0.2, -3), Vector3(6, 0.4, 2))
+
+
+func _box(body: StaticBody3D, center: Vector3, size: Vector3) -> void:
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = size
+	shape.shape = box
+	shape.position = center
+	body.add_child(shape)
+
+
+## Walks up the stairs at `angle` off straight on, over the landing, and down
+## the far side: each riser is stepped (IW steps 0.46 m), the oblique angle
+## does not catch on the riser, and going down eases the camera instead of
+## dropping it a stair a tick.
+func _stairs(angle: float, name: String) -> void:
+	_player.teleport(STAIRS + Vector3(0, 0.02, 1.0), angle)
+	_drawn_feet = Vector3.INF
+	await _ticks(30)
+	await _begin(name)
+	Input.action_press("move_forward")
+	var top := 0.0
+	var depth := STAIR_STEPS * STAIR_TREAD * 2 + STAIR_TOP_DEPTH
+	var ticks := 0
+	while _player.global_position.z > STAIRS.z - depth - 1.0 and ticks < 1200:
+		await _record(1)
+		top = maxf(top, _player.global_position.y)
+		ticks += 1
+	Input.action_release("move_forward")
+	await _record(60)
+	var rows := _scenario_rows(name)
+	_check(
+		top >= STAIR_STEPS * STAIR_RISE - 0.02,
+		(
+			"%.0f degrees off the stairs, the player climbs to the top, %.2f m"
+			% [rad_to_deg(angle), top]
+		)
+	)
+	_check(ticks < 1200, "and walks over and down without catching, %d ticks" % ticks)
+	var airborne := 0
+	var slowest := 99.0
+	for i in range(40, rows.size() - 70):
+		if not rows[i].on_floor:
+			airborne += 1
+		slowest = minf(slowest, rows[i].speed)
+	_check(airborne == 0, "and stays on the ground, %d ticks in the air" % airborne)
+	_check(slowest >= WALK_SPEED - 0.1, "at walking speed, slowest %.2f m/s" % slowest)
+	var worst := 0.0
+	for i in range(2, rows.size()):
+		# The camera in the world (it draws the previous tick's feet).
+		var now: float = rows[i].camera_eye + rows[i - 1].feet.y
+		var before: float = rows[i - 1].camera_eye + rows[i - 2].feet.y
+		worst = maxf(worst, absf(now - before))
+	_check(worst < 0.05, "the camera rides the steps smoothly, worst %.3f m a tick" % worst)
+	await _reset()
+
+
+## A 0.4 m step, higher than the old 0.3 m limit: walked up without a jump.
+func _high_step() -> void:
+	_player.teleport(HIGH_STEP + Vector3(0, 0.02, 0), 0.0)
+	await _ticks(30)
+	await _begin("high_step")
+	Input.action_press("move_forward")
+	var top := 0.0
+	for i in 150:
+		await _record(1)
+		top = maxf(top, _player.global_position.y)
+	Input.action_release("move_forward")
+	await _record(30)
+	_check(absf(top - 0.4) < 0.03, "a 0.4 m step is walked up, feet at %.2f m" % top)
+	await _reset()
 
 
 ## Crouch and stand in place: the camera, the shot origin, and the capsule
@@ -282,7 +387,7 @@ func _bunny_hop() -> void:
 	for hop in 6:
 		await _press("jump")
 		await _record(4)
-		while not _player.is_on_floor():
+		while not _player.is_grounded():
 			await _record(1)
 	var covered := _player.global_position.distance_to(from)
 	var seconds: float = _scenario_rows("bunny_hop").back().t - 1.017
@@ -345,7 +450,7 @@ func _slide_chain() -> void:
 		var state := _player.movement_state()
 		if state == "Sliding":
 			await _press("jump")
-		elif state == "Sprinting" and _player.is_on_floor():
+		elif state == "Sprinting" and _player.is_grounded():
 			await _press("crouch")
 			await _press("jump")
 		else:
@@ -508,7 +613,7 @@ func _record(count: int) -> void:
 						"%.4f" % feet.y,
 						"%.4f" % feet.z,
 						_player.movement_state(),
-						str(_player.is_on_floor()),
+						str(_player.is_grounded()),
 						"%.3f" % _camera.fov,
 					]
 				)
