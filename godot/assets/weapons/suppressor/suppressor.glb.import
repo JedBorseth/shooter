@@ -41,9 +41,25 @@ materials/extract_format=0
 materials/extract_path=""
 _subresources={
 "materials": {
+"Cartridge": {
+"use_external/enabled": true,
+"use_external/path": "res://assets/weapons/shared/cartridge.tres"
+},
+"Glow": {
+"use_external/enabled": true,
+"use_external/path": "res://assets/weapons/shared/glow_tritium.tres"
+},
+"Lens": {
+"use_external/enabled": true,
+"use_external/path": "res://assets/weapons/shared/lens.tres"
+},
+"Optics": {
+"use_external/enabled": true,
+"use_external/fallback_path": "res://assets/weapons/shared/optics.tres",
+"use_external/path": "res://assets/weapons/shared/optics.tres"
+},
 "Weapon": {
 "use_external/enabled": true,
-"use_external/fallback_path": "res://assets/weapons/suppressor/suppressor.tres",
 "use_external/path": "res://assets/weapons/suppressor/suppressor.tres"
 }
 }
