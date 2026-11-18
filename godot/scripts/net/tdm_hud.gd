@@ -187,19 +187,19 @@ func _process(delta: float) -> void:
 	# Destroy's own HUD says what to do while dead in a match.
 	var dead_hint := not alive and not ladder and not snd
 	_hint.visible = not _menu.visible and (phase == "lobby" or dead_hint)
+	var key := Settings.prompt_key(&"loadout")
 	if phase == "lobby":
 		_hint.text = (
-			"WARM-UP  ·  %s  ·  [L] %s and ready"
-			% [_ready_count(), "weapon ladder" if ladder else "loadout"]
+			"WARM-UP  ·  %s  ·  [%s] %s and ready"
+			% [_ready_count(), key, "weapon ladder" if ladder else "loadout"]
 		)
-	else:
-		_hint.text = "[L] change loadout for your next spawn"
-	if phase == "lobby":
 		_menu_status.text = _ready_count()
-	elif snd:
-		_menu_status.text = "Applies at once before a round starts, otherwise next round."
 	else:
-		_menu_status.text = "" if ladder else "Applies from your next spawn."
+		_hint.text = "[%s] change loadout for your next spawn" % key
+		if snd:
+			_menu_status.text = "Applies at once before a round starts, otherwise next round."
+		else:
+			_menu_status.text = "" if ladder else "Applies from your next spawn."
 
 
 func _joined() -> bool:
@@ -928,7 +928,7 @@ func _build_menu() -> void:
 	_ready_button.pressed.connect(_toggle_ready)
 	buttons.add_child(_ready_button)
 	var close := Button.new()
-	close.text = "Close  [L]"
+	close.text = "Close  [%s]" % Settings.prompt_key(&"loadout")
 	close.custom_minimum_size = Vector2(0, 52)
 	close.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	close.add_theme_font_size_override("font_size", 20)

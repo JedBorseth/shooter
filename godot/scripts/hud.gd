@@ -151,7 +151,7 @@ func _process(delta: float) -> void:
 	elif magazine == 0 and reserve == 0:
 		_show_prompt(_warning, "NO AMMO", UiTheme.HARM)
 	elif low and reserve > 0:
-		_show_prompt(_warning, "[%s] RELOAD" % Settings.key_label(&"reload"), UiTheme.ACCENT)
+		_show_prompt(_warning, "[%s] RELOAD" % Settings.prompt_key(&"reload"), UiTheme.ACCENT)
 	elif low:
 		_show_prompt(_warning, "LOW AMMO", UiTheme.ENEMY)
 	else:

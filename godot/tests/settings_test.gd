@@ -32,6 +32,7 @@ func _run() -> void:
 	_check_round_trip(settings)
 	_check_graphics(settings)
 	_check_bindings(settings)
+	_check_input_device(settings)
 	await _check_menu(settings)
 
 	settings.reset_to_defaults()
@@ -320,6 +321,16 @@ func _check_menu(settings: Node) -> void:
 		tabs.tab_count == 5, "settings has Controls, Keybinds, Graphics, Audio, and General tabs"
 	)
 	_check(menu._tab_sections[0].visible, "Controls opens first")
+	var device: OptionButton = menu._input_option
+	_check(device.is_visible_in_tree(), "Controls starts with the input device")
+	_check(device.selected == 0, "the menu shows keyboard and mouse")
+	_check(menu._controller_heading.text.ends_with("LOCKED"), "the controller section says locked")
+	device.select(1)
+	device.item_selected.emit(1)
+	_check(settings.uses_controller(), "picking Controller in the menu sets it")
+	_check(menu._mouse_heading.text.ends_with("LOCKED"), "then the mouse section says locked")
+	settings.set_setting(&"input_device", 0)
+	_check(device.selected == 0, "the menu follows outside changes")
 	tabs.current_tab = 2
 	_check(
 		menu._tab_sections[2].visible and not menu._tab_sections[0].visible,
@@ -417,7 +428,7 @@ func _check_bindings(settings: Node) -> void:
 	_check(settings.key_label(&"fire") == "LMB", "fire is the left mouse button")
 	settings.rebind(&"jump", _key(KEY_J))
 	_check(_bound(&"jump") == KEY_J, "jump rebinds to J")
-	_check(InputMap.action_has_event(&"jump", _joy(JOY_BUTTON_A)), "the gamepad binding stays")
+	_check(settings.key_label(&"jump", true) == "A", "the gamepad binding stays")
 	settings.rebind(&"crouch", _key(KEY_J))
 	_check(_bound(&"crouch") == KEY_J, "crouch takes J")
 	_check(_bound(&"jump") == KEY_C, "and jump gets crouch's C, got %d" % _bound(&"jump"))
@@ -430,6 +441,68 @@ func _check_bindings(settings: Node) -> void:
 	fresh.free()
 	settings.reset_to_defaults()
 	_check(_bound(&"jump") == KEY_SPACE, "reset puts Space back on jump")
+
+
+## Picking a device takes the other's bindings off the gameplay actions, while
+## pause and the menus keep both, and keyboard bindings survive for later.
+func _check_input_device(settings: Node) -> void:
+	_check(not settings.uses_controller(), "keyboard and mouse play by default")
+	_check(_bound(&"jump") == KEY_SPACE, "keyboard and mouse: Space jumps")
+	_check(
+		not InputMap.action_has_event(&"jump", _joy(JOY_BUTTON_A)),
+		"keyboard and mouse: the controller's A is locked out"
+	)
+	_check(not _has_joy_motion(&"look_right"), "keyboard and mouse: the right stick is locked out")
+	_check(InputMap.action_has_event(&"pause", _joy(JOY_BUTTON_START)), "Menu still pauses")
+	_check(InputMap.action_has_event(&"ui_accept", _joy(JOY_BUTTON_A)), "menus still take A")
+
+	settings.set_setting(&"input_device", settings.InputDevice.CONTROLLER)
+	_check(settings.uses_controller(), "the controller is picked")
+	_check(InputMap.action_has_event(&"jump", _joy(JOY_BUTTON_A)), "controller: A jumps")
+	_check(_has_joy_motion(&"fire"), "controller: the right trigger fires")
+	_check(_bound(&"jump") == KEY_NONE, "controller: Space is locked out")
+	_check(not _has_mouse(&"fire"), "controller: the mouse button is locked out")
+	_check(_bound(&"pause") == KEY_ESCAPE, "Esc still pauses")
+	_check(_bound(&"chat") == KEY_ENTER, "the keyboard still opens chat")
+	_check(settings.binding(&"jump") != null, "the keyboard binding is kept for later")
+	settings.rebind(&"jump", _key(KEY_J))
+	_check(
+		(settings.binding(&"jump") as InputEventKey).physical_keycode == KEY_J,
+		"keys rebind while the controller plays"
+	)
+	_check(_bound(&"jump") == KEY_NONE, "and stay locked out")
+	var player := _FakePlayer.new()
+	settings.apply_to_player(player)
+	_check(player.controller_input, "the player is told the controller plays")
+
+	settings.save_settings()
+	var fresh: Node = SETTINGS_SCRIPT.new()
+	fresh.path = TEST_PATH
+	fresh.load_settings()
+	_check(fresh.input_device == settings.InputDevice.CONTROLLER, "the input device round-trips")
+	fresh.free()
+	settings.set_setting(&"input_device", 7)
+	_check(not settings.uses_controller(), "an unknown device falls back to keyboard and mouse")
+	_check(_bound(&"jump") == KEY_J, "back on keyboard, the new key works")
+	settings.apply_to_player(player)
+	_check(not player.controller_input, "the player is told keyboard and mouse play")
+	player.free()
+	settings.reset_to_defaults()
+	_check(_bound(&"jump") == KEY_SPACE, "reset puts Space back")
+
+
+func _has_joy_motion(action: StringName) -> bool:
+	for event: InputEvent in InputMap.action_get_events(action):
+		if event is InputEventJoypadMotion:
+			return true
+	return false
+
+
+func _has_mouse(action: StringName) -> bool:
+	for event: InputEvent in InputMap.action_get_events(action):
+		if event is InputEventMouseButton:
+			return true
+	return false
 
 
 ## The physical key bound to `action`, or KEY_NONE.
@@ -490,3 +563,4 @@ class _FakePlayer:
 	var mouse_invert_y := false
 	var stick_yaw_speed := 0.0
 	var aim_assist := true
+	var controller_input := false
