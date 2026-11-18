@@ -54,6 +54,21 @@ impl Default for ZombieRules {
     }
 }
 
+/// Frag grenades at the start of a Zombies game (Black Ops rules).
+pub const START_FRAGS: u8 = 2;
+/// Frags given at the start of every later round, up to [`MAX_FRAGS`].
+pub const FRAGS_PER_ROUND: u8 = 2;
+/// Most frags a player carries in Zombies.
+pub const MAX_FRAGS: u8 = 4;
+
+/// Frags carried after a new round's restock, from `carried`.
+pub fn restock_frags(carried: u8) -> u8 {
+    carried
+        .saturating_add(FRAGS_PER_ROUND)
+        .min(MAX_FRAGS)
+        .max(carried)
+}
+
 /// How many zombies a round sends: 6, 8, 13, 18, 24, then about five more each round.
 pub fn zombies_in_round(round: u32) -> u32 {
     match round {
@@ -456,6 +471,15 @@ mod power_up_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn frags_restock_two_a_round_up_to_four() {
+        assert_eq!(restock_frags(0), 2);
+        assert_eq!(restock_frags(1), 3);
+        assert_eq!(restock_frags(START_FRAGS), 4);
+        assert_eq!(restock_frags(4), 4);
+        assert_eq!(restock_frags(9), 9, "never takes any away");
+    }
     use crate::TICK_DT;
 
     #[test]

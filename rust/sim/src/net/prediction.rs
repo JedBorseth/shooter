@@ -142,6 +142,7 @@ pub fn diverged(a: &Predicted, b: &Predicted) -> bool {
     a.on_floor != b.on_floor
         || a.state.reload_held != b.state.reload_held
         || a.state.melee_held != b.state.melee_held
+        || a.state.lethal_held != b.state.lethal_held
         || a.state.airborne != b.state.airborne
         || (a.state.health - b.state.health).abs() > 0.01
         || (a.state.fall_speed - b.state.fall_speed).abs() > VELOCITY_TOLERANCE
@@ -213,6 +214,26 @@ fn combat_diverged(a: &CombatState, b: &CombatState) -> bool {
                 lunge: lb,
             },
         ) => la != lb || !close(ra, rb) || !close(sa, sb),
+        (
+            Action::Throwing {
+                kind: ka,
+                cooked: ca,
+                release_in: la,
+            },
+            Action::Throwing {
+                kind: kb,
+                cooked: cb,
+                release_in: lb,
+            },
+        ) => {
+            ka != kb
+                || !close(ca, cb)
+                || match (la, lb) {
+                    (None, None) => false,
+                    (Some(x), Some(y)) => !close(x, y),
+                    _ => true,
+                }
+        }
         _ => true,
     };
     action_diverged
@@ -227,6 +248,7 @@ fn combat_diverged(a: &CombatState, b: &CombatState) -> bool {
         || a.recoil.distance(b.recoil) > 1e-4
         || a.holding_breath != b.holding_breath
         || a.reload_queued != b.reload_queued
+        || a.lethals != b.lethals
         || !close(a.sway_time, b.sway_time)
         || !close(a.breath, b.breath)
         || !close(a.winded, b.winded)

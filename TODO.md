@@ -50,6 +50,11 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Hold-breath sway for scoped weapons.
 - [x] Weapon inspect on a key press (I, or D-pad down): a keyframed turn and roll that any action cancels.
 - [x] **good first task** Low-ammo click and a "LOW AMMO" HUD warning.
+- [ ] Equipment (`rust/sim/src/equipment.rs`, [docs/weapons.md](docs/weapons.md#equipment)):
+  - [x] Frag grenade rules: cook, overhand throw, bounce, roll, a blast that falls off with distance and stops at walls, self-damage, a live drop on death, kill credit, counts per mode, server authority with the throw predicted.
+  - [ ] First-person pin pull, cook, and throw with the arms; a third-person throw pose; camera shake and ear ring by distance; a danger indicator and a grenade count on the HUD.
+  - [ ] Flashbang and smoke grenade.
+  - [ ] Bots throw grenades and run from live ones.
 - [x] Melee: a knife on its own button (V, R3) with a lunge at enemies within about 3 m, predicted and lag-compensated (`rust/sim/src/melee.rs`), swung in the support hand in first and third person (the knife modelled in Blender, `tools/build_knife.py`), knife kills in the feed, 130-point knife kills in Zombies, and bots that knife up close.
 
 ### Movement

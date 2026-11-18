@@ -7,6 +7,7 @@
 pub mod bot;
 pub mod chat;
 pub mod ctf;
+pub mod equipment;
 pub mod fmath;
 pub mod gun_game;
 pub mod hardpoint;

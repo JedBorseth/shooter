@@ -60,6 +60,7 @@ use godot::prelude::*;
 use shooter_sim::bot::Skill;
 use shooter_sim::chat::{self, ChatLimiter};
 use shooter_sim::ctf::{FlagEvent, FlagPlayer, FlagRules, FlagState, Flags};
+use shooter_sim::equipment;
 use shooter_sim::gun_game::{self, Progress, Step};
 use shooter_sim::hardpoint::{HardpointRules, HardpointState, HillTime, Holder, Zone};
 use shooter_sim::hitbox::clock::{BodyClock, BodyState};
@@ -90,6 +91,7 @@ use super::props::{PropExplosion, PropSnapshot, PropsBridge};
 use super::transport::{self, NetEvent};
 use crate::body::{self, BodyParts};
 use crate::convert::{to_godot, to_sim};
+use crate::grenades::{self, GrenadeSim, LiveGrenade};
 use crate::penetration;
 use crate::pickup::{INTERACT_LAYER, WeaponPickup};
 use crate::target::WORLD_LAYER;
@@ -266,6 +268,8 @@ pub struct NetServer {
     /// Ticks until looking for the props manager again (maps without props
     /// never pay more than a group lookup every couple of seconds).
     props_retry: u32,
+    /// Every live grenade.
+    grenades: GrenadeSim,
 }
 
 struct ClientSlot {
@@ -363,6 +367,21 @@ struct Attack {
     /// The attacker's shot number, which the hit events echo.
     shot: u32,
     melee: bool,
+}
+
+/// A grenade that left a hand (or fell from a dead one) this tick.
+struct Throw {
+    owner: u8,
+    shot: u32,
+    kind: equipment::Kind,
+    eye: Vector3,
+    yaw: f32,
+    pitch: f32,
+    /// The thrower's velocity, which the grenade carries.
+    carrier: Vec3,
+    fuse: f32,
+    /// Fell from a dead player's hand rather than thrown.
+    dropped: bool,
 }
 
 /// What lunge checks need to know about each player this tick.
@@ -1165,6 +1184,8 @@ impl NetServer {
     /// somewhere away from the others.
     fn respawn_all_at_start(&mut self) {
         self.recent_deaths.clear();
+        // A fresh match or round starts with no grenades about.
+        self.grenades.clear();
         let free_for_all = self.game.free_for_all();
         let mut slots = [0; tdm::TEAM_COUNT];
         let mut order: Vec<(Team, u8)> = self.avatars.iter().map(|a| (a.team, a.id)).collect();
@@ -1213,6 +1234,7 @@ impl NetServer {
             // Gun Game: the ladder's weapon and nothing else.
             state.combat = CombatState::only(loadout);
         }
+        state.combat.lethals = equipment::spawn_lethals(self.game);
         avatar.predicted = Predicted {
             state,
             position: point.position,
@@ -1338,6 +1360,7 @@ impl NetServer {
         let mut events = Vec::new();
         let mut shots = Vec::new();
         let mut strikes = Vec::new();
+        let mut throws: Vec<Throw> = Vec::new();
         let mut fall_deaths = Vec::new();
         let mut respawns = Vec::new();
         let tick = self.tick;
@@ -1517,6 +1540,42 @@ impl NetServer {
                                 rtt: *rtt,
                             });
                         }
+                        PlayerEvent::Combat(CombatEvent::Thrown {
+                            kind,
+                            yaw,
+                            pitch,
+                            fuse,
+                            shot,
+                        }) => {
+                            let p = &avatar.predicted;
+                            let eye = to_godot(p.position)
+                                + Vector3::UP * p.state.movement.eye_height(&self.params.movement);
+                            throws.push(Throw {
+                                owner: avatar.id,
+                                shot,
+                                kind,
+                                eye,
+                                yaw,
+                                pitch,
+                                carrier: p.state.movement.velocity,
+                                fuse,
+                                dropped: false,
+                            });
+                        }
+                        PlayerEvent::GrenadeDropped { kind, fuse, shot } => {
+                            let p = &avatar.predicted;
+                            throws.push(Throw {
+                                owner: avatar.id,
+                                shot,
+                                kind,
+                                eye: to_godot(p.position) + Vector3::UP * 0.4,
+                                yaw: input.yaw,
+                                pitch: 0.0,
+                                carrier: p.state.movement.velocity * 0.5,
+                                fuse,
+                                dropped: true,
+                            });
+                        }
                         // Only falls kill inside the step; shots are resolved below.
                         PlayerEvent::Died => fall_deaths.push(avatar.id),
                         _ => {}
@@ -1552,6 +1611,191 @@ impl NetServer {
         }
         for strike in strikes {
             self.resolve_melee(&strike);
+        }
+        self.update_grenades(throws);
+    }
+
+    /// Adds this tick's throws, flies every grenade, and sets off the ones
+    /// whose fuse ran out.
+    fn update_grenades(&mut self, throws: Vec<Throw>) {
+        if throws.is_empty() && self.grenades.live.is_empty() {
+            return;
+        }
+        let Some(mut space) = self
+            .base()
+            .get_world_3d()
+            .and_then(|world| world.get_direct_space_state())
+        else {
+            return;
+        };
+        for throw in throws {
+            if throw.dropped {
+                self.grenades.add(LiveGrenade {
+                    owner: Some(throw.owner),
+                    shot: throw.shot,
+                    grenade: equipment::Grenade::dropped(
+                        throw.kind,
+                        to_sim(throw.eye),
+                        throw.carrier,
+                        throw.fuse,
+                    ),
+                });
+            } else {
+                self.grenades.throw(
+                    &mut space,
+                    Some(throw.owner),
+                    throw.shot,
+                    throw.kind,
+                    throw.eye,
+                    (throw.yaw, throw.pitch),
+                    throw.carrier,
+                    throw.fuse,
+                );
+            }
+        }
+        let outcome = self.grenades.step(&mut space, TICK_DT);
+        for blast in outcome.blasts {
+            self.resolve_grenade(&mut space, &blast);
+        }
+    }
+
+    /// A grenade goes off: everyone sees it, and every body the blast can
+    /// see within its radius takes damage by distance. No friendly fire, but
+    /// a thrower's own grenade hurts them. Kills count as the thrower's.
+    fn resolve_grenade(&mut self, space: &mut Gd<PhysicsDirectSpaceState3D>, blast: &LiveGrenade) {
+        let kind = blast.grenade.kind;
+        let at = blast.grenade.position;
+        self.broadcast_event(&GameEvent::Blast {
+            owner: blast.owner,
+            shot: blast.shot,
+            kind,
+            at,
+        });
+        if !self.attacks_hurt() {
+            return;
+        }
+        let attacker = blast
+            .owner
+            .filter(|id| self.avatars.iter().any(|a| a.id == *id));
+        let attacker_side = attacker.and_then(|id| {
+            self.avatars
+                .iter()
+                .find(|a| a.id == id)
+                .map(|a| self.side(a))
+        });
+        let center = to_godot(at);
+        let radius = equipment::blast_radius(kind);
+        let mut victims: Vec<(u8, f32, f32)> = Vec::new();
+        for avatar in &self.avatars {
+            if !avatar.predicted.state.alive() {
+                continue;
+            }
+            let own = Some(avatar.id) == attacker;
+            if !own && attacker_side.is_some_and(|side| side == self.side(avatar)) {
+                continue;
+            }
+            let feet = to_godot(avatar.predicted.position);
+            let chest = feet + Vector3::UP * EXPLOSION_TARGET_HEIGHT;
+            let distance = center.distance_to(chest);
+            if distance > radius || !grenades::blast_reaches(space, center, feet) {
+                continue;
+            }
+            let damage = equipment::blast_damage(kind, distance);
+            if damage > 0.0 {
+                victims.push((avatar.id, distance, damage));
+            }
+        }
+        // The weapon the thrower holds names nothing in the feed; the grenade does.
+        let weapon = attacker
+            .and_then(|id| self.avatars.iter().find(|a| a.id == id))
+            .map_or_else(default_primary, |a| a.predicted.state.combat.weapon().id);
+        let attacker_team =
+            attacker.and_then(|id| self.avatars.iter().find(|a| a.id == id).map(|a| a.team));
+        let scoring = self.match_state.scoring();
+        let mut kills = Vec::new();
+        for (id, distance, damage) in victims {
+            let Some(victim) = self.avatars.iter_mut().find(|a| a.id == id) else {
+                continue;
+            };
+            let killed =
+                player::apply_damage(&mut victim.predicted.state, damage, false, &mut Vec::new());
+            let travel = victim.predicted.position - at;
+            victim.hits = victim.hits.wrapping_add(1);
+            victim.hit_heading = protocol::heading_to_u8(travel.x, travel.z);
+            victim.hit_part =
+                protocol::HitPart::new(Some(shooter_sim::hitbox::CHEST_SHAPE as u8), damage, false)
+                    .to_u8();
+            if let Some(attacker) = attacker
+                && let Some(brain) = &mut victim.brain
+            {
+                brain.on_hurt(attacker, center, self.tick);
+            }
+            self.send_event(
+                id,
+                GameEvent::Hurt {
+                    attacker: attacker.unwrap_or(u8::MAX),
+                    from: at,
+                    damage,
+                    killed,
+                },
+            );
+            if let Some(attacker) = attacker.filter(|a| *a != id) {
+                self.send_event(
+                    attacker,
+                    GameEvent::Hit {
+                        victim: id,
+                        shot: blast.shot,
+                        damage,
+                        headshot: false,
+                        killed,
+                    },
+                );
+            }
+            if !killed {
+                continue;
+            }
+            let credited = attacker.filter(|attacker| *attacker != id);
+            self.broadcast_event(&GameEvent::Kill {
+                killer: credited.unwrap_or(id),
+                victim: id,
+                weapon,
+                headshot: false,
+                cause: protocol::KillCause::Equipment(kind),
+            });
+            self.record_death(id);
+            if credited.is_some() {
+                kills.push(Kill {
+                    distance,
+                    headshot: false,
+                });
+            } else {
+                self.on_suicide(id);
+            }
+            let victim_team = self.avatars.iter().find(|a| a.id == id).map(|a| a.team);
+            let end = match (self.game, credited) {
+                (Mode::GunGame(rules), Some(killer)) => self.climb(killer, &rules),
+                (Mode::FreeForAll, Some(killer)) => self.free_for_all_end(killer, kills.len()),
+                (Mode::TeamDeathmatch, _) => victim_team.and_then(|victim_team| {
+                    self.match_state
+                        .on_kill(&self.rules, credited.and(attacker_team), victim_team)
+                }),
+                _ => None,
+            };
+            if let Some(end) = end {
+                self.on_transition(end);
+            } else {
+                self.broadcast_match();
+            }
+        }
+        if !kills.is_empty() && scoring {
+            let rules = self.score_rules;
+            if let Some(attacker) = attacker
+                && let Some(thrower) = self.avatars.iter_mut().find(|a| a.id == attacker)
+            {
+                let awards = thrower.score.on_shot_kills(&rules, &kills);
+                let totals = thrower.score.totals();
+                self.send_event(attacker, GameEvent::Score { awards, totals });
+            }
         }
     }
 
@@ -1824,7 +2068,11 @@ impl NetServer {
                     victim: hit.id,
                     weapon: attack.weapon,
                     headshot: hit.headshot,
-                    melee: attack.melee,
+                    cause: if attack.melee {
+                        protocol::KillCause::Knife
+                    } else {
+                        protocol::KillCause::Weapon
+                    },
                 });
                 self.record_death(hit.id);
                 let victim = self
@@ -2081,7 +2329,7 @@ impl NetServer {
                     victim: id,
                     weapon,
                     headshot: false,
-                    melee: false,
+                    cause: protocol::KillCause::Weapon,
                 });
                 self.record_death(id);
                 if credited.is_some() {
@@ -2882,6 +3130,20 @@ impl NetServer {
             })
             .collect();
         views.sort_by_key(|v| v.id);
+        let grenade_views: Vec<protocol::GrenadeView> = self
+            .grenades
+            .live
+            .iter()
+            .filter_map(|g| {
+                Some(protocol::GrenadeView::new(
+                    g.owner?,
+                    g.shot,
+                    g.grenade.kind,
+                    g.grenade.position,
+                    g.grenade.resting,
+                ))
+            })
+            .collect();
         self.history.insert(self.tick, views.clone());
         self.lag.record(self.tick, views.clone());
 
@@ -2903,6 +3165,7 @@ impl NetServer {
                     predicted: avatar.predicted,
                 })),
                 players: others,
+                grenades: grenade_views.clone(),
             });
             let base = baseline
                 .as_ref()

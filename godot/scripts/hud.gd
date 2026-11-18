@@ -27,6 +27,7 @@ const DEFAULT_CONTROLS := [
 	"aim:Aim",
 	"reload:Reload",
 	"melee:Knife",
+	"lethal:Frag",
 	"weapon_1:Switch weapon",
 	"interact:Take weapon",
 	"refill_ammo:Refill ammo",

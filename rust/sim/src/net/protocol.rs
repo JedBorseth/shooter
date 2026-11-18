@@ -21,6 +21,7 @@ use super::Tick;
 use super::bits::{BitReader, BitWriter, DecodeError, DecodeResult};
 use super::subtick;
 use crate::chat;
+use crate::equipment;
 use crate::gun_game;
 use crate::hardpoint::Holder;
 use crate::hitbox::clock::{self, Progress};
@@ -68,7 +69,10 @@ use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState}
 // round (`PlayerView::step`), which the hit zones' legs follow.
 // Version 30 changed how each class of weapon is carried and reloaded
 // (`hitbox::carry::CarryClass`), which moves the arm hit zones.
-pub const PROTOCOL_VERSION: u16 = 30;
+// Version 31 added the frag grenade: the lethal button in inputs, the throw
+// and the grenades carried in the predicted state, live grenades in
+// snapshots, blasts, and kill causes in the kill feed.
+pub const PROTOCOL_VERSION: u16 = 31;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -180,8 +184,8 @@ pub enum GameEvent {
         /// The weapon in the killer's hands.
         weapon: WeaponId,
         headshot: bool,
-        /// A knife kill ([`crate::melee`]): the feed shows the knife instead.
-        melee: bool,
+        /// A knife or a grenade shows in the feed instead of the weapon.
+        cause: KillCause,
     },
     /// To one player: awards just earned, if any, and their match totals.
     Score {
@@ -265,6 +269,15 @@ pub enum GameEvent {
         attackers: Team,
         halftime_after: u32,
     },
+    /// To everyone: a grenade went off at `at`. `owner` threw it (none once
+    /// they have left) as their shot `shot`; clients draw the blast, and
+    /// remove the grenade.
+    Blast {
+        owner: Option<u8>,
+        shot: u32,
+        kind: equipment::Kind,
+        at: Vec3,
+    },
 }
 
 /// One flag as clients see it.
@@ -339,6 +352,56 @@ pub struct Snapshot {
     pub own: Option<Box<OwnState>>,
     /// Every other player, sorted by id.
     pub players: Vec<PlayerView>,
+    /// Every live grenade, in full each time (there are few, and they move
+    /// every tick).
+    pub grenades: Vec<GrenadeView>,
+}
+
+/// A live grenade as clients see it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GrenadeView {
+    /// Who threw it.
+    pub owner: u8,
+    /// The thrower's shot number for the throw (`CombatEvent::Thrown`), so
+    /// the thrower's own drawn grenade can be matched to it.
+    pub shot: u32,
+    pub kind: equipment::Kind,
+    /// Centre in millimetres.
+    pub position: IVec3,
+    /// Lying still.
+    pub resting: bool,
+}
+
+impl GrenadeView {
+    pub fn new(owner: u8, shot: u32, kind: equipment::Kind, position: Vec3, resting: bool) -> Self {
+        Self {
+            owner,
+            shot,
+            kind,
+            position: (position * POSITION_SCALE).round().as_ivec3(),
+            resting,
+        }
+    }
+
+    /// Centre in metres.
+    pub fn position(&self) -> Vec3 {
+        self.position.as_vec3() / POSITION_SCALE
+    }
+}
+
+/// Most grenades a snapshot carries.
+pub const MAX_GRENADES: usize = 32;
+
+/// Why a kill happened, for the kill feed.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum KillCause {
+    /// The weapon in the killer's hands.
+    #[default]
+    Weapon,
+    /// A knife strike ([`crate::melee`]).
+    Knife,
+    /// Thrown equipment.
+    Equipment(equipment::Kind),
 }
 
 /// Everything client prediction needs to restart from the server's result.
@@ -705,6 +768,7 @@ fn write_input(w: &mut BitWriter, input: &PlayerInput, previous_view: Option<f64
         input.aim,
         input.reload,
         input.melee,
+        input.lethal,
     ] {
         w.bool(flag);
     }
@@ -825,6 +889,7 @@ fn read_input(r: &mut BitReader, previous_view: Option<f64>) -> DecodeResult<Pla
     let aim = r.bool()?;
     let reload = r.bool()?;
     let melee = r.bool()?;
+    let lethal = r.bool()?;
     let lunge = if r.bool()? {
         let x = f32::from(r.u16()? as i16);
         let z = f32::from(r.u16()? as i16);
@@ -862,6 +927,7 @@ fn read_input(r: &mut BitReader, previous_view: Option<f64>) -> DecodeResult<Pla
         pickup,
         melee,
         lunge,
+        lethal,
         view_tick,
         fire_aim,
     })
@@ -993,14 +1059,21 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
             victim,
             weapon,
             headshot,
-            melee,
+            cause,
         } => {
             w.bits(2, EVENT_TAG_BITS);
             w.u8(*killer);
             w.u8(*victim);
             write_weapon(w, *weapon);
             w.bool(*headshot);
-            w.bool(*melee);
+            match cause {
+                KillCause::Weapon => w.bits(0, 2),
+                KillCause::Knife => w.bits(1, 2),
+                KillCause::Equipment(kind) => {
+                    w.bits(2, 2);
+                    w.bits(u32::from(kind.code()), EQUIPMENT_BITS);
+                }
+            }
         }
         GameEvent::Score { awards, totals } => {
             w.bits(3, EVENT_TAG_BITS);
@@ -1197,6 +1270,24 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
             w.bits(u32::from(*attackers), 1);
             w.varint(*halftime_after);
         }
+        GameEvent::Blast {
+            owner,
+            shot,
+            kind,
+            at,
+        } => {
+            w.bits(17, EVENT_TAG_BITS);
+            match owner {
+                Some(id) => {
+                    w.bool(true);
+                    w.u8(*id);
+                }
+                None => w.bool(false),
+            }
+            w.varint(*shot);
+            w.bits(u32::from(kind.code()), EQUIPMENT_BITS);
+            write_vec3(w, *at);
+        }
     }
 }
 
@@ -1220,7 +1311,12 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
             victim: r.u8()?,
             weapon: read_weapon(r)?,
             headshot: r.bool()?,
-            melee: r.bool()?,
+            cause: match r.bits(2)? {
+                0 => KillCause::Weapon,
+                1 => KillCause::Knife,
+                2 => KillCause::Equipment(read_equipment(r)?),
+                _ => return Err(DecodeError::Invalid("kill cause")),
+            },
         }),
         3 => {
             let count = r.varint()? as usize;
@@ -1414,6 +1510,12 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
                 halftime_after: r.varint()?,
             })
         }
+        17 => Ok(GameEvent::Blast {
+            owner: if r.bool()? { Some(r.u8()?) } else { None },
+            shot: r.varint()?,
+            kind: read_equipment(r)?,
+            at: read_finite_vec3(r)?,
+        }),
         _ => Err(DecodeError::Invalid("event tag")),
     }
 }
@@ -1541,6 +1643,17 @@ fn write_snapshot(w: &mut BitWriter, s: &Snapshot, baseline: &[PlayerView]) {
             });
         write_view_delta(w, view, &base);
     }
+    let count = s.grenades.len().min(MAX_GRENADES);
+    w.varint(count as u32);
+    for g in &s.grenades[..count] {
+        w.u8(g.owner);
+        w.varint(g.shot);
+        w.bits(u32::from(g.kind.code()), EQUIPMENT_BITS);
+        w.varint_signed(g.position.x);
+        w.varint_signed(g.position.y);
+        w.varint_signed(g.position.z);
+        w.bool(g.resting);
+    }
 }
 
 fn read_snapshot<'a>(
@@ -1582,11 +1695,26 @@ fn read_snapshot<'a>(
             });
         players.push(read_view_delta(r, &b)?);
     }
+    let count = r.varint()? as usize;
+    if count > MAX_GRENADES {
+        return Err(DecodeError::Invalid("grenade count"));
+    }
+    let mut grenades = Vec::with_capacity(count);
+    for _ in 0..count {
+        grenades.push(GrenadeView {
+            owner: r.u8()?,
+            shot: r.varint()?,
+            kind: read_equipment(r)?,
+            position: IVec3::new(r.varint_signed()?, r.varint_signed()?, r.varint_signed()?),
+            resting: r.bool()?,
+        });
+    }
     Ok(Snapshot {
         tick,
         baseline: base_tick,
         own,
         players,
+        grenades,
     })
 }
 
@@ -1726,6 +1854,7 @@ fn write_predicted(w: &mut BitWriter, p: &Predicted) {
     let s = &p.state;
     w.bool(s.reload_held);
     w.bool(s.melee_held);
+    w.bool(s.lethal_held);
     w.f32(s.health);
     w.f32(s.since_damage);
     w.f32(s.fall_speed);
@@ -1739,6 +1868,7 @@ fn read_predicted(r: &mut BitReader) -> DecodeResult<Predicted> {
     let on_floor = r.bool()?;
     let reload_held = r.bool()?;
     let melee_held = r.bool()?;
+    let lethal_held = r.bool()?;
     let health = r.f32()?;
     let since_damage = r.f32()?;
     let fall_speed = r.f32()?;
@@ -1755,6 +1885,7 @@ fn read_predicted(r: &mut BitReader) -> DecodeResult<Predicted> {
             airborne,
             reload_held,
             melee_held,
+            lethal_held,
         },
         position,
         on_floor,
@@ -1862,6 +1993,22 @@ fn write_combat_state(w: &mut BitWriter, c: &CombatState) {
             w.f32(strike_in);
             w.bool(lunge);
         }
+        Action::Throwing {
+            kind,
+            cooked,
+            release_in,
+        } => {
+            w.bits(7, 3);
+            w.bits(u32::from(kind.code()), EQUIPMENT_BITS);
+            w.f32(cooked);
+            match release_in {
+                Some(left) => {
+                    w.bool(true);
+                    w.f32(left);
+                }
+                None => w.bool(false),
+            }
+        }
     }
     w.f32(c.ads);
     w.f32(c.cooldown);
@@ -1879,6 +2026,7 @@ fn write_combat_state(w: &mut BitWriter, c: &CombatState) {
     w.f32(c.winded);
     w.bool(c.holding_breath);
     w.bool(c.reload_queued);
+    w.u8(c.lethals);
 }
 
 fn read_combat_state(r: &mut BitReader) -> DecodeResult<CombatState> {
@@ -1930,6 +2078,11 @@ fn read_combat_state(r: &mut BitReader) -> DecodeResult<CombatState> {
             strike_in: r.f32()?,
             lunge: r.bool()?,
         },
+        7 => Action::Throwing {
+            kind: read_equipment(r)?,
+            cooked: r.f32()?,
+            release_in: if r.bool()? { Some(r.f32()?) } else { None },
+        },
         _ => return Err(DecodeError::Invalid("action")),
     };
     Ok(CombatState {
@@ -1951,7 +2104,16 @@ fn read_combat_state(r: &mut BitReader) -> DecodeResult<CombatState> {
         winded: r.f32()?,
         holding_breath: r.bool()?,
         reload_queued: r.bool()?,
+        lethals: r.u8()?,
     })
+}
+
+/// Bits for an [`equipment::Kind`] on the wire: room for the tacticals.
+const EQUIPMENT_BITS: u32 = 2;
+
+fn read_equipment(r: &mut BitReader) -> DecodeResult<equipment::Kind> {
+    equipment::Kind::from_code(r.bits(EQUIPMENT_BITS)? as u8)
+        .ok_or(DecodeError::Invalid("equipment"))
 }
 
 fn write_vec3(w: &mut BitWriter, v: Vec3) {
@@ -2266,6 +2428,7 @@ mod tests {
     fn own_state_is_bit_exact() {
         let predicted = sample_state(70);
         let snapshot = ServerMessage::Snapshot(Snapshot {
+            grenades: Vec::new(),
             tick: 500,
             baseline: None,
             own: Some(Box::new(OwnState {
@@ -2280,10 +2443,71 @@ mod tests {
     }
 
     #[test]
+    fn grenades_and_a_thrower_mid_cook_survive_the_wire() {
+        let mut predicted = sample_state(70);
+        predicted.state.combat.action = Action::Throwing {
+            kind: equipment::Kind::Frag,
+            cooked: 1.25,
+            release_in: Some(0.05),
+        };
+        predicted.state.combat.lethals = 2;
+        predicted.state.lethal_held = true;
+        let snapshot = ServerMessage::Snapshot(Snapshot {
+            grenades: vec![
+                GrenadeView::new(
+                    4,
+                    90_210,
+                    equipment::Kind::Frag,
+                    Vec3::new(-12.5, 0.045, 33.25),
+                    true,
+                ),
+                GrenadeView::new(
+                    0,
+                    1,
+                    equipment::Kind::Frag,
+                    Vec3::new(1.0, 4.0, -2.0),
+                    false,
+                ),
+            ],
+            tick: 900,
+            baseline: None,
+            own: Some(Box::new(OwnState {
+                last_input: 7,
+                predicted,
+            })),
+            players: vec![],
+        });
+        let decoded = ServerMessage::decode(&snapshot.encode(&[]), |_| None).unwrap();
+        assert_eq!(decoded, snapshot);
+        let ServerMessage::Snapshot(decoded) = decoded else {
+            panic!("expected a snapshot");
+        };
+        assert!((decoded.grenades[0].position() - Vec3::new(-12.5, 0.045, 33.25)).length() < 1e-3);
+    }
+
+    #[test]
+    fn the_lethal_button_rides_in_inputs() {
+        let input = PlayerInput {
+            lethal: true,
+            ..Default::default()
+        };
+        let msg = ClientMessage::Input(InputPacket {
+            ack_snapshot: None,
+            first_seq: 1,
+            inputs: vec![input],
+        });
+        let ClientMessage::Input(decoded) = ClientMessage::decode(&msg.encode()).unwrap() else {
+            panic!("expected input");
+        };
+        assert!(decoded.inputs[0].lethal);
+    }
+
+    #[test]
     fn hits_ride_in_the_view_delta() {
         let p = sample_state(30);
         let a = PlayerView::from_state(3, &p, 0.5, -0.1);
         let full = ServerMessage::Snapshot(Snapshot {
+            grenades: Vec::new(),
             tick: 100,
             baseline: None,
             own: None,
@@ -2298,6 +2522,7 @@ mod tests {
         hit.hit_heading = heading_to_u8(-1.0, 0.0);
         hit.hit_part = HitPart::new(Some(0), 120.0, false).to_u8();
         let delta = ServerMessage::Snapshot(Snapshot {
+            grenades: Vec::new(),
             tick: 101,
             baseline: Some(100),
             own: None,
@@ -2327,6 +2552,7 @@ mod tests {
             step: 0.25,
         });
         let delta = ServerMessage::Snapshot(Snapshot {
+            grenades: Vec::new(),
             tick: 101,
             baseline: Some(100),
             own: None,
@@ -2387,6 +2613,7 @@ mod tests {
         let a = PlayerView::from_state(3, &p, 0.5, -0.1);
         let b = PlayerView::from_state(9, &p, 2.0, 0.2);
         let full = ServerMessage::Snapshot(Snapshot {
+            grenades: Vec::new(),
             tick: 100,
             baseline: None,
             own: None,
@@ -2399,6 +2626,7 @@ mod tests {
         a2.position.x += 37;
         let c = PlayerView::from_state(12, &p, 0.0, 0.0);
         let delta = ServerMessage::Snapshot(Snapshot {
+            grenades: Vec::new(),
             tick: 101,
             baseline: Some(100),
             own: None,
@@ -2413,6 +2641,7 @@ mod tests {
         .unwrap();
         assert_eq!(decoded, delta);
         let unchanged = ServerMessage::Snapshot(Snapshot {
+            grenades: Vec::new(),
             tick: 102,
             baseline: Some(100),
             own: None,
@@ -2430,6 +2659,7 @@ mod tests {
     #[test]
     fn unknown_baseline_is_an_error() {
         let msg = ServerMessage::Snapshot(Snapshot {
+            grenades: Vec::new(),
             tick: 10,
             baseline: Some(5),
             own: None,
@@ -2658,7 +2888,20 @@ mod tests {
                 victim: 0,
                 weapon: WeaponId::expect("m40"),
                 headshot: true,
-                melee: false,
+                cause: KillCause::Weapon,
+            },
+            GameEvent::Kill {
+                killer: 3,
+                victim: 3,
+                weapon: WeaponId::expect("m4"),
+                headshot: false,
+                cause: KillCause::Equipment(equipment::Kind::Frag),
+            },
+            GameEvent::Blast {
+                owner: Some(3),
+                shot: 41,
+                kind: equipment::Kind::Frag,
+                at: Vec3::new(2.5, 0.05, -7.125),
             },
             GameEvent::Score {
                 awards: vec![

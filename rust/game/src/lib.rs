@@ -12,6 +12,8 @@ mod character;
 mod convert;
 mod effects;
 mod footsteps;
+mod grenade_view;
+mod grenades;
 mod gunfire;
 mod hitbox_rig;
 mod knife;

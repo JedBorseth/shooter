@@ -53,6 +53,7 @@ fn raw_input(tick: u32) -> PlayerInput {
         pickup: None,
         melee: tick % 500 == 450 || tick % 500 == 451,
         lunge: (tick % 1000 == 450).then_some(Vec2::new(0.8, -2.6)),
+        lethal: (800..860).contains(&(tick % 1200)),
         view_tick: None,
         fire_aim: None,
     }
@@ -231,10 +232,11 @@ fn press_aim_changes_no_state() {
 // sprint that builds and winds down.
 // Movement, round 3: landings cost speed and recover, tired jumps, and air
 // steering that never adds speed.
-const REFERENCE_HASH: u64 = 0xc6af_afd8_c4f7_6557;
+// Equipment: the script pulls a frag's pin, cooks it, and throws it.
+const REFERENCE_HASH: u64 = 0x1913_0fdd_c1a8_0ad9;
 /// The same for every shot's view angles and aim offset (sub-tick press aims
 /// included).
-const SHOT_REFERENCE_HASH: u64 = 0xe2ef_ea58_c6c7_b1e6;
+const SHOT_REFERENCE_HASH: u64 = 0x4ca7_51e6_8d89_97b9;
 
 #[test]
 fn state_matches_the_reference_on_every_platform() {

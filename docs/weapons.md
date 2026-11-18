@@ -38,6 +38,17 @@ The knife has its own button (V, or R3 on a gamepad) and works with any weapon i
 - In Zombies the knife does the same 150 damage (one strike kills in round 1) and a knife kill pays 130 points. In Gun Game a knife kill sets the victim back a weapon and does not move the killer up.
 - Bots knife enemies that come within about 2.5 m in front of them.
 
+## Equipment
+
+The frag grenade is the lethal: G, or RB on a gamepad. Rules are in `rust/sim/src/equipment.rs`; the throw is part of the predicted weapon state (`Action::Throwing`).
+
+- A press pulls the pin and lowers the weapon. The fuse (3 s) burns from the pin. Holding the button cooks the grenade in hand; letting go throws it overhand after the pin is out (0.3 s) and a 0.15 s wind-up. A grenade held past its fuse goes off in the hand. The weapon is back up 0.45 s after the release. A throw cuts a reload or a bolt or pump cycle short like the knife, and cannot start during a switch, a knife strike, or a mantle. Fire, aim, switches, and pickups wait for it.
+- The grenade leaves the hand at 21 m/s, 9° above the view, plus the thrower's velocity, and falls at 14 m/s²: a level throw first lands about 10 m out, a high one about 30 m. It bounces off walls and floors (32% of the speed into a surface back, 70% along it), rolls when it meets the ground slower than 1.4 m/s (slowing at 3.5 m/s²), and settles. It passes through players and zombies.
+- The blast does 150 damage within 3 m, falling to 20 at 8 m: it kills a full-health player out to about 5 m. A body is hit only if the blast can see its shins, chest, or head. No friendly fire, but a thrower's own grenade hurts them; a kill counts as the thrower's, and the kill feed shows "Frag".
+- A player killed with the pin out drops the grenade, live, at their feet.
+- Counts: one frag a life in Team Deathmatch, Free-for-all, Capture the Flag, Hardpoint, and Search and Destroy (so one a round there), refilled at each spawn; none in Gun Game, which hands out guns only. Zombies starts with two and gives two more at the start of each later round, up to four (Black Ops). The practice arena gives one a life; the T refill does not give grenades.
+- Online the server flies every grenade and decides the damage; snapshots carry each live grenade, and a blast event sets off the effect. The thrower's client flies its own throw from the release, through the same rules and the same map, and hands over when the server's grenade arrives.
+
 ## Damage zones
 
 The head uses `damage.headshot`. Other zones use the weapon's `zones` (`stomach`, `arm`, `leg`; default 1, 0.9, 0.85). The M40 kills in one shot only to the head or upper chest (stomach 0.9, arms 0.75, legs 0.7); the PDW-9 is forgiving on limbs.

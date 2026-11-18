@@ -134,6 +134,13 @@ impl INode3D for ZombieDirector {
         for event in &events {
             match *event {
                 RoundEvent::RoundStarted { round } => {
+                    // Two more frags a round after the first, up to four.
+                    if round > 1
+                        && let Some(mut player) = self.player()
+                        && player.has_method("restock_lethals")
+                    {
+                        player.call("restock_lethals", &[]);
+                    }
                     self.round_kills = 0;
                     self.round_drops = 0;
                     self.rebuild_points = 0;

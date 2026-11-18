@@ -31,7 +31,7 @@ pub use def::{
     WeaponId, builtin, install, parse, parse_all, table,
 };
 
-use crate::{fmath, rng};
+use crate::{equipment, fmath, rng};
 
 /// Ammo for one carried weapon.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -103,6 +103,14 @@ pub enum Action {
         strike_in: f32,
         lunge: bool,
     },
+    /// A grenade in hand ([`crate::equipment`]), weapon down: seconds since
+    /// the pin was pulled (the fuse has burned that long), and once the
+    /// button is let go, seconds until it leaves the hand.
+    Throwing {
+        kind: equipment::Kind,
+        cooked: f32,
+        release_in: Option<f32>,
+    },
 }
 
 /// Player combat state: loadout, current action, aim, recoil, and breath.
@@ -140,6 +148,8 @@ pub struct CombatState {
     pub reload_queued: bool,
     /// Rounds left in the current burst (burst-fire weapons).
     pub burst_left: u8,
+    /// Frag grenades carried.
+    pub lethals: u8,
 }
 
 impl CombatState {
@@ -165,6 +175,35 @@ impl CombatState {
             holding_breath: false,
             reload_queued: false,
             burst_left: 0,
+            lethals: 1,
+        }
+    }
+
+    /// This loadout carrying `count` frags.
+    pub fn with_lethals(mut self, count: u8) -> Self {
+        self.lethals = count;
+        self
+    }
+
+    /// Whether a grenade can come out now: one is carried, and the hands
+    /// are free (not switching, knifing, or already throwing). It cuts a
+    /// reload or a bolt or pump cycle short, as the knife does.
+    pub fn can_throw(&self) -> bool {
+        self.lethals > 0 && self.can_melee()
+    }
+
+    pub fn throwing(&self) -> bool {
+        matches!(self.action, Action::Throwing { .. })
+    }
+
+    /// The grenade in hand with the pin out, if any: its kind and the
+    /// seconds left on its fuse. A player who dies holding it drops it live.
+    pub fn live_grenade(&self) -> Option<(equipment::Kind, f32)> {
+        match self.action {
+            Action::Throwing { kind, cooked, .. } => {
+                Some((kind, (equipment::FRAG_FUSE - cooked).max(0.0)))
+            }
+            _ => None,
         }
     }
 
@@ -215,7 +254,10 @@ impl CombatState {
     pub fn can_melee(&self) -> bool {
         !matches!(
             self.action,
-            Action::Lowering { .. } | Action::Raising { .. } | Action::Meleeing { .. }
+            Action::Lowering { .. }
+                | Action::Raising { .. }
+                | Action::Meleeing { .. }
+                | Action::Throwing { .. }
         )
     }
 
@@ -272,7 +314,7 @@ impl CombatState {
             Slot::Primary => Slot::Secondary,
             Slot::Secondary => Slot::Primary,
         };
-        Self::new([weapon, weapon]).without(empty)
+        Self::new([weapon, weapon]).without(empty).with_lethals(0)
     }
 
     /// Takes away whatever the player carries and hands them `weapon` alone
@@ -284,6 +326,7 @@ impl CombatState {
     /// semi-automatic weapon does not fire until it is pressed again.
     pub fn rearm(&mut self, weapon: WeaponId) {
         *self = Self {
+            lethals: self.lethals,
             shots_fired: self.shots_fired,
             fire_held: self.fire_held,
             sway_time: self.sway_time,
@@ -378,6 +421,11 @@ pub struct CombatInput {
     /// A melee starts this tick: seconds until it strikes, and whether it
     /// lunges. The caller checks [`CombatState::can_melee`] first.
     pub melee: Option<(f32, bool)>,
+    /// The lethal button went down this tick: pull a grenade's pin if one
+    /// can come out ([`CombatState::can_throw`]).
+    pub throw: bool,
+    /// The lethal button is held: the grenade in hand cooks until it is let go.
+    pub throw_held: bool,
 }
 
 /// How aimed the weapon is for its rules and its look, from the linear `ads`
@@ -465,6 +513,22 @@ pub enum CombatEvent {
         weapon: WeaponId,
         lunge: bool,
     },
+    /// A grenade's pin was pulled with `weapon` in hand, which goes down.
+    ThrowStarted {
+        weapon: WeaponId,
+        kind: equipment::Kind,
+    },
+    /// The grenade left the hand along the view `yaw` and `pitch` (radians)
+    /// with `fuse` seconds left; 0 means it went off in the hand. `shot`
+    /// numbers it in the same series as shots, so the thrower's drawn
+    /// grenade can be matched to the server's.
+    Thrown {
+        kind: equipment::Kind,
+        yaw: f32,
+        pitch: f32,
+        fuse: f32,
+        shot: u32,
+    },
     /// The knife strike landed: whoever runs the hit test checks it now.
     /// `shot` numbers it in the same series as shots, so the server's
     /// verdict can be matched to it.
@@ -508,7 +572,10 @@ pub fn step(
     state.cooldown = state.cooldown.max(if was_firing { -dt } else { 0.0 });
     state.since_shot += dt;
 
-    if let Some(weapon) = input.pickup {
+    // Hands full: a pickup waits for the throw to end.
+    if let Some(weapon) = input.pickup
+        && !state.throwing()
+    {
         pick_up(state, weapon, events);
     }
 
@@ -521,11 +588,15 @@ pub fn step(
     }
 
     request_switch(state, input);
+    advance_throw(state, input, dt, events);
     advance_action(state, dt, events);
     if let Some((strike_in, lunge)) = input.melee
         && state.can_melee()
     {
         start_melee(state, strike_in, lunge, events);
+    }
+    if input.throw && state.can_throw() {
+        start_throw(state, equipment::Kind::Frag, events);
     }
 
     let def = state.def();
@@ -563,7 +634,10 @@ pub fn step(
     // or a melee.
     let aim_allowed = !matches!(
         state.action,
-        Action::Lowering { .. } | Action::Raising { .. } | Action::Meleeing { .. }
+        Action::Lowering { .. }
+            | Action::Raising { .. }
+            | Action::Meleeing { .. }
+            | Action::Throwing { .. }
     );
     let can_aim = input.aim && !ctx.sprinting && aim_allowed;
     let ads_step = dt / def.ads_time;
@@ -636,8 +710,8 @@ fn request_switch(state: &mut CombatState, input: &CombatInput) {
         return;
     }
     match state.action {
-        // The knife finishes its strike first.
-        Action::Meleeing { .. } => return,
+        // The knife finishes its strike first, and a grenade its throw.
+        Action::Meleeing { .. } | Action::Throwing { .. } => return,
         Action::Lowering { to: target, .. } if target == to => return,
         // Changed their mind: bring the weapon in hand back up from as far
         // as it got, instead of lowering it all the way and drawing it again.
@@ -671,7 +745,8 @@ fn request_switch(state: &mut CombatState, input: &CombatInput) {
 
 fn advance_action(state: &mut CombatState, dt: f32, events: &mut Vec<CombatEvent>) {
     match state.action {
-        Action::Ready => {}
+        // Advanced by `advance_throw`, which needs the button.
+        Action::Ready | Action::Throwing { .. } => {}
         Action::Reloading { remaining, empty } => {
             let was_seated = state.magazine_seated();
             let remaining = remaining - dt;
@@ -801,6 +876,77 @@ fn advance_action(state: &mut CombatState, dt: f32, events: &mut Vec<CombatEvent
             };
         }
     }
+}
+
+/// Pulls a grenade's pin: the weapon goes down and the fuse starts. Cuts a
+/// reload or a bolt or pump cycle short, as the knife does.
+fn start_throw(state: &mut CombatState, kind: equipment::Kind, events: &mut Vec<CombatEvent>) {
+    let cut_cycle = match state.action {
+        Action::Cycling { .. } => true,
+        Action::Reloading { empty: true, .. } => state.magazine_seated(),
+        _ => false,
+    };
+    if cut_cycle {
+        state.slots[usize::from(state.active)].needs_cycle = true;
+    }
+    state.burst_left = 0;
+    state.reload_queued = false;
+    state.lethals -= 1;
+    state.action = Action::Throwing {
+        kind,
+        cooked: 0.0,
+        release_in: None,
+    };
+    events.push(CombatEvent::ThrowStarted {
+        weapon: state.weapon().id,
+        kind,
+    });
+}
+
+/// Cooks the grenade in hand while the button is held, winds up once it is
+/// let go (never before the pin is out), and throws it. A grenade cooked to
+/// the end of its fuse goes off in the hand.
+fn advance_throw(
+    state: &mut CombatState,
+    input: &CombatInput,
+    dt: f32,
+    events: &mut Vec<CombatEvent>,
+) {
+    let Action::Throwing {
+        kind,
+        cooked,
+        release_in,
+    } = state.action
+    else {
+        return;
+    };
+    let cooked = cooked + dt;
+    let release_in = match release_in {
+        Some(left) => Some(left - dt),
+        None if !input.throw_held && cooked >= equipment::PIN_TIME => Some(equipment::WIND_UP),
+        None => None,
+    };
+    let fuse = equipment::FRAG_FUSE - cooked;
+    let thrown = fuse <= 0.0 || release_in.is_some_and(|left| left <= 0.0);
+    if !thrown {
+        state.action = Action::Throwing {
+            kind,
+            cooked,
+            release_in,
+        };
+        return;
+    }
+    events.push(CombatEvent::Thrown {
+        kind,
+        yaw: input.shot_yaw,
+        pitch: input.shot_pitch,
+        fuse: fuse.max(0.0),
+        shot: state.shots_fired,
+    });
+    state.shots_fired = state.shots_fired.wrapping_add(1);
+    state.action = Action::Raising {
+        remaining: equipment::RECOVERY,
+    };
 }
 
 /// Starts a knife strike that lands in `strike_in` seconds. It cuts short a
