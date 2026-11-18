@@ -88,10 +88,26 @@ it out. Chaining slides and cancels as fast as the buttons allow averages no
 more than a plain sprint (`chained_slide_cancels_never_outrun_a_sprint`; on
 the old rules the best chain averaged 1.08 x sprint).
 
-## Mantle
+## Mantle and vault
 
-A mantle's direction is fixed when it starts (`MoveState::mantle_dir`), so
-turning mid-climb no longer pulls the player off the wall.
+| | Here | Reference |
+| --- | --- | --- |
+| Mantle | ledges 0.5 to 1.35 m above the feet, deep enough to stand on, 0.22 s + 0.2 s per metre | climb onto anything chest high |
+| Trigger | a jump press at it, or jump held in the air (a jumped-at ledge too high from the ground climbs once in reach) | hold jump to mantle |
+| Low ledge | room only to crouch on top: the climb ends crouched | crouch-height mantles |
+| Vault | thin cover or a window sill 0.5 to 1.2 m high, with ground within 1.6 m below on the far side, 0.18 s + 0.15 s per metre | vault over thin cover and through windows |
+| Vault speed | keeps the run's speed (at least 3 m/s, at most a sprint) and drops off the far side without a landing penalty | keeps momentum |
+| Window | ducks through when a standing body would not fit (and only when a crouched one does), standing up on the far side once clear | |
+
+The engine looks for what is climbable (`body::find_climb`): a wall within
+0.75 m at knee height, its top just past the face, and whether the top runs
+on (a ledge, with stand or crouch room above it) or drops away again (thin
+cover, with clear room over it and ground beyond). The simulation picks a
+mantle over a vault and climbs at a velocity fixed when the climb starts
+(`MoveState::mantle_dir`), so turning mid-climb does not pull the player off
+the wall. `MoveState::vaulting` marks a vault, which carries on over the top
+and ducks through windows at slide speed. Ladders and weapon mounting are not
+done: no map has ladders yet.
 
 ## Collision and stepping
 

@@ -828,6 +828,7 @@ impl FpsPlayer {
         let movement = &self.state.movement;
         let label = match movement.stance {
             _ if !self.state.alive() => "Dead",
+            _ if movement.mantling() => "Mantling",
             Stance::Sliding => "Sliding",
             Stance::Crouching => "Crouching",
             Stance::Standing if movement.sprinting => "Sprinting",

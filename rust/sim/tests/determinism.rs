@@ -94,6 +94,8 @@ fn run(ticks: u32) -> Run {
             on_floor: p.on_floor,
             can_stand: true,
             ledge: None,
+            ledge_low: false,
+            vault: None,
         };
         events.clear();
         let v = player::step(&mut p.state, &input, env, &params, TICK_DT, &mut events);
@@ -192,6 +194,8 @@ fn press_aim_changes_no_state() {
             on_floor: true,
             can_stand: true,
             ledge: None,
+            ledge_low: false,
+            vault: None,
         };
         let mut q = p;
         events.clear();

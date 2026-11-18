@@ -55,6 +55,8 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 ### Movement
 
 - [x] Mantling: jump at a ledge 0.5 to 1.35 m high while moving toward it to climb onto or over it (the engine finds the ledge, `movement::step` climbs; predicted like any move).
+- [x] Vaults over thin cover and through windows that keep the run's speed, mantles by holding jump in the air, and crouch-height mantles that end crouched ([docs/movement.md](docs/movement.md)).
+- [ ] Ladders (`MoveEnv` ladder contact, climb at about 1.5-2 m/s) once a map has them, and mounting the weapon on cover.
 - [x] Third-person mantle animation (UAL2's `ClimbUp_1m_RM`, played once as a mantle starts).
 - [ ] Prone (third stance, `MoveParams` heights, crawl speed). On hold until there is a CC0 crawl animation for third person.
 - [x] Footstep sounds, with surface types and a cadence tied to speed.

@@ -61,8 +61,21 @@ pub struct MoveEnv {
     /// False when there is no headroom to stand up from a crouch.
     pub can_stand: bool,
     /// Height above the feet of a ledge in front of the player that they could
-    /// climb onto (with room to stand on top), if there is one in reach.
+    /// climb onto (with room on top), if there is one in reach.
     pub ledge: Option<f32>,
+    /// The ledge has room on top only to crouch: the climb ends crouched.
+    pub ledge_low: bool,
+    /// Thin cover or a window sill in reach, with clear ground behind it, to
+    /// vault over without stopping.
+    pub vault: Option<Vault>,
+}
+
+/// Something to vault over: its top's height above the feet, and whether
+/// the way over is too low to stand through (a window), so the body ducks.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Vault {
+    pub height: f32,
+    pub low: bool,
 }
 
 impl Default for MoveEnv {
@@ -71,6 +84,8 @@ impl Default for MoveEnv {
             on_floor: true,
             can_stand: true,
             ledge: None,
+            ledge_low: false,
+            vault: None,
         }
     }
 }
@@ -120,9 +135,13 @@ pub struct MoveState {
     /// Seconds of unbroken sprint on the ground. A slide has to be earned
     /// with `slide_min_sprint` of it.
     pub sprint_time: f32,
-    /// Horizontal direction (`x`, `z`) of the current mantle, fixed when it
-    /// starts so turning mid-climb does not pull the player off the wall.
+    /// Horizontal velocity (`x`, `z`) of the current mantle or vault, fixed
+    /// when it starts so turning mid-climb does not pull the player off the
+    /// wall. A vault keeps the speed it came in with.
     pub mantle_dir: Vec2,
+    /// The current climb is a vault: it carries on over the top, and a
+    /// ducked one stands up on the far side.
+    pub vaulting: bool,
     /// How far into a run the legs are, 0 walking to 1 at full sprint: it
     /// builds over `sprint_in_time` and winds down over the weapon's
     /// sprint-out time, and the speed cap follows it.
@@ -234,6 +253,16 @@ pub struct MoveParams {
     pub mantle_time_per_metre: f32,
     /// Forward speed while climbing, which carries the player onto the top.
     pub mantle_forward_speed: f32,
+    /// Thin cover up to this high (above the feet) can be vaulted.
+    pub vault_max: f32,
+    /// Seconds a vault's rise takes, plus this much per metre of height.
+    pub vault_base_time: f32,
+    pub vault_time_per_metre: f32,
+    /// A vault carries the player over at their speed, at least this.
+    pub vault_min_speed: f32,
+    /// Seconds after a vault before a drop counts as a landing, so a vault
+    /// keeps its momentum.
+    pub vault_landing_grace: f32,
 }
 
 impl Default for MoveParams {
@@ -281,6 +310,11 @@ impl Default for MoveParams {
             mantle_base_time: 0.22,
             mantle_time_per_metre: 0.2,
             mantle_forward_speed: 2.6,
+            vault_max: 1.2,
+            vault_base_time: 0.18,
+            vault_time_per_metre: 0.15,
+            vault_min_speed: 3.0,
+            vault_landing_grace: 0.4,
         }
     }
 }
@@ -357,7 +391,8 @@ fn step_crouch(state: &mut MoveState, env: MoveEnv, params: &MoveParams, dt: f32
         1.0
     };
     if target > state.crouch {
-        let time = if state.stance == Stance::Sliding {
+        // Dropping into a slide or ducking through a window is quick.
+        let time = if state.stance == Stance::Sliding || state.vaulting {
             params.slide_down_time
         } else {
             params.crouch_down_time
@@ -447,25 +482,39 @@ fn step_rules(
         cancel_slide(state, input, params, wish);
     }
 
-    // Jumping at a ledge in reach while moving toward it climbs over it.
-    if state.jump_buffer > 0.0
-        && wish.y > 0.3
-        && state.stance != Stance::Crouching
-        && let Some(height) = env.ledge
-        && (params.mantle_min..=params.mantle_max).contains(&height)
-    {
-        state.jump_buffer = 0.0;
-        state.coyote = 0.0;
-        state.sprinting = false;
-        state.stance = Stance::Standing;
-        let time = params.mantle_base_time + params.mantle_time_per_metre * height;
-        state.mantle_time = time;
-        // A little over the ledge, so the feet clear its edge.
-        state.mantle_rise = (height + 0.15) / time;
-        state.mantle_dir = Vec2::new(forward.x, forward.z);
-        // Climbing out of a jump is not a landing.
-        state.air_time = 0.0;
-        return mantle(state, params, dt);
+    // Jumping at a ledge in reach while moving toward it climbs onto it, and
+    // at thin cover or a window vaults over it. In the air, holding jump is
+    // enough: a jump at a wall climbs it as soon as the ledge is in reach.
+    let climb = state.jump_buffer > 0.0 || (input.jump && !env.on_floor);
+    if climb && wish.y > 0.3 && state.stance != Stance::Crouching {
+        let reach = params.mantle_min..=params.mantle_max;
+        if let Some(height) = env.ledge.filter(|h| reach.contains(h)) {
+            let time = params.mantle_base_time + params.mantle_time_per_metre * height;
+            let carry = Vec2::new(forward.x, forward.z) * params.mantle_forward_speed;
+            // A little over the ledge, so the feet clear its edge.
+            start_climb(state, height + 0.15, time, carry, env.ledge_low, false);
+            return mantle(state, params, dt);
+        }
+        if let Some(vault) = env
+            .vault
+            .filter(|v| (params.mantle_min..=params.vault_max).contains(&v.height))
+        {
+            let time = params.vault_base_time + params.vault_time_per_metre * vault.height;
+            let speed = horizontal_speed.clamp(params.vault_min_speed, params.sprint_speed);
+            let carry = Vec2::new(forward.x, forward.z) * speed;
+            // Over cover the feet clear the top well; through a window just
+            // enough, so the ducked body fits under its head.
+            let clearance = if vault.low { 0.08 } else { 0.2 };
+            start_climb(
+                state,
+                vault.height + clearance,
+                time,
+                carry,
+                vault.low,
+                true,
+            );
+            return mantle(state, params, dt);
+        }
     }
 
     if slide_cancelled {
@@ -636,9 +685,36 @@ fn mantle(state: &mut MoveState, params: &MoveParams, dt: f32) -> Vec3 {
     } else {
         0.0
     };
-    let forward = Vec3::new(state.mantle_dir.x, 0.0, state.mantle_dir.y);
-    state.velocity = forward * params.mantle_forward_speed + Vec3::Y * rise;
+    if state.mantle_time <= 0.0 && std::mem::take(&mut state.vaulting) {
+        // Over the top: stand up from a ducked vault once there is room,
+        // and let the drop on the far side keep the vault's speed.
+        if state.stance == Stance::Crouching {
+            state.stance = Stance::Standing;
+        }
+        state.air_time = -params.vault_landing_grace;
+    }
+    state.velocity = Vec3::new(state.mantle_dir.x, rise, state.mantle_dir.y);
     state.velocity
+}
+
+/// Starts a climb (a mantle or a vault): rise `height` over `time` seconds
+/// while moving at `carry` (horizontal `x`, `z`), ducked if `low`.
+fn start_climb(state: &mut MoveState, height: f32, time: f32, carry: Vec2, low: bool, vault: bool) {
+    state.jump_buffer = 0.0;
+    state.coyote = 0.0;
+    state.sprinting = false;
+    state.slide_time = 0.0;
+    state.stance = if low {
+        Stance::Crouching
+    } else {
+        Stance::Standing
+    };
+    state.mantle_time = time;
+    state.mantle_rise = height / time;
+    state.mantle_dir = carry;
+    state.vaulting = vault;
+    // Climbing out of a jump is not a landing.
+    state.air_time = 0.0;
 }
 
 /// Throws the player at a melee target `offset` away (see [`crate::melee`]).
@@ -969,6 +1045,8 @@ mod tests {
             on_floor: true,
             can_stand: false,
             ledge: None,
+            ledge_low: false,
+            vault: None,
         };
         run(&mut s, crouch, low_ceiling, 1);
         run(&mut s, MoveInput::default(), low_ceiling, 1);
@@ -1127,6 +1205,8 @@ mod tests {
         on_floor: false,
         can_stand: true,
         ledge: None,
+        ledge_low: false,
+        vault: None,
     };
 
     fn jump() -> MoveInput {
@@ -1341,6 +1421,8 @@ mod tests {
             on_floor: false,
             can_stand: true,
             ledge: None,
+            ledge_low: false,
+            vault: None,
         };
         run(
             &mut s,
@@ -1523,6 +1605,8 @@ mod tests {
             on_floor: true,
             can_stand: false,
             ledge: None,
+            ledge_low: false,
+            vault: None,
         };
         let jump = MoveInput {
             wish: Vec2::Y,
@@ -1949,5 +2033,150 @@ mod tests {
             travelled += -v.z * TICK;
         }
         assert!((0.6..=1.4).contains(&travelled), "{travelled} m");
+    }
+
+    fn vault_env(height: f32, low: bool) -> MoveEnv {
+        MoveEnv {
+            vault: Some(Vault { height, low }),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn holding_jump_in_the_air_mantles_once_the_ledge_is_in_reach() {
+        let p = MoveParams::default();
+        let mut s = MoveState::default();
+        let held = MoveInput {
+            wish: Vec2::Y,
+            jump: true,
+            ..Default::default()
+        };
+        step(&mut s, &held, MoveEnv::default(), &p, TICK);
+        assert!(s.velocity.y > 5.0, "jumped");
+        // Still holding jump a few ticks later, a ledge comes into reach.
+        run_at(&mut s, held, AIR, 0.1);
+        let ledge = MoveEnv {
+            on_floor: false,
+            ledge: Some(1.2),
+            ..Default::default()
+        };
+        step(&mut s, &held, ledge, &p, TICK);
+        assert!(s.mantling(), "no fresh press needed in the air");
+        // On the ground, a held button is not a fresh press.
+        let mut g = MoveState {
+            jump_held: true,
+            ..Default::default()
+        };
+        step(
+            &mut g,
+            &held,
+            MoveEnv {
+                ledge: Some(1.0),
+                ..Default::default()
+            },
+            &p,
+            TICK,
+        );
+        assert!(!g.mantling());
+    }
+
+    #[test]
+    fn a_vault_keeps_its_speed_and_carries_on_over() {
+        let p = MoveParams::default();
+        let mut s = MoveState::default();
+        let sprint = MoveInput {
+            sprint: true,
+            ..forward()
+        };
+        run_at(&mut s, sprint, MoveEnv::default(), 1.0);
+        let jump = MoveInput {
+            jump: true,
+            ..forward()
+        };
+        let v = step(&mut s, &jump, vault_env(1.0, false), &p, TICK);
+        assert!(s.mantling() && s.vaulting);
+        assert!(
+            (-v.z - p.sprint_speed).abs() < 0.01,
+            "at the run's speed: {v}"
+        );
+        let mut rise = v.y * TICK;
+        while s.mantling() {
+            rise += step(&mut s, &forward(), MoveEnv::default(), &p, TICK).y * TICK;
+        }
+        assert!(rise > 1.1, "clears the top: {rise}");
+        assert!(!s.vaulting);
+        // The drop on the far side keeps the speed: no landing penalty.
+        run_at(&mut s, forward(), AIR, 0.3);
+        step(&mut s, &forward(), MoveEnv::default(), &p, TICK);
+        assert_eq!(s.land_slow, 0.0);
+        assert!(speed(&s) > p.walk_speed, "{}", speed(&s));
+        // From a standstill, a vault still goes over briskly.
+        let mut still = MoveState::default();
+        let v = step(&mut still, &jump, vault_env(0.9, false), &p, TICK);
+        assert!((-v.z - p.vault_min_speed).abs() < 0.01, "{v}");
+    }
+
+    #[test]
+    fn a_ducked_vault_stands_up_on_the_far_side() {
+        let p = MoveParams::default();
+        let mut s = MoveState::default();
+        let jump = MoveInput {
+            jump: true,
+            ..forward()
+        };
+        step(&mut s, &jump, vault_env(1.0, true), &p, TICK);
+        assert_eq!(s.stance, Stance::Crouching, "ducks through the window");
+        while s.mantling() {
+            step(&mut s, &forward(), MoveEnv::default(), &p, TICK);
+        }
+        assert_eq!(s.stance, Stance::Standing);
+        run_at(&mut s, forward(), MoveEnv::default(), 0.4);
+        assert_eq!(s.crouch, 0.0, "and is up once clear");
+    }
+
+    #[test]
+    fn a_low_ledge_is_climbed_onto_crouched() {
+        let p = MoveParams::default();
+        let mut s = MoveState::default();
+        let env = MoveEnv {
+            ledge: Some(1.0),
+            ledge_low: true,
+            ..Default::default()
+        };
+        let jump = MoveInput {
+            jump: true,
+            ..forward()
+        };
+        step(&mut s, &jump, env, &p, TICK);
+        assert!(s.mantling());
+        while s.mantling() {
+            step(&mut s, &forward(), MoveEnv::default(), &p, TICK);
+        }
+        run_at(&mut s, MoveInput::default(), MoveEnv::default(), 0.3);
+        assert_eq!(s.stance, Stance::Crouching);
+        assert_eq!(s.crouch, 1.0);
+    }
+
+    #[test]
+    fn a_ledge_wins_over_a_vault_and_tall_cover_is_not_vaulted() {
+        let p = MoveParams::default();
+        let jump = MoveInput {
+            jump: true,
+            ..forward()
+        };
+        let mut s = MoveState::default();
+        let both = MoveEnv {
+            ledge: Some(1.0),
+            vault: Some(Vault {
+                height: 1.0,
+                low: false,
+            }),
+            ..Default::default()
+        };
+        step(&mut s, &jump, both, &p, TICK);
+        assert!(s.mantling() && !s.vaulting);
+        let mut s = MoveState::default();
+        step(&mut s, &jump, vault_env(p.vault_max + 0.1, false), &p, TICK);
+        assert!(!s.mantling());
     }
 }

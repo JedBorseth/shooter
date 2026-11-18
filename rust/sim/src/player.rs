@@ -371,6 +371,8 @@ mod tests {
         on_floor: false,
         can_stand: true,
         ledge: None,
+        ledge_low: false,
+        vault: None,
     };
 
     #[test]
