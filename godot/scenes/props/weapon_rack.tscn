@@ -1,15 +1,9 @@
 [gd_scene format=3]
 
-[ext_resource type="Material" path="res://materials/world/wood.tres" id="1_crate"]
+[ext_resource type="PackedScene" path="res://assets/models/weapon_rack/weapon_rack.gltf" id="1_model"]
 
 [sub_resource type="BoxShape3D" id="Shape_rack"]
 size = Vector3(1.4, 1.1, 0.5)
-
-[sub_resource type="BoxMesh" id="Mesh_table"]
-size = Vector3(1.4, 0.08, 0.5)
-
-[sub_resource type="BoxMesh" id="Mesh_leg"]
-size = Vector3(0.08, 1.0, 0.08)
 
 [node name="WeaponRack" type="WeaponPickup"]
 metadata/surface = "wood"
@@ -18,20 +12,7 @@ metadata/surface = "wood"
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.55, 0)
 shape = SubResource("Shape_rack")
 
-[node name="Table" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.0, 0)
-mesh = SubResource("Mesh_table")
-surface_material_override/0 = ExtResource("1_crate")
-
-[node name="LegA" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.62, 0.5, 0)
-mesh = SubResource("Mesh_leg")
-surface_material_override/0 = ExtResource("1_crate")
-
-[node name="LegB" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.62, 0.5, 0)
-mesh = SubResource("Mesh_leg")
-surface_material_override/0 = ExtResource("1_crate")
+[node name="Bench" parent="." instance=ExtResource("1_model")]
 
 [node name="Display" type="Node3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.12, 0)

@@ -110,6 +110,12 @@ jobs:
         run: |
           test -f tools/test_slamcity_layout.py
           python -m unittest discover -s tools -p "test_slamcity_layout.py" -v
+      # The standalone Blender models: built, current, and no primitive meshes
+      # standing in for them.
+      - name: Model tests
+        run: |
+          test -f tools/test_models.py
+          python -m unittest discover -s tools -p "test_models.py" -v
       - name: Rust format
         working-directory: rust
         run: cargo fmt --all --check

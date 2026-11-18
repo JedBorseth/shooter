@@ -1,0 +1,14 @@
+[gd_resource type="ShaderMaterial" format=3]
+
+[ext_resource type="Shader" path="res://shaders/world.gdshader" id="1_shader"]
+
+[resource]
+shader = ExtResource("1_shader")
+shader_parameter/textured = false
+shader_parameter/use_vertex_color = true
+shader_parameter/vertex_roughness = true
+shader_parameter/metallic_scale = 0
+shader_parameter/variation = 0.14
+shader_parameter/wear = 1
+shader_parameter/grime = 0.4
+shader_parameter/object_space = true

@@ -53,6 +53,10 @@ Props are CC0 models from [Poly Haven](https://polyhaven.com/models), built by `
 
 Props never change how a map plays. Each one that should block players or bullets stands on a box in a hidden CSG combiner (`Blockers`, `CoverBlockers`, or the map's existing combiners, now hidden), so collision stays exactly as simple as the blockout and impacts still report a surface. Crate stacks are scaled to fill their old blockout box; jersey barriers are scaled to fill the old low cover.
 
+### Modelled game pieces
+
+Everything a player looks at is a modelled mesh, built in Blender; Godot's primitive meshes and CSG stay for collision, effects, and debug shapes only. The game's own pieces (the sentry, the weapon racks, the Zombies window boards and door barricades, the power-ups, the Capture the Flag pole and plinth, and the hidden laser with its vault and pedestal) are procedural models in `tools/gear_models.py`, built with Slamcity's model API (bevelled boxes, hulls, subdivided cages, lofts, tubes, and 3D text). `blender -b --python tools/build_models.py` writes each to `godot/assets/models/<name>/<name>.gltf`, and its materials, folded from the same looks as Slamcity's, to `godot/materials/models/`. Those project their textures in the model's own space (the world shader's `object_space`), so a turning sentry head, a spinning power-up, or a board torn off a window keeps its texture as it moves. The laser draws through the viewmodel shader, which reads standard materials, so it exports plain glTF materials instead. `tools/test_models.py` fails in CI when a model is missing or older than its source, or when a prop, Zombies piece, or weapon scene builds a primitive mesh again.
+
 ### Slamcity
 
 ![Slamcity: Slam Junction over the avenue, the derailed car in the alley, a platform, the avenue from the platform, the diner, and the climb up the derailed car's aisle](media/slamcity-junction.jpg)

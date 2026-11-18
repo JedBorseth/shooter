@@ -95,14 +95,26 @@ uniform vec4 stripe_color : source_color = vec4(1.0);
 uniform float checker_size = 0.0;
 uniform vec4 checker_color : source_color = vec4(0.0, 0.0, 0.0, 1.0);
 
+// Models that move (a turning sentry head, a bobbing pickup, a board torn
+// off a window) project in their own space instead, so their textures stay
+// put on them: `world_position` and `world_normal` are then the model's own,
+// with its origin on the ground under it, and the result turns back into the
+// world at the end.
+uniform bool object_space = false;
+
 varying vec3 world_position;
 varying vec3 world_normal;
 
 void vertex() {
-	world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	// The normal matrix, not the model matrix: props are rotated and scaled
-	// unevenly, which would tilt their normals.
-	world_normal = normalize(MODEL_NORMAL_MATRIX * NORMAL);
+	if (object_space) {
+		world_position = VERTEX;
+		world_normal = normalize(NORMAL);
+	} else {
+		world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+		// The normal matrix, not the model matrix: props are rotated and
+		// scaled unevenly, which would tilt their normals.
+		world_normal = normalize(MODEL_NORMAL_MATRIX * NORMAL);
+	}
 }
 
 #ifdef WORLD_WINDOWS
@@ -166,7 +178,7 @@ void fragment() {
 		{
 			// Close-up detail: fine grain in the normal and the roughness,
 			// fading out before it could shimmer.
-			float close = 1.0 - smoothstep(DETAIL_NEAR, DETAIL_FAR, length(world_position - CAMERA_POSITION_WORLD));
+			float close = 1.0 - smoothstep(DETAIL_NEAR, DETAIL_FAR, length(VERTEX));
 			vec2 d = texture(world_detail_normal, uv * tile_size * DETAIL_SCALE).rg * 2.0 - 1.0;
 			d *= close;
 			nm.xy += d * 0.3 * normal_strength;
@@ -301,5 +313,8 @@ void fragment() {
 	// Texture AO is for light that comes from all around (sky, bounce); the
 	// sun reaches into a crevice the texture cannot see, so it barely dims it.
 	AO_LIGHT_AFFECT = 0.1;
+	if (object_space) {
+		surface_normal = normalize(MODEL_NORMAL_MATRIX * surface_normal);
+	}
 	NORMAL = normalize((VIEW_MATRIX * vec4(surface_normal, 0.0)).xyz);
 }
