@@ -250,7 +250,8 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
   - [x] Bullet holes per surface class (four variants each, soot ring, roughness), flipbook dust, debris that lands on the floor, and exit effects where a round penetrates.
   - [x] Tracers as camera-facing ribbons with a minimum pixel width, from other players too.
   - [x] Ejected cases handed to the world: they bounce, land, clink on what they hit, and stay; third-person ejection.
-  - [ ] Muzzle flash flipbooks, lit soft smoke, lingering barrel smoke, heat haze on High, and a muzzle light that stays on its side of walls.
+  - [x] Lit muzzle smoke that stays in the world, lingering barrel smoke after sustained fire, and a muzzle light that stays on its side of walls.
+  - [ ] Muzzle flash flipbooks per weapon class, soft (depth-faded) smoke in third person, and heat haze on High.
   - [x] An explosion and fire effect with an API for grenades (`CombatEffects.explosion`, `CombatEffects.fire`); frag grenades use the explosion.
   - [ ] A wound mark where a character was hit (character shader).
 - [x] Skyline windows with fake rooms behind them (interior mapping in `world.gdshader`), and bump-mapped cloth, leather, and creases on characters.
