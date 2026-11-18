@@ -142,5 +142,6 @@ GPU time on Medium at 1080p on the reference card, average over viewpoints (wors
 | Soldiers rebuilt as MakeHuman people in modelled kit on one baked atlas, zombies on their own kit, far meshes past 15 m (characters alone: 0.11 to 0.09 ms on Slamcity; the same `main` measured alongside: 5.02, 7.07, 5.19 ms) | 4.99 (5.09) ms | 7.05 (7.30) ms | 5.14 (5.55) ms |
 | Four zombie bodies in their own clothes, combat boots and bloused trousers, a seated helmet band and chin strap, first-person arms on their own atlas | 5.03 (5.19) ms | 7.12 (7.35) ms | 5.20 (5.68) ms |
 | Lens bloom with dirt and a sun flare, contact shadows under characters, wet Zombies, close-up surface detail on High (Medium within +0.08 ms of `main` at every worst view; baseline is the better of two runs per view) | 5.13 (5.30) ms | 7.18 (7.33) ms | 5.28 (5.73) ms |
+| Testing Area and Zombies arena modelled in Blender instead of CSG (`main` measured alongside on the same box: 5.29 (5.51) and 5.41 (5.85) ms) | 5.60 (5.92) ms | | 5.58 (6.04) ms |
 
 Slamcity's 7.0 ms on Medium is about 0.5 ms more than the old map, over the usual 5% step. It was accepted for the rebuild: the rest is the denser map's own shading (decals, the skyline, small detail, and props are about 0.15 ms each), and the next cut would remove visible detail.

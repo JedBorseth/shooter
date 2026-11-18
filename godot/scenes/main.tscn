@@ -3,9 +3,8 @@
 [ext_resource type="PackedScene" path="res://scenes/player.tscn" id="1_player"]
 [ext_resource type="LightmapGIData" uid="uid://bo87p12pwjuom" path="res://scenes/main.lmbake" id="2_fv21b"]
 [ext_resource type="PackedScene" path="res://scenes/props/target_dummy.tscn" id="4_dummy"]
-[ext_resource type="ArrayMesh" path="res://assets/maps/main/Map.res" id="5_dgi5k"]
+[ext_resource type="PackedScene" path="res://assets/models/map_testing_area/map_testing_area.gltf" id="5_dgi5k"]
 [ext_resource type="PackedScene" path="res://scenes/ui/pause_menu.tscn" id="5_pause"]
-[ext_resource type="ArrayMesh" path="res://assets/maps/main/MapMetal.res" id="9_j8jky"]
 [ext_resource type="PackedScene" path="res://scenes/props/weapon_rack.tscn" id="9_rack"]
 [ext_resource type="PackedScene" path="res://assets/weapons/lsw6/lsw6.glb" id="17_lsw6"]
 [ext_resource type="PackedScene" path="res://assets/weapons/br3/br3.glb" id="18_br3"]
@@ -85,7 +84,6 @@ directional_shadow_max_distance = 90.0
 visible = false
 use_collision = true
 metadata/surface = "concrete"
-metadata/csg_baked = true
 
 [node name="Floor" type="CSGBox3D" parent="Map" unique_id=1382492506]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
@@ -137,9 +135,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10, 1.65, -18)
 size = Vector3(4, 0.5, 4)
 material = ExtResource("m_tunnel")
 
-[node name="MapMesh" type="MeshInstance3D" parent="." unique_id=506400248]
-mesh = ExtResource("5_dgi5k")
-metadata/csg_visual = true
+[node name="Architecture" parent="." instance=ExtResource("5_dgi5k")]
 
 [node name="MapWood" type="CSGCombiner3D" parent="." unique_id=443765915]
 visible = false
@@ -185,7 +181,6 @@ material = ExtResource("m_cover")
 visible = false
 use_collision = true
 metadata/surface = "metal"
-metadata/csg_baked = true
 
 [node name="Platform" type="CSGBox3D" parent="MapMetal" unique_id=1036807548]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 1.5, -16)
@@ -196,10 +191,6 @@ material = ExtResource("m_platform")
 transform = Transform3D(1, 0, 0, 0, 0.90630794, -0.42261797, 0, 0.42261797, 0.90630794, 16, 1.28, -8.8)
 size = Vector3(4, 0.4, 7.6)
 material = ExtResource("m_platform")
-
-[node name="MapMetalMesh" type="MeshInstance3D" parent="." unique_id=2060591155]
-mesh = ExtResource("9_j8jky")
-metadata/csg_visual = true
 
 [node name="Props3D" type="Node3D" parent="." unique_id=1455878939]
 
