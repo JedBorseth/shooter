@@ -50,6 +50,7 @@ func _run() -> void:
 	if _wants("zombies"):
 		var scene := await _open("res://scenes/zombies_arena.tscn")
 		await _group(scene, "zombies_night", Vector3(0, 0, 8), Vector3(0, 0, -1))
+		await _walls(scene, "zombies_wall")
 		await _close(scene)
 	settings.reset_to_defaults()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://capture_grounding.cfg"))
@@ -158,6 +159,30 @@ func _props(scene: Node, label: String) -> void:
 	for i in spots.size():
 		camera.look_at_from_position(spots[i][0], spots[i][1])
 		await _shot("%s_%d" % [label, i])
+	camera.queue_free()
+
+
+## Walls round the map's centre: each found by a ray, seen from 5 m off it
+## and from 2 m at a grazing angle (wet streaks, damp, and grime).
+func _walls(scene: Node, label: String) -> void:
+	var camera := Camera3D.new()
+	camera.fov = 60.0
+	scene.add_child(camera)
+	camera.make_current()
+	var space := root.get_world_3d().direct_space_state
+	for i in 4:
+		var dir := Vector3.FORWARD.rotated(Vector3.UP, i * PI / 2 + 0.3)
+		var eye := Vector3(0, _floor(Vector3.ZERO) + 1.6, 0)
+		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(eye, eye + dir * 80.0, 1))
+		if hit.is_empty():
+			continue
+		var wall: Vector3 = hit["position"]
+		var normal: Vector3 = hit["normal"]
+		camera.look_at_from_position(wall + normal * 5.0, wall + Vector3.UP * 0.6)
+		await _shot("%s_%d" % [label, i])
+		var along := normal.cross(Vector3.UP)
+		camera.look_at_from_position(wall + normal * 1.2 - along * 2.0, wall + along * 2.0)
+		await _shot("%s_%d_grazing" % [label, i])
 	camera.queue_free()
 
 

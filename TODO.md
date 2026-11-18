@@ -277,6 +277,7 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 - [x] Eye adaptation on every preset (rays from the camera, no GPU time; slow, within a stop, against each map's own typical light) and a key light for the first-person weapon and arms in the viewmodel shader.
 - [x] The first-person key reaches the gloves and sleeves too (a first-person copy of the character shader), and in shade it becomes the sky's light, so the weapon keeps its shape in shade and under a roof. The weapon already takes the sun's shadow.
 - [x] Grounding: contact shadows shaped by stance (longer and darker crouched and sliding, turned with the body) that fade to a core in direct sun, and tight contact ambient occlusion in the Testing Area and Slamcity (`godot/scripts/grounding.gd`, `godot/tests/capture_grounding.gd`).
+- [x] Wet walls: narrow vertical run-off streaks that stay soaked on wet maps (Zombies), sharing the puddles' noise read, compiled out on dry maps.
 - [ ] Picture fidelity, next (see the round 11 review): hiding texture repeats with per-material blend layers, contact-hardening sun shadows, daytime volumetric light on High, moving clouds, self-shadowing on the first-person weapon (the weapon and arms cast no shadow: in the sun's shadow map they would also throw a floating gun's shadow on the ground, since the local player has no body shadow).
 - [ ] Lighting pass: baked lightmaps or SDFGI tuning per map, volumetric fog, reflection probes.
 - [ ] Performance budget and profiling: target 144 FPS on a mid-range GPU, CPU frame time per system.
