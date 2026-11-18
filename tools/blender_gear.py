@@ -705,7 +705,8 @@ def arm_bands(body: Body, shoulders: dict[str, tuple[Vector, Vector]]) -> list[b
     out = []
     for side, (shoulder, elbow) in shoulders.items():
         axis = elbow - shoulder
-        centre = shoulder + axis * 0.42
+        # Below the sleeve pocket and above the elbow pad (blender_wardrobe.py).
+        centre = shoulder + axis * 0.64
         out.append(band(body, f"arm_band_{side}", centre, axis, Vector((0, 0, 1)), 0.035, 0.003, 0.003, "accent", "band",
                         segments=16, reach=0.12, rigid=f"DEF-upper_arm.{side}"))
     return out

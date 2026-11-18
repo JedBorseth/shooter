@@ -1043,6 +1043,9 @@ def build_kit(spec: dict, human, clothes, ual, head_pieces=()) -> list:
     if shirt is not None:
         plates = [o for o in out if o.name.startswith(("plate_", "cummerbund", "back_panel"))]
         gear.remove_hidden(shirt, plates, 0.02)
+        if shirt.get("decimate"):
+            # The modelled shirt spends its triangles on what still shows.
+            decimate(shirt, shirt["decimate"])
     for o in out:
         if o["role"] != "skin":
             gear.unwrap(o)
