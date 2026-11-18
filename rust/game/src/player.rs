@@ -1489,7 +1489,7 @@ impl FpsPlayer {
             PlayerEvent::Damaged { amount, fall } => {
                 self.flinch.velocity += if fall { -0.6 } else { 0.4 } * (amount / 30.0).min(1.5);
                 if let Some(mut body) = self.player_sounds.clone() {
-                    body.bind_mut().on_damaged(amount, fall);
+                    body.bind_mut().on_damaged(fall);
                 }
                 self.signals().damaged().emit(amount, from, fall);
             }
