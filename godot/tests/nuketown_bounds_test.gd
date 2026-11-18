@@ -146,11 +146,24 @@ func _sweep(level: Node3D, player: FpsPlayer, points: PackedVector2Array) -> voi
 	var space := level.get_world_3d().direct_space_state
 	var tries := 0
 	var escapes := 0
+	var unwalled := 0
 	for i in points.size():
 		var a := points[i]
 		var b := points[(i + 1) % points.size()]
 		var along := (b - a).normalized()
 		var inward := Vector2(-along.y, along.x) * signf(area)
+		# Every edge has its wall, low and high, even where no run can start.
+		var middle := a.lerp(b, 0.5)
+		for y in [-1.0, 3.0, 15.0]:
+			var across := PhysicsRayQueryParameters3D.create(
+				Vector3(middle.x + inward.x, y, middle.y + inward.y),
+				Vector3(middle.x - inward.x, y, middle.y - inward.y),
+				16
+			)
+			var wall := space.intersect_ray(across)
+			if wall.is_empty() or (wall.collider as Node).name != "Boundary":
+				unwalled += 1
+				print("  no boundary wall across edge %d at y %.0f" % [i, y])
 		for t in [0.3, 0.7]:
 			var start := a.lerp(b, t) + inward * 1.2
 			var down := PhysicsRayQueryParameters3D.create(
@@ -182,6 +195,7 @@ func _sweep(level: Node3D, player: FpsPlayer, points: PackedVector2Array) -> voi
 				if not Geometry2D.is_point_in_polygon(spot, points):
 					escapes += 1
 					print("  escaped over edge %d from %s to %s" % [i, start, spot])
+	_check(unwalled == 0, "every boundary edge has its wall (%d gaps)" % unwalled)
 	_check(tries > 120, "swept %d runs at the boundary" % tries)
 	_check(escapes == 0, "no run at the boundary gets out (%d did)" % escapes)
 
