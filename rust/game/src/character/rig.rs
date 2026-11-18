@@ -28,7 +28,7 @@ use shooter_sim::movement::Stance;
 use shooter_sim::weapon::WeaponId;
 
 use super::palette::{self, Team};
-use super::poser::{Grips, Hold, PoseInput, SoldierPoser, WeaponPlacement};
+use super::poser::{Grips, Hold, PoseInput, Section, SoldierPoser, WeaponPlacement};
 use crate::convert::{to_godot, to_godot_basis, to_sim};
 use crate::spring::{Spring, impulse_for_peak, smoothing};
 use crate::viewmodel::{self, WeaponView};
@@ -698,6 +698,10 @@ impl SoldierRig {
         let grips = self.weapon.as_ref().map(|(id, view)| {
             let mut g = view.bind().grips();
             g.hold = Hold::of(id.def());
+            // The server poses the arm hit zones from the weapon file's grips
+            // (`carry::hand_targets`), so the third-person hands stay on the
+            // same numbers rather than the measured handguard.
+            g.section = None;
             if g.hold == Hold::Handguard {
                 // Mid-handguard rather than at the muzzle end of it, so the
                 // support elbow bends and drops under the weapon.
@@ -1075,8 +1079,164 @@ pub fn grips_of(view: &Gd<Node3D>, rake: f32) -> Grips {
     }
     if let Some(m) = view.try_get_node_as::<Node3D>("GripLeft") {
         grips.left = m.get_position();
+        grips.section = support_section(view, grips.left);
     }
     grips
+}
+
+/// The weapon's cross-section around the support marker, as a centre and
+/// half extents (weapon space): every triangle of the weapon's shown parts is
+/// cut by the plane across the barrel at the marker, and the cut points within
+/// 45 mm of the marker across and 35 mm up or down count. Measured once per
+/// weapon view and kept as metadata.
+fn support_section(view: &Gd<Node3D>, marker: Vector3) -> Option<Section> {
+    const META: &str = "support_section";
+    if view.has_meta(META) {
+        let v = view.get_meta(META).try_to::<PackedFloat32Array>().ok()?;
+        let v = v.as_slice();
+        return (v.len() == 7 && v[5] > 0.0).then(|| Section {
+            marker: Vector3::new(v[0], v[1], v[2]),
+            centre: Vector2::new(v[3], v[4]),
+            half: Vector2::new(v[5], v[6]),
+        });
+    }
+    let inverse = view.get_global_transform().affine_inverse();
+    let mut points = Vec::new();
+    for node in view
+        .find_children_ex("*")
+        .type_("MeshInstance3D")
+        .owned(false)
+        .done()
+        .iter_shared()
+    {
+        let Ok(mesh_node) = node.try_cast::<godot::classes::MeshInstance3D>() else {
+            continue;
+        };
+        if !shown_under(&mesh_node.clone().upcast(), view) {
+            continue;
+        }
+        let Some(mesh) = mesh_node.get_mesh() else {
+            continue;
+        };
+        let to_view = inverse * mesh_node.get_global_transform();
+        let faces = mesh.get_faces();
+        let corners: Vec<Vector3> = faces.as_slice().iter().map(|p| to_view * *p).collect();
+        for tri in corners.as_chunks::<3>().0 {
+            section_points(tri, marker.z, &mut points);
+        }
+    }
+    let section = section_bounds(&points, marker).map(|(centre, half)| Section {
+        marker,
+        centre,
+        half,
+    });
+    let packed = section.map_or([0.0; 7], |s| {
+        let (m, c, h) = (s.marker, s.centre, s.half);
+        [m.x, m.y, m.z, c.x, c.y, h.x, h.y]
+    });
+    view.clone()
+        .set_meta(META, &PackedFloat32Array::from(&packed[..]).to_variant());
+    section
+}
+
+/// Whether `node` and every parent up to (not including) `root` are set
+/// visible: the parts the weapon shows, whether or not the weapon itself is.
+fn shown_under(node: &Gd<Node3D>, root: &Gd<Node3D>) -> bool {
+    let mut at = node.clone();
+    loop {
+        if at == *root {
+            return true;
+        }
+        if !at.is_visible() {
+            return false;
+        }
+        match at.get_parent().and_then(|p| p.try_cast::<Node3D>().ok()) {
+            Some(parent) => at = parent,
+            None => return true,
+        }
+    }
+}
+
+/// Where a triangle's edges cross the plane `z = cut`.
+fn section_points(tri: &[Vector3; 3], cut: f32, out: &mut Vec<Vector3>) {
+    for i in 0..3 {
+        let (a, b) = (tri[i], tri[(i + 1) % 3]);
+        let (da, db) = (a.z - cut, b.z - cut);
+        if da == 0.0 {
+            out.push(a);
+        } else if da * db < 0.0 {
+            out.push(a.lerp(b, da / (da - db)));
+        }
+    }
+}
+
+/// The bounds of the section points near the marker: within 45 mm across and
+/// 35 mm up or down, so sights and rails well above a handguard do not count
+/// (the hand holds it from below). The centre and half extents, if any.
+fn section_bounds(points: &[Vector3], marker: Vector3) -> Option<(Vector2, Vector2)> {
+    let near = points
+        .iter()
+        .filter(|q| (q.x - marker.x).abs() < 0.045 && (q.y - marker.y).abs() < 0.035);
+    let (mut lo, mut hi) = (Vector2::splat(f32::MAX), Vector2::splat(f32::MIN));
+    for q in near {
+        lo = lo.coord_min(Vector2::new(q.x, q.y));
+        hi = hi.coord_max(Vector2::new(q.x, q.y));
+    }
+    // Something under 5 mm across is a sling loop or a stray edge, not a grip.
+    if hi.x - lo.x < 0.005 || hi.y - lo.y < 0.005 {
+        return None;
+    }
+    Some(((lo + hi) * 0.5, (hi - lo) * 0.5))
+}
+
+#[cfg(test)]
+mod section_tests {
+    use super::*;
+
+    #[test]
+    fn a_long_tube_is_cut_where_the_hand_holds_it() {
+        // A square tube 40 mm across, 50 mm tall, centred 20 mm below the
+        // axis, running 300 mm along the barrel with no vertex near the cut.
+        let (x, y0, y1) = (0.02, -0.045, 0.005);
+        let quad = |a: Vector2, b: Vector2| {
+            let p = |v: Vector2, z: f32| Vector3::new(v.x, v.y, z);
+            [
+                p(a, 0.0),
+                p(b, 0.0),
+                p(b, -0.3),
+                p(a, 0.0),
+                p(b, -0.3),
+                p(a, -0.3),
+            ]
+        };
+        let corners = [
+            Vector2::new(-x, y0),
+            Vector2::new(x, y0),
+            Vector2::new(x, y1),
+            Vector2::new(-x, y1),
+        ];
+        let mut points = Vec::new();
+        for i in 0..4 {
+            for tri in quad(corners[i], corners[(i + 1) % 4]).as_chunks::<3>().0 {
+                section_points(tri, -0.15, &mut points);
+            }
+        }
+        let marker = Vector3::new(0.0, -0.025, -0.15);
+        let (centre, half) = section_bounds(&points, marker).expect("a section");
+        assert!(
+            (centre - Vector2::new(0.0, -0.02)).length() < 1e-4,
+            "{centre:?}"
+        );
+        assert!(
+            (half - Vector2::new(0.02, 0.025)).length() < 1e-4,
+            "{half:?}"
+        );
+    }
+
+    #[test]
+    fn nothing_at_the_marker_gives_no_section() {
+        assert_eq!(section_bounds(&[], Vector3::ZERO), None);
+    }
 }
 
 #[cfg(test)]
