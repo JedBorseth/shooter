@@ -28,6 +28,8 @@ const STEEL: Color = Color::from_rgb(0.085, 0.088, 0.095);
 
 /// Radius of the reflex sight's window.
 const REFLEX_LENS: f32 = 0.0118;
+/// How far ahead of the sight's rear (`rear_z`) its window sits, at size 1.
+pub const REFLEX_WINDOW_BEHIND: f32 = 0.006;
 
 /// Builds the sights for one weapon view and removes the model's own.
 #[derive(GodotClass)]
@@ -583,9 +585,12 @@ fn reflex(p: &Params, parts: &mut Parts) {
     riser(&mut parts.steel, p, REFLEX_FOOT, (-0.016, 0.0165), 0.0118);
     // The lens fills the hood: one face toward the eye, so the tint is a
     // single layer.
-    parts
-        .glass
-        .disc(Vector2::ZERO, REFLEX_LENS * s, zr - 0.006 * s, 36);
+    parts.glass.disc(
+        Vector2::ZERO,
+        REFLEX_LENS * s,
+        zr - REFLEX_WINDOW_BEHIND * s,
+        36,
+    );
     // The dot sits just behind the lens, so the tint never dims it. About
     // 6 px across aimed: big enough to find, small enough to stay crisp
     // through the bloom.

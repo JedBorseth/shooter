@@ -336,6 +336,30 @@ fn magazine_top(mag: &Gd<Node3D>) -> Option<f32> {
 const GRIP_MOUNT_DROP: f32 = 0.006;
 /// Height an optic needs between its mount and its sight line.
 const OPTIC_CLEARANCE: f32 = 0.018;
+/// How far a red dot's window sits in front of the eye when aimed, so it
+/// spans about an eighth of the screen's width, as the built-in reflex
+/// sights of the PDW-9 and BR-3 already do. A red dot slides along the rail from its
+/// mount to sit there (`reflex_seat`), as shooters mount one further back on
+/// a long rail, so the weapon's aimed place is unchanged.
+const REFLEX_EYE_DISTANCE: f32 = 0.1;
+/// A red dot stands on a riser this tall, a lower-third co-witness as on
+/// modern carbines: the front sight and the support hand sit lower in its
+/// window, below the dot rather than at the centre.
+const REFLEX_RISER: f32 = 0.012;
+/// How far back along the rail a red dot may slide from its mount, and
+/// forward.
+const REFLEX_RAIL_BACK: f32 = 0.09;
+const REFLEX_RAIL_FORWARD: f32 = 0.02;
+
+/// Where a red dot sits along the rail (its rear, in the weapon's space) on
+/// a weapon whose optic mount is at `mount_z` and which is aimed with its
+/// origin `ads_z` ahead of the eye: its window `REFLEX_EYE_DISTANCE` from
+/// the eye, within reach of the mount.
+fn reflex_seat(mount_z: f32, ads_z: f32) -> f32 {
+    let window = -REFLEX_EYE_DISTANCE - ads_z;
+    (window + sights::REFLEX_WINDOW_BEHIND)
+        .clamp(mount_z - REFLEX_RAIL_FORWARD, mount_z + REFLEX_RAIL_BACK)
+}
 
 /// Seconds an ejected shell stays visible in the view, where there is no
 /// world to hand it to (`CombatEffects`).
@@ -1139,10 +1163,10 @@ impl WeaponView {
             .map(|m| m.get_position() + Vector3::new(0.0, self.sight_drop, 0.0));
         // A prism sight stands on a taller mount than a red dot, as on the
         // real rifle, so the front sight sits below its chevron.
-        let riser = if attachment == Some(Attachment::Acog) {
-            ACOG_RISER
-        } else {
-            0.0
+        let riser = match attachment {
+            Some(Attachment::Acog) => ACOG_RISER,
+            Some(Attachment::RedDot) => REFLEX_RISER,
+            _ => 0.0,
         };
         let drop = match (optic, mount) {
             (true, Some(m)) => (m.y + OPTIC_CLEARANCE + riser).max(0.0),
@@ -1209,7 +1233,14 @@ impl WeaponView {
                         let (rear_z, base, size) = s.bind().placement();
                         (rear_z - if acog { 0.03 } else { 0.09 }, base, size)
                     }
-                    (None, Some(m)) => (m.z + if acog { 0.017 } else { 0.0 }, m.y - drop, 1.0),
+                    (None, Some(m)) => {
+                        let z = if acog {
+                            m.z + 0.017
+                        } else {
+                            reflex_seat(m.z, self.ads_position.z)
+                        };
+                        (z, m.y - drop, 1.0)
+                    }
                     (None, None) => (-0.09, -0.022, 1.0),
                 };
                 let size = if acog { size * ACOG_SIZE } else { size };
@@ -3409,6 +3440,21 @@ const LAND_ZETA: f32 = 0.5;
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_red_dot_sits_a_tenth_of_a_metre_from_the_eye_within_the_rail() {
+        use super::{REFLEX_EYE_DISTANCE, reflex_seat, sights::REFLEX_WINDOW_BEHIND};
+        // The M4: aimed 9 cm ahead, mount 8.7 cm further: the dot slides back.
+        let z = reflex_seat(-0.0868, -0.09);
+        let window = -0.09 + z - REFLEX_WINDOW_BEHIND;
+        assert!((window + REFLEX_EYE_DISTANCE).abs() < 1e-5, "{window}");
+        assert!(z > -0.0868);
+        // The AK: already about there.
+        assert!((reflex_seat(0.0424, -0.14) - 0.0424).abs() < 0.01);
+        // Never off the rail.
+        assert_eq!(reflex_seat(0.0, -0.4), 0.09);
+        assert_eq!(reflex_seat(0.0, 0.2), -0.02);
+    }
+
     #[test]
     fn first_person_copies_key_and_clip_where_asked() {
         let code = "shader_type spatial;\nvoid fragment() {\n\tALBEDO = vec3(1.0);\n}\n";
