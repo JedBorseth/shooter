@@ -431,7 +431,7 @@ impl ICharacterBody3D for FpsPlayer {
         }
         let stance = self.state.movement.stance;
         if stance == Stance::Sliding && previous_stance != Stance::Sliding {
-            self.play_body("res://assets/audio/player/slide", 0.0);
+            self.play_body("res://assets/audio/player/slide", footsteps::SLIDE_DB);
             self.kick_fov(self.slide_fov_kick);
         }
 
