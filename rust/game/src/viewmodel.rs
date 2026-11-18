@@ -93,22 +93,43 @@ pub enum ViewAction {
 /// degree about the rear sight, back on the bullet path within about 70 ms,
 /// before the next round of any automatic: the view's own climb is the
 /// simulation's recoil.
-fn shot_kick(shot: u32, strength: f32, ads: f32) -> (Vector3, Vector3) {
-    let hip_pos = Vector3::new(0.0, 0.002 * strength, (0.013 * strength).min(0.04));
-    let aim_pos = Vector3::new(0.0, 0.0015 * strength, (0.017 * strength).min(0.045));
+fn shot_kick(shot: u32, strength: f32, ads: f32, kind: ClipKind) -> (Vector3, Vector3) {
+    // A pump or bolt gun's single heavy shot bucks much harder at the hip; a
+    // pistol flips its muzzle (it pivots high in a light hand).
+    let (hip_lift, hip_back, aim_lift) = match kind {
+        ClipKind::Shotgun | ClipKind::BoltAction => (2.6, 1.5, 0.22),
+        ClipKind::Pistol => (2.4, 1.0, 0.5),
+        ClipKind::Rifle { .. } => (1.2, 1.0, 0.18),
+    };
+    let hip_pos = Vector3::new(
+        0.0,
+        0.002 * strength,
+        (0.013 * strength * hip_back).min(0.06),
+    );
+    let aim_pos = Vector3::new(0.0, 0.0015 * strength, (0.017 * strength).min(0.05));
     let lift = 0.75 + 0.25 * rng::unit(shot, 31);
     let hip_rot = Vector3::new(
-        (1.2 * strength * lift).min(4.0),
+        (hip_lift * strength * lift).min(9.0),
         0.4 * strength * rng::signed(shot, 32),
         1.0 * strength * rng::signed(shot, 33),
     );
     let aim_rot = Vector3::new(
-        (0.18 * strength * lift).min(0.6),
+        (aim_lift * strength * lift).min(1.2),
         0.08 * strength * rng::signed(shot, 35),
-        0.6 * strength * rng::signed(shot, 36),
+        1.0 * strength * rng::signed(shot, 36),
     );
     (hip_pos.lerp(aim_pos, ads), hip_rot.lerp(aim_rot, ads))
 }
+
+/// A share of each kick that builds up under sustained fire and settles
+/// about 200 ms after the trigger is let go (`ride` springs).
+const RIDE_SHARE: f32 = 0.2;
+const RIDE_STIFFNESS: f32 = 180.0;
+const RIDE_ZETA: f32 = 0.9;
+/// Clip beats (a magazine seating, a bolt release) and the settle on the
+/// sights: a softer spring, so each reads as a distinct thump.
+const JOLT_STIFFNESS: f32 = 400.0;
+const JOLT_ZETA: f32 = 0.45;
 
 /// Kick springs: stiff, so the shove peaks within about two frames and is
 /// back in about 100 ms, and slightly underdamped for a small rebound.
@@ -121,11 +142,7 @@ const KICK_ROT_ZETA: f32 = 0.7;
 /// leaves the hip quickly and slows onto the sights. The world zoom uses it
 /// too, so the two arrive together.
 pub fn ads_ease(ads: f32) -> f32 {
-    let t = ads.clamp(0.0, 1.0);
-    // Smoothstep weighted toward the end: a quick start, a long settle.
-    let s = t * t * (3.0 - 2.0 * t);
-    let out = 1.0 - (1.0 - t).powi(3);
-    0.5 * (s + out)
+    shooter_sim::weapon::ads_ease(ads)
 }
 
 /// How far the weapon turns against the player's own turning (radians:
@@ -135,12 +152,14 @@ fn look_sway_target(look_velocity: Vector2, ads: f32) -> Vector3 {
     let lag = 0.010 + (0.0025 - 0.010) * ads;
     // Aimed the weapon barely turns, so the sights stay on the bullet path;
     // its lag shows as a small shift instead (see `ViewmodelRig::update`).
-    let limit = (2.5 + (0.15 - 2.5) * ads).to_radians();
-    let roll_limit = (3.0 + (0.4 - 3.0) * ads).to_radians();
+    // The limits are soft, so a faster flick still swings further.
+    let limit = (4.0 + (0.15 - 4.0) * ads).to_radians();
+    let roll_limit = (3.5 + (0.4 - 3.5) * ads).to_radians();
+    let soft = |v: f32, limit: f32| limit * (v / limit).tanh();
     Vector3::new(
-        (-look_velocity.y * lag).clamp(-limit, limit),
-        (-look_velocity.x * lag).clamp(-limit, limit),
-        (look_velocity.x * lag).clamp(-roll_limit, roll_limit),
+        soft(-look_velocity.y * lag, limit),
+        soft(-look_velocity.x * lag, limit),
+        soft(look_velocity.x * lag, roll_limit),
     )
 }
 
@@ -149,8 +168,8 @@ fn look_sway_target(look_velocity: Vector2, ads: f32) -> Vector3 {
 /// two steps, a dip on every footfall. `sprint` adds the running loop.
 fn stride_bob(theta: f32, amount: f32, sprint: f32) -> (Vector3, Vector3) {
     let (side, dip) = (theta.sin(), -(2.0 * theta).cos());
-    let walk_pos = Vector3::new(0.007 * side, 0.008 * dip, 0.0);
-    let walk_rot = Vector3::new(0.6 * dip, 0.35 * side, 0.5 * side);
+    let walk_pos = Vector3::new(0.008 * side, 0.011 * dip, 0.0);
+    let walk_rot = Vector3::new(0.9 * dip, 0.4 * side, 0.6 * side);
     let run_pos = Vector3::new(0.022 * side, 0.012 * dip, 0.004 * dip);
     let run_rot = Vector3::new(2.0 * dip, 3.0 * side, 5.0 * side);
     (
@@ -1519,6 +1538,12 @@ pub struct ViewmodelRig {
     /// Shot kick: position (metres) and rotation (radians: pitch, yaw, roll).
     kick_pos: Spring,
     kick_rot: Spring,
+    /// The build-up under sustained fire (see `RIDE_SHARE`).
+    ride_pos: Spring,
+    ride_rot: Spring,
+    /// Clip beats and the settle on the sights (see `JOLT_STIFFNESS`).
+    jolt_pos: Spring,
+    jolt_rot: Spring,
     /// Shots fired, to hash each kick's variation.
     shots: u32,
     /// Landing: `y` dip (metres) and `x` pitch (radians).
@@ -1572,13 +1597,20 @@ impl ViewmodelRig {
         view.bind_mut()
             .on_fired(rounds_left, weapon.def().magazine, self.last_ads);
         self.shots = self.shots.wrapping_add(1);
-        let (pos, rot) = shot_kick(self.shots, strength, self.last_ads);
+        let kind = ClipKind::of(weapon.def());
+        let (pos, rot) = shot_kick(self.shots, strength, ads_ease(self.last_ads), kind);
+        let rot = Vector3::new(rot.x.to_radians(), rot.y.to_radians(), rot.z.to_radians());
         self.kick_pos.velocity += peak_impulse(pos, KICK_POS_STIFFNESS, KICK_POS_ZETA);
-        self.kick_rot.velocity += peak_impulse(
-            Vector3::new(rot.x.to_radians(), rot.y.to_radians(), rot.z.to_radians()),
-            KICK_ROT_STIFFNESS,
-            KICK_ROT_ZETA,
+        self.kick_rot.velocity += peak_impulse(rot, KICK_ROT_STIFFNESS, KICK_ROT_ZETA);
+        // The ride: a little of every kick that a long spray stacks up. Only
+        // the push back and the hip's lift: aimed it would lift the sights.
+        let ride_rot = Vector3::new(rot.x * (1.0 - ads_ease(self.last_ads)), 0.0, 0.0);
+        self.ride_pos.velocity += peak_impulse(
+            Vector3::new(0.0, 0.0, pos.z) * RIDE_SHARE,
+            RIDE_STIFFNESS,
+            RIDE_ZETA,
         );
+        self.ride_rot.velocity += peak_impulse(ride_rot * RIDE_SHARE, RIDE_STIFFNESS, RIDE_ZETA);
         if eject {
             self.eject_shell(&view);
         }
@@ -1750,6 +1782,17 @@ impl ViewmodelRig {
         }
     }
 
+    /// A thump on the jolt springs: peaks in metres and degrees.
+    fn jolt(&mut self, pos: Vector3, rot_degrees: Vector3) {
+        let rot = Vector3::new(
+            rot_degrees.x.to_radians(),
+            rot_degrees.y.to_radians(),
+            rot_degrees.z.to_radians(),
+        );
+        self.jolt_pos.velocity += peak_impulse(pos, JOLT_STIFFNESS, JOLT_ZETA);
+        self.jolt_rot.velocity += peak_impulse(rot, JOLT_STIFFNESS, JOLT_ZETA);
+    }
+
     /// Plays the beats the clips crossed since the last frame: a foley event
     /// for each (the `foley_event` signal on the view) and its jolt. Also
     /// stops the reload sound when a switch cuts the reload short.
@@ -1814,8 +1857,8 @@ impl ViewmodelRig {
                 } else {
                     0.35
                 };
-                for &(at, name) in weapon_clips::cycle_beats(kind) {
-                    beat(at, length, name, Vector3::ZERO, Vector3::ZERO);
+                for b in weapon_clips::cycle_beats(kind) {
+                    beat(b.at, length, b.name, b.jolt_pos, b.jolt_rot);
                 }
             }
             BeatClip::Lower if since < 0.0 => sounds.push("holster"),
@@ -1833,9 +1876,7 @@ impl ViewmodelRig {
         }
         let scale = 1.0 - 0.5 * ads_ease(frame.ads);
         for (pos, rot) in jolts {
-            self.kick_pos.velocity += peak_impulse(pos * scale, KICK_POS_STIFFNESS, KICK_POS_ZETA);
-            let rot = Vector3::new(rot.x.to_radians(), rot.y.to_radians(), rot.z.to_radians());
-            self.kick_rot.velocity += peak_impulse(rot * scale, KICK_ROT_STIFFNESS * 0.5, 0.5);
+            self.jolt(pos * scale, rot * scale);
         }
     }
 
@@ -1892,16 +1933,7 @@ impl ViewmodelRig {
         let hip_amount = 1.0 - ads;
         // Reaching the sights: a small settle as the weapon stops on the eye.
         if frame.ads >= 0.999 && self.last_ads < 0.999 {
-            self.kick_rot.velocity += peak_impulse(
-                Vector3::new(-0.4f32.to_radians(), 0.0, 0.0),
-                KICK_ROT_STIFFNESS * 0.3,
-                0.45,
-            );
-            self.kick_pos.velocity += peak_impulse(
-                Vector3::new(0.0, 0.0, -0.008),
-                KICK_POS_STIFFNESS * 0.3,
-                0.45,
-            );
+            self.jolt(Vector3::new(0.0, 0.0, -0.008), Vector3::new(-0.4, 0.0, 0.0));
         }
         // On the way up the weapon swings through a small arc: dipped, rolled
         // in, and pulled toward the eye at the middle. Lowering is a quicker,
@@ -1946,17 +1978,14 @@ impl ViewmodelRig {
 
         // Idle breathing at the hip: a slow drift, nearly gone aimed (the
         // aimed sway is in the simulation's aim instead).
-        let breath_t = self.time * TAU * 0.22;
+        let breath_t = self.time * TAU * 0.25;
         let breath = 1.0 - 0.9 * ads;
-        let breathe_pos = Vector3::new(
-            0.0006 * (breath_t * 0.5).sin(),
-            0.0012 * breath_t.sin(),
-            0.0,
-        ) * breath;
+        let breathe_pos =
+            Vector3::new(0.0012 * (breath_t * 0.5).sin(), 0.004 * breath_t.sin(), 0.0) * breath;
         let breathe_rot = Vector3::new(
-            0.12 * (breath_t + 0.6).sin(),
-            0.06 * (breath_t * 0.5 + 1.3).sin(),
-            0.1 * (breath_t * 0.5).sin(),
+            0.4 * (breath_t + 0.6).sin(),
+            0.15 * (breath_t * 0.5 + 1.3).sin(),
+            0.2 * (breath_t * 0.5).sin(),
         ) * breath;
 
         // Look sway and movement inertia.
@@ -1967,7 +1996,7 @@ impl ViewmodelRig {
         let inertia = 1.0 - 0.7 * ads;
         let floor = if frame.on_floor { 1.0 } else { 0.0 };
         // Aimed, the look lag is mostly this shift (the turn is clamped hard).
-        let look_shift = 0.0008 + 0.0004 * ads;
+        let look_shift = 0.002 - 0.0008 * ads;
         let sway_pos = Vector3::new(
             -frame.look_velocity.x * look_shift - change.x * 0.003,
             -frame.look_velocity.y * look_shift * 0.6 - frame.velocity.y * 0.004,
@@ -1976,7 +2005,14 @@ impl ViewmodelRig {
         let limit = Vector3::new(0.015, 0.025, 0.015) * inertia;
         let sway_pos = sway_pos.clamp(-limit, limit);
         let strafe_roll = -frame.velocity.x * 0.005 * floor * inertia;
-        let look = look + Vector3::new(0.0, 0.0, strafe_roll);
+        // In the air the muzzle tips up on the way up and a little down on
+        // the way down.
+        let air_pitch = if frame.on_floor {
+            0.0
+        } else {
+            (frame.velocity.y * 0.0055).clamp(-0.01, 0.026) * inertia
+        };
+        let look = look + Vector3::new(air_pitch, 0.0, strafe_roll);
         self.sway_rot
             .step_toward(look, SWAY_STIFFNESS, damping_for(SWAY_STIFFNESS, 0.55), dt);
         self.sway_pos.step_toward(
@@ -1996,6 +2032,12 @@ impl ViewmodelRig {
             damping_for(KICK_ROT_STIFFNESS, KICK_ROT_ZETA),
             dt,
         );
+        let ride_c = damping_for(RIDE_STIFFNESS, RIDE_ZETA);
+        self.ride_pos.step(RIDE_STIFFNESS, ride_c, dt);
+        self.ride_rot.step(RIDE_STIFFNESS, ride_c, dt);
+        let jolt_c = damping_for(JOLT_STIFFNESS, JOLT_ZETA);
+        self.jolt_pos.step(JOLT_STIFFNESS, jolt_c, dt);
+        self.jolt_rot.step(JOLT_STIFFNESS, jolt_c, dt);
         self.land
             .step(LAND_STIFFNESS, damping_for(LAND_STIFFNESS, LAND_ZETA), dt);
         let land = self.land.value * (1.0 - 0.6 * ads);
@@ -2023,9 +2065,16 @@ impl ViewmodelRig {
 
         // Bolt or pump: a quick push and roll, peaking mid-cycle, mostly kept
         // off the sight line when aimed. A loaded shell gives a small bump.
+        // A pump is two strokes (the gun follows the pump back and forward);
+        // a bolt is one smooth throw.
         let cycle = match frame.action {
             ViewAction::Cycling(p) => {
-                (PI * p).sin().max(0.0) * (1.0 - 0.5 * frame.scope) * (1.0 - 0.75 * ads)
+                let stroke = if kind == ClipKind::Shotgun {
+                    keyed(&PUMP_BACK, p)
+                } else {
+                    (PI * p).sin().max(0.0)
+                };
+                stroke * (1.0 - 0.5 * frame.scope) * (1.0 - 0.75 * ads)
             }
             _ => 0.0,
         };
@@ -2049,7 +2098,7 @@ impl ViewmodelRig {
         position += Vector3::new(-0.012, -0.018, 0.02) * arc;
         position += sprint_pos * sprint;
         position += bob_pos + breathe_pos + self.sway_pos.value;
-        position += self.kick_pos.value;
+        position += self.kick_pos.value + self.ride_pos.value + self.jolt_pos.value;
         position += Vector3::new(0.0, land.y, 0.0);
         if frame.crouched {
             // Crouched, the weapon sits a touch lower and closer.
@@ -2059,7 +2108,8 @@ impl ViewmodelRig {
         position += clip_pose.pos * clip_scale + switch_pos;
         let ins_rot = clip_pose.rot * clip_scale;
         let deg = |v: f32| v.to_radians();
-        let motion = self.sway_rot.value + self.kick_rot.value;
+        let motion =
+            self.sway_rot.value + self.kick_rot.value + self.ride_rot.value + self.jolt_rot.value;
         let pitch = deg(ins_rot.x)
             + deg(sprint_rot.x) * sprint
             + deg(bob_rot.x + breathe_rot.x)
@@ -2139,9 +2189,14 @@ const LAND_ZETA: f32 = 0.5;
 mod tests {
     use super::*;
 
+    const RIFLE: ClipKind = ClipKind::Rifle {
+        charge: false,
+        heavy: false,
+    };
+
     /// Peak of one shot's kick on the weapon, simulated with the kick springs.
     fn kick_peak(shot: u32, strength: f32, ads: f32) -> (Vector3, Vector3) {
-        let (pos, rot) = shot_kick(shot, strength, ads);
+        let (pos, rot) = shot_kick(shot, strength, ads, RIFLE);
         let mut p = Spring {
             value: Vector3::ZERO,
             velocity: peak_impulse(pos, KICK_POS_STIFFNESS, KICK_POS_ZETA),
@@ -2183,7 +2238,7 @@ mod tests {
         );
         assert!(rot.x.abs() < 0.25, "aimed sights bounce {}", rot.x);
         // The shove peaks within two frames at 60 FPS and is gone in ~120 ms.
-        let (p, _) = shot_kick(7, 1.35, 1.0);
+        let (p, _) = shot_kick(7, 1.35, 1.0, RIFLE);
         let mut spring = Spring {
             value: Vector3::ZERO,
             velocity: peak_impulse(p, KICK_POS_STIFFNESS, KICK_POS_ZETA),
@@ -2200,12 +2255,12 @@ mod tests {
         // Aimed the front sight always kicks up, a fraction of a degree, and
         // never more than 0.6 degrees even on the heaviest weapons.
         for i in 0..200 {
-            let (_, rot) = shot_kick(i, 1.55, 1.0);
+            let (_, rot) = shot_kick(i, 1.55, 1.0, RIFLE);
             assert!(rot.x > 0.15 && rot.x <= 0.6, "{rot:?}");
         }
-        assert!(shot_kick(3, 3.0, 1.0).1.x <= 0.6);
+        assert!(shot_kick(3, 3.0, 1.0, RIFLE).1.x <= 0.6);
         // Within 0.05 degrees of the sight line by the next round at 750 rpm.
-        let (_, rot) = shot_kick(5, 1.35, 1.0);
+        let (_, rot) = shot_kick(5, 1.35, 1.0, RIFLE);
         let mut spring = Spring {
             value: Vector3::ZERO,
             velocity: peak_impulse(rot, KICK_ROT_STIFFNESS, KICK_ROT_ZETA),
@@ -2216,9 +2271,14 @@ mod tests {
             0.08,
         );
         assert!(spring.value.x.abs() < 0.05, "{}", spring.value.x);
+        // A pump gun bucks hard at the hip; a pistol flips its muzzle aimed.
+        let pump = shot_kick(2, 2.75, 0.0, ClipKind::Shotgun);
+        assert!(pump.1.x > 5.0 && pump.0.z > 0.04, "{pump:?}");
+        let pistol = shot_kick(2, 1.15, 1.0, ClipKind::Pistol);
+        assert!(pistol.1.x > 0.4, "{pistol:?}");
         // At the hip the muzzle always tips up, and the roll changes side
         // from shot to shot without a fixed alternation.
-        let hip: Vec<Vector3> = (0..32).map(|i| shot_kick(i, 1.35, 0.0).1).collect();
+        let hip: Vec<Vector3> = (0..32).map(|i| shot_kick(i, 1.35, 0.0, RIFLE).1).collect();
         assert!(hip.iter().all(|r| r.x > 0.5));
         let flips = hip
             .windows(2)
@@ -2235,11 +2295,15 @@ mod tests {
         let aimed = look_sway_target(turn, 1.0);
         // It points right of the turn (negative yaw) and cants with it.
         assert!(hip.y < 0.0 && hip.z > 0.0);
+        // A soft limit: about 2.5 degrees here, more for a faster flick, never
+        // past 4.
         assert!(
-            (hip.y.to_degrees() + 2.5).abs() < 1e-3,
-            "clamped at 2.5: {}",
-            hip.y
+            (2.0..2.8).contains(&-hip.y.to_degrees()),
+            "{}",
+            hip.y.to_degrees()
         );
+        let faster = look_sway_target(turn * 2.0, 0.0);
+        assert!(faster.y < hip.y && faster.y.to_degrees() > -4.0);
         assert!(aimed.y.to_degrees().abs() <= 0.15 + 1e-3);
         assert_eq!(look_sway_target(Vector2::ZERO, 0.0), Vector3::ZERO);
     }

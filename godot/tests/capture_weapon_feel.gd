@@ -28,6 +28,8 @@ const SCENARIOS := [
 	"jump",
 	"reload_m4",
 	"reload_m4_empty",
+	"reload_ak47_empty",
+	"reload_m40_empty",
 	"reload_lsw6",
 	"reload_m1911_empty",
 	"reload_m870",
@@ -81,7 +83,9 @@ func _run() -> void:
 			+ "sight_pitch,sight_yaw,speed,hand_x,hand_y,hand_z,foley"
 		)
 	)
-	process_frame.connect(_record)
+	# Recorded at the end of each frame, after every node has processed, so
+	# the weapon's pose and the player's state are from the same frame.
+	process_frame.connect(func() -> void: _record.call_deferred())
 	for child in _rig.get_children():
 		if child is WeaponView:
 			child.connect("foley_event", func(name: StringName) -> void: _foley.append(name))
@@ -107,15 +111,17 @@ func _start(scenario: String) -> void:
 	_player.refill_all_ammo()
 	_player.teleport(Vector3(0, 0.1, 20), 0.0)
 	_player.set_look(0.0, 0.0)
-	var weapon := scenario.get_slice("_", scenario.get_slice_count("_") - 1)
+	# The weapon is whichever weapon key the scenario name contains.
+	var weapon := "m4"
+	for part in scenario.split("_"):
+		if part in ["m4", "ak47", "br3", "m40", "m870", "lsw6", "pdw9", "m1911"]:
+			weapon = part
 	if weapon == "m1911":
 		Input.action_press("weapon_2")
 		await _sixtieths(2)
 		Input.action_release("weapon_2")
-	elif weapon in ["m4", "ak47", "br3", "m40", "m870", "lsw6"]:
-		_player.give_weapon(weapon)
 	else:
-		_player.give_weapon("m4")
+		_player.give_weapon(weapon)
 	await _sixtieths(80)
 	_player.refill_all_ammo()
 	await _sixtieths(30)
@@ -367,10 +373,14 @@ func _scenario_jump() -> void:
 
 func _reload(empty: bool, aimed: bool, sixtieths: int) -> void:
 	if empty:
-		Input.action_press("fire")
-		while _player.magazine() > 0:
-			await _sixtieths(1)
-		Input.action_release("fire")
+		# Tap as fast as the weapon allows, so semi-automatics empty too.
+		var guard := 0
+		while _player.magazine() > 0 and guard < 600:
+			Input.action_press("fire")
+			await _sixtieths(2)
+			Input.action_release("fire")
+			await _sixtieths(2)
+			guard += 1
 		await _sixtieths(20)
 	else:
 		await _hold("fire", 12, "fire")
@@ -389,6 +399,14 @@ func _scenario_reload_m4() -> void:
 
 func _scenario_reload_m4_empty() -> void:
 	await _reload(true, false, 190)
+
+
+func _scenario_reload_ak47_empty() -> void:
+	await _reload(true, false, 200)
+
+
+func _scenario_reload_m40_empty() -> void:
+	await _reload(true, false, 240)
 
 
 func _scenario_reload_lsw6() -> void:

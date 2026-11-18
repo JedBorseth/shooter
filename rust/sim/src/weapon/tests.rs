@@ -468,7 +468,7 @@ fn every_weapon_sways_a_little_when_aimed() {
     run(&mut s, aim(), CombatContext::default(), 90);
     let sway = s.scope_sway();
     assert!(sway != Vec2::ZERO);
-    assert!(sway.length() < 0.1f32.to_radians(), "{sway:?}");
+    assert!(sway.length() < 0.2f32.to_radians(), "{sway:?}");
     assert_eq!(s.scope_amount(), 0.0);
     // Only a scope can be steadied with breath.
     let held = CombatInput {

@@ -1,4 +1,4 @@
-// BR-3 bullpup: a three-round burst. One whole burst kills inside 15 m (34
+// BR-3 bullpup: a three-round burst. One whole burst kills inside 9 m (34
 // damage a round); past that it takes a fourth round, so a second burst. A
 // short pause after each burst keeps it from out-firing the automatics.
 (
@@ -8,23 +8,23 @@
     rounds_per_minute: 800,
     magazine: 30,
     reserve: 120,
-    damage: (near: 34, far: 25, falloff_start: 15, falloff_end: 40, headshot: 1.4),
+    damage: (near: 34, far: 25, falloff_start: 9, falloff_end: 40, headshot: 1.4),
     range: 400,
     penetration: 0.32,
-    reload: Magazine(time: 2.3, empty_time: 2.8, mag_in: Some(1.35)),
+    reload: Magazine(time: 2.3, empty_time: 2.8, mag_in: Some(1.5)),
     ads_time: 0.25,
     sprint_out_time: 0.23,
     raise_time: 0.42,
     lower_time: 0.28,
-    spread: (hip: 2.4, hip_moving: 4.2, air: 6.0, ads: 0.0, bloom: 0.3, bloom_max: 1.8, ads_sway: 0.08),
+    spread: (hip: 2.4, hip_moving: 4.2, air: 6.0, ads: 0.0, bloom: 0.3, bloom_max: 1.8, ads_sway: 0.12),
     ads_fov_scale: 0.78,
     ads_move_scale: 0.6,
     move_scale: 0.98,
     recoil: (
         pattern: [
-            (0.26, 0.02), (0.32, -0.05), (0.38, 0.07), (0.32, 0.02),
+            (0.26, 0.03), (0.32, -0.08), (0.38, 0.1), (0.32, 0.04),
         ],
-        jitter: (0.04, 0.06),
+        jitter: (0.04, 0.1),
         ads_scale: 0.7,
         kick_return: 0.45,
         recovery_delay: 0.02,
