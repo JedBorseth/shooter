@@ -5,7 +5,7 @@
 //! shots happen. The rig only turns simulation state into motion, so the same
 //! numbers can later drive other players' third-person weapons.
 
-use std::f32::consts::{PI, TAU};
+use std::f32::consts::{FRAC_PI_2, PI, TAU};
 
 use godot::classes::{
     AudioStreamPlayer, AudioStreamRandomizer, BaseMaterial3D, Curve, CurveTexture, CylinderMesh,
@@ -701,6 +701,14 @@ impl WeaponView {
         let mut iron = self.base().try_get_node_as::<IronSights>("Sights");
         if let Some(iron) = &mut iron {
             iron.set_visible(!optic);
+        }
+        // A flip-up rear sight folds forward, flat on the rail, under an optic.
+        if let Some(mut leaf) = self
+            .base()
+            .try_get_node_as::<Node3D>("Model/Mesh/RearSight")
+        {
+            let fold = if optic { -FRAC_PI_2 } else { 0.0 };
+            leaf.set_rotation(Vector3::new(fold, 0.0, 0.0));
         }
         self.suppressed = attachment == Some(Attachment::Suppressor);
         if let Some(gunshot) = &mut self.gunshot {
