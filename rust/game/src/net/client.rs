@@ -1242,7 +1242,7 @@ impl NetClient {
             };
             self.remotes[index]
                 .buffer
-                .push(tick, RemoteSample::from(view));
+                .push(tick, RemoteSample::at(tick, view));
         }
         if !newest {
             return;

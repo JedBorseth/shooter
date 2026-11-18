@@ -24,7 +24,7 @@ pub mod tdm;
 pub mod weapon;
 pub mod zombies;
 
-pub use glam::{Vec2, Vec3};
+pub use glam::{Mat3, Vec2, Vec3};
 
 /// Simulation ticks per second. The engine's physics tick must match
 /// (`physics/common/physics_ticks_per_second` in `project.godot`). 120 Hz halves

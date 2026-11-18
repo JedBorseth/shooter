@@ -27,4 +27,6 @@
         recovery_rate: 10.0,
     ),
     beam: true,
+    // Hands on the model: GripRight and GripLeft in laser_view.tscn.
+    grips: Some((right: (0, -0.135, 0.05), left: (0, -0.13, -0.15), rake: 15)),
 )

@@ -75,12 +75,12 @@ pub struct HitboxRig {
 #[godot_api]
 impl INode3D for HitboxRig {
     fn ready(&mut self) {
-        let standing = hitbox::hitboxes(&HitboxPose {
-            feet: shooter_sim::Vec3::ZERO,
-            yaw: 0.0,
-            pitch: 0.0,
-            stance: shooter_sim::movement::Stance::Standing,
-        });
+        let standing = hitbox::hitboxes(&HitboxPose::new(
+            shooter_sim::Vec3::ZERO,
+            0.0,
+            0.0,
+            shooter_sim::movement::Stance::Standing,
+        ));
         for (i, hb) in standing.iter().enumerate() {
             let part = self.make_part(i, hb);
             self.parts.push(part);

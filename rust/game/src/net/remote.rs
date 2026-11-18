@@ -160,7 +160,9 @@ impl RemotePlayer {
             return;
         };
         let sample = RemoteSample {
+            tick: 0.0,
             position: to_sim(feet),
+            velocity: self.test_velocity(feet, delta),
             yaw: 0.0,
             pitch: 0.0,
             stance: match stance {
@@ -182,9 +184,68 @@ impl RemotePlayer {
         };
         self.apply(&sample, delta);
     }
+
+    /// Applies a made-up snapshot from a dictionary (tests): `feet`
+    /// (Vector3), `yaw`, `pitch`, `stance` ("standing", "crouching",
+    /// "sliding"), `sprinting`, `on_floor`, `ads`, `weapon` (file key),
+    /// `reloading`, `mantling`, `alive`. Missing keys take a standing,
+    /// living M4 holder's values. Velocity comes from how `feet` moves.
+    #[func]
+    fn apply_test_state(&mut self, state: VarDictionary, delta: f32) {
+        let get = |key: &str| state.get(key);
+        let f = |key: &str| get(key).and_then(|v| v.try_to::<f32>().ok());
+        let b = |key: &str, default: bool| {
+            get(key)
+                .and_then(|v| v.try_to::<bool>().ok())
+                .unwrap_or(default)
+        };
+        let Some(weapon) = get("weapon")
+            .and_then(|v| WeaponId::by_key(&v.to_string()))
+            .or_else(|| WeaponId::by_key("m4"))
+        else {
+            return;
+        };
+        let feet = get("feet")
+            .and_then(|v| v.try_to::<Vector3>().ok())
+            .unwrap_or(Vector3::ZERO);
+        let sample = RemoteSample {
+            tick: 0.0,
+            position: to_sim(feet),
+            velocity: self.test_velocity(feet, delta),
+            yaw: f("yaw").unwrap_or(0.0),
+            pitch: f("pitch").unwrap_or(0.0),
+            stance: match get("stance").map(|v| v.to_string()).as_deref() {
+                Some("crouching") => Stance::Crouching,
+                Some("sliding") => Stance::Sliding,
+                _ => Stance::Standing,
+            },
+            sprinting: b("sprinting", false),
+            on_floor: b("on_floor", true),
+            ads: f("ads").unwrap_or(0.0),
+            weapon,
+            reloading: b("reloading", false),
+            alive: b("alive", true),
+            shots_fired: 0,
+            mantling: b("mantling", false),
+            meleeing: b("meleeing", false),
+            hits: 0,
+            hit_heading: 0,
+        };
+        self.apply(&sample, delta);
+    }
 }
 
 impl RemotePlayer {
+    /// A made-up sample's velocity: how far the feet moved since the last one.
+    fn test_velocity(&self, feet: Vector3, delta: f32) -> shooter_sim::Vec3 {
+        match self.last_position {
+            Some(last) if delta > 0.0 && last.distance_to(feet) < 2.0 => {
+                to_sim((feet - last) / delta)
+            }
+            _ => shooter_sim::Vec3::ZERO,
+        }
+    }
+
     pub fn set_display_name(&mut self, name: &str) {
         self.name_label.set_text(name);
     }

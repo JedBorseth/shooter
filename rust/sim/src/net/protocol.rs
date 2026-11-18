@@ -23,7 +23,7 @@ use super::subtick;
 use crate::chat;
 use crate::gun_game;
 use crate::hardpoint::Holder;
-use crate::hitbox::HitboxPose;
+use crate::hitbox::{Activity, HitboxPose};
 use crate::look::PITCH_LIMIT;
 use crate::movement::{MoveState, Stance};
 use crate::player::{FireAim, PlayerInput, PlayerState};
@@ -56,7 +56,9 @@ use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState}
 // kills in the kill feed.
 // Version 21 changed weapon rules (firing ends a reload once the weapon is
 // back up), so older clients would mispredict.
-pub const PROTOCOL_VERSION: u16 = 21;
+// Version 22 added what each body was doing (sprinting, airborne, mantling,
+// reloading, aim, velocity, weapon) to the debug rewound hitbox poses.
+pub const PROTOCOL_VERSION: u16 = 22;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -922,6 +924,7 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
                 w.f32(pose.yaw);
                 w.f32(pose.pitch);
                 write_stance(w, pose.stance);
+                write_activity(w, &pose.activity);
             }
         }
         GameEvent::Joined {
@@ -1153,6 +1156,7 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
                     yaw: read_finite(r)?,
                     pitch: read_finite(r)?,
                     stance: read_stance(r)?,
+                    activity: read_activity(r)?,
                 };
                 poses.push((id, pose));
             }
@@ -1832,6 +1836,36 @@ fn read_stance(r: &mut BitReader) -> DecodeResult<Stance> {
 
 /// Weapons go by their index in the weapon table, which both sides build from
 /// the same data files.
+/// A rewound hitbox pose's activity, with `ads` quantized as in snapshots.
+fn write_activity(w: &mut BitWriter, a: &Activity) {
+    w.bool(a.sprinting);
+    w.bool(a.airborne);
+    w.bool(a.mantling);
+    w.bool(a.reloading);
+    w.u8((a.ads.clamp(0.0, 1.0) * 255.0).round() as u8);
+    write_vec3(w, a.velocity);
+    w.bool(a.weapon.is_some());
+    if let Some(weapon) = a.weapon {
+        write_weapon(w, weapon);
+    }
+}
+
+fn read_activity(r: &mut BitReader) -> DecodeResult<Activity> {
+    Ok(Activity {
+        sprinting: r.bool()?,
+        airborne: r.bool()?,
+        mantling: r.bool()?,
+        reloading: r.bool()?,
+        ads: f32::from(r.u8()?) / 255.0,
+        velocity: read_finite_vec3(r)?,
+        weapon: if r.bool()? {
+            Some(read_weapon(r)?)
+        } else {
+            None
+        },
+    })
+}
+
 fn write_weapon(w: &mut BitWriter, id: WeaponId) {
     w.u8(id.0);
 }
@@ -2455,6 +2489,15 @@ mod tests {
                         yaw: 1.0,
                         pitch: -0.2,
                         stance: Stance::Crouching,
+                        activity: Activity {
+                            sprinting: false,
+                            airborne: true,
+                            mantling: false,
+                            reloading: true,
+                            ads: 128.0 / 255.0,
+                            velocity: Vec3::new(1.5, -0.25, -4.0),
+                            weapon: Some(WeaponId(3)),
+                        },
                     },
                 )],
             },

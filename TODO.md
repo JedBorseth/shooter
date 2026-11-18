@@ -140,6 +140,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Debug visualization: with F4 on, the server's rewound hitboxes for each of your shots are drawn in white next to the client's.
 - [x] Unit tests for rewind math in `rust/sim` (`net::lag`), and a netcode test that kills a strafing bot through a lossy, 110 ms link.
 - [x] Sub-tick fire timing: a click between ticks fires from the view angles and remote-player view tick of the frame it was clicked on, not the next tick's (`net::subtick`, `PlayerInput::fire_aim`). The server accepts press angles only between the previous input's view and this one's; held automatic fire keeps the tick's angles.
+- [x] What you see is what you hit: hit zones follow the animated soldier. They pose from the snapshot's activity (sprinting, airborne, mantling, reloading, aim, weapon) and the velocity between the two snapshots a sample blends, as well as stance and view angles: base poses measured from the animations and blended by speed (`rust/sim/src/hitbox/poses.rs`, `gait.rs`), hips turned toward a strafe, the aim pitch bent up the spine as the poser does, and arms on each weapon's grips with the character's own carry and IK (`hitbox/carry.rs`, shared with `SoldierRig`). `hitbox_fit_test.gd` measures bone-to-zone drift and skin outside the zones in every state and fails past 6 cm in settled states.
 
 ## Phase 4: game loop
 

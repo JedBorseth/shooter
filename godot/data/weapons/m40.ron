@@ -33,4 +33,6 @@
     scope: Some((sway: 0.55, hold_breath: 4.0, breath_recovery: 2.5)),
     tracer_every: 1,
     attachments: [Suppressor, ExtendedMag],
+    // Hands on the model: GripRight and GripLeft in m40_view.tscn.
+    grips: Some((right: (0, -0.115, 0.03), left: (0, -0.08, -0.36), rake: 38)),
 )

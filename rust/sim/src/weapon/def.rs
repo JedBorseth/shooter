@@ -376,12 +376,29 @@ pub struct WeaponDef {
     /// Attachments this weapon takes in a loadout.
     #[serde(default)]
     pub attachments: Vec<Attachment>,
+    /// Where a third-person soldier's hands hold the weapon: its scene's
+    /// `GripRight` and `GripLeft` markers and grip rake. The arm hit zones
+    /// follow them (`crate::hitbox`).
+    #[serde(default)]
+    pub grips: Option<GripsDef>,
     /// On an attachment variant: the attachment fitted.
     #[serde(skip)]
     pub attachment: Option<Attachment>,
     /// On an attachment variant: the plain weapon's key (its model and sounds).
     #[serde(skip)]
     pub base_key: String,
+}
+
+/// Hand positions on a weapon model, in its space (origin at the rear sight,
+/// -Z toward the muzzle, metres).
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
+pub struct GripsDef {
+    /// Centre of the firing hand's grip.
+    pub right: [f32; 3],
+    /// Where the support hand holds.
+    pub left: [f32; 3],
+    /// Degrees the pistol grip leans back from vertical.
+    pub rake: f32,
 }
 
 fn one() -> u8 {

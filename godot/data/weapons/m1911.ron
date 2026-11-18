@@ -27,4 +27,6 @@
         recovery_rate: 14.0,
     ),
     tracer_every: 0,
+    // Hands on the model: GripRight and GripLeft in pistol_view.tscn.
+    grips: Some((right: (0, -0.0833, 0.0098), left: (0, -0.102, 0.0217), rake: 0)),
 )

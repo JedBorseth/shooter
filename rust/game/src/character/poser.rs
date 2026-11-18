@@ -12,29 +12,31 @@
 //!
 //! Bone names are Godot's humanoid profile; the import retargets every
 //! character onto it.
+//!
+//! The aim, weapon, and hand numbers come from `shooter_sim::hitbox::carry`,
+//! which the arm hit zones are posed from too.
 
 use godot::classes::{ISkeletonModifier3D, Node3D, Skeleton3D, SkeletonModifier3D};
 use godot::prelude::*;
+pub use shooter_sim::hitbox::carry::Hold;
+use shooter_sim::hitbox::carry::{self, PITCH_SHARES};
+use shooter_sim::hitbox::gait::TWIST_SHARES;
 
 use super::ik::{self, Chain};
+use crate::convert::{to_godot, to_godot_basis, to_sim};
 
 /// Where the eyes are in the head bone's space (+Y up the head, +Z forward).
-const EYE_IN_HEAD: Vector3 = Vector3::new(0.0, 0.15, 0.09);
-/// Share of the aim pitch each bone takes, from the spine up. Sums to 1, so the
-/// head looks along the aim.
-const PITCH_SHARES: [(usize, f32); 5] = [
-    (Bone::SPINE, 0.12),
-    (Bone::CHEST, 0.18),
-    (Bone::UPPER_CHEST, 0.25),
-    (Bone::NECK, 0.2),
-    (Bone::HEAD, 0.25),
+const EYE_IN_HEAD: Vector3 = to_godot(carry::EYE_IN_HEAD);
+/// The bones the aim pitch bends, in [`PITCH_SHARES`] order.
+const PITCH_BONES: [usize; 5] = [
+    Bone::SPINE,
+    Bone::CHEST,
+    Bone::UPPER_CHEST,
+    Bone::NECK,
+    Bone::HEAD,
 ];
-/// Share of the hips' turn the spine bones give back, so the chest faces the aim.
-const TWIST_SHARES: [(usize, f32); 3] = [
-    (Bone::SPINE, 0.35),
-    (Bone::CHEST, 0.35),
-    (Bone::UPPER_CHEST, 0.3),
-];
+/// The bones that turn back toward the aim, in [`TWIST_SHARES`] order.
+const TWIST_BONES: [usize; 3] = [Bone::SPINE, Bone::CHEST, Bone::UPPER_CHEST];
 
 /// Bone indices resolved once per skeleton.
 #[derive(Clone, Copy, Debug)]
@@ -83,37 +85,12 @@ pub struct Grips {
     pub hold: Hold,
 }
 
-/// What the support hand holds.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Hold {
-    /// A rifle's handguard, from below.
-    #[default]
-    Handguard,
-    /// A shotgun's pump.
-    Pump,
-    /// One-handed weapons: the support hand cups the firing hand.
-    Pistol,
-}
-
-impl Hold {
-    /// The hold for a weapon: sidearms are pistols, multi-pellet guns pumps.
-    pub fn of(def: &shooter_sim::weapon::WeaponDef) -> Self {
-        if def.slot == shooter_sim::weapon::Slot::Secondary {
-            Hold::Pistol
-        } else if def.pellets > 1 {
-            Hold::Pump
-        } else {
-            Hold::Handguard
-        }
-    }
-
-    /// How the support hand closes for this hold.
-    fn support_shape(self) -> HandShape {
-        match self {
-            Hold::Handguard => HANDGUARD,
-            Hold::Pump => PUMP,
-            Hold::Pistol => CUP,
-        }
+/// How the support hand closes for a hold.
+fn support_shape(hold: Hold) -> HandShape {
+    match hold {
+        Hold::Handguard => HANDGUARD,
+        Hold::Pump => PUMP,
+        Hold::Pistol => CUP,
     }
 }
 
@@ -130,28 +107,16 @@ impl Default for Grips {
 
 impl Grips {
     /// The hand bones' bases in weapon space: +Y toward the knuckles, +Z out of
-    /// the palm. Measured from the library's two-handed pistol pose, then raked
-    /// for rifle grips.
+    /// the palm (`carry::Grips::hand_bases`).
     fn hand_bases(&self) -> (Basis, Basis) {
-        let rake = Basis::from_axis_angle(Vector3::RIGHT, -self.rake.to_radians());
-        let right = rake
-            * ik::basis_from_y_z(
-                Vector3::new(-0.02, 0.19, -0.98),
-                Vector3::new(-1.0, 0.04, 0.03),
-            );
-        let left = if self.hold == Hold::Pistol {
-            ik::basis_from_y_z(
-                Vector3::new(0.31, 0.11, -0.95),
-                Vector3::new(0.65, 0.7, 0.29),
-            )
-        } else {
-            // Under the handguard: palm up and in, knuckles forward and to the right.
-            ik::basis_from_y_z(
-                Vector3::new(0.25, 0.05, -0.97),
-                Vector3::new(0.35, 0.94, 0.0),
-            )
-        };
-        (right, left)
+        let (right, left) = carry::Grips {
+            right: to_sim(self.right),
+            left: to_sim(self.left),
+            rake: self.rake,
+            hold: self.hold,
+        }
+        .hand_bases();
+        (to_godot_basis(right), to_godot_basis(left))
     }
 }
 
@@ -213,8 +178,8 @@ const CUP: HandShape = [
 ];
 
 /// Where the grip sits in each hand's bone space (from the wrist).
-const RIGHT_PALM: Vector3 = Vector3::new(0.0, 0.085, 0.035);
-const LEFT_PALM: Vector3 = Vector3::new(0.0, 0.07, 0.05);
+const RIGHT_PALM: Vector3 = to_godot(carry::RIGHT_PALM);
+const LEFT_PALM: Vector3 = to_godot(carry::LEFT_PALM);
 
 /// Where the weapon goes this frame.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -301,14 +266,14 @@ impl ISkeletonModifier3D for SoldierPoser {
         // 1. Hips toward the movement, spine back toward the aim.
         if input.lower_yaw.abs() > 1e-4 {
             rotate_global(&mut skel, bone(Bone::HIPS), Vector3::UP, input.lower_yaw);
-            for (b, share) in TWIST_SHARES {
+            for (b, share) in TWIST_BONES.into_iter().zip(TWIST_SHARES) {
                 rotate_global(&mut skel, bone(b), Vector3::UP, -input.lower_yaw * share);
             }
         }
 
         // 2. Aim pitch and hit lean. The skeleton faces +Z, so the character's
         // right is -X; pitching up turns +Z toward +Y, a negative turn about +X.
-        for (b, share) in PITCH_SHARES {
+        for (b, share) in PITCH_BONES.into_iter().zip(PITCH_SHARES) {
             rotate_global(&mut skel, bone(b), Vector3::RIGHT, -input.pitch * share);
         }
         let lean = Vector3::new(-input.lean.x, 0.0, -input.lean.z);
@@ -361,7 +326,7 @@ impl ISkeletonModifier3D for SoldierPoser {
             return;
         }
         let knife = input.knife.clamp(0.0, 1.0);
-        let support = grips.hold.support_shape();
+        let support = support_shape(grips.hold);
         let trigger_off = input.trigger_off.clamp(0.0, 1.0);
         for &(index, rest, right, finger, joint) in &self.fingers {
             let angle = if right {
@@ -382,8 +347,8 @@ impl ISkeletonModifier3D for SoldierPoser {
         let (right_basis, left_basis) = grips.hand_bases();
         // Elbow hints in the weapon's frame: the firing elbow down and out, the
         // support elbow down and in under the weapon.
-        let right_pole = weapon_skel * Vector3::new(0.45, -0.7, 0.35);
-        let left_pole = weapon_skel * Vector3::new(-0.25, -0.8, 0.0);
+        let right_pole = weapon_skel * to_godot(carry::RIGHT_POLE);
+        let left_pole = weapon_skel * to_godot(carry::LEFT_POLE);
         self.place_hand(
             &mut skel,
             [
@@ -402,8 +367,7 @@ impl ISkeletonModifier3D for SoldierPoser {
             let off = input.support_off.clamp(0.0, 1.0);
             left_grip = left_grip.lerp(weapon_skel * input.support_target, off);
             // Turn the palm toward the body while it fetches a magazine.
-            let fetch = weapon_skel.basis
-                * ik::basis_from_y_z(Vector3::new(0.2, 0.3, -0.9), Vector3::new(0.8, 0.4, 0.0));
+            let fetch = weapon_skel.basis * to_godot_basis(carry::fetch_basis());
             left_hand_basis = Basis::from_quaternion(
                 left_hand_basis
                     .get_quaternion()
@@ -554,17 +518,6 @@ fn apply_global_rotation(skel: &mut Gd<Skeleton3D>, bone: i32, rotation: Quatern
 #[cfg(test)]
 mod hold_tests {
     use super::*;
-    use shooter_sim::weapon::WeaponId;
-
-    #[test]
-    fn each_weapon_class_gets_its_hold() {
-        let hold = |key: &str| Hold::of(WeaponId::by_key(key).expect(key).def());
-        assert_eq!(hold("m1911"), Hold::Pistol);
-        assert_eq!(hold("m870"), Hold::Pump);
-        for key in ["m4", "ak47", "m40", "pdw9"] {
-            assert_eq!(hold(key), Hold::Handguard, "{key}");
-        }
-    }
 
     #[test]
     fn support_hands_close_less_than_a_fist() {

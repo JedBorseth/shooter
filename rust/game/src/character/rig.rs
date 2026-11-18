@@ -4,8 +4,10 @@
 //! and hands, a world copy of the weapon, team colours, and hit reactions.
 //!
 //! Remote players and target dummies drive it; nothing here affects gameplay.
-//! Hit detection uses the shapes in `shooter_sim::hitbox`, which this pose is
-//! fitted to.
+//! Hit detection uses the shapes in `shooter_sim::hitbox`, which follow this
+//! pose: they share its weapon carry (`shooter_sim::hitbox::carry`) and start
+//! from base poses measured from its animations. `godot/tests/hitbox_fit_test.gd`
+//! fails if the two drift apart.
 
 use std::f32::consts::PI;
 
@@ -17,41 +19,30 @@ use godot::classes::{
     BoneAttachment3D, INode3D, MeshInstance3D, Node3D, ShaderMaterial, Skeleton3D, SphereMesh,
 };
 use godot::prelude::*;
+use shooter_sim::hitbox::Activity;
+use shooter_sim::hitbox::carry::{self, Carry};
+use shooter_sim::hitbox::gait;
 use shooter_sim::movement::Stance;
 use shooter_sim::weapon::WeaponId;
 
 use super::palette::{self, Team};
 use super::poser::{Grips, Hold, PoseInput, SoldierPoser, WeaponPlacement};
+use crate::convert::{to_godot, to_godot_basis, to_sim};
 use crate::spring::{Spring, impulse_for_peak, smoothing};
 use crate::viewmodel::{self, WeaponView};
 
-/// Natural ground speeds (m/s) of the in-place loops, measured from the planted
-/// foot. Playback scales to the real speed so feet do not slide.
-const WALK_SPEED: f32 = 1.06;
+// The loops' natural ground speeds and the strafe's leg turn are in
+// `shooter_sim::hitbox::gait`, shared with the hit zones. Playback scales to
+// the real speed so feet do not slide.
 /// Playback speed of the climb clip, so it fits a mantle's short climb.
 const CLIMB_RATE: f32 = 1.45;
-const JOG_SPEED: f32 = 3.0;
-const SPRINT_SPEED: f32 = 6.0;
-const CROUCH_SPEED: f32 = 0.72;
 /// Natural ground speed (m/s) of the zombie walk loop, measured from the planted foot.
 const ZOMBIE_WALK_SPEED: f32 = 0.95;
 /// Zombies slower than this play the shamble alone, sped up to their speed.
 const ZOMBIE_SHAMBLE_LIMIT: f32 = 2.1;
-/// Non-sprinting runs blend no further than this toward the sprint, then speed up.
-const RUN_BLEND_LIMIT: f32 = 4.0;
-/// The legs turn at most this far from the aim (radians) when strafing.
-const MAX_LEG_TURN: f32 = 75.0 * PI / 180.0;
 
-/// Weapon offsets from the eyes, in the aim frame (+X right, +Y up, -Z along the aim).
-const ADS_OFFSET: Vector3 = Vector3::new(0.034, -0.045, -0.09);
-const HIP_OFFSET: Vector3 = Vector3::new(0.085, -0.13, -0.11);
-const SPRINT_OFFSET: Vector3 = Vector3::new(0.03, -0.3, -0.16);
-/// Degrees: pitch, yaw, roll.
-const HIP_ROTATION: Vector3 = Vector3::new(0.0, 3.0, -6.0);
-const SPRINT_ROTATION: Vector3 = Vector3::new(-42.0, 38.0, -28.0);
-/// Where the support hand reaches during a reload, in weapon space (a pouch on
-/// the vest, below and behind the magazine well).
-const RELOAD_REACH: Vector3 = Vector3::new(-0.12, -0.32, 0.12);
+// Weapon offsets from the eyes, the reload reach, and the hand placement are
+// in `shooter_sim::hitbox::carry`, shared with the arm hit zones.
 
 /// Hit flinch spring (radians of torso lean), as the old target dummy.
 const LEAN_STIFFNESS: f32 = 140.0;
@@ -97,6 +88,21 @@ pub struct SoldierFrame {
     pub mantling: bool,
     /// Swinging the knife: each new swing plays the slash once.
     pub meleeing: bool,
+}
+
+impl SoldierFrame {
+    /// What the hit zones need of this frame beyond stance and view angles.
+    pub fn activity(&self) -> Activity {
+        Activity {
+            sprinting: self.sprinting,
+            airborne: !self.on_floor,
+            mantling: self.mantling,
+            reloading: self.reload.is_some(),
+            ads: self.ads,
+            velocity: to_sim(self.velocity),
+            weapon: self.weapon,
+        }
+    }
 }
 
 impl Default for SoldierFrame {
@@ -414,24 +420,14 @@ impl SoldierRig {
         let local = Basis::from_axis_angle(Vector3::UP, -frame.yaw) * frame.velocity;
         let flat = Vector3::new(local.x, 0.0, local.z);
         let speed = flat.length();
-        let moving = speed > 0.4 && frame.alive;
+        let moving = speed > gait::MOVING_SPEED && frame.alive;
         let forward = -flat.z;
         let right = flat.x;
         let mut leg_turn = 0.0;
         if moving && frame.stance != Stance::Sliding {
-            let angle = right.atan2(forward);
-            let cos = angle.cos();
-            self.walking_backward = if self.walking_backward {
-                cos < -0.1
-            } else {
-                cos < -0.35
-            } && !frame.sprinting;
-            let legs = if self.walking_backward {
-                wrap_angle(angle - PI)
-            } else {
-                angle
-            };
-            leg_turn = legs.clamp(-MAX_LEG_TURN, MAX_LEG_TURN);
+            self.walking_backward =
+                gait::backward(right, forward, frame.sprinting, self.walking_backward);
+            leg_turn = gait::leg_turn(right, forward, self.walking_backward);
         } else if !moving {
             self.walking_backward = false;
         }
@@ -459,21 +455,19 @@ impl SoldierRig {
         self.air += (air_target - self.air) * smoothing(10.0, dt);
 
         let direction = if self.walking_backward { -1.0 } else { 1.0 };
-        let stand_position = if !moving {
-            0.0
-        } else if frame.sprinting {
-            speed.clamp(JOG_SPEED, SPRINT_SPEED)
+        let stand_position = if moving {
+            gait::stand_position(speed, frame.sprinting)
         } else {
-            speed.min(RUN_BLEND_LIMIT)
+            0.0
         };
         let stand_rate = if moving {
-            (speed / stand_position.max(WALK_SPEED)).clamp(0.5, 1.8) * direction
+            (speed / stand_position.max(gait::WALK_SPEED)).clamp(0.5, 1.8) * direction
         } else {
             1.0
         };
-        let crouch_position = if moving { CROUCH_SPEED } else { 0.0 };
+        let crouch_position = if moving { gait::CROUCH_SPEED } else { 0.0 };
         let crouch_rate = if moving {
-            (speed / CROUCH_SPEED).clamp(0.6, 2.2) * direction
+            (speed / gait::CROUCH_SPEED).clamp(0.6, 2.2) * direction
         } else {
             1.0
         };
@@ -523,7 +517,7 @@ impl SoldierRig {
                 } else if speed < ZOMBIE_SHAMBLE_LIMIT {
                     ZOMBIE_WALK_SPEED
                 } else {
-                    speed.min(SPRINT_SPEED)
+                    speed.min(gait::SPRINT_SPEED)
                 };
                 let rate = if moving {
                     (speed / position.max(ZOMBIE_WALK_SPEED)).clamp(0.5, 1.8)
@@ -547,15 +541,18 @@ impl SoldierRig {
                 };
                 set(tree, "hold/blend_amount", hold.to_variant());
             }
-            // The climb plays once as a mantle starts.
-            if frame.mantling && !self.was_mantling && !self.zombie {
-                set(tree, "climb_rate/scale", CLIMB_RATE.to_variant());
-                set(
-                    tree,
-                    "climb/request",
-                    (godot::classes::animation_node_one_shot::OneShotRequest::FIRE.ord())
-                        .to_variant(),
-                );
+            // The climb plays as a mantle starts and fades out as it ends, so
+            // the body does not go on climbing once the player is up (the
+            // hit zones hold the climb only while mantling).
+            use godot::classes::animation_node_one_shot::OneShotRequest;
+            if frame.mantling != self.was_mantling && !self.zombie {
+                let request = if frame.mantling {
+                    set(tree, "climb_rate/scale", CLIMB_RATE.to_variant());
+                    OneShotRequest::FIRE
+                } else {
+                    OneShotRequest::FADE_OUT
+                };
+                set(tree, "climb/request", request.ord().to_variant());
             }
             self.was_mantling = frame.mantling;
             // Only on a change: a request restarts the death clip.
@@ -616,10 +613,6 @@ impl SoldierRig {
     }
 
     fn pose_input(&self, frame: &SoldierFrame) -> PoseInput {
-        let ads = smoothstep(frame.ads) * (1.0 - self.sprint);
-        let sprint = smoothstep(self.sprint);
-        let dip = (PI * self.reload_progress).sin().max(0.0) * self.reload_blend;
-        let kick = self.kick.value;
         // A knife swing drops the gun most of the way to the sprint carry
         // and leans the body into the strike.
         let swing = self.melee.map_or(0.0, |t| {
@@ -628,58 +621,52 @@ impl SoldierRig {
         let lunge = self.melee.map_or(0.0, |t| {
             crate::weapon_clips::keyed(&[(0.0, 0.0), (0.12, 1.0), (0.34, 0.0)], t)
         });
-        let mut offset = HIP_OFFSET.lerp(ADS_OFFSET, ads);
-        offset += (SPRINT_OFFSET - HIP_OFFSET) * (sprint + 0.6 * swing).min(1.0);
-        offset += Vector3::new(
-            -0.04 * dip,
-            -0.04 * dip - 0.25 * self.switch_drop,
-            0.03 * dip,
-        );
-        offset.z += kick.z;
-        let deg = |v: f32| v.to_radians();
-        let hip = 1.0 - ads;
-        let carry = sprint + 0.5 * swing;
-        let pitch =
-            deg(HIP_ROTATION.x) * hip + deg(SPRINT_ROTATION.x) * carry + kick.x + deg(12.0) * dip
-                - deg(40.0) * self.switch_drop;
-        let yaw = deg(HIP_ROTATION.y) * hip + deg(SPRINT_ROTATION.y) * carry;
-        let roll = deg(HIP_ROTATION.z) * hip + deg(SPRINT_ROTATION.z) * carry + deg(30.0) * dip;
-        let rotation = Basis::from_euler(EulerOrder::YXZ, Vector3::new(pitch, yaw, roll));
+        // The same carry the arm hit zones are posed from, with this rig's
+        // smoothed blends, kick, weapon switch, and knife swing on top.
+        let carry = Carry {
+            ads: frame.ads,
+            sprint: self.sprint,
+            reload: self.reload_blend,
+            reload_progress: self.reload_progress,
+            kick: to_sim(self.kick.value),
+            switch_drop: self.switch_drop,
+            swing,
+        };
+        let (offset, rotation) = carry.weapon_offset();
+        let (offset, rotation) = (to_godot(offset), to_godot_basis(rotation));
 
         // The slash is keyed from the eyes, where the weapon rests at the hip,
         // so it stays at head height while the gun drops out of its way.
         let weapon_from_eyes = Transform3D::new(rotation, offset).affine_inverse()
-            * Transform3D::new(Basis::IDENTITY, HIP_OFFSET);
+            * Transform3D::new(Basis::IDENTITY, to_godot(carry::HIP_OFFSET));
         let knife = self.melee.map_or((0.0, Transform3D::IDENTITY), |t| {
             let (blend, at) = crate::knife::third_person(t);
             (blend, weapon_from_eyes * at)
         });
-        // The support hand fetches a magazine in the middle of the reload.
-        let p = self.reload_progress;
-        let support_off = self.reload_blend
-            * (smoothstep((p - 0.1) / 0.15) * (1.0 - smoothstep((p - 0.6) / 0.2)));
         let grips = self.weapon.as_ref().map(|(id, view)| {
             let mut g = view.bind().grips();
             g.hold = Hold::of(id.def());
             if g.hold == Hold::Handguard {
                 // Mid-handguard rather than at the muzzle end of it, so the
                 // support elbow bends and drops under the weapon.
-                g.left.z += SUPPORT_BACK;
+                g.left.z += carry::SUPPORT_BACK;
             }
             g
         });
+        let slide = 1.0 - (1.0 - carry::SLIDE_PITCH_SCALE) * self.slide;
         PoseInput {
             lower_yaw: self.lower_yaw,
-            pitch: frame.pitch.clamp(-1.3, 1.3) * (1.0 - 0.6 * self.slide),
+            pitch: frame.pitch.clamp(-carry::MAX_PITCH, carry::MAX_PITCH) * slide,
             lean: self.lean.value + Vector3::new(0.0, 0.0, -0.3) * lunge,
             placement: WeaponPlacement::FromEyes { offset, rotation },
             grips,
             ik: self.ik,
             weapon_in_hand: !frame.alive,
-            support_off,
-            support_target: RELOAD_REACH,
+            // The support hand fetches a magazine in the middle of the reload.
+            support_off: carry.support_off(),
+            support_target: to_godot(carry::RELOAD_REACH),
             // Trigger discipline: off the trigger while sprinting or reloading.
-            trigger_off: self.sprint.max(self.reload_blend),
+            trigger_off: carry.trigger_off(),
             knife: knife.0,
             knife_at: knife.1,
         }
@@ -777,7 +764,7 @@ impl SoldierRig {
         let space = |points: &[(&str, f32)]| {
             let mut s = AnimationNodeBlendSpace1D::new_gd();
             s.set_min_space(0.0);
-            s.set_max_space(SPRINT_SPEED);
+            s.set_max_space(gait::SPRINT_SPEED);
             for (name, position) in points {
                 let point = name.rsplit('/').next().unwrap_or(name);
                 s.add_blend_point_ex(&clip(name).upcast::<AnimationRootNode>(), *position)
@@ -790,16 +777,20 @@ impl SoldierRig {
             "stand",
             space(&[
                 ("ual1/Idle", 0.0),
-                ("ual1/Walk", WALK_SPEED),
-                ("ual1/Jog_Fwd", JOG_SPEED),
-                ("ual1/Sprint", SPRINT_SPEED),
+                ("ual1/Walk", gait::WALK_SPEED),
+                ("ual1/Jog_Fwd", gait::JOG_SPEED),
+                ("ual1/Sprint", gait::SPRINT_SPEED),
             ])
             .upcast(),
             0.0,
         );
         add(
             "crouch",
-            space(&[("ual1/Crouch_Idle", 0.0), ("ual1/Crouch_Fwd", CROUCH_SPEED)]).upcast(),
+            space(&[
+                ("ual1/Crouch_Idle", 0.0),
+                ("ual1/Crouch_Fwd", gait::CROUCH_SPEED),
+            ])
+            .upcast(),
             0.0,
         );
         add("stand_rate", AnimationNodeTimeScale::new_gd().upcast(), 1.0);
@@ -879,10 +870,6 @@ impl SoldierRig {
     }
 }
 
-/// How far (m) a third-person soldier's support hand sits behind the
-/// weapon's `GripLeft` marker on a rifle handguard.
-const SUPPORT_BACK: f32 = 0.08;
-
 /// A 64-bit mix (SplitMix64's finaliser): spreads regularly spaced seeds.
 fn splitmix(mut x: u64) -> u64 {
     x = x.wrapping_add(0x9E37_79B9_7F4A_7C15);
@@ -947,12 +934,12 @@ fn zombie_graph() -> Gd<AnimationNodeBlendTree> {
     };
     let mut walk = AnimationNodeBlendSpace1D::new_gd();
     walk.set_min_space(0.0);
-    walk.set_max_space(SPRINT_SPEED);
+    walk.set_max_space(gait::SPRINT_SPEED);
     for (name, position) in [
         ("ual2/Zombie_Idle", 0.0),
         ("ual2/Zombie_Walk_Fwd", ZOMBIE_WALK_SPEED),
-        ("ual1/Jog_Fwd", JOG_SPEED),
-        ("ual1/Sprint", SPRINT_SPEED),
+        ("ual1/Jog_Fwd", gait::JOG_SPEED),
+        ("ual1/Sprint", gait::SPRINT_SPEED),
     ] {
         let point = name.rsplit('/').next().unwrap_or(name);
         walk.add_blend_point_ex(&clip(name).upcast::<AnimationRootNode>(), position)
@@ -1009,11 +996,6 @@ fn recolour(mut mesh: Gd<MeshInstance3D>, team: Team) {
             mesh.set_surface_override_material(surface, &character);
         }
     }
-}
-
-fn smoothstep(t: f32) -> f32 {
-    let t = t.clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
 }
 
 /// False in dedicated server exports, which never draw characters: owners can
