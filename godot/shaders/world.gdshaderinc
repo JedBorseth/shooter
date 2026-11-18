@@ -177,10 +177,14 @@ void fragment() {
 #if WORLD_DETAIL
 		{
 			// Close-up detail: fine grain in the normal and the roughness,
-			// fading out before it could shimmer.
+			// fading out before it could shimmer. Only rough, non-metal
+			// surfaces (concrete, plaster, asphalt, brick, dirt) take it at
+			// full strength: paint, steel, and anything smooth keep the
+			// texture's own relief, or they would read as hammered foil.
 			float close = 1.0 - smoothstep(DETAIL_NEAR, DETAIL_FAR, length(VERTEX));
+			float grainy = smoothstep(0.45, 0.8, orm.g * roughness_scale) * (1.0 - orm.b * metallic_scale);
 			vec2 d = texture(world_detail_normal, uv * tile_size * DETAIL_SCALE).rg * 2.0 - 1.0;
-			d *= close;
+			d *= close * grainy;
 			nm.xy += d * 0.3 * normal_strength;
 			rough = clamp(rough + (d.x + d.y) * 0.1, 0.04, 1.0);
 			albedo *= 1.0 + (d.x - d.y) * 0.04;
@@ -233,12 +237,17 @@ void fragment() {
 		// walls. Puddles fill the low patches of a broad noise on the ground:
 		// dark mirrors for the sky and the lamps.
 		float up = smoothstep(0.75, 0.95, n.y);
-		float damp = world_wetness * mix(0.55, 1.0, up);
+		// Walls dry faster than the ground, and unevenly (the same macro noise
+		// as the colour variation, so no extra texture read).
+		float damp = world_wetness * mix(0.2 * (0.5 + noise), 1.0, up);
 		albedo *= 1.0 - 0.35 * damp;
 		rough = mix(rough, rough * 0.35 + 0.05, damp);
 		float depth = texture(world_noise, world_position.xz * (0.32 / 16.0)).r;
-		float puddle = smoothstep(0.6, 0.66, depth + world_wetness * 0.12) * up * step(0.5, world_wetness);
-		albedo *= 1.0 - 0.45 * puddle;
+		float puddle = smoothstep(0.54, 0.68, depth + world_wetness * 0.12) * up * step(0.5, world_wetness);
+		// A darker, soaked rim where the water thins out, before the mirror.
+		float rim = puddle * (1.0 - puddle) * 4.0;
+		albedo *= (1.0 - 0.45 * puddle) * (1.0 - 0.2 * rim);
+		puddle = smoothstep(0.35, 0.9, puddle);
 		rough = mix(rough, 0.02, puddle);
 		metal = mix(metal, 0.0, puddle);
 		surface_normal = normalize(mix(surface_normal, n, puddle));

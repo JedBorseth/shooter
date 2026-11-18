@@ -9,11 +9,14 @@ extends CanvasLayer
 ## `Settings` creates one for the whole game and calls `configure` when the
 ## graphics preset or the "Lens effects" setting changes. What it draws follows
 ## the preset, because a full-screen pass is not free (docs/performance.md):
-## Low draws nothing, Medium draws the vignette and grain without reading the
-## screen (shaders/lens_lite.gdshader), and High also sharpens.
+## Low draws only for the moments rounds pass close or after death (the
+## vignette without grain, 0.13 ms while it shows), Medium draws the vignette
+## and grain without reading the screen (shaders/lens_lite.gdshader), and High
+## also sharpens.
 
-## What the lens draws: nothing, the vignette and grain, or those and sharpening.
-enum Mode { OFF, LITE, FULL }
+## What the lens draws: only suppression and death (and nothing the rest of
+## the time), the vignette and grain, or those and sharpening.
+enum Mode { MOMENTS, LITE, FULL }
 
 const GraphicsQuality := preload("res://scripts/graphics.gd")
 const Looks := preload("res://scripts/looks.gd")
@@ -29,7 +32,7 @@ const LITE_SUN := preload("res://shaders/lens_lite_sun.gdshader")
 const VIGNETTE := 0.13
 const GRAIN := 0.014
 ## What the lens draws on each graphics preset, Low to High.
-const MODES: Array[Mode] = [Mode.OFF, Mode.LITE, Mode.FULL]
+const MODES: Array[Mode] = [Mode.MOMENTS, Mode.LITE, Mode.FULL]
 ## Sharpening strength where the lens reads the screen.
 const SHARPEN := 0.45
 ## How fast the suppression vignette lets go, per second.
@@ -58,7 +61,7 @@ const FLARE_EDGE := 0.25
 var _rect := ColorRect.new()
 var _material := ShaderMaterial.new()
 var _effects := true
-var _mode := Mode.OFF
+var _mode := Mode.MOMENTS
 var _suppression := 0.0
 var _vitality := 1.0
 var _frame := 0
@@ -103,8 +106,9 @@ func _use_shader(sun: bool) -> void:
 		_material.shader = FULL_SUN if sun else FULL
 	else:
 		_material.shader = LITE_SUN if sun else LITE
-	_material.set_shader_parameter(&"vignette", VIGNETTE if _effects else 0.0)
-	_material.set_shader_parameter(&"grain", GRAIN if _effects else 0.0)
+	var still := _effects and _mode != Mode.MOMENTS
+	_material.set_shader_parameter(&"vignette", VIGNETTE if still else 0.0)
+	_material.set_shader_parameter(&"grain", GRAIN if still else 0.0)
 	_material.set_shader_parameter(&"dirt", LensDirt.texture())
 	if _mode == Mode.FULL:
 		_material.set_shader_parameter(&"sharpen", SHARPEN)
@@ -140,8 +144,7 @@ func _process(delta: float) -> void:
 	GraphicsQuality.set_vitality(get_tree(), _vitality * (1.0 - SUPPRESSION_DRAIN * _suppression))
 
 	var drawn := (
-		_mode == Mode.FULL
-		or (_mode == Mode.LITE and (_effects or _suppression > 0.0 or _dead > 0.0))
+		_mode == Mode.FULL or (_mode == Mode.LITE and _effects) or _suppression > 0.0 or _dead > 0.0
 	)
 	_rect.visible = in_world and drawn
 	if not _rect.visible:
@@ -155,7 +158,7 @@ func _process(delta: float) -> void:
 
 
 func _physics_process(_delta: float) -> void:
-	if not _rect.visible or not _effects or _mode == Mode.OFF:
+	if not _rect.visible or not _effects or _mode == Mode.MOMENTS:
 		return
 	var camera := get_viewport().get_camera_3d()
 	if camera == null or not _find_sun():

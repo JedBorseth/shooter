@@ -85,7 +85,7 @@ The presets live in `godot/scripts/graphics.gd`. The `Settings` autoload applies
 | Anisotropic filtering | 2× | 4× | 16× |
 | Lightmap sampling | bilinear | bilinear | bicubic |
 | Texture sharpness (mipmap bias) | 0 | −0.35 | −0.25 |
-| Lens (`scripts/lens.gd`) | off | vignette, film grain, sun flare | vignette, film grain, sun flare, and sharpening |
+| Lens (`scripts/lens.gd`) | only while rounds pass close or after death (vignette, 0.13 ms then) | vignette, film grain, sun flare | vignette, film grain, sun flare, and sharpening |
 | Close-up detail on world surfaces | off | off | on |
 | Lens dirt on the bloom | (no bloom) | on | on |
 | Wet surfaces and puddles (Zombies) | dry | on | on |

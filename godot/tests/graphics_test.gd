@@ -14,6 +14,7 @@ const Looks := preload("res://scripts/looks.gd")
 const Lens := preload("res://scripts/lens.gd")
 const LensDirt := preload("res://scripts/lens_dirt.gd")
 const Grounding := preload("res://scripts/grounding.gd")
+const DamageOverlay := preload("res://scripts/damage_overlay.gd")
 const TEST_PATH := "user://graphics_test.cfg"
 
 var _failures: PackedStringArray = []
@@ -39,6 +40,7 @@ func _run() -> void:
 	_check_tools_opt_out()
 	_check_vitality()
 	_check_lens(settings)
+	_check_damage_vignette()
 	_check_bloom_and_dirt()
 	_check_world_surfaces()
 	await _check_grounding()
@@ -263,7 +265,14 @@ func _check_lens(settings: Node) -> void:
 	root.add_child(lens)
 	var material: ShaderMaterial = lens.get_child(0).material
 	lens.configure(GraphicsQuality.Preset.LOW, true)
-	_check(lens._mode == Lens.Mode.OFF, "Low draws no lens")
+	_check(
+		(
+			lens._mode == Lens.Mode.MOMENTS
+			and is_zero_approx(material.get_shader_parameter(&"vignette"))
+			and is_zero_approx(material.get_shader_parameter(&"grain"))
+		),
+		"Low draws the lens only for suppression and death, with no standing vignette or grain"
+	)
 	lens.configure(GraphicsQuality.Preset.MEDIUM, true)
 	_check(material.shader == Lens.LITE, "Medium uses the lens that does not read the screen")
 	_check(
@@ -300,6 +309,21 @@ func _check_lens(settings: Node) -> void:
 	settings.lens_effects = true
 	settings.load_settings()
 	_check(not settings.lens_effects, "the lens effects setting round-trips")
+
+
+## The hurt vignette: nothing at full health, deeper as health drops, and a
+## heartbeat that only beats when health is low.
+func _check_damage_vignette() -> void:
+	_check(is_zero_approx(DamageOverlay.vignette_at(1.0, 0.08)), "full health shows no vignette")
+	_check(
+		DamageOverlay.vignette_at(0.5, 0.5) > 0.1 and DamageOverlay.vignette_at(0.5, 0.5) < 0.5,
+		"half health shows some"
+	)
+	var calm := absf(DamageOverlay.vignette_at(0.5, 0.08) - DamageOverlay.vignette_at(0.5, 0.6))
+	_check(calm < 0.001, "the heart does not beat at half health")
+	var beat := DamageOverlay.vignette_at(0.15, 0.08) - DamageOverlay.vignette_at(0.15, 0.6)
+	_check(beat > 0.1, "at low health each heartbeat deepens the vignette")
+	_check(DamageOverlay.vignette_at(0.0, 0.08) <= 1.0, "and it never passes full strength")
 
 
 ## Every graded map gets the shared bloom: only what is brighter than white
