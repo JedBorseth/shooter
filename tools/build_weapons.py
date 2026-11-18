@@ -134,6 +134,7 @@ WEAPONS = {
             "GripRight": (-0.06, -0.045),
             "GripLeft": (0.2, 0.005),
         },
+        "handle": "rear",
         "spare": True,
     },
     "m870": {
@@ -154,13 +155,17 @@ WEAPONS = {
         # A pump gun with a 230 mm receiver and an 18 inch barrel.
         "scale": 0.9,
         "cartridge": 2,
-        # Aimed down the flat top of the receiver at the bead.
-        "sight": {"rear": (-0.29, 0.0467), "front": (0.3767, 0.0513)},
+        # Aimed over the receiver at the brass bead the tool adds (2.5 mm
+        # radius on the barrel's top at its muzzle end), the eye 13 mm above
+        # the receiver's flat top so the bead stands clear of it.
+        "sight": {"rear": (-0.29, 0.0600), "front": (0.3767, 0.0541)},
+        "bead": {"at": (0.3767, 0.0513), "radius": 0.0025},
         "parts": {
             "Fore_Stock": "Pump",
             # The bolt face in the port rides back with the pump.
             "Ejection_Port": "Pump/BoltCarrier",
             "Trigger": "Trigger",
+            "BEAD": "Body",
         },
         "pivots": {"Trigger": "Trigger"},
         "markers": {
@@ -199,6 +204,7 @@ WEAPONS = {
             "GripRight": (-0.016, -0.004),
             "GripLeft": (-0.39, 0.075),
         },
+        "handle": "+x",
         "spare": True,
     },
     "lsw6": {
@@ -242,6 +248,7 @@ WEAPONS = {
             "GripRight": (-0.016, -0.004),
             "GripLeft": (-0.39, 0.075),
         },
+        "handle": "+x",
         "spare": True,
     },
     "m1911": {
@@ -311,6 +318,7 @@ WEAPONS = {
             "GripRight": (0.0, 0.0),
             "GripLeft": (-0.29, 0.09),
         },
+        "handle": "-x",
         "spare": True,
     },
     "br3": {
@@ -353,6 +361,7 @@ WEAPONS = {
             "GripRight": (0.02, -0.02),
             "GripLeft": (-0.36, 0.02),
         },
+        "handle": "+x",
         "spare": True,
     },
     "m40": {
@@ -893,6 +902,22 @@ def add_drum(source: Source, spec: dict):
     add_part(source, bm, "ROUNDS", "BULLETS")
 
 
+def add_bead(source: Source, spec: dict):
+    """A brass bead front sight (bone "BEAD", on the cartridge texture's
+    brass): a sphere sitting on the barrel at `at` (source y, z of the
+    barrel's top)."""
+    y, z = spec["bead"]["at"]
+    r = spec["bead"]["radius"] / spec["scale"]
+    bm = bmesh.new()
+    uv = bm.loops.layers.uv.new("UV_0")
+    bmesh.ops.create_uvsphere(bm, u_segments=12, v_segments=8, radius=r)
+    bmesh.ops.translate(bm, vec=(0.0, y, z), verts=bm.verts)
+    for face in bm.faces:
+        for loop in face.loops:
+            loop[uv].uv = (0.3, 1.0 - 0.5 / 4.0)
+    add_part(source, bm, "BEAD", "BULLETS")
+
+
 def add_bipod(source: Source, spec: dict):
     """A folded bipod (bone "BIPOD"): a clamp around the barrel at `at`
     (source y) and two legs folded back under the barrel."""
@@ -1080,8 +1105,65 @@ def save_png(path: Path, rgb: np.ndarray, srgb: bool):
     image.save()
     bpy.data.images.remove(image)
 
+# Lowest roughness on metal, and the brightest bare steel (sRGB): see
+# build_textures.
+METAL_ROUGHNESS_MIN = 0.32
+BARE_STEEL_MAX = 0.6
+# Pixels each texture island's colour is grown into the empty space round it,
+# so mipmaps and filtering never pull in the gaps' colour (white sparkle).
+ISLAND_PADDING = 16
 
-def build_textures(key: str, spec: dict, out: Path):
+
+def uv_mask(objects: dict) -> np.ndarray:
+    """Which texels of the weapon's own texture the UVs cover (rows from
+    the bottom, as Blender stores pixels)."""
+    size = TEXTURE_SIZE
+    mask = np.zeros((size, size), bool)
+    for obj in objects.values():
+        names = [slot.material.name if slot.material else "" for slot in obj.material_slots]
+        uv = obj.data.uv_layers.active
+        if uv is None:
+            continue
+        for poly in obj.data.polygons:
+            if material_kind(names[poly.material_index] if names else "") != "Weapon":
+                continue
+            pts = np.array([uv.data[i].uv[:] for i in poly.loop_indices], np.float64) * size
+            for k in range(1, len(pts) - 1):
+                tri = pts[[0, k, k + 1]]
+                lo = np.floor(tri.min(axis=0)).astype(int).clip(0, size - 1)
+                hi = np.ceil(tri.max(axis=0)).astype(int).clip(0, size - 1)
+                xs, ys = np.meshgrid(np.arange(lo[0], hi[0] + 1) + 0.5, np.arange(lo[1], hi[1] + 1) + 0.5)
+                (ax, ay), (bx, by), (cx, cy) = tri
+                d = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+                if abs(d) < 1e-12:
+                    continue
+                w0 = ((by - cy) * (xs - cx) + (cx - bx) * (ys - cy)) / d
+                w1 = ((cy - ay) * (xs - cx) + (ax - cx) * (ys - cy)) / d
+                inside = (w0 >= -0.02) & (w1 >= -0.02) & (w0 + w1 <= 1.02)
+                mask[lo[1]:hi[1] + 1, lo[0]:hi[0] + 1] |= inside
+    return mask
+
+
+def pad_islands(pixels: np.ndarray, mask: np.ndarray, steps: int) -> np.ndarray:
+    """Grows the colour of covered texels outwards `steps` texels into the
+    uncovered ones, averaging neighbours, like a bake's margin."""
+    out = pixels.copy()
+    filled = mask.copy()
+    for _ in range(steps):
+        total = np.zeros_like(out)
+        count = np.zeros(mask.shape, np.float32)
+        for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            src = np.roll(np.roll(out, dy, 0), dx, 1)
+            ok = np.roll(np.roll(filled, dy, 0), dx, 1)
+            total += src * ok[..., None]
+            count += ok
+        grow = (~filled) & (count > 0)
+        out[grow] = total[grow] / count[grow][:, None]
+        filled |= grow
+    return out
+
+
+def build_textures(key: str, spec: dict, out: Path, mask=None):
     textures = spec["textures"]
     if isinstance(textures, dict):
         # Separate maps: colour, normal, metallic, roughness, and occlusion
@@ -1104,6 +1186,13 @@ def build_textures(key: str, spec: dict, out: Path):
     else:
         rmao = resize(load_pixels(rmao_path, False), TEXTURE_SIZE)
         orm = np.stack([rmao[..., 2], rmao[..., 0], rmao[..., 1]], axis=2)
+    # Weapon steel is blued, parkerised, or worn, never polished: below
+    # this roughness bare edges read as chrome in first person.
+    metal = orm[..., 2] > 0.5
+    orm[..., 1] = np.where(metal, np.maximum(orm[..., 1], METAL_ROUGHNESS_MIN), orm[..., 1])
+    color = np.where(metal[..., None], np.minimum(color, BARE_STEEL_MAX), color)
+    if mask is not None:
+        color, normal, orm = (pad_islands(m, mask, ISLAND_PADDING) for m in (color, normal, orm))
     log("  roughness mean", float(orm[..., 1].mean()), "metal mean", float(orm[..., 2].mean()),
         "ao mean", float(orm[..., 0].mean()))
     save_png(out / f"{key}_albedo.png", color, srgb=True)
@@ -1230,9 +1319,21 @@ def patch_scene(spec: dict, markers: dict[str, tuple]):
         )
         line = f"position = Vector3({x:.4f}, {y:.4f}, {z:.4f})\n"
         text, count = pattern.subn(lambda m: m.group(1) + line, text)
-        if count != 1:
-            log(f"  {path.name}: no marker {name}")
+        if count == 0:
+            text = text.rstrip("\n") + f'\n\n[node name="{name}" type="Marker3D" parent="."]\n' + line
+            log(f"  {path.name}: added marker {name}")
     path.write_text(text)
+
+
+def handle_point(obj, origin: Vector, side: str) -> Vector:
+    """The middle of the part's last few millimetres on `side`: "+x" (the
+    right), "-x" (the left), or "rear" (toward the shooter, -Y in Blender
+    view space)."""
+    pts = [v.co + origin for v in obj.data.vertices]
+    axis, sign = {"+x": (0, 1.0), "-x": (0, -1.0), "rear": (1, -1.0)}[side]
+    far = max(sign * p[axis] for p in pts)
+    tip = [p for p in pts if sign * p[axis] > far - 0.004]
+    return sum(tip, Vector()) / len(tip)
 
 
 def build(key: str):
@@ -1252,11 +1353,13 @@ def build(key: str):
         add_drum(source, spec)
     if "bipod" in spec:
         add_bipod(source, spec)
+    if "bead" in spec:
+        add_bead(source, spec)
     objects = split(source.obj, spec)
     for name in spec.get("drop", []):
         bpy.data.objects.remove(objects.pop(name))
     set_materials(objects, key)
-    place(objects, spec, source)
+    origins = place(objects, spec, source)
     for path, obj in objects.items():
         if path.endswith("Rounds"):
             cartridge_uvs(obj, row=spec.get("cartridge", 0))
@@ -1270,6 +1373,10 @@ def build(key: str):
     markers = {}
     for name, where in spec["markers"].items():
         markers[name] = godot(matrix @ source_point(spec, source, where))
+    # Where the hand works the charging handle: the end of the part on the
+    # side it sticks out of (the reload clips reach for this marker).
+    if "handle" in spec and "ChargingHandle" in objects:
+        markers["ChargingHandle"] = godot(handle_point(objects["ChargingHandle"], origins["ChargingHandle"], spec["handle"]))
     def count(paths):
         return sum(sum(len(p.vertices) - 2 for p in objects[k].data.polygons) for k in paths)
 
@@ -1279,7 +1386,7 @@ def build(key: str):
     log(f"  {tris} triangles in first person, {world_tris} for other players, {len(objects)} nodes")
     stem = spec["dir"] if spec["dir"] != key else key
     export(objects, out / f"{stem}.glb")
-    build_textures(stem, spec, out)
+    build_textures(stem, spec, out, uv_mask(objects))
     write_material(stem, out, spec["dir"])
     write_import(stem, out, spec["dir"])
     patch_scene(spec, markers)
