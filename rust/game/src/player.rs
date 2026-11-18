@@ -35,7 +35,7 @@ use godot::classes::{
     AudioStreamPlayer, AudioStreamRandomizer, Camera3D, CharacterBody3D, CollisionShape3D, Engine,
     ICharacterBody3D, Input, InputEvent, InputEventJoypadButton, InputEventJoypadMotion,
     InputEventMouseButton, InputEventMouseMotion, Node3D, PackedScene, PhysicsDirectSpaceState3D,
-    PhysicsRayQueryParameters3D, PhysicsShapeQueryParameters3D, ShapeCast3D, SphereShape3D,
+    PhysicsRayQueryParameters3D, PhysicsShapeQueryParameters3D, ShapeCast3D, SphereShape3D, Time,
 };
 use godot::prelude::*;
 use shooter_sim::hitbox::HitZone;
@@ -91,19 +91,64 @@ const SHAKE_STIFFNESS: f32 = 900.0;
 
 /// Actions whose presses are remembered until the next physics tick, so a tap
 /// shorter than one tick (or a mouse-wheel step) is never lost.
-const LATCHED_ACTIONS: [&str; 11] = [
+const LATCHED_ACTIONS: [&str; 10] = [
     "jump",
     "crouch",
     "sprint",
     "fire",
     "reload",
     "melee",
-    "weapon_next",
     "weapon_1",
     "weapon_2",
     "interact",
     "refill_ammo",
 ];
+
+/// After a mouse-wheel step swaps weapons, further wheel input is ignored for
+/// this long, so one flick (several notches, or a high-resolution wheel's
+/// partial steps) swaps once instead of swapping back.
+const WHEEL_SWAP_COOLDOWN_MS: u64 = 250;
+/// Partial wheel steps further apart than this start a fresh notch.
+const WHEEL_STEP_GAP_MS: u64 = 200;
+
+/// Turns mouse-wheel events bound to the weapon swap into swaps: one per
+/// whole notch, and one per flick.
+#[derive(Clone, Copy, Debug, Default)]
+struct WheelSwap {
+    /// Partial steps toward the next notch.
+    steps: f32,
+    /// When the wheel last moved, in milliseconds.
+    moved_ms: u64,
+    /// When the wheel last swapped, in milliseconds.
+    swapped_ms: Option<u64>,
+}
+
+impl WheelSwap {
+    /// One wheel event at `now_ms`; `factor` is the share of a notch it
+    /// covers (0 when the platform doesn't say: a whole notch). True when it
+    /// swaps.
+    fn step(&mut self, now_ms: u64, factor: f32) -> bool {
+        let resting = now_ms.saturating_sub(self.moved_ms) > WHEEL_STEP_GAP_MS;
+        self.moved_ms = now_ms;
+        if self
+            .swapped_ms
+            .is_some_and(|at| now_ms.saturating_sub(at) < WHEEL_SWAP_COOLDOWN_MS)
+        {
+            self.steps = 0.0;
+            return false;
+        }
+        if resting {
+            self.steps = 0.0;
+        }
+        self.steps += if factor > 0.0 { factor } else { 1.0 };
+        if self.steps < 0.99 {
+            return false;
+        }
+        self.steps = 0.0;
+        self.swapped_ms = Some(now_ms);
+        true
+    }
+}
 
 /// The view at a fire press between two ticks, captured on the input event.
 #[derive(Clone, Copy, Debug)]
@@ -247,6 +292,10 @@ pub struct FpsPlayer {
     events: Vec<PlayerEvent>,
     latched: [bool; LATCHED_ACTIONS.len()],
     interact_held: bool,
+    /// A swap press (wheel step or button) since the last tick. The swap
+    /// toggles, so it fires once per press, never per tick held.
+    next_pressed: bool,
+    wheel_swap: WheelSwap,
     input_enabled: bool,
     /// Held still by the match (a Search and Destroy round's freeze): the
     /// player can look and aim but not move or fire.
@@ -390,6 +439,15 @@ impl ICharacterBody3D for FpsPlayer {
         for (latched, action) in self.latched.iter_mut().zip(LATCHED_ACTIONS) {
             if event.is_action_pressed(action) {
                 *latched = true;
+            }
+        }
+        if event.is_action_pressed("weapon_next") {
+            match event.clone().try_cast::<InputEventMouseButton>() {
+                Ok(wheel) => {
+                    let now = Time::singleton().get_ticks_msec();
+                    self.next_pressed |= self.wheel_swap.step(now, wheel.get_factor());
+                }
+                Err(_) => self.next_pressed = true,
             }
         }
         // The view at the click: every mouse motion before this event is
@@ -937,6 +995,8 @@ impl FpsPlayer {
     fn set_input_enabled(&mut self, enabled: bool) {
         self.input_enabled = enabled;
         self.latched = Default::default();
+        self.next_pressed = false;
+        self.wheel_swap.steps = 0.0;
         self.fire_press = None;
         // A key still held when the menu closes is not a fresh press.
         self.interact_held = enabled && Input::singleton().is_action_pressed("interact");
@@ -1160,6 +1220,7 @@ impl FpsPlayer {
 
     fn read_input(&mut self) -> PlayerInput {
         let press = self.fire_press.take();
+        let next = std::mem::take(&mut self.next_pressed);
         if !self.input_enabled {
             self.wish = Vector2::ZERO;
             return PlayerInput {
@@ -1182,7 +1243,6 @@ impl FpsPlayer {
         let fire = held("fire");
         let melee = held("melee");
         let mut reload = held("reload");
-        let next = held("weapon_next");
         let slot_1 = held("weapon_1");
         let slot_2 = held("weapon_2");
         let mut interact_down = held("interact");
@@ -2323,4 +2383,41 @@ pub(crate) fn surface_of(collider: Option<&Gd<Node>>) -> String {
 
 fn linear_db(linear: f32) -> f32 {
     20.0 * linear.max(1e-4).log10()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_wheel_notch_swaps_once() {
+        let mut wheel = WheelSwap::default();
+        assert!(wheel.step(1_000, 1.0));
+        // The rest of the flick lands within the cooldown.
+        assert!(!wheel.step(1_016, 1.0));
+        assert!(!wheel.step(1_040, 1.0));
+        // A deliberate second scroll swaps back.
+        assert!(wheel.step(1_400, 1.0));
+    }
+
+    #[test]
+    fn partial_steps_add_up_to_one_swap() {
+        let mut wheel = WheelSwap::default();
+        let swaps = (0..8).filter(|i| wheel.step(1_000 + i * 8, 0.125)).count();
+        assert_eq!(swaps, 1);
+    }
+
+    #[test]
+    fn stray_partial_steps_do_not_add_up_over_time() {
+        let mut wheel = WheelSwap::default();
+        for i in 0..8 {
+            assert!(!wheel.step(1_000 + i * 500, 0.25));
+        }
+    }
+
+    #[test]
+    fn an_unsized_step_is_a_whole_notch() {
+        let mut wheel = WheelSwap::default();
+        assert!(wheel.step(1_000, 0.0));
+    }
 }
