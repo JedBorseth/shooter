@@ -1,7 +1,7 @@
 extends Control
 ## Score feedback: "+N" points that stack under the crosshair while kills keep
-## coming, a line per award, medal emblems with a chime, and the match score in
-## the top-right corner. Driven by FpsPlayer.scored; the rules live in Rust
+## coming, a line per award, medal emblems with a chime, and your score in
+## the top-left corner. Driven by FpsPlayer.scored; the rules live in Rust
 ## (rust/sim/src/score.rs).
 ##
 ## Medals are drawn here, not loaded as images: each family has its own emblem
@@ -35,10 +35,14 @@ const VIOLET := Color(0.74, 0.45, 1.0)
 const TEAL := Color(0.3, 0.9, 0.84)
 const SKY := Color(0.45, 0.78, 1.0)
 
+const UiTheme := preload("res://scripts/ui/ui_theme.gd")
+const Paint := preload("res://scripts/ui/hud_paint.gd")
 const FONT_HEAVY := preload("res://assets/fonts/ChakraPetch-Bold.ttf")
 const FONT_BOLD := preload("res://assets/fonts/ChakraPetch-SemiBold.ttf")
 
 var player: FpsPlayer
+## Draw your score in the top left corner. Match HUDs turn it off.
+var show_score := true
 
 var _total := 0
 var _total_left := 0.0
@@ -438,46 +442,63 @@ func _tier_color(label: String) -> Color:
 # --- Scoreboard ------------------------------------------------------------
 
 
+## Your score, top left, on a plate: the score with kills, deaths, and the
+## current streak beside it. Match HUDs hide it (`show_score`), since their
+## own score block takes the corner.
 func _draw_scoreboard(ui: float) -> void:
-	if player == null:
+	if player == null or not show_score:
 		return
-	var right := size.x - 24.0 * ui
-	var top := 40.0 * ui
-	var score_text := str(player.score())
-	var score_size := int(30.0 * ui)
-	var score_w := (
-		FONT_HEAVY.get_string_size(score_text, HORIZONTAL_ALIGNMENT_LEFT, -1, score_size).x
-	)
-	_outlined(
-		FONT_HEAVY, score_text, Vector2(right - score_w, top), score_size, Color(1, 1, 1, 0.95), 1.0
-	)
-	var label_size := int(14.0 * ui)
-	var label_w := _tracked_width(FONT_BOLD, "SCORE", label_size, 2.0 * ui)
-	_tracked(
-		FONT_BOLD,
-		"SCORE",
-		Vector2(right - score_w - label_w - 10.0 * ui, top - 2.0 * ui),
-		label_size,
-		2.0 * ui,
-		Color(1, 1, 1, 0.6),
-		1.0
-	)
-
-	var stats := "K %d   D %d" % [player.kills(), player.deaths()]
+	var at := Vector2(40.0, 24.0) * ui
+	var stats := [["K", player.kills()], ["D", player.deaths()]]
 	var streak := player.kill_streak()
 	if streak >= 2:
-		stats += "   STREAK %d" % streak
-	var stats_size := int(15.0 * ui)
-	var stats_w := _tracked_width(FONT_BOLD, stats, stats_size, 1.5 * ui)
-	_tracked(
-		FONT_BOLD,
-		stats,
-		Vector2(right - stats_w, top + 22.0 * ui),
-		stats_size,
-		1.5 * ui,
-		Color(1, 1, 1, 0.75),
-		1.0
+		stats.append(["STREAK", streak])
+	var score_text := str(player.score())
+	var score_w := Paint.text_width(Paint.DISPLAY, score_text, int(30.0 * ui))
+	var label_w := Paint.text_width(Paint.LABEL, "SCORE", int(12.0 * ui), 2.0 * ui)
+	var width := maxf(score_w, label_w) + 22.0 * ui
+	for stat: Array in stats:
+		width += (
+			Paint.text_width(Paint.LABEL, stat[0], int(12.0 * ui), 1.5 * ui)
+			+ Paint.text_width(Paint.LABEL, str(stat[1]), int(18.0 * ui))
+			+ 26.0 * ui
+		)
+	var plate := Rect2(at, Vector2(width + 16.0 * ui, 52.0 * ui))
+	Paint.plate(self, plate, Paint.PLATE, Color(1, 1, 1, 0.85))
+	var x := at.x + 14.0 * ui
+	Paint.text(
+		self,
+		Paint.LABEL,
+		"SCORE",
+		Vector2(x, at.y + 18.0 * ui),
+		int(12.0 * ui),
+		UiTheme.TEXT_DIM,
+		2.0 * ui
 	)
+	Paint.text(
+		self, Paint.DISPLAY, score_text, Vector2(x, at.y + 45.0 * ui), int(30.0 * ui), UiTheme.TEXT
+	)
+	x += maxf(score_w, label_w) + 22.0 * ui
+	for stat: Array in stats:
+		draw_rect(Rect2(x - 12.0 * ui, at.y + 12.0 * ui, 1.0, 28.0 * ui), Color(1, 1, 1, 0.16))
+		var w := Paint.text(
+			self,
+			Paint.LABEL,
+			stat[0],
+			Vector2(x, at.y + 18.0 * ui),
+			int(12.0 * ui),
+			UiTheme.TEXT_DIM,
+			1.5 * ui
+		)
+		var value_w := Paint.text(
+			self,
+			Paint.LABEL,
+			str(stat[1]),
+			Vector2(x, at.y + 43.0 * ui),
+			int(18.0 * ui),
+			UiTheme.TEXT
+		)
+		x += maxf(w, value_w) + 26.0 * ui
 
 
 # --- Drawing helpers -------------------------------------------------------

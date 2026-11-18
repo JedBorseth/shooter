@@ -2,7 +2,11 @@
 
 [ext_resource type="Script" path="res://scripts/hud.gd" id="2_hud"]
 [ext_resource type="Script" path="res://scripts/crosshair.gd" id="3_crosshair"]
+[ext_resource type="Script" path="res://scripts/hud_vitals.gd" id="4_vitals"]
+[ext_resource type="Script" path="res://scripts/hud_weapon.gd" id="5_weapon"]
 [ext_resource type="Script" path="res://scripts/scope_overlay.gd" id="6_scope"]
+[ext_resource type="Script" path="res://scripts/hud_centre.gd" id="9_centre"]
+[ext_resource type="FontFile" path="res://assets/fonts/ChakraPetch-SemiBold.ttf" id="10_label"]
 [ext_resource type="Script" path="res://scripts/damage_overlay.gd" id="7_damage"]
 [ext_resource type="Shader" path="res://shaders/damage_vignette.gdshader" id="8_vignette"]
 [ext_resource type="Script" path="res://scripts/score_feed.gd" id="17_score"]
@@ -56,227 +60,61 @@ mouse_filter = 2
 script = ExtResource("3_crosshair")
 
 [node name="Readout" type="Label" parent="."]
-offset_left = 24.0
-offset_top = 18.0
-offset_right = 424.0
-offset_bottom = 38.0
-theme_type_variation = &"HudText"
-theme_override_colors/font_color = Color(0.957, 0.941, 0.91, 0.6)
-theme_override_font_sizes/font_size = 14
-text = "STANDING"
-
-[node name="Controls" type="Label" parent="."]
-anchors_preset = 7
-anchor_left = 0.5
-anchor_top = 1.0
-anchor_right = 0.5
-anchor_bottom = 1.0
-offset_left = -500.0
-offset_top = -84.0
-offset_right = 500.0
-offset_bottom = -40.0
-grow_horizontal = 2
-grow_vertical = 0
-theme_type_variation = &"HudText"
-theme_override_colors/font_color = Color(0.957, 0.941, 0.91, 0.62)
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -200.0
+offset_top = 12.0
+offset_right = -18.0
+offset_bottom = 30.0
+grow_horizontal = 0
+theme_override_colors/font_color = Color(0.957, 0.941, 0.91, 0.7)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.6)
+theme_override_constants/shadow_offset_x = 0
+theme_override_constants/shadow_offset_y = 1
+theme_override_fonts/font = ExtResource("10_label")
 theme_override_font_sizes/font_size = 13
-text = "WASD move   Shift sprint (toggle) / hold breath   C crouch   Space jump   LMB fire   RMB aim   R reload   V knife   1 / 2 / wheel switch   F take weapon   T refill ammo   Esc menu   F1 hide"
-horizontal_alignment = 1
-vertical_alignment = 2
-autowrap_mode = 3
+text = "60 FPS"
+horizontal_alignment = 2
 
-[node name="HealthBlock" type="PanelContainer" parent="."]
+[node name="HealthBlock" type="Control" parent="."]
+layout_mode = 3
 anchors_preset = 2
 anchor_top = 1.0
 anchor_bottom = 1.0
 offset_left = 40.0
-offset_top = -112.0
-offset_right = 270.0
-offset_bottom = -40.0
+offset_top = -134.0
+offset_right = 320.0
+offset_bottom = -34.0
 grow_vertical = 0
 mouse_filter = 2
-theme_type_variation = &"HudShade"
+script = ExtResource("4_vitals")
 
-[node name="Row" type="HBoxContainer" parent="HealthBlock"]
-layout_mode = 2
-theme_override_constants/separation = 10
-
-[node name="Plus" type="Label" parent="HealthBlock/Row"]
-layout_mode = 2
-theme_type_variation = &"HudText"
-theme_override_font_sizes/font_size = 26
-text = "+"
-
-[node name="Column" type="VBoxContainer" parent="HealthBlock/Row"]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 4
-theme_override_constants/separation = 2
-
-[node name="HealthValue" type="Label" parent="HealthBlock/Row/Column"]
-layout_mode = 2
-theme_type_variation = &"HudNumber"
-theme_override_font_sizes/font_size = 44
-text = "100"
-
-[node name="Health" type="ProgressBar" parent="HealthBlock/Row/Column"]
-custom_minimum_size = Vector2(170, 5)
-layout_mode = 2
-mouse_filter = 2
-value = 100.0
-show_percentage = false
-
-[node name="AmmoBlock" type="PanelContainer" parent="."]
+[node name="AmmoBlock" type="Control" parent="."]
+layout_mode = 3
 anchors_preset = 3
 anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -300.0
-offset_top = -140.0
+offset_left = -420.0
+offset_top = -134.0
 offset_right = -40.0
-offset_bottom = -40.0
+offset_bottom = -34.0
 grow_horizontal = 0
 grow_vertical = 0
 mouse_filter = 2
-theme_type_variation = &"HudShade"
+script = ExtResource("5_weapon")
 
-[node name="Ammo" type="VBoxContainer" parent="AmmoBlock"]
-layout_mode = 2
-theme_override_constants/separation = 2
-alignment = 2
-
-[node name="Top" type="HBoxContainer" parent="AmmoBlock/Ammo"]
-layout_mode = 2
-theme_override_constants/separation = 10
-alignment = 2
-
-[node name="WeaponIcon" type="TextureRect" parent="AmmoBlock/Ammo/Top"]
-custom_minimum_size = Vector2(0, 24)
-layout_mode = 2
-expand_mode = 3
-stretch_mode = 5
-
-[node name="Weapon" type="Label" parent="AmmoBlock/Ammo/Top"]
-layout_mode = 2
-theme_type_variation = &"HudText"
-text = "M4A1"
-
-[node name="Count" type="HBoxContainer" parent="AmmoBlock/Ammo"]
-layout_mode = 2
-theme_override_constants/separation = 6
-alignment = 2
-
-[node name="Magazine" type="Label" parent="AmmoBlock/Ammo/Count"]
-layout_mode = 2
-theme_type_variation = &"HudNumber"
-theme_override_font_sizes/font_size = 52
-text = "30"
-
-[node name="Reserve" type="Label" parent="AmmoBlock/Ammo/Count"]
-layout_mode = 2
-size_flags_vertical = 8
-theme_type_variation = &"HudText"
-theme_override_colors/font_color = Color(0.957, 0.941, 0.91, 0.62)
-theme_override_font_sizes/font_size = 22
-text = "/120"
-
-[node name="MagBar" type="ProgressBar" parent="AmmoBlock/Ammo"]
-custom_minimum_size = Vector2(0, 4)
-layout_mode = 2
-mouse_filter = 2
-value = 100.0
-show_percentage = false
-
-[node name="Warning" type="HBoxContainer" parent="."]
-visible = false
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -200.0
-offset_top = 46.0
-offset_right = 200.0
-offset_bottom = 74.0
+[node name="Centre" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
 grow_horizontal = 2
+grow_vertical = 2
 mouse_filter = 2
-theme_override_constants/separation = 8
-alignment = 1
-
-[node name="Key" type="Label" parent="Warning"]
-layout_mode = 2
-theme_type_variation = &"KeyCap"
-text = "R"
-
-[node name="Text" type="Label" parent="Warning"]
-layout_mode = 2
-theme_type_variation = &"HudText"
-text = "RELOAD"
-
-[node name="Prompt" type="HBoxContainer" parent="."]
-visible = false
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -260.0
-offset_top = 92.0
-offset_right = 260.0
-offset_bottom = 124.0
-grow_horizontal = 2
-mouse_filter = 2
-theme_override_constants/separation = 8
-alignment = 1
-
-[node name="Key" type="Label" parent="Prompt"]
-layout_mode = 2
-theme_type_variation = &"KeyCap"
-theme_override_font_sizes/font_size = 15
-text = "F"
-
-[node name="Text" type="Label" parent="Prompt"]
-layout_mode = 2
-theme_type_variation = &"HudText"
-theme_override_font_sizes/font_size = 20
-text = "Take M870"
-
-[node name="Death" type="VBoxContainer" parent="."]
-visible = false
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -200.0
-offset_top = -150.0
-offset_right = 200.0
-offset_bottom = -50.0
-grow_horizontal = 2
-mouse_filter = 2
-theme_override_constants/separation = 6
-
-[node name="Title" type="Label" parent="Death"]
-layout_mode = 2
-theme_type_variation = &"HudNumber"
-theme_override_colors/font_color = Color(0.898, 0.282, 0.302, 1)
-theme_override_font_sizes/font_size = 44
-text = "YOU DIED"
-horizontal_alignment = 1
-
-[node name="Detail" type="Label" parent="Death"]
-layout_mode = 2
-theme_type_variation = &"HudText"
-text = "Respawning in 3.0"
-horizontal_alignment = 1
-
-[node name="RespawnBar" type="ProgressBar" parent="Death"]
-custom_minimum_size = Vector2(220, 4)
-layout_mode = 2
-size_flags_horizontal = 4
-mouse_filter = 2
-show_percentage = false
+script = ExtResource("9_centre")
 
 [node name="HitSound" type="AudioStreamPlayer" parent="."]
 volume_db = -6.0

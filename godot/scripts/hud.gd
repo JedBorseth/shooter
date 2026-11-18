@@ -1,40 +1,50 @@
 extends CanvasLayer
 ## Heads-up display: crosshair, hit markers and sounds, score popups and
-## medals, ammo with low-ammo warnings, health, damage feedback, scope overlay,
-## pickup prompts, the death screen, and a movement readout for tuning.
+## medals, the weapon and ammo cluster with low-ammo warnings, health, damage
+## feedback, the scope overlay, pickup prompts, the death card, the controls
+## legend, and the frame-rate counter.
 ##
-## Health sits bottom left and the ammo cluster (weapon silhouette and name, big
-## magazine count, reserve, magazine bar) bottom right, each on a soft shade.
-## Prompts show their key as a key cap: "[F] Take M870" reads F, then the text.
+## Layout: health bottom left (`hud_vitals.gd`), the weapon cluster bottom
+## right (`hud_weapon.gd`), prompts under the crosshair and the death card in
+## the lower third (`hud_centre.gd`), your score top left (`score_feed.gd`),
+## and the frame rate top right. Match HUDs add their own pieces on top and
+## tell this one who killed us (`set_killer`).
 
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
-## White weapon silhouettes by weapon key; weapons without one show only the name.
-const WEAPON_ICONS := "res://assets/ui/weapons/%s.png"
 
-## Seconds the controls line stays up after spawning; F1 toggles it.
-const CONTROLS_TIME := 60.0
+## Seconds the controls legend stays up after the first spawn; F1 toggles it.
+const CONTROLS_TIME := 14.0
 
-const GAMEPAD_CONTROLS := (
-	"LS move   L3 sprint (toggle)   B crouch (slide while sprinting)   A jump"
-	+ "   RT fire   LT aim   X reload   Y switch   RS look (aim assist on)"
-)
+## The controls legend by default: "action:Label" pairs. `move` shows the four
+## movement keys; `weapon_1` shows both weapon keys.
+const DEFAULT_CONTROLS := [
+	"move:Move",
+	"sprint:Sprint",
+	"crouch:Crouch / slide",
+	"jump:Jump",
+	"fire:Fire",
+	"aim:Aim",
+	"reload:Reload",
+	"melee:Knife",
+	"weapon_1:Switch weapon",
+	"interact:Take weapon",
+	"refill_ammo:Refill ammo",
+	"pause:Menu",
+	"toggle_controls:Hide controls",
+]
 
 @export var player_path: NodePath
-## Replaces the keyboard controls line when set (levels without the pause menu).
-@export_multiline var controls_text := ""
+## Replaces the controls legend ("action:Label" pairs), for levels whose
+## controls differ.
+@export var controls: PackedStringArray = []
 ## Multiplayer kill scoring (popups and medals). Zombies turns it off and shows
 ## its own points.
 @export var score_feed := true
 
 var _controls_left := CONTROLS_TIME
 var _controls_forced := false
-var _icon_key := ""
 ## The longest respawn wait seen this death, to fill the respawn bar.
 var _respawn_total := 0.0
-var _health_fill := UiTheme.plate(UiTheme.TEXT, 0.0, 0.0)
-var _low_fill := UiTheme.plate(UiTheme.HARM, 0.0, 0.0)
-var _mag_fill := UiTheme.plate(UiTheme.TEXT, 0.0, 0.0)
-var _mag_low_fill := UiTheme.plate(UiTheme.ENEMY, 0.0, 0.0)
 
 ## Hit marker sounds by name, built on first use.
 var _markers := {}
@@ -42,26 +52,14 @@ var _markers := {}
 @onready var _player: FpsPlayer = get_node_or_null(player_path) as FpsPlayer
 @onready var _crosshair: Control = $Crosshair
 @onready var _readout: Label = $Readout
-@onready var _controls: Label = $Controls
-@onready var _weapon: Label = $AmmoBlock/Ammo/Top/Weapon
-@onready var _weapon_icon: TextureRect = $AmmoBlock/Ammo/Top/WeaponIcon
-@onready var _magazine: Label = $AmmoBlock/Ammo/Count/Magazine
-@onready var _reserve: Label = $AmmoBlock/Ammo/Count/Reserve
-@onready var _mag_bar: ProgressBar = $AmmoBlock/Ammo/MagBar
-@onready var _warning: Control = $Warning
-@onready var _prompt: Control = $Prompt
-@onready var _health: ProgressBar = $HealthBlock/Row/Column/Health
-@onready var _health_value: Label = $HealthBlock/Row/Column/HealthValue
-@onready var _health_block: Control = $HealthBlock
-@onready var _death: Control = $Death
-@onready var _death_detail: Label = $Death/Detail
-@onready var _respawn_bar: ProgressBar = $Death/RespawnBar
+@onready var _centre: Control = $Centre
+@onready var _health: Control = $HealthBlock
+@onready var _weapon: Control = $AmmoBlock
 @onready var _damage: Control = $Damage
 @onready var _scope: Control = $Scope
 @onready var _hit_sound: AudioStreamPlayer = $HitSound
 ## A second voice, for the headshot ring under a headshot kill.
 @onready var _head_sound: AudioStreamPlayer = _make_head_sound()
-@onready var _keyboard_controls := controls_text if controls_text != "" else _controls.text
 @onready var _score_feed: Control = $ScoreFeed
 
 
@@ -76,9 +74,11 @@ func _ready() -> void:
 		_player.scored.connect(_score_feed.add_award)
 		_score_feed.player = _player
 	_player.damaged.connect(_damage.on_damaged)
-	_player.respawned.connect(func() -> void: _controls_left = 0.0)
+	_player.respawned.connect(_on_respawned)
 	_damage.player = _player
 	_scope.player = _player
+	_health.player = _player
+	_weapon.player = _player
 
 
 func _make_head_sound() -> AudioStreamPlayer:
@@ -91,8 +91,21 @@ func _make_head_sound() -> AudioStreamPlayer:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("toggle_controls"):
-		_controls_forced = not _controls.visible
+		_controls_forced = not _legend_showing()
 		_controls_left = 0.0
+
+
+## Names who killed us on the death card, with their colour and weapon key
+## (match HUDs call this when the kill is reported).
+func set_killer(killer_name: String, colour: Color, weapon_key := "") -> void:
+	_centre.killer = killer_name
+	_centre.killer_colour = colour
+	_centre.killer_weapon = weapon_key
+
+
+func _on_respawned() -> void:
+	_controls_left = 0.0
+	set_killer("", UiTheme.ENEMY)
 
 
 func _on_hit(killed: bool, headshot: bool) -> void:
@@ -121,59 +134,55 @@ func _marker(marker: String) -> AudioStream:
 	return _markers[marker]
 
 
+func _legend_showing() -> bool:
+	return _controls_forced or _controls_left > 0.0
+
+
 func _process(delta: float) -> void:
 	if _player == null:
 		return
-	var show_fps: bool = Settings.show_fps
-	_readout.visible = show_fps
-	_readout.text = (
-		"%s   %.1f M/S   %d FPS"
-		% [
-			_player.movement_state().to_upper(),
-			_player.horizontal_speed(),
-			Engine.get_frames_per_second(),
-		]
-	)
+	_readout.visible = Settings.show_fps
+	if _readout.visible:
+		_readout.text = "%d FPS" % Engine.get_frames_per_second()
+
 	_controls_left = maxf(_controls_left - delta, 0.0)
-	_controls.visible = _controls_forced or _controls_left > 0.0
-	_controls.text = GAMEPAD_CONTROLS if _player.using_gamepad() else _keyboard_controls
+	var legend_target := 1.0 if _legend_showing() else 0.0
+	_centre.legend_alpha = move_toward(_centre.legend_alpha, legend_target, delta * 3.0)
+	if _centre.legend_alpha > 0.0:
+		_centre.legend = _legend(_player.using_gamepad())
 
 	var alive := _player.is_alive()
 	var scoped := _player.scope_amount() >= 0.85
-	_update_ammo()
 	var magazine := _player.magazine()
 	var reserve := _player.reserve()
 	var low := magazine <= _player.low_ammo_threshold()
 
-	_warning.visible = alive and not scoped
-	if _player.is_reloading():
-		_show_prompt(_warning, "RELOADING", UiTheme.TEXT_DIM)
-	elif magazine == 0 and reserve == 0:
-		_show_prompt(_warning, "NO AMMO", UiTheme.HARM)
-	elif low and reserve > 0:
-		_show_prompt(_warning, "[%s] RELOAD" % Settings.prompt_key(&"reload"), UiTheme.ACCENT)
-	elif low:
-		_show_prompt(_warning, "LOW AMMO", UiTheme.ENEMY)
-	else:
-		_warning.visible = false
+	var warning := {}
+	if alive and not scoped:
+		if _player.is_reloading():
+			warning = {"text": "RELOADING", "colour": UiTheme.TEXT_DIM}
+		elif magazine == 0 and reserve == 0:
+			warning = {"text": "NO AMMO", "colour": UiTheme.HARM}
+		elif low and reserve > 0:
+			warning = _split_key("[%s] RELOAD" % Settings.prompt_key(&"reload"), UiTheme.TEXT)
+		elif low:
+			warning = {"text": "LOW AMMO", "colour": UiTheme.ENEMY}
+	_centre.warning = warning
 
 	var prompt := _player.interact_prompt()
-	_prompt.visible = alive and prompt != ""
-	if _prompt.visible:
-		_show_prompt(_prompt, prompt, UiTheme.TEXT)
-
-	_update_health()
+	_centre.prompt = _split_key(prompt, UiTheme.TEXT) if alive and prompt != "" else {}
 
 	# Without respawns (Zombies) the mode shows its own end screen.
-	_death.visible = not alive and _player.auto_respawn
-	if _death.visible:
+	_centre.dead = not alive and _player.auto_respawn
+	if _centre.dead:
 		var left := _player.respawn_time_left()
 		_respawn_total = maxf(_respawn_total, left)
-		_death_detail.text = "Respawning in %.1f" % left
-		_respawn_bar.max_value = maxf(_respawn_total, 0.01)
-		_respawn_bar.value = _respawn_total - left
+		_centre.respawn_left = left
+		_centre.respawn_total = _respawn_total
 	else:
 		_respawn_total = 0.0
+	_health.visible = alive or not _player.auto_respawn
+	_weapon.visible = alive
 
 	# Convert the spread cone to pixels so the crosshair shows where shots can land.
 	# Shotguns add their pellet cone, so the crosshair matches the pattern.
@@ -186,48 +195,49 @@ func _process(delta: float) -> void:
 	_crosshair.alpha = 0.0 if not alive else 1.0 - clampf(_player.ads_amount() * 1.5, 0.0, 1.0)
 
 
-func _update_ammo() -> void:
-	_weapon.text = _player.weapon_name().to_upper()
-	var key := _player.weapon_key()
-	if key != _icon_key:
-		_icon_key = key
-		var path := WEAPON_ICONS % key
-		_weapon_icon.texture = load(path) as Texture2D if ResourceLoader.exists(path) else null
-		_weapon_icon.visible = _weapon_icon.texture != null
-	var magazine := _player.magazine()
-	var low := magazine <= _player.low_ammo_threshold()
-	_magazine.text = str(magazine)
-	_magazine.add_theme_color_override(&"font_color", UiTheme.ENEMY if low else UiTheme.TEXT)
-	_reserve.text = "/%d" % _player.reserve()
-	_mag_bar.max_value = maxi(_player.magazine_size(), 1)
-	_mag_bar.value = magazine
-	_mag_bar.add_theme_stylebox_override(&"fill", _mag_low_fill if low else _mag_fill)
-
-
-func _update_health() -> void:
-	var health := _player.health()
-	var full := _player.max_health()
-	_health.max_value = full
-	_health.value = health
-	_health_value.text = str(ceili(health))
-	var hurt := health < full * 0.35
-	_health.add_theme_stylebox_override(&"fill", _low_fill if hurt else _health_fill)
-	_health_value.add_theme_color_override(&"font_color", UiTheme.HARM if hurt else UiTheme.TEXT)
-	# Quiet at full health; fully up once hurt.
-	_health_block.modulate.a = 1.0 if health < full else 0.55
-
-
-## Shows `text` in a prompt row. A leading "[KEY]" becomes the row's key cap.
-func _show_prompt(row: Control, text: String, colour: Color) -> void:
+## Splits a leading "[KEY]" off `text` into a prompt row's key cap.
+func _split_key(text: String, colour: Color) -> Dictionary:
 	var key := ""
 	if text.begins_with("["):
 		var close := text.find("]")
 		if close > 0:
 			key = text.substr(1, close - 1)
 			text = text.substr(close + 1).strip_edges()
-	var cap := row.get_node("Key") as Label
-	cap.text = key
-	cap.visible = key != ""
-	var label := row.get_node("Text") as Label
-	label.text = text
-	label.add_theme_color_override(&"font_color", colour)
+	return {"text": text, "key": key, "colour": colour}
+
+
+## The legend's [key, label] pairs for the current device.
+func _legend(gamepad: bool) -> Array:
+	var pairs := []
+	for entry in controls if not controls.is_empty() else PackedStringArray(DEFAULT_CONTROLS):
+		var action := entry.get_slice(":", 0)
+		var label := entry.get_slice(":", 1)
+		var key := ""
+		match action:
+			"move":
+				key = (
+					"LS"
+					if gamepad
+					else _keys([&"move_forward", &"move_left", &"move_back", &"move_right"], "")
+				)
+			"weapon_1":
+				key = (
+					Settings.key_label(&"weapon_next", true)
+					if gamepad
+					else _keys([&"weapon_1", &"weapon_2"], " ")
+				)
+			_:
+				key = Settings.key_label(StringName(action), gamepad)
+		if key == "?":
+			continue
+		pairs.append([key, label])
+	if gamepad:
+		pairs.insert(1, ["RS", "Look"])
+	return pairs
+
+
+func _keys(actions: Array, separator: String) -> String:
+	var keys := PackedStringArray()
+	for action: StringName in actions:
+		keys.append(Settings.key_label(action))
+	return separator.join(keys)

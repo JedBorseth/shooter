@@ -151,16 +151,16 @@ omni_attenuation = 1.5
 position = Vector3(0, 0.05, 20)
 
 [node name="HUD" parent="." instance=ExtResource("2_hud")]
-controls_text = "WASD move   Shift sprint (toggle)   C / Ctrl crouch (slide while sprinting)   Space jump   LMB fire   RMB aim   R reload   V knife   1 / 2 / wheel switch   F take weapon   Esc release mouse"
+controls = PackedStringArray("move:Move", "sprint:Sprint", "crouch:Crouch / slide", "jump:Jump", "fire:Fire", "aim:Aim", "reload:Reload", "melee:Knife", "weapon_1:Switch weapon", "interact:Take weapon", "pause:Release mouse")
 
 [node name="SecretLaser" type="Node3D" parent="."]
 script = ExtResource("7_secret")
 
 [node name="ReturnToMenu" type="Button" parent="HUD"]
-offset_left = 24.0
-offset_top = 66.0
-offset_right = 220.0
-offset_bottom = 108.0
+offset_left = 40.0
+offset_top = 112.0
+offset_right = 236.0
+offset_bottom = 154.0
 text = "← Home"
 
 [node name="PauseMenu" parent="." instance=ExtResource("8_pause")]

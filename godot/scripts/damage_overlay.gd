@@ -1,10 +1,13 @@
 extends Control
 ## Damage feedback: a red vignette that deepens as health drops and flashes on
-## each hit, and arcs around the crosshair that point toward whoever hit you.
+## each hit, and red crescents around the crosshair that point toward
+## whoever hit you.
 
 const INDICATOR_TIME := 1.6
-const INDICATOR_RADIUS := 110.0
-const INDICATOR_WIDTH := deg_to_rad(34.0)
+const INDICATOR_RADIUS := 120.0
+const INDICATOR_WIDTH := deg_to_rad(40.0)
+## Thickness at the middle of each crescent.
+const INDICATOR_THICKNESS := 11.0
 
 var player: Node = null
 
@@ -46,16 +49,34 @@ func _draw() -> void:
 		var to: Vector3 = indicator["from"] - origin
 		# Same convention as the player: yaw 0 looks down -Z, positive turns left.
 		var bearing := atan2(-to.x, -to.z) - yaw
-		var alpha := clampf(indicator["left"] / INDICATOR_TIME, 0.0, 1.0)
+		var age: float = INDICATOR_TIME - indicator["left"]
+		var alpha := clampf(indicator["left"] / (INDICATOR_TIME * 0.6), 0.0, 1.0)
 		# Screen angle: 0 is straight up (in front), increasing clockwise.
 		var screen := -bearing - PI / 2.0
-		draw_arc(
-			centre,
-			INDICATOR_RADIUS,
-			screen - INDICATOR_WIDTH / 2.0,
-			screen + INDICATOR_WIDTH / 2.0,
-			24,
-			Color(1, 0.15, 0.1, 0.85 * alpha),
-			7.0,
-			true
-		)
+		# Lands a little further out and settles in, so a fresh hit catches the eye.
+		var settle := 1.0 - clampf(age / 0.18, 0.0, 1.0)
+		_draw_wedge(centre, INDICATOR_RADIUS + 18.0 * settle, screen, alpha)
+
+
+## A crescent pointing at the shooter: thick in the middle and tapering to
+## points, dark red at the inner edge and bright at the outer.
+func _draw_wedge(centre: Vector2, radius: float, angle: float, alpha: float) -> void:
+	var steps := 18
+	var outer := PackedVector2Array()
+	var inner := PackedVector2Array()
+	for i in steps + 1:
+		var t := float(i) / steps
+		var a := angle + (t - 0.5) * INDICATOR_WIDTH
+		var swell := sin(t * PI)
+		var direction := Vector2(cos(a), sin(a))
+		outer.append(centre + direction * (radius + INDICATOR_THICKNESS * swell))
+		inner.append(centre + direction * radius)
+	var points := PackedVector2Array(outer)
+	var colours := PackedColorArray()
+	for i in outer.size():
+		colours.append(Color(1.0, 0.22, 0.16, 0.9 * alpha))
+	inner.reverse()
+	points.append_array(inner)
+	for i in inner.size():
+		colours.append(Color(0.55, 0.02, 0.0, 0.55 * alpha))
+	draw_polygon(points, colours)
