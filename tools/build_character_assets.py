@@ -508,12 +508,14 @@ KITS = {
             "skin": "skin_young_caucasian_male",
             "parts": [
                 {"asset": "cargo", "role": "pants", "subdiv": 1, "tighten": 0.016, "split_legs": 0.82},
-                {"asset": "shirt", "role": "uniform", "tighten": 0.012, "decimate": 0.75},
                 {"asset": "boots", "role": "boots", "decimate": 0.4},
                 {"asset": "gloves", "role": "gloves", "decimate": 0.35},
                 {"asset": "eyes", "role": "eyes", "type": "Eyes"},
             ],
             "keep_body": {"bones": ["DEF-head", "DEF-neck"], "threshold": 0.35},
+            # A modelled combat shirt (tools/blender_wardrobe.py), baked from
+            # its high-detail source.
+            "hilo": {"shirt": {"hem": 1.02, "waist": 1.07, "collar": [1.535, 1.56], "ratio": 0.3}},
             "body_decimate": 0.32,
             # A close crop under the helmet and stubble on bare faces (paint_hair).
             "hair": {"colour": (0.12, 0.085, 0.06), "front": 0.05, "nape": 0.055, "density": 0.85, "stubble": 0.65},
@@ -532,7 +534,7 @@ KITS = {
                 "knuckles": 0,
             },
         },
-        "density": {"skin": 3.0, "eyes": 2.0},
+        "density": {"skin": 3.0, "eyes": 2.0, "uniform": 1.6},
         # Face coverings and the skin they replace never occlude each other.
         "ao_rounds": [[[0, 3, 4], [0, 3, 4]], [[1], [0, 1]], [[2], [0, 2]]],
         "size": 2048,

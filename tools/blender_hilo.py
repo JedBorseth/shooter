@@ -508,14 +508,16 @@ def rigid_guard(obj, hand: Hand, guard: np.ndarray):
 
 def paint_panels(obj, rows: np.ndarray):
     """Per-vertex panel properties for the high-detail material, one row of
-    (albedo, roughness, leather, velcro) per vertex: albedo and roughness go
-    in colour attribute "panel", the leather and velcro masks in "mask"."""
+    (albedo, roughness, leather, velcro[, knit]) per vertex: albedo and
+    roughness go in colour attribute "panel", the leather, velcro, and knit
+    masks in "mask"."""
     me = obj.data
-    for name, cols in (("panel", (0, 1)), ("mask", (2, 3))):
+    for name, cols in (("panel", (0, 1)), ("mask", (2, 3, 4))):
         attr = me.color_attributes.new(name, "FLOAT_COLOR", "POINT")
         rgba = np.zeros((len(rows), 4))
-        rgba[:, 0] = rows[:, cols[0]]
-        rgba[:, 1] = rows[:, cols[1]]
+        for k, col in enumerate(cols):
+            if col < rows.shape[1]:
+                rgba[:, k] = rows[:, col]
         rgba[:, 3] = 1.0
         attr.data.foreach_set("color", rgba.reshape(-1))
 
@@ -773,7 +775,7 @@ def high_material(name: str, kind: str) -> bpy.types.Material:
     grid.inputs["Scale"].default_value = 900.0 if kind == "glove" else 520.0
     links.new(coord, grid.inputs["Vector"])
     fabric = math_node("MULTIPLY", math_node("ADD", weave.outputs["Fac"], grid.outputs["Fac"]), 0.5)
-    if kind == "sleeve":
+    if kind in ("sleeve", "shirt"):
         # Ripstop: a heavier thread every 6 mm both ways.
         rip = nodes.new("ShaderNodeTexBrick")
         rip.inputs["Scale"].default_value = 160.0
@@ -783,6 +785,20 @@ def high_material(name: str, kind: str) -> bpy.types.Material:
         rip.offset = 0.0
         links.new(coord, rip.inputs["Vector"])
         fabric = math_node("ADD", math_node("MULTIPLY", fabric, 0.6), math_node("MULTIPLY", math_node("SUBTRACT", 1.0, rip.outputs["Fac"]), 0.8))
+    if kind == "shirt":
+        # The third-person atlas has texels of about 1.5 mm, where a weave
+        # only aliases into a grid: the sleeves keep the ripstop's heavier
+        # threads, and the torso's knit is a soft grain.
+        grit = nodes.new("ShaderNodeTexNoise")
+        grit.inputs["Scale"].default_value = 300.0
+        grit.inputs["Detail"].default_value = 1.0
+        links.new(coord, grit.inputs["Vector"])
+        knit_w = msep.outputs[2]
+        threads = math_node("SUBTRACT", 1.0, rip.outputs["Fac"])
+        fabric = math_node("ADD", math_node("MULTIPLY", math_node("ADD", math_node("MULTIPLY", threads, 0.7),
+                                                                   math_node("MULTIPLY", grit.outputs["Fac"], 0.3)),
+                                                         math_node("SUBTRACT", 1.0, knit_w)),
+                           math_node("MULTIPLY", grit.outputs["Fac"], knit_w))
     grain = nodes.new("ShaderNodeTexVoronoi")
     grain.inputs["Scale"].default_value = 1500.0
     links.new(coord, grain.inputs["Vector"])
@@ -797,13 +813,14 @@ def high_material(name: str, kind: str) -> bpy.types.Material:
                        math_node("MULTIPLY", velcro.outputs["Fac"], velcro_w))
     bump = nodes.new("ShaderNodeBump")
     # Leather grain reads; the knit and ripstop stay a texture, not a grid.
-    strength = math_node("ADD", 0.12, math_node("MULTIPLY", leather_w, 0.12))
+    strength = math_node("ADD", 0.06 if kind == "shirt" else 0.12, math_node("MULTIPLY", leather_w, 0.12))
     links.new(strength, bump.inputs["Strength"])
     bump.inputs["Distance"].default_value = 0.0004
     links.new(height, bump.inputs["Height"])
     links.new(bump.outputs[0], bsdf.inputs["Normal"])
     # Albedo: the panel's value, a touch darker in the weave's recesses.
-    shade = math_node("ADD", 0.86, math_node("MULTIPLY", height, 0.18))
+    contrast = 0.08 if kind == "shirt" else 0.18
+    shade = math_node("ADD", 1.0 - contrast * 0.8, math_node("MULTIPLY", height, contrast))
     albedo = math_node("MULTIPLY", sep.outputs[0], shade)
     comb = nodes.new("ShaderNodeCombineColor")
     for i in range(3):
@@ -892,7 +909,7 @@ def bake_pairs(pairs: list, parts: list, size: int, ao_samples: int) -> dict[str
     result = {"mask": dilate(mine, 8) & ~(others & ~mine)}
     for hi in highs:
         hi.hide_render = False
-        kind = "sleeve" if hi.name.startswith("sleeve") else "glove"
+        kind = hi.get("kind") or ("sleeve" if hi.name.startswith("sleeve") else "glove")
         hi.data.materials.clear()
         hi.data.materials.append(high_material(f"high_{hi.name}", kind))
     for name, kind in PASSES:
@@ -916,9 +933,10 @@ def bake_pairs(pairs: list, parts: list, size: int, ao_samples: int) -> dict[str
                 normal_space="TANGENT",
                 uv_layer="atlas",
                 use_selected_to_active=True,
-                # Small, so rays between the fingers never reach the next finger.
-                cage_extrusion=0.0018,
-                max_ray_distance=0.0045,
+                # Small, so rays between the fingers never reach the next
+                # finger, unless the part asks for more (the shirt's folds).
+                cage_extrusion=hi.get("cage", 0.0018),
+                max_ray_distance=hi.get("ray", 0.0045),
                 use_clear=k == 0,
                 margin=16,
             )
@@ -946,6 +964,12 @@ def build(spec: dict, human, frames: dict):
     """Every glove and sleeve the kit asks for. Returns (game meshes, (game
     mesh, high-detail mesh) pairs)."""
     lows, pairs = [], []
+    if spec.get("shirt"):
+        import blender_wardrobe
+
+        lo, hi = blender_wardrobe.combat_shirt(human, frames, **spec["shirt"])
+        lows.append(lo)
+        pairs.append((lo, hi))
     for side in "LR":
         if spec.get("gloves"):
             lo, hi = glove(human, frames, side)
@@ -961,6 +985,8 @@ def build(spec: dict, human, frames: dict):
     # The game meshes keep their forms with fewer triangles: the bake carries
     # the rest.
     for lo in lows:
+        if lo.name.startswith("shirt"):
+            continue  # decimated once the gear has covered part of it (build_kit)
         ratio = spec.get("glove_ratio" if lo.name.startswith("glove") else "sleeve_ratio", 1.0)
         if ratio < 1.0:
             before = len(lo.data.polygons)
