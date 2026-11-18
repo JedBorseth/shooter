@@ -35,6 +35,16 @@ class Model:
     def hull(self, points, look, detail=False):
         self._add({"kind": "hull", "points": points, "look": look}, detail)
 
+    def smooth(self, verts, faces, look, levels=2, detail=False):
+        """A control cage smoothed by subdivision (see loft for building one)."""
+        self._add({"kind": "smooth", "verts": [tuple(v) for v in verts], "faces": [tuple(f) for f in faces],
+                   "look": look, "levels": levels}, detail)
+
+    def smooth_hull(self, points, look, levels=2, detail=False):
+        """A convex hull, smoothed by subdivision: soft things (washing, bags)."""
+        self._add({"kind": "smooth_hull", "points": [tuple(p) for p in points], "look": look, "levels": levels},
+                  detail)
+
     def prism(self, profile, x0, x1, look, detail=False):
         """A side profile [(z, y), ...] extruded across x."""
         self.hull([(x, y, z) for x in (x0, x1) for z, y in profile], look, detail)
@@ -100,52 +110,46 @@ CAR_COLORS = ["car_red", "car_blue", "car_green", "car_white", "car_grey", "car_
 def _car(b: Model, look, length=4.5, width=1.82, taxi=False, wrecked=False):
     hl, hw = length / 2, width / 2
     wheels = (-hl + 0.85, hl - 0.85)
-    # The body above the wheels: bumpers to the belt line, rounded at the
-    # ends, its flanks bowed out at the shoulder and tucked in at the sill.
-    sill = 0.6
-    upper = [(-hl, sill), (-hl, 0.72), (-hl + 0.12, 0.8), (-hl + 0.3, 0.87), (-0.95, 0.92), (0.2, 0.92),
-             (hl - 1.1, 0.9), (hl - 0.5, 0.86), (hl - 0.12, 0.79), (hl, 0.68), (hl, sill)]
-    pts = []
-    for z, y in upper:
-        for s_ in (-1, 1):
-            pts.append((s_ * (hw - (0.08 if y > 0.85 else 0.0)), y, z))
-    for z in (-hl + 0.15, -0.6, 0.6, hl - 0.15):
-        for s_ in (-1, 1):
-            pts.append((s_ * (hw + 0.02), 0.74, z))
-    b.hull(pts, look)
-    # Skirts between and beyond the wheel arches, and a dark well behind each
-    # wheel, so the wheels sit in real openings.
-    arch = 0.44
-    edges = [-hl + 0.04, wheels[0] - arch, wheels[0] + arch, wheels[1] - arch, wheels[1] + arch, hl - 0.04]
-    for z0, z1 in zip(edges[::2], edges[1::2]):
-        b.box(-hw + 0.03, hw - 0.03, 0.3, sill + 0.02, z0, z1, look, bevel=0.04)
+    # The body: a cage of cross-sections from the rear bumper to the front,
+    # smoothed by subdivision. Its underside lifts over each wheel and drops
+    # between them, so the smoothing rounds those dips into wheel arches.
+    rw, fw = wheels
+
+    def section(z, yb, yt, ws=1.0):
+        w = hw * ws
+        lo = yb + min(0.12, (yt - yb) * 0.25)
+        hi = yt - min(0.1, (yt - yb) * 0.25)
+        return [(-0.9 * w, yb, z), (0.9 * w, yb, z), (w, lo, z), (w, hi, z),
+                (0.86 * w, yt, z), (-0.86 * w, yt, z), (-w, hi, z), (-w, lo, z)]
+
+    stations = [(-hl, 0.38, 0.76, 0.84), (-hl + 0.14, 0.3, 0.86, 0.97), (rw - 0.6, 0.3, 0.88, 1.0),
+                (rw - 0.38, 0.6, 0.89, 1.0), (rw, 0.8, 0.9, 1.0), (rw + 0.38, 0.6, 0.91, 1.0),
+                (rw + 0.6, 0.3, 0.92, 1.0), (0.0, 0.3, 0.93, 1.0), (fw - 0.6, 0.3, 0.9, 1.0),
+                (fw - 0.38, 0.6, 0.88, 1.0), (fw, 0.8, 0.85, 1.0), (fw + 0.38, 0.6, 0.8, 0.99),
+                (fw + 0.6, 0.32, 0.74, 0.97), (hl - 0.12, 0.33, 0.68, 0.94), (hl, 0.38, 0.6, 0.84)]
+    verts, faces = loft([section(*st) for st in stations])
+    b.smooth(verts, faces, look, levels=2)
+    # A dark well behind each wheel.
     for z in wheels:
-        b.box(-hw + 0.28, hw - 0.28, 0.2, sill + 0.05, z - arch, z + arch, "rubber")
-        for s_ in (-1, 1):
-            lip = [(s_ * (hw + 0.008), 0.3 + math.sin(t) * arch, z + math.cos(t) * arch)
-                   for t in [k * PI / 8 for k in range(9)]]
-            b.tube(lip, 0.018, "trim_black", sides=5)
-    # A crease along the flanks and a shut line round each door.
-    for s_ in (-1, 1):
-        b.box(s_ * (hw + 0.012) - 0.006, s_ * (hw + 0.012) + 0.006, 0.66, 0.68, -hl + 0.5, hl - 0.5, "trim_black",
-              detail=True)
-        for z in (-0.95, 0.0, 0.95):
-            b.box(s_ * (hw + 0.004) - 0.005, s_ * (hw + 0.004) + 0.005, 0.38, 0.9, z - 0.006, z + 0.006, "trim_black",
-                  detail=True)
+        b.box(-hw + 0.28, hw - 0.28, 0.2, 0.72, z - 0.4, z + 0.4, "rubber")
     # Cabin glass, roof, and the pillars between the windows.
     # The glasshouse leans in toward the roof (tumblehome).
-    cabin = [(-1.45, 0.9), (-0.95, 1.38), (0.55, 1.38), (1.25, 0.9)]
-    b.hull([(s_ * (hw - 0.1 if y < 1.0 else hw - 0.24), y, z) for z, y in cabin for s_ in (-1, 1)], "glass_tint")
+    cabin = [(-1.4, 0.84), (-0.95, 1.38), (0.55, 1.38), (1.08, 0.84)]
+    b.hull([(s_ * (hw - 0.12 if y < 1.0 else hw - 0.24), y, z) for z, y in cabin for s_ in (-1, 1)], "glass_tint")
     # Seats, headrests, a dash, and a wheel, seen through the glass.
     for z0, z1 in ((-0.95, -0.35), (0.05, 0.6)):
         b.box(-hw + 0.25, hw - 0.25, 0.85, 1.25, z0, z0 + 0.12, "seat_vinyl", detail=True)
         for x in (-0.38, 0.38):
             b.box(x - 0.13, x + 0.13, 1.25, 1.36, z0, z0 + 0.1, "seat_vinyl", detail=True)
-    b.box(-hw + 0.15, hw - 0.15, 0.86, 1.02, 0.9, 1.15, "trim_black", detail=True)
-    b.cyl("z", 0.82, 0.86, (-0.38, 1.05), 0.17, "trim_black", sides=10, detail=True)
-    roof = [(-1.32, 1.3), (-0.9, 1.43), (0.5, 1.43), (1.12, 1.3)]
-    b.hull([(s_ * w, y, z) for z, y in roof for s_ in (-1, 1)
-            for w in ((hw - 0.21) if y < 1.4 else (hw - 0.32),)], look)
+    b.box(-hw + 0.25, hw - 0.25, 0.9, 1.0, 0.62, 0.85, "trim_black", detail=True)
+    b.cyl("z", 0.58, 0.62, (-0.38, 1.02), 0.17, "trim_black", sides=10, detail=True)
+    # The roof: a smoothed cage over the glasshouse, its edges rolled.
+    rw_ = hw - 0.22
+    roof_rings = [[(-1.08 * rw_ * k, y, z) for k, y in ((1, 1.33), (-1, 1.33), (-0.92, 1.46), (0.92, 1.46))]
+                  for z in (-1.3, -0.95, 0.45, 1.05)]
+    roof_rings = [[(x, y - (0.04 if z in (-1.3, 1.05) else 0.0), z) for x, y, z in ring] for ring in roof_rings]
+    rv, rf = loft(roof_rings)
+    b.smooth(rv, rf, look, levels=2)
     for s_ in (-1, 1):
         for (za, ya), (zb, yb) in (((0.55, 1.38), (1.22, 0.92)), ((-0.18, 1.38), (-0.18, 0.92)),
                                    ((-0.95, 1.38), (-1.42, 0.92))):
@@ -154,28 +158,27 @@ def _car(b: Model, look, length=4.5, width=1.82, taxi=False, wrecked=False):
     for z in wheels:
         for s_ in (-1, 1):
             b.wheel(s_ * (hw - 0.13), 0.33, z, 0.33, 0.22)
-    # Sills, bumpers, lights, mirrors, the grille and plate.
+    # Bumpers, lights set into the body's ends, mirrors, the grille and plate.
+    b.box(-hw * 0.92, hw * 0.92, 0.27, 0.44, hl - 0.1, hl + 0.05, "trim_black", bevel=0.05)
+    b.box(-hw * 0.92, hw * 0.92, 0.27, 0.44, -hl - 0.05, -hl + 0.1, "trim_black", bevel=0.05)
     for s_ in (-1, 1):
-        b.box(s_ * hw - 0.015 * s_, s_ * hw + 0.01 * s_, 0.3, 0.4, -hl + 1.35, hl - 1.35, "trim_black",
-              detail=True)
-    b.box(-hw, hw, 0.28, 0.46, hl - 0.02, hl + 0.06, "trim_black", bevel=0.03)
-    b.box(-hw, hw, 0.28, 0.46, -hl - 0.06, -hl + 0.02, "trim_black", bevel=0.03)
-    for s_ in (-1, 1):
-        b.box(s_ * (hw - 0.35) - 0.22, s_ * (hw - 0.35) + 0.22, 0.6, 0.72, hl - 0.03, hl + 0.01,
+        b.box(s_ * (hw - 0.38) - 0.18, s_ * (hw - 0.38) + 0.18, 0.46, 0.57, hl - 0.16, hl + 0.01,
               "light_lens", detail=True)
-        b.box(s_ * (hw - 0.3) - 0.2, s_ * (hw - 0.3) + 0.2, 0.62, 0.74, -hl - 0.01, -hl + 0.03,
+        b.box(s_ * (hw - 0.34) - 0.18, s_ * (hw - 0.34) + 0.18, 0.58, 0.68, -hl + 0.03, -hl + 0.2,
               "tail_lens", detail=True)
         b.box(s_ * (hw + 0.02) - 0.06, s_ * (hw + 0.02) + 0.06, 0.95, 1.05, 0.95, 1.12, look,
               detail=True)
-        b.box(s_ * hw - 0.01, s_ * hw + 0.012, 0.78, 0.81, -0.6, -0.4, "chrome", detail=True)
-        b.box(s_ * hw - 0.01, s_ * hw + 0.012, 0.78, 0.81, 0.3, 0.5, "chrome", detail=True)
-    b.box(-0.45, 0.45, 0.38, 0.5, hl + 0.06, hl + 0.07, "plate", detail=True)
-    b.box(-0.45, 0.45, 0.38, 0.5, -hl - 0.07, -hl - 0.06, "plate", detail=True)
-    b.box(-0.35, 0.35, 0.5, 0.62, hl + 0.02, hl + 0.04, "trim_black", detail=True)
+        b.box(s_ * hw - 0.04, s_ * hw - 0.01, 0.76, 0.79, -0.6, -0.4, "chrome", detail=True)
+        b.box(s_ * hw - 0.04, s_ * hw - 0.01, 0.76, 0.79, 0.3, 0.5, "chrome", detail=True)
+    b.box(-0.3, 0.3, 0.3, 0.42, hl + 0.05, hl + 0.06, "plate", detail=True)
+    b.box(-0.3, 0.3, 0.3, 0.42, -hl - 0.06, -hl - 0.05, "plate", detail=True)
+    b.box(-0.35, 0.35, 0.44, 0.54, hl - 0.16, hl - 0.04, "trim_black", detail=True)
     if taxi:
         b.box(-0.35, 0.35, 1.43, 1.63, -0.25, 0.05, "sign_white", bevel=0.02)
         b.text("TAXI", 0, 1.48, 0.06, 0.0, 0.11, "trim_black", depth=0.01)
-        b.box(-hw - 0.005, hw + 0.005, 0.66, 0.72, -hl + 0.4, hl - 0.4, "checker_band", detail=True)
+        for s_ in (-1, 1):
+            b.box(s_ * hw - 0.012, s_ * hw + 0.012, 0.66, 0.72, -1.1, 1.0, "checker_band",
+                  detail=True)
     if wrecked:
         # Rust blistering out of the rear arches and the sills.
         z = -hl + 0.85
@@ -187,6 +190,23 @@ def _car(b: Model, look, length=4.5, width=1.82, taxi=False, wrecked=False):
         # A crumpled bonnet.
         b.hull([(-hw + 0.1, 0.9, hl - 0.3), (hw - 0.1, 0.9, hl - 0.3), (0.0, 1.08, hl - 0.6),
                 (-hw + 0.2, 0.88, hl - 1.1), (hw - 0.2, 0.88, hl - 1.1)], look)
+
+
+def loft(rings):
+    """A control cage through a run of cross-section rings (each the same
+    number of points, in the same winding), closed at both ends: (verts,
+    faces) for Model.smooth."""
+    n = len(rings[0])
+    verts = [p for ring in rings for p in ring]
+    faces = []
+    for r in range(len(rings) - 1):
+        a, b_ = r * n, (r + 1) * n
+        for i in range(n):
+            j = (i + 1) % n
+            faces.append((a + i, a + j, b_ + j, b_ + i))
+    faces.append(tuple(range(n - 1, -1, -1)))
+    faces.append(tuple(range((len(rings) - 1) * n, len(rings) * n)))
+    return verts, faces
 
 
 @model
@@ -1244,6 +1264,28 @@ def change_machine(b: Model):
 
 
 @model
+def laundry_cart(b: Model, seed=0):
+    """A wire laundry cart on castors, a heap of washing in it (front +z)."""
+    rng = random.Random(seed)
+    for x in (-0.38, 0.38):
+        for z in (-0.28, 0.28):
+            b.cyl("y", 0.05, 0.85, (x, z), 0.012, "chrome", sides=6)
+            b.cyl("y", 0.0, 0.07, (x, z), 0.04, "rubber", sides=8, detail=True)
+    for y in (0.4, 0.62, 0.85):
+        b.box(-0.4, 0.4, y, y + 0.015, -0.3, -0.29, "chrome", detail=True)
+        b.box(-0.4, 0.4, y, y + 0.015, 0.29, 0.3, "chrome", detail=True)
+        b.box(-0.4, -0.39, y, y + 0.015, -0.3, 0.3, "chrome", detail=True)
+        b.box(0.39, 0.4, y, y + 0.015, -0.3, 0.3, "chrome", detail=True)
+    b.box(-0.39, 0.39, 0.4, 0.42, -0.29, 0.29, "chrome")
+    b.tube([(-0.4, 0.85, -0.3), (-0.4, 1.05, -0.36), (0.4, 1.05, -0.36), (0.4, 0.85, -0.3)], 0.014, "chrome", sides=6)
+    for k in range(4):
+        x, z = rng.uniform(-0.22, 0.22), rng.uniform(-0.15, 0.15)
+        b.smooth_hull([(x + rng.uniform(-0.2, 0.2), 0.42 + rng.uniform(0.05, 0.4), z + rng.uniform(-0.15, 0.15))
+                       for _ in range(10)], rng.choice(["fabric_white", "fabric_blue", "fabric_green", "rug_red"]),
+                      levels=1)
+
+
+@model
 def kitchen_line(b: Model, length=11.0):
     hl = length / 2
     b.box(-hl, hl, 0, 0.92, -0.35, 0.35, "steel_white", bevel=0.01)
@@ -1304,17 +1346,6 @@ def plastic_chair(b: Model):
     for x in (-0.19, 0.19):
         for z in (-0.19, 0.19):
             b.cyl("y", 0, 0.42, (x, z), 0.015, "chrome", sides=6)
-
-
-@model
-def laundry_cart(b: Model):
-    for x in (-0.35, 0.35):
-        for z in (-0.25, 0.25):
-            b.cyl("y", 0.08, 1.6, (x, z), 0.015, "chrome", sides=6)
-            b.cyl("y", 0, 0.08, (x, z), 0.04, "rubber", sides=8)
-    b.box(-0.38, 0.38, 0.4, 0.9, -0.28, 0.28, "canvas_tan", bevel=0.03)
-    b.tube([(-0.35, 1.6, -0.25), (0.35, 1.6, -0.25)], 0.015, "chrome")
-    b.tube([(-0.35, 1.6, 0.25), (0.35, 1.6, 0.25)], 0.015, "chrome")
 
 
 @model
