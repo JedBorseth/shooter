@@ -152,6 +152,10 @@ pub struct MoveState {
     /// Seconds of landing recovery left: the speed cap and the jump are
     /// reduced while it runs out (`land_recovery_time` after a full jump).
     pub land_slow: f32,
+    /// Crouch was pressed in the air during a sprint: slide on landing.
+    pub slide_queued: bool,
+    /// Seconds left of the low-friction wind-down after a slide.
+    pub slide_out: f32,
 }
 
 impl MoveState {
@@ -224,6 +228,15 @@ pub struct MoveParams {
     pub slide_friction: f32,
     /// Seconds on the ground after a slide before the next one.
     pub slide_cooldown: f32,
+    /// Turn rate (radians per second) from full strafe input during a slide.
+    pub slide_steer_rate: f32,
+    /// Seconds after a slide ends with friction eased in from
+    /// `slide_out_friction_scale` to 1, so its speed fades instead of snapping.
+    pub slide_out_time: f32,
+    pub slide_out_friction_scale: f32,
+    /// A slide queued in the air starts on landing only if the velocity's
+    /// heading is this close to the view (cosine of the widest angle).
+    pub air_slide_min_alignment: f32,
     pub stand_height: f32,
     pub crouch_height: f32,
     /// Seconds to go from standing to crouched, and back up.
@@ -293,6 +306,10 @@ impl Default for MoveParams {
             slide_hold: 0.15,
             slide_friction: 1.4,
             slide_cooldown: 0.5,
+            slide_steer_rate: 1.4,
+            slide_out_time: 0.5,
+            slide_out_friction_scale: 0.3,
+            air_slide_min_alignment: 0.7,
             stand_height: 1.8,
             crouch_height: 1.1,
             crouch_down_time: 0.25,
@@ -454,7 +471,12 @@ fn step_rules(
     }
 
     land(state, env, params, dt);
-    tick_slide(state, params, dt);
+    state.slide_out = (state.slide_out - dt).max(0.0);
+    if env.on_floor && std::mem::take(&mut state.slide_queued) {
+        // Judged on the speed it fell with, before the landing takes any off.
+        land_queued_slide(state, input, params, horizontal_speed, forward);
+    }
+    tick_slide(state, input, env, params, wish, dt);
     update_stance(
         state,
         input,
@@ -552,7 +574,9 @@ fn step_rules(
     if env.on_floor && !jumped {
         state.velocity.y = 0.0;
         let friction = if state.stance != Stance::Sliding {
-            params.friction
+            // Just after a slide, friction eases back in.
+            let out = (state.slide_out / params.slide_out_time.max(1e-3)).clamp(0.0, 1.0);
+            params.friction * (1.0 + (params.slide_out_friction_scale - 1.0) * out)
         } else if state.slide_time > params.slide_duration - params.slide_hold {
             // The slide holds its entry speed for a moment before it bleeds off.
             0.0
@@ -560,7 +584,9 @@ fn step_rules(
             params.slide_friction
         };
         apply_friction(&mut state.velocity, friction, params.stop_speed, dt);
-        if state.stance != Stance::Sliding {
+        if state.stance == Stance::Sliding {
+            steer_slide(state, wish, right, params, dt);
+        } else {
             let wish_speed = wish_amount * max_speed(state, params) * input.speed_multiplier;
             // Scale acceleration by at least `stop_speed`, so slow stances (crouch,
             // aiming) still reach their speed against the stronger low-speed friction.
@@ -617,23 +643,18 @@ fn update_stance(
             // Weapon weight scales the slide like the sprint it comes from.
             let sprint_speed = params.sprint_speed * input.speed_multiplier;
             let fast_enough = horizontal_speed >= sprint_speed * params.slide_min_speed_ratio;
-            if crouch_pressed
+            if crouch_pressed && !env.on_floor && state.sprinting && fast_enough {
+                // In the air, a sprint's crouch queues a slide for the landing
+                // (a second press takes it back).
+                state.slide_queued = !state.slide_queued;
+            } else if crouch_pressed
                 && env.on_floor
                 && state.sprinting
                 && state.sprint_time >= params.slide_min_sprint
                 && fast_enough
                 && state.slide_cooldown <= 0.0
             {
-                state.stance = Stance::Sliding;
-                state.slide_time = params.slide_duration;
-                state.sprinting = false;
-                let dir = horizontal(state.velocity)
-                    .try_normalize()
-                    .unwrap_or(forward);
-                // Always the same entry speed: speed carried in from an
-                // earlier slide never stacks on top of it.
-                let speed = sprint_speed * params.slide_speed_ratio;
-                state.velocity = Vec3::new(dir.x * speed, state.velocity.y, dir.z * speed);
+                start_slide(state, input, params, forward);
             } else if crouch_pressed {
                 state.stance = Stance::Crouching;
                 state.sprinting = false;
@@ -664,6 +685,7 @@ fn cancel_slide(state: &mut MoveState, input: &MoveInput, params: &MoveParams, w
     state.stance = Stance::Standing;
     state.slide_time = 0.0;
     state.slide_cooldown = params.slide_cooldown;
+    state.slide_out = params.slide_out_time;
     state.sprinting = wish.y >= params.sprint_min_forward && !input.block_sprint;
     state.sprint_time = 0.0;
     if state.sprinting {
@@ -704,6 +726,7 @@ fn start_climb(state: &mut MoveState, height: f32, time: f32, carry: Vec2, low: 
     state.coyote = 0.0;
     state.sprinting = false;
     state.slide_time = 0.0;
+    state.slide_queued = false;
     state.stance = if low {
         Stance::Crouching
     } else {
@@ -729,6 +752,7 @@ fn start_lunge(state: &mut MoveState, offset: Vec2, params: &MoveParams) {
     state.lunge_time = travel / speed;
     state.sprinting = false;
     state.jump_buffer = 0.0;
+    state.slide_queued = false;
     if state.stance == Stance::Sliding {
         state.stance = Stance::Crouching;
         state.slide_time = 0.0;
@@ -774,18 +798,95 @@ fn land(state: &mut MoveState, env: MoveEnv, params: &MoveParams, dt: f32) {
     state.land_slow = state.land_slow.max(params.land_recovery_time * severity);
 }
 
-/// Advances the slide timer and ends the slide, in a crouch, when it runs out or slows down.
+/// Advances the slide timer and ends the slide, in a crouch, when it runs out
+/// or slows down. Sliding off a ledge ends it once coyote time is up: the
+/// player stands (sprinting on, as a slide-cancel) when there is headroom.
 /// Kept separate from `update_stance` so the timer ticks exactly once per step.
-fn tick_slide(state: &mut MoveState, params: &MoveParams, dt: f32) {
+fn tick_slide(
+    state: &mut MoveState,
+    input: &MoveInput,
+    env: MoveEnv,
+    params: &MoveParams,
+    wish: Vec2,
+    dt: f32,
+) {
     if state.stance != Stance::Sliding {
         return;
     }
     state.slide_time -= dt;
+    if !env.on_floor && state.coyote <= 0.0 && env.can_stand {
+        cancel_slide(state, input, params, wish);
+        return;
+    }
     let slowed = horizontal(state.velocity).length() <= params.crouch_speed;
-    if state.slide_time <= 0.0 || slowed {
+    if state.slide_time <= 0.0 || slowed || (!env.on_floor && state.coyote <= 0.0) {
         state.slide_cooldown = params.slide_cooldown;
+        state.slide_out = params.slide_out_time;
         state.stance = Stance::Crouching;
     }
+}
+
+/// Starts a slide from a sprint along the way the player is moving.
+fn start_slide(state: &mut MoveState, input: &MoveInput, params: &MoveParams, forward: Vec3) {
+    state.stance = Stance::Sliding;
+    state.slide_time = params.slide_duration;
+    state.sprinting = false;
+    state.slide_queued = false;
+    let dir = horizontal(state.velocity)
+        .try_normalize()
+        .unwrap_or(forward);
+    // Always the same entry speed: speed carried in from an earlier slide
+    // never stacks on top of it.
+    let speed = params.sprint_speed * input.speed_multiplier * params.slide_speed_ratio;
+    state.velocity = Vec3::new(dir.x * speed, state.velocity.y, dir.z * speed);
+}
+
+/// Lands a slide queued in the air (IW8: crouch in the air slides on
+/// touchdown). It starts if the slide is earned and the player still moves the
+/// way they look; it replaces the landing's slowdown, as the slide's own entry
+/// speed takes over. Otherwise the player lands crouched, as pressed.
+fn land_queued_slide(
+    state: &mut MoveState,
+    input: &MoveInput,
+    params: &MoveParams,
+    speed: f32,
+    forward: Vec3,
+) {
+    if state.stance != Stance::Standing {
+        return;
+    }
+    let heading = horizontal(state.velocity).normalize_or_zero();
+    let sprint_speed = params.sprint_speed * input.speed_multiplier;
+    if state.sprinting
+        && state.sprint_time >= params.slide_min_sprint
+        && state.slide_cooldown <= 0.0
+        && speed >= sprint_speed * params.slide_min_speed_ratio
+        && heading.dot(forward) >= params.air_slide_min_alignment
+    {
+        state.land_slow = 0.0;
+        start_slide(state, input, params, forward);
+    } else {
+        state.stance = Stance::Crouching;
+        state.sprinting = false;
+    }
+}
+
+/// Strafing turns a slide toward that side of the view, keeping its speed.
+/// The view itself never steers it, so the player can look around freely.
+fn steer_slide(state: &mut MoveState, wish: Vec2, right: Vec3, params: &MoveParams, dt: f32) {
+    let h = horizontal(state.velocity);
+    let speed = h.length();
+    if speed < 1e-3 || wish.x.abs() < 0.1 {
+        return;
+    }
+    let dir = h / speed;
+    // Rotating by +angle turns `dir` toward `perp`.
+    let perp = Vec3::new(dir.z, 0.0, -dir.x);
+    let side = (right * wish.x).dot(perp).signum();
+    let angle = params.slide_steer_rate * wish.x.abs().min(1.0) * side * dt;
+    let (s, c) = crate::fmath::sin_cos(angle);
+    state.velocity.x = (dir.x * c + dir.z * s) * speed;
+    state.velocity.z = (dir.z * c - dir.x * s) * speed;
 }
 
 /// The speed cap. Going down, it eases from the standing gait's to the crouch
@@ -2178,5 +2279,257 @@ mod tests {
         let mut s = MoveState::default();
         step(&mut s, &jump, vault_env(p.vault_max + 0.1, false), &p, TICK);
         assert!(!s.mantling());
+    }
+
+    /// A full sprint on the floor at the real tick rate, earned for a slide.
+    fn sprinting() -> MoveState {
+        let mut s = MoveState::default();
+        let press = MoveInput {
+            sprint: true,
+            ..forward()
+        };
+        run_at(&mut s, press, MoveEnv::default(), TICK);
+        run_at(&mut s, forward(), MoveEnv::default(), 1.0);
+        assert!(s.sprinting);
+        s
+    }
+
+    fn crouch_forward() -> MoveInput {
+        MoveInput {
+            crouch: true,
+            ..forward()
+        }
+    }
+
+    fn jump_forward() -> MoveInput {
+        MoveInput {
+            jump: true,
+            ..forward()
+        }
+    }
+
+    #[test]
+    fn crouch_in_the_air_during_a_sprint_slides_on_landing() {
+        let p = MoveParams::default();
+        let mut s = sprinting();
+        run_at(&mut s, jump_forward(), MoveEnv::default(), TICK);
+        run_at(&mut s, forward(), AIR, 0.2);
+        run_at(&mut s, crouch_forward(), AIR, TICK);
+        assert!(s.slide_queued);
+        assert_eq!(s.stance, Stance::Standing, "no crouch in the air");
+        run_at(&mut s, forward(), AIR, 0.3);
+        run_at(&mut s, forward(), MoveEnv::default(), TICK);
+        assert_eq!(s.stance, Stance::Sliding);
+        assert!(!s.slide_queued);
+        assert!(
+            (speed(&s) - p.sprint_speed * p.slide_speed_ratio).abs() < 0.05,
+            "the slide's own entry speed, not the landing's: {}",
+            speed(&s)
+        );
+        assert_eq!(s.land_slow, 0.0);
+    }
+
+    #[test]
+    fn a_second_crouch_in_the_air_takes_the_queued_slide_back() {
+        let mut s = sprinting();
+        run_at(&mut s, jump_forward(), MoveEnv::default(), TICK);
+        run_at(&mut s, crouch_forward(), AIR, TICK);
+        run_at(&mut s, forward(), AIR, TICK);
+        run_at(&mut s, crouch_forward(), AIR, TICK);
+        assert!(!s.slide_queued);
+        run_at(&mut s, forward(), AIR, 0.5);
+        run_at(&mut s, forward(), MoveEnv::default(), TICK);
+        assert_eq!(s.stance, Stance::Standing);
+    }
+
+    #[test]
+    fn a_queued_slide_lands_crouched_when_looking_away_or_unearned() {
+        // Looking well away from the way the jump goes.
+        let mut s = sprinting();
+        run_at(&mut s, jump_forward(), MoveEnv::default(), TICK);
+        run_at(&mut s, crouch_forward(), AIR, TICK);
+        assert!(s.slide_queued);
+        let look_back = MoveInput {
+            yaw: std::f32::consts::PI,
+            ..Default::default()
+        };
+        run_at(&mut s, look_back, AIR, 0.3);
+        run_at(&mut s, look_back, MoveEnv::default(), TICK);
+        assert_eq!(s.stance, Stance::Crouching);
+
+        // Still in the cooldown of the last slide (it runs only on the ground).
+        let mut s = sprinting();
+        s.slide_cooldown = 0.3;
+        run_at(&mut s, jump_forward(), MoveEnv::default(), TICK);
+        run_at(&mut s, crouch_forward(), AIR, TICK);
+        run_at(&mut s, forward(), AIR, 0.3);
+        run_at(&mut s, forward(), MoveEnv::default(), TICK);
+        assert_eq!(s.stance, Stance::Crouching);
+    }
+
+    #[test]
+    fn crouch_in_the_air_without_a_sprint_crouches_at_once() {
+        let mut s = MoveState::default();
+        run_at(&mut s, crouch_forward(), AIR, TICK);
+        assert_eq!(s.stance, Stance::Crouching);
+        assert!(!s.slide_queued);
+    }
+
+    #[test]
+    fn strafing_steers_a_slide_and_looking_around_does_not() {
+        let mut s = sprinting();
+        run_at(&mut s, crouch_forward(), MoveEnv::default(), TICK);
+        assert_eq!(s.stance, Stance::Sliding);
+        let mut looking = s;
+
+        // Yaw 0 looks down -Z; right is +X.
+        let right = MoveInput {
+            wish: Vec2::X,
+            ..Default::default()
+        };
+        run_at(&mut s, right, MoveEnv::default(), 0.3);
+        assert_eq!(s.stance, Stance::Sliding);
+        assert!(s.velocity.x > 1.0 && s.velocity.z < 0.0, "{}", s.velocity);
+
+        let look_left = MoveInput {
+            yaw: std::f32::consts::FRAC_PI_2,
+            ..forward()
+        };
+        run_at(&mut looking, look_left, MoveEnv::default(), 0.3);
+        assert_eq!(looking.stance, Stance::Sliding);
+        assert!(looking.velocity.x.abs() < 1e-3, "{}", looking.velocity);
+    }
+
+    #[test]
+    fn a_slide_winds_down_instead_of_snapping_to_a_crouch() {
+        let p = MoveParams::default();
+        let mut s = sprinting();
+        run_at(&mut s, crouch_forward(), MoveEnv::default(), TICK);
+        while s.stance == Stance::Sliding {
+            run_at(&mut s, forward(), MoveEnv::default(), TICK);
+        }
+        assert_eq!(s.stance, Stance::Crouching);
+        let end = speed(&s);
+        assert!(
+            end > p.crouch_speed + 0.5,
+            "ends above a crouch walk: {end}"
+        );
+        let mut snap = MoveState {
+            slide_out: 0.0,
+            ..s
+        };
+        run_at(&mut s, forward(), MoveEnv::default(), 0.05);
+        run_at(&mut snap, forward(), MoveEnv::default(), 0.05);
+        assert!(
+            speed(&s) > speed(&snap) + 0.3,
+            "{} vs {}",
+            speed(&s),
+            speed(&snap)
+        );
+        run_at(&mut s, forward(), MoveEnv::default(), 1.0);
+        assert!((speed(&s) - p.crouch_speed).abs() < 0.05);
+    }
+
+    #[test]
+    fn sliding_off_a_ledge_stands_and_sprints_on() {
+        let p = MoveParams::default();
+        let mut s = sprinting();
+        run_at(&mut s, crouch_forward(), MoveEnv::default(), TICK);
+        run_at(&mut s, forward(), MoveEnv::default(), 0.05);
+        // Within coyote time the slide holds.
+        run_at(&mut s, forward(), AIR, p.coyote_time * 0.5);
+        assert_eq!(s.stance, Stance::Sliding);
+        run_at(&mut s, forward(), AIR, p.coyote_time);
+        assert_eq!(s.stance, Stance::Standing);
+        assert!(s.sprinting);
+        assert!(
+            speed(&s) <= p.sprint_speed + 1e-3,
+            "capped like a slide-cancel"
+        );
+
+        // Under a low ceiling it ends crouched.
+        let mut s = sprinting();
+        run_at(&mut s, crouch_forward(), MoveEnv::default(), TICK);
+        let low_air = MoveEnv {
+            can_stand: false,
+            ..AIR
+        };
+        run_at(&mut s, forward(), low_air, p.coyote_time * 2.0);
+        assert_eq!(s.stance, Stance::Crouching);
+    }
+
+    #[test]
+    fn jump_and_air_slide_chains_never_outrun_a_sprint() {
+        // Sprint, jump, crouch in the air, slide on landing, crouch-cancel back
+        // into a sprint, run for a moment, and go again, with every timing in
+        // reach.
+        let p = MoveParams::default();
+        let mut worst: (f32, usize, usize, usize) = (0.0, 0, 0, 0);
+        let mut slides = 0;
+        for wait in (0..ticks(0.9)).step_by(9) {
+            for crouch_after in (1..ticks(0.6)).step_by(9) {
+                for cancel_after in (1..ticks(0.7)).step_by(9) {
+                    let mut s = sprinting();
+                    let mut height = 0.0f32;
+                    let mut distance = 0.0;
+                    let mut previous = MoveInput::default();
+                    let mut since_jump = 0;
+                    let mut sliding_for = 0;
+                    let mut ground_for = 0;
+                    let mut was_on_floor = true;
+                    let total = ticks(10.0);
+                    for _ in 0..total {
+                        let on_floor = height <= 0.0;
+                        // The landing tick is the queued slide's: a jump then would
+                        // cancel it at once.
+                        let landing = on_floor && !was_on_floor;
+                        was_on_floor = on_floor;
+                        let env = MoveEnv {
+                            on_floor,
+                            ..Default::default()
+                        };
+                        let mut input = forward();
+                        if s.stance == Stance::Sliding {
+                            sliding_for += 1;
+                            input.crouch = sliding_for >= cancel_after && !previous.crouch;
+                        } else {
+                            sliding_for = 0;
+                            input.sprint = !s.sprinting && !previous.sprint;
+                            if on_floor {
+                                ground_for += 1;
+                                input.jump = !landing && ground_for > wait && !previous.jump;
+                                since_jump = 0;
+                            } else {
+                                ground_for = 0;
+                                since_jump += 1;
+                                input.crouch = since_jump == crouch_after && !s.slide_queued;
+                            }
+                        }
+                        let before = s.stance;
+                        let v = step(&mut s, &input, env, &p, TICK);
+                        if before != Stance::Sliding && s.stance == Stance::Sliding {
+                            slides += 1;
+                        }
+                        previous = input;
+                        distance += Vec2::new(v.x, v.z).length() * TICK;
+                        height = (height + v.y * TICK).max(0.0);
+                        if height <= 0.0 && s.velocity.y < 0.0 {
+                            s.velocity.y = 0.0;
+                        }
+                    }
+                    let mean = distance / (total as f32 * TICK);
+                    if mean > worst.0 {
+                        worst = (mean, wait, crouch_after, cancel_after);
+                    }
+                }
+            }
+        }
+        assert!(slides > 1000, "the chains slide: {slides}");
+        assert!(
+            worst.0 <= p.sprint_speed * 1.03,
+            "the best chain averages {:.2} m/s ({worst:?}) against a {} m/s sprint",
+            worst.0,
+            p.sprint_speed
+        );
     }
 }

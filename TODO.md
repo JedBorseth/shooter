@@ -71,6 +71,8 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] **good first task** Head bob and strafe tilt for the camera (small, with a settings toggle).
 - [x] Stance changes take time (0.25 s down, 0.3 s up) on one crouch blend that drives the capsule, the camera, the shot origin, the hit zones, and the third-person body together ([docs/movement.md](docs/movement.md)).
 - [x] Slides are earned (0.3 s of sprint) and start at 1.1x sprint scaled by weapon weight; a slide-cancel keeps no more than sprint speed, so chained cancels cannot outrun a sprint.
+- [x] Slides after IW8 ([docs/movement.md](docs/movement.md#slide)): crouch in the air during a sprint slides on landing, strafing steers a slide while the view looks freely, a 0.5 s low-friction wind-down after it, and sliding off a ledge ends it standing.
+- [ ] Slope-aware slide friction (faster downhill, slower uphill, as in IW8's `Slide_FrictionScale`): needs the floor normal in `MoveEnv`.
 - [x] Ground inertia (0.23 s to a walk, 0.28 s to stop), strafe and backpedal at 0.8x and 0.7x, a 6.9 m/s sprint that builds over 0.25 s and winds down over the weapon's sprint-out time, and slower diagonal sprints.
 - [x] Landings cost speed (0.7x on touchdown, 1.2 s to recover) and make the next jump lower, air strafing adds no speed, and a standing jump can be steered about a metre.
 - [x] Camera: the walk bob dips just after each footfall and never snaps, landings dip about 5 cm and nod the head, a hit flinches away from the shot, and the death camera leaves first person to face the killer.

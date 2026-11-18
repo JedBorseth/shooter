@@ -72,7 +72,9 @@ use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState}
 // Version 31 added the frag grenade: the lethal button in inputs, the throw
 // and the grenades carried in the predicted state, live grenades in
 // snapshots, blasts, and kill causes in the kill feed.
-pub const PROTOCOL_VERSION: u16 = 31;
+// Version 32 added slides queued in the air and the slide wind-down to the
+// movement state.
+pub const PROTOCOL_VERSION: u16 = 32;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -1916,6 +1918,8 @@ fn write_move_state(w: &mut BitWriter, m: &MoveState) {
     w.f32(m.air_time);
     w.f32(m.land_slow);
     w.bool(m.vaulting);
+    w.bool(m.slide_queued);
+    w.f32(m.slide_out);
 }
 
 fn read_move_state(r: &mut BitReader) -> DecodeResult<MoveState> {
@@ -1941,6 +1945,8 @@ fn read_move_state(r: &mut BitReader) -> DecodeResult<MoveState> {
         air_time: r.f32()?,
         land_slow: r.f32()?,
         vaulting: r.bool()?,
+        slide_queued: r.bool()?,
+        slide_out: r.f32()?,
     })
 }
 

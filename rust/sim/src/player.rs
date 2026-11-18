@@ -274,9 +274,11 @@ pub fn step(
     let input = if state.alive() {
         *input
     } else {
-        // A jump pressed just before dying must not fire later from the buffer.
+        // A jump pressed just before dying must not fire later from the
+        // buffer, nor a slide queued in the air start on a fatal landing.
         state.movement.jump_buffer = 0.0;
         state.movement.coyote = 0.0;
+        state.movement.slide_queued = false;
         // A grenade cooking in their hand falls, live, instead of being thrown.
         if let Some((kind, fuse)) = state.combat.live_grenade() {
             let shot = state.combat.shots_fired;
@@ -760,6 +762,26 @@ mod tests {
         let events = fall_and_land(&mut s, 70);
         assert!(events.contains(&PlayerEvent::Died));
         assert!(!s.alive());
+    }
+
+    #[test]
+    fn a_slide_queued_before_a_fatal_landing_does_not_start() {
+        let mut s = ready_state();
+        run(&mut s, PlayerInput::default(), AIRBORNE, 66);
+        s.movement.sprinting = true;
+        s.movement.sprint_time = 1.0;
+        s.movement.velocity.z = -8.0;
+        let crouch = PlayerInput {
+            wish: Vec2::Y,
+            crouch: true,
+            ..Default::default()
+        };
+        run(&mut s, crouch, AIRBORNE, 1);
+        assert!(s.movement.slide_queued);
+        let events = run(&mut s, PlayerInput::default(), MoveEnv::default(), 1);
+        assert!(events.contains(&PlayerEvent::Died));
+        assert_ne!(s.movement.stance, movement::Stance::Sliding);
+        assert!(!s.movement.slide_queued);
     }
 
     #[test]
