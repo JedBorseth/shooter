@@ -59,12 +59,15 @@ const MAPS := {
 			# white while shade goes properly dark.
 			"tonemap_mode": Environment.TONE_MAPPER_ACES,
 			"tonemap_white": 8.0,
-			"tonemap_exposure": 0.72,
+			"tonemap_exposure": 0.82,
+			# More sky light for what the lightmap does not light (soldiers,
+			# the first-person weapon), so they keep their fill in the shade.
+			"ambient_light_energy": 1.35,
 			# The grade below replaces these.
 			"adjustment_contrast": 1.0,
 			"adjustment_saturation": 1.0,
 		},
-		"sun": {"light_energy": 3.2},
+		"sun": {"light_energy": 2.9},
 		"grade":
 		{
 			"contrast": 1.3,
@@ -73,7 +76,7 @@ const MAPS := {
 			"shadows": Color(0.94, 0.98, 1.06),
 			"highlights": Color(1.04, 1.0, 0.95),
 			"balance": 0.5,
-			"toe": 0.25,
+			"toe": 0.12,
 		},
 		"flare": 1.0,
 	},
