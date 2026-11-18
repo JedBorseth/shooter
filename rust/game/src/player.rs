@@ -45,7 +45,8 @@ use shooter_sim::look::{
 use shooter_sim::movement::{MoveEnv, Stance};
 use shooter_sim::net::prediction::{ErrorSmoothing, Prediction, Reconciled};
 use shooter_sim::net::protocol::{OwnState, Predicted};
-use shooter_sim::player::{self, PlayerEvent, PlayerInput, PlayerParams, PlayerState};
+use shooter_sim::net::subtick;
+use shooter_sim::player::{self, FireAim, PlayerEvent, PlayerInput, PlayerParams, PlayerState};
 use shooter_sim::score::{Kill, ScoreRules, ScoreState, ScoreTotals, Scored};
 use shooter_sim::weapon::{self, Action, CombatEvent, FireMode, LoadStage, Reload, Slot, WeaponId};
 use shooter_sim::{Vec2, Vec3, rng};
@@ -101,6 +102,15 @@ const LATCHED_ACTIONS: [&str; 10] = [
     "interact",
     "refill_ammo",
 ];
+
+/// The view at a fire press between two ticks, captured on the input event.
+#[derive(Clone, Copy, Debug)]
+struct FirePress {
+    yaw: f32,
+    pitch: f32,
+    /// Online: the server tick other players were drawn at on that frame.
+    view_tick: Option<f64>,
+}
 
 #[derive(GodotClass)]
 #[class(init, base = CharacterBody3D)]
@@ -247,6 +257,12 @@ pub struct FpsPlayer {
     /// Online: the server tick other players were last drawn at, sent with
     /// firing inputs for lag compensation.
     view_tick: Option<f64>,
+    /// The view when fire went down since the last tick, captured on the
+    /// press event so the shot leaves from it (`net::subtick`).
+    fire_press: Option<FirePress>,
+    /// View angles (yaw, pitch) of the last input, which a press aim must
+    /// lie between this input's and (`subtick::check`, as on the server).
+    previous_view: Option<(f32, f32)>,
     /// Online: recent shots whose hit marker was already shown from local
     /// hitscan, so the server's confirmation does not show it again.
     predicted_hits: VecDeque<u32>,
@@ -374,6 +390,16 @@ impl ICharacterBody3D for FpsPlayer {
                 *latched = true;
             }
         }
+        // The view at the click: every mouse motion before this event is
+        // already applied. The first press since the last tick is the one
+        // that fires.
+        if event.is_action_pressed("fire") && self.fire_press.is_none() {
+            self.fire_press = Some(FirePress {
+                yaw: self.yaw,
+                pitch: self.pitch,
+                view_tick: self.view_tick,
+            });
+        }
         let event = match event.try_cast::<InputEventMouseMotion>() {
             Ok(motion) => {
                 if captured && !self.controller_input {
@@ -410,8 +436,14 @@ impl ICharacterBody3D for FpsPlayer {
         self.look_price = 0;
         self.look_device = None;
         self.find_interactable();
-        // Quantized exactly as the server will decode it, so prediction matches.
+        // Quantized exactly as the server will decode it, and the press aim
+        // checked as the server will check it, so prediction matches.
         let input = self.read_input().quantized();
+        let input = PlayerInput {
+            fire_aim: subtick::check(self.previous_view, &input),
+            ..input
+        };
+        self.previous_view = Some((input.yaw, input.pitch));
 
         self.score.tick(dt);
         self.previous_recoil = self.state.combat.recoil;
@@ -897,6 +929,7 @@ impl FpsPlayer {
     fn set_input_enabled(&mut self, enabled: bool) {
         self.input_enabled = enabled;
         self.latched = Default::default();
+        self.fire_press = None;
         // A key still held when the menu closes is not a fresh press.
         self.interact_held = enabled && Input::singleton().is_action_pressed("interact");
     }
@@ -1034,6 +1067,13 @@ impl FpsPlayer {
         self.view_tick = Some(tick);
     }
 
+    /// Online: the view tick of a fire press the next tick has yet to act
+    /// on. Until then the client keeps other players' hitboxes posed at it,
+    /// so the local hit test sees what the server will rewind to.
+    pub(crate) fn pending_press_view_tick(&self) -> Option<f64> {
+        self.fire_press.and_then(|press| press.view_tick)
+    }
+
     /// The server's verdict on one of our shots that hit `victim`.
     pub(crate) fn on_server_hit(&mut self, shot: u32, headshot: bool, killed: bool) {
         if killed {
@@ -1111,6 +1151,7 @@ impl FpsPlayer {
     }
 
     fn read_input(&mut self) -> PlayerInput {
+        let press = self.fire_press.take();
         if !self.input_enabled {
             self.wish = Vector2::ZERO;
             return PlayerInput {
@@ -1188,11 +1229,17 @@ impl FpsPlayer {
             reload,
             switch_to,
             pickup: if interact { self.look_target } else { None },
-            view_tick: if fire && self.prediction.is_some() {
-                self.view_tick
-            } else {
-                None
+            // A press since the last tick: the server rewinds others to the
+            // frame it was clicked on.
+            view_tick: match press {
+                _ if !fire || self.prediction.is_none() => None,
+                Some(press) => press.view_tick.or(self.view_tick),
+                None => self.view_tick,
             },
+            fire_aim: press.filter(|_| fire).map(|press| FireAim {
+                yaw: press.yaw - self.yaw,
+                pitch: press.pitch - self.pitch,
+            }),
         };
         if self.movement_locked {
             input.held_still()
@@ -1498,13 +1545,15 @@ impl FpsPlayer {
         match event {
             CombatEvent::Fired {
                 weapon,
+                yaw,
+                pitch,
                 aim_offset,
                 shot,
                 climb,
             } => {
                 let def = weapon.def();
                 self.pending_climb += climb;
-                self.fire_shot(weapon, aim_offset, shot);
+                self.fire_shot(weapon, (yaw, pitch), aim_offset, shot);
                 self.rumble_on_fire(weapon);
                 let ads = self.state.combat.ads;
                 let rounds_left = self.state.combat.weapon().magazine;
@@ -1564,10 +1613,11 @@ impl FpsPlayer {
         self.kick_fov(-degrees.x * SHOT_ZOOM_PULSE * scale);
     }
 
-    /// Hitscan from the eye along the view direction plus recoil, spread, and
-    /// sway, once per pellet. Damage is summed per target so a shotgun blast
-    /// confirms one hit, not eight.
-    fn fire_shot(&mut self, weapon: WeaponId, aim_offset: Vec2, shot: u32) {
+    /// Hitscan from the eye along the shot's view angles (the click's, for a
+    /// press between ticks) plus recoil, spread, and sway, once per pellet.
+    /// Damage is summed per target so a shotgun blast confirms one hit, not
+    /// eight.
+    fn fire_shot(&mut self, weapon: WeaponId, view: (f32, f32), aim_offset: Vec2, shot: u32) {
         let def = weapon.def();
         let origin = self.eye_position();
         // Per target: summed damage, any headshot, direction of the first pellet
@@ -1586,7 +1636,7 @@ impl FpsPlayer {
 
         for pellet in 0..def.pellets {
             let offset = aim_offset + weapon::pellet_offset(weapon, shot, pellet);
-            let direction = to_godot(player::aim_direction(self.yaw, self.pitch, offset));
+            let direction = to_godot(player::aim_direction(view.0, view.1, offset));
             // Through thin cover, losing damage at each wall.
             let path = penetration::trace(
                 &mut space,

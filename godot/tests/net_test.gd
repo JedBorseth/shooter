@@ -98,6 +98,7 @@ func _run() -> void:
 			"the enemy bot carries a controller aim assist target"
 		)
 		await _shoot_bot(player, client, bot)
+		await _flick_shots(player, client, bot)
 
 	# Weapon rack: walk west until 2 m from the M870 rack (x = -7, z = 20.6).
 	# The server checks the pickup against its own raycast; an honest one
@@ -295,6 +296,47 @@ func _shoot_bot(player: FpsPlayer, client: NetClient, bot: RemotePlayer) -> void
 	_check(int(stats.rewound_received) > 0, "the server sends the hitboxes it rewound (F4 overlay)")
 	HitboxRig.set_debug_visible(false)
 	await _ticks(10)
+
+
+## Clicks on the bot, then flicks the view half a radian away before the
+## tick acts on the click. Only the server shooting from the click's view
+## (and rewinding to the frame it was clicked on) can confirm a hit.
+func _flick_shots(player: FpsPlayer, client: NetClient, bot: RemotePlayer) -> void:
+	Input.action_press("aim")
+	var before := int(client.stats().hits_confirmed)
+	var attempts := 0
+	for i in 1200:
+		if int(client.stats().hits_confirmed) > before or attempts >= 16:
+			break
+		var target := _stomach(bot)
+		if target == Vector3.INF:
+			# Dead: wait for the respawn.
+			await physics_frame
+			continue
+		var eye := player.global_position + Vector3.UP * 1.68
+		var to := target - eye
+		var yaw := atan2(-to.x, -to.z)
+		var pitch := atan2(to.y, Vector2(to.x, to.z).length())
+		player.set_look(yaw, pitch)
+		if i % 40 != 39:
+			await physics_frame
+			continue
+		attempts += 1
+		var press := InputEventAction.new()
+		press.action = &"fire"
+		press.pressed = true
+		root.push_input(press)
+		var release := InputEventAction.new()
+		release.action = &"fire"
+		release.pressed = false
+		root.push_input(release)
+		player.set_look(yaw + 0.5, pitch)
+		await physics_frame
+	Input.action_release("aim")
+	await _ticks(60)
+	var hits := int(client.stats().hits_confirmed) - before
+	print("flick shots: %d hits confirmed in %d clicks" % [hits, attempts])
+	_check(hits >= 1, "the server shoots from the view at the click, not the next tick's")
 
 
 ## Centre of the bot's stomach hit zone as drawn on this client, or INF while

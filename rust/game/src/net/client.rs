@@ -341,9 +341,23 @@ impl INode for NetClient {
             return;
         };
         let render_tick = clock.advance(delta as f32);
+        // A fire press that no tick has acted on yet aims at the frame it was
+        // clicked on, and the server rewinds hitboxes to that frame's tick.
+        // Until the tick fires it, hitboxes stay posed there (bodies still
+        // move on), so the local hit test agrees with the server's.
+        let pressed_at = self
+            .player
+            .as_ref()
+            .and_then(|player| player.bind().pending_press_view_tick())
+            .filter(|tick| *tick < render_tick);
         for remote in &mut self.remotes {
+            // Sampled first: the buffer drops snapshots older than a sample.
+            let held = pressed_at.and_then(|tick| remote.buffer.sample(tick));
             if let Some(sample) = remote.buffer.sample(render_tick) {
                 remote.node.bind_mut().apply(&sample, delta as f32);
+            }
+            if let Some(held) = held {
+                remote.node.bind_mut().hold_hitboxes(&held);
             }
         }
         // Shots fired before the next frame aim at what was just drawn.

@@ -212,6 +212,12 @@ impl RemotePlayer {
         self.aim_assist.bind_mut().set_active(on);
     }
 
+    /// Poses only the hitboxes, at an earlier sample than the body: where
+    /// they were on the frame a pending shot was clicked on.
+    pub fn hold_hitboxes(&mut self, s: &RemoteSample) {
+        self.hitboxes.bind_mut().set_pose(s.hitbox_pose());
+    }
+
     pub fn apply(&mut self, s: &RemoteSample, delta: f32) {
         let position = to_godot(s.position);
         self.base_mut().set_global_position(position);

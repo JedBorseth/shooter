@@ -327,6 +327,10 @@ impl CombatState {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct CombatInput {
     pub fire: bool,
+    /// View angles a shot fired this tick leaves from (radians, as in
+    /// `PlayerInput::shot_view`), carried into [`CombatEvent::Fired`].
+    pub shot_yaw: f32,
+    pub shot_pitch: f32,
     pub aim: bool,
     /// Reload was pressed this tick.
     pub reload: bool,
@@ -375,8 +379,14 @@ pub enum CombatEvent {
     /// `climb` (radians, same axes) is the part of this shot's kick that
     /// stays: the shooter's client turns its view by it, as if the mouse had
     /// moved, so later shots leave from the climbed aim.
+    ///
+    /// `yaw` and `pitch` are the view angles the shot leaves from, before
+    /// `aim_offset`: the press's view for a shot fired on the input where the
+    /// trigger went down between ticks (`net::subtick`), the tick's otherwise.
     Fired {
         weapon: WeaponId,
+        yaw: f32,
+        pitch: f32,
         aim_offset: Vec2,
         shot: u32,
         climb: Vec2,
@@ -520,7 +530,7 @@ pub fn step(
             {
                 state.burst_left = rounds.max(1);
             }
-            fire(state, ctx, events);
+            fire(state, input, ctx, events);
         }
     } else if state.weapon().magazine == 0
         && matches!(state.action, Action::Ready)
@@ -782,7 +792,12 @@ fn update_breath(state: &mut CombatState, hold: bool, dt: f32) {
     }
 }
 
-fn fire(state: &mut CombatState, ctx: &CombatContext, events: &mut Vec<CombatEvent>) {
+fn fire(
+    state: &mut CombatState,
+    input: &CombatInput,
+    ctx: &CombatContext,
+    events: &mut Vec<CombatEvent>,
+) {
     let def = state.def();
     let seed = state.shots_fired;
 
@@ -810,6 +825,8 @@ fn fire(state: &mut CombatState, ctx: &CombatContext, events: &mut Vec<CombatEve
     state.recoil += kick * recoil.kick_return;
     events.push(CombatEvent::Fired {
         weapon: state.weapon().id,
+        yaw: input.shot_yaw,
+        pitch: input.shot_pitch,
         aim_offset,
         shot: seed,
         climb: kick * (1.0 - recoil.kick_return),

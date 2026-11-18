@@ -19,13 +19,14 @@ use glam::{IVec3, Vec2, Vec3};
 
 use super::Tick;
 use super::bits::{BitReader, BitWriter, DecodeError, DecodeResult};
+use super::subtick;
 use crate::chat;
 use crate::gun_game;
 use crate::hardpoint::Holder;
 use crate::hitbox::HitboxPose;
 use crate::look::PITCH_LIMIT;
 use crate::movement::{MoveState, Stance};
-use crate::player::{PlayerInput, PlayerState};
+use crate::player::{FireAim, PlayerInput, PlayerState};
 use crate::score::{Award, ScoreTotals, Scored};
 use crate::snd::{RoundEnd, RoundPhase};
 use crate::tdm::{MAX_NAME_CHARS, Mode, Phase, TEAM_COUNT, Team};
@@ -49,7 +50,8 @@ use crate::weapon::{self, Action, CombatState, LoadStage, WeaponId, WeaponState}
 // Version 16 added the server's build name to the welcome.
 // Version 17 added Free-for-all.
 // Version 18 added hip-fire bloom and each slot's pending bolt cycle.
-pub const PROTOCOL_VERSION: u16 = 18;
+// Version 19 added the press aim to inputs (sub-tick fire timing).
+pub const PROTOCOL_VERSION: u16 = 19;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -438,6 +440,7 @@ impl PlayerInput {
         self.switch_to = self.switch_to.filter(|slot| *slot < 4);
         self.pickup = self.pickup.filter(|id| valid_weapon(*id));
         self.view_tick = self.view_tick.and_then(quantize_view_tick);
+        self.fire_aim = self.fire_aim.and_then(subtick::quantize);
         self
     }
 }
@@ -474,6 +477,7 @@ impl ClientMessage {
                 for input in &packet.inputs[packet.inputs.len() - count..] {
                     let input = PlayerInput {
                         view_tick: input.view_tick.and_then(quantize_view_tick),
+                        fire_aim: input.fire_aim.and_then(subtick::quantize),
                         ..*input
                     };
                     let same = previous == Some(input);
@@ -594,6 +598,34 @@ fn write_input(w: &mut BitWriter, input: &PlayerInput, previous_view: Option<f64
         _ => w.bool(false),
     }
     write_view_tick(w, input.view_tick, previous_view);
+    write_fire_aim(w, input.fire_aim);
+}
+
+/// The press aim, only on the input where fire went down: a flag, then each
+/// axis as signed steps (a byte or two for a tick's worth of turning).
+fn write_fire_aim(w: &mut BitWriter, aim: Option<FireAim>) {
+    let steps = aim.and_then(|a| Some((subtick::steps(a.yaw)?, subtick::steps(a.pitch)?)));
+    w.bool(steps.is_some());
+    if let Some((yaw, pitch)) = steps {
+        w.varint_signed(yaw);
+        w.varint_signed(pitch);
+    }
+}
+
+fn read_fire_aim(r: &mut BitReader) -> DecodeResult<Option<FireAim>> {
+    if !r.bool()? {
+        return Ok(None);
+    }
+    let mut axis = || -> DecodeResult<f32> {
+        let steps = r.varint_signed()?;
+        if steps.unsigned_abs() > subtick::LIMIT_STEPS.unsigned_abs() {
+            return Err(DecodeError::Invalid("fire aim"));
+        }
+        Ok(subtick::from_steps(steps))
+    };
+    let yaw = axis()?;
+    let pitch = axis()?;
+    Ok(Some(FireAim { yaw, pitch }))
 }
 
 /// View ticks in wire steps. Only called on quantized ticks, which are exact.
@@ -669,6 +701,7 @@ fn read_input(r: &mut BitReader, previous_view: Option<f64>) -> DecodeResult<Pla
         None
     };
     let view_tick = read_view_tick(r, previous_view)?;
+    let fire_aim = read_fire_aim(r)?;
     Ok(PlayerInput {
         wish,
         yaw,
@@ -682,6 +715,7 @@ fn read_input(r: &mut BitReader, previous_view: Option<f64>) -> DecodeResult<Pla
         switch_to,
         pickup,
         view_tick,
+        fire_aim,
     })
 }
 
@@ -2067,6 +2101,116 @@ mod tests {
         );
         let expected = ((123_456.0 + 3.0 * 1.013) * 256.0_f64).floor() / 256.0;
         assert_eq!(firing[3].view_tick, Some(expected), "1/256 tick steps");
+    }
+
+    #[test]
+    fn press_aim_rides_only_on_the_press_input() {
+        // A click mid-flick, then the trigger held: the press input carries
+        // its aim, every input after it is resent without one.
+        let inputs: Vec<PlayerInput> = (0..16)
+            .map(|i| {
+                PlayerInput {
+                    yaw: 0.5 + i as f32 * 0.02,
+                    pitch: -0.1,
+                    fire: i >= 3,
+                    view_tick: (i >= 3).then(|| 5_000.0 + f64::from(i)),
+                    fire_aim: (i == 3).then_some(FireAim {
+                        yaw: -0.012_345,
+                        pitch: 0.001,
+                    }),
+                    ..Default::default()
+                }
+                .quantized()
+            })
+            .collect();
+        let packet = |inputs: Vec<PlayerInput>| {
+            ClientMessage::Input(InputPacket {
+                ack_snapshot: Some(3),
+                first_seq: 900,
+                inputs,
+            })
+        };
+        let msg = packet(inputs.clone());
+        let bytes = msg.encode();
+        let ClientMessage::Input(decoded) = ClientMessage::decode(&bytes).unwrap() else {
+            panic!("expected input");
+        };
+        // Bit-identical, so the server's shot leaves from exactly the angles
+        // the client predicted with.
+        assert_eq!(decoded.inputs, inputs);
+        let aim = decoded.inputs[3].fire_aim.unwrap();
+        assert_eq!(
+            aim.yaw,
+            subtick::from_steps(subtick::steps(-0.012_345).unwrap())
+        );
+        assert_eq!(
+            decoded.inputs[3].shot_view(),
+            (inputs[3].yaw + aim.yaw, inputs[3].pitch + aim.pitch)
+        );
+        assert!(
+            decoded
+                .inputs
+                .iter()
+                .filter(|i| i.fire_aim.is_some())
+                .count()
+                == 1
+        );
+        // One flag bit per input, plus a few bytes on the press.
+        let without: Vec<PlayerInput> = inputs
+            .iter()
+            .map(|i| PlayerInput {
+                fire_aim: None,
+                ..*i
+            })
+            .collect();
+        let plain = packet(without).encode();
+        assert!(
+            bytes.len() <= plain.len() + 4,
+            "{} bytes with the press aim, {} without",
+            bytes.len(),
+            plain.len()
+        );
+    }
+
+    #[test]
+    fn press_aim_is_quantized_like_the_wire() {
+        let input = PlayerInput {
+            fire: true,
+            fire_aim: Some(FireAim {
+                yaw: 0.123_456_7,
+                pitch: -9.0,
+            }),
+            ..Default::default()
+        }
+        .quantized();
+        let aim = input.fire_aim.unwrap();
+        assert_eq!(aim.pitch, -subtick::LIMIT, "clamped to the wire's range");
+        assert_eq!(input.quantized(), input, "quantizing is idempotent");
+        let msg = ClientMessage::Input(InputPacket {
+            ack_snapshot: None,
+            first_seq: 1,
+            inputs: vec![input],
+        });
+        assert_eq!(ClientMessage::decode(&msg.encode()).unwrap(), msg);
+        let broken = PlayerInput {
+            fire_aim: Some(FireAim {
+                yaw: f32::NAN,
+                pitch: 0.0,
+            }),
+            ..Default::default()
+        };
+        assert_eq!(broken.quantized().fire_aim, None);
+    }
+
+    #[test]
+    fn press_aim_past_the_limit_is_rejected() {
+        let mut w = BitWriter::new();
+        w.bool(true);
+        w.varint_signed(subtick::LIMIT_STEPS + 1);
+        w.varint_signed(0);
+        let bytes = w.finish();
+        let mut r = BitReader::new(&bytes);
+        assert!(read_fire_aim(&mut r).is_err());
     }
 
     #[test]

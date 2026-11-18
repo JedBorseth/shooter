@@ -8,6 +8,9 @@
 //! reconcile against snapshots. Other players render in the past by as little
 //! as the connection allows: two snapshot intervals plus jitter, about 35 to
 //! 50 ms on a clean link, wider while snapshots go missing.
+//! A shot fired by a click between ticks leaves from the view at the click
+//! (`subtick`), and the server rewinds other players to what the shooter was
+//! drawing then (`lag`).
 //! The transport is Godot's ENet, used only as an unreliable UDP pipe; all
 //! serialization is here.
 
@@ -20,6 +23,7 @@ pub mod lag;
 pub mod prediction;
 pub mod protocol;
 pub mod snapshot_history;
+pub mod subtick;
 
 /// Server tick counter. At 120 Hz a `u32` lasts over a year.
 pub type Tick = u32;

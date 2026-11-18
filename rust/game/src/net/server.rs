@@ -71,6 +71,7 @@ use shooter_sim::net::protocol::{
     ServerMessage, Snapshot, ZoneView,
 };
 use shooter_sim::net::snapshot_history::SnapshotHistory;
+use shooter_sim::net::subtick;
 use shooter_sim::net::{CHANNEL_COUNT, DEFAULT_PORT, MAX_PLAYERS, TICK_DT, TICK_RATE, Tick};
 use shooter_sim::player::{self, PlayerEvent, PlayerInput, PlayerParams, PlayerState};
 use shooter_sim::score::{Award, Kill, ScoreRules, ScoreState, Scored};
@@ -321,6 +322,8 @@ struct Shot {
     shooter: u8,
     /// Eye position after the input that fired, as the client computes it.
     eye: Vector3,
+    /// View angles the shot leaves from (`CombatEvent::Fired`): the click's
+    /// for a press between ticks.
     yaw: f32,
     pitch: f32,
     weapon: WeaponId,
@@ -1385,6 +1388,10 @@ impl NetServer {
                 {
                     input.pickup = None;
                 }
+                // A click between ticks may only aim somewhere the view
+                // passed through since the last input; the client checked the
+                // same way before predicting the shot.
+                input.fire_aim = subtick::check(Some((avatar.yaw, avatar.pitch)), &input);
                 let input = &input;
                 events.clear();
                 body::tick(
@@ -1400,6 +1407,8 @@ impl NetServer {
                     match *event {
                         PlayerEvent::Combat(CombatEvent::Fired {
                             weapon,
+                            yaw,
+                            pitch,
                             aim_offset,
                             shot,
                             ..
@@ -1411,8 +1420,8 @@ impl NetServer {
                             shots.push(Shot {
                                 shooter: avatar.id,
                                 eye,
-                                yaw: input.yaw,
-                                pitch: input.pitch,
+                                yaw,
+                                pitch,
                                 weapon,
                                 aim_offset,
                                 shot,
