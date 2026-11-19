@@ -151,8 +151,9 @@ The final picture of a map is set in `godot/scripts/looks.gd`, not in its scene,
 | Testing Area | Hard midday: a filmic curve, a strong sun, deep shade, cool shadows, warm highlights |
 | Zombies | Cold night: muted colour, blue shadows, warm lamp highlights, a low pivot and a little more sky light so walls separate from the dark |
 | Slamcity | Dusk: firmer contrast with a toe that keeps the near street's blacks under the haze, and less sky colour in the near haze, so only the distance fades; cool shade against warm lamp and sun light. Its environment overrides keep bloom to the neon, the lamps, and the lit windows (`glow_hdr_threshold` 1.3), so sunlit surfaces never glare |
+| Nuketown | Desert noon: firmer contrast and a toe, so shade under the eaves goes dark; warm sunlit paint against cool shade; its bright paint a shade calmer, so soldiers read against it; more aerial perspective on the far rooftops and the tower. It keeps its AgX curve, sun, and ambient occlusion as imported: the map has no benchmark views to price changes to those, so its look uses only what is free (the grade, the haze's colour, and the shared bloom and lens dirt) |
 
-Nuketown is not listed and keeps the look authored in its scene.
+Nuketown's scene and assets stay as imported; its look lives only here.
 
 On top of that, for every map:
 

@@ -290,10 +290,10 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 
 ## Phase 6 and later: production polish
 
-- [x] Post-processing pass: a colour grade per map as a look-up table built in code (`godot/scripts/looks.gd`; Testing Area, Zombies, and Slamcity), bloom that lifts only what is bright, a lens pass with a vignette, film grain, and sharpening on High (`godot/scripts/lens.gd`), and colour that drains as health drops. (Motion blur is an option; depth of field while aiming was left out because it blurs the iron sights.)
+- [x] Post-processing pass: a colour grade per map as a look-up table built in code (`godot/scripts/looks.gd`; Testing Area, Zombies, Slamcity, and Nuketown), bloom that lifts only what is bright, a lens pass with a vignette, film grain, and sharpening on High (`godot/scripts/lens.gd`), and colour that drains as health drops. (Motion blur is an option; depth of field while aiming was left out because it blurs the iron sights.)
 - [x] A dusk look for the rebuilt Slamcity in `godot/scripts/looks.gd` (cool shade, warm light, bloom on the neon only).
 - [x] Picture fidelity, first round: bloom added like light through a lens with lens dirt and a sun flare that hides behind cover, contact shadows under characters, close-up surface detail on world surfaces (High), wet surfaces and puddles in Zombies, a scope lens with eye-relief shadow, suppression and death on the lens, and a frame profiler that alternates each variant with the full frame (`godot/tests/profile_frame.gd`).
-- [ ] A look for Nuketown in `godot/scripts/looks.gd`.
+- [x] A look for Nuketown in `godot/scripts/looks.gd` (desert noon; only free settings).
 - [x] Temporal antialiasing on High (in place of 2× MSAA plus SMAA, same cost), close-up detail only on rough non-metal surfaces, a hurt vignette with smears, hit flashes, and a heartbeat, suppression on Low, softer puddles.
 - [x] Eye adaptation on every preset (rays from the camera, no GPU time; slow, within a stop, against each map's own typical light) and a key light for the first-person weapon and arms in the viewmodel shader.
 - [x] The first-person key reaches the gloves and sleeves too (a first-person copy of the character shader), and in shade it becomes the sky's light, so the weapon keeps its shape in shade and under a roof. The weapon already takes the sun's shadow.
