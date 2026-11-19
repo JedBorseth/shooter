@@ -1,5 +1,6 @@
 extends SceneTree
-## Fails if a baked lightmap came out black (see tools/lightmap_check.gd).
+## Fails if a baked lightmap came out black, all over or on the map's main
+## surfaces (see tools/lightmap_check.gd).
 ## tools/bake_lightmaps.sh runs it after every bake:
 ##   godot --headless --path godot --script res://tools/check_lightmap.gd -- \
 ##     res://scenes/slamcity.tscn ...
