@@ -273,9 +273,20 @@ pub struct NetServer {
     props_retry: u32,
     /// Every live grenade.
     grenades: GrenadeSim,
-    /// Smoke clouds still hanging: centre and the tick each popped. Only
-    /// bots read them (clients draw their own from the blast).
-    smokes: Vec<(Vec3, Tick)>,
+    /// Smoke clouds still hanging, oldest first: bots see through them
+    /// only as far as they allow, and snapshots carry them so players who
+    /// join after one popped still see it.
+    smokes: Vec<HangingSmoke>,
+}
+
+/// A smoke cloud still hanging.
+struct HangingSmoke {
+    /// The thrower and their shot number for the throw (the `Blast`'s key).
+    owner: Option<u8>,
+    shot: u32,
+    /// Where the grenade popped.
+    at: Vec3,
+    popped: Tick,
 }
 
 struct ClientSlot {
@@ -1516,13 +1527,13 @@ impl NetServer {
         // Live grenades and smoke, for bots.
         let smoke_ticks = (equipment::SMOKE_SECONDS * TICK_RATE as f32) as Tick;
         self.smokes
-            .retain(|(_, popped)| tick.saturating_sub(*popped) < smoke_ticks);
+            .retain(|smoke| tick.saturating_sub(smoke.popped) < smoke_ticks);
         let smokes: Vec<BotSmoke> = self
             .smokes
             .iter()
-            .map(|(center, popped)| BotSmoke {
-                center: *center,
-                age: tick.saturating_sub(*popped) as f32 * TICK_DT,
+            .map(|smoke| BotSmoke {
+                center: smoke.at + Vec3::Y * equipment::SMOKE_HEIGHT,
+                age: tick.saturating_sub(smoke.popped) as f32 * TICK_DT,
             })
             .collect();
         let bot_grenades: Vec<BotGrenade> = self
@@ -1818,9 +1829,12 @@ impl NetServer {
         });
         match kind {
             equipment::Kind::Flash => self.flash_bots(space, at),
-            equipment::Kind::Smoke => self
-                .smokes
-                .push((at + Vec3::Y * equipment::SMOKE_HEIGHT, self.tick)),
+            equipment::Kind::Smoke => self.smokes.push(HangingSmoke {
+                owner: blast.owner,
+                shot: blast.shot,
+                at,
+                popped: self.tick,
+            }),
             equipment::Kind::Frag => {}
         }
         if !self.attacks_hurt() {
@@ -3325,6 +3339,19 @@ impl NetServer {
                 ))
             })
             .collect();
+        // The newest clouds, if there are ever more than a snapshot holds.
+        let skip = self.smokes.len().saturating_sub(protocol::MAX_SMOKES);
+        let smoke_views: Vec<protocol::SmokeView> = self.smokes[skip..]
+            .iter()
+            .map(|smoke| {
+                protocol::SmokeView::new(
+                    smoke.owner,
+                    smoke.shot,
+                    smoke.at,
+                    self.tick.saturating_sub(smoke.popped),
+                )
+            })
+            .collect();
         self.history.insert(self.tick, views.clone());
         self.lag.record(self.tick, views.clone());
 
@@ -3347,6 +3374,7 @@ impl NetServer {
                 })),
                 players: others,
                 grenades: grenade_views.clone(),
+                smokes: smoke_views.clone(),
             });
             let base = baseline
                 .as_ref()
