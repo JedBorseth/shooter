@@ -192,7 +192,7 @@ func _throw_frag(player: FpsPlayer, client: NetClient) -> void:
 	# The fuse (3 s from the press, at 120 ticks a second) and a round trip.
 	await _ticks(360)
 	_check(get_nodes_in_group(&"grenades").is_empty(), "the server's blast took it away")
-	# The tactical (a flashbang by default) on its own button.
+	# The tactical (smoke, picked in the lobby) on its own button.
 	_check(player.tacticals() == 1, "one tactical online, got %d" % player.tacticals())
 	Input.action_press("tactical")
 	await _ticks(2)
@@ -200,10 +200,27 @@ func _throw_frag(player: FpsPlayer, client: NetClient) -> void:
 	await _ticks(60)
 	_check(player.tacticals() == 0, "the tactical throw spent it")
 	await _ticks(240)
-	_check(get_nodes_in_group(&"grenades").is_empty(), "the server's flashbang went off")
+	_check(get_nodes_in_group(&"grenades").is_empty(), "the server's smoke grenade went off")
+	await _late_smoke()
 	var corrections := int(client.stats().corrections) - corrections_before
 	_check(corrections == 0, "the throws were predicted with no corrections, got %d" % corrections)
 	player.set_look(0.0, 0.0)
+
+
+## The popped smoke is drawn once, though both the blast and every snapshot
+## name it; and a client that missed the pop (as one that joins late does)
+## draws the cloud from the snapshot's list, part-way through its life.
+func _late_smoke() -> void:
+	var clouds := get_nodes_in_group(&"smoke")
+	_check(clouds.size() == 1, "the smoke is drawn once online, got %d clouds" % clouds.size())
+	for cloud in clouds:
+		cloud.free()
+	await _ticks(30)
+	clouds = get_nodes_in_group(&"smoke")
+	_check(clouds.size() == 1, "a missed cloud comes back from snapshots, got %d" % clouds.size())
+	if clouds.size() == 1:
+		var age: float = clouds[0].get(&"start_age")
+		_check(age > 0.5, "it starts part-way through its life, at %.2f s" % age)
 
 
 ## Chat: a message comes back from the server cleaned up, and a flood is cut
@@ -256,6 +273,7 @@ func _play_match(client: NetClient) -> void:
 	)
 	_check(client.match_info().phase == "lobby", "the match waits in the lobby")
 	_check(client.set_loadout("m4+grip"), "an attachment variant is a valid loadout")
+	_check(client.choose_tactical("smoke"), "smoke is a valid tactical")
 	client.set_ready(true)
 	var saw_countdown := false
 	for i in 1200:

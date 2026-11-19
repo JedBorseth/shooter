@@ -10,6 +10,11 @@
 //! the bang and asks the pooled combat effects for the explosion
 //! (`CombatEffects::explosion`); replacing that scene changes every
 //! grenade's blast.
+//!
+//! Smoke clouds are keyed like grenades. Online, snapshots list every cloud
+//! still hanging (`protocol::SmokeView`): a cloud the client has not drawn
+//! (it joined after the pop) starts part-way through its life, and a drawn
+//! cloud the server no longer lists (a new round) goes.
 
 use godot::classes::{Node3D, PackedScene, ResourceLoader};
 use godot::prelude::*;
@@ -45,10 +50,28 @@ struct Shown {
     spin: Basis,
 }
 
-/// Every grenade model on screen.
+/// A smoke cloud on screen.
+struct Cloud {
+    key: GrenadeKey,
+    node: Gd<Node3D>,
+    /// A snapshot has listed it, so leaving a later one out means it is gone.
+    listed: bool,
+}
+
+/// A smoke cloud the server says is hanging.
+pub struct HangingCloud {
+    pub key: GrenadeKey,
+    /// Where the grenade popped.
+    pub at: Vector3,
+    /// Seconds since it popped.
+    pub age: f32,
+}
+
+/// Every grenade model and smoke cloud on screen.
 #[derive(Default)]
 pub struct GrenadeShow {
     shown: Vec<Shown>,
+    clouds: Vec<Cloud>,
     models: Vec<(Kind, Gd<PackedScene>)>,
     blasts: Vec<(Kind, Gd<PackedScene>)>,
 }
@@ -171,17 +194,79 @@ impl GrenadeShow {
         }
     }
 
-    /// Plays `kind`'s blast at `at`, under `parent`.
-    pub fn blast(&mut self, parent: &mut Gd<Node>, kind: Kind, at: Vector3) {
-        let Some(node) = cached(&mut self.blasts, kind, blast_scene(kind))
-            .and_then(|scene| scene.instantiate())
-            .and_then(|node| node.try_cast::<Node3D>().ok())
-        else {
+    /// Plays the blast of grenade `key` (`kind`) at `at`, under `parent`. A
+    /// smoke cloud a snapshot already started is not started twice.
+    pub fn blast(&mut self, parent: &mut Gd<Node>, key: GrenadeKey, kind: Kind, at: Vector3) {
+        if kind == Kind::Smoke {
+            self.clouds.retain(|cloud| cloud.node.is_instance_valid());
+            if self.clouds.iter().any(|cloud| cloud.key == key) {
+                return;
+            }
+        }
+        let Some(node) = self.start_blast(parent, kind, at, 0.0) else {
             return;
         };
-        let mut node = node;
+        if kind == Kind::Smoke {
+            self.clouds.push(Cloud {
+                key,
+                node,
+                listed: false,
+            });
+        }
+    }
+
+    /// Online: the smoke clouds the server says are hanging. Starts any not
+    /// drawn yet part-way through, and clears drawn ones it stopped listing.
+    pub fn sync_clouds(&mut self, parent: &mut Gd<Node>, hanging: &[HangingCloud]) {
+        self.clouds.retain(|cloud| cloud.node.is_instance_valid());
+        for smoke in hanging {
+            if let Some(cloud) = self.clouds.iter_mut().find(|c| c.key == smoke.key) {
+                cloud.listed = true;
+                continue;
+            }
+            if smoke.age >= equipment::SMOKE_SECONDS {
+                continue;
+            }
+            if let Some(node) = self.start_blast(parent, Kind::Smoke, smoke.at, smoke.age) {
+                self.clouds.push(Cloud {
+                    key: smoke.key,
+                    node,
+                    listed: true,
+                });
+            }
+        }
+        self.clouds.retain_mut(|cloud| {
+            let keep = !cloud.listed || hanging.iter().any(|s| s.key == cloud.key);
+            if !keep {
+                if cloud.node.has_method("dissipate") {
+                    cloud.node.call("dissipate", &[]);
+                } else {
+                    cloud.node.queue_free();
+                }
+            }
+            keep
+        });
+    }
+
+    /// Instances `kind`'s blast at `at`, `age` seconds into it (only smoke
+    /// clouds take an age).
+    fn start_blast(
+        &mut self,
+        parent: &mut Gd<Node>,
+        kind: Kind,
+        at: Vector3,
+        age: f32,
+    ) -> Option<Gd<Node3D>> {
+        let mut node = cached(&mut self.blasts, kind, blast_scene(kind))?
+            .instantiate()?
+            .try_cast::<Node3D>()
+            .ok()?;
+        if age > 0.0 {
+            node.set("start_age", &age.to_variant());
+        }
         parent.add_child(&node);
         node.set_global_position(at);
+        Some(node)
     }
 
     /// Where every drawn grenade is now.
@@ -195,10 +280,12 @@ impl GrenadeShow {
         self.shown.is_empty()
     }
 
-    /// Removes every model.
+    /// Removes every model, and forgets the clouds (they stay in the world
+    /// and fade by themselves).
     pub fn clear(&mut self) {
         for mut shown in self.shown.drain(..) {
             shown.node.queue_free();
         }
+        self.clouds.clear();
     }
 }

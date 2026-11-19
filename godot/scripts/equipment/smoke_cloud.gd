@@ -16,9 +16,17 @@ const HEIGHT := 1.6
 ## Per preset (Low, Medium, High): billows and their size in metres.
 const BILLOWS := [14, 18, 26]
 const BILLOW_SIZE := [2.9, 2.7, 2.6]
+## Seconds a cloud the server dropped takes to fade.
+const DISSIPATE := 0.5
+
+## Seconds into its life to start: a player who joins after the pop sees the
+## cloud as it is now (set before it enters the tree).
+var start_age := 0.0
 
 var _quality := 1
 var _age := 0.0
+## Seconds left of a quick fade-out (a new round cleared the cloud), or < 0.
+var _dissipating := -1.0
 var _fog: ColorRect
 var _fog_layer: CanvasLayer
 var _particles: GPUParticles3D
@@ -29,6 +37,7 @@ func _ready() -> void:
 	if settings != null:
 		_quality = clampi(int(settings.get(&"graphics_quality")), 0, 2)
 	add_to_group(&"smoke")
+	_age = start_age
 	_billows()
 	_fog_layer = CanvasLayer.new()
 	_fog_layer.layer = 30
@@ -44,7 +53,15 @@ func _ready() -> void:
 	hiss.volume_db = -2.0
 	hiss.unit_size = 6.0
 	add_child(hiss)
-	hiss.play()
+	# Joined late: the pop and its hiss are long over.
+	if start_age < 1.0:
+		hiss.play()
+
+
+## Fades the cloud out over half a second and frees it (the server dropped it).
+func dissipate() -> void:
+	if _dissipating < 0.0:
+		_dissipating = DISSIPATE
 
 
 ## The cloud's radius now (`equipment::smoke_radius`).
@@ -59,7 +76,12 @@ func radius() -> float:
 
 func _process(delta: float) -> void:
 	_age += delta
-	if _age >= SECONDS + 1.0:
+	var fade := 1.0
+	if _dissipating >= 0.0:
+		_dissipating -= delta
+		fade = clampf(_dissipating / DISSIPATE, 0.0, 1.0)
+		_particles.transparency = 1.0 - fade
+	if _age >= SECONDS + 1.0 or (_dissipating >= 0.0 and fade <= 0.0):
 		queue_free()
 		return
 	var camera := get_viewport().get_camera_3d()
@@ -70,7 +92,7 @@ func _process(delta: float) -> void:
 		if r > 0.5:
 			var depth := 1.0 - camera.global_position.distance_to(centre) / r
 			inside = clampf(depth * 2.2, 0.0, 1.0)
-	_fog.color.a = 0.92 * inside
+	_fog.color.a = 0.92 * inside * fade
 	# Deep inside, the fog hides everything: skip drawing the billows.
 	var draw := inside < 0.9
 	if _particles.visible != draw:
@@ -140,6 +162,8 @@ func _billows() -> void:
 	particles.process_material = process
 	particles.visibility_aabb = AABB(Vector3(-8, -2, -8), Vector3(16, 10, 16))
 	particles.position = Vector3.UP * 1.3
+	# Joined late: run the billows forward to where they are now.
+	particles.preprocess = start_age
 	add_child(particles)
 	particles.emitting = true
 	_particles = particles

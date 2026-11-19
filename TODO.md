@@ -55,6 +55,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
   - [x] First-person pin pull, cook, and throw with the arms; a third-person throw pose; camera shake and ear ring by distance; a danger indicator and a grenade count on the HUD.
   - [ ] Throw sounds (pin, spoon, bounces) and a close explosion sound from the sound pass; the combat effects' explosion in place of the stand-in blast.
   - [x] Flashbang and smoke grenade, picked in the loadout.
+  - [x] Players who join after a smoke popped see the cloud (snapshots list the hanging clouds).
   - [x] Bots blinded by flashbangs and unable to see through smoke (`equipment::smoke_blocks`).
   - [x] Bots throw grenades and run from live ones: frags at bunched or hiding enemies (cooked on Normal and Hard), flashbangs at a hiding enemy, smoke over a retreat to cover (`shooter_sim::bot::plan_throw`, `rust/game/src/net/bots.rs`).
   - [ ] Bots bank grenades off walls on purpose (today a bounce counts only when the checked flight happens to take one), and pop smoke to cover a plant or defuse once Search and Destroy has a bomb.

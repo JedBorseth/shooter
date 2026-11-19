@@ -9,6 +9,7 @@ extends SceneTree
 ##     --script res://tests/capture_grenade.gd
 
 const SOLDIER := preload("res://scenes/characters/soldier.tscn")
+const SMOKE := preload("res://scenes/equipment/smoke_cloud.tscn")
 const SPOT := Vector3(0, 0.05, 20)
 ## Physics time after the press for each frozen first-person shot, in
 ## sixtieths; the button is let go at `RELEASE`.
@@ -49,7 +50,8 @@ func _run() -> void:
 
 
 ## A flashbang from the thrower's eyes, the flash seen from beside it, and a
-## smoke cloud from outside and inside.
+## smoke cloud from outside and inside, and one started late (as a player
+## who joined after it popped sees it).
 func _tacticals(main: Node, player: FpsPlayer) -> void:
 	player.teleport(SPOT, 0.0)
 	player.set_look(0.0, -0.8)
@@ -78,7 +80,7 @@ func _tacticals(main: Node, player: FpsPlayer) -> void:
 	camera.make_current()
 	await _sixtieths(2)
 	await _shot("flash_pop")
-	var smoke := (load("res://scenes/equipment/smoke_cloud.tscn") as PackedScene).instantiate()
+	var smoke := SMOKE.instantiate()
 	main.add_child(smoke)
 	smoke.global_position = SPOT + Vector3(0, 0, -8)
 	camera.look_at_from_position(SPOT + Vector3(0, 1.7, 4), SPOT + Vector3(0, 1.5, -8))
@@ -93,6 +95,16 @@ func _tacticals(main: Node, player: FpsPlayer) -> void:
 	await _sixtieths(10)
 	await _shot("smoke_edge")
 	smoke.queue_free()
+	# The same cloud as a player who joined late draws it: started 3 s in
+	# from the snapshot, it should match `smoke_full`.
+	var late := SMOKE.instantiate()
+	late.set(&"start_age", 3.0)
+	main.add_child(late)
+	late.global_position = SPOT + Vector3(0, 0, -8)
+	camera.look_at_from_position(SPOT + Vector3(0, 1.7, 4), SPOT + Vector3(0, 1.5, -8))
+	await _sixtieths(2)
+	await _shot("smoke_late")
+	late.queue_free()
 	camera.queue_free()
 	player.get_node("Camera").make_current()
 	await _sixtieths(10)

@@ -47,7 +47,7 @@ use shooter_sim::melee;
 use shooter_sim::movement::{MoveEnv, Stance};
 use shooter_sim::net::TICK_DT;
 use shooter_sim::net::prediction::{ErrorSmoothing, Prediction, Reconciled};
-use shooter_sim::net::protocol::{self, GrenadeView, OwnState, Predicted};
+use shooter_sim::net::protocol::{self, GrenadeView, OwnState, Predicted, SmokeView};
 use shooter_sim::net::subtick;
 use shooter_sim::player::{self, FireAim, PlayerEvent, PlayerInput, PlayerParams, PlayerState};
 use shooter_sim::score::{Kill, ScoreRules, ScoreState, ScoreTotals, Scored};
@@ -67,7 +67,7 @@ use crate::character::rig::{SoldierFrame, SoldierRig, push_of};
 use crate::convert::{to_godot, to_sim};
 use crate::effects::CombatEffects;
 use crate::footsteps::{self, Gait, Stride};
-use crate::grenade_view::GrenadeShow;
+use crate::grenade_view::{GrenadeShow, HangingCloud};
 use crate::grenades::{self, GrenadeSim, LiveGrenade};
 use crate::penetration;
 use crate::pickup::{INTERACT_LAYER, WeaponPickup};
@@ -3014,7 +3014,8 @@ impl FpsPlayer {
         let radius = equipment::blast_radius(kind);
         if let Some(mut parent) = self.base().get_parent() {
             self.grenade_show.remove((None, blast.shot));
-            self.grenade_show.blast(&mut parent, kind, center);
+            self.grenade_show
+                .blast(&mut parent, (None, blast.shot), kind, center);
         }
         match kind {
             Kind::Frag => self.feel_blast(center),
@@ -3132,6 +3133,24 @@ impl FpsPlayer {
         self.server_grenades.extend_from_slice(grenades);
     }
 
+    /// Online: the smoke clouds still hanging. Draws any we missed (we
+    /// joined after they popped) part-way through, and clears any the
+    /// server dropped.
+    pub(crate) fn on_server_smokes(&mut self, smokes: &[SmokeView]) {
+        let Some(mut parent) = self.base().get_parent() else {
+            return;
+        };
+        let hanging: Vec<HangingCloud> = smokes
+            .iter()
+            .map(|smoke| HangingCloud {
+                key: (smoke.owner, smoke.shot),
+                at: to_godot(smoke.position()),
+                age: smoke.age as f32 * TICK_DT,
+            })
+            .collect();
+        self.grenade_show.sync_clouds(&mut parent, &hanging);
+    }
+
     /// Online: a grenade went off.
     pub(crate) fn on_server_blast(&mut self, owner: Option<u8>, shot: u32, kind: Kind, at: Vec3) {
         if owner.is_some() && owner == self.net_id {
@@ -3142,7 +3161,8 @@ impl FpsPlayer {
             .retain(|view| !(Some(view.owner) == owner && view.shot == shot));
         if let Some(mut parent) = self.base().get_parent() {
             self.grenade_show.remove((owner, shot));
-            self.grenade_show.blast(&mut parent, kind, to_godot(at));
+            self.grenade_show
+                .blast(&mut parent, (owner, shot), kind, to_godot(at));
         }
         match kind {
             Kind::Frag => self.feel_blast(to_godot(at)),

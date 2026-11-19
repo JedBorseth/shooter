@@ -87,7 +87,9 @@ use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, Weapo
 // Version 37 added ladders: the ladder a player is on, a slide down it, and
 // the regrab delay in the movement state, and the ladder each body faces in
 // player views (`PlayerView::ladder`).
-pub const PROTOCOL_VERSION: u16 = 37;
+// Version 38 added the smoke clouds still hanging to snapshots, so players
+// who join after a smoke popped see it.
+pub const PROTOCOL_VERSION: u16 = 38;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -371,6 +373,38 @@ pub struct Snapshot {
     /// Every live grenade, in full each time (there are few, and they move
     /// every tick).
     pub grenades: Vec<GrenadeView>,
+    /// Every smoke cloud still hanging, in full each time, so a player who
+    /// joins after one popped still sees it.
+    pub smokes: Vec<SmokeView>,
+}
+
+/// A smoke cloud still hanging, as clients see it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SmokeView {
+    /// Who threw it (`None` if they have left) and their shot number for
+    /// the throw, the same key as the cloud's `GameEvent::Blast`.
+    pub owner: Option<u8>,
+    pub shot: u32,
+    /// Where the grenade popped, in millimetres (the `Blast`'s `at`).
+    pub position: IVec3,
+    /// Ticks since it popped.
+    pub age: Tick,
+}
+
+impl SmokeView {
+    pub fn new(owner: Option<u8>, shot: u32, position: Vec3, age: Tick) -> Self {
+        Self {
+            owner,
+            shot,
+            position: (position * POSITION_SCALE).round().as_ivec3(),
+            age,
+        }
+    }
+
+    /// Where it popped, in metres.
+    pub fn position(&self) -> Vec3 {
+        self.position.as_vec3() / POSITION_SCALE
+    }
 }
 
 /// A live grenade as clients see it.
@@ -407,6 +441,8 @@ impl GrenadeView {
 
 /// Most grenades a snapshot carries.
 pub const MAX_GRENADES: usize = 32;
+/// Most smoke clouds a snapshot carries.
+pub const MAX_SMOKES: usize = 16;
 
 /// Why a kill happened, for the kill feed.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -1718,6 +1754,22 @@ fn write_snapshot(w: &mut BitWriter, s: &Snapshot, baseline: &[PlayerView]) {
         w.varint_signed(g.position.z);
         w.bool(g.resting);
     }
+    let count = s.smokes.len().min(MAX_SMOKES);
+    w.varint(count as u32);
+    for smoke in &s.smokes[..count] {
+        match smoke.owner {
+            Some(id) => {
+                w.bool(true);
+                w.u8(id);
+            }
+            None => w.bool(false),
+        }
+        w.varint(smoke.shot);
+        w.varint_signed(smoke.position.x);
+        w.varint_signed(smoke.position.y);
+        w.varint_signed(smoke.position.z);
+        w.varint(smoke.age);
+    }
 }
 
 fn read_snapshot<'a>(
@@ -1773,12 +1825,26 @@ fn read_snapshot<'a>(
             resting: r.bool()?,
         });
     }
+    let count = r.varint()? as usize;
+    if count > MAX_SMOKES {
+        return Err(DecodeError::Invalid("smoke count"));
+    }
+    let mut smokes = Vec::with_capacity(count);
+    for _ in 0..count {
+        smokes.push(SmokeView {
+            owner: if r.bool()? { Some(r.u8()?) } else { None },
+            shot: r.varint()?,
+            position: IVec3::new(r.varint_signed()?, r.varint_signed()?, r.varint_signed()?),
+            age: r.varint()?,
+        });
+    }
     Ok(Snapshot {
         tick,
         baseline: base_tick,
         own,
         players,
         grenades,
+        smokes,
     })
 }
 
@@ -2570,6 +2636,7 @@ mod tests {
         let predicted = sample_state(70);
         let snapshot = ServerMessage::Snapshot(Snapshot {
             grenades: Vec::new(),
+            smokes: Vec::new(),
             tick: 500,
             baseline: None,
             own: Some(Box::new(OwnState {
@@ -2610,6 +2677,7 @@ mod tests {
                     false,
                 ),
             ],
+            smokes: Vec::new(),
             tick: 900,
             baseline: None,
             own: Some(Box::new(OwnState {
@@ -2624,6 +2692,50 @@ mod tests {
             panic!("expected a snapshot");
         };
         assert!((decoded.grenades[0].position() - Vec3::new(-12.5, 0.045, 33.25)).length() < 1e-3);
+    }
+
+    #[test]
+    fn hanging_smoke_clouds_survive_the_wire() {
+        let smokes = vec![
+            SmokeView::new(Some(3), 77, Vec3::new(10.25, 0.04, -6.5), 600),
+            // The thrower left; the cloud stays.
+            SmokeView::new(None, 2, Vec3::new(-40.0, 3.2, 18.0), 0),
+        ];
+        let snapshot = ServerMessage::Snapshot(Snapshot {
+            grenades: Vec::new(),
+            smokes: smokes.clone(),
+            tick: 1200,
+            baseline: None,
+            own: None,
+            players: vec![],
+        });
+        let decoded = ServerMessage::decode(&snapshot.encode(&[]), |_| None).unwrap();
+        assert_eq!(decoded, snapshot);
+        let ServerMessage::Snapshot(decoded) = decoded else {
+            panic!("expected a snapshot");
+        };
+        assert!((decoded.smokes[0].position() - Vec3::new(10.25, 0.04, -6.5)).length() < 1e-3);
+        assert_eq!(decoded.smokes[0].age, 600);
+        assert_eq!(decoded.smokes[1].owner, None);
+    }
+
+    #[test]
+    fn a_snapshot_carries_at_most_max_smokes() {
+        let snapshot = Snapshot {
+            grenades: Vec::new(),
+            smokes: vec![SmokeView::new(Some(1), 1, Vec3::ZERO, 5); MAX_SMOKES + 4],
+            tick: 10,
+            baseline: None,
+            own: None,
+            players: vec![],
+        };
+        let decoded =
+            ServerMessage::decode(&ServerMessage::Snapshot(snapshot).encode(&[]), |_| None)
+                .unwrap();
+        let ServerMessage::Snapshot(decoded) = decoded else {
+            panic!("expected a snapshot");
+        };
+        assert_eq!(decoded.smokes.len(), MAX_SMOKES);
     }
 
     #[test]
@@ -2653,6 +2765,7 @@ mod tests {
         assert_eq!(throw_to_u8(Some(0.0)), 1, "a throw just begun still shows");
         let delta = ServerMessage::Snapshot(Snapshot {
             grenades: Vec::new(),
+            smokes: Vec::new(),
             tick: 101,
             baseline: Some(100),
             own: None,
@@ -2669,6 +2782,7 @@ mod tests {
         let a = PlayerView::from_state(3, &p, 0.5, -0.1);
         let full = ServerMessage::Snapshot(Snapshot {
             grenades: Vec::new(),
+            smokes: Vec::new(),
             tick: 100,
             baseline: None,
             own: None,
@@ -2684,6 +2798,7 @@ mod tests {
         hit.hit_part = HitPart::new(Some(0), 120.0, false).to_u8();
         let delta = ServerMessage::Snapshot(Snapshot {
             grenades: Vec::new(),
+            smokes: Vec::new(),
             tick: 101,
             baseline: Some(100),
             own: None,
@@ -2714,6 +2829,7 @@ mod tests {
         });
         let delta = ServerMessage::Snapshot(Snapshot {
             grenades: Vec::new(),
+            smokes: Vec::new(),
             tick: 101,
             baseline: Some(100),
             own: None,
@@ -2775,6 +2891,7 @@ mod tests {
         let b = PlayerView::from_state(9, &p, 2.0, 0.2);
         let full = ServerMessage::Snapshot(Snapshot {
             grenades: Vec::new(),
+            smokes: Vec::new(),
             tick: 100,
             baseline: None,
             own: None,
@@ -2788,6 +2905,7 @@ mod tests {
         let c = PlayerView::from_state(12, &p, 0.0, 0.0);
         let delta = ServerMessage::Snapshot(Snapshot {
             grenades: Vec::new(),
+            smokes: Vec::new(),
             tick: 101,
             baseline: Some(100),
             own: None,
@@ -2803,6 +2921,7 @@ mod tests {
         assert_eq!(decoded, delta);
         let unchanged = ServerMessage::Snapshot(Snapshot {
             grenades: Vec::new(),
+            smokes: Vec::new(),
             tick: 102,
             baseline: Some(100),
             own: None,
@@ -2821,6 +2940,7 @@ mod tests {
     fn unknown_baseline_is_an_error() {
         let msg = ServerMessage::Snapshot(Snapshot {
             grenades: Vec::new(),
+            smokes: Vec::new(),
             tick: 10,
             baseline: Some(5),
             own: None,

@@ -1308,7 +1308,9 @@ impl NetClient {
         });
 
         if newest && let (Some(id), Some(player)) = (self.player_id, &mut self.player) {
-            player.bind_mut().on_server_grenades(id, &snapshot.grenades);
+            let mut player = player.bind_mut();
+            player.on_server_grenades(id, &snapshot.grenades);
+            player.on_server_smokes(&snapshot.smokes);
         }
         if let Some(own) = snapshot.own {
             self.stats.server_position = to_godot(own.predicted.position);
