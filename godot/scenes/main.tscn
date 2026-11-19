@@ -76,6 +76,12 @@ adjustment_enabled = true
 adjustment_contrast = 1.05
 adjustment_saturation = 1.05
 
+[sub_resource type="BoxShape3D" id="Shape_post_x"]
+size = Vector3(0.32, 5.85, 0.13)
+
+[sub_resource type="BoxShape3D" id="Shape_post_z"]
+size = Vector3(0.13, 5.85, 0.32)
+
 [sub_resource type="BoxShape3D" id="Shape_culvert_cover"]
 size = Vector3(4, 0.02, 4)
 
@@ -150,6 +156,249 @@ material = ExtResource("m_tunnel")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10, 1.65, -18)
 size = Vector3(4, 0.5, 4)
 material = ExtResource("m_tunnel")
+
+[node name="WallPosts" type="StaticBody3D" parent="."]
+metadata/surface = "concrete"
+
+[node name="N01" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -28, 2.925, -31.945)
+shape = SubResource("Shape_post_x")
+
+[node name="N02" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -24, 2.925, -31.945)
+shape = SubResource("Shape_post_x")
+
+[node name="N03" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -20, 2.925, -31.945)
+shape = SubResource("Shape_post_x")
+
+[node name="N04" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16, 2.925, -31.945)
+shape = SubResource("Shape_post_x")
+
+[node name="N05" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -12, 2.925, -31.945)
+shape = SubResource("Shape_post_x")
+
+[node name="N06" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8, 2.925, -31.945)
+shape = SubResource("Shape_post_x")
+
+[node name="N07" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4, 2.925, -31.945)
+shape = SubResource("Shape_post_x")
+
+[node name="N08" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.925, -31.945)
+shape = SubResource("Shape_post_x")
+
+[node name="N09" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 2.925, -31.945)
+shape = SubResource("Shape_post_x")
+
+[node name="N10" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 2.925, -31.945)
+shape = SubResource("Shape_post_x")
+
+[node name="N11" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 12, 2.925, -31.945)
+shape = SubResource("Shape_post_x")
+
+[node name="N12" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 2.925, -31.945)
+shape = SubResource("Shape_post_x")
+
+[node name="N13" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 20, 2.925, -31.945)
+shape = SubResource("Shape_post_x")
+
+[node name="N14" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24, 2.925, -31.945)
+shape = SubResource("Shape_post_x")
+
+[node name="N15" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 28, 2.925, -31.945)
+shape = SubResource("Shape_post_x")
+
+[node name="S01" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -28, 2.925, 31.945)
+shape = SubResource("Shape_post_x")
+
+[node name="S02" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -24, 2.925, 31.945)
+shape = SubResource("Shape_post_x")
+
+[node name="S03" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -20, 2.925, 31.945)
+shape = SubResource("Shape_post_x")
+
+[node name="S04" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16, 2.925, 31.945)
+shape = SubResource("Shape_post_x")
+
+[node name="S05" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -12, 2.925, 31.945)
+shape = SubResource("Shape_post_x")
+
+[node name="S06" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8, 2.925, 31.945)
+shape = SubResource("Shape_post_x")
+
+[node name="S07" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4, 2.925, 31.945)
+shape = SubResource("Shape_post_x")
+
+[node name="S08" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.925, 31.945)
+shape = SubResource("Shape_post_x")
+
+[node name="S09" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 2.925, 31.945)
+shape = SubResource("Shape_post_x")
+
+[node name="S10" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 2.925, 31.945)
+shape = SubResource("Shape_post_x")
+
+[node name="S11" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 12, 2.925, 31.945)
+shape = SubResource("Shape_post_x")
+
+[node name="S12" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 2.925, 31.945)
+shape = SubResource("Shape_post_x")
+
+[node name="S13" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 20, 2.925, 31.945)
+shape = SubResource("Shape_post_x")
+
+[node name="S14" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24, 2.925, 31.945)
+shape = SubResource("Shape_post_x")
+
+[node name="S15" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 28, 2.925, 31.945)
+shape = SubResource("Shape_post_x")
+
+[node name="W01" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -31.945, 2.925, -28)
+shape = SubResource("Shape_post_z")
+
+[node name="W02" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -31.945, 2.925, -24)
+shape = SubResource("Shape_post_z")
+
+[node name="W03" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -31.945, 2.925, -20)
+shape = SubResource("Shape_post_z")
+
+[node name="W04" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -31.945, 2.925, -16)
+shape = SubResource("Shape_post_z")
+
+[node name="W05" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -31.945, 2.925, -12)
+shape = SubResource("Shape_post_z")
+
+[node name="W06" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -31.945, 2.925, -8)
+shape = SubResource("Shape_post_z")
+
+[node name="W07" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -31.945, 2.925, -4)
+shape = SubResource("Shape_post_z")
+
+[node name="W08" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -31.945, 2.925, 0)
+shape = SubResource("Shape_post_z")
+
+[node name="W09" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -31.945, 2.925, 4)
+shape = SubResource("Shape_post_z")
+
+[node name="W10" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -31.945, 2.925, 8)
+shape = SubResource("Shape_post_z")
+
+[node name="W11" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -31.945, 2.925, 12)
+shape = SubResource("Shape_post_z")
+
+[node name="W12" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -31.945, 2.925, 16)
+shape = SubResource("Shape_post_z")
+
+[node name="W13" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -31.945, 2.925, 20)
+shape = SubResource("Shape_post_z")
+
+[node name="W14" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -31.945, 2.925, 24)
+shape = SubResource("Shape_post_z")
+
+[node name="W15" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -31.945, 2.925, 28)
+shape = SubResource("Shape_post_z")
+
+[node name="E01" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 31.945, 2.925, -28)
+shape = SubResource("Shape_post_z")
+
+[node name="E02" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 31.945, 2.925, -24)
+shape = SubResource("Shape_post_z")
+
+[node name="E03" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 31.945, 2.925, -20)
+shape = SubResource("Shape_post_z")
+
+[node name="E04" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 31.945, 2.925, -16)
+shape = SubResource("Shape_post_z")
+
+[node name="E05" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 31.945, 2.925, -12)
+shape = SubResource("Shape_post_z")
+
+[node name="E06" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 31.945, 2.925, -8)
+shape = SubResource("Shape_post_z")
+
+[node name="E07" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 31.945, 2.925, -4)
+shape = SubResource("Shape_post_z")
+
+[node name="E08" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 31.945, 2.925, 0)
+shape = SubResource("Shape_post_z")
+
+[node name="E09" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 31.945, 2.925, 4)
+shape = SubResource("Shape_post_z")
+
+[node name="E10" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 31.945, 2.925, 8)
+shape = SubResource("Shape_post_z")
+
+[node name="E11" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 31.945, 2.925, 12)
+shape = SubResource("Shape_post_z")
+
+[node name="E12" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 31.945, 2.925, 16)
+shape = SubResource("Shape_post_z")
+
+[node name="E13" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 31.945, 2.925, 20)
+shape = SubResource("Shape_post_z")
+
+[node name="E14" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 31.945, 2.925, 24)
+shape = SubResource("Shape_post_z")
+
+[node name="E15" type="CollisionShape3D" parent="WallPosts"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 31.945, 2.925, 28)
+shape = SubResource("Shape_post_z")
 
 [node name="SkyCovers" type="StaticBody3D" parent="."]
 collision_mask = 0

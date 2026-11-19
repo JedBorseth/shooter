@@ -775,6 +775,39 @@ def testing_floor_and_walls(b: Model):
             raw_box(b, "range_panel", lo, hi, 0.0, top, -32.0, 32.0, skip=("x+" if sign < 0 else "x-", "y-", "y+"))
 
 
+def testing_joints(b: Model):
+    """The saw-cut joints between the range's slabs: one connected strip per
+    joint line (one lightmap chart each: thousands of loose pieces broke the
+    bake), its width wandering slab by slab and its shade along its length,
+    so the joints read as cut and sealed by hand, dirt-filled in places and
+    with the sealant gone pale in others, not as a ruled grid."""
+    rng = random.Random(77)
+    for k in range(1, 16):
+        t = -32.0 + k * 4.0
+        for along_x in (False, True):
+            y = 0.0024 if along_x else 0.002
+            spots = [(rng.uniform(-32.0, 32.0), rng.uniform(0.3, 1.2), rng.uniform(-0.5, 0.8)) for _ in range(32)]
+            verts, shades, faces = [], [], []
+            steps = 128
+            halves = [rng.uniform(0.004, 0.011) for _ in range(17)]
+            for n in range(steps + 1):
+                s_ = -32.0 + 64.0 * n / steps
+                half = halves[min(int((s_ + 32.0) // 4), 16)]
+                m = 1.0
+                for su, sw, d in spots:
+                    m *= 1.0 + d * max(0.0, 1.0 - abs(s_ - su) / sw)
+                for side in (-1.0, 1.0):
+                    if along_x:
+                        verts.append((s_, y, t + side * half))
+                    else:
+                        verts.append((t + side * half, y, s_))
+                    shades.append((m, m, m, 1.0))
+            for n in range(steps):
+                a = 2 * n
+                faces.append(_wound(verts, (a, a + 1, a + 3, a + 2), (0, 1, 0)))
+            raw(b, "range_joint", verts, faces, shades)
+
+
 def _chunk(c, size, detail):
     """A dressing part's mesh: small parts (`detail`) by quadrant, so each
     quarter's litter hides on its own beyond its range; what lies flat on the
@@ -851,7 +884,8 @@ def map_testing_dressing(b: Model):
     # The frames only: their plates are steel_plate_* models in the scene.
     for k, z in enumerate((5.0, 8.0)):
         place(b, steel_frame, (30.6, 0.0, z), -PI / 2, seed=10 + k)
-    b.text("IMPACT AREA", 31.99, 4.2, 15.5, -PI / 2, 0.8, "sign_red", depth=0.006, detail=False)
+    # On one panel, between two of the wall's posts.
+    b.text("IMPACT AREA", 31.99, 4.3, 14.0, -PI / 2, 0.52, "sign_red", depth=0.006, detail=False)
     # Strike marks on the wall behind the targets.
     for _ in range(70):
         z = rng.uniform(3.0, 27.0)
@@ -881,17 +915,18 @@ def map_testing_dressing(b: Model):
         yaw = math.atan2(-x, -z)
         place(b, floodlight_mast, (x, 6.12, z), yaw, height=4.6, heads=3)
     # A cable tray along the east wall from the tower to the targets, on
-    # brackets every 2 m, its cables dropping to each target group.
+    # brackets every 2 m, its cables dropping to each target group. It hangs
+    # clear of the wall's posts (12 cm proud).
     for z in [-26.0 + k * 2.0 for k in range(27)]:
-        b.box(31.55, 32.0, 3.0, 3.03, z - 0.03, z + 0.03, "steel_galv")
+        b.box(31.43, 32.0, 3.0, 3.03, z - 0.03, z + 0.03, "steel_galv")
         b.box(31.97, 32.0, 2.9, 3.05, z - 0.04, z + 0.04, "steel_galv", detail=True)
-    b.box(31.5, 31.53, 3.03, 3.12, -26.0, 26.0, "steel_galv")
-    b.box(31.5, 31.97, 3.03, 3.04, -26.0, 26.0, "steel_galv")
+    b.box(31.38, 31.41, 3.03, 3.12, -26.0, 26.0, "steel_galv")
+    b.box(31.38, 31.85, 3.03, 3.04, -26.0, 26.0, "steel_galv")
     for k, dy in enumerate((0.05, 0.07)):
-        b.tube([(31.7 + k * 0.08, 3.03 + dy, -26.0), (31.7 + k * 0.08, 3.03 + dy, 26.0)], 0.014, "cable", sides=5)
-    for z in (6.5, 20.0):
-        b.tube([(31.75, 3.05, z), (31.9, 1.5, z), (31.9, 0.02, z), (31.0, 0.0, z)], 0.012, "cable", sides=4)
-    b.tube([(31.45, 3.08, -26.0), (31.2, 3.6, -27.5), (30.1, 4.0, -26.1)], 0.014, "cable", sides=4)
+        b.tube([(31.58 + k * 0.08, 3.03 + dy, -26.0), (31.58 + k * 0.08, 3.03 + dy, 26.0)], 0.014, "cable", sides=5)
+    for z in (6.5, 19.0):
+        b.tube([(31.63, 3.05, z), (31.9, 1.5, z), (31.9, 0.02, z), (31.0, 0.0, z)], 0.012, "cable", sides=4)
+    b.tube([(31.33, 3.08, -26.0), (31.1, 3.6, -27.5), (30.1, 4.0, -26.1)], 0.014, "cable", sides=4)
     # A cable from the office across the floor to the armoury, in a
     # protector where it crosses the walkway.
     place(b, cable_protector, (-17.0, 0.0, 27.6), 0.0, length=13.5)
@@ -933,8 +968,8 @@ def map_testing_dressing(b: Model):
     for x, y, z, yaw, plate, text, size, w in (
             (-31.98, 2.4, 14.0, PI / 2, "sign_blue", "EAR PROTECTION", 0.13, 1.9),
             (-31.98, 2.4, 18.0, PI / 2, "sign_red", "LIVE FIRE", 0.2, 1.6),
-            (12.0, 2.4, -31.98, 0.0, "sign_red", "DANGER", 0.22, 1.4),
-            (31.98, 2.6, 12.5, -PI / 2, "sign_red", "CEASE FIRE", 0.17, 1.6)):
+            (14.0, 2.4, -31.98, 0.0, "sign_red", "DANGER", 0.22, 1.4),
+            (31.98, 2.6, 13.0, -PI / 2, "sign_red", "CEASE FIRE", 0.17, 1.6)):
         c, s = math.cos(yaw), math.sin(yaw)
         # The plate, 2 cm proud of the wall, and its text on its face.
         hx_, hy_ = w / 2, 0.24
