@@ -228,6 +228,10 @@ impl SoldierFrame {
             progress,
             crouch: self.crouch,
             hunch: 0.0,
+            throw: match self.action {
+                Some((ActionPose::Throw, t)) => Some(t),
+                _ => None,
+            },
         }
     }
 }
@@ -1388,10 +1392,10 @@ impl SoldierRig {
         // as for a knife swing.
         let (action_drop, action_reach) = match frame.action {
             Some((ActionPose::Plant | ActionPose::Defuse, _)) => (1.0, Some(PLANT_REACH)),
-            Some((ActionPose::Throw, t)) => (
-                crate::weapon_clips::keyed(&[(0.0, 0.0), (0.15, 1.0), (0.8, 1.0), (1.0, 0.0)], t),
-                None,
-            ),
+            // The same drop the arm hit zones are posed with.
+            Some((ActionPose::Throw, t)) => {
+                (shooter_sim::hitbox::action::throw_weapon_drop(t), None)
+            }
             None => (0.0, None),
         };
         let swing = swing.max(action_drop);
