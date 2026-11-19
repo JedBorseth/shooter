@@ -31,6 +31,22 @@ const KNOWN_DEPTHS := {
 	"ak47/left index": [4.5, "not yet diagnosed"],
 	"m1911/left index": [6.0, "not yet diagnosed"],
 }
+## How far (degrees, summed over its three joints) each of the firing hand's
+## middle, ring, and little fingers must close: a hand round a pistol grip
+## wraps it. A fit that stops early leaves the hand open beside the grip,
+## fingers straight along the frame and the thumb standing up beside the
+## slide (the M1911 after #200, in the aimed sight picture).
+const LEAST_WRAP := 120.0
+## Weapons whose firing hand the fit still leaves open, and why. The hand sits
+## over the receiver instead of round the grip; fix the grip marker, the
+## rake, or the seat, re-run the bake, and remove the entry.
+const KNOWN_OPEN := {
+	"m4": "the hand sits over the magazine well, ahead of the pistol grip",
+	"br3": "the middle and ring fingers stop early; not yet diagnosed",
+	"pdw9": "the middle finger stops early; not yet diagnosed",
+	"m40": "the middle finger stops early; not yet diagnosed",
+	"lsw6": "the little finger stops early; not yet diagnosed",
+}
 const BLOCK_START := "    // Finger poses fitted to the model"
 ## `FpArms.hand_depths`'s `finger_depths`, in order.
 const FINGER_NAMES := [
@@ -86,6 +102,7 @@ func _run() -> void:
 			for variant: String in variants:
 				var depths := await _hold(player, arms, variant, "hand_depths")
 				_check_depths(variant, depths)
+			_check_wrap(key, _stored_right(stored))
 			continue
 		var fit := await _hold(player, arms, key, "fit_hands")
 		var foregrip := {}
@@ -95,6 +112,7 @@ func _run() -> void:
 			_failures.append("%s: the hands did not hold it" % key)
 			continue
 		_check_depths(key, fit)
+		_check_wrap(key, fit.get("right", PackedFloat32Array()))
 		if takes_grip:
 			_check_depths(key + "+grip", foregrip)
 		if not _write(path, source, _block(fit, foregrip)):
@@ -170,6 +188,38 @@ func _check_depths(key: String, hands: Dictionary) -> void:
 		_failures.append("%s: a hand is %.1f mm off its grip" % [key, max(miss.x, miss.y)])
 	if max(palms.x, palms.y) > MOST_PALM_DEPTH:
 		_failures.append("%s: a palm is %.1f mm into it" % [key, max(palms.x, palms.y)])
+
+
+## Fails if the firing hand's lower three fingers (`right`: 15 curls, index
+## to thumb, three joints each) do not close round the grip, unless the
+## weapon is a listed exception.
+func _check_wrap(key: String, right: PackedFloat32Array) -> void:
+	if right.size() != 15:
+		_failures.append("%s: no firing-hand curls to check" % key)
+		return
+	if key in KNOWN_OPEN:
+		return
+	for f in [1, 2, 3]:
+		var wrap := right[f * 3] + right[f * 3 + 1] + right[f * 3 + 2]
+		if wrap < LEAST_WRAP:
+			_failures.append(
+				(
+					"%s: the firing hand's %s closes only %.0f degrees round the grip"
+					% [key, FINGER_NAMES[f], wrap]
+				)
+			)
+
+
+## The firing hand's stored curls (index to thumb, three joints each) from a
+## weapon file's `hands` block, or an empty array if they cannot be read.
+func _stored_right(block: String) -> PackedFloat32Array:
+	var line := RegEx.create_from_string("right: \\(fingers: \\(([^s]*)\\), spread").search(block)
+	var out := PackedFloat32Array()
+	if line == null:
+		return out
+	for number in RegEx.create_from_string("-?[0-9.]+").search_all(line.get_string(1)):
+		out.append(float(number.get_string()))
+	return out
 
 
 ## The weapon file's `hands` block for a fit.
