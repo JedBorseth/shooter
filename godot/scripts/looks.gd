@@ -168,6 +168,32 @@ const MAPS := {
 		# the lamps.
 		"wetness": 0.75,
 	},
+	# Nuketown keeps its scene and assets as imported; its look is set here.
+	# A hard desert noon, using only settings that cost nothing (the map has
+	# no benchmark views to price anything else against): firmer contrast and
+	# a real toe, so shade under the eaves goes dark; warm sunlit paint against
+	# cool shade; the candy colours a shade calmer, so soldiers read against
+	# them; and air that fades the far rooftops and the tower.
+	"res://scenes/nuketown.tscn":
+	{
+		"env":
+		{
+			"fog_aerial_perspective": 0.8,
+			# The grade below replaces these.
+			"adjustment_contrast": 1.0,
+			"adjustment_saturation": 1.0,
+		},
+		"grade":
+		{
+			"contrast": 1.22,
+			"pivot": 0.45,
+			"saturation": 0.95,
+			"shadows": Color(0.94, 0.98, 1.06),
+			"highlights": Color(1.05, 1.0, 0.94),
+			"balance": 0.5,
+			"toe": 0.1,
+		},
+	},
 }
 
 ## Bloom for every listed map: only what is brighter than white blooms (no
