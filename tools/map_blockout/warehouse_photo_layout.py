@@ -129,6 +129,8 @@ TRAYS = [
     (4.2, 5.0, 4.2, 16.0, 4.2),
     (-15.0, -20.0, 40.0, -20.0, 7.6),
     (40.0, -20.0, 40.0, 30.0, 7.6),
+    (-15.0, 28.6, 43.5, 28.6, 5.8),
+    (22.0, 28.6, 22.0, 6.5, 6.5),
 ]
 PIPES = [  # model, x0, z0, x1, z1, y
     ("pipe_conduit", 15.0, -25.85, 39.0, -25.85, 3.6),
@@ -180,7 +182,9 @@ MACHINES = [
     ("arch_strapper", 7.2, 11.2, 90, 3.4, 2.7, 2.65),
     ("cream_aux_station", 11.2, 11.2, 90, 4.6, 2.15, 1.85),
     ("flexo_line_blue", 17.6, 11.2, 90, 8.2, 3.65, 1.9),
-    ("inspection_bank", 25.6, 11.2, 90, 7.8, 2.15, 2.25),
+    # Photo 10: the rotary die-cutter's feed end closes the line at the east
+    # aisle, its operator side to the north.
+    ("rotary_feeder", 25.5, 11.2, 270, 8.2, 3.4, 2.98),
     # Grey take-off hood over the finishing cell (photo 2, upper centre).
     ("elevated_hood", 1.5, 8.2, 90, 4.8, 1.9, 3.2),
     # Finishing cell (photos 2 and 3): the folder-gluer runs north into the
@@ -210,8 +214,7 @@ FALLBACK = {"forklift": "res://assets/props/warehouse/forklift.glb",
             "office_printer": "res://assets/props/warehouse/office_printer.glb",
             "office_chair": "res://assets/props/warehouse/office_chair.glb",
             "aopack_box_maker": "res://assets/props/warehouse/box_machine.glb",
-            "delivery_truck": "res://assets/props/warehouse/delivery_truck.glb",
-            "jersey_barrier": "res://assets/props/barrier/barrier.gltf"}
+            "delivery_truck": "res://assets/props/warehouse/delivery_truck.glb"}
 
 # --- stock ------------------------------------------------------------------------
 KRAFT_BY_HEIGHT = [
@@ -318,6 +321,10 @@ fill("towers", 33.4, -9.1, 1.2, 1.0, 1.25, 90, 1, models=["pallet_tower_short"],
 fill("sheets", 41.8, -18.0, 3.6, 7.0, 3.6, 0, 8)
 fill("sheets", 41.8, 12.0, 3.6, 9.0, 3.4, 0, 9)
 fill("sheets", 36.5, 12.5, 3.0, 5.0, 2.6, 0, 4)
+# Photo 10: the orange rack of curved board formers and the floor-level trim
+# duct the feed end's scrap goes down (waist-high cover along its length).
+MACHINES.append(("pallet_rack_orange", 36.9, 8.4, 90, 2.7, 1.1, 3.2))
+MACHINES.append(("trim_duct", 39.6, 18.7, 90, 7.0, 1.0, 1.12))
 # Photos 8 and 9: die-cut cell.
 fill("bulk", 30.23, -21.4, 1.35, 0.95, 1.23, 0, 1, models=["open_bulk_box"], hvar=0)
 fill("bulk", 29.7, -22.8, 1.15, 1.25, 1.28, 0, 1, models=["open_bulk_box"], hvar=0)

@@ -3,10 +3,10 @@
 [ext_resource type="Texture2D" path="res://assets/textures/corrugated/normal.jpg" id="1"]
 
 [resource]
-resource_name = "Black roof deck"
-albedo_color = Color(0.36, 0.37, 0.38, 1)
-metallic = 0.35
-roughness = 0.72
+resource_name = "Grey primed roof deck"
+albedo_color = Color(0.66, 0.67, 0.68, 1)
+metallic = 0.12
+roughness = 0.62
 normal_enabled = true
 normal_scale = 0.9
 normal_texture = ExtResource("1")

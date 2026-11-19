@@ -104,7 +104,7 @@ def merge(lo, hi, corner, cell, tol):
                 continue
             b, t = lo[i, j], hi[i, j]
 
-            def ok(ii, jj):
+            def ok(ii, jj, b=b, t=t):
                 return (not used[ii, jj] and abs(lo[ii, jj] - b) <= tol and abs(hi[ii, jj] - t) <= tol)
 
             j1 = j

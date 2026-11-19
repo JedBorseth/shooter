@@ -73,6 +73,8 @@ func _run() -> void:
 		query.collision_mask = 1
 		_check(space.intersect_shape(query).is_empty(), "spawn %s has body clearance" % marker.name)
 
+	_check_prop_collision(current_scene)
+
 	var start_y := player.position.y
 	for i in 120:
 		await physics_frame
@@ -95,6 +97,49 @@ func _run() -> void:
 		"Home returns to the title screen"
 	)
 	_finish()
+
+
+## Props collide with what players see: every prop body has a visible model,
+## props use fitted clip boxes (tools/build_warehouse_clip.py) rather than one
+## box around the model, and no box reaches past the model's own bounds.
+func _check_prop_collision(map: Node) -> void:
+	var invisible := PackedStringArray()
+	var oversized := PackedStringArray()
+	var clipped := 0
+	var bodies := 0
+	for group in ["PhotoPass", "WarehouseDressing"]:
+		for body: StaticBody3D in map.get_node(group).find_children(
+			"*", "StaticBody3D", true, false
+		):
+			var meshes := body.find_children("*", "MeshInstance3D", true, false)
+			var shapes := body.find_children("*", "CollisionShape3D", false, false)
+			if shapes.is_empty():
+				continue
+			bodies += 1
+			if meshes.is_empty():
+				invisible.append(str(map.get_path_to(body)))
+				continue
+			var seen := AABB()
+			for i in meshes.size():
+				var m := meshes[i] as MeshInstance3D
+				var box: AABB = m.global_transform * m.get_aabb()
+				seen = box if i == 0 else seen.merge(box)
+			seen = seen.grow(0.1)
+			for s: CollisionShape3D in shapes:
+				if s.name.begins_with("Clip"):
+					clipped += 1
+				if s.shape is BoxShape3D:
+					var size := (s.shape as BoxShape3D).size
+					var box := s.global_transform * AABB(-size / 2, size)
+					if not seen.encloses(box):
+						oversized.append(str(map.get_path_to(body)))
+						break
+	_check(invisible.is_empty(), "no prop collides without anything to see: %s" % [invisible])
+	_check(oversized.is_empty(), "no prop's collision reaches past its model: %s" % [oversized])
+	_check(
+		clipped > bodies * 2,
+		"props collide with fitted clip boxes (%d boxes, %d bodies)" % [clipped, bodies]
+	)
 
 
 func _check(ok: bool, description: String) -> void:

@@ -906,6 +906,20 @@
    40.0,
    30.0,
    7.6
+  ],
+  [
+   -15.0,
+   28.6,
+   43.5,
+   28.6,
+   5.8
+  ],
+  [
+   22.0,
+   28.6,
+   22.0,
+   6.5,
+   6.5
   ]
  ],
  "pipes": [
@@ -1193,13 +1207,13 @@
    1.9
   ],
   [
-   "inspection_bank",
-   25.6,
+   "rotary_feeder",
+   25.5,
    11.2,
-   90,
-   7.8,
-   2.15,
-   2.25
+   270,
+   8.2,
+   3.4,
+   2.98
   ],
   [
    "elevated_hood",
@@ -1338,6 +1352,24 @@
    1.0
   ],
   [
+   "pallet_rack_orange",
+   36.9,
+   8.4,
+   90,
+   2.7,
+   1.1,
+   3.2
+  ],
+  [
+   "trim_duct",
+   39.6,
+   18.7,
+   90,
+   7.0,
+   1.0,
+   1.12
+  ],
+  [
    "delivery_truck",
    -9.5,
    -33.0,
@@ -1394,8 +1426,7 @@
   "office_printer": "res://assets/props/warehouse/office_printer.glb",
   "office_chair": "res://assets/props/warehouse/office_chair.glb",
   "aopack_box_maker": "res://assets/props/warehouse/box_machine.glb",
-  "delivery_truck": "res://assets/props/warehouse/delivery_truck.glb",
-  "jersey_barrier": "res://assets/props/barrier/barrier.gltf"
+  "delivery_truck": "res://assets/props/warehouse/delivery_truck.glb"
  },
  "props": [
   {

@@ -43,7 +43,9 @@ func _run() -> void:
 			var x: float = X[0] + (j + 0.5) * CELL
 			var z: float = Z[0] + (i + 0.5) * CELL
 			# Highest walkable surface under the roof: start below the joists.
-			var ray := PhysicsRayQueryParameters3D.create(Vector3(x, 8.0, z), Vector3(x, -4.0, z), 1)
+			var ray := PhysicsRayQueryParameters3D.create(
+				Vector3(x, 8.0, z), Vector3(x, -4.0, z), 1
+			)
 			var hit := space.intersect_ray(ray)
 			var y: float = hit.position.y if hit else -99.0
 			floor.append(y)
@@ -64,8 +66,16 @@ func _run() -> void:
 				if not space.intersect_ray(r).is_empty():
 					blocked = true
 			sight.append(1 if blocked else 0)
-	var out := {"x0": X[0], "z0": Z[0], "cell": CELL, "nx": nx, "nz": nz,
-		"floor": Array(floor), "move": Array(move), "sight": Array(sight)}
+	var out := {
+		"x0": X[0],
+		"z0": Z[0],
+		"cell": CELL,
+		"nx": nx,
+		"nz": nz,
+		"floor": Array(floor),
+		"move": Array(move),
+		"sight": Array(sight)
+	}
 	var spawns := []
 	for m: Node3D in scene.get_node("SpawnPoints").get_children():
 		spawns.append([m.position.x, m.position.y, m.position.z, m.get_meta("team", -1)])

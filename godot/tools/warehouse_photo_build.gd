@@ -438,15 +438,16 @@ static func _build_lighting(g: Node3D) -> void:
 		spot.distance_fade_length = 12.0
 		g.add_child(spot)
 		spot.owner = _root
-		# High-bays leak a little light upward, which is what lets the deck and joists read.
+		# High-bays spill light upward, which is what lets the deck and joists
+		# read: photo 10 shows a light grey deck washed around every fixture.
 		var up := SpotLight3D.new()
 		up.name = "Uplight%02d" % n
 		up.position = Vector3(p[0], y + 0.15, p[1])
 		up.rotation_degrees = Vector3(90, 0, 0)
 		up.light_color = spot.light_color
-		up.light_energy = 1.2
-		up.spot_range = 3.5
-		up.spot_angle = 80.0
+		up.light_energy = 2.4
+		up.spot_range = 5.0
+		up.spot_angle = 85.0
 		up.light_volumetric_fog_energy = 0.0
 		g.add_child(up)
 		up.owner = _root

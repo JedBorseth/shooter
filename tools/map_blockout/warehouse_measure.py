@@ -21,7 +21,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from blockout import SPRINT, sightlines  # noqa: E402
+from blockout import SPRINT, sightlines
 
 STEP_UP = 0.6  # highest step a player walks up without mantling (m)
 MANTLE = 1.35  # highest ledge a player mantles (rust/sim/src/movement.rs)
@@ -81,7 +81,7 @@ def main():
 
     def free_near(p):
         i, j = cellof(p)
-        for r in range(0, 12):
+        for r in range(12):
             for a in range(i - r, i + r + 1):
                 for b in range(j - r, j + r + 1):
                     if 0 <= a < nz and 0 <= b < nx and not move[a, b]:
@@ -135,7 +135,6 @@ def main():
     ax.set_facecolor("#0b0f14")
     img = np.zeros((*move.shape, 3))
     img[~move] = (0.58, 0.62, 0.64)
-    low = move & ~sight & reach.any()
     img[move & ~sight] = (0.33, 0.36, 0.38)
     img[move & sight] = (0.10, 0.12, 0.14)
     high = (floor > 1.0) & ~move

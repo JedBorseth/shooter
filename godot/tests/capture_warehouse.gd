@@ -12,13 +12,16 @@ extends SceneTree
 ##                  vertical field of view (default 62, an iPhone main camera
 ##                  held upright). Without it the photo views below are taken.
 ##   CAPTURE_TOP    1 to add a top-down orthographic plan with the roof hidden.
+##   CAPTURE_PRESET low, medium, or high graphics (default high).
+##   CAPTURE_SCENE  another scene to capture (default Warehouse).
 
+const Benchmark := preload("res://tests/benchmark.gd")
 const LEVEL := "res://scenes/warehouse.tscn"
 
-## Photo 10: from the east end of the rotary line, looking west along the
-## south cross aisle to the dispatch office and the wing.
+## Photo 10: at the feed corner of the rotary (the south line's east end),
+## looking south across it to the dispatch office and the south wall.
 const VIEWS := {
-	"photo10": [Vector3(29.5, 1.6, 19.0), 266.0, 6.0, 62.0],
+	"photo10": [Vector3(30.6, 1.6, 7.6), 205.0, 7.0, 62.0],
 	"south_aisle_east": [Vector3(40.0, 1.6, 18.0), 270.0, 0.0, 62.0],
 	"centre_north": [Vector3(13.5, 1.6, 4.0), 0.0, 0.0, 62.0],
 	"wing": [Vector3(-26.0, 1.6, -20.0), 180.0, 0.0, 62.0],
@@ -37,7 +40,14 @@ func _run() -> void:
 		quit(1)
 		return
 	DirAccess.make_dir_recursive_absolute(_out)
-	var scene: Node3D = (load(LEVEL) as PackedScene).instantiate()
+	var settings := root.get_node("Settings")
+	settings.path = "user://capture_warehouse_settings.cfg"
+	var preset := OS.get_environment("CAPTURE_PRESET")
+	settings.set_graphics_preset(Benchmark.PRESET_KEYS.get(preset, Benchmark.PRESET_KEYS["high"]))
+	var level := OS.get_environment("CAPTURE_SCENE")
+	var scene: Node3D = (
+		(load(level if not level.is_empty() else LEVEL) as PackedScene).instantiate()
+	)
 	for n in ["Player", "HUD", "PauseMenu"]:
 		var node := scene.get_node_or_null(n)
 		if node != null:
@@ -63,6 +73,8 @@ func _run() -> void:
 		await _shot(name)
 	if OS.get_environment("CAPTURE_TOP") == "1":
 		await _top(scene, cam)
+	settings.reset_to_defaults()
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(settings.path))
 	quit()
 
 

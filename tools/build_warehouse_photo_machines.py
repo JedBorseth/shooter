@@ -82,6 +82,15 @@ def finishes():
         "wood_old": material("Weathered pallet", rough=0.95,
                              albedo=props.TEXTURES / "pallet_wood_albedo.png", tint=(0.72, 0.68, 0.62)),
         "endgrain": finish("Exposed corrugated edge", "a88a61", 0.91),
+        "rotary_navy": finish("Rotary navy enamel", "1d2a4d", 0.52, painted=True),
+        "rail_blue": finish("Overhead rail blue", "2c5b9a", 0.45, painted=True),
+        "roller_blue": finish("Light blue feed roller", "6f9ccc", 0.35, 0.3),
+        "rack_orange": finish("Rack upright orange", "d9561c", 0.5, painted=True),
+        "rack_teal": finish("Rack beam teal", "1d6c86", 0.48, painted=True),
+        "duct_galv": finish("Galvanized spiral duct", "a9afb0", 0.42, 0.7),
+        "mirror": finish("Convex safety mirror", "dfe4e6", 0.05, 1.0),
+        "led": finish("Red LED digits", "ff2a1a", 0.3),
+        "nalgene": finish("Blue water bottle", "1f5fae", 0.25),
     }
 
 
@@ -505,7 +514,7 @@ def air_compressor(m):
         box(m, "Right-hand cooling slot", 0.591, 0.05, z, 0.012, 0.41, 0.037, "charcoal")
 
 
-def incline_conveyor(m):
+def incline_conveyor(m, belt="black"):
     """Photo 4. Steep dark cleated belt, silver rails and a pale head drive."""
     lower = Vector((-1.47, 0, 0.40))
     upper = Vector((1.06, 0, 2.414))
@@ -517,7 +526,7 @@ def incline_conveyor(m):
         obj = box(m, name, midpoint.x, lateral, midpoint.z, thickness, width, (upper - lower).length, color)
         obj.rotation_euler.y = atan2(slope.x, slope.z)
 
-    along_belt("Inclined rubber belt", 0, 0.064, 0.48, "black")
+    along_belt("Inclined rubber belt", 0, 0.064, 0.48, belt)
     for y in (-0.278, 0.278):
         along_belt("Folded side channel", y, 0.112, 0.06, "zinc")
         for i in range(15):
@@ -526,7 +535,7 @@ def incline_conveyor(m):
     for i in range(20):
         p = lower.lerp(upper, (i + 0.5) / 20) + normal * 0.045
         beam(m, "Molded transverse cleat", p - Vector((0, 0.217, 0)), p + Vector((0, 0.217, 0)),
-             0.027, 0.023, "black")
+             0.027, 0.023, belt)
     for y in (-0.205, 0.205):
         for x, h in ((-1.34, 0.43), (0.68, 2.045)):
             foot(m, x, y, 0.17, 0.17, "stand")
@@ -544,6 +553,123 @@ def incline_conveyor(m):
         bolt(m, x, -0.314, 2.295)
 
 
+
+
+def rotary_feeder(m):
+    """Photo 10. The rotary die-cutter's feed end: a navy frame with yellow
+    handwheels, a black bellows guard, a blue and silver roller feed table
+    behind a rusted yellow side guide, and an overhead blue rail carrying red
+    LED counters and a convex safety mirror. The feed end is -X and the
+    operator side -Y; the ledge carries the operator's clipboard and kit."""
+    box(m, "Dark plinth", 0, 0, 0.12, 8.2, 2.8, 0.24, "duct")
+    box(m, "Navy lower frame", 0, 0, 0.6, 8.2, 2.5, 0.72, "rotary_navy")
+    for x in (-3.0, -1.2, 0.6, 2.4):
+        panel(m, x, -1.262, 0.58, 1.3, 0.46, "rotary_navy")
+    for i in range(22):
+        box(m, "Gear rack tooth", -2.95 + i * 0.045, -1.275, 0.86, 0.022, 0.02, 0.05, "zinc")
+    for x in (-3.55, -0.9):
+        handwheel(m, x, -1.33, 0.56, 0.2, "yellow")
+    box(m, "Operator ledge", -2.75, -1.40, 0.985, 2.3, 0.32, 0.05, "rotary_navy")
+    box(m, "Clipboard", -2.2, -1.40, 1.016, 0.24, 0.32, 0.012, "brown")
+    box(m, "Run sheet", -2.2, -1.40, 1.024, 0.215, 0.28, 0.004, "legend")
+    disc(m, "Paper cup", -2.75, -1.36, 1.01, 0.04, 0.1, "legend", 16)
+    disc(m, "Water bottle", -2.95, -1.33, 1.01, 0.045, 0.24, "nalgene", 16)
+    disc(m, "Bottle cap", -2.95, -1.33, 1.25, 0.04, 0.035, "black", 16)
+    for y in (-1.44, -1.31):
+        round_bar(m, "Ear defender cup", (-3.42, y, 1.06), (-3.42, y + 0.05, 1.06), 0.055, "yellow", 16)
+    beam(m, "Ear defender band", (-3.42, -1.40, 1.12), (-3.42, -1.31, 1.12), 0.02, 0.03, "black")
+    # Control column at the feed corner, with a red lockout box.
+    box(m, "Control column", -3.85, -1.2, 1.5, 0.4, 0.36, 1.0, "rotary_navy")
+    box(m, "Control face", -3.85, -1.385, 1.68, 0.32, 0.012, 0.42, "black")
+    for i, (dx, dz) in enumerate(((-0.08, 0.1), (0.08, 0.1), (-0.08, -0.06), (0.08, -0.06))):
+        round_bar(m, "Selector knob", (-3.85 + dx, -1.39, 1.68 + dz), (-3.85 + dx, -1.43, 1.68 + dz),
+                  0.03, "steel" if i else "signal", 12)
+    box(m, "Legend plate", -3.85, -1.392, 1.5, 0.2, 0.006, 0.05, "yellow")
+    box(m, "Lockout box", -3.43, -1.42, 1.48, 0.2, 0.1, 0.36, "signal")
+    for i in range(4):
+        box(m, "Lockout tag", -3.43, -1.475, 1.4 + i * 0.05, 0.12, 0.005, 0.02, "legend")
+    # Black accordion bellows over the feed gate.
+    pleats = 26
+    for i in range(pleats):
+        a = -pi / 2 + pi * i / (pleats - 1)
+        r = 1.0 + (0.05 if i % 2 else 0.0)
+        cx, cy = -2.4 + 0.75 * cos(a) * 0.55, r * sin(a)
+        obj = box(m, "Bellows pleat", cx, cy, 1.37, 0.07, 0.12, 0.74, "black")
+        obj.rotation_euler.z = a
+    box(m, "Bellows header", -2.4, 0, 1.76, 0.5, 2.1, 0.06, "rotary_navy")
+    # Feed table: rollers across the line, light blue and silver.
+    box(m, "Feed table bed", 1.25, 0, 0.98, 5.7, 2.0, 0.06, "duct")
+    for i in range(40):
+        x = -1.55 + i * 0.142
+        round_bar(m, "Feed roller", (x, -0.98, 1.04), (x, 0.92, 1.04), 0.032,
+                  "roller_blue" if i % 3 else "steel", 10)
+    round_bar(m, "Front guard bar", (-1.6, -1.12, 1.0), (4.1, -1.12, 1.0), 0.055, "steel", 16)
+    box(m, "Yellow side guide", 1.25, 1.05, 1.2, 5.7, 0.2, 0.36, "yellow")
+    for x, w in ((-0.6, 0.45), (0.9, 0.3), (2.3, 0.55), (3.5, 0.25)):
+        box(m, "Rust bloom", x, 0.945, 1.2 + (x % 0.1), w, 0.012, 0.22, "orange")
+    for x in (0.2, 1.8, 3.3):
+        box(m, "Guide finger", x, 0.82, 1.32, 0.26, 0.06, 0.56, "steel")
+        box(m, "Guide clamp", x, 0.9, 1.6, 0.16, 0.12, 0.1, "zinc")
+    # Overhead blue rail with counters, a control pod, and the safety mirror.
+    for x in (-2.0, 1.0, 4.0):
+        box(m, "Rail post", x, 1.3, 1.6, 0.14, 0.14, 1.2, "rotary_navy")
+    box(m, "Upper rail", 1.0, 1.3, 2.25, 6.3, 0.16, 0.2, "rail_blue")
+    box(m, "Lower rail", 1.0, 1.3, 1.62, 6.3, 0.12, 0.1, "rail_blue")
+    for x in (0.55, 1.05):
+        box(m, "LED counter", x, 1.2, 1.74, 0.36, 0.14, 0.14, "black")
+        box(m, "LED digits", x - 0.02, 1.125, 1.74, 0.24, 0.006, 0.07, "led")
+    box(m, "Counter cabinet", -1.75, 1.25, 2.52, 0.56, 0.3, 0.34, "signal")
+    box(m, "Counter face", -1.75, 1.096, 2.52, 0.4, 0.006, 0.16, "black")
+    box(m, "Counter digits", -1.75, 1.092, 2.52, 0.26, 0.004, 0.08, "led")
+    round_bar(m, "Mirror stalk", (-1.75, 1.3, 2.69), (-1.75, 1.3, 2.9), 0.018, "zinc", 8)
+    disc(m, "Mirror rim", -1.75, 1.3, 2.9, 0.28, 0.04, "black", 28)
+    disc(m, "Convex mirror face", -1.75, 1.3, 2.94, 0.26, 0.05, "mirror", 28)
+    box(m, "Control pod", 3.3, 1.18, 1.95, 0.5, 0.18, 0.3, "black")
+    for i in range(3):
+        round_bar(m, "Pod knob", (3.15 + i * 0.15, 1.09, 1.95), (3.15 + i * 0.15, 1.06, 1.95), 0.03, "steel", 12)
+    hose(m, "Yellow sensor cable", [(-1.5, 1.2, 2.45), (-1.0, 1.0, 1.9), (-0.4, 0.9, 1.55),
+                                    (0.3, 1.0, 1.8), (0.9, 1.15, 1.78)], 0.016, "yellow")
+
+
+def pallet_rack_orange(m):
+    """Photo 10. An orange-upright pallet rack with teal beams, holding curved
+    board formers stacked in arches."""
+    for x in (-1.3, 1.3):
+        for y in (-0.48, 0.48):
+            box(m, "Rack upright", x, y, 1.6, 0.08, 0.08, 3.2, "rack_orange")
+            foot(m, x, y, 0.14, 0.14, "rack_orange")
+        for z0 in (0.3, 1.3, 2.3):
+            beam(m, "Frame brace", (x, -0.46, z0), (x, 0.46, z0 + 0.8), 0.03, 0.03, "zinc")
+    for z in (0.14, 1.55, 2.85):
+        for y in (-0.5, 0.5):
+            box(m, "Step beam", 0, y, z, 2.6, 0.05, 0.12, "rack_teal")
+    for shelf in (0.2, 1.61, 2.91):
+        for k, x in enumerate((-0.68, 0.62)):
+            for n in range(3 if shelf < 2.5 else 2):
+                r = 0.42 - n * 0.035
+                rings = []
+                for t in range(13):
+                    a = pi * t / 12
+                    rings.append([(x + r * cos(a), y, shelf + 0.02 + n * 0.11 + r * sin(a) * 0.7)
+                                  for y in (-0.42, 0.42)])
+                ring_pts = [[rings[t][0], rings[t][1]] for t in range(13)]
+                skin(m, "Curved board former", [[p[0] for p in ring_pts], [p[1] for p in ring_pts]],
+                     "kraft")
+                box(m, "Former label", x - r * 0.5, -0.425, shelf + 0.1 + n * 0.11 + r * 0.4,
+                    0.16, 0.004, 0.08, "legend")
+                box(m, "Former stripe", x - r * 0.5, -0.427, shelf + 0.13 + n * 0.11 + r * 0.4,
+                    0.16, 0.003, 0.02, "signal")
+
+
+def trim_duct(m):
+    """Photo 10. The trim-scrap duct running along the floor: a 1 m galvanized
+    spiral duct on saddles, with raised seams every 1.2 m."""
+    round_bar(m, "Trim duct", (-3.5, 0, 0.62), (3.5, 0, 0.62), 0.5, "duct_galv", 28)
+    for i in range(6):
+        x = -3.0 + i * 1.2
+        round_bar(m, "Duct seam", (x, 0, 0.62), (x + 0.06, 0, 0.62), 0.515, "zinc", 28)
+    for x in (-2.4, 2.4):
+        box(m, "Duct saddle", x, 0, 0.09, 0.2, 1.0, 0.18, "zinc")
 
 
 def die_cutter_white(m):
@@ -862,6 +988,9 @@ MODELS = {
     "rolling_tub_blue": (lambda m: rolling_tub(m, "poly_blue", 1.13, 0.72, 0.72), (1.13, 0.72, 0.72)),
     "rolling_tub_yellow": (lambda m: rolling_tub(m, "poly_yellow", 1.0, 0.72, 0.78), (1.0, 0.72, 0.78)),
     "open_bulk_box": (open_bulk_box, (1.35, 1.4, 1.25)),
+    "rotary_feeder": (rotary_feeder, (8.2, 3.4, 2.98)),
+    "pallet_rack_orange": (pallet_rack_orange, (2.7, 1.1, 3.2)),
+    "trim_duct": (trim_duct, (7.0, 1.0, 1.12)),
 }
 
 
