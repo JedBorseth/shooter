@@ -182,6 +182,10 @@ func _feet_on_a_step() -> void:
 		right.y < left.y - 0.09,
 		"the foot over the lower ground reaches down toward it (ankle %.3f)" % right.y
 	)
+	# Past the straight leg, the toe points down to the lower ground: the
+	# ball of the foot (whose joint sits about 4 cm over the sole) reaches it.
+	var toe := await _posed(rig, "RightToes", still)
+	_check(toe.y < 0.07, "the toe reaches down to the lower ground (ball %.3f)" % toe.y)
 	var hips := await _posed(rig, "Hips", still)
 	_check(
 		hips.y > 0.18 + 0.87 - 0.095,
