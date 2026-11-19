@@ -31,7 +31,8 @@ Downloaded (CC0), cached in ~/.cache/shooter-fidelity/combat-vfx/sources:
 - cloud_8x4.png: Unity Labs' Cloud02 and Cloud01 loops, sixteen frames each,
   for the smoke grenade's billows and the flashbang's puff.
 
-Also generated: scorch_{albedo,orm}.png, the soot a blast leaves.
+Also generated: scorch_{albedo,orm}.png, the soot, thrown dirt, and fragment
+pits a blast leaves.
 """
 
 import io
@@ -399,26 +400,54 @@ def explosion_flipbook() -> None:
 
 
 def scorch(size: int = 512) -> None:
-    """scorch_{albedo,orm}.png: the soot a blast leaves on the ground, dark at
-    the centre, streaked outward, and broken up at its edge."""
+    """scorch_{albedo,orm}.png: what a frag leaves on the ground. Soot, black
+    at the centre and broken up at its edge; streaks of soot and of brown dirt
+    thrown out from it; and pits where fragments struck, scattered over the
+    whole mark."""
     rng = np.random.default_rng(55)
     x, y, r, angle = polar(size)
     streaks = np.zeros_like(r)
-    for _ in range(40):
+    for _ in range(56):
         a0 = rng.uniform(-np.pi, np.pi)
-        w = rng.uniform(0.03, 0.09)
-        reach = rng.uniform(0.55, 0.95)
+        w = rng.uniform(0.02, 0.07)
+        reach = rng.uniform(0.5, 0.95)
         d = np.abs(np.angle(np.exp(1j * (angle - a0))))
         streaks = np.maximum(streaks, np.clip(1 - d / w, 0, 1) * np.clip(1 - r / reach, 0, 1))
+    # Dirt thrown out: broad, faint brown rays past the soot.
+    thrown = np.zeros_like(r)
+    for _ in range(18):
+        a0 = rng.uniform(-np.pi, np.pi)
+        w = rng.uniform(0.08, 0.2)
+        d = np.abs(np.angle(np.exp(1j * (angle - a0))))
+        ray = np.clip(1 - d / w, 0, 1) * np.clip((r - 0.25) / 0.2, 0, 1) * np.clip((0.98 - r) / 0.3, 0, 1)
+        thrown = np.maximum(thrown, ray * rng.uniform(0.6, 1.0))
     noise = fbm(size, rng, 6, 4)
-    body = np.clip(1 - r / (0.55 + 0.25 * noise), 0, 1) ** 0.8
-    soot = np.clip(np.maximum(body, streaks * 0.8) + (noise - 0.5) * 0.4, 0, 1)
-    soot *= np.clip((0.97 - r) / 0.15, 0, 1)
-    shade = 0.03 + 0.07 * fbm(size, rng, 16, 2) * (1 - body)
-    colour = np.stack([shade * 1.05, shade, shade * 0.95], axis=2)
-    alpha = np.clip(soot * 1.15, 0, 1)
-    save_rgba(OUT / "scorch_albedo.png", np.concatenate([colour, alpha[..., None]], axis=2))
-    orm = np.stack([np.ones_like(r), np.full_like(r, 0.95), np.zeros_like(r), alpha], axis=2)
+    grain = fbm(size, rng, 24, 3)
+    body = np.clip(1 - r / (0.42 + 0.22 * noise), 0, 1) ** 0.7
+    soot = np.clip(np.maximum(body, streaks * 0.75) + (noise - 0.5) * 0.45, 0, 1)
+    # Fragment pits: small dark dents, denser toward the centre.
+    pits = np.zeros_like(r)
+    for _ in range(90):
+        pr = rng.uniform(0.0, 1.0) ** 0.8 * 0.9
+        pa = rng.uniform(-np.pi, np.pi)
+        px, py = pr * np.cos(pa), pr * np.sin(pa)
+        radius = rng.uniform(0.003, 0.009)
+        depth = rng.uniform(0.35, 0.8)
+        pits = np.maximum(pits, np.clip(1 - np.hypot(x - px, y - py) / radius, 0, 1) * depth)
+    dirt = thrown * (0.55 + 0.45 * grain) * (1 - soot)
+    edge = np.clip((0.97 - r) / 0.15, 0, 1)
+    soot *= edge
+    dirt *= edge
+    shade = 0.025 + 0.06 * grain * (1 - body)
+    soot_rgb = np.stack([shade * 1.05, shade, shade * 0.95], axis=2)
+    dirt_rgb = np.array([0.2, 0.15, 0.1])[None, None, :] * (0.7 + 0.3 * grain[..., None])
+    cover = np.clip(soot * 1.2 + dirt + pits, 0, 1)
+    mix_dirt = np.where(cover > 0, dirt / np.maximum(cover, 1e-4), 0)[..., None]
+    colour = soot_rgb * (1 - mix_dirt) + dirt_rgb * mix_dirt
+    colour *= (1 - 0.6 * pits)[..., None]
+    save_rgba(OUT / "scorch_albedo.png", np.concatenate([colour, cover[..., None]], axis=2))
+    # Soot and dirt are matte; occlusion darkens the pits.
+    orm = np.stack([1 - 0.5 * pits, np.full_like(r, 0.95), np.zeros_like(r), cover], axis=2)
     save_rgba(OUT / "scorch_orm.png", orm)
     print("scorch")
 

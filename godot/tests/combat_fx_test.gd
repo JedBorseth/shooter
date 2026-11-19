@@ -112,6 +112,23 @@ func _run() -> void:
 	effects.explosion(Vector3(4.3, 0.0, -4), Vector3.UP, 1.0)
 	_check(effects.explosions_played() == played + 2, "explosions play")
 	_check(effects.scorches_kept() == scorched + 1, "a second blast on the spot reuses its scorch")
+	var explosion: Node = null
+	for child: Node in effects.get_children():
+		if child.scene_file_path.ends_with("explosion.tscn"):
+			explosion = child
+			break
+	_check(explosion != null, "the explosion is pooled under the effects node")
+	if explosion != null:
+		var chips := (explosion.get_node("Debris") as GPUParticles3D).draw_pass_1
+		_check(
+			chips != null and chips.get_faces().size() > 36,
+			"explosion debris draws the modelled chip, not a box"
+		)
+		var dirt := explosion.get_node("Dirt") as GPUParticles3D
+		_check(
+			absf(float(dirt.get_instance_shader_parameter(&"ground_y"))) < 0.05,
+			"the dirt thrown up fades in above the ground the blast went off on"
+		)
 	var blast := (load("res://scenes/equipment/frag_blast.tscn") as PackedScene).instantiate()
 	blast.position = Vector3(-4, 0.0, -4)
 	level.add_child(blast)
