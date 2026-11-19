@@ -12,3 +12,6 @@ rust/target/
 # Python asset-pipeline caches.
 __pycache__/
 benchmark.json
+
+# Blockout plan outputs (plan.png, sightlines.png, minimap.png)
+tools/map_blockout/*_out/

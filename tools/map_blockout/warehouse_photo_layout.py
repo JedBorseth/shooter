@@ -1,16 +1,15 @@
-"""Warehouse layout matched to the nine reference photos (November 2026 photo pass).
+"""Warehouse layout: the real building's shell and structure from the photo
+pass, and the 6v6 layout from the approved plan (warehouse_2026_11.py).
 
 Writes godot/tools/warehouse_photo_layout.json, which
 godot/tools/warehouse_photo_build.gd reads to rebuild the shell (as Cyclops
-blocks), the roof structure, lighting, utilities, machines, and stock.
+blocks), the roof structure, lighting, utilities, machines, stock, rooms,
+stairs, rails, effects, spawns, and bot lanes.
 
-World metres, Godot axes: +x east, +z south, y up, hall floor y = 0.
-Measurements come from a photogrammetric read of the photos (camera fits,
-known object sizes, shared landmarks between photos). The east wall moved
-from x 35.5 to x 44, the roof rose to a 9.3 m deck with joists bottoming at
-8.4 m, and the southeast corner gained a 3.8 m CMU storage platform. Parts
-that only the top-down sketch shows (parking, loading apron, wing exterior,
-offices) keep their sketch positions.
+World metres, Godot axes: +x east, +z south, y up, hall floor y = 0. The
+hall's size, roof (a 9.3 m deck on joists bottoming at 8.4 m), and doors come
+from the reference photos and the fire plan. The play space is the hall and
+the two yards; the wing is sealed.
 
 Run: python tools/map_blockout/warehouse_photo_layout.py
 """
@@ -32,51 +31,45 @@ WALL_H = DECK_Y + 0.15
 APRON_Y = -1.25
 
 # --- shell -------------------------------------------------------------------
+# The 6v6 rebuild (tools/map_blockout/warehouse_2026_11.py) keeps the real
+# building's single square hall: the fire plan shows no wing, so the wing is
+# sealed behind a solid west wall and left out of play. The truck apron sits
+# level with the hall like the parking lot, so both teams' yards play alike.
 # Floors: name, x0, x1, z0, z1, y0, y1, material
 FLOORS = [
     ("ParkingLot", -37, EAST + WALL_T, -34.5, -26.4, -0.5, 0.0, "yard"),
     ("WingParkingEntry", -26, -23.5, -26.4, -24.9, -0.5, 0.0, "yard"),
     ("LeftWingFloor", -35.9, -17.2, -24.9, 31.4, -1.75, 0.0, "slab"),
     ("MainHallFloor", -17.2, EAST + WALL_T, -26.4, 33.4, -1.75, 0.0, "slab"),
-    ("WingApron", -35.9, -17.2, 31.4, 33.4, -1.75, APRON_Y, "yard"),
-    ("TruckBayApron", -35.9, EAST + WALL_T, 33.4, 46, -1.75, APRON_Y, "yard"),
+    ("WingApron", -35.9, -17.2, 31.4, 33.4, -0.5, 0.0, "yard"),
+    ("TruckBayApron", -35.9, EAST + WALL_T, 33.4, 46, -0.5, 0.0, "yard"),
 ]
 
 # Walls: name, x0, x1, z0, z1, height, material, openings along the long axis
-# as (start, end, top_y).
+# as (start, end, top_y). Each long side has four doors, the south ones the
+# north ones turned 180 degrees about the hall's centre (x 13.5, z 3.5).
 WALLS = [
     ("HallNorth", -17.2, EAST + WALL_T, -26.4, -26.0, WALL_H, "tiltup",
-     [(-14, -11.5, 3.25), (-1.5, 1.0, 3.25), (15, 18, 3.5), (30.2, 32.7, 2.25)]),
+     [(-14, -11.5, 3.25), (-1.5, 1.0, 3.25), (15, 18, 3.5), (30.2, 32.7, 3.25)]),
     ("HallEast", EAST, EAST + WALL_T, -26.0, 33.0, WALL_H, "tiltup", []),
-    ("HallSouth", -17.2, EAST + WALL_T, 33.0, 33.4, WALL_H, "tiltup", [(-8, -5, 3.5), (24, 28, 3.8)]),
-    ("WingNorth", -35.9, -17.2, -24.9, -24.5, WALL_H, "tiltup", [(-26, -23.5, 3.25)]),
+    ("HallSouth", -17.2, EAST + WALL_T, 33.0, 33.4, WALL_H, "tiltup",
+     [(-5.7, -3.2, 3.25), (9.0, 12.0, 3.5), (26.0, 28.5, 3.25), (38.5, 41.0, 3.25)]),
+    ("WingNorth", -35.9, -17.2, -24.9, -24.5, WALL_H, "tiltup", []),
     ("WingWest", -35.9, -35.5, -24.5, 31.0, WALL_H, "tiltup", []),
-    ("WingSouth", -35.9, -17.2, 31.0, 31.4, WALL_H, "tiltup", [(-33, -30.5, 3.25)]),
-    ("DividerNorth", -17.2, -16.8, -26.0, 4.5, WALL_H, "tiltup", [(-4.5, 0.5, 3.9)]),
-    ("AnnexNorthReturn", -16.8, -12.8, 4.5, 4.8, WALL_H, "tiltup", []),
-    ("AnnexFace", -13.15, -12.8, 4.8, 16.7, WALL_H, "tiltup", []),
-    ("AnnexSouthReturn", -16.8, -12.8, 16.7, 17.0, WALL_H, "tiltup", []),
-    ("DividerSouth", -17.2, -16.8, 4.5, 33.0, WALL_H, "tiltup", [(22.45, 25.05, 3.25)]),
-    # The dispatch office is a full-height concrete room: photo 1's tall left wall.
-    ("OfficeNorth", -2.91, 4.2, 24.5, 24.92, WALL_H, "tiltup", [(-0.79, 1.2, 2.2)]),
-    ("OfficeWest", -2.91, -2.49, 24.92, 32.08, WALL_H, "tiltup", []),
-    ("OfficeSouth", -2.91, 8.59, 32.08, 32.5, WALL_H, "tiltup", []),
-    ("OfficeStep", 4.2, 4.62, 24.92, 28.4, WALL_H, "tiltup", []),
-    ("OfficeStepNorth", 4.2, 8.59, 28.4, 28.82, WALL_H, "tiltup", []),
-    ("OfficeEast", 8.17, 8.59, 28.82, 32.08, WALL_H, "tiltup", []),
-    # The wing office's east face rises to the roof as a white panel wall with a
-    # sectional door and high windows: photo 1 sees it through the south portal.
-    ("ShippingRoomEast", -25.4, -25.0, 14.5, 26.5, WALL_H, "panel_white", [(19.4, 22.7, 3.15), (23.5, 24.7, 2.2)]),
+    ("WingSouth", -35.9, -17.2, 31.0, 31.4, WALL_H, "tiltup", []),
+    ("HallWest", -17.2, -16.8, -26.0, 33.0, WALL_H, "tiltup", []),
 ]
 
-# The southeast CMU storage platform (photos 4, 5).
-PLATFORMS = [
-    ("CmuPlatform", 42.3, EAST, 26.7, 32.65, 0.0, 3.62, "cmu"),
-    ("CmuPlatformCap", 42.22, EAST, 26.62, 32.73, 3.62, 3.8, "cap"),
-]
+PLATFORMS = []
 
+# The roof over the middle has given way (Atlas Superstore's ceiling is open to
+# the sky in places): daylight falls on the mid stockpile through this hole.
+ROOF_HOLES = [(7.5, 19.5, -2.5, 9.5)]  # x0, x1, z0, z1
 ROOFS = [
-    ("HallRoof", -17.2, EAST + WALL_T, -26.4, 33.4, DECK_Y, DECK_Y + 0.25),
+    ("HallRoofNorth", -17.2, EAST + WALL_T, -26.4, -2.5, DECK_Y, DECK_Y + 0.25),
+    ("HallRoofSouth", -17.2, EAST + WALL_T, 9.5, 33.4, DECK_Y, DECK_Y + 0.25),
+    ("HallRoofWest", -17.2, 7.5, -2.5, 9.5, DECK_Y, DECK_Y + 0.25),
+    ("HallRoofEast", 19.5, EAST + WALL_T, -2.5, 9.5, DECK_Y, DECK_Y + 0.25),
     ("WingRoof", -35.9, -17.2, -24.9, 31.4, DECK_Y, DECK_Y + 0.25),
 ]
 
@@ -89,14 +82,10 @@ COLUMN_Z = [-21.0, -10.3, 1.5, 13.8]
 EXTRA_COLUMNS = [(31.8, 20.0)]
 # Grid columns that would stand in the photographed east aisle (photo 6).
 SKIP_COLUMNS = [[31.8, 1.5]]
-WING_GIRDER_X = [-26.2]
-WING_COLUMN_Z = [-12.0, 0.5, 11.0]
 JOIST_SPACING = 1.75
 
-LIGHT_X = [-13.0, -4.8, 4.2, 13.6, 21.5, 28.4, 35.2, 41.0]
+LIGHT_X = [-13.0, -4.8, 4.2, 13.6, 21.5, 28.4, 35.2, 41.0]  # none fall inside a roof hole
 LIGHT_Z = [-22.0, -14.5, -6.5, 1.5, 9.5, 17.0, 24.2, 30.4]
-WING_LIGHT_X = [-31.0, -21.5]
-WING_LIGHT_Z = [-19.0, -11.0, -3.0, 5.0, 13.0, 21.0, 28.0]
 LIGHT_Y = 8.05
 
 # Windows: model, centre x, centre z, width, height, sill, facing (the room side).
@@ -116,10 +105,7 @@ WINDOWS = [
     ("window_4x3", -35.5, -15.0, 3.0, 1.8, 4.6, "E"),
     ("window_4x3", -35.5, 2.0, 3.0, 1.8, 4.6, "E"),
 ]
-DOORS = [
-    ("exit_door_set", 31.45, -26.0, "S"),
-    ("sectional_door", -25.0, 21.05, "E"),
-]
+DOORS = []
 
 # Ladder trays (x0, z0, x1, z1, y), conduits and pipes.
 TRAYS = [
@@ -151,91 +137,34 @@ LINES = [
     (12.0, 20.6, 15.0, 20.6), (19.5, 26.6, 22.5, 26.6), (-4.6, 18.6, -0.9, 18.6),
 ]
 
-# --- machines ------------------------------------------------------------------
-# model, x, z, yaw (heading of the width axis; 90 spans east-west), and the
-# envelope w, d, h the model is fitted to.
-MACHINES = [
-    # North line (sketch blocks A+B): sheet feeder -> inspection/print bank ->
-    # flexo units -> feeder -> white flatbed die-cutter (front to the north,
-    # photo 9), turning north into the blue delivery section (photo 8).
-    ("die_cutter_feed", -10.8, -14.0, 90, 4.8, 2.0, 2.55),
-    # A 2.4 m operator crossing between the print bank and the flexo units,
-    # in line with the middle north door, so the north team can reach the
-    # middle as fast as the south team (it was a 35 m wall of machines).
-    ("inspection_bank", -4.5, -14.0, 90, 7.8, 2.15, 2.25),
-    ("flexo_line_blue", 5.9, -14.0, 90, 8.2, 3.65, 1.9),
-    ("die_cutter_feed", 12.3, -14.0, 90, 4.8, 2.0, 2.55),
-    ("die_cutter_white", 18.2, -14.0, 270, 7.6, 4.0, 2.65),
-    ("flexo_line_blue", 24.5, -18.9, 0, 8.2, 3.65, 1.9),
-    ("black_duct", 22.3, -22.6, 0, 0.65, 0.8, 3.8),
-    # Middle line (sketch block C), ending at the east aisle with its blue
-    # tooling end beside photo 6's camera.
-    # A 2.5 m crossing west of the feeder: the line sits north of the hall's
-    # middle, so without it the north team walks around a 41 m wall.
-    ("inspection_bank", -7.4, -1.5, 90, 7.8, 2.15, 2.25),
-    ("die_cutter_feed", 1.4, -1.5, 90, 4.8, 2.0, 2.55),
-    ("flexo_line_blue", 7.9, -1.5, 90, 8.2, 3.65, 1.9),
-    ("inspection_bank", 16.9, -1.5, 90, 9.8, 2.15, 2.25),
-    ("flexo_line_blue", 25.9, -1.5, 90, 8.2, 3.65, 2.15),
-    # South line (sketch block D), finishing at its west end with the arch
-    # strapper photo 3 looks at.
-    ("arch_strapper", 7.2, 11.2, 90, 3.4, 2.7, 2.65),
-    ("cream_aux_station", 11.2, 11.2, 90, 4.6, 2.15, 1.85),
-    ("flexo_line_blue", 17.6, 11.2, 90, 8.2, 3.65, 1.9),
-    # Photo 10: the rotary die-cutter's feed end closes the line at the east
-    # aisle, its operator side to the north.
-    ("rotary_feeder", 25.5, 11.2, 270, 8.2, 3.4, 2.98),
-    # Grey take-off hood over the finishing cell (photo 2, upper centre).
-    ("elevated_hood", 1.5, 8.2, 90, 4.8, 1.9, 3.2),
-    # Finishing cell (photos 2 and 3): the folder-gluer runs north into the
-    # AOPACK, with the strapping cart and wrapper beside it.
-    ("aopack_box_maker", -1.8, 14.4, 90, 2.8, 1.25, 1.55),
-    ("folder_gluer", 0.6, 15.6, 78, 4.0, 1.35, 1.45),
-    ("strapping_cart", -1.95, 17.9, 90, 1.0, 0.57, 0.9),
-    ("strapping_cart", 2.9, 17.0, 75, 1.0, 0.57, 0.9),
-    ("stretch_wrapper", 7.4, 16.2, 0, 1.7, 1.7, 2.45),
-    ("bollard_loop", 5.9, 13.6, 90, 0.9, 0.16, 1.05),
-    # Southeast cross aisle (photo 4).
-    ("stretch_wrapper", 16.7, 21.6, 0, 1.7, 1.7, 2.45),
-    ("forklift", 23.8, 23.85, 180, 1.2, 2.45, 2.38),
-    ("forklift", 18.8, -8.7, 0, 1.2, 2.45, 2.2),
-    ("air_compressor", 17.65, 21.55, 90, 1.2, 0.8, 1.0),
-    ("incline_conveyor", 18.15, 22.55, 180, 3.2, 0.65, 2.55),
-    # Photo 1: the shipping desk and printer stand against the dispatch
-    # office's north wall (optional 8th value = base height).
-    ("packing_table", 2.4, 24.08, 90, 1.6, 0.76, 0.86),
-    ("office_printer", 1.95, 24.12, 90, 0.5, 0.45, 0.35, 0.86),
-    ("office_chair", 3.1, 23.6, 300, 0.6, 0.6, 1.0),
-]
+# --- 6v6 layout -------------------------------------------------------------------
+# Built from the approved plan, tools/map_blockout/warehouse_2026_11.py, which
+# takes Modern Warfare's Atlas Superstore as its structure: a yard start at each
+# end, four doors per side with a pallet baffle inside each, big blocks of
+# machines and racking in a grid with aisles between, a mid stockpile under a
+# roof breach, an upstairs office near each team, crossover walkways over two
+# production lines, one-storey rooms whose roofs crates let players climb onto,
+# and a crouch tunnel through each long line. The plan's local metres (origin
+# at the hall's centre) become world metres by adding (CX, CZ); the north half
+# is authored once and turned 180 degrees for the south, dressed differently.
+CX, CZ = 13.5, 3.5
 
-# Fallbacks while a machine model is missing (older warehouse props).
+MACHINES = []  # model, x, z, yaw (heading of the width axis), w, d, h[, base y]
 FALLBACK = {"forklift": "res://assets/props/warehouse/forklift.glb",
             "office_desk": "res://assets/props/warehouse/office_desk.glb",
-            "office_printer": "res://assets/props/warehouse/office_printer.glb",
+            "office_files": "res://assets/props/warehouse/office_files.glb",
             "office_chair": "res://assets/props/warehouse/office_chair.glb",
-            "aopack_box_maker": "res://assets/props/warehouse/box_machine.glb",
-            "delivery_truck": "res://assets/props/warehouse/delivery_truck.glb"}
-
-# --- stock ------------------------------------------------------------------------
-KRAFT_BY_HEIGHT = [
-    (3.2, ["stack_tall_a", "stack_wide_a", "stack_wide_a"]),
-    (2.3, ["stack_tall_b", "stack_wide_bowed", "stack_wide_c", "stack_wide_c"]),
-    (1.55, ["stack_double", "stack_wide_b", "stack_wide_b"]),
-    (0.95, ["stack_single", "stack_wide_low"]),
-    (0.5, ["cut_sheets_mid"]),
-    (0.0, ["cut_sheets_low"]),
-]
-WHITE_BY_HEIGHT = [(1.2, ["stack_white"]), (0.0, ["cut_sheets_white"])]
-ROLLS = ["roll_stack_kraft", "roll_stack_mixed", "roll_stack_kraft", "roll_single_white"]
-
+            "delivery_truck": "res://assets/props/warehouse/delivery_truck.glb",
+            "jersey_barrier": "res://assets/props/barrier/barrier.gltf",
+            "service_door": "res://assets/props/warehouse/warehouse_service_door.glb"}
 props: list[dict] = []
+BOXES: list[dict] = []  # plain boxes: rooms, slabs, stairs, rails, curtains
+EFFECTS: list[dict] = []  # sun, sparks, flickering lights, beacons, steam
 
-
-def pick(table, h):
-    for min_h, models in table:
-        if h >= min_h:
-            return rng.choice(models)
-    return table[-1][1][0]
+WALL_MODELS = ["stack_wide_b", "stack_wide_bowed", "stack_wide_c", "stack_tall_b"]
+TALL_MODELS = ["stack_wide_a", "stack_tall_a", "stack_wide_bowed"]
+LOW_MODELS = ["stack_single", "stack_wide_low"]
+ROLLS = ["roll_stack_kraft", "roll_stack_mixed", "roll_stack_kraft"]
 
 
 def place(model, x, z, yaw, w, d, h, y=0.0, jitter_yaw=0.0, collide=True):
@@ -244,199 +173,391 @@ def place(model, x, z, yaw, w, d, h, y=0.0, jitter_yaw=0.0, collide=True):
                       fit=[round(w, 3), round(d, 3), round(h, 3)], collide=collide))
 
 
-def fill(kind, x, z, w, d, h, yaw, count, y=0.0, hvar=0.15, table=None, models=None):
-    """Split an envelope into about `count` cells and put one unit in each."""
-    long_ax = max(w, d)
-    across = max(1, round(math.sqrt(count * min(w, d) / long_ax)))
-    along = max(1, math.ceil(count / across))
-    if not models and table is not WHITE_BY_HEIGHT and long_ax / along < 1.9 and along > 1:
-        along = max(1, int(long_ax / 1.9))
-        count = min(count, along * across)
-    if w < d:
-        along, across = across, along
-    cw, cd = w / along, d / across
-    rad = math.radians(90 - yaw)
-    ux, uz = math.cos(rad), -math.sin(rad)   # width axis
-    vx, vz = math.sin(rad), math.cos(rad)    # depth axis
-    n = 0
-    for i in range(along):
-        for j in range(across):
-            if n >= count:
-                break
-            n += 1
-            lu = -w / 2 + (i + 0.5) * cw + rng.uniform(-0.06, 0.06)
-            lv = -d / 2 + (j + 0.5) * cd + rng.uniform(-0.06, 0.06)
-            hh = h * rng.uniform(1 - hvar, 1.0)
-            model = rng.choice(models) if models else pick(table or KRAFT_BY_HEIGHT, hh)
-            turn = cd > cw * 1.15
-            place(model, x + ux * lu + vx * lv, z + uz * lu + vz * lv, yaw + (90 if turn else 0),
-                  (cd if turn else cw) * 0.94, (cw if turn else cd) * 0.94, hh, y, jitter_yaw=3)
-
-
-K, W = KRAFT_BY_HEIGHT, WHITE_BY_HEIGHT
-# Photo 1: south portal staging and the wing pallet towers.
-fill("sheets", 0.4, 22.6, 1.3, 1.0, 0.55, 90, 1, hvar=0)
-fill("wrap", -0.1, 23.75, 1.2, 1.0, 0.72, 90, 1, table=W, hvar=0)
-fill("sheets", -4.6, 26.8, 2.2, 4.4, 3.2, 0, 4)
-fill("sheets", -2.0, 23.9, 2.0, 1.1, 2.9, 90, 1, hvar=0)
-fill("sheets", -12.0, 28.3, 3.1, 2.1, 3.4, 90, 4)
-fill("towers", -21.1, 23.1, 1.2, 1.0, 2.65, 90, 1, models=["pallet_tower_tall"], hvar=0)
-fill("towers", -22.1, 21.9, 1.2, 1.0, 3.5, 90, 1, models=["pallet_tower_tall"], hvar=0)
-fill("towers", -20.8, 20.5, 1.2, 1.0, 3.1, 90, 1, models=["pallet_tower_tall"], hvar=0)
-# Photos 2 and 3: finishing row.
-fill("sheets", -3.95, 16.25, 1.9, 1.05, 0.56, 0, 1, hvar=0)
-fill("tub", -4.4, 14.8, 1.13, 0.72, 0.72, 90, 1, models=["rolling_tub_blue"], hvar=0)
-fill("sheets", -13.65, 0.8, 3.4, 2.4, 2.8, 90, 4)
-fill("towers", -11.0, 6.8, 2.5, 1.25, 1.75, 90, 2, models=["pallet_tower_short"])
-fill("hopper", 2.5, 4.6, 3.8, 1.2, 1.02, 90, 3, models=["tilt_hopper_red"], hvar=0)
-fill("sheets", 12.5, 6.4, 4.4, 2.4, 3.1, 90, 4)
-fill("sheets", 5.1, 14.9, 1.3, 1.1, 1.3, 90, 1, hvar=0)
-fill("sheets", 11.0, 15.4, 3.3, 1.4, 1.18, 90, 2)
-# Photo 4: southeast cross aisle.
-fill("tub", 22.2, 22.6, 1.0, 0.72, 0.78, 90, 1, models=["rolling_tub_yellow"], hvar=0)
-fill("rolls", 34.6, 20.9, 5.2, 3.0, 4.15, 90, 6, models=ROLLS, hvar=0.25)
-fill("rolls", 29.3, 20.9, 2.8, 1.6, 3.9, 90, 2, models=ROLLS, hvar=0.2)
-fill("sheets", 35.9, 22.6, 9.0, 1.6, 3.8, 90, 6, hvar=0.2)
-fill("sheets", 40.8, 25.0, 2.2, 3.7, 3.7, 0, 4, hvar=0.1)
-fill("white", 32.75, 23.6, 1.1, 0.85, 0.46, 90, 1, table=W, hvar=0)
-fill("white", 26.9, 31.6, 6.4, 1.9, 2.55, 90, 8, table=W)
-fill("sheets", 33.9, 31.75, 11.8, 2.3, 4.05, 90, 11, hvar=0.25)
-fill("sheets", 23.8, 30.85, 2.1, 1.2, 1.2, 90, 1, hvar=0)
-fill("bale", 26.7, 28.1, 1.65, 1.05, 0.78, 90, 1, models=["scrap_bale"], hvar=0)
-fill("sheets", 22.2, 29.9, 1.6, 1.1, 0.9, 90, 1, hvar=0)
-fill("white", 25.3, 30.3, 1.2, 1.0, 0.6, 90, 1, table=W, hvar=0)
-fill("platform", 43.15, 29.45, 1.0, 3.7, 1.5, 0, 3, y=3.8, models=["pallet_tower_short", "cut_sheets_mid"])
-# Photos 6 and 7: east aisle.
-fill("tooling", 29.65, 1.8, 1.2, 1.0, 1.0, 90, 1, models=["rotary_tooling_pallet"], hvar=0)
-fill("tub", 28.6, 3.1, 1.0, 0.7, 0.78, 0, 1, models=["rolling_tub_yellow"], hvar=0)
-fill("sheets", 29.4, 6.8, 1.9, 1.45, 1.55, 0, 1, hvar=0)
-fill("sheets", 36.6, 1.2, 4.5, 2.25, 2.9, 0, 4)
-fill("hopper", 33.25, -7.6, 1.35, 1.12, 1.07, 90, 1, models=["tilt_hopper_red"], hvar=0)
-fill("sheets", 35.4, -7.45, 1.6, 1.3, 2.8, 90, 1, hvar=0)
-fill("sheets", 37.0, -9.6, 3.6, 3.2, 4.4, 90, 4, hvar=0.15)
-fill("sheets", 39.35, -8.2, 3.3, 3.0, 2.8, 90, 5)
-fill("sheets", 42.4, -4.1, 2.15, 4.5, 3.6, 0, 6)
-fill("wrapped", 36.25, -6.28, 1.15, 1.0, 0.7, 90, 1, models=["cut_sheets_mid"], hvar=0)
-fill("towers", 33.4, -9.1, 1.2, 1.0, 1.25, 90, 1, models=["pallet_tower_short"], hvar=0)
-fill("sheets", 41.8, -18.0, 3.6, 7.0, 3.6, 0, 8)
-fill("sheets", 41.8, 12.0, 3.6, 9.0, 3.4, 0, 9)
-fill("sheets", 36.5, 12.5, 3.0, 5.0, 2.6, 0, 4)
-# Photo 10: the orange rack of curved board formers and the floor-level trim
-# duct the feed end's scrap goes down (waist-high cover along its length).
-MACHINES.append(("pallet_rack_orange", 36.9, 8.4, 90, 2.7, 1.1, 3.2))
-MACHINES.append(("trim_duct", 39.6, 18.7, 90, 7.0, 1.0, 1.12))
-# Photos 8 and 9: die-cut cell.
-fill("bulk", 30.23, -21.4, 1.35, 0.95, 1.23, 0, 1, models=["open_bulk_box"], hvar=0)
-fill("bulk", 29.7, -22.8, 1.15, 1.25, 1.28, 0, 1, models=["open_bulk_box"], hvar=0)
-fill("bulk", 30.66, -19.38, 1.15, 0.8, 1.25, 336, 1, models=["open_bulk_box"], hvar=0)
-fill("sheets", 27.6, -20.37, 1.25, 1.05, 0.28, 90, 1, hvar=0)
-fill("sheets", 28.1, -15.75, 2.0, 1.5, 1.35, 90, 1, hvar=0)
-fill("towers", 27.6, -16.9, 1.2, 1.0, 1.0, 90, 1, models=["pallet_tower_short"], hvar=0)
-fill("sheets", 12.0, -21.5, 4.0, 2.4, 2.4, 90, 4)
-# Unphotographed areas: plausible staging so the north half and wing are not bare.
-fill("sheets", -13.0, -21.5, 3.0, 4.5, 3.2, 0, 6)
-fill("sheets", -12.0, -7.5, 5.0, 2.3, 2.2, 90, 3)
-fill("rolls", 14.0, 4.2, 5.0, 1.6, 3.6, 90, 3, models=ROLLS)
-fill("sheets", -31.5, -20.0, 5.0, 2.4, 3.4, 90, 6)
-fill("sheets", -31.5, -8.0, 2.4, 8.0, 3.0, 0, 8)
-fill("white", -31.5, 4.0, 2.4, 5.0, 2.4, 0, 4, table=W)
-fill("sheets", -21.0, -12.0, 2.4, 6.0, 2.8, 0, 6)
-fill("towers", -20.0, 4.0, 2.6, 1.2, 2.9, 90, 2, models=["pallet_tower_tall", "pallet_tower_short"])
-fill("rolls", -27.5, -21.5, 6.0, 1.6, 3.6, 90, 4, models=ROLLS)
-fill("hopper", -19.5, -4.0, 1.4, 1.2, 1.07, 90, 1, models=["tilt_hopper_red"], hvar=0)
-
-
-# --- 6v6 cover (photo 10 pass) ------------------------------------------------
-# Measured with tools/map_blockout/warehouse_measure.py: the open hall, the
-# parking strip, and the truck apron let players see 60 to 80 m. Call of Duty
-# core maps keep the median longest line near 30 m, so these break every long
-# line with cover a real plant would have there: parked box trucks and staged
-# pallets in the yards, and stock walls between the production lines. Each
-# yard "gate" is two pieces from opposite sides of the strip, 2 to 3 m apart,
-# so a straight run along the strip always meets one and players weave past.
-WALL_MODELS = ["stack_wide_b", "stack_wide_bowed", "stack_wide_c", "stack_tall_b"]
-LOW_MODELS = ["stack_single", "stack_wide_low"]
-
-
-def wall(x0, z0, x1, z1, h, y=0.0, depth=1.8, models=None):
+def wall(x0, z0, x1, z1, h, y=0.0, depth=1.8, models=None, unit=2.6):
     """A run of palletized stock from (x0, z0) to (x1, z1), units end to end."""
     length = math.hypot(x1 - x0, z1 - z0)
-    n = max(1, math.ceil(length / 2.6))
+    n = max(1, math.ceil(length / unit))
     heading = math.degrees(math.atan2(x1 - x0, -(z1 - z0)))
     for i in range(n):
         t = (i + 0.5) / n
         place(rng.choice(models or WALL_MODELS), x0 + (x1 - x0) * t, z0 + (z1 - z0) * t, heading,
-              length / n * 0.97, depth, h * rng.uniform(0.94, 1.0), y, jitter_yaw=2)
+              length / n * 0.97, depth, h * rng.uniform(0.95, 1.0), y, jitter_yaw=1.5)
 
 
-# Box trucks: x, z, yaw (0 parks it east-west, 90 north-south), base y.
-YARD_TRUCKS = [
-    (-9.5, -33.0, 0, 0.0), (13.0, -32.9, 0, 0.0), (36.5, -27.7, 0, 0.0),
-    (37.5, 39.5, 90, APRON_Y), (-27.5, 44.3, 0, APRON_Y),
-]
-for x, z, yaw, y in YARD_TRUCKS:
-    MACHINES.append(("delivery_truck", x, z, yaw, 2.43, 6.91, 3.34, y))
-# Parking lot: the other half of each gate, from the hall wall out.
-wall(-16.0, -26.5, -16.0, -32.2, 3.0)
-wall(20.5, -26.5, 20.5, -32.4, 3.0)
-wall(28.0, -34.4, 28.0, -28.5, 2.9)
-wall(-30.5, -26.5, -30.5, -30.5, 2.8)
-# Truck apron (1.25 m down): close the bands either side of the parked trucks.
-wall(-22.5, 33.5, -22.5, 36.0, 2.9, APRON_Y)
-wall(-14.5, 45.9, -14.5, 42.3, 2.9, APRON_Y)
-wall(16.5, 33.5, 16.5, 37.2, 2.9, APRON_Y)
-wall(25.0, 45.9, 25.0, 43.4, 2.9, APRON_Y)
-wall(33.5, 45.9, 33.5, 42.8, 2.9, APRON_Y)
-wall(41.5, 33.5, 41.5, 36.4, 2.9, APRON_Y)
-wall(-33.0, 33.6, -33.0, 36.5, 2.6, APRON_Y)
-# Hall: stock walls staggered across the aisles between the production lines.
-wall(-3.0, -19.2, -3.0, -25.9, 3.2)      # north band, west of the middle door
-wall(6.6, -24.6, 10.2, -24.6, 2.4)       # north band
-wall(1.5, -9.5, 5.5, -9.5, 2.6)          # middle aisle
-wall(22.0, -6.0, 26.0, -6.0, 2.8)
-wall(21.8, 5.6, 25.2, 5.6, 2.8)          # south aisle
-wall(-6.5, 4.4, -6.5, 7.6, 2.4)
-wall(12.5, 18.6, 12.5, 22.6, 3.0)        # south cross aisle
-wall(-11.1, 21.5, -7.9, 21.5, 2.4)
-wall(19.0, 24.8, 19.0, 28.6, 2.8)
-wall(32.2, -14.0, 32.2, -11.0, 3.0)      # east aisle
-wall(33.6, 14.3, 33.6, 17.3, 2.6)
-# Waist-high cover in the open middle: it blocks movement, not sight.
-wall(7.0, 4.6, 9.0, 4.6, 1.05, models=LOW_MODELS, depth=1.3)
-wall(-2.0, -5.6, 0.0, -5.6, 1.1, models=LOW_MODELS, depth=1.3)
-wall(18.0, 15.8, 20.0, 15.8, 1.0, models=LOW_MODELS, depth=1.3)
-# Wing: stock rows across its length so it is not one 56 m hallway.
-wall(-26.5, -5.0, -21.5, -5.0, 3.0)
-wall(-32.5, 10.5, -27.5, 10.5, 3.0)
-wall(-21.0, 17.3, -21.0, 19.7, 2.6)
-wall(-29.8, 28.5, -26.2, 28.5, 2.4)
-
-# Keep the east bay door's approach clear: the photo pass staged stock right
-# across it, which sealed the door and left the south team two ways in. Stock
-# is dropped here after placement, so the rest keeps its seeded layout.
-KEEP_CLEAR = [(23.4, 28.6, 29.2, 33.0)]  # x0, x1, z0, z1
+def world(r, side):
+    """A plan rectangle (local x0, x1, z0, z1) for the north (0) or south (1) half."""
+    x0, x1, z0, z1 = r
+    if side:
+        x0, x1, z0, z1 = -x1, -x0, -z1, -z0
+    return x0 + CX, x1 + CX, z0 + CZ, z1 + CZ
 
 
-def _clear(p):
-    hw = max(p["fit"][0], p["fit"][1]) / 2
-    return not any(x0 - hw < p["x"] < x1 + hw and z0 - hw < p["z"] < z1 + hw for x0, x1, z0, z1 in KEEP_CLEAR)
+def at(x, z, side):
+    return (-x + CX, -z + CZ) if side else (x + CX, z + CZ)
 
 
-props[:] = [p for p in props if _clear(p)]
+def turn(yaw, side):
+    return (yaw + 180) % 360 if side else yaw
 
-# Floor patches where the shell leaves a gap: the strip between the parking lot
-# and the wing's north wall had no floor. x0, x1, z0, z1, y0, y1, material.
+
+def box(name, x0, x1, y0, y1, z0, z1, mat, collide=True, pitch=0.0, yaw=0.0, visible=True):
+    BOXES.append(dict(name=name, lo=[round(x0, 3), round(y0, 3), round(z0, 3)],
+                      hi=[round(x1, 3), round(y1, 3), round(z1, 3)], mat=mat, collide=collide,
+                      pitch=round(pitch, 3), yaw=yaw, visible=visible))
+
+
+def stock_block(r, h, models=None, y=0.0):
+    """Fill a world rectangle with rows of stock along its long side."""
+    x0, x1, z0, z1 = r
+    w, d = x1 - x0, z1 - z0
+    across = d if w >= d else w
+    n = max(1, round(across / 1.85))
+    for i in range(n):
+        c = (i + 0.5) / n
+        if w >= d:
+            z = z0 + d * c
+            wall(x0 + 0.05, z, x1 - 0.05, z, h, y, depth=d / n * 0.97, models=models)
+        else:
+            x = x0 + w * c
+            wall(x, z0 + 0.05, x, z1 - 0.05, h, y, depth=w / n * 0.97, models=models)
+
+
+def rack_block(r):
+    """Pallet racking faced onto both long sides, with stock filling its core."""
+    x0, x1, z0, z1 = r
+    along_x = (x1 - x0) >= (z1 - z0)
+    length = (x1 - x0) if along_x else (z1 - z0)
+    n = max(1, round(length / 2.7))
+    for k in range(n):
+        t = (k + 0.5) / n
+        for edge in (0, 1):
+            if along_x:
+                x, z = x0 + (x1 - x0) * t, (z0 + 0.55) if edge == 0 else (z1 - 0.55)
+                yaw = 90 if edge else 270
+            else:
+                x, z = (x0 + 0.55) if edge == 0 else (x1 - 0.55), z0 + (z1 - z0) * t
+                yaw = 0 if edge else 180
+            MACHINES.append(("pallet_rack_orange", round(x, 3), round(z, 3), yaw, length / n * 0.98, 1.1, 3.4))
+    core = (x0, x1, z0 + 1.15, z1 - 1.15) if along_x else (x0 + 1.15, x1 - 1.15, z0, z1)
+    if min(core[1] - core[0], core[3] - core[2]) > 0.8:
+        stock_block(core, 3.2, TALL_MODELS)
+
+
+def roll_block(r):
+    x0, x1, z0, z1 = r
+    nx, nz = max(1, round((x1 - x0) / 1.55)), max(1, round((z1 - z0) / 1.55))
+    for i in range(nx):
+        for j in range(nz):
+            cw, cd = (x1 - x0) / nx, (z1 - z0) / nz
+            place(rng.choice(ROLLS), x0 + (i + 0.5) * cw, z0 + (j + 0.5) * cd, 90,
+                  cw * 0.96, cd * 0.96, rng.uniform(3.0, 3.6), jitter_yaw=8)
+
+
+def machine_block(r, line, fill_h=2.7):
+    """Machines end to end along the block's long side nearer the hall's middle
+    line, stock behind them. `line` is a list of (model, length, depth, height)."""
+    x0, x1, z0, z1 = r
+    along_x = (x1 - x0) >= (z1 - z0)
+    length = (x1 - x0) if along_x else (z1 - z0)
+    depth = max(m[2] for m in line)
+    total = sum(m[1] for m in line)
+    cursor = -total / 2
+    toward_mid = ((z0 + z1) / 2 < CZ) if along_x else ((x0 + x1) / 2 < CX)
+    for model, mlen, mdep, mh in line:
+        c = cursor + mlen / 2
+        cursor += mlen
+        if along_x:
+            x = (x0 + x1) / 2 + c
+            z = (z1 - depth / 2 - 0.05) if toward_mid else (z0 + depth / 2 + 0.05)
+            yaw = 90 if toward_mid else 270
+        else:
+            z = (z0 + z1) / 2 + c
+            x = (x1 - depth / 2 - 0.05) if toward_mid else (x0 + depth / 2 + 0.05)
+            yaw = 180 if toward_mid else 0
+        MACHINES.append((model, round(x, 3), round(z, 3), yaw, mlen, mdep, mh))
+    rest = (depth + 0.15)
+    if along_x:
+        back = (x0, x1, z0, z1 - rest) if toward_mid else (x0, x1, z0 + rest, z1)
+    else:
+        back = (x0, x1 - rest, z0, z1) if toward_mid else (x0 + rest, x1, z0, z1)
+    if min(back[1] - back[0], back[3] - back[2]) > 0.8:
+        stock_block(back, fill_h)
+    del length
+
+
+def wall_run(name, x0, x1, z0, z1, h, openings, mat, y=0.0):
+    """A wall along its long axis with openings (a, b, bottom, top) in it."""
+    along_x = (x1 - x0) >= (z1 - z0)
+    start, end = (x0, x1) if along_x else (z0, z1)
+    cuts = sorted(openings)
+    pieces = []
+    cursor = start
+    for a, b, lo, hi in cuts:
+        pieces.append((cursor, a, 0.0, h))
+        if lo > 0:
+            pieces.append((a, b, 0.0, lo))
+        if hi < h:
+            pieces.append((a, b, hi, h))
+        cursor = b
+    pieces.append((cursor, end, 0.0, h))
+    for k, (a, b, lo, hi) in enumerate(pieces):
+        if b - a < 0.01:
+            continue
+        if along_x:
+            box(f"{name}{k}", a, b, y + lo, y + hi, z0, z1, mat)
+        else:
+            box(f"{name}{k}", x0, x1, y + lo, y + hi, a, b, mat)
+
+
+def stair(name, x0, x1, z0, z1, y0, y1, toward, mat="steel"):
+    """A stair rising from y0 to y1 toward 'n', 's', 'e' or 'w' inside the rect:
+    steps to see and one sloped box to walk on (Call of Duty clips stairs as a
+    ramp so feet never catch on a nosing)."""
+    run = (z1 - z0) if toward in "ns" else (x1 - x0)
+    n = max(3, round((y1 - y0) / 0.19))
+    for i in range(n):
+        f0, f1 = i / n, (i + 1) / n
+        top = y0 + (y1 - y0) * (i + 1) / n
+        if toward == "n":
+            box(f"{name}Step{i}", x0, x1, top - 0.05, top, z1 - run * f1, z1 - run * f0, mat, False)
+        elif toward == "s":
+            box(f"{name}Step{i}", x0, x1, top - 0.05, top, z0 + run * f0, z0 + run * f1, mat, False)
+        elif toward == "e":
+            box(f"{name}Step{i}", x0 + run * f0, x0 + run * f1, top - 0.05, top, z0, z1, mat, False)
+        else:
+            box(f"{name}Step{i}", x1 - run * f1, x1 - run * f0, top - 0.05, top, z0, z1, mat, False)
+    for side in (0, 1):  # stringers
+        if toward in "ns":
+            xs = (x0, x0 + 0.06) if side == 0 else (x1 - 0.06, x1)
+            box(f"{name}Stringer{side}", *xs, y0, y0 + 0.12, z0, z1, "yellow", False)
+        else:
+            zs = (z0, z0 + 0.06) if side == 0 else (z1 - 0.06, z1)
+            box(f"{name}Stringer{side}", x0, x1, y0, y0 + 0.12, *zs, "yellow", False)
+    slope = math.degrees(math.atan2(y1 - y0, run))
+    pitch = {"n": slope, "s": -slope, "e": slope, "w": -slope}[toward]
+    box(f"{name}Ramp", x0, x1, y0 - 0.1, y1, z0, z1, "steel", True, pitch=pitch,
+        yaw=0.0 if toward in "ns" else 90.0, visible=False)
+
+
+def rail(name, x0, x1, z0, z1, y):
+    """A safety rail standing on y: posts and a top rail, 1.05 m."""
+    box(f"{name}Top", x0, x1, y + 0.98, y + 1.05, z0, z1, "yellow")
+    box(f"{name}Mid", x0, x1, y + 0.5, y + 0.55, z0, z1, "yellow", False)
+    along_x = (x1 - x0) >= (z1 - z0)
+    length = (x1 - x0) if along_x else (z1 - z0)
+    for k in range(int(length / 1.5) + 2):
+        t = min(k * 1.5, length)
+        px, pz = (x0 + t, (z0 + z1) / 2) if along_x else ((x0 + x1) / 2, z0 + t)
+        box(f"{name}Post{k}", px - 0.03, px + 0.03, y, y + 0.98, pz - 0.03, pz + 0.03, "yellow", False)
+    # One clip box from the deck to the top rail: no gaps to fall through.
+    box(f"{name}Clip", x0, x1, y, y + 1.05, z0, z1, "yellow", True, visible=False)
+
+
+def half(side):
+    """Everything authored once, for the north (0) or south (1) half."""
+    tag = "N" if side == 0 else "S"
+
+    # Yard: two gates of a vehicle along the fence and a pallet wall off the
+    # building, 3 m apart and overlapping; jersey barriers by the gate.
+    for k, (x, z) in enumerate([(-19.5, -37.1), (12.5, -37.1)]):
+        wx, wz = at(x, z, side)
+        MACHINES.append(("delivery_truck", round(wx, 3), round(wz, 3), turn(0, side), 2.43, 6.91, 3.34))
+    for r in [(-13, -11, -36.3, -30.2), (19, 21, -36.3, -30.2)]:
+        stock_block(world(r, side), 3.0)
+    for (x, z, length) in [(-0.75, -36.7, 4.5), (27, -34, 3.0), (-27, -35.5, 3.0)]:
+        n = round(length / 2.0)
+        for k in range(n):
+            wx, wz = at(x - length / 2 + (k + 0.5) * length / n, z, side)
+            MACHINES.append(("jersey_barrier", round(wx, 3), round(wz, 3), turn(90, side), length / n * 0.98, 0.6, 1.0))
+    wx, wz = at(-6.5, -36.0, side)
+    MACHINES.append(("forklift", round(wx, 3), round(wz, 3), turn(20, side), 1.2, 2.45, 2.3))
+    EFFECTS.append(dict(kind="beacon", pos=[round(wx, 2), 2.45, round(wz, 2)]))
+
+    # Doors from the yard: a pallet baffle just inside each, strip curtains in it.
+    for a, b in ((-27.5, -25), (-15, -12.5), (1.5, 4.5), (16.7, 19.2)):
+        m = (a + b) / 2
+        stock_block(world((m - 2.3, m + 2.3, -27.4, -26.0), side), 2.4)
+        x0, x1, z0, z1 = world((a, b, -29.95, -29.85), side)
+        strips = round((x1 - x0) / 0.3)
+        for k in range(strips):
+            sx = x0 + (k + 0.5) * (x1 - x0) / strips
+            box(f"Curtain{tag}{int(m)}_{k}", sx - 0.13, sx + 0.13, 0.05, 3.2, z0, z1, "curtain", False)
+
+    # Ink room (north) / plate room (south): one storey, a flat roof at 3.2 m
+    # reached by mantling up two crates, a parapet round the rest of the roof.
+    rx0, rx1, rz0, rz1 = world((-12, -6, -29.5, -24), side)
+    inner_wall = rz1 if side == 0 else rz0  # the wall facing into the hall
+    t = 0.25
+    box(f"Room{tag}West", rx0, rx0 + t, 0, 3.2, rz0, rz1, "cmu")
+    box(f"Room{tag}East", rx1 - t, rx1, 0, 3.2, rz0, rz1, "cmu")
+    if side == 0:
+        box(f"Room{tag}Front", rx0, rx1, 0, 3.2, rz1 - t, rz1, "cmu")
+    else:
+        box(f"Room{tag}Front", rx0, rx1, 0, 3.2, rz0, rz0 + t, "cmu")
+    box(f"Room{tag}Roof", rx0, rx1, 3.2, 3.4, rz0, rz1, "cap")
+    # Parapets on the two sides; the hall-facing edge stays open over the crates.
+    for k, (x0, x1) in enumerate([(rx0, rx0 + 0.2), (rx1 - 0.2, rx1)]):
+        box(f"Room{tag}Parapet{k}", x0, x1, 3.4, 4.1, rz0, rz1, "cap")
+    dx, dz = at(-6.0, -27.0, side)
+    MACHINES.append(("service_door", round(dx + (0.08 if side == 0 else -0.08), 3), round(dz, 3),
+                     turn(0, side), 1.08, 0.21, 2.16))
+    for k, (x, h) in enumerate([(-10.9, 1.1), (-9.5, 1.1), (-9.5, 2.2)]):
+        cx, cz = at(x, -23.4, side)
+        base = 1.1 if h > 1.5 else 0.0
+        place("stack_single", cx, cz, 90, 1.38, 1.18, 1.1, y=base)
+    del inner_wall
+
+    # Maintenance shop (north) / tooling crib (south): one storey, no way up.
+    mx0, mx1, mz0, mz1 = world((9, 13, -29.5, -24), side)
+    box(f"Shop{tag}West", mx0, mx0 + t, 0, 3.2, mz0, mz1, "panel_white")
+    box(f"Shop{tag}East", mx1 - t, mx1, 0, 3.2, mz0, mz1, "panel_white")
+    box(f"Shop{tag}Front", mx0, mx1, 0, 3.2, *((mz1 - t, mz1) if side == 0 else (mz0, mz0 + t)), "panel_white")
+    box(f"Shop{tag}Roof", mx0, mx1, 3.2, 3.4, mz0, mz1, "cap")
+
+    # Two-storey office in the team's corner: shift office (north-east) and QC
+    # lab (south-west). Ground floor: a door from the back aisle and one to the
+    # bay, a counter window; a stair inside up to an open-plan 2F whose half
+    # walls and window band look over the racking and the bay.
+    ox0, ox1, oz0, oz1 = world((22, 30.5, -29.5, -19), side)
+    if side == 0:
+        wall_run(f"Office{tag}West", ox0, ox0 + t, oz0, oz1, 3.2, [(oz0 + 2.0, oz0 + 4.5, 0.0, 2.4)], "panel_white")
+        wall_run(f"Office{tag}Front", ox0, ox1, oz1 - t, oz1, 3.2,
+                 [(ox0 + 3.0, ox0 + 5.0, 0.0, 2.4), (ox0 + 5.6, ox0 + 7.8, 1.0, 2.2)], "panel_white")
+        hx0, hx1, hz0, hz1 = ox1 - 2.4, ox1, oz0 + 2.0, oz1     # stair well
+        stair(f"Stair{tag}", hx0 + 0.3, hx1 - 0.2, hz0, hz1 - 0.2, 0.0, 3.4, "n")
+        box(f"Office{tag}FloorA", ox0, hx0, 3.2, 3.4, oz0, oz1, "cap")
+        box(f"Office{tag}FloorB", hx0, ox1, 3.2, 3.4, oz0, hz0, "cap")
+        rail(f"Office{tag}WellRail", hx0 - 0.05, hx0, hz0, oz1, 3.4)
+        up_w = (ox0, ox0 + t, oz0, oz1)
+        up_f = (ox0, ox1, oz1 - t, oz1)
+    else:
+        wall_run(f"Office{tag}East", ox1 - t, ox1, oz0, oz1, 3.2, [(oz1 - 4.5, oz1 - 2.0, 0.0, 2.4)], "panel_white")
+        wall_run(f"Office{tag}Front", ox0, ox1, oz0, oz0 + t, 3.2,
+                 [(ox1 - 5.0, ox1 - 3.0, 0.0, 2.4), (ox1 - 7.8, ox1 - 5.6, 1.0, 2.2)], "panel_white")
+        hx0, hx1, hz0, hz1 = ox0, ox0 + 2.4, oz0, oz1 - 2.0
+        stair(f"Stair{tag}", hx0 + 0.2, hx1 - 0.3, hz0 + 0.2, hz1, 0.0, 3.4, "s")
+        box(f"Office{tag}FloorA", hx1, ox1, 3.2, 3.4, oz0, oz1, "cap")
+        box(f"Office{tag}FloorB", ox0, hx1, 3.2, 3.4, hz1, oz1, "cap")
+        rail(f"Office{tag}WellRail", hx1, hx1 + 0.05, oz0, hz1, 3.4)
+        up_w = (ox1 - t, ox1, oz0, oz1)
+        up_f = (ox0, ox1, oz0, oz0 + t)
+    for k, (x0, x1, z0, z1) in enumerate((up_w, up_f)):
+        along_x = (x1 - x0) >= (z1 - z0)
+        box(f"Office{tag}Sill{k}", x0, x1, 3.4, 4.4, z0, z1, "panel_white")
+        box(f"Office{tag}Header{k}", x0, x1, 5.6, 6.2, z0, z1, "panel_white")
+        length = (x1 - x0) if along_x else (z1 - z0)
+        for j in range(int(length / 2.2) + 1):  # mullions
+            p = min(j * 2.2, length - 0.08)
+            if along_x:
+                box(f"Office{tag}Mullion{k}_{j}", x0 + p, x0 + p + 0.08, 4.4, 5.6, z0, z1, "steel", False)
+            else:
+                box(f"Office{tag}Mullion{k}_{j}", x0, x1, 4.4, 5.6, z0 + p, z0 + p + 0.08, "steel", False)
+    box(f"Office{tag}Roof", ox0, ox1, 6.2, 6.4, oz0, oz1, "cap")
+    for y in (2.9, 6.0):  # office ceiling lights, downstairs and up
+        EFFECTS.append(dict(kind="lamp", pos=[round((ox0 + ox1) / 2, 2), y, round((oz0 + oz1) / 2, 2)]))
+    for k, (x, z, yaw) in enumerate([(24.0, -27.5, 90), (27.0, -22.5, 0)]):
+        wx, wz = at(x, z, side)
+        MACHINES.append(("office_desk", round(wx, 3), round(wz, 3), turn(yaw, side), 1.8, 0.73, 0.75, 3.4))
+    for k, (x, z) in enumerate([(23.0, -21.0), (24.6, -21.0)]):
+        wx, wz = at(x, z, side)
+        MACHINES.append(("office_files", round(wx, 3), round(wz, 3), turn(0, side), 0.95, 0.66, 1.67))
+
+    # Row north: racking on the west wall, the long line split by a crouch
+    # tunnel, the die-cut (north) / folder-gluer (south) line, rolls end-on.
+    rack_block(world((-30.5, -22, -24, -13), side))
+    first = [("die_cutter_feed", 4.8, 2.0, 2.55)] if side == 0 else [("cream_aux_station", 4.6, 2.15, 1.85)]
+    machine_block(world((-17.5, -11.5, -21.5, -15.5), side), first)
+    machine_block(world((-10, -4, -21.5, -15.5), side), first)
+    tx0, tx1, tz0, tz1 = world((-11.5, -10, -21.5, -15.5), side)
+    box(f"Tunnel{tag}Conveyor", tx0, tx1, 1.4, 1.62, tz0, tz1, "steel")
+    for k, z in enumerate((tz0 + 0.1, tz1 - 0.1)):
+        box(f"Tunnel{tag}Leg{k}a", tx0, tx0 + 0.08, 0, 1.4, z - 0.04, z + 0.04, "yellow", False)
+        box(f"Tunnel{tag}Leg{k}b", tx1 - 0.08, tx1, 0, 1.4, z - 0.04, z + 0.04, "yellow", False)
+    stock_block((tx0, tx1, tz0, tz1), 1.25, LOW_MODELS, y=1.62)
+    long_line = ([("die_cutter_white", 7.6, 4.0, 2.65), ("die_cutter_feed", 4.8, 2.0, 2.55)] if side == 0
+                 else [("folder_gluer", 4.0, 1.35, 1.45), ("aopack_box_maker", 2.8, 1.25, 1.55),
+                       ("folder_gluer", 4.0, 1.35, 1.45)])
+    machine_block(world((0, 13, -21.5, -15.5), side), long_line)
+    stock_block(world((5, 9, -24, -21.5), side), 2.7)
+    roll_block(world((16.5, 21, -19, -10), side))
+    stock_block(world((25, 28, -15.5, -14), side), 1.1, LOW_MODELS)
+    for k in range(3):  # a toppled rack's spilled sheets
+        x, z = at(24.5 + k * 1.3, -9.8 + k * 0.4, side)
+        place("cut_sheets_low", x, z, turn(30 + k * 25, side), 1.9, 1.12, 0.46, jitter_yaw=15)
+
+    # Row middle: the sheeter (north) / strapping line (south), pallets by the
+    # wall, the ink (north) / glue (south) station, the crossover, a stock wall.
+    sheeter = ([("inspection_bank", 8.6, 2.15, 2.25)] if side == 0
+               else [("arch_strapper", 3.4, 2.7, 2.65), ("stretch_wrapper", 2.1, 1.7, 2.45),
+                     ("strapping_cart", 1.0, 0.57, 0.9)])
+    machine_block(world((-26, -17, -10.5, -3), side), sheeter)
+    stock_block(world((-30.5, -28, -10, -7), side), 1.1, LOW_MODELS)
+    ix0, ix1, iz0, iz1 = world((-11, -4, -15, -8), side)
+    stock_block((ix0 + 1.2, ix1 - 1.2, iz0 + 1.2, iz1 - 1.2), 2.8)
+    for k, (fx, fz) in enumerate([(0.15, 0.1), (0.5, 0.1), (0.85, 0.1), (0.15, 0.9), (0.5, 0.9), (0.85, 0.9),
+                                  (0.08, 0.5), (0.92, 0.5)]):
+        model = ["open_bulk_box", "tilt_hopper_red", "rolling_tub_blue", "rolling_tub_yellow"][k % 4]
+        place(model, ix0 + (ix1 - ix0) * fx, iz0 + (iz1 - iz0) * fz, rng.uniform(0, 180), 1.3, 1.1, 1.2, jitter_yaw=10)
+    cx0, cx1, cz0, cz1 = world((4, 13, -11.5, -7.5), side)
+    MACHINES.append(("flexo_line_blue" if side == 0 else "rotary_feeder", round((cx0 + cx1) / 2, 3),
+                     round((cz0 + cz1) / 2, 3), turn(90, side), 8.2, 3.4, 1.9))
+    # The crossover: a steel deck at 2.6 m on posts, rails along its long sides,
+    # a stair up from the cross aisle at its west (north) / east (south) end.
+    px0, px1, pz0, pz1 = world((3.5, 13.5, -12, -7), side)
+    box(f"Crossover{tag}Deck", px0, px1, 2.6, 2.75, pz0, pz1, "steel")
+    for k, (x, z) in enumerate([(px0, pz0), (px1, pz0), (px0, pz1), (px1, pz1)]):
+        box(f"Crossover{tag}Post{k}", x - 0.08, x + 0.08, 0, 2.6, z - 0.08, z + 0.08, "yellow")
+    rail(f"Crossover{tag}RailN", px0, px1, pz0, pz0 + 0.05, 2.75)
+    rail(f"Crossover{tag}RailS", px0, px1, pz1 - 0.05, pz1, 2.75)
+    if side == 0:
+        stair(f"Crossover{tag}Stair", px0 - 5.0, px0, pz0 + 0.1, pz0 + 1.5, 0.0, 2.75, "e")
+    else:
+        stair(f"Crossover{tag}Stair", px1, px1 + 5.0, pz1 - 1.5, pz1 - 0.1, 0.0, 2.75, "w")
+    # A torn cable tray over the crossover spits sparks.
+    sx, sz = at(12.5, -9.5, side)
+    EFFECTS.append(dict(kind="sparks", pos=[round(sx, 2), 5.6, round(sz, 2)]))
+    stock_block(world((17, 25, -9, -3), side), 3.0)
+    stock_block(world((27, 29, -6, -3), side), 1.1, LOW_MODELS)
+    # The trim-scrap duct (photo 10) runs along the wall: waist-high cover.
+    dx, dz = at(29.95, -8.6, side)
+    MACHINES.append(("trim_duct", round(dx, 3), round(dz, 3), turn(0, side), 7.0, 1.0, 1.12))
+    stock_block(world((-17, -13, -3, 1), side), 2.8)
+    # Steam from a vent by the west wall (north) / east wall (south).
+    vx, vz = at(-29.8, -11.5, side)
+    EFFECTS.append(dict(kind="steam", pos=[round(vx, 2), 2.6, round(vz, 2)]))
+
+
+for _side in (0, 1):
+    half(_side)
+
+# Mid stockpile (one, under the roof breach): a tall stack of jumbo rolls you
+# climb by a crate and a lower stack, rolls on their sides around it, roof
+# deck panels that came down with the breach.
+for i, (x, z) in enumerate([(12.75, 2.75), (14.25, 2.75), (12.75, 4.25), (14.25, 4.25)]):
+    place("roll_stack_kraft", x, z, 90, 1.45, 1.45, 2.6, jitter_yaw=10)
+place("stack_double", 16.0, 3.8, 0, 1.6, 1.38, 2.0)          # second step (2.0 m)
+place("stack_single", 17.7, 3.8, 0, 1.6, 1.3, 1.1)           # first step (1.1 m)
+place("stack_wide_low", 8.5, 5.5, 90, 2.0, 1.6, 1.1, jitter_yaw=20)
+place("stack_wide_low", 11.5, -2.0, 90, 2.0, 1.6, 1.1, jitter_yaw=20)
+place("roll_stack_mixed", 19.0, 0.0, 90, 2.0, 1.45, 2.8, jitter_yaw=12)
+for k, (x, z, yaw) in enumerate([(10.0, 1.0, 20), (16.5, 7.5, 70), (9.5, 8.0, 140)]):
+    place("deck_panel", x, z, yaw, 2.4, 1.2, 0.08, jitter_yaw=10, collide=False)
+EFFECTS.append(dict(kind="sun", hole=ROOF_HOLES[0]))
+EFFECTS.append(dict(kind="flicker", pos=[-4.8, -22.0]))     # back aisle high-bay
+EFFECTS.append(dict(kind="flicker", pos=[35.2, 30.4]))      # front aisle high-bay
+
+# Screen walls round the yards (the boundary stays invisible behind them).
+for k, (x0, x1, z0, z1) in enumerate([(-17.2, -16.8, -34.9, -26.4), (-17.2, -16.8, 33.4, 42.4),
+                                      (-17.2, EAST + 0.8, -35.3, -34.9), (-17.2, EAST + 0.8, 42.0, 42.4),
+                                      (EAST + 0.4, EAST + 0.8, -34.9, -26.4), (EAST + 0.4, EAST + 0.8, 33.4, 42.0)]):
+    box(f"YardWall{k}", x0, x1, 0.0, 2.6, z0, z1, "tiltup")
+
 PATCHES = [
     ("WingNorthYard", -36.0, -17.2, -26.45, -24.85, -0.5, 0.0, "yard"),
 ]
 
 # --- gameplay -------------------------------------------------------------------
-# Team Deathmatch spawns (docs/tdm-spawns.md). Each team starts at one of the
-# sketch's spawns: team 0 in the parking lot (north-east), team 1 on the loading
-# apron (south-west, 1.25 m below the hall), facing the building. The neutral
-# points fill the aisles between the production lines, facing the middle. The
-# builder drops any point without floor beneath it or room for a player.
-CENTRE = (13.5, 3.5)
+CENTRE = (CX, CZ)
 
 
 def facing(x, z, tx, tz):
@@ -444,67 +565,59 @@ def facing(x, z, tx, tz):
 
 
 SPAWNS = []
-# Team 0 starts mid-way along the parking lot and team 1 mid-way along the truck
-# apron, so the teams meet across the building's short axis (about 80 m walk,
-# as in a 6v6 Call of Duty core map) instead of corner to corner (110 m).
-for x, z in [(-5, -31), (-2.5, -31), (0, -31), (2.5, -31), (5, -31), (0, -33.2)]:
-    SPAWNS.append((x, 0.0, z, 180.0, 0))
-for x, z in [(-5, 43.6), (-2.5, 43.6), (0, 43.6), (2.5, 43.6), (5, 43.6), (0, 45.3)]:
-    SPAWNS.append((x, APRON_Y, z, 0.0, 1))
-for x, z in [(-8, -8), (2, -8), (12, -8), (26, -8.5), (-12, 5), (8.5, 7.0), (20, 5), (-8, 19),
-             (14, 19), (26, 16.5), (31.7, -15), (31.7, 8), (14, 26), (28, 25.8), (38, 26.5),
-             (-6, -23), (5, -23.5), (16, -24), (-26, -15), (-26, -2), (-22, 8), (-22, -22),
-             (40, -14), (40, 3), (-8, 30.5), (12, 30.5)]:
-    SPAWNS.append((x, 0.0, z, facing(x, z, *CENTRE), -1))
-# The old corner starts stay in play as respawns at the ends of each yard.
-for x, z in [(25, -31.5), (40, -30.5), (-33.5, -31.5)]:
-    SPAWNS.append((x, 0.0, z, facing(x, z, *CENTRE), -1))
-for x, z in [(-31, 40), (38, 44.5)]:
-    SPAWNS.append((x, APRON_Y, z, facing(x, z, *CENTRE), -1))
+# Team 0 starts in the parking lot, team 1 on the truck apron (its turn).
+for side, team in ((0, 0), (1, 1)):
+    for x, z in [(-5, -34), (-2.5, -34), (0, -34), (2.5, -34), (5, -34), (0, -32)]:
+        wx, wz = at(x, z, side)
+        SPAWNS.append((round(wx, 2), 0.0, round(wz, 2), 180.0 if team == 0 else 0.0, team))
+# Respawns in the aisles of each half, facing the middle.
+for side in (0, 1):
+    for x, z in [(-26, -28.5), (-3, -28), (15, -28.5), (-19.7, -18), (-2, -18), (14.8, -14),
+                 (25.5, -12.5), (-28.5, -1), (-14.5, -6), (2, -5.5), (15, -5), (29.5, -10.5),
+                 (-25, -33), (25, -33)]:
+        wx, wz = at(x, z, side)
+        SPAWNS.append((round(wx, 2), 0.0, round(wz, 2), facing(wx, wz, *CENTRE), -1))
 
-# Bot lanes from team 0's parking-lot start to team 1's apron start, west to
-# east: the wing, the hall's middle between the production lines, and the east
-# aisle. Points are (x, y, z).
-LANES = {
-    "West": [(0, 0, -30), (-24.75, 0, -27.5), (-24.75, 0, -23), (-24.0, 0, -12), (-25, 0, 2),
-             (-21, 0, 10), (-21, 0, 28), (-31.75, 0, 30), (-31.75, APRON_Y, 38), (0, APRON_Y, 42)],
-    "Centre": [(0, 0, -30), (-0.25, 0, -27.5), (-0.25, 0, -23), (-4, 0, -8), (-9, 0, 5),
-               (-8, 0, 19), (-6.5, 0, 31), (-6.5, APRON_Y, 39), (0, APRON_Y, 42)],
-    "East": [(0, 0, -30), (16.5, 0, -28), (16.5, 0, -24), (31.7, 0, -20), (31.0, 0, 8),
-             (28, 0, 25.8), (26, 0, 31.6), (26, APRON_Y, 38), (0, APRON_Y, 42)],
+# Bot lanes, west to east, each from the parking lot to the apron (bots run
+# them along the line between the teams' starts).
+_LANES_LOCAL = {
+    "West": [(-26, -34), (-26.25, -28.75), (-19.7, -20), (-19.75, -12.25), (-28.5, -1), (-22.75, 12.25),
+             (-19.75, 20.75), (-17.75, 24.25), (-17.25, 33.75)],
+    "Centre": [(3, -34), (2.75, -28.75), (-2, -18), (0.75, -6.25), (3.5, 6), (2, 18), (-3, 28.5), (-3, 34)],
+    "East": [(17.25, -34.25), (17.25, -31.25), (14.8, -14), (28.5, 1), (19.75, 12.25), (19.7, 20),
+             (26.25, 28.75), (25.75, 33.75)],
 }
+LANES = {name: [(round(x + CX, 2), 0.0, round(z + CZ, 2)) for x, z in pts] for name, pts in _LANES_LOCAL.items()}
 
 # Reverb zones (centre x, y, z, size x, y, z, room size, damping, wet, predelay ms).
 REVERB = [
     ("Hall", 13.6, 4.65, 3.5, 61.4, 9.3, 59.4, 0.85, 0.35, 0.3, 45.0),
-    ("Wing", -26.35, 4.65, 3.25, 18.7, 9.3, 55.9, 0.7, 0.4, 0.26, 32.0),
-    ("Dispatch", 2.8, 1.5, 28.5, 11.4, 3.0, 7.6, 0.3, 0.6, 0.16, 8.0),
+    ("ShiftOffice", 39.75, 4.8, -20.75, 8.5, 2.8, 10.5, 0.3, 0.6, 0.16, 8.0),
+    ("QcLab", -12.75, 4.8, 27.75, 8.5, 2.8, 10.5, 0.3, 0.6, 0.16, 8.0),
 ]
-# Invisible walls around the yard: x0, x1, z0, z1 (from y -3 to 12).
-BOUNDARY = [(-38.0, -37.0, -36.0, 47.0), (EAST + 0.4, EAST + 1.4, -36.0, 47.0),
-            (-38.0, EAST + 1.4, -35.5, -34.5), (-38.0, EAST + 1.4, 46.0, 47.0)]
+# Invisible walls round the play space: x0, x1, z0, z1 (from y -3 to 12).
+BOUNDARY = [(-18.0, -16.8, -36.0, 44.0), (EAST + 0.4, EAST + 1.4, -36.0, 44.0),
+            (-18.0, EAST + 1.4, -35.9, -34.9), (-18.0, EAST + 1.4, 42.0, 43.0)]
 
-# Camera fits for the photo comparisons (heading, pitch in degrees).
-CAMERAS = {
-    "1": (4.4, 22.3, 263, -7), "2": (-3.0, 20.4, 9, -13), "3": (3.4, 18.6, 24, -12),
-    "4": (11.5, 25.2, 91, -8.5), "5": (26.8, 24.9, 87, -11.4), "6": (31.0, 8.0, 2, -25.2),
-    "7": (32.7, -1.0, 30, -18.7), "8": (31.7, -21.4, 274, -6.2), "9": (32.1, -19.6, 246, -10.5),
-}
+
+def in_hole(x, z):
+    return any(x0 <= x <= x1 and z0 <= z <= z1 for x0, x1, z0, z1 in ROOF_HOLES)
 
 
 def main():
     data = dict(
         deck_y=DECK_Y, joist_bottom=JOIST_BOTTOM, wall_h=WALL_H,
         floors=FLOORS, walls=WALLS, platforms=PLATFORMS, roofs=ROOFS,
-        girder_x=GIRDER_X, column_z=COLUMN_Z, wing_girder_x=WING_GIRDER_X, extra_columns=EXTRA_COLUMNS, skip_columns=SKIP_COLUMNS, wing_column_z=WING_COLUMN_Z,
+        girder_x=GIRDER_X, column_z=COLUMN_Z, wing_girder_x=[], extra_columns=EXTRA_COLUMNS, skip_columns=SKIP_COLUMNS, wing_column_z=[],
         joist_spacing=JOIST_SPACING, hall=[-17.0, EAST, -26.0, 33.0], wing=[-35.5, -17.0, -24.5, 31.0],
-        lights=[[x, z] for x in LIGHT_X for z in LIGHT_Z] + [[x, z] for x in WING_LIGHT_X for z in WING_LIGHT_Z],
+        lights=[[x, z] for x in LIGHT_X for z in LIGHT_Z if not in_hole(x, z)],
         light_y=LIGHT_Y, windows=WINDOWS, doors=DOORS, trays=TRAYS, pipes=PIPES, drops=DROPS, lines=LINES,
-        machines=MACHINES, fallback=FALLBACK, props=props, cameras=CAMERAS,
+        machines=MACHINES, fallback=FALLBACK, props=props,
         spawns=SPAWNS, reverb=REVERB, boundary=BOUNDARY, lanes=LANES, patches=PATCHES,
+        boxes=BOXES, effects=EFFECTS, roof_holes=ROOF_HOLES,
     )
     OUT.write_text(json.dumps(data, indent=1))
-    print(f"wrote {OUT} with {len(props)} stock units and {len(MACHINES)} machines")
+    print(f"wrote {OUT} with {len(props)} stock units, {len(MACHINES)} machines, {len(BOXES)} boxes")
 
 
 if __name__ == "__main__":
