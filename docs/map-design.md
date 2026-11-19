@@ -129,6 +129,9 @@ L-shaped roof.
 
 ### Photo-matched pass
 
+The 6v6 rebuild below replaced this pass's interior layout, spawns, and yards;
+its shell, roof structure, materials, and models remain.
+
 A third pass rebuilds Warehouse from nine reference photos of a corrugated-box
 plant and the camera map that marks where each was taken. Where the photos and
 the sketch disagree, the photos win for what is visible and the sketch fills in
@@ -160,72 +163,89 @@ walls show lifting inserts, and the scene adds light haze and dust.
 
 Warehouse is on the title screen as a free-roam route and in the local match
 setup for every mode except Search and Destroy. Servers load it with
-`--map warehouse`. Team 0 starts mid-way along the north parking lot and
-enters through the north doors. Team 1 starts mid-way along the truck apron
-and comes up the bay ramps and the wing ramp. Thirty-one neutral respawn
-points line the aisles and the ends of each yard (see
-[tdm-spawns.md](tdm-spawns.md)). Bots follow three lanes, west to east: the
-wing, the hall's middle through the production-line crossings, and the east
-aisle. Capture the Flag and Hardpoint fall back to flag and zone
-positions derived from the spawns. Reverb zones give the hall, the wing, and
-the dispatch office their own echo. An invisible boundary keeps players in
-the yard. `godot/tests/warehouse_test.gd` checks the spawns, floor, and body
-clearance, the prop collision (below), and the route from the menu.
+`--map warehouse`. The layout is the 6v6 rebuild below. Team 0 starts in the
+north parking lot and team 1 on the south truck apron; each has four doors into
+the hall. Twenty-eight neutral respawns sit in the aisles of both halves and at
+the yards' ends (see [tdm-spawns.md](tdm-spawns.md)). Bots follow three lanes,
+west to east: the west racking aisle, the centre aisle through the mid
+stockpile, and the east rolls aisle. Capture the Flag and Hardpoint fall back
+to flag and zone positions derived from the spawns. Reverb zones give the
+hall and the two upstairs offices their own echo. Screen walls close the yards
+and an invisible boundary stands behind them; the wing is sealed.
+`godot/tests/warehouse_test.gd` checks the spawns, floor, and body clearance,
+the prop collision, the tunnels, roofs, offices, and walkways (below), and the
+route from the menu.
 
-The camera map is an estimate, so photo 1's portal reads farther away than in
-the photo. Areas no photo covers, such as the northwest of the hall, the wing,
-and the exterior, are educated guesses.
+### 6v6 rebuild (November 2026)
 
-### 6v6 pass (photo 10)
+The user's direction: flow like a real 6v6 Call of Duty map rather than match
+the building exactly, with Modern Warfare's **Atlas Superstore** as the model of
+a warehouse map done properly. The approved plan is
+[`warehouse_2026_11.py`](../tools/map_blockout/warehouse_2026_11.py); the
+building is the real one's single square hall from its fire plan (no wing).
 
-The photo pass was built to look like the plant, not to play like a Call of
-Duty map, and measured that way. [`warehouse_measure.py`](../tools/map_blockout/warehouse_measure.py)
-measures the built scene: `godot/tests/warehouse_grid.gd` samples its real
-collision on a 0.5 m grid (standing players on the lowest surface they fit on,
-so the floor under an overhead part counts), and the script reports the
-map-design targets.
+What it takes from Atlas Superstore, as structure rather than layout:
 
-| Measure | Photo pass | 6v6 pass | Target |
+- **A yard start at each end.** Atlas starts one team in the Backlot and the
+  other at the Loading Docks; here the parking lot (north) and the truck apron
+  (south), each with box trucks and pallet walls set as staggered gates.
+- **Several ways in, each staggered.** Four doors per side, with a pallet
+  baffle just inside each so no line runs from a yard into the hall, and PVC
+  strip curtains in the doorways.
+- **Big blocks in a grid, aisles between.** Atlas's shelving blocks become
+  machine lines (flexo and die cutter in the north; rotary, folder-gluers, and
+  strapping in the south), pallet racking faced onto the aisles, and roll and
+  stock blocks, about 6 to 13 m with 4 to 5 m aisles: many routes, not three
+  corridors. Wall departments (ink room, maintenance shop; plate room, tooling
+  crib) cut the back and front aisles into stretches.
+- **A middle under an open roof.** Atlas's ceiling is open to the sky in
+  places; here a 12 m roof breach over the mid stockpile lets a sun shaft and
+  haze fall on a stack of jumbo rolls, with fallen deck panels around it.
+- **An upstairs office near each team** (Carpenters Office and Security in
+  Atlas): the shift office (north-east) and the QC lab (south-west), two
+  storeys, a stair inside, an open-plan upper floor whose window band looks
+  over the racking and the bay.
+- **Overwatch reached by a stair:** a steel crossover deck at 2.6 m over a
+  middle-row machine in each half, with rails along its sides and a stair from
+  the cross aisle.
+
+Verticality and set pieces added on review:
+
+- **Room roofs.** The ink room (north) and plate room (south) are one storey
+  with a flat roof at 3.4 m. Two pallets of stock against the wall step 1.1 m
+  and 2.2 m, so players mantle up to the roof (Call of Duty's mantle reaches
+  1.35 m here), which looks down the back aisle over a parapet.
+- **The roll perch** in the mid stockpile: 1.1 m, then 2.0 m, then the roll
+  tops at 2.6 m.
+- **Crouch tunnels.** Each long north–south production line is split by a
+  transfer conveyor at 1.4 m: a crouching or sliding player (1.1 m) gets
+  through, a standing one does not (Atlas's shortcuts).
+- **Effects:** the breach's sun shaft and denser haze, a torn cable tray over
+  each crossover throwing sparks with a flash, two failing high-bays that
+  flicker (back and front aisles), amber beacons turning on the yard
+  forklifts, steam from a wall vent in each half, and a toppled rack's spilled
+  sheets in each bay.
+
+Stairs are clipped as one ramp (steps to see, a slope to walk on), as Call of
+Duty clips stairs, and rails as one box from deck to top rail.
+
+| Measure | Photo pass | 6v6 rebuild | Target |
 | --- | --- | --- | --- |
-| Start to start | 110 m (14.8 s) | 82 m (11.0 s) | 75 to 90 m |
-| Start to the middle (x 0, z 6) | — | 5.3 s and 5.9 s | 5 to 6 s each |
-| Start to the west and east lanes' middles | — | 6.8 / 7.1 s, 8.0 / 8.3 s | within about 0.3 s |
-| Median longest eye-height line | 33.8 m | 23.5 m | 32 m or less |
-| Floor that sees past 40 m | 33% | 4% | under 10% |
-| Longest line | 80 m | 58 m | 60 m or less |
-| Longest line from a start | 78 m | 30 m | no line into the enemy half |
+| Start to start | 110 m (14.8 s) | 75 m (10.1 s) | 75 to 90 m |
+| Median longest eye-height line | 33.8 m | 20.5 m | 32 m or less |
+| Floor that sees past 40 m | 33% | 2% | under 10% |
+| Longest line | 80 m | 50 m | 60 m or less |
 
-- **Starts on the long sides.** The teams started in opposite corners. They now
-  start mid-way along the parking lot and the truck apron, so they meet across
-  the building's short axis like the two halves of a core map. The old corner
-  starts are respawns.
-- **Lanes.** The wing (west), the hall's middle (centre), and the east aisle
-  run north to south between the starts, and the production lines run across
-  them as cover. The north and middle lines were unbroken 35 m and 41 m walls of
-  machines; each now has an operator crossing (2.4 m and 2.5 m) near the middle,
-  which also balances the time each team takes to reach it.
-- **Yard gates.** The parking lot and the apron were 80 m firing lanes. Parked
-  box trucks and pallet walls now stand in pairs from opposite sides, 2 to 3 m
-  apart, so a run along a yard always meets one and players weave through.
-- **Hall and wing cover.** Pallet walls (2.4 to 3.2 m) stand staggered across
-  the aisles between the lines, the east aisle, and the length of the wing.
-  Three waist-high units in the open middle block movement but not sight.
-- **East bay.** Stock staged across the east bay door's approach sealed it
-  from inside, so the south team had two ways in to the north team's four.
-  `KEEP_CLEAR` drops stock there after placement, and the east lane now takes
-  both teams about the same time.
-- A floor strip that was missing between the parking lot and the wing's north
-  wall is filled (`PATCHES`).
-- **Bots.** Lanes used to be read as running west to east, with a team's
-  direction taken from its spawns' mean X; both Warehouse teams average x 0.
-  Bots now take the direction between the two teams' starts and run each lane
-  that way (`lane_route` in `rust/game/src/net/bots.rs`), which is unchanged on
-  maps whose teams start west and east. `bots_test.gd -- --warehouse` plays a
-  minute of bot TDM on Warehouse in CI.
+Measured on the built scene: `godot/tests/warehouse_grid.gd` samples its real
+collision on a 0.5 m grid and [`warehouse_measure.py`](../tools/map_blockout/warehouse_measure.py)
+reports the targets (one floor per cell, so upstairs is not measured).
 
-Reference: the layout targets in the map-design skill (Call of Duty core 6v6
-maps such as Crash, Strike, Raid, and Standoff), and Modern Warfare III's Meat
-for an industrial interior where machines and stock blocks are the hard cover.
+**Bots.** Lanes used to be read as running west to east, with a team's
+direction taken from its spawns' mean X; Warehouse's teams start north and
+south. Bots now take the direction between the two teams' starts and run each
+lane that way (`lane_route` in `rust/game/src/net/bots.rs`), which is
+unchanged on maps whose teams start west and east. `bots_test.gd -- --warehouse`
+plays a minute of bot TDM on Warehouse in CI.
 
 **Collision.** Every prop collided as one box around its whole model, so the
 overhead extraction hood walled off the floor under it, forklifts blocked the
@@ -235,24 +255,21 @@ voxelizes each model and writes clip boxes to
 `godot/assets/props/warehouse_photo/clip.json`, the way Call of Duty maps use
 player clip: boxes that follow the solid parts, keep every opening at least
 0.3 m tall open (rack shelves, the space under overhead parts), and skip
-details too thin to matter. The builder gives every placed prop and the older
-scene-placed dressing those boxes; bodies with no model of their own, such as
-the dispatch office's roof slabs under their sibling ceiling meshes, keep
-their authored collision. The test fails on a collider with nothing visible
-around it, a box that reaches past what is visible, a return to single boxes,
-or a player not fitting under the extraction hood.
+details too thin to matter. The builder gives every placed prop those boxes. The test fails on a collider
+with nothing visible around it, a prop box that reaches past its model, or a
+return to single boxes.
 
-**Photo 10** looks south across the feed end of the rotary die-cutter (the
-south line's east end) to the dispatch office. It adds:
+**Photo 10** looks across the feed end of the rotary die-cutter. Its models,
+now placed by the 6v6 layout:
 
 - `rotary_feeder`: the navy feed section with yellow handwheels, a black
   bellows guard, a blue and silver roller feed table behind a rusted yellow side
   guide, the control column and red lockout box, the operator's clipboard, cup,
   bottle, and ear defenders, and an overhead blue rail with red LED counters and
-  a convex safety mirror. It replaces the line's last inspection bank.
-- `pallet_rack_orange` (orange uprights, teal beams, curved board formers) and
-  `trim_duct` (a 1 m galvanized duct on the floor, waist-high cover) across the
-  east aisle from it.
+  a convex safety mirror. It sits under the south crossover.
+- `pallet_rack_orange` (orange uprights, teal beams, curved board formers)
+  faces the racking blocks onto the aisles, and `trim_duct` (a 1 m galvanized
+  duct on the floor) runs along the bay walls as waist-high cover.
 - Cable ladder trays at 5.8 m across the south bay and a branch north at 6.5 m.
 - A grey primed roof deck in place of the black one, and stronger high-bay
   uplight, so the deck reads light grey above black joists as in the photo.
@@ -260,6 +277,7 @@ south line's east end) to the dispatch office. It adds:
 Rebuild:
 
 ```sh
+uv run --with numpy --with matplotlib tools/map_blockout/blockout.py tools/map_blockout/warehouse_2026_11.py
 python3 tools/map_blockout/warehouse_photo_layout.py
 blender -b --python tools/build_warehouse_photo_machines.py -- rotary_feeder pallet_rack_orange trim_duct
 uv run --with trimesh --with numpy --with scipy tools/build_warehouse_clip.py
@@ -267,7 +285,7 @@ uv run --with trimesh --with numpy --with scipy tools/build_warehouse_clip.py
 # so the script refuses to rebuild those parts under --headless.
 xvfb-run -a godot --path godot --script res://tools/warehouse_build_headless.gd
 GRID_OUT=grid.json godot --headless --path godot --script res://tests/warehouse_grid.gd
-uv run --with numpy --with matplotlib tools/map_blockout/warehouse_measure.py grid.json --centre=0,6
+uv run --with numpy --with matplotlib tools/map_blockout/warehouse_measure.py grid.json --centre=13.5,8
 ```
 
 `godot/tests/capture_warehouse.gd` renders the photo viewpoints and a top-down

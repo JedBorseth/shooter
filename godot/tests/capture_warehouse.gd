@@ -92,10 +92,16 @@ func _views() -> Dictionary:
 
 ## Hides everything above head height and looks straight down.
 func _top(scene: Node3D, cam: Camera3D) -> void:
-	for path in ["Shell/HallRoof", "Shell/WingRoof", "PhotoPass/Structure", "PhotoPass/Utilities"]:
+	for path in ["PhotoPass/Structure", "PhotoPass/Utilities"]:
 		var n := scene.get_node_or_null(path) as Node3D
 		if n != null:
 			n.visible = false
+	for n in scene.get_node("Shell").get_children():
+		if "Roof" in String(n.name):
+			(n as Node3D).visible = false
+	for n in scene.get_node("PhotoPass/Boxes").get_children():
+		if String(n.name).ends_with("Roof"):
+			(n as Node3D).visible = false
 	for n in scene.find_children("*", "SpotLight3D", true, false):
 		(n as SpotLight3D).shadow_enabled = false
 	var sun := DirectionalLight3D.new()

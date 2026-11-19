@@ -4,6 +4,7 @@ extends SceneTree
 ## player lands and walks, and Home returns to the title screen.
 
 const LEVEL := "res://scenes/warehouse.tscn"
+const LAYOUT_JSON := "res://tools/warehouse_photo_layout.json"
 
 var _failures := 0
 
@@ -99,66 +100,162 @@ func _run() -> void:
 	_finish()
 
 
-## Props collide with what players see: every prop body has a visible model
-## (or, for a collision-only body, a visible sibling that covers it), props use
-## fitted clip boxes (tools/build_warehouse_clip.py) rather than one box around
-## the model, no box reaches past what is visible, and players fit under the
-## overhead extraction hood, which a box around the whole model walled off.
+## Props collide with what players see: every body has something visible on
+## or around it (a clip-only body, such as a stair's ramp or a rail's clip,
+## needs visible siblings where it stands), prop models use fitted clip boxes
+## (tools/build_warehouse_clip.py) rather than one box round the model, and no
+## prop's box reaches past its model. Then the places the 6v6 layout builds for
+## players: the crouch tunnels fit a crouching player but not a standing one,
+## and players can stand on the room roofs, the office floors upstairs, and
+## the crossover decks.
 func _check_prop_collision(map: Node) -> void:
 	var invisible := PackedStringArray()
 	var oversized := PackedStringArray()
 	var clipped := 0
-	var bodies := 0
-	for group in ["PhotoPass", "WarehouseDressing"]:
-		for body: StaticBody3D in map.get_node(group).find_children(
-			"*", "StaticBody3D", true, false
-		):
-			var shapes := body.find_children("*", "CollisionShape3D", false, false)
-			if shapes.is_empty():
-				continue
-			bodies += 1
-			var meshes := body.find_children("*", "MeshInstance3D", true, false)
-			if meshes.is_empty():
-				# Collision authored beside its mesh (the dispatch roof slabs).
-				for c in body.get_parent().get_children():
-					if c != body and String(body.name).begins_with(String(c.name)):
-						meshes.append_array(c.find_children("*", "MeshInstance3D", true, false))
-			var seen := _visible_bounds(meshes, body)
-			if seen.size == Vector3.ZERO:
-				invisible.append(str(map.get_path_to(body)))
-				continue
+	var props := 0
+	for body: StaticBody3D in map.get_node("PhotoPass").find_children(
+		"*", "StaticBody3D", true, false
+	):
+		var shapes := body.find_children("*", "CollisionShape3D", false, false)
+		if shapes.is_empty():
+			continue
+		var meshes := body.find_children("*", "MeshInstance3D", true, false)
+		if meshes.is_empty():
+			var reach := AABB()
 			for s: CollisionShape3D in shapes:
-				if s.name.begins_with("Clip"):
-					clipped += 1
-				if s.shape is BoxShape3D:
-					var size := (s.shape as BoxShape3D).size
-					var box := s.global_transform * AABB(-size / 2, size)
-					if not seen.encloses(box):
-						oversized.append(str(map.get_path_to(body)))
-						break
-	_check(invisible.is_empty(), "no prop collides without anything to see: %s" % [invisible])
+				var size := (s.shape as BoxShape3D).size if s.shape is BoxShape3D else Vector3.ONE
+				reach = s.global_transform * AABB(-size / 2, size)
+			for c in body.get_parent().get_children():
+				if c == body or not c is Node3D:
+					continue
+				for m: MeshInstance3D in (
+					c.find_children("*", "MeshInstance3D", true, false)
+					+ ([c] if c is MeshInstance3D else [])
+				):
+					if reach.grow(0.1).intersects(m.global_transform * m.get_aabb()):
+						meshes.append(m)
+			if meshes.is_empty():
+				invisible.append(str(map.get_path_to(body)))
+			continue
+		var model := false
+		for c in body.get_children():
+			if c is Node3D and c.scene_file_path != "":
+				model = true
+		if not model:
+			continue
+		props += 1
+		var seen := _visible_bounds(meshes, body)
+		for s: CollisionShape3D in shapes:
+			if s.name.begins_with("Clip"):
+				clipped += 1
+			if s.shape is BoxShape3D:
+				var size := (s.shape as BoxShape3D).size
+				var box := s.global_transform * AABB(-size / 2, size)
+				if not seen.encloses(box):
+					oversized.append(str(map.get_path_to(body)))
+					break
+	_check(invisible.is_empty(), "nothing collides without anything to see: %s" % [invisible])
 	_check(oversized.is_empty(), "no prop's collision reaches past its model: %s" % [oversized])
 	_check(
-		clipped > bodies * 2,
-		"props collide with fitted clip boxes (%d boxes, %d bodies)" % [clipped, bodies]
+		clipped > props * 2,
+		"props collide with fitted clip boxes (%d boxes, %d props)" % [clipped, props]
 	)
-	var hood := map.get_node("PhotoPass/Machines").find_children("ElevatedHood*", "", false, false)
-	_check(hood.size() == 1, "the extraction hood is in the finishing cell")
-	if hood.size() == 1:
-		var capsule := CapsuleShape3D.new()
-		capsule.radius = 0.3
-		capsule.height = 1.6
-		var query := PhysicsShapeQueryParameters3D.new()
-		query.shape = capsule
-		query.collision_mask = 1
-		var blocked := false
-		for along in [-1.6, -0.8, 0.0]:
-			query.transform.origin = (hood[0] as Node3D).global_transform * Vector3(along, 0.9, 0)
-			var hits := (hood[0] as Node3D).get_world_3d().direct_space_state.intersect_shape(query)
-			for h in hits:
-				if h.collider == hood[0]:
-					blocked = true
-		_check(not blocked, "players fit under the overhead extraction hood")
+	var space := (map as Node3D).get_world_3d().direct_space_state
+	var layout: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(LAYOUT_JSON))
+	for tag in ["N", "S"]:
+		var tunnel := map.get_node_or_null("PhotoPass/Boxes/Tunnel%sConveyor" % tag) as Node3D
+		_check(tunnel != null, "the %s line has a crouch tunnel" % tag)
+		if tunnel != null:
+			# Crouch through the whole tunnel, mouth to mouth.
+			var length := (
+				((tunnel.get_node("Shape") as CollisionShape3D).shape as BoxShape3D).size.z
+			)
+			var clear := true
+			for k in 9:
+				var z := tunnel.global_position.z + (k / 8.0 - 0.5) * (length + 1.0)
+				clear = clear and _fits(space, Vector3(tunnel.global_position.x, 0.0, z), 1.1)
+			_check(clear, "a crouching player gets through tunnel %s, mouth to mouth" % tag)
+			var under := Vector3(tunnel.global_position.x, 0.0, tunnel.global_position.z)
+			_check(not _fits(space, under, 1.8), "a standing player does not fit tunnel %s" % tag)
+		for path in ["Room%sRoof" % tag, "Office%sFloorA" % tag, "Crossover%sDeck" % tag]:
+			var top := map.get_node_or_null("PhotoPass/Boxes/" + path) as StaticBody3D
+			_check(top != null, "%s is built" % path)
+			if top != null:
+				var size := ((top.get_node("Shape") as CollisionShape3D).shape as BoxShape3D).size
+				var feet := top.global_position + Vector3(0, size.y / 2 + 0.02, 0)
+				_check(_fits(space, feet, 1.8), "players can stand on %s" % path)
+	# The crate steps up to each room roof: floor, 1.1 m, 2.2 m, roof, each
+	# rise within the 1.35 m mantle (layout: half(), the ink and plate rooms).
+	for steps in [
+		[Vector3(2.6, 0, -19.9), Vector3(4.0, 0, -19.9), Vector3(4.0, 0, -21.5)],
+		[Vector3(24.4, 0, 26.9), Vector3(23.0, 0, 26.9), Vector3(23.0, 0, 28.5)]
+	]:
+		var heights := []
+		for p: Vector3 in steps:
+			heights.append(snappedf(_ground(space, p), 0.01))
+		_check(
+			(
+				absf(heights[0] - 1.1) < 0.15
+				and absf(heights[1] - 2.2) < 0.15
+				and absf(heights[2] - 3.4) < 0.1
+			),
+			"crates step 1.1, 2.2, then the roof at 3.4 m, got %s" % [heights]
+		)
+	# Every stair rises steadily from floor to landing with standing room all
+	# the way up (a wall, slab, or rail across it would stop players).
+	for b in layout.boxes:
+		if is_zero_approx(b.get("pitch", 0.0)):
+			continue
+		var lo := Vector3(b.lo[0], b.lo[1], b.lo[2])
+		var hi := Vector3(b.hi[0], b.hi[1], b.hi[2])
+		var along_z: bool = is_zero_approx(b.yaw)
+		var mid := (lo + hi) / 2
+		var heights := []
+		var points := []
+		for k in 9:
+			var t := 0.06 + 0.88 * k / 8.0
+			var p := Vector3(
+				mid.x if along_z else lerpf(lo.x, hi.x, t),
+				0,
+				lerpf(lo.z, hi.z, t) if along_z else mid.z
+			)
+			points.append(p)
+			heights.append(snappedf(_ground(space, p, hi.y + 0.6), 0.01))
+		if heights[0] > heights[-1]:
+			heights.reverse()
+			points.reverse()
+		var room := true
+		for k in points.size():
+			var p: Vector3 = points[k]
+			room = room and _fits(space, Vector3(p.x, heights[k] + 0.05, p.z), 1.8)
+		var steady := true
+		for k in range(1, heights.size()):
+			steady = steady and heights[k] > heights[k - 1] and heights[k] - heights[k - 1] < 0.6
+		_check(steady and heights[-1] > hi.y - 0.5, "%s climbs steadily: %s" % [b.name, heights])
+		_check(room, "%s has standing room from foot to head" % b.name)
+
+
+## The height of the first walkable surface under `p`, looking down from
+## `from` (by default just under the hall's joists).
+func _ground(space: PhysicsDirectSpaceState3D, p: Vector3, from := 8.0) -> float:
+	var ray := PhysicsRayQueryParameters3D.create(
+		Vector3(p.x, from, p.z), Vector3(p.x, -1.0, p.z), 1
+	)
+	var hit := space.intersect_ray(ray)
+	return hit.position.y if hit else -9.0
+
+
+## A player capsule `height` tall, standing with its feet at `feet`, touches
+## nothing.
+func _fits(space: PhysicsDirectSpaceState3D, feet: Vector3, height: float) -> bool:
+	var capsule := CapsuleShape3D.new()
+	capsule.radius = 0.35
+	capsule.height = height
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = capsule
+	query.collision_mask = 1
+	query.transform.origin = feet + Vector3.UP * (height / 2 + 0.03)
+	return space.intersect_shape(query).is_empty()
 
 
 ## The world bounds of `meshes` that lie on or around `body`, grown a little.

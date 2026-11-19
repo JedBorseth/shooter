@@ -26,7 +26,7 @@ from scipy import ndimage
 
 GODOT = Path(__file__).resolve().parents[1] / "godot"
 OUT = GODOT / "assets/props/warehouse_photo/clip.json"
-DIRS = ["assets/props/warehouse_photo", "assets/props/warehouse", "assets/props/covered_car",
+DIRS = ["assets/props/warehouse_photo", "assets/props/warehouse", "assets/props/covered_car", "assets/props/barrier",
         "assets/props/trash_can"]
 # Models that never collide (building parts, lights, utilities, decals).
 SKIP = {"cable_tray_6", "deck_panel", "floor_line", "girder_10", "hanger_rod", "high_bay_led",

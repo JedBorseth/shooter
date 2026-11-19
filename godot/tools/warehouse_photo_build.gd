@@ -17,17 +17,8 @@ const CLIP := "res://assets/props/warehouse_photo/clip.json"
 const PHOTO := "res://assets/props/warehouse_photo/"
 const BLOCK := preload("res://addons/cyclops_level_builder/nodes/cyclops_block.gd")
 const MATS := "res://materials/warehouse/"
-const KEEP_SHELL := ["BayWestRamp", "BayEastRamp", "WingEntryRamp"]
-const OLD_COVER := ["Jumbo Back", "Jumbo Crawl Section Roof", "Jumbo Die Cut Machine", "Sheeter Machine",
-	"Rotary Machine", "WingOfficeWall4", "WingOfficeWall5", "DispatchOfficeL"]
-const OLD_DRESSING := ["BoxMachine", "CardboardStock", "BlueRollingBin", "Forklift",
-	"WarehouseFitout/ProductionStock", "WarehouseFitout/LeftWingStock", "WarehouseFitout/ProductionMachines",
-	"WarehouseFitout/ShopSecondPass", "WarehouseFitout/Structure", "WarehouseFitout/Overhead",
-	"WarehouseFitout/Lighting", "WarehouseFitout/HallDispatch/WorkshopDoorPanel",
-	"WarehouseFitout/OfficeFurniture/ShippingCarton13", "WarehouseFitout/OfficeFurniture/ProductionDesk",
-	"WarehouseFitout/OfficeFurniture/ProductionDeskReturn", "WarehouseFitout/OfficeFurniture/ProductionChair"]
-## Older dressing kept but moved to where the photos put it (photo 1's shipping desk).
-const LEGACY_MOVES := {}
+const KEEP_SHELL := []
+
 
 static var _root: Node3D
 static var _data: Dictionary
@@ -36,17 +27,20 @@ static var _clip := {}
 static var _log: PackedStringArray
 
 
-static func build(root: Node3D, parts: Array = ["shell", "structure", "lighting", "utilities", "machines", "stock", "patches", "clip", "gameplay"]) -> String:
+static func build(root: Node3D, parts: Array = ["shell", "structure", "lighting", "utilities", "machines", "stock", "patches", "boxes", "effects", "clip", "gameplay"]) -> String:
 	_root = root
 	_log = PackedStringArray()
 	_data = JSON.parse_string(FileAccess.get_file_as_string(LAYOUT))
 	_clip = JSON.parse_string(FileAccess.get_file_as_string(CLIP)) if FileAccess.file_exists(CLIP) else {}
 	_scenes = {}
+	# Effects attach to the high-bays (flicker): rebuilt lights need them again.
+	if "lighting" in parts and not "effects" in parts:
+		parts = parts + ["effects"]
 	if "shell" in parts:
 		_clear_old()
 		_build_shell()
 	var pass_node := _group(root, "PhotoPass")
-	for part in ["structure", "lighting", "utilities", "machines", "stock", "patches"]:
+	for part in ["structure", "lighting", "utilities", "machines", "stock", "patches", "boxes", "effects"]:
 		if part in parts:
 			var g := _group(pass_node, part.capitalize())
 			for c in g.get_children():
@@ -59,6 +53,8 @@ static func build(root: Node3D, parts: Array = ["shell", "structure", "lighting"
 				"machines": _build_machines(g)
 				"stock": _build_stock(g)
 				"patches": _build_patches(g)
+				"boxes": _build_boxes(g)
+				"effects": _build_effects(g)
 	if "clip" in parts:
 		_clip_dressing()
 	if "gameplay" in parts:
@@ -89,6 +85,7 @@ static func _own(node: Node) -> void:
 
 static func _mat(key: String) -> Material:
 	var names := {"slab": "slab_polished", "tiltup": "tiltup_wall", "panel_white": "panel_white",
+		"steel": "steel_deck", "yellow": "safety_yellow", "curtain": "strip_curtain",
 		"yard": "yard", "cmu": "cmu", "cap": "cap", "deck": "roof_deck"}
 	return load(MATS + names[key] + ".tres")
 
@@ -199,7 +196,11 @@ static func _add_clip(body: Node3D, inst: Node3D) -> bool:
 ## are siblings) keep the collision they were authored with.
 static func _clip_dressing() -> void:
 	var n := 0
-	for body: StaticBody3D in _root.get_node("WarehouseDressing").find_children("*", "StaticBody3D", true, true):
+	var dressing := _root.get_node_or_null("WarehouseDressing")
+	if dressing == null:
+		_log.append("clip: no older dressing")
+		return
+	for body: StaticBody3D in dressing.find_children("*", "StaticBody3D", true, true):
 		var model: Node3D = null
 		for c in body.get_children():
 			if c is Node3D and c.scene_file_path != "":
@@ -255,22 +256,13 @@ static func _clear_old() -> void:
 		if not (c.name in KEEP_SHELL):
 			shell.remove_child(c)
 			c.free()
-	var cover := _root.get_node("BlockoutCover")
-	for n in OLD_COVER:
-		var c := cover.get_node_or_null(n)
-		if c:
-			cover.remove_child(c)
-			c.free()
-	var dressing := _root.get_node("WarehouseDressing")
-	for n in OLD_DRESSING:
-		var c := dressing.get_node_or_null(n)
-		if c:
-			c.get_parent().remove_child(c)
-			c.free()
-	for path in LEGACY_MOVES:
-		var c := dressing.get_node_or_null(path) as Node3D
-		if c:
-			c.global_position = LEGACY_MOVES[path]
+	# The 6v6 rebuild places everything from the layout: the sketch-era cover
+	# and the scene-placed dressing (offices, yard, cubicles) go.
+	for group in ["BlockoutCover", "WarehouseDressing"]:
+		var old := _root.get_node_or_null(group)
+		if old:
+			_root.remove_child(old)
+			old.free()
 
 
 static func _build_shell() -> void:
@@ -321,10 +313,24 @@ static func _in_machine(x: float, z: float, margin := 0.4) -> bool:
 	for p in _data.platforms:
 		if x > p[1] - margin and x < p[2] + margin and z > p[3] - margin and z < p[4] + margin:
 			return true
-	if x > -3.3 and x < 9.0 and z > 24.1 and z < 33.0:  # dispatch office
+	if _in_hole(x, z):
 		return true
-	if x < -24.6 and z > 14.1 and z < 26.9:  # shipping room
-		return true
+	# Stock, rooms, stairs, and rails: a column never stands inside them.
+	for p in _data.props:
+		var r: float = maxf(p.fit[0], p.fit[1]) / 2.0 + margin
+		if absf(x - p.x) < r and absf(z - p.z) < r:
+			return true
+	for b in _data.get("boxes", []):
+		if b.lo[1] < 2.0 and x > b.lo[0] - margin and x < b.hi[0] + margin and z > b.lo[2] - margin and z < b.hi[2] + margin:
+			return true
+	return false
+
+
+## Inside a hole in the roof (the breach over the mid stockpile).
+static func _in_hole(x: float, z: float) -> bool:
+	for h in _data.get("roof_holes", []):
+		if x >= h[0] and x <= h[1] and z >= h[2] and z <= h[3]:
+			return true
 	return false
 
 
@@ -335,7 +341,9 @@ static func _build_structure(g: Node3D) -> void:
 	var girder_depth := deck - girder_bottom
 	var hall: Array = _data.hall
 	var wing: Array = _data.wing
-	var spans := [[hall, _data.girder_x, _data.column_z], [wing, _data.wing_girder_x, _data.wing_column_z]]
+	var spans := [[hall, _data.girder_x, _data.column_z]]
+	if not _data.wing_girder_x.is_empty():
+		spans.append([wing, _data.wing_girder_x, _data.wing_column_z])
 	var col_n := 0
 	var girders := []
 	var joists := []
@@ -354,14 +362,16 @@ static func _build_structure(g: Node3D) -> void:
 				var length: float = zs[i + 1] - zs[i]
 				var xf := Transform3D(Basis(Vector3.UP, -PI / 2) * Basis.from_scale(Vector3(length / 10.0, girder_depth / 1.4, 1)),
 					Vector3(x, girder_bottom, (zs[i] + zs[i + 1]) / 2))
-				girders.append(xf)
+				if not _in_hole(x, (zs[i] + zs[i + 1]) / 2):
+					girders.append(xf)
 		var xs := [area[0]] + gx + [area[1]]
 		for i in xs.size() - 1:
 			var length: float = xs[i + 1] - xs[i]
 			var z: float = area[2] + 0.9
 			while z < area[3] - 0.5:
-				joists.append(Transform3D(Basis.from_scale(Vector3(length / 10.0, (deck - jb) / 1.0, 1)),
-					Vector3((xs[i] + xs[i + 1]) / 2, jb, z)))
+				if not _in_hole((xs[i] + xs[i + 1]) / 2, z):
+					joists.append(Transform3D(Basis.from_scale(Vector3(length / 10.0, (deck - jb) / 1.0, 1)),
+						Vector3((xs[i] + xs[i + 1]) / 2, jb, z)))
 				z += _data.joist_spacing
 	for c in _data.get("extra_columns", []):
 		if _in_machine(c[0], c[1]):
@@ -378,6 +388,8 @@ static func _build_structure(g: Node3D) -> void:
 		var x := rng.randf_range(hall[0] + 0.5, hall[1] - 0.5)
 		var z := rng.randf_range(hall[2] + 0.5, hall[3] - 0.5)
 		var length := rng.randf_range(0.6, 1.2) if rng.randf() < 0.55 else rng.randf_range(1.5, deck - 3.5)
+		if _in_hole(x, z):
+			continue
 		rods.append(Transform3D(Basis.from_scale(Vector3(1, length, 1)), Vector3(x, deck - length, z)))
 	_multimesh(g, "HangerRods", "hanger_rod", rods)
 	# Windows and doors.
@@ -448,11 +460,8 @@ static func _build_lighting(g: Node3D) -> void:
 	_multimesh(g, "Fixtures", "high_bay_led", fixtures)
 	g.add_child(_dust(Vector3(13.5, 4.2, 3.5), Vector3(61, 8, 59), 700))
 	g.get_child(-1).owner = _root
-	g.add_child(_dust(Vector3(-26.25, 4.2, 3.25), Vector3(18.5, 8, 55.5), 180))
-	g.get_child(-1).owner = _root
 	var hall: Array = _data.hall
-	var probes := [[Vector3(4, 4.6, 3.5), Vector3(42, 9.4, 59)], [Vector3(31, 4.6, 3.5), Vector3(26, 9.4, 59)],
-		[Vector3(-26.25, 4.6, 3.25), Vector3(18.5, 9.4, 55.5)]]
+	var probes := [[Vector3(4, 4.6, 3.5), Vector3(42, 9.4, 59)], [Vector3(31, 4.6, 3.5), Vector3(26, 9.4, 59)]]
 	for i in probes.size():
 		var rp := ReflectionProbe.new()
 		rp.name = "Probe%d" % i
@@ -601,6 +610,131 @@ static func _build_patches(g: Node3D) -> void:
 		body.add_child(shape)
 		shape.owner = _root
 	_log.append("patches: %d" % _data.get("patches", []).size())
+
+
+## Rooms, slabs, stairs, rails, and curtains from the layout's plain boxes. A
+## box that collides is a StaticBody3D with its mesh; `visible: false` boxes
+## are clip only (a stair's ramp, a rail's full-height clip) and sit beside the
+## meshes they stand for; boxes that do not collide are meshes alone.
+static func _build_boxes(g: Node3D) -> void:
+	var n := 0
+	for b in _data.get("boxes", []):
+		n += 1
+		var lo := Vector3(b.lo[0], b.lo[1], b.lo[2])
+		var hi := Vector3(b.hi[0], b.hi[1], b.hi[2])
+		var size := hi - lo
+		var centre := (lo + hi) / 2.0
+		var shown: bool = b.get("visible", true)
+		var mesh: MeshInstance3D = null
+		if shown:
+			mesh = MeshInstance3D.new()
+			var bm := BoxMesh.new()
+			bm.size = size
+			bm.material = _mat(b.mat)
+			mesh.mesh = bm
+		if not b.collide:
+			mesh.name = b.name
+			mesh.position = centre
+			g.add_child(mesh)
+			mesh.owner = _root
+			continue
+		var body := StaticBody3D.new()
+		body.name = b.name
+		body.position = centre
+		g.add_child(body)
+		body.owner = _root
+		if mesh != null:
+			mesh.name = "Mesh"
+			body.add_child(mesh)
+			mesh.owner = _root
+		var shape := CollisionShape3D.new()
+		shape.name = "Shape"
+		var bs := BoxShape3D.new()
+		var pitch: float = b.get("pitch", 0.0)
+		if is_zero_approx(pitch):
+			bs.size = size
+		else:
+			# A stair's ramp: one slab from the foot to the head, 0.3 m thick,
+			# its top along the step noses.
+			var along_z: bool = is_zero_approx(b.get("yaw", 0.0))
+			var run := size.z if along_z else size.x
+			var rise := size.y - 0.1
+			var length := sqrt(run * run + rise * rise)
+			bs.size = Vector3(size.x, 0.3, length) if along_z else Vector3(length, 0.3, size.z)
+			var axis := Vector3.RIGHT if along_z else Vector3.BACK
+			var angle := atan2(rise, run) * signf(pitch)
+			body.position = Vector3(centre.x, lo.y + 0.1 + rise / 2.0 - 0.15 / cos(atan2(rise, run)), centre.z)
+			shape.rotation = (Basis(axis, angle)).get_euler()
+		shape.shape = bs
+		body.add_child(shape)
+		shape.owner = _root
+	_log.append("boxes: %d" % n)
+
+
+const FX := "res://scripts/warehouse_fx.gd"
+
+
+## The roof breach's daylight, sparks from a torn cable tray, flickering
+## high-bays, forklift beacons, and steam from wall vents.
+static func _build_effects(g: Node3D) -> void:
+	var lights: Array = _root.get_node("PhotoPass/Lighting").find_children("HighBay*", "SpotLight3D", false, false)
+	var n := 0
+	for e in _data.get("effects", []):
+		n += 1
+		match e.kind:
+			"sun":
+				var h: Array = e.hole
+				var sun := DirectionalLight3D.new()
+				sun.name = "BreachSun"
+				# Low enough in the west that its shaft slants across the stockpile.
+				sun.rotation_degrees = Vector3(-62.0, -125.0, 0.0)
+				sun.light_color = Color(1.0, 0.93, 0.8)
+				sun.light_energy = 2.2
+				sun.light_volumetric_fog_energy = 3.0
+				sun.shadow_enabled = true
+				sun.directional_shadow_max_distance = 120.0
+				g.add_child(sun)
+				sun.owner = _root
+				# Denser haze under the breach makes the shaft read.
+				var fog := FogVolume.new()
+				fog.name = "BreachHaze"
+				fog.position = Vector3((h[0] + h[1]) / 2.0, 4.6, (h[2] + h[3]) / 2.0)
+				fog.size = Vector3(h[1] - h[0] + 10.0, 9.2, h[3] - h[2] + 10.0)
+				var fm := FogMaterial.new()
+				fm.density = 0.012
+				fm.albedo = Color(0.95, 0.92, 0.86)
+				fm.edge_fade = 0.4
+				fog.material = fm
+				g.add_child(fog)
+				fog.owner = _root
+			"flicker":
+				var best: SpotLight3D = null
+				for l: SpotLight3D in lights:
+					var d := Vector2(l.position.x - e.pos[0], l.position.z - e.pos[1]).length()
+					if best == null or d < Vector2(best.position.x - e.pos[0], best.position.z - e.pos[1]).length():
+						best = l
+				if best != null:
+					best.set_script(load(FX))
+					best.set("kind", "flicker")
+			"lamp":
+				var lamp := OmniLight3D.new()
+				lamp.name = "OfficeLamp%02d" % n
+				lamp.position = Vector3(e.pos[0], e.pos[1], e.pos[2])
+				lamp.light_color = Color(0.95, 0.97, 1.0)
+				lamp.light_energy = 1.6
+				lamp.omni_range = 7.5
+				lamp.shadow_enabled = true
+				g.add_child(lamp)
+				lamp.owner = _root
+			"sparks", "steam", "beacon":
+				var fx := Node3D.new()
+				fx.name = "%s%02d" % [String(e.kind).capitalize(), n]
+				fx.position = Vector3(e.pos[0], e.pos[1], e.pos[2])
+				fx.set_script(load(FX))
+				fx.set("kind", e.kind)
+				g.add_child(fx)
+				fx.owner = _root
+	_log.append("effects: %d" % n)
 
 
 # --- gameplay ----------------------------------------------------------------
