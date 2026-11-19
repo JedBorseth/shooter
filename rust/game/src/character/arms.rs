@@ -40,8 +40,40 @@ pub struct FpArms {
     #[init(val = 1.12)]
     scale: f32,
 
-    /// Where the body sits now, from `body_offset` (`set_body_shift`).
+    /// Through a grenade throw, the body moves by this much (view space,
+    /// m) as the support hand leaves the weapon: up, out, and forward, so
+    /// the support shoulder sits where a thrower's is, beside and a little
+    /// below the eye and turned forward with the torso. The arm then comes
+    /// over beside the head at arm's length instead of up through the
+    /// middle of the view close to the eye.
+    #[export]
+    #[init(val = Vector3::new(-0.04, 0.08, -0.14))]
+    throw_shift: Vector3,
+    /// Through a throw, the support elbow bends toward this point (view
+    /// space, m): out to the left beside the head, as an overhand throw
+    /// carries it, instead of down and in under the weapon.
+    #[export]
+    #[init(val = Vector3::new(-0.8, 0.05, -0.1))]
+    throw_pole: Vector3,
+    /// Through a throw the arms come back to life size from `scale`, about
+    /// the support shoulder: the weapon is down out of the frame, so they
+    /// need no extra reach, and the forearm coming over at arm's length is
+    /// drawn no thicker than a real one.
+    #[export]
+    #[init(val = 1.0)]
+    throw_scale: f32,
+    /// The support shoulder (the left upper arm's root at rest), in this
+    /// node's space: the throw's scale keeps it where it is.
+    pivot: Vector3,
+    /// The scale the body is drawn at now.
+    drawn_scale: f32,
+
+    /// Where the body sits now, from `body_offset`: the aimed weapon's
+    /// shift (`set_body_shift`) plus the throw's, by how far the support
+    /// hand has left the weapon for it.
     shift: Vector3,
+    aim_shift: Vector3,
+    throw_blend: f32,
 
     #[init(node = "Model")]
     model: OnReady<Gd<Node3D>>,
@@ -78,6 +110,13 @@ impl INode3D for FpArms {
             godot_error!("FpArms: no GeneralSkeleton under Model");
             return;
         };
+        self.drawn_scale = self.scale;
+        let shoulder = skeleton.find_bone("LeftUpperArm");
+        if shoulder >= 0 {
+            let to_local = self.base().get_global_transform().affine_inverse()
+                * skeleton.get_global_transform();
+            self.pivot = to_local * skeleton.get_bone_global_rest(shoulder).origin;
+        }
         for child in skeleton.get_children().iter_shared() {
             if let Ok(mut mesh) = child.try_cast::<MeshInstance3D>() {
                 let arms = mesh.get_name() == "ArmsFP";
@@ -399,12 +438,17 @@ impl FpArms {
             (node, grips)
         });
         self.grips = weapon.as_ref().map(|(_, grips)| *grips);
+        self.throw_blend = throw.map_or(0.0, |(pose, _)| pose.blend);
+        self.place_body();
+        let throw_pole = self.throw_pole;
         let Some(poser) = &mut self.poser else {
             return;
         };
         let mut poser = poser.bind_mut();
         match weapon {
             Some((node, grips)) => {
+                // The weapon and the arms share the viewmodel rig's space.
+                let weapon_from_rig = node.get_transform().affine_inverse();
                 poser.weapon = Some(node);
                 poser.input = PoseInput {
                     placement: WeaponPlacement::External,
@@ -421,6 +465,8 @@ impl FpArms {
                     grenade_in_hand: throw.is_some_and(|(pose, _)| pose.in_hand),
                     grenade_pinned: throw.is_some_and(|(pose, _)| pose.pinned),
                     grenade_kind: throw.map_or(Default::default(), |(pose, _)| pose.kind),
+                    grenade_pole: throw
+                        .map(|(pose, _)| (weapon_from_rig * throw_pole, pose.elbow_out)),
                     ..PoseInput::default()
                 };
             }
@@ -436,15 +482,31 @@ impl FpArms {
     /// Moves the body from `body_offset` by `shift` (view space, m), as the
     /// aimed weapon or a throw asks; the shoulders go with it.
     pub fn set_body_shift(&mut self, shift: Vector3) {
-        if shift.distance_squared_to(self.shift) < 1e-10 {
+        self.aim_shift = shift;
+        self.place_body();
+    }
+
+    /// Puts the body at `body_offset` plus the aimed weapon's and the
+    /// throw's shifts.
+    fn place_body(&mut self) {
+        let shift = self.aim_shift + self.throw_shift * self.throw_blend;
+        let scale = self.scale + (self.throw_scale - self.scale) * self.throw_blend;
+        if shift.distance_squared_to(self.shift) < 1e-10 && (scale - self.drawn_scale).abs() < 1e-6
+        {
             return;
         }
         self.shift = shift;
-        let origin = self.body_offset + shift;
-        let mut base = self.base_mut();
-        let mut t = base.get_transform();
-        t.origin = origin;
-        base.set_transform(t);
+        self.drawn_scale = scale;
+        let turn = Basis::from_axis_angle(Vector3::UP, self.body_yaw.to_radians());
+        let full = turn.scaled(Vector3::splat(self.scale));
+        let now = turn.scaled(Vector3::splat(scale));
+        // Scaled about the support shoulder, so it stays put.
+        let origin = self.body_offset + shift + full * self.pivot - now * self.pivot;
+        self.base_mut().set_transform(Transform3D::new(now, origin));
+        if let Some(poser) = &mut self.poser {
+            // Only the arms are drawn longer than life.
+            poser.bind_mut().hand_scale = 1.0 / scale;
+        }
     }
 
     /// The poser, the grips of the weapon it holds, and that weapon's surface

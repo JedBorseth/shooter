@@ -1558,6 +1558,9 @@ impl SoldierRig {
             grenade_in_hand: throw.is_some_and(|(pose, _)| pose.in_hand),
             grenade_pinned: throw.is_some_and(|(pose, _)| pose.pinned),
             grenade_kind: throw.map_or(Default::default(), |(pose, _)| pose.kind),
+            // Other players' throws keep the hold's elbow hint; their arm
+            // swings wide in the keys themselves.
+            grenade_pole: None,
             feet: (self.feet_on && frame.alive).then_some(self.feet_lift),
             ladder: self.ladder_limbs.filter(|_| frame.alive),
             plant: vaulting.map(|p| {

@@ -606,6 +606,10 @@ pub struct PoseInput {
     pub grenade_in_hand: bool,
     pub grenade_pinned: bool,
     pub grenade_kind: shooter_sim::equipment::Kind,
+    /// Where the support elbow bends toward through the throw (weapon
+    /// space), and how far (0..1, times `grenade`) it goes there from the
+    /// weapon hold's elbow hint; `None` keeps the hold's.
+    pub grenade_pole: Option<(Vector3, f32)>,
     /// Foot IK: how far (m, world up) the ground under each foot (left,
     /// right) is from the ground the animation stands on, or `None` for no
     /// foot IK (far away, in the air).
@@ -860,6 +864,9 @@ impl SoldierPoser {
         // support elbow down and in under the weapon.
         let right_pole = weapon_skel * to_godot(carry::RIGHT_POLE);
         let mut left_pole = weapon_skel * to_godot(carry::LEFT_POLE);
+        if let Some((pole, out)) = input.grenade_pole {
+            left_pole = left_pole.lerp(weapon_skel * pole, grenade * out.clamp(0.0, 1.0));
+        }
         self.place_hand(
             skel,
             [
