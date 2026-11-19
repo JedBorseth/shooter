@@ -1147,22 +1147,24 @@ def riflescope(spec: dict) -> bpy.types.Object:
 
 
 # Parts left out of `World`: the spare magazine stays hidden, and the rail
-# shows only under an optic. Everything else, the magazine included (other
-# players' reloads move the hand, not the magazine), is merged.
+# shows only under an optic. Everything else, the magazine included, is
+# merged: one draw call for a gun that is not being reloaded.
 WORLD_SEPARATE = ("MagazineSpare", "OpticRail")
 # Seen from a few metres away, `World` keeps this share of the triangles
 # (the normal map keeps the detail), and Godot's LODs take it further.
 WORLD_DECIMATE = 0.2
 
 
-def world_mesh(objects: dict):
+def world_mesh(objects: dict, name: str = "World", leave_out: tuple = ()):
     """`World`: the weapon merged into one node, for other players' weapons
     and racks (one draw call per material instead of one per part). Hidden
-    in first person."""
+    in first person. With `leave_out`, those parts are left out too."""
     copies = []
     for path, obj in objects.items():
         # Rounds and tritium dots are too small to see on another player.
-        if path.split("/")[0] in WORLD_SEPARATE or path.endswith(("Rounds", "SightGlow")):
+        if path.split("/")[0] in WORLD_SEPARATE + leave_out or path.endswith(("Rounds", "SightGlow")):
+            continue
+        if path in ("World", "WorldBody", "WorldMagazine"):
             continue
         dup = obj.copy()
         dup.data = obj.data.copy()
@@ -1178,8 +1180,8 @@ def world_mesh(objects: dict):
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
     bpy.ops.object.join()
     world = bpy.context.view_layer.objects.active
-    world.name = "World"
-    world.data.name = "World"
+    world.name = name
+    world.data.name = name
     # One surface per material: lenses take the optics' finish at a distance.
     names = [slot.material.name if slot.material else "" for slot in world.material_slots]
     if "Lens" in names and "Optics" in names:
@@ -1193,7 +1195,35 @@ def world_mesh(objects: dict):
     decimate.ratio = WORLD_DECIMATE
     decimate.use_collapse_triangulate = True
     bpy.ops.object.modifier_apply(modifier=decimate.name)
-    objects["World"] = world
+    objects[name] = world
+
+
+def world_magazine(objects: dict):
+    """For other players' reloads (`WeaponView::pose_world_magazine`):
+    `WorldBody`, `World` without its magazine, and `WorldMagazine`, the
+    magazine alone with the same pivot as `Magazine`, both decimated as
+    `World` is. They replace `World` only while a reload moves the
+    magazine, so a gun costs one draw call the rest of the time."""
+    if "Magazine" not in objects:
+        return
+    world_mesh(objects, "WorldBody", ("Magazine",))
+    magazine = objects["Magazine"]
+    dup = magazine.copy()
+    dup.data = magazine.data.copy()
+    bpy.context.scene.collection.objects.link(dup)
+    dup.parent = None
+    dup.matrix_world = magazine.matrix_world.copy()
+    dup.name = "WorldMagazine"
+    dup.data.name = "WorldMagazine"
+    bpy.context.view_layer.update()
+    bpy.ops.object.select_all(action="DESELECT")
+    dup.select_set(True)
+    bpy.context.view_layer.objects.active = dup
+    decimate = dup.modifiers.new("Decimate", "DECIMATE")
+    decimate.ratio = WORLD_DECIMATE
+    decimate.use_collapse_triangulate = True
+    bpy.ops.object.modifier_apply(modifier=decimate.name)
+    objects["WorldMagazine"] = dup
 
 
 def load_pixels(path: Path, color: bool) -> np.ndarray:
@@ -1634,6 +1664,7 @@ def build(key: str):
         objects["Scope"] = riflescope(spec)
     bpy.context.view_layer.update()
     world_mesh(objects)
+    world_magazine(objects)
     if spec.get("spare"):
         spare_magazine(objects)
     matrix = to_view(spec)
@@ -1647,7 +1678,7 @@ def build(key: str):
     def count(paths):
         return sum(sum(len(p.vertices) - 2 for p in objects[k].data.polygons) for k in paths)
 
-    first = [k for k in objects if k != "World" and not k.startswith("MagazineSpare")]
+    first = [k for k in objects if not k.startswith(("World", "MagazineSpare"))]
     world = ["World"] + [k for k in objects if k.split("/")[0] == "OpticRail"]
     tris, world_tris = count(first), count(world)
     log(f"  {tris} triangles in first person, {world_tris} for other players, {len(objects)} nodes")

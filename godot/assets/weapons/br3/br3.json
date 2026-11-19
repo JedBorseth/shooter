@@ -15,7 +15,9 @@
     "Safety",
     "Selector",
     "Trigger",
-    "World"
+    "World",
+    "WorldBody",
+    "WorldMagazine"
   ],
   "markers": {
     "Muzzle": [

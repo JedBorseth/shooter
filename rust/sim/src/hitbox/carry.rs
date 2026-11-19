@@ -226,6 +226,27 @@ pub fn basis_from_y_z(y: Vec3, z: Vec3) -> Mat3 {
     Mat3::from_cols(y.cross(z), y, z)
 }
 
+/// Where the support hand takes a box magazine and seats the fresh one, from
+/// the firing hand's grip (weapon space).
+const MAGAZINE_WELL: Vec3 = Vec3::new(-0.01, -0.03, -0.12);
+/// Where it pushes a pistol's magazine home, at the grip's base.
+const PISTOL_WELL: Vec3 = Vec3::new(0.0, -0.1, 0.01);
+/// A pistol's empty magazine drops from this share of the reload, out of
+/// sight after this much more.
+const PISTOL_DROP_START: f32 = 0.04;
+const PISTOL_DROP_TIME: f32 = 0.1;
+
+/// Where a weapon's magazine is ([`Carry::magazine_pose`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum MagazinePose {
+    /// In the weapon.
+    Seated,
+    /// Out of sight: dropped, or in a pouch.
+    Out,
+    /// Moved this far from where it sits (weapon space).
+    At(Vec3),
+}
+
 /// The weapon's carry state, each part 0..1 unless noted.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Carry {
@@ -360,14 +381,14 @@ impl Carry {
                 (target, off)
             }
             (CarryClass::Pistol, ReloadTiming::Magazine { seat }) => {
-                let well = grips.right + Vec3::new(0.0, -0.1, 0.01);
+                let well = grips.right + PISTOL_WELL;
                 let target = ease(PISTOL_POUCH, well, seat * 0.55, seat * 0.92);
                 let off =
                     smoothstep((p - 0.04) / (seat * 0.25)) * (1.0 - smoothstep((p - seat) / 0.12));
                 (target, off)
             }
             (_, ReloadTiming::Magazine { seat }) => {
-                let well = grips.right + Vec3::new(-0.01, -0.03, -0.12);
+                let well = grips.right + MAGAZINE_WELL;
                 let below = well + Vec3::new(0.0, -0.07, 0.02);
                 let target = if p < seat * 0.42 {
                     well
@@ -384,6 +405,46 @@ impl Carry {
             _ => (RELOAD_REACH, 0.0),
         };
         (target, off * self.reload)
+    }
+
+    /// Where the weapon's magazine is during a reload, for the drawn
+    /// third-person weapon (cosmetic: the hit zones do not use it). It
+    /// follows the support hand's path ([`Carry::support_path`]):
+    ///
+    /// - a box magazine stays seated until the hand has it, rides the hand
+    ///   down to the vest pouch, where the empty goes in and a fresh one
+    ///   comes out, and back up into the well as it seats;
+    /// - a pistol's drops out of the grip as the release is pressed, and a
+    ///   fresh one comes up from the belt in the hand and is pushed home;
+    /// - a pump gun has none to move.
+    pub fn magazine_pose(&self, grips: &Grips) -> MagazinePose {
+        let p = self.reload_progress;
+        let (target, _) = self.support_path(grips);
+        match (self.class, self.timing) {
+            (CarryClass::Shotgun, _) | (_, ReloadTiming::Shells { .. }) => MagazinePose::Seated,
+            (CarryClass::Pistol, ReloadTiming::Magazine { seat }) => {
+                let well = grips.right + PISTOL_WELL;
+                let drop = (p - PISTOL_DROP_START) / PISTOL_DROP_TIME;
+                if p < PISTOL_DROP_START || p >= seat {
+                    MagazinePose::Seated
+                } else if drop < 1.0 {
+                    // Out of the grip and falling: down the grip's line and
+                    // a little forward.
+                    MagazinePose::At(Vec3::new(0.0, -0.3, -0.05) * drop * drop)
+                } else if p < seat * 0.55 {
+                    MagazinePose::Out
+                } else {
+                    MagazinePose::At(target - well)
+                }
+            }
+            (_, ReloadTiming::Magazine { seat }) => {
+                if p < seat * 0.42 || p >= seat {
+                    MagazinePose::Seated
+                } else {
+                    MagazinePose::At(target - (grips.right + MAGAZINE_WELL))
+                }
+            }
+        }
     }
 
     /// The trigger finger comes off the trigger while sprinting or reloading.
@@ -563,5 +624,53 @@ mod tests {
         let m = basis_from_y_z(Vec3::new(0.3, 1.0, 0.1), Vec3::new(0.0, 0.2, 1.0));
         assert!((m.determinant() - 1.0).abs() < 1e-5);
         assert!((m.y_axis - Vec3::new(0.3, 1.0, 0.1).normalize()).length() < 1e-5);
+    }
+
+    #[test]
+    fn the_magazine_rides_the_support_hand_out_and_back() {
+        let grips = Grips::default();
+        let at = |class: CarryClass, p: f32| {
+            Carry {
+                reload: 1.0,
+                reload_progress: p,
+                class,
+                timing: ReloadTiming::Magazine { seat: 0.6 },
+                ..Carry::default()
+            }
+            .magazine_pose(&grips)
+        };
+        // A rifle's is seated until the hand has it and once it seats.
+        assert_eq!(at(CarryClass::Rifle, 0.1), MagazinePose::Seated);
+        assert_eq!(at(CarryClass::Rifle, 0.7), MagazinePose::Seated);
+        // In between it goes down to the pouch with the hand and comes back.
+        let MagazinePose::At(low) = at(CarryClass::Rifle, 0.4) else {
+            panic!("in the hand");
+        };
+        assert!(low.y < -0.1 && low.z > 0.1, "toward the pouch: {low:?}");
+        let MagazinePose::At(home) = at(CarryClass::Rifle, 0.599) else {
+            panic!("in the hand");
+        };
+        assert!(home.length() < 0.01, "seating: {home:?}");
+        // A pistol's falls out, is gone, then comes up in the hand.
+        let MagazinePose::At(falling) = at(CarryClass::Pistol, 0.09) else {
+            panic!("falling");
+        };
+        assert!(falling.y < -0.03);
+        assert_eq!(at(CarryClass::Pistol, 0.2), MagazinePose::Out);
+        assert!(matches!(at(CarryClass::Pistol, 0.45), MagazinePose::At(_)));
+        assert_eq!(at(CarryClass::Pistol, 0.65), MagazinePose::Seated);
+        // A pump gun has none.
+        let pump = Carry {
+            reload: 1.0,
+            reload_progress: 0.5,
+            class: CarryClass::Shotgun,
+            timing: ReloadTiming::Shells {
+                start: 0.1,
+                each: 0.2,
+                count: 4,
+            },
+            ..Carry::default()
+        };
+        assert_eq!(pump.magazine_pose(&grips), MagazinePose::Seated);
     }
 }

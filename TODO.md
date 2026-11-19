@@ -126,6 +126,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [ ] Zombie ragdolls never fall asleep and freeze at 5 s, sometimes with a leg still partly up after a shotgun death; a slower limb drop (angular damping 1.5) is the likely cause.
 - [ ] Third-person magazines: the support hand fetches and seats a magazine, but the world model's magazine does not leave the weapon. Moving it (and a fresh one in the hand) needs the world view to run the first-person clip's magazine parts.
 - [x] Directional gait: walk, jog, and crouched-walk cycles in eight directions (crossover strafes, backpedals that reach back toe first, diagonals), authored from the forward cycles with foot-path IK by `tools/build_gait_animations.py`; the hit zones are measured in every direction.
+- [x] Third-person magazines: other players' reloads take the magazine out of the gun with the support hand (to the vest pouch and back for rifles and machine guns; a pistol's drops and a fresh one comes from the belt), from `WorldBody` and `WorldMagazine` meshes the weapon build exports.
 - [x] The player's own body in the death camera: a ragdoll of our own body falls where we died, and the camera pulls back to watch it before turning to the killer.
 - [x] Score popups (+100, headshot and longshot bonuses) and medals at the crosshair.
 

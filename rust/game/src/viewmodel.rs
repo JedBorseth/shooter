@@ -14,6 +14,7 @@ use godot::classes::{
 };
 use godot::global::randf_range;
 use godot::prelude::*;
+use shooter_sim::hitbox::carry::MagazinePose;
 use shooter_sim::rng;
 use shooter_sim::weapon::{Attachment, LoadStage, WeaponId};
 
@@ -24,6 +25,7 @@ use crate::audio;
 use crate::character::arms::FpArms;
 use crate::character::poser::Grips;
 use crate::character::poser::Held;
+use crate::convert::to_godot;
 use crate::effects::{self, CombatEffects};
 use crate::sights::{self, IronSights};
 use crate::spring::{Spring, damping_for, impulse_for_peak, smoothing};
@@ -521,6 +523,11 @@ pub struct WeaponView {
     shell_mesh: Option<Gd<Mesh>>,
     /// The shell in the support hand while a shotgun loads.
     shell_in_hand: Option<Gd<MeshInstance3D>>,
+    /// Third person: the magazine a reload moves (`WorldMagazine`), found
+    /// on the first reload, and whether `WorldBody` and it stand in for
+    /// `World` now.
+    world_magazine: Option<Part>,
+    world_split: bool,
 
     flash_time: f32,
     flash_count: u32,
@@ -1418,8 +1425,44 @@ impl WeaponView {
                 "World" => part.set_visible(world),
                 // Hidden until an optic shows it, and the spare stays hidden.
                 "OpticRail" | "MagazineSpare" => {}
+                // Third-person reloads swap these in (`pose_world_magazine`).
+                "WorldBody" | "WorldMagazine" => part.set_visible(false),
                 _ => part.set_visible(!world),
             }
+        }
+    }
+
+    /// Third person: moves the magazine as a reload takes it out and seats a
+    /// fresh one (`carry::Carry::magazine_pose`; `None` when not
+    /// reloading). While it moves, `WorldBody` (the gun without it) and
+    /// `WorldMagazine` stand in for `World`, so a gun is one draw call the
+    /// rest of the time. Models without them keep the magazine in place.
+    pub fn pose_world_magazine(&mut self, pose: Option<MagazinePose>) {
+        if !self.world_model {
+            return;
+        }
+        let split = !matches!(pose, None | Some(MagazinePose::Seated));
+        if split && self.world_magazine.is_none() {
+            let view = self.to_gd().upcast::<Node3D>();
+            self.world_magazine = Part::find(&view, "WorldMagazine");
+        }
+        if self.world_magazine.is_none() {
+            return;
+        }
+        if split != self.world_split {
+            self.world_split = split;
+            self.show_part("World", !split);
+            self.show_part("WorldBody", split);
+        }
+        let Some(magazine) = &mut self.world_magazine else {
+            return;
+        };
+        match pose {
+            Some(MagazinePose::At(offset)) => {
+                magazine.node.set_visible(true);
+                magazine.pose_about(to_godot(offset), Vector3::RIGHT, 0.0, Vector3::ZERO);
+            }
+            _ => magazine.node.set_visible(false),
         }
     }
 
