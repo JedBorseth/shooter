@@ -65,7 +65,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 ### Movement
 
 - [x] Mantling: jump at a ledge 0.5 to 1.35 m high while moving toward it to climb onto or over it (the engine finds the ledge, `movement::step` climbs; predicted like any move).
-- [x] Vaults over thin cover and through windows that keep the run's speed, mantles by holding jump in the air, and crouch-height mantles that end crouched ([docs/movement.md](docs/movement.md)).
+- [x] Vaults over thin cover and through windows that keep the run's speed, mantles by holding jump in the air, and crouch-height mantles that end crouched ([docs/movement.md](docs/movement.md)). Other players vault with a vault of their own (a hand planted on the top, legs swung over), not the mantle's climb, and their hit zones follow it.
 - [x] Ladders: grab, climb at 2 m/s, step off at the top or bottom, slide down with crouch, jump off, weapon lowered (`rust/sim/src/movement/ladder.rs`, `LadderVolume` markup in `rust/game/src/ladder.rs`). The Testing Area's tower ladder is climbable.
 - [ ] Ladders: first-person hands on the rungs (the weapon just drops away now), and ladders on Slamcity and Zombies once their maps want them.
 - [x] Mounting the weapon on cover (aim and melee, as Modern Warfare 2019): ledges, barriers, sandbag walls, and windowsills from 0.82 m to 1.6 m; the eye rests the gun on the edge, kick and sway shrink, the view stops at a cone ([docs/movement.md](docs/movement.md)). The Testing Area's 1.2 m barriers and 0.84 m sandbags mount.

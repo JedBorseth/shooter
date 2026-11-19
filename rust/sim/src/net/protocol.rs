@@ -100,7 +100,9 @@ use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, Weapo
 // (`hitbox::action`), and added the throw to the debug rewound poses.
 // Version 42 added mounting the weapon on cover (`MoveState::mounted` and
 // its yaw, crouch, and blend; `PlayerView::mount`).
-pub const PROTOCOL_VERSION: u16 = 42;
+// Version 43 added whether a climb is a vault (`PlayerView::vaulting`), so
+// other players draw, and the hit zones pose, a vault instead of a mantle.
+pub const PROTOCOL_VERSION: u16 = 43;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -511,6 +513,9 @@ pub struct PlayerView {
     pub shots_fired: u32,
     /// Climbing over a ledge.
     pub mantling: bool,
+    /// Vaulting over thin cover: the climb is a vault, or the body is
+    /// dropping off the cover's far side after one (`MoveState::in_vault`).
+    pub vaulting: bool,
     /// Swinging the knife.
     pub meleeing: bool,
     /// Throwing a grenade: 0 when not, otherwise how far along the throw is
@@ -628,6 +633,7 @@ impl PlayerView {
             alive: p.state.alive(),
             shots_fired: combat.shots_fired,
             mantling: p.state.movement.mantling(),
+            vaulting: p.state.movement.in_vault(p.on_floor),
             meleeing: combat.meleeing(),
             throw: throw_to_u8(combat.throw_progress()),
             throw_kind: match combat.action {
@@ -1905,7 +1911,7 @@ fn write_view_delta(w: &mut BitWriter, v: &PlayerView, base: &PlayerView) {
             p.reloading,
             p.reload_empty,
             p.alive,
-            p.mantling,
+            (p.mantling, p.vaulting),
             p.meleeing,
             p.ladder,
         )
@@ -1923,6 +1929,7 @@ fn write_view_delta(w: &mut BitWriter, v: &PlayerView, base: &PlayerView) {
         w.bool(v.reload_empty);
         w.bool(v.alive);
         w.bool(v.mantling);
+        w.bool(v.vaulting);
         w.bool(v.meleeing);
         w.bool(v.ladder.is_some());
         if let Some(heading) = v.ladder {
@@ -1993,6 +2000,7 @@ fn read_view_delta(r: &mut BitReader, base: &PlayerView) -> DecodeResult<PlayerV
         v.reload_empty = r.bool()?;
         v.alive = r.bool()?;
         v.mantling = r.bool()?;
+        v.vaulting = r.bool()?;
         v.meleeing = r.bool()?;
         v.ladder = if r.bool()? { Some(r.u8()?) } else { None };
         v.mount = r.u8()?;
@@ -2355,6 +2363,7 @@ fn write_activity(w: &mut BitWriter, a: &Activity) {
     w.bool(a.sprinting);
     w.bool(a.airborne);
     w.bool(a.mantling);
+    w.bool(a.vaulting);
     w.bool(a.reloading);
     w.u8((a.ads.clamp(0.0, 1.0) * 255.0).round() as u8);
     write_vec3(w, a.velocity);
@@ -2382,6 +2391,7 @@ fn read_activity(r: &mut BitReader) -> DecodeResult<Activity> {
         sprinting: r.bool()?,
         airborne: r.bool()?,
         mantling: r.bool()?,
+        vaulting: r.bool()?,
         reloading: r.bool()?,
         ads: f32::from(r.u8()?) / 255.0,
         velocity: read_finite_vec3(r)?,
@@ -2597,6 +2607,39 @@ mod tests {
         let bytes = w.finish();
         let decoded = read_view_delta(&mut BitReader::new(&bytes), &view).unwrap();
         assert_eq!(decoded.mount, 255);
+    }
+
+    #[test]
+    fn a_vault_shows_on_other_players_until_the_drop_lands() {
+        let mut state = PlayerState::default();
+        state.movement.mantle_time = 0.2;
+        state.movement.vaulting = true;
+        let rising = Predicted {
+            state,
+            position: Vec3::new(1.0, 0.5, 3.0),
+            on_floor: false,
+        };
+        let view = PlayerView::from_state(0, &rising, 0.0, 0.0);
+        assert!(view.mantling && view.vaulting);
+        let base = PlayerView::default();
+        let mut w = BitWriter::new();
+        write_view_delta(&mut w, &view, &base);
+        let bytes = w.finish();
+        assert_eq!(
+            read_view_delta(&mut BitReader::new(&bytes), &base).unwrap(),
+            view
+        );
+        // Over the top and dropping: still a vault, no longer a climb.
+        let mut dropping = rising;
+        dropping.state.movement.mantle_time = 0.0;
+        dropping.state.movement.vaulting = false;
+        dropping.state.movement.air_time = -0.3;
+        let view = PlayerView::from_state(0, &dropping, 0.0, 0.0);
+        assert!(!view.mantling && view.vaulting);
+        // A mantle is not a vault.
+        let mut mantle = rising;
+        mantle.state.movement.vaulting = false;
+        assert!(!PlayerView::from_state(0, &mantle, 0.0, 0.0).vaulting);
     }
 
     #[test]
@@ -3355,6 +3398,7 @@ mod tests {
                             sprinting: false,
                             airborne: true,
                             mantling: false,
+                            vaulting: false,
                             reloading: true,
                             ads: 128.0 / 255.0,
                             velocity: Vec3::new(1.5, -0.25, -4.0),

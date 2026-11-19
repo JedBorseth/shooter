@@ -105,6 +105,10 @@ pub struct Activity {
     pub airborne: bool,
     /// Climbing over a ledge.
     pub mantling: bool,
+    /// Vaulting over thin cover: while mantling, the vault's own poses and
+    /// the support hand planted on the top ([`action::vault_plant`]); in the
+    /// air after it, the vault's last pose, reaching for the ground.
+    pub vaulting: bool,
     pub reloading: bool,
     /// Aim down sights, 0 at the hip to 1 aimed.
     pub ads: f32,
@@ -272,14 +276,22 @@ fn track<const N: usize>(samples: &[BasePose; N], progress: f32) -> BasePose {
 }
 
 /// The animation the body is playing, as the character's animation tree picks
-/// it: a mantle's climb over everything (blended in over the start of the
-/// climb), then the jump in the air, then the stance.
+/// it: a mantle's climb or a vault over everything (blended in over the
+/// start of the climb), then a vault's last pose while dropping off the far
+/// side, then the jump in the air, then the stance.
 fn base_pose(pose: &HitboxPose, speed: f32) -> BasePose {
     let activity = &pose.activity;
     if activity.mantling {
         let mantle = activity.progress.mantle;
-        let climb = track(&poses::CLIMB, mantle);
+        let climb = if activity.vaulting {
+            track(&poses::VAULT, mantle)
+        } else {
+            track(&poses::CLIMB, mantle)
+        };
         return ground_pose(pose, speed).lerp(&climb, gait::climb_share(mantle));
+    }
+    if activity.vaulting {
+        return poses::VAULT[poses::CLIMB_SAMPLES - 1];
     }
     if activity.airborne {
         return poses::AIR;
@@ -382,11 +394,25 @@ fn carry_of(activity: &Activity) -> Carry {
         reload_progress: activity.progress.reload,
         class: def.map_or_else(Default::default, carry::CarryClass::of),
         timing: def.map_or_else(Default::default, carry::ReloadTiming::of),
-        // A throw drops the weapon out of the support hand's way.
-        swing: activity.throw.map_or(0.0, action::throw_weapon_drop),
+        // A throw, or a vault's hand plant, drops the weapon out of the
+        // support hand's way.
+        swing: activity
+            .throw
+            .map_or(0.0, action::throw_weapon_drop)
+            .max(vault_progress(activity).map_or(0.0, action::vault_weapon_drop)),
         ..Carry::default()
     }
 }
+
+/// How far through a vault the body is, if it is vaulting.
+fn vault_progress(activity: &Activity) -> Option<f32> {
+    (activity.mantling && activity.vaulting).then_some(activity.progress.mantle)
+}
+
+/// A planted hand's elbow bends out to the side and back (body space), and
+/// the forearm reaches on from the wrist down onto the palm.
+const VAULT_ELBOW: Vec3 = Vec3::new(-0.6, 1.1, 0.3);
+const VAULT_PALM: Vec3 = Vec3::new(0.0, -0.04, -0.06);
 
 /// Two-bone IK for an arm, as the character's poser solves it: the elbow and
 /// the wrist for a shoulder at `root` reaching for `target`, bending toward
@@ -498,9 +524,14 @@ pub fn hitboxes(pose: &HitboxPose) -> [Hitbox; COUNT] {
     // Holding a long gun, the upper chest blades (support shoulder forward)
     // and the neck turns back, so the head keeps facing the aim.
     let carry = carry_of(activity);
-    // A throw squares up while the support hand is off the weapon.
+    // A throw, or a vault's hand plant, squares up while the support hand is
+    // off the weapon.
     let blade = if activity.weapon.is_some() {
-        carry.blade() * (1.0 - activity.throw.map_or(0.0, action::throw_hand_blend))
+        let off = activity
+            .throw
+            .map_or(0.0, action::throw_hand_blend)
+            .max(vault_progress(activity).map_or(0.0, action::vault_hand_blend));
+        carry.blade() * (1.0 - off)
     } else {
         0.0
     };
@@ -546,7 +577,19 @@ pub fn hitboxes(pose: &HitboxPose) -> [Hitbox; COUNT] {
             );
             (elbow, wrist + hand * poses::HAND_MIDDLE[0] * (1.0 - blend))
         }
-        None => arm(left_target, 0, carry::LEFT_POLE),
+        None => match vault_progress(activity) {
+            // Vaulting: the support hand plants on the top.
+            Some(p) => {
+                let blend = action::vault_hand_blend(p);
+                let (wrist_target, hand) = left_target;
+                let plant = action::vault_plant(p);
+                let pole = pole(carry::LEFT_POLE).lerp(VAULT_ELBOW, blend);
+                let (elbow, wrist) = solve_arm(shoulders[0], wrist_target.lerp(plant, blend), pole);
+                let middle = (hand * poses::HAND_MIDDLE[0]).lerp(VAULT_PALM, blend);
+                (elbow, wrist + middle)
+            }
+            None => arm(left_target, 0, carry::LEFT_POLE),
+        },
     };
     let (mut right_elbow, mut right_hand) = arm(right_target, 1, carry::RIGHT_POLE);
     if hunch > 0.0 {
@@ -1124,6 +1167,44 @@ mod tests {
         });
         assert_ne!(air[9], stand[9], "the legs tuck in the air");
         assert_ne!(climb[9], air[9], "a mantle's climb wins over the air");
+    }
+
+    #[test]
+    fn a_vault_has_its_own_poses_and_plants_the_support_hand() {
+        let at = |mantling: bool, vaulting: bool, mantle: f32| {
+            with(Activity {
+                mantling,
+                vaulting,
+                airborne: true,
+                weapon: m4(),
+                progress: clock::Progress {
+                    mantle,
+                    ..Default::default()
+                },
+                ..Activity::default()
+            })
+        };
+        let climb = at(true, false, 0.5);
+        let vault = at(true, true, 0.5);
+        assert_ne!(vault[9], climb[9], "a vault's legs are its own");
+        // Planted: the left hand reaches ahead and down onto the top, where
+        // it rests on the weapon otherwise.
+        let planted = at(true, true, 0.3);
+        let held = at(true, false, 0.3);
+        let hand = |b: &[Hitbox; COUNT]| b[LEFT_HAND].b;
+        let plant = action::vault_plant(0.3);
+        assert!(
+            hand(&planted).distance(plant) < hand(&held).distance(plant),
+            "{} vs {}",
+            hand(&planted),
+            hand(&held)
+        );
+        assert!(hand(&planted).y < hand(&held).y, "down onto the top");
+        // Dropping off the far side: the vault's last pose, not the air's.
+        let dropping = at(false, true, 0.0);
+        let air = at(false, false, 0.0);
+        assert_eq!(dropping[9], at(true, true, 1.0)[9]);
+        assert_ne!(dropping[9], air[9]);
     }
 
     #[test]

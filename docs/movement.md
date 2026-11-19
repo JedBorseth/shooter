@@ -124,6 +124,15 @@ mantle over a vault and climbs at a velocity fixed when the climb starts
 the wall. `MoveState::vaulting` marks a vault, which carries on over the top
 and ducks through windows at slide speed.
 
+Other players see a vault as one (`PlayerView::vaulting`, set by
+`MoveState::in_vault` from the start of the rise until the drop off the far
+side lands): the run's last stride drives the right knee up, the support hand
+leaves the lowered rifle to plant on the top, the hips turn and roll toward
+the hand while both legs tuck and swing over on the right, and the feet reach
+down ahead for the landing (`gait/Vault`, authored by
+`tools/build_gait_animations.py`). A mantle still plays the climb. The hit
+zones pose the same vault, hand plant included (`hitbox::action::vault_plant`).
+
 ## Weapon mount
 
 Modern Warfare (2019) and its successors' weapon mount (`rust/sim/src/mount.rs`).

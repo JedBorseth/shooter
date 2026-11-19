@@ -193,6 +193,12 @@ impl MoveState {
         self.mantle_time > 0.0
     }
 
+    /// Rising over thin cover, or dropping off its far side before the
+    /// vault's landing grace runs out (`air_time` is negative only then).
+    pub fn in_vault(&self, on_floor: bool) -> bool {
+        (self.mantling() && self.vaulting) || (!on_floor && self.air_time < 0.0)
+    }
+
     /// How much landing recovery is left, 1 just after a full jump's landing
     /// to 0 recovered.
     pub fn landing_recovery(&self, params: &MoveParams) -> f32 {
@@ -2158,6 +2164,7 @@ mod tests {
         run_at(&mut s, forward(), MoveEnv::default(), 1.0);
         run_at(&mut s, forward(), AIR, 0.1);
         step(&mut s, &forward(), MoveEnv::default(), &p, TICK);
+        assert!(!s.in_vault(false), "landed: the vault is over");
         assert_eq!(s.land_slow, 0.0);
     }
 
@@ -2301,9 +2308,12 @@ mod tests {
         }
         assert!(rise > 1.1, "clears the top: {rise}");
         assert!(!s.vaulting);
+        // Others still see a vault while the body drops off the far side.
+        assert!(s.in_vault(false) && !s.in_vault(true));
         // The drop on the far side keeps the speed: no landing penalty.
         run_at(&mut s, forward(), AIR, 0.3);
         step(&mut s, &forward(), MoveEnv::default(), &p, TICK);
+        assert!(!s.in_vault(false), "landed: the vault is over");
         assert_eq!(s.land_slow, 0.0);
         assert!(speed(&s) > p.walk_speed, "{}", speed(&s));
         // From a standstill, a vault still goes over briskly.

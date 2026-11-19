@@ -72,6 +72,8 @@ func _moves() -> Dictionary:
 		"slide": [1.3, [0.25, 0.32, 0.38, 0.5, 0.8, 0.93, 1.0, 1.15], _slide],
 		"start_stop": [1.6, [0.0, 0.12, 0.25, 0.45, 0.9, 1.05, 1.15, 1.4], _start_stop],
 		"step": [0.6, [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.55, 0.6], _on_step],
+		"vault": [1.2, [0.25, 0.36, 0.43, 0.5, 0.57, 0.63, 0.75, 0.9], _climb.bind(true)],
+		"mantle": [1.2, [0.25, 0.36, 0.43, 0.5, 0.57, 0.63, 0.75, 0.9], _climb.bind(false)],
 		"reload_m4": [1.0, RELOAD_MOMENTS, _reload.bind("m4")],
 		"reload_lsw6": [1.0, RELOAD_MOMENTS, _reload.bind("lsw6")],
 		"reload_m40": [1.0, RELOAD_MOMENTS, _reload.bind("m40")],
@@ -177,6 +179,44 @@ func _on_step(_t: float) -> Dictionary:
 	return {"weapon": "m4", "feet": Vector3(0, 0.18, 0), "step": true}
 
 
+## A run at 1 m cover (`_strip` builds it) at 5 m/s, climbing from 0.3 s as
+## the movement does: a vault rises 1.2 m over 0.33 s against the wall and
+## carries on over the top, falling to the ground beyond; a mantle rises
+## 1.15 m over 0.42 s onto it and walks on. Seen from the left, the support
+## hand's side.
+func _climb(t: float, vault: bool) -> Dictionary:
+	var start := 0.3
+	var rise_time := 0.33 if vault else 0.42
+	var rise := 1.2 if vault else 1.15
+	var speed := 5.0 if vault else 2.6
+	var state := {"weapon": "m4", "cover": true, "velocity": Vector3(0, 0, -speed)}
+	var p := (t - start) / rise_time
+	if t < start:
+		state["feet"] = Vector3(0, 0, speed * (start - t))
+	elif p < 1.0:
+		# Held at the wall until the feet clear its top, then on over it.
+		var ahead := clampf((p - 0.8) / 0.2, 0.0, 1.0) * speed * rise_time * 0.2
+		state["feet"] = Vector3(0, rise * p, -ahead)
+		state["mantling"] = true
+		state["vaulting"] = vault
+		state["mantle_progress"] = p
+		state["on_floor"] = false
+		state["velocity"] = Vector3(0, rise / rise_time, -speed * 0.2)
+	else:
+		var after := t - start - rise_time
+		var z := -speed * rise_time * 0.2 - speed * after
+		if vault:
+			var y := maxf(rise - 7.0 * after * after, 0.0)
+			state["feet"] = Vector3(0, y, z)
+			state["on_floor"] = y <= 0.0
+			# Others see the vault until the drop lands (`MoveState::in_vault`).
+			state["vaulting"] = y > 0.0
+			state["velocity"] = Vector3(0, -14.0 * after if y > 0.0 else 0.0, -speed)
+		else:
+			state["feet"] = Vector3(0, rise - 0.15, z)
+	return state
+
+
 ## A running jump: 3 m/s forward, in the air from 0.1 s to 0.67 s.
 func _jump(t: float) -> Dictionary:
 	var air := t - 0.1
@@ -254,6 +294,8 @@ func _strip(scene: Node, move: String, spec: Array) -> void:
 	var step: Node3D = null
 	if state_at.call(0.0).get("step", false):
 		step = _step(scene)
+	if state_at.call(0.0).get("cover", false):
+		step = _cover(scene)
 	if state_at.call(0.0).has("world_feet"):
 		rig.global_position = state_at.call(0.0)["world_feet"]
 		_camera.global_position = state_at.call(0.0)["camera"]
@@ -311,6 +353,22 @@ func _step(scene: Node) -> Node3D:
 	body.global_position = SPOT + Vector3(-0.5, 0.09, 0)
 	_camera.global_position = SPOT + Vector3(0.4, 1.0, -2.6)
 	_camera.look_at(SPOT + Vector3(0, 0.5, 0))
+	return body
+
+
+## A 1 m wall, 0.3 m deep, just ahead of where a climb starts, seen from
+## ahead on the climber's left.
+func _cover(scene: Node) -> Node3D:
+	var body := StaticBody3D.new()
+	var mesh := MeshInstance3D.new()
+	var cube := BoxMesh.new()
+	cube.size = Vector3(1.4, 1.0, 0.3)
+	mesh.mesh = cube
+	body.add_child(mesh)
+	scene.add_child(body)
+	body.global_position = SPOT + Vector3(0, 0.5, -0.45)
+	_camera.global_position = SPOT + Vector3(-2.9, 1.7, -2.4)
+	_camera.look_at(SPOT + Vector3(0, 1.2, -0.3))
 	return body
 
 
