@@ -315,7 +315,6 @@ pub struct SoldierRig {
     applied_team: Option<Team>,
 
     frame: SoldierFrame,
-    lower_yaw: f32,
     /// The travel's direction the loops blend (radians from the aim,
     /// positive right; `gait::direction`), eased round.
     direction: f32,
@@ -748,23 +747,17 @@ impl SoldierRig {
         let moving = speed > gait::MOVING_SPEED && frame.alive;
         let forward = -flat.z;
         let right = flat.x;
-        // Every direction has its own loops (`gait::DIRECTIONS`); only a
-        // sprint turns its hips toward a sideways drift.
-        let mut leg_turn = 0.0;
+        // Every direction has its own loops (`gait::DIRECTIONS`); a sprint
+        // drifting sideways blends toward its forward diagonals.
         if moving && frame.stance != Stance::Sliding {
             let target = gait::direction(right, forward, frame.sprinting);
             self.direction = wrap_angle(
                 self.direction + wrap_angle(target - self.direction) * smoothing(12.0, dt),
             );
-            if frame.sprinting {
-                leg_turn = gait::leg_turn(right, forward);
-            }
         } else if self.step > 0.0 {
             // Stepping round on the spot is the forward walk.
             self.direction = 0.0;
         }
-        // Positive turns the hips left; drifting right turns them right.
-        self.lower_yaw += (-leg_turn - self.lower_yaw) * smoothing(10.0, dt);
 
         // Turning in place: the legs stay on the feet until they step round,
         // and step in place as they do (`gait::Turning`, the rule the
@@ -1465,7 +1458,6 @@ impl SoldierRig {
         });
         let slide = 1.0 - (1.0 - carry::SLIDE_PITCH_SCALE) * self.slide;
         PoseInput {
-            lower_yaw: self.lower_yaw,
             turn: if frame.alive { self.turn } else { 0.0 },
             pitch: frame.pitch.clamp(-carry::MAX_PITCH, carry::MAX_PITCH) * slide,
             lean: self.lean.value + self.motion_lean.value + Vector3::new(0.0, 0.0, -0.3) * lunge,
@@ -1811,7 +1803,7 @@ impl SoldierRig {
         };
         // The standing loops: by the travel's direction (the eight authored
         // directions, backward at both ends), and in each by speed. Only
-        // forward has the sprint.
+        // forward and its diagonals have the sprint.
         let mut loops = AnimationNodeBlendSpace1D::new_gd();
         loops.set_min_space(-PI);
         loops.set_max_space(PI);
@@ -1822,12 +1814,7 @@ impl SoldierRig {
             let mut speeds = AnimationNodeBlendSpace1D::new_gd();
             speeds.set_min_space(0.0);
             speeds.set_max_space(gait::SPRINT_SPEED);
-            let count = if index == 0 {
-                gait::STAND_LOOPS.len()
-            } else {
-                gait::DIRECTION_LOOPS
-            };
-            for l in &gait::STAND_LOOPS[..count] {
+            for l in &gait::STAND_LOOPS[..gait::loops_in(index)] {
                 let point = l.clip.rsplit('/').next().unwrap_or(l.clip);
                 speeds
                     .add_blend_point_ex(
@@ -1991,6 +1978,7 @@ fn directed_clip(l: &gait::Loop, index: usize) -> (String, f32) {
     let base = match l.clip {
         "ual1/Walk" => "Walk",
         "ual1/Jog_Fwd" => "Jog",
+        "ual1/Sprint" => "Sprint",
         _ => "Crouch",
     };
     (format!("gait/{base}_{}", gait::DIRECTIONS[index]), 0.0)

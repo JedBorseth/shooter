@@ -17,6 +17,7 @@ const HOLD_WEAPONS := ["m4", "lsw6", "m1911", "m870"]
 ## Moments through about one stride of a run, and of a walk.
 const GAIT_MOMENTS := [0.0, 0.07, 0.14, 0.21, 0.28, 0.35, 0.42, 0.49]
 const GAIT_SLOW_MOMENTS := [0.0, 0.12, 0.24, 0.36, 0.48, 0.6, 0.72, 0.84]
+const SPRINT_MOMENTS := [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35]
 
 var _out := OS.get_environment("CAPTURE_DIR")
 var _sets := OS.get_environment("CAPTURE_SETS")
@@ -93,6 +94,10 @@ func _moves() -> Dictionary:
 		"gait_back": [0.6, GAIT_MOMENTS, _gait.bind(180.0, 3.5, {})],
 		"gait_back_right": [0.6, GAIT_MOMENTS, _gait.bind(135.0, 3.5, {})],
 		"gait_forward_left": [0.6, GAIT_MOMENTS, _gait.bind(-45.0, 4.5, {})],
+		# A sprint drifting right (the diagonal sprint, about 27°) and one
+		# straight ahead to compare, at the sprint's stride.
+		"gait_sprint_drift": [0.4, SPRINT_MOMENTS, _gait.bind(26.6, 6.0, {"sprinting": true})],
+		"gait_sprint": [0.4, SPRINT_MOMENTS, _gait.bind(0.0, 6.9, {"sprinting": true})],
 		"gait_aimed_walk_right": [1.0, GAIT_SLOW_MOMENTS, _gait.bind(90.0, 1.6, {"ads": 1.0})],
 		"gait_crouch_left":
 		[1.0, GAIT_SLOW_MOMENTS, _gait.bind(-90.0, 1.8, {"stance": "crouching"})],

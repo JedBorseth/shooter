@@ -23,7 +23,8 @@ extends SceneTree
 ## Run from the repo root:
 ##   godot --headless --path godot --script res://tests/hitbox_fit_test.gd
 ## It prints every state's numbers (cm, and cover in %); HITBOX_FIT_SHAPES=1
-## also prints each shape's error and the segments it compared.
+## also prints each shape's error and the segments it compared, and
+## HITBOX_FIT_ONLY=walk,sprint measures only the states named.
 ## HITBOX_FIT_DUMP=$PWD/rust/sim/src/hitbox/poses.rs (an absolute path, from
 ## the repo root) instead writes the base poses the hit zones start from,
 ## measured from the animations; do that when an animation changes, then run
@@ -94,6 +95,14 @@ func _states() -> Array[Dictionary]:
 	add.call("walk", {}, moving.call(Vector3(0, 0, -1.5)))
 	add.call("run", {}, moving.call(Vector3(0, 0, -4.0)))
 	add.call("sprint", {"sprinting": true}, moving.call(Vector3(0, 0, -6.0)))
+	# A sprint drifting sideways (at most about 27°, the movement's
+	# `sprint_strafe`) blends toward its forward diagonal, as does one held
+	# against its limit.
+	add.call("sprint_drift", {"sprinting": true}, moving.call(_toward(26.6, 6.0)))
+	add.call("sprint_drift_left", {"sprinting": true}, moving.call(_toward(-20.0, 5.0)))
+	add.call("sprint_diagonal", {"sprinting": true}, moving.call(_toward(60.0, 6.0)))
+	add.call("sprint_build", {"sprinting": true}, moving.call(Vector3(0, 0, -5.0)))
+	add.call("sprint_build_drift", {"sprinting": true}, moving.call(_toward(15.0, 4.5)))
 	add.call("strafe", {}, moving.call(Vector3(3.0, 0, 0)))
 	add.call("strafe_run", {}, moving.call(Vector3(-2.8, 0, -2.8)))
 	add.call("backpedal", {}, moving.call(Vector3(0, 0, 2.0)))
@@ -183,8 +192,11 @@ func _run() -> void:
 		quit(0)
 		return
 	_check_grips()
+	# HITBOX_FIT_ONLY=a,b measures only the states named.
+	var only := OS.get_environment("HITBOX_FIT_ONLY").split(",", false)
 	for spec in _states():
-		await _measure(world, spec)
+		if only.is_empty() or (spec["name"] as String) in only:
+			await _measure(world, spec)
 	_report()
 	world.queue_free()
 	_finish()
@@ -476,6 +488,7 @@ func _generate(world: Node3D) -> void:
 		[{}, Vector3(0, 0, -2.0)],
 		[{}, Vector3(0, 0, -3.0)],
 		[{}, Vector3(0, 0, -4.0)],
+		[{"sprinting": true}, Vector3(0, 0, -5.0)],
 		[{"sprinting": true}, Vector3(0, 0, -6.0)],
 	]
 	var out := PackedStringArray()
@@ -501,7 +514,7 @@ func _generate(world: Node3D) -> void:
 	out.append("pub(super) const CLIMB_SAMPLES: usize = %d;" % CLIMB_SAMPLES)
 	out.append("")
 	out.append("/// The standing blend at each of `gait::STRIDE_POSITIONS`.")
-	out.append("pub(super) const STAND_STRIDES: [[BasePose; STRIDE_SAMPLES]; 5] = [")
+	out.append("pub(super) static STAND_STRIDES: [[BasePose; STRIDE_SAMPLES]; 6] = [")
 	for l: Array in loops:
 		out.append("[")
 		for i in STRIDE_SAMPLES:
@@ -522,11 +535,13 @@ func _generate(world: Node3D) -> void:
 	out.append("")
 	# Every measured direction but forward (`gait::POSE_DIRECTIONS`), at the
 	# standing blend's first `gait::DIRECTION_STRIDE_POSITIONS`, and crouched.
-	var directions := [45.0, 90.0, 112.5, 135.0, 157.5, 180.0, -157.5, -135.0, -112.5, -90.0, -45.0]
+	var directions := [
+		22.5, 45.0, 90.0, 112.5, 135.0, 157.5, 180.0, -157.5, -135.0, -112.5, -90.0, -45.0, -22.5
+	]
 	out.append("/// The standing blend in each measured direction but forward")
 	out.append("/// (`gait::POSE_DIRECTIONS[1..]`) at `gait::STRIDE_POSITIONS[..3]`.")
 	out.append("#[rustfmt::skip]")
-	out.append("pub(super) static DIRECTION_STRIDES: [[[BasePose; STRIDE_SAMPLES]; 3]; 11] = [")
+	out.append("pub(super) static DIRECTION_STRIDES: [[[BasePose; STRIDE_SAMPLES]; 3]; 13] = [")
 	for degrees: float in directions:
 		out.append("[")
 		for l: Array in loops.slice(0, 3):
@@ -542,9 +557,33 @@ func _generate(world: Node3D) -> void:
 		out.append("],")
 	out.append("];")
 	out.append("")
+	# Within the forward diagonals the blend runs on into the sprint, as
+	# forward does (`gait::SPRINT_POSE_DIRECTIONS`, `gait::STRIDE_POSITIONS[3..]`).
+	out.append("/// The standing blend in each measured direction within the forward diagonals")
+	out.append("/// (`gait::SPRINT_POSE_DIRECTIONS`) at `gait::STRIDE_POSITIONS[3..]`.")
+	out.append("#[rustfmt::skip]")
+	out.append("pub(super) static DIAGONAL_SPRINTS: [[[BasePose; STRIDE_SAMPLES]; 3]; 4] = [")
+	for degrees: float in [22.5, 45.0, -45.0, -22.5]:
+		out.append("[")
+		for l: Array in loops.slice(3, 6):
+			out.append("[")
+			for i in STRIDE_SAMPLES:
+				# Only a sprint gets this far up the blend off forward (a run
+				# stops at `gait::run_limit`); the flag moves only the weapon.
+				var state := {"sprinting": true}
+				state["stride"] = float(i) / STRIDE_SAMPLES
+				var speed := absf((l[1] as Vector3).z)
+				var pose := await _average_pose(
+					world, state, _toward(degrees, speed), 60, 1, {}, extra
+				)
+				out.append("%s," % _pose_literal(pose))
+			out.append("],")
+		out.append("],")
+	out.append("];")
+	out.append("")
 	out.append("/// The crouched walk in each measured direction but forward.")
 	out.append("#[rustfmt::skip]")
-	out.append("pub(super) static DIRECTION_CROUCH_WALKS: [[BasePose; STRIDE_SAMPLES]; 11] = [")
+	out.append("pub(super) static DIRECTION_CROUCH_WALKS: [[BasePose; STRIDE_SAMPLES]; 13] = [")
 	for degrees: float in directions:
 		out.append("[")
 		for i in STRIDE_SAMPLES:

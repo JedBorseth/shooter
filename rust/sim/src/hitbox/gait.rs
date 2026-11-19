@@ -2,7 +2,7 @@
 //! third-person character's animation tree plays (idle, walk, jog, sprint, and
 //! the crouched walk), each loop authored in eight directions (forward,
 //! strafes, backpedals, and the diagonals between; `tools/build_gait_animations.py`),
-//! and how far the hips turn toward a sprint's sideways drift.
+//! and the sprint in the forward diagonals it drifts between.
 //!
 //! The character (`rust/game/src/character/rig.rs`) and [`super::hitboxes`]
 //! both read these, so the hit zones blend the same base poses the body is
@@ -28,11 +28,12 @@ pub const CROUCH_SPEED: f32 = 0.72;
 pub const RUN_BLEND_LIMIT: f32 = 4.0;
 /// Slower than this (m/s) the body stands still.
 pub const MOVING_SPEED: f32 = 0.4;
-/// A sprint's legs turn at most this far from the aim (radians) toward its
-/// sideways drift; every other gait has a loop for its direction.
-pub const MAX_LEG_TURN: f32 = 75.0 * std::f32::consts::PI / 180.0;
+/// A sprint drifts sideways at most about 27° (the movement's
+/// `sprint_strafe`), between its forward diagonals: its direction is held
+/// within them (radians), so it always blends loops that have the sprint.
+pub const MAX_SPRINT_DIRECTION: f32 = std::f32::consts::FRAC_PI_4;
 /// Share of the hips' turn the spine, chest, and upper chest give back, so
-/// the chest faces the aim.
+/// the chest faces the aim (turning in place).
 pub const TWIST_SHARES: [f32; 3] = [0.35, 0.35, 0.3];
 /// The directions each loop was authored in, 45° apart clockwise from
 /// forward, as the animation library names them (`gait/<Loop>_<Dir>`; forward is
@@ -58,9 +59,9 @@ pub struct Loop {
 }
 
 /// The standing loops the stride blends between, slowest first (measured from
-/// the clips; the idle below them is not a stride). Only forward has the
-/// sprint: the other directions blend the walk and the jog
-/// ([`DIRECTION_LOOPS`]).
+/// the clips; the idle below them is not a stride). Only forward and its
+/// diagonals have the sprint: the other directions blend the walk and the jog
+/// ([`loops_in`]).
 pub const STAND_LOOPS: [Loop; 3] = [
     Loop {
         clip: "ual1/Walk",
@@ -81,8 +82,20 @@ pub const STAND_LOOPS: [Loop; 3] = [
         offset: 0.86,
     },
 ];
-/// How many of [`STAND_LOOPS`] the directions other than forward have.
+/// How many of [`STAND_LOOPS`] the directions without a sprint have.
 pub const DIRECTION_LOOPS: usize = 2;
+/// The [`DIRECTIONS`] with a sprint: forward and its diagonals (`FR`, `FL`).
+pub const SPRINT_DIRECTIONS: [usize; 3] = [0, 1, 7];
+
+/// How many of [`STAND_LOOPS`] authored direction `index` (of
+/// [`DIRECTIONS`]) has.
+pub fn loops_in(index: usize) -> usize {
+    if SPRINT_DIRECTIONS.contains(&index) {
+        STAND_LOOPS.len()
+    } else {
+        DIRECTION_LOOPS
+    }
+}
 /// The crouched walk.
 pub const CROUCH_LOOP: Loop = Loop {
     clip: "ual1/Crouch_Fwd",
@@ -93,19 +106,22 @@ pub const CROUCH_LOOP: Loop = Loop {
 
 /// Where in the standing blend the hit zones' stride poses are measured
 /// (`hitbox/poses.rs`): each loop, the points between them a player moves at
-/// (an aimed walk, and the run every non-sprinting player settles at,
-/// [`RUN_BLEND_LIMIT`]), and the sprint. Each is measured sprinting or not as
-/// a body at that point would be.
-pub const STRIDE_POSITIONS: [(f32, bool); 5] = [
+/// (an aimed walk, the run every non-sprinting player settles at,
+/// [`RUN_BLEND_LIMIT`], and halfway up a sprint, whose high knee is far from
+/// a straight line between the run and the sprint), and the sprint. Each is
+/// measured sprinting or not as a body at that point would be.
+pub const STRIDE_POSITIONS: [(f32, bool); 6] = [
     (WALK_SPEED, false),
     (2.0, false),
     (JOG_SPEED, false),
     (RUN_BLEND_LIMIT, false),
+    (5.0, true),
     (SPRINT_SPEED, true),
 ];
 
-/// How many of [`STRIDE_POSITIONS`] the directions other than forward are
-/// measured at: up to the jog, where their blend ends.
+/// How many of [`STRIDE_POSITIONS`] the directions without a sprint are
+/// measured at: up to the jog, where their blend ends. Forward and the
+/// forward diagonals ([`SPRINT_POSE_DIRECTIONS`]) are measured at all of them.
 pub const DIRECTION_STRIDE_POSITIONS: usize = 3;
 
 /// The two measured stride positions around `position` and how far from the
@@ -134,11 +150,13 @@ fn samples_in(positions: &[(f32, bool)], position: f32) -> (usize, usize, f32) {
 
 /// The direction of travel (radians from the aim, positive to the right,
 /// −π..π) for body-frame velocity (`right`, `forward`), as the loops blend
-/// it. A sprint runs the forward loop with its legs turned
-/// ([`leg_turn`]), so it is forward.
+/// it. A sprint's is held within its forward diagonals
+/// ([`MAX_SPRINT_DIRECTION`]).
 pub fn direction(right: f32, forward: f32, sprinting: bool) -> f32 {
-    if sprinting || (right == 0.0 && forward == 0.0) {
+    if right == 0.0 && forward == 0.0 {
         0.0
+    } else if sprinting {
+        fmath::atan2(right, forward).clamp(-MAX_SPRINT_DIRECTION, MAX_SPRINT_DIRECTION)
     } else {
         fmath::atan2(right, forward)
     }
@@ -146,12 +164,17 @@ pub fn direction(right: f32, forward: f32, sprinting: bool) -> f32 {
 
 /// The directions the hit zones' stride poses are measured in (degrees
 /// clockwise from forward, 0 to 360): the authored ones, and halfway between
-/// those behind the strafes, where the drawn blend of a strafe and a back
-/// diagonal (two quite different leg poses) is too far from a straight line
-/// between them.
-pub const POSE_DIRECTIONS: [f32; 12] = [
-    0.0, 45.0, 90.0, 112.5, 135.0, 157.5, 180.0, 202.5, 225.0, 247.5, 270.0, 315.0,
+/// those behind the strafes and either side of forward, where the drawn blend
+/// of two quite different leg poses (a strafe and a back diagonal; a sprint
+/// and its diagonal, the knee high) is too far from a straight line between
+/// them.
+pub const POSE_DIRECTIONS: [f32; 14] = [
+    0.0, 22.5, 45.0, 90.0, 112.5, 135.0, 157.5, 180.0, 202.5, 225.0, 247.5, 270.0, 315.0, 337.5,
 ];
+/// The [`POSE_DIRECTIONS`] besides forward measured at every one of
+/// [`STRIDE_POSITIONS`], sprint included: those within the forward
+/// diagonals, where a sprint runs.
+pub const SPRINT_POSE_DIRECTIONS: [usize; 4] = [1, 2, 12, 13];
 
 /// The two of [`POSE_DIRECTIONS`] around `direction` (radians, as
 /// [`direction`]) and how far from the first to the second (0..1).
@@ -399,12 +422,6 @@ pub fn yaw_of(facing: glam::Vec2) -> f32 {
 /// is two rungs of 0.3 m.
 pub const LADDER_STRIDE: f32 = 0.6;
 
-/// How far a sprint's legs turn from the aim toward its sideways drift,
-/// radians (positive toward the right).
-pub fn leg_turn(right: f32, forward: f32) -> f32 {
-    fmath::atan2(right, forward).clamp(-MAX_LEG_TURN, MAX_LEG_TURN)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -451,25 +468,39 @@ mod tests {
     }
 
     #[test]
-    fn every_direction_has_its_loop_and_only_a_sprint_turns_the_legs() {
+    fn every_direction_has_its_loop_and_a_sprint_drifts_between_its_diagonals() {
         use std::f32::consts::{FRAC_PI_2, FRAC_PI_4, PI};
         // Strafing, backpedalling, and the diagonals each pick their loop.
         assert!((direction(3.0, 0.0, false) - FRAC_PI_2).abs() < 1e-5);
         assert!((direction(0.0, -2.0, false).abs() - PI).abs() < 1e-5);
         assert_eq!(pose_direction_samples(0.0), (0, 1, 0.0));
-        assert_eq!(pose_direction_samples(FRAC_PI_2), (2, 3, 0.0));
-        let (a, b, t) = pose_direction_samples(-FRAC_PI_4 * 0.5);
-        assert_eq!((a, b), (11, 0));
+        assert_eq!(pose_direction_samples(FRAC_PI_2), (3, 4, 0.0));
+        let (a, b, t) = pose_direction_samples(-FRAC_PI_4 * 0.25);
+        assert_eq!((a, b), (13, 0));
         assert!((t - 0.5).abs() < 1e-4);
         let (a, b, t) = pose_direction_samples(PI);
-        assert!((a, b) == (6, 7) && t < 1e-4 || (a, b) == (5, 6) && t > 1.0 - 1e-4);
-        // Behind the strafes the poses are measured every 22.5°.
+        assert!((a, b) == (7, 8) && t < 1e-4 || (a, b) == (6, 7) && t > 1.0 - 1e-4);
+        // Behind the strafes and beside forward the poses are measured every
+        // 22.5°.
         let (a, b, t) = pose_direction_samples(PI * 0.6);
-        assert!((a, b) == (2, 3) && (t - 0.8).abs() < 1e-3, "{a} {b} {t}");
-        // A sprint is forward with its legs turned toward the drift.
-        assert_eq!(direction(3.0, 4.0, true), 0.0);
-        assert!((leg_turn(3.0, 0.0) - MAX_LEG_TURN).abs() < 1e-6);
-        assert!(leg_turn(1.0, 2.0) > 0.4);
+        assert!((a, b) == (3, 4) && (t - 0.8).abs() < 1e-3, "{a} {b} {t}");
+        let (a, b, t) = pose_direction_samples(FRAC_PI_4 * 0.75);
+        assert!((a, b) == (1, 2) && (t - 0.5).abs() < 1e-3, "{a} {b} {t}");
+        // A sprint drifting sideways blends toward its diagonal, never
+        // past it, and only directions with a sprint loop are sprinted in.
+        assert!((direction(1.0, 2.0, true) - fmath::atan2(1.0, 2.0)).abs() < 1e-6);
+        assert_eq!(direction(3.0, 0.0, true), MAX_SPRINT_DIRECTION);
+        assert_eq!(direction(-3.0, -1.0, true), -MAX_SPRINT_DIRECTION);
+        assert_eq!(direction(0.0, 0.0, true), 0.0);
+        for (i, name) in DIRECTIONS.iter().enumerate() {
+            let sprint = matches!(*name, "Fwd" | "FR" | "FL");
+            assert_eq!(loops_in(i) == STAND_LOOPS.len(), sprint, "{name}");
+        }
+        for (d, degrees) in POSE_DIRECTIONS.iter().enumerate().skip(1) {
+            let within = (degrees.to_radians().sin().abs() <= FRAC_PI_4.sin() + 1e-5)
+                && degrees.to_radians().cos() > 0.0;
+            assert_eq!(SPRINT_POSE_DIRECTIONS.contains(&d), within, "{degrees}");
+        }
         // Sideways steps are quicker; the run blends to the jog from 45° off.
         assert_eq!(cadence(0.0), 1.0);
         assert!((cadence(-FRAC_PI_2) - (1.0 + LATERAL_CADENCE)).abs() < 1e-5);

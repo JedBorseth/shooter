@@ -315,11 +315,25 @@ fn ground_pose(pose: &HitboxPose, speed: f32) -> BasePose {
             cycle(&poses::STAND_STRIDES[a], stride)
                 .lerp(&cycle(&poses::STAND_STRIDES[b], stride), t)
         }
-        d => {
-            let table = &poses::DIRECTION_STRIDES[d - 1];
-            let (a, b, t) = gait::direction_stride_samples(at);
-            cycle(&table[a], stride).lerp(&cycle(&table[b], stride), t)
-        }
+        d => match gait::SPRINT_POSE_DIRECTIONS.iter().position(|s| *s == d) {
+            // A forward diagonal runs on into its sprint, as forward does.
+            Some(k) => {
+                let sample = |i: usize| {
+                    let table = match i.checked_sub(gait::DIRECTION_STRIDE_POSITIONS) {
+                        None => &poses::DIRECTION_STRIDES[d - 1][i],
+                        Some(i) => &poses::DIAGONAL_SPRINTS[k][i],
+                    };
+                    cycle(table, stride)
+                };
+                let (a, b, t) = gait::stride_samples(at);
+                sample(a).lerp(&sample(b), t)
+            }
+            None => {
+                let table = &poses::DIRECTION_STRIDES[d - 1];
+                let (a, b, t) = gait::direction_stride_samples(at);
+                cycle(&table[a], stride).lerp(&cycle(&table[b], stride), t)
+            }
+        },
     };
     let standing = || {
         if moving {
@@ -415,16 +429,11 @@ pub fn hitboxes(pose: &HitboxPose) -> [Hitbox; COUNT] {
     let mut head = base.head;
     let mut legs = base.legs;
 
-    // A sprint's hips turn toward its sideways drift and the spine turns back
-    // toward the aim (every other gait has a loop for its direction).
-    // Standing still, the hips stay on the planted feet as the aim turns
-    // (`Progress::turn`), and the spine turns the rest. A sprint turns the
-    // hips about themselves; a body turning in place turns about the feet,
-    // which stay planted.
+    // Every gait has a loop for its direction. Standing still, the hips stay
+    // on the planted feet as the aim turns (`Progress::turn`), turning about
+    // the feet, and the spine turns the rest.
     let moving = speed > gait::MOVING_SPEED && pose.stance != Stance::Sliding;
-    let (lower_yaw, pivot) = if moving && activity.sprinting {
-        (-gait::leg_turn(right, forward), hips)
-    } else if moving {
+    let (lower_yaw, pivot) = if moving {
         (0.0, hips)
     } else {
         (-activity.progress.turn, Vec3::ZERO)
@@ -1025,7 +1034,9 @@ mod tests {
         });
         assert!(feet(&back).z > 0.2, "{:?}", feet(&back));
         assert!(hips(&back).dot(hips(&stand)) > 0.95);
-        // A sprint drifting right runs forward with its hips turned.
+        // A sprint drifting right blends toward its forward diagonal: the
+        // hips open a little toward the drift (less than the old forward
+        // sprint turned the whole way), and the feet run along it.
         let sprint = with(Activity {
             sprinting: true,
             velocity: Vec3::new(2.5, 0.0, -5.5),
@@ -1037,7 +1048,13 @@ mod tests {
             ..Activity::default()
         });
         let drift = hips(&sprint).dot(hips(&straight));
-        assert!(drift < 0.95, "{drift}");
+        assert!(drift < 0.995 && drift > 0.9, "{drift}");
+        assert!(
+            feet(&sprint).x > feet(&straight).x + 0.05,
+            "{:?} {:?}",
+            feet(&sprint),
+            feet(&straight)
+        );
     }
 
     #[test]
