@@ -165,6 +165,141 @@ impl FpArms {
         out
     }
 
+    /// Measures a candidate pose for one hand (0 firing, 1 support) on the
+    /// weapon in hand, where it holds it now, for tuning a pose by hand
+    /// (`hand_tuning` in a weapon file): `flex` (15 angles, index to thumb,
+    /// three joints each), `spread` (5: each finger's spread, then the
+    /// thumb's turn) and `seat` (off its marker, weapon space, m). Returns
+    /// `depths` (mm per finger; negative: clear) and `points` (an array per
+    /// finger of its points in weapon space), or an empty dictionary.
+    #[func]
+    pub fn try_hand(
+        &self,
+        hand: i64,
+        flex: PackedFloat32Array,
+        spread: PackedFloat32Array,
+        seat: Vector3,
+    ) -> VarDictionary {
+        let mut out = VarDictionary::new();
+        let (flex, spread) = (flex.as_slice(), spread.as_slice());
+        if !(0..=1).contains(&hand) || flex.len() != 15 || spread.len() != 5 {
+            return out;
+        }
+        let Some((poser, _, fields)) = self.held_fields() else {
+            return out;
+        };
+        let mut pose = [[0.0; 3]; 5];
+        for (f, finger) in pose.iter_mut().enumerate() {
+            finger.copy_from_slice(&flex[f * 3..f * 3 + 3]);
+        }
+        let mut turns = [0.0; 5];
+        turns.copy_from_slice(spread);
+        let Some(probe) = poser
+            .bind()
+            .try_hand(&fields, hand as usize, pose, turns, seat)
+        else {
+            return out;
+        };
+        out.set(
+            "depths",
+            &PackedFloat32Array::from_iter(probe.depths.iter().map(|d| d * 1000.0)),
+        );
+        let points: VarArray = probe
+            .points
+            .iter()
+            .map(|f| PackedVector3Array::from_iter(f.iter().map(|(p, _)| *p)).to_variant())
+            .collect();
+        out.set("points", &points);
+        out
+    }
+
+    /// A fit (as [`FpArms::fit_hands`] gives it) with the weapon's hand-set
+    /// values (`hand_tuning` in its file) applied, and its finger depths
+    /// measured again with them, so the bake checks the poses as the game
+    /// draws them. The support hand's tuning is left out on a foregrip
+    /// (`foregrip`), which the fit alone poses.
+    #[func]
+    pub fn with_tuning(&self, fit: VarDictionary, foregrip: bool) -> VarDictionary {
+        let out = fit.duplicate_shallow();
+        let Some((poser, _, fields)) = self.held_fields() else {
+            return out;
+        };
+        let def = poser
+            .bind()
+            .weapon
+            .clone()
+            .and_then(|v| v.try_cast::<crate::viewmodel::WeaponView>().ok())
+            .and_then(|v| v.bind().weapon_id())
+            .map(|id| id.def());
+        let Some(tuning) = def.and_then(|d| d.hand_tuning) else {
+            return out;
+        };
+        let mut out = out;
+        let Ok(mut depths) = fit
+            .get_or_nil("finger_depths")
+            .try_to::<PackedFloat32Array>()
+        else {
+            return out;
+        };
+        let tunes = [tuning.right, if foregrip { None } else { tuning.left }];
+        for (h, tune) in tunes.into_iter().enumerate() {
+            let Some(tune) = tune else { continue };
+            let side = if h == 0 { "right" } else { "left" };
+            let read = |key: &str| {
+                fit.get_or_nil(key)
+                    .try_to::<PackedFloat32Array>()
+                    .unwrap_or_default()
+            };
+            let (flex, spread) = (read(side), read(&format!("{side}_spread")));
+            let seat = fit
+                .get_or_nil(format!("{side}_seat").as_str())
+                .try_to::<Vector3>()
+                .unwrap_or(Vector3::ZERO);
+            if flex.len() != 15 || spread.len() != 5 {
+                continue;
+            }
+            let mut hand = shooter_sim::weapon::HandDef {
+                fingers: [[0.0; 3]; 5],
+                spread: Some([0.0; 5]),
+                seat: seat.to_array(),
+            };
+            for (f, finger) in hand.fingers.iter_mut().enumerate() {
+                finger.copy_from_slice(&flex.as_slice()[f * 3..f * 3 + 3]);
+            }
+            if let Some(s) = hand.spread.as_mut() {
+                s.copy_from_slice(spread.as_slice());
+            }
+            let tuned = tune.apply(hand);
+            let turns = tuned.spread.unwrap_or_default();
+            let seat = Vector3::from_array(tuned.seat);
+            out.set(
+                side,
+                &PackedFloat32Array::from_iter(tuned.fingers.iter().flatten().copied()),
+            );
+            out.set(
+                format!("{side}_spread").as_str(),
+                &PackedFloat32Array::from(&turns[..]),
+            );
+            out.set(format!("{side}_seat").as_str(), seat);
+            let Some(probe) = poser
+                .bind()
+                .try_hand(&fields, h, tuned.fingers, turns, seat)
+            else {
+                continue;
+            };
+            // `finger_depths`: the firing hand's five, its index off the
+            // trigger, then the support hand's five.
+            let at = if h == 0 { 0 } else { 6 };
+            for (f, d) in probe.depths.iter().enumerate() {
+                if at + f < depths.len() {
+                    depths[at + f] = d * 1000.0;
+                }
+            }
+        }
+        out.set("finger_depths", &depths);
+        out
+    }
+
     /// Whether both grip markers of the weapon in hand are at rest (no clip,
     /// pump stroke, or bolt moving a hand), so a pose measured now is the
     /// held pose.

@@ -498,6 +498,15 @@ pub struct FittedHands {
     pub depths: HandDepths,
 }
 
+/// A candidate hand pose measured on the weapon ([`SoldierPoser::try_hand`]):
+/// each finger's depth into it (m) and its points (weapon space) with the
+/// finger's radius at each.
+#[derive(Clone, Debug, Default)]
+pub struct HandProbe {
+    pub depths: [f32; 5],
+    pub points: [Vec<(Vector3, f32)>; 5],
+}
+
 /// How deep a pose's fingers and palms go into a weapon (m; negative: clear
 /// of it): per hand (right, left) and finger (`FINGERS` order), the firing
 /// index off the trigger, and each palm.
@@ -1148,6 +1157,42 @@ impl SoldierPoser {
             palms,
             misses,
         })
+    }
+
+    /// A candidate pose for one hand (0 firing, 1 support) where it was last
+    /// aimed on the weapon in hand, seated `seat` off its marker: each
+    /// finger's depth into `fields` (m; negative: clear) and the points
+    /// along it (weapon space) with its radius there. For offline tools that
+    /// tune a pose by hand (`FpArms::try_hand`); `None` until the hands have
+    /// held a weapon.
+    pub fn try_hand(
+        &self,
+        fields: &WeaponFields,
+        hand: usize,
+        flex: FingerFlex,
+        spread: [f32; 5],
+        seat: Vector3,
+    ) -> Option<HandProbe> {
+        let aim = self.held_target.get(hand).copied().flatten()?;
+        let field = if hand == 0 {
+            fields.right.as_ref()?
+        } else {
+            fields.left.as_ref()?
+        };
+        let left = hand == 1;
+        let contact = Contact {
+            field,
+            hand_to_field: Transform3D::new(aim.basis, aim.origin + seat),
+            left,
+        };
+        let joint = |j: usize, a: f32, s: f32| HandShape::turned(j, left, a, s);
+        let mut probe = HandProbe::default();
+        for (f, finger) in self.fingers[hand].iter().enumerate() {
+            let (_, chain) = finger.as_ref()?;
+            probe.depths[f] = grasp::finger_depth(chain, &contact, flex[f], spread[f], joint);
+            probe.points[f] = grasp::finger_points(chain, &contact, flex[f], spread[f], joint);
+        }
+        Some(probe)
     }
 
     /// Puts the feet on a ladder's rungs: each leg reaches its ankle to the
