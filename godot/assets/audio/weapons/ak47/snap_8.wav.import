@@ -2,13 +2,13 @@
 
 importer="wav"
 type="AudioStreamWAV"
-uid="uid://uydsxhniit35"
-path="res://.godot/imported/body_2.wav-0ea40dfbd80b66bfacc709e344fcdb71.sample"
+uid="uid://cuaqjycxulmj3"
+path="res://.godot/imported/snap_8.wav-d5137208d8d0f9d85c20329efddcec88.sample"
 
 [deps]
 
-source_file="res://assets/audio/weapons/ak47/body_2.wav"
-dest_files=["res://.godot/imported/body_2.wav-0ea40dfbd80b66bfacc709e344fcdb71.sample"]
+source_file="res://assets/audio/weapons/ak47/snap_8.wav"
+dest_files=["res://.godot/imported/snap_8.wav-d5137208d8d0f9d85c20329efddcec88.sample"]
 
 [params]
 

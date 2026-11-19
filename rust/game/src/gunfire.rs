@@ -72,7 +72,8 @@ fn distance_db(distance: f32, reference: f32) -> f32 {
 #[derive(Clone)]
 struct GunSounds {
     snap: Gd<AudioStreamRandomizer>,
-    body: Gd<AudioStreamRandomizer>,
+    /// None when the snap is the whole shot (`tools/build_gunshots.py`).
+    body: Option<Gd<AudioStreamRandomizer>>,
     tail: Option<Gd<AudioStreamRandomizer>>,
     tail_indoor: Option<Gd<AudioStreamRandomizer>>,
     mid: Option<Gd<AudioStreamRandomizer>>,
@@ -125,11 +126,12 @@ impl Gunfire {
         mid.set_bus(DISTANT_BUS);
         far.set_bus(DISTANT_BUS);
         Self {
+            // Room for whole-shot snaps to overlap (`audio::WHOLE_SHOT_VOICES`).
             snap: make(
                 "ShotSnap",
                 AttenuationModel::INVERSE_SQUARE_DISTANCE,
                 NEAR_UNIT,
-                4,
+                audio::WHOLE_SHOT_VOICES,
             ),
             body: make(
                 "ShotBody",
@@ -220,7 +222,7 @@ impl Gunfire {
         };
         let layers = [
             (&mut self.snap, Some(&gun.snap), gun.levels[0], near),
-            (&mut self.body, Some(&gun.body), gun.levels[1], near),
+            (&mut self.body, gun.body.as_ref(), gun.levels[1], near),
             (&mut self.tail, tail, gun.levels[2], near),
             (
                 &mut self.mid,
@@ -277,7 +279,7 @@ fn load(weapon: WeaponId) -> Option<GunSounds> {
     let volume = float("fire_volume_db", -6.0) + REMOTE_DB;
     Some(GunSounds {
         snap: layer("snap")?,
-        body: layer("body")?,
+        body: layer("body"),
         tail: layer("tail"),
         tail_indoor: layer("tail_indoor"),
         mid: layer("mid"),

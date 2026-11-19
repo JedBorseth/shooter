@@ -3,6 +3,11 @@
 use godot::classes::{AudioStream, AudioStreamRandomizer, ResourceLoader};
 use godot::prelude::*;
 
+/// Voices for a gunshot whose snap layer is the whole shot (room and echo
+/// included, about 1.2 s): enough that full auto at 600 rounds a minute never
+/// cuts a ringing shot short.
+pub const WHOLE_SHOT_VOICES: i32 = 14;
+
 /// Loads `<base>.ogg`, or `<base>_1.ogg`, `<base>_2.ogg`, ... into a randomizer
 /// that never repeats the same file twice in a row. `.wav` files work too; short
 /// transient sounds use them because Vorbis smears sharp attacks. Returns `None`

@@ -74,18 +74,30 @@ func _gunshots(player: FpsPlayer) -> void:
 	var views := player.find_children("*", "WeaponView", true, false)
 	_check(views.size() >= 6, "every weapon has a view, got %d" % views.size())
 	for view in views:
-		var layers := 0
-		for layer in ["GunshotSnap", "GunshotBody", "GunshotTail"]:
-			var sound := view.get_node_or_null(layer) as AudioStreamPlayer
-			if sound != null and sound.stream != null:
-				layers += 1
-		_check(layers == 3, "%s gunshot has snap, body and tail layers" % view.name)
+		var snap := view.get_node_or_null("GunshotSnap") as AudioStreamPlayer
+		_check(snap != null and snap.stream != null, "%s gunshot has a snap layer" % view.name)
+		# A gun built whole (tools/build_gunshots.py) is its snap alone, the
+		# recording's own action included, with voices for shots to overlap.
+		var whole := view.get_node_or_null("GunshotTail") == null
+		if whole:
+			_check(
+				view.get_node_or_null("GunshotBody") == null and snap.max_polyphony >= 12,
+				"%s whole gunshot overlaps in full" % view.name
+			)
+		else:
+			var layers := 0
+			for layer in ["GunshotBody", "GunshotTail"]:
+				var sound := view.get_node_or_null(layer) as AudioStreamPlayer
+				if sound != null and sound.stream != null:
+					layers += 1
+			_check(layers == 2, "%s gunshot has body and tail layers" % view.name)
 		# Every real gun has an action; magazine-fed guns ring when nearly empty.
 		var key: String = view.get("weapon")
 		if key == "laser":
 			continue
-		var mech := view.get_node_or_null("GunshotMech") as AudioStreamPlayer
-		_check(mech != null and mech.stream != null, "%s has a mechanical layer" % view.name)
+		if not whole:
+			var mech := view.get_node_or_null("GunshotMech") as AudioStreamPlayer
+			_check(mech != null and mech.stream != null, "%s has a mechanical layer" % view.name)
 		if key not in ["m40", "m870"]:
 			var hollow := view.get_node_or_null("GunshotHollow") as AudioStreamPlayer
 			_check(

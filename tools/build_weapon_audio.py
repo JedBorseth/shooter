@@ -640,6 +640,59 @@ MID_DB = -20.0
 FAR_DB = -22.0
 
 
+def near_layers(tracks: dict[str, Path], gun: Weapon) -> dict[str, np.ndarray]:
+    """The snap, body, tail and indoor tail of each take, by file name."""
+    shots = collect(tracks, gun.files, gun.tail_seconds)
+    if not shots:
+        sys.exit(f"{gun.key}: no clean shots found")
+    shots = shots[: gun.takes]
+    if gun.blend:
+        finder = find_shots if gun.blend.find == "shots" else find_blasts
+        under = collect(tracks, gun.blend.files, gun.tail_seconds, finder)
+        if not under:
+            sys.exit(f"{gun.key}: no shots found in the blend recordings")
+        shots = [
+            blend(s, under[i % len(under)], gun.blend) for i, s in enumerate(shots)
+        ]
+    if gun.room:
+        shots = [s + room(s, gun.room, seed=i) for i, s in enumerate(shots)]
+    if gun.weight:
+        shots = [s + weight(s, gun.weight, seed=i) for i, s in enumerate(shots)]
+    if gun.air_hz:
+        shots = [darken(declick(s), gun.air_hz) for s in shots]
+    if gun.blend or gun.room:
+        # The parts were cut at the same length; fade out what they added.
+        fade_out = int(0.15 * len(shots[0]))
+        for s in shots:
+            s[-fade_out:] *= raised_cosine(fade_out)[::-1, None]
+    if gun.drive_db:
+        drive = 10 ** (gun.drive_db / 20)
+        shots = [np.tanh(s * drive / np.abs(s).max()) for s in shots]
+
+    # Match each shot's opening loudness, then the weapon's loudness to the old mix.
+    target = 10 ** (gun.loudness_db / 20)
+    shots = [s * target / rms(s, 0.15) for s in shots]
+    layers = [split(s) for s in shots]
+    indoors = [indoor_tail(s, seed=100 + i) for i, s in enumerate(shots)]
+    peak = max(np.abs(s).max() for s in shots)
+    headroom = min(1.0, 10 ** (-1 / 20) / peak)
+
+    files = {}
+    for i, layer in enumerate(layers, start=1):
+        files[f"snap_{i}.wav"] = layer["snap"] * headroom
+        files[f"body_{i}.wav"] = layer["body"] * headroom
+        files[f"tail_{i}.ogg"] = layer["tail"] * headroom
+        files[f"tail_indoor_{i}.ogg"] = indoors[i - 1] * headroom
+    return files
+
+
+def whole_shot_guns() -> set[str]:
+    """Guns whose shot build_gunshots.py writes whole (snap only)."""
+    from build_gunshots import RECIPES
+
+    return set(RECIPES)
+
+
 def build_layers(cache: Path, only: set[str]) -> None:
     names = set()
     for gun in GUNS:
@@ -650,47 +703,10 @@ def build_layers(cache: Path, only: set[str]) -> None:
     for gun in GUNS:
         if only and gun.key not in only:
             continue
-        shots = collect(tracks, gun.files, gun.tail_seconds)
-        if not shots:
-            sys.exit(f"{gun.key}: no clean shots found")
-        shots = shots[: gun.takes]
-        if gun.blend:
-            finder = find_shots if gun.blend.find == "shots" else find_blasts
-            under = collect(tracks, gun.blend.files, gun.tail_seconds, finder)
-            if not under:
-                sys.exit(f"{gun.key}: no shots found in the blend recordings")
-            shots = [
-                blend(s, under[i % len(under)], gun.blend) for i, s in enumerate(shots)
-            ]
-        if gun.room:
-            shots = [s + room(s, gun.room, seed=i) for i, s in enumerate(shots)]
-        if gun.weight:
-            shots = [s + weight(s, gun.weight, seed=i) for i, s in enumerate(shots)]
-        if gun.air_hz:
-            shots = [darken(declick(s), gun.air_hz) for s in shots]
-        if gun.blend or gun.room:
-            # The parts were cut at the same length; fade out what they added.
-            fade_out = int(0.15 * len(shots[0]))
-            for s in shots:
-                s[-fade_out:] *= raised_cosine(fade_out)[::-1, None]
-        if gun.drive_db:
-            drive = 10 ** (gun.drive_db / 20)
-            shots = [np.tanh(s * drive / np.abs(s).max()) for s in shots]
-
-        # Match each shot's opening loudness, then the weapon's loudness to the old mix.
-        target = 10 ** (gun.loudness_db / 20)
-        shots = [s * target / rms(s, 0.15) for s in shots]
-        layers = [split(s) for s in shots]
-        indoors = [indoor_tail(s, seed=100 + i) for i, s in enumerate(shots)]
-        peak = max(np.abs(s).max() for s in shots)
-        headroom = min(1.0, 10 ** (-1 / 20) / peak)
-
-        files = {}
-        for i, layer in enumerate(layers, start=1):
-            files[f"snap_{i}.wav"] = layer["snap"] * headroom
-            files[f"body_{i}.wav"] = layer["body"] * headroom
-            files[f"tail_{i}.ogg"] = layer["tail"] * headroom
-            files[f"tail_indoor_{i}.ogg"] = indoors[i - 1] * headroom
+        # A gun built whole by build_gunshots.py keeps its snap; this only
+        # rebuilds its mid and far.
+        whole = gun.key in whole_shot_guns()
+        files = {} if whole else near_layers(tracks, gun)
         # Other players' gunfire from mid and far away: real recordings from
         # down the range, cut at the blast (the bullet's crack, which reaches
         # a microphone down range first, is the near-miss system's job).
@@ -713,21 +729,19 @@ def build_layers(cache: Path, only: set[str]) -> None:
 
         out = WEAPONS / gun.key
         # Remove sounds this build no longer makes (the mechanical layers are
-        # another command's), but keep the .import files of the ones it
-        # rewrites, so their Godot UIDs stay the same.
+        # another command's, a whole gun's snap build_gunshots.py's), but keep
+        # the .import files of the ones it rewrites, so their Godot UIDs stay
+        # the same.
+        keep = ("mech_", "hollow_", "snap_") if whole else ("mech_", "hollow_")
         for old in out.glob("*") if out.exists() else []:
             name = old.name.removesuffix(".import")
-            if (
-                old.is_file()
-                and name not in files
-                and not name.startswith(("mech_", "hollow_"))
-            ):
+            if old.is_file() and name not in files and not name.startswith(keep):
                 old.unlink()
         for name, data in files.items():
             write(out / name, data, ogg=name.endswith(".ogg"))
-        print(
-            f"{gun.key}: {len(shots)} takes, {len(mid)} mid, {len(far)} far, {gun.tail_seconds:.1f} s tail"
-        )
+        takes = sum(name.startswith("snap_") for name in files)
+        near = "whole shot kept" if whole else f"{takes} takes"
+        print(f"{gun.key}: {near}, {len(mid)} mid, {len(far)} far")
 
 
 # Sounds whose quiet lead-in is room noise rather than part of the sound.
@@ -880,9 +894,11 @@ def hollow_sound(mech: Mech, seed: int) -> np.ndarray:
 
 
 def build_mech() -> None:
+    whole = whole_shot_guns()
     for mech in MECHS:
         base = sum(ord(c) for c in mech.key) * 101
-        for i in range(MECH_VARIATIONS):
+        # A whole gun's action is already in its recording.
+        for i in range(0 if mech.key in whole else MECH_VARIATIONS):
             path = WEAPONS / mech.key / f"mech_{i + 1}.wav"
             write(path, mech_sound(mech, base + i), ogg=False)
             print(path.relative_to(ROOT))
@@ -923,6 +939,8 @@ RAW_SHA256 = {
     "C_39": "2109bd8c65c35ce43aa1ace88db542b4a739843254fe922d9df255f37417cf18",
     "C_40": "2eb68bf77fcd28208a50b4b030132bbf05d76cec4b4d5b1680ac4b8be2d99ea6",
     "C_42": "a234a8817d6632f423ba1d31083746b8eba2e31c684c9a7e6b3deb5a2b86c5d8",
+    "C_45": "d893f9d5d16727b5ad672bffa045eec109b7d3df14da2cac8b5aa25e55659dc2",
+    "C_48": "5b52d310ea270d19cb970e73d0e2147f46e9986ae8050436478bfdcb577234df",
     "U_12": "68b6b884fccaf3399fc2450a8547cc05becf03f144a191611793609190384875",
     "U_13": "cb08e05b97493e16d8ba95bb9c5ab7cbc8d3a1c70d61db63325ed8deb992e091",
     "U_14": "529ea6776bd2c69cd522a875aaf66c84532a5f97bd8fbf289ba166dbba7e6abf",
