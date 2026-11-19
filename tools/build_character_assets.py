@@ -527,10 +527,27 @@ KITS = {
             "macro": {
                 "gender": 1.0,
                 "age": 0.5,
-                "muscle": 0.7,
-                "weight": 0.55,
+                "muscle": 0.85,
+                "weight": 0.62,
                 "height": 0.6,
                 "race": {"caucasian": 0.8, "african": 0.1, "asian": 0.1},
+            },
+            # A loaded soldier's build, not MakeHuman's slim default: heavier
+            # shoulders, chest, and back, thick upper arms and forearms, and
+            # thighs. Girth only: fit_to_skeleton puts every joint back on the
+            # skeleton's.
+            "targets": {
+                "torso-muscle-pectoral-incr": 0.4,
+                "torso-muscle-dorsi-incr": 0.5,
+                "torso-scale-depth-incr": 0.25,
+                "torso-vshape-incr": 0.3,
+                "neck-scale-horiz-incr": 0.3,
+                **{f"{s}-upperarm-muscle-incr": 0.6 for s in "lr"},
+                **{f"{s}-upperarm-scale-horiz-incr": 0.3 for s in "lr"},
+                **{f"{s}-upperarm-scale-depth-incr": 0.3 for s in "lr"},
+                **{f"{s}-lowerarm-muscle-incr": 0.4 for s in "lr"},
+                **{f"{s}-upperleg-muscle-incr": 0.5 for s in "lr"},
+                **{f"{s}-upperleg-scale-horiz-incr": 0.2 for s in "lr"},
             },
             "skin": "skin_young_caucasian_male",
             # Other faces on the same head, blended per soldier (blend shapes;
@@ -588,10 +605,27 @@ KITS = {
             "macro": {
                 "gender": 1.0,
                 "age": 0.5,
-                "muscle": 0.7,
-                "weight": 0.55,
+                "muscle": 0.85,
+                "weight": 0.62,
                 "height": 0.6,
                 "race": {"caucasian": 0.8, "african": 0.1, "asian": 0.1},
+            },
+            # A loaded soldier's build, not MakeHuman's slim default: heavier
+            # shoulders, chest, and back, thick upper arms and forearms, and
+            # thighs. Girth only: fit_to_skeleton puts every joint back on the
+            # skeleton's.
+            "targets": {
+                "torso-muscle-pectoral-incr": 0.4,
+                "torso-muscle-dorsi-incr": 0.5,
+                "torso-scale-depth-incr": 0.25,
+                "torso-vshape-incr": 0.3,
+                "neck-scale-horiz-incr": 0.3,
+                **{f"{s}-upperarm-muscle-incr": 0.6 for s in "lr"},
+                **{f"{s}-upperarm-scale-horiz-incr": 0.3 for s in "lr"},
+                **{f"{s}-upperarm-scale-depth-incr": 0.3 for s in "lr"},
+                **{f"{s}-lowerarm-muscle-incr": 0.4 for s in "lr"},
+                **{f"{s}-upperleg-muscle-incr": 0.5 for s in "lr"},
+                **{f"{s}-upperleg-scale-horiz-incr": 0.2 for s in "lr"},
             },
             "skin": "skin_young_caucasian_male",
             "parts": [

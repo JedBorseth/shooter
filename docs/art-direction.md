@@ -251,7 +251,7 @@ Teams differ in value first and in accent hue second. A faint rim in each team's
 
 | Item | Budget | Soldier today |
 | --- | --- | --- |
-| Third-person triangles | 25k | 25.0k in one mesh (body, uniform, kit); 5.0k past 15 m. Zombie: 11.4k; 3.4k past 15 m |
+| Third-person triangles | 25k | 25.4k in one mesh (body, uniform, kit); 5.1k past 15 m. Zombie: 11.4k; 3.4k past 15 m |
 | Bones | 60 | 53 (Godot's humanoid profile) |
 | Materials | One per team and kit, shared by every character of that team | 1 (`shaders/character.gdshader`, 13 roles) |
 | Draw calls per character | 2 | 1 plus the weapon |
@@ -279,7 +279,8 @@ The per-character seed is an instance uniform (`variant`, `hidden_parts`, and `s
 
 - The skeleton, rest pose, and animations: Quaternius's [Universal Animation Library](https://opengameart.org/content/universal-animation-library) and [Universal Animation Library 2](https://opengameart.org/content/universal-animation-library-2), both CC0. The free Standard tiers include a mannequin on a humanoid rig and about 90 animations.
 - The body, skin, eyes, and clothes: [MakeHuman](https://static.makehumancommunity.org/assets/assetpacks/index.html) CC0 asset packs, built with MPFB 2 (MakeHuman for Blender, GPL-3.0, used only as a build tool). The tool pins each download by hash. The MakeHuman file server refuses a bare browser user agent, so the tool sends `curl/8.0`.
-- The kit (helmet with cover and mounts, glasses, balaclava and neck gaiter, plate carrier with pouches, magazines, radio and straps, belt and holster, knee pads, knuckle guards, team bands): modelled in Blender Python by `tools/blender_gear.py`.
+- The kit (helmet with cover and mounts, glasses, balaclava and neck gaiter, plate carrier with pouches, magazines, radio, padded straps, and a hydration carrier on the back, a padded belt with a holster, hip and first-aid pouches, knee pads, knuckle guards, team bands): modelled in Blender Python by `tools/blender_gear.py`. The plates stand about 4 cm proud of the chest and back, and the hydration carrier 6.5 cm more, so the kit has a loaded soldier's bulk instead of sitting flat on the body.
+- The build: a loaded soldier's, not MakeHuman's slim default. The macro has more muscle (0.85) and weight (0.62), and region targets (`targets` in the kit: MakeHuman modifiers by name, loaded before the rig is fitted) thicken the chest, back, and neck, the upper arms and forearms, and the thighs. It is girth only: `fit_to_skeleton` puts every joint back on the skeleton's, so the animations and hit-zone joints are unchanged. The arm and chest hit zones were widened to the new girth (upper arm 6.5 cm, forearm 5.5 cm, chest 21 cm radius), and the ragdoll capsules with them.
 - The combat shirt and boots: modelled from the body and the fitted shoe by `tools/blender_wardrobe.py`, with high-detail sources baked onto them (below).
 
 ### Pipeline

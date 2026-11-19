@@ -280,6 +280,7 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
   - [x] A wound mark where a character was hit (character shader, `wounds.rs`).
 - [x] Skyline windows with fake rooms behind them (interior mapping in `world.gdshader`), and bump-mapped cloth, leather, and creases on characters.
 - [x] Soldiers as believable people: a MakeHuman body fitted to the existing skeleton, a combat shirt and trousers, modelled kit (helmet with cover and mounts, glasses, balaclava or neck gaiter or a bare face per character, plate carrier with pouches, magazines and a radio, belt and holster, knee pads), all in one mesh with one baked texture atlas and a team tint (`tools/build_character_assets.py`).
+- [x] A loaded soldier's build: more muscle and weight and MakeHuman region targets (chest, back, neck, arms, thighs; girth only, joints on the skeleton), plates 4 cm proud, padded straps and belt, hip and first-aid pouches, and a hydration carrier on the back (25.4k triangles). Arm and chest hit zones widened to match.
 - [x] Zombies as distinct people: five MakeHuman bodies (age, build, skin, one a woman) in their own civilian clothes, picked per zombie (`zombie_body.tscn`, `SoldierRig.variants`).
 - [x] Zombies: painted short hair and stubble per body.
 - [x] Zombies: painted wounds, blood soaked and run from them, a bloody mouth, rips in the cloth, grime and mud, per body (baked, `add_decay`).

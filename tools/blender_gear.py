@@ -608,8 +608,9 @@ def plate_carrier(body: Body, chest_z: tuple[float, float]) -> list[bpy.types.Ob
     lo, hi = chest_z
     out = []
     spine = ["DEF-spine.002", "DEF-spine.003"]
-    front = panel(body, "plate_front", (-0.135, 0.135), (lo, hi), -1, 0.012, 0.034, "vest", "molle", bones=spine)
-    back = panel(body, "plate_back", (-0.14, 0.14), (lo - 0.01, hi + 0.01), 1, 0.012, 0.03, "vest", "molle", bones=spine)
+    # Plates in a carrier stand about 4 cm proud of the chest and back.
+    front = panel(body, "plate_front", (-0.135, 0.135), (lo, hi), -1, 0.012, 0.042, "vest", "molle", bones=spine)
+    back = panel(body, "plate_back", (-0.14, 0.14), (lo - 0.01, hi + 0.01), 1, 0.012, 0.04, "vest", "molle", bones=spine)
     out += [front, back]
     # Cummerbund: wraps the sides between the plates.
     cb_z = lo + 0.075
@@ -630,9 +631,10 @@ def plate_carrier(body: Body, chest_z: tuple[float, float]) -> list[bpy.types.Ob
             target = Vector((x, 0.0, hi - 0.05))
             hit = body.surface(origin, target - origin, None)
             pts.append(hit + (origin - target).normalized() * 0.009)
+        # Padded straps, wide over the shoulder.
         verts = []
         for q in pts:
-            verts += [q + Vector((-0.026, 0, 0)), q + Vector((0.026, 0, 0))]
+            verts += [q + Vector((-0.032, 0, 0)), q + Vector((0.032, 0, 0))]
         s = new_object(f"shoulder_strap_{sx}", verts, [(2 * k, 2 * k + 1, 2 * k + 3, 2 * k + 2) for k in range(8)],
                        "vest", "strap", bones=["DEF-spine.003", "DEF-shoulder"])
         bm = bmesh.new()
@@ -640,7 +642,7 @@ def plate_carrier(body: Body, chest_z: tuple[float, float]) -> list[bpy.types.Ob
         bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
         bm.to_mesh(s.data)
         bm.free()
-        thicken(s, 0.014, bevel=0.005, segments=2, offset=1.0)
+        thicken(s, 0.02, bevel=0.006, segments=2, offset=1.0)
         out.append(s)
     # Pouches on the front plate: three magazine pouches low, an admin pouch
     # above, and a radio on the left side.
@@ -662,13 +664,17 @@ def plate_carrier(body: Body, chest_z: tuple[float, float]) -> list[bpy.types.Ob
     out.append(cylinder("tourniquet", Vector((-0.09, -0.135, hi - 0.03)), Vector((-0.09, -0.13, hi + 0.06)), 0.017, "webbing", "strap", segments=10, bones=spine))
     by = max(v.co.y for v in back.data.vertices)
     out.append(rounded_box("drag_handle", (0.0, by + 0.012, hi - 0.01), (0.1, 0.02, 0.03), "webbing", "strap", bevel=0.006, bones=spine))
-    out.append(rounded_box("back_panel", (0.0, by + 0.018, lo + 0.17), (0.22, 0.035, 0.24), "vest", "molle", bevel=0.012, bones=spine))
+    # A hydration carrier on the back plate: a full bladder pouch, rounded,
+    # with a grab loop, standing well off the back.
+    out.append(rounded_box("hydration", (0.0, by + 0.034, lo + 0.18), (0.22, 0.065, 0.34), "vest", "cordura", bevel=0.022, bones=spine))
+    out.append(rounded_box("hydration_loop", (0.0, by + 0.07, lo + 0.335), (0.07, 0.012, 0.025), "webbing", "strap", bevel=0.004, bones=spine))
     return out
 
 
 def belt(body: Body, z: float) -> list[bpy.types.Object]:
     hips = ["DEF-hips", "DEF-spine.001"]
-    out = [band(body, "battle_belt", Vector((0, 0, z)), Vector((0, 0, 1)), Vector((0, -1, 0)), 0.055, 0.008, 0.012,
+    # A padded battle belt.
+    out = [band(body, "battle_belt", Vector((0, 0, z)), Vector((0, 0, 1)), Vector((0, -1, 0)), 0.065, 0.008, 0.02,
                 "webbing", "molle", segments=28, bones=hips)]
     fy = body.surface(Vector((0, -0.6, z)), Vector((0, 1, 0))).y
     out.append(rounded_box("buckle", (0.0, fy - 0.024, z), (0.06, 0.012, 0.045), "metal", "metal", bevel=0.004, rigid="DEF-hips"))
@@ -676,6 +682,14 @@ def belt(body: Body, z: float) -> list[bpy.types.Object]:
     for i, x in enumerate((0.07, 0.11)):
         y = body.surface(Vector((x, -0.6, z)), Vector((0, 1, 0))).y
         out.append(rounded_box(f"pistol_mag_pouch_{i}", (x, y - 0.03, z - 0.01), (0.035, 0.028, 0.085), "webbing", "cordura", bevel=0.006, rigid="DEF-hips"))
+    # A utility pouch on the left hip (the holster has the right) and a
+    # first-aid pouch behind the right: bulk at the hips, as a loaded belt has.
+    x = body.surface(Vector((0.6, -0.03, z)), Vector((-1, 0, 0))).x
+    out.append(rounded_box("utility_pouch", (x + 0.03, -0.035, z - 0.02), (0.05, 0.09, 0.1), "webbing", "cordura",
+                           bevel=0.01, rigid="DEF-hips"))
+    y = body.surface(Vector((-0.12, 0.6, z)), Vector((0, -1, 0))).y
+    out.append(rounded_box("ifak", (-0.12, y + 0.035, z - 0.01), (0.1, 0.06, 0.09), "webbing", "cordura",
+                           bevel=0.012, rigid="DEF-hips"))
     by = body.surface(Vector((0, 0.6, z)), Vector((0, -1, 0))).y
     out.append(rounded_box("dump_pouch", (0.06, by + 0.04, z - 0.04), (0.13, 0.05, 0.12), "webbing", "cordura", bevel=0.015, rigid="DEF-hips"))
     # Holster on the right hip with the pistol's grip showing.

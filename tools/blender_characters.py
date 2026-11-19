@@ -114,6 +114,14 @@ def make_human(spec: dict, assets: dict[str, str]):
         scale=0.1,
         macro_detail_dict=macro,
     )
+    # Region targets on top of the macros (MakeHuman's modifiers, by target
+    # name: a soldier's shoulders, arms, and thighs), before the rig is fitted
+    # to the shape.
+    for name, weight in spec.get("targets", {}).items():
+        path = TargetService.target_full_path(name)
+        if path is None:
+            raise SystemExit(f"no MakeHuman target named {name}")
+        TargetService.load_target(human, path, weight=weight, name=name)
     rig = HumanService.add_builtin_rig(human, "game_engine")
     clothes = []
     for part in spec.get("parts", []):

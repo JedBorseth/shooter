@@ -221,10 +221,10 @@ const fn m(x: Vec3, y: Vec3, z: Vec3) -> Mat3 {
 /// Radii: head, neck, chest, stomach, upper arm, forearm, thigh, shin.
 pub const HEAD_RADIUS: f32 = 0.135;
 pub const NECK_RADIUS: f32 = 0.065;
-pub const CHEST_RADIUS: f32 = 0.2;
+pub const CHEST_RADIUS: f32 = 0.21;
 pub const STOMACH_RADIUS: f32 = 0.17;
-pub const UPPER_ARM_RADIUS: f32 = 0.055;
-pub const FOREARM_RADIUS: f32 = 0.05;
+pub const UPPER_ARM_RADIUS: f32 = 0.065;
+pub const FOREARM_RADIUS: f32 = 0.055;
 pub const THIGH_RADIUS: f32 = 0.085;
 pub const SHIN_RADIUS: f32 = 0.065;
 
