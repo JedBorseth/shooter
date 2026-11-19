@@ -841,6 +841,20 @@ impl NetServer {
         }
     }
 
+    /// Debug: a bot stands still and presses nothing while `passive`, so a
+    /// test can use it as a target that never fights back (tests).
+    #[func]
+    fn debug_bot_passive(&mut self, id: i32, passive: bool) {
+        if let Some(brain) = self
+            .avatars
+            .iter_mut()
+            .find(|a| i32::from(a.id) == id)
+            .and_then(|a| a.brain.as_mut())
+        {
+            brain.passive = passive;
+        }
+    }
+
     /// Debug: turns a bot to face `point` level (tests).
     #[func]
     fn debug_bot_face(&mut self, id: i32, point: Vector3) {
