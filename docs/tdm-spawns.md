@@ -29,8 +29,9 @@ after changing map collision. Its six outermost ground-level points at either en
 lineups; the remaining points are neutral respawn candidates, including the
 upstairs points. Preparation happens before the dedicated server reads the map
 and is safe to call repeatedly. Warehouse authors its markers in the scene: six
-starts per team at the sketch's parking-lot and loading-apron spawns, and 26
-neutral aisle points facing the middle of the hall. All three maps appear in the
+starts per team mid-way along the parking lot and the truck apron, and 31
+neutral points in the aisles and at the ends of each yard, facing the middle of
+the hall. All three maps appear in the
 local TDM setup menu.
 
 The sightline test checks geometry, regardless of which way an enemy is facing.

@@ -313,8 +313,8 @@ pub struct BotWorld<'a> {
     /// Spawn points on each team's own side, by team, for goals on the
     /// enemy's side. Teams can change sides (Search and Destroy's halftime).
     pub team_spawns: &'a [Vec<Vector3>; 2],
-    /// The map's lanes (`BotLanes`), each a line of points from the west to
-    /// the east.
+    /// The map's lanes (`BotLanes`), each a line of points from one team's
+    /// side of the map to the other's.
     pub lanes: &'a [Vec<Vector3>],
     /// Every live grenade.
     pub grenades: &'a [BotGrenade],
@@ -1496,36 +1496,43 @@ impl BotBrain {
         let Some((lane, _)) = best else {
             return Vec::new();
         };
-        // Lanes run west to east. A team heads away from its own spawns,
-        // wherever they are this round; without sides (free-for-all) team 0
-        // heads east.
+        // A team heads away from its own spawns toward the enemy's, wherever
+        // they are this round: along X on maps whose teams start west and
+        // east, along Z on Warehouse, whose teams start north and south.
+        // Without sides (free-for-all) team 0 heads east.
         let team = usize::from(me.team.min(1));
-        let mean_x = |points: &[Vector3]| {
-            (!points.is_empty())
-                .then(|| points.iter().map(|p| p.x).sum::<f32>() / points.len() as f32)
+        let centroid = |points: &[Vector3]| {
+            (!points.is_empty()).then(|| {
+                let sum = points.iter().fold(Vector3::ZERO, |a, p| a + *p);
+                sum / points.len() as f32
+            })
         };
-        let eastward = match (
-            mean_x(&world.team_spawns[team]),
-            mean_x(&world.team_spawns[1 - team]),
+        let between = match (
+            centroid(&world.team_spawns[team]),
+            centroid(&world.team_spawns[1 - team]),
         ) {
-            (Some(own), Some(enemy)) => own < enemy,
-            _ => match me.team {
-                0 => true,
-                1 => false,
-                _ => me.feet.x < 0.0,
-            },
+            (Some(own), Some(enemy)) => Some(Vector3::new(enemy.x - own.x, 0.0, enemy.z - own.z)),
+            _ => None,
         };
-        let mut points = world.lanes[lane].clone();
-        if !eastward {
-            points.reverse();
-        }
-        let ahead = |p: &Vector3| {
-            if eastward {
-                p.x > me.feet.x + 3.0
-            } else {
-                p.x < me.feet.x - 3.0
+        let toward = match between {
+            Some(d) if d.length() > 1.0 => d.normalized(),
+            _ => {
+                let east = match me.team {
+                    0 => true,
+                    1 => false,
+                    _ => me.feet.x < 0.0,
+                };
+                Vector3::new(if east { 1.0 } else { -1.0 }, 0.0, 0.0)
             }
         };
+        let along = |p: &Vector3| p.x * toward.x + p.z * toward.z;
+        let mut points = world.lanes[lane].clone();
+        if let (Some(first), Some(last)) = (points.first(), points.last())
+            && along(last) < along(first)
+        {
+            points.reverse();
+        }
+        let ahead = |p: &Vector3| along(p) > along(&me.feet) + 3.0;
         let mut route: Vec<Vector3> = points.into_iter().filter(ahead).collect();
         if route.is_empty() {
             return route;

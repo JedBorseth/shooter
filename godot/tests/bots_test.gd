@@ -4,12 +4,16 @@ extends SceneTree
 ## ready-up, and checks that the bots bake a navigation mesh, find each other
 ## across the map, and score kills within a minute of play, and that the
 ## server keeps its tick rate. BOTS=12 runs a full 6v6; SKILL sets the skill.
-## godot --headless --path godot --script res://tests/bots_test.gd
+## With `-- --warehouse` the team match runs on Warehouse instead, whose teams
+## start north and south rather than west and east (the free-for-all part
+## stays on Slamcity).
+## godot --headless --path godot --script res://tests/bots_test.gd [-- --warehouse]
 
 const SECONDS := 60
 ## Loaded at run time: preloading needs the autoloads a test script lacks.
 const SERVER_SCENE := "res://scenes/server.tscn"
 const SLAMCITY := "res://scenes/slamcity.tscn"
+const WAREHOUSE := "res://scenes/warehouse.tscn"
 
 ## A port per process, so test runs in parallel on one machine don't meet.
 var _port := 30000 + OS.get_process_id() % 20000
@@ -22,9 +26,11 @@ func _initialize() -> void:
 
 func _run() -> void:
 	var bots := int(OS.get_environment("BOTS")) if OS.get_environment("BOTS") != "" else 6
+	var warehouse := OS.get_cmdline_user_args().has("--warehouse")
+	var map_name := "Warehouse" if warehouse else "Slamcity"
 	var server := (load(SERVER_SCENE) as PackedScene).instantiate() as NetServer
-	server.map_scene = load(SLAMCITY) as PackedScene
-	server.map_name = "Slamcity"
+	server.map_scene = load(WAREHOUSE if warehouse else SLAMCITY) as PackedScene
+	server.map_name = map_name
 	server.port = _port
 	server.query_port = -1
 	server.bots = bots
@@ -36,7 +42,7 @@ func _run() -> void:
 	for i in 5:
 		await physics_frame
 	_check(server.has_bot_navigation(), "the bots bake a navigation mesh")
-	_check(server.bot_lane_count() == 3, "Slamcity gives the bots its three lanes")
+	_check(server.bot_lane_count() == 3, "%s gives the bots its three lanes" % map_name)
 	_check(server.player_count() == bots, "%d bots join, got %d" % [bots, server.player_count()])
 	var teams := [0, 0]
 	for i in bots:
@@ -68,7 +74,8 @@ func _run() -> void:
 	_check(int(tactics.cover) >= 1, "hurt bots take cover, %d times" % tactics.cover)
 	server.queue_free()
 	await process_frame
-	await _free_for_all()
+	if not warehouse:
+		await _free_for_all()
 	_finish()
 
 

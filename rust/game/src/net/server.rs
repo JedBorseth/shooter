@@ -247,7 +247,7 @@ pub struct NetServer {
     spawn_rules: SpawnRules,
     /// Where players died recently, and when.
     recent_deaths: VecDeque<(Tick, Vec3)>,
-    /// The map's lanes for bots to follow (`BotLanes`), west to east.
+    /// The map's lanes for bots to follow (`BotLanes`), from one side to the other.
     bot_lanes: Vec<Vec<Vector3>>,
     /// Tick of the next scoreboard update.
     next_scoreboard: Tick,
@@ -3595,7 +3595,7 @@ pub(crate) fn is_loadout_primary(id: WeaponId) -> bool {
 /// facing the way players should, with an optional `team` metadata (0 or 1;
 /// none or -1 for either team).
 /// The lanes under the map's `BotLanes` node: each child is a lane, and its
-/// children are points (in map space) from the west end to the east.
+/// children are points (in map space) from one team's side to the other's.
 fn map_lanes(map: &Gd<Node>) -> Vec<Vec<Vector3>> {
     let Some(parent) = map
         .get_node_or_null("BotLanes")

@@ -12,6 +12,8 @@ extends RefCounted
 ## else lives under PhotoPass and is rebuilt on every run.
 
 const LAYOUT := "res://tools/warehouse_photo_layout.json"
+## Clip boxes fitted to each prop model by tools/build_warehouse_clip.py.
+const CLIP := "res://assets/props/warehouse_photo/clip.json"
 const PHOTO := "res://assets/props/warehouse_photo/"
 const BLOCK := preload("res://addons/cyclops_level_builder/nodes/cyclops_block.gd")
 const MATS := "res://materials/warehouse/"
@@ -30,19 +32,21 @@ const LEGACY_MOVES := {}
 static var _root: Node3D
 static var _data: Dictionary
 static var _scenes := {}
+static var _clip := {}
 static var _log: PackedStringArray
 
 
-static func build(root: Node3D, parts: Array = ["shell", "structure", "lighting", "utilities", "machines", "stock", "gameplay"]) -> String:
+static func build(root: Node3D, parts: Array = ["shell", "structure", "lighting", "utilities", "machines", "stock", "patches", "clip", "gameplay"]) -> String:
 	_root = root
 	_log = PackedStringArray()
 	_data = JSON.parse_string(FileAccess.get_file_as_string(LAYOUT))
+	_clip = JSON.parse_string(FileAccess.get_file_as_string(CLIP)) if FileAccess.file_exists(CLIP) else {}
 	_scenes = {}
 	if "shell" in parts:
 		_clear_old()
 		_build_shell()
 	var pass_node := _group(root, "PhotoPass")
-	for part in ["structure", "lighting", "utilities", "machines", "stock"]:
+	for part in ["structure", "lighting", "utilities", "machines", "stock", "patches"]:
 		if part in parts:
 			var g := _group(pass_node, part.capitalize())
 			for c in g.get_children():
@@ -54,6 +58,9 @@ static func build(root: Node3D, parts: Array = ["shell", "structure", "lighting"
 				"utilities": _build_utilities(g)
 				"machines": _build_machines(g)
 				"stock": _build_stock(g)
+				"patches": _build_patches(g)
+	if "clip" in parts:
+		_clip_dressing()
 	if "gameplay" in parts:
 		_build_gameplay()
 	_log.append("done")
@@ -149,7 +156,7 @@ static func _place(parent: Node, name: String, model: String, pos: Vector3, rot:
 	inst.position = Vector3(-c.x, -box.position.y * s.y, -c.z)
 	holder.position = pos
 	holder.rotation_degrees.y = rot
-	if collide:
+	if collide and not _add_clip(holder, inst):
 		var shape := CollisionShape3D.new()
 		var bs := BoxShape3D.new()
 		bs.size = box.size * s
@@ -158,6 +165,55 @@ static func _place(parent: Node, name: String, model: String, pos: Vector3, rot:
 		holder.add_child(shape)
 		shape.owner = _root
 	return holder
+
+
+## Gives `body` the clip boxes fitted to its model `inst` (a child of the body),
+## so it collides with what players see instead of one box around the whole
+## model. Returns false when the model has no clip boxes.
+static func _add_clip(body: Node3D, inst: Node3D) -> bool:
+	var boxes: Array = _clip.get(inst.scene_file_path, [])
+	if boxes.is_empty():
+		return false
+	var xf: Transform3D = body.global_transform.affine_inverse() * inst.global_transform
+	var scale := xf.basis.get_scale()
+	var turn := xf.basis.orthonormalized()
+	var k := 0
+	for b in boxes:
+		var lo := Vector3(b[0], b[1], b[2])
+		var hi := Vector3(b[3], b[4], b[5])
+		var shape := CollisionShape3D.new()
+		shape.name = "Clip%02d" % k
+		k += 1
+		var bs := BoxShape3D.new()
+		bs.size = (hi - lo) * scale
+		shape.shape = bs
+		shape.transform = Transform3D(turn, xf * ((lo + hi) / 2))
+		body.add_child(shape)
+		shape.owner = _root
+	return true
+
+
+## The older dressing (offices, yard, cubicles) is placed in the scene, not
+## from the layout: refit its colliders to its models too. Bodies without a
+## model of their own (the dispatch office's roof slabs, whose ceiling meshes
+## are siblings) keep the collision they were authored with.
+static func _clip_dressing() -> void:
+	var n := 0
+	for body: StaticBody3D in _root.get_node("WarehouseDressing").find_children("*", "StaticBody3D", true, true):
+		var model: Node3D = null
+		for c in body.get_children():
+			if c is Node3D and c.scene_file_path != "":
+				model = c
+				break
+		if model == null or not _clip.has(model.scene_file_path):
+			continue
+		for c in body.get_children():
+			if c is CollisionShape3D:
+				body.remove_child(c)
+				c.free()
+		_add_clip(body, model)
+		n += 1
+	_log.append("clip: refit %d dressing bodies" % n)
 
 
 static func _multimesh(parent: Node, name: String, model: String, xforms: Array) -> void:
@@ -376,15 +432,16 @@ static func _build_lighting(g: Node3D) -> void:
 		spot.distance_fade_length = 12.0
 		g.add_child(spot)
 		spot.owner = _root
-		# High-bays leak a little light upward, which is what lets the deck and joists read.
+		# High-bays spill light upward, which is what lets the deck and joists
+		# read: photo 10 shows a light grey deck washed around every fixture.
 		var up := SpotLight3D.new()
 		up.name = "Uplight%02d" % n
 		up.position = Vector3(p[0], y + 0.15, p[1])
 		up.rotation_degrees = Vector3(90, 0, 0)
 		up.light_color = spot.light_color
-		up.light_energy = 1.2
-		up.spot_range = 3.5
-		up.spot_angle = 80.0
+		up.light_energy = 2.4
+		up.spot_range = 5.0
+		up.spot_angle = 85.0
 		up.light_volumetric_fog_energy = 0.0
 		g.add_child(up)
 		up.owner = _root
@@ -517,6 +574,33 @@ static func _build_stock(g: Node3D) -> void:
 		_place(g, "%s%03d" % [String(p.model).to_pascal_case(), n], p.model, Vector3(p.x, p.y, p.z), p.rot, p.fit,
 			0.7, 1.4, p.collide)
 	_log.append("stock: %d" % n)
+
+
+## Plain floor slabs that fill gaps the Cyclops shell leaves.
+static func _build_patches(g: Node3D) -> void:
+	for p in _data.get("patches", []):
+		var body := StaticBody3D.new()
+		body.name = p[0]
+		var size := Vector3(p[2] - p[1], p[6] - p[5], p[4] - p[3])
+		body.position = Vector3((p[1] + p[2]) / 2.0, (p[5] + p[6]) / 2.0, (p[3] + p[4]) / 2.0)
+		g.add_child(body)
+		body.owner = _root
+		var mesh := MeshInstance3D.new()
+		mesh.name = "Mesh"
+		var bm := BoxMesh.new()
+		bm.size = size
+		bm.material = _mat(p[7])
+		mesh.mesh = bm
+		body.add_child(mesh)
+		mesh.owner = _root
+		var shape := CollisionShape3D.new()
+		shape.name = "Shape"
+		var bs := BoxShape3D.new()
+		bs.size = size
+		shape.shape = bs
+		body.add_child(shape)
+		shape.owner = _root
+	_log.append("patches: %d" % _data.get("patches", []).size())
 
 
 # --- gameplay ----------------------------------------------------------------
