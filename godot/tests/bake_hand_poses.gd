@@ -51,7 +51,7 @@ const KNOWN_OPEN := {
 const HAND_TUNED := {
 	"m1911 firing thumb": "(60, 10, 15), turn 70: laid over the backstrap, not up beside the slide",
 	"ak47 support seat and index":
-	"seat (0, -0.017, 0), index (27.5, 35, 25): the thumb stays below the red dot's window",
+	"seat (0, -0.017, 0), index (20, 30, 60): the hand stays below the red dot's window",
 }
 const BLOCK_START := "    // Finger poses fitted to the model"
 ## `FpArms.hand_depths`'s `finger_depths`, in order.
