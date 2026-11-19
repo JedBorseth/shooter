@@ -39,6 +39,11 @@ color_ramp = SubResource("Texture_fade")
 [sub_resource type="ShaderMaterial" id="Mat_billows"]
 shader = ExtResource("2_shader")
 shader_parameter/flipbook = ExtResource("3_cloud")
+shader_parameter/tint = Color(0.74, 0.74, 0.73, 1)
+shader_parameter/rounding = 0.7
+shader_parameter/cloud_radius = 5.0
+shader_parameter/variation = 0.7
+shader_parameter/ragged = 0.65
 
 [sub_resource type="QuadMesh" id="Mesh_billow"]
 material = SubResource("Mat_billows")

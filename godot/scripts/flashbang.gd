@@ -1,14 +1,16 @@
 extends Node3D
-## A flashbang going off: a white burst that blooms for a tenth of a second,
-## a spray of white sparks, a hard flash of light, and a small white puff of
-## smoke from Unity Labs' CC0 Cloud flipbook (`shaders/smoke_screen.gdshader`)
-## that churns and drifts for a couple of seconds. Pooled and placed by
+## A flashbang going off: a white-hot, star-shaped burst for less than a
+## tenth of a second (a frame of the Blender-rendered muzzle flash atlas,
+## `assets/textures/effects/muzzle_flash_4x4.png`, picked at random), a spray
+## of thin white sparks, a hard flash of light, and a small grey puff of
+## smoke from Unity Labs' CC0 Cloud flipbook (`shaders/smoke_screen.gdshader`,
+## shaded as one round puff) that churns and drifts for a couple of seconds. Pooled and placed by
 ## `CombatEffects.flash_pop` (`rust/game/src/effects.rs`); the bang plays from
 ## whoever calls it. What it does to eyes and ears is the player's
 ## (`FpsPlayer`, `flash_overlay.gd`).
 
 ## Seconds the burst and the light take to fade, and their peaks.
-const BURST_TIME := 0.12
+const BURST_TIME := 0.08
 const LIGHT_TIME := 0.15
 const LIGHT_ENERGY := 14.0
 ## Sparks per preset (Low, Medium, High).
@@ -34,6 +36,9 @@ func _ready() -> void:
 func setup(ground_y := -1000.0) -> void:
 	_sparks.amount_ratio = float(SPARKS[_quality()]) / float(_sparks.amount)
 	_puff.set_instance_shader_parameter(&"ground_y", ground_y)
+	_puff.set_instance_shader_parameter(&"centre", global_position + Vector3.UP * 0.5)
+	# One of the atlas's four flashes seen head on (its top row).
+	_burst_material.uv1_offset = Vector3(0.25 * (randi() % 4), 0.0, 0.0)
 	for emitter: GPUParticles3D in [_sparks, _puff]:
 		emitter.restart()
 		emitter.emitting = true
@@ -63,8 +68,8 @@ func _fade() -> void:
 	var burst := 1.0 - _age / BURST_TIME
 	_burst.visible = burst > 0.0
 	if _burst.visible:
-		_burst_material.albedo_color = Color(4, 4, 4) * burst
-		_burst.scale = Vector3.ONE * (0.7 + 0.5 * (1.0 - burst))
+		_burst_material.albedo_color = Color(6, 6, 6) * burst
+		_burst.scale = Vector3.ONE * (0.8 + 0.4 * (1.0 - burst))
 	var light := 1.0 - _age / LIGHT_TIME
 	_light.visible = light > 0.0
 	_light.light_energy = LIGHT_ENERGY * light * light

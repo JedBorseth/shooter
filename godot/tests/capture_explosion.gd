@@ -1,8 +1,10 @@
 extends SceneTree
-## Captures an explosion (`CombatEffects.explosion`, a frag's size) as a frame
-## strip in three lights: the Testing Area in the sun (10 m off, and 5 m off
-## looking down at the chips and the scorch), inside its culvert in shade,
-## and the Zombies arena at night. Needs a GPU and a display (or Xvfb),
+## Captures an explosion (`CombatEffects.explosion`, a frag's size), a smoke
+## grenade's cloud (`CombatEffects.smoke`), or a flashbang's pop
+## (`CombatEffects.flash_pop`) as a frame strip in three lights: the
+## Testing Area in the sun (10 m off, and 5 m off looking down at the chips
+## and the scorch), inside its culvert in shade, and the Zombies arena at
+## night. Needs a GPU and a display (or Xvfb),
 ## and --fixed-fps 60 so the strip's moments are true time:
 ##   CAPTURE_DIR=/path/to/out CAPTURE_PRESET=medium godot --path godot \
 ##     --resolution 1600x900 --audio-driver Dummy --fixed-fps 60 \
@@ -12,10 +14,16 @@ extends SceneTree
 ##   CAPTURE_DIR     output directory (required).
 ##   CAPTURE_PRESET  low, medium, or high (default medium).
 ##   CAPTURE_ONLY    comma list of lights: sun, close, shade, night (default: all).
+##   CAPTURE_EFFECT  explosion (default), smoke, or flash.
 
 const Benchmark := preload("res://tests/benchmark.gd")
-## Sixtieths of a second after the blast for each frame of the strip.
-const MOMENTS := [2, 5, 9, 15, 24, 40, 70, 120, 200, 320, 600]
+## Per effect, sixtieths of a second after it starts for each frame of the
+## strip.
+const MOMENTS := {
+	"explosion": [2, 5, 9, 15, 24, 40, 70, 120, 200, 320, 600],
+	"smoke": [20, 60, 150, 300, 600, 900],
+	"flash": [1, 3, 6, 10, 20, 40, 90],
+}
 ## Per light: the map, the player's feet, yaw, pitch, and where the blast goes
 ## off (on the ground about 10 m ahead).
 const LIGHTS := {
@@ -28,6 +36,7 @@ const LIGHTS := {
 
 var _out := OS.get_environment("CAPTURE_DIR")
 var _only := OS.get_environment("CAPTURE_ONLY")
+var _effect := OS.get_environment("CAPTURE_EFFECT")
 var _player: FpsPlayer
 var _settings: Node
 
@@ -48,6 +57,8 @@ func _run() -> void:
 	_settings = root.get_node("Settings")
 	_settings.path = "user://capture_explosion_settings.cfg"
 	_settings.set_graphics_preset(Benchmark.PRESET_KEYS[preset])
+	if not MOMENTS.has(_effect):
+		_effect = "explosion"
 	for light: String in LIGHTS:
 		if not _only.is_empty() and not light in _only.split(","):
 			continue
@@ -58,12 +69,19 @@ func _run() -> void:
 		if effects == null:
 			push_error("No combat effects in %s." % spec[0])
 		else:
-			effects.explosion(spec[4], Vector3.UP, 1.0)
+			match _effect:
+				"smoke":
+					effects.smoke(spec[4], 0.0)
+				"flash":
+					effects.flash_pop(spec[4] + Vector3.UP * 0.1)
+				_:
+					effects.explosion(spec[4], Vector3.UP, 1.0)
 			var shown := 0
-			for moment: int in MOMENTS:
+			for moment: int in MOMENTS[_effect]:
 				await _hold(spec[1], spec[2], spec[3], moment - shown)
 				shown = moment
-				await _shot("%s_%s_%03d" % [preset, light, moment])
+				var prefix := "" if _effect == "explosion" else _effect + "_"
+				await _shot("%s%s_%s_%03d" % [prefix, preset, light, moment])
 		_unload()
 		await process_frame
 	_settings.reset_to_defaults()

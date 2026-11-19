@@ -1,8 +1,11 @@
 extends Node3D
 ## A smoke grenade's cloud: billows that pour out over two seconds, hang for
 ## the cloud's life churning slowly, and thin away, played from Unity Labs'
-## CC0 Cloud flipbooks (`shaders/smoke_screen.gdshader`) and lit by the scene,
-## with a grey fog over the screen while the camera is inside. Pooled and
+## CC0 Cloud flipbooks (`shaders/smoke_screen.gdshader`) and lit by the scene
+## as one round bank (the side toward the sun bright, the far side and
+## underside in shade), each billow its own shade and thickness and the rim
+## broken into wisps, with a grey fog over the screen while the camera is
+## inside. Pooled and
 ## placed by `CombatEffects.smoke` (`rust/game/src/effects.rs`).
 ##
 ## The rules (radius over time, what it hides) are `shooter_sim::equipment`
@@ -60,6 +63,8 @@ func start(age := 0.0, ground_y := -1000.0) -> int:
 	var material := _billows.draw_pass_1.surface_get_material(0) as ShaderMaterial
 	material.set_shader_parameter(&"size_scale", BILLOW_SIZE[quality] / 2.7)
 	_billows.set_instance_shader_parameter(&"ground_y", ground_y)
+	# Lit as one round bank about its middle, ragged toward its rim.
+	_billows.set_instance_shader_parameter(&"centre", global_position + Vector3.UP * HEIGHT)
 	_billows.transparency = 0.0
 	# Run the billows forward to where they are now.
 	_billows.preprocess = age

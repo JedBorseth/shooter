@@ -1,9 +1,11 @@
 extends Node3D
 ## A steel plate hung on chains from a target frame (the Testing Area's
 ## impact area): it swings back when a round strikes it and swings to rest.
-## Visual only, and only on clients: the round's sparks, sound, and collision
-## are the world's (the frame's collision box in scenes/main.tscn is
-## `MapMetal`, so its impacts spark as steel).
+## Visual only, and only on clients: the round's sound and collision are the
+## world's (the frame's collision box in scenes/main.tscn is `MapMetal`, so
+## its impacts also spark as steel). On top of that, a hit on the face throws
+## a bright splash of fragments out across it (`scenes/effects/steel_splash.tscn`),
+## as a round breaking up on hard steel does.
 ##
 ## `CombatEffects` tells the `struck` group about every impact
 ## (`struck(position, normal)`); each plate checks whether the round hit its
@@ -12,6 +14,7 @@ extends Node3D
 ## it does no work at all.
 
 const GROUP := &"struck"
+const SPLASH := preload("res://scenes/effects/steel_splash.tscn")
 ## Gravity over the chain's length to the plate's centre, as a pendulum
 ## (rad/s²): about one swing a second, as a plate on short chains.
 const STIFFNESS := 38.0
@@ -33,6 +36,8 @@ const REST := 0.002
 var _angle := 0.0
 var _speed := 0.0
 var _model: Node3D
+## The plate's splash, made on its first hit.
+var _splash: GPUParticles3D
 
 
 func _ready() -> void:
@@ -57,6 +62,19 @@ func struck(position: Vector3, normal: Vector3) -> void:
 	var lever := clampf((-local.y) / (centre_drop + radius), 0.4, 1.2)
 	_speed += push * KICK * lever
 	set_process(true)
+	_splash_at(position, normal)
+
+
+## Fragments thrown out across the face from where the round struck.
+func _splash_at(position: Vector3, normal: Vector3) -> void:
+	if _splash == null:
+		_splash = SPLASH.instantiate() as GPUParticles3D
+		add_child(_splash)
+	var up := normal.normalized() if normal.length_squared() > 0.0 else global_basis.z
+	var reference := Vector3.UP if absf(up.dot(Vector3.UP)) < 0.99 else Vector3.FORWARD
+	var x := reference.cross(up).normalized()
+	_splash.global_transform = Transform3D(Basis(x, up, x.cross(up)), position + up * 0.01)
+	_splash.restart()
 
 
 func _process(delta: float) -> void:
