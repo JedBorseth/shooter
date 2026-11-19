@@ -28,7 +28,10 @@ and excludes three obstructed points. Rebuild `data/nuketown_spawns.json` with
 after changing map collision. Its six outermost ground-level points at either end of the X axis form the opposing starting
 lineups; the remaining points are neutral respawn candidates, including the
 upstairs points. Preparation happens before the dedicated server reads the map
-and is safe to call repeatedly. Both maps appear in the local TDM setup menu.
+and is safe to call repeatedly. Warehouse authors its markers in the scene: six
+starts per team at the sketch's parking-lot and loading-apron spawns, and 26
+neutral aisle points facing the middle of the hall. All three maps appear in the
+local TDM setup menu.
 
 The sightline test checks geometry, regardless of which way an enemy is facing.
 Safety is evaluated at the respawn tick; it cannot guarantee safety against an
@@ -36,7 +39,8 @@ enemy moving into view afterward. Offline exploration still respawns at its
 original player start; dynamic selection belongs to server-run TDM.
 
 Regression coverage is in `rust/sim/src/tdm.rs` (selection and flips),
-`godot/tests/nuketown_test.gd` (server preparation, floor and body clearance),
+`godot/tests/nuketown_test.gd` and `godot/tests/warehouse_test.gd` (server
+preparation, floor and body clearance),
 and `godot/tests/title_screen_test.gd` (menu selection).
 
 Small vertical edges are handled in the shared body controller: a blocked grounded

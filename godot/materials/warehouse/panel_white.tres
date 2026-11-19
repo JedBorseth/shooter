@@ -1,0 +1,19 @@
+[gd_resource type="ShaderMaterial" format=3]
+
+[ext_resource type="Shader" path="res://shaders/warehouse_tiltup.gdshader" id="1"]
+[ext_resource type="Texture2D" path="res://assets/textures/concrete_smooth/albedo.jpg" id="2"]
+[ext_resource type="Texture2D" path="res://assets/textures/concrete_smooth/normal.jpg" id="3"]
+[ext_resource type="Texture2D" path="res://assets/textures/warehouse/wall_masks.png" id="4"]
+
+[resource]
+resource_name = "White insulated panel"
+shader = ExtResource("1")
+shader_parameter/detail_albedo = ExtResource("2")
+shader_parameter/detail_normal = ExtResource("3")
+shader_parameter/masks = ExtResource("4")
+shader_parameter/tint = Color(0.82, 0.83, 0.82, 1)
+shader_parameter/detail_size = 12.0
+shader_parameter/panel_width = 1.0
+shader_parameter/joint_width = 0.006
+shader_parameter/insert_size = Vector2(0, 0)
+shader_parameter/rough = 0.6

@@ -18,7 +18,12 @@ signal start_requested(options: Dictionary)
 
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const ChipRow := preload("res://scripts/ui/chip_row.gd")
-const MAPS := [["Slamcity", "slamcity"], ["Nuketown", "nuketown"], ["Testing Arena", "arena"]]
+const MAPS := [
+	["Slamcity", "slamcity"],
+	["Nuketown", "nuketown"],
+	["Warehouse", "warehouse"],
+	["Testing Arena", "arena"],
+]
 ## Search and Destroy needs a map with attacking and defending sides.
 const SND_MAPS := [["Slamcity", "slamcity"]]
 const ROUNDS_TO_WIN := [4, 6, 8]
@@ -38,6 +43,7 @@ const FFA_SCORE_LIMITS := [10, 20, 30, 50]
 const MAP_PICTURES := {
 	"slamcity": "res://assets/ui/maps/slamcity.jpg",
 	"nuketown": "res://assets/ui/maps/nuketown.jpg",
+	"warehouse": "res://assets/ui/maps/warehouse.jpg",
 	"arena": "res://assets/ui/maps/arena.jpg",
 }
 const MODE_NAMES := {
