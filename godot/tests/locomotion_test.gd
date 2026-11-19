@@ -7,7 +7,8 @@ extends SceneTree
 ## step, each foot rests on the ground under it. A weapon switch lowers the old
 ## weapon before the new one comes up. A reload takes the magazine out of the
 ## gun with the support hand and seats it again; an empty one drops the old
-## magazine, which falls and lies on the ground. Exits non-zero on failure.
+## magazine, which falls and lies on the ground. An extended magazine shows
+## on the gun. Exits non-zero on failure.
 ## Run from the repo root:
 ##   godot --headless --path godot --fixed-fps 120 --script res://tests/locomotion_test.gd
 
@@ -29,6 +30,7 @@ func _run() -> void:
 	await _switch()
 	await _magazine()
 	await _dropped_magazines()
+	await _extended_magazine()
 	_finish()
 
 
@@ -248,6 +250,36 @@ func _magazine() -> void:
 		await process_frame
 		_check(world.visible and not body.visible, "%s: one mesh again after it" % weapon)
 		rig.queue_free()
+
+
+## An extended magazine shows in third person: the gun draws its own
+## magazine, longer than the plain one, held and through a reload.
+func _extended_magazine() -> void:
+	var rig := SOLDIER.instantiate() as SoldierRig
+	root.add_child(rig)
+	for i in 30:
+		rig.drive({"weapon": "m4+extmag"}, DT)
+		await process_frame
+	var mesh := rig.weapon_node().get_node("Model/Mesh") as Node3D
+	var world := mesh.get_node("World") as Node3D
+	var body := mesh.get_node("WorldBody") as Node3D
+	var magazine := mesh.get_node("WorldMagazine") as Node3D
+	_check(
+		body.visible and magazine.visible and not world.visible,
+		"m4+extmag: its own magazine shows with the gun"
+	)
+	_check(magazine.scale.y > 1.3, "m4+extmag: the magazine is longer (%.2f)" % magazine.scale.y)
+	var rest := magazine.position
+	for i in 100:
+		rig.drive({"weapon": "m4+extmag", "reload": i / 100.0}, DT)
+		await process_frame
+	rig.drive({"weapon": "m4+extmag"}, DT)
+	await process_frame
+	_check(
+		body.visible and magazine.visible and magazine.position.distance_to(rest) < 0.001,
+		"m4+extmag: the magazine is back in the gun after a reload"
+	)
+	rig.queue_free()
 
 
 ## An empty reload drops the old magazine to the ground, where it lies on its

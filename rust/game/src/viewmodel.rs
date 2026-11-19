@@ -528,6 +528,9 @@ pub struct WeaponView {
     /// `World` now.
     world_magazine: Option<Part>,
     world_split: bool,
+    /// An extended magazine is fitted: third person shows `WorldBody` and a
+    /// stretched `WorldMagazine` all the time instead of `World`.
+    extended_magazine: bool,
 
     flash_time: f32,
     flash_count: u32,
@@ -1345,7 +1348,12 @@ impl WeaponView {
     fn lengthen_magazine(&mut self, extended: bool) {
         let stretch = if extended { EXTENDED_MAGAZINE } else { 1.0 };
         let mut changed = false;
-        for name in ["Model/Mesh/Magazine", "Model/Mesh/FreshMagazine"] {
+        self.extended_magazine = extended;
+        for name in [
+            "Model/Mesh/Magazine",
+            "Model/Mesh/FreshMagazine",
+            "Model/Mesh/WorldMagazine",
+        ] {
             let Some(mut mag) = self.base().try_get_node_as::<Node3D>(name) else {
                 continue;
             };
@@ -1365,6 +1373,11 @@ impl WeaponView {
         }
         if changed && self.parts.is_some() {
             self.find_parts();
+        }
+        if self.world_model {
+            // Found again at its new length, and shown (or not) for it.
+            self.world_magazine = None;
+            self.pose_world_magazine(None);
         }
     }
 
@@ -1441,7 +1454,9 @@ impl WeaponView {
         if !self.world_model {
             return;
         }
-        let split = !matches!(pose, None | Some(MagazinePose::Seated));
+        // An extended magazine is longer than the one `World` carries, so a
+        // gun with one always draws its own (two draw calls instead of one).
+        let split = self.extended_magazine || !matches!(pose, None | Some(MagazinePose::Seated));
         if split && self.world_magazine.is_none() {
             let view = self.to_gd().upcast::<Node3D>();
             self.world_magazine = Part::find(&view, "WorldMagazine");
@@ -1461,6 +1476,10 @@ impl WeaponView {
             Some(MagazinePose::At(offset)) => {
                 magazine.node.set_visible(true);
                 magazine.pose_about(to_godot(offset), Vector3::RIGHT, 0.0, Vector3::ZERO);
+            }
+            None | Some(MagazinePose::Seated) if self.extended_magazine => {
+                magazine.node.set_visible(true);
+                magazine.pose_about(Vector3::ZERO, Vector3::RIGHT, 0.0, Vector3::ZERO);
             }
             _ => magazine.node.set_visible(false),
         }
@@ -1515,11 +1534,13 @@ impl WeaponView {
     /// gunshot layers.
     fn ready_world(&mut self) {
         self.show_world_parts(true);
-        if let Some(mut world) = self
-            .base()
-            .try_get_node_as::<GeometryInstance3D>("Model/Mesh/World")
-        {
-            world.set_lod_bias(WORLD_LOD_BIAS);
+        for name in ["World", "WorldBody", "WorldMagazine"] {
+            if let Some(mut world) = self
+                .base()
+                .try_get_node_as::<GeometryInstance3D>(&format!("Model/Mesh/{name}"))
+            {
+                world.set_lod_bias(WORLD_LOD_BIAS);
+            }
         }
         // A boost of 1 keeps the shared materials, so racks and other
         // players' copies of a gun draw with one material, not one each.
