@@ -308,7 +308,9 @@ pub struct SoldierRig {
 
     frame: SoldierFrame,
     lower_yaw: f32,
-    walking_backward: bool,
+    /// The travel's direction the loops blend (radians from the aim,
+    /// positive right; `gait::direction`), eased round.
+    direction: f32,
     crouch: f32,
     slide: f32,
     air: f32,
@@ -734,15 +736,22 @@ impl SoldierRig {
         let moving = speed > gait::MOVING_SPEED && frame.alive;
         let forward = -flat.z;
         let right = flat.x;
+        // Every direction has its own loops (`gait::DIRECTIONS`); only a
+        // sprint turns its hips toward a sideways drift.
         let mut leg_turn = 0.0;
         if moving && frame.stance != Stance::Sliding {
-            self.walking_backward =
-                gait::backward(right, forward, frame.sprinting, self.walking_backward);
-            leg_turn = gait::leg_turn(right, forward, self.walking_backward);
-        } else if !moving {
-            self.walking_backward = false;
+            let target = gait::direction(right, forward, frame.sprinting);
+            self.direction = wrap_angle(
+                self.direction + wrap_angle(target - self.direction) * smoothing(12.0, dt),
+            );
+            if frame.sprinting {
+                leg_turn = gait::leg_turn(right, forward);
+            }
+        } else if self.step > 0.0 {
+            // Stepping round on the spot is the forward walk.
+            self.direction = 0.0;
         }
-        // Positive turns the hips left; moving right turns them right.
+        // Positive turns the hips left; drifting right turns them right.
         self.lower_yaw += (-leg_turn - self.lower_yaw) * smoothing(10.0, dt);
 
         // Turning in place: the legs stay on the feet until they step round,
@@ -865,7 +874,7 @@ impl SoldierRig {
             .step_toward(lean_target, MOTION_LEAN_STIFFNESS, MOTION_LEAN_DAMPING, dt);
 
         let stand_position = if moving {
-            gait::stand_position(speed, frame.sprinting)
+            gait::stand_position(speed, frame.sprinting, self.direction)
         } else {
             0.0
         };
@@ -880,7 +889,6 @@ impl SoldierRig {
                     frame.stance,
                     frame.sprinting,
                     frame.on_floor,
-                    self.walking_backward,
                 )
             } else {
                 0.0
@@ -973,10 +981,24 @@ impl SoldierRig {
                 } else {
                     (stand_position, gait::walk_share(stand_position))
                 };
+                // The travel's direction picks the loops; each direction
+                // blends its own by speed.
                 set(
                     tree,
                     "stand_loops/blend_position",
-                    stand_position.to_variant(),
+                    self.direction.to_variant(),
+                );
+                for (_, name, _) in DIRECTION_POINTS {
+                    set(
+                        tree,
+                        &format!("stand_loops/{name}/blend_position"),
+                        stand_position.to_variant(),
+                    );
+                }
+                set(
+                    tree,
+                    "crouch_loop/blend_position",
+                    self.direction.to_variant(),
                 );
                 set(tree, "stand_seek/seek_request", self.stride.to_variant());
                 set(tree, "stand/blend_amount", walk.to_variant());
@@ -1684,6 +1706,7 @@ impl SoldierRig {
         for (name, path) in [
             ("ual1", "res://assets/characters/animations/ual1.glb"),
             ("ual2", "res://assets/characters/animations/ual2.glb"),
+            ("gait", "res://assets/characters/animations/gait.glb"),
         ] {
             match try_load::<AnimationLibrary>(path) {
                 Ok(lib) => {
@@ -1713,23 +1736,54 @@ impl SoldierRig {
         // A loop on the shared stride phase: its timeline stretched to one
         // second and started where its left foot is furthest forward, so a
         // seek to the phase lands every loop on the same moment of a stride.
-        let stride_clip = |l: &gait::Loop| {
-            let mut a = clip(l.clip);
+        let stride_clip = |l: &gait::Loop, index: usize| {
+            let (name, offset) = directed_clip(l, index);
+            let mut a = clip(&name);
             a.set_use_custom_timeline(true);
             a.set_timeline_length(1.0);
             a.set_stretch_time_scale(true);
-            a.set_start_offset(f64::from(l.offset * l.seconds));
+            a.set_start_offset(f64::from(offset * l.seconds));
             a.set_loop_mode(godot::classes::animation::LoopMode::LINEAR);
             a
         };
+        // The standing loops: by the travel's direction (the eight authored
+        // directions, backward at both ends), and in each by speed. Only
+        // forward has the sprint.
         let mut loops = AnimationNodeBlendSpace1D::new_gd();
-        loops.set_min_space(0.0);
-        loops.set_max_space(gait::SPRINT_SPEED);
-        for l in &gait::STAND_LOOPS {
-            let point = l.clip.rsplit('/').next().unwrap_or(l.clip);
+        loops.set_min_space(-PI);
+        loops.set_max_space(PI);
+        let mut crouch_loops = AnimationNodeBlendSpace1D::new_gd();
+        crouch_loops.set_min_space(-PI);
+        crouch_loops.set_max_space(PI);
+        for (index, name, at) in DIRECTION_POINTS {
+            let mut speeds = AnimationNodeBlendSpace1D::new_gd();
+            speeds.set_min_space(0.0);
+            speeds.set_max_space(gait::SPRINT_SPEED);
+            let count = if index == 0 {
+                gait::STAND_LOOPS.len()
+            } else {
+                gait::DIRECTION_LOOPS
+            };
+            for l in &gait::STAND_LOOPS[..count] {
+                let point = l.clip.rsplit('/').next().unwrap_or(l.clip);
+                speeds
+                    .add_blend_point_ex(
+                        &stride_clip(l, index).upcast::<AnimationRootNode>(),
+                        l.position,
+                    )
+                    .name(point)
+                    .done();
+            }
             loops
-                .add_blend_point_ex(&stride_clip(l).upcast::<AnimationRootNode>(), l.position)
-                .name(point)
+                .add_blend_point_ex(&speeds.upcast::<AnimationRootNode>(), at)
+                .name(name)
+                .done();
+            crouch_loops
+                .add_blend_point_ex(
+                    &stride_clip(&gait::CROUCH_LOOP, index).upcast::<AnimationRootNode>(),
+                    at,
+                )
+                .name(name)
                 .done();
         }
         add("stand_idle", clip("ual1/Idle").upcast(), 0.0);
@@ -1737,7 +1791,7 @@ impl SoldierRig {
         add("stand_seek", AnimationNodeTimeSeek::new_gd().upcast(), 1.0);
         add("stand", AnimationNodeBlend2::new_gd().upcast(), 1.5);
         add("crouch_idle", clip("ual1/Crouch_Idle").upcast(), 0.0);
-        add("crouch_loop", stride_clip(&gait::CROUCH_LOOP).upcast(), 0.0);
+        add("crouch_loop", crouch_loops.upcast(), 0.0);
         add("crouch_seek", AnimationNodeTimeSeek::new_gd().upcast(), 1.0);
         add("crouch", AnimationNodeBlend2::new_gd().upcast(), 1.5);
         add("stance", AnimationNodeBlend2::new_gd().upcast(), 2.0);
@@ -1846,6 +1900,37 @@ impl SoldierRig {
         tree.set_active(true);
         tree
     }
+}
+
+/// The direction blends' points: the index into `gait::DIRECTIONS`, the
+/// point's name, and where it sits (radians from the aim, positive right).
+/// Backward sits at both ends.
+const DIRECTION_POINTS: [(usize, &str, f32); 9] = [
+    (4, "B_left", -PI),
+    (5, "BL", -0.75 * PI),
+    (6, "L", -0.5 * PI),
+    (7, "FL", -0.25 * PI),
+    (0, "Fwd", 0.0),
+    (1, "FR", 0.25 * PI),
+    (2, "R", 0.5 * PI),
+    (3, "BR", 0.75 * PI),
+    (4, "B", PI),
+];
+
+/// The clip of loop `l` as authored in direction `index`
+/// (`gait::DIRECTIONS`) and its offset: forward is the source library's own;
+/// the others are `gait/<Loop>_<Dir>` (`tools/build_gait_animations.py`),
+/// with stride phase 0 at their start.
+fn directed_clip(l: &gait::Loop, index: usize) -> (String, f32) {
+    if index == 0 {
+        return (l.clip.to_string(), l.offset);
+    }
+    let base = match l.clip {
+        "ual1/Walk" => "Walk",
+        "ual1/Jog_Fwd" => "Jog",
+        _ => "Crouch",
+    };
+    (format!("gait/{base}_{}", gait::DIRECTIONS[index]), 0.0)
 }
 
 /// Force level for a hit with nothing more known (a rifle round).

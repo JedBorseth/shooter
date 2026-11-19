@@ -14,6 +14,9 @@ const DT := 1.0 / 120.0
 ## the progress).
 const RELOAD_MOMENTS := [0.0, 0.12, 0.25, 0.37, 0.5, 0.62, 0.75, 0.9]
 const HOLD_WEAPONS := ["m4", "lsw6", "m1911", "m870"]
+## Moments through about one stride of a run, and of a walk.
+const GAIT_MOMENTS := [0.0, 0.07, 0.14, 0.21, 0.28, 0.35, 0.42, 0.49]
+const GAIT_SLOW_MOMENTS := [0.0, 0.12, 0.24, 0.36, 0.48, 0.6, 0.72, 0.84]
 
 var _out := OS.get_environment("CAPTURE_DIR")
 var _sets := OS.get_environment("CAPTURE_SETS")
@@ -78,8 +81,35 @@ func _moves() -> Dictionary:
 		"ladder":
 		[1.6, [0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.6], _ladder.bind(Vector3(-1.9, 0.9, -1.9))],
 		"ladder_back":
+		# Directional gait, on the spot (the stride runs, the body stays), at
+		# the speeds players move: strafes 4 m/s, backpedals 3.5, and an
 		[1.6, [0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.6], _ladder.bind(Vector3(-2.6, 1.6, 0.6))],
+		# aimed walk and a crouched walk.
+		"gait_strafe_right": [0.6, GAIT_MOMENTS, _gait.bind(90.0, 4.0, {})],
+		"gait_strafe_left": [0.6, GAIT_MOMENTS, _gait.bind(-90.0, 4.0, {})],
+		"gait_back": [0.6, GAIT_MOMENTS, _gait.bind(180.0, 3.5, {})],
+		"gait_back_right": [0.6, GAIT_MOMENTS, _gait.bind(135.0, 3.5, {})],
+		"gait_forward_left": [0.6, GAIT_MOMENTS, _gait.bind(-45.0, 4.5, {})],
+		"gait_aimed_walk_right": [1.0, GAIT_SLOW_MOMENTS, _gait.bind(90.0, 1.6, {"ads": 1.0})],
+		"gait_crouch_left":
+		[1.0, GAIT_SLOW_MOMENTS, _gait.bind(-90.0, 1.8, {"stance": "crouching"})],
+		"gait_crouch_back":
+		[1.0, GAIT_SLOW_MOMENTS, _gait.bind(180.0, 1.8, {"stance": "crouching"})],
 	}
+
+
+## Moving toward `degrees` from the aim (positive right) at `speed` on the
+## spot, seen from in front and to the right at knee height.
+func _gait(_t: float, degrees: float, speed: float, extra: Dictionary) -> Dictionary:
+	var a := deg_to_rad(degrees)
+	var state := {
+		"weapon": "m4",
+		"feet": Vector3.ZERO,
+		"velocity": Vector3(sin(a), 0, -cos(a)) * speed,
+		"gait": true,
+	}
+	state.merge(extra)
+	return state
 
 
 ## Climbing the Testing Area tower's ladder at 2 m/s from 0.4 m up (it is
@@ -191,6 +221,9 @@ func _strip(scene: Node, move: String, spec: Array) -> void:
 	# both show; moves from the side.
 	if state_at.call(0.0).has("camera"):
 		pass
+	elif state_at.call(0.0).get("gait", false):
+		_camera.global_position = SPOT + Vector3(2.4, 1.1, -2.9)
+		_camera.look_at(SPOT + Vector3(0, 0.75, 0))
 	elif state_at.call(0.0).get("side", false):
 		_camera.global_position = SPOT + Vector3(5.5, 1.2, 0.0)
 		_camera.look_at(SPOT + Vector3(0, 0.8, 0.0))

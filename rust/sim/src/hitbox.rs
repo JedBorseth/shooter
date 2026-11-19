@@ -284,31 +284,50 @@ fn base_pose(pose: &HitboxPose, speed: f32) -> BasePose {
 }
 
 /// The pose on the ground: the idle blended into the loops by speed, each loop
-/// at the snapshot's stride phase.
+/// at the snapshot's stride phase in the two measured directions around the
+/// travel (`gait::POSE_DIRECTIONS`).
 fn ground_pose(pose: &HitboxPose, speed: f32) -> BasePose {
     let activity = &pose.activity;
     let stride = activity.progress.stride;
     let moving = speed > gait::MOVING_SPEED;
+    let (right, forward) = gait::local_velocity(activity.velocity, pose.yaw);
+    let direction = gait::direction(right, forward, activity.sprinting);
+    let (dir_a, dir_b, dir_t) = gait::pose_direction_samples(direction);
     let crouched = || {
         if moving {
-            cycle(&poses::CROUCH_WALK, stride)
+            let walk = |d: usize| match d {
+                0 => cycle(&poses::CROUCH_WALK, stride),
+                d => cycle(&poses::DIRECTION_CROUCH_WALKS[d - 1], stride),
+            };
+            walk(dir_a).lerp(&walk(dir_b), dir_t)
         } else {
             poses::CROUCH
         }
     };
+    // The standing loops in measured direction `d` at blend position `at`.
+    let loops = |d: usize, at: f32| match d {
+        0 => {
+            let (a, b, t) = gait::stride_samples(at);
+            cycle(&poses::STAND_STRIDES[a], stride)
+                .lerp(&cycle(&poses::STAND_STRIDES[b], stride), t)
+        }
+        d => {
+            let table = &poses::DIRECTION_STRIDES[d - 1];
+            let (a, b, t) = gait::direction_stride_samples(at);
+            cycle(&table[a], stride).lerp(&cycle(&table[b], stride), t)
+        }
+    };
     let standing = || {
         if moving {
-            let at = gait::stand_position(speed, activity.sprinting);
-            let (a, b, t) = gait::stride_samples(at);
-            let loops = cycle(&poses::STAND_STRIDES[a], stride)
-                .lerp(&cycle(&poses::STAND_STRIDES[b], stride), t);
-            poses::STAND.lerp(&loops, gait::walk_share(at))
+            let at = gait::stand_position(speed, activity.sprinting, direction);
+            let blend = loops(dir_a, at).lerp(&loops(dir_b, at), dir_t);
+            poses::STAND.lerp(&blend, gait::walk_share(at))
         } else if activity.progress.step > 0.0 {
-            // Stepping round on the spot: the walk loop at the stride.
-            let (a, b, t) = gait::stride_samples(gait::WALK_SPEED);
-            let walk = cycle(&poses::STAND_STRIDES[a], stride)
-                .lerp(&cycle(&poses::STAND_STRIDES[b], stride), t);
-            poses::STAND.lerp(&walk, activity.progress.step * gait::TURN_STEP_WEIGHT)
+            // Stepping round on the spot: the forward walk at the stride.
+            poses::STAND.lerp(
+                &loops(0, gait::WALK_SPEED),
+                activity.progress.step * gait::TURN_STEP_WEIGHT,
+            )
         } else {
             poses::STAND
         }
@@ -390,15 +409,17 @@ pub fn hitboxes(pose: &HitboxPose) -> [Hitbox; COUNT] {
     let mut head = base.head;
     let mut legs = base.legs;
 
-    // Moving, the hips turn toward the movement and the spine turns back
-    // toward the aim, so a strafe runs the forward loop sideways. Standing
-    // still, the hips stay on the planted feet as the aim turns
-    // (`Progress::turn`), and the spine turns the rest.
-    // A strafe turns the hips about themselves; a body turning in place
-    // turns about the feet, which stay planted.
-    let (lower_yaw, pivot) = if speed > gait::MOVING_SPEED && pose.stance != Stance::Sliding {
-        let backward = gait::backward(right, forward, activity.sprinting, false);
-        (-gait::leg_turn(right, forward, backward), hips)
+    // A sprint's hips turn toward its sideways drift and the spine turns back
+    // toward the aim (every other gait has a loop for its direction).
+    // Standing still, the hips stay on the planted feet as the aim turns
+    // (`Progress::turn`), and the spine turns the rest. A sprint turns the
+    // hips about themselves; a body turning in place turns about the feet,
+    // which stay planted.
+    let moving = speed > gait::MOVING_SPEED && pose.stance != Stance::Sliding;
+    let (lower_yaw, pivot) = if moving && activity.sprinting {
+        (-gait::leg_turn(right, forward), hips)
+    } else if moving {
+        (0.0, hips)
     } else {
         (-activity.progress.turn, Vec3::ZERO)
     };
@@ -924,28 +945,51 @@ mod tests {
     }
 
     #[test]
-    fn running_leans_in_and_strafing_turns_the_legs() {
+    fn running_leans_in_and_each_direction_has_its_own_gait() {
         let stand = with(Activity::default());
         let run = with(Activity {
             velocity: Vec3::new(0.0, 0.0, -3.5),
             ..Activity::default()
         });
         assert!(run[0].a.z < stand[0].a.z - 0.05, "the head leads a run");
-        // Strafing right: the hips and legs turn right, the chest stays on the aim.
+        // The line across the hips, and where the left ankle is from the
+        // right one, at stride phase 0 (the left foot just planted, furthest
+        // along the travel).
+        let hips = |b: &[Hitbox; COUNT]| (b[12].a - b[12].b).normalize();
+        let feet = |b: &[Hitbox; COUNT]| b[9].b - b[11].b;
+        assert!(feet(&run).z < -0.3, "running, the left foot is in front");
+        // Strafing right: the strafe loop. The hips open a little toward the
+        // travel (not the old forward run turned 75°), the chest stays on
+        // the aim, and the left foot crosses over to the right.
         let strafe = with(Activity {
             velocity: Vec3::new(3.0, 0.0, 0.0),
             ..Activity::default()
         });
-        let knees = |b: &[Hitbox; COUNT]| (b[9].a - b[11].a).normalize();
-        assert!(knees(&strafe).dot(knees(&run)) < 0.7, "the legs turned");
+        let turned = hips(&strafe).dot(hips(&stand));
+        assert!(turned < 0.99 && turned > 0.8, "hips turned {turned}");
         let chest = |b: &[Hitbox; COUNT]| b[2].b - b[2].a;
         assert!(chest(&strafe).normalize().dot(chest(&run).normalize()) > 0.9);
-        // A backpedal plays the walk backward: no turn.
+        assert!(feet(&strafe).x > 0.2, "{:?}", feet(&strafe));
+        // A backpedal reaches back: its left foot plants behind.
         let back = with(Activity {
             velocity: Vec3::new(0.0, 0.0, 2.0),
             ..Activity::default()
         });
-        assert!(knees(&back).dot(knees(&run)) > 0.9);
+        assert!(feet(&back).z > 0.2, "{:?}", feet(&back));
+        assert!(hips(&back).dot(hips(&stand)) > 0.95);
+        // A sprint drifting right runs forward with its hips turned.
+        let sprint = with(Activity {
+            sprinting: true,
+            velocity: Vec3::new(2.5, 0.0, -5.5),
+            ..Activity::default()
+        });
+        let straight = with(Activity {
+            sprinting: true,
+            velocity: Vec3::new(0.0, 0.0, -6.0),
+            ..Activity::default()
+        });
+        let drift = hips(&sprint).dot(hips(&straight));
+        assert!(drift < 0.95, "{drift}");
     }
 
     #[test]

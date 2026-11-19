@@ -96,9 +96,22 @@ func _states() -> Array[Dictionary]:
 	add.call("strafe", {}, moving.call(Vector3(3.0, 0, 0)))
 	add.call("strafe_run", {}, moving.call(Vector3(-2.8, 0, -2.8)))
 	add.call("backpedal", {}, moving.call(Vector3(0, 0, 2.0)))
+	# Every authored direction (`gait::DIRECTIONS`) at the speeds players
+	# move at (IW: strafes at 0.8 and backpedals at 0.7 of the 5 m/s run),
+	# and directions between two authored ones, where the loops blend.
+	add.call("strafe_left_run", {}, moving.call(Vector3(-4.0, 0, 0)))
+	add.call("back_right", {}, moving.call(_toward(135.0, 3.5)))
+	add.call("back_left_walk", {}, moving.call(_toward(-135.0, 1.4)))
+	add.call("backpedal_run", {}, moving.call(Vector3(0, 0, 3.5)))
+	add.call("forward_right", {}, moving.call(_toward(45.0, 4.5)))
+	add.call("between_22", {}, moving.call(_toward(22.5, 4.5)))
+	add.call("between_112", {}, moving.call(_toward(112.5, 3.8)))
+	add.call("between_157", {}, moving.call(_toward(-157.5, 2.5)))
 	add.call("crouch", {"stance": "crouching"})
 	add.call("crouch_walk", {"stance": "crouching"}, moving.call(Vector3(0, 0, -1.2)))
 	add.call("crouch_strafe", {"stance": "crouching"}, moving.call(Vector3(1.2, 0, 0)))
+	add.call("crouch_back", {"stance": "crouching"}, moving.call(_toward(-135.0, 1.5)))
+	add.call("crouch_between", {"stance": "crouching"}, moving.call(_toward(67.5, 2.0)))
 	add.call("slide", {"stance": "sliding"}, {"velocity": Vector3(0, 0, -7.0)})
 	add.call("ads", {"ads": 1.0})
 	add.call("ads_walk", {"ads": 1.0}, moving.call(Vector3(0, 0, -1.2)))
@@ -141,6 +154,13 @@ func _states() -> Array[Dictionary]:
 	add.call("turning", {}, {"yaw_rate": 3.0})
 	add.call("turned", {"yaw": 2.2, "pitch": 0.4})
 	return states
+
+
+## A body-frame velocity (yaw 0) toward `degrees` from forward, positive to
+## the right, at `speed` m/s.
+func _toward(degrees: float, speed: float) -> Vector3:
+	var a := deg_to_rad(degrees)
+	return Vector3(sin(a), 0, -cos(a)) * speed
 
 
 func _run() -> void:
@@ -487,6 +507,40 @@ func _generate(world: Node3D) -> void:
 		var state := {"stance": "crouching", "stride": float(i) / STRIDE_SAMPLES}
 		var pose := await _average_pose(world, state, Vector3(0, 0, -0.72), 60, 1, {}, extra)
 		out.append("%s," % _pose_literal(pose))
+	out.append("];")
+	out.append("")
+	# Every measured direction but forward (`gait::POSE_DIRECTIONS`), at the
+	# standing blend's first `gait::DIRECTION_STRIDE_POSITIONS`, and crouched.
+	var directions := [45.0, 90.0, 112.5, 135.0, 157.5, 180.0, -157.5, -135.0, -112.5, -90.0, -45.0]
+	out.append("/// The standing blend in each measured direction but forward")
+	out.append("/// (`gait::POSE_DIRECTIONS[1..]`) at `gait::STRIDE_POSITIONS[..3]`.")
+	out.append("#[rustfmt::skip]")
+	out.append("pub(super) static DIRECTION_STRIDES: [[[BasePose; STRIDE_SAMPLES]; 3]; 11] = [")
+	for degrees: float in directions:
+		out.append("[")
+		for l: Array in loops.slice(0, 3):
+			out.append("[")
+			for i in STRIDE_SAMPLES:
+				var state := {"stride": float(i) / STRIDE_SAMPLES}
+				var speed := absf((l[1] as Vector3).z)
+				var pose := await _average_pose(
+					world, state, _toward(degrees, speed), 60, 1, {}, extra
+				)
+				out.append("%s," % _pose_literal(pose))
+			out.append("],")
+		out.append("],")
+	out.append("];")
+	out.append("")
+	out.append("/// The crouched walk in each measured direction but forward.")
+	out.append("#[rustfmt::skip]")
+	out.append("pub(super) static DIRECTION_CROUCH_WALKS: [[BasePose; STRIDE_SAMPLES]; 11] = [")
+	for degrees: float in directions:
+		out.append("[")
+		for i in STRIDE_SAMPLES:
+			var state := {"stance": "crouching", "stride": float(i) / STRIDE_SAMPLES}
+			var pose := await _average_pose(world, state, _toward(degrees, 0.72), 60, 1, {}, extra)
+			out.append("%s," % _pose_literal(pose))
+		out.append("],")
 	out.append("];")
 	out.append("")
 	out.append("/// A mantle's climb.")

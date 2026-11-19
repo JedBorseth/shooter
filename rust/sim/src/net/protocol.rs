@@ -89,7 +89,10 @@ use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, Weapo
 // player views (`PlayerView::ladder`).
 // Version 38 added the smoke clouds still hanging to snapshots, so players
 // who join after a smoke popped see it.
-pub const PROTOCOL_VERSION: u16 = 38;
+// Version 39 authored a loop for every direction of travel: the stride
+// phase runs forward for backpedals, quicker sideways, and the hit zones pose
+// the directional loops, so both ends must agree on them.
+pub const PROTOCOL_VERSION: u16 = 39;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).

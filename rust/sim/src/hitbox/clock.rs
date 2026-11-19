@@ -52,7 +52,6 @@ pub struct BodyState {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct BodyClock {
     stride: f32,
-    backward: bool,
     /// Seconds into the current reload.
     reload: Option<f32>,
     /// The current mantle's full length, seconds.
@@ -65,16 +64,8 @@ impl BodyClock {
     /// Advances the clocks by one step of `dt` seconds with the body in `s`.
     pub fn tick(&mut self, s: &BodyState, dt: f32) -> Progress {
         let (right, forward) = gait::local_velocity(s.velocity, s.yaw);
-        self.backward = gait::backward(right, forward, s.sprinting, self.backward);
         let rate = if s.alive {
-            gait::stride_rate(
-                s.velocity,
-                s.yaw,
-                s.stance,
-                s.sprinting,
-                s.on_floor,
-                self.backward,
-            )
+            gait::stride_rate(s.velocity, s.yaw, s.stance, s.sprinting, s.on_floor)
         } else {
             0.0
         };

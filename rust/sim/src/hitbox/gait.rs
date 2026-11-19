@@ -1,6 +1,8 @@
 //! How a soldier's body moves over the ground: the locomotion blend the
 //! third-person character's animation tree plays (idle, walk, jog, sprint, and
-//! the crouched walk) and how far the hips turn toward a strafe.
+//! the crouched walk), each loop authored in eight directions (forward,
+//! strafes, backpedals, and the diagonals between; `tools/build_gait_animations.py`),
+//! and how far the hips turn toward a sprint's sideways drift.
 //!
 //! The character (`rust/game/src/character/rig.rs`) and [`super::hitboxes`]
 //! both read these, so the hit zones blend the same base poses the body is
@@ -26,15 +28,20 @@ pub const CROUCH_SPEED: f32 = 0.72;
 pub const RUN_BLEND_LIMIT: f32 = 4.0;
 /// Slower than this (m/s) the body stands still.
 pub const MOVING_SPEED: f32 = 0.4;
-/// The legs turn at most this far from the aim (radians) when strafing.
+/// A sprint's legs turn at most this far from the aim (radians) toward its
+/// sideways drift; every other gait has a loop for its direction.
 pub const MAX_LEG_TURN: f32 = 75.0 * std::f32::consts::PI / 180.0;
 /// Share of the hips' turn the spine, chest, and upper chest give back, so
 /// the chest faces the aim.
 pub const TWIST_SHARES: [f32; 3] = [0.35, 0.35, 0.3];
-/// Moving this far back (the cosine of the angle from forward) starts the
-/// backward walk; moving less far back than [`BACKWARD_LEAVE`] ends it.
-pub const BACKWARD_ENTER: f32 = -0.35;
-pub const BACKWARD_LEAVE: f32 = -0.1;
+/// The directions each loop was authored in, 45° apart clockwise from
+/// forward, as the animation library names them (`gait/<Loop>_<Dir>`; forward is
+/// the source library's own loop).
+pub const DIRECTIONS: [&str; 8] = ["Fwd", "FR", "R", "BR", "B", "BL", "L", "FL"];
+/// Sideways the stride is this much quicker (and each step this much
+/// shorter): cadence `1 + LATERAL_CADENCE * |sin(direction)|`. The loops
+/// were authored with it.
+pub const LATERAL_CADENCE: f32 = 0.2;
 
 /// One locomotion loop's timing.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -51,7 +58,9 @@ pub struct Loop {
 }
 
 /// The standing loops the stride blends between, slowest first (measured from
-/// the clips; the idle below them is not a stride).
+/// the clips; the idle below them is not a stride). Only forward has the
+/// sprint: the other directions blend the walk and the jog
+/// ([`DIRECTION_LOOPS`]).
 pub const STAND_LOOPS: [Loop; 3] = [
     Loop {
         clip: "ual1/Walk",
@@ -72,6 +81,8 @@ pub const STAND_LOOPS: [Loop; 3] = [
         offset: 0.86,
     },
 ];
+/// How many of [`STAND_LOOPS`] the directions other than forward have.
+pub const DIRECTION_LOOPS: usize = 2;
 /// The crouched walk.
 pub const CROUCH_LOOP: Loop = Loop {
     clip: "ual1/Crouch_Fwd",
@@ -93,18 +104,86 @@ pub const STRIDE_POSITIONS: [(f32, bool); 5] = [
     (SPRINT_SPEED, true),
 ];
 
+/// How many of [`STRIDE_POSITIONS`] the directions other than forward are
+/// measured at: up to the jog, where their blend ends.
+pub const DIRECTION_STRIDE_POSITIONS: usize = 3;
+
 /// The two measured stride positions around `position` and how far from the
 /// first to the second (0..1).
 pub fn stride_samples(position: f32) -> (usize, usize, f32) {
-    let last = STRIDE_POSITIONS.len() - 1;
-    match STRIDE_POSITIONS.iter().position(|(p, _)| *p > position) {
+    samples_in(&STRIDE_POSITIONS, position)
+}
+
+/// [`stride_samples`] for a direction other than forward, whose blend ends
+/// at the jog.
+pub fn direction_stride_samples(position: f32) -> (usize, usize, f32) {
+    samples_in(&STRIDE_POSITIONS[..DIRECTION_STRIDE_POSITIONS], position)
+}
+
+fn samples_in(positions: &[(f32, bool)], position: f32) -> (usize, usize, f32) {
+    let last = positions.len() - 1;
+    match positions.iter().position(|(p, _)| *p > position) {
         Some(0) => (0, 0, 0.0),
         None => (last, last, 0.0),
         Some(n) => {
-            let (a, b) = (STRIDE_POSITIONS[n - 1].0, STRIDE_POSITIONS[n].0);
+            let (a, b) = (positions[n - 1].0, positions[n].0);
             (n - 1, n, (position - a) / (b - a))
         }
     }
+}
+
+/// The direction of travel (radians from the aim, positive to the right,
+/// −π..π) for body-frame velocity (`right`, `forward`), as the loops blend
+/// it. A sprint runs the forward loop with its legs turned
+/// ([`leg_turn`]), so it is forward.
+pub fn direction(right: f32, forward: f32, sprinting: bool) -> f32 {
+    if sprinting || (right == 0.0 && forward == 0.0) {
+        0.0
+    } else {
+        fmath::atan2(right, forward)
+    }
+}
+
+/// The directions the hit zones' stride poses are measured in (degrees
+/// clockwise from forward, 0 to 360): the authored ones, and halfway between
+/// those behind the strafes, where the drawn blend of a strafe and a back
+/// diagonal (two quite different leg poses) is too far from a straight line
+/// between them.
+pub const POSE_DIRECTIONS: [f32; 12] = [
+    0.0, 45.0, 90.0, 112.5, 135.0, 157.5, 180.0, 202.5, 225.0, 247.5, 270.0, 315.0,
+];
+
+/// The two of [`POSE_DIRECTIONS`] around `direction` (radians, as
+/// [`direction`]) and how far from the first to the second (0..1).
+pub fn pose_direction_samples(direction: f32) -> (usize, usize, f32) {
+    let degrees = direction.to_degrees().rem_euclid(360.0);
+    let n = POSE_DIRECTIONS.len();
+    let i = POSE_DIRECTIONS
+        .iter()
+        .rposition(|d| *d <= degrees)
+        .unwrap_or(0);
+    let (from, to) = (
+        POSE_DIRECTIONS[i],
+        POSE_DIRECTIONS.get(i + 1).copied().unwrap_or(360.0),
+    );
+    (
+        i,
+        (i + 1) % n,
+        ((degrees - from) / (to - from)).clamp(0.0, 1.0),
+    )
+}
+
+/// How much quicker the stride is in `direction` than forward.
+pub fn cadence(direction: f32) -> f32 {
+    1.0 + LATERAL_CADENCE * fmath::sin_cos(direction).0.abs()
+}
+
+/// The furthest the standing blend goes without sprinting in `direction`:
+/// [`RUN_BLEND_LIMIT`] straight ahead, down to the jog (where the other
+/// directions' blends end) from 45° off.
+pub fn run_limit(direction: f32) -> f32 {
+    let off = (direction.abs() / std::f32::consts::FRAC_PI_4).min(1.0);
+    RUN_BLEND_LIMIT + (JOG_SPEED - RUN_BLEND_LIMIT) * off
 }
 
 /// The climb blends in over this much of a mantle's progress, as the body
@@ -145,9 +224,9 @@ pub fn crouch_rate(speed: f32) -> f32 {
     (speed / CROUCH_SPEED).clamp(0.6, 2.2)
 }
 
-/// Strides per second (negative walking backward) for a body moving at
-/// `velocity` with view `yaw`: the loops' own cadence, blended and sped up as
-/// the character's animation tree plays them. Zero standing still, sliding,
+/// Strides per second for a body moving at `velocity` with view `yaw`: the
+/// loops' own cadence, blended and sped up as the character's animation tree
+/// plays them, quicker sideways ([`cadence`]). Zero standing still, sliding,
 /// or off the ground, where no loop plays.
 pub fn stride_rate(
     velocity: Vec3,
@@ -155,7 +234,6 @@ pub fn stride_rate(
     stance: crate::movement::Stance,
     sprinting: bool,
     on_floor: bool,
-    backward: bool,
 ) -> f32 {
     use crate::movement::Stance;
     let (right, forward) = local_velocity(velocity, yaw);
@@ -163,16 +241,17 @@ pub fn stride_rate(
     if speed <= MOVING_SPEED || !on_floor {
         return 0.0;
     }
-    let direction = if backward { -1.0 } else { 1.0 };
+    let direction = direction(right, forward, sprinting);
+    let cadence = cadence(direction);
     match stance {
         Stance::Sliding => 0.0,
-        Stance::Crouching => crouch_rate(speed) / CROUCH_LOOP.seconds * direction,
+        Stance::Crouching => crouch_rate(speed) / CROUCH_LOOP.seconds * cadence,
         Stance::Standing => {
-            let position = stand_position(speed, sprinting);
+            let position = stand_position(speed, sprinting, direction);
             let (a, b, t) = stand_loops(position);
-            let cadence =
+            let loops =
                 (1.0 / STAND_LOOPS[a].seconds) * (1.0 - t) + (1.0 / STAND_LOOPS[b].seconds) * t;
-            stand_rate(speed, position) * cadence * direction
+            stand_rate(speed, position) * loops * cadence
         }
     }
 }
@@ -201,28 +280,18 @@ pub fn local_velocity(velocity: Vec3, yaw: f32) -> (f32, f32) {
     (right, -back)
 }
 
-/// Where the standing blend sits for a ground speed: 0 idle, then the loops'
-/// natural speeds. Sprinting blends from the jog to the sprint.
-pub fn stand_position(speed: f32, sprinting: bool) -> f32 {
+/// Where the standing blend sits for a ground speed in `direction` (see
+/// [`direction`]): 0 idle, then the loops' natural speeds. Sprinting blends
+/// from the jog to the sprint; otherwise the blend stops at [`run_limit`]
+/// and the loops play faster.
+pub fn stand_position(speed: f32, sprinting: bool, direction: f32) -> f32 {
     if speed <= MOVING_SPEED {
         0.0
     } else if sprinting {
         speed.clamp(JOG_SPEED, SPRINT_SPEED)
     } else {
-        speed.min(RUN_BLEND_LIMIT)
+        speed.min(run_limit(direction))
     }
-}
-
-/// Whether the legs walk backward (the loop played in reverse) rather than
-/// turning all the way round. `was` is the previous answer, for hysteresis;
-/// the hit zones, which have no history, pass `false`.
-pub fn backward(right: f32, forward: f32, sprinting: bool, was: bool) -> bool {
-    let speed = (right * right + forward * forward).sqrt();
-    if speed <= MOVING_SPEED || sprinting {
-        return false;
-    }
-    let cos = forward / speed;
-    cos < if was { BACKWARD_LEAVE } else { BACKWARD_ENTER }
 }
 
 /// Standing still, the aim may turn this far from the feet (radians) before
@@ -330,21 +399,10 @@ pub fn yaw_of(facing: glam::Vec2) -> f32 {
 /// is two rungs of 0.3 m.
 pub const LADDER_STRIDE: f32 = 0.6;
 
-/// How far the legs turn from the aim toward the movement, radians (positive
-/// toward the right). Walking backward the legs face away from the movement.
-pub fn leg_turn(right: f32, forward: f32, backward: bool) -> f32 {
-    let angle = fmath::atan2(right, forward);
-    let legs = if backward {
-        let a = angle - std::f32::consts::PI;
-        if a <= -std::f32::consts::PI {
-            a + std::f32::consts::TAU
-        } else {
-            a
-        }
-    } else {
-        angle
-    };
-    legs.clamp(-MAX_LEG_TURN, MAX_LEG_TURN)
+/// How far a sprint's legs turn from the aim toward its sideways drift,
+/// radians (positive toward the right).
+pub fn leg_turn(right: f32, forward: f32) -> f32 {
+    fmath::atan2(right, forward).clamp(-MAX_LEG_TURN, MAX_LEG_TURN)
 }
 
 #[cfg(test)]
@@ -393,14 +451,31 @@ mod tests {
     }
 
     #[test]
-    fn strafing_turns_the_legs_and_backpedalling_does_not() {
-        assert!((leg_turn(3.0, 0.0, false) - MAX_LEG_TURN).abs() < 1e-6);
-        assert!(backward(0.0, -2.0, false, false));
-        assert!(leg_turn(0.0, -2.0, true).abs() < 1e-5);
-        assert!(!backward(0.0, -2.0, true, false), "no backward sprint");
-        // Hysteresis: a little back of sideways keeps walking backward.
-        assert!(backward(1.0, -0.2, false, true));
-        assert!(!backward(1.0, -0.2, false, false));
+    fn every_direction_has_its_loop_and_only_a_sprint_turns_the_legs() {
+        use std::f32::consts::{FRAC_PI_2, FRAC_PI_4, PI};
+        // Strafing, backpedalling, and the diagonals each pick their loop.
+        assert!((direction(3.0, 0.0, false) - FRAC_PI_2).abs() < 1e-5);
+        assert!((direction(0.0, -2.0, false).abs() - PI).abs() < 1e-5);
+        assert_eq!(pose_direction_samples(0.0), (0, 1, 0.0));
+        assert_eq!(pose_direction_samples(FRAC_PI_2), (2, 3, 0.0));
+        let (a, b, t) = pose_direction_samples(-FRAC_PI_4 * 0.5);
+        assert_eq!((a, b), (11, 0));
+        assert!((t - 0.5).abs() < 1e-4);
+        let (a, b, t) = pose_direction_samples(PI);
+        assert!((a, b) == (6, 7) && t < 1e-4 || (a, b) == (5, 6) && t > 1.0 - 1e-4);
+        // Behind the strafes the poses are measured every 22.5°.
+        let (a, b, t) = pose_direction_samples(PI * 0.6);
+        assert!((a, b) == (2, 3) && (t - 0.8).abs() < 1e-3, "{a} {b} {t}");
+        // A sprint is forward with its legs turned toward the drift.
+        assert_eq!(direction(3.0, 4.0, true), 0.0);
+        assert!((leg_turn(3.0, 0.0) - MAX_LEG_TURN).abs() < 1e-6);
+        assert!(leg_turn(1.0, 2.0) > 0.4);
+        // Sideways steps are quicker; the run blends to the jog from 45° off.
+        assert_eq!(cadence(0.0), 1.0);
+        assert!((cadence(-FRAC_PI_2) - (1.0 + LATERAL_CADENCE)).abs() < 1e-5);
+        assert_eq!(run_limit(0.0), RUN_BLEND_LIMIT);
+        assert_eq!(run_limit(-PI), JOG_SPEED);
+        assert!(run_limit(0.3) < RUN_BLEND_LIMIT && run_limit(0.3) > JOG_SPEED);
     }
 
     #[test]
@@ -408,50 +483,42 @@ mod tests {
         use crate::movement::Stance;
         let forward = |v: f32| Vec3::new(0.0, 0.0, -v);
         // At a loop's natural speed its clip plays at its own length.
-        let walk = stride_rate(
-            forward(WALK_SPEED),
-            0.0,
-            Stance::Standing,
-            false,
-            true,
-            false,
-        );
+        let walk = stride_rate(forward(WALK_SPEED), 0.0, Stance::Standing, false, true);
         assert!((walk - 1.0 / 1.3333).abs() < 1e-4, "{walk}");
-        let sprint = stride_rate(
-            forward(SPRINT_SPEED),
-            0.0,
-            Stance::Standing,
-            true,
-            true,
-            false,
-        );
+        let sprint = stride_rate(forward(SPRINT_SPEED), 0.0, Stance::Standing, true, true);
         assert!((sprint - 1.0 / 0.6667).abs() < 1e-3, "{sprint}");
         // Between loops the cadence blends.
-        let between = stride_rate(forward(2.0), 0.0, Stance::Standing, false, true, false);
+        let between = stride_rate(forward(2.0), 0.0, Stance::Standing, false, true);
         assert!(between > walk && between < 1.0 / 0.9333 * 1.0, "{between}");
-        // Backward runs the stride the other way; still, sliding, or in the air
-        // it holds.
-        assert!(stride_rate(forward(1.5), 0.0, Stance::Standing, false, true, true) < 0.0);
-        assert_eq!(
-            stride_rate(forward(0.2), 0.0, Stance::Standing, false, true, false),
-            0.0
-        );
-        assert_eq!(
-            stride_rate(forward(7.0), 0.0, Stance::Sliding, false, true, false),
-            0.0
-        );
-        assert_eq!(
-            stride_rate(forward(4.0), 0.0, Stance::Standing, false, false, false),
-            0.0
-        );
-        let crouch = stride_rate(
-            forward(CROUCH_SPEED),
+        // Backward runs the stride forward too (the backpedal is its own
+        // loop), and sideways it is quicker.
+        let back = stride_rate(forward(-WALK_SPEED), 0.0, Stance::Standing, false, true);
+        assert!((back - walk).abs() < 1e-4, "{back}");
+        let side = stride_rate(
+            Vec3::new(WALK_SPEED, 0.0, 0.0),
             0.0,
-            Stance::Crouching,
+            Stance::Standing,
             false,
             true,
-            false,
         );
+        assert!(
+            (side - walk * (1.0 + LATERAL_CADENCE)).abs() < 1e-4,
+            "{side}"
+        );
+        // Still, sliding, or in the air it holds.
+        assert_eq!(
+            stride_rate(forward(0.2), 0.0, Stance::Standing, false, true),
+            0.0
+        );
+        assert_eq!(
+            stride_rate(forward(7.0), 0.0, Stance::Sliding, false, true),
+            0.0
+        );
+        assert_eq!(
+            stride_rate(forward(4.0), 0.0, Stance::Standing, false, false),
+            0.0
+        );
+        let crouch = stride_rate(forward(CROUCH_SPEED), 0.0, Stance::Crouching, false, true);
         assert!((crouch - 0.5).abs() < 1e-4, "{crouch}");
     }
 
@@ -466,9 +533,12 @@ mod tests {
 
     #[test]
     fn blend_positions() {
-        assert_eq!(stand_position(0.2, false), 0.0);
-        assert_eq!(stand_position(2.0, false), 2.0);
-        assert_eq!(stand_position(5.5, false), RUN_BLEND_LIMIT);
-        assert_eq!(stand_position(2.0, true), JOG_SPEED);
+        assert_eq!(stand_position(0.2, false, 0.0), 0.0);
+        assert_eq!(stand_position(2.0, false, 0.0), 2.0);
+        assert_eq!(stand_position(5.5, false, 0.0), RUN_BLEND_LIMIT);
+        assert_eq!(stand_position(2.0, true, 0.0), JOG_SPEED);
+        // Strafing and backpedalling stop at the jog.
+        assert_eq!(stand_position(4.0, false, 1.6), JOG_SPEED);
+        assert_eq!(stand_position(3.5, false, -3.1), JOG_SPEED);
     }
 }
