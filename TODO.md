@@ -273,7 +273,7 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
   - [x] The smoke grenade's cloud and the flashbang's pop as pooled flipbook effects (`CombatEffects.smoke`, `CombatEffects.flash_pop`, Unity Labs' Cloud flipbooks).
   - [x] A frag that reads as dirt thrown up, not a white puff: a short bounded orange core, jets of dirt from a Blender-rendered flipbook, a lingering dust cloud and ground skirt, modelled rubble chips, and a larger scorch with fragment pits (`tools/build_explosion_fx.py`).
   - [x] Concrete impacts: modelled chips tinted by the surface instead of flat cubes, and sparks only on metal (shorter, thinner, fewer).
-  - [ ] The smoke grenade's cloud: density variation, sun shading, and a ragged edge.
+  - [x] The smoke grenade's cloud: density variation, sun shading, and a ragged edge; the flashbang pops as a short white-hot burst with a grey puff.
   - [x] A wound mark where a character was hit (character shader, `wounds.rs`).
 - [x] Skyline windows with fake rooms behind them (interior mapping in `world.gdshader`), and bump-mapped cloth, leather, and creases on characters.
 - [x] Soldiers as believable people: a MakeHuman body fitted to the existing skeleton, a combat shirt and trousers, modelled kit (helmet with cover and mounts, glasses, balaclava or neck gaiter or a bare face per character, plate carrier with pouches, magazines and a radio, belt and holster, knee pads), all in one mesh with one baked texture atlas and a team tint (`tools/build_character_assets.py`).

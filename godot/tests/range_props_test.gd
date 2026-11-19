@@ -38,9 +38,18 @@ func _check_plates(scene: Node) -> void:
 	var normal := plate.global_basis.z.normalized()
 	call_group(&"struck", &"struck", plate.global_position + Vector3(0, -0.5, 1.5), normal)
 	_check(not plate.is_processing(), "a round that misses leaves the plate still")
+	_check(
+		plate.find_children("*", "GPUParticles3D", true, false).is_empty(),
+		"a miss throws no splash"
+	)
 	# A round on the face of the first plate.
 	var face := plate.global_transform * Vector3(0.0, -float(plate.get("centre_drop")), 0.01)
 	call_group(&"struck", &"struck", face, normal)
+	var splash := plate.find_children("*", "GPUParticles3D", true, false)
+	_check(
+		splash.size() == 1 and (splash[0] as GPUParticles3D).emitting,
+		"a round on the face throws a splash of fragments"
+	)
 	for i in 8:
 		await process_frame
 	var swing: float = plate.call(&"swing")
