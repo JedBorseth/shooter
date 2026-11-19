@@ -252,6 +252,7 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 - [x] PBR world textures: a CC0 texture library and one world-space surface shader for every map (`tools/build_textures.py`, `godot/shaders/world.gdshader`).
 - [x] Lighting: CC0 sky images lined up with each map's sun, sky light in the shade, haze, colour grading, flickering lamps and volumetric fog (High) in Zombies.
 - [x] Baked lightmaps on every map, with baked-only interior lights in Slamcity (`tools/bake_lightmaps.sh`).
+- [x] Lightmap checks catch a bake that is black only on the map's main surfaces, in shade (`godot/tools/lightmap_check.gd`, #240's failure).
 - [x] Weapons: PBR materials, smoothed shading, baked wear, better muzzle flash and smoke (`tools/build_weapons.py`).
 - [x] Map props: CC0 Poly Haven models (cars, lamps, crates, barrels, bins, barriers, AC units, shutters) on the existing collision (`tools/build_props.py`).
 - [x] Map meshes: the blockout CSG is baked into meshes with lightmap UVs (`godot/tools/bake_map_meshes.gd`).
