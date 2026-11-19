@@ -74,6 +74,10 @@ pub struct MoveEnv {
     pub vault: Option<Vault>,
     /// A ladder in reach (see [`Ladder`]).
     pub ladder: Option<Ladder>,
+    /// Height above the feet of cover in front of the gun to mount the
+    /// weapon on (a ledge, a barrier's top, a windowsill), if there is one
+    /// in reach ([`crate::mount`]). Looked for while aiming or mounted.
+    pub mount: Option<f32>,
 }
 
 /// Something to vault over: its top's height above the feet, and whether
@@ -93,6 +97,7 @@ impl Default for MoveEnv {
             ledge_low: false,
             vault: None,
             ladder: None,
+            mount: None,
         }
     }
 }
@@ -170,6 +175,17 @@ pub struct MoveState {
     pub ladder_slide: bool,
     /// Seconds before a ladder can be grabbed again after letting go.
     pub ladder_cooldown: f32,
+    /// The weapon is mounted on cover ([`crate::mount`]): the body stays
+    /// put and the view turns within a cone about `mount_yaw`.
+    pub mounted: bool,
+    /// The view yaw the mount was made facing.
+    pub mount_yaw: f32,
+    /// The crouch blend that rests the gun on the cover: the body rises or
+    /// sinks to it while mounted.
+    pub mount_crouch: f32,
+    /// How far the mount has settled in, 0 to 1 over `mount::SETTLE_TIME`:
+    /// the kick and sway scales and the drawn rest follow it.
+    pub mount_blend: f32,
 }
 
 impl MoveState {
@@ -457,7 +473,10 @@ pub fn step(
 /// Moves the crouch blend toward the stance. Standing up waits while there
 /// is no headroom (the stance stays standing, so it finishes once clear).
 fn step_crouch(state: &mut MoveState, env: MoveEnv, params: &MoveParams, dt: f32) {
-    let target = if state.stance == Stance::Standing {
+    let target = if state.mounted {
+        // Up or down until the gun rests on the cover.
+        state.mount_crouch
+    } else if state.stance == Stance::Standing {
         0.0
     } else {
         1.0
@@ -469,9 +488,9 @@ fn step_crouch(state: &mut MoveState, env: MoveEnv, params: &MoveParams, dt: f32
         } else {
             params.crouch_down_time
         };
-        state.crouch = (state.crouch + dt / time.max(1e-3)).min(1.0);
+        state.crouch = (state.crouch + dt / time.max(1e-3)).min(target);
     } else if target < state.crouch && (env.can_stand || state.mantling()) {
-        state.crouch = (state.crouch - dt / params.stand_up_time.max(1e-3)).max(0.0);
+        state.crouch = (state.crouch - dt / params.stand_up_time.max(1e-3)).max(target);
     }
 }
 
@@ -1217,6 +1236,7 @@ mod tests {
             ledge_low: false,
             vault: None,
             ladder: None,
+            mount: None,
         };
         run(&mut s, crouch, low_ceiling, 1);
         run(&mut s, MoveInput::default(), low_ceiling, 1);
@@ -1378,6 +1398,7 @@ mod tests {
         ledge_low: false,
         vault: None,
         ladder: None,
+        mount: None,
     };
 
     fn jump() -> MoveInput {
@@ -1595,6 +1616,7 @@ mod tests {
             ledge_low: false,
             vault: None,
             ladder: None,
+            mount: None,
         };
         run(
             &mut s,
@@ -1780,6 +1802,7 @@ mod tests {
             ledge_low: false,
             vault: None,
             ladder: None,
+            mount: None,
         };
         let jump = MoveInput {
             wish: Vec2::Y,

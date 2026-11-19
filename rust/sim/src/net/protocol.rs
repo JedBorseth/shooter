@@ -98,7 +98,9 @@ use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, Weapo
 // (`PlayerView::reload_empty`).
 // Version 41 moved the support arm's hit zones with a grenade throw
 // (`hitbox::action`), and added the throw to the debug rewound poses.
-pub const PROTOCOL_VERSION: u16 = 41;
+// Version 42 added mounting the weapon on cover (`MoveState::mounted` and
+// its yaw, crouch, and blend; `PlayerView::mount`).
+pub const PROTOCOL_VERSION: u16 = 42;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -540,6 +542,9 @@ pub struct PlayerView {
     /// On a ladder: the way it is climbed, in 1/256 turns
     /// ([`heading_to_u8`] of `MoveState::ladder_facing`).
     pub ladder: Option<u8>,
+    /// How far the weapon is mounted on cover, 0 to 255
+    /// (`MoveState::mount_blend`): the body leans onto the gun on the cover.
+    pub mount: u8,
 }
 
 /// A throw's progress (0 to 1) as [`PlayerView::throw`]: 0 for none.
@@ -637,6 +642,7 @@ impl PlayerView {
             mantle_progress: 0,
             turn: 0,
             step: 0,
+            mount: (p.state.movement.mount_blend.clamp(0.0, 1.0) * 255.0).round() as u8,
             ladder: p.state.movement.on_ladder().then(|| {
                 heading_to_u8(
                     p.state.movement.ladder_facing.x,
@@ -1904,7 +1910,7 @@ fn write_view_delta(w: &mut BitWriter, v: &PlayerView, base: &PlayerView) {
             p.ladder,
         )
     };
-    let flags_changed = flags(v) != flags(base);
+    let flags_changed = flags(v) != flags(base) || v.mount != base.mount;
     w.bool(flags_changed);
     if flags_changed {
         write_stance(w, v.stance);
@@ -1922,6 +1928,7 @@ fn write_view_delta(w: &mut BitWriter, v: &PlayerView, base: &PlayerView) {
         if let Some(heading) = v.ladder {
             w.u8(heading);
         }
+        w.u8(v.mount);
     }
     let throw_changed = (v.throw, v.throw_kind) != (base.throw, base.throw_kind);
     w.bool(throw_changed);
@@ -1988,6 +1995,7 @@ fn read_view_delta(r: &mut BitReader, base: &PlayerView) -> DecodeResult<PlayerV
         v.mantling = r.bool()?;
         v.meleeing = r.bool()?;
         v.ladder = if r.bool()? { Some(r.u8()?) } else { None };
+        v.mount = r.u8()?;
     }
     if r.bool()? {
         v.throw = r.u8()?;
@@ -2091,6 +2099,10 @@ fn write_move_state(w: &mut BitWriter, m: &MoveState) {
     w.f32(m.ladder_facing.y);
     w.bool(m.ladder_slide);
     w.f32(m.ladder_cooldown);
+    w.bool(m.mounted);
+    w.f32(m.mount_yaw);
+    w.f32(m.mount_crouch);
+    w.f32(m.mount_blend);
 }
 
 fn read_move_state(r: &mut BitReader) -> DecodeResult<MoveState> {
@@ -2121,6 +2133,10 @@ fn read_move_state(r: &mut BitReader) -> DecodeResult<MoveState> {
         ladder_facing: Vec2::new(r.f32()?, r.f32()?),
         ladder_slide: r.bool()?,
         ladder_cooldown: r.f32()?,
+        mounted: r.bool()?,
+        mount_yaw: r.f32()?,
+        mount_crouch: r.f32()?,
+        mount_blend: r.f32()?,
     })
 }
 
@@ -2547,6 +2563,40 @@ mod tests {
         let decoded = read_predicted(&mut BitReader::new(&bytes)).unwrap();
         assert_eq!(decoded, p);
         assert!(PlayerView::from_state(1, &p, 0.0, 0.0).meleeing);
+    }
+
+    #[test]
+    fn a_mounted_weapon_round_trips_and_shows_on_other_players() {
+        let mut state = PlayerState::default();
+        state.movement.mounted = true;
+        state.movement.mount_yaw = -2.5;
+        state.movement.mount_crouch = 0.42;
+        state.movement.mount_blend = 0.75;
+        let p = Predicted {
+            state,
+            position: Vec3::new(1.0, 0.0, 3.0),
+            on_floor: true,
+        };
+        let mut w = BitWriter::new();
+        write_predicted(&mut w, &p);
+        let bytes = w.finish();
+        assert_eq!(read_predicted(&mut BitReader::new(&bytes)).unwrap(), p);
+
+        let view = PlayerView::from_state(0, &p, 0.0, 0.0);
+        let base = PlayerView::default();
+        let mut w = BitWriter::new();
+        write_view_delta(&mut w, &view, &base);
+        let bytes = w.finish();
+        let decoded = read_view_delta(&mut BitReader::new(&bytes), &base).unwrap();
+        assert_eq!(decoded, view);
+        assert_eq!(decoded.mount, 191);
+        // Settling in alone (no other flag changing) is still sent.
+        let settled = PlayerView { mount: 255, ..view };
+        let mut w = BitWriter::new();
+        write_view_delta(&mut w, &settled, &view);
+        let bytes = w.finish();
+        let decoded = read_view_delta(&mut BitReader::new(&bytes), &view).unwrap();
+        assert_eq!(decoded.mount, 255);
     }
 
     #[test]

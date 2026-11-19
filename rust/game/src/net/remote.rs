@@ -229,6 +229,7 @@ impl RemotePlayer {
             hit_part: 0,
             progress: Progress::default(),
             ladder: None,
+            mount: 0.0,
         };
         let sample = self.with_test_progress(sample, None, delta);
         self.apply(&sample, delta);
@@ -301,6 +302,7 @@ impl RemotePlayer {
                 let (forward, _) = shooter_sim::movement::basis_from_yaw(yaw);
                 shooter_sim::Vec2::new(forward.x, forward.z)
             }),
+            mount: f("mount").unwrap_or(0.0),
         };
         let set = TestProgress {
             stride: f("stride"),
@@ -572,6 +574,7 @@ impl RemotePlayer {
             action: s.throw.filter(|_| s.alive).map(|t| (ActionPose::Throw, t)),
             throw_kind: s.throw_kind,
             ladder: s.ladder,
+            mount: s.mount,
         };
         match (self.drawn_alive, s.alive) {
             // Dead: the body that died lies where it fell, in the scene's

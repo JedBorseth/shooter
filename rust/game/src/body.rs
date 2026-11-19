@@ -97,6 +97,7 @@ pub fn tick(
         ledge_low: climb.ledge_low,
         vault: climb.vault,
         ladder: find_ladder(parts, p),
+        mount: find_mount(parts, &params.movement, p, input),
     };
     let previous_crouch = p.state.movement.crouch;
     let requested = player::step(&mut p.state, input, env, params, TICK_DT, events);
@@ -433,6 +434,82 @@ fn find_climb(parts: &BodyParts, params: &MoveParams, p: &Predicted, yaw: f32) -
         vault: Some(Vault { height, low }),
         ..Climb::default()
     }
+}
+
+/// How far in front of the feet (m) the mount probe looks for the cover's
+/// top: past the capsule (0.35) by a handguard's reach.
+const MOUNT_REACH: f32 = 0.55;
+/// The cover's front face must be within this of the body's centre (m).
+const MOUNT_FACE: f32 = 0.65;
+/// How far past the cover the barrel and the line of sight must be clear (m).
+const MOUNT_CLEAR: f32 = 1.2;
+
+/// Cover to mount the weapon on (`MoveEnv::mount`, [`shooter_sim::mount`]):
+/// a level top at weapon height in front of the eye, from where a crouched
+/// body's gun rests to where a standing body's does, with its front face in
+/// reach and clear air over it for the barrel and the sights (a ledge, a
+/// barrier, a sandbag wall, a windowsill). Looked for while aiming or
+/// mounted, along the mount's own yaw once mounted. Client and server see
+/// the same geometry, so both find the same.
+fn find_mount(
+    parts: &BodyParts,
+    params: &MoveParams,
+    p: &Predicted,
+    input: &PlayerInput,
+) -> Option<f32> {
+    let movement = &p.state.movement;
+    if !p.state.alive()
+        || !p.on_floor
+        || !(input.aim || movement.mounted)
+        || movement.mantling()
+        || movement.on_ladder()
+        || movement.stance == Stance::Sliding
+    {
+        return None;
+    }
+    let mut space = parts.body.get_world_3d()?.get_direct_space_state()?;
+    let yaw = if movement.mounted {
+        movement.mount_yaw
+    } else {
+        input.yaw
+    };
+    let feet = to_godot(p.position);
+    let (forward, _) = shooter_sim::movement::basis_from_yaw(yaw);
+    let forward = to_godot(forward);
+    let exclude: Array<Rid> = array![parts.body.get_rid()];
+    let mut ray = |from: Vector3, to: Vector3| {
+        let query = PhysicsRayQueryParameters3D::create_ex(from, to)
+            .collision_mask(WORLD_LAYER)
+            .exclude(&exclude)
+            .done()?;
+        let hit = space.intersect_ray(&query);
+        let at = hit.get_or_nil("position").try_to::<Vector3>().ok()?;
+        let normal = hit
+            .get_or_nil("normal")
+            .try_to::<Vector3>()
+            .unwrap_or(Vector3::UP);
+        Some((at, normal))
+    };
+    let (low, high) = shooter_sim::mount::reach(params);
+    // The top, a handguard's reach in front: level enough to rest on.
+    let ahead = feet + forward * MOUNT_REACH;
+    let (top, normal) = ray(
+        ahead + Vector3::UP * (high + 0.15),
+        ahead + Vector3::UP * (low - 0.05),
+    )?;
+    let height = top.y - feet.y;
+    if !(low..=high).contains(&height) || normal.y < 0.75 {
+        return None;
+    }
+    // Its front face just under the top, in reach of the body.
+    let under = feet + Vector3::UP * (height - 0.06);
+    ray(under, under + forward * MOUNT_FACE)?;
+    // Clear air just over it for the barrel and the sights.
+    let over = feet + Vector3::UP * (height + 0.06);
+    if ray(over, over + forward * MOUNT_CLEAR).is_some() {
+        return None;
+    }
+    Some(height)
 }
 
 /// The ladder in reach of the feet, if any (see [`crate::ladder`]). Client and

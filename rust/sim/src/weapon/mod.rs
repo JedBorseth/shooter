@@ -462,6 +462,12 @@ impl CombatState {
         }
     }
 
+    /// [`Self::scope_sway`] as a weapon mounted `mount` (0 to 1) on cover
+    /// sways: steadied by the mount. The camera and the shot both use it.
+    pub fn aimed_sway(&self, mount: f32) -> Vec2 {
+        self.scope_sway() * crate::mount::sway_scale(mount)
+    }
+
     /// Aimed sway in radians (`x` pitch up, `y` yaw right): a slow drift
     /// while aimed, larger through a scope. The camera and the shot both use
     /// it, so the sights always show where the round goes.
@@ -546,6 +552,9 @@ pub struct CombatContext {
     pub crouched: bool,
     /// Horizontal speed relative to walk speed.
     pub move_ratio: f32,
+    /// How far the weapon is mounted on cover, 0 to 1 (`MoveState::mount_blend`):
+    /// the kick and the aimed sway shrink with it ([`crate::mount`]).
+    pub mount: f32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1210,7 +1219,7 @@ fn fire(
     let angle = rng::unit(seed, 1) * TAU;
     let radius = rng::unit(seed, 2).sqrt() * cone;
     let spread = Vec2::new(fmath::sin(angle), fmath::cos(angle)) * radius;
-    let aim_offset = state.recoil + spread + state.scope_sway();
+    let aim_offset = state.recoil + spread + state.aimed_sway(ctx.mount);
 
     let recoil = &def.recoil;
     let base = recoil.pattern[usize::from(state.burst).min(recoil.pattern.len() - 1)];
@@ -1222,6 +1231,7 @@ fn fire(
     if ctx.crouched {
         scale *= recoil.crouch_scale;
     }
+    scale *= crate::mount::kick_scale(ctx.mount);
     let kick = Vec2::new(
         (base.x + jitter.x).to_radians(),
         (base.y + jitter.y).to_radians(),

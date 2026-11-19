@@ -4,7 +4,7 @@ How firing, recoil, aiming, and reloads work, and the numbers that set each weap
 
 ## Recoil
 
-Each shot kicks the view by the weapon's `recoil.pattern` entry for that shot of the spray (the last entry repeats), plus hashed variation (`recoil.jitter`), scaled down while aimed (`ads_scale`) and crouched (`crouch_scale`, 0.85 by default). The kick splits in two:
+Each shot kicks the view by the weapon's `recoil.pattern` entry for that shot of the spray (the last entry repeats), plus hashed variation (`recoil.jitter`), scaled down while aimed (`ads_scale`), crouched (`crouch_scale`, 0.85 by default), and mounted on cover (`mount::KICK_SCALE`, 0.35; see "Weapon mount" in [movement.md](movement.md)). The kick splits in two:
 
 - **Climb** (`1 - kick_return` of it) turns the view and stays, as if the mouse had moved. The simulation reports it with each `CombatEvent::Fired`; the shooter's client turns its look by it over about 25 ms. Pulling down against a spray holds the aim where the player puts it, and nothing drifts back after the trigger is let go.
 - **Snap** (`kick_return`) is an aim offset that settles back at `recovery_rate` once `recovery_delay` has passed since the shot. Automatics return 45% within about 50 ms (a visible bounce of about 0.1–0.15° that settles before the next round); pistols, shotguns, and the sniper return 60–70%, so a single shot kicks hard and settles near the target. Patterns start light and build over the first five or six rounds, so tapping is rewarded over holding, and each weapon drifts its own way (the AK climbs hardest and hooks right on rounds 2–5, the M4 leans right then swings back left, the LSW-6 bounces side to side, the PDW-9 jitters), with hashed sideways variation on every shot.

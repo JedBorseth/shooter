@@ -78,9 +78,13 @@ use crate::target::{BODY_LAYER, HITBOX_LAYER, WORLD_LAYER};
 use crate::viewmodel::{ViewAction, ViewFrame, ViewmodelRig};
 
 use shooter_sim::look::PITCH_LIMIT;
+use shooter_sim::mount;
 
 /// Surface used when a collider has no `surface` metadata.
 const DEFAULT_SURFACE: &str = "concrete";
+/// How far (radians, about 11 degrees) the player pushes the view past a
+/// mount's cone edge before it goes through and the mount lets go.
+const MOUNT_PUSH_OUT: f32 = 0.2;
 
 /// Camera punch spring: stiff and well damped. A shot's punch peaks after about
 /// 35 ms and is roughly half gone by the next M4 round (80 ms), so during a spray
@@ -395,6 +399,10 @@ pub struct FpsPlayer {
     current_position: Vector3,
     previous_recoil: Vec2,
     previous_sway: Vec2,
+    /// How far (radians) the player has pushed the view past a mount's cone
+    /// edge: past [`MOUNT_PUSH_OUT`] the view goes through and the mount
+    /// lets go.
+    mount_push: f32,
     previous_ads: f32,
     /// Aim pitch, aim yaw, and look pitch from the last rendered frame.
     aim_angles: Vector3,
@@ -592,6 +600,7 @@ impl ICharacterBody3D for FpsPlayer {
                     };
                     self.yaw -= delta.x;
                     self.pitch = (self.pitch - dy).clamp(-PITCH_LIMIT, PITCH_LIMIT);
+                    self.hold_mounted_view(true);
                 }
                 return;
             }
@@ -622,7 +631,10 @@ impl ICharacterBody3D for FpsPlayer {
 
         self.score.tick(dt);
         self.previous_recoil = self.state.combat.recoil;
-        self.previous_sway = self.state.combat.scope_sway();
+        self.previous_sway = self
+            .state
+            .combat
+            .aimed_sway(self.state.movement.mount_blend);
         self.previous_ads = self.state.combat.ads;
         self.previous_crouch = self.state.movement.crouch;
         let previous_stance = self.state.movement.stance;
@@ -714,7 +726,9 @@ impl ICharacterBody3D for FpsPlayer {
         } else {
             self.previous_recoil.lerp(combat.recoil, fraction)
         };
-        let sway = self.previous_sway.lerp(combat.scope_sway(), fraction);
+        let sway = self
+            .previous_sway
+            .lerp(combat.aimed_sway(self.state.movement.mount_blend), fraction);
         let ads = self.previous_ads + (combat.ads - self.previous_ads) * fraction;
 
         let alive = self.state.alive();
@@ -1057,6 +1071,12 @@ impl FpsPlayer {
         self.viewmodel.bind().inspecting()
     }
 
+    /// How far the weapon is mounted on cover, 0 (not) to 1 (settled).
+    #[func]
+    fn weapon_mount(&self) -> f32 {
+        self.state.movement.mount_blend
+    }
+
     /// Prompt for the pickup or device in front of the player, or empty.
     /// Devices write `{key}` where the interact key goes.
     #[func]
@@ -1071,6 +1091,12 @@ impl FpsPlayer {
             return GString::from(&prompt.to_string().replace("{key}", &key));
         }
         let Some(id) = self.look_target else {
+            // Aimed at cover the weapon could rest on, as the reference
+            // shows its mount cue.
+            let movement = &self.state.movement;
+            if self.env.mount.is_some() && !movement.mounted && self.state.combat.ads > 0.5 {
+                return GString::from(&format!("[{}] Mount", self.key_label("melee")));
+            }
             return GString::new();
         };
         let name = &id.def().name;
@@ -1738,6 +1764,7 @@ impl FpsPlayer {
             self.assist_target = None;
         }
         self.turn(-rates.x * delta, rates.y * delta);
+        self.hold_mounted_view(true);
     }
 
     /// The world FOV multiplier from aiming down sights alone (1 at the hip),
@@ -1772,6 +1799,37 @@ impl FpsPlayer {
     fn turn(&mut self, yaw: f32, pitch: f32) {
         self.yaw += yaw;
         self.pitch = (self.pitch + pitch).clamp(-PITCH_LIMIT, PITCH_LIMIT);
+        self.hold_mounted_view(false);
+    }
+
+    /// While the weapon is mounted, stops the view at the mount's cone
+    /// (`shooter_sim::mount::YAW_LIMIT` and the pitch limits), as the
+    /// reference does. When the player's own look (`pushed`) keeps going
+    /// past the edge by [`MOUNT_PUSH_OUT`], the view goes through and the
+    /// simulation lets the mount go; recoil and flinches only stop there.
+    fn hold_mounted_view(&mut self, pushed: bool) {
+        let movement = &self.state.movement;
+        if !movement.mounted {
+            self.mount_push = 0.0;
+            return;
+        }
+        let off = shooter_sim::hitbox::gait::wrap_angle(self.yaw - movement.mount_yaw);
+        let held = off.clamp(-mount::YAW_LIMIT, mount::YAW_LIMIT);
+        let pitch = self.pitch.clamp(-mount::PITCH_DOWN, mount::PITCH_UP);
+        let over = (off - held).abs() + (self.pitch - pitch).abs();
+        if over < 1e-6 {
+            self.mount_push = 0.0;
+            return;
+        }
+        if pushed {
+            self.mount_push += over;
+            if self.mount_push > MOUNT_PUSH_OUT {
+                return;
+            }
+        }
+        // Back to the edge without jumping a whole turn.
+        self.yaw -= off - held;
+        self.pitch = pitch;
     }
 
     /// Enabled aim assist targets in range with a clear line of sight.
@@ -2903,6 +2961,7 @@ impl FpsPlayer {
             mantle_left: self.state.movement.mantle_time,
             vaulting: self.state.movement.vaulting,
             on_ladder: self.state.movement.on_ladder(),
+            mount: self.state.movement.mount_blend,
             weapon: combat.weapon().id,
             ads,
             scope: combat.scope_amount(),

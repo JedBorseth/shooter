@@ -1688,6 +1688,7 @@ mod tests {
             ledge_low: false,
             vault: None,
             ladder: None,
+            mount: None,
         };
         let mut stances = Vec::new();
         for _ in 0..ticks {

@@ -122,7 +122,35 @@ cover, with clear room over it and ground beyond). The simulation picks a
 mantle over a vault and climbs at a velocity fixed when the climb starts
 (`MoveState::mantle_dir`), so turning mid-climb does not pull the player off
 the wall. `MoveState::vaulting` marks a vault, which carries on over the top
-and ducks through windows at slide speed. Weapon mounting is not done.
+and ducks through windows at slide speed.
+
+## Weapon mount
+
+Modern Warfare (2019) and its successors' weapon mount (`rust/sim/src/mount.rs`).
+
+| | Here | Reference |
+| --- | --- | --- |
+| Mount | aim at cover and press melee (V, or the controller's melee) | ADS + Melee, the default activation |
+| Cover | a level top 0.55 m ahead, from 0.82 m (a crouched body's gun) to 1.60 m (a standing body's) above the feet, its face within 0.65 m of the body, clear air 6 cm over it for 1.2 m: ledges, barriers, sandbag walls, windowsills | flat surfaces at crouching or standing height |
+| Cue | `[V] Mount` in the interaction prompt while aimed at cover | an icon on the crosshair |
+| Height | the eye moves to 8 cm over the cover (`REST`) on the crouch blend, so the gun rests on the edge: the body rises from a crouch or sinks from standing | the view lowers or rises onto the surface |
+| Effect | kick 35% (`KICK_SCALE`), aimed sway 15% (`SWAY_SCALE`), both settling in over 0.18 s; the first-person weapon thumps onto the edge and its idle breathing and look lag nearly stop | most recoil removed (players measure 70 to 90% less) and nearly all idle sway |
+| View | stops 40 degrees either side of the mount's yaw, 20 up and 30 down; pushing on about 11 degrees more goes through and lets go | the view stops at the mount's limits |
+| Leave | let go of aim, move, jump, crouch, sprint, press melee again, switch weapons, throw, or turn through the edge; the press does its own thing too (a crouch crouches) | the same exits (MWII calls them "Weapon Mount Exit") |
+| Reload | keeps the mount | reloads mounted |
+
+The engine looks for cover only while aiming or mounted, along the mount's
+own yaw once mounted (`body::find_mount`, three rays a tick), and reports its
+height (`MoveEnv::mount`); client and server find the same. Because the mount
+moves the eye on the same crouch blend as a stance change, the camera, the
+shot origin, the capsule, and the hit zones agree. New state:
+`MoveState::mounted`, `mount_yaw`, `mount_crouch`, and `mount_blend`;
+snapshots carry the blend (`PlayerView::mount`), and other players' bodies
+lean 4 degrees onto the gun (cosmetic, inside the hit zones' fit).
+The Testing Area's 1.2 m concrete barriers, its 0.84 m sandbag walls (mounted
+crouched), and windowsills mount; the culvert's 0.44 m sandbags are prone
+height, and the tall walls' ends would need a mount on a wall's side (left
+for later). `godot/tests/weapon_mount_test.gd` checks each case.
 
 ## Ladders
 

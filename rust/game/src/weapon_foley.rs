@@ -34,7 +34,7 @@ const VOICES: usize = 4;
 
 /// Every event `WeaponView::foley_event` emits, as the contract with the
 /// reload animation names them, plus `dry` (dry fire) and `pickup`.
-pub const EVENTS: [&str; 18] = [
+pub const EVENTS: [&str; 20] = [
     "mag_out",
     "mag_in",
     "bolt_release",
@@ -53,6 +53,8 @@ pub const EVENTS: [&str; 18] = [
     "inspect",
     "dry",
     "pickup",
+    "mount",
+    "unmount",
 ];
 
 /// Seconds from the start of an event's sound to its main hit (the magazine
@@ -138,6 +140,11 @@ fn layers(event: &str) -> Vec<Layer> {
         "inspect" => vec![s("inspect", -6.0, 0.0)],
         "dry" => vec![w("dry", 0.0)],
         "pickup" => vec![s("pouch", -4.0, 0.0), s("pouch", -8.0, 0.12)],
+        // The handguard set down on cover, and the gear shifting with the
+        // body; lifted off, a softer brush. Shared handling sounds until the
+        // audio pass records contact foley for it.
+        "mount" => vec![s("ads_in", -3.0, 0.0), s("pouch", -12.0, 0.04)],
+        "unmount" => vec![s("ads_out", -9.0, 0.0)],
         _ => vec![],
     }
 }

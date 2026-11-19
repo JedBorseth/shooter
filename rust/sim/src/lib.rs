@@ -14,6 +14,7 @@ pub mod hardpoint;
 pub mod hitbox;
 pub mod look;
 pub mod melee;
+pub mod mount;
 pub mod movement;
 pub mod net;
 pub mod penetration;

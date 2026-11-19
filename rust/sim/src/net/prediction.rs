@@ -312,6 +312,7 @@ mod tests {
             ledge_low: false,
             vault: None,
             ladder: None,
+            mount: None,
         };
         let mut events = Vec::new();
         let v = player::step(
