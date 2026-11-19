@@ -125,6 +125,19 @@ impl HitboxRig {
         out
     }
 
+    /// Where a third-person soldier's support hand holds the weapon `key`
+    /// (weapon space; `carry::Grips::held`), before its palm is rested on the
+    /// weapon's section: where `tests/bake_support_sections.gd` cuts the
+    /// section. Zero for an unknown weapon or a one-handed hold.
+    #[func]
+    fn support_grip(key: GString) -> Vector3 {
+        use shooter_sim::hitbox::carry::{Grips, Hold};
+        shooter_sim::weapon::WeaponId::by_key(&key.to_string())
+            .map(|id| Grips::held(id.def()))
+            .filter(|g| g.hold != Hold::Pistol)
+            .map_or(Vector3::ZERO, |g| to_godot(g.left))
+    }
+
     #[func]
     fn set_debug_visible(on: bool) {
         set_debug_draw(on);

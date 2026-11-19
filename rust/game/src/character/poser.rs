@@ -236,6 +236,7 @@ impl Grips {
             left: to_sim(self.left),
             rake: self.rake,
             hold: self.hold,
+            section: None,
         }
         .hand_bases();
         (to_godot_basis(right), to_godot_basis(left))
@@ -268,17 +269,18 @@ impl Grips {
         if hold <= 0.0 {
             return (self.left, LEFT_PALM);
         }
-        // The palm's normal (the hand's +Z) in weapon space, and how far the
-        // section reaches along it (an ellipse's support).
-        let n = hand * Vector3::BACK;
-        let half = section.half;
-        let reach = ((n.x * half.x).powi(2) + (n.y * half.y).powi(2)).sqrt();
-        let centre = Vector3::new(
-            section.centre.x + moved.x,
-            section.centre.y + moved.y,
-            self.left.z,
+        // The same contact the arm hit zones use (`carry::section_contact`).
+        let cut = carry::Section {
+            centre: shooter_sim::Vec2::new(section.centre.x + moved.x, section.centre.y + moved.y),
+            half: shooter_sim::Vec2::new(section.half.x, section.half.y),
+        };
+        let hand = shooter_sim::Mat3::from_cols(
+            to_sim(hand.col_a()),
+            to_sim(hand.col_b()),
+            to_sim(hand.col_c()),
         );
-        let palm = Vector3::new(LEFT_PALM.x, LEFT_PALM.y, reach + PALM_SKIN);
+        let (centre, palm) = carry::section_contact(cut, self.left.z, hand);
+        let (centre, palm) = (to_godot(centre), to_godot(palm));
         (self.left.lerp(centre, hold), LEFT_PALM.lerp(palm, hold))
     }
 }
@@ -475,7 +477,8 @@ const RIGHT_PALM: Vector3 = to_godot(carry::RIGHT_PALM);
 const LEFT_PALM: Vector3 = to_godot(carry::LEFT_PALM);
 /// From the hand bone to the gloved palm's surface, where the palm meets a
 /// handguard.
-const PALM_SKIN: f32 = 0.019;
+#[cfg(test)]
+const PALM_SKIN: f32 = carry::PALM_SKIN;
 
 /// One finger's three joint bones and the chain they make.
 type FingerBones = ([i32; 3], grasp::Chain);
