@@ -49,6 +49,10 @@ const DECAL_CULL_MASK: u32 = 0xF_FFFF & !NO_DECALS_LAYER;
 const IMPACT_SCENE: &str = "res://scenes/effects/impact.tscn";
 const EXPLOSION_SCENE: &str = "res://scenes/effects/explosion.tscn";
 const FIRE_SCENE: &str = "res://scenes/effects/fire.tscn";
+const SMOKE_SCENE: &str = "res://scenes/effects/smoke_screen.tscn";
+const FLASH_SCENE: &str = "res://scenes/effects/flashbang.tscn";
+/// Flashbang pops playing at once; a third reuses the older.
+const FLASHES: usize = 2;
 /// Explosions playing at once; a fourth reuses the oldest.
 const EXPLOSIONS: usize = 3;
 /// Seconds an explosion's particles last (its smoke column the longest).
@@ -83,6 +87,8 @@ pub struct Budget {
     pub scorches: usize,
     /// Fires burning at once.
     pub fires: usize,
+    /// Smoke grenade clouds hanging at once.
+    pub smokes: usize,
     /// Fired cases in the world at once, flying or lying where they fell.
     pub cases: usize,
 }
@@ -97,6 +103,7 @@ pub const BUDGETS: [Budget; 3] = [
         tracers: 8,
         scorches: 4,
         fires: 2,
+        smokes: 2,
         cases: 12,
     },
     Budget {
@@ -106,6 +113,7 @@ pub const BUDGETS: [Budget; 3] = [
         tracers: 16,
         scorches: 8,
         fires: 4,
+        smokes: 3,
         cases: 24,
     },
     Budget {
@@ -115,6 +123,7 @@ pub const BUDGETS: [Budget; 3] = [
         tracers: 24,
         scorches: 12,
         fires: 6,
+        smokes: 4,
         cases: 40,
     },
 ];
@@ -396,6 +405,33 @@ fn lying_basis(basis: Basis, normal: Vector3) -> Basis {
     Basis::from_cols(flat.cross(normal), flat, normal)
 }
 
+/// Which slot of a pool of `budget` effects to play the next one in: one
+/// that has finished (its `busy` method returns false), else a new one (the
+/// returned index is `pool.len()`; the caller adds it), else the oldest.
+/// `None` when the budget is zero.
+fn pool_slot(
+    pool: &mut [Gd<Node3D>],
+    next: &mut usize,
+    budget: usize,
+    busy: &str,
+) -> Option<usize> {
+    if budget == 0 {
+        return None;
+    }
+    if let Some(index) = pool
+        .iter()
+        .position(|node| !node.clone().call(busy, &[]).booleanize())
+    {
+        return Some(index);
+    }
+    if pool.len() < budget {
+        return Some(pool.len());
+    }
+    let index = *next % pool.len();
+    *next = index + 1;
+    Some(index)
+}
+
 /// One pooled impact effect and how long it has been playing.
 struct Impact {
     node: Gd<Node3D>,
@@ -418,9 +454,17 @@ pub struct CombatEffects {
     scorch_textures: Option<[Gd<Texture2D>; 2]>,
     /// Explosions played so far (tests).
     explosions_played: u32,
+    /// Flashbang pops played so far (tests).
+    flashes_played: u32,
     fire_scene: Option<Gd<PackedScene>>,
     fires: Vec<Gd<Node3D>>,
     next_fire: usize,
+    smoke_scene: Option<Gd<PackedScene>>,
+    smokes: Vec<Gd<Node3D>>,
+    next_smoke: usize,
+    flash_scene: Option<Gd<PackedScene>>,
+    flashes: Vec<Gd<Node3D>>,
+    next_flash: usize,
     cases: Vec<Case>,
     next_case: usize,
     case_meshes: HashMap<String, Option<Gd<Mesh>>>,
@@ -461,6 +505,8 @@ impl INode3D for CombatEffects {
         self.scene = try_load::<PackedScene>(IMPACT_SCENE).ok();
         self.explosion_scene = try_load::<PackedScene>(EXPLOSION_SCENE).ok();
         self.fire_scene = try_load::<PackedScene>(FIRE_SCENE).ok();
+        self.smoke_scene = try_load::<PackedScene>(SMOKE_SCENE).ok();
+        self.flash_scene = try_load::<PackedScene>(FLASH_SCENE).ok();
         if let Some(stream) = audio::variations("res://assets/audio/player/shell", 1.15) {
             for i in 0..CLINK_VOICES {
                 let mut voice = AudioStreamPlayer3D::new_alloc();
@@ -629,6 +675,81 @@ impl CombatEffects {
         fire.set_global_position(position);
         fire.call("start", &[size.to_variant(), seconds.to_variant()]);
         Some(fire)
+    }
+
+    /// A smoke grenade's cloud popping at `position` (on the ground),
+    /// `age` seconds into its life (a player who joins late sees it as it
+    /// is now): billows that pour out, hang, and thin away, with a fog over
+    /// the screen from inside. Returns the cloud, whose `dissipate()` fades
+    /// it early and whose `serial` changes if the pool hands it to another
+    /// grenade. When every cloud in the preset's pool hangs, the oldest is
+    /// moved here.
+    #[func]
+    pub fn smoke(&mut self, position: Vector3, age: f32) -> Option<Gd<Node3D>> {
+        let budget = self.current_budget().smokes;
+        while self.smokes.len() > budget {
+            if let Some(mut old) = self.smokes.pop() {
+                old.queue_free();
+            }
+        }
+        let scene = self.smoke_scene.clone()?;
+        let index = pool_slot(&mut self.smokes, &mut self.next_smoke, budget, "hanging")?;
+        if index == self.smokes.len() {
+            let node = scene.instantiate()?.try_cast::<Node3D>().ok()?;
+            self.base_mut().add_child(&node);
+            self.smokes.push(node);
+        }
+        let ground = self.floor_below(position + Vector3::UP * 0.3);
+        let mut cloud = self.smokes[index].clone();
+        cloud.set_global_position(position);
+        cloud.call(
+            "start",
+            &[age.to_variant(), ground.unwrap_or(-1000.0).to_variant()],
+        );
+        Some(cloud)
+    }
+
+    /// Smoke clouds hanging now (tests).
+    #[func]
+    fn smokes_hanging(&self) -> i64 {
+        self.smokes
+            .iter()
+            .filter(|s| (*s).clone().call("hanging", &[]).booleanize())
+            .count() as i64
+    }
+
+    /// A flashbang going off at `position`: a white burst, sparks, a hard
+    /// flash of light, and a small puff of smoke. The caller plays the bang.
+    #[func]
+    pub fn flash_pop(&mut self, position: Vector3) {
+        let Some(scene) = self.flash_scene.clone() else {
+            return;
+        };
+        let Some(index) = pool_slot(&mut self.flashes, &mut self.next_flash, FLASHES, "playing")
+        else {
+            return;
+        };
+        if index == self.flashes.len() {
+            let Some(node) = scene
+                .instantiate()
+                .and_then(|n| n.try_cast::<Node3D>().ok())
+            else {
+                return;
+            };
+            self.base_mut().add_child(&node);
+            self.flashes.push(node);
+        }
+        let ground = self.floor_below(position + Vector3::UP * 0.3);
+        let mut flash = self.flashes[index].clone();
+        flash.set_global_position(position);
+        flash.call("setup", &[ground.unwrap_or(-1000.0).to_variant()]);
+        self.flashes_played = self.flashes_played.wrapping_add(1);
+    }
+
+    /// Flashbang pops played so far (tests).
+    #[func]
+    fn flashes_played(&self) -> i64 {
+        i64::from(self.flashes_played)
     }
 
     /// Fires burning or dying down now (tests).
@@ -931,6 +1052,7 @@ impl CombatEffects {
             "tracers" => b.tracers as i64,
             "scorches" => b.scorches as i64,
             "fires" => b.fires as i64,
+            "smokes" => b.smokes as i64,
             "cases" => b.cases as i64,
         }
     }
@@ -1295,7 +1417,10 @@ mod tests {
             assert!(pair[0].impacts <= pair[1].impacts);
             assert!(pair[0].holes <= pair[1].holes);
             assert!(pair[0].splats <= pair[1].splats);
+            assert!(pair[0].smokes <= pair[1].smokes);
         }
+        // Every preset can show a smoke from each side at once.
+        assert!(BUDGETS.iter().all(|b| b.smokes >= 2));
         assert_eq!(BUDGETS.map(|b| b.holes), [16, 48, 96]);
     }
 

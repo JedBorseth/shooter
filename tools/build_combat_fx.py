@@ -28,6 +28,8 @@ Downloaded (CC0), cached in ~/.cache/shooter-fidelity/combat-vfx/sources:
 - explosion_5x5.png: Unity Labs' Explosion02HD flipbook, a fireball burning
   out into smoke.
 - flame_8x4.png: Unity Labs' SmallFlame01 loop, for fires.
+- cloud_8x4.png: Unity Labs' Cloud02 and Cloud01 loops, sixteen frames each,
+  for the smoke grenade's billows and the flashbang's puff.
 
 Also generated: scorch_{albedo,orm}.png, the soot a blast leaves.
 """
@@ -436,6 +438,35 @@ def flame_flipbook() -> None:
     print("flame_8x4")
 
 
+def cloud_flipbook() -> None:
+    """cloud_8x4.png: two billowing loops, Unity Labs' Cloud02 (top two rows)
+    and Cloud01 (bottom two), every fourth of each one's 64 frames at 128 px,
+    for the smoke grenade's cloud and the flashbang's puff. As for gun smoke,
+    the colour is shading only (normalised grey with its shadows lifted, so
+    the scene's light decides how dark it is) and alpha is density."""
+    rows = []
+    for name in ("Cloud02", "Cloud01"):
+        atlas = unity_flipbook(name, f"{name}_8x8.tga")
+        rows.append(repack(atlas, 8, list(range(0, 64, 4)), 4, 128))
+    # Two 4 x 4 atlases side by side would mix the loops; lay each loop out
+    # as two rows of eight instead.
+    out = np.zeros((4 * 128, 8 * 128, 4), dtype=np.float32)
+    for loop, rgba in enumerate(rows):
+        for frame in range(16):
+            sx, sy = (frame % 4) * 128, (frame // 4) * 128
+            dx, dy = (frame % 8) * 128, (loop * 2 + frame // 8) * 128
+            out[dy:dy + 128, dx:dx + 128] = rgba[sy:sy + 128, sx:sx + 128]
+    grey = out[..., :3].mean(axis=2)
+    dense = out[..., 3] > 0.2
+    level = np.percentile(grey[dense], 90) if dense.any() else 1.0
+    # Keep the billows' self-shadowing, softened: it gives the bank its
+    # volume, while the scene's light sets the overall tone.
+    shade = 0.55 + 0.45 * np.clip(grey / max(level, 1e-3), 0, 1)
+    out[..., 0] = out[..., 1] = out[..., 2] = shade
+    save_rgba(OUT / "cloud_8x4.png", out)
+    print("cloud_8x4")
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     for i in range(4):
@@ -445,6 +476,7 @@ def main() -> None:
     smoke_flipbook()
     explosion_flipbook()
     flame_flipbook()
+    cloud_flipbook()
     scorch()
     print(f"wrote {OUT}")
 

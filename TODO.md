@@ -262,6 +262,7 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
   - [x] Soft (depth-faded) gun smoke on High, first and third person (`muzzle_smoke.gdshader` `SOFT_SMOKE`).
   - [ ] Heat haze on High: priced at +0.4 ms in the firefight (a screen copy); waits for High headroom on Slamcity.
   - [x] An explosion and fire effect with an API for grenades (`CombatEffects.explosion`, `CombatEffects.fire`); frag grenades use the explosion.
+  - [x] The smoke grenade's cloud and the flashbang's pop as pooled flipbook effects (`CombatEffects.smoke`, `CombatEffects.flash_pop`, Unity Labs' Cloud flipbooks).
   - [x] A wound mark where a character was hit (character shader, `wounds.rs`).
 - [x] Skyline windows with fake rooms behind them (interior mapping in `world.gdshader`), and bump-mapped cloth, leather, and creases on characters.
 - [x] Soldiers as believable people: a MakeHuman body fitted to the existing skeleton, a combat shirt and trousers, modelled kit (helmet with cover and mounts, glasses, balaclava or neck gaiter or a bare face per character, plate carrier with pouches, magazines and a radio, belt and holster, knee pads), all in one mesh with one baked texture atlas and a team tint (`tools/build_character_assets.py`).

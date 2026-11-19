@@ -57,8 +57,9 @@ func _throw_and_bounce(main: Node, player: FpsPlayer) -> void:
 		_check(pin != null and not pin.visible, "the thrown grenade has no pin")
 	await _sixtieths(60)
 	grenades = get_nodes_in_group(&"grenades")
+	var at := Vector3.INF
 	if grenades.size() == 1:
-		var at := (grenades[0] as Node3D).global_position
+		at = (grenades[0] as Node3D).global_position
 		_check(at.z > SPOT.z - 3.8, "it bounced back off the wall, at z %.2f" % at.z)
 		_check(at.y < SPOT.y + 1.0, "and fell to the floor, at y %.2f" % at.y)
 	else:
@@ -67,6 +68,8 @@ func _throw_and_bounce(main: Node, player: FpsPlayer) -> void:
 	player.teleport(SPOT + Vector3(20, 0, 0), 0.0)
 	await _sixtieths(150)
 	_check(get_nodes_in_group(&"grenades").is_empty(), "the grenade went off after its fuse")
+	var blast := _effect_near(at, "explosion.tscn")
+	_check(blast != null, "the explosion plays where the grenade went off, not at the map's origin")
 	_check(player.is_alive(), "the thrower, 20 m away, is unhurt")
 	await _tap("lethal")
 	_check(get_nodes_in_group(&"grenades").is_empty(), "no frag left to throw")
@@ -149,7 +152,35 @@ func _smoke(player: FpsPlayer) -> void:
 	_check(player.tactical_key() == "smoke", "a smoke grenade this life")
 	await _tap("tactical")
 	await _sixtieths(120)
-	_check(get_nodes_in_group(&"smoke").size() == 1, "it pops into a cloud")
+	var clouds := get_nodes_in_group(&"smoke")
+	_check(clouds.size() == 1, "it pops into a cloud")
+	var effects := get_first_node_in_group(&"combat_effects")
+	_check(effects.smokes_hanging() == 1, "the pooled cloud hangs")
+	if clouds.size() == 1:
+		var at := (clouds[0] as Node3D).global_position
+		var cloud := _effect_near(at, "smoke_screen.tscn")
+		_check(cloud != null and cloud.radius() > 2.0, "where the grenade popped, growing")
+		clouds[0].dissipate()
+		await _sixtieths(60)
+		_check(effects.smokes_hanging() == 0, "a dropped cloud fades away")
+
+
+## The combat effects' pooled effect from `scene` (a file name) within 3 m of
+## `at` (a grenade can roll on after it was last seen), if one is showing.
+func _effect_near(at: Vector3, scene: String) -> Node3D:
+	var effects := get_first_node_in_group(&"combat_effects")
+	if effects == null:
+		return null
+	for child in effects.get_children():
+		var node := child as Node3D
+		if (
+			node != null
+			and node.visible
+			and node.scene_file_path.ends_with(scene)
+			and node.global_position.distance_to(at) < 3.0
+		):
+			return node
+	return null
 
 
 ## A solid box of `size` centred at `at`, on the world layer.
