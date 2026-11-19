@@ -196,9 +196,31 @@ pub fn pose_direction_samples(direction: f32) -> (usize, usize, f32) {
     )
 }
 
-/// How much quicker the stride is in `direction` than forward.
+/// How much quicker the authored stride is in `direction` than forward (each
+/// step that much shorter).
 pub fn cadence(direction: f32) -> f32 {
     1.0 + LATERAL_CADENCE * fmath::sin_cos(direction).0.abs()
+}
+
+/// How much quicker the stride runs in `direction` than forward, as drawn:
+/// the loops of the two authored directions around it ([`DIRECTIONS`], 45°
+/// apart) blend by weight, and so do their foot paths, two vectors 45°
+/// apart whose blend is shorter than either (by up to 8% halfway, more where
+/// one is shortened by [`cadence`]). The stride runs faster by as much, so a
+/// planted foot keeps pace with the ground instead of sliding along with the
+/// body. In an authored direction it is [`cadence`].
+pub fn blend_cadence(direction: f32) -> f32 {
+    use std::f32::consts::FRAC_PI_4;
+    let at = direction / FRAC_PI_4;
+    let from = at.floor();
+    let t = at - from;
+    let (a, b) = (from * FRAC_PI_4, (from + 1.0) * FRAC_PI_4);
+    // Each loop's foot path, relative to forward's: the first along x, the
+    // second 45° round from it.
+    let (la, lb) = ((1.0 - t) / cadence(a), t / cadence(b));
+    let half = std::f32::consts::FRAC_1_SQRT_2;
+    let (x, y) = (la + lb * half, lb * half);
+    1.0 / (x * x + y * y).sqrt()
 }
 
 /// The furthest the standing blend goes without sprinting in `direction`:
@@ -249,7 +271,8 @@ pub fn crouch_rate(speed: f32) -> f32 {
 
 /// Strides per second for a body moving at `velocity` with view `yaw`: the
 /// loops' own cadence, blended and sped up as the character's animation tree
-/// plays them, quicker sideways ([`cadence`]). Zero standing still, sliding,
+/// plays them, quicker sideways and between two authored directions
+/// ([`blend_cadence`]). Zero standing still, sliding,
 /// or off the ground, where no loop plays.
 pub fn stride_rate(
     velocity: Vec3,
@@ -265,7 +288,7 @@ pub fn stride_rate(
         return 0.0;
     }
     let direction = direction(right, forward, sprinting);
-    let cadence = cadence(direction);
+    let cadence = blend_cadence(direction);
     match stance {
         Stance::Sliding => 0.0,
         Stance::Crouching => crouch_rate(speed) / CROUCH_LOOP.seconds * cadence,
@@ -504,6 +527,28 @@ mod tests {
         // Sideways steps are quicker; the run blends to the jog from 45° off.
         assert_eq!(cadence(0.0), 1.0);
         assert!((cadence(-FRAC_PI_2) - (1.0 + LATERAL_CADENCE)).abs() < 1e-5);
+        // In an authored direction the drawn stride runs at its cadence;
+        // halfway between two it runs faster by the blended foot path's loss
+        // (cos 22.5° between forward and its diagonal), and symmetrically.
+        for d in [
+            0.0,
+            FRAC_PI_4,
+            FRAC_PI_2,
+            3.0 * FRAC_PI_4,
+            PI,
+            -FRAC_PI_4,
+            -FRAC_PI_2,
+        ] {
+            assert!((blend_cadence(d) - cadence(d)).abs() < 1e-4, "{d}");
+        }
+        let half = blend_cadence(FRAC_PI_4 * 0.5);
+        let lengths = (1.0 + 1.0 / cadence(FRAC_PI_4)) * 0.5;
+        assert!(
+            half > 1.0 / lengths && half < 1.0 / (lengths * 0.92),
+            "{half}"
+        );
+        assert!((blend_cadence(0.3) - blend_cadence(-0.3)).abs() < 1e-5);
+        assert!((blend_cadence(2.5) - blend_cadence(-2.5)).abs() < 1e-5);
         assert_eq!(run_limit(0.0), RUN_BLEND_LIMIT);
         assert_eq!(run_limit(-PI), JOG_SPEED);
         assert!(run_limit(0.3) < RUN_BLEND_LIMIT && run_limit(0.3) > JOG_SPEED);

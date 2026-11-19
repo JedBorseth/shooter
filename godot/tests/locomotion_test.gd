@@ -8,7 +8,9 @@ extends SceneTree
 ## weapon before the new one comes up. A reload takes the magazine out of the
 ## gun with the support hand and seats it again; an empty one drops the old
 ## magazine, which falls and lies on the ground. An extended magazine shows
-## on the gun. Exits non-zero on failure.
+## on the gun. Walking between two authored directions, a planted foot keeps
+## pace with the ground instead of sliding along with the body. Exits non-zero
+## on failure.
 ## Run from the repo root:
 ##   godot --headless --path godot --fixed-fps 120 --script res://tests/locomotion_test.gd
 
@@ -31,6 +33,7 @@ func _run() -> void:
 	await _magazine()
 	await _dropped_magazines()
 	await _extended_magazine()
+	await _blend_slide()
 	_finish()
 
 
@@ -331,6 +334,70 @@ func _dropped_magazines() -> void:
 				"a dropped magazine lies on the ground, its lowest point at %.3f m" % low.y
 			)
 	ground.queue_free()
+
+
+## Walking halfway between two authored directions blends their foot paths,
+## which are 45° apart and so shorter together than either; the stride runs
+## faster by as much (`gait::blend_cadence`), so a planted foot keeps pace
+## with the ground. Before, it slid along with the body by 7–11% of the
+## travel, against about 1% in an authored direction.
+func _blend_slide() -> void:
+	var slides := PackedFloat32Array()
+	for degrees: float in [22.5, 67.5, -22.5, -67.5]:
+		slides.append(await _planted_slide(degrees, 1.06))
+	var mean := 0.0
+	for slide in slides:
+		mean += slide / slides.size()
+	_check(
+		mean < 0.05,
+		(
+			"a walk between two directions keeps its planted feet (slides %.1f%% of the travel: %s)"
+			% [
+				mean * 100.0,
+				", ".join(Array(slides).map(func(x: float) -> String: return "%.1f" % (x * 100.0)))
+			]
+		)
+	)
+
+
+## How far a walking body's planted feet move along its travel, as a share
+## of how far it travels while they are planted (both feet, averaged).
+func _planted_slide(degrees: float, speed: float) -> float:
+	var rig := SOLDIER.instantiate() as SoldierRig
+	root.add_child(rig)
+	var a := deg_to_rad(degrees)
+	var velocity := Vector3(sin(a), 0, -cos(a)) * speed
+	var along := Vector2(velocity.x, velocity.z).normalized()
+	var state := {"weapon": "m4", "velocity": velocity}
+	for i in 120:
+		rig.global_position += velocity * DT
+		rig.drive(state, DT)
+		await process_frame
+	var feet := {"LeftFoot": [], "RightFoot": []}
+	# Two strides.
+	for i in 240:
+		rig.global_position += velocity * DT
+		rig.capture_pose()
+		rig.drive(state, DT)
+		await process_frame
+		await process_frame
+		for foot: String in feet:
+			feet[foot].append(rig.posed_bone_transform(foot).origin)
+	rig.queue_free()
+	var slide := 0.0
+	var travel := 0.0
+	for foot: String in feet:
+		var points: Array = feet[foot]
+		var low := INF
+		for p: Vector3 in points:
+			low = minf(low, p.y)
+		# Planted: within 5 mm of its lowest.
+		for i in range(1, points.size()):
+			if points[i].y < low + 0.005 and points[i - 1].y < low + 0.005:
+				var step: Vector3 = points[i] - points[i - 1]
+				slide += Vector2(step.x, step.z).dot(along)
+				travel += speed * DT
+	return slide / maxf(travel, 1e-6)
 
 
 func _check(condition: bool, label: String) -> void:
