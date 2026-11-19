@@ -5,7 +5,10 @@ extends SceneTree
 ## a bot throws a frag at an enemy that ducked out of sight, runs from a live
 ## frag at its feet and lives, is blinded by a flashbang it faces but not by
 ## one behind a wall, and cannot see an enemy through smoke but can without
-## it. Exits non-zero on failure.
+## it. B is held passive throughout (it stands and presses nothing): it is
+## only a target, and left free it could walk round the low wall and shoot A
+## dead while A cooked its frag, which made the throw check flaky. Exits
+## non-zero on failure.
 ## godot --headless --path godot --script res://tests/bot_equipment_test.gd
 
 const SERVER_SCENE := "res://scenes/server.tscn"
@@ -42,6 +45,7 @@ func _run() -> void:
 			break
 		await physics_frame
 	_check(_server.match_phase() == "playing", "the match starts")
+	_server.debug_bot_passive(B, true)
 	await _frag_at_a_hidden_enemy()
 	await _run_from_a_frag()
 	await _flashbang()

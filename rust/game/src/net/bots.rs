@@ -435,6 +435,9 @@ pub struct BotBrain {
     pub flashed: u32,
     /// Takes every grenade chance, whatever its skill (tests).
     pub always_throw: bool,
+    /// Stands where it is and presses nothing: no moving, shooting, or
+    /// throwing (tests that need a bot only as a target).
+    pub passive: bool,
 }
 
 #[derive(Default)]
@@ -487,6 +490,7 @@ impl BotBrain {
             flights: 0,
             flashed: 0,
             always_throw: false,
+            passive: false,
         }
     }
 
@@ -587,7 +591,7 @@ impl BotBrain {
     ) -> PlayerInput {
         let skill = self.skill.params();
         let tick = world.tick;
-        if !me.alive {
+        if !me.alive || self.passive {
             self.engagement = None;
             self.throwing = None;
             self.blind = None;
