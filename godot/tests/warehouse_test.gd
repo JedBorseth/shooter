@@ -99,9 +99,11 @@ func _run() -> void:
 	_finish()
 
 
-## Props collide with what players see: every prop body has a visible model,
-## props use fitted clip boxes (tools/build_warehouse_clip.py) rather than one
-## box around the model, and no box reaches past the model's own bounds.
+## Props collide with what players see: every prop body has a visible model
+## (or, for a collision-only body, a visible sibling that covers it), props use
+## fitted clip boxes (tools/build_warehouse_clip.py) rather than one box around
+## the model, no box reaches past what is visible, and players fit under the
+## overhead extraction hood, which a box around the whole model walled off.
 func _check_prop_collision(map: Node) -> void:
 	var invisible := PackedStringArray()
 	var oversized := PackedStringArray()
@@ -111,20 +113,20 @@ func _check_prop_collision(map: Node) -> void:
 		for body: StaticBody3D in map.get_node(group).find_children(
 			"*", "StaticBody3D", true, false
 		):
-			var meshes := body.find_children("*", "MeshInstance3D", true, false)
 			var shapes := body.find_children("*", "CollisionShape3D", false, false)
 			if shapes.is_empty():
 				continue
 			bodies += 1
+			var meshes := body.find_children("*", "MeshInstance3D", true, false)
 			if meshes.is_empty():
+				# Collision authored beside its mesh (the dispatch roof slabs).
+				for c in body.get_parent().get_children():
+					if c != body and String(body.name).begins_with(String(c.name)):
+						meshes.append_array(c.find_children("*", "MeshInstance3D", true, false))
+			var seen := _visible_bounds(meshes, body)
+			if seen.size == Vector3.ZERO:
 				invisible.append(str(map.get_path_to(body)))
 				continue
-			var seen := AABB()
-			for i in meshes.size():
-				var m := meshes[i] as MeshInstance3D
-				var box: AABB = m.global_transform * m.get_aabb()
-				seen = box if i == 0 else seen.merge(box)
-			seen = seen.grow(0.1)
 			for s: CollisionShape3D in shapes:
 				if s.name.begins_with("Clip"):
 					clipped += 1
@@ -140,6 +142,37 @@ func _check_prop_collision(map: Node) -> void:
 		clipped > bodies * 2,
 		"props collide with fitted clip boxes (%d boxes, %d bodies)" % [clipped, bodies]
 	)
+	var hood := map.get_node("PhotoPass/Machines").find_children("ElevatedHood*", "", false, false)
+	_check(hood.size() == 1, "the extraction hood is in the finishing cell")
+	if hood.size() == 1:
+		var capsule := CapsuleShape3D.new()
+		capsule.radius = 0.3
+		capsule.height = 1.6
+		var query := PhysicsShapeQueryParameters3D.new()
+		query.shape = capsule
+		query.collision_mask = 1
+		var blocked := false
+		for along in [-1.6, -0.8, 0.0]:
+			query.transform.origin = (hood[0] as Node3D).global_transform * Vector3(along, 0.9, 0)
+			var hits := (hood[0] as Node3D).get_world_3d().direct_space_state.intersect_shape(query)
+			for h in hits:
+				if h.collider == hood[0]:
+					blocked = true
+		_check(not blocked, "players fit under the overhead extraction hood")
+
+
+## The world bounds of `meshes` that lie on or around `body`, grown a little.
+func _visible_bounds(meshes: Array, body: Node3D) -> AABB:
+	var seen := AABB()
+	var first := true
+	var near := AABB(body.global_position - Vector3.ONE * 50.0, Vector3.ONE * 100.0)
+	for m: MeshInstance3D in meshes:
+		var box: AABB = m.global_transform * m.get_aabb()
+		if not near.intersects(box):
+			continue
+		seen = box if first else seen.merge(box)
+		first = false
+	return seen.grow(0.1) if not first else AABB()
 
 
 func _check(ok: bool, description: String) -> void:

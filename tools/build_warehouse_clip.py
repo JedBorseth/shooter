@@ -39,7 +39,8 @@ CELL = 0.16  # clip column size (m)
 HEADROOM = 2.0  # open space under an overhead part players can walk through
 MIN_PART = 0.05  # columns thinner than this (m tall) are dropped
 TOL = 0.12  # columns within this height merge into one box
-MAX_BOXES = 24
+MAX_BOXES = 40
+GAP = 0.3  # vertical openings at least this tall stay open
 
 
 def load(path: Path) -> trimesh.Trimesh:
@@ -68,54 +69,70 @@ def columns(mesh: trimesh.Trimesh):
     pad[:nx, :, :nz] = filled
     occ = pad.reshape(cx, k, ny, cz, k).any(axis=(1, 4))  # (cx, ny, cz)
     base_y = mesh.bounds[0][1]
-    lo = np.full((cx, cz), np.nan)
-    hi = np.full((cx, cz), np.nan)
     ys = origin[1] + (np.arange(ny) + 0.5) * PITCH
+    spans = {}
     for i in range(cx):
         for j in range(cz):
             col = np.flatnonzero(occ[i, :, j])
             if col.size == 0:
                 continue
-            bottom, top = ys[col[0]] - PITCH / 2, ys[col[-1]] + PITCH / 2
-            # Gaps tall enough to walk through, starting near the floor, stay open.
-            gaps = np.flatnonzero(np.diff(col) > 1)
-            for g in gaps:
-                gap_lo = ys[col[g]] + PITCH / 2
-                gap_hi = ys[col[g + 1]] - PITCH / 2
-                if gap_lo - base_y < 0.45 and gap_hi - gap_lo >= HEADROOM - 0.45:
-                    # Below the gap is only feet/rails: walkable; keep the overhead part.
-                    bottom = gap_hi
-                    break
-            if top - bottom < MIN_PART:
-                continue
-            lo[i, j], hi[i, j] = bottom, top
+            # Split the column at every real gap: shelf openings and the space
+            # under overhead parts stay open to bullets and players.
+            breaks = np.flatnonzero(np.diff(col) * PITCH > GAP)
+            runs = np.split(col, breaks + 1)
+            out = []
+            for run in runs:
+                bottom, top = ys[run[0]] - PITCH / 2, ys[run[-1]] + PITCH / 2
+                if top - bottom >= MIN_PART or bottom - base_y < 0.05:
+                    out.append([bottom, top])
+            # Feet and rails under an overhead part are not worth walking around
+            # separately from the floor: keep them only if they are the part.
+            if len(out) > 1 and out[0][1] - base_y < 0.45 and out[1][0] - out[0][1] >= HEADROOM - 0.45:
+                out = out[1:]
+            out = [sp for sp in out if sp[1] - sp[0] >= MIN_PART]
+            if out:
+                spans[(i, j)] = out
     corner = np.array([origin[0], origin[2]])
-    return lo, hi, corner, k * PITCH
+    return spans, (cx, cz), corner, k * PITCH
 
 
-def merge(lo, hi, corner, cell, tol):
-    """Greedy rectangles over columns of similar bottom and top."""
-    cx, cz = lo.shape
-    used = np.isnan(lo)
+def merge(spans, shape, corner, cell, tol):
+    """Greedy rectangles over columns holding a span of similar bottom and top."""
+    cx, cz = shape
+    used = {key: [False] * len(v) for key, v in spans.items()}
+
+    def find(ii, jj, b, t):
+        for n, (bb, tt) in enumerate(spans.get((ii, jj), ())):
+            if not used[(ii, jj)][n] and abs(bb - b) <= tol and abs(tt - t) <= tol:
+                return n
+        return None
+
     boxes = []
-    for i in range(cx):
-        for j in range(cz):
-            if used[i, j]:
+    for (i, j), column in sorted(spans.items()):
+        for n, (b, t) in enumerate(column):
+            if used[(i, j)][n]:
                 continue
-            b, t = lo[i, j], hi[i, j]
-
-            def ok(ii, jj, b=b, t=t):
-                return (not used[ii, jj] and abs(lo[ii, jj] - b) <= tol and abs(hi[ii, jj] - t) <= tol)
-
+            used[(i, j)][n] = True
+            cells = [(i, j, n)]
             j1 = j
-            while j1 + 1 < cz and ok(i, j1 + 1):
+            while j1 + 1 < cz:
+                m = find(i, j1 + 1, b, t)
+                if m is None:
+                    break
+                used[(i, j1 + 1)][m] = True
+                cells.append((i, j1 + 1, m))
                 j1 += 1
             i1 = i
-            while i1 + 1 < cx and all(ok(i1 + 1, jj) for jj in range(j, j1 + 1)):
+            while i1 + 1 < cx:
+                row = [find(i1 + 1, jj, b, t) for jj in range(j, j1 + 1)]
+                if any(m is None for m in row):
+                    break
+                for jj, m in zip(range(j, j1 + 1), row):
+                    used[(i1 + 1, jj)][m] = True
+                    cells.append((i1 + 1, jj, m))
                 i1 += 1
-            blk = (slice(i, i1 + 1), slice(j, j1 + 1))
-            used[blk] = True
-            bb, tt = float(np.nanmin(lo[blk])), float(np.nanmax(hi[blk]))
+            bb = min(spans[(a, c)][m][0] for a, c, m in cells)
+            tt = max(spans[(a, c)][m][1] for a, c, m in cells)
             x0, z0 = corner + np.array([i, j]) * cell
             x1, z1 = corner + np.array([i1 + 1, j1 + 1]) * cell
             boxes.append([x0, bb, z0, x1, tt, z1])
@@ -123,19 +140,19 @@ def merge(lo, hi, corner, cell, tol):
 
 
 def clip(mesh: trimesh.Trimesh) -> list[list[float]]:
-    lo, hi, corner, cell = columns(mesh)
-    # Drop specks: isolated columns smaller than one cell and lower than 0.3 m.
-    keep = ~np.isnan(lo)
-    lab, n = ndimage.label(keep)
-    for k in range(1, n + 1):
-        part = lab == k
-        if part.sum() <= 1 and np.nanmax(hi[part]) - np.nanmin(lo[part]) < 0.3:
-            lo[part] = hi[part] = np.nan
+    spans, shape, corner, cell = columns(mesh)
+    # Drop specks: lone columns lower than 0.3 m with no neighbour.
+    for (i, j) in list(spans):
+        lone = not any((i + di, j + dj) in spans for di in (-1, 0, 1) for dj in (-1, 0, 1) if di or dj)
+        if lone and max(t for _, t in spans[(i, j)]) - min(b for b, _ in spans[(i, j)]) < 0.3:
+            del spans[(i, j)]
     tol = TOL
-    boxes = merge(lo, hi, corner, cell, tol)
-    while len(boxes) > MAX_BOXES and tol < 3.0:
-        tol *= 1.6
-        boxes = merge(lo, hi, corner, cell, tol)
+    boxes = merge(spans, shape, corner, cell, tol)
+    # Coarser height matching keeps big models to a sane box count; it never
+    # grows past GAP, so it cannot bridge an opening.
+    while len(boxes) > MAX_BOXES and tol * 1.5 < GAP:
+        tol *= 1.5
+        boxes = merge(spans, shape, corner, cell, tol)
     # Clamp to the model's bounds (voxels overhang the surface by up to a voxel).
     bmin, bmax = mesh.bounds
     out = []

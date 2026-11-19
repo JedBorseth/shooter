@@ -181,14 +181,17 @@ and the exterior, are educated guesses.
 The photo pass was built to look like the plant, not to play like a Call of
 Duty map, and measured that way. [`warehouse_measure.py`](../tools/map_blockout/warehouse_measure.py)
 measures the built scene: `godot/tests/warehouse_grid.gd` samples its real
-collision on a 0.5 m grid, and the script reports the map-design targets.
+collision on a 0.5 m grid (standing players on the lowest surface they fit on,
+so the floor under an overhead part counts), and the script reports the
+map-design targets.
 
 | Measure | Photo pass | 6v6 pass | Target |
 | --- | --- | --- | --- |
 | Start to start | 110 m (14.8 s) | 82 m (11.0 s) | 75 to 90 m |
 | Start to the middle (x 0, z 6) | — | 5.3 s and 5.9 s | 5 to 6 s each |
-| Median longest eye-height line | 33.8 m | 23.8 m | 32 m or less |
-| Floor that sees past 40 m | 33% | 3% | under 10% |
+| Start to the west and east lanes' middles | — | 6.8 / 7.1 s, 8.0 / 8.3 s | within about 0.3 s |
+| Median longest eye-height line | 33.8 m | 23.5 m | 32 m or less |
+| Floor that sees past 40 m | 33% | 4% | under 10% |
 | Longest line | 80 m | 58 m | 60 m or less |
 | Longest line from a start | 78 m | 30 m | no line into the enemy half |
 
@@ -207,8 +210,18 @@ collision on a 0.5 m grid, and the script reports the map-design targets.
 - **Hall and wing cover.** Pallet walls (2.4 to 3.2 m) stand staggered across
   the aisles between the lines, the east aisle, and the length of the wing.
   Three waist-high units in the open middle block movement but not sight.
+- **East bay.** Stock staged across the east bay door's approach sealed it
+  from inside, so the south team had two ways in to the north team's four.
+  `KEEP_CLEAR` drops stock there after placement, and the east lane now takes
+  both teams about the same time.
 - A floor strip that was missing between the parking lot and the wing's north
   wall is filled (`PATCHES`).
+- **Bots.** Lanes used to be read as running west to east, with a team's
+  direction taken from its spawns' mean X; both Warehouse teams average x 0.
+  Bots now take the direction between the two teams' starts and run each lane
+  that way (`lane_route` in `rust/game/src/net/bots.rs`), which is unchanged on
+  maps whose teams start west and east. `bots_test.gd -- --warehouse` plays a
+  minute of bot TDM on Warehouse in CI.
 
 Reference: the layout targets in the map-design skill (Call of Duty core 6v6
 maps such as Crash, Strike, Raid, and Standoff), and Modern Warfare III's Meat
@@ -217,15 +230,17 @@ for an industrial interior where machines and stock blocks are the hard cover.
 **Collision.** Every prop collided as one box around its whole model, so the
 overhead extraction hood walled off the floor under it, forklifts blocked the
 air around their forks and mast, the incline conveyor blocked everything under
-its belt, and two invisible slabs from an older office ceiling hung inside the
-dispatch office. [`build_warehouse_clip.py`](../tools/build_warehouse_clip.py)
+its belt, and every shelf of a rack stopped bullets. [`build_warehouse_clip.py`](../tools/build_warehouse_clip.py)
 voxelizes each model and writes clip boxes to
 `godot/assets/props/warehouse_photo/clip.json`, the way Call of Duty maps use
-player clip: boxes that follow the solid parts, leave walkable space under
-overhead parts open, and skip details too thin to matter. The builder gives
-every placed prop and the older scene-placed dressing those boxes, and removes
-bodies that have collision but nothing to see. The test fails on any such body
-or any box that reaches past its model.
+player clip: boxes that follow the solid parts, keep every opening at least
+0.3 m tall open (rack shelves, the space under overhead parts), and skip
+details too thin to matter. The builder gives every placed prop and the older
+scene-placed dressing those boxes; bodies with no model of their own, such as
+the dispatch office's roof slabs under their sibling ceiling meshes, keep
+their authored collision. The test fails on a collider with nothing visible
+around it, a box that reaches past what is visible, a return to single boxes,
+or a player not fitting under the extraction hood.
 
 **Photo 10** looks south across the feed end of the rotary die-cutter (the
 south line's east end) to the dispatch office. It adds:
@@ -248,7 +263,8 @@ Rebuild:
 python3 tools/map_blockout/warehouse_photo_layout.py
 blender -b --python tools/build_warehouse_photo_machines.py -- rotary_feeder pallet_rack_orange trim_duct
 uv run --with trimesh --with numpy --with scipy tools/build_warehouse_clip.py
-# A real renderer is needed: headless Godot saves MultiMesh instances empty.
+# A real renderer is needed: headless Godot saves MultiMesh instances empty,
+# so the script refuses to rebuild those parts under --headless.
 xvfb-run -a godot --path godot --script res://tools/warehouse_build_headless.gd
 GRID_OUT=grid.json godot --headless --path godot --script res://tests/warehouse_grid.gd
 uv run --with numpy --with matplotlib tools/map_blockout/warehouse_measure.py grid.json --centre=0,6

@@ -42,19 +42,39 @@ func _run() -> void:
 		for j in nx:
 			var x: float = X[0] + (j + 0.5) * CELL
 			var z: float = Z[0] + (i + 0.5) * CELL
-			# Highest walkable surface under the roof: start below the joists.
-			var ray := PhysicsRayQueryParameters3D.create(
-				Vector3(x, 8.0, z), Vector3(x, -4.0, z), 1
-			)
-			var hit := space.intersect_ray(ray)
-			var y: float = hit.position.y if hit else -99.0
-			floor.append(y)
-			if not hit:
+			# Every surface under the roof, top down (a ray that starts inside a
+			# shape passes through it, so each restart finds the next one). A
+			# player stands on the lowest surface with room above it: the floor
+			# under an overhead hood, not the hood's top; a stack's top only
+			# when the floor under it is the stack itself.
+			var surfaces := []
+			var from := 8.0
+			for k in 5:
+				var ray := PhysicsRayQueryParameters3D.create(
+					Vector3(x, from, z), Vector3(x, -4.0, z), 1
+				)
+				var hit := space.intersect_ray(ray)
+				if hit.is_empty():
+					break
+				surfaces.append(hit.position.y)
+				from = hit.position.y - 0.02
+			if surfaces.is_empty():
+				floor.append(-99.0)
 				move.append(1)
 				sight.append(1)
 				continue
-			body.transform = Transform3D(Basis(), Vector3(x, y + 0.35 + 0.65 + 0.12, z))
-			move.append(1 if not space.intersect_shape(body, 1).is_empty() else 0)
+			var y: float = surfaces[0]
+			var fits := false
+			for k in range(surfaces.size() - 1, -1, -1):
+				body.transform = Transform3D(
+					Basis(), Vector3(x, surfaces[k] + 0.35 + 0.65 + 0.12, z)
+				)
+				if space.intersect_shape(body, 1).is_empty():
+					y = surfaces[k]
+					fits = true
+					break
+			floor.append(y)
+			move.append(0 if fits else 1)
 			var eye := PhysicsPointQueryParameters3D.new()
 			eye.position = Vector3(x, y + 1.55, z)
 			eye.collision_mask = 1

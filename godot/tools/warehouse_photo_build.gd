@@ -194,24 +194,18 @@ static func _add_clip(body: Node3D, inst: Node3D) -> bool:
 
 
 ## The older dressing (offices, yard, cubicles) is placed in the scene, not
-## from the layout: refit its colliders to its models too. Bodies that only
-## hold collision, with nothing to see, are invisible walls and go.
+## from the layout: refit its colliders to its models too. Bodies without a
+## model of their own (the dispatch office's roof slabs, whose ceiling meshes
+## are siblings) keep the collision they were authored with.
 static func _clip_dressing() -> void:
 	var n := 0
-	var removed := 0
 	for body: StaticBody3D in _root.get_node("WarehouseDressing").find_children("*", "StaticBody3D", true, true):
 		var model: Node3D = null
 		for c in body.get_children():
 			if c is Node3D and c.scene_file_path != "":
 				model = c
 				break
-		if model == null:
-			if body.find_children("*", "MeshInstance3D", true, false).is_empty():
-				body.get_parent().remove_child(body)
-				body.free()
-				removed += 1
-			continue
-		if not _clip.has(model.scene_file_path):
+		if model == null or not _clip.has(model.scene_file_path):
 			continue
 		for c in body.get_children():
 			if c is CollisionShape3D:
@@ -219,7 +213,7 @@ static func _clip_dressing() -> void:
 				c.free()
 		_add_clip(body, model)
 		n += 1
-	_log.append("clip: refit %d dressing bodies, removed %d invisible" % [n, removed])
+	_log.append("clip: refit %d dressing bodies" % n)
 
 
 static func _multimesh(parent: Node, name: String, model: String, xforms: Array) -> void:

@@ -29,6 +29,7 @@ REALTIME=(net_test server_browser_test local_pause_test)
 # with no arguments.
 declare -A RUNS=(
   [server_browser_test]="-- --directory 127.0.0.1:27985|-- --nuketown --directory 127.0.0.1:27985"
+  [bots_test]="-- --slamcity|-- --warehouse"
 )
 # Generous per-run limit; a hung test fails instead of using the job timeout.
 TIMEOUT=300

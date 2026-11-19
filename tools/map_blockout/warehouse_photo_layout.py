@@ -411,6 +411,19 @@ wall(-32.5, 10.5, -27.5, 10.5, 3.0)
 wall(-21.0, 17.3, -21.0, 19.7, 2.6)
 wall(-29.8, 28.5, -26.2, 28.5, 2.4)
 
+# Keep the east bay door's approach clear: the photo pass staged stock right
+# across it, which sealed the door and left the south team two ways in. Stock
+# is dropped here after placement, so the rest keeps its seeded layout.
+KEEP_CLEAR = [(23.4, 28.6, 29.2, 33.0)]  # x0, x1, z0, z1
+
+
+def _clear(p):
+    hw = max(p["fit"][0], p["fit"][1]) / 2
+    return not any(x0 - hw < p["x"] < x1 + hw and z0 - hw < p["z"] < z1 + hw for x0, x1, z0, z1 in KEEP_CLEAR)
+
+
+props[:] = [p for p in props if _clear(p)]
+
 # Floor patches where the shell leaves a gap: the strip between the parking lot
 # and the wing's north wall had no floor. x0, x1, z0, z1, y0, y1, material.
 PATCHES = [
@@ -453,12 +466,12 @@ for x, z in [(-31, 40), (38, 44.5)]:
 # east: the wing, the hall's middle between the production lines, and the east
 # aisle. Points are (x, y, z).
 LANES = {
-    "West": [(0, 0, -30), (-24.75, 0, -27.5), (-24.75, 0, -23), (-26, 0, -12), (-25, 0, 2),
+    "West": [(0, 0, -30), (-24.75, 0, -27.5), (-24.75, 0, -23), (-24.0, 0, -12), (-25, 0, 2),
              (-21, 0, 10), (-21, 0, 28), (-31.75, 0, 30), (-31.75, APRON_Y, 38), (0, APRON_Y, 42)],
     "Centre": [(0, 0, -30), (-0.25, 0, -27.5), (-0.25, 0, -23), (-4, 0, -8), (-9, 0, 5),
                (-8, 0, 19), (-6.5, 0, 31), (-6.5, APRON_Y, 39), (0, APRON_Y, 42)],
     "East": [(0, 0, -30), (16.5, 0, -28), (16.5, 0, -24), (31.7, 0, -20), (31.0, 0, 8),
-             (28, 0, 25.8), (26, 0, 31), (26, APRON_Y, 38), (0, APRON_Y, 42)],
+             (28, 0, 25.8), (26, 0, 31.6), (26, APRON_Y, 38), (0, APRON_Y, 42)],
 }
 
 # Reverb zones (centre x, y, z, size x, y, z, room size, damping, wet, predelay ms).
