@@ -58,7 +58,7 @@ const EXPLOSIONS: usize = 3;
 /// Seconds an explosion's particles last (its smoke column the longest).
 const EXPLOSION_LIFETIME: f32 = 5.5;
 /// A frag's scorch mark across (metres), and how deep it projects.
-const SCORCH_SIZE: f32 = 2.6;
+const SCORCH_SIZE: f32 = 3.4;
 /// Within this distance (metres) an explosion shakes the camera, hardest
 /// close up.
 pub const SHAKE_RADIUS: f32 = 22.0;

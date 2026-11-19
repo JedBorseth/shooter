@@ -2,7 +2,10 @@
 // emitter's +Y (the surface normal, or the round's travel at an exit), they
 // tumble, fall, bounce once or twice on the floor below (`floor_y`, found by
 // a ray when the impact plays), and come to rest there instead of falling
-// through it, then shrink away at the end of their life.
+// through it, then shrink away at the end of their life. Each chip gets its
+// own shape (a different stretch on each axis of the one chip mesh) and its
+// own shade of `base_color`, the colour of what was hit (COLOR, for a
+// material that takes the vertex colour as albedo).
 shader_type particles;
 render_mode disable_force;
 
@@ -17,6 +20,9 @@ uniform float floor_y = -1000.0;
 /// Share of the speed kept across the floor on a bounce, and along it.
 uniform float bounce = 0.3;
 uniform float friction = 0.55;
+/// The chips' colour, and how far each one's brightness wanders from it.
+uniform vec4 base_color : source_color = vec4(0.5, 0.5, 0.5, 1.0);
+uniform float color_jitter = 0.35;
 
 float hash(uint x) {
 	x ^= x >> 16u;
@@ -58,8 +64,13 @@ void start() {
 	}
 	// CUSTOM: x spin rate (radians a second), y angle so far, z scale, w resting.
 	CUSTOM = vec4((r3 * 2.0 - 1.0) * 12.0, r4 * TAU, mix(scale_min, scale_max, r3 * 0.5 + r4 * 0.5), 0.0);
-	// USERDATA1.x: seconds since it was thrown.
-	USERDATA1 = vec4(0.0);
+	// USERDATA1.x: seconds since it was thrown; .yzw its stretch per axis.
+	float r5 = hash(seed + 8u);
+	float r6 = hash(seed + 9u);
+	float r7 = hash(seed + 10u);
+	USERDATA1 = vec4(0.0, 0.7 + 0.6 * r5, 0.6 + 0.6 * r6, 0.7 + 0.6 * r7);
+	float shade = 1.0 + (r5 * 0.5 + r7 * 0.5 - 0.5) * 2.0 * color_jitter;
+	COLOR = vec4(clamp(base_color.rgb * shade, vec3(0.0), vec3(1.0)), 1.0);
 }
 
 void process() {
@@ -88,6 +99,8 @@ void process() {
 	}
 	// Shrink away over the last fifth of the life.
 	float fade = clamp((LIFETIME - USERDATA1.x) / (0.2 * LIFETIME), 0.0, 1.0);
-	mat3 basis = rotation(axis, CUSTOM.y) * (CUSTOM.z * fade);
+	mat3 basis = rotation(axis, CUSTOM.y) * mat3(
+		vec3(USERDATA1.y, 0.0, 0.0), vec3(0.0, USERDATA1.z, 0.0), vec3(0.0, 0.0, USERDATA1.w))
+		* (CUSTOM.z * fade);
 	TRANSFORM = mat4(vec4(basis[0], 0.0), vec4(basis[1], 0.0), vec4(basis[2], 0.0), vec4(position, 1.0));
 }

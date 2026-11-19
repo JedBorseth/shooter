@@ -3,210 +3,250 @@
 [ext_resource type="Script" path="res://scripts/explosion.gd" id="1_script"]
 [ext_resource type="Shader" path="res://shaders/explosion.gdshader" id="2_fireball"]
 [ext_resource type="Texture2D" path="res://assets/textures/effects/explosion_5x5.png" id="3_flipbook"]
-[ext_resource type="Texture2D" path="res://assets/textures/effects/smoke_4x4.png" id="4_smoke"]
+[ext_resource type="Texture2D" path="res://assets/textures/effects/cloud_8x4.png" id="4_cloud"]
 [ext_resource type="Shader" path="res://shaders/debris.gdshader" id="5_debris"]
 [ext_resource type="Shader" path="res://shaders/spark.gdshader" id="6_spark"]
+[ext_resource type="Shader" path="res://shaders/dirt_burst.gdshader" id="7_dirt"]
+[ext_resource type="Texture2D" path="res://assets/textures/effects/dirt_burst_4x4.png" id="8_burst"]
+[ext_resource type="Shader" path="res://shaders/smoke_screen.gdshader" id="9_billow"]
 
-[sub_resource type="ParticleProcessMaterial" id="Process_fireball"]
+[sub_resource type="ParticleProcessMaterial" id="Process_core"]
+emission_shape = 1
+emission_sphere_radius = 0.2
 direction = Vector3(0, 1, 0)
-spread = 55.0
-initial_velocity_min = 0.6
+spread = 40.0
+initial_velocity_min = 0.8
 initial_velocity_max = 1.6
-gravity = Vector3(0, 0.3, 0)
-damping_min = 1.5
-damping_max = 2.5
+gravity = Vector3(0, 0.6, 0)
+damping_min = 2.0
+damping_max = 3.0
 angle_min = -180.0
 angle_max = 180.0
-scale_min = 0.85
-scale_max = 1.2
+scale_min = 0.8
+scale_max = 1.1
 anim_speed_min = 1.0
 anim_speed_max = 1.0
 
-[sub_resource type="ShaderMaterial" id="Mat_fireball"]
+[sub_resource type="ShaderMaterial" id="Mat_core"]
 render_priority = 2
 shader = ExtResource("2_fireball")
 shader_parameter/flipbook = ExtResource("3_flipbook")
+shader_parameter/first_frame = 5
+shader_parameter/fire_energy = 2.6
+shader_parameter/cooling = Vector2(0.05, 0.4)
+shader_parameter/soft_distance = 0.6
+shader_parameter/fade_out = Vector2(0.25, 0.75)
 
-[sub_resource type="QuadMesh" id="Mesh_fireball"]
-material = SubResource("Mat_fireball")
-size = Vector2(3.4, 3.4)
+[sub_resource type="QuadMesh" id="Mesh_core"]
+material = SubResource("Mat_core")
+size = Vector2(2.2, 2.2)
 
-[sub_resource type="Curve" id="Curve_column_grow"]
-_data = [Vector2(0, 0.45), 0.0, 1.6, 0, 0, Vector2(1, 1.4), 0.4, 0.0, 0, 0]
-point_count = 2
+[sub_resource type="ParticleProcessMaterial" id="Process_dirt"]
+particle_flag_align_y = true
+emission_shape = 1
+emission_sphere_radius = 0.35
+direction = Vector3(0, 1, 0)
+spread = 26.0
+initial_velocity_min = 0.6
+initial_velocity_max = 1.4
+gravity = Vector3(0, 0, 0)
+damping_min = 0.3
+damping_max = 0.6
+scale_min = 0.75
+scale_max = 1.25
 
-[sub_resource type="CurveTexture" id="Texture_column_grow"]
-curve = SubResource("Curve_column_grow")
+[sub_resource type="ShaderMaterial" id="Mat_dirt"]
+render_priority = 1
+shader = ExtResource("7_dirt")
+shader_parameter/flipbook = ExtResource("8_burst")
+shader_parameter/tint = Color(0.36, 0.31, 0.26, 1)
+shader_parameter/shadow = 0.38
+shader_parameter/opacity = 1.0
+shader_parameter/ease = 0.55
+shader_parameter/ground_fade = 0.4
 
-[sub_resource type="Gradient" id="Gradient_column"]
-offsets = PackedFloat32Array(0, 0.12, 0.5, 1)
-colors = PackedColorArray(0.2, 0.18, 0.16, 0, 0.22, 0.2, 0.18, 0.9, 0.36, 0.34, 0.31, 0.55, 0.45, 0.43, 0.4, 0)
+[sub_resource type="QuadMesh" id="Mesh_dirt"]
+material = SubResource("Mat_dirt")
+size = Vector2(1.6, 4.0)
+center_offset = Vector3(0, 1.95, 0)
 
-[sub_resource type="GradientTexture1D" id="Texture_column"]
-gradient = SubResource("Gradient_column")
+[sub_resource type="Curve" id="Curve_billow_grow"]
+_data = [Vector2(0, 0.35), 0.0, 2.2, 0, 0, Vector2(0.35, 0.95), 0.6, 0.6, 0, 0, Vector2(1, 1.35), 0.3, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="Texture_billow_grow"]
+curve = SubResource("Curve_billow_grow")
+
+[sub_resource type="Gradient" id="Gradient_billow"]
+offsets = PackedFloat32Array(0, 0.08, 0.45, 1)
+colors = PackedColorArray(1, 1, 1, 0, 1, 1, 1, 0.95, 1, 1, 1, 0.6, 1, 1, 1, 0)
+
+[sub_resource type="GradientTexture1D" id="Texture_billow"]
+gradient = SubResource("Gradient_billow")
 
 [sub_resource type="ParticleProcessMaterial" id="Process_column"]
 emission_shape = 1
 emission_sphere_radius = 0.6
 direction = Vector3(0, 1, 0)
-spread = 18.0
-initial_velocity_min = 1.2
-initial_velocity_max = 2.6
-gravity = Vector3(0.15, 0.35, 0)
-damping_min = 0.5
-damping_max = 0.9
+spread = 22.0
+initial_velocity_min = 1.6
+initial_velocity_max = 3.4
+gravity = Vector3(0.15, 0.25, 0)
+damping_min = 0.8
+damping_max = 1.3
 angle_min = -180.0
 angle_max = 180.0
 scale_min = 0.8
 scale_max = 1.3
-scale_curve = SubResource("Texture_column_grow")
-color_ramp = SubResource("Texture_column")
-anim_speed_min = 0.4
-anim_speed_max = 0.7
-anim_offset_max = 0.5
+scale_curve = SubResource("Texture_billow_grow")
+color_ramp = SubResource("Texture_billow")
 
-[sub_resource type="StandardMaterial3D" id="Mat_smoke"]
-transparency = 1
-shading_mode = 2
-vertex_color_use_as_albedo = true
-albedo_texture = ExtResource("4_smoke")
-billboard_mode = 3
-particles_anim_h_frames = 4
-particles_anim_v_frames = 4
-particles_anim_loop = false
+[sub_resource type="ShaderMaterial" id="Mat_dust"]
+shader = ExtResource("9_billow")
+shader_parameter/flipbook = ExtResource("4_cloud")
+shader_parameter/tint = Color(0.52, 0.47, 0.41, 1)
+shader_parameter/opacity = 0.85
+shader_parameter/frame_rate = 3.0
+shader_parameter/size_scale = 1.0
+shader_parameter/ground_fade = 0.5
 
 [sub_resource type="QuadMesh" id="Mesh_column"]
-material = SubResource("Mat_smoke")
-size = Vector2(2.4, 2.4)
+material = SubResource("Mat_dust")
+size = Vector2(2.6, 2.6)
 
 [sub_resource type="Gradient" id="Gradient_ring"]
-offsets = PackedFloat32Array(0, 0.15, 1)
-colors = PackedColorArray(0.5, 0.45, 0.38, 0, 0.5, 0.45, 0.38, 0.8, 0.55, 0.5, 0.44, 0)
+offsets = PackedFloat32Array(0, 0.1, 0.5, 1)
+colors = PackedColorArray(1, 1, 1, 0, 1, 1, 1, 0.9, 1, 1, 1, 0.55, 1, 1, 1, 0)
 
 [sub_resource type="GradientTexture1D" id="Texture_ring"]
 gradient = SubResource("Gradient_ring")
 
 [sub_resource type="ParticleProcessMaterial" id="Process_ring"]
-resource_local_to_scene = true
-particle_flag_disable_z = false
-direction = Vector3(1, 0.15, 0)
+direction = Vector3(1, 0.05, 0)
 spread = 180.0
-flatness = 0.9
+flatness = 0.95
 initial_velocity_min = 3.0
 initial_velocity_max = 6.5
-gravity = Vector3(0, 0.1, 0)
-damping_min = 3.5
-damping_max = 5.0
+gravity = Vector3(0, 0.05, 0)
+damping_min = 5.0
+damping_max = 7.0
 angle_min = -180.0
 angle_max = 180.0
-scale_min = 0.7
+scale_min = 0.8
 scale_max = 1.2
-scale_curve = SubResource("Texture_column_grow")
+scale_curve = SubResource("Texture_billow_grow")
 color_ramp = SubResource("Texture_ring")
-anim_speed_min = 0.5
-anim_speed_max = 0.8
 
 [sub_resource type="QuadMesh" id="Mesh_ring"]
-material = SubResource("Mat_smoke")
-size = Vector2(1.6, 1.6)
+material = SubResource("Mat_dust")
+size = Vector2(2.1, 2.1)
 
 [sub_resource type="ShaderMaterial" id="Process_debris"]
 resource_local_to_scene = true
 shader = ExtResource("5_debris")
-shader_parameter/spread_degrees = 60.0
+shader_parameter/spread_degrees = 55.0
 shader_parameter/speed_min = 4.0
-shader_parameter/speed_max = 10.0
+shader_parameter/speed_max = 12.0
 shader_parameter/gravity = 14.0
-shader_parameter/scale_min = 0.6
-shader_parameter/scale_max = 1.8
+shader_parameter/scale_min = 0.8
+shader_parameter/scale_max = 3.2
 shader_parameter/bounce = 0.25
 shader_parameter/friction = 0.5
+shader_parameter/base_color = Color(0.2, 0.17, 0.14, 1)
+shader_parameter/color_jitter = 0.4
 
 [sub_resource type="StandardMaterial3D" id="Mat_debris"]
-albedo_color = Color(0.14, 0.12, 0.1, 1)
+vertex_color_use_as_albedo = true
 roughness = 1.0
-
-[sub_resource type="BoxMesh" id="Mesh_debris"]
-material = SubResource("Mat_debris")
-size = Vector3(0.03, 0.022, 0.035)
 
 [sub_resource type="ParticleProcessMaterial" id="Process_sparks"]
 particle_flag_align_y = true
 direction = Vector3(0, 1, 0)
-spread = 75.0
-initial_velocity_min = 8.0
-initial_velocity_max = 18.0
+spread = 70.0
+initial_velocity_min = 9.0
+initial_velocity_max = 16.0
 gravity = Vector3(0, -9.8, 0)
-scale_min = 0.7
-scale_max = 1.5
+scale_min = 0.5
+scale_max = 1.0
 
 [sub_resource type="ShaderMaterial" id="Mat_spark"]
 render_priority = 1
 shader = ExtResource("6_spark")
-shader_parameter/color = Color(1, 0.62, 0.3, 1)
-shader_parameter/energy = 5.0
+shader_parameter/color = Color(1, 0.6, 0.28, 1)
+shader_parameter/energy = 3.0
 
 [sub_resource type="QuadMesh" id="Mesh_spark"]
 material = SubResource("Mat_spark")
-size = Vector2(0.02, 0.32)
+size = Vector2(0.012, 0.16)
 
 [node name="Explosion" type="Node3D"]
 script = ExtResource("1_script")
 
-[node name="Fireball" type="GPUParticles3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.7, 0)
+[node name="Core" type="GPUParticles3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.55, 0)
 cast_shadow = 0
 emitting = false
-amount = 3
-lifetime = 1.4
+amount = 2
+lifetime = 0.5
 one_shot = true
 explosiveness = 1.0
-visibility_aabb = AABB(-6, -2, -6, 12, 10, 12)
-process_material = SubResource("Process_fireball")
-draw_pass_1 = SubResource("Mesh_fireball")
+visibility_aabb = AABB(-4, -2, -4, 8, 6, 8)
+process_material = SubResource("Process_core")
+draw_pass_1 = SubResource("Mesh_core")
+
+[node name="Dirt" type="GPUParticles3D" parent="."]
+cast_shadow = 0
+emitting = false
+amount = 6
+lifetime = 3.2
+one_shot = true
+explosiveness = 1.0
+visibility_aabb = AABB(-6, -1, -6, 12, 8, 12)
+process_material = SubResource("Process_dirt")
+draw_pass_1 = SubResource("Mesh_dirt")
 
 [node name="Column" type="GPUParticles3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, 0)
 cast_shadow = 0
 emitting = false
-amount = 8
-lifetime = 4.5
+amount = 5
+lifetime = 6.0
 one_shot = true
-explosiveness = 0.75
-visibility_aabb = AABB(-8, -2, -8, 16, 16, 16)
+explosiveness = 0.85
+visibility_aabb = AABB(-8, -2, -8, 16, 14, 16)
 process_material = SubResource("Process_column")
 draw_pass_1 = SubResource("Mesh_column")
 
 [node name="Ring" type="GPUParticles3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.3, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.35, 0)
 cast_shadow = 0
 emitting = false
-amount = 6
-lifetime = 2.2
+amount = 7
+lifetime = 4.0
 one_shot = true
 explosiveness = 1.0
-visibility_aabb = AABB(-8, -2, -8, 16, 6, 16)
+visibility_aabb = AABB(-9, -2, -9, 18, 6, 18)
 process_material = SubResource("Process_ring")
 draw_pass_1 = SubResource("Mesh_ring")
 
 [node name="Debris" type="GPUParticles3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.15, 0)
+material_override = SubResource("Mat_debris")
 cast_shadow = 0
 emitting = false
-amount = 22
-lifetime = 3.0
+amount = 36
+lifetime = 6.0
 one_shot = true
 explosiveness = 1.0
-visibility_aabb = AABB(-10, -4, -10, 20, 14, 20)
+visibility_aabb = AABB(-12, -4, -12, 24, 16, 24)
 process_material = SubResource("Process_debris")
-draw_pass_1 = SubResource("Mesh_debris")
 
 [node name="Sparks" type="GPUParticles3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.3, 0)
 cast_shadow = 0
 emitting = false
-amount = 14
-lifetime = 0.6
+amount = 8
+lifetime = 0.45
 one_shot = true
 explosiveness = 1.0
 visibility_aabb = AABB(-10, -4, -10, 20, 14, 20)
@@ -216,8 +256,8 @@ draw_pass_1 = SubResource("Mesh_spark")
 [node name="Flash" type="OmniLight3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8, 0)
 visible = false
-light_color = Color(1, 0.66, 0.36, 1)
+light_color = Color(1, 0.62, 0.32, 1)
 light_energy = 0.0
-light_specular = 0.4
-omni_range = 9.0
+light_specular = 0.3
+omni_range = 8.0
 omni_attenuation = 1.6
