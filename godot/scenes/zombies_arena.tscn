@@ -18,6 +18,8 @@
 [ext_resource type="PackedScene" path="res://scenes/zombies/zombie.tscn" id="20_zombie"]
 [ext_resource type="Script" uid="uid://o8q12w3swokr" path="res://scripts/zombies_hud.gd" id="21_zhud"]
 [ext_resource type="Shader" uid="uid://cok4ojgcqfr1j" path="res://shaders/night_sky.gdshader" id="22_sky"]
+[ext_resource type="Texture2D" uid="uid://x4dvh68l41dk" path="res://assets/skies/zombies_horizon.png" id="26_skyline"]
+[ext_resource type="Texture2D" uid="uid://guq2dby4ndlu" path="res://assets/skies/zombies_horizon_depth.png" id="27_skyline_depth"]
 [ext_resource type="Script" uid="uid://dct36uf5dfgpr" path="res://scripts/lamp_flicker.gd" id="23_flicker"]
 [ext_resource type="PackedScene" path="res://scenes/zombies/door.tscn" id="24_door"]
 [ext_resource type="PackedScene" path="res://scenes/zombies/power_up.tscn" id="25_power_up"]
@@ -39,6 +41,8 @@
 
 [sub_resource type="ShaderMaterial" id="SkyMat"]
 shader = ExtResource("22_sky")
+shader_parameter/skyline = ExtResource("26_skyline")
+shader_parameter/skyline_depth = ExtResource("27_skyline_depth")
 
 [sub_resource type="Sky" id="Sky"]
 sky_material = SubResource("SkyMat")
