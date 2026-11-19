@@ -1,6 +1,6 @@
 {
   "triangles": 17892,
-  "world_triangles": 3831,
+  "world_triangles": 3832,
   "nodes": [
     "Bipod",
     "Body",
@@ -36,7 +36,7 @@
     "GripRight": [
       -0.0,
       -0.1301,
-      0.1721
+      0.1661
     ],
     "GripLeft": [
       0.0,

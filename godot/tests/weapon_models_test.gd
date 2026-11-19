@@ -118,6 +118,12 @@ const SIGHT_TOLERANCE := 0.0006
 const POST_BELOW := 0.001
 const POST_SIDE := 0.0006
 const POST_DEPTH := 0.0025
+## Aimed on the irons, no part of the weapon comes nearer the eye than this
+## along the sight line (m) within `EYE_CLEAR_SIDE` of it, or the near plane
+## (0.03 m) slices it open, as it did the AK's dust cover when the eye sat
+## over it.
+const EYE_CLEAR_AHEAD := 0.04
+const EYE_CLEAR_SIDE := 0.035
 
 ## Least share of sampled texels whose normal leans off flat, and of
 ## neighbouring samples whose brightness steps, for a weapon's maps to count
@@ -240,11 +246,23 @@ func _check_view(key: String, view: Node3D) -> void:
 	_check_sight_picture(key, view, tip.z)
 
 
-## Looks down the sights from where the eye is when aimed (the view sits at
-## `ads_position` from the camera).
+## Looks down the sights from where the eye is when aimed on them (the view
+## sits at `ads_position` from the camera, `iron_eye_back` further on irons).
 func _check_sight_picture(key: String, view: Node3D, front_z: float) -> void:
 	var tris := _view_triangles(view)
-	var eye := -(view.get("ads_position") as Vector3)
+	var eye := -(view.get("ads_position") as Vector3) + Vector3(0.0, 0.0, view.get("iron_eye_back"))
+	var nearest := INF
+	for i in tris.size():
+		var p := tris[i] / 1000.0 - eye
+		if absf(p.x) < EYE_CLEAR_SIDE and absf(p.y) < EYE_CLEAR_SIDE:
+			nearest = minf(nearest, -p.z)
+	_check(
+		nearest > EYE_CLEAR_AHEAD,
+		(
+			"%s: aimed, the weapon stays %.0f mm ahead of the eye (%.0f mm)"
+			% [key, EYE_CLEAR_AHEAD * 1000.0, nearest * 1000.0]
+		)
+	)
 	# Just over the front sight, the line is clear all the way to it.
 	var over: Variant = _first_hit(tris, eye, Vector3(0.0, 0.0005, front_z))
 	_check(

@@ -38,6 +38,9 @@ pub struct FpArms {
     #[init(val = 1.12)]
     scale: f32,
 
+    /// Where the body sits now, from `body_offset` (`set_body_shift`).
+    shift: Vector3,
+
     #[init(node = "Model")]
     model: OnReady<Gd<Node3D>>,
     poser: Option<Gd<SoldierPoser>>,
@@ -425,6 +428,20 @@ impl FpArms {
 }
 
 impl FpArms {
+    /// Moves the body from `body_offset` by `shift` (view space, m), as the
+    /// aimed weapon or a throw asks; the shoulders go with it.
+    pub fn set_body_shift(&mut self, shift: Vector3) {
+        if shift.distance_squared_to(self.shift) < 1e-10 {
+            return;
+        }
+        self.shift = shift;
+        let origin = self.body_offset + shift;
+        let mut base = self.base_mut();
+        let mut t = base.get_transform();
+        t.origin = origin;
+        base.set_transform(t);
+    }
+
     /// The poser, the grips of the weapon it holds, and that weapon's surface
     /// around its grips (only the offline tools ask). Measured now, or with
     /// `reuse`, kept from the last call on the same view with its grips at

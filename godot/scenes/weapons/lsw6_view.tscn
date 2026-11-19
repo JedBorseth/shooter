@@ -14,6 +14,7 @@ grip_rake = 22.0
 hip_position = Vector3(0.130, -0.115, -0.235)
 hip_rotation = Vector3(0, 5, 4)
 ads_position = Vector3(0, 0, -0.14)
+iron_eye_back = 0.16
 sprint_position = Vector3(-0.04, 0.015, 0.03)
 sprint_rotation = Vector3(-6, 26, 28)
 pivot = Vector3(0, -0.126, 0.16)
@@ -48,7 +49,7 @@ omni_range = 8.0
 position = Vector3(0.0120, -0.0304, 0.0580)
 
 [node name="GripRight" type="Marker3D" parent="."]
-position = Vector3(0.0000, -0.1301, 0.1661)
+position = Vector3(-0.0000, -0.1301, 0.1661)
 
 [node name="GripLeft" type="Marker3D" parent="."]
 position = Vector3(0.0000, -0.0610, -0.1473)
