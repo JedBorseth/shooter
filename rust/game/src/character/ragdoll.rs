@@ -10,6 +10,10 @@
 //!   only the world: they never block players, bullets, or each other.
 //! - The body starts from the exact pose the character was last drawn in
 //!   (the poser captures it), moving at the character's velocity.
+//! - For its first half second a shot body buckles (see [`Buckle`]): short
+//!   lived muscles bend its knees, hips and spine toward a plan chosen from
+//!   where and from which side the round struck, so it folds at the knees
+//!   and goes down forward or sideways instead of toppling back stiff.
 //! - Each frame the capsules' transforms are written into the skeleton's own
 //!   bone poses. Once the body comes to rest (every capsule asleep), after
 //!   [`MAX_SECONDS`], or when more than [`MAX_SIMULATING`] ragdolls are
@@ -56,20 +60,20 @@ const QUIET_SPIN: f32 = 0.6;
 const QUIET_SECONDS: f32 = 0.25;
 /// Whole-body mass (kg).
 const MASS: f32 = 70.0;
-/// A body hit hard does not fold at once: for the first moments its joints
-/// stay near the pose it died in, so it topples with the push, then they
-/// loosen to their full range and it goes limp. Seconds held stiff, seconds
-/// to loosen, and the share of each joint's range allowed while stiff.
+/// The arms do not go limp at once: for the first moments their joints stay
+/// near the pose the body died in, then they loosen to their full range.
+/// Seconds held stiff, seconds to loosen, and the share of each joint's
+/// range allowed while stiff. A body that buckles (see [`Buckle`]) frees its
+/// legs and torso sooner.
 const STIFF_SECONDS: f32 = 0.18;
 const LOOSEN_SECONDS: f32 = 0.45;
 const STIFF_RANGE: f32 = 0.12;
-/// The legs stay stiff longer, so a body topples over instead of folding
-/// onto its knees where it stood.
+/// Without a buckle, the legs would stay stiff longer than the body.
 const LEG_STIFF_SECONDS: f32 = 0.4;
 const LEG_LOOSEN_SECONDS: f32 = 0.6;
-/// A knife kill does fold where it stood, as Call of Duty's knife deaths do:
-/// the legs give at once and the knees buckle, so the body is visibly going
-/// down within a tenth of a second instead of standing a third of one. Its
+/// A knife kill folds where it stood, as Call of Duty's knife deaths do: the
+/// legs give at once and the knees buckle, so the body is further down a
+/// tenth of a second in than a shot body that buckles. Its
 /// body and leg stiffness (stiff, loosen seconds), the hips' drop (m/s), and
 /// how fast the knees are thrown forward (m/s).
 const CRUMPLE_BODY: (f32, f32) = (0.06, 0.3);
@@ -360,6 +364,276 @@ impl Push {
     }
 }
 
+/// How a shot body buckles in its first moments, before it goes limp. Call
+/// of Duty's deaths give at the knees and fold over: a soldier shot from the
+/// front hunches over the wound and drops onto the near knee, one shot from
+/// the side folds toward the push, a leg hit goes down on that leg, and a
+/// headshot drops where it stood. The push still moves the body; short-lived
+/// "muscles" (see [`Muscle`]) bend each joint toward this plan, so the body
+/// no longer topples backward stiff as a plank.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Buckle {
+    /// Each knee's bend from straight (degrees): left, right.
+    pub knees: [f32; 2],
+    /// Each hip's flex, the thigh forward of the hips (degrees): left, right.
+    pub hips: [f32; 2],
+    /// Forward bend of the spine and chest together (degrees).
+    pub bend: f32,
+    /// The head's nod forward (degrees).
+    pub nod: f32,
+    /// Side bend of the spine and chest together (degrees, + toward the
+    /// body's right).
+    pub lean: f32,
+    /// Turn of the spine and chest together (degrees, + turning the chest's
+    /// front toward the body's right): the struck shoulder goes back.
+    pub twist: f32,
+    /// How fast the hips drop as the legs give (m/s).
+    pub drop: f32,
+    /// How fast the upper body is carried toward the side it falls to
+    /// (m/s, + toward the body's right): a body shot square on turns away
+    /// from the struck shoulder and goes down on that side.
+    pub sway: f32,
+    /// Seconds the muscles hold the plan before fading over
+    /// [`BUCKLE_FADE`].
+    pub hold: f32,
+}
+
+impl Buckle {
+    /// A death with nothing known about the shot: the legs give and the
+    /// body folds where it stands.
+    pub const LIMP: Buckle = Buckle {
+        knees: [90.0, 75.0],
+        hips: [60.0, 50.0],
+        bend: 15.0,
+        nod: 10.0,
+        lean: 0.0,
+        twist: 0.0,
+        drop: 0.5,
+        sway: 0.0,
+        hold: 0.2,
+    };
+}
+
+/// Seconds over which the muscles let go after [`Buckle::hold`].
+const BUCKLE_FADE: f32 = 0.3;
+/// How fast a muscle closes on its target (1/s): the share of the error it
+/// asks to turn per second.
+const MUSCLE_GAIN: f32 = 9.0;
+/// How fast a muscle's wanted spin replaces the joint's own (1/s).
+const MUSCLE_RATE: f32 = 40.0;
+/// While a body buckles, the spine, chest and neck may move this share of
+/// their range about the pose it died in (stiff bodies hold
+/// [`STIFF_RANGE`]): enough to fold forward, not enough to bow back far.
+const BUCKLE_TORSO_RANGE: f32 = 1.0;
+/// A buckling torso stays braced for this long (seconds), then opens to
+/// [`BUCKLE_TORSO_RANGE`] over the next: the push tips the whole body
+/// instead of bowing the spine back over legs that have given.
+const BUCKLE_BRACE: (f32, f32) = (0.08, 0.12);
+/// A force level from this up (a close shotgun, a sniper rifle) throws the
+/// body: it folds less, and the push carries it.
+const HEAVY_FORCE: f32 = 10.0;
+
+impl Push {
+    /// How the body hit by this push buckles, for a body facing `front`
+    /// whose hips are at `hips` (world).
+    pub fn buckle(&self, front: Vector3, hips: Vector3) -> Buckle {
+        let flat = |v: Vector3| Vector3::new(v.x, 0.0, v.z).try_normalized();
+        let front = flat(front).unwrap_or(Vector3::BACK);
+        let right = front.cross(Vector3::UP);
+        let travel = flat(self.direction).unwrap_or(-front);
+        // + the shot travels the way the body faces (it came from behind);
+        // + it travels toward the body's right (it came from its left).
+        let ahead = travel.dot(front);
+        let side = travel.dot(right);
+        // The side the body goes down on (+1 right): with the push when it
+        // is from the side; otherwise the side of the body the round struck,
+        // which turns that shoulder away and drops it first.
+        let struck = self.point.map_or(0.0, |p| (p - hips).dot(right));
+        let fall = if side.abs() > 0.35 {
+            side.signum()
+        } else if struck.abs() > 0.03 {
+            struck.signum()
+        } else {
+            // Square on: either way, but the same for the same shot.
+            let p = self.point.unwrap_or(hips);
+            if ((p.x * 97.0 + p.z * 61.0).floor() as i64).rem_euclid(2) == 0 {
+                1.0
+            } else {
+                -1.0
+            }
+        };
+        // Index 0 is left, 1 right; `near` is the side it falls to.
+        let sides = |near: f32, far: f32| {
+            if fall > 0.0 { [far, near] } else { [near, far] }
+        };
+        let front_share = (-ahead).max(0.0);
+        let back_share = ahead.max(0.0);
+        let side_share = side.abs();
+        let mut plan = match self.part {
+            Some(BodyPart::Head) => Buckle {
+                // Out at once: the legs fold under it where it stands.
+                knees: sides(110.0, 90.0),
+                hips: sides(70.0, 55.0),
+                bend: 35.0,
+                nod: 0.0,
+                lean: fall * (8.0 + 16.0 * side_share + 10.0 * front_share),
+                twist: fall * 20.0 * front_share,
+                drop: 0.7,
+                sway: fall * 0.4 * front_share,
+                hold: 0.2,
+            },
+            Some(
+                leg @ (BodyPart::LeftUpperLeg
+                | BodyPart::LeftLowerLeg
+                | BodyPart::RightUpperLeg
+                | BodyPart::RightLowerLeg),
+            ) => {
+                // The hit leg gives; the body goes down over it.
+                let hit = if matches!(leg, BodyPart::LeftUpperLeg | BodyPart::LeftLowerLeg) {
+                    -1.0
+                } else {
+                    1.0
+                };
+                let pick = |hit_leg: f32, other: f32| {
+                    if hit > 0.0 {
+                        [other, hit_leg]
+                    } else {
+                        [hit_leg, other]
+                    }
+                };
+                Buckle {
+                    knees: pick(105.0, 50.0),
+                    hips: pick(60.0, 35.0),
+                    bend: 15.0,
+                    nod: 15.0,
+                    lean: hit * 15.0,
+                    twist: 0.0,
+                    drop: 0.5,
+                    sway: 0.0,
+                    hold: 0.3,
+                }
+            }
+            _ => Buckle {
+                // Hunched over a wound in front, folded with the push from
+                // the side, onto the knees and forward from behind.
+                knees: sides(100.0, 65.0 - 20.0 * front_share),
+                // As the knees go forward the hips flex as far, so the
+                // torso stays over them instead of tipping back.
+                hips: sides(70.0, 50.0),
+                bend: 55.0 * front_share + 12.0 * back_share + 16.0 * side_share,
+                nod: 15.0,
+                lean: fall * (6.0 + 14.0 * side_share + 14.0 * front_share),
+                twist: fall * 30.0 * front_share,
+                drop: 0.5,
+                sway: fall * 0.7 * front_share,
+                hold: 0.25 + 0.15 * front_share,
+            },
+        };
+        if self.force >= HEAVY_FORCE {
+            // Thrown: less fold, the push does the rest.
+            plan.bend *= 0.5;
+            plan.drop *= 0.6;
+        }
+        plan
+    }
+}
+
+/// Holds a ragdoll's capsules and joints, and pulls its muscles each
+/// physics tick while the body buckles.
+#[derive(GodotClass)]
+#[class(init, base = Node3D)]
+pub struct RagdollHolder {
+    base: Base<Node3D>,
+    muscles: Vec<Muscle>,
+    /// Seconds the muscles hold before letting go.
+    hold: f32,
+    age: f32,
+}
+
+#[godot_api]
+impl INode3D for RagdollHolder {
+    fn physics_process(&mut self, delta: f64) {
+        if self.muscles.is_empty() {
+            return;
+        }
+        let dt = delta as f32;
+        self.age += dt;
+        let strength = 1.0 - ((self.age - self.hold) / BUCKLE_FADE).clamp(0.0, 1.0);
+        if strength <= 0.0 {
+            self.muscles.clear();
+            return;
+        }
+        for muscle in &mut self.muscles {
+            muscle.pull(strength, dt);
+        }
+    }
+}
+
+/// A short-lived pull between two parts toward a planned bend: each step it
+/// sets the child's spin relative to the parent's toward closing the gap,
+/// shared by mass so the pair's momentum is kept and the body still falls
+/// as the push and gravity take it.
+struct Muscle {
+    parent: Gd<RigidBody3D>,
+    child: Gd<RigidBody3D>,
+    /// The child's wanted rotation relative to the parent's.
+    target: Quaternion,
+    /// The child's share of the change (the parent takes the rest).
+    child_share: f32,
+}
+
+impl Muscle {
+    /// A muscle that turns `child` by `turn` (world, about the joint) from
+    /// where it is now relative to `parent`.
+    fn new(parent: &Gd<RigidBody3D>, child: &Gd<RigidBody3D>, turn: Basis) -> Muscle {
+        let p = parent.get_global_basis().orthonormalized().get_quaternion();
+        let c = child.get_global_basis().orthonormalized().get_quaternion();
+        let wanted = turn.orthonormalized().get_quaternion() * c;
+        let (pm, cm) = (parent.get_mass(), child.get_mass());
+        Muscle {
+            parent: parent.clone(),
+            child: child.clone(),
+            target: (p.inverse() * wanted).normalized(),
+            child_share: pm / (pm + cm).max(1e-3),
+        }
+    }
+
+    /// Pulls toward the target with `strength` (0..1) over `dt` seconds.
+    fn pull(&mut self, strength: f32, dt: f32) {
+        if strength <= 0.0 || !self.parent.is_instance_valid() || !self.child.is_instance_valid() {
+            return;
+        }
+        let p = self
+            .parent
+            .get_global_basis()
+            .orthonormalized()
+            .get_quaternion();
+        let c = self
+            .child
+            .get_global_basis()
+            .orthonormalized()
+            .get_quaternion();
+        let mut error = self.target * (p.inverse() * c).inverse();
+        if error.w < 0.0 {
+            error = -error;
+        }
+        let angle = 2.0 * error.w.clamp(-1.0, 1.0).acos();
+        let axis = Vector3::new(error.x, error.y, error.z)
+            .try_normalized()
+            .unwrap_or(Vector3::ZERO);
+        let wanted = Basis::from_quaternion(p) * axis * angle * MUSCLE_GAIN;
+        let (pw, cw) = (
+            self.parent.get_angular_velocity(),
+            self.child.get_angular_velocity(),
+        );
+        let change = (wanted - (cw - pw)) * strength * (1.0 - (-MUSCLE_RATE * dt).exp());
+        self.child
+            .set_angular_velocity(cw + change * self.child_share);
+        self.parent
+            .set_angular_velocity(pw - change * (1.0 - self.child_share));
+    }
+}
+
 /// A joint and its full limits.
 struct Joint {
     node: Gd<Joint3D>,
@@ -368,6 +642,8 @@ struct Joint {
     limits: (f32, f32),
     /// A hip or knee: loosens later.
     leg: bool,
+    /// The spine, chest, or neck: may fold further while the body buckles.
+    torso: bool,
     /// Cones: where the limb rests, to rebuild the joint around once loose.
     rest: Option<RestFrame>,
     /// The rebuilt cone (a physics server joint), the swing span it started
@@ -526,7 +802,7 @@ struct Part {
 pub struct Ragdoll {
     skeleton: Gd<Skeleton3D>,
     /// Holds the capsules and joints (each capsule is top level).
-    holder: Gd<Node3D>,
+    holder: Gd<RagdollHolder>,
     parts: Vec<Part>,
     joints: Vec<Joint>,
     /// Every bone's local pose; the driven bones' are rewritten each frame.
@@ -542,6 +818,8 @@ pub struct Ragdoll {
     /// Seconds held stiff and seconds to loosen: the body's, then the legs'.
     body_stiff: (f32, f32),
     leg_stiff: (f32, f32),
+    /// A buckling body: seconds its muscles hold (see [`Buckle`]).
+    buckle: Option<f32>,
     id: InstanceId,
 }
 
@@ -633,7 +911,7 @@ impl Ragdoll {
             })
         };
 
-        let mut holder = Node3D::new_alloc();
+        let mut holder = RagdollHolder::new_alloc();
         holder.set_name("Ragdoll");
         skeleton.add_child(&holder);
         let mut material = PhysicsMaterial::new_gd();
@@ -724,11 +1002,16 @@ impl Ragdoll {
                         })
                     })
                     .flatten();
+                let torso = matches!(
+                    spec.part,
+                    BodyPart::Spine | BodyPart::Chest | BodyPart::Head
+                );
                 let mut joint = Joint {
                     node: joint,
                     kind: spec.joint,
                     limits,
                     leg,
+                    torso,
                     rest,
                     rebuilt: None,
                 };
@@ -754,6 +1037,44 @@ impl Ragdoll {
                 };
                 body.set_linear_velocity(v + kick);
             }
+        }
+        // Any other death buckles: the legs give and the body folds over as
+        // it falls, toward the side the shot decides.
+        let mut muscles = Vec::new();
+        let buckle = (!crumple).then(|| {
+            let hips = built
+                .first()
+                .map_or(Vector3::ZERO, |(_, b, ..)| b.get_global_position());
+            let plan = push.map_or(Buckle::LIMP, |p| p.buckle(front, hips));
+            muscles = buckle_muscles(&plan, &built, front);
+            let right = Vector3::new(front.x, 0.0, front.z)
+                .try_normalized()
+                .unwrap_or(Vector3::BACK)
+                .cross(Vector3::UP);
+            for (part, body, ..) in &mut built {
+                let v = body.get_linear_velocity();
+                let kick = match part {
+                    // The legs fold under the muscles alone: a shin thrown
+                    // forward slides the foot out and sits the body down.
+                    BodyPart::LeftLowerLeg | BodyPart::RightLowerLeg => Vector3::ZERO,
+                    BodyPart::LeftUpperLeg | BodyPart::RightUpperLeg => {
+                        Vector3::DOWN * plan.drop * 0.5
+                    }
+                    BodyPart::Hips | BodyPart::Spine => {
+                        Vector3::DOWN * plan.drop + right * plan.sway * 0.5
+                    }
+                    _ => Vector3::DOWN * plan.drop + right * plan.sway,
+                };
+                body.set_linear_velocity(v + kick);
+            }
+            plan.hold
+        });
+        if let Some(hold) = buckle {
+            // Pulled every physics tick, so the fold is the same at any
+            // frame rate.
+            let mut holder = holder.bind_mut();
+            holder.muscles = muscles;
+            holder.hold = hold;
         }
         if let Some(push) = push {
             let target = push.part.unwrap_or(BodyPart::Chest);
@@ -784,11 +1105,15 @@ impl Ragdoll {
             } else {
                 (STIFF_SECONDS, LOOSEN_SECONDS)
             },
-            leg_stiff: if crumple {
-                CRUMPLE_LEGS
-            } else {
-                (LEG_STIFF_SECONDS, LEG_LOOSEN_SECONDS)
+            // A buckling body's legs are free from the start (the muscles
+            // hold them); their cones are rebuilt about the rest once the
+            // muscles have let go.
+            leg_stiff: match buckle {
+                _ if crumple => CRUMPLE_LEGS,
+                Some(hold) => (hold, BUCKLE_FADE),
+                None => (LEG_STIFF_SECONDS, LEG_LOOSEN_SECONDS),
             },
+            buckle,
             id: owner,
         })
     }
@@ -807,11 +1132,26 @@ impl Ragdoll {
                 STIFF_RANGE + (1.0 - STIFF_RANGE) * t * t * (3.0 - 2.0 * t)
             };
             let body = share(body_stiff, body_loosen);
-            let legs = share(leg_stiff, leg_loosen);
+            let buckling = self.buckle.is_some();
+            let legs = if buckling {
+                1.0
+            } else {
+                share(leg_stiff, leg_loosen)
+            };
             for joint in &mut self.joints {
-                joint.set_range(if joint.leg { legs } else { body });
+                joint.set_range(match () {
+                    _ if joint.leg => legs,
+                    _ if joint.torso && buckling => {
+                        // Braced while the round's push spreads through the
+                        // whole body, then free to fold.
+                        let t = ((self.age - BUCKLE_BRACE.0) / BUCKLE_BRACE.1).clamp(0.0, 1.0);
+                        body.max(STIFF_RANGE + (BUCKLE_TORSO_RANGE - STIFF_RANGE) * t)
+                    }
+                    _ => body,
+                });
             }
         }
+
         // Loose: each cone moves its centre from the death pose to the
         // limb's rest, and settles there.
         let body_loose = self.age >= body_stiff + body_loosen;
@@ -856,11 +1196,22 @@ impl Ragdoll {
         !(resting || self.age > MAX_SECONDS)
     }
 
-    /// Where the hips are now (world), for tests and the death camera.
-    pub fn hips(&self) -> Vector3 {
-        self.parts
-            .first()
-            .map_or(Vector3::ZERO, |p| p.body.get_global_position())
+    /// Where the body's centre of mass is now (world). Only the push,
+    /// gravity, and the ground move it, so it shows which way the body fell
+    /// however its muscles folded it.
+    pub fn centre(&self) -> Vector3 {
+        let (sum, mass) = self
+            .parts
+            .iter()
+            .fold((Vector3::ZERO, 0.0), |(sum, mass), p| {
+                let m = p.body.get_mass();
+                (sum + p.body.get_global_position() * m, mass + m)
+            });
+        if mass > 0.0 {
+            sum / mass
+        } else {
+            Vector3::ZERO
+        }
     }
 
     /// Stops the physics and keeps the pose it ended in.
@@ -912,6 +1263,57 @@ impl Ragdoll {
             };
         }
     }
+}
+
+/// The muscles that bend a body into `plan`, from the parts as built
+/// (part, body, joint point, axis) for a body facing `front`.
+fn buckle_muscles(
+    plan: &Buckle,
+    built: &[(BodyPart, Gd<RigidBody3D>, Vector3, Vector3)],
+    front: Vector3,
+) -> Vec<Muscle> {
+    let find = |part: BodyPart| built.iter().find(|(p, ..)| *p == part);
+    // Turning about `pitch` by a positive angle tips what points up toward
+    // the front (and what hangs down toward the back); about `front`, it
+    // leans what points up toward the body's right.
+    let front = Vector3::new(front.x, 0.0, front.z)
+        .try_normalized()
+        .unwrap_or(Vector3::BACK);
+    let pitch = Vector3::UP.cross(front);
+    let turn = |axis: Vector3, degrees: f32| Basis::from_axis_angle(axis, degrees.to_radians());
+    let mut muscles = Vec::new();
+    let mut add = |parent: BodyPart, child: BodyPart, by: Basis| {
+        if let (Some((_, p, ..)), Some((_, c, ..))) = (find(parent), find(child)) {
+            muscles.push(Muscle::new(p, c, by));
+        }
+    };
+    // Turning about up by a positive angle turns the front toward the
+    // body's left, so a twist to the right is a negative turn.
+    let torso = turn(Vector3::UP, -plan.twist * 0.5)
+        * turn(front, plan.lean * 0.5)
+        * turn(pitch, plan.bend * 0.5);
+    add(BodyPart::Hips, BodyPart::Spine, torso);
+    add(BodyPart::Spine, BodyPart::Chest, torso);
+    add(BodyPart::Chest, BodyPart::Head, turn(pitch, plan.nod));
+    let legs = [
+        (BodyPart::LeftUpperLeg, BodyPart::LeftLowerLeg),
+        (BodyPart::RightUpperLeg, BodyPart::RightLowerLeg),
+    ];
+    for (i, (thigh, shin)) in legs.into_iter().enumerate() {
+        add(BodyPart::Hips, thigh, turn(pitch, -plan.hips[i]));
+        if let (Some((.., thigh_axis)), Some((.., shin_axis))) = (find(thigh), find(shin)) {
+            // About the knee's own hinge, as far again as it still needs to
+            // reach the planned bend: a crouched knee stays bent.
+            let (hinge, bent) = hinge_axis(*thigh_axis, *shin_axis, -front);
+            let more = (plan.knees[i] - bent.to_degrees()).max(0.0);
+            add(
+                thigh,
+                shin,
+                Basis::from_axis_angle(hinge, more.to_radians()),
+            );
+        }
+    }
+    muscles
 }
 
 /// The axis of an already built part's capsule.
@@ -1126,6 +1528,60 @@ mod tests {
         let (lower, upper_limit) = hinge_limits(bend, 140f32.to_radians());
         assert!((upper_limit - bend).abs() < 1e-5);
         assert!((lower + (140f32.to_radians() - bend)).abs() < 1e-5);
+    }
+
+    fn shot(direction: Vector3, part: BodyPart, point: Option<Vector3>, force: f32) -> Push {
+        Push {
+            direction,
+            part: Some(part),
+            point,
+            force,
+            knife: false,
+        }
+    }
+
+    #[test]
+    fn a_body_goes_down_toward_the_push_from_the_side() {
+        // Facing +Z, its right is -X. A round travelling -X pushes it right.
+        let front = Vector3::BACK;
+        let hips = Vector3::new(0.0, 1.0, 0.0);
+        let plan = shot(Vector3::LEFT, BodyPart::Chest, None, 3.0).buckle(front, hips);
+        assert!(plan.lean > 10.0, "{plan:?}");
+        assert!(plan.knees[1] > plan.knees[0], "the right knee goes first");
+        let plan = shot(Vector3::RIGHT, BodyPart::Chest, None, 3.0).buckle(front, hips);
+        assert!(
+            plan.lean < -10.0 && plan.knees[0] > plan.knees[1],
+            "{plan:?}"
+        );
+    }
+
+    #[test]
+    fn a_shot_from_the_front_hunches_over_it_and_drops_on_the_struck_side() {
+        let front = Vector3::BACK;
+        let hips = Vector3::new(0.0, 1.0, 0.0);
+        let right = Vector3::new(-0.12, 1.3, 0.1);
+        let plan = shot(Vector3::FORWARD, BodyPart::Chest, Some(right), 3.0).buckle(front, hips);
+        assert!(plan.bend > 20.0, "folds forward over the wound: {plan:?}");
+        assert!(plan.lean > 0.0 && plan.knees[1] > plan.knees[0], "{plan:?}");
+        let behind = shot(Vector3::BACK, BodyPart::Chest, Some(right), 3.0).buckle(front, hips);
+        assert!(behind.bend < plan.bend && behind.bend > 0.0, "{behind:?}");
+        // Square on, the same shot always falls the same way.
+        let square = shot(Vector3::FORWARD, BodyPart::Chest, None, 3.0);
+        assert_eq!(square.buckle(front, hips), square.buckle(front, hips));
+    }
+
+    #[test]
+    fn a_leg_hit_gives_that_leg_and_a_headshot_drops_fastest() {
+        let front = Vector3::BACK;
+        let hips = Vector3::new(0.0, 1.0, 0.0);
+        let leg = shot(Vector3::FORWARD, BodyPart::LeftLowerLeg, None, 3.0).buckle(front, hips);
+        assert!(leg.knees[0] > 100.0 && leg.knees[1] < 60.0, "{leg:?}");
+        assert!(leg.lean < 0.0, "down over the left leg: {leg:?}");
+        let head = shot(Vector3::FORWARD, BodyPart::Head, None, 3.0).buckle(front, hips);
+        let chest = shot(Vector3::FORWARD, BodyPart::Chest, None, 3.0).buckle(front, hips);
+        assert!(head.drop > chest.drop && head.hold < chest.hold, "{head:?}");
+        let blast = shot(Vector3::FORWARD, BodyPart::Chest, None, 15.0).buckle(front, hips);
+        assert!(blast.bend < chest.bend, "a blast throws more than it folds");
     }
 
     #[test]

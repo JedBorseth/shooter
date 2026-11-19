@@ -380,7 +380,8 @@ pub struct SoldierRig {
     /// Where it was hit lately, darkened on the body (`wounds.rs`).
     wounds: Wounds,
     death: Death,
-    /// Where the hips were as the ragdoll started and where they are now.
+    /// Where the body's centre of mass was as the ragdoll started and where
+    /// it is now.
     fall_from: Vector3,
     fall_to: Vector3,
     /// Whether the last ragdoll came to rest before its time cap froze it.
@@ -531,7 +532,7 @@ impl SoldierRig {
             .unwrap_or(Vector3::ZERO)
     }
 
-    /// How far (m) the hips have moved along the ground since the ragdoll
+    /// How far (m) the centre of mass has moved along the ground since the ragdoll
     /// started (tests).
     #[func]
     pub fn fall_distance(&self) -> f32 {
@@ -1564,7 +1565,7 @@ impl SoldierRig {
             }
             Death::Ragdoll(mut ragdoll) => {
                 let moving = ragdoll.step(dt);
-                self.fall_to = ragdoll.hips();
+                self.fall_to = ragdoll.centre();
                 if moving {
                     self.death = Death::Ragdoll(ragdoll);
                 } else {
@@ -1581,7 +1582,7 @@ impl SoldierRig {
     /// sinking away).
     pub fn freeze_ragdoll(&mut self) {
         if let Death::Ragdoll(ragdoll) = std::mem::take(&mut self.death) {
-            self.fall_to = ragdoll.hips();
+            self.fall_to = ragdoll.centre();
             ragdoll.freeze();
             self.death = Death::Still;
         } else if matches!(self.death, Death::Alive) {
@@ -1617,7 +1618,7 @@ impl SoldierRig {
         let Some(ragdoll) = Ragdoll::start(skeleton, pose, velocity, push, owner) else {
             return Death::Still;
         };
-        self.fall_from = ragdoll.hips();
+        self.fall_from = ragdoll.centre();
         self.fall_to = self.fall_from;
         self.came_to_rest = false;
         let cap = if self.zombie {
