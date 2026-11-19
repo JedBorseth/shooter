@@ -76,6 +76,9 @@ func _moves() -> Dictionary:
 		"reload_m40": [1.0, RELOAD_MOMENTS, _reload.bind("m40")],
 		"reload_m1911": [1.0, RELOAD_MOMENTS, _reload.bind("m1911")],
 		"reload_m870": [1.0, RELOAD_MOMENTS, _reload.bind("m870")],
+		# Empty reloads: the old magazine drops and lies on the ground.
+		"reload_empty_m4": [1.0, RELOAD_MOMENTS, _reload.bind("m4", true)],
+		"reload_empty_ak47": [1.0, RELOAD_MOMENTS, _reload.bind("ak47", true)],
 		"holds": [1.12, [0.07, 0.21, 0.35, 0.49, 0.63, 0.77, 0.91, 1.05], _holds],
 		"actions": [1.0, [0.0, 0.2, 0.4, 0.5, 0.6, 0.7, 0.8, 0.95], _actions],
 		"ladder":
@@ -138,8 +141,16 @@ func _spin(t: float) -> Dictionary:
 	return {"weapon": "m4", "yaw": 3.0 * minf(t, 1.0)}
 
 
-func _reload(t: float, weapon: String) -> Dictionary:
-	return {"weapon": weapon, "reload": clampf(t, 0.0, 0.999), "front": true}
+## A reload close up from the support hand's side; an empty one from lower
+## and further out in front, where the dropped magazine shows on the ground.
+func _reload(t: float, weapon: String, empty := false) -> Dictionary:
+	var state := {"weapon": weapon, "reload": clampf(t, 0.0, 0.999), "reload_empty": empty}
+	if empty:
+		state["camera"] = SPOT + Vector3(-1.5, 1.0, -2.0)
+		state["look"] = SPOT + Vector3(0, 0.6, 0)
+	else:
+		state["front"] = true
+	return state
 
 
 ## Each class at the hip, then sprinting: M4, LSW-6, M1911, M870.
@@ -220,7 +231,8 @@ func _strip(scene: Node, move: String, spec: Array) -> void:
 	# Turns are seen from in front and above, where the feet and the aim
 	# both show; moves from the side.
 	if state_at.call(0.0).has("camera"):
-		pass
+		_camera.global_position = state_at.call(0.0)["camera"]
+		_camera.look_at(state_at.call(0.0)["look"])
 	elif state_at.call(0.0).get("gait", false):
 		_camera.global_position = SPOT + Vector3(2.4, 1.1, -2.9)
 		_camera.look_at(SPOT + Vector3(0, 0.75, 0))

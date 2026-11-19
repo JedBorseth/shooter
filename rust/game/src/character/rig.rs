@@ -168,6 +168,9 @@ pub struct SoldierFrame {
     pub weapon: Option<WeaponId>,
     /// Reload progress 0..1 while reloading.
     pub reload: Option<f32>,
+    /// The reload is from an empty magazine: the old one drops instead of
+    /// going to the pouch.
+    pub reload_empty: bool,
     pub alive: bool,
     /// Climbing over a ledge: plays the climb once as it starts.
     pub mantling: bool,
@@ -241,6 +244,7 @@ impl Default for SoldierFrame {
             ads: 0.0,
             weapon: None,
             reload: None,
+            reload_empty: false,
             alive: true,
             mantling: false,
             meleeing: false,
@@ -333,6 +337,9 @@ pub struct SoldierRig {
     sprint: f32,
     reload_blend: f32,
     reload_progress: f32,
+    /// The reload progress the magazine was last posed at, while reloading:
+    /// the old magazine drops as the progress passes its drop point.
+    magazine_seen: Option<f32>,
     /// Seconds into the knife swing playing, if one is.
     melee: Option<f32>,
     ik: f32,
@@ -595,7 +602,7 @@ impl SoldierRig {
     /// Poses the character from a dictionary, for tests and screenshot scripts:
     /// `velocity` (Vector3), `on_floor`, `stance` ("standing", "crouching",
     /// "sliding"), `sprinting`, `yaw`, `pitch`, `ads`, `weapon` (file key),
-    /// `reload` (progress, or -1), `alive`, `mantling`, `meleeing`, `crouch`
+    /// `reload` (progress, or -1), `reload_empty`, `alive`, `mantling`, `meleeing`, `crouch`
     /// (the simulation's crouch blend, or -1), `turn` (the aim's turn from the
     /// planted feet; missing turns the rig's own feet), `action` ("plant",
     /// "defuse", "throw") with `action_progress`. Missing keys keep their
@@ -631,6 +638,7 @@ impl SoldierRig {
             ads: f("ads", 0.0),
             weapon: get("weapon").and_then(|v| WeaponId::by_key(&v.to_string())),
             reload: (reload >= 0.0).then_some(reload),
+            reload_empty: b("reload_empty", false),
             alive: b("alive", true),
             mantling: b("mantling", false),
             meleeing: b("meleeing", false),
@@ -1326,20 +1334,41 @@ impl SoldierRig {
     /// support hand (`carry::Carry::magazine_pose`).
     fn pose_magazine(&mut self, frame: &SoldierFrame) {
         let progress = self.reload_progress;
+        let reloading = frame.reload.is_some() && frame.alive;
+        let seen = std::mem::replace(&mut self.magazine_seen, reloading.then_some(progress));
+        let tree = self.base().is_inside_tree().then(|| self.base().get_tree());
         let Some((id, view)) = &mut self.weapon else {
             return;
         };
-        let pose = frame.reload.filter(|_| frame.alive).map(|_| {
-            let def = id.def();
-            Carry {
-                reload: 1.0,
-                reload_progress: progress,
-                class: carry::CarryClass::of(def),
-                timing: carry::ReloadTiming::of(def),
-                ..Carry::default()
-            }
-            .magazine_pose(&carry::Grips::held(def))
-        });
+        let def = id.def();
+        let carry = Carry {
+            reload: 1.0,
+            reload_progress: progress,
+            class: carry::CarryClass::of(def),
+            timing: carry::ReloadTiming::of(def),
+            ..Carry::default()
+        };
+        // The old magazine drops free as the reload passes its drop point
+        // (not for a body seen first mid-reload): a loose copy falls from
+        // where it sat, and the gun's own copy goes out of sight.
+        let dropping = reloading
+            && carry
+                .drop_point(frame.reload_empty)
+                .zip(seen)
+                .is_some_and(|(at, seen)| seen < at && seen <= progress && progress >= at);
+        if dropping
+            && visuals_enabled()
+            && let Some(tree) = &tree
+            && let Some((magazine, at)) = view.bind_mut().world_magazine_seated()
+        {
+            // Let go with the body's motion, falling and tumbling a little
+            // out from the gun.
+            let out = at.basis.orthonormalized() * Vector3::new(-0.3, -0.6, 0.1);
+            let spin = at.basis.orthonormalized() * Vector3::new(0.0, 0.0, 4.0);
+            super::magazines::drop_magazine(tree, magazine, at, frame.velocity * 0.8 + out, spin);
+        }
+        let pose =
+            reloading.then(|| carry.magazine_pose(&carry::Grips::held(def), frame.reload_empty));
         view.bind_mut().pose_world_magazine(pose);
     }
 

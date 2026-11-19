@@ -92,7 +92,7 @@ use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, Weapo
 // Version 39 authored a loop for every direction of travel: the stride
 // phase runs forward for backpedals, quicker sideways, and the hit zones pose
 // the directional loops, so both ends must agree on them.
-pub const PROTOCOL_VERSION: u16 = 39;
+pub const PROTOCOL_VERSION: u16 = 40;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -495,6 +495,9 @@ pub struct PlayerView {
     pub ads: u8,
     pub weapon: WeaponId,
     pub reloading: bool,
+    /// The reload is from an empty magazine: other players see the old one
+    /// dropped instead of stowed.
+    pub reload_empty: bool,
     pub alive: bool,
     /// Rounds fired so far; an increase means the player fired.
     pub shots_fired: u32,
@@ -610,6 +613,7 @@ impl PlayerView {
             ads: (combat.ads.clamp(0.0, 1.0) * 255.0).round() as u8,
             weapon: combat.weapon().id,
             reloading: combat.is_reloading(),
+            reload_empty: combat.is_empty_reload(),
             alive: p.state.alive(),
             shots_fired: combat.shots_fired,
             mantling: p.state.movement.mantling(),
@@ -1887,6 +1891,7 @@ fn write_view_delta(w: &mut BitWriter, v: &PlayerView, base: &PlayerView) {
             p.ads,
             p.weapon,
             p.reloading,
+            p.reload_empty,
             p.alive,
             p.mantling,
             p.meleeing,
@@ -1903,6 +1908,7 @@ fn write_view_delta(w: &mut BitWriter, v: &PlayerView, base: &PlayerView) {
         w.u8(v.ads);
         write_weapon(w, v.weapon);
         w.bool(v.reloading);
+        w.bool(v.reload_empty);
         w.bool(v.alive);
         w.bool(v.mantling);
         w.bool(v.meleeing);
@@ -1971,6 +1977,7 @@ fn read_view_delta(r: &mut BitReader, base: &PlayerView) -> DecodeResult<PlayerV
         v.ads = r.u8()?;
         v.weapon = read_weapon(r)?;
         v.reloading = r.bool()?;
+        v.reload_empty = r.bool()?;
         v.alive = r.bool()?;
         v.mantling = r.bool()?;
         v.meleeing = r.bool()?;
@@ -2781,6 +2788,34 @@ mod tests {
         let baseline = [a];
         let decoded = ServerMessage::decode(&delta.encode(&baseline), |_| Some(&baseline[..]));
         assert_eq!(decoded.unwrap(), delta);
+    }
+
+    #[test]
+    fn an_empty_reload_rides_in_the_view_delta() {
+        let a = PlayerView::from_state(3, &sample_state(30), 0.5, -0.1);
+        assert!(!a.reload_empty);
+        let mut empty = a;
+        empty.reloading = true;
+        empty.reload_empty = true;
+        let delta = ServerMessage::Snapshot(Snapshot {
+            grenades: Vec::new(),
+            smokes: Vec::new(),
+            tick: 101,
+            baseline: Some(100),
+            own: None,
+            players: vec![empty],
+        });
+        let baseline = [a];
+        let decoded = ServerMessage::decode(&delta.encode(&baseline), |_| Some(&baseline[..]));
+        assert_eq!(decoded.unwrap(), delta);
+        // The server sets it from the combat state.
+        let mut p = sample_state(30);
+        p.state.combat.action = crate::weapon::Action::Reloading {
+            remaining: 1.0,
+            empty: true,
+        };
+        let view = PlayerView::from_state(3, &p, 0.0, 0.0);
+        assert!(view.reloading && view.reload_empty);
     }
 
     #[test]

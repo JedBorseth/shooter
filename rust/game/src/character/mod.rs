@@ -5,6 +5,7 @@ pub mod arms;
 pub mod corpses;
 pub mod grasp;
 pub mod ik;
+pub mod magazines;
 pub mod palette;
 pub mod poser;
 pub mod ragdoll;

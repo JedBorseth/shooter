@@ -342,6 +342,11 @@ impl CombatState {
         matches!(self.action, Action::Meleeing { .. })
     }
 
+    /// Reloading from an empty magazine (the old one is dropped, not stowed).
+    pub fn is_empty_reload(&self) -> bool {
+        matches!(self.action, Action::Reloading { empty: true, .. })
+    }
+
     pub fn is_reloading(&self) -> bool {
         matches!(
             self.action,

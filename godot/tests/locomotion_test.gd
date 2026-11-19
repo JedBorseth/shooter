@@ -6,7 +6,8 @@ extends SceneTree
 ## torso leans into a start and back from a stop. Standing on the edge of a
 ## step, each foot rests on the ground under it. A weapon switch lowers the old
 ## weapon before the new one comes up. A reload takes the magazine out of the
-## gun with the support hand and seats it again. Exits non-zero on failure.
+## gun with the support hand and seats it again; an empty one drops the old
+## magazine, which falls and lies on the ground. Exits non-zero on failure.
 ## Run from the repo root:
 ##   godot --headless --path godot --fixed-fps 120 --script res://tests/locomotion_test.gd
 
@@ -27,6 +28,7 @@ func _run() -> void:
 	await _feet_on_a_step()
 	await _switch()
 	await _magazine()
+	await _dropped_magazines()
 	_finish()
 
 
@@ -246,6 +248,57 @@ func _magazine() -> void:
 		await process_frame
 		_check(world.visible and not body.visible, "%s: one mesh again after it" % weapon)
 		rig.queue_free()
+
+
+## An empty reload drops the old magazine to the ground, where it lies on its
+## side; a tactical reload stows it; a pistol's always drops.
+func _dropped_magazines() -> void:
+	var ground := StaticBody3D.new()
+	var shape := CollisionShape3D.new()
+	var slab := BoxShape3D.new()
+	slab.size = Vector3(10, 1, 10)
+	shape.shape = slab
+	shape.position = Vector3(0, -0.5, 20)
+	ground.add_child(shape)
+	root.add_child(ground)
+	var drops := func() -> Node: return get_first_node_in_group("magazine_drops")
+	var dropped := func() -> int:
+		var node: Node = drops.call()
+		return 0 if node == null else node.dropped()
+	for run in [["m4", false, 0], ["m4", true, 1], ["ak47", true, 1], ["m1911", false, 1]]:
+		var before: int = dropped.call()
+		var rig := SOLDIER.instantiate() as SoldierRig
+		root.add_child(rig)
+		rig.position = Vector3(0, 0, 20)
+		var state := {"weapon": run[0]}
+		for i in 30:
+			rig.drive(state, DT)
+			await process_frame
+		for i in 240:
+			state = {"weapon": run[0], "reload": i / 240.0, "reload_empty": run[1]}
+			rig.drive(state, DT)
+			await process_frame
+		for i in 120:
+			rig.drive({"weapon": run[0]}, DT)
+			await process_frame
+		var count: int = dropped.call() - before
+		_check(
+			count == run[2],
+			(
+				"%s %s reload: drops %d magazine(s) (%d)"
+				% [run[0], "empty" if run[1] else "tactical", run[2], count]
+			)
+		)
+		rig.queue_free()
+	var node: Node = drops.call()
+	if node != null:
+		_check(node.resting() == node.showing(), "the dropped magazines lie still")
+		for low: Vector3 in node.lowest_points():
+			_check(
+				low.y > -0.01 and low.y < 0.02,
+				"a dropped magazine lies on the ground, its lowest point at %.3f m" % low.y
+			)
+	ground.queue_free()
 
 
 func _check(condition: bool, label: String) -> void:
