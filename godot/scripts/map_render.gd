@@ -12,7 +12,9 @@ extends Node
 ## its own count (Low's shadows reach only half as far), and the set dressing's small
 ## detail (`map_*_detail` meshes: litter, brass, weeds) is hidden, so the
 ## dressing costs Low nothing over the bare map. A sky shader with a `detailed`
-## switch (shaders/night_sky.gdshader) drops its cloud and stars.
+## switch (shaders/night_sky.gdshader) drops its cloud, stars, and skyline on
+## Low, and one with a `fine_clouds` switch reads its cloud's finer noise on
+## High only.
 
 const GraphicsQuality := preload("res://scripts/graphics.gd")
 
@@ -61,6 +63,8 @@ func _apply_preset() -> void:
 		mesh.visible = not low
 	if _sky != null:
 		_sky.set_shader_parameter(&"detailed", not low)
+		var high: bool = int(_settings.get(&"graphics_quality")) == GraphicsQuality.Preset.HIGH
+		_sky.set_shader_parameter(&"fine_clouds", high)
 
 
 ## Whether the mesh's model has a shadow twin beside it.
