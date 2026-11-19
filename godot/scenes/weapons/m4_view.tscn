@@ -44,7 +44,7 @@ omni_range = 8.0
 position = Vector3(0.0164, -0.0511, -0.0728)
 
 [node name="GripRight" type="Marker3D" parent="."]
-position = Vector3(0.0000, -0.1196, -0.0075)
+position = Vector3(0.0000, -0.1446, 0.0275)
 
 [node name="GripLeft" type="Marker3D" parent="."]
 position = Vector3(0.0000, -0.0741, -0.2619)

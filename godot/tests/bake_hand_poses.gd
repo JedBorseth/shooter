@@ -12,6 +12,9 @@ extends SceneTree
 ## sampled finger or palm goes into it (past the limits and exceptions below)
 ## or a weapon has no stored poses. It does not compare the poses with a
 ## fresh fit: re-run this after changing a model.
+## Values set by hand after the fit go in the weapon file's `hand_tuning`
+## field, which the game applies over `hands`; this tool writes only `hands`,
+## so a re-bake keeps them (check that their reason still holds).
 
 ## The weapon files to fit.
 const WEAPONS := ["m4", "ak47", "br3", "lsw6", "pdw9", "m40", "m870", "m1911", "laser"]
@@ -25,8 +28,6 @@ const MOST_REACH_MISS := 5.0
 ## Fingers the fit cannot clear, how far (mm) they may go in instead, and why.
 ## Fix the model or the grip marker and remove the entry.
 const KNOWN_DEPTHS := {
-	"lsw6/right index": [4.0, "the box magazine reaches back over the trigger guard"],
-	"lsw6+grip/right index": [4.0, "the box magazine reaches back over the trigger guard"],
 	"lsw6/left middle finger": [2.0, "not yet diagnosed"],
 	"m1911/left index": [6.0, "not yet diagnosed"],
 }
@@ -38,21 +39,10 @@ const KNOWN_DEPTHS := {
 const LEAST_WRAP := 120.0
 ## Weapons whose firing hand the fit still leaves open, and why. The hand sits
 ## over the receiver instead of round the grip; fix the grip marker, the
-## rake, or the seat, re-run the bake, and remove the entry.
-const KNOWN_OPEN := {
-	"m4": "the hand sits over the magazine well, ahead of the pistol grip",
-	"br3": "the middle and ring fingers stop early; not yet diagnosed",
-	"pdw9": "the middle finger stops early; not yet diagnosed",
-	"m40": "the middle finger stops early; not yet diagnosed",
-	"lsw6": "the little finger stops early; not yet diagnosed",
-}
-## Values set by hand after the fit, which a bake overwrites: restore them
-## and check the reason still holds (the bake prints this list).
-const HAND_TUNED := {
-	"m1911 firing thumb": "(60, 10, 15), turn 70: laid over the backstrap, not up beside the slide",
-	"ak47 support seat and index":
-	"seat (0, -0.017, 0), index (20, 30, 60): the hand stays below the red dot's window",
-}
+## rake, or the seat, re-run the bake, and remove the entry. Every weapon
+## closes its hand now: the grip markers sit on each model's grip, raked as
+## its grip is (#215 found the cause on the pistol).
+const KNOWN_OPEN := {}
 const BLOCK_START := "    // Finger poses fitted to the model"
 ## `FpArms.hand_depths`'s `finger_depths`, in order.
 const FINGER_NAMES := [
@@ -111,16 +101,21 @@ func _run() -> void:
 			_check_wrap(key, _stored_right(stored))
 			continue
 		var fit := await _hold(player, arms, key, "fit_hands")
+		# Checked as the game draws it: with the file's hand-set values.
+		var drawn: Dictionary = arms.with_tuning(fit, false) if not fit.is_empty() else {}
 		var foregrip := {}
+		var drawn_grip := {}
 		if takes_grip:
 			foregrip = await _hold(player, arms, key + "+grip", "fit_hands")
+			if not foregrip.is_empty():
+				drawn_grip = arms.with_tuning(foregrip, true)
 		if fit.is_empty() or (takes_grip and foregrip.is_empty()):
 			_failures.append("%s: the hands did not hold it" % key)
 			continue
-		_check_depths(key, fit)
-		_check_wrap(key, fit.get("right", PackedFloat32Array()))
+		_check_depths(key, drawn)
+		_check_wrap(key, drawn.get("right", PackedFloat32Array()))
 		if takes_grip:
-			_check_depths(key + "+grip", foregrip)
+			_check_depths(key + "+grip", drawn_grip)
 		if not _write(path, source, _block(fit, foregrip)):
 			_failures.append("%s: cannot find where its `hands` field ends; not written" % key)
 	if not _failures.is_empty():
@@ -128,9 +123,6 @@ func _run() -> void:
 			printerr("FAIL: ", failure)
 		quit(1)
 		return
-	if not check:
-		for tuned: String in HAND_TUNED:
-			print("Set by hand, now overwritten: %s %s" % [tuned, HAND_TUNED[tuned]])
 	print("PASS" if check else "Wrote the hand poses; rebuild the game to use them.")
 	quit()
 

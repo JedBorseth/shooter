@@ -390,6 +390,11 @@ pub struct WeaponDef {
     /// and checked against it by `hand_poses_test.gd`.
     #[serde(default)]
     pub hands: Option<HandsDef>,
+    /// Values set by hand after the fit, applied over `hands`. The bake
+    /// writes only `hands`, so a re-bake keeps these; `hand_poses_test.gd`
+    /// checks the poses with them applied.
+    #[serde(default)]
+    pub hand_tuning: Option<HandTuning>,
     /// On an attachment variant: the attachment fitted.
     #[serde(skip)]
     pub attachment: Option<Attachment>,
@@ -443,6 +448,54 @@ pub struct HandDef {
     pub seat: [f32; 3],
 }
 
+/// Hand-set changes to one fitted hand: each listed finger's curl, finger
+/// spread or thumb turn, and the seat replace the fitted ones; `None` keeps
+/// the fit.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize)]
+pub struct HandTune {
+    #[serde(default)]
+    pub fingers: [Option<[f32; 3]>; 5],
+    #[serde(default)]
+    pub spread: [Option<f32>; 5],
+    #[serde(default)]
+    pub seat: Option<[f32; 3]>,
+}
+
+impl HandTune {
+    /// `hand` with these changes.
+    pub fn apply(&self, mut hand: HandDef) -> HandDef {
+        for (finger, tuned) in hand.fingers.iter_mut().zip(self.fingers) {
+            if let Some(tuned) = tuned {
+                *finger = tuned;
+            }
+        }
+        if self.spread.iter().any(Option::is_some) {
+            let mut spread = hand.spread.unwrap_or_default();
+            for (s, tuned) in spread.iter_mut().zip(self.spread) {
+                if let Some(tuned) = tuned {
+                    *s = tuned;
+                }
+            }
+            hand.spread = Some(spread);
+        }
+        if let Some(seat) = self.seat {
+            hand.seat = seat;
+        }
+        hand
+    }
+}
+
+/// Hand-set changes over a weapon's fitted hand poses
+/// (`WeaponDef::hand_tuning`): the firing hand, and the support hand on the
+/// weapon itself (not on a foregrip).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize)]
+pub struct HandTuning {
+    #[serde(default)]
+    pub right: Option<HandTune>,
+    #[serde(default)]
+    pub left: Option<HandTune>,
+}
+
 /// A weapon's hand poses (see `WeaponDef::hands`).
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
 pub struct HandsDef {
@@ -459,18 +512,25 @@ pub struct HandsDef {
 }
 
 impl WeaponDef {
-    /// The hand poses for this weapon as fitted (right, index off the
-    /// trigger, left), each `None` where the file has none.
+    /// The hand poses for this weapon as fitted, with the hand-set changes
+    /// applied (right, index off the trigger, left), each `None` where the
+    /// file has none.
     pub fn finger_poses(&self) -> (Option<HandDef>, Option<[f32; 3]>, Option<HandDef>) {
         let Some(hands) = self.hands else {
             return (None, None, None);
         };
+        let tuning = self.hand_tuning.unwrap_or_default();
+        let tune = |tune: Option<HandTune>, hand: HandDef| tune.map_or(hand, |t| t.apply(hand));
         let left = if self.attachment == Some(Attachment::Grip) {
             hands.left_foregrip
         } else {
-            Some(hands.left)
+            Some(tune(tuning.left, hands.left))
         };
-        (Some(hands.right), Some(hands.index_off), left)
+        (
+            Some(tune(tuning.right, hands.right)),
+            Some(hands.index_off),
+            left,
+        )
     }
 }
 
@@ -728,6 +788,50 @@ mod tests {
         assert!(WeaponId::by_key("m40+acog").is_none());
         assert!(WeaponId::by_key("m1911+grip").is_none());
         assert!(table().len() < 64);
+    }
+
+    #[test]
+    fn hand_tuning_replaces_only_what_it_lists() {
+        let hand = HandDef {
+            fingers: [[10.0; 3], [20.0; 3], [30.0; 3], [40.0; 3], [50.0; 3]],
+            spread: Some([1.0, 2.0, 3.0, 4.0, 5.0]),
+            seat: [0.01, 0.0, 0.0],
+        };
+        let tune = HandTune {
+            fingers: [None, None, None, None, Some([60.0, 10.0, 15.0])],
+            spread: [None, None, None, None, Some(70.0)],
+            seat: None,
+        };
+        let tuned = tune.apply(hand);
+        assert_eq!(tuned.fingers[..4], hand.fingers[..4]);
+        assert_eq!(tuned.fingers[4], [60.0, 10.0, 15.0]);
+        assert_eq!(tuned.spread, Some([1.0, 2.0, 3.0, 4.0, 70.0]));
+        assert_eq!(tuned.seat, hand.seat);
+        let seat = HandTune {
+            seat: Some([0.0, -0.017, 0.0]),
+            ..HandTune::default()
+        };
+        assert_eq!(seat.apply(hand).seat, [0.0, -0.017, 0.0]);
+        assert_eq!(seat.apply(hand).spread, hand.spread);
+    }
+
+    #[test]
+    fn weapon_files_keep_hand_set_values_outside_the_fit() {
+        // The pistol's firing thumb and the AK-47's support hand are set by
+        // hand (`hand_tuning`); a re-bake rewrites `hands` but not them.
+        let pistol = WeaponId::expect("m1911").def();
+        let (right, _, _) = pistol.finger_poses();
+        let right = right.expect("the pistol has fitted hands");
+        assert_eq!(right.fingers[4], [60.0, 10.0, 15.0]);
+        assert_eq!(right.spread.map(|s| s[4]), Some(70.0));
+        let ak = WeaponId::expect("ak47").def();
+        let (_, _, left) = ak.finger_poses();
+        let left = left.expect("the AK-47 has fitted hands");
+        assert_eq!(left.seat, [0.0, -0.017, 0.0]);
+        assert_eq!(left.fingers[0], [20.0, 30.0, 60.0]);
+        // A foregrip's fist is the fit's alone.
+        let (_, _, grip) = WeaponId::expect("ak47+grip").def().finger_poses();
+        assert_eq!(grip, ak.hands.and_then(|h| h.left_foregrip));
     }
 
     #[test]

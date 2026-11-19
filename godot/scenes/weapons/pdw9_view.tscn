@@ -9,7 +9,7 @@ size = Vector2(0.16, 0.16)
 
 [node name="PDW9" type="WeaponView"]
 weapon = "pdw9"
-grip_rake = 15.0
+grip_rake = 22.0
 hip_position = Vector3(0.135, -0.070, -0.26)
 hip_rotation = Vector3(0, 5, 4)
 ads_position = Vector3(0, 0, -0.09)
@@ -51,7 +51,7 @@ omni_range = 7.0
 position = Vector3(0.0157, -0.0625, -0.0072)
 
 [node name="GripRight" type="Marker3D" parent="."]
-position = Vector3(-0.0000, -0.1968, 0.1183)
+position = Vector3(0.0000, -0.1968, 0.1233)
 
 [node name="GripLeft" type="Marker3D" parent="."]
 position = Vector3(0.0000, -0.1086, -0.1659)

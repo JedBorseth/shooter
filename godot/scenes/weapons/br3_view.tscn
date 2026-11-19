@@ -9,7 +9,7 @@ size = Vector2(0.18, 0.18)
 
 [node name="BR3" type="WeaponView"]
 weapon = "br3"
-grip_rake = 18.0
+grip_rake = 32.0
 hip_position = Vector3(0.130, -0.085, -0.29)
 hip_rotation = Vector3(0, 5, 4)
 ads_position = Vector3(0, 0, -0.1)
@@ -51,7 +51,7 @@ omni_range = 7.5
 position = Vector3(0.0122, -0.0459, 0.0306)
 
 [node name="GripRight" type="Marker3D" parent="."]
-position = Vector3(-0.0000, -0.1275, 0.2244)
+position = Vector3(0.0000, -0.1275, 0.2444)
 
 [node name="GripLeft" type="Marker3D" parent="."]
 position = Vector3(0.0000, -0.0867, -0.1632)

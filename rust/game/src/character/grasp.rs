@@ -450,20 +450,20 @@ impl Contact<'_> {
     }
 }
 
-/// How far each tested point of a finger posed at `flex` is into the
-/// surface (m; negative: clear of it). Points the finger does not test read
-/// `f32::MIN`.
-fn depths(
+/// Each tested point of a finger posed at `flex` and `spread`, in the
+/// field's space, with the finger's radius there (m): `None` for points the
+/// finger does not test.
+fn sample_points(
     chain: &Chain,
     contact: &Contact,
     flex: [f32; 3],
     spread: f32,
     joint: &impl Fn(usize, f32, f32) -> Quaternion,
-) -> [f32; SAMPLE_COUNT] {
+) -> [Option<(Vector3, f32)>; SAMPLE_COUNT] {
     let segments = if chain.thumb { &THUMB } else { &FINGER };
     let scale = contact.scale();
     let side = if contact.left { -1.0 } else { 1.0 };
-    let mut out = [f32::MIN; SAMPLE_COUNT];
+    let mut out = [None; SAMPLE_COUNT];
     let mut frame = Transform3D::IDENTITY;
     let mut n = 0;
     for (s, segment) in segments.iter().enumerate() {
@@ -479,12 +479,42 @@ fn depths(
         for &t in SAMPLES[s] {
             if segment.radius > 0.0 {
                 let p = contact.hand_to_field * (frame * (Vector3::UP * (length * t) + offset));
-                out[n] = segment.radius * PRESS * scale - contact.field.distance(p);
+                out[n] = Some((p, segment.radius * scale));
             }
             n += 1;
         }
     }
     out
+}
+
+/// How far each tested point of a finger posed at `flex` is into the
+/// surface (m; negative: clear of it). Points the finger does not test read
+/// `f32::MIN`.
+fn depths(
+    chain: &Chain,
+    contact: &Contact,
+    flex: [f32; 3],
+    spread: f32,
+    joint: &impl Fn(usize, f32, f32) -> Quaternion,
+) -> [f32; SAMPLE_COUNT] {
+    sample_points(chain, contact, flex, spread, joint)
+        .map(|p| p.map_or(f32::MIN, |(p, r)| r * PRESS - contact.field.distance(p)))
+}
+
+/// The points along a finger posed at `flex` and `spread` (the field's
+/// space) with the finger's radius at each, for offline tools that check
+/// what a pose shows (a thumb rising into a sight's window).
+pub fn finger_points(
+    chain: &Chain,
+    contact: &Contact,
+    flex: [f32; 3],
+    spread: f32,
+    joint: impl Fn(usize, f32, f32) -> Quaternion,
+) -> Vec<(Vector3, f32)> {
+    sample_points(chain, contact, flex, spread, &joint)
+        .into_iter()
+        .flatten()
+        .collect()
 }
 
 /// The deepest any part of a finger posed at `flex` and `spread` goes into

@@ -38,13 +38,13 @@
     tracer_every: 4,
     attachments: [RedDot, Acog, Suppressor, Grip, ExtendedMag],
     // Hands on the model: GripRight and GripLeft in lsw6_view.tscn.
-    grips: Some((right: (0, -0.1301, 0.1721), left: (0, -0.061, -0.1473), rake: 25, section: Some((centre: (0.0000, -0.0501), half: (0.0208, 0.0219))))),
+    grips: Some((right: (0, -0.1301, 0.1661), left: (0, -0.061, -0.1473), rake: 22, section: Some((centre: (0.0000, -0.0501), half: (0.0208, 0.0219))))),
     // Finger poses fitted to the model by tests/bake_hand_poses.gd:
     // curl in degrees per joint (index, middle, ring, little, thumb), each
     // finger's spread, and the hand's seat off its marker (m). Re-run it
     // after moving the grips or changing the model.
     hands: Some((
-        right: (fingers: ((7.5, 51.5, 51.5), (44, 34, 64.5), (51.5, 34, 64.5), (49, 25, 7), (-32.5, 4.5, 4)), spread: Some((-7.5, -12, -9.5, 7, 48)), seat: (-0.006, -0.002, -0.009)),
+        right: (fingers: ((4.5, 16.5, 51.5), (38.5, 34.5, 64.5), (52, 32, 51.5), (75.5, 77, 44.5), (-32.5, 5, 6)), spread: Some((-4, -12, 3, 7, 46.5)), seat: (-0.006, -0.002, -0.001)),
         index_off: (4, 6, 4),
         left: (fingers: ((27.5, 45.5, 36.5), (-19, 58, 55.5), (71, 74, 46), (65, 65, 38), (5.5, 22.5, 17.5)), spread: Some((-7.5, 17, 3.5, 9, 38)), seat: (0, 0, 0)),
         left_foregrip: Some((fingers: ((38.5, 40, 23.5), (73, 81.5, 64.5), (80, 85, 45), (85, 85, 45), (21.5, 43, 65.5)), spread: Some((-2, 0, 2, 4, 40)), seat: (0.012, 0.01, -0.009))),

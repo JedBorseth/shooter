@@ -10,7 +10,7 @@ size = Vector2(0.2, 0.2)
 [node name="LSW6" type="WeaponView"]
 weapon = "lsw6"
 fire_volume_db = -5.0
-grip_rake = 25.0
+grip_rake = 22.0
 hip_position = Vector3(0.130, -0.115, -0.235)
 hip_rotation = Vector3(0, 5, 4)
 ads_position = Vector3(0, 0, -0.14)
@@ -48,7 +48,7 @@ omni_range = 8.0
 position = Vector3(0.0120, -0.0304, 0.0580)
 
 [node name="GripRight" type="Marker3D" parent="."]
-position = Vector3(-0.0000, -0.1301, 0.1721)
+position = Vector3(0.0000, -0.1301, 0.1661)
 
 [node name="GripLeft" type="Marker3D" parent="."]
 position = Vector3(0.0000, -0.0610, -0.1473)
