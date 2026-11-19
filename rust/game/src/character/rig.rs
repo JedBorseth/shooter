@@ -110,6 +110,10 @@ const ZOMBIE_SHAMBLE_LIMIT: f32 = 2.1;
 // Weapon offsets from the eyes, the reload reach, and the hand placement are
 // in `shooter_sim::hitbox::carry`, shared with the arm hit zones.
 
+/// A soldier with the weapon mounted on cover leans this far onto it
+/// (degrees forward). Cosmetic: about 3.5 cm at the head, inside the hit
+/// zones' fit.
+const MOUNT_LEAN_DEGREES: f32 = 4.0;
 /// Hit flinch spring (radians of torso lean), as the old target dummy.
 const LEAN_STIFFNESS: f32 = 140.0;
 const LEAN_DAMPING: f32 = 9.0;
@@ -197,6 +201,9 @@ pub struct SoldierFrame {
     /// On a ladder: the way it is climbed (`x`, `z`). The body faces the
     /// rungs with its hands and feet on them, the weapon put away.
     pub ladder: Option<shooter_sim::Vec2>,
+    /// How far the weapon is mounted on cover, 0 to 1 (`PlayerView::mount`):
+    /// the body leans onto the gun resting on the edge.
+    pub mount: f32,
 }
 
 /// Things a soldier does with their hands instead of the weapon. The hit
@@ -259,6 +266,7 @@ impl Default for SoldierFrame {
             action: None,
             throw_kind: Default::default(),
             ladder: None,
+            mount: 0.0,
         }
     }
 }
@@ -675,6 +683,7 @@ impl SoldierRig {
                     let (forward, _) = shooter_sim::movement::basis_from_yaw(yaw);
                     shooter_sim::Vec2::new(forward.x, forward.z)
                 }),
+            mount: f("mount", 0.0),
         };
         self.update(&frame, delta);
     }
@@ -1469,7 +1478,10 @@ impl SoldierRig {
         PoseInput {
             turn: if frame.alive { self.turn } else { 0.0 },
             pitch: frame.pitch.clamp(-carry::MAX_PITCH, carry::MAX_PITCH) * slide,
-            lean: self.lean.value + self.motion_lean.value + Vector3::new(0.0, 0.0, -0.3) * lunge,
+            lean: self.lean.value
+                + self.motion_lean.value
+                + Vector3::new(0.0, 0.0, -0.3) * lunge
+                + Vector3::new(0.0, 0.0, -MOUNT_LEAN_DEGREES.to_radians()) * frame.mount,
             head_lean: self.head.value,
             twist: self.twist.value,
             arm_loose: self

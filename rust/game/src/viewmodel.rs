@@ -69,6 +69,10 @@ pub struct ViewFrame {
     pub vaulting: bool,
     /// On a ladder: the hands are on the rungs, so the weapon is put away.
     pub on_ladder: bool,
+    /// How far the weapon is mounted on cover, 0 to 1
+    /// (`MoveState::mount_blend`): it settles onto the edge with a thump and
+    /// its idle breathing and look lag nearly stop.
+    pub mount: f32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -2548,6 +2552,8 @@ pub struct ViewmodelRig {
     /// overshoot, and whether the last frame was sliding.
     slide: Spring<f32>,
     was_sliding: bool,
+    /// The weapon was mounted on cover last frame.
+    was_mounted: bool,
     /// A mantle or vault: its length in seconds (when it started), and the
     /// pose's blend, which hands over to the sprint-out like the sprint pose.
     mantle_total: f32,
@@ -3209,6 +3215,24 @@ impl ViewmodelRig {
             );
         }
         self.was_sliding = sliding;
+
+        // Mounting: the handguard comes down onto the edge with a short
+        // thump and a small roll as the weight settles, and lifts a little
+        // as it comes off (Modern Warfare's mount settle).
+        let mounted = frame.mount > 0.0 && frame.visible;
+        if mounted != self.was_mounted {
+            if mounted {
+                self.jolt(
+                    Vector3::new(0.0, -0.007, 0.003),
+                    Vector3::new(-0.9, 0.0, -0.7),
+                );
+                view.bind_mut().foley("mount");
+            } else {
+                self.jolt(Vector3::new(0.0, 0.004, 0.0), Vector3::new(0.5, 0.0, 0.0));
+                view.bind_mut().foley("unmount");
+            }
+        }
+        self.was_mounted = mounted;
         let (slide_k, slide_zeta) = if sliding { (110.0, 0.55) } else { (60.0, 0.9) };
         self.slide.step_toward(
             if sliding { 1.0 } else { 0.0 },
@@ -3247,7 +3271,8 @@ impl ViewmodelRig {
         // Idle breathing at the hip: a slow drift, nearly gone aimed (the
         // aimed sway is in the simulation's aim instead).
         let breath_t = self.time * TAU * 0.25;
-        let breath = 1.0 - 0.9 * ads;
+        let steady = 1.0 - 0.85 * frame.mount.clamp(0.0, 1.0);
+        let breath = (1.0 - 0.9 * ads) * steady;
         let breathe_pos =
             Vector3::new(0.0012 * (breath_t * 0.5).sin(), 0.004 * breath_t.sin(), 0.0) * breath;
         let breathe_rot = Vector3::new(
@@ -3257,7 +3282,8 @@ impl ViewmodelRig {
         ) * breath;
 
         // Look sway and movement inertia.
-        let look = look_sway_target(frame.look_velocity, ads);
+        // Resting on cover, the weapon follows the view more tightly.
+        let look = look_sway_target(frame.look_velocity, ads) * steady;
         let follow = smoothing(6.0, dt);
         self.smoothed_velocity += (frame.velocity - self.smoothed_velocity) * follow;
         let change = frame.velocity - self.smoothed_velocity;

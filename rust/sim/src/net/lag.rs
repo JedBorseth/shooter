@@ -91,6 +91,8 @@ pub struct RemoteSample {
     pub progress: Progress,
     /// The way the ladder the body is on is climbed (`x`, `z`), if it is on one.
     pub ladder: Option<glam::Vec2>,
+    /// How far the weapon is mounted on cover, 0 to 1 (`PlayerView::mount`).
+    pub mount: f32,
 }
 
 impl Interpolate for Progress {
@@ -144,6 +146,7 @@ impl RemoteSample {
             hit_part: v.hit_part,
             progress: v.progress(),
             ladder: v.ladder_facing(),
+            mount: f32::from(v.mount) / 255.0,
         }
     }
 }
@@ -168,6 +171,7 @@ impl Interpolate for RemoteSample {
             pitch: self.pitch + (to.pitch - self.pitch) * t,
             ads: self.ads + (to.ads - self.ads) * t,
             crouch: self.crouch + (to.crouch - self.crouch) * t,
+            mount: self.mount + (to.mount - self.mount) * t,
             progress: self.progress.interpolate(&to.progress, t),
             throw: match (self.throw, to.throw) {
                 (Some(a), Some(b)) if b >= a => Some(a + (b - a) * t),

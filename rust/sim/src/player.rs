@@ -6,6 +6,7 @@
 use glam::{Vec2, Vec3};
 
 use crate::melee;
+use crate::mount;
 use crate::movement::{self, MoveEnv, MoveInput, MoveParams, MoveState};
 use crate::weapon::{self, CombatContext, CombatEvent, CombatInput, CombatState, WeaponId};
 
@@ -201,6 +202,7 @@ impl PlayerState {
             airborne: !env.on_floor,
             crouched: self.movement.stance == crate::movement::Stance::Crouching,
             move_ratio: speed / params.walk_speed,
+            mount: self.movement.mount_blend,
         }
     }
 }
@@ -313,13 +315,45 @@ pub fn step(
     state.reload_held = input.reload;
     let melee_pressed = input.melee && !state.melee_held;
     state.melee_held = input.melee;
+    let lethal_pressed = input.lethal && !state.lethal_held;
+    let tactical_pressed = input.tactical && !state.tactical_held;
+
+    // Mounting goes first: an aimed melee press at cover mounts instead of
+    // swinging the knife, and while mounted the body stays put.
+    let m = &state.movement;
+    let mount_input = mount::MountInput {
+        aim: input.aim,
+        melee_pressed,
+        stance_pressed: (input.jump && !m.jump_held)
+            || (input.crouch && !m.crouch_held)
+            || (input.sprint && !m.sprint_held),
+        wish: input.wish,
+        yaw: input.yaw,
+        pitch: input.pitch,
+        // Not mid-switch, mid-throw, or mid-knife; a reload keeps the mount.
+        weapon_free: state.combat.can_melee(),
+        leaving: input
+            .switch_to
+            .is_some_and(|slot| slot != state.combat.active)
+            || lethal_pressed
+            || tactical_pressed
+            || input.pickup.is_some(),
+    };
+    let mount_press = mount::step(&mut state.movement, &mount_input, env, &params.movement, dt);
+    let melee_pressed = melee_pressed && !mount_press;
+    let input = if state.movement.mounted {
+        PlayerInput {
+            wish: Vec2::ZERO,
+            ..input
+        }
+    } else {
+        input
+    };
     // Not while climbing, when the weapon is down anyway.
     let climbing = state.movement.mantling() || state.movement.on_ladder();
     let melee = melee_pressed && state.combat.can_melee() && !climbing;
     let lunge = input.lunge.filter(|offset| melee && melee::lunges(*offset));
-    let lethal_pressed = input.lethal && !state.lethal_held;
     state.lethal_held = input.lethal;
-    let tactical_pressed = input.tactical && !state.tactical_held;
     state.tactical_held = input.tactical;
     // Not while climbing, nor in the same tick as a knife. The lethal wins
     // if both go down at once.
@@ -431,7 +465,96 @@ mod tests {
         ledge_low: false,
         vault: None,
         ladder: None,
+        mount: None,
     };
+
+    fn at_cover(height: f32) -> MoveEnv {
+        MoveEnv {
+            mount: Some(height),
+            ..MoveEnv::default()
+        }
+    }
+
+    fn kicks(events: &[PlayerEvent]) -> Vec<Vec2> {
+        events
+            .iter()
+            .filter_map(|e| match e {
+                PlayerEvent::Combat(CombatEvent::Fired { climb, .. }) => Some(*climb),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn an_aimed_melee_press_at_cover_mounts_instead_of_knifing() {
+        let mut s = ready_state();
+        let aim = PlayerInput {
+            aim: true,
+            ..Default::default()
+        };
+        run(&mut s, aim, at_cover(1.2), 60);
+        let press = PlayerInput { melee: true, ..aim };
+        let events = run(&mut s, press, at_cover(1.2), 1);
+        assert!(s.movement.mounted);
+        assert_eq!(melee_events(&events), (0, 0), "no knife");
+        // The body sinks until the eye rests the gun on the barrier, and
+        // stays put however the movement keys are held.
+        let lean = PlayerInput {
+            wish: Vec2::new(0.2, 0.2),
+            ..aim
+        };
+        run(&mut s, lean, at_cover(1.2), 60);
+        let params = PlayerParams::default().movement;
+        let eye = s.movement.eye_height(&params);
+        assert!((eye - (1.2 + crate::mount::REST)).abs() < 1e-3, "{eye}");
+        assert!(s.movement.velocity.length() < 1e-3);
+        // A second press lets go, and the next swings the knife.
+        run(&mut s, press, at_cover(1.2), 1);
+        assert!(!s.movement.mounted);
+        run(&mut s, aim, at_cover(1.2), 1);
+        let events = run(&mut s, press, at_cover(1.2), 1);
+        assert!(s.movement.mounted, "a press at cover mounts again");
+        run(&mut s, PlayerInput::default(), at_cover(1.2), 1);
+        assert!(!s.movement.mounted, "letting go of aim lets go");
+        let events_knife = run(
+            &mut s,
+            PlayerInput {
+                melee: true,
+                ..Default::default()
+            },
+            at_cover(1.2),
+            1,
+        );
+        assert_eq!(melee_events(&events), (0, 0));
+        assert_eq!(
+            melee_events(&events_knife).0,
+            1,
+            "at the hip it is the knife"
+        );
+    }
+
+    #[test]
+    fn a_mounted_weapon_kicks_less() {
+        let fire = |mount: bool| {
+            let mut s = ready_state();
+            let aim = PlayerInput {
+                aim: true,
+                ..Default::default()
+            };
+            run(&mut s, aim, at_cover(1.2), 60);
+            if mount {
+                run(&mut s, PlayerInput { melee: true, ..aim }, at_cover(1.2), 1);
+                run(&mut s, aim, at_cover(1.2), 60);
+                assert_eq!(s.movement.mount_blend, 1.0);
+            }
+            let events = run(&mut s, PlayerInput { fire: true, ..aim }, at_cover(1.2), 60);
+            kicks(&events).iter().map(|k| k.length()).sum::<f32>()
+        };
+        let (free, mounted) = (fire(false), fire(true));
+        assert!(free > 0.0);
+        let ratio = mounted / free;
+        assert!((ratio - crate::mount::KICK_SCALE).abs() < 1e-3, "{ratio}");
+    }
 
     #[test]
     fn firing_ends_sprint_and_waits_for_sprint_out() {
