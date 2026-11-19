@@ -281,7 +281,7 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 - [x] Soldiers: five faces (MakeHuman head shapes as blend shapes, each with its skin tone), picked per soldier.
 - [x] First-person arms: their own model and atlas (sleeves with sewn cuffs, gloves with knuckle guards, a field watch), and finger shapes per hold (pistol grip with trigger discipline, rifle handguard, pump, two-handed pistol).
 - [x] Firing hands closed round every weapon's grip, in first and third person: each `GripRight` sits on its model's grip and is raked as the grip is, and hand-set values live in `hand_tuning`, which the hand-pose bake keeps.
-- [ ] The LSW-6's support thumb rises into the red dot's window.
+- [x] The LSW-6's support hand clear of the red dot's window: it was the index curling over the handguard's top, not the thumb; it now lies along the handguard (`hand_tuning`).
 - [x] First-person gloves and sleeves: modelled seams, palm panels, and knuckle padding, and cloth-simulated sleeve folds, baked from high-detail sources into the arms atlas (`tools/blender_hilo.py`).
 
 ## Phase 6 and later: production polish

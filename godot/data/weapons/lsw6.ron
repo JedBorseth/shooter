@@ -49,4 +49,12 @@
         left: (fingers: ((27.5, 45.5, 36.5), (-19, 58, 55.5), (71, 74, 46), (65, 65, 38), (5.5, 22.5, 17.5)), spread: Some((-7.5, 17, 3.5, 9, 38)), seat: (0, 0, 0)),
         left_foregrip: Some((fingers: ((38.5, 40, 23.5), (73, 81.5, 64.5), (80, 85, 45), (85, 85, 45), (21.5, 43, 65.5)), spread: Some((-2, 0, 2, 4, 40)), seat: (0.012, 0.01, -0.009))),
     )),
+    // Set by hand after the fit, applied over `hands` (a re-bake keeps it):
+    // the support index lies straight along the handguard's side, pointing
+    // forward, instead of curling over its top edge, where its tip rose
+    // into the red dot's window (chosen by rendering candidates and
+    // counting the hand's pixels in the window: 1151 px to none).
+    hand_tuning: Some((
+        left: Some((fingers: (Some((25, 0, 0)), None, None, None, None), spread: (Some(-16), None, None, None, None))),
+    )),
 )
