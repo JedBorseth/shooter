@@ -596,7 +596,17 @@ pub struct PoseInput {
     pub feet: Option<[f32; 2]>,
     /// On a ladder: hands and feet on its rungs.
     pub ladder: Option<LadderLimbs>,
+    /// Vaulting: where the support wrist plants (world space) and how far
+    /// it has left the weapon for it (`hitbox::action::vault_plant`).
+    pub plant: Option<(Vector3, f32)>,
 }
+
+/// A vault's planted hand: its fingers point forward and down, and its
+/// elbow bends toward this point out to the left and back (skeleton space,
+/// which faces +Z with the character's left at +X), as the arm hit zones'
+/// `VAULT_ELBOW` is in body space.
+const VAULT_FINGERS: Vector3 = Vector3::new(0.0, -0.6, 1.0);
+const VAULT_ELBOW: Vector3 = Vector3::new(0.6, 1.1, -0.3);
 
 /// A climber's hands and feet on a ladder's rungs (world space), from
 /// `crate::ladder::limb_targets`, blended in by `weight`.
@@ -833,7 +843,7 @@ impl SoldierPoser {
         // Elbow hints in the weapon's frame: the firing elbow down and out, the
         // support elbow down and in under the weapon.
         let right_pole = weapon_skel * to_godot(carry::RIGHT_POLE);
-        let left_pole = weapon_skel * to_godot(carry::LEFT_POLE);
+        let mut left_pole = weapon_skel * to_godot(carry::LEFT_POLE);
         self.place_hand(
             skel,
             [
@@ -910,6 +920,23 @@ impl SoldierPoser {
                 Basis::from_quaternion(rotation),
                 left_target.origin.lerp(hand.origin, grenade),
             );
+        }
+        if let Some((at, plant)) = input.plant.filter(|(_, b)| *b > 0.0) {
+            // Palm down on the top, fingers forward (the skeleton faces +Z),
+            // the elbow out to the side and back, as the arm zones pose it.
+            let hand = left_target.basis.orthonormalized();
+            let turn = ik::rotation_between(hand.col_b(), VAULT_FINGERS.normalized());
+            let rotation = left_target.basis.get_quaternion().slerp(
+                (Basis::from_quaternion(turn) * hand).get_quaternion(),
+                plant,
+            );
+            left_target = Transform3D::new(
+                Basis::from_quaternion(rotation),
+                left_target
+                    .origin
+                    .lerp(skel_xform.affine_inverse() * at, plant),
+            );
+            left_pole = left_pole.lerp(VAULT_ELBOW, plant);
         }
         self.place_hand(
             skel,

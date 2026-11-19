@@ -179,6 +179,10 @@ pub struct SoldierFrame {
     pub alive: bool,
     /// Climbing over a ledge: plays the climb once as it starts.
     pub mantling: bool,
+    /// Vaulting over thin cover (`PlayerView::vaulting`): while mantling,
+    /// plays the vault instead of the climb, with the support hand planted
+    /// on the top; in the air after it, holds the vault's last pose.
+    pub vaulting: bool,
     /// Swinging the knife: each new swing plays the slash once.
     pub meleeing: bool,
     /// The stride phase and mantle progress from the server
@@ -229,6 +233,7 @@ impl SoldierFrame {
             // On a ladder the zones hang standing, facing the rungs.
             airborne: !self.on_floor && self.ladder.is_none(),
             mantling: self.mantling,
+            vaulting: self.vaulting,
             reloading: self.reload.is_some(),
             ads: self.ads,
             velocity: to_sim(self.velocity),
@@ -259,6 +264,7 @@ impl Default for SoldierFrame {
             reload_empty: false,
             alive: true,
             mantling: false,
+            vaulting: false,
             meleeing: false,
             stride: None,
             mantle_progress: None,
@@ -394,6 +400,9 @@ pub struct SoldierRig {
     stride: f32,
     mantle_progress: f32,
     climb: f32,
+    /// The climb drawn is a vault (1) or a mantle (0): kept while the climb
+    /// blends out after it.
+    vault: f32,
     /// Turning in place: the aim's offset from the feet and the in-place
     /// step drawn, and the rig's own turning offline.
     turn: f32,
@@ -632,7 +641,7 @@ impl SoldierRig {
     /// Poses the character from a dictionary, for tests and screenshot scripts:
     /// `velocity` (Vector3), `on_floor`, `stance` ("standing", "crouching",
     /// "sliding"), `sprinting`, `yaw`, `pitch`, `ads`, `weapon` (file key),
-    /// `reload` (progress, or -1), `reload_empty`, `alive`, `mantling`, `meleeing`, `crouch`
+    /// `reload` (progress, or -1), `reload_empty`, `alive`, `mantling`, `vaulting`, `meleeing`, `crouch`
     /// (the simulation's crouch blend, or -1), `turn` (the aim's turn from the
     /// planted feet; missing turns the rig's own feet), `action` ("plant",
     /// "defuse", "throw") with `action_progress`. Missing keys keep their
@@ -671,6 +680,7 @@ impl SoldierRig {
             reload_empty: b("reload_empty", false),
             alive: b("alive", true),
             mantling: b("mantling", false),
+            vaulting: b("vaulting", false),
             meleeing: b("meleeing", false),
             stride: (f("stride", -1.0) >= 0.0).then(|| f("stride", 0.0)),
             mantle_progress: (f("mantle_progress", -1.0) >= 0.0).then(|| f("mantle_progress", 0.0)),
@@ -936,7 +946,19 @@ impl SoldierRig {
         };
         // The climb blends in with the mantle's progress, as the hit zones
         // blend it, and out over a moment once the player is up.
-        self.climb = if frame.mantling && frame.alive {
+        if frame.mantling {
+            self.vault = if frame.vaulting { 1.0 } else { 0.0 };
+        }
+        // Dropping off the far side of a vault: its last pose, reaching for
+        // the ground, as the hit zones hold it.
+        let dropping = frame.vaulting && !frame.mantling && frame.alive;
+        if dropping {
+            self.vault = 1.0;
+            self.mantle_progress = 1.0;
+        }
+        self.climb = if dropping {
+            1.0
+        } else if frame.mantling && frame.alive {
             gait::climb_share(self.mantle_progress)
         } else {
             (self.climb - dt / CLIMB_FADE_OUT).max(0.0)
@@ -1044,6 +1066,12 @@ impl SoldierRig {
                     "climb_seek/seek_request",
                     self.mantle_progress.to_variant(),
                 );
+                set(
+                    tree,
+                    "vault_seek/seek_request",
+                    self.mantle_progress.to_variant(),
+                );
+                set(tree, "vault_or_climb/blend_amount", self.vault.to_variant());
                 set(tree, "climb/blend_amount", self.climb.to_variant());
                 // A leg hit dips the body toward a crouch for a moment.
                 let stance = (self.crouch + self.buckle.value).clamp(0.0, 1.0);
@@ -1419,7 +1447,12 @@ impl SoldierRig {
             }
             None => (0.0, None),
         };
-        let swing = swing.max(action_drop);
+        // A vault drops the weapon while the support hand plants, as the
+        // arm hit zones do.
+        let vaulting =
+            (frame.mantling && frame.vaulting && frame.alive).then_some(self.mantle_progress);
+        let vault_drop = vaulting.map_or(0.0, shooter_sim::hitbox::action::vault_weapon_drop);
+        let swing = swing.max(action_drop).max(vault_drop);
         let carry = Carry {
             ads: frame.ads,
             sprint: self.sprint,
@@ -1494,13 +1527,15 @@ impl SoldierRig {
                 + Vector3::new(0.0, 0.0, -MOUNT_LEAN_DEGREES.to_radians()) * frame.mount,
             head_lean: self.head.value,
             twist: self.twist.value,
-            // Squared up while the support hand throws, as the hit zones.
+            // Squared up while the support hand throws or plants on a
+            // vault's cover, as the hit zones.
             blade: if frame.alive && self.weapon.is_some() {
                 let throwing = match frame.action {
                     Some((ActionPose::Throw, t)) => action::throw_hand_blend(t),
                     _ => 0.0,
                 };
-                carry.blade() * self.ik.clamp(0.0, 1.0) * (1.0 - throwing)
+                let planting = vaulting.map_or(0.0, action::vault_hand_blend);
+                carry.blade() * self.ik.clamp(0.0, 1.0) * (1.0 - throwing.max(planting))
             } else {
                 0.0
             },
@@ -1525,6 +1560,13 @@ impl SoldierRig {
             grenade_kind: throw.map_or(Default::default(), |(pose, _)| pose.kind),
             feet: (self.feet_on && frame.alive).then_some(self.feet_lift),
             ladder: self.ladder_limbs.filter(|_| frame.alive),
+            plant: vaulting.map(|p| {
+                let at = to_godot(shooter_sim::hitbox::action::vault_plant(p));
+                (
+                    self.base().get_global_transform() * at,
+                    shooter_sim::hitbox::action::vault_hand_blend(p),
+                )
+            }),
         }
     }
 
@@ -1937,6 +1979,20 @@ impl SoldierRig {
         climb.set_loop_mode(godot::classes::animation::LoopMode::NONE);
         add("climb_clip", climb.upcast(), 4.0);
         add("climb_seek", AnimationNodeTimeSeek::new_gd().upcast(), 4.0);
+        // A vault: the authored vault (`tools/build_gait_animations.py`),
+        // seeked the same way.
+        let mut vault = clip("gait/Vault");
+        vault.set_use_custom_timeline(true);
+        vault.set_timeline_length(1.0);
+        vault.set_stretch_time_scale(true);
+        vault.set_loop_mode(godot::classes::animation::LoopMode::NONE);
+        add("vault_clip", vault.upcast(), 4.0);
+        add("vault_seek", AnimationNodeTimeSeek::new_gd().upcast(), 4.0);
+        add(
+            "vault_or_climb",
+            AnimationNodeBlend2::new_gd().upcast(),
+            4.25,
+        );
         add("climb", AnimationNodeBlend2::new_gd().upcast(), 4.5);
         add("hold_clip", clip("ual1/Pistol_Aim_Neutral").upcast(), 4.0);
         let mut hold = AnimationNodeBlend2::new_gd();
@@ -1973,7 +2029,10 @@ impl SoldierRig {
             ("land", 1, "land_seek"),
             ("climb_seek", 0, "climb_clip"),
             ("climb", 0, "land"),
-            ("climb", 1, "climb_seek"),
+            ("vault_seek", 0, "vault_clip"),
+            ("vault_or_climb", 0, "climb_seek"),
+            ("vault_or_climb", 1, "vault_seek"),
+            ("climb", 1, "vault_or_climb"),
             ("hold", 0, "climb"),
             ("hold", 1, "hold_clip"),
             ("output", 0, "hold"),

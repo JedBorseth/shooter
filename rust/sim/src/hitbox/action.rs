@@ -1,6 +1,7 @@
 //! Actions that take the support hand off the weapon, keyed the same for the
 //! drawn body and its hit zones: a grenade throw, by its progress
-//! (`equipment::throw_progress`, `PlayerView::throw`).
+//! (`equipment::throw_progress`, `PlayerView::throw`), and a vault's hand
+//! plant, by the climb's progress (`Progress::mantle`).
 //!
 //! The third-person throw's path is kept here, engine free, so the soldier
 //! the game draws (`grenade_hold::third_person`) and the arm hit zones the
@@ -41,6 +42,39 @@ pub fn throw_hand_blend(p: f32) -> f32 {
 /// (0..1, as a knife swing's; `carry::Carry::swing`) at progress `p`.
 pub fn throw_weapon_drop(p: f32) -> f32 {
     keyed(&[(0.0, 0.0), (0.15, 1.0), (0.8, 1.0), (1.0, 0.0)], p)
+}
+
+/// How far a vaulting body's support hand has left the weapon for the plant
+/// on the cover's top (0..1) at climb progress `p`: off as the run's last
+/// stride drives up, planted while the body rises over it, and back on the
+/// weapon as the legs swing over.
+pub fn vault_hand_blend(p: f32) -> f32 {
+    keyed(&[(0.0, 0.0), (0.15, 1.0), (0.45, 1.0), (0.75, 0.0)], p)
+}
+
+/// How far a vaulting body's weapon drops out of the way (as a knife
+/// swing's; `carry::Carry::swing`) at climb progress `p`: held low in the
+/// firing hand while the other hand plants.
+pub fn vault_weapon_drop(p: f32) -> f32 {
+    keyed(&[(0.0, 0.0), (0.15, 1.0), (0.6, 1.0), (1.0, 0.0)], p)
+}
+
+/// Where a vaulting body's support wrist reaches at climb progress `p`, in
+/// body space (from the feet, forward -Z, right +X): ahead and down onto
+/// the top, then back along the body as it rises and passes over the hand.
+/// The capsule rises over the vault (`movement`), so the top of 1 m cover
+/// comes down toward the feet; the hand meets it while it is still in reach.
+pub fn vault_plant(p: f32) -> Vec3 {
+    const KEYS: [(f32, Vec3); 4] = [
+        (0.0, Vec3::new(-0.24, 0.95, -0.40)),
+        (0.15, Vec3::new(-0.24, 0.80, -0.45)),
+        (0.3, Vec3::new(-0.22, 0.66, -0.40)),
+        (0.45, Vec3::new(-0.22, 0.56, -0.28)),
+    ];
+    let x = keyed(&KEYS.map(|(t, v)| (t, v.x)), p);
+    let y = keyed(&KEYS.map(|(t, v)| (t, v.y)), p);
+    let z = keyed(&KEYS.map(|(t, v)| (t, v.z)), p);
+    Vec3::new(x, y, z)
 }
 
 /// The third-person throw's keys: progress, and where the grenade is in the
@@ -109,5 +143,17 @@ mod tests {
         let release = third_person_grenade(eyes, 0.0, equipment::release_progress());
         assert!(cocked.y > eyes.y && cocked.z > eyes.z, "{cocked}");
         assert!(release.z < eyes.z - 0.4, "{release}");
+    }
+    #[test]
+    fn a_vault_plants_the_hand_and_takes_it_back() {
+        assert_eq!(vault_hand_blend(0.0), 0.0);
+        assert_eq!(vault_hand_blend(0.3), 1.0);
+        assert_eq!(vault_hand_blend(1.0), 0.0);
+        assert_eq!(vault_weapon_drop(1.0), 0.0);
+        // Forward and down onto the top, then back along the body.
+        let reach = vault_plant(0.15);
+        let passed = vault_plant(0.45);
+        assert!(reach.z < -0.3 && reach.x < 0.0, "{reach}");
+        assert!(passed.z > reach.z + 0.1 && passed.y < reach.y, "{passed}");
     }
 }

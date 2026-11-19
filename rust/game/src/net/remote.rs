@@ -221,6 +221,7 @@ impl RemotePlayer {
             alive: true,
             shots_fired: u32::try_from(shots_fired).unwrap_or(0),
             mantling: false,
+            vaulting: false,
             meleeing: false,
             throw: None,
             throw_kind: Default::default(),
@@ -238,7 +239,7 @@ impl RemotePlayer {
     /// Applies a made-up snapshot from a dictionary (tests): `feet`
     /// (Vector3), `yaw`, `pitch`, `stance` ("standing", "crouching",
     /// "sliding"), `sprinting`, `on_floor`, `ads`, `weapon` (file key),
-    /// `reloading`, `reload_empty`, `mantling`, `alive`, `hits`, `hit_heading`, `hit_part`
+    /// `reloading`, `reload_empty`, `mantling`, `vaulting`, `alive`, `hits`, `hit_heading`, `hit_part`
     /// (the snapshot's hit fields), `crouch` (0..1, the crouch blend;
     /// missing is fully in the stance), and the animation progress
     /// `stride`, `reload_progress`, and `mantle_progress` (0..1). Missing keys
@@ -284,6 +285,7 @@ impl RemotePlayer {
             alive: b("alive", true),
             shots_fired: 0,
             mantling: b("mantling", false),
+            vaulting: b("vaulting", false),
             meleeing: b("meleeing", false),
             throw: f("throw"),
             throw_kind: Default::default(),
@@ -565,6 +567,7 @@ impl RemotePlayer {
             reload_empty: s.reload_empty,
             alive: s.alive,
             mantling: s.mantling,
+            vaulting: s.vaulting,
             meleeing: s.meleeing,
             stride: Some(s.progress.stride),
             mantle_progress: s.mantling.then_some(s.progress.mantle),

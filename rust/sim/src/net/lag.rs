@@ -79,6 +79,8 @@ pub struct RemoteSample {
     pub alive: bool,
     pub shots_fired: u32,
     pub mantling: bool,
+    /// The climb is a vault (`PlayerView::vaulting`).
+    pub vaulting: bool,
     pub meleeing: bool,
     /// How far along a grenade throw, if throwing (`PlayerView::throw`).
     pub throw: Option<f32>,
@@ -138,6 +140,7 @@ impl RemoteSample {
             alive: v.alive,
             shots_fired: v.shots_fired,
             mantling: v.mantling,
+            vaulting: v.vaulting,
             meleeing: v.meleeing,
             throw: v.throw_progress(),
             throw_kind: v.throw_kind,
@@ -197,6 +200,7 @@ impl RemoteSample {
                 // On a ladder the zones hang standing, facing the rungs.
                 airborne: !self.on_floor && self.ladder.is_none(),
                 mantling: self.mantling,
+                vaulting: self.vaulting,
                 reloading: self.reloading,
                 ads: self.ads,
                 velocity: self.velocity,
@@ -563,6 +567,7 @@ mod tests {
                 sprinting: true,
                 airborne: true,
                 mantling: true,
+                vaulting: false,
                 reloading: true,
                 ads: 1.0,
                 velocity: Vec3::ZERO,

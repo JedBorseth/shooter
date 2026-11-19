@@ -4,7 +4,7 @@
 # ///
 """Authors the soldier's directional locomotion cycles: strafes, diagonals,
 and backpedals for the walk, the jog, and the crouched walk, and the forward
-diagonals of the sprint.
+diagonals of the sprint; and a vault over thin cover (``author_vault``).
 
 Neither CC0 animation library the game uses has them, so they are made from
 the forward cycles in ``godot/assets/characters/animations/ual1.glb``:
@@ -471,6 +471,118 @@ def check(skel: Skeleton, frames: list[dict], spec: Base, direction: float) -> d
     }
 
 
+# --- The vault --------------------------------------------------------------------
+
+# A speed vault over waist-high cover, keyed over a vault's rise (the game
+# seeks it by `MoveState`'s climb progress, 0..1): the run's last stride
+# drives the right knee up, the left hand plants on the top (posed by the
+# game, `shooter_sim::hitbox::action::vault_plant`), the hips turn and roll
+# toward the hand while both legs tuck and swing over on the right, and the
+# feet reach down ahead for the landing. Positions are in the character's
+# own space (+Z forward, +X its left, Y up from the ground the capsule
+# stands on), which rises with the capsule: the body tucks its feet up
+# instead of rising itself. Each key: progress, the hips' position, their
+# turn to the right, forward pitch, and roll (left side down), degrees; the
+# spine's extra forward bend and lean to the left; and each ankle's target.
+VAULT_KEYS = [
+    # progress, hips, (yaw, pitch, roll), (bend, lean), ankle L, ankle R
+    (0.0, (0.005, 0.877, -0.086), (0.0, 0.0, 0.0), (0.0, 0.0), (0.195, 0.103, 0.127), (-0.162, 0.104, -0.267)),
+    (0.25, (-0.02, 0.92, 0.05), (8.0, 20.0, 8.0), (10.0, 5.0), (0.08, 0.18, -0.15), (-0.12, 0.46, 0.18)),
+    (0.55, (-0.08, 0.95, 0.10), (25.0, 25.0, 18.0), (15.0, 12.0), (-0.16, 0.50, 0.08), (-0.32, 0.56, 0.16)),
+    (0.8, (-0.06, 0.92, 0.12), (15.0, 10.0, 12.0), (8.0, 8.0), (-0.08, 0.38, 0.36), (-0.25, 0.44, 0.44)),
+    (1.0, (-0.02, 0.90, 0.05), (5.0, 0.0, 4.0), (2.0, 2.0), (0.08, 0.18, 0.16), (-0.12, 0.26, 0.30)),
+]
+# Frames in the vault clip (it is seeked, never played at its own rate).
+VAULT_FRAMES = 31
+# The foot points its toes down this far while tucked (degrees, at the
+# middle key), so the boot does not stick out flat over the cover.
+VAULT_TOE_DOWN = 35.0
+# Turning a foot about its knee's hinge by a positive angle lifts the toes.
+TOE_SIGN = -1.0
+
+
+def keyed(t: float, values: list[tuple[float, np.ndarray]]) -> np.ndarray:
+    """`values` (progress, value) at `t`, eased between keys (smoothstep)."""
+    if t <= values[0][0]:
+        return values[0][1]
+    for (t0, v0), (t1, v1) in zip(values, values[1:]):
+        if t <= t1:
+            u = (t - t0) / max(t1 - t0, 1e-6)
+            u = u * u * (3.0 - 2.0 * u)
+            return v0 + (v1 - v0) * u
+    return values[-1][1]
+
+
+class Authored:
+    """A clip made here: its channel order and length, as `write` needs."""
+
+    def __init__(self, order: list[tuple[int, str, str]], length: float):
+        self.order = order
+        self.length = length
+
+
+def author_vault(skel: Skeleton, base: Clip) -> tuple[list[dict], float]:
+    """The vault clip, from the idle's first pose, where a mantle's climb
+    starts too, so both blend in from the ground the same way (the arms are
+    the game's: it holds the weapon and plants the hand itself). The first
+    key is that pose. Returns one pose per frame and the worst IK miss (m)."""
+    hips_i = skel.index["DEF-hips"]
+    legs = {s: [skel.index[f"DEF-thigh.{s}"], skel.index[f"DEF-shin.{s}"], skel.index[f"DEF-foot.{s}"]] for s in "LR"}
+    spine = [skel.index[n] for n in ("DEF-spine.001", "DEF-spine.002", "DEF-spine.003")]
+    start = base.sample(0.0)
+    g = skel.globals(start)
+    parent_r, parent_t = g[skel.parent[hips_i]]
+
+    def column(i: int) -> list[tuple[float, np.ndarray]]:
+        return [(k[0], np.asarray(k[i], dtype=np.float64)) for k in VAULT_KEYS]
+
+    hips_keys, turn_keys, spine_keys = column(1), column(2), column(3)
+    ankle_keys = {"L": column(4), "R": column(5)}
+    x, y, z = np.eye(3)
+    frames = []
+    worst = 0.0
+    for k in range(VAULT_FRAMES):
+        t = k / (VAULT_FRAMES - 1)
+        pose = dict(start)
+        turn_right, pitch, roll = np.radians(keyed(t, turn_keys))
+        bend, lean = np.radians(keyed(t, spine_keys))
+        # Forward pitch tips the top toward +Z (about +X); a roll with the
+        # left side down tips it toward +X (about -Z).
+        turn = yaw(turn_right) @ axis_angle(x, pitch) @ axis_angle(z, -roll)
+        new_rot: dict[int, np.ndarray] = {hips_i: turn @ g[hips_i][0]}
+        hips_t = keyed(t, hips_keys)
+        pose[(hips_i, "translation")] = parent_r.T @ (hips_t - parent_t)
+        # The spine bends on over the hips, shared up its three bones.
+        bend_spine = axis_angle(x, bend / 3.0) @ axis_angle(z, -lean / 3.0)
+        above = turn
+        for i in spine:
+            above = bend_spine @ above
+            new_rot[i] = above @ g[i][0]
+        toe = math.radians(VAULT_TOE_DOWN) * math.sin(math.pi * t)
+        for s in "LR":
+            thigh, shin, foot = legs[s]
+            _, thigh_t = skel.local(pose, thigh)
+            hip = new_rot[hips_i] @ thigh_t + hips_t
+            knee = hip + turn @ (g[shin][1] - g[thigh][1])
+            ankle = knee + turn @ (g[foot][1] - g[shin][1])
+            hinge = turn @ g[thigh][0][:, 0]
+            thigh_turn, shin_turn, miss = solve_leg(hip, knee, ankle, hinge, keyed(t, ankle_keys[s]))
+            worst = max(worst, miss)
+            new_rot[thigh] = thigh_turn @ turn @ g[thigh][0]
+            new_rot[shin] = shin_turn @ turn @ g[shin][0]
+            # The foot rides with the shin, toes pointed down while tucked
+            # (about the knee's hinge as the leg now lies).
+            across = thigh_turn @ hinge
+            across = across / np.linalg.norm(across)
+            new_rot[foot] = axis_angle(across, TOE_SIGN * toe) @ shin_turn @ turn @ g[foot][0]
+        out = dict(pose)
+        for i in sorted(new_rot, key=lambda j: depth(skel, j)):
+            parent = parent_rotation(skel, pose, new_rot, i)
+            out[(i, "rotation")] = mat_to_quat(parent.T @ new_rot[i])
+        frames.append(out)
+    return frames, worst
+
+
 def write(src: Gltf, clips: list[tuple[str, list[dict], Clip]], path: Path) -> None:
     w = Writer()
     copy_rig(src, w)
@@ -515,6 +627,13 @@ def main(argv: list[str] | None = None) -> None:
             if args.report:
                 print(f"{spec.name}_{label} miss {worst * 100:.1f} cm", check(skel, frames, spec, direction))
             clips.append((f"{spec.name}_{label}", frames, base))
+    idle = Clip(src, "Idle_Loop")
+    frames, worst = author_vault(skel, idle)
+    if worst > 0.005 and not args.report:
+        raise SystemExit(f"Vault: IK misses its foot target by {worst * 100:.1f} cm")
+    if args.report:
+        print(f"Vault miss {worst * 100:.1f} cm")
+    clips.append(("Vault", frames, Authored(idle.order, 1.0)))
     write(src, clips, args.out)
 
 

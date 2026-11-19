@@ -2,7 +2,7 @@ extends SceneTree
 ## Headless test that the hit zones follow the animated soldier: "what you see
 ## is what you hit". A remote player is posed through every state another
 ## player can be seen in (idle, walking, running, sprinting, strafing, crouched,
-## sliding, aiming, reloading, mantling, in the air, each weapon, looking up and
+## sliding, aiming, reloading, mantling, vaulting, in the air, each weapon, looking up and
 ## down, turning, throwing a grenade), and for each hit zone it measures:
 ##
 ## - axis: how far the skeleton's bones are from the zone's capsule axes (the
@@ -149,6 +149,22 @@ func _states() -> Array[Dictionary]:
 	# A mantle up a metre takes about 25 frames.
 	add.call(
 		"mantle", {}, {"then": {"mantling": true}, "samples": [3, 9, 15, 21], "phase": "climb"}
+	)
+	# A vault over 1 m cover takes about 20 frames: the support hand plants
+	# on the top, then the body drops off the far side holding its last pose.
+	add.call(
+		"vault",
+		{},
+		{
+			"then": {"mantling": true, "vaulting": true},
+			"samples": [3, 7, 11, 15, 18],
+			"phase": "climb"
+		}
+	)
+	add.call(
+		"vault_drop",
+		{"on_floor": false, "vaulting": true},
+		{"settle": 30, "velocity": Vector3(0, -2.0, -5.0)}
 	)
 	for weapon in ["ak47", "br3", "lsw6", "m40", "pdw9", "m870", "m1911"]:
 		add.call(weapon, {"weapon": weapon})
@@ -597,6 +613,16 @@ func _generate(world: Node3D) -> void:
 	out.append("pub(super) const CLIMB: [BasePose; CLIMB_SAMPLES] = [")
 	for i in CLIMB_SAMPLES:
 		var state := {"mantling": true, "mantle_progress": float(i) / (CLIMB_SAMPLES - 1)}
+		var pose := await _average_pose(world, state, Vector3.ZERO, 30, 1, {}, extra)
+		out.append("%s," % _pose_literal(pose))
+	out.append("];")
+	out.append("")
+	out.append("/// A vault over thin cover (`tools/build_gait_animations.py`).")
+	out.append("pub(super) const VAULT: [BasePose; CLIMB_SAMPLES] = [")
+	for i in CLIMB_SAMPLES:
+		var state := {
+			"mantling": true, "vaulting": true, "mantle_progress": float(i) / (CLIMB_SAMPLES - 1)
+		}
 		var pose := await _average_pose(world, state, Vector3.ZERO, 30, 1, {}, extra)
 		out.append("%s," % _pose_literal(pose))
 	out.append("];")
