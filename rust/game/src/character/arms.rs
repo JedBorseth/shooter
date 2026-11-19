@@ -13,6 +13,7 @@ use godot::classes::{
     AnimationLibrary, AnimationPlayer, INode3D, MeshInstance3D, Node3D, Skeleton3D,
 };
 use godot::prelude::*;
+use shooter_sim::weapon::FingerFlex;
 
 /// Where the support hand reaches during a reload, in weapon space.
 const RELOAD_REACH: Vector3 = Vector3::new(-0.06, -0.3, 0.08);
@@ -43,6 +44,14 @@ pub struct FpArms {
     arms: Option<Gd<MeshInstance3D>>,
     /// The weapon in hand's grips, as last given (`fit_hands` reads them).
     grips: Option<Grips>,
+    /// The last weapon surface measured for the offline tools, keyed by the
+    /// weapon view and its grip rests, so a search over many candidate
+    /// poses (`try_hand`) measures it once.
+    measured: std::cell::RefCell<Option<(InstanceId, Vector3, Vector3, WeaponFields)>>,
+    /// A candidate pose per hand (firing, support) drawn instead of the
+    /// weapon's own, for choosing hand-set values by eye
+    /// ([`FpArms::preview_hand`]); `None` draws the weapon's.
+    preview: [Option<(FingerFlex, [f32; 5], Vector3)>; 2],
 }
 
 #[godot_api]
@@ -123,7 +132,7 @@ impl FpArms {
     #[func]
     pub fn fit_hands(&self) -> VarDictionary {
         let mut out = VarDictionary::new();
-        let Some((poser, grips, fields)) = self.held_fields() else {
+        let Some((poser, grips, fields)) = self.held_fields(false) else {
             return out;
         };
         let Some(fit) = poser.bind().fit_hands(&fields, &grips) else {
@@ -157,7 +166,7 @@ impl FpArms {
     #[func]
     pub fn hand_depths(&self) -> VarDictionary {
         let mut out = VarDictionary::new();
-        if let Some((poser, grips, fields)) = self.held_fields()
+        if let Some((poser, grips, fields)) = self.held_fields(false)
             && let Some(depths) = poser.bind().hand_depths(&fields, &grips)
         {
             depths_into(&mut out, &depths);
@@ -185,7 +194,7 @@ impl FpArms {
         if !(0..=1).contains(&hand) || flex.len() != 15 || spread.len() != 5 {
             return out;
         }
-        let Some((poser, _, fields)) = self.held_fields() else {
+        let Some((poser, _, fields)) = self.held_fields(true) else {
             return out;
         };
         let mut pose = [[0.0; 3]; 5];
@@ -221,7 +230,7 @@ impl FpArms {
     #[func]
     pub fn with_tuning(&self, fit: VarDictionary, foregrip: bool) -> VarDictionary {
         let out = fit.duplicate_shallow();
-        let Some((poser, _, fields)) = self.held_fields() else {
+        let Some((poser, _, fields)) = self.held_fields(false) else {
             return out;
         };
         let def = poser
@@ -300,6 +309,35 @@ impl FpArms {
         out
     }
 
+    /// Draws a candidate pose for one hand (0 firing, 1 support) instead of
+    /// the weapon's own until cleared, as [`FpArms::try_hand`] takes it, so
+    /// an offline tool can render it; an empty `flex` clears it.
+    #[func]
+    pub fn preview_hand(
+        &mut self,
+        hand: i64,
+        flex: PackedFloat32Array,
+        spread: PackedFloat32Array,
+        seat: Vector3,
+    ) {
+        let Ok(h) = usize::try_from(hand) else {
+            return;
+        };
+        if h > 1 {
+            return;
+        }
+        let (flex, spread) = (flex.as_slice(), spread.as_slice());
+        self.preview[h] = (flex.len() == 15 && spread.len() == 5).then(|| {
+            let mut pose = [[0.0; 3]; 5];
+            for (f, finger) in pose.iter_mut().enumerate() {
+                finger.copy_from_slice(&flex[f * 3..f * 3 + 3]);
+            }
+            let mut turns = [0.0; 5];
+            turns.copy_from_slice(spread);
+            (pose, turns, seat)
+        });
+    }
+
     /// Whether both grip markers of the weapon in hand are at rest (no clip,
     /// pump stroke, or bolt moving a hand), so a pose measured now is the
     /// held pose.
@@ -343,6 +381,16 @@ impl FpArms {
         {
             arms.set_visible(visible);
         }
+        let weapon = weapon.map(|(node, mut grips)| {
+            for (h, preview) in self.preview.iter().enumerate() {
+                if let Some((flex, spread, seat)) = preview {
+                    grips.fingers[h] = Some(*flex);
+                    grips.spreads[h] = Some(*spread);
+                    grips.seats[h] = *seat;
+                }
+            }
+            (node, grips)
+        });
         self.grips = weapon.as_ref().map(|(_, grips)| *grips);
         let Some(poser) = &mut self.poser else {
             return;
@@ -378,8 +426,11 @@ impl FpArms {
 
 impl FpArms {
     /// The poser, the grips of the weapon it holds, and that weapon's surface
-    /// around its grips (measured now; only the offline tools ask).
-    fn held_fields(&self) -> Option<(Gd<SoldierPoser>, Grips, WeaponFields)> {
+    /// around its grips (only the offline tools ask). Measured now, or with
+    /// `reuse`, kept from the last call on the same view with its grips at
+    /// the same rests: a search over candidate poses (`try_hand`) holds one
+    /// weapon still, so its surface does not change.
+    fn held_fields(&self, reuse: bool) -> Option<(Gd<SoldierPoser>, Grips, WeaponFields)> {
         let poser = self.poser.clone()?;
         let grips = self.grips?;
         let view = poser.bind().weapon.clone()?;
@@ -388,11 +439,21 @@ impl FpArms {
             .try_cast::<crate::viewmodel::WeaponView>()
             .map(|v| v.bind().grip_rests())
             .unwrap_or_default();
-        let fields = WeaponFields::measure(
-            &view,
-            right.unwrap_or(grips.right),
-            left.unwrap_or(grips.left),
-        );
+        let (right, left) = (right.unwrap_or(grips.right), left.unwrap_or(grips.left));
+        if !reuse {
+            let fields = WeaponFields::measure(&view, right, left);
+            return Some((poser, grips, fields));
+        }
+        let id = view.instance_id();
+        let mut measured = self.measured.borrow_mut();
+        let fields = match measured.as_ref() {
+            Some((at, r, l, fields)) if (*at, *r, *l) == (id, right, left) => fields.clone(),
+            _ => {
+                let fields = WeaponFields::measure(&view, right, left);
+                *measured = Some((id, right, left, fields.clone()));
+                fields
+            }
+        };
         Some((poser, grips, fields))
     }
 }
