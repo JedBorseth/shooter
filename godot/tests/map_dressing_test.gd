@@ -25,6 +25,7 @@ const MUST_HIT := [
 	["steel target", Vector3(25, 1.2, 5), Vector3(32, 1.2, 5), 5.4, 0.1],
 	["target stand", Vector3(25, 1.2, 20.2), Vector3(32, 1.2, 20.2), 5.05, 0.1],
 	["gate car", Vector3(20, 0.7, 28.6), Vector3(32, 0.7, 28.6), 5.75, 0.25],
+	["wall post", Vector3(28, 1.5, 12), Vector3(33, 1.5, 12), 3.88, 0.03],
 ]
 ## Rays that must stay clear: the lanes the dressing must not block.
 const MUST_MISS := [
