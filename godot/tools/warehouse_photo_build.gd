@@ -800,6 +800,9 @@ static func _build_gameplay() -> void:
 	home.owner = _root
 	var pause: Node = load("res://scenes/ui/pause_menu.tscn").instantiate()
 	pause.name = "PauseMenu"
+	# The pause menu pushes Settings (input device, look speed, FOV) onto this
+	# player: without it the right stick does nothing (#258).
+	pause.set("player_path", NodePath("../Player"))
 	_root.add_child(pause)
 	pause.owner = _root
 	var zones := Node3D.new()
