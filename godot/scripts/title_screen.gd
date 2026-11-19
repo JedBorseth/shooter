@@ -7,6 +7,7 @@ extends Control
 const ARENA_PATH := "res://scenes/main.tscn"
 const NUKETOWN_PATH := "res://scenes/nuketown.tscn"
 const SLAMCITY_PATH := "res://scenes/slamcity.tscn"
+const WAREHOUSE_PATH := "res://scenes/warehouse.tscn"
 const BROWSER_PATH := "res://scenes/server_browser.tscn"
 const ZOMBIES_PATH := "res://scenes/zombies_arena.tscn"
 ## The menu button for each local match mode.
@@ -32,6 +33,7 @@ const ROUTES := {
 	"TestingArea": ["EVERY WEAPON", "Movement, weapons, and target practice."],
 	"Slamcity": ["FREE ROAM", "Walk the three lanes of Slamcity on your own."],
 	"Nuketown": ["FREE ROAM", "Walk Nuketown on your own."],
+	"Warehouse": ["FREE ROAM", "Walk the box plant's production lines on your own."],
 	"Options": ["", "Controls, video, audio, and gameplay."],
 	"Quit": ["", "Close the game."],
 }
@@ -60,6 +62,9 @@ func _ready() -> void:
 	)
 	_menu.get_node("Slamcity").pressed.connect(
 		func() -> void: _start_scene(SLAMCITY_PATH, "Slamcity")
+	)
+	_menu.get_node("Warehouse").pressed.connect(
+		func() -> void: _start_scene(WAREHOUSE_PATH, "Warehouse")
 	)
 	for mode: String in SETUP_BUTTONS:
 		_menu.get_node(SETUP_BUTTONS[mode]).pressed.connect(_open_setup.bind(mode))

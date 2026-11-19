@@ -43,6 +43,7 @@ func _run() -> void:
 	)
 	_check(not (menu.get_node("Slamcity") as Button).disabled, "Slamcity is a home-screen option")
 	_check(not (menu.get_node("Nuketown") as Button).disabled, "Nuketown is a home-screen option")
+	_check(not (menu.get_node("Warehouse") as Button).disabled, "Warehouse is a home-screen option")
 	_check(not (menu.get_node("Multiplayer") as Button).disabled, "Multiplayer opens its browser")
 	_check(not (menu.get_node("Zombies") as Button).disabled, "Zombies opens its menu")
 	var options_button := title.get_node("%Options") as Button
@@ -94,7 +95,15 @@ func _run() -> void:
 		_check(
 			(setup.get("_map_title") as Label).text == "Nuketown", "the card shows the chosen map"
 		)
-		maps.call("select", 2)
+		(maps.get_child(2) as Button).pressed.emit()
+		_check(
+			setup.options()["map"] == "warehouse", "Warehouse selection starts the Warehouse map"
+		)
+		_check(
+			(setup.get("_picture") as TextureRect).texture != null,
+			"the card shows Warehouse's picture"
+		)
+		maps.call("select", 3)
 		_check(setup.options()["map"] == "arena", "select() chooses a map like an OptionButton")
 		setup.back_requested.emit()
 		await process_frame

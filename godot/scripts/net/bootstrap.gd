@@ -5,7 +5,7 @@ extends Node
 ##
 ##   --server [--port N] [--bots N] [--bot-skill easy|normal|hard] [--bot-damage]
 ##            [--name NAME] [--master HOST[:PORT]]
-##            [--query-port N] [--map arena|nuketown|slamcity]
+##            [--query-port N] [--map arena|nuketown|slamcity|warehouse]
 ##            [--mode tdm|ctf|hardpoint|gungame|snd] [--kills-per-weapon N] [--rounds N]
 ##            [--score-limit N] [--time-limit MINUTES] [--auto-start]
 ##                                    run as a dedicated server (use with --headless);
@@ -43,9 +43,12 @@ const MAP_SCENES := {
 	"arena": ARENA_SCENE,
 	"nuketown": "res://scenes/nuketown.tscn",
 	"slamcity": "res://scenes/slamcity.tscn",
+	"warehouse": "res://scenes/warehouse.tscn",
 }
 ## Names server browsers show for each map.
-const MAP_NAMES := {"arena": "Arena", "nuketown": "Nuketown", "slamcity": "Slamcity"}
+const MAP_NAMES := {
+	"arena": "Arena", "nuketown": "Nuketown", "slamcity": "Slamcity", "warehouse": "Warehouse"
+}
 const TITLE_SCENE := "res://scenes/title_screen.tscn"
 const REMOTE_PLAYER_SCENE := "res://scenes/remote_player.tscn"
 const OVERLAY_SCRIPT := "res://scripts/net/net_overlay.gd"
