@@ -176,6 +176,32 @@ const ACOG_RISER: f32 = 0.012;
 /// it is behind the eyepiece's rim or inside its picture.
 const ACOG_BODY_HIDDEN_AT: f32 = 0.9;
 
+/// Raising a riflescope (`WeaponView::scope_eyepiece`): from this scope
+/// amount the zoomed world shows in the eyepiece's glass; from
+/// `SCOPE_OPEN_FROM` the picture grows from the glass to the full scope
+/// overlay's lens, reached at `SCOPE_OPEN_TO`, when the weapon model hides
+/// (`frame.scope < 0.85`) and the overlay takes over
+/// (`scripts/scope_overlay.gd` uses the same two amounts).
+const SCOPE_GLASS_FROM: f32 = 0.5;
+const SCOPE_OPEN_FROM: f32 = 0.6;
+const SCOPE_OPEN_TO: f32 = 0.85;
+/// The scope overlay's lens radius (0.46 of the screen's height) as a
+/// direction from the eye, through the weapon's 55 degree field of view.
+const SCOPE_OVERLAY_TAN: f32 = 0.46 * 2.0 * 0.520_567;
+
+/// How much of the way a riflescope's picture has grown from its eyepiece's
+/// glass to the full overlay lens, at scope amount `scope`.
+pub fn scope_open(scope: f32) -> f32 {
+    smoothstep(((scope - SCOPE_OPEN_FROM) / (SCOPE_OPEN_TO - SCOPE_OPEN_FROM)).clamp(0.0, 1.0))
+}
+
+/// The lens a riflescope cuts in the first-person weapon while it is
+/// raised: `glass` is the eyepiece glass's radius over its depth from the
+/// eye; the cut grows from it to the overlay's lens as the scope opens.
+fn scope_raise_lens(glass: f32, scope: f32) -> f32 {
+    glass + (SCOPE_OVERLAY_TAN - glass).max(0.0) * scope_open(scope)
+}
+
 /// How far behind the rear sight the aimed weapon turns, in metres.
 const AIM_PIVOT_BACK: f32 = 0.12;
 
@@ -427,6 +453,12 @@ pub struct WeaponView {
     /// the rear notch sit in front of the eye, not around it.
     #[export]
     iron_eye_back: f32,
+    /// A built-in riflescope's eyepiece (view space): `x` the depth of its
+    /// back face along the sight line, `y` its glass's radius, in metres;
+    /// zero for none. Raising it, the eye sees the zoomed world in the
+    /// glass, growing into the full scope picture (`scope_raise_lens`).
+    #[export]
+    scope_eyepiece: Vector2,
     #[export]
     #[init(val = Vector3::new(-0.04, -0.05, 0.02))]
     sprint_position: Vector3,
@@ -779,6 +811,9 @@ impl INode3D for WeaponView {
         self.build_muzzle_effects(true);
         let pending = self.pending_attachment.take();
         self.set_attachment(pending);
+        if self.scope_eyepiece.y > 0.0 {
+            self.set_lens_clip(true);
+        }
         self.find_parts();
         self.add_foley();
         crate::effects::keep_decals_off(&self.base().clone().upcast());
@@ -1339,7 +1374,7 @@ impl WeaponView {
         if !self.world_model {
             let shader = load::<Shader>(VIEWMODEL_SHADER);
             convert_to_viewmodel_materials(&parts.clone().upcast(), &shader, self.albedo_boost);
-            self.set_lens_clip(self.eyepiece_z.is_some());
+            self.set_lens_clip(self.eyepiece_z.is_some() || self.scope_eyepiece.y > 0.0);
         }
         crate::effects::keep_decals_off(&parts.upcast());
     }
@@ -2856,21 +2891,35 @@ impl ViewmodelRig {
     /// are cut away (`viewmodel_scope_lens` in
     /// `shaders/viewmodel_projection.gdshaderinc`).
     fn update_scope_lens(&mut self, view: &Gd<WeaponView>, frame: &ViewFrame, shown: bool) {
-        let lens = {
+        let (lens, eyepiece) = {
             let v = view.bind();
-            v.eyepiece_z.zip(v.lens)
+            (
+                v.eyepiece_z.zip(v.lens),
+                (v.scope_eyepiece.y > 0.0).then_some(v.scope_eyepiece),
+            )
         };
-        if lens.is_some() != self.lens_clip {
-            self.lens_clip = lens.is_some();
+        let clip = lens.is_some() || eyepiece.is_some();
+        if clip != self.lens_clip {
+            self.lens_clip = clip;
             crate::character::palette::clip_first_person_lens(self.lens_clip);
         }
-        let value = match lens {
-            Some((eyepiece, (cut, radius))) if shown && frame.ads >= ACOG_BODY_HIDDEN_AT => {
-                let to_eye = self.base().get_transform() * view.get_transform();
+        let to_eye = self.base().get_transform() * view.get_transform();
+        let value = match (lens, eyepiece) {
+            (Some((eyepiece, (cut, radius))), _) if shown && frame.ads >= ACOG_BODY_HIDDEN_AT => {
                 let centre = to_eye * Vector3::new(0.0, 0.0, eyepiece);
                 let depth = (-centre.z).max(1e-3);
                 let cut = -(to_eye * Vector3::new(0.0, 0.0, cut)).z;
                 Vector4::new(centre.x / depth, centre.y / depth, cut, radius / depth)
+            }
+            // A riflescope coming to the eye: everything past its eyepiece's
+            // back face inside the lens is cut away, so the eye sees the
+            // zoomed world in the glass, and the lens widens to the
+            // overlay's as the scope arrives.
+            (None, Some(eyepiece)) if shown && frame.scope >= SCOPE_GLASS_FROM => {
+                let centre = to_eye * Vector3::new(0.0, 0.0, eyepiece.x);
+                let depth = (-centre.z).max(1e-3);
+                let radius = scope_raise_lens(eyepiece.y / depth, frame.scope);
+                Vector4::new(centre.x / depth, centre.y / depth, depth - 0.001, radius)
             }
             _ => Vector4::ZERO,
         };
@@ -3892,6 +3941,23 @@ mod tests {
         // Sprinting adds the running loop: about 2.5 cm and 5 degrees.
         let run = stride_bob(PI * 0.5, 1.0, 1.0);
         assert!(run.0.x > 0.025 && run.1.z > 5.0);
+    }
+
+    #[test]
+    fn a_raised_scope_grows_from_its_glass_to_the_overlay_lens() {
+        use super::{SCOPE_OPEN_FROM, SCOPE_OPEN_TO, SCOPE_OVERLAY_TAN, scope_raise_lens};
+        let glass = 0.2;
+        assert_eq!(scope_raise_lens(glass, SCOPE_OPEN_FROM), glass);
+        assert!((scope_raise_lens(glass, SCOPE_OPEN_TO) - SCOPE_OVERLAY_TAN).abs() < 1e-6);
+        let mut last = glass;
+        for i in 1..=20 {
+            let s = SCOPE_OPEN_FROM + (SCOPE_OPEN_TO - SCOPE_OPEN_FROM) * i as f32 / 20.0;
+            let r = scope_raise_lens(glass, s);
+            assert!(r >= last, "the lens never shrinks as the scope comes up");
+            last = r;
+        }
+        // The overlay's lens is 0.46 of the screen's height through 55 degrees.
+        assert!((SCOPE_OVERLAY_TAN - 0.46 * 2.0 * 27.5_f32.to_radians().tan()).abs() < 1e-4);
     }
 
     #[test]
