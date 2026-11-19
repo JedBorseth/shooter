@@ -3,7 +3,8 @@
 # dependencies = ["numpy>=2", "pillow>=11"]
 # ///
 """Authors the soldier's directional locomotion cycles: strafes, diagonals,
-and backpedals for the walk, the jog, and the crouched walk.
+and backpedals for the walk, the jog, and the crouched walk, and the forward
+diagonals of the sprint.
 
 Neither CC0 animation library the game uses has them, so they are made from
 the forward cycles in ``godot/assets/characters/animations/ual1.glb``:
@@ -40,8 +41,9 @@ How a cycle for a direction is made (``author``):
 
 The stride phase of every clip is the game's shared one: phase 0 has the
 left foot furthest along the travel, just planted (``gait::Loop::offset`` is
-0 for each). Clip names are ``<Base>_<Dir>``, Dir one of ``FR``, ``R``,
-``BR``, ``B``, ``BL``, ``L``, ``FL``.
+0 for each; the sprint's is the source clip's own offset, 0.86). Clip names
+are ``<Base>_<Dir>``, Dir one of ``FR``, ``R``, ``BR``, ``B``, ``BL``, ``L``,
+``FL`` (the sprint only ``FR`` and ``FL``).
 """
 
 from __future__ import annotations
@@ -86,12 +88,18 @@ class Base:
     stance: float
     # How much wider each foot stands at a full strafe, metres.
     widen: float
+    # The directions authored (`DIRECTIONS` labels); all of them if empty.
+    only: tuple[str, ...] = ()
 
 
 BASES = [
     Base("Walk_Loop", "Walk", 0.0, 20.0, 40.0, 0.03),
     Base("Jog_Fwd_Loop", "Jog", 0.0, 28.0, 45.0, 0.035),
     Base("Crouch_Fwd_Loop", "Crouch", 0.12, 22.0, 40.0, 0.02),
+    # A sprint only drifts sideways (at most about 27°, the movement's
+    # `sprint_strafe`), so it has the forward diagonals alone, and the hips
+    # turn further into it than a jog's do.
+    Base("Sprint_Loop", "Sprint", 0.86, 35.0, 45.0, 0.03, ("FR", "FL")),
 ]
 
 # Direction name, angle from forward toward the right (degrees), and the share
@@ -495,6 +503,8 @@ def main(argv: list[str] | None = None) -> None:
     for spec in BASES:
         base = Clip(src, spec.clip)
         for label, direction, hip_share, stance_share in DIRECTIONS:
+            if spec.only and label not in spec.only:
+                continue
             frames, worst = author(skel, base, spec, direction, hip_share, stance_share)
             if worst > 0.002:
                 # A foot out of reach: the hips sit that much lower through
