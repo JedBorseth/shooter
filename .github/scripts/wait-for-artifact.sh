@@ -19,9 +19,19 @@ polls=0
 while true; do
   count=$(gh api "repos/$repo/actions/runs/$run/artifacts?name=$artifact" -q '.total_count' || echo 0)
   if [[ $count != 0 ]]; then
-    gh run download "$run" -R "$repo" -n "$artifact" -D "$dest"
-    echo "Got $artifact after $(($(date +%s) - started)) s."
-    exit 0
+    # The artifact is listed as soon as its upload starts, before GitHub has
+    # finalized it; a download then finds "no valid artifacts". Retry a few
+    # times before giving up.
+    for try in 1 2 3 4 5 6; do
+      if gh run download "$run" -R "$repo" -n "$artifact" -D "$dest"; then
+        echo "Got $artifact after $(($(date +%s) - started)) s."
+        exit 0
+      fi
+      echo "$artifact is listed but not downloadable yet (try $try); retrying."
+      sleep 10
+    done
+    echo "::error::$artifact is listed but could not be downloaded."
+    exit 1
   fi
   # Checking the job costs another API call, so do it every few polls. The
   # GITHUB_TOKEN allows 1,000 calls an hour across the whole repository.
