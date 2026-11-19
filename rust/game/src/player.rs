@@ -2961,6 +2961,7 @@ impl FpsPlayer {
             mantle_left: self.state.movement.mantle_time,
             vaulting: self.state.movement.vaulting,
             on_ladder: self.state.movement.on_ladder(),
+            feet: self.base().get_global_position(),
             mount: self.state.movement.mount_blend,
             weapon: combat.weapon().id,
             ads,

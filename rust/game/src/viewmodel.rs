@@ -24,7 +24,7 @@ use crate::acoustics::{self, AudioEnvironment};
 use crate::audio;
 use crate::character::arms::FpArms;
 use crate::character::poser::Grips;
-use crate::character::poser::Held;
+use crate::character::poser::{Held, LadderLimbs};
 use crate::convert::to_godot;
 use crate::effects::{self, CombatEffects};
 use crate::sights::{self, IronSights};
@@ -69,6 +69,9 @@ pub struct ViewFrame {
     pub vaulting: bool,
     /// On a ladder: the hands are on the rungs, so the weapon is put away.
     pub on_ladder: bool,
+    /// Where the player's feet are (world): the rungs the hands take are
+    /// found from them.
+    pub feet: Vector3,
     /// How far the weapon is mounted on cover, 0 to 1
     /// (`MoveState::mount_blend`): it settles onto the edge with a thump and
     /// its idle breathing and look lag nearly stop.
@@ -2607,6 +2610,9 @@ pub struct ViewmodelRig {
     /// How far the weapon is put away for a ladder; it comes back up over
     /// the sprint-out once off it.
     ladder_blend: f32,
+    /// The rungs the hands hold on a ladder (world), kept as they let go
+    /// once off it.
+    ladder_holds: Option<LadderLimbs>,
     /// Crouched, eased in and out rather than snapped (Black Ops 2's
     /// `posMoveRate`).
     crouch_blend: f32,
@@ -2636,6 +2642,46 @@ impl INode3D for ViewmodelRig {
         self.shell_sound = self.make_player("res://assets/audio/player/shell", -16.0);
         self.knife_swing = self.make_player("res://assets/audio/foley/knife_swing", -4.0);
         self.knife_hit = self.make_player("res://assets/audio/foley/knife_hit", -1.0);
+    }
+}
+
+impl ViewmodelRig {
+    /// On a ladder, the hands on its rungs where a climber's go
+    /// (`ladder::limb_targets`: in diagonal pairs with the feet, two rungs a
+    /// move), moved into the first-person projection so they show over the
+    /// rungs, and blended in as the weapon goes away. Once off the ladder
+    /// they let go of the last rungs as the weapon comes back up.
+    fn ladder_hands(&mut self, frame: &ViewFrame) -> Option<LadderLimbs> {
+        let weight = smoothstep(self.ladder_blend.min(1.0));
+        if weight < 0.01 {
+            self.ladder_holds = None;
+            return None;
+        }
+        if frame.on_ladder {
+            let found = self
+                .base()
+                .get_world_3d()
+                .and_then(|w| w.get_direct_space_state())
+                .and_then(|mut space| crate::ladder::find_volume(&mut space, frame.feet));
+            if let Some((volume, ladder)) = found {
+                let (hands, ankles) =
+                    crate::ladder::limb_targets(frame.feet, &ladder, volume.bind().rungs());
+                self.ladder_holds = Some(LadderLimbs {
+                    weight: 1.0,
+                    hands,
+                    ankles,
+                    facing: Vector3::new(ladder.facing.x, 0.0, ladder.facing.y),
+                });
+            }
+        }
+        let mut limbs = self.ladder_holds?;
+        let camera = self.base().get_viewport()?.get_camera_3d()?;
+        let (at, fov) = (camera.get_global_transform(), camera.get_fov());
+        limbs.hands = limbs
+            .hands
+            .map(|hand| effects::world_to_viewmodel(at, fov, hand));
+        limbs.weight = weight;
+        Some(limbs)
     }
 }
 
@@ -3610,6 +3656,7 @@ impl ViewmodelRig {
                 )
             })
         };
+        let ladder = self.ladder_hands(frame);
         if let Some(arms) = &mut self.arms {
             // The hands follow the grip markers, which the clips move.
             let hold = shown.then(|| {
@@ -3630,7 +3677,7 @@ impl ViewmodelRig {
             // and the firing elbow stays low instead of folding up into view.
             arms.bind_mut()
                 .set_body_shift(Vector3::new(0.0, 0.0, iron_back * ads));
-            arms.bind_mut().follow(hold, 0.0, None, item, throw);
+            arms.bind_mut().follow(hold, 0.0, None, item, throw, ladder);
         }
     }
 }
