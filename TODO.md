@@ -272,7 +272,7 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
   - [x] An explosion and fire effect with an API for grenades (`CombatEffects.explosion`, `CombatEffects.fire`); frag grenades use the explosion.
   - [x] The smoke grenade's cloud and the flashbang's pop as pooled flipbook effects (`CombatEffects.smoke`, `CombatEffects.flash_pop`, Unity Labs' Cloud flipbooks).
   - [x] A frag that reads as dirt thrown up, not a white puff: a short bounded orange core, jets of dirt from a Blender-rendered flipbook, a lingering dust cloud and ground skirt, modelled rubble chips, and a larger scorch with fragment pits (`tools/build_explosion_fx.py`).
-  - [ ] Concrete impacts: chips tinted by the surface instead of flat cubes, and sparks only on metal.
+  - [x] Concrete impacts: modelled chips tinted by the surface instead of flat cubes, and sparks only on metal (shorter, thinner, fewer).
   - [ ] The smoke grenade's cloud: density variation, sun shading, and a ragged edge.
   - [x] A wound mark where a character was hit (character shader, `wounds.rs`).
 - [x] Skyline windows with fake rooms behind them (interior mapping in `world.gdshader`), and bump-mapped cloth, leather, and creases on characters.
