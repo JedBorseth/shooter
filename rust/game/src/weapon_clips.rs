@@ -450,6 +450,7 @@ impl MagazineReload {
                 let out = if charge { AK_CHANGE_OUT } else { Vector3::ZERO };
                 let held = Pose::new(8.0, -10.0, -34.0, -0.05, 0.12, 0.03).scaled(k);
                 let watch = Pose::new(10.0, -13.0, -40.0, -0.055, 0.135, 0.025).scaled(k);
+                let action = Pose::new(5.0, 8.0, 14.0, -0.02, 0.06, 0.02).scaled(k);
                 (
                     Pose {
                         pos: held.pos + out,
@@ -459,7 +460,13 @@ impl MagazineReload {
                         pos: watch.pos + out,
                         ..watch
                     },
-                    Pose::new(5.0, 8.0, 14.0, -0.02, 0.06, 0.02).scaled(k),
+                    // Still held out for the charge: back at an AR's
+                    // distance, the support hand reaching over the receiver
+                    // to the right-side handle passed 0.17 m from the eye.
+                    Pose {
+                        pos: action.pos + out,
+                        ..action
+                    },
                 )
             }
             ClipKind::Pistol => (
@@ -1233,6 +1240,25 @@ mod tests {
         assert!(slap.rot.length() < held.rot.length() * 0.7, "less tilt");
         assert!(slap.pos.z < held.pos.z - 0.02, "further from the eye");
         assert!(slap.pos.y < held.pos.y, "lower");
+    }
+
+    #[test]
+    fn a_charged_rifle_stays_held_out_through_its_charge() {
+        // The support hand reaches over the receiver to the right-side
+        // handle: brought back to an AR's distance for it, the hand passed
+        // 0.17 m from the eye.
+        for key in ["ak47", "lsw6", "pdw9", "br3"] {
+            let r = reload(key, true);
+            let a = anchors(r.kind);
+            let t = r.times();
+            let held = r.pose(t.seat, &a).weapon;
+            let charge = r.pose(t.finish_end, &a).weapon;
+            assert!(charge.pos.z < AK_CHANGE_OUT.z * 0.8, "{key}: {charge:?}");
+            assert!(
+                charge.pos.z < held.pos.z + 0.03,
+                "{key}: no nearer for the charge"
+            );
+        }
     }
 
     #[test]
