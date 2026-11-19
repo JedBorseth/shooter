@@ -171,9 +171,11 @@ pub fn third_person(p: f32, kind: Kind) -> ThrowPose {
 }
 
 /// How far down the weapon dips while the support hand throws, at progress
-/// `p`, as `ViewAction::Lowering` progress: part way, held in the firing hand.
+/// `p`, as `ViewAction::Lowering` progress: all the way out of the frame in
+/// the firing hand, as the reference lowers it, instead of hanging in view
+/// with no hand on it.
 pub fn weapon_dip(p: f32) -> f32 {
-    crate::weapon_clips::keyed(&[(0.0, 0.0), (0.15, 0.4), (0.8, 0.4), (1.0, 0.0)], p)
+    crate::weapon_clips::keyed(&[(0.0, 0.0), (0.2, 1.0), (0.8, 1.0), (1.0, 0.0)], p)
 }
 
 /// Each kind's model, built in Blender by `tools/build_grenade.py`.
@@ -277,5 +279,15 @@ mod tests {
         assert!(phase(0.1).2, "pinned at the start");
         assert_eq!(phase(1.0).0, 0.0, "back on the weapon");
         assert_eq!(phase(0.5).0, 1.0, "off the weapon mid-throw");
+    }
+
+    #[test]
+    fn the_weapon_leaves_the_frame_for_the_whole_release() {
+        let release = shooter_sim::equipment::release_progress();
+        assert_eq!(super::weapon_dip(0.0), 0.0);
+        for p in [0.2, 0.5, release, 0.8] {
+            assert_eq!(super::weapon_dip(p), 1.0, "fully lowered at {p}");
+        }
+        assert_eq!(super::weapon_dip(1.0), 0.0, "back up when the throw ends");
     }
 }
