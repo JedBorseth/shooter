@@ -11,8 +11,9 @@ extends SceneTree
 
 const SOLDIER := preload("res://scenes/characters/soldier.tscn")
 const ZOMBIE := preload("res://scenes/characters/zombie_body.tscn")
-## Seconds after the shot each strip shows.
-const MOMENTS := [0.0, 0.08, 0.17, 0.3, 0.5, 0.8, 1.3, 3.0]
+## Seconds after the shot each strip shows: the last is past the 5 s cap,
+## where every body has stopped.
+const MOMENTS := [0.0, 0.08, 0.17, 0.3, 0.5, 1.0, 2.5, 5.5]
 const SPOT := Vector3(0, 0.05, 20)
 ## name: [travel (world), hit shape, force, start state]
 const DEATHS := {
