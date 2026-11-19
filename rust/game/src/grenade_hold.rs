@@ -42,7 +42,7 @@ const PIN_OUT: f32 = 0.3;
 /// How far the support hand has left the weapon for the grenade (0..1) at
 /// throw progress `p`.
 fn blend(p: f32) -> f32 {
-    crate::weapon_clips::keyed(&[(0.0, 0.0), (0.12, 1.0), (0.8, 1.0), (1.0, 0.0)], p)
+    shooter_sim::hitbox::action::throw_hand_blend(p)
 }
 
 /// Keys of a path, by progress: position, the fuse's direction, and where
@@ -145,48 +145,28 @@ pub fn first_person(p: f32, kind: Kind) -> ThrowPose {
 
 /// The third-person throw at progress `p`, in the space of the weapon at
 /// the hip as seen from the eyes (as `knife::third_person`): a wider,
-/// overhand version of the first-person path.
+/// overhand version of the first-person path. The grenade's positions are
+/// `shooter_sim::hitbox::action`'s, which the arm hit zones follow too;
+/// these add which way the fuse and the spoon face.
 pub fn third_person(p: f32, kind: Kind) -> ThrowPose {
     let v = Vector3::new;
-    let release = equipment::release_progress();
-    let cocked = equipment::COCKED_PROGRESS;
-    // Big enough to read from 20 m: cocked, the hand is up above the helmet
-    // and out behind the shoulder, clear of the body's dark outline; it lets
-    // go with the arm reaching high in front. At eye height in front of the
-    // chest, dark on dark, a throw went unseen at fighting range.
-    let keys: [KnifeKey; 6] = [
-        (
-            0.0,
-            v(-0.15, -0.35, -0.1),
-            v(0.0, 1.0, 0.0),
-            v(1.0, 0.0, 0.0),
-        ),
-        (
-            cocked,
-            v(-0.3, 0.22, 0.16),
-            v(0.0, 0.7, 0.7),
-            v(1.0, 0.0, 0.0),
-        ),
-        (
-            cocked + 0.06,
-            v(-0.3, 0.26, 0.22),
-            v(0.0, 0.5, 0.9),
-            v(1.0, 0.0, 0.0),
-        ),
-        (
-            release,
-            v(-0.1, 0.16, -0.48),
-            v(0.0, 0.3, -1.0),
-            v(1.0, 0.0, 0.0),
-        ),
-        (
-            release + 0.12,
-            v(0.1, -0.2, -0.42),
-            v(0.3, -0.4, -0.8),
-            v(0.6, -0.6, 0.4),
-        ),
-        (1.0, v(-0.1, -0.4, -0.1), v(0.0, 1.0, 0.0), v(1.0, 0.0, 0.0)),
+    let turns = [
+        (v(0.0, 1.0, 0.0), v(1.0, 0.0, 0.0)),
+        (v(0.0, 0.7, 0.7), v(1.0, 0.0, 0.0)),
+        (v(0.0, 0.5, 0.9), v(1.0, 0.0, 0.0)),
+        (v(0.0, 0.3, -1.0), v(1.0, 0.0, 0.0)),
+        (v(0.3, -0.4, -0.8), v(0.6, -0.6, 0.4)),
+        (v(0.0, 1.0, 0.0), v(1.0, 0.0, 0.0)),
     ];
+    let keys: [KnifeKey; 6] = std::array::from_fn(|i| {
+        let (at, at_point) = shooter_sim::hitbox::action::third_person_throw_keys()[i];
+        (
+            at,
+            crate::convert::to_godot(at_point),
+            turns[i].0,
+            turns[i].1,
+        )
+    });
     pose(&keys, p, kind)
 }
 

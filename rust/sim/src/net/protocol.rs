@@ -91,8 +91,14 @@ use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, Weapo
 // who join after a smoke popped see it.
 // Version 39 authored a loop for every direction of travel: the stride
 // phase runs forward for backpedals, quicker sideways, and the hit zones pose
-// the directional loops, so both ends must agree on them.
-pub const PROTOCOL_VERSION: u16 = 40;
+// the directional loops, so both ends must agree on them. It also sends knife
+// hits with their own force level (`HitPart::KNIFE_FORCE`), so knife-killed
+// bodies crumple.
+// Version 40 added whether a reload is from an empty magazine
+// (`PlayerView::reload_empty`).
+// Version 41 moved the support arm's hit zones with a grenade throw
+// (`hitbox::action`), and added the throw to the debug rewound poses.
+pub const PROTOCOL_VERSION: u16 = 41;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -2349,6 +2355,10 @@ fn write_activity(w: &mut BitWriter, a: &Activity) {
     if let Some(crouch) = a.crouch {
         w.u8(clock::to_u8(crouch));
     }
+    w.bool(a.throw.is_some());
+    if let Some(throw) = a.throw {
+        w.u8(clock::to_u8(throw));
+    }
 }
 
 fn read_activity(r: &mut BitReader) -> DecodeResult<Activity> {
@@ -2377,6 +2387,11 @@ fn read_activity(r: &mut BitReader) -> DecodeResult<Activity> {
             None
         },
         hunch: 0.0,
+        throw: if r.bool()? {
+            Some(clock::from_u8(r.u8()?))
+        } else {
+            None
+        },
     })
 }
 
@@ -3296,6 +3311,7 @@ mod tests {
                             weapon: Some(WeaponId(3)),
                             crouch: Some(clock::from_u8(clock::to_u8(0.5))),
                             hunch: 0.0,
+                            throw: Some(clock::from_u8(clock::to_u8(0.62))),
                             progress: Progress {
                                 stride: 0.25,
                                 reload: 51.0 / 255.0,

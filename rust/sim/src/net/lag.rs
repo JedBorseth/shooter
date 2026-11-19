@@ -200,6 +200,7 @@ impl RemoteSample {
                 progress: self.progress,
                 crouch: Some(self.crouch),
                 hunch: 0.0,
+                throw: self.throw,
             },
         })
     }
@@ -564,6 +565,7 @@ mod tests {
                 weapon: Some(WeaponId::expect("m870")),
                 crouch: Some(0.0),
                 hunch: 0.0,
+                throw: None,
                 progress: Progress {
                     stride: 0.25,
                     reload: 0.2,

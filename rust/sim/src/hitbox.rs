@@ -23,6 +23,7 @@
 //!
 //! Body space: +X is the character's right, +Y up, -Z forward, origin at the feet.
 
+pub mod action;
 pub mod carry;
 pub mod clock;
 pub mod gait;
@@ -124,6 +125,9 @@ pub struct Activity {
     /// sides instead of holding a weapon, as the shamble is drawn. Zombies
     /// are not networked; snapshots never carry it.
     pub hunch: f32,
+    /// How far along a grenade throw the body is (`PlayerView::throw`), if
+    /// throwing: the support arm follows the grenade ([`action`]).
+    pub throw: Option<f32>,
 }
 
 impl HitboxPose {
@@ -364,6 +368,8 @@ fn carry_of(activity: &Activity) -> Carry {
         reload_progress: activity.progress.reload,
         class: def.map_or_else(Default::default, carry::CarryClass::of),
         timing: def.map_or_else(Default::default, carry::ReloadTiming::of),
+        // A throw drops the weapon out of the support hand's way.
+        swing: activity.throw.map_or(0.0, action::throw_weapon_drop),
         ..Carry::default()
     }
 }
@@ -498,7 +504,22 @@ pub fn hitboxes(pose: &HitboxPose) -> [Hitbox; COUNT] {
         (elbow, wrist + hand * poses::HAND_MIDDLE[side])
     };
     let [right_target, left_target] = targets;
-    let (mut left_elbow, mut left_hand) = arm(left_target, 0, carry::LEFT_POLE);
+    let (mut left_elbow, mut left_hand) = match activity.throw {
+        // Throwing: the support hand carries the grenade, which is where
+        // the forearm ends.
+        Some(p) => {
+            let blend = action::throw_hand_blend(p);
+            let grenade = action::third_person_grenade(eyes, pitch, p);
+            let (wrist_target, hand) = left_target;
+            let (elbow, wrist) = solve_arm(
+                shoulders[0],
+                wrist_target.lerp(grenade, blend),
+                pole(carry::LEFT_POLE),
+            );
+            (elbow, wrist + hand * poses::HAND_MIDDLE[0] * (1.0 - blend))
+        }
+        None => arm(left_target, 0, carry::LEFT_POLE),
+    };
     let (mut right_elbow, mut right_hand) = arm(right_target, 1, carry::RIGHT_POLE);
     if hunch > 0.0 {
         // A zombie's arms hang at its sides, bent at the elbow.
@@ -826,6 +847,33 @@ mod tests {
     /// Indices of the shapes: the hands are the far ends of the forearms.
     const LEFT_HAND: usize = 5;
     const RIGHT_HAND: usize = 7;
+
+    #[test]
+    fn a_throw_carries_the_support_arm_over_and_out() {
+        let held = with(Activity {
+            weapon: m4(),
+            ..Activity::default()
+        });
+        let at = |p: f32| {
+            with(Activity {
+                weapon: m4(),
+                throw: Some(p),
+                ..Activity::default()
+            })
+        };
+        let feet = pose(Stance::Standing).feet;
+        let head = held[0].a;
+        // Cocked: the hand is up above the helmet and behind the head.
+        let cocked = at(crate::equipment::COCKED_PROGRESS)[LEFT_HAND].b;
+        assert!(cocked.y > head.y && cocked.z > head.z - 0.05, "{cocked}");
+        // Let go: the hand is out in front, well away from the handguard.
+        let release = at(crate::equipment::release_progress())[LEFT_HAND].b;
+        assert!(release.z < feet.z - 0.3, "{release}");
+        assert!(release.distance(held[LEFT_HAND].b) > 0.15, "{release}");
+        // Done: back on the weapon, and the firing arm keeps it throughout.
+        assert!(at(1.0)[LEFT_HAND].b.distance(held[LEFT_HAND].b) < 1e-3);
+        assert!(at(0.5)[RIGHT_HAND].b.distance(held[RIGHT_HAND].b) < 0.6);
+    }
 
     #[test]
     fn sprinting_drops_the_weapon_and_leans_in() {

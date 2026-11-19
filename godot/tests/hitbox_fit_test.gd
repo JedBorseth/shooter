@@ -3,7 +3,7 @@ extends SceneTree
 ## is what you hit". A remote player is posed through every state another
 ## player can be seen in (idle, walking, running, sprinting, strafing, crouched,
 ## sliding, aiming, reloading, mantling, in the air, each weapon, looking up and
-## down, turning), and for each hit zone it measures:
+## down, turning, throwing a grenade), and for each hit zone it measures:
 ##
 ## - axis: how far the skeleton's bones are from the zone's capsule axes (the
 ##   larger of bone-to-axis and axis-to-bone, sampled along both), in cm;
@@ -36,7 +36,8 @@ const DT := 1.0 / 60.0
 const AXIS_TOLERANCE := 0.06
 const OUT_TOLERANCE := 0.05
 ## Looser axis bounds (m) for a few zones in some animations: the support
-## arm reaching for a pump gun's shells, and the legs kicking up a ledge.
+## arm reaching for a pump gun's shells or cocking a grenade crouched, and
+## the legs kicking up a ledge.
 const PHASE := {
 	"reach": {"arm": 0.08},
 	"climb": {"leg": 0.09},
@@ -151,6 +152,16 @@ func _states() -> Array[Dictionary]:
 	add.call(
 		"slide_pitch_60", {"stance": "sliding", "pitch": 1.05}, {"velocity": Vector3(0, 0, -7.0)}
 	)
+	# A grenade throw (`PlayerView::throw`): the support hand bringing the
+	# grenade up, cocked above the helmet, letting go in front, and the
+	# follow-through.
+	for throw: Array in [
+		["throw_up", 0.2], ["throw_cocked", 0.45], ["throw_release", 0.62], ["throw_follow", 0.72]
+	]:
+		add.call(throw[0], {"throw": throw[1]})
+	# Crouched, the cocked arm is drawn bent a little further than the zones'
+	# arm solve bends it (7.9 cm): the reach's allowance.
+	add.call("crouch_throw_cocked", {"stance": "crouching", "throw": 0.45}, {"phase": "reach"})
 	add.call("turning", {}, {"yaw_rate": 3.0})
 	add.call("turned", {"yaw": 2.2, "pitch": 0.4})
 	return states
