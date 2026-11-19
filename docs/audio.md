@@ -40,7 +40,7 @@ Every sound plays from a fixed pool; nothing is instantiated per shot:
 
 | Source | Voices |
 | --- | --- |
-| Your gun (snap, body, tail, indoor tail, mech, hollow) | 6 players, 1 to 4 voices each |
+| Your gun (snap, body, tail, indoor tail, mech, hollow) | 6 players, 1 to 4 voices each (a whole-shot snap 14) |
 | Your weapon's handling (`WeaponFoley`) | 4 per view |
 | Each other player: gunfire (snap, body, tail, mid, far), steps, body, reload | 8 players |
 | Impacts and ricochets, everyone's (`ShotTracer`) | 10 |
@@ -53,10 +53,29 @@ queues (8, 16, and 4 entries).
 
 ## Gunshots
 
-Every gun has its own recordings (`tools/build_weapon_audio.py layers`), from
-the raw master tracks of the CC0 Free Firearm Sound Library. The BR-3 is an
-SKS and the LSW-6 a Mosin-Nagant (a full-power rifle round), so no weapon
-borrows another's voice.
+Every gun has its own recordings, from the raw master tracks of the CC0 Free
+Firearm Sound Library. The BR-3 is an SKS and the LSW-6 a Mosin-Nagant (a
+full-power rifle round), so no weapon borrows another's voice.
+
+Guns are being rebuilt one at a time the way the
+[gun-sound-design](../.agents/skills/gun-sound-design/SKILL.md) skill
+describes, with `tools/build_gunshots.py`; each is approved by ear first.
+
+### Whole shots (`tools/build_gunshots.py`): the AK-47
+
+Each take is one real shot mixed from every microphone that caught it at once
+(near the muzzle, beside and behind the shooter, lined up to the sample),
+put in a short bright room, squashed so it stays loud until the next round,
+and EQ'd so a spray matches the reference game's gun (Counter-Strike's AK for
+the AK-47). It is written whole, about 1.2 s with its room and echo, as the
+gun's `snap_N.wav`; the gun has no `body`, `tail`, `tail_indoor` or `mech`.
+`WeaponView` and `Gunfire` then give the snap 14 voices
+(`audio::WHOLE_SHOT_VOICES`), so full auto overlaps in full and builds into
+one dense wall instead of each shot cutting the last one's tail. Each gun's
+recipe (microphone mix, room, density, EQ, loudness) is in
+`build_gunshots.RECIPES`; the EQ comes from `build_gunshots.py match`.
+
+### Layered shots (`tools/build_weapon_audio.py layers`): the other guns
 
 The local player's shot is five layers, each picked from five takes on its
 own, so automatic fire does not repeat:

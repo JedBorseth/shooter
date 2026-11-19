@@ -1913,12 +1913,17 @@ impl WeaponView {
             self.base_mut().add_child(&player);
             Some(player)
         };
-        let snap = layer("snap", "GunshotSnap", snap_db, 4)?;
-        let body = layer("body", "GunshotBody", body_db, 4)?;
+        // A gun built by `tools/build_gunshots.py` has no body or tail: each
+        // snap is the whole shot, room and echo included, and shots overlap
+        // in full so full auto builds into one dense wall.
+        let whole = audio::variations(&format!("{dir}/tail"), 1.0).is_none();
+        let snap_voices = if whole { audio::WHOLE_SHOT_VOICES } else { 4 };
+        let snap = layer("snap", "GunshotSnap", snap_db, snap_voices)?;
+        let body = layer("body", "GunshotBody", body_db, 4);
         // One echo at a time: each shot cuts the last one's tail, so full
         // auto stays tight instead of piling up reverb. Outdoors and indoors
         // each have their own, cross-faded by where the listener is.
-        let tail = layer("tail", "GunshotTail", tail_db, 1)?;
+        let tail = layer("tail", "GunshotTail", tail_db, 1);
         let tail_indoor = layer("tail_indoor", "GunshotTailIndoor", tail_db, 1);
         // The shot as heard from down the range, for its slapback off walls.
         let distant = audio::variations(&format!("{dir}/mid"), 1.0);
@@ -1950,8 +1955,8 @@ impl WeaponView {
             pitch,
             volumes: [
                 snap.get_volume_db(),
-                body.get_volume_db(),
-                tail.get_volume_db(),
+                self.fire_volume_db + body_db,
+                self.fire_volume_db + tail_db,
             ],
             snap,
             body,
@@ -1970,7 +1975,8 @@ impl WeaponView {
 }
 
 /// The layers of one gunshot, played together. Each picks its own recording,
-/// so a few source shots combine into many different-sounding ones.
+/// so a few source shots combine into many different-sounding ones. A gun
+/// built whole has only the snap, which carries the entire shot.
 struct Gunshot {
     /// The action under every shot, if the weapon has one.
     mech: Option<Gd<AudioStreamPlayer>>,
@@ -1981,8 +1987,10 @@ struct Gunshot {
     /// Each layer's volume as built, before any suppressor.
     volumes: [f32; 3],
     snap: Gd<AudioStreamPlayer>,
-    body: Gd<AudioStreamPlayer>,
-    tail: Gd<AudioStreamPlayer>,
+    /// The punch under the snap; none when the snap is the whole shot.
+    body: Option<Gd<AudioStreamPlayer>>,
+    /// The echo, one at a time; none when the snap is the whole shot.
+    tail: Option<Gd<AudioStreamPlayer>>,
     /// The tail indoors (a room's early reflections and decay, no terrain echo).
     tail_indoor: Option<Gd<AudioStreamPlayer>>,
     /// The shot from a distance, played off nearby walls outdoors.
@@ -1995,19 +2003,25 @@ impl Gunshot {
     fn set_suppressed(&mut self, on: bool) {
         self.suppressed = on;
         let cut = if on { [14.0, 7.0, 12.0] } else { [0.0; 3] };
-        for ((player, volume), cut) in [&mut self.snap, &mut self.body, &mut self.tail]
-            .into_iter()
-            .zip(self.volumes)
-            .zip(cut)
+        for ((player, volume), cut) in
+            [Some(&mut self.snap), self.body.as_mut(), self.tail.as_mut()]
+                .into_iter()
+                .zip(self.volumes)
+                .zip(cut)
         {
-            player.set_volume_db(volume - cut);
+            if let Some(player) = player {
+                player.set_volume_db(volume - cut);
+            }
         }
     }
 
     /// Plays a shot that left `rounds_left` in a magazine of `magazine`.
     fn play(&mut self, rounds_left: u16, magazine: u16, tree: &Gd<SceneTree>) {
         let pitch = randf_range(0.96, 1.04) as f32 * self.pitch;
-        for player in [&mut self.snap, &mut self.body] {
+        for player in [Some(&mut self.snap), self.body.as_mut()]
+            .into_iter()
+            .flatten()
+        {
             player.set_pitch_scale(pitch);
             player.play();
         }
@@ -2019,7 +2033,7 @@ impl Gunshot {
         };
         let base_tail = self.volumes[2] - if self.suppressed { 12.0 } else { 0.0 };
         for (player, share) in [
-            (Some(&mut self.tail), 1.0 - indoors),
+            (self.tail.as_mut(), 1.0 - indoors),
             (self.tail_indoor.as_mut(), indoors),
         ] {
             let Some(player) = player else { continue };
