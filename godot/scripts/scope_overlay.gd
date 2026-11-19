@@ -1,10 +1,16 @@
 extends Control
 ## Sniper scope: the lens (shaders/scope.gdshader: black surround, a soft
 ## eye-relief shadow that slides as the scope swings, and a faint fringe at the
-## rim), a fine crosshair, and a mil-dot stadia. Drawn once the player is
-## nearly fully scoped (the weapon model hides at the same point).
+## rim), a fine crosshair, and a mil-dot stadia. As the scope comes up, the
+## zoomed picture shows in its eyepiece and grows out of it while the black
+## surround fades in (`OPEN_FROM` to `OPEN_TO`, the same amounts as
+## `SCOPE_OPEN_FROM` and `SCOPE_OPEN_TO` in `rust/game/src/viewmodel.rs`);
+## the weapon model hides at `OPEN_TO`.
 
-const SHOW_AT := 0.85
+const OPEN_FROM := 0.6
+const OPEN_TO := 0.85
+## The reticle fades in over the last part of the raise.
+const RETICLE_FROM := 0.6
 const LENS := preload("res://shaders/scope.gdshader")
 ## Radius of the lens, as a fraction of the screen height.
 const RADIUS := 0.46
@@ -22,6 +28,7 @@ var _material := ShaderMaterial.new()
 var _eye := Vector2.ZERO
 var _last_look := Vector2.ZERO
 var _was_visible := false
+var _open := 1.0
 
 
 func _ready() -> void:
@@ -35,10 +42,13 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	visible = player != null and player.scope_amount() >= SHOW_AT
+	var scope: float = player.scope_amount() if player != null else 0.0
+	visible = scope > OPEN_FROM
 	if not visible:
 		_was_visible = false
 		return
+	_open = smoothstep(OPEN_FROM, OPEN_TO, scope)
+	_material.set_shader_parameter(&"open", _open)
 	# Where the shots go against where the eye looks: sway and recoil move the
 	# scope off the eye, and turning makes it lag behind.
 	var aim: Vector3 = player.aim_angles()
@@ -61,7 +71,10 @@ func _draw() -> void:
 	var radius := size.y * RADIUS
 
 	# Crosshair: thick outer posts, thin centre lines, and dots.
-	var line := Color(0.02, 0.02, 0.02, 0.95)
+	var shown := clampf((_open - RETICLE_FROM) / (1.0 - RETICLE_FROM), 0.0, 1.0)
+	if shown <= 0.0:
+		return
+	var line := Color(0.02, 0.02, 0.02, 0.95 * shown)
 	var gap := radius * 0.5
 	draw_line(centre + Vector2(-radius, 0), centre + Vector2(-gap, 0), line, 5.0, true)
 	draw_line(centre + Vector2(gap, 0), centre + Vector2(radius, 0), line, 5.0, true)
@@ -75,7 +88,7 @@ func _draw() -> void:
 		]:
 			draw_circle(centre + dot, 2.2, line, true, -1.0, true)
 
-	if player.is_holding_breath() or player.breath() < 0.99:
+	if _open >= 1.0 and (player.is_holding_breath() or player.breath() < 0.99):
 		var label := "HOLDING BREATH" if player.is_holding_breath() else "[Shift] Hold breath"
 		var font := get_theme_default_font()
 		var width := 220.0

@@ -102,11 +102,12 @@ func _run() -> void:
 	await _sixtieths(60)
 
 	player.give_weapon("m40")
-	await _sixtieths(60)
+	# Past its 1.4 s first raise, then its 0.42 s aim.
+	await _sixtieths(100)
 	await _shot("14_m40_hip")
 	player.set_look(0.0, -0.02)
 	Input.action_press("aim")
-	await _sixtieths(40)
+	await _sixtieths(45)
 	await _shot("15_m40_scope")
 	Input.action_release("aim")
 	await _sixtieths(30)
