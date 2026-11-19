@@ -36,7 +36,8 @@ and pass ``--ual1 .../Godot/AnimationLibrary_Godot_Standard.glb`` and
 Godot retargets every file onto its humanoid skeleton profile when it imports
 them (see the ``.import`` files and ``bone_map_*.tres``). Open the editor or run
 ``godot --headless --import`` afterwards. ``--kits soldier`` rebuilds one kit;
-``--reuse`` skips Blender and reassembles from the last bake.
+``--reuse`` skips Blender and reassembles from the last bake; ``--animations-only``
+rebuilds only the animation sets.
 """
 
 from __future__ import annotations
@@ -70,15 +71,8 @@ UAL1_ANIMATIONS = [
     "Jump_Start",
     "Jump_Loop",
     "Jump_Land",
-    "Death01",
-    "Hit_Chest",
-    "Hit_Head",
-    "Pistol_Idle_Loop",
+    # The hold pose the soldier and the first-person arms start from.
     "Pistol_Aim_Neutral",
-    "Pistol_Aim_Up",
-    "Pistol_Aim_Down",
-    "Pistol_Reload",
-    "Pistol_Shoot",
 ]
 UAL2_ANIMATIONS = [
     "Slide_Start",
@@ -882,12 +876,15 @@ def main() -> None:
     parser.add_argument("--kits", default=",".join(KITS), help="comma-separated kits to build")
     parser.add_argument("--reuse", action="store_true", help="reassemble from the last bake, skipping Blender")
     parser.add_argument("--no-animations", action="store_true")
+    parser.add_argument("--animations-only", action="store_true", help="rebuild only the animation sets")
     args = parser.parse_args()
     ual1 = Gltf(args.ual1)
-    src = fetch(args.cache)
-    install_mpfb(args.cache, src)
-    assets = asset_paths(src)
-    for name in args.kits.split(","):
+    kits = [] if args.animations_only else args.kits.split(",")
+    if kits:
+        src = fetch(args.cache)
+        install_mpfb(args.cache, src)
+        assets = asset_paths(src)
+    for name in kits:
         kit = KITS[name]
         work = args.cache / "work" / name
         if not args.reuse:
