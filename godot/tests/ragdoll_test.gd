@@ -1,7 +1,8 @@
 extends SceneTree
 ## Headless ragdoll test: soldiers killed on a flat floor fall with the shot's
 ## push (a chest shot from behind, a headshot from the side, a shotgun blast,
-## a crouched death), stay above the floor, come to rest and freeze, drop their
+## a crouched death), buckle at the knees instead of bowing back stiff when
+## shot from the front, stay above the floor, come to rest and freeze, drop their
 ## gun, keep at most six ragdolls moving at once, and stand up whole again when
 ## they respawn. A remote player's body stays where it fell when they
 ## respawn. A knife kill crumples where it stands, and our own knife drops a
@@ -39,6 +40,7 @@ func _run() -> void:
 	await _sixtieths(5)
 
 	await _chest_shot_from_behind()
+	await _front_shot_buckles()
 	await _headshot_from_the_side()
 	await _shotgun_pushes_harder()
 	await _crouched_death()
@@ -116,6 +118,37 @@ func _chest_shot_from_behind() -> void:
 		"a frozen body stays put"
 	)
 	dummy.queue_free()
+
+
+## Shot in the chest or head from the front, a body gives at the knees and
+## folds over: its torso leans back less than 12 degrees while the hips are up,
+## and the hips are well down within 0.3 s. Before, it toppled back as a stiff
+## plank, leaning back 30 to 65 degrees.
+func _front_shot_buckles() -> void:
+	for part in [2, 0]:
+		var dummy := _dummy(Vector3(-6, 0, 14))
+		await _sixtieths(10)
+		var rig := _rig(dummy)
+		var standing := rig.bone_global_transform("Hips").origin.y
+		# The dummy faces -Z; travelling +Z, the round strikes its front.
+		_kill(dummy, Vector3(0, 0, 1), part, 3.0)
+		var lean := 0.0
+		var drop := 0.0
+		for i in 42:
+			await _sixtieths(1)
+			var hips := rig.bone_global_transform("Hips").origin
+			var torso := rig.bone_global_transform("Neck").origin - hips
+			if hips.y > 0.55 and torso.length() > 0.01:
+				# Leaning back is toward +Z, away from the way it faces.
+				lean = maxf(lean, rad_to_deg(atan2(torso.z, torso.y)))
+			if i == 17:
+				drop = standing - hips.y
+		_check(
+			lean < 12.0, "shot from the front (part %d), it leans back only %.1f°" % [part, lean]
+		)
+		_check(drop > 0.3, "and its knees give, hips %.2f m lower at 0.3 s" % drop)
+		dummy.queue_free()
+		await _sixtieths(2)
 
 
 func _headshot_from_the_side() -> void:
@@ -238,13 +271,17 @@ func _knife_crumples() -> void:
 	var standing := _rig(knifed).bone_global_transform("Hips").origin.y
 	_kill(knifed, Vector3(0, 0, 1), 2, 0.0)
 	_kill(shot, Vector3(0, 0, 1), 2, 4.0)
-	await _sixtieths(18)
+	# A shot body buckles too, but the knife's legs give at once: it is
+	# further down a tenth of a second in.
+	await _sixtieths(6)
 	var knife_drop := standing - _rig(knifed).bone_global_transform("Hips").origin.y
 	var shot_drop := standing - _rig(shot).bone_global_transform("Hips").origin.y
+	await _sixtieths(12)
+	var knife_later := standing - _rig(knifed).bone_global_transform("Hips").origin.y
 	_check(
-		knife_drop > 0.2 and knife_drop > shot_drop + 0.12,
+		knife_drop > 0.07 and knife_drop > shot_drop * 1.4 and knife_later > 0.4,
 		(
-			"a knifed body is going down within 0.3 s, hips %.2f m lower (a shot one %.2f)"
+			"a knifed body is going down within 0.1 s, hips %.2f m lower (a shot one %.2f)"
 			% [knife_drop, shot_drop]
 		)
 	)
