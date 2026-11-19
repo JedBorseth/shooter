@@ -928,11 +928,12 @@ pub fn draw_keys(kind: ClipKind) -> &'static [(f32, Pose)] {
         (0.82, Pose::new(-1.5, -0.5, 1.5, 0.0, -0.003, 0.0)),
         (1.0, Pose::ZERO),
     ];
-    // A sidearm comes up from low centre, quick and straight.
+    // A sidearm comes up from low centre, quick, with a flick of the
+    // wrist: rolled in as it rises, and snapped level.
     const PISTOL: [(f32, Pose); 4] = [
         (0.0, PISTOL_DOWN),
-        (0.55, Pose::new(4.0, 0.0, -2.0, 0.0, 0.01, 0.0)),
-        (0.8, Pose::new(-1.0, 0.0, 0.5, 0.0, -0.002, 0.0)),
+        (0.5, Pose::new(5.0, -3.0, -12.0, 0.008, 0.012, 0.0)),
+        (0.78, Pose::new(-1.5, 0.5, 2.0, 0.0, -0.003, 0.0)),
         (1.0, Pose::ZERO),
     ];
     // Long guns swing up heavier, with more overshoot.
@@ -942,10 +943,27 @@ pub fn draw_keys(kind: ClipKind) -> &'static [(f32, Pose)] {
         (0.84, Pose::new(-2.0, -0.6, 2.0, 0.0, -0.004, 0.0)),
         (1.0, Pose::ZERO),
     ];
+    // A pump gun comes up canted the other way, its loading port showing,
+    // and settles with a rock.
+    const SHOTGUN: [(f32, Pose); 4] = [
+        (0.0, LONG_GUN_DOWN),
+        (0.55, Pose::new(7.0, 3.0, 9.0, 0.0, 0.014, 0.0)),
+        (0.8, Pose::new(-2.0, -0.6, -2.5, 0.0, -0.004, 0.0)),
+        (1.0, Pose::ZERO),
+    ];
+    // A bolt action rises steady and long, the scope level by the top.
+    const BOLT: [(f32, Pose); 4] = [
+        (0.0, LONG_GUN_DOWN),
+        (0.65, Pose::new(4.0, 1.5, -3.0, 0.0, 0.01, 0.0)),
+        (0.86, Pose::new(-1.0, -0.3, 1.0, 0.0, -0.003, 0.0)),
+        (1.0, Pose::ZERO),
+    ];
     match kind {
         ClipKind::Pistol => &PISTOL,
         ClipKind::Rifle { heavy: false, .. } => &RIFLE,
-        _ => &HEAVY,
+        ClipKind::Shotgun => &SHOTGUN,
+        ClipKind::BoltAction => &BOLT,
+        ClipKind::Rifle { heavy: true, .. } => &HEAVY,
     }
 }
 
@@ -993,77 +1011,249 @@ pub fn pose_at(keys: &[(f32, Pose)], t: f32) -> Pose {
     posed(keys, t)
 }
 
-/// A weapon inspect, in seconds: turn the left side up to the eye and check
-/// the magazine with a tap, roll over to look at the top and ease the
-/// charging handle back a touch to check the chamber, and settle back.
-pub const INSPECT_LENGTH: f32 = 3.2;
+/// How long a weapon's inspect lasts, in seconds: a sidearm's is quick, a
+/// heavy one's slower, a bolt action's has the bolt to work.
+pub fn inspect_length(kind: ClipKind) -> f32 {
+    match kind {
+        ClipKind::Pistol => PISTOL_INSPECT,
+        ClipKind::Shotgun => 3.0,
+        ClipKind::BoltAction => 3.4,
+        ClipKind::Rifle { heavy: true, .. } => RIFLE_INSPECT * HEAVY_INSPECT,
+        ClipKind::Rifle { .. } => RIFLE_INSPECT,
+    }
+}
 
+/// A rifle's inspect, and how much slower a heavy one plays it.
+const RIFLE_INSPECT: f32 = 3.2;
+const HEAVY_INSPECT: f32 = 1.12;
+
+/// A weapon inspect, `t` seconds in (`inspect_length` long), each class
+/// checking what its owner would:
+///
+/// - a rifle turns its left side up to the eye and checks the magazine with
+///   a tug and a slap, rolls over to look at the top, and eases the charging
+///   handle back to check the chamber;
+/// - a pistol press-checks a third of the slide's travel with the support
+///   hand at the front serrations, turns its left side up, and flips to show
+///   its right side;
+/// - a pump gun rolls its loading port up, draws the pump back a touch to
+///   check the chamber, and turns its receiver's left side to the eye;
+/// - a bolt action checks its magazine like a rifle, then rolls the bolt up
+///   and the firing hand lifts it and draws it a little to see the round.
+///
+/// Held poses drift a little (no frozen holds).
 pub fn inspect_pose(t: f32, kind: ClipKind, anchors: &Anchors) -> ClipPose {
-    let keys = [
-        (0.0, Pose::ZERO),
-        (0.4, Pose::new(8.0, 42.0, -30.0, -0.05, 0.03, 0.0)),
-        (1.3, Pose::new(10.0, 46.0, -32.0, -0.05, 0.035, 0.0)),
-        (1.75, Pose::new(12.0, -10.0, 20.0, 0.015, 0.01, 0.0)),
-        (2.6, Pose::new(11.0, -11.0, 21.0, 0.015, 0.01, 0.0)),
-        (3.0, Pose::new(-4.0, 2.0, -3.0, 0.0, -0.005, 0.0)),
-        (INSPECT_LENGTH, Pose::ZERO),
-    ];
-    // Held poses drift a little (no frozen holds), weighted in between the
-    // turns.
-    let hold = smoothstep((t - 0.3) / 0.3) * (1.0 - smoothstep((t - 2.7) / 0.3));
-    let mut weapon = posed(&keys, t);
-    weapon.rot += Vector3::new(
+    let pose = match kind {
+        ClipKind::Pistol => pistol_inspect(t, anchors),
+        ClipKind::Shotgun => shotgun_inspect(t, anchors),
+        ClipKind::BoltAction => bolt_inspect(t, anchors),
+        ClipKind::Rifle { heavy, .. } => {
+            let t = if heavy { t / HEAVY_INSPECT } else { t };
+            rifle_inspect(t, anchors)
+        }
+    };
+    let length = inspect_length(kind);
+    let hold = smoothstep((t - 0.3) / 0.3) * (1.0 - smoothstep((t - (length - 0.5)) / 0.3));
+    let mut pose = pose;
+    pose.weapon.rot += Vector3::new(
         0.6 * (t * 1.7).sin(),
         0.8 * (t * 1.3 + 0.5).sin(),
         0.5 * (t * 2.1).sin(),
     ) * hold;
-    // The magazine check: pulled a finger's width and slapped home.
+    pose
+}
+
+/// Contacts in an inspect (seconds in, and a jolt: metres, degrees), so the
+/// checks land with a knock instead of gliding: a magazine slapped home, a
+/// slide or pump let go, a bolt lifted and turned down.
+pub fn inspect_jolts(kind: ClipKind) -> Vec<(f32, Vector3, Vector3)> {
+    let slap = (Vector3::new(0.0, 0.002, 0.0), Vector3::new(-0.8, 0.0, 0.6));
+    let home = (
+        Vector3::new(0.0, 0.0, -0.003),
+        Vector3::new(-0.6, 0.0, -0.5),
+    );
+    match kind {
+        ClipKind::Rifle { heavy, .. } => {
+            let k = if heavy { HEAVY_INSPECT } else { 1.0 };
+            vec![(1.0 * k, slap.0, slap.1), (2.45 * k, home.0, home.1)]
+        }
+        ClipKind::Pistol => vec![(0.86, home.0, home.1)],
+        ClipKind::Shotgun => vec![
+            (
+                0.8,
+                Vector3::new(0.0, 0.0, 0.003),
+                Vector3::new(0.6, 0.0, 0.3),
+            ),
+            (
+                1.05,
+                Vector3::new(0.0, 0.0, -0.004),
+                Vector3::new(-0.7, 0.0, -0.3),
+            ),
+        ],
+        ClipKind::BoltAction => vec![
+            (1.0, slap.0, slap.1),
+            (2.05, Vector3::ZERO, Vector3::new(-0.3, 0.0, 0.5)),
+            (2.7, Vector3::ZERO, Vector3::new(-0.5, 0.0, -0.6)),
+        ],
+    }
+}
+
+/// The magazine check shared by rifles and the bolt action: pulled a
+/// finger's width and slapped home, with the release held meanwhile.
+fn magazine_check(t: f32) -> (f32, f32) {
     let tug = keyed(&[(0.55, 0.0), (0.75, 0.022), (0.9, 0.022), (1.0, 0.0)], t);
-    let has_mag = matches!(kind, ClipKind::Rifle { .. } | ClipKind::Pistol);
-    let old_mag = Some(if has_mag {
-        mag_dir() * tug
-    } else {
-        Vector3::ZERO
-    });
+    let release = keyed(&[(0.5, 0.0), (0.56, 1.0), (0.9, 1.0), (0.96, 0.0)], t);
+    (tug, release)
+}
+
+/// The left side up to the eye, held from 0.4 s to 1.3 s.
+const LEFT_SIDE_UP: Pose = Pose::new(8.0, 42.0, -30.0, -0.05, 0.03, 0.0);
+const LEFT_SIDE_HELD: Pose = Pose::new(10.0, 46.0, -32.0, -0.05, 0.035, 0.0);
+
+fn rifle_inspect(t: f32, anchors: &Anchors) -> ClipPose {
+    let keys = [
+        (0.0, Pose::ZERO),
+        (0.4, LEFT_SIDE_UP),
+        (1.3, LEFT_SIDE_HELD),
+        (1.75, Pose::new(12.0, -10.0, 20.0, 0.015, 0.01, 0.0)),
+        (2.6, Pose::new(11.0, -11.0, 21.0, 0.015, 0.01, 0.0)),
+        (3.0, Pose::new(-4.0, 2.0, -3.0, 0.0, -0.005, 0.0)),
+        (RIFLE_INSPECT, Pose::ZERO),
+    ];
+    let (tug, mag_release) = magazine_check(t);
     // The chamber check: the handle eased back and let forward.
     let pull = keyed(&[(1.95, 0.0), (2.15, 0.025), (2.35, 0.025), (2.45, 0.0)], t);
     let place = |hand: Hand| match hand {
-        Hand::Rest => anchors.hand_rest,
         Hand::OldMag => anchors.mag_base + mag_dir() * tug,
         Hand::Charge(p) => anchors.charge + Vector3::new(0.0, 0.0, p + pull),
         Hand::Regrip => anchors.hand_rest + Vector3::new(0.0, -0.015, 0.035),
         _ => anchors.hand_rest,
     };
-    let mut hand_keys = vec![(0.0, Hand::Rest)];
-    if has_mag {
-        hand_keys.extend([
-            (0.5, Hand::OldMag),
-            (1.05, Hand::OldMag),
-            (1.35, Hand::Rest),
-        ]);
-    }
-    // A re-grip as the weapon rolls over: the hand slides back and forward.
-    hand_keys.extend([(1.45, Hand::Regrip), (1.62, Hand::Rest)]);
-    if kind != ClipKind::Shotgun {
-        hand_keys.extend([
-            (1.8, Hand::Rest),
-            (2.0, Hand::Charge(0.0)),
-            (2.45, Hand::Charge(0.0)),
-            (2.7, Hand::Rest),
-        ]);
-    }
-    // The release held while the magazine is tugged.
-    let mag_release = if has_mag {
-        keyed(&[(0.5, 0.0), (0.56, 1.0), (0.9, 1.0), (0.96, 0.0)], t)
-    } else {
-        0.0
-    };
+    let hand_keys = [
+        (0.0, Hand::Rest),
+        (0.5, Hand::OldMag),
+        (1.05, Hand::OldMag),
+        (1.35, Hand::Rest),
+        // A re-grip as the weapon rolls over: the hand slides back and forward.
+        (1.45, Hand::Regrip),
+        (1.62, Hand::Rest),
+        (1.8, Hand::Rest),
+        (2.0, Hand::Charge(0.0)),
+        (2.45, Hand::Charge(0.0)),
+        (2.7, Hand::Rest),
+    ];
     ClipPose {
-        weapon,
-        old_mag,
+        weapon: posed(&keys, t),
+        old_mag: Some(mag_dir() * tug),
         hand: hand_position(&hand_keys, t, place),
         focus: Some(anchors.well()),
-        handle: if kind == ClipKind::Shotgun { 0.0 } else { pull },
+        handle: pull,
+        mag_release,
+        ..ClipPose::rest()
+    }
+}
+
+fn pistol_inspect(t: f32, anchors: &Anchors) -> ClipPose {
+    let keys = [
+        (0.0, Pose::ZERO),
+        // Turned in and up toward the support hand for the press check, as
+        // for a first raise's rack: turned side-on first, the hand reaching
+        // over the slide brought the forearm across the eye.
+        (0.3, Pose::new(9.0, 12.0, 18.0, -0.03, 0.03, 0.02)),
+        (0.95, Pose::new(10.0, 13.0, 19.0, -0.03, 0.032, 0.02)),
+        // The left side up to the eye, then flipped to the right side.
+        (1.35, Pose::new(10.0, 40.0, -32.0, -0.04, 0.035, 0.02)),
+        (1.85, Pose::new(11.0, 42.0, -33.0, -0.04, 0.038, 0.02)),
+        (2.2, Pose::new(9.0, -24.0, 28.0, 0.01, 0.02, 0.02)),
+        (2.5, Pose::new(8.0, -25.0, 29.0, 0.01, 0.022, 0.02)),
+        (2.7, Pose::new(-3.0, 2.0, -3.0, 0.0, -0.004, 0.0)),
+        (PISTOL_INSPECT, Pose::ZERO),
+    ];
+    // The press check: a third of the slide's travel, held, and let go.
+    let slide = keyed(&[(0.45, 0.0), (0.62, 0.35), (0.78, 0.35), (0.86, 0.0)], t);
+    // A front press check: the slide pinched at its front serrations and
+    // drawn back. Pinched at the rear (as a rack), the hand came over the
+    // slide a hand's width from the eye and filled half the frame.
+    let front = Vector3::new(-0.012, -0.012, -0.14);
+    let place = |hand: Hand| match hand {
+        Hand::Charge(p) => front + Vector3::new(0.0, 0.0, p * PISTOL_SLIDE_TRAVEL),
+        _ => anchors.hand_rest,
+    };
+    let hand_keys = [
+        (0.05, Hand::Rest),
+        (0.35, Hand::Charge(0.0)),
+        (0.45, Hand::Charge(0.0)),
+        (0.62, Hand::Charge(0.35)),
+        (0.78, Hand::Charge(0.35)),
+        (0.86, Hand::Charge(0.0)),
+        (1.1, Hand::Rest),
+    ];
+    ClipPose {
+        weapon: posed(&keys, t),
+        hand: hand_position(&hand_keys, t, place),
+        slide: (slide > 0.0).then_some(slide),
+        focus: Some(anchors.well()),
+        ..ClipPose::rest()
+    }
+}
+
+/// A pistol's inspect, in seconds.
+const PISTOL_INSPECT: f32 = 2.85;
+
+fn shotgun_inspect(t: f32, anchors: &Anchors) -> ClipPose {
+    let keys = [
+        (0.0, Pose::ZERO),
+        // The loading port rolled up toward the eye.
+        (0.4, Pose::new(14.0, -12.0, 42.0, -0.03, 0.05, 0.02)),
+        (1.2, Pose::new(15.0, -13.0, 44.0, -0.03, 0.052, 0.02)),
+        // The receiver's left side.
+        (1.6, Pose::new(8.0, 38.0, -26.0, -0.05, 0.03, 0.0)),
+        (2.4, Pose::new(9.0, 40.0, -27.0, -0.05, 0.032, 0.0)),
+        (2.75, Pose::new(-3.0, 2.0, -3.0, 0.0, -0.005, 0.0)),
+        (3.0, Pose::ZERO),
+    ];
+    // The pump drawn back a touch to see the shell in the chamber.
+    let pump = keyed(&[(0.6, 0.0), (0.8, 0.3), (0.95, 0.3), (1.05, 0.0)], t);
+    ClipPose {
+        weapon: posed(&keys, t),
+        pump: (pump > 0.0).then_some(pump),
+        hand: (pump > 0.0).then(|| anchors.hand_rest + Vector3::new(0.0, 0.0, pump * 0.075)),
+        focus: Some(anchors.port),
+        ..ClipPose::rest()
+    }
+}
+
+fn bolt_inspect(t: f32, anchors: &Anchors) -> ClipPose {
+    let keys = [
+        (0.0, Pose::ZERO),
+        (0.4, LEFT_SIDE_UP),
+        (1.3, LEFT_SIDE_HELD),
+        // Rolled over, the bolt up toward the eye.
+        (1.75, Pose::new(8.0, -14.0, 26.0, 0.01, 0.02, 0.0)),
+        (2.75, Pose::new(7.0, -15.0, 27.0, 0.01, 0.022, 0.0)),
+        (3.15, Pose::new(-4.0, 2.0, -3.0, 0.0, -0.005, 0.0)),
+        (3.4, Pose::ZERO),
+    ];
+    let (tug, mag_release) = magazine_check(t);
+    let place = |hand: Hand| match hand {
+        Hand::OldMag => anchors.mag_base + mag_dir() * tug,
+        _ => anchors.hand_rest,
+    };
+    let hand_keys = [
+        (0.0, Hand::Rest),
+        (0.5, Hand::OldMag),
+        (1.05, Hand::OldMag),
+        (1.35, Hand::Rest),
+    ];
+    let lift = keyed(&[(1.85, 0.0), (2.05, 1.0), (2.5, 1.0), (2.7, 0.0)], t);
+    let back = keyed(&[(2.05, 0.0), (2.2, 0.25), (2.35, 0.25), (2.5, 0.0)], t);
+    ClipPose {
+        weapon: posed(&keys, t),
+        old_mag: Some(mag_dir() * tug),
+        hand: hand_position(&hand_keys, t, place),
+        bolt: (lift > 0.0).then_some((lift, back)),
+        bolt_hand: keyed(&[(1.7, 0.0), (1.9, 1.0), (2.75, 1.0), (2.95, 0.0)], t),
+        focus: Some(anchors.well()),
         mag_release,
         ..ClipPose::rest()
     }
@@ -1546,6 +1736,90 @@ mod tests {
         assert!(tug.hand.is_some());
         let check = inspect_pose(2.25, kind, &a);
         assert!((check.hand.unwrap() - a.charge).z > 0.02);
-        assert_eq!(inspect_pose(INSPECT_LENGTH, kind, &a).weapon, Pose::ZERO);
+        assert_eq!(
+            inspect_pose(inspect_length(kind), kind, &a).weapon,
+            Pose::ZERO
+        );
+    }
+
+    #[test]
+    fn each_class_inspects_what_its_owner_checks() {
+        let rifle = ClipKind::Rifle {
+            charge: true,
+            heavy: false,
+        };
+        let heavy = ClipKind::Rifle {
+            charge: true,
+            heavy: true,
+        };
+        let kinds = [
+            rifle,
+            heavy,
+            ClipKind::Pistol,
+            ClipKind::Shotgun,
+            ClipKind::BoltAction,
+        ];
+        for kind in kinds {
+            let a = anchors(kind);
+            let length = inspect_length(kind);
+            // Starts and ends at rest, with no jump on the way.
+            assert_eq!(inspect_pose(0.0, kind, &a).weapon, Pose::ZERO, "{kind:?}");
+            assert_eq!(
+                inspect_pose(length, kind, &a).weapon,
+                Pose::ZERO,
+                "{kind:?}"
+            );
+            let mut last = inspect_pose(0.0, kind, &a).weapon;
+            for i in 1..=200 {
+                let now = inspect_pose(length * i as f32 / 200.0, kind, &a).weapon;
+                assert!((now.rot - last.rot).length() < 6.0, "{kind:?} at {i}");
+                last = now;
+            }
+            // Every contact lands inside the inspect.
+            for (at, _, _) in inspect_jolts(kind) {
+                assert!(at > 0.0 && at < length, "{kind:?}");
+            }
+        }
+        let a = anchors(ClipKind::Pistol);
+        let press = inspect_pose(0.7, ClipKind::Pistol, &a);
+        assert!(press.slide.is_some_and(|s| s > 0.3), "press check");
+        assert!(press.hand.is_some());
+        let a = anchors(ClipKind::Shotgun);
+        let pump = inspect_pose(0.85, ClipKind::Shotgun, &a);
+        assert!(pump.pump.is_some_and(|p| p > 0.25), "pump check");
+        assert!(pump.weapon.rot.z > 30.0, "loading port up");
+        let a = anchors(ClipKind::BoltAction);
+        let bolt = inspect_pose(2.3, ClipKind::BoltAction, &a);
+        assert!(
+            bolt.bolt
+                .is_some_and(|(lift, back)| lift > 0.9 && back > 0.2)
+        );
+        assert!(bolt.bolt_hand > 0.9, "the firing hand works it");
+        assert!(inspect_length(heavy) > inspect_length(rifle));
+        assert!(inspect_length(ClipKind::Pistol) < inspect_length(rifle));
+    }
+
+    #[test]
+    fn each_class_draws_its_own_way() {
+        let kinds = [
+            ClipKind::Pistol,
+            ClipKind::Rifle {
+                charge: true,
+                heavy: false,
+            },
+            ClipKind::Rifle {
+                charge: true,
+                heavy: true,
+            },
+            ClipKind::Shotgun,
+            ClipKind::BoltAction,
+        ];
+        for (i, a) in kinds.iter().enumerate() {
+            let keys = draw_keys(*a);
+            assert_eq!(keys.last().unwrap().1, Pose::ZERO);
+            for b in &kinds[i + 1..] {
+                assert_ne!(draw_keys(*a)[1].1, draw_keys(*b)[1].1, "{a:?} and {b:?}");
+            }
+        }
     }
 }
