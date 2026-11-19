@@ -8,8 +8,8 @@ extends SceneTree
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
 ##     --script res://tests/capture_characters.gd
 ## CAPTURE_SETS picks sections (comma list of lineups, poses, turntable, hands,
-## fp, horde, bodies, faces, wounds; default all). CAPTURE_WEAPONS limits the first-person
-## set to some weapons (comma list).
+## fp, horde, bodies, faces, wounds; default all). CAPTURE_WEAPONS limits the hands
+## and first-person sets to some weapons (comma list).
 
 const SOLDIER := preload("res://scenes/characters/soldier.tscn")
 const ZOMBIE_BODY := preload("res://scenes/characters/zombie_body.tscn")
@@ -298,7 +298,10 @@ func _hands() -> void:
 		"under": Vector3(0.05, -0.45, -0.1),
 		"front": Vector3(0.1, 0.05, -0.5),
 	}
-	for weapon in ["m4", "m1911", "m870"]:
+	var weapons := ["m4", "m1911", "m870"]
+	if not OS.get_environment("CAPTURE_WEAPONS").is_empty():
+		weapons = Array(OS.get_environment("CAPTURE_WEAPONS").split(","))
+	for weapon: String in weapons:
 		for frame in 50:
 			soldier.drive({"weapon": weapon, "yaw": 0.0, "ads": 1.0}, 1.0 / 60.0)
 			soldier.global_position = Vector3(0, 0, 10)

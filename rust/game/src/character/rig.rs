@@ -1407,10 +1407,6 @@ impl SoldierRig {
             let mut g = view.bind().grips();
             g.hold = Hold::of(id.def());
             g.fit_to(id.def());
-            // The server poses the arm hit zones from the weapon file's grips
-            // (`carry::hand_targets`), so the third-person hands stay on the
-            // same numbers rather than the measured handguard.
-            g.section = None;
             if g.hold == Hold::Handguard && !g.foregrip {
                 // Mid-handguard rather than at the muzzle end of it, so the
                 // support elbow bends and drops under the weapon. The fitted
@@ -1422,6 +1418,15 @@ impl SoldierRig {
                 g.spreads[1] = None;
                 g.seats[1] = Vector3::ZERO;
             }
+            // The server poses the arm hit zones from the weapon file's grips
+            // (`carry::hand_targets`), so the palm rests on the section the
+            // weapon file measured where this hand holds, not on one cut
+            // from the drawn model at the marker.
+            g.section = carry::Grips::held(id.def()).section.map(|s| Section {
+                marker: g.left,
+                centre: Vector2::new(s.centre.x, s.centre.y),
+                half: Vector2::new(s.half.x, s.half.y),
+            });
             g
         });
         let slide = 1.0 - (1.0 - carry::SLIDE_PITCH_SCALE) * self.slide;

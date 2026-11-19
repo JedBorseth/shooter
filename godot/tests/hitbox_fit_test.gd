@@ -183,7 +183,7 @@ func _run() -> void:
 ## scene's GripRight and GripLeft markers and grip rake (which place the drawn hands).
 func _check_grips() -> void:
 	var pattern := RegEx.create_from_string(
-		"grips: Some\\(\\(right: \\(([^)]*)\\), left: \\(([^)]*)\\), rake: ([-0-9.]+)\\)\\)"
+		"grips: Some\\(\\(right: \\(([^)]*)\\), left: \\(([^)]*)\\), rake: ([-0-9.]+)[,)]"
 	)
 	var parse := func(text: String) -> Vector3:
 		var parts := text.split(",")

@@ -408,6 +408,20 @@ pub struct GripsDef {
     pub left: [f32; 3],
     /// Degrees the pistol grip leans back from vertical.
     pub rake: f32,
+    /// The handguard's (or pump's) cross-section where a third-person
+    /// soldier's support hand holds it, so the palm rests on its surface
+    /// (`crate::hitbox::carry::Grips::support_contact`). Measured from the
+    /// third-person model by `godot/tests/bake_support_sections.gd`.
+    #[serde(default)]
+    pub section: Option<SectionDef>,
+}
+
+/// A weapon's cross-section across the barrel (weapon space, metres): its
+/// centre (x, y) and half its width and height.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
+pub struct SectionDef {
+    pub centre: [f32; 2],
+    pub half: [f32; 2],
 }
 
 /// One hand's finger curl: degrees per joint (knuckle, middle, tip; the

@@ -37,7 +37,7 @@
     tracer_every: 3,
     attachments: [Acog, Suppressor, Grip, ExtendedMag],
     // Hands on the model: GripRight and GripLeft in pdw9_view.tscn.
-    grips: Some((right: (0, -0.1968, 0.1183), left: (0, -0.1086, -0.1659), rake: 15)),
+    grips: Some((right: (0, -0.1968, 0.1183), left: (0, -0.1086, -0.1659), rake: 15, section: Some((centre: (0.0000, -0.0921), half: (0.0284, 0.0185))))),
     // Finger poses fitted to the model by tests/bake_hand_poses.gd:
     // curl in degrees per joint (index, middle, ring, little, thumb), each
     // finger's spread, and the hand's seat off its marker (m). Re-run it

@@ -10,9 +10,9 @@
 //! the aim). Weapon space has its origin at the rear sight, -Z toward the
 //! muzzle. A hand bone's space has +Y toward the knuckles and +Z out of the palm.
 
-use glam::{EulerRot, Mat3, Quat, Vec3};
+use glam::{EulerRot, Mat3, Quat, Vec2, Vec3};
 
-use crate::weapon::{Reload, Slot, WeaponDef};
+use crate::weapon::{Attachment, Reload, Slot, WeaponDef};
 
 /// Where the eyes are in the head bone's space (+Y up the head, +Z forward).
 pub const EYE_IN_HEAD: Vec3 = Vec3::new(0.0, 0.15, 0.09);
@@ -41,6 +41,13 @@ pub const SHELL_POUCH: Vec3 = Vec3::new(-0.14, -0.22, 0.14);
 /// How far (m) the support hand sits behind the weapon's `GripLeft` marker on
 /// a rifle handguard, so the support elbow bends and drops under the weapon.
 pub const SUPPORT_BACK: f32 = 0.08;
+/// Where a vertical foregrip moves the support hand from the weapon's
+/// `GripLeft` marker: down onto the grip under the handguard (the drawn
+/// weapon moves its marker the same way, `viewmodel.rs`).
+pub const FOREGRIP_SHIFT: Vec3 = Vec3::new(0.0, -0.045, 0.004);
+/// How far the support palm's centre sits off the surface it rests on: the
+/// glove and the flesh of the palm.
+pub const PALM_SKIN: f32 = 0.019;
 /// Where the grip sits in each hand's bone space (from the wrist).
 pub const RIGHT_PALM: Vec3 = Vec3::new(0.0, 0.085, 0.035);
 pub const LEFT_PALM: Vec3 = Vec3::new(0.0, 0.07, 0.05);
@@ -163,6 +170,18 @@ pub struct Grips {
     /// Pistol grip rake in degrees: how far the grip leans back from vertical.
     pub rake: f32,
     pub hold: Hold,
+    /// The handguard's or pump's cross-section where the support hand holds
+    /// it, across the barrel at `left`: the support palm rests on its
+    /// surface ([`Grips::support_contact`]).
+    pub section: Option<Section>,
+}
+
+/// A weapon's cross-section across the barrel (weapon space): its centre
+/// (x, y) and half its width and height.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Section {
+    pub centre: Vec2,
+    pub half: Vec2,
 }
 
 impl Default for Grips {
@@ -172,25 +191,51 @@ impl Default for Grips {
             left: Vec3::new(0.0, -0.06, -0.28),
             rake: 22.0,
             hold: Hold::Handguard,
+            section: None,
         }
     }
 }
 
 impl Grips {
     /// A weapon's grips as a third-person soldier holds them: the support hand
-    /// moves back along a rifle's handguard by [`SUPPORT_BACK`].
+    /// moves back along a rifle's handguard by [`SUPPORT_BACK`], with its palm
+    /// on the handguard's section, or down onto a vertical foregrip.
     pub fn held(def: &WeaponDef) -> Self {
         let mut grips = def.grips.map_or_else(Grips::default, |g| Grips {
             right: Vec3::from(g.right),
             left: Vec3::from(g.left),
             rake: g.rake,
             hold: Hold::Handguard,
+            section: g.section.map(|s| Section {
+                centre: Vec2::from(s.centre),
+                half: Vec2::from(s.half),
+            }),
         });
         grips.hold = Hold::of(def);
-        if grips.hold == Hold::Handguard {
-            grips.left.z += SUPPORT_BACK;
+        match grips.hold {
+            Hold::Handguard if def.attachment == Some(Attachment::Grip) => {
+                // A fist round the foregrip, not a palm on the handguard.
+                grips.left += FOREGRIP_SHIFT;
+                grips.section = None;
+            }
+            Hold::Handguard => grips.left.z += SUPPORT_BACK,
+            Hold::Pump => {}
+            Hold::Pistol => grips.section = None,
         }
         grips
+    }
+
+    /// Where the support hand's grip centre goes (weapon space) and where
+    /// that centre sits in the hand (hand space), for the hand's basis in
+    /// weapon space. On a handguard or pump with a section, the centre is the
+    /// section's and the palm rests on its surface: the section's reach
+    /// along the palm's normal (an ellipse's support) plus [`PALM_SKIN`].
+    /// Otherwise the marker, held [`LEFT_PALM`] from the wrist.
+    pub fn support_contact(&self, hand: Mat3) -> (Vec3, Vec3) {
+        match (self.hold, self.section) {
+            (Hold::Pistol, _) | (_, None) => (self.left, LEFT_PALM),
+            (_, Some(section)) => section_contact(section, self.left.z, hand),
+        }
     }
 
     /// The hand bones' bases in weapon space: right, then left. Measured from
@@ -207,6 +252,21 @@ impl Grips {
         };
         (right, left)
     }
+}
+
+/// The support palm on a section cut across the barrel at `z`, for a hand
+/// with basis `hand` (weapon space): the section's centre, and that centre
+/// in the hand's space (see [`Grips::support_contact`]).
+pub fn section_contact(section: Section, z: f32, hand: Mat3) -> (Vec3, Vec3) {
+    // The palm's normal (the hand's +Z) in weapon space, and how far the
+    // section reaches along it.
+    let n = hand.z_axis;
+    let half = section.half;
+    let reach = ((n.x * half.x).powi(2) + (n.y * half.y).powi(2)).sqrt();
+    (
+        section.centre.extend(z),
+        Vec3::new(LEFT_PALM.x, LEFT_PALM.y, reach + PALM_SKIN),
+    )
 }
 
 /// The support hand's basis in weapon space while it fetches a magazine: the
@@ -473,7 +533,8 @@ pub fn hand_targets(
     let (right_basis, left_basis) = grips.hand_bases();
     let right_hand = basis * right_basis;
     let right_wrist = at(grips.right) - right_hand * RIGHT_PALM;
-    let mut left_grip = at(grips.left);
+    let (contact, left_palm) = grips.support_contact(left_basis);
+    let mut left_grip = at(contact);
     let mut left_hand = basis * left_basis;
     if support_off > 0.0 {
         let off = support_off.clamp(0.0, 1.0);
@@ -482,7 +543,7 @@ pub fn hand_targets(
         let to = Quat::from_mat3(&(basis * fetch_basis()));
         left_hand = Mat3::from_quat(from.slerp(to, off));
     }
-    let left_wrist = left_grip - left_hand * LEFT_PALM;
+    let left_wrist = left_grip - left_hand * left_palm;
     [(right_wrist, right_hand), (left_wrist, left_hand)]
 }
 
@@ -617,6 +678,63 @@ mod tests {
         let (offset, rotation) = sprint.weapon_offset();
         let muzzle = rotation * Vec3::NEG_Z;
         assert!(offset.y < -0.4 && muzzle.y < -0.8, "{offset} {muzzle}");
+    }
+
+    #[test]
+    fn the_support_palm_rests_on_the_handguard() {
+        // Every two-handed weapon's file has the section where the third-
+        // person hand holds it, under the marker's line.
+        for key in ["m4", "ak47", "br3", "lsw6", "pdw9", "m40", "m870"] {
+            let grips = Grips::held(WeaponId::by_key(key).expect(key).def());
+            let section = grips.section.unwrap_or_else(|| panic!("{key}: no section"));
+            assert!(
+                section.half.min_element() > 0.01 && section.half.max_element() < 0.04,
+                "{key}: {section:?}"
+            );
+        }
+        // Palm straight up under a section: the grip is the section's centre
+        // and the palm sits its half height plus the glove below it.
+        let grips = Grips {
+            left: Vec3::new(0.0, -0.08, -0.2),
+            section: Some(Section {
+                centre: Vec2::new(0.0, -0.05),
+                half: Vec2::new(0.02, 0.025),
+            }),
+            ..Grips::default()
+        };
+        let up = basis_from_y_z(Vec3::NEG_Z, Vec3::Y);
+        let (point, palm) = grips.support_contact(up);
+        assert!((point - Vec3::new(0.0, -0.05, -0.2)).length() < 1e-5);
+        assert!((palm.z - (0.025 + PALM_SKIN)).abs() < 1e-5);
+        // Held in the hold's own basis (palm up and in), the arm's target
+        // puts the palm's surface on the section's edge below its centre.
+        let weapon = (Mat3::IDENTITY, Vec3::ZERO);
+        let [_, (wrist, hand)] = hand_targets(weapon, &grips, (Vec3::ZERO, 0.0));
+        let (_, palm) = grips.support_contact(hand);
+        let surface = wrist + hand * Vec3::new(palm.x, palm.y, PALM_SKIN);
+        let below = Vec3::new(0.0, -0.05, -0.2) - surface;
+        assert!(
+            (below.dot(hand.z_axis) - (palm.z - PALM_SKIN)).abs() < 1e-5
+                && below.y > 0.02
+                && below.y < 0.025 + 1e-4,
+            "on the handguard's underside: {surface}"
+        );
+        // Pistols cup the firing hand whatever the section.
+        let pistol = Grips {
+            hold: Hold::Pistol,
+            ..grips
+        };
+        assert_eq!(pistol.support_contact(up), (pistol.left, LEFT_PALM));
+    }
+
+    #[test]
+    fn a_foregrip_takes_the_support_hand_off_the_handguard() {
+        let plain = Grips::held(WeaponId::by_key("m4").expect("m4").def());
+        let grip = Grips::held(WeaponId::by_key("m4+grip").expect("m4+grip").def());
+        assert!(grip.section.is_none());
+        assert!(
+            (grip.left - (plain.left - Vec3::Z * SUPPORT_BACK + FOREGRIP_SHIFT)).length() < 1e-5
+        );
     }
 
     #[test]
