@@ -60,6 +60,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
   - [x] Bots throw grenades and run from live ones: frags at bunched or hiding enemies (cooked on Normal and Hard), flashbangs at a hiding enemy, smoke over a retreat to cover (`shooter_sim::bot::plan_throw`, `rust/game/src/net/bots.rs`).
   - [ ] Bots bank grenades off walls on purpose (today a bounce counts only when the checked flight happens to take one), and pop smoke to cover a plant or defuse once Search and Destroy has a bomb.
 - [x] Melee: a knife on its own button (V, R3) with a lunge at enemies within about 3 m, predicted and lag-compensated (`rust/sim/src/melee.rs`), swung in the support hand in first and third person (the knife modelled in Blender, `tools/build_knife.py`), knife kills in the feed, 130-point knife kills in Zombies, and bots that knife up close.
+  - [x] Knife kills crumple where they stand, from the strike (the client drops the body on its own strike; the server confirms).
 
 ### Movement
 

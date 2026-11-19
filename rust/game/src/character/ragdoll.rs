@@ -55,6 +55,15 @@ const STIFF_RANGE: f32 = 0.12;
 /// onto its knees where it stood.
 const LEG_STIFF_SECONDS: f32 = 0.4;
 const LEG_LOOSEN_SECONDS: f32 = 0.6;
+/// A knife kill does fold where it stood, as Call of Duty's knife deaths do:
+/// the legs give at once and the knees buckle, so the body is visibly going
+/// down within a tenth of a second instead of standing a third of one. Its
+/// body and leg stiffness (stiff, loosen seconds), the hips' drop (m/s), and
+/// how fast the knees are thrown forward (m/s).
+const CRUMPLE_BODY: (f32, f32) = (0.06, 0.3);
+const CRUMPLE_LEGS: (f32, f32) = (0.0, 0.2);
+const CRUMPLE_DROP: f32 = 1.6;
+const CRUMPLE_KNEES: f32 = 1.4;
 
 /// Push (N·s) at the part the killing shot hit: a base plus a share per
 /// force level (`protocol::HitPart::force`, about a tenth of the damage), so
@@ -314,8 +323,11 @@ pub struct Push {
     pub part: Option<BodyPart>,
     /// Where it hit (world), if known.
     pub point: Option<Vector3>,
-    /// Force level 0 to 15 (`protocol::HitPart::force`).
+    /// Force level 1 to 15 (`protocol::HitPart::force`).
     pub force: f32,
+    /// A knife: the body crumples where it stands ([`Ragdoll::start`])
+    /// instead of toppling stiff-legged with the push.
+    pub knife: bool,
 }
 
 impl Push {
@@ -511,6 +523,9 @@ pub struct Ragdoll {
     /// Bone indices, parents before children.
     order: Vec<usize>,
     age: f32,
+    /// Seconds held stiff and seconds to loosen: the body's, then the legs'.
+    body_stiff: (f32, f32),
+    leg_stiff: (f32, f32),
     id: InstanceId,
 }
 
@@ -707,6 +722,23 @@ impl Ragdoll {
             built.push((spec.part, body, a, axis));
         }
 
+        let crumple = push.is_some_and(|p| p.knife);
+        if crumple {
+            // The body drops as one (arms and head with it, so they do not
+            // fly up as the hips fall away) and the knees go forward, so the
+            // legs fold under it.
+            for (part, body, ..) in &mut built {
+                let v = body.get_linear_velocity();
+                let kick = match part {
+                    BodyPart::LeftLowerLeg | BodyPart::RightLowerLeg => front * CRUMPLE_KNEES,
+                    BodyPart::LeftUpperLeg | BodyPart::RightUpperLeg => {
+                        Vector3::DOWN * CRUMPLE_DROP * 0.5 + front * CRUMPLE_KNEES * 0.5
+                    }
+                    _ => Vector3::DOWN * CRUMPLE_DROP,
+                };
+                body.set_linear_velocity(v + kick);
+            }
+        }
         if let Some(push) = push {
             let target = push.part.unwrap_or(BodyPart::Chest);
             if let Some((_, body, ..)) = built.iter_mut().find(|(p, ..)| *p == target) {
@@ -729,6 +761,16 @@ impl Ragdoll {
             parents,
             order,
             age: 0.0,
+            body_stiff: if crumple {
+                CRUMPLE_BODY
+            } else {
+                (STIFF_SECONDS, LOOSEN_SECONDS)
+            },
+            leg_stiff: if crumple {
+                CRUMPLE_LEGS
+            } else {
+                (LEG_STIFF_SECONDS, LEG_LOOSEN_SECONDS)
+            },
             id: owner,
         })
     }
@@ -737,23 +779,25 @@ impl Ragdoll {
     /// body has come to rest or moved for [`MAX_SECONDS`]: the caller then
     /// [freezes](Self::freeze) it.
     pub fn step(&mut self, dt: f32) -> bool {
-        let loosening = self.age < LEG_STIFF_SECONDS + LEG_LOOSEN_SECONDS;
+        let (body_stiff, body_loosen) = self.body_stiff;
+        let (leg_stiff, leg_loosen) = self.leg_stiff;
+        let loosening = self.age < (leg_stiff + leg_loosen).max(body_stiff + body_loosen);
         self.age += dt;
         if loosening {
             let share = |stiff: f32, loosen: f32| {
                 let t = ((self.age - stiff) / loosen).clamp(0.0, 1.0);
                 STIFF_RANGE + (1.0 - STIFF_RANGE) * t * t * (3.0 - 2.0 * t)
             };
-            let body = share(STIFF_SECONDS, LOOSEN_SECONDS);
-            let legs = share(LEG_STIFF_SECONDS, LEG_LOOSEN_SECONDS);
+            let body = share(body_stiff, body_loosen);
+            let legs = share(leg_stiff, leg_loosen);
             for joint in &mut self.joints {
                 joint.set_range(if joint.leg { legs } else { body });
             }
         }
         // Loose: each cone moves its centre from the death pose to the
         // limb's rest, and settles there.
-        let body_loose = self.age >= STIFF_SECONDS + LOOSEN_SECONDS;
-        let legs_loose = self.age >= LEG_STIFF_SECONDS + LEG_LOOSEN_SECONDS;
+        let body_loose = self.age >= body_stiff + body_loosen;
+        let legs_loose = self.age >= leg_stiff + leg_loosen;
         for joint in &mut self.joints {
             if (joint.leg && legs_loose) || (!joint.leg && body_loose) {
                 joint.rebuild_at_rest();
@@ -763,7 +807,7 @@ impl Ragdoll {
         // Ground drag: capsules roll and skate on contact, so a body that has
         // stopped falling sheds its speed along the ground as cloth and kit
         // would drag.
-        if self.age > STIFF_SECONDS {
+        if self.age > body_stiff {
             let keep = (-GROUND_DRAG * dt).exp();
             for part in &mut self.parts {
                 let v = part.body.get_linear_velocity();
@@ -775,7 +819,7 @@ impl Ragdoll {
         }
         self.write_pose();
         // Not before every cone has been rebuilt about its rest and settled.
-        let settled = LEG_STIFF_SECONDS + LEG_LOOSEN_SECONDS + SLUMP_SECONDS;
+        let settled = leg_stiff + leg_loosen + SLUMP_SECONDS;
         let resting = self.age > settled && self.parts.iter().all(|p| p.body.is_sleeping());
         !(resting || self.age > MAX_SECONDS)
     }
@@ -1059,6 +1103,7 @@ mod tests {
             part,
             point: None,
             force,
+            knife: false,
         };
         let rifle = push(3.0, None).impulse();
         let shotgun = push(15.0, None).impulse();

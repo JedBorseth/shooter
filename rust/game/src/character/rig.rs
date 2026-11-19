@@ -1242,6 +1242,7 @@ impl SoldierRig {
                 part: None,
                 point: None,
                 force: DEFAULT_FORCE,
+                knife: false,
             },
             killed,
         );
@@ -1967,13 +1968,20 @@ pub fn push_of(direction: Vector3, point: Vector3, part: i64, force: f32) -> Pus
     let part = usize::try_from(part)
         .ok()
         .and_then(|p| shooter_sim::hitbox::SHAPE_PARTS.get(p).copied());
+    // A knife's level (`HitPart::KNIFE_FORCE`, 0) pushes like a light round,
+    // enough to tip the body away from the blade as it folds.
+    let knife = force <= f32::from(shooter_sim::net::protocol::KNIFE_FORCE);
     Push {
         direction,
         part,
         point: (point != Vector3::ZERO).then_some(point),
-        force,
+        force: if knife { KNIFE_PUSH_FORCE } else { force },
+        knife,
     }
 }
+
+/// The push level a knife hit takes (as a rifle round's).
+const KNIFE_PUSH_FORCE: f32 = 4.0;
 
 /// Every bone's local pose as the skeleton holds it.
 fn base_pose(skeleton: &Gd<Skeleton3D>) -> Vec<ragdoll::BonePose> {

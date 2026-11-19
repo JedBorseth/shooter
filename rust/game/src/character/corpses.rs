@@ -196,6 +196,15 @@ impl CorpseYard {
         });
     }
 
+    /// Takes a body back out of the yard and frees it (a death this client
+    /// predicted that the server did not confirm).
+    pub fn release(&mut self, mut rig: Gd<SoldierRig>) {
+        let id = rig.instance_id();
+        self.corpses.retain(|c| c.rig.instance_id() != id);
+        rig.bind_mut().freeze_ragdoll();
+        rig.queue_free();
+    }
+
     fn take_weapon(&mut self, mut view: Gd<Node3D>, velocity: Vector3, spin: Vector3) {
         let place = view.get_global_transform();
         let bounds = shown_bounds(&view);
