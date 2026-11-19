@@ -65,6 +65,9 @@ pub struct ThrowPose {
     pub in_hand: bool,
     pub pinned: bool,
     pub kind: Kind,
+    /// How far the support elbow swings out to the side (0..1), first
+    /// person only (`FpArms::throw_pole`).
+    pub elbow_out: f32,
 }
 
 /// The hand's blend, whether the grenade is in it, and whether its pin is
@@ -81,7 +84,30 @@ fn pose(keys: &[KnifeKey], p: f32, kind: Kind) -> ThrowPose {
         in_hand,
         pinned,
         kind,
+        elbow_out: 0.0,
     }
+}
+
+/// How far the first-person support elbow swings out to the side at
+/// throw progress `p`: down under the grenade while it comes up, the pin
+/// comes out, and it cooks; out beside the head as the arm draws back and
+/// comes over, so the forearm crosses in from the edge of the view instead
+/// of rising through its middle; and down again as the arm follows through
+/// and drops away.
+pub fn elbow_out(p: f32) -> f32 {
+    let cocked = equipment::COCKED_PROGRESS;
+    let release = equipment::release_progress();
+    crate::weapon_clips::keyed(
+        &[
+            (0.0, 0.0),
+            (cocked, 0.0),
+            (cocked + 0.06, 1.0),
+            (release, 1.0),
+            (release + 0.08, 0.0),
+            (1.0, 0.0),
+        ],
+        p,
+    )
 }
 
 /// The first-person throw at progress `p`, in the view (`ViewmodelRig`)
@@ -112,7 +138,7 @@ pub fn first_person(p: f32, kind: Kind) -> ThrowPose {
         ),
         (
             cocked + 0.06,
-            v(-0.25, -0.05, -0.38),
+            v(-0.27, -0.02, -0.4),
             v(0.2, 0.7, 0.7),
             v(1.0, 0.3, 0.0),
         ),
@@ -123,13 +149,13 @@ pub fn first_person(p: f32, kind: Kind) -> ThrowPose {
         // forearm lay along the line of sight and hid both.
         (
             release,
-            v(-0.12, 0.06, -0.42),
+            v(-0.16, 0.05, -0.52),
             v(0.1, 0.85, -0.5),
             v(1.0, -0.1, 0.0),
         ),
         (
             release + 0.1,
-            v(-0.03, -0.24, -0.52),
+            v(-0.05, -0.22, -0.6),
             v(0.3, -0.2, -0.9),
             v(0.6, -0.6, 0.4),
         ),
@@ -140,7 +166,10 @@ pub fn first_person(p: f32, kind: Kind) -> ThrowPose {
             v(1.0, 0.0, 0.0),
         ),
     ];
-    pose(&keys, p, kind)
+    ThrowPose {
+        elbow_out: elbow_out(p),
+        ..pose(&keys, p, kind)
+    }
 }
 
 /// The third-person throw at progress `p`, in the space of the weapon at
@@ -289,5 +318,22 @@ mod tests {
             assert_eq!(super::weapon_dip(p), 1.0, "fully lowered at {p}");
         }
         assert_eq!(super::weapon_dip(1.0), 0.0, "back up when the throw ends");
+    }
+
+    #[test]
+    fn the_elbow_swings_out_only_to_draw_back_and_throw() {
+        let cocked = equipment::COCKED_PROGRESS;
+        let release = equipment::release_progress();
+        // Down under the grenade while it comes up and while it cooks.
+        for p in [0.0, 0.2, cocked] {
+            assert_eq!(elbow_out(p), 0.0, "down at {p}");
+        }
+        // Out beside the head from the draw-back through the release.
+        for p in [cocked + 0.06, release] {
+            assert_eq!(elbow_out(p), 1.0, "out at {p}");
+        }
+        // Down again for the follow-through.
+        assert_eq!(elbow_out(release + 0.1), 0.0);
+        assert_eq!(elbow_out(1.0), 0.0);
     }
 }
