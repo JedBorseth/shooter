@@ -264,8 +264,16 @@ impl GrenadeShow {
         if age > 0.0 {
             node.set("start_age", &age.to_variant());
         }
+        // Placed before it enters the tree: blast scenes start their effect
+        // where they are in `_ready`.
+        let local = match parent.clone().try_cast::<Node3D>() {
+            Ok(parent) if parent.is_inside_tree() => {
+                parent.get_global_transform().affine_inverse() * at
+            }
+            _ => at,
+        };
+        node.set_position(local);
         parent.add_child(&node);
-        node.set_global_position(at);
         Some(node)
     }
 

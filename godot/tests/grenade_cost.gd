@@ -7,6 +7,7 @@ extends SceneTree
 ## Prints the mean and the worst frame of each. Needs a GPU:
 ##   xvfb-run -a -s "-screen 0 1920x1080x24" godot --path godot \
 ##     --resolution 1920x1080 --audio-driver Dummy --script res://tests/grenade_cost.gd
+## GRENADE_COST_ONLY=testing/medium,slamcity/high measures only those.
 
 const BLAST := preload("res://scenes/equipment/frag_blast.tscn")
 const SMOKE := preload("res://scenes/equipment/smoke_cloud.tscn")
@@ -31,8 +32,11 @@ func _run() -> void:
 	settings.set_setting(&"max_fps", 0)
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	RenderingServer.viewport_set_measure_render_time(root.get_viewport_rid(), true)
+	var only := OS.get_environment("GRENADE_COST_ONLY").split(",", false)
 	for map: String in VIEWS:
 		for preset: String in PRESETS:
+			if not only.is_empty() and not only.has("%s/%s" % [map, preset]):
+				continue
 			settings.set_graphics_preset(PRESETS[preset])
 			await _measure(map, preset)
 	settings.reset_to_defaults()
@@ -58,17 +62,18 @@ func _measure(map: String, preset: String) -> void:
 	player.set_look(spec[2], -0.05)
 	await _frames(120)
 	# Warm the blast's shaders and pipelines before measuring.
+	# Placed before entering the tree: blasts start their effect in `_ready`.
 	var warm := BLAST.instantiate() as Node3D
+	warm.position = spec[1] + Vector3(0, -50, 0)
 	scene.add_child(warm)
-	warm.global_position = spec[1] + Vector3(0, -50, 0)
 	await _frames(30)
 	var quiet := await _sample(scene, player, spec, false)
 	var fight := await _sample(scene, player, spec, true)
 	var yaw: float = spec[2]
 	var ahead: Vector3 = spec[1] + Vector3(-sin(yaw), 0, -cos(yaw)) * 7.0
 	var smoke := SMOKE.instantiate() as Node3D
+	smoke.position = ahead
 	scene.add_child(smoke)
-	smoke.global_position = ahead
 	await _frames(200)
 	var cloud := await _sample(scene, player, spec, false)
 	player.teleport(ahead, yaw)
@@ -103,10 +108,10 @@ func _sample(scene: Node, player: FpsPlayer, spec: Array, blasts: bool) -> Packe
 	for i in FRAMES:
 		if blasts and i % 20 == 0 and i < 60:
 			var blast := BLAST.instantiate() as Node3D
-			scene.add_child(blast)
-			blast.global_position = (
+			blast.position = (
 				spec[1] + forward * (6.0 + i * 0.07) + right * (float(i / 20) - 1.0) * 2.0
 			)
+			scene.add_child(blast)
 		player.set_look(yaw, -0.05)
 		await process_frame
 		times.append(RenderingServer.viewport_get_measured_render_time_gpu(root.get_viewport_rid()))

@@ -113,8 +113,8 @@ func _run() -> void:
 	_check(effects.explosions_played() == played + 2, "explosions play")
 	_check(effects.scorches_kept() == scorched + 1, "a second blast on the spot reuses its scorch")
 	var blast := (load("res://scenes/equipment/frag_blast.tscn") as PackedScene).instantiate()
+	blast.position = Vector3(-4, 0.0, -4)
 	level.add_child(blast)
-	blast.global_position = Vector3(-4, 0.0, -4)
 	_check(effects.explosions_played() == played + 3, "a frag's blast plays the pooled explosion")
 	for i in 12:
 		effects.explosion(Vector3(i * 3.0 - 18.0, 0.0, -6), Vector3.UP, 1.0)
@@ -131,6 +131,24 @@ func _run() -> void:
 	for f: Node in effects.get_children():
 		if f.has_method("stop"):
 			f.stop()
+
+	# Smoke clouds hang from a pool; a late one starts grown; a dropped one
+	# fades. A flashbang's pop plays from its own pool.
+	var cloud: Node3D = effects.smoke(Vector3(4, 0, -8), 0.0)
+	_check(cloud != null and effects.smokes_hanging() == 1, "a smoke cloud hangs")
+	var late: Node3D = effects.smoke(Vector3(-4, 0, -8), 8.0)
+	_check(late != null and is_equal_approx(late.radius(), 5.0), "a late cloud starts full grown")
+	for i in effects.budget()["smokes"] + 2:
+		effects.smoke(Vector3(i * 3.0, 0, -10), 0.0)
+	_check(effects.smokes_hanging() <= effects.budget()["smokes"], "clouds stay within the budget")
+	for child in effects.get_children():
+		if child.has_method("dissipate"):
+			child.dissipate()
+	var pops: int = effects.flashes_played()
+	effects.flash_pop(Vector3(0, 0, -6))
+	_check(effects.flashes_played() == pops + 1, "a flashbang pops")
+	await _frames(60)
+	_check(effects.smokes_hanging() == 0, "dropped clouds fade away")
 
 	# Fired cases fly, clink, and come to rest on the floor, within budget.
 	var clinks: int = effects.clinks_played()
