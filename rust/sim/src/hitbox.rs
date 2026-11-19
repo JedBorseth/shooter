@@ -495,12 +495,31 @@ pub fn hitboxes(pose: &HitboxPose) -> [Hitbox; COUNT] {
         let tilt = HUNCH_ANGLE + HUNCH_NECK;
         head = Mat3::from_axis_angle(Vec3::X, tilt * HUNCH_HEAD_UP * hunch) * curl * bend * head;
     }
+    // Holding a long gun, the upper chest blades (support shoulder forward)
+    // and the neck turns back, so the head keeps facing the aim.
+    let carry = carry_of(activity);
+    // A throw squares up while the support hand is off the weapon.
+    let blade = if activity.weapon.is_some() {
+        carry.blade() * (1.0 - activity.throw.map_or(0.0, action::throw_hand_blend))
+    } else {
+        0.0
+    };
+    if blade > 0.0 {
+        let axis = carry::blade_axis(pitch);
+        let turn = Mat3::from_axis_angle(axis, -blade);
+        let pivot = spine[2];
+        let about = |p: Vec3| pivot + turn * (p - pivot);
+        shoulders = shoulders.map(about);
+        spine[3] = about(spine[3]);
+        spine[4] = about(spine[4]);
+        let back = Mat3::from_axis_angle(axis, blade);
+        spine[4] = spine[3] + back * (spine[4] - spine[3]);
+    }
     let [spine_joint, chest, upper_chest, neck, head_joint] = spine;
     let head_centre = head_joint + head * poses::HEAD_CENTRE;
 
     // The weapon at the eyes, the hands on its grips, the elbows from IK.
     let eyes = head_joint + head * carry::EYE_IN_HEAD;
-    let carry = carry_of(activity);
     let weapon = carry::weapon_transform(eyes, pitch, &carry);
     let grips = activity
         .weapon
@@ -856,6 +875,40 @@ mod tests {
     /// Indices of the shapes: the hands are the far ends of the forearms.
     const LEFT_HAND: usize = 5;
     const RIGHT_HAND: usize = 7;
+
+    #[test]
+    fn a_long_gun_blades_the_shoulders_and_keeps_the_head() {
+        let bare = with(Activity::default());
+        let rifle = with(Activity {
+            weapon: m4(),
+            ..Activity::default()
+        });
+        let pistol = with(Activity {
+            weapon: WeaponId::by_key("m1911"),
+            ..Activity::default()
+        });
+        // The upper arms start at the shoulders (facing -Z: smaller z is
+        // further forward).
+        let (left, right) = (4, 6);
+        let ahead = |b: &[Hitbox; COUNT]| b[right].a.z - b[left].a.z;
+        assert!(
+            ahead(&rifle) > ahead(&bare) + 0.08,
+            "support shoulder forward: {} against {}",
+            ahead(&rifle),
+            ahead(&bare)
+        );
+        assert!(
+            (ahead(&pistol) - ahead(&bare)).abs() < 1e-4,
+            "pistols square up"
+        );
+        // The neck turns back: the head zone stays put.
+        assert!(
+            rifle[0].a.distance(bare[0].a) < 0.02,
+            "{} {}",
+            rifle[0].a,
+            bare[0].a
+        );
+    }
 
     #[test]
     fn a_throw_carries_the_support_arm_over_and_out() {

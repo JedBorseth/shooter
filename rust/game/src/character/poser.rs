@@ -558,6 +558,9 @@ pub struct PoseInput {
     /// The torso's twist from a hit (radians about up, positive left),
     /// shared by the spine and chest.
     pub twist: f32,
+    /// The upper chest's blade behind a long gun, support shoulder forward
+    /// (radians, `carry::Carry::blade`); the neck turns back as much.
+    pub blade: f32,
     /// How far each hand's grip on the weapon loosens (right, left), 0..1,
     /// on top of `ik`: an arm hit loosens one.
     pub arm_loose: [f32; 2],
@@ -745,6 +748,17 @@ impl SoldierPoser {
             let angle = head.length();
             rotate_global(skel, bone(Bone::NECK), axis, angle * 0.4);
             rotate_global(skel, bone(Bone::HEAD), axis, angle * 0.6);
+        }
+
+        // 2b. Bladed behind a long gun, as the hit zones pose it: the upper
+        // chest turns about the pitched spine's up (`carry::blade_axis`; the
+        // skeleton faces +Z, so its pitch axis is the body's turned round),
+        // and the neck turns back so the head still faces the aim.
+        if input.blade > 1e-4 {
+            let share: f32 = PITCH_SHARES[..3].iter().sum();
+            let axis = Basis::from_axis_angle(Vector3::RIGHT, -input.pitch * share) * Vector3::UP;
+            rotate_global(skel, bone(Bone::UPPER_CHEST), axis, -input.blade);
+            rotate_global(skel, bone(Bone::NECK), axis, input.blade);
         }
 
         if let Some(ladder) = input.ladder.filter(|l| l.weight > 0.0) {

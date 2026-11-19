@@ -21,6 +21,7 @@ use godot::classes::{
 };
 use godot::prelude::*;
 use shooter_sim::hitbox::Activity;
+use shooter_sim::hitbox::action;
 use shooter_sim::hitbox::carry::{self, Carry};
 use shooter_sim::hitbox::clock::Progress;
 use shooter_sim::hitbox::gait;
@@ -1492,6 +1493,16 @@ impl SoldierRig {
                 + Vector3::new(0.0, 0.0, -MOUNT_LEAN_DEGREES.to_radians()) * frame.mount,
             head_lean: self.head.value,
             twist: self.twist.value,
+            // Squared up while the support hand throws, as the hit zones.
+            blade: if frame.alive && self.weapon.is_some() {
+                let throwing = match frame.action {
+                    Some((ActionPose::Throw, t)) => action::throw_hand_blend(t),
+                    _ => 0.0,
+                };
+                carry.blade() * self.ik.clamp(0.0, 1.0) * (1.0 - throwing)
+            } else {
+                0.0
+            },
             arm_loose: self
                 .arm_drop
                 .map(|t| (1.0 - ARM_DROP_WEIGHT) * (t / ARM_DROP_SECONDS).clamp(0.0, 1.0)),

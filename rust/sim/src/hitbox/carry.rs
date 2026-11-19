@@ -25,8 +25,8 @@ pub const MAX_PITCH: f32 = 1.3;
 pub const SLIDE_PITCH_SCALE: f32 = 0.4;
 
 /// Weapon offsets from the eyes, in the aim frame.
-pub const ADS_OFFSET: Vec3 = Vec3::new(0.034, -0.045, -0.09);
-pub const HIP_OFFSET: Vec3 = Vec3::new(0.085, -0.13, -0.11);
+pub const ADS_OFFSET: Vec3 = Vec3::new(0.034, -0.045, -0.12);
+pub const HIP_OFFSET: Vec3 = Vec3::new(0.085, -0.13, -0.14);
 pub const SPRINT_OFFSET: Vec3 = Vec3::new(0.03, -0.3, -0.16);
 /// Degrees: pitch, yaw, roll.
 pub const HIP_ROTATION: Vec3 = Vec3::new(0.0, 3.0, -6.0);
@@ -38,9 +38,15 @@ pub const RELOAD_REACH: Vec3 = Vec3::new(-0.12, -0.32, 0.12);
 /// pump gun's shells (a side pouch), in weapon space.
 pub const PISTOL_POUCH: Vec3 = Vec3::new(-0.1, -0.4, 0.3);
 pub const SHELL_POUCH: Vec3 = Vec3::new(-0.14, -0.22, 0.14);
+/// Radians a soldier holding a long gun turns the upper chest about the spine,
+/// support shoulder forward, as a rifle stance is bladed toward the target:
+/// the support arm reaches further up the handguard and the stock comes out
+/// of the chest onto the firing shoulder. The neck turns back as much, so the
+/// head still faces the aim. Pistols are held square.
+pub const BLADE: f32 = 0.26;
 /// How far (m) the support hand sits behind the weapon's `GripLeft` marker on
 /// a rifle handguard, so the support elbow bends and drops under the weapon.
-pub const SUPPORT_BACK: f32 = 0.08;
+pub const SUPPORT_BACK: f32 = 0.02;
 /// Where a vertical foregrip moves the support hand from the weapon's
 /// `GripLeft` marker: down onto the grip under the handguard (the drawn
 /// weapon moves its marker the same way, `viewmodel.rs`).
@@ -275,6 +281,13 @@ pub fn fetch_basis() -> Mat3 {
     basis_from_y_z(Vec3::new(0.2, 0.3, -0.9), Vec3::new(0.8, 0.4, 0.0))
 }
 
+/// The axis the upper chest blades about (body space): up, tilted with the
+/// aim pitch as far as the spine has bent it below the neck.
+pub fn blade_axis(pitch: f32) -> Vec3 {
+    let share: f32 = PITCH_SHARES[..3].iter().sum();
+    Mat3::from_axis_angle(Vec3::X, pitch * share) * Vec3::Y
+}
+
 /// A basis whose +Y is `y` and whose +Z is as close to `z` as possible.
 pub fn basis_from_y_z(y: Vec3, z: Vec3) -> Mat3 {
     let y = y.try_normalize().unwrap_or(Vec3::Y);
@@ -398,6 +411,15 @@ impl Carry {
         let roll =
             deg(hip_rotation.z) * hip + deg(sprint_rotation.z) * carry + deg(tilt_roll) * dip;
         (offset, Mat3::from_euler(EulerRot::YXZ, yaw, pitch, roll))
+    }
+
+    /// How far the upper chest turns, support shoulder forward (radians,
+    /// [`BLADE`]): squared up in a sprint, and never with a pistol.
+    pub fn blade(&self) -> f32 {
+        if self.class == CarryClass::Pistol {
+            return 0.0;
+        }
+        BLADE * (1.0 - smoothstep(self.sprint))
     }
 
     /// The weapon dips and rolls toward the support hand mid-reload.
@@ -575,6 +597,24 @@ pub fn smoothstep(t: f32) -> f32 {
 mod tests {
     use super::*;
     use crate::weapon::WeaponId;
+
+    #[test]
+    fn blades_behind_long_guns_but_not_pistols_or_in_a_sprint() {
+        let rifle = Carry::default();
+        assert!((rifle.blade() - BLADE).abs() < 1e-6);
+        let sprinting = Carry {
+            sprint: 1.0,
+            ..Carry::default()
+        };
+        assert!(sprinting.blade().abs() < 1e-6);
+        let pistol = Carry {
+            class: CarryClass::Pistol,
+            ..Carry::default()
+        };
+        assert_eq!(pistol.blade(), 0.0);
+        // Level aim blades about straight up.
+        assert!((blade_axis(0.0) - Vec3::Y).length() < 1e-6);
+    }
 
     #[test]
     fn each_weapon_class_gets_its_hold() {
