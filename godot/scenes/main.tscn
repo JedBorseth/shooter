@@ -20,6 +20,8 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/hud.tscn" id="19_hud"]
 [ext_resource type="Texture2D" uid="uid://c21lj1e3rpr52" path="res://assets/skies/range_day.hdr" id="20_sky"]
 [ext_resource type="Shader" uid="uid://cg0wji0m4cgxn" path="res://shaders/day_sky.gdshader" id="21_daysky"]
+[ext_resource type="Texture2D" uid="uid://h2jj3jeti64r" path="res://assets/skies/testing_horizon.png" id="22_horizon"]
+[ext_resource type="Texture2D" uid="uid://b4wpcwl4xoinh" path="res://assets/skies/testing_horizon_depth.png" id="23_horizon_depth"]
 [ext_resource type="Material" path="res://materials/world/range_cover.tres" id="m_cover"]
 [ext_resource type="Material" path="res://materials/world/range_crate.tres" id="m_crate"]
 [ext_resource type="Material" path="res://materials/world/range_floor.tres" id="m_floor"]
@@ -42,6 +44,9 @@
 [sub_resource type="ShaderMaterial" id="SkyMat"]
 shader = ExtResource("21_daysky")
 shader_parameter/panorama = ExtResource("20_sky")
+shader_parameter/horizon = ExtResource("22_horizon")
+shader_parameter/horizon_depth = ExtResource("23_horizon_depth")
+shader_parameter/sky_turn = 1.576
 
 [sub_resource type="Sky" id="Sky"]
 sky_material = SubResource("SkyMat")
