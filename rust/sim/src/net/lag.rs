@@ -74,6 +74,8 @@ pub struct RemoteSample {
     pub ads: f32,
     pub weapon: WeaponId,
     pub reloading: bool,
+    /// The reload is from an empty magazine (`PlayerView::reload_empty`).
+    pub reload_empty: bool,
     pub alive: bool,
     pub shots_fired: u32,
     pub mantling: bool,
@@ -130,6 +132,7 @@ impl RemoteSample {
             ads: v.ads(),
             weapon: v.weapon,
             reloading: v.reloading,
+            reload_empty: v.reload_empty,
             alive: v.alive,
             shots_fired: v.shots_fired,
             mantling: v.mantling,

@@ -291,10 +291,11 @@ pub fn basis_from_y_z(y: Vec3, z: Vec3) -> Mat3 {
 const MAGAZINE_WELL: Vec3 = Vec3::new(-0.01, -0.03, -0.12);
 /// Where it pushes a pistol's magazine home, at the grip's base.
 const PISTOL_WELL: Vec3 = Vec3::new(0.0, -0.1, 0.01);
-/// A pistol's empty magazine drops from this share of the reload, out of
-/// sight after this much more.
+/// A pistol's magazine drops from this share of the reload.
 const PISTOL_DROP_START: f32 = 0.04;
-const PISTOL_DROP_TIME: f32 = 0.1;
+/// On an empty reload a box magazine drops at this share of the time to
+/// the seat: as the support hand reaches the well.
+const EMPTY_DROP: f32 = 0.3;
 
 /// Where a weapon's magazine is ([`Carry::magazine_pose`]).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -473,24 +474,27 @@ impl Carry {
     ///
     /// - a box magazine stays seated until the hand has it, rides the hand
     ///   down to the vest pouch, where the empty goes in and a fresh one
-    ///   comes out, and back up into the well as it seats;
+    ///   comes out, and back up into the well as it seats (a tactical
+    ///   reload);
+    /// - on an `empty` reload the hand reaches the well as the old magazine
+    ///   drops free ([`Carry::drop_point`]), and comes back from the pouch
+    ///   with the fresh one;
     /// - a pistol's drops out of the grip as the release is pressed, and a
     ///   fresh one comes up from the belt in the hand and is pushed home;
     /// - a pump gun has none to move.
-    pub fn magazine_pose(&self, grips: &Grips) -> MagazinePose {
+    ///
+    /// From the drop point the old magazine is out of the gun: the drawn
+    /// weapon lets a loose copy fall where it was.
+    pub fn magazine_pose(&self, grips: &Grips, empty: bool) -> MagazinePose {
         let p = self.reload_progress;
         let (target, _) = self.support_path(grips);
+        let dropped = self.drop_point(empty).is_some_and(|at| p >= at);
         match (self.class, self.timing) {
             (CarryClass::Shotgun, _) | (_, ReloadTiming::Shells { .. }) => MagazinePose::Seated,
             (CarryClass::Pistol, ReloadTiming::Magazine { seat }) => {
                 let well = grips.right + PISTOL_WELL;
-                let drop = (p - PISTOL_DROP_START) / PISTOL_DROP_TIME;
-                if p < PISTOL_DROP_START || p >= seat {
+                if !dropped || p >= seat {
                     MagazinePose::Seated
-                } else if drop < 1.0 {
-                    // Out of the grip and falling: down the grip's line and
-                    // a little forward.
-                    MagazinePose::At(Vec3::new(0.0, -0.3, -0.05) * drop * drop)
                 } else if p < seat * 0.55 {
                     MagazinePose::Out
                 } else {
@@ -498,12 +502,27 @@ impl Carry {
                 }
             }
             (_, ReloadTiming::Magazine { seat }) => {
-                if p < seat * 0.42 || p >= seat {
+                let held = if dropped { seat * 0.6 } else { seat * 0.42 };
+                if p >= seat || (!dropped && p < held) {
                     MagazinePose::Seated
+                } else if p < held {
+                    MagazinePose::Out
                 } else {
                     MagazinePose::At(target - (grips.right + MAGAZINE_WELL))
                 }
             }
+        }
+    }
+
+    /// The share of the reload at which the old magazine drops free of the
+    /// gun, if it does: a pistol's always, as the release is pressed; a box
+    /// magazine's on an `empty` reload, as the support hand reaches the
+    /// well (a tactical reload keeps it and stows it in the pouch).
+    pub fn drop_point(&self, empty: bool) -> Option<f32> {
+        match (self.class, self.timing) {
+            (CarryClass::Shotgun, _) | (_, ReloadTiming::Shells { .. }) => None,
+            (CarryClass::Pistol, ReloadTiming::Magazine { .. }) => Some(PISTOL_DROP_START),
+            (_, ReloadTiming::Magazine { seat }) => empty.then_some(seat * EMPTY_DROP),
         }
     }
 
@@ -747,16 +766,15 @@ mod tests {
     #[test]
     fn the_magazine_rides_the_support_hand_out_and_back() {
         let grips = Grips::default();
-        let at = |class: CarryClass, p: f32| {
-            Carry {
-                reload: 1.0,
-                reload_progress: p,
-                class,
-                timing: ReloadTiming::Magazine { seat: 0.6 },
-                ..Carry::default()
-            }
-            .magazine_pose(&grips)
+        let carry = |class: CarryClass, p: f32| Carry {
+            reload: 1.0,
+            reload_progress: p,
+            class,
+            timing: ReloadTiming::Magazine { seat: 0.6 },
+            ..Carry::default()
         };
+        let at = |class: CarryClass, p: f32| carry(class, p).magazine_pose(&grips, false);
+        let empty = |class: CarryClass, p: f32| carry(class, p).magazine_pose(&grips, true);
         // A rifle's is seated until the hand has it and once it seats.
         assert_eq!(at(CarryClass::Rifle, 0.1), MagazinePose::Seated);
         assert_eq!(at(CarryClass::Rifle, 0.7), MagazinePose::Seated);
@@ -769,14 +787,31 @@ mod tests {
             panic!("in the hand");
         };
         assert!(home.length() < 0.01, "seating: {home:?}");
-        // A pistol's falls out, is gone, then comes up in the hand.
-        let MagazinePose::At(falling) = at(CarryClass::Pistol, 0.09) else {
-            panic!("falling");
+        // A tactical reload stows it; an empty one drops it as the hand
+        // reaches the well, and the hand brings a fresh one from the pouch.
+        assert_eq!(carry(CarryClass::Rifle, 0.0).drop_point(false), None);
+        let drop = carry(CarryClass::Rifle, 0.0)
+            .drop_point(true)
+            .expect("drops");
+        assert!(drop > 0.1 && drop < 0.6 * 0.42, "{drop}");
+        assert_eq!(empty(CarryClass::Rifle, drop - 0.01), MagazinePose::Seated);
+        assert_eq!(empty(CarryClass::Rifle, 0.3), MagazinePose::Out);
+        let MagazinePose::At(fresh) = empty(CarryClass::Rifle, 0.4) else {
+            panic!("the fresh one in the hand");
         };
-        assert!(falling.y < -0.03);
-        assert_eq!(at(CarryClass::Pistol, 0.2), MagazinePose::Out);
-        assert!(matches!(at(CarryClass::Pistol, 0.45), MagazinePose::At(_)));
-        assert_eq!(at(CarryClass::Pistol, 0.65), MagazinePose::Seated);
+        assert!(fresh.y < -0.1, "{fresh:?}");
+        assert_eq!(empty(CarryClass::Rifle, 0.7), MagazinePose::Seated);
+        // A pistol's drops out whichever reload, is gone, then comes up in
+        // the hand.
+        for empty in [false, true] {
+            let pose = |p: f32| carry(CarryClass::Pistol, p).magazine_pose(&grips, empty);
+            let drop = carry(CarryClass::Pistol, 0.0).drop_point(empty);
+            assert_eq!(drop, Some(PISTOL_DROP_START));
+            assert_eq!(pose(0.02), MagazinePose::Seated);
+            assert_eq!(pose(0.2), MagazinePose::Out);
+            assert!(matches!(pose(0.45), MagazinePose::At(_)));
+            assert_eq!(pose(0.65), MagazinePose::Seated);
+        }
         // A pump gun has none.
         let pump = Carry {
             reload: 1.0,
@@ -789,6 +824,7 @@ mod tests {
             },
             ..Carry::default()
         };
-        assert_eq!(pump.magazine_pose(&grips), MagazinePose::Seated);
+        assert_eq!(pump.magazine_pose(&grips, true), MagazinePose::Seated);
+        assert_eq!(pump.drop_point(true), None);
     }
 }

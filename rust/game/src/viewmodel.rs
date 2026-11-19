@@ -1466,6 +1466,25 @@ impl WeaponView {
         }
     }
 
+    /// Third person: the magazine (`WorldMagazine`) and where it sits in the
+    /// gun now (global, at its drawn scale), for a loose copy that drops
+    /// from there. `None` for models without one.
+    pub fn world_magazine_seated(&mut self) -> Option<(Gd<MeshInstance3D>, Transform3D)> {
+        if !self.world_model {
+            return None;
+        }
+        if self.world_magazine.is_none() {
+            let view = self.to_gd().upcast::<Node3D>();
+            self.world_magazine = Part::find(&view, "WorldMagazine");
+        }
+        let part = self.world_magazine.as_ref()?;
+        let mesh = part.node.clone().try_cast::<MeshInstance3D>().ok()?;
+        Some((
+            mesh,
+            self.base().get_global_transform() * part.to_view * part.rest,
+        ))
+    }
+
     /// Shows or hides one of the model's parts, if it has it.
     fn show_part(&self, name: &str, visible: bool) {
         if let Some(mut node) = self
