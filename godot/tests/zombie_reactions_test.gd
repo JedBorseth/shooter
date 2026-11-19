@@ -90,10 +90,12 @@ func _mid_air_death() -> void:
 ## Zombies die hunched, arms reaching. Killed from each side, by a headshot,
 ## and by a shotgun, every body ends lying with no knee held up over its hip
 ## or hand over its shoulder: the joints settle about the limbs' natural
-## rest, not about the pose each died in.
+## rest, not about the pose each died in. They come to rest and stop on
+## their own rather than at the time cap.
 func _limbs_rest_down() -> void:
 	var worst_knee := 0.0
 	var worst_hand := 0.0
+	var rested := 0
 	# Travel, hit shape, force: chest hits from each side, a headshot, and a
 	# shotgun blast.
 	var hits := [
@@ -115,10 +117,17 @@ func _limbs_rest_down() -> void:
 			if t > 120 and rig.is_still():
 				break
 		var raised := _raised(rig)
+		if rig.came_to_rest():
+			rested += 1
 		print(
 			(
-				"zombie %d: knee %.2f m over its hip, hand %.2f m over its shoulder"
-				% [i, raised.x, raised.y]
+				"zombie %d: knee %.2f m over its hip, hand %.2f m over its shoulder, %s"
+				% [
+					i,
+					raised.x,
+					raised.y,
+					"came to rest" if rig.came_to_rest() else "frozen by the time cap"
+				]
 			)
 		)
 		worst_knee = maxf(worst_knee, raised.x)
@@ -127,6 +136,12 @@ func _limbs_rest_down() -> void:
 			zombie.queue_free()
 	_check(worst_knee < 0.2, "no knee is left raised over its hip (%.2f m)" % worst_knee)
 	_check(worst_hand < 0.2, "no hand is left raised over its shoulder (%.2f m)" % worst_hand)
+	# Bodies settle and stop on their own, not frozen mid-move by the 5 s
+	# cap (one slow topple may still run to it).
+	_check(
+		rested >= hits.size() - 1,
+		"bodies come to rest before the time cap (%d of %d)" % [rested, hits.size()]
+	)
 
 
 ## How far the highest knee sits above its own hip joint (`x`) and the

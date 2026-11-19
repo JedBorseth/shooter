@@ -42,6 +42,18 @@ pub const MAX_SECONDS: f32 = 5.0;
 /// How fast a body that has stopped falling loses its speed along the
 /// ground (1/s).
 const GROUND_DRAG: f32 = 2.5;
+/// Slower than this along the ground (m/s), a part is left to friction.
+const DRAG_STOP: f32 = 0.2;
+/// The capsules' damping while the body falls (linear, angular; 1/s).
+const FALL_DAMP: (f32, f32) = (0.1, 1.5);
+/// A settled body counts as at rest once every part has moved slower than
+/// this (m/s, and rad/s about itself) for [`QUIET_SECONDS`]. Physics sleep
+/// alone is not enough: a capsule rocking against a joint's limit, or
+/// spinning slowly about its own length, keeps the whole body awake until
+/// the [`MAX_SECONDS`] cap froze it, sometimes mid-fall with a limb up.
+const QUIET_SPEED: f32 = 0.08;
+const QUIET_SPIN: f32 = 0.6;
+const QUIET_SECONDS: f32 = 0.25;
 /// Whole-body mass (kg).
 const MASS: f32 = 70.0;
 /// A body hit hard does not fold at once: for the first moments its joints
@@ -523,6 +535,10 @@ pub struct Ragdoll {
     /// Bone indices, parents before children.
     order: Vec<usize>,
     age: f32,
+    /// Seconds every part has been quiet (see [`QUIET_SPEED`]).
+    quiet: f32,
+    /// Whether it came to rest before [`MAX_SECONDS`] froze it.
+    pub rested: bool,
     /// Seconds held stiff and seconds to loosen: the body's, then the legs'.
     body_stiff: (f32, f32),
     leg_stiff: (f32, f32),
@@ -650,8 +666,8 @@ impl Ragdoll {
             body.set_collision_layer(RAGDOLL_LAYER);
             body.set_collision_mask(WORLD_LAYER);
             body.set_mass(MASS * spec.mass);
-            body.set_linear_damp(0.1);
-            body.set_angular_damp(1.5);
+            body.set_linear_damp(FALL_DAMP.0);
+            body.set_angular_damp(FALL_DAMP.1);
             body.set_physics_material_override(&material);
             body.add_child(&collision);
             let transform = Transform3D::new(basis_with_y(axis), (a + z) * 0.5);
@@ -761,6 +777,8 @@ impl Ragdoll {
             parents,
             order,
             age: 0.0,
+            quiet: 0.0,
+            rested: false,
             body_stiff: if crumple {
                 CRUMPLE_BODY
             } else {
@@ -806,12 +824,17 @@ impl Ragdoll {
         }
         // Ground drag: capsules roll and skate on contact, so a body that has
         // stopped falling sheds its speed along the ground as cloth and kit
-        // would drag.
+        // would drag. Only while a part still slides: setting a velocity
+        // wakes the body, so a drag written every frame never lets it sleep.
         if self.age > body_stiff {
             let keep = (-GROUND_DRAG * dt).exp();
             for part in &mut self.parts {
+                if part.body.is_sleeping() {
+                    continue;
+                }
                 let v = part.body.get_linear_velocity();
-                if v.y.abs() < 1.0 {
+                let along = Vector2::new(v.x, v.z).length();
+                if v.y.abs() < 1.0 && along > DRAG_STOP {
                     part.body
                         .set_linear_velocity(Vector3::new(v.x * keep, v.y, v.z * keep));
                 }
@@ -820,7 +843,16 @@ impl Ragdoll {
         self.write_pose();
         // Not before every cone has been rebuilt about its rest and settled.
         let settled = leg_stiff + leg_loosen + SLUMP_SECONDS;
-        let resting = self.age > settled && self.parts.iter().all(|p| p.body.is_sleeping());
+        let quiet = self.parts.iter().all(|p| {
+            p.body.is_sleeping()
+                || (p.body.get_linear_velocity().length() < QUIET_SPEED
+                    && p.body.get_angular_velocity().length() < QUIET_SPIN)
+        });
+        self.quiet = if quiet { self.quiet + dt } else { 0.0 };
+        let resting = self.age > settled && self.quiet >= QUIET_SECONDS;
+        if resting {
+            self.rested = true;
+        }
         !(resting || self.age > MAX_SECONDS)
     }
 

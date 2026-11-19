@@ -370,6 +370,8 @@ pub struct SoldierRig {
     /// Where the hips were as the ragdoll started and where they are now.
     fall_from: Vector3,
     fall_to: Vector3,
+    /// Whether the last ragdoll came to rest before its time cap froze it.
+    came_to_rest: bool,
     was_alive: bool,
     was_mantling: bool,
     /// The stride phase and mantle progress drawn (the server's, or the
@@ -519,6 +521,13 @@ impl SoldierRig {
     pub fn fall_distance(&self) -> f32 {
         let moved = self.fall_to - self.fall_from;
         Vector3::new(moved.x, 0.0, moved.z).length()
+    }
+
+    /// Whether the last ragdoll came to rest on its own, rather than being
+    /// frozen by its time cap or the cap on moving bodies (tests).
+    #[func]
+    pub fn came_to_rest(&self) -> bool {
+        self.came_to_rest
     }
 
     /// Whether the body is a ragdoll still moving (tests).
@@ -1539,6 +1548,7 @@ impl SoldierRig {
                 if moving {
                     self.death = Death::Ragdoll(ragdoll);
                 } else {
+                    self.came_to_rest = ragdoll.rested;
                     ragdoll.freeze();
                     self.death = Death::Still;
                 }
@@ -1589,6 +1599,7 @@ impl SoldierRig {
         };
         self.fall_from = ragdoll.hips();
         self.fall_to = self.fall_from;
+        self.came_to_rest = false;
         let cap = if self.zombie {
             ragdoll::MAX_SIMULATING_ZOMBIES
         } else {
