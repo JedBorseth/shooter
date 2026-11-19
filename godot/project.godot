@@ -16,6 +16,7 @@ UiThemeLoader="*res://scripts/ui/ui_theme_loader.gd"
 MenuFocus="*res://scripts/ui/menu_focus.gd"
 Settings="*res://scripts/settings.gd"
 Net="*res://scripts/net/bootstrap.gd"
+CyclopsAutoload="*res://addons/cyclops_level_builder/cyclops_autoload.tscn"
 
 [debug]
 file_logging/enable_file_logging=true
@@ -30,7 +31,7 @@ window/stretch/aspect="expand"
 window/vsync/vsync_mode=2
 
 [editor_plugins]
-enabled=PackedStringArray("res://addons/lightmap_baker/plugin.cfg")
+enabled=PackedStringArray("res://addons/cyclops_level_builder/plugin.cfg", "res://addons/godot_ai_mcp/plugin.cfg", "res://addons/lightmap_baker/plugin.cfg")
 
 [input]
 
