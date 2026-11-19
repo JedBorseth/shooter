@@ -94,6 +94,9 @@ const DESCRIPTIONS := {
 	),
 }
 
+## The player that settings (look speed, input device, FOV) are pushed onto.
+## Left empty, the map's own `Player` node beside the menu is used, so a map
+## that forgets the path still gets controller look and sensitivity.
 @export var player_path: NodePath
 @export var title_menu := false
 
@@ -142,8 +145,7 @@ var _owns_pause := false
 
 
 func _ready() -> void:
-	if not player_path.is_empty():
-		_player = get_node_or_null(player_path)
+	_player = _find_player()
 	_build_settings()
 	_setup_sounds()
 
@@ -296,6 +298,13 @@ func _release_pause() -> void:
 
 func _exit_tree() -> void:
 	_release_pause()
+
+
+func _find_player() -> Node:
+	if not player_path.is_empty():
+		return get_node_or_null(player_path)
+	var map := get_parent()
+	return map.get_node_or_null(^"Player") if map != null else null
 
 
 func _set_player_input(enabled: bool) -> void:
