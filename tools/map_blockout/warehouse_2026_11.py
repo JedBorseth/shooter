@@ -80,9 +80,10 @@ label(26.2, -24, "SHIFT\nOFFICE\n2F", "QC LAB\n2F", size=8)
 # Row north.
 solid(-HALL, -22, -24, -13)                  # finished-goods racking (tall)
 label(-26, -18.5, "RACKING", "RACKING", size=8)
-solid(-17.5, -11.5, -21.5, -15.5)            # north line: flexo units, and a
-solid(-10, -4, -21.5, -15.5)                 # 1.4 m crouch tunnel under the
-door(-11.5, -10, -21.5, -15.5)               # transfer conveyor between them
+solid(-17.5, -13.5, -21.5, -15.5)            # north line: flexo units, and a
+solid(-12, -4, -21.5, -15.5)                 # 1.4 m crouch tunnel under the
+door(-13.5, -12, -21.5, -15.5)               # transfer conveyor between them,
+                                             # opening onto the cross aisle
 label(-10.8, -18.5, "FLEXO LINE", "ROTARY LINE", size=8)
 solid(0, 13, -21.5, -15.5)                   # die cutter
 label(6.5, -18.5, "DIE CUTTER", "FOLDER-GLUER", size=8)

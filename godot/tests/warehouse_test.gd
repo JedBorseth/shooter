@@ -4,6 +4,7 @@ extends SceneTree
 ## player lands and walks, and Home returns to the title screen.
 
 const LEVEL := "res://scenes/warehouse.tscn"
+const LAYOUT_JSON := "res://tools/warehouse_photo_layout.json"
 
 var _failures := 0
 
@@ -160,12 +161,21 @@ func _check_prop_collision(map: Node) -> void:
 		"props collide with fitted clip boxes (%d boxes, %d props)" % [clipped, props]
 	)
 	var space := (map as Node3D).get_world_3d().direct_space_state
+	var layout: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(LAYOUT_JSON))
 	for tag in ["N", "S"]:
 		var tunnel := map.get_node_or_null("PhotoPass/Boxes/Tunnel%sConveyor" % tag) as Node3D
 		_check(tunnel != null, "the %s line has a crouch tunnel" % tag)
 		if tunnel != null:
+			# Crouch through the whole tunnel, mouth to mouth.
+			var length := (
+				((tunnel.get_node("Shape") as CollisionShape3D).shape as BoxShape3D).size.z
+			)
+			var clear := true
+			for k in 9:
+				var z := tunnel.global_position.z + (k / 8.0 - 0.5) * (length + 1.0)
+				clear = clear and _fits(space, Vector3(tunnel.global_position.x, 0.0, z), 1.1)
+			_check(clear, "a crouching player gets through tunnel %s, mouth to mouth" % tag)
 			var under := Vector3(tunnel.global_position.x, 0.0, tunnel.global_position.z)
-			_check(_fits(space, under, 1.1), "a crouching player fits through tunnel %s" % tag)
 			_check(not _fits(space, under, 1.8), "a standing player does not fit tunnel %s" % tag)
 		for path in ["Room%sRoof" % tag, "Office%sFloorA" % tag, "Crossover%sDeck" % tag]:
 			var top := map.get_node_or_null("PhotoPass/Boxes/" + path) as StaticBody3D
@@ -174,6 +184,65 @@ func _check_prop_collision(map: Node) -> void:
 				var size := ((top.get_node("Shape") as CollisionShape3D).shape as BoxShape3D).size
 				var feet := top.global_position + Vector3(0, size.y / 2 + 0.02, 0)
 				_check(_fits(space, feet, 1.8), "players can stand on %s" % path)
+	# The crate steps up to each room roof: floor, 1.1 m, 2.2 m, roof, each
+	# rise within the 1.35 m mantle (layout: half(), the ink and plate rooms).
+	for steps in [
+		[Vector3(2.6, 0, -19.9), Vector3(4.0, 0, -19.9), Vector3(4.0, 0, -21.5)],
+		[Vector3(24.4, 0, 26.9), Vector3(23.0, 0, 26.9), Vector3(23.0, 0, 28.5)]
+	]:
+		var heights := []
+		for p: Vector3 in steps:
+			heights.append(snappedf(_ground(space, p), 0.01))
+		_check(
+			(
+				absf(heights[0] - 1.1) < 0.15
+				and absf(heights[1] - 2.2) < 0.15
+				and absf(heights[2] - 3.4) < 0.1
+			),
+			"crates step 1.1, 2.2, then the roof at 3.4 m, got %s" % [heights]
+		)
+	# Every stair rises steadily from floor to landing with standing room all
+	# the way up (a wall, slab, or rail across it would stop players).
+	for b in layout.boxes:
+		if is_zero_approx(b.get("pitch", 0.0)):
+			continue
+		var lo := Vector3(b.lo[0], b.lo[1], b.lo[2])
+		var hi := Vector3(b.hi[0], b.hi[1], b.hi[2])
+		var along_z: bool = is_zero_approx(b.yaw)
+		var mid := (lo + hi) / 2
+		var heights := []
+		var points := []
+		for k in 9:
+			var t := 0.06 + 0.88 * k / 8.0
+			var p := Vector3(
+				mid.x if along_z else lerpf(lo.x, hi.x, t),
+				0,
+				lerpf(lo.z, hi.z, t) if along_z else mid.z
+			)
+			points.append(p)
+			heights.append(snappedf(_ground(space, p, hi.y + 0.6), 0.01))
+		if heights[0] > heights[-1]:
+			heights.reverse()
+			points.reverse()
+		var room := true
+		for k in points.size():
+			var p: Vector3 = points[k]
+			room = room and _fits(space, Vector3(p.x, heights[k] + 0.05, p.z), 1.8)
+		var steady := true
+		for k in range(1, heights.size()):
+			steady = steady and heights[k] > heights[k - 1] and heights[k] - heights[k - 1] < 0.6
+		_check(steady and heights[-1] > hi.y - 0.5, "%s climbs steadily: %s" % [b.name, heights])
+		_check(room, "%s has standing room from foot to head" % b.name)
+
+
+## The height of the first walkable surface under `p`, looking down from
+## `from` (by default just under the hall's joists).
+func _ground(space: PhysicsDirectSpaceState3D, p: Vector3, from := 8.0) -> float:
+	var ray := PhysicsRayQueryParameters3D.create(
+		Vector3(p.x, from, p.z), Vector3(p.x, -1.0, p.z), 1
+	)
+	var hit := space.intersect_ray(ray)
+	return hit.position.y if hit else -9.0
 
 
 ## A player capsule `height` tall, standing with its feet at `feet`, touches

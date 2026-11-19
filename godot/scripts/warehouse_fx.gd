@@ -7,6 +7,9 @@ extends Node3D
 ##   beacon   a forklift's amber beacon, two lamps turning.
 ## Everything is cosmetic: nothing here touches collision or gameplay.
 
+## The crossover deck under a torn tray's sparks (world height).
+const DECK_Y := 2.75
+
 @export var kind := "sparks"
 
 var _rng := RandomNumberGenerator.new()
@@ -81,8 +84,14 @@ func _build_sparks() -> void:
 	var tex := GradientTexture1D.new()
 	tex.gradient = ramp
 	pm.color_ramp = tex
+	# The sparks bounce on the crossover deck under the torn tray: GPU
+	# particles collide only with particle colliders, so give them one there.
 	pm.collision_mode = ParticleProcessMaterial.COLLISION_RIGID
 	pm.collision_bounce = 0.3
+	var deck := GPUParticlesCollisionBox3D.new()
+	deck.size = Vector3(10.0, 0.3, 5.0)
+	deck.position = Vector3(0, DECK_Y - 0.15 - position.y, 0)
+	add_child(deck)
 	_burst.process_material = pm
 	var quad := QuadMesh.new()
 	quad.size = Vector2(0.025, 0.12)

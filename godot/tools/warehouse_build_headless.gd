@@ -23,7 +23,16 @@ func _run() -> void:
 		Array(text.split(",", false))
 		if not text.is_empty()
 		else [
-			"structure", "lighting", "utilities", "machines", "stock", "patches", "clip", "gameplay"
+			"structure",
+			"lighting",
+			"utilities",
+			"machines",
+			"stock",
+			"patches",
+			"boxes",
+			"effects",
+			"clip",
+			"gameplay",
 		]
 	)
 	var multimesh_parts := parts.filter(func(p: String) -> bool: return p in MULTIMESH_PARTS)

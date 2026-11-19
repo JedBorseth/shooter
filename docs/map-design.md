@@ -232,9 +232,9 @@ Duty clips stairs, and rails as one box from deck to top rail.
 | Measure | Photo pass | 6v6 rebuild | Target |
 | --- | --- | --- | --- |
 | Start to start | 110 m (14.8 s) | 75 m (10.1 s) | 75 to 90 m |
-| Median longest eye-height line | 33.8 m | 20.8 m | 32 m or less |
+| Median longest eye-height line | 33.8 m | 20.5 m | 32 m or less |
 | Floor that sees past 40 m | 33% | 2% | under 10% |
-| Longest line | 80 m | 48 m | 60 m or less |
+| Longest line | 80 m | 50 m | 60 m or less |
 
 Measured on the built scene: `godot/tests/warehouse_grid.gd` samples its real
 collision on a 0.5 m grid and [`warehouse_measure.py`](../tools/map_blockout/warehouse_measure.py)

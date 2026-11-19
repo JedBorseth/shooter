@@ -466,9 +466,9 @@ def half(side):
     # tunnel, the die-cut (north) / folder-gluer (south) line, rolls end-on.
     rack_block(world((-30.5, -22, -24, -13), side))
     first = [("die_cutter_feed", 4.8, 2.0, 2.55)] if side == 0 else [("cream_aux_station", 4.6, 2.15, 1.85)]
-    machine_block(world((-17.5, -11.5, -21.5, -15.5), side), first)
-    machine_block(world((-10, -4, -21.5, -15.5), side), first)
-    tx0, tx1, tz0, tz1 = world((-11.5, -10, -21.5, -15.5), side)
+    machine_block(world((-17.5, -13.5, -21.5, -15.5), side), first)
+    machine_block(world((-12, -4, -21.5, -15.5), side), first)
+    tx0, tx1, tz0, tz1 = world((-13.5, -12, -21.5, -15.5), side)
     box(f"Tunnel{tag}Conveyor", tx0, tx1, 1.4, 1.62, tz0, tz1, "steel")
     for k, z in enumerate((tz0 + 0.1, tz1 - 0.1)):
         box(f"Tunnel{tag}Leg{k}a", tx0, tx0 + 0.08, 0, 1.4, z - 0.04, z + 0.04, "yellow", False)
@@ -514,7 +514,7 @@ def half(side):
     else:
         stair(f"Crossover{tag}Stair", px1, px1 + 5.0, pz1 - 1.5, pz1 - 0.1, 0.0, 2.75, "w")
     # A torn cable tray over the crossover spits sparks.
-    sx, sz = at(12.5, -9.5, side)
+    sx, sz = at(8.5, -9.5, side)  # over the deck's middle
     EFFECTS.append(dict(kind="sparks", pos=[round(sx, 2), 5.6, round(sz, 2)]))
     stock_block(world((17, 25, -9, -3), side), 3.0)
     stock_block(world((27, 29, -6, -3), side), 1.1, LOW_MODELS)
@@ -573,7 +573,7 @@ for side, team in ((0, 0), (1, 1)):
 # Respawns in the aisles of each half, facing the middle.
 for side in (0, 1):
     for x, z in [(-26, -28.5), (-3, -28), (15, -28.5), (-19.7, -18), (-2, -18), (14.8, -14),
-                 (25.5, -12.5), (-28.5, -1), (-14.5, -6), (2, -5.5), (15, -5), (29.5, -10.5),
+                 (25.5, -12.5), (-28.5, -1), (-14.5, -6), (2, -5.5), (15, -5), (27.5, -11.5),
                  (-25, -33), (25, -33)]:
         wx, wz = at(x, z, side)
         SPAWNS.append((round(wx, 2), 0.0, round(wz, 2), facing(wx, wz, *CENTRE), -1))

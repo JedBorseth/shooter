@@ -33,6 +33,9 @@ static func build(root: Node3D, parts: Array = ["shell", "structure", "lighting"
 	_data = JSON.parse_string(FileAccess.get_file_as_string(LAYOUT))
 	_clip = JSON.parse_string(FileAccess.get_file_as_string(CLIP)) if FileAccess.file_exists(CLIP) else {}
 	_scenes = {}
+	# Effects attach to the high-bays (flicker): rebuilt lights need them again.
+	if "lighting" in parts and not "effects" in parts:
+		parts = parts + ["effects"]
 	if "shell" in parts:
 		_clear_old()
 		_build_shell()
