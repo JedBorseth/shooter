@@ -62,6 +62,11 @@ const GROAN_MAX: f32 = 9.0;
 /// second and every fourth frame.
 const HALF_RATE_DISTANCE: f32 = 18.0;
 const QUARTER_RATE_DISTANCE: f32 = 32.0;
+/// Each zombie walks up to this share faster or slower than its round's
+/// speed (evenly spread, so the horde's average is the round's), and its
+/// shamble's cadence follows its speed: a crowd spreads out and falls out of
+/// step instead of marching in a block.
+const SPEED_JITTER: f32 = 0.08;
 
 #[derive(GodotClass)]
 #[class(init, base = CharacterBody3D)]
@@ -142,6 +147,7 @@ impl ICharacterBody3D for Zombie {
         self.voice = self.base().try_get_node_as::<AudioStreamPlayer3D>("Voice");
         self.seed = self.base().instance_id().to_i64() as u32;
         self.groan_in = GROAN_MIN + rng::unit(self.seed, 0) * (GROAN_MAX - GROAN_MIN);
+        self.speed *= speed_factor(self.seed);
     }
 
     /// Animation runs per rendered frame (less often far away); movement and
@@ -586,5 +592,28 @@ impl Zombie {
         target.call("take_damage", &[damage.to_variant(), from.to_variant()]);
         self.hits_landed += 1;
         self.signals().struck().emit();
+    }
+}
+
+/// This zombie's share of its round's speed, from its seed: 1 ± [`SPEED_JITTER`].
+fn speed_factor(seed: u32) -> f32 {
+    1.0 + SPEED_JITTER * (rng::unit(seed, 2) * 2.0 - 1.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn speeds_spread_round_the_rounds_speed() {
+        let factors: Vec<f32> = (0..400).map(speed_factor).collect();
+        let mean = factors.iter().sum::<f32>() / factors.len() as f32;
+        assert!((mean - 1.0).abs() < 0.01, "mean {mean}");
+        assert!(factors.iter().all(|f| (f - 1.0).abs() <= SPEED_JITTER));
+        let spread = factors
+            .iter()
+            .copied()
+            .fold(0.0f32, |m, f| m.max((f - 1.0).abs()));
+        assert!(spread > SPEED_JITTER * 0.8, "spread {spread}");
     }
 }

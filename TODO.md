@@ -224,6 +224,7 @@ Done: rounds with a growing, toughening horde, zombies that walk straight at the
 - [ ] Playable versions of the menu's maps; today every map loads the one arena.
 - [x] A cheaper zombie for big hordes: two surfaces per character instead of eleven (a 24-zombie horde draws about 195 calls instead of 630).
 - [x] Animate distant zombies at a reduced rate: every second frame beyond 18 m and every fourth beyond 32 m, staggered across zombies.
+- [x] A horde that is not one costume marching in step: each zombie's walk starts at its own stride phase and its speed varies ±8% round the round's; clothes darkened and dirtied so they stop glowing under the floodlights; faces lifted out of black.
 
 ## Search and Destroy
 

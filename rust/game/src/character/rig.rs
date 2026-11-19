@@ -314,6 +314,11 @@ pub struct SoldierRig {
     /// is picked per character, `Model` included.
     #[export]
     variants: Array<Gd<PackedScene>>,
+    /// Wear this body instead of the seed's pick (0 is `Model`, then
+    /// `variants` in order; -1 picks by seed). For captures and tests.
+    #[export]
+    #[init(val = -1)]
+    body: i32,
 
     #[init(node = "Model")]
     model: OnReady<Gd<Node3D>>,
@@ -470,7 +475,10 @@ impl SoldierRig {
         let seed = self.base().instance_id().to_i64().unsigned_abs();
         // Instance ids are spaced regularly, so mix the bits before picking:
         // otherwise a horde wears only some of the bodies.
-        let pick = (splitmix(seed) % (self.variants.len() as u64 + 1)) as usize;
+        let pick = match usize::try_from(self.body) {
+            Ok(body) => body.min(self.variants.len()),
+            Err(_) => (splitmix(seed) % (self.variants.len() as u64 + 1)) as usize,
+        };
         if pick == 0 {
             return;
         }
@@ -1797,7 +1805,11 @@ impl SoldierRig {
         }
         tree.set_root_node("../Model");
         if self.zombie {
-            let graph = zombie_graph();
+            // Each zombie starts its moving loops at its own moment of a
+            // stride, so a horde that set off together does not walk in step.
+            let seed = self.base().instance_id().to_i64().unsigned_abs();
+            let phase = (splitmix(seed ^ 0x5EED_57E9) % 1024) as f32 / 1024.0;
+            let graph = zombie_graph(&tree, phase);
             return self.finish_tree(tree, graph);
         }
 
@@ -2101,11 +2113,25 @@ fn add_zombie_eyes(skeleton: &Gd<Skeleton3D>) {
 /// The zombie's animation graph: a shamble that blends into a jog and a run
 /// with speed, a one-shot scratch attack, and a stagger from heavy hits.
 /// Deaths are ragdolls.
-fn zombie_graph() -> Gd<AnimationNodeBlendTree> {
+///
+/// The moving loops start `phase` (0 to 1) of the way through.
+fn zombie_graph(tree: &Gd<AnimationTree>, phase: f32) -> Gd<AnimationNodeBlendTree> {
     let mut graph = AnimationNodeBlendTree::new_gd();
     let clip = |name: &str| {
         let mut a = AnimationNodeAnimation::new_gd();
         a.set_animation(name);
+        a
+    };
+    let looped = |name: &str| {
+        let mut a = clip(name);
+        if let Some(animation) = tree.get_animation(name) {
+            let length = animation.get_length();
+            a.set_use_custom_timeline(true);
+            a.set_timeline_length(length);
+            a.set_stretch_time_scale(false);
+            a.set_start_offset(f64::from(phase) * length);
+            a.set_loop_mode(godot::classes::animation::LoopMode::LINEAR);
+        }
         a
     };
     let mut walk = AnimationNodeBlendSpace1D::new_gd();
@@ -2118,7 +2144,14 @@ fn zombie_graph() -> Gd<AnimationNodeBlendTree> {
         ("ual1/Sprint", gait::SPRINT_SPEED),
     ] {
         let point = name.rsplit('/').next().unwrap_or(name);
-        walk.add_blend_point_ex(&clip(name).upcast::<AnimationRootNode>(), position)
+        // The idle keeps its own start: a zombie stands still only to swing
+        // or tear at a barrier, and its hit zones are fitted at that start.
+        let node = if position > 0.0 {
+            looped(name)
+        } else {
+            clip(name)
+        };
+        walk.add_blend_point_ex(&node.upcast::<AnimationRootNode>(), position)
             .name(point)
             .done();
     }

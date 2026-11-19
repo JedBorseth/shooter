@@ -8,8 +8,9 @@ extends SceneTree
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
 ##     --script res://tests/capture_characters.gd
 ## CAPTURE_SETS picks sections (comma list of lineups, poses, turntable, hands,
-## fp, horde, bodies, faces, wounds; default all). CAPTURE_WEAPONS limits the hands
-## and first-person sets to some weapons (comma list).
+## fp, horde, bodies (also each zombie kit by day and at night), faces, wounds;
+## default all). CAPTURE_WEAPONS limits the hands and first-person sets to some
+## weapons (comma list).
 
 const SOLDIER := preload("res://scenes/characters/soldier.tscn")
 const ZOMBIE_BODY := preload("res://scenes/characters/zombie_body.tscn")
@@ -453,6 +454,43 @@ func _bodies() -> void:
 		rig.queue_free()
 	camera.queue_free()
 	await _close(scene)
+	await _kits_at_night()
+
+
+## Each zombie body once, by day and under the arena's floodlights at night,
+## walking (each at its own moment of the stride), then each face at 1 m.
+func _kits_at_night() -> void:
+	for map: String in ["res://scenes/main.tscn", "res://scenes/zombies_arena.tscn"]:
+		var scene := await _open(map)
+		var night := map.contains("zombies")
+		var camera := _camera(scene, 40.0)
+		var origin := Vector3(0, 0, 10)
+		if night:
+			var player := scene.get_node("Player") as Node3D
+			origin = player.global_position + Vector3(0, 0, -7)
+		var kits: Array[SoldierRig] = []
+		for i in 5:
+			var zombie := ZOMBIE_BODY.instantiate() as SoldierRig
+			zombie.set("body", i)
+			scene.add_child(zombie)
+			zombie.global_position = origin + Vector3(-2.8 + i * 1.4, 0, 0)
+			kits.append(zombie)
+		for frame in 50:
+			for rig in kits:
+				rig.drive({"yaw": PI, "velocity": Vector3(0, 0, 1.4), "on_floor": true}, 1.0 / 60.0)
+			await process_frame
+		var tag := "night" if night else "day"
+		camera.look_at_from_position(origin + Vector3(0, 1.3, 7.0), origin + Vector3(0, 0.95, 0))
+		await _shot("kits_%s" % tag)
+		for i in kits.size():
+			var head := (
+				kits[i].get_node("Model").find_child("GeneralSkeleton", true, false) as Skeleton3D
+			)
+			var face := head.to_global(head.get_bone_global_pose(head.find_bone("Head")).origin)
+			camera.look_at_from_position(face + Vector3(0.25, 0.0, 1.0), face)
+			await _shot("kits_%s_face_%d" % [tag, i])
+		camera.queue_free()
+		await _close(scene)
 
 
 func _faces() -> void:
