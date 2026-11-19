@@ -421,6 +421,12 @@ pub struct WeaponView {
     #[export]
     #[init(val = Vector3::new(0.0, 0.0, -0.12))]
     ads_position: Vector3,
+    /// How much further back the eye sits on the iron sights than on an
+    /// optic (`ads_position`), in metres: a long receiver like the AK's puts
+    /// the cheek on the stock behind its dust cover, so the cover's end and
+    /// the rear notch sit in front of the eye, not around it.
+    #[export]
+    iron_eye_back: f32,
     #[export]
     #[init(val = Vector3::new(-0.04, -0.05, 0.02))]
     sprint_position: Vector3,
@@ -1182,6 +1188,11 @@ impl WeaponView {
     }
 
     /// Asks for an attachment on a view that is not in the tree yet.
+    /// Whether the weapon is aimed on its own sights, not a fitted optic.
+    fn on_irons(&self) -> bool {
+        !matches!(self.attachment, Some(Attachment::RedDot | Attachment::Acog))
+    }
+
     pub fn set_pending_attachment(&mut self, attachment: Option<Attachment>) {
         self.pending_attachment = attachment;
     }
@@ -3407,8 +3418,9 @@ impl ViewmodelRig {
         self.pickup_dip = (self.pickup_dip - dt * 2.5).max(0.0);
         let bump = smoothstep(self.cycle_kick) * 0.4 + smoothstep(self.pickup_dip) * 0.6;
 
-        let (hip, hip_rot, aim, sprint_pos, sprint_rot, pivot, cycle_pos, cycle_rot) = {
+        let (hip, hip_rot, aim, sprint_pos, sprint_rot, pivot, cycle_pos, cycle_rot, iron_back) = {
             let v = view.bind();
+            let iron_back = if v.on_irons() { v.iron_eye_back } else { 0.0 };
             // An ACOG puts the eye just behind its eyepiece.
             let aim = match v.eyepiece_z {
                 Some(eyepiece) => Vector3::new(
@@ -3416,6 +3428,7 @@ impl ViewmodelRig {
                     v.ads_position.y,
                     -ACOG_EYE_RELIEF - eyepiece,
                 ),
+                None if v.on_irons() => v.ads_position - Vector3::new(0.0, 0.0, v.iron_eye_back),
                 None => v.ads_position,
             };
             (
@@ -3427,6 +3440,7 @@ impl ViewmodelRig {
                 v.pivot,
                 v.cycle_position,
                 v.cycle_rotation,
+                iron_back,
             )
         };
         let (sprint_pos, sprint_rot, hip, hip_rot) = if kind == ClipKind::Pistol {
@@ -3562,6 +3576,11 @@ impl ViewmodelRig {
                 }
                 _ => None,
             };
+            // Aimed further back on a long receiver's irons, the body comes
+            // back with the eye, so the arms keep their reach to the grips
+            // and the firing elbow stays low instead of folding up into view.
+            arms.bind_mut()
+                .set_body_shift(Vector3::new(0.0, 0.0, iron_back * ads));
             arms.bind_mut().follow(hold, 0.0, None, item, throw);
         }
     }

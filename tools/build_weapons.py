@@ -93,6 +93,14 @@ TEXTURE_SIZE = 2048
 #   markers        view scene marker -> bone (its head, moved onto the
 #                  centre line) or (y, z) on the centre line or (x, y, z), in
 #                  source space
+#   refinish       node -> (u, v): box-project that part's UVs, at the
+#                  texture's own density, onto the atlas patch centred at
+#                  (u, v), for a part the source paints in a finish that does
+#                  not match the gun (the AK's near-white charging handle)
+#   thin           node -> share: squeezes that part across the gun toward
+#                  the receiver, keeping this share of its thickness (the
+#                  source's AK selector lever stands 7.5 mm proud; the real
+#                  stamping is about 3 mm)
 #   spare          also export `MagazineSpare`, a second magazine with its
 #                  rounds, for reloads that bring a fresh one up
 #   forward        "+Y" for packs that face +Y with +X to the right (the
@@ -111,6 +119,12 @@ AK_SIGHT_EDITS = [
     {"kind": "widen", "front": True, "at": 0.0, "depth": 0.004,
      "z": (-0.0038, 0.0005), "half": (0.00083, 0.0017), "keep": 0.0035},
 ]
+
+# The middle of the AK atlas's dust cover (UV, v up): worn blued steel.
+AK_COVER_FINISH = (0.27, 0.445)
+# The source atlases' texel density, in UV per metre (about 4.5 texels/mm at
+# 2048 px).
+ATLAS_UV_PER_M = 4.5 * 1000.0 / TEXTURE_SIZE
 
 WEAPONS = {
     "m4": {
@@ -237,6 +251,11 @@ WEAPONS = {
             "GripRight": (-0.016, -0.004),
             "GripLeft": (-0.39, 0.075),
         },
+        # The source paints the charging handle and selector lever near-white
+        # and polished, and the lever thick: give both the dust cover's worn
+        # blued steel, and thin the lever.
+        "refinish": {"Selector": AK_COVER_FINISH, "ChargingHandle": AK_COVER_FINISH},
+        "thin": {"Selector": 0.4},
         "handle": "+x",
         "spare": True,
     },
@@ -282,6 +301,11 @@ WEAPONS = {
             "GripRight": (-0.023, -0.004),
             "GripLeft": (-0.39, 0.075),
         },
+        # The source paints the charging handle and selector lever near-white
+        # and polished, and the lever thick: give both the dust cover's worn
+        # blued steel, and thin the lever.
+        "refinish": {"Selector": AK_COVER_FINISH, "ChargingHandle": AK_COVER_FINISH},
+        "thin": {"Selector": 0.4},
         "handle": "+x",
         "spare": True,
     },
@@ -678,6 +702,34 @@ def split(obj, spec: dict) -> dict[str, bpy.types.Object]:
         log(f"  {path}: {len(dup.data.polygons)} faces")
     bpy.data.objects.remove(obj)
     return objects
+
+
+def refinish(obj, spec: dict, at: tuple[float, float]):
+    """Box-projects a part's UVs onto the atlas patch centred at `at`: each
+    face takes the two axes across its normal, in metres at the atlas's
+    density, so the part wears that patch's finish."""
+    scale = ATLAS_UV_PER_M * spec["scale"]
+    mesh = obj.data
+    centre = sum((v.co for v in mesh.vertices), Vector()) / max(len(mesh.vertices), 1)
+    uv = mesh.uv_layers.active.data
+    for poly in mesh.polygons:
+        axis = max(range(3), key=lambda i: abs(poly.normal[i]))
+        a, b = [i for i in range(3) if i != axis]
+        for li in poly.loop_indices:
+            co = mesh.vertices[mesh.loops[li].vertex_index].co - centre
+            uv[li].uv = (at[0] + co[a] * scale, at[1] + co[b] * scale)
+
+
+def thin(obj, spec: dict, share: float):
+    """Squeezes a part across the gun (source X) toward its side nearest the
+    centre line, keeping `share` of its thickness."""
+    centre = spec["sight"].get("x", 0.0)
+    xs = [v.co.x for v in obj.data.vertices]
+    lo, hi = min(xs), max(xs)
+    inner = lo if abs(lo - centre) < abs(hi - centre) else hi
+    for v in obj.data.vertices:
+        v.co.x = inner + (v.co.x - inner) * share
+    obj.data.update()
 
 
 def set_materials(objects: dict, key: str):
@@ -1645,6 +1697,10 @@ def build(key: str):
             color = load_pixels(textures[0], True)[..., :3]
         weapon_finish.assign_zones(source.obj, spec["finish"], metallic, color)
     objects = split(source.obj, spec)
+    for name, at in spec.get("refinish", {}).items():
+        refinish(objects[name], spec, at)
+    for name, share in spec.get("thin", {}).items():
+        thin(objects[name], spec, share)
     for name in spec.get("drop", []):
         bpy.data.objects.remove(objects.pop(name))
     set_materials(objects, key)

@@ -54,7 +54,13 @@
     // forward, instead of curling over its top edge, where its tip rose
     // into the red dot's window (chosen by rendering candidates and
     // counting the hand's pixels in the window: 1151 px to none).
+    // The firing thumb lies forward along the receiver's right side and
+    // curls under its lower edge (fp-polish round 3): the fitted thumb
+    // stood up beside the dust cover, into the aimed picture once the eye
+    // sits behind the cover (`iron_eye_back`). Chosen by a search over
+    // thumb poses clear of the weapon, lowest from the aimed eye.
     hand_tuning: Some((
+        right: Some((fingers: (None, None, None, None, Some((-20, 40, 45))), spread: (None, None, None, None, Some(50)))),
         left: Some((fingers: (Some((25, 0, 0)), None, None, None, None), spread: (Some(-16), None, None, None, None))),
     )),
 )

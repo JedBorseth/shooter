@@ -44,10 +44,11 @@ func _run() -> void:
 			Input.action_release("weapon_2")
 		else:
 			player.give_weapon(weapon)
-		await _sixtieths(70)
+		# Past the slowest first raise (the LSW-6's 1.7 s) and aim (0.42 s).
+		await _sixtieths(120)
 		await _shot("%s_hip" % weapon)
 		Input.action_press("aim")
-		await _sixtieths(45)
+		await _sixtieths(60)
 		await _shot("%s_ads" % weapon)
 		Input.action_release("aim")
 		await _sixtieths(30)
