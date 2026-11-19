@@ -99,6 +99,7 @@ The presets live in `godot/scripts/graphics.gd`. The `Settings` autoload applies
 | Texture sharpness (mipmap bias) | 0 | −0.35 | −0.25 |
 | Lens (`scripts/lens.gd`) | only while rounds pass close or after death (vignette, 0.13 ms then) | vignette, film grain, sun flare | vignette, film grain, sun flare, and sharpening |
 | Close-up detail on world surfaces | off | off | on |
+| Soft gun smoke (depth fade where puffs meet the world) | off | off | on |
 | Lens dirt on the bloom | (no bloom) | on | on |
 | Wet surfaces and puddles (Zombies) | dry | on | on |
 | Contact shadows under characters | on | on | on |
@@ -175,5 +176,6 @@ GPU time on Medium at 1080p on the reference card, average over viewpoints (wors
 | Wet run-off streaks down the walls (Zombies, Medium and High): the puddle's noise read stretched down the wall, no extra texture fetch (`main` measured alongside, alternating, best of three runs per view: Zombies 5.48 (6.12) Medium, 8.01 (8.68) High; dry maps compile it out). Baseline not refreshed | | | 5.48 (6.11) ms |
 | Close-up detail strength per texture set on High (a uniform multiply), and anti-tiling by a shifted sample instead of a turned and scaled one (the same one fetch). `main` measured alongside, alternating, best of two runs per view (Testing Medium best of three): every view within ±0.05 ms on Medium and High; Low views moved both ways by up to 1 ms in a disturbed session. Baseline not refreshed | 5.64 (5.77) ms | | |
 | Testing Area steel plates as their own models (4 draws), swinging only after a hit; a wall rack of four third-person rifles on the container (no shadows). `profile_frame.gd` hiding each in the same run: 0.00 to 0.01 ms on Medium (views 0 and 3) and Low (view 3). Benchmark alternated with `main` in a disturbed session (views moved ±0.3 ms both ways); baseline not refreshed | | | |
+| Soft gun smoke on High (depth fade, compiled out on Low and Medium). Firefight (`combat_fx.gd` `FX_BENCH`, alternating, two runs each): High firing 9.26 / 9.26 ms before, 9.34 / 9.27 after; the same depth fade measured on Medium (6.38 / 6.41 against 6.37 / 6.38) and Low (3.20 / 3.40 against 3.16 / 4.49, one disturbed run) was free too. Heat haze (a screen read) measured 9.66 / 9.68 ms firing on High, +0.4 ms, and was left out. Idle benchmark views draw no smoke; baseline not refreshed | | | |
 
 Slamcity's 7.0 ms on Medium is about 0.5 ms more than the old map, over the usual 5% step. It was accepted for the rebuild: the rest is the denser map's own shading (decals, the skyline, small detail, and props are about 0.15 ms each), and the next cut would remove visible detail.

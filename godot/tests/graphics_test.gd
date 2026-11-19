@@ -502,6 +502,14 @@ func _check_world_surfaces() -> void:
 	)
 	GraphicsQuality.set_world_wet(false)
 	_check(not GraphicsQuality.world_wet(), "a dry map leaves them out")
+	var soft: Array[bool] = []
+	for preset: Dictionary in GraphicsQuality.PRESETS:
+		soft.append(preset["soft_smoke"])
+	_check(soft == [false, false, true], "soft gun smoke on High only")
+	GraphicsQuality.set_soft_smoke(true)
+	_check(GraphicsQuality.soft_smoke(), "the smoke shader compiles its soft edge in")
+	GraphicsQuality.set_soft_smoke(false)
+	_check(not GraphicsQuality.soft_smoke(), "and out again")
 	for name: StringName in [&"world_wetness", &"world_detail_normal", &"world_wear"]:
 		_check(
 			ProjectSettings.has_setting("shader_globals/%s" % name),

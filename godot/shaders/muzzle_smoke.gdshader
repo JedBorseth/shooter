@@ -4,13 +4,26 @@
 // at night. Drawn with the world camera's projection at the world position of
 // the muzzle as the player sees it (the first-person weapon's emitters are
 // placed there each shot), so the puff stays where it was fired as the view
-// moves and walls hide it. Fades with the particle's alpha.
+// moves and walls hide it. Fades with the particle's alpha. On High
+// (SOFT_SMOKE, rewritten by GraphicsQuality per preset) a puff also fades out
+// where it meets the world, instead of cutting a hard line across a wall or
+// the ground: it reads the depth buffer, which the firefight measurement
+// (tests/combat_fx.gd) found already copied while anything fires.
 shader_type spatial;
 render_mode blend_mix, cull_disabled, depth_draw_never, shadows_disabled, diffuse_lambert_wrap;
+
+// 1 compiles in the soft edge against the world (High). The graphics preset
+// rewrites this line (GraphicsQuality.set_soft_smoke); keep its form.
+#define SOFT_SMOKE 0
 
 uniform sampler2D flipbook : source_color, filter_linear_mipmap, repeat_disable;
 uniform vec4 tint : source_color = vec4(0.62, 0.62, 0.64, 1.0);
 uniform float opacity = 0.55;
+#if SOFT_SMOKE
+uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;
+// The puff fades out over this many metres in front of what is behind it.
+const float SOFT_DEPTH = 0.35;
+#endif
 
 void vertex() {
 	// Face the camera, turned by a per-particle angle, keeping its scale.
@@ -43,4 +56,10 @@ void fragment() {
 	ROUGHNESS = 1.0;
 	SPECULAR = 0.0;
 	ALPHA = tex.a * opacity * COLOR.a;
+#if SOFT_SMOKE
+	float raw = texture(depth_tex, SCREEN_UV).r;
+	vec4 behind = INV_PROJECTION_MATRIX * vec4(SCREEN_UV * 2.0 - 1.0, raw, 1.0);
+	// View-space depths are negative: the gap between the world and the puff.
+	ALPHA *= clamp((VERTEX.z - behind.z / behind.w) / SOFT_DEPTH, 0.0, 1.0);
+#endif
 }
