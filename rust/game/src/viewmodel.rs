@@ -2955,7 +2955,16 @@ impl ViewmodelRig {
             }
             BeatClip::Lower if since < 0.0 => sounds.push("holster"),
             BeatClip::Raise if since < 0.0 => sounds.push("draw"),
-            BeatClip::Inspect if since < 0.0 => sounds.push("inspect"),
+            BeatClip::Inspect => {
+                if since < 0.0 {
+                    sounds.push("inspect");
+                }
+                for (at, pos, rot) in weapon_clips::inspect_jolts(kind) {
+                    if crossed(at) {
+                        jolts.push((pos, rot));
+                    }
+                }
+            }
             _ => {}
         }
         if frame.ads > self.last_ads && self.last_ads <= 0.001 {
@@ -3051,7 +3060,8 @@ impl ViewmodelRig {
                 || !frame.visible
                 || self.kick_pos.value.length() > 0.004;
             let t = t + dt;
-            self.inspect = (!busy && t < weapon_clips::INSPECT_LENGTH).then_some(t);
+            let length = weapon_clips::inspect_length(ClipKind::of(frame.weapon.def()));
+            self.inspect = (!busy && t < length).then_some(t);
         }
         // A strike plays out while the simulation is in it.
         if let Some((t, strike)) = self.melee {

@@ -43,6 +43,10 @@ const SCENARIOS := [
 	"reload_fire_m4",
 	"switch",
 	"inspect",
+	"inspect_m1911",
+	"inspect_m870",
+	"inspect_m40",
+	"inspect_lsw6",
 	"first_raise",
 	"first_raise_bolt",
 	"first_raise_pump",
@@ -528,6 +532,27 @@ func _scenario_switch() -> void:
 func _scenario_inspect() -> void:
 	await _hold("inspect", 2, "inspect")
 	await _sixtieths(200)
+
+
+## Each class inspects its own way (`weapon_clips::inspect_pose`).
+func _scenario_inspect_m1911() -> void:
+	await _hold("inspect", 2, "inspect")
+	await _sixtieths(200)
+
+
+func _scenario_inspect_m870() -> void:
+	await _hold("inspect", 2, "inspect")
+	await _sixtieths(200)
+
+
+func _scenario_inspect_m40() -> void:
+	await _hold("inspect", 2, "inspect")
+	await _sixtieths(220)
+
+
+func _scenario_inspect_lsw6() -> void:
+	await _hold("inspect", 2, "inspect")
+	await _sixtieths(230)
 
 
 ## A weapon off the rack comes up with a first raise, working the action.
