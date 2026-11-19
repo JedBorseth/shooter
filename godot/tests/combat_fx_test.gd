@@ -58,6 +58,30 @@ func _run() -> void:
 	_check(effects.holes_kept() == 16, "Low trims holes back to 16")
 	settings.set_graphics_preset(1)
 
+	# Concrete throws chips the colour of concrete and no sparks; metal sparks
+	# and does not chip.
+	var impact := (load("res://scenes/effects/impact.tscn") as PackedScene).instantiate()
+	level.add_child(impact)
+	impact.setup(Vector3(0, 0, 1), "concrete")
+	var impact_chips := impact.get_node("Debris") as GPUParticles3D
+	_check(
+		impact_chips.visible and not impact.get_node("Sparks").visible, "concrete chips, no sparks"
+	)
+	_check(
+		impact_chips.draw_pass_1 != null and impact_chips.draw_pass_1.get_faces().size() > 36,
+		"impact chips are the modelled chip, not a box"
+	)
+	var tint: Color = (impact_chips.process_material as ShaderMaterial).get_shader_parameter(
+		&"base_color"
+	)
+	_check(tint.get_luminance() > 0.45, "concrete chips are pale like the wall")
+	impact.setup(Vector3(0, 0, 1), "metal")
+	_check(
+		impact.get_node("Sparks").visible and not impact_chips.visible,
+		"metal sparks and does not chip"
+	)
+	impact.queue_free()
+
 	# A round leaving cover blows out a wider hole than one going in.
 	effects.impact(Vector3(2, 1, -9.75), Vector3(0, 0, 1), "wood", true)
 	var entry := _newest_decal(effects)
