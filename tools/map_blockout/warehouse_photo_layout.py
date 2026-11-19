@@ -157,19 +157,24 @@ MACHINES = [
     # flexo units -> feeder -> white flatbed die-cutter (front to the north,
     # photo 9), turning north into the blue delivery section (photo 8).
     ("die_cutter_feed", -10.8, -14.0, 90, 4.8, 2.0, 2.55),
-    ("inspection_bank", -3.5, -14.0, 90, 9.8, 2.15, 2.25),
-    ("flexo_line_blue", 5.5, -14.0, 90, 8.2, 3.65, 1.9),
-    ("die_cutter_feed", 12.0, -14.0, 90, 4.8, 2.0, 2.55),
+    # A 2.4 m operator crossing between the print bank and the flexo units,
+    # in line with the middle north door, so the north team can reach the
+    # middle as fast as the south team (it was a 35 m wall of machines).
+    ("inspection_bank", -4.5, -14.0, 90, 7.8, 2.15, 2.25),
+    ("flexo_line_blue", 5.9, -14.0, 90, 8.2, 3.65, 1.9),
+    ("die_cutter_feed", 12.3, -14.0, 90, 4.8, 2.0, 2.55),
     ("die_cutter_white", 18.2, -14.0, 270, 7.6, 4.0, 2.65),
     ("flexo_line_blue", 24.5, -18.9, 0, 8.2, 3.65, 1.9),
     ("black_duct", 22.3, -22.6, 0, 0.65, 0.8, 3.8),
     # Middle line (sketch block C), ending at the east aisle with its blue
     # tooling end beside photo 6's camera.
-    ("inspection_bank", -6.4, -1.5, 90, 9.8, 2.15, 2.25),
-    ("die_cutter_feed", 0.9, -1.5, 90, 4.8, 2.0, 2.55),
-    ("flexo_line_blue", 7.4, -1.5, 90, 8.2, 3.65, 1.9),
-    ("inspection_bank", 16.4, -1.5, 90, 9.8, 2.15, 2.25),
-    ("flexo_line_blue", 25.4, -1.5, 90, 8.2, 3.65, 2.15),
+    # A 2.5 m crossing west of the feeder: the line sits north of the hall's
+    # middle, so without it the north team walks around a 41 m wall.
+    ("inspection_bank", -7.4, -1.5, 90, 7.8, 2.15, 2.25),
+    ("die_cutter_feed", 1.4, -1.5, 90, 4.8, 2.0, 2.55),
+    ("flexo_line_blue", 7.9, -1.5, 90, 8.2, 3.65, 1.9),
+    ("inspection_bank", 16.9, -1.5, 90, 9.8, 2.15, 2.25),
+    ("flexo_line_blue", 25.9, -1.5, 90, 8.2, 3.65, 2.15),
     # South line (sketch block D), finishing at its west end with the arch
     # strapper photo 3 looks at.
     ("arch_strapper", 7.2, 11.2, 90, 3.4, 2.7, 2.65),
@@ -204,7 +209,9 @@ FALLBACK = {"forklift": "res://assets/props/warehouse/forklift.glb",
             "office_desk": "res://assets/props/warehouse/office_desk.glb",
             "office_printer": "res://assets/props/warehouse/office_printer.glb",
             "office_chair": "res://assets/props/warehouse/office_chair.glb",
-            "aopack_box_maker": "res://assets/props/warehouse/box_machine.glb"}
+            "aopack_box_maker": "res://assets/props/warehouse/box_machine.glb",
+            "delivery_truck": "res://assets/props/warehouse/delivery_truck.glb",
+            "jersey_barrier": "res://assets/props/barrier/barrier.gltf"}
 
 # --- stock ------------------------------------------------------------------------
 KRAFT_BY_HEIGHT = [
@@ -331,6 +338,78 @@ fill("towers", -20.0, 4.0, 2.6, 1.2, 2.9, 90, 2, models=["pallet_tower_tall", "p
 fill("rolls", -27.5, -21.5, 6.0, 1.6, 3.6, 90, 4, models=ROLLS)
 fill("hopper", -19.5, -4.0, 1.4, 1.2, 1.07, 90, 1, models=["tilt_hopper_red"], hvar=0)
 
+
+# --- 6v6 cover (photo 10 pass) ------------------------------------------------
+# Measured with tools/map_blockout/warehouse_measure.py: the open hall, the
+# parking strip, and the truck apron let players see 60 to 80 m. Call of Duty
+# core maps keep the median longest line near 30 m, so these break every long
+# line with cover a real plant would have there: parked box trucks and staged
+# pallets in the yards, and stock walls between the production lines. Each
+# yard "gate" is two pieces from opposite sides of the strip, 2 to 3 m apart,
+# so a straight run along the strip always meets one and players weave past.
+WALL_MODELS = ["stack_wide_b", "stack_wide_bowed", "stack_wide_c", "stack_tall_b"]
+LOW_MODELS = ["stack_single", "stack_wide_low"]
+
+
+def wall(x0, z0, x1, z1, h, y=0.0, depth=1.8, models=None):
+    """A run of palletized stock from (x0, z0) to (x1, z1), units end to end."""
+    length = math.hypot(x1 - x0, z1 - z0)
+    n = max(1, math.ceil(length / 2.6))
+    heading = math.degrees(math.atan2(x1 - x0, -(z1 - z0)))
+    for i in range(n):
+        t = (i + 0.5) / n
+        place(rng.choice(models or WALL_MODELS), x0 + (x1 - x0) * t, z0 + (z1 - z0) * t, heading,
+              length / n * 0.97, depth, h * rng.uniform(0.94, 1.0), y, jitter_yaw=2)
+
+
+# Box trucks: x, z, yaw (0 parks it east-west, 90 north-south), base y.
+YARD_TRUCKS = [
+    (-9.5, -33.0, 0, 0.0), (13.0, -32.9, 0, 0.0), (36.5, -27.7, 0, 0.0),
+    (37.5, 39.5, 90, APRON_Y), (-27.5, 44.3, 0, APRON_Y),
+]
+for x, z, yaw, y in YARD_TRUCKS:
+    MACHINES.append(("delivery_truck", x, z, yaw, 2.43, 6.91, 3.34, y))
+# Parking lot: the other half of each gate, from the hall wall out.
+wall(-16.0, -26.5, -16.0, -32.2, 3.0)
+wall(20.5, -26.5, 20.5, -32.4, 3.0)
+wall(28.0, -34.4, 28.0, -28.5, 2.9)
+wall(-30.5, -26.5, -30.5, -30.5, 2.8)
+# Truck apron (1.25 m down): close the bands either side of the parked trucks.
+wall(-22.5, 33.5, -22.5, 36.0, 2.9, APRON_Y)
+wall(-14.5, 45.9, -14.5, 42.3, 2.9, APRON_Y)
+wall(16.5, 33.5, 16.5, 37.2, 2.9, APRON_Y)
+wall(25.0, 45.9, 25.0, 43.4, 2.9, APRON_Y)
+wall(33.5, 45.9, 33.5, 42.8, 2.9, APRON_Y)
+wall(41.5, 33.5, 41.5, 36.4, 2.9, APRON_Y)
+wall(-33.0, 33.6, -33.0, 36.5, 2.6, APRON_Y)
+# Hall: stock walls staggered across the aisles between the production lines.
+wall(-3.0, -19.2, -3.0, -25.9, 3.2)      # north band, west of the middle door
+wall(6.6, -24.6, 10.2, -24.6, 2.4)       # north band
+wall(1.5, -9.5, 5.5, -9.5, 2.6)          # middle aisle
+wall(22.0, -6.0, 26.0, -6.0, 2.8)
+wall(21.8, 5.6, 25.2, 5.6, 2.8)          # south aisle
+wall(-6.5, 4.4, -6.5, 7.6, 2.4)
+wall(12.5, 18.6, 12.5, 22.6, 3.0)        # south cross aisle
+wall(-11.1, 21.5, -7.9, 21.5, 2.4)
+wall(19.0, 24.8, 19.0, 28.6, 2.8)
+wall(32.2, -14.0, 32.2, -11.0, 3.0)      # east aisle
+wall(33.6, 14.3, 33.6, 17.3, 2.6)
+# Waist-high cover in the open middle: it blocks movement, not sight.
+wall(7.0, 4.6, 9.0, 4.6, 1.05, models=LOW_MODELS, depth=1.3)
+wall(-2.0, -5.6, 0.0, -5.6, 1.1, models=LOW_MODELS, depth=1.3)
+wall(18.0, 15.8, 20.0, 15.8, 1.0, models=LOW_MODELS, depth=1.3)
+# Wing: stock rows across its length so it is not one 56 m hallway.
+wall(-26.5, -5.0, -21.5, -5.0, 3.0)
+wall(-32.5, 10.5, -27.5, 10.5, 3.0)
+wall(-21.0, 17.3, -21.0, 19.7, 2.6)
+wall(-29.8, 28.5, -26.2, 28.5, 2.4)
+
+# Floor patches where the shell leaves a gap: the strip between the parking lot
+# and the wing's north wall had no floor. x0, x1, z0, z1, y0, y1, material.
+PATCHES = [
+    ("WingNorthYard", -36.0, -17.2, -26.45, -24.85, -0.5, 0.0, "yard"),
+]
+
 # --- gameplay -------------------------------------------------------------------
 # Team Deathmatch spawns (docs/tdm-spawns.md). Each team starts at one of the
 # sketch's spawns: team 0 in the parking lot (north-east), team 1 on the loading
@@ -345,26 +424,34 @@ def facing(x, z, tx, tz):
 
 
 SPAWNS = []
-for x, z in [(20, -31.5), (22.5, -31.5), (25, -31.5), (27.5, -31.5), (30, -31.5), (25, -29)]:
+# Team 0 starts mid-way along the parking lot and team 1 mid-way along the truck
+# apron, so the teams meet across the building's short axis (about 80 m walk,
+# as in a 6v6 Call of Duty core map) instead of corner to corner (110 m).
+for x, z in [(-5, -31), (-2.5, -31), (0, -31), (2.5, -31), (5, -31), (0, -33.2)]:
     SPAWNS.append((x, 0.0, z, 180.0, 0))
-for x, z in [(-33.5, 38.5), (-31, 38.5), (-28.5, 38.5), (-33.5, 41), (-31, 41), (-28.5, 41)]:
+for x, z in [(-5, 43.6), (-2.5, 43.6), (0, 43.6), (2.5, 43.6), (5, 43.6), (0, 45.3)]:
     SPAWNS.append((x, APRON_Y, z, 0.0, 1))
-for x, z in [(-8, -8), (2, -8), (12, -8), (26, -8.5), (-12, 5), (8, 5), (20, 5), (-8, 19),
+for x, z in [(-8, -8), (2, -8), (12, -8), (26, -8.5), (-12, 5), (8.5, 7.0), (20, 5), (-8, 19),
              (14, 19), (26, 16.5), (31.7, -15), (31.7, 8), (14, 26), (28, 25.8), (38, 26.5),
-             (-5, -23), (5, -23.5), (16, -24), (-26, -15), (-26, -2), (-22, 8), (-22, -22),
+             (-6, -23), (5, -23.5), (16, -24), (-26, -15), (-26, -2), (-22, 8), (-22, -22),
              (40, -14), (40, 3), (-8, 30.5), (12, 30.5)]:
     SPAWNS.append((x, 0.0, z, facing(x, z, *CENTRE), -1))
+# The old corner starts stay in play as respawns at the ends of each yard.
+for x, z in [(25, -31.5), (40, -30.5), (-33.5, -31.5)]:
+    SPAWNS.append((x, 0.0, z, facing(x, z, *CENTRE), -1))
+for x, z in [(-31, 40), (38, 44.5)]:
+    SPAWNS.append((x, APRON_Y, z, facing(x, z, *CENTRE), -1))
 
-# Bot lanes from team 0's parking-lot start to team 1's apron start: north
-# through the wing, centre between the production lines, and east down the
-# photographed east aisle and the south cross aisle. Points are (x, y, z).
+# Bot lanes from team 0's parking-lot start to team 1's apron start, west to
+# east: the wing, the hall's middle between the production lines, and the east
+# aisle. Points are (x, y, z).
 LANES = {
-    "North": [(25, 0, -30), (16.5, 0, -24), (2, 0, -22.5), (-14.5, 0, -20.5), (-15, 0, -2),
-              (-26, 0, -2), (-21, 0, 10), (-21, 0, 28), (-31.75, 0, 30), (-31.75, APRON_Y, 38)],
-    "Centre": [(16.5, 0, -30), (16.5, 0, -24), (8, 0, -8), (-14, 0, -8), (-14, 0, 6),
-               (-8, 0, 19), (-6.5, 0, 31), (-6.5, APRON_Y, 39), (-20, APRON_Y, 40), (-31, APRON_Y, 40)],
-    "East": [(25, 0, -30), (16.5, 0, -24), (31.7, 0, -20), (31.7, 0, 8), (32.5, 0, 17),
-             (28, 0, 25.8), (14, 0, 25.8), (-6.5, 0, 31), (-6.5, APRON_Y, 39), (-31, APRON_Y, 40)],
+    "West": [(0, 0, -30), (-24.75, 0, -27.5), (-24.75, 0, -23), (-26, 0, -12), (-25, 0, 2),
+             (-21, 0, 10), (-21, 0, 28), (-31.75, 0, 30), (-31.75, APRON_Y, 38), (0, APRON_Y, 42)],
+    "Centre": [(0, 0, -30), (-0.25, 0, -27.5), (-0.25, 0, -23), (-4, 0, -8), (-9, 0, 5),
+               (-8, 0, 19), (-6.5, 0, 31), (-6.5, APRON_Y, 39), (0, APRON_Y, 42)],
+    "East": [(0, 0, -30), (16.5, 0, -28), (16.5, 0, -24), (31.7, 0, -20), (31.0, 0, 8),
+             (28, 0, 25.8), (26, 0, 31), (26, APRON_Y, 38), (0, APRON_Y, 42)],
 }
 
 # Reverb zones (centre x, y, z, size x, y, z, room size, damping, wet, predelay ms).
@@ -394,7 +481,7 @@ def main():
         lights=[[x, z] for x in LIGHT_X for z in LIGHT_Z] + [[x, z] for x in WING_LIGHT_X for z in WING_LIGHT_Z],
         light_y=LIGHT_Y, windows=WINDOWS, doors=DOORS, trays=TRAYS, pipes=PIPES, drops=DROPS, lines=LINES,
         machines=MACHINES, fallback=FALLBACK, props=props, cameras=CAMERAS,
-        spawns=SPAWNS, reverb=REVERB, boundary=BOUNDARY, lanes=LANES,
+        spawns=SPAWNS, reverb=REVERB, boundary=BOUNDARY, lanes=LANES, patches=PATCHES,
     )
     OUT.write_text(json.dumps(data, indent=1))
     print(f"wrote {OUT} with {len(props)} stock units and {len(MACHINES)} machines")
