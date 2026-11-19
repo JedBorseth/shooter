@@ -45066,6 +45066,7 @@ text = "← Home"
 process_mode = 3
 layer = 10
 script = ExtResource("91_88etw")
+player_path = NodePath("../Player")
 
 [node name="ReverbZones" type="Node3D" parent="." unique_id=1590173120]
 
