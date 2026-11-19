@@ -23,7 +23,8 @@ It downloads its pinned CC0 sources into a cache (``--cache``, by default
    (``character_<kit>``), and its atlas as ``<kit>_{albedo,normal,orm}.png``.
 3. Writes ``animations/ual1.glb`` and ``animations/ual2.glb``: the animations
    the game uses, on the libraries' own skeletons, with everything else
-   stripped.
+   stripped, and ``animations/gait.glb`` from them
+   (``tools/build_gait_animations.py``: strafes, diagonals, and backpedals).
 
 The animation libraries are not downloaded: get the free Standard zips of
 Universal Animation Library (https://opengameart.org/content/universal-animation-library)
@@ -904,6 +905,10 @@ def main() -> None:
     if not args.no_animations:
         build_animations(ual1, UAL1_ANIMATIONS, OUT / "animations" / "ual1.glb")
         build_animations(Gltf(args.ual2), UAL2_ANIMATIONS, OUT / "animations" / "ual2.glb")
+        # The directional loops are authored from ual1's forward ones.
+        import build_gait_animations
+
+        build_gait_animations.main([])
 
 
 if __name__ == "__main__":

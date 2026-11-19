@@ -125,7 +125,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Ragdoll joints settle about the limbs' natural rest: once a body has toppled, each cone is rebuilt through `PhysicsServer3D::joint_make_cone_twist` with explicit frames from the skeleton's rest pose (arms hanging), narrows to 80% of its swing, and lets the limb slump toward rest, so bodies no longer lie with a limb held at the angle they died in.
 - [ ] Zombie ragdolls never fall asleep and freeze at 5 s, sometimes with a leg still partly up after a shotgun death; a slower limb drop (angular damping 1.5) is the likely cause.
 - [ ] Third-person magazines: the support hand fetches and seats a magazine, but the world model's magazine does not leave the weapon. Moving it (and a fresh one in the hand) needs the world view to run the first-person clip's magazine parts.
-- [ ] Directional gait: strafes still run the forward loop with the hips turned (up to 75°) and backpedals play it in reverse. Authored strafe and backpedal cycles, or orientation warping with leg IK, would read better.
+- [x] Directional gait: walk, jog, and crouched-walk cycles in eight directions (crossover strafes, backpedals that reach back toe first, diagonals), authored from the forward cycles with foot-path IK by `tools/build_gait_animations.py`; the hit zones are measured in every direction.
 - [x] The player's own body in the death camera: a ragdoll of our own body falls where we died, and the camera pulls back to watch it before turning to the killer.
 - [x] Score popups (+100, headshot and longshot bonuses) and medals at the crosshair.
 
