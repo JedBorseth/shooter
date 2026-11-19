@@ -8,7 +8,9 @@
 
 use super::grasp::WeaponFields;
 use super::palette::{self, Team};
-use super::poser::{Grips, HandDepths, Held, PoseInput, SoldierPoser, WeaponPlacement};
+use super::poser::{
+    Grips, HandDepths, Held, LadderLimbs, PoseInput, SoldierPoser, WeaponPlacement,
+};
 use godot::classes::{
     AnimationLibrary, AnimationPlayer, INode3D, MeshInstance3D, Node3D, Skeleton3D,
 };
@@ -369,7 +371,8 @@ impl FpArms {
     /// the support hand off the weapon, for reloads, toward `support_target`
     /// in the weapon's space (a magazine pouch if `None`). `item` puts the
     /// support hand on the knife or planted on a ledge instead, by a blend
-    /// (0..1), at a transform in the weapon's space.
+    /// (0..1), at a transform in the weapon's space. On a ladder, `ladder`
+    /// takes both hands off the put-away weapon onto the rungs.
     pub fn follow(
         &mut self,
         weapon: Option<(Gd<Node3D>, Grips)>,
@@ -377,6 +380,7 @@ impl FpArms {
         support_target: Option<Vector3>,
         item: Option<(f32, Transform3D, Held)>,
         throw: Option<(crate::grenade_hold::ThrowPose, Transform3D)>,
+        ladder: Option<LadderLimbs>,
     ) {
         let visible = weapon.is_some();
         if let Some(arms) = &mut self.arms
@@ -405,7 +409,8 @@ impl FpArms {
                 poser.input = PoseInput {
                     placement: WeaponPlacement::External,
                     grips: Some(grips),
-                    ik: 1.0,
+                    ik: 1.0 - ladder.map_or(0.0, |l| l.weight.clamp(0.0, 1.0)),
+                    ladder,
                     support_off,
                     support_target: support_target.unwrap_or(RELOAD_REACH),
                     knife: item.map_or(0.0, |(blend, _, _)| blend),

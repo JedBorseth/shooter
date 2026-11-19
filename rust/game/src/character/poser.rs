@@ -348,6 +348,22 @@ const KNIFE_FIST: HandShape = HandShape {
     spread: [-2.0, 0.0, 2.0, 4.0],
     oppose: 40.0,
 };
+/// A hand hooked over a ladder's rung: the fingers curled round it, the
+/// thumb closed beside them.
+const RUNG_GRIP: HandShape = HandShape {
+    flex: [
+        [55.0, 70.0, 40.0],
+        [60.0, 70.0, 40.0],
+        [62.0, 72.0, 40.0],
+        [65.0, 72.0, 40.0],
+        [20.0, 30.0, 25.0],
+    ],
+    spread: [-3.0, 0.0, 2.0, 5.0],
+    oppose: 30.0,
+};
+/// Which way a hand's palm faces along its bone's Z: right, then left (the
+/// humanoid retarget mirrors the hands).
+const PALM_Z: [f32; 2] = [1.0, 1.0];
 /// The support hand open and planted flat on a ledge: the fingers nearly
 /// straight and spread, the thumb out to the side.
 const PLANTED: HandShape = HandShape {
@@ -1302,14 +1318,38 @@ impl SoldierPoser {
                 1.0,
             ),
         ];
-        // The fingers point at the rungs and a little up, to hook over them.
+        // The fingers point at the rungs and a little up, to hook over them,
+        // the palm toward the ladder, curled round the rung.
         let reach = (toward + Vector3::UP * 0.4).normalized();
-        for (chain, wrist, out) in arms {
+        let weight = ladder.weight.clamp(0.0, 1.0);
+        for (h, finger) in self.fingers.iter().enumerate() {
+            let left = h == 1;
+            for (f, bones) in finger.iter().enumerate() {
+                let Some((joints, chain)) = bones else {
+                    continue;
+                };
+                for j in 0..3 {
+                    let grip = chain.rests[j] * RUNG_GRIP.joint(f, j, left, RUNG_GRIP.flex[f][j]);
+                    let pose = skel.get_bone_pose_rotation(joints[j]);
+                    skel.set_bone_pose_rotation(joints[j], pose.slerp(grip, weight));
+                }
+            }
+        }
+        for (h, (chain, wrist, out)) in arms.into_iter().enumerate() {
             let mid = skel.get_bone_global_pose(chain[1]).origin;
             let pole = mid + Vector3::DOWN * 0.5 + side * (0.3 * out) - toward * 0.1;
             let hand = skel.get_bone_global_pose(chain[2]).basis.orthonormalized();
             let turn = ik::rotation_between(hand.col_b(), reach);
             let basis = Basis::from_quaternion(turn) * hand;
+            // Twisted about the fingers until the palm faces the rungs.
+            let palm = basis.col_c() * PALM_Z[h];
+            let flat = |v: Vector3| (v - reach * v.dot(reach)).try_normalized();
+            let basis = match (flat(palm), flat(toward)) {
+                (Some(from), Some(to)) => {
+                    Basis::from_axis_angle(reach, from.signed_angle_to(to, reach)) * basis
+                }
+                _ => basis,
+            };
             self.place_hand(
                 skel,
                 chain,

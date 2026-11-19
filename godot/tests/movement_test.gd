@@ -323,11 +323,27 @@ func _ladder_climb() -> void:
 	_player.teleport(LADDER + Vector3(0, 0.02, -FACE + 2.0), 0.0)
 	await _ticks(30)
 	await _begin("ladder_climb")
+	var arms := _player.get_node("Camera/Viewmodel/Arms") as FpArms
+	var holding := _hands_in_view(arms)
 	Input.action_press("move_forward")
+	var climbing := Vector2(-INF, -INF)
 	for i in 480:
 		await _record(1)
+		if _player.global_position.y > 1.0 and _player.global_position.y < 3.0:
+			var hands := _hands_in_view(arms)
+			climbing = Vector2(maxf(climbing.x, hands.x), maxf(climbing.y, hands.y))
 		if _player.is_grounded() and _player.global_position.y > LADDER_TOP - 0.05:
 			break
+	# First person, the hands leave the put-away weapon for the rungs: up in
+	# front of the eyes, where they held the weapon low.
+	_check(
+		holding.y < -0.15 and climbing.y > holding.y + 0.15,
+		(
+			"ladder: the first-person hands go up onto the rungs (highest %.2f m, %.2f holding)"
+			% [climbing.y, holding.y]
+		)
+	)
+	_check(climbing.x > 0.2, "ladder: in front of the eyes, %.2f m ahead" % climbing.x)
 	await _record(20)
 	Input.action_release("move_forward")
 	await _record(30)
@@ -344,6 +360,15 @@ func _ladder_climb() -> void:
 	var seconds := on.size() / float(Engine.physics_ticks_per_second)
 	_check(seconds > 1.8 and seconds < 2.8, "ladder: %.2f s on a 4.14 m ladder" % seconds)
 	await _reset()
+
+
+## The first-person wrists in the camera's frame: how far ahead of the eyes
+## the nearer one is (`x`) and how high the higher one is (`y`).
+func _hands_in_view(arms: FpArms) -> Vector2:
+	var view := _camera.global_transform.affine_inverse()
+	var right := view * arms.wrist_position(true)
+	var left := view * arms.wrist_position(false)
+	return Vector2(minf(-right.z, -left.z), maxf(right.y, left.y))
 
 
 ## Walks off the top toward the ladder's open side: grabbed from the top and

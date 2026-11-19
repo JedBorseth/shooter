@@ -188,7 +188,12 @@ snapshots carry the ladder's heading (`PlayerView::ladder`), and the hit
 zones and the third-person body face its rungs (`gait::Turning::hold`).
 Other bodies put their hands and feet on the rungs in diagonal pairs, two
 rungs a move (`ladder::limb_targets`), with the weapon put away; a rung rings
-under each 0.3 m climbed. The Testing Area's tower has the first ladder.
+under each 0.3 m climbed. In first person the hands do the same as the
+weapon goes away: `ViewmodelRig` finds the rungs from the feet and moves
+each hand's hold into the first-person projection
+(`effects::world_to_viewmodel`), so the hands show over the rungs whatever
+the field of view. Every climber's hands close round the rung, backs of the
+hands out (`poser::RUNG_GRIP`). The Testing Area's tower has the first ladder.
 
 ## Collision and stepping
 

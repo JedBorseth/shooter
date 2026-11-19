@@ -231,6 +231,16 @@ pub fn viewmodel_to_world(
     )
 }
 
+/// Where to put something drawn with the first-person weapon's projection
+/// so it shows on screen over the world point `point`, at the same depth:
+/// [`viewmodel_to_world`] the other way. The first-person hands reach for a
+/// ladder's rungs here.
+pub fn world_to_viewmodel(camera: Transform3D, camera_fov: f32, point: Vector3) -> Vector3 {
+    let scale = (camera_fov.to_radians() * 0.5).tan() / (VIEWMODEL_FOV.to_radians() * 0.5).tan();
+    let view = camera.affine_inverse() * point;
+    camera * Vector3::new(view.x / scale, view.y / scale, view.z)
+}
+
 /// A fired case's mesh with its own (world) materials, from `CASINGS`.
 fn world_case_mesh(name: &str) -> Option<Gd<Mesh>> {
     let root = try_load::<PackedScene>(CASINGS).ok()?.instantiate()?;
@@ -1409,6 +1419,22 @@ impl CombatEffects {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_point_moved_into_the_viewmodel_shows_over_the_world_point() {
+        let camera = Transform3D::new(
+            Basis::from_axis_angle(Vector3::UP, 0.7),
+            Vector3::new(3.0, 1.7, -2.0),
+        );
+        let rung = Vector3::new(3.4, 2.1, -2.6);
+        let drawn = world_to_viewmodel(camera, 80.0, rung);
+        let (back, _) = viewmodel_to_world(camera, 80.0, drawn, Vector3::ZERO);
+        assert!(back.distance_to(rung) < 1e-4, "{back} vs {rung}");
+        // A wider world view draws it nearer the middle of the viewmodel's.
+        let view = camera.affine_inverse();
+        assert!((view * drawn).x.abs() < (view * rung).x.abs());
+    }
+
     use super::*;
 
     #[test]
