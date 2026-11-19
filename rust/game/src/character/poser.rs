@@ -63,6 +63,8 @@ impl Bone {
     const RIGHT_UPPER_LEG: usize = 15;
     const RIGHT_LOWER_LEG: usize = 16;
     const RIGHT_FOOT: usize = 17;
+    const LEFT_TOES: usize = 18;
+    const RIGHT_TOES: usize = 19;
     const NAMES: [&'static str; BONES] = [
         "Hips",
         "Spine",
@@ -82,14 +84,20 @@ impl Bone {
         "RightUpperLeg",
         "RightLowerLeg",
         "RightFoot",
+        "LeftToes",
+        "RightToes",
     ];
 }
 
 /// Bones the poser resolves.
-const BONES: usize = 18;
+const BONES: usize = 20;
 /// Foot IK lowers the hips at most this far (m) so a foot can reach lower
 /// ground: the hit zones stand on flat ground, so the body keeps close to them.
 pub const MAX_PELVIS_DROP: f32 = 0.09;
+/// Past what the straightened leg reaches, the foot points its toe down
+/// toward lower ground, as a foot reaches for the next stair down: the ball
+/// of the foot leans at most this far below level (radians).
+pub const MAX_TOE_REACH: f32 = 0.85;
 
 /// How the hands hold a weapon, in the weapon's space (origin at the rear
 /// sight, -Z toward the muzzle, +Y up, +X right).
@@ -943,19 +951,26 @@ impl SoldierPoser {
             );
         }
         let legs = [
-            (Bone::LEFT_UPPER_LEG, Bone::LEFT_LOWER_LEG, Bone::LEFT_FOOT),
+            (
+                Bone::LEFT_UPPER_LEG,
+                Bone::LEFT_LOWER_LEG,
+                Bone::LEFT_FOOT,
+                Bone::LEFT_TOES,
+            ),
             (
                 Bone::RIGHT_UPPER_LEG,
                 Bone::RIGHT_LOWER_LEG,
                 Bone::RIGHT_FOOT,
+                Bone::RIGHT_TOES,
             ),
         ];
-        for ((upper, lower, foot), lift) in legs.into_iter().zip(lift) {
+        let up = (to_skel * Vector3::UP).normalized();
+        for ((upper, lower, foot, toes), lift) in legs.into_iter().zip(lift) {
             let reach = lift + drop;
             if reach.abs() < 1e-3 {
                 continue;
             }
-            let (upper, lower, foot) = (bone(upper), bone(lower), bone(foot));
+            let (upper, lower, foot, toes) = (bone(upper), bone(lower), bone(foot), bone(toes));
             let chain = Chain {
                 root: skel.get_bone_global_pose(upper).origin,
                 mid: skel.get_bone_global_pose(lower).origin,
@@ -969,12 +984,17 @@ impl SoldierPoser {
                 .unwrap_or(Vector3::BACK);
             let pole = chain.mid + bend * 0.4;
             let flat = skel.get_bone_global_pose(foot).basis;
+            let ball = skel.get_bone_global_pose(toes).origin - chain.end;
             let solution = ik::solve_two_bone(chain, target, pole);
             apply_global_rotation(skel, upper, solution.upper);
             apply_global_rotation(skel, lower, solution.lower);
-            // The foot keeps the angle the animation gave it.
+            // The foot keeps the angle the animation gave it, unless the
+            // straight leg still falls short of lower ground: then the toe
+            // points down to it, so the ball of the foot reaches the stair.
+            let short = (solution.end - target).dot(up);
             let placed = skel.get_bone_global_pose(foot);
-            skel.set_bone_global_pose(foot, Transform3D::new(flat, placed.origin));
+            let basis = toe_down(flat, ball, up, short);
+            skel.set_bone_global_pose(foot, Transform3D::new(basis, placed.origin));
         }
     }
 
@@ -1140,15 +1160,21 @@ impl SoldierPoser {
         let to_skel = skel.get_global_transform().affine_inverse();
         let toward = (to_skel.basis * ladder.facing).normalized();
         let legs = [
-            (Bone::LEFT_UPPER_LEG, Bone::LEFT_LOWER_LEG, Bone::LEFT_FOOT),
+            (
+                Bone::LEFT_UPPER_LEG,
+                Bone::LEFT_LOWER_LEG,
+                Bone::LEFT_FOOT,
+                Bone::LEFT_TOES,
+            ),
             (
                 Bone::RIGHT_UPPER_LEG,
                 Bone::RIGHT_LOWER_LEG,
                 Bone::RIGHT_FOOT,
+                Bone::RIGHT_TOES,
             ),
         ];
         let weight = ladder.weight.clamp(0.0, 1.0);
-        for ((upper, lower, foot), ankle) in legs.into_iter().zip(ladder.ankles) {
+        for ((upper, lower, foot, _), ankle) in legs.into_iter().zip(ladder.ankles) {
             let (upper, lower, foot) = (bone(upper), bone(lower), bone(foot));
             let chain = Chain {
                 root: skel.get_bone_global_pose(upper).origin,
@@ -1305,6 +1331,24 @@ fn rotate_global(skel: &mut Gd<Skeleton3D>, bone: i32, axis: Vector3, angle: f32
         bone,
         Quaternion::from_axis_angle(axis.normalized(), angle),
     );
+}
+
+/// A foot's basis `flat` turned so its ball (`ball`, from the ankle) is
+/// `short` lower along `up`, as far as [`MAX_TOE_REACH`] allows: the toe
+/// pointing down to ground the straight leg cannot reach.
+fn toe_down(flat: Basis, ball: Vector3, up: Vector3, short: f32) -> Basis {
+    let length = ball.length();
+    let axis = ball.cross(up).try_normalized();
+    let (Some(axis), true) = (axis, short > 1e-3 && length > 1e-3) else {
+        return flat;
+    };
+    // The ball's angle below level now, and the one that lowers it `short`.
+    let below = (-ball.dot(up) / length).clamp(-1.0, 1.0).asin();
+    let want = ((-ball.dot(up) + short) / length).clamp(-1.0, 1.0).asin();
+    let turn = (want.min(MAX_TOE_REACH) - below).max(0.0);
+    // Turning about `ball × up` takes the ball toward `up`; the other way
+    // takes it down.
+    Basis::from_axis_angle(axis, -turn) * flat
 }
 
 fn apply_global_rotation(skel: &mut Gd<Skeleton3D>, bone: i32, rotation: Quaternion) {
