@@ -2203,14 +2203,17 @@ impl FpsPlayer {
             direction,
         );
         self.viewmodel.bind_mut().on_melee_struck(true, true);
-        self.signals().hit_confirmed().emit(killed, false);
+        // Online the body falls on the strike (`RemotePlayer::apply_melee`),
+        // but the kill marker, zoom, and points wait for the server's word.
+        let confirmed = killed && self.prediction.is_none();
+        self.signals().hit_confirmed().emit(confirmed, false);
         if self.prediction.is_some() {
             self.predicted_hits.push_back(shot);
             if self.predicted_hits.len() > 64 {
                 self.predicted_hits.pop_front();
             }
         }
-        if killed {
+        if confirmed {
             self.kick_fov(-self.kill_fov_kick);
             let kill = Kill {
                 distance: eye.distance_to(chest),

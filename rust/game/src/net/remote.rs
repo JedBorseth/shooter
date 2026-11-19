@@ -72,6 +72,11 @@ pub struct RemotePlayer {
     /// Seconds since each flinch our own hits predicted, oldest first: the
     /// snapshot that confirms a hit does not flinch the body a second time.
     predicted: std::collections::VecDeque<f32>,
+    /// A death our own knife predicted (knife hits always kill): seconds
+    /// since, and the body it left, until a snapshot confirms it. If none
+    /// does in [`PREDICTED_DEATH_SECONDS`], the server disagreed: the body
+    /// goes and the player is drawn alive again.
+    predicted_death: Option<(f32, Gd<SoldierRig>)>,
     /// The team colours the body wears (`SoldierRig::set_team_index`).
     #[init(val = 1)]
     team_index: i32,
@@ -130,6 +135,15 @@ impl RemotePlayer {
         false
     }
 
+    /// Called by the local player's knife strike. The server owns health, but
+    /// a knife always kills, so the death is drawn now, on the strike,
+    /// instead of an interpolation delay and a round trip later (it is
+    /// undone if the server disagrees).
+    #[func]
+    fn apply_melee(&mut self, damage: f32) -> bool {
+        self.alive && damage >= shooter_sim::player::HealthParams::default().max_health
+    }
+
     /// A small predicted flinch away from the local player's hit.
     /// Hits this player was seen to take, from the snapshots (tests).
     #[func]
@@ -150,6 +164,9 @@ impl RemotePlayer {
         self.rig.bind_mut().hit_at(push, killed);
         if !killed && self.alive {
             self.predicted.push_back(0.0);
+        }
+        if killed && self.alive {
+            self.predict_death();
         }
     }
 
@@ -303,6 +320,9 @@ struct TestProgress {
 /// A predicted flinch waits this long (seconds) for the snapshot that
 /// confirms its hit: a round trip and the interpolation delay, with room.
 const PREDICTED_FLINCH_SECONDS: f32 = 1.0;
+/// A death our knife predicted waits this long (seconds) for the snapshot
+/// that confirms it.
+const PREDICTED_DEATH_SECONDS: f32 = 1.0;
 
 /// The body every player wears.
 const SOLDIER_SCENE: &str = "res://scenes/characters/soldier.tscn";
@@ -415,7 +435,57 @@ impl RemotePlayer {
         self.hitboxes.bind_mut().set_pose(s.hitbox_pose());
     }
 
+    /// Draws this player dying now, ahead of the server (our knife struck):
+    /// the body falls from the pose it is in and a fresh one waits hidden.
+    fn predict_death(&mut self) {
+        if self.drawn_alive != Some(true) || !self.base().is_inside_tree() {
+            return;
+        }
+        let dying = SoldierFrame {
+            velocity: self.velocity,
+            alive: false,
+            ..SoldierFrame::default()
+        };
+        let body = self.rig.clone();
+        self.rig.bind_mut().update(&dying, 0.0);
+        self.leave_body();
+        self.alive = false;
+        self.drawn_alive = Some(false);
+        self.update_aim_assist();
+        self.predicted_death = Some((0.0, body));
+    }
+
+    /// The sample as it should be drawn: dead while a predicted death waits
+    /// for the server, until a snapshot confirms it or the wait runs out.
+    fn with_predicted_death(&mut self, s: &RemoteSample, delta: f32) -> RemoteSample {
+        let Some((age, body)) = &mut self.predicted_death else {
+            return *s;
+        };
+        if !s.alive {
+            // Confirmed: the body we dropped is the one that died.
+            self.predicted_death = None;
+            return *s;
+        }
+        *age += delta;
+        if *age < PREDICTED_DEATH_SECONDS {
+            let mut dead = *s;
+            dead.alive = false;
+            return dead;
+        }
+        // The server says the strike did not kill: take the body away and
+        // draw the player alive again.
+        let body = body.clone();
+        self.predicted_death = None;
+        if body.is_instance_valid() {
+            let tree = self.base().get_tree();
+            CorpseYard::of(&tree).bind_mut().release(body);
+        }
+        *s
+    }
+
     pub fn apply(&mut self, s: &RemoteSample, delta: f32) {
+        let shown = self.with_predicted_death(s, delta);
+        let s = &shown;
         let position = to_godot(s.position);
         self.base_mut().set_global_position(position);
         self.yaw = s.yaw;

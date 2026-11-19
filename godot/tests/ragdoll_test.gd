@@ -4,7 +4,9 @@ extends SceneTree
 ## a crouched death), stay above the floor, come to rest and freeze, drop their
 ## gun, keep at most six ragdolls moving at once, and stand up whole again when
 ## they respawn. A remote player's body stays where it fell when they
-## respawn. Exits non-zero on failure. Run from the repo root:
+## respawn. A knife kill crumples where it stands, and our own knife drops a
+## remote player at once, undone if the server never confirms it. Exits
+## non-zero on failure. Run from the repo root:
 ##   godot --headless --path godot --fixed-fps 120 --script res://tests/ragdoll_test.gd
 
 const DUMMY_SCENE := preload("res://scenes/props/target_dummy.tscn")
@@ -43,6 +45,8 @@ func _run() -> void:
 	await _cap()
 	await _respawn()
 	await _remote_leaves_body()
+	await _knife_crumples()
+	await _knife_kill_predicted()
 	_finish()
 
 
@@ -222,6 +226,79 @@ func _remote_leaves_body() -> void:
 	_check(fresh.visible, "the fresh body shows on respawn")
 	_check(fresh.bone_global_transform("Hips").origin.y > 0.8, "the respawned player stands")
 	_check(body.get_parent() == yard, "the old body still lies where it fell")
+	remote.queue_free()
+
+
+## A knife kill (force level 0, `HitPart::KNIFE_FORCE`) folds the body where
+## it stands; a rifle kill with the same push topples it stiff-legged first.
+func _knife_crumples() -> void:
+	var knifed := _dummy(Vector3(-10, 0, -10))
+	var shot := _dummy(Vector3(-14, 0, -10))
+	await _sixtieths(10)
+	var standing := _rig(knifed).bone_global_transform("Hips").origin.y
+	_kill(knifed, Vector3(0, 0, 1), 2, 0.0)
+	_kill(shot, Vector3(0, 0, 1), 2, 4.0)
+	await _sixtieths(18)
+	var knife_drop := standing - _rig(knifed).bone_global_transform("Hips").origin.y
+	var shot_drop := standing - _rig(shot).bone_global_transform("Hips").origin.y
+	_check(
+		knife_drop > 0.2 and knife_drop > shot_drop + 0.12,
+		(
+			"a knifed body is going down within 0.3 s, hips %.2f m lower (a shot one %.2f)"
+			% [knife_drop, shot_drop]
+		)
+	)
+	for i in 3 * 60:
+		await _sixtieths(1)
+	var hips := _rig(knifed).bone_global_transform("Hips").origin
+	_check(hips.y < 0.45, "and ends up on the ground, hips at %.2f" % hips.y)
+	_check(_lowest_bone(_rig(knifed)) > -0.08, "with no bone through the floor")
+	knifed.queue_free()
+	shot.queue_free()
+
+
+## Our own knife strike drops a remote player at once, ahead of the server.
+## A snapshot that confirms the death keeps that one body; if none confirms
+## it within a second, the body goes and the player stands again.
+func _knife_kill_predicted() -> void:
+	var remote := REMOTE_SCENE.instantiate() as RemotePlayer
+	_world.add_child(remote)
+	var feet := Vector3(30, 0, 12)
+	for i in 20:
+		remote.apply_test_state({"feet": feet}, 1.0 / 60.0)
+		await _sixtieths(1)
+	var yard := root.get_tree().get_first_node_in_group("corpse_yard") as CorpseYard
+	var lying := yard.corpse_count()
+	var body := remote.soldier()
+	_check(remote.apply_melee(150.0), "a knife strike predicts a kill")
+	remote.react_to_hit(Vector3(0, 0, 1), true, Vector3.ZERO, 2, 0.0)
+	_check(yard.corpse_count() == lying + 1, "the body falls on the strike")
+	_check(not remote.is_alive(), "and the player is dead on this client")
+	# The server has not answered yet: snapshots still show them alive.
+	for i in 30:
+		remote.apply_test_state({"feet": feet}, 1.0 / 60.0)
+		await _sixtieths(1)
+	_check(not remote.soldier().visible, "it stays down while the server's word is on its way")
+	# It never comes: the server's strike missed.
+	for i in 40:
+		remote.apply_test_state({"feet": feet}, 1.0 / 60.0)
+		await _sixtieths(1)
+	await _sixtieths(1)
+	_check(yard.corpse_count() == lying, "unconfirmed, the body goes")
+	_check(not is_instance_valid(body), "and is freed")
+	_check(remote.soldier().visible and remote.is_alive(), "and the player stands again")
+	# Again, and this time the server confirms it: one body, the one that fell.
+	body = remote.soldier()
+	remote.apply_melee(150.0)
+	remote.react_to_hit(Vector3(0, 0, 1), true, Vector3.ZERO, 2, 0.0)
+	for i in 6:
+		remote.apply_test_state({"feet": feet}, 1.0 / 60.0)
+		await _sixtieths(1)
+	for i in 80:
+		remote.apply_test_state({"feet": feet, "alive": false}, 1.0 / 60.0)
+		await _sixtieths(1)
+	_check(yard.corpse_count() == lying + 1, "confirmed, one body lies there")
+	_check(is_instance_valid(body) and body.get_parent() == yard, "the one that fell")
 	remote.queue_free()
 
 

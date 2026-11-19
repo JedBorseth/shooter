@@ -17,6 +17,8 @@ const SPOT := Vector3(0, 0.05, 20)
 ## name: [travel (world), hit shape, force, start state]
 const DEATHS := {
 	"chest_front": [Vector3(0, 0, 1), 2, 3.0, {}],
+	# A knife kill from the front (`HitPart::KNIFE_FORCE`): it crumples.
+	"knife": [Vector3(0, 0, 1), 2, 0.0, {}],
 	"chest_back": [Vector3(0, 0, -1), 2, 3.0, {}],
 	"chest_left": [Vector3(1, 0, 0), 2, 3.0, {}],
 	"headshot": [Vector3(0, 0, 1), 0, 3.0, {}],

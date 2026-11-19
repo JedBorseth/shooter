@@ -551,18 +551,22 @@ pub fn heading_to_u8(x: f32, z: f32) -> u8 {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct HitPart {
     pub part: Option<u8>,
-    /// 0 to 15: about a tenth of the damage dealt, low for a knife.
+    /// 1 to 15: about a tenth of the damage dealt; [`KNIFE_FORCE`] for a
+    /// knife.
     pub force: u8,
 }
 
+/// The force level a knife hit carries: a level guns never use (theirs is at
+/// least 1), so a knife kill can crumple the body where it stands instead of
+/// toppling it like a shot.
+pub const KNIFE_FORCE: u8 = 0;
+
 impl HitPart {
-    /// The force level of `damage` dealt by a gun, or by a knife (`melee`),
-    /// which pushes little however much it deals.
+    /// The force level of `damage` dealt by a gun, or by a knife (`melee`,
+    /// [`KNIFE_FORCE`]), which pushes little however much it deals.
     pub fn new(part: Option<u8>, damage: f32, melee: bool) -> Self {
         let force = if melee {
-            // Enough to tip the body away from the blade as it drops, not
-            // throw it like a shotgun blast.
-            4
+            KNIFE_FORCE
         } else {
             (damage / 10.0).round().clamp(1.0, 15.0) as u8
         };
@@ -2852,7 +2856,11 @@ mod tests {
     #[test]
     fn hit_parts_round_trip() {
         for part in 0..crate::hitbox::COUNT as u8 {
-            for (damage, melee, force) in [(30.0, false, 3), (400.0, false, 15), (150.0, true, 4)] {
+            for (damage, melee, force) in [
+                (30.0, false, 3),
+                (400.0, false, 15),
+                (150.0, true, KNIFE_FORCE),
+            ] {
                 let packed = HitPart::new(Some(part), damage, melee);
                 assert_eq!(HitPart::from_u8(packed.to_u8()), packed);
                 assert_eq!(packed.force, force);
