@@ -14,7 +14,9 @@
     "Slide/SightGlow",
     "SlideStop",
     "Trigger",
-    "World"
+    "World",
+    "WorldBody",
+    "WorldMagazine"
   ],
   "markers": {
     "Muzzle": [

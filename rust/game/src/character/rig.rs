@@ -949,6 +949,7 @@ impl SoldierRig {
 
         self.update_feet(frame, moving || self.step > 0.0, dt);
         let input = self.pose_input(frame);
+        self.pose_magazine(frame);
         if let Some(poser) = &mut self.poser {
             poser.bind_mut().input = input;
         }
@@ -1320,6 +1321,27 @@ impl SoldierRig {
         }
     }
 
+    /// The weapon's magazine through a reload, on the same timeline as the
+    /// support hand (`carry::Carry::magazine_pose`).
+    fn pose_magazine(&mut self, frame: &SoldierFrame) {
+        let progress = self.reload_progress;
+        let Some((id, view)) = &mut self.weapon else {
+            return;
+        };
+        let pose = frame.reload.filter(|_| frame.alive).map(|_| {
+            let def = id.def();
+            Carry {
+                reload: 1.0,
+                reload_progress: progress,
+                class: carry::CarryClass::of(def),
+                timing: carry::ReloadTiming::of(def),
+                ..Carry::default()
+            }
+            .magazine_pose(&carry::Grips::held(def))
+        });
+        view.bind_mut().pose_world_magazine(pose);
+    }
+
     fn pose_input(&self, frame: &SoldierFrame) -> PoseInput {
         // A knife swing drops the gun most of the way to the sprint carry
         // and leans the body into the strike.
@@ -1554,9 +1576,11 @@ impl SoldierRig {
 
     /// Lets go of the held gun: it falls on its own, into the scene's yard.
     fn drop_weapon(&mut self, velocity: Vector3) {
-        let Some((_, view)) = self.weapon.take() else {
+        let Some((_, mut view)) = self.weapon.take() else {
             return;
         };
+        // Dropped mid-reload, the magazine goes back in.
+        view.bind_mut().pose_world_magazine(None);
         if !self.base().is_inside_tree() {
             return;
         }

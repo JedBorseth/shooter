@@ -5,7 +5,8 @@ extends SceneTree
 ## as the hit zones do, a landing flexes the knees without crouching, and the
 ## torso leans into a start and back from a stop. Standing on the edge of a
 ## step, each foot rests on the ground under it. A weapon switch lowers the old
-## weapon before the new one comes up. Exits non-zero on failure.
+## weapon before the new one comes up. A reload takes the magazine out of the
+## gun with the support hand and seats it again. Exits non-zero on failure.
 ## Run from the repo root:
 ##   godot --headless --path godot --fixed-fps 120 --script res://tests/locomotion_test.gd
 
@@ -25,6 +26,7 @@ func _run() -> void:
 	await _lean()
 	await _feet_on_a_step()
 	await _switch()
+	await _magazine()
 	_finish()
 
 
@@ -209,6 +211,37 @@ func _switch() -> void:
 		await process_frame
 	_check(rig.weapon_node() != rifle, "the new weapon is out after 0.35 s")
 	rig.queue_free()
+
+
+## A rifle's magazine leaves the gun with the support hand (the gun swaps its
+## one-piece `World` mesh for `WorldBody` and `WorldMagazine`) and is seated
+## again; a pistol's drops away and a fresh one comes up from the belt.
+func _magazine() -> void:
+	for weapon in ["m4", "m1911"]:
+		var rig := SOLDIER.instantiate() as SoldierRig
+		root.add_child(rig)
+		for i in 30:
+			rig.drive({"weapon": weapon}, DT)
+			await process_frame
+		var mesh := rig.weapon_node().get_node("Model/Mesh") as Node3D
+		var world := mesh.get_node("World") as Node3D
+		var body := mesh.get_node("WorldBody") as Node3D
+		var magazine := mesh.get_node("WorldMagazine") as Node3D
+		var rest := magazine.position
+		_check(world.visible and not body.visible, "%s: one mesh before the reload" % weapon)
+		var furthest := 0.0
+		var shown_away := false
+		for i in 100:
+			rig.drive({"weapon": weapon, "reload": i / 100.0}, DT)
+			await process_frame
+			if magazine.visible:
+				furthest = maxf(furthest, magazine.position.distance_to(rest))
+				shown_away = shown_away or magazine.position.distance_to(rest) > 0.1
+		_check(shown_away, "%s: the magazine leaves the gun (%.2f m)" % [weapon, furthest])
+		rig.drive({"weapon": weapon}, DT)
+		await process_frame
+		_check(world.visible and not body.visible, "%s: one mesh again after it" % weapon)
+		rig.queue_free()
 
 
 func _check(condition: bool, label: String) -> void:
