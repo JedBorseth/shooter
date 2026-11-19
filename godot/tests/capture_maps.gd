@@ -11,11 +11,14 @@ extends SceneTree
 ##   CAPTURE_PRESET  low, medium, or high (default medium).
 ##   CAPTURE_ONLY    comma list of maps: testing, zombies (default: both).
 ##   CAPTURE_VIEWS   optional extra views for one map, as
-##                   "name:x,y,z,yaw,pitch;name:..." (feet position, radians).
+##                   "name:x,y,z,yaw,pitch[,1];name:..." (feet position,
+##                   radians; a trailing 1 crouches).
 
 const Benchmark := preload("res://tests/benchmark.gd")
 
-## Named views per map: [feet position, yaw, pitch]. Yaw 0 looks down -Z.
+## Named views per map: [feet position, yaw, pitch, crouched (optional)]. Yaw 0
+## looks down -Z. The culvert is 1.4 m high inside: only a crouched player fits,
+## so its inside view is taken crouched (a standing eye would sit in its roof).
 const VIEWS := {
 	"testing":
 	{
@@ -26,7 +29,7 @@ const VIEWS := {
 			"armoury": [Vector3(-2, 0.1, 22), 1.2, -0.12],
 			"lanes_far": [Vector3(-3, 0.1, -10), 0.4, -0.02],
 			"culvert": [Vector3(-10, 0.1, -12), 0.0, -0.08],
-			"culvert_inside": [Vector3(-10, 0.1, -18), 0.0, -0.05],
+			"culvert_inside": [Vector3(-10, 0.1, -18), 0.0, -0.05, true],
 			"platform": [Vector3(8, 0.1, -4), -0.7, 0.05],
 			"platform_top": [Vector3(16, 3.1, -16), 2.4, -0.15],
 			"corner_ne": [Vector3(20, 0.1, -22), -0.9, -0.08],
@@ -95,8 +98,15 @@ func _run() -> void:
 			views[extra[0]] = extra[1]
 		for name: String in views:
 			var v: Array = views[name]
+			var crouched: bool = v.size() > 3 and v[3]
+			if crouched:
+				await _toggle_crouch()
 			await _hold(v[0], v[1], v[2], 45)
 			await _shot("%s_%s_%s" % [map, preset, name])
+			if crouched:
+				# Back out in the open to stand up again.
+				await _hold(Vector3(0, 0.1, 0), 0.0, 0.0, 10)
+				await _toggle_crouch()
 		_unload()
 	_settings.reset_to_defaults()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(_settings.path))
@@ -111,7 +121,7 @@ func _extra_views() -> Array:
 	for item in text.split(";", false):
 		var parts := item.split(":")
 		var n := parts[1].split_floats(",")
-		out.append([parts[0], [Vector3(n[0], n[1], n[2]), n[3], n[4]]])
+		out.append([parts[0], [Vector3(n[0], n[1], n[2]), n[3], n[4], n.size() > 5 and n[5] > 0.5]])
 	return out
 
 
@@ -141,6 +151,16 @@ func _hold(at: Vector3, yaw: float, pitch: float, frames: int) -> void:
 			_player.global_position = at
 			_player.velocity = Vector3.ZERO
 			_player.set_look(yaw, pitch)
+		await process_frame
+
+
+## Crouch is a toggle: tap it, and give the stance time to settle.
+func _toggle_crouch() -> void:
+	Input.action_press("crouch")
+	await process_frame
+	await process_frame
+	Input.action_release("crouch")
+	for i in 30:
 		await process_frame
 
 
