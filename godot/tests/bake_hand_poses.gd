@@ -28,7 +28,6 @@ const KNOWN_DEPTHS := {
 	"lsw6/right index": [4.0, "the box magazine reaches back over the trigger guard"],
 	"lsw6+grip/right index": [4.0, "the box magazine reaches back over the trigger guard"],
 	"lsw6/left middle finger": [2.0, "not yet diagnosed"],
-	"ak47/left index": [4.5, "not yet diagnosed"],
 	"m1911/left index": [6.0, "not yet diagnosed"],
 }
 ## How far (degrees, summed over its three joints) each of the firing hand's
@@ -46,6 +45,13 @@ const KNOWN_OPEN := {
 	"pdw9": "the middle finger stops early; not yet diagnosed",
 	"m40": "the middle finger stops early; not yet diagnosed",
 	"lsw6": "the little finger stops early; not yet diagnosed",
+}
+## Values set by hand after the fit, which a bake overwrites: restore them
+## and check the reason still holds (the bake prints this list).
+const HAND_TUNED := {
+	"m1911 firing thumb": "(60, 10, 15), turn 70: laid over the backstrap, not up beside the slide",
+	"ak47 support seat and index":
+	"seat (0, -0.017, 0), index (20, 30, 60): the hand stays below the red dot's window",
 }
 const BLOCK_START := "    // Finger poses fitted to the model"
 ## `FpArms.hand_depths`'s `finger_depths`, in order.
@@ -122,6 +128,9 @@ func _run() -> void:
 			printerr("FAIL: ", failure)
 		quit(1)
 		return
+	if not check:
+		for tuned: String in HAND_TUNED:
+			print("Set by hand, now overwritten: %s %s" % [tuned, HAND_TUNED[tuned]])
 	print("PASS" if check else "Wrote the hand poses; rebuild the game to use them.")
 	quit()
 
