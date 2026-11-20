@@ -41,6 +41,10 @@ pub struct BodyState {
     pub on_floor: bool,
     pub alive: bool,
     pub reloading: bool,
+    /// How fast the reload runs against real time (Sleight of Hand: 2;
+    /// `perk::Handling::reload`), so the body's reload ends with the
+    /// player's.
+    pub reload_rate: f32,
     pub weapon: WeaponId,
     /// Seconds left of a mantle (`MoveState::mantle_time`), 0 when not mantling.
     pub mantle_left: f32,
@@ -94,7 +98,7 @@ impl BodyClock {
         self.stride = self.stride.rem_euclid(1.0);
 
         self.reload = match (s.reloading && s.alive, self.reload) {
-            (true, Some(t)) => Some(t + dt),
+            (true, Some(t)) => Some(t + dt * s.reload_rate),
             (true, None) => Some(0.0),
             (false, _) => None,
         };
@@ -187,6 +191,7 @@ mod tests {
             on_floor: true,
             alive: true,
             reloading: false,
+            reload_rate: 1.0,
             weapon: WeaponId::expect("m4"),
             mantle_left: 0.0,
             ladder: None,
@@ -231,6 +236,20 @@ mod tests {
             t += dt;
         }
         assert!(last > 0.95);
+        assert_eq!(clock.tick(&body(), dt).reload, 0.0);
+        // Sleight of Hand: the same reload in half the time.
+        let quick = BodyState {
+            reload_rate: 2.0,
+            ..reloading
+        };
+        clock.tick(&quick, dt);
+        let mut t = 0.0;
+        let mut p = 0.0;
+        while t < total * 0.5 - dt {
+            p = clock.tick(&quick, dt).reload;
+            t += dt;
+        }
+        assert!(p > 0.9, "{p}");
         assert_eq!(clock.tick(&body(), dt).reload, 0.0);
         // A new reload starts over.
         assert_eq!(clock.tick(&reloading, dt).reload, 0.0);
