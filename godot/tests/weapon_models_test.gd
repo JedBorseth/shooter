@@ -54,6 +54,18 @@ const WEAPONS := {
 		"MagRelease",
 		"OpticRail"
 	],
+	"kr12":
+	[
+		"Body",
+		"Magazine",
+		"Magazine/Rounds",
+		"MagazineSpare",
+		"ChargingHandle",
+		"Selector",
+		"Trigger",
+		"MagRelease",
+		"OpticRail"
+	],
 	"pistol":
 	[
 		"Body",
@@ -127,7 +139,7 @@ const FOREGRIP := "res://assets/weapons/foregrip/foregrip.glb"
 const M4_VIEW := "res://scenes/weapons/m4_view.tscn"
 ## Weapons aimed with their own iron sights; the others carry a reflex sight
 ## (the scene's IronSights node) or, the M40, a scope on the sight line.
-const IRON_SIGHTS := ["m4", "m870", "lsw6", "ak47", "pistol"]
+const IRON_SIGHTS := ["m4", "m870", "lsw6", "ak47", "kr12", "pistol"]
 ## Weapons whose own sights are unusable, aimed with iron sights the scene's
 ## IronSights node builds instead (its style).
 const BUILT_IRON_SIGHTS := {"bp9": "pistol"}

@@ -26,7 +26,7 @@ Both parts are aim, and the camera looks along the aim, so the screen centre and
 - Sprinting does not cancel a reload, and a reload can start while sprinting. Firing ends a sprint and waits `sprint_out_time`.
 - A switch that cuts off a bolt or pump cycle, or an empty reload before its charge, leaves the weapon needing its action worked (`WeaponState::needs_cycle`): it cycles when drawn again, so switching never skips a cycle.
 - Re-selecting the weapon in hand while it is being put away brings it back up from as far as it got.
-- **First raise.** A weapon's first draw of a game or round, and a weapon picked up, comes up with a first raise (`Raise::First`, `first_raise_time`): the draw, then the action worked (an AR's charging handle or an AK's, a pistol's slide racked, the bolt or the pump worked), and it cannot fire until that ends. Later draws, and every respawn after the first, are ordinary draws. This follows Call of Duty's `firstRaiseAnim`, with Modern Warfare III's 2023 rule (it plays at the start of a game or round and on a pickup, not on every life). Times are Black Ops 2's for each class (assault rifles 1.4–1.7 s, SMGs 1.0–1.25 s, LMGs 1.85 s, shotguns 1.65 s, snipers 1.75 s, pistols 0.85–1.1 s) scaled to our faster draws: M4A1 and BR-3 1.1 s, AK-47 1.2 s, PDW-9 0.8 s, CQ-10 0.75 s, BP-9 0.85 s, LSW-6 1.7 s, M870 1.35 s, M40 1.4 s, M1911 0.8 s. A switch away during a first raise ends it; the weapon just draws next time.
+- **First raise.** A weapon's first draw of a game or round, and a weapon picked up, comes up with a first raise (`Raise::First`, `first_raise_time`): the draw, then the action worked (an AR's charging handle or an AK's, a pistol's slide racked, the bolt or the pump worked), and it cannot fire until that ends. Later draws, and every respawn after the first, are ordinary draws. This follows Call of Duty's `firstRaiseAnim`, with Modern Warfare III's 2023 rule (it plays at the start of a game or round and on a pickup, not on every life). Times are Black Ops 2's for each class (assault rifles 1.4–1.7 s, SMGs 1.0–1.25 s, LMGs 1.85 s, shotguns 1.65 s, snipers 1.75 s, pistols 0.85–1.1 s) scaled to our faster draws: M4A1 and BR-3 1.1 s, AK-47 1.2 s, KR-12 1.25 s, PDW-9 0.8 s, CQ-10 0.75 s, BP-9 0.85 s, LSW-6 1.7 s, M870 1.35 s, M40 1.4 s, M1911 0.8 s. A switch away during a first raise ends it; the weapon just draws next time.
 - A burst in progress is dropped by a reload, a sprint, or a switch.
 
 ## Melee
@@ -85,6 +85,7 @@ Chest hits on a 100-health player with the trigger at the weapon's maximum rate,
 | bp9 | 104 ms (3) | 104 ms (3) | 277 ms (4) | 277 ms (4) | 329 ms (5) | 329 ms (5) | 329 ms (5) | 329 ms (5) |
 | br3 | 150 ms (3) | 385 ms (4) | 385 ms (4) | 385 ms (4) | 385 ms (4) | 385 ms (4) | 385 ms (4) | 385 ms (4) |
 | cq10 | 157 ms (4) | 157 ms (4) | 209 ms (5) | 313 ms (7) | 365 ms (8) | 365 ms (8) | 365 ms (8) | 365 ms (8) |
+| kr12 | 222 ms (3) | 222 ms (3) | 222 ms (3) | 222 ms (3) | 222 ms (3) | 222 ms (3) | 333 ms (4) | 333 ms (4) |
 | lsw6 | 277 ms (4) | 277 ms (4) | 277 ms (4) | 277 ms (4) | 277 ms (4) | 277 ms (4) | 369 ms (5) | 369 ms (5) |
 | m1911 | 300 ms (3) | 300 ms (3) | 300 ms (3) | 450 ms (4) | 450 ms (4) | 450 ms (4) | 450 ms (4) | 450 ms (4) |
 | m4 | 240 ms (4) | 240 ms (4) | 240 ms (4) | 240 ms (4) | 240 ms (4) | 320 ms (5) | 320 ms (5) | 320 ms (5) |
@@ -113,6 +114,7 @@ Identity by class:
 |---|---|---|
 | M4A1 | All-rounder: 4 hits to 30 m, 5 beyond | 0.24 / 0.22 |
 | AK-47 | Hits harder up close (3 to about 9 m), falls off further (5 past 42 m), kicks more and wanders | 0.27 / 0.25 |
+| KR-12 | Battle rifle: three hits to about 42 m, four beyond, at 540 rpm; slower than the AK-47 point-blank, faster than either rifle from 10 m out. Pays for it with a 20-round magazine, the heaviest straight climb of the rifles, and slower handling. Black Ops 2's SCAR-H (625 rpm, three to four hits). The AK-47 model with its furniture refinished as black polymer (`wood_to`) | 0.29 / 0.27 |
 | BR-3 | One burst kills point-blank (to about 6 m); a second burst beyond | 0.25 / 0.23 |
 | LSW-6 | Four hits to about 49 m, five beyond; 75 rounds, heavy kick, slow everything | 0.42 / 0.38 |
 | PDW-9 | Wins from 7 to 15 m against everything (1000 rpm), falls off past 20 m, quickest handling | 0.19 / 0.16 |

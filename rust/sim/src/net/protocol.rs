@@ -167,7 +167,8 @@ use crate::zombies::drinks::Drinks;
 // token, the welcome says whether the server reports progress to the account
 // server itself (`ranked`), and `ServerMessage::Denied` says why a server
 // turned a player away.
-pub const PROTOCOL_VERSION: u16 = 69;
+// Version 70 added the KR-12 to the weapon table.
+pub const PROTOCOL_VERSION: u16 = 70;
 /// Longest account session token a hello carries, in bytes.
 pub const MAX_ACCOUNT_TOKEN_BYTES: usize = 2048;
 /// Longest reason a denial carries, in bytes.

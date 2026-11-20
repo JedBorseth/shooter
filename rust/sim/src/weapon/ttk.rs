@@ -291,6 +291,16 @@ mod tests {
             shots_to_kill(def("m870"), 12.0, HitZone::Chest, 100.0),
             Some(2)
         );
+        // The battle rifle kills in three to about 42 m: slower than the AK
+        // point-blank, faster than either rifle from 10 m out.
+        assert_eq!(
+            shots_to_kill(def("kr12"), 40.0, HitZone::Chest, 100.0),
+            Some(3)
+        );
+        assert!(at("ak47", 5.0) < at("kr12", 5.0));
+        for d in [10.0, 20.0, 40.0] {
+            assert!(at("kr12", d) < at("m4", d) && at("kr12", d) < at("ak47", d));
+        }
         // The burst pistol kills in one burst to about 11 m, and out-kills
         // the M1911 everywhere it reaches but is a sidearm past 20 m.
         assert_eq!(

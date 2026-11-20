@@ -248,6 +248,16 @@ impl KickFeel {
                 zeta: 0.5,
                 ..rifle
             },
+            // A heavy straight buck: more lift and roll than the AK, less
+            // sideways wander.
+            "kr12" => Self {
+                hip_back: 1.15,
+                aim_lift: 0.56,
+                aim_yaw: 0.14,
+                aim_roll: 0.95,
+                zeta: 0.55,
+                ..rifle
+            },
             "lsw6" => Self {
                 hip_back: 1.2,
                 aim_lift: 0.45,

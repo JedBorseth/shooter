@@ -12,7 +12,7 @@ extends SceneTree
 ## missing or more than TOLERANCE off.
 
 ## The weapons held in both hands with the palm on a handguard or a pump.
-const WEAPONS := ["m4", "ak47", "br3", "lsw6", "pdw9", "cq10", "m40", "m870"]
+const WEAPONS := ["m4", "ak47", "br3", "lsw6", "pdw9", "cq10", "kr12", "m40", "m870"]
 ## The section counts the cut points within this far of where the hand holds
 ## across the weapon (m) and up or down, so sights and rails well above a
 ## handguard, and a magazine well below it, do not count (the hand holds it

@@ -49,7 +49,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
   - [x] Weapon classes and their bands; Create-a-Class grouped by class; bots carry any weapon of their default class's weapon class (`class::bot_class`).
   - [x] CQ-10 SMG (the Skorpion EVO's role: fastest fire, shortest reach), from the Classic Weapons Pack's MAC-11. Its own firing sound is held for listening; it fires and reloads with the PDW-9's until then.
   - [x] BP-9 burst pistol (the B23R's role), from the Classic Weapons Pack's Tec-9 with built-in three-dot sights. Its own firing sound is held for listening; it fires with the M1911's until then.
-  - [ ] A slower, harder-hitting assault rifle (the SCAR-H's role).
+  - [x] KR-12 battle rifle (the SCAR-H's role: slower, harder-hitting), the AK-47 model with its walnut refinished as black polymer. Its own firing sound is held for listening; it fires with the AK-47's until then.
   - [ ] Semi-automatic shotgun (the S12's role).
   - [ ] Marksman rifle (the SVU-AS's role).
   - [ ] Launcher: a free-flight rocket that also brings down scorestreak aircraft (the RPG's role).
