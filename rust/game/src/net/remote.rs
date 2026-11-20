@@ -379,6 +379,7 @@ impl RemotePlayer {
             on_floor: s.on_floor,
             alive: s.alive,
             reloading: s.reloading,
+            reload_rate: 1.0,
             weapon: s.weapon,
             mantle_left: self.test_mantle_left.unwrap_or(0.0),
             ladder: s.ladder.map(shooter_sim::hitbox::gait::yaw_of),

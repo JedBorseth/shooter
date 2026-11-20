@@ -556,6 +556,7 @@ pub fn body_state(p: &Predicted, yaw: f32) -> BodyState {
         on_floor: p.on_floor,
         alive: p.state.alive(),
         reloading: p.state.combat.is_reloading(),
+        reload_rate: p.state.perks.handling().reload,
         weapon: p.state.combat.weapon().id,
         mantle_left: movement.mantle_time,
         ladder: movement
