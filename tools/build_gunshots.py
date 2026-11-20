@@ -118,6 +118,12 @@ CS_AK = (
     ),
 )
 
+# Counter-Strike 2's Tec-9, measured from in-game clips, for the BP-9.
+CS_TEC9 = (
+    "cs",
+    (("kPIZJJAI0UI.wav", 7.5, 9.1), ("_JpbNp5FPvM.wav", 2.1, 3.8), ("_JpbNp5FPvM.wav", 20.4, 21.6)),
+)
+
 RECIPES = {
     "ak47": Recipe(
         sessions=(("C_25", "C_45", "C_39"), ("C_28", "C_48", "C_42")),
@@ -158,6 +164,45 @@ RECIPES = {
             -4.1,
         ),
         reference=CS_AK,
+    ),
+    # The BP-9: the Walther PPQ (9 mm), near and behind the shooter,
+    # matched to Counter-Strike 2's Tec-9. Held for listening (variant A).
+    "bp9": Recipe(
+        sessions=(("X_39", "X_38"), ("X_41", "X_40")),
+        weights=(0.0, -3.0),
+        wet_db=-1.0, dense=1.3, drive=3.0, shave_db=12.0, seconds=1.0,
+        room=Room(t60_low=0.6, t60_high=0.45),
+        eq=(
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            5.7,
+            1.2,
+            -0.5,
+            -2.0,
+            -5.4,
+            -8.1,
+            -10.0,
+            -14.8,
+            -15.0,
+            -11.1,
+            -9.8,
+            -13.7,
+            -15.0,
+            -15.0,
+            -15.0,
+            -9.7,
+            -5.8,
+            -3.9,
+            -1.8,
+            -0.6,
+            0.8,
+            2.0,
+            0.1,
+        ),
+        reference=CS_TEC9,
+        lufs=-21.0,
     ),
 }
 
