@@ -3,8 +3,9 @@ extends SceneTree
 ## Slamcity with bots, and we join it, earn every streak through the
 ## server's debug hooks, and capture the streak column with a held UAV, a
 ## UAV's sweep on the minimap, an enemy Counter-UAV's static, the Airstrike's
-## target picker with its marks, and a Care Package on its way down and
-## landed. Needs a GPU and a display (or Xvfb):
+## target picker with its marks, a Care Package on its way down and
+## landed, each drone circling overhead, and a Sentry Gun set down. Needs
+## a GPU and a display (or Xvfb):
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
 ##     --script res://tests/capture_streaks.gd
 
@@ -92,6 +93,21 @@ func _run() -> void:
 	await _frames(60)
 	await _shot("06_jammed")
 	await _aircraft_shots("counter_uav", "08")
+
+	_server.debug_give_streak(me, "sentry_gun")
+	_server.debug_use_streak(me, "sentry_gun")
+	await _frames(60 * 2)
+	var guns := _server.turrets()
+	if not guns.is_empty():
+		var camera := Camera3D.new()
+		camera.fov = 55.0
+		current_scene.add_child(camera)
+		camera.make_current()
+		var centre: Vector3 = guns[0].centre
+		camera.look_at_from_position(centre + Vector3(2.2, 0.6, 2.4), centre)
+		await _frames(3)
+		await _shot("09_sentry_gun")
+		camera.queue_free()
 	_server.queue_free()
 	quit(0)
 

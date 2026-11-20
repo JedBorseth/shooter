@@ -255,6 +255,8 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Airstrike: three strikes on points marked on the map's plan, after Black Ops 2's Lightning Strike; its kills count nothing toward streaks; bots mark their nearest enemies ([docs/scorestreaks.md](docs/scorestreaks.md#airstrike)).
 - [ ] Scorestreaks follow-ups: the aircraft's, drones', jets', and crate's sounds (engine loops, the shoot-down), a UAV's damage smoke trail, UAV assist points, announcer lines, a full-map view for the dead or spectating. Warehouse is roofed over, so for now it leaves out the Care Package and the Airstrike (greyed out with "NO OPEN SKY"; `roofed` map metadata). Decide whether Warehouse gets a skylight or roof hatch so they can come back.
 - [x] Perks that need streaks: Hardline, Ghost, and Hard Wired ([create-a-class.md](docs/create-a-class.md#perks)).
+- [x] Sentry Gun (Black Ops 2's, 800): set down in front of its caller, a half-circle field of fire, 650 health that bullets wear at 60% and blasts at double, 240 s; bots place theirs and shoot enemy ones ([docs/scorestreaks.md](docs/scorestreaks.md#sentry-gun)).
+- [ ] Sentry Gun follow-ups: its own firing sound, a minimap icon for our side's, carrying and moving it (Black Ops 2 lets the owner pick it up), and Care Packages holding one.
 - [ ] Blind Eye, once there is an AI air streak to hide from.
 - [x] Player names: sent in the hello (`Settings.player_name`), cleaned by the server, and listed in the roster.
 - [x] Names in the kill feed and scoreboard.

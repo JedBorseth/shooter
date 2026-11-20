@@ -64,6 +64,7 @@ func _ready() -> void:
 	client.streaks_changed.connect(_on_streaks)
 	client.sky_changed.connect(_on_sky)
 	client.aircraft_downed.connect(_on_downed)
+	client.turret_gone.connect(_on_turret_gone)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -125,6 +126,15 @@ func _on_downed(streak: String, ours: bool, _by_me: bool, _at: Vector3) -> void:
 		_say("%s SHOT DOWN" % name, "", UiTheme.ENEMY)
 	else:
 		_say("ENEMY %s DESTROYED" % name, "", UiTheme.ALLY)
+
+
+func _on_turret_gone(destroyed: bool, ours: bool, _by_me: bool, _at: Vector3) -> void:
+	if not destroyed:
+		return
+	if ours:
+		_say("SENTRY GUN DESTROYED", "", UiTheme.ENEMY)
+	else:
+		_say("ENEMY SENTRY GUN DESTROYED", "", UiTheme.ALLY)
 
 
 func _say(text: String, sub: String, colour: Color) -> void:

@@ -36,6 +36,7 @@ pub mod snd;
 pub mod stats;
 pub mod streak;
 pub mod tdm;
+pub mod turret;
 pub mod weapon;
 pub mod zombies;
 
