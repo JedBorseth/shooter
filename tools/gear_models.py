@@ -1287,3 +1287,98 @@ def forge_lit(b: Model):
     for x in (-0.75, 0.75):
         b.cyl("z", D + 0.05, D + 0.06, (x, 1.7), 0.045, "forge_blue", sides=12)
     b.box(-0.5, 0.5, 1.46, 1.48, D, D + 0.008, "forge_blue")
+
+
+# --- Care Package ------------------------------------------------------------------------
+# Flat palette looks: a textured look new to the models would renumber the
+# shared materials every other model points at.
+LOOKS["crate_strap"] = {"color": (0.45, 0.4, 0.28), "rough": 0.95}
+LOOKS["crate_beacon"] = {"color": (1.0, 0.62, 0.12), "glow": 3.0}
+LOOKS["aircraft_skin"] = {"color": (0.34, 0.37, 0.38), "rough": 0.65, "metal": 0.5}
+LOOKS["aircraft_dark"] = {"color": (0.1, 0.105, 0.11), "rough": 0.6, "metal": 0.6}
+LOOKS["aircraft_glass"] = {"color": (0.06, 0.08, 0.1), "rough": 0.15, "metal": 0.6}
+
+
+@model
+def care_package(b: Model):
+    """A Care Package's crate (scripts/net/care_package_view.gd): a
+    reinforced supply crate 1.3 x 0.95 x 0.95 m on skids, origin on the
+    ground at its middle, its long side along x. Ratchet straps cross it,
+    steel corners guard it, SUPPLY is stencilled on its long sides, and an
+    amber beacon on the lid marks it from afar."""
+    # Skids and the base frame.
+    for z in (-0.38, 0.38):
+        b.box(-0.68, 0.68, 0.0, 0.07, z - 0.06, z + 0.06, "charge_steel", bevel=0.01)
+    b.box(-0.66, 0.66, 0.07, 0.12, -0.47, 0.47, "charge_steel", bevel=0.01)
+    # The body and the lid.
+    b.box(-0.65, 0.65, 0.12, 0.88, -0.46, 0.46, "crate_olive", bevel=0.025)
+    b.box(-0.67, 0.67, 0.88, 0.97, -0.48, 0.48, "crate_olive", bevel=0.02)
+    # Ribs pressed into the long sides, and the lid's seam.
+    for x in (-0.33, 0.0, 0.33):
+        b.box(x - 0.035, x + 0.035, 0.16, 0.84, -0.475, 0.475, "crate_olive", bevel=0.01)
+    b.box(-0.668, 0.668, 0.875, 0.885, -0.478, 0.478, "trim_black")
+    # Steel corner guards.
+    for x in (-0.66, 0.66):
+        for z in (-0.47, 0.47):
+            b.box(x - 0.035, x + 0.035, 0.1, 0.98, z - 0.035, z + 0.035, "charge_steel", bevel=0.008)
+    # Two ratchet straps over the top and down both long sides.
+    for x in (-0.48, 0.48):
+        w = 0.05
+        b.box(x - w, x + w, 0.97, 0.985, -0.485, 0.485, "crate_strap")
+        for z in (-0.49, 0.49):
+            b.box(x - w, x + w, 0.12, 0.985, z - 0.008, z + 0.008, "crate_strap")
+        b.box(x - 0.06, x + 0.06, 0.45, 0.56, -0.505, -0.49, "charge_steel", bevel=0.005)
+    # Handles on the short ends.
+    for x in (-0.68, 0.68):
+        out = 1 if x > 0 else -1
+        b.tube([(x, 0.6, -0.18), (x + out * 0.06, 0.6, -0.16), (x + out * 0.06, 0.6, 0.16), (x, 0.6, 0.18)],
+               0.016, "charge_steel", sides=6, detail=False)
+    # Stencils on the long sides.
+    for yaw, z in ((0.0, 0.49), (PI, -0.49)):
+        b.text("SUPPLY", 0.0, 0.36, z, yaw, 0.22, "stencil", depth=0.004, detail=False)
+    # The beacon on the lid.
+    b.cyl("y", 0.97, 1.02, (0.0, 0.0), 0.07, "charge_steel", sides=12)
+    b.cyl("y", 1.02, 1.1, (0.0, 0.0), 0.05, "crate_beacon", sides=12)
+
+
+@model
+def cargo_aircraft(b: Model):
+    """The aircraft that drops a Care Package (scripts/net/care_package_view.gd):
+    a high-winged twin-engine cargo plane 21 m long with a 26 m span, seen
+    from below as it crosses the map. Origin at the middle of its fuselage,
+    nose toward -z."""
+    # The fuselage: lofted sections from the nose to the swept-up tail.
+    sections = [(-10.5, 0.15, 0.0, 0.25), (-9.8, 0.9, 0.05, 0.85), (-8.6, 1.35, 0.1, 1.3),
+                (-6.0, 1.5, 0.1, 1.45), (4.0, 1.5, 0.1, 1.45), (6.5, 1.25, 0.5, 1.1),
+                (8.8, 0.7, 1.3, 0.55), (10.5, 0.3, 1.9, 0.25)]
+    for (z0, r0, y0, w0), (z1, r1, y1, w1) in zip(sections, sections[1:]):
+        pts = []
+        for z, r, yc, w in ((z0, r0, y0, w0), (z1, r1, y1, w1)):
+            for k in range(10):
+                a = 2 * PI * k / 10
+                pts.append((w * math.cos(a), yc + r * math.sin(a), z))
+        b.hull(pts, "aircraft_skin")
+    # The cockpit glazing.
+    b.hull([(x, y, z) for x in (-0.7, 0.7) for y in (0.95, 1.25) for z in (-9.3, -8.2)], "aircraft_glass")
+    # The high wing, tapering to its tips, and its engines.
+    wing = []
+    for x, chord, lead in ((-13.0, 1.6, -1.2), (-2.0, 3.2, -2.2), (2.0, 3.2, -2.2), (13.0, 1.6, -1.2)):
+        for y in (1.35, 1.6):
+            wing.append((x, y, lead))
+            wing.append((x, y, lead + chord))
+    b.hull(wing[:8], "aircraft_skin")
+    b.hull(wing[4:12], "aircraft_skin")
+    b.hull(wing[8:], "aircraft_skin")
+    for x in (-5.5, 5.5):
+        b.cyl("z", -3.6, 1.8, (x, 1.15), 0.62, "aircraft_skin", sides=14)
+        b.cyl("z", -3.75, -3.6, (x, 1.15), 0.3, "aircraft_dark", sides=10)
+        # Spinning props read as a dark disc.
+        b.cyl("z", -3.85, -3.8, (x, 1.15), 1.9, "aircraft_dark", sides=20)
+    # The tail: fin and tailplanes.
+    b.hull([(0.0, 1.8, 7.6), (0.0, 1.8, 10.6), (0.0, 6.0, 10.4), (0.0, 6.0, 11.2),
+            (0.12, 1.8, 9.0), (-0.12, 1.8, 9.0)], "aircraft_skin")
+    b.hull([(x, y, z) for x in (-5.0, 5.0) for y in (2.0, 2.15) for z in (9.4, 10.8)]
+           + [(x, y, z) for x in (-1.0, 1.0) for y in (2.0, 2.15) for z in (8.6, 11.0)], "aircraft_skin")
+    # Landing gear blisters along the belly.
+    for x in (-1.45, 1.45):
+        b.hull([(x * k, y, z) for k in (0.95, 1.08) for y in (-1.2, -0.6) for z in (-2.0, 2.0)], "aircraft_dark")

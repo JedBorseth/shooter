@@ -10,12 +10,13 @@ Rewards earned with score in one life, as in Black Ops 2 (kept in Black Ops 3 an
 - **Death** resets the count.
 - **Using:** the use key calls in the selected held streak. The next key selects another. Earning one selects it, as in Black Ops 2.
 - **Modes:** every mode but Gun Game and Zombies, as in Black Ops 2's party modes and Zombies. Search and Destroy keeps both the count and held streaks across rounds within a life, as Black Ops 2 does.
-- **Bots** bring the UAV and the Counter-UAV and call in what they earn at once.
+- **Bots** bring the UAV, the Counter-UAV, and the Care Package, and call in what they earn at once.
 
 | Streak | Cost | Black Ops 2 | Effect |
 | --- | --- | --- | --- |
 | UAV | 425 | UAV, 425 after patch 1.04 (350 at launch) | sweeps every enemy onto the team's minimaps every 3 s for 30 s |
 | Counter-UAV | 475 | Counter-UAV; sources give 400 to 600 | jams the enemy's minimaps for 30 s |
+| Care Package | 550 | Care Package, 550 | a crate dropped from a flyover, with a random streak inside |
 
 ## UAV
 
@@ -29,6 +30,28 @@ Black Ops 2's UAV lasts 30 seconds. The 3 s sweep is an estimate of its refresh.
 ## Counter-UAV
 
 While an enemy Counter-UAV is up, the minimap shows static and no dots at all, not even teammates. That covers fire, sweeps, and our own side's UAV. **Hard Wired** players keep their minimap. The 30 s duration is an estimate in line with Black Ops 2.
+
+## Care Package
+
+Calling one in marks the floor where the caller aims, up to 40 m off, or their feet if that spot has no open sky above it. If neither is open, the streak stays held. Black Ops 2 throws a marker grenade instead; aiming does the same job without a throw animation.
+
+A cargo aircraft (a Blender model, `tools/gear_models.py` `cargo_aircraft`) crosses the map 40 m over the spot along a random heading at 45 m/s. It lets the crate go over the spot 4 s after the call, and the crate falls for 2.5 s. The crate is `care_package` in the same file: a reinforced supply crate on skids with straps and an amber beacon.
+
+Anyone holding use within 1.8 m of a landed crate captures it:
+
+- **Times:** the caller in 0.5 s, anyone else in 3 s. A teammate, or an enemy stealing it, takes the same 3 s. Call of Duty's rule since Modern Warfare 2, kept in Black Ops 2.
+- **One at a time:** the first player to start holds the capture until they let go or step away.
+- **Running out:** a crate nobody takes is gone after 90 s (an estimate).
+- **Limit:** at most 8 crates wait at once; the oldest goes first.
+
+**Contents:** the streak inside is rolled when the crate is called in, from the UAV (106) and the Counter-UAV (94), Black Ops 2's own weights for those two. A crate never holds another Care Package. Black Ops 2's booby-trapped crates (Engineer, Black Hat) are left out: there is no Engineer.
+
+**On screen:**
+
+- "[F] HOLD FOR UAV" under the crosshair beside a crate, and a bar while capturing it (`godot/scripts/net/care_package_view.gd`).
+- Landed crates show on the minimap: ours blue, anyone else's white.
+
+**Bots** call theirs in where they aim, run to a landed crate (their own within 40 m, anyone else's within 15 m), and hold use on it. `care_package_test` plays it through on a server.
 
 ## On screen
 
@@ -52,12 +75,13 @@ The server keeps every count and held streak and decides every use (`ClientMessa
 
 ## Still to come
 
-Care Package, a lethal streak, Blind Eye (with an AI streak to hide from), UAV assist points, and announcer lines. They are tracked in [TODO.md](../TODO.md).
+A lethal streak, Blind Eye (with an AI streak to hide from), UAV assist points, and announcer lines. They are tracked in [TODO.md](../TODO.md).
 
 ## Call of Duty reference
 
 - **Black Ops 2's scorestreak rules:** score earned in one life, objective score included; earned streaks kept after death; streak kills not counting toward streaks; the counter starting again after the last streak.
-- **Costs:** UAV 425 (raised from 350 in patch 1.04), Counter-UAV between 400 and 600 depending on the source (475 here).
+- **Costs:** UAV 425 (raised from 350 in patch 1.04), Counter-UAV between 400 and 600 depending on the source (475 here), Care Package 550.
+- **Care Package:** a flyover drops a crate on the marked spot. The owner captures almost at once, others in about 3 s, and enemies may steal it. Contents are weighted toward cheap streaks (UAV 10.6%, Counter-UAV 9.4%).
 - **Durations:** UAV and Counter-UAV 30 s.
 - **Hardline:** in Black Ops 2 it adds 20% to scorestreak score, per the Call of Duty wiki, about 16.7% off each cost. Guides that give "-25 points" or "15%" disagree with it.
 - **Ghost:** works while moving. **Hard Wired:** immune to Counter-UAV.

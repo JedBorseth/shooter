@@ -24,6 +24,7 @@
 //! | --- | --- | --- | --- |
 //! | UAV | 425 | UAV, 425 after patch 1.04 (350 at launch) | sweeps enemies onto the team's minimaps every 3 s for 30 s |
 //! | Counter-UAV | 475 | Counter-UAV (sources give 400 to 600) | jams enemy minimaps for 30 s |
+//! | Care Package | 550 | Care Package, 550 | a crate from a flyover with a random streak inside ([`crate::care_package`]) |
 //!
 //! Every number here is an estimate where Black Ops 2's own files give none;
 //! the docs list which (`docs/scorestreaks.md`).
@@ -36,6 +37,7 @@ use crate::net::Tick;
 pub enum Streak {
     Uav,
     CounterUav,
+    CarePackage,
 }
 
 /// UAV: seconds it stays up, and seconds between its sweeps (Black Ops 2's
@@ -51,13 +53,14 @@ pub const HARDLINE_TENTHS: u32 = 12;
 pub const MAX_HELD: usize = 8;
 
 impl Streak {
-    pub const ALL: [Streak; 2] = [Streak::Uav, Streak::CounterUav];
+    pub const ALL: [Streak; 3] = [Streak::Uav, Streak::CounterUav, Streak::CarePackage];
 
     /// Score to earn it.
     pub fn cost(self) -> u32 {
         match self {
             Streak::Uav => 425,
             Streak::CounterUav => 475,
+            Streak::CarePackage => 550,
         }
     }
 
@@ -66,6 +69,7 @@ impl Streak {
     pub fn unlock_level(self) -> u8 {
         match self {
             Streak::Uav | Streak::CounterUav => 1,
+            Streak::CarePackage => 7,
         }
     }
 
@@ -74,6 +78,7 @@ impl Streak {
         match self {
             Streak::Uav => "uav",
             Streak::CounterUav => "counter_uav",
+            Streak::CarePackage => "care_package",
         }
     }
 
@@ -86,6 +91,7 @@ impl Streak {
         match self {
             Streak::Uav => "UAV",
             Streak::CounterUav => "Counter-UAV",
+            Streak::CarePackage => "Care Package",
         }
     }
 
@@ -94,6 +100,7 @@ impl Streak {
         match self {
             Streak::Uav => "Shows enemies on your team's minimap for 30 seconds.",
             Streak::CounterUav => "Jams enemy minimaps for 30 seconds.",
+            Streak::CarePackage => "Drops a crate where you aim, with a random scorestreak inside.",
         }
     }
 
@@ -111,6 +118,7 @@ impl Streak {
         let seconds = match self {
             Streak::Uav => UAV_SECONDS,
             Streak::CounterUav => COUNTER_UAV_SECONDS,
+            Streak::CarePackage => 0.0,
         };
         seconds_to_ticks(seconds)
     }

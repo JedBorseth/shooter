@@ -158,7 +158,8 @@ use crate::zombies::drinks::Drinks;
 // Version 65 added scorestreaks (`crate::streak`): the loadout and using one
 // as client messages, `StreakEvent`, UAV sweep dots, and the Hardline,
 // Ghost, and Hard Wired perks (perk sets now take 16 bits).
-pub const PROTOCOL_VERSION: u16 = 65;
+// Version 66 added the Care Package (`StreakEvent::Crate*`).
+pub const PROTOCOL_VERSION: u16 = 66;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -409,7 +410,7 @@ pub enum GameEvent {
 }
 
 /// Scorestreaks' news.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum StreakEvent {
     /// To one player, whenever it changes: their count toward the next
     /// streak this life, the streaks they hold (oldest first), and the
@@ -422,6 +423,31 @@ pub enum StreakEvent {
     /// To everyone, whenever it changes and on joining: every UAV and
     /// Counter-UAV up.
     Sky { up: Vec<AirView> },
+    /// To everyone, and on joining for each crate still out: a Care
+    /// Package is coming (`crate::care_package`). The aircraft lets it go
+    /// over `at` at `drop_at`, flying along `heading` (radians), and it
+    /// lands at `lands_at`.
+    CrateIncoming {
+        id: u16,
+        owner: u8,
+        at: Vec3,
+        heading: f32,
+        drop_at: Tick,
+        lands_at: Tick,
+        contents: Streak,
+    },
+    /// To everyone: player `by` started capturing crate `id`, done at
+    /// `done_at` if they keep holding (`by` none: the capture stopped).
+    CrateCapture {
+        id: u16,
+        by: Option<u8>,
+        started: Tick,
+        done_at: Tick,
+    },
+    /// To everyone: player `by` took crate `id` and its streak.
+    CrateTaken { id: u16, by: u8, contents: Streak },
+    /// To everyone: crate `id` ran out.
+    CrateGone { id: u16 },
 }
 
 /// A UAV or Counter-UAV up: whose, on which side, and until when.
@@ -2870,6 +2896,52 @@ fn write_streak_event(w: &mut BitWriter, event: &StreakEvent) {
             }
             write_loadout(w, *loadout);
         }
+        StreakEvent::CrateIncoming {
+            id,
+            owner,
+            at,
+            heading,
+            drop_at,
+            lands_at,
+            contents,
+        } => {
+            w.bits(2, MORE_TAG_BITS);
+            w.u16(*id);
+            w.u8(*owner);
+            write_vec3(w, *at);
+            w.f32(*heading);
+            w.u32(*drop_at);
+            w.u32(*lands_at);
+            write_streak(w, *contents);
+        }
+        StreakEvent::CrateCapture {
+            id,
+            by,
+            started,
+            done_at,
+        } => {
+            w.bits(3, MORE_TAG_BITS);
+            w.u16(*id);
+            match by {
+                Some(by) => {
+                    w.bool(true);
+                    w.u8(*by);
+                }
+                None => w.bool(false),
+            }
+            w.u32(*started);
+            w.u32(*done_at);
+        }
+        StreakEvent::CrateTaken { id, by, contents } => {
+            w.bits(4, MORE_TAG_BITS);
+            w.u16(*id);
+            w.u8(*by);
+            write_streak(w, *contents);
+        }
+        StreakEvent::CrateGone { id } => {
+            w.bits(5, MORE_TAG_BITS);
+            w.u16(*id);
+        }
         StreakEvent::Sky { up } => {
             w.bits(1, MORE_TAG_BITS);
             let count = up.len().min(MAX_AIRBORNE);
@@ -2918,6 +2990,27 @@ fn read_streak_event(r: &mut BitReader) -> DecodeResult<StreakEvent> {
             }
             Ok(StreakEvent::Sky { up })
         }
+        2 => Ok(StreakEvent::CrateIncoming {
+            id: r.u16()?,
+            owner: r.u8()?,
+            at: read_finite_vec3(r)?,
+            heading: read_finite(r)?,
+            drop_at: r.u32()?,
+            lands_at: r.u32()?,
+            contents: read_streak(r)?,
+        }),
+        3 => Ok(StreakEvent::CrateCapture {
+            id: r.u16()?,
+            by: if r.bool()? { Some(r.u8()?) } else { None },
+            started: r.u32()?,
+            done_at: r.u32()?,
+        }),
+        4 => Ok(StreakEvent::CrateTaken {
+            id: r.u16()?,
+            by: r.u8()?,
+            contents: read_streak(r)?,
+        }),
+        5 => Ok(StreakEvent::CrateGone { id: r.u16()? }),
         _ => Err(DecodeError::Invalid("streak event")),
     }
 }
@@ -4324,6 +4417,33 @@ mod tests {
                 ],
             }),
             GameEvent::Streak(StreakEvent::Sky { up: Vec::new() }),
+            GameEvent::Streak(StreakEvent::CrateIncoming {
+                id: 600,
+                owner: 4,
+                at: Vec3::new(1.5, -0.25, 30.0),
+                heading: 2.5,
+                drop_at: 1000,
+                lands_at: 1300,
+                contents: Streak::CounterUav,
+            }),
+            GameEvent::Streak(StreakEvent::CrateCapture {
+                id: 600,
+                by: Some(9),
+                started: 1400,
+                done_at: 1760,
+            }),
+            GameEvent::Streak(StreakEvent::CrateCapture {
+                id: 600,
+                by: None,
+                started: 0,
+                done_at: 0,
+            }),
+            GameEvent::Streak(StreakEvent::CrateTaken {
+                id: 600,
+                by: 9,
+                contents: Streak::Uav,
+            }),
+            GameEvent::Streak(StreakEvent::CrateGone { id: 1 }),
         ]);
         assert_eq!(
             ServerMessage::decode(&msg.encode(&[]), |_| None).unwrap(),

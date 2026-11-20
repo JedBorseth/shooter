@@ -5,6 +5,7 @@
 //! and can be unit-tested without the engine.
 
 pub mod bot;
+pub mod care_package;
 pub mod chat;
 pub mod class;
 pub mod ctf;

@@ -5,7 +5,8 @@ extends Control
 ## - the three chosen streaks, bottom right above the weapon cluster, the
 ##   cheapest lowest, as Black Ops 2 stacks them: each with its cost, a thin
 ##   bar filling with this life's score toward it, and lit with a count once
-##   earned. The one the use key calls in carries its key cap;
+##   earned. Streaks held from a Care Package stack above them. The one the
+##   use key calls in carries its key cap;
 ## - "UAV READY" in the upper third when one is earned, with the key to call
 ##   it in;
 ## - calls when a UAV or Counter-UAV goes up, ours or the enemy's ("UAV
@@ -132,19 +133,23 @@ func _draw() -> void:
 			)
 
 
-## The chosen streaks, cheapest at the bottom.
+## The chosen streaks, cheapest at the bottom, and any others held (from a
+## Care Package) above them, lit and without a bar.
 func _draw_column() -> void:
 	var loadout: PackedStringArray = _info.get("loadout", PackedStringArray())
 	var held: PackedStringArray = _info.get("held", PackedStringArray())
 	var selected := int(_info.get("selected", -1))
 	var selected_key := held[selected] if selected >= 0 and selected < held.size() else ""
 	var progress := float(_info.get("progress", 0))
+	var rows := Array(loadout)
+	for key in held:
+		if not key in rows:
+			rows.append(key)
 	var right := size.x - RIGHT
 	var y := size.y - BOTTOM
 	var floor_cost := 0.0
-	for i in loadout.size():
-		var key := loadout[i]
-		var cost := float(_cost(key))
+	for i in rows.size():
+		var key: String = rows[i]
 		var count := held.count(key)
 		var lit := count > 0
 		var row := Rect2(right - WIDTH, y - ROW_H, WIDTH, ROW_H - 4.0)
@@ -155,24 +160,32 @@ func _draw_column() -> void:
 		if count > 1:
 			name += "  ×%d" % count
 		Paint.text_right(self, Paint.LABEL, name, Vector2(right - 46.0, baseline), 13, colour, 1.5)
-		Paint.text_right(
-			self,
-			Paint.LABEL_LIGHT,
-			str(int(cost)),
-			Vector2(right - 4.0, baseline),
-			12,
-			Color(UiTheme.TEXT, 0.5)
-		)
-		# This life's score toward it, from the cost below it.
-		var fill := clampf((progress - floor_cost) / maxf(cost - floor_cost, 1.0), 0.0, 1.0)
-		var bar := Rect2(row.position.x + 60.0, row.end.y - 3.0, row.size.x - 60.0, 2.0)
-		draw_rect(bar, Paint.TRACK)
-		draw_rect(Rect2(bar.position, Vector2(bar.size.x * fill, 2.0)), Color(UiTheme.ACCENT, 0.9))
+		if i < loadout.size():
+			_draw_cost(row, float(_cost(key)), floor_cost, progress, baseline)
+			floor_cost = float(_cost(key))
 		if key == selected_key:
 			var cap := Settings.prompt_key(&"streak_use")
 			Paint.key_cap(self, cap, Vector2(row.position.x + 4.0, row.position.y + 1.0), 18.0)
-		floor_cost = cost
 		y -= ROW_H
+
+
+## A chosen streak's cost, and a thin bar filling with this life's score
+## from the cost below it.
+func _draw_cost(
+	row: Rect2, cost: float, floor_cost: float, progress: float, baseline: float
+) -> void:
+	Paint.text_right(
+		self,
+		Paint.LABEL_LIGHT,
+		str(int(cost)),
+		Vector2(row.end.x - 4.0, baseline),
+		12,
+		Color(UiTheme.TEXT, 0.5)
+	)
+	var fill := clampf((progress - floor_cost) / maxf(cost - floor_cost, 1.0), 0.0, 1.0)
+	var bar := Rect2(row.position.x + 60.0, row.end.y - 3.0, row.size.x - 60.0, 2.0)
+	draw_rect(bar, Paint.TRACK)
+	draw_rect(Rect2(bar.position, Vector2(bar.size.x * fill, 2.0)), Color(UiTheme.ACCENT, 0.9))
 
 
 func _cost(key: String) -> int:
