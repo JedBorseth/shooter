@@ -18,6 +18,8 @@
 
 use std::collections::VecDeque;
 
+use glam::{IVec3, Vec3};
+
 use crate::equipment;
 use crate::hitbox::clock::{BodyClock, BodyState};
 use crate::net::interpolation::Interpolate;
@@ -124,6 +126,10 @@ pub struct Killcam {
     pub weapon: WeaponId,
     pub cause: KillCause,
     pub headshot: bool,
+    /// Where the camera watches from instead of the killer's eyes, in
+    /// centimetres: a scorestreak's ([`streak_eye`]). It looks at the
+    /// victim, and no first-person weapon shows.
+    pub eye: Option<IVec3>,
 }
 
 impl Killcam {
@@ -146,7 +152,13 @@ impl Killcam {
             weapon: record.weapon,
             cause: record.cause,
             headshot: record.headshot,
+            eye: record.eye,
         }
+    }
+
+    /// [`Killcam::eye`] in metres.
+    pub fn eye_position(&self) -> Option<Vec3> {
+        self.eye.map(|cm| cm.as_vec3() / 100.0)
     }
 
     /// The first tick shown.
@@ -217,6 +229,9 @@ pub struct KillRecord {
     pub weapon: WeaponId,
     pub cause: KillCause,
     pub headshot: bool,
+    /// Where a scorestreak's kill is watched from ([`streak_eye`]); `None`
+    /// for the killer's own eyes.
+    pub eye: Option<IVec3>,
 }
 
 impl KillRecord {
@@ -234,6 +249,28 @@ impl KillRecord {
 /// kill is replayed for everyone instead.
 pub fn respawn_killcam(mode: Mode, phase: Phase, killer: u8, victim: u8) -> bool {
     mode != Mode::SearchAndDestroy && phase == Phase::Playing && killer != victim
+}
+
+/// How high above a blast, and how far to its side, a sky-borne streak's
+/// kill is watched from.
+const SKY_EYE_HEIGHT: f32 = 20.0;
+const SKY_EYE_SIDE: f32 = 8.0;
+
+/// Where the killcam of a kill by `streak` watches from, given where its
+/// round or blast came `from`, in centimetres. Black Ops 2 plays a kill by
+/// anything other than the killer's own hands from that thing
+/// (`getkillcamentity` in `_globallogic_player.gsc` returns the inflictor):
+/// the Sentry Gun's and Attack Chopper's guns, and the falling missile for
+/// the Lightning Strike and the Hellstorm's bomblets. The tape keeps no
+/// missile, so those are watched from the sky above the blast, a little to
+/// its side so the camera can look down at it.
+pub fn streak_eye(streak: crate::streak::Streak, from: Vec3) -> IVec3 {
+    use crate::streak::Streak;
+    let eye = match streak {
+        Streak::SentryGun | Streak::AttackChopper => from,
+        _ => from + Vec3::new(0.0, SKY_EYE_HEIGHT, SKY_EYE_SIDE),
+    };
+    (eye * 100.0).round().as_ivec3()
 }
 
 /// Seconds the server waits before respawning the victim of `killcam`: the
@@ -612,7 +649,6 @@ fn find(views: &[PlayerView], id: u8) -> Option<&PlayerView> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use glam::IVec3;
 
     #[test]
     fn the_tape_replays_grenades_their_blasts_and_smoke() {
@@ -660,7 +696,36 @@ mod tests {
             weapon: WeaponId::expect("m4"),
             cause,
             headshot: false,
+            eye: None,
         }
+    }
+
+    #[test]
+    fn streak_kills_are_watched_from_the_streak() {
+        use crate::streak::Streak;
+        let gun = Vec3::new(1.0, 2.5, -3.0);
+        assert_eq!(
+            streak_eye(Streak::SentryGun, gun),
+            IVec3::new(100, 250, -300)
+        );
+        assert_eq!(
+            streak_eye(Streak::AttackChopper, gun),
+            IVec3::new(100, 250, -300)
+        );
+        let blast = streak_eye(Streak::Airstrike, Vec3::new(4.0, 0.0, 4.0));
+        assert_eq!(blast, IVec3::new(400, 2000, 1200));
+        let k = KillRecord {
+            eye: Some(blast),
+            ..record(KillCause::Streak(Streak::Airstrike))
+        }
+        .killcam(Kind::Respawn);
+        assert_eq!(k.eye_position(), Some(Vec3::new(4.0, 20.0, 12.0)));
+        assert_eq!(
+            record(KillCause::Weapon)
+                .killcam(Kind::Respawn)
+                .eye_position(),
+            None
+        );
     }
 
     #[test]
