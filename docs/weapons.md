@@ -90,6 +90,21 @@ Chest hits on a 100-health player with the trigger at the weapon's maximum rate,
 | m870 | 0 ms (1) | 550 ms (2) | 1100 ms (3) | 2750 ms (6) | 9350 ms (18) | 17050 ms (32) | 26400 ms (49) | - |
 | pdw9 | 180 ms (4) | 180 ms (4) | 180 ms (4) | 240 ms (5) | 420 ms (8) | 420 ms (8) | 420 ms (8) | 420 ms (8) |
 
+### Class bands
+
+Every weapon file names its `class` (Black Ops 2's Create-a-Class groups, which also order the menu). Each class has a band its chest time to kill and its handling must land in (`ttk::band`); `cargo test -p shooter-sim every_weapon_lands_in_its_class_band` fails for any weapon outside its band, so a new or retuned weapon keeps its class's shape. The bands follow Black Ops 2's classes: assault rifles kill in 200–400 ms at every range (the SCAR-H's three hits at 625 rpm, the M8A1's one burst point-blank); SMGs are faster than any rifle to about 15 m and slower past 20 m (the Skorpion EVO's 33 damage to 10 m, 22 to 21 m, 18 beyond); LMGs hold their kill to long range and handle slowest; shotguns kill in one or two shots up close and not at all at range (the S12's 30 damage per pellet to 3.75 m, nothing past 15 m); marksman rifles take two shots to the chest anywhere and never one (the SVU-AS's 70 damage); snipers one; pistols a sidearm's few hits.
+
+| Class | Chest TTK (ms) by range | ADS (s) | Sprint-out (s) | Move |
+|---|---|---|---|---|
+| Assault rifle | 5 m 120–320; 10–30 m 180–400; 40 m 180–420; 50–70 m 220–450 | 0.22–0.32 | 0.20–0.30 | 0.93–1.0 |
+| SMG | 5 m 120–220; 10 m 120–250; 15 m 120–300; 20 m 150–350; 30 m 300–600; 50 m 300–800 | 0.15–0.22 | 0.12–0.20 | 1.0–1.05 |
+| LMG | 5–40 m 220–400; 50–70 m 250–450 | 0.36–0.50 | 0.32–0.45 | 0.82–0.92 |
+| Shotgun | 3–5 m 0–150; 10 m 0–600; 20 m 500 or more, or no kill | 0.20–0.30 | 0.18–0.26 | 0.95–1.0 |
+| Marksman | 5–20 m 50–300; 50–70 m 50–400 (never one shot) | 0.30–0.40 | 0.26–0.36 | 0.92–0.98 |
+| Sniper | one shot at 5–100 m | 0.38–0.50 | 0.32–0.42 | 0.88–0.95 |
+| Pistol | 5 m 80–350; 15 m 100–450; 30 m 250–900 | 0.12–0.20 | 0.08–0.15 | 1.0–1.1 |
+| Launcher | explosive: handling only | 0.35–0.60 | 0.30–0.50 | 0.85–0.95 |
+
 Identity by class:
 
 | Weapon | Role | Handling (ADS / sprint-out, s) |

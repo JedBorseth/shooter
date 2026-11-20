@@ -3,6 +3,7 @@
 // 70 degree view) with sway that hold-breath (Shift while scoped) steadies.
 (
     name: "M40",
+    class: Sniper,
     slot: Primary,
     fire_mode: Semi,
     rounds_per_minute: 600,

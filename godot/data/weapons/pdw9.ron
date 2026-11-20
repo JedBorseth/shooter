@@ -2,6 +2,7 @@
 // tight hip fire, and quick handling for close quarters.
 (
     name: "PDW-9",
+    class: Smg,
     slot: Primary,
     fire_mode: Auto,
     rounds_per_minute: 1000,

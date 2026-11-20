@@ -4,6 +4,7 @@
 // reload.
 (
     name: "LSW-6",
+    class: Lmg,
     slot: Primary,
     fire_mode: Auto,
     rounds_per_minute: 650,

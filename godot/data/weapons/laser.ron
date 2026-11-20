@@ -3,6 +3,7 @@
 // spread, no recoil, and a magazine that takes over a minute to empty.
 (
     name: "PRISM LASER",
+    class: Special,
     slot: Primary,
     fire_mode: Auto,
     rounds_per_minute: 900,

@@ -3,6 +3,7 @@
 // about 42 m) and its climb is heavier, hooking right then left.
 (
     name: "AK-47",
+    class: AssaultRifle,
     slot: Primary,
     fire_mode: Auto,
     rounds_per_minute: 600,

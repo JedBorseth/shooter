@@ -1,6 +1,7 @@
 // M1911-style sidearm: semi-automatic, fast handling.
 (
     name: "M1911",
+    class: Pistol,
     slot: Secondary,
     fire_mode: Semi,
     rounds_per_minute: 400,

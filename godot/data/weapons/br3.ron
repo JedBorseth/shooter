@@ -3,6 +3,7 @@
 // short pause after each burst keeps it from out-firing the automatics.
 (
     name: "BR-3",
+    class: AssaultRifle,
     slot: Primary,
     fire_mode: Burst(rounds: 3, delay: 0.16),
     rounds_per_minute: 800,

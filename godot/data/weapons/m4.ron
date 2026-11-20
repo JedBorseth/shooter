@@ -2,6 +2,7 @@
 // Angles are degrees, times seconds, distances metres. See rust/sim/src/weapon/def.rs.
 (
     name: "M4A1",
+    class: AssaultRifle,
     slot: Primary,
     fire_mode: Auto,
     rounds_per_minute: 750,

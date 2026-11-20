@@ -1303,8 +1303,9 @@ impl NetClient {
     }
 
     /// Everything a class can hold, for the create-a-class menu:
-    /// `primaries` and `secondaries` (each `key`, `name`, and `attachments`,
-    /// a list of `key` and `name`), `tacticals` (`key`, `name`), `perks`
+    /// `primaries` and `secondaries` (each `key`, `name`, `class` and
+    /// `class_order` (its Create-a-Class group), and `attachments`, a list of
+    /// `key` and `name`), `tacticals` (`key`, `name`), `perks`
     /// (`key`, `name`, `summary`, and `tier`, 1 to 3, in tier order), and
     /// `wildcards` (`key`, `name`, `summary`).
     #[func]
@@ -1317,6 +1318,8 @@ impl NetClient {
                     let mut d = VarDictionary::new();
                     d.set("key", &GString::from(def.key.as_str()));
                     d.set("name", &GString::from(def.name.as_str()));
+                    d.set("class", def.class.label());
+                    d.set("class_order", def.class.order() as i64);
                     let attachments: Array<VarDictionary> = def
                         .attachments
                         .iter()
