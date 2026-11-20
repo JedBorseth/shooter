@@ -288,6 +288,16 @@ impl KickFeel {
                 aim_roll: 0.6,
                 ..rifle
             },
+            // A lighter buck than the bolt gun's, settling quickly for the
+            // follow-up.
+            "dm7" => Self {
+                hip_lift: 2.0,
+                hip_back: 1.3,
+                aim_lift: 0.5,
+                aim_yaw: 0.08,
+                aim_roll: 0.7,
+                zeta: 0.65,
+            },
             "m870" | "m40" => Self {
                 hip_lift: 2.6,
                 hip_back: 1.5,

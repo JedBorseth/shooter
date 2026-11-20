@@ -309,6 +309,19 @@ mod tests {
         );
         assert!(at("bp9", 5.0) < at("m1911", 5.0));
         assert!(at("bp9", 30.0) > at("m4", 30.0));
+        // The marksman rifle takes two to the chest everywhere, never one,
+        // and a headshot kills outright up close.
+        for d in [5.0, 30.0, 70.0, 100.0] {
+            assert_eq!(
+                shots_to_kill(def("dm7"), d, HitZone::Chest, 100.0),
+                Some(2),
+                "{d} m"
+            );
+        }
+        assert_eq!(
+            shots_to_kill(def("dm7"), 30.0, HitZone::Head, 100.0),
+            Some(1)
+        );
         // The sniper one-shots the chest anywhere.
         assert_eq!(at("m40", 100.0), 0.0);
     }

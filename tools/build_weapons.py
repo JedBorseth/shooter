@@ -533,6 +533,52 @@ WEAPONS = {
         "handle": "+x",
         "spare": True,
     },
+    "dm7": {
+        "dir": "dm7",
+        "scene": "dm7",
+        # A marksman M14: the pack's rifle with a riflescope on its receiver
+        # mount (`riflescope`, as the M40's) and its walnut refinished as
+        # olive glass-fibre (`wood_to`).
+        "fbx": CLASSIC / "M14/SKM_M14.fbx",
+        "textures": [CLASSIC / f"M14/T_M14_{s}.png" for s in ("C", "N", "RMAO")],
+        "normal_dx": True,
+        "wood_to": {"color": (0.27, 0.285, 0.215), "roughness": 0.74, "keep": 0.7, "flatten": 0.85},
+        "scale": 1.02,
+        "cartridge": 0,
+        # The scope's axis, 28 mm over the receiver mount (medium rings):
+        # the sight line, level, with the eye 9 cm behind the rear ring.
+        "sight": {"rear": (-0.065, 0.109), "front": (-0.4, 0.109)},
+        "scope": {"rail": 0.0809, "rings": (-0.23, -0.155)},
+        "parts": {
+            "MAGAZINE": "Magazine",
+            "BULLET_01": "Magazine/Rounds",
+            "BULLET_02": "Magazine/Rounds",
+            "BULLET_03": "Magazine/Rounds",
+            "OPERATING_HANDLE": "ChargingHandle",
+            "BOLT": "BoltCarrier",
+            "BOLT_STOP": "BoltStop",
+            "SAFETY": "Safety",
+            "SELECTOR": "Selector",
+            "TRIGGER": "Trigger",
+            "MAGAZINE_RELEASE": "MagRelease",
+            None: "Body",
+        },
+        "pivots": {
+            "Safety": "SAFETY",
+            "Selector": "SELECTOR",
+            "Trigger": "TRIGGER",
+            "MagRelease": "MAGAZINE_RELEASE",
+            "BoltStop": "BOLT_STOP",
+        },
+        "markers": {
+            "Muzzle": "FX_FIRE",
+            "Ejection": (-0.012, -0.17, 0.06),
+            "GripRight": (0.0396, -0.02),
+            "GripLeft": (-0.36, 0.02),
+        },
+        "handle": "+x",
+        "spare": True,
+    },
     "m40": {
         "dir": "m40",
         "scene": "m40",
