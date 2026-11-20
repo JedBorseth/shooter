@@ -438,7 +438,7 @@ func _check_menu(settings: Node) -> void:
 	var sliders: Array[Node] = menu.find_children("*", "HSlider", true, false)
 	_check(sliders.size() == 12, "twelve sliders, got %d" % sliders.size())
 	var toggle_count := menu.find_children("*", "CheckButton", true, false).size()
-	_check(toggle_count == 10, "ten toggles, got %d" % toggle_count)
+	_check(toggle_count == 11, "eleven toggles, got %d" % toggle_count)
 
 	# Drive a slider and a toggle like a player would.
 	var fov_slider: HSlider = menu._sliders[&"fov"]
