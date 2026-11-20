@@ -120,6 +120,12 @@ pub enum Award {
     Clutch,
     /// Killed the whole enemy team in one round.
     Ace,
+    /// Domination: stood in a flag's circle when the team took it.
+    DominationCapture,
+    /// Domination: a kill on or near a flag the team owns.
+    DominationDefend,
+    /// Domination: a kill on or near a flag the team does not own.
+    DominationAssault,
 }
 
 impl Award {
@@ -141,6 +147,7 @@ impl Award {
                 | Award::WireCutter
                 | Award::Clutch
                 | Award::Ace
+                | Award::DominationCapture
         )
     }
 
@@ -170,6 +177,9 @@ impl Award {
             Award::WireCutter => "Wire Cutter".to_owned(),
             Award::Clutch => "Clutch".to_owned(),
             Award::Ace => "Ace".to_owned(),
+            Award::DominationCapture => "Flag Captured".to_owned(),
+            Award::DominationDefend => "Flag Defense".to_owned(),
+            Award::DominationAssault => "Flag Assault".to_owned(),
         }
     }
 }
@@ -198,9 +208,12 @@ pub struct ScoreState {
     pub deaths: u32,
     /// Kills since the last death.
     pub streak: u32,
-    /// Capture the Flag: flags captured and returned.
+    /// Capture the Flag: flags captured and returned. Domination counts
+    /// its flag captures in `captures` too.
     pub captures: u32,
     pub returns: u32,
+    /// Domination: kills defending a flag the team owns.
+    pub defends: u32,
     /// Kills in the current multi-kill chain.
     chain: u32,
     /// Seconds left to extend the chain.
@@ -326,8 +339,14 @@ impl ScoreState {
         self.streak = totals.streak;
     }
 
-    /// Pays an award that is not a kill (objective play).
+    /// Pays an award that is not a kill (objective play). Domination
+    /// captures and defences also count toward the scoreboard's columns.
     pub fn award(&mut self, award: Award, points: u32) -> Scored {
+        match award {
+            Award::DominationCapture => self.captures += 1,
+            Award::DominationDefend => self.defends += 1,
+            _ => {}
+        }
         self.score += points;
         Scored { award, points }
     }

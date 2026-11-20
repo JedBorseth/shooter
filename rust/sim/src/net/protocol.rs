@@ -22,6 +22,7 @@ use super::bits::{BitReader, BitWriter, DecodeError, DecodeResult};
 use super::subtick;
 use crate::chat;
 use crate::class::{Attachments, Class, Gun, Wildcards};
+use crate::domination;
 use crate::equipment;
 use crate::gun_game;
 use crate::hardpoint::Holder;
@@ -117,7 +118,9 @@ use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, Weapo
 // player views.
 // Version 48 added Search and Destroy's scores and medals (award tags grew
 // to 5 bits) and kills by the charge going off.
-pub const PROTOCOL_VERSION: u16 = 48;
+// Version 49 added Domination: its mode, the flags and their captures,
+// halftime, the flag awards, and flag defences on the scoreboard.
+pub const PROTOCOL_VERSION: u16 = 49;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -138,6 +141,9 @@ const MAX_REWOUND_POSES: usize = 32;
 const MAX_SCOREBOARD_ROWS: usize = 64;
 /// Cap on zones in one [`GameEvent::HardpointZones`].
 pub const MAX_HARDPOINT_ZONES: usize = 16;
+/// Cap on flags in one [`GameEvent::DominationFlags`] or
+/// [`GameEvent::Domination`].
+pub const MAX_DOMINATION_FLAGS: usize = domination::MAX_FLAGS;
 /// Cap on sites in one [`GameEvent::ChargeSites`].
 pub const MAX_CHARGE_SITES: usize = 4;
 /// Zone names are at most this many bytes of UTF-8 on the wire.
@@ -337,6 +343,45 @@ pub enum GameEvent {
     /// a round or the match. Clients replay it from their own recording of
     /// the snapshots (`killcam::Tape`).
     Killcam(Killcam),
+    /// To everyone (Domination): the map's flags, A, B, C. Sent on joining.
+    DominationFlags { flags: Vec<FlagPointView> },
+    /// To everyone (Domination), whenever a flag changes owner, claim,
+    /// contest, or capture speed: every flag as of server tick `tick`.
+    /// Clients run each capture on at its rate between events.
+    Domination(DominationView),
+}
+
+/// One Domination flag's circle as clients see it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FlagPointView {
+    pub name: String,
+    /// The circle's middle, `half_height` above its floor.
+    pub center: Vec3,
+    pub radius: f32,
+    pub half_height: f32,
+}
+
+/// Every Domination flag ([`GameEvent::Domination`]).
+#[derive(Clone, Debug, PartialEq)]
+pub struct DominationView {
+    /// The server tick this state is from.
+    pub tick: Tick,
+    pub flags: Vec<FlagPointStatus>,
+    /// Halftime has passed: the teams play from each other's sides.
+    pub swapped: bool,
+}
+
+/// One flag's owner and capture ([`domination::FlagState`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct FlagPointStatus {
+    pub owner: Option<Team>,
+    pub claim: Option<Team>,
+    /// How far along the claim's capture is, in 255ths.
+    pub progress: u8,
+    pub contested: bool,
+    /// The claiming team's players in the circle (the capture's speed); 0
+    /// when stalled.
+    pub capturers: u8,
 }
 
 /// One flag as clients see it.
@@ -440,6 +485,9 @@ pub struct ScoreRow {
     pub returns: u32,
     /// Hardpoint: whole seconds spent in the live zone this match.
     pub hill_seconds: u32,
+    /// Domination: kills defending a flag the team owns (its captures are
+    /// in `captures`).
+    pub defends: u32,
     pub alive: bool,
 }
 
@@ -1370,6 +1418,7 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
                 w.varint(row.captures);
                 w.varint(row.returns);
                 w.varint(row.hill_seconds);
+                w.varint(row.defends);
                 w.bool(row.alive);
             }
         }
@@ -1526,7 +1575,47 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
             w.bits(20, EVENT_TAG_BITS);
             write_charge(w, view);
         }
+        GameEvent::DominationFlags { flags } => {
+            w.bits(21, EVENT_TAG_BITS);
+            let count = flags.len().min(MAX_DOMINATION_FLAGS);
+            w.varint(count as u32);
+            for flag in &flags[..count] {
+                write_string(w, &flag.name, MAX_ZONE_NAME_BYTES);
+                write_vec3(w, flag.center);
+                w.f32(flag.radius);
+                w.f32(flag.half_height);
+            }
+        }
+        GameEvent::Domination(view) => {
+            w.bits(22, EVENT_TAG_BITS);
+            w.varint(view.tick);
+            w.bool(view.swapped);
+            let count = view.flags.len().min(MAX_DOMINATION_FLAGS);
+            w.varint(count as u32);
+            for flag in &view.flags[..count] {
+                write_option_team(w, flag.owner);
+                write_option_team(w, flag.claim);
+                w.u8(flag.progress);
+                w.bool(flag.contested);
+                w.u8(flag.capturers);
+            }
+        }
     }
+}
+
+fn write_option_team(w: &mut BitWriter, team: Option<Team>) {
+    w.bool(team.is_some());
+    if let Some(team) = team {
+        w.bits(u32::from(team.min(1)), 1);
+    }
+}
+
+fn read_option_team(r: &mut BitReader) -> DecodeResult<Option<Team>> {
+    Ok(if r.bool()? {
+        Some(r.bits(1)? as Team)
+    } else {
+        None
+    })
 }
 
 fn write_charge(w: &mut BitWriter, view: &ChargeView) {
@@ -1737,6 +1826,7 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
                     captures: r.varint()?,
                     returns: r.varint()?,
                     hill_seconds: r.varint()?,
+                    defends: r.varint()?,
                     alive: r.bool()?,
                 });
             }
@@ -1886,6 +1976,45 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
             Ok(GameEvent::ChargeSites { sites })
         }
         20 => Ok(GameEvent::Charge(read_charge(r)?)),
+        21 => {
+            let count = r.varint()? as usize;
+            if count > MAX_DOMINATION_FLAGS {
+                return Err(DecodeError::Invalid("flag count"));
+            }
+            let mut flags = Vec::with_capacity(count);
+            for _ in 0..count {
+                flags.push(FlagPointView {
+                    name: read_string(r, MAX_ZONE_NAME_BYTES)?,
+                    center: read_finite_vec3(r)?,
+                    radius: read_finite(r)?,
+                    half_height: read_finite(r)?,
+                });
+            }
+            Ok(GameEvent::DominationFlags { flags })
+        }
+        22 => {
+            let tick = r.varint()?;
+            let swapped = r.bool()?;
+            let count = r.varint()? as usize;
+            if count > MAX_DOMINATION_FLAGS {
+                return Err(DecodeError::Invalid("flag count"));
+            }
+            let mut flags = Vec::with_capacity(count);
+            for _ in 0..count {
+                flags.push(FlagPointStatus {
+                    owner: read_option_team(r)?,
+                    claim: read_option_team(r)?,
+                    progress: r.u8()?,
+                    contested: r.bool()?,
+                    capturers: r.u8()?,
+                });
+            }
+            Ok(GameEvent::Domination(DominationView {
+                tick,
+                flags,
+                swapped,
+            }))
+        }
         _ => Err(DecodeError::Invalid("event tag")),
     }
 }
@@ -1904,6 +2033,7 @@ fn write_mode(w: &mut BitWriter, mode: &Mode) {
         Mode::Hardpoint => w.bits(3, MODE_TAG_BITS),
         Mode::SearchAndDestroy => w.bits(4, MODE_TAG_BITS),
         Mode::FreeForAll => w.bits(5, MODE_TAG_BITS),
+        Mode::Domination => w.bits(6, MODE_TAG_BITS),
     }
 }
 
@@ -1917,6 +2047,7 @@ fn read_mode(r: &mut BitReader) -> DecodeResult<Mode> {
         3 => Ok(Mode::Hardpoint),
         4 => Ok(Mode::SearchAndDestroy),
         5 => Ok(Mode::FreeForAll),
+        6 => Ok(Mode::Domination),
         _ => Err(DecodeError::Invalid("mode")),
     }
 }
@@ -1945,6 +2076,9 @@ fn write_award(w: &mut BitWriter, award: Award) {
         Award::WireCutter => (17, None),
         Award::Clutch => (18, None),
         Award::Ace => (19, None),
+        Award::DominationCapture => (20, None),
+        Award::DominationDefend => (21, None),
+        Award::DominationAssault => (22, None),
     };
     w.bits(tag, AWARD_TAG_BITS);
     if let Some(n) = count {
@@ -1974,6 +2108,9 @@ fn read_award(r: &mut BitReader) -> DecodeResult<Award> {
         17 => Award::WireCutter,
         18 => Award::Clutch,
         19 => Award::Ace,
+        20 => Award::DominationCapture,
+        21 => Award::DominationDefend,
+        22 => Award::DominationAssault,
         _ => return Err(DecodeError::Invalid("award")),
     })
 }
@@ -3753,6 +3890,14 @@ mod tests {
                         award: Award::HardpointAssault,
                         points: 50,
                     },
+                    Scored {
+                        award: Award::DominationCapture,
+                        points: 150,
+                    },
+                    Scored {
+                        award: Award::DominationDefend,
+                        points: 50,
+                    },
                 ],
                 totals: ScoreTotals {
                     score: 2350,
@@ -3881,6 +4026,7 @@ mod tests {
                         captures: 2,
                         returns: 5,
                         hill_seconds: 74,
+                        defends: 3,
                         alive: true,
                     },
                     ScoreRow {
@@ -3918,6 +4064,43 @@ mod tests {
                 holder: Holder::Neutral,
                 moves_at: Some(1),
             },
+            GameEvent::DominationFlags {
+                flags: vec![
+                    FlagPointView {
+                        name: "A".to_owned(),
+                        center: Vec3::new(-20.0, 2.0, 4.5),
+                        radius: 3.5,
+                        half_height: 2.0,
+                    },
+                    FlagPointView {
+                        name: "B".to_owned(),
+                        center: Vec3::new(0.0, 2.6, 0.0),
+                        radius: 4.0,
+                        half_height: 2.0,
+                    },
+                ],
+            },
+            GameEvent::Domination(DominationView {
+                tick: 91_234,
+                swapped: true,
+                flags: vec![
+                    FlagPointStatus::default(),
+                    FlagPointStatus {
+                        owner: Some(1),
+                        claim: Some(0),
+                        progress: 128,
+                        contested: false,
+                        capturers: 2,
+                    },
+                    FlagPointStatus {
+                        owner: Some(0),
+                        claim: Some(1),
+                        progress: 40,
+                        contested: true,
+                        capturers: 0,
+                    },
+                ],
+            }),
             GameEvent::Round {
                 number: 1,
                 phase: RoundPhase::Freeze,
@@ -4046,6 +4229,8 @@ mod tests {
             Mode::CaptureTheFlag,
             Mode::Hardpoint,
             Mode::SearchAndDestroy,
+            Mode::FreeForAll,
+            Mode::Domination,
         ] {
             let msg = ServerMessage::Welcome {
                 player_id: 3,
