@@ -429,6 +429,71 @@ def powerup_tag(b: Model):
     b.text("10", 0.05, -0.09, -0.03, 0.0, 0.2, "trim_black", depth=0.065, detail=False)
 
 
+# --- Zombies electric fence ------------------------------------------------------------
+# The trap across the west gate (scenes/zombies/electric_trap.tscn): an 8 m run of
+# wires between two steel posts on ceramic insulators along local x, origin at the
+# middle of its foot, and the switch box that buys it on the wall beside the gate.
+LOOKS["fence_ceramic"] = {"color": (0.62, 0.58, 0.5), "rough": 0.35}
+LOOKS["fence_wire"] = {"color": (0.4, 0.38, 0.35), "rough": 0.5, "metal": 0.9}
+LOOKS["fence_live"] = {"color": (0.6, 0.85, 1.0), "glow": 3.0}
+LOOKS["switch_paint"] = {"color": (0.55, 0.42, 0.08), "rough": 0.6, "metal": 0.4}
+LOOKS["switch_red"] = {"color": (0.9, 0.12, 0.08), "glow": 1.4}
+FENCE_WIRES = (0.35, 0.75, 1.15, 1.55, 1.95)
+FENCE_HALF = 4.0
+
+
+def _fence_wires(b: Model, look: str, radius: float):
+    for y in FENCE_WIRES:
+        sag = [(x, y - 0.05 * (1.0 - (x / FENCE_HALF) ** 2), 0.0)
+               for x in (-FENCE_HALF + 0.1 + k * (2 * FENCE_HALF - 0.2) / 8 for k in range(9))]
+        b.tube(sag, radius, look, sides=5, detail=False)
+
+
+@model
+def trap_fence(b: Model):
+    """Two steel posts 2.3 m tall at x = +/-4 m, braced at the foot, each with five
+    ceramic insulators, five wires strung between them, and a junction box with
+    its cable down the west post."""
+    for x in (-FENCE_HALF, FENCE_HALF):
+        b.box(x - 0.06, x + 0.06, 0.0, 2.3, -0.06, 0.06, "steel_dark", bevel=0.01)
+        b.box(x - 0.2, x + 0.2, 0.0, 0.08, -0.2, 0.2, "steel_dark", bevel=0.01)
+        b.hull([(x, 0.0, -0.45), (x, 0.0, 0.45), (x, 0.9, 0.0), (x + 0.02, 0.9, 0.0),
+                (x + 0.02, 0.0, -0.45), (x + 0.02, 0.0, 0.45)], "steel_galv")
+        inward = -1.0 if x > 0 else 1.0
+        for y in FENCE_WIRES:
+            for k in range(3):
+                b.cyl("x", x + inward * (0.06 + k * 0.035), x + inward * (0.085 + k * 0.035),
+                      (y, 0.0), 0.04 - k * 0.006, "fence_ceramic", sides=10)
+    _fence_wires(b, "fence_wire", 0.007)
+    b.box(-FENCE_HALF - 0.32, -FENCE_HALF - 0.06, 1.1, 1.45, -0.12, 0.12, "steel_galv", bevel=0.015)
+    b.tube([(-FENCE_HALF - 0.19, 1.1, 0.0), (-FENCE_HALF - 0.19, 0.4, 0.06), (-FENCE_HALF - 0.1, 0.02, 0.1)],
+           0.015, "rubber", sides=6, detail=False)
+
+
+@model
+def trap_fence_lit(b: Model):
+    """The fence's wires live: glowing over the plain ones while it is on."""
+    _fence_wires(b, "fence_live", 0.012)
+
+
+@model
+def trap_switch(b: Model):
+    """The switch box that buys the fence: 0.45 x 0.6 m, on the wall, its front
+    toward +z, origin on the wall at its foot 1.1 m up the box, a lever on its
+    side and a red lamp on top."""
+    b.box(-0.22, 0.22, 1.0, 1.6, 0.0, 0.18, "switch_paint", bevel=0.02)
+    b.box(-0.18, 0.18, 1.06, 1.54, 0.18, 0.19, "steel_dark", bevel=0.005)
+    # A stencilled bolt on the door, dark.
+    b.hull([(0.04, 1.47, 0.195), (-0.06, 1.3, 0.195), (0.0, 1.3, 0.195), (-0.04, 1.13, 0.195),
+            (0.07, 1.33, 0.195), (0.01, 1.33, 0.195)], "trim_black")
+    b.cyl("x", 0.22, 0.27, (1.3, 0.09), 0.035, "steel_dark", sides=10)
+    b.tube([(0.27, 1.3, 0.09), (0.3, 1.42, 0.16), (0.3, 1.52, 0.2)], 0.014, "steel_galv", sides=6, detail=False)
+    b.smooth_hull([(0.3 + math.cos(a) * 0.03, 1.55 + y, 0.21 + math.sin(a) * 0.03)
+                   for a in (k * PI / 4 for k in range(8)) for y in (-0.04, 0.04)], "rubber", levels=1)
+    b.cyl("y", 1.6, 1.66, (0.0, 0.09), 0.035, "switch_red", sides=10)
+    b.tube([(0.0, 1.0, 0.09), (0.0, 0.0, 0.09)], 0.02, "rubber", sides=6, detail=False)
+
+
 # --- Capture the Flag ------------------------------------------------------------------
 @model
 def flag_pole(b: Model):

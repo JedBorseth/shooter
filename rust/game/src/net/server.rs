@@ -1974,6 +1974,24 @@ impl NetServer {
         }
     }
 
+    /// Zombies: moves zombie `id` to `at` (tests).
+    #[func]
+    fn debug_place_zombie(&mut self, id: i32, at: Vector3) {
+        if let (Some(horde), Ok(id)) = (&mut self.horde, u8::try_from(id)) {
+            horde.place(id, to_sim(at));
+        }
+    }
+
+    /// Zombies: trap `index`'s phase ("idle", "active", "cooling"), or ""
+    /// (tests).
+    #[func]
+    fn trap_phase(&self, index: i32) -> GString {
+        self.horde
+            .as_ref()
+            .and_then(|h| Some(h.trap_phase(usize::try_from(index).ok()?)))
+            .map_or(GString::new(), GString::from)
+    }
+
     /// Zombies: whether this round is a hound round.
     #[func]
     fn hound_round(&self) -> bool {
@@ -2032,6 +2050,7 @@ impl NetServer {
             .and_then(|h| match kind.to_string().as_str() {
                 "door" => h.door_node(index),
                 "drink" => h.machines.drink_machine_node(index),
+                "trap" => h.machines.traps.get(index).map(|t| t.node.clone().upcast()),
                 "power" => h.machines.power_switch_node(),
                 "crate" => h.machines.mystery.as_ref()?.spot_node(index),
                 "forge" => h.machines.forge.as_ref().map(|f| f.node()),
@@ -2733,6 +2752,7 @@ impl NetServer {
             events.extend(horde.drop_events());
             events.push(horde.timers_event(self.tick));
             events.extend(self.crate_events());
+            events.extend(self.trap_events());
             events.extend(self.forge_event());
             events.extend(self.forge_event());
             for avatar in &self.avatars {
@@ -4154,6 +4174,7 @@ impl NetServer {
         events.push(horde.timers_event(self.tick));
         events.extend(horde.machines.events(self.avatars.len() == 1));
         events.extend(self.crate_events());
+        events.extend(self.trap_events());
         for event in events {
             self.broadcast_event(&GameEvent::Zombies(event));
         }
@@ -4180,6 +4201,8 @@ impl NetServer {
                 HordeEvent::Struck { player, from } => self.zombie_strike(player, from, false),
                 HordeEvent::Bitten { player, from } => self.zombie_strike(player, from, true),
                 HordeEvent::BurnedToDeath { shooter } => self.pay_kills(shooter, 1),
+                HordeEvent::Shocked { player } => self.trap_shock(player),
+                HordeEvent::TrapChanged { trap } => self.broadcast_trap(trap),
                 HordeEvent::HoundStrike { at } => {
                     self.broadcast_event(&GameEvent::Zombies(
                         protocol::ZombiesEvent::HoundStrike { at },
@@ -4279,6 +4302,12 @@ impl NetServer {
             if let Some(machine) = horde.machines.drink_machine_of(&node) {
                 if pressed {
                     self.buy_drink(id, machine);
+                }
+                continue;
+            }
+            if let Some(trap) = horde.machines.trap_of(&node) {
+                if pressed {
+                    self.buy_trap(id, trap);
                 }
                 continue;
             }
@@ -4429,6 +4458,80 @@ impl NetServer {
         self.broadcast_crate();
     }
 
+    /// Zombies: player `id` presses use at trap `trap`'s switch: with the
+    /// power on and 1000 points, it goes live for 40 s.
+    fn buy_trap(&mut self, id: u8, trap: usize) {
+        let Some(horde) = &mut self.horde else {
+            return;
+        };
+        let powered = horde.machines.power();
+        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
+            return;
+        };
+        let state = &avatar.predicted.state;
+        if !state.alive() || state.downed {
+            return;
+        }
+        let Some(price) = horde.buy_trap(trap, id, avatar.zombies.points, powered) else {
+            return;
+        };
+        avatar.zombies.points -= price;
+        godot_print!("server: player {id} switched trap {trap} on");
+        self.send_points(id, -(price as i32));
+        self.broadcast_trap(trap);
+    }
+
+    /// Zombies: trap `trap` as everyone is told it.
+    fn broadcast_trap(&mut self, trap: usize) {
+        let tick = self.tick;
+        let event = self.horde.as_ref().and_then(|h| {
+            Some(h.machines.traps.get(trap)?.event(trap, |seconds| {
+                tick + (seconds.max(0.0) * TICK_RATE as f32).ceil() as Tick
+            }))
+        });
+        if let Some(event) = event {
+            self.broadcast_event(&GameEvent::Zombies(event));
+        }
+    }
+
+    /// Zombies: player `id` walked into a live trap: down, unless they have
+    /// Bulwark, which turns it into a fifth of their health.
+    fn trap_shock(&mut self, id: u8) {
+        let max = self.params.health.max_health;
+        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
+            return;
+        };
+        let state = &mut avatar.predicted.state;
+        if !state.alive() || state.downed {
+            return;
+        }
+        let damage = if state.drinks.has(Drink::Bulwark) {
+            (max * zombies::traps::BULWARK_SHOCK_SHARE).min(state.health)
+        } else {
+            state.health
+        };
+        let downs = damage >= state.health;
+        let damage = if downs {
+            state.health - laststand::DOWNED_HEALTH
+        } else {
+            damage
+        };
+        player::apply_damage(state, damage, false, &mut Vec::new());
+        let from = avatar.predicted.position;
+        self.send_event(
+            id,
+            GameEvent::Hurt {
+                attacker: u8::MAX,
+                from,
+                damage,
+                killed: false,
+            },
+        );
+        if downs {
+            self.go_down(id);
+        }
+    }
+
     /// Zombies: player `id` presses use at the forge: if it is powered and
     /// free and they hold a weapon it can upgrade (and carry another), they
     /// pay, hand it over, and the forge starts on it.
@@ -4490,6 +4593,19 @@ impl NetServer {
         if let Some(event) = self.forge_event() {
             self.broadcast_event(&GameEvent::Zombies(event));
         }
+    }
+
+    /// Zombies: every trap as clients are told it.
+    fn trap_events(&self) -> Vec<protocol::ZombiesEvent> {
+        let tick = self.tick;
+        self.horde
+            .as_ref()
+            .map(|h| {
+                h.machines.trap_events(|seconds| {
+                    tick + (seconds.max(0.0) * TICK_RATE as f32).ceil() as Tick
+                })
+            })
+            .unwrap_or_default()
     }
 
     /// Zombies: the mystery crate's spots as clients are told them.

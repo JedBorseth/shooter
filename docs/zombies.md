@@ -98,12 +98,35 @@ round's running total stays under 50 times the round number, at most 500
 (`rebuild_barrier_cap_per_round`); as in Black Ops, the board that reaches
 the cap is not paid.
 
+## The electric fence
+
+A trap across the west gate (`Traps/WestGateFence` on the arena,
+`scenes/zombies/electric_trap.tscn`; rules in
+`rust/sim/src/zombies/traps.rs`, run by `net/horde.rs`): five wires between
+two steel posts, and a switch box on the wall beside the gate that buys it.
+
+| Rule | Here | Black Ops III (`_zm_traps.gsc`, `_zm_trap_electric.gsc`) |
+| --- | --- | --- |
+| Price | 1000, with the power on | `zombie_cost` 1000; traps wait for `power_on` |
+| On | 40 s, then 60 s cooling down before it can be bought again | `_trap_duration` 40, `_trap_cooldown_time` 60 |
+| Zombies | Any zombie or hound in it dies within 1.25 s. Nobody is paid and nothing drops | `zombie_trap_death`'s `wait(randomfloat(1.25))`; the trap is the attacker |
+| Players | A player who walks into it goes down; with Bulwark it takes a fifth of their health instead, every 2.5 s they stay | `player_elec_damage`: down without Jugg, 50 of 250 with it, a 2.5 s shock |
+
+The fence does not block anyone: zombies and players walk through it, as
+in Black Ops. Its wires glow and flicker while it is on. The models are
+ours, built in Blender (`tools/gear_models.py`: `trap_fence`,
+`trap_fence_lit`, `trap_switch`).
+
+**Differences from Black Ops, on purpose:** no trap sounds yet (real CC0
+recordings only), and the fence does not shake the screen of a player it
+shocks.
+
 ## Power
 
 | Rule | Here | Black Ops |
 | --- | --- | --- |
 | Switch | One lever (`PowerSwitch` on the map) in the west yard, behind its door. A press turns the power on, free, for the rest of the game | Same: a lever behind a door, free, once a game (`_zm_power.gsc`) |
-| What needs it | Every drink machine and the forge. Second Wind in a game for one works without it. The mystery crate never does | Perk machines and Pack-a-Punch; Quick Revive works without power in solo (`use_solo_revive`) |
+| What needs it | Every drink machine, the forge, and the electric fence. Second Wind in a game for one works without it. The mystery crate never does | Perk machines and Pack-a-Punch; Quick Revive works without power in solo (`use_solo_revive`) |
 | New game | Off again | — |
 
 The switch lights two lamps and every machine's sign when thrown.
@@ -253,7 +276,8 @@ sounds yet (real CC0 recordings only).
 
 ## Reference
 
-- Black Ops III: `_zm_ai_dogs.gsc` (hound rounds), `_zm_powerups.gsc`, `_zm_powerup_carpenter.gsc`,
+- Black Ops III: `_zm_ai_dogs.gsc` (hound rounds), `_zm_traps.gsc` and
+  `_zm_trap_electric.gsc` (the fence), `_zm_powerups.gsc`, `_zm_powerup_carpenter.gsc`,
   `_zm_powerup_fire_sale.gsc`,
   `_zm_blockers.gsc` and `_zm.gsc` (rebuilding), `_zm_pack_a_punch.gsc` and `_zm_pack_a_punch_util.gsc`
   (cost, working time, timeout), `_zm_weapons.gsc` (upgraded ammo cost),

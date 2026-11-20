@@ -210,7 +210,8 @@ use crate::zombies::drinks::Drinks;
 // while its bottle is drunk (the raise kind takes 2 bits).
 // Version 88 added alternate ammo for re-packed weapons
 // (`crate::zombies::alt_ammo`): `ZombiesEvent::AltAmmo` and `AltAmmoFired`.
-pub const PROTOCOL_VERSION: u16 = 88;
+// Version 89 added traps: `ZombiesEvent::Trap`.
+pub const PROTOCOL_VERSION: u16 = 89;
 /// Longest account session token a hello carries, in bytes.
 pub const MAX_ACCOUNT_TOKEN_BYTES: usize = 2048;
 /// Longest reason a denial carries, in bytes.
@@ -976,6 +977,13 @@ pub enum ZombiesEvent {
         weapon: WeaponId,
         kind: Option<crate::zombies::alt_ammo::AltAmmo>,
     },
+    /// To everyone, when it changes and on joining: trap `trap` (the map's
+    /// `Traps` in order) is in `phase` until server tick `until`.
+    Trap {
+        trap: u8,
+        phase: TrapPhase,
+        until: Option<Tick>,
+    },
     /// To everyone: alternate ammo `kind` went off at `at`: the Arc struck
     /// the first `count` of `struck` in turn (zombie ids), Cinder burst
     /// there.
@@ -1076,6 +1084,24 @@ pub enum ZombiesEvent {
         weapon: Option<WeaponId>,
         until: Option<Tick>,
     },
+}
+
+/// What a trap is doing ([`ZombiesEvent::Trap`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TrapPhase {
+    Idle,
+    Active,
+    Cooling,
+}
+
+impl TrapPhase {
+    pub fn name(self) -> &'static str {
+        match self {
+            TrapPhase::Idle => "idle",
+            TrapPhase::Active => "active",
+            TrapPhase::Cooling => "cooling",
+        }
+    }
 }
 
 /// What the forge is doing ([`ZombiesEvent::Forge`]).
@@ -2530,6 +2556,19 @@ fn write_zombies_event(w: &mut BitWriter, event: &ZombiesEvent) {
                 w.bits(u32::from(kind.code()), 2);
             }
         }
+        ZombiesEvent::Trap { trap, phase, until } => {
+            w.bits(18, ZOMBIES_TAG_BITS);
+            w.u8(trap);
+            w.bits(
+                match phase {
+                    TrapPhase::Idle => 0,
+                    TrapPhase::Active => 1,
+                    TrapPhase::Cooling => 2,
+                },
+                2,
+            );
+            write_option_tick(w, until);
+        }
         ZombiesEvent::AltAmmoFired {
             kind,
             at,
@@ -2712,6 +2751,16 @@ fn read_zombies_event(r: &mut BitReader) -> DecodeResult<ZombiesEvent> {
             } else {
                 None
             },
+        },
+        18 => ZombiesEvent::Trap {
+            trap: r.u8()?,
+            phase: match r.bits(2)? {
+                0 => TrapPhase::Idle,
+                1 => TrapPhase::Active,
+                2 => TrapPhase::Cooling,
+                _ => return Err(DecodeError::Invalid("trap phase")),
+            },
+            until: read_option_tick(r)?,
         },
         17 => {
             let kind = read_alt_ammo(r)?;
@@ -6940,6 +6989,11 @@ mod tests {
                 player: 2,
                 weapon: WeaponId::expect("m4").upgraded().unwrap(),
                 kind: Some(crate::zombies::alt_ammo::AltAmmo::Cinder),
+            }),
+            GameEvent::Zombies(ZombiesEvent::Trap {
+                trap: 0,
+                phase: TrapPhase::Cooling,
+                until: Some(12_000),
             }),
             GameEvent::Zombies(ZombiesEvent::AltAmmoFired {
                 kind: crate::zombies::alt_ammo::AltAmmo::Arc,

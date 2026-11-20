@@ -86,6 +86,7 @@ pub struct HordeView {
     drink_machines: Vec<Gd<Node3D>>,
     crate_spots: Vec<Gd<Node3D>>,
     forge: Option<Gd<crate::forge::Forge>>,
+    traps: Vec<Gd<Node3D>>,
     history: HordeHistory,
     puppets: Vec<Puppet>,
     lag: f64,
@@ -128,8 +129,10 @@ impl HordeView {
         let forge = map
             .as_ref()
             .and_then(|m| m.try_get_node_as::<crate::forge::Forge>("Forge"));
+        let traps = map.as_ref().map(machines::map_traps).unwrap_or_default();
         Some(Self {
             forge,
+            traps,
             director,
             scene,
             hound_scene: godot::tools::try_load::<PackedScene>(HOUND_SCENE).ok(),
@@ -372,6 +375,9 @@ impl HordeView {
                 if let Some(forge) = &mut self.forge {
                     forge.bind_mut().set_powered(on);
                 }
+                for trap in &mut self.traps {
+                    trap.call("set_powered", &[on.to_variant()]);
+                }
             }
             ZombiesEvent::Machine {
                 machine,
@@ -427,6 +433,15 @@ impl HordeView {
                 }
             }
             ZombiesEvent::HoundStrike { at } => self.strike(to_godot(at)),
+            ZombiesEvent::Trap { trap, phase, until } => {
+                let seconds = until.map_or(0.0, &seconds_until) as f32;
+                if let Some(node) = self.traps.get_mut(usize::from(trap)) {
+                    node.call(
+                        "show_phase",
+                        &[phase.name().to_variant(), seconds.to_variant()],
+                    );
+                }
+            }
             ZombiesEvent::AltAmmo {
                 player,
                 weapon,
