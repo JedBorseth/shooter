@@ -196,8 +196,9 @@ What it takes from Atlas Superstore, as structure rather than layout:
   machine lines (flexo and die cutter in the north; rotary, folder-gluers, and
   strapping in the south), pallet racking faced onto the aisles, and roll and
   stock blocks, about 6 to 13 m with 4 to 5 m aisles: many routes, not three
-  corridors. Wall departments (ink room, maintenance shop; plate room, tooling
-  crib) cut the back and front aisles into stretches.
+  corridors. Wall departments (ink room, maintenance shop; plate room, and an
+  open forklift charging bay since the variation pass) cut the back and front
+  aisles into stretches.
 - **A middle under an open roof.** Atlas's ceiling is open to the sky in
   places; here a 12 m roof breach over the mid stockpile lets a sun shaft and
   haze fall on a stack of jumbo rolls, with fallen deck panels around it.
@@ -212,19 +213,21 @@ What it takes from Atlas Superstore, as structure rather than layout:
 Verticality and set pieces added on review:
 
 - **Room roofs.** The ink room (north) and plate room (south) are one storey
-  with a flat roof at 3.4 m. Two pallets of stock against the wall step 1.1 m
-  and 2.2 m, so players mantle up to the roof (Call of Duty's mantle reaches
-  1.35 m here), which looks down the back aisle over a parapet.
+  with a flat roof at 3.4 m, which looks down the back aisle over a parapet.
+  At the ink room, two pallets of stock against the wall step 1.1 m and 2.2 m,
+  so players mantle up to the roof (Call of Duty's mantle reaches 1.35 m
+  here); the plate room has a fixed ladder instead (see the variation pass).
 - **The roll perch** in the mid stockpile: 1.1 m, then 2.0 m, then the roll
   tops at 2.6 m.
 - **Crouch tunnels.** Each long north–south production line is split by a
   transfer conveyor at 1.4 m: a crouching or sliding player (1.1 m) gets
   through, a standing one does not (Atlas's shortcuts).
 - **Effects:** the breach's sun shaft and denser haze, a torn cable tray over
-  each crossover throwing sparks with a flash, two failing high-bays that
-  flicker (back and front aisles), amber beacons turning on the yard
-  forklifts, steam from a wall vent in each half, and a toppled rack's spilled
-  sheets in each bay.
+  the north crossover throwing sparks with a flash, two failing high-bays that
+  flicker (back and front aisles), an amber beacon turning on the parking
+  lot's forklift, and a toppled rack's spilled sheets in the north bay. (The
+  wall steam went in the detail pass; the south half's twins of the sparks,
+  beacon, and spill went in the variation pass.)
 
 Stairs are clipped as one ramp (steps to see, a slope to walk on), as Call of
 Duty clips stairs, and rails as one box from deck to top rail.
@@ -374,6 +377,103 @@ Rebuild:
 
 ```sh
 blender -b --python tools/build_warehouse_detail_props.py
+python3 tools/map_blockout/warehouse_photo_layout.py
+uv run --with numpy --with pillow --with scipy tools/build_warehouse_floor_masks.py
+xvfb-run -a godot --path godot --script res://tools/warehouse_build_headless.gd
+```
+
+### Variation pass (November 2026)
+
+![Warehouse after the variation pass: the scanned office's break area and a desk room through its glass (top), the plate room's ladder and the truck apron's container (bottom)](media/warehouse-variation.jpg)
+
+The user's direction: the map read as a mirror image, so take out duplicated
+pieces and give the two halves their own identity with ideas from other Call
+of Duty maps, make one office look like an office they scanned in real life,
+and add a ladder up onto an area.
+
+Call of Duty's maps are rarely mirrored: balance comes from matched walking
+times and sightlines, while each side's rooms, yards, and ways up differ (see
+"What the good ones share" above). The halves keep the 6v6 plan's footprints
+and cover heights where they block lines, so the measures hold, and change
+what stands in them:
+
+| | North (team 0) | South (team 1) | Reference |
+| --- | --- | --- | --- |
+| Yard | Two box trucks, pallet stock, a forklift with its beacon, a covered car in the parking lot | One truck, a 20 ft shipping container where the second truck stood (same gate overlap), a wall of scrap bales three high, empty pallets | Shipment's and Crash's container yards |
+| Door baffles | Four pallet stacks | Two pallet stacks, two of paper rolls | |
+| Room roof | Ink room: crates to mantle | Plate room: a fixed ladder, the only way up | Crash's courtyard ladder onto a rooftop; Rust's ladder up from Maintenance |
+| Wall department | Maintenance shop (walled room) | Open forklift charging bay: chargers, a forklift on charge, a spare battery, a guard rail | |
+| Office, ground floor | The scanned office (below) | QC lab: a box compression tester, sample files | Vacant's and Atlas's lived-in rooms |
+| Office, upstairs | Desks | QC test benches | |
+| Effects | Sparks over the crossover, spilled sheets, beacon | Burnt switchboard's arcing (detail pass) | |
+
+**The ladder** is the sim's ladder (`rust/sim/src/movement/ladder.rs`, Call of
+Duty's grab, climb, slide down, and lowered weapon), marked with a
+`LadderVolume` from the layout's `ladders` list. It is a 3.4 m yellow steel
+ladder with 0.3 m rungs on the plate room's hall-facing wall, its stiles
+carried 1.05 m past the roof edge as grab rails; one clip box fills the gap
+between rungs and wall, no higher than the roof. The roof is a riskier perch
+than the ink room's: the climb is slower than two mantles and the weapon is
+down the whole way.
+
+**The scanned office.** The user's phone LiDAR scan of a real in-plant office
+(about 10.6 x 6.0 m inside, a 2.84 m ceiling) is the reference, not an asset:
+like a Call of Duty map's photogrammetry, it was measured and rebuilt as clean
+game models (`tools/build_warehouse_variation_props.py`), and the scan is not
+in the repository. It fills the shift office's ground floor beside its stair:
+
+- a desk room at each end behind a full-height glass partition with a black
+  anodized frame and head track, its glass door standing open, and plank
+  vinyl floors; a polished-concrete break area between;
+- in the break area, a wall TV over a stainless table with a laser printer
+  on its undershelf, a black mini fridge with a microwave and paper cups on
+  it, framed woodland prints, two chairs, and a putting mat on the floor;
+- grey oak-laminate desks with drawer pedestals and monitors, a filing
+  cabinet, a jacket and a hi-vis vest on hooks;
+- white panel walls, a suspended ceiling at 2.85 m with linear LED strips, a
+  white-framed glass door to the back aisle, and a window over the plant.
+
+The partitions, door, and window collide for players but carry
+`surface = glass`, so rounds pass through them as they do Call of Duty's
+interior glass: glass keeps up to 95% of a round's damage, less a share for
+the pane's thickness (`rust/sim/src/penetration.rs`), about 91% for an M4
+round through a partition straight on. Bots see, and are seen, through glass
+and never take it for cover (`clear_line` in `rust/game/src/net/bots.rs`).
+The way through jinks: the bay door (moved to the office's west end) into the
+south desk room, its partition door at the east end into the break area, then
+the north partition's door at the east end again. The partition doorways are
+1.6 m wide under a 2.3 m head and the glass door 1.7 m by 2.4 m, so the bots'
+navigation mesh (0.4 m radius, 1.8 m tall, baked in 0.25 m cells) runs through
+each; `warehouse_test.gd` bakes it with the bots' settings and walks every
+door and the stair. The glass draws with an unlit fresnel sheen
+(`shaders/office_glass.gdshader`, single-sided, no fog): lit, double-sided
+panes cost about 5 ms on Medium with a partition filling the screen. One lamp
+lights all three rooms through the glass. Litter and wall dressing keep out of
+the office (the layout's `clear` areas).
+
+**Measures** (the built scene through `warehouse_grid.gd` and
+`warehouse_measure.py`, which sample collision, so the office glass counts as
+opaque there; the office is interior, off every long line): start to start 75 m (10.1 s) both before and after;
+median longest eye-height line 20.4 m before, 21.0 m after; floor seeing past
+40 m 2% before and after; longest line 50 m before, 48 m after.
+
+**Cost** (GTX 1660 Ti, 1080p, GPU ms, before / after, at the new places):
+
+| View | Low | Medium | High |
+| --- | --- | --- | --- |
+| Scanned office, break area | 5.87 / 6.18 | 10.21 / 10.88 | 13.13 / 14.11 |
+| Through the office glass | 6.23 / 6.79 | 10.77 / 11.81 | 14.12 / 15.44 |
+| Plate room ladder | 6.46 / 6.41 | 11.22 / 11.22 | 14.15 / 14.11 |
+| Charging bay | 5.37 / 5.43 | 9.38 / 9.54 | 11.99 / 12.15 |
+| Truck apron | 5.73 / 5.70 | 9.57 / 9.54 | 12.38 / 12.33 |
+| Hall, centre looking north | 6.29 / 6.46 | 10.19 / 10.28 | 13.34 / 13.41 |
+
+Rebuild:
+
+```sh
+blender -b --python tools/build_warehouse_variation_props.py
+uv run --with trimesh --with numpy --with scipy tools/build_warehouse_clip.py shipping_container_blue qc_bench
+# The office glass material is set in the models' .gltf.import files.
 python3 tools/map_blockout/warehouse_photo_layout.py
 uv run --with numpy --with pillow --with scipy tools/build_warehouse_floor_masks.py
 xvfb-run -a godot --path godot --script res://tools/warehouse_build_headless.gd

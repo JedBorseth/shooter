@@ -39,7 +39,13 @@ SKIP = {"cable_tray_6", "deck_panel", "floor_line", "girder_10", "hanger_rod", "
         "litter_cardboard", "litter_wrap", "litter_mixed", "traffic_cone", "traffic_cone_down",
         "caution_tape", "wet_floor_sign", "mop_bucket", "switchgear_burnt", "extinguisher_down",
         "extinguisher_station", "junction_box", "notice_board", "dumpster", "trash_bags", "weeds",
-        "oil_drip_tray"}
+        "oil_drip_tray",
+        # The halves' variation (tools/build_warehouse_variation_props.py):
+        # set pieces placed with their own clip by the layout.
+        "office_partition", "office_door_white", "office_window", "office_desk_l", "office_desk_straight",
+        "office_tv", "office_fridge", "office_prep_table", "office_print_a", "office_print_b",
+        "office_coat_hooks", "office_putting_mat", "office_led_strip", "office_lvp_north", "office_lvp_south",
+        "fixed_ladder", "charging_station", "qc_compression_tester"}
 
 PITCH = 0.08  # voxel size (m)
 CELL = 0.16  # clip column size (m)

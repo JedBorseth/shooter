@@ -672,7 +672,18 @@ static func _build_boxes(g: Node3D) -> void:
 		shape.shape = bs
 		body.add_child(shape)
 		shape.owner = _root
-	_log.append("boxes: %d" % n)
+	# Climbable ladders (rust/game/src/ladder.rs): a LadderVolume at each
+	# ladder's foot on its rungs' face, its -Z pointing the way a climber faces.
+	for l in _data.get("ladders", []):
+		var volume: Node3D = ClassDB.instantiate("LadderVolume")
+		volume.name = l.name
+		volume.position = _v(l.pos)
+		volume.rotation_degrees.y = l.yaw
+		volume.set("length", l.length)
+		volume.set("width", l.width)
+		g.add_child(volume)
+		volume.owner = _root
+	_log.append("boxes: %d, ladders: %d" % [n, _data.get("ladders", []).size()])
 
 
 # --- detail pass ------------------------------------------------------------------
@@ -695,6 +706,9 @@ static func _build_detail(g: Node3D) -> void:
 		var collides: bool = d.has("clip") or d.has("hull")
 		var holder: Node3D = StaticBody3D.new() if collides else Node3D.new()
 		holder.name = d.get("name", "%s%02d" % [String(d.model).to_pascal_case(), n])
+		# Glass partitions, doors, and windows stop players, not rounds.
+		if d.has("surface"):
+			holder.set_meta("surface", d.surface)
 		g.add_child(holder)
 		holder.owner = _root
 		var inst: Node3D = ps.instantiate()
@@ -821,10 +835,11 @@ static func _build_effects(g: Node3D) -> void:
 				var lamp := OmniLight3D.new()
 				lamp.name = "OfficeLamp%02d" % n
 				lamp.position = Vector3(e.pos[0], e.pos[1], e.pos[2])
-				lamp.light_color = Color(0.95, 0.97, 1.0)
-				lamp.light_energy = 1.6
-				lamp.omni_range = 7.5
-				lamp.shadow_enabled = true
+				var tint: Array = e.get("color", [0.95, 0.97, 1.0])
+				lamp.light_color = Color(tint[0], tint[1], tint[2])
+				lamp.light_energy = e.get("energy", 1.6)
+				lamp.omni_range = e.get("range", 7.5)
+				lamp.shadow_enabled = e.get("shadow", true)
 				g.add_child(lamp)
 				lamp.owner = _root
 			"sparks", "steam", "beacon", "smolder", "embers", "arc", "wisp", "drip", "dangle":
