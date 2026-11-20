@@ -60,6 +60,10 @@ ci: check-rust check-gd test perf-gate-if-gpu
 screens dir="/tmp/shooter-screens": build
     CAPTURE_DIR={{dir}} {{godot}} --path godot --resolution 1600x900 --script res://tests/capture_screens.gd
 
+# Photograph a map from eye level. Requires a display and a renderer.
+capture map dir: build
+    CAPTURE_MAP={{quote(map)}} CAPTURE_DIR={{quote(dir)}} {{godot}} --path godot --resolution 1600x900 --audio-driver Dummy --script res://tests/capture_view.gd
+
 # Measure frame times and compare them with the baseline (see docs/perf).
 bench:
     tools/benchmark.sh --compare docs/perf/baseline.json
