@@ -14,6 +14,7 @@
 //! The transport is Godot's ENet, used only as an unreliable UDP pipe; all
 //! serialization is here.
 
+pub mod bandwidth;
 pub mod bits;
 pub mod conditioner;
 pub mod discovery;

@@ -77,6 +77,7 @@ use shooter_sim::hardpoint::{self, HardpointRules, HardpointState, HillTime, Hol
 use shooter_sim::hitbox::clock::{BodyClock, BodyState};
 use shooter_sim::killcam::{self, KillRecord};
 use shooter_sim::melee;
+use shooter_sim::net::bandwidth::Probe;
 use shooter_sim::net::discovery::{ServerInfo, query_port_for};
 use shooter_sim::net::input_queue::InputQueue;
 use shooter_sim::net::lag::{self, LagHistory, Pellet, Target, TargetHit};
@@ -260,12 +261,19 @@ pub struct NetServer {
     #[export]
     #[init(val = 45.0)]
     fuse_seconds: f32,
+    /// Bandwidth bench: above 0, every bot's snapshots and inputs are
+    /// encoded as if it were a client this many milliseconds of round trip
+    /// away, and counted (`bandwidth_report`).
+    #[export]
+    bandwidth_probe_rtt_ms: f32,
 
     host: Option<Gd<ENetConnection>>,
     clients: Vec<ClientSlot>,
     avatars: Vec<Avatar>,
     tick: Tick,
     history: SnapshotHistory,
+    /// The bandwidth bench, when `bandwidth_probe_rtt_ms` is set.
+    probe: Option<Probe>,
     /// Every snapshot's players for the last second, for lag compensation.
     lag: LagHistory,
     params: PlayerParams,
@@ -546,6 +554,9 @@ impl INode3D for NetServer {
         // Headless, nothing paces the main loop; don't spin a core.
         Engine::singleton().set_max_fps(TICK_RATE as i32 * 2);
         self.spawn = Vector3::new(0.0, 0.05, 20.0);
+        if self.bandwidth_probe_rtt_ms > 0.0 {
+            self.probe = Some(Probe::new(f64::from(self.bandwidth_probe_rtt_ms)));
+        }
         self.game = match Mode::parse(&self.mode.to_string()) {
             Some(Mode::GunGame(_)) => Mode::GunGame(gun_game::Rules {
                 kills_per_weapon: self.kills_per_weapon.clamp(1, 255) as u8,
@@ -721,6 +732,9 @@ impl INode3D for NetServer {
             self.navigation = map.and_then(|map| BotNavigation::bake(&mut parent, &map, area));
         }
         self.simulate();
+        if let Some(probe) = &mut self.probe {
+            probe.on_tick(self.avatars.iter().filter(|a| a.bot).count());
+        }
         self.update_charge();
         self.update_flags();
         self.update_hardpoint();
@@ -753,6 +767,39 @@ impl INode3D for NetServer {
 
 #[godot_api]
 impl NetServer {
+    /// Bandwidth bench: starts counting from zero (after a warm-up).
+    #[func]
+    fn start_bandwidth_probe(&mut self) {
+        if let Some(probe) = &mut self.probe {
+            probe.start();
+        }
+    }
+
+    /// Bandwidth bench: kilobits per second per client, payload alone
+    /// (`down_kbps`, `up_kbps`, `own_kbps` of it the receiver's own state)
+    /// and with IP, UDP, and ENet headers (`down_wire_kbps`,
+    /// `up_wire_kbps`), and packets per second. Empty when the bench is off.
+    #[func]
+    fn bandwidth_report(&self) -> VarDictionary {
+        let mut d = VarDictionary::new();
+        let Some(probe) = &self.probe else {
+            return d;
+        };
+        let r = probe.totals.rates();
+        d.set("down_kbps", r.down_kbps);
+        d.set("own_kbps", r.own_kbps);
+        d.set("up_kbps", r.up_kbps);
+        d.set("down_wire_kbps", r.down_wire_kbps);
+        d.set("up_wire_kbps", r.up_wire_kbps);
+        d.set("down_pps", r.down_pps);
+        d.set("up_pps", r.up_pps);
+        d.set(
+            "seconds",
+            probe.totals.client_ticks as f64 / f64::from(TICK_RATE),
+        );
+        d
+    }
+
     /// Players currently in the game, bots included.
     #[func]
     fn player_count(&self) -> i32 {
@@ -2289,6 +2336,9 @@ impl NetServer {
                     }
                     _ => bot_input(avatar, tick),
                 };
+                if let Some(probe) = &mut self.probe {
+                    probe.on_input(avatar.id, tick, input);
+                }
                 vec![(input, None, None)]
             } else {
                 let Some(client) = self
@@ -5784,33 +5834,89 @@ impl NetServer {
         let tick = self.tick;
         let zombie_views = self.horde.as_mut().and_then(|h| h.views_for(tick));
 
+        let parts = SnapshotParts {
+            tick,
+            views: &views,
+            grenades: &grenade_views,
+            smokes: &smoke_views,
+            zombies: zombie_views.as_ref(),
+        };
         for client in &mut self.clients {
             let Some(id) = client.player else { continue };
             let Some(avatar) = self.avatars.iter().find(|a| a.id == id) else {
                 continue;
             };
-            let others: Vec<PlayerView> = views.iter().filter(|v| v.id != id).copied().collect();
-            let baseline: Option<(Tick, Vec<PlayerView>)> = client.ack.and_then(|tick| {
-                let views = self.history.get(tick)?;
-                Some((tick, views.iter().filter(|v| v.id != id).copied().collect()))
-            });
-            let snapshot = ServerMessage::Snapshot(Snapshot {
-                tick: self.tick,
-                baseline: baseline.as_ref().map(|(tick, _)| *tick),
-                own: Some(Box::new(OwnState {
-                    last_input: client.inputs.last_applied(),
-                    predicted: avatar.predicted,
-                })),
-                players: others,
-                grenades: grenade_views.clone(),
-                smokes: smoke_views.clone(),
-                zombies: zombie_views.clone(),
-            });
-            let base = baseline
-                .as_ref()
-                .map_or(&[][..], |(_, views)| views.as_slice());
-            transport::send_unreliable(&mut client.peer, &snapshot.encode(base));
+            let (snapshot, base) = parts.for_player(
+                &self.history,
+                avatar,
+                client.ack,
+                client.inputs.last_applied(),
+            );
+            transport::send_unreliable(&mut client.peer, &snapshot.encode(&base));
         }
+        if let Some(probe) = &mut self.probe {
+            probe.on_snapshot(tick);
+            let ack = probe.ack(tick);
+            for avatar in self.avatars.iter().filter(|a| a.bot) {
+                let last_input = probe.last_input(avatar.id, tick);
+                let (mut snapshot, base) = parts.for_player(&self.history, avatar, ack, last_input);
+                let ServerMessage::Snapshot(s) = &mut snapshot else {
+                    continue;
+                };
+                let own = s.own.take();
+                let without_own = snapshot.encode(&base).len();
+                if let ServerMessage::Snapshot(s) = &mut snapshot {
+                    s.own = own;
+                }
+                let bytes = snapshot.encode(&base).len();
+                probe.count_snapshot(bytes, bytes - without_own);
+            }
+        }
+    }
+}
+
+/// What every snapshot of a tick shares; each receiver gets its own copy
+/// without itself in the players, and its own state.
+struct SnapshotParts<'a> {
+    tick: Tick,
+    views: &'a [PlayerView],
+    grenades: &'a [protocol::GrenadeView],
+    smokes: &'a [protocol::SmokeView],
+    zombies: Option<&'a Vec<protocol::ZombieView>>,
+}
+
+impl SnapshotParts<'_> {
+    /// The snapshot for `avatar`'s client, delta-encoded against `ack` if the
+    /// server still has it, and the baseline players to encode it with.
+    fn for_player(
+        &self,
+        history: &SnapshotHistory,
+        avatar: &Avatar,
+        ack: Option<Tick>,
+        last_input: u32,
+    ) -> (ServerMessage, Vec<PlayerView>) {
+        let id = avatar.id;
+        let others: Vec<PlayerView> = self.views.iter().filter(|v| v.id != id).copied().collect();
+        let baseline: Option<(Tick, Vec<PlayerView>)> = ack.and_then(|tick| {
+            let views = history.get(tick)?;
+            Some((tick, views.iter().filter(|v| v.id != id).copied().collect()))
+        });
+        let snapshot = ServerMessage::Snapshot(Snapshot {
+            tick: self.tick,
+            baseline: baseline.as_ref().map(|(tick, _)| *tick),
+            own: Some(Box::new(OwnState {
+                last_input,
+                predicted: avatar.predicted,
+            })),
+            players: others,
+            grenades: self.grenades.to_vec(),
+            smokes: self.smokes.to_vec(),
+            zombies: self.zombies.cloned(),
+        });
+        (
+            snapshot,
+            baseline.map(|(_, views)| views).unwrap_or_default(),
+        )
     }
 }
 
