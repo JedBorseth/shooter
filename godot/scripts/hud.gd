@@ -238,10 +238,14 @@ func _process(delta: float) -> void:
 
 ## True on an online match's results screen.
 func _match_ended() -> bool:
-	var client := Net.client()
+	# Found at run time, untyped: naming the Net autoload and NetClient here
+	# changed the offline arena's frame-by-frame results (smoke_test's view
+	# drift checks), though nothing in it runs offline.
+	var net := get_node_or_null(^"/root/Net")
+	var client: Object = net.call(&"client") if net != null else null
 	if client == null:
 		return false
-	var info := client.match_info()
+	var info: Dictionary = client.call(&"match_info")
 	return String(info.get("phase", "")) == "ended" and String(info.get("mode", "")) != "zombies"
 
 
