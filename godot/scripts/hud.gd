@@ -23,6 +23,7 @@ const DEFAULT_CONTROLS := [
 	"move:Move",
 	"sprint:Sprint",
 	"crouch:Crouch / slide",
+	"prone:Prone",
 	"jump:Jump",
 	"fire:Fire",
 	"aim:Aim",
