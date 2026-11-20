@@ -422,4 +422,8 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 - [x] Determinism test in CI: record an input sequence, run it through `shooter_sim::player::step` twice (and on each OS in the build matrix), and compare state hashes. Catches prediction desyncs before netcode depends on them. (`rust/sim/tests/determinism.rs`)
 - [ ] Visual and performance checks on a GPU runner: run `capture_screens.gd` and a scripted fly-through that records frame times, on a self-hosted runner with a GPU, for trusted branches only.
 - [x] A `justfile` with `build`, `run`, `test` (the tests listed in CI), `screens`, and `ci` recipes.
+- [x] CI flakes fixed at the root, with a flake log in `docs/ci.md` (#351), and Godot tests sped up: two real-time lanes (#352) and three fixed-rate workers (#355), taking the Godot job from about 8 minutes to about 5.
+- [ ] Start the longest fixed-rate Godot tests first (`nuketown_bounds_test` takes 35 to 60 s and starts mid-run), so the three workers finish together.
+- [ ] The "server keeps up with its tick rate" checks in `bots_test`, `hardpoint_test`, and `domination_bots_test` time the wall clock. They have about 6x headroom on CI but could trip on a heavily loaded machine; measure the server's own tick cost instead.
+- [ ] Clippy on Rust 1.99 flags three `needless_range_loop` lints in `rust/game/src/character/poser.rs`; fix them before CI's stable toolchain moves to it.
 - [ ] **good first task** Editor plugin or script that measures a weapon model's sight line and muzzle to fill in `WeaponView` offsets automatically (what was done by hand for the M4 and M1911).
