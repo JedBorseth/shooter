@@ -38,6 +38,7 @@ use godot::classes::{
 use godot::global::Error;
 use godot::prelude::*;
 use shooter_sim::class::{self, Class, DefaultClass, Gun, Wildcard};
+use shooter_sim::custom;
 use shooter_sim::domination::DominationRules;
 use shooter_sim::equipment::Kind;
 use shooter_sim::gun_game;
@@ -57,6 +58,7 @@ use shooter_sim::net::protocol::{
 use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::{CHANNEL_COUNT, CHANNEL_RELIABLE, DEFAULT_PORT, TICK_RATE, Tick};
 use shooter_sim::perk::{Perk, Perks};
+use shooter_sim::player::HealthParams;
 use shooter_sim::snd::{
     Charge, ChargeContext, ChargePlayer, ChargeState, ChargeUse, RoundEnd, RoundPhase, Site,
     SndRules, UseKind,
@@ -198,6 +200,8 @@ pub struct NetClient {
     server_build: String,
     /// The server reports our match XP to our account (its welcome).
     ranked: bool,
+    /// The server's custom game settings (`shooter_sim::custom`).
+    custom: custom::Settings,
     /// Why the server turned us away.
     denied_reason: String,
     /// Hardpoint: the map's zones, the live one, who holds it, and the
@@ -1766,6 +1770,15 @@ impl NetClient {
         self.ranked
     }
 
+    /// The server's custom game settings, for the HUD and menus:
+    /// `custom` (any differ from the normal rules), `text` (the text form),
+    /// `hardcore`, `health` (percent), `regen`, `friendly_fire`, `killcam`,
+    /// `radar` ("normal", "constant", or "off"), `streaks`, and `loadouts`.
+    #[func]
+    fn custom_settings(&self) -> VarDictionary {
+        custom_dict(&self.custom)
+    }
+
     /// Our stats this match so far (stat key to count), as the server
     /// counts them; the server sends them every few seconds while they
     /// change, and once more as the match ends.
@@ -1910,12 +1923,14 @@ impl NetClient {
                 mode,
                 server_build,
                 ranked,
+                custom,
                 ..
             } => {
                 if self.status != Status::Connecting {
                     return;
                 }
                 self.ranked = ranked;
+                self.custom = custom;
                 self.server_build = clean_text(&server_build, MAX_BUILD_BYTES);
                 godot_print!(
                     "net client: joined as player {player_id} (server build {}, ours {})",
@@ -1939,7 +1954,12 @@ impl NetClient {
                     }
                 }
                 if let Some(player) = &mut self.player {
-                    player.bind_mut().start_prediction();
+                    let mut player = player.bind_mut();
+                    player.start_prediction();
+                    player.set_health_params(custom.health_params(HealthParams::default()));
+                }
+                if !custom.is_default() {
+                    godot_print!("net client: custom game: {}", custom.to_text());
                 }
             }
             ServerMessage::Reject { server_version } => {
@@ -3411,6 +3431,45 @@ fn cosmetics_to_dict(cosmetics: &Cosmetics) -> VarDictionary {
         camos.set(weapon.def().key.as_str(), camo.key());
     }
     d.set("camos", &camos);
+    d
+}
+
+/// A custom game's settings as GDScript reads them (`NetClient.custom_settings`).
+pub(crate) fn custom_dict(c: &custom::Settings) -> VarDictionary {
+    let mut d = VarDictionary::new();
+    d.set("custom", !c.is_default());
+    d.set("text", &GString::from(c.to_text().as_str()));
+    d.set("hardcore", c.hardcore);
+    d.set("health", i64::from(c.health));
+    let regen = match c.regen {
+        custom::Regen::Normal => "normal",
+        custom::Regen::Slow => "slow",
+        custom::Regen::Fast => "fast",
+        custom::Regen::Off => "off",
+    };
+    d.set("regen", regen);
+    let ff = match c.friendly_fire {
+        custom::FriendlyFire::Off => "off",
+        custom::FriendlyFire::On => "on",
+        custom::FriendlyFire::Reflect => "reflect",
+        custom::FriendlyFire::Shared => "shared",
+    };
+    d.set("friendly_fire", ff);
+    d.set("killcam", c.killcam);
+    let radar = match c.radar {
+        custom::Radar::Normal => "normal",
+        custom::Radar::Constant => "constant",
+        custom::Radar::Off => "off",
+    };
+    d.set("radar", radar);
+    d.set("streaks", c.streaks);
+    let loadouts = match c.loadouts {
+        custom::Loadouts::Any => "any",
+        custom::Loadouts::DefaultClasses => "default",
+        custom::Loadouts::PistolsOnly => "pistols",
+        custom::Loadouts::SnipersOnly => "snipers",
+    };
+    d.set("loadouts", loadouts);
     d
 }
 

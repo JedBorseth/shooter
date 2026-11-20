@@ -26,6 +26,7 @@ use crate::card::Card;
 use crate::chat;
 use crate::class::{Attachments, Class, Gun, Wildcards};
 use crate::cosmetics::{Cosmetics, MAX_CAMOS};
+use crate::custom;
 use crate::domination;
 use crate::equipment;
 use crate::gun_game;
@@ -213,7 +214,8 @@ use crate::zombies::drinks::Drinks;
 // Version 89 added traps: `ZombiesEvent::Trap`.
 // Version 90 added `Killcam::eye`: a scorestreak's kill is watched from the
 // streak (`killcam::streak_eye`).
-pub const PROTOCOL_VERSION: u16 = 90;
+// Version 91 added custom game settings to the welcome (`crate::custom`).
+pub const PROTOCOL_VERSION: u16 = 91;
 /// Longest account session token a hello carries, in bytes.
 pub const MAX_ACCOUNT_TOKEN_BYTES: usize = 2048;
 /// Longest reason a denial carries, in bytes.
@@ -330,6 +332,9 @@ pub enum ServerMessage {
         /// The server checks accounts and reports each player's match XP to
         /// the account server itself, so the game must not report it too.
         ranked: bool,
+        /// The host's custom game settings (`crate::custom`); the defaults
+        /// on a ranked server.
+        custom: custom::Settings,
     },
     Reject {
         server_version: u16,
@@ -2017,6 +2022,7 @@ impl ServerMessage {
                 mode,
                 server_build,
                 ranked,
+                custom,
             } => {
                 w.bits(0, TAG_BITS);
                 w.u16(PROTOCOL_VERSION);
@@ -2026,6 +2032,7 @@ impl ServerMessage {
                 write_mode(&mut w, mode);
                 write_string(&mut w, server_build, MAX_BUILD_BYTES);
                 w.bool(*ranked);
+                custom.write(&mut w);
             }
             ServerMessage::Reject { server_version } => {
                 w.bits(1, TAG_BITS);
@@ -2093,6 +2100,7 @@ impl ServerMessage {
                     mode: read_mode(&mut r)?,
                     server_build: read_string(&mut r, MAX_BUILD_BYTES)?,
                     ranked: r.bool()?,
+                    custom: custom::Settings::read(&mut r)?,
                 })
             }
             1 => Ok(ServerMessage::Reject {
@@ -6813,6 +6821,11 @@ mod tests {
                 mode,
                 server_build: "abc1234".to_owned(),
                 ranked: mode == Mode::Domination,
+                custom: if mode == Mode::Hardpoint {
+                    custom::Settings::hardcore()
+                } else {
+                    custom::Settings::default()
+                },
             };
             assert_eq!(
                 ServerMessage::decode(&msg.encode(&[]), |_| None).unwrap(),
@@ -7130,6 +7143,7 @@ mod tests {
             mode: Mode::Zombies,
             server_build: "dev".into(),
             ranked: false,
+            custom: custom::Settings::default(),
         };
         assert_eq!(
             ServerMessage::decode(&welcome.encode(&[]), |_| None).unwrap(),
