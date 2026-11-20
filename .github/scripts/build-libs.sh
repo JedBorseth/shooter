@@ -14,13 +14,15 @@ cd rust
 
 case "$platform" in
   linux)
-    # The master server ships in the Linux dedicated server zip.
+    # The master server and shooter-query ship in the Linux dedicated server zip.
     cargo build --locked --profile "$profile" -p shooter-game -p shooter-master -p shooter-launcher
-    cp "target/$profile/libshooter_game.so" "target/$profile/shooter-master" "$out/"
+    cp "target/$profile/libshooter_game.so" "target/$profile/shooter-master" \
+      "target/$profile/shooter-query" "$out/"
     cp "target/$profile/shooter-launcher" "$out/shooter-launcher-linux-x86_64"
     # Fail if a binary needs a glibc newer than 2.39, the baseline the Linux job's
     # ubuntu-24.04 image ships (see ci.yml).
-    newest=$(objdump -T "$out/libshooter_game.so" "$out/shooter-master" "$out/shooter-launcher-linux-x86_64" |
+    newest=$(objdump -T "$out/libshooter_game.so" "$out/shooter-master" "$out/shooter-query" \
+      "$out/shooter-launcher-linux-x86_64" |
       grep -o 'GLIBC_[0-9.]*' | sort -u -V | tail -n 1)
     echo "Newest glibc symbol: $newest"
     if [[ "$(printf '%s\n' "$newest" GLIBC_2.39 | sort -V | tail -n 1)" != GLIBC_2.39 ]]; then

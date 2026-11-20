@@ -220,6 +220,8 @@ jobs:
     permissions:
       contents: write
       actions: read
+      # Pushes the server image to the GitHub Container Registry from main and tags.
+      packages: write
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -241,6 +243,7 @@ jobs:
           cp libs/libshooter_game.so rust/target/release/
           cp libs/libshooter_game.so rust/target/debug/
           install -m 755 libs/shooter-master master/shooter-master
+          install -m 755 libs/shooter-query master/shooter-query
       - uses: ./.github/actions/godot-import
         with:
           version: ${{ env.GODOT_VERSION }}
@@ -270,7 +273,7 @@ jobs:
           (cd builds/linux && zip -qr "../../dist/${NAME}-linux-x86_64.zip" .) & pids+=($!)
           # Headless dedicated server: runs as a server on start, no rendering or audio.
           export_preset "Linux Server" "$PWD/builds/server/shooter-server.x86_64"
-          cp master/shooter-master builds/server/shooter-master
+          cp master/shooter-master master/shooter-query builds/server/
           (cd builds/server && zip -qr "../../dist/${NAME}-server-linux-x86_64.zip" .) & pids+=($!)
           .github/scripts/wait-for-artifact.sh lib-windows "Windows (tests, library)" libs
           cp libs/shooter_game.dll rust/target/release/
@@ -284,6 +287,16 @@ jobs:
           install -m 755 libs/shooter-launcher-linux-x86_64 libs/shooter-launcher-windows-x86_64.exe \
             libs/shooter-launcher-macos-universal dist/
           ls -lh dist
+      # Every run builds the server's Docker image and checks that it starts a
+      # healthy server; main and tags push it to ghcr.io (docs/server.md).
+      - name: Log in to the GitHub Container Registry
+        if: (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')) || github.ref_type == 'tag'
+        run: echo "$GH_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Server image
+        env:
+          NAME: ${{ steps.meta.outputs.name }}
+          PUSH: ${{ github.ref_type == 'tag' && 'release' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')) && 'nightly' || '' }}
+        run: .github/scripts/server-image.sh builds/server "${NAME#shooter-}"
       - name: Write manifest
         run: .github/scripts/write-manifest.sh dist "${{ steps.meta.outputs.name }}"
       - uses: actions/upload-artifact@v7

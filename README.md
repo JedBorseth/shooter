@@ -309,6 +309,13 @@ The server decides every hit. Each firing input carries the moment the client wa
 
 CI also exports a headless Linux dedicated server (`shooter-<version>-server-linux-x86_64.zip`), with the master server binary next to it. It starts as a server on its own; pass `-- --port N --bots N --name NAME --master HOST` to configure it.
 
+The same server runs in Docker with one command; see [docs/server.md](docs/server.md) for its options and tags:
+
+```sh
+docker run -d -p 27015:27015/udp -p 27016:27016/udp -e SHOOTER_MAP=nuketown -e SHOOTER_BOTS=6 \
+  -e SHOOTER_BOT_SKILL=normal ghcr.io/jedborseth/shooter-server:nightly
+```
+
 ### Run a server that stays up to date
 
 `shooter-launcher serve` runs the dedicated server from the latest nightly build and keeps it there. Every 5 minutes (`--check-minutes N`) it checks for a new build and downloads it while the old server keeps running. When nobody is connected (bots do not count), it stops the old server and starts the new one, so the server and freshly updated games always speak the same protocol. If the server exits, the launcher starts it again. Server options go after `--`:
