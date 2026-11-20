@@ -800,6 +800,17 @@ fn streak_challenges(out: &mut Vec<Challenge>) {
             }],
         ),
         (
+            Streak::SentryGun,
+            &[Tiered {
+                id: "streak.sentry_gun.kills",
+                name: "Watchful Eye",
+                detail: "Get {} kills with the Sentry Gun.",
+                stat: "s.sentry_gun.kills",
+                tiers: &[(25, 1500), (100, 3000)],
+                card: None,
+            }],
+        ),
+        (
             Streak::Airstrike,
             &[
                 Tiered {

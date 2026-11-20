@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 
 use godot::prelude::*;
 use shooter_sim::net::{TICK_RATE, Tick};
-use shooter_sim::progression::{self, Earned, Outcome};
+use shooter_sim::progression::{self, Earned, MAX_PRESTIGE, Outcome};
 use shooter_sim::stats::{self, Recorder};
 use shooter_sim::weapon::WeaponId;
 
@@ -159,8 +159,33 @@ pub fn earned_from(progress: &VarDictionary) -> Earned {
         xp: whole(progress.get("xp")),
         weapon_kills: counts_at(progress, "weapon_kills"),
         stats: counts_at(progress, "stats"),
-        prestige: whole(progress.get("prestige")).min(u32::from(u8::MAX)) as u8,
+        prestige: whole(progress.get("prestige")).min(u32::from(MAX_PRESTIGE)) as u8,
+        tokens: whole(progress.get("tokens")).min(u32::from(u8::MAX)) as u8,
+        permanent: progress
+            .get("permanent")
+            .map(|v| strings(&v))
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|key| key.len() <= 40)
+            .collect(),
     }
+}
+
+/// Strings from an Array or a PackedStringArray (JSON brings the one, the
+/// game's own files the other).
+fn strings(value: &Variant) -> Vec<String> {
+    if let Ok(list) = value.try_to::<PackedStringArray>() {
+        return list.as_slice().iter().map(|s| s.to_string()).collect();
+    }
+    value
+        .try_to::<VarArray>()
+        .map(|list| {
+            list.iter_shared()
+                .filter_map(|v| v.try_to::<GString>().ok())
+                .map(|s| s.to_string())
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 pub fn counts_dictionary(counts: &BTreeMap<String, u32>) -> VarDictionary {

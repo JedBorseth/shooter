@@ -8,6 +8,7 @@ extends Control
 
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
+const PrestigeEmblem := preload("res://scripts/ui/prestige_emblem.gd")
 
 const SECONDS := 6.0
 const LINES := 5
@@ -15,11 +16,27 @@ const LINE_H := 28.0
 const ICON_H := 17.0
 const TEXT_SIZE := 15
 const SMALL_SIZE := 13
+## A prestige emblem's height.
+const EMBLEM_H := 18.0
 
 ## Each line: {"parts": Array, "mine": bool, "left": float, "age": float}.
 ## A part is [text, colour], [text, colour, true] for small print, or
-## {"icon": weapon key} / {"headshot": true}.
+## {"icon": weapon key} / {"headshot": true} / {"prestige": level} (the
+## emblem before a name).
 var _lines: Array[Dictionary] = []
+
+
+## Player `id`'s prestige, from what they show (0 before the first).
+static func prestige_of(client: NetClient, id: int) -> int:
+	return int(client.cosmetics_of(id).get("prestige", 0))
+
+
+## The parts naming player `id`: their prestige emblem, if any, and their
+## name in `colour`.
+static func named(client: NetClient, id: int, colour: Color) -> Array:
+	var prestige := prestige_of(client, id)
+	var name := [client.name_of(id), colour]
+	return [{"prestige": prestige}, name] if prestige > 0 else [name]
 
 
 ## Adds a line; see `_lines` for the parts.
@@ -94,6 +111,14 @@ func _draw_line(line: Dictionary, at: Vector2, alpha: float) -> void:
 					)
 			elif part.has("headshot"):
 				_draw_headshot(Vector2(x + 8.0, at.y + LINE_H / 2.0), alpha)
+			elif part.has("prestige"):
+				PrestigeEmblem.draw_emblem(
+					self,
+					int(part.prestige),
+					Vector2(x + EMBLEM_H / 2.0, at.y + LINE_H / 2.0),
+					EMBLEM_H,
+					alpha
+				)
 		else:
 			var small: bool = part.size() > 2 and part[2]
 			var colour: Color = part[1]
@@ -115,6 +140,8 @@ func _part_width(part: Variant) -> float:
 			if icon == null:
 				return Paint.text_width(Paint.LABEL_LIGHT, part.get("name", ""), SMALL_SIZE)
 			return icon.get_width() * ICON_H / icon.get_height()
+		if part.has("prestige"):
+			return EMBLEM_H - 4.0
 		return 16.0
 	var small: bool = part.size() > 2 and part[2]
 	return Paint.text_width(

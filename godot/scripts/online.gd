@@ -268,6 +268,36 @@ func refresh_progress() -> void:
 		ProgressStore.set_totals(result)
 
 
+## Prestiges: on the account while signed in (the account server checks
+## the level), here otherwise. "" when done, otherwise why not.
+func prestige_up() -> String:
+	if not is_signed_in():
+		return ProgressStore.prestige_up()
+	var block := String(Progression.prestige_block(ProgressStore.totals()))
+	if block != "":
+		return block
+	var result: Variant = await _rpc("progress_prestige", {})
+	if result == null:
+		return message if message != "" else "Cannot reach the account server."
+	ProgressStore.set_totals(result)
+	return ""
+
+
+## Spends a permanent unlock token on an item (`kind`, `key`): on the
+## account while signed in, here otherwise. "" when done, otherwise why not.
+func unlock_permanent(kind: String, key: String) -> String:
+	if not is_signed_in():
+		return ProgressStore.unlock_permanent(kind, key)
+	var check := Progression.unlock_permanent(ProgressStore.totals(), kind, key)
+	if String(check.error) != "":
+		return String(check.error)
+	var result: Variant = await _rpc("progress_unlock", {"item": "%s:%s" % [kind, key]})
+	if result == null:
+		return message if message != "" else "Cannot reach the account server."
+	ProgressStore.set_totals(result)
+	return ""
+
+
 ## Reads the account's progress again in a few seconds, once a ranked
 ## server has reported the match (its totals replace the game's own sum).
 func refresh_progress_soon(delay := 3.0) -> void:
@@ -320,6 +350,7 @@ func _start(name: String) -> bool:
 			int(local.xp) > 0
 			or not (local.weapon_kills as Dictionary).is_empty()
 			or not (local.stats as Dictionary).is_empty()
+			or int(local.prestige) > 0
 		)
 	):
 		if await _rpc("progress_import", local) == null:
