@@ -93,6 +93,17 @@ pub const SLEIGHT_OF_HAND_RELOAD: f32 = 0.5;
 pub const DEXTERITY_CLIMB: f32 = 0.6;
 pub const DEXTERITY_LADDER: f32 = 1.75;
 pub const DEXTERITY_SPRINT_OUT: f32 = 0.5;
+/// Dead Silence: the mover's footsteps, landings, slides, and climbs play
+/// this much quieter and carry this share of their range, so only someone
+/// within a few metres hears them. Black Ops 2 publishes no number; it only
+/// says "quieter movement", and players hear Dead Silence steps right up
+/// close. An estimate.
+pub const DEAD_SILENCE_DB: f32 = -12.0;
+pub const DEAD_SILENCE_RANGE: f32 = 0.25;
+/// Awareness: enemy movement plays this much louder and carries this much
+/// further for the listener (an estimate: "hear enemy movement louder").
+pub const AWARENESS_DB: f32 = 6.0;
+pub const AWARENESS_RANGE: f32 = 1.5;
 /// Tactical Mask: a flashbang blinds for this share of its time (Black Ops 2
 /// `perk_shellShockReduction` 0.5).
 pub const TACTICAL_MASK_FLASH: f32 = 0.5;
@@ -316,6 +327,39 @@ impl Perks {
     }
 }
 
+/// How loud another player's movement is for a listener: dB added and the
+/// share of its usual range, from the mover's Dead Silence and, for an
+/// enemy, the listener's Awareness. Both apply together: Awareness turns up
+/// a Dead Silence enemy, who is still far quieter than anyone else.
+pub fn heard(mover: Perks, listener: Perks, enemy: bool) -> Hearing {
+    let mut hearing = Hearing::default();
+    if mover.has(Perk::DeadSilence) {
+        hearing.db += DEAD_SILENCE_DB;
+        hearing.range *= DEAD_SILENCE_RANGE;
+    }
+    if enemy && listener.has(Perk::Awareness) {
+        hearing.db += AWARENESS_DB;
+        hearing.range *= AWARENESS_RANGE;
+    }
+    hearing
+}
+
+/// A change to how movement sounds: [`heard`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Hearing {
+    pub db: f32,
+    pub range: f32,
+}
+
+impl Default for Hearing {
+    fn default() -> Self {
+        Self {
+            db: 0.0,
+            range: 1.0,
+        }
+    }
+}
+
 /// Rates weapon timers run at (see [`Perks::handling`]).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Handling {
@@ -373,6 +417,22 @@ mod tests {
                 assert_eq!(set.in_tier(tier), 1);
             }
         }
+    }
+
+    #[test]
+    fn dead_silence_quiets_and_awareness_sharpens_enemy_steps() {
+        let none = Perks::NONE;
+        let silent = Perks::of(&[Perk::DeadSilence]);
+        let aware = Perks::of(&[Perk::Awareness]);
+        assert_eq!(heard(none, none, true), Hearing::default());
+        assert_eq!(heard(silent, none, true).range, 0.25);
+        let louder = heard(none, aware, true);
+        assert!(louder.db > 0.0 && louder.range > 1.0);
+        // Awareness is for enemies only.
+        assert_eq!(heard(none, aware, false), Hearing::default());
+        // Both: still far quieter than a normal step.
+        let both = heard(silent, aware, true);
+        assert!(both.db < 0.0 && both.range < 0.5);
     }
 
     #[test]

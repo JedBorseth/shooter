@@ -53,6 +53,7 @@ use shooter_sim::net::protocol::{
 };
 use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::{CHANNEL_COUNT, CHANNEL_RELIABLE, DEFAULT_PORT, TICK_RATE, Tick};
+use shooter_sim::perk::Perks;
 use shooter_sim::snd::{
     Charge, ChargeContext, ChargePlayer, ChargeState, ChargeUse, RoundEnd, RoundPhase, Site,
     SndRules, UseKind,
@@ -1960,6 +1961,14 @@ impl NetClient {
             self.remotes[index]
                 .buffer
                 .push(tick, RemoteSample::at(tick, view));
+            if newest {
+                let listener = self
+                    .player
+                    .as_ref()
+                    .map_or(Perks::NONE, |p| p.bind().perks());
+                let mut node = self.remotes[index].node.clone();
+                node.bind_mut().set_hearing(view.quiet, listener);
+            }
         }
         if !newest {
             return;

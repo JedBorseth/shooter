@@ -2066,6 +2066,7 @@ impl NetServer {
                 feet: to_godot(a.predicted.position),
                 crouch: a.predicted.state.movement.crouch,
                 lane: a.brain.as_ref().and_then(|b| b.lane()),
+                perks: a.predicted.state.perks,
             })
             .collect();
         // Each team's own side, for bots' goals on the enemy's side.

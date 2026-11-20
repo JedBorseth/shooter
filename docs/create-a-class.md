@@ -40,8 +40,8 @@ Perk names in the game are plain descriptions, as the wildcards' are; Call of Du
 | 2 | Scavenger (Scrounger) | refills ammo and grenades from packs dead enemies drop | one magazine, one lethal, one tactical per pack (`perk_scavenger_*`) |
 | 2 | Sleight of Hand (Fast Reload) | reloads in half the time | `perk_weapReloadMultiplier` 0.5 |
 | 3 | Dexterity (Climber) | mantles and vaults in 60% of the time, climbs ladders 75% faster, weapon up after a sprint in half the time | `perk_mantleReduction` 0.4, `perk_fastLadderClimbMultiplier` 1.75; the sprint-out share is an estimate |
-| 3 | Dead Silence (Soft Step) | near-silent footsteps | |
-| 3 | Awareness (Keen Ears) | hears enemy footsteps louder | |
+| 3 | Dead Silence (Soft Step) | movement 12 dB quieter, heard at a quarter of the range | none published; an estimate |
+| 3 | Awareness (Keen Ears) | enemy movement 6 dB louder, heard 1.5 times as far | none published; an estimate |
 | 3 | Tactical Mask (Flash Guard) | flashbangs blind for half as long | `perk_shellShockReduction` 0.5 |
 
 How each one is decided:
@@ -50,7 +50,8 @@ How each one is decided:
 - **Flak Jacket** scales grenade damage on the server. Search and Destroy's charge is not reduced.
 - **Toughness** scales the hit flinch on the client that flinches (the flinch turns the look, which the server sees through the view angles). A fall's jolt is not reduced.
 - **Tactical Mask** shortens the blind on the flashed client, and on the server for bots.
-- Dead Silence, Awareness, and Scavenger follow in their own pull requests.
+- **Dead Silence and Awareness** change how movement sounds (`perk::heard`): steps, ladder rungs, jumps, landings, slides, and climbs, not reloads. The server marks a Dead Silence player as quiet in every view of them (`PlayerView::quiet`, protocol 55), and each client applies its own Awareness to enemies (`RemotePlayer::set_hearing`). Both together: Awareness turns a Dead Silence enemy up, but they stay far quieter than anyone else. Dead Silence quiets a player's own steps too, as in Black Ops 2. Bots hear enemies within 7 m whichever way they face; Dead Silence shrinks that to a quarter, a bot's Awareness stretches it by half.
+- Scavenger follows in its own pull request.
 
 Left out, because their target does not exist here: Hardline (scorestreaks), Blind Eye and Ghost (UAV and air support), Cold-Blooded (AI streaks and thermal), Hard Wired (counter-UAV and EMP), Engineer (enemy equipment and care packages), and Extreme Conditioning (sprint is unlimited, a recorded project decision against stamina). Sleight of Hand is not in Black Ops 2 (its Fast Mag attachment did the job); it takes Black Ops 1's Perk 2 slot here, since there is no Fast Mag.
 
