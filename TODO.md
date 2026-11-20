@@ -46,7 +46,6 @@ These pull requests are open, waiting for the owner to listen. Until they land, 
 - #344 to #348: the CQ-10, BP-9, KR-12, DM-7, and SG-12's own shots (they borrow the PDW-9's, M1911's, AK-47's, BR-3's, and M870's).
 - #396: the RL-4's launch and rocket flight (it fires with the M870's shot).
 - #395: every scorestreak's sounds (UAV, Counter-UAV, Care Package, shoot-downs; it also has sounds for the cut Airstrike, Guided Missile, Attack Chopper, and Sentry Gun to drop).
-- #276: Search and Destroy's charge beeps, its own explosion, and the planted sting.
 - #284: jump, landing, mantle, vault, and sprint-out sounds from recordings.
 - #403 (a sting for a challenge completed mid-match): close; challenges were cut.
 
