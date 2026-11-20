@@ -188,15 +188,36 @@ func create_dock(child:Node, title:String, slot:EditorDock.DockSlot, layout:Edit
 	
 	return dock
 
+# Local change (shooter): the global scene lives in the editor only. Upstream
+# registers it as a project autoload, but its script names EditorPlugin types,
+# so every exported build (which has no editor classes) logged a parse error
+# trying to load it. The plugin adds it under the editor's root instead.
+const GLOBAL_SCENE_PATH = "res://addons/cyclops_level_builder/cyclops_autoload.tscn"
+
 func _enable_plugin() -> void:
-	add_autoload_singleton(AUTOLOAD_NAME, "res://addons/cyclops_level_builder/cyclops_autoload.tscn")
-	pass
+	# Projects that enabled the upstream plugin carry the autoload: drop it.
+	if ProjectSettings.has_setting("autoload/" + AUTOLOAD_NAME):
+		remove_autoload_singleton(AUTOLOAD_NAME)
 
 func _disable_plugin() -> void:
-	remove_autoload_singleton(AUTOLOAD_NAME)
-	pass
+	if ProjectSettings.has_setting("autoload/" + AUTOLOAD_NAME):
+		remove_autoload_singleton(AUTOLOAD_NAME)
+
+func _add_global_scene() -> void:
+	var root:Window = get_tree().root
+	if root.has_node(AUTOLOAD_NAME):
+		return
+	var scene:Node = load(GLOBAL_SCENE_PATH).instantiate()
+	scene.name = AUTOLOAD_NAME
+	root.add_child(scene)
+
+func _remove_global_scene() -> void:
+	var root:Window = get_tree().root
+	if root.has_node(AUTOLOAD_NAME):
+		root.get_node(AUTOLOAD_NAME).queue_free()
 
 func _enter_tree():
+	_add_global_scene()
 	config_scene = preload(config_scene_path).instantiate()
 	add_child(config_scene)
 	
@@ -312,6 +333,7 @@ func calc_snap_to_grid_util()->SnapToGridUtil:
 	return null
 
 func _exit_tree():
+	_remove_global_scene()
 	
 	var file:FileAccess = FileAccess.open(editor_cache_file, FileAccess.WRITE)
 	#var text:String = JSON.stringify(editor_cache, "  ")
