@@ -36,8 +36,7 @@ func _run() -> void:
 	change_scene_to_file("res://scenes/title_screen.tscn")
 	await process_frame
 	await process_frame
-	var button := current_scene.get_node("Margin/Layout/Menu/Warehouse") as Button
-	button.pressed.emit()
+	current_scene.call("start_free_roam", "warehouse")
 	var deadline := Time.get_ticks_msec() + 120000
 	while Time.get_ticks_msec() < deadline:
 		if current_scene != null and current_scene.scene_file_path == LEVEL:

@@ -41,12 +41,23 @@ func _run() -> void:
 		title.get_node("Margin/Layout/Status").text == "Two teams race to the kill limit.",
 		"the status describes the focused route"
 	)
-	_check(not (menu.get_node("Slamcity") as Button).disabled, "Slamcity is a home-screen option")
-	_check(not (menu.get_node("Nuketown") as Button).disabled, "Nuketown is a home-screen option")
-	_check(not (menu.get_node("Warehouse") as Button).disabled, "Warehouse is a home-screen option")
-	_check(
-		not (menu.get_node("Breakwater") as Button).disabled, "Breakwater is a home-screen option"
-	)
+	var free_roam := menu.get_node("FreeRoam") as Button
+	_check(not free_roam.disabled, "Free Roam is a home-screen option")
+	free_roam.pressed.emit()
+	await process_frame
+	var roam: Control = title.get_node_or_null("TdmSetup")
+	_check(roam != null and roam.get("mode") == "freeroam", "Free Roam opens its map card")
+	if roam != null:
+		var roam_maps: HBoxContainer = roam.get("_map")
+		_check(roam_maps.get_child_count() == 4, "Free Roam offers the four multiplayer maps")
+		(roam_maps.get_child(2) as Button).pressed.emit()
+		_check(
+			roam.options() == {"mode": "freeroam", "map": "warehouse"},
+			"Free Roam starts the chosen map, got %s" % roam.options()
+		)
+		roam.emit_signal("back_requested")
+		await process_frame
+	_check(free_roam.has_focus(), "closing the Free Roam card refocuses its route")
 	_check(not (menu.get_node("Multiplayer") as Button).disabled, "Multiplayer opens its browser")
 	_check(not (menu.get_node("Zombies") as Button).disabled, "Zombies opens its menu")
 	var options_button := title.get_node("%Options") as Button

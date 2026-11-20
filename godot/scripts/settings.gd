@@ -162,7 +162,7 @@ const DEFAULTS := {
 	&"fullscreen": false,
 	&"vsync": true,
 	&"max_fps": 0,
-	&"show_fps": true,
+	&"show_fps": false,
 	&"graphics_quality": GraphicsQuality.Preset.MEDIUM,
 	&"render_scale": 1.0,
 	&"motion_blur": false,

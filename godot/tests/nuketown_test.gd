@@ -28,9 +28,9 @@ func _run() -> void:
 	change_scene_to_file("res://scenes/title_screen.tscn")
 	await process_frame
 	await process_frame
-	var button := current_scene.get_node("Margin/Layout/Menu/Nuketown") as Button
-	button.pressed.emit()
-	button.pressed.emit()
+	var button := current_scene.get_node("Margin/Layout/Menu/FreeRoam") as Button
+	current_scene.call("start_free_roam", "nuketown")
+	current_scene.call("start_free_roam", "nuketown")
 	_check(button.disabled, "Nuketown disables while loading")
 	var deadline := Time.get_ticks_msec() + 120000
 	while Time.get_ticks_msec() < deadline:
