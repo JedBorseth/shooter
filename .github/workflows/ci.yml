@@ -224,6 +224,9 @@ jobs:
           python3 tools/test_online.py
       - name: Run Godot tests
         env:
+          # Three fixed-rate tests at a time on the four-CPU runner, beside
+          # the two real-time lanes, which spend most of their time waiting.
+          GODOT_TEST_JOBS: "3"
           NAKAMA_URL: http://127.0.0.1:7350
           MATCHMAKING_TEST: "1"
         run: .github/scripts/godot-tests.sh
