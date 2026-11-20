@@ -3,8 +3,13 @@
 // reads as billowing smoke rather than soft discs. Lit, so the low sun warms
 // one side. Colour and opacity come from the particle (COLOR); the quad keeps
 // the particle's scale.
+// Lit per vertex, without shadow lookups: a puff faces the camera, so its
+// normal is the same across the quad and per-pixel light would only repeat
+// the same sum. A plume filling the view is many layers deep, and lighting
+// each of their pixels cost about 0.35 ms on Medium on the reference card.
 shader_type spatial;
-render_mode blend_mix, depth_draw_never, cull_disabled, diffuse_lambert, specular_disabled;
+render_mode blend_mix, depth_draw_never, cull_disabled, diffuse_lambert, specular_disabled,
+	vertex_lighting, shadows_disabled;
 
 uniform sampler2D noise_tex : hint_default_white, filter_linear_mipmap, repeat_enable;
 // How much of the quad's radius the puff fills before the noise eats it.

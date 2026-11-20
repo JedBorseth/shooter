@@ -21,6 +21,9 @@ var _phase := ""
 var _playing_since := -1.0
 var _score := 0
 var _kills := {}
+## New scoreboard figures since `_score` was read: reading it walks the
+## roster, about 0.2 ms, so not every frame.
+var _score_stale := true
 ## Plain weapon key for each weapon's name, to count kills by.
 var _weapon_names := {}
 
@@ -32,6 +35,8 @@ func _ready() -> void:
 			_weapon_names[String(weapon.name)] = String(weapon.key)
 	if client != null:
 		client.kill_reported.connect(_on_kill)
+		client.scoreboard_changed.connect(func() -> void: _score_stale = true)
+		client.roster_changed.connect(func() -> void: _score_stale = true)
 
 
 func _process(_delta: float) -> void:
@@ -43,7 +48,9 @@ func _process(_delta: float) -> void:
 		if _playing_since < 0.0:
 			_reset()
 			_playing_since = _now()
-		_score = maxi(_score, _my_score())
+		if _score_stale:
+			_score_stale = false
+			_score = maxi(_score, _my_score())
 	if phase != _phase:
 		if phase == "ended" and _playing_since >= 0.0:
 			_score = maxi(_score, _my_score())
@@ -134,6 +141,7 @@ func _my_score() -> int:
 func _reset() -> void:
 	_playing_since = -1.0
 	_score = 0
+	_score_stale = true
 	_kills = {}
 
 

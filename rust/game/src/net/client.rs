@@ -1621,6 +1621,7 @@ impl NetClient {
                 self.status = Status::Joined;
                 self.player_id = Some(player_id);
                 self.mode = mode;
+                crate::viewmodel::precache_weapon_scenes();
                 if let Some(clock) = &mut self.clock {
                     clock.set_interval(u32::from(snapshot_interval));
                 }

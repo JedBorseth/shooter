@@ -2576,6 +2576,17 @@ pub fn clear_cache() {
     CASES.with_borrow_mut(|cache| cache.clear());
 }
 
+/// Loads every weapon's view scene into the cache, as Call of Duty precaches
+/// the weapons a match can show when the map loads: a remote player's first
+/// switch to a weapon nobody had drawn yet otherwise loaded its scene mid-match
+/// (a hitch of up to a second on Josh's dev box).
+pub fn precache_weapon_scenes() {
+    let _profile = crate::profile::scope("precache weapon scenes");
+    for id in WeaponId::all() {
+        let _ = weapon_scene(id);
+    }
+}
+
 /// The weapon view scene for a weapon: `scenes/weapons/<key>_view.tscn`, or any
 /// scene in that folder whose root `weapon` property is the key.
 pub fn weapon_scene(id: WeaponId) -> Option<Gd<PackedScene>> {
