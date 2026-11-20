@@ -26,6 +26,7 @@ const ViewmodelLight := preload("res://scripts/viewmodel_light.gd")
 const EyeAdaptation := preload("res://scripts/eye_adaptation.gd")
 const Grounding := preload("res://scripts/grounding.gd")
 const InputNotice := preload("res://scripts/ui/input_notice.gd")
+const Captions := preload("res://scripts/ui/captions.gd")
 const Glyphs := preload("res://scripts/ui/glyphs.gd")
 const TeamColours := preload("res://scripts/ui/team_colours.gd")
 
@@ -69,14 +70,17 @@ const SAVE_DELAY := 0.75
 ## for headphones: 0 centred, 1 as tuned), bus offsets in dB on top of the volume
 ## sliders, and whether the Master bus compresses (quiet sounds lifted, loud
 ## ones held down). Competitive brings footsteps forward and the ambience down.
-const AUDIO_MIXES: Array[String] = ["Headphones", "Speakers", "Competitive"]
-const MIX_PANNING: Array[float] = [1.0, 0.6, 1.5]
+## Night, as Call of Duty's Night Mode, narrows the loud end for quiet rooms:
+## gunfire and explosions down, everything compressed, speaker-width panning.
+const AUDIO_MIXES: Array[String] = ["Headphones", "Speakers", "Competitive", "Night"]
+const MIX_PANNING: Array[float] = [1.0, 0.6, 1.5, 0.6]
 const MIX_BUS_OFFSETS: Array[Dictionary] = [
 	{},
 	{},
 	{&"Footsteps": 4.0, &"Ambience": -9.0, &"Weapons": -3.0},
+	{&"Weapons": -6.0, &"Effects": -6.0, &"Ambience": -3.0},
 ]
-const MIX_COMPRESSION: Array[bool] = [false, false, true]
+const MIX_COMPRESSION: Array[bool] = [false, false, true, true]
 
 ## Shared public host for discovery and future account/matchmaking services.
 const SERVICE_HOST := "borseth.ddns.net"
@@ -176,6 +180,7 @@ const DEFAULTS := {
 	&"ambience_volume": 0.6,
 	&"ui_volume": 0.7,
 	&"audio_mix": 0,
+	&"subtitles": false,
 	&"master_server": DEFAULT_DIRECTORY,
 	&"player_name": "Player",
 	&"skip_killcams": false,
@@ -223,6 +228,7 @@ const SECTIONS := {
 		&"ambience_volume",
 		&"ui_volume",
 		&"audio_mix",
+		&"subtitles",
 	],
 	"multiplayer": [&"player_name", &"skip_killcams", &"minimap_rotates"],
 	"interface": [&"team_colours", &"hud_scale", &"hud_opacity"],
@@ -234,7 +240,7 @@ const INT_OPTIONS := {
 	&"stick_sensitivity_level": SENSITIVITY_LEVEL_OPTIONS,
 	&"max_fps": MAX_FPS_OPTIONS,
 	&"graphics_quality": [0, 1, 2],
-	&"audio_mix": [0, 1, 2],
+	&"audio_mix": [0, 1, 2, 3],
 	&"button_prompts": [0, 1, 2],
 	&"stick_response": [0, 1, 2],
 	&"team_colours": [0, 1, 2, 3],
@@ -334,6 +340,8 @@ var ambience_volume: float = DEFAULTS[&"ambience_volume"]
 var ui_volume: float = DEFAULTS[&"ui_volume"]
 ## An index into AUDIO_MIXES.
 var audio_mix: int = DEFAULTS[&"audio_mix"]
+## Captions for calls and audio cues (`captions.gd`).
+var subtitles: bool = DEFAULTS[&"subtitles"]
 ## Master server (`host[:port]`) the server browser lists internet servers
 ## from. Runtime only: --directory HOST[:PORT] overrides the shared default.
 ## Legacy saved addresses are ignored so old installs follow the public hostname.
@@ -370,6 +378,7 @@ var _joy_device := -1
 var _save_timer := Timer.new()
 ## The full-screen lens pass; none on a dedicated server.
 var _lens: Lens
+var _captions: Captions
 
 
 func _init() -> void:
@@ -382,6 +391,10 @@ func _init() -> void:
 
 func _ready() -> void:
 	get_tree().node_added.connect(_on_node_added)
+	_captions = Captions.new()
+	_captions.name = "Captions"
+	_captions.settings = self
+	add_child(_captions)
 	Input.joy_connection_changed.connect(
 		func(_device: int, _connected: bool) -> void: _update_glyphs()
 	)
@@ -469,10 +482,11 @@ func prompt_key(action: StringName) -> String:
 	return key_label(action, uses_controller())
 
 
-## The key or button for a menu action (`ui_accept`, `ui_cancel`, ...) on the
-## device used last, for menu footers.
-func menu_key(action: StringName) -> String:
-	return key_label(action, menu_controller)
+## Shows a subtitle line, when Subtitles is on: a voice line or an audio cue
+## that carries information. `speaker` names who or what ("" for none).
+func caption(speaker: String, text: String) -> void:
+	if _captions != null:
+		_captions.say(speaker, text)
 
 
 ## Records which device was used last (the `InputNotice` layer reports every

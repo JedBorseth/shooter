@@ -99,8 +99,10 @@ const DESCRIPTIONS := {
 	&"audio_mix":
 	(
 		"Headphones keeps full stereo. Speakers narrows it. Competitive also evens out loud"
-		+ " and quiet sounds so footsteps carry."
+		+ " and quiet sounds so footsteps carry. Night turns gunfire and explosions down"
+		+ " and evens everything out, for playing quietly."
 	),
+	&"subtitles": "Captions for calls and sound cues, such as the 30-second warning.",
 	&"player_name": "The name other players see in the kill feed and on the scoreboard.",
 	&"camera_motion": "Head bob and weapon sway while you move.",
 	&"show_fps": "Shows the frame rate in the corner of the screen.",
@@ -489,6 +491,7 @@ func _build_settings() -> void:
 	_add_slider(audio, &"ui_volume", "Interface", 0.01, percent)
 	_add_heading(audio, "Output")
 	_add_choice(audio, &"audio_mix", "Audio mix", Settings.AUDIO_MIXES)
+	_add_toggle(audio, &"subtitles", "Subtitles")
 
 	var general := _add_section("General")
 	_add_heading(general, "Profile")

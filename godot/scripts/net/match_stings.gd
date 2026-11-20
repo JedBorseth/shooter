@@ -9,6 +9,10 @@ extends Node
 ## The match HUD adds one.
 
 const STINGS := "res://assets/audio/ui/%s.ogg"
+## Subtitles for stings no banner already announces: [speaker, text].
+const CAPTIONS := {
+	"time_warning": ["Time warning", "30 seconds left"],
+}
 ## Seconds left when the time warning plays.
 const WARNING_AT := 30.0
 
@@ -126,3 +130,7 @@ func play(sting: String) -> void:
 	_player.stream = load(path)
 	_player.play()
 	played.append(sting)
+	# A global class compiles before the autoloads exist: find Settings at run time.
+	var settings := get_node_or_null(^"/root/Settings")
+	if CAPTIONS.has(sting) and settings != null:
+		settings.caption(CAPTIONS[sting][0], CAPTIONS[sting][1])

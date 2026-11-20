@@ -39,3 +39,15 @@ The palettes: Default is blue against red. Protanopia and deuteranopia keep a bl
 ![HUD size at 80% and 125%](media/hud-size.jpg)
 
 A new HUD piece joins the size and opacity settings with `Settings.fit_hud(piece)` once it is in the tree. Pass `own_fade = true` if the piece animates its own `modulate`. A full-screen piece that draws its corners itself must read the screen size from `get_viewport_rect()`, not its own `size`, when it sizes things.
+
+## Audio
+
+| Setting | Values (default) | What it does | Call of Duty |
+| --- | --- | --- | --- |
+| Master, Weapons, Effects, Footsteps, Ambience, Interface | 0 to 100% | Bus volumes | Master, Music, Dialogue, Effects volumes |
+| Audio mix | Headphones, Speakers, Competitive, Night (Headphones) | Panning width, bus offsets, and Master compression per mix (`Settings.AUDIO_MIXES`). Night turns gunfire and explosions down 6 dB and compresses everything, for playing quietly | Audio Mix presets (Home Theater, Headphones, Night Mode, ...) |
+| Subtitles | off | Caption lines bottom centre for calls and sound cues (`godot/scripts/ui/captions.gd`) | Subtitles |
+
+There are no voice lines yet, so subtitles caption the audio cues that no banner already shows: for now, the 30-second time warning (`MatchStings.CAPTIONS`). A voice line added later captions itself with `Settings.caption(speaker, text)`; the line shows only while Subtitles is on.
+
+![A subtitle line above the controls legend](media/subtitles.jpg)

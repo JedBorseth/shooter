@@ -37,7 +37,7 @@ func bind(cap: Label, action: StringName) -> void:
 
 func refresh() -> void:
 	for entry: Array in _caps:
-		var key: String = Settings.menu_key(entry[2])
+		var key: String = Settings.key_label(entry[2], Settings.menu_controller)
 		var glyph: Texture2D = Glyphs.texture(key) if Glyphs.is_pad(key) else null
 		(entry[1] as TextureRect).texture = glyph
 		(entry[1] as TextureRect).visible = glyph != null
