@@ -115,6 +115,22 @@ pub const PRONE_LOOP: Loop = Loop {
 };
 /// Metres crawled per stride of the low crawl (the tool's `CRAWL_STRIDE`).
 pub const PRONE_STRIDE: f32 = 0.7;
+/// The crawl is authored forward, to each side, and backward
+/// (`gait/Prone_Crawl`, `_R`, `_B`, `_L`, as the IW engine's prone has a
+/// crawl each way); the hit zones' crawl poses are measured in those and the
+/// diagonals between, where the drawn blend of two different leg patterns
+/// is furthest from a straight line between them: every 45° clockwise from
+/// forward.
+pub const PRONE_POSE_DIRECTIONS: usize = 8;
+
+/// The two of the [`PRONE_POSE_DIRECTIONS`] around `direction` (radians, as
+/// [`direction`]) and how far from the first to the second (0..1).
+pub fn prone_direction_samples(direction: f32) -> (usize, usize, f32) {
+    let n = PRONE_POSE_DIRECTIONS as f32;
+    let at = direction.rem_euclid(std::f32::consts::TAU) / std::f32::consts::TAU * n;
+    let i = (at.floor() as usize) % PRONE_POSE_DIRECTIONS;
+    (i, (i + 1) % PRONE_POSE_DIRECTIONS, at - at.floor())
+}
 
 /// Where in the standing blend the hit zones' stride poses are measured
 /// (`hitbox/poses.rs`): each loop, the points between them a player moves at
@@ -463,6 +479,22 @@ pub const LADDER_STRIDE: f32 = 0.6;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_crawl_blends_the_two_measured_directions_around_the_travel() {
+        use std::f32::consts::{FRAC_PI_2, FRAC_PI_4, PI};
+        assert_eq!(prone_direction_samples(0.0), (0, 1, 0.0));
+        // Right is the third of eight, backward the fifth from either side.
+        let (a, b, t) = prone_direction_samples(FRAC_PI_2);
+        assert_eq!((a, b), (2, 3));
+        assert!(t.abs() < 1e-5);
+        assert_eq!(prone_direction_samples(PI).0, 4);
+        assert_eq!(prone_direction_samples(-PI).0, 4);
+        // Halfway between forward and the forward-left diagonal.
+        let (a, b, t) = prone_direction_samples(-FRAC_PI_4 / 2.0);
+        assert_eq!((a, b), (7, 0));
+        assert!((t - 0.5).abs() < 1e-5);
+    }
 
     #[test]
     fn feet_turn_only_past_the_start_and_then_catch_up() {

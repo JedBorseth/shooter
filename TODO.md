@@ -83,7 +83,8 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Mounting on a wall's side (the tall block walls' ends) and at prone height (the culvert's 0.44 m sandbags): prone, the body props up onto low cover; beside a wall's edge, the gun rests at its height ([docs/movement.md](docs/movement.md#weapon-mount)).
 - [x] Third-person mantle animation (UAL2's `ClimbUp_1m_RM`, played once as a mantle starts).
 - [x] Prone (Black Ops 2's third stance): the prone button or a held crouch, 0.7 s down through a crouch, a 0.8 m/s crawl, eye 0.39 m, legs checked behind, weapon lowered crawling at the hip, steadier aim, pitch limits; an authored prone pose and low crawl for third person, hit zones measured from them ([docs/movement.md](docs/movement.md#prone)).
-- [ ] Prone follow-ups: the crawl plays forward whatever the direction (author backward and sideways crawls); the body lies flat on slopes instead of along them (IW tilts it to the ground); turning prone sweeps the legs through walls (IW stops the turn); a first-person crawl animation (the weapon uses the sprint's lowered pose).
+- [x] Directional crawls: forward, backward, and to each side, blended by the travel's direction, with the hit zones measured every 45° ([docs/movement.md](docs/movement.md#prone)).
+- [ ] Prone follow-ups: the body lies flat on slopes instead of along them (IW tilts it to the ground); turning prone sweeps the legs through walls (IW stops the turn); a first-person crawl animation (the weapon uses the sprint's lowered pose).
 - [x] Footstep sounds, with surface types and a cadence tied to speed.
 - [x] Fall damage and a landing camera dip scaled by fall speed.
 - [x] Slide camera tilt and slide sound.

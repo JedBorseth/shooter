@@ -393,7 +393,9 @@ fn ground_pose(pose: &HitboxPose, speed: f32) -> BasePose {
         return upright;
     }
     let lying = if moving {
-        cycle(&poses::PRONE_CRAWL, stride)
+        // The crawl in the two measured directions around the travel.
+        let (a, b, t) = gait::prone_direction_samples(direction);
+        cycle(&poses::PRONE_CRAWLS[a], stride).lerp(&cycle(&poses::PRONE_CRAWLS[b], stride), t)
     } else {
         poses::PRONE
     };
