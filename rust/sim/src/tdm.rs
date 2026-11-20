@@ -318,14 +318,15 @@ impl MatchState {
     }
 
     /// Counts a flag capture by `team` (Capture the Flag). Returns the end of
-    /// the match if it reached the score limit.
+    /// the match if it reached the score limit, or in overtime, where the
+    /// next capture wins (sudden death).
     pub fn on_capture(&mut self, rules: &MatchRules, team: Team) -> Option<Transition> {
         if !self.scoring() || usize::from(team) >= TEAM_COUNT {
             return None;
         }
         let score = &mut self.scores[usize::from(team)];
         *score += 1;
-        (*score >= rules.score_limit).then(|| self.finish(rules, Some(team)))
+        (*score >= rules.score_limit || self.overtime()).then(|| self.finish(rules, Some(team)))
     }
 
     /// Adds objective points to `team`'s score (Hardpoint). Returns the end
@@ -798,6 +799,18 @@ mod tests {
             Some(Transition::Ended { winner: Some(1) })
         );
         assert_eq!(state.scores, [0, 2]);
+        // In overtime, the next capture wins.
+        let mut state = MatchState {
+            phase: Phase::Playing,
+            time_left: 0.0,
+            scores: [0, 0],
+            ..MatchState::default()
+        };
+        state.start_overtime(Some(300.0));
+        assert_eq!(
+            state.on_capture(&rules, 0),
+            Some(Transition::Ended { winner: Some(0) })
+        );
         // Captures count only while playing.
         let mut lobby = MatchState::default();
         assert_eq!(lobby.on_capture(&rules, 0), None);

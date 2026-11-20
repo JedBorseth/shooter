@@ -366,7 +366,9 @@ func _update_banner(phase: String, info: Dictionary) -> void:
 					% [kills, "" if kills == 1 else "s", info.score_limit]
 				)
 			elif info.mode == "ctf":
-				_overlay.detail = "Capture the Flag  ·  first to %d captures" % info.score_limit
+				_overlay.detail = (
+					"Capture the Flag  ·  first to %d captures  ·  two halves" % info.score_limit
+				)
 			elif info.mode == "hardpoint":
 				_overlay.detail = "Hardpoint  ·  first to %d points" % info.score_limit
 			elif info.mode == "dom":

@@ -57,7 +57,20 @@ and ends it.
 
 ## Capture the Flag
 
-To do: halves and overtime (TODO.md).
+Reference game: **Black Ops 2**, as for Domination ([domination.md](domination.md)).
+
+| Rule | Here | Call of Duty |
+| --- | --- | --- |
+| Flags | Take the enemy's flag from their base or where it lies; capture at your own base, only while your own flag is home | Same since Call of Duty 4's CTF |
+| Returns | Touch your own dropped flag to send it home at once; left alone it goes home after 30 s | Black Ops 2 returns on touch; dropped flags reset on their own after a timeout (about 30 s, not sourced exactly) |
+| Limit | 3 captures or 10 minutes | 3 captures; Black Ops 2 plays two 5-minute halves |
+| Halftime | At half the clock the teams swap bases, both flags go home, everyone starts again from their new side, and the score carries over (`ctf::halftime_due`, `Flags::set_sides`) | Black Ops 2: two rounds with the sides switched |
+| Overtime | Level when the clock runs out: an overtime round as long as a half, from the first half's bases, where the next capture wins; no capture is a draw | Black Ops 2 plays overtime rounds with the sides switched each round (David Vonderhaar, Gameranx, 22 October 2012) |
+
+**Differences.** Black Ops 2's League Play settles a draw with a two-round
+stopwatch: a capture in the first overtime round sets the time to beat in the
+second. That is a competitive option, not the public rule, so it is not used
+here: one sudden-death round is.
 
 ## Gun Game
 

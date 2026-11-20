@@ -69,7 +69,7 @@ use godot::prelude::*;
 use shooter_sim::bot::Skill;
 use shooter_sim::chat::{self, ChatLimiter};
 use shooter_sim::class::{Class, DefaultClass};
-use shooter_sim::ctf::{FlagEvent, FlagPlayer, FlagRules, FlagState, Flags};
+use shooter_sim::ctf::{self, FlagEvent, FlagPlayer, FlagRules, FlagState, Flags};
 use shooter_sim::domination::{self, BotGoal, DominationRules, DominationState, FlagPoint};
 use shooter_sim::equipment;
 use shooter_sim::gun_game::{self, Progress, Step};
@@ -908,6 +908,16 @@ impl NetServer {
         })
     }
 
+    /// Capture the Flag (tests): where team `team`'s flag's base is now (the
+    /// other team's in the second half), or the origin in other modes.
+    #[func]
+    fn flag_home(&self, team: i32) -> Vector3 {
+        match (&self.flags, Team::try_from(team)) {
+            (Some(flags), Ok(team)) => to_godot(flags.flag(team).home),
+            _ => Vector3::ZERO,
+        }
+    }
+
     /// Captures a player has made this match (tests), or -1 if absent.
     #[func]
     fn player_captures(&self, id: i32) -> i64 {
@@ -1730,12 +1740,12 @@ impl NetServer {
     }
 
     /// The side of the map `team` plays from: their own, except in Search
-    /// and Destroy, where the attackers take side 0, and in Domination's
-    /// second half, when the teams have swapped.
+    /// and Destroy, where the attackers take side 0, and in Domination's and
+    /// Capture the Flag's second half, when the teams have swapped.
     fn side_of(&self, team: Team) -> Team {
         match self.round {
             Some(round) => round.side_of(team),
-            None if self.dom.swapped => 1 - team.min(1),
+            None if self.dom.swapped || self.flags.is_some_and(|f| f.swapped()) => 1 - team.min(1),
             None => team,
         }
     }
@@ -3693,6 +3703,9 @@ impl NetServer {
             self.on_transition(end);
             return;
         }
+        if self.game == Mode::CaptureTheFlag {
+            self.ctf_periods();
+        }
         let transition = self
             .match_state
             .tick(&self.rules, TICK_DT, all_ready, leader);
@@ -3736,6 +3749,59 @@ impl NetServer {
         self.match_state.start_overtime(None);
         self.broadcast_match();
         None
+    }
+
+    /// Capture the Flag's halves and overtime, as in Black Ops 2: at half the
+    /// clock the teams swap bases, and a draw when the clock runs out goes to
+    /// an overtime round from the original bases, as long as a half, where
+    /// the next capture wins. Each change sends both flags home and everyone
+    /// back to their side's starts; the score carries over.
+    fn ctf_periods(&mut self) {
+        let state = self.match_state;
+        let Some(limit) = self.rules.time_limit else {
+            return;
+        };
+        if state.phase != Phase::Playing {
+            return;
+        }
+        if ctf::halftime_due(
+            state.time_left,
+            Some(limit),
+            state.period == Period::Regulation,
+        ) {
+            godot_print!(
+                "server: halftime ({} to {}), the teams swap bases",
+                state.scores[0],
+                state.scores[1]
+            );
+            self.match_state.period = Period::SecondHalf;
+            self.change_sides(true);
+        } else if !state.overtime()
+            && state.time_left - TICK_DT <= 0.0
+            && state.team_leader().is_none()
+        {
+            godot_print!(
+                "server: overtime ({} to {}), the next capture wins",
+                state.scores[0],
+                state.scores[1]
+            );
+            self.match_state.start_overtime(Some(limit * 0.5));
+            self.change_sides(false);
+        }
+    }
+
+    /// Capture the Flag: puts the flags at their bases for the new period
+    /// (`swapped` for the second half), brings everyone back at their starts,
+    /// and tells the clients.
+    fn change_sides(&mut self, swapped: bool) {
+        if let Some(flags) = &mut self.flags {
+            flags.set_sides(swapped);
+        }
+        self.respawn_all_at_start();
+        if let Some(event) = self.flags_event() {
+            self.broadcast_event(&event);
+        }
+        self.broadcast_match();
     }
 
     /// Runs a Search and Destroy round: its clock, wipe-outs, the round's
@@ -4668,7 +4734,8 @@ impl NetServer {
         let Some(flags) = &mut self.flags else {
             return;
         };
-        flags.reset();
+        // Every match starts, and ends, from the first half's bases.
+        flags.set_sides(false);
         if let Some(event) = self.flags_event() {
             self.broadcast_event(&event);
         }

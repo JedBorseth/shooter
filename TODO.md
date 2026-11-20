@@ -337,7 +337,8 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
   - [ ] Flags placed by hand on Slamcity, Nuketown, and Warehouse.
 - [x] Gun Game: a knife kill sets the victim back a weapon, as in the classic rules.
 - [x] Gun Game: a sound for each new weapon and for a set-back (`match_stings.gd`; the sting files are in their own PR, held for a listen).
-- [ ] Capture the Flag: halftime side swap, overtime on a draw, and a carrier speed or weapon penalty if playtests call for one.
+- [x] Capture the Flag: halftime side swap and a sudden-death overtime round on a draw, as in Black Ops 2 ([modes.md](docs/modes.md)).
+- [ ] Capture the Flag: a carrier speed or weapon penalty if playtests call for one.
 
 ## Tooling
 

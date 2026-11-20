@@ -11,6 +11,13 @@
 //! - Walk over your own dropped flag to send it home at once. Left alone, a
 //!   dropped flag goes home by itself after [`FlagRules::return_time`].
 //!
+//! The match is played in two halves, as in Black Ops 2: at half the clock
+//! the teams swap bases ([`Flags::set_sides`]), both flags go home, and the
+//! score carries over ([`halftime_due`]). A draw at the end goes to one
+//! overtime round from the original sides, as long as a half, where the
+//! next capture wins ([`crate::tdm::MatchState::on_capture`]); with no
+//! capture it stays a draw.
+//!
 //! The match clock, the score limit, and the team scores are in
 //! [`crate::tdm`]; this is only the flags. The server runs it; clients show
 //! what it sends (`net::protocol::GameEvent::Flags`).
@@ -95,6 +102,8 @@ pub enum FlagEvent {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Flags {
     pub flags: [Flag; TEAM_COUNT],
+    /// The map's two bases: the first half's homes, by team.
+    bases: [Vec3; TEAM_COUNT],
 }
 
 impl Flags {
@@ -108,7 +117,23 @@ impl Flags {
         };
         Self {
             flags: [flag(0), flag(1)],
+            bases: homes,
         }
+    }
+
+    /// Puts each team's flag at its own base (`swapped` false) or at the
+    /// other team's (true, the second half), and sends both home without
+    /// events.
+    pub fn set_sides(&mut self, swapped: bool) {
+        for (team, flag) in self.flags.iter_mut().enumerate() {
+            flag.home = self.bases[team ^ usize::from(swapped)];
+        }
+        self.reset();
+    }
+
+    /// Whether the teams play from each other's bases.
+    pub fn swapped(&self) -> bool {
+        self.flags[0].home == self.bases[1] && self.bases[0] != self.bases[1]
     }
 
     /// Sends both flags home without events, for the start of a match.
@@ -259,6 +284,12 @@ impl Flags {
             });
         }
     }
+}
+
+/// Whether the second half starts now: half the regulation clock has run in
+/// the first half (`time_left` of `time_limit` seconds left).
+pub fn halftime_due(time_left: f32, time_limit: Option<f32>, first_half: bool) -> bool {
+    first_half && time_limit.is_some_and(|limit| time_left <= limit * 0.5)
 }
 
 fn touches(rules: &FlagRules, radius: f32, feet: Vec3, spot: Vec3) -> bool {
@@ -458,6 +489,38 @@ mod tests {
             ]
         ));
         assert_eq!(flags.flag(1).state, FlagState::Home);
+    }
+
+    #[test]
+    fn halftime_swaps_the_bases_and_sends_the_flags_home() {
+        let mut flags = Flags::new([Vec3::ZERO, Vec3::new(50.0, 0.0, 0.0)]);
+        assert!(!flags.swapped());
+        // Blue takes red's flag, then halftime comes.
+        step(&mut flags, &[player(1, 0, 50.0)]);
+        assert_eq!(flags.carried_by(1), Some(1));
+        flags.set_sides(true);
+        assert!(flags.swapped());
+        assert_eq!(flags.flag(0).home, Vec3::new(50.0, 0.0, 0.0));
+        assert_eq!(flags.flag(1).home, Vec3::ZERO);
+        assert_eq!(flags.carried_by(1), None);
+        assert_eq!(flags.flag(1).state, FlagState::Home);
+        assert_eq!(flags.flag(1).position, Vec3::ZERO);
+        // Blue now captures at its new base, x = 50, with red's flag from x = 0.
+        step(&mut flags, &[player(1, 0, 0.0)]);
+        let events = step(&mut flags, &[player(1, 0, 50.0)]);
+        assert!(events.contains(&FlagEvent::Captured { flag: 1, by: 1 }));
+        // Overtime plays from the original bases.
+        flags.set_sides(false);
+        assert!(!flags.swapped());
+        assert_eq!(flags.flag(0).home, Vec3::ZERO);
+    }
+
+    #[test]
+    fn halftime_comes_once_at_half_the_clock() {
+        assert!(!halftime_due(301.0, Some(600.0), true));
+        assert!(halftime_due(300.0, Some(600.0), true));
+        assert!(!halftime_due(100.0, Some(600.0), false));
+        assert!(!halftime_due(0.0, None, true));
     }
 
     #[test]
