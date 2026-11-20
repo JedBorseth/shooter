@@ -82,7 +82,7 @@ use shooter_sim::net::discovery::{ServerInfo, query_port_for};
 use shooter_sim::net::input_queue::InputQueue;
 use shooter_sim::net::lag::{self, LagHistory, Pellet, Target, TargetHit};
 use shooter_sim::net::protocol::{
-    self, BlipView, ChargeStatus, ChargeView, ClientMessage, DominationView, FlagPlay,
+    self, Baseline, BlipView, ChargeStatus, ChargeView, ClientMessage, DominationView, FlagPlay,
     FlagPointStatus, FlagPointView, FlagStatus, FlagView, GameEvent, MAX_CHARGE_SITES,
     MAX_DOMINATION_FLAGS, MAX_EVENTS_PER_MESSAGE, MAX_HARDPOINT_ZONES, OwnState, PROTOCOL_VERSION,
     PlayerView, Predicted, RadarView, ScavengerEvent, ScoreRow, ServerMessage, Snapshot, UseView,
@@ -6216,7 +6216,8 @@ impl NetServer {
                 )
             })
             .collect();
-        self.history.insert(self.tick, views.clone());
+        let owns = self.avatars.iter().map(|a| (a.id, a.predicted)).collect();
+        self.history.insert_with_own(self.tick, views.clone(), owns);
         self.lag.record(self.tick, views.clone());
         let tick = self.tick;
         let zombie_views = self.horde.as_mut().and_then(|h| h.views_for(tick));
@@ -6240,29 +6241,24 @@ impl NetServer {
             let Some(avatar) = self.avatars.iter().find(|a| a.id == id) else {
                 continue;
             };
-            let (snapshot, base) = parts.for_player(
+            let outgoing = parts.for_player(
                 &self.history,
                 avatar,
                 client.ack,
                 client.inputs.last_applied(),
             );
-            transport::send_unreliable(&mut client.peer, &snapshot.encode(&base));
+            transport::send_unreliable(&mut client.peer, &outgoing.encode());
         }
         if let Some(probe) = &mut self.probe {
             probe.on_snapshot(tick);
             let ack = probe.ack(tick);
             for avatar in self.avatars.iter().filter(|a| a.bot) {
                 let last_input = probe.last_input(avatar.id, tick);
-                let (mut snapshot, base) = parts.for_player(&self.history, avatar, ack, last_input);
-                let ServerMessage::Snapshot(s) = &mut snapshot else {
-                    continue;
-                };
-                let own = s.own.take();
-                let without_own = snapshot.encode(&base).len();
-                if let ServerMessage::Snapshot(s) = &mut snapshot {
-                    s.own = own;
-                }
-                let bytes = snapshot.encode(&base).len();
+                let mut outgoing = parts.for_player(&self.history, avatar, ack, last_input);
+                let bytes = outgoing.encode().len();
+                let own = outgoing.snapshot.own.take();
+                let without_own = outgoing.encode().len();
+                outgoing.snapshot.own = own;
                 probe.count_snapshot(bytes, bytes - without_own);
             }
         }
@@ -6283,42 +6279,63 @@ struct SnapshotParts<'a> {
 
 impl SnapshotParts<'_> {
     /// The snapshot for `avatar`'s client, delta-encoded against `ack` if the
-    /// server still has it, and the baseline players to encode it with.
+    /// server still has it.
     fn for_player(
         &self,
         history: &SnapshotHistory,
         avatar: &Avatar,
         ack: Option<Tick>,
         last_input: u32,
-    ) -> (ServerMessage, Vec<PlayerView>) {
+    ) -> Outgoing {
         let id = avatar.id;
         let others: Vec<PlayerView> = self.views.iter().filter(|v| v.id != id).copied().collect();
         let baseline: Option<(Tick, Vec<PlayerView>)> = ack.and_then(|tick| {
             let views = history.get(tick)?;
             Some((tick, views.iter().filter(|v| v.id != id).copied().collect()))
         });
-        let snapshot = ServerMessage::Snapshot(Snapshot {
-            tick: self.tick,
-            baseline: baseline.as_ref().map(|(tick, _)| *tick),
-            own: Some(Box::new(OwnState {
-                last_input,
-                predicted: avatar.predicted,
-            })),
-            players: others,
-            grenades: self.grenades.to_vec(),
-            smokes: self.smokes.to_vec(),
-            zombies: self.zombies.cloned(),
-            radar: self
-                .radars
-                .iter()
-                .find(|(viewer, _)| *viewer == id)
-                .map(|(_, view)| view.clone())
-                .unwrap_or_default(),
-        });
-        (
-            snapshot,
-            baseline.map(|(_, views)| views).unwrap_or_default(),
-        )
+        let base_own = baseline
+            .as_ref()
+            .and_then(|(tick, _)| history.own(*tick, id))
+            .copied();
+        Outgoing {
+            snapshot: Snapshot {
+                tick: self.tick,
+                baseline: baseline.as_ref().map(|(tick, _)| *tick),
+                own: Some(Box::new(OwnState {
+                    last_input,
+                    predicted: avatar.predicted,
+                })),
+                players: others,
+                grenades: self.grenades.to_vec(),
+                smokes: self.smokes.to_vec(),
+                zombies: self.zombies.cloned(),
+                radar: self
+                    .radars
+                    .iter()
+                    .find(|(viewer, _)| *viewer == id)
+                    .map(|(_, view)| view.clone())
+                    .unwrap_or_default(),
+            },
+            base_players: baseline.map(|(_, views)| views).unwrap_or_default(),
+            base_own,
+        }
+    }
+}
+
+/// One client's snapshot and the baseline it is encoded against.
+struct Outgoing {
+    snapshot: Snapshot,
+    base_players: Vec<PlayerView>,
+    base_own: Option<Predicted>,
+}
+
+impl Outgoing {
+    fn encode(&self) -> Vec<u8> {
+        // Cloned to wrap it as a message; a snapshot is small next to encoding it.
+        ServerMessage::Snapshot(self.snapshot.clone()).encode_with(Baseline {
+            players: &self.base_players,
+            own: self.base_own.as_ref(),
+        })
     }
 }
 

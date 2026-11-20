@@ -47,7 +47,7 @@ use shooter_sim::net::discovery::clean_text;
 use shooter_sim::net::interpolation::{InterpolationBuffer, SnapshotClock};
 use shooter_sim::net::prediction::Reconciled;
 use shooter_sim::net::protocol::{
-    self as protocol, ChargeStatus, ChargeView, ClientMessage, DominationView, FlagPlay,
+    self as protocol, Baseline, ChargeStatus, ChargeView, ClientMessage, DominationView, FlagPlay,
     FlagPointView, FlagStatus, FlagView, GameEvent, InputPacket, KillCause, MAX_BUILD_BYTES,
     PROTOCOL_VERSION, RadarView, ScavengerEvent, ScoreRow, ServerMessage, Snapshot, ZombiesEvent,
     ZoneView,
@@ -1336,7 +1336,13 @@ impl NetClient {
 impl NetClient {
     fn handle_packet(&mut self, bytes: &[u8]) {
         let history = &self.history;
-        let message = match ServerMessage::decode(bytes, |tick| history.get(tick)) {
+        let id = self.player_id.unwrap_or(0);
+        let message = match ServerMessage::decode_with(bytes, |tick| {
+            Some(Baseline {
+                players: history.get(tick)?,
+                own: history.own(tick, id),
+            })
+        }) {
             Ok(message) => message,
             Err(error) => {
                 self.stats.decode_errors += 1;
@@ -2030,7 +2036,12 @@ impl NetClient {
     fn apply_snapshot(&mut self, snapshot: Snapshot) {
         self.stats.snapshots += 1;
         let tick = snapshot.tick;
-        self.history.insert(tick, snapshot.players.clone());
+        let owns = snapshot
+            .own
+            .as_ref()
+            .map(|own| (self.player_id.unwrap_or(0), own.predicted));
+        self.history
+            .insert_with_own(tick, snapshot.players.clone(), owns.into_iter().collect());
         let newest = self.newest.is_none_or(|n| tick > n);
         if newest {
             self.record_tape(&snapshot);

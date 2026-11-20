@@ -18,7 +18,8 @@
 use glam::{IVec3, Vec2, Vec3};
 
 use super::Tick;
-use super::bits::{BitReader, BitWriter, DecodeError, DecodeResult};
+use super::bits::{BitReader, BitSink, BitSource, BitWriter, DecodeError, DecodeResult};
+use super::delta::{self, DeltaReader, DeltaWriter};
 use super::subtick;
 use crate::chat;
 use crate::class::{Attachments, Class, Gun, Wildcards};
@@ -146,7 +147,9 @@ use crate::zombies::drinks::Drinks;
 // Version 60 added the kneel at Search and Destroy's charge to rewound hitbox
 // poses (`Activity::kneel`), so the hit zones follow the plant and defuse.
 // Version 61 added the minimap's red dots to snapshots (`RadarView`).
-pub const PROTOCOL_VERSION: u16 = 61;
+// Version 62 sends the receiver's own state as field-by-field changes from
+// the own state in the acknowledged snapshot (`net::delta`).
+pub const PROTOCOL_VERSION: u16 = 62;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -601,6 +604,15 @@ impl BlipView {
     pub fn position(&self) -> Vec2 {
         Vec2::new(f32::from(self.x), f32::from(self.z)) / BLIP_SCALE
     }
+}
+
+/// What a client already has of the snapshot a new one is delta-encoded
+/// against (`Snapshot::baseline`): its remote players, and its own state if
+/// it was in the game.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Baseline<'a> {
+    pub players: &'a [PlayerView],
+    pub own: Option<&'a Predicted>,
 }
 
 /// Most zombies a snapshot carries.
@@ -1527,6 +1539,16 @@ impl ServerMessage {
     /// Encodes the message. `baseline` holds the remote players of the snapshot
     /// named by `Snapshot::baseline`, exactly as this client received them.
     pub fn encode(&self, baseline: &[PlayerView]) -> Vec<u8> {
+        self.encode_with(Baseline {
+            players: baseline,
+            own: None,
+        })
+    }
+
+    /// Encodes the message against everything the client has of the
+    /// snapshot named by `Snapshot::baseline`: its remote players and its own
+    /// state, so both are sent as changes.
+    pub fn encode_with(&self, baseline: Baseline) -> Vec<u8> {
         let mut w = BitWriter::new();
         match self {
             ServerMessage::Welcome {
@@ -1569,6 +1591,19 @@ impl ServerMessage {
     pub fn decode<'a>(
         bytes: &[u8],
         baseline: impl FnOnce(Tick) -> Option<&'a [PlayerView]>,
+    ) -> DecodeResult<Self> {
+        Self::decode_with(bytes, |tick| {
+            baseline(tick).map(|players| Baseline { players, own: None })
+        })
+    }
+
+    /// Decodes a message. `baseline` looks up what the client has of an
+    /// earlier snapshot by tick; a snapshot whose baseline is unknown, or
+    /// whose own state is sent as changes from an own state the client does
+    /// not have, fails to decode.
+    pub fn decode_with<'a>(
+        bytes: &[u8],
+        baseline: impl FnOnce(Tick) -> Option<Baseline<'a>>,
     ) -> DecodeResult<Self> {
         let mut r = BitReader::new(bytes);
         match r.bits(TAG_BITS)? {
@@ -2769,7 +2804,7 @@ fn read_finite_vec3(r: &mut BitReader) -> DecodeResult<Vec3> {
     Ok(Vec3::new(read_finite(r)?, read_finite(r)?, read_finite(r)?))
 }
 
-fn write_snapshot(w: &mut BitWriter, s: &Snapshot, baseline: &[PlayerView]) {
+fn write_snapshot(w: &mut BitWriter, s: &Snapshot, baseline: Baseline) {
     w.u32(s.tick);
     match s.baseline {
         // Baselines are recent, so send the distance back instead of the tick.
@@ -2779,15 +2814,28 @@ fn write_snapshot(w: &mut BitWriter, s: &Snapshot, baseline: &[PlayerView]) {
         }
         None => w.bool(false),
     }
+    let baseline = if s.baseline.is_some() {
+        baseline
+    } else {
+        Baseline::default()
+    };
     match &s.own {
         Some(own) => {
             w.bool(true);
             w.varint(own.last_input);
-            write_predicted(w, &own.predicted);
+            // The own state as changes from the baseline's, field by field.
+            w.bool(baseline.own.is_some());
+            match baseline.own {
+                Some(base) => {
+                    let fields = delta::record(|r| write_predicted(r, base));
+                    write_predicted(&mut DeltaWriter::new(w, &fields), &own.predicted);
+                }
+                None => write_predicted(w, &own.predicted),
+            }
         }
         None => w.bool(false),
     }
-    let baseline = if s.baseline.is_some() { baseline } else { &[] };
+    let baseline = baseline.players;
     w.varint(s.players.len() as u32);
     for view in &s.players {
         w.u8(view.id);
@@ -2927,7 +2975,7 @@ fn read_zombie(r: &mut BitReader) -> DecodeResult<ZombieView> {
 
 fn read_snapshot<'a>(
     r: &mut BitReader,
-    baseline: impl FnOnce(Tick) -> Option<&'a [PlayerView]>,
+    baseline: impl FnOnce(Tick) -> Option<Baseline<'a>>,
 ) -> DecodeResult<Snapshot> {
     let tick = r.u32()?;
     let base_tick = if r.bool()? {
@@ -2935,18 +2983,29 @@ fn read_snapshot<'a>(
     } else {
         None
     };
+    let baseline = match base_tick {
+        Some(t) => baseline(t).ok_or(DecodeError::Invalid("unknown baseline"))?,
+        None => Baseline::default(),
+    };
     let own = if r.bool()? {
+        let last_input = r.varint()?;
+        let predicted = if r.bool()? {
+            let base = baseline
+                .own
+                .ok_or(DecodeError::Invalid("unknown own baseline"))?;
+            let fields = delta::record(|w| write_predicted(w, base));
+            read_predicted(&mut DeltaReader::new(r, &fields))?
+        } else {
+            read_predicted(r)?
+        };
         Some(Box::new(OwnState {
-            last_input: r.varint()?,
-            predicted: read_predicted(r)?,
+            last_input,
+            predicted,
         }))
     } else {
         None
     };
-    let base: &[PlayerView] = match base_tick {
-        Some(t) => baseline(t).ok_or(DecodeError::Invalid("unknown baseline"))?,
-        None => &[],
-    };
+    let base = baseline.players;
     let count = r.varint()? as usize;
     if count > 255 {
         return Err(DecodeError::Invalid("player count"));
@@ -3185,7 +3244,7 @@ fn read_view_delta(r: &mut BitReader, base: &PlayerView) -> DecodeResult<PlayerV
 // ---------------------------------------------------------------------------
 // Full-precision state for prediction
 
-fn write_predicted(w: &mut BitWriter, p: &Predicted) {
+fn write_predicted(w: &mut impl BitSink, p: &Predicted) {
     write_vec3(w, p.position);
     w.bool(p.on_floor);
     let s = &p.state;
@@ -3204,7 +3263,7 @@ fn write_predicted(w: &mut BitWriter, p: &Predicted) {
     write_combat_state(w, &s.combat);
 }
 
-fn read_predicted(r: &mut BitReader) -> DecodeResult<Predicted> {
+fn read_predicted(r: &mut impl BitSource) -> DecodeResult<Predicted> {
     let position = read_vec3(r)?;
     let on_floor = r.bool()?;
     let reload_held = r.bool()?;
@@ -3242,7 +3301,7 @@ fn read_predicted(r: &mut BitReader) -> DecodeResult<Predicted> {
     })
 }
 
-fn write_move_state(w: &mut BitWriter, m: &MoveState) {
+fn write_move_state(w: &mut impl BitSink, m: &MoveState) {
     write_vec3(w, m.velocity);
     write_stance(w, m.stance);
     w.bool(m.sprinting);
@@ -3278,7 +3337,7 @@ fn write_move_state(w: &mut BitWriter, m: &MoveState) {
     w.f32(m.mount_blend);
 }
 
-fn read_move_state(r: &mut BitReader) -> DecodeResult<MoveState> {
+fn read_move_state(r: &mut impl BitSource) -> DecodeResult<MoveState> {
     Ok(MoveState {
         velocity: read_vec3(r)?,
         stance: read_stance(r)?,
@@ -3313,7 +3372,7 @@ fn read_move_state(r: &mut BitReader) -> DecodeResult<MoveState> {
     })
 }
 
-fn write_combat_state(w: &mut BitWriter, c: &CombatState) {
+fn write_combat_state(w: &mut impl BitSink, c: &CombatState) {
     for slot in &c.slots {
         write_weapon(w, slot.id);
         w.u16(slot.magazine);
@@ -3402,7 +3461,7 @@ fn write_combat_state(w: &mut BitWriter, c: &CombatState) {
     w.u8(c.tacticals);
 }
 
-fn read_combat_state(r: &mut BitReader) -> DecodeResult<CombatState> {
+fn read_combat_state(r: &mut impl BitSource) -> DecodeResult<CombatState> {
     let mut slot = || -> DecodeResult<WeaponState> {
         Ok(WeaponState {
             id: read_weapon(r)?,
@@ -3517,7 +3576,7 @@ fn write_class(w: &mut BitWriter, class: &Class) {
     w.bits(u32::from(class.wildcards.bits()), Wildcards::BITS);
 }
 
-fn read_perks(r: &mut BitReader) -> DecodeResult<Perks> {
+fn read_perks(r: &mut impl BitSource) -> DecodeResult<Perks> {
     Perks::from_bits(r.bits(Perks::BITS)? as u16).ok_or(DecodeError::Invalid("perks"))
 }
 
@@ -3537,22 +3596,22 @@ fn read_class(r: &mut BitReader) -> DecodeResult<Class> {
 /// Bits for an [`equipment::Kind`] on the wire: room for the tacticals.
 const EQUIPMENT_BITS: u32 = 2;
 
-fn read_equipment(r: &mut BitReader) -> DecodeResult<equipment::Kind> {
+fn read_equipment(r: &mut impl BitSource) -> DecodeResult<equipment::Kind> {
     equipment::Kind::from_code(r.bits(EQUIPMENT_BITS)? as u8)
         .ok_or(DecodeError::Invalid("equipment"))
 }
 
-fn write_vec3(w: &mut BitWriter, v: Vec3) {
+fn write_vec3(w: &mut impl BitSink, v: Vec3) {
     w.f32(v.x);
     w.f32(v.y);
     w.f32(v.z);
 }
 
-fn read_vec3(r: &mut BitReader) -> DecodeResult<Vec3> {
+fn read_vec3(r: &mut impl BitSource) -> DecodeResult<Vec3> {
     Ok(Vec3::new(r.f32()?, r.f32()?, r.f32()?))
 }
 
-fn write_stance(w: &mut BitWriter, stance: Stance) {
+fn write_stance(w: &mut impl BitSink, stance: Stance) {
     let value = match stance {
         Stance::Standing => 0,
         Stance::Crouching => 1,
@@ -3561,7 +3620,7 @@ fn write_stance(w: &mut BitWriter, stance: Stance) {
     w.bits(value, 2);
 }
 
-fn read_stance(r: &mut BitReader) -> DecodeResult<Stance> {
+fn read_stance(r: &mut impl BitSource) -> DecodeResult<Stance> {
     match r.bits(2)? {
         0 => Ok(Stance::Standing),
         1 => Ok(Stance::Crouching),
@@ -3644,11 +3703,11 @@ fn read_activity(r: &mut BitReader) -> DecodeResult<Activity> {
     })
 }
 
-fn write_weapon(w: &mut BitWriter, id: WeaponId) {
+fn write_weapon(w: &mut impl BitSink, id: WeaponId) {
     w.u8(id.0);
 }
 
-fn read_weapon(r: &mut BitReader) -> DecodeResult<WeaponId> {
+fn read_weapon(r: &mut impl BitSource) -> DecodeResult<WeaponId> {
     let id = WeaponId(r.u8()?);
     if valid_weapon(id) {
         Ok(id)
@@ -3742,6 +3801,58 @@ mod tests {
             position: Vec3::new(1.5, 0.25, -7.125),
             on_floor: true,
         }
+    }
+
+    #[test]
+    fn own_state_rides_as_changes_from_the_baseline() {
+        let before = sample_state(60);
+        let after = sample_state(62);
+        let snapshot = |own: Predicted, baseline: Option<Tick>| {
+            ServerMessage::Snapshot(Snapshot {
+                tick: 102,
+                baseline,
+                own: Some(Box::new(OwnState {
+                    last_input: 9,
+                    predicted: own,
+                })),
+                players: Vec::new(),
+                grenades: Vec::new(),
+                smokes: Vec::new(),
+                zombies: None,
+                radar: RadarView::default(),
+            })
+        };
+        let base = Baseline {
+            players: &[],
+            own: Some(&before),
+        };
+        let full = snapshot(after, None).encode_with(base);
+        let delta_msg = snapshot(after, Some(100));
+        let delta = delta_msg.encode_with(base);
+        assert!(
+            delta.len() * 3 < full.len(),
+            "{} bytes as changes, {} in full",
+            delta.len(),
+            full.len()
+        );
+        let decoded = ServerMessage::decode_with(&delta, |tick| {
+            assert_eq!(tick, 100);
+            Some(base)
+        })
+        .unwrap();
+        assert_eq!(decoded, delta_msg);
+        // Unchanged, the own state is little more than a flag a field.
+        let same = snapshot(before, Some(100)).encode_with(base);
+        assert!(same.len() < 24, "{} bytes unchanged", same.len());
+        // Without the baseline's own state the client cannot decode it.
+        let missing = Baseline {
+            players: &[],
+            own: None,
+        };
+        assert_eq!(
+            ServerMessage::decode_with(&delta, |_| Some(missing)),
+            Err(DecodeError::Invalid("unknown own baseline"))
+        );
     }
 
     #[test]
