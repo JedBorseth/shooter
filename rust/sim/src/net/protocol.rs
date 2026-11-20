@@ -149,7 +149,9 @@ use crate::zombies::drinks::Drinks;
 // Version 61 added the minimap's red dots to snapshots (`RadarView`).
 // Version 62 sends the receiver's own state as field-by-field changes from
 // the own state in the acknowledged snapshot (`net::delta`).
-pub const PROTOCOL_VERSION: u16 = 62;
+// Version 63 snaps inputs' view angles to whole steps of 2^-14 radians and
+// sends each input after a packet's first as changes from the one before.
+pub const PROTOCOL_VERSION: u16 = 63;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -1208,7 +1210,8 @@ impl PlayerInput {
         let q = |v: f32| (v.clamp(-1.0, 1.0) * WISH_SCALE).round() / WISH_SCALE;
         self.wish = Vec2::new(q(self.wish.x), q(self.wish.y));
         // The client already clamps; this keeps a tampered pitch off the server.
-        self.pitch = self.pitch.clamp(-PITCH_LIMIT, PITCH_LIMIT);
+        self.pitch = view_angle(self.pitch.clamp(-PITCH_LIMIT, PITCH_LIMIT));
+        self.yaw = view_angle(self.yaw);
         self.switch_to = self.switch_to.filter(|slot| *slot < 4);
         self.pickup = self.pickup.filter(|id| valid_weapon(*id));
         self.lunge = self.lunge.and_then(quantize_lunge);
@@ -1223,6 +1226,31 @@ impl PlayerInput {
 fn quantize_lunge(offset: Vec2) -> Option<Vec2> {
     (offset.is_finite() && offset.length() <= crate::melee::MAX_LUNGE_OFFSET)
         .then(|| (offset * LUNGE_SCALE).round() / LUNGE_SCALE)
+}
+
+/// View angles in inputs travel as whole steps of 2^-14 radians (about
+/// 0.0035 degrees, finer than Quake III's and Call of Duty's 16-bit
+/// angles), so a turn between two inputs is a small change. Yaw is not
+/// wrapped (the client lets it run past a turn), and every step count below
+/// [`MAX_VIEW_STEPS`] is exact both as an integer and as an `f32`.
+const VIEW_ANGLE_STEPS: f32 = 16384.0;
+/// Yaw beyond this many steps (about 10,000 turns) is clamped.
+const MAX_VIEW_STEPS: i32 = i32::MAX / 2;
+
+/// An angle snapped to the input grid.
+fn view_angle(radians: f32) -> f32 {
+    if !radians.is_finite() {
+        return 0.0;
+    }
+    angle_from_steps(angle_steps(radians))
+}
+
+fn angle_steps(radians: f32) -> i32 {
+    ((radians * VIEW_ANGLE_STEPS).round() as i32).clamp(-MAX_VIEW_STEPS, MAX_VIEW_STEPS)
+}
+
+fn angle_from_steps(steps: i32) -> f32 {
+    steps as f32 / VIEW_ANGLE_STEPS
 }
 
 /// A view tick as the wire carries it, or `None` if it cannot be sent.
@@ -1253,19 +1281,25 @@ impl ClientMessage {
                 let skipped = (packet.inputs.len() - count) as u32;
                 w.varint(packet.first_seq.wrapping_add(skipped));
                 w.varint(count as u32);
-                let mut previous: Option<PlayerInput> = None;
+                // The first input whole, each later one as changes from the
+                // one before it (`net::delta`): while a player turns and
+                // moves, consecutive inputs differ in a few small fields.
+                let mut previous: Option<Vec<delta::Field>> = None;
+                let mut last: Option<PlayerInput> = None;
                 for input in &packet.inputs[packet.inputs.len() - count..] {
-                    let input = PlayerInput {
-                        view_tick: input.view_tick.and_then(quantize_view_tick),
-                        fire_aim: input.fire_aim.and_then(subtick::quantize),
-                        ..*input
-                    };
-                    let same = previous == Some(input);
+                    let input = input.quantized();
+                    let same = last == Some(input);
                     w.bool(same);
                     if !same {
-                        write_input(&mut w, &input, previous.and_then(|p| p.view_tick));
+                        match &previous {
+                            Some(fields) => {
+                                write_input(&mut DeltaWriter::new(&mut w, fields), &input);
+                            }
+                            None => write_input(&mut w, &input),
+                        }
+                        previous = Some(delta::record(|r| write_input(r, &input)));
                     }
-                    previous = Some(input);
+                    last = Some(input);
                 }
             }
             ClientMessage::Debug { rewound_hitboxes } => {
@@ -1311,12 +1345,17 @@ impl ClientMessage {
                     return Err(DecodeError::Invalid("input count"));
                 }
                 let mut inputs: Vec<PlayerInput> = Vec::with_capacity(count);
+                let mut previous: Option<Vec<delta::Field>> = None;
                 for _ in 0..count {
                     let input = if r.bool()? {
                         *inputs.last().ok_or(DecodeError::Invalid("repeat"))?
                     } else {
-                        let previous = inputs.last().and_then(|p| p.view_tick);
-                        read_input(&mut r, previous)?
+                        let input = match &previous {
+                            Some(fields) => read_input(&mut DeltaReader::new(&mut r, fields))?,
+                            None => read_input(&mut r)?,
+                        };
+                        previous = Some(delta::record(|w| write_input(w, &input)));
+                        input
                     };
                     inputs.push(input);
                 }
@@ -1344,16 +1383,26 @@ impl ClientMessage {
     }
 }
 
-/// Writes an input. `previous_view` is the view tick of the input before it in
-/// the packet: while firing, view ticks advance about one tick per input, so
-/// they are sent as a small difference from it.
-fn write_input(w: &mut BitWriter, input: &PlayerInput, previous_view: Option<f64>) {
+/// Writes a quantized input ([`PlayerInput::quantized`]); written against
+/// [`BitSink`] so later inputs in a packet go as changes from the one before.
+fn write_input(w: &mut impl BitSink, input: &PlayerInput) {
     let byte = |v: f32| ((v.clamp(-1.0, 1.0) * WISH_SCALE).round() as i8) as u8;
     w.u8(byte(input.wish.x));
     w.u8(byte(input.wish.y));
-    w.f32(input.yaw);
-    w.f32(input.pitch);
-    for flag in [
+    w.number(angle_steps(input.yaw) as u32, 32);
+    let pitch = angle_steps(input.pitch).clamp(i32::from(i16::MIN), i32::from(i16::MAX));
+    w.number(u32::from(pitch as i16 as u16), 16);
+    // Every button and which optional parts follow, as one field: from one
+    // input to the next it rarely changes, and then costs a bit.
+    let lunge = input.lunge.and_then(quantize_lunge);
+    let switch_to = input.switch_to.filter(|slot| *slot < 4);
+    let pickup = input.pickup.filter(|id| valid_weapon(*id));
+    let view_tick = input.view_tick.and_then(quantize_view_tick);
+    let fire_aim = input
+        .fire_aim
+        .and_then(|a| Some((subtick::steps(a.yaw)?, subtick::steps(a.pitch)?)));
+    let mut mask = 0;
+    for (bit, flag) in [
         input.jump,
         input.sprint,
         input.crouch,
@@ -1364,62 +1413,46 @@ fn write_input(w: &mut BitWriter, input: &PlayerInput, previous_view: Option<f64
         input.lethal,
         input.tactical,
         input.interact,
-    ] {
-        w.bool(flag);
+        lunge.is_some(),
+        switch_to.is_some(),
+        pickup.is_some(),
+        view_tick.is_some(),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        mask |= u32::from(flag) << bit;
     }
-    match input.lunge.and_then(quantize_lunge) {
-        Some(offset) => {
-            w.bool(true);
-            let mm = (offset * LUNGE_SCALE).round();
-            w.u16(mm.x as i16 as u16);
-            w.u16(mm.y as i16 as u16);
-        }
-        None => w.bool(false),
+    w.bits(mask, INPUT_FLAG_BITS);
+    if let Some(offset) = lunge {
+        let mm = (offset * LUNGE_SCALE).round();
+        w.u16(mm.x as i16 as u16);
+        w.u16(mm.y as i16 as u16);
     }
-    match input.switch_to {
-        Some(slot) if slot < 4 => {
-            w.bool(true);
-            w.bits(u32::from(slot), 2);
-        }
-        _ => w.bool(false),
+    if let Some(slot) = switch_to {
+        w.bits(u32::from(slot), 2);
     }
-    match input.pickup {
-        Some(id) if valid_weapon(id) => {
-            w.bool(true);
-            write_weapon(w, id);
-        }
-        _ => w.bool(false),
+    if let Some(id) = pickup {
+        write_weapon(w, id);
     }
-    write_view_tick(w, input.view_tick, previous_view);
-    write_fire_aim(w, input.fire_aim);
-}
-
-/// The press aim, only on the input where fire went down: a flag, then each
-/// axis as signed steps (a byte or two for a tick's worth of turning).
-fn write_fire_aim(w: &mut BitWriter, aim: Option<FireAim>) {
-    let steps = aim.and_then(|a| Some((subtick::steps(a.yaw)?, subtick::steps(a.pitch)?)));
-    w.bool(steps.is_some());
-    if let Some((yaw, pitch)) = steps {
+    // The whole tick, then the fraction: from one input to the next the
+    // whole tick moves by one.
+    if let Some(tick) = view_tick {
+        let steps = view_steps(tick);
+        w.u32((steps >> 8) as u32);
+        w.u8(steps as u8);
+    }
+    // The press aim rides on one input in a burst, so it keeps its own flag
+    // rather than changing the mask twice.
+    w.bool(fire_aim.is_some());
+    if let Some((yaw, pitch)) = fire_aim {
         w.varint_signed(yaw);
         w.varint_signed(pitch);
     }
 }
 
-fn read_fire_aim(r: &mut BitReader) -> DecodeResult<Option<FireAim>> {
-    if !r.bool()? {
-        return Ok(None);
-    }
-    let mut axis = || -> DecodeResult<f32> {
-        let steps = r.varint_signed()?;
-        if steps.unsigned_abs() > subtick::LIMIT_STEPS.unsigned_abs() {
-            return Err(DecodeError::Invalid("fire aim"));
-        }
-        Ok(subtick::from_steps(steps))
-    };
-    let yaw = axis()?;
-    let pitch = axis()?;
-    Ok(Some(FireAim { yaw, pitch }))
-}
+/// Bits of an input's button and optional-part mask.
+const INPUT_FLAG_BITS: u32 = 14;
 
 /// View ticks in wire steps. Only called on quantized ticks, which are exact.
 fn view_steps(tick: f64) -> i64 {
@@ -1463,7 +1496,7 @@ fn read_view_tick(r: &mut BitReader, previous: Option<f64>) -> DecodeResult<Opti
     Ok(Some(tick))
 }
 
-fn read_input(r: &mut BitReader, previous_view: Option<f64>) -> DecodeResult<PlayerInput> {
+fn read_input(r: &mut impl BitSource) -> DecodeResult<PlayerInput> {
     let mut axis = || -> DecodeResult<f32> {
         let v = r.u8()? as i8;
         if v == i8::MIN {
@@ -1472,22 +1505,18 @@ fn read_input(r: &mut BitReader, previous_view: Option<f64>) -> DecodeResult<Pla
         Ok(f32::from(v) / WISH_SCALE)
     };
     let wish = Vec2::new(axis()?, axis()?);
-    let yaw = r.f32()?;
-    let pitch = r.f32()?;
-    if !yaw.is_finite() || !pitch.is_finite() {
-        return Err(DecodeError::Invalid("view angles"));
+    let yaw_steps = r.number(32)? as i32;
+    if yaw_steps.unsigned_abs() > MAX_VIEW_STEPS.unsigned_abs() {
+        return Err(DecodeError::Invalid("yaw"));
     }
-    let jump = r.bool()?;
-    let sprint = r.bool()?;
-    let crouch = r.bool()?;
-    let fire = r.bool()?;
-    let aim = r.bool()?;
-    let reload = r.bool()?;
-    let melee = r.bool()?;
-    let lethal = r.bool()?;
-    let tactical = r.bool()?;
-    let interact = r.bool()?;
-    let lunge = if r.bool()? {
+    let yaw = angle_from_steps(yaw_steps);
+    let pitch = angle_from_steps(i32::from(r.number(16)? as u16 as i16));
+    if pitch.abs() > PITCH_LIMIT + 1.0 / VIEW_ANGLE_STEPS {
+        return Err(DecodeError::Invalid("pitch"));
+    }
+    let mask = r.bits(INPUT_FLAG_BITS)?;
+    let flag = |bit: u32| mask & (1 << bit) != 0;
+    let lunge = if flag(10) {
         let x = f32::from(r.u16()? as i16);
         let z = f32::from(r.u16()? as i16);
         let offset = Vec2::new(x, z) / LUNGE_SCALE;
@@ -1498,18 +1527,38 @@ fn read_input(r: &mut BitReader, previous_view: Option<f64>) -> DecodeResult<Pla
     } else {
         None
     };
-    let switch_to = if r.bool()? {
+    let switch_to = if flag(11) {
         Some(r.bits(2)? as u8)
     } else {
         None
     };
-    let pickup = if r.bool()? {
+    let pickup = if flag(12) {
         Some(read_weapon(r)?)
     } else {
         None
     };
-    let view_tick = read_view_tick(r, previous_view)?;
-    let fire_aim = read_fire_aim(r)?;
+    let view_tick = if flag(13) {
+        let steps = (i64::from(r.u32()?) << 8) | i64::from(r.u8()?);
+        Some(steps as f64 / VIEW_TICK_STEPS)
+    } else {
+        None
+    };
+    let fire_aim = if r.bool()? {
+        let mut axis = || -> DecodeResult<f32> {
+            let steps = r.varint_signed()?;
+            if steps.unsigned_abs() > subtick::LIMIT_STEPS.unsigned_abs() {
+                return Err(DecodeError::Invalid("fire aim"));
+            }
+            Ok(subtick::from_steps(steps))
+        };
+        let yaw = axis()?;
+        let pitch = axis()?;
+        Some(FireAim { yaw, pitch })
+    } else {
+        None
+    };
+    let (jump, sprint, crouch, fire, aim) = (flag(0), flag(1), flag(2), flag(3), flag(4));
+    let (reload, melee, lethal, tactical, interact) = (flag(5), flag(6), flag(7), flag(8), flag(9));
     Ok(PlayerInput {
         wish,
         yaw,
@@ -3375,8 +3424,8 @@ fn read_move_state(r: &mut impl BitSource) -> DecodeResult<MoveState> {
 fn write_combat_state(w: &mut impl BitSink, c: &CombatState) {
     for slot in &c.slots {
         write_weapon(w, slot.id);
-        w.u16(slot.magazine);
-        w.u16(slot.reserve);
+        w.number(u32::from(slot.magazine), 16);
+        w.number(u32::from(slot.reserve), 16);
         w.bool(slot.needs_cycle);
         w.bool(slot.carried);
         w.bool(slot.fresh);
@@ -3443,12 +3492,12 @@ fn write_combat_state(w: &mut impl BitSink, c: &CombatState) {
     w.f32(c.ads);
     w.f32(c.cooldown);
     w.f32(c.sprint_out);
-    w.u16(c.burst);
+    w.number(u32::from(c.burst), 16);
     w.f32(c.since_shot);
     w.f32(c.recoil.x);
     w.f32(c.recoil.y);
     w.f32(c.bloom);
-    w.u32(c.shots_fired);
+    w.number(c.shots_fired, 32);
     w.bool(c.fire_held);
     w.u8(c.burst_left);
     w.f32(c.sway_time);
@@ -3465,8 +3514,8 @@ fn read_combat_state(r: &mut impl BitSource) -> DecodeResult<CombatState> {
     let mut slot = || -> DecodeResult<WeaponState> {
         Ok(WeaponState {
             id: read_weapon(r)?,
-            magazine: r.u16()?,
-            reserve: r.u16()?,
+            magazine: r.number(16)? as u16,
+            reserve: r.number(16)? as u16,
             needs_cycle: r.bool()?,
             carried: r.bool()?,
             fresh: r.bool()?,
@@ -3526,11 +3575,11 @@ fn read_combat_state(r: &mut impl BitSource) -> DecodeResult<CombatState> {
         ads: r.f32()?,
         cooldown: r.f32()?,
         sprint_out: r.f32()?,
-        burst: r.u16()?,
+        burst: r.number(16)? as u16,
         since_shot: r.f32()?,
         recoil: Vec2::new(r.f32()?, r.f32()?),
         bloom: r.f32()?,
-        shots_fired: r.u32()?,
+        shots_fired: r.number(32)?,
         fire_held: r.bool()?,
         burst_left: r.u8()?,
         sway_time: r.f32()?,
@@ -4119,7 +4168,60 @@ mod tests {
             pitch: 3.0,
             ..Default::default()
         };
-        assert_eq!(input.quantized().pitch, PITCH_LIMIT);
+        let pitch = input.quantized().pitch;
+        assert!(
+            (pitch - PITCH_LIMIT).abs() <= 0.5 / VIEW_ANGLE_STEPS,
+            "{pitch}"
+        );
+    }
+
+    #[test]
+    fn view_angles_snap_to_a_grid_the_wire_keeps_exactly() {
+        for yaw in [0.0, -0.0, 1e-6, -3.0, 6.3, 1234.567, -58_765.43, 1e9] {
+            let q = PlayerInput {
+                yaw,
+                pitch: -yaw.clamp(-1.0, 1.0),
+                ..Default::default()
+            }
+            .quantized();
+            assert_eq!(q.quantized(), q, "snapping twice changes nothing");
+            if yaw.abs() < 60_000.0 {
+                assert!((q.yaw - yaw).abs() <= 0.5 / VIEW_ANGLE_STEPS, "{yaw}");
+            }
+            let msg = ClientMessage::Input(InputPacket {
+                ack_snapshot: None,
+                first_seq: 1,
+                inputs: vec![q],
+            });
+            assert_eq!(ClientMessage::decode(&msg.encode()).unwrap(), msg);
+        }
+    }
+
+    #[test]
+    fn turning_and_moving_inputs_cost_a_few_bytes_each() {
+        // A player strafing and tracking a target: every input differs.
+        let inputs: Vec<PlayerInput> = (0..10)
+            .map(|i| {
+                PlayerInput {
+                    wish: Vec2::new(if i < 5 { 1.0 } else { -1.0 }, 1.0),
+                    yaw: 2.0 + i as f32 * 0.021,
+                    pitch: -0.1 + i as f32 * 0.003,
+                    sprint: true,
+                    ..Default::default()
+                }
+                .quantized()
+            })
+            .collect();
+        let msg = ClientMessage::Input(InputPacket {
+            ack_snapshot: Some(500),
+            first_seq: 7,
+            inputs,
+        });
+        let bytes = msg.encode();
+        assert_eq!(ClientMessage::decode(&bytes).unwrap(), msg);
+        // The first input whole (about 10 bytes), then about 4 to 5 bytes
+        // each, mostly the turn (32-bit floats were 11 bytes each).
+        assert!(bytes.len() <= 56, "{} bytes", bytes.len());
     }
 
     #[test]
@@ -4757,12 +4859,17 @@ mod tests {
     #[test]
     fn press_aim_past_the_limit_is_rejected() {
         let mut w = BitWriter::new();
+        w.u8(0);
+        w.u8(0);
+        w.u32(0);
+        w.u16(0);
+        w.bits(0, INPUT_FLAG_BITS);
         w.bool(true);
         w.varint_signed(subtick::LIMIT_STEPS + 1);
         w.varint_signed(0);
         let bytes = w.finish();
         let mut r = BitReader::new(&bytes);
-        assert!(read_fire_aim(&mut r).is_err());
+        assert_eq!(read_input(&mut r), Err(DecodeError::Invalid("fire aim")));
     }
 
     #[test]

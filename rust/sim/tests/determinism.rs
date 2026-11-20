@@ -241,10 +241,11 @@ fn press_aim_changes_no_state() {
 // Equipment: the script pulls a frag's pin, cooks it, and throws it.
 // The throw then stays in hand through its follow-through.
 // Tacticals: the script throws its flashbang too.
-const REFERENCE_HASH: u64 = 0x5df4_bcb3_f3a9_9afa;
+// Inputs: view angles snap to whole steps of 2^-14 radians (protocol 63).
+const REFERENCE_HASH: u64 = 0x4232_9202_60da_996c;
 /// The same for every shot's view angles and aim offset (sub-tick press aims
 /// included).
-const SHOT_REFERENCE_HASH: u64 = 0x711a_2bf6_d434_1119;
+const SHOT_REFERENCE_HASH: u64 = 0x4db0_44a7_b47a_5b66;
 
 #[test]
 fn state_matches_the_reference_on_every_platform() {
