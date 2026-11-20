@@ -307,6 +307,8 @@ func _build() -> void:
 	layout.add_child(rows)
 	_name = LineEdit.new()
 	_name.text = Settings.player_name
+	# Signed in, the account's name is the player's name.
+	_name.editable = not Online.is_signed_in()
 	_name.max_length = 16
 	_name.placeholder_text = "Player"
 	_name.custom_minimum_size = Vector2(0, 38)

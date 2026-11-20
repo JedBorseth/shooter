@@ -23,8 +23,8 @@
 set -uo pipefail
 
 # Tests that start another Godot or master server process, directly or through
-# the game's local match (Net.start_local_match).
-REALTIME=(net_test server_browser_test local_pause_test killcam_test zombies_net_test zombies_local_test)
+# the game's local match (Net.start_local_match), or talk to the account server.
+REALTIME=(net_test server_browser_test local_pause_test killcam_test zombies_net_test zombies_local_test online_test)
 # Extra argument sets: a test listed here runs once per entry instead of once
 # with no arguments.
 declare -A RUNS=(

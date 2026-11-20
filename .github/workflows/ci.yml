@@ -188,6 +188,10 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+      # The account server (docker/online) for online_test.gd and the Nakama
+      # module tests. It starts in the background while everything builds.
+      - name: Start the online services
+        run: docker compose -f docker/online/compose.yml up -d
       - uses: ./.github/actions/lfs-pull
         with:
           save: ${{ env.SAVE_CACHE }}
@@ -206,8 +210,17 @@ jobs:
         with:
           version: ${{ env.GODOT_VERSION }}
           save: ${{ env.SAVE_CACHE }}
+      - name: Nakama module tests
+        run: |
+          docker compose -f docker/online/compose.yml up -d --wait
+          python3 tools/test_online.py
       - name: Run Godot tests
+        env:
+          NAKAMA_URL: http://127.0.0.1:7350
         run: .github/scripts/godot-tests.sh
+      - name: Online services log
+        if: failure()
+        run: docker compose -f docker/online/compose.yml logs --tail 200 nakama
 
   # Starts with the other jobs: it prepares Godot, the LFS files, and the import
   # while the libraries build, then picks up each library as soon as its job

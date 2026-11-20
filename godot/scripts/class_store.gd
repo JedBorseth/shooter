@@ -8,6 +8,9 @@ extends RefCounted
 ##
 ## The server checks every class it is sent; this only keeps what the
 ## player made between sessions.
+##
+## Signed in (`Online`), the account keeps the classes too: the store reads
+## a cache of them, and `on_saved` sends each change to the account.
 
 const PATH := "user://classes.cfg"
 const HEADLESS_PATH := "user://headless_classes.cfg"
@@ -25,6 +28,8 @@ static var _selected := "default:0"
 ## The scorestreaks to bring (keys), shared by every class as in Black Ops 2.
 static var _streaks := PackedStringArray()
 static var _loaded := false
+## Called with `data()` after each save while signed in.
+static var on_saved := Callable()
 
 
 ## The chosen scorestreaks' keys (up to three; the server sorts them).
@@ -119,6 +124,12 @@ static func use_file(file: String) -> void:
 	reload()
 
 
+## Goes back to the player's own file, after `use_file`.
+static func use_default_file() -> void:
+	Engine.remove_meta(PATH_META)
+	reload()
+
+
 ## The file in use: the one `use_file` set, or the player's. Headless runs
 ## (tests, dedicated servers) default to a file of their own, so a test
 ## that plays a match never adds to a player's.
@@ -136,6 +147,39 @@ static func save() -> void:
 	var err := config.save(path())
 	if err != OK:
 		push_warning("Could not save %s (%s)." % [path(), error_string(err)])
+	if on_saved.is_valid():
+		on_saved.call(data())
+
+
+## Every class, the selected one, and the streaks, as plain data (JSON-safe)
+## for the account.
+static func data() -> Dictionary:
+	_load()
+	var custom_classes := []
+	for entry in _custom:
+		custom_classes.append(entry.duplicate(true))
+	return {"custom": custom_classes, "selected": _selected, "streaks": Array(_streaks)}
+
+
+## Writes `value` (shaped like `data()`) to the file in use and loads it,
+## keeping the usual checks: a class that breaks a rule goes back to its
+## default. Does not call `on_saved`.
+static func set_data(value: Dictionary) -> void:
+	var config := ConfigFile.new()
+	var stored: Variant = value.get("custom", [])
+	if stored is Array:
+		for i in mini((stored as Array).size(), CUSTOM_SLOTS):
+			if stored[i] is Dictionary:
+				config.set_value("custom", str(i), _whole_numbers(stored[i]))
+	config.set_value("class", "selected", String(value.get("selected", "default:0")))
+	var keys := PackedStringArray()
+	var streak_list: Variant = value.get("streaks", [])
+	if streak_list is Array:
+		for key: Variant in streak_list:
+			keys.append(str(key))
+	config.set_value("class", "streaks", keys)
+	config.save(path())
+	reload()
 
 
 ## Forgets what was loaded, so the next use reads `path` again (tests).
@@ -178,6 +222,15 @@ static func _load() -> void:
 				_streaks.append(key)
 	if not _valid_id(_selected):
 		_selected = "default:0"
+
+
+## JSON brings every number back as a float; class counts are ints.
+static func _whole_numbers(value: Dictionary) -> Dictionary:
+	var out := {}
+	for key: Variant in value:
+		var item: Variant = value[key]
+		out[key] = int(item) if item is float else item
+	return out
 
 
 static func _valid_id(id: String) -> bool:
