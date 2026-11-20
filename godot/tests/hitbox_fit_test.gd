@@ -132,6 +132,13 @@ func _states() -> Array[Dictionary]:
 	add.call("prone_crawl_diagonal", {"stance": "prone"}, moving.call(Vector3(0.57, 0, -0.57)))
 	add.call("prone_crawl_back_left", {"stance": "prone"}, moving.call(Vector3(-0.57, 0, 0.57)))
 	add.call("prone_crawl_between", {"stance": "prone"}, moving.call(Vector3(0.31, 0, -0.74)))
+	# Lying along a slope (`PlayerView::prone_slope`): head down, head up, and
+	# crawling across one, the body turned about the eyes.
+	add.call("prone_slope_down", {"stance": "prone", "slope": 0.35})
+	add.call("prone_slope_up", {"stance": "prone", "slope": -0.35, "pitch": 0.3})
+	add.call(
+		"prone_crawl_slope", {"stance": "prone", "slope": 0.25}, moving.call(Vector3(0, 0, -0.8))
+	)
 	add.call("prone_ads", {"stance": "prone", "ads": 1.0})
 	add.call("prone_pitch_up", {"stance": "prone", "pitch": 0.8})
 	add.call("prone_pitch_down", {"stance": "prone", "pitch": -0.5})

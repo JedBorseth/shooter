@@ -127,7 +127,42 @@ func _moves() -> Dictionary:
 		"prone_crawl_back": [0.875, PRONE_MOMENTS, _gait.bind(180.0, 0.8, PRONE_SEEN)],
 		"prone_crawl_diagonal": [0.875, PRONE_MOMENTS, _gait.bind(45.0, 0.8, PRONE_SEEN)],
 		"prone_crawl_above": [0.875, PRONE_MOMENTS, _gait.bind(0.0, 0.8, PRONE_SEEN)],
+		# Lying on the Testing Area's 25-degree ramp, head down it then head
+		# up it: each first as it lay before (flat, the legs in the ramp),
+		# then along the slope (`PlayerView::prone_slope`).
+		"prone_ramp": [1.0, [0.1, 0.2, 0.35, 0.45, 0.6, 0.7, 0.85, 0.95], _prone_ramp],
 	}
+
+
+## Prone on the ramp at x 16 (it climbs toward -z from z -6 to -12): head down it (facing +z)
+## for the first half, head up it for the second; flat in the first quarter
+## of each, then lying along the slope the rays under the chest and knees
+## find, as the server measures it (`body::prone_slope`).
+func _prone_ramp(t: float) -> Dictionary:
+	var down := t < 0.5
+	var along := fmod(t, 0.5) >= 0.25
+	var z := -9.0
+	var behind := z - 1.1 if down else z + 1.1
+	var feet := Vector3(16.0, _ground(16.0, z), z)
+	var slope := atan2(_ground(16.0, behind) - feet.y, 1.1)
+	return {
+		"weapon": "m4",
+		"world_feet": feet,
+		"stance": "prone",
+		"yaw": PI if down else 0.0,
+		"slope": clampf(slope, -0.52, 0.52) if along else 0.0,
+		# From the ramp's far edge, just above its surface, so the profile
+		# against the ramp shows.
+		"camera": Vector3(17.9, _ground(17.9, z - 0.5) + 0.3, z - 0.5),
+		"look": Vector3(16.0, _ground(16.0, z - 0.5) + 0.3, z - 0.5),
+	}
+
+
+func _ground(x: float, z: float) -> float:
+	var space := root.get_world_3d().direct_space_state
+	var query := PhysicsRayQueryParameters3D.create(Vector3(x, 10, z), Vector3(x, -2, z))
+	var hit := space.intersect_ray(query)
+	return (hit["position"] as Vector3).y if not hit.is_empty() else 0.0
 
 
 ## Lying prone with a rifle, aiming up, level, then down.

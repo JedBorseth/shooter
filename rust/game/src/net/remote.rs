@@ -270,6 +270,7 @@ impl RemotePlayer {
             progress: Progress::default(),
             ladder: None,
             mount: 0.0,
+            prone_slope: 0.0,
         };
         let sample = self.with_test_progress(sample, None, delta);
         self.apply(&sample, delta);
@@ -353,6 +354,8 @@ impl RemotePlayer {
                 shooter_sim::Vec2::new(forward.x, forward.z)
             }),
             mount: f("mount").unwrap_or(0.0),
+            // Lying prone along a slope (radians, legs up positive).
+            prone_slope: f("slope").unwrap_or(0.0),
         };
         let set = TestProgress {
             stride: f("stride"),
@@ -722,6 +725,7 @@ impl RemotePlayer {
             throw_kind: s.throw_kind,
             ladder: s.ladder,
             mount: s.mount,
+            slope: s.prone_slope,
         };
         let rig = crate::profile::scope("remotes/rig update");
         match (self.drawn_alive, s.alive) {

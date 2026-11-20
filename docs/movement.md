@@ -78,7 +78,9 @@ hands-and-knees crawl and lying-down clips, and no free animation pack has a
 belly crawl, so the prone pose and the low crawl are authored from the
 soldier's idle pose (`tools/build_gait_animations.py`: `gait/Prone`, and
 `gait/Prone_Crawl` with its `_R`, `_B`, and `_L` directions; frame strips
-of the side, backward, and diagonal crawls: [prone-crawls.jpg](media/prone-crawls.jpg)).
+of the side, backward, and diagonal crawls: [prone-crawls.jpg](media/prone-crawls.jpg); lying
+head down the Testing Area's 25° ramp, flat as before and then along it:
+[prone-slope.jpg](media/prone-slope.jpg)).
 
 | | Here | Reference |
 | --- | --- | --- |
@@ -89,6 +91,7 @@ of the side, backward, and diagonal crawls: [prone-crawls.jpg](media/prone-crawl
 | Crawl | 0.8 m/s, any direction; aiming, the ADS speed scale slows it more | IW `player_proneSpeedScale` about 0.15 of a walk |
 | Crawl animations | one each way, blended by the travel's direction: forward (the knees draw up in turn), backward (the forward crawl in reverse, toes dug in pulling the body back), and to each side (the leading knee draws up and out twice a stride and pushes the hips over it, the trailing leg drags and swings back in, the hips fishtail) | the IW player animation set's prone crawl forward, back, left, and right |
 | Room | lying down needs nothing solid within 1.45 m behind the feet at 0.2 m up (two rays); rising waits for headroom (to a crouch, then to standing) | Call of Duty's "can't go prone here" |
+| Slope | the body lies along the ground: the server finds the ground under the chest and 1.1 m behind under the knees (two rays) and sends the slope with the body (`PlayerView::prone_slope`, half degrees, up to 30); the drawn body and its hit zones turn about the eyes to lie along it, and the aim is raised on the body by as much, so the gun still points where it aims | the IW engine pitches a prone body to the ground (`proneDirectionPitch` and `proneTorsoPitch` in the player state) |
 | Weapon | lowered while getting down or up, and while crawling at the hip; aimed, the crawl keeps the gun up | IW weapons' prone-in, prone-out, and crawl animations; no fire until settled |
 | Accuracy | hip cone 0.6 x (crouched 0.8 x), the crouch's steadier kick, aimed sway 0.4 x | IW `hipSpreadProneMin` under the ducked one; weapons' `idleProneFactor` about 0.4 |
 | View | pitch held between 30 degrees down and 50 up, eased in as the body goes down; the whole body turns with the aim | the ground and the neck bound the prone view |

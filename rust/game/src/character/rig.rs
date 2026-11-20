@@ -211,6 +211,10 @@ pub struct SoldierFrame {
     /// How far the weapon is mounted on cover, 0 to 1 (`PlayerView::mount`):
     /// the body leans onto the gun resting on the edge.
     pub mount: f32,
+    /// Lying prone, the ground's slope under the body (radians, positive
+    /// with the legs higher; `PlayerView::prone_slope`): the body lies
+    /// along it, turned about the eyes as the hit zones are.
+    pub slope: f32,
 }
 
 /// Things a soldier does with their hands instead of the weapon. The hit
@@ -248,6 +252,7 @@ impl SoldierFrame {
                 _ => None,
             },
             kneel: self.kneel(),
+            slope: self.slope,
         }
     }
 
@@ -289,6 +294,7 @@ impl Default for SoldierFrame {
             throw_kind: Default::default(),
             ladder: None,
             mount: 0.0,
+            slope: 0.0,
         }
     }
 }
@@ -369,6 +375,10 @@ pub struct SoldierRig {
     crouch: f32,
     /// How far down from a crouch to prone, eased (0 to 1).
     prone: f32,
+    /// How far the body lies along the ground's slope (radians, legs up
+    /// positive): the prone slope, as far as the body is down
+    /// (`hitbox::lying_slope`).
+    lie: f32,
     slide: f32,
     air: f32,
     air_time: f32,
@@ -735,6 +745,7 @@ impl SoldierRig {
                     shooter_sim::Vec2::new(forward.x, forward.z)
                 }),
             mount: f("mount", 0.0),
+            slope: f("slope", 0.0),
         };
         self.update(&frame, delta);
     }
@@ -950,6 +961,21 @@ impl SoldierRig {
             Some(blend) => shooter_sim::movement::prone_ease(blend),
             None => self.prone + (prone_target - self.prone) * smoothing(8.0, dt),
         };
+        // Lying along a slope: the model turns nose down by it about the
+        // eyes, as the hit zones do, and the aim is that much higher on the
+        // body (`pose_input`), so the weapon still points where it aims.
+        let lie = frame.slope.clamp(
+            -shooter_sim::hitbox::MAX_PRONE_SLOPE,
+            shooter_sim::hitbox::MAX_PRONE_SLOPE,
+        ) * self.prone;
+        if (lie - self.lie).abs() > 1e-5 {
+            self.lie = lie;
+            let pivot = to_godot(shooter_sim::hitbox::PRONE_PIVOT);
+            let tilt = Basis::from_axis_angle(Vector3::RIGHT, -lie);
+            let facing = Basis::from_axis_angle(Vector3::UP, std::f32::consts::PI);
+            self.model
+                .set_transform(Transform3D::new(tilt * facing, pivot - tilt * pivot));
+        }
         let slide_target = if frame.stance == Stance::Sliding {
             1.0
         } else {
@@ -1659,7 +1685,7 @@ impl SoldierRig {
         let slide = 1.0 - (1.0 - carry::SLIDE_PITCH_SCALE) * self.slide;
         PoseInput {
             turn: if frame.alive { self.turn } else { 0.0 },
-            pitch: frame.pitch.clamp(-carry::MAX_PITCH, carry::MAX_PITCH) * slide,
+            pitch: (frame.pitch + self.lie).clamp(-carry::MAX_PITCH, carry::MAX_PITCH) * slide,
             lean: self.lean.value
                 + self.motion_lean.value
                 + Vector3::new(0.0, 0.0, -0.3) * lunge
