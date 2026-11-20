@@ -860,3 +860,25 @@ rotation = Vector3(0, -1.5707964, 0)
 [node name="WallRack" parent="." instance=ExtResource("w_wall_rack")]
 position = Vector3(29.55, 0, -5.7)
 rotation = Vector3(0, -1.5707964, 0)
+
+[node name="Hardpoints" type="Node3D" parent="."]
+
+[node name="P1_Crossroads" type="Marker3D" parent="Hardpoints"]
+position = Vector3(0, 1.6, -2)
+metadata/size = Vector3(12, 3.2, 12)
+metadata/label = "Crossroads"
+
+[node name="P2_Platform" type="Marker3D" parent="Hardpoints"]
+position = Vector3(16, 2.3, -16)
+metadata/size = Vector3(10, 4.6, 10)
+metadata/label = "The Platform"
+
+[node name="P3_Tunnel" type="Marker3D" parent="Hardpoints"]
+position = Vector3(-10, 1.6, -18)
+metadata/size = Vector3(10, 3.2, 8)
+metadata/label = "Tunnel"
+
+[node name="P4_Range" type="Marker3D" parent="Hardpoints"]
+position = Vector3(-17, 1.6, 20)
+metadata/size = Vector3(12, 3.2, 10)
+metadata/label = "Target Range"

@@ -168,8 +168,11 @@ north parking lot and team 1 on the south truck apron; each has four doors into
 the hall. Twenty-eight neutral respawns sit in the aisles of both halves and at
 the yards' ends (see [tdm-spawns.md](tdm-spawns.md)). Bots follow three lanes,
 west to east: the west racking aisle, the centre aisle through the mid
-stockpile, and the east rolls aisle. Capture the Flag and Hardpoint fall back
-to flag and zone positions derived from the spawns. Reverb zones give the
+stockpile, and the east rolls aisle. Capture the Flag falls back to flag
+positions derived from the spawns. Hardpoint rotates through five zones
+(`Hardpoints`): the Mid Stockpile, Shipping, the South Crossover, the North
+Crossover, and Receiving; the two crossovers and Shipping and Receiving are
+each other's 180-degree twins, and the order alternates halves. Reverb zones give the
 hall and the two upstairs offices their own echo. Screen walls close the yards
 and an invisible boundary stands behind them; the wing is sealed.
 `godot/tests/warehouse_test.gd` checks the spawns, floor, and body clearance,

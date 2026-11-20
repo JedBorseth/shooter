@@ -26,6 +26,25 @@ runs.
 | Limit | 250 points or 10 minutes | 250 points; Black Ops 6 public play |
 | Overtime | When the clock runs out while a team that is not ahead has a living player in the live zone (holding or contesting), play goes on. The zone keeps scoring and keeps rotating. Overtime ends the moment no team that is not ahead stands in the zone; the team ahead then wins (a draw if level). A trailing team holding the zone alone can score past the leader and win | See below |
 
+**Zones.** Each map lists its zones in rotation order under a `Hardpoints`
+node (a `Marker3D` per zone, its box in `size`, its HUD name in `label`).
+Following Call of Duty's maps, the first zone is in the middle, the rotation
+then swings from one side of the map to the other so neither team's spawn
+gets two near zones in a row, and every move goes at least 16 m to a zone
+whose footprint does not touch the last one's
+(`godot/tests/hardpoint_zones_test.gd` checks this on every map, and that
+most of each zone's footprint has floor inside its box).
+
+| Map | Rotation |
+| --- | --- |
+| Slamcity | Junction, Pawn Shop, The Platforms, Ticket Hall |
+| Testing Area | Crossroads, The Platform, Tunnel, Target Range |
+| Nuketown | Cul-de-sac, West House, Front Lot, East House |
+| Warehouse | Mid Stockpile, Shipping, South Crossover, North Crossover, Receiving |
+
+A map without `Hardpoints` still gets one zone halfway between the teams'
+spawns.
+
 **Overtime.** This is the project's rule from the TODO ("overtime when the
 trailing team is in the zone at the buzzer"). Call of Duty's public Hardpoint
 ends at the buzzer, and the sources we could reach (official mode guides for

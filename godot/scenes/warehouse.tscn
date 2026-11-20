@@ -50101,3 +50101,30 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 39.75, 0, 32.25)
 
 [node name="P7" type="Marker3D" parent="BotLanes/East" unique_id=2019825576]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 39.25, 0, 37.25)
+
+[node name="Hardpoints" type="Node3D" parent="."]
+
+[node name="P1_MidStockpile" type="Marker3D" parent="Hardpoints"]
+position = Vector3(13.5, 1.6, 3.5)
+metadata/size = Vector3(12, 3.2, 12)
+metadata/label = "Mid Stockpile"
+
+[node name="P2_Shipping" type="Marker3D" parent="Hardpoints"]
+position = Vector3(39.5, 1.6, -10.75)
+metadata/size = Vector3(9, 3.2, 8.5)
+metadata/label = "Shipping"
+
+[node name="P3_SouthCrossover" type="Marker3D" parent="Hardpoints"]
+position = Vector3(5, 2.8, 14.25)
+metadata/size = Vector3(11, 5.6, 8.5)
+metadata/label = "South Crossover"
+
+[node name="P4_NorthCrossover" type="Marker3D" parent="Hardpoints"]
+position = Vector3(22, 2.8, -7.25)
+metadata/size = Vector3(11, 5.6, 8.5)
+metadata/label = "North Crossover"
+
+[node name="P5_Receiving" type="Marker3D" parent="Hardpoints"]
+position = Vector3(-12.5, 1.6, 17.75)
+metadata/size = Vector3(9, 3.2, 8.5)
+metadata/label = "Receiving"
