@@ -13,6 +13,7 @@
 //! | Secondary weapon | one, any secondary | [`Wildcard::Overkill`]: a primary instead |
 //! | Lethal | one frag | [`Wildcard::DangerClose`]: two |
 //! | Tactical | two of one kind (flashbang or smoke) | |
+//! | Perk 1, Perk 2, Perk 3 | one perk of the tier ([`crate::perk`]) | its Perk Greed: two |
 //!
 //! A weapon takes only the attachments its file lists, and at most one optic
 //! (a red dot or an ACOG), as in Call of Duty.
@@ -21,8 +22,7 @@
 //!
 //! - A class must carry at least one gun: there is no knife-only weapon to
 //!   fall back on.
-//! - No perks yet, so no perk slots and no Perk Greed wildcards; their points
-//!   go to the rest. Secondary Gunfighter and secondary attachments wait for
+//! - Secondary Gunfighter and secondary attachments wait for
 //!   a pistol that takes attachments, and Tactician (a tactical in the lethal
 //!   slot) for a lethal button that can throw one.
 //!
@@ -32,6 +32,7 @@
 //! player's level yet.
 
 use crate::equipment;
+pub use crate::perk::{Perk, Perks, Tier};
 pub use crate::weapon::Attachments;
 use crate::weapon::{Attachment, CombatState, Slot, WeaponId};
 
@@ -45,6 +46,9 @@ pub const LETHALS: u8 = 1;
 pub const DANGER_CLOSE_LETHALS: u8 = 2;
 /// Tacticals a class carries (two of the same kind, a point each).
 pub const TACTICALS: u8 = 2;
+/// Perks a tier's slot takes, and with that tier's Perk Greed.
+pub const PERKS_PER_TIER: u8 = 1;
+pub const GREED_PERKS_PER_TIER: u8 = 2;
 /// Custom class slots a player has (Black Ops 2's five, before prestige).
 pub const CUSTOM_CLASSES: usize = 5;
 
@@ -57,14 +61,32 @@ pub enum Wildcard {
     Overkill,
     /// A second frag.
     DangerClose,
+    /// A second Perk 1 perk (Black Ops 2's Perk 1 Greed).
+    Perk1Greed,
+    /// A second Perk 2 perk.
+    Perk2Greed,
+    /// A second Perk 3 perk.
+    Perk3Greed,
 }
 
 impl Wildcard {
-    pub const ALL: [Wildcard; 3] = [
+    pub const ALL: [Wildcard; 6] = [
         Wildcard::PrimaryGunfighter,
         Wildcard::Overkill,
         Wildcard::DangerClose,
+        Wildcard::Perk1Greed,
+        Wildcard::Perk2Greed,
+        Wildcard::Perk3Greed,
     ];
+
+    /// The Perk Greed wildcard for a tier.
+    pub fn greed(tier: Tier) -> Self {
+        match tier {
+            Tier::One => Wildcard::Perk1Greed,
+            Tier::Two => Wildcard::Perk2Greed,
+            Tier::Three => Wildcard::Perk3Greed,
+        }
+    }
 
     /// The key settings and scripts use.
     pub fn key(self) -> &'static str {
@@ -72,6 +94,9 @@ impl Wildcard {
             Wildcard::PrimaryGunfighter => "gunfighter",
             Wildcard::Overkill => "overkill",
             Wildcard::DangerClose => "danger_close",
+            Wildcard::Perk1Greed => "perk1_greed",
+            Wildcard::Perk2Greed => "perk2_greed",
+            Wildcard::Perk3Greed => "perk3_greed",
         }
     }
 
@@ -86,6 +111,9 @@ impl Wildcard {
             Wildcard::PrimaryGunfighter => "Third Attachment",
             Wildcard::Overkill => "Two Primaries",
             Wildcard::DangerClose => "Extra Lethal",
+            Wildcard::Perk1Greed => "Extra Perk 1",
+            Wildcard::Perk2Greed => "Extra Perk 2",
+            Wildcard::Perk3Greed => "Extra Perk 3",
         }
     }
 
@@ -95,6 +123,9 @@ impl Wildcard {
             Wildcard::PrimaryGunfighter => "A third attachment on your primary weapon.",
             Wildcard::Overkill => "A second primary weapon in place of your sidearm.",
             Wildcard::DangerClose => "Carry a second frag grenade.",
+            Wildcard::Perk1Greed => "Take a second Perk 1 perk.",
+            Wildcard::Perk2Greed => "Take a second Perk 2 perk.",
+            Wildcard::Perk3Greed => "Take a second Perk 3 perk.",
         }
     }
 }
@@ -106,7 +137,7 @@ pub struct Wildcards(u8);
 impl Wildcards {
     pub const NONE: Wildcards = Wildcards(0);
     /// Bits the set uses on the wire (room for more wildcards).
-    pub const BITS: u32 = 4;
+    pub const BITS: u32 = 8;
 
     pub fn from_bits(bits: u8) -> Option<Self> {
         let known = (1u8 << Wildcard::ALL.len()) - 1;
@@ -198,6 +229,8 @@ pub enum ClassError {
     TooManyTacticals,
     /// The tactical slot holds a lethal.
     NotATactical,
+    /// More perks of one tier than its slot takes.
+    TooManyPerks,
 }
 
 /// A class: what a player spawns with.
@@ -210,6 +243,7 @@ pub struct Class {
     /// The tactical kind, and how many.
     pub tactical: equipment::Kind,
     pub tacticals: u8,
+    pub perks: Perks,
     pub wildcards: Wildcards,
 }
 
@@ -221,13 +255,15 @@ impl Default for Class {
 }
 
 impl Class {
-    /// Points it spends: one per weapon, attachment, grenade, and wildcard.
+    /// Points it spends: one per weapon, attachment, grenade, perk, and
+    /// wildcard.
     pub fn cost(&self) -> u8 {
         let gun = |g: Option<Gun>| g.map_or(0, |g| 1 + g.attachments.len());
         gun(self.primary)
             + gun(self.secondary)
             + self.lethals
             + self.tacticals
+            + self.perks.len()
             + self.wildcards.len()
     }
 
@@ -271,6 +307,16 @@ impl Class {
         }
         if self.tacticals > TACTICALS {
             return Err(ClassError::TooManyTacticals);
+        }
+        for tier in Tier::ALL {
+            let limit = if self.wildcards.has(Wildcard::greed(tier)) {
+                GREED_PERKS_PER_TIER
+            } else {
+                PERKS_PER_TIER
+            };
+            if self.perks.in_tier(tier) > limit {
+                return Err(ClassError::TooManyPerks);
+            }
         }
         if self.cost() > PICKS {
             return Err(ClassError::OverBudget);
@@ -384,6 +430,7 @@ impl DefaultClass {
             lethals: 1,
             tactical,
             tacticals,
+            perks: Perks::NONE,
             wildcards: Wildcards::NONE,
         }
     }
@@ -405,6 +452,7 @@ mod tests {
             lethals: 1,
             tactical: Kind::Flash,
             tacticals: 1,
+            perks: Perks::NONE,
             wildcards: Wildcards::NONE,
         }
     }
@@ -549,6 +597,31 @@ mod tests {
         );
         let wild = Wildcards::of(&[Wildcard::Overkill]);
         assert_eq!(Wildcards::from_bits(wild.bits()), Some(wild));
-        assert_eq!(Wildcards::from_bits(0b1000), None);
+        assert_eq!(Wildcards::from_bits(0b100_0000), None);
+    }
+
+    #[test]
+    fn a_perk_costs_a_point_and_each_tier_takes_one() {
+        let mut c = class(Some(Gun::plain(m4())));
+        let before = c.cost();
+        c.perks = Perks::of(&[Perk::Lightweight, Perk::FastHands, Perk::Dexterity]);
+        assert_eq!(c.cost(), before + 3);
+        assert_eq!(c.validate(), Ok(()));
+        c.perks = c.perks.with(Perk::FlakJacket);
+        assert_eq!(c.validate(), Err(ClassError::TooManyPerks));
+        // Perk 1 Greed opens a second Perk 1, for a point of its own.
+        c.wildcards = Wildcards::of(&[Wildcard::Perk1Greed]);
+        assert_eq!(c.validate(), Ok(()));
+        assert_eq!(c.cost(), before + 5);
+        // Another tier's greed does not.
+        c.wildcards = Wildcards::of(&[Wildcard::Perk2Greed]);
+        assert_eq!(c.validate(), Err(ClassError::TooManyPerks));
+        // No tier ever takes three.
+        let mut c = class(None);
+        c.lethals = 0;
+        c.tacticals = 0;
+        c.perks = Perks::of(&[Perk::Toughness, Perk::FastHands, Perk::Scavenger]);
+        c.wildcards = Wildcards::of(&[Wildcard::Perk2Greed]);
+        assert_eq!(c.validate(), Err(ClassError::TooManyPerks));
     }
 }

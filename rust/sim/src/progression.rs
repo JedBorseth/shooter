@@ -12,8 +12,9 @@
 //! - **Create-a-Class opens at level [`CREATE_A_CLASS_LEVEL`]** (4, as in
 //!   Black Ops 2 and 3). Before that, players pick from the default classes,
 //!   which always carry their items whatever the level.
-//! - **Weapons, tacticals, and wildcards unlock by level** (each weapon's
-//!   `unlock_level` in its file; [`tactical_level`], [`wildcard_level`]).
+//! - **Weapons, tacticals, perks, and wildcards unlock by level** (each
+//!   weapon's `unlock_level` in its file; [`tactical_level`],
+//!   [`perk_level`], [`wildcard_level`]).
 //! - **Attachments unlock by kills with that weapon**, as Black Ops 2's
 //!   weapon levels do ([`attachment_kills`]).
 //!
@@ -23,6 +24,7 @@
 
 use crate::class::Wildcard;
 use crate::equipment;
+use crate::perk::Perk;
 use crate::weapon::Attachment;
 
 /// The highest level (Black Ops 2 and 3: 55).
@@ -87,6 +89,24 @@ pub fn wildcard_level(wildcard: Wildcard) -> u8 {
         Wildcard::DangerClose => 10,
         Wildcard::PrimaryGunfighter => 19,
         Wildcard::Overkill => 28,
+        Wildcard::Perk1Greed => 25,
+        Wildcard::Perk2Greed => 31,
+        Wildcard::Perk3Greed => 34,
+    }
+}
+
+/// The level that unlocks a perk. Create-a-Class opens with one perk of each
+/// tier, as Black Ops 2's does; the rest follow every few levels.
+pub fn perk_level(perk: Perk) -> u8 {
+    match perk {
+        Perk::Lightweight | Perk::Toughness | Perk::Dexterity => CREATE_A_CLASS_LEVEL,
+        Perk::FastHands => 5,
+        Perk::FlakJacket => 7,
+        Perk::TacticalMask => 9,
+        Perk::SleightOfHand => 11,
+        Perk::DeadSilence => 14,
+        Perk::Scavenger => 17,
+        Perk::Awareness => 20,
     }
 }
 
@@ -203,5 +223,17 @@ mod tests {
             .map(|a| attachment_kills(*a))
             .collect();
         assert!(kills.iter().all(|k| *k > 0));
+    }
+
+    #[test]
+    fn create_a_class_opens_with_a_perk_of_each_tier() {
+        use crate::perk::Tier;
+        for tier in Tier::ALL {
+            let first = Perk::of_tier(tier).map(perk_level).min().unwrap();
+            assert_eq!(first, CREATE_A_CLASS_LEVEL, "{tier:?}");
+        }
+        for perk in Perk::ALL {
+            assert!((CREATE_A_CLASS_LEVEL..=MAX_LEVEL).contains(&perk_level(perk)));
+        }
     }
 }

@@ -89,6 +89,7 @@ use shooter_sim::net::protocol::{
 use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::subtick;
 use shooter_sim::net::{CHANNEL_COUNT, DEFAULT_PORT, MAX_PLAYERS, TICK_DT, TICK_RATE, Tick};
+use shooter_sim::perk::Perks;
 use shooter_sim::player::{self, PlayerEvent, PlayerInput, PlayerParams, PlayerState};
 use shooter_sim::score::{Award, Kill, ScoreRules, ScoreState, ScoreTotals, Scored};
 use shooter_sim::snd::{
@@ -1646,6 +1647,7 @@ impl NetServer {
                         avatar.predicted.state = PlayerState::new(loadout_for(&class));
                         avatar.predicted.state.movement = movement;
                         avatar.predicted.state.combat = class.combat().first_draw();
+                        avatar.predicted.state.perks = class.perks;
                     }
                 }
             }
@@ -1880,6 +1882,12 @@ impl NetServer {
             // bots do.
             let pick = rng::hash(u32::from(avatar.id), tick) as usize % DefaultClass::ALL.len();
             avatar.class = DefaultClass::ALL[pick].class();
+            // And one perk of each tier.
+            let (id, mut roll) = (u32::from(avatar.id), 0);
+            avatar.class.perks = Perks::one_per_tier(|n| {
+                roll += 1;
+                rng::hash(id ^ roll << 8, tick) as usize % n
+            });
             brain.on_spawn(point.yaw, tick);
         }
         let mut state = if self.game == Mode::Zombies {
@@ -1896,6 +1904,8 @@ impl NetServer {
         } else {
             let mut state = PlayerState::new(loadout_for(&avatar.class));
             state.combat = avatar.class.combat();
+            // Perks come with the class; Zombies and Gun Game carry none.
+            state.perks = avatar.class.perks;
             state
         };
         if first {
@@ -3087,7 +3097,9 @@ impl NetServer {
             if distance > radius || !grenades::blast_reaches(space, center, feet) {
                 continue;
             }
-            let damage = equipment::blast_damage(kind, distance);
+            // Flak Jacket lets through a share of explosive damage.
+            let damage = equipment::blast_damage(kind, distance)
+                * avatar.predicted.state.perks.explosive_scale();
             if damage > 0.0 {
                 victims.push((avatar.id, distance, damage));
             }
@@ -3219,7 +3231,8 @@ impl NetServer {
             let forward = to_godot(shooter_sim::look::view_direction(view.x, view.y));
             let amount = equipment::flash_amount(to.length(), forward.dot(to.normalized_or_zero()));
             if amount > 0.02 {
-                brain.on_flashed(amount, tick);
+                // Tactical Mask halves how long it lasts.
+                brain.on_flashed(amount, avatar.predicted.state.perks.flash_scale(), tick);
             }
         }
     }

@@ -2771,6 +2771,12 @@ impl FpsPlayer {
     /// from behind tips it down. A fall jolts the head down.
     fn flinch_from(&mut self, amount: f32, fall: bool, from: Vector3) {
         let strength = (amount / 30.0).min(1.5);
+        // Toughness leaves a quarter of a hit's flinch (not a fall's jolt).
+        let strength = if fall {
+            strength
+        } else {
+            strength * self.state.perks.flinch_scale()
+        };
         if fall {
             self.flinch.velocity -= 0.6 * strength;
             return;
@@ -3397,7 +3403,9 @@ impl FpsPlayer {
                 "flash",
                 &[
                     amount.to_variant(),
-                    equipment::flash_seconds(amount).to_variant(),
+                    // Tactical Mask halves how long it blinds.
+                    (equipment::flash_seconds(amount) * self.state.perks.flash_scale())
+                        .to_variant(),
                 ],
             );
         }

@@ -5,6 +5,7 @@
 use godot::prelude::*;
 use shooter_sim::class::{self, Wildcard};
 use shooter_sim::equipment::Kind;
+use shooter_sim::perk::Perk;
 use shooter_sim::progression::{self, Outcome};
 use shooter_sim::weapon::{Attachment, Slot, WeaponId};
 
@@ -36,8 +37,8 @@ impl Progression {
         i32::from(progression::CREATE_A_CLASS_LEVEL)
     }
 
-    /// The level that unlocks an item: `kind` is "weapon", "tactical", or
-    /// "wildcard", `key` its key. 1 for anything unknown.
+    /// The level that unlocks an item: `kind` is "weapon", "tactical",
+    /// "perk", or "wildcard", `key` its key. 1 for anything unknown.
     #[func]
     fn unlock_level(kind: GString, key: GString) -> i32 {
         i32::from(unlock_level(&kind.to_string(), &key.to_string()).unwrap_or(1))
@@ -90,6 +91,11 @@ impl Progression {
                 out.push(&entry("tactical", kind.key(), kind.name()));
             }
         }
+        for perk in Perk::ALL {
+            if i32::from(progression::perk_level(perk)) == level {
+                out.push(&entry("perk", perk.key(), perk.label()));
+            }
+        }
         for wildcard in Wildcard::ALL {
             if i32::from(progression::wildcard_level(wildcard)) == level {
                 out.push(&entry("wildcard", wildcard.key(), wildcard.label()));
@@ -103,6 +109,7 @@ fn unlock_level(kind: &str, key: &str) -> Option<u8> {
     match kind {
         "weapon" => WeaponId::by_key(key).map(|id| id.def().unlock_level),
         "tactical" => Kind::by_key(key).map(progression::tactical_level),
+        "perk" => Perk::by_key(key).map(progression::perk_level),
         "wildcard" => Wildcard::by_key(key).map(progression::wildcard_level),
         _ => None,
     }

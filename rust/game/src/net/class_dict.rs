@@ -5,6 +5,7 @@
 //!     "primary": "m4", "primary_attachments": ["reddot", "grip"],
 //!     "secondary": "m1911", "secondary_attachments": [],
 //!     "lethals": 1, "tactical": "flash", "tacticals": 2,
+//!     "perks": ["lightweight", "fast_hands", "dexterity"],
 //!     "wildcards": ["danger_close"],
 //! }
 //! ```
@@ -15,10 +16,11 @@
 use godot::prelude::*;
 use shooter_sim::class::{Attachments, Class, ClassError, Gun, Wildcard, Wildcards};
 use shooter_sim::equipment::Kind;
+use shooter_sim::perk::{Perk, Perks};
 use shooter_sim::weapon::{Attachment, WeaponId};
 
 /// Reads a class. `None` when a key names something that does not exist
-/// (a weapon, attachment, tactical, or wildcard); its rules are checked
+/// (a weapon, attachment, tactical, perk, or wildcard); its rules are checked
 /// separately ([`Class::validate`]).
 pub fn class_from_dict(d: &VarDictionary) -> Option<Class> {
     let string = |key: &str| {
@@ -66,6 +68,10 @@ pub fn class_from_dict(d: &VarDictionary) -> Option<Class> {
             attachments: set,
         }))
     };
+    let mut perks = Perks::NONE;
+    for p in strings("perks") {
+        perks = perks.with(Perk::by_key(&p)?);
+    }
     let mut wildcards = Wildcards::NONE;
     for w in strings("wildcards") {
         wildcards = wildcards.with(Wildcard::by_key(&w)?);
@@ -76,6 +82,7 @@ pub fn class_from_dict(d: &VarDictionary) -> Option<Class> {
         lethals: count("lethals"),
         tactical: Kind::by_key(&string("tactical")).unwrap_or(Kind::Flash),
         tacticals: count("tacticals"),
+        perks,
         wildcards,
     })
 }
@@ -100,6 +107,8 @@ pub fn class_to_dict(class: &Class) -> VarDictionary {
     d.set("lethals", i64::from(class.lethals));
     d.set("tactical", class.tactical.key());
     d.set("tacticals", i64::from(class.tacticals));
+    let perks: PackedStringArray = class.perks.iter().map(|p| GString::from(p.key())).collect();
+    d.set("perks", &perks);
     let wildcards: PackedStringArray = class
         .wildcards
         .iter()
@@ -123,5 +132,6 @@ pub fn error_text(error: ClassError) -> &'static str {
         ClassError::TooManyLethals => "A second lethal needs Extra Lethal",
         ClassError::TooManyTacticals => "Two tacticals at most",
         ClassError::NotATactical => "Not a tactical",
+        ClassError::TooManyPerks => "A second perk of a tier needs its Extra Perk wildcard",
     }
 }

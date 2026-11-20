@@ -8,6 +8,7 @@ use glam::{Vec2, Vec3};
 use crate::melee;
 use crate::mount;
 use crate::movement::{self, MoveEnv, MoveInput, MoveParams, MoveState};
+use crate::perk::Perks;
 use crate::weapon::{self, CombatContext, CombatEvent, CombatInput, CombatState, WeaponId};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -184,6 +185,10 @@ pub struct PlayerState {
     /// sidearm only, no regeneration, and no harm. The server downs and
     /// revives; prediction only follows the rules here.
     pub downed: bool,
+    /// The perks this life carries ([`crate::perk`]), from the class it
+    /// spawned with. Part of the predicted state, so the client steps its
+    /// movement and weapon with the same perks the server does.
+    pub perks: Perks,
 }
 
 impl PlayerState {
@@ -200,6 +205,7 @@ impl PlayerState {
             lethal_held: false,
             tactical_held: false,
             downed: false,
+            perks: Perks::NONE,
         }
     }
 
@@ -227,6 +233,7 @@ impl PlayerState {
             crouched: self.movement.stance == crate::movement::Stance::Crouching,
             move_ratio: speed / params.walk_speed,
             mount: self.movement.mount_blend,
+            handling: self.perks.handling(),
         }
     }
 }
@@ -301,8 +308,11 @@ pub fn step(
         events.push(PlayerEvent::Landed {
             speed: state.fall_speed,
         });
-        let damage = params.health.fall_damage(state.fall_speed);
-        apply_damage(state, damage, true, events);
+        // Lightweight takes no fall damage.
+        if state.perks.fall_damage() {
+            let damage = params.health.fall_damage(state.fall_speed);
+            apply_damage(state, damage, true, events);
+        }
     }
     state.airborne = !env.on_floor;
 
@@ -419,6 +429,22 @@ pub fn step(
     let def = state.combat.def();
     let ads = state.combat.ads;
     let scoped = state.combat.scope_amount() > 0.5;
+    let perks = state.perks;
+    // Dexterity climbs faster: shorter mantles and vaults, quicker ladders.
+    let move_params = if perks.climb_time_scale() != 1.0 || perks.ladder_speed_scale() != 1.0 {
+        let mut p = params.movement;
+        let climb = perks.climb_time_scale();
+        p.mantle_base_time *= climb;
+        p.mantle_time_per_metre *= climb;
+        p.vault_base_time *= climb;
+        p.vault_time_per_metre *= climb;
+        let ladder = perks.ladder_speed_scale();
+        p.ladder_climb_speed *= ladder;
+        p.ladder_down_speed *= ladder;
+        p
+    } else {
+        params.movement
+    };
     let move_input = MoveInput {
         wish: input.wish,
         yaw: input.yaw,
@@ -434,17 +460,20 @@ pub fn step(
             || scoped
             || melee
             || state.combat.meleeing(),
+        // Lightweight moves faster in every stance; last stand crawls.
         speed_multiplier: def.move_scale
             * (1.0 + (def.ads_move_scale - 1.0) * ads)
+            * perks.speed_scale()
             * if state.downed {
                 crate::zombies::laststand::CRAWL_SPEED_SCALE
             } else {
                 1.0
             },
-        sprint_out_time: def.sprint_out_time,
+        // Dexterity's sprint-out is shorter; the legs follow the gun.
+        sprint_out_time: def.sprint_out_time / perks.handling().sprint_out,
         lunge,
     };
-    let velocity = movement::step(&mut state.movement, &move_input, env, &params.movement, dt);
+    let velocity = movement::step(&mut state.movement, &move_input, env, &move_params, dt);
     if !env.on_floor {
         state.fall_speed = (-velocity.y).max(0.0);
     }
@@ -1312,5 +1341,161 @@ mod tests {
         let held_shots = shots(&events);
         assert!(held_shots.len() > 3, "{held_shots:?}");
         assert!(held_shots.iter().all(|&shot| shot == (1.1, 0.25)));
+    }
+
+    fn with_perks(perks: &[crate::perk::Perk]) -> PlayerState {
+        let mut s = ready_state();
+        s.perks = Perks::of(perks);
+        s
+    }
+
+    /// Ticks until `done` holds, stepping with `input` (at most 600).
+    fn ticks_until(
+        s: &mut PlayerState,
+        input: PlayerInput,
+        done: impl Fn(&PlayerState) -> bool,
+    ) -> usize {
+        let params = PlayerParams::default();
+        let mut events = Vec::new();
+        for tick in 1..=600 {
+            step(s, &input, MoveEnv::default(), &params, DT, &mut events);
+            if done(s) {
+                return tick;
+            }
+        }
+        panic!("never happened");
+    }
+
+    #[test]
+    fn lightweight_moves_seven_percent_faster_and_lands_unhurt() {
+        use crate::perk::Perk;
+        let walk = PlayerInput {
+            wish: Vec2::new(0.0, 1.0),
+            ..Default::default()
+        };
+        let speed =
+            |s: &PlayerState| Vec2::new(s.movement.velocity.x, s.movement.velocity.z).length();
+        let mut plain = ready_state();
+        let mut light = with_perks(&[Perk::Lightweight]);
+        run(&mut plain, walk, MoveEnv::default(), 120);
+        run(&mut light, walk, MoveEnv::default(), 120);
+        assert!((speed(&light) / speed(&plain) - 1.07).abs() < 1e-3);
+
+        // A drop that would kill does nothing to a Lightweight player.
+        for (perks, hurt) in [(&[][..], true), (&[Perk::Lightweight][..], false)] {
+            let mut s = with_perks(perks);
+            s.airborne = true;
+            s.fall_speed = 25.0;
+            let events = run(&mut s, PlayerInput::default(), MoveEnv::default(), 1);
+            let damaged = events
+                .iter()
+                .any(|e| matches!(e, PlayerEvent::Damaged { fall: true, .. }));
+            assert_eq!(damaged, hurt, "{perks:?}");
+            assert_eq!(s.alive(), !hurt);
+        }
+    }
+
+    #[test]
+    fn sleight_of_hand_reloads_in_half_the_time() {
+        use crate::perk::Perk;
+        let reload = PlayerInput {
+            reload: true,
+            ..Default::default()
+        };
+        let reloaded = |s: &PlayerState| !s.combat.is_reloading();
+        let mut plain = ready_state();
+        plain.combat.slots[0].magazine = 1;
+        let mut quick = with_perks(&[Perk::SleightOfHand]);
+        quick.combat.slots[0].magazine = 1;
+        let slow = ticks_until(&mut plain, reload, reloaded);
+        let fast = ticks_until(&mut quick, reload, reloaded);
+        assert!(
+            (fast as f32 / slow as f32 - 0.5).abs() < 0.05,
+            "{fast} of {slow}"
+        );
+        assert_eq!(
+            quick.combat.weapon().magazine,
+            plain.combat.weapon().magazine
+        );
+    }
+
+    #[test]
+    fn fast_hands_switches_in_half_the_time_and_throws_faster() {
+        use crate::perk::Perk;
+        let switch = PlayerInput {
+            switch_to: Some(1),
+            ..Default::default()
+        };
+        let drawn =
+            |s: &PlayerState| s.combat.active == 1 && matches!(s.combat.action, Action::Ready);
+        let slow = ticks_until(&mut ready_state(), switch, drawn);
+        let fast = ticks_until(&mut with_perks(&[Perk::FastHands]), switch, drawn);
+        assert!(
+            (fast as f32 / slow as f32 - 0.5).abs() < 0.05,
+            "{fast} of {slow}"
+        );
+
+        // A tap of the lethal button: the pin keeps its time, the wind-up and
+        // follow-through run faster.
+        let throw_done = |perks: &[Perk]| {
+            let mut s = with_perks(perks);
+            s.combat.lethals = 1;
+            run(
+                &mut s,
+                PlayerInput {
+                    lethal: true,
+                    ..Default::default()
+                },
+                MoveEnv::default(),
+                1,
+            );
+            ticks_until(&mut s, PlayerInput::default(), |s| {
+                matches!(s.combat.action, Action::Ready)
+            })
+        };
+        let slow = throw_done(&[]);
+        let fast = throw_done(&[Perk::FastHands]);
+        assert!(fast < slow, "{fast} of {slow}");
+    }
+
+    #[test]
+    fn dexterity_brings_the_weapon_up_sooner_after_a_sprint() {
+        use crate::perk::Perk;
+        let first_shot = |perks: &[Perk]| {
+            let mut s = with_perks(perks);
+            let sprint = PlayerInput {
+                wish: Vec2::new(0.0, 1.0),
+                sprint: true,
+                ..Default::default()
+            };
+            run(&mut s, sprint, MoveEnv::default(), 1);
+            run(
+                &mut s,
+                PlayerInput {
+                    wish: Vec2::new(0.0, 1.0),
+                    ..Default::default()
+                },
+                MoveEnv::default(),
+                60,
+            );
+            assert!(s.movement.sprinting);
+            // Firing ends the sprint; the sprint-out holds the first shot.
+            let params = PlayerParams::default();
+            let fire = PlayerInput {
+                fire: true,
+                ..Default::default()
+            };
+            for tick in 1..=120 {
+                let mut events = Vec::new();
+                step(&mut s, &fire, MoveEnv::default(), &params, DT, &mut events);
+                if fired(&events) {
+                    return tick;
+                }
+            }
+            panic!("never fired");
+        };
+        let slow = first_shot(&[]);
+        let fast = first_shot(&[Perk::Dexterity]);
+        assert!(fast < slow, "{fast} of {slow}");
     }
 }

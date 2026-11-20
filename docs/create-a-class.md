@@ -1,6 +1,6 @@
 # Create-a-Class
 
-Players spawn with a class: two weapons with their attachments, grenades, and wildcards. The rules follow Black Ops 2's Pick 10 (kept in Black Ops 3 and 4). They live in `rust/sim/src/class.rs`.
+Players spawn with a class: two weapons with their attachments, grenades, perks, and wildcards. The rules follow Black Ops 2's Pick 10 (kept in Black Ops 3 and 4). They live in `rust/sim/src/class.rs`.
 
 ## Pick 10
 
@@ -13,6 +13,7 @@ A class has 10 points. Every item costs one: a weapon, each attachment, each gre
 | Secondary weapon | one, any secondary | Two Primaries: a primary instead |
 | Lethal | one frag | Extra Lethal: two |
 | Tactical | two of one kind (flashbang or smoke) | |
+| Perk 1, Perk 2, Perk 3 | one perk of that tier | Extra Perk 1, 2, or 3: two |
 
 - Every combination is its own weapon-table variant, built at load by applying each attachment's changes in turn (`m4+reddot+grip`, `weapon/def.rs::variants_of`): up to three attachments, one optic. The first-person model fits every part together (`WeaponView::set_attachments`).
 - A weapon takes only the attachments its file lists (`attachments:` in `godot/data/weapons/*.ron`), and one optic at most (red dot or ACOG).
@@ -22,8 +23,38 @@ A class has 10 points. Every item costs one: a weapon, each attachment, each gre
 Deliberate differences from Black Ops 2:
 
 - A class must carry at least one gun. There is no knife-only weapon to fall back on.
-- No perks yet, so no perk slots and no Perk Greed wildcards.
 - Secondary Gunfighter and secondary attachments wait for a pistol that takes attachments. Tactician (a tactical in the lethal slot) waits for a lethal button that can throw a tactical.
+
+## Perks
+
+Black Ops 2's three perk tiers (kept in Black Ops 3). Each tier is a slot taking one perk for a point; a Perk Greed wildcard (here "Extra Perk 1/2/3", a point of its own) opens a second perk of that tier, as in Black Ops 2. The rules and numbers are in `rust/sim/src/perk.rs`.
+
+Perk names in the game are plain descriptions, as the wildcards' are; Call of Duty's names are kept here and in the code for reference.
+
+| Tier | Perk (in game) | Effect | Black Ops 2 number |
+| --- | --- | --- | --- |
+| 1 | Lightweight (Light Load) | moves 7% faster in every stance; no fall damage | `perk_speedMultiplier` 1.07 |
+| 1 | Flak Jacket (Blast Vest) | takes 35% of grenade damage | `perk_flakJacket` 35 |
+| 2 | Toughness (Unshaken) | a hit's aim flinch is a quarter as strong | flinch to 25% (`perk_damageKickReduction` 0.25) |
+| 2 | Fast Hands (Quick Hands) | switches weapons in half the time; a throw's wind-up and follow-through take 60% | `perk_weapSwitchMultiplier` 0.5, `perk_weapEquipmentUseMultiplier` 0.6 |
+| 2 | Scavenger (Scrounger) | refills ammo and grenades from packs dead enemies drop | one magazine, one lethal, one tactical per pack (`perk_scavenger_*`) |
+| 2 | Sleight of Hand (Fast Reload) | reloads in half the time | `perk_weapReloadMultiplier` 0.5 |
+| 3 | Dexterity (Climber) | mantles and vaults in 60% of the time, climbs ladders 75% faster, weapon up after a sprint in half the time | `perk_mantleReduction` 0.4, `perk_fastLadderClimbMultiplier` 1.75; the sprint-out share is an estimate |
+| 3 | Dead Silence (Soft Step) | near-silent footsteps | |
+| 3 | Awareness (Keen Ears) | hears enemy footsteps louder | |
+| 3 | Tactical Mask (Flash Guard) | flashbangs blind for half as long | `perk_shellShockReduction` 0.5 |
+
+How each one is decided:
+
+- **Predicted perks** (Lightweight, Fast Hands, Sleight of Hand, Dexterity) change movement and weapon timing, so they are part of the player's simulated state (`PlayerState::perks`), set from the class at spawn and sent in every own-state snapshot (protocol 54). The client steps with the same perks the server does, so they never mispredict (`perks_predict_exactly_what_the_server_runs`); a client that predicted without them takes them from the first correction. Handling perks run the action's own timer faster (`perk::Handling`), so every stage of a reload or switch, and its animation, keeps its proportions. A grenade's pin and fuse keep real time under Fast Hands; only the arm is quicker.
+- **Flak Jacket** scales grenade damage on the server. Search and Destroy's charge is not reduced.
+- **Toughness** scales the hit flinch on the client that flinches (the flinch turns the look, which the server sees through the view angles). A fall's jolt is not reduced.
+- **Tactical Mask** shortens the blind on the flashed client, and on the server for bots.
+- Dead Silence, Awareness, and Scavenger follow in their own pull requests.
+
+Left out, because their target does not exist here: Hardline (scorestreaks), Blind Eye and Ghost (UAV and air support), Cold-Blooded (AI streaks and thermal), Hard Wired (counter-UAV and EMP), Engineer (enemy equipment and care packages), and Extreme Conditioning (sprint is unlimited, a recorded project decision against stamina). Sleight of Hand is not in Black Ops 2 (its Fast Mag attachment did the job); it takes Black Ops 1's Perk 2 slot here, since there is no Fast Mag.
+
+Bots take one random perk of each tier every life.
 
 ## Default classes
 
@@ -59,6 +90,8 @@ XP, levels, and unlocks follow classic Call of Duty (Call of Duty 4 through Blac
   | 22 | M40 |
   | 28 | Two Primaries |
 
+  Perks: Create-a-Class opens with one of each tier, as in Black Ops 2 (Lightweight, Toughness, Dexterity at 4), then Fast Hands 5, Flak Jacket 7, Tactical Mask 9, Sleight of Hand 11, Dead Silence 14, Scavenger 17, Awareness 20. Extra Perk 1 at 25, Extra Perk 2 at 31, Extra Perk 3 at 34 (`perk_level`, `wildcard_level`).
+
 - **Attachments unlock by kills with that weapon**, as Black Ops 2's weapon levels do: red dot 5, grip 15, extended magazine 30, ACOG 50, suppressor 80 (`attachment_kills`).
 - The editor shows what each locked item needs ("Level 12", "8 kills"). A custom class saved with something still locked plays without it: a locked weapon gives way to the first unlocked one of its slot (`ProgressStore.unlocked_class`).
 - The class list shows the level and the XP to the next.
@@ -85,6 +118,8 @@ The client sends its whole class (`ClientMessage::Class`, protocol 45). The serv
 The decoder checks only the shape (real weapon ids, known attachment and wildcard bits). The rules are the server's to check, so a modified client gains nothing.
 
 ## Call of Duty reference
+
+- Perks: Black Ops 2's tiers (Perk 1: Lightweight, Hardline, Blind Eye, Flak Jacket, Ghost; Perk 2: Toughness, Cold-Blooded, Fast Hands, Hard Wired, Scavenger; Perk 3: Dexterity, Extreme Conditioning, Engineer, Tactical Mask, Dead Silence, Awareness) and the Perk Greed wildcards (Call of Duty wiki, Perks and Wildcards pages). Numbers from Black Ops 2's perk variables as dumped by players (denkirson.proboards.com, "Black Ops II Perk Variables", 2013); the dump does not say which perk each belongs to, and a few are matched by name only.
 
 - Pick 10, its per-item costs, and the wildcards: Activision's Black Ops II support pages ("What is the Pick 10 feature", "What are wildcards") and the Call of Duty wiki's Wildcards page.
 - Black Ops 2 slot limits: two primary attachments (three with Primary Gunfighter), one lethal (two with Danger Close), up to two tacticals, a primary in the secondary slot with Overkill.

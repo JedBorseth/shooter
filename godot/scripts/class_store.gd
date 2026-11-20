@@ -176,6 +176,7 @@ static func _clean(value: Dictionary) -> Dictionary:
 		"lethals",
 		"tactical",
 		"tacticals",
+		"perks",
 		"wildcards",
 	]:
 		var item: Variant = value.get(key)

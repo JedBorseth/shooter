@@ -21,6 +21,7 @@ pub mod mount;
 pub mod movement;
 pub mod net;
 pub mod penetration;
+pub mod perk;
 pub mod player;
 pub mod progression;
 pub mod rng;
