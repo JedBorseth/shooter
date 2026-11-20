@@ -208,8 +208,15 @@ a match is real.
 plays short drum, riser, and brass cues: when a match goes live, its result
 (win, loss, draw), a warning at 30 seconds left, and in Search and Destroy
 each round's start and result. Hardpoint calls its zone moves with a two-tone
-radio chirp of its own. There is no announcer voice: no CC0 recordings good
-enough were found.
+radio chirp of its own. Halftime (Capture the Flag, Domination) gets two drum
+hits under a held open fifth, and overtime a riser into a double hit, a tense
+brass cluster, and three warning pulses. In Gun Game, each new weapon plays a
+bolt click and two bright brass stabs stepping up (about 2 dB under the round
+stings, since it plays every couple of kills), and being set back plays a
+thud and two dark stabs stepping down: the stings stand in for Call of Duty's
+announcer lines ("weapon upgraded", "humiliation") until there is a voice
+(`tools/build_world_audio.py mode-stings`). There is no announcer voice: no
+CC0 recordings good enough were found.
 
 ## Reviewing sound without listening
 
