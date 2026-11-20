@@ -5,6 +5,27 @@ and the decisions behind our own. Agents follow the
 [map-design skill](../.agents/skills/map-design/SKILL.md); this page is the
 background.
 
+## Looking at a map
+
+With a display available, run `just capture slamcity /tmp/slamcity` to save
+eye-level PNGs with the game's lighting. On a fresh checkout, run `just import`
+first. The command accepts the map keys `arena` (Testing Area), `nuketown`,
+`slamcity`, `warehouse`, `breakwater`, and `zombies`, or a `res://` scene path.
+
+The script picks up to 12 distinct viewpoints from the map's spawn, bot lane,
+and objective markers, using floor collision to place the camera at standing
+eye height. Set `CAPTURE_AUTO=6` to change the count,
+`CAPTURE_TOP=1` to include an orthographic overhead image, or
+`CAPTURE_PRESET=medium` to use a different graphics preset (default high).
+
+Set `CAPTURE_VIEWS='yard:-39.5,0.05,-1,90,0;plaza:-14,0.05,1,90,0,62'`
+for custom views. Coordinates are world-space feet positions in metres.
+Heading 0 faces north (−Z), 90 faces east, and positive pitch looks up.
+The optional last field is vertical FOV in degrees and defaults to the game's
+default. To reshoot the same cameras after a map change, use the same resolution
+and preset and set `CAPTURE_VIEWS_FILE=/tmp/slamcity/views.json` with a new
+output directory.
+
 ## References
 
 We study real Call of Duty minimaps before drawing a layout. They are
