@@ -39,6 +39,17 @@ static var _corner: GradientTexture2D
 ## A soft dark shade spreading from a corner of `rect` (`corner` is (1, 1)
 ## for bottom right, (0, 1) for bottom left), so HUD text holds over a bright
 ## scene without a visible box.
+## Where a world point lands on screen, for markers held at the screen's
+## edge. `Camera3D.unproject_position` has no answer for a point exactly level
+## with the lens (it errors and returns the corner); such a point is nudged a
+## centimetre forward, so it projects far out to its side and clamps there.
+static func screen_point(camera: Camera3D, world: Vector3) -> Vector2:
+	var forward := -camera.global_basis.z
+	if absf(forward.dot(world - camera.global_position)) < 0.001:
+		world += forward * 0.01
+	return camera.unproject_position(world)
+
+
 static func corner_shade(item: CanvasItem, rect: Rect2, corner: Vector2, alpha := 0.5) -> void:
 	if _corner == null:
 		var gradient := Gradient.new()

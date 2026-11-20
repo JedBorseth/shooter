@@ -245,7 +245,7 @@ func _draw_marker(
 	var screen := get_viewport().get_visible_rect().size
 	var ui := screen.y / 900.0
 	var behind := camera.is_position_behind(point)
-	var at := camera.unproject_position(point)
+	var at := Paint.screen_point(camera, point)
 	if behind:
 		at = screen - at
 	var margin := Vector2(60, 70) * ui

@@ -368,7 +368,7 @@ func _draw_overlay() -> void:
 func _draw_marker(camera: Camera3D, flag: Dictionary, size: Vector2, ui: float) -> void:
 	var center: Vector3 = flag.center
 	var world := Vector3(center.x, float(flag.floor) + MARKER_LIFT, center.z)
-	var point := camera.unproject_position(world)
+	var point := Paint.screen_point(camera, world)
 	var behind := camera.is_position_behind(world)
 	var margin := SCREEN_MARGIN * ui
 	var bounds := Rect2(Vector2.ONE * margin, size - Vector2.ONE * margin * 2.0)

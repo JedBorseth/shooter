@@ -12,6 +12,7 @@ extends Node3D
 ##   screen when the zone comes online, changes hands, or is about to move.
 ##   In the last seconds before a move, a dim marker shows where it goes next.
 
+const Paint := preload("res://scripts/ui/hud_paint.gd")
 const CONTESTED := Color("ffd34d")
 const NEUTRAL := Color("e8eef2")
 ## Seconds before a move when the next zone is announced and marked.
@@ -361,7 +362,7 @@ func _draw_marker(
 	var screen := get_viewport().get_visible_rect().size
 	var ui := screen.y / 900.0
 	var behind := camera.is_position_behind(point)
-	var at := camera.unproject_position(point)
+	var at := Paint.screen_point(camera, point)
 	if behind:
 		# Mirror it, so the marker sits on the side the zone is on.
 		at = screen - at
