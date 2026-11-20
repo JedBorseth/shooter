@@ -2014,8 +2014,9 @@ impl NetServer {
     }
 
     /// Zombies: the mystery crate's spot and phase ("idle", "cycling",
-    /// "offering", "duck", "away"), and the weapon it holds out, if any
-    /// (tests).
+    /// "offering", "duck", "away"), every spot's phase (`phases`, "hidden"
+    /// where there is no crate), the price of a spin, and the weapon the
+    /// crate's own spot holds out, if any (tests).
     #[func]
     fn mystery_crate(&self) -> VarDictionary {
         let Some(crate_) = self
@@ -2030,10 +2031,15 @@ impl NetServer {
             .avatars
             .iter()
             .find_map(|a| crate_.offered(at, a.id).map(|w| (a.id, w)));
+        let phases: PackedStringArray = (0..crate_.spot_count())
+            .map(|spot| GString::from(crate_.phase_name(spot)))
+            .collect();
         vdict! {
             "spot" => at as i64,
             "spots" => crate_.spot_count() as i64,
-            "phase" => crate_.phase_name(),
+            "phase" => crate_.phase_name(at),
+            "phases" => &phases,
+            "price" => i64::from(crate_.price()),
             "weapon" => &offered.map_or(GString::new(), |(_, w)| GString::from(&w.def().key)),
             "for" => offered.map_or(-1, |(id, _)| i64::from(id)),
         }
@@ -2103,10 +2109,13 @@ impl NetServer {
         else {
             return false;
         };
-        let Some(weapon) = crate_.offered(crate_.at(), id) else {
+        let Some(spot) = crate_.offering_to(id) else {
             return false;
         };
-        crate_.taken();
+        let Some(weapon) = crate_.offered(spot, id) else {
+            return false;
+        };
+        crate_.taken(spot, id, weapon);
         self.debug_pick_up(id, weapon);
         self.broadcast_crate();
         true
@@ -2188,11 +2197,12 @@ impl NetServer {
             "on_ground" => horde.drops_on_ground() as i64,
             "insta_kill" => insta,
             "double_points" => double,
+            "fire_sale" => horde.fire_sale_left(),
         }
     }
 
     /// Zombies: drops a power-up ("max_ammo", "insta_kill", "double_points",
-    /// "nuke", "carpenter") at `position` (tests).
+    /// "nuke", "carpenter", "fire_sale") at `position` (tests).
     #[func]
     fn debug_drop_power_up(&mut self, kind: GString, position: Vector3) {
         let Some(kind) = zombies::PowerUp::from_key(&kind.to_string()) else {
@@ -2642,7 +2652,7 @@ impl NetServer {
             events.extend(horde.door_events());
             events.extend(horde.drop_events());
             events.push(horde.timers_event(self.tick));
-            events.extend(self.crate_event());
+            events.extend(self.crate_events());
             events.extend(self.forge_event());
             events.extend(self.forge_event());
             for avatar in &self.avatars {
@@ -3441,7 +3451,7 @@ impl NetServer {
         let mut spent: Vec<(u8, u32)> = Vec::new();
         let mut uses: Vec<(u8, Gd<Node>, bool)> = Vec::new();
         let mut revivers: Vec<(u8, u8)> = Vec::new();
-        let mut crate_taken = false;
+        let mut crate_taken: Vec<(usize, u8, WeaponId)> = Vec::new();
         let mut forge_taken = false;
         // Zombies: who is down, and where, as of the start of the tick.
         let downed: Vec<(u8, Vec3)> = self
@@ -3710,7 +3720,7 @@ impl NetServer {
                 // Zombies: a wall weapon costs its price, and its ammo half
                 // that, paid when it is taken.
                 let mut cost = None;
-                let mut from_crate = false;
+                let mut from_crate = None;
                 let mut from_forge = false;
                 if let Some(weapon) = input.pickup {
                     let price = if racks {
@@ -3732,8 +3742,9 @@ impl NetServer {
                         }
                         let crate_ = machines.mystery.as_ref()?;
                         let spot = crate_.spot_of(&node)?;
-                        from_crate = crate_.offered(spot, avatar.id) == Some(weapon);
-                        from_crate.then_some(0)
+                        let offered = crate_.offered(spot, avatar.id) == Some(weapon);
+                        from_crate = offered.then_some((spot, weapon));
+                        offered.then_some(0)
                     });
                     match price {
                         Some(price) if zombies_mode => {
@@ -3792,8 +3803,10 @@ impl NetServer {
                     avatar.zombies.points -= cost;
                     spent.push((avatar.id, cost));
                 }
-                if from_crate && picked_up {
-                    crate_taken = true;
+                if let Some((spot, weapon)) = from_crate
+                    && picked_up
+                {
+                    crate_taken.push((spot, avatar.id, weapon));
                 }
                 if from_forge && picked_up {
                     forge_taken = true;
@@ -3960,13 +3973,15 @@ impl NetServer {
             }
             self.broadcast_forge();
         }
-        if crate_taken {
+        if !crate_taken.is_empty() {
             if let Some(crate_) = self
                 .horde
                 .as_mut()
                 .and_then(|h| h.machines.mystery.as_mut())
             {
-                crate_.taken();
+                for (spot, by, weapon) in crate_taken {
+                    crate_.taken(spot, by, weapon);
+                }
             }
             self.broadcast_crate();
         }
@@ -4047,7 +4062,7 @@ impl NetServer {
         events.extend(horde.door_events());
         events.push(horde.timers_event(self.tick));
         events.extend(horde.machines.events(self.avatars.len() == 1));
-        events.extend(self.crate_event());
+        events.extend(self.crate_events());
         for event in events {
             self.broadcast_event(&GameEvent::Zombies(event));
         }
@@ -4119,7 +4134,8 @@ impl NetServer {
                         }
                         zombies::PowerUp::InstaKill
                         | zombies::PowerUp::DoublePoints
-                        | zombies::PowerUp::Carpenter => {}
+                        | zombies::PowerUp::Carpenter
+                        | zombies::PowerUp::FireSale => {}
                     }
                 }
                 // Every board is back: every player is paid, as in Black Ops.
@@ -4130,6 +4146,7 @@ impl NetServer {
                         self.award_points(id, zombies::powerups::CARPENTER_POINTS);
                     }
                 }
+                HordeEvent::CrateChanged => self.broadcast_crate(),
                 HordeEvent::TimersChanged => {
                     let event = self.horde.as_ref().map(|h| h.timers_event(self.tick));
                     if let Some(event) = event {
@@ -4366,11 +4383,16 @@ impl NetServer {
         }
     }
 
-    /// Zombies: the mystery crate as clients are told it.
-    fn crate_event(&self) -> Option<protocol::ZombiesEvent> {
+    /// Zombies: the mystery crate's spots as clients are told them.
+    fn crate_events(&self) -> Vec<protocol::ZombiesEvent> {
         let tick = self.tick;
-        let crate_ = self.horde.as_ref()?.machines.mystery.as_ref()?;
-        crate_.event(|seconds| tick + (seconds.max(0.0) * TICK_RATE as f32).ceil() as Tick)
+        self.horde
+            .as_ref()
+            .and_then(|h| h.machines.mystery.as_ref())
+            .map(|c| {
+                c.events(|seconds| tick + (seconds.max(0.0) * TICK_RATE as f32).ceil() as Tick)
+            })
+            .unwrap_or_default()
     }
 
     /// Zombies: tells everyone what the mystery crate is doing, and shows it
@@ -4383,7 +4405,7 @@ impl NetServer {
         {
             crate_.show();
         }
-        if let Some(event) = self.crate_event() {
+        for event in self.crate_events() {
             self.broadcast_event(&GameEvent::Zombies(event));
         }
     }

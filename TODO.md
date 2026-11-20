@@ -289,7 +289,7 @@ Done: rounds with a growing, toughening horde, zombies that walk straight at the
   - [ ] Drink and machine sounds from real CC0 recordings (a cap, a gulp, a machine hum); none suitable found yet.
 - [x] A mystery crate ([docs/zombies.md](docs/zombies.md#the-mystery-crate)): a random weapon for 950 points from a weighted pool, never one carried, cycling up out of it for 4 s and held out to the buyer for 12 s; after enough spins (Black Ops III's odds) the duck, a refund, and a move to another of three spots.
   - [ ] Crate sounds (the lid, the cycle, the duck) from real CC0 recordings.
-  - [ ] Fire Sale (every spot open at 10 points for 30 s), with its own power-up.
+  - [x] Fire Sale ([docs/zombies.md](docs/zombies.md#power-ups)): once the crate has moved, a power-up that puts a crate at every spot for 30 s at 10 points a spin; sale spins never land on the duck.
 - [x] The forge, an upgrade machine ([docs/zombies.md](docs/zombies.md#the-forge)): with the power on, 5000 points upgrades the weapon in hand in 3.35 s (twice the damage, half again the magazine, twice the reserve, a blue sheen), taken within 15 s or lost; its wall ammo costs 4500.
   - [ ] Re-forging an upgraded weapon for an alternate ammo type (Black Ops III's 2500-point AAT).
   - [ ] Forge sounds from real CC0 recordings.

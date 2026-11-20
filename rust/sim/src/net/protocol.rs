@@ -198,7 +198,10 @@ use crate::zombies::drinks::Drinks;
 // Version 82 added cosmetics (prestige, calling card, camos):
 // `ClientMessage::Cosmetics` and `GameEvent::Cosmetics`.
 // Version 83 added the Carpenter power-up (power-up kinds take 3 bits).
-pub const PROTOCOL_VERSION: u16 = 83;
+// Version 84 added the Fire Sale: the power-up, its timer, a crate at every
+// spot (`ZombiesEvent::Crate` is per spot, with `CratePhase::Hidden` and
+// whether a sale is on).
+pub const PROTOCOL_VERSION: u16 = 84;
 /// Longest account session token a hello carries, in bytes.
 pub const MAX_ACCOUNT_TOKEN_BYTES: usize = 2048;
 /// Longest reason a denial carries, in bytes.
@@ -991,11 +994,12 @@ pub enum ZombiesEvent {
         by: Option<u8>,
         done_at: Tick,
     },
-    /// To everyone, whenever they change: the server ticks Insta-Kill and
-    /// Double Points run out (none when off).
+    /// To everyone, whenever they change: the server ticks Insta-Kill,
+    /// Double Points, and the Fire Sale run out (none when off).
     PowerUpTimers {
         insta_kill_until: Option<Tick>,
         double_points_until: Option<Tick>,
+        fire_sale_until: Option<Tick>,
     },
     /// To everyone, when it changes and on joining: the power is on (or off
     /// again for a new game). Drink machines and the upgrade machine need it.
@@ -1016,17 +1020,19 @@ pub enum ZombiesEvent {
         player: u8,
         drink: crate::zombies::drinks::Drink,
     },
-    /// To everyone, when it changes and on joining: the mystery crate
-    /// ([`crate::zombies::mystery`]) at spot `spot` (the map's
-    /// `MysteryCrates` in order) is in `phase`, for player `by` (the buyer),
-    /// landing on or offering `weapon` (none for the duck), until server
-    /// tick `until`.
+    /// To everyone, when it changes and on joining, one per spot: the
+    /// mystery crate ([`crate::zombies::mystery`]) at spot `spot` (the
+    /// map's `MysteryCrates` in order) is in `phase`, for player `by` (the
+    /// buyer), landing on or offering `weapon` (none for the duck), until
+    /// server tick `until`. `sale`: a Fire Sale is on (a spin costs
+    /// [`crate::zombies::mystery::SALE_PRICE`]).
     Crate {
         spot: u8,
         phase: CratePhase,
         by: u8,
         weapon: Option<WeaponId>,
         until: Option<Tick>,
+        sale: bool,
     },
     /// To everyone, when it changes and on joining: the forge
     /// ([`crate::zombies::forge`]) is idle, working `weapon` (the upgrade)
@@ -1061,15 +1067,18 @@ pub enum CratePhase {
     Duck,
     /// Gone from this spot; it shows up at another at `until`.
     Away,
+    /// No crate at this spot.
+    Hidden,
 }
 
 impl CratePhase {
-    const ALL: [CratePhase; 5] = [
+    const ALL: [CratePhase; 6] = [
         CratePhase::Idle,
         CratePhase::Cycling,
         CratePhase::Offering,
         CratePhase::Duck,
         CratePhase::Away,
+        CratePhase::Hidden,
     ];
 
     pub fn code(self) -> u32 {
@@ -2518,10 +2527,12 @@ fn write_zombies_event(w: &mut BitWriter, event: &ZombiesEvent) {
         ZombiesEvent::PowerUpTimers {
             insta_kill_until,
             double_points_until,
+            fire_sale_until,
         } => {
             w.bits(7, ZOMBIES_TAG_BITS);
             write_option_tick(w, insta_kill_until);
             write_option_tick(w, double_points_until);
+            write_option_tick(w, fire_sale_until);
         }
         ZombiesEvent::Power { on } => {
             w.bits(10, ZOMBIES_TAG_BITS);
@@ -2550,6 +2561,7 @@ fn write_zombies_event(w: &mut BitWriter, event: &ZombiesEvent) {
             by,
             weapon,
             until,
+            sale,
         } => {
             w.bits(13, ZOMBIES_TAG_BITS);
             w.u8(spot);
@@ -2560,6 +2572,7 @@ fn write_zombies_event(w: &mut BitWriter, event: &ZombiesEvent) {
                 write_weapon(w, weapon);
             }
             write_option_tick(w, until);
+            w.bool(sale);
         }
         ZombiesEvent::Forge {
             phase,
@@ -2630,6 +2643,7 @@ fn read_zombies_event(r: &mut BitReader) -> DecodeResult<ZombiesEvent> {
         7 => ZombiesEvent::PowerUpTimers {
             insta_kill_until: read_option_tick(r)?,
             double_points_until: read_option_tick(r)?,
+            fire_sale_until: read_option_tick(r)?,
         },
         8 => ZombiesEvent::Downed {
             player: r.u8()?,
@@ -2657,6 +2671,7 @@ fn read_zombies_event(r: &mut BitReader) -> DecodeResult<ZombiesEvent> {
                 None
             },
             until: read_option_tick(r)?,
+            sale: r.bool()?,
         },
         14 => ZombiesEvent::Forge {
             phase: match r.bits(2)? {
@@ -6739,6 +6754,7 @@ mod tests {
             GameEvent::Zombies(ZombiesEvent::PowerUpTimers {
                 insta_kill_until: Some(5000),
                 double_points_until: None,
+                fire_sale_until: Some(6200),
             }),
             GameEvent::Zombies(ZombiesEvent::Downed {
                 player: 3,
@@ -6770,6 +6786,7 @@ mod tests {
                 by: 2,
                 weapon: Some(WeaponId::expect("ak47")),
                 until: Some(9000),
+                sale: true,
             }),
             GameEvent::Zombies(ZombiesEvent::Forge {
                 phase: ForgePhase::Working,
@@ -6785,10 +6802,11 @@ mod tests {
             }),
             GameEvent::Zombies(ZombiesEvent::Crate {
                 spot: 0,
-                phase: CratePhase::Away,
+                phase: CratePhase::Hidden,
                 by: 0,
                 weapon: None,
                 until: None,
+                sale: false,
             }),
         ]);
         assert_eq!(

@@ -4,8 +4,9 @@
 //!
 //! The dedicated server decides everything (`net/machines.rs`); the map's
 //! `MysteryCrates` children are these nodes, and `HordeView` passes each
-//! `ZombiesEvent::Crate` on with [`MysteryCrate::show`]. The spot the crate
-//! is not at shows nothing and does not collide.
+//! `ZombiesEvent::Crate` (one per spot) on with [`MysteryCrate::show`]. A
+//! spot without a crate (`CratePhase::Hidden`) shows nothing and does not
+//! collide; during a Fire Sale every spot has one, for 10 points a spin.
 //!
 //! The scene (`scenes/zombies/mystery_crate.tscn`) has `Body` (the crate),
 //! `Lid` (hinged at its back edge, opening about x), `Display` (where the
@@ -41,6 +42,9 @@ pub struct MysteryCrate {
     present: bool,
     /// The local player bought this spin.
     mine: bool,
+    /// Points a spin costs here now (10 during a Fire Sale).
+    #[init(val = mystery::PRICE)]
+    price: u32,
     weapon: Option<WeaponId>,
     /// Seconds into the current phase, and how long it lasts.
     elapsed: f32,
@@ -91,7 +95,7 @@ impl MysteryCrate {
         if !self.present || self.phase != CratePhase::Idle {
             return GString::new();
         }
-        let price = i64::from(mystery::PRICE);
+        let price = i64::from(self.price);
         let points = self
             .base()
             .get_tree()
@@ -99,10 +103,15 @@ impl MysteryCrate {
             .map_or(0, |mut w| {
                 w.call("points", &[]).try_to::<i64>().unwrap_or(0)
             });
-        GString::from(&if points >= price {
-            format!("[{{key}}] Open the mystery crate: {price}")
+        let name = if self.price == mystery::SALE_PRICE {
+            "Fire Sale crate"
         } else {
-            format!("Mystery crate: {price} points")
+            "mystery crate"
+        };
+        GString::from(&if points >= price {
+            format!("[{{key}}] Open the {name}: {price}")
+        } else {
+            format!("The {name}: {price} points")
         })
     }
 
@@ -135,7 +144,7 @@ impl MysteryCrate {
             _ => CratePhase::Idle,
         };
         let weapon = WeaponId::by_key(&weapon.to_string());
-        self.show(true, phase, true, weapon, 0.0);
+        self.show(phase, true, weapon, 0.0, mystery::PRICE);
         self.elapsed = seconds;
         self.lid = if phase == CratePhase::Idle { 0.0 } else { 1.0 };
     }
@@ -159,6 +168,7 @@ impl MysteryCrate {
             CratePhase::Offering => "offering",
             CratePhase::Duck => "duck",
             CratePhase::Away => "away",
+            CratePhase::Hidden => "",
         })
     }
 }
@@ -169,12 +179,14 @@ impl MysteryCrate {
     /// `present` false) it is somewhere else.
     pub fn show(
         &mut self,
-        present: bool,
         phase: CratePhase,
         mine: bool,
         weapon: Option<WeaponId>,
         seconds: f32,
+        price: u32,
     ) {
+        let present = phase != CratePhase::Hidden;
+        self.price = price;
         let changed = phase != self.phase || present != self.present;
         self.present = present;
         self.mine = mine;
@@ -187,7 +199,7 @@ impl MysteryCrate {
                 CratePhase::Offering => mystery::TAKE_SECONDS,
                 CratePhase::Duck => mystery::DUCK_SECONDS,
                 CratePhase::Away => mystery::AWAY_SECONDS,
-                CratePhase::Idle => 0.0,
+                CratePhase::Idle | CratePhase::Hidden => 0.0,
             };
             // A late joiner sees the phase partway through.
             self.elapsed = (self.length - seconds).clamp(0.0, self.length);
@@ -318,25 +330,22 @@ fn smooth(t: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
-/// Shows a `ZombiesEvent::Crate` on the map's spots: the crate at `spot`
-/// in `phase` (for the local player `me` when they bought it), every other
-/// spot empty. `seconds` is how long the phase has left.
-pub fn show_on_spots(
-    spots: &[Gd<Node3D>],
-    spot: u8,
+/// Shows one spot's `ZombiesEvent::Crate`: its crate in `phase` (for the
+/// local player `me` when they bought it), or none (`Hidden`). `seconds` is
+/// how long the phase has left, and `price` what a spin costs now.
+pub fn show_on_spot(
+    node: &Gd<Node3D>,
     phase: CratePhase,
     by: u8,
     weapon: Option<WeaponId>,
     seconds: f32,
     me: Option<u8>,
+    price: u32,
 ) {
-    for (index, node) in spots.iter().enumerate() {
-        let Ok(mut crate_) = node.clone().try_cast::<MysteryCrate>() else {
-            continue;
-        };
-        let here = index == usize::from(spot);
-        crate_
-            .bind_mut()
-            .show(here, phase, here && me == Some(by), weapon, seconds);
-    }
+    let Ok(mut crate_) = node.clone().try_cast::<MysteryCrate>() else {
+        return;
+    };
+    crate_
+        .bind_mut()
+        .show(phase, me == Some(by), weapon, seconds, price);
 }

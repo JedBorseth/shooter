@@ -88,6 +88,8 @@ pub struct ZombieDirector {
     /// Online: engine seconds Insta-Kill and Double Points end.
     net_insta_kill_ends: f64,
     net_double_points_ends: f64,
+    /// Online: engine seconds the Fire Sale ends.
+    net_fire_sale_ends: f64,
     /// Online: engine seconds this player bleeds out, while down.
     net_bleeds_out: Option<f64>,
     /// Online: a revive under way that involves this player: the other
@@ -300,6 +302,15 @@ impl ZombieDirector {
         self.double_points_left
     }
 
+    /// Seconds of Fire Sale left (online only).
+    #[func]
+    fn fire_sale_left(&self) -> f32 {
+        if self.networked {
+            return (self.net_fire_sale_ends - now_seconds()).max(0.0) as f32;
+        }
+        0.0
+    }
+
     /// Pays for a board put back on a barrier, up to a cap each round.
     /// Returns the points paid.
     #[func]
@@ -418,10 +429,11 @@ impl ZombieDirector {
 
     /// Online: seconds of Insta-Kill and Double Points left. Held as the
     /// engine times they end, so the HUD counts them down.
-    pub fn net_timers(&mut self, insta_kill: f64, double_points: f64) {
+    pub fn net_timers(&mut self, insta_kill: f64, double_points: f64, fire_sale: f64) {
         let now = now_seconds();
         self.net_insta_kill_ends = now + insta_kill.max(0.0);
         self.net_double_points_ends = now + double_points.max(0.0);
+        self.net_fire_sale_ends = now + fire_sale.max(0.0);
     }
 
     /// Online: this player went down and bleeds out in `seconds`, or (None)
@@ -704,8 +716,8 @@ impl ZombieDirector {
                 self.nuking = false;
                 self.award(i64::from(zombies::NUKE_POINTS));
             }
-            // Only the server's drop cycle deals it; the server rebuilds.
-            PowerUp::Carpenter => {}
+            // Only the server's drop cycle deals these.
+            PowerUp::Carpenter | PowerUp::FireSale => {}
         }
         self.signals()
             .power_up_collected()

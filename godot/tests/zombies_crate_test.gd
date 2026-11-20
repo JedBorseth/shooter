@@ -8,7 +8,9 @@ extends SceneTree
 ##   carries) to the buyer alone, who takes it into their hands, and the
 ##   crate closes; left untaken it closes after 12 s;
 ## - after enough spins it lands on the duck: the buyer gets the 950 back,
-##   and the crate leaves for another spot, where it can be opened again.
+##   and the crate leaves for another spot, where it can be opened again;
+## - a Fire Sale puts a crate at every spot for 30 s, 10 points a spin; once
+##   it ends the spare crates go once their spin is done.
 ## godot --headless --path godot --script res://tests/zombies_crate_test.gd
 
 const BOT := 200
@@ -98,7 +100,46 @@ func _run() -> void:
 	_check(_server.mystery_crate().phase == "idle", "the old spot is empty")
 	_server.debug_use(BOT, "crate", spot, true)
 	_check(_server.mystery_crate().phase == "cycling", "the new one opens")
+	await _seconds(4.1)
+	_server.debug_take_from_crate(BOT)
+	await _fire_sale(spot)
 	_finish()
+
+
+func _fire_sale(home: int) -> void:
+	_check(_hidden_spots() == 2, "away from a sale, one crate")
+	_server.zombies_harmless = true
+	_server.debug_drop_power_up("fire_sale", _server.player_position(BOT))
+	_check(
+		await _wait_for(func() -> bool: return _server.power_ups()["fire_sale"] > 29.0, 1.0),
+		"taking the Fire Sale starts 30 s of it"
+	)
+	_check(_hidden_spots() == 0, "a crate at every spot")
+	_check(int(_server.mystery_crate().price) == 10, "10 points a spin")
+	var spare := (home + 1) % 3
+	# Spin a spare crate in the sale's last seconds.
+	await _wait_for(func() -> bool: return _server.power_ups()["fire_sale"] < 2.0, 30.0)
+	_clear_zombies()
+	var points := _server.player_points(BOT)
+	_server.debug_use(BOT, "crate", spare, true)
+	_check(_server.mystery_crate().phases[spare] == "cycling", "a spare crate opens")
+	_check(_server.player_points(BOT) == points - 10, "for 10")
+	await _wait_for(func() -> bool: return _server.power_ups()["fire_sale"] <= 0.0, 3.0)
+	_check(_hidden_spots() == 1, "when the sale ends the spare left idle goes")
+	_check(_server.mystery_crate().phases[spare] == "cycling", "one still in use stays")
+	await _seconds(4.1)
+	_check(_server.mystery_crate().phases[spare] == "offering", "and holds a weapon out")
+	_server.debug_take_from_crate(BOT)
+	_check(_hidden_spots() == 2, "and goes once taken")
+	_check(int(_server.mystery_crate().price) == 950, "back to 950")
+
+
+func _hidden_spots() -> int:
+	var hidden := 0
+	for phase: String in _server.mystery_crate().phases:
+		if phase == "hidden":
+			hidden += 1
+	return hidden
 
 
 ## Kills every zombie, so none reaches the players during the test.

@@ -21,6 +21,9 @@ pub const PRICE: u32 = 950;
 /// Seconds weapons cycle before the crate lands on one: 20 x 0.05 +
 /// 10 x 0.1 + 5 x 0.2 + 3 x 0.3 + 0.1.
 pub const CYCLE_SECONDS: f32 = 4.0;
+/// Points a spin costs during a Fire Sale, at any spot
+/// (`toggle_fire_sale_on`'s `zombie_cost = 10`).
+pub const SALE_PRICE: u32 = 10;
 /// Seconds the buyer has to take the weapon (`treasure_chest_timeout`).
 pub const TAKE_SECONDS: f32 = 12.0;
 /// Seconds the duck floats over the crate before it leaves.

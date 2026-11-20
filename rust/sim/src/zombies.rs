@@ -304,6 +304,9 @@ pub enum PowerUp {
     /// Puts every board back on every window, nearest first, then pays
     /// every player [`powerups::CARPENTER_POINTS`].
     Carpenter,
+    /// The mystery crate stands at every spot and costs
+    /// [`mystery::SALE_PRICE`], for [`powerups::FIRE_SALE_SECONDS`].
+    FireSale,
 }
 
 /// Seconds Insta-Kill and Double Points last.
@@ -347,12 +350,13 @@ pub const MAX_DROPS_PER_ROUND: u32 = powerups::MAX_DROPS_PER_ROUND;
 pub const DROP_CHANCE: f32 = 0.035;
 
 impl PowerUp {
-    pub const ALL: [PowerUp; 5] = [
+    pub const ALL: [PowerUp; 6] = [
         PowerUp::MaxAmmo,
         PowerUp::InstaKill,
         PowerUp::DoublePoints,
         PowerUp::Nuke,
         PowerUp::Carpenter,
+        PowerUp::FireSale,
     ];
 
     /// The kinds the offline game drops.
@@ -380,6 +384,7 @@ impl PowerUp {
             PowerUp::DoublePoints => "DOUBLE POINTS",
             PowerUp::Nuke => "KABOOM",
             PowerUp::Carpenter => "CARPENTER",
+            PowerUp::FireSale => "FIRE SALE",
         }
     }
 
@@ -391,6 +396,7 @@ impl PowerUp {
             PowerUp::DoublePoints => "double_points",
             PowerUp::Nuke => "nuke",
             PowerUp::Carpenter => "carpenter",
+            PowerUp::FireSale => "fire_sale",
         }
     }
 
@@ -400,7 +406,10 @@ impl PowerUp {
 
     /// Whether it lasts a while instead of acting once.
     pub fn timed(self) -> bool {
-        matches!(self, PowerUp::InstaKill | PowerUp::DoublePoints)
+        matches!(
+            self,
+            PowerUp::InstaKill | PowerUp::DoublePoints | PowerUp::FireSale
+        )
     }
 }
 
