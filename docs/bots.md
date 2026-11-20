@@ -64,6 +64,21 @@ bot heads to take, and 5 m out from a charge being planted or defused, toward
 the other side; once a life, and not where a cloud already hangs (none within
 6.5 m in the last 12 s, as `bot_combat_throw_smoke`). Easy bots throw nothing.
 
+### Objectives
+
+- **Domination** (`domination::bot_goals`): the two nearest bots answer an
+  enemy capture of a flag the team owns; a bot within 6 m of a flag the team
+  does not own takes it (Black Ops 2's first rule in `bot_dom_think`); one in
+  four guards an owned flag; the rest take the nearest flag the team does not
+  own, every third the next nearest.
+- **Hardpoint** (`hardpoint::bots_rotating`): 12 seconds before the zone
+  moves, a third of a team holding it, or half of a team that is not, head
+  for the next zone. Black Ops 2's bots only know the live zone
+  (`bot_koth_think`); players rotate early, and so do ours.
+- **Capture the Flag**: escorts take spots 2 to 10 m round their carrier,
+  changing every few seconds, as Black Ops 2's take a node 64 to 512 units
+  from it (`bot_ctf_capture`).
+
 ### Bench
 
 `godot/tools/bot_bench.gd` plays whole bot-only matches headless and writes

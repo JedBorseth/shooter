@@ -354,10 +354,15 @@ pub enum BotGoal {
 
 /// Bots this many or fewer answer an enemy capture of one of the team's flags.
 const RESPONDERS: usize = 2;
+/// A bot this close to the edge of a flag its team does not own goes and
+/// takes it, whatever else it was doing, in metres (Black Ops 2: within 384
+/// units of the flag).
+const TAKE_NEAR: f32 = 6.0;
 
 /// Where each of team `team`'s bots (`(id, feet)`) should go, the way Call
 /// of Duty's bots play Domination: the nearest bots run back to stop an
-/// enemy capture of a flag the team owns, one bot in four guards an owned
+/// enemy capture of a flag the team owns, a bot at a flag the team does not
+/// own takes it, one bot in four guards an owned
 /// flag, and the rest take the flags the team does not own, most of them the
 /// nearest and every third the next nearest, so the team splits over two
 /// flags. With every flag owned, everyone guards.
@@ -390,6 +395,20 @@ pub fn bot_goals(
         by_distance.sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
         for (_, id) in by_distance.into_iter().take(RESPONDERS) {
             out.push((id, BotGoal::Defend(flag)));
+        }
+    }
+    // A bot already at a flag the team does not own takes it (Black Ops 2's
+    // first rule, `bot_dom_think`).
+    for (id, feet) in &bots {
+        if out.iter().any(|(o, _)| o == id) {
+            continue;
+        }
+        let near = targets.iter().copied().find(|t| {
+            let c = points[*t].center;
+            Vec3::new(feet.x - c.x, 0.0, feet.z - c.z).length() <= points[*t].radius + TAKE_NEAR
+        });
+        if let Some(flag) = near {
+            out.push((*id, BotGoal::Capture(flag)));
         }
     }
     let mut guards = 0;
@@ -728,6 +747,12 @@ mod tests {
             answering.contains(&205) && answering.contains(&206),
             "{goals:?}"
         );
+        // A guard passing by a flag the team does not own takes it.
+        state.flags[0].claim = None;
+        let mut passing = bots.clone();
+        passing[3].1 = points[2].center + Vec3::new(points[2].radius + 2.0, 0.0, 0.0);
+        let goals = bot_goals(&points, &state, 0, &passing);
+        assert!(goals.contains(&(203, BotGoal::Capture(2))), "{goals:?}");
         // Holding all three, everyone guards.
         state.flags[0].claim = None;
         state.flags[2].owner = Some(0);

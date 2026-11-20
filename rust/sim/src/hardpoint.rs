@@ -301,6 +301,26 @@ impl HillTime {
     }
 }
 
+/// Seconds before the live zone moves that bots start for the next one.
+/// Black Ops 2's bots wait for the move (`bot_koth_think` only knows the live
+/// zone); players rotate early to be on the next hill when it goes live, and
+/// bots now do too.
+pub const BOT_ROTATE_EARLY: f32 = 12.0;
+
+/// How many of a team's `bots` head for the next zone now, `time_left`
+/// seconds before the move: none until [`BOT_ROTATE_EARLY`]; then a third
+/// while the team holds the live zone (the rest keep scoring), or half when
+/// it does not.
+pub fn bots_rotating(bots: usize, time_left: f32, holding: bool) -> usize {
+    if time_left > BOT_ROTATE_EARLY {
+        0
+    } else if holding {
+        bots / 3
+    } else {
+        bots.div_ceil(2)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -456,5 +476,14 @@ mod tests {
         }
         assert_eq!(time.tick(&rules, 1.0, false, false), None);
         assert!((time.seconds - 22.0).abs() < 0.01, "{}", time.seconds);
+    }
+
+    #[test]
+    fn bots_rotate_early_without_leaving_a_held_zone() {
+        assert_eq!(bots_rotating(6, 30.0, false), 0);
+        assert_eq!(bots_rotating(6, BOT_ROTATE_EARLY, true), 2);
+        assert_eq!(bots_rotating(6, 5.0, false), 3);
+        assert_eq!(bots_rotating(1, 5.0, true), 0, "a lone holder stays");
+        assert_eq!(bots_rotating(1, 5.0, false), 1);
     }
 }
