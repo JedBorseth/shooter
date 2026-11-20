@@ -1311,8 +1311,10 @@ impl NetClient {
                     self.props.reset();
                 }
                 if matches!(phase, Phase::Lobby | Phase::Countdown) {
-                    // Between matches there is no round.
+                    // Between matches there is no round, and no killcam.
                     self.set_round(None);
+                    self.killcam = None;
+                    self.stop_killcam();
                 }
                 self.match_phase = Some(phase);
                 self.match_ends_at = ends_at;
@@ -1369,13 +1371,20 @@ impl NetClient {
                 ends_at,
                 attackers,
                 halftime_after,
-            } => self.set_round(Some(Round {
-                number,
-                phase,
-                ends_at,
-                attackers,
-                halftime_after,
-            })),
+            } => {
+                if phase == RoundPhase::Freeze {
+                    // A new round: whatever replay was left is over.
+                    self.killcam = None;
+                    self.stop_killcam();
+                }
+                self.set_round(Some(Round {
+                    number,
+                    phase,
+                    ends_at,
+                    attackers,
+                    halftime_after,
+                }));
+            }
             GameEvent::PropState { id, stage, impulse } => {
                 // The server owns prop damage: clients only show the states
                 // it sends, never damage props themselves online.

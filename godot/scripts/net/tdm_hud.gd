@@ -132,7 +132,9 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _process(delta: float) -> void:
-	_root.visible = _joined()
+	# A killcam has its own overlay; the match HUD comes back after it (the
+	# results board after the final killcam, as in Call of Duty).
+	_root.visible = _joined() and not client.in_killcam()
 	if not _root.visible:
 		return
 	var info := client.match_info()

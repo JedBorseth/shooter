@@ -2749,6 +2749,27 @@ impl NetServer {
         self.send_event(record.victim, GameEvent::Killcam(killcam));
     }
 
+    /// Sends everyone the killcam of the latest kill to end a round or the
+    /// match, if it is recent enough to replay, and keeps the round's end
+    /// (or the results) up until it has played.
+    fn play_ending_killcam(&mut self, kind: killcam::Kind) {
+        let Some(killcam) = killcam::ending_killcam(self.last_kill.take(), kind, self.tick) else {
+            return;
+        };
+        let seconds = killcam::ending_seconds(&killcam);
+        if let Some(round) = &mut self.round
+            && matches!(round.phase, RoundPhase::Over { .. })
+            && kind == killcam::Kind::Round
+        {
+            round.time_left = round.time_left.max(seconds);
+        }
+        if kind == killcam::Kind::Final {
+            // The results stay up as long as usual once it has played.
+            self.match_state.time_left += seconds;
+        }
+        self.broadcast_event(&GameEvent::Killcam(killcam));
+    }
+
     fn record_death(&mut self, id: u8) {
         let tick = self.tick;
         let scoring = self.match_state.scoring();
@@ -2843,6 +2864,7 @@ impl NetServer {
                 return;
             }
             RoundTransition::Next { swapped } => {
+                self.last_kill = None;
                 if swapped {
                     godot_print!("server: halftime, the teams swap sides");
                 }
@@ -2864,6 +2886,17 @@ impl NetServer {
             self.broadcast_charge();
         }
         let end = self.match_state.add_point(&self.rules, winner);
+        // A round won by wiping the other team out replays its last kill for
+        // everyone: the round winning kill, or the final killcam when it
+        // also wins the match.
+        if reason == RoundEnd::Eliminated {
+            let kind = if end.is_some() {
+                killcam::Kind::Final
+            } else {
+                killcam::Kind::Round
+            };
+            self.play_ending_killcam(kind);
+        }
         self.broadcast_round();
         match end {
             Some(end) => self.on_transition(end),
@@ -3031,6 +3064,7 @@ impl NetServer {
         match transition {
             Transition::Started => {
                 godot_print!("server: match started");
+                self.last_kill = None;
                 self.reset_flags();
                 if self.game == Mode::SearchAndDestroy {
                     self.round = Some(RoundState::first(&self.snd_rules));
@@ -3080,6 +3114,11 @@ impl NetServer {
                 // Ready-up again only before the first match of a session.
                 for client in &mut self.clients {
                     client.ready = true;
+                }
+                // The kill that ended the match, for everyone (Search and
+                // Destroy plays its own when the last round is won).
+                if self.game != Mode::SearchAndDestroy {
+                    self.play_ending_killcam(killcam::Kind::Final);
                 }
                 self.reset_flags();
             }

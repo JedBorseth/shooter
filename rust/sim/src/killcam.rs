@@ -248,6 +248,19 @@ pub fn ending_seconds(killcam: &Killcam) -> f32 {
     FINAL_LEAD + killcam.playback_seconds() + FINAL_HOLD
 }
 
+/// Oldest kill, in ticks before the round or match ends, that an ending
+/// killcam replays: clients keep [`TAPE_SECONDS`] of snapshots, which must
+/// still hold its lead-in when it starts playing after [`FINAL_LEAD`].
+pub const ENDING_MAX_AGE: Tick = 8 * TICK_RATE;
+
+/// The killcam that ends a round or match on `last_kill`, if there is one
+/// recent enough at `now` to replay.
+pub fn ending_killcam(last_kill: Option<KillRecord>, kind: Kind, now: Tick) -> Option<Killcam> {
+    last_kill
+        .filter(|kill| now.saturating_sub(kill.tick) <= ENDING_MAX_AGE)
+        .map(|kill| kill.killcam(kind))
+}
+
 /// The replay clock: which server tick is shown, advancing at the killcam's
 /// speed (slow motion near the kill of an ending killcam).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -597,6 +610,20 @@ mod tests {
         let mut tape = Tape::default();
         tape.record(9_800, vec![view(3, 0)]);
         assert!(tape.covers(&killcam), "half the lead-in is enough");
+    }
+
+    #[test]
+    fn ending_killcams_replay_only_a_recent_kill() {
+        let kill = record(KillCause::Weapon);
+        let now = kill.tick + 3 * TICK_RATE;
+        let final_cam = ending_killcam(Some(kill), Kind::Final, now).unwrap();
+        assert_eq!(final_cam.kind, Kind::Final);
+        assert_eq!(final_cam.before, 600);
+        assert!(ending_killcam(Some(kill), Kind::Final, kill.tick + 9 * TICK_RATE).is_none());
+        assert!(ending_killcam(None, Kind::Round, now).is_none());
+        // Lead, about 8.8 s of slowed playback, and the hold.
+        let seconds = ending_seconds(&final_cam);
+        assert!(seconds > 10.5 && seconds < 12.0, "{seconds}");
     }
 
     #[test]
