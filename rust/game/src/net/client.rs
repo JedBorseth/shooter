@@ -1423,7 +1423,19 @@ impl NetClient {
                         .bind_mut()
                         .hold_respawn(killcam::respawn_wait(&killcam));
                 }
-                if replaces && self.tape.covers(&killcam) {
+                let covered = self.tape.covers(&killcam);
+                godot_print!(
+                    "net client: {:?} killcam of player {} by player {}{}",
+                    killcam.kind,
+                    killcam.victim,
+                    killcam.killer,
+                    if covered {
+                        ""
+                    } else {
+                        " (too old for the tape, not played)"
+                    }
+                );
+                if replaces && covered {
                     let now = Time::singleton().get_ticks_usec() as f64 / 1e6;
                     self.killcam = Some((killcam, now));
                 }

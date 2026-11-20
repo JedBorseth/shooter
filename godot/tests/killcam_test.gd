@@ -127,9 +127,13 @@ func _round_winning_kill(player: FpsPlayer, client: NetClient) -> void:
 	_check(lead < 1.6, "round: it starts after the short lead, %.2f s" % lead)
 	_check(not bool(info.get("skippable", true)), "round: it cannot be skipped")
 	var next_round := false
+	var capture := OS.get_environment("KILLCAM_CAPTURE")
 	for i in 15 * Engine.physics_ticks_per_second:
 		if not client.in_killcam():
 			break
+		if capture != "" and i % 120 == 60:
+			var image := root.get_viewport().get_texture().get_image()
+			image.save_png(capture.path_join("round_%d.png" % (i / 120)))
 		if String(client.round_info().get("phase", "")) == "freeze":
 			next_round = true
 		await physics_frame
@@ -173,6 +177,10 @@ func _final_killcam(main: Node, player: FpsPlayer, client: NetClient) -> void:
 			break
 		last_progress = float(client.killcam_info().get("progress", last_progress))
 		var now := Time.get_ticks_msec()
+		var capture := OS.get_environment("KILLCAM_CAPTURE")
+		if capture != "" and i % 240 == 120:
+			var image := root.get_viewport().get_texture().get_image()
+			image.save_png(capture.path_join("final_%d.png" % (i / 240)))
 		if now - window_at >= 250:
 			if last_progress < 0.99:
 				var speed := (last_progress - window_progress) * 7.0 / ((now - window_at) / 1000.0)
