@@ -824,6 +824,20 @@ pub struct Ragdoll {
     id: InstanceId,
 }
 
+/// However a ragdoll ends (frozen, discarded, or dropped with its body when
+/// a corpse sinks away, a respawn clears it, or the scene goes), its rebuilt
+/// cone joints are physics server joints no node owns: free them here, or
+/// each death leaks a dozen (`JoltJoint3D` RIDs at exit), and give up its
+/// place in the cap.
+impl Drop for Ragdoll {
+    fn drop(&mut self) {
+        release(self.id);
+        for joint in &mut self.joints {
+            joint.free();
+        }
+    }
+}
+
 thread_local! {
     /// Ragdolls moving now, oldest first, by owner.
     static SIMULATING: RefCell<VecDeque<InstanceId>> = const { RefCell::new(VecDeque::new()) };
@@ -1221,12 +1235,9 @@ impl Ragdoll {
         self.discard();
     }
 
-    /// Frees the capsules without touching the pose.
+    /// Frees the capsules without touching the pose (the joints and the
+    /// place in the cap go as it drops).
     pub fn discard(mut self) {
-        release(self.id);
-        for joint in &mut self.joints {
-            joint.free();
-        }
         if self.holder.is_instance_valid() {
             self.holder.queue_free();
         }
