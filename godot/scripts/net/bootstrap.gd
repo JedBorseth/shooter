@@ -180,7 +180,8 @@ func join(target: String, options: Dictionary = {}, arena: PackedScene = null) -
 ## `auto_start` to skip the ready-up) and joins it. The server pauses with
 ## the pause menu and does not answer server browsers, unless `shared`: then
 ## friends on the network find it under Multiplayer, LAN (or join it
-## directly), and it never pauses.
+## directly), and it never pauses. A shared one with a `master` also lists
+## itself on that server directory (Multiplayer, Internet).
 func start_local_match(options: Dictionary) -> void:
 	stop_local_server()
 	_local_shared = bool(options.get("shared", false))
@@ -188,6 +189,22 @@ func start_local_match(options: Dictionary) -> void:
 	DirAccess.remove_absolute(_local_pause_file)
 	var map := String(options.get("map", "slamcity"))
 	var port := SHARED_PORT if _local_shared else LOCAL_PORT
+	var server_name := String(options.get("name", "Local match"))
+	var args := local_server_args(options, port, _local_pause_file)
+	_local_server_pid = OS.create_process(OS.get_executable_path(), args)
+	if _local_server_pid <= 0:
+		push_error("Net.start_local_match: cannot start the server process")
+		return
+	join("127.0.0.1:%d" % port, {"map": map, "name": server_name})
+
+
+## The command line for the server process `start_local_match` starts on
+## `port` (`pause_file`: the private server's pause flag). A shared server
+## with a `master` (a directory address) also lists itself there, so it
+## shows under Multiplayer, Internet as well as LAN.
+func local_server_args(options: Dictionary, port: int, pause_file: String) -> PackedStringArray:
+	var shared := bool(options.get("shared", false))
+	var map := String(options.get("map", "slamcity"))
 	var server_name := String(options.get("name", "Local match"))
 	var server_log := OS.get_user_data_dir().path_join("logs/local-server.log")
 	var args := PackedStringArray(["--headless", "--log-file", server_log])
@@ -224,15 +241,13 @@ func start_local_match(options: Dictionary) -> void:
 	)
 	# Only a server nobody else can join pauses, and only it hides from
 	# server browsers.
-	if not _local_shared:
-		args.append_array(["--query-port", "-1", "--pause-file", _local_pause_file])
+	if not shared:
+		args.append_array(["--query-port", "-1", "--pause-file", pause_file])
+	elif String(options.get("master", "")) != "":
+		args.append_array(["--master", String(options.get("master"))])
 	if bool(options.get("auto_start", false)):
 		args.append("--auto-start")
-	_local_server_pid = OS.create_process(OS.get_executable_path(), args)
-	if _local_server_pid <= 0:
-		push_error("Net.start_local_match: cannot start the server process")
-		return
-	join("127.0.0.1:%d" % port, {"map": map, "name": server_name})
+	return args
 
 
 ## Stops the server `start_local_match` started, if it is still running.

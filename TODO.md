@@ -301,7 +301,8 @@ Done: rounds with a growing, toughening horde, zombies that walk straight at the
   - [ ] Forge sounds from real CC0 recordings.
 - [x] The title screen's Zombies runs on a local dedicated server: Solo starts a private one that skips the ready-up and pauses; Co-op hosts one friends on the network find under Multiplayer, LAN (up to four players, ready-up, no pause). The scoreboard shows points, kills, downs, revives, and headshots.
 - [ ] Remove the offline `ZombieDirector` game once the benchmark and the capture scripts run Zombies on a server (they are its only users now).
-- [ ] Zombies on the Internet tab: a hosted co-op game registers with a master server.
+- [x] Zombies on the Internet tab: a hosted co-op game listed on the Internet registers with the server directory (Co-op setup, Listed: LAN or Internet), as dedicated servers do with `--master`.
+  - [ ] Reaching a hosted game behind a home router without forwarding port 27027 (NAT punch-through through the directory).
 - [x] Hound rounds ([docs/zombies.md](docs/zombies.md#hound-rounds), Black Ops III's dog-round numbers): every 4 or 5 rounds from round 5 to 7, a pack of Blender-built hounds struck into the arena, the last leaving a Max Ammo.
   - [ ] Hound sounds (breathing, snarls, bites, the strike's crack) from real CC0 recordings.
 - [ ] Playable versions of the menu's maps; today every map loads the one arena.
