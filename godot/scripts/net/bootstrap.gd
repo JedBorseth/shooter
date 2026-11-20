@@ -10,6 +10,7 @@ extends Node
 ##            [--rounds N]
 ##            [--score-limit N] [--time-limit MINUTES] [--auto-start]
 ##            [--accounts URL] [--custom SETTINGS]
+##            [--team-bots ALLIES,ENEMIES] [--team-bot-skill SKILL,SKILL]
 ##            [--exit-when-empty SECONDS]
 ##                                    run as a dedicated server (use with --headless);
 ##                                    with --bot-skill the bots play the match; without
@@ -36,6 +37,9 @@ extends Node
 ##                                    key=value pairs ("hardcore=on,ff=reflect";
 ##                                    docs/custom-games.md); ranked servers
 ##                                    ignore it.
+##                                    --team-bots gives each team exactly that
+##                                    many bots (players take no bot's place),
+##                                    each at its --team-bot-skill.
 ##                                    --exit-when-empty quits once nobody has
 ##                                    been connected for SECONDS (servers an
 ##                                    allocator starts for one match).
@@ -262,6 +266,9 @@ func local_server_args(options: Dictionary, port: int, pause_file: String) -> Pa
 	var custom := String(options.get("custom", ""))
 	if not custom.is_empty():
 		args.append_array(["--custom", custom])
+	for key: String in ["team_bots", "team_bot_skill"]:
+		if String(options.get(key, "")) != "":
+			args.append_array(["--" + key.replace("_", "-"), String(options[key])])
 	return args
 
 
@@ -354,6 +361,8 @@ func _start_server(options: Dictionary) -> void:
 		server.rounds_to_win = maxi(int(options["rounds"]), 1)
 	server.auto_start = options.has("auto-start")
 	server.custom_settings = String(options.get("custom", ""))
+	server.team_bots = String(options.get("team-bots", ""))
+	server.team_bot_skill = String(options.get("team-bot-skill", ""))
 	var accounts := String(options.get("accounts", ""))
 	if not accounts.is_empty():
 		server.accounts = true

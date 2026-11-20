@@ -49,6 +49,15 @@ pub struct SkillParams {
 }
 
 impl Skill {
+    /// The name [`Skill::parse`] takes.
+    pub fn key(self) -> &'static str {
+        match self {
+            Skill::Easy => "easy",
+            Skill::Normal => "normal",
+            Skill::Hard => "hard",
+        }
+    }
+
     pub fn parse(name: &str) -> Option<Skill> {
         match name.to_ascii_lowercase().as_str() {
             "easy" => Some(Skill::Easy),

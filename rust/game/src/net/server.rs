@@ -338,6 +338,19 @@ pub struct NetServer {
     custom_settings: GString,
     /// The custom settings in force, parsed from `custom_settings`.
     custom: custom::Settings,
+    /// Bots on each team, as "ALLIES,ENEMIES" ("3,6"), for custom games:
+    /// each team keeps exactly that many, and players do not take their
+    /// places. Empty: `bots` fill both teams evenly, each player taking a
+    /// bot's place. Free-for-all modes count both as one number.
+    #[export]
+    team_bots: GString,
+    /// Each team's bot difficulty, as "ALLIES,ENEMIES" ("easy,hard");
+    /// empty for `bot_skill` on both.
+    #[export]
+    team_bot_skill: GString,
+    /// `team_bots` and `team_bot_skill`, parsed when the server starts.
+    bots_per_team: Option<[u8; tdm::TEAM_COUNT]>,
+    team_skills: [Option<Skill>; tdm::TEAM_COUNT],
 
     host: Option<Gd<ENetConnection>>,
     clients: Vec<ClientSlot>,
@@ -850,6 +863,15 @@ impl INode3D for NetServer {
         self.host = Some(host);
 
         let skill = Skill::parse(&self.bot_skill.to_string());
+        self.read_team_bots(skill);
+        if let Some(per_team) = self.bots_per_team {
+            // Custom games: each team's own number and difficulty.
+            self.navigation_pending =
+                per_team.iter().sum::<u8>() > 0 && self.team_skills.iter().any(Option::is_some);
+            self.balance_bots();
+            self.start_query_responder();
+            return;
+        }
         // CSG builds its collision a frame after entering the tree, so the
         // navigation mesh bakes on an early tick (`physics_process`).
         self.navigation_pending = skill.is_some() && self.bots > 0;
@@ -3334,13 +3356,35 @@ impl NetServer {
         class: Class,
         brain: Option<BotBrain>,
     ) {
+        self.spawn_avatar_on(id, bot, name, class, brain, None);
+    }
+
+    /// `spawn_avatar` on `team`, or with `None` on the team that needs them.
+    fn spawn_avatar_on(
+        &mut self,
+        id: u8,
+        bot: bool,
+        name: &str,
+        class: Class,
+        brain: Option<BotBrain>,
+        team: Option<Team>,
+    ) {
         let mut counts = [0; tdm::TEAM_COUNT];
         for avatar in &self.avatars {
-            counts[usize::from(avatar.team)] += 1;
+            // With bots per team, players even out among themselves: the
+            // bots are each team's own.
+            if self.bots_per_team.is_none() || !avatar.bot {
+                counts[usize::from(avatar.team)] += 1;
+            }
         }
         // Without teams, and in co-op, everyone is on team 0.
         let team = if self.game.free_for_all() || self.game == Mode::Zombies {
             0
+        } else if let Some(team) = team {
+            team.min(1)
+        } else if self.bots_per_team.is_some() {
+            // The first player is on the first team (the allies).
+            tdm::assign_team(counts, 0)
         } else {
             tdm::assign_team(counts, u8::from(bot))
         };
@@ -3635,7 +3679,79 @@ impl NetServer {
     /// Playing bots fill the teams up to the size the server started with
     /// (its bots plus one player): each player who joins takes a bot's place,
     /// and a bot comes back when a player leaves. Teams stay even.
+    /// Parses `team_bots` and `team_bot_skill`. Free-for-all modes and
+    /// Zombies take the sum as `bots`, with the first difficulty.
+    fn read_team_bots(&mut self, skill: Option<Skill>) {
+        let pair = |text: &GString| -> Option<[String; 2]> {
+            let text = text.to_string();
+            let (a, b) = text.split_once(',')?;
+            Some([a.trim().to_owned(), b.trim().to_owned()])
+        };
+        let Some([a, b]) = pair(&self.team_bots) else {
+            return;
+        };
+        let (Ok(a), Ok(b)) = (a.parse::<u8>(), b.parse::<u8>()) else {
+            godot_warn!("server: team bots \"{}\" ignored", self.team_bots);
+            return;
+        };
+        let (a, b) = (a.min(11), b.min(12));
+        self.team_skills = match pair(&self.team_bot_skill) {
+            Some([x, y]) => [Skill::parse(&x).or(skill), Skill::parse(&y).or(skill)],
+            None => [skill, skill],
+        };
+        if self.game.free_for_all() || self.game == Mode::Zombies {
+            self.bots = i32::from(a) + i32::from(b);
+            if let Some(first) = self.team_skills[0] {
+                self.bot_skill = GString::from(first.key());
+            }
+            return;
+        }
+        godot_print!("server: bots per team {a} and {b}");
+        self.bots_per_team = Some([a, b]);
+    }
+
+    /// Custom games: each team gets exactly its number of bots, at its
+    /// difficulty.
+    fn balance_team_bots(&mut self, per_team: [u8; tdm::TEAM_COUNT]) {
+        for team in 0..tdm::TEAM_COUNT as u8 {
+            let want = usize::from(per_team[usize::from(team)]);
+            loop {
+                let have: Vec<u8> = self
+                    .avatars
+                    .iter()
+                    .filter(|a| a.bot && a.team == team)
+                    .map(|a| a.id)
+                    .collect();
+                if have.len() > want {
+                    let id = *have.iter().max().expect("not empty");
+                    self.despawn_avatar(id);
+                    self.broadcast_event(&GameEvent::Left { id });
+                } else if have.len() < want {
+                    let Some(id) = (FIRST_BOT_ID..=u8::MAX)
+                        .find(|id| !self.avatars.iter().any(|a| a.id == *id))
+                    else {
+                        return;
+                    };
+                    let brain = self.team_skills[usize::from(team)].map(|skill| {
+                        BotBrain::new(
+                            skill,
+                            rng::hash(u32::from(id), self.tick.wrapping_add(self.bot_seed as u32)),
+                        )
+                    });
+                    let name = format!("Bot {}", id - FIRST_BOT_ID + 1);
+                    self.spawn_avatar_on(id, true, &name, Class::default(), brain, Some(team));
+                } else {
+                    break;
+                }
+                self.next_scoreboard = self.tick;
+            }
+        }
+    }
+
     fn balance_bots(&mut self) {
+        if let Some(per_team) = self.bots_per_team {
+            return self.balance_team_bots(per_team);
+        }
         let Some(skill) = Skill::parse(&self.bot_skill.to_string()) else {
             return;
         };

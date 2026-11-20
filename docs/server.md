@@ -42,6 +42,8 @@ Each option is an environment variable; any argument after the image name is pas
 | `SHOOTER_TIME_LIMIT` | 10 | `--time-limit`, in minutes |
 | `SHOOTER_ROUNDS` | 6 | `--rounds`: round wins in Search and Destroy |
 | `SHOOTER_CUSTOM` | none | `--custom`: a custom game's rules, such as `hardcore=on,ff=reflect` ([custom-games.md](custom-games.md)); ranked servers ignore them |
+| `SHOOTER_TEAM_BOTS` | none | `--team-bots ALLIES,ENEMIES`: exactly that many bots on each team; players take no bot's place ([custom-games.md](custom-games.md#bots-per-team)) |
+| `SHOOTER_TEAM_BOT_SKILL` | `SHOOTER_BOT_SKILL` for both | `--team-bot-skill SKILL,SKILL`: each team's bot difficulty |
 | `SHOOTER_AUTO_START` | off | `1` skips the lobby's ready-up (`--auto-start`) |
 | `SHOOTER_EXIT_WHEN_EMPTY` | off | `--exit-when-empty SECONDS`: stop once nobody has been connected that long (the allocator's servers) |
 | `SHOOTER_ACCOUNTS` | none | `--accounts URL`: admit only players signed in to this account server, check their unlocks, and report their match XP ([online.md](online.md#ranked-servers)) |
