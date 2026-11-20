@@ -98,6 +98,7 @@ pub fn tick(
         vault: climb.vault,
         ladder: find_ladder(parts, p),
         mount: find_mount(parts, &params.movement, p, input),
+        floor_normal: floor_normal(parts, p),
     };
     let previous_crouch = p.state.movement.crouch;
     let requested = player::step(&mut p.state, input, env, params, TICK_DT, events);
@@ -183,6 +184,37 @@ fn going_down(parts: &BodyParts, velocity: Vector3) -> bool {
         .get("position")
         .and_then(|p| p.try_to::<Vector3>().ok())
         .is_none_or(|p| p.y < feet.y - 0.02)
+}
+
+/// The walkable floor's normal under a sliding body (`MoveEnv::floor_normal`;
+/// straight up otherwise). A ray from the feet, so a replay from a placed
+/// body reads the same slope the first run did.
+fn floor_normal(parts: &BodyParts, p: &Predicted) -> shooter_sim::Vec3 {
+    let up = shooter_sim::Vec3::Y;
+    if !p.on_floor || p.state.movement.stance != Stance::Sliding {
+        return up;
+    }
+    let body = &parts.body;
+    let Some(mut space) = body.get_world_3d().and_then(|w| w.get_direct_space_state()) else {
+        return up;
+    };
+    let feet = to_godot(p.position);
+    let exclude: Array<Rid> = array![body.get_rid()];
+    let Some(query) = PhysicsRayQueryParameters3D::create_ex(
+        feet + Vector3::UP * 0.1,
+        feet - Vector3::UP * STEP_HEIGHT,
+    )
+    .collision_mask(WORLD_LAYER)
+    .exclude(&exclude)
+    .done() else {
+        return up;
+    };
+    space
+        .intersect_ray(&query)
+        .get("normal")
+        .and_then(|n| n.try_to::<Vector3>().ok())
+        .filter(|n| n.dot(Vector3::UP) >= body.get_floor_max_angle().cos())
+        .map_or(up, to_sim)
 }
 
 /// True when walkable ground lies within `depth` below the feet (straight

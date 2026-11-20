@@ -2281,6 +2281,7 @@ mod tests {
             vault: None,
             ladder: None,
             mount: None,
+            floor_normal: shooter_sim::Vec3::Y,
         };
         let mut stances = Vec::new();
         for _ in 0..ticks {

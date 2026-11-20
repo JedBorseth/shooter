@@ -170,9 +170,69 @@ func _run() -> void:
 			% [stats.ping_ms, stats.snapshots, stats.kbps_in, stats.kbps_out]
 		)
 	)
+	await _ramp_slide(player, client)
 	await _throw_frag(player, client)
 	await _chat(client)
 	_finish()
+
+
+## A slide down the Testing Area's 25-degree ramp: the slope speeds it up
+## (`MoveEnv::floor_normal`), and the client predicts it with no corrections.
+func _ramp_slide(player: FpsPlayer, client: NetClient) -> void:
+	# Round the ramp's side onto the platform it climbs to, then face down it.
+	for target: Vector3 in [Vector3(16.0, 0.0, 2.0), Vector3(16.0, 0.0, -4.0), Vector3(16.0, 3.0, -19.0)]:
+		await _walk_to(player, target)
+	_check(player.global_position.y > 2.9, "walks up the ramp onto the platform")
+	player.set_look(PI, 0.0)
+	await _ticks(30)
+	var corrections_before := int(client.stats().corrections)
+	Input.action_press("move_forward")
+	Input.action_press("sprint")
+	await _ticks(2)
+	Input.action_release("sprint")
+	for i in 240:
+		if player.global_position.z > -11.0:
+			break
+		await physics_frame
+	Input.action_press("crouch")
+	await _ticks(2)
+	Input.action_release("crouch")
+	var slid := 0
+	var peak := 0.0
+	for i in 120:
+		if player.movement_state() == "Sliding":
+			slid += 1
+			peak = maxf(peak, player.horizontal_speed())
+		await physics_frame
+	Input.action_release("move_forward")
+	await _ticks(90)
+	_check(slid > 30, "slides down the ramp, %d ticks" % slid)
+	_check(peak > 7.8, "the slope speeds the slide up, peak %.2f m/s" % peak)
+	var stats := client.stats()
+	var corrections := int(stats.corrections) - corrections_before
+	_check(
+		corrections == 0,
+		(
+			"the ramp slide matched the server with no corrections, got %d (last %.1f cm)"
+			% [corrections, stats.last_error_cm]
+		)
+	)
+	var error := player.global_position.distance_to(stats.server_position)
+	_check(error < 0.01, "client and server agree after the ramp slide, off by %.3f m" % error)
+
+
+## Walks the player to `target` on the ground (ignoring height), turning
+## toward it every tick.
+func _walk_to(player: FpsPlayer, target: Vector3) -> void:
+	Input.action_press("move_forward")
+	for i in 1200:
+		var to := Vector2(target.x - player.global_position.x, target.z - player.global_position.z)
+		if to.length() < 0.4:
+			break
+		player.set_look(atan2(-to.x, -to.y), 0.0)
+		await physics_frame
+	Input.action_release("move_forward")
+	await _ticks(20)
 
 
 ## A frag thrown online: the throw is predicted with no corrections, the

@@ -83,6 +83,7 @@ not a ceiling but an overhang's edge over the shoulders is.
 | Steering | strafe turns it up to 1.4 rad/s (80 degrees a second), keeping its speed; the view never steers it | IW8 locks the slide's direction, lets the view turn freely, and lets the strafe input bend it |
 | Wind-down | 0.5 s after it ends, friction eases from 0.3 x back to full | IW8 `slide_outTimeMs` and the slide-out friction scale |
 | Off a ledge | ends after coyote time (0.1 s): standing and sprinting on, as a slide-cancel, or crouched under a low ceiling | IW8 ends a slide that loses the ground |
+| On a slope | friction scales by 1 - 2.5 x the slope's sine along the slide (none down a 25-degree ramp, 2 x up it), and gravity pulls at 0.3 x its share along it; never over 1.2 x the entry speed. Down the Testing Area's 25-degree ramp a slide runs 5.5 m (1.4 x the flat's 3.9 m) and peaks at 9.4 m/s; up it, 2.5 m in 0.47 s | IW8 `Slide_FrictionScale`: slides run on downhill and die uphill (its numbers are not public) |
 
 Every slide starts at the same speed, whatever the speed before it, so speed
 never stacks. A slide-cancel (jump or crouch during the slide) stands up and
@@ -100,7 +101,9 @@ cancels at every timing average at most 1.01 x sprint
 (`jump_and_air_slide_chains_never_outrun_a_sprint`). Pressing crouch again in
 the air takes the queued slide back; crouch in the air without a sprint still
 crouches at once. The wind-down follows any slide's end, so its speed fades
-into the crouch instead of snapping to it. New state:
+into the crouch instead of snapping to it. The engine reads the slope from a
+ray under a sliding body's feet (`MoveEnv::floor_normal`), so a replay from a
+placed body sees the floor the first run did. New state:
 `MoveState::slide_queued` and `MoveState::slide_out`. IW8's numbers for these
 are not public; ours are tuned by feel and measured in the tests.
 
