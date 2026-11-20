@@ -415,6 +415,20 @@ def powerup_tote(b: Model):
            "powerup_glow", sides=6, detail=False)
 
 
+@model
+def powerup_tag(b: Model):
+    """The Fire Sale: a shop's price tag, 0.46 m long, hanging on its string,
+    "10" stamped through it so it reads from both faces as it spins."""
+    # The tag: a slab with its tied end clipped to a point.
+    b.hull([(x, y, z) for x in (-0.14, 0.23) for y in (-0.15, 0.15) for z in (-0.025, 0.025)]
+           + [(-0.23, y, z) for y in (-0.05, 0.05) for z in (-0.025, 0.025)], "powerup_glow")
+    # The eyelet and its string, looping up and over.
+    b.cyl("z", -0.03, 0.03, (-0.17, 0.0), 0.028, "trim_black", sides=12)
+    b.tube([(-0.17, 0.0, 0.0), (-0.21, 0.12, 0.0), (-0.16, 0.22, 0.0), (-0.08, 0.2, 0.0), (-0.05, 0.12, 0.0)],
+           0.008, "powerup_glow", sides=5, detail=False)
+    b.text("10", 0.05, -0.09, -0.03, 0.0, 0.2, "trim_black", depth=0.065, detail=False)
+
+
 # --- Capture the Flag ------------------------------------------------------------------
 @model
 def flag_pole(b: Model):

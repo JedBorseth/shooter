@@ -33,14 +33,22 @@ When a drop comes, and which, follow Black Ops III's `_zm_powerups.gsc`:
 | Max Ammo | Every standing player's weapons full | `full_ammo` |
 | Insta-Kill, Double Points | 30 s each | `zombie_powerup_insta_kill_time`, `..._double_points_time` |
 | Kaboom (the nuke) | Every zombie in play dies; every player gets 400 | `nuke` |
+| Fire Sale | Drops only once the crate has moved, and not while one is on. For 30 s the mystery crate stands at every spot and a spin costs 10 anywhere; a Fire Sale spin never lands on the duck or counts towards a move. When it ends, each spare crate goes once its spin is done | `func_should_drop_fire_sale`, `start_fire_sale`, `toggle_fire_sale_on` (`zombie_cost = 10`), `_box_opened_by_fire_sale` |
 | Carpenter | Drops only once five windows are bare. Boards go back on every window, nearest to where it was taken first, one every 0.1 s; then every player gets 200 | `func_should_drop_carpenter`, `start_carpenter` |
 
 Points earned count everything paid: hits, kills, boards, the nuke's and
 the Carpenter's pay, doubled under Double Points, as Black Ops'
 `score_total` does. Kills by the nuke drop nothing.
 
-The Carpenter's token is a carpenter's tote with a saw standing in it, built
-in Blender (`tools/gear_models.py`, `powerup_tote`).
+The Carpenter's token is a carpenter's tote with a saw standing in it, and
+the Fire Sale's a shop's price tag stamped "10", both built in Blender
+(`tools/gear_models.py`, `powerup_tote` and `powerup_tag`). The HUD counts
+the Fire Sale down beside Insta-Kill and Double Points.
+
+**Differences from Black Ops, on purpose:** a crate travelling between spots
+when a Fire Sale starts lands at once (Black Ops holds it hidden until the
+sale ends). Another Fire Sale taken while one is on (two can lie on the
+ground at once) adds 30 s, as Black Ops does.
 
 **Windows.** Holding use at a window puts a board back at once, then one a
 second (`do_post_chunk_repair_delay`'s `wait(1)`). Each pays 10 while the
@@ -137,7 +145,7 @@ the crate is holding that weapon out to them.
 
 **Differences from Black Ops, on purpose:** the weapon goes into its own
 slot (primary or sidearm), as every pickup in this game does, instead of
-replacing the weapon in hand. No Fire Sale. No sounds yet (they must be real
+replacing the weapon in hand. No sounds yet (they must be real
 CC0 recordings).
 
 ## The forge
@@ -169,6 +177,7 @@ sounds yet (real CC0 recordings only).
 ## Reference
 
 - Black Ops III: `_zm_powerups.gsc`, `_zm_powerup_carpenter.gsc`,
+  `_zm_powerup_fire_sale.gsc`,
   `_zm_blockers.gsc` and `_zm.gsc` (rebuilding), `_zm_pack_a_punch.gsc` and `_zm_pack_a_punch_util.gsc`
   (cost, working time, timeout), `_zm_weapons.gsc` (upgraded ammo cost),
   `_zm_magicbox.gsc` (cost, cycle, timeout, move odds),

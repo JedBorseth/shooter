@@ -15,7 +15,9 @@
 //! Which one comes from a shuffled deck of every kind, dealt in turn and
 //! shuffled again once it runs out (`get_next_powerup`). A kind that cannot
 //! drop now is passed over for the next card (`get_valid_powerup`): the
-//! Carpenter while fewer than [`CARPENTER_MIN_WINDOWS`] windows are bare.
+//! Carpenter while fewer than [`CARPENTER_MIN_WINDOWS`] windows are bare,
+//! and the Fire Sale until the mystery crate has moved once, or while one
+//! is on.
 
 use super::PowerUp;
 use crate::rng;
@@ -40,6 +42,10 @@ pub const CARPENTER_POINTS: u32 = 200;
 /// (`wait(0.05)` and a network frame per board).
 pub const CARPENTER_BOARD_SECONDS: f32 = 0.1;
 
+/// Seconds a Fire Sale lasts; another taken while one is on adds as much
+/// again (`zombie_powerup_fire_sale_time`).
+pub const FIRE_SALE_SECONDS: f32 = 30.0;
+
 /// Seconds a dropped power-up lies still before it starts to blink
 /// (`powerup_timeout`'s `wait_time`).
 pub const STEADY_SECONDS: f32 = 15.0;
@@ -54,6 +60,10 @@ pub const LIFETIME: f32 = STEADY_SECONDS + BLINK_SECONDS;
 pub struct DropContext {
     /// Windows with no boards left.
     pub bare_windows: usize,
+    /// Times the mystery crate has moved this game.
+    pub crate_moves: u32,
+    /// A Fire Sale is on.
+    pub fire_sale: bool,
 }
 
 impl PowerUp {
@@ -61,6 +71,8 @@ impl PowerUp {
     pub fn can_drop(self, context: &DropContext) -> bool {
         match self {
             PowerUp::Carpenter => context.bare_windows >= CARPENTER_MIN_WINDOWS,
+            // `func_should_drop_fire_sale`.
+            PowerUp::FireSale => context.crate_moves >= 1 && !context.fire_sale,
             _ => true,
         }
     }
@@ -173,7 +185,11 @@ mod tests {
     use super::*;
 
     fn all_can_drop() -> DropContext {
-        DropContext { bare_windows: 8 }
+        DropContext {
+            bare_windows: 8,
+            crate_moves: 1,
+            fire_sale: false,
+        }
     }
 
     #[test]
@@ -240,13 +256,20 @@ mod tests {
     }
 
     #[test]
-    fn the_carpenter_waits_for_five_bare_windows() {
+    fn the_carpenter_and_the_fire_sale_wait_for_their_moment() {
         let mut cycle = DropCycle::new(5);
-        let context = DropContext { bare_windows: 4 };
+        let context = DropContext::default();
         for _ in 0..100 {
-            assert_ne!(cycle.deal(&context), Some(PowerUp::Carpenter));
+            let kind = cycle.deal(&context).unwrap();
+            assert!(kind != PowerUp::Carpenter && kind != PowerUp::FireSale);
         }
         assert!(PowerUp::Carpenter.can_drop(&all_can_drop()));
+        assert!(PowerUp::FireSale.can_drop(&all_can_drop()));
+        let on = DropContext {
+            fire_sale: true,
+            ..all_can_drop()
+        };
+        assert!(!PowerUp::FireSale.can_drop(&on));
     }
 
     #[test]

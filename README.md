@@ -167,8 +167,9 @@ respawn: death ends the match and shows how many rounds you survived, with
   for the first, 14% more each time after), and now and then by luck; at most four a
   round. They glow green for 15 seconds, then blink for 11.5 before they go: Max
   Ammo, Insta-Kill (any hit kills for 30 seconds), Double Points (30 seconds), Kaboom
-  (kills every zombie and pays 400), and the Carpenter (once five windows are bare:
-  boards every window back up and pays everyone 200).
+  (kills every zombie and pays 400), the Carpenter (once five windows are bare:
+  boards every window back up and pays everyone 200), and the Fire Sale (once the
+  mystery crate has moved: a crate at every spot, 10 points a spin, for 30 seconds).
 
 The T refill key is off in this mode. Esc opens the pause menu.
 

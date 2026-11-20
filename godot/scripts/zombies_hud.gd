@@ -129,6 +129,8 @@ func _process(delta: float) -> void:
 		active.append("INSTA-KILL  %d" % ceili(_director.insta_kill_left()))
 	if _director.double_points_left() > 0.0:
 		active.append("DOUBLE POINTS  %d" % ceili(_director.double_points_left()))
+	if _director.fire_sale_left() > 0.0:
+		active.append("FIRE SALE  %d" % ceili(_director.fire_sale_left()))
 	_power_ups.text = "     ".join(active)
 
 	_update_last_stand()

@@ -9,13 +9,14 @@ const GLOW := Color(0.45, 1.0, 0.35)
 ## (`powerup_timeout`; `shooter_sim::zombies::powerups`).
 const BLINK_FROM := 11.5
 ## Each kind's model (tools/gear_models.py, built in Blender): an ammo can,
-## a skull, "x2", a bomb, and a carpenter's tote, glowing.
+## a skull, "x2", a bomb, a carpenter's tote, and a price tag, glowing.
 const MODELS := {
 	"max_ammo": preload("res://assets/models/powerup_ammo/powerup_ammo.gltf"),
 	"insta_kill": preload("res://assets/models/powerup_skull/powerup_skull.gltf"),
 	"double_points": preload("res://assets/models/powerup_x2/powerup_x2.gltf"),
 	"nuke": preload("res://assets/models/powerup_bomb/powerup_bomb.gltf"),
 	"carpenter": preload("res://assets/models/powerup_tote/powerup_tote.gltf"),
+	"fire_sale": preload("res://assets/models/powerup_tag/powerup_tag.gltf"),
 }
 const LABELS := {
 	"max_ammo": "MAX AMMO",
@@ -23,6 +24,7 @@ const LABELS := {
 	"double_points": "DOUBLE POINTS",
 	"nuke": "KABOOM",
 	"carpenter": "CARPENTER",
+	"fire_sale": "FIRE SALE",
 }
 
 var kind := ""

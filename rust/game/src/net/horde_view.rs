@@ -13,6 +13,7 @@ use godot::prelude::*;
 use shooter_sim::net::Tick;
 use shooter_sim::net::horde::HordeHistory;
 use shooter_sim::net::protocol::{self, ZombieView, ZombiesEvent, ZombiesPhase};
+use shooter_sim::zombies::mystery;
 
 use super::{horde, machines};
 use crate::convert::to_godot;
@@ -241,10 +242,12 @@ impl HordeView {
             ZombiesEvent::PowerUpTimers {
                 insta_kill_until,
                 double_points_until,
+                fire_sale_until,
             } => {
                 let insta = insta_kill_until.map_or(0.0, &seconds_until);
                 let double = double_points_until.map_or(0.0, &seconds_until);
-                self.director.bind_mut().net_timers(insta, double);
+                let sale = fire_sale_until.map_or(0.0, &seconds_until);
+                self.director.bind_mut().net_timers(insta, double, sale);
             }
             ZombiesEvent::Downed {
                 player,
@@ -296,17 +299,17 @@ impl HordeView {
                 by,
                 weapon,
                 until,
+                sale,
             } => {
                 let seconds = until.map_or(0.0, &seconds_until) as f32;
-                crate::mystery_crate::show_on_spots(
-                    &self.crate_spots,
-                    spot,
-                    phase,
-                    by,
-                    weapon,
-                    seconds,
-                    me,
-                );
+                let price = if sale {
+                    mystery::SALE_PRICE
+                } else {
+                    mystery::PRICE
+                };
+                if let Some(node) = self.crate_spots.get(usize::from(spot)) {
+                    crate::mystery_crate::show_on_spot(node, phase, by, weapon, seconds, me, price);
+                }
             }
             ZombiesEvent::Forge {
                 phase,

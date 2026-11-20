@@ -97,6 +97,8 @@ pub enum HordeEvent {
     TimersChanged,
     /// The Carpenter put the last board back: every player is paid.
     CarpenterDone,
+    /// A Fire Sale started or ended: the mystery crate's spots changed.
+    CrateChanged,
 }
 
 /// What a hit did to a zombie.
@@ -186,6 +188,7 @@ pub struct Horde {
     next_drop_id: u8,
     insta_kill_left: f32,
     double_points_left: f32,
+    fire_sale_left: f32,
     /// What happened since the server last asked.
     pending: Vec<HordeEvent>,
     /// The power switch and the drink machines.
@@ -228,6 +231,7 @@ impl Horde {
             next_drop_id: 0,
             insta_kill_left: 0.0,
             double_points_left: 0.0,
+            fire_sale_left: 0.0,
             pending: Vec::new(),
             machines: Machines::new(map),
         };
@@ -253,6 +257,7 @@ impl Horde {
         self.drops.clear();
         self.insta_kill_left = 0.0;
         self.double_points_left = 0.0;
+        self.fire_sale_left = 0.0;
         self.pending.clear();
         self.machines.reset();
         for door in &mut self.doors {
@@ -499,6 +504,8 @@ impl Horde {
     fn drop_context(&self) -> DropContext {
         DropContext {
             bare_windows: self.windows.iter().filter(|w| w.boards == 0).count(),
+            crate_moves: self.machines.mystery.as_ref().map_or(0, |c| c.moves()),
+            fire_sale: self.fire_sale_left > 0.0,
         }
     }
 
@@ -515,6 +522,12 @@ impl Horde {
         self.double_points_left = (self.double_points_left - dt).max(0.0);
         if (self.insta_kill_left > 0.0, self.double_points_left > 0.0) != was {
             self.pending.push(HordeEvent::TimersChanged);
+        }
+        if self.fire_sale_left > 0.0 {
+            self.fire_sale_left = (self.fire_sale_left - dt).max(0.0);
+            if self.fire_sale_left <= 0.0 {
+                self.set_fire_sale(false);
+            }
         }
         let mut taken = Vec::new();
         self.drops.retain_mut(|drop| {
@@ -546,6 +559,11 @@ impl Horde {
             PowerUp::MaxAmmo => {}
             // A second one while the first works restarts it from here.
             PowerUp::Carpenter => self.carpenter = Some((at, 0.0)),
+            // A second one while one is on adds its time to it.
+            PowerUp::FireSale => {
+                self.fire_sale_left += powerups::FIRE_SALE_SECONDS;
+                self.set_fire_sale(true);
+            }
             PowerUp::InstaKill => {
                 self.insta_kill_left = zombies::POWER_UP_SECONDS;
                 self.pending.push(HordeEvent::TimersChanged);
@@ -590,6 +608,24 @@ impl Horde {
         (self.insta_kill_left, self.double_points_left)
     }
 
+    /// Seconds of Fire Sale left.
+    pub fn fire_sale_left(&self) -> f32 {
+        self.fire_sale_left
+    }
+
+    /// Starts or ends a Fire Sale on the mystery crate.
+    fn set_fire_sale(&mut self, on: bool) {
+        self.pending.push(HordeEvent::TimersChanged);
+        if self
+            .machines
+            .mystery
+            .as_mut()
+            .is_some_and(|c| c.set_sale(on))
+        {
+            self.pending.push(HordeEvent::CrateChanged);
+        }
+    }
+
     /// Whether points are doubled now.
     pub fn double_points(&self) -> bool {
         self.double_points_left > 0.0
@@ -603,6 +639,7 @@ impl Horde {
         ZombiesEvent::PowerUpTimers {
             insta_kill_until: until(self.insta_kill_left),
             double_points_until: until(self.double_points_left),
+            fire_sale_until: until(self.fire_sale_left),
         }
     }
 
