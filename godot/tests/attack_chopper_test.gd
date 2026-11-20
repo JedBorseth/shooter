@@ -3,7 +3,8 @@ extends SceneTree
 ## Deathmatch server in this process on the arena, with two passive bots,
 ## one a side: called in on the enemy, it flies in and guards the point,
 ## leaves a player alone for five seconds after they spawn, then kills them
-## (the kill is the Attack Chopper's); only one a side flies at once; and a
+## (the kill is the Attack Chopper's); only one a side flies at once; Blind
+## Eye hides a player from it; and a
 ## rocket aimed ahead of it shoots it down, scoring for the shooter (Black
 ## Ops 2's Stealth Chopper).
 ## godot --headless --path godot --script res://tests/attack_chopper_test.gd
@@ -73,6 +74,14 @@ func _run() -> void:
 	_server.debug_teleport(enemy, spot)
 	await _seconds(PROTECTED - 1.0)
 	_check(_server.player_alive(enemy), "a player just spawned is left alone")
+
+	# Blind Eye: it never targets them.
+	_server.debug_give_perks(enemy, PackedStringArray(["blind_eye"]))
+	var targeted := false
+	for i in int(4.0 * Engine.physics_ticks_per_second):
+		targeted = targeted or int(_server.choppers()[0].target) == enemy
+		await physics_frame
+	_check(not targeted and _server.player_alive(enemy), "Blind Eye hides a player from it")
 
 	# A rocket aimed ahead of it shoots it down.
 	_server.debug_arm(enemy, "rl4")

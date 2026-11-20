@@ -241,7 +241,8 @@ func _enemies() -> Array[Vector3]:
 		if not free_for_all and client.team_of(id) == team:
 			continue
 		var remote := client.remote_player(id)
-		if remote != null and remote.is_alive():
+		# Cold-Blooded players get no box (Black Ops 2).
+		if remote != null and remote.is_alive() and not remote.is_unmarked():
 			out.append(remote.feet())
 	return out
 

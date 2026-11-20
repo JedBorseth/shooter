@@ -190,7 +190,9 @@ use crate::zombies::drinks::Drinks;
 // `MissileBlast`; streak events take five tag bits.
 // Version 80 added the Attack Chopper: `Streak::AttackChopper`, and
 // `StreakEvent::Chopper`, `ChopperTarget`, and `ChopperGone`.
-pub const PROTOCOL_VERSION: u16 = 80;
+// Version 81 added Blind Eye, Cold-Blooded, and Engineer (perk sets are
+// full at sixteen bits) and `PlayerView::unmarked` (Cold-Blooded).
+pub const PROTOCOL_VERSION: u16 = 81;
 /// Longest account session token a hello carries, in bytes.
 pub const MAX_ACCOUNT_TOKEN_BYTES: usize = 2048;
 /// Longest reason a denial carries, in bytes.
@@ -1247,6 +1249,9 @@ pub struct PlayerView {
     /// Moves quietly (Dead Silence): other players hear its movement far
     /// quieter and only up close (`perk::heard`).
     pub quiet: bool,
+    /// Cold-Blooded: enemies aiming at them see no red name or crosshair,
+    /// and enemy Guided Missiles do not box them.
+    pub unmarked: bool,
 }
 
 /// A throw's progress (0 to 1) as [`PlayerView::throw`]: 0 for none.
@@ -1330,6 +1335,7 @@ impl PlayerView {
             alive: p.state.alive(),
             downed: p.state.downed,
             quiet: p.state.perks.has(crate::perk::Perk::DeadSilence),
+            unmarked: p.state.perks.has(crate::perk::Perk::ColdBlooded),
             shots_fired: combat.shots_fired,
             mantling: p.state.movement.mantling(),
             vaulting: p.state.movement.in_vault(p.on_floor),
@@ -3962,7 +3968,7 @@ fn read_view_delta(r: &mut BitReader, base: &PlayerView) -> DecodeResult<PlayerV
 }
 
 /// Bits of a player view's flag mask.
-const VIEW_FLAG_BITS: u32 = 12;
+const VIEW_FLAG_BITS: u32 = 13;
 
 /// Every field of a [`PlayerView`] but its id. Positions, angles, and
 /// counters are numbers, so they change by their difference; the flags are
@@ -3987,6 +3993,7 @@ fn write_view(w: &mut impl BitSink, v: &PlayerView) {
         v.downed,
         v.quiet,
         v.ladder.is_some(),
+        v.unmarked,
     ]
     .into_iter()
     .enumerate()
@@ -4050,6 +4057,7 @@ fn read_view(r: &mut impl BitSource) -> DecodeResult<PlayerView> {
         defusing: flag(8),
         downed: flag(9),
         quiet: flag(10),
+        unmarked: flag(12),
         ladder,
         mount: r.u8()?,
         throw: r.u8()?,
@@ -5069,6 +5077,17 @@ mod tests {
             quiet: false,
             ..view
         };
+        // Cold-Blooded rides the same way.
+        p.state.perks = crate::perk::Perks::of(&[crate::perk::Perk::ColdBlooded]);
+        let cold = PlayerView::from_state(0, &p, 0.0, 0.0);
+        assert!(cold.unmarked && !cold.quiet);
+        let mut w = BitWriter::new();
+        write_view_delta(&mut w, &cold, &view);
+        let bytes = w.finish();
+        assert_eq!(
+            read_view_delta(&mut BitReader::new(&bytes), &view).unwrap(),
+            cold
+        );
         let mut w = BitWriter::new();
         write_view_delta(&mut w, &loud, &view);
         let bytes = w.finish();
