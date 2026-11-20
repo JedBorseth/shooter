@@ -241,6 +241,7 @@ impl SoldierFrame {
             mantling: self.mantling,
             vaulting: self.vaulting,
             reloading: self.reload.is_some(),
+            hound: false,
             ads: self.ads,
             velocity: to_sim(self.velocity),
             weapon: self.weapon,

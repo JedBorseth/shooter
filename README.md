@@ -171,6 +171,11 @@ respawn: death ends the match and shows how many rounds you survived, with
   boards every window back up and pays everyone 200), and the Fire Sale (once the
   mystery crate has moved: a crate at every spot, 10 points a spin, for 30 seconds).
 
+Every few rounds (first in round 5, 6, or 7) is a hound round: no zombies, but a
+pack of fast hounds (six a player, eight later) struck into the yard in a flash of
+cold light. They bite for 40% of your health and are almost as fast as your sprint.
+The last one killed leaves a Max Ammo.
+
 The T refill key is off in this mode. Esc opens the pause menu.
 
 ## Test

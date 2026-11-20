@@ -1,0 +1,14 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://assets/characters/hound/hound.glb" id="1_hound"]
+
+[node name="Hound" type="Hound"]
+
+[node name="Model" parent="." instance=ExtResource("1_hound")]
+
+[node name="Hitboxes" type="HitboxRig" parent="."]
+
+[node name="AimAssist" type="AimAssistTarget" parent="."]
+radius = 0.35
+height = 0.85
+snap = true

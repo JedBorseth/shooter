@@ -1,4 +1,4 @@
-# Zombies: power-ups, power, drinks, the mystery crate, and the forge
+# Zombies: hound rounds, power-ups, power, drinks, the mystery crate, and the forge
 
 The systems that make a round-based Zombies run worth playing past the first
 few rounds, after Black Ops' power switch, perk machines, mystery box, and
@@ -16,6 +16,48 @@ We take the mechanics, never the property: the machines, drinks, crate, and
 forge have our own names, models (built in Blender,
 `tools/gear_models.py`), colours, and icons. No Call of Duty names, logos,
 or jingles.
+
+## Hound rounds
+
+Every few rounds the zombies stay away and a pack of hounds comes instead,
+Black Ops' dog rounds under our own name and look (rules in
+`rust/sim/src/zombies/hounds.rs`, run by `net/horde.rs`):
+
+| Rule | Here | Black Ops III (`_zm_ai_dogs.gsc`) |
+| --- | --- | --- |
+| When | The first in round 5, 6, or 7; then every 4 or 5 rounds | `dog_round_tracker`: `randomintrange(4, 7)` from round 1, then `randomintrange(4, 6)` |
+| Pack | 6 a player in the first two hound rounds, 8 after | `dog_round_spawning`: `players.size * 6`, then `* 8` |
+| Health | 400, 900, 1300, then 1600 | `dog_health_increase` |
+| At once | Two a player | `num_player_valid * 2` |
+| Pace | The first 7 s in, then every 3, 2.5, 2, or 1.5 s by hound round, less the share of the pack already sent (at least 0.05 s) | `wait(1)` + `wait(6)`, `waiting_for_next_dog_spawn` |
+| Arrival | A strike lands at a hound spot (`HoundSpawns` on the map) 10 to 25 m from the player it hunts, not the last one used; the hound stands there 1.5 s later | `dog_spawn_factory_logic` (400 to 1000 units), `dog_spawn_fx` (`wait(1.5)`) |
+| Bite | 40% of a player's health (three bites down a player without a rest), 16% with Bulwark (seven). Reach 1.6 m, through to 2.3 m | `meleedamage` 40 of 100 health (250 with Jugg); `ai_meleeRange` 100 units in dog rounds |
+| Speed | 6.2 m/s: faster than any zombie, a little slower than a sprint (7.4) | `zombie_move_speed = "sprint"` |
+| Points | As a zombie: 10 a hit, 60 a kill, 100 a headshot kill, 130 a knife kill; kills can drop power-ups | `dog_death`'s `player_add_points("death")` |
+| End | The last hound killed leaves a Max Ammo where it fell | `dog_round_aftermath` |
+
+Hounds run straight at the nearest standing player like zombies (no
+pathfinding, a project decision), never stagger, and ignore downed
+players. They crumble to ash with a cold flare when killed instead of
+falling as ragdolls, as Black Ops' burst.
+
+**Look.** Our own creature (`tools/build_hound.py`, built and rigged in
+Blender): a gaunt, hairless, ash-grey hound, long in the leg, with a ridge
+of bone spurs down its back, bared teeth, and cold blue-white eyes. Black
+Ops' burn orange. Its gallop, bite, and pant are keyed procedurally in the
+same script. Its strike is a cold bolt that crackles on the spot for 1.5 s
+first (`scripts/zombies_hound_strike.gd`). The HUD calls the round
+"ROUND n  HOUNDS" and counts "HOUNDS LEFT".
+
+**Online.** Hounds ride in the horde's snapshots with a bit marking them
+(`ZombieView::hound`), are rewound for lag compensation with their own
+four-legged hit zones (`hitbox::hound_hitboxes`: head, chest, belly,
+forelegs, hind legs, haunches), and are drawn as `Hound`
+(`rust/game/src/hound.rs`). Strikes are `ZombiesEvent::HoundStrike`.
+
+**Differences from Black Ops, on purpose:** no hound sounds yet (they must
+be real CC0 recordings; none found), no fog change for the round, and
+hound spots only in the main yard.
 
 ## Power-ups
 
@@ -176,7 +218,7 @@ sounds yet (real CC0 recordings only).
 
 ## Reference
 
-- Black Ops III: `_zm_powerups.gsc`, `_zm_powerup_carpenter.gsc`,
+- Black Ops III: `_zm_ai_dogs.gsc` (hound rounds), `_zm_powerups.gsc`, `_zm_powerup_carpenter.gsc`,
   `_zm_powerup_fire_sale.gsc`,
   `_zm_blockers.gsc` and `_zm.gsc` (rebuilding), `_zm_pack_a_punch.gsc` and `_zm_pack_a_punch_util.gsc`
   (cost, working time, timeout), `_zm_weapons.gsc` (upgraded ammo cost),

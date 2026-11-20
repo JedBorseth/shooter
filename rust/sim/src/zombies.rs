@@ -13,6 +13,7 @@ use crate::weapon::{CombatState, WeaponId};
 pub mod chase;
 pub mod drinks;
 pub mod forge;
+pub mod hounds;
 pub mod laststand;
 pub mod mystery;
 pub mod powerups;
@@ -438,26 +439,46 @@ pub enum Phase {
 /// What the round system wants done this tick.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RoundEvent {
-    /// Round `round` begins.
-    RoundStarted { round: u32 },
+    /// Round `round` begins; `hounds`: a hound round ([`hounds`]).
+    RoundStarted { round: u32, hounds: bool },
     /// Spawn the `index`th zombie of the round (from 0), with this health and gait.
     Spawn { index: u32, health: f32, gait: Gait },
+    /// Bring in the `index`th hound of a hound round (from 0), with this
+    /// health: its strike lands now, and it stands there
+    /// [`hounds::STRIKE_SECONDS`] later.
+    SpawnHound { index: u32, health: f32 },
     /// Every zombie of round `round` is dead; a break follows.
     RoundCleared { round: u32 },
 }
 
 /// The round loop: a break, then a round's zombies spawn over time up to the
-/// alive cap, and the round ends when the last one dies.
+/// alive cap, and the round ends when the last one dies. With hound rounds
+/// on ([`Rounds::with_hounds`]), every few rounds is one of those instead.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Rounds {
     pub round: u32,
     pub phase: Phase,
-    /// Zombies of this round spawned so far.
+    /// Zombies (or hounds) of this round spawned so far.
     pub spawned: u32,
-    /// Zombies of this round killed so far.
+    /// Zombies (or hounds) of this round killed so far.
     pub killed: u32,
+    /// Players in the game, for the size of a hound pack.
+    pub players: u32,
     /// Seconds until the break ends or the next spawn.
     timer: f32,
+    hounds: Option<HoundSchedule>,
+}
+
+/// When hound rounds come.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct HoundSchedule {
+    seed: u32,
+    /// The round the next hound round is.
+    next: u32,
+    /// Hound rounds so far, this one included while it is on.
+    count: u32,
+    /// This round is a hound round of `total` hounds.
+    current: Option<u32>,
 }
 
 impl Rounds {
@@ -468,13 +489,52 @@ impl Rounds {
             phase: Phase::Break,
             spawned: 0,
             killed: 0,
+            players: 1,
             timer: first_break,
+            hounds: None,
+        }
+    }
+
+    /// Turns hound rounds on, their rounds drawn from `seed`; the first is
+    /// round 5, 6, or 7 ([`hounds::first_hound_round`]).
+    pub fn with_hounds(mut self, seed: u32) -> Self {
+        self.hounds = Some(HoundSchedule {
+            seed,
+            next: hounds::first_hound_round(seed),
+            count: 0,
+            current: None,
+        });
+        self
+    }
+
+    /// The round the next hound round is, if hound rounds are on.
+    pub fn next_hound_round(&self) -> Option<u32> {
+        self.hounds.map(|h| h.next)
+    }
+
+    /// Makes `round` the next hound round (tests and benches).
+    pub fn set_next_hound_round(&mut self, round: u32) {
+        if let Some(hounds) = &mut self.hounds {
+            hounds.next = round;
+        }
+    }
+
+    /// Whether this round is a hound round.
+    pub fn hound_round(&self) -> bool {
+        self.hounds.is_some_and(|h| h.current.is_some())
+    }
+
+    /// Zombies (or hounds) this round sends.
+    pub fn total(&self) -> u32 {
+        match self.hounds.and_then(|h| h.current) {
+            Some(total) => total,
+            None => zombies_in_round(self.round),
         }
     }
 
     /// Zombies of this round still to kill, spawned or not.
     pub fn remaining(&self) -> u32 {
-        zombies_in_round(self.round).saturating_sub(self.killed)
+        self.total().saturating_sub(self.killed)
     }
 
     /// Zombies alive right now.
@@ -513,11 +573,27 @@ impl Rounds {
                     self.spawned = 0;
                     self.killed = 0;
                     self.timer = 0.0;
-                    events.push(RoundEvent::RoundStarted { round: self.round });
+                    let players = self.players;
+                    let round = self.round;
+                    let mut hound_round = false;
+                    if let Some(hounds) = &mut self.hounds {
+                        hounds.current = None;
+                        if hounds.next <= round {
+                            hounds.count += 1;
+                            hounds.current = Some(hounds::hounds_in_round(hounds.count, players));
+                            hounds.next = hounds::next_hound_round(hounds.seed, round);
+                            hound_round = true;
+                            self.timer = hounds::FIRST_SPAWN_SECONDS;
+                        }
+                    }
+                    events.push(RoundEvent::RoundStarted {
+                        round,
+                        hounds: hound_round,
+                    });
                 }
             }
             Phase::Fighting => {
-                let total = zombies_in_round(self.round);
+                let total = self.total();
                 if self.killed >= total {
                     events.push(RoundEvent::RoundCleared { round: self.round });
                     self.round += 1;
@@ -526,7 +602,19 @@ impl Rounds {
                     return;
                 }
                 self.timer -= dt;
-                if self.timer <= 0.0 && self.spawned < total && self.alive() < rules.max_alive {
+                if self.timer > 0.0 || self.spawned >= total {
+                    return;
+                }
+                if let Some(nth) = self.hounds.filter(|h| h.current.is_some()).map(|h| h.count) {
+                    if self.alive() < hounds::max_alive(self.players).min(rules.max_alive) {
+                        events.push(RoundEvent::SpawnHound {
+                            index: self.spawned,
+                            health: hounds::hound_health(nth),
+                        });
+                        self.timer = hounds::spawn_interval(nth, self.spawned, total);
+                        self.spawned += 1;
+                    }
+                } else if self.alive() < rules.max_alive {
                     events.push(RoundEvent::Spawn {
                         index: self.spawned,
                         health: zombie_health(self.round),
@@ -754,7 +842,7 @@ mod tests {
             rounds.step(&rules, TICK_DT, &mut events);
             for e in &events {
                 match e {
-                    RoundEvent::RoundStarted { round: 1 } => started = true,
+                    RoundEvent::RoundStarted { round: 1, .. } => started = true,
                     RoundEvent::Spawn { health, gait, .. } => {
                         assert_eq!(*health, 150.0);
                         assert_eq!(*gait, Gait::Walk);
@@ -781,7 +869,7 @@ mod tests {
             for e in &events {
                 match e {
                     RoundEvent::RoundCleared { round: 1 } => cleared = true,
-                    RoundEvent::RoundStarted { round: 2 } => round_two = true,
+                    RoundEvent::RoundStarted { round: 2, .. } => round_two = true,
                     _ => {}
                 }
             }
@@ -792,6 +880,63 @@ mod tests {
         assert!(cleared && round_two);
         assert_eq!(rounds.round, 2);
         assert_eq!(rounds.remaining(), 8);
+    }
+
+    #[test]
+    fn a_hound_round_sends_a_pack_in_place_of_the_horde() {
+        let rules = ZombieRules::default();
+        let mut rounds = Rounds::new(0.0).with_hounds(3);
+        rounds.players = 2;
+        let first = rounds.next_hound_round().unwrap();
+        assert!((5..=7).contains(&first));
+        rounds.set_next_hound_round(1);
+        let mut events = Vec::new();
+        rounds.step(&rules, TICK_DT, &mut events);
+        assert_eq!(
+            events,
+            vec![RoundEvent::RoundStarted {
+                round: 1,
+                hounds: true
+            }]
+        );
+        assert!(rounds.hound_round());
+        assert_eq!(rounds.remaining(), 12, "six a player");
+        let mut hounds = Vec::new();
+        let mut first_at = None;
+        for tick in 0..(30.0 / TICK_DT) as usize {
+            events.clear();
+            rounds.step(&rules, TICK_DT, &mut events);
+            for e in &events {
+                match e {
+                    RoundEvent::SpawnHound { index, health } => {
+                        first_at.get_or_insert(tick as f32 * TICK_DT);
+                        assert_eq!(*health, 400.0);
+                        hounds.push(*index);
+                    }
+                    RoundEvent::Spawn { .. } => panic!("no zombies in a hound round"),
+                    _ => {}
+                }
+            }
+            assert!(rounds.alive() <= 4, "two a player at once");
+        }
+        assert!((first_at.unwrap() - hounds::FIRST_SPAWN_SECONDS).abs() < 0.05);
+        assert_eq!(hounds, vec![0, 1, 2, 3]);
+        let mut cleared = false;
+        while !cleared {
+            while rounds.alive() > 0 {
+                rounds.on_killed();
+            }
+            events.clear();
+            rounds.step(&rules, TICK_DT, &mut events);
+            cleared = events.contains(&RoundEvent::RoundCleared { round: 1 });
+        }
+        // The next is a zombie round, and the next hound round 4 or 5 on.
+        for _ in 0..(rules.round_break / TICK_DT) as usize + 2 {
+            rounds.step(&rules, TICK_DT, &mut events);
+        }
+        assert!(!rounds.hound_round());
+        assert_eq!(rounds.remaining(), zombies_in_round(2));
+        assert!((5..=6).contains(&rounds.next_hound_round().unwrap()));
     }
 
     #[test]

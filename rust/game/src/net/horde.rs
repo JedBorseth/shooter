@@ -35,6 +35,7 @@ use shooter_sim::net::protocol::{
 };
 use shooter_sim::rng;
 use shooter_sim::zombies::chase::{self, ChaseEvent, Chaser, Prey, Window, World};
+use shooter_sim::zombies::hounds;
 use shooter_sim::zombies::powerups::{self, DropContext, DropCycle};
 use shooter_sim::zombies::{self, Phase, PowerUp, RoundEvent, Rounds, ZombieRules};
 use shooter_sim::{TICK_DT, Vec3};
@@ -57,6 +58,10 @@ const DEAD_LINGER: f32 = 0.6;
 const GRAVITY: f32 = 20.0;
 const CAPSULE_RADIUS: f32 = 0.3;
 const CAPSULE_HEIGHT: f32 = 1.75;
+/// A hound's body: low and long enough to stand on its four feet.
+const HOUND_CAPSULE_HEIGHT: f32 = 0.85;
+/// Where a hound's bite comes from, above its feet.
+const BITE_HEIGHT: f32 = 0.6;
 /// Boards on a full window (`zombies_barrier.gd`'s `BOARDS`).
 pub const WINDOW_BOARDS: u8 = 6;
 /// Where a zombie's swing comes from, above its feet, for the damage
@@ -79,6 +84,10 @@ pub enum HordeEvent {
     RoundStarted(u32),
     /// A zombie's swing landed on player `player`, from `from`.
     Struck { player: u8, from: Vec3 },
+    /// A hound's bite landed on player `player`, from `from`.
+    Bitten { player: u8, from: Vec3 },
+    /// A strike landed at `at`: a hound stands there shortly.
+    HoundStrike { at: Vec3 },
     /// A window's boards changed (torn off or put back).
     Boards { window: u8, boards: u8 },
     /// A kill dropped a power-up.
@@ -140,6 +149,8 @@ struct MapWindow {
 
 struct Zombie {
     id: u8,
+    /// A hound, not a zombie.
+    hound: bool,
     body: Gd<CharacterBody3D>,
     chaser: Chaser,
     health: f32,
@@ -183,6 +194,13 @@ pub struct Horde {
     /// The Carpenter at work: where it was picked up, and seconds to the
     /// next board.
     carpenter: Option<(Vec3, f32)>,
+    /// Where hounds can be struck down (`HoundSpawns`), the last one used,
+    /// and the strikes whose hound has yet to stand there (where, seconds
+    /// left, its health).
+    hound_spawns: Vec<Vec3>,
+    last_hound_spawn: Option<usize>,
+    strikes: Vec<(Vec3, f32, f32)>,
+    hound_rules: ZombieRules,
     doors: Vec<MapDoor>,
     drops: Vec<PowerUpDrop>,
     next_drop_id: u8,
@@ -226,6 +244,10 @@ impl Horde {
             earned: 0,
             games: 0,
             carpenter: None,
+            hound_spawns: map_hound_spawns(map),
+            last_hound_spawn: None,
+            strikes: Vec::new(),
+            hound_rules: hounds::rules(),
             doors: map_doors(map),
             drops: Vec::new(),
             next_drop_id: 0,
@@ -246,11 +268,13 @@ impl Horde {
             let mut body = zombie.body;
             body.queue_free();
         }
-        self.rounds = Rounds::new(FIRST_BREAK);
+        self.games = self.games.wrapping_add(1);
+        self.rounds = Rounds::new(FIRST_BREAK).with_hounds(rng::hash(self.games, 0x484f_554e));
+        self.strikes.clear();
+        self.last_hound_spawn = None;
         self.open_zones = vec![String::new()];
         self.gates.clear();
         self.history.clear();
-        self.games = self.games.wrapping_add(1);
         self.drop_cycle = DropCycle::new(rng::hash(self.games, 0x504f_5745));
         self.earned = 0;
         self.carpenter = None;
@@ -318,6 +342,7 @@ impl Horde {
             phase,
             starts_at,
             remaining: self.rounds.remaining(),
+            hounds: self.rounds.hound_round() && self.rounds.phase == Phase::Fighting,
         }
     }
 
@@ -341,10 +366,28 @@ impl Horde {
     /// Ends the break now and starts round `round` (tests and benches).
     pub fn skip_break_to(&mut self, round: u32) {
         if self.rounds.phase == Phase::Break {
-            let mut fresh = Rounds::new(0.0);
+            let next_hounds = self.rounds.next_hound_round();
+            let mut fresh = Rounds::new(0.0).with_hounds(rng::hash(self.games, 0x484f_554e));
             fresh.round = round.max(1);
+            // Hound rounds skipped past come after the round skipped to.
+            let next = next_hounds.unwrap_or(0);
+            fresh.set_next_hound_round(if next < fresh.round {
+                fresh.round + 1
+            } else {
+                next
+            });
             self.rounds = fresh;
         }
+    }
+
+    /// Makes `round` the next hound round (tests and benches).
+    pub fn set_next_hound_round(&mut self, round: u32) {
+        self.rounds.set_next_hound_round(round);
+    }
+
+    /// Whether this round is a hound round.
+    pub fn hound_round(&self) -> bool {
+        self.rounds.hound_round()
     }
 
     /// Runs one tick: the round, spawns, and every zombie.
@@ -353,10 +396,11 @@ impl Horde {
         let mut out = std::mem::take(&mut self.pending);
         let mut events = std::mem::take(&mut self.events);
         events.clear();
+        self.rounds.players = players.len().max(1) as u32;
         self.rounds.step(&self.rules, dt, &mut events);
         for event in &events {
             match *event {
-                RoundEvent::RoundStarted { round } => {
+                RoundEvent::RoundStarted { round, .. } => {
                     self.drop_cycle.round_started();
                     out.push(HordeEvent::RoundStarted(round));
                 }
@@ -369,9 +413,26 @@ impl Horde {
                     let round = self.rounds.round;
                     self.spawn(round, index, health, gait.speed(&self.rules), players);
                 }
+                RoundEvent::SpawnHound { index, health } => {
+                    let at = self.hound_spot(index, players);
+                    self.strikes.push((at, hounds::STRIKE_SECONDS, health));
+                    out.push(HordeEvent::HoundStrike { at });
+                }
             }
         }
         self.events = events;
+        let mut landed = Vec::new();
+        self.strikes.retain_mut(|(at, left, health)| {
+            *left -= dt;
+            let ready = *left <= 0.0;
+            if ready {
+                landed.push((*at, *health));
+            }
+            !ready
+        });
+        for (at, health) in landed {
+            self.spawn_hound(at, health, players);
+        }
 
         let prey: Vec<Prey> = players
             .iter()
@@ -401,9 +462,18 @@ impl Horde {
                 gates: &self.gates,
                 windows: &windows,
             };
-            let plan = zombie.chaser.plan(&self.rules, at, &world, dt);
+            let rules = if zombie.hound {
+                &self.hound_rules
+            } else {
+                &self.rules
+            };
+            let plan = zombie.chaser.plan(rules, at, &world, dt);
             match plan.event {
                 Some(ChaseEvent::Swung) => zombie.swings = zombie.swings.wrapping_add(1),
+                Some(ChaseEvent::Struck(player)) if zombie.hound => out.push(HordeEvent::Bitten {
+                    player,
+                    from: at + Vec3::Y * BITE_HEIGHT,
+                }),
                 Some(ChaseEvent::Struck(player)) => out.push(HordeEvent::Struck {
                     player,
                     from: at + Vec3::Y * STRIKE_HEIGHT,
@@ -769,6 +839,7 @@ impl Horde {
                 hits: z.hits,
                 hit_heading: z.hit_heading,
                 hit_part: z.hit_part,
+                hound: z.hound,
                 ..ZombieView::new(z.id, z.feet(), z.chaser.yaw, z.alive)
             })
             .collect();
@@ -838,6 +909,7 @@ impl Horde {
         let context = self.drop_context();
         let insta_kill = self.insta_kill_left > 0.0;
         let zombie = self.zombies.iter_mut().find(|z| z.id == id && z.alive)?;
+        let hound = zombie.hound;
         // Insta-Kill: any hit kills.
         let damage = if insta_kill { zombie.health } else { damage };
         zombie.health -= damage;
@@ -853,10 +925,18 @@ impl Horde {
             zombie.body.set_collision_layer(0);
             zombie.body.set_collision_mask(0);
             self.rounds.on_killed();
-            if may_drop && let Some(kind) = self.drop_cycle.on_kill(&context) {
+            // The last hound of a hound round leaves a Max Ammo
+            // (`dog_round_aftermath`).
+            let last_hound = hound
+                && self.rounds.hound_round()
+                && self.rounds.remaining() == 0
+                && self.strikes.is_empty();
+            if last_hound {
+                self.drop_power_up(PowerUp::MaxAmmo, position);
+            } else if may_drop && let Some(kind) = self.drop_cycle.on_kill(&context) {
                 self.drop_power_up(kind, position);
             }
-        } else if !melee && hit.force >= chase::STAGGER_FORCE {
+        } else if !hound && !melee && hit.force >= chase::STAGGER_FORCE {
             zombie.chaser.stagger();
         }
         Some(ZombieHurt { killed, position })
@@ -877,6 +957,16 @@ impl Horde {
             .filter(|z| z.alive)
             .map(|z| (z.id, z.feet()))
             .collect()
+    }
+
+    /// Whether zombie `id` is a hound (tests).
+    pub fn is_hound(&self, id: u8) -> bool {
+        self.zombies.iter().any(|z| z.id == id && z.hound)
+    }
+
+    /// Strikes whose hound is yet to stand there (tests).
+    pub fn strikes_pending(&self) -> usize {
+        self.strikes.len()
     }
 
     fn spawn(&mut self, round: u32, index: u32, health: f32, speed: f32, players: &[HordePlayer]) {
@@ -916,11 +1006,88 @@ impl Horde {
         let mut chaser = Chaser::new(speed * chase::speed_factor(seed), face);
         chaser.waypoint = point.via;
         chaser.window = point.window;
-        let mut body = build_body(id);
+        let mut body = build_body(id, CAPSULE_HEIGHT);
         self.parent.add_child(&body);
         body.set_global_position(to_godot(point.position));
         self.zombies.push(Zombie {
             id,
+            hound: false,
+            body,
+            chaser,
+            health,
+            alive: true,
+            dead_for: 0.0,
+            fall_speed: 0.0,
+            swings: 0,
+            hits: 0,
+            hit_heading: 0,
+            hit_part: 0,
+        });
+    }
+
+    /// Where the `index`th hound of the round is struck down: a hound spot
+    /// 10 to 25 m from the standing player nearest it, not the last one
+    /// used, as Black Ops' `dog_spawn_factory_logic` picks; any other spot
+    /// when none is in that ring.
+    fn hound_spot(&mut self, index: u32, players: &[HordePlayer]) -> Vec3 {
+        if self.hound_spawns.is_empty() {
+            // No hound spots: through a window's far side, or a spawn.
+            return self
+                .spawns
+                .iter()
+                .map(|s| s.via.unwrap_or(s.position))
+                .nth(index as usize % self.spawns.len().max(1))
+                .unwrap_or(Vec3::ZERO);
+        }
+        let standing: Vec<Vec3> = players
+            .iter()
+            .filter(|p| p.standing)
+            .map(|p| p.feet)
+            .collect();
+        // The player it hunts: each in turn.
+        let hunted = (!standing.is_empty()).then(|| standing[index as usize % standing.len()]);
+        let count = self.hound_spawns.len();
+        let start = rng::hash(self.rounds.round, index) as usize % count;
+        let mut pick = None;
+        for k in 0..count {
+            let i = (start + k) % count;
+            if Some(i) == self.last_hound_spawn && count > 1 {
+                continue;
+            }
+            let spot = self.hound_spawns[i];
+            let fits = hunted.is_none_or(|p| {
+                let d = zombies::flat_distance(spot, p);
+                (hounds::SPAWN_MIN_DISTANCE..=hounds::SPAWN_MAX_DISTANCE).contains(&d)
+            });
+            if fits {
+                pick = Some(i);
+                break;
+            }
+        }
+        let i = pick.unwrap_or(start);
+        self.last_hound_spawn = Some(i);
+        self.hound_spawns[i]
+    }
+
+    /// A hound stands at `at`, facing the nearest standing player.
+    fn spawn_hound(&mut self, at: Vec3, health: f32, players: &[HordePlayer]) {
+        let Some(id) = self.free_id() else {
+            return;
+        };
+        let face = players
+            .iter()
+            .filter(|p| p.standing)
+            .map(|p| p.feet)
+            .min_by(|a, b| a.distance(at).total_cmp(&b.distance(at)))
+            .map_or(0.0, |target| chase::yaw_of(target - at));
+        let chaser = Chaser::new(self.hound_rules.run_speed, face);
+        let mut body = build_body(id, HOUND_CAPSULE_HEIGHT);
+        body.set_name(&format!("Hound{id}"));
+        self.parent.add_child(&body);
+        body.set_global_position(to_godot(at));
+        self.zombies.push(Zombie {
+            id,
+            hound: true,
             body,
             chaser,
             health,
@@ -957,7 +1124,7 @@ impl Drop for Horde {
     }
 }
 
-fn build_body(id: u8) -> Gd<CharacterBody3D> {
+fn build_body(id: u8, height: f32) -> Gd<CharacterBody3D> {
     let mut body = CharacterBody3D::new_alloc();
     body.set_name(&format!("Zombie{id}"));
     body.set_collision_layer(ZOMBIE_LAYER);
@@ -965,10 +1132,10 @@ fn build_body(id: u8) -> Gd<CharacterBody3D> {
     body.set_floor_snap_length(0.3);
     let mut capsule = CapsuleShape3D::new_gd();
     capsule.set_radius(CAPSULE_RADIUS);
-    capsule.set_height(CAPSULE_HEIGHT);
+    capsule.set_height(height);
     let mut shape = CollisionShape3D::new_alloc();
     shape.set_shape(&capsule);
-    shape.set_position(Vector3::UP * (CAPSULE_HEIGHT * 0.5));
+    shape.set_position(Vector3::UP * (height * 0.5));
     body.add_child(&shape);
     body
 }
@@ -1008,6 +1175,19 @@ fn map_doors(map: &Gd<Node>) -> Vec<MapDoor> {
 /// (`ZombiesEvent::Boards`).
 pub fn map_windows(map: &Gd<Node>) -> Vec<Gd<Node3D>> {
     map_spawns(map).1.into_iter().map(|w| w.node).collect()
+}
+
+/// The map's hound spots: `HoundSpawns`' children, inside the play area.
+fn map_hound_spawns(map: &Gd<Node>) -> Vec<Vec3> {
+    let Some(parent) = map.get_node_or_null("HoundSpawns") else {
+        return Vec::new();
+    };
+    parent
+        .get_children()
+        .iter_shared()
+        .filter_map(|child| child.try_cast::<Node3D>().ok())
+        .map(|node| to_sim(node.get_global_position()))
+        .collect()
 }
 
 /// The map's zombie spawn points and the windows they come through.

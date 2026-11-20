@@ -1874,6 +1874,15 @@ impl NetServer {
             .any(|a| i32::from(a.id) == id && a.predicted.state.alive())
     }
 
+    /// A player's health (tests), or -1 if absent.
+    #[func]
+    fn player_health(&self, id: i32) -> f32 {
+        self.avatars
+            .iter()
+            .find(|a| i32::from(a.id) == id)
+            .map_or(-1.0, |a| a.predicted.state.health)
+    }
+
     /// Points a team has this match: kills, captures in Capture the Flag,
     /// Hardpoint points, or rounds won in Search and Destroy.
     #[func]
@@ -1923,6 +1932,7 @@ impl NetServer {
                 "id" => i64::from(id),
                 "position" => to_godot(feet),
                 "health" => horde.health(id).unwrap_or(0.0),
+                "hound" => horde.is_hound(id),
             });
         }
         out
@@ -1951,6 +1961,28 @@ impl NetServer {
             window: index as u8,
             boards,
         }));
+    }
+
+    /// Zombies: makes `round` the next hound round (tests and benches).
+    #[func]
+    fn debug_next_hound_round(&mut self, round: i32) {
+        if let Some(horde) = &mut self.horde {
+            horde.set_next_hound_round(round.max(1) as u32);
+        }
+    }
+
+    /// Zombies: whether this round is a hound round.
+    #[func]
+    fn hound_round(&self) -> bool {
+        self.horde.as_ref().is_some_and(|h| h.hound_round())
+    }
+
+    /// Zombies: strikes whose hound has yet to arrive (tests).
+    #[func]
+    fn hound_strikes(&self) -> i32 {
+        self.horde
+            .as_ref()
+            .map_or(0, |h| h.strikes_pending() as i32)
     }
 
     /// Zombies: windows on the map.
@@ -4086,7 +4118,13 @@ impl NetServer {
         for event in horde.take_events() {
             match event {
                 HordeEvent::RoundStarted(round) => self.on_zombies_round(round),
-                HordeEvent::Struck { player, from } => self.zombie_strike(player, from),
+                HordeEvent::Struck { player, from } => self.zombie_strike(player, from, false),
+                HordeEvent::Bitten { player, from } => self.zombie_strike(player, from, true),
+                HordeEvent::HoundStrike { at } => {
+                    self.broadcast_event(&GameEvent::Zombies(
+                        protocol::ZombiesEvent::HoundStrike { at },
+                    ));
+                }
                 HordeEvent::Boards { window, boards } => {
                     self.broadcast_event(&GameEvent::Zombies(protocol::ZombiesEvent::Boards {
                         window,
@@ -4511,7 +4549,7 @@ impl NetServer {
     }
 
     /// A zombie's swing landed on player `id`: the two-hit rule.
-    fn zombie_strike(&mut self, id: u8, from: Vec3) {
+    fn zombie_strike(&mut self, id: u8, from: Vec3, hound: bool) {
         if self.zombies_harmless {
             return;
         }
@@ -4526,7 +4564,12 @@ impl NetServer {
         if state.downed {
             return;
         }
-        let damage = drinks::hit_damage(state.health, max, state.drinks);
+        let damage = if hound {
+            let bulwark = state.drinks.has(Drink::Bulwark);
+            zombies::hounds::bite_damage(max, bulwark).min(state.health)
+        } else {
+            drinks::hit_damage(state.health, max, state.drinks)
+        };
         // The hit that would kill downs instead (last stand).
         let downs = damage >= state.health;
         let damage = if downs {
