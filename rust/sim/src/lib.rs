@@ -12,6 +12,7 @@ pub mod challenge;
 pub mod chat;
 pub mod chopper;
 pub mod class;
+pub mod cosmetics;
 pub mod ctf;
 pub mod domination;
 pub mod equipment;

@@ -100,6 +100,44 @@ Black Ops 2's challenges pay 250 to 5,000 XP each. A weapon's whole ladder comes
 | Mastery and Nebula | none, as Black Ops 2's Diamond paid none |
 | Career, mode, and scorestreak tiers | 500 to 5,000, as Black Ops 2's |
 
+## Camos
+
+Each weapon has 14 ladder camos, Gold, Mastery, and Nebula, our own designs (`rust/sim/src/camo.rs`):
+
+| Kind | Camos |
+| --- | --- |
+| Ladder, 1 to 14 | Gravel, Dune, Timber, Tundra, Cocoa, Riptide, Ember, Static, Scales, Weave, Bloom, Ink, Hazard, Circuit |
+| Past the ladder | Gold, Prism (mastery), Nebula (final) |
+
+![Every camo pattern: the ladder, Gold, Prism (shown as the data its shader reads), and Nebula](media/camo-patterns.jpg)
+
+- **Patterns.** `tools/build_camos.py` paints each pattern as a seamless 512 px texture (`godot/assets/camos/`). It needs only numpy and is seeded, so it rebuilds the same files.
+- **Shader** (`godot/shaders/weapon_camo.gdshaderinc`):
+  - It projects the pattern onto the gun from three sides in the gun's own space, so it needs no UVs.
+  - It paints the pattern over the coated parts: whatever the weapon's ORM map does not mark as bare metal. This is the same finish `tools/weapon_finish.py` paints.
+  - Edges worn to bare metal stay bare, and the finish's grime and occlusion darken the paint, as Call of Duty's camos sit under the weapon's wear.
+  - **Gold** is polished metal.
+  - **Prism** has facets whose hue turns with the view.
+  - **Nebula** has slowly drifting clouds with glinting stars.
+- **No extra draw calls.**
+  - In first person, a camo is a few parameters on the material each surface already has (`viewmodel.gdshader`).
+  - In third person and killcams, the weapon's shared material is swapped for one with the camo painted in (`weapon_camo.gdshader`). It is cached per material and camo, so every M4A1 in Gold shares one.
+  - `camo_draws_test` checks that the draw count holds.
+- **Create-a-Class.** Each weapon of a class takes a camo (`primary_camo`, `secondary_camo`), chosen from the camos that weapon has earned. A note gives how many more its challenges hold. As in Black Ops 2, a camo costs no point. Changing the weapon resets its camo.
+- **Others see it.**
+  - The game sends its cosmetics with its class (`ClientMessage::Cosmetics`): the prestige, the calling card, and the camo on each weapon. The server passes them to everyone (`GameEvent::Cosmetics`, protocol 82).
+  - Other players' third-person weapons wear the camo.
+  - In a killcam, the first-person weapon wears the killer's camo; it goes back to ours afterwards.
+  - A ranked server takes the prestige from the account and drops any card or camo it has not unlocked (`Cosmetics::checked`). Other servers pass on what the game sends.
+
+![The M4A1 in Gold, in first person](media/camo-gold-first-person.jpg)
+
+![The AK-47 in Dune and in Prism, inspected](media/camo-inspect.jpg)
+
+![Another player's M4A1 in Gold and in Dune](media/camo-third-person.jpg)
+
+![Create-a-Class: the M4A1's earned camos, with their patterns](media/camo-picker.jpg)
+
 ## Career screen
 
 **Career**, beside Options on the title screen, opens the player's challenges and combat record (`godot/scripts/ui/career_menu.gd`). Black Ops 2 keeps these in the Barracks.
@@ -141,4 +179,5 @@ The account stores `stats` beside `xp` and `weapon_kills` (`docker/online/nakama
   - Gold is all of a weapon's camos.
   - Diamond is Gold on every weapon of a class (Call of Duty wiki, "Diamond Camouflage").
   - Dark Matter is Black Ops 3's camo for every class.
+- **Camos:** a camo is chosen per weapon in Create-a-Class, costs no point, sits under the weapon's wear, and shows for other players and in killcams, as Black Ops 2's do.
 - **Names and designs** are our own. None of Black Ops 2's camo, challenge, or calling card names are used.

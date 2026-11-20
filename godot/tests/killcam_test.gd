@@ -96,6 +96,7 @@ func _run() -> void:
 		await _round_winning_kill(player, client)
 		_finish()
 		return
+	await _check_cosmetics(player, client)
 	await _watch_death(main, player, client, false)
 	await _watch_death(main, player, client, true)
 	await _skip_by_setting(player, client)
@@ -143,6 +144,39 @@ func _round_winning_kill(player: FpsPlayer, client: NetClient) -> void:
 	var length := (Time.get_ticks_msec() - death_at) / 1000.0
 	_check(not next_round, "round: the next round waits for it")
 	_check(length > 9.5, "round: it plays out, %.2f s after the kill" % length)
+
+
+## What we show goes through the server and back (an unranked server passes
+## it on as sent), and our first-person M4A1 wears its camo.
+func _check_cosmetics(player: FpsPlayer, client: NetClient) -> void:
+	client.set_cosmetics({"prestige": 3, "card": "veteran", "camos": {"m4": "gold"}})
+	var id := client.player_id()
+	await _wait_until(func() -> bool: return not client.cosmetics_of(id).is_empty(), 5.0)
+	var shown := client.cosmetics_of(id)
+	_check(
+		(
+			int(shown.get("prestige", 0)) == 3
+			and String(shown.get("card", "")) == "veteran"
+			and (shown.get("camos", {}) as Dictionary).get("m4") == "gold"
+		),
+		"cosmetics: the server passes ours on, %s" % shown
+	)
+	var painted := false
+	for material: Variant in _materials(player.get_node("Camera/Viewmodel")):
+		if (
+			material is ShaderMaterial
+			and (material as ShaderMaterial).get_shader_parameter("camo_on") == true
+		):
+			painted = true
+	_check(painted, "cosmetics: our first-person M4A1 wears the Gold camo")
+
+
+func _materials(node: Node) -> Array:
+	var out := []
+	for mesh: MeshInstance3D in node.find_children("*", "MeshInstance3D", true, false):
+		for surface in mesh.get_surface_override_material_count():
+			out.append(mesh.get_active_material(surface))
+	return out
 
 
 ## The kill that ends the match plays for everyone as the final killcam:

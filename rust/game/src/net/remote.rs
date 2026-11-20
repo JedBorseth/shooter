@@ -49,6 +49,8 @@ pub struct RemotePlayer {
 
     /// The name shown over a teammate.
     display_name: String,
+    /// What the player shows: the camos on their weapons.
+    cosmetics: shooter_sim::cosmetics::Cosmetics,
     shots_fired: Option<u32>,
     hits: Option<u8>,
     /// Flinches played from snapshots (tests).
@@ -456,7 +458,14 @@ impl RemotePlayer {
         self.base_mut().add_child(&fresh);
         let team = self.team_index;
         fresh.bind_mut().set_team_index(team);
+        fresh.bind_mut().set_cosmetics(&self.cosmetics);
         *self.rig = fresh;
+    }
+
+    /// What the player shows: their weapons wear its camos.
+    pub fn set_cosmetics(&mut self, cosmetics: &shooter_sim::cosmetics::Cosmetics) {
+        self.cosmetics = cosmetics.clone();
+        self.rig.bind_mut().set_cosmetics(cosmetics);
     }
 
     pub fn set_display_name(&mut self, name: &str) {

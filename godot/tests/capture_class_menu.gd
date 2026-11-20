@@ -24,7 +24,8 @@ func _run() -> void:
 	DirAccess.make_dir_recursive_absolute(_out)
 	ClassStore.use_file("user://capture_class_menu.cfg")
 	ProgressStore.use_file("user://capture_class_menu_progress.cfg")
-	ProgressStore.add(320000, {"m4": 60, "pdw9": 100})
+	# Camos earned on the M4A1: its headshot ladder and longshots.
+	ProgressStore.add(320000, {"m4": 60, "pdw9": 100}, false, {"w.m4.hs": 60, "w.m4.long": 12})
 	ClassStore.reload()
 	var layer := CanvasLayer.new()
 	root.add_child(layer)
@@ -46,6 +47,17 @@ func _run() -> void:
 	menu.call("_open_editor", "custom:0")
 	await _frames(10)
 	await _shot("class_editor")
+	# Its camo picked: the class card names it.
+	var draft: Dictionary = menu.get("_draft")
+	draft["primary"] = "m4"
+	draft["primary_camo"] = "riptide"
+	menu.call("_rebuild_editor")
+	await _frames(5)
+	var scroll := menu.find_children("*", "ScrollContainer", true, false)
+	for found: ScrollContainer in scroll:
+		found.scroll_vertical = 220
+	await _frames(5)
+	await _shot("class_editor_camo")
 	for file in [ClassStore.path(), ProgressStore.path()]:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(file))
 	quit(0)
