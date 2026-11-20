@@ -104,7 +104,27 @@ func _moves() -> Dictionary:
 		"gait_crouch_left":
 		[1.0, GAIT_SLOW_MOMENTS, _gait.bind(-90.0, 1.8, {"stance": "crouching"})],
 		"gait_crouch_back":
+		# Prone: lying still aiming up, level, and down, then the low crawl
 		[1.0, GAIT_SLOW_MOMENTS, _gait.bind(180.0, 1.8, {"stance": "crouching"})],
+		# through a stride (0.7 m at 0.8 m/s).
+		"prone": [1.0, GAIT_SLOW_MOMENTS, _prone],
+		"prone_crawl":
+		[
+			0.875,
+			[0.0, 0.11, 0.22, 0.33, 0.44, 0.55, 0.66, 0.77],
+			_gait.bind(0.0, 0.8, {"stance": "prone"})
+		],
+	}
+
+
+## Lying prone with a rifle, aiming up, level, then down.
+func _prone(t: float) -> Dictionary:
+	return {
+		"weapon": "m4",
+		"feet": Vector3.ZERO,
+		"stance": "prone",
+		"pitch": lerpf(0.8, -0.5, t),
+		"ads": 1.0 if t > 0.5 else 0.0,
 	}
 
 

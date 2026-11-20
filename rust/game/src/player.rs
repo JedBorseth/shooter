@@ -141,9 +141,10 @@ const OWN_BODY_SCENE: &str = "res://scenes/characters/soldier.tscn";
 
 /// Actions whose presses are remembered until the next physics tick, so a tap
 /// shorter than one tick (or a mouse-wheel step) is never lost.
-const LATCHED_ACTIONS: [&str; 12] = [
+const LATCHED_ACTIONS: [&str; 13] = [
     "jump",
     "crouch",
+    "prone",
     "sprint",
     "fire",
     "reload",
@@ -643,10 +644,10 @@ impl ICharacterBody3D for FpsPlayer {
 
         self.score.tick(dt);
         self.previous_recoil = self.state.combat.recoil;
-        self.previous_sway = self
-            .state
-            .combat
-            .aimed_sway(self.state.movement.mount_blend);
+        self.previous_sway = self.state.combat.aimed_sway(
+            self.state.movement.mount_blend,
+            self.state.movement.stance == Stance::Prone,
+        );
         self.previous_ads = self.state.combat.ads;
         self.previous_crouch = self.state.movement.crouch;
         let previous_stance = self.state.movement.stance;
@@ -743,9 +744,13 @@ impl ICharacterBody3D for FpsPlayer {
         } else {
             self.previous_recoil.lerp(combat.recoil, fraction)
         };
-        let sway = self
-            .previous_sway
-            .lerp(combat.aimed_sway(self.state.movement.mount_blend), fraction);
+        let sway = self.previous_sway.lerp(
+            combat.aimed_sway(
+                self.state.movement.mount_blend,
+                self.state.movement.stance == Stance::Prone,
+            ),
+            fraction,
+        );
         let ads = self.previous_ads + (combat.ads - self.previous_ads) * fraction;
 
         let alive = self.state.alive();
@@ -967,6 +972,7 @@ impl FpsPlayer {
             _ if movement.on_ladder() => "Ladder",
             Stance::Sliding => "Sliding",
             Stance::Crouching => "Crouching",
+            Stance::Prone => "Prone",
             Stance::Standing if movement.sprinting => "Sprinting",
             Stance::Standing => "Standing",
         };
@@ -1642,6 +1648,9 @@ impl FpsPlayer {
     }
 
     fn read_input(&mut self) -> PlayerInput {
+        // Going prone pulls a view looking far down or up into prone's range.
+        let (down, up) = shooter_sim::look::pitch_range(self.state.movement.prone_amount());
+        self.pitch = self.pitch.clamp(-down, up);
         let press = self.fire_press.take();
         let next = std::mem::take(&mut self.next_pressed);
         if !self.devices_on() {
@@ -1663,6 +1672,7 @@ impl FpsPlayer {
         let jump = held("jump");
         let sprint = held("sprint");
         let crouch = held("crouch");
+        let prone = held("prone");
         let fire = held("fire");
         let melee = held("melee");
         let lethal = held("lethal");
@@ -1734,6 +1744,7 @@ impl FpsPlayer {
             jump,
             sprint,
             crouch,
+            prone,
             fire,
             aim: input.is_action_pressed("aim"),
             reload,
@@ -1999,6 +2010,9 @@ impl FpsPlayer {
     /// simulation lets the mount go; recoil and flinches only stop there.
     fn hold_mounted_view(&mut self, pushed: bool) {
         let movement = &self.state.movement;
+        // Prone, the neck and the ground bound the pitch.
+        let (down, up) = shooter_sim::look::pitch_range(movement.prone_amount());
+        self.pitch = self.pitch.clamp(-down, up);
         if !movement.mounted {
             self.mount_push = 0.0;
             return;
@@ -3170,7 +3184,11 @@ impl FpsPlayer {
             ads,
             scope: combat.scope_amount(),
             visible: self.state.alive(),
-            sprinting: self.state.movement.sprinting,
+            // Crawling at the hip and getting down to or up from prone
+            // lower the weapon as a sprint does.
+            sprinting: self.state.movement.sprinting
+                || self.state.movement.crawling(ads > 0.0)
+                || self.state.movement.changing_prone(),
             on_floor: self.env.on_floor,
             action,
             empty: combat.weapon().magazine == 0,

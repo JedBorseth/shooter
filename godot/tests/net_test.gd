@@ -221,6 +221,35 @@ func _ramp_slide(player: FpsPlayer, client: NetClient) -> void:
 	)
 	var error := player.global_position.distance_to(stats.server_position)
 	_check(error < 0.01, "client and server agree after the ramp slide, off by %.3f m" % error)
+	await _prone_online(player, client)
+
+
+## Prone online: down with the prone button, a crawl, a crouch held up to
+## standing; the stance change and the crawl are predicted with no corrections.
+func _prone_online(player: FpsPlayer, client: NetClient) -> void:
+	var corrections_before := int(client.stats().corrections)
+	Input.action_press("prone")
+	await _ticks(2)
+	Input.action_release("prone")
+	await _ticks(100)
+	_check(player.movement_state() == "Prone", "lies prone online, %s" % player.movement_state())
+	Input.action_press("move_forward")
+	await _ticks(120)
+	Input.action_release("move_forward")
+	Input.action_press("crouch")
+	await _ticks(48)
+	Input.action_release("crouch")
+	await _ticks(120)
+	_check(player.movement_state() == "Standing", "stands up online")
+	var stats := client.stats()
+	var corrections := int(stats.corrections) - corrections_before
+	_check(
+		corrections == 0,
+		(
+			"prone was predicted with no corrections, got %d (last %.1f cm)"
+			% [corrections, stats.last_error_cm]
+		)
+	)
 
 
 ## Walks the player to `target` on the ground (ignoring height), turning

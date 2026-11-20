@@ -46,6 +46,7 @@ fn raw_input(tick: u32) -> PlayerInput {
         jump: tick % 97 < 2,
         sprint: tick % 150 < 2,
         crouch: tick % 150 == 70 || tick % 150 == 71,
+        prone: false,
         fire: r(3) < 0.3,
         aim: r(4) < 0.4,
         reload: tick % 400 == 300,
@@ -96,6 +97,8 @@ fn run(ticks: u32) -> Run {
         let env = MoveEnv {
             on_floor: p.on_floor,
             can_stand: true,
+            can_crouch: true,
+            can_prone: true,
             ledge: None,
             ledge_low: false,
             vault: None,
@@ -199,6 +202,8 @@ fn press_aim_changes_no_state() {
         let env = MoveEnv {
             on_floor: true,
             can_stand: true,
+            can_crouch: true,
+            can_prone: true,
             ledge: None,
             ledge_low: false,
             vault: None,

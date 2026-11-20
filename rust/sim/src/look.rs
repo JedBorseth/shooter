@@ -27,6 +27,21 @@ use crate::fmath;
 
 /// Furthest the view pitches up or down, in radians: just short of straight up.
 pub const PITCH_LIMIT: f32 = std::f32::consts::FRAC_PI_2 - 0.01;
+/// Prone, the view pitches no further down or up than these (radians): the
+/// ground is in the way below and the neck stops it above, as Call of Duty's
+/// prone view limits do.
+pub const PRONE_PITCH_DOWN: f32 = 0.52;
+pub const PRONE_PITCH_UP: f32 = 0.87;
+
+/// How far the view may pitch (down, up) with the body `prone` (0 to 1,
+/// `MoveState::prone_amount`) of the way down from a crouch to prone.
+pub fn pitch_range(prone: f32) -> (f32, f32) {
+    let t = prone.clamp(0.0, 1.0);
+    (
+        PITCH_LIMIT + (PRONE_PITCH_DOWN - PITCH_LIMIT) * t,
+        PITCH_LIMIT + (PRONE_PITCH_UP - PITCH_LIMIT) * t,
+    )
+}
 
 /// Stick response settings.
 #[derive(Clone, Copy, Debug, PartialEq)]

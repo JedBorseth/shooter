@@ -334,7 +334,9 @@ impl CombatState {
         let spread = &self.def().spread;
         let mut hip =
             spread.hip + (spread.hip_moving - spread.hip) * ctx.move_ratio.clamp(0.0, 1.0);
-        if ctx.crouched {
+        if ctx.prone {
+            hip *= PRONE_HIP_SPREAD;
+        } else if ctx.crouched {
             hip *= CROUCH_HIP_SPREAD;
         }
         hip += self.bloom;
@@ -482,8 +484,9 @@ impl CombatState {
 
     /// [`Self::scope_sway`] as a weapon mounted `mount` (0 to 1) on cover
     /// sways: steadied by the mount. The camera and the shot both use it.
-    pub fn aimed_sway(&self, mount: f32) -> Vec2 {
-        self.scope_sway() * crate::mount::sway_scale(mount)
+    pub fn aimed_sway(&self, mount: f32, prone: bool) -> Vec2 {
+        let prone = if prone { PRONE_SWAY_SCALE } else { 1.0 };
+        self.scope_sway() * crate::mount::sway_scale(mount) * prone
     }
 
     /// Aimed sway in radians (`x` pitch up, `y` yaw right): a slow drift
@@ -560,6 +563,11 @@ const BLOOM_HOLD: f32 = 0.1;
 
 /// Hip cone multiplier while crouched.
 const CROUCH_HIP_SPREAD: f32 = 0.8;
+/// Hip cone multiplier while prone (IW's `hipSpreadProneMin` sits under
+/// the ducked one).
+const PRONE_HIP_SPREAD: f32 = 0.6;
+/// Aimed sway while prone (IW weapons' `idleProneFactor`, about 0.4).
+pub const PRONE_SWAY_SCALE: f32 = 0.4;
 
 /// Movement facts the weapon reacts to.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -568,6 +576,9 @@ pub struct CombatContext {
     pub airborne: bool,
     /// Crouched (not sliding): a steadier kick and a tighter hip cone.
     pub crouched: bool,
+    /// Lying prone: the crouch's steadier kick, a tighter hip cone still,
+    /// and less aimed sway.
+    pub prone: bool,
     /// Horizontal speed relative to walk speed.
     pub move_ratio: f32,
     /// How far the weapon is mounted on cover, 0 to 1 (`MoveState::mount_blend`):
@@ -1267,7 +1278,7 @@ fn fire(
     let angle = rng::unit(seed, 1) * TAU;
     let radius = rng::unit(seed, 2).sqrt() * cone;
     let spread = Vec2::new(fmath::sin(angle), fmath::cos(angle)) * radius;
-    let aim_offset = state.recoil + spread + state.aimed_sway(ctx.mount);
+    let aim_offset = state.recoil + spread + state.aimed_sway(ctx.mount, ctx.prone);
 
     let recoil = &def.recoil;
     let base = recoil.pattern[usize::from(state.burst).min(recoil.pattern.len() - 1)];
@@ -1276,7 +1287,7 @@ fn fire(
         rng::signed(seed, 4) * recoil.jitter.y,
     );
     let mut scale = 1.0 + (recoil.ads_scale - 1.0) * ads_ease(state.ads);
-    if ctx.crouched {
+    if ctx.crouched || ctx.prone {
         scale *= recoil.crouch_scale;
     }
     scale *= crate::mount::kick_scale(ctx.mount);

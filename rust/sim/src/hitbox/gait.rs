@@ -104,6 +104,18 @@ pub const CROUCH_LOOP: Loop = Loop {
     offset: 0.12,
 };
 
+/// The low crawl prone (`gait/Prone_Crawl`, `tools/build_gait_animations.py`):
+/// one stride, each knee drawn up and pushed back once, over its one-second
+/// timeline, with the left knee drawn up at phase 0.
+pub const PRONE_LOOP: Loop = Loop {
+    clip: "gait/Prone_Crawl",
+    position: PRONE_STRIDE,
+    seconds: 1.0,
+    offset: 0.0,
+};
+/// Metres crawled per stride of the low crawl (the tool's `CRAWL_STRIDE`).
+pub const PRONE_STRIDE: f32 = 0.7;
+
 /// Where in the standing blend the hit zones' stride poses are measured
 /// (`hitbox/poses.rs`): each loop, the points between them a player moves at
 /// (an aimed walk, the run every non-sprinting player settles at,
@@ -291,6 +303,9 @@ pub fn stride_rate(
     let cadence = blend_cadence(direction);
     match stance {
         Stance::Sliding => 0.0,
+        // The crawl has one stride for every `PRONE_STRIDE` crawled, in any
+        // direction.
+        Stance::Prone => speed / PRONE_STRIDE,
         Stance::Crouching => crouch_rate(speed) / CROUCH_LOOP.seconds * cadence,
         Stance::Standing => {
             let position = stand_position(speed, sprinting, direction);
