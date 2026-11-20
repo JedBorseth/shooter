@@ -49,7 +49,8 @@ use shooter_sim::net::prediction::Reconciled;
 use shooter_sim::net::protocol::{
     self as protocol, ChargeStatus, ChargeView, ClientMessage, DominationView, FlagPlay,
     FlagPointView, FlagStatus, FlagView, GameEvent, InputPacket, KillCause, MAX_BUILD_BYTES,
-    PROTOCOL_VERSION, ScavengerEvent, ScoreRow, ServerMessage, Snapshot, ZombiesEvent, ZoneView,
+    PROTOCOL_VERSION, RadarView, ScavengerEvent, ScoreRow, ServerMessage, Snapshot, ZombiesEvent,
+    ZoneView,
 };
 use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::{CHANNEL_COUNT, CHANNEL_RELIABLE, DEFAULT_PORT, TICK_RATE, Tick};
@@ -212,6 +213,10 @@ pub struct NetClient {
     charge: Option<ChargeView>,
     /// Scavenger's packs on the ground: id, where, and who dropped it.
     scavenger_packs: Vec<(u16, shooter_sim::Vec3, u8)>,
+    /// The minimap's enemies from the newest snapshot, and when (seconds,
+    /// engine clock) it came.
+    radar: RadarView,
+    radar_at: f64,
     /// Zombies: the horde as drawn, and the map's director mirroring the
     /// server's game.
     horde: Option<HordeView>,
@@ -859,6 +864,46 @@ impl NetClient {
     /// planting or defusing, -1 for nobody we are told of), `use_kind`
     /// ("plant" or "defuse"), `use_progress` (0 to 1), and `spot` ("plant",
     /// "defuse", or "": what holding interact would do where we stand).
+    /// The enemies our minimap shows, as the server decided
+    /// (`shooter_sim::radar`): dictionaries with `id`, `position` (a
+    /// `Vector3` on the ground plane, y 0), `kind` ("fire"), and `alpha`
+    /// (1, fading to 0 over the dot's last second).
+    #[func]
+    fn radar_blips(&self) -> Array<VarDictionary> {
+        let now = Time::singleton().get_ticks_usec() as f64 / 1e6;
+        let since = (now - self.radar_at).max(0.0) as f32;
+        self.radar
+            .blips
+            .iter()
+            .filter_map(|blip| {
+                let life = blip.kind.life() as f32 / TICK_RATE as f32;
+                let age = blip.age as f32 / TICK_RATE as f32 + since;
+                let alpha = (life - age).clamp(0.0, 1.0);
+                if alpha <= 0.0 {
+                    return None;
+                }
+                let at = blip.position();
+                let mut d = VarDictionary::new();
+                d.set("id", i32::from(blip.id));
+                d.set("position", Vector3::new(at.x, 0.0, at.y));
+                d.set(
+                    "kind",
+                    match blip.kind {
+                        shooter_sim::radar::BlipKind::Fire => "fire",
+                    },
+                );
+                d.set("alpha", alpha);
+                Some(d)
+            })
+            .collect()
+    }
+
+    /// Whether an enemy Counter-UAV jams our minimap.
+    #[func]
+    fn radar_jammed(&self) -> bool {
+        self.radar.jammed
+    }
+
     /// Scavenger packs this player can see and take: none without the
     /// perk; otherwise every enemy's (anyone else's without teams), as
     /// dictionaries with `id` and `position` (the ground under it).
@@ -1992,6 +2037,8 @@ impl NetClient {
         }
         if newest {
             self.newest = Some(tick);
+            self.radar = snapshot.radar.clone();
+            self.radar_at = Time::singleton().get_ticks_usec() as f64 / 1e6;
             if let Some(clock) = &mut self.clock {
                 clock.on_snapshot(tick);
             }

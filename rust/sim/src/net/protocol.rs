@@ -33,6 +33,7 @@ use crate::look::PITCH_LIMIT;
 use crate::movement::{MoveState, Stance};
 use crate::perk::Perks;
 use crate::player::{FireAim, PlayerInput, PlayerState};
+use crate::radar;
 use crate::score::{Award, ScoreTotals, Scored};
 use crate::snd::{RoundEnd, RoundPhase, UseKind};
 use crate::tdm::{MAX_NAME_CHARS, Mode, Period, Phase, TEAM_COUNT, Team};
@@ -144,7 +145,8 @@ use crate::zombies::drinks::Drinks;
 // (`<key>+forged`) to the weapon table.
 // Version 60 added the kneel at Search and Destroy's charge to rewound hitbox
 // poses (`Activity::kneel`), so the hit zones follow the plant and defuse.
-pub const PROTOCOL_VERSION: u16 = 60;
+// Version 61 added the minimap's red dots to snapshots (`RadarView`).
+pub const PROTOCOL_VERSION: u16 = 61;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -555,6 +557,50 @@ pub struct Snapshot {
     /// ([`ZOMBIE_SEND_TICKS`]); `None` in the snapshots between, and outside
     /// Zombies.
     pub zombies: Option<Vec<ZombieView>>,
+    /// The enemies the receiving player's minimap shows, and whether an
+    /// enemy Counter-UAV jams it ([`crate::radar`]).
+    pub radar: RadarView,
+}
+
+/// What a player's minimap shows of the enemy, decided by the server
+/// ([`crate::radar::Radar`]): only these dots, never anyone it does not show.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RadarView {
+    pub jammed: bool,
+    pub blips: Vec<BlipView>,
+}
+
+/// A red dot on the minimap.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct BlipView {
+    pub id: u8,
+    /// Where (x, z) in decimetres.
+    pub x: i16,
+    pub z: i16,
+    /// Ticks since it was revealed.
+    pub age: Tick,
+    pub kind: radar::BlipKind,
+}
+
+/// Blip positions travel in decimetres: a minimap dot needs no more.
+const BLIP_SCALE: f32 = 10.0;
+
+impl BlipView {
+    pub fn new(blip: &radar::Blip, now: Tick) -> Self {
+        let quantize = |v: f32| (v * BLIP_SCALE).round().clamp(-32768.0, 32767.0) as i16;
+        Self {
+            id: blip.id,
+            x: quantize(blip.at.x),
+            z: quantize(blip.at.z),
+            age: now.saturating_sub(blip.tick),
+            kind: blip.kind,
+        }
+    }
+
+    /// Where (x, z) in metres.
+    pub fn position(&self) -> Vec2 {
+        Vec2::new(f32::from(self.x), f32::from(self.z)) / BLIP_SCALE
+    }
 }
 
 /// Most zombies a snapshot carries.
@@ -2793,6 +2839,47 @@ fn write_snapshot(w: &mut BitWriter, s: &Snapshot, baseline: &[PlayerView]) {
         }
         None => w.bool(false),
     }
+    w.bool(s.radar.jammed);
+    let count = s.radar.blips.len().min(radar::MAX_BLIPS);
+    w.varint(count as u32);
+    for blip in &s.radar.blips[..count] {
+        w.u8(blip.id);
+        w.varint_signed(i32::from(blip.x));
+        w.varint_signed(i32::from(blip.z));
+        w.varint(blip.age);
+        w.bits(blip.kind as u32, BLIP_KIND_BITS);
+    }
+}
+
+const BLIP_KIND_BITS: u32 = 2;
+
+fn read_blip_kind(r: &mut BitReader) -> DecodeResult<radar::BlipKind> {
+    match r.bits(BLIP_KIND_BITS)? {
+        0 => Ok(radar::BlipKind::Fire),
+        _ => Err(DecodeError::Invalid("blip kind")),
+    }
+}
+
+fn read_radar(r: &mut BitReader) -> DecodeResult<RadarView> {
+    let jammed = r.bool()?;
+    let count = r.varint()? as usize;
+    if count > radar::MAX_BLIPS {
+        return Err(DecodeError::Invalid("blip count"));
+    }
+    let mut blips = Vec::with_capacity(count);
+    for _ in 0..count {
+        let id = r.u8()?;
+        let x = i16::try_from(r.varint_signed()?).map_err(|_| DecodeError::Invalid("blip x"))?;
+        let z = i16::try_from(r.varint_signed()?).map_err(|_| DecodeError::Invalid("blip z"))?;
+        blips.push(BlipView {
+            id,
+            x,
+            z,
+            age: r.varint()?,
+            kind: read_blip_kind(r)?,
+        });
+    }
+    Ok(RadarView { jammed, blips })
 }
 
 fn write_zombie(w: &mut BitWriter, z: &ZombieView) {
@@ -2917,6 +3004,7 @@ fn read_snapshot<'a>(
     } else {
         None
     };
+    let radar = read_radar(r)?;
     Ok(Snapshot {
         tick,
         baseline: base_tick,
@@ -2925,6 +3013,7 @@ fn read_snapshot<'a>(
         grenades,
         smokes,
         zombies,
+        radar,
     })
 }
 
@@ -3947,6 +4036,7 @@ mod tests {
             grenades: Vec::new(),
             smokes: Vec::new(),
             zombies: None,
+            radar: RadarView::default(),
             tick: 500,
             baseline: None,
             own: Some(Box::new(OwnState {
@@ -3989,6 +4079,7 @@ mod tests {
             ],
             smokes: Vec::new(),
             zombies: None,
+            radar: RadarView::default(),
             tick: 900,
             baseline: None,
             own: Some(Box::new(OwnState {
@@ -4016,6 +4107,7 @@ mod tests {
             grenades: Vec::new(),
             smokes: smokes.clone(),
             zombies: None,
+            radar: RadarView::default(),
             tick: 1200,
             baseline: None,
             own: None,
@@ -4037,6 +4129,7 @@ mod tests {
             grenades: Vec::new(),
             smokes: vec![SmokeView::new(Some(1), 1, Vec3::ZERO, 5); MAX_SMOKES + 4],
             zombies: None,
+            radar: RadarView::default(),
             tick: 10,
             baseline: None,
             own: None,
@@ -4049,6 +4142,40 @@ mod tests {
             panic!("expected a snapshot");
         };
         assert_eq!(decoded.smokes.len(), MAX_SMOKES);
+    }
+
+    #[test]
+    fn a_snapshot_carries_the_minimap_dots_to_decimetres() {
+        let blip = radar::Blip {
+            id: 7,
+            at: Vec3::new(-12.34, 3.0, 45.67),
+            tick: 90,
+            kind: radar::BlipKind::Fire,
+        };
+        let radar_view = RadarView {
+            jammed: true,
+            blips: vec![BlipView::new(&blip, 100)],
+        };
+        let snapshot = Snapshot {
+            grenades: Vec::new(),
+            smokes: Vec::new(),
+            zombies: None,
+            radar: radar_view.clone(),
+            tick: 100,
+            baseline: None,
+            own: None,
+            players: vec![],
+        };
+        let decoded =
+            ServerMessage::decode(&ServerMessage::Snapshot(snapshot).encode(&[]), |_| None)
+                .unwrap();
+        let ServerMessage::Snapshot(decoded) = decoded else {
+            panic!("expected a snapshot");
+        };
+        assert_eq!(decoded.radar, radar_view);
+        let dot = decoded.radar.blips[0];
+        assert_eq!(dot.age, 10);
+        assert!((dot.position() - Vec2::new(-12.3, 45.7)).length() < 0.06);
     }
 
     #[test]
@@ -4128,6 +4255,7 @@ mod tests {
             grenades: Vec::new(),
             smokes: Vec::new(),
             zombies: None,
+            radar: RadarView::default(),
             tick: 101,
             baseline: Some(100),
             own: None,
@@ -4149,6 +4277,7 @@ mod tests {
             grenades: Vec::new(),
             smokes: Vec::new(),
             zombies: None,
+            radar: RadarView::default(),
             tick: 101,
             baseline: Some(100),
             own: None,
@@ -4175,6 +4304,7 @@ mod tests {
             grenades: Vec::new(),
             smokes: Vec::new(),
             zombies: None,
+            radar: RadarView::default(),
             tick: 100,
             baseline: None,
             own: None,
@@ -4192,6 +4322,7 @@ mod tests {
             grenades: Vec::new(),
             smokes: Vec::new(),
             zombies: None,
+            radar: RadarView::default(),
             tick: 101,
             baseline: Some(100),
             own: None,
@@ -4224,6 +4355,7 @@ mod tests {
             grenades: Vec::new(),
             smokes: Vec::new(),
             zombies: None,
+            radar: RadarView::default(),
             tick: 101,
             baseline: Some(100),
             own: None,
@@ -4291,6 +4423,7 @@ mod tests {
             grenades: Vec::new(),
             smokes: Vec::new(),
             zombies: None,
+            radar: RadarView::default(),
             tick: 100,
             baseline: None,
             own: None,
@@ -4306,6 +4439,7 @@ mod tests {
             grenades: Vec::new(),
             smokes: Vec::new(),
             zombies: None,
+            radar: RadarView::default(),
             tick: 101,
             baseline: Some(100),
             own: None,
@@ -4323,6 +4457,7 @@ mod tests {
             grenades: Vec::new(),
             smokes: Vec::new(),
             zombies: None,
+            radar: RadarView::default(),
             tick: 102,
             baseline: Some(100),
             own: None,
@@ -4343,6 +4478,7 @@ mod tests {
             grenades: Vec::new(),
             smokes: Vec::new(),
             zombies: None,
+            radar: RadarView::default(),
             tick: 10,
             baseline: Some(5),
             own: None,
@@ -5150,6 +5286,7 @@ mod tests {
             grenades: Vec::new(),
             smokes: Vec::new(),
             zombies: Some(zombies.clone()),
+            radar: RadarView::default(),
         });
         let bytes = msg.encode(&[]);
         // A big horde stays small: about ten bytes a zombie.
@@ -5169,6 +5306,7 @@ mod tests {
             grenades: Vec::new(),
             smokes: Vec::new(),
             zombies: Some(horde),
+            radar: RadarView::default(),
         });
         let bytes = msg.encode(&[]);
         assert!(bytes.len() < MAX_ZOMBIES * 11, "{} bytes", bytes.len());

@@ -13,6 +13,10 @@ extends Control
 ##   Domination's lettered flags, and Search and Destroy's sites and charge,
 ##   in their holder's colour. One out of the window is held at its edge, as
 ##   Call of Duty holds objective icons;
+## - enemies only where the server reveals them (`NetClient.radar_blips`):
+##   red dots where they fired an unsuppressed weapon, fading out
+##   (`shooter_sim::radar`). Jammed by an enemy Counter-UAV, static covers
+##   the plan and it shows nobody but us.
 ## It hides during killcams, in Zombies, and on maps without a plan. `Net`
 ## adds it to the match HUD.
 
@@ -98,7 +102,7 @@ func _process(delta: float) -> void:
 	_material.set_shader_parameter(&"turn", -_turn)
 	_material.set_shader_parameter(&"jammed", _jam)
 	_material.set_shader_parameter(&"time", Time.get_ticks_msec() / 1000.0)
-	_jam = move_toward(_jam, 0.0, delta)
+	_jam = move_toward(_jam, 1.0 if client.radar_jammed() else 0.0, delta * 4.0)
 	queue_redraw()
 	_icons.queue_redraw()
 
@@ -154,6 +158,13 @@ func _draw_icons() -> void:
 	var teams := not bool(client.match_info().get("free_for_all", false))
 	_draw_objectives()
 	if _jam < 0.5:
+		for blip: Dictionary in client.radar_blips():
+			var p: Vector3 = blip.position
+			var dot := to_window(Vector2(p.x, p.z))
+			if _inside(dot):
+				var fade: float = blip.alpha
+				_icons.draw_circle(dot, 4.6, Color(0, 0, 0, 0.45 * fade), true, -1.0, true)
+				_icons.draw_circle(dot, 3.6, Color(ENEMY, fade), true, -1.0, true)
 		for id in client.remote_ids():
 			var remote := client.remote_player(id)
 			if remote == null or not remote.is_alive():

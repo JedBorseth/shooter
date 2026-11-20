@@ -82,16 +82,18 @@ use shooter_sim::net::discovery::{ServerInfo, query_port_for};
 use shooter_sim::net::input_queue::InputQueue;
 use shooter_sim::net::lag::{self, LagHistory, Pellet, Target, TargetHit};
 use shooter_sim::net::protocol::{
-    self, ChargeStatus, ChargeView, ClientMessage, DominationView, FlagPlay, FlagPointStatus,
-    FlagPointView, FlagStatus, FlagView, GameEvent, MAX_CHARGE_SITES, MAX_DOMINATION_FLAGS,
-    MAX_EVENTS_PER_MESSAGE, MAX_HARDPOINT_ZONES, OwnState, PROTOCOL_VERSION, PlayerView, Predicted,
-    ScavengerEvent, ScoreRow, ServerMessage, Snapshot, UseView, ZoneView,
+    self, BlipView, ChargeStatus, ChargeView, ClientMessage, DominationView, FlagPlay,
+    FlagPointStatus, FlagPointView, FlagStatus, FlagView, GameEvent, MAX_CHARGE_SITES,
+    MAX_DOMINATION_FLAGS, MAX_EVENTS_PER_MESSAGE, MAX_HARDPOINT_ZONES, OwnState, PROTOCOL_VERSION,
+    PlayerView, Predicted, RadarView, ScavengerEvent, ScoreRow, ServerMessage, Snapshot, UseView,
+    ZoneView,
 };
 use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::subtick;
 use shooter_sim::net::{CHANNEL_COUNT, DEFAULT_PORT, MAX_PLAYERS, TICK_DT, TICK_RATE, Tick};
 use shooter_sim::perk::{Perk, Perks};
 use shooter_sim::player::{self, PlayerEvent, PlayerInput, PlayerParams, PlayerState};
+use shooter_sim::radar::Radar;
 use shooter_sim::scavenger;
 use shooter_sim::score::{Award, Kill, ScoreRules, ScoreState, ScoreTotals, Scored};
 use shooter_sim::snd::{
@@ -307,12 +309,16 @@ pub struct NetServer {
     round_record: RoundRecord,
     /// Players whose inputs hold interact whatever they send (tests).
     forced_interact: Vec<u8>,
+    /// Players whose inputs hold the trigger whatever they send (tests).
+    forced_fire: Vec<u8>,
     spawn_points: Vec<SpawnPoint>,
     spawn_rules: SpawnRules,
     /// Where players died recently, and when.
     recent_deaths: VecDeque<(Tick, Vec3)>,
     /// Scavenger's packs on the ground (`shooter_sim::scavenger`).
     scavenger: scavenger::Packs,
+    /// Who shows on whose minimap (`shooter_sim::radar`).
+    radar: Radar,
     /// The map's lanes for bots to follow (`BotLanes`), from one side to the other.
     bot_lanes: Vec<Vec<Vector3>>,
     /// Tick of the next scoreboard update.
@@ -1013,6 +1019,30 @@ impl NetServer {
             avatar.predicted.position = to_sim(position);
             body::place(&mut avatar.parts, &params.movement, &avatar.predicted);
         }
+    }
+
+    /// Debug: player `id`'s inputs hold the trigger while `held`, whatever
+    /// they send (tests).
+    #[func]
+    fn debug_fire(&mut self, id: i32, held: bool) {
+        let Ok(id) = u8::try_from(id) else { return };
+        self.forced_fire.retain(|p| *p != id);
+        if held {
+            self.forced_fire.push(id);
+        }
+    }
+
+    /// The players `viewer`'s minimap shows as red dots (tests).
+    #[func]
+    fn radar_ids(&self, viewer: i32) -> PackedInt32Array {
+        let Some(avatar) = self.avatars.iter().find(|a| i32::from(a.id) == viewer) else {
+            return PackedInt32Array::new();
+        };
+        self.radar_view(avatar)
+            .blips
+            .iter()
+            .map(|b| i32::from(b.id))
+            .collect()
     }
 
     /// Debug: player `id`'s inputs hold interact while `held`, whatever
@@ -2317,6 +2347,7 @@ impl NetServer {
     }
 
     fn despawn_avatar(&mut self, id: u8) {
+        self.radar.forget(id);
         if let Some(index) = self.avatars.iter().position(|a| a.id == id) {
             let avatar = self.avatars.swap_remove(index);
             avatar.parts.body.upcast::<Node>().queue_free();
@@ -2494,6 +2525,9 @@ impl NetServer {
                 }
                 if self.forced_interact.contains(&avatar.id) {
                     input.interact = true;
+                }
+                if self.forced_fire.contains(&avatar.id) {
+                    input.fire = true;
                 }
                 if let Some(charge) = &charge
                     && input.interact
@@ -2715,6 +2749,11 @@ impl NetServer {
         }
         for id in respawns {
             self.respawn(id, None, false);
+        }
+        for shot in &shots {
+            // Unsuppressed fire shows on enemy minimaps where it was fired.
+            self.radar
+                .fired(shot.shooter, to_sim(shot.eye), shot.weapon, self.tick);
         }
         for shot in shots {
             self.resolve_shot(&shot);
@@ -4604,6 +4643,7 @@ impl NetServer {
         };
         let (at, side) = (avatar.predicted.position, self.side(avatar));
         self.recent_deaths.push_back((tick, at));
+        self.radar.forget(id);
         self.next_scoreboard = tick;
         // Everyone leaves a Scavenger pack, for their enemies with the perk
         // (not in Zombies, which has no perks).
@@ -5489,6 +5529,30 @@ impl NetServer {
     }
 
     /// Whether `a` and `b` are enemies.
+    /// What `viewer`'s minimap shows of the enemy: only the dots their radar
+    /// has, so a client learns nothing more (`shooter_sim::radar`). Zombies
+    /// has no minimap.
+    fn radar_view(&self, viewer: &Avatar) -> RadarView {
+        if self.horde.is_some() {
+            return RadarView::default();
+        }
+        let hostile = |id: u8| {
+            self.avatars
+                .iter()
+                .find(|a| a.id == id)
+                .is_some_and(|other| self.hostile(viewer, other))
+        };
+        RadarView {
+            jammed: false,
+            blips: self
+                .radar
+                .blips_for(self.tick, hostile)
+                .iter()
+                .map(|blip| BlipView::new(blip, self.tick))
+                .collect(),
+        }
+    }
+
     fn hostile(&self, a: &Avatar, b: &Avatar) -> bool {
         a.id != b.id && self.side(a) != self.side(b)
     }
@@ -6156,6 +6220,12 @@ impl NetServer {
         self.lag.record(self.tick, views.clone());
         let tick = self.tick;
         let zombie_views = self.horde.as_mut().and_then(|h| h.views_for(tick));
+        self.radar.expire(tick);
+        let radars: Vec<(u8, RadarView)> = self
+            .avatars
+            .iter()
+            .map(|viewer| (viewer.id, self.radar_view(viewer)))
+            .collect();
 
         let parts = SnapshotParts {
             tick,
@@ -6163,6 +6233,7 @@ impl NetServer {
             grenades: &grenade_views,
             smokes: &smoke_views,
             zombies: zombie_views.as_ref(),
+            radars: &radars,
         };
         for client in &mut self.clients {
             let Some(id) = client.player else { continue };
@@ -6206,6 +6277,8 @@ struct SnapshotParts<'a> {
     grenades: &'a [protocol::GrenadeView],
     smokes: &'a [protocol::SmokeView],
     zombies: Option<&'a Vec<protocol::ZombieView>>,
+    /// Each player's minimap of the enemy, by player id.
+    radars: &'a [(u8, RadarView)],
 }
 
 impl SnapshotParts<'_> {
@@ -6235,6 +6308,12 @@ impl SnapshotParts<'_> {
             grenades: self.grenades.to_vec(),
             smokes: self.smokes.to_vec(),
             zombies: self.zombies.cloned(),
+            radar: self
+                .radars
+                .iter()
+                .find(|(viewer, _)| *viewer == id)
+                .map(|(_, view)| view.clone())
+                .unwrap_or_default(),
         });
         (
             snapshot,
