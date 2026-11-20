@@ -7,8 +7,11 @@ under Phase 2 and Phase 3.
 
 ## Measuring bandwidth
 
-`godot/tests/bandwidth_test.gd` runs a dedicated server in-process on Slamcity
-with twelve bots playing Team Deathmatch, and measures what each bot would cost
+`godot/tests/bandwidth_test.gd` runs a dedicated server in-process, first on
+Slamcity with twelve bots playing Team Deathmatch, then on the Zombies arena
+with four players against a round-10 horde (24 zombies out at once; the bench
+makes zombie strikes harmless so the scripted players stay up), and measures
+what each bot would cost
 if it were a client behind an 80 ms round trip (`NetServer.bandwidth_probe_rtt_ms`,
 `shooter_sim::net::bandwidth::Probe`). Each bot's snapshots are built by the
 same code as a real client's and delta-encoded against the snapshot that client
@@ -17,7 +20,9 @@ packet carries every input it would not have seen acknowledged yet, as
 `Prediction::unacked` does. Both are encoded with the real wire format and
 counted. It prints kilobits per second per client, payload alone and with
 IPv4, UDP, and ENet headers (40 bytes a packet), and fails if a direction
-grows past its budget, so CI catches a regression.
+grows past its budget, so CI catches a regression. Reliable game events
+(kills, score, the scoreboard every few seconds) are not counted: they are
+rare next to the 60 snapshots and 120 input packets a second.
 
 ```sh
 godot --headless --fixed-fps 120 --path godot --script res://tests/bandwidth_test.gd
@@ -38,6 +43,14 @@ first rows), payload kbps
 | Before (protocol 57) | 30 ms | 170 (189) | 94 | 53 (91) |
 | Own state as changes | 80 ms | 92 to 97 (111 to 117) | 14 to 15 | 101 to 103 (139 to 142) |
 | Inputs as changes on a view-angle grid | 80 ms | 87 to 88 (107) | 14 | 37 (75 to 76) |
+| Other players field by field | 80 ms | 65 to 70 (84 to 89) | 14 | 36 to 37 (74 to 76) |
+
+Zombies, four players and 24 zombies, 20 s of play:
+
+| Change | RTT | Down | Own state | Up |
+| --- | --- | --- | --- | --- |
+| Before the horde went as changes | 80 ms | 83 (102) | 19 | 22 (60) |
+| The horde as changes | 80 ms | 52 (71) | 19 | 22 (60) |
 
 Where it goes, before any change:
 
@@ -71,7 +84,23 @@ Quake III is GPL and no code was copied). Quake lists its fields in a table;
 here the encoder's call order is the table. The float XOR is the float
 compression of Facebook's Gorilla (Pelkonen et al., VLDB 2015).
 
-## Inputs as changes
+## Other players field by field
+
+Other players were already sent as changes from the acknowledged snapshot,
+but in groups: both view angles in full whenever either moved, every flag
+whenever one changed, and all five animation clocks whenever the stride
+moved, which it does every snapshot a body walks. Now a
+player view goes through the same field coder (`write_view`,
+`read_view`): positions, angles, and the shot counter as differences, each
+small field on its own, and the twelve flags as one field. About 12 bytes a
+moving player became about 8.
+
+The Zombies horde went out whole every other snapshot (30 Hz): about 8 bytes
+a zombie in centimetres. It now goes as changes from the newest horde the
+client acknowledged (the server remembers, per client, the newest
+acknowledged snapshot that carried one): a zombie's position as
+differences, the rest as one field of flags and counters, and ids that run
+in order as a bit each. About 4 bytes a walking zombie.
 
 Every input packet resends every input the server has not acknowledged, so a
 lost packet costs nothing; at an 80 ms round trip that is about ten inputs a

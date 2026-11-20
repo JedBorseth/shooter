@@ -151,7 +151,10 @@ use crate::zombies::drinks::Drinks;
 // the own state in the acknowledged snapshot (`net::delta`).
 // Version 63 snaps inputs' view angles to whole steps of 2^-14 radians and
 // sends each input after a packet's first as changes from the one before.
-pub const PROTOCOL_VERSION: u16 = 63;
+// Version 64 sends other players' views field by field through the same
+// coder (`net::delta`), positions, angles, and counters as differences, and
+// the Zombies horde as changes from the last horde the client acknowledged.
+pub const PROTOCOL_VERSION: u16 = 64;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -615,6 +618,9 @@ impl BlipView {
 pub struct Baseline<'a> {
     pub players: &'a [PlayerView],
     pub own: Option<&'a Predicted>,
+    /// Zombies: the horde of the newest snapshot carrying it that the client
+    /// acknowledged, and that snapshot's tick, so the horde goes as changes.
+    pub zombies: Option<(Tick, &'a [ZombieView])>,
 }
 
 /// Most zombies a snapshot carries.
@@ -1590,7 +1596,7 @@ impl ServerMessage {
     pub fn encode(&self, baseline: &[PlayerView]) -> Vec<u8> {
         self.encode_with(Baseline {
             players: baseline,
-            own: None,
+            ..Baseline::default()
         })
     }
 
@@ -1641,8 +1647,15 @@ impl ServerMessage {
         bytes: &[u8],
         baseline: impl FnOnce(Tick) -> Option<&'a [PlayerView]>,
     ) -> DecodeResult<Self> {
+        // Only the players' baseline is looked up: this form never carries
+        // own state or horde changes.
+        let baseline = std::cell::Cell::new(Some(baseline));
         Self::decode_with(bytes, |tick| {
-            baseline(tick).map(|players| Baseline { players, own: None })
+            let players = baseline.take()?(tick)?;
+            Some(Baseline {
+                players,
+                ..Baseline::default()
+            })
         })
     }
 
@@ -1652,7 +1665,7 @@ impl ServerMessage {
     /// not have, fails to decode.
     pub fn decode_with<'a>(
         bytes: &[u8],
-        baseline: impl FnOnce(Tick) -> Option<Baseline<'a>>,
+        baseline: impl Fn(Tick) -> Option<Baseline<'a>>,
     ) -> DecodeResult<Self> {
         let mut r = BitReader::new(bytes);
         match r.bits(TAG_BITS)? {
@@ -2854,6 +2867,7 @@ fn read_finite_vec3(r: &mut BitReader) -> DecodeResult<Vec3> {
 }
 
 fn write_snapshot(w: &mut BitWriter, s: &Snapshot, baseline: Baseline) {
+    let zombie_base = baseline.zombies;
     w.u32(s.tick);
     match s.baseline {
         // Baselines are recent, so send the distance back instead of the tick.
@@ -2928,10 +2942,32 @@ fn write_snapshot(w: &mut BitWriter, s: &Snapshot, baseline: Baseline) {
     match &s.zombies {
         Some(zombies) => {
             w.bool(true);
+            // As changes from the horde the client last acknowledged.
+            w.bool(zombie_base.is_some());
+            let base: &[ZombieView] = match zombie_base {
+                Some((tick, base)) => {
+                    w.varint(s.tick.wrapping_sub(tick));
+                    base
+                }
+                None => &[],
+            };
             let count = zombies.len().min(MAX_ZOMBIES);
             w.varint(count as u32);
+            let mut next = 0u8;
             for z in &zombies[..count] {
-                write_zombie(w, z);
+                // Ids mostly run in order: a bit for the next one.
+                w.bool(z.id == next);
+                if z.id != next {
+                    w.u8(z.id);
+                }
+                next = z.id.wrapping_add(1);
+                let b = zombie_or_new(base, z.id);
+                let changed = *z != b;
+                w.bool(changed);
+                if changed {
+                    let fields = delta::record(|r| write_zombie(r, &b));
+                    write_zombie(&mut DeltaWriter::new(w, &fields), z);
+                }
             }
         }
         None => w.bool(false),
@@ -2979,33 +3015,51 @@ fn read_radar(r: &mut BitReader) -> DecodeResult<RadarView> {
     Ok(RadarView { jammed, blips })
 }
 
-fn write_zombie(w: &mut BitWriter, z: &ZombieView) {
+/// Zombie `id` in `base`, or a zombie never seen, to encode against.
+fn zombie_or_new(base: &[ZombieView], id: u8) -> ZombieView {
+    base.iter()
+        .find(|b| b.id == id)
+        .copied()
+        .unwrap_or(ZombieView {
+            id,
+            ..ZombieView::default()
+        })
+}
+
+/// Every field of a zombie but its id, written against [`BitSink`] so a
+/// horde goes as changes.
+fn write_zombie(w: &mut impl BitSink, z: &ZombieView) {
     let counter = (1 << ZOMBIE_COUNTER_BITS) - 1;
-    w.u8(z.id);
-    w.varint_signed(z.position.x);
-    w.varint_signed(z.position.y);
-    w.varint_signed(z.position.z);
+    for axis in 0..3 {
+        w.number(z.position[axis] as u32, 32);
+    }
     w.u8(z.yaw);
-    w.bool(z.alive);
-    w.bits(u32::from(z.swings & counter), ZOMBIE_COUNTER_BITS);
-    w.bits(u32::from(z.hits & counter), ZOMBIE_COUNTER_BITS);
     // A zombie never hit has no latest hit to describe.
     let hit = z.hits != 0 || z.hit_heading != 0 || z.hit_part != 0;
-    w.bool(hit);
+    // Whether it is alive or was hit, and both counters, as one field.
+    let flags = u32::from(z.alive)
+        | u32::from(hit) << 1
+        | u32::from(z.swings & counter) << 2
+        | u32::from(z.hits & counter) << (2 + ZOMBIE_COUNTER_BITS);
+    w.bits(flags, 2 + 2 * ZOMBIE_COUNTER_BITS);
     if hit {
         w.u8(z.hit_heading);
         w.u8(z.hit_part);
     }
 }
 
-fn read_zombie(r: &mut BitReader) -> DecodeResult<ZombieView> {
-    let id = r.u8()?;
-    let position = IVec3::new(r.varint_signed()?, r.varint_signed()?, r.varint_signed()?);
+fn read_zombie(r: &mut impl BitSource, id: u8) -> DecodeResult<ZombieView> {
+    let mut position = IVec3::ZERO;
+    for axis in 0..3 {
+        position[axis] = r.number(32)? as i32;
+    }
     let yaw = r.u8()?;
-    let alive = r.bool()?;
-    let swings = r.bits(ZOMBIE_COUNTER_BITS)? as u8;
-    let hits = r.bits(ZOMBIE_COUNTER_BITS)? as u8;
-    let (hit_heading, hit_part) = if r.bool()? {
+    let counter = (1 << ZOMBIE_COUNTER_BITS) - 1;
+    let flags = r.bits(2 + 2 * ZOMBIE_COUNTER_BITS)?;
+    let alive = flags & 1 != 0;
+    let swings = ((flags >> 2) & counter) as u8;
+    let hits = ((flags >> (2 + ZOMBIE_COUNTER_BITS)) & counter) as u8;
+    let (hit_heading, hit_part) = if flags & 2 != 0 {
         (r.u8()?, r.u8()?)
     } else {
         (0, 0)
@@ -3024,7 +3078,7 @@ fn read_zombie(r: &mut BitReader) -> DecodeResult<ZombieView> {
 
 fn read_snapshot<'a>(
     r: &mut BitReader,
-    baseline: impl FnOnce(Tick) -> Option<Baseline<'a>>,
+    lookup: impl Fn(Tick) -> Option<Baseline<'a>>,
 ) -> DecodeResult<Snapshot> {
     let tick = r.u32()?;
     let base_tick = if r.bool()? {
@@ -3033,7 +3087,7 @@ fn read_snapshot<'a>(
         None
     };
     let baseline = match base_tick {
-        Some(t) => baseline(t).ok_or(DecodeError::Invalid("unknown baseline"))?,
+        Some(t) => lookup(t).ok_or(DecodeError::Invalid("unknown baseline"))?,
         None => Baseline::default(),
     };
     let own = if r.bool()? {
@@ -3100,13 +3154,32 @@ fn read_snapshot<'a>(
         });
     }
     let zombies = if r.bool()? {
+        let base: &[ZombieView] = if r.bool()? {
+            let at = tick.wrapping_sub(r.varint()?);
+            lookup(at)
+                .and_then(|b| b.zombies)
+                .ok_or(DecodeError::Invalid("unknown zombie baseline"))?
+                .1
+        } else {
+            &[]
+        };
         let count = r.varint()? as usize;
         if count > MAX_ZOMBIES {
             return Err(DecodeError::Invalid("zombie count"));
         }
         let mut zombies = Vec::with_capacity(count);
+        let mut next = 0u8;
         for _ in 0..count {
-            zombies.push(read_zombie(r)?);
+            let id = if r.bool()? { next } else { r.u8()? };
+            next = id.wrapping_add(1);
+            let b = zombie_or_new(base, id);
+            let z = if r.bool()? {
+                let fields = delta::record(|w| write_zombie(w, &b));
+                read_zombie(&mut DeltaReader::new(r, &fields), id)?
+            } else {
+                b
+            };
+            zombies.push(z);
         }
         Some(zombies)
     } else {
@@ -3128,166 +3201,134 @@ fn read_snapshot<'a>(
 /// Lunge offsets travel in millimetres.
 const LUNGE_SCALE: f32 = 1000.0;
 
-/// Field groups of a [`PlayerView`], each sent only when it changed.
+/// A [`PlayerView`] as changes from `base` (`net::delta`): one bit when
+/// nothing changed, otherwise each field against the baseline's. A field
+/// added to [`write_view`] and [`read_view`] is delta-compressed with them.
 fn write_view_delta(w: &mut BitWriter, v: &PlayerView, base: &PlayerView) {
     let changed = v != base;
     w.bool(changed);
-    if !changed {
-        return;
-    }
-    for axis in 0..3 {
-        let delta = v.position[axis].wrapping_sub(base.position[axis]);
-        w.bool(delta != 0);
-        if delta != 0 {
-            w.varint_signed(delta);
-        }
-    }
-    let look = (v.yaw, v.pitch) != (base.yaw, base.pitch);
-    w.bool(look);
-    if look {
-        w.u16(v.yaw);
-        w.u16(v.pitch);
-    }
-    let flags = |p: &PlayerView| {
-        (
-            p.stance,
-            p.crouch,
-            p.sprinting,
-            p.on_floor,
-            p.ads,
-            p.weapon,
-            p.reloading,
-            p.reload_empty,
-            p.alive,
-            (p.mantling, p.vaulting),
-            p.meleeing,
-            p.ladder,
-        )
-    };
-    let flags_changed = flags(v) != flags(base)
-        || (v.mount, v.downed, v.quiet) != (base.mount, base.downed, base.quiet);
-    w.bool(flags_changed);
-    if flags_changed {
-        write_stance(w, v.stance);
-        w.u8(v.crouch);
-        w.bool(v.sprinting);
-        w.bool(v.on_floor);
-        w.u8(v.ads);
-        write_weapon(w, v.weapon);
-        w.bool(v.reloading);
-        w.bool(v.reload_empty);
-        w.bool(v.alive);
-        w.bool(v.mantling);
-        w.bool(v.vaulting);
-        w.bool(v.meleeing);
-        w.bool(v.downed);
-        w.bool(v.quiet);
-        w.bool(v.ladder.is_some());
-        if let Some(heading) = v.ladder {
-            w.u8(heading);
-        }
-        w.u8(v.mount);
-    }
-    let throw_changed = (v.throw, v.throw_kind) != (base.throw, base.throw_kind);
-    w.bool(throw_changed);
-    if throw_changed {
-        w.u8(v.throw);
-        w.bits(u32::from(v.throw_kind.code()), EQUIPMENT_BITS);
-    }
-    let charge_changed = (v.charge_use, v.defusing) != (base.charge_use, base.defusing);
-    w.bool(charge_changed);
-    if charge_changed {
-        w.u8(v.charge_use);
-        w.bool(v.defusing);
-    }
-    let shots = v.shots_fired.wrapping_sub(base.shots_fired);
-    w.bool(shots != 0);
-    if shots != 0 {
-        w.varint(shots);
-    }
-    let hit = (v.hits, v.hit_heading, v.hit_part) != (base.hits, base.hit_heading, base.hit_part);
-    w.bool(hit);
-    if hit {
-        w.u8(v.hits);
-        w.u8(v.hit_heading);
-        w.u8(v.hit_part);
-    }
-    let progress = |p: &PlayerView| {
-        (
-            p.stride,
-            p.reload_progress,
-            p.mantle_progress,
-            p.turn,
-            p.step,
-        )
-    };
-    let moved = progress(v) != progress(base);
-    w.bool(moved);
-    if moved {
-        w.u8(v.stride);
-        w.u8(v.reload_progress);
-        w.u8(v.mantle_progress);
-        w.u8(v.turn);
-        w.u8(v.step);
+    if changed {
+        let fields = delta::record(|r| write_view(r, base));
+        write_view(&mut DeltaWriter::new(w, &fields), v);
     }
 }
 
 fn read_view_delta(r: &mut BitReader, base: &PlayerView) -> DecodeResult<PlayerView> {
-    let mut v = *base;
     if !r.bool()? {
-        return Ok(v);
+        return Ok(*base);
     }
+    let fields = delta::record(|w| write_view(w, base));
+    let view = read_view(&mut DeltaReader::new(r, &fields))?;
+    Ok(PlayerView {
+        id: base.id,
+        ..view
+    })
+}
+
+/// Bits of a player view's flag mask.
+const VIEW_FLAG_BITS: u32 = 12;
+
+/// Every field of a [`PlayerView`] but its id. Positions, angles, and
+/// counters are numbers, so they change by their difference; the flags are
+/// one field, so they cost a bit while none of them changes.
+fn write_view(w: &mut impl BitSink, v: &PlayerView) {
     for axis in 0..3 {
-        if r.bool()? {
-            v.position[axis] = base.position[axis].wrapping_add(r.varint_signed()?);
-        }
+        w.number(v.position[axis] as u32, 32);
     }
-    if r.bool()? {
-        v.yaw = r.u16()?;
-        v.pitch = r.u16()?;
+    w.number(u32::from(v.yaw), 16);
+    w.number(u32::from(v.pitch), 16);
+    let mut mask = 0;
+    for (bit, flag) in [
+        v.sprinting,
+        v.on_floor,
+        v.reloading,
+        v.reload_empty,
+        v.alive,
+        v.mantling,
+        v.vaulting,
+        v.meleeing,
+        v.defusing,
+        v.downed,
+        v.quiet,
+        v.ladder.is_some(),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        mask |= u32::from(flag) << bit;
     }
-    if r.bool()? {
-        v.stance = read_stance(r)?;
-        v.crouch = r.u8()?;
-        v.sprinting = r.bool()?;
-        v.on_floor = r.bool()?;
-        v.ads = r.u8()?;
-        v.weapon = read_weapon(r)?;
-        v.reloading = r.bool()?;
-        v.reload_empty = r.bool()?;
-        v.alive = r.bool()?;
-        v.mantling = r.bool()?;
-        v.vaulting = r.bool()?;
-        v.meleeing = r.bool()?;
-        v.downed = r.bool()?;
-        v.quiet = r.bool()?;
-        v.ladder = if r.bool()? { Some(r.u8()?) } else { None };
-        v.mount = r.u8()?;
+    w.bits(mask, VIEW_FLAG_BITS);
+    write_stance(w, v.stance);
+    w.u8(v.crouch);
+    w.u8(v.ads);
+    write_weapon(w, v.weapon);
+    if let Some(heading) = v.ladder {
+        w.u8(heading);
     }
-    if r.bool()? {
-        v.throw = r.u8()?;
-        v.throw_kind = read_equipment(r)?;
+    w.u8(v.mount);
+    w.u8(v.throw);
+    w.bits(u32::from(v.throw_kind.code()), EQUIPMENT_BITS);
+    w.u8(v.charge_use);
+    w.number(v.shots_fired, 32);
+    w.u8(v.hits);
+    w.u8(v.hit_heading);
+    w.u8(v.hit_part);
+    w.u8(v.stride);
+    w.u8(v.reload_progress);
+    w.u8(v.mantle_progress);
+    w.u8(v.turn);
+    w.u8(v.step);
+}
+
+fn read_view(r: &mut impl BitSource) -> DecodeResult<PlayerView> {
+    let mut position = IVec3::ZERO;
+    for axis in 0..3 {
+        position[axis] = r.number(32)? as i32;
     }
-    if r.bool()? {
-        v.charge_use = r.u8()?;
-        v.defusing = r.bool()?;
-    }
-    if r.bool()? {
-        v.shots_fired = base.shots_fired.wrapping_add(r.varint()?);
-    }
-    if r.bool()? {
-        v.hits = r.u8()?;
-        v.hit_heading = r.u8()?;
-        v.hit_part = r.u8()?;
-    }
-    if r.bool()? {
-        v.stride = r.u8()?;
-        v.reload_progress = r.u8()?;
-        v.mantle_progress = r.u8()?;
-        v.turn = r.u8()?;
-        v.step = r.u8()?;
-    }
-    Ok(v)
+    let yaw = r.number(16)? as u16;
+    let pitch = r.number(16)? as u16;
+    let mask = r.bits(VIEW_FLAG_BITS)?;
+    let flag = |bit: u32| mask & (1 << bit) != 0;
+    let stance = read_stance(r)?;
+    let crouch = r.u8()?;
+    let ads = r.u8()?;
+    let weapon = read_weapon(r)?;
+    let ladder = if flag(11) { Some(r.u8()?) } else { None };
+    Ok(PlayerView {
+        id: 0,
+        position,
+        yaw,
+        pitch,
+        stance,
+        crouch,
+        sprinting: flag(0),
+        on_floor: flag(1),
+        ads,
+        weapon,
+        reloading: flag(2),
+        reload_empty: flag(3),
+        alive: flag(4),
+        mantling: flag(5),
+        vaulting: flag(6),
+        meleeing: flag(7),
+        defusing: flag(8),
+        downed: flag(9),
+        quiet: flag(10),
+        ladder,
+        mount: r.u8()?,
+        throw: r.u8()?,
+        throw_kind: read_equipment(r)?,
+        charge_use: r.u8()?,
+        shots_fired: r.number(32)?,
+        hits: r.u8()?,
+        hit_heading: r.u8()?,
+        hit_part: r.u8()?,
+        stride: r.u8()?,
+        reload_progress: r.u8()?,
+        mantle_progress: r.u8()?,
+        turn: r.u8()?,
+        step: r.u8()?,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -3874,6 +3915,7 @@ mod tests {
         let base = Baseline {
             players: &[],
             own: Some(&before),
+            zombies: None,
         };
         let full = snapshot(after, None).encode_with(base);
         let delta_msg = snapshot(after, Some(100));
@@ -3894,14 +3936,103 @@ mod tests {
         let same = snapshot(before, Some(100)).encode_with(base);
         assert!(same.len() < 24, "{} bytes unchanged", same.len());
         // Without the baseline's own state the client cannot decode it.
-        let missing = Baseline {
-            players: &[],
-            own: None,
-        };
+        let missing = Baseline::default();
         assert_eq!(
             ServerMessage::decode_with(&delta, |_| Some(missing)),
             Err(DecodeError::Invalid("unknown own baseline"))
         );
+    }
+
+    #[test]
+    fn the_horde_rides_as_changes_from_the_acknowledged_one() {
+        let horde = |t: f32| -> Vec<ZombieView> {
+            (0..24u8)
+                .map(|id| {
+                    let f = f32::from(id);
+                    ZombieView::new(
+                        id,
+                        Vec3::new(f * 1.3 + t * 1.5, 0.0, -f + t * 0.9),
+                        f * 0.2,
+                        true,
+                    )
+                })
+                .collect()
+        };
+        let before = horde(0.0);
+        // 80 ms on, two zombies hit and one killed.
+        let mut now = horde(0.08);
+        now[3].hits = 1;
+        now[3].hit_part = 9;
+        now[7].alive = false;
+        let snapshot = |zombies: Vec<ZombieView>| {
+            ServerMessage::Snapshot(Snapshot {
+                tick: 120,
+                baseline: None,
+                own: None,
+                players: Vec::new(),
+                grenades: Vec::new(),
+                smokes: Vec::new(),
+                zombies: Some(zombies),
+                radar: RadarView::default(),
+            })
+        };
+        let full = snapshot(now.clone()).encode(&[]);
+        let base = Baseline {
+            zombies: Some((112, &before)),
+            ..Baseline::default()
+        };
+        let msg = snapshot(now);
+        let delta = msg.encode_with(base);
+        // About 4 bytes a walking zombie, against 7 or 8 in full.
+        assert!(
+            delta.len() <= 24 * 4 + 4 && delta.len() * 3 < full.len() * 2,
+            "{} bytes as changes, {} in full",
+            delta.len(),
+            full.len()
+        );
+        let decoded = ServerMessage::decode_with(&delta, |tick| {
+            assert_eq!(tick, 112);
+            Some(base)
+        })
+        .unwrap();
+        assert_eq!(decoded, msg);
+        assert_eq!(
+            ServerMessage::decode_with(&delta, |_| Some(Baseline::default())),
+            Err(DecodeError::Invalid("unknown zombie baseline"))
+        );
+    }
+
+    #[test]
+    fn a_running_turning_player_costs_a_few_bytes() {
+        let base = PlayerView {
+            id: 4,
+            position: IVec3::new(12_000, 0, -3_000),
+            yaw: 0xFFF0,
+            pitch: 0,
+            alive: true,
+            on_floor: true,
+            sprinting: true,
+            weapon: WeaponId::expect("m1911"),
+            stride: 200,
+            shots_fired: 40,
+            ..Default::default()
+        };
+        // 80 ms later: 0.5 m on, turned through zero, looking a hair down.
+        let now = PlayerView {
+            position: IVec3::new(12_400, 0, -2_700),
+            yaw: 0x0040,
+            pitch: 0xFFFC,
+            stride: 30,
+            ..base
+        };
+        let mut w = BitWriter::new();
+        write_view_delta(&mut w, &now, &base);
+        let bits = w.len_bits();
+        let bytes = w.finish();
+        let decoded = read_view_delta(&mut BitReader::new(&bytes), &base).unwrap();
+        assert_eq!(decoded, now);
+        // The grouped format took about 130 bits for the same change.
+        assert!(bits <= 88, "{bits} bits");
     }
 
     #[test]
