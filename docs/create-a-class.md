@@ -63,6 +63,17 @@ XP, levels, and unlocks follow classic Call of Duty (Call of Duty 4 through Blac
 - The editor shows what each locked item needs ("Level 12", "8 kills"). A custom class saved with something still locked plays without it: a locked weapon gives way to the first unlocked one of its slot (`ProgressStore.unlocked_class`).
 - The class list shows the level and the XP to the next.
 
+### End of match
+
+The results screen shows the XP the match paid on a card beside the scoreboard (`godot/scripts/net/xp_summary.gd`), as Call of Duty's after-match screen does:
+
+- the score, the match bonus (marked when it was a win), and the total;
+- the level bar filling from where the match started to where it ended, with LEVEL UP when it crossed one;
+- what the new levels unlocked;
+- for each weapon used, its kills this match and how far its next attachment is ("Grip in 8").
+
+![The XP card beside the results](media/match-xp.jpg)
+
 The server cannot check a level without accounts, so it checks only the class rules. Unlocks are the client's to enforce until Phase 5.
 
 ![The class list at level 9 (top) and the editor with locked items (bottom)](media/class-unlocks.jpg)

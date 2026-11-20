@@ -21,7 +21,9 @@ extends CanvasLayer
 ##   Ready button in the lobby. It opens by itself when we join a lobby. A
 ##   new class applies from the next spawn (in Search and Destroy, at once
 ##   during a round's freeze). Gun Game has no classes: the menu shows the
-##   ladder.
+##   ladder;
+## - at the end of a match, the XP it paid beside the results
+##   (`xp_summary.gd`, from `match_xp.gd`).
 ##
 ## Hardpoint's own pieces (the zone, its marker, and the calls) are in
 ## `hardpoint_view.gd`; here it adds a TIME column (seconds on the hill) to
@@ -36,6 +38,7 @@ const MatchBanner := preload("res://scripts/net/match_banner.gd")
 const Scoreboard := preload("res://scripts/net/scoreboard.gd")
 const ClassMenu := preload("res://scripts/net/class_menu.gd")
 const MatchXp := preload("res://scripts/net/match_xp.gd")
+const XpSummary := preload("res://scripts/net/xp_summary.gd")
 
 const ALLY := Color("7cc4ff")
 const ENEMY := Color("ff7a5c")
@@ -60,6 +63,10 @@ var _menu_panel: PanelContainer
 var _class_menu: VBoxContainer
 ## Earns the match's XP (`match_xp.gd`).
 var _match_xp: Node
+## The end-of-match XP card beside the results (`xp_summary.gd`), and
+## whether it has this match's summary.
+var _xp_card: PanelContainer
+var _xp_ready := false
 var _ready_button: Button
 var _menu_status: Label
 var _menu_eyebrow: Label
@@ -92,6 +99,7 @@ func _ready() -> void:
 	_match_xp.name = "MatchXp"
 	_match_xp.client = client
 	add_child(_match_xp)
+	_match_xp.match_finished.connect(_on_match_finished)
 	client.kill_reported.connect(_on_kill)
 	client.chat_received.connect(_on_chat)
 	client.match_changed.connect(_refresh_board)
@@ -167,6 +175,9 @@ func _process(delta: float) -> void:
 		_ready_button.visible = true
 
 	var results := phase == "ended"
+	if not results:
+		_xp_ready = false
+	_xp_card.visible = results and _xp_ready and not _menu.visible
 	_board.visible = results or (Input.is_action_pressed(&"scoreboard") and not _menu.visible)
 	# The banner above says the result; the board keeps the mode, in its colour.
 	_board.title = String(info.get("mode_name", "")).to_upper()
@@ -790,6 +801,20 @@ func _age_chat(delta: float) -> void:
 func _build_board() -> void:
 	_board = _full_rect(Scoreboard)
 	_board.visible = false
+	_xp_card = XpSummary.new()
+	_xp_card.visible = false
+	# Right of the results scoreboard, clear of the ammo cluster.
+	_xp_card.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_xp_card.offset_left = -372.0
+	_xp_card.offset_right = -32.0
+	_xp_card.offset_top = 222.0
+	_xp_card.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_root.add_child(_xp_card)
+
+
+func _on_match_finished(summary: Dictionary) -> void:
+	_xp_card.show_summary(summary)
+	_xp_ready = true
 
 
 func _build_menu() -> void:

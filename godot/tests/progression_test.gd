@@ -6,6 +6,7 @@ extends SceneTree
 ## godot --headless --path godot --script res://tests/progression_test.gd
 
 const MatchXp := preload("res://scripts/net/match_xp.gd")
+const XpSummary := preload("res://scripts/net/xp_summary.gd")
 
 var _failures := 0
 
@@ -26,6 +27,7 @@ func _run() -> void:
 	ProgressStore.reload()
 	_check_rules()
 	_check_match()
+	await _check_card()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(ProgressStore.path()))
 	print("Progression test: %d failure(s)" % _failures)
 	quit(1 if _failures > 0 else 0)
@@ -44,6 +46,47 @@ func _check_rules() -> void:
 		unlocks.any(func(u: Dictionary) -> bool: return u.key == "create_a_class"),
 		"level 4 opens Create-a-Class: %s" % [unlocks]
 	)
+
+
+## The results card: the rows, and the bar filling to where the match ended.
+func _check_card() -> void:
+	var card: PanelContainer = XpSummary.new()
+	root.add_child(card)
+	await process_frame
+	(
+		card
+		. show_summary(
+			{
+				"score": 1250,
+				"bonus": 1500,
+				"outcome": "win",
+				"xp_before": 500,
+				"xp_after": 3250,
+				"kills": {"m4": 2},
+				"unlocks": Progression.unlocks_at(4),
+			}
+		)
+	)
+	var text := _texts(card)
+	_check("+2,750" in text, "the total is score plus bonus: %s" % [text])
+	_check("Match bonus  ·  win" in text, "the bonus says it was a win")
+	_check("LEVEL 1" in text, "the bar starts where the match started")
+	_check(
+		text.any(func(t: String) -> bool: return t.begins_with("M4A1  +2 kills")), "kills listed"
+	)
+	await create_timer(XpSummary.FILL_DELAY + XpSummary.FILL_SECONDS + 0.3).timeout
+	text = _texts(card)
+	_check("LEVEL 4" in text and "LEVEL UP" in text, "it fills to level 4: %s" % [text])
+	_check("Create-a-Class, AK-47" in text, "and lists the unlocks")
+	card.queue_free()
+
+
+func _texts(node: Node) -> Array:
+	var out := []
+	for label in node.find_children("*", "Label", true, false):
+		if (label as Label).is_visible_in_tree():
+			out.append((label as Label).text)
+	return out
 
 
 func _check_match() -> void:

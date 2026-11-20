@@ -10,6 +10,7 @@ extends RefCounted
 ## player made between sessions.
 
 const PATH := "user://classes.cfg"
+const HEADLESS_PATH := "user://headless_classes.cfg"
 const CUSTOM_SLOTS := 5
 ## Longest class name.
 const NAME_CHARS := 20
@@ -104,8 +105,12 @@ static func use_file(file: String) -> void:
 	reload()
 
 
+## The file in use: the one `use_file` set, or the player's. Headless runs
+## (tests, dedicated servers) default to a file of their own, so a test
+## that plays a match never adds to a player's.
 static func path() -> String:
-	return String(Engine.get_meta(PATH_META, PATH))
+	var fallback := PATH if DisplayServer.get_name() != "headless" else HEADLESS_PATH
+	return String(Engine.get_meta(PATH_META, fallback))
 
 
 static func save() -> void:
