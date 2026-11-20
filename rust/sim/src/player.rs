@@ -393,6 +393,7 @@ pub fn step(
         melee_pressed,
         stance_pressed: (input.jump && !m.jump_held)
             || (input.crouch && !m.crouch_held)
+            || (input.prone && !m.prone_held)
             || (input.sprint && !m.sprint_held),
         wish: input.wish,
         yaw: input.yaw,
@@ -508,7 +509,8 @@ pub fn step(
         throw_held,
     };
     let mut ctx = state.combat_context(env, &params.movement);
-    ctx.sprinting |= state.movement.crawling(input.aim);
+    // Down in last stand the pistol stays up through the crawl.
+    ctx.sprinting |= state.movement.crawling(input.aim) && !state.downed;
     let mut combat = Vec::new();
     weapon::step(&mut state.combat, &combat_input, &ctx, dt, &mut combat);
     events.extend(combat.into_iter().map(PlayerEvent::Combat));
@@ -556,7 +558,8 @@ mod tests {
         let mut s = ready_state();
         s.downed = true;
         s.health = crate::zombies::laststand::DOWNED_HEALTH;
-        s.movement.stance = crate::movement::Stance::Crouching;
+        s.movement.stance = crate::movement::Stance::Prone;
+        s.movement.crouch = 2.0;
         let crawl = PlayerInput {
             wish: Vec2::new(0.0, 1.0),
             sprint: true,
@@ -567,11 +570,14 @@ mod tests {
         run(&mut s, crawl, ground, 120);
         let speed = Vec2::new(s.movement.velocity.x, s.movement.velocity.z).length();
         assert!(
-            speed > 0.5 && speed < 1.2,
-            "crawls at about 1 m/s, got {speed}"
+            speed > 0.6 && speed < 1.0,
+            "crawls at about 0.8 m/s, got {speed}"
         );
         assert!(!s.movement.sprinting);
-        assert_eq!(s.movement.stance, crate::movement::Stance::Crouching);
+        assert_eq!(s.movement.stance, crate::movement::Stance::Prone);
+        // The pistol stays up through the crawl.
+        let ctx = s.combat_context(ground, &PlayerParams::default().movement);
+        assert!(!ctx.sprinting);
         assert_eq!(
             s.health,
             crate::zombies::laststand::DOWNED_HEALTH,

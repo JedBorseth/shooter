@@ -30,10 +30,9 @@ pub const DOWN_PENALTY: f32 = 0.05;
 /// Share of their points every other player loses when one bleeds out
 /// (`penalty_no_revive`).
 pub const NO_REVIVE_PENALTY: f32 = 0.10;
-/// A downed player crawls at this share of the crouch speed (2.6 m/s), about
-/// 1 m/s. Black Ops crawls prone; this game has no prone yet, so the body
-/// stays crouched.
-pub const CRAWL_SPEED_SCALE: f32 = 0.4;
+/// A downed player crawls prone, as Black Ops' last stand does, at this
+/// share of the prone crawl (0.8 m/s): the same crawl, pistol up.
+pub const CRAWL_SPEED_SCALE: f32 = 1.0;
 /// Health a downed player is held at (Black Ops sets 1): the screen stays
 /// red, and nothing regenerates.
 pub const DOWNED_HEALTH: f32 = 1.0;

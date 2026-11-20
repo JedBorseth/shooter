@@ -54,26 +54,31 @@ pub const SWAY_SCALE: f32 = 0.15;
 
 /// Heights above the feet (m) where the engine looks for a surface to mount
 /// on: from where a crouched body's gun rests (less [`LOW_SLACK`]) to where
-/// a standing body's does.
-pub fn reach(params: &MoveParams) -> (f32, f32) {
+/// a standing body's does; or, `prone`, from where a prone body's gun rests
+/// up to a crouched body's (Modern Warfare's prone mount on low cover: the
+/// body props itself up onto it).
+pub fn reach(params: &MoveParams, prone: bool) -> (f32, f32) {
+    let (top, bottom) = if prone { (1.0, 2.0) } else { (0.0, 1.0) };
     (
-        params.eye_height_at(1.0) - REST - LOW_SLACK,
-        params.eye_height_at(0.0) - REST,
+        params.eye_height_at(bottom) - REST - LOW_SLACK,
+        params.eye_height_at(top) - REST,
     )
 }
 
-/// The crouch blend (0 standing to 1 crouched) that rests the gun on a
-/// surface `height` above the feet, or `None` if it is out of reach.
-pub fn crouch_for(height: f32, params: &MoveParams) -> Option<f32> {
-    let (low, high) = reach(params);
+/// The crouch blend (0 standing to 1 crouched, or 1 to 2 prone) that rests
+/// the gun on a surface `height` above the feet, or `None` if it is out of
+/// reach.
+pub fn crouch_for(height: f32, params: &MoveParams, prone: bool) -> Option<f32> {
+    let (low, high) = reach(params, prone);
     if !(low..=high + 1e-4).contains(&height) {
         return None;
     }
-    let (stand, crouched) = (params.eye_height_at(0.0), params.eye_height_at(1.0));
-    let eye = (height + REST).clamp(crouched, stand);
+    let (top, bottom) = if prone { (1.0, 2.0) } else { (0.0f32, 1.0f32) };
+    let (upper, lower) = (params.eye_height_at(top), params.eye_height_at(bottom));
+    let eye = (height + REST).clamp(lower, upper);
     // Invert the eye's ease by bisection: a fixed number of plain f32 steps,
     // so client and server agree to the bit.
-    let (mut lo, mut hi) = (0.0f32, 1.0f32);
+    let (mut lo, mut hi) = (top, bottom);
     for _ in 0..20 {
         let mid = 0.5 * (lo + hi);
         if params.eye_height_at(mid) > eye {
@@ -143,7 +148,9 @@ pub fn step(
         && !state.mantling()
         && !state.on_ladder()
         && pitch_in_cone(input.pitch, 0.0)
-        && let Some(crouch) = env.mount.and_then(|h| crouch_for(h, params))
+        && let Some(crouch) = env
+            .mount
+            .and_then(|h| crouch_for(h, params, state.stance == Stance::Prone))
     {
         state.mounted = true;
         state.mount_yaw = input.yaw;
@@ -218,18 +225,26 @@ mod tests {
     fn the_eye_rests_the_gun_on_the_surface() {
         let params = MoveParams::default();
         // A 1.2 m concrete barrier: the standing body sinks to rest on it.
-        let c = crouch_for(1.2, &params).expect("in reach");
+        let c = crouch_for(1.2, &params, false).expect("in reach");
         assert!(c > 0.0 && c < 1.0, "{c}");
         assert!((params.eye_height_at(c) - (1.2 + REST)).abs() < 1e-4);
         // At the top of the reach the body stands; at the bottom it crouches.
-        let (low, high) = reach(&params);
-        assert!(crouch_for(high, &params).unwrap() < 1e-3);
-        assert!(crouch_for(low, &params).unwrap() > 1.0 - 1e-3);
+        let (low, high) = reach(&params, false);
+        assert!(crouch_for(high, &params, false).unwrap() < 1e-3);
+        assert!(crouch_for(low, &params, false).unwrap() > 1.0 - 1e-3);
         // The Testing Area's 0.84 m sandbags mount crouched; the culvert's
-        // 0.44 m ones (prone height) and a 1.8 m wall do not.
-        assert!(crouch_for(0.84, &params).unwrap() > 0.99);
-        assert_eq!(crouch_for(0.44, &params), None);
-        assert_eq!(crouch_for(1.8, &params), None);
+        // 0.44 m ones are prone height, and a 1.8 m wall is too high.
+        assert!(crouch_for(0.84, &params, false).unwrap() > 0.99);
+        assert_eq!(crouch_for(0.44, &params, false), None);
+        assert_eq!(crouch_for(1.8, &params, false), None);
+        // Prone, the culvert's sandbags prop the body up onto them.
+        let c = crouch_for(0.44, &params, true).expect("prone reach");
+        assert!(c > 1.0 && c < 2.0, "{c}");
+        assert!((params.eye_height_at(c) - (0.44 + REST)).abs() < 1e-4);
+        let (low, high) = reach(&params, true);
+        assert!(crouch_for(low, &params, true).unwrap() > 2.0 - 1e-3);
+        assert!(crouch_for(high, &params, true).unwrap() < 1.0 + 1e-3);
+        assert_eq!(crouch_for(1.2, &params, true), None);
     }
 
     #[test]
@@ -248,6 +263,26 @@ mod tests {
         }
         assert_eq!(s.mount_blend, 1.0);
         assert!(kick_scale(s.mount_blend) < 0.5 && sway_scale(s.mount_blend) < 0.5);
+    }
+
+    #[test]
+    fn prone_the_body_props_itself_up_onto_low_cover() {
+        let params = MoveParams::default();
+        let mut s = MoveState {
+            stance: Stance::Prone,
+            crouch: 2.0,
+            ..MoveState::default()
+        };
+        assert!(step(&mut s, &press(), env(0.44), &params, DT));
+        assert!(s.mounted);
+        assert!(
+            s.mount_crouch > 1.0 && s.mount_crouch < 2.0,
+            "{}",
+            s.mount_crouch
+        );
+        // Standing, the same sandbags are too low.
+        let mut s = MoveState::default();
+        assert!(!step(&mut s, &press(), env(0.44), &params, DT));
     }
 
     #[test]

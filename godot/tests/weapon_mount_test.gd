@@ -5,7 +5,8 @@ extends SceneTree
 ## and moving, letting go of aim, or a second press lets go. The real player
 ## body and probe (`body.rs`) on a test floor with the Testing Area's ledge
 ## heights: a 1.2 m concrete barrier, a 0.84 m sandbag wall, a windowsill,
-## and a 1.8 m wall too high to mount.
+## a 1.8 m wall too high to mount, the end of a tall wall (mounted on its
+## side), and the culvert's 0.44 m sandbags, mounted prone.
 ## Run from the repo root:
 ##   godot --headless --path godot --script res://tests/weapon_mount_test.gd
 
@@ -20,6 +21,8 @@ const BARRIER := Vector3(0, 0, 0)
 const SANDBAGS := Vector3(20, 0, 0)
 const WINDOW := Vector3(40, 0, 0)
 const TALL := Vector3(60, 0, 0)
+const WALL_END := Vector3(80, 0, 0)
+const LOW_BAGS := Vector3(100, 0, 0)
 const FACE := 0.5
 
 var _failures: PackedStringArray = []
@@ -43,6 +46,9 @@ func _run() -> void:
 	_box(body, WINDOW + Vector3(0, 0.475, -FACE - 0.1), Vector3(3, 0.95, 0.2))
 	_box(body, WINDOW + Vector3(0, 2.4, -FACE - 0.1), Vector3(3, 0.6, 0.2))
 	_box(body, TALL + Vector3(0, 0.9, -FACE - 0.3), Vector3(3, 1.8, 0.6))
+	# A 3 m wall ending 0.15 m left of the line of fire.
+	_box(body, WALL_END + Vector3(-1.65, 1.5, -FACE - 0.3), Vector3(3, 3, 0.6))
+	_box(body, LOW_BAGS + Vector3(0, 0.22, -FACE - 0.22), Vector3(1.2, 0.44, 0.44))
 	_player = PLAYER_SCENE.instantiate() as FpsPlayer
 	_check(_player != null, "the player is an FpsPlayer (Rust extension loaded)")
 	if _player == null:
@@ -56,6 +62,8 @@ func _run() -> void:
 	await _sandbags()
 	await _window()
 	await _tall_wall()
+	await _wall_end()
+	await _prone_bags()
 	_finish()
 
 
@@ -182,6 +190,51 @@ func _tall_wall() -> void:
 	_check(knifed, "and the press swings the knife")
 
 
+func _wall_end() -> void:
+	await _aim_at(WALL_END)
+	_check(_player.interact_prompt().ends_with("Mount"), "beside a wall's end, the mount cue shows")
+	await _press("melee")
+	await _ticks(60)
+	_check(_player.weapon_mount() > 0.99, "a wall's side mounts")
+	var eye := _player.shot_origin().y - _player.global_position.y
+	_check(absf(eye - STAND_EYE) < 0.02, "at the height the gun was: eye %.3f m" % eye)
+	var mounted := await _burst()
+	await _press("melee")
+	await _ticks(60)
+	var free := await _burst()
+	_check(
+		mounted < free * 0.6,
+		"on the side, a burst climbs less: %.2f against %.2f" % [mounted, free]
+	)
+
+
+func _prone_bags() -> void:
+	_release_all()
+	_player.teleport(LOW_BAGS + Vector3(0, 0.02, 0), 0.0)
+	_player.set_look(0.0, 0.0)
+	await _ticks(10)
+	await _press("prone")
+	await _ticks(120)
+	for i in 240:
+		if _player.weapon_ready():
+			break
+		await _ticks(1)
+	Input.action_press("aim")
+	await _ticks(45)
+	await _press("melee")
+	await _ticks(90)
+	_check(_player.weapon_mount() > 0.99, "prone, the culvert's 0.44 m sandbags mount")
+	var eye := _player.shot_origin().y - _player.global_position.y
+	_check(absf(eye - (0.44 + REST)) < 0.02, "propped up to rest on them: eye %.3f m" % eye)
+	_check(_player.movement_state() == "Prone", "and still prone")
+	await _press("melee")
+	await _ticks(90)
+	eye = _player.shot_origin().y - _player.global_position.y
+	_check(absf(eye - 0.39) < 0.02, "letting go lies back down: eye %.3f m" % eye)
+	await _press("prone")
+	await _ticks(120)
+
+
 func _press(action: String) -> void:
 	Input.action_press(action)
 	await _ticks(2)
@@ -190,7 +243,7 @@ func _press(action: String) -> void:
 
 
 func _release_all() -> void:
-	for action in ["aim", "fire", "melee", "move_back", "move_forward"]:
+	for action in ["aim", "fire", "melee", "move_back", "move_forward", "prone"]:
 		Input.action_release(action)
 
 

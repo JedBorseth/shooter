@@ -78,7 +78,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Ladders: first-person hands on the rungs as the weapon goes away, closed round each rung ([docs/movement.md](docs/movement.md#ladders)).
 - [ ] Ladders on Slamcity and Zombies once their maps want them.
 - [x] Mounting the weapon on cover (aim and melee, as Modern Warfare 2019): ledges, barriers, sandbag walls, and windowsills from 0.82 m to 1.6 m; the eye rests the gun on the edge, kick and sway shrink, the view stops at a cone ([docs/movement.md](docs/movement.md)). The Testing Area's 1.2 m barriers and 0.84 m sandbags mount.
-- [ ] Mounting on a wall's side (the tall block walls' ends) and at prone height (the culvert's 0.44 m sandbags, once prone exists).
+- [x] Mounting on a wall's side (the tall block walls' ends) and at prone height (the culvert's 0.44 m sandbags): prone, the body props up onto low cover; beside a wall's edge, the gun rests at its height ([docs/movement.md](docs/movement.md#weapon-mount)).
 - [x] Third-person mantle animation (UAL2's `ClimbUp_1m_RM`, played once as a mantle starts).
 - [x] Prone (Black Ops 2's third stance): the prone button or a held crouch, 0.7 s down through a crouch, a 0.8 m/s crawl, eye 0.39 m, legs checked behind, weapon lowered crawling at the hip, steadier aim, pitch limits; an authored prone pose and low crawl for third person, hit zones measured from them ([docs/movement.md](docs/movement.md#prone)).
 - [ ] Prone follow-ups: the crawl plays forward whatever the direction (author backward and sideways crawls); the body lies flat on slopes instead of along them (IW tilts it to the ground); turning prone sweeps the legs through walls (IW stops the turn); a first-person crawl animation (the weapon uses the sprint's lowered pose).
@@ -218,7 +218,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
   - [x] Hardpoint: bots head for the next zone before the live one moves (`hardpoint::bots_rotating`).
   - [x] Capture the Flag: escorts ring the carrier instead of chasing its heels.
   - [x] Awareness: enemies on the minimap (unsuppressed fire, UAV sweeps) draw bots' eyes and patrols, and footsteps heard round a corner turn them.
-  - [x] Combat feel: aim round corners on the path, peek from cover and fight from it, and on Hard slide into fights and crouch up close (no prone, so no drop shot).
+  - [x] Combat feel: aim round corners on the path, peek from cover and fight from it, and on Hard slide into fights, crouch up close, and drop-shot prone early in a close fight.
 - [x] Team Deathmatch rules on the server: two teams (new players join the smaller), 75 kills or 10 minutes, no friendly fire, a lobby that waits for everyone to ready up, a countdown, and a results phase before the next match (`rust/sim/src/tdm.rs`).
 - [x] Round end screen: VICTORY, DEFEAT, or DRAW with the scoreboard, then the next match's countdown.
 - [x] Team colours from the match: teammates wear the allies' colours and show their name; enemies wear the enemies' colours and show none.
@@ -265,7 +265,8 @@ Done: rounds with a growing, toughening horde, zombies that walk straight at the
 - [x] Doors, rebuilding windows, and power-ups on the server: a press buys a door, holding use rebuilds a window a board every 0.6 s (10 points, up to 300 a round), and power-ups are taken by any standing player for the whole team (Max Ammo for everyone, the Nuke pays every player 400).
 - [ ] Rebuild speed is approximate (0.6 s a board); measure Black Ops' and match it.
 - [x] Downed state and revives for co-op (`rust/sim/src/zombies/laststand.rs`, Black Ops III's numbers): the second hit downs instead of killing; downed players crawl with the sidearm (two spare magazines), take no harm, and zombies ignore them; a teammate holding use within 1.9 m for 3 s revives them (held still, as the client predicts), earning the 5% of points they lost going down; after 45 s they bleed out, every other player loses 10%, and they come back at the next round. Everyone down ends the game, so solo play ends on the first down.
-- [ ] Downed players crawl crouched: add a prone stance and a crawl animation (Black Ops crawls prone), and a revive animation for the reviver.
+- [x] Downed players crawl prone (Black Ops' last stand), at the prone crawl's 0.8 m/s, the pistol up through the crawl.
+- [ ] A revive animation for the reviver.
 - [x] Drinks and the power ([docs/zombies.md](docs/zombies.md), Black Ops III's perk numbers under our own names and machines): a power switch in the west yard; Bulwark (down on the fifth hit), Second Wind (half-time revives; alone, 500 points, no power needed, and back up by yourself after 10 s, three times a game), Quickload (half-time reloads), Hair Trigger (a third faster fire, double damage on zombies), and Long Stride (7% faster); four at most, all lost on going down; badges on the HUD.
   - [ ] A drinking animation (a bottle in the hands for about 3 s) instead of the weapon's re-raise.
   - [ ] Drink and machine sounds from real CC0 recordings (a cap, a gulp, a machine hum); none suitable found yet.

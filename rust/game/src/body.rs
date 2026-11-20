@@ -531,12 +531,19 @@ const MOUNT_REACH: f32 = 0.55;
 const MOUNT_FACE: f32 = 0.65;
 /// How far past the cover the barrel and the line of sight must be clear (m).
 const MOUNT_CLEAR: f32 = 1.2;
+/// A wall's side mounts when its face is this far to one side of the line
+/// of fire (m): the gun rests against its edge.
+const MOUNT_SIDE: f32 = 0.3;
 
 /// Cover to mount the weapon on (`MoveEnv::mount`, [`shooter_sim::mount`]):
 /// a level top at weapon height in front of the eye, from where a crouched
-/// body's gun rests to where a standing body's does, with its front face in
-/// reach and clear air over it for the barrel and the sights (a ledge, a
-/// barrier, a sandbag wall, a windowsill). Looked for while aiming or
+/// body's gun rests to where a standing body's does (prone, from where a
+/// prone body's does up to a crouched one's), with its front face in reach
+/// and clear air over it for the barrel and the sights (a ledge, a barrier,
+/// a sandbag wall, a windowsill). Failing that, the side of a wall: a wall's
+/// end or a corner beside the gun, its face just ahead to one side while the
+/// line of fire past it is clear, mounts at the height the gun is at
+/// (Modern Warfare's mount on a wall's edge). Looked for while aiming or
 /// mounted, along the mount's own yaw once mounted. Client and server see
 /// the same geometry, so both find the same.
 fn find_mount(
@@ -578,26 +585,58 @@ fn find_mount(
             .unwrap_or(Vector3::UP);
         Some((at, normal))
     };
-    let (low, high) = shooter_sim::mount::reach(params);
-    // The top, a handguard's reach in front: level enough to rest on.
-    let ahead = feet + forward * MOUNT_REACH;
-    let (top, normal) = ray(
-        ahead + Vector3::UP * (high + 0.15),
-        ahead + Vector3::UP * (low - 0.05),
-    )?;
-    let height = top.y - feet.y;
-    if !(low..=high).contains(&height) || normal.y < 0.75 {
+    let prone = movement.stance == Stance::Prone;
+    let (low, high) = shooter_sim::mount::reach(params, prone);
+    let mut top_mount = || {
+        // The top, a handguard's reach in front: level enough to rest on.
+        let ahead = feet + forward * MOUNT_REACH;
+        let (top, normal) = ray(
+            ahead + Vector3::UP * (high + 0.15),
+            ahead + Vector3::UP * (low - 0.05),
+        )?;
+        let height = top.y - feet.y;
+        if !(low..=high).contains(&height) || normal.y < 0.75 {
+            return None;
+        }
+        // Its front face just under the top, in reach of the body.
+        let under = feet + Vector3::UP * (height - 0.06);
+        ray(under, under + forward * MOUNT_FACE)?;
+        // Clear air just over it for the barrel and the sights.
+        let over = feet + Vector3::UP * (height + 0.06);
+        if ray(over, over + forward * MOUNT_CLEAR).is_some() {
+            return None;
+        }
+        Some(height)
+    };
+    if let Some(height) = top_mount() {
+        return Some(height);
+    }
+    // A wall's side, at the height the gun rests at now: mounted, the one
+    // the mount settled to.
+    let crouch = if movement.mounted {
+        movement.mount_crouch
+    } else {
+        movement.crouch
+    };
+    let height = params.eye_height_at(crouch) - shooter_sim::mount::REST;
+    if !(low..=high).contains(&height) {
         return None;
     }
-    // Its front face just under the top, in reach of the body.
-    let under = feet + Vector3::UP * (height - 0.06);
-    ray(under, under + forward * MOUNT_FACE)?;
-    // Clear air just over it for the barrel and the sights.
-    let over = feet + Vector3::UP * (height + 0.06);
-    if ray(over, over + forward * MOUNT_CLEAR).is_some() {
+    let (_, right) = shooter_sim::movement::basis_from_yaw(yaw);
+    let right = to_godot(right);
+    let level = feet + Vector3::UP * height;
+    // The line of fire is clear past where the wall's edge is.
+    if ray(level, level + forward * (MOUNT_FACE + MOUNT_CLEAR)).is_some() {
         return None;
     }
-    Some(height)
+    // A face square to the aim just ahead to one side: the wall's side.
+    let beside =
+        |side: f32, ray: &mut dyn FnMut(Vector3, Vector3) -> Option<(Vector3, Vector3)>| {
+            let from = level + right * (side * MOUNT_SIDE);
+            ray(from, from + forward * MOUNT_FACE)
+                .is_some_and(|(_, normal)| normal.y.abs() < 0.3 && normal.dot(forward) < -0.7)
+        };
+    (beside(1.0, &mut ray) || beside(-1.0, &mut ray)).then_some(height)
 }
 
 /// The ladder in reach of the feet, if any (see [`crate::ladder`]). Client and

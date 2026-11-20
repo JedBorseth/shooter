@@ -256,7 +256,8 @@ impl MoveState {
     /// Getting down to or up from prone: IW's weapons play their prone-in
     /// and prone-out animations there and fire only once settled.
     pub fn changing_prone(&self) -> bool {
-        self.crouch > 1.0 && self.crouch < 2.0
+        // Mounted on low cover prone, the body rests partway up on purpose.
+        !self.mounted && self.mount_blend <= 0.0 && self.crouch > 1.0 && self.crouch < 2.0
     }
 
     /// Crawling at the hip (not holding aim): the weapon goes down for the
