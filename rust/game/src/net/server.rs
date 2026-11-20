@@ -2589,7 +2589,7 @@ impl NetServer {
         // Everyone already here, then the newcomer for everyone.
         let roster: Vec<GameEvent> = self.avatars.iter().map(joined_event).collect();
         self.clients[index].outbox.extend(roster);
-        let shown: Vec<GameEvent> = self
+        let mut shown: Vec<GameEvent> = self
             .clients
             .iter()
             .filter(|c| c.cosmetics != Cosmetics::default())
@@ -2600,6 +2600,15 @@ impl NetServer {
                 })
             })
             .collect();
+        shown.extend(
+            self.avatars
+                .iter()
+                .filter(|a| a.bot)
+                .map(|a| GameEvent::Cosmetics {
+                    id: a.id,
+                    cosmetics: bot_cosmetics(a.id),
+                }),
+        );
         self.clients[index].outbox.extend(shown);
         self.spawn_avatar(id, false, &name, class, None);
         if self.clients[index].cosmetics != Cosmetics::default() {
@@ -3190,6 +3199,12 @@ impl NetServer {
         }
         let event = joined_event(self.avatars.last().expect("just pushed"));
         self.broadcast_event(&event);
+        if bot {
+            self.broadcast_event(&GameEvent::Cosmetics {
+                id,
+                cosmetics: bot_cosmetics(id),
+            });
+        }
         // Before a match the team starts together; during one, or without
         // teams, somewhere safe. In a Search and Destroy round, at their
         // side: joiners in a round's freeze play it, and later ones wait for
@@ -10251,4 +10266,19 @@ fn fallback_zones(spawns: &[SpawnPoint]) -> Vec<Zone> {
         center: center + Vec3::new(0.0, 1.5, 0.0),
         half_extents: Vec3::new(5.0, 2.0, 5.0),
     }]
+}
+
+/// What a bot shows: a low prestige and one of the career calling cards,
+/// fixed by its id, as Call of Duty's bots wear ranks and cards of their own.
+fn bot_cosmetics(id: u8) -> Cosmetics {
+    let roll = rng::hash(u32::from(id), 0xCA2D);
+    let cards = shooter_sim::card::Card::all()
+        .filter(|c| !c.key().starts_with("prestige_"))
+        .take(14)
+        .collect::<Vec<_>>();
+    Cosmetics {
+        prestige: (roll % 4) as u8,
+        card: cards[(roll / 4) as usize % cards.len()],
+        camos: Vec::new(),
+    }
 }

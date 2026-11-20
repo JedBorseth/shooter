@@ -8,6 +8,9 @@ extends Control
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
 const PrestigeEmblem := preload("res://scripts/ui/prestige_emblem.gd")
+const CallingCard := preload("res://scripts/ui/calling_card.gd")
+## How wide a row's calling card shows behind the name.
+const CARD_W := 240.0
 
 const WIDTH := 820.0
 const ROW_H := 32.0
@@ -22,7 +25,8 @@ var clock := ""
 ## Each section: {"name", "score" (String, may be empty), "colour",
 ## "headings": Array[String] (the first is the name column), "rows": Array of
 ## {"cells": Array[String], "me": bool, "faint": bool, "tag": String,
-## "prestige": int (the emblem before the name; 0 for none)}}.
+## "prestige": int (the emblem before the name; 0 for none), "card":
+## String (the calling card behind the name; "" for none)}}.
 var sections: Array = []
 
 
@@ -125,6 +129,12 @@ func _draw_section(section: Dictionary, left: float, right: float, y: float) -> 
 			draw_rect(Rect2(rect.position, Vector2(2.0, rect.size.y)), UiTheme.TEXT)
 		elif index % 2 == 0:
 			draw_rect(rect, Color(1, 1, 1, 0.04))
+		# The player's calling card, faint behind their name, as Call of Duty's
+		# scoreboards show it.
+		var card := String(row.get("card", ""))
+		if card != "":
+			var strip := Rect2(rect.position + Vector2(3.0, 0.0), Vector2(CARD_W, rect.size.y))
+			CallingCard.draw_card(self, card, strip, 0.32)
 		var text_colour := UiTheme.TEXT if not row.get("faint", false) else UiTheme.TEXT_FAINT
 		var baseline := y + ROW_H / 2.0 + 5.0
 		var cells: Array = row.cells

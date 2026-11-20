@@ -1,6 +1,6 @@
 extends SceneTree
-## Captures prestige emblems where other players see them, for the docs: the
-## scoreboard and the kill feed with names at several prestiges. Needs a GPU
+## Captures prestige emblems and calling cards where other players see them,
+## for the docs: the scoreboard and the kill feed at several prestiges. Needs a GPU
 ## and a display (or Xvfb):
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
 ##     --audio-driver Dummy --script res://tests/capture_prestige.gd
@@ -34,21 +34,26 @@ func _run() -> void:
 	var enemy := TeamColours.of(false)
 	var rows := []
 	for player: Array in [
-		["Vega", 11, 2450, 21, 9, true], ["Rook", 7, 1900, 16, 10], ["Slam", 3, 1300, 11, 12]
+		["Vega", 11, 2450, 21, 9, "prestige_11", true],
+		["Rook", 7, 1900, 16, 10, "hot_streak"],
+		["Slam", 3, 1300, 11, 12, "far_sight"]
 	]:
 		(
 			rows
 			. append(
 				{
 					"cells": [player[0], str(player[2]), str(player[3]), str(player[4]), "38"],
-					"me": player.size() > 5,
+					"me": player.size() > 6,
 					"prestige": player[1],
+					"card": player[5],
 				}
 			)
 		)
 	var them := []
 	for player: Array in [
-		["Kite", 10, 2100, 18, 11], ["Moth", 5, 1500, 12, 14], ["Pike", 0, 900, 7, 15]
+		["Kite", 10, 2100, 18, 11, "chain"],
+		["Moth", 5, 1500, 12, 14, "runner"],
+		["Pike", 0, 900, 7, 15, ""],
 	]:
 		(
 			them
@@ -56,6 +61,7 @@ func _run() -> void:
 				{
 					"cells": [player[0], str(player[2]), str(player[3]), str(player[4]), "41"],
 					"prestige": player[1],
+					"card": player[5],
 				}
 			)
 		)
@@ -109,4 +115,18 @@ func _run() -> void:
 	await RenderingServer.frame_post_draw
 	root.get_texture().get_image().save_png(_out.path_join("prestige_scoreboard.png"))
 	print("saved prestige_scoreboard")
+	# The in-match challenge popup, over the match itself.
+	layer.visible = false
+	var level: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	root.add_child(level)
+	var top := CanvasLayer.new()
+	root.add_child(top)
+	var popup: Control = (load("res://scripts/net/challenge_popup.gd") as GDScript).new()
+	top.add_child(popup)
+	popup.call("announce", Progression.challenge("w.m4.6"))
+	for i in 90:
+		await process_frame
+	await RenderingServer.frame_post_draw
+	root.get_texture().get_image().save_png(_out.path_join("challenge_popup.png"))
+	print("saved challenge_popup")
 	quit(0)

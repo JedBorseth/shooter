@@ -50,6 +50,9 @@ A challenge is a target on a stat (`rust/sim/src/challenge.rs`).
 - It completes in the match that takes the stat past the target, and it pays its XP in that match.
 - Completion is never stored: it is worked out from the totals. The game, the ranked server, and the account always agree on it, and each challenge pays once.
 - The end-of-match card shows the challenges' XP on its own line and lists the challenges completed, with the camo or card each awarded.
+- During the match, each challenge is announced the moment it is done, as Black Ops 2 does: a quiet "CHALLENGE COMPLETE" plate near the top of the screen with its name, XP, and reward (`godot/scripts/net/challenge_popup.gd`). They queue one at a time, and at most four wait. `match_xp.gd` works them out from the stats the server sends every two seconds, as the match would pay them if it ended then.
+
+![A challenge completed mid-match](media/challenge-popup.jpg)
 
 ### Weapon challenges: the camo ladder
 
@@ -162,7 +165,34 @@ Black Ops 2's prestige (`rust/sim/src/progression.rs`):
 
 ![The Prestige tab: every emblem, entering the next prestige, and spending a token](media/prestige-tab.jpg)
 
-![Prestige emblems beside names on the scoreboard and in the kill feed](media/prestige-scoreboard.jpg)
+![Prestige emblems and calling cards on the scoreboard, and emblems in the kill feed](media/prestige-scoreboard.jpg)
+
+## Calling cards
+
+A calling card is the banner a player shows (`rust/sim/src/card.rs`). There are 40, all our own designs:
+
+| Cards | Earned by |
+| --- | --- |
+| Recruit | Everyone has it from the start. |
+| 27 cards | The last tier of most career, mode, and scorestreak challenges, as in Black Ops 2 |
+| Nebula | Mastery in every weapon class |
+| One for each prestige and for Master | Reaching that prestige |
+
+- **Art.** Each card is drawn as vector shapes from its key (`godot/scripts/ui/calling_card.gd`), so it is sharp at any size and needs no texture. A card is a base colour, an accent, and a motif: stripes, chevrons, a crosshair, stars, rings, blades, bars, hexes, a burst, peaks, a grid, or waves. Prestige cards put the prestige's emblem on a band of its metal.
+- **Picking.** The career screen's Calling Cards tab shows every card.
+  - Earned cards can be picked; the one shown is outlined.
+  - The rest are dim, with what earns them.
+  - The pick is kept with the classes (`ClassStore.set_card`), so it follows the account, and goes to the server with the class as part of the player's cosmetics.
+  - A ranked server shows only a card the account has earned.
+- **Where it shows:**
+  - faint behind the player's name on the scoreboard;
+  - under the killer's name card in a killcam, with their prestige emblem;
+  - in the career screen's header.
+  - Bots show one too: a low prestige and a career card fixed by their id, as Call of Duty's bots wear ranks and cards.
+
+![The Calling Cards tab](media/calling-cards.jpg)
+
+![A killcam's killer card on the killer's calling card](media/calling-card-killcam.jpg)
 
 ## Career screen
 
@@ -198,6 +228,7 @@ The account stores `stats` beside `xp` and `weapon_kills` (`docker/online/nakama
 ## Call of Duty reference
 
 - **Career screen:** Black Ops 2's Barracks holds the challenges (by weapon, career, mode, and scorestreak, each with its progress and reward) and the combat record (K/D, win/loss, accuracy, time played, and per-weapon kills, deaths, headshots, and accuracy).
+- **Challenge popups:** Black Ops 2 announces each challenge mid-match as it completes, with its name and reward.
 - **Stats and challenges:** Black Ops 2's challenge tables are targets on its player and weapon stats, kept by the game server. A challenge completes, and its XP is paid, in the match that crosses it.
 - **The camo ladder:**
   - The numbers for each class follow games.gg, "Black Ops 2: All Weapon Camos & Challenges", and gamerant.com, "Black Ops 2 camo challenges guide": the headshot ladder 5 to 100; then longshots or revenge kills, 150 kills with no attachments, 150 with no perks, 20 double kills, and 10 Bloodthirsty medals.
@@ -208,4 +239,5 @@ The account stores `stats` beside `xp` and `weapon_kills` (`docker/online/nakama
 - **Camos:** a camo is chosen per weapon in Create-a-Class, costs no point, sits under the weapon's wear, and shows for other players and in killcams, as Black Ops 2's do.
 - **Prestige:** Black Ops 2 has ten prestiges and Prestige Master, reached at level 55. Prestiging resets the level and what it unlocks, and earns the prestige's emblem and an unlock token for one permanent unlock; at Master everything unlocks (Activision support, "Achieving Prestige Master in Call of Duty: Black Ops II"; boostmatch.gg, "Black Ops 2 Prestige System"). Camos, challenges, and the combat record carry over. The prestige icon shows beside the name in lobbies, on the scoreboard, and in the kill feed.
   - Deliberate differences: Black Ops 2 also offered a stat reset or an extra class slot for a token; here a token is only a permanent unlock. Weapon kills (attachments) are kept, so attachments need not be earned again.
+- **Calling cards:** Black Ops 2 awards calling cards for the last tier of most career, game mode, and scorestreak challenges, and one per prestige. The player picks one to show, and it appears in lobbies, on the scoreboard, and on the killcam's killer card.
 - **Names and designs** are our own. None of Black Ops 2's camo, challenge, or calling card names are used.

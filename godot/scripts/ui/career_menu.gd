@@ -11,6 +11,7 @@ extends Control
 ## line for each weapon.
 ## Prestige: the emblems, entering the next prestige, and permanent unlock
 ## tokens (`prestige_page.gd`).
+## Calling Cards: every card, the earned ones to pick from (`cards_page.gd`).
 
 signal back_requested
 
@@ -18,8 +19,10 @@ const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const MenuStyle := preload("res://scripts/ui/menu_style.gd")
 const PrestigeEmblem := preload("res://scripts/ui/prestige_emblem.gd")
 const PrestigePage := preload("res://scripts/ui/prestige_page.gd")
+const CardsPage := preload("res://scripts/ui/cards_page.gd")
+const CallingCard := preload("res://scripts/ui/calling_card.gd")
 
-const TABS := ["Challenges", "Combat Record", "Prestige"]
+const TABS := ["Challenges", "Combat Record", "Prestige", "Calling Cards"]
 ## Challenge categories, by `group.kind` of the challenges they hold.
 const CATEGORIES := [
 	["Weapons", ["weapon", "mastery"]],
@@ -90,7 +93,10 @@ func _build() -> void:
 	var prestige: VBoxContainer = PrestigePage.new()
 	prestige.name = "Prestige"
 	prestige.changed.connect(rebuild.bind(2))
-	for page: Control in [_challenges_page(), _record_page(), prestige]:
+	var cards: ScrollContainer = CardsPage.new()
+	cards.name = "CallingCards"
+	cards.changed.connect(rebuild.bind(3))
+	for page: Control in [_challenges_page(), _record_page(), prestige, cards]:
 		page.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		pages.add_child(page)
 		_pages.append(page)
@@ -111,7 +117,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		back_requested.emit()
 
 
-## Opens tab `index` (0 challenges, 1 combat record, 2 prestige).
+## Opens tab `index` (0 challenges, 1 combat record, 2 prestige, 3 cards).
 func show_tab(index: int) -> void:
 	for i in _pages.size():
 		_pages[i].visible = i == index
@@ -317,6 +323,12 @@ func _header() -> Control:
 	name.text = player if player != "" else "Player"
 	name.theme_type_variation = &"DisplayTitle"
 	titles.add_child(name)
+	# The calling card the player shows.
+	var card: Control = CallingCard.new()
+	card.card = ClassStore.card()
+	card.custom_minimum_size = Vector2(300, 76)
+	card.size_flags_vertical = Control.SIZE_SHRINK_END
+	header.add_child(card)
 	var rank := Progression.rank(int(_totals.get("xp", 0)))
 	var level := VBoxContainer.new()
 	level.alignment = BoxContainer.ALIGNMENT_END
@@ -348,7 +360,7 @@ func _tab_row() -> Control:
 		tab.theme_type_variation = &"TabButton"
 		tab.toggle_mode = true
 		tab.button_group = group
-		tab.custom_minimum_size = Vector2(220, 44)
+		tab.custom_minimum_size = Vector2(200, 44)
 		tab.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		tab.pressed.connect(show_tab.bind(i))
 		row.add_child(tab)

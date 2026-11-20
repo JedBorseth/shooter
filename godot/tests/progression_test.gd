@@ -7,6 +7,7 @@ extends SceneTree
 
 const MatchXp := preload("res://scripts/net/match_xp.gd")
 const XpSummary := preload("res://scripts/net/xp_summary.gd")
+const ChallengePopup := preload("res://scripts/net/challenge_popup.gd")
 
 var _failures := 0
 
@@ -29,6 +30,7 @@ func _run() -> void:
 	_check_match()
 	_check_challenges()
 	await _check_card()
+	await _check_popup()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(ProgressStore.path()))
 	print("Progression test: %d failure(s)" % _failures)
 	quit(1 if _failures > 0 else 0)
@@ -120,6 +122,22 @@ func _check_challenges() -> void:
 	)
 	ProgressStore.reload()
 	_check(ProgressStore.stat("w.m4.hs") == 7, "stats survive a restart")
+
+
+## The in-match popup: challenges queue, show one at a time, and go.
+func _check_popup() -> void:
+	var popup: Control = ChallengePopup.new()
+	root.add_child(popup)
+	popup.announce(Progression.challenge("w.m4.0"))
+	popup.announce(Progression.challenge("career.kills.0"))
+	await process_frame
+	var names: PackedStringArray = popup.names()
+	_check(names.size() == 2 and names[0] == "Headshots I", "challenges queue in order: %s" % names)
+	await create_timer(ChallengePopup.SHOW_SECONDS + 0.2).timeout
+	_check(popup.names().size() == 1, "one at a time: %s" % popup.names())
+	await create_timer(ChallengePopup.SHOW_SECONDS + 0.2).timeout
+	_check(popup.names().is_empty(), "and they go")
+	popup.queue_free()
 
 
 func _texts(node: Node) -> Array:

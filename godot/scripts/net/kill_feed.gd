@@ -31,6 +31,11 @@ static func prestige_of(client: NetClient, id: int) -> int:
 	return int(client.cosmetics_of(id).get("prestige", 0))
 
 
+## Player `id`'s calling card key, or "" for a player who shows none (bots).
+static func card_of(client: NetClient, id: int) -> String:
+	return String(client.cosmetics_of(id).get("card", ""))
+
+
 ## The parts naming player `id`: their prestige emblem, if any, and their
 ## name in `colour`.
 static func named(client: NetClient, id: int, colour: Color) -> Array:
