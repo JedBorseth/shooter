@@ -180,7 +180,9 @@ func _run() -> void:
 ## (`MoveEnv::floor_normal`), and the client predicts it with no corrections.
 func _ramp_slide(player: FpsPlayer, client: NetClient) -> void:
 	# Round the ramp's side onto the platform it climbs to, then face down it.
-	for target: Vector3 in [Vector3(16.0, 0.0, 2.0), Vector3(16.0, 0.0, -4.0), Vector3(16.0, 3.0, -19.0)]:
+	for target: Vector3 in [
+		Vector3(16.0, 0.0, 2.0), Vector3(16.0, 0.0, -4.0), Vector3(16.0, 3.0, -19.0)
+	]:
 		await _walk_to(player, target)
 	_check(player.global_position.y > 2.9, "walks up the ramp onto the platform")
 	player.set_look(PI, 0.0)
