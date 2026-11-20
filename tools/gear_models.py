@@ -38,9 +38,26 @@ def _t(set_, size, tint, **kw):
     return {"set": set_, "size": size, "tint": tint, **kw}
 
 
+class _Looks(dict):
+    """The looks table, refusing to redefine a look. Every model reads LOOKS
+    once all of this module has run, so a second `LOOKS["x"] = ...` further
+    down would silently recolour every earlier model that uses "x" (a later
+    red wire changed the bomb's, and its charge.bin, on the next rebuild).
+    Setting a look again to the same spec is allowed."""
+
+    def __setitem__(self, key, value):
+        if key in self and self[key] != value:
+            raise ValueError(f"look {key!r} is already defined as {self[key]}: give the new one its own name")
+        super().__setitem__(key, value)
+
+    def update(self, other=(), **kw):
+        for key, value in dict(other, **kw).items():
+            self[key] = value
+
+
 # Looks only these models use (kept out of world_looks.py, whose every change
 # rebuilds Slamcity). Grime is off: it darkens toward the model's own origin.
-LOOKS: dict[str, dict] = {
+LOOKS: dict[str, dict] = _Looks({
     "mil_olive": _t("painted_metal", 1.0, (0.25, 0.28, 0.2), metal=0.5, rough=0.9, grime=0.0),
     "mil_tan": _t("painted_metal", 1.0, (0.55, 0.48, 0.36), metal=0.5, rough=0.95, grime=0.0),
     "gunmetal": _t("painted_metal", 1.0, (0.13, 0.135, 0.14), metal=1.0, rough=0.7, grime=0.0),
@@ -49,7 +66,7 @@ LOOKS: dict[str, dict] = {
     "board_dark": _t("planks", 1.2, (0.5, 0.4, 0.31), grime=0.0),
     "sandbag": _t("canvas", 0.6, (0.6, 0.53, 0.4), grime=0.0),
     "nail": {"color": (0.3, 0.29, 0.27), "rough": 0.5, "metal": 1},
-}
+})
 
 
 # --- Helpers -------------------------------------------------------------------------
@@ -1210,12 +1227,12 @@ def revive_syrette(b: Model):
     b.cyl("y", -0.03, 0.045, (0.0, 0.0), 0.0105, "charge_case", sides=12)
     b.cyl("y", 0.0, 0.025, (0.0, 0.0), 0.0112, "bottle_label", sides=12)
     b.cyl("y", 0.045, 0.06, (0.0, 0.0), 0.0075, "charge_steel", sides=10)
-    b.cyl("y", 0.06, 0.066, (0.0, 0.0), 0.012, "wire_red", sides=12)
+    b.cyl("y", 0.06, 0.066, (0.0, 0.0), 0.012, "cutter_red", sides=12)
     b.cyl("y", -0.04, -0.03, (0.0, 0.0), 0.008, "charge_steel", sides=10)
     b.cyl("y", -0.068, -0.04, (0.0, 0.0), 0.0012, "charge_steel", sides=6)
 
 
-LOOKS["wire_red"] = {"color": (0.62, 0.06, 0.05), "rough": 0.5}
+LOOKS["cutter_red"] = {"color": (0.62, 0.06, 0.05), "rough": 0.5}
 
 
 @model
@@ -1233,7 +1250,7 @@ def wire_cutters(b: Model):
         b.hull([(side * x, y, z) for x, z in ((0.003, 0.036), (0.009, 0.036), (0.013, 0.065), (0.007, 0.065))
                 for y in (-0.004, 0.004)], "charge_steel")
         b.hull([(side * x, y, z) for x, z in ((0.006, 0.065), (0.019, 0.065), (0.03, 0.17), (0.015, 0.17))
-                for y in (-0.007, 0.007)], "wire_red")
+                for y in (-0.007, 0.007)], "cutter_red")
 
 
 @model

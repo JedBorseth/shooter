@@ -194,6 +194,10 @@ def detail_line(text: str) -> str:
 
 
 def main():
+    # A model look may not quietly replace a world look of the same name.
+    clashes = sorted(k for k in G.LOOKS if W.SLAMCITY_LOOKS.get(k, G.LOOKS[k]) != G.LOOKS[k])
+    if clashes:
+        raise SystemExit(f"looks in gear_models.py redefine world_looks.py's: {clashes}")
     W.SLAMCITY_LOOKS.update(G.LOOKS)
     B.RECTS = B.atlas_rects()
     M.RECTS = B.RECTS
