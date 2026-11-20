@@ -8,6 +8,7 @@
 //! - `MysteryCrates`: the spots the mystery crate can stand at
 //!   (`MysteryCrate`, `rust/game/src/mystery_crate.rs`); it starts at the
 //!   first.
+//! - `Forge`: the upgrade machine (`rust/game/src/forge.rs`), powered.
 //! - `DrinkMachines`: one child per machine
 //!   (`scripts/zombies_drink_machine.gd`), each with a `drink` key
 //!   (`Drink::key`).
@@ -20,11 +21,11 @@
 use godot::classes::Node3D;
 use godot::prelude::*;
 use shooter_sim::net::Tick;
-use shooter_sim::net::protocol::{CratePhase, ZombiesEvent};
+use shooter_sim::net::protocol::{CratePhase, ForgePhase, ZombiesEvent};
 use shooter_sim::rng;
 use shooter_sim::weapon::{CombatState, WeaponId};
 use shooter_sim::zombies::drinks::{self, Drink};
-use shooter_sim::zombies::mystery;
+use shooter_sim::zombies::{forge, mystery};
 
 struct DrinkMachine {
     node: Gd<Node3D>,
@@ -41,6 +42,7 @@ pub struct Machines {
     /// Second Winds a lone player has bought this game.
     solo_second_winds: u8,
     pub mystery: Option<MysteryCrate>,
+    pub forge: Option<Forge>,
     /// Games played, to vary the crate's draws.
     games: u32,
 }
@@ -62,6 +64,7 @@ impl Machines {
             power_switch,
             drink_machines,
             mystery,
+            forge: Forge::new(map),
             ..Self::default()
         };
         machines.reset();
@@ -75,6 +78,10 @@ impl Machines {
         if let Some(mystery) = &mut self.mystery {
             mystery.reset(rng::hash(self.games, 0x4352_4154));
             mystery.show();
+        }
+        if let Some(forge) = &mut self.forge {
+            forge.reset();
+            forge.show();
         }
         self.set_power(false);
         self.solo_second_winds = 0;
@@ -99,6 +106,9 @@ impl Machines {
         let powered = self.power();
         for machine in &mut self.drink_machines {
             machine.node.call("set_powered", &[powered.to_variant()]);
+        }
+        if let Some(forge) = &mut self.forge {
+            forge.node.call("set_powered", &[powered.to_variant()]);
         }
         changed
     }
@@ -474,4 +484,137 @@ pub fn map_crate_spots(map: &Gd<Node>) -> Vec<Gd<Node3D>> {
         .iter_shared()
         .filter_map(|child| child.try_cast::<Node3D>().ok())
         .collect()
+}
+
+/// What the forge is doing.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum ForgeState {
+    Idle,
+    Working { by: u8, weapon: WeaponId, left: f32 },
+    Offering { by: u8, weapon: WeaponId, left: f32 },
+}
+
+/// The forge (`shooter_sim::zombies::forge`): the map's `Forge` node
+/// (`Forge`, `rust/game/src/forge.rs`).
+pub struct Forge {
+    node: Gd<Node3D>,
+    state: ForgeState,
+}
+
+impl Forge {
+    pub fn new(map: &Gd<Node>) -> Option<Self> {
+        Some(Self {
+            node: map.try_get_node_as::<Node3D>("Forge")?,
+            state: ForgeState::Idle,
+        })
+    }
+
+    pub fn reset(&mut self) {
+        self.state = ForgeState::Idle;
+    }
+
+    pub fn is(&self, node: &Gd<Node>) -> bool {
+        self.node.instance_id() == node.instance_id()
+    }
+
+    pub fn node(&self) -> Gd<Node> {
+        self.node.clone().upcast()
+    }
+
+    pub fn free(&self) -> bool {
+        self.state == ForgeState::Idle
+    }
+
+    pub fn phase_name(&self) -> &'static str {
+        match self.state {
+            ForgeState::Idle => "idle",
+            ForgeState::Working { .. } => "working",
+            ForgeState::Offering { .. } => "offering",
+        }
+    }
+
+    /// Starts upgrading into `weapon` for player `by`.
+    pub fn start(&mut self, by: u8, weapon: WeaponId) {
+        self.state = ForgeState::Working {
+            by,
+            weapon,
+            left: forge::WORK_SECONDS,
+        };
+    }
+
+    /// The upgraded weapon held out to player `by`, if it is.
+    pub fn offered(&self, by: u8) -> Option<WeaponId> {
+        match self.state {
+            ForgeState::Offering {
+                by: owner, weapon, ..
+            } if owner == by => Some(weapon),
+            _ => None,
+        }
+    }
+
+    pub fn taken(&mut self) {
+        if matches!(self.state, ForgeState::Offering { .. }) {
+            self.state = ForgeState::Idle;
+        }
+    }
+
+    /// Runs the forge one tick; true when its state changed (left untaken,
+    /// the weapon is lost, as in Black Ops).
+    pub fn step(&mut self, dt: f32) -> bool {
+        match &mut self.state {
+            ForgeState::Idle => false,
+            ForgeState::Working { by, weapon, left } => {
+                *left -= dt;
+                if *left > 0.0 {
+                    return false;
+                }
+                self.state = ForgeState::Offering {
+                    by: *by,
+                    weapon: *weapon,
+                    left: forge::TAKE_SECONDS,
+                };
+                true
+            }
+            ForgeState::Offering { left, .. } => {
+                *left -= dt;
+                if *left > 0.0 {
+                    return false;
+                }
+                self.state = ForgeState::Idle;
+                true
+            }
+        }
+    }
+
+    fn view(&self) -> (ForgePhase, u8, Option<WeaponId>, Option<f32>) {
+        match self.state {
+            ForgeState::Idle => (ForgePhase::Idle, 0, None, None),
+            ForgeState::Working { by, weapon, left } => {
+                (ForgePhase::Working, by, Some(weapon), Some(left))
+            }
+            ForgeState::Offering { by, weapon, left } => {
+                (ForgePhase::Offering, by, Some(weapon), Some(left))
+            }
+        }
+    }
+
+    /// Shows the forge's state on the server's own node.
+    pub fn show(&self) {
+        let (phase, by, weapon, left) = self.view();
+        if let Ok(mut node) = self.node.clone().try_cast::<crate::forge::Forge>() {
+            node.bind_mut()
+                .show(phase, false, by, weapon, left.unwrap_or(0.0));
+        }
+    }
+
+    /// The forge as clients are told it.
+    pub fn event(&self, ticks_from_now: impl Fn(f32) -> Tick) -> ZombiesEvent {
+        let (phase, by, weapon, left) = self.view();
+        ZombiesEvent::Forge {
+            phase,
+            by,
+            weapon,
+            until: left.map(ticks_from_now),
+        }
+    }
 }

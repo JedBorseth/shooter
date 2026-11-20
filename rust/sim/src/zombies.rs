@@ -12,6 +12,7 @@ use crate::weapon::{CombatState, WeaponId};
 
 pub mod chase;
 pub mod drinks;
+pub mod forge;
 pub mod laststand;
 pub mod mystery;
 
