@@ -811,6 +811,28 @@ fn streak_challenges(out: &mut Vec<Challenge>) {
             }],
         ),
         (
+            Streak::GuidedMissile,
+            &[Tiered {
+                id: "streak.guided_missile.kills",
+                name: "Pilot",
+                detail: "Get {} kills with the Guided Missile.",
+                stat: "s.guided_missile.kills",
+                tiers: &[(25, 1500), (100, 3000)],
+                card: None,
+            }],
+        ),
+        (
+            Streak::AttackChopper,
+            &[Tiered {
+                id: "streak.attack_chopper.kills",
+                name: "Rotor Wash",
+                detail: "Get {} kills with the Attack Chopper.",
+                stat: "s.attack_chopper.kills",
+                tiers: &[(25, 1500), (100, 3000)],
+                card: None,
+            }],
+        ),
+        (
             Streak::Airstrike,
             &[
                 Tiered {

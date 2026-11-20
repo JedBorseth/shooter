@@ -7,8 +7,9 @@ extends CanvasLayer
 ##   FINAL KILLCAM for the kill that ended a round or the match, with a thin
 ##   bar under it filling as the replay plays;
 ## - the killer's card, bottom centre: who killed (in the colours we see
-##   them in), with what weapon and attachment, and whether it was a
-##   headshot; an ending killcam also names the victim;
+##   them in, with their prestige emblem), on their calling card, with what
+##   weapon and attachment, and whether it was a headshot; an ending
+##   killcam also names the victim;
 ## - the skip prompt under the card ("[F] Skip"), after a death only.
 ##
 ## Call of Duty shows the same parts: a KILLCAM title, the killer's name card
@@ -18,6 +19,8 @@ extends CanvasLayer
 const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
+const CallingCard := preload("res://scripts/ui/calling_card.gd")
+const PrestigeEmblem := preload("res://scripts/ui/prestige_emblem.gd")
 
 var client: NetClient
 var player: FpsPlayer
@@ -124,9 +127,24 @@ func _draw_overlay() -> void:
 	var detail_w := Paint.text_width(Paint.LABEL, detail, 17, 1.0)
 	var card_w := maxf(maxf(name_w, detail_w) + 120.0, 340.0)
 	var card := Rect2(centre - card_w / 2.0, card_y - 62.0, card_w, 104.0)
+	# The killer's calling card under the plate, as Call of Duty's killcam
+	# shows the killer's card.
+	var shown := client.cosmetics_of(killer) if client != null else {}
+	var calling := String(shown.get("card", ""))
+	if calling != "":
+		CallingCard.draw_card(_canvas, calling, card, alpha)
+	var plate_alpha := 0.66 if calling != "" else 1.0
 	Paint.plate(
-		_canvas, card, Color(Paint.PLATE, Paint.PLATE.a * alpha), Color(_colour_of(killer), alpha)
+		_canvas,
+		card,
+		Color(Paint.PLATE, Paint.PLATE.a * plate_alpha * alpha),
+		Color(_colour_of(killer), alpha)
 	)
+	var prestige := int(shown.get("prestige", 0))
+	if prestige > 0:
+		PrestigeEmblem.draw_emblem(
+			_canvas, prestige, Vector2(centre - name_w / 2.0 - 24.0, card_y - 15.0), 30.0, alpha
+		)
 	Paint.text_centred(
 		_canvas,
 		Paint.LABEL,

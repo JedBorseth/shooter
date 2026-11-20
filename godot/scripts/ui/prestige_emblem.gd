@@ -38,7 +38,7 @@ static func draw_emblem(
 ) -> void:
 	if level <= 0:
 		return
-	var colours: Array = _colours(level)
+	var colours: Array = colours_of(level)
 	var fill := Color(colours[0], alpha)
 	var rim := Color(colours[1], alpha)
 	var mark := Color(colours[2], alpha)
@@ -63,7 +63,8 @@ static func draw_emblem(
 			_chevron(canvas, Vector2(centre.x, top + i * step), r * 0.46, r * 0.13, mark)
 
 
-static func _colours(level: int) -> Array:
+## Prestige `level`'s fill, rim, and mark colours.
+static func colours_of(level: int) -> Array:
 	if level >= 11:
 		return MASTER
 	if level == 10:

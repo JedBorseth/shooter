@@ -636,6 +636,8 @@ func _refresh_board() -> void:
 						"faint": snd and not entry.alive,
 						"tag": "BOT" if entry.bot else "",
 						"prestige": KillFeed.prestige_of(client, int(entry.id)),
+						"card": KillFeed.card_of(client, int(entry.id)),
+						"card": KillFeed.card_of(client, int(entry.id)),
 					}
 				)
 			)
@@ -696,6 +698,7 @@ func _refresh_ladder_board() -> void:
 					"me": entry.me,
 					"tag": "BOT" if entry.bot else "",
 					"prestige": KillFeed.prestige_of(client, int(entry.id)),
+					"card": KillFeed.card_of(client, int(entry.id)),
 				}
 			)
 		)

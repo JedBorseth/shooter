@@ -23,6 +23,7 @@ func _check(ok: bool, what: String) -> void:
 func _run() -> void:
 	_dir = OS.get_environment("CAPTURE_DIR")
 	ProgressStore.use_file("user://career_test.cfg")
+	ClassStore.use_file("user://career_test_classes.cfg")
 	(
 		ProgressStore
 		. set_totals(
@@ -90,10 +91,28 @@ func _run() -> void:
 	_check(texts.has("25.7%"), "the M4A1's accuracy")
 	await _shot("career_record")
 	await _check_prestige(career)
+	await _check_cards(career)
 	career.emit_signal("back_requested")
 	await _frames(5)
 	_check(title.get_node_or_null("CareerMenu") == null, "Back closes it")
 	_finish()
+
+
+## Calling cards: earned ones can be picked (prestige 1's card is), and the
+## pick is what the player shows.
+func _check_cards(career: Node) -> void:
+	career.call("show_tab", 3)
+	await _frames(3)
+	var card := career.find_child("Card_prestige_1", true, false) as Button
+	_check(card != null and not card.disabled, "prestige 1's card is earned")
+	var locked := career.find_child("Card_ace", true, false) as Button
+	_check(locked != null and locked.disabled, "a card still to earn is locked")
+	if card != null:
+		card.pressed.emit()
+		await _frames(5)
+	_check(ClassStore.card() == "prestige_1", "picking a card shows it")
+	_check(String(ClassStore.cosmetics().card) == "prestige_1", "and sends it with the class")
+	await _shot("career_cards")
 
 
 ## At the top level, entering prestige (after confirming) goes back to level
@@ -139,6 +158,7 @@ func _check_prestige(career: Node) -> void:
 
 func _finish() -> void:
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(ProgressStore.path()))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(ClassStore.path()))
 	print("Career test: %d failure(s)" % _failures)
 	quit(1 if _failures > 0 else 0)
 
