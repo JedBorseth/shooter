@@ -195,6 +195,14 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Health, regeneration after a delay, death, and respawn (`shooter_sim::player`). Respawn picks the original spawn until the spawn system exists.
 - [x] Bots that play Team Deathmatch (`--bot-skill easy|normal|hard`): a navigation mesh baked from the map's collision, field-of-view and line-of-sight perception, reaction time, turn-rate-limited aim with shrinking error, bursts and taps, strafing, sprinting between fights, random loadouts, and players taking bots' places (`rust/game/src/net/bots.rs`, `rust/sim/src/bot.rs`).
 - [x] Bots: take cover when hurt (a nearby spot the threat cannot see; they crouch, reload, and heal there), and follow the map's lanes (`BotLanes`), picking the one with the fewest teammates. They throw nothing yet.
+- [x] A bot match bench (`godot/tools/bot_bench.gd`): whole bot-only matches headless, written to JSON with the winner, scores, every bot's kills and deaths, tactics, and each mode's objective log (Search and Destroy rounds, Hardpoint zone arrivals, Domination flag time), so bot changes are compared by outcome (`docs/bots.md`).
+- [ ] Bots play like Black Ops 2's Combat Training bots (`docs/bots.md`):
+  - [ ] Search and Destroy: the carrier goes to plant as the clock runs down, escorts guard the plant spot, attackers switch sites when the target is held, a lurker takes the other route, defenders frag enemies near their site, smoke covers a plant or defuse, and Hard bots fake a plant or defuse.
+  - [ ] Domination: bots spread over the flags instead of one team piling onto one, and grenade flags they attack.
+  - [ ] Hardpoint: bots head for the next zone before the live one moves, and grenade the enemy holding it.
+  - [ ] Capture the Flag: escorts ring the carrier instead of chasing its heels.
+  - [ ] Awareness: enemies who fire unsuppressed (the minimap's red dots) draw bots' eyes and patrols; footsteps and gunfire turn them.
+  - [ ] Combat feel: pre-aim the angles enemies come from, check corners, peek from cover, and slide or drop-shot on Hard only. Easy bots throw nothing (Black Ops 2's Recruit).
 - [x] Team Deathmatch rules on the server: two teams (new players join the smaller), 75 kills or 10 minutes, no friendly fire, a lobby that waits for everyone to ready up, a countdown, and a results phase before the next match (`rust/sim/src/tdm.rs`).
 - [x] Round end screen: VICTORY, DEFEAT, or DRAW with the scoreboard, then the next match's countdown.
 - [x] Team colours from the match: teammates wear the allies' colours and show their name; enemies wear the enemies' colours and show none.

@@ -11,6 +11,7 @@ mod horde;
 mod horde_view;
 pub(crate) mod killcam;
 mod machines;
+mod match_log;
 mod props;
 mod remote;
 mod server;
