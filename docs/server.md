@@ -35,7 +35,7 @@ Each option is an environment variable; any argument after the image name is pas
 | `SHOOTER_MAP` | `slamcity` | `--map`: `arena`, `nuketown`, `slamcity`, `warehouse`, `breakwater`, `zombies` |
 | `SHOOTER_MODE` | `tdm` | `--mode`: `tdm`, `ctf`, `hardpoint`, `dom`, `gungame`, `snd`, `zombies` (on the `zombies` map) |
 | `SHOOTER_NAME` | "Shooter server" | `--name`: the name server browsers show |
-| `SHOOTER_BOTS` | 0 | `--bots`: bots that fill the teams; each player who joins takes one's place |
+| `SHOOTER_BOTS` | 0 | `--bots`: bots that fill the teams; each player who joins takes one's place; ignored in Zombies, which has no bots |
 | `SHOOTER_BOT_SKILL` | none (scripted targets) | `--bot-skill`: `easy`, `normal`, `hard` |
 | `SHOOTER_MASTER` | none | `--master HOST[:PORT]`: stay listed on a master server's Internet tab |
 | `SHOOTER_SCORE_LIMIT` | the mode's | `--score-limit` |

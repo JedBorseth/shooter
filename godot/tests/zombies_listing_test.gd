@@ -3,7 +3,8 @@ extends SceneTree
 ##
 ## - a private local match hides from server browsers and pauses;
 ## - a shared Zombies co-op game answers browsers on the network (LAN);
-## - listed on the Internet, it also registers with the server directory.
+## - listed on the Internet, it also registers with the server directory;
+## - a dedicated Zombies server ignores `--bots` (`Net.server_bots`).
 ## godot --headless --path godot --script res://tests/zombies_listing_test.gd
 
 var _failures := 0
@@ -41,6 +42,16 @@ func _run() -> void:
 	_check(at >= 0, "listed on the Internet, it registers with the server directory")
 	_check(at >= 0 and internet[at + 1] == "directory.example:27010", "the directory it was given")
 	_check(not "--query-port" in internet, "and still answers on the network")
+
+	var script: GDScript = net.get_script()
+	_check(script.call("server_bots", {"mode": "tdm", "bots": "5"}) == 5, "TDM keeps its bots")
+	_check(
+		script.call("server_bots", {"mode": "zombies", "bots": "11"}) == 0,
+		"a Zombies server spawns no bots"
+	)
+	_check(
+		script.call("server_bots", {"mode": "ZM", "bots": "3"}) == 0, "whatever the mode's spelling"
+	)
 	if _failures == 0:
 		print("zombies_listing_test: all checks passed")
 	quit(1 if _failures > 0 else 0)
