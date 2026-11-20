@@ -26,7 +26,7 @@ Both parts are aim, and the camera looks along the aim, so the screen centre and
 - Sprinting does not cancel a reload, and a reload can start while sprinting. Firing ends a sprint and waits `sprint_out_time`.
 - A switch that cuts off a bolt or pump cycle, or an empty reload before its charge, leaves the weapon needing its action worked (`WeaponState::needs_cycle`): it cycles when drawn again, so switching never skips a cycle.
 - Re-selecting the weapon in hand while it is being put away brings it back up from as far as it got.
-- **First raise.** A weapon's first draw of a game or round, and a weapon picked up, comes up with a first raise (`Raise::First`, `first_raise_time`): the draw, then the action worked (an AR's charging handle or an AK's, a pistol's slide racked, the bolt or the pump worked), and it cannot fire until that ends. Later draws, and every respawn after the first, are ordinary draws. This follows Call of Duty's `firstRaiseAnim`, with Modern Warfare III's 2023 rule (it plays at the start of a game or round and on a pickup, not on every life). Times are Black Ops 2's for each class (assault rifles 1.4–1.7 s, SMGs 1.0–1.25 s, LMGs 1.85 s, shotguns 1.65 s, snipers 1.75 s, pistols 0.85–1.1 s) scaled to our faster draws: M4A1 and BR-3 1.1 s, AK-47 1.2 s, KR-12 1.25 s, PDW-9 0.8 s, CQ-10 0.75 s, BP-9 0.85 s, LSW-6 1.7 s, M870 1.35 s, DM-7 1.3 s, M40 1.4 s, M1911 0.8 s. A switch away during a first raise ends it; the weapon just draws next time.
+- **First raise.** A weapon's first draw of a game or round, and a weapon picked up, comes up with a first raise (`Raise::First`, `first_raise_time`): the draw, then the action worked (an AR's charging handle or an AK's, a pistol's slide racked, the bolt or the pump worked), and it cannot fire until that ends. Later draws, and every respawn after the first, are ordinary draws. This follows Call of Duty's `firstRaiseAnim`, with Modern Warfare III's 2023 rule (it plays at the start of a game or round and on a pickup, not on every life). Times are Black Ops 2's for each class (assault rifles 1.4–1.7 s, SMGs 1.0–1.25 s, LMGs 1.85 s, shotguns 1.65 s, snipers 1.75 s, pistols 0.85–1.1 s) scaled to our faster draws: M4A1 and BR-3 1.1 s, AK-47 1.2 s, KR-12 1.25 s, PDW-9 0.8 s, CQ-10 0.75 s, BP-9 0.85 s, LSW-6 1.7 s, M870 1.35 s, SG-12 1.3 s, DM-7 1.3 s, M40 1.4 s, M1911 0.8 s. A switch away during a first raise ends it; the weapon just draws next time.
 - A burst in progress is dropped by a reload, a sprint, or a switch.
 
 ## Melee
@@ -91,6 +91,7 @@ Chest hits on a 100-health player with the trigger at the weapon's maximum rate,
 | m1911 | 300 ms (3) | 300 ms (3) | 300 ms (3) | 450 ms (4) | 450 ms (4) | 450 ms (4) | 450 ms (4) | 450 ms (4) |
 | m4 | 240 ms (4) | 240 ms (4) | 240 ms (4) | 240 ms (4) | 240 ms (4) | 320 ms (5) | 320 ms (5) | 320 ms (5) |
 | m40 | 0 ms (1) | 0 ms (1) | 0 ms (1) | 0 ms (1) | 0 ms (1) | 0 ms (1) | 0 ms (1) | 0 ms (1) |
+| sg12 | 0 ms (1) | 133 ms (2) | 1067 ms (9) | 1867 ms (15) | 4267 ms (33) | - | - | - |
 | m870 | 0 ms (1) | 550 ms (2) | 1100 ms (3) | 2750 ms (6) | 9350 ms (18) | 17050 ms (32) | 26400 ms (49) | - |
 | pdw9 | 180 ms (4) | 180 ms (4) | 180 ms (4) | 240 ms (5) | 420 ms (8) | 420 ms (8) | 420 ms (8) | 420 ms (8) |
 
@@ -121,6 +122,7 @@ Identity by class:
 | PDW-9 | Wins from 7 to 15 m against everything (1000 rpm), falls off past 20 m, quickest handling | 0.19 / 0.16 |
 | CQ-10 | The fastest fire (1150 rpm): four hits to about 12 m, beating the PDW-9 there, then seven or eight; a hard, jumpy climb. Black Ops 2's Skorpion EVO (33 damage to 10 m, 22 to 21 m, 18 beyond, no headshot bonus). Its own reflex sight; takes a suppressor, a grip, and an extended magazine (Black Ops 2's SMGs take no ACOG) | 0.17 / 0.14 |
 | M870 | Ten pellets: one shot to about 9 m, two to 12 m; 0.55 s pump | 0.24 / 0.21 |
+| SG-12 | Semi-automatic: eight pellets at 450 rpm, one shot to about 7.5 m, two (133 ms apart) to about 10 m, nothing past 30 m; an eight-round box magazine, reloaded like a rifle's. Black Ops 2's S12 (eight pellets, 30 damage to 3.75 m, 20 to 7.5 m, nothing past 15 m, 468 rpm). Ghost-ring sights built over its receiver (`IronSights` style `shotgun`); takes a red dot, suppressor, grip, and extended magazine | 0.26 / 0.22 |
 | DM-7 | Marksman: semi-automatic, two hits to the chest anywhere and never one, a headshot kills to about 39 m; a 2.5x scope (0.45 of the view) with light sway that hold-breath steadies; 10 rounds. Black Ops 2's SVU-AS (70 damage, two to kill, a headshot one, about 415 rpm); ours caps at 300 rpm so a pair is 200 ms. The M14 with a riflescope and an olive glass-fibre stock | 0.34 / 0.30 |
 | M40 | One shot to head or upper chest at any range | 0.42 / 0.36 |
 | M1911 | Sidearm: 3 hits to 15 m | 0.16 / 0.12 |

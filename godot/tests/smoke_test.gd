@@ -98,7 +98,10 @@ func _gunshots(player: FpsPlayer) -> void:
 		if not whole:
 			var mech := view.get_node_or_null("GunshotMech") as AudioStreamPlayer
 			_check(mech != null and mech.stream != null, "%s has a mechanical layer" % view.name)
-		if key not in ["m40", "m870"]:
+		# A gun borrowing another's sound until its own is approved
+		# (`sound_from`) rings only if the lender does.
+		var lender: String = view.get("sound_from")
+		if key not in ["m40", "m870"] and lender not in ["m40", "m870"]:
 			var hollow := view.get_node_or_null("GunshotHollow") as AudioStreamPlayer
 			_check(
 				hollow != null and hollow.stream != null, "%s has a last-rounds layer" % view.name

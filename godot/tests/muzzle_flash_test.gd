@@ -8,7 +8,19 @@ extends SceneTree
 
 const ATLAS := "res://assets/textures/effects/muzzle_flash_4x4.png"
 const WEAPONS := [
-	"m4", "ak47", "kr12", "pdw9", "cq10", "m870", "lsw6", "br3", "dm7", "m40", "pistol", "bp9"
+	"m4",
+	"ak47",
+	"kr12",
+	"pdw9",
+	"cq10",
+	"m870",
+	"sg12",
+	"lsw6",
+	"br3",
+	"dm7",
+	"m40",
+	"pistol",
+	"bp9"
 ]
 
 var _failures := 0

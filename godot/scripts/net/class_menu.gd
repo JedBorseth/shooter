@@ -31,6 +31,7 @@ const WEAPON_ROLES := {
 	"br3": "Burst rifle. Three rounds a pull; one burst up close.",
 	"lsw6": "Light machine gun. 75 rounds, slow to aim.",
 	"m870": "Pump shotgun. One shot up close.",
+	"sg12": "Semi-auto shotgun. As fast as you pull; a box magazine.",
 	"dm7": "Marksman rifle. Two shots anywhere, scoped.",
 	"m40": "Bolt-action sniper. One shot to the chest.",
 }

@@ -169,7 +169,8 @@ use crate::zombies::drinks::Drinks;
 // turned a player away.
 // Version 70 added the KR-12 to the weapon table.
 // Version 71 added the DM-7 to the weapon table.
-pub const PROTOCOL_VERSION: u16 = 71;
+// Version 72 added the SG-12 to the weapon table.
+pub const PROTOCOL_VERSION: u16 = 72;
 /// Longest account session token a hello carries, in bytes.
 pub const MAX_ACCOUNT_TOKEN_BYTES: usize = 2048;
 /// Longest reason a denial carries, in bytes.

@@ -287,7 +287,7 @@ mod tests {
             assert_eq!(level(key), 1, "{key}");
         }
         let mut order: Vec<u8> = [
-            "ak47", "m870", "br3", "bp9", "lsw6", "m40", "cq10", "kr12", "dm7",
+            "ak47", "m870", "br3", "bp9", "lsw6", "m40", "cq10", "kr12", "sg12", "dm7",
         ]
         .iter()
         .map(|k| level(k))

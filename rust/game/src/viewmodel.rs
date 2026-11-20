@@ -298,6 +298,16 @@ impl KickFeel {
                 aim_roll: 0.7,
                 zeta: 0.65,
             },
+            // The pump's buck, a little lighter, for a gun fired as fast as
+            // the trigger is pulled.
+            "sg12" => Self {
+                hip_lift: 2.2,
+                hip_back: 1.4,
+                aim_lift: 0.54,
+                aim_yaw: 0.12,
+                aim_roll: 0.8,
+                zeta: 0.62,
+            },
             "m870" | "m40" => Self {
                 hip_lift: 2.6,
                 hip_back: 1.5,

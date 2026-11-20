@@ -28,6 +28,7 @@ const WEAPONS := [
 	"dm7",
 	"m40",
 	"m870",
+	"sg12",
 	"m1911",
 	"bp9",
 	"laser",

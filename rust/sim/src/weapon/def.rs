@@ -944,7 +944,7 @@ macro_rules! builtin_files {
 pub fn builtin() -> Vec<WeaponDef> {
     parse_all(builtin_files![
         "ak47", "bp9", "br3", "cq10", "dm7", "kr12", "laser", "lsw6", "m1911", "m40", "m4", "m870",
-        "pdw9"
+        "pdw9", "sg12"
     ])
     .expect("built-in weapon files are valid")
 }
@@ -995,7 +995,7 @@ mod tests {
             keys,
             [
                 "ak47", "bp9", "br3", "cq10", "dm7", "kr12", "laser", "lsw6", "m1911", "m4", "m40",
-                "m870", "pdw9"
+                "m870", "pdw9", "sg12"
             ]
         );
         let all: Vec<_> = table().iter().map(|d| d.key.as_str()).collect();

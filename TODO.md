@@ -50,7 +50,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
   - [x] CQ-10 SMG (the Skorpion EVO's role: fastest fire, shortest reach), from the Classic Weapons Pack's MAC-11. Its own firing sound is held for listening; it fires and reloads with the PDW-9's until then.
   - [x] BP-9 burst pistol (the B23R's role), from the Classic Weapons Pack's Tec-9 with built-in three-dot sights. Its own firing sound is held for listening; it fires with the M1911's until then.
   - [x] KR-12 battle rifle (the SCAR-H's role: slower, harder-hitting), the AK-47 model with its walnut refinished as black polymer. Its own firing sound is held for listening; it fires with the AK-47's until then.
-  - [ ] Semi-automatic shotgun (the S12's role).
+  - [x] SG-12 semi-automatic shotgun (the S12's role), box-fed, modelled by `tools/weapon_sg12.py` on the M870's receiver. Its own firing sound is held for listening; it fires with the M870's until then.
   - [x] DM-7 marksman rifle (the SVU-AS's role), the M14 with a riflescope and an olive glass-fibre stock. Its own firing sound is held for listening; it fires with the BR-3's until then.
   - [ ] Launcher: a free-flight rocket that also brings down scorestreak aircraft (the RPG's role).
 - [x] LMG (LSW-6: 75 rounds, slow aim and reload) and a burst-fire rifle (BR-3: `FireMode::Burst`, three rounds a pull, one burst kills up close).
