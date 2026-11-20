@@ -70,7 +70,7 @@ use shooter_sim::bot::Skill;
 use shooter_sim::chat::{self, ChatLimiter};
 use shooter_sim::class::{Class, DefaultClass};
 use shooter_sim::ctf::{FlagEvent, FlagPlayer, FlagRules, FlagState, Flags};
-use shooter_sim::domination::{self, DominationRules, DominationState, FlagPoint};
+use shooter_sim::domination::{self, BotGoal, DominationRules, DominationState, FlagPoint};
 use shooter_sim::equipment;
 use shooter_sim::gun_game::{self, Progress, Step};
 use shooter_sim::hardpoint::{self, HardpointRules, HardpointState, HillTime, Holder, Zone};
@@ -152,6 +152,9 @@ const DEFEND_RADIUS: f32 = 6.0;
 /// In Hardpoint, the live zone counts as this many enemies standing at its
 /// centre when choosing a spawn, so nobody spawns on the hill.
 const ZONE_SPAWN_THREATS: usize = 2;
+/// Metres outside a Domination flag's circle from which a bot stops
+/// hunting toward it and holds a spot inside.
+const DOM_HOLD_REACH: f32 = 8.0;
 /// Seconds a Hardpoint bot holds one spot in the zone.
 const ZONE_SPOT_SECONDS: u32 = 4;
 /// Height above a player's feet that an explosion is checked against.
@@ -3387,6 +3390,9 @@ impl NetServer {
                 self.match_state.scores[1]
             );
             self.dom.halftime();
+            // The match HUD calls the second half out ("HALFTIME").
+            self.match_state.period = Period::SecondHalf;
+            self.broadcast_match();
             self.respawn_all_at_start();
             let event = self.domination_event();
             self.broadcast_event(&event);
@@ -3972,6 +3978,9 @@ impl NetServer {
         if let Some(zone) = self.zones.get(self.hardpoint.active) {
             return self.zone_objectives(zone);
         }
+        if !self.dom_points.is_empty() {
+            return self.dom_objectives();
+        }
         let Some(flags) = &self.flags else {
             return Vec::new();
         };
@@ -4189,6 +4198,52 @@ impl NetServer {
                         floor,
                         zone.center.z + (b * 2.0 - 1.0) * reach_z,
                     )))
+                };
+                out.push((id, Some(objective)));
+            }
+        }
+        out
+    }
+
+    /// Domination: each team's bots take the flags they do not own, guard
+    /// the ones they do, and run back to stop an enemy capture
+    /// (`domination::bot_goals`). Near its flag a bot holds a spot inside the
+    /// circle, moving to a new one every few seconds, so it captures or
+    /// contests; further off it hunts its way there.
+    fn dom_objectives(&self) -> Vec<(u8, Option<BotObjective>)> {
+        let period = self.tick / (ZONE_SPOT_SECONDS * TICK_RATE);
+        let mut out = Vec::new();
+        for team in 0..tdm::TEAM_COUNT as Team {
+            let bots: Vec<(u8, Vec3)> = self
+                .avatars
+                .iter()
+                .filter(|a| a.team == team && a.brain.is_some())
+                .map(|a| (a.id, a.predicted.position))
+                .collect();
+            for (id, goal) in domination::bot_goals(&self.dom_points, &self.dom, team, &bots) {
+                let flag = match goal {
+                    BotGoal::Capture(i) | BotGoal::Defend(i) => i,
+                };
+                let Some(point) = self.dom_points.get(flag) else {
+                    continue;
+                };
+                let feet = bots
+                    .iter()
+                    .find(|(b, _)| *b == id)
+                    .map_or(point.center, |(_, f)| *f);
+                let across = Vec2::new(feet.x - point.center.x, feet.z - point.center.z).length();
+                let floor = point.floor() + 0.3;
+                let objective = if across <= point.radius + DOM_HOLD_REACH {
+                    let angle = rng::unit(u32::from(id), period * 2) * std::f32::consts::TAU;
+                    let reach = rng::unit(u32::from(id), period * 2 + 1).sqrt()
+                        * (point.radius - 0.8).max(0.3);
+                    BotObjective::hold(to_godot(Vec3::new(
+                        point.center.x + angle.cos() * reach,
+                        floor,
+                        point.center.z + angle.sin() * reach,
+                    )))
+                } else {
+                    BotObjective::hunt(to_godot(Vec3::new(point.center.x, floor, point.center.z)))
                 };
                 out.push((id, Some(objective)));
             }

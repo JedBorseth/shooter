@@ -342,6 +342,83 @@ impl DominationState {
     }
 }
 
+/// What a bot should do in Domination ([`bot_goals`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BotGoal {
+    /// Go and stand in flag `i` until the team owns it.
+    Capture(usize),
+    /// Guard flag `i`, which the team owns, standing in its circle so an
+    /// enemy capture is contested.
+    Defend(usize),
+}
+
+/// Bots this many or fewer answer an enemy capture of one of the team's flags.
+const RESPONDERS: usize = 2;
+
+/// Where each of team `team`'s bots (`(id, feet)`) should go, the way Call
+/// of Duty's bots play Domination: the nearest bots run back to stop an
+/// enemy capture of a flag the team owns, one bot in four guards an owned
+/// flag, and the rest take the flags the team does not own, most of them the
+/// nearest and every third the next nearest, so the team splits over two
+/// flags. With every flag owned, everyone guards.
+pub fn bot_goals(
+    points: &[FlagPoint],
+    state: &DominationState,
+    team: Team,
+    bots: &[(u8, Vec3)],
+) -> Vec<(u8, BotGoal)> {
+    let mut bots: Vec<(u8, Vec3)> = bots.to_vec();
+    bots.sort_unstable_by_key(|(id, _)| *id);
+    let count = points.len().min(state.flags.len());
+    let owned: Vec<usize> = (0..count)
+        .filter(|i| state.flags[*i].owner == Some(team))
+        .collect();
+    let targets: Vec<usize> = (0..count)
+        .filter(|i| state.flags[*i].owner != Some(team))
+        .collect();
+    let mut out: Vec<(u8, BotGoal)> = Vec::new();
+    // The nearest bots answer an enemy capture of a flag we own.
+    for &flag in &owned {
+        if state.flags[flag].claim.is_none_or(|t| t == team) {
+            continue;
+        }
+        let mut by_distance: Vec<(f32, u8)> = bots
+            .iter()
+            .filter(|(id, _)| !out.iter().any(|(o, _)| o == id))
+            .map(|(id, feet)| (feet.distance(points[flag].center), *id))
+            .collect();
+        by_distance.sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
+        for (_, id) in by_distance.into_iter().take(RESPONDERS) {
+            out.push((id, BotGoal::Defend(flag)));
+        }
+    }
+    let mut guards = 0;
+    let mut attackers = 0;
+    for (i, (id, feet)) in bots.iter().enumerate() {
+        if out.iter().any(|(o, _)| o == id) {
+            continue;
+        }
+        if !owned.is_empty() && (targets.is_empty() || i % 4 == 3) {
+            out.push((*id, BotGoal::Defend(owned[guards % owned.len()])));
+            guards += 1;
+            continue;
+        }
+        let mut nearest = targets.clone();
+        nearest.sort_unstable_by(|a, b| {
+            feet.distance(points[*a].center)
+                .total_cmp(&feet.distance(points[*b].center))
+        });
+        let pick = if attackers % 3 == 2 && nearest.len() >= 2 {
+            nearest[1]
+        } else {
+            nearest[0]
+        };
+        attackers += 1;
+        out.push((*id, BotGoal::Capture(pick)));
+    }
+    out
+}
+
 /// Teammates an owned flag counts as when choosing a spawn.
 pub const OWNED_FLAG_PULL: usize = 3;
 /// Enemies an enemy flag counts as when choosing a spawn.
@@ -576,6 +653,62 @@ mod tests {
         state.flags[2].owner = Some(0);
         assert_eq!(pick(&state), Some(1));
         assert!(state.spawn_threats(&points, 0).iter().any(|t| t.enemy));
+    }
+
+    fn bots_at(feet: &[Vec3]) -> Vec<(u8, Vec3)> {
+        feet.iter()
+            .enumerate()
+            .map(|(i, f)| (200 + i as u8, *f))
+            .collect()
+    }
+
+    #[test]
+    fn bots_split_over_the_nearest_flags_at_the_start() {
+        let points = fallback_points(Vec3::ZERO, Vec3::new(0.0, 0.0, 100.0));
+        let state = DominationState::new(3);
+        let bots = bots_at(&[Vec3::ZERO; 6]);
+        let goals = bot_goals(&points, &state, 0, &bots);
+        assert_eq!(goals.len(), 6);
+        let on = |g: BotGoal| goals.iter().filter(|(_, x)| *x == g).count();
+        // Nobody owns anything yet: everyone attacks, most at A, some at B.
+        assert_eq!(on(BotGoal::Capture(0)), 4);
+        assert_eq!(on(BotGoal::Capture(1)), 2);
+    }
+
+    #[test]
+    fn bots_guard_what_they_own_and_answer_a_capture() {
+        let points = fallback_points(Vec3::ZERO, Vec3::new(0.0, 0.0, 100.0));
+        let mut state = DominationState::new(3);
+        state.flags[0].owner = Some(0);
+        state.flags[1].owner = Some(0);
+        let bots = bots_at(&[Vec3::new(0.0, 0.0, 60.0); 8]);
+        let goals = bot_goals(&points, &state, 0, &bots);
+        let defending = goals
+            .iter()
+            .filter(|(_, g)| matches!(g, BotGoal::Defend(_)))
+            .count();
+        assert_eq!(defending, 2, "one in four guards: {goals:?}");
+        assert!(goals.iter().any(|(_, g)| *g == BotGoal::Capture(2)));
+        // The enemy starts taking A: the two nearest bots go back for it.
+        state.flags[0].claim = Some(1);
+        let mut bots = bots;
+        bots[5].1 = Vec3::new(0.0, 0.0, 25.0);
+        bots[6].1 = Vec3::new(0.0, 0.0, 30.0);
+        let goals = bot_goals(&points, &state, 0, &bots);
+        let answering: Vec<u8> = goals
+            .iter()
+            .filter(|(_, g)| *g == BotGoal::Defend(0))
+            .map(|(id, _)| *id)
+            .collect();
+        assert!(
+            answering.contains(&205) && answering.contains(&206),
+            "{goals:?}"
+        );
+        // Holding all three, everyone guards.
+        state.flags[0].claim = None;
+        state.flags[2].owner = Some(0);
+        let goals = bot_goals(&points, &state, 0, &bots);
+        assert!(goals.iter().all(|(_, g)| matches!(g, BotGoal::Defend(_))));
     }
 
     #[test]

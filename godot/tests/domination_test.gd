@@ -77,6 +77,7 @@ func _run() -> void:
 	_server.debug_match_time_left(299.0)
 	await _seconds(0.2)
 	_check(_server.dom_swapped(), "halftime swapped the sides")
+	_check(_server.match_period() == "second_half", "the second half is on")
 	_check(
 		_server.dom_flag_owner(0) == -1 and _server.dom_flag_owner(1) == -1,
 		"every flag is neutral again after halftime"

@@ -14,8 +14,8 @@ extends Node3D
 ##   enemy's capture of our flag, which we stop by standing on it), or
 ##   SECURED.
 ## - Calls in the middle of the screen with a short sting until there is an
-##   announcer: "WE'VE TAKEN B", "WE'VE LOST B", "ENEMY TOOK B", and
-##   "HALFTIME" when the teams swap sides.
+##   announcer: "WE'VE TAKEN B", "WE'VE LOST B", and "ENEMY TOOK B". The
+##   match HUD calls halftime, when the teams swap sides (the second half).
 ##
 ## The server decides everything; this only draws what it says.
 
@@ -68,7 +68,6 @@ var _ring_texture: ImageTexture
 var _ring_glow: ImageTexture
 ## Owners as last seen, for the calls; empty until the first state.
 var _last_owners: Array = []
-var _last_swapped := false
 var _time := 0.0
 
 var _layer: CanvasLayer
@@ -301,11 +300,7 @@ func _ring_textures() -> Array[ImageTexture]:
 func _announce(info: Dictionary) -> void:
 	var flags: Array = info.flags
 	var owners: Array = flags.map(func(f: Dictionary) -> String: return f.owner)
-	var swapped: bool = info.swapped
 	var playing: bool = info.phase == "playing"
-	if swapped and not _last_swapped and playing:
-		_say("HALFTIME", "Switching sides", NEUTRAL)
-	_last_swapped = swapped
 	if _last_owners.size() == owners.size() and playing:
 		for i in owners.size():
 			var was: String = _last_owners[i]
