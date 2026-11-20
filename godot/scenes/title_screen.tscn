@@ -240,42 +240,12 @@ icon = ExtResource("3_arrow")
 alignment = 0
 icon_alignment = 2
 
-[node name="Slamcity" type="Button" parent="Margin/Layout/Menu"]
+[node name="FreeRoam" type="Button" parent="Margin/Layout/Menu"]
 custom_minimum_size = Vector2(500, 40)
 layout_mode = 2
 mouse_default_cursor_shape = 2
 theme_type_variation = &"RouteButton"
-text = "Slamcity"
-icon = ExtResource("3_arrow")
-alignment = 0
-icon_alignment = 2
-
-[node name="Nuketown" type="Button" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(500, 40)
-layout_mode = 2
-mouse_default_cursor_shape = 2
-theme_type_variation = &"RouteButton"
-text = "Nuketown"
-icon = ExtResource("3_arrow")
-alignment = 0
-icon_alignment = 2
-
-[node name="Warehouse" type="Button" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(500, 40)
-layout_mode = 2
-mouse_default_cursor_shape = 2
-theme_type_variation = &"RouteButton"
-text = "Warehouse"
-icon = ExtResource("3_arrow")
-alignment = 0
-icon_alignment = 2
-
-[node name="Breakwater" type="Button" parent="Margin/Layout/Menu"]
-custom_minimum_size = Vector2(500, 40)
-layout_mode = 2
-mouse_default_cursor_shape = 2
-theme_type_variation = &"RouteButton"
-text = "Breakwater"
+text = "Free Roam"
 icon = ExtResource("3_arrow")
 alignment = 0
 icon_alignment = 2

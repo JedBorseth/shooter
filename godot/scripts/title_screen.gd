@@ -20,6 +20,14 @@ const SETUP_BUTTONS := {
 	"gungame": "GunGame",
 	"ffa": "FreeForAll",
 	"snd": "SearchAndDestroy",
+	"freeroam": "FreeRoam",
+}
+## The scene each Free Roam map loads, and its name in the loading line.
+const FREE_ROAM := {
+	"slamcity": [SLAMCITY_PATH, "Slamcity"],
+	"nuketown": [NUKETOWN_PATH, "Nuketown"],
+	"warehouse": [WAREHOUSE_PATH, "Warehouse"],
+	"breakwater": [BREAKWATER_PATH, "Breakwater"],
 }
 ## The short tag on the right of each route, and the line the status shows
 ## while it has focus.
@@ -35,10 +43,7 @@ const ROUTES := {
 	"Multiplayer": ["SERVERS", "Join a dedicated server on the internet or your network."],
 	"Zombies": ["CO-OP", "Survive the rounds, alone or with up to three friends."],
 	"TestingArea": ["EVERY WEAPON", "Movement, weapons, and target practice."],
-	"Slamcity": ["FREE ROAM", "Walk the three lanes of Slamcity on your own."],
-	"Nuketown": ["FREE ROAM", "Walk Nuketown on your own."],
-	"Warehouse": ["FREE ROAM", "Walk the box plant's production lines on your own."],
-	"Breakwater": ["FREE ROAM", "Walk the fuel terminal's quay, rack, and tank farm on your own."],
+	"FreeRoam": ["ANY MAP", "Walk Slamcity, Nuketown, Warehouse, or Breakwater on your own."],
 	"Options": ["", "Controls, video, audio, and gameplay."],
 	"Quit": ["", "Close the game."],
 }
@@ -65,18 +70,6 @@ func _ready() -> void:
 	_testing.pressed.connect(_start_testing)
 	%Options.pressed.connect(_open_options)
 	%Quit.pressed.connect(get_tree().quit)
-	_menu.get_node("Nuketown").pressed.connect(
-		func() -> void: _start_scene(NUKETOWN_PATH, "Nuketown")
-	)
-	_menu.get_node("Slamcity").pressed.connect(
-		func() -> void: _start_scene(SLAMCITY_PATH, "Slamcity")
-	)
-	_menu.get_node("Warehouse").pressed.connect(
-		func() -> void: _start_scene(WAREHOUSE_PATH, "Warehouse")
-	)
-	_menu.get_node("Breakwater").pressed.connect(
-		func() -> void: _start_scene(BREAKWATER_PATH, "Breakwater")
-	)
 	for mode: String in SETUP_BUTTONS:
 		_menu.get_node(SETUP_BUTTONS[mode]).pressed.connect(_open_setup.bind(mode))
 	_menu.get_node("Multiplayer").pressed.connect(_open_multiplayer)
@@ -312,6 +305,9 @@ func _set_current(button_name: String) -> void:
 
 
 func _start_tdm(options: Dictionary) -> void:
+	if options.get("mode") == "freeroam":
+		start_free_roam(options.map)
+		return
 	_close_tdm()
 	_loading = true
 	_set_buttons_disabled(true)
@@ -367,6 +363,15 @@ func _close_zombies() -> void:
 	$FloorShade.show()
 	$Margin.show()
 	$Margin/Layout/Menu/Zombies.grab_focus()
+
+
+## Loads a multiplayer map to walk alone ("slamcity", "nuketown", "warehouse",
+## or "breakwater").
+func start_free_roam(map: String) -> void:
+	if not FREE_ROAM.has(map):
+		return
+	_close_tdm()
+	_start_scene(FREE_ROAM[map][0], FREE_ROAM[map][1])
 
 
 func _start_testing() -> void:

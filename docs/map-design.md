@@ -172,7 +172,7 @@ walls show lifting inserts, and the scene adds light haze and dust.
 
 #### Playing Warehouse
 
-Warehouse is on the title screen as a free-roam route and in the local match
+Warehouse is on the title screen under Free Roam and in the local match
 setup for every mode except Search and Destroy. Servers load it with
 `--map warehouse`. The layout is the 6v6 rebuild below. Team 0 starts in the
 north parking lot and team 1 on the south truck apron; each has four doors into
@@ -577,7 +577,7 @@ MINIMAPS=breakwater godot --headless --path godot --script res://tools/build_min
 
 ### Playing Breakwater
 
-Breakwater is on the title screen as a free-roam route and in the local match
+Breakwater is on the title screen under Free Roam and in the local match
 setup for every mode, Search and Destroy included; servers load it with
 `--map breakwater`.
 

@@ -8,7 +8,8 @@ extends Control
 ## limit), Free-for-all ("ffa": name, map, player count, bots, kill limit,
 ## and time limit), or Search and Destroy ("snd": name, team size, bots, and
 ## rounds to win, on Slamcity or Breakwater), or Zombies co-op ("zombies": name and map;
-## friends on the network join it from Multiplayer, LAN, up to four players).
+## friends on the network join it from Multiplayer, LAN, up to four players), or
+## Free Roam ("freeroam": a map to walk alone, no server, no bots).
 ## Bots fill the empty places in the other modes. Start runs a local dedicated server with
 ## those rules and joins it (`Net.start_local_match`). UI only: it loads no
 ## gameplay. Set `mode` before adding it to the tree.
@@ -32,6 +33,13 @@ const MAPS := [
 const ZOMBIES_MAPS := [["Zombies Arena", "zombies"]]
 ## Search and Destroy needs a map with attacking and defending sides.
 const SND_MAPS := [["Slamcity", "slamcity"], ["Breakwater", "breakwater"]]
+## Free Roam walks a multiplayer map alone (the Testing Area has its own route).
+const FREE_ROAM_MAPS := [
+	["Slamcity", "slamcity"],
+	["Nuketown", "nuketown"],
+	["Warehouse", "warehouse"],
+	["Breakwater", "breakwater"],
+]
 const ROUNDS_TO_WIN := [4, 6, 8]
 const TEAM_SIZES := [1, 2, 3, 4, 5, 6]
 const SCORE_LIMITS := [25, 50, 75, 100]
@@ -65,6 +73,7 @@ const MODE_NAMES := {
 	"dom": "Domination",
 	"snd": "Search and Destroy",
 	"zombies": "Zombies",
+	"freeroam": "Free Roam",
 }
 ## The line under the map picture, by mode.
 const DETAILS := {
@@ -87,6 +96,7 @@ const DETAILS := {
 		"Rounds with one life each. The attackers wipe out the defenders, or the"
 		+ " defenders hold out until time runs out."
 	),
+	"freeroam": "Walk the map on your own: no bots, no clock.",
 	"zombies":
 	(
 		"Co-op against rounds of zombies, up to four players. Friends on your network"
@@ -95,7 +105,8 @@ const DETAILS := {
 }
 const CARD_WIDTH := 560.0
 
-## "tdm", "ctf", "hardpoint", "dom", "gungame", "ffa", "snd", or "zombies".
+## "tdm", "ctf", "hardpoint", "dom", "gungame", "ffa", "snd", "zombies", or
+## "freeroam".
 var mode := "tdm"
 
 var _name: LineEdit
@@ -130,6 +141,8 @@ func _unhandled_input(event: InputEvent) -> void:
 
 ## The chosen rules, as `Net.start_local_match` takes them.
 func options() -> Dictionary:
+	if _free_roam():
+		return {"mode": "freeroam", "map": FREE_ROAM_MAPS[_map.selected][1]}
 	if _zombies():
 		var host := _name.text.strip_edges()
 		return {
@@ -210,7 +223,13 @@ func _zombies() -> bool:
 	return mode == "zombies"
 
 
+func _free_roam() -> bool:
+	return mode == "freeroam"
+
+
 func _maps() -> Array:
+	if _free_roam():
+		return FREE_ROAM_MAPS
 	if _zombies():
 		return ZOMBIES_MAPS
 	return SND_MAPS if _snd() else MAPS
@@ -282,7 +301,7 @@ func _build() -> void:
 	eyebrow.text = (
 		"%s  ·  %s"
 		% [
-			"CO-OP" if _zombies() else "LOCAL MATCH",
+			"CO-OP" if _zombies() else ("PRACTICE" if _free_roam() else "LOCAL MATCH"),
 			MODE_NAMES.get(mode, "Team Deathmatch").to_upper(),
 		]
 	)
@@ -305,6 +324,12 @@ func _build() -> void:
 	rows.add_theme_constant_override("h_separation", 16)
 	rows.add_theme_constant_override("v_separation", 8)
 	layout.add_child(rows)
+	if _free_roam():
+		_map = _chips(rows, "Map", _maps().map(func(m: Array) -> String: return m[0]), 0)
+		_map.item_selected.connect(_show_map)
+		_show_map(0)
+		_build_actions(layout)
+		return
 	_name = LineEdit.new()
 	_name.text = Settings.player_name
 	# Signed in, the account's name is the player's name.
@@ -362,7 +387,11 @@ func _build() -> void:
 		_time_limit = _chips(
 			rows, "Minutes", TIME_LIMITS.map(func(n: int) -> String: return str(n)), 1
 		)
+	_build_actions(layout)
 
+
+## Back and the primary button along the card's foot.
+func _build_actions(layout: VBoxContainer) -> void:
 	var actions := HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 8)
 	layout.add_child(actions)
@@ -376,7 +405,7 @@ func _build() -> void:
 	actions.add_child(back)
 	_start = Button.new()
 	_start.name = "Start"
-	_start.text = "HOST GAME" if _zombies() else "START MATCH"
+	_start.text = "HOST GAME" if _zombies() else ("START" if _free_roam() else "START MATCH")
 	_start.theme_type_variation = &"PrimaryButton"
 	_start.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	_start.icon = load("res://assets/ui/icons/arrow_right.svg") as Texture2D
@@ -393,8 +422,8 @@ func _build() -> void:
 
 
 func _detail() -> String:
-	if _zombies():
-		return DETAILS.zombies
+	if _zombies() or _free_roam():
+		return DETAILS[mode]
 	return DETAILS.get(mode, DETAILS.tdm) + " Bots fill the empty places."
 
 

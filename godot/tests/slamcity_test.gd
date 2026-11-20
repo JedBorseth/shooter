@@ -24,10 +24,10 @@ func _run() -> void:
 	change_scene_to_file("res://scenes/title_screen.tscn")
 	await process_frame
 	await process_frame
-	var button := current_scene.get_node("Margin/Layout/Menu/Slamcity") as Button
+	var button := current_scene.get_node("Margin/Layout/Menu/FreeRoam") as Button
 	_check(not button.disabled, "Slamcity is a home-screen option")
-	button.pressed.emit()
-	button.pressed.emit()
+	current_scene.call("start_free_roam", "slamcity")
+	current_scene.call("start_free_roam", "slamcity")
 	_check(button.disabled, "Slamcity disables while loading")
 	var deadline := Time.get_ticks_msec() + 60000
 	while Time.get_ticks_msec() < deadline:
