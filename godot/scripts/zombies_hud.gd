@@ -89,6 +89,13 @@ func _ready() -> void:
 	add_child(_drinks)
 	_place(_drinks, Vector2(0, 1), Rect2(40, -350, 260, 40))
 	_build_game_over()
+	# The HUD's pieces follow the HUD size and opacity settings, each scaled
+	# about the screen corner or edge it hangs from. The banner fades itself.
+	for piece: Control in [
+		_round_label, _points_label, _left_label, _power_ups, _drinks, _last_stand, _revive_bar
+	]:
+		Settings.fit_hud(piece)
+	Settings.fit_hud(_banner, true)
 	_sting = AudioStreamPlayer.new()
 	_sting.bus = &"UI"
 	_sting.volume_db = -3.0
@@ -215,6 +222,7 @@ func _on_points(points: int, _total: int) -> void:
 	var popup := _label(28, POINTS_COLOR)
 	popup.text = "+%d" % points
 	_place(popup, Vector2(1, 1), Rect2(-150 - randf() * 70.0, -250, 120, 34))
+	Settings.fit_hud(popup, true)
 	_popups.append({"label": popup, "age": 0.0})
 	while _popups.size() > MAX_POPUPS:
 		(_popups.pop_front().label as Label).queue_free()
@@ -224,6 +232,7 @@ func _on_spent(points: int, _total: int) -> void:
 	var popup := _label(28, SPEND_COLOR)
 	popup.text = "-%d" % points
 	_place(popup, Vector2(1, 1), Rect2(-150, -250, 120, 34))
+	Settings.fit_hud(popup, true)
 	_popups.append({"label": popup, "age": 0.0})
 
 
