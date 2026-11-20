@@ -218,16 +218,28 @@ fn prone_room(parts: &BodyParts, p: &Predicted, input: &PlayerInput) -> bool {
     if !(input.prone || input.crouch) || movement.stance == Stance::Prone || !p.on_floor {
         return true;
     }
-    let yaw = input.yaw;
     let body = &parts.body;
     let Some(mut space) = body.get_world_3d().and_then(|w| w.get_direct_space_state()) else {
         return true;
     };
+    legs_clear(&mut space, to_godot(p.position), input.yaw, body.get_rid())
+}
+
+/// Room for a prone body's legs, which trail [`PRONE_LEGS`] behind the
+/// feet at `yaw`: two rays back from beside the feet, low, find nothing
+/// solid. Lying down needs it, and so does turning while lying (the IW
+/// engine stops a prone turn that would put the legs in a wall).
+pub fn legs_clear(
+    space: &mut Gd<godot::classes::PhysicsDirectSpaceState3D>,
+    feet: Vector3,
+    yaw: f32,
+    exclude: Rid,
+) -> bool {
     let (forward, right) = shooter_sim::movement::basis_from_yaw(yaw);
     let back = -to_godot(forward);
     let side = to_godot(right) * 0.15;
-    let feet = to_godot(p.position) + Vector3::UP * PRONE_LEGS_HEIGHT;
-    let exclude: Array<Rid> = array![body.get_rid()];
+    let feet = feet + Vector3::UP * PRONE_LEGS_HEIGHT;
+    let exclude: Array<Rid> = array![exclude];
     [side, -side].into_iter().all(|offset| {
         let Some(query) = PhysicsRayQueryParameters3D::create_ex(
             feet + offset,

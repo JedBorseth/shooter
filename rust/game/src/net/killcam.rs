@@ -123,6 +123,11 @@ impl ViewDriver {
             scope: if def.scope.is_some() { s.ads } else { 0.0 },
             visible: s.alive,
             sprinting: s.sprinting,
+            // The killer crawling prone at the hip (the rule
+            // `MoveState::crawling` applies, from the snapshot).
+            crawling: s.stance == Stance::Prone
+                && s.ads <= 0.0
+                && s.velocity.x.hypot(s.velocity.z) > shooter_sim::movement::CRAWL_LOWERS_WEAPON,
             on_floor: s.on_floor,
             action,
             empty: false,

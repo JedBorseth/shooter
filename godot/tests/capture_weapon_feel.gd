@@ -66,6 +66,8 @@ const SCENARIOS := [
 	"throw_quick",
 	"slide",
 	"crouch",
+	"crawl",
+	"crawl_m1911",
 	"vault",
 	"mantle",
 	"hit",
@@ -189,6 +191,9 @@ func _start(scenario: String) -> void:
 func _release_all() -> void:
 	for action in ["fire", "aim", "move_forward", "move_left", "move_right", "sprint", "jump"]:
 		Input.action_release(action)
+	if _player != null and _player.movement_state() == "Prone":
+		Input.action_press("prone")
+		Input.action_release("prone")
 
 
 func _record() -> void:
@@ -594,6 +599,33 @@ func _scenario_reload_fire_m4() -> void:
 	Input.action_release("fire")
 	_mark("release")
 	await _sixtieths(40)
+
+
+## Down to prone, then the low crawl forward at the hip: the weapon rolls on
+## its side and rocks with each elbow pull while the support hand reaches out
+## and drags; then aimed, crawling with the gun up.
+func _crawl() -> void:
+	await _hold("prone", 2, "prone")
+	await _sixtieths(60)
+	_mark("crawl")
+	Input.action_press("move_forward")
+	await _sixtieths(150)
+	_mark("crawl_aimed")
+	Input.action_press("aim")
+	await _sixtieths(60)
+	Input.action_release("aim")
+	Input.action_release("move_forward")
+	await _sixtieths(30)
+	await _hold("prone", 2, "stand")
+	await _sixtieths(70)
+
+
+func _scenario_crawl() -> void:
+	await _crawl()
+
+
+func _scenario_crawl_m1911() -> void:
+	await _crawl()
 
 
 func _scenario_switch() -> void:

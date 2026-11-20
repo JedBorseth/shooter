@@ -4,7 +4,8 @@ extends SceneTree
 ## through a crouch in 0.6-0.8 s with the shot origin at the prone eye and the
 ## capsule at the prone height; the body crawls at about 0.8 m/s; a crouch
 ## held from prone stands up and one held standing lies down again; a wall
-## behind the legs stops the body lying down; and a low ceiling over a prone
+## behind the legs stops the body lying down, and stops a turn that would
+## sweep the legs into it; and a low ceiling over a prone
 ## body keeps it down. Exits non-zero on failure.
 ## Run from the repo root: godot --headless --path godot --script res://tests/prone_test.gd
 
@@ -123,6 +124,25 @@ func _wall_behind() -> void:
 	await _press("prone")
 	await _ticks(120)
 	_check(_player.movement_state() == "Prone", "facing the wall, there is room to lie down")
+	# Turning round would sweep the legs through the wall 1 m in front: the
+	# view stops where they still have room (the IW engine's prone turn
+	# check), about 128 degrees round, where the 1.45 m legs first reach it.
+	for i in 60:
+		_player.look_by(0.05, 0.0)
+		await physics_frame
+	var turned := absf(wrapf(_player.view_yaw() - PI, -PI, PI))
+	_check(
+		turned > 1.9 and turned < 2.3,
+		"turning prone stops before the legs reach the wall, turned %.2f rad" % turned
+	)
+	# Back the other way is free.
+	for i in 20:
+		_player.look_by(-0.05, 0.0)
+		await physics_frame
+	_check(
+		absf(wrapf(_player.view_yaw() - PI, -PI, PI)) < turned - 0.5,
+		"and turns back freely, at %.2f" % _player.view_yaw()
+	)
 	await _press("prone")
 	await _ticks(150)
 
