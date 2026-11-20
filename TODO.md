@@ -226,7 +226,8 @@ Done: rounds with a growing, toughening horde, zombies that walk straight at the
 - [x] Zombie sounds (groans, attacks, deaths; CC0, `tools/build_zombie_audio.py`) and round stings (synthesized).
 - [x] Barriers: zombies spawn outside and tear the boards off their window; players rebuild them for points (`scripts/zombies_barrier.gd`).
 - [x] Zombies on the dedicated server (`--mode zombies`, `--map zombies`): the server runs the horde, rounds, points, wall-weapon prices, and windows' boards (`rust/game/src/net/horde.rs`); zombies are sent in every other snapshot, quantized (about ten bytes each), and hit with lag compensation; clients draw them as puppets and the map's director mirrors the server for the HUD.
-- [ ] Doors, rebuilding windows, and power-ups on the server.
+- [x] Doors, rebuilding windows, and power-ups on the server: a press buys a door, holding use rebuilds a window a board every 0.6 s (10 points, up to 300 a round), and power-ups are taken by any standing player for the whole team (Max Ammo for everyone, the Nuke pays every player 400).
+- [ ] Rebuild speed is approximate (0.6 s a board); measure Black Ops' and match it.
 - [ ] Downed state and revives for co-op (Black Ops rules: 45 s bleed-out, 3 s revive, 5% of points lost on going down and paid to the reviver, 10% from everyone else when a player bleeds out).
 - [ ] The title screen's Zombies runs a local server; co-op setup, the server browser, a co-op scoreboard (kills, downs, revives, headshots); then drop the offline director.
 - [ ] Playable versions of the menu's maps; today every map loads the one arena.

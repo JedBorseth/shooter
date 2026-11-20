@@ -125,7 +125,9 @@ use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, Weapo
 // Version 51 added Zombies on the dedicated server: the mode, the horde in
 // snapshots (`ZombieView`), and the round, zombie hits, points, and windows'
 // boards as events (`ZombiesEvent`).
-pub const PROTOCOL_VERSION: u16 = 51;
+// Version 52 added Zombies' doors, power-ups, and their timers to
+// `ZombiesEvent`.
+pub const PROTOCOL_VERSION: u16 = 52;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -593,7 +595,7 @@ pub fn yaw_to_u8(yaw: f32) -> u8 {
 }
 
 /// What happens in a Zombies game ([`GameEvent::Zombies`]).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ZombiesEvent {
     /// To everyone, whenever it changes and on joining: round `round` is
     /// counting down (`Break`, until server tick `starts_at`), being fought
@@ -617,6 +619,25 @@ pub enum ZombiesEvent {
     /// To everyone, whenever it changes and on joining: window `window`
     /// (the map's barriers in order) has `boards` boards up.
     Boards { window: u8, boards: u8 },
+    /// To everyone, when it changes and on joining: door `door` (the map's
+    /// `Doors` in order) is open, or closed again for a new game.
+    Door { door: u8, open: bool },
+    /// To everyone: a kill dropped power-up `id` of `kind` at `at`. It lies
+    /// there until picked up or [`crate::zombies::POWER_UP_LIFETIME`] runs out.
+    PowerUpDropped {
+        id: u8,
+        kind: crate::zombies::PowerUp,
+        at: Vec3,
+    },
+    /// To everyone: power-up `id` is gone, taken by player `by` (none when
+    /// it ran out).
+    PowerUpGone { id: u8, by: Option<u8> },
+    /// To everyone, whenever they change: the server ticks Insta-Kill and
+    /// Double Points run out (none when off).
+    PowerUpTimers {
+        insta_kill_until: Option<Tick>,
+        double_points_until: Option<Tick>,
+    },
 }
 
 /// Where a Zombies round is ([`crate::zombies::Phase`]).
@@ -1798,6 +1819,33 @@ fn write_zombies_event(w: &mut BitWriter, event: &ZombiesEvent) {
             w.u8(window);
             w.u8(boards);
         }
+        ZombiesEvent::Door { door, open } => {
+            w.bits(4, ZOMBIES_TAG_BITS);
+            w.u8(door);
+            w.bool(open);
+        }
+        ZombiesEvent::PowerUpDropped { id, kind, at } => {
+            w.bits(5, ZOMBIES_TAG_BITS);
+            w.u8(id);
+            w.bits(kind.code(), 2);
+            write_vec3(w, at);
+        }
+        ZombiesEvent::PowerUpGone { id, by } => {
+            w.bits(6, ZOMBIES_TAG_BITS);
+            w.u8(id);
+            w.bool(by.is_some());
+            if let Some(by) = by {
+                w.u8(by);
+            }
+        }
+        ZombiesEvent::PowerUpTimers {
+            insta_kill_until,
+            double_points_until,
+        } => {
+            w.bits(7, ZOMBIES_TAG_BITS);
+            write_option_tick(w, insta_kill_until);
+            write_option_tick(w, double_points_until);
+        }
     }
 }
 
@@ -1827,6 +1875,24 @@ fn read_zombies_event(r: &mut BitReader) -> DecodeResult<ZombiesEvent> {
         3 => ZombiesEvent::Boards {
             window: r.u8()?,
             boards: r.u8()?,
+        },
+        4 => ZombiesEvent::Door {
+            door: r.u8()?,
+            open: r.bool()?,
+        },
+        5 => ZombiesEvent::PowerUpDropped {
+            id: r.u8()?,
+            kind: crate::zombies::PowerUp::from_code(r.bits(2)?)
+                .ok_or(DecodeError::Invalid("power-up"))?,
+            at: read_finite_vec3(r)?,
+        },
+        6 => ZombiesEvent::PowerUpGone {
+            id: r.u8()?,
+            by: if r.bool()? { Some(r.u8()?) } else { None },
+        },
+        7 => ZombiesEvent::PowerUpTimers {
+            insta_kill_until: read_option_tick(r)?,
+            double_points_until: read_option_tick(r)?,
         },
         _ => return Err(DecodeError::Invalid("zombies event")),
     })
@@ -4741,6 +4807,21 @@ mod tests {
             GameEvent::Zombies(ZombiesEvent::Boards {
                 window: 7,
                 boards: 2,
+            }),
+            GameEvent::Zombies(ZombiesEvent::Door {
+                door: 1,
+                open: true,
+            }),
+            GameEvent::Zombies(ZombiesEvent::PowerUpDropped {
+                id: 4,
+                kind: crate::zombies::PowerUp::Nuke,
+                at: Vec3::new(1.0, 0.0, -3.5),
+            }),
+            GameEvent::Zombies(ZombiesEvent::PowerUpGone { id: 4, by: Some(2) }),
+            GameEvent::Zombies(ZombiesEvent::PowerUpGone { id: 5, by: None }),
+            GameEvent::Zombies(ZombiesEvent::PowerUpTimers {
+                insta_kill_until: Some(5000),
+                double_points_until: None,
             }),
         ]);
         assert_eq!(

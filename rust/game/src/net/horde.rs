@@ -14,6 +14,12 @@
 //! (the path to the window's barrier, `scripts/zombies_barrier.gd`, which
 //! the zombie tears down first).
 //!
+//! Doors are `Doors`' children with a `zone` and a `price`
+//! (`scripts/zombies_door.gd`): opening one (the server decides when a
+//! player buys it) adds its zone's spawn points, and its position becomes a
+//! gate stuck zombies head for. Kills drop power-ups (`zombies::PowerUp`)
+//! that any standing player picks up for the whole team.
+//!
 //! Zombie bodies collide with the map, each other, players, and window
 //! boards; player bodies do not collide with zombies, so a player's
 //! prediction never runs into a zombie drawn where the server no longer has
@@ -29,7 +35,7 @@ use shooter_sim::net::protocol::{
 };
 use shooter_sim::rng;
 use shooter_sim::zombies::chase::{self, ChaseEvent, Chaser, Prey, Window, World};
-use shooter_sim::zombies::{Phase, RoundEvent, Rounds, ZombieRules};
+use shooter_sim::zombies::{self, Phase, PowerUp, RoundEvent, Rounds, ZombieRules};
 use shooter_sim::{TICK_DT, Vec3};
 
 use crate::convert::{to_godot, to_sim};
@@ -73,6 +79,20 @@ pub enum HordeEvent {
     Struck { player: u8, from: Vec3 },
     /// A window's boards changed (torn off or put back).
     Boards { window: u8, boards: u8 },
+    /// A kill dropped a power-up.
+    PowerUpDropped { id: u8, kind: PowerUp, at: Vec3 },
+    /// Player `by` picked up power-up `id` (a Nuke has already killed
+    /// everything, `nuked` zombies).
+    PowerUpTaken {
+        id: u8,
+        kind: PowerUp,
+        by: u8,
+        nuked: u32,
+    },
+    /// Power-up `id` ran out on the ground.
+    PowerUpExpired { id: u8 },
+    /// Insta-Kill or Double Points started or ran out.
+    TimersChanged,
 }
 
 /// What a hit did to a zombie.
@@ -88,6 +108,22 @@ struct SpawnPoint {
     zone: String,
     via: Option<Vec3>,
     window: Option<usize>,
+}
+
+struct MapDoor {
+    node: Gd<Node3D>,
+    zone: String,
+    price: u32,
+    /// Where the zone meets the rest of the map.
+    gate: Vec3,
+    open: bool,
+}
+
+struct PowerUpDrop {
+    id: u8,
+    kind: PowerUp,
+    at: Vec3,
+    left: f32,
 }
 
 struct MapWindow {
@@ -132,8 +168,16 @@ pub struct Horde {
     history: HordeHistory,
     last_send: Option<Tick>,
     events: Vec<RoundEvent>,
-    /// Kills this match, for the scoreboard and power-up drops.
+    /// Kills and power-up drops this round.
     round_kills: u32,
+    round_drops: u32,
+    doors: Vec<MapDoor>,
+    drops: Vec<PowerUpDrop>,
+    next_drop_id: u8,
+    insta_kill_left: f32,
+    double_points_left: f32,
+    /// What happened since the server last asked.
+    pending: Vec<HordeEvent>,
 }
 
 impl Horde {
@@ -164,6 +208,13 @@ impl Horde {
             last_send: None,
             events: Vec::new(),
             round_kills: 0,
+            round_drops: 0,
+            doors: map_doors(map),
+            drops: Vec::new(),
+            next_drop_id: 0,
+            insta_kill_left: 0.0,
+            double_points_left: 0.0,
+            pending: Vec::new(),
         };
         horde.reset();
         Some(horde)
@@ -181,6 +232,16 @@ impl Horde {
         self.gates.clear();
         self.history.clear();
         self.round_kills = 0;
+        self.round_drops = 0;
+        self.drops.clear();
+        self.insta_kill_left = 0.0;
+        self.double_points_left = 0.0;
+        self.pending.clear();
+        for door in &mut self.doors {
+            door.open = false;
+            door.node
+                .call("set_open", &[false.to_variant(), false.to_variant()]);
+        }
         for window in &mut self.windows {
             window.boards = WINDOW_BOARDS;
             window
@@ -259,14 +320,19 @@ impl Horde {
     }
 
     /// Runs one tick: the round, spawns, and every zombie.
-    pub fn step(&mut self, players: &[HordePlayer], out: &mut Vec<HordeEvent>) {
+    pub fn step(&mut self, players: &[HordePlayer]) {
         let dt = TICK_DT;
+        let mut out = std::mem::take(&mut self.pending);
         let mut events = std::mem::take(&mut self.events);
         events.clear();
         self.rounds.step(&self.rules, dt, &mut events);
         for event in &events {
             match *event {
-                RoundEvent::RoundStarted { round } => out.push(HordeEvent::RoundStarted(round)),
+                RoundEvent::RoundStarted { round } => {
+                    self.round_kills = 0;
+                    self.round_drops = 0;
+                    out.push(HordeEvent::RoundStarted(round));
+                }
                 RoundEvent::RoundCleared { .. } => {}
                 RoundEvent::Spawn {
                     index,
@@ -358,6 +424,210 @@ impl Horde {
             }
             keep
         });
+        self.pending = out;
+        if !over {
+            self.update_power_ups(players, dt);
+        }
+    }
+
+    /// What happened since the last call, oldest first.
+    pub fn take_events(&mut self) -> Vec<HordeEvent> {
+        std::mem::take(&mut self.pending)
+    }
+
+    /// Ages the drops and the timed power-ups, and hands drops to the
+    /// standing players who walk over them.
+    fn update_power_ups(&mut self, players: &[HordePlayer], dt: f32) {
+        let was = (self.insta_kill_left > 0.0, self.double_points_left > 0.0);
+        self.insta_kill_left = (self.insta_kill_left - dt).max(0.0);
+        self.double_points_left = (self.double_points_left - dt).max(0.0);
+        if (self.insta_kill_left > 0.0, self.double_points_left > 0.0) != was {
+            self.pending.push(HordeEvent::TimersChanged);
+        }
+        let mut taken = Vec::new();
+        self.drops.retain_mut(|drop| {
+            drop.left -= dt;
+            let by = players.iter().find(|p| {
+                p.standing
+                    && zombies::flat_distance(p.feet, drop.at) < zombies::PICKUP_RADIUS
+                    && (p.feet.y - drop.at.y).abs() < 2.5
+            });
+            if let Some(by) = by {
+                taken.push((drop.id, drop.kind, by.id));
+                return false;
+            }
+            if drop.left <= 0.0 {
+                self.pending
+                    .push(HordeEvent::PowerUpExpired { id: drop.id });
+                return false;
+            }
+            true
+        });
+        for (id, kind, by) in taken {
+            self.collect(id, kind, by);
+        }
+    }
+
+    fn collect(&mut self, id: u8, kind: PowerUp, by: u8) {
+        let mut nuked = 0;
+        match kind {
+            PowerUp::MaxAmmo => {}
+            PowerUp::InstaKill => {
+                self.insta_kill_left = zombies::POWER_UP_SECONDS;
+                self.pending.push(HordeEvent::TimersChanged);
+            }
+            PowerUp::DoublePoints => {
+                self.double_points_left = zombies::POWER_UP_SECONDS;
+                self.pending.push(HordeEvent::TimersChanged);
+            }
+            PowerUp::Nuke => {
+                // Its kills pay nothing on their own and drop nothing.
+                let ids: Vec<u8> = self
+                    .zombies
+                    .iter()
+                    .filter(|z| z.alive)
+                    .map(|z| z.id)
+                    .collect();
+                for zombie in ids {
+                    if self.kill(zombie, Vec3::Y).is_some() {
+                        nuked += 1;
+                    }
+                }
+            }
+        }
+        self.pending.push(HordeEvent::PowerUpTaken {
+            id,
+            kind,
+            by,
+            nuked,
+        });
+    }
+
+    /// Kills zombie `id` outright, as a Nuke does: no drop.
+    fn kill(&mut self, id: u8, direction: Vec3) -> Option<()> {
+        let zombie = self.zombies.iter_mut().find(|z| z.id == id && z.alive)?;
+        let damage = zombie.health + 1.0;
+        let drops = std::mem::replace(&mut self.round_drops, zombies::MAX_DROPS_PER_ROUND);
+        self.hurt(id, damage, direction, None, false);
+        self.round_drops = drops;
+        Some(())
+    }
+
+    /// Seconds of Insta-Kill and Double Points left.
+    pub fn timers(&self) -> (f32, f32) {
+        (self.insta_kill_left, self.double_points_left)
+    }
+
+    /// Whether points are doubled now.
+    pub fn double_points(&self) -> bool {
+        self.double_points_left > 0.0
+    }
+
+    /// The timers as everyone is told them; `now` is the server tick.
+    pub fn timers_event(&self, now: Tick) -> ZombiesEvent {
+        let until = |left: f32| {
+            (left > 0.0).then(|| now + (left * shooter_sim::TICK_RATE as f32).ceil() as Tick)
+        };
+        ZombiesEvent::PowerUpTimers {
+            insta_kill_until: until(self.insta_kill_left),
+            double_points_until: until(self.double_points_left),
+        }
+    }
+
+    /// Every power-up lying on the ground, for a player joining.
+    pub fn drop_events(&self) -> Vec<ZombiesEvent> {
+        self.drops
+            .iter()
+            .map(|d| ZombiesEvent::PowerUpDropped {
+                id: d.id,
+                kind: d.kind,
+                at: d.at,
+            })
+            .collect()
+    }
+
+    /// Drops a power-up at `at` (tests).
+    pub fn drop_power_up(&mut self, kind: PowerUp, at: Vec3) {
+        let id = self.next_drop_id;
+        self.next_drop_id = self.next_drop_id.wrapping_add(1);
+        self.drops.push(PowerUpDrop {
+            id,
+            kind,
+            at,
+            left: zombies::POWER_UP_LIFETIME,
+        });
+        self.pending
+            .push(HordeEvent::PowerUpDropped { id, kind, at });
+    }
+
+    /// Power-ups lying on the ground.
+    pub fn drops_on_ground(&self) -> usize {
+        self.drops.len()
+    }
+
+    /// The door whose collider is `node`, if it is one.
+    pub fn door_of(&self, node: &Gd<Node>) -> Option<usize> {
+        self.doors
+            .iter()
+            .position(|d| d.node.instance_id() == node.instance_id())
+    }
+
+    /// The window whose barrier is `node`, if it is one.
+    pub fn window_of(&self, node: &Gd<Node>) -> Option<usize> {
+        self.windows
+            .iter()
+            .position(|w| w.node.instance_id() == node.instance_id())
+    }
+
+    /// Door `index`'s node (tests).
+    pub fn door_node(&self, index: usize) -> Option<Gd<Node>> {
+        self.doors.get(index).map(|d| d.node.clone().upcast())
+    }
+
+    /// Window `index`'s barrier (tests).
+    pub fn window_node(&self, index: usize) -> Option<Gd<Node>> {
+        self.windows.get(index).map(|w| w.node.clone().upcast())
+    }
+
+    /// Door `index`'s price, if it is still closed.
+    pub fn door_price(&self, index: usize) -> Option<u32> {
+        self.doors.get(index).filter(|d| !d.open).map(|d| d.price)
+    }
+
+    pub fn door_count(&self) -> usize {
+        self.doors.len()
+    }
+
+    pub fn door_open(&self, index: usize) -> bool {
+        self.doors.get(index).is_some_and(|d| d.open)
+    }
+
+    /// Opens door `index`: its zone's spawns join the rotation and its gate
+    /// guides stuck zombies.
+    pub fn open_door(&mut self, index: usize) -> bool {
+        let Some(door) = self.doors.get_mut(index).filter(|d| !d.open) else {
+            return false;
+        };
+        door.open = true;
+        door.node
+            .call("set_open", &[true.to_variant(), false.to_variant()]);
+        if !self.open_zones.contains(&door.zone) {
+            self.open_zones.push(door.zone.clone());
+        }
+        self.gates.push(door.gate);
+        true
+    }
+
+    /// Every door's state, for a player joining or a new game.
+    pub fn door_events(&self) -> Vec<ZombiesEvent> {
+        self.doors
+            .iter()
+            .enumerate()
+            .map(|(i, d)| ZombiesEvent::Door {
+                door: i as u8,
+                open: d.open,
+            })
+            .collect()
     }
 
     /// Puts boards back on (or takes them off) window `index`.
@@ -443,7 +713,10 @@ impl Horde {
         part: Option<u8>,
         melee: bool,
     ) -> Option<ZombieHurt> {
+        let insta_kill = self.insta_kill_left > 0.0;
         let zombie = self.zombies.iter_mut().find(|z| z.id == id && z.alive)?;
+        // Insta-Kill: any hit kills.
+        let damage = if insta_kill { zombie.health } else { damage };
         zombie.health -= damage;
         let killed = zombie.health <= 0.0;
         let hit = protocol::HitPart::new(part, damage, melee);
@@ -457,7 +730,12 @@ impl Horde {
             zombie.body.set_collision_layer(0);
             zombie.body.set_collision_mask(0);
             self.rounds.on_killed();
+            let kill = self.round_kills;
             self.round_kills += 1;
+            if let Some(kind) = zombies::power_up_drop(self.rounds.round, kill, self.round_drops) {
+                self.round_drops += 1;
+                self.drop_power_up(kind, position);
+            }
         } else if !melee && hit.force >= chase::STAGGER_FORCE {
             zombie.chaser.stagger();
         }
@@ -573,6 +851,37 @@ fn build_body(id: u8) -> Gd<CharacterBody3D> {
     shape.set_position(Vector3::UP * (CAPSULE_HEIGHT * 0.5));
     body.add_child(&shape);
     body
+}
+
+/// The map's doors in the order the server numbers them
+/// (`ZombiesEvent::Door`): `Doors`' children with a `zone`.
+pub fn map_door_nodes(map: &Gd<Node>) -> Vec<Gd<Node3D>> {
+    map_doors(map).into_iter().map(|d| d.node).collect()
+}
+
+fn map_doors(map: &Gd<Node>) -> Vec<MapDoor> {
+    let Some(parent) = map.get_node_or_null("Doors") else {
+        return Vec::new();
+    };
+    parent
+        .get_children()
+        .iter_shared()
+        .filter_map(|child| child.try_cast::<Node3D>().ok())
+        .filter_map(|node| {
+            let zone = node.get("zone");
+            if zone.is_nil() {
+                return None;
+            }
+            let price = node.get("price").try_to::<i64>().unwrap_or(0).max(0) as u32;
+            Some(MapDoor {
+                zone: zone.to_string(),
+                price,
+                gate: to_sim(node.get_global_position()),
+                node,
+                open: false,
+            })
+        })
+        .collect()
 }
 
 /// The map's boarded windows, in the order the server numbers them

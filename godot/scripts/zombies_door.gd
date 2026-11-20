@@ -3,6 +3,9 @@ extends StaticBody3D
 ## `price` points (the interact key, through `FpsPlayer`'s device prompts);
 ## it then falls away, and `ZombieDirector.open_zone` adds the zone behind it
 ## to the spawn rotation.
+##
+## Online the dedicated server decides who buys it and opens it on every
+## client with `set_open`.
 
 signal opened
 
@@ -62,3 +65,32 @@ func interact(_player: Node) -> void:
 
 func is_open() -> bool:
 	return _open
+
+
+## Opens the door (falling away with its sound when `animate`), or closes
+## it again for a new game. The server and online clients call this.
+func set_open(open: bool, animate: bool) -> void:
+	if open == _open:
+		return
+	_open = open
+	collision_layer = 0 if open else (1 | 1 << 3)
+	collision_mask = 0
+	var debris := get_node_or_null("Debris") as Node3D
+	var label := get_node_or_null("Price") as Node3D
+	if label != null:
+		label.visible = not open
+	if debris == null:
+		return
+	if not open:
+		debris.position.y = 0.0
+		debris.show()
+		return
+	if not animate:
+		debris.hide()
+		return
+	var sound := get_node_or_null("Sound") as AudioStreamPlayer3D
+	if sound != null:
+		sound.play()
+	var tween := create_tween()
+	tween.tween_property(debris, "position:y", -3.0, 0.6).set_ease(Tween.EASE_IN)
+	tween.tween_callback(debris.hide)

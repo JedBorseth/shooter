@@ -34,6 +34,7 @@ pub struct HordeView {
     director: Gd<ZombieDirector>,
     scene: Gd<PackedScene>,
     windows: Vec<Gd<Node3D>>,
+    doors: Vec<Gd<Node3D>>,
     history: HordeHistory,
     puppets: Vec<Puppet>,
     lag: f64,
@@ -54,14 +55,14 @@ impl HordeView {
             zombie.queue_free();
         }
         let scene = director.bind().zombie_scene();
-        let windows = director
-            .get_parent()
-            .map(|map| horde::map_windows(&map))
-            .unwrap_or_default();
+        let map = director.get_parent();
+        let windows = map.as_ref().map(horde::map_windows).unwrap_or_default();
+        let doors = map.as_ref().map(horde::map_door_nodes).unwrap_or_default();
         Some(Self {
             director,
             scene,
             windows,
+            doors,
             history: HordeHistory::default(),
             puppets: Vec::new(),
             lag: protocol::zombie_lag(snapshot_interval),
@@ -190,6 +191,25 @@ impl HordeView {
                 if let Some(node) = self.windows.get_mut(usize::from(window)) {
                     node.call("show_boards", &[i64::from(boards).to_variant()]);
                 }
+            }
+            ZombiesEvent::Door { door, open } => {
+                if let Some(node) = self.doors.get_mut(usize::from(door)) {
+                    node.call("set_open", &[open.to_variant(), true.to_variant()]);
+                }
+            }
+            ZombiesEvent::PowerUpDropped { id, kind, at } => {
+                self.director.bind_mut().net_drop(id, kind, to_godot(at));
+            }
+            ZombiesEvent::PowerUpGone { id, by } => {
+                self.director.bind_mut().net_drop_gone(id, by.is_some());
+            }
+            ZombiesEvent::PowerUpTimers {
+                insta_kill_until,
+                double_points_until,
+            } => {
+                let insta = insta_kill_until.map_or(0.0, &seconds_until);
+                let double = double_points_until.map_or(0.0, &seconds_until);
+                self.director.bind_mut().net_timers(insta, double);
             }
             ZombiesEvent::Hit { .. } => {}
         }

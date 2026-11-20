@@ -302,6 +302,14 @@ pub enum PowerUp {
 pub const POWER_UP_SECONDS: f32 = 30.0;
 /// Seconds a dropped power-up waits to be picked up.
 pub const POWER_UP_LIFETIME: f32 = 30.0;
+/// A player picks up a dropped power-up within this many metres (flat) of it.
+pub const PICKUP_RADIUS: f32 = 1.6;
+/// Points each board put back on a window pays (Black Ops: 10).
+pub const REBUILD_POINTS: u32 = 10;
+/// Most points rebuilding pays one player in a round.
+pub const MAX_REBUILD_POINTS: u32 = 300;
+/// Seconds per board while the use button is held at a window.
+pub const REBUILD_SECONDS: f32 = 0.6;
 /// Points a Nuke pays (the zombies it kills pay nothing themselves).
 pub const NUKE_POINTS: u32 = 400;
 /// Most power-ups that drop in one round.
@@ -316,6 +324,15 @@ impl PowerUp {
         PowerUp::DoublePoints,
         PowerUp::Nuke,
     ];
+
+    /// Its number on the wire.
+    pub fn code(self) -> u32 {
+        PowerUp::ALL.iter().position(|p| *p == self).unwrap_or(0) as u32
+    }
+
+    pub fn from_code(code: u32) -> Option<PowerUp> {
+        PowerUp::ALL.get(code as usize).copied()
+    }
 
     /// The name the HUD shows.
     pub fn label(self) -> &'static str {
