@@ -26,6 +26,8 @@ Every secret has a development default. Copy `docker/online/.env.example` to `do
 
 ## Accounts
 
+![The title screen with the account card open: the signed-in player's name, level, Sign out, and the account server's address, with the name and level badge top right](media/account-card.jpg)
+
 The title screen's top-right corner shows who is signed in and their level, or **Sign in**. The account card takes the name other players see. Signing in makes an account tied to this machine's device id (a random id in `user://account.cfg`) with that name as its username; a taken name is refused. Typing a new name later renames the account. The session's tokens are saved, so the game signs in again at the next launch, refreshing them when they run out (sessions last a day, refresh tokens 30 days). Signing out goes back to the machine's own progress and classes.
 
 Signing in on a second machine with the same account is not possible yet: device sign-in identifies the machine. Linking an email and password (Nakama supports both) is a follow-up.
