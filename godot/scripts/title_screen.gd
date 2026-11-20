@@ -47,6 +47,8 @@ var _scene_path := ARENA_PATH
 var _destination := "testing arena"
 var _zombies_menu: Node
 var _tdm_setup: Node
+var _account_card: Node
+var _account_badge: Button
 ## The menu button that opened the match setup, focused again when it closes.
 var _setup_button := "TeamDeathmatch"
 
@@ -83,6 +85,7 @@ func _ready() -> void:
 		button.mouse_entered.connect(_describe.bind(button))
 	_menu.get_node("TeamDeathmatch").grab_focus()
 	$Margin/Layout/Footer/Build.text = "Build %s" % GameBuild.label()
+	_add_account_badge()
 	# Back from a server (left, or the connection failed): straight to the browser.
 	if Net.return_to_browser:
 		var message := Net.browser_message
@@ -121,10 +124,68 @@ func _describe(button: Button) -> void:
 	_status.text = ROUTES.get(String(button.name), ["", ""])[1]
 
 
+## Who is signed in and their level, top right, as Call of Duty's front end
+## shows the player's name and rank; it opens the account card.
+func _add_account_badge() -> void:
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	$Margin/Layout/Brand.add_child(spacer)
+	_account_badge = Button.new()
+	_account_badge.name = "Account"
+	_account_badge.theme_type_variation = &"QuietButton"
+	_account_badge.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_account_badge.focus_mode = Control.FOCUS_ALL
+	_account_badge.pressed.connect(_open_account)
+	$Margin/Layout/Brand.add_child(_account_badge)
+	Online.changed.connect(_show_account)
+	_show_account()
+
+
+func _show_account() -> void:
+	match Online.state:
+		Online.State.SIGNED_IN:
+			_account_badge.text = (
+				"%s  ·  Level %d"
+				% [Online.username, int(Progression.rank(ProgressStore.xp()).level)]
+			)
+		Online.State.SIGNING_IN:
+			_account_badge.text = "Signing in…"
+		_:
+			_account_badge.text = "Sign in"
+	_account_badge.visible = Online.address != "" or Online.is_signed_in()
+
+
+func _open_account() -> void:
+	if _loading:
+		return
+	if _account_card != null:
+		_close_account()
+		return
+	_close_tdm(false)
+	var card := Control.new()
+	card.set_script(load("res://scripts/ui/account_card.gd"))
+	card.name = "AccountCard"
+	_account_card = card
+	add_child(card)
+	card.back_requested.connect(_close_account)
+
+
+func _close_account(refocus := true) -> void:
+	if _account_card == null:
+		return
+	_account_card.queue_free()
+	remove_child(_account_card)
+	_account_card = null
+	if refocus:
+		_account_badge.grab_focus()
+
+
 func _open_options() -> void:
 	if _loading:
 		return
 	_close_tdm(false)
+	_close_account(false)
 	var options := (load("res://scenes/ui/pause_menu.tscn") as PackedScene).instantiate()
 	options.title_menu = true
 	$Margin.hide()
@@ -146,6 +207,7 @@ func _open_multiplayer(message := "") -> void:
 		_status.text = "Unable to open the server browser."
 		return
 	_close_tdm(false)
+	_close_account(false)
 	var browser := scene.instantiate()
 	$Margin.hide()
 	add_child(browser)
@@ -165,6 +227,7 @@ func _open_setup(mode: String) -> void:
 	if _loading:
 		return
 	_close_tdm(false)
+	_close_account(false)
 	var setup := Control.new()
 	setup.set_script(load("res://scripts/tdm_setup.gd"))
 	setup.set("mode", mode)
@@ -220,6 +283,7 @@ func _open_zombies() -> void:
 		_status.text = "Unable to open Zombies menu."
 		return
 	_close_tdm(false)
+	_close_account(false)
 	var zombies := scene.instantiate()
 	_zombies_menu = zombies
 	$Background.hide()

@@ -1,0 +1,73 @@
+# The online services, self-hosted: Nakama (accounts, progression, and later
+# parties and matchmaking) on PostgreSQL. See docs/online.md.
+#
+#   docker compose -f docker/online/compose.yml up -d
+#
+# Every secret has a development default. Before exposing the stack, put real
+# values in docker/online/.env (see .env.example); Compose reads it by itself.
+
+name: shooter-online
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: nakama
+      POSTGRES_USER: nakama
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-localdev}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "nakama", "-d", "nakama"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  nakama:
+    image: heroiclabs/nakama:3.42.0
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        db="nakama:$${POSTGRES_PASSWORD}@postgres:5432/nakama"
+        /nakama/nakama migrate up --database.address "$$db"
+        exec /nakama/nakama --config /nakama/data/shooter.yml --database.address "$$db" \
+          --socket.server_key "$$NAKAMA_SERVER_KEY" \
+          --runtime.http_key "$$NAKAMA_HTTP_KEY" \
+          --session.encryption_key "$$NAKAMA_SESSION_KEY" \
+          --session.refresh_encryption_key "$$NAKAMA_REFRESH_KEY" \
+          --console.username "$$NAKAMA_CONSOLE_USER" \
+          --console.password "$$NAKAMA_CONSOLE_PASSWORD" \
+          --console.signing_key "$$NAKAMA_CONSOLE_KEY"
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-localdev}
+      # Clients send the server key; it is public, built into every game.
+      NAKAMA_SERVER_KEY: ${NAKAMA_SERVER_KEY:-defaultkey}
+      # Dedicated servers call the server-only RPCs with the HTTP key. Secret.
+      NAKAMA_HTTP_KEY: ${NAKAMA_HTTP_KEY:-localdevhttpkey}
+      NAKAMA_SESSION_KEY: ${NAKAMA_SESSION_KEY:-localdevsessionkey}
+      NAKAMA_REFRESH_KEY: ${NAKAMA_REFRESH_KEY:-localdevrefreshkey}
+      NAKAMA_CONSOLE_USER: ${NAKAMA_CONSOLE_USER:-admin}
+      NAKAMA_CONSOLE_PASSWORD: ${NAKAMA_CONSOLE_PASSWORD:-localdevpassword}
+      NAKAMA_CONSOLE_KEY: ${NAKAMA_CONSOLE_KEY:-localdevconsolekey}
+    volumes:
+      - ./nakama/shooter.yml:/nakama/data/shooter.yml:ro
+      - ./nakama/modules:/nakama/data/modules:ro
+    ports:
+      # The client API (HTTP and the realtime socket).
+      - "${NAKAMA_PORT:-7350}:7350"
+      # The admin console stays on this machine.
+      - "127.0.0.1:${NAKAMA_CONSOLE_PORT:-7351}:7351"
+    healthcheck:
+      test: ["CMD", "/nakama/nakama", "healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  postgres:

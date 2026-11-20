@@ -5,8 +5,11 @@ extends RefCounted
 ## its attachments. The rules (the level curve, what each level unlocks) are
 ## `Progression`, from `rust/sim/src/progression.rs`.
 ##
-## Kept on this machine until accounts exist (Phase 5); the server checks
-## only the class rules, not unlocks.
+## Signed out, progress lives in this file. Signed in (`Online`), the
+## account on the Nakama server keeps it: the store then reads a cache of
+## the account's totals (`use_account`), and each `add` is reported to the
+## account through `on_added`, whose answer replaces the totals (the server
+## caps what a game may award itself).
 
 const PATH := "user://progress.cfg"
 const HEADLESS_PATH := "user://headless_progress.cfg"
@@ -19,6 +22,9 @@ const PATH_META := &"progress_store_path"
 static var _xp := 0
 static var _weapon_kills := {}
 static var _loaded := false
+## Called with (xp, kills) after each `add` while signed in, to report it
+## to the account.
+static var on_added := Callable()
 
 
 static func xp() -> int:
@@ -43,6 +49,26 @@ static func add(xp_gained: int, kills: Dictionary = {}) -> void:
 	for weapon: String in kills:
 		_weapon_kills[weapon] = weapon_kills(weapon) + int(kills[weapon])
 	save()
+	if on_added.is_valid():
+		on_added.call(maxi(xp_gained, 0), kills.duplicate())
+
+
+## Replaces the totals with the account's and saves them to the file in use
+## (the account's cache).
+static func set_totals(total_xp: int, kills: Dictionary) -> void:
+	_loaded = true
+	_xp = maxi(total_xp, 0)
+	_weapon_kills = {}
+	for key: Variant in kills:
+		if key is String:
+			_weapon_kills[key] = maxi(int(kills[key]), 0)
+	save()
+
+
+## Totals as the account server takes them: `xp` and `weapon_kills`.
+static func totals() -> Dictionary:
+	_load()
+	return {"xp": _xp, "weapon_kills": _weapon_kills.duplicate()}
 
 
 static func can_create_classes() -> bool:
@@ -112,6 +138,12 @@ static func unlocked_class(entry: Dictionary, items: Dictionary) -> Dictionary:
 
 static func use_file(file: String) -> void:
 	Engine.set_meta(PATH_META, file)
+	reload()
+
+
+## Goes back to the player's own file, after `use_file`.
+static func use_default_file() -> void:
+	Engine.remove_meta(PATH_META)
 	reload()
 
 

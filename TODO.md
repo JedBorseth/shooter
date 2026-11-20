@@ -302,6 +302,11 @@ Rounds with one life each (`rust/sim/src/snd.rs`, `--mode snd`), on Slamcity. Cl
 ## Phase 5: online services (all self-hosted)
 
 - [ ] Nakama (self-hosted, Docker Compose) for accounts, parties, and matchmaking. Use the `nakama-godot` client.
+  - [x] The stack (`docker/online`), device sign-in with a username on the title screen, and progression and classes on the account ([docs/online.md](docs/online.md)).
+  - [ ] Dedicated servers check unlocks against the account and report match XP themselves (`server_progress_get`, `server_progress_add`).
+  - [ ] Parties and quick-play matchmaking per mode.
+  - [ ] Sign in on another machine: link an email and password to the account.
+  - [ ] Run the stack on the public host behind TLS, so `borseth.ddns.net:7350` answers.
 - [x] Dockerfile for the headless server (Godot export + Rust extension): `docker/server`, published to `ghcr.io/jedborseth/shooter-server` from `main` ([docs/server.md](docs/server.md)).
 - [ ] Strip textures from the server export (558 MB of the 693 MB pack is `.ctex` the server never draws): mark image files "Strip Visuals" in the Linux Server preset.
 - [ ] Server allocation: Nakama match handler starts or assigns a dedicated server and hands its address to players. Agones on Kubernetes later.
