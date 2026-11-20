@@ -172,6 +172,23 @@ pub enum Transition {
     NextCountdown,
 }
 
+/// Which part of the match is being played. Every match starts in
+/// [`Period::Regulation`]; modes with halves move to
+/// [`Period::SecondHalf`], and a mode that plays on past the clock moves to
+/// [`Period::Overtime`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Period {
+    /// The whole match, or its first half.
+    #[default]
+    Regulation,
+    /// The second half, with the teams on each other's sides.
+    SecondHalf,
+    /// Past the regulation clock. `timed`: overtime has its own clock (a
+    /// sudden-death round); otherwise the server ends it when the mode's
+    /// condition lapses (Hardpoint: the trailing team leaves the zone).
+    Overtime { timed: bool },
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MatchState {
     pub phase: Phase,
@@ -179,6 +196,9 @@ pub struct MatchState {
     /// without a time limit).
     pub time_left: f32,
     pub scores: [u32; TEAM_COUNT],
+    /// Which part of the match is being played (meaningful while playing,
+    /// and kept on the results screen).
+    pub period: Period,
 }
 
 impl Default for MatchState {
@@ -187,6 +207,7 @@ impl Default for MatchState {
             phase: Phase::Lobby,
             time_left: 0.0,
             scores: [0; TEAM_COUNT],
+            period: Period::Regulation,
         }
     }
 }
@@ -224,11 +245,16 @@ impl MatchState {
                 self.phase = Phase::Playing;
                 self.time_left = rules.time_limit.unwrap_or(0.0);
                 self.scores = [0; TEAM_COUNT];
+                self.period = Period::Regulation;
                 Some(Transition::Started)
             }
             Phase::Playing => {
-                // Without a clock only the score ends the match.
+                // Without a clock only the score ends the match, and untimed
+                // overtime runs until the server ends it.
                 rules.time_limit?;
+                if self.period == (Period::Overtime { timed: false }) {
+                    return None;
+                }
                 self.time_left -= dt;
                 if self.time_left > 0.0 {
                     return None;
@@ -278,7 +304,9 @@ impl MatchState {
     pub fn has_clock(&self, rules: &MatchRules) -> bool {
         match self.phase {
             Phase::Lobby => false,
-            Phase::Playing => rules.time_limit.is_some(),
+            Phase::Playing => {
+                rules.time_limit.is_some() && self.period != (Period::Overtime { timed: false })
+            }
             Phase::Countdown | Phase::Ended { .. } => true,
         }
     }
@@ -308,6 +336,24 @@ impl MatchState {
         let score = &mut self.scores[usize::from(team)];
         *score = (*score + points).min(rules.score_limit);
         (*score >= rules.score_limit).then(|| self.finish(rules, Some(team)))
+    }
+
+    /// Plays on past the clock: with `seconds` of overtime clock (a
+    /// sudden-death round), or with none, until the server calls
+    /// [`MatchState::finish`] (Hardpoint overtime). Only while playing.
+    pub fn start_overtime(&mut self, seconds: Option<f32>) {
+        if self.phase != Phase::Playing {
+            return;
+        }
+        self.period = Period::Overtime {
+            timed: seconds.is_some(),
+        };
+        self.time_left = seconds.unwrap_or(0.0).max(0.0);
+    }
+
+    /// Whether the match is in overtime.
+    pub fn overtime(&self) -> bool {
+        matches!(self.period, Period::Overtime { .. })
     }
 
     /// Returns to the lobby, for when every human has left.
@@ -616,6 +662,7 @@ mod tests {
             phase: Phase::Playing,
             time_left: 10.0,
             scores: [0, 2],
+            ..MatchState::default()
         };
         assert_eq!(
             state.on_kill(&rules(), Some(1), 0),
@@ -633,6 +680,7 @@ mod tests {
             phase: Phase::Playing,
             time_left: 1.0,
             scores: [4, 4],
+            ..MatchState::default()
         };
         assert_eq!(
             run(&mut state, 1.05, false),
@@ -655,6 +703,7 @@ mod tests {
             phase: Phase::Playing,
             time_left: 10.0,
             scores: [0, 0],
+            ..MatchState::default()
         };
         assert_eq!(
             state.finish(&rules(), Some(42)),
@@ -667,11 +716,62 @@ mod tests {
             phase: Phase::Playing,
             time_left: 0.05,
             scores: [0, 0],
+            ..MatchState::default()
         };
         assert_eq!(
             state.tick(&rules(), 0.1, false, Some(7)),
             Some(Transition::Ended { winner: Some(7) })
         );
+    }
+
+    #[test]
+    fn untimed_overtime_holds_the_clock_until_the_server_ends_it() {
+        let mut state = MatchState {
+            phase: Phase::Playing,
+            time_left: 0.05,
+            scores: [0, 2],
+            ..MatchState::default()
+        };
+        state.start_overtime(None);
+        assert!(state.overtime());
+        assert!(!state.has_clock(&rules()));
+        // The clock no longer ends it.
+        assert!(run(&mut state, 30.0, false).is_empty());
+        assert_eq!(state.phase, Phase::Playing);
+        // Points still score in overtime, and the score limit still ends it.
+        assert_eq!(state.add_points(&rules(), 0, 1), None);
+        assert_eq!(
+            state.finish(&rules(), state.team_leader()),
+            Transition::Ended { winner: Some(1) }
+        );
+        // Overtime stays on the results, and the next match starts in
+        // regulation.
+        assert!(state.overtime());
+        run(&mut state, 4.05, false);
+        run(&mut state, 2.05, false);
+        assert_eq!(state.phase, Phase::Playing);
+        assert_eq!(state.period, Period::Regulation);
+    }
+
+    #[test]
+    fn timed_overtime_runs_its_own_clock() {
+        let mut state = MatchState {
+            phase: Phase::Playing,
+            time_left: 0.0,
+            scores: [1, 1],
+            ..MatchState::default()
+        };
+        state.start_overtime(Some(2.0));
+        assert!(state.has_clock(&rules()));
+        assert!(run(&mut state, 1.9, false).is_empty());
+        assert_eq!(
+            run(&mut state, 0.2, false),
+            vec![Transition::Ended { winner: None }]
+        );
+        // Not outside play.
+        let mut lobby = MatchState::default();
+        lobby.start_overtime(None);
+        assert_eq!(lobby.period, Period::Regulation);
     }
 
     #[test]
@@ -684,6 +784,7 @@ mod tests {
             phase: Phase::Playing,
             time_left: 10.0,
             scores: [0, 0],
+            ..MatchState::default()
         };
         assert_eq!(state.on_capture(&rules, 1), None);
         assert_eq!(
@@ -778,6 +879,7 @@ mod tests {
             phase: Phase::Playing,
             time_left: 0.0,
             scores: [0, 0],
+            ..MatchState::default()
         };
         assert!(!state.has_clock(&rules));
         for _ in 0..1000 {

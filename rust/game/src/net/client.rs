@@ -57,7 +57,7 @@ use shooter_sim::snd::{
     Charge, ChargeContext, ChargePlayer, ChargeState, ChargeUse, RoundEnd, RoundPhase, Site,
     SndRules, UseKind,
 };
-use shooter_sim::tdm::{Mode, Phase, TEAM_COUNT, Team};
+use shooter_sim::tdm::{Mode, Period, Phase, TEAM_COUNT, Team};
 use shooter_sim::weapon::{Slot, WeaponId};
 
 use super::class_dict::{class_from_dict, class_to_dict, error_text};
@@ -164,6 +164,8 @@ pub struct NetClient {
     roster: Vec<RosterEntry>,
     match_phase: Option<Phase>,
     match_ends_at: Option<Tick>,
+    /// Regulation, the second half, or overtime.
+    match_period: Period,
     /// Capture the Flag: both flags, by team.
     flags: Option<[FlagView; TEAM_COUNT]>,
     team_scores: [u32; TEAM_COUNT],
@@ -551,7 +553,9 @@ impl NetClient {
     /// `seconds_left` (0 without a clock), `scores` (per team: kills,
     /// captures, points, or rounds won),
     /// `score_limit`, `winner` (a team, or in free-for-all modes a player id;
-    /// -1 for a draw), `my_team`, and for Gun Game `kills_per_weapon`.
+    /// -1 for a draw), `my_team`, `period` ("regulation", "second_half", or
+    /// "overtime"), `timed_overtime` (overtime with a clock of its own), and
+    /// for Gun Game `kills_per_weapon`.
     #[func]
     fn match_info(&self) -> VarDictionary {
         let mut d = VarDictionary::new();
@@ -571,6 +575,13 @@ impl NetClient {
         d.set("phase", phase);
         d.set("winner", winner);
         d.set("seconds_left", self.seconds_until(self.match_ends_at));
+        let (period, timed) = match self.match_period {
+            Period::Regulation => ("regulation", false),
+            Period::SecondHalf => ("second_half", false),
+            Period::Overtime { timed } => ("overtime", timed),
+        };
+        d.set("period", period);
+        d.set("timed_overtime", timed);
         let scores: PackedInt32Array = self.team_scores.iter().map(|s| *s as i32).collect();
         d.set("scores", &scores);
         d.set("score_limit", self.score_limit);
@@ -1377,6 +1388,7 @@ impl NetClient {
                 ends_at,
                 scores,
                 score_limit,
+                period,
             } => {
                 if phase == Phase::Playing && self.match_phase != Some(Phase::Playing) {
                     self.props.reset();
@@ -1391,6 +1403,7 @@ impl NetClient {
                 self.match_ends_at = ends_at;
                 self.team_scores = scores;
                 self.score_limit = score_limit;
+                self.match_period = period;
                 self.signals().match_changed().emit();
             }
             GameEvent::Scoreboard { rows } => {
@@ -2040,6 +2053,7 @@ impl NetClient {
         self.tape.clear();
         self.killcam = None;
         self.match_phase = None;
+        self.match_period = Period::Regulation;
         self.flags = None;
         self.zones.clear();
         self.holder = Holder::Neutral;

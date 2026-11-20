@@ -2,9 +2,10 @@ class_name MatchStings
 extends Node
 ## Match stings, from the match and round state the client reports: a sting
 ## when a match goes live, its result (win, loss, or draw) when it ends, a
-## warning at 30 seconds left, and in Search and Destroy the start and result
-## of every round. No announcer: short drum, riser, and brass cues
-## (`tools/build_world_audio.py stings`). The match HUD adds one.
+## warning at 30 seconds left, a call at halftime and at overtime, and in
+## Search and Destroy the start and result of every round. No announcer:
+## short drum, riser, and brass cues (`tools/build_world_audio.py stings`).
+## The match HUD adds one.
 
 const STINGS := "res://assets/audio/ui/%s.ogg"
 ## Seconds left when the time warning plays.
@@ -15,6 +16,7 @@ var client: Node
 var played: PackedStringArray = []
 
 var _phase := ""
+var _period := "regulation"
 var _round_phase := ""
 var _round_number := -1
 var _seconds_left := INF
@@ -40,8 +42,17 @@ func _process(_delta: float) -> void:
 			play("match_start")
 		elif phase == "ended" and was == "playing":
 			play(_result(info))
+		if phase != "playing" and phase != "ended":
+			_period = "regulation"
 		_seconds_left = INF
 	if phase == "playing":
+		var period: String = info.get("period", "regulation")
+		if period != _period:
+			_period = period
+			if period == "overtime":
+				play_first(["overtime", "time_warning"])
+			elif period == "second_half":
+				play_first(["halftime", "round_start"])
 		var left: float = info.get("seconds_left", INF)
 		if info.get("mode", "") != "snd" and _seconds_left > WARNING_AT and left <= WARNING_AT:
 			play("time_warning")
@@ -74,6 +85,14 @@ func _result(info: Dictionary) -> String:
 	if info.get("free_for_all", false) or info.get("mode", "") == "gungame":
 		return "win" if winner == client.player_id() else "loss"
 	return "win" if winner == info.get("my_team", -2) else "loss"
+
+
+## Plays the first of `stings` that exists.
+func play_first(stings: Array) -> void:
+	for sting: String in stings:
+		if ResourceLoader.exists(STINGS % sting):
+			play(sting)
+			return
 
 
 func play(sting: String) -> void:

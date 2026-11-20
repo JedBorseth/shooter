@@ -89,6 +89,8 @@ var _levels := {}
 var _levels_phase := ""
 ## "tdm", "ctf", "hardpoint", "gungame", "ffa", or "snd", as the server last said.
 var _mode := ""
+## The period last called out ("regulation", "second_half", or "overtime").
+var _period := "regulation"
 
 
 func _ready() -> void:
@@ -156,6 +158,14 @@ func _process(delta: float) -> void:
 	else:
 		_update_team_bar(info)
 	_score.clock = _clock_text(phase, info.seconds_left)
+	if phase == "playing" and info.get("period", "") == "overtime":
+		# Hardpoint's overtime has no clock: it lasts while the team behind
+		# is on the hill.
+		if info.get("timed_overtime", false):
+			_score.clock = "OT " + _score.clock
+		else:
+			_score.clock = "OVERTIME"
+	_check_period(phase, info)
 	if snd and phase == "playing":
 		# The round's clock, while it runs.
 		var round := client.round_info()
@@ -501,6 +511,41 @@ func _check_levels(info: Dictionary) -> void:
 		if level == last and before < last:
 			var who := "YOU ARE" if entry.me else "%s IS" % String(entry.name).to_upper()
 			_feed_notice("%s ON THE FINAL WEAPON" % who, ALLY if entry.me else ENEMY)
+
+
+# --- Halftime and overtime -------------------------------------------------------
+
+
+## Calls out a new period of play: halftime's side swap and overtime, with
+## what it means for us in this mode.
+func _check_period(phase: String, info: Dictionary) -> void:
+	var period: String = info.get("period", "regulation")
+	if phase != "playing":
+		_period = "regulation" if phase == "countdown" else _period
+		return
+	if period == _period:
+		return
+	_period = period
+	match period:
+		"second_half":
+			_show_callout("HALFTIME", "Switching sides", MenuStyle.TEXT)
+		"overtime":
+			_show_callout("OVERTIME", _overtime_detail(info), MenuStyle.ACCENT)
+
+
+func _overtime_detail(info: Dictionary) -> String:
+	match info.mode:
+		"hardpoint":
+			var scores: PackedInt32Array = info.scores
+			var mine: int = info.my_team
+			if mine < 0 or mine >= scores.size():
+				return "Until the team behind leaves the zone"
+			if scores[mine] > scores[1 - mine]:
+				return "Clear the zone to win"
+			return "Stay in the zone"
+		"ctf":
+			return "Next capture wins"
+	return ""
 
 
 func _show_callout(text: String, sub: String, colour := Color.WHITE) -> void:

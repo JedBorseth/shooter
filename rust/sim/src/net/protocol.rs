@@ -34,7 +34,7 @@ use crate::movement::{MoveState, Stance};
 use crate::player::{FireAim, PlayerInput, PlayerState};
 use crate::score::{Award, ScoreTotals, Scored};
 use crate::snd::{RoundEnd, RoundPhase, UseKind};
-use crate::tdm::{MAX_NAME_CHARS, Mode, Phase, TEAM_COUNT, Team};
+use crate::tdm::{MAX_NAME_CHARS, Mode, Period, Phase, TEAM_COUNT, Team};
 use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, WeaponState};
 
 /// Bumped whenever the wire format changes; mismatched clients are rejected.
@@ -120,7 +120,9 @@ use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, Weapo
 // to 5 bits) and kills by the charge going off.
 // Version 49 added Domination: its mode, the flags and their captures,
 // halftime, the flag awards, and flag defences on the scoreboard.
-pub const PROTOCOL_VERSION: u16 = 49;
+// Version 50 added the match period (regulation, second half, or overtime)
+// to match events, for Hardpoint overtime.
+pub const PROTOCOL_VERSION: u16 = 50;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -267,12 +269,13 @@ pub enum GameEvent {
     /// the server tick the phase's clock runs out (none in the lobby, or
     /// while playing a mode without a match clock, as Search and Destroy).
     /// In Gun Game the scores stay 0 and `score_limit` is the number of
-    /// weapons.
+    /// weapons. `period`: regulation, the second half, or overtime.
     Match {
         phase: Phase,
         ends_at: Option<Tick>,
         scores: [u32; TEAM_COUNT],
         score_limit: u32,
+        period: Period,
     },
     /// To everyone, about once a second: every player's line on the scoreboard.
     Scoreboard { rows: Vec<ScoreRow> },
@@ -1381,6 +1384,7 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
             ends_at,
             scores,
             score_limit,
+            period,
         } => {
             w.bits(7, EVENT_TAG_BITS);
             let (tag, winner) = match phase {
@@ -1401,6 +1405,14 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
                 w.varint(*score);
             }
             w.varint(*score_limit);
+            match period {
+                Period::Regulation => w.bits(0, 2),
+                Period::SecondHalf => w.bits(1, 2),
+                Period::Overtime { timed } => {
+                    w.bits(2, 2);
+                    w.bool(*timed);
+                }
+            }
         }
         GameEvent::Scoreboard { rows } => {
             w.bits(8, EVENT_TAG_BITS);
@@ -1800,11 +1812,19 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
             for score in &mut scores {
                 *score = r.varint()?;
             }
+            let score_limit = r.varint()?;
+            let period = match r.bits(2)? {
+                0 => Period::Regulation,
+                1 => Period::SecondHalf,
+                2 => Period::Overtime { timed: r.bool()? },
+                _ => return Err(DecodeError::Invalid("period")),
+            };
             Ok(GameEvent::Match {
                 phase,
                 ends_at,
                 scores,
-                score_limit: r.varint()?,
+                score_limit,
+                period,
             })
         }
         8 => {
@@ -3992,18 +4012,35 @@ mod tests {
                 ends_at: None,
                 scores: [0, 0],
                 score_limit: 75,
+                period: Period::Regulation,
             },
             GameEvent::Match {
                 phase: Phase::Ended { winner: Some(1) },
                 ends_at: Some(123_456),
                 scores: [41, 75],
                 score_limit: 75,
+                period: Period::Regulation,
             },
             GameEvent::Match {
                 phase: Phase::Ended { winner: None },
                 ends_at: Some(9),
                 scores: [3, 3],
                 score_limit: 1,
+                period: Period::SecondHalf,
+            },
+            GameEvent::Match {
+                phase: Phase::Playing,
+                ends_at: None,
+                scores: [200, 190],
+                score_limit: 250,
+                period: Period::Overtime { timed: false },
+            },
+            GameEvent::Match {
+                phase: Phase::Playing,
+                ends_at: Some(77),
+                scores: [2, 2],
+                score_limit: 3,
+                period: Period::Overtime { timed: true },
             },
             // Gun Game: a player wins.
             GameEvent::Match {
@@ -4011,6 +4048,7 @@ mod tests {
                 ends_at: Some(10),
                 scores: [0, 0],
                 score_limit: 8,
+                period: Period::Regulation,
             },
             GameEvent::Scoreboard {
                 rows: vec![
