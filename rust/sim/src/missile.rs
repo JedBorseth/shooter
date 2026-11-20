@@ -63,6 +63,11 @@ pub const BOMBLET_DAMAGE: f32 = 160.0;
 pub const BOMBLET_OUTER_DAMAGE: f32 = 30.0;
 /// Seconds the pilot's camera stays after the first bomblet lands.
 pub const CAMERA_LINGER_SECONDS: f32 = 1.0;
+/// The sphere round it that an enemy's shot or rocket meets: any hit sets
+/// it off in the air (Black Ops 2's `handledamage` detonates it on the first
+/// damage), scoring for the shooter.
+pub const HIT_RADIUS: f32 = 1.0;
+pub const SHOT_DOWN_POINTS: u32 = 100;
 
 /// One guided missile in the air.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -109,6 +114,13 @@ impl Missile {
         } else {
             SPEED
         }
+    }
+
+    /// Where it was `ticks` ago, carried back along its flight (it flies
+    /// straight between turns), for checking a shot where the shooter saw
+    /// it.
+    pub fn back(&self, ticks: f32) -> Vec3 {
+        self.position - self.direction() * self.speed() * ticks / TICK_RATE as f32
     }
 
     /// Whether its time is up at `now`.
@@ -275,6 +287,16 @@ mod tests {
         assert!(b.at(f64::from(b.fire_at) - 1.0).is_none());
         let landed = b.at(f64::from(b.lands_at())).unwrap();
         assert!(landed.distance(b.to) < BOMBLET_SPEED / 120.0 + 1e-3);
+    }
+
+    #[test]
+    fn it_carries_back_along_its_flight() {
+        let mut m = Missile::launch(1, 3, 0, Vec3::ZERO, 0.0, 0);
+        let start = m.position;
+        for _ in 0..12 {
+            m.step(m.view, false);
+        }
+        assert!(m.back(12.0).distance(start) < 1e-3);
     }
 
     #[test]

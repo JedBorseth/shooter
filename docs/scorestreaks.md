@@ -61,7 +61,18 @@ Anyone holding use within 1.8 m of a landed crate captures it:
 - **Running out:** a crate nobody takes is gone after 90 s (an estimate).
 - **Limit:** at most 8 crates wait at once; the oldest goes first.
 
-**Contents:** the streak inside is rolled when the crate is called in, from the UAV (106) and the Counter-UAV (94), Black Ops 2's own weights for those two, and the Airstrike (40, an estimate: rare, as the dear streaks are in Black Ops 2). A crate never holds another Care Package. Black Ops 2's booby-trapped crates (Engineer, Black Hat) are left out: there is no Engineer.
+**Contents:** the streak inside is rolled when the crate is called in, with Black Ops 2's own weights from its crate table (`_supplydrop.gsc`) for the streaks this game has:
+
+| Streak | Weight | Share |
+| --- | ---: | ---: |
+| UAV | 100 | 21.5% |
+| Counter-UAV | 100 | 21.5% |
+| Guided Missile (Hellstorm) | 85 | 18.3% |
+| Airstrike (Lightning Strike) | 80 | 17.2% |
+| Sentry Gun | 80 | 17.2% |
+| Attack Chopper (Stealth Chopper) | 20 | 4.3% |
+
+A crate never holds another Care Package. Black Ops 2's booby-trapped and rerolled crates (Engineer, Black Hat) are left out; Engineer here only shows enemy crates through walls.
 
 **On screen:**
 
@@ -119,6 +130,7 @@ The Guided Missile follows Black Ops 2's Hellstorm Missile (`_remotemissile.gsc`
   The missile itself coasts on, unseen, and still goes off where it lands. Enemies near the middle of the view are boxed in red, brighter within the cluster's reach.
 - **Blasts:** the missile does 300 damage at its centre, falling to 50 at 9 m. A bomblet does 160, falling to 30 at 4.5 m. Both go off on the map or on an enemy they meet. Their kills show as "Guided Missile" and count nothing toward streaks.
 - **The camera** comes back a second after the first bomblet lands (Black Ops 2's `bomblet_camera_waiter`), or half a second after an unsplit missile goes off. It comes back at once if the pilot dies; the missile flies on unsteered.
+- **Shooting it down:** any enemy hit sets it off where it is, as Black Ops 2's `handledamage` detonates it on the first damage. A bullet counts if it meets a 1 m sphere round the missile where the shooter saw it (carried back along its flight), and a rocket within 6 m counts. Its blast still goes off up there, the pilot's view comes back half a second later, and the shooter scores 100 and the "Destroyed Guided Missile" medal.
 - **Bots:** a bot aims it at its nearest enemy within 80 m, steers it at them, and splits it a second and a half in, as Black Ops 2's bots press fire 1.5 s into theirs. It stands still meanwhile.
 - **Roofed maps** leave it out.
 - **Estimates:** the speeds, turn rate, blasts, and bomblet speed are estimates. Black Ops 2 keeps them in weapon files its scripts do not carry.
@@ -206,7 +218,7 @@ UAV assist points and announcer lines. Blind Eye, Cold-Blooded, and Engineer act
 
 - **Black Ops 2's scorestreak rules:** score earned in one life, objective score included; earned streaks kept after death; streak kills not counting toward streaks; the counter starting again after the last streak.
 - **Costs:** UAV 425 (raised from 350 in patch 1.04), Counter-UAV between 400 and 600 depending on the source (475 here), Care Package 550.
-- **Care Package:** a flyover drops a crate on the marked spot. The owner captures almost at once, others in about 3 s, and enemies may steal it. Contents are weighted toward cheap streaks (UAV 10.6%, Counter-UAV 9.4%).
+- **Care Package:** a flyover drops a crate on the marked spot. The owner captures almost at once, others in about 3 s, and enemies may steal it. Contents use Black Ops 2's crate weights (`_supplydrop.gsc`: UAV 100, Counter-UAV 100, Hellstorm 85, Lightning Strike 80, Sentry Gun 80, Stealth Chopper 20).
 - **Durations:** UAV and Counter-UAV 30 s.
 - **Hardline:** in Black Ops 2 it adds 20% to scorestreak score, per the Call of Duty wiki, about 16.7% off each cost. Guides that give "-25 points" or "15%" disagree with it.
 - **Lightning Strike:** 750, three strikes on points picked on the map, in sequence.
