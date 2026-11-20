@@ -1,6 +1,7 @@
 //! Weapon handling sounds, beat by beat: the magazine out and in, the bolt
 //! release or charging handle, the pump, the bolt, each shell, the draw, the
-//! holster, raising to the eye, and the inspect.
+//! holster, raising to the eye, the weapon coming back up after a sprint,
+//! and the inspect.
 //!
 //! `WeaponView` says *when* with its `foley_event(name)` signal; this module
 //! decides *what it sounds like*. Every first-person view gets a
@@ -34,7 +35,7 @@ const VOICES: usize = 4;
 
 /// Every event `WeaponView::foley_event` emits, as the contract with the
 /// reload animation names them, plus `dry` (dry fire) and `pickup`.
-pub const EVENTS: [&str; 20] = [
+pub const EVENTS: [&str; 21] = [
     "mag_out",
     "mag_in",
     "bolt_release",
@@ -51,6 +52,7 @@ pub const EVENTS: [&str; 20] = [
     "ads_in",
     "ads_out",
     "inspect",
+    "sprint_out",
     "dry",
     "pickup",
     "mount",
@@ -138,6 +140,8 @@ fn layers(event: &str) -> Vec<Layer> {
         "ads_in" => vec![s("ads_in", -10.0, 0.0)],
         "ads_out" => vec![s("ads_out", -13.0, 0.0)],
         "inspect" => vec![s("inspect", -6.0, 0.0)],
+        // The weapon back up out of a sprint: cloth settling and a clack.
+        "sprint_out" => vec![s("sprint_out", -6.0, 0.0)],
         "dry" => vec![w("dry", 0.0)],
         "pickup" => vec![s("pouch", -4.0, 0.0), s("pouch", -8.0, 0.12)],
         // The handguard set down on cover, and the gear shifting with the

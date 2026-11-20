@@ -23,6 +23,7 @@ use shooter_sim::movement::Stance;
 use shooter_sim::weapon::{Reload, WeaponId};
 
 use crate::audio;
+use crate::player_sounds;
 use crate::surfaces::{Surface, surface_at};
 use crate::target::WORLD_LAYER;
 use crate::weapon_foley;
@@ -167,6 +168,8 @@ pub struct Foley {
     pushed_off: bool,
     stance: Stance,
     mantling: bool,
+    /// Seconds sprinting, for the weapon coming back up when it ends.
+    sprint_time: f32,
     /// Metres climbed or descended on a ladder since the last rung's sound.
     rung_travel: f32,
     /// The reload's progress last frame, below 0 when not reloading.
@@ -193,11 +196,18 @@ pub struct Motion {
     pub sprinting: bool,
     pub alive: bool,
     pub mantling: bool,
+    /// The climb is a vault over cover.
+    pub vaulting: bool,
     pub reloading: bool,
     pub walk_speed: f32,
     /// On a ladder: a rung rings under each step instead of footfalls.
     pub ladder: bool,
 }
+
+/// A sprint this long or longer plays the weapon coming back up when it
+/// ends (shorter ones barely lowered it), at this level (dB).
+const SPRINT_OUT_AFTER: f32 = 0.4;
+const SPRINT_OUT_DB: f32 = -10.0;
 
 /// A ladder's rungs ring every this far climbed (the rung spacing).
 pub const RUNG_STEP: f32 = 0.3;
@@ -229,6 +239,7 @@ impl Foley {
             pushed_off: false,
             stance: Stance::Standing,
             mantling: false,
+            sprint_time: 0.0,
             rung_travel: 0.0,
             reload_progress: -1.0,
             sounds: HashMap::new(),
@@ -261,7 +272,23 @@ impl Foley {
         if !motion.alive {
             self.was_on_floor = motion.on_floor;
             self.reload_progress = -1.0;
+            self.sprint_time = 0.0;
             return;
+        }
+
+        // The end of a sprint: their weapon comes back up into their hands
+        // (cloth and a handling clack), as the local player hears their own.
+        if motion.sprinting {
+            self.sprint_time += delta;
+        } else {
+            if self.sprint_time > SPRINT_OUT_AFTER
+                && motion.on_floor
+                && !motion.mantling
+                && let Some(db) = level(SPRINT_OUT_DB, RELOAD_RANGE)
+            {
+                self.play_shared_gear("res://assets/audio/foley/sprint_out", motion.feet, db);
+            }
+            self.sprint_time = 0.0;
         }
 
         // A ladder: a rung rings under each step, and hanging on it is not
@@ -341,7 +368,7 @@ impl Foley {
             && !self.mantling
             && let Some(db) = level(-4.0, MANTLE_RANGE)
         {
-            self.play_body("res://assets/audio/player/mantle", motion.feet, db);
+            self.play_body(player_sounds::climb_sound(motion.vaulting), motion.feet, db);
         }
         self.mantling = motion.mantling;
 
@@ -370,6 +397,18 @@ impl Foley {
             .or_insert_with(|| weapon_foley::remote_sound(weapon.def().model_key(), event))
             .clone();
         let Some(stream) = stream else { return };
+        self.gear.set_global_position(feet + Vector3::UP * 1.2);
+        self.gear.set_stream(&stream);
+        self.gear.set_volume_db(volume_db);
+        self.gear.play();
+    }
+
+    /// A handling sound every weapon shares (`assets/audio/foley/`), at the
+    /// hands.
+    fn play_shared_gear(&mut self, base: &str, feet: Vector3, volume_db: f32) {
+        let Some(stream) = self.sound(base, 1.04) else {
+            return;
+        };
         self.gear.set_global_position(feet + Vector3::UP * 1.2);
         self.gear.set_stream(&stream);
         self.gear.set_volume_db(volume_db);

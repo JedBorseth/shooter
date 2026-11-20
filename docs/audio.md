@@ -112,7 +112,7 @@ frame). The names are the contract between the animation and the sound:
 
 `mag_out`, `mag_in`, `bolt_release`, `charge`, `shell_in`, `pump_back`,
 `pump_forward`, `bolt_up`, `bolt_back`, `bolt_forward`, `bolt_down`, `draw`,
-`holster`, `ads_in`, `ads_out`, `inspect`.
+`holster`, `ads_in`, `ads_out`, `inspect`, `sprint_out`.
 
 Every first-person view has a `WeaponFoley` child (`weapon_foley.rs`) connected
 to that signal, which plays the event's layers on a pool of four voices. The
@@ -182,11 +182,42 @@ The sounds are synthesized by `tools/build_world_audio.py bullets`.
 - a heartbeat below 40% health, racing from one every 0.95 s to 0.55 s;
 - being hit (a short, soft blunt thud and the kit jolted, at -10 dB; -14 dB
   for a hard landing), and a body fall on death;
-- a jump's push-off, hands on a ledge when mantling, and the kit and cloth
-  under each step (louder when sprinting, none when crouched).
+- a jump's push-off, hands on a ledge when mantling or one hand on the cover
+  when vaulting, and the kit and cloth under each step (louder when
+  sprinting, none when crouched).
 
-Other players' sprints carry the same kit rattle, and their jumps and mantles
-the same sounds, at their position.
+The player plays its landings itself (`player.rs`, louder for a longer drop),
+and the weapon view plays the end of a sprint as the `sprint_out` handling
+event, once the weapon had gone down. Other players' sprints carry the same
+kit rattle, and their jumps, landings, mantles, vaults, and sprint ends the
+same sounds, at their position (`footsteps::Foley`).
+
+### Movement sounds (`tools/build_movement_audio.py`)
+
+The jump, landing, mantle, vault, and sprint-out are real recordings, built
+the way gunshots are (`tools/build_gunshots.py`): CC0 recordings from
+Freesound, fetched by pinned hash, cut, layered, and processed in code
+(band limits, shelves, compression, a look-ahead limiter, loudness), never
+synthesized. Each is several takes, so repeats vary. The reference is modern
+Call of Duty (Modern Warfare 2019 onward):
+
+| Sound | Files | What it is |
+| --- | --- | --- |
+| Jump | `player/jump_1..4` | Boots scuffing off rock as they push off, a rifle's kit jostling 50 ms later, a nylon jacket's swish. 0.26 s, short and dry. |
+| Landing | `player/land_1..4` | Boots landing on rock, a heavy boot thump under them, the rifle's hardware clanking and the kit rattling just after. |
+| Mantle | `player/mantle_1..3` | Two hands slapping a wall 65-100 ms apart, then a body and boots scraping up onto a concrete roof, jacket and kit. |
+| Vault | `player/vault_1..3` | One hand planted, the jacket swishing as the body swings over, a boot scuff on the top, kit. 0.33 s, as quick as the vault. |
+| Sprint out | `foley/sprint_out_1..4` | The jacket settling and an AR-15's hardware clacking as the weapon comes back into the hands. |
+
+The recordings, by Freesound id: Nox_Sound's mountain boots jumping and
+landing on rock (558477), magnuswaker's dropped heavy boots (614064),
+Juandamb's hands on a wall (430599), modusmogulus's ledge climb (812599),
+IENBA's nylon jacket (658410), a rifle being moved and rattled (719241), and
+jackthemurray's AR-15 hardware (393732). The tool uses each sound's
+high-quality preview (no account needed); with Freesound's original files
+downloaded, `--originals DIR` builds from those instead, on the same
+timeline. `build_movement_audio.py preview OUT.mp3 --old DIR` writes a
+listening clip with the old and new takes at the same loudness.
 
 The HUD plays a dry tick for a hit, a struck-helmet ring for a headshot, and a
 thump with a short ding for a kill; a headshot kill plays the ring under the

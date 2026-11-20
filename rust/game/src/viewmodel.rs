@@ -2582,6 +2582,9 @@ pub struct ViewmodelRig {
     foot: f32,
     last_stride: f32,
     sprint_blend: f32,
+    /// The player was sprinting last frame (the end of a sprint plays the
+    /// weapon coming back up).
+    was_sprinting: bool,
     /// Where the last frame's clip was, to fire each beat once: which clip,
     /// and its time (seconds, or progress for cycles and switches).
     beat_clock: Option<(BeatClip, f32)>,
@@ -3142,6 +3145,23 @@ impl ViewmodelRig {
             sounds.push("ads_in");
         } else if frame.ads < self.last_ads && self.last_ads >= 0.999 {
             sounds.push("ads_out");
+        }
+        // The end of a sprint: the weapon comes back up into the hands, a
+        // cloth settle and a handling clack (Modern Warfare's sprint-out), if
+        // it had gone down. A switch or a draw plays its own sound instead.
+        let sprint_ended = self.was_sprinting && !frame.sprinting;
+        self.was_sprinting = frame.sprinting;
+        if sprint_ended
+            && self.sprint_blend > 0.5
+            && frame.visible
+            && !frame.on_ladder
+            && !frame.put_away
+            && !matches!(
+                frame.action,
+                ViewAction::Lowering(_) | ViewAction::Raising(_) | ViewAction::FirstRaise { .. }
+            )
+        {
+            sounds.push("sprint_out");
         }
         for name in sounds {
             view.bind_mut().foley(name);

@@ -44,9 +44,9 @@ a short reflection tail), plus new grass, tile, gravel, carpet, and flesh sets.
 
 ``player`` synthesizes the feedback and body sounds, seeded: hit, headshot,
 and kill markers (a dry tick, a struck-helmet ring, a thump and short ding),
-being hit, a heartbeat, breathing (normal and hurt), a death fall,
-a jump's push-off, a mantle's hands on the ledge, and the gear and cloth
-layers under footsteps.
+being hit, a heartbeat, breathing (normal and hurt), a death fall, and the
+gear and cloth layers under footsteps. The jump, landing, mantle, vault, and
+sprint-out are real recordings (tools/build_movement_audio.py).
 
 ``stings`` synthesizes the match stings (start, win, loss, draw, round start,
 round win and loss, the time warning, the hardpoint call: drums, a riser, and
@@ -867,36 +867,6 @@ def death_sound(rng: np.random.Generator) -> np.ndarray:
     return normalized(out, 0.9)
 
 
-def push_off(rng: np.random.Generator) -> np.ndarray:
-    """A jump: a boot scuffing off the ground, cloth, and kit bouncing."""
-    n = int(0.35 * RATE)
-    scuff = bandpass(rng.standard_normal(n), 400, 4_000) * env_decay(n, 0.025)
-    swish = bandpass(rng.standard_normal(n), 300, 3_000) * np.sin(np.pi * np.linspace(0, 1, n)) ** 2
-    rattle = grains(rng, n, 5, 0.12, 2_500, 6_000, 0.01)
-    out = normalized(scuff, 1) + 0.5 * normalized(swish, 1) + 0.45 * normalized(rattle, 1)
-    return normalized(out, 0.8)
-
-
-def mantle_sound(rng: np.random.Generator) -> np.ndarray:
-    """Climbing over a ledge: two hands slapping onto it, cloth dragging, and
-    kit knocking."""
-    n = int(0.7 * RATE)
-    out = np.zeros(n)
-    for at in (0.0, rng.uniform(0.06, 0.1)):
-        a = int(at * RATE)
-        m = n - a
-        slap = bandpass(rng.standard_normal(m), 600, 3_500) * env_decay(m, 0.012)
-        slap += 0.6 * sine_sweep(m, 220, 150, 0.01) * env_decay(m, 0.02)
-        out[a:] += normalized(slap, 1)
-    t = np.linspace(0, 1, n)
-    drag = bandpass(rng.standard_normal(n), 250, 2_500) * np.sin(np.pi * t) ** 1.5
-    out += 0.6 * normalized(drag, 1)
-    out += 0.4 * normalized(grains(rng, n, 6, 0.4, 2_500, 6_000, 0.01), 1)
-    fade = int(0.05 * RATE)
-    out[-fade:] *= np.linspace(1, 0, fade)
-    return normalized(out, 0.8)
-
-
 def step_gear(rng: np.random.Generator) -> np.ndarray:
     """What rides on a soldier with every step: magazines and buckles
     knocking (2-5 kHz ticks 10-40 ms apart) and a sling slapping."""
@@ -929,7 +899,7 @@ def write_wav(path: Path, x: np.ndarray) -> None:
 
 def player() -> None:
     """Hit, headshot, and kill markers (audio/ui/), and being hit, heartbeat,
-    breathing, death, jump, mantle, and step layers (audio/player/)."""
+    breathing, death, and step layers (audio/player/)."""
     makers = (
         (UI, "hit", hit_marker, 4, True),
         (UI, "hit_head", head_marker, 3, True),
@@ -937,8 +907,6 @@ def player() -> None:
         (PLAYER, "hit_taken", hit_taken, 4, False),
         (PLAYER, "heartbeat", heartbeat, 2, False),
         (PLAYER, "death", death_sound, 2, False),
-        (PLAYER, "jump", push_off, 4, False),
-        (PLAYER, "mantle", mantle_sound, 3, False),
         (PLAYER, "step_gear", step_gear, 6, False),
         (PLAYER, "step_cloth", step_cloth, 6, False),
     )
