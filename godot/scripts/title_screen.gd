@@ -8,6 +8,7 @@ const ARENA_PATH := "res://scenes/main.tscn"
 const NUKETOWN_PATH := "res://scenes/nuketown.tscn"
 const SLAMCITY_PATH := "res://scenes/slamcity.tscn"
 const WAREHOUSE_PATH := "res://scenes/warehouse.tscn"
+const BREAKWATER_PATH := "res://scenes/breakwater.tscn"
 const BROWSER_PATH := "res://scenes/server_browser.tscn"
 const ZOMBIES_PATH := "res://scenes/zombies_arena.tscn"
 ## The menu button for each local match mode.
@@ -36,6 +37,7 @@ const ROUTES := {
 	"Slamcity": ["FREE ROAM", "Walk the three lanes of Slamcity on your own."],
 	"Nuketown": ["FREE ROAM", "Walk Nuketown on your own."],
 	"Warehouse": ["FREE ROAM", "Walk the box plant's production lines on your own."],
+	"Breakwater": ["FREE ROAM", "Walk the fuel terminal's quay, rack, and tank farm on your own."],
 	"Options": ["", "Controls, video, audio, and gameplay."],
 	"Quit": ["", "Close the game."],
 }
@@ -67,6 +69,9 @@ func _ready() -> void:
 	)
 	_menu.get_node("Warehouse").pressed.connect(
 		func() -> void: _start_scene(WAREHOUSE_PATH, "Warehouse")
+	)
+	_menu.get_node("Breakwater").pressed.connect(
+		func() -> void: _start_scene(BREAKWATER_PATH, "Breakwater")
 	)
 	for mode: String in SETUP_BUTTONS:
 		_menu.get_node(SETUP_BUTTONS[mode]).pressed.connect(_open_setup.bind(mode))

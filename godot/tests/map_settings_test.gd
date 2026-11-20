@@ -11,6 +11,7 @@ const MAPS: Array[String] = [
 	"res://scenes/slamcity.tscn",
 	"res://scenes/nuketown.tscn",
 	"res://scenes/warehouse.tscn",
+	"res://scenes/breakwater.tscn",
 	"res://scenes/zombies_arena.tscn",
 ]
 

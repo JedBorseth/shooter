@@ -7,7 +7,7 @@ extends Control
 ## ("gungame": name, map, player count, bots, kills per weapon, and time
 ## limit), Free-for-all ("ffa": name, map, player count, bots, kill limit,
 ## and time limit), or Search and Destroy ("snd": name, team size, bots, and
-## rounds to win, on Slamcity), or Zombies co-op ("zombies": name and map;
+## rounds to win, on Slamcity or Breakwater), or Zombies co-op ("zombies": name and map;
 ## friends on the network join it from Multiplayer, LAN, up to four players).
 ## Bots fill the empty places in the other modes. Start runs a local dedicated server with
 ## those rules and joins it (`Net.start_local_match`). UI only: it loads no
@@ -25,12 +25,13 @@ const MAPS := [
 	["Slamcity", "slamcity"],
 	["Nuketown", "nuketown"],
 	["Warehouse", "warehouse"],
+	["Breakwater", "breakwater"],
 	["Testing Arena", "arena"],
 ]
 ## Zombies needs a map with zombie spawns and windows.
 const ZOMBIES_MAPS := [["Zombies Arena", "zombies"]]
 ## Search and Destroy needs a map with attacking and defending sides.
-const SND_MAPS := [["Slamcity", "slamcity"]]
+const SND_MAPS := [["Slamcity", "slamcity"], ["Breakwater", "breakwater"]]
 const ROUNDS_TO_WIN := [4, 6, 8]
 const TEAM_SIZES := [1, 2, 3, 4, 5, 6]
 const SCORE_LIMITS := [25, 50, 75, 100]
@@ -51,6 +52,7 @@ const MAP_PICTURES := {
 	"slamcity": "res://assets/ui/maps/slamcity.jpg",
 	"nuketown": "res://assets/ui/maps/nuketown.jpg",
 	"warehouse": "res://assets/ui/maps/warehouse.jpg",
+	"breakwater": "res://assets/ui/maps/breakwater.jpg",
 	"arena": "res://assets/ui/maps/arena.jpg",
 	"zombies": "res://assets/ui/maps/zombies.jpg",
 }

@@ -5,11 +5,12 @@ extends SceneTree
 ## across the map, and score kills within a minute of play, and that the
 ## server keeps its tick rate. BOTS=12 runs a full 6v6; SKILL sets the skill.
 ## With `-- --warehouse` the team match runs on Warehouse instead, whose teams
-## start north and south rather than west and east, and with `-- --nuketown`
+## start north and south rather than west and east, with `-- --breakwater` on
+## Breakwater, and with `-- --nuketown`
 ## on Nuketown, which has no lanes (the free-for-all part stays on Slamcity).
 ## Nuketown's backdrop mountains once stopped its navigation mesh baking on a
 ## headless server, so its bots stood still; this run guards that.
-## godot --headless --path godot --script res://tests/bots_test.gd [-- --warehouse|--nuketown]
+## godot --headless --path godot --script res://tests/bots_test.gd [-- --<map>]
 
 const SECONDS := 60
 ## Loaded at run time: preloading needs the autoloads a test script lacks.
@@ -17,6 +18,7 @@ const SERVER_SCENE := "res://scenes/server.tscn"
 const SLAMCITY := "res://scenes/slamcity.tscn"
 const WAREHOUSE := "res://scenes/warehouse.tscn"
 const NUKETOWN := "res://scenes/nuketown.tscn"
+const BREAKWATER := "res://scenes/breakwater.tscn"
 
 ## A port per process, so test runs in parallel on one machine don't meet.
 var _port := 30000 + OS.get_process_id() % 20000
@@ -35,6 +37,9 @@ func _run() -> void:
 	if args.has("--warehouse"):
 		map_name = "Warehouse"
 		map_path = WAREHOUSE
+	elif args.has("--breakwater"):
+		map_name = "Breakwater"
+		map_path = BREAKWATER
 	elif args.has("--nuketown"):
 		map_name = "Nuketown"
 		map_path = NUKETOWN

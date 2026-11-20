@@ -41,6 +41,7 @@ most of each zone's footprint has floor inside its box).
 | Testing Area | Crossroads, The Platform, Tunnel, Target Range |
 | Nuketown | Cul-de-sac, West House, Front Lot, East House |
 | Warehouse | Mid Stockpile, Shipping, South Crossover, North Crossover, Receiving |
+| Breakwater | Loading Rack, Pump House, Rack Deck, Fire Pumps |
 
 A map without `Hardpoints` still gets one zone halfway between the teams'
 spawns.

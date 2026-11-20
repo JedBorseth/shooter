@@ -260,6 +260,16 @@ icon = ExtResource("3_arrow")
 alignment = 0
 icon_alignment = 2
 
+[node name="Breakwater" type="Button" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(500, 40)
+layout_mode = 2
+mouse_default_cursor_shape = 2
+theme_type_variation = &"RouteButton"
+text = "Breakwater"
+icon = ExtResource("3_arrow")
+alignment = 0
+icon_alignment = 2
+
 [node name="SystemGap" type="Control" parent="Margin/Layout/Menu"]
 custom_minimum_size = Vector2(0, 8)
 layout_mode = 2

@@ -110,6 +110,13 @@ jobs:
         run: |
           test -f tools/test_slamcity_layout.py
           python -m unittest discover -s tools -p "test_slamcity_layout.py" -v
+      # Breakwater's layout rules: twinned collision, the spawn yards closed to
+      # each other, spawn safety, no long open lines, and a current scene,
+      # mesh, and lightmap.
+      - name: Breakwater layout tests
+        run: |
+          test -f tools/test_breakwater_layout.py
+          python -m unittest discover -s tools -p "test_breakwater_layout.py" -v
       # The standalone Blender models: built, current, and no primitive meshes
       # standing in for them.
       - name: Model tests

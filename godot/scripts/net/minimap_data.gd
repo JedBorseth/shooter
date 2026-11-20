@@ -4,6 +4,8 @@ extends RefCounted
 
 const MAPS := {
 	"arena": {"scene": "res://scenes/main.tscn", "centre": Vector2(0.00, 0.00), "width": 70.00},
+	"breakwater":
+	{"scene": "res://scenes/breakwater.tscn", "centre": Vector2(0.00, -1.00), "width": 108.00},
 	"nuketown":
 	{"scene": "res://scenes/nuketown.tscn", "centre": Vector2(2.00, 1.00), "width": 112.00},
 	"slamcity":

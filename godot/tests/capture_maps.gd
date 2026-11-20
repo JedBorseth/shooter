@@ -1,15 +1,17 @@
 extends SceneTree
-## Captures the Testing Area and the Zombies arena for checking set dressing and
-## atmosphere: wide views across each map, its benchmark viewpoints, and close
-## views of the dressed corners, at one preset. Needs a GPU and a display (or
-## Xvfb):
+## Captures the Testing Area, the Zombies arena, and Breakwater for checking set
+## dressing and atmosphere: wide views across each map, its benchmark
+## viewpoints, and close views of the dressed corners, at one preset.
+## Breakwater's views are taken from a free camera with the HUD hidden (eye
+## positions, including overhead plans and the menu picture), not the player.
+## Needs a GPU and a display (or Xvfb):
 ##   CAPTURE_DIR=/path/to/out CAPTURE_PRESET=medium godot --path godot \
 ##     --resolution 1920x1080 --audio-driver Dummy --script res://tests/capture_maps.gd
 ##
 ## Environment:
 ##   CAPTURE_DIR     output directory (required).
 ##   CAPTURE_PRESET  low, medium, or high (default medium).
-##   CAPTURE_ONLY    comma list of maps: testing, zombies (default: both).
+##   CAPTURE_ONLY    comma list of maps: testing, zombies, breakwater (default: all).
 ##   CAPTURE_VIEWS   optional extra views for one map, as
 ##                   "name:x,y,z,yaw,pitch[,1];name:..." (feet position,
 ##                   radians; a trailing 1 crouches).
@@ -60,6 +62,29 @@ const VIEWS := {
 			"window_close": [Vector3(-10, 0.1, -19), 0.9, -0.1],
 		},
 	},
+	"breakwater":
+	{
+		"scene": "res://scenes/breakwater.tscn",
+		"camera": true,
+		"views":
+		{
+			"overhead": [Vector3(0, 95, 0.01), 0.0, -PI / 2 + 0.001],
+			"overhead_west": [Vector3(-48, 46, 22), -2.2, -0.75],
+			"overhead_east": [Vector3(48, 46, -22), 0.95, -0.75],
+			"menu": [Vector3(-24, 9.5, 10), -0.75, -0.2],
+			"yard": [Vector3(-37, 1.65, 3), -PI / 2, -0.02],
+			"main_road": [Vector3(-27, 1.65, 1), -PI / 2 + 0.08, 0.0],
+			"rack_from_apron": [Vector3(-3, 1.65, -20), 0.2, 0.08],
+			"crossing": [Vector3(5.0, 1.65, 7.0), 0.62, 0.05],
+			"deck": [Vector3(-4.89, 5.25, 3.49), -0.95, -0.05],
+			"control_upper": [Vector3(-27, 5.45, -6), PI, -0.05],
+			"quay": [Vector3(-39, 1.65, -31), -PI / 2, 0.0],
+			"pump_house": [Vector3(-2, 1.8, -31), -PI / 2, -0.05],
+			"tank_farm": [Vector3(-36, 1.65, 22.5), -PI / 2 + 0.2, 0.02],
+			"roof_deck": [Vector3(-30, 6.0, 19), -PI / 2 - 0.4, -0.08],
+			"far_quay": [Vector3(38, 1.65, 31), PI / 2, 0.0],
+		},
+	},
 }
 
 var _out := OS.get_environment("CAPTURE_DIR")
@@ -84,13 +109,17 @@ func _run() -> void:
 	_settings = root.get_node("Settings")
 	_settings.path = "user://capture_maps_settings.cfg"
 	_settings.set_graphics_preset(Benchmark.PRESET_KEYS[preset])
-	var bench_names := {"testing": "testing", "zombies": "zombies"}
+	var bench_names := {"testing": "testing", "zombies": "zombies", "breakwater": "breakwater"}
 	for map: String in VIEWS:
 		if not _only.is_empty() and not map in _only.split(","):
 			continue
 		var spec: Dictionary = VIEWS[map]
 		await _load(spec["scene"])
 		var views: Dictionary = spec["views"].duplicate()
+		if spec.get("camera", false):
+			await _free_camera(views, map, preset)
+			_unload()
+			continue
 		var bench: Array = Benchmark.MAPS[bench_names[map]]["views"]
 		for i in bench.size():
 			views["bench_%d" % i] = bench[i]
@@ -111,6 +140,28 @@ func _run() -> void:
 	_settings.reset_to_defaults()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(_settings.path))
 	quit()
+
+
+## Views from a free camera at eye positions, with the HUD and the player
+## hidden: plans from overhead and clean pictures.
+func _free_camera(views: Dictionary, map: String, preset: String) -> void:
+	var hud := current_scene.get_node_or_null("HUD")
+	if hud != null:
+		hud.set("visible", false)
+	_player.process_mode = Node.PROCESS_MODE_DISABLED
+	_player.visible = false
+	var camera := Camera3D.new()
+	camera.fov = 75.0
+	camera.far = 900.0
+	current_scene.add_child(camera)
+	camera.make_current()
+	for name: String in views:
+		var v: Array = views[name]
+		camera.global_position = v[0]
+		camera.rotation = Vector3(v[2], v[1], 0.0)
+		for i in 30:
+			await process_frame
+		await _shot("%s_%s_%s" % [map, preset, name])
 
 
 func _extra_views() -> Array:

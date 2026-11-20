@@ -12,7 +12,7 @@ extends SceneTree
 ## Environment:
 ##   BENCH_OUT      JSON results file (optional; a table always prints).
 ##   BENCH_PRESETS  comma list of low, medium, high (default: all three).
-##   BENCH_MAPS     comma list of testing, slamcity, slamcity_closeups, zombies
+##   BENCH_MAPS     comma list of testing, slamcity, slamcity_closeups, breakwater, zombies
 ##                  (default: all).
 ##   BENCH_FRAMES   frames measured per viewpoint (default 120).
 ##   BENCH_CAPTURE  directory for a screenshot of each viewpoint (optional).
@@ -48,6 +48,19 @@ const MAPS := {
 			[Vector3(-24, 3.85, -10), -PI / 2, -0.05],
 			[Vector3(-39, 0.05, -29.5), -PI / 2, 0.0],
 			[Vector3(-31.5, 0.2, 9.5), -PI / 2 + 0.3, -0.04],
+		],
+	},
+	"breakwater":
+	{
+		"scene": "res://scenes/breakwater.tscn",
+		"views":
+		[
+			[Vector3(-37, 0.05, 3), -PI / 2, -0.02],
+			[Vector3(-16, 0.05, 2), -PI / 2 + 0.2, 0.05],
+			[Vector3(-4.89, 3.65, 3.49), -0.95, -0.05],
+			[Vector3(-27, 3.85, -6), PI, -0.05],
+			[Vector3(-39, 0.05, -31), -PI / 2, 0.0],
+			[Vector3(-36, 0.05, 22.5), -PI / 2 + 0.2, 0.02],
 		],
 	},
 	# Close-ups of the expensive cases on Slamcity (smoke filling the screen,

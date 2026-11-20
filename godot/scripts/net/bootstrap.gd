@@ -5,7 +5,7 @@ extends Node
 ##
 ##   --server [--port N] [--bots N] [--bot-skill easy|normal|hard] [--bot-damage]
 ##            [--name NAME] [--master HOST[:PORT]]
-##            [--query-port N] [--map arena|nuketown|slamcity|warehouse|zombies]
+##            [--query-port N] [--map arena|nuketown|slamcity|warehouse|breakwater|zombies]
 ##            [--mode tdm|ctf|hardpoint|dom|gungame|snd|zombies] [--kills-per-weapon N]
 ##            [--rounds N]
 ##            [--score-limit N] [--time-limit MINUTES] [--auto-start]
@@ -47,6 +47,7 @@ const MAP_SCENES := {
 	"nuketown": "res://scenes/nuketown.tscn",
 	"slamcity": "res://scenes/slamcity.tscn",
 	"warehouse": "res://scenes/warehouse.tscn",
+	"breakwater": "res://scenes/breakwater.tscn",
 	"zombies": "res://scenes/zombies_arena.tscn",
 }
 ## Names server browsers show for each map.
@@ -55,6 +56,7 @@ const MAP_NAMES := {
 	"nuketown": "Nuketown",
 	"slamcity": "Slamcity",
 	"warehouse": "Warehouse",
+	"breakwater": "Breakwater",
 	"zombies": "Zombies Arena",
 }
 const TITLE_SCENE := "res://scenes/title_screen.tscn"

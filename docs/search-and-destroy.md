@@ -64,6 +64,11 @@ Slamcity's (`CHARGE_SITES` in `tools/slamcity_layout.py`):
 - **A**: the pawn shop's back room on the north street, east of the El.
 - **B**: the ticket hall's front room on the market side.
 
+Breakwater's (`CHARGE_SITES` in `tools/breakwater_layout.py`), on Red's half:
+
+- **A**: the pump house's east room on the north route, by the export pumps.
+- **B**: Red's quay by the containers, on the south route.
+
 Each has a solid marker crate with its letter on every side
 (`gear_models.charge_site_a` and `_b`, built in Blender), which stands in
 every mode as set dressing. The defenders reach either site in about 7 s at a

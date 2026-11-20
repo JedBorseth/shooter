@@ -31,6 +31,7 @@ SKIES = {
     "range_day": "kloofendal_48d_partly_cloudy_puresky",
     "slamcity_sunset": "qwantani_late_afternoon_puresky",
     "slamcity_dusk": "kloppenheim_06_puresky",
+    "breakwater_day": "kloofendal_43d_clear_puresky",
 }
 
 
