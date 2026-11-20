@@ -63,22 +63,28 @@ var _edit_status: Label
 func _ready() -> void:
 	add_theme_constant_override("separation", 12)
 	_items = NetClient.class_items()
-	# Primaries in the order of their roles (rifles, SMG, LMG, shotgun,
-	# sniper), any others after.
-	var order := WEAPON_ROLES.keys()
-	var primaries: Array = _items.primaries
-	primaries.sort_custom(
-		func(a: Dictionary, b: Dictionary) -> bool:
-			var ia := order.find(String(a.key))
-			var ib := order.find(String(b.key))
-			return (ia if ia >= 0 else order.size()) < (ib if ib >= 0 else order.size())
-	)
+	# Weapons grouped by class in Black Ops 2's order (rifles, SMGs, LMGs,
+	# shotguns, marksman, snipers; pistols, launchers), and within a class in
+	# the order of their roles, any others after.
+	for list: Array in [_items.primaries, _items.secondaries]:
+		list.sort_custom(_weapon_before)
 	_build_level_row()
 	_build_list_page()
 	_build_edit_page()
 	show_list()
 	if client != null:
 		client.set_streaks(_usable_streaks())
+
+
+func _weapon_before(a: Dictionary, b: Dictionary) -> bool:
+	var ca := int(a.get("class_order", 0))
+	var cb := int(b.get("class_order", 0))
+	if ca != cb:
+		return ca < cb
+	var order := WEAPON_ROLES.keys()
+	var ia := order.find(String(a.key))
+	var ib := order.find(String(b.key))
+	return (ia if ia >= 0 else order.size()) < (ib if ib >= 0 else order.size())
 
 
 ## Back to the class list, the equipped class highlighted.

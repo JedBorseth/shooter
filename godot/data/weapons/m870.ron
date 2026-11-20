@@ -3,6 +3,7 @@
 // Firing (with a shell loaded) interrupts a reload.
 (
     name: "M870",
+    class: Shotgun,
     slot: Primary,
     fire_mode: Semi,
     rounds_per_minute: 600,

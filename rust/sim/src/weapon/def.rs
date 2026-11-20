@@ -84,6 +84,62 @@ pub enum FireMode {
     },
 }
 
+/// A weapon's class, as Black Ops 2's Create-a-Class groups them. Each class
+/// has a band its time to kill and handling must land in
+/// (`super::ttk::band`, checked for every weapon by `every_weapon_lands_in_its_class_band`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
+pub enum WeaponClass {
+    AssaultRifle,
+    Smg,
+    Lmg,
+    Shotgun,
+    /// Semi-automatic marksman rifles: two shots to the chest at any range.
+    Marksman,
+    Sniper,
+    Pistol,
+    Launcher,
+    /// Test and debug weapons (the laser): no band.
+    Special,
+}
+
+impl WeaponClass {
+    /// Create-a-Class order, primaries then secondaries (Black Ops 2's).
+    pub const ALL: [WeaponClass; 9] = [
+        WeaponClass::AssaultRifle,
+        WeaponClass::Smg,
+        WeaponClass::Lmg,
+        WeaponClass::Shotgun,
+        WeaponClass::Marksman,
+        WeaponClass::Sniper,
+        WeaponClass::Pistol,
+        WeaponClass::Launcher,
+        WeaponClass::Special,
+    ];
+
+    /// The class's heading in menus.
+    pub fn label(self) -> &'static str {
+        match self {
+            WeaponClass::AssaultRifle => "Assault Rifles",
+            WeaponClass::Smg => "Submachine Guns",
+            WeaponClass::Lmg => "Light Machine Guns",
+            WeaponClass::Shotgun => "Shotguns",
+            WeaponClass::Marksman => "Marksman Rifles",
+            WeaponClass::Sniper => "Sniper Rifles",
+            WeaponClass::Pistol => "Pistols",
+            WeaponClass::Launcher => "Launchers",
+            WeaponClass::Special => "Special",
+        }
+    }
+
+    /// Position in [`WeaponClass::ALL`].
+    pub fn order(self) -> usize {
+        Self::ALL
+            .iter()
+            .position(|c| *c == self)
+            .unwrap_or(Self::ALL.len())
+    }
+}
+
 /// Which loadout slot a weapon goes in. Picking one up replaces that slot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 pub enum Slot {
@@ -378,6 +434,9 @@ pub struct WeaponDef {
     #[serde(skip)]
     pub key: String,
     pub name: String,
+    /// Its class: the Create-a-Class group and the time-to-kill band it is
+    /// held to.
+    pub class: WeaponClass,
     pub slot: Slot,
     pub fire_mode: FireMode,
     pub rounds_per_minute: f32,

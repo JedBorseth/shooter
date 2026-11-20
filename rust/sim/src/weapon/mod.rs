@@ -28,7 +28,8 @@ use glam::Vec2;
 
 pub use def::{
     Attachment, Attachments, Damage, FingerFlex, FireMode, HandDef, HandsDef, LoadError, RecoilDef,
-    Reload, ScopeDef, Slot, Spread, WeaponDef, WeaponId, builtin, install, parse, parse_all, table,
+    Reload, ScopeDef, Slot, Spread, WeaponClass, WeaponDef, WeaponId, builtin, install, parse,
+    parse_all, table,
 };
 
 use crate::{equipment, fmath, rng};

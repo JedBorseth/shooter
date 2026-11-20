@@ -6,8 +6,153 @@
 //! Shotgun pellets hit in proportion to how much of a torso-sized disc their
 //! cone covers at that range.
 
-use super::def::{FireMode, WeaponDef};
+use super::def::{FireMode, WeaponClass, WeaponDef};
 use crate::hitbox::HitZone;
+
+/// What a weapon class's numbers must stay within, so each new weapon keeps
+/// its class's shape (Black Ops 2's: rifles kill in 200 to 400 ms at every
+/// range, SMGs faster up close and slower past 20 m, LMGs steady to long
+/// range and slow to handle, shotguns one or two shots up close and nothing
+/// at range, marksman rifles two shots anywhere, snipers one, pistols a
+/// sidearm's few hits). Checked against every weapon file by
+/// `every_weapon_lands_in_its_class_band`, and listed in `docs/weapons.md`.
+#[derive(Clone, Copy, Debug)]
+pub struct Band {
+    /// Chest time to kill on a 100-health player at each range: (metres,
+    /// fastest, slowest) in seconds. `f32::INFINITY` as the slowest lets the
+    /// weapon fail to kill there.
+    pub ttk: &'static [(f32, f32, f32)],
+    /// Aim-down-sights time, seconds.
+    pub ads: (f32, f32),
+    /// Sprint-out time, seconds.
+    pub sprint_out: (f32, f32),
+    /// Movement speed scale while it is in hand.
+    pub move_scale: (f32, f32),
+}
+
+/// The band `class` is held to, or `None` for one with none (test weapons).
+pub fn band(class: WeaponClass) -> Option<Band> {
+    const INF: f32 = f32::INFINITY;
+    Some(match class {
+        WeaponClass::AssaultRifle => Band {
+            ttk: &[
+                (5.0, 0.12, 0.32),
+                (10.0, 0.18, 0.40),
+                (20.0, 0.18, 0.40),
+                (30.0, 0.18, 0.40),
+                (40.0, 0.18, 0.42),
+                (50.0, 0.22, 0.45),
+                (70.0, 0.22, 0.45),
+            ],
+            ads: (0.22, 0.32),
+            sprint_out: (0.20, 0.30),
+            move_scale: (0.93, 1.0),
+        },
+        WeaponClass::Smg => Band {
+            ttk: &[
+                (5.0, 0.12, 0.22),
+                (10.0, 0.12, 0.25),
+                (15.0, 0.12, 0.30),
+                (20.0, 0.15, 0.35),
+                (30.0, 0.30, 0.60),
+                (50.0, 0.30, 0.80),
+            ],
+            ads: (0.15, 0.22),
+            sprint_out: (0.12, 0.20),
+            move_scale: (1.0, 1.05),
+        },
+        WeaponClass::Lmg => Band {
+            ttk: &[
+                (5.0, 0.22, 0.40),
+                (20.0, 0.22, 0.40),
+                (40.0, 0.22, 0.40),
+                (50.0, 0.25, 0.45),
+                (70.0, 0.25, 0.45),
+            ],
+            ads: (0.36, 0.50),
+            sprint_out: (0.32, 0.45),
+            move_scale: (0.82, 0.92),
+        },
+        WeaponClass::Shotgun => Band {
+            ttk: &[
+                (3.0, 0.0, 0.15),
+                (5.0, 0.0, 0.15),
+                (10.0, 0.0, 0.60),
+                (20.0, 0.5, INF),
+            ],
+            ads: (0.20, 0.30),
+            sprint_out: (0.18, 0.26),
+            move_scale: (0.95, 1.0),
+        },
+        WeaponClass::Marksman => Band {
+            // Never one shot to the chest (that is the sniper's).
+            ttk: &[
+                (5.0, 0.05, 0.30),
+                (20.0, 0.05, 0.30),
+                (50.0, 0.05, 0.40),
+                (70.0, 0.05, 0.40),
+            ],
+            ads: (0.30, 0.40),
+            sprint_out: (0.26, 0.36),
+            move_scale: (0.92, 0.98),
+        },
+        WeaponClass::Sniper => Band {
+            ttk: &[
+                (5.0, 0.0, 0.0),
+                (20.0, 0.0, 0.0),
+                (50.0, 0.0, 0.0),
+                (100.0, 0.0, 0.0),
+            ],
+            ads: (0.38, 0.50),
+            sprint_out: (0.32, 0.42),
+            move_scale: (0.88, 0.95),
+        },
+        WeaponClass::Pistol => Band {
+            ttk: &[(5.0, 0.08, 0.35), (15.0, 0.10, 0.45), (30.0, 0.25, 0.90)],
+            ads: (0.12, 0.20),
+            sprint_out: (0.08, 0.15),
+            move_scale: (1.0, 1.1),
+        },
+        // Explosives: no bullet time to kill; handling only.
+        WeaponClass::Launcher => Band {
+            ttk: &[],
+            ads: (0.35, 0.60),
+            sprint_out: (0.30, 0.50),
+            move_scale: (0.85, 0.95),
+        },
+        WeaponClass::Special => return None,
+    })
+}
+
+/// Every way `def` falls outside its class's band, as readable lines.
+pub fn band_misses(def: &WeaponDef) -> Vec<String> {
+    let Some(band) = band(def.class) else {
+        return Vec::new();
+    };
+    let mut misses = Vec::new();
+    for &(range, fastest, slowest) in band.ttk {
+        let t = ttk(def, range, HitZone::Chest, 100.0).unwrap_or(f32::INFINITY);
+        // A millisecond of tolerance for rounding in the fire interval.
+        if t < fastest - 1e-3 || t > slowest + 1e-3 {
+            misses.push(format!(
+                "{} at {range} m kills in {:.0} ms, outside {:.0}-{:.0} ms",
+                def.key,
+                t * 1000.0,
+                fastest * 1000.0,
+                slowest * 1000.0
+            ));
+        }
+    }
+    let mut check = |what: &str, value: f32, (low, high): (f32, f32)| {
+        if value < low - 1e-4 || value > high + 1e-4 {
+            misses.push(format!("{} {what} {value} outside {low}-{high}", def.key));
+        }
+    };
+    check("ads_time", def.ads_time, band.ads);
+    check("sprint_out_time", def.sprint_out_time, band.sprint_out);
+    check("move_scale", def.move_scale, band.move_scale);
+    misses
+}
 
 /// Radius of the disc a torso presents to a shotgun's pellet cone, in metres.
 const TORSO_RADIUS: f32 = 0.25;
@@ -140,6 +285,20 @@ mod tests {
         );
         // The sniper one-shots the chest anywhere.
         assert_eq!(at("m40", 100.0), 0.0);
+    }
+
+    /// The headless balance check: every weapon file's time to kill at each
+    /// range and its handling land in its class's band.
+    #[test]
+    fn every_weapon_lands_in_its_class_band() {
+        let mut misses = Vec::new();
+        for id in WeaponId::all() {
+            let d = id.def();
+            if d.plain() {
+                misses.extend(band_misses(d));
+            }
+        }
+        assert!(misses.is_empty(), "{}", misses.join("\n"));
     }
 
     /// Prints the table (`cargo test -p shooter-sim ttk_table -- --nocapture`).
