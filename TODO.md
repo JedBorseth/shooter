@@ -418,7 +418,7 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 - [ ] Long-term progression, Black Ops 2's ([docs/progression.md](docs/progression.md)):
   - [x] Career stats counted by the server (`rust/sim/src/stats.rs`), challenges with XP (`rust/sim/src/challenge.rs`): each weapon's camo ladder, gold, class mastery, the final camo, and career, mode, and scorestreak challenges; kept on the account (ranked servers report them) or locally.
   - [x] A challenges screen and a combat record (Career, on the title screen).
-  - [ ] Camos on the weapons (first person, third person, killcam), picked in Create-a-Class.
+  - [x] Camos on the weapons (first person, third person, killcam), picked in Create-a-Class; cosmetics (prestige, card, camos) on the wire, checked by ranked servers.
   - [ ] Prestige: 10 and Master, with emblems and permanent unlock tokens; the icon on the scoreboard and in the kill feed.
   - [ ] Calling cards, picked in the profile, on the scoreboard and the killcam card.
 - [x] Gun Game: free-for-all up a ladder of the eight weapons, with a local match button on the title screen (`rust/sim/src/gun_game.rs`).

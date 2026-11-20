@@ -387,6 +387,7 @@ func _attach_client(main: Node, target: String, options: Dictionary, token := ""
 	client.player_name = Settings.player_name
 	client.account_token = token
 	client.set_class(ClassStore.selected())
+	client.set_cosmetics(ClassStore.cosmetics())
 	client.latency_ms = float(options.get("lag", 0))
 	client.jitter_ms = float(options.get("jitter", 0))
 	client.loss_percent = float(options.get("loss", 0))

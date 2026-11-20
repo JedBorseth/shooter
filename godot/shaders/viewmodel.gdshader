@@ -8,6 +8,7 @@ render_mode cull_back, depth_draw_opaque;
 
 #include "res://shaders/viewmodel_projection.gdshaderinc"
 #include "res://shaders/viewmodel_key.gdshaderinc"
+#include "res://shaders/weapon_camo.gdshaderinc"
 
 uniform vec4 albedo : source_color = vec4(1.0);
 uniform sampler2D albedo_texture : source_color, filter_linear_mipmap_anisotropic, repeat_enable, hint_default_white;
@@ -26,6 +27,7 @@ uniform bool vertex_color_srgb = false;
 
 void vertex() {
 	POSITION = viewmodel_position(PROJECTION_MATRIX, MODELVIEW_MATRIX, VERTEX);
+	CAMO_VERTEX
 }
 
 void fragment() {
@@ -48,8 +50,13 @@ void fragment() {
 		AO = orm.r;
 		AO_LIGHT_AFFECT = 0.3;
 		occlusion = orm.r;
-		ROUGHNESS = orm.g;
-		METALLIC = orm.b;
+		vec3 painted = ALBEDO;
+		float rough = orm.g;
+		float metal = orm.b;
+		camo_apply(painted, rough, metal, glow, orm.b, NORMAL, VIEW, TIME);
+		ALBEDO = painted;
+		ROUGHNESS = rough;
+		METALLIC = metal;
 		NORMAL_MAP = texture(normal_texture, UV).rgb;
 		n = viewmodel_key_normal(NORMAL_MAP, 1.0, NORMAL, TANGENT, BINORMAL);
 	} else {

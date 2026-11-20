@@ -71,6 +71,7 @@ use shooter_sim::care_package;
 use shooter_sim::chat::{self, ChatLimiter};
 use shooter_sim::chopper::{self, Chopper};
 use shooter_sim::class::{self, Class};
+use shooter_sim::cosmetics::Cosmetics;
 use shooter_sim::ctf::{self, FlagEvent, FlagPlayer, FlagRules, FlagState, Flags};
 use shooter_sim::domination::{self, BotGoal, DominationRules, DominationState, FlagPoint};
 use shooter_sim::equipment;
@@ -489,6 +490,10 @@ struct ClientSlot {
     /// known (`accounts`).
     wanted_class: Option<Class>,
     wanted_streaks: Option<Loadout>,
+    /// The cosmetics last asked for, and what the server lets them show
+    /// (`shooter_sim::cosmetics`).
+    wanted_cosmetics: Option<Cosmetics>,
+    cosmetics: Cosmetics,
 }
 
 struct Avatar {
@@ -985,6 +990,7 @@ impl NetServer {
         // What they asked for while they waited, now that it can be checked.
         self.apply_wanted_class(index);
         self.apply_wanted_streaks(index);
+        self.apply_wanted_cosmetics(index);
         self.admit(index, &name);
     }
 
@@ -2381,6 +2387,8 @@ impl NetServer {
                     account: AccountState::None,
                     wanted_class: None,
                     wanted_streaks: None,
+                    wanted_cosmetics: None,
+                    cosmetics: Cosmetics::default(),
                 });
             }
             NetEvent::Disconnect(peer) => {
@@ -2523,7 +2531,23 @@ impl NetServer {
         // Everyone already here, then the newcomer for everyone.
         let roster: Vec<GameEvent> = self.avatars.iter().map(joined_event).collect();
         self.clients[index].outbox.extend(roster);
+        let shown: Vec<GameEvent> = self
+            .clients
+            .iter()
+            .filter(|c| c.cosmetics != Cosmetics::default())
+            .filter_map(|c| {
+                c.player.map(|id| GameEvent::Cosmetics {
+                    id,
+                    cosmetics: c.cosmetics.clone(),
+                })
+            })
+            .collect();
+        self.clients[index].outbox.extend(shown);
         self.spawn_avatar(id, false, &name, class, None);
+        if self.clients[index].cosmetics != Cosmetics::default() {
+            let cosmetics = self.clients[index].cosmetics.clone();
+            self.broadcast_event(&GameEvent::Cosmetics { id, cosmetics });
+        }
         let streaks = self.clients[index].streaks;
         if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) {
             avatar.streak_wanted = streaks;
@@ -2717,6 +2741,10 @@ impl NetServer {
                     pilot.split |= split;
                 }
             }
+            ClientMessage::Cosmetics(cosmetics) => {
+                self.clients[index].wanted_cosmetics = Some(cosmetics);
+                self.apply_wanted_cosmetics(index);
+            }
             ClientMessage::Chat { text, team } => self.relay_chat(index, &text, team),
             ClientMessage::SkipKillcam => self.skip_killcam(index),
         }
@@ -2779,6 +2807,34 @@ impl NetServer {
             && let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id)
         {
             avatar.streak_wanted = loadout;
+        }
+    }
+
+    /// Takes the cosmetics the client last asked for, as far as the server
+    /// allows them: on a server with `accounts`, once the account is known,
+    /// with its prestige and only what it has unlocked. Everyone hears of
+    /// them once the player is in.
+    fn apply_wanted_cosmetics(&mut self, index: usize) {
+        let Some(wanted) = &self.clients[index].wanted_cosmetics else {
+            return;
+        };
+        let checked = if self.accounts {
+            let Some(earned) = self.clients[index].account.earned() else {
+                return;
+            };
+            wanted.checked(Some(earned))
+        } else {
+            wanted.checked(None)
+        };
+        if checked == self.clients[index].cosmetics {
+            return;
+        }
+        self.clients[index].cosmetics = checked.clone();
+        if let Some(id) = self.clients[index].player {
+            self.broadcast_event(&GameEvent::Cosmetics {
+                id,
+                cosmetics: checked,
+            });
         }
     }
 

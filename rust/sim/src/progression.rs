@@ -37,6 +37,9 @@ use crate::weapon::{Attachment, WeaponId};
 
 /// The highest level (Black Ops 2 and 3: 55).
 pub const MAX_LEVEL: u8 = 55;
+/// Prestiges: ten, then the master's (Black Ops 2's Prestige Master), the
+/// last.
+pub const MAX_PRESTIGE: u8 = 11;
 /// The level that opens Create-a-Class (Black Ops 2 and 3: 4).
 pub const CREATE_A_CLASS_LEVEL: u8 = 4;
 

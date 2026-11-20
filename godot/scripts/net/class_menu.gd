@@ -20,6 +20,8 @@ const MenuStyle := preload("res://scripts/ui/menu_style.gd")
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 ## Each perk's icon, by key.
 const PERK_ICON := "res://assets/ui/perks/%s.svg"
+## Camo patterns, by key (`tools/build_camos.py`).
+const CAMO_DIR := "res://assets/camos/"
 
 ## A line for each primary weapon; others show only their name.
 const WEAPON_ROLES := {
@@ -295,6 +297,7 @@ func _equip(id: String) -> void:
 		var error := String(client.set_class(ClassStore.selected()))
 		if error != "":
 			push_warning("class %s refused: %s" % [id, error])
+		client.set_cosmetics(ClassStore.cosmetics())
 	_show_detail(id)
 	class_equipped.emit(id)
 
@@ -330,6 +333,17 @@ func _show_detail(id: String) -> void:
 	)
 
 
+## A weapon's detail line with its camo after the attachments.
+func _and_camo(detail: String, camo: String) -> String:
+	if camo == "none" or camo == "":
+		return detail
+	for item: Dictionary in Progression.camos():
+		if item.key == camo:
+			var name := "%s camo" % String(item.name)
+			return name if detail == "" else "%s  ·  %s" % [detail, name]
+	return detail
+
+
 ## Rows of [slot, item, detail] describing a class.
 func _describe(entry: Dictionary) -> Array:
 	var rows := []
@@ -340,7 +354,10 @@ func _describe(entry: Dictionary) -> Array:
 			[
 				"PRIMARY",
 				_weapon_name(primary) if primary != "" else "None",
-				_attachment_names(primary, entry.get("primary_attachments", [])),
+				_and_camo(
+					_attachment_names(primary, entry.get("primary_attachments", [])),
+					String(entry.get("primary_camo", "none"))
+				),
 			]
 		)
 	)
@@ -351,7 +368,10 @@ func _describe(entry: Dictionary) -> Array:
 			[
 				"SECONDARY",
 				_weapon_name(secondary) if secondary != "" else "None",
-				_attachment_names(secondary, entry.get("secondary_attachments", [])),
+				_and_camo(
+					_attachment_names(secondary, entry.get("secondary_attachments", [])),
+					String(entry.get("secondary_camo", "none"))
+				),
 			]
 		)
 	)
@@ -521,6 +541,7 @@ func _rebuild_editor() -> void:
 			_attachment_chips(primary, "primary_attachments"),
 			"Two, or three with Third Attachment. One optic."
 		)
+		_camo_section("PRIMARY CAMO", primary, "primary_camo")
 
 	var secondary := String(_draft.get("secondary", ""))
 	chips = []
@@ -554,6 +575,8 @@ func _rebuild_editor() -> void:
 	_section("SECONDARY", chips, "Any primary, with Two Primaries." if not overkill else "")
 	if secondary != "" and not _weapon(secondary).get("attachments", []).is_empty():
 		_section("SECONDARY ATTACHMENTS", _attachment_chips(secondary, "secondary_attachments"), "")
+	if secondary != "":
+		_camo_section("SECONDARY CAMO", secondary, "secondary_camo")
 
 	var lethals := int(_draft.get("lethals", 0))
 	chips = [
@@ -712,17 +735,45 @@ func _attachment_chips(weapon: String, field: String) -> Array:
 	return chips
 
 
+## The camos `weapon` has earned, as chips with their pattern, and how
+## many more its challenges hold (Career, on the title screen, lists them).
+## A camo costs no point, as in Black Ops 2.
+func _camo_section(title: String, weapon: String, field: String) -> void:
+	var chosen := String(_draft.get(field, "none"))
+	var totals := ProgressStore.totals()
+	var chips := []
+	var locked := 0
+	for camo: Dictionary in Progression.camos():
+		var key := String(camo.key)
+		if not Progression.camo_unlocked(totals, weapon, key):
+			locked += 1
+			continue
+		var icon := "" if key == "none" else CAMO_DIR + key + ".png"
+		chips.append([String(camo.name), _with_camo.bind(field, key), chosen == key, "", icon])
+	var note := "%d more from challenges." % locked if locked > 0 else "Every camo earned."
+	_section(title, chips, note)
+
+
 # Each change takes a class and returns it changed, keeping it as close to
 # valid as it can (dropping what the new choice no longer allows).
 
 
+func _with_camo(draft: Dictionary, field: String, key: String) -> Dictionary:
+	draft[field] = key
+	return draft
+
+
 func _with_primary(draft: Dictionary, key: String) -> Dictionary:
+	if String(draft.get("primary", "")) != key:
+		draft["primary_camo"] = "none"
 	draft["primary"] = key
 	draft["primary_attachments"] = _offered(key, Array(draft.get("primary_attachments", [])))
 	return draft
 
 
 func _with_secondary(draft: Dictionary, key: String) -> Dictionary:
+	if String(draft.get("secondary", "")) != key:
+		draft["secondary_camo"] = "none"
 	draft["secondary"] = key
 	draft["secondary_attachments"] = _offered(key, Array(draft.get("secondary_attachments", [])))
 	return draft

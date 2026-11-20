@@ -21,8 +21,11 @@ use super::Tick;
 use super::bits::{BitReader, BitSink, BitSource, BitWriter, DecodeError, DecodeResult};
 use super::delta::{self, DeltaReader, DeltaWriter};
 use super::subtick;
+use crate::camo::Camo;
+use crate::card::Card;
 use crate::chat;
 use crate::class::{Attachments, Class, Gun, Wildcards};
+use crate::cosmetics::{Cosmetics, MAX_CAMOS};
 use crate::domination;
 use crate::equipment;
 use crate::gun_game;
@@ -192,7 +195,9 @@ use crate::zombies::drinks::Drinks;
 // `StreakEvent::Chopper`, `ChopperTarget`, and `ChopperGone`.
 // Version 81 added Blind Eye, Cold-Blooded, and Engineer (perk sets are
 // full at sixteen bits) and `PlayerView::unmarked` (Cold-Blooded).
-pub const PROTOCOL_VERSION: u16 = 81;
+// Version 82 added cosmetics (prestige, calling card, camos):
+// `ClientMessage::Cosmetics` and `GameEvent::Cosmetics`.
+pub const PROTOCOL_VERSION: u16 = 82;
 /// Longest account session token a hello carries, in bytes.
 pub const MAX_ACCOUNT_TOKEN_BYTES: usize = 2048;
 /// Longest reason a denial carries, in bytes.
@@ -280,6 +285,9 @@ pub enum ClientMessage {
         boost: bool,
         split: bool,
     },
+    /// What we show others: prestige, calling card, and camos
+    /// (`crate::cosmetics`). Sent with the class; the server checks it.
+    Cosmetics(Cosmetics),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -470,6 +478,10 @@ pub enum GameEvent {
     /// end of the match: their stats this match (`crate::stats`), which
     /// their game adds to their career and checks challenges against.
     Stats(Stats),
+    /// To everyone, when it changes and on joining for everyone already
+    /// there: what player `id` shows (`crate::cosmetics`), as the server
+    /// allows it.
+    Cosmetics { id: u8, cosmetics: Cosmetics },
 }
 
 /// Scorestreaks' news.
@@ -1594,6 +1606,11 @@ impl ClientMessage {
                 w.bool(*boost);
                 w.bool(*split);
             }
+            ClientMessage::Cosmetics(cosmetics) => {
+                w.bits(7, TAG_BITS);
+                w.bits(3, MORE_TAG_BITS);
+                write_cosmetics(&mut w, cosmetics);
+            }
         }
         w.finish()
     }
@@ -1679,6 +1696,7 @@ impl ClientMessage {
                     boost: r.bool()?,
                     split: r.bool()?,
                 }),
+                3 => Ok(ClientMessage::Cosmetics(read_cosmetics(&mut r)?)),
                 _ => Err(DecodeError::Invalid("client message tag")),
             },
             _ => Err(DecodeError::Invalid("client message tag")),
@@ -2343,6 +2361,11 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
         GameEvent::Streak(event) => {
             w.bits(STREAK_EVENT_TAG, EVENT_TAG_BITS);
             write_streak_event(w, event);
+        }
+        GameEvent::Cosmetics { id, cosmetics } => {
+            w.bits(COSMETICS_EVENT_TAG, EVENT_TAG_BITS);
+            w.u8(*id);
+            write_cosmetics(w, cosmetics);
         }
         GameEvent::Stats(stats) => {
             w.bits(STATS_EVENT_TAG, EVENT_TAG_BITS);
@@ -3086,6 +3109,10 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
         })),
         ZOMBIES_EVENT_TAG => Ok(GameEvent::Zombies(read_zombies_event(r)?)),
         STREAK_EVENT_TAG => Ok(GameEvent::Streak(read_streak_event(r)?)),
+        COSMETICS_EVENT_TAG => Ok(GameEvent::Cosmetics {
+            id: r.u8()?,
+            cosmetics: read_cosmetics(r)?,
+        }),
         STATS_EVENT_TAG => {
             let len = r.varint()? as usize;
             if len > stats::MAX_MATCH_KEYS {
@@ -3109,6 +3136,42 @@ const STREAK_EVENT_TAG: u32 = 24;
 const STATS_EVENT_TAG: u32 = 25;
 /// Bits for a [`StreakEvent`]'s tag; room for thirty-two.
 const STREAK_TAG_BITS: u32 = 5;
+const COSMETICS_EVENT_TAG: u32 = 26;
+/// Bits for a prestige (0 to `progression::MAX_PRESTIGE`).
+const PRESTIGE_BITS: u32 = 4;
+/// Bits for a camo code (`crate::camo`).
+const CAMO_BITS: u32 = 5;
+
+fn write_cosmetics(w: &mut BitWriter, cosmetics: &Cosmetics) {
+    w.bits(u32::from(cosmetics.prestige.min(15)), PRESTIGE_BITS);
+    w.u8(cosmetics.card.0);
+    let camos = &cosmetics.camos[..cosmetics.camos.len().min(MAX_CAMOS)];
+    w.bits(camos.len() as u32, 3);
+    for (weapon, camo) in camos {
+        write_weapon(w, *weapon);
+        w.bits(u32::from(camo.0.min(31)), CAMO_BITS);
+    }
+}
+
+fn read_cosmetics(r: &mut BitReader) -> DecodeResult<Cosmetics> {
+    let prestige = r.bits(PRESTIGE_BITS)? as u8;
+    let card = Card::from_code(r.u8()?).ok_or(DecodeError::Invalid("card"))?;
+    let count = r.bits(3)? as usize;
+    if count > MAX_CAMOS {
+        return Err(DecodeError::Invalid("camo count"));
+    }
+    let mut camos = Vec::with_capacity(count);
+    for _ in 0..count {
+        let weapon = read_weapon(r)?;
+        let camo = Camo::from_code(r.bits(CAMO_BITS)? as u8).ok_or(DecodeError::Invalid("camo"))?;
+        camos.push((weapon, camo));
+    }
+    Ok(Cosmetics {
+        prestige,
+        card,
+        camos,
+    })
+}
 /// Most streaks one [`StreakEvent::State`] lists, and airborne streaks one
 /// [`StreakEvent::Sky`] does.
 const MAX_HELD_STREAKS: usize = streak::MAX_HELD;
@@ -5987,6 +6050,14 @@ mod tests {
                 headshot: false,
                 cause: KillCause::Equipment(equipment::Kind::Frag),
             },
+            GameEvent::Cosmetics {
+                id: 201,
+                cosmetics: Cosmetics {
+                    prestige: 3,
+                    card: Card(2),
+                    camos: vec![(WeaponId::expect("ak47"), Camo::FINAL)],
+                },
+            },
             GameEvent::Stats(
                 [("kills", 12), ("w.m4.hs", 3), ("time", 600)]
                     .into_iter()
@@ -6523,6 +6594,14 @@ mod tests {
             }),
             ClientMessage::Class(Class::default()),
             ClientMessage::SkipKillcam,
+            ClientMessage::Cosmetics(Cosmetics {
+                prestige: 11,
+                card: Card(5),
+                camos: vec![
+                    (WeaponId::expect("m4"), Camo::GOLD),
+                    (WeaponId::expect("pdw9"), Camo(3)),
+                ],
+            }),
             ClientMessage::Streaks(streak::Loadout::default()),
             ClientMessage::Streaks(streak::Loadout([None, Some(Streak::CounterUav), None])),
             ClientMessage::UseStreak {
