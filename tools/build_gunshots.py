@@ -118,6 +118,12 @@ CS_AK = (
     ),
 )
 
+# Counter-Strike 2's SG 553, measured from in-game clips, for the KR-12.
+CS_SG553 = (
+    "cs",
+    (("91O9A0zfjWo.wav", 15.9, 17.9), ("w77gevi-Vic.wav", 4.3, 5.4), ("w77gevi-Vic.wav", 12.9, 13.9)),
+)
+
 RECIPES = {
     "ak47": Recipe(
         sessions=(("C_25", "C_45", "C_39"), ("C_28", "C_48", "C_42")),
@@ -158,6 +164,45 @@ RECIPES = {
             -4.1,
         ),
         reference=CS_AK,
+    ),
+    # The KR-12: the Arisaka (.30-06 class), near and behind the shooter,
+    # matched to Counter-Strike 2's SG 553. Held for listening (variant A).
+    "kr12": Recipe(
+        sessions=(("E_22", "E_20"), ("E_25", "E_23")),
+        weights=(0.0, -3.0),
+        wet_db=0.0, dense=1.6, drive=3.5, shave_db=13.0, seconds=1.2,
+        room=Room(t60_low=0.7, t60_high=0.55),
+        eq=(
+            1.5,
+            3.0,
+            3.0,
+            3.0,
+            12.0,
+            6.3,
+            -3.3,
+            -4.9,
+            -7.9,
+            -14.6,
+            -15.0,
+            -15.0,
+            -15.0,
+            -15.0,
+            -14.9,
+            -5.2,
+            0.0,
+            3.8,
+            6.7,
+            7.2,
+            12.0,
+            12.0,
+            12.0,
+            12.0,
+            12.0,
+            12.0,
+            12.0,
+        ),
+        reference=CS_SG553,
+        lufs=-20.0,
     ),
 }
 
