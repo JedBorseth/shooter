@@ -134,6 +134,12 @@ impl Streak {
         matches!(self, Streak::CarePackage | Streak::Airstrike)
     }
 
+    /// Whether it flies: what shooting one down counts toward the
+    /// "aircraft" career stat (a Sentry Gun stands on the ground).
+    pub fn is_aircraft(self) -> bool {
+        matches!(self, Streak::Uav | Streak::CounterUav)
+    }
+
     /// Whether it can be earned and called in on a map, `roofed` or not.
     pub fn usable(self, roofed: bool) -> bool {
         !(roofed && self.needs_open_sky())
