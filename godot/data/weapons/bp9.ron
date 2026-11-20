@@ -1,0 +1,54 @@
+// BP-9 burst pistol: three rounds a pull at 1150 rpm, one burst kills to
+// about 11 m, two beyond. Black Ops 2's B23R: a three-round burst at about
+// 1145 rpm within it and about 700 overall, a kill in one burst up close.
+(
+    name: "BP-9",
+    class: Pistol,
+    slot: Secondary,
+    fire_mode: Burst(rounds: 3, delay: 0.12),
+    rounds_per_minute: 1150,
+    magazine: 30,
+    reserve: 90,
+    damage: (near: 35, far: 22, falloff_start: 9, falloff_end: 25, headshot: 1.3),
+    range: 150,
+    penetration: 0.1,
+    reload: Magazine(time: 1.7, empty_time: 2.1, mag_in: Some(1.05)),
+    ads_time: 0.17,
+    sprint_out_time: 0.12,
+    raise_time: 0.32,
+    // First raise: Black Ops 2's for the class, scaled to our quicker draws.
+    first_raise_time: 0.85,
+    lower_time: 0.22,
+    spread: (hip: 2.2, hip_moving: 3.2, air: 5.0, ads: 0.08, bloom: 0.35, bloom_max: 2.0, ads_sway: 0.14),
+    ads_fov_scale: 0.9,
+    ads_move_scale: 0.75,
+    move_scale: 1.05,
+    // Each burst climbs: the third round kicks most, then it settles in the
+    // pause before the next.
+    recoil: (
+        pattern: [
+            (0.3, 0.05), (0.42, 0.12), (0.5, -0.06),
+            (0.5, 0.1), (0.52, 0.14), (0.52, -0.08),
+        ],
+        jitter: (0.06, 0.14),
+        ads_scale: 0.75,
+        kick_return: 0.55,
+        recovery_delay: 0.03,
+        recovery_rate: 18.0,
+    ),
+    tracer_every: 0,
+    attachments: [RedDot, Suppressor, ExtendedMag],
+    // The player level that unlocks it (Create-a-Class, docs/create-a-class.md).
+    unlock_level: 13,
+    // Hands on the model: GripRight and GripLeft in bp9_view.tscn.
+    grips: Some((right: (0, -0.1505, 0.04), left: (0, -0.1255, -0.123), rake: 20)),
+    // Finger poses fitted to the model by tests/bake_hand_poses.gd:
+    // curl in degrees per joint (index, middle, ring, little, thumb), each
+    // finger's spread, and the hand's seat off its marker (m). Re-run it
+    // after moving the grips or changing the model.
+    hands: Some((
+        right: (fingers: ((6.5, 63, 65), (16, 79, 49), (12, 75.5, 45.5), (80, 80, 45), (-7.5, 4.5, 4)), spread: Some((-4, 0.5, 3, 7, 35.5)), seat: (0, 0, 0)),
+        index_off: (4, 6, 4),
+        left: (fingers: ((64, 96.5, 58), (62.5, 64.5, 60.5), (72, 74.5, 60.5), (81, 80, 51), (35.5, 51.5, 33)), spread: Some((2, 3, 5, 7.5, 45)), seat: (-0.005, 0, -0.01)),
+    )),
+)

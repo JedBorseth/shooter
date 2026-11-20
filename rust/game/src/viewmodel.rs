@@ -286,6 +286,15 @@ impl KickFeel {
                 aim_roll: 0.8,
                 zeta: 0.6,
             },
+            // A burst's three rounds stack up and the pause lets it fall back.
+            "bp9" => Self {
+                hip_lift: 1.8,
+                aim_lift: 0.6,
+                aim_yaw: 0.16,
+                aim_roll: 0.75,
+                zeta: 0.65,
+                ..rifle
+            },
             "m1911" => Self {
                 hip_lift: 2.4,
                 aim_lift: 0.85,

@@ -13,6 +13,7 @@ const WEAPONS := {
 	"ak47": "ak47",
 	"pdw9": "pdw9",
 	"cq10": "cq10",
+	"bp9": "bp9",
 	"br3": "br3",
 	"lsw6": "lsw6",
 	"m870": "m870",

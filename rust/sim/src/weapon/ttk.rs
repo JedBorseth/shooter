@@ -291,6 +291,14 @@ mod tests {
             shots_to_kill(def("m870"), 12.0, HitZone::Chest, 100.0),
             Some(2)
         );
+        // The burst pistol kills in one burst to about 11 m, and out-kills
+        // the M1911 everywhere it reaches but is a sidearm past 20 m.
+        assert_eq!(
+            shots_to_kill(def("bp9"), 9.0, HitZone::Chest, 100.0),
+            Some(3)
+        );
+        assert!(at("bp9", 5.0) < at("m1911", 5.0));
+        assert!(at("bp9", 30.0) > at("m4", 30.0));
         // The sniper one-shots the chest anywhere.
         assert_eq!(at("m40", 100.0), 0.0);
     }
