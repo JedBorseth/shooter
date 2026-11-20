@@ -35,6 +35,7 @@ from events placed modulo the loop length, so it repeats without a seam:
     uv run tools/build_world_audio.py bullets
     uv run tools/build_world_audio.py player
     uv run tools/build_world_audio.py stings
+    uv run tools/build_world_audio.py mode-stings
 
 ``bullets`` synthesizes what a passing or landing round sounds like, seeded:
 supersonic cracks (an N-wave shock and its reflections), subsonic whizzes (a
@@ -1007,6 +1008,10 @@ def sting(kind: str) -> np.ndarray:
         "round_loss": 2.2,
         "time_warning": 1.1,
         "hardpoint_call": 0.7,
+        "weapon_up": 0.9,
+        "set_back": 1.0,
+        "halftime": 1.9,
+        "overtime": 2.1,
     }[kind]
     n = int(seconds * RATE)
     t = np.arange(n) / RATE
@@ -1058,10 +1063,43 @@ def sting(kind: str) -> np.ndarray:
             chirp = np.sin(2 * np.pi * f * t) * gate * np.exp(-t / 0.08)
             at(chirp, 0.11 * k, 0.5)
         at(bandpass(np.random.default_rng(3).standard_normal(n), 1_000, 4_000) * np.exp(-t / 0.01), 0.0, 0.2)
+    elif kind == "weapon_up":
+        # Gun Game's new weapon: a bolt-like click, then two quick bright
+        # brass stabs stepping up a fourth, over a tight drum.
+        click = bandpass(np.random.default_rng(11).standard_normal(n), 2_000, 7_000) * np.exp(-t / 0.006)
+        at(click, 0.0, 0.5)
+        at(click, 0.045, 0.35)
+        at(drum_hit(t, 70, 0.18), 0.06, 0.6)
+        at(brass(t, [146.8, 220.0, 293.7], 0.03, 0.12, 4_000), 0.06, 0.4)
+        at(brass(t, [196.0, 293.7, 392.0], 0.03, 0.25, 4_500), 0.2, 0.42)
+    elif kind == "set_back":
+        # Set back a weapon: a dull thud and two dark stabs stepping down.
+        at(drum_hit(t, 48, 0.35), 0.0, 0.8)
+        at(brass(t, [98.0, 146.8, 185.0], 0.03, 0.15, 1_400), 0.0, 0.4)
+        at(brass(t, [73.4, 110.0, 138.6], 0.04, 0.35, 1_100), 0.22, 0.42)
+    elif kind == "halftime":
+        # Halftime: two drum hits under a held open fifth, neither won nor
+        # lost.
+        at(drum_hit(t, 52, 0.45), 0.0)
+        at(brass(t, [73.4, 110.0, 146.8, 220.0], 0.2, 0.9, 2_600), 0.0, 0.38)
+        at(drum_hit(t, 49, 0.5), 0.55, 0.85)
+        at(modal(np.random.default_rng(5), n, [587, 880, 1_318], 0.6), 0.55, 0.1)
+    elif kind == "overtime":
+        # Overtime: a riser into a hard double hit and a tense brass cluster
+        # (a minor second on top), with the time warning's pulse under it.
+        at(riser(t, 0.6), 0.0, 0.35)
+        at(drum_hit(t, 55, 0.4), 0.6)
+        at(drum_hit(t, 55, 0.4), 0.78, 0.9)
+        at(brass(t, [73.4, 146.8, 220.0, 233.1], 0.15, 0.8, 3_000), 0.6, 0.38)
+        for k in range(3):
+            gate = np.clip(np.minimum(t / 0.004, (0.1 - t) / 0.01), 0, 1)
+            at(np.sin(2 * np.pi * 1_320 * t) * gate, 1.1 + 0.22 * k, 0.18)
     fade = int(0.08 * RATE)
     x[-fade:] *= np.linspace(1, 0, fade)
     stereo = np.stack([x, np.roll(x, int(0.0007 * RATE))], axis=1)
-    return normalized(stereo, 0.8)
+    # Gun Game's new-weapon sting plays every couple of kills: it sits a
+    # couple of dB under the round stings.
+    return normalized(stereo, 0.6 if kind == "weapon_up" else 0.8)
 
 
 def gust(rng: np.random.Generator) -> np.ndarray:
@@ -1137,6 +1175,15 @@ def stings_and_world() -> None:
         print(f"  audio/ambience/{name}: {takes}")
 
 
+def mode_stings() -> None:
+    """Gun Game's new-weapon and set-back stings, and the halftime and
+    overtime stings, in audio/ui/ (only these, so the older stings are not
+    rewritten)."""
+    for kind in ("weapon_up", "set_back", "halftime", "overtime"):
+        write_ogg(UI / f"{kind}.ogg", sting(kind))
+    print("  audio/ui: mode stings")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -1151,6 +1198,7 @@ def main() -> None:
     sub.add_parser("bullets", help="bullet cracks, whizzes, ricochets, and layered impacts")
     sub.add_parser("player", help="hit and kill markers, health, breath, and body sounds")
     sub.add_parser("stings", help="match stings and world one-shots")
+    sub.add_parser("mode-stings", help="Gun Game, halftime, and overtime stings")
     args = parser.parse_args()
     if args.command == "footsteps":
         footsteps(args.kenney)
@@ -1160,6 +1208,8 @@ def main() -> None:
         player()
     elif args.command == "stings":
         stings_and_world()
+    elif args.command == "mode-stings":
+        mode_stings()
     else:
         ambience()
 
