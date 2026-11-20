@@ -9,9 +9,11 @@ extends SceneTree
 ## - hits on zombies pay 10 points, a headshot kill 100, and kills count down
 ##   the round;
 ## - a door costs its price and opens; holding use at a torn window puts a
-##   board back every 0.6 s for 10 points; power-ups are picked up by walking
-##   over them: Double Points doubles points for 30 s, Insta-Kill kills with
-##   any hit, and the Nuke kills everything and pays 400;
+##   board back at once and another each second, for 10 points each;
+##   power-ups are picked up by walking over them: the Carpenter boards every
+##   window back up and pays 200, Double Points doubles points for 30 s,
+##   Insta-Kill kills with any hit, and the Nuke kills everything and pays
+##   400;
 ## - zombies walk in to the player and two swings put them down, which ends
 ##   the game for a lone player;
 ## - after the results a new game starts: round 1, 500 points, full windows.
@@ -117,16 +119,36 @@ func _economy() -> void:
 		if _server.window_boards(i) < 6:
 			window = i
 	if window >= 0:
-		var boards := _server.window_boards(window)
+		_server.debug_set_boards(window, 0)
 		points = _server.player_points(BOT)
-		for i in int(0.65 * Engine.physics_ticks_per_second):
-			_server.debug_use(BOT, "window", window, i == 0)
+		_server.debug_use(BOT, "window", window, true)
+		await physics_frame
+		_check(_server.window_boards(window) == 1, "the first board goes up at once")
+		for i in int(1.05 * Engine.physics_ticks_per_second):
+			_server.debug_use(BOT, "window", window, false)
 			await physics_frame
 		_check(
-			_server.window_boards(window) >= boards + 1,
-			"holding use puts a board back (%d -> %d)" % [boards, _server.window_boards(window)]
+			_server.window_boards(window) == 2,
+			(
+				"holding use puts another board back a second later (%d)"
+				% _server.window_boards(window)
+			)
 		)
-		_check(_server.player_points(BOT) > points, "a board pays")
+		_check(_server.player_points(BOT) == points + 20, "each board pays 10")
+
+	# The Carpenter: every window whole again, then 200 points each.
+	for i in _server.window_count():
+		_server.debug_set_boards(i, i % 3)
+	points = _server.player_points(BOT)
+	_server.debug_drop_power_up("carpenter", _server.player_position(BOT))
+	_check(
+		await _wait_for(func() -> bool: return _all_boarded(), 8.0),
+		"the Carpenter boards every window back up"
+	)
+	_check(
+		await _wait_for(func() -> bool: return _server.player_points(BOT) >= points + 200, 1.0),
+		"the Carpenter pays 200 (%d)" % (_server.player_points(BOT) - points)
+	)
 
 	var feet := _server.player_position(BOT)
 	_server.debug_drop_power_up("double_points", feet)
@@ -247,6 +269,13 @@ func _someone_down() -> bool:
 func _seconds(seconds: float) -> void:
 	for _i in int(seconds * Engine.physics_ticks_per_second):
 		await physics_frame
+
+
+func _all_boarded() -> bool:
+	for i in _server.window_count():
+		if _server.window_boards(i) < 6:
+			return false
+	return true
 
 
 func _board_torn() -> bool:

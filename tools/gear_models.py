@@ -391,6 +391,30 @@ def powerup_x2(b: Model):
     b.text("x2", 0.0, -0.17, -0.04, 0.0, 0.48, "powerup_glow", depth=0.08, detail=False)
 
 
+@model
+def powerup_tote(b: Model):
+    """The Carpenter: a carpenter's open tote, 0.5 m long, with a dowel handle
+    along its length and a hand saw standing in it, centred on its origin."""
+    # Sloped ends and low sides, so the saw and the handle read from any side.
+    b.hull([(x * s, y, z) for x, s in ((-0.25, 1.0), (0.25, 1.0)) for y in (-0.12, 0.0) for z in (-0.12, 0.12)]
+           + [(x, 0.2, 0.0) for x in (-0.24, 0.24)], "powerup_glow")
+    for z in (-0.124, 0.124):
+        b.box(-0.24, 0.24, -0.005, 0.005, z - 0.002, z + 0.002, "trim_black")
+        for x in (-0.12, 0.0, 0.12):
+            b.box(x - 0.012, x + 0.012, -0.11, -0.02, z - 0.003, z + 0.003, "trim_black")
+    b.cyl("x", -0.27, 0.27, (0.24, 0.0), 0.022, "powerup_glow", sides=10)
+    # The saw: a tapered blade with its teeth dark, and a closed grip.
+    b.hull([(-0.2, 0.02, z) for z in (-0.06, -0.05)] + [(0.08, 0.02, z) for z in (-0.06, -0.05)]
+           + [(-0.2, 0.17, z) for z in (-0.06, -0.05)] + [(0.08, 0.3, z) for z in (-0.06, -0.05)], "powerup_glow")
+    for k in range(9):
+        x = -0.19 + k * 0.03
+        b.hull([(x, 0.17 + (x + 0.2) * 0.46, z) for z in (-0.061, -0.049)]
+               + [(x + 0.015, 0.19 + (x + 0.2) * 0.46, z) for z in (-0.061, -0.049)]
+               + [(x + 0.03, 0.17 + (x + 0.23) * 0.46, z) for z in (-0.061, -0.049)], "trim_black")
+    b.tube([(0.08, 0.06, -0.055), (0.17, 0.08, -0.055), (0.17, 0.27, -0.055), (0.08, 0.3, -0.055)], 0.018,
+           "powerup_glow", sides=6, detail=False)
+
+
 # --- Capture the Flag ------------------------------------------------------------------
 @model
 def flag_pole(b: Model):

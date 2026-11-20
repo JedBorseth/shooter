@@ -197,7 +197,8 @@ use crate::zombies::drinks::Drinks;
 // full at sixteen bits) and `PlayerView::unmarked` (Cold-Blooded).
 // Version 82 added cosmetics (prestige, calling card, camos):
 // `ClientMessage::Cosmetics` and `GameEvent::Cosmetics`.
-pub const PROTOCOL_VERSION: u16 = 82;
+// Version 83 added the Carpenter power-up (power-up kinds take 3 bits).
+pub const PROTOCOL_VERSION: u16 = 83;
 /// Longest account session token a hello carries, in bytes.
 pub const MAX_ACCOUNT_TOKEN_BYTES: usize = 2048;
 /// Longest reason a denial carries, in bytes.
@@ -2427,6 +2428,9 @@ fn read_option_team(r: &mut BitReader) -> DecodeResult<Option<Team>> {
 const ZOMBIES_EVENT_TAG: u32 = 31;
 /// Bits for a [`ZombiesEvent`]'s own tag.
 const ZOMBIES_TAG_BITS: u32 = 5;
+/// Bits for a power-up's kind.
+const POWER_UP_BITS: u32 = 3;
+const _: () = assert!(crate::zombies::PowerUp::ALL.len() <= 1 << POWER_UP_BITS);
 
 fn write_zombies_event(w: &mut BitWriter, event: &ZombiesEvent) {
     match *event {
@@ -2479,7 +2483,7 @@ fn write_zombies_event(w: &mut BitWriter, event: &ZombiesEvent) {
         ZombiesEvent::PowerUpDropped { id, kind, at } => {
             w.bits(5, ZOMBIES_TAG_BITS);
             w.u8(id);
-            w.bits(kind.code(), 2);
+            w.bits(kind.code(), POWER_UP_BITS);
             write_vec3(w, at);
         }
         ZombiesEvent::PowerUpGone { id, by } => {
@@ -2615,7 +2619,7 @@ fn read_zombies_event(r: &mut BitReader) -> DecodeResult<ZombiesEvent> {
         },
         5 => ZombiesEvent::PowerUpDropped {
             id: r.u8()?,
-            kind: crate::zombies::PowerUp::from_code(r.bits(2)?)
+            kind: crate::zombies::PowerUp::from_code(r.bits(POWER_UP_BITS)?)
                 .ok_or(DecodeError::Invalid("power-up"))?,
             at: read_finite_vec3(r)?,
         },
@@ -6727,7 +6731,7 @@ mod tests {
             }),
             GameEvent::Zombies(ZombiesEvent::PowerUpDropped {
                 id: 4,
-                kind: crate::zombies::PowerUp::Nuke,
+                kind: crate::zombies::PowerUp::Carpenter,
                 at: Vec3::new(1.0, 0.0, -3.5),
             }),
             GameEvent::Zombies(ZombiesEvent::PowerUpGone { id: 4, by: Some(2) }),

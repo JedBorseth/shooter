@@ -15,6 +15,7 @@ pub mod drinks;
 pub mod forge;
 pub mod laststand;
 pub mod mystery;
+pub mod powerups;
 
 /// Tuning for a Zombies match.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -300,29 +301,62 @@ pub enum PowerUp {
     DoublePoints,
     /// Kills every zombie in play and pays [`NUKE_POINTS`].
     Nuke,
+    /// Puts every board back on every window, nearest first, then pays
+    /// every player [`powerups::CARPENTER_POINTS`].
+    Carpenter,
 }
 
 /// Seconds Insta-Kill and Double Points last.
 pub const POWER_UP_SECONDS: f32 = 30.0;
 /// Seconds a dropped power-up waits to be picked up.
-pub const POWER_UP_LIFETIME: f32 = 30.0;
+pub const POWER_UP_LIFETIME: f32 = powerups::LIFETIME;
 /// A player picks up a dropped power-up within this many metres (flat) of it.
 pub const PICKUP_RADIUS: f32 = 1.6;
 /// Points each board put back on a window pays (Black Ops: 10).
 pub const REBUILD_POINTS: u32 = 10;
-/// Most points rebuilding pays one player in a round.
-pub const MAX_REBUILD_POINTS: u32 = 300;
-/// Seconds per board while the use button is held at a window.
-pub const REBUILD_SECONDS: f32 = 0.6;
+/// Seconds between boards while the use button is held at a window: the
+/// first goes up at once, then one a second (Black Ops III's
+/// `do_post_chunk_repair_delay`, `wait(1)`).
+pub const REBUILD_SECONDS: f32 = 1.0;
+
+/// Points rebuilding can pay one player in `round`: 50 a round, at most 500
+/// (`rebuild_barrier_cap_per_round`).
+pub fn rebuild_cap(round: u32) -> u32 {
+    (50 * round).min(500)
+}
+
+/// What the next board pays a player who has been paid `rebuilt` for
+/// rebuilding this round. Black Ops adds the board to the running total
+/// first and pays only while that stays under the cap
+/// (`handle_post_board_repair_rewards`), so the board that reaches it is
+/// not paid.
+pub fn rebuild_pay(round: u32, rebuilt: u32) -> u32 {
+    if rebuilt + REBUILD_POINTS < rebuild_cap(round) {
+        REBUILD_POINTS
+    } else {
+        0
+    }
+}
 /// Points a Nuke pays (the zombies it kills pay nothing themselves).
 pub const NUKE_POINTS: u32 = 400;
 /// Most power-ups that drop in one round.
-pub const MAX_DROPS_PER_ROUND: u32 = 4;
-/// Chance that a kill drops a power-up, while the round has drops left.
+pub const MAX_DROPS_PER_ROUND: u32 = powerups::MAX_DROPS_PER_ROUND;
+/// Chance that a kill drops a power-up in the offline game
+/// ([`power_up_drop`]), while the round has drops left. Online games use
+/// Black Ops' drop cycle ([`powerups::DropCycle`]).
 pub const DROP_CHANCE: f32 = 0.035;
 
 impl PowerUp {
-    pub const ALL: [PowerUp; 4] = [
+    pub const ALL: [PowerUp; 5] = [
+        PowerUp::MaxAmmo,
+        PowerUp::InstaKill,
+        PowerUp::DoublePoints,
+        PowerUp::Nuke,
+        PowerUp::Carpenter,
+    ];
+
+    /// The kinds the offline game drops.
+    pub const OFFLINE: [PowerUp; 4] = [
         PowerUp::MaxAmmo,
         PowerUp::InstaKill,
         PowerUp::DoublePoints,
@@ -345,6 +379,7 @@ impl PowerUp {
             PowerUp::InstaKill => "INSTA-KILL",
             PowerUp::DoublePoints => "DOUBLE POINTS",
             PowerUp::Nuke => "KABOOM",
+            PowerUp::Carpenter => "CARPENTER",
         }
     }
 
@@ -355,6 +390,7 @@ impl PowerUp {
             PowerUp::InstaKill => "insta_kill",
             PowerUp::DoublePoints => "double_points",
             PowerUp::Nuke => "nuke",
+            PowerUp::Carpenter => "carpenter",
         }
     }
 
@@ -375,8 +411,8 @@ pub fn power_up_drop(round: u32, kill: u32, dropped: u32) -> Option<PowerUp> {
     if dropped >= MAX_DROPS_PER_ROUND || rng::unit(round.wrapping_mul(7919), kill) >= DROP_CHANCE {
         return None;
     }
-    let pick = rng::hash(round, kill.wrapping_add(31)) as usize % PowerUp::ALL.len();
-    Some(PowerUp::ALL[pick])
+    let pick = rng::hash(round, kill.wrapping_add(31)) as usize % PowerUp::OFFLINE.len();
+    Some(PowerUp::OFFLINE[pick])
 }
 
 /// Where a round is.
@@ -516,7 +552,7 @@ mod power_up_tests {
         }
         // About 3.5% of some 6,000 kills, capped per round.
         assert!((100..=220).contains(&total), "{total} drops");
-        assert_eq!(kinds.len(), 4);
+        assert_eq!(kinds.len(), PowerUp::OFFLINE.len());
         assert_eq!(power_up_drop(3, 5, 1), power_up_drop(3, 5, 1));
     }
 
@@ -540,6 +576,21 @@ mod tests {
         assert_eq!(respawn_points(9, 4000), 4000);
         assert_eq!(pickup_cost(1200, false), 1200);
         assert_eq!(pickup_cost(1200, true), 600);
+    }
+
+    #[test]
+    fn rebuilding_pays_up_to_fifty_a_round_capped_at_500() {
+        assert_eq!(rebuild_cap(1), 50);
+        assert_eq!(rebuild_cap(10), 500);
+        assert_eq!(rebuild_cap(30), 500);
+        // Round 1: four boards are paid, the fifth reaches the cap.
+        let mut paid = 0;
+        for _ in 0..10 {
+            paid += rebuild_pay(1, paid);
+        }
+        assert_eq!(paid, 40);
+        assert_eq!(rebuild_pay(12, 480), 10);
+        assert_eq!(rebuild_pay(12, 490), 0);
     }
 
     #[test]
