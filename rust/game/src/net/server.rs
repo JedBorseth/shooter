@@ -4847,6 +4847,27 @@ impl NetServer {
         for (id, owner) in struck {
             self.hurt_aircraft(id, streak::AIRCRAFT_HEALTH + 1.0, owner, u32::MAX);
         }
+        // And on enemy Guided Missiles, which a rocket sets off.
+        let missiles = &self.missiles;
+        let struck = self.grenades.strike_aircraft(TICK_DT, |owner, from, to| {
+            let side = sides.iter().find(|(id, _)| *id == owner)?.1;
+            missiles
+                .iter()
+                .filter(|f| !f.exploded && f.missile.side != side)
+                .filter_map(|f| {
+                    let t = streak::segment_meets_sphere(
+                        from,
+                        to,
+                        f.missile.position,
+                        equipment::ROCKET_AIRCRAFT_RADIUS,
+                    )?;
+                    Some((f.missile.id, t))
+                })
+                .min_by(|a, b| a.1.total_cmp(&b.1))
+        });
+        for (id, owner) in struck {
+            self.shoot_down_missile(id, owner, u32::MAX);
+        }
         // And on enemy Attack Choppers, any of which one rocket downs.
         let choppers = &self.choppers;
         let struck = self.grenades.strike_aircraft(TICK_DT, |owner, from, to| {
@@ -5363,6 +5384,24 @@ impl NetServer {
         }
         for (id, damage) in chopper_hits {
             self.hurt_chopper(id, damage, shot.shooter, shot.shot);
+        }
+        // Enemy Guided Missiles: any hit sets one off (Black Ops 2), checked
+        // where the shooter saw it.
+        let back = (f64::from(self.tick) - rewind).max(0.0) as f32;
+        let missile_hit = pellets.iter().find_map(|pellet| {
+            let to = pellet.origin + pellet.direction * pellet.max_distance.min(def.range);
+            self.missiles
+                .iter()
+                .filter(|f| !f.exploded && f.missile.side != shooter_side)
+                .find(|f| {
+                    let at = f.missile.back(back);
+                    streak::segment_meets_sphere(pellet.origin, to, at, missile::HIT_RADIUS)
+                        .is_some()
+                })
+                .map(|f| f.missile.id)
+        });
+        if let Some(id) = missile_hit {
+            self.shoot_down_missile(id, shot.shooter, shot.shot);
         }
         // Enemy Sentry Guns: a pellet that meets one short of a wall.
         let mut turret_hits: Vec<(u16, f32)> = Vec::new();
@@ -7906,6 +7945,66 @@ impl NetServer {
                 && !piloted.contains(&f.missile.id)
                 && !bomblets_out.contains(&f.missile.id))
         });
+    }
+
+    /// Player `by` hit Guided Missile `id`: it goes off where it is (Black
+    /// Ops 2's `handledamage` detonates it on any damage), its pilot's view
+    /// comes back half a second later, and `by` scores for it.
+    fn shoot_down_missile(&mut self, id: u16, by: u8, shot: u32) {
+        let tick = self.tick;
+        let Some(flight) = self
+            .missiles
+            .iter_mut()
+            .find(|f| f.missile.id == id && !f.exploded)
+        else {
+            return;
+        };
+        flight.exploded = true;
+        if flight.pilot_until.is_none() {
+            flight.pilot_until = Some(tick + streak::seconds_to_ticks(MISSILE_CAMERA_AFTER_BLAST));
+        }
+        let m = flight.missile;
+        godot_print!(
+            "server: player {by} shot down player {}'s Guided Missile",
+            m.owner
+        );
+        self.send_event(
+            by,
+            GameEvent::Hit {
+                victim: u8::MAX,
+                shot,
+                damage: 1.0,
+                headshot: false,
+                killed: false,
+            },
+        );
+        self.broadcast_event(&GameEvent::Streak(StreakEvent::MissileBlast {
+            at: m.position,
+            bomblet: false,
+        }));
+        let blast = PropExplosion {
+            position: m.position,
+            radius: missile::BLAST_RADIUS,
+            damage: missile::BLAST_DAMAGE,
+            outer_damage: missile::BLAST_OUTER_DAMAGE,
+            attacker: Some(m.owner),
+            weapon: None,
+        };
+        self.streak_blast(&blast, Streak::GuidedMissile);
+        if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == by) {
+            let scored = avatar.score.award(
+                Award::ShotDown(Streak::GuidedMissile),
+                missile::SHOT_DOWN_POINTS,
+            );
+            let totals = avatar.score.totals();
+            self.send_event(
+                by,
+                GameEvent::Score {
+                    awards: vec![scored],
+                    totals,
+                },
+            );
+        }
     }
 
     /// Where the move `from` to `to` first meets the map or the body of

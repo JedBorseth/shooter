@@ -5,8 +5,8 @@ extends SceneTree
 ## that its caller flies; steered onto the enemy and split, its cluster
 ## kills them (the kill is the Guided Missile's) and the pilot's view comes
 ## back; flown straight in unsplit, the missile itself kills; and one held
-## level runs out of time in the air after ten seconds; and a bot flies
-## its own and splits it (Black Ops 2's Hellstorm).
+## level runs out of time in the air after ten seconds; an enemy shoots one
+## down; and a bot flies its own and splits it (Black Ops 2's Hellstorm).
 ## godot --headless --path godot --script res://tests/guided_missile_test.gd
 
 const BOTS := 2
@@ -117,6 +117,31 @@ func _run() -> void:
 		await physics_frame
 	var seconds := flown / float(Engine.physics_ticks_per_second)
 	_check(seconds > 9.5 and seconds < 10.5, "it goes off after ten seconds: %.2f s" % seconds)
+
+	# The enemy under it shoots it down: any hit sets it off (Black Ops 2).
+	await _wait_for(func() -> bool: return not _server.player_piloting(pilot), 4.0)
+	await _wait_for(func() -> bool: return _server.player_alive(enemy), 10.0)
+	_server.debug_teleport(pilot, spot)
+	_server.debug_teleport(enemy, target)
+	_server.debug_bot_face(pilot, target)
+	_server.debug_arm(enemy, "lsw6")
+	await _seconds(1.2)
+	var before := _server.player_score(enemy)
+	_server.debug_give_streak(pilot, "guided_missile")
+	_server.debug_use_streak(pilot, "guided_missile")
+	await _ticks(2)
+	_server.debug_fire(enemy, true)
+	var downed := false
+	for i in int(8.0 * Engine.physics_ticks_per_second):
+		var now := _server.missiles()
+		if now.is_empty() or bool(now[0].exploded):
+			break
+		_server.debug_steer_missile(pilot, target + Vector3.UP, false, false)
+		_server.debug_bot_look(enemy, now[0].position)
+		await physics_frame
+	_server.debug_fire(enemy, false)
+	downed = _server.player_score(enemy) - before >= 100
+	_check(downed, "the enemy under it shoots it down")
 
 	# A bot flies its own at its nearest enemy and splits it.
 	await _wait_for(func() -> bool: return not _server.player_piloting(pilot), 4.0)
