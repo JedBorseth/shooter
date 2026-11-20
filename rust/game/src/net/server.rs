@@ -117,6 +117,7 @@ use super::bots::{
 use super::discovery::QueryResponder;
 use super::horde::{Horde, HordeEvent, HordePlayer};
 use super::machines::CrateChange;
+use super::match_log::{MatchLog, RoundLog};
 use super::props::{PropExplosion, PropSnapshot, PropsBridge};
 use super::transport::{self, NetEvent};
 use crate::body::{self, BodyParts};
@@ -213,6 +214,10 @@ pub struct NetServer {
     /// scripted bots that strafe and fire bursts (tests).
     #[export]
     bot_skill: GString,
+    /// Mixed into every bot's random seed, so bot matches can be run again
+    /// differently (the bot bench). 0 keeps the usual seeds.
+    #[export]
+    bot_seed: i32,
     /// Name shown in server browsers.
     #[export]
     #[init(val = GString::from("Shooter server"))]
@@ -303,6 +308,12 @@ pub struct NetServer {
     /// The site the attacking bots go for this round (an index into
     /// `charge_sites`).
     charge_target: usize,
+    /// The site the attacking bots were first sent to this round, and
+    /// whether they switched since (the bot bench's log).
+    charge_first_target: usize,
+    charge_switched: bool,
+    /// Round results and zone arrivals, for the bot bench.
+    match_log: MatchLog,
     /// Who planted the charge this round (the explosion's kills are theirs).
     charge_planter: Option<u8>,
     /// The round's kills and last ones standing, for its medals.
@@ -694,7 +705,12 @@ impl INode3D for NetServer {
         self.navigation_pending = skill.is_some() && self.bots > 0;
         for i in 0..self.bots.clamp(0, 50) {
             let id = FIRST_BOT_ID + i as u8;
-            let brain = skill.map(|skill| BotBrain::new(skill, rng::hash(u32::from(id), 77)));
+            let brain = skill.map(|skill| {
+                BotBrain::new(
+                    skill,
+                    rng::hash(u32::from(id), 77u32.wrapping_add(self.bot_seed as u32)),
+                )
+            });
             self.spawn_avatar(id, true, &format!("Bot {}", i + 1), Class::default(), brain);
         }
         self.start_query_responder();
@@ -1009,6 +1025,39 @@ impl NetServer {
             .iter()
             .find(|a| i32::from(a.id) == id)
             .map_or(-1, |a| i64::from(a.score.captures))
+    }
+
+    /// A player's match so far (the bot bench): `team`, `bot`, `score`,
+    /// `kills`, `deaths`, `captures`, `returns`, and `defends`. Empty if
+    /// absent.
+    #[func]
+    fn player_stats(&self, id: i32) -> VarDictionary {
+        let Some(a) = self.avatars.iter().find(|a| i32::from(a.id) == id) else {
+            return VarDictionary::new();
+        };
+        vdict! {
+            "team" => i32::from(a.team),
+            "bot" => a.bot,
+            "score" => i64::from(a.score.score),
+            "kills" => i64::from(a.score.kills),
+            "deaths" => i64::from(a.score.deaths),
+            "captures" => i64::from(a.score.captures),
+            "returns" => i64::from(a.score.returns),
+            "defends" => i64::from(a.score.defends),
+        }
+    }
+
+    /// Every player's id (the bot bench).
+    #[func]
+    fn player_ids(&self) -> PackedInt32Array {
+        self.avatars.iter().map(|a| i32::from(a.id)).collect()
+    }
+
+    /// The match's objective log so far (the bot bench): Search and
+    /// Destroy `rounds` and Hardpoint `zones` (`match_log::MatchLog`).
+    #[func]
+    fn match_log(&self) -> VarDictionary {
+        self.match_log.to_dictionary(TICK_RATE as f32)
     }
 
     /// Debug: moves a player's feet to `position` (tests).
@@ -2336,7 +2385,10 @@ impl NetServer {
                 else {
                     return;
                 };
-                let brain = BotBrain::new(skill, rng::hash(u32::from(id), self.tick));
+                let brain = BotBrain::new(
+                    skill,
+                    rng::hash(u32::from(id), self.tick.wrapping_add(self.bot_seed as u32)),
+                );
                 let name = format!("Bot {}", id - FIRST_BOT_ID + 1);
                 self.spawn_avatar(id, true, &name, Class::default(), Some(brain));
             } else {
@@ -4875,6 +4927,25 @@ impl NetServer {
     /// Scores a decided round for `winner` and tells everyone.
     fn round_over(&mut self, number: u32, winner: Team, reason: RoundEnd) {
         godot_print!("server: round {number} to team {} ({reason:?})", winner + 1);
+        if let Some(round) = self.round {
+            let planted = match self.charge.map(|c| c.state) {
+                Some(
+                    ChargeState::Planted { site, .. }
+                    | ChargeState::Detonated { site, .. }
+                    | ChargeState::Defused { site, .. },
+                ) => Some(site),
+                _ => None,
+            };
+            self.match_log.rounds.push(RoundLog {
+                number,
+                winner,
+                attackers: round.attackers,
+                reason,
+                planted,
+                target: u8::try_from(self.charge_first_target).ok(),
+                switched: self.charge_switched,
+            });
+        }
         if reason == RoundEnd::Detonated
             && let Some(charge) = &mut self.charge
         {
@@ -4932,6 +5003,8 @@ impl NetServer {
         self.round_record = RoundRecord::default();
         self.charge_target = rng::hash(round.number, self.tick.wrapping_add(7)) as usize
             % self.charge_sites.len().max(1);
+        self.charge_first_target = self.charge_target;
+        self.charge_switched = false;
         if let Some((id, _)) = carrier {
             godot_print!(
                 "server: player {id} carries the charge in round {}",
@@ -5329,6 +5402,15 @@ impl NetServer {
         let step = self
             .hardpoint
             .tick(&self.hardpoint_rules, self.zones.len(), TICK_DT, presence);
+        if self.match_state.scoring() {
+            let alone = match presence {
+                [a, 0] if a > 0 => Some(0),
+                [0, b] if b > 0 => Some(1),
+                _ => None,
+            };
+            self.match_log
+                .zone_tick(self.tick, self.hardpoint.active, presence, alone);
+        }
 
         if scoring {
             let holder = step.captured.or(self.hardpoint.holder.team());
