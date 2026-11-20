@@ -476,6 +476,11 @@ impl DefaultClass {
 /// its sidearm for any of the secondaries a default class could carry.
 /// Attachments the new weapon does not take are left off. The Marksman
 /// class's bots take marksman rifles as well as snipers.
+///
+/// One bot in [`BOT_LAUNCHER_IN`] carries the RL-4 launcher as its sidearm
+/// instead, for enemy scorestreak aircraft: Black Ops 2's bots pick their
+/// secondary at random from every one there is, three of them launchers
+/// (`_bot_loadout.gsc`), and only fire a launcher at aircraft.
 pub fn bot_class(roll: u32) -> Class {
     let default = DefaultClass::ALL[roll as usize % DefaultClass::ALL.len()];
     let mut class = default.class();
@@ -499,8 +504,16 @@ pub fn bot_class(roll: u32) -> Class {
     };
     class.primary = swap(class.primary, 0x5eed_0001, &|_| true);
     class.secondary = swap(class.secondary, 0x5eed_0002, &|_| true);
+    if rng::hash(roll, 0x5eed_0003).is_multiple_of(BOT_LAUNCHER_IN)
+        && let Some(launcher) = WeaponId::by_key("rl4")
+    {
+        class.secondary = Some(Gun::plain(launcher));
+    }
     class
 }
+
+/// One bot in this many carries a launcher ([`bot_class`]).
+pub const BOT_LAUNCHER_IN: u32 = 4;
 
 /// The weapon classes a bot's default class may swap among.
 fn bot_group(class: WeaponClass) -> WeaponClass {
@@ -518,9 +531,13 @@ mod tests {
     #[test]
     fn bot_classes_are_valid_and_carry_every_gun_of_the_defaults_classes() {
         let mut seen = std::collections::HashSet::new();
+        let mut launchers = 0;
         for roll in 0..4000u32 {
             let class = bot_class(rng::hash(roll, 7));
             assert_eq!(class.validate(), Ok(()), "roll {roll}");
+            if class.secondary.is_some_and(|g| g.base.def().key == "rl4") {
+                launchers += 1;
+            }
             for id in class.weapons().into_iter().flatten() {
                 seen.insert(id.plain().def().key.clone());
             }
@@ -533,6 +550,8 @@ mod tests {
                 }
             }
         }
+        // About one in four carries the launcher.
+        assert!((850..1150).contains(&launchers), "{launchers}");
     }
 
     fn m4() -> WeaponId {

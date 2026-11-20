@@ -29,6 +29,18 @@ While a side's UAV is up, it sweeps every 3 seconds. Each living enemy shows on 
 
 Black Ops 2's UAV lasts 30 seconds. The 3 s sweep is an estimate of its refresh.
 
+## In the sky
+
+A UAV or Counter-UAV is an aircraft in the world, not only an effect. Each circles the map on a ring both the server and every client compute from the same few numbers (`streak::Orbit`), so the server sends only when it was called and where round the ring it started.
+
+- **The ring:** centred over everywhere players spawn, walk, and fight, 45 m above the highest of those points. The UAV flies four fifths of the way to the far edge (20 to 60 m out), clockwise seen from above, once a minute. The Counter-UAV flies a fifth closer in and 10 m higher, the other way round, every 40 s. Black Ops 2 turns its UAV rig once a minute clockwise and its Counter-UAV rig every 40 s the other way, the planes about 4,000 to 5,000 units out (100 to 127 m) and the Counter-UAV's rig 400 units higher (`_spyplane.gsc`). Our maps are smaller, so the ring is scaled to the map and stays in a launcher's reach.
+![The UAV circling overhead](media/uav-overhead.jpg) ![An enemy Counter-UAV overhead](media/counter-uav-overhead.jpg)
+
+- **The models:** both are built in Blender (`tools/gear_models.py`). The UAV (`uav_drone`) is a long-winged surveillance drone with a sensor turret and a pusher propeller. The Counter-UAV (`counter_uav_drone`) is a darker swept flying-wing jammer with emitter pods. Both bank into the turn (`godot/scripts/net/sky_view.gd`).
+- **Shooting one down:** enemies can shoot down the other side's (anyone but the caller, without teams). Each has 700 health, Black Ops 2's `u2_maxhealth`. Bullets take off their damage at that range, and the server checks them against a 3.2 m sphere where the shooter saw the aircraft, rewound as players are. A rocket that passes within 6 m downs any of them at once, as in Black Ops 2, where a rocket's damage is the health plus one. Shooting one gives a hit marker.
+- **Downed:** the streak ends at once for its side, so a downed UAV stops sweeping and a downed Counter-UAV stops jamming. It blows up where it was hit and its wreck falls away. The shooter scores 100 and the "Destroyed UAV" (or "Destroyed Counter-UAV") medal. Everyone hears "ENEMY UAV DESTROYED" or "UAV SHOT DOWN" in the upper third. Black Ops 2 publishes no point value for this. Earlier games paid 100, and one Black Ops 2 source gives 75.
+- **Bots:** one bot in four carries the RL-4 as its sidearm. Black Ops 2's bots pick their secondary at random from every one there is, and three of those are launchers (`_bot_loadout.gsc`). With no enemy player in sight, a bot with a launcher turns it on enemy aircraft it can see that are no more than 70° overhead (Black Ops 2's bots let higher ones go, `_bot_combat.gsc`). It switches to the launcher, aims ahead of the aircraft for the rocket's flight, fires when on target, and switches back when the sky is clear or an enemy shows. `air_streaks_test` plays all of this through on a server.
+
 ## Counter-UAV
 
 While an enemy Counter-UAV is up, the minimap shows static and no dots at all, not even teammates. That covers fire, sweeps, and our own side's UAV. **Hard Wired** players keep their minimap. The 30 s duration is an estimate in line with Black Ops 2.
@@ -119,3 +131,4 @@ Blind Eye (with an AI streak to hide from), UAV assist points, and announcer lin
 - **Lightning Strike:** 750, three strikes on points picked on the map, in sequence.
 - **Streak kills:** do not count toward streaks.
 - **Ghost:** works while moving. **Hard Wired:** immune to Counter-UAV.
+- **UAV and Counter-UAV in the sky** (`_spyplane.gsc`, Black Ops 2's scripts as the Plutonium project publishes them): 700 health, bullets do their damage, any rocket downs one, the UAV rig turns clockwise once a minute and the Counter-UAV's the other way every 40 s, a downed one ends at once. Bots fire launchers only at aircraft, never at one more than 70° up (`_bot_combat.gsc`).

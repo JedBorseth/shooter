@@ -79,6 +79,7 @@ const TDM_HUD_SCRIPT := "res://scripts/net/tdm_hud.gd"
 const MINIMAP_SCRIPT := "res://scripts/net/minimap.gd"
 const STREAKS_HUD_SCRIPT := "res://scripts/net/streaks_hud.gd"
 const CARE_PACKAGE_VIEW_SCRIPT := "res://scripts/net/care_package_view.gd"
+const SKY_VIEW_SCRIPT := "res://scripts/net/sky_view.gd"
 const AIRSTRIKE_VIEW_SCRIPT := "res://scripts/net/airstrike_view.gd"
 const CTF_VIEW_SCRIPT := "res://scripts/net/ctf_view.gd"
 const HARDPOINT_VIEW_SCRIPT := "res://scripts/net/hardpoint_view.gd"
@@ -444,6 +445,12 @@ func _attach_client(main: Node, target: String, options: Dictionary, token := ""
 	crates.set("client", client)
 	crates.set("player", player)
 	main.add_child(crates)
+	# UAVs and Counter-UAVs circling overhead, and their wrecks.
+	var sky := Node3D.new()
+	sky.name = "SkyView"
+	sky.set_script(load(SKY_VIEW_SCRIPT))
+	sky.set("client", client)
+	main.add_child(sky)
 	# Match stings: start, result, time warning, and rounds.
 	var stings := MatchStings.new()
 	stings.client = client
