@@ -176,6 +176,9 @@ const ZONE_SPOT_SECONDS: u32 = 4;
 /// How far out from a charge being planted or defused a bot pops its smoke,
 /// toward the other side, in metres.
 const COVER_SMOKE_OUT: f32 = 5.0;
+/// How far from a flag carrier its escorts keep, nearest and farthest, in
+/// metres (Black Ops 2: 64 to 512 units).
+const ESCORT_RING: (f32, f32) = (2.0, 10.0);
 /// Enemies this far past an objective's edge (a flag's circle, a zone's
 /// box) are worth a grenade, in metres (Black Ops 2: 384 units).
 const OBJECTIVE_GRENADE_REACH: f32 = 9.75;
@@ -6661,7 +6664,7 @@ impl NetServer {
     /// - Otherwise a third of each team (at least one bot in teams of three or
     ///   more) defends: it holds spots near its flag, or chases the enemy
     ///   carrying it. The rest attack: they go for the enemy's flag, or
-    ///   escort the teammate carrying it.
+    ///   escort the teammate carrying it from a few metres off.
     fn bot_objectives(&self) -> Vec<(u8, Option<BotObjective>)> {
         if let (Some(round), Some(charge)) = (self.round, self.charge) {
             return self.charge_objectives(round, &charge);
@@ -6675,6 +6678,7 @@ impl NetServer {
         let Some(flags) = &self.flags else {
             return Vec::new();
         };
+        let period = self.tick / (ZONE_SPOT_SECONDS * TICK_RATE);
         let position = |id: u8| {
             self.avatars
                 .iter()
@@ -6720,9 +6724,22 @@ impl NetServer {
                     }
                 } else {
                     match enemy.state {
-                        FlagState::Carried { by } => {
-                            BotObjective::hunt(position(by).unwrap_or(to_godot(own.home)))
-                        }
+                        // Escort: a spot round the carrier, as Black Ops 2's
+                        // bots take a node 64 to 512 units from it
+                        // (`bot_ctf_capture`), changing every few seconds.
+                        FlagState::Carried { by } => match position(by) {
+                            Some(at) => {
+                                let angle = rng::unit(u32::from(bot.id), period * 2)
+                                    * std::f32::consts::TAU;
+                                let reach = ESCORT_RING.0
+                                    + rng::unit(u32::from(bot.id), period * 2 + 1)
+                                        * (ESCORT_RING.1 - ESCORT_RING.0);
+                                BotObjective::hunt(
+                                    at + Vector3::new(angle.cos(), 0.0, angle.sin()) * reach,
+                                )
+                            }
+                            None => BotObjective::hunt(to_godot(own.home)),
+                        },
                         // Attackers grab a dropped flag as urgently as a returner.
                         FlagState::Dropped { at, .. } => BotObjective::run(to_godot(at)),
                         FlagState::Home => BotObjective::hunt(to_godot(enemy.home))
@@ -7039,7 +7056,8 @@ impl NetServer {
 
     /// Hardpoint: three of every four bots on a team hold spots inside the
     /// live zone, each moving to a new spot every few seconds; the rest hunt
-    /// around its edges for enemies on their way in.
+    /// around its edges for enemies on their way in. In the zone's last
+    /// seconds some go ahead to the next zone (`hardpoint::bots_rotating`).
     fn zone_objectives(&self, zone: &Zone) -> Vec<(u8, Option<BotObjective>)> {
         let period = self.tick / (ZONE_SPOT_SECONDS * TICK_RATE);
         let mut out = Vec::new();
@@ -7051,9 +7069,33 @@ impl NetServer {
                 .map(|a| a.id)
                 .collect();
             bots.sort_unstable();
+            // Shortly before the zone moves, some of the team head for the
+            // next one (`hardpoint::bots_rotating`): the last on the list.
+            let next = (self.zones.len() > 1)
+                .then(|| self.zones.get(self.hardpoint.next(self.zones.len())))
+                .flatten();
+            let holding = self.hardpoint.holder.team() == Some(team);
+            let rotating = next.map_or(0, |_| {
+                hardpoint::bots_rotating(bots.len(), self.hardpoint.time_left, holding)
+            });
+            let count = bots.len();
             for (i, id) in bots.into_iter().enumerate() {
                 let a = rng::unit(u32::from(id), period * 2);
                 let b = rng::unit(u32::from(id), period * 2 + 1);
+                if let Some(next) = next
+                    && i >= count - rotating
+                {
+                    let reach_x = (next.half_extents.x - 1.0).max(0.3);
+                    let reach_z = (next.half_extents.z - 1.0).max(0.3);
+                    let floor = next.floor() + 0.3;
+                    let objective = BotObjective::hold(to_godot(Vec3::new(
+                        next.center.x + (a * 2.0 - 1.0) * reach_x,
+                        floor,
+                        next.center.z + (b * 2.0 - 1.0) * reach_z,
+                    )));
+                    out.push((id, Some(objective)));
+                    continue;
+                }
                 let floor = zone.floor() + 0.3;
                 let objective = if i % 4 == 3 {
                     // A spot just outside the zone, on a random side.
