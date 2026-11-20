@@ -27,7 +27,7 @@
 
 use std::collections::VecDeque;
 
-use godot::classes::{ENetConnection, ENetPacketPeer, INode, PackedScene, Time};
+use godot::classes::{ENetConnection, ENetPacketPeer, INode, Input, PackedScene, Time};
 use godot::global::Error;
 use godot::prelude::*;
 use shooter_sim::class::{self, Class, DefaultClass, Gun};
@@ -35,7 +35,7 @@ use shooter_sim::equipment::Kind;
 use shooter_sim::gun_game;
 use shooter_sim::hardpoint::Holder;
 use shooter_sim::hitbox::HitboxPose;
-use shooter_sim::killcam::{Killcam, OwnRecorder, Tape};
+use shooter_sim::killcam::{self, Killcam, OwnRecorder, Tape};
 use shooter_sim::net::conditioner::{LinkConditioner, LinkSettings};
 use shooter_sim::net::discovery::clean_text;
 use shooter_sim::net::interpolation::{InterpolationBuffer, SnapshotClock};
@@ -51,6 +51,7 @@ use shooter_sim::tdm::{Mode, Phase, TEAM_COUNT, Team};
 use shooter_sim::weapon::{Slot, WeaponId};
 
 use super::class_dict::{class_from_dict, class_to_dict, error_text};
+use super::killcam::{Playing, WeaponCue};
 use super::props::{PropSnapshot, PropsBridge};
 use super::remote::{RemotePlayer, RemoteSample};
 use super::transport::{self, NetEvent};
@@ -174,8 +175,13 @@ pub struct NetClient {
     own_recorder: OwnRecorder,
     /// Our view angles in the latest snapshot, for one whose input is gone.
     own_angles: (f32, f32),
-    /// The killcam the server sent last, with the time it arrived.
+    /// The killcam the server sent last, with the time it arrived, until
+    /// it starts playing.
     killcam: Option<(Killcam, f64)>,
+    /// The killcam playing.
+    playing: Option<Playing>,
+    /// The kind of the killcam playing, for the HUD.
+    playing_kind: Option<killcam::Kind>,
 }
 
 #[derive(Clone, Copy)]
@@ -384,6 +390,7 @@ impl INode for NetClient {
             player.bind_mut().set_view_tick(render_tick);
         }
         self.age_ghosts(delta as f32);
+        self.update_killcam(delta as f32);
     }
 
     fn exit_tree(&mut self) {
@@ -434,6 +441,14 @@ impl NetClient {
     /// A Search and Destroy round changed phase.
     #[signal]
     fn round_changed();
+
+    /// A killcam started playing: `info` as in `killcam_info`.
+    #[signal]
+    fn killcam_started(info: VarDictionary);
+
+    /// The killcam ended (finished, skipped, or cut short by a respawn).
+    #[signal]
+    fn killcam_ended();
 
     /// Every player, ourselves included, as dictionaries with `id`, `name`,
     /// `team`, `bot`, `me`, `score`, `kills`, `deaths`, `ping`, `ready`,
@@ -612,6 +627,52 @@ impl NetClient {
     /// `seconds_left`, `attacking` (whether our team attacks), `winner` (the
     /// team that took the round, or -1), `reason` ("eliminated" or "time"),
     /// and `halftime` (whether the teams swap sides after this round).
+    #[func]
+    fn killcam_info(&self) -> VarDictionary {
+        let mut info = VarDictionary::new();
+        let Some(playing) = &self.playing else {
+            return info;
+        };
+        let playback = &playing.playback;
+        let k = playback.killcam();
+        let kind = match k.kind {
+            killcam::Kind::Respawn => "respawn",
+            killcam::Kind::Round => "round",
+            killcam::Kind::Final => "final",
+        };
+        let def = k.weapon.def();
+        let base = crate::viewmodel::base_weapon(k.weapon).def().name.clone();
+        let weapon = match k.cause {
+            KillCause::Knife => KNIFE_NAME.to_owned(),
+            KillCause::Equipment(kind) => kind.name().to_owned(),
+            KillCause::Weapon => base,
+        };
+        let attachment = match k.cause {
+            KillCause::Weapon => def.attachment.map_or("", |a| a.label()),
+            _ => "",
+        };
+        info.set("kind", kind);
+        info.set("killer", i32::from(k.killer));
+        info.set("killer_name", &self.name_of(i32::from(k.killer)));
+        info.set("killer_team", self.team_of(i32::from(k.killer)));
+        info.set("victim", i32::from(k.victim));
+        info.set("victim_name", &self.name_of(i32::from(k.victim)));
+        info.set("weapon", weapon.as_str());
+        info.set("attachment", attachment);
+        info.set("headshot", k.headshot);
+        info.set("progress", playback.progress());
+        info.set("past_kill", playback.past_kill());
+        info.set("skippable", !k.kind.ending());
+        info.set("me_killer", Some(k.killer) == self.player_id);
+        info
+    }
+
+    /// Whether a killcam is playing.
+    #[func]
+    fn in_killcam(&self) -> bool {
+        self.playing.is_some()
+    }
+
     #[func]
     fn round_info(&self) -> VarDictionary {
         let mut d = VarDictionary::new();
@@ -1190,6 +1251,13 @@ impl NetClient {
                     Some((current, _)) => killcam.kind.ending() || !current.kind.ending(),
                     None => true,
                 };
+                if killcam.kind == killcam::Kind::Respawn
+                    && let Some(player) = &mut self.player
+                {
+                    player
+                        .bind_mut()
+                        .hold_respawn(killcam::respawn_wait(&killcam));
+                }
                 if replaces && self.tape.covers(&killcam) {
                     let now = Time::singleton().get_ticks_usec() as f64 / 1e6;
                     self.killcam = Some((killcam, now));
@@ -1432,6 +1500,131 @@ impl NetClient {
         self.tape.record(snapshot.tick, views);
     }
 
+    /// Starts, plays, and ends killcams. A respawn killcam starts after the
+    /// death delay and ends at its last frame, on a skip (the use button:
+    /// interact, or the controller's reload), or once we are alive again;
+    /// one that ends a round or match starts after a short lead, cannot be
+    /// skipped, and holds its last frame (Call of Duty's `_killcam.gsc`).
+    fn update_killcam(&mut self, dt: f32) {
+        let now = Time::singleton().get_ticks_usec() as f64 / 1e6;
+        let alive = self
+            .player
+            .as_ref()
+            .is_some_and(|player| player.bind().is_alive());
+        if self.playing.is_none()
+            && let Some((pending, arrived)) = self.killcam
+        {
+            let ending = pending.kind.ending();
+            let lead = if ending {
+                killcam::FINAL_LEAD
+            } else {
+                killcam::DEATH_DELAY
+            };
+            if !ending && alive && now - arrived > 0.5 {
+                // Already back in the game.
+                self.killcam = None;
+            } else if now >= arrived + f64::from(lead) {
+                self.killcam = None;
+                self.start_killcam(&pending);
+            }
+        }
+        let Some(playing) = &mut self.playing else {
+            return;
+        };
+        let kind = playing.playback.killcam().kind;
+        let mut cues = Vec::new();
+        let view = playing.update(&self.tape, dt, &mut cues);
+        if let Some(player) = &mut self.player {
+            let mut player = player.bind_mut();
+            player.set_killcam(view);
+            for cue in cues {
+                match cue {
+                    WeaponCue::Fired(weapon) => player.killcam_fired(weapon),
+                    WeaponCue::Melee => player.killcam_melee(),
+                }
+            }
+        }
+        // Players who joined while it plays stay hidden under it.
+        for remote in &mut self.remotes {
+            if remote.node.is_visible() {
+                remote.node.set_visible(false);
+                remote.node.bind_mut().set_muted(true);
+            }
+        }
+        let input = Input::singleton();
+        let skipped = !kind.ending()
+            && (input.is_action_just_pressed("interact") || input.is_action_just_pressed("reload"));
+        let done = match kind {
+            killcam::Kind::Respawn => playing.playback.finished() || alive,
+            _ => playing.held() >= killcam::FINAL_HOLD,
+        };
+        if view.is_none() || skipped || done {
+            if kind == killcam::Kind::Respawn && !alive {
+                // Over, skipped or finished: the server respawns us as soon
+                // as the respawn delay allows, as Call of Duty spawns the
+                // player when the killcam ends.
+                self.send_reliable(&ClientMessage::SkipKillcam);
+                if let Some(player) = &mut self.player {
+                    player.bind_mut().killcam_skipped();
+                }
+            }
+            self.stop_killcam();
+        }
+    }
+
+    fn start_killcam(&mut self, killcam: &Killcam) {
+        let Some(mut parent) = self.base().get_parent() else {
+            return;
+        };
+        let playing = Playing::start(killcam, &self.tape, &mut parent, |id| self.killcam_copy(id));
+        for remote in &mut self.remotes {
+            remote.node.set_visible(false);
+            remote.node.bind_mut().set_muted(true);
+        }
+        self.playing = Some(playing);
+        self.playing_kind = Some(killcam.kind);
+        let info = self.killcam_info();
+        self.signals().killcam_started().emit(&info);
+    }
+
+    fn stop_killcam(&mut self) {
+        let Some(playing) = self.playing.take() else {
+            return;
+        };
+        playing.stop();
+        self.playing_kind = None;
+        if let Some(player) = &mut self.player {
+            player.bind_mut().set_killcam(None);
+        }
+        for remote in &mut self.remotes {
+            remote.node.set_visible(true);
+            remote.node.bind_mut().set_muted(false);
+        }
+        self.signals().killcam_ended().emit();
+    }
+
+    /// A killcam's copy of player `id` (ourselves included), named and in
+    /// the colours we see them in.
+    fn killcam_copy(&self, id: u8) -> Option<Gd<RemotePlayer>> {
+        let scene = self.remote_player_scene.as_ref()?;
+        let mut node = scene.instantiate()?.try_cast::<RemotePlayer>().ok()?;
+        node.set_name(&format!("KillcamPlayer{id}"));
+        let mut parent = self.base().get_parent()?;
+        parent.add_child(&node);
+        let entry = self.roster.iter().find(|e| e.id == id);
+        let friendly = Some(id) == self.player_id
+            || (!self.mode.free_for_all()
+                && entry.is_some_and(|e| Some(e.team) == self.local_team()));
+        {
+            let mut copy = node.bind_mut();
+            if let Some(entry) = entry {
+                copy.set_display_name(&entry.name);
+            }
+            copy.set_friendly(friendly);
+        }
+        Some(node)
+    }
+
     fn spawn_remote(&mut self, id: u8) -> Option<Gd<RemotePlayer>> {
         let scene = self.remote_player_scene.as_ref()?;
         let mut node = scene.instantiate()?.try_cast::<RemotePlayer>().ok()?;
@@ -1512,6 +1705,7 @@ impl NetClient {
         for (ghost, _) in self.ghosts.drain(..) {
             ghost.upcast::<Node>().queue_free();
         }
+        self.stop_killcam();
         self.roster.clear();
         self.tape.clear();
         self.killcam = None;

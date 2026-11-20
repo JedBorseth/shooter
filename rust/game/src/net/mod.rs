@@ -7,6 +7,7 @@ mod bots;
 mod class_dict;
 mod client;
 mod discovery;
+pub(crate) mod killcam;
 mod props;
 mod remote;
 mod server;

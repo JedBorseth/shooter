@@ -69,6 +69,7 @@ use crate::effects::CombatEffects;
 use crate::footsteps::{self, Gait, Stride};
 use crate::grenade_view::{GrenadeShow, HangingCloud};
 use crate::grenades::{self, GrenadeSim, LiveGrenade};
+use crate::net::killcam::KillcamView;
 use crate::penetration;
 use crate::pickup::{INTERACT_LAYER, WeaponPickup};
 use crate::player_sounds::{BodyFrame, PlayerSounds};
@@ -369,6 +370,9 @@ pub struct FpsPlayer {
     next_pressed: bool,
     wheel_swap: WheelSwap,
     input_enabled: bool,
+    /// Online, while a killcam plays: the killer's view, drawn instead of
+    /// ours, and devices are ignored (`net::killcam`).
+    killcam: Option<KillcamView>,
     /// Held still by the match (a Search and Destroy round's freeze): the
     /// player can look and aim but not move or fire.
     movement_locked: bool,
@@ -552,7 +556,7 @@ impl ICharacterBody3D for FpsPlayer {
     }
 
     fn input(&mut self, event: Gd<InputEvent>) {
-        if !self.input_enabled {
+        if !self.devices_on() {
             return;
         }
         let mut input = Input::singleton();
@@ -700,7 +704,11 @@ impl ICharacterBody3D for FpsPlayer {
             );
         }
 
-        // Online, the server respawns the player and the next snapshot moves them.
+        // Online the server respawns the player and the next snapshot moves
+        // them: the countdown is only the HUD's estimate.
+        if !self.state.alive() && self.prediction.is_some() {
+            self.respawn_in = (self.respawn_in - dt).max(0.0);
+        }
         if !self.state.alive() && self.prediction.is_none() && self.auto_respawn {
             self.respawn_in -= dt;
             if self.respawn_in <= 0.0 {
@@ -786,7 +794,7 @@ impl ICharacterBody3D for FpsPlayer {
         self.shake
             .step(SHAKE_STIFFNESS, damping_for(SHAKE_STIFFNESS, 0.5), dt);
 
-        if alive && self.input_enabled {
+        if alive && self.devices_on() {
             let eye = feet + Vector3::UP * eye_height;
             self.apply_stick_look(eye, ads, dt);
         }
@@ -828,6 +836,16 @@ impl ICharacterBody3D for FpsPlayer {
             + basis.col_a() * bob.x
             + basis * self.shake.value;
         let first_person = Transform3D::new(basis, origin);
+        if let Some(view) = self.killcam {
+            // The killer's eyes and weapon instead of ours.
+            if !alive {
+                self.dead_for += dt;
+            }
+            self.camera.set_global_transform(view.camera);
+            self.camera.set_fov(self.base_fov * view.zoom);
+            self.viewmodel.bind_mut().update(&view.frame, dt);
+            return;
+        }
         let transform = if alive {
             first_person
         } else {
@@ -837,7 +855,7 @@ impl ICharacterBody3D for FpsPlayer {
         self.camera.set_fov(fov);
 
         let frame = self.view_frame(ads);
-        let inspect = self.input_enabled
+        let inspect = self.devices_on()
             && self.state.alive()
             && Input::singleton().is_action_just_pressed("inspect");
         let mut rig = self.viewmodel.bind_mut();
@@ -987,13 +1005,22 @@ impl FpsPlayer {
     /// 0 at the hip, 1 fully aimed down sights.
     #[func]
     fn ads_amount(&self) -> f32 {
-        self.state.combat.ads
+        self.killcam
+            .map_or(self.state.combat.ads, |view| view.frame.ads)
     }
 
-    /// 0 unless aiming a scoped weapon; the HUD draws the scope overlay from it.
+    /// 0 unless aiming a scoped weapon; the HUD draws the scope overlay from
+    /// it (the killer's scope while a killcam plays).
     #[func]
     fn scope_amount(&self) -> f32 {
-        self.state.combat.scope_amount()
+        self.killcam
+            .map_or(self.state.combat.scope_amount(), |view| view.frame.scope)
+    }
+
+    /// A killcam is showing the killer's view instead of ours.
+    #[func]
+    fn in_killcam(&self) -> bool {
+        self.killcam.is_some()
     }
 
     /// Breath left for steadying a scope, 0 to 1.
@@ -1038,7 +1065,7 @@ impl FpsPlayer {
     }
 
     #[func]
-    fn is_alive(&self) -> bool {
+    pub(crate) fn is_alive(&self) -> bool {
         self.state.alive()
     }
 
@@ -1388,6 +1415,63 @@ impl FpsPlayer {
         result
     }
 
+    /// Whether keys, mouse, and gamepad steer the player: not while a menu
+    /// is open or a killcam plays.
+    fn devices_on(&self) -> bool {
+        self.input_enabled && self.killcam.is_none()
+    }
+
+    /// Online: shows a killcam's frame (the killer's eyes and weapon), or
+    /// with `None` goes back to our own view. Our fallen body hides while
+    /// the killcam's own copy of us is drawn.
+    pub(crate) fn set_killcam(&mut self, view: Option<KillcamView>) {
+        let was = self.killcam.is_some();
+        self.killcam = view;
+        if was != view.is_some() {
+            if let Some(rig) = &mut self.own_body
+                && rig.is_instance_valid()
+            {
+                rig.set_visible(!view.is_some() && !self.state.alive());
+            }
+            if view.is_none() {
+                // Back to our own weapon: nothing of the killer's carries over.
+                self.fire_press = None;
+                self.latched = Default::default();
+            }
+        }
+    }
+
+    /// The killer fired in a killcam: the first-person weapon kicks,
+    /// flashes, and sounds.
+    pub(crate) fn killcam_fired(&mut self, weapon: WeaponId) {
+        let def = weapon.def();
+        let eject = def.cycle_time <= 0.0 && !def.beam;
+        self.viewmodel
+            .bind_mut()
+            .on_fired(weapon, eject, def.magazine.max(1));
+    }
+
+    /// Online: the server holds our respawn for a killcam of `seconds`
+    /// from now (the death card's countdown).
+    pub(crate) fn hold_respawn(&mut self, seconds: f32) {
+        self.respawn_in = self.respawn_in.max(seconds);
+    }
+
+    /// Online: we skipped the killcam, so the respawn comes as soon as the
+    /// normal respawn delay allows.
+    pub(crate) fn killcam_skipped(&mut self) {
+        self.respawn_in = self
+            .respawn_in
+            .min((self.respawn_delay - self.dead_for).max(0.0));
+    }
+
+    /// The killer swung their knife in a killcam.
+    pub(crate) fn killcam_melee(&mut self) {
+        self.viewmodel
+            .bind_mut()
+            .on_melee(false, melee::STRIKE_DELAY);
+    }
+
     /// Online: the server tick other players are drawn at this frame.
     pub(crate) fn set_view_tick(&mut self, tick: f64) {
         self.view_tick = Some(tick);
@@ -1471,7 +1555,7 @@ impl FpsPlayer {
             | self.take_latched("refill_ammo");
         pressed
             && self.allow_refill
-            && self.input_enabled
+            && self.devices_on()
             && self.state.alive()
             && self.prediction.is_none()
     }
@@ -1479,7 +1563,7 @@ impl FpsPlayer {
     fn read_input(&mut self) -> PlayerInput {
         let press = self.fire_press.take();
         let next = std::mem::take(&mut self.next_pressed);
-        if !self.input_enabled {
+        if !self.devices_on() {
             self.wish = Vector2::ZERO;
             return PlayerInput {
                 yaw: self.yaw,

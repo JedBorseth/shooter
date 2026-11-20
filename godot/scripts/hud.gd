@@ -166,6 +166,17 @@ func _process(delta: float) -> void:
 	if _centre.legend_alpha > 0.0:
 		_centre.legend = _legend(_player.using_gamepad())
 
+	# A killcam draws its own overlay: the HUD steps aside (the killer's
+	# scope still shows, from `scope_amount`).
+	var killcam := _player.in_killcam()
+	for piece: Control in [_crosshair, _centre, _health, _weapon, _damage, _score_feed]:
+		piece.visible = not killcam
+	if killcam:
+		return
+	_crosshair.visible = true
+	_centre.visible = true
+	_damage.visible = true
+	_score_feed.visible = true
 	var alive := _player.is_alive()
 	var scoped := _player.scope_amount() >= 0.85
 	var magazine := _player.magazine()

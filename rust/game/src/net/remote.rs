@@ -80,6 +80,17 @@ pub struct RemotePlayer {
     /// The team colours the body wears (`SoldierRig::set_team_index`).
     #[init(val = 1)]
     team_index: i32,
+    /// Makes no sound and traces no shots (a live player while a killcam
+    /// plays over them).
+    muted: bool,
+    /// A killcam's copy of a player: never aim assisted, and the bodies it
+    /// leaves are kept to take away when the killcam ends.
+    replay: bool,
+    /// Bodies this killcam copy has left in the corpse yard.
+    left_bodies: Vec<Gd<SoldierRig>>,
+    /// Seen from its own eyes (the killer in a killcam): the body is
+    /// hidden and its gunfire is heard from the first-person weapon instead.
+    first_person: bool,
 }
 
 #[godot_api]
@@ -399,6 +410,9 @@ impl RemotePlayer {
         CorpseYard::of(&tree)
             .bind_mut()
             .adopt(self.rig.clone(), corpses::SOLDIER_SECONDS);
+        if self.replay {
+            self.left_bodies.push(self.rig.clone());
+        }
         fresh.set_name("Soldier");
         fresh.set_visible(false);
         self.base_mut().add_child(&fresh);
@@ -426,12 +440,44 @@ impl RemotePlayer {
         // says which side they are on.
         self.name_label
             .set_modulate(Color::from_rgb(0.55, 0.78, 1.0));
-        self.name_label.set_visible(friendly);
+        self.name_label.set_visible(friendly && !self.first_person);
+    }
+
+    /// Silences this player's gunfire, footsteps, and traced shots.
+    pub fn set_muted(&mut self, muted: bool) {
+        self.muted = muted;
+    }
+
+    /// Makes this a killcam's copy of the player (see `replay`).
+    pub fn set_replay(&mut self) {
+        self.replay = true;
+        self.update_aim_assist();
+    }
+
+    /// Draws this player from their own eyes: the body hides, and the
+    /// first-person weapon makes their gunfire (the killcam's killer).
+    pub fn set_first_person(&mut self, first_person: bool) {
+        self.first_person = first_person;
+        if first_person {
+            self.rig.set_visible(false);
+        }
+        self.name_label.set_visible(self.friendly && !first_person);
+    }
+
+    /// Takes away the bodies this killcam copy left (the killcam ended).
+    pub fn release_bodies(&mut self) {
+        let tree = self.base().get_tree();
+        let mut yard = CorpseYard::of(&tree);
+        for body in self.left_bodies.drain(..) {
+            if body.is_instance_valid() {
+                yard.bind_mut().release(body);
+            }
+        }
     }
 
     /// Aim assist is on for living enemies only.
     fn update_aim_assist(&mut self) {
-        let on = self.sided && !self.friendly && self.alive;
+        let on = self.sided && !self.friendly && self.alive && !self.replay;
         self.aim_assist.bind_mut().set_active(on);
     }
 
@@ -588,7 +634,7 @@ impl RemotePlayer {
             }
             (_, false) => {}
             (_, true) => {
-                if !self.rig.is_visible() {
+                if !self.rig.is_visible() && !self.first_person {
                     self.rig.set_visible(true);
                 }
                 self.rig.bind_mut().update(&frame, delta);
@@ -608,7 +654,7 @@ impl RemotePlayer {
             .shots_fired
             .map_or(0, |last| s.shots_fired.wrapping_sub(last));
         self.shots_fired = Some(s.shots_fired);
-        if fired > 0 && fired < 64 && s.alive {
+        if fired > 0 && fired < 64 && s.alive && !self.muted {
             self.rig.bind_mut().fire();
             let muzzle = self.rig.bind().muzzle_position();
             let listener = self
@@ -617,7 +663,9 @@ impl RemotePlayer {
                 .and_then(|v| v.get_camera_3d())
                 .map(|c| c.get_global_position());
             let indoors = zone_at(&self.base().get_tree(), muzzle).is_some();
-            if let Some(gunfire) = &mut self.gunfire {
+            if let Some(gunfire) = &mut self.gunfire
+                && !self.first_person
+            {
                 gunfire.fire(s.weapon, muzzle, listener, indoors);
             }
             // Each round, traced on this client for its near miss and impact
@@ -654,7 +702,9 @@ impl RemotePlayer {
             ladder: s.ladder.is_some() && s.alive,
         };
         let friendly = self.friendly;
-        if let Some(foley) = &mut self.foley {
+        if let Some(foley) = &mut self.foley
+            && !self.muted
+        {
             foley.update(&motion, delta, listener, friendly, reload);
         }
     }

@@ -62,8 +62,10 @@ pub const TAPE_SECONDS: f32 = 16.0;
 /// Longest killcam a client accepts, in ticks (a decoding bound).
 pub const MAX_TICKS: u32 = 15 * TICK_RATE;
 /// Margin the server adds to a respawn killcam before respawning the victim
-/// anyway, for the reliable event's trip to the client.
-const RESPAWN_MARGIN: f32 = 0.25;
+/// anyway. The client says when its killcam is over (finished or skipped,
+/// `ClientMessage::SkipKillcam`), so this only covers a client that never
+/// does: the event's trip, and frames that run late.
+const RESPAWN_MARGIN: f32 = 1.0;
 
 /// Which killcam this is.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -517,7 +519,7 @@ mod tests {
     fn a_respawn_killcam_plays_at_full_speed() {
         let killcam = record(KillCause::Weapon).killcam(Kind::Respawn);
         assert!((killcam.playback_seconds() - 4.5).abs() < 0.02);
-        assert!((respawn_wait(&killcam) - 6.75).abs() < 0.02);
+        assert!((respawn_wait(&killcam) - 7.5).abs() < 0.02);
         let mut clock = Playback::new(&killcam);
         assert_eq!(clock.tick(), 9_700.0);
         assert_eq!(clock.others_tick(), 9_694.0);
