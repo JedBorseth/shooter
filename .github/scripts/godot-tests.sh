@@ -13,8 +13,10 @@
 # passes with a warning to add it to REALTIME.
 #
 # Fixed-rate tests run several at a time (GODOT_TEST_JOBS, default half the
-# CPUs, at most 3). Real-time tests run one after another beside them, because
-# some of them share ports and LAN discovery.
+# CPUs, at most 3). Real-time tests run beside them in two lanes, each one test
+# after another: REALTIME tests share fixed ports, LAN discovery, or the
+# account server, so they never overlap; REALTIME_OWN_PORT tests use a port of
+# their own and nothing shared, so their lane runs alongside.
 #
 # Usage, from the repository root, after the assets are imported:
 #   .github/scripts/godot-tests.sh            # every test
@@ -24,7 +26,12 @@ set -uo pipefail
 
 # Tests that start another Godot or master server process, directly or through
 # the game's local match (Net.start_local_match), or talk to the account server.
-REALTIME=(net_test server_browser_test local_pause_test killcam_test zombies_net_test zombies_local_test online_test ranked_test matchmaking_test)
+# Put a new one here unless it qualifies for REALTIME_OWN_PORT.
+REALTIME=(server_browser_test local_pause_test zombies_local_test online_test ranked_test matchmaking_test)
+# Real-time tests whose server takes a port from the test's process id
+# (30000 + pid % 20000) with no query port (--query-port -1), and that use
+# no fixed port, LAN discovery, or account server.
+REALTIME_OWN_PORT=(net_test killcam_test zombies_net_test)
 # Extra argument sets: a test listed here runs once per entry instead of once
 # with no arguments.
 declare -A RUNS=(
@@ -45,13 +52,20 @@ jobs=${GODOT_TEST_JOBS:-$((cpus / 2 > 3 ? 3 : (cpus / 2 < 1 ? 1 : cpus / 2)))}
 names=()
 args=()
 modes=()
+# Real-time lane per run: "shared" or "own".
+lanes=()
 add_run() {
   names+=("$1")
   args+=("$2")
   if [[ " ${REALTIME[*]} " == *" $1 "* ]]; then
     modes+=("real time")
+    lanes+=(shared)
+  elif [[ " ${REALTIME_OWN_PORT[*]} " == *" $1 "* ]]; then
+    modes+=("real time")
+    lanes+=(own)
   else
     modes+=("fixed")
+    lanes+=("")
   fi
 }
 for path in godot/tests/*_test.gd; do
@@ -115,17 +129,26 @@ run_one() {
 }
 
 started=$(date +%s)
-realtime=()
+shared=()
+own=()
 fixed=()
 for i in "${!names[@]}"; do
-  if [[ ${modes[$i]} == fixed ]]; then fixed+=("$i"); else realtime+=("$i"); fi
+  case ${lanes[$i]} in
+    shared) shared+=("$i") ;;
+    own) own+=("$i") ;;
+    *) fixed+=("$i") ;;
+  esac
 done
-echo "Running ${#names[@]} Godot test runs: ${#fixed[@]} at a fixed frame rate, $jobs at a time, and ${#realtime[@]} in real time beside them."
+echo "Running ${#names[@]} Godot test runs: ${#fixed[@]} at a fixed frame rate, $jobs at a time, and $((${#shared[@]} + ${#own[@]})) in real time in two lanes beside them."
 
 (
-  for i in "${realtime[@]}"; do run_one "$i" "real time"; done
+  for i in "${shared[@]}"; do run_one "$i" "real time"; done
 ) &
-realtime_lane=$!
+shared_lane=$!
+(
+  for i in "${own[@]}"; do run_one "$i" "real time"; done
+) &
+own_lane=$!
 
 declare -A pool=()
 for i in "${fixed[@]}"; do
@@ -136,7 +159,7 @@ for i in "${fixed[@]}"; do
   run_one "$i" fixed &
   pool[$!]=1
 done
-wait "${!pool[@]}" "$realtime_lane"
+wait "${!pool[@]}" "$shared_lane" "$own_lane"
 
 # A fixed-rate failure gets one more try in real time.
 for i in "${fixed[@]}"; do
