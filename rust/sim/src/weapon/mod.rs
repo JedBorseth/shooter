@@ -231,6 +231,15 @@ impl CombatState {
         self
     }
 
+    /// This loadout coming back up from nothing in hand, as after a revive
+    /// in Zombies: out of aim, the weapon in hand being drawn.
+    pub fn raised(mut self) -> Self {
+        self.ads = 0.0;
+        self.burst_left = 0;
+        self.action = draw(&mut self);
+        self
+    }
+
     /// This loadout carrying `count` of the tactical `kind`.
     pub fn with_tacticals(mut self, kind: equipment::Kind, count: u8) -> Self {
         self.tactical = kind;

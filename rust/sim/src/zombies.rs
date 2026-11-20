@@ -11,6 +11,7 @@ use crate::rng;
 use crate::weapon::{CombatState, WeaponId};
 
 pub mod chase;
+pub mod laststand;
 
 /// Tuning for a Zombies match.
 #[derive(Clone, Copy, Debug, PartialEq)]

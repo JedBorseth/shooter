@@ -127,7 +127,10 @@ use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, Weapo
 // boards as events (`ZombiesEvent`).
 // Version 52 added Zombies' doors, power-ups, and their timers to
 // `ZombiesEvent`.
-pub const PROTOCOL_VERSION: u16 = 52;
+// Version 53 added Zombies' last stand: whether a player is down in the
+// predicted state and player views, going down and reviving as events, and
+// revives and headshots on the scoreboard.
+pub const PROTOCOL_VERSION: u16 = 53;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -499,6 +502,9 @@ pub struct ScoreRow {
     /// in `captures`).
     pub defends: u32,
     pub alive: bool,
+    /// Zombies: teammates revived, and headshot kills.
+    pub revives: u32,
+    pub headshots: u32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -632,6 +638,21 @@ pub enum ZombiesEvent {
     /// To everyone: power-up `id` is gone, taken by player `by` (none when
     /// it ran out).
     PowerUpGone { id: u8, by: Option<u8> },
+    /// To everyone, when it changes and on joining: player `player` went
+    /// down and bleeds out at server tick `bleeds_out_at`, or (none) is no
+    /// longer down: revived, or bled out.
+    Downed {
+        player: u8,
+        bleeds_out_at: Option<Tick>,
+    },
+    /// To everyone: player `by` started reviving downed player `player`, done
+    /// at server tick `done_at` if they keep holding; `by` none when the
+    /// revive stopped short.
+    Revive {
+        player: u8,
+        by: Option<u8>,
+        done_at: Tick,
+    },
     /// To everyone, whenever they change: the server ticks Insta-Kill and
     /// Double Points run out (none when off).
     PowerUpTimers {
@@ -813,6 +834,8 @@ pub struct PlayerView {
     /// as 1 to 255 ([`throw_to_u8`]); `defusing` says which.
     pub charge_use: u8,
     pub defusing: bool,
+    /// Zombies: down in last stand, waiting for a revive.
+    pub downed: bool,
 }
 
 /// A throw's progress (0 to 1) as [`PlayerView::throw`]: 0 for none.
@@ -894,6 +917,7 @@ impl PlayerView {
             reloading: combat.is_reloading(),
             reload_empty: combat.is_empty_reload(),
             alive: p.state.alive(),
+            downed: p.state.downed,
             shots_fired: combat.shots_fired,
             mantling: p.state.movement.mantling(),
             vaulting: p.state.movement.in_vault(p.on_floor),
@@ -1568,6 +1592,8 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
                 w.varint(row.hill_seconds);
                 w.varint(row.defends);
                 w.bool(row.alive);
+                w.varint(row.revives);
+                w.varint(row.headshots);
             }
         }
         GameEvent::Spawned { yaw } => {
@@ -1838,6 +1864,27 @@ fn write_zombies_event(w: &mut BitWriter, event: &ZombiesEvent) {
                 w.u8(by);
             }
         }
+        ZombiesEvent::Downed {
+            player,
+            bleeds_out_at,
+        } => {
+            w.bits(8, ZOMBIES_TAG_BITS);
+            w.u8(player);
+            write_option_tick(w, bleeds_out_at);
+        }
+        ZombiesEvent::Revive {
+            player,
+            by,
+            done_at,
+        } => {
+            w.bits(9, ZOMBIES_TAG_BITS);
+            w.u8(player);
+            w.bool(by.is_some());
+            if let Some(by) = by {
+                w.u8(by);
+            }
+            w.u32(done_at);
+        }
         ZombiesEvent::PowerUpTimers {
             insta_kill_until,
             double_points_until,
@@ -1893,6 +1940,15 @@ fn read_zombies_event(r: &mut BitReader) -> DecodeResult<ZombiesEvent> {
         7 => ZombiesEvent::PowerUpTimers {
             insta_kill_until: read_option_tick(r)?,
             double_points_until: read_option_tick(r)?,
+        },
+        8 => ZombiesEvent::Downed {
+            player: r.u8()?,
+            bleeds_out_at: read_option_tick(r)?,
+        },
+        9 => ZombiesEvent::Revive {
+            player: r.u8()?,
+            by: if r.bool()? { Some(r.u8()?) } else { None },
+            done_at: r.u32()?,
         },
         _ => return Err(DecodeError::Invalid("zombies event")),
     })
@@ -2116,6 +2172,8 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
                     hill_seconds: r.varint()?,
                     defends: r.varint()?,
                     alive: r.bool()?,
+                    revives: r.varint()?,
+                    headshots: r.varint()?,
                 });
             }
             Ok(GameEvent::Scoreboard { rows })
@@ -2664,7 +2722,7 @@ fn write_view_delta(w: &mut BitWriter, v: &PlayerView, base: &PlayerView) {
             p.ladder,
         )
     };
-    let flags_changed = flags(v) != flags(base) || v.mount != base.mount;
+    let flags_changed = flags(v) != flags(base) || (v.mount, v.downed) != (base.mount, base.downed);
     w.bool(flags_changed);
     if flags_changed {
         write_stance(w, v.stance);
@@ -2679,6 +2737,7 @@ fn write_view_delta(w: &mut BitWriter, v: &PlayerView, base: &PlayerView) {
         w.bool(v.mantling);
         w.bool(v.vaulting);
         w.bool(v.meleeing);
+        w.bool(v.downed);
         w.bool(v.ladder.is_some());
         if let Some(heading) = v.ladder {
             w.u8(heading);
@@ -2756,6 +2815,7 @@ fn read_view_delta(r: &mut BitReader, base: &PlayerView) -> DecodeResult<PlayerV
         v.mantling = r.bool()?;
         v.vaulting = r.bool()?;
         v.meleeing = r.bool()?;
+        v.downed = r.bool()?;
         v.ladder = if r.bool()? { Some(r.u8()?) } else { None };
         v.mount = r.u8()?;
     }
@@ -2796,6 +2856,7 @@ fn write_predicted(w: &mut BitWriter, p: &Predicted) {
     w.bool(s.melee_held);
     w.bool(s.lethal_held);
     w.bool(s.tactical_held);
+    w.bool(s.downed);
     w.f32(s.health);
     w.f32(s.since_damage);
     w.f32(s.fall_speed);
@@ -2811,6 +2872,7 @@ fn read_predicted(r: &mut BitReader) -> DecodeResult<Predicted> {
     let melee_held = r.bool()?;
     let lethal_held = r.bool()?;
     let tactical_held = r.bool()?;
+    let downed = r.bool()?;
     let health = r.f32()?;
     let since_damage = r.f32()?;
     let fall_speed = r.f32()?;
@@ -2829,6 +2891,7 @@ fn read_predicted(r: &mut BitReader) -> DecodeResult<Predicted> {
             melee_held,
             lethal_held,
             tactical_held,
+            downed,
         },
         position,
         on_floor,
@@ -4419,6 +4482,8 @@ mod tests {
                         hill_seconds: 74,
                         defends: 3,
                         alive: true,
+                        revives: 2,
+                        headshots: 9,
                     },
                     ScoreRow {
                         id: 203,
@@ -4822,6 +4887,19 @@ mod tests {
             GameEvent::Zombies(ZombiesEvent::PowerUpTimers {
                 insta_kill_until: Some(5000),
                 double_points_until: None,
+            }),
+            GameEvent::Zombies(ZombiesEvent::Downed {
+                player: 3,
+                bleeds_out_at: Some(77_000),
+            }),
+            GameEvent::Zombies(ZombiesEvent::Downed {
+                player: 3,
+                bleeds_out_at: None,
+            }),
+            GameEvent::Zombies(ZombiesEvent::Revive {
+                player: 3,
+                by: Some(1),
+                done_at: 77_360,
             }),
         ]);
         assert_eq!(

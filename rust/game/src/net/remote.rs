@@ -46,6 +46,8 @@ pub struct RemotePlayer {
     #[init(node = "AimAssist")]
     aim_assist: OnReady<Gd<AimAssistTarget>>,
 
+    /// The name shown over a teammate.
+    display_name: String,
     shots_fired: Option<u32>,
     hits: Option<u8>,
     /// Flinches played from snapshots (tests).
@@ -425,7 +427,23 @@ impl RemotePlayer {
     }
 
     pub fn set_display_name(&mut self, name: &str) {
+        self.display_name = name.to_owned();
         self.name_label.set_text(name);
+    }
+
+    /// Zombies: marks a teammate down in last stand over their head, seen
+    /// through walls like their name, until they are back up.
+    pub fn set_downed_marker(&mut self, downed: bool) {
+        let (text, colour) = if downed {
+            (
+                format!("REVIVE\n{}", self.display_name),
+                Color::from_rgb(1.0, 0.45, 0.3),
+            )
+        } else {
+            (self.display_name.clone(), Color::from_rgb(0.55, 0.78, 1.0))
+        };
+        self.name_label.set_text(&text);
+        self.name_label.set_modulate(colour);
     }
 
     /// Teammates wear the allies' colours, show their name, and take no hits

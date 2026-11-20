@@ -38,6 +38,8 @@ pub struct HordeView {
     history: HordeHistory,
     puppets: Vec<Puppet>,
     lag: f64,
+    /// Players down in last stand.
+    downed: Vec<u8>,
 }
 
 impl HordeView {
@@ -65,6 +67,7 @@ impl HordeView {
             doors,
             history: HordeHistory::default(),
             puppets: Vec::new(),
+            downed: Vec::new(),
             lag: protocol::zombie_lag(snapshot_interval),
         })
     }
@@ -211,8 +214,28 @@ impl HordeView {
                 let double = double_points_until.map_or(0.0, &seconds_until);
                 self.director.bind_mut().net_timers(insta, double);
             }
-            ZombiesEvent::Hit { .. } => {}
+            ZombiesEvent::Downed {
+                player,
+                bleeds_out_at,
+            } => {
+                let downed = bleeds_out_at.is_some();
+                self.downed.retain(|id| *id != player);
+                if downed {
+                    self.downed.push(player);
+                }
+            }
+            // Last stand on the HUD is `NetClient`'s, which knows names.
+            ZombiesEvent::Hit { .. } | ZombiesEvent::Revive { .. } => {}
         }
+    }
+
+    /// Players down in last stand.
+    pub fn downed(&self) -> &[u8] {
+        &self.downed
+    }
+
+    pub fn director(&mut self) -> &mut Gd<ZombieDirector> {
+        &mut self.director
     }
 
     /// This player's kills and headshots, from the scoreboard.

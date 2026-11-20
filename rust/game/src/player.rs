@@ -1074,6 +1074,17 @@ impl FpsPlayer {
         self.state.alive()
     }
 
+    /// Zombies: down in last stand (the server's word, through prediction).
+    #[func]
+    pub(crate) fn is_downed(&self) -> bool {
+        self.state.downed
+    }
+
+    /// Feet position at the latest tick.
+    pub(crate) fn feet_position(&self) -> Vector3 {
+        self.current_position
+    }
+
     /// Seconds until respawn while dead.
     #[func]
     fn respawn_time_left(&self) -> f32 {
