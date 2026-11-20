@@ -1,0 +1,39 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/zombies_power_switch.gd" id="1_switch"]
+[ext_resource type="PackedScene" path="res://assets/models/power_switch/power_switch.gltf" id="2_cabinet"]
+[ext_resource type="PackedScene" path="res://assets/models/power_lever/power_lever.gltf" id="3_lever"]
+[ext_resource type="PackedScene" path="res://assets/models/power_lamps/power_lamps.gltf" id="4_lamps"]
+[ext_resource type="AudioStream" path="res://assets/audio/impacts/metal_3.ogg" id="5_sound"]
+
+[sub_resource type="BoxShape3D" id="Shape_cabinet"]
+size = Vector3(0.9, 1.66, 0.5)
+
+[node name="PowerSwitch" type="StaticBody3D"]
+script = ExtResource("1_switch")
+metadata/surface = "metal"
+
+[node name="Collision" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.83, 0.03)
+shape = SubResource("Shape_cabinet")
+
+[node name="Cabinet" parent="." instance=ExtResource("2_cabinet")]
+
+[node name="Lever" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.15, 0.22)
+
+[node name="Model" parent="Lever" instance=ExtResource("3_lever")]
+
+[node name="Lamps" parent="." instance=ExtResource("4_lamps")]
+
+[node name="Light" type="OmniLight3D" parent="Lamps"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.45, 0.6)
+light_color = Color(0.5, 1, 0.4, 1)
+light_energy = 0.8
+omni_range = 2.5
+
+[node name="Sound" type="AudioStreamPlayer3D" parent="."]
+stream = ExtResource("5_sound")
+volume_db = 2.0
+unit_size = 6.0
+bus = &"Effects"

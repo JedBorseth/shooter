@@ -189,6 +189,9 @@ pub struct PlayerState {
     /// spawned with. Part of the predicted state, so the client steps its
     /// movement and weapon with the same perks the server does.
     pub perks: Perks,
+    /// Zombies: the drinks held ([`crate::zombies::drinks`]). The server
+    /// sells and takes them; prediction follows their handling.
+    pub drinks: crate::zombies::drinks::Drinks,
 }
 
 impl PlayerState {
@@ -206,6 +209,7 @@ impl PlayerState {
             tactical_held: false,
             downed: false,
             perks: Perks::NONE,
+            drinks: crate::zombies::drinks::Drinks::NONE,
         }
     }
 
@@ -234,6 +238,7 @@ impl PlayerState {
             move_ratio: speed / params.walk_speed,
             mount: self.movement.mount_blend,
             handling: self.perks.handling(),
+            drinks: self.drinks,
         }
     }
 }
@@ -468,7 +473,8 @@ pub fn step(
                 crate::zombies::laststand::CRAWL_SPEED_SCALE
             } else {
                 1.0
-            },
+            }
+            * state.drinks.speed_scale(),
         // Dexterity's sprint-out is shorter; the legs follow the gun.
         sprint_out_time: def.sprint_out_time / perks.handling().sprint_out,
         lunge,

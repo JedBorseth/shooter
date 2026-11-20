@@ -38,6 +38,7 @@ use shooter_sim::zombies::chase::{self, ChaseEvent, Chaser, Prey, Window, World}
 use shooter_sim::zombies::{self, Phase, PowerUp, RoundEvent, Rounds, ZombieRules};
 use shooter_sim::{TICK_DT, Vec3};
 
+use super::machines::Machines;
 use crate::convert::{to_godot, to_sim};
 use crate::target::WORLD_LAYER;
 use crate::zombie::BARRIER_LAYER;
@@ -178,6 +179,8 @@ pub struct Horde {
     double_points_left: f32,
     /// What happened since the server last asked.
     pending: Vec<HordeEvent>,
+    /// The power switch and the drink machines.
+    pub machines: Machines,
 }
 
 impl Horde {
@@ -215,6 +218,7 @@ impl Horde {
             insta_kill_left: 0.0,
             double_points_left: 0.0,
             pending: Vec::new(),
+            machines: Machines::new(map),
         };
         horde.reset();
         Some(horde)
@@ -237,6 +241,7 @@ impl Horde {
         self.insta_kill_left = 0.0;
         self.double_points_left = 0.0;
         self.pending.clear();
+        self.machines.reset();
         for door in &mut self.doors {
             door.open = false;
             door.node

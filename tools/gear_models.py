@@ -934,3 +934,186 @@ def charge_site_a(b: Model):
 def charge_site_b(b: Model):
     """Site B's marker crate (see _site_crate)."""
     _site_crate(b, "B")
+
+
+# --- Zombies: drink machines, the power switch ------------------------------------------
+# Each drink machine is a cabinet in its drink's colour (scripts/zombies_drink_machine.gd)
+# with its name on the header, an emblem on the front, a dispenser, and a coin panel. Its
+# lit header and strips are a separate model (drink_sign_<key>) the scene shows only while
+# the power is on. Fronts face +z; origins on the ground at the middle.
+DRINKS = {
+    # key: (name, cabinet colour, glow colour, emblem)
+    "bulwark": ("BULWARK", (0.62, 0.24, 0.05), (1.0, 0.52, 0.16), "shield"),
+    "second_wind": ("SECOND WIND", (0.05, 0.4, 0.42), (0.25, 1.0, 0.92), "cross"),
+    "quickload": ("QUICKLOAD", (0.3, 0.13, 0.52), (0.72, 0.4, 1.0), "magazine"),
+    "hair_trigger": ("HAIR TRIGGER", (0.5, 0.04, 0.07), (1.0, 0.18, 0.22), "round"),
+    "long_stride": ("LONG STRIDE", (0.33, 0.52, 0.08), (0.72, 1.0, 0.25), "chevrons"),
+}
+for _key, (_name, _paint, _light, _emblem) in DRINKS.items():
+    LOOKS[f"drink_{_key}"] = {"color": _paint, "rough": 0.38, "metal": 0.4}
+    LOOKS[f"drink_glow_{_key}"] = {"color": _light, "glow": 2.2}
+LOOKS["drink_glass"] = {"color": (0.02, 0.025, 0.03), "rough": 0.08}
+LOOKS["drink_cream"] = {"color": (0.72, 0.68, 0.6), "rough": 0.5}
+LOOKS["machine_dark"] = {"color": (0.12, 0.125, 0.13), "rough": 0.55, "metal": 0.85}
+LOOKS["machine_steel"] = {"color": (0.32, 0.33, 0.34), "rough": 0.45, "metal": 0.9}
+LOOKS["sign_glow_white"] = {"color": (1.0, 0.97, 0.9), "glow": 1.6}
+
+MACHINE_W = 0.5  # half width
+MACHINE_D = 0.4  # half depth
+MACHINE_H = 2.15
+HEADER = (1.72, 2.08)  # the header's bottom and top
+
+
+def _emblem(b: Model, kind: str, cx: float, cy: float, z: float, look: str):
+    """A drink's emblem, about 0.36 m across, raised off the front at `z`."""
+    t = 0.012
+    if kind == "shield":
+        b.hull([(cx + x, cy + y, zz) for zz in (z, z + t) for x, y in
+                ((-0.15, 0.18), (0.15, 0.18), (0.15, 0.02), (0.0, -0.18), (-0.15, 0.02))], look)
+    elif kind == "cross":
+        b.box(cx - 0.05, cx + 0.05, cy - 0.17, cy + 0.17, z, z + t, look)
+        b.box(cx - 0.17, cx + 0.17, cy - 0.05, cy + 0.05, z, z + t, look)
+    elif kind == "magazine":
+        # A curved box magazine, leaning, with a round at its lips.
+        pts = [(-0.06, 0.16), (0.06, 0.16), (0.11, -0.16), (-0.03, -0.16)]
+        b.hull([(cx + x, cy + y, zz) for zz in (z, z + t) for x, y in pts], look)
+        b.cyl("z", z, z + t * 1.5, (cx - 0.005, cy + 0.19), 0.03, look, sides=10)
+    elif kind == "round":
+        b.box(cx - 0.05, cx + 0.05, cy - 0.17, cy + 0.06, z, z + t, look)
+        b.hull([(cx + x, cy + y, zz) for zz in (z, z + t) for x, y in
+                ((-0.05, 0.06), (0.05, 0.06), (0.03, 0.14), (0.0, 0.18), (-0.03, 0.14))], look)
+        b.box(cx - 0.06, cx + 0.06, cy - 0.17, cy - 0.13, z, z + t * 1.4, look)
+    else:  # chevrons
+        for dy in (-0.11, 0.02, 0.15):
+            for side in (-1, 1):
+                b.hull([(cx + x * side, cy + dy + y, zz) for zz in (z, z + t) for x, y in
+                        ((0.0, 0.0), (0.0, -0.06), (0.17, -0.12), (0.17, -0.06))], look)
+
+
+def _drink_machine(b: Model, key: str):
+    name, _paint, _light, emblem = DRINKS[key]
+    paint = f"drink_{key}"
+    w, d = MACHINE_W, MACHINE_D
+    # Plinth, cabinet, and a header that stands proud of the front.
+    b.box(-w + 0.02, w - 0.02, 0.0, 0.1, -d + 0.02, d - 0.02, "machine_dark", bevel=0.01)
+    b.box(-w, w, 0.1, HEADER[0], -d, d, paint, bevel=0.025)
+    b.box(-w - 0.02, w + 0.02, HEADER[0], HEADER[1], -d - 0.01, d + 0.05, paint, bevel=0.02)
+    b.box(-w - 0.03, w + 0.03, HEADER[1], MACHINE_H, -d - 0.02, d + 0.06, "machine_dark", bevel=0.015)
+    # The header's sign panel (dark here; the lit copy is drink_sign_<key>) and name.
+    f = d + 0.05
+    b.box(-w + 0.04, w - 0.04, HEADER[0] + 0.05, HEADER[1] - 0.05, f, f + 0.01, "drink_glass")
+    size = 0.17 if len(name) <= 9 else 0.13
+    b.text(name, 0.0, HEADER[0] + 0.1, f + 0.012, 0.0, size, "drink_cream", depth=0.006, detail=False)
+    # The front: a cream panel with the emblem, a dark window with bottles, the
+    # dispenser, and the coin panel down the right.
+    b.box(-w + 0.05, w * 0.3, 1.05, HEADER[0] - 0.06, d, d + 0.012, "drink_cream", bevel=0.004)
+    _emblem(b, emblem, -w * 0.35 + 0.08, 1.33, d + 0.012, paint)
+    b.box(-w + 0.05, w * 0.3, 0.42, 0.98, d, d + 0.01, "drink_glass")
+    for k in range(4):
+        x = -w + 0.13 + k * 0.17
+        b.cyl("y", 0.47, 0.72, (x, d - 0.04), 0.035, paint, sides=10)
+        b.cyl("y", 0.72, 0.8, (x, d - 0.04), 0.018, paint, sides=8)
+        b.cyl("y", 0.8, 0.83, (x, d - 0.04), 0.021, "machine_steel", sides=8)
+    b.box(-w + 0.1, w * 0.3 - 0.05, 0.16, 0.34, d - 0.06, d + 0.015, "trim_black", bevel=0.01)
+    b.box(w * 0.38, w - 0.05, 0.42, HEADER[0] - 0.06, d, d + 0.03, "machine_steel", bevel=0.008)
+    for k in range(5):
+        b.box(w * 0.48, w - 0.13, 1.3 - k * 0.11, 1.37 - k * 0.11, d + 0.03, d + 0.04, "trim_black", bevel=0.004)
+    b.box(w * 0.5, w - 0.15, 1.45, 1.5, d + 0.03, d + 0.035, "drink_glass")
+    # Side vents and a kick plate.
+    for side in (-1, 1):
+        for k in range(6):
+            y = 0.35 + k * 0.08
+            b.box(side * w - 0.004, side * w + 0.004, y, y + 0.03, -0.25, 0.25, "trim_black")
+    b.box(-w, w, 0.1, 0.16, d, d + 0.01, "machine_steel")
+
+
+def _drink_sign(b: Model, key: str):
+    name, _paint, _light, _emblem = DRINKS[key]
+    glow = f"drink_glow_{key}"
+    w, d = MACHINE_W, MACHINE_D
+    f = d + 0.05
+    # The name, lit, just in front of the dark letters, and a lit frame round the
+    # header's panel.
+    size = 0.17 if len(name) <= 9 else 0.13
+    b.text(name, 0.0, HEADER[0] + 0.1, f + 0.02, 0.0, size, glow, depth=0.004, detail=False)
+    x0, x1, y0, y1 = -w + 0.04, w - 0.04, HEADER[0] + 0.05, HEADER[1] - 0.05
+    for a, bb, c, e in ((x0, x1, y0 - 0.012, y0), (x0, x1, y1, y1 + 0.012), (x0 - 0.012, x0, y0, y1),
+                        (x1, x1 + 0.012, y0, y1)):
+        b.box(a, bb, c, e, f, f + 0.016, glow)
+    # Light strips down both front edges and a lamp under the header.
+    for side in (-1, 1):
+        b.box(side * w - 0.012, side * w + 0.012, 0.2, HEADER[0] - 0.03, d - 0.005, d + 0.012, glow)
+    b.box(-w + 0.06, w - 0.06, HEADER[0] - 0.035, HEADER[0] - 0.015, d + 0.01, d + 0.04, "sign_glow_white")
+
+
+def _register_drink(key: str):
+    def machine(b: Model):
+        _drink_machine(b, key)
+
+    def sign(b: Model):
+        _drink_sign(b, key)
+
+    machine.__doc__ = f"The {DRINKS[key][0].title()} drink machine (see _drink_machine)."
+    sign.__doc__ = f"The {DRINKS[key][0].title()} machine's lit sign (see _drink_sign)."
+    MODELS[f"drink_machine_{key}"] = machine
+    MODELS[f"drink_sign_{key}"] = sign
+
+
+for _key in DRINKS:
+    _register_drink(_key)
+
+
+LOOKS["pad_concrete"] = {"color": (0.45, 0.44, 0.42), "rough": 0.9}
+LOOKS["hazard_yellow"] = {"color": (0.85, 0.66, 0.08), "rough": 0.6}
+LOOKS["lamp_off"] = {"color": (0.18, 0.05, 0.04), "rough": 0.2}
+
+
+@model
+def power_switch(b: Model):
+    """The power switch: a steel switch cabinet on a concrete pad, 1.6 m to
+    its top, with hazard bands, conduit up out of the ground, and two lamps
+    (dark here; scripts/zombies_power_switch.gd lights them). The lever is
+    power_lever, pivoting at (0, 1.15, 0.22). Front +z, origin on the ground."""
+    b.box(-0.55, 0.55, 0.0, 0.08, -0.4, 0.4, "pad_concrete", bevel=0.01)
+    b.box(-0.42, 0.42, 0.08, 1.6, -0.2, 0.2, "machine_steel", bevel=0.02)
+    b.box(-0.44, 0.44, 1.6, 1.66, -0.22, 0.24, "machine_steel", bevel=0.01)
+    # The door, its hinges and handle, and a hazard band across the bottom.
+    b.box(-0.38, 0.38, 0.2, 1.52, 0.2, 0.215, "machine_steel", bevel=0.006)
+    for y in (0.4, 1.3):
+        b.cyl("y", y - 0.06, y + 0.06, (-0.39, 0.215), 0.012, "machine_dark", sides=8)
+    for k in range(7):
+        x = -0.36 + k * 0.11
+        b.hull([(x, 0.22, 0.216), (x + 0.05, 0.22, 0.216), (x + 0.1, 0.32, 0.216), (x + 0.05, 0.32, 0.216),
+                (x, 0.22, 0.22), (x + 0.05, 0.22, 0.22), (x + 0.1, 0.32, 0.22), (x + 0.05, 0.32, 0.22)],
+               "hazard_yellow")
+    # The lever's mounting plate and slot.
+    b.box(-0.12, 0.12, 0.8, 1.5, 0.215, 0.23, "machine_dark", bevel=0.006)
+    b.box(-0.025, 0.025, 0.88, 1.42, 0.229, 0.232, "trim_black")
+    b.cyl("x", -0.07, 0.07, (1.15, 0.22), 0.04, "machine_dark", sides=12)
+    # The two lamps above the plate, and the conduit.
+    for x in (-0.25, 0.25):
+        b.cyl("z", 0.2, 0.24, (x, 1.42), 0.045, "lamp_off", sides=12)
+        b.cyl("z", 0.2, 0.22, (x, 1.42), 0.055, "machine_dark", sides=12)
+    for x in (-0.3, 0.3):
+        b.cyl("y", 0.08, 1.6, (x, -0.24), 0.03, "machine_dark", sides=8)
+    b.text("POWER", 0.0, 1.53, 0.233, 0.0, 0.055, "drink_cream", depth=0.003, detail=False)
+
+
+@model
+def power_lever(b: Model):
+    """The power switch's lever, origin at its pivot, the handle up (off).
+    scripts/zombies_power_switch.gd swings it down about x to turn it on."""
+    b.box(-0.02, 0.02, -0.03, 0.32, 0.02, 0.06, "machine_dark", bevel=0.006)
+    b.cyl("x", -0.11, 0.11, (0.34, 0.08), 0.03, "rubber", sides=10)
+    b.cyl("x", -0.05, 0.05, (0.0, 0.03), 0.05, "machine_steel", sides=12)
+
+
+LOOKS["lamp_on_green"] = {"color": (0.4, 1.0, 0.3), "glow": 4.0}
+
+
+@model
+def power_lamps(b: Model):
+    """The power switch's lamps, lit: shown once the power is on, over the
+    dark lenses of power_switch."""
+    for x in (-0.25, 0.25):
+        b.cyl("z", 0.236, 0.244, (x, 1.42), 0.043, "lamp_on_green", sides=12)

@@ -37,6 +37,7 @@ use crate::score::{Award, ScoreTotals, Scored};
 use crate::snd::{RoundEnd, RoundPhase, UseKind};
 use crate::tdm::{MAX_NAME_CHARS, Mode, Period, Phase, TEAM_COUNT, Team};
 use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, WeaponState};
+use crate::zombies::drinks::Drinks;
 
 /// Bumped whenever the wire format changes; mismatched clients are rejected.
 // Version 5 added Team Deathmatch: names, teams, ready-up, loadouts, the
@@ -136,7 +137,9 @@ use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, Weapo
 // Version 55 added whether a player moves quietly (Dead Silence,
 // `PlayerView::quiet`).
 // Version 56 added Scavenger's packs as events (`ScavengerEvent`).
-pub const PROTOCOL_VERSION: u16 = 56;
+// Version 57 added Zombies' drinks (`crate::zombies::drinks`) in the
+// predicted state, and the power, drink machines, and drinking as events.
+pub const PROTOCOL_VERSION: u16 = 57;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -678,6 +681,25 @@ pub enum ZombiesEvent {
     PowerUpTimers {
         insta_kill_until: Option<Tick>,
         double_points_until: Option<Tick>,
+    },
+    /// To everyone, when it changes and on joining: the power is on (or off
+    /// again for a new game). Drink machines and the upgrade machine need it.
+    Power { on: bool },
+    /// To everyone, when it changes, on joining, and when players come or
+    /// go: drink machine `machine` (the map's `DrinkMachines` in order)
+    /// sells for `price`, needs the power on (`needs_power`), and can be
+    /// used, or has left (`available` false: Second Wind's, once a lone
+    /// player has bought it three times).
+    Machine {
+        machine: u8,
+        available: bool,
+        price: u32,
+        needs_power: bool,
+    },
+    /// To everyone: player `player` bought and drank `drink`.
+    Drank {
+        player: u8,
+        drink: crate::zombies::drinks::Drink,
     },
 }
 
@@ -1844,7 +1866,7 @@ fn read_option_team(r: &mut BitReader) -> DecodeResult<Option<Team>> {
 /// new modes' events fill in below it.
 const ZOMBIES_EVENT_TAG: u32 = 31;
 /// Bits for a [`ZombiesEvent`]'s own tag.
-const ZOMBIES_TAG_BITS: u32 = 4;
+const ZOMBIES_TAG_BITS: u32 = 5;
 
 fn write_zombies_event(w: &mut BitWriter, event: &ZombiesEvent) {
     match *event {
@@ -1937,6 +1959,27 @@ fn write_zombies_event(w: &mut BitWriter, event: &ZombiesEvent) {
             write_option_tick(w, insta_kill_until);
             write_option_tick(w, double_points_until);
         }
+        ZombiesEvent::Power { on } => {
+            w.bits(10, ZOMBIES_TAG_BITS);
+            w.bool(on);
+        }
+        ZombiesEvent::Machine {
+            machine,
+            available,
+            price,
+            needs_power,
+        } => {
+            w.bits(11, ZOMBIES_TAG_BITS);
+            w.u8(machine);
+            w.bool(available);
+            w.varint(price);
+            w.bool(needs_power);
+        }
+        ZombiesEvent::Drank { player, drink } => {
+            w.bits(12, ZOMBIES_TAG_BITS);
+            w.u8(player);
+            w.bits(u32::from(drink.code()), 3);
+        }
     }
 }
 
@@ -1993,6 +2036,18 @@ fn read_zombies_event(r: &mut BitReader) -> DecodeResult<ZombiesEvent> {
             player: r.u8()?,
             by: if r.bool()? { Some(r.u8()?) } else { None },
             done_at: r.u32()?,
+        },
+        10 => ZombiesEvent::Power { on: r.bool()? },
+        11 => ZombiesEvent::Machine {
+            machine: r.u8()?,
+            available: r.bool()?,
+            price: r.varint()?,
+            needs_power: r.bool()?,
+        },
+        12 => ZombiesEvent::Drank {
+            player: r.u8()?,
+            drink: crate::zombies::drinks::Drink::from_code(r.bits(3)? as u8)
+                .ok_or(DecodeError::Invalid("drink"))?,
         },
         _ => return Err(DecodeError::Invalid("zombies event")),
     })
@@ -2917,6 +2972,7 @@ fn write_predicted(w: &mut BitWriter, p: &Predicted) {
     w.bool(s.lethal_held);
     w.bool(s.tactical_held);
     w.bool(s.downed);
+    w.bits(u32::from(s.drinks.bits()), Drinks::BITS);
     w.f32(s.health);
     w.f32(s.since_damage);
     w.f32(s.fall_speed);
@@ -2934,6 +2990,8 @@ fn read_predicted(r: &mut BitReader) -> DecodeResult<Predicted> {
     let lethal_held = r.bool()?;
     let tactical_held = r.bool()?;
     let downed = r.bool()?;
+    let drinks =
+        Drinks::from_bits(r.bits(Drinks::BITS)? as u8).ok_or(DecodeError::Invalid("drinks"))?;
     let health = r.f32()?;
     let since_damage = r.f32()?;
     let fall_speed = r.f32()?;
@@ -2955,6 +3013,7 @@ fn read_predicted(r: &mut BitReader) -> DecodeResult<Predicted> {
             tactical_held,
             downed,
             perks,
+            drinks,
         },
         position,
         on_floor,
@@ -3424,6 +3483,9 @@ mod tests {
         let params = PlayerParams::default();
         let mut state = PlayerState {
             perks: Perks::of(&[crate::perk::Perk::Lightweight, crate::perk::Perk::Dexterity]),
+            drinks: Drinks::NONE
+                .with(crate::zombies::drinks::Drink::Quickload)
+                .with(crate::zombies::drinks::Drink::LongStride),
             ..PlayerState::default()
         };
         let mut events = Vec::new();
@@ -5027,6 +5089,17 @@ mod tests {
                 player: 3,
                 by: Some(1),
                 done_at: 77_360,
+            }),
+            GameEvent::Zombies(ZombiesEvent::Power { on: true }),
+            GameEvent::Zombies(ZombiesEvent::Machine {
+                machine: 2,
+                available: false,
+                price: 500,
+                needs_power: false,
+            }),
+            GameEvent::Zombies(ZombiesEvent::Drank {
+                player: 1,
+                drink: crate::zombies::drinks::Drink::LongStride,
             }),
         ]);
         assert_eq!(

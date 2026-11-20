@@ -231,7 +231,11 @@ Done: rounds with a growing, toughening horde, zombies that walk straight at the
 - [ ] Rebuild speed is approximate (0.6 s a board); measure Black Ops' and match it.
 - [x] Downed state and revives for co-op (`rust/sim/src/zombies/laststand.rs`, Black Ops III's numbers): the second hit downs instead of killing; downed players crawl with the sidearm (two spare magazines), take no harm, and zombies ignore them; a teammate holding use within 1.9 m for 3 s revives them (held still, as the client predicts), earning the 5% of points they lost going down; after 45 s they bleed out, every other player loses 10%, and they come back at the next round. Everyone down ends the game, so solo play ends on the first down.
 - [ ] Downed players crawl crouched: add a prone stance and a crawl animation (Black Ops crawls prone), and a revive animation for the reviver.
-- [ ] Quick Revive and the other perks (solo self-revive, half revive time).
+- [x] Drinks and the power ([docs/zombies.md](docs/zombies.md), Black Ops III's perk numbers under our own names and machines): a power switch in the west yard; Bulwark (down on the fifth hit), Second Wind (half-time revives; alone, 500 points, no power needed, and back up by yourself after 10 s, three times a game), Quickload (half-time reloads), Hair Trigger (a third faster fire, double damage on zombies), and Long Stride (7% faster); four at most, all lost on going down; badges on the HUD.
+  - [ ] A drinking animation (a bottle in the hands for about 3 s) instead of the weapon's re-raise.
+  - [ ] Drink and machine sounds from real CC0 recordings (a cap, a gulp, a machine hum); none suitable found yet.
+- [ ] A mystery crate: a random weapon for 950 points from a weighted pool, the cycling display, and a move to another spot after enough uses.
+- [ ] An upgrade machine (needs the power): more damage, magazine, and reserve, and a tint on the upgraded gun.
 - [x] The title screen's Zombies runs on a local dedicated server: Solo starts a private one that skips the ready-up and pauses; Co-op hosts one friends on the network find under Multiplayer, LAN (up to four players, ready-up, no pause). The scoreboard shows points, kills, downs, revives, and headshots.
 - [ ] Remove the offline `ZombieDirector` game once the benchmark and the capture scripts run Zombies on a server (they are its only users now).
 - [ ] Zombies on the Internet tab: a hosted co-op game registers with a master server.

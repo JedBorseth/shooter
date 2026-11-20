@@ -1732,7 +1732,12 @@ impl NetClient {
                 let revive = by.map(|by| {
                     let reviving = Some(by) == me;
                     let other = if reviving { player } else { by };
-                    let name = self.name_of(i32::from(other)).to_string();
+                    // Second Wind alone: getting back up by ourselves.
+                    let name = if by == player {
+                        String::new()
+                    } else {
+                        self.name_of(i32::from(other)).to_string()
+                    };
                     (name, reviving, self.seconds_until(Some(done_at)))
                 });
                 if let Some(horde) = &mut self.horde {
