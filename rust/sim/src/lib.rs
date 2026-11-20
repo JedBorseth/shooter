@@ -29,6 +29,7 @@ pub mod rng;
 pub mod scavenger;
 pub mod score;
 pub mod snd;
+pub mod streak;
 pub mod tdm;
 pub mod weapon;
 pub mod zombies;

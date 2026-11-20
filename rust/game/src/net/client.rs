@@ -47,10 +47,10 @@ use shooter_sim::net::discovery::clean_text;
 use shooter_sim::net::interpolation::{InterpolationBuffer, SnapshotClock};
 use shooter_sim::net::prediction::Reconciled;
 use shooter_sim::net::protocol::{
-    self as protocol, Baseline, ChargeStatus, ChargeView, ClientMessage, DominationView, FlagPlay,
-    FlagPointView, FlagStatus, FlagView, GameEvent, InputPacket, KillCause, MAX_BUILD_BYTES,
-    PROTOCOL_VERSION, RadarView, ScavengerEvent, ScoreRow, ServerMessage, Snapshot, ZombiesEvent,
-    ZoneView,
+    self as protocol, AirView, Baseline, ChargeStatus, ChargeView, ClientMessage, DominationView,
+    FlagPlay, FlagPointView, FlagStatus, FlagView, GameEvent, InputPacket, KillCause,
+    MAX_BUILD_BYTES, PROTOCOL_VERSION, RadarView, ScavengerEvent, ScoreRow, ServerMessage,
+    Snapshot, StreakEvent, ZombiesEvent, ZoneView,
 };
 use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::{CHANNEL_COUNT, CHANNEL_RELIABLE, DEFAULT_PORT, TICK_RATE, Tick};
@@ -59,6 +59,7 @@ use shooter_sim::snd::{
     Charge, ChargeContext, ChargePlayer, ChargeState, ChargeUse, RoundEnd, RoundPhase, Site,
     SndRules, UseKind,
 };
+use shooter_sim::streak::{Loadout, Streak};
 use shooter_sim::tdm::{Mode, Period, Phase, TEAM_COUNT, Team};
 use shooter_sim::weapon::{Slot, WeaponId};
 
@@ -217,6 +218,15 @@ pub struct NetClient {
     /// engine clock) it came.
     radar: RadarView,
     radar_at: f64,
+    /// Scorestreaks: the ones chosen (sent on connecting and whenever they
+    /// change), our count and held streaks as the server last said, which
+    /// held one the use button calls in, and every UAV and Counter-UAV up.
+    streak_choice: Loadout,
+    streak_progress: u32,
+    streak_held: Vec<Streak>,
+    streak_loadout: Loadout,
+    streak_selected: usize,
+    sky: Vec<AirView>,
     /// Zombies: the horde as drawn, and the map's director mirroring the
     /// server's game.
     horde: Option<HordeView>,
@@ -352,6 +362,8 @@ impl INode for NetClient {
                     transport::send_reliable(&mut peer, &hello.encode());
                     let class = ClientMessage::Class(self.current_class());
                     transport::send_reliable(&mut peer, &class.encode());
+                    let streaks = ClientMessage::Streaks(self.streak_choice);
+                    transport::send_reliable(&mut peer, &streaks.encode());
                 }
                 NetEvent::Disconnect(_) => self.on_disconnected(),
                 NetEvent::Receive(_, bytes, channel) => {
@@ -519,6 +531,17 @@ impl NetClient {
     /// `taken_by` is who took one (-1 when none was).
     #[signal]
     fn scavenger_changed(taken_by: i32);
+
+    /// Scorestreaks: our count or held streaks changed (`streak_info`).
+    /// `earned` is the key of a streak just earned, or "".
+    #[signal]
+    fn streaks_changed(earned: GString);
+
+    /// A UAV or Counter-UAV went up or left (`sky_info`). `called` is the
+    /// key of one just called in, and `ours` whether by our side ("" and
+    /// false when one left).
+    #[signal]
+    fn sky_changed(called: GString, ours: bool);
 
     /// Every player, ourselves included, as dictionaries with `id`, `name`,
     /// `team`, `bot`, `me`, `score`, `kills`, `deaths`, `ping`, `ready`,
@@ -866,7 +889,7 @@ impl NetClient {
     /// "defuse", or "": what holding interact would do where we stand).
     /// The enemies our minimap shows, as the server decided
     /// (`shooter_sim::radar`): dictionaries with `id`, `position` (a
-    /// `Vector3` on the ground plane, y 0), `kind` ("fire"), and `alpha`
+    /// `Vector3` on the ground plane, y 0), `kind` ("fire" or "sweep"), and `alpha`
     /// (1, fading to 0 over the dot's last second).
     #[func]
     fn radar_blips(&self) -> Array<VarDictionary> {
@@ -890,12 +913,115 @@ impl NetClient {
                     "kind",
                     match blip.kind {
                         shooter_sim::radar::BlipKind::Fire => "fire",
+                        shooter_sim::radar::BlipKind::Sweep => "sweep",
                     },
                 );
                 d.set("alpha", alpha);
                 Some(d)
             })
             .collect()
+    }
+
+    /// Our scorestreaks, as a dictionary: `progress` (score toward the next
+    /// this life), `next` (its key, "" with none chosen), `next_cost`,
+    /// `loadout` (the keys counted toward, cheapest first), `held` (the keys
+    /// held, oldest first), and `selected` (the index in `held` the use
+    /// button calls in, -1 with none held).
+    #[func]
+    fn streak_info(&self) -> VarDictionary {
+        let mut d = VarDictionary::new();
+        d.set("progress", self.streak_progress);
+        let next = self
+            .streak_loadout
+            .streaks()
+            .find(|s| s.cost() > self.streak_progress);
+        d.set("next", next.map_or("", |s| s.key()));
+        d.set("next_cost", next.map_or(0, |s| s.cost()));
+        let keys = |list: &mut dyn Iterator<Item = Streak>| -> PackedStringArray {
+            list.map(|s| GString::from(s.key())).collect()
+        };
+        d.set("loadout", &keys(&mut self.streak_loadout.streaks()));
+        d.set("held", &keys(&mut self.streak_held.iter().copied()));
+        d.set(
+            "selected",
+            if self.streak_held.is_empty() {
+                -1
+            } else {
+                self.streak_selected as i32
+            },
+        );
+        d
+    }
+
+    /// Calls in the selected held streak (the server decides).
+    #[func]
+    fn use_streak(&mut self) {
+        if let Some(streak) = self.streak_held.get(self.streak_selected).copied() {
+            self.send_reliable(&ClientMessage::UseStreak { streak });
+        }
+    }
+
+    /// Selects the next held streak.
+    #[func]
+    fn cycle_streak(&mut self) {
+        if !self.streak_held.is_empty() {
+            self.streak_selected = (self.streak_selected + 1) % self.streak_held.len();
+            self.signals().streaks_changed().emit("");
+        }
+    }
+
+    /// Chooses the scorestreaks to bring from the next spawn (keys; unknown
+    /// ones and repeats are dropped, and they sort by cost).
+    #[func]
+    fn set_streaks(&mut self, keys: PackedStringArray) {
+        let mut slots = [None; 3];
+        for (slot, key) in slots.iter_mut().zip(keys.as_slice()) {
+            *slot = Streak::by_key(&key.to_string());
+        }
+        self.streak_choice = Loadout(slots).sorted();
+        self.send_reliable(&ClientMessage::Streaks(self.streak_choice));
+    }
+
+    /// Every scorestreak, cheapest first, as dictionaries with `key`,
+    /// `name`, `cost`, `summary`, and `level` (the level it unlocks at).
+    #[func]
+    fn streak_items() -> Array<VarDictionary> {
+        let mut list: Vec<Streak> = Streak::ALL.to_vec();
+        list.sort_by_key(|s| s.cost());
+        list.into_iter()
+            .map(|s| {
+                let mut d = VarDictionary::new();
+                d.set("key", s.key());
+                d.set("name", s.label());
+                d.set("cost", s.cost());
+                d.set("summary", s.summary());
+                d.set("level", s.unlock_level());
+                d
+            })
+            .collect()
+    }
+
+    /// The UAVs and Counter-UAVs up, as a dictionary: `uav` and
+    /// `counter_uav` (seconds our side's has left, 0 for none), and
+    /// `enemy_uav` and `enemy_counter_uav` (the enemy's).
+    #[func]
+    fn sky_info(&self) -> VarDictionary {
+        let mut d = VarDictionary::new();
+        for (key, streak, ours) in [
+            ("uav", Streak::Uav, true),
+            ("counter_uav", Streak::CounterUav, true),
+            ("enemy_uav", Streak::Uav, false),
+            ("enemy_counter_uav", Streak::CounterUav, false),
+        ] {
+            let until = self
+                .sky
+                .iter()
+                .filter(|a| a.streak == streak && self.ours(a.side) == ours)
+                .map(|a| a.until)
+                .max();
+            d.set(key, self.seconds_until(until));
+        }
+        d
     }
 
     /// Whether an enemy Counter-UAV jams our minimap.
@@ -1729,6 +1855,38 @@ impl NetClient {
                 };
                 self.signals().scavenger_changed().emit(taken_by);
             }
+            GameEvent::Streak(StreakEvent::State {
+                progress,
+                held,
+                loadout,
+            }) => {
+                let earned = if held.len() > self.streak_held.len() {
+                    held.last().map_or("", |s| s.key())
+                } else {
+                    ""
+                };
+                // The newest earned is selected, as in Black Ops 2;
+                // otherwise the selection stays on its streak if it can.
+                let selected = self.streak_held.get(self.streak_selected).copied();
+                self.streak_selected = if !earned.is_empty() {
+                    held.len() - 1
+                } else {
+                    selected
+                        .and_then(|s| held.iter().position(|h| *h == s))
+                        .unwrap_or(held.len().saturating_sub(1))
+                };
+                self.streak_progress = progress;
+                self.streak_held = held;
+                self.streak_loadout = loadout;
+                self.signals().streaks_changed().emit(earned);
+            }
+            GameEvent::Streak(StreakEvent::Sky { up }) => {
+                let new = up.iter().find(|a| !self.sky.contains(a)).copied();
+                self.sky = up;
+                let (called, ours) =
+                    new.map_or(("", false), |a| (a.streak.key(), self.ours(a.side)));
+                self.signals().sky_changed().emit(called, ours);
+            }
             GameEvent::Charge(view) => {
                 let was_planted = self
                     .charge
@@ -1952,6 +2110,16 @@ impl NetClient {
 
     fn entry(&self, id: i32) -> Option<&RosterEntry> {
         self.roster.iter().find(|e| i32::from(e.id) == id)
+    }
+
+    /// Whether streak side `side` is ours: our team, or ourselves without
+    /// teams.
+    fn ours(&self, side: u8) -> bool {
+        if self.mode.free_for_all() {
+            Some(side) == self.player_id
+        } else {
+            self.local_team() == Some(side)
+        }
     }
 
     fn local_team(&self) -> Option<Team> {

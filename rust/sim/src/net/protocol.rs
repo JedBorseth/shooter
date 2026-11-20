@@ -37,6 +37,7 @@ use crate::player::{FireAim, PlayerInput, PlayerState};
 use crate::radar;
 use crate::score::{Award, ScoreTotals, Scored};
 use crate::snd::{RoundEnd, RoundPhase, UseKind};
+use crate::streak::{self, Streak};
 use crate::tdm::{MAX_NAME_CHARS, Mode, Period, Phase, TEAM_COUNT, Team};
 use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, WeaponState};
 use crate::zombies::drinks::Drinks;
@@ -154,7 +155,10 @@ use crate::zombies::drinks::Drinks;
 // Version 64 sends other players' views field by field through the same
 // coder (`net::delta`), positions, angles, and counters as differences, and
 // the Zombies horde as changes from the last horde the client acknowledged.
-pub const PROTOCOL_VERSION: u16 = 64;
+// Version 65 added scorestreaks (`crate::streak`): the loadout and using one
+// as client messages, `StreakEvent`, UAV sweep dots, and the Hardline,
+// Ghost, and Hard Wired perks (perk sets now take 16 bits).
+pub const PROTOCOL_VERSION: u16 = 65;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -184,6 +188,10 @@ pub const MAX_CHARGE_SITES: usize = 4;
 const MAX_ZONE_NAME_BYTES: usize = 64;
 
 const TAG_BITS: u32 = 3;
+/// Client messages past the seventh share tag 7 and add this many bits.
+const MORE_TAG_BITS: u32 = 3;
+/// Bits for a [`Streak`] on the wire: room for eight.
+const STREAK_BITS: u32 = 3;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ClientMessage {
@@ -213,6 +221,13 @@ pub enum ClientMessage {
     /// The killcam playing after our death is over, skipped or finished:
     /// respawn as soon as the respawn delay allows (`killcam`).
     SkipKillcam,
+    /// The scorestreaks to bring from the next spawn on (`crate::streak`).
+    /// The server keeps each streak once and sorts them by cost.
+    Streaks(streak::Loadout),
+    /// Call in a held `streak` (the first held one of its kind).
+    UseStreak {
+        streak: Streak,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -389,6 +404,33 @@ pub enum GameEvent {
     /// To everyone: Scavenger's packs dropped, taken, and gone
     /// (`crate::scavenger`). Clients draw them only for a Scavenger player.
     Scavenger(ScavengerEvent),
+    /// Scorestreaks (`crate::streak`).
+    Streak(StreakEvent),
+}
+
+/// Scorestreaks' news.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StreakEvent {
+    /// To one player, whenever it changes: their count toward the next
+    /// streak this life, the streaks they hold (oldest first), and the
+    /// loadout the count runs on.
+    State {
+        progress: u32,
+        held: Vec<Streak>,
+        loadout: streak::Loadout,
+    },
+    /// To everyone, whenever it changes and on joining: every UAV and
+    /// Counter-UAV up.
+    Sky { up: Vec<AirView> },
+}
+
+/// A UAV or Counter-UAV up: whose, on which side, and until when.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AirView {
+    pub streak: Streak,
+    pub owner: u8,
+    pub side: u8,
+    pub until: Tick,
 }
 
 /// A Scavenger pack's comings and goings.
@@ -1326,6 +1368,16 @@ impl ClientMessage {
                 write_string(&mut w, text, chat::MAX_BYTES);
             }
             ClientMessage::SkipKillcam => w.bits(6, TAG_BITS),
+            ClientMessage::Streaks(loadout) => {
+                w.bits(7, TAG_BITS);
+                w.bits(0, MORE_TAG_BITS);
+                write_loadout(&mut w, *loadout);
+            }
+            ClientMessage::UseStreak { streak } => {
+                w.bits(7, TAG_BITS);
+                w.bits(1, MORE_TAG_BITS);
+                write_streak(&mut w, *streak);
+            }
         }
         w.finish()
     }
@@ -1384,6 +1436,13 @@ impl ClientMessage {
                 })
             }
             6 => Ok(ClientMessage::SkipKillcam),
+            7 => match r.bits(MORE_TAG_BITS)? {
+                0 => Ok(ClientMessage::Streaks(read_loadout(&mut r)?)),
+                1 => Ok(ClientMessage::UseStreak {
+                    streak: read_streak(&mut r)?,
+                }),
+                _ => Err(DecodeError::Invalid("client message tag")),
+            },
             _ => Err(DecodeError::Invalid("client message tag")),
         }
     }
@@ -2030,6 +2089,10 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
                 w.bool(flag.contested);
                 w.u8(flag.capturers);
             }
+        }
+        GameEvent::Streak(event) => {
+            w.bits(STREAK_EVENT_TAG, EVENT_TAG_BITS);
+            write_streak_event(w, event);
         }
         GameEvent::Zombies(event) => {
             w.bits(ZOMBIES_EVENT_TAG, EVENT_TAG_BITS);
@@ -2750,7 +2813,112 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
             _ => return Err(DecodeError::Invalid("scavenger event")),
         })),
         ZOMBIES_EVENT_TAG => Ok(GameEvent::Zombies(read_zombies_event(r)?)),
+        STREAK_EVENT_TAG => Ok(GameEvent::Streak(read_streak_event(r)?)),
         _ => Err(DecodeError::Invalid("event tag")),
+    }
+}
+
+const STREAK_EVENT_TAG: u32 = 24;
+/// Most streaks one [`StreakEvent::State`] lists, and airborne streaks one
+/// [`StreakEvent::Sky`] does.
+const MAX_HELD_STREAKS: usize = streak::MAX_HELD;
+const MAX_AIRBORNE: usize = 32;
+
+fn write_streak(w: &mut BitWriter, streak: Streak) {
+    w.bits(u32::from(streak.code()), STREAK_BITS);
+}
+
+fn read_streak(r: &mut BitReader) -> DecodeResult<Streak> {
+    Streak::from_code(r.bits(STREAK_BITS)? as u8).ok_or(DecodeError::Invalid("streak"))
+}
+
+fn write_loadout(w: &mut BitWriter, loadout: streak::Loadout) {
+    for slot in loadout.0 {
+        match slot {
+            Some(streak) => {
+                w.bool(true);
+                write_streak(w, streak);
+            }
+            None => w.bool(false),
+        }
+    }
+}
+
+fn read_loadout(r: &mut BitReader) -> DecodeResult<streak::Loadout> {
+    let mut slots = [None; 3];
+    for slot in &mut slots {
+        if r.bool()? {
+            *slot = Some(read_streak(r)?);
+        }
+    }
+    Ok(streak::Loadout(slots))
+}
+
+fn write_streak_event(w: &mut BitWriter, event: &StreakEvent) {
+    match event {
+        StreakEvent::State {
+            progress,
+            held,
+            loadout,
+        } => {
+            w.bits(0, MORE_TAG_BITS);
+            w.varint(*progress);
+            let count = held.len().min(MAX_HELD_STREAKS);
+            w.varint(count as u32);
+            for streak in &held[..count] {
+                write_streak(w, *streak);
+            }
+            write_loadout(w, *loadout);
+        }
+        StreakEvent::Sky { up } => {
+            w.bits(1, MORE_TAG_BITS);
+            let count = up.len().min(MAX_AIRBORNE);
+            w.varint(count as u32);
+            for air in &up[..count] {
+                write_streak(w, air.streak);
+                w.u8(air.owner);
+                w.u8(air.side);
+                w.u32(air.until);
+            }
+        }
+    }
+}
+
+fn read_streak_event(r: &mut BitReader) -> DecodeResult<StreakEvent> {
+    match r.bits(MORE_TAG_BITS)? {
+        0 => {
+            let progress = r.varint()?;
+            let count = r.varint()? as usize;
+            if count > MAX_HELD_STREAKS {
+                return Err(DecodeError::Invalid("held streaks"));
+            }
+            let mut held = Vec::with_capacity(count);
+            for _ in 0..count {
+                held.push(read_streak(r)?);
+            }
+            Ok(StreakEvent::State {
+                progress,
+                held,
+                loadout: read_loadout(r)?,
+            })
+        }
+        1 => {
+            let count = r.varint()? as usize;
+            if count > MAX_AIRBORNE {
+                return Err(DecodeError::Invalid("airborne streaks"));
+            }
+            let mut up = Vec::with_capacity(count);
+            for _ in 0..count {
+                up.push(AirView {
+                    streak: read_streak(r)?,
+                    owner: r.u8()?,
+                    side: r.u8()?,
+                    until: r.u32()?,
+                });
+            }
+            Ok(StreakEvent::Sky { up })
+        }
+        _ => Err(DecodeError::Invalid("streak event")),
     }
 }
 
@@ -2989,6 +3157,7 @@ const BLIP_KIND_BITS: u32 = 2;
 fn read_blip_kind(r: &mut BitReader) -> DecodeResult<radar::BlipKind> {
     match r.bits(BLIP_KIND_BITS)? {
         0 => Ok(radar::BlipKind::Fire),
+        1 => Ok(radar::BlipKind::Sweep),
         _ => Err(DecodeError::Invalid("blip kind")),
     }
 }
@@ -4128,6 +4297,38 @@ mod tests {
         let bytes = w.finish();
         let decoded = read_view_delta(&mut BitReader::new(&bytes), &view).unwrap();
         assert_eq!(decoded.mount, 255);
+    }
+
+    #[test]
+    fn streak_events_round_trip() {
+        let msg = ServerMessage::Events(vec![
+            GameEvent::Streak(StreakEvent::State {
+                progress: 310,
+                held: vec![Streak::Uav, Streak::CounterUav, Streak::Uav],
+                loadout: streak::Loadout::default(),
+            }),
+            GameEvent::Streak(StreakEvent::Sky {
+                up: vec![
+                    AirView {
+                        streak: Streak::Uav,
+                        owner: 3,
+                        side: 1,
+                        until: 90_000,
+                    },
+                    AirView {
+                        streak: Streak::CounterUav,
+                        owner: 200,
+                        side: 200,
+                        until: 4,
+                    },
+                ],
+            }),
+            GameEvent::Streak(StreakEvent::Sky { up: Vec::new() }),
+        ]);
+        assert_eq!(
+            ServerMessage::decode(&msg.encode(&[]), |_| None).unwrap(),
+            msg
+        );
     }
 
     #[test]
@@ -5589,6 +5790,11 @@ mod tests {
             }),
             ClientMessage::Class(Class::default()),
             ClientMessage::SkipKillcam,
+            ClientMessage::Streaks(streak::Loadout::default()),
+            ClientMessage::Streaks(streak::Loadout([None, Some(Streak::CounterUav), None])),
+            ClientMessage::UseStreak {
+                streak: Streak::CounterUav,
+            },
         ] {
             assert_eq!(ClientMessage::decode(&msg.encode()).unwrap(), msg);
         }

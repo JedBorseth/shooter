@@ -3,7 +3,8 @@ extends SceneTree
 ## Team Deathmatch server in this process on Slamcity with four passive bots.
 ## A bot that fires shows on both enemies' radars and on no teammate's, the
 ## dot stays where the shot was fired, and it is gone a few seconds after
-## the shooting stops, or at once when the shooter dies.
+## the shooting stops, or at once when the shooter dies. A suppressed weapon
+## shows nothing.
 ## godot --headless --path godot --script res://tests/radar_test.gd
 
 const BOTS := 4
@@ -46,8 +47,16 @@ func _run() -> void:
 	for id in [reds[0], reds[1], blues[0], blues[1]]:
 		_check(_server.radar_ids(id).is_empty(), "%d's radar starts empty" % id)
 
+	# Suppressed fire shows nothing.
+	_server.debug_arm(shooter, "m4+suppressor")
 	_server.debug_fire(shooter, true)
-	await _seconds(0.4)
+	await _seconds(1.0)
+	_server.debug_fire(shooter, false)
+	_check(_server.radar_ids(blues[0]).is_empty(), "suppressed fire stays off the radar")
+
+	_server.debug_arm(shooter, "m4")
+	_server.debug_fire(shooter, true)
+	await _seconds(1.0)
 	_server.debug_fire(shooter, false)
 	for enemy: int in blues:
 		_check(shooter in _server.radar_ids(enemy), "an enemy sees the shooter (%d)" % enemy)

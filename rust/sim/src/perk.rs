@@ -12,10 +12,13 @@
 //! | --- | --- | --- |
 //! | 1 | Lightweight | moves 7% faster, no fall damage |
 //! | 1 | Flak Jacket | takes 35% of explosive damage |
+//! | 1 | Hardline | score counts 20% more toward scorestreaks |
+//! | 1 | Ghost | hidden from enemy UAV sweeps while moving |
 //! | 2 | Toughness | aim flinches a quarter as much when shot |
 //! | 2 | Fast Hands | switches weapons in half the time, throws faster |
 //! | 2 | Scavenger | refills ammo and grenades from packs enemies drop |
 //! | 2 | Sleight of Hand | reloads in half the time (Black Ops 1's Perk 2) |
+//! | 2 | Hard Wired | immune to enemy Counter-UAVs |
 //! | 3 | Dexterity | mantles 40% faster, climbs ladders 75% faster, weapon up sooner after a sprint |
 //! | 3 | Dead Silence | near-silent footsteps |
 //! | 3 | Awareness | hears enemy footsteps louder |
@@ -29,10 +32,10 @@
 //! client that is flashed or flinches, footsteps where they are heard.
 //!
 //! Black Ops 2 perks this game leaves out, because their target does not
-//! exist yet: Hardline (scorestreaks), Blind Eye and Ghost (UAV and air
-//! support), Cold-Blooded (AI streaks and thermal), Hard Wired (counter-UAV
-//! and EMP), Engineer (enemy equipment and care packages), and Extreme
+//! exist yet: Blind Eye (AI air support), Cold-Blooded (AI streaks and
+//! thermal), Engineer (enemy equipment and care packages), and Extreme
 //! Conditioning (sprint is unlimited here, a recorded project decision).
+//! Hard Wired also shields from EMPs in Black Ops 2; there are none here.
 
 /// A perk's tier: the Create-a-Class slot it goes in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -68,6 +71,9 @@ pub enum Perk {
     DeadSilence,
     Awareness,
     TacticalMask,
+    Hardline,
+    Ghost,
+    HardWired,
 }
 
 /// Lightweight's movement speed (Black Ops 2 `perk_speedMultiplier` 1.07).
@@ -107,9 +113,13 @@ pub const AWARENESS_RANGE: f32 = 1.5;
 /// Tactical Mask: a flashbang blinds for this share of its time (Black Ops 2
 /// `perk_shellShockReduction` 0.5).
 pub const TACTICAL_MASK_FLASH: f32 = 0.5;
+/// Ghost hides a player from UAV sweeps while they move faster than this
+/// (metres a second), or plant or defuse (Black Ops 2: "undetectable by
+/// UAV while moving"; standing still shows them).
+pub const GHOST_MOVING_SPEED: f32 = 0.5;
 
 impl Perk {
-    pub const ALL: [Perk; 10] = [
+    pub const ALL: [Perk; 13] = [
         Perk::Lightweight,
         Perk::FlakJacket,
         Perk::Toughness,
@@ -120,12 +130,19 @@ impl Perk {
         Perk::DeadSilence,
         Perk::Awareness,
         Perk::TacticalMask,
+        Perk::Hardline,
+        Perk::Ghost,
+        Perk::HardWired,
     ];
 
     pub fn tier(self) -> Tier {
         match self {
-            Perk::Lightweight | Perk::FlakJacket => Tier::One,
-            Perk::Toughness | Perk::FastHands | Perk::Scavenger | Perk::SleightOfHand => Tier::Two,
+            Perk::Lightweight | Perk::FlakJacket | Perk::Hardline | Perk::Ghost => Tier::One,
+            Perk::Toughness
+            | Perk::FastHands
+            | Perk::Scavenger
+            | Perk::SleightOfHand
+            | Perk::HardWired => Tier::Two,
             Perk::Dexterity | Perk::DeadSilence | Perk::Awareness | Perk::TacticalMask => {
                 Tier::Three
             }
@@ -150,6 +167,9 @@ impl Perk {
             Perk::DeadSilence => "dead_silence",
             Perk::Awareness => "awareness",
             Perk::TacticalMask => "tactical_mask",
+            Perk::Hardline => "hardline",
+            Perk::Ghost => "ghost",
+            Perk::HardWired => "hard_wired",
         }
     }
 
@@ -171,6 +191,9 @@ impl Perk {
             Perk::DeadSilence => "Soft Step",
             Perk::Awareness => "Keen Ears",
             Perk::TacticalMask => "Flash Guard",
+            Perk::Hardline => "Fast Track",
+            Perk::Ghost => "Low Profile",
+            Perk::HardWired => "Jam Proof",
         }
     }
 
@@ -189,6 +212,9 @@ impl Perk {
             Perk::DeadSilence => "Your footsteps are near silent.",
             Perk::Awareness => "Hear enemy footsteps louder.",
             Perk::TacticalMask => "Flashbangs blind you for half as long.",
+            Perk::Hardline => "Earn scorestreaks with less score.",
+            Perk::Ghost => "Enemy UAVs cannot see you while you move.",
+            Perk::HardWired => "Enemy Counter-UAVs cannot jam your minimap.",
         }
     }
 }
@@ -200,7 +226,7 @@ pub struct Perks(u16);
 impl Perks {
     pub const NONE: Perks = Perks(0);
     /// Bits the set uses on the wire (room for more perks).
-    pub const BITS: u32 = 12;
+    pub const BITS: u32 = 16;
 
     pub fn from_bits(bits: u16) -> Option<Self> {
         let known = (1u16 << Perk::ALL.len()) - 1;
@@ -394,7 +420,7 @@ mod tests {
     fn sets_round_trip_their_bits() {
         let set = Perks::of(&[Perk::Lightweight, Perk::TacticalMask]);
         assert_eq!(Perks::from_bits(set.bits()), Some(set));
-        assert_eq!(Perks::from_bits(1 << 11), None);
+        assert_eq!(Perks::from_bits(1 << 15), None);
         assert_eq!(set.len(), 2);
         assert_eq!(set.in_tier(Tier::One), 1);
         assert_eq!(set.in_tier(Tier::Two), 0);

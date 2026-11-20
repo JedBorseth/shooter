@@ -106,6 +106,8 @@ const REBINDABLE := {
 	&"tactical": "Tactical (flashbang or smoke)",
 	&"weapon_1": "Primary weapon",
 	&"weapon_2": "Secondary weapon",
+	&"streak_use": "Use scorestreak",
+	&"streak_next": "Next scorestreak",
 	&"interact": "Interact",
 	&"inspect": "Inspect weapon",
 	&"loadout": "Loadout",

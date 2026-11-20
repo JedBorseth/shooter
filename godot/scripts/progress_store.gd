@@ -50,7 +50,7 @@ static func can_create_classes() -> bool:
 
 
 ## "" when the item is unlocked, otherwise what unlocks it ("Level 12").
-## `kind` is "weapon", "tactical", or "wildcard".
+## `kind` is "weapon", "tactical", "perk", "wildcard", or "streak".
 static func lock_reason(kind: String, key: String) -> String:
 	var needed := Progression.unlock_level(kind, key)
 	return "" if level() >= needed else "Level %d" % needed

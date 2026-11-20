@@ -83,16 +83,16 @@ use shooter_sim::net::input_queue::InputQueue;
 use shooter_sim::net::integrity::{self, Flag, PacketLimit, Verdict, Watch};
 use shooter_sim::net::lag::{self, LagHistory, Pellet, Target, TargetHit};
 use shooter_sim::net::protocol::{
-    self, Baseline, BlipView, ChargeStatus, ChargeView, ClientMessage, DominationView, FlagPlay,
-    FlagPointStatus, FlagPointView, FlagStatus, FlagView, GameEvent, MAX_CHARGE_SITES,
+    self, AirView, Baseline, BlipView, ChargeStatus, ChargeView, ClientMessage, DominationView,
+    FlagPlay, FlagPointStatus, FlagPointView, FlagStatus, FlagView, GameEvent, MAX_CHARGE_SITES,
     MAX_DOMINATION_FLAGS, MAX_EVENTS_PER_MESSAGE, MAX_HARDPOINT_ZONES, OwnState, PROTOCOL_VERSION,
-    PlayerView, Predicted, RadarView, ScavengerEvent, ScoreRow, ServerMessage, Snapshot, UseView,
-    ZoneView,
+    PlayerView, Predicted, RadarView, ScavengerEvent, ScoreRow, ServerMessage, Snapshot,
+    StreakEvent, UseView, ZoneView,
 };
 use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::subtick;
 use shooter_sim::net::{CHANNEL_COUNT, DEFAULT_PORT, MAX_PLAYERS, TICK_DT, TICK_RATE, Tick};
-use shooter_sim::perk::{Perk, Perks};
+use shooter_sim::perk::{self, Perk, Perks};
 use shooter_sim::player::{self, PlayerEvent, PlayerInput, PlayerParams, PlayerState};
 use shooter_sim::radar::Radar;
 use shooter_sim::scavenger;
@@ -101,6 +101,7 @@ use shooter_sim::snd::{
     Charge, ChargeContext, ChargeEvent, ChargePlayer, ChargeState, Headcount, RoundEnd, RoundPhase,
     RoundRecord, RoundState, RoundTransition, Site, SndRules, UseKind,
 };
+use shooter_sim::streak::{Loadout, Sky, Streak, StreakState};
 use shooter_sim::tdm::{
     self, MatchRules, MatchState, Mode, Period, Phase, SpawnPoint, SpawnRules, Team, Threat,
     Transition,
@@ -335,6 +336,8 @@ pub struct NetServer {
     scavenger: scavenger::Packs,
     /// Who shows on whose minimap (`shooter_sim::radar`).
     radar: Radar,
+    /// The UAVs and Counter-UAVs up (`shooter_sim::streak`).
+    sky: Sky,
     /// The map's lanes for bots to follow (`BotLanes`), from one side to the other.
     bot_lanes: Vec<Vec<Vector3>>,
     /// Tick of the next scoreboard update.
@@ -413,6 +416,8 @@ struct ClientSlot {
     ready: bool,
     /// The class for the next spawn, checked when it arrived.
     class: Class,
+    /// The scorestreaks for the next spawn.
+    streaks: Loadout,
     /// Chat rate limit.
     chat: ChatLimiter,
     /// Packet rate and garbage limits (`integrity`).
@@ -461,6 +466,13 @@ struct Avatar {
     last_stand: Option<LastStand>,
     /// Aim, view tick, and input flow heuristics (`integrity`).
     watch: Watch,
+    /// Scorestreaks (`shooter_sim::streak`): the three this life counts
+    /// toward, the ones chosen for the next spawn, the count and what is
+    /// held, and the score already counted.
+    streak_loadout: Loadout,
+    streak_wanted: Loadout,
+    streaks: StreakState,
+    streak_seen: u32,
 }
 
 /// A player down in last stand.
@@ -777,6 +789,7 @@ impl INode3D for NetServer {
         self.update_hardpoint();
         self.update_domination();
         self.update_scavenger();
+        self.update_streaks();
         self.update_match();
         self.update_props();
         self.tick += 1;
@@ -1100,6 +1113,68 @@ impl NetServer {
             avatar.predicted.position = to_sim(position);
             body::place(&mut avatar.parts, &params.movement, &avatar.predicted);
         }
+    }
+
+    /// Debug: player `id` holds only weapon `key` (tests).
+    #[func]
+    fn debug_arm(&mut self, id: i32, key: GString) {
+        let Some(weapon) = WeaponId::by_key(&key.to_string()) else {
+            return;
+        };
+        if let Some(avatar) = self.avatars.iter_mut().find(|a| i32::from(a.id) == id) {
+            avatar.predicted.state.combat = CombatState::only(weapon);
+        }
+    }
+
+    /// Debug: pays `points` of score to player `id`, as an objective would
+    /// (tests).
+    #[func]
+    fn debug_score(&mut self, id: i32, points: i32) {
+        if let Some(avatar) = self.avatars.iter_mut().find(|a| i32::from(a.id) == id) {
+            avatar.score.score += points.max(0) as u32;
+        }
+    }
+
+    /// The scorestreaks player `id` holds, oldest first, as keys (tests).
+    #[func]
+    fn streaks_held(&self, id: i32) -> PackedStringArray {
+        self.avatars
+            .iter()
+            .find(|a| i32::from(a.id) == id)
+            .map(|a| {
+                a.streaks
+                    .held
+                    .iter()
+                    .map(|s| GString::from(s.key()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Player `id`'s count toward their next scorestreak (tests).
+    #[func]
+    fn streak_progress(&self, id: i32) -> i32 {
+        self.avatars
+            .iter()
+            .find(|a| i32::from(a.id) == id)
+            .map_or(0, |a| a.streaks.progress as i32)
+    }
+
+    /// Debug: player `id` calls in their held streak `key` (tests).
+    #[func]
+    fn debug_use_streak(&mut self, id: i32, key: GString) {
+        if let (Ok(id), Some(streak)) = (u8::try_from(id), Streak::by_key(&key.to_string())) {
+            self.use_streak(id, streak);
+        }
+    }
+
+    /// Whether player `id`'s minimap is jammed (tests).
+    #[func]
+    fn radar_jammed(&self, id: i32) -> bool {
+        self.avatars
+            .iter()
+            .find(|a| i32::from(a.id) == id)
+            .is_some_and(|a| self.radar_view(a).jammed)
     }
 
     /// Debug: player `id`'s inputs hold the trigger while `held`, whatever
@@ -1889,6 +1964,7 @@ impl NetServer {
                     outbox: Vec::new(),
                     ready: false,
                     class: Class::default(),
+                    streaks: Loadout::default(),
                     chat: ChatLimiter::default(),
                     limit: PacketLimit::new(self.tick),
                     kicked: false,
@@ -2027,6 +2103,14 @@ impl NetServer {
                 let roster: Vec<GameEvent> = self.avatars.iter().map(joined_event).collect();
                 self.clients[index].outbox.extend(roster);
                 self.spawn_avatar(id, false, &name, class, None);
+                let streaks = self.clients[index].streaks;
+                if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) {
+                    avatar.streak_wanted = streaks;
+                    avatar.streak_loadout = streaks;
+                }
+                self.send_streaks(id);
+                let sky = self.sky_event();
+                self.send_event(id, sky);
                 self.balance_bots();
                 let event = self.match_event();
                 self.send_event(id, event);
@@ -2130,6 +2214,22 @@ impl NetServer {
                         avatar.predicted.state.combat = class.combat().first_draw();
                         avatar.predicted.state.perks = class.perks;
                     }
+                }
+            }
+            ClientMessage::Streaks(loadout) => {
+                // Each streak once, cheapest first; a new choice counts from
+                // the next spawn, as Black Ops 2's does.
+                let loadout = loadout.sorted();
+                self.clients[index].streaks = loadout;
+                if let Some(id) = self.clients[index].player
+                    && let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id)
+                {
+                    avatar.streak_wanted = loadout;
+                }
+            }
+            ClientMessage::UseStreak { streak } => {
+                if let Some(id) = self.clients[index].player {
+                    self.use_streak(id, streak);
                 }
             }
             ClientMessage::Chat { text, team } => self.relay_chat(index, &text, team),
@@ -2255,6 +2355,10 @@ impl NetServer {
             },
             last_stand: None,
             watch: Watch::default(),
+            streak_loadout: Loadout::default(),
+            streak_wanted: Loadout::default(),
+            streaks: StreakState::default(),
+            streak_seen: 0,
         });
         let event = joined_event(self.avatars.last().expect("just pushed"));
         self.broadcast_event(&event);
@@ -2406,6 +2510,8 @@ impl NetServer {
         avatar.pitch = 0.0;
         avatar.spawned_at = tick;
         avatar.last_stand = None;
+        avatar.streak_loadout = avatar.streak_wanted;
+        avatar.streak_seen = avatar.score.score;
         avatar.respawn_in = self.respawn_delay;
         avatar.killcam_since = None;
         body::place(&mut avatar.parts, &self.params.movement, &avatar.predicted);
@@ -4850,6 +4956,10 @@ impl NetServer {
         let (at, side) = (avatar.predicted.position, self.side(avatar));
         self.recent_deaths.push_back((tick, at));
         self.radar.forget(id);
+        if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) {
+            avatar.streaks.on_death();
+        }
+        self.send_streaks(id);
         self.next_scoreboard = tick;
         // Everyone leaves a Scavenger pack, for their enemies with the perk
         // (not in Zombies, which has no perks).
@@ -5326,6 +5436,15 @@ impl NetServer {
                     avatar.score = ScoreState::default();
                     avatar.progress = Progress::default();
                     avatar.hill = HillTime::default();
+                    avatar.streaks = StreakState::default();
+                    avatar.streak_seen = 0;
+                }
+                self.sky.clear();
+                let sky = self.sky_event();
+                self.broadcast_event(&sky);
+                let ids: Vec<u8> = self.avatars.iter().map(|a| a.id).collect();
+                for id in ids {
+                    self.send_streaks(id);
                 }
                 self.respawn_all_at_start();
                 self.new_charge();
@@ -5765,6 +5884,131 @@ impl NetServer {
     }
 
     /// Whether `a` and `b` are enemies.
+    /// Whether this game has scorestreaks: not Gun Game, Zombies, or
+    /// outside a match (Black Ops 2's party modes and Zombies have none).
+    fn streaks_on(&self) -> bool {
+        !matches!(self.game, Mode::GunGame(_) | Mode::Zombies) && self.match_state.scoring()
+    }
+
+    /// Counts score earned since the last look toward each living player's
+    /// streaks, runs the UAVs' sweeps, and sends off what has left.
+    fn update_streaks(&mut self) {
+        let on = self.streaks_on();
+        let mut changed = Vec::new();
+        for avatar in &mut self.avatars {
+            let points = avatar.score.score.saturating_sub(avatar.streak_seen);
+            avatar.streak_seen = avatar.score.score;
+            if !on || points == 0 || !avatar.predicted.state.alive() {
+                continue;
+            }
+            let hardline = avatar.predicted.state.perks.has(Perk::Hardline);
+            let loadout = avatar.streak_loadout;
+            avatar.streaks.on_points(loadout, points, hardline);
+            changed.push(avatar.id);
+        }
+        for id in changed {
+            self.send_streaks(id);
+        }
+        // Bots call in what they hold as soon as they are alive to, as
+        // Call of Duty's bots do (passive test bots hold on to them).
+        let bot_calls: Vec<(u8, Streak)> = self
+            .avatars
+            .iter()
+            .filter(|a| a.brain.as_ref().is_some_and(|b| !b.passive) && a.predicted.state.alive())
+            .filter_map(|a| Some((a.id, *a.streaks.held.first()?)))
+            .collect();
+        for (id, streak) in bot_calls {
+            self.use_streak(id, streak);
+        }
+        if self.sky.expire(self.tick) {
+            let sky = self.sky_event();
+            self.broadcast_event(&sky);
+        }
+        for side in self.sky.sweeps(self.tick) {
+            let found: Vec<(u8, Vec3)> = self
+                .avatars
+                .iter()
+                .filter(|a| a.predicted.state.alive() && self.side(a) != side && !self.ghosted(a))
+                .map(|a| (a.id, a.predicted.position))
+                .collect();
+            self.radar.sweep(side, &found, self.tick);
+        }
+    }
+
+    /// Ghost: hidden from UAV sweeps while moving, or planting or defusing
+    /// (Black Ops 2's Ghost; standing still shows the player).
+    fn ghosted(&self, avatar: &Avatar) -> bool {
+        if !avatar.predicted.state.perks.has(Perk::Ghost) {
+            return false;
+        }
+        let velocity = avatar.predicted.state.movement.velocity;
+        let moving = Vec3::new(velocity.x, 0.0, velocity.z).length() > perk::GHOST_MOVING_SPEED;
+        let using_charge = self
+            .charge
+            .and_then(|c| c.using)
+            .is_some_and(|u| u.by == avatar.id);
+        moving || using_charge
+    }
+
+    /// Calls in `id`'s first held `streak`, if they hold one and may.
+    fn use_streak(&mut self, id: u8, streak: Streak) {
+        if !self.streaks_on() {
+            return;
+        }
+        let tick = self.tick;
+        let Some(avatar) = self.avatars.iter().find(|a| a.id == id) else {
+            return;
+        };
+        if !avatar.predicted.state.alive() {
+            return;
+        }
+        let side = self.side(avatar);
+        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
+            return;
+        };
+        let Some(index) = avatar.streaks.held.iter().position(|s| *s == streak) else {
+            return;
+        };
+        avatar.streaks.select(index);
+        avatar.streaks.take();
+        match streak {
+            Streak::Uav | Streak::CounterUav => self.sky.call(streak, id, side, tick),
+        }
+        godot_print!("server: player {id} called in a {}", streak.label());
+        self.send_streaks(id);
+        let sky = self.sky_event();
+        self.broadcast_event(&sky);
+    }
+
+    /// Tells `id` their streak count and what they hold.
+    fn send_streaks(&mut self, id: u8) {
+        let Some(avatar) = self.avatars.iter().find(|a| a.id == id) else {
+            return;
+        };
+        let event = GameEvent::Streak(StreakEvent::State {
+            progress: avatar.streaks.progress,
+            held: avatar.streaks.held.clone(),
+            loadout: avatar.streak_loadout,
+        });
+        self.send_event(id, event);
+    }
+
+    fn sky_event(&self) -> GameEvent {
+        GameEvent::Streak(StreakEvent::Sky {
+            up: self
+                .sky
+                .up
+                .iter()
+                .map(|a| AirView {
+                    streak: a.streak,
+                    owner: a.owner,
+                    side: a.side,
+                    until: a.until,
+                })
+                .collect(),
+        })
+    }
+
     /// What `viewer`'s minimap shows of the enemy: only the dots their radar
     /// has, so a client learns nothing more (`shooter_sim::radar`). Zombies
     /// has no minimap.
@@ -5778,11 +6022,21 @@ impl NetServer {
                 .find(|a| a.id == id)
                 .is_some_and(|other| self.hostile(viewer, other))
         };
+        let side = self.side(viewer);
+        let jammed = self.sky.jammed(side)
+            && !viewer.predicted.state.perks.has(Perk::HardWired)
+            && viewer.predicted.state.alive();
+        if jammed {
+            return RadarView {
+                jammed,
+                blips: Vec::new(),
+            };
+        }
         RadarView {
-            jammed: false,
+            jammed,
             blips: self
                 .radar
-                .blips_for(self.tick, hostile)
+                .blips_for(self.tick, side, hostile)
                 .iter()
                 .map(|blip| BlipView::new(blip, self.tick))
                 .collect(),

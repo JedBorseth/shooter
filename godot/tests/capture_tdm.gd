@@ -4,7 +4,7 @@ extends SceneTree
 ## kill feed, the scoreboard, and the results screen. Starts its own server
 ## process. Needs a GPU and a display (or Xvfb):
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
-##     --script res://tests/capture_tdm.gd [-- --map slamcity --bots 5 --mode dom]
+##     --script res://tests/capture_tdm.gd [-- --map slamcity --bots 5 --mode dom --shots 6]
 
 const PORT := 27997
 
@@ -104,8 +104,8 @@ func _run() -> void:
 	await _frames(20)
 	await _shot("05_scoreboard")
 	Input.action_release("scoreboard")
-	# Watch the bots play for a while.
-	for i in 6:
+	# Watch the bots play for a while (`--shots N` for longer).
+	for i in int(options.get("shots", "6")):
 		await _frames(150)
 		await _shot("06_play_%d" % i)
 	Input.action_press("scoreboard")
