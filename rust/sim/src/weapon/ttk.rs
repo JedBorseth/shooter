@@ -309,6 +309,12 @@ mod tests {
         );
         assert!(at("bp9", 5.0) < at("m1911", 5.0));
         assert!(at("bp9", 30.0) > at("m4", 30.0));
+        // The semi-automatic shotgun one-shots to about 7.5 m, and its
+        // second shell lands 133 ms later out to about 10 m, where the pump
+        // takes 550 ms.
+        assert_eq!(at("sg12", 7.0), 0.0);
+        assert!(at("sg12", 9.0) > 0.0);
+        assert!(at("sg12", 10.0) < 0.15 && at("sg12", 10.0) < at("m870", 10.0));
         // The marksman rifle takes two to the chest everywhere, never one,
         // and a headshot kills outright up close.
         for d in [5.0, 30.0, 70.0, 100.0] {

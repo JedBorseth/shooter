@@ -35,7 +35,7 @@ pub const MIN_USES_BEFORE_MOVE: u32 = 4;
 /// weight over the total of those the buyer can take). Black Ops weights
 /// its ordinary weapons equally; the sidearm every player starts with is
 /// not in it.
-pub const POOL: [(&str, u32); 10] = [
+pub const POOL: [(&str, u32); 11] = [
     ("m4", 10),
     ("ak47", 10),
     ("pdw9", 10),
@@ -46,6 +46,7 @@ pub const POOL: [(&str, u32); 10] = [
     ("cq10", 10),
     ("kr12", 10),
     ("dm7", 10),
+    ("sg12", 10),
 ];
 
 /// Whether this spin lands on the duck and the crate moves, after `uses`

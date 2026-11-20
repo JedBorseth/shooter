@@ -175,6 +175,19 @@ FINISHES = {
         "tint": 0.012,
         "mottle": ((0.19, 0.2, 0.155), 0.58),
     },
+    # A shotgun shell's hull: red moulded plastic, waxy, scuffed pale where
+    # it rubs the magazine's lips.
+    "hull": {
+        "id": 10,
+        "color": (0.42, 0.06, 0.045),
+        "roughness": 0.5,
+        "metallic": 0.0,
+        "bare": ((0.5, 0.2, 0.17), 0.45, 0.0),
+        "wear": 0.3,
+        "grime": 0.3,
+        "bump": 0.00001,
+        "tint": 0.02,
+    },
     # Brass: a shotgun's bead. Polished by handling, never coated.
     "brass": {
         "id": 8,

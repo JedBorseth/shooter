@@ -54,6 +54,7 @@ from mathutils import Matrix, Vector
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import weapon_finish
 import weapon_m870
+import weapon_sg12
 import weapon_shapes
 import weapon_optics
 
@@ -222,6 +223,14 @@ WEAPONS = {
         "scene": "m870",
         "model": "m870",
         "spare": False,
+    },
+    # A box-fed semi-automatic 12 gauge, modelled by tools/weapon_sg12.py on
+    # the M870's receiver, trigger group, and stock.
+    "sg12": {
+        "dir": "sg12",
+        "scene": "sg12",
+        "model": "sg12",
+        "spare": True,
     },
     "ak47": {
         "dir": "ak47",
@@ -1786,7 +1795,7 @@ def handle_point(obj, origin: Vector, side: str) -> Vector:
 
 
 # Weapons modelled by a tool instead of imported from a pack.
-MODELLED = {"m870": weapon_m870}
+MODELLED = {"m870": weapon_m870, "sg12": weapon_sg12}
 
 
 def militarize(source: Source, spec: dict):
@@ -1867,6 +1876,8 @@ def build_modelled(key: str):
     for obj in objects.values():
         obj.data.attributes.remove(obj.data.attributes[weapon_finish.ZONE_ATTRIBUTE])
     world_mesh(objects)
+    if "Magazine" in objects:
+        world_magazine(objects)
     markers = {name: godot(point) for name, point in points.items()}
 
     def count(paths):

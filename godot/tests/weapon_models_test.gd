@@ -29,6 +29,16 @@ const WEAPONS := {
 		"RearSight"
 	],
 	"m870": ["Body", "Pump", "Pump/BoltCarrier", "Trigger"],
+	"sg12":
+	[
+		"Body",
+		"Magazine",
+		"Magazine/Rounds",
+		"MagazineSpare",
+		"BoltCarrier",
+		"ChargingHandle",
+		"Trigger"
+	],
 	"lsw6":
 	[
 		"Body",
@@ -157,7 +167,7 @@ const M4_VIEW := "res://scenes/weapons/m4_view.tscn"
 const IRON_SIGHTS := ["m4", "m870", "lsw6", "ak47", "kr12", "pistol"]
 ## Weapons whose own sights are unusable, aimed with iron sights the scene's
 ## IronSights node builds instead (its style).
-const BUILT_IRON_SIGHTS := {"bp9": "pistol"}
+const BUILT_IRON_SIGHTS := {"bp9": "pistol", "sg12": "shotgun"}
 ## Weapons aimed through a riflescope on the sight line.
 const SCOPED := ["m40", "dm7"]
 ## How far behind the muzzle the front sight sits, at most (the M4A1's post

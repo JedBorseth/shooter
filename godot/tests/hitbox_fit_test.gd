@@ -177,6 +177,7 @@ func _states() -> Array[Dictionary]:
 		"pdw9",
 		"cq10",
 		"m870",
+		"sg12",
 		"m1911",
 		"bp9",
 	]
