@@ -64,6 +64,11 @@ const REPATH_SECONDS: f32 = 2.0;
 const MEMORY_SECONDS: f32 = 4.0;
 /// Seconds of not getting anywhere before a bot jumps, and picks a new goal.
 const STUCK_SECONDS: f32 = 1.2;
+/// Path updates in a row that find no way to the goal before a bot gives it
+/// up; meanwhile it walks straight at it.
+const STRANDED_TRIES: u32 = 4;
+/// Seconds a stuck bot backs out before it plans again.
+const ESCAPE_SECONDS: f32 = 0.8;
 /// Aim down sights beyond this range (not with a shotgun).
 const ADS_RANGE: f32 = 12.0;
 /// Within this many metres of an objective, a bot walks straight at it
@@ -122,6 +127,12 @@ pub const THROW_CHECKS_PER_TICK: u32 = 1;
 /// Most rays one throw check casts: a coarse flight per candidate (two at
 /// most), plus the blast's line to the target.
 const THROW_CHECK_RAYS: usize = 200;
+
+/// The navigation mesh's agent radius (the player capsule's 0.35 m, rounded
+/// up to whole voxels), and its voxel size across and up, in metres.
+const AGENT_RADIUS: f32 = 0.375;
+const CELL_SIZE: f32 = 0.125;
+const CELL_HEIGHT: f32 = 0.1;
 
 /// What the server wants a bot to go for (Capture the Flag, Hardpoint, and
 /// Search and Destroy).
@@ -208,8 +219,15 @@ impl BotNavigation {
             .instantiate("NavigationMesh")
             .try_to::<Gd<Resource>>()
             .ok()?;
-        let settings: [(&str, Variant); 6] = [
-            ("agent_radius", 0.4.to_variant()),
+        let settings: [(&str, Variant); 8] = [
+            // About the player capsule's radius, and voxels fine enough that a
+            // 1.4 m doorway stays open whatever the grid's alignment: at
+            // 0.25 m with a 0.4 m radius, one of Slamcity's mirrored
+            // tenement doors baked shut and the other open, so bots that
+            // wandered into the shut room never found the way out.
+            ("agent_radius", AGENT_RADIUS.to_variant()),
+            ("cell_size", CELL_SIZE.to_variant()),
+            ("cell_height", CELL_HEIGHT.to_variant()),
             ("agent_height", 1.8.to_variant()),
             ("agent_max_climb", 0.4.to_variant()),
             ("agent_max_slope", 40.0.to_variant()),
@@ -252,8 +270,18 @@ impl BotNavigation {
             .ok()?;
         region.set_name("BotNavigation");
         region.set("navigation_mesh", &mesh.to_variant());
+        // The map merges the mesh's edges by its own cell size, which must
+        // match the mesh's before the region joins it.
+        let map_rid = parent.get_viewport()?.get_world_3d()?.get_navigation_map();
+        server.call(
+            "map_set_cell_size",
+            &[map_rid.to_variant(), CELL_SIZE.to_variant()],
+        );
+        server.call(
+            "map_set_cell_height",
+            &[map_rid.to_variant(), CELL_HEIGHT.to_variant()],
+        );
         parent.add_child(&region);
-        let map_rid = region.get_world_3d()?.get_navigation_map();
         godot_print!("server: baked the bots' navigation mesh ({polygons} polygons)");
         Some(Self {
             server,
@@ -445,8 +473,14 @@ pub struct BotBrain {
     path: Vec<Vector3>,
     next_waypoint: usize,
     repath_at: Tick,
+    /// Path updates in a row that found no way to the goal.
+    unreachable: u32,
     stuck_since: (Vector3, Tick),
     stuck_strikes: u32,
+    /// Backing out of a spot it got stuck in: the way, and until when; and
+    /// how many times in a row it has had to.
+    escape: Option<(Vec3, Tick)>,
+    escapes: u32,
     strafe: f32,
     strafe_until: Tick,
     burst_until: Tick,
@@ -513,8 +547,11 @@ impl BotBrain {
             path: Vec::new(),
             next_waypoint: 0,
             repath_at: 0,
+            unreachable: 0,
             stuck_since: (Vector3::ZERO, 0),
             stuck_strikes: 0,
+            escape: None,
+            escapes: 0,
             strafe: 1.0,
             strafe_until: 0,
             burst_until: 0,
@@ -590,6 +627,12 @@ impl BotBrain {
         self.danger = None;
     }
 
+    /// Where the bot is headed and how many waypoints its path has (tests
+    /// and the bench).
+    pub fn route(&self) -> (Option<Vector3>, usize) {
+        (self.goal, self.path.len())
+    }
+
     /// The lane the bot is following, if any.
     pub fn lane(&self) -> Option<usize> {
         self.lane
@@ -607,6 +650,9 @@ impl BotBrain {
         self.lane = None;
         self.cover = None;
         self.path.clear();
+        self.unreachable = 0;
+        self.escape = None;
+        self.escapes = 0;
         self.stuck_since = (Vector3::ZERO, tick);
         self.held = Held::default();
         self.detour = None;
@@ -664,7 +710,7 @@ impl BotBrain {
             let mut want = Want::default();
             self.stagger(state, tick, &skill, &mut want);
             self.keep_throwing(state, look_before, tick, &skill, &mut want);
-            self.unstick(me, tick, &mut want);
+            self.unstick(me, world, &mut want);
             return self.press(want, state);
         }
         let eye = me.eye(world.params);
@@ -691,7 +737,7 @@ impl BotBrain {
                 self.hide(me, spot, target.as_ref(), state, world, &skill, &mut want);
                 self.flee(me, world, &skill, &mut want);
                 self.keep_throwing(state, look_before, tick, &skill, &mut want);
-                self.unstick(me, tick, &mut want);
+                self.unstick(me, world, &mut want);
                 return self.press(want, state);
             }
         }
@@ -740,7 +786,7 @@ impl BotBrain {
         }
         self.flee(me, world, &skill, &mut want);
         self.keep_throwing(state, look_before, tick, &skill, &mut want);
-        self.unstick(me, tick, &mut want);
+        self.unstick(me, world, &mut want);
         self.press(want, state)
     }
 
@@ -1413,6 +1459,7 @@ impl BotBrain {
     fn set_goal(&mut self, goal: Vector3, tick: Tick) {
         self.goal = Some(goal);
         self.repath_at = tick;
+        self.unreachable = 0;
     }
 
     /// The direction to walk toward `goal`: along the navigation mesh, and
@@ -1461,18 +1508,39 @@ impl BotBrain {
     /// repathing every couple of seconds.
     fn follow_path(&mut self, me: &BotPlayer, world: &mut BotWorld) -> Option<Vec3> {
         let tick = world.tick;
-        if tick >= self.repath_at || self.path.is_empty() {
+        if tick >= self.repath_at || (self.path.is_empty() && self.unreachable == 0) {
             let goal = self.goal?;
             self.path = world.navigation.path(me.feet, goal);
             self.next_waypoint = 1.min(self.path.len());
             self.repath_at = tick + (REPATH_SECONDS * TICK_RATE as f32) as Tick;
             if self.path.len() < 2 {
+                self.unreachable += 1;
+                // The bot may stand on a scrap of mesh cut off from the rest
+                // (a kerb or a ledge the bake left apart): walk straight at
+                // the goal for a moment, jumping when blocked
+                // ([`Self::unstick`]), to get back onto the mesh.
+                if self.unreachable <= STRANDED_TRIES {
+                    self.repath_at = tick + TICK_RATE / 2;
+                    let straight = to_sim(goal - me.feet);
+                    let flat = Vec3::new(straight.x, 0.0, straight.z);
+                    return (flat.length() > WAYPOINT_RADIUS).then_some(flat);
+                }
                 // Unreachable: drop the route and plan again in a moment.
+                self.unreachable = 0;
                 self.goal = None;
                 self.route.clear();
                 self.lane = None;
                 self.replan_at = tick + TICK_RATE / 2;
+            } else {
+                self.unreachable = 0;
             }
+        }
+        if self.path.len() < 2
+            && let Some(goal) = self.goal
+        {
+            let straight = to_sim(goal - me.feet);
+            let flat = Vec3::new(straight.x, 0.0, straight.z);
+            return (flat.length() > WAYPOINT_RADIUS).then_some(flat);
         }
         while self.next_waypoint < self.path.len()
             && horizontal_distance(self.path[self.next_waypoint], me.feet) < WAYPOINT_RADIUS
@@ -1610,14 +1678,32 @@ impl BotBrain {
         route
     }
 
-    /// Jumps when the bot stops getting anywhere, and gives up on the goal if
-    /// that does not help.
-    fn unstick(&mut self, me: &BotPlayer, tick: Tick, want: &mut Want) {
+    /// Jumps when the bot stops getting anywhere. If that does not free it,
+    /// it backs out for a moment toward the nearest point on the navigation
+    /// mesh (a bot cutting a corner can wedge itself into a nook the mesh
+    /// leaves out), or, when it is already on the mesh or that failed too,
+    /// any way but the one it was going; then it plans its way afresh.
+    fn unstick(&mut self, me: &BotPlayer, world: &mut BotWorld, want: &mut Want) {
+        let tick = world.tick;
+        if let Some((direction, until)) = self.escape {
+            if tick < until {
+                want.wish = bot::wish_toward(self.look.x, direction);
+                want.sprint = false;
+                want.crouch = false;
+                return;
+            }
+            self.escape = None;
+            self.path.clear();
+            self.repath_at = tick;
+        }
         let moving = want.wish.length() > 0.5 && self.engagement.is_none();
         let (since_pos, since_tick) = self.stuck_since;
         if !moving || horizontal_distance(since_pos, me.feet) > 0.6 {
             self.stuck_since = (me.feet, tick);
             self.stuck_strikes = 0;
+            if horizontal_distance(since_pos, me.feet) > 2.0 {
+                self.escapes = 0;
+            }
             return;
         }
         if tick.saturating_sub(since_tick) > (STUCK_SECONDS * TICK_RATE as f32) as Tick {
@@ -1625,6 +1711,28 @@ impl BotBrain {
             self.stuck_strikes += 1;
             self.stuck_since = (me.feet, tick);
             if self.stuck_strikes >= 2 {
+                let mesh = world.navigation.closest_point(me.feet);
+                let to_mesh = to_sim(mesh - me.feet);
+                let to_mesh = Vec3::new(to_mesh.x, 0.0, to_mesh.z);
+                let direction = if self.escapes == 0 && to_mesh.length() > 0.25 {
+                    to_mesh
+                } else {
+                    // Away from where it was trying to go, give or take.
+                    let (forward, right) = shooter_sim::movement::basis_from_yaw(self.look.x);
+                    let going = forward * want.wish.y + right * want.wish.x;
+                    let turn = std::f32::consts::PI + (self.random() - 0.5) * 2.4;
+                    let (sin, cos) = turn.sin_cos();
+                    Vec3::new(
+                        going.x * cos - going.z * sin,
+                        0.0,
+                        going.x * sin + going.z * cos,
+                    )
+                };
+                self.escapes += 1;
+                self.escape = Some((
+                    direction,
+                    tick + (ESCAPE_SECONDS * TICK_RATE as f32) as Tick,
+                ));
                 self.goal = None;
                 self.path.clear();
                 self.stuck_strikes = 0;

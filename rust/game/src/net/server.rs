@@ -1246,8 +1246,9 @@ impl NetServer {
     }
 
     /// One bot's state (tests): `blind`, `fleeing`, the enemy it has in
-    /// `sight` (-1 for none), its view `yaw`, and its `frags` thrown. Empty
-    /// for a player or no one.
+    /// `sight` (-1 for none), its view `yaw`, its `frags` thrown, the `goal`
+    /// it walks to (NaN for none), and how many points its `path` has.
+    /// Empty for a player or no one.
     #[func]
     fn bot_status(&self, id: i32) -> VarDictionary {
         let mut d = VarDictionary::new();
@@ -1264,6 +1265,12 @@ impl NetServer {
         d.set("sight", brain.target_in_sight().map_or(-1, i32::from));
         d.set("yaw", brain.view().x);
         d.set("frags", brain.frags_thrown);
+        let (goal, path) = brain.route();
+        d.set(
+            "goal",
+            goal.unwrap_or(Vector3::new(f32::NAN, f32::NAN, f32::NAN)),
+        );
+        d.set("path", path as i64);
         d
     }
 
