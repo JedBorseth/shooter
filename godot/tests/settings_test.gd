@@ -32,6 +32,7 @@ func _run() -> void:
 	_check_sensitivity_levels(settings)
 	_check_audio_mix(settings)
 	_check_aim_assist(settings)
+	_check_controller_tuning(settings)
 	_check_round_trip(settings)
 	_check_graphics(settings)
 	_check_bindings(settings)
@@ -244,6 +245,42 @@ func _check_aim_assist(settings: Node) -> void:
 	settings.reset_to_defaults()
 
 
+## Response curve type and the left stick and trigger deadzones (Call of
+## Duty's controller settings) reach the player and the input map.
+func _check_controller_tuning(settings: Node) -> void:
+	_check(
+		is_equal_approx(InputMap.action_get_deadzone(&"move_forward"), 0.12),
+		"the left stick starts at 12%"
+	)
+	_check(is_equal_approx(InputMap.action_get_deadzone(&"fire"), 0.25), "triggers start at 25%")
+	settings.set_setting(&"move_deadzone", 0.2)
+	settings.set_setting(&"trigger_deadzone", 0.05)
+	_check(
+		is_equal_approx(InputMap.action_get_deadzone(&"move_left"), 0.2),
+		"the left stick deadzone sets the movement actions"
+	)
+	_check(
+		is_equal_approx(InputMap.action_get_deadzone(&"aim"), 0.05),
+		"the trigger deadzone sets fire and aim"
+	)
+	settings.set_setting(&"input_device", settings.InputDevice.CONTROLLER)
+	_check(
+		is_equal_approx(InputMap.action_get_deadzone(&"move_left"), 0.2),
+		"and survives the input map being rebuilt"
+	)
+	settings.set_setting(&"stick_response", 2)
+	var player := FpsPlayer.new()
+	settings.apply_to_player(player)
+	_check(int(player.get(&"stick_response")) == 2, "the curve type reaches the player")
+	settings.set_setting(&"stick_response", 7)
+	_check(settings.stick_response == 0, "an unknown curve type falls back to Standard")
+	player.free()
+	settings.reset_to_defaults()
+	_check(
+		is_equal_approx(InputMap.action_get_deadzone(&"fire"), 0.25), "reset puts the triggers back"
+	)
+
+
 func _check_round_trip(settings: Node) -> void:
 	settings.set_setting(&"mouse_sensitivity", 2.35)
 	settings.set_setting(&"fov", 95.0)
@@ -437,7 +474,7 @@ func _check_menu(settings: Node) -> void:
 	_check(menu._bind_buttons[&"jump"].is_visible_in_tree(), "Keybinds lists the bindings")
 	tabs.current_tab = 0
 	var sliders: Array[Node] = menu.find_children("*", "HSlider", true, false)
-	_check(sliders.size() == 12, "twelve sliders, got %d" % sliders.size())
+	_check(sliders.size() == 14, "fourteen sliders, got %d" % sliders.size())
 	var toggle_count := menu.find_children("*", "CheckButton", true, false).size()
 	_check(toggle_count == 12, "twelve toggles, got %d" % toggle_count)
 

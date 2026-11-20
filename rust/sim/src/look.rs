@@ -43,6 +43,42 @@ pub fn pitch_range(prone: f32) -> (f32, f32) {
     )
 }
 
+/// The shape of the look stick's response, as Call of Duty's "Aim Response
+/// Curve Type" setting offers it (Black Ops Cold War onward).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum StickResponse {
+    /// Turn rate rises with deflection raised to `StickParams::curve`: fine
+    /// near the centre, fast at the edge.
+    #[default]
+    Standard,
+    /// Turn rate in direct proportion to deflection.
+    Linear,
+    /// An S-curve (smoothstep): fine near the centre, quick through the middle
+    /// of the throw, and easing into full speed at the edge.
+    Dynamic,
+}
+
+impl StickResponse {
+    /// The setting's index in the menu (0 Standard, 1 Linear, 2 Dynamic);
+    /// anything else is Standard.
+    pub fn from_index(index: i64) -> Self {
+        match index {
+            1 => Self::Linear,
+            2 => Self::Dynamic,
+            _ => Self::Standard,
+        }
+    }
+
+    /// Output (0 to 1) for deflection through the live range `t` (0 to 1).
+    pub fn apply(self, t: f32, exponent: f32) -> f32 {
+        match self {
+            Self::Standard => fmath::powf(t, exponent),
+            Self::Linear => t,
+            Self::Dynamic => t * t * (3.0 - 2.0 * t),
+        }
+    }
+}
+
 /// Stick response settings.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct StickParams {
@@ -51,8 +87,10 @@ pub struct StickParams {
     /// Deflection above `1 - outer_deadzone` reads as full.
     pub outer_deadzone: f32,
     /// Response curve exponent: 1 is linear, higher gives finer control near
-    /// the center.
+    /// the center. Only the Standard response uses it.
     pub curve: f32,
+    /// The response curve's shape.
+    pub response: StickResponse,
     /// Horizontal turn rate at full deflection, in radians per second.
     pub yaw_speed: f32,
     /// Vertical turn rate at full deflection, in radians per second.
@@ -71,6 +109,7 @@ impl Default for StickParams {
             inner_deadzone: 0.1,
             outer_deadzone: 0.04,
             curve: 2.0,
+            response: StickResponse::Standard,
             yaw_speed: 200_f32.to_radians(),
             pitch_speed: 150_f32.to_radians(),
             boost_yaw_speed: 120_f32.to_radians(),
@@ -89,7 +128,7 @@ pub fn shape_stick(raw: Vec2, params: &StickParams) -> Vec2 {
         return Vec2::ZERO;
     }
     let t = ((length - params.inner_deadzone) / live).clamp(0.0, 1.0);
-    raw / length * fmath::powf(t, params.curve)
+    raw / length * params.response.apply(t, params.curve)
 }
 
 /// Turns stick deflection into turn rates, with a boost for long full turns.
@@ -524,6 +563,25 @@ mod tests {
         // Direction is preserved.
         let diag = shape_stick(Vec2::new(0.5, 0.5), &p);
         assert!((diag.x - diag.y).abs() < 1e-6);
+    }
+
+    #[test]
+    fn response_curve_types() {
+        let mut p = StickParams::default();
+        let at = |p: &StickParams, t: f32| {
+            let live = 1.0 - p.inner_deadzone - p.outer_deadzone;
+            shape_stick(Vec2::new(p.inner_deadzone + t * live, 0.0), p).x
+        };
+        p.response = StickResponse::Linear;
+        assert!((at(&p, 0.3) - 0.3).abs() < 1e-4);
+        p.response = StickResponse::Dynamic;
+        // Finer than linear early, faster than linear late, full at the edge.
+        assert!(at(&p, 0.2) < 0.2 && at(&p, 0.2) > 0.2_f32.powi(2));
+        assert!(at(&p, 0.7) > 0.7);
+        assert!((at(&p, 1.0) - 1.0).abs() < 1e-4);
+        assert!((at(&p, 0.5) - 0.5).abs() < 1e-4);
+        assert_eq!(StickResponse::from_index(2), StickResponse::Dynamic);
+        assert_eq!(StickResponse::from_index(9), StickResponse::Standard);
     }
 
     #[test]

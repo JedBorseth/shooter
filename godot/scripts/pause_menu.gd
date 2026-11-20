@@ -46,10 +46,19 @@ const DESCRIPTIONS := {
 	&"invert_mouse_y": "Moving the mouse forward looks down instead of up.",
 	&"stick_sensitivity_level": "How fast the right stick turns the view. Each step is 20% faster.",
 	&"stick_deadzone":
-	"How far a stick must move before it counts. Raise it if the view drifts on its own.",
+	"How far the right stick must move before the view turns. Raise it if the view drifts.",
+	&"move_deadzone":
+	"How far the left stick must move before you walk. Raise it if you creep on your own.",
+	&"trigger_deadzone": "How far a trigger must be pulled to fire or aim. Lower is quicker.",
+	&"stick_response":
+	(
+		"How turn speed builds as you push the right stick. Standard is finer near the"
+		+ " centre, Linear turns in step with the stick, and Dynamic is an S-curve: fine"
+		+ " at first, quick through the middle."
+	),
 	&"invert_stick_y": "Pushing the right stick up looks down.",
 	&"stick_curve":
-	"How the turn speed builds as you push the stick. Higher is finer near the centre.",
+	"How strongly the Standard curve holds back small movements. Higher is finer near the centre.",
 	&"aim_assist":
 	(
 		"With a controller, slows your aim over an enemy and follows them as you move."
@@ -433,8 +442,11 @@ func _build_settings() -> void:
 	controls.add_child(_controller_status)
 	_show_controller_status()
 	_add_level_slider(controls, &"stick_sensitivity_level", "Look speed")
-	_add_slider(controls, &"stick_deadzone", "Stick deadzone", 0.01, percent)
-	_add_slider(controls, &"stick_curve", "Response curve", 0.1, decimal)
+	_add_choice(controls, &"stick_response", "Aim response curve", Settings.STICK_RESPONSES)
+	_add_slider(controls, &"stick_curve", "Curve strength", 0.1, decimal)
+	_add_slider(controls, &"stick_deadzone", "Right stick deadzone", 0.01, percent)
+	_add_slider(controls, &"move_deadzone", "Left stick deadzone", 0.01, percent)
+	_add_slider(controls, &"trigger_deadzone", "Trigger deadzone", 0.01, percent)
 	_add_toggle(controls, &"invert_stick_y", "Invert Y axis")
 	_add_toggle(controls, &"aim_assist", "Aim assist")
 	_add_toggle(controls, &"rumble", "Vibration")
