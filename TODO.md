@@ -294,7 +294,8 @@ Rounds with one life each (`rust/sim/src/snd.rs`, `--mode snd`), on Slamcity. Cl
 ## Phase 5: online services (all self-hosted)
 
 - [ ] Nakama (self-hosted, Docker Compose) for accounts, parties, and matchmaking. Use the `nakama-godot` client.
-- [ ] Dockerfile for the headless server (Godot export + Rust extension).
+- [x] Dockerfile for the headless server (Godot export + Rust extension): `docker/server`, published to `ghcr.io/jedborseth/shooter-server` from `main` ([docs/server.md](docs/server.md)).
+- [ ] Strip textures from the server export (558 MB of the 693 MB pack is `.ctex` the server never draws): mark image files "Strip Visuals" in the Linux Server preset.
 - [ ] Server allocation: Nakama match handler starts or assigns a dedicated server and hands its address to players. Agones on Kubernetes later.
 - [x] Server-side validation and anti-cheat basics: packet floods and garbage disconnect; aim snaps onto hits, view ticks the round trip does not explain, and lag switching are flagged in the server log, never kicked ([docs/netcode.md](docs/netcode.md#server-checks), `shooter_sim::net::integrity`). Speed, teleports, and fire rate cannot be cheated: the server simulates them from inputs.
   - [ ] Follow-ups: send each client only the enemies it could see or hear (against wallhacks; killcams and the minimap need a plan for the rest), and a way for an operator to see flags without reading the log (once there are accounts).
@@ -394,7 +395,7 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 
 - [x] GitHub Actions CI: `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`, gdlint and gdformat, and the headless smoke test (download Godot 4.7.2 in the job).
 - [x] Release builds: export presets for Linux, Windows, and macOS clients, exported on `main` and published on `v*` tags.
-- [ ] Dedicated server build: a Linux export preset with `dedicated_server=true` (done, exported by CI), packaged as a Docker image and pushed to GitHub Container Registry from CI.
+- [x] Dedicated server build: a Linux export preset with `dedicated_server=true` (done, exported by CI), packaged as a Docker image and pushed to GitHub Container Registry from CI (`.github/scripts/server-image.sh`).
 - [x] Determinism test in CI: record an input sequence, run it through `shooter_sim::player::step` twice (and on each OS in the build matrix), and compare state hashes. Catches prediction desyncs before netcode depends on them. (`rust/sim/tests/determinism.rs`)
 - [ ] Visual and performance checks on a GPU runner: run `capture_screens.gd` and a scripted fly-through that records frame times, on a self-hosted runner with a GPU, for trusted branches only.
 - [x] A `justfile` with `build`, `run`, `test` (the tests listed in CI), `screens`, and `ci` recipes.

@@ -9,7 +9,7 @@ Every pull request, merge queue entry, and push to `main` runs one GitHub Action
 | Linux (lint, tests, library) | Ubuntu | The Linux game library, master server, and launcher; gdlint, gdformat, the importer's Python tests, `cargo fmt`, clippy, `cargo test` |
 | Windows (tests, library), macOS (tests, library) | Windows, macOS | The game library and launcher for that platform (universal on macOS), then `cargo test`, so the simulation behaves the same on every platform |
 | Godot tests (headless) | Ubuntu | Every `godot/tests/*_test.gd`, then the benchmark script without a GPU |
-| Export builds | Ubuntu | Linux, Windows, macOS, and dedicated server zips plus the launchers, uploaded as one artifact; publishes `nightly` from `main` |
+| Export builds | Ubuntu | Linux, Windows, macOS, and dedicated server zips plus the launchers, uploaded as one artifact; builds the server's Docker image and checks it starts healthy; publishes `nightly` (the release and the `ghcr.io/jedborseth/shooter-server` image) from `main` ([server.md](server.md)) |
 | CI passed | Ubuntu | Passes only when every other job passed |
 
 `CI passed` is the only check branch protection needs. Jobs can be added, split, or renamed without changing the ruleset.
