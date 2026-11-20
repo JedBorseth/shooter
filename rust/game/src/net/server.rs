@@ -164,6 +164,13 @@ const STATS_INTERVAL_TICKS: Tick = 2 * TICK_RATE;
 const PICKUP_REACH: f32 = 3.0;
 /// Bots get ids from here up, so they never collide with client ids.
 const FIRST_BOT_ID: u8 = 200;
+/// Spectators get ids from here up, between players' and bots'.
+const FIRST_SPECTATOR_ID: u8 = 100;
+/// Most spectators a server takes (Black Ops 2's CODcaster lobbies take a
+/// few casters beside the twelve players).
+const MAX_SPECTATORS: u8 = 8;
+/// Why a ranked server turns a spectator away.
+const NO_RANKED_SPECTATORS: &str = "Spectating is off on ranked servers.";
 /// Seconds a death keeps nearby spawn points unattractive.
 const RECENT_DEATH_SECONDS: u32 = 5;
 /// Ticks between scoreboard updates when nothing scored.
@@ -452,6 +459,8 @@ pub struct NetServer {
     /// The latest kill of the match (or the Search and Destroy round), for
     /// the killcam that ends it.
     last_kill: Option<KillRecord>,
+    /// The caster's rows last sent to spectators (`GameEvent::Caster`).
+    caster_sent: Vec<protocol::CasterRow>,
 }
 
 /// A smoke cloud still hanging.
@@ -468,6 +477,9 @@ struct ClientSlot {
     peer: Gd<ENetPacketPeer>,
     /// Set once the hello is accepted.
     player: Option<u8>,
+    /// Watching, not playing: `player` is a spectator id
+    /// (`FIRST_SPECTATOR_ID` up), with no body and no team.
+    spectator: bool,
     inputs: InputQueue,
     /// Newest snapshot the client has acknowledged.
     ack: Option<Tick>,
@@ -503,6 +515,13 @@ struct ClientSlot {
     /// (`shooter_sim::cosmetics`).
     wanted_cosmetics: Option<Cosmetics>,
     cosmetics: Cosmetics,
+}
+
+impl ClientSlot {
+    /// Admitted as a player (not a spectator).
+    fn playing(&self) -> bool {
+        self.player.is_some() && !self.spectator
+    }
 }
 
 struct Avatar {
@@ -920,6 +939,7 @@ impl INode3D for NetServer {
             self.broadcast_scoreboard();
         }
         self.send_stats(false);
+        self.send_caster();
         self.send_events();
         host.flush();
         drop(net_out);
@@ -931,7 +951,7 @@ impl INode3D for NetServer {
             }
         }
 
-        let players = self.clients.iter().filter(|c| c.player.is_some()).count();
+        let players = self.clients.iter().filter(|c| c.playing()).count();
         let bots = self.avatars.iter().filter(|a| a.bot).count();
         if let Some(responder) = &mut self.responder {
             responder.info.players = players.min(255) as u8;
@@ -967,6 +987,34 @@ impl NetServer {
                 godot_warn!("server: custom settings ignored: {error}");
                 custom::Settings::default()
             }
+        }
+    }
+
+    /// Sends spectators every player's class and scorestreaks
+    /// (`GameEvent::Caster`) twice a second, when they changed.
+    fn send_caster(&mut self) {
+        if !self.tick.is_multiple_of(TICK_RATE / 2) || !self.clients.iter().any(|c| c.spectator) {
+            return;
+        }
+        let mut rows: Vec<protocol::CasterRow> = self
+            .avatars
+            .iter()
+            .map(|a| protocol::CasterRow {
+                id: a.id,
+                class: self.custom.loadouts.restrict(a.class),
+                streaks: a.streak_loadout,
+                progress: a.streaks.progress,
+                held: a.streaks.held.clone(),
+            })
+            .collect();
+        rows.sort_by_key(|r| r.id);
+        if rows == self.caster_sent {
+            return;
+        }
+        let event = GameEvent::Caster(rows.clone());
+        self.caster_sent = rows;
+        for client in self.clients.iter_mut().filter(|c| c.spectator) {
+            client.outbox.push(event.clone());
         }
     }
 
@@ -2544,6 +2592,7 @@ impl NetServer {
                     peer.get_remote_port()
                 );
                 self.clients.push(ClientSlot {
+                    spectator: false,
                     peer,
                     player: None,
                     inputs: InputQueue::default(),
@@ -2571,7 +2620,9 @@ impl NetServer {
                     return;
                 };
                 let client = self.clients.swap_remove(index);
-                if let Some(id) = client.player {
+                if let Some(id) = client.player.filter(|_| client.spectator) {
+                    godot_print!("server: spectator {id} left");
+                } else if let Some(id) = client.player {
                     godot_print!("server: player {id} left");
                     // Leaving mid-match keeps the score, without the bonus.
                     if self.match_state.phase == Phase::Playing {
@@ -2678,11 +2729,24 @@ impl NetServer {
     /// game, and a spawn. The hello already passed; on a server with
     /// `accounts`, the account server too.
     fn admit(&mut self, index: usize, name: &str) {
+        self.admit_as(index, name, false);
+    }
+
+    /// Lets a client in, as a player or as a `spectator`: a spectator gets
+    /// the welcome and everything a late joiner needs to follow the match,
+    /// but no body, no team, and no place a bot would fill.
+    fn admit_as(&mut self, index: usize, name: &str, spectator: bool) {
         let mut peer = self.clients[index].peer.clone();
         // Zombies is for up to four players, as in Black Ops.
-        let full = self.game == Mode::Zombies
-            && self.clients.iter().filter(|c| c.player.is_some()).count() >= zombies::MAX_PLAYERS;
-        let Some(id) = (0..MAX_PLAYERS as u8)
+        let players = self.clients.iter().filter(|c| c.playing()).count();
+        let full = !spectator && self.game == Mode::Zombies && players >= zombies::MAX_PLAYERS;
+        let ids = if spectator {
+            FIRST_SPECTATOR_ID..FIRST_SPECTATOR_ID + MAX_SPECTATORS
+        } else {
+            0..MAX_PLAYERS as u8
+        };
+        let Some(id) = ids
+            .clone()
             .find(|id| !self.clients.iter().any(|c| c.player == Some(*id)))
             .filter(|_| !full)
         else {
@@ -2690,6 +2754,12 @@ impl NetServer {
             return;
         };
         self.clients[index].player = Some(id);
+        self.clients[index].spectator = spectator;
+        if spectator {
+            // Everything for the caster's view, on the next send.
+            self.caster_sent.clear();
+            godot_print!("server: spectator {id} \"{name}\" joined");
+        }
         let name = tdm::clean_name(name, &format!("Player {}", id + 1));
         let class = self.clients[index].class;
         // The welcome goes first, so the client knows its id before
@@ -2702,6 +2772,7 @@ impl NetServer {
             server_build: crate::build_info::BUILD.to_owned(),
             ranked: self.accounts,
             custom: self.custom,
+            spectator,
         };
         transport::send_reliable(&mut peer, &welcome.encode(&[]));
         // Everyone already here, then the newcomer for everyone.
@@ -2728,17 +2799,19 @@ impl NetServer {
                 }),
         );
         self.clients[index].outbox.extend(shown);
-        self.spawn_avatar(id, false, &name, class, None);
-        if self.clients[index].cosmetics != Cosmetics::default() {
-            let cosmetics = self.clients[index].cosmetics.clone();
-            self.broadcast_event(&GameEvent::Cosmetics { id, cosmetics });
+        if !spectator {
+            self.spawn_avatar(id, false, &name, class, None);
+            if self.clients[index].cosmetics != Cosmetics::default() {
+                let cosmetics = self.clients[index].cosmetics.clone();
+                self.broadcast_event(&GameEvent::Cosmetics { id, cosmetics });
+            }
+            let streaks = self.clients[index].streaks;
+            if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) {
+                avatar.streak_wanted = streaks;
+                avatar.streak_loadout = streaks;
+            }
+            self.send_streaks(id);
         }
-        let streaks = self.clients[index].streaks;
-        if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) {
-            avatar.streak_wanted = streaks;
-            avatar.streak_loadout = streaks;
-        }
-        self.send_streaks(id);
         let sky = self.sky_event();
         self.send_event(id, sky);
         for c in self.choppers.clone() {
@@ -2838,6 +2911,7 @@ impl NetServer {
                 version,
                 name,
                 account,
+                spectate,
             } => {
                 if self.clients[index].player.is_some()
                     || !matches!(self.clients[index].account, AccountState::None)
@@ -2852,6 +2926,14 @@ impl NetServer {
                     transport::send_reliable(&mut peer, &reject.encode(&[]));
                     peer.peer_disconnect_later();
                     return;
+                }
+                if spectate {
+                    // Ranked play has no spectators: a second client could
+                    // watch for its team.
+                    if self.accounts {
+                        return self.deny(index, NO_RANKED_SPECTATORS);
+                    }
+                    return self.admit_as(index, &name, true);
                 }
                 if self.accounts {
                     // Held until the account server vouches for the token.
@@ -2877,7 +2959,10 @@ impl NetServer {
                 if client.player.is_none() {
                     return;
                 }
-                client.inputs.receive(packet.first_seq, &packet.inputs);
+                // A spectator's inputs move nothing; only its acks count.
+                if !client.spectator {
+                    client.inputs.receive(packet.first_seq, &packet.inputs);
+                }
                 if let Some(ack) = packet.ack_snapshot
                     && ack <= self.tick
                     && client.ack.is_none_or(|current| ack > current)
@@ -6700,7 +6785,7 @@ impl NetServer {
         {
             self.recent_deaths.pop_front();
         }
-        let humans: Vec<&ClientSlot> = self.clients.iter().filter(|c| c.player.is_some()).collect();
+        let humans: Vec<&ClientSlot> = self.clients.iter().filter(|c| c.playing()).collect();
         if humans.is_empty() && !self.auto_start {
             if self.match_state.phase != Phase::Lobby {
                 self.match_state.reset();
@@ -9985,6 +10070,11 @@ impl NetServer {
         };
         for client in &mut self.clients {
             let Some(id) = client.player else { continue };
+            if client.spectator {
+                let outgoing = parts.for_spectator(&self.history, client.ack);
+                transport::send_unreliable(&mut client.peer, &outgoing.encode());
+                continue;
+            }
             let Some(avatar) = self.avatars.iter().find(|a| a.id == id) else {
                 continue;
             };
@@ -10028,6 +10118,29 @@ struct SnapshotParts<'a> {
 }
 
 impl SnapshotParts<'_> {
+    /// The snapshot for a spectator: every player, no own state, and no
+    /// minimap dots (a caster sees the players themselves).
+    fn for_spectator(&self, history: &SnapshotHistory, ack: Option<Tick>) -> Outgoing {
+        let baseline: Option<(Tick, Vec<PlayerView>)> =
+            ack.and_then(|tick| Some((tick, history.get(tick)?.to_vec())));
+        Outgoing {
+            snapshot: Snapshot {
+                tick: self.tick,
+                baseline: baseline.as_ref().map(|(tick, _)| *tick),
+                own: None,
+                players: self.views.to_vec(),
+                grenades: self.grenades.to_vec(),
+                smokes: self.smokes.to_vec(),
+                zombies: self.zombies.cloned(),
+                radar: RadarView::default(),
+            },
+            base_players: baseline.map(|(_, views)| views).unwrap_or_default(),
+            base_own: None,
+            // Spectators get the horde whole each time.
+            base_zombies: None,
+        }
+    }
+
     /// The snapshot for `avatar`'s client, delta-encoded against what it
     /// acknowledged (`acks`: its newest snapshot, and its newest that
     /// carried the horde) if the server still has it.

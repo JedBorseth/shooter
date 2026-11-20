@@ -132,6 +132,8 @@ var _layout: VBoxContainer
 var _custom_page: Control
 var _custom_summary: Label
 var _custom_button: Button
+## Join the match as a spectator, watching the bots (CODcaster style).
+var _spectate: Button
 ## The custom rules chosen (`CustomPresets`), for every mode but Zombies and
 ## Free Roam.
 var _custom := CustomPresets.last()
@@ -164,6 +166,8 @@ func options() -> Dictionary:
 		var custom := CustomPresets.to_text(_custom)
 		if not custom.is_empty():
 			chosen["custom"] = custom
+		if _spectate != null and _spectate.button_pressed:
+			chosen["spectate"] = true
 	return chosen
 
 
@@ -446,6 +450,15 @@ func _build_custom_line(layout: VBoxContainer) -> void:
 	_custom_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	_custom_button.pressed.connect(_show_custom_page.bind(true))
 	line.add_child(_custom_button)
+	_spectate = Button.new()
+	_spectate.name = "Spectate"
+	_spectate.text = "Spectate"
+	_spectate.toggle_mode = true
+	_spectate.theme_type_variation = &"ChipButton"
+	_spectate.tooltip_text = "Watch the match instead of playing: any player's view, or a free camera."
+	_spectate.custom_minimum_size = Vector2(110, 38)
+	_spectate.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	line.add_child(_spectate)
 	_update_custom_summary()
 
 
