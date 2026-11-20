@@ -85,6 +85,9 @@ pub struct ZombieDirector {
     /// Online: seconds (engine time) the break ends, and zombies left.
     net_break_ends: f64,
     net_remaining: u32,
+    /// Online: engine seconds Insta-Kill and Double Points end.
+    net_insta_kill_ends: f64,
+    net_double_points_ends: f64,
 }
 
 /// Points for each board put back on a barrier.
@@ -103,6 +106,8 @@ struct Drop {
     kind: PowerUp,
     node: Gd<Node3D>,
     left: f32,
+    /// Online: the server's id for it.
+    id: Option<u8>,
 }
 
 #[godot_api]
@@ -116,6 +121,11 @@ impl INode3D for ZombieDirector {
 
     fn physics_process(&mut self, delta: f64) {
         if self.networked {
+            // Tokens blink in their last seconds; the server removes them.
+            for drop in &mut self.drops {
+                drop.left -= delta as f32;
+                drop.node.call("set_time_left", &[drop.left.to_variant()]);
+            }
             return;
         }
         let dt = delta as f32;
@@ -263,12 +273,18 @@ impl ZombieDirector {
     /// Seconds of Insta-Kill left.
     #[func]
     fn insta_kill_left(&self) -> f32 {
+        if self.networked {
+            return (self.net_insta_kill_ends - now_seconds()).max(0.0) as f32;
+        }
         self.insta_kill_left
     }
 
     /// Seconds of Double Points left.
     #[func]
     fn double_points_left(&self) -> f32 {
+        if self.networked {
+            return (self.net_double_points_ends - now_seconds()).max(0.0) as f32;
+        }
         self.double_points_left
     }
 
@@ -362,6 +378,38 @@ impl ZombieDirector {
                 .points_spent()
                 .emit(i64::from(-change), total);
         }
+    }
+
+    /// Online: a kill dropped power-up `id` of `kind` at `at`.
+    pub fn net_drop(&mut self, id: u8, kind: PowerUp, at: Vector3) {
+        self.spawn_drop(kind, at);
+        if let Some(drop) = self.drops.last_mut() {
+            drop.id = Some(id);
+        }
+    }
+
+    /// Online: power-up `id` is gone; `taken` if a player picked it up,
+    /// which everyone hears announced.
+    pub fn net_drop_gone(&mut self, id: u8, taken: bool) {
+        let Some(index) = self.drops.iter().position(|d| d.id == Some(id)) else {
+            return;
+        };
+        let mut drop = self.drops.remove(index);
+        drop.node.queue_free();
+        if taken {
+            self.signals().power_up_collected().emit(
+                &GString::from(drop.kind.key()),
+                &GString::from(drop.kind.label()),
+            );
+        }
+    }
+
+    /// Online: seconds of Insta-Kill and Double Points left. Held as the
+    /// engine times they end, so the HUD counts them down.
+    pub fn net_timers(&mut self, insta_kill: f64, double_points: f64) {
+        let now = now_seconds();
+        self.net_insta_kill_ends = now + insta_kill.max(0.0);
+        self.net_double_points_ends = now + double_points.max(0.0);
     }
 
     /// Online: this player's kills and headshots, from the scoreboard.
@@ -505,6 +553,7 @@ impl ZombieDirector {
             kind,
             node,
             left: zombies::POWER_UP_LIFETIME,
+            id: None,
         });
         self.signals()
             .power_up_dropped()

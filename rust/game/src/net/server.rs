@@ -423,6 +423,12 @@ struct ZombiesStats {
     kills: u32,
     headshots: u32,
     downs: u32,
+    /// Seconds into the board being put back on a window, and points paid
+    /// for rebuilding this round.
+    rebuild_for: f32,
+    rebuilt: u32,
+    /// The last tick they held use at a window.
+    rebuild_seen: Option<Tick>,
 }
 
 /// A shot fired this tick, waiting to be checked.
@@ -1217,6 +1223,79 @@ impl NetServer {
             .map_or(0, |a| i64::from(a.zombies.points))
     }
 
+    /// Zombies: doors on the map, and whether door `index` is open.
+    #[func]
+    fn door_count(&self) -> i32 {
+        self.horde.as_ref().map_or(0, |h| h.door_count() as i32)
+    }
+
+    #[func]
+    fn door_open(&self, index: i32) -> bool {
+        self.horde
+            .as_ref()
+            .zip(usize::try_from(index).ok())
+            .is_some_and(|(h, i)| h.door_open(i))
+    }
+
+    /// Zombies: player `id` uses door (`kind` "door") or window ("window")
+    /// `index` this tick, as if looking at it with the use button held;
+    /// `pressed` on the first tick (tests).
+    #[func]
+    fn debug_use(&mut self, id: i32, kind: GString, index: i32, pressed: bool) {
+        let (Ok(id), Ok(index)) = (u8::try_from(id), usize::try_from(index)) else {
+            return;
+        };
+        let node = self
+            .horde
+            .as_ref()
+            .and_then(|h| match kind.to_string().as_str() {
+                "door" => h.door_node(index),
+                _ => h.window_node(index),
+            });
+        if let Some(node) = node {
+            self.zombies_uses(vec![(id, node, pressed)]);
+        }
+    }
+
+    /// Zombies: power-ups on the ground, and seconds of Insta-Kill and
+    /// Double Points left.
+    #[func]
+    fn power_ups(&self) -> VarDictionary {
+        let Some(horde) = &self.horde else {
+            return VarDictionary::new();
+        };
+        let (insta, double) = horde.timers();
+        vdict! {
+            "on_ground" => horde.drops_on_ground() as i64,
+            "insta_kill" => insta,
+            "double_points" => double,
+        }
+    }
+
+    /// Zombies: drops a power-up ("max_ammo", "insta_kill", "double_points",
+    /// "nuke") at `position` (tests).
+    #[func]
+    fn debug_drop_power_up(&mut self, kind: GString, position: Vector3) {
+        let Some(kind) = zombies::PowerUp::from_key(&kind.to_string()) else {
+            return;
+        };
+        if let Some(horde) = &mut self.horde {
+            horde.drop_power_up(kind, to_sim(position));
+        }
+        self.drain_horde();
+    }
+
+    /// Zombies: gives player `id` points outright (tests).
+    #[func]
+    fn debug_add_points(&mut self, id: i32, points: i32) {
+        let Some(avatar) = self.avatars.iter_mut().find(|a| i32::from(a.id) == id) else {
+            return;
+        };
+        avatar.zombies.points = avatar.zombies.points.saturating_add(points.max(0) as u32);
+        let id = avatar.id;
+        self.send_points(id, points.max(0));
+    }
+
     /// Zombies: ends the break before the next round now (tests).
     #[func]
     fn debug_skip_zombie_break(&mut self) {
@@ -1454,6 +1533,9 @@ impl NetServer {
                 if let Some(horde) = &self.horde {
                     let mut events = vec![horde.round_event(self.tick)];
                     events.extend(horde.window_events());
+                    events.extend(horde.door_events());
+                    events.extend(horde.drop_events());
+                    events.push(horde.timers_event(self.tick));
                     for event in events {
                         self.send_event(id, GameEvent::Zombies(event));
                     }
@@ -1867,6 +1949,7 @@ impl NetServer {
         let mut fall_deaths = Vec::new();
         let mut respawns = Vec::new();
         let mut spent: Vec<(u8, u32)> = Vec::new();
+        let mut uses: Vec<(u8, Gd<Node>, bool)> = Vec::new();
         let zombies_mode = self.horde.is_some();
         let tick = self.tick;
         // What bots know about everyone this tick.
@@ -2018,6 +2101,13 @@ impl NetServer {
                         .is_some()
                 {
                     input = input.using_charge();
+                }
+                // Zombies: holding the use button at a door or a window.
+                if zombies_mode
+                    && input.interact
+                    && let Some(node) = looked_at(avatar, &input, &self.params)
+                {
+                    uses.push((avatar.id, node, !avatar.interact));
                 }
                 avatar.interact = input.interact;
                 // Zombies: a wall weapon costs its price, and its ammo half
@@ -2200,6 +2290,7 @@ impl NetServer {
         for (id, cost) in spent {
             self.send_points(id, -(cost as i32));
         }
+        self.zombies_uses(uses);
         self.update_horde();
     }
 
@@ -2222,20 +2313,8 @@ impl NetServer {
                 standing: a.predicted.state.alive(),
             })
             .collect();
-        let mut events = Vec::new();
-        horde.step(&players, &mut events);
-        for event in events {
-            match event {
-                HordeEvent::RoundStarted(round) => self.on_zombies_round(round),
-                HordeEvent::Struck { player, from } => self.zombie_strike(player, from),
-                HordeEvent::Boards { window, boards } => {
-                    self.broadcast_event(&GameEvent::Zombies(protocol::ZombiesEvent::Boards {
-                        window,
-                        boards,
-                    }));
-                }
-            }
-        }
+        horde.step(&players);
+        self.drain_horde();
         let everyone_down =
             !self.avatars.is_empty() && self.avatars.iter().all(|a| !a.predicted.state.alive());
         if let Some(horde) = &mut self.horde
@@ -2248,6 +2327,176 @@ impl NetServer {
             self.on_transition(transition);
         }
         self.broadcast_zombies_round();
+    }
+
+    /// Zombies: a fresh game. Everything back as the map starts, everyone
+    /// on 500 points, and every client told.
+    fn reset_zombies(&mut self) {
+        let Some(horde) = &mut self.horde else {
+            return;
+        };
+        // Power-ups still lying about go from every client.
+        let mut events: Vec<protocol::ZombiesEvent> = horde
+            .drop_events()
+            .into_iter()
+            .filter_map(|e| match e {
+                protocol::ZombiesEvent::PowerUpDropped { id, .. } => {
+                    Some(protocol::ZombiesEvent::PowerUpGone { id, by: None })
+                }
+                _ => None,
+            })
+            .collect();
+        horde.reset();
+        events.extend(horde.window_events());
+        events.extend(horde.door_events());
+        events.push(horde.timers_event(self.tick));
+        for event in events {
+            self.broadcast_event(&GameEvent::Zombies(event));
+        }
+        for avatar in &mut self.avatars {
+            avatar.zombies = ZombiesStats {
+                points: zombies::START_POINTS,
+                ..ZombiesStats::default()
+            };
+        }
+        let ids: Vec<u8> = self.avatars.iter().map(|a| a.id).collect();
+        for id in ids {
+            self.send_points(id, 0);
+        }
+    }
+
+    /// Acts on what the horde did since the last call.
+    fn drain_horde(&mut self) {
+        let Some(horde) = &mut self.horde else {
+            return;
+        };
+        for event in horde.take_events() {
+            match event {
+                HordeEvent::RoundStarted(round) => self.on_zombies_round(round),
+                HordeEvent::Struck { player, from } => self.zombie_strike(player, from),
+                HordeEvent::Boards { window, boards } => {
+                    self.broadcast_event(&GameEvent::Zombies(protocol::ZombiesEvent::Boards {
+                        window,
+                        boards,
+                    }));
+                }
+                HordeEvent::PowerUpDropped { id, kind, at } => {
+                    self.broadcast_event(&GameEvent::Zombies(
+                        protocol::ZombiesEvent::PowerUpDropped { id, kind, at },
+                    ));
+                }
+                HordeEvent::PowerUpExpired { id } => {
+                    self.broadcast_event(&GameEvent::Zombies(
+                        protocol::ZombiesEvent::PowerUpGone { id, by: None },
+                    ));
+                }
+                HordeEvent::PowerUpTaken {
+                    id,
+                    kind,
+                    by,
+                    nuked,
+                } => {
+                    godot_print!("server: player {by} took {}", kind.label());
+                    self.broadcast_event(&GameEvent::Zombies(
+                        protocol::ZombiesEvent::PowerUpGone { id, by: Some(by) },
+                    ));
+                    match kind {
+                        // Every player standing gets their ammo back.
+                        zombies::PowerUp::MaxAmmo => {
+                            for avatar in &mut self.avatars {
+                                if avatar.predicted.state.alive() {
+                                    avatar.predicted.state.combat.refill_ammo(&mut Vec::new());
+                                }
+                            }
+                        }
+                        // Every player is paid, as in Black Ops.
+                        zombies::PowerUp::Nuke => {
+                            let ids: Vec<u8> = self.avatars.iter().map(|a| a.id).collect();
+                            for id in ids {
+                                self.award_points(id, zombies::NUKE_POINTS);
+                            }
+                            if nuked > 0 {
+                                self.next_scoreboard = self.tick;
+                            }
+                        }
+                        zombies::PowerUp::InstaKill | zombies::PowerUp::DoublePoints => {}
+                    }
+                }
+                HordeEvent::TimersChanged => {
+                    let event = self.horde.as_ref().map(|h| h.timers_event(self.tick));
+                    if let Some(event) = event {
+                        self.broadcast_event(&GameEvent::Zombies(event));
+                    }
+                }
+            }
+        }
+    }
+
+    /// Zombies: players holding the use button at a door (a press buys it)
+    /// or a window (holding rebuilds it a board at a time, for points).
+    fn zombies_uses(&mut self, uses: Vec<(u8, Gd<Node>, bool)>) {
+        let tick = self.tick;
+        for (id, node, pressed) in uses {
+            let Some(horde) = &mut self.horde else {
+                return;
+            };
+            if !self.match_state.scoring() || horde.over() {
+                return;
+            }
+            if let Some(door) = horde.door_of(&node) {
+                let Some(price) = horde.door_price(door) else {
+                    continue;
+                };
+                let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
+                    continue;
+                };
+                if !pressed || avatar.zombies.points < price || !horde.open_door(door) {
+                    continue;
+                }
+                avatar.zombies.points -= price;
+                godot_print!("server: player {id} opened door {door}");
+                self.send_points(id, -(price as i32));
+                self.broadcast_event(&GameEvent::Zombies(protocol::ZombiesEvent::Door {
+                    door: door as u8,
+                    open: true,
+                }));
+            } else if let Some(window) = horde.window_of(&node) {
+                let Some(boards) = horde.window_boards(window) else {
+                    continue;
+                };
+                if boards >= super::horde::WINDOW_BOARDS {
+                    continue;
+                }
+                let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
+                    continue;
+                };
+                // Letting go, or looking away, starts the board over.
+                if avatar
+                    .zombies
+                    .rebuild_seen
+                    .is_none_or(|seen| seen + 1 < tick)
+                {
+                    avatar.zombies.rebuild_for = 0.0;
+                }
+                avatar.zombies.rebuild_seen = Some(tick);
+                avatar.zombies.rebuild_for += TICK_DT;
+                if avatar.zombies.rebuild_for < zombies::REBUILD_SECONDS {
+                    continue;
+                }
+                avatar.zombies.rebuild_for = 0.0;
+                let pay = zombies::REBUILD_POINTS
+                    .min(zombies::MAX_REBUILD_POINTS.saturating_sub(avatar.zombies.rebuilt));
+                avatar.zombies.rebuilt += pay;
+                horde.set_boards(window, boards + 1);
+                self.broadcast_event(&GameEvent::Zombies(protocol::ZombiesEvent::Boards {
+                    window: window as u8,
+                    boards: boards + 1,
+                }));
+                if pay > 0 {
+                    self.award_points(id, pay);
+                }
+            }
+        }
     }
 
     /// Sends the round to everyone if it changed since the last time.
@@ -2278,6 +2527,7 @@ impl NetServer {
         godot_print!("server: Zombies round {round}");
         let mut back = Vec::new();
         for avatar in &mut self.avatars {
+            avatar.zombies.rebuilt = 0;
             if avatar.predicted.state.alive() {
                 if round > 1 {
                     let combat = &mut avatar.predicted.state.combat;
@@ -2348,6 +2598,11 @@ impl NetServer {
 
     /// Pays player `id` for hurting zombies, doubled during Double Points.
     fn award_points(&mut self, id: u8, points: u32) {
+        let points = if self.horde.as_ref().is_some_and(|h| h.double_points()) {
+            points * 2
+        } else {
+            points
+        };
         let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
             return;
         };
@@ -3747,22 +4002,8 @@ impl NetServer {
         match transition {
             Transition::Started => {
                 godot_print!("server: match started");
-                if let Some(horde) = &mut self.horde {
-                    horde.reset();
-                    for avatar in &mut self.avatars {
-                        avatar.zombies = ZombiesStats {
-                            points: zombies::START_POINTS,
-                            ..ZombiesStats::default()
-                        };
-                    }
-                    let events = horde.window_events();
-                    for event in events {
-                        self.broadcast_event(&GameEvent::Zombies(event));
-                    }
-                    let ids: Vec<u8> = self.avatars.iter().map(|a| a.id).collect();
-                    for id in ids {
-                        self.send_points(id, 0);
-                    }
+                if self.horde.is_some() {
+                    self.reset_zombies();
                 }
                 self.last_kill = None;
                 self.reset_flags();
@@ -4978,14 +5219,9 @@ fn lunge_backed(
 /// True if the weapon rack the input claims is really under this player's
 /// crosshair and within reach, as the client saw it before the move. Without
 /// this check, a tampered client could take any weapon from anywhere.
-/// The price of the rack holding `weapon` that the player is looking at
-/// within reach, if they are (0 for a free rack).
-fn pickup_in_reach(
-    avatar: &Avatar,
-    input: &PlayerInput,
-    weapon: WeaponId,
-    params: &PlayerParams,
-) -> Option<i64> {
+/// The collider the player is looking at within reach (a rack, a door, a
+/// window's barrier), if any.
+fn looked_at(avatar: &Avatar, input: &PlayerInput, params: &PlayerParams) -> Option<Gd<Node>> {
     let p = &avatar.predicted;
     if !p.state.alive() {
         return None;
@@ -5002,10 +5238,23 @@ fn pickup_in_reach(
         .collision_mask(WORLD_LAYER | INTERACT_LAYER)
         .exclude(&exclude)
         .done()?;
-    let hit = space.intersect_ray(&query);
-    let pickup = hit
+    space
+        .intersect_ray(&query)
         .get_or_nil("collider")
-        .try_to::<Gd<WeaponPickup>>()
+        .try_to::<Gd<Node>>()
+        .ok()
+}
+
+/// The price of the rack holding `weapon` that the player is looking at
+/// within reach, if they are (0 for a free rack).
+fn pickup_in_reach(
+    avatar: &Avatar,
+    input: &PlayerInput,
+    weapon: WeaponId,
+    params: &PlayerParams,
+) -> Option<i64> {
+    let pickup = looked_at(avatar, input, params)?
+        .try_cast::<WeaponPickup>()
         .ok()?;
     let pickup = pickup.bind();
     (pickup.weapon_id() == Some(weapon)).then(|| pickup.price())
