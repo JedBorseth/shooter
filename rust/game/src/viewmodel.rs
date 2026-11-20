@@ -603,6 +603,10 @@ pub struct WeaponView {
     /// the view was ready.
     attachments: Attachments,
     pending_attachments: Option<Attachments>,
+    /// Asked for the forged sheen before entering the tree.
+    pending_forged: bool,
+    /// Upgraded at the Zombies forge: the forged sheen is drawn over it.
+    forged: bool,
     /// Where the left hand held the weapon before a foregrip moved it.
     grip_left_rest: Option<Vector3>,
     /// The back of a fitted ACOG's eyepiece along the sight line (view
@@ -794,6 +798,9 @@ impl INode3D for WeaponView {
             self.ready_world();
             if let Some(pending) = self.pending_attachments.take() {
                 self.set_attachments(pending);
+            }
+            if std::mem::take(&mut self.pending_forged) {
+                self.set_forged(true);
             }
             return;
         }
@@ -1243,6 +1250,22 @@ impl WeaponView {
 
     pub fn set_pending_attachments(&mut self, attachments: Attachments) {
         self.pending_attachments = Some(attachments);
+    }
+
+    /// Draws (or takes off) the forge's sheen over every surface of the
+    /// weapon: an upgraded weapon (`WeaponDef::upgraded`).
+    pub fn set_forged(&mut self, forged: bool) {
+        if self.forged == forged {
+            return;
+        }
+        self.forged = forged;
+        let overlay = forged.then(|| {
+            let mut material = ShaderMaterial::new_gd();
+            material.set_shader(&load::<Shader>(FORGED_SHADER));
+            material.set_shader_parameter("viewmodel", &(!self.world_model).to_variant());
+            material
+        });
+        set_overlay(&self.model.clone().upcast(), overlay.as_ref());
     }
 
     /// Fits attachments' parts in place of those fitted: a suppressor on
@@ -2549,8 +2572,25 @@ pub fn instantiate_world_weapon(id: WeaponId) -> Option<Gd<WeaponView>> {
         let mut v = view.bind_mut();
         v.world_model = true;
         v.set_pending_attachments(id.def().fitted);
+        v.pending_forged = id.def().upgraded;
     }
     Some(view)
+}
+
+/// The forge's sheen (`WeaponView::set_forged`).
+const FORGED_SHADER: &str = "res://shaders/forged.gdshader";
+
+/// Sets `overlay` as the material overlay of every mesh under `node`.
+fn set_overlay(node: &Gd<Node>, overlay: Option<&Gd<ShaderMaterial>>) {
+    for child in node.get_children().iter_shared() {
+        if let Ok(mut mesh) = child.clone().try_cast::<MeshInstance3D>() {
+            match overlay {
+                Some(material) => mesh.set_material_overlay(material),
+                None => mesh.set_material_overlay(Option::<&Gd<Material>>::None),
+            }
+        }
+        set_overlay(&child, overlay);
+    }
 }
 
 /// Moves the active [`WeaponView`] procedurally. Child of the camera.
@@ -3270,6 +3310,7 @@ impl ViewmodelRig {
             if show {
                 let mut v = view.bind_mut();
                 v.set_attachments(frame.weapon.def().fitted);
+                v.set_forged(frame.weapon.def().upgraded);
                 v.animate(frame, &clip);
             }
             if view.is_visible() != show {

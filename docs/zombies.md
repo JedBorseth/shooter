@@ -1,7 +1,8 @@
-# Zombies: power, drinks, and the mystery crate
+# Zombies: power, drinks, the mystery crate, and the forge
 
 The systems that make a round-based Zombies run worth playing past the first
-few rounds, after Black Ops' power switch, perk machines, and mystery box. The rounds, the horde, doors, windows, power-ups, and last
+few rounds, after Black Ops' power switch, perk machines, mystery box, and
+Pack-a-Punch. The rounds, the horde, doors, windows, power-ups, and last
 stand are in [roadmap.md](roadmap.md#decisions) (the Zombies row) and
 `TODO.md`.
 
@@ -11,8 +12,8 @@ are in `rust/sim/src/zombies/`. Numbers come from Black Ops III's decompiled
 scripts (`scripts/zm/*.gsc` in the community's t7-source dump); each constant
 names the script variable it follows.
 
-We take the mechanics, never the property: the machines, drinks, and crate
-have our own names, models (built in Blender,
+We take the mechanics, never the property: the machines, drinks, crate, and
+forge have our own names, models (built in Blender,
 `tools/gear_models.py`), colours, and icons. No Call of Duty names, logos,
 or jingles.
 
@@ -21,7 +22,7 @@ or jingles.
 | Rule | Here | Black Ops |
 | --- | --- | --- |
 | Switch | One lever (`PowerSwitch` on the map) in the west yard, behind its door. A press turns the power on, free, for the rest of the game | Same: a lever behind a door, free, once a game (`_zm_power.gsc`) |
-| What needs it | Every drink machine and the forge. Second Wind in a game for one works without it | Perk machines and Pack-a-Punch; Quick Revive works without power in solo (`use_solo_revive`) |
+| What needs it | Every drink machine and the forge. Second Wind in a game for one works without it. The mystery crate never does | Perk machines and Pack-a-Punch; Quick Revive works without power in solo (`use_solo_revive`) |
 | New game | Off again | — |
 
 The switch lights two lamps and every machine's sign when thrown.
@@ -108,9 +109,37 @@ slot (primary or sidearm), as every pickup in this game does, instead of
 replacing the weapon in hand. No Fire Sale. No sounds yet (they must be real
 CC0 recordings).
 
+## The forge
+
+The upgrade machine: a furnace-press in the east lot, behind its door, lit
+when the power is on (`rust/game/src/forge.rs`, rules in
+`rust/sim/src/zombies/forge.rs`).
+
+| Rule | Here | Black Ops III |
+| --- | --- | --- |
+| Needs | The power on, 5000 points, and a weapon in hand that has an upgrade, with another weapon carried | `vending_weapon_upgrade_cost` 5000; Pack-a-Punch is powered |
+| Working | The weapon goes in and the other comes up; 3.35 s later the upgrade comes out, full, for its owner alone | `wait(0.35)` + `wait(3)` in `_zm_pack_a_punch.gsc` |
+| Taking it | Use while looking at it, like a rack; left for 15 s, it is lost | `level.pack_a_punch.timeout` 15 s |
+| The upgrade | Twice the damage, half again the magazine, twice the reserve, "MK II" after its name, and a cold blue sheen sliding along it in first and third person | Hand-set per weapon in Black Ops; double damage and a bigger magazine and reserve are typical |
+| Ammo | A wall rack of the plain weapon refills the upgraded one for 4500 | `get_upgraded_ammo_cost` 4500 |
+
+Upgraded weapons are the weapon table's `<key>+forged` variants
+(`weapon::def::forged`), one per plain weapon (not the laser), so the
+upgrade rides in the weapon id like an attachment does: predicted, sent in
+snapshots, and drawn with the plain weapon's model and sounds plus the
+sheen (`shaders/forged.gdshader`, a material overlay set by
+`WeaponView::set_forged`).
+
+**Differences from Black Ops, on purpose:** no re-pack for an alternate
+ammo type (Black Ops III's 2500-point AAT), no lone sidearm upgrade (it
+would leave the player with nothing in this game's two slots), and no
+sounds yet (real CC0 recordings only).
+
 ## Reference
 
-- Black Ops III: `_zm_magicbox.gsc` (cost, cycle, timeout, move odds),
+- Black Ops III: `_zm_pack_a_punch.gsc` and `_zm_pack_a_punch_util.gsc`
+  (cost, working time, timeout), `_zm_weapons.gsc` (upgraded ammo cost),
+  `_zm_magicbox.gsc` (cost, cycle, timeout, move odds),
   `_zm_perks.gsc` (`perk_purchase_limit`, perk loss on going
   down), `_zm_perk_juggernaut.gsc`, `_zm_perk_quick_revive.gsc`,
   `_zm_perk_sleight_of_hand.gsc`, `_zm_perk_doubletap2.gsc`,

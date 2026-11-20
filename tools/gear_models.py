@@ -1213,3 +1213,77 @@ def mystery_duck(b: Model):
                   + [(0.0, 0.255, 0.25)], "duck_orange", levels=1)
     for x in (-0.055, 0.055):
         b.cyl("z", 0.14, 0.16, (x, 0.31), 0.016, "trim_black", sides=8)
+
+
+# --- Zombies: the forge ------------------------------------------------------------------
+# The upgrade machine (rust/game/src/forge.rs): a heavy furnace-press with a mouth at waist
+# height that takes the weapon in on a roller tray, flywheels on its flanks, and a hood
+# and flue on top. Its lit parts (the furnace glow in the mouth, lamps, a band) are
+# forge_lit, shown while the power is on. Front +z, origin on the ground at the middle.
+LOOKS["forge_iron"] = {"color": (0.14, 0.13, 0.12), "rough": 0.6, "metal": 0.9}
+LOOKS["forge_steel"] = {"color": (0.36, 0.36, 0.37), "rough": 0.4, "metal": 0.95}
+LOOKS["forge_paint"] = {"color": (0.18, 0.24, 0.36), "rough": 0.55, "metal": 0.5}
+LOOKS["forge_mouth"] = {"color": (0.03, 0.02, 0.02), "rough": 0.9}
+LOOKS["forge_heat"] = {"color": (1.0, 0.45, 0.12), "glow": 2.6}
+LOOKS["forge_blue"] = {"color": (0.35, 0.7, 1.0), "glow": 2.0}
+FORGE_W, FORGE_D = 0.9, 0.55  # half width, half depth
+MOUTH = (0.92, 1.36)  # the mouth's bottom and top
+MOUTH_W = 0.62  # its half width
+
+
+@model
+def forge(b: Model):
+    """The forge's body, 1.8 x 2.35 x 1.1 m, its mouth facing +z."""
+    W, D = FORGE_W, FORGE_D
+    # Plinth, the two cheeks either side of the mouth, the bed under it, and
+    # the crown over it.
+    b.box(-W - 0.05, W + 0.05, 0.0, 0.18, -D - 0.05, D + 0.05, "forge_iron", bevel=0.02)
+    b.box(-W, -MOUTH_W, 0.18, 1.85, -D, D, "forge_paint", bevel=0.03)
+    b.box(MOUTH_W, W, 0.18, 1.85, -D, D, "forge_paint", bevel=0.03)
+    b.box(-MOUTH_W, MOUTH_W, 0.18, MOUTH[0], -D, D, "forge_paint", bevel=0.02)
+    b.box(-MOUTH_W, MOUTH_W, MOUTH[1], 1.85, -D, D, "forge_paint", bevel=0.02)
+    # The mouth's dark throat, a heavy steel frame, and the roller tray out front.
+    b.box(-MOUTH_W, MOUTH_W, MOUTH[0], MOUTH[1], -D, D - 0.3, "forge_mouth")
+    for x0, x1, y0, y1 in ((-MOUTH_W - 0.06, -MOUTH_W, MOUTH[0] - 0.06, MOUTH[1] + 0.06),
+                           (MOUTH_W, MOUTH_W + 0.06, MOUTH[0] - 0.06, MOUTH[1] + 0.06),
+                           (-MOUTH_W, MOUTH_W, MOUTH[1], MOUTH[1] + 0.06),
+                           (-MOUTH_W, MOUTH_W, MOUTH[0] - 0.06, MOUTH[0])):
+        b.box(x0, x1, y0, y1, D - 0.02, D + 0.04, "forge_steel", bevel=0.008)
+    b.box(-0.45, 0.45, MOUTH[0] - 0.05, MOUTH[0] - 0.02, D, D + 0.45, "forge_iron", bevel=0.006)
+    for k in range(7):
+        z = D + 0.04 + k * 0.06
+        b.cyl("x", -0.42, 0.42, (MOUTH[0] - 0.005, z), 0.018, "forge_steel", sides=8)
+    for x in (-0.42, 0.42):
+        b.box(x - 0.02, x + 0.02, 0.18, MOUTH[0] - 0.05, D + 0.38, D + 0.44, "forge_iron", bevel=0.004)
+    # Hazard stripes along the bed, flywheels on the flanks, and pipes.
+    for k in range(9):
+        x = -0.56 + k * 0.13
+        b.hull([(x, 0.6, D + 0.002), (x + 0.06, 0.6, D + 0.002), (x + 0.12, 0.72, D + 0.002),
+                (x + 0.06, 0.72, D + 0.002), (x, 0.6, D + 0.01), (x + 0.06, 0.6, D + 0.01),
+                (x + 0.12, 0.72, D + 0.01), (x + 0.06, 0.72, D + 0.01)], "hazard_yellow")
+    for side in (-1, 1):
+        x = side * (W + 0.02)
+        b.cyl("x", *sorted((x, x + side * 0.08)), (1.15, 0.0), 0.42, "forge_steel", sides=24)
+        b.cyl("x", *sorted((x + side * 0.08, x + side * 0.12)), (1.15, 0.0), 0.1, "forge_iron", sides=12)
+        b.tube([(side * (W - 0.1), 1.85, -0.3), (side * (W - 0.1), 2.0, -0.3), (side * 0.3, 2.1, -0.3)], 0.05,
+               "forge_iron", sides=10, detail=False)
+    # The hood and its flue.
+    b.hull([(x, y, z) for x in (-W - 0.05, W + 0.05) for y in (1.85,) for z in (-D - 0.05, D + 0.12)]
+           + [(x, 2.1, z) for x in (-0.5, 0.5) for z in (-0.35, 0.25)], "forge_iron")
+    b.cyl("y", 2.1, 2.55, (0.0, -0.05), 0.16, "forge_iron", sides=14)
+    b.cyl("y", 2.55, 2.62, (0.0, -0.05), 0.2, "forge_steel", sides=14)
+    # Its name over the mouth, and the lamp housings.
+    b.text("FORGE", 0.0, 1.52, D + 0.005, 0.0, 0.18, "drink_cream", depth=0.006, detail=False)
+    for x in (-0.75, 0.75):
+        b.cyl("z", D, D + 0.05, (x, 1.7), 0.06, "forge_steel", sides=12)
+
+
+@model
+def forge_lit(b: Model):
+    """The forge's lit parts: the furnace glow deep in its mouth, its lamps,
+    and a blue band under the name."""
+    D = FORGE_D
+    b.box(-MOUTH_W + 0.04, MOUTH_W - 0.04, MOUTH[0] + 0.03, MOUTH[1] - 0.03, D - 0.32, D - 0.3, "forge_heat")
+    for x in (-0.75, 0.75):
+        b.cyl("z", D + 0.05, D + 0.06, (x, 1.7), 0.045, "forge_blue", sides=12)
+    b.box(-0.5, 0.5, 1.46, 1.48, D, D + 0.008, "forge_blue")

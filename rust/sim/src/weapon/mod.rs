@@ -312,6 +312,14 @@ impl CombatState {
         self.slots.iter().any(|s| s.carried && s.id == weapon)
     }
 
+    /// Whether the forge's upgrade of `weapon` is carried
+    /// ([`crate::zombies::forge`]).
+    pub fn carries_upgraded(&self, weapon: WeaponId) -> bool {
+        weapon
+            .upgraded()
+            .is_some_and(|up| self.slots.iter().any(|s| s.carried && s.id == up))
+    }
+
     pub fn weapon(&self) -> &WeaponState {
         &self.slots[usize::from(self.active)]
     }
@@ -806,8 +814,16 @@ pub fn step(
 
 fn pick_up(state: &mut CombatState, weapon: WeaponId, events: &mut Vec<CombatEvent>) {
     let def = weapon.def();
-    if let Some(slot) = state.slots.iter_mut().find(|s| s.carried && s.id == weapon) {
-        slot.reserve = slot.reserve.max(def.reserve);
+    // A wall weapon taken while carrying it, or its forged upgrade, refills
+    // the one carried.
+    let upgrade = weapon.upgraded();
+    if let Some(slot) = state
+        .slots
+        .iter_mut()
+        .find(|s| s.carried && (s.id == weapon || Some(s.id) == upgrade))
+    {
+        slot.reserve = slot.reserve.max(slot.id.def().reserve);
+        let weapon = slot.id;
         events.push(CombatEvent::PickedUp { weapon });
         return;
     }

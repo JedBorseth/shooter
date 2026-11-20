@@ -39,7 +39,7 @@ impl WeaponId {
     /// or the table's variant with exactly those, in any order.
     pub fn with_attachments(self, attachments: &[Attachment]) -> Option<WeaponId> {
         let base = self.def();
-        if !base.fitted.is_empty() {
+        if !base.plain() {
             return None;
         }
         let mut key = base.key.clone();
@@ -50,6 +50,21 @@ impl WeaponId {
             }
         }
         Self::by_key(&key)
+    }
+
+    /// The forge's upgrade of this plain weapon, if it has one.
+    pub fn upgraded(self) -> Option<WeaponId> {
+        let def = self.def();
+        if !def.plain() {
+            return None;
+        }
+        Self::by_key(&format!("{}{FORGED_SUFFIX}", def.key))
+    }
+
+    /// The plain weapon this is a variant of (attachments or upgrade), or
+    /// itself.
+    pub fn plain(self) -> WeaponId {
+        Self::by_key(self.def().model_key()).unwrap_or(self)
     }
 
     pub fn all() -> impl Iterator<Item = WeaponId> {
@@ -440,6 +455,11 @@ pub struct WeaponDef {
     /// On an attachment variant: the plain weapon's key (its model and sounds).
     #[serde(skip)]
     pub base_key: String,
+    /// Upgraded at the Zombies forge ([`crate::zombies::forge`]): the
+    /// table's `<key>+forged` variant of a plain weapon, with its
+    /// `base_key` set to the plain weapon's.
+    #[serde(skip)]
+    pub upgraded: bool,
 }
 
 /// Hand positions on a weapon model, in its space (origin at the rear sight,
@@ -598,6 +618,11 @@ impl WeaponDef {
         }
     }
 
+    /// A plain weapon: no attachments fitted and not upgraded.
+    pub fn plain(&self) -> bool {
+        self.fitted.is_empty() && !self.upgraded
+    }
+
     pub fn fire_interval(&self) -> f32 {
         60.0 / self.rounds_per_minute
     }
@@ -745,6 +770,30 @@ fn variants_of(def: &WeaponDef) -> Vec<WeaponDef> {
     out
 }
 
+/// The key suffix of a weapon upgraded at the forge (`m4+forged`).
+pub const FORGED_SUFFIX: &str = "+forged";
+
+/// A plain weapon as the Zombies forge upgrades it
+/// ([`crate::zombies::forge`]): twice the damage, half again the magazine,
+/// twice the reserve, and "MK II" after its name. Black Ops sets each
+/// upgraded weapon's numbers by hand; these are its typical changes.
+fn forged(def: &WeaponDef) -> WeaponDef {
+    use crate::zombies::forge;
+    let mut up = def.clone();
+    up.key = format!("{}{FORGED_SUFFIX}", def.key);
+    up.base_key = def.key.clone();
+    up.upgraded = true;
+    up.name = format!("{} MK II", def.name);
+    up.attachments = Vec::new();
+    up.unlock_level = u8::MAX;
+    up.damage.near *= forge::DAMAGE_SCALE;
+    up.damage.far *= forge::DAMAGE_SCALE;
+    up.magazine =
+        ((f32::from(def.magazine) * forge::MAGAZINE_SCALE).round() as u16).max(def.magazine + 1);
+    up.reserve = ((f32::from(def.reserve) * forge::RESERVE_SCALE).round() as u16).max(up.magazine);
+    up
+}
+
 /// A set of attachments, one bit per [`Attachment::ALL`] entry.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Attachments(u8);
@@ -813,7 +862,9 @@ pub fn parse_all<'a>(
         .map(|(key, source)| parse(key, source))
         .collect::<Result<Vec<_>, _>>()?;
     let variants: Vec<WeaponDef> = defs.iter().flat_map(variants_of).collect();
+    let upgrades: Vec<WeaponDef> = defs.iter().filter(|d| !d.beam).map(forged).collect();
     defs.extend(variants);
+    defs.extend(upgrades);
     defs.sort_by(|a, b| a.key.cmp(&b.key));
     if defs.len() > usize::from(u8::MAX) {
         return Err(LoadError {
@@ -877,7 +928,7 @@ mod tests {
     fn builtin_table_is_sorted_and_complete() {
         let keys: Vec<_> = table()
             .iter()
-            .filter(|d| d.fitted.is_empty())
+            .filter(|d| d.plain())
             .map(|d| d.key.as_str())
             .collect();
         assert_eq!(

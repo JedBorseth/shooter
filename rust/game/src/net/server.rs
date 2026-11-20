@@ -104,6 +104,7 @@ use shooter_sim::tdm::{
 };
 use shooter_sim::weapon::{self, CombatEvent, CombatState, WeaponId};
 use shooter_sim::zombies::drinks::{self, Drink, Drinks};
+use shooter_sim::zombies::forge;
 use shooter_sim::zombies::{self, laststand};
 use shooter_sim::{Vec2, Vec3, rng};
 
@@ -1392,6 +1393,7 @@ impl NetServer {
                 "drink" => h.machines.drink_machine_node(index),
                 "power" => h.machines.power_switch_node(),
                 "crate" => h.machines.mystery.as_ref()?.spot_node(index),
+                "forge" => h.machines.forge.as_ref().map(|f| f.node()),
                 _ => h.window_node(index),
             });
         if let Some(node) = node {
@@ -1431,6 +1433,56 @@ impl NetServer {
         }
     }
 
+    /// Zombies: the forge's phase ("idle", "working", "offering"), or "" on
+    /// a map without one (tests).
+    #[func]
+    fn forge_phase(&self) -> GString {
+        self.horde
+            .as_ref()
+            .and_then(|h| h.machines.forge.as_ref())
+            .map_or(GString::new(), |f| GString::from(f.phase_name()))
+    }
+
+    /// Zombies: player `id` takes the upgrade the forge holds out to them,
+    /// as a press of use looking at it would (tests).
+    #[func]
+    fn debug_take_from_forge(&mut self, id: i32) -> bool {
+        let Ok(id) = u8::try_from(id) else {
+            return false;
+        };
+        let Some(forge_) = self.horde.as_mut().and_then(|h| h.machines.forge.as_mut()) else {
+            return false;
+        };
+        let Some(weapon) = forge_.offered(id) else {
+            return false;
+        };
+        forge_.taken();
+        self.debug_pick_up(id, weapon);
+        self.broadcast_forge();
+        true
+    }
+
+    /// Zombies: player `id` takes `weapon` (a key) from a wall rack priced
+    /// `price`, paying what a press at the rack would (tests).
+    #[func]
+    fn debug_buy_wall_weapon(&mut self, id: i32, weapon: GString, price: i32) -> bool {
+        let (Ok(id), Some(weapon)) = (u8::try_from(id), WeaponId::by_key(&weapon.to_string()))
+        else {
+            return false;
+        };
+        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
+            return false;
+        };
+        let due = forge::wall_cost(i64::from(price), &avatar.predicted.state.combat, weapon);
+        if avatar.zombies.points < due {
+            return false;
+        }
+        avatar.zombies.points -= due;
+        self.debug_pick_up(id, weapon);
+        self.send_points(id, -(due as i32));
+        true
+    }
+
     /// Zombies: player `id` takes what the mystery crate holds out to them,
     /// as a press of use looking at it would (tests).
     #[func]
@@ -1449,8 +1501,15 @@ impl NetServer {
             return false;
         };
         crate_.taken();
+        self.debug_pick_up(id, weapon);
+        self.broadcast_crate();
+        true
+    }
+
+    /// Steps player `id` one tick with `weapon` picked up (tests).
+    fn debug_pick_up(&mut self, id: u8, weapon: WeaponId) {
         let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
-            return false;
+            return;
         };
         let input = PlayerInput {
             pickup: Some(weapon),
@@ -1464,8 +1523,6 @@ impl NetServer {
             &input,
             &mut events,
         );
-        self.broadcast_crate();
-        true
     }
 
     /// Zombies: drink machines on the map.
@@ -1818,6 +1875,8 @@ impl NetServer {
                     events.extend(horde.drop_events());
                     events.push(horde.timers_event(self.tick));
                     events.extend(self.crate_event());
+                    events.extend(self.forge_event());
+                    events.extend(self.forge_event());
                     for avatar in &self.avatars {
                         if let Some(stand) = &avatar.last_stand {
                             events.push(protocol::ZombiesEvent::Downed {
@@ -2279,6 +2338,7 @@ impl NetServer {
         let mut uses: Vec<(u8, Gd<Node>, bool)> = Vec::new();
         let mut revivers: Vec<(u8, u8)> = Vec::new();
         let mut crate_taken = false;
+        let mut forge_taken = false;
         // Zombies: who is down, and where, as of the start of the tick.
         let downed: Vec<(u8, Vec3)> = self
             .avatars
@@ -2463,6 +2523,7 @@ impl NetServer {
                 // that, paid when it is taken.
                 let mut cost = None;
                 let mut from_crate = false;
+                let mut from_forge = false;
                 if let Some(weapon) = input.pickup {
                     let price = if racks {
                         pickup_in_reach(avatar, &input, weapon, &self.params)
@@ -2471,16 +2532,26 @@ impl NetServer {
                     };
                     // Zombies: the mystery crate holding a weapon out to
                     // its buyer gives it for nothing.
+                    // So does the forge, the upgrade it holds out.
                     let price = price.or_else(|| {
-                        let crate_ = self.horde.as_ref()?.machines.mystery.as_ref()?;
-                        let spot = crate_.spot_of(&looked_at(avatar, &input, &self.params)?)?;
+                        let machines = &self.horde.as_ref()?.machines;
+                        let node = looked_at(avatar, &input, &self.params)?;
+                        if let Some(forge_) = &machines.forge
+                            && forge_.is(&node)
+                        {
+                            from_forge = forge_.offered(avatar.id) == Some(weapon);
+                            return from_forge.then_some(0);
+                        }
+                        let crate_ = machines.mystery.as_ref()?;
+                        let spot = crate_.spot_of(&node)?;
                         from_crate = crate_.offered(spot, avatar.id) == Some(weapon);
                         from_crate.then_some(0)
                     });
                     match price {
                         Some(price) if zombies_mode => {
                             let combat = &avatar.predicted.state.combat;
-                            let due = zombies::pickup_cost(price, combat.carries(weapon));
+                            // Ammo for an upgraded weapon costs 4500.
+                            let due = forge::wall_cost(price, combat, weapon);
                             if avatar.zombies.points >= due {
                                 cost = Some(due);
                             } else {
@@ -2533,6 +2604,9 @@ impl NetServer {
                 }
                 if from_crate && picked_up {
                     crate_taken = true;
+                }
+                if from_forge && picked_up {
+                    forge_taken = true;
                 }
                 avatar.yaw = input.yaw;
                 avatar.pitch = input.pitch;
@@ -2651,6 +2725,12 @@ impl NetServer {
         self.update_grenades(throws);
         for (id, cost) in spent {
             self.send_points(id, -(cost as i32));
+        }
+        if forge_taken {
+            if let Some(forge_) = self.horde.as_mut().and_then(|h| h.machines.forge.as_mut()) {
+                forge_.taken();
+            }
+            self.broadcast_forge();
         }
         if crate_taken {
             if let Some(crate_) = self
@@ -2842,6 +2922,12 @@ impl NetServer {
                 }
                 continue;
             }
+            if horde.machines.forge.as_ref().is_some_and(|f| f.is(&node)) {
+                if pressed {
+                    self.use_forge(id);
+                }
+                continue;
+            }
             if let Some(spot) = horde
                 .machines
                 .mystery
@@ -2983,6 +3069,58 @@ impl NetServer {
         self.broadcast_crate();
     }
 
+    /// Zombies: player `id` presses use at the forge: if it is powered and
+    /// free and they hold a weapon it can upgrade (and carry another), they
+    /// pay, hand it over, and the forge starts on it.
+    fn use_forge(&mut self, id: u8) {
+        let Some(machines) = self.horde.as_mut().map(|h| &mut h.machines) else {
+            return;
+        };
+        let powered = machines.power();
+        let Some(forge_) = machines.forge.as_mut() else {
+            return;
+        };
+        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
+            return;
+        };
+        let state = &mut avatar.predicted.state;
+        if !state.alive() || state.downed {
+            return;
+        }
+        let Ok(upgrade) =
+            forge::can_forge(&state.combat, avatar.zombies.points, powered, forge_.free())
+        else {
+            return;
+        };
+        avatar.zombies.points -= forge::PRICE;
+        forge::hand_over(&mut state.combat);
+        forge_.start(id, upgrade);
+        godot_print!(
+            "server: player {id} handed the forge {}",
+            upgrade.plain().def().key
+        );
+        self.send_points(id, -(forge::PRICE as i32));
+        self.broadcast_forge();
+    }
+
+    /// Zombies: the forge as clients are told it.
+    fn forge_event(&self) -> Option<protocol::ZombiesEvent> {
+        let tick = self.tick;
+        let forge_ = self.horde.as_ref()?.machines.forge.as_ref()?;
+        Some(forge_.event(|seconds| tick + (seconds.max(0.0) * TICK_RATE as f32).ceil() as Tick))
+    }
+
+    /// Zombies: tells everyone what the forge is doing, and shows it on the
+    /// server's own node.
+    fn broadcast_forge(&mut self) {
+        if let Some(forge_) = self.horde.as_ref().and_then(|h| h.machines.forge.as_ref()) {
+            forge_.show();
+        }
+        if let Some(event) = self.forge_event() {
+            self.broadcast_event(&GameEvent::Zombies(event));
+        }
+    }
+
     /// Zombies: the mystery crate as clients are told it.
     fn crate_event(&self) -> Option<protocol::ZombiesEvent> {
         let tick = self.tick;
@@ -3014,6 +3152,14 @@ impl NetServer {
             .and_then(|h| h.machines.mystery.as_mut())
         {
             crate_.step(TICK_DT, &mut changes);
+        }
+        let forge_changed = self
+            .horde
+            .as_mut()
+            .and_then(|h| h.machines.forge.as_mut())
+            .is_some_and(|f| f.step(TICK_DT));
+        if forge_changed {
+            self.broadcast_forge();
         }
         for change in changes {
             match change {

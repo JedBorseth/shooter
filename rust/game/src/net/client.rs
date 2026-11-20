@@ -2357,6 +2357,9 @@ impl NetClient {
 fn gun_of(key: &str) -> Option<Gun> {
     let id = WeaponId::by_key(key)?;
     let def = id.def();
+    if def.upgraded {
+        return None;
+    }
     let base = WeaponId::by_key(if def.fitted.is_empty() {
         &def.key
     } else {

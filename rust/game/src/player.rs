@@ -1134,6 +1134,12 @@ impl FpsPlayer {
             .collect()
     }
 
+    /// The player's simulation state (the forge's prompt reads the weapon
+    /// in hand).
+    pub(crate) fn sim_state(&self) -> &PlayerState {
+        &self.state
+    }
+
     /// Zombies: whether this player is down in last stand.
     #[func]
     fn zombie_downed(&self) -> bool {
@@ -1162,8 +1168,13 @@ impl FpsPlayer {
             }
             return GString::new();
         };
-        let name = &id.def().name;
-        let owned = self.state.combat.carries(id);
+        let upgraded = self.state.combat.carries_upgraded(id);
+        let name = &if upgraded {
+            id.upgraded().unwrap_or(id).def().name.clone()
+        } else {
+            id.def().name.clone()
+        };
+        let owned = self.state.combat.carries(id) || upgraded;
         let cost = self.pickup_cost(id);
         if cost == 0 {
             return if owned {
@@ -1828,11 +1839,15 @@ impl FpsPlayer {
     /// What taking `id` from the pickup under the crosshair costs: its price,
     /// or half for ammo of a weapon already carried.
     fn pickup_cost(&self, id: WeaponId) -> i64 {
-        if self.state.combat.carries(id) {
-            self.look_price / 2
-        } else {
-            self.look_price
+        if self.look_price <= 0 {
+            return 0;
         }
+        // Zombies: ammo for a weapon carried upgraded costs 4500.
+        i64::from(shooter_sim::zombies::forge::wall_cost(
+            self.look_price,
+            &self.state.combat,
+            id,
+        ))
     }
 
     /// The Zombies wallet (`ZombieDirector`), if this level has one.

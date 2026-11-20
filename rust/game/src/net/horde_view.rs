@@ -39,6 +39,7 @@ pub struct HordeView {
     power_switch: Option<Gd<Node3D>>,
     drink_machines: Vec<Gd<Node3D>>,
     crate_spots: Vec<Gd<Node3D>>,
+    forge: Option<Gd<crate::forge::Forge>>,
     history: HordeHistory,
     puppets: Vec<Puppet>,
     lag: f64,
@@ -78,7 +79,11 @@ impl HordeView {
             .as_ref()
             .map(machines::map_crate_spots)
             .unwrap_or_default();
+        let forge = map
+            .as_ref()
+            .and_then(|m| m.try_get_node_as::<crate::forge::Forge>("Forge"));
         Some(Self {
+            forge,
             director,
             scene,
             windows,
@@ -259,6 +264,9 @@ impl HordeView {
                 for machine in &mut self.drink_machines {
                     machine.call("set_powered", &[on.to_variant()]);
                 }
+                if let Some(forge) = &mut self.forge {
+                    forge.bind_mut().set_powered(on);
+                }
             }
             ZombiesEvent::Machine {
                 machine,
@@ -299,6 +307,19 @@ impl HordeView {
                     seconds,
                     me,
                 );
+            }
+            ZombiesEvent::Forge {
+                phase,
+                by,
+                weapon,
+                until,
+            } => {
+                let seconds = until.map_or(0.0, &seconds_until) as f32;
+                if let Some(forge) = &mut self.forge {
+                    forge
+                        .bind_mut()
+                        .show(phase, me == Some(by), by, weapon, seconds);
+                }
             }
             // Last stand on the HUD is `NetClient`'s, which knows names.
             ZombiesEvent::Hit { .. } | ZombiesEvent::Revive { .. } => {}

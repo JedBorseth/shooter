@@ -369,7 +369,7 @@ fn check_attachments(gun: Gun, limit: u8) -> Result<(), ClassError> {
 /// slot, and not the secret laser.
 pub fn is_class_weapon(id: WeaponId, slot: Slot) -> bool {
     let def = id.def();
-    def.slot == slot && def.fitted.is_empty() && !def.beam
+    def.slot == slot && def.plain() && !def.beam
 }
 
 /// The plain weapons a class may carry in `slot`, in table order.

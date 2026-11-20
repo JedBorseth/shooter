@@ -140,7 +140,9 @@ use crate::zombies::drinks::Drinks;
 // Version 57 added Zombies' drinks (`crate::zombies::drinks`) in the
 // predicted state, and the power, drink machines, and drinking as events.
 // Version 58 added the mystery crate (`ZombiesEvent::Crate`).
-pub const PROTOCOL_VERSION: u16 = 58;
+// Version 59 added the forge (`ZombiesEvent::Forge`) and upgraded weapons
+// (`<key>+forged`) to the weapon table.
+pub const PROTOCOL_VERSION: u16 = 59;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -714,6 +716,24 @@ pub enum ZombiesEvent {
         weapon: Option<WeaponId>,
         until: Option<Tick>,
     },
+    /// To everyone, when it changes and on joining: the forge
+    /// ([`crate::zombies::forge`]) is idle, working `weapon` (the upgrade)
+    /// for player `by`, or holding it out to them, until server tick
+    /// `until`.
+    Forge {
+        phase: ForgePhase,
+        by: u8,
+        weapon: Option<WeaponId>,
+        until: Option<Tick>,
+    },
+}
+
+/// What the forge is doing ([`ZombiesEvent::Forge`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ForgePhase {
+    Idle,
+    Working,
+    Offering,
 }
 
 /// What the mystery crate is doing ([`ZombiesEvent::Crate`]).
@@ -2043,6 +2063,28 @@ fn write_zombies_event(w: &mut BitWriter, event: &ZombiesEvent) {
             }
             write_option_tick(w, until);
         }
+        ZombiesEvent::Forge {
+            phase,
+            by,
+            weapon,
+            until,
+        } => {
+            w.bits(14, ZOMBIES_TAG_BITS);
+            w.bits(
+                match phase {
+                    ForgePhase::Idle => 0,
+                    ForgePhase::Working => 1,
+                    ForgePhase::Offering => 2,
+                },
+                2,
+            );
+            w.u8(by);
+            w.bool(weapon.is_some());
+            if let Some(weapon) = weapon {
+                write_weapon(w, weapon);
+            }
+            write_option_tick(w, until);
+        }
     }
 }
 
@@ -2110,6 +2152,21 @@ fn read_zombies_event(r: &mut BitReader) -> DecodeResult<ZombiesEvent> {
         13 => ZombiesEvent::Crate {
             spot: r.u8()?,
             phase: CratePhase::from_code(r.bits(3)?).ok_or(DecodeError::Invalid("crate phase"))?,
+            by: r.u8()?,
+            weapon: if r.bool()? {
+                Some(read_weapon(r)?)
+            } else {
+                None
+            },
+            until: read_option_tick(r)?,
+        },
+        14 => ZombiesEvent::Forge {
+            phase: match r.bits(2)? {
+                0 => ForgePhase::Idle,
+                1 => ForgePhase::Working,
+                2 => ForgePhase::Offering,
+                _ => return Err(DecodeError::Invalid("forge phase")),
+            },
             by: r.u8()?,
             weapon: if r.bool()? {
                 Some(read_weapon(r)?)
@@ -5181,6 +5238,18 @@ mod tests {
                 by: 2,
                 weapon: Some(WeaponId::expect("ak47")),
                 until: Some(9000),
+            }),
+            GameEvent::Zombies(ZombiesEvent::Forge {
+                phase: ForgePhase::Working,
+                by: 3,
+                weapon: WeaponId::expect("m4").upgraded(),
+                until: Some(800),
+            }),
+            GameEvent::Zombies(ZombiesEvent::Forge {
+                phase: ForgePhase::Idle,
+                by: 0,
+                weapon: None,
+                until: None,
             }),
             GameEvent::Zombies(ZombiesEvent::Crate {
                 spot: 0,
