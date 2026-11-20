@@ -16,7 +16,7 @@ use godot::global::randf_range;
 use godot::prelude::*;
 use shooter_sim::hitbox::carry::MagazinePose;
 use shooter_sim::rng;
-use shooter_sim::weapon::{Attachment, LoadStage, WeaponId};
+use shooter_sim::weapon::{Attachment, Attachments, LoadStage, WeaponId};
 
 use godot::classes::light_3d::Param;
 
@@ -596,10 +596,10 @@ pub struct WeaponView {
     heat: f32,
     /// Seconds the wisp has left to follow the barrel.
     wisp_left: f32,
-    /// The attachment fitted (see `set_attachment`), and one asked for before
+    /// The attachments fitted (see `set_attachments`), and a set asked for before
     /// the view was ready.
-    attachment: Option<Attachment>,
-    pending_attachment: Option<Attachment>,
+    attachments: Attachments,
+    pending_attachments: Option<Attachments>,
     /// Where the left hand held the weapon before a foregrip moved it.
     grip_left_rest: Option<Vector3>,
     /// The back of a fitted ACOG's eyepiece along the sight line (view
@@ -789,8 +789,9 @@ impl INode3D for WeaponView {
         self.id = WeaponId::by_key(&self.weapon.to_string());
         if self.world_model {
             self.ready_world();
-            let pending = self.pending_attachment.take();
-            self.set_attachment(pending);
+            if let Some(pending) = self.pending_attachments.take() {
+                self.set_attachments(pending);
+            }
             return;
         }
         let shader = load::<Shader>(VIEWMODEL_SHADER);
@@ -812,8 +813,9 @@ impl INode3D for WeaponView {
         self.flash_light.set_visible(false);
         self.show_world_parts(false);
         self.build_muzzle_effects(true);
-        let pending = self.pending_attachment.take();
-        self.set_attachment(pending);
+        if let Some(pending) = self.pending_attachments.take() {
+            self.set_attachments(pending);
+        }
         if self.scope_eyepiece.y > 0.0 {
             self.set_lens_clip(true);
         }
@@ -853,13 +855,18 @@ impl WeaponView {
     #[signal]
     fn foley_event(name: StringName);
 
-    /// Fits the attachment with this key (`reddot`, `acog`, `suppressor`,
-    /// `grip`, `extmag`), or takes it off for an empty key. For tests and
+    /// Fits the attachments with these keys (`reddot`, `acog`,
+    /// `suppressor`, `grip`, `extmag`), joined by `+` (`reddot+grip`), in
+    /// place of any fitted; an empty key takes them all off. For tests and
     /// captures; the game picks attachments through the weapon's variant.
     #[func]
     fn apply_attachment(&mut self, key: GString) {
-        let attachment = Attachment::from_key(&key.to_string());
-        self.set_attachment(attachment);
+        let key = key.to_string();
+        let set = key
+            .split('+')
+            .filter_map(Attachment::from_key)
+            .fold(Attachments::NONE, Attachments::with);
+        self.set_attachments(set);
     }
 }
 
@@ -1228,22 +1235,23 @@ impl WeaponView {
     /// Asks for an attachment on a view that is not in the tree yet.
     /// Whether the weapon is aimed on its own sights, not a fitted optic.
     fn on_irons(&self) -> bool {
-        !matches!(self.attachment, Some(Attachment::RedDot | Attachment::Acog))
+        self.attachments.optic().is_none()
     }
 
-    pub fn set_pending_attachment(&mut self, attachment: Option<Attachment>) {
-        self.pending_attachment = attachment;
+    pub fn set_pending_attachments(&mut self, attachments: Attachments) {
+        self.pending_attachments = Some(attachments);
     }
 
-    /// Fits an attachment's parts, or takes them off: a suppressor on the
-    /// muzzle (no flash, a quieter shot), a foregrip under the handguard
-    /// (the left hand moves onto it), or a red dot or ACOG in place of the
-    /// iron sights.
-    pub fn set_attachment(&mut self, attachment: Option<Attachment>) {
-        if self.attachment == attachment {
+    /// Fits attachments' parts in place of those fitted: a suppressor on
+    /// the muzzle (no flash, a quieter shot), a foregrip under the handguard
+    /// (the left hand moves onto it), a red dot or ACOG in place of the iron
+    /// sights, and a longer magazine.
+    pub fn set_attachments(&mut self, attachments: Attachments) {
+        if self.attachments == attachments {
             return;
         }
-        self.attachment = attachment;
+        self.attachments = attachments;
+        let optic_kind = attachments.optic();
         self.eyepiece_z = None;
         self.lens = None;
         if let Some(mut old) = self.base().get_node_or_null("Attachment") {
@@ -1259,7 +1267,7 @@ impl WeaponView {
         }
         let mut parts = Node3D::new_alloc();
         parts.set_name("Attachment");
-        let optic = matches!(attachment, Some(Attachment::RedDot | Attachment::Acog));
+        let optic = optic_kind.is_some();
         // An optic on a weapon with a mount (and no built-in iron sight
         // node) sits on the mount, high enough to clear it: the weapon drops
         // that far below the sight line, so the optic is what lines up.
@@ -1269,7 +1277,7 @@ impl WeaponView {
             .map(|m| m.get_position() + Vector3::new(0.0, self.sight_drop, 0.0));
         // A prism sight stands on a taller mount than a red dot, as on the
         // real rifle, so the front sight sits below its chevron.
-        let riser = match attachment {
+        let riser = match optic_kind {
             Some(Attachment::Acog) => ACOG_RISER,
             Some(Attachment::RedDot) => REFLEX_RISER,
             _ => 0.0,
@@ -1294,78 +1302,72 @@ impl WeaponView {
             let fold = if optic { -FRAC_PI_2 } else { 0.0 };
             leaf.set_rotation(Vector3::new(fold, 0.0, 0.0));
         }
-        self.lengthen_magazine(attachment == Some(Attachment::ExtendedMag));
-        self.suppressed = attachment == Some(Attachment::Suppressor);
+        self.lengthen_magazine(attachments.has(Attachment::ExtendedMag));
+        self.suppressed = attachments.has(Attachment::Suppressor);
         if let Some(gunshot) = &mut self.gunshot {
             gunshot.set_suppressed(self.suppressed);
         }
-        match attachment {
-            Some(Attachment::Suppressor) => {
-                let muzzle = self
-                    .base()
-                    .try_get_node_as::<Node3D>("Muzzle")
-                    .map(|m| m.get_position())
-                    .unwrap_or_default();
-                // Built in metres with its rear face on the bore at the
-                // origin (tools/build_weapons.py): it threads on at the muzzle.
-                if let Some(mut mesh) =
-                    instance_model("res://assets/weapons/suppressor/suppressor.glb")
-                {
-                    mesh.set_position(muzzle);
-                    parts.add_child(&mesh);
+        if attachments.has(Attachment::Suppressor) {
+            let muzzle = self
+                .base()
+                .try_get_node_as::<Node3D>("Muzzle")
+                .map(|m| m.get_position())
+                .unwrap_or_default();
+            // Built in metres with its rear face on the bore at the
+            // origin (tools/build_weapons.py): it threads on at the muzzle.
+            if let Some(mut mesh) = instance_model("res://assets/weapons/suppressor/suppressor.glb")
+            {
+                mesh.set_position(muzzle);
+                parts.add_child(&mesh);
+            }
+        }
+        if attachments.has(Attachment::Grip)
+            && let Some(mut marker) = self.base().try_get_node_as::<Node3D>("GripLeft")
+        {
+            let rest = marker.get_position();
+            // Its clamp's top (the model's origin) just under the
+            // handguard.
+            if let Some(mut mesh) = instance_model("res://assets/weapons/foregrip/foregrip.glb") {
+                mesh.set_position(rest - Vector3::new(0.0, GRIP_MOUNT_DROP, 0.0));
+                parts.add_child(&mesh);
+            }
+            self.grip_left_rest = Some(rest);
+            marker.set_position(rest - Vector3::new(0.0, 0.045, -0.004));
+        }
+        if let Some(optic) = optic_kind {
+            let acog = optic == Attachment::Acog;
+            // From the iron sights: in front of the rear sight. From a
+            // mount: centred on it.
+            let (z, base, size) = match (&iron, mount) {
+                (Some(s), _) => {
+                    let (rear_z, base, size) = s.bind().placement();
+                    (rear_z - if acog { 0.03 } else { 0.09 }, base, size)
                 }
-            }
-            Some(Attachment::Grip) => {
-                if let Some(mut marker) = self.base().try_get_node_as::<Node3D>("GripLeft") {
-                    let rest = marker.get_position();
-                    // Its clamp's top (the model's origin) just under the
-                    // handguard.
-                    if let Some(mut mesh) =
-                        instance_model("res://assets/weapons/foregrip/foregrip.glb")
-                    {
-                        mesh.set_position(rest - Vector3::new(0.0, GRIP_MOUNT_DROP, 0.0));
-                        parts.add_child(&mesh);
-                    }
-                    self.grip_left_rest = Some(rest);
-                    marker.set_position(rest - Vector3::new(0.0, 0.045, -0.004));
+                (None, Some(m)) => {
+                    let z = if acog {
+                        m.z + 0.017
+                    } else {
+                        reflex_seat(m.z, self.ads_position.z)
+                    };
+                    (z, m.y - drop, 1.0)
                 }
-            }
-            Some(Attachment::RedDot | Attachment::Acog) => {
-                let acog = attachment == Some(Attachment::Acog);
-                // From the iron sights: in front of the rear sight. From a
-                // mount: centred on it.
-                let (z, base, size) = match (&iron, mount) {
-                    (Some(s), _) => {
-                        let (rear_z, base, size) = s.bind().placement();
-                        (rear_z - if acog { 0.03 } else { 0.09 }, base, size)
-                    }
-                    (None, Some(m)) => {
-                        let z = if acog {
-                            m.z + 0.017
-                        } else {
-                            reflex_seat(m.z, self.ads_position.z)
-                        };
-                        (z, m.y - drop, 1.0)
-                    }
-                    (None, None) => (-0.09, -0.022, 1.0),
-                };
-                let size = if acog { size * ACOG_SIZE } else { size };
-                self.eyepiece_z = acog.then_some(z + sights::ACOG_EYEPIECE * size);
-                // Cut away just past the reticle.
-                self.lens = acog.then_some((
-                    z + (sights::ACOG_RETICLE - 0.003) * size,
-                    sights::ACOG_BORE * size,
-                ));
-                let (style, glow) = if acog {
-                    ("acog", Color::from_rgba(1.0, 0.25, 0.1, 1.0))
-                } else {
-                    ("reflex", Color::from_rgba(1.0, 0.12, 0.06, 1.0))
-                };
-                let mut sights = IronSights::optic(style, z, base, size, glow);
-                sights.set_name("Optic");
-                parts.add_child(&sights);
-            }
-            Some(Attachment::ExtendedMag) | None => {}
+                (None, None) => (-0.09, -0.022, 1.0),
+            };
+            let size = if acog { size * ACOG_SIZE } else { size };
+            self.eyepiece_z = acog.then_some(z + sights::ACOG_EYEPIECE * size);
+            // Cut away just past the reticle.
+            self.lens = acog.then_some((
+                z + (sights::ACOG_RETICLE - 0.003) * size,
+                sights::ACOG_BORE * size,
+            ));
+            let (style, glow) = if acog {
+                ("acog", Color::from_rgba(1.0, 0.25, 0.1, 1.0))
+            } else {
+                ("reflex", Color::from_rgba(1.0, 0.12, 0.06, 1.0))
+            };
+            let mut sights = IronSights::optic(style, z, base, size, glow);
+            sights.set_name("Optic");
+            parts.add_child(&sights);
         }
         self.base_mut().add_child(&parts);
         if self.parts.is_some() {
@@ -2537,7 +2539,7 @@ pub fn instantiate_world_weapon(id: WeaponId) -> Option<Gd<WeaponView>> {
     {
         let mut v = view.bind_mut();
         v.world_model = true;
-        v.set_pending_attachment(id.def().attachment);
+        v.set_pending_attachments(id.def().fitted);
     }
     Some(view)
 }
@@ -3245,7 +3247,7 @@ impl ViewmodelRig {
             let show = shown && view.bind().weapon_id() == Some(base);
             if show {
                 let mut v = view.bind_mut();
-                v.set_attachment(frame.weapon.def().attachment);
+                v.set_attachments(frame.weapon.def().fitted);
                 v.animate(frame, &clip);
             }
             if view.is_visible() != show {

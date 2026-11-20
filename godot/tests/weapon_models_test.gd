@@ -103,6 +103,7 @@ const MARKERS := ["Muzzle", "Ejection", "GripRight", "GripLeft"]
 const CASINGS := "res://assets/weapons/shared/casings.glb"
 const SUPPRESSOR := "res://assets/weapons/suppressor/suppressor.glb"
 const FOREGRIP := "res://assets/weapons/foregrip/foregrip.glb"
+const M4_VIEW := "res://scenes/weapons/m4_view.tscn"
 ## Weapons aimed with their own iron sights; the others carry a reflex sight
 ## (the scene's IronSights node) or, the M40, a scope on the sight line.
 const IRON_SIGHTS := ["m4", "m870", "lsw6", "ak47", "pistol"]
@@ -182,6 +183,7 @@ func _run() -> void:
 		world.queue_free()
 		await process_frame
 	await _check_extended_magazine()
+	await _check_combined_attachments()
 	for key: String in WEAPONS:
 		_check_surface_detail(key)
 	_check_casings()
@@ -339,6 +341,39 @@ func _front_sight_tip(body: MeshInstance3D, view: Node3D, muzzle_z: float, reach
 	return top
 
 
+## A class fits up to three attachments: each one's part shows together.
+func _check_combined_attachments() -> void:
+	var view := (load(M4_VIEW) as PackedScene).instantiate() as Node3D
+	root.add_child(view)
+	await process_frame
+	var mag := view.get_node("Model/Mesh/Magazine") as MeshInstance3D
+	var before := _bounds_in(mag, view)
+	view.call("apply_attachment", "reddot+suppressor+grip")
+	await process_frame
+	var parts := view.get_node_or_null("Attachment")
+	_check(parts != null, "combined: the attachment parts are fitted")
+	if parts != null:
+		_check(parts.has_node("Optic"), "combined: the red dot is on")
+		# The optic, the suppressor, and the foregrip.
+		_check(
+			parts.get_child_count() == 3, "combined: three parts, got %d" % parts.get_child_count()
+		)
+	_check(
+		absf(_bounds_in(mag, view).size.y - before.size.y) < 0.001,
+		"combined: no extended magazine unless asked"
+	)
+	view.call("apply_attachment", "acog+extmag")
+	await process_frame
+	parts = view.get_node_or_null("Attachment")
+	_check(
+		parts != null and parts.get_child_count() == 1 and parts.has_node("Optic"),
+		"combined: refitting replaces the parts"
+	)
+	_check(_bounds_in(mag, view).size.y > before.size.y * 1.25, "combined: the magazine is longer")
+	view.queue_free()
+	await process_frame
+
+
 ## An extended magazine is longer, and still seats where the standard one does.
 func _check_extended_magazine() -> void:
 	for key: String in ["m4", "ak47", "pdw9"]:
@@ -442,7 +477,7 @@ func _check_optics() -> void:
 	# The optics draw their modelled housings (tools/weapon_optics.py) round
 	# the glass and reticle built in code: the red dot's in its sight mesh,
 	# the ACOG's eye guard there and the rest in its body.
-	var view := (load("res://scenes/weapons/m4_view.tscn") as PackedScene).instantiate() as Node3D
+	var view := (load(M4_VIEW) as PackedScene).instantiate() as Node3D
 	root.add_child(view)
 	await process_frame
 	for optic: Array in [["reddot", "SightMesh", 2000], ["acog", "SightBody", 5000]]:

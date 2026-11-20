@@ -191,7 +191,7 @@ impl Grips {
         self.seats =
             [right, left].map(|h| h.map_or(Vector3::ZERO, |h| Vector3::from_array(h.seat)));
         self.index_off = index_off;
-        self.foregrip = def.attachment == Some(Attachment::Grip);
+        self.foregrip = def.fitted.has(Attachment::Grip);
     }
 
     /// How each hand closes (firing, support): the hold's shapes, moved

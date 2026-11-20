@@ -1558,13 +1558,13 @@ impl NetClient {
 fn gun_of(key: &str) -> Option<Gun> {
     let id = WeaponId::by_key(key)?;
     let def = id.def();
-    let base = WeaponId::by_key(if def.attachment.is_some() {
-        &def.base_key
-    } else {
+    let base = WeaponId::by_key(if def.fitted.is_empty() {
         &def.key
+    } else {
+        &def.base_key
     })?;
-    class::is_class_weapon(base, Slot::Primary).then(|| Gun {
+    class::is_class_weapon(base, Slot::Primary).then_some(Gun {
         base,
-        attachments: class::Attachments::of(def.attachment.as_slice()),
+        attachments: def.fitted,
     })
 }

@@ -39,7 +39,7 @@ impl WeaponId {
     /// or the table's variant with exactly those, in any order.
     pub fn with_attachments(self, attachments: &[Attachment]) -> Option<WeaponId> {
         let base = self.def();
-        if base.attachment.is_some() {
+        if !base.fitted.is_empty() {
             return None;
         }
         let mut key = base.key.clone();
@@ -291,13 +291,25 @@ impl Attachment {
         }
     }
 
-    /// The weapon with this attachment fitted.
+    /// The weapon with this attachment fitted, on top of any it has.
     pub fn apply(self, base: &WeaponDef) -> WeaponDef {
         let mut def = base.clone();
-        def.key = format!("{}+{}", base.key, self.key());
-        def.name = format!("{} {}", base.name, self.label());
-        def.attachment = Some(self);
-        def.base_key = base.key.clone();
+        let plain = if base.fitted.is_empty() {
+            base.key.clone()
+        } else {
+            base.base_key.clone()
+        };
+        def.fitted = base.fitted.with(self);
+        def.key = plain.clone();
+        let mut labels = Vec::new();
+        for a in def.fitted.iter() {
+            def.key.push('+');
+            def.key.push_str(a.key());
+            labels.push(a.label());
+        }
+        let base_name = base.name.split(' ').next().unwrap_or_default();
+        def.name = format!("{base_name} {}", labels.join(" + "));
+        def.base_key = plain;
         def.attachments = Vec::new();
         match self {
             Attachment::RedDot => {
@@ -417,9 +429,10 @@ pub struct WeaponDef {
     /// checks the poses with them applied.
     #[serde(default)]
     pub hand_tuning: Option<HandTuning>,
-    /// On an attachment variant: the attachment fitted.
+    /// On an attachment variant: the attachments fitted (none on a plain
+    /// weapon).
     #[serde(skip)]
-    pub attachment: Option<Attachment>,
+    pub fitted: Attachments,
     /// On an attachment variant: the plain weapon's key (its model and sounds).
     #[serde(skip)]
     pub base_key: String,
@@ -543,7 +556,7 @@ impl WeaponDef {
         };
         let tuning = self.hand_tuning.unwrap_or_default();
         let tune = |tune: Option<HandTune>, hand: HandDef| tune.map_or(hand, |t| t.apply(hand));
-        let left = if self.attachment == Some(Attachment::Grip) {
+        let left = if self.fitted.has(Attachment::Grip) {
             hands.left_foregrip
         } else {
             Some(tune(tuning.left, hands.left))
@@ -698,6 +711,91 @@ pub fn parse(key: &str, source: &str) -> Result<WeaponDef, LoadError> {
     Ok(def)
 }
 
+/// Most attachments a variant carries (a primary with the Third Attachment
+/// wildcard, `crate::class::GUNFIGHTER_ATTACHMENTS`).
+pub const MAX_FITTED: u8 = 3;
+
+/// Every attachment variant of a plain weapon: each set of up to
+/// [`MAX_FITTED`] of the attachments it takes, with one optic at most.
+fn variants_of(def: &WeaponDef) -> Vec<WeaponDef> {
+    let offered = &def.attachments;
+    let mut out = Vec::new();
+    for bits in 1u32..1 << offered.len() {
+        let set: Vec<Attachment> = (0..offered.len())
+            .filter(|i| bits & 1 << i != 0)
+            .map(|i| offered[i])
+            .collect();
+        if set.len() > usize::from(MAX_FITTED) || set.iter().filter(|a| a.optic()).count() > 1 {
+            continue;
+        }
+        // Fit them in `Attachment::ALL` order, so the key is canonical.
+        let mut ordered = set;
+        ordered.sort_by_key(|a| Attachments::index(*a));
+        let variant = ordered.iter().fold(def.clone(), |d, a| a.apply(&d));
+        out.push(variant);
+    }
+    out
+}
+
+/// A set of attachments, one bit per [`Attachment::ALL`] entry.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Attachments(u8);
+
+impl Attachments {
+    pub const NONE: Attachments = Attachments(0);
+    /// Bits the set uses on the wire.
+    pub const BITS: u32 = Attachment::ALL.len() as u32;
+
+    pub fn from_bits(bits: u8) -> Option<Self> {
+        (u32::from(bits) < 1 << Self::BITS).then_some(Self(bits))
+    }
+
+    pub fn bits(self) -> u8 {
+        self.0
+    }
+
+    pub fn of(list: &[Attachment]) -> Self {
+        list.iter().fold(Self::NONE, |set, a| set.with(*a))
+    }
+
+    pub fn with(self, attachment: Attachment) -> Self {
+        Self(self.0 | 1 << Self::index(attachment))
+    }
+
+    pub fn without(self, attachment: Attachment) -> Self {
+        Self(self.0 & !(1 << Self::index(attachment)))
+    }
+
+    pub fn has(self, attachment: Attachment) -> bool {
+        self.0 & 1 << Self::index(attachment) != 0
+    }
+
+    pub fn len(self) -> u8 {
+        self.0.count_ones() as u8
+    }
+
+    pub fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+
+    /// The optic fitted, if any.
+    pub fn optic(self) -> Option<Attachment> {
+        self.iter().find(|a| a.optic())
+    }
+
+    /// The attachments in [`Attachment::ALL`] order.
+    pub fn iter(self) -> impl Iterator<Item = Attachment> {
+        Attachment::ALL.into_iter().filter(move |a| self.has(*a))
+    }
+
+    fn index(attachment: Attachment) -> u32 {
+        Attachment::ALL
+            .iter()
+            .position(|a| *a == attachment)
+            .unwrap_or_default() as u32
+    }
+}
+
 /// Parses a set of `(key, source)` files into a table sorted by key.
 pub fn parse_all<'a>(
     files: impl IntoIterator<Item = (&'a str, &'a str)>,
@@ -706,10 +804,7 @@ pub fn parse_all<'a>(
         .into_iter()
         .map(|(key, source)| parse(key, source))
         .collect::<Result<Vec<_>, _>>()?;
-    let variants: Vec<WeaponDef> = defs
-        .iter()
-        .flat_map(|def| def.attachments.iter().map(move |a| a.apply(def)))
-        .collect();
+    let variants: Vec<WeaponDef> = defs.iter().flat_map(variants_of).collect();
     defs.extend(variants);
     defs.sort_by(|a, b| a.key.cmp(&b.key));
     if defs.len() > usize::from(u8::MAX) {
@@ -774,7 +869,7 @@ mod tests {
     fn builtin_table_is_sorted_and_complete() {
         let keys: Vec<_> = table()
             .iter()
-            .filter(|d| d.attachment.is_none())
+            .filter(|d| d.fitted.is_empty())
             .map(|d| d.key.as_str())
             .collect();
         assert_eq!(
@@ -791,12 +886,48 @@ mod tests {
     }
 
     #[test]
+    fn attachments_combine_up_to_three_with_one_optic() {
+        let m4 = WeaponId::expect("m4");
+        let both = m4
+            .with_attachments(&[Attachment::Grip, Attachment::RedDot])
+            .expect("a red dot and a grip");
+        let def = both.def();
+        assert_eq!(def.key, "m4+reddot+grip");
+        assert_eq!(def.name, "M4A1 Red Dot + Grip");
+        assert_eq!(def.model_key(), "m4");
+        assert!(def.fitted.has(Attachment::Grip) && def.fitted.has(Attachment::RedDot));
+        let grip = WeaponId::expect("m4+grip").def();
+        assert_eq!(def.recoil.pattern[0], grip.recoil.pattern[0]);
+        assert!(def.ads_time < grip.ads_time);
+        let three = m4.with_attachments(&[
+            Attachment::Acog,
+            Attachment::Suppressor,
+            Attachment::ExtendedMag,
+        ]);
+        assert!(three.is_some());
+        assert!(
+            m4.with_attachments(&[Attachment::RedDot, Attachment::Acog])
+                .is_none()
+        );
+        assert!(
+            m4.with_attachments(&[
+                Attachment::Suppressor,
+                Attachment::Grip,
+                Attachment::ExtendedMag,
+                Attachment::RedDot,
+            ])
+            .is_none()
+        );
+        assert!(table().len() <= usize::from(u8::MAX));
+    }
+
+    #[test]
     fn attachments_make_variants_with_changed_numbers() {
         let m4 = WeaponId::expect("m4").def();
         let grip = WeaponId::expect("m4+grip").def();
         assert_eq!(grip.name, "M4A1 Grip");
         assert_eq!(grip.model_key(), "m4");
-        assert_eq!(grip.attachment, Some(Attachment::Grip));
+        assert_eq!(grip.fitted, Attachments::of(&[Attachment::Grip]));
         assert!(grip.recoil.pattern[0].x < m4.recoil.pattern[0].x);
         let mag = WeaponId::expect("m4+extmag").def();
         assert_eq!(mag.magazine, 45);
@@ -809,7 +940,8 @@ mod tests {
         assert!(WeaponId::by_key("pdw9+reddot").is_none());
         assert!(WeaponId::by_key("m40+acog").is_none());
         assert!(WeaponId::by_key("m1911+grip").is_none());
-        assert!(table().len() < 64);
+        // Every variant fits the wire's one-byte weapon id.
+        assert!(table().len() <= usize::from(u8::MAX));
     }
 
     #[test]
