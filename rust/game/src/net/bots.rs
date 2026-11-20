@@ -40,6 +40,7 @@ use shooter_sim::melee;
 use shooter_sim::movement::Stance;
 use shooter_sim::net::Tick;
 use shooter_sim::net::protocol::Predicted;
+use shooter_sim::perk::{self, Perks};
 use shooter_sim::player::{PlayerInput, PlayerParams};
 use shooter_sim::tdm::Team;
 use shooter_sim::weapon::FireMode;
@@ -327,6 +328,9 @@ pub struct BotPlayer {
     /// The lane a bot is following (`BotWorld::lanes`), if any. Humans have
     /// none.
     pub lane: Option<usize>,
+    /// Their perks: Dead Silence shrinks how close a bot hears them, a
+    /// bot's own Awareness stretches it.
+    pub perks: Perks,
 }
 
 impl BotPlayer {
@@ -1076,8 +1080,9 @@ impl BotBrain {
             }
             let flat = Vector3::new(to.x, 0.0, to.z).normalized_or_zero();
             let in_view = flat.dot(facing) >= (skill.fov * 0.5).cos();
+            let hearing = perk::heard(enemy.perks, me.perks, true).range;
             let noticed = in_view
-                || distance < HEARING_RANGE
+                || distance < HEARING_RANGE * hearing
                 || Some(enemy.id) == attacker
                 || Some(enemy.id) == current;
             if !noticed || world.smoke_between(eye, point) || !clear_line(world.space, eye, point) {

@@ -1403,6 +1403,17 @@ impl FpsPlayer {
         self.grenade_show.clear();
     }
 
+    /// The perks this life carries (`PlayerState::perks`).
+    pub(crate) fn perks(&self) -> shooter_sim::perk::Perks {
+        self.state.perks
+    }
+
+    /// How much quieter our own movement plays: Dead Silence quiets it for
+    /// us too, as it does for everyone else.
+    fn own_movement_db(&self) -> f32 {
+        shooter_sim::perk::heard(self.state.perks, shooter_sim::perk::Perks::NONE, false).db
+    }
+
     pub(crate) fn prediction(&self) -> Option<&Prediction> {
         self.prediction.as_ref()
     }
@@ -2720,7 +2731,8 @@ impl FpsPlayer {
             let volume = gait.sound().level_db + footsteps::OWN_STEP_DB;
             self.play_footstep(volume);
             if let Some(mut body) = self.player_sounds.clone() {
-                body.bind_mut().on_step(gait, volume);
+                body.bind_mut()
+                    .on_step(gait, volume + self.own_movement_db());
             }
         }
     }
@@ -2734,6 +2746,7 @@ impl FpsPlayer {
             return;
         };
         self.footsteps.set_stream(&stream);
+        let volume_db = volume_db + self.own_movement_db();
         self.footsteps.set_volume_db(volume_db);
         self.footsteps.play();
     }
@@ -2746,15 +2759,18 @@ impl FpsPlayer {
             return;
         };
         self.footsteps.set_stream(&stream);
+        let volume_db = volume_db + self.own_movement_db();
         self.footsteps.set_volume_db(volume_db);
         self.footsteps.play();
     }
 
+    /// A body movement sound: a landing or a slide.
     fn play_body(&mut self, base: &str, volume_db: f32) {
         let Some(stream) = self.sound(base, 1.05) else {
             return;
         };
         self.body_sounds.set_stream(&stream);
+        let volume_db = volume_db + self.own_movement_db();
         self.body_sounds.set_volume_db(volume_db);
         self.body_sounds.play();
     }

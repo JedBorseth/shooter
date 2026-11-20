@@ -133,7 +133,9 @@ use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, Weapo
 // revives and headshots on the scoreboard.
 // Version 54 added perks (`crate::perk`): a class's perks and the Perk Greed
 // wildcards, and the perks in the predicted player state.
-pub const PROTOCOL_VERSION: u16 = 54;
+// Version 55 added whether a player moves quietly (Dead Silence,
+// `PlayerView::quiet`).
+pub const PROTOCOL_VERSION: u16 = 55;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -839,6 +841,9 @@ pub struct PlayerView {
     pub defusing: bool,
     /// Zombies: down in last stand, waiting for a revive.
     pub downed: bool,
+    /// Moves quietly (Dead Silence): other players hear its movement far
+    /// quieter and only up close (`perk::heard`).
+    pub quiet: bool,
 }
 
 /// A throw's progress (0 to 1) as [`PlayerView::throw`]: 0 for none.
@@ -921,6 +926,7 @@ impl PlayerView {
             reload_empty: combat.is_empty_reload(),
             alive: p.state.alive(),
             downed: p.state.downed,
+            quiet: p.state.perks.has(crate::perk::Perk::DeadSilence),
             shots_fired: combat.shots_fired,
             mantling: p.state.movement.mantling(),
             vaulting: p.state.movement.in_vault(p.on_floor),
@@ -2725,7 +2731,8 @@ fn write_view_delta(w: &mut BitWriter, v: &PlayerView, base: &PlayerView) {
             p.ladder,
         )
     };
-    let flags_changed = flags(v) != flags(base) || (v.mount, v.downed) != (base.mount, base.downed);
+    let flags_changed = flags(v) != flags(base)
+        || (v.mount, v.downed, v.quiet) != (base.mount, base.downed, base.quiet);
     w.bool(flags_changed);
     if flags_changed {
         write_stance(w, v.stance);
@@ -2741,6 +2748,7 @@ fn write_view_delta(w: &mut BitWriter, v: &PlayerView, base: &PlayerView) {
         w.bool(v.vaulting);
         w.bool(v.meleeing);
         w.bool(v.downed);
+        w.bool(v.quiet);
         w.bool(v.ladder.is_some());
         if let Some(heading) = v.ladder {
             w.u8(heading);
@@ -2819,6 +2827,7 @@ fn read_view_delta(r: &mut BitReader, base: &PlayerView) -> DecodeResult<PlayerV
         v.vaulting = r.bool()?;
         v.meleeing = r.bool()?;
         v.downed = r.bool()?;
+        v.quiet = r.bool()?;
         v.ladder = if r.bool()? { Some(r.u8()?) } else { None };
         v.mount = r.u8()?;
     }
@@ -3487,6 +3496,35 @@ mod tests {
         let bytes = w.finish();
         let decoded = read_view_delta(&mut BitReader::new(&bytes), &view).unwrap();
         assert_eq!(decoded.mount, 255);
+    }
+
+    #[test]
+    fn dead_silence_shows_as_quiet_to_other_players() {
+        let mut p = sample_state(5);
+        p.state.perks = crate::perk::Perks::of(&[crate::perk::Perk::DeadSilence]);
+        let view = PlayerView::from_state(0, &p, 0.0, 0.0);
+        assert!(view.quiet);
+        let base = PlayerView::default();
+        let mut w = BitWriter::new();
+        write_view_delta(&mut w, &view, &base);
+        let bytes = w.finish();
+        assert_eq!(
+            read_view_delta(&mut BitReader::new(&bytes), &base).unwrap(),
+            view
+        );
+        // Only the perk changing is still sent.
+        let loud = PlayerView {
+            quiet: false,
+            ..view
+        };
+        let mut w = BitWriter::new();
+        write_view_delta(&mut w, &loud, &view);
+        let bytes = w.finish();
+        assert!(
+            !read_view_delta(&mut BitReader::new(&bytes), &view)
+                .unwrap()
+                .quiet
+        );
     }
 
     #[test]

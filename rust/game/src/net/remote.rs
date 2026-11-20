@@ -19,6 +19,7 @@ use shooter_sim::look;
 use shooter_sim::movement::{MoveParams, Stance};
 pub use shooter_sim::net::lag::RemoteSample;
 use shooter_sim::net::protocol;
+use shooter_sim::perk::{self, Perk, Perks};
 use shooter_sim::snd::UseKind;
 use shooter_sim::weapon::WeaponId;
 
@@ -62,6 +63,10 @@ pub struct RemotePlayer {
     gunfire: Option<Gunfire>,
     foley: Option<Foley>,
     friendly: bool,
+    /// This player moves quietly (Dead Silence), and the perks of whoever
+    /// is listening (Awareness).
+    quiet: bool,
+    listener_perks: Perks,
     /// The roster has said which side this player is on.
     sided: bool,
     /// View angles and life from the last drawn sample, for spectating.
@@ -448,6 +453,13 @@ impl RemotePlayer {
 
     /// Teammates wear the allies' colours, show their name, and take no hits
     /// from us; everyone else wears the enemies' colours.
+    /// Whether this player moves quietly (Dead Silence, from its snapshot),
+    /// and the listening player's perks (Awareness).
+    pub fn set_hearing(&mut self, quiet: bool, listener: Perks) {
+        self.quiet = quiet;
+        self.listener_perks = listener;
+    }
+
     pub fn set_friendly(&mut self, friendly: bool) {
         self.team_index = if friendly { 0 } else { 1 };
         let team = self.team_index;
@@ -733,10 +745,16 @@ impl RemotePlayer {
             ladder: s.ladder.is_some() && s.alive,
         };
         let friendly = self.friendly;
+        let mover = if self.quiet {
+            Perks::of(&[Perk::DeadSilence])
+        } else {
+            Perks::NONE
+        };
+        let hearing = perk::heard(mover, self.listener_perks, !friendly);
         if let Some(foley) = &mut self.foley
             && !self.muted
         {
-            foley.update(&motion, delta, listener, friendly, reload);
+            foley.update(&motion, delta, listener, friendly, hearing, reload);
         }
     }
 }

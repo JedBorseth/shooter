@@ -20,6 +20,7 @@ use godot::classes::{
 };
 use godot::prelude::*;
 use shooter_sim::movement::Stance;
+use shooter_sim::perk::Hearing;
 use shooter_sim::weapon::{Reload, WeaponId};
 
 use crate::audio;
@@ -237,14 +238,16 @@ impl Foley {
     }
 
     /// Advances by one frame of `delta` seconds. `listener` is the camera,
-    /// `friendly` whether this player is on the listener's team, and `reload`
-    /// the reload in progress, if any.
+    /// `friendly` whether this player is on the listener's team, `hearing`
+    /// how perks change their movement's sound (Dead Silence, Awareness;
+    /// `perk::heard`), and `reload` the reload in progress, if any.
     pub fn update(
         &mut self,
         motion: &Motion,
         delta: f32,
         listener: Option<Vector3>,
         friendly: bool,
+        hearing: Hearing,
         reload: Option<RemoteReload>,
     ) {
         let speed = Vector2::new(motion.velocity.x, motion.velocity.z).length();
@@ -254,7 +257,13 @@ impl Foley {
             (0.0, 1.0)
         };
         let distance = listener.map_or(f32::INFINITY, |l| l.distance_to(motion.feet));
+        // Movement: steps, rungs, jumps, landings, slides, and climbs.
         let level = |base_db: f32, range: f32| {
+            falloff_db(distance, range * team_range * hearing.range)
+                .map(|d| base_db + d + team_db + hearing.db)
+        };
+        // Handling noise, which the movement perks leave alone.
+        let gear_level = |base_db: f32, range: f32| {
             falloff_db(distance, range * team_range).map(|d| base_db + d + team_db)
         };
 
@@ -351,7 +360,7 @@ impl Foley {
                 let magazine = matches!(reload.weapon.def().reload, Reload::Magazine { .. });
                 for &(at, event) in weapon_foley::remote_reload_cues(magazine, false) {
                     if weapon_foley::crossed(self.reload_progress, reload.progress, at)
-                        && let Some(db) = level(-6.0, RELOAD_RANGE)
+                        && let Some(db) = gear_level(-6.0, RELOAD_RANGE)
                     {
                         self.play_gear(reload.weapon, event, motion.feet, db);
                     }
