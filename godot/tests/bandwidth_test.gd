@@ -15,7 +15,7 @@ const SLAMCITY := "res://scenes/slamcity.tscn"
 ## Seconds of play before counting, after the countdown.
 const WARM_UP := 5
 ## Payload budgets per client, in kilobits per second (docs/netcode.md).
-const DOWN_BUDGET := 200.0
+const DOWN_BUDGET := 130.0
 const UP_BUDGET := 130.0
 
 var _port := 30000 + OS.get_process_id() % 20000
@@ -28,7 +28,7 @@ func _initialize() -> void:
 
 func _run() -> void:
 	var bots := _env_int("BOTS", 12)
-	var seconds := _env_int("SECONDS", 30)
+	var seconds := _env_int("SECONDS", 60)
 	var rtt := _env_int("RTT_MS", 80)
 	var server := (load(SERVER_SCENE) as PackedScene).instantiate() as NetServer
 	server.map_scene = load(SLAMCITY) as PackedScene

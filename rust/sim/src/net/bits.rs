@@ -40,7 +40,7 @@ impl BitWriter {
     }
 
     /// Writes the low `count` bits of `value` (`count` ≤ 32).
-    pub fn bits(&mut self, value: u32, count: u32) {
+    pub fn put(&mut self, value: u32, count: u32) {
         debug_assert!(count <= 32);
         debug_assert!(
             count == 32 || value >> count == 0,
@@ -60,45 +60,6 @@ impl BitWriter {
             left -= take;
             self.used = (self.used + take) % 8;
         }
-    }
-
-    pub fn bool(&mut self, value: bool) {
-        self.bits(u32::from(value), 1);
-    }
-
-    pub fn u8(&mut self, value: u8) {
-        self.bits(u32::from(value), 8);
-    }
-
-    pub fn u16(&mut self, value: u16) {
-        self.bits(u32::from(value), 16);
-    }
-
-    pub fn u32(&mut self, value: u32) {
-        self.bits(value, 32);
-    }
-
-    /// Bit-exact float.
-    pub fn f32(&mut self, value: f32) {
-        self.u32(value.to_bits());
-    }
-
-    /// Unsigned LEB128-style variable-length integer in 7-bit groups: small values are cheap.
-    pub fn varint(&mut self, mut value: u32) {
-        loop {
-            let group = value & 0x7F;
-            value >>= 7;
-            self.bits(group, 7);
-            self.bool(value != 0);
-            if value == 0 {
-                break;
-            }
-        }
-    }
-
-    /// Signed varint with zigzag encoding, so small negative numbers stay small.
-    pub fn varint_signed(&mut self, value: i32) {
-        self.varint(((value << 1) ^ (value >> 31)) as u32);
     }
 
     pub fn finish(self) -> Vec<u8> {
@@ -124,7 +85,7 @@ impl<'a> BitReader<'a> {
         Self { bytes, bit: 0 }
     }
 
-    pub fn bits(&mut self, count: u32) -> DecodeResult<u32> {
+    pub fn take(&mut self, count: u32) -> DecodeResult<u32> {
         debug_assert!(count <= 32);
         if self.bit + count as usize > self.bytes.len() * 8 {
             return Err(DecodeError::Truncated);
@@ -143,27 +104,86 @@ impl<'a> BitReader<'a> {
         Ok(value as u32)
     }
 
-    pub fn bool(&mut self) -> DecodeResult<bool> {
+    /// True when only zero padding bits remain.
+    pub fn is_done(&self) -> bool {
+        self.bytes.len() * 8 - self.bit < 8
+    }
+}
+
+/// Where encoders write fields: a packet ([`BitWriter`]), or a recorder or
+/// delta coder (`net::delta`). Every field is some number of bits, so an
+/// encoder written against this trait can be delta-compressed field by field
+/// without knowing it.
+pub trait BitSink {
+    /// Writes the low `count` bits of `value` (`count` ≤ 32) as one field.
+    fn bits(&mut self, value: u32, count: u32);
+
+    fn bool(&mut self, value: bool) {
+        self.bits(u32::from(value), 1);
+    }
+
+    fn u8(&mut self, value: u8) {
+        self.bits(u32::from(value), 8);
+    }
+
+    fn u16(&mut self, value: u16) {
+        self.bits(u32::from(value), 16);
+    }
+
+    fn u32(&mut self, value: u32) {
+        self.bits(value, 32);
+    }
+
+    /// Bit-exact float.
+    fn f32(&mut self, value: f32) {
+        self.u32(value.to_bits());
+    }
+
+    /// Unsigned LEB128-style variable-length integer in 7-bit groups: small values are cheap.
+    fn varint(&mut self, mut value: u32) {
+        loop {
+            let group = value & 0x7F;
+            value >>= 7;
+            self.bits(group, 7);
+            self.bool(value != 0);
+            if value == 0 {
+                break;
+            }
+        }
+    }
+
+    /// Signed varint with zigzag encoding, so small negative numbers stay small.
+    fn varint_signed(&mut self, value: i32) {
+        self.varint(((value << 1) ^ (value >> 31)) as u32);
+    }
+}
+
+/// Where decoders read fields from; the mirror of [`BitSink`].
+pub trait BitSource {
+    /// Reads one field of `count` bits (`count` ≤ 32).
+    fn bits(&mut self, count: u32) -> DecodeResult<u32>;
+
+    fn bool(&mut self) -> DecodeResult<bool> {
         Ok(self.bits(1)? == 1)
     }
 
-    pub fn u8(&mut self) -> DecodeResult<u8> {
+    fn u8(&mut self) -> DecodeResult<u8> {
         Ok(self.bits(8)? as u8)
     }
 
-    pub fn u16(&mut self) -> DecodeResult<u16> {
+    fn u16(&mut self) -> DecodeResult<u16> {
         Ok(self.bits(16)? as u16)
     }
 
-    pub fn u32(&mut self) -> DecodeResult<u32> {
+    fn u32(&mut self) -> DecodeResult<u32> {
         self.bits(32)
     }
 
-    pub fn f32(&mut self) -> DecodeResult<f32> {
+    fn f32(&mut self) -> DecodeResult<f32> {
         Ok(f32::from_bits(self.u32()?))
     }
 
-    pub fn varint(&mut self) -> DecodeResult<u32> {
+    fn varint(&mut self) -> DecodeResult<u32> {
         let mut value = 0u32;
         for shift in (0..35).step_by(7) {
             let group = self.bits(7)?;
@@ -178,14 +198,21 @@ impl<'a> BitReader<'a> {
         Err(DecodeError::Invalid("varint"))
     }
 
-    pub fn varint_signed(&mut self) -> DecodeResult<i32> {
+    fn varint_signed(&mut self) -> DecodeResult<i32> {
         let raw = self.varint()?;
         Ok(((raw >> 1) as i32) ^ -((raw & 1) as i32))
     }
+}
 
-    /// True when only zero padding bits remain.
-    pub fn is_done(&self) -> bool {
-        self.bytes.len() * 8 - self.bit < 8
+impl BitSink for BitWriter {
+    fn bits(&mut self, value: u32, count: u32) {
+        self.put(value, count);
+    }
+}
+
+impl BitSource for BitReader<'_> {
+    fn bits(&mut self, count: u32) -> DecodeResult<u32> {
+        self.take(count)
     }
 }
 
