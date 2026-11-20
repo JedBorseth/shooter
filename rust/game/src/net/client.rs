@@ -648,8 +648,13 @@ impl NetClient {
             KillCause::Weapon => base,
         };
         let attachment = match k.cause {
-            KillCause::Weapon => def.attachment.map_or("", |a| a.label()),
-            _ => "",
+            KillCause::Weapon => def
+                .fitted
+                .iter()
+                .map(|a| a.label())
+                .collect::<Vec<_>>()
+                .join("  ·  "),
+            _ => String::new(),
         };
         info.set("kind", kind);
         info.set("killer", i32::from(k.killer));
@@ -658,7 +663,7 @@ impl NetClient {
         info.set("victim", i32::from(k.victim));
         info.set("victim_name", &self.name_of(i32::from(k.victim)));
         info.set("weapon", weapon.as_str());
-        info.set("attachment", attachment);
+        info.set("attachment", attachment.as_str());
         info.set("headshot", k.headshot);
         info.set("progress", playback.progress());
         info.set("past_kill", playback.past_kill());
