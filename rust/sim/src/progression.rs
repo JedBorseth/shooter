@@ -18,14 +18,20 @@
 //! - **Attachments unlock by kills with that weapon**, as Black Ops 2's
 //!   weapon levels do ([`attachment_kills`]).
 //!
-//! Progress is kept by the client for now (`godot/scripts/progress_store.gd`).
-//! The server cannot check a level without accounts (Phase 5), so it checks
-//! only the class rules (`crate::class`), not unlocks.
+//! Progress is kept by the player's account on the account server
+//! (docs/online.md), or by the game itself without one
+//! (`godot/scripts/progress_store.gd`). A dedicated server that checks
+//! accounts holds each player's [`Earned`] and refuses a class or streak the
+//! player has not unlocked ([`Earned::check_class`]), as Call of Duty's
+//! servers do; others check only the class rules (`crate::class`).
 
-use crate::class::Wildcard;
+use std::collections::BTreeMap;
+
+use crate::class::{Class, DefaultClass, Wildcard};
 use crate::equipment;
 use crate::perk::Perk;
-use crate::weapon::Attachment;
+use crate::streak::{self, Streak};
+use crate::weapon::{Attachment, WeaponId};
 
 /// The highest level (Black Ops 2 and 3: 55).
 pub const MAX_LEVEL: u8 = 55;
@@ -151,10 +157,88 @@ pub fn match_bonus(seconds_played: f32, outcome: Outcome) -> u32 {
     total.round() as u32
 }
 
+/// What a player has earned: total XP and kills with each weapon, by the
+/// weapon's plain key ("m4"). Every unlock follows from these two.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Earned {
+    pub xp: u32,
+    pub weapon_kills: BTreeMap<String, u32>,
+}
+
+/// Something a class or streak loadout uses that the player has not
+/// unlocked yet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Locked {
+    /// A custom class below [`CREATE_A_CLASS_LEVEL`].
+    CreateAClass,
+    Weapon(WeaponId),
+    Attachment(WeaponId, Attachment),
+    Tactical(equipment::Kind),
+    Perk(Perk),
+    Wildcard(Wildcard),
+    Streak(Streak),
+}
+
+impl Earned {
+    pub fn level(&self) -> u8 {
+        rank(self.xp).level
+    }
+
+    /// Kills with a weapon (its plain key).
+    pub fn kills(&self, weapon: &str) -> u32 {
+        self.weapon_kills.get(weapon).copied().unwrap_or(0)
+    }
+
+    /// Whether the player may spawn with `class`: a default class always,
+    /// whatever it carries; a custom one from Create-a-Class's level on,
+    /// with every weapon, attachment, tactical, perk, and wildcard unlocked.
+    pub fn check_class(&self, class: &Class) -> Result<(), Locked> {
+        if DefaultClass::ALL.iter().any(|d| d.class() == *class) {
+            return Ok(());
+        }
+        let level = self.level();
+        if level < CREATE_A_CLASS_LEVEL {
+            return Err(Locked::CreateAClass);
+        }
+        for gun in [class.primary, class.secondary].into_iter().flatten() {
+            let def = gun.base.def();
+            if def.unlock_level > level {
+                return Err(Locked::Weapon(gun.base));
+            }
+            let kills = self.kills(&def.key);
+            if let Some(attachment) = gun
+                .attachments
+                .iter()
+                .find(|a| attachment_kills(*a) > kills)
+            {
+                return Err(Locked::Attachment(gun.base, attachment));
+            }
+        }
+        if class.tacticals > 0 && tactical_level(class.tactical) > level {
+            return Err(Locked::Tactical(class.tactical));
+        }
+        if let Some(perk) = class.perks.iter().find(|p| perk_level(*p) > level) {
+            return Err(Locked::Perk(perk));
+        }
+        if let Some(wildcard) = class.wildcards.iter().find(|w| wildcard_level(*w) > level) {
+            return Err(Locked::Wildcard(wildcard));
+        }
+        Ok(())
+    }
+
+    /// Whether every streak in `loadout` is unlocked.
+    pub fn check_streaks(&self, loadout: streak::Loadout) -> Result<(), Locked> {
+        let level = self.level();
+        match loadout.streaks().find(|s| s.unlock_level() > level) {
+            Some(streak) => Err(Locked::Streak(streak)),
+            None => Ok(()),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::weapon::WeaponId;
 
     #[test]
     fn levels_take_a_little_more_xp_each() {
@@ -238,5 +322,86 @@ mod tests {
         for perk in Perk::ALL {
             assert!((CREATE_A_CLASS_LEVEL..=MAX_LEVEL).contains(&perk_level(perk)));
         }
+    }
+
+    #[test]
+    fn a_new_player_may_use_only_the_default_classes() {
+        let new = Earned::default();
+        for default in DefaultClass::ALL {
+            assert_eq!(new.check_class(&default.class()), Ok(()));
+        }
+        let mut custom = DefaultClass::Assault.class();
+        custom.lethals = 0;
+        // A copy of a default class keeps its items only as a default.
+        custom.primary = custom.primary.map(|gun| crate::class::Gun::plain(gun.base));
+        custom.secondary = custom
+            .secondary
+            .map(|gun| crate::class::Gun::plain(gun.base));
+        custom.perks = crate::perk::Perks::default();
+        custom.wildcards = crate::class::Wildcards::default();
+        assert_eq!(new.check_class(&custom), Err(Locked::CreateAClass));
+        let earned = Earned {
+            xp: xp_for_level(CREATE_A_CLASS_LEVEL),
+            ..Earned::default()
+        };
+        assert_eq!(earned.check_class(&custom), Ok(()));
+    }
+
+    #[test]
+    fn locked_weapons_attachments_and_perks_are_refused() {
+        let level = |level: u8| Earned {
+            xp: xp_for_level(level),
+            ..Earned::default()
+        };
+        let mut class = DefaultClass::Assault.class();
+        class.lethals = 0;
+        class.perks = crate::perk::Perks::default();
+        class.wildcards = crate::class::Wildcards::default();
+        let m40 = WeaponId::by_key("m40").unwrap();
+        let m40_level = m40.def().unlock_level;
+        class.primary = Some(crate::class::Gun::plain(m40));
+        assert_eq!(
+            level(m40_level - 1).check_class(&class),
+            Err(Locked::Weapon(m40))
+        );
+        assert_eq!(level(m40_level).check_class(&class), Ok(()));
+
+        let mut gun = crate::class::Gun::plain(m40);
+        gun.attachments = gun.attachments.with(Attachment::Suppressor);
+        class.primary = Some(gun);
+        let mut earned = level(m40_level);
+        assert_eq!(
+            earned.check_class(&class),
+            Err(Locked::Attachment(m40, Attachment::Suppressor))
+        );
+        earned.weapon_kills.insert("m40".into(), 80);
+        assert_eq!(earned.check_class(&class), Ok(()));
+
+        class.perks = class.perks.with(Perk::Awareness);
+        assert_eq!(
+            level(perk_level(Perk::Awareness) - 1).check_class(&{
+                let mut c = class;
+                c.primary = Some(crate::class::Gun::plain(WeaponId::by_key("m4").unwrap()));
+                c
+            }),
+            Err(Locked::Perk(Perk::Awareness))
+        );
+    }
+
+    #[test]
+    fn streaks_unlock_by_level() {
+        let new = Earned::default();
+        assert_eq!(new.check_streaks(streak::Loadout::default()), Ok(()));
+        let locked = Streak::ALL
+            .into_iter()
+            .find(|s| s.unlock_level() > 1)
+            .expect("a streak that unlocks later");
+        let loadout = streak::Loadout([Some(locked), None, None]);
+        assert_eq!(new.check_streaks(loadout), Err(Locked::Streak(locked)));
+        let earned = Earned {
+            xp: xp_for_level(locked.unlock_level()),
+            ..Earned::default()
+        };
+        assert_eq!(earned.check_streaks(loadout), Ok(()));
     }
 }

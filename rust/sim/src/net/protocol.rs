@@ -163,7 +163,15 @@ use crate::zombies::drinks::Drinks;
 // `StreakEvent::Airstrike` and `Strike`, and `KillCause::Streak`.
 // Version 68 added the CQ-10 and the BP-9 (and their variants) to the
 // weapon table, which moves the index of every weapon after them.
-pub const PROTOCOL_VERSION: u16 = 68;
+// Version 69 added accounts: the hello carries the player's account session
+// token, the welcome says whether the server reports progress to the account
+// server itself (`ranked`), and `ServerMessage::Denied` says why a server
+// turned a player away.
+pub const PROTOCOL_VERSION: u16 = 69;
+/// Longest account session token a hello carries, in bytes.
+pub const MAX_ACCOUNT_TOKEN_BYTES: usize = 2048;
+/// Longest reason a denial carries, in bytes.
+pub const MAX_DENIED_BYTES: usize = 160;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -204,6 +212,10 @@ pub enum ClientMessage {
         version: u16,
         /// The player's name; the server cleans it (`tdm::clean_name`).
         name: String,
+        /// The player's account session token (a Nakama session), or empty
+        /// when not signed in. A server that checks accounts asks the
+        /// account server who it belongs to (docs/online.md).
+        account: String,
     },
     Input(InputPacket),
     /// Debug: ask for the hitboxes the server rewinds for each of our shots
@@ -258,9 +270,17 @@ pub enum ServerMessage {
         /// Which build the server runs (a tag or short commit hash), so
         /// players can tell when it differs from theirs.
         server_build: String,
+        /// The server checks accounts and reports each player's match XP to
+        /// the account server itself, so the game must not report it too.
+        ranked: bool,
     },
     Reject {
         server_version: u16,
+    },
+    /// The server turned the player away, and why ("Sign in to play on this
+    /// server."). Sent before disconnecting.
+    Denied {
+        reason: String,
     },
     Snapshot(Snapshot),
     /// Things that happened once, sent reliably and in order.
@@ -1358,10 +1378,15 @@ impl ClientMessage {
     pub fn encode(&self) -> Vec<u8> {
         let mut w = BitWriter::new();
         match self {
-            ClientMessage::Hello { version, name } => {
+            ClientMessage::Hello {
+                version,
+                name,
+                account,
+            } => {
                 w.bits(0, TAG_BITS);
                 w.u16(*version);
                 write_string(&mut w, name, MAX_NAME_BYTES);
+                write_string(&mut w, account, MAX_ACCOUNT_TOKEN_BYTES);
             }
             ClientMessage::Input(packet) => {
                 w.bits(1, TAG_BITS);
@@ -1435,13 +1460,21 @@ impl ClientMessage {
         match r.bits(TAG_BITS)? {
             0 => {
                 let version = r.u16()?;
-                // An older client sends no name; let the version check reject it.
-                let name = if version == PROTOCOL_VERSION {
-                    read_string(&mut r, MAX_NAME_BYTES)?
+                // An older client sends no name or account; let the version
+                // check reject it.
+                let (name, account) = if version == PROTOCOL_VERSION {
+                    (
+                        read_string(&mut r, MAX_NAME_BYTES)?,
+                        read_string(&mut r, MAX_ACCOUNT_TOKEN_BYTES)?,
+                    )
                 } else {
-                    String::new()
+                    (String::new(), String::new())
                 };
-                Ok(ClientMessage::Hello { version, name })
+                Ok(ClientMessage::Hello {
+                    version,
+                    name,
+                    account,
+                })
             }
             1 => {
                 let ack_snapshot = read_option_tick(&mut r)?;
@@ -1728,6 +1761,7 @@ impl ServerMessage {
                 snapshot_interval,
                 mode,
                 server_build,
+                ranked,
             } => {
                 w.bits(0, TAG_BITS);
                 w.u16(PROTOCOL_VERSION);
@@ -1736,10 +1770,15 @@ impl ServerMessage {
                 w.u8(*snapshot_interval);
                 write_mode(&mut w, mode);
                 write_string(&mut w, server_build, MAX_BUILD_BYTES);
+                w.bool(*ranked);
             }
             ServerMessage::Reject { server_version } => {
                 w.bits(1, TAG_BITS);
                 w.u16(*server_version);
+            }
+            ServerMessage::Denied { reason } => {
+                w.bits(4, TAG_BITS);
+                write_string(&mut w, reason, MAX_DENIED_BYTES);
             }
             ServerMessage::Snapshot(snapshot) => {
                 w.bits(2, TAG_BITS);
@@ -1798,10 +1837,14 @@ impl ServerMessage {
                     snapshot_interval: r.u8()?.max(1),
                     mode: read_mode(&mut r)?,
                     server_build: read_string(&mut r, MAX_BUILD_BYTES)?,
+                    ranked: r.bool()?,
                 })
             }
             1 => Ok(ServerMessage::Reject {
                 server_version: r.u16()?,
+            }),
+            4 => Ok(ServerMessage::Denied {
+                reason: read_string(&mut r, MAX_DENIED_BYTES)?,
             }),
             2 => Ok(ServerMessage::Snapshot(read_snapshot(&mut r, baseline)?)),
             3 => {
@@ -5905,6 +5948,7 @@ mod tests {
                 snapshot_interval: 2,
                 mode,
                 server_build: "abc1234".to_owned(),
+                ranked: mode == Mode::Domination,
             };
             assert_eq!(
                 ServerMessage::decode(&msg.encode(&[]), |_| None).unwrap(),
@@ -5964,6 +6008,7 @@ mod tests {
             ClientMessage::Hello {
                 version: PROTOCOL_VERSION,
                 name: "Josh".to_owned(),
+                account: "eyJhbGciOiJIUzI1NiJ9.eyJ1aWQiOiJhYmMifQ.c2ln".to_owned(),
             },
             ClientMessage::Ready { ready: true },
             ClientMessage::Chat {
@@ -6012,6 +6057,7 @@ mod tests {
         let msg = ClientMessage::Hello {
             version: PROTOCOL_VERSION,
             name: "é".repeat(100),
+            account: String::new(),
         };
         let ClientMessage::Hello { name, .. } = ClientMessage::decode(&msg.encode()).unwrap()
         else {
@@ -6181,10 +6227,18 @@ mod tests {
             snapshot_interval: 2,
             mode: Mode::Zombies,
             server_build: "dev".into(),
+            ranked: false,
         };
         assert_eq!(
             ServerMessage::decode(&welcome.encode(&[]), |_| None).unwrap(),
             welcome
+        );
+        let denied = ServerMessage::Denied {
+            reason: "Sign in to play on this server.".into(),
+        };
+        assert_eq!(
+            ServerMessage::decode(&denied.encode(&[]), |_| None).unwrap(),
+            denied
         );
         assert_eq!(zombie_lag(2), 4.0);
     }

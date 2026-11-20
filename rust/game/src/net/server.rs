@@ -95,6 +95,7 @@ use shooter_sim::net::subtick;
 use shooter_sim::net::{CHANNEL_COUNT, DEFAULT_PORT, MAX_PLAYERS, TICK_DT, TICK_RATE, Tick};
 use shooter_sim::perk::{self, Perk, Perks};
 use shooter_sim::player::{self, PlayerEvent, PlayerInput, PlayerParams, PlayerState};
+use shooter_sim::progression::Outcome;
 use shooter_sim::radar::Radar;
 use shooter_sim::scavenger;
 use shooter_sim::score::{Award, Kill, ScoreRules, ScoreState, ScoreTotals, Scored};
@@ -114,6 +115,7 @@ use shooter_sim::zombies::forge;
 use shooter_sim::zombies::{self, laststand};
 use shooter_sim::{Vec2, Vec3, rng};
 
+use super::accounts::{self, AccountState, MatchShare};
 use super::bots::{
     BotBrain, BotGrenade, BotNavigation, BotObjective, BotPlayer, BotSmoke, BotWorld,
     ObjectiveKind, RadarDot, THROW_CHECKS_PER_TICK, bake_area,
@@ -267,6 +269,15 @@ pub struct NetServer {
     /// servers that should just run).
     #[export]
     auto_start: bool,
+    /// Check accounts (`accounts.rs`, docs/online.md): admit only signed-in
+    /// players the account server vouches for, refuse classes and streaks
+    /// they have not unlocked, and report their match XP. The account
+    /// server is asked through the `account_check` and `account_award`
+    /// signals.
+    #[export]
+    accounts: bool,
+    /// Numbers account checks, so a late answer finds its connection.
+    account_serial: i64,
     /// The game: "tdm" (Team Deathmatch), "ctf" (Capture the Flag),
     /// "hardpoint", "dom" (Domination), "gungame", or "snd" (Search and
     /// Destroy).
@@ -448,6 +459,12 @@ struct ClientSlot {
     limit: PacketLimit,
     /// Disconnected for abuse: whatever it still sends is ignored.
     kicked: bool,
+    /// The account behind this connection, on a server with `accounts`.
+    account: AccountState,
+    /// The class and streaks last asked for, applied once the account is
+    /// known (`accounts`).
+    wanted_class: Option<Class>,
+    wanted_streaks: Option<Loadout>,
 }
 
 struct Avatar {
@@ -497,6 +514,8 @@ struct Avatar {
     streak_wanted: Loadout,
     streaks: StreakState,
     streak_seen: u32,
+    /// This match's playing time and weapon kills, for the account.
+    share: MatchShare,
 }
 
 /// A player down in last stand.
@@ -841,6 +860,65 @@ impl INode3D for NetServer {
 
 #[godot_api]
 impl NetServer {
+    /// `accounts`: a joining player's account session token, to be checked
+    /// with the account server; answer with `accept_account` or
+    /// `deny_account` and the same `serial`.
+    #[signal]
+    fn account_check(serial: i64, token: GString);
+
+    /// `accounts`: a player's match, to add to their account: total XP and
+    /// kills with each weapon (plain weapon key to count).
+    #[signal]
+    fn account_award(user_id: GString, xp: i64, weapon_kills: VarDictionary);
+
+    /// The account server vouched for the player of check `serial`: their
+    /// account id, username (the name others see), total XP, and weapon
+    /// kills. Lets them in.
+    #[func]
+    fn accept_account(
+        &mut self,
+        serial: i64,
+        user_id: GString,
+        username: GString,
+        xp: i64,
+        weapon_kills: VarDictionary,
+    ) {
+        let Some(index) = self.pending_account(serial) else {
+            return;
+        };
+        let user_id = user_id.to_string();
+        if self
+            .clients
+            .iter()
+            .any(|c| c.account.user_id() == Some(user_id.as_str()))
+        {
+            return self.deny(index, accounts::ALREADY_PLAYING);
+        }
+        let AccountState::Pending { name, .. } = std::mem::take(&mut self.clients[index].account)
+        else {
+            return;
+        };
+        let username = username.to_string();
+        let name = if username.is_empty() { name } else { username };
+        self.clients[index].account = AccountState::Verified {
+            user_id,
+            earned: accounts::earned_from(xp, &weapon_kills),
+        };
+        // What they asked for while they waited, now that it can be checked.
+        self.apply_wanted_class(index);
+        self.apply_wanted_streaks(index);
+        self.admit(index, &name);
+    }
+
+    /// The account server refused the player of check `serial` (or could
+    /// not be reached): they are told `reason` and disconnected.
+    #[func]
+    fn deny_account(&mut self, serial: i64, reason: GString) {
+        if let Some(index) = self.pending_account(serial) {
+            self.deny(index, &reason.to_string());
+        }
+    }
+
     /// Bandwidth bench: starts counting from zero (after a warm-up).
     #[func]
     fn start_bandwidth_probe(&mut self) {
@@ -2036,6 +2114,9 @@ impl NetServer {
                     chat: ChatLimiter::default(),
                     limit: PacketLimit::new(self.tick),
                     kicked: false,
+                    account: AccountState::None,
+                    wanted_class: None,
+                    wanted_streaks: None,
                 });
             }
             NetEvent::Disconnect(peer) => {
@@ -2045,6 +2126,10 @@ impl NetServer {
                 let client = self.clients.swap_remove(index);
                 if let Some(id) = client.player {
                     godot_print!("server: player {id} left");
+                    // Leaving mid-match keeps the score, without the bonus.
+                    if self.match_state.phase == Phase::Playing {
+                        self.award_account(&client.account, id, None);
+                    }
                     self.despawn_avatar(id);
                     self.broadcast_event(&GameEvent::Left { id });
                     self.next_scoreboard = self.tick;
@@ -2128,10 +2213,129 @@ impl NetServer {
         );
     }
 
+    fn pending_account(&self, serial: i64) -> Option<usize> {
+        self.clients.iter().position(
+            |c| matches!(c.account, AccountState::Pending { serial: s, .. } if s == serial),
+        )
+    }
+
+    /// Lets a connection in: a player id, the welcome, the state of the
+    /// game, and a spawn. The hello already passed; on a server with
+    /// `accounts`, the account server too.
+    fn admit(&mut self, index: usize, name: &str) {
+        let mut peer = self.clients[index].peer.clone();
+        // Zombies is for up to four players, as in Black Ops.
+        let full = self.game == Mode::Zombies
+            && self.clients.iter().filter(|c| c.player.is_some()).count() >= zombies::MAX_PLAYERS;
+        let Some(id) = (0..MAX_PLAYERS as u8)
+            .find(|id| !self.clients.iter().any(|c| c.player == Some(*id)))
+            .filter(|_| !full)
+        else {
+            peer.peer_disconnect_later();
+            return;
+        };
+        self.clients[index].player = Some(id);
+        let name = tdm::clean_name(name, &format!("Player {}", id + 1));
+        let class = self.clients[index].class;
+        // The welcome goes first, so the client knows its id before
+        // the roster arrives.
+        let welcome = ServerMessage::Welcome {
+            player_id: id,
+            tick: self.tick,
+            snapshot_interval: self.snapshot_interval.clamp(1, 255) as u8,
+            mode: self.game,
+            server_build: crate::build_info::BUILD.to_owned(),
+            ranked: self.accounts,
+        };
+        transport::send_reliable(&mut peer, &welcome.encode(&[]));
+        // Everyone already here, then the newcomer for everyone.
+        let roster: Vec<GameEvent> = self.avatars.iter().map(joined_event).collect();
+        self.clients[index].outbox.extend(roster);
+        self.spawn_avatar(id, false, &name, class, None);
+        let streaks = self.clients[index].streaks;
+        if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) {
+            avatar.streak_wanted = streaks;
+            avatar.streak_loadout = streaks;
+        }
+        self.send_streaks(id);
+        let sky = self.sky_event();
+        self.send_event(id, sky);
+        for crate_ in self.crates.list.clone() {
+            self.send_event(id, crate_incoming(&crate_));
+            if crate_.capture.is_some() {
+                let capture = self.crate_capture_event(crate_.id);
+                self.send_event(id, capture);
+            }
+        }
+        self.balance_bots();
+        let event = self.match_event();
+        self.send_event(id, event);
+        if let Some(event) = self.flags_event() {
+            self.send_event(id, event);
+        }
+        if !self.zones.is_empty() {
+            let zones = self.zones_event();
+            self.send_event(id, zones);
+            let status = self.hardpoint_event();
+            self.send_event(id, status);
+        }
+        if !self.dom_points.is_empty() {
+            let flags = self.dom_flags_event();
+            self.send_event(id, flags);
+            let status = self.domination_event();
+            self.send_event(id, status);
+        }
+        // A late joiner needs the props as they are now: everyone
+        // already here saw each change as it happened.
+        for state in self.props.snapshot_states() {
+            self.send_event(id, prop_event(&state));
+        }
+        if let Some(event) = self.round_event() {
+            self.send_event(id, event);
+        }
+        if !self.charge_sites.is_empty() {
+            let sites = self.charge_sites_event();
+            self.send_event(id, sites);
+        }
+        if let Some(event) = self.charge_event_for(id) {
+            self.send_event(id, event);
+        }
+        if let Some(horde) = &self.horde {
+            let mut events = vec![horde.round_event(self.tick)];
+            events.extend(horde.window_events());
+            events.extend(horde.door_events());
+            events.extend(horde.drop_events());
+            events.push(horde.timers_event(self.tick));
+            events.extend(self.crate_event());
+            events.extend(self.forge_event());
+            events.extend(self.forge_event());
+            for avatar in &self.avatars {
+                if let Some(stand) = &avatar.last_stand {
+                    events.push(protocol::ZombiesEvent::Downed {
+                        player: avatar.id,
+                        bleeds_out_at: Some(self.ticks_from_now(stand.bleed_left)),
+                    });
+                }
+            }
+            for event in events {
+                self.send_event(id, GameEvent::Zombies(event));
+            }
+            self.send_points(id, 0);
+            self.broadcast_machines();
+        }
+        godot_print!("server: player {id} \"{name}\" joined");
+    }
+
     fn handle_message(&mut self, index: usize, message: ClientMessage) {
         match message {
-            ClientMessage::Hello { version, name } => {
-                if self.clients[index].player.is_some() {
+            ClientMessage::Hello {
+                version,
+                name,
+                account,
+            } => {
+                if self.clients[index].player.is_some()
+                    || !matches!(self.clients[index].account, AccountState::None)
+                {
                     return;
                 }
                 let mut peer = self.clients[index].peer.clone();
@@ -2143,106 +2347,24 @@ impl NetServer {
                     peer.peer_disconnect_later();
                     return;
                 }
-                // Zombies is for up to four players, as in Black Ops.
-                let full = self.game == Mode::Zombies
-                    && self.clients.iter().filter(|c| c.player.is_some()).count()
-                        >= zombies::MAX_PLAYERS;
-                let Some(id) = (0..MAX_PLAYERS as u8)
-                    .find(|id| !self.clients.iter().any(|c| c.player == Some(*id)))
-                    .filter(|_| !full)
-                else {
-                    peer.peer_disconnect_later();
+                if self.accounts {
+                    // Held until the account server vouches for the token.
+                    if account.is_empty() {
+                        return self.deny(index, accounts::NOT_SIGNED_IN);
+                    }
+                    self.account_serial += 1;
+                    let serial = self.account_serial;
+                    self.clients[index].account = AccountState::Pending {
+                        serial,
+                        name,
+                        since: self.tick,
+                    };
+                    self.signals()
+                        .account_check()
+                        .emit(serial, &GString::from(account.as_str()));
                     return;
-                };
-                self.clients[index].player = Some(id);
-                let name = tdm::clean_name(&name, &format!("Player {}", id + 1));
-                let class = self.clients[index].class;
-                // The welcome goes first, so the client knows its id before
-                // the roster arrives.
-                let welcome = ServerMessage::Welcome {
-                    player_id: id,
-                    tick: self.tick,
-                    snapshot_interval: self.snapshot_interval.clamp(1, 255) as u8,
-                    mode: self.game,
-                    server_build: crate::build_info::BUILD.to_owned(),
-                };
-                transport::send_reliable(&mut peer, &welcome.encode(&[]));
-                // Everyone already here, then the newcomer for everyone.
-                let roster: Vec<GameEvent> = self.avatars.iter().map(joined_event).collect();
-                self.clients[index].outbox.extend(roster);
-                self.spawn_avatar(id, false, &name, class, None);
-                let streaks = self.clients[index].streaks;
-                if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) {
-                    avatar.streak_wanted = streaks;
-                    avatar.streak_loadout = streaks;
                 }
-                self.send_streaks(id);
-                let sky = self.sky_event();
-                self.send_event(id, sky);
-                for crate_ in self.crates.list.clone() {
-                    self.send_event(id, crate_incoming(&crate_));
-                    if crate_.capture.is_some() {
-                        let capture = self.crate_capture_event(crate_.id);
-                        self.send_event(id, capture);
-                    }
-                }
-                self.balance_bots();
-                let event = self.match_event();
-                self.send_event(id, event);
-                if let Some(event) = self.flags_event() {
-                    self.send_event(id, event);
-                }
-                if !self.zones.is_empty() {
-                    let zones = self.zones_event();
-                    self.send_event(id, zones);
-                    let status = self.hardpoint_event();
-                    self.send_event(id, status);
-                }
-                if !self.dom_points.is_empty() {
-                    let flags = self.dom_flags_event();
-                    self.send_event(id, flags);
-                    let status = self.domination_event();
-                    self.send_event(id, status);
-                }
-                // A late joiner needs the props as they are now: everyone
-                // already here saw each change as it happened.
-                for state in self.props.snapshot_states() {
-                    self.send_event(id, prop_event(&state));
-                }
-                if let Some(event) = self.round_event() {
-                    self.send_event(id, event);
-                }
-                if !self.charge_sites.is_empty() {
-                    let sites = self.charge_sites_event();
-                    self.send_event(id, sites);
-                }
-                if let Some(event) = self.charge_event_for(id) {
-                    self.send_event(id, event);
-                }
-                if let Some(horde) = &self.horde {
-                    let mut events = vec![horde.round_event(self.tick)];
-                    events.extend(horde.window_events());
-                    events.extend(horde.door_events());
-                    events.extend(horde.drop_events());
-                    events.push(horde.timers_event(self.tick));
-                    events.extend(self.crate_event());
-                    events.extend(self.forge_event());
-                    events.extend(self.forge_event());
-                    for avatar in &self.avatars {
-                        if let Some(stand) = &avatar.last_stand {
-                            events.push(protocol::ZombiesEvent::Downed {
-                                player: avatar.id,
-                                bleeds_out_at: Some(self.ticks_from_now(stand.bleed_left)),
-                            });
-                        }
-                    }
-                    for event in events {
-                        self.send_event(id, GameEvent::Zombies(event));
-                    }
-                    self.send_points(id, 0);
-                    self.broadcast_machines();
-                }
-                godot_print!("server: player {id} \"{name}\" joined");
+                self.admit(index, &name);
             }
             ClientMessage::Input(packet) => {
                 let client = &mut self.clients[index];
@@ -2274,33 +2396,12 @@ impl NetServer {
                     godot_warn!("server: refused a class ({error:?})");
                     return;
                 }
-                self.clients[index].class = class;
-                let freeze = self.round.is_some_and(|r| r.phase == RoundPhase::Freeze);
-                let gun_game = matches!(self.game, Mode::GunGame(_));
-                if let Some(id) = self.clients[index].player
-                    && let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id)
-                {
-                    avatar.class = class;
-                    // During a round's freeze a new class applies at once.
-                    if freeze && !gun_game && avatar.predicted.state.alive() {
-                        let movement = avatar.predicted.state.movement;
-                        avatar.predicted.state = PlayerState::new(loadout_for(&class));
-                        avatar.predicted.state.movement = movement;
-                        avatar.predicted.state.combat = class.combat().first_draw();
-                        avatar.predicted.state.perks = class.perks;
-                    }
-                }
+                self.clients[index].wanted_class = Some(class);
+                self.apply_wanted_class(index);
             }
             ClientMessage::Streaks(loadout) => {
-                // Each streak once, cheapest first; a new choice counts from
-                // the next spawn, as Black Ops 2's does.
-                let loadout = loadout.sorted();
-                self.clients[index].streaks = loadout;
-                if let Some(id) = self.clients[index].player
-                    && let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id)
-                {
-                    avatar.streak_wanted = loadout;
-                }
+                self.clients[index].wanted_streaks = Some(loadout);
+                self.apply_wanted_streaks(index);
             }
             ClientMessage::UseStreak { streak, targets } => {
                 if let Some(id) = self.clients[index].player {
@@ -2309,6 +2410,126 @@ impl NetServer {
             }
             ClientMessage::Chat { text, team } => self.relay_chat(index, &text, team),
             ClientMessage::SkipKillcam => self.skip_killcam(index),
+        }
+    }
+
+    /// Applies the class the client last asked for (it passed the class
+    /// rules) from the next spawn on. On a server with `accounts`, only once
+    /// the account is known and only if everything in it is unlocked;
+    /// otherwise the player keeps the class they had.
+    fn apply_wanted_class(&mut self, index: usize) {
+        let Some(class) = self.clients[index].wanted_class else {
+            return;
+        };
+        if self.accounts {
+            let Some(earned) = self.clients[index].account.earned() else {
+                return;
+            };
+            if let Err(locked) = earned.check_class(&class) {
+                godot_warn!("server: refused a class with something locked ({locked:?})");
+                return;
+            }
+        }
+        self.clients[index].class = class;
+        let freeze = self.round.is_some_and(|r| r.phase == RoundPhase::Freeze);
+        let gun_game = matches!(self.game, Mode::GunGame(_));
+        if let Some(id) = self.clients[index].player
+            && let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id)
+        {
+            avatar.class = class;
+            // During a round's freeze a new class applies at once.
+            if freeze && !gun_game && avatar.predicted.state.alive() {
+                let movement = avatar.predicted.state.movement;
+                avatar.predicted.state = PlayerState::new(loadout_for(&class));
+                avatar.predicted.state.movement = movement;
+                avatar.predicted.state.combat = class.combat().first_draw();
+                avatar.predicted.state.perks = class.perks;
+            }
+        }
+    }
+
+    /// Applies the scorestreaks the client last asked for: each streak
+    /// once, cheapest first, from the next spawn, as Black Ops 2's do. With
+    /// `accounts`, only unlocked ones.
+    fn apply_wanted_streaks(&mut self, index: usize) {
+        let Some(loadout) = self.clients[index].wanted_streaks else {
+            return;
+        };
+        if self.accounts {
+            let Some(earned) = self.clients[index].account.earned() else {
+                return;
+            };
+            if let Err(locked) = earned.check_streaks(loadout) {
+                godot_warn!("server: refused streaks with one locked ({locked:?})");
+                return;
+            }
+        }
+        let loadout = loadout.sorted();
+        self.clients[index].streaks = loadout;
+        if let Some(id) = self.clients[index].player
+            && let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id)
+        {
+            avatar.streak_wanted = loadout;
+        }
+    }
+
+    /// Turns a connection away with a reason the player sees.
+    fn deny(&mut self, index: usize, reason: &str) {
+        let client = &mut self.clients[index];
+        godot_print!("server: turned a player away: {reason}");
+        client.account = AccountState::None;
+        client.kicked = true;
+        let denied = ServerMessage::Denied {
+            reason: reason.to_owned(),
+        };
+        transport::send_reliable(&mut client.peer, &denied.encode(&[]));
+        client.peer.peer_disconnect_later();
+    }
+
+    /// Reports a player's match to their account (`account_award`):
+    /// `outcome` when the match ended with them in it, `None` when they
+    /// left it early (score only).
+    fn award_account(&mut self, account: &AccountState, id: u8, outcome: Option<Outcome>) {
+        let Some(user_id) = account.user_id() else {
+            return;
+        };
+        let Some(avatar) = self.avatars.iter().find(|a| a.id == id) else {
+            return;
+        };
+        let score = avatar.score.score;
+        if !avatar.share.earned_anything(score) && outcome.is_none() {
+            return;
+        }
+        let xp = avatar.share.xp(score, self.tick, outcome);
+        let kills = accounts::kills_dictionary(&avatar.share.weapon_kills);
+        godot_print!("server: player {id} earned {xp} XP for their account");
+        self.signals()
+            .account_award()
+            .emit(&GString::from(user_id), i64::from(xp), &kills);
+    }
+
+    /// The match is over: every player with an account is paid for it.
+    fn award_accounts(&mut self, winner: Option<u8>) {
+        let players: Vec<(AccountState, u8)> = self
+            .clients
+            .iter()
+            .filter_map(|c| c.player.map(|id| (c.account.clone(), id)))
+            .collect();
+        for (account, id) in players {
+            let Some(avatar) = self.avatars.iter().find(|a| a.id == id) else {
+                continue;
+            };
+            let won = if self.game.free_for_all() {
+                winner == Some(id)
+            } else {
+                winner == Some(avatar.team)
+            };
+            let outcome = match winner {
+                None => Outcome::Draw,
+                Some(_) if won => Outcome::Win,
+                Some(_) => Outcome::Loss,
+            };
+            self.award_account(&account, id, Some(outcome));
         }
     }
 
@@ -2366,8 +2587,21 @@ impl NetServer {
     /// A connection that never says hello would hold a player slot forever.
     fn drop_silent_peers(&mut self) {
         let tick = self.tick;
+        // A player the account server never vouched for is told so.
+        let unanswered: Vec<usize> = (0..self.clients.len())
+            .filter(|&i| {
+                matches!(self.clients[i].account, AccountState::Pending { since, .. }
+                    if tick.saturating_sub(since) > accounts::ACCOUNT_TIMEOUT_TICKS)
+            })
+            .collect();
+        for index in unanswered {
+            self.deny(index, accounts::NO_ANSWER);
+        }
         self.clients.retain_mut(|client| {
+            let waiting = matches!(client.account, AccountState::Pending { .. });
             let silent = client.player.is_none()
+                && !waiting
+                && !client.kicked
                 && tick.saturating_sub(client.connected_at) > HELLO_TIMEOUT_TICKS;
             if silent {
                 client.peer.peer_disconnect_now();
@@ -2436,7 +2670,13 @@ impl NetServer {
             streak_wanted: if bot { BOT_STREAKS } else { Loadout::default() },
             streaks: StreakState::default(),
             streak_seen: 0,
+            share: MatchShare::default(),
         });
+        if self.match_state.phase == Phase::Playing
+            && let Some(avatar) = self.avatars.last_mut()
+        {
+            avatar.share.start(self.tick);
+        }
         let event = joined_event(self.avatars.last().expect("just pushed"));
         self.broadcast_event(&event);
         // Before a match the team starts together; during one, or without
@@ -5549,6 +5789,7 @@ impl NetServer {
                 self.hardpoint = HardpointState::new(&self.hardpoint_rules);
                 self.dom = DominationState::new(self.dom_points.len());
                 for avatar in &mut self.avatars {
+                    avatar.share.start(self.tick);
                     avatar.score = ScoreState::default();
                     avatar.progress = Progress::default();
                     avatar.hill = HillTime::default();
@@ -5599,6 +5840,9 @@ impl NetServer {
                         self.match_state.scores[0],
                         self.match_state.scores[1]
                     );
+                }
+                if self.accounts {
+                    self.award_accounts(winner);
                 }
                 // Ready-up again only before the first match of a session.
                 for client in &mut self.clients {
@@ -7242,6 +7486,21 @@ impl NetServer {
     }
 
     fn broadcast_event(&mut self, event: &GameEvent) {
+        // Every kill with a gun in a match counts toward the killer's
+        // attachments on their account (as the game's kill feed counts them).
+        if let GameEvent::Kill {
+            killer,
+            victim,
+            weapon,
+            cause: protocol::KillCause::Weapon,
+            ..
+        } = event
+            && killer != victim
+            && self.match_state.phase == Phase::Playing
+            && let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == *killer)
+        {
+            avatar.share.add_kill(*weapon);
+        }
         for client in &mut self.clients {
             if client.player.is_some() {
                 client.outbox.push(event.clone());
