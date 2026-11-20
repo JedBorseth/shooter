@@ -6,6 +6,7 @@ extends SceneTree
 const TEST_PATH := "user://settings_test.cfg"
 const SETTINGS_SCRIPT := preload("res://scripts/settings.gd")
 const Glyphs := preload("res://scripts/ui/glyphs.gd")
+const TeamColours := preload("res://scripts/ui/team_colours.gd")
 
 var _failures: PackedStringArray = []
 
@@ -33,6 +34,7 @@ func _run() -> void:
 	_check_audio_mix(settings)
 	_check_aim_assist(settings)
 	_check_controller_tuning(settings)
+	_check_interface(settings)
 	_check_round_trip(settings)
 	_check_graphics(settings)
 	_check_bindings(settings)
@@ -281,6 +283,44 @@ func _check_controller_tuning(settings: Node) -> void:
 	)
 
 
+## Team colour palettes, and the HUD size and opacity on a corner piece and
+## a full-screen one.
+func _check_interface(settings: Node) -> void:
+	_check(TeamColours.of(false) == TeamColours.PALETTES[0][1], "enemies start red")
+	settings.set_setting(&"team_colours", 2)
+	_check(TeamColours.of(false) == TeamColours.PALETTES[2][1], "deuteranopia turns them orange")
+	_check(TeamColours.of(true) != TeamColours.of(false), "and keeps the sides apart")
+	var screen := Control.new()
+	screen.size = Vector2(1600, 900)
+	root.add_child(screen)
+	var corner := Control.new()
+	screen.add_child(corner)
+	corner.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	corner.position = Vector2(40, 800)
+	corner.size = Vector2(100, 60)
+	var full := Control.new()
+	screen.add_child(full)
+	full.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	settings.fit_hud(corner)
+	settings.fit_hud(full)
+	settings.set_setting(&"hud_scale", 1.2)
+	settings.set_setting(&"hud_opacity", 0.5)
+	var top_left := corner.get_global_transform() * Vector2.ZERO
+	_check(
+		top_left.is_equal_approx(Vector2(48, 780)),
+		"a corner piece grows about its screen corner, margin too, got %s" % top_left
+	)
+	_check(is_equal_approx(full.anchor_right, 1.0 / 1.2), "a full-screen piece keeps its corners")
+	_check(
+		(full.get_global_transform() * full.size).is_equal_approx(screen.size),
+		"its far corner stays on the screen's"
+	)
+	_check(is_equal_approx(corner.modulate.a, 0.5), "HUD opacity fades the pieces")
+	screen.free()
+	settings.reset_to_defaults()
+	_check(TeamColours.of(false) == TeamColours.PALETTES[0][1], "reset puts red back")
+
+
 func _check_round_trip(settings: Node) -> void:
 	settings.set_setting(&"mouse_sensitivity", 2.35)
 	settings.set_setting(&"fov", 95.0)
@@ -474,7 +514,7 @@ func _check_menu(settings: Node) -> void:
 	_check(menu._bind_buttons[&"jump"].is_visible_in_tree(), "Keybinds lists the bindings")
 	tabs.current_tab = 0
 	var sliders: Array[Node] = menu.find_children("*", "HSlider", true, false)
-	_check(sliders.size() == 14, "fourteen sliders, got %d" % sliders.size())
+	_check(sliders.size() == 16, "sixteen sliders, got %d" % sliders.size())
 	var toggle_count := menu.find_children("*", "CheckButton", true, false).size()
 	_check(toggle_count == 12, "twelve toggles, got %d" % toggle_count)
 

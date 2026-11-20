@@ -27,6 +27,7 @@ const EyeAdaptation := preload("res://scripts/eye_adaptation.gd")
 const Grounding := preload("res://scripts/grounding.gd")
 const InputNotice := preload("res://scripts/ui/input_notice.gd")
 const Glyphs := preload("res://scripts/ui/glyphs.gd")
+const TeamColours := preload("res://scripts/ui/team_colours.gd")
 
 ## Radians of view rotation per screen pixel at 1× sensitivity.
 const BASE_MOUSE_SENSITIVITY := 0.0022
@@ -85,6 +86,8 @@ const STICK_YAW_SPEED := 200.0
 const STICK_PITCH_SPEED := 150.0
 
 const INPUT_DEVICES: Array[String] = ["Keyboard & mouse", "Controller"]
+## HUD pieces that follow the HUD size and opacity settings (see `fit_hud`).
+const HUD_GROUP := &"hud_piece"
 ## Aim response curve types, as Call of Duty names them (`look::StickResponse`).
 const STICK_RESPONSES: Array[String] = ["Standard", "Linear", "Dynamic"]
 ## Actions the left stick and trigger deadzone settings set, with the
@@ -177,6 +180,9 @@ const DEFAULTS := {
 	&"player_name": "Player",
 	&"skip_killcams": false,
 	&"minimap_rotates": true,
+	&"team_colours": 0,
+	&"hud_scale": 1.0,
+	&"hud_opacity": 1.0,
 }
 
 ## Config file section for each setting.
@@ -219,6 +225,7 @@ const SECTIONS := {
 		&"audio_mix",
 	],
 	"multiplayer": [&"player_name", &"skip_killcams", &"minimap_rotates"],
+	"interface": [&"team_colours", &"hud_scale", &"hud_opacity"],
 }
 
 ## Allowed values of each int setting.
@@ -230,6 +237,7 @@ const INT_OPTIONS := {
 	&"audio_mix": [0, 1, 2],
 	&"button_prompts": [0, 1, 2],
 	&"stick_response": [0, 1, 2],
+	&"team_colours": [0, 1, 2, 3],
 }
 
 ## Look speed saved by builds before it became a level, as a multiplier.
@@ -253,6 +261,8 @@ const RANGES := {
 	&"ambience_volume": Vector2(0.0, 1.0),
 	&"ui_volume": Vector2(0.0, 1.0),
 	&"render_scale": Vector2(0.5, 1.0),
+	&"hud_scale": Vector2(0.8, 1.25),
+	&"hud_opacity": Vector2(0.3, 1.0),
 }
 
 ## Audio bus driven by each volume setting.
@@ -337,6 +347,14 @@ var skip_killcams: bool = DEFAULTS[&"skip_killcams"]
 ## The minimap turns with the player, who always faces up (Call of Duty's
 ## default); off, north stays up and the player's arrow turns.
 var minimap_rotates: bool = DEFAULTS[&"minimap_rotates"]
+
+## Team colour palette: an index into `TeamColours.NAMES` (Default, or one
+## for protanopia, deuteranopia, or tritanopia).
+var team_colours: int = DEFAULTS[&"team_colours"]
+## HUD size, a scale on every HUD piece about its screen corner, and HUD
+## opacity. The crosshair, hit markers, and damage indicators keep theirs.
+var hud_scale: float = DEFAULTS[&"hud_scale"]
+var hud_opacity: float = DEFAULTS[&"hud_opacity"]
 
 ## Keyboard and mouse bindings changed from the defaults: action to a
 ## serialized event (see `_event_to_value`).
@@ -773,6 +791,12 @@ func _apply(key: StringName) -> void:
 			_update_glyphs()
 		&"move_deadzone", &"trigger_deadzone":
 			_apply_deadzones()
+		&"team_colours":
+			TeamColours.use(team_colours)
+		&"hud_scale", &"hud_opacity":
+			if is_inside_tree():
+				for piece: Node in get_tree().get_nodes_in_group(HUD_GROUP):
+					_fit_hud(piece as Control)
 		&"audio_mix":
 			for volume_key: StringName in BUSES:
 				_apply(volume_key)
@@ -798,6 +822,46 @@ func _apply(key: StringName) -> void:
 				DisplayServer.window_set_vsync_mode(
 					DisplayServer.VSYNC_MAILBOX if vsync else DisplayServer.VSYNC_DISABLED
 				)
+
+
+## Puts a HUD piece under the HUD size and opacity settings. A piece that
+## fills the screen (and draws its corners itself) keeps its corners on the
+## screen's; a smaller piece scales about the screen point it is anchored to,
+## so its margin scales with it. `own_fade`: the piece fades itself with
+## `modulate`, so opacity goes on `self_modulate` (it must draw itself).
+func fit_hud(piece: Control, own_fade := false) -> void:
+	if not piece.is_in_group(HUD_GROUP):
+		piece.add_to_group(HUD_GROUP)
+		var full := (
+			piece.anchor_left == 0.0
+			and piece.anchor_top == 0.0
+			and piece.anchor_right == 1.0
+			and piece.anchor_bottom == 1.0
+		)
+		piece.set_meta(&"hud_full", full)
+		piece.set_meta(&"hud_own_fade", own_fade)
+		if not full:
+			piece.item_rect_changed.connect(_pivot_hud.bind(piece))
+	_fit_hud(piece)
+
+
+func _fit_hud(piece: Control) -> void:
+	piece.scale = Vector2.ONE * hud_scale
+	if piece.get_meta(&"hud_full", false):
+		piece.pivot_offset = Vector2.ZERO
+		piece.anchor_right = 1.0 / hud_scale
+		piece.anchor_bottom = 1.0 / hud_scale
+	else:
+		_pivot_hud(piece)
+	if piece.get_meta(&"hud_own_fade", false):
+		piece.self_modulate.a = hud_opacity
+	else:
+		piece.modulate.a = hud_opacity
+
+
+func _pivot_hud(piece: Control) -> void:
+	var anchor := piece.get_parent_area_size() * Vector2(piece.anchor_left, piece.anchor_top)
+	piece.pivot_offset = anchor - piece.position
 
 
 ## Turns the Master bus's mix compressor on for mixes that use it.

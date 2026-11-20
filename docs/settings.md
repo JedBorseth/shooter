@@ -21,3 +21,21 @@ The settings menu (pause menu or Options on the title screen) follows the option
 | Button prompts | Auto, Xbox, PlayStation (Auto) | Which controller's button images prompts show (art-direction.md, Button prompts) | Controller button prompt type |
 
 Every gameplay action can be rebound on keyboard and mouse (Keybinds), including prone, the scorestreak keys, interact, the controls legend (F1), and the Testing Area's ammo refill. Controller buttons follow the default Call of Duty layout and are not rebindable yet.
+
+## Interface (General tab)
+
+| Setting | Values (default) | What it does | Call of Duty |
+| --- | --- | --- | --- |
+| Camera motion | on | Head bob and strafe tilt | Camera Movement |
+| Show FPS counter | off | Frame rate, top right | Telemetry → FPS Counter (off by default) |
+| Team colours | Default, Protanopia, Deuteranopia, Tritanopia (Default) | Your side's and the enemy's colour everywhere they appear: score block, kill feed, scoreboard, minimap, objective markers, mode HUDs, chat (`godot/scripts/ui/team_colours.gd`) | Color Customization → HUD Color Palette (protanopia, deuteranopia, tritanopia) |
+| HUD size | 80 to 125% (100%) | Scales the corner pieces (health, ammo, score block, minimap, kill feed, streaks, points, prompts) about the screen corner each is anchored to, margins included (`Settings.fit_hud`) | HUD size / Magnified HUD preset (Black Ops 6) |
+| HUD opacity | 30 to 100% (100%) | Fades the same pieces; the crosshair, hit markers, and damage indicators keep theirs | Black Ops 6 has crosshair and minimap opacity; one slider here |
+
+The palettes: Default is blue against red. Protanopia and deuteranopia keep a blue and move the enemy to an orange from Okabe and Ito's colour-blind-safe set (a lighter orange for protanopia, which sees red light as dim). Tritanopia, which confuses blue with green, uses teal against a pinkish red. Black Ops 6 also lets players pick each colour by hue; that and a world colour filter are not offered yet.
+
+![Default, protanopia, deuteranopia, and tritanopia palettes on the Domination HUD](media/team-colour-palettes.jpg)
+
+![HUD size at 80% and 125%](media/hud-size.jpg)
+
+A new HUD piece joins the size and opacity settings with `Settings.fit_hud(piece)` once it is in the tree. Pass `own_fade = true` if the piece animates its own `modulate`. A full-screen piece that draws its corners itself must read the screen size from `get_viewport_rect()`, not its own `size`, when it sizes things.

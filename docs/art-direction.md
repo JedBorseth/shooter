@@ -465,6 +465,8 @@ Prompt strings name their key in square brackets ("[F] Take M870", "Hold [pad:x]
 
 In play, prompts follow the input device that plays (Settings, Controls, "Input device"). Menus take both devices, so their footers follow the device used last and switch the moment the other is touched, as Call of Duty's menus do (`footer_keys.gd`).
 
+Team colours (blue for your side, red for the enemy) come from `godot/scripts/ui/team_colours.gd`, never a local constant, so the colour-blind palettes in Settings reach every piece (see [settings.md](settings.md)).
+
 Deliberate differences from Call of Duty: health shows as a number and bar, because health here regenerates in steps worth reading; the match state reads LEADING or TRAILING rather than Call of Duty's wording.
 
 ### Minimap

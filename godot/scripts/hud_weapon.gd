@@ -7,6 +7,7 @@ extends Control
 ##
 ## Low on ammo, the count and the strip turn red; while reloading they dim.
 
+const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
 
@@ -48,13 +49,13 @@ func _draw() -> void:
 	var capacity := maxi(player.magazine_size(), 1)
 	var low := magazine <= player.low_ammo_threshold()
 	var reloading := player.is_reloading()
-	var count_colour := UiTheme.ENEMY if low else UiTheme.TEXT
+	var count_colour := TeamColours.enemy if low else UiTheme.TEXT
 	if reloading:
 		count_colour = Color(UiTheme.TEXT, 0.45)
 
 	# Rounds strip along the bottom.
 	var strip := Rect2(right - STRIP_WIDTH, bottom - 5.0, STRIP_WIDTH, 4.0)
-	var strip_colour := UiTheme.ENEMY if low else Color(UiTheme.TEXT, 0.9)
+	var strip_colour := TeamColours.enemy if low else Color(UiTheme.TEXT, 0.9)
 	if reloading:
 		strip_colour = Color(UiTheme.TEXT, 0.35)
 	if capacity <= MAX_TICKS:

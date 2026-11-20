@@ -116,7 +116,8 @@ func _process(delta: float) -> void:
 
 
 func _draw() -> void:
-	var ui := size.y / BASE_HEIGHT
+	# The viewport, not this piece: the HUD size setting scales the piece.
+	var ui := get_viewport_rect().size.y / BASE_HEIGHT
 	_draw_scoreboard(ui)
 	_draw_points(ui)
 	if not _medals.is_empty():
