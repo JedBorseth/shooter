@@ -37,7 +37,8 @@ func interact(_player: Node) -> void:
 	if _open:
 		return
 	var wallet := get_tree().get_first_node_in_group("zombies_wallet")
-	if wallet == null or not wallet.spend(price):
+	# Online the dedicated server opens doors.
+	if wallet == null or wallet.is_networked() or not wallet.spend(price):
 		return
 	_open = true
 	collision_layer = 0

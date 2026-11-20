@@ -122,7 +122,10 @@ use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, Weapo
 // halftime, the flag awards, and flag defences on the scoreboard.
 // Version 50 added the match period (regulation, second half, or overtime)
 // to match events, for Hardpoint overtime.
-pub const PROTOCOL_VERSION: u16 = 50;
+// Version 51 added Zombies on the dedicated server: the mode, the horde in
+// snapshots (`ZombieView`), and the round, zombie hits, points, and windows'
+// boards as events (`ZombiesEvent`).
+pub const PROTOCOL_VERSION: u16 = 51;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -352,6 +355,8 @@ pub enum GameEvent {
     /// contest, or capture speed: every flag as of server tick `tick`.
     /// Clients run each capture on at its rate between events.
     Domination(DominationView),
+    /// Zombies: rounds, hits on zombies, points, and windows' boards.
+    Zombies(ZombiesEvent),
 }
 
 /// One Domination flag's circle as clients see it.
@@ -510,6 +515,116 @@ pub struct Snapshot {
     /// Every smoke cloud still hanging, in full each time, so a player who
     /// joins after one popped still sees it.
     pub smokes: Vec<SmokeView>,
+    /// Zombies: the horde, in full, in every other snapshot
+    /// ([`ZOMBIE_SEND_TICKS`]); `None` in the snapshots between, and outside
+    /// Zombies.
+    pub zombies: Option<Vec<ZombieView>>,
+}
+
+/// Most zombies a snapshot carries.
+pub const MAX_ZOMBIES: usize = 64;
+/// Zombies are sent at most this often, in ticks (30 Hz at the 120 Hz tick):
+/// a horde is many bodies, and they shamble.
+pub const ZOMBIE_SEND_TICKS: Tick = 4;
+/// Zombie positions travel in centimetres.
+const ZOMBIE_POSITION_SCALE: f32 = 100.0;
+
+/// How far behind the other players clients draw zombies, in ticks: one
+/// zombie send interval, so a sent pair always brackets the drawn moment.
+/// The server rewinds zombies by the same amount behind a shot's view tick.
+pub fn zombie_lag(snapshot_interval: u8) -> f64 {
+    f64::from(ZOMBIE_SEND_TICKS.max(u32::from(snapshot_interval)))
+}
+
+/// One zombie as clients see it ([`crate::zombies`]): quantized, and only
+/// what drawing it needs.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ZombieView {
+    /// Unique among the zombies in play (ids wrap, but never onto a zombie
+    /// still shown).
+    pub id: u8,
+    /// Feet position in centimetres.
+    pub position: IVec3,
+    /// Facing in 1/256 turns ([`heading_to_u8`] of the way it faces).
+    pub yaw: u8,
+    pub alive: bool,
+    /// Swings started so far, wrapping at 8: an increase plays the attack
+    /// (a swing at a player or at a window's boards).
+    pub swings: u8,
+    /// Hits taken so far, wrapping at 8: an increase plays the flinch, and
+    /// the death falls from the latest one.
+    pub hits: u8,
+    /// The horizontal direction the latest hit travelled (1/256 turns), and
+    /// where it landed and how hard ([`HitPart`]).
+    pub hit_heading: u8,
+    pub hit_part: u8,
+}
+
+/// Counters in [`ZombieView`] wrap at this many.
+pub const ZOMBIE_COUNTER_BITS: u32 = 3;
+
+impl ZombieView {
+    pub fn new(id: u8, position: Vec3, yaw: f32, alive: bool) -> Self {
+        Self {
+            id,
+            position: (position * ZOMBIE_POSITION_SCALE).round().as_ivec3(),
+            yaw: yaw_to_u8(yaw),
+            alive,
+            ..Self::default()
+        }
+    }
+
+    /// Feet position in metres.
+    pub fn position(&self) -> Vec3 {
+        self.position.as_vec3() / ZOMBIE_POSITION_SCALE
+    }
+
+    /// Facing in radians (0 faces -Z).
+    pub fn yaw(&self) -> f32 {
+        f32::from(self.yaw) / 256.0 * std::f32::consts::TAU
+    }
+}
+
+/// A yaw (radians) as 1/256 turns.
+pub fn yaw_to_u8(yaw: f32) -> u8 {
+    (yaw / std::f32::consts::TAU * 256.0)
+        .round()
+        .rem_euclid(256.0) as u8
+}
+
+/// What happens in a Zombies game ([`GameEvent::Zombies`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ZombiesEvent {
+    /// To everyone, whenever it changes and on joining: round `round` is
+    /// counting down (`Break`, until server tick `starts_at`), being fought
+    /// with `remaining` zombies still to kill, or was the last (`Over`).
+    Round {
+        round: u32,
+        phase: ZombiesPhase,
+        starts_at: Option<Tick>,
+        remaining: u32,
+    },
+    /// To a shooter: their shot (or knife, or grenade) number `shot` hit
+    /// zombie `zombie`.
+    Hit {
+        zombie: u8,
+        shot: u32,
+        headshot: bool,
+        killed: bool,
+    },
+    /// To one player: their points changed by `change`, to `total`.
+    Points { total: u32, change: i32 },
+    /// To everyone, whenever it changes and on joining: window `window`
+    /// (the map's barriers in order) has `boards` boards up.
+    Boards { window: u8, boards: u8 },
+}
+
+/// Where a Zombies round is ([`crate::zombies::Phase`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ZombiesPhase {
+    Break,
+    Fighting,
+    Over,
 }
 
 /// A smoke cloud still hanging, as clients see it.
@@ -1612,6 +1727,10 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
                 w.u8(flag.capturers);
             }
         }
+        GameEvent::Zombies(event) => {
+            w.bits(ZOMBIES_EVENT_TAG, EVENT_TAG_BITS);
+            write_zombies_event(w, event);
+        }
     }
 }
 
@@ -1627,6 +1746,89 @@ fn read_option_team(r: &mut BitReader) -> DecodeResult<Option<Team>> {
         Some(r.bits(1)? as Team)
     } else {
         None
+    })
+}
+
+/// The event tag of [`GameEvent::Zombies`], kept at the top of the range so
+/// new modes' events fill in below it.
+const ZOMBIES_EVENT_TAG: u32 = 31;
+/// Bits for a [`ZombiesEvent`]'s own tag.
+const ZOMBIES_TAG_BITS: u32 = 4;
+
+fn write_zombies_event(w: &mut BitWriter, event: &ZombiesEvent) {
+    match *event {
+        ZombiesEvent::Round {
+            round,
+            phase,
+            starts_at,
+            remaining,
+        } => {
+            w.bits(0, ZOMBIES_TAG_BITS);
+            w.varint(round);
+            w.bits(
+                match phase {
+                    ZombiesPhase::Break => 0,
+                    ZombiesPhase::Fighting => 1,
+                    ZombiesPhase::Over => 2,
+                },
+                2,
+            );
+            write_option_tick(w, starts_at);
+            w.varint(remaining);
+        }
+        ZombiesEvent::Hit {
+            zombie,
+            shot,
+            headshot,
+            killed,
+        } => {
+            w.bits(1, ZOMBIES_TAG_BITS);
+            w.u8(zombie);
+            w.varint(shot);
+            w.bool(headshot);
+            w.bool(killed);
+        }
+        ZombiesEvent::Points { total, change } => {
+            w.bits(2, ZOMBIES_TAG_BITS);
+            w.varint(total);
+            w.varint_signed(change);
+        }
+        ZombiesEvent::Boards { window, boards } => {
+            w.bits(3, ZOMBIES_TAG_BITS);
+            w.u8(window);
+            w.u8(boards);
+        }
+    }
+}
+
+fn read_zombies_event(r: &mut BitReader) -> DecodeResult<ZombiesEvent> {
+    Ok(match r.bits(ZOMBIES_TAG_BITS)? {
+        0 => ZombiesEvent::Round {
+            round: r.varint()?,
+            phase: match r.bits(2)? {
+                0 => ZombiesPhase::Break,
+                1 => ZombiesPhase::Fighting,
+                2 => ZombiesPhase::Over,
+                _ => return Err(DecodeError::Invalid("zombies phase")),
+            },
+            starts_at: read_option_tick(r)?,
+            remaining: r.varint()?,
+        },
+        1 => ZombiesEvent::Hit {
+            zombie: r.u8()?,
+            shot: r.varint()?,
+            headshot: r.bool()?,
+            killed: r.bool()?,
+        },
+        2 => ZombiesEvent::Points {
+            total: r.varint()?,
+            change: r.varint_signed()?,
+        },
+        3 => ZombiesEvent::Boards {
+            window: r.u8()?,
+            boards: r.u8()?,
+        },
+        _ => return Err(DecodeError::Invalid("zombies event")),
     })
 }
 
@@ -2035,6 +2237,7 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
                 swapped,
             }))
         }
+        ZOMBIES_EVENT_TAG => Ok(GameEvent::Zombies(read_zombies_event(r)?)),
         _ => Err(DecodeError::Invalid("event tag")),
     }
 }
@@ -2054,6 +2257,8 @@ fn write_mode(w: &mut BitWriter, mode: &Mode) {
         Mode::SearchAndDestroy => w.bits(4, MODE_TAG_BITS),
         Mode::FreeForAll => w.bits(5, MODE_TAG_BITS),
         Mode::Domination => w.bits(6, MODE_TAG_BITS),
+        // At the top of the range, so new modes fill in below it.
+        Mode::Zombies => w.bits(7, MODE_TAG_BITS),
     }
 }
 
@@ -2068,6 +2273,7 @@ fn read_mode(r: &mut BitReader) -> DecodeResult<Mode> {
         4 => Ok(Mode::SearchAndDestroy),
         5 => Ok(Mode::FreeForAll),
         6 => Ok(Mode::Domination),
+        7 => Ok(Mode::Zombies),
         _ => Err(DecodeError::Invalid("mode")),
     }
 }
@@ -2207,6 +2413,60 @@ fn write_snapshot(w: &mut BitWriter, s: &Snapshot, baseline: &[PlayerView]) {
         w.varint_signed(smoke.position.z);
         w.varint(smoke.age);
     }
+    match &s.zombies {
+        Some(zombies) => {
+            w.bool(true);
+            let count = zombies.len().min(MAX_ZOMBIES);
+            w.varint(count as u32);
+            for z in &zombies[..count] {
+                write_zombie(w, z);
+            }
+        }
+        None => w.bool(false),
+    }
+}
+
+fn write_zombie(w: &mut BitWriter, z: &ZombieView) {
+    let counter = (1 << ZOMBIE_COUNTER_BITS) - 1;
+    w.u8(z.id);
+    w.varint_signed(z.position.x);
+    w.varint_signed(z.position.y);
+    w.varint_signed(z.position.z);
+    w.u8(z.yaw);
+    w.bool(z.alive);
+    w.bits(u32::from(z.swings & counter), ZOMBIE_COUNTER_BITS);
+    w.bits(u32::from(z.hits & counter), ZOMBIE_COUNTER_BITS);
+    // A zombie never hit has no latest hit to describe.
+    let hit = z.hits != 0 || z.hit_heading != 0 || z.hit_part != 0;
+    w.bool(hit);
+    if hit {
+        w.u8(z.hit_heading);
+        w.u8(z.hit_part);
+    }
+}
+
+fn read_zombie(r: &mut BitReader) -> DecodeResult<ZombieView> {
+    let id = r.u8()?;
+    let position = IVec3::new(r.varint_signed()?, r.varint_signed()?, r.varint_signed()?);
+    let yaw = r.u8()?;
+    let alive = r.bool()?;
+    let swings = r.bits(ZOMBIE_COUNTER_BITS)? as u8;
+    let hits = r.bits(ZOMBIE_COUNTER_BITS)? as u8;
+    let (hit_heading, hit_part) = if r.bool()? {
+        (r.u8()?, r.u8()?)
+    } else {
+        (0, 0)
+    };
+    Ok(ZombieView {
+        id,
+        position,
+        yaw,
+        alive,
+        swings,
+        hits,
+        hit_heading,
+        hit_part,
+    })
 }
 
 fn read_snapshot<'a>(
@@ -2275,6 +2535,19 @@ fn read_snapshot<'a>(
             age: r.varint()?,
         });
     }
+    let zombies = if r.bool()? {
+        let count = r.varint()? as usize;
+        if count > MAX_ZOMBIES {
+            return Err(DecodeError::Invalid("zombie count"));
+        }
+        let mut zombies = Vec::with_capacity(count);
+        for _ in 0..count {
+            zombies.push(read_zombie(r)?);
+        }
+        Some(zombies)
+    } else {
+        None
+    };
     Ok(Snapshot {
         tick,
         baseline: base_tick,
@@ -2282,6 +2555,7 @@ fn read_snapshot<'a>(
         players,
         grenades,
         smokes,
+        zombies,
     })
 }
 
@@ -3221,6 +3495,7 @@ mod tests {
         let snapshot = ServerMessage::Snapshot(Snapshot {
             grenades: Vec::new(),
             smokes: Vec::new(),
+            zombies: None,
             tick: 500,
             baseline: None,
             own: Some(Box::new(OwnState {
@@ -3262,6 +3537,7 @@ mod tests {
                 ),
             ],
             smokes: Vec::new(),
+            zombies: None,
             tick: 900,
             baseline: None,
             own: Some(Box::new(OwnState {
@@ -3288,6 +3564,7 @@ mod tests {
         let snapshot = ServerMessage::Snapshot(Snapshot {
             grenades: Vec::new(),
             smokes: smokes.clone(),
+            zombies: None,
             tick: 1200,
             baseline: None,
             own: None,
@@ -3308,6 +3585,7 @@ mod tests {
         let snapshot = Snapshot {
             grenades: Vec::new(),
             smokes: vec![SmokeView::new(Some(1), 1, Vec3::ZERO, 5); MAX_SMOKES + 4],
+            zombies: None,
             tick: 10,
             baseline: None,
             own: None,
@@ -3398,6 +3676,7 @@ mod tests {
         let delta = ServerMessage::Snapshot(Snapshot {
             grenades: Vec::new(),
             smokes: Vec::new(),
+            zombies: None,
             tick: 101,
             baseline: Some(100),
             own: None,
@@ -3418,6 +3697,7 @@ mod tests {
         let delta = ServerMessage::Snapshot(Snapshot {
             grenades: Vec::new(),
             smokes: Vec::new(),
+            zombies: None,
             tick: 101,
             baseline: Some(100),
             own: None,
@@ -3443,6 +3723,7 @@ mod tests {
         let full = ServerMessage::Snapshot(Snapshot {
             grenades: Vec::new(),
             smokes: Vec::new(),
+            zombies: None,
             tick: 100,
             baseline: None,
             own: None,
@@ -3459,6 +3740,7 @@ mod tests {
         let delta = ServerMessage::Snapshot(Snapshot {
             grenades: Vec::new(),
             smokes: Vec::new(),
+            zombies: None,
             tick: 101,
             baseline: Some(100),
             own: None,
@@ -3490,6 +3772,7 @@ mod tests {
         let delta = ServerMessage::Snapshot(Snapshot {
             grenades: Vec::new(),
             smokes: Vec::new(),
+            zombies: None,
             tick: 101,
             baseline: Some(100),
             own: None,
@@ -3556,6 +3839,7 @@ mod tests {
         let full = ServerMessage::Snapshot(Snapshot {
             grenades: Vec::new(),
             smokes: Vec::new(),
+            zombies: None,
             tick: 100,
             baseline: None,
             own: None,
@@ -3570,6 +3854,7 @@ mod tests {
         let delta = ServerMessage::Snapshot(Snapshot {
             grenades: Vec::new(),
             smokes: Vec::new(),
+            zombies: None,
             tick: 101,
             baseline: Some(100),
             own: None,
@@ -3586,6 +3871,7 @@ mod tests {
         let unchanged = ServerMessage::Snapshot(Snapshot {
             grenades: Vec::new(),
             smokes: Vec::new(),
+            zombies: None,
             tick: 102,
             baseline: Some(100),
             own: None,
@@ -3605,6 +3891,7 @@ mod tests {
         let msg = ServerMessage::Snapshot(Snapshot {
             grenades: Vec::new(),
             smokes: Vec::new(),
+            zombies: None,
             tick: 10,
             baseline: Some(5),
             own: None,
@@ -4382,5 +4669,95 @@ mod tests {
             let _ = ClientMessage::decode(&bytes);
             let _ = ServerMessage::decode(&bytes, |_| Some(&[]));
         }
+    }
+
+    #[test]
+    fn zombies_round_trip_in_snapshots_and_events() {
+        let mut hit = ZombieView::new(9, Vec3::new(-12.345, 0.02, 30.5), 1.5, false);
+        hit.swings = 5;
+        hit.hits = 3;
+        hit.hit_heading = 200;
+        hit.hit_part = 0x83;
+        let zombies = vec![ZombieView::new(1, Vec3::ZERO, 0.0, true), hit];
+        let msg = ServerMessage::Snapshot(Snapshot {
+            tick: 400,
+            baseline: None,
+            own: None,
+            players: Vec::new(),
+            grenades: Vec::new(),
+            smokes: Vec::new(),
+            zombies: Some(zombies.clone()),
+        });
+        let bytes = msg.encode(&[]);
+        // A big horde stays small: about ten bytes a zombie.
+        assert!(bytes.len() < 40, "{} bytes", bytes.len());
+        let ServerMessage::Snapshot(decoded) = ServerMessage::decode(&bytes, |_| None).unwrap()
+        else {
+            panic!("not a snapshot");
+        };
+        assert_eq!(decoded.zombies, Some(zombies));
+        let horde =
+            vec![ZombieView::new(1, Vec3::new(20.0, 0.0, -25.0), 3.0, true); MAX_ZOMBIES + 3];
+        let msg = ServerMessage::Snapshot(Snapshot {
+            tick: 404,
+            baseline: None,
+            own: None,
+            players: Vec::new(),
+            grenades: Vec::new(),
+            smokes: Vec::new(),
+            zombies: Some(horde),
+        });
+        let bytes = msg.encode(&[]);
+        assert!(bytes.len() < MAX_ZOMBIES * 11, "{} bytes", bytes.len());
+        let ServerMessage::Snapshot(decoded) = ServerMessage::decode(&bytes, |_| None).unwrap()
+        else {
+            panic!("not a snapshot");
+        };
+        assert_eq!(decoded.zombies.map(|z| z.len()), Some(MAX_ZOMBIES));
+
+        let msg = ServerMessage::Events(vec![
+            GameEvent::Zombies(ZombiesEvent::Round {
+                round: 12,
+                phase: ZombiesPhase::Break,
+                starts_at: Some(9000),
+                remaining: 0,
+            }),
+            GameEvent::Zombies(ZombiesEvent::Round {
+                round: 3,
+                phase: ZombiesPhase::Over,
+                starts_at: None,
+                remaining: 7,
+            }),
+            GameEvent::Zombies(ZombiesEvent::Hit {
+                zombie: 250,
+                shot: 1234,
+                headshot: true,
+                killed: true,
+            }),
+            GameEvent::Zombies(ZombiesEvent::Points {
+                total: 1490,
+                change: -1250,
+            }),
+            GameEvent::Zombies(ZombiesEvent::Boards {
+                window: 7,
+                boards: 2,
+            }),
+        ]);
+        assert_eq!(
+            ServerMessage::decode(&msg.encode(&[]), |_| None).unwrap(),
+            msg
+        );
+        let welcome = ServerMessage::Welcome {
+            player_id: 0,
+            tick: 1,
+            snapshot_interval: 2,
+            mode: Mode::Zombies,
+            server_build: "dev".into(),
+        };
+        assert_eq!(
+            ServerMessage::decode(&welcome.encode(&[]), |_| None).unwrap(),
+            welcome
+        );
+        assert_eq!(zombie_lag(2), 4.0);
     }
 }

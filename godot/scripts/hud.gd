@@ -169,14 +169,17 @@ func _process(delta: float) -> void:
 	# A killcam draws its own overlay: the HUD steps aside (the killer's
 	# scope still shows, from `scope_amount`).
 	var killcam := _player.in_killcam()
+	# The Zombies arena's HUD has no score feed.
 	for piece: Control in [_crosshair, _centre, _health, _weapon, _damage, _score_feed]:
-		piece.visible = not killcam
+		if piece != null:
+			piece.visible = not killcam
 	if killcam:
 		return
 	_crosshair.visible = true
 	_centre.visible = true
 	_damage.visible = true
-	_score_feed.visible = true
+	if _score_feed != null:
+		_score_feed.visible = true
 	var alive := _player.is_alive()
 	var scoped := _player.scope_amount() >= 0.85
 	var magazine := _player.magazine()

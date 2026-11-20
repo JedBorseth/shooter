@@ -8,6 +8,9 @@
 use glam::Vec3;
 
 use crate::rng;
+use crate::weapon::{CombatState, WeaponId};
+
+pub mod chase;
 
 /// Tuning for a Zombies match.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -52,6 +55,43 @@ impl Default for ZombieRules {
             attack_cycle: 1.2,
         }
     }
+}
+
+/// Most players in a game of Zombies (Black Ops: four).
+pub const MAX_PLAYERS: usize = 4;
+
+/// The round from which a player coming back in has at least
+/// [`RESPAWN_POINTS`]: Black Ops tops a returning player up to 1500 points
+/// after round 6 (`spectator_respawn_player`).
+pub const RESPAWN_POINTS_AFTER_ROUND: u32 = 6;
+pub const RESPAWN_POINTS: u32 = 1500;
+
+/// Points a player has when they come back in at the start of `round`.
+pub fn respawn_points(round: u32, points: u32) -> u32 {
+    if round > RESPAWN_POINTS_AFTER_ROUND {
+        points.max(RESPAWN_POINTS)
+    } else {
+        points
+    }
+}
+
+/// What taking a wall weapon costs: its price, or half for ammo of one
+/// already carried (Black Ops).
+pub fn pickup_cost(price: i64, carried: bool) -> u32 {
+    let price = price.max(0) as u32;
+    if carried { price / 2 } else { price }
+}
+
+/// Points each player starts a game with (Black Ops: `zombie_score_start`, 500).
+pub const START_POINTS: u32 = 500;
+
+/// The weapon every player starts with, and falls back on when downed.
+pub const START_WEAPON: &str = "m1911";
+
+/// What a player carries at the start of a Zombies game: the sidearm alone
+/// and two frags (Black Ops).
+pub fn start_combat() -> CombatState {
+    CombatState::only(WeaponId::expect(START_WEAPON)).with_lethals(START_FRAGS)
 }
 
 /// Frag grenades at the start of a Zombies game (Black Ops rules).
@@ -325,7 +365,7 @@ pub enum Phase {
     Break,
     /// Zombies are coming.
     Fighting,
-    /// The player is dead; nothing more happens.
+    /// Every player is down; nothing more happens.
     Over,
 }
 
@@ -392,7 +432,7 @@ impl Rounds {
         }
     }
 
-    /// Ends the match: the player died.
+    /// Ends the match: every player is down.
     pub fn end(&mut self) {
         self.phase = Phase::Over;
     }
@@ -471,6 +511,15 @@ mod power_up_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn returning_players_get_at_least_1500_after_round_six() {
+        assert_eq!(respawn_points(6, 200), 200);
+        assert_eq!(respawn_points(7, 200), 1500);
+        assert_eq!(respawn_points(9, 4000), 4000);
+        assert_eq!(pickup_cost(1200, false), 1200);
+        assert_eq!(pickup_cost(1200, true), 600);
+    }
 
     #[test]
     fn frags_restock_two_a_round_up_to_four() {

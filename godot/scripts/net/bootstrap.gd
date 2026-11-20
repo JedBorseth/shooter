@@ -5,8 +5,8 @@ extends Node
 ##
 ##   --server [--port N] [--bots N] [--bot-skill easy|normal|hard] [--bot-damage]
 ##            [--name NAME] [--master HOST[:PORT]]
-##            [--query-port N] [--map arena|nuketown|slamcity|warehouse]
-##            [--mode tdm|ctf|hardpoint|dom|gungame|snd] [--kills-per-weapon N]
+##            [--query-port N] [--map arena|nuketown|slamcity|warehouse|zombies]
+##            [--mode tdm|ctf|hardpoint|dom|gungame|snd|zombies] [--kills-per-weapon N]
 ##            [--rounds N]
 ##            [--score-limit N] [--time-limit MINUTES] [--auto-start]
 ##                                    run as a dedicated server (use with --headless);
@@ -21,7 +21,8 @@ extends Node
 ##                                    (250), Domination to N points (200), or
 ##                                    MINUTES (10), or Gun Game with N
 ##                                    kills per weapon (2), or Search and Destroy to
-##                                    N rounds (6);
+##                                    N rounds (6), or co-op Zombies for up to
+##                                    four players (on the zombies map);
 ##                                    --auto-start skips the lobby's ready-up.
 ##   --directory HOST[:PORT]          developer override for the Internet directory;
 ##                                    not saved between launches
@@ -46,10 +47,15 @@ const MAP_SCENES := {
 	"nuketown": "res://scenes/nuketown.tscn",
 	"slamcity": "res://scenes/slamcity.tscn",
 	"warehouse": "res://scenes/warehouse.tscn",
+	"zombies": "res://scenes/zombies_arena.tscn",
 }
 ## Names server browsers show for each map.
 const MAP_NAMES := {
-	"arena": "Arena", "nuketown": "Nuketown", "slamcity": "Slamcity", "warehouse": "Warehouse"
+	"arena": "Arena",
+	"nuketown": "Nuketown",
+	"slamcity": "Slamcity",
+	"warehouse": "Warehouse",
+	"zombies": "Zombies Arena",
 }
 const TITLE_SCENE := "res://scenes/title_screen.tscn"
 const REMOTE_PLAYER_SCENE := "res://scenes/remote_player.tscn"
