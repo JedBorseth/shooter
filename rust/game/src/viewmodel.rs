@@ -2210,6 +2210,12 @@ fn viewmodel_material(
         material.set_shader_parameter("albedo", &boosted.to_variant());
         material.set_shader_parameter("roughness", &standard.get_roughness().to_variant());
         material.set_shader_parameter("metallic", &standard.get_metallic().to_variant());
+        use godot::classes::base_material_3d::Flags;
+        if standard.get_flag(Flags::ALBEDO_FROM_VERTEX_COLOR) {
+            material.set_shader_parameter("use_vertex_color", &true.to_variant());
+            let srgb = standard.get_flag(Flags::SRGB_VERTEX_COLOR);
+            material.set_shader_parameter("vertex_color_srgb", &srgb.to_variant());
+        }
         if standard.get_feature(godot::classes::base_material_3d::Feature::EMISSION) {
             material.set_shader_parameter("emission", &standard.get_emission().to_variant());
             material.set_shader_parameter(
@@ -2632,6 +2638,9 @@ pub struct ViewmodelRig {
     /// The rungs the hands hold on a ladder (world), kept as they let go
     /// once off it.
     ladder_holds: Option<LadderLimbs>,
+    /// Planting or defusing: where the charge is drawn in the hands (world,
+    /// as the viewmodel draws), or `None`.
+    keypad_case: Option<Transform3D>,
     /// Crouched, eased in and out rather than snapped (Black Ops 2's
     /// `posMoveRate`).
     crouch_blend: f32,
@@ -2672,9 +2681,18 @@ impl ViewmodelRig {
     /// they let go of the last rungs as the weapon comes back up.
     fn ladder_hands(&mut self, frame: &ViewFrame) -> Option<LadderLimbs> {
         let weight = smoothstep(self.ladder_blend.min(1.0));
+        self.keypad_case = None;
         if weight < 0.01 {
             self.ladder_holds = None;
             return None;
+        }
+        if frame.put_away && !frame.on_ladder {
+            let camera = self.base().get_viewport()?.get_camera_3d()?;
+            let seconds = godot::classes::Time::singleton().get_ticks_msec() as f32 / 1000.0;
+            let (case, limbs) = keypad_hands(camera.get_global_transform(), weight, seconds);
+            self.keypad_case = Some(case);
+            self.ladder_holds = None;
+            return Some(limbs);
         }
         if frame.on_ladder {
             let found = self
@@ -2690,6 +2708,7 @@ impl ViewmodelRig {
                     hands,
                     ankles,
                     facing: Vector3::new(ladder.facing.x, 0.0, ladder.facing.y),
+                    keypad: false,
                 });
             }
         }
@@ -3696,6 +3715,7 @@ impl ViewmodelRig {
             // and the firing elbow stays low instead of folding up into view.
             arms.bind_mut()
                 .set_body_shift(Vector3::new(0.0, 0.0, iron_back * ads));
+            arms.bind_mut().show_charge(self.keypad_case);
             arms.bind_mut().follow(hold, 0.0, None, item, throw, ladder);
         }
     }
@@ -3751,6 +3771,79 @@ const STRAFE_SHIFT: f32 = 0.0022;
 /// from footage, roughly).
 const SLIDE_POS: Vector3 = Vector3::new(-0.012, 0.004, 0.012);
 const SLIDE_ROT: Vector3 = Vector3::new(5.0, -3.0, 10.0);
+/// Planting or defusing Search and Destroy's charge in first person: the
+/// case held low in front, its lid tilted up to the eye, rising into view as
+/// the weapon drops away (`weight`), the left hand flat on its near corner
+/// and the right index finger tapping out a code on its keypad, a key every
+/// [`KEY_TAP_SECONDS`], as Call of Duty's bomb plant and defuse show the
+/// hands working the bomb's keypad. Returns the case's transform and the
+/// hands (world, as the viewmodel draws), `seconds` being any running clock.
+fn keypad_hands(camera: Transform3D, weight: f32, seconds: f32) -> (Transform3D, LadderLimbs) {
+    // The case in view space: below and ahead of the eye, turned so its
+    // handle faces the viewer, the lid tilted up toward the eye.
+    let rise = (1.0 - weight) * 0.25;
+    let case_in_view = Transform3D::new(
+        (Basis::from_axis_angle(Vector3::RIGHT, KEYPAD_TILT.to_radians())
+            * Basis::from_axis_angle(Vector3::UP, std::f32::consts::PI))
+        .scaled(Vector3::splat(KEYPAD_SCALE)),
+        KEYPAD_CASE - Vector3::UP * rise,
+    );
+    let case = camera * case_in_view;
+    let lid = case.basis.col_b().normalized();
+    // Along the lid away from the viewer (the case's local +z, turned).
+    let away = (case.basis * Vector3::BACK).normalized();
+    let point = (away - lid * 0.6).normalized();
+
+    // The key under the finger: one of the 4 x 3 keys (`charge` in
+    // tools/gear_models.py), a new one every tap.
+    let tap = (seconds / KEY_TAP_SECONDS).floor();
+    let phase = seconds / KEY_TAP_SECONDS - tap;
+    let pick = shooter_sim::rng::hash(tap as i64 as u32, 911);
+    let (col, row) = (pick % 4, (pick / 4) % 3);
+    let key = Vector3::new(
+        -0.14 + col as f32 * 0.045,
+        KEY_TOP,
+        0.01 + row as f32 * 0.03,
+    );
+    // Up off the key, over to it, pressed, and lifted again.
+    let lift = crate::weapon_clips::keyed(
+        &[
+            (0.0, 0.025),
+            (0.45, 0.02),
+            (0.6, 0.0),
+            (0.75, 0.0),
+            (1.0, 0.025),
+        ],
+        phase,
+    );
+    let fingertip = case * key + lid * lift;
+    let right = fingertip - point * KEYPAD_FINGER_REACH;
+    // The left hand rests flat on the near left of the lid.
+    let palm = case * Vector3::new(0.16, KEY_TOP + 0.03, 0.0);
+    let left = palm - away * 0.08;
+    (
+        case,
+        LadderLimbs {
+            weight,
+            hands: [right, left],
+            ankles: [Vector3::ZERO; 2],
+            facing: point,
+            keypad: true,
+        },
+    )
+}
+
+/// The charge in first person: where its middle sits in view space, how far
+/// its lid tilts up toward the eye (degrees), the top of its keys above its
+/// underside (m), how far the wrist sits behind the index fingertip along
+/// the finger (m), and how long each key press takes (seconds).
+const KEYPAD_CASE: Vector3 = Vector3::new(0.02, -0.17, -0.55);
+const KEYPAD_SCALE: f32 = 0.7;
+const KEYPAD_TILT: f32 = 58.0;
+const KEY_TOP: f32 = 0.138;
+const KEYPAD_FINGER_REACH: f32 = 0.16;
+pub const KEY_TAP_SECONDS: f32 = 0.3;
+
 /// Mantling: tucked down and right, canted out of the planting hand's way.
 const MANTLE_POS: Vector3 = Vector3::new(0.012, -0.015, 0.008);
 const MANTLE_ROT: Vector3 = Vector3::new(-5.0, -4.0, -9.0);

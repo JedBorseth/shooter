@@ -30,7 +30,7 @@ rejected a half-defuse checkpoint ([roadmap.md](roadmap.md) decisions).
 | Interrupted | Letting go, moving off, or dying starts a plant or defuse over from nothing | Same; Modern Warfare (2019) keeps half a defuse, which this project does not |
 | One at a time | A second defender holding interact waits until the first lets go | Same |
 | After the plant | Wiping out the attackers no longer wins: the defenders must defuse. Wiping out the defenders wins at once | Same |
-| While using | Held still, weapon put away (no firing, aiming, reloading, or switching); looking around is free | Same |
+| While using | Held still, weapon put away (no firing, aiming, reloading, or switching); looking around is free. In first person the charge comes up into view in the hands, the left hand steadying the case and the right index finger tapping its keypad | Same; the first-person plant and defuse show the bomb in the hands, keyed on its pad |
 | Input | Hold interact (F; X / Square on a controller, the reload button, when standing where it would plant or defuse) | Hold Use (F; X / Square) |
 
 Who knows what: the attackers see who carries it (an ESCORT marker over a

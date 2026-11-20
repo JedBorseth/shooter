@@ -348,6 +348,19 @@ const KNIFE_FIST: HandShape = HandShape {
     spread: [-2.0, 0.0, 2.0, 4.0],
     oppose: 40.0,
 };
+/// The firing hand pressing keys: the index finger straight out, the other
+/// fingers curled into the palm, the thumb tucked beside them.
+const KEY_PRESS: HandShape = HandShape {
+    flex: [
+        [8.0, 12.0, 10.0],
+        [70.0, 85.0, 50.0],
+        [75.0, 85.0, 50.0],
+        [78.0, 85.0, 50.0],
+        [25.0, 35.0, 25.0],
+    ],
+    spread: [0.0, 0.0, 2.0, 4.0],
+    oppose: 35.0,
+};
 /// A hand hooked over a ladder's rung: the fingers curled round it, the
 /// thumb closed beside them.
 const RUNG_GRIP: HandShape = HandShape {
@@ -637,8 +650,13 @@ pub struct LadderLimbs {
     pub hands: [Vector3; 2],
     /// Ankles: left, right.
     pub ankles: [Vector3; 2],
-    /// The way the climber faces (world, horizontal).
+    /// The way the climber faces (world, horizontal). On the charge's
+    /// keypad, the way the fingers point (world).
     pub facing: Vector3,
+    /// Not a ladder: the first-person hands on Search and Destroy's charge,
+    /// the right index finger on its keypad and the left hand flat on its
+    /// case, palms down (the legs are left alone).
+    pub keypad: bool,
 }
 
 #[derive(GodotClass)]
@@ -752,7 +770,7 @@ impl SoldierPoser {
         if let Some(lift) = input.feet {
             self.plant_feet(skel, bones, lift);
         }
-        if let Some(ladder) = input.ladder.filter(|l| l.weight > 0.0) {
+        if let Some(ladder) = input.ladder.filter(|l| l.weight > 0.0 && !l.keypad) {
             self.climb_legs(skel, bones, &ladder);
         }
 
@@ -1326,17 +1344,27 @@ impl SoldierPoser {
             ),
         ];
         // The fingers point at the rungs and a little up, to hook over them,
-        // the palm toward the ladder, curled round the rung.
-        let reach = (toward + Vector3::UP * 0.4).normalized();
+        // the palm toward the ladder, curled round the rung. On the charge
+        // they point where `facing` says, palms down onto it.
+        let (reach, palm_to) = if ladder.keypad {
+            (toward, side.cross(toward).normalized())
+        } else {
+            ((toward + Vector3::UP * 0.4).normalized(), toward)
+        };
         let weight = ladder.weight.clamp(0.0, 1.0);
         for (h, finger) in self.fingers.iter().enumerate() {
             let left = h == 1;
+            let shape = match (ladder.keypad, left) {
+                (false, _) => &RUNG_GRIP,
+                (true, false) => &KEY_PRESS,
+                (true, true) => &PLANTED,
+            };
             for (f, bones) in finger.iter().enumerate() {
                 let Some((joints, chain)) = bones else {
                     continue;
                 };
                 for j in 0..3 {
-                    let grip = chain.rests[j] * RUNG_GRIP.joint(f, j, left, RUNG_GRIP.flex[f][j]);
+                    let grip = chain.rests[j] * shape.joint(f, j, left, shape.flex[f][j]);
                     let pose = skel.get_bone_pose_rotation(joints[j]);
                     skel.set_bone_pose_rotation(joints[j], pose.slerp(grip, weight));
                 }
@@ -1351,7 +1379,7 @@ impl SoldierPoser {
             // Twisted about the fingers until the palm faces the rungs.
             let palm = basis.col_c() * PALM_Z[h];
             let flat = |v: Vector3| (v - reach * v.dot(reach)).try_normalized();
-            let basis = match (flat(palm), flat(toward)) {
+            let basis = match (flat(palm), flat(palm_to)) {
                 (Some(from), Some(to)) => {
                     Basis::from_axis_angle(reach, from.signed_angle_to(to, reach)) * basis
                 }

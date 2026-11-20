@@ -381,6 +381,8 @@ pub struct FpsPlayer {
     charge_spot: bool,
     /// The last input planted or defused: held still, the weapon put away.
     using_charge: bool,
+    /// Tests: draw the first-person hands on the charge as if planting.
+    debug_keypad: bool,
     env: MoveEnv,
     /// Floor contact after the last move; the next tick's `MoveEnv::on_floor`.
     on_floor: bool,
@@ -1305,6 +1307,13 @@ impl FpsPlayer {
     #[func]
     pub fn is_using_charge(&self) -> bool {
         self.using_charge
+    }
+
+    /// Tests and captures: draws the first-person hands on the charge's
+    /// keypad, as while planting, without a match.
+    #[func]
+    pub fn debug_keypad(&mut self, on: bool) {
+        self.debug_keypad = on;
     }
 
     /// Moves the player instantly and points them along `yaw`, keeping weapons,
@@ -3105,7 +3114,7 @@ impl FpsPlayer {
             mantle_left: self.state.movement.mantle_time,
             vaulting: self.state.movement.vaulting,
             on_ladder: self.state.movement.on_ladder(),
-            put_away: self.using_charge,
+            put_away: self.using_charge || self.debug_keypad,
             feet: self.base().get_global_position(),
             mount: self.state.movement.mount_blend,
             weapon: combat.weapon().id,

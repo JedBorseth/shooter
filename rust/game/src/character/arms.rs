@@ -20,6 +20,9 @@ use shooter_sim::weapon::FingerFlex;
 /// Where the support hand reaches during a reload, in weapon space.
 const RELOAD_REACH: Vector3 = Vector3::new(-0.06, -0.3, 0.08);
 
+/// Search and Destroy's charge, the model the world draws (`snd_view.gd`).
+const CHARGE_MODEL: &str = "res://assets/models/charge/charge.gltf";
+
 #[derive(GodotClass)]
 #[class(init, base = Node3D)]
 pub struct FpArms {
@@ -65,6 +68,9 @@ pub struct FpArms {
     /// The support shoulder (the left upper arm's root at rest), in this
     /// node's space: the throw's scale keeps it where it is.
     pivot: Vector3,
+    /// Search and Destroy's charge, drawn like the arms while the hands
+    /// plant or defuse it ([`FpArms::show_charge`]).
+    charge: Option<Gd<Node3D>>,
     /// The scale the body is drawn at now.
     drawn_scale: f32,
 
@@ -158,6 +164,22 @@ impl INode3D for FpArms {
         crate::viewmodel::convert_to_viewmodel_materials(&grenade.clone().upcast(), &shader, 1.0);
         self.base_mut().add_child(&grenade);
         poser.bind_mut().grenade = Some(grenade);
+        if let Some(mut charge) = try_load::<PackedScene>(CHARGE_MODEL)
+            .ok()
+            .and_then(|scene| scene.instantiate())
+            .and_then(|node| node.try_cast::<Node3D>().ok())
+        {
+            charge.set_name("Charge");
+            crate::viewmodel::convert_to_viewmodel_materials(
+                &charge.clone().upcast(),
+                &shader,
+                1.0,
+            );
+            light_charge_glow(&charge);
+            charge.set_visible(false);
+            self.base_mut().add_child(&charge);
+            self.charge = Some(charge);
+        }
         self.poser = Some(poser);
         crate::effects::keep_decals_off(&self.base().clone().upcast());
     }
@@ -479,6 +501,24 @@ impl FpArms {
 }
 
 impl FpArms {
+    /// Shows Search and Destroy's charge at `at` (world, as the viewmodel
+    /// draws), or hides it.
+    pub fn show_charge(&mut self, at: Option<Transform3D>) {
+        let Some(charge) = &mut self.charge else {
+            return;
+        };
+        match at {
+            Some(at) => {
+                charge.set_global_transform(at);
+                if !charge.is_visible() {
+                    charge.set_visible(true);
+                }
+            }
+            None if charge.is_visible() => charge.set_visible(false),
+            None => {}
+        }
+    }
+
     /// Moves the body from `body_offset` by `shift` (view space, m), as the
     /// aimed weapon or a throw asks; the shoulders go with it.
     pub fn set_body_shift(&mut self, shift: Vector3) {
@@ -573,6 +613,42 @@ fn viewmodel_colours(mesh: &mut Gd<MeshInstance3D>, team: Team) {
         if let Some(character) = palette::material_for(&material.get_name().to_string(), team, true)
         {
             mesh.set_surface_override_material(surface, &character);
+        }
+    }
+}
+
+/// The charge's timer screen and lamp (its `glow` surfaces) shine in their
+/// vertex colours, as the world's charge does in the dark.
+fn light_charge_glow(root: &Gd<Node3D>) {
+    for node in root
+        .find_children_ex("*")
+        .type_("MeshInstance3D")
+        .owned(false)
+        .done()
+        .iter_shared()
+    {
+        let Ok(mesh) = node.try_cast::<MeshInstance3D>() else {
+            continue;
+        };
+        let Some(source) = mesh.get_mesh() else {
+            continue;
+        };
+        for surface in 0..mesh.get_surface_override_material_count() {
+            let glow = source
+                .surface_get_material(surface)
+                .is_some_and(|m| m.get_name() == "glow");
+            let Some(material) = mesh
+                .get_surface_override_material(surface)
+                .and_then(|m| m.try_cast::<godot::classes::ShaderMaterial>().ok())
+            else {
+                continue;
+            };
+            if glow {
+                let mut material = material;
+                material.set_shader_parameter("use_vertex_color", &true.to_variant());
+                material.set_shader_parameter("emission", &Color::WHITE.to_variant());
+                material.set_shader_parameter("emission_energy", &0.7.to_variant());
+            }
         }
     }
 }
