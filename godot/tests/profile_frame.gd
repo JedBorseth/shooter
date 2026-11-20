@@ -105,6 +105,11 @@ func _run() -> void:
 		["no sun shadows", _sun_set.bind(&"shadow_enabled", false)],
 		["sun shadows, hard filter", _shadow_filter.bind(RenderingServer.SHADOW_QUALITY_HARD)],
 		["sun shadows, 2 splits", _sun_set.bind(&"directional_shadow_mode", 1)],
+		["sun shadow atlas 2048", _shadow_atlas.bind(2048)],
+		["sun shadows reach 60% as far", _sun_reach.bind(0.6)],
+		["sun shadows reach 40% as far", _sun_reach.bind(0.4)],
+		["no roughness limiter", _roughness_limiter.bind(false)],
+		["anisotropic filtering 2x", _aniso.bind(Viewport.ANISOTROPY_2X)],
 		["no lens pass", _visible.bind(lens, false)],
 		["no HUD", _visible.bind(hud, false)],
 		["no first-person weapon", _visible.bind(_player.get_node_or_null("Head"), false)],
@@ -302,6 +307,38 @@ func _ssao_cheapest() -> Variant:
 		RenderingServer.ENV_SSAO_QUALITY_VERY_LOW, true, 0.5, 1, 50.0, 300.0
 	)
 	return func() -> void: _settings.set_graphics_preset(_settings.graphics_quality)
+
+
+func _shadow_atlas(size: int) -> Variant:
+	if _sun == null or not _sun.shadow_enabled:
+		return null
+	RenderingServer.directional_shadow_atlas_set_size(size, true)
+	return func() -> void: _settings.set_graphics_preset(_settings.graphics_quality)
+
+
+func _sun_reach(scale: float) -> Variant:
+	if _sun == null or not _sun.shadow_enabled:
+		return null
+	var was := _sun.directional_shadow_max_distance
+	_sun.directional_shadow_max_distance = was * scale
+	return func() -> void: _sun.directional_shadow_max_distance = was
+
+
+func _roughness_limiter(on: bool) -> Variant:
+	var was: bool = ProjectSettings.get_setting(
+		"rendering/anti_aliasing/screen_space_roughness_limiter/enabled", true
+	)
+	if was == on:
+		return null
+	var amount: float = ProjectSettings.get_setting(
+		"rendering/anti_aliasing/screen_space_roughness_limiter/amount", 0.25
+	)
+	var limit: float = ProjectSettings.get_setting(
+		"rendering/anti_aliasing/screen_space_roughness_limiter/limit", 0.18
+	)
+	RenderingServer.screen_space_roughness_limiter_set_active(on, amount, limit)
+	return func() -> void:
+		RenderingServer.screen_space_roughness_limiter_set_active(was, amount, limit)
 
 
 func _shadow_filter(quality: int) -> Variant:

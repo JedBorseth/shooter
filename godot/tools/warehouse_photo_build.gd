@@ -17,6 +17,9 @@ const CLIP := "res://assets/props/warehouse_photo/clip.json"
 const PHOTO := "res://assets/props/warehouse_photo/"
 const BLOCK := preload("res://addons/cyclops_level_builder/nodes/cyclops_block.gd")
 const MATS := "res://materials/warehouse/"
+## The baked lightmap (tools/bake_lightmaps.sh res://scenes/warehouse.tscn).
+const LIGHTMAP := "res://scenes/warehouse.lmbake"
+const BAKED_LIGHTS := "res://scripts/baked_lights.gd"
 const KEEP_SHELL := []
 
 
@@ -36,6 +39,9 @@ static func build(root: Node3D, parts: Array = ["shell", "structure", "lighting"
 	# Effects attach to the high-bays (flicker): rebuilt lights need them again.
 	if "lighting" in parts and not "effects" in parts:
 		parts = parts + ["effects"]
+	# And the office lamps the effects add are baked lights under Lighting.
+	if "effects" in parts and not "lighting" in parts:
+		parts = parts + ["lighting"]
 	if "shell" in parts:
 		_clear_old()
 		_build_shell()
@@ -241,6 +247,8 @@ static func _multimesh(parent: Node, name: String, model: String, xforms: Array)
 		var mmi := MultiMeshInstance3D.new()
 		mmi.name = "%s%d" % [name, i]
 		mmi.multimesh = mm
+		# A lightmap cannot hold a multimesh: lit by the lightmap's probes.
+		mmi.gi_mode = GeometryInstance3D.GI_MODE_DYNAMIC
 		parent.add_child(mmi)
 		mmi.owner = _root
 		made.append(mmi)
@@ -423,6 +431,35 @@ static func _build_lighting(g: Node3D) -> void:
 	var y: float = _data.light_y
 	var fixtures := []
 	var n := 0
+	# The hall is lit by its lightmap: the high-bays and their uplights are
+	# baked (direct light, shadows, and bounce) and removed in the game
+	# (scripts/baked_lights.gd), as on the other maps. Drawn live they cost
+	# about 14 ms a frame on Medium on the reference card, and SDFGI's bounce
+	# another 5 (docs/performance.md). Players and props that are not
+	# lightmapped take the light from the lightmap's probes.
+	var baked := Node3D.new()
+	baked.name = "BakedLights"
+	baked.set_script(load(BAKED_LIGHTS))
+	g.add_child(baked)
+	baked.owner = _root
+	# A LightmapGI bakes what is under its parent: it sits at the scene's root.
+	var lightmap := _root.get_node_or_null("LightmapGI") as LightmapGI
+	if lightmap == null:
+		lightmap = LightmapGI.new()
+		lightmap.name = "LightmapGI"
+		_root.add_child(lightmap)
+		lightmap.owner = _root
+	lightmap.max_texture_size = 4096
+	# Half the texel density the meshes ask for: the full hall at full
+	# density runs the reference card out of memory while baking.
+	lightmap.texel_scale = 0.7
+	# The kraft paper and cardboard bounce a strong orange; SDFGI, which lit
+	# the hall before, gave the bounce half its weight.
+	lightmap.bounce_indirect_energy = 0.6
+	# Finer probes, for the strewn clutter and players between the stacks.
+	lightmap.generate_probes_subdiv = LightmapGI.GENERATE_PROBES_SUBDIV_16
+	if lightmap.light_data == null and ResourceLoader.exists(LIGHTMAP):
+		lightmap.light_data = load(LIGHTMAP)
 	for p in _data.lights:
 		n += 1
 		fixtures.append(Transform3D(Basis(), Vector3(p[0], y, p[1])))
@@ -446,7 +483,11 @@ static func _build_lighting(g: Node3D) -> void:
 		spot.distance_fade_begin = 60.0
 		spot.distance_fade_shadow = 24.0
 		spot.distance_fade_length = 12.0
-		g.add_child(spot)
+		spot.light_bake_mode = Light3D.BAKE_STATIC
+		# An LED high-bay's panel is about half a metre across: soft baked
+		# shadows, as the live shadow maps' filtering gave.
+		spot.light_size = 0.5
+		baked.add_child(spot)
 		spot.owner = _root
 		# High-bays spill light upward, which is what lets the deck and joists
 		# read: photo 10 shows a light grey deck washed around every fixture.
@@ -459,9 +500,13 @@ static func _build_lighting(g: Node3D) -> void:
 		up.spot_range = 5.0
 		up.spot_angle = 85.0
 		up.light_volumetric_fog_energy = 0.0
-		g.add_child(up)
+		up.light_bake_mode = Light3D.BAKE_STATIC
+		baked.add_child(up)
 		up.owner = _root
-	_multimesh(g, "Fixtures", "high_bay_led", fixtures)
+	# Each lamp sits in its fixture's housing: kept out of the bake, the
+	# housing would shadow its own light off the whole hall.
+	for mmi: MultiMeshInstance3D in _multimesh(g, "Fixtures", "high_bay_led", fixtures):
+		mmi.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 	g.add_child(_dust(Vector3(13.5, 4.2, 3.5), Vector3(61, 8, 59), 700))
 	g.get_child(-1).owner = _root
 	var hall: Array = _data.hall
@@ -475,6 +520,8 @@ static func _build_lighting(g: Node3D) -> void:
 		rp.interior = true
 		rp.max_distance = 80.0
 		rp.ambient_mode = ReflectionProbe.AMBIENT_DISABLED
+		# About 1.5 ms on Medium on the reference card: High only.
+		rp.add_to_group(&"graphics_high_only", true)
 		g.add_child(rp)
 		rp.owner = _root
 	_log.append("lighting: %d high-bays" % n)
@@ -521,8 +568,8 @@ static func _dust(center: Vector3, size: Vector3, amount: int) -> GPUParticles3D
 	mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
 	mat.vertex_color_use_as_albedo = true
 	mat.albedo_color = Color(1.0, 0.96, 0.88, 0.5)
-	mat.proximity_fade_enabled = true
-	mat.proximity_fade_distance = 0.3
+	# No proximity fade: it makes the renderer copy the depth buffer every
+	# frame, for motes four millimetres across.
 	mat.distance_fade_mode = BaseMaterial3D.DISTANCE_FADE_PIXEL_ALPHA
 	mat.distance_fade_min_distance = 9.0
 	mat.distance_fade_max_distance = 0.5
@@ -603,6 +650,8 @@ static func _build_patches(g: Node3D) -> void:
 		var bm := BoxMesh.new()
 		bm.size = size
 		bm.material = _mat(p[7])
+		# Lightmap UVs, so the bake lights it.
+		bm.add_uv2 = true
 		mesh.mesh = bm
 		body.add_child(mesh)
 		mesh.owner = _root
@@ -635,6 +684,7 @@ static func _build_boxes(g: Node3D) -> void:
 			var bm := BoxMesh.new()
 			bm.size = size
 			bm.material = _mat(b.mat)
+			bm.add_uv2 = true
 			mesh.mesh = bm
 		if not b.collide:
 			mesh.name = b.name
@@ -792,7 +842,9 @@ const FX := "res://scripts/warehouse_fx.gd"
 ## The roof breach's daylight, sparks from a torn cable tray, flickering
 ## high-bays, forklift beacons, and steam from wall vents.
 static func _build_effects(g: Node3D) -> void:
-	var lights: Array = _root.get_node("PhotoPass/Lighting").find_children("HighBay*", "SpotLight3D", false, false)
+	var lighting := _root.get_node("PhotoPass/Lighting")
+	var baked := lighting.get_node("BakedLights")
+	var lights: Array = lighting.find_children("HighBay*", "SpotLight3D", true, false)
 	var n := 0
 	for e in _data.get("effects", []):
 		n += 1
@@ -808,6 +860,11 @@ static func _build_effects(g: Node3D) -> void:
 				sun.light_volumetric_fog_energy = 3.0
 				sun.shadow_enabled = true
 				sun.directional_shadow_max_distance = 120.0
+				# The shaft is baked into the lightmap; the live sun (its
+				# shadows cost about 1.4 ms on Medium) lights players and the
+				# haze on High only, where lightmapped surfaces skip it.
+				sun.light_bake_mode = Light3D.BAKE_STATIC
+				sun.add_to_group(&"graphics_high_only", true)
 				g.add_child(sun)
 				sun.owner = _root
 				# Denser haze under the breach makes the shaft read.
@@ -829,6 +886,13 @@ static func _build_effects(g: Node3D) -> void:
 					if best == null or d < Vector2(best.position.x - e.pos[0], best.position.z - e.pos[1]).length():
 						best = l
 				if best != null:
+					# A failing driver must stay live to flicker: out of the
+					# bake-only lights, its direct light drawn live and only
+					# its bounce baked.
+					best.get_parent().remove_child(best)
+					lighting.add_child(best)
+					best.owner = _root
+					best.light_bake_mode = Light3D.BAKE_DYNAMIC
 					best.set_script(load(FX))
 					best.set("kind", "flicker")
 			"lamp":
@@ -840,7 +904,10 @@ static func _build_effects(g: Node3D) -> void:
 				lamp.light_energy = e.get("energy", 1.6)
 				lamp.omni_range = e.get("range", 7.5)
 				lamp.shadow_enabled = e.get("shadow", true)
-				g.add_child(lamp)
+				# Baked like the high-bays (scripts/baked_lights.gd).
+				lamp.light_bake_mode = Light3D.BAKE_STATIC
+				lamp.light_size = 0.2
+				baked.add_child(lamp)
 				lamp.owner = _root
 			"sparks", "steam", "beacon", "smolder", "embers", "arc", "wisp", "drip", "dangle":
 				var fx := Node3D.new()

@@ -764,7 +764,11 @@ func _sanitize(key: StringName, value: Variant) -> Variant:
 
 
 func _on_node_added(node: Node) -> void:
-	if node is WorldEnvironment or node is DirectionalLight3D:
+	if (
+		node is WorldEnvironment
+		or node is DirectionalLight3D
+		or node.is_in_group(GraphicsQuality.HIGH_ONLY)
+	):
 		GraphicsQuality.adopt(node, graphics_quality)
 	elif _lens != null and node is SoldierRig:
 		# Contact shadows are for the eye: the dedicated server has no lens and
