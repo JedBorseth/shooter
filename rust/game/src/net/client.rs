@@ -227,9 +227,25 @@ pub struct NetClient {
     streak_loadout: Loadout,
     streak_selected: usize,
     sky: Vec<AirView>,
+    /// Care Packages out (`shooter_sim::care_package`), as the server said.
+    crates: Vec<CrateView>,
     /// Zombies: the horde as drawn, and the map's director mirroring the
     /// server's game.
     horde: Option<HordeView>,
+}
+
+/// A Care Package as the client knows it.
+#[derive(Clone, Copy)]
+struct CrateView {
+    id: u16,
+    owner: u8,
+    at: shooter_sim::Vec3,
+    heading: f32,
+    drop_at: Tick,
+    lands_at: Tick,
+    contents: Streak,
+    /// Who is capturing it, from and until which ticks.
+    capture: Option<(u8, Tick, Tick)>,
 }
 
 #[derive(Clone, Copy)]
@@ -542,6 +558,12 @@ impl NetClient {
     /// false when one left).
     #[signal]
     fn sky_changed(called: GString, ours: bool);
+
+    /// A Care Package was called in, captured, taken, or ran out
+    /// (`crates`). `taken_by` is who took one and `contents` the streak's
+    /// key (-1 and "" otherwise).
+    #[signal]
+    fn crates_changed(taken_by: i32, contents: GString);
 
     /// Every player, ourselves included, as dictionaries with `id`, `name`,
     /// `team`, `bot`, `me`, `score`, `kills`, `deaths`, `ping`, `ready`,
@@ -1022,6 +1044,46 @@ impl NetClient {
             d.set(key, self.seconds_until(until));
         }
         d
+    }
+
+    /// The Care Packages out, as dictionaries with `id`, `owner`, `mine`
+    /// (we called it), `position` (where it lands), `heading` (the
+    /// aircraft's, radians), `drop_seconds` and `land_seconds` (until the
+    /// aircraft lets it go and it lands; negative after), `contents` (the
+    /// streak's key) and `contents_name`, `capture_by` (-1 for nobody), and
+    /// `capture_progress` (0 to 1).
+    #[func]
+    fn crates(&self) -> Array<VarDictionary> {
+        let since = |tick: Tick| -> f64 {
+            let now = self.newest.unwrap_or(0);
+            (f64::from(tick) - f64::from(now)) / f64::from(TICK_RATE)
+        };
+        self.crates
+            .iter()
+            .map(|c| {
+                let mut d = VarDictionary::new();
+                d.set("id", i32::from(c.id));
+                d.set("owner", i32::from(c.owner));
+                d.set("mine", Some(c.owner) == self.player_id);
+                d.set("position", to_godot(c.at));
+                d.set("heading", c.heading);
+                d.set("drop_seconds", since(c.drop_at));
+                d.set("land_seconds", since(c.lands_at));
+                d.set("contents", c.contents.key());
+                d.set("contents_name", c.contents.label());
+                let (by, progress) = match c.capture {
+                    Some((by, started, done)) if done > started => {
+                        let now = self.newest.unwrap_or(started);
+                        let p = f64::from(now.saturating_sub(started)) / f64::from(done - started);
+                        (i32::from(by), p.clamp(0.0, 1.0))
+                    }
+                    _ => (-1, 0.0),
+                };
+                d.set("capture_by", by);
+                d.set("capture_progress", progress);
+                d
+            })
+            .collect()
     }
 
     /// Whether an enemy Counter-UAV jams our minimap.
@@ -1879,6 +1941,49 @@ impl NetClient {
                 self.streak_held = held;
                 self.streak_loadout = loadout;
                 self.signals().streaks_changed().emit(earned);
+            }
+            GameEvent::Streak(StreakEvent::CrateIncoming {
+                id,
+                owner,
+                at,
+                heading,
+                drop_at,
+                lands_at,
+                contents,
+            }) => {
+                self.crates.retain(|c| c.id != id);
+                self.crates.push(CrateView {
+                    id,
+                    owner,
+                    at,
+                    heading,
+                    drop_at,
+                    lands_at,
+                    contents,
+                    capture: None,
+                });
+                self.signals().crates_changed().emit(-1, "");
+            }
+            GameEvent::Streak(StreakEvent::CrateCapture {
+                id,
+                by,
+                started,
+                done_at,
+            }) => {
+                if let Some(c) = self.crates.iter_mut().find(|c| c.id == id) {
+                    c.capture = by.map(|by| (by, started, done_at));
+                }
+                self.signals().crates_changed().emit(-1, "");
+            }
+            GameEvent::Streak(StreakEvent::CrateTaken { id, by, contents }) => {
+                self.crates.retain(|c| c.id != id);
+                self.signals()
+                    .crates_changed()
+                    .emit(i32::from(by), contents.key());
+            }
+            GameEvent::Streak(StreakEvent::CrateGone { id }) => {
+                self.crates.retain(|c| c.id != id);
+                self.signals().crates_changed().emit(-1, "");
             }
             GameEvent::Streak(StreakEvent::Sky { up }) => {
                 let new = up.iter().find(|a| !self.sky.contains(a)).copied();

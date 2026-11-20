@@ -17,6 +17,7 @@ extends Control
 ##   red dots where they fired an unsuppressed weapon, or where our UAV's
 ##   sweep found them, fading out (`shooter_sim::radar`). Jammed by an enemy
 ##   Counter-UAV, static covers the plan and it shows nobody but us;
+## - landed Care Packages, ours blue and anyone else's white;
 ## - tags along its foot for every UAV and Counter-UAV up, ours blue and
 ##   the enemy's red.
 ## It hides during killcams, in Zombies, and on maps without a plan. `Net`
@@ -177,9 +178,28 @@ func _draw_icons() -> void:
 			var at := to_window(Vector2(feet.x, feet.z))
 			if _inside(at):
 				_arrow(at, window_angle(remote.view_angles().x), ALLY)
+	_draw_crates()
 	if player.is_alive():
 		_arrow(size / 2.0, window_angle(player.view_yaw()), UiTheme.TEXT)
 	_draw_sky()
+
+
+## Landed Care Packages, as small crates: ours in blue, anyone else's white.
+func _draw_crates() -> void:
+	for c: Dictionary in client.crates():
+		if float(c.land_seconds) > 0.0:
+			continue
+		var p: Vector3 = c.position
+		var at := to_window(Vector2(p.x, p.z))
+		if not _inside(at):
+			continue
+		var colour := ALLY if bool(c.mine) else UiTheme.TEXT
+		var rect := Rect2(at - Vector2(4.5, 3.5), Vector2(9, 7))
+		_icons.draw_rect(rect.grow(1.0), Color(0, 0, 0, 0.55))
+		_icons.draw_rect(rect, colour)
+		_icons.draw_line(
+			rect.position + Vector2(0, 3.5), rect.end - Vector2(0, 3.5), Color(0, 0, 0, 0.6)
+		)
 
 
 ## Tags along the window's foot for the UAVs and Counter-UAVs up: ours in

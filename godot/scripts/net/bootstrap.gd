@@ -64,6 +64,7 @@ const STATUS_SCRIPT := "res://scripts/net/net_status.gd"
 const TDM_HUD_SCRIPT := "res://scripts/net/tdm_hud.gd"
 const MINIMAP_SCRIPT := "res://scripts/net/minimap.gd"
 const STREAKS_HUD_SCRIPT := "res://scripts/net/streaks_hud.gd"
+const CARE_PACKAGE_VIEW_SCRIPT := "res://scripts/net/care_package_view.gd"
 const CTF_VIEW_SCRIPT := "res://scripts/net/ctf_view.gd"
 const HARDPOINT_VIEW_SCRIPT := "res://scripts/net/hardpoint_view.gd"
 const DOMINATION_VIEW_SCRIPT := "res://scripts/net/domination_view.gd"
@@ -376,6 +377,13 @@ func _attach_client(main: Node, target: String, options: Dictionary) -> void:
 	streaks.set("client", client)
 	streaks.set("player", player)
 	tdm_hud.add_child(streaks)
+	# Care Packages: the flyover, the crate, and its capture prompt.
+	var crates := Node3D.new()
+	crates.name = "CarePackageView"
+	crates.set_script(load(CARE_PACKAGE_VIEW_SCRIPT))
+	crates.set("client", client)
+	crates.set("player", player)
+	main.add_child(crates)
 	# Match stings: start, result, time warning, and rounds.
 	var stings := MatchStings.new()
 	stings.client = client

@@ -67,6 +67,7 @@ use godot::classes::{
 use godot::global::Error;
 use godot::prelude::*;
 use shooter_sim::bot::Skill;
+use shooter_sim::care_package;
 use shooter_sim::chat::{self, ChatLimiter};
 use shooter_sim::class::{Class, DefaultClass};
 use shooter_sim::ctf::{self, FlagEvent, FlagPlayer, FlagRules, FlagState, Flags};
@@ -338,6 +339,8 @@ pub struct NetServer {
     radar: Radar,
     /// The UAVs and Counter-UAVs up (`shooter_sim::streak`).
     sky: Sky,
+    /// Care Packages called in and not yet taken (`shooter_sim::care_package`).
+    crates: care_package::Crates,
     /// The map's lanes for bots to follow (`BotLanes`), from one side to the other.
     bot_lanes: Vec<Vec<Vector3>>,
     /// Tick of the next scoreboard update.
@@ -1158,6 +1161,36 @@ impl NetServer {
             .iter()
             .find(|a| i32::from(a.id) == id)
             .map_or(0, |a| a.streaks.progress as i32)
+    }
+
+    /// Debug: player `id` holds scorestreak `key` as if earned (tests).
+    #[func]
+    fn debug_give_streak(&mut self, id: i32, key: GString) {
+        let Some(streak) = Streak::by_key(&key.to_string()) else {
+            return;
+        };
+        if let Some(avatar) = self.avatars.iter_mut().find(|a| i32::from(a.id) == id) {
+            avatar.streaks.hold(streak);
+        }
+    }
+
+    /// The Care Packages out, as dictionaries with `id`, `owner`,
+    /// `position`, `landed`, and `contents` (tests).
+    #[func]
+    fn crates(&self) -> Array<VarDictionary> {
+        self.crates
+            .list
+            .iter()
+            .map(|c| {
+                let mut d = VarDictionary::new();
+                d.set("id", i32::from(c.id));
+                d.set("owner", i32::from(c.owner));
+                d.set("position", to_godot(c.at));
+                d.set("landed", c.landed(self.tick));
+                d.set("contents", c.contents.key());
+                d
+            })
+            .collect()
     }
 
     /// Debug: player `id` calls in their held streak `key` (tests).
@@ -2111,6 +2144,13 @@ impl NetServer {
                 self.send_streaks(id);
                 let sky = self.sky_event();
                 self.send_event(id, sky);
+                for crate_ in self.crates.list.clone() {
+                    self.send_event(id, crate_incoming(&crate_));
+                    if crate_.capture.is_some() {
+                        let capture = self.crate_capture_event(crate_.id);
+                        self.send_event(id, capture);
+                    }
+                }
                 self.balance_bots();
                 let event = self.match_event();
                 self.send_event(id, event);
@@ -2355,8 +2395,10 @@ impl NetServer {
             },
             last_stand: None,
             watch: Watch::default(),
-            streak_loadout: Loadout::default(),
-            streak_wanted: Loadout::default(),
+            // Bots bring every streak there is (Call of Duty's bots bring
+            // a fixed set).
+            streak_loadout: if bot { BOT_STREAKS } else { Loadout::default() },
+            streak_wanted: if bot { BOT_STREAKS } else { Loadout::default() },
             streaks: StreakState::default(),
             streak_seen: 0,
         });
@@ -2623,6 +2665,12 @@ impl NetServer {
 
     fn despawn_avatar(&mut self, id: u8) {
         self.radar.forget(id);
+        for change in self.crates.forget(id) {
+            if let care_package::Change::Capture { id } = change {
+                let event = self.crate_capture_event(id);
+                self.broadcast_event(&event);
+            }
+        }
         if let Some(index) = self.avatars.iter().position(|a| a.id == id) {
             let avatar = self.avatars.swap_remove(index);
             avatar.parts.body.upcast::<Node>().queue_free();
@@ -2719,6 +2767,7 @@ impl NetServer {
         let mut throw_checks = THROW_CHECKS_PER_TICK;
         let mut objectives = self.bot_objectives();
         self.scavenger_objectives(&mut objectives);
+        self.crate_objectives(&mut objectives);
         let frozen = self.frozen();
         // Planting and defusing hold the player still with the weapon away.
         let charge = self.charge;
@@ -5442,6 +5491,11 @@ impl NetServer {
                 self.sky.clear();
                 let sky = self.sky_event();
                 self.broadcast_event(&sky);
+                for change in self.crates.clear() {
+                    if let care_package::Change::Gone { id } = change {
+                        self.broadcast_event(&GameEvent::Streak(StreakEvent::CrateGone { id }));
+                    }
+                }
                 let ids: Vec<u8> = self.avatars.iter().map(|a| a.id).collect();
                 for id in ids {
                     self.send_streaks(id);
@@ -5924,6 +5978,7 @@ impl NetServer {
             let sky = self.sky_event();
             self.broadcast_event(&sky);
         }
+        self.update_crates();
         for side in self.sky.sweeps(self.tick) {
             let found: Vec<(u8, Vec3)> = self
                 .avatars
@@ -5963,6 +6018,18 @@ impl NetServer {
             return;
         }
         let side = self.side(avatar);
+        if !avatar.streaks.held.contains(&streak) {
+            return;
+        }
+        // A Care Package needs open sky to land in; without it the streak
+        // stays held.
+        let drop = match streak {
+            Streak::CarePackage => match self.crate_spot(avatar) {
+                Some(at) => Some(at),
+                None => return,
+            },
+            _ => None,
+        };
         let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
             return;
         };
@@ -5971,13 +6038,150 @@ impl NetServer {
         };
         avatar.streaks.select(index);
         avatar.streaks.take();
-        match streak {
-            Streak::Uav | Streak::CounterUav => self.sky.call(streak, id, side, tick),
+        match (streak, drop) {
+            (Streak::CarePackage, Some(at)) => {
+                let seed = rng::hash(
+                    u32::from(id) << 16 | u32::from(self.crates.list.len() as u8),
+                    tick,
+                );
+                let (crate_, pushed) = self.crates.call(id, at, tick, seed);
+                if let Some(old) = pushed {
+                    self.broadcast_event(&GameEvent::Streak(StreakEvent::CrateGone { id: old.id }));
+                }
+                self.broadcast_event(&crate_incoming(&crate_));
+            }
+            _ => self.sky.call(streak, id, side, tick),
         }
         godot_print!("server: player {id} called in a {}", streak.label());
         self.send_streaks(id);
         let sky = self.sky_event();
         self.broadcast_event(&sky);
+    }
+
+    /// Where `avatar`'s Care Package lands: the floor where they aim, up to
+    /// 40 m off, or at their feet, whichever is first under open sky (Black
+    /// Ops 2 drops it at the thrown marker). None when neither is.
+    fn crate_spot(&self, avatar: &Avatar) -> Option<Vec3> {
+        const REACH: f32 = 40.0;
+        const SKY: f32 = 80.0;
+        let mut space = self
+            .base()
+            .get_world_3d()
+            .and_then(|world| world.get_direct_space_state())?;
+        let feet = to_godot(avatar.predicted.position);
+        let eye = feet + Vector3::UP * 1.6;
+        let dir = to_godot(shooter_sim::look::view_direction(avatar.yaw, avatar.pitch));
+        let aimed = world_hit(&mut space, eye, eye + dir * REACH).map(|hit| hit - dir * 0.6);
+        for spot in aimed
+            .into_iter()
+            .chain(std::iter::once(feet + Vector3::UP * 0.2))
+        {
+            let floor = world_hit(
+                &mut space,
+                spot + Vector3::UP * 0.3,
+                spot - Vector3::UP * 30.0,
+            )?;
+            let open = world_hit(
+                &mut space,
+                floor + Vector3::UP * 0.5,
+                floor + Vector3::UP * SKY,
+            )
+            .is_none();
+            if open {
+                return Some(to_sim(floor));
+            }
+        }
+        None
+    }
+
+    /// Runs the Care Packages: captures, the streak to whoever takes one,
+    /// and crates running out.
+    fn update_crates(&mut self) {
+        if self.crates.list.is_empty() {
+            return;
+        }
+        let takers: Vec<care_package::Taker> = self
+            .avatars
+            .iter()
+            .map(|a| care_package::Taker {
+                id: a.id,
+                feet: a.predicted.position,
+                holding: a.interact && a.predicted.state.alive(),
+            })
+            .collect();
+        for change in self.crates.update(self.tick, &takers) {
+            match change {
+                care_package::Change::Capture { id } => {
+                    let event = self.crate_capture_event(id);
+                    self.broadcast_event(&event);
+                }
+                care_package::Change::Taken { id, by, contents } => {
+                    if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == by) {
+                        avatar.streaks.hold(contents);
+                    }
+                    self.send_streaks(by);
+                    self.broadcast_event(&GameEvent::Streak(StreakEvent::CrateTaken {
+                        id,
+                        by,
+                        contents,
+                    }));
+                }
+                care_package::Change::Gone { id } => {
+                    self.broadcast_event(&GameEvent::Streak(StreakEvent::CrateGone { id }));
+                }
+            }
+        }
+    }
+
+    fn crate_capture_event(&self, id: u16) -> GameEvent {
+        let capture = self
+            .crates
+            .list
+            .iter()
+            .find(|c| c.id == id)
+            .and_then(|c| c.capture);
+        GameEvent::Streak(StreakEvent::CrateCapture {
+            id,
+            by: capture.map(|c| c.by),
+            started: capture.map_or(0, |c| c.started),
+            done_at: capture.map_or(0, |c| c.done_at),
+        })
+    }
+
+    /// Bots go for a landed crate near them: their own within 40 m, anyone
+    /// else's within 15 m, and hold use on it when there.
+    fn crate_objectives(&self, objectives: &mut Vec<(u8, Option<BotObjective>)>) {
+        for avatar in self.avatars.iter().filter(|a| a.brain.is_some()) {
+            if !avatar.predicted.state.alive() {
+                continue;
+            }
+            let current = objectives.iter().position(|(id, _)| *id == avatar.id);
+            let busy = current
+                .and_then(|i| objectives[i].1)
+                .is_some_and(|o| matches!(o.kind, ObjectiveKind::Run | ObjectiveKind::Use));
+            if busy {
+                continue;
+            }
+            let feet = avatar.predicted.position;
+            let Some(crate_) = self.crates.list.iter().find(|c| {
+                let range = if c.owner == avatar.id { 40.0 } else { 15.0 };
+                c.landed(self.tick) && c.at.distance(feet) <= range
+            }) else {
+                continue;
+            };
+            let d = crate_.at - feet;
+            let at = to_godot(crate_.at);
+            let objective =
+                if Vec3::new(d.x, 0.0, d.z).length() < care_package::CAPTURE_RADIUS * 0.6 {
+                    BotObjective::use_here(at)
+                } else {
+                    BotObjective::run(at)
+                };
+            match current {
+                Some(i) => objectives[i].1 = Some(objective),
+                None => objectives.push((avatar.id, Some(objective))),
+            }
+        }
     }
 
     /// Tells `id` their streak count and what they hold.
@@ -7008,6 +7212,25 @@ fn pickup_in_reach(
         .ok()?;
     let pickup = pickup.bind();
     (pickup.weapon_id() == Some(weapon)).then(|| pickup.price())
+}
+
+/// The scorestreaks bots bring.
+const BOT_STREAKS: Loadout = Loadout([
+    Some(Streak::Uav),
+    Some(Streak::CounterUav),
+    Some(Streak::CarePackage),
+]);
+
+fn crate_incoming(c: &care_package::Crate) -> GameEvent {
+    GameEvent::Streak(StreakEvent::CrateIncoming {
+        id: c.id,
+        owner: c.owner,
+        at: c.at,
+        heading: c.heading,
+        drop_at: c.drop_at,
+        lands_at: c.lands_at,
+        contents: c.contents,
+    })
 }
 
 fn joined_event(avatar: &Avatar) -> GameEvent {
