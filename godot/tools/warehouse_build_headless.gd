@@ -30,6 +30,7 @@ func _run() -> void:
 			"stock",
 			"patches",
 			"boxes",
+			"detail",
 			"effects",
 			"clip",
 			"gameplay",

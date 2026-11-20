@@ -18,7 +18,11 @@ from __future__ import annotations
 import json
 import math
 import random
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import warehouse_detail_layout  # noqa: E402
 
 OUT = Path(__file__).resolve().parents[2] / "godot/tools/warehouse_photo_layout.json"
 rng = random.Random(1118)
@@ -540,7 +544,9 @@ place("stack_single", 17.7, 3.8, 0, 1.6, 1.3, 1.1)           # first step (1.1 m
 place("stack_wide_low", 8.5, 5.5, 90, 2.0, 1.6, 1.1, jitter_yaw=20)
 place("stack_wide_low", 11.5, -2.0, 90, 2.0, 1.6, 1.1, jitter_yaw=20)
 place("roll_stack_mixed", 19.0, 0.0, 90, 2.0, 1.45, 2.8, jitter_yaw=12)
-for k, (x, z, yaw) in enumerate([(10.0, 1.0, 20), (16.5, 7.5, 70), (9.5, 8.0, 140)]):
+# (The detail pass, warehouse_detail_layout.py, lays the rest of the fallen
+# roof: a rubble mound, a folded deck sheet, debris, and puddles.)
+for k, (x, z, yaw) in enumerate([(9.5, 8.0, 140)]):
     place("deck_panel", x, z, yaw, 2.4, 1.2, 0.08, jitter_yaw=10, collide=False)
 EFFECTS.append(dict(kind="sun", hole=ROOF_HOLES[0]))
 EFFECTS.append(dict(kind="flicker", pos=[-4.8, -22.0]))     # back aisle high-bay
@@ -610,12 +616,15 @@ def main():
         floors=FLOORS, walls=WALLS, platforms=PLATFORMS, roofs=ROOFS,
         girder_x=GIRDER_X, column_z=COLUMN_Z, wing_girder_x=[], extra_columns=EXTRA_COLUMNS, skip_columns=SKIP_COLUMNS, wing_column_z=[],
         joist_spacing=JOIST_SPACING, hall=[-17.0, EAST, -26.0, 33.0], wing=[-35.5, -17.0, -24.5, 31.0],
-        lights=[[x, z] for x in LIGHT_X for z in LIGHT_Z if not in_hole(x, z)],
+        # The back aisle's dangling high-bay is built by its effect instead.
+        lights=[[x, z] for x in LIGHT_X for z in LIGHT_Z
+                if not in_hole(x, z) and (x, z) != warehouse_detail_layout.DANGLE],
         light_y=LIGHT_Y, windows=WINDOWS, doors=DOORS, trays=TRAYS, pipes=PIPES, drops=DROPS, lines=LINES,
         machines=MACHINES, fallback=FALLBACK, props=props,
         spawns=SPAWNS, reverb=REVERB, boundary=BOUNDARY, lanes=LANES, patches=PATCHES,
         boxes=BOXES, effects=EFFECTS, roof_holes=ROOF_HOLES,
     )
+    warehouse_detail_layout.dress(data)
     OUT.write_text(json.dumps(data, indent=1))
     print(f"wrote {OUT} with {len(props)} stock units, {len(MACHINES)} machines, {len(BOXES)} boxes")
 

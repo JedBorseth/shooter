@@ -4,6 +4,8 @@
 [ext_resource type="Texture2D" path="res://assets/textures/concrete_smooth/albedo.jpg" id="2"]
 [ext_resource type="Texture2D" path="res://assets/textures/concrete_smooth/normal.jpg" id="3"]
 [ext_resource type="Texture2D" path="res://assets/textures/warehouse/wall_masks.png" id="4"]
+[ext_resource type="Texture2D" path="res://assets/textures/warehouse/floor_layout_a.png" id="5"]
+[ext_resource type="Texture2D" path="res://assets/textures/warehouse/floor_layout_b.png" id="6"]
 
 [resource]
 resource_name = "Tilt-up wall"
@@ -11,3 +13,5 @@ shader = ExtResource("1")
 shader_parameter/detail_albedo = ExtResource("2")
 shader_parameter/detail_normal = ExtResource("3")
 shader_parameter/masks = ExtResource("4")
+shader_parameter/layout_a = ExtResource("5")
+shader_parameter/layout_b = ExtResource("6")

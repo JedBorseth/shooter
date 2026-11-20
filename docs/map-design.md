@@ -290,3 +290,87 @@ uv run --with numpy --with matplotlib tools/map_blockout/warehouse_measure.py gr
 
 `godot/tests/capture_warehouse.gd` renders the photo viewpoints and a top-down
 plan for comparison.
+
+### Detail pass (November 2026)
+
+![Warehouse before (left) and after (right) the detail pass: the fallen forklift by the west wall, the burnt-out switchboard, the smoke reaching the roof, the breach's rubble and puddles, the roof leak, and the south yard](media/warehouse-detail.jpg)
+
+The user's direction: make the hall look lived in and run down, as if a
+professional map maker had done a large detail pass; break up the repeating
+floor and walls; keep collision clean; and replace the steam on a blank wall
+with a fallen-over forklift smoking like it is broken, and more like it.
+
+Call of Duty's warehouse maps (Modern Warfare's Atlas Superstore, the
+wrecked interiors of Black Ops 3) dress a big shed this way: a few story set
+pieces you can read from across the room, clutter banked where it would
+gather, ground blended from painted masks rather than tiled, and none of the
+clutter in player clip.
+
+- **Floor** (`warehouse_floor.gdshader`). Every 5.5 m slab between the saw
+  cuts is its own pour: its own tone, roughness, and shifted, turned patch of
+  the detail and mask textures, with the seams hidden in the joints, so the
+  repeat never shows. One slab in ten is a newer patch pour ringed in sealant.
+  On top, masks painted over the whole map from the layout
+  (`tools/build_warehouse_floor_masks.py`, `floor_layout_a/b.png` at 10 px/m):
+  dust banked against walls, stock, and machines; forklift tyre tracks down
+  every long clear aisle with the polish they leave; puddles that fill the
+  slab's low spots first; oil under machines, trucks, and the wreck; scorch;
+  extinguisher powder; damp; and broken slab. Broken slab is cut in with
+  parallax occlusion mapping (`floor_damage.png`, spalls and cracks 3.5 cm
+  deep indoors, potholes 6 cm in the yards): purely visual, so collision stays
+  the flat slab. The yards use the same shader with weathered, stained
+  concrete.
+- **Walls** (`warehouse_tiltup.gdshader`). Every tilt-up panel is its own
+  casting (tone and texture patch), some lifting inserts weep rust, rain
+  streaks run down from the roof flashing on some panels, and a damp band with
+  a salt line sits at the foot. Walls read the floor masks at their foot: dust
+  banks against them, damp rises where water stands, and soot climbs above a
+  fire, widening as it rises.
+- **Set pieces** (`tools/map_blockout/warehouse_detail_layout.py`):
+  - North, west wall: a forklift on its side where the low stock stood,
+    smouldering. A dark smoke column rises, slows, and spreads into a haze
+    under the roof; small flames lick in the engine bay; a cable arcs; oil and
+    scorch spread on the slab and soot up the wall; its load, a broken pallet,
+    and a knocked-over cone lie round it. It collides as one box 1.1 m high,
+    the same cover the low stock gave, and players mantle onto it.
+  - South, east wall: a switchboard that arced and burnt out, its middle door
+    blown open, breakers charred, cables spilled, blue-white arcing and a wisp
+    of smoke, soot up the wall, cordoned with cones and barrier tape, an
+    emptied extinguisher in its powder.
+  - Middle: the roofing that came down through the breach: a rubble mound, a
+    folded deck sheet, debris, torn insulation hanging off the edges, a joist
+    hanging by one end (above 5 m), rain dripping off the edges into puddles,
+    and weeds in the wet slab.
+  - North, back aisle: the flickering high-bay now hangs off one hanger on its
+    chain at 5.5 m, swinging, its light swinging with it, spitting sparks.
+  - South: a roof leak dripping into a mop bucket, with a wet-floor sign.
+  - Oil drums on a spill tray by the maintenance shop, one knocked over and
+    leaking; pallet jacks left in two aisles.
+- **Clutter**: litter drifts (box blanks, stretch film, strapping, paper,
+  cups, bottles, offcuts), broken pallets, and debris against stock, machines,
+  and walls; extinguisher points, disconnect boxes, and notice boards on the
+  walls; a dumpster, bin bags, tyres, weeds, potholes, and oil stains in each
+  yard. Models: `tools/build_warehouse_detail_props.py` (Blender).
+
+**Collision.** Litter, debris, cones, tape, signs, weeds, and wall dressing
+never collide. A set piece that blocks has one simple shape: the wreck's box,
+the switchboard's cabinet, the drums, the dumpster, the bucket. The rubble
+mound is one low convex hull (0.3 m crown, slopes under 20 degrees), so
+sprinting or sliding players ride over it. `warehouse_test.gd` checks the
+wreck is mantle-height cover, the mound rises smoothly, no clip box is an
+ankle-high snag, and clutter casts no shadow.
+
+**Cost** (GTX 1660 Ti, 1080p, GPU ms, before / after, six views): Low
+5.5–7.3 / 5.6–8.1, Medium 9.6–11.9 / 9.9–12.4, High 12.1–14.6 /
+12.5–15.5. Views add 0.1–0.8 ms (the floor's masks about 0.2 ms); looking
+straight at the wreck's smoke adds about 1 ms. Warehouse was already over the
+budget before this pass.
+
+Rebuild:
+
+```sh
+blender -b --python tools/build_warehouse_detail_props.py
+python3 tools/map_blockout/warehouse_photo_layout.py
+uv run --with numpy --with pillow --with scipy tools/build_warehouse_floor_masks.py
+xvfb-run -a godot --path godot --script res://tools/warehouse_build_headless.gd
+```

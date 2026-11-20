@@ -27,7 +27,7 @@ static var _clip := {}
 static var _log: PackedStringArray
 
 
-static func build(root: Node3D, parts: Array = ["shell", "structure", "lighting", "utilities", "machines", "stock", "patches", "boxes", "effects", "clip", "gameplay"]) -> String:
+static func build(root: Node3D, parts: Array = ["shell", "structure", "lighting", "utilities", "machines", "stock", "patches", "boxes", "detail", "effects", "clip", "gameplay"]) -> String:
 	_root = root
 	_log = PackedStringArray()
 	_data = JSON.parse_string(FileAccess.get_file_as_string(LAYOUT))
@@ -40,7 +40,7 @@ static func build(root: Node3D, parts: Array = ["shell", "structure", "lighting"
 		_clear_old()
 		_build_shell()
 	var pass_node := _group(root, "PhotoPass")
-	for part in ["structure", "lighting", "utilities", "machines", "stock", "patches", "boxes", "effects"]:
+	for part in ["structure", "lighting", "utilities", "machines", "stock", "patches", "boxes", "detail", "effects"]:
 		if part in parts:
 			var g := _group(pass_node, part.capitalize())
 			for c in g.get_children():
@@ -54,6 +54,7 @@ static func build(root: Node3D, parts: Array = ["shell", "structure", "lighting"
 				"stock": _build_stock(g)
 				"patches": _build_patches(g)
 				"boxes": _build_boxes(g)
+				"detail": _build_detail(g)
 				"effects": _build_effects(g)
 	if "clip" in parts:
 		_clip_dressing()
@@ -217,10 +218,11 @@ static func _clip_dressing() -> void:
 	_log.append("clip: refit %d dressing bodies" % n)
 
 
-static func _multimesh(parent: Node, name: String, model: String, xforms: Array) -> void:
+static func _multimesh(parent: Node, name: String, model: String, xforms: Array) -> Array:
+	var made := []
 	var ps := _scene(model)
 	if ps == null or xforms.is_empty():
-		return
+		return made
 	var inst: Node3D = ps.instantiate()
 	var meshes := inst.find_children("*", "MeshInstance3D", true, false)
 	for i in meshes.size():
@@ -241,7 +243,9 @@ static func _multimesh(parent: Node, name: String, model: String, xforms: Array)
 		mmi.multimesh = mm
 		parent.add_child(mmi)
 		mmi.owner = _root
+		made.append(mmi)
 	inst.free()
+	return made
 
 
 static func _v(a: Array) -> Vector3:
@@ -671,6 +675,103 @@ static func _build_boxes(g: Node3D) -> void:
 	_log.append("boxes: %d" % n)
 
 
+# --- detail pass ------------------------------------------------------------------
+
+## The detail pass (tools/map_blockout/warehouse_detail_layout.py): set pieces
+## placed one by one, with the one smooth clip shape each needs (a wreck's box,
+## the rubble's low mound) or none at all, and strewn clutter drawn in batches
+## by quarter of the map, casting no shadows and never colliding, so nothing
+## catches a sprinting or sliding player.
+static func _build_detail(g: Node3D) -> void:
+	var n := 0
+	for d in _data.get("detail", []):
+		n += 1
+		if d.has("beam"):
+			_place_beam(g, d)
+			continue
+		var ps := _scene(d.model)
+		if ps == null:
+			continue
+		var collides: bool = d.has("clip") or d.has("hull")
+		var holder: Node3D = StaticBody3D.new() if collides else Node3D.new()
+		holder.name = d.get("name", "%s%02d" % [String(d.model).to_pascal_case(), n])
+		g.add_child(holder)
+		holder.owner = _root
+		var inst: Node3D = ps.instantiate()
+		holder.add_child(inst)
+		inst.owner = _root
+		var r: Array = d.rot
+		var s := Vector3.ONE
+		if d.has("scale"):
+			s = Vector3(d.scale[0], d.scale[1], d.scale[2])
+		inst.transform = Transform3D(
+			Basis.from_euler(Vector3(deg_to_rad(r[0]), 0.0, deg_to_rad(r[2])), EULER_ORDER_ZXY) * Basis.from_scale(s),
+			Vector3.ZERO)
+		# Centre what it now covers on the footprint, its lowest point on the
+		# base (or, for wall pieces, its back on the wall).
+		var box := _local_aabb(inst)
+		box = inst.transform * box
+		var c := box.get_center()
+		inst.position = Vector3(-c.x, -box.position.y, -box.position.z if d.get("back", false) else -c.z)
+		holder.position = _v(d.pos)
+		holder.rotation_degrees.y = r[1]
+		if not d.get("shadow", true):
+			for gi: GeometryInstance3D in inst.find_children("*", "GeometryInstance3D", true, false):
+				gi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var k := 0
+		for c2 in d.get("clip", []):
+			var shape := CollisionShape3D.new()
+			shape.name = "Clip%02d" % k
+			k += 1
+			var bs := BoxShape3D.new()
+			bs.size = Vector3(c2[3], c2[4], c2[5])
+			shape.shape = bs
+			shape.position = Vector3(c2[0], c2[1], c2[2])
+			holder.add_child(shape)
+			shape.owner = _root
+		if d.has("hull"):
+			var shape := CollisionShape3D.new()
+			shape.name = "Mound"
+			var hull := ConvexPolygonShape3D.new()
+			var pts := PackedVector3Array()
+			for q in d.hull:
+				pts.append(_v(q))
+			hull.points = pts
+			shape.shape = hull
+			holder.add_child(shape)
+			shape.owner = _root
+	var strewn := 0
+	for model in _data.get("scatter", {}):
+		var quarters := {}
+		for t in _data.scatter[model]:
+			var xf := Transform3D(
+				Basis.from_euler(Vector3(deg_to_rad(t[4]), deg_to_rad(t[3]), deg_to_rad(t[5])), EULER_ORDER_YXZ)
+					* Basis.from_scale(Vector3.ONE * t[6]),
+				Vector3(t[0], t[1], t[2]))
+			var q := ("N" if t[2] < 3.5 else "S") + ("W" if t[0] < 13.5 else "E")
+			quarters.get_or_add(q, []).append(xf)
+			strewn += 1
+		for q in quarters:
+			for mmi: MultiMeshInstance3D in _multimesh(g, "%s%s" % [String(model).to_pascal_case(), q], model, quarters[q]):
+				mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_log.append("detail: %d pieces, %d strewn" % [n, strewn])
+
+
+## A beam hung between two points (a joist torn loose at one end).
+static func _place_beam(g: Node3D, d: Dictionary) -> void:
+	var a := _v(d.beam[0])
+	var b := _v(d.beam[1])
+	var dir := b - a
+	var x := dir.normalized()
+	var z := x.cross(Vector3.UP).normalized()
+	var y := z.cross(x)
+	var basis := Basis(x * dir.length() / 10.0, y * float(d.get("depth", 1.0)), z)
+	# The joist model hangs below its axis line from 0 to its depth: put its
+	# top chord on the line between the two points.
+	var mid := (a + b) / 2.0 - y * float(d.get("depth", 1.0))
+	_multimesh(g, d.get("name", "Beam"), d.model, [Transform3D(basis, mid)])
+
+
 const FX := "res://scripts/warehouse_fx.gd"
 
 
@@ -726,12 +827,26 @@ static func _build_effects(g: Node3D) -> void:
 				lamp.shadow_enabled = true
 				g.add_child(lamp)
 				lamp.owner = _root
-			"sparks", "steam", "beacon":
+			"sparks", "steam", "beacon", "smolder", "embers", "arc", "wisp", "drip", "dangle":
 				var fx := Node3D.new()
 				fx.name = "%s%02d" % [String(e.kind).capitalize(), n]
 				fx.position = Vector3(e.pos[0], e.pos[1], e.pos[2])
 				fx.set_script(load(FX))
 				fx.set("kind", e.kind)
+				match e.kind:
+					"arc":
+						fx.set("floor_y", 0.0)
+					"dangle":
+						fx.set("length", e.length)
+					"drip":
+						# Drips fall to the slab, or into the water of a bucket
+						# standing under them.
+						var catch := 0.0
+						for d in _data.get("detail", []):
+							if d.model == "mop_bucket" and Vector2(d.pos[0] - e.pos[0], d.pos[2] - e.pos[2]).length() < 0.4:
+								catch = 0.3
+						fx.set("length", e.pos[1] - catch)
+						fx.set("fast", e.get("fast", false))
 				g.add_child(fx)
 				fx.owner = _root
 	_log.append("effects: %d" % n)
