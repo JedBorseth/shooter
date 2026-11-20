@@ -46,7 +46,6 @@ These pull requests are open, waiting for the owner to listen. Until they land, 
 - #344 to #348: the CQ-10, BP-9, KR-12, DM-7, and SG-12's own shots (they borrow the PDW-9's, M1911's, AK-47's, BR-3's, and M870's).
 - #396: the RL-4's launch and rocket flight (it fires with the M870's shot).
 - #395: every scorestreak's sounds (UAV, Counter-UAV, Care Package, shoot-downs; it also has sounds for the cut Airstrike, Guided Missile, Attack Chopper, and Sentry Gun to drop).
-- #284: jump, landing, mantle, vault, and sprint-out sounds from recordings.
 - #403 (a sting for a challenge completed mid-match): close; challenges were cut.
 
 #417 (a command-line `--connect` without `--map` loads the server's map) is also open.
@@ -73,6 +72,8 @@ These pull requests are open, waiting for the owner to listen. Until they land, 
 - [ ] Footsteps on water and in puddles, and a hollower step on stairs.
 - [ ] Other players' weapon switches and bolt or pump cycles, positional (only their reloads play today, `footsteps::Foley`).
 - [ ] An HRTF spatializer (for example a Steam Audio GDExtension) in place of stereo panning and the rear shelf, if playtests want sharper elevation and front and back.
+- [ ] Movement sounds from Freesound's original files instead of its previews (`tools/build_movement_audio.py build --originals ~/Downloads`), once they are downloaded.
+- [ ] A sprint-in sound (the weapon going down as a sprint starts), and the recovery breathing after a sprint from real recordings instead of synthesis.
 
 ## Settings and HUD
 

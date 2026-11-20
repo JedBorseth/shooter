@@ -3,8 +3,8 @@ extends SceneTree
 ## plays magazine out then in (and the bolt release after an empty one) inside
 ## the reload's time, a pump gun pumps back then forward and loads each shell,
 ## a bolt gun lifts, draws, pushes, and turns its bolt in order, and a switch
-## and aiming each have their sound. Every recording the events name
-## exists for every weapon.
+## and aiming each have their sound, and the end of a sprint plays the weapon
+## coming back up. Every recording the events name exists for every weapon.
 ##
 ## With FOLEY_TRACE set to a file path, it also writes every event with its
 ## time, for the review timelines (tools/audio_report.py).
@@ -43,6 +43,7 @@ func _run() -> void:
 	await _pump_case()
 	await _bolt_case()
 	await _switch_and_aim_case()
+	await _sprint_out_case()
 	_write_trace()
 	_finish()
 
@@ -63,7 +64,9 @@ func _check_files() -> void:
 		for event: String in need[weapon]:
 			var path := "res://assets/audio/weapons/%s/foley/%s_1.ogg" % [weapon, event]
 			_check(ResourceLoader.exists(path), "%s has a %s recording" % [weapon, event])
-	for shared in ["ads_in", "ads_out", "draw", "holster", "inspect", "pouch", "breath_hold"]:
+	for shared in [
+		"ads_in", "ads_out", "draw", "holster", "inspect", "pouch", "breath_hold", "sprint_out"
+	]:
 		var path := "res://assets/audio/foley/%s_1.ogg" % shared
 		_check(ResourceLoader.exists(path), "the shared %s layer exists" % shared)
 
@@ -159,6 +162,22 @@ func _switch_and_aim_case() -> void:
 	await _frames(30)
 	names = _names(_events_between("", start, _time))
 	_check(names == ["ads_in", "ads_out"], "aiming in and out, got %s" % [names])
+
+
+## Sprinting lowers the weapon; stopping brings it back up with its sound,
+## once.
+func _sprint_out_case() -> void:
+	await _draw("m4")
+	var start := _time
+	Input.action_press("move_forward")
+	await _hold("sprint", 2)
+	await _frames(60)
+	var during := _names(_events_between("", start, _time))
+	Input.action_release("move_forward")
+	await _frames(40)
+	var names := _names(_events_between("", start, _time))
+	_check(not "sprint_out" in during, "sprinting plays no sprint-out, got %s" % [during])
+	_check(names.count("sprint_out") == 1, "stopping a sprint plays it once, got %s" % [names])
 
 
 ## When the reload that ended last began: the first frame after `after` the
