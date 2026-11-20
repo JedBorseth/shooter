@@ -45,6 +45,14 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Data-driven weapon definitions: RON files in `godot/data/weapons/`, loaded at startup and hot-reloaded in debug builds.
 - [ ] Detailed weapon models from CC0 source packs (`tools/build_weapons.sh`): every gun done (the LSW-6 derived from the AK-47 with a longer barrel, bipod, and 75-round drum); modelled fired cases (brass, lacquered steel, and shotgun shells), suppressor, and foregrip done; the extended magazine shows; the M4A1's finish is painted from its geometry (`tools/weapon_finish.py`); the red dot and ACOG housings are modelled (`tools/weapon_optics.py`).
 - [x] More weapons: AK-47, PDW-9 SMG (with a red dot), M870 pump shotgun (pellets, shell-by-shell reload), M40 bolt-action sniper (scope overlay).
+- [ ] Black Ops 2-style roster, one weapon per PR, each held to its class's time-to-kill band (`every_weapon_lands_in_its_class_band`, [docs/weapons.md](docs/weapons.md#class-bands)):
+  - [x] Weapon classes and their bands; Create-a-Class grouped by class; bots carry any weapon of their default class's weapon class (`class::bot_class`).
+  - [x] CQ-10 SMG (the Skorpion EVO's role: fastest fire, shortest reach), from the Classic Weapons Pack's MAC-11. Its own firing sound is held for listening; it fires and reloads with the PDW-9's until then.
+  - [ ] Burst pistol (the B23R's role).
+  - [ ] A slower, harder-hitting assault rifle (the SCAR-H's role).
+  - [ ] Semi-automatic shotgun (the S12's role).
+  - [ ] Marksman rifle (the SVU-AS's role).
+  - [ ] Launcher: a free-flight rocket that also brings down scorestreak aircraft (the RPG's role).
 - [x] LMG (LSW-6: 75 rounds, slow aim and reload) and a burst-fire rifle (BR-3: `FireMode::Burst`, three rounds a pull, one burst kills up close).
 - [x] Attachments: red dot, ACOG, suppressor, grip, and extended magazine, as weapon variants (`Attachment::apply`), chosen in the loadout menu, with their parts on the first- and third-person models. The ACOG aims through its own eyepiece, with a lit chevron and the zoomed world inside it, instead of the sniper's overlay.
 - [x] Hold-breath sway for scoped weapons.

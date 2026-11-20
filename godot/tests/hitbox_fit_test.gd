@@ -167,7 +167,7 @@ func _states() -> Array[Dictionary]:
 		{"on_floor": false, "vaulting": true},
 		{"settle": 30, "velocity": Vector3(0, -2.0, -5.0)}
 	)
-	for weapon in ["ak47", "br3", "lsw6", "m40", "pdw9", "m870", "m1911"]:
+	for weapon in ["ak47", "br3", "lsw6", "m40", "pdw9", "cq10", "m870", "m1911"]:
 		add.call(weapon, {"weapon": weapon})
 		add.call(weapon + "_ads", {"weapon": weapon, "ads": 1.0})
 	for pitch_deg in [-89, -45, 45, 89]:

@@ -6,7 +6,7 @@ extends SceneTree
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
 ##     --script res://tests/capture_sights.gd
 
-const WEAPONS := ["m4", "ak47", "pdw9", "m870", "m1911", "lsw6", "br3"]
+const WEAPONS := ["m4", "ak47", "pdw9", "cq10", "m870", "m1911", "lsw6", "br3"]
 
 var _out := OS.get_environment("CAPTURE_DIR")
 

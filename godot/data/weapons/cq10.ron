@@ -1,0 +1,57 @@
+// CQ-10 submachine gun: the fastest-firing gun in the game and the shortest
+// reach. Four hits to about 12 m, then its damage falls away quickly (seven
+// past 20 m, eight past 22 m); a hard, jumpy climb. Black Ops 2's Skorpion
+// EVO: 33 damage to 10 m, 22 to 21 m, 18 beyond, no headshot bonus.
+(
+    name: "CQ-10",
+    class: Smg,
+    slot: Primary,
+    fire_mode: Auto,
+    rounds_per_minute: 1150,
+    magazine: 32,
+    reserve: 128,
+    damage: (near: 33, far: 14, falloff_start: 6, falloff_end: 22, headshot: 1.1),
+    range: 150,
+    penetration: 0.12,
+    reload: Magazine(time: 1.95, empty_time: 2.35, mag_in: Some(1.2)),
+    ads_time: 0.17,
+    sprint_out_time: 0.14,
+    raise_time: 0.32,
+    // First raise: Black Ops 2's for the class, scaled to our quicker draws.
+    first_raise_time: 0.75,
+    lower_time: 0.22,
+    spread: (hip: 1.4, hip_moving: 2.6, air: 5.0, ads: 0.0, bloom: 0.18, bloom_max: 1.6, ads_sway: 0.13),
+    ads_fov_scale: 0.86,
+    ads_move_scale: 0.72,
+    move_scale: 1.05,
+    // Light per round but nineteen rounds a second: it climbs and hops
+    // right and left harder than the PDW-9, so it loses at range.
+    recoil: (
+        pattern: [
+            (0.17, 0.04), (0.2, 0.1), (0.22, -0.05), (0.23, 0.13),
+            (0.23, 0.15), (0.22, -0.07), (0.22, 0.12), (0.21, 0.1),
+        ],
+        jitter: (0.06, 0.16),
+        ads_scale: 0.75,
+        kick_return: 0.45,
+        recovery_delay: 0.02,
+        recovery_rate: 20.0,
+    ),
+    tracer_every: 3,
+    // Black Ops 2's SMGs take no ACOG; it has its own reflex sight.
+    attachments: [Suppressor, Grip, ExtendedMag],
+    // The player level that unlocks it (Create-a-Class, docs/create-a-class.md).
+    unlock_level: 28,
+    // Hands on the model: GripRight and GripLeft in cq10_view.tscn.
+    grips: Some((right: (0, -0.1426, 0.0393), left: (0, -0.0994, -0.0924), rake: 12, section: Some((centre: (0.0000, -0.0785), half: (0.0174, 0.0139))))),
+    // Finger poses fitted to the model by tests/bake_hand_poses.gd:
+    // curl in degrees per joint (index, middle, ring, little, thumb), each
+    // finger's spread, and the hand's seat off its marker (m). Re-run it
+    // after moving the grips or changing the model.
+    hands: Some((
+        right: (fingers: ((21.5, 28, 51.5), (61, 65, 39.5), (57.5, 63.5, 37), (57.5, 58.5, 36), (-7.5, 4.5, 5)), spread: Some((-4, 0, 3, 7, 32)), seat: (0.012, 0.003, -0.012)),
+        index_off: (4, 6, 4),
+        left: (fingers: ((63, 65, 51.5), (60, 65.5, 50), (71, 70.5, 43), (65, 65, 38), (12.5, 32.5, 25)), spread: Some((-6, -1, 3, 9, 38)), seat: (0, 0, 0)),
+        left_foregrip: Some((fingers: ((62, 67, 39), (73, 81.5, 64.5), (80, 85, 45), (85, 85, 45), (21.5, 42.5, 65.5)), spread: Some((-2, 0, 2, 4, 40)), seat: (0.012, 0.009, -0.009))),
+    )),
+)

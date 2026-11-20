@@ -263,6 +263,15 @@ impl KickFeel {
                 zeta: 0.8,
                 ..rifle
             },
+            // Faster and jumpier than the PDW-9: more roll and sideways hop,
+            // settling quickly between rounds.
+            "cq10" => Self {
+                aim_lift: 0.46,
+                aim_yaw: 0.24,
+                aim_roll: 0.65,
+                zeta: 0.8,
+                ..rifle
+            },
             "br3" => Self {
                 aim_lift: 0.4,
                 aim_yaw: 0.08,
@@ -885,6 +894,7 @@ impl WeaponView {
         let mut foley = WeaponFoley::new_alloc();
         foley.set_name("Foley");
         foley.bind_mut().weapon = self.weapon.clone();
+        foley.bind_mut().lender = self.sound_from.clone();
         self.base_mut().add_child(&foley);
         let callable = foley.callable("play");
         self.base_mut().connect("foley_event", &callable);

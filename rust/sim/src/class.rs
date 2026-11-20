@@ -33,8 +33,9 @@
 
 use crate::equipment;
 pub use crate::perk::{Perk, Perks, Tier};
+use crate::rng;
 pub use crate::weapon::Attachments;
-use crate::weapon::{Attachment, CombatState, Slot, WeaponId};
+use crate::weapon::{Attachment, CombatState, Slot, WeaponDef, WeaponId};
 
 /// Points a class can spend (Black Ops 2's Pick 10).
 pub const PICKS: u8 = 10;
@@ -469,10 +470,61 @@ impl DefaultClass {
     }
 }
 
+/// A bot's class for one life, from `roll` (any hash): a default class, as
+/// Call of Duty's bots take, with its primary swapped for any weapon of the
+/// same weapon class (so bots carry every SMG, not only the default's) and
+/// its sidearm for any of the secondaries a default class could carry.
+/// Attachments the new weapon does not take are left off.
+pub fn bot_class(roll: u32) -> Class {
+    let default = DefaultClass::ALL[roll as usize % DefaultClass::ALL.len()];
+    let mut class = default.class();
+    let swap = |gun: Option<Gun>, salt: u32, allowed: &dyn Fn(&WeaponDef) -> bool| {
+        let gun = gun?;
+        let kind = gun.base.def().class;
+        let pool: Vec<WeaponId> = class_weapons(gun.base.def().slot)
+            .into_iter()
+            .filter(|id| id.def().class == kind && allowed(id.def()))
+            .collect();
+        let Some(&base) = pool.get((rng::hash(roll, salt) as usize) % pool.len().max(1)) else {
+            return Some(gun);
+        };
+        let offered = &base.def().attachments;
+        let kept: Vec<Attachment> = gun
+            .attachments
+            .iter()
+            .filter(|a| offered.contains(a))
+            .collect();
+        Some(Gun::with(base, &kept))
+    };
+    class.primary = swap(class.primary, 0x5eed_0001, &|_| true);
+    class.secondary = swap(class.secondary, 0x5eed_0002, &|_| true);
+    class
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use equipment::Kind;
+
+    #[test]
+    fn bot_classes_are_valid_and_carry_every_gun_of_the_defaults_classes() {
+        let mut seen = std::collections::HashSet::new();
+        for roll in 0..4000u32 {
+            let class = bot_class(rng::hash(roll, 7));
+            assert_eq!(class.validate(), Ok(()), "roll {roll}");
+            for id in class.weapons().into_iter().flatten() {
+                seen.insert(id.plain().def().key.clone());
+            }
+        }
+        for default in DefaultClass::ALL {
+            let kind = default.class().primary.unwrap().base.def().class;
+            for id in class_weapons(Slot::Primary) {
+                if id.def().class == kind {
+                    assert!(seen.contains(&id.def().key), "{}", id.def().key);
+                }
+            }
+        }
+    }
 
     fn m4() -> WeaponId {
         WeaponId::expect("m4")

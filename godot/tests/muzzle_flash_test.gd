@@ -7,7 +7,7 @@ extends SceneTree
 ## godot --headless --path godot --script res://tests/muzzle_flash_test.gd
 
 const ATLAS := "res://assets/textures/effects/muzzle_flash_4x4.png"
-const WEAPONS := ["m4", "ak47", "pdw9", "m870", "lsw6", "br3", "m40", "pistol"]
+const WEAPONS := ["m4", "ak47", "pdw9", "cq10", "m870", "lsw6", "br3", "m40", "pistol"]
 
 var _failures := 0
 
