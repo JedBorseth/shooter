@@ -1101,6 +1101,50 @@ for _key in DRINKS:
     _register_drink(_key)
 
 
+# A drink's bottle, as the first-person hands drink it (rust/game/src/viewmodel.rs
+# `drink_hands`): 0.2 m tall to the top of its neck, origin at the middle of its
+# base, +y up the neck; glass in the drink's colour, a cream label with a band of
+# its light colour. The cap is a model of its own (drink_cap), flicked off.
+LOOKS["bottle_label"] = {"color": (0.8, 0.76, 0.66), "rough": 0.6}
+
+
+def _ring(y, r, sides=14):
+    return [(r * math.cos(2 * PI * k / sides), y, r * math.sin(2 * PI * k / sides)) for k in range(sides)]
+
+
+def _drink_bottle(b: Model, key: str):
+    glass, band = f"drink_{key}", f"drink_glow_{key}"
+    b.cyl("y", 0.0, 0.012, (0.0, 0.0), 0.029, glass, sides=14)
+    b.cyl("y", 0.008, 0.12, (0.0, 0.0), 0.031, glass, sides=14)
+    # The shoulder tapers to the neck, which ends in a lip under the cap.
+    b.hull(_ring(0.118, 0.031) + _ring(0.15, 0.013), glass)
+    b.cyl("y", 0.148, 0.19, (0.0, 0.0), 0.0125, glass, sides=12)
+    b.cyl("y", 0.186, 0.2, (0.0, 0.0), 0.0145, glass, sides=12)
+    # The label round the body, and its band.
+    b.cyl("y", 0.03, 0.1, (0.0, 0.0), 0.0318, "bottle_label", sides=14)
+    b.cyl("y", 0.055, 0.075, (0.0, 0.0), 0.0322, band, sides=14)
+
+
+def _register_bottle(key: str):
+    def bottle(b: Model):
+        _drink_bottle(b, key)
+
+    bottle.__doc__ = f"The {DRINKS[key][0].title()} bottle (see _drink_bottle)."
+    MODELS[f"drink_bottle_{key}"] = bottle
+
+
+for _key in DRINKS:
+    _register_bottle(_key)
+
+
+@model
+def drink_cap(b: Model):
+    """A drink bottle's crown cap, origin at the middle of its underside (on
+    the bottle's neck), +y up: a crimped steel disc 1.2 cm tall."""
+    b.cyl("y", 0.0, 0.008, (0.0, 0.0), 0.0165, "machine_steel", sides=14)
+    b.cyl("y", 0.006, 0.012, (0.0, 0.0), 0.015, "machine_steel", sides=14)
+
+
 LOOKS["pad_concrete"] = {"color": (0.45, 0.44, 0.42), "rough": 0.9}
 LOOKS["hazard_yellow"] = {"color": (0.85, 0.66, 0.08), "rough": 0.6}
 LOOKS["lamp_off"] = {"color": (0.18, 0.05, 0.04), "rough": 0.2}

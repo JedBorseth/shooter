@@ -4326,9 +4326,9 @@ impl NetServer {
         };
         avatar.zombies.points -= price;
         state.drinks = state.drinks.with(drink);
-        // The drink: the weapon goes down and comes back up.
+        // The drink: the weapon goes down for the bottle and comes back up.
         let shots = state.combat.shots_fired;
-        state.combat = state.combat.raised();
+        state.combat = state.combat.drinking(drink);
         state.combat.shots_fired = shots;
         godot_print!("server: player {id} drank {}", drink.label());
         let left =
