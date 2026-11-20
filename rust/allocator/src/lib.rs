@@ -89,6 +89,20 @@ pub struct AllocateRequest {
     /// The match handler's match id, for the server's name and logs.
     #[serde(default)]
     pub match_id: String,
+    /// A private match (docs/custom-games.md): unranked, with the host's
+    /// custom settings and bots per team, waiting in its lobby until every
+    /// player is ready instead of starting at once.
+    #[serde(default)]
+    pub private: bool,
+    /// Private matches: custom settings in their text form ("hardcore=on").
+    #[serde(default)]
+    pub custom: String,
+    /// Private matches: bots on each team ("3,6") and their difficulty
+    /// ("easy,hard").
+    #[serde(default)]
+    pub team_bots: String,
+    #[serde(default)]
+    pub team_bot_skill: String,
 }
 
 /// Where players connect.
@@ -145,6 +159,30 @@ impl AllocateRequest {
                 "Search and Destroy needs Slamcity or Breakwater".into(),
             ));
         }
+        // These go into the server's environment: only the characters their
+        // text forms use, so nothing else can ride along.
+        let plain = |text: &str, max: usize| {
+            text.len() <= max
+                && text
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '=' || c == ',')
+        };
+        if !plain(&self.custom, 256) {
+            return Err(AllocateError::BadRequest("bad custom settings".into()));
+        }
+        let pair = |text: &str, ok: &dyn Fn(&str) -> bool| {
+            text.is_empty() || text.split_once(',').is_some_and(|(a, b)| ok(a) && ok(b))
+        };
+        if !pair(&self.team_bots, &|n| {
+            !n.is_empty() && n.len() <= 2 && n.chars().all(|c| c.is_ascii_digit())
+        }) {
+            return Err(AllocateError::BadRequest("bad team bots".into()));
+        }
+        if !pair(&self.team_bot_skill, &|s| {
+            matches!(s, "easy" | "normal" | "hard")
+        }) {
+            return Err(AllocateError::BadRequest("bad team bot skill".into()));
+        }
         Ok(())
     }
 }
@@ -169,7 +207,9 @@ const BOTS: u8 = 11;
 /// on `port`.
 pub fn container_spec(config: &Config, request: &AllocateRequest, port: u16) -> Value {
     let query = port + 1;
-    let name = if request.match_id.is_empty() {
+    let name = if request.private {
+        format!("Private match {port}")
+    } else if request.match_id.is_empty() {
         format!("Matchmade {port}")
     } else {
         format!(
@@ -185,10 +225,23 @@ pub fn container_spec(config: &Config, request: &AllocateRequest, port: u16) -> 
         format!("SHOOTER_NAME={name}"),
         format!("SHOOTER_BOTS={BOTS}"),
         format!("SHOOTER_BOT_SKILL={}", config.bot_skill),
-        "SHOOTER_AUTO_START=1".to_owned(),
         format!("SHOOTER_EXIT_WHEN_EMPTY={}", config.exit_when_empty),
     ];
-    if !config.accounts_url.is_empty() {
+    if request.private {
+        // The host's rules, unranked, in a lobby that waits for everyone.
+        for (key, value) in [
+            ("SHOOTER_CUSTOM", &request.custom),
+            ("SHOOTER_TEAM_BOTS", &request.team_bots),
+            ("SHOOTER_TEAM_BOT_SKILL", &request.team_bot_skill),
+        ] {
+            if !value.is_empty() {
+                env.push(format!("{key}={value}"));
+            }
+        }
+    } else {
+        env.push("SHOOTER_AUTO_START=1".to_owned());
+    }
+    if !config.accounts_url.is_empty() && !request.private {
         env.push(format!("SHOOTER_ACCOUNTS={}", config.accounts_url));
         env.push(format!("SHOOTER_ACCOUNTS_KEY={}", config.accounts_key));
     }
@@ -237,6 +290,59 @@ mod tests {
             map: map.into(),
             players: 2,
             match_id: "0c1e5a77-1234".into(),
+            private: false,
+            custom: String::new(),
+            team_bots: String::new(),
+            team_bot_skill: String::new(),
+        }
+    }
+
+    #[test]
+    fn private_matches_carry_the_hosts_rules_unranked() {
+        let config = Config {
+            accounts_url: "http://nakama:7350".into(),
+            accounts_key: "secret".into(),
+            ..Config::default()
+        };
+        let private = AllocateRequest {
+            private: true,
+            custom: "hardcore=on,ff=reflect".into(),
+            team_bots: "2,6".into(),
+            team_bot_skill: "easy,hard".into(),
+            ..request("tdm", "slamcity")
+        };
+        assert_eq!(private.validate(), Ok(()));
+        let spec = container_spec(&config, &private, 27100);
+        let env: Vec<&str> = spec["Env"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        assert!(env.contains(&"SHOOTER_CUSTOM=hardcore=on,ff=reflect"));
+        assert!(env.contains(&"SHOOTER_TEAM_BOTS=2,6"));
+        assert!(env.contains(&"SHOOTER_TEAM_BOT_SKILL=easy,hard"));
+        assert!(
+            !env.iter().any(|e| e.starts_with("SHOOTER_ACCOUNTS")),
+            "unranked"
+        );
+        assert!(!env.contains(&"SHOOTER_AUTO_START=1"), "waits in its lobby");
+        // Nothing past the text forms' characters.
+        for bad in [
+            AllocateRequest {
+                custom: "ff=on;rm -rf".into(),
+                ..private.clone()
+            },
+            AllocateRequest {
+                team_bots: "2,6,9".into(),
+                ..private.clone()
+            },
+            AllocateRequest {
+                team_bot_skill: "easy,godlike".into(),
+                ..private.clone()
+            },
+        ] {
+            assert!(bad.validate().is_err(), "{bad:?}");
         }
     }
 

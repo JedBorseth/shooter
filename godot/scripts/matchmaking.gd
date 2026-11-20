@@ -17,6 +17,12 @@ extends Node
 ## Call of Duty's quick play works the same way: pick a playlist, the party
 ## queues together, and the back end puts the lobby on a
 ## server.
+##
+## - **Private matches** (docs/custom-games.md): the party leader picks the
+##   map, mode, custom settings, and bots in the match setup and starts it
+##   (`start_private`, the `private_match_start` RPC). The party gets an
+##   unranked server of its own that waits in its lobby, where everyone
+##   picks a team and readies up.
 
 signal changed
 ## Someone invited us to their party.
@@ -66,6 +72,8 @@ var _connecting := false
 var _ticket := ""
 var _match_id := ""
 var _falling_back := false
+## Join the next match's server as a spectator (the private match's host).
+var _spectate := false
 
 
 func _ready() -> void:
@@ -229,6 +237,34 @@ func cancel_search() -> void:
 	_set_state(State.IDLE)
 
 
+## The party leader's private match: `options` as the match setup gives them
+## (`mode`, `map`, `custom`, `team_bots`, `team_bot_skill`, `spectate`). The
+## whole party joins an unranked server that waits in its lobby.
+func start_private(options: Dictionary) -> bool:
+	if state != State.IDLE:
+		return false
+	if not is_leader():
+		return _fail("The party leader starts the match.")
+	if not await ensure_socket():
+		return false
+	mode = String(options.get("mode", "tdm"))
+	_set_state(State.STARTING)
+	var others := members.keys().filter(func(id: String) -> bool: return id != Online.user_id)
+	var request := {"users": others}
+	for key: String in ["mode", "map", "custom", "team_bots", "team_bot_skill"]:
+		request[key] = String(options.get(key, ""))
+	var result: NakamaAPI.ApiRpc = await (Online.nakama_client().rpc_async(
+		Online.session(), "private_match_start", JSON.stringify(request)
+	))
+	var parsed: Variant = null if result.is_exception() else JSON.parse_string(result.payload)
+	if not parsed is Dictionary:
+		_set_state(State.IDLE)
+		return _fail("The private match could not start. Try again.")
+	_spectate = bool(options.get("spectate", false))
+	await _join_match(String(parsed.get("match_id", "")))
+	return true
+
+
 ## Nobody to match with: stop searching and play with bots.
 func _start_own_match() -> void:
 	_falling_back = true
@@ -294,7 +330,12 @@ func _on_match_state(data: NakamaRTAPI.MatchData) -> void:
 		message = ""
 		match_found.emit(address, map)
 		if auto_join:
-			Net.join(address, {"map": map, "name": "Quick play"})
+			var private := bool(parsed.get("private", false))
+			var options := {"map": map, "name": "Private match" if private else "Quick play"}
+			if _spectate:
+				options["spectate"] = true
+			_spectate = false
+			Net.join(address, options)
 	else:
 		return
 	if _match_id != "" and _socket != null:

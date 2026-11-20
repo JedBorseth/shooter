@@ -1799,6 +1799,15 @@ impl NetClient {
     /// `custom` (any differ from the normal rules), `text` (the text form),
     /// `hardcore`, `health` (percent), `regen`, `friendly_fire`, `killcam`,
     /// `radar` ("normal", "constant", or "off"), `streaks`, and `loadouts`.
+    /// In the lobby: asks to move to the other team (a private match's team
+    /// swap). The roster shows the move once the server makes it.
+    #[func]
+    fn switch_team(&mut self) {
+        if !self.spectator {
+            self.send_reliable(&ClientMessage::SwitchTeam);
+        }
+    }
+
     /// Whether the server let us in as a spectator.
     #[func]
     fn is_spectator(&self) -> bool {

@@ -7,7 +7,7 @@ server. It ends once its players have taken the address (or after a minute
 without them), or when no server could be had.
 
 Messages to players (op codes):
-  1  ADDRESS  {host, port, mode, map}
+  1  ADDRESS  {host, port, mode, map, private}
   2  FAILED   {reason}
 
 Settings come from Nakama's runtime environment (compose.yml):
@@ -46,6 +46,10 @@ local function allocate(context, state)
     map = state.map,
     players = state.player_count,
     match_id = context.match_id,
+    private = state.private,
+    custom = state.custom,
+    team_bots = state.team_bots,
+    team_bot_skill = state.team_bot_skill,
   })
   local headers = {
     ["Content-Type"] = "application/json",
@@ -65,18 +69,43 @@ local function allocate(context, state)
     end
     return nil, "The match server could not be started. Try again."
   end
-  return { host = decoded.host, port = decoded.port, mode = state.mode, map = state.map }
+  return {
+    host = decoded.host,
+    port = decoded.port,
+    mode = state.mode,
+    map = state.map,
+    private = state.private,
+  }
+end
+
+-- Whether `map` is one `mode` is played on.
+local function plays_on(mode, map)
+  for _, candidate in ipairs(MAPS[mode] or {}) do
+    if candidate == map then
+      return true
+    end
+  end
+  return false
 end
 
 function M.match_init(_context, params)
-  local maps = MAPS[params.mode] or MAPS.tdm
+  local mode = MAPS[params.mode] and params.mode or "tdm"
+  local maps = MAPS[mode]
   local count = 0
   for _ in pairs(params.users or {}) do
     count = count + 1
   end
   local state = {
-    mode = MAPS[params.mode] and params.mode or "tdm",
-    map = maps[math.random(#maps)],
+    mode = mode,
+    -- A private match plays the host's map; matchmade ones a random one.
+    map = plays_on(mode, params.map) and params.map or maps[math.random(#maps)],
+    -- Private matches (matchmaking.lua's private_match_start): unranked,
+    -- with the host's custom settings and bots per team; the allocator
+    -- checks each string.
+    private = params.private == true,
+    custom = type(params.custom) == "string" and params.custom or "",
+    team_bots = type(params.team_bots) == "string" and params.team_bots or "",
+    team_bot_skill = type(params.team_bot_skill) == "string" and params.team_bot_skill or "",
     users = params.users or {},
     player_count = count,
     presences = {},

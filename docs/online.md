@@ -111,6 +111,7 @@ curl -X POST -H "Authorization: Bearer localdevallocatorkey" \
 | `progress_match` | the game, signed in | adds a match it reports itself, capped by time |
 | `party_invite` | the game, signed in | `{username, party_id}`: sends that player an invite |
 | `quick_play_start` | the game, signed in | `{mode, users}`: starts a match for the caller and up to five party members, who are told to join it |
+| `private_match_start` | the game, signed in | `{mode, map, custom, team_bots, team_bot_skill, users}`: the party leader's private match ([custom-games.md](custom-games.md#private-matches)) on an unranked server that waits in its lobby |
 | `server_progress_get` | a dedicated server, with the HTTP key | a player's progress, by user id |
 | `server_progress_add` | a dedicated server, with the HTTP key | adds a match's XP and weapon kills |
 

@@ -21,6 +21,12 @@ RPCs for the game (a signed-in session):
                     party members in `users` (user ids, up to six), and tells
                     each of them (notification "quick_play_match", code 101,
                     content { match_id }) to join it.
+  private_match_start  { mode, map, custom, team_bots, team_bot_skill, users }
+                    the party leader's private match (docs/custom-games.md):
+                    as quick_play_start, on the host's map, with their custom
+                    settings and bots per team, on an unranked server that
+                    waits in its lobby (team swap, ready-up) until everyone
+                    is ready.
 ]]
 
 local nk = require("nakama")
@@ -102,6 +108,49 @@ local function quick_play_start(context, payload)
   return nk.json_encode({ match_id = match_id })
 end
 
+-- The players a party start covers: the caller and up to five members.
+local function party_users(context, request)
+  local users = { [context.user_id] = true }
+  local count = 1
+  for _, id in ipairs(type(request.users) == "table" and request.users or {}) do
+    if type(id) == "string" and not users[id] and count < PARTY_SIZE then
+      users[id] = true
+      count = count + 1
+    end
+  end
+  return users
+end
+
+local function private_match_start(context, payload)
+  if context.user_id == nil or context.user_id == "" then
+    error({ "sign in first", 16 })
+  end
+  local ok, request = pcall(nk.json_decode, payload or "")
+  if not ok or type(request) ~= "table" then
+    error({ "payload must be a JSON object", 3 })
+  end
+  local text = function(value)
+    return type(value) == "string" and #value <= 256 and value or ""
+  end
+  local users = party_users(context, request)
+  local match_id = nk.match_create("shooter_match", {
+    mode = MODES[request.mode] and request.mode or "tdm",
+    map = text(request.map),
+    users = users,
+    private = true,
+    custom = text(request.custom),
+    team_bots = text(request.team_bots),
+    team_bot_skill = text(request.team_bot_skill),
+  })
+  for id in pairs(users) do
+    if id ~= context.user_id then
+      nk.notification_send(id, "quick_play_match", { match_id = match_id }, MATCH_CODE, context.user_id, false)
+    end
+  end
+  return nk.json_encode({ match_id = match_id })
+end
+
 nk.register_matchmaker_matched(matchmaker_matched)
+nk.register_rpc(private_match_start, "private_match_start")
 nk.register_rpc(party_invite, "party_invite")
 nk.register_rpc(quick_play_start, "quick_play_start")

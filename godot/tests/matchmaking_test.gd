@@ -3,8 +3,11 @@ extends SceneTree
 ## player invites another by name, the invite arrives and is accepted, the
 ## leader queues the party for Domination, the matchmaker puts both in one
 ## match, and Nakama's match handler gets a server from the allocator and
-## hands both players its address. A second, solo search finds every server
-## busy and says so.
+## hands both players its address. The leader then starts a private match
+## for the party (docs/custom-games.md): the friend is told to join it, and
+## the allocator is asked for an unranked server on the chosen map with the
+## custom settings and bots per team. A solo search finds every server busy
+## and says so.
 ##
 ## The allocator here is a stand-in this test serves on port 7499; Nakama
 ## must call it (ALLOCATOR_URL=http://host.docker.internal:7499 when starting
@@ -137,6 +140,42 @@ func _run() -> void:
 		"so does the friend: %s" % [got.address]
 	)
 	_check(matchmaking.state == matchmaking.State.IDLE, "and the search is over")
+
+	# A private match for the party.
+	got.own = ""
+	got.address = null
+	found.clear()
+	var private := {
+		"mode": "tdm",
+		"map": "warehouse",
+		"custom": "hardcore=on,ff=reflect",
+		"team_bots": "2,6",
+		"team_bot_skill": "easy,hard",
+	}
+	_check(await matchmaking.start_private(private), "the leader starts a private match")
+	await _until(func() -> bool: return got.own != "", 10.0)
+	_check(got.own != "", "the friend is told to join it")
+	if got.own != "":
+		await socket.join_match_async(got.own)
+	await _until(func() -> bool: return not found.is_empty() and got.address != null, 30.0)
+	var asked: Dictionary = _allocations.back() if _allocations.size() == 2 else {}
+	_check(_allocations.size() == 2, "the allocator is asked for its server")
+	_check(
+		bool(asked.get("private", false)) and asked.get("map") == "warehouse",
+		"a private one on the chosen map: %s" % [asked]
+	)
+	_check(
+		(
+			asked.get("custom") == "hardcore=on,ff=reflect"
+			and asked.get("team_bots") == "2,6"
+			and asked.get("team_bot_skill") == "easy,hard"
+		),
+		"with the host's settings and bots"
+	)
+	_check(
+		got.address is Dictionary and bool(got.address.get("private", false)),
+		"both get its address, marked private: %s" % [got.address]
+	)
 
 	# Alone, with every server busy.
 	await matchmaking.leave_party()
