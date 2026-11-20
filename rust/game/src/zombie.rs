@@ -163,6 +163,7 @@ impl ICharacterBody3D for Zombie {
     /// Animation runs per rendered frame (less often far away); movement and
     /// attacks per tick.
     fn process(&mut self, delta: f64) {
+        let _profile = crate::profile::scope("zombies (frame)");
         if !self.visuals {
             return;
         }
@@ -192,6 +193,7 @@ impl ICharacterBody3D for Zombie {
     }
 
     fn physics_process(&mut self, delta: f64) {
+        let _profile = crate::profile::scope("zombies (physics)");
         let dt = delta as f32;
         if !self.is_alive() {
             self.moved = Vector3::ZERO;

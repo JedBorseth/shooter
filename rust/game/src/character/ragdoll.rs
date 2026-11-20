@@ -553,6 +553,7 @@ pub struct RagdollHolder {
 #[godot_api]
 impl INode3D for RagdollHolder {
     fn physics_process(&mut self, delta: f64) {
+        let _profile = crate::profile::scope("ragdolls");
         if self.muscles.is_empty() {
             return;
         }

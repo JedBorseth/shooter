@@ -88,6 +88,7 @@ pub fn tick(
     input: &PlayerInput,
     events: &mut Vec<PlayerEvent>,
 ) -> TickOutcome {
+    let probes = crate::profile::scope("body/probes (headroom, climb, ladder, mount)");
     parts.headroom.force_shapecast_update();
     let climb = find_climb(parts, &params.movement, p, input.yaw);
     let env = MoveEnv {
@@ -100,8 +101,11 @@ pub fn tick(
         mount: find_mount(parts, &params.movement, p, input),
         floor_normal: floor_normal(parts, p),
     };
+    drop(probes);
     let previous_crouch = p.state.movement.crouch;
+    let sim = crate::profile::scope("body/sim step");
     let requested = player::step(&mut p.state, input, env, params, TICK_DT, events);
+    drop(sim);
     if previous_crouch != p.state.movement.crouch {
         apply_stance_shape(parts, &params.movement, p.state.movement.crouch);
     }
@@ -111,6 +115,7 @@ pub fn tick(
         && requested.y <= 0.0
         && !p.state.movement.mantling()
         && !p.state.movement.on_ladder();
+    let slide = crate::profile::scope("body/move and slide, step up");
     parts.body.set_velocity(to_godot(requested));
     parts.body.move_and_slide();
     let mut step_height = if grounded {
@@ -136,6 +141,7 @@ pub fn tick(
         parts.body.move_and_slide();
         parts.body.set_velocity(velocity);
     }
+    drop(slide);
     p.state.movement.velocity = to_sim(velocity);
     p.position = to_sim(parts.body.get_global_position());
     // Rolling over an edge, the contact is too steep to count as floor, but

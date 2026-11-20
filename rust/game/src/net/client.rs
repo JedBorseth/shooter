@@ -363,6 +363,7 @@ impl INode for NetClient {
     }
 
     fn physics_process(&mut self, _delta: f64) {
+        let _profile = crate::profile::scope("client/net");
         let Some(mut host) = self.host.clone() else {
             return;
         };
@@ -447,6 +448,7 @@ impl INode for NetClient {
     }
 
     fn process(&mut self, delta: f64) {
+        let _profile = crate::profile::scope("client/remotes and horde");
         if self.base().get_tree().is_paused()
             || self.status != Status::Joined
             || self.newest.is_none()

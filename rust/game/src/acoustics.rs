@@ -295,6 +295,7 @@ impl INode for AudioEnvironment {
     }
 
     fn process(&mut self, delta: f64) {
+        let _profile = crate::profile::scope("acoustics");
         let Some((listener, forward)) = self.listener() else {
             return;
         };

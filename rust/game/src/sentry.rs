@@ -106,6 +106,7 @@ impl INode3D for Sentry {
     }
 
     fn physics_process(&mut self, delta: f64) {
+        let _profile = crate::profile::scope("sentry");
         let dt = delta as f32;
         self.flash_time -= dt;
         if self.flash_time <= 0.0 {
@@ -293,6 +294,9 @@ impl Sentry {
         to: Vector3,
         mask: u32,
     ) -> Option<(Vector3, Vector3, Option<Gd<Node>>)> {
+        if mask & HITBOX_LAYER != 0 {
+            crate::hitbox_rig::sync_all();
+        }
         let mut space = self.base().get_world_3d()?.get_direct_space_state()?;
         let query = PhysicsRayQueryParameters3D::create_ex(from, to)
             .collision_mask(mask)

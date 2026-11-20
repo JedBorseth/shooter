@@ -61,6 +61,7 @@ impl IStaticBody3D for MysteryCrate {
     }
 
     fn process(&mut self, delta: f64) {
+        let _profile = crate::profile::scope("mystery crate");
         let dt = delta as f32;
         self.elapsed += dt;
         let open = matches!(

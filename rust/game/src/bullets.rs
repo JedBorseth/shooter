@@ -183,6 +183,7 @@ impl INode3D for ShotTracer {
     }
 
     fn process(&mut self, delta: f64) {
+        let _profile = crate::profile::scope("bullets");
         let delta = delta as f32;
         if self.pending.is_empty() {
             return;
@@ -291,6 +292,7 @@ impl ShotTracer {
             .base()
             .get_world_3d()
             .and_then(|w| w.get_direct_space_state())?;
+        crate::hitbox_rig::sync_all();
         let query = PhysicsRayQueryParameters3D::create_ex(origin, ray.end)
             .collision_mask(WORLD_LAYER | HITBOX_LAYER)
             .done()?;

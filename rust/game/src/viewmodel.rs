@@ -873,6 +873,7 @@ impl INode3D for WeaponView {
     }
 
     fn process(&mut self, delta: f64) {
+        let _profile = crate::profile::scope("viewmodel");
         self.since_shot += delta as f32;
         if let Some(t) = &mut self.cover_open {
             *t += delta as f32;

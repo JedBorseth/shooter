@@ -99,6 +99,7 @@ pub struct MagazineDrops {
 #[godot_api]
 impl INode3D for MagazineDrops {
     fn process(&mut self, delta: f64) {
+        let _profile = crate::profile::scope("dropped magazines");
         for drop in PENDING.with_borrow_mut(std::mem::take) {
             if drop.source.is_instance_valid() {
                 self.add(drop);

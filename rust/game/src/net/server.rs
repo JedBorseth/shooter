@@ -132,6 +132,7 @@ use crate::convert::{to_godot, to_sim};
 use crate::grenades::{self, GrenadeSim, LiveGrenade};
 use crate::penetration;
 use crate::pickup::{INTERACT_LAYER, WeaponPickup};
+use crate::profile;
 use crate::target::WORLD_LAYER;
 
 /// Map nodes that only make sense on a client, or only offline: the local
@@ -228,6 +229,9 @@ pub struct NetServer {
     /// Private local-match control file; empty on public dedicated servers.
     #[export]
     pause_file: GString,
+    /// File the per-system CPU profile is written to every few seconds
+    /// (`SHOOTER_CPU_PROFILE`, for `tests/cpu_bench.gd`); empty when off.
+    profile_out: GString,
     /// Whether scripted bots' bursts can hurt players. Off by default, so a
     /// test client is not shot at random. Bots with a skill always can.
     #[export]
@@ -638,6 +642,14 @@ impl INode3D for NetServer {
             return;
         }
         body::check_tick_rate();
+        self.profile_out = GString::from(
+            std::env::var("SHOOTER_CPU_PROFILE")
+                .unwrap_or_default()
+                .as_str(),
+        );
+        if !self.profile_out.is_empty() {
+            profile::set_enabled(true);
+        }
         // Headless, nothing paces the main loop; don't spin a core.
         Engine::singleton().set_max_fps(TICK_RATE as i32 * 2);
         self.spawn = Vector3::new(0.0, 0.05, 20.0);
@@ -794,6 +806,8 @@ impl INode3D for NetServer {
         let Some(mut host) = self.host.clone() else {
             return;
         };
+        let tick_scope = profile::scope("server");
+        let net_in = profile::scope("server/net in");
         let mut events = std::mem::take(&mut self.net_events);
         events.clear();
         transport::service(&mut host, &mut events);
@@ -801,6 +815,7 @@ impl INode3D for NetServer {
             self.handle_event(event);
         }
         self.net_events = events;
+        drop(net_in);
         if !self.pause_file.is_empty() {
             let paused = godot::classes::FileAccess::file_exists(&self.pause_file);
             self.base().get_tree().set_pause(paused);
@@ -821,12 +836,17 @@ impl INode3D for NetServer {
             let mut parent = self.base().clone().upcast::<Node>();
             let map = self.base().get_child(0);
             let area = self.bot_bake_area();
+            let _bake = profile::scope("server/navigation bake");
             self.navigation = map.and_then(|map| BotNavigation::bake(&mut parent, &map, area));
         }
-        self.simulate();
+        {
+            let _simulate = profile::scope("server/simulate");
+            self.simulate();
+        }
         if let Some(probe) = &mut self.probe {
             probe.on_tick(self.avatars.iter().filter(|a| a.bot).count());
         }
+        let modes = profile::scope("server/modes");
         self.update_charge();
         self.update_flags();
         self.update_hardpoint();
@@ -835,18 +855,29 @@ impl INode3D for NetServer {
         self.update_streaks();
         self.update_match();
         self.update_props();
+        drop(modes);
         self.tick += 1;
         if self
             .tick
             .is_multiple_of(self.snapshot_interval.max(1) as u32)
         {
+            let _snapshots = profile::scope("server/snapshots");
             self.broadcast();
         }
+        let net_out = profile::scope("server/net out");
         if self.tick >= self.next_scoreboard {
             self.broadcast_scoreboard();
         }
         self.send_events();
         host.flush();
+        drop(net_out);
+        if !self.profile_out.is_empty() {
+            drop(tick_scope);
+            profile::end_frame();
+            if self.tick.is_multiple_of(2 * TICK_RATE) {
+                self.write_profile();
+            }
+        }
 
         let players = self.clients.iter().filter(|c| c.player.is_some()).count();
         let bots = self.avatars.iter().filter(|a| a.bot).count();
@@ -854,6 +885,27 @@ impl INode3D for NetServer {
             responder.info.players = players.min(255) as u8;
             responder.info.bots = bots.min(255) as u8;
             responder.poll();
+        }
+    }
+}
+
+impl NetServer {
+    /// Writes the CPU profile (see `profile_out`) with the tick count and
+    /// how many players and bots are in, so a bench can turn totals into
+    /// per-tick costs.
+    fn write_profile(&self) {
+        let mut d = VarDictionary::new();
+        d.set("ticks", i64::from(self.tick));
+        d.set("tick_rate", i64::from(TICK_RATE));
+        d.set("players", self.avatars.len() as i64);
+        d.set("bots", self.avatars.iter().filter(|a| a.bot).count() as i64);
+        d.set("systems", &profile::report());
+        let text = godot::classes::Json::stringify(&d.to_variant());
+        if let Some(mut file) = godot::classes::FileAccess::open(
+            &self.profile_out,
+            godot::classes::file_access::ModeFlags::WRITE,
+        ) {
+            file.store_string(&text);
         }
     }
 }
@@ -2966,6 +3018,7 @@ impl NetServer {
     /// they fired. Shots fired in the same tick all count, so two players who
     /// fire at each other in the same tick can trade kills.
     fn simulate(&mut self) {
+        let bot_world = profile::scope("server/simulate/bot world");
         let mut flags: Vec<(u8, Flag)> = Vec::new();
         let mut events = Vec::new();
         let mut shots = Vec::new();
@@ -3092,6 +3145,8 @@ impl NetServer {
             .and_then(|world| world.get_direct_space_state());
         // Gun Game hands out weapons by the ladder only.
         let racks = !matches!(self.game, Mode::GunGame(_));
+        drop(bot_world);
+        let avatars = profile::scope("server/simulate/avatars");
         for avatar in &mut self.avatars {
             let inputs: Vec<(PlayerInput, Option<f64>, Option<f32>)> = if avatar.bot {
                 let input = match (&mut avatar.brain, &mut self.navigation, &mut space) {
@@ -3121,6 +3176,7 @@ impl NetServer {
                             .iter()
                             .find(|(id, _)| *id == avatar.id)
                             .and_then(|(_, o)| *o);
+                        let _think = profile::scope("server/simulate/avatars/bots think");
                         let input = brain.think(&me, &avatar.predicted, &mut world, objective);
                         // Bots that think later this tick see the lane this
                         // one just took.
@@ -3263,6 +3319,7 @@ impl NetServer {
                 }
                 let input = &input;
                 events.clear();
+                let movement = profile::scope("server/simulate/avatars/movement");
                 body::tick(
                     &mut avatar.parts,
                     &self.params,
@@ -3270,6 +3327,7 @@ impl NetServer {
                     input,
                     &mut events,
                 );
+                drop(movement);
                 let picked_up = events
                     .iter()
                     .any(|e| matches!(e, PlayerEvent::Combat(CombatEvent::PickedUp { .. })));
@@ -3371,7 +3429,9 @@ impl NetServer {
                 }
             }
             avatar.score.tick(TICK_DT);
+            let clock = profile::scope("server/simulate/avatars/body clock");
             avatar.clock.tick(&body_state(avatar), TICK_DT);
+            drop(clock);
             if avatar.bot {
                 let combat = &mut avatar.predicted.state.combat;
                 if combat.weapon().magazine == 0 && combat.weapon().reserve == 0 {
@@ -3387,6 +3447,8 @@ impl NetServer {
                 }
             }
         }
+        drop(avatars);
+        let deaths = profile::scope("server/simulate/deaths and respawns");
         for id in fall_deaths {
             self.record_death(id);
             self.on_suicide(id);
@@ -3394,6 +3456,8 @@ impl NetServer {
         for id in respawns {
             self.respawn(id, None, false);
         }
+        drop(deaths);
+        let rest = profile::scope("server/simulate/shots and grenades");
         for shot in &shots {
             // Unsuppressed fire shows on enemy minimaps where it was fired.
             self.radar
@@ -3429,7 +3493,11 @@ impl NetServer {
         if zombies_mode && self.match_state.scoring() {
             self.update_last_stands(&revivers);
         }
-        self.update_horde();
+        drop(rest);
+        {
+            let _horde = profile::scope("server/simulate/horde");
+            self.update_horde();
+        }
         for (id, flag) in flags {
             self.log_flag(id, flag);
         }

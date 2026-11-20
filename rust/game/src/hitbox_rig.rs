@@ -7,13 +7,21 @@
 //! by zone, to check the animated model against what the simulation hits. Only
 //! debug builds can turn it on, and the shapes are depth tested, so it never
 //! shows other players through walls.
+//!
+//! Posing is lazy: `set_pose` only records the pose, and the shapes move when
+//! something is about to test against them ([`sync_all`], called by every
+//! hitscan, melee, and blast query), or at least ten times a second for the
+//! rays that only look (the lens flare, eye adaptation). Placing every
+//! remote player's shapes each frame cost about 3 ms of a 6v6 frame.
 
+use std::cell::RefCell;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use godot::classes::base_material_3d::{ShadingMode, Transparency};
+use godot::classes::physics_server_3d::BodyState;
 use godot::classes::{
     CapsuleMesh, CapsuleShape3D, CollisionShape3D, Engine, INode3D, Input, MeshInstance3D,
-    SphereMesh, SphereShape3D, StandardMaterial3D, StaticBody3D,
+    PhysicsServer3D, SphereMesh, SphereShape3D, StandardMaterial3D, StaticBody3D,
 };
 use godot::prelude::*;
 use shooter_sim::hitbox::{self, HitZone, Hitbox, HitboxPose};
@@ -24,6 +32,27 @@ use crate::convert::to_godot;
 pub const HITBOX_LAYER: u32 = 1 << 2;
 
 static DEBUG_DRAW: AtomicBool = AtomicBool::new(false);
+
+/// Longest a rig's shapes lag its pose when nothing tests against them.
+const IDLE_SYNC_MSEC: u64 = 100;
+
+thread_local! {
+    /// Rigs whose pose changed since their shapes were last placed.
+    static PENDING: RefCell<Vec<InstanceId>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Places the shapes of every rig whose pose changed. Call it before any
+/// query that can hit the hitboxes layer.
+pub fn sync_all() {
+    let pending = PENDING.with_borrow_mut(std::mem::take);
+    for id in pending {
+        if let Ok(mut rig) = Gd::<HitboxRig>::try_from_instance_id(id) {
+            let mut rig = rig.bind_mut();
+            rig.queued = false;
+            rig.place_now();
+        }
+    }
+}
 static LAST_TOGGLE_FRAME: AtomicU64 = AtomicU64::new(u64::MAX);
 
 /// Whether hitboxes are drawn.
@@ -70,6 +99,12 @@ pub struct HitboxRig {
     parts: Vec<Part>,
     pose: Option<HitboxPose>,
     drawn: bool,
+    /// The pose changed since the shapes were placed.
+    dirty: bool,
+    /// Listed in `PENDING`.
+    queued: bool,
+    /// When the shapes were last placed (engine milliseconds).
+    placed_at: u64,
 }
 
 #[godot_api]
@@ -89,6 +124,7 @@ impl INode3D for HitboxRig {
     }
 
     fn process(&mut self, _delta: f64) {
+        let _profile = crate::profile::scope("hitbox rigs");
         // One toggle per frame, however many rigs see the key press.
         if godot::classes::Os::singleton().is_debug_build()
             && Input::singleton().is_action_just_pressed("debug_hitboxes")
@@ -104,6 +140,13 @@ impl INode3D for HitboxRig {
             for part in &mut self.parts {
                 part.mesh.set_visible(draw);
             }
+        }
+        if self.dirty
+            && (self.drawn
+                || godot::classes::Time::singleton().get_ticks_msec()
+                    >= self.placed_at + IDLE_SYNC_MSEC)
+        {
+            self.place_now();
         }
     }
 }
@@ -152,15 +195,42 @@ impl HitboxRig {
     }
 
     /// Poses the shapes, or turns them off with `None` (dead, despawned).
+    /// The shapes move on the next [`sync_all`] (or within a tenth of a
+    /// second); a rig that turns on is placed at once.
     pub fn set_pose(&mut self, pose: Option<HitboxPose>) {
         let was_enabled = self.pose.is_some();
         self.pose = pose;
-        if pose.is_some() != was_enabled {
-            self.set_enabled(pose.is_some());
+        if pose.is_none() {
+            self.dirty = false;
+            if was_enabled {
+                self.set_enabled(false);
+            }
+            return;
         }
-        let Some(pose) = pose else {
+        self.dirty = true;
+        if !was_enabled {
+            self.place_now();
+            self.set_enabled(true);
+            return;
+        }
+        if !self.queued {
+            self.queued = true;
+            let id = self.base().instance_id();
+            PENDING.with_borrow_mut(|pending| pending.push(id));
+        }
+    }
+
+    /// Places the shapes at the current pose, if it changed.
+    fn place_now(&mut self) {
+        if !self.dirty {
+            return;
+        }
+        self.dirty = false;
+        self.placed_at = godot::classes::Time::singleton().get_ticks_msec();
+        let Some(pose) = self.pose else {
             return;
         };
+        let _profile = crate::profile::scope("hitbox placement");
         for (part, hb) in self.parts.iter_mut().zip(hitbox::hitboxes(&pose)) {
             place(part, &hb);
         }
@@ -264,5 +334,14 @@ fn place(part: &mut Part, hb: &Hitbox) {
             }
         }
     }
-    part.body.set_global_transform(Transform3D::new(basis, mid));
+    let transform = Transform3D::new(basis, mid);
+    part.body.set_global_transform(transform);
+    // The node hands its transform to the physics server only when the tree
+    // flushes transform changes (before the next physics step); a query this
+    // tick must already see the shape where it is.
+    PhysicsServer3D::singleton().body_set_state(
+        part.body.get_rid(),
+        BodyState::TRANSFORM,
+        &transform.to_variant(),
+    );
 }

@@ -12,6 +12,7 @@
 use std::f32::consts::PI;
 
 use godot::classes::animation_mixer::AnimationCallbackModeProcess;
+use godot::classes::skeleton_3d::ModifierCallbackModeProcess;
 use godot::classes::{
     AnimationLibrary, AnimationNode, AnimationNodeAnimation, AnimationNodeBlend2,
     AnimationNodeBlendSpace1D, AnimationNodeBlendTree, AnimationNodeOneShot,
@@ -315,6 +316,10 @@ const HIT_MEMORY: f32 = 1.0;
 /// Frames to wait for the poser's capture before taking the pose without it.
 const CAPTURE_FRAMES: u32 = 3;
 
+/// How far a body may reach past its middle (a metre up from the feet) and
+/// still be on screen, for the animation level of detail.
+const LOD_RADIUS: f32 = 1.6;
+
 #[derive(GodotClass)]
 #[class(init, base = Node3D)]
 pub struct SoldierRig {
@@ -348,6 +353,13 @@ pub struct SoldierRig {
     applied_team: Option<Team>,
 
     frame: SoldierFrame,
+    /// Animate every frame wherever the camera is (the player's own body).
+    pub full_rate: bool,
+    /// Animation level of detail: seconds of animation not drawn yet, and
+    /// whether the skeleton's modifiers are stepped by hand.
+    anim_pending: f32,
+    manual_skeleton: bool,
+    lod_skeleton: Option<Gd<Skeleton3D>>,
     /// The travel's direction the loops blend (radians from the aim,
     /// positive right; `gait::direction`), eased round.
     direction: f32,
@@ -755,8 +767,83 @@ impl SoldierRig {
 }
 
 impl SoldierRig {
-    /// Advances the character to `frame`.
+    /// Advances the character to `frame`, at the rate its distance and
+    /// visibility call for (see [`Self::animation_interval`]): a frame it
+    /// skips keeps the last pose, and the next one it draws catches up by
+    /// the time skipped.
     pub fn update(&mut self, frame: &SoldierFrame, dt: f32) {
+        self.anim_pending += dt;
+        let interval = if frame.alive && self.was_alive {
+            self.animation_interval()
+        } else {
+            // Deaths and revivals are drawn at once, at the full rate.
+            0.0
+        };
+        self.set_manual_skeleton(interval > 0.0);
+        if interval > 0.0 && self.anim_pending < interval {
+            return;
+        }
+        let dt = std::mem::take(&mut self.anim_pending);
+        self.update_now(frame, dt);
+        if self.manual_skeleton
+            && let Some(skeleton) = &mut self.lod_skeleton
+        {
+            skeleton.advance(f64::from(dt));
+        }
+    }
+
+    /// Seconds between animation updates: every frame within 20 m of the
+    /// camera, 30 a second to 40 m, 20 a second beyond, and 10 a second off
+    /// screen, the way Call of Duty's engines animate distant characters
+    /// less often. Hit zones are posed from the simulation, not from this
+    /// animation, so a skipped frame changes nothing a shot can hit.
+    fn animation_interval(&self) -> f32 {
+        if self.full_rate || !self.base().is_visible_in_tree() {
+            return 0.0;
+        }
+        let Some(camera) = self.base().get_viewport().and_then(|v| v.get_camera_3d()) else {
+            return 0.0;
+        };
+        let center = self.base().get_global_position() + Vector3::UP;
+        let on_screen = camera
+            .get_frustum()
+            .iter_shared()
+            .all(|plane| plane.distance_to(center) <= LOD_RADIUS);
+        if !on_screen {
+            return 1.0 / 10.0;
+        }
+        let distance = camera.get_global_position().distance_to(center);
+        if distance < 20.0 {
+            0.0
+        } else if distance < 40.0 {
+            1.0 / 30.0
+        } else {
+            1.0 / 20.0
+        }
+    }
+
+    /// Steps the skeleton's modifiers (the poser) by hand while the
+    /// animation runs below the frame rate, so a skipped frame costs no
+    /// skeleton update either; otherwise the skeleton steps them itself.
+    fn set_manual_skeleton(&mut self, manual: bool) {
+        if manual == self.manual_skeleton {
+            return;
+        }
+        if self.lod_skeleton.is_none() {
+            self.lod_skeleton = self.skeleton();
+        }
+        let Some(skeleton) = &mut self.lod_skeleton else {
+            return;
+        };
+        self.manual_skeleton = manual;
+        skeleton.set_modifier_callback_mode_process(if manual {
+            ModifierCallbackModeProcess::MANUAL
+        } else {
+            ModifierCallbackModeProcess::IDLE
+        });
+    }
+
+    fn update_now(&mut self, frame: &SoldierFrame, dt: f32) {
         let was_alive = self.was_alive;
         let was_meleeing = self.frame.meleeing;
         if let Some((_, age)) = &mut self.last_hit {
@@ -1133,6 +1220,7 @@ impl SoldierRig {
                 set(tree, "hold/blend_amount", hold.to_variant());
             }
             self.was_mantling = frame.mantling;
+            let _profile = crate::profile::scope("animation tree advance");
             tree.advance(f64::from(dt));
         }
     }

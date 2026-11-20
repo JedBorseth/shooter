@@ -373,6 +373,7 @@ impl BotNavigation {
 
     /// The path from `from` to `to`, or empty if there is none.
     pub fn path(&mut self, from: Vector3, to: Vector3) -> Vec<Vector3> {
+        let _profile = crate::profile::scope("bots/navigation path");
         let args = [
             self.map.to_variant(),
             from.to_variant(),
@@ -832,6 +833,7 @@ impl BotBrain {
         }
         let blind = self.blind.is_some();
         if !blind && (tick + u32::from(me.id)).is_multiple_of(PERCEPTION_INTERVAL) {
+            let _profile = crate::profile::scope("bots/perceive");
             self.perceive(me, world, &skill);
             self.sense_grenades(me, world);
         }

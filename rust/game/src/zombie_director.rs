@@ -131,6 +131,7 @@ impl INode3D for ZombieDirector {
     }
 
     fn physics_process(&mut self, delta: f64) {
+        let _profile = crate::profile::scope("zombie director");
         if self.networked {
             // Tokens blink in their last seconds; the server removes them.
             for drop in &mut self.drops {

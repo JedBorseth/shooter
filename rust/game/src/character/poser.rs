@@ -703,6 +703,7 @@ pub struct SoldierPoser {
 #[godot_api]
 impl ISkeletonModifier3D for SoldierPoser {
     fn process_modification_with_delta(&mut self, _delta: f64) {
+        let _profile = crate::profile::scope("poser (skeleton modifier)");
         let Some(mut skel) = self.base().get_skeleton() else {
             return;
         };

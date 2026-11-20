@@ -198,6 +198,7 @@ impl INode for WeaponFoley {
     }
 
     fn process(&mut self, delta: f64) {
+        let _profile = crate::profile::scope("weapon foley");
         let delta = delta as f32;
         self.clock += delta;
         if self.pending.is_empty() {

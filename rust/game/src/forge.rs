@@ -46,6 +46,7 @@ impl IStaticBody3D for Forge {
     }
 
     fn process(&mut self, delta: f64) {
+        let _profile = crate::profile::scope("forge");
         self.elapsed += delta as f32;
         self.sync_model();
         let t = self.elapsed;
