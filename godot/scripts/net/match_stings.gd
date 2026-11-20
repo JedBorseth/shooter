@@ -2,8 +2,9 @@ class_name MatchStings
 extends Node
 ## Match stings, from the match and round state the client reports: a sting
 ## when a match goes live, its result (win, loss, or draw) when it ends, a
-## warning at 30 seconds left, a call at halftime and at overtime, and in
-## Search and Destroy the start and result of every round. No announcer:
+## warning at 30 seconds left, a call at halftime and at overtime, in Gun Game
+## a step up for each new weapon and a step down when set back, and in Search
+## and Destroy the start and result of every round. No announcer:
 ## short drum, riser, and brass cues (`tools/build_world_audio.py stings`).
 ## The match HUD adds one.
 
@@ -17,6 +18,8 @@ var played: PackedStringArray = []
 
 var _phase := ""
 var _period := "regulation"
+## Gun Game: our level on the ladder last frame, or -1 before we know it.
+var _level := -1
 var _round_phase := ""
 var _round_number := -1
 var _seconds_left := INF
@@ -44,6 +47,7 @@ func _process(_delta: float) -> void:
 			play(_result(info))
 		if phase != "playing" and phase != "ended":
 			_period = "regulation"
+		_level = -1
 		_seconds_left = INF
 	if phase == "playing":
 		var period: String = info.get("period", "regulation")
@@ -53,12 +57,32 @@ func _process(_delta: float) -> void:
 				play_first(["overtime", "time_warning"])
 			elif period == "second_half":
 				play_first(["halftime", "round_start"])
+		if info.get("mode", "") == "gungame":
+			_follow_ladder()
 		var left: float = info.get("seconds_left", INF)
 		if info.get("mode", "") != "snd" and _seconds_left > WARNING_AT and left <= WARNING_AT:
 			play("time_warning")
 		_seconds_left = left
 		if info.get("mode", "") == "snd" and client.has_method("round_info"):
 			_follow_round(client.round_info(), info)
+
+
+## Gun Game: a step up for each new weapon, a step down when set back (Call
+## of Duty's announcer calls both).
+func _follow_ladder() -> void:
+	var level := -1
+	for entry: Dictionary in client.roster():
+		if entry.get("me", false):
+			level = int(entry.get("level", -1))
+			break
+	if level < 0:
+		return
+	# One step at a time: a jump (a new match's reset) is not a call.
+	if _level >= 0 and level == _level + 1:
+		play_first(["weapon_up"])
+	elif _level >= 0 and level == _level - 1:
+		play_first(["set_back"])
+	_level = level
 
 
 func _follow_round(round: Dictionary, info: Dictionary) -> void:
