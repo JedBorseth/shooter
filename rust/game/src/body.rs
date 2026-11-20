@@ -242,6 +242,48 @@ fn prone_room(parts: &BodyParts, p: &Predicted, input: &PlayerInput) -> bool {
     })
 }
 
+/// How far along the ground a prone body lies (`PlayerView::prone_slope`,
+/// radians, positive with the legs higher than the chest, as lying head
+/// down a slope): the ground under the chest and under the knees
+/// (`hitbox::PRONE_SLOPE_SPAN` behind), each found with a ray down, as the
+/// IW engine pitches a prone body to the ground (`proneDirectionPitch`).
+/// Level when either ray finds nothing (a ledge), and held within
+/// `hitbox::MAX_PRONE_SLOPE`.
+pub fn prone_slope(
+    space: &mut Gd<godot::classes::PhysicsDirectSpaceState3D>,
+    feet: Vector3,
+    yaw: f32,
+    exclude: Rid,
+) -> f32 {
+    use shooter_sim::hitbox::{MAX_PRONE_SLOPE, PRONE_SLOPE_SPAN};
+    let (forward, _) = shooter_sim::movement::basis_from_yaw(yaw);
+    let back = -to_godot(forward) * PRONE_SLOPE_SPAN;
+    let exclude: Array<Rid> = array![exclude];
+    let mut ground = |at: Vector3| -> Option<f32> {
+        let query = PhysicsRayQueryParameters3D::create_ex(
+            at + Vector3::UP * PRONE_SLOPE_REACH,
+            at - Vector3::UP * PRONE_SLOPE_REACH,
+        )
+        .collision_mask(WORLD_LAYER)
+        .exclude(&exclude)
+        .done()?;
+        space
+            .intersect_ray(&query)
+            .get("position")
+            .and_then(|p| p.try_to::<Vector3>().ok())
+            .map(|p| p.y)
+    };
+    match (ground(feet), ground(feet + back)) {
+        (Some(chest), Some(knees)) => (knees - chest)
+            .atan2(PRONE_SLOPE_SPAN)
+            .clamp(-MAX_PRONE_SLOPE, MAX_PRONE_SLOPE),
+        _ => 0.0,
+    }
+}
+
+/// How far above and below the feet the prone slope's rays look (m).
+const PRONE_SLOPE_REACH: f32 = 0.7;
+
 /// The walkable floor's normal under a sliding body (`MoveEnv::floor_normal`;
 /// straight up otherwise). A ray from the feet, so a replay from a placed
 /// body reads the same slope the first run did.

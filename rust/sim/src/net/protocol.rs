@@ -201,7 +201,9 @@ use crate::zombies::drinks::Drinks;
 // Version 84 added the Fire Sale: the power-up, its timer, a crate at every
 // spot (`ZombiesEvent::Crate` is per spot, with `CratePhase::Hidden` and
 // whether a sale is on).
-pub const PROTOCOL_VERSION: u16 = 84;
+// Version 85 added `PlayerView::prone_slope`: a prone body lies along the
+// ground, drawn and hit there.
+pub const PROTOCOL_VERSION: u16 = 85;
 /// Longest account session token a hello carries, in bytes.
 pub const MAX_ACCOUNT_TOKEN_BYTES: usize = 2048;
 /// Longest reason a denial carries, in bytes.
@@ -1268,6 +1270,11 @@ pub struct PlayerView {
     pub defusing: bool,
     /// Zombies: down in last stand, waiting for a revive.
     pub downed: bool,
+    /// Lying prone: how far along the ground the body lies, in half
+    /// degrees, positive with the legs higher than the chest
+    /// ([`PlayerView::prone_slope`]). Sent only while the body is down past
+    /// a crouch.
+    pub prone_slope: i8,
     /// Moves quietly (Dead Silence): other players hear its movement far
     /// quieter and only up close (`perk::heard`).
     pub quiet: bool,
@@ -1384,7 +1391,19 @@ impl PlayerView {
             }),
             charge_use: 0,
             defusing: false,
+            prone_slope: 0,
         }
+    }
+
+    /// The ground's slope under a prone body (radians, positive with the
+    /// legs higher than the chest; `hitbox::Activity::slope`).
+    pub fn prone_slope(&self) -> f32 {
+        f32::from(self.prone_slope) * 0.5_f32.to_radians()
+    }
+
+    /// `slope` (radians) as [`PlayerView::prone_slope`] carries it.
+    pub fn slope_to_i8(slope: f32) -> i8 {
+        (slope.to_degrees() * 2.0).round().clamp(-127.0, 127.0) as i8
     }
 
     /// Planting or defusing, and how far along (0 to 1), if either.
@@ -4103,6 +4122,15 @@ fn write_view(w: &mut impl BitSink, v: &PlayerView) {
     w.u8(v.mantle_progress);
     w.u8(v.turn);
     w.u8(v.step);
+    if lying(v.crouch) {
+        w.u8(v.prone_slope as u8);
+    }
+}
+
+/// A body down past a crouch toward prone, whose view carries the ground's
+/// slope (`PlayerView::prone_slope`): on the way down, lying, and getting up.
+fn lying(crouch: u8) -> bool {
+    crouch > crouch_to_u8(1.0)
 }
 
 fn read_view(r: &mut impl BitSource) -> DecodeResult<PlayerView> {
@@ -4154,6 +4182,7 @@ fn read_view(r: &mut impl BitSource) -> DecodeResult<PlayerView> {
         mantle_progress: r.u8()?,
         turn: r.u8()?,
         step: r.u8()?,
+        prone_slope: if lying(crouch) { r.u8()? as i8 } else { 0 },
     })
 }
 
@@ -4595,6 +4624,7 @@ fn write_activity(w: &mut BitWriter, a: &Activity) {
     if let Some(kneel) = a.kneel {
         w.u8(clock::to_u8(kneel));
     }
+    w.u8(PlayerView::slope_to_i8(a.slope) as u8);
 }
 
 fn read_activity(r: &mut BitReader) -> DecodeResult<Activity> {
@@ -4634,6 +4664,7 @@ fn read_activity(r: &mut BitReader) -> DecodeResult<Activity> {
         } else {
             None
         },
+        slope: f32::from(r.u8()? as i8) * 0.5_f32.to_radians(),
     })
 }
 
@@ -4972,6 +5003,41 @@ mod tests {
         let bytes = w.finish();
         let decoded = read_view_delta(&mut BitReader::new(&bytes), &view).unwrap();
         assert_eq!(decoded.mount, 255);
+    }
+
+    #[test]
+    fn a_prone_body_carries_the_slope_it_lies_along() {
+        let standing = PlayerView::default();
+        let lying = PlayerView {
+            stance: Stance::Prone,
+            crouch: crouch_to_u8(2.0),
+            prone_slope: PlayerView::slope_to_i8(0.3),
+            ..standing
+        };
+        let down_hill = PlayerView {
+            prone_slope: PlayerView::slope_to_i8(-0.2),
+            ..lying
+        };
+        // Getting up: past a crouch it still lies along the ground.
+        let rising = PlayerView {
+            stance: Stance::Crouching,
+            crouch: crouch_to_u8(1.5),
+            ..lying
+        };
+        for (v, base) in [
+            (lying, standing),
+            (down_hill, lying),
+            (rising, down_hill),
+            (standing, rising),
+        ] {
+            let mut w = BitWriter::new();
+            write_view_delta(&mut w, &v, &base);
+            let bytes = w.finish();
+            let decoded = read_view_delta(&mut BitReader::new(&bytes), &base).unwrap();
+            assert_eq!(decoded, v);
+        }
+        assert!((lying.prone_slope() - 0.3).abs() < 0.5_f32.to_radians());
+        assert_eq!(PlayerView::slope_to_i8(-10.0), -127);
     }
 
     #[test]
@@ -6194,6 +6260,7 @@ mod tests {
                             hunch: 0.0,
                             throw: Some(clock::from_u8(clock::to_u8(0.62))),
                             kneel: Some(clock::from_u8(clock::to_u8(0.4))),
+                            slope: f32::from(PlayerView::slope_to_i8(-0.2)) * 0.5_f32.to_radians(),
                             progress: Progress {
                                 stride: 0.25,
                                 reload: 51.0 / 255.0,

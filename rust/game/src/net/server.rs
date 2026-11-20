@@ -9331,12 +9331,31 @@ impl NetServer {
     /// Sends every joined client its snapshot for this tick.
     fn broadcast(&mut self) {
         let using = self.charge.and_then(|c| c.using);
+        let mut space = self
+            .base()
+            .get_world_3d()
+            .and_then(|world| world.get_direct_space_state());
         let mut views: Vec<PlayerView> = self
             .avatars
             .iter()
             .map(|a| {
                 let charge_use = using.filter(|u| u.by == a.id);
+                // A body down from a crouch toward prone lies along the
+                // ground under it.
+                let movement = &a.predicted.state.movement;
+                let prone_slope = match &mut space {
+                    Some(space) if movement.crouch > 1.0 && a.predicted.on_floor => {
+                        PlayerView::slope_to_i8(crate::body::prone_slope(
+                            space,
+                            to_godot(a.predicted.position),
+                            a.yaw,
+                            a.parts.body.get_rid(),
+                        ))
+                    }
+                    _ => 0,
+                };
                 PlayerView {
+                    prone_slope,
                     hits: a.hits,
                     hit_heading: a.hit_heading,
                     hit_part: a.hit_part,

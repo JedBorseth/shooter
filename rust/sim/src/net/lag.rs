@@ -98,6 +98,8 @@ pub struct RemoteSample {
     /// Planting or defusing the charge, and how far along
     /// (`PlayerView::charge_progress`).
     pub charge_use: Option<(crate::snd::UseKind, f32)>,
+    /// Lying prone along the ground (radians, `PlayerView::prone_slope`).
+    pub prone_slope: f32,
 }
 
 impl Interpolate for Progress {
@@ -154,6 +156,7 @@ impl RemoteSample {
             ladder: v.ladder_facing(),
             mount: f32::from(v.mount) / 255.0,
             charge_use: v.charge_progress(),
+            prone_slope: v.prone_slope(),
         }
     }
 }
@@ -179,6 +182,7 @@ impl Interpolate for RemoteSample {
             ads: self.ads + (to.ads - self.ads) * t,
             crouch: self.crouch + (to.crouch - self.crouch) * t,
             mount: self.mount + (to.mount - self.mount) * t,
+            prone_slope: self.prone_slope + (to.prone_slope - self.prone_slope) * t,
             progress: self.progress.interpolate(&to.progress, t),
             throw: match (self.throw, to.throw) {
                 (Some(a), Some(b)) if b >= a => Some(a + (b - a) * t),
@@ -220,6 +224,7 @@ impl RemoteSample {
                 kneel: self
                     .charge_use
                     .map(|(kind, t)| hitbox::action::kneel(kind, t)),
+                slope: self.prone_slope,
             },
         })
     }
@@ -613,6 +618,7 @@ mod tests {
                 hunch: 0.0,
                 throw: None,
                 kneel: None,
+                slope: 0.0,
                 progress: Progress {
                     stride: 0.25,
                     reload: 0.2,

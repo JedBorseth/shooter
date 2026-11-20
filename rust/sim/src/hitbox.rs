@@ -137,6 +137,32 @@ pub struct Activity {
     /// crouch, the weapon drops, and the support hand reaches for the
     /// keypad ([`action::KNEEL_REACH`]), as the character draws it.
     pub kneel: Option<f32>,
+    /// Lying prone, how far along the ground the body lies (radians,
+    /// positive with the legs higher than the chest; `PlayerView::
+    /// prone_slope`): the lying body turns about the eyes
+    /// ([`PRONE_PIVOT`]) to lie along it, the aim staying where it was.
+    pub slope: f32,
+}
+
+/// What a prone body lying along a slope turns about: the eyes, which sit
+/// over the player's origin prone (body space; the prone eye height).
+pub const PRONE_PIVOT: Vec3 = Vec3::new(0.0, 0.39, 0.0);
+/// How far behind the eyes the ground under a prone body's knees is
+/// measured (m), and the steepest slope it lies along (radians).
+pub const PRONE_SLOPE_SPAN: f32 = 1.1;
+pub const MAX_PRONE_SLOPE: f32 = 30.0 * std::f32::consts::PI / 180.0;
+
+/// How far a body lies along its slope (radians): the slope, as far as the
+/// body is down from a crouch to prone.
+pub fn lying_slope(pose: &HitboxPose) -> f32 {
+    let activity = &pose.activity;
+    let full = if pose.stance == Stance::Prone {
+        2.0
+    } else {
+        0.0
+    };
+    let blend = activity.crouch.unwrap_or(full);
+    activity.slope.clamp(-MAX_PRONE_SLOPE, MAX_PRONE_SLOPE) * crate::movement::prone_ease(blend)
 }
 
 impl HitboxPose {
@@ -471,7 +497,10 @@ pub fn hitboxes(pose: &HitboxPose) -> [Hitbox; COUNT] {
     } else {
         1.0
     };
-    let pitch = pose.pitch.clamp(-carry::MAX_PITCH, carry::MAX_PITCH) * slide;
+    // Lying along a slope, the body turns nose down by it about the eyes
+    // (below), so the aim it holds is that much higher on the body.
+    let tilt = lying_slope(pose);
+    let pitch = (pose.pitch + tilt).clamp(-carry::MAX_PITCH, carry::MAX_PITCH) * slide;
 
     // The aim pitch bends each joint up the spine in turn; the shoulders ride
     // on the upper chest and the head turns with all of them.
@@ -645,8 +674,12 @@ pub fn hitboxes(pose: &HitboxPose) -> [Hitbox; COUNT] {
     }
 
     let (s, c) = fmath::sin_cos(pose.yaw);
+    let lie = Mat3::from_axis_angle(Vec3::X, -tilt);
     // Yaw turns -Z (forward) toward -X for positive yaw, as `movement::basis_from_yaw`.
-    let world = |p: Vec3| pose.feet + Vec3::new(p.x * c + p.z * s, p.y, -p.x * s + p.z * c);
+    let world = |p: Vec3| {
+        let p = PRONE_PIVOT + lie * (p - PRONE_PIVOT);
+        pose.feet + Vec3::new(p.x * c + p.z * s, p.y, -p.x * s + p.z * c)
+    };
     let shape = |zone, a: Vec3, b: Vec3, radius| Hitbox {
         zone,
         a: world(a),
@@ -987,6 +1020,33 @@ mod tests {
             rifle[0].a,
             bare[0].a
         );
+    }
+
+    #[test]
+    fn a_prone_body_lies_along_the_slope_about_its_eyes_and_keeps_its_aim() {
+        let lying = |slope: f32| {
+            let mut pose = HitboxPose::new(Vec3::ZERO, 0.0, 0.0, Stance::Prone);
+            pose.activity.slope = slope;
+            hitboxes(&pose)
+        };
+        let flat = lying(0.0);
+        let head_down = lying(0.3);
+        // The legs (behind) rise; the head stays near the eyes it turns
+        // about (it moves only as much as raising the aim by the slope moves
+        // it lying flat).
+        let feet = |b: &[Hitbox; COUNT]| b[9].b.y.max(b[11].b.y);
+        assert!(feet(&head_down) > feet(&flat) + 0.3);
+        let moved = head_down[0].a.distance(flat[0].a);
+        assert!(moved < 0.15, "head moved {moved}");
+        // The weapon arm still points the same way: the right forearm's
+        // direction is about level, as it is lying flat.
+        let dir = |b: &[Hitbox; COUNT]| (b[7].b - b[7].a).normalize();
+        assert!(dir(&head_down).dot(dir(&flat)) > 0.97);
+        // Standing, a slope does nothing.
+        let mut standing = HitboxPose::new(Vec3::ZERO, 0.0, 0.0, Stance::Standing);
+        standing.activity.slope = 0.3;
+        let upright = HitboxPose::new(Vec3::ZERO, 0.0, 0.0, Stance::Standing);
+        assert_eq!(hitboxes(&standing), hitboxes(&upright));
     }
 
     #[test]
