@@ -75,6 +75,10 @@ one dense wall instead of each shot cutting the last one's tail. Each gun's
 recipe (microphone mix, room, density, EQ, loudness) is in
 `build_gunshots.RECIPES`; the EQ comes from `build_gunshots.py match`.
 
+The CQ-10's whole shot is the PPSh's (near and behind the shooter) matched to
+Counter-Strike 2's MAC-10. Until its own shot lands, a new weapon plays the
+one its view's `sound_from` names (`audio::shot_source`).
+
 ### Layered shots (`tools/build_weapon_audio.py layers`): the other guns
 
 The local player's shot is five layers, each picked from five takes on its

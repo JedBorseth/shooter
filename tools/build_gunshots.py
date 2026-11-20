@@ -118,6 +118,12 @@ CS_AK = (
     ),
 )
 
+# Counter-Strike 2's MAC-10, measured from in-game clips, for the CQ-10.
+CS_MAC10 = (
+    "cs",
+    (("XGyIK2WlNSI.wav", 8.8, 10.6), ("OaMfVys3C9I.wav", 9.8, 10.8), ("OaMfVys3C9I.wav", 4.5, 5.8)),
+)
+
 RECIPES = {
     "ak47": Recipe(
         sessions=(("C_25", "C_45", "C_39"), ("C_28", "C_48", "C_42")),
@@ -158,6 +164,45 @@ RECIPES = {
             -4.1,
         ),
         reference=CS_AK,
+    ),
+    # The CQ-10: the PPSh (7.62x25, about 1000 rpm), near and behind the shooter,
+    # matched to Counter-Strike 2's MAC-10. Held for listening (variant A).
+    "cq10": Recipe(
+        sessions=(("P_30", "P_31"), ("P_24", "P_25"), ("P_32", "P_33")),
+        weights=(0.0, -3.0),
+        wet_db=-2.0, dense=1.4, drive=3.0, shave_db=12.0, seconds=1.0,
+        room=Room(t60_low=0.6, t60_high=0.45),
+        eq=(
+            -8.2,
+            -0.3,
+            3.0,
+            3.0,
+            1.1,
+            -1.5,
+            -5.6,
+            -10.5,
+            -14.1,
+            -13.2,
+            -12.5,
+            -12.4,
+            -7.1,
+            -3.7,
+            -0.5,
+            3.2,
+            4.1,
+            3.9,
+            4.8,
+            9.1,
+            12.0,
+            12.0,
+            12.0,
+            12.0,
+            12.0,
+            12.0,
+            12.0,
+        ),
+        reference=CS_MAC10,
+        lufs=-21.0,
     ),
 }
 
