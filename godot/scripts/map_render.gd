@@ -8,8 +8,7 @@ extends Node
 ## cascade instead of one per material. The editor keeps the real meshes
 ## casting, so the lightmap bake sees them.
 ##
-## On the Low preset the map's sun draws at most two shadow splits instead of
-## its own count (Low's shadows reach only half as far), and the set dressing's small
+## On the Low preset the set dressing's small
 ## detail (`map_*_detail` meshes: litter, brass, weeds) is hidden, so the
 ## dressing costs Low nothing over the bare map. A sky shader with a `detailed`
 ## switch (shaders/night_sky.gdshader) drops its cloud, stars, and skyline on
@@ -19,10 +18,10 @@ extends Node
 const GraphicsQuality := preload("res://scripts/graphics.gd")
 
 ## The map's sun or moon.
+## Unused: the presets cap every sun's splits on Low (scripts/graphics.gd).
+## Kept so the scenes that set it still load cleanly.
 @export var sun_path: NodePath
 
-var _sun: DirectionalLight3D
-var _sun_mode := DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
 var _details: Array[MeshInstance3D] = []
 var _settings: Node
 var _sky: ShaderMaterial
@@ -38,9 +37,6 @@ func _ready() -> void:
 			_details.append(mesh)
 		elif not mesh.name.ends_with("_ground") and _has_twin(mesh):
 			mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_sun = get_node_or_null(sun_path) as DirectionalLight3D
-	if _sun != null:
-		_sun_mode = _sun.directional_shadow_mode
 	for env_node in scene.find_children("*", "WorldEnvironment", true, false):
 		var env := (env_node as WorldEnvironment).environment
 		if env != null and env.sky != null and env.sky.sky_material is ShaderMaterial:
@@ -55,10 +51,6 @@ func _ready() -> void:
 
 func _apply_preset() -> void:
 	var low: bool = int(_settings.get(&"graphics_quality")) == GraphicsQuality.Preset.LOW
-	if _sun != null:
-		_sun.directional_shadow_mode = (
-			mini(_sun_mode, DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS) if low else _sun_mode
-		)
 	for mesh in _details:
 		mesh.visible = not low
 	if _sky != null:

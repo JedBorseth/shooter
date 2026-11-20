@@ -6,7 +6,9 @@
 #
 # Extra environment variables (BENCH_PRESETS, BENCH_MAPS, BENCH_FRAMES,
 # BENCH_CAPTURE) pass through; see the script's header. Without a display it
-# runs under xvfb-run. Build the extension first (cargo build in rust/).
+# runs under xvfb-run. Build the extension first (cargo build in rust/). For
+# numbers that compare across runs on a busy machine, run it through
+# tools/steady.sh (as `just perf-gate` and the baseline do).
 set -euo pipefail
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 out="$repo/benchmark.json"

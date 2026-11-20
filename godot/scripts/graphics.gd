@@ -45,6 +45,8 @@ const PRESETS := [
 		"world_detail": 0,
 		"wet": false,
 		"soft_smoke": false,
+		"sun_splits": DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS,
+		"ambient_particles": 0.5,
 	},
 	{
 		"upscaler": Viewport.SCALING_3D_MODE_FSR2,
@@ -68,6 +70,8 @@ const PRESETS := [
 		"world_detail": 0,
 		"wet": true,
 		"soft_smoke": false,
+		"sun_splits": DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS,
+		"ambient_particles": 1.0,
 	},
 	{
 		"upscaler": Viewport.SCALING_3D_MODE_FSR2,
@@ -91,6 +95,8 @@ const PRESETS := [
 		"world_detail": 1,
 		"wet": true,
 		"soft_smoke": true,
+		"sun_splits": DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS,
+		"ambient_particles": 1.0,
 	},
 ]
 
@@ -102,6 +108,12 @@ const _STALE_AUTHORED := &"_graphics_authored"
 ## map's live extras whose light is also baked, such as Warehouse's
 ## reflection probes and the sun through its roof breach.
 const HIGH_ONLY := &"graphics_high_only"
+## A map's ambient particles that fill a lot of the screen with transparent
+## puffs (a smoke plume, steam, spray mist), saved in this group by their
+## effect scenes. Low emits half as many, as Call of Duty's low particle
+## quality draws fewer and cheaper particles: the plume over Slamcity's
+## railway cost 0.32 ms of Low's 4 ms there.
+const AMBIENT_PUFFS := &"graphics_ambient_puffs"
 const MotionBlur := preload("res://scripts/motion_blur.gd")
 const Looks := preload("res://scripts/looks.gd")
 ## The world surface shaders (both include shaders/world.gdshaderinc).
@@ -312,8 +324,10 @@ static func adopt(node: Node, preset: int) -> void:
 			var scene := node.owner.scene_file_path if node.owner != null else ""
 			Looks.apply_sun(light, scene)
 			var authored := {"shadow_distance": light.directional_shadow_max_distance}
-			_authored[id] = _take_stale(light, authored)
-	elif not node.is_in_group(HIGH_ONLY):
+			authored = _take_stale(light, authored)
+			authored["shadow_mode"] = light.directional_shadow_mode
+			_authored[id] = authored
+	elif not node.is_in_group(HIGH_ONLY) and not node.is_in_group(AMBIENT_PUFFS):
 		return
 	node.add_to_group(&"graphics_adopted")
 	_apply_node(node, PRESETS[clampi(preset, 0, PRESETS.size() - 1)])
@@ -369,6 +383,11 @@ static func _apply_node(node: Node, p: Dictionary) -> void:
 		var light := node as DirectionalLight3D
 		var authored: Dictionary = _authored[light.get_instance_id()]
 		light.directional_shadow_max_distance = authored["shadow_distance"] * p["shadow_distance"]
+		# Low draws at most two shadow splits (its shadows reach only half as
+		# far): 0.08 ms at Slamcity's worst view.
+		light.directional_shadow_mode = mini(authored["shadow_mode"], p["sun_splits"])
+	elif node is GPUParticles3D and node.is_in_group(AMBIENT_PUFFS):
+		(node as GPUParticles3D).amount_ratio = p["ambient_particles"]
 
 
 ## The scene of the map being played (its environment arrived last), for

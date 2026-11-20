@@ -947,6 +947,7 @@ func _on_node_added(node: Node) -> void:
 		node is WorldEnvironment
 		or node is DirectionalLight3D
 		or node.is_in_group(GraphicsQuality.HIGH_ONLY)
+		or node.is_in_group(GraphicsQuality.AMBIENT_PUFFS)
 	):
 		GraphicsQuality.adopt(node, graphics_quality)
 	elif _lens != null and node is SoldierRig:

@@ -8,11 +8,24 @@ Measured at 1920×1080 on a GTX 1060 3GB, the reference card. The budget is GPU 
 
 | Preset | GPU budget | Leaves room for | Today (worst view) |
 | --- | --- | --- | --- |
-| Low | 4 ms | weaker cards and laptops at 60 fps | 5.8 ms (Breakwater); Slamcity 5.4, Zombies 4.7, Warehouse 3.9, Testing 2.8 |
-| Medium (default) | 6.5 ms (the gate; 8 ms is the hard ceiling) | 144 fps on the reference card with room for the CPU, 60 fps on much weaker cards | Slamcity 8.5 and Breakwater 6.4 to 7.1 over; Warehouse 6.4, Zombies 6.2, Testing 5.8 |
-| High | 12 ms | 60 fps | 12.1 ms (Warehouse, with its live sun and probes); Slamcity 11.8 |
+| Low | 4 ms | weaker cards and laptops at 60 fps | 3.96 ms (Slamcity, the railway platform); Zombies 3.7, Slamcity's close-ups 3.7, Breakwater 3.4, Warehouse 3.3, Testing 2.8 |
+| Medium (default) | 6.5 ms (the gate; 8 ms is the hard ceiling) | 144 fps on the reference card with room for the CPU, 60 fps on much weaker cards | Slamcity 8.3 and Breakwater 7.3 over; Warehouse 6.3, Zombies 6.2, Testing 5.8 |
+| High | 12 ms | 60 fps | 11.95 ms (Warehouse, with its live sun and probes); Slamcity 11.6 |
 
-Per map on Medium, best of runs on 2026-11-20 (average over viewpoints, worst in brackets): Testing 5.61 (5.83), Slamcity 7.60 (8.46), its close-ups 7.56 (7.62), Breakwater 6.79 (7.11), Warehouse 5.60 (6.43), Zombies with 24 zombies 5.52 (6.16) ms.
+Per map, best of two steady runs (see below) on 2026-11-20, average over viewpoints with the worst in brackets:
+
+| Map | Low | Medium | High |
+| --- | ---: | ---: | ---: |
+| Testing Area | 2.71 (2.83) | 5.66 (5.83) | 8.57 (9.02) |
+| Slamcity | 3.71 (3.96) | 7.66 (8.27) | 10.95 (11.61) |
+| Slamcity close-ups | 3.65 (3.67) | 7.53 (7.54) | 10.95 (11.03) |
+| Breakwater | 3.23 (3.42) | 6.90 (7.30) | 9.78 (10.24) |
+| Warehouse | 2.92 (3.29) | 5.61 (6.26) | 10.77 (11.95) |
+| Zombies, 24 zombies | 3.20 (3.70) | 5.58 (6.17) | 8.15 (8.81) |
+
+With a hound round's eight hounds galloping ahead of the horde (`BENCH_HOUNDS=8`), Zombies' worst views are 3.80, 6.32, and 9.09 ms.
+
+Low was read at 4.7 to 5.8 ms on Slamcity, Breakwater, and Zombies before steady runs. Most of that was the card's clock, not the maps: measured steadily, only Slamcity's railway platform was over (4.05 ms), and Low's two shadow splits on every map and thinner ambient smoke brought it under.
 
 Zombies hounds (`BENCH_HOUNDS=8`: a four-player hound round's most at once, galloping in front of the 24-zombie horde, which a real game never has together): Medium 5.59 (6.35) ms against 5.55 (6.17) without them, Low 3.21 (3.76) against 3.24 (3.71), on 2026-11-20. The gate itself runs without hounds, as the baseline was measured.
 
@@ -63,6 +76,15 @@ tools/benchmark.sh --out after.json --compare docs/perf/baseline.json
 `tools/benchmark.sh` runs `godot/tests/benchmark.gd` at 1920×1080 (under `xvfb-run` when there is no display). It loads the Testing Area, Slamcity, Breakwater, Warehouse, and the Zombies arena with a 24-zombie horde walking at the player, holds each fixed viewpoint for 120 frames at each preset, and prints frame time, 99th-percentile frame time, GPU time, and draw calls (and how many of them went into shadow maps). `tools/bench_compare.py` prints a Markdown table of two runs and exits non-zero if a map and preset got more than 5% slower, so a loop can stop on a regression.
 
 Narrow a run with `BENCH_MAPS=slamcity`, `BENCH_PRESETS=medium`, or `BENCH_FRAMES=60`, and measure with motion blur on with `BENCH_MOTION_BLUR=1`. The script visits every map once before it measures, so shader compiles do not land in the first number. Set `BENCH_CAPTURE=<dir>` to save a screenshot of every viewpoint for before-and-after comparisons.
+
+**Measure steadily.** GPU time scales with the card's clock, and the driver drops the clock whenever the card idles between frames: on Low, and whenever other programs on the machine slow the frame rate. Within one run on the reference card the clock wandered from 999 to 1923 MHz, and Low read up to 1.5 ms high. `tools/steady.sh` fixes both causes for the command it runs. It starts a headless X server on the NVIDIA driver, sets the driver's "prefer maximum performance" mode through it (GeForce cards of this age cannot lock their clock with `nvidia-smi -lgc`), and runs the command on that display at a raised CPU priority. Frames are then presented on the GPU instead of being copied through Xvfb, so the card runs at 150 to 230 fps and boosts as it would for a player. Repeated runs agree to about 0.03 ms per view. It needs passwordless sudo, Xorg with the NVIDIA driver, and `nvidia-settings`, and runs the command unchanged without them. `just perf-gate` and the baseline use it:
+
+```sh
+flock ~/.cache/shooter-fidelity/gpu.lock tools/steady.sh tools/benchmark.sh --out after.json
+flock ~/.cache/shooter-fidelity/gpu.lock tools/steady.sh env PROFILE_MAP=slamcity PROFILE_VIEW=2 \
+  PROFILE_PRESET=low godot --path godot --resolution 1920x1080 --audio-driver Dummy \
+  --script res://tests/profile_frame.gd
+```
 
 **Read GPU time, not frames per second.** GPU time comes from the renderer's own timestamps. Under Xvfb, each frame is also copied through the CPU to the virtual display, which adds about 8 ms at 1080p. That caps the wall-clock numbers near 60–100 fps even when the GPU is idle half the frame. On a real display, the frame rate follows GPU time.
 
@@ -134,7 +156,8 @@ The presets live in `godot/scripts/graphics.gd`. The `Settings` autoload applies
 | SSAO | off | low, half resolution | medium, half resolution |
 | Glow | off | on, bilinear upscale | on, bicubic upscale |
 | Volumetric fog | off | off | where the map uses it |
-| Sun shadows | 2048 atlas, softest-cheapest filter, 50% range | 4096, soft low, 80% range | 4096, soft medium, full range |
+| Sun shadows | 2048 atlas, softest-cheapest filter, 50% range, at most two splits | 4096, soft low, 80% range, the map's splits | 4096, soft medium, full range, the map's splits |
+| A map's ambient smoke, steam, and spray mist (`graphics_ambient_puffs`) | half the particles | all | all |
 | Anisotropic filtering | 2× | 4× | 16× |
 | Lightmap sampling | bilinear | bilinear | bicubic |
 | Texture sharpness (mipmap bias) | 0 | −0.35 | −0.25 |
@@ -224,6 +247,7 @@ GPU time on Medium at 1080p on the reference card, average over viewpoints (wors
 | Zombies skyline rendered from tree, town, and pylon meshes into a horizon strip (two texture reads on sky pixels near the horizon, Medium and High), the moon drawn lower on the moonlight's bearing (free: no light moves); the sky behind the skyline is skipped, and Medium reads its cloud noise once instead of twice to pay for it; Low draws no skyline. `main` measured alongside, alternating, best of two runs per view: Low 3.59, 2.91, 2.89 ms against 3.60, 2.92, 2.91 here (`profile_frame.gd` with an identical-code control: 0.00 to 0.01 ms); Medium 6.12, 5.28, 5.19 against 6.01, 5.14, 5.06; High 8.70, 7.72, 7.66 against 8.73, 7.75, 7.69. Baseline not refreshed | | | 5.40 (6.01) ms |
 | A loaded soldier's build: a bulkier MakeHuman body, thicker plates, padded straps and belt, hip and first-aid pouches, and a hydration carrier (25.0k to 25.4k triangles; far mesh 5.0k to 5.1k; same surfaces and atlas size). `main`'s soldier assets swapped in on one build, alternating, best of two runs per side (average over views): Testing 2.64 / 5.51 / 8.31 ms against 2.63 / 5.51 / 8.36 here; Slamcity 3.75 / 7.58 / 10.78 against 3.75 / 7.58 / 10.87; Zombies (the horde wears the soldier) 4.11 / 5.18 / 7.86 against 4.02 / 5.17 / 7.82. Draw counts identical. Baseline not refreshed | 5.51 (5.70) ms | 7.58 (8.48) ms | 5.17 (5.23) ms |
 | Warehouse lit by a lightmap instead of live lights, SDFGI, SSIL, and SSR (#354); smoke lit per vertex; presets switch live GI off on Low and Medium. Baseline refreshed with all maps, Warehouse included | 5.61 (5.83) ms | 7.60 (8.46) ms | 5.52 (6.16) ms |
+| Steady measurement (`tools/steady.sh`: the card held in its performance state, frames presented on its own display), and the baseline re-measured that way with everything since #359 (streaks, hounds, prone, camos, custom games); Low caps every map's sun at two shadow splits and halves a map's ambient smoke, steam, and mist. Medium and High are unchanged; Low's worst views went from 4.05 to 3.96 ms on Slamcity and moved by −0.07 to +0.01 ms elsewhere against `main` measured the same way | 5.66 (5.83) ms | 7.66 (8.27) ms | 5.58 (6.17) ms |
 
 Warehouse (photo-matched and rebuilt for 6v6, #234 to #285) was never measured when it landed: lit live by 122 spot lights (61 with shadows), SDFGI, SSIL, screen-space reflections, and two reflection probes, it cost 22.9 ms on average on Medium (29.5 at the worst view; Low 8 to 10 ms) with 10,000 to 11,600 draws. Baked into a lightmap like the other maps, with the probes and the live breach sun on High only, it costs:
 

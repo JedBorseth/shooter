@@ -57,7 +57,7 @@ size = Vector2(1, 1)
 
 [node name="SmokePlume" type="Node3D"]
 
-[node name="Particles" type="GPUParticles3D" parent="."]
+[node name="Particles" type="GPUParticles3D" parent="." groups=["graphics_ambient_puffs"]]
 amount = 44
 lifetime = 12.0
 preprocess = 6.0
