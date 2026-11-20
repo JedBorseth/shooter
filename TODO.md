@@ -231,7 +231,9 @@ Done: rounds with a growing, toughening horde, zombies that walk straight at the
 - [x] Downed state and revives for co-op (`rust/sim/src/zombies/laststand.rs`, Black Ops III's numbers): the second hit downs instead of killing; downed players crawl with the sidearm (two spare magazines), take no harm, and zombies ignore them; a teammate holding use within 1.9 m for 3 s revives them (held still, as the client predicts), earning the 5% of points they lost going down; after 45 s they bleed out, every other player loses 10%, and they come back at the next round. Everyone down ends the game, so solo play ends on the first down.
 - [ ] Downed players crawl crouched: add a prone stance and a crawl animation (Black Ops crawls prone), and a revive animation for the reviver.
 - [ ] Quick Revive and the other perks (solo self-revive, half revive time).
-- [ ] The title screen's Zombies runs a local server; co-op setup, the server browser, a co-op scoreboard (kills, downs, revives, headshots); then drop the offline director.
+- [x] The title screen's Zombies runs on a local dedicated server: Solo starts a private one that skips the ready-up and pauses; Co-op hosts one friends on the network find under Multiplayer, LAN (up to four players, ready-up, no pause). The scoreboard shows points, kills, downs, revives, and headshots.
+- [ ] Remove the offline `ZombieDirector` game once the benchmark and the capture scripts run Zombies on a server (they are its only users now).
+- [ ] Zombies on the Internet tab: a hosted co-op game registers with a master server.
 - [ ] Playable versions of the menu's maps; today every map loads the one arena.
 - [x] A cheaper zombie for big hordes: two surfaces per character instead of eleven (a 24-zombie horde draws about 195 calls instead of 630).
 - [x] Animate distant zombies at a reduced rate: every second frame beyond 18 m and every fourth beyond 32 m, staggered across zombies.

@@ -31,7 +31,7 @@ const ROUTES := {
 	"Domination": ["OBJECTIVE", "Take and hold flags A, B, and C."],
 	"SearchAndDestroy": ["ONE LIFE", "Rounds with one life each."],
 	"Multiplayer": ["ONLINE", "Join a dedicated server on the internet or your network."],
-	"Zombies": ["SOLO", "Survive the rounds."],
+	"Zombies": ["CO-OP", "Survive the rounds, alone or with up to three friends."],
 	"TestingArea": ["EVERY WEAPON", "Movement, weapons, and target practice."],
 	"Slamcity": ["FREE ROAM", "Walk the three lanes of Slamcity on your own."],
 	"Nuketown": ["FREE ROAM", "Walk Nuketown on your own."],
@@ -155,7 +155,7 @@ func _open_multiplayer(message := "") -> void:
 
 
 ## Opens the local match setup for `mode` ("tdm", "ctf", "hardpoint", "dom", "gungame",
-## "ffa", or "snd") as a card beside the menu, closing any card already open.
+## "ffa", "snd", or "zombies") as a card beside the menu, closing any card already open.
 func _open_setup(mode: String) -> void:
 	if _loading:
 		return
@@ -165,7 +165,8 @@ func _open_setup(mode: String) -> void:
 	setup.set("mode", mode)
 	setup.name = "TdmSetup"
 	_tdm_setup = setup
-	_setup_button = SETUP_BUTTONS[mode]
+	# Zombies co-op opens from the Zombies menu.
+	_setup_button = SETUP_BUTTONS.get(mode, "Zombies")
 	_set_current(_setup_button)
 	add_child(setup)
 	setup.back_requested.connect(_close_tdm)
@@ -222,9 +223,21 @@ func _open_zombies() -> void:
 	$Margin.hide()
 	add_child(zombies)
 	zombies.back_requested.connect(_close_zombies)
-	zombies.play_requested.connect(
-		func(_map_name: String) -> void: _start_scene(ZOMBIES_PATH, "Zombies")
-	)
+	zombies.play_requested.connect(func(_map_name: String) -> void: _start_solo_zombies())
+	zombies.coop_requested.connect(_open_zombies_coop)
+
+
+## Solo Zombies: a local dedicated server, as every mode is, that starts at
+## once and pauses with the pause menu.
+func _start_solo_zombies() -> void:
+	_close_zombies()
+	_start_tdm({"mode": "zombies", "map": "zombies", "name": "Solo Zombies", "auto_start": true})
+
+
+## Zombies with friends: the local match card, set up for co-op.
+func _open_zombies_coop() -> void:
+	_close_zombies()
+	_open_setup("zombies")
 
 
 func _close_zombies() -> void:

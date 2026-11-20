@@ -7,7 +7,9 @@ extends Control
 ## ("gungame": name, map, player count, bots, kills per weapon, and time
 ## limit), Free-for-all ("ffa": name, map, player count, bots, kill limit,
 ## and time limit), or Search and Destroy ("snd": name, team size, bots, and
-## rounds to win, on Slamcity). Bots fill the empty places. Start runs a local dedicated server with
+## rounds to win, on Slamcity), or Zombies co-op ("zombies": name and map;
+## friends on the network join it from Multiplayer, LAN, up to four players).
+## Bots fill the empty places in the other modes. Start runs a local dedicated server with
 ## those rules and joins it (`Net.start_local_match`). UI only: it loads no
 ## gameplay. Set `mode` before adding it to the tree.
 ##
@@ -25,6 +27,8 @@ const MAPS := [
 	["Warehouse", "warehouse"],
 	["Testing Arena", "arena"],
 ]
+## Zombies needs a map with zombie spawns and windows.
+const ZOMBIES_MAPS := [["Zombies Arena", "zombies"]]
 ## Search and Destroy needs a map with attacking and defending sides.
 const SND_MAPS := [["Slamcity", "slamcity"]]
 const ROUNDS_TO_WIN := [4, 6, 8]
@@ -48,6 +52,7 @@ const MAP_PICTURES := {
 	"nuketown": "res://assets/ui/maps/nuketown.jpg",
 	"warehouse": "res://assets/ui/maps/warehouse.jpg",
 	"arena": "res://assets/ui/maps/arena.jpg",
+	"zombies": "res://assets/ui/maps/zombies.jpg",
 }
 const MODE_NAMES := {
 	"tdm": "Team Deathmatch",
@@ -57,6 +62,7 @@ const MODE_NAMES := {
 	"hardpoint": "Hardpoint",
 	"dom": "Domination",
 	"snd": "Search and Destroy",
+	"zombies": "Zombies",
 }
 ## The line under the map picture, by mode.
 const DETAILS := {
@@ -79,10 +85,15 @@ const DETAILS := {
 		"Rounds with one life each. The attackers wipe out the defenders, or the"
 		+ " defenders hold out until time runs out."
 	),
+	"zombies":
+	(
+		"Co-op against rounds of zombies, up to four players. Friends on your network"
+		+ " find it under Multiplayer, LAN; it starts once everyone is ready."
+	),
 }
 const CARD_WIDTH := 560.0
 
-## "tdm", "ctf", "hardpoint", "dom", "gungame", "ffa", or "snd".
+## "tdm", "ctf", "hardpoint", "dom", "gungame", "ffa", "snd", or "zombies".
 var mode := "tdm"
 
 var _name: LineEdit
@@ -117,6 +128,14 @@ func _unhandled_input(event: InputEvent) -> void:
 
 ## The chosen rules, as `Net.start_local_match` takes them.
 func options() -> Dictionary:
+	if _zombies():
+		var host := _name.text.strip_edges()
+		return {
+			"mode": "zombies",
+			"map": ZOMBIES_MAPS[_map.selected][1],
+			"name": "%s's Zombies" % (host if host != "" else "Player"),
+			"shared": true,
+		}
 	if _gun_game():
 		return {
 			"mode": "gungame",
@@ -185,7 +204,13 @@ func _ffa() -> bool:
 	return mode == "ffa"
 
 
+func _zombies() -> bool:
+	return mode == "zombies"
+
+
 func _maps() -> Array:
+	if _zombies():
+		return ZOMBIES_MAPS
 	return SND_MAPS if _snd() else MAPS
 
 
@@ -252,7 +277,13 @@ func _build() -> void:
 	caption.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	header.add_child(caption)
 	var eyebrow := Label.new()
-	eyebrow.text = "LOCAL MATCH  ·  %s" % MODE_NAMES.get(mode, "Team Deathmatch").to_upper()
+	eyebrow.text = (
+		"%s  ·  %s"
+		% [
+			"CO-OP" if _zombies() else "LOCAL MATCH",
+			MODE_NAMES.get(mode, "Team Deathmatch").to_upper(),
+		]
+	)
 	eyebrow.theme_type_variation = &"Eyebrow"
 	eyebrow.add_theme_color_override("font_color", UiTheme.ACCENT)
 	caption.add_child(eyebrow)
@@ -281,7 +312,9 @@ func _build() -> void:
 	_map = _chips(rows, "Map", _maps().map(func(m: Array) -> String: return m[0]), 0)
 	_map.item_selected.connect(_show_map)
 	_show_map(0)
-	if _gun_game() or _ffa():
+	if _zombies():
+		pass
+	elif _gun_game() or _ffa():
 		_players = _chips(
 			rows, "Players", PLAYER_COUNTS.map(func(n: int) -> String: return str(n)), 3
 		)
@@ -289,8 +322,11 @@ func _build() -> void:
 		_team_size = _chips(
 			rows, "Teams", TEAM_SIZES.map(func(n: int) -> String: return "%dv%d" % [n, n]), 5
 		)
-	_bot_skill = _chips(rows, "Bots", BOT_SKILLS.map(func(s: Array) -> String: return s[0]), 1)
-	if _gun_game():
+	if not _zombies():
+		_bot_skill = _chips(rows, "Bots", BOT_SKILLS.map(func(s: Array) -> String: return s[0]), 1)
+	if _zombies():
+		pass
+	elif _gun_game():
 		_kills_per_weapon = _chips(
 			rows, "Kills each", KILLS_PER_WEAPON.map(func(n: int) -> String: return str(n)), 1
 		)
@@ -318,7 +354,7 @@ func _build() -> void:
 		_score_limit = _chips(
 			rows, "Kills", SCORE_LIMITS.map(func(n: int) -> String: return str(n)), 2
 		)
-	if not _snd():
+	if not _snd() and not _zombies():
 		_time_limit = _chips(
 			rows, "Minutes", TIME_LIMITS.map(func(n: int) -> String: return str(n)), 1
 		)
@@ -336,7 +372,7 @@ func _build() -> void:
 	actions.add_child(back)
 	_start = Button.new()
 	_start.name = "Start"
-	_start.text = "START MATCH"
+	_start.text = "HOST GAME" if _zombies() else "START MATCH"
 	_start.theme_type_variation = &"PrimaryButton"
 	_start.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	_start.icon = load("res://assets/ui/icons/arrow_right.svg") as Texture2D
@@ -353,6 +389,8 @@ func _build() -> void:
 
 
 func _detail() -> String:
+	if _zombies():
+		return DETAILS.zombies
 	return DETAILS.get(mode, DETAILS.tdm) + " Bots fill the empty places."
 
 

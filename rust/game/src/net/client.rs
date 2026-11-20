@@ -551,6 +551,8 @@ impl NetClient {
                 d.set("captures", e.row.captures);
                 d.set("returns", e.row.returns);
                 d.set("defends", e.row.defends);
+                d.set("revives", e.row.revives);
+                d.set("headshots", e.row.headshots);
                 d.set("ping", i32::from(e.row.ping_ms));
                 d.set("ready", e.row.ready);
                 d.set("level", i32::from(e.row.level));
@@ -1442,7 +1444,7 @@ impl NetClient {
                 if let (Some(horde), Some(me)) = (&mut self.horde, self.player_id)
                     && let Some(row) = rows.iter().find(|r| r.id == me)
                 {
-                    horde.set_tallies(row.kills, 0);
+                    horde.set_tallies(row.kills, row.headshots);
                 }
                 for row in rows {
                     if let Some(entry) = self.roster.iter_mut().find(|e| e.id == row.id) {

@@ -72,6 +72,9 @@ const DEFAULT_PORT := 27015
 ## Port of the server `start_local_match` runs, away from the default so it
 ## does not clash with a server already running on this machine.
 const LOCAL_PORT := 27035
+## Port of a local server shared with friends: inside the range a LAN search
+## asks (`LAN_QUERY_PORTS`), so they find it under Multiplayer, LAN.
+const SHARED_PORT := 27027
 const OFFLINE_ONLY_NODES := ["Targets", "Sentry", "SecretLaser"]
 
 ## Set by `leave`: the title screen opens the server browser and shows
@@ -83,6 +86,9 @@ var _client: NetClient
 ## Process id of the server `start_local_match` started, or -1.
 var _local_server_pid := -1
 var _local_pause_file := ""
+## The local server is open to friends: it does not pause, and answers
+## server browsers.
+var _local_shared := false
 
 
 func _ready() -> void:
@@ -143,15 +149,21 @@ func join(target: String, options: Dictionary = {}, arena: PackedScene = null) -
 
 
 ## Starts a dedicated server in a background process with `options` (`mode`,
-## "tdm", "ctf", "hardpoint", "dom", "gungame", or "snd"; `map`, `bots`,
-## `bot_skill`, `score_limit` (0 for the mode's usual limit),
-## `kills_per_weapon`, `time_limit` in minutes, `rounds_to_win`) and joins it.
-## The server does not answer server browsers.
+## "tdm", "ctf", "hardpoint", "dom", "gungame", "snd", or "zombies"; `map`,
+## `bots`, `bot_skill`, `score_limit` (0 for the mode's usual limit),
+## `kills_per_weapon`, `time_limit` in minutes, `rounds_to_win`, `name`,
+## `auto_start` to skip the ready-up) and joins it. The server pauses with
+## the pause menu and does not answer server browsers, unless `shared`: then
+## friends on the network find it under Multiplayer, LAN (or join it
+## directly), and it never pauses.
 func start_local_match(options: Dictionary) -> void:
 	stop_local_server()
+	_local_shared = bool(options.get("shared", false))
 	_local_pause_file = OS.get_user_data_dir().path_join("local-pause-%d" % OS.get_process_id())
 	DirAccess.remove_absolute(_local_pause_file)
 	var map := String(options.get("map", "slamcity"))
+	var port := SHARED_PORT if _local_shared else LOCAL_PORT
+	var server_name := String(options.get("name", "Local match"))
 	var server_log := OS.get_user_data_dir().path_join("logs/local-server.log")
 	var args := PackedStringArray(["--headless", "--log-file", server_log])
 	if OS.has_feature("editor"):
@@ -163,13 +175,9 @@ func start_local_match(options: Dictionary) -> void:
 				"--",
 				"--server",
 				"--port",
-				str(LOCAL_PORT),
-				"--query-port",
-				"-1",
-				"--pause-file",
-				_local_pause_file,
+				str(port),
 				"--name",
-				"Local match",
+				server_name,
 				"--map",
 				map,
 				"--bots",
@@ -189,11 +197,17 @@ func start_local_match(options: Dictionary) -> void:
 			]
 		)
 	)
+	# Only a server nobody else can join pauses, and only it hides from
+	# server browsers.
+	if not _local_shared:
+		args.append_array(["--query-port", "-1", "--pause-file", _local_pause_file])
+	if bool(options.get("auto_start", false)):
+		args.append("--auto-start")
 	_local_server_pid = OS.create_process(OS.get_executable_path(), args)
 	if _local_server_pid <= 0:
 		push_error("Net.start_local_match: cannot start the server process")
 		return
-	join("127.0.0.1:%d" % LOCAL_PORT, {"map": map, "name": "Local match"})
+	join("127.0.0.1:%d" % port, {"map": map, "name": server_name})
 
 
 ## Stops the server `start_local_match` started, if it is still running.
@@ -206,9 +220,10 @@ func stop_local_server() -> void:
 	_local_pause_file = ""
 
 
-## Only matches launched by this client may pause their dedicated process.
+## Only matches launched by this client, and not shared with friends, may
+## pause their dedicated process.
 func is_local_match() -> bool:
-	return _local_server_pid > 0
+	return _local_server_pid > 0 and not _local_shared
 
 
 func set_local_paused(value: bool) -> void:
@@ -244,8 +259,13 @@ func leave(message := "") -> void:
 
 
 ## Only known local map scenes can be selected by a server listing.
+## Takes a map id ("zombies") or the name browsers show ("Zombies Arena").
 static func map_path(map_name: String) -> String:
-	return MAP_SCENES.get(map_name.to_lower(), "")
+	var key := map_name.to_lower()
+	for id: String in MAP_NAMES:
+		if String(MAP_NAMES[id]).to_lower() == key:
+			key = id
+	return MAP_SCENES.get(key, "")
 
 
 func _start_server(options: Dictionary) -> void:
