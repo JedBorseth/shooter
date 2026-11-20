@@ -238,7 +238,10 @@ static func _load() -> void:
 	var defaults := NetClient.default_classes()
 	_custom.clear()
 	for i in CUSTOM_SLOTS:
-		var stored: Variant = config.get_value("custom", str(i), null) if err == OK else null
+		# `get_value` with a null default errors when the key is missing.
+		var stored: Variant = (
+			config.get_value("custom", str(i)) if config.has_section_key("custom", str(i)) else null
+		)
 		var entry: Dictionary
 		# A saved class that no longer passes (a weapon was removed, rules
 		# changed) goes back to its default.
@@ -255,7 +258,9 @@ static func _load() -> void:
 	for item: Dictionary in NetClient.streak_items():
 		known.append(String(item.key))
 	_streaks = PackedStringArray(["uav", "counter_uav"])
-	var stored_streaks: Variant = config.get_value("class", "streaks", null) if err == OK else null
+	var stored_streaks: Variant = (
+		config.get_value("class", "streaks") if config.has_section_key("class", "streaks") else null
+	)
 	if stored_streaks is PackedStringArray:
 		_streaks = PackedStringArray()
 		for key in stored_streaks as PackedStringArray:
