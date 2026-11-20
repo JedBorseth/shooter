@@ -2022,6 +2022,8 @@ impl NetClient {
             views.push(view);
         }
         self.tape.record(snapshot.tick, views);
+        self.tape
+            .record_grenades(snapshot.tick, &snapshot.grenades, &snapshot.smokes);
     }
 
     /// Starts, plays, and ends killcams. A respawn killcam starts after the

@@ -18,10 +18,11 @@
 
 use std::collections::VecDeque;
 
+use crate::equipment;
 use crate::hitbox::clock::{BodyClock, BodyState};
 use crate::net::interpolation::Interpolate;
 use crate::net::lag::RemoteSample;
-use crate::net::protocol::{KillCause, PlayerView, Predicted};
+use crate::net::protocol::{GrenadeView, KillCause, PlayerView, Predicted, SmokeView};
 use crate::net::{TICK_RATE, Tick};
 use crate::tdm::{Mode, Phase};
 use crate::weapon::WeaponId;
@@ -325,10 +326,39 @@ impl Playback {
 
 /// The client's recording of every snapshot it received in the last
 /// [`TAPE_SECONDS`]: every player's view, its own included (built from its
-/// authoritative state), sorted by id.
+/// authoritative state), sorted by id, and every live grenade and hanging
+/// smoke cloud ([`Tape::record_grenades`]).
 #[derive(Default)]
 pub struct Tape {
     frames: VecDeque<(Tick, Vec<PlayerView>)>,
+    grenades: VecDeque<GrenadeFrame>,
+}
+
+/// The grenades and smoke clouds of one snapshot.
+struct GrenadeFrame {
+    tick: Tick,
+    grenades: Vec<GrenadeView>,
+    smokes: Vec<SmokeView>,
+}
+
+/// A grenade in a replay: who threw it, their shot number, what it is, and
+/// where it is (metres).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TapeGrenade {
+    pub owner: u8,
+    pub shot: u32,
+    pub kind: equipment::Kind,
+    pub position: crate::Vec3,
+}
+
+/// A smoke cloud hanging in a replay: its key, where it popped, and how old
+/// it is (seconds).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TapeSmoke {
+    pub owner: Option<u8>,
+    pub shot: u32,
+    pub position: crate::Vec3,
+    pub age: f32,
 }
 
 impl Tape {
@@ -348,6 +378,107 @@ impl Tape {
 
     pub fn clear(&mut self) {
         self.frames.clear();
+        self.grenades.clear();
+    }
+
+    /// Records the live grenades and hanging smoke clouds of the snapshot
+    /// sent at `tick`, beside its players.
+    pub fn record_grenades(&mut self, tick: Tick, grenades: &[GrenadeView], smokes: &[SmokeView]) {
+        if self.grenades.back().is_some_and(|f| f.tick >= tick) {
+            return;
+        }
+        self.grenades.push_back(GrenadeFrame {
+            tick,
+            grenades: grenades.to_vec(),
+            smokes: smokes.to_vec(),
+        });
+        let span = (TAPE_SECONDS * TICK_RATE as f32) as Tick;
+        while self.grenades.front().is_some_and(|f| f.tick + span < tick) {
+            self.grenades.pop_front();
+        }
+    }
+
+    /// Every grenade in flight or lying at `tick`, placed between the
+    /// snapshots around it. A grenade in the snapshot before `tick` but not
+    /// the one after went off between them and is not shown.
+    pub fn grenades_at(&self, tick: f64) -> Vec<TapeGrenade> {
+        let split = self.grenades.partition_point(|f| f64::from(f.tick) <= tick);
+        let Some(before) = split.checked_sub(1).and_then(|i| self.grenades.get(i)) else {
+            return Vec::new();
+        };
+        let after = self.grenades.get(split);
+        before
+            .grenades
+            .iter()
+            .filter_map(|g| {
+                let from = g.position();
+                let position = match after {
+                    None => from,
+                    Some(next) => {
+                        let to = next
+                            .grenades
+                            .iter()
+                            .find(|n| n.owner == g.owner && n.shot == g.shot)?
+                            .position();
+                        let t = (tick - f64::from(before.tick))
+                            / f64::from(next.tick - before.tick).max(1.0);
+                        from.lerp(to, t.clamp(0.0, 1.0) as f32)
+                    }
+                };
+                Some(TapeGrenade {
+                    owner: g.owner,
+                    shot: g.shot,
+                    kind: g.kind,
+                    position,
+                })
+            })
+            .collect()
+    }
+
+    /// The grenades that went off after `from` and up to `to`: each one in
+    /// a snapshot and gone from the next, where it last was.
+    pub fn blasts_between(&self, from: f64, to: f64) -> Vec<TapeGrenade> {
+        let mut blasts = Vec::new();
+        for (a, b) in self.grenades.iter().zip(self.grenades.iter().skip(1)) {
+            let at = f64::from(b.tick);
+            if at <= from || at > to {
+                continue;
+            }
+            for g in &a.grenades {
+                if !b
+                    .grenades
+                    .iter()
+                    .any(|n| n.owner == g.owner && n.shot == g.shot)
+                {
+                    blasts.push(TapeGrenade {
+                        owner: g.owner,
+                        shot: g.shot,
+                        kind: g.kind,
+                        position: g.position(),
+                    });
+                }
+            }
+        }
+        blasts
+    }
+
+    /// The smoke clouds hanging at `tick`, aged to it.
+    pub fn smokes_at(&self, tick: f64) -> Vec<TapeSmoke> {
+        let split = self.grenades.partition_point(|f| f64::from(f.tick) <= tick);
+        let Some(frame) = split.checked_sub(1).and_then(|i| self.grenades.get(i)) else {
+            return Vec::new();
+        };
+        let since = (tick - f64::from(frame.tick)).max(0.0);
+        frame
+            .smokes
+            .iter()
+            .map(|s| TapeSmoke {
+                owner: s.owner,
+                shot: s.shot,
+                position: s.position(),
+                age: ((f64::from(s.age) + since) / f64::from(TICK_RATE)) as f32,
+            })
+            .collect()
     }
 
     pub fn oldest_tick(&self) -> Option<Tick> {
@@ -481,6 +612,43 @@ fn find(views: &[PlayerView], id: u8) -> Option<&PlayerView> {
 mod tests {
     use super::*;
     use glam::IVec3;
+
+    #[test]
+    fn the_tape_replays_grenades_their_blasts_and_smoke() {
+        use crate::Vec3;
+        use equipment::Kind;
+        let mut tape = Tape::default();
+        let frag = |x: f32| GrenadeView::new(3, 7, Kind::Frag, Vec3::new(x, 1.0, 0.0), false);
+        let smoke = |age| SmokeView::new(Some(4), 2, Vec3::new(5.0, 0.0, 5.0), age);
+        tape.record_grenades(100, &[frag(0.0)], &[]);
+        tape.record_grenades(102, &[frag(2.0)], &[smoke(0)]);
+        // Repeated or out-of-order snapshots are dropped.
+        tape.record_grenades(102, &[], &[]);
+        tape.record_grenades(104, &[], &[smoke(4)]);
+
+        let mid = tape.grenades_at(101.0);
+        assert_eq!(mid.len(), 1);
+        assert!((mid[0].position.x - 1.0).abs() < 1e-3, "{:?}", mid[0]);
+        assert_eq!((mid[0].owner, mid[0].shot, mid[0].kind), (3, 7, Kind::Frag));
+        // Gone once it went off, and nothing before the tape starts.
+        assert!(tape.grenades_at(103.0).is_empty());
+        assert!(tape.grenades_at(99.0).is_empty());
+
+        let blasts = tape.blasts_between(102.0, 104.0);
+        assert_eq!(blasts.len(), 1);
+        assert!((blasts[0].position.x - 2.0).abs() < 1e-3);
+        assert!(tape.blasts_between(100.0, 102.0).is_empty());
+        assert!(tape.blasts_between(104.0, 110.0).is_empty());
+
+        let clouds = tape.smokes_at(105.0);
+        assert_eq!(clouds.len(), 1);
+        assert_eq!((clouds[0].owner, clouds[0].shot), (Some(4), 2));
+        assert!((clouds[0].age - 5.0 / TICK_RATE as f32).abs() < 1e-4);
+        assert!(tape.smokes_at(101.0).is_empty());
+
+        tape.clear();
+        assert!(tape.grenades_at(101.0).is_empty());
+    }
 
     fn record(cause: KillCause) -> KillRecord {
         KillRecord {

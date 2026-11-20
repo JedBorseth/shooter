@@ -417,12 +417,14 @@ impl RemotePlayer {
             return;
         };
         let tree = self.base().get_tree();
+        if self.replay {
+            // A replay's body, and the gun it drops, go with the replay.
+            self.rig.add_to_group(corpses::REPLAY_GROUP);
+            self.left_bodies.push(self.rig.clone());
+        }
         CorpseYard::of(&tree)
             .bind_mut()
             .adopt(self.rig.clone(), corpses::SOLDIER_SECONDS);
-        if self.replay {
-            self.left_bodies.push(self.rig.clone());
-        }
         fresh.set_name("Soldier");
         fresh.set_visible(false);
         self.base_mut().add_child(&fresh);
