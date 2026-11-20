@@ -452,8 +452,8 @@ The HUD follows the modern Call of Duty layout (Modern Warfare 2019 on and Black
 | Bottom right | Weapon name and attachment, silhouette, big magazine count, smaller reserve, and a tick per round | `hud_weapon.gd` |
 | Centre | Crosshair, hit markers, damage crescents, ammo warnings and prompts with key caps, points and medals | `crosshair.gd`, `damage_overlay.gd`, `hud_centre.gd`, `score_feed.gd` |
 | Upper third | Announcement banners: the title on a dark band with thin wings in the call's colour | `net/match_banner.gd` |
-| Lower third | The death card ("KILLED BY", the killer's name and weapon, the respawn countdown) and the hint under it | `hud_centre.gd`, `net/match_banner.gd` |
-| Bottom edge | The controls legend, from the live bindings, for 14 seconds after the first spawn (F1 toggles it) | `hud_centre.gd` |
+| Lower third | The death card ("KILLED BY", the killer's name and weapon, the respawn countdown) and the hint under it; the held scoreboard covers the card | `hud_centre.gd`, `net/match_banner.gd` |
+| Bottom edge | The controls legend, from the live bindings and only for actions that work here (no ammo refill online or in Zombies), for 14 seconds after the first spawn (F1 toggles it) | `hud_centre.gd` |
 
 ### Button prompts
 

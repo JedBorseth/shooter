@@ -268,6 +268,16 @@ func _tdm() -> void:
 		await process_frame
 		if String(client.match_info().phase) == "ended":
 			break
+	# The final killcam plays first (it can take a few seconds to start);
+	# the results board follows it.
+	for i in 600:
+		if client.in_killcam():
+			break
+		await process_frame
+	for i in 1800:
+		if not client.in_killcam():
+			break
+		await process_frame
 	await _seconds(1.0)
 	await _shot("tdm_08_results")
 	net.call("stop_local_server")

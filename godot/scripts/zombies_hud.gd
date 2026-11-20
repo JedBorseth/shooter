@@ -240,6 +240,9 @@ func _on_game_over(round_number: int) -> void:
 		]
 	)
 	_game_over.show()
+	# Nothing announced before the end stays over the results.
+	_banner_time = 0.0
+	_banner.text = ""
 	# Online the next game starts by itself after the results.
 	_again.visible = not _director.is_networked()
 	if _director.is_networked():
