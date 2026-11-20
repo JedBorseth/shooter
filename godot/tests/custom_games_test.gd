@@ -19,6 +19,8 @@ const BOTS := 4
 var _port := 30000 + OS.get_process_id() % 20000
 var _failures := 0
 var _server_pid := -1
+## Each in-process server takes the next port.
+var _servers := 0
 
 
 func _initialize() -> void:
@@ -28,6 +30,8 @@ func _initialize() -> void:
 func _run() -> void:
 	await _client_side()
 	await _server_side()
+	for ff in ["off", "on", "reflect", "shared"]:
+		await _friendly_fire(ff)
 	await _ranked_ignores()
 	_finish()
 
@@ -89,7 +93,8 @@ func _client_side() -> void:
 func _start_server(custom: String, ranked := false) -> NetServer:
 	var server := (load("res://scenes/server.tscn") as PackedScene).instantiate() as NetServer
 	server.map_scene = ARENA_SCENE
-	server.port = _port + 1
+	_servers += 1
+	server.port = _port + _servers
 	server.query_port = -1
 	server.bots = BOTS
 	server.bot_skill = "normal"
@@ -130,6 +135,62 @@ func _server_side() -> void:
 		await _wait_for(func() -> bool: return server.player_alive(201), 0.25),
 		"and is back at once"
 	)
+	server.queue_free()
+	await process_frame
+
+
+## A frag thrown by one bot goes off at a teammate's feet, far from the
+## thrower: with friendly fire off the teammate is spared; on, they take it
+## all; reflect, the thrower takes half instead; shared, each takes half.
+func _friendly_fire(ff: String) -> void:
+	var server := _start_server("ff=%s,regen=off" % ff)
+	for b in BOTS:
+		server.debug_bot_passive(200 + b, true)
+	await _wait_for(func() -> bool: return server.match_phase() == "playing", 30.0)
+	await _seconds(0.5)
+	var thrower := 200
+	var mate := -1
+	var enemy := -1
+	for id in server.player_ids():
+		if id == thrower:
+			continue
+		if server.player_team(id) == server.player_team(thrower):
+			mate = id
+		else:
+			enemy = id
+	_check(mate >= 0 and enemy >= 0, "%s: the thrower has a teammate and an enemy" % ff)
+	if mate < 0 or enemy < 0:
+		server.queue_free()
+		await process_frame
+		return
+	# The teammate stands where the enemy is, far from the thrower.
+	var spot := server.player_position(enemy) + Vector3(1.0, 0.0, 0.0)
+	server.debug_teleport(mate, spot)
+	await _ticks(2)
+	var far := server.player_position(thrower).distance_to(spot)
+	server.debug_grenade(thrower, "frag", spot + Vector3(0.0, 0.1, 0.0), 0.05)
+	await _seconds(0.5)
+	var mate_health := server.player_health(mate)
+	var thrower_health := server.player_health(thrower)
+	var note := "teammate %.0f, thrower %.0f, %.0f m apart" % [mate_health, thrower_health, far]
+	match ff:
+		"off":
+			_check(mate_health == 100.0 and thrower_health == 100.0, "off: nobody hurt (%s)" % note)
+		"on":
+			_check(
+				mate_health < 50.0 and thrower_health == 100.0,
+				"on: the teammate takes it (%s)" % note
+			)
+		"reflect":
+			_check(
+				mate_health == 100.0 and thrower_health < 100.0,
+				"reflect: the thrower takes it instead (%s)" % note
+			)
+		"shared":
+			_check(
+				mate_health < 100.0 and mate_health > 0.0 and thrower_health < 100.0,
+				"shared: both take half (%s)" % note
+			)
 	server.queue_free()
 	await process_frame
 

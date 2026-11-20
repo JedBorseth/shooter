@@ -57,6 +57,21 @@ pub enum FriendlyFire {
     Shared,
 }
 
+impl FriendlyFire {
+    /// A hit of `damage` on a teammate: what the teammate takes, and what
+    /// reflects onto the attacker. Black Ops 2 halves reflected and shared
+    /// damage, `int(damage * 0.5)`, at least 1.
+    pub fn split(self, damage: f32) -> (f32, f32) {
+        let half = (damage * FRIENDLY_SHARE).floor().max(1.0);
+        match self {
+            Self::Off => (0.0, 0.0),
+            Self::On => (damage, 0.0),
+            Self::Reflect => (0.0, half),
+            Self::Shared => (half, half),
+        }
+    }
+}
+
 /// What the minimap shows (Black Ops 2 `forceRadar`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Radar {
@@ -537,6 +552,16 @@ mod tests {
         let s = Settings::parse(" killcam = OFF , radar=Constant ").unwrap();
         assert!(!s.killcam);
         assert_eq!(s.radar, Radar::Constant);
+    }
+
+    #[test]
+    fn friendly_fire_splits_damage_as_black_ops_2() {
+        assert_eq!(FriendlyFire::Off.split(40.0), (0.0, 0.0));
+        assert_eq!(FriendlyFire::On.split(40.0), (40.0, 0.0));
+        assert_eq!(FriendlyFire::Reflect.split(41.0), (0.0, 20.0));
+        assert_eq!(FriendlyFire::Shared.split(41.0), (20.0, 20.0));
+        // At least 1.
+        assert_eq!(FriendlyFire::Shared.split(1.0), (1.0, 1.0));
     }
 
     #[test]
