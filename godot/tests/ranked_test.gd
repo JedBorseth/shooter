@@ -2,8 +2,9 @@ extends SceneTree
 ## A dedicated server with accounts (`--accounts`, docs/online.md) against a
 ## running account server: a player who is not signed in is turned away with
 ## the reason, a signed-in player joins under their account's name, the
-## server says it reports the match itself, and at the end of the match the
-## server's report reaches the account while the game reports nothing.
+## server says it reports the match itself, its bots have a navigation mesh,
+## and at the end of the match the server's report reaches the account while
+## the game reports nothing.
 ##
 ## Needs NAKAMA_URL and NAKAMA_HTTP_KEY like online_test.gd; skips without
 ## NAKAMA_URL. Real time: it starts a dedicated server process.
@@ -122,6 +123,15 @@ func _run() -> void:
 	while client.match_info()["phase"] != "ended" and Time.get_ticks_msec() < deadline:
 		await process_frame
 	_check(client.match_info()["phase"] == "ended", "the match ends")
+	# Helpers the server adds for accounts must not hide the map from the
+	# bots' navigation bake (it once took the account link for the map).
+	var server_log := FileAccess.get_file_as_string(
+		OS.get_user_data_dir().path_join("logs/ranked-test-server.log")
+	)
+	_check(
+		server_log.contains("baked the bots' navigation mesh"),
+		"the ranked server's bots have a navigation mesh"
+	)
 	deadline = Time.get_ticks_msec() + 15000
 	var xp := 0
 	while xp == 0 and Time.get_ticks_msec() < deadline:
