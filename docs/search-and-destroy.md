@@ -104,13 +104,20 @@ objectives, as in Capture the Flag and Hardpoint):
   to it; that one anchors. Once the charge is planted, the nearest runs to
   defuse it and the rest clear round it.
 
+- Hard bots bait: arriving to plant or defuse with an enemy seen in the
+  last 5 seconds, heard, or on the minimap within 25 m, a Hard bot taps
+  interact for 0.8 s, lets go, and watches where the enemy was for 1.6 s
+  before doing it for real; once per spot a life. It fakes a defuse half the
+  time and a plant one time in five: a fake plant costs the attackers time at
+  the site, and at one in two it halved Warehouse's plants on the bench.
+
 Black Ops 2's bots (`maps/mp/bots/_bot_sd.gsc`) are the reference for the
 carrier's timing (`sd_get_time_frac`: the chance to go and plant is the share
 of the round gone, checked every 2.5 to 5 s, forced past 85%) and the escort
 share (`protectcarrier`: three in ten, within 256 units of the plant spot).
 Their defenders take a random site and rush the defuse. Site switching, the
-lurker, and the defenders' rotation are what players do; Black Ops 2's bots
-do not. See [bots.md](bots.md).
+lurker, the defenders' rotation, and fakes are what players do; Black Ops
+2's bots do not. See [bots.md](bots.md).
 
 ## Scores and medals
 
