@@ -398,6 +398,20 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 - [x] The LSW-6's support hand clear of the red dot's window: it was the index curling over the handguard's top, not the thumb; it now lies along the handguard (`hand_tuning`).
 - [x] First-person gloves and sleeves: modelled seams, palm panels, and knuckle padding, and cloth-simulated sleeve folds, baked from high-detail sources into the arms atlas (`tools/blender_hilo.py`).
 
+## Custom games, spectating, and private matches
+
+Black Ops 2's Custom Games, CODcaster-style spectating, and a private match lobby ([docs/custom-games.md](docs/custom-games.md)).
+
+- [x] Custom game settings on the server (`shooter_sim::custom`, `--custom`): score, time, and round limits, respawn delay, health and regeneration, killcam, radar (normal, constant, off), scorestreaks, and hardcore's health and friendly fire, sent in the welcome; ranked servers ignore them.
+- [ ] Friendly fire on, reflect, and shared on the server (bullets, the knife, explosions), with teamkills scoring nothing.
+- [ ] Loadout rules: default classes only, pistols only, snipers only.
+- [ ] Hardcore's HUD (none) and the minimap off on the client.
+- [ ] A Game Settings page in the local match setup, with named presets saved locally.
+- [ ] Bots per team, each team with its own difficulty.
+- [ ] Spectating: join as a spectator (on no team), a free-fly camera, and first-person follow of any player.
+- [ ] A caster overlay: both teams' loadouts, scores, streaks, and the objective.
+- [ ] Private matches: the party leader picks map, mode, and settings; a lobby screen with teams, team swap, and ready-up; the allocator or a local server starts it.
+
 ## Phase 6 and later: production polish
 
 - [x] Post-processing pass: a colour grade per map as a look-up table built in code (`godot/scripts/looks.gd`; Testing Area, Zombies, Slamcity, and Nuketown), bloom that lifts only what is bright, a lens pass with a vignette, film grain, and sharpening on High (`godot/scripts/lens.gd`), and colour that drains as health drops. (Motion blur is an option; depth of field while aiming was left out because it blurs the iron sights.)

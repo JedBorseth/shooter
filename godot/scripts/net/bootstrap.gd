@@ -9,7 +9,7 @@ extends Node
 ##            [--mode tdm|ctf|hardpoint|dom|gungame|snd|zombies] [--kills-per-weapon N]
 ##            [--rounds N]
 ##            [--score-limit N] [--time-limit MINUTES] [--auto-start]
-##            [--accounts URL]
+##            [--accounts URL] [--custom SETTINGS]
 ##            [--exit-when-empty SECONDS]
 ##                                    run as a dedicated server (use with --headless);
 ##                                    with --bot-skill the bots play the match; without
@@ -32,6 +32,10 @@ extends Node
 ##                                    server's HTTP key comes from the
 ##                                    SHOOTER_ACCOUNTS_KEY environment variable
 ##                                    (docs/online.md).
+##                                    --custom sets a custom game's rules, as
+##                                    key=value pairs ("hardcore=on,ff=reflect";
+##                                    docs/custom-games.md); ranked servers
+##                                    ignore it.
 ##                                    --exit-when-empty quits once nobody has
 ##                                    been connected for SECONDS (servers an
 ##                                    allocator starts for one match).
@@ -177,7 +181,8 @@ func join(target: String, options: Dictionary = {}, arena: PackedScene = null) -
 ## "tdm", "ctf", "hardpoint", "dom", "gungame", "snd", or "zombies"; `map`,
 ## `bots`, `bot_skill`, `score_limit` (0 for the mode's usual limit),
 ## `kills_per_weapon`, `time_limit` in minutes, `rounds_to_win`, `name`,
-## `auto_start` to skip the ready-up) and joins it. The server pauses with
+## `auto_start` to skip the ready-up, `custom` for a custom game's settings in
+## their text form) and joins it. The server pauses with
 ## the pause menu and does not answer server browsers, unless `shared`: then
 ## friends on the network find it under Multiplayer, LAN (or join it
 ## directly), and it never pauses. A shared one with a `master` also lists
@@ -247,6 +252,9 @@ func local_server_args(options: Dictionary, port: int, pause_file: String) -> Pa
 		args.append_array(["--master", String(options.get("master"))])
 	if bool(options.get("auto_start", false)):
 		args.append("--auto-start")
+	var custom := String(options.get("custom", ""))
+	if not custom.is_empty():
+		args.append_array(["--custom", custom])
 	return args
 
 
@@ -338,6 +346,7 @@ func _start_server(options: Dictionary) -> void:
 	if options.has("rounds"):
 		server.rounds_to_win = maxi(int(options["rounds"]), 1)
 	server.auto_start = options.has("auto-start")
+	server.custom_settings = String(options.get("custom", ""))
 	var accounts := String(options.get("accounts", ""))
 	if not accounts.is_empty():
 		server.accounts = true

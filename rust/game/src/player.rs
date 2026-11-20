@@ -1505,8 +1505,16 @@ impl FpsPlayer {
         self.prediction = Some(Prediction::default());
     }
 
+    /// The server's health rules (a custom game's health and
+    /// regeneration), which prediction and the HUD follow.
+    pub(crate) fn set_health_params(&mut self, health: shooter_sim::player::HealthParams) {
+        self.params.health = health;
+        self.state.health = self.state.health.min(health.max_health);
+    }
+
     /// Back to offline play (the connection ended).
     pub(crate) fn stop_prediction(&mut self) {
+        self.params.health = shooter_sim::player::HealthParams::default();
         self.prediction = None;
         self.view_tick = None;
         self.predicted_hits.clear();

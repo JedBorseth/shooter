@@ -73,6 +73,7 @@ use shooter_sim::chopper::{self, Chopper};
 use shooter_sim::class::{self, Class};
 use shooter_sim::cosmetics::Cosmetics;
 use shooter_sim::ctf::{self, FlagEvent, FlagPlayer, FlagRules, FlagState, Flags};
+use shooter_sim::custom;
 use shooter_sim::domination::{self, BotGoal, DominationRules, DominationState, FlagPoint};
 use shooter_sim::equipment;
 use shooter_sim::gun_game::{self, Progress, Step};
@@ -323,6 +324,13 @@ pub struct NetServer {
     /// its players up through a long round.
     #[export]
     zombies_harmless: bool,
+    /// The host's custom game settings, in the text form
+    /// `shooter_sim::custom::Settings::parse` reads ("hardcore=on,ff=reflect");
+    /// empty for the normal rules. Ranked servers (`accounts`) ignore them.
+    #[export]
+    custom_settings: GString,
+    /// The custom settings in force, parsed from `custom_settings`.
+    custom: custom::Settings,
 
     host: Option<Gd<ENetConnection>>,
     clients: Vec<ClientSlot>,
@@ -701,15 +709,23 @@ impl INode3D for NetServer {
                 Mode::TeamDeathmatch
             }
         };
+        self.custom = self.read_custom_settings();
+        if let Some(rounds) = self.custom.rounds_to_win {
+            self.rounds_to_win = i32::from(rounds.max(1));
+        }
         let score_limit = match self.score_limit {
             limit if limit > 0 => limit as u32,
             _ => self.game.default_score_limit(),
         };
-        self.rules = MatchRules {
-            score_limit,
-            time_limit: Some(self.time_limit_minutes.max(0.1) * 60.0),
-            ..MatchRules::default()
-        };
+        self.rules = self.custom.match_rules(
+            &self.game,
+            MatchRules {
+                score_limit,
+                time_limit: Some(self.time_limit_minutes.max(0.1) * 60.0),
+                ..MatchRules::default()
+            },
+        );
+        self.params.health = self.custom.health_params(self.params.health);
         if self.game == Mode::Zombies {
             // The horde ends the game, not a clock or a score.
             self.rules.score_limit = 0;
@@ -736,6 +752,9 @@ impl INode3D for NetServer {
             // Longer than Team Deathmatch, so clearing a base buys time to
             // take its flag before the defenders are back.
             self.respawn_delay = self.respawn_delay.max(CTF_RESPAWN_SECONDS);
+        }
+        if let Some(seconds) = self.custom.respawn_delay {
+            self.respawn_delay = f32::from(seconds);
         }
         self.load_map();
         if self.spawn_points.is_empty() {
@@ -923,6 +942,34 @@ impl INode3D for NetServer {
 }
 
 impl NetServer {
+    /// The custom settings this server runs: `custom_settings` parsed, or
+    /// the normal rules on a ranked server, in Zombies, or when they do not
+    /// parse.
+    fn read_custom_settings(&self) -> custom::Settings {
+        let text = self.custom_settings.to_string();
+        if text.trim().is_empty() {
+            return custom::Settings::default();
+        }
+        if self.accounts {
+            godot_print!("server: ranked: custom settings ignored ({text})");
+            return custom::Settings::default();
+        }
+        if self.game == Mode::Zombies {
+            godot_print!("server: Zombies keeps its own rules; custom settings ignored");
+            return custom::Settings::default();
+        }
+        match custom::Settings::parse(&text) {
+            Ok(settings) => {
+                godot_print!("server: custom settings: {}", settings.to_text());
+                settings
+            }
+            Err(error) => {
+                godot_warn!("server: custom settings ignored: {error}");
+                custom::Settings::default()
+            }
+        }
+    }
+
     /// Writes the CPU profile (see `profile_out`) with the tick count and
     /// how many players and bots are in, so a bench can turn totals into
     /// per-tick costs.
@@ -1059,6 +1106,18 @@ impl NetServer {
     }
 
     /// Players currently in the game, bots included.
+    /// The custom settings in force (as `NetClient.custom_settings`).
+    #[func]
+    fn custom_rules(&self) -> VarDictionary {
+        super::client::custom_dict(&self.custom)
+    }
+
+    /// Seconds a dead player waits to respawn.
+    #[func]
+    fn respawn_seconds(&self) -> f32 {
+        self.respawn_delay
+    }
+
     #[func]
     fn player_count(&self) -> i32 {
         self.avatars.len() as i32
@@ -2642,6 +2701,7 @@ impl NetServer {
             mode: self.game,
             server_build: crate::build_info::BUILD.to_owned(),
             ranked: self.accounts,
+            custom: self.custom,
         };
         transport::send_reliable(&mut peer, &welcome.encode(&[]));
         // Everyone already here, then the newcomer for everyone.
@@ -3372,6 +3432,7 @@ impl NetServer {
             return;
         };
         let tick = self.tick;
+        let max_health = self.params.health.max_health;
         let gun_game = matches!(self.game, Mode::GunGame(_));
         let avatar = &mut self.avatars[index];
         if let Some(brain) = &mut avatar.brain {
@@ -3407,6 +3468,8 @@ impl NetServer {
         if first {
             state.combat = state.combat.first_draw();
         }
+        // A custom game's health (hardcore's 30).
+        state.health = max_health;
         avatar.predicted = Predicted {
             state,
             position: point.position,
@@ -6449,7 +6512,8 @@ impl NetServer {
         if phase == Phase::Playing && record.killer != record.victim {
             self.last_kill = Some(record);
         }
-        if !killcam::respawn_killcam(self.game, phase, record.killer, record.victim)
+        if !self.custom.killcam
+            || !killcam::respawn_killcam(self.game, phase, record.killer, record.victim)
             || self.client_of(record.victim).is_none()
         {
             return;
@@ -6468,6 +6532,10 @@ impl NetServer {
     /// match, if it is recent enough to replay, and keeps the round's end
     /// (or the results) up until it has played.
     fn play_ending_killcam(&mut self, kind: killcam::Kind) {
+        if !self.custom.killcam {
+            self.last_kill = None;
+            return;
+        }
         let Some(killcam) = killcam::ending_killcam(self.last_kill.take(), kind, self.tick) else {
             return;
         };
@@ -7496,7 +7564,9 @@ impl NetServer {
     /// Whether this game has scorestreaks: not Gun Game, Zombies, or
     /// outside a match (Black Ops 2's party modes and Zombies have none).
     fn streaks_on(&self) -> bool {
-        !matches!(self.game, Mode::GunGame(_) | Mode::Zombies) && self.match_state.scoring()
+        !matches!(self.game, Mode::GunGame(_) | Mode::Zombies)
+            && self.custom.streaks
+            && self.match_state.scoring()
     }
 
     /// Counts score earned since the last look toward each living player's
@@ -7562,6 +7632,32 @@ impl NetServer {
         self.update_missiles();
         self.update_choppers();
         for side in self.sky.sweeps(self.tick) {
+            let found: Vec<(u8, Vec3)> = self
+                .avatars
+                .iter()
+                .filter(|a| a.predicted.state.alive() && self.side(a) != side && !self.ghosted(a))
+                .map(|a| (a.id, a.predicted.position))
+                .collect();
+            self.radar.sweep(side, &found, self.tick);
+        }
+        self.constant_radar();
+    }
+
+    /// Custom games' constant radar: a UAV for every side that never goes
+    /// down (Black Ops 2's `forceRadar`), sweeping at the UAV's interval.
+    /// Ghost still hides a moving player from it.
+    fn constant_radar(&mut self) {
+        let interval = streak::seconds_to_ticks(streak::UAV_SWEEP_SECONDS).max(1);
+        if self.custom.radar != custom::Radar::Constant
+            || self.horde.is_some()
+            || !self.tick.is_multiple_of(interval)
+        {
+            return;
+        }
+        let mut sides: Vec<u8> = self.avatars.iter().map(|a| self.side(a)).collect();
+        sides.sort_unstable();
+        sides.dedup();
+        for side in sides {
             let found: Vec<(u8, Vec3)> = self
                 .avatars
                 .iter()
@@ -8714,7 +8810,7 @@ impl NetServer {
     /// has, so a client learns nothing more (`shooter_sim::radar`). Zombies
     /// has no minimap.
     fn radar_view(&self, viewer: &Avatar) -> RadarView {
-        if self.horde.is_some() {
+        if self.horde.is_some() || self.custom.radar == custom::Radar::Off {
             return RadarView::default();
         }
         let hostile = |id: u8| {

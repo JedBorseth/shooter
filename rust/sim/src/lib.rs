@@ -14,6 +14,7 @@ pub mod chopper;
 pub mod class;
 pub mod cosmetics;
 pub mod ctf;
+pub mod custom;
 pub mod domination;
 pub mod equipment;
 pub mod fmath;
