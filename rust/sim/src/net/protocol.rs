@@ -183,7 +183,9 @@ use crate::zombies::drinks::Drinks;
 // phase), lets them be shot down (`StreakEvent::Downed`,
 // `Award::ShotDown`), and gives streak events four tag bits.
 // Version 77 added `GameEvent::Stats`, a player's match stats.
-pub const PROTOCOL_VERSION: u16 = 77;
+// Version 78 added the Sentry Gun: `Streak::SentryGun`, and
+// `StreakEvent::Turret`, `TurretTarget`, and `TurretGone`.
+pub const PROTOCOL_VERSION: u16 = 78;
 /// Longest account session token a hello carries, in bytes.
 pub const MAX_ACCOUNT_TOKEN_BYTES: usize = 2048;
 /// Longest reason a denial carries, in bytes.
@@ -507,6 +509,15 @@ pub enum StreakEvent {
     },
     /// To everyone: a strike of `owner`'s Airstrike went off at `at`.
     Strike { owner: u8, at: Vec3 },
+    /// To everyone, and on joining for each one up: a Sentry Gun was set
+    /// down (`crate::turret`).
+    Turret(TurretView),
+    /// To everyone: Sentry Gun `id` turned onto player `target` (none: it
+    /// has no one).
+    TurretTarget { id: u16, target: Option<u8> },
+    /// To everyone: Sentry Gun `id` is gone, destroyed by player `by` (none:
+    /// it ran out).
+    TurretGone { id: u16, by: Option<u8> },
     /// To everyone: player `by` shot down aircraft `id` (`owner`'s
     /// `streak`) at `at`.
     Downed {
@@ -516,6 +527,19 @@ pub enum StreakEvent {
         by: u8,
         at: Vec3,
     },
+}
+
+/// A Sentry Gun set down: which, whose, on which side, its feet and the way
+/// it faces, and when it was set down and runs out.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TurretView {
+    pub id: u16,
+    pub owner: u8,
+    pub side: u8,
+    pub at: Vec3,
+    pub facing: f32,
+    pub placed: Tick,
+    pub until: Tick,
 }
 
 /// A UAV or Counter-UAV up: which, whose, on which side, when it was
@@ -3146,6 +3170,26 @@ fn write_streak_event(w: &mut BitWriter, event: &StreakEvent) {
             w.u8(*by);
             write_vec3(w, *at);
         }
+        StreakEvent::Turret(t) => {
+            w.bits(9, STREAK_TAG_BITS);
+            w.u16(t.id);
+            w.u8(t.owner);
+            w.u8(t.side);
+            write_vec3(w, t.at);
+            w.f32(t.facing);
+            w.u32(t.placed);
+            w.u32(t.until);
+        }
+        StreakEvent::TurretTarget { id, target } => {
+            w.bits(10, STREAK_TAG_BITS);
+            w.u16(*id);
+            write_option_u8(w, *target);
+        }
+        StreakEvent::TurretGone { id, by } => {
+            w.bits(11, STREAK_TAG_BITS);
+            w.u16(*id);
+            write_option_u8(w, *by);
+        }
     }
 }
 
@@ -3234,6 +3278,23 @@ fn read_streak_event(r: &mut BitReader) -> DecodeResult<StreakEvent> {
             owner: r.u8()?,
             by: r.u8()?,
             at: read_finite_vec3(r)?,
+        }),
+        9 => Ok(StreakEvent::Turret(TurretView {
+            id: r.u16()?,
+            owner: r.u8()?,
+            side: r.u8()?,
+            at: read_finite_vec3(r)?,
+            facing: read_finite(r)?,
+            placed: r.u32()?,
+            until: r.u32()?,
+        })),
+        10 => Ok(StreakEvent::TurretTarget {
+            id: r.u16()?,
+            target: read_option_u8(r)?,
+        }),
+        11 => Ok(StreakEvent::TurretGone {
+            id: r.u16()?,
+            by: read_option_u8(r)?,
         }),
         _ => Err(DecodeError::Invalid("streak event")),
     }
@@ -3343,6 +3404,17 @@ fn read_award(r: &mut BitReader) -> DecodeResult<Award> {
         ),
         _ => return Err(DecodeError::Invalid("award")),
     })
+}
+
+fn write_option_u8(w: &mut BitWriter, value: Option<u8>) {
+    w.bool(value.is_some());
+    if let Some(v) = value {
+        w.u8(v);
+    }
+}
+
+fn read_option_u8(r: &mut BitReader) -> DecodeResult<Option<u8>> {
+    Ok(if r.bool()? { Some(r.u8()?) } else { None })
 }
 
 fn read_finite(r: &mut BitReader) -> DecodeResult<f32> {
@@ -4687,6 +4759,25 @@ mod tests {
                 by: 9,
                 at: Vec3::new(20.0, 50.5, -4.0),
             }),
+            GameEvent::Streak(StreakEvent::Turret(TurretView {
+                id: 3,
+                owner: 4,
+                side: 1,
+                at: Vec3::new(-3.0, 0.5, 12.25),
+                facing: -1.25,
+                placed: 5000,
+                until: 33_800,
+            })),
+            GameEvent::Streak(StreakEvent::TurretTarget {
+                id: 3,
+                target: Some(8),
+            }),
+            GameEvent::Streak(StreakEvent::TurretTarget {
+                id: 3,
+                target: None,
+            }),
+            GameEvent::Streak(StreakEvent::TurretGone { id: 3, by: Some(8) }),
+            GameEvent::Streak(StreakEvent::TurretGone { id: 4, by: None }),
             GameEvent::Streak(StreakEvent::CrateIncoming {
                 id: 600,
                 owner: 4,

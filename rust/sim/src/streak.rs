@@ -26,6 +26,7 @@
 //! | Counter-UAV | 475 | Counter-UAV (sources give 400 to 600) | jams enemy minimaps for 30 s |
 //! | Care Package | 550 | Care Package, 550 | a crate from a flyover with a random streak inside ([`crate::care_package`]) |
 //! | Airstrike | 750 | Lightning Strike, 750 | three strikes on points marked on the map ([`Strikes`]) |
+//! | Sentry Gun | 800 | Sentry Gun, 800 | an automated gun set down in front of the caller ([`crate::turret`]) |
 //!
 //! Every number here is an estimate where Black Ops 2's own files give none;
 //! the docs list which (`docs/scorestreaks.md`).
@@ -40,6 +41,7 @@ pub enum Streak {
     CounterUav,
     CarePackage,
     Airstrike,
+    SentryGun,
 }
 
 /// UAV: seconds it stays up, and seconds between its sweeps (Black Ops 2's
@@ -55,11 +57,12 @@ pub const HARDLINE_TENTHS: u32 = 12;
 pub const MAX_HELD: usize = 8;
 
 impl Streak {
-    pub const ALL: [Streak; 4] = [
+    pub const ALL: [Streak; 5] = [
         Streak::Uav,
         Streak::CounterUav,
         Streak::CarePackage,
         Streak::Airstrike,
+        Streak::SentryGun,
     ];
 
     /// Score to earn it.
@@ -69,6 +72,7 @@ impl Streak {
             Streak::CounterUav => 475,
             Streak::CarePackage => 550,
             Streak::Airstrike => 750,
+            Streak::SentryGun => 800,
         }
     }
 
@@ -79,6 +83,7 @@ impl Streak {
             Streak::Uav | Streak::CounterUav => 1,
             Streak::CarePackage => 7,
             Streak::Airstrike => 13,
+            Streak::SentryGun => 16,
         }
     }
 
@@ -89,6 +94,7 @@ impl Streak {
             Streak::CounterUav => "counter_uav",
             Streak::CarePackage => "care_package",
             Streak::Airstrike => "airstrike",
+            Streak::SentryGun => "sentry_gun",
         }
     }
 
@@ -103,6 +109,7 @@ impl Streak {
             Streak::CounterUav => "Counter-UAV",
             Streak::CarePackage => "Care Package",
             Streak::Airstrike => "Airstrike",
+            Streak::SentryGun => "Sentry Gun",
         }
     }
 
@@ -113,6 +120,9 @@ impl Streak {
             Streak::CounterUav => "Jams enemy minimaps for 30 seconds.",
             Streak::CarePackage => "Drops a crate where you aim, with a random scorestreak inside.",
             Streak::Airstrike => "Calls three air strikes on points you mark on the map.",
+            Streak::SentryGun => {
+                "Sets down an automated gun that fires at enemies in front of it for four minutes."
+            }
         }
     }
 
@@ -122,6 +132,12 @@ impl Streak {
     /// ([`Loadout::usable`]); the radar streaks still work.
     pub fn needs_open_sky(self) -> bool {
         matches!(self, Streak::CarePackage | Streak::Airstrike)
+    }
+
+    /// Whether it flies: what shooting one down counts toward the
+    /// "aircraft" career stat (a Sentry Gun stands on the ground).
+    pub fn is_aircraft(self) -> bool {
+        matches!(self, Streak::Uav | Streak::CounterUav)
     }
 
     /// Whether it can be earned and called in on a map, `roofed` or not.
@@ -143,7 +159,7 @@ impl Streak {
         let seconds = match self {
             Streak::Uav => UAV_SECONDS,
             Streak::CounterUav => COUNTER_UAV_SECONDS,
-            Streak::CarePackage | Streak::Airstrike => 0.0,
+            Streak::CarePackage | Streak::Airstrike | Streak::SentryGun => 0.0,
         };
         seconds_to_ticks(seconds)
     }

@@ -80,6 +80,7 @@ const MINIMAP_SCRIPT := "res://scripts/net/minimap.gd"
 const STREAKS_HUD_SCRIPT := "res://scripts/net/streaks_hud.gd"
 const CARE_PACKAGE_VIEW_SCRIPT := "res://scripts/net/care_package_view.gd"
 const SKY_VIEW_SCRIPT := "res://scripts/net/sky_view.gd"
+const SENTRY_VIEW_SCRIPT := "res://scripts/net/sentry_view.gd"
 const AIRSTRIKE_VIEW_SCRIPT := "res://scripts/net/airstrike_view.gd"
 const CTF_VIEW_SCRIPT := "res://scripts/net/ctf_view.gd"
 const HARDPOINT_VIEW_SCRIPT := "res://scripts/net/hardpoint_view.gd"
@@ -456,6 +457,12 @@ func _attach_client(main: Node, target: String, options: Dictionary, token := ""
 	sky.set_script(load(SKY_VIEW_SCRIPT))
 	sky.set("client", client)
 	main.add_child(sky)
+	# Sentry Guns set down, firing on whoever the server says.
+	var sentries := Node3D.new()
+	sentries.name = "SentryView"
+	sentries.set_script(load(SENTRY_VIEW_SCRIPT))
+	sentries.set("client", client)
+	main.add_child(sentries)
 	# Match stings: start, result, time warning, and rounds.
 	var stings := MatchStings.new()
 	stings.client = client

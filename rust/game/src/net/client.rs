@@ -246,6 +246,9 @@ pub struct NetClient {
     /// tick the world is drawn at, where they are drawn.
     sky_orbit: streak::Orbit,
     render_tick: f64,
+    /// Sentry Guns set down (`shooter_sim::turret`), and the player each is
+    /// on, as the server said.
+    turrets: Vec<(protocol::TurretView, Option<u8>)>,
     /// Care Packages out (`shooter_sim::care_package`), as the server said.
     crates: Vec<CrateView>,
     /// Zombies: the horde as drawn, and the map's director mirroring the
@@ -590,6 +593,12 @@ impl NetClient {
     /// `at`: `ours` whether it was our side's, `by_me` whether we did it.
     #[signal]
     fn aircraft_downed(streak: GString, ours: bool, by_me: bool, at: Vector3);
+
+    /// A Sentry Gun went (`turrets`): `destroyed` whether shot to pieces
+    /// rather than run out, `ours` whether it was our side's, `by_me`
+    /// whether we did it, and where it stood.
+    #[signal]
+    fn turret_gone(destroyed: bool, ours: bool, by_me: bool, at: Vector3);
 
     /// A Care Package was called in, captured, taken, or ran out
     /// (`crates`). `taken_by` is who took one and `contents` the streak's
@@ -1177,6 +1186,36 @@ impl NetClient {
                 d.set("ours", self.ours(a.side));
                 d.set("position", to_godot(at));
                 d.set("yaw", yaw);
+                d
+            })
+            .collect()
+    }
+
+    /// The Sentry Guns set down, as dictionaries with `id`, `ours` (our
+    /// side's), `mine`, `position` (its feet), `facing` (yaw), `armed`
+    /// (past its arming delay), `seconds_left`, and `target` (the chest of
+    /// the player it is on, or null).
+    #[func]
+    fn turrets(&self) -> Array<VarDictionary> {
+        let arm = f64::from(streak::seconds_to_ticks(shooter_sim::turret::ARM_SECONDS));
+        self.turrets
+            .iter()
+            .map(|(t, on)| {
+                let mut d = VarDictionary::new();
+                d.set("id", i32::from(t.id));
+                d.set("ours", self.ours(t.side));
+                d.set("mine", Some(t.owner) == self.player_id);
+                d.set("position", to_godot(t.at));
+                d.set("facing", t.facing);
+                d.set("armed", self.render_tick >= f64::from(t.placed) + arm);
+                d.set("seconds_left", self.seconds_until(Some(t.until)));
+                let target = on
+                    .and_then(|id| self.carrier_feet(id))
+                    .map(|feet| feet + Vector3::UP * (shooter_sim::turret::BODY_HEIGHT * 0.7));
+                match target {
+                    Some(at) => d.set("target", at),
+                    None => d.set("target", &Variant::nil()),
+                }
                 d
             })
             .collect()
@@ -2152,6 +2191,26 @@ impl NetClient {
             GameEvent::Stats(stats) => {
                 self.match_stats = stats;
                 self.signals().stats_changed().emit();
+            }
+            GameEvent::Streak(StreakEvent::Turret(view)) => {
+                self.turrets.retain(|(t, _)| t.id != view.id);
+                self.turrets.push((view, None));
+            }
+            GameEvent::Streak(StreakEvent::TurretTarget { id, target }) => {
+                if let Some((_, on)) = self.turrets.iter_mut().find(|(t, _)| t.id == id) {
+                    *on = target;
+                }
+            }
+            GameEvent::Streak(StreakEvent::TurretGone { id, by }) => {
+                let Some(index) = self.turrets.iter().position(|(t, _)| t.id == id) else {
+                    return;
+                };
+                let (view, _) = self.turrets.remove(index);
+                let ours = self.ours(view.side);
+                let by_me = by.is_some() && by == self.player_id;
+                self.signals()
+                    .turret_gone()
+                    .emit(by.is_some(), ours, by_me, to_godot(view.at));
             }
             GameEvent::Streak(StreakEvent::Strike { owner, at }) => {
                 self.signals()

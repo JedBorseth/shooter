@@ -275,7 +275,9 @@ impl Recorder {
                 Award::Streak(10) => self.add("merciless", 1),
                 Award::Collateral => self.add("collateral", 1),
                 Award::ShotDown(streak) => {
-                    self.add("aircraft", 1);
+                    if streak.is_aircraft() {
+                        self.add("aircraft", 1);
+                    }
                     self.add(&format!("s.{}.downed", streak.key()), 1);
                 }
                 Award::PointBlank => self.add("point_blank", 1),

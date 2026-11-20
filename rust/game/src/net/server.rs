@@ -110,6 +110,7 @@ use shooter_sim::tdm::{
     self, MatchRules, MatchState, Mode, Period, Phase, SpawnPoint, SpawnRules, Team, Threat,
     Transition,
 };
+use shooter_sim::turret::{self, Turret, TurretHit, Turrets};
 use shooter_sim::weapon::{self, CombatEvent, CombatState, WeaponId};
 use shooter_sim::zombies::drinks::{self, Drink, Drinks};
 use shooter_sim::zombies::forge;
@@ -384,6 +385,8 @@ pub struct NetServer {
     crates: care_package::Crates,
     /// Airstrike strikes on their way (`shooter_sim::streak`).
     strikes: streak::Strikes,
+    /// Sentry Guns set down (`shooter_sim::turret`).
+    turrets: Turrets,
     /// The map's lanes for bots to follow (`BotLanes`), from one side to the other.
     bot_lanes: Vec<Vec<Vector3>>,
     /// Tick of the next scoreboard update.
@@ -1288,6 +1291,9 @@ impl NetServer {
             d.set("victim", i64::from(kill.victim));
             d.set("weapon", &GString::from(kill.weapon.def().key.as_str()));
             d.set("by_weapon", kill.cause == protocol::KillCause::Weapon);
+            if let protocol::KillCause::Streak(streak) = kill.cause {
+                d.set("streak", streak.key());
+            }
         }
         d
     }
@@ -1356,7 +1362,7 @@ impl NetServer {
             .map(|p| shooter_sim::Vec2::new(p.x, p.z))
             .collect();
         if let Ok(id) = u8::try_from(id) {
-            self.use_streak(id, Streak::Airstrike, &marks);
+            let _ = self.use_streak(id, Streak::Airstrike, &marks);
         }
     }
 
@@ -1390,11 +1396,25 @@ impl NetServer {
             .collect()
     }
 
+    /// Debug: player `id` brings the streaks `keys` from now on (tests).
+    #[func]
+    fn debug_set_streaks(&mut self, id: i32, keys: PackedStringArray) {
+        let mut slots = [None; 3];
+        for (slot, key) in slots.iter_mut().zip(keys.as_slice()) {
+            *slot = Streak::by_key(&key.to_string());
+        }
+        let loadout = Loadout(slots).sorted();
+        if let Some(avatar) = self.avatars.iter_mut().find(|a| i32::from(a.id) == id) {
+            avatar.streak_loadout = loadout;
+            avatar.streak_wanted = loadout;
+        }
+    }
+
     /// Debug: player `id` calls in their held streak `key` (tests).
     #[func]
     fn debug_use_streak(&mut self, id: i32, key: GString) {
         if let (Ok(id), Some(streak)) = (u8::try_from(id), Streak::by_key(&key.to_string())) {
-            self.use_streak(id, streak, &[]);
+            let _ = self.use_streak(id, streak, &[]);
         }
     }
 
@@ -1650,6 +1670,27 @@ impl NetServer {
             let eye = avatar.predicted.position + Vec3::Y * eye_height;
             brain.face(shooter_sim::look::bearing(eye, to_sim(point)));
         }
+    }
+
+    /// The Sentry Guns set down (tests), as dictionaries with `id`,
+    /// `owner`, `position` (its feet), `centre` (where shots meet it),
+    /// `damage`, and `target` (the player it is on, -1 for none).
+    #[func]
+    fn turrets(&self) -> Array<VarDictionary> {
+        self.turrets
+            .list
+            .iter()
+            .map(|t| {
+                let mut d = VarDictionary::new();
+                d.set("id", i32::from(t.id));
+                d.set("owner", i32::from(t.owner));
+                d.set("position", to_godot(t.at));
+                d.set("centre", to_godot(t.centre()));
+                d.set("damage", t.damage);
+                d.set("target", t.target.map_or(-1, |(id, _)| i32::from(id)));
+                d
+            })
+            .collect()
     }
 
     /// The UAVs and Counter-UAVs up (tests), as dictionaries with `id`,
@@ -2411,6 +2452,18 @@ impl NetServer {
         self.send_streaks(id);
         let sky = self.sky_event();
         self.send_event(id, sky);
+        for turret in self.turrets.list.clone() {
+            self.send_event(id, turret_event(&turret));
+            if let Some((target, _)) = turret.target {
+                self.send_event(
+                    id,
+                    GameEvent::Streak(StreakEvent::TurretTarget {
+                        id: turret.id,
+                        target: Some(target),
+                    }),
+                );
+            }
+        }
         for crate_ in self.crates.list.clone() {
             self.send_event(id, crate_incoming(&crate_));
             if crate_.capture.is_some() {
@@ -2556,7 +2609,7 @@ impl NetServer {
             }
             ClientMessage::UseStreak { streak, targets } => {
                 if let Some(id) = self.clients[index].player {
-                    self.use_streak(id, streak, &targets);
+                    let _ = self.use_streak(id, streak, &targets);
                 }
             }
             ClientMessage::Chat { text, team } => self.relay_chat(index, &text, team),
@@ -2896,8 +2949,16 @@ impl NetServer {
             watch: Watch::default(),
             // Bots bring every streak there is (Call of Duty's bots bring
             // a fixed set).
-            streak_loadout: if bot { BOT_STREAKS } else { Loadout::default() },
-            streak_wanted: if bot { BOT_STREAKS } else { Loadout::default() },
+            streak_loadout: if bot {
+                bot_streaks(id)
+            } else {
+                Loadout::default()
+            },
+            streak_wanted: if bot {
+                bot_streaks(id)
+            } else {
+                Loadout::default()
+            },
             streaks: StreakState::default(),
             streak_seen: 0,
             share: MatchShare::default(),
@@ -3241,6 +3302,14 @@ impl NetServer {
                 }
             })
             .collect();
+        // Sentry Guns that have armed, for bots to shoot at.
+        let bot_turrets: Vec<(u16, u8, Vector3)> = self
+            .turrets
+            .list
+            .iter()
+            .filter(|t| t.armed(tick))
+            .map(|t| (t.id, t.side, to_godot(t.centre())))
+            .collect();
         // Each team's own side, for bots' goals on the enemy's side.
         let mut team_spawns: [Vec<Vector3>; 2] = [Vec::new(), Vec::new()];
         for point in &self.spawn_points {
@@ -3359,6 +3428,7 @@ impl NetServer {
                                 .find(|(id, _)| *id == avatar.id)
                                 .map_or(&[], |(_, dots)| dots.as_slice()),
                             aircraft: &bot_aircraft,
+                            turrets: &bot_turrets,
                         };
                         let objective = objectives
                             .iter()
@@ -4652,6 +4722,12 @@ impl NetServer {
         for (id, owner) in struck {
             self.hurt_aircraft(id, streak::AIRCRAFT_HEALTH + 1.0, owner, u32::MAX);
         }
+        // And on enemy Sentry Guns, whose blast then does the damage.
+        let turrets = &self.turrets;
+        self.grenades.strike_aircraft(TICK_DT, |owner, from, to| {
+            let side = sides.iter().find(|(id, _)| *id == owner)?.1;
+            turrets.first_on_segment(from, to, side)
+        });
         let outcome = self.grenades.step(&mut space, TICK_DT);
         for blast in outcome.blasts {
             self.resolve_grenade(&mut space, &blast);
@@ -4726,6 +4802,28 @@ impl NetServer {
             let damage = equipment::blast_damage(kind, distance) * scale;
             if damage > 0.0 {
                 victims.push((avatar.id, distance, damage));
+            }
+        }
+        // Enemy Sentry Guns in the blast take double (Black Ops 2: a
+        // launcher's rocket counts 200, so two destroy one).
+        if let (Some(attacker), Some(side)) = (attacker, attacker_side) {
+            let hit: Vec<(u16, f32)> = self
+                .turrets
+                .list
+                .iter()
+                .filter(|t| t.side != side)
+                .filter_map(|t| {
+                    let distance = center.distance_to(to_godot(t.centre()));
+                    if distance > radius || !grenades::blast_reaches(space, center, to_godot(t.at))
+                    {
+                        return None;
+                    }
+                    let damage = equipment::blast_damage(kind, distance);
+                    (damage > 0.0).then_some((t.id, damage))
+                })
+                .collect();
+            for (id, damage) in hit {
+                self.hurt_turret(id, TurretHit::Explosive, damage, attacker, u32::MAX);
             }
         }
         // The weapon the thrower holds names nothing in the feed; the grenade
@@ -5091,6 +5189,25 @@ impl NetServer {
         }
         for (id, damage) in aircraft_hits {
             self.hurt_aircraft(id, damage, shot.shooter, shot.shot);
+        }
+        // Enemy Sentry Guns: a pellet that meets one short of a wall.
+        let mut turret_hits: Vec<(u16, f32)> = Vec::new();
+        for pellet in &pellets {
+            let reach = pellet.max_distance.min(def.range);
+            let to = pellet.origin + pellet.direction * reach;
+            if let Some((id, t)) = self
+                .turrets
+                .first_on_segment(pellet.origin, to, shooter_side)
+            {
+                let damage = def.damage_at(reach * t);
+                match turret_hits.iter_mut().find(|(hit, _)| *hit == id) {
+                    Some((_, total)) => *total += damage,
+                    None => turret_hits.push((id, damage)),
+                }
+            }
+        }
+        for (id, damage) in turret_hits {
+            self.hurt_turret(id, TurretHit::Bullet, damage, shot.shooter, shot.shot);
         }
         let tick = self.tick;
         let stretched = self
@@ -5506,7 +5623,59 @@ impl NetServer {
             }
         }
 
+        // Enemy Sentry Guns in the blast take double (Black Ops 2).
+        if let Some(attacker) = attacker {
+            let side = self
+                .avatars
+                .iter()
+                .find(|a| a.id == attacker)
+                .map(|a| self.side(a));
+            let hit: Vec<(u16, f32)> = self
+                .turrets
+                .list
+                .iter()
+                .filter(|t| Some(t.side) != side)
+                .filter_map(|t| {
+                    let centre = to_godot(t.centre());
+                    let distance = origin.distance_to(centre);
+                    if distance > blast.radius {
+                        return None;
+                    }
+                    let blocked = world_hit(&mut space, origin, centre)
+                        .is_some_and(|hit| origin.distance_to(hit) + BLAST_CLEARANCE < distance);
+                    let damage = blast.damage
+                        + (blast.outer_damage - blast.damage) * (distance / blast.radius);
+                    (!blocked && damage > 0.0).then_some((t.id, damage))
+                })
+                .collect();
+            for (id, damage) in hit {
+                self.hurt_turret(id, TurretHit::Explosive, damage, attacker, u32::MAX);
+            }
+        }
         let weapon = blast.weapon.unwrap_or_else(default_primary);
+        self.hurt_players(
+            attacker,
+            attacker_team,
+            blast.position,
+            victims,
+            weapon,
+            cause,
+        );
+    }
+
+    /// Applies one blast's or Sentry Gun round's damage to `victims` (each
+    /// player's id, distance, and damage): hurt events, kills credited to
+    /// `attacker` (on `attacker_team`) with `weapon` and `cause`, the
+    /// mode's rules, and the attacker's points.
+    fn hurt_players(
+        &mut self,
+        attacker: Option<u8>,
+        attacker_team: Option<Team>,
+        from: Vec3,
+        victims: Vec<(u8, f32, f32)>,
+        weapon: WeaponId,
+        cause: protocol::KillCause,
+    ) {
         let scoring = self.match_state.scoring();
         let mut kills = Vec::new();
         for (id, distance, damage) in victims {
@@ -5518,7 +5687,7 @@ impl NetServer {
             if let Some(attacker) = attacker
                 && let Some(brain) = &mut victim.brain
             {
-                brain.on_hurt(attacker, to_godot(blast.position), self.tick);
+                brain.on_hurt(attacker, to_godot(from), self.tick);
             }
             self.send_event(
                 id,
@@ -5526,7 +5695,7 @@ impl NetServer {
                     // Blasts with no player behind them use an id no roster
                     // has; the HUD only uses the damage and direction.
                     attacker: attacker.unwrap_or(u8::MAX),
-                    from: blast.position,
+                    from: from,
                     damage,
                     killed,
                 },
@@ -6176,6 +6345,12 @@ impl NetServer {
                 }
                 self.sky.clear();
                 self.strikes.clear();
+                for turret in std::mem::take(&mut self.turrets.list) {
+                    self.broadcast_event(&GameEvent::Streak(StreakEvent::TurretGone {
+                        id: turret.id,
+                        by: None,
+                    }));
+                }
                 let sky = self.sky_event();
                 self.broadcast_event(&sky);
                 for change in self.crates.clear() {
@@ -6662,17 +6837,31 @@ impl NetServer {
         }
         // Bots call in what they hold as soon as they are alive to, as
         // Call of Duty's bots do (passive test bots hold on to them).
-        let bot_calls: Vec<(u8, Streak)> = self
+        // A bot tries what it holds in turn, twice a second, until one
+        // goes (a Sentry Gun needs room in front of it).
+        let bot_calls: Vec<(u8, Vec<Streak>)> = self
             .avatars
             .iter()
             .filter(|a| a.brain.as_ref().is_some_and(|b| !b.passive) && a.predicted.state.alive())
-            .filter_map(|a| {
-                let usable = a.streaks.held.iter().find(|s| s.usable(self.roofed))?;
-                Some((a.id, *usable))
+            .filter(|a| (self.tick + u32::from(a.id)).is_multiple_of(TICK_RATE / 2))
+            .map(|a| {
+                let mut usable: Vec<Streak> = a
+                    .streaks
+                    .held
+                    .iter()
+                    .copied()
+                    .filter(|s| s.usable(self.roofed))
+                    .collect();
+                usable.dedup();
+                (a.id, usable)
             })
             .collect();
-        for (id, streak) in bot_calls {
-            self.use_streak(id, streak, &[]);
+        for (id, streaks) in bot_calls {
+            for streak in streaks {
+                if self.use_streak(id, streak, &[]) {
+                    break;
+                }
+            }
         }
         if self.sky.expire(self.tick) {
             let sky = self.sky_event();
@@ -6680,6 +6869,7 @@ impl NetServer {
         }
         self.update_crates();
         self.update_strikes();
+        self.update_turrets();
         for side in self.sky.sweeps(self.tick) {
             let found: Vec<(u8, Vec3)> = self
                 .avatars
@@ -6707,29 +6897,43 @@ impl NetServer {
     }
 
     /// Calls in `id`'s first held `streak`, if they hold one and may.
-    fn use_streak(&mut self, id: u8, streak: Streak, targets: &[shooter_sim::Vec2]) {
+    /// Returns whether it went.
+    fn use_streak(&mut self, id: u8, streak: Streak, targets: &[shooter_sim::Vec2]) -> bool {
         if !self.streaks_on() {
-            return;
+            return false;
         }
         let tick = self.tick;
         let Some(avatar) = self.avatars.iter().find(|a| a.id == id) else {
-            return;
+            return false;
         };
         if !avatar.predicted.state.alive() {
-            return;
+            return false;
         }
         let side = self.side(avatar);
         if !avatar.streaks.held.contains(&streak) || !streak.usable(self.roofed) {
-            return;
+            return false;
         }
         // A Care Package needs open sky to land in; without it the streak
         // stays held.
         let drop = match streak {
             Streak::CarePackage => match self.crate_spot(avatar) {
                 Some(at) => Some(at),
-                None => return,
+                None => return false,
             },
             _ => None,
+        };
+        // A Sentry Gun needs floor in front of the caller, and room under
+        // Black Ops 2's limits (four a side, eight in all).
+        let sentry = if streak == Streak::SentryGun {
+            if !self.turrets.room_for(side) {
+                return false;
+            }
+            match self.turret_spot(avatar) {
+                Some(spot) => Some(spot),
+                None => return false,
+            }
+        } else {
+            None
         };
         // An Airstrike needs a marked point that is on the map; a bot marks
         // where it last saw its enemies.
@@ -6745,17 +6949,17 @@ impl NetServer {
                 .filter_map(|m| self.strike_ground(*m))
                 .collect();
             if points.is_empty() {
-                return;
+                return false;
             }
             points
         } else {
             Vec::new()
         };
         let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
-            return;
+            return false;
         };
         let Some(index) = avatar.streaks.held.iter().position(|s| *s == streak) else {
-            return;
+            return false;
         };
         avatar.streaks.select(index);
         avatar.streaks.take();
@@ -6778,6 +6982,12 @@ impl NetServer {
                 }
                 self.broadcast_event(&crate_incoming(&crate_));
             }
+            (Streak::SentryGun, _) => {
+                if let Some((at, facing)) = sentry {
+                    let turret = self.turrets.place(id, side, at, facing, tick);
+                    self.broadcast_event(&turret_event(&turret));
+                }
+            }
             _ => {
                 let phase = rng::hash(u32::from(id) << 8 | streak.code() as u32, tick) as u16;
                 self.sky.call(streak, id, side, tick, phase);
@@ -6787,6 +6997,188 @@ impl NetServer {
         self.send_streaks(id);
         let sky = self.sky_event();
         self.broadcast_event(&sky);
+        true
+    }
+
+    /// Where `avatar`'s Sentry Gun goes: the floor a step in front of them,
+    /// facing the way they face, if nothing stands between and the floor is
+    /// near their feet's height. Black Ops 2 has the player carry it and set
+    /// it down where they choose; ours sets down where they stand facing.
+    fn turret_spot(&self, avatar: &Avatar) -> Option<(Vec3, f32)> {
+        const STEP: f32 = 1.2;
+        let mut space = self
+            .base()
+            .get_world_3d()
+            .and_then(|world| world.get_direct_space_state())?;
+        let feet = to_godot(avatar.predicted.position);
+        let forward = Vector3::new(-avatar.yaw.sin(), 0.0, -avatar.yaw.cos());
+        let chest = feet + Vector3::UP * 1.0;
+        let ahead = chest + forward * STEP;
+        // Room for the gun: nothing between the chest and the spot, nor in
+        // the spot's own half-metre.
+        if world_hit(&mut space, chest, ahead + forward * 0.4).is_some() {
+            return None;
+        }
+        let floor = world_hit(&mut space, ahead, ahead - Vector3::UP * 1.6)?;
+        if (floor.y - feet.y).abs() > 0.6 {
+            return None;
+        }
+        Some((to_sim(floor), avatar.yaw))
+    }
+
+    /// Runs the Sentry Guns: those whose owner left or whose time is up go,
+    /// each armed one picks and turns onto the nearest enemy in its field
+    /// of fire it can see, and fires; its rounds hurt the first enemy they
+    /// meet short of a wall. Its kills are its owner's, as "Sentry Gun",
+    /// and count nothing toward streaks.
+    fn update_turrets(&mut self) {
+        if self.turrets.list.is_empty() {
+            return;
+        }
+        let tick = self.tick;
+        let owners: Vec<u8> = self.avatars.iter().map(|a| a.id).collect();
+        let orphaned: Vec<u16> = self
+            .turrets
+            .list
+            .iter()
+            .filter(|t| !owners.contains(&t.owner))
+            .map(|t| t.id)
+            .collect();
+        self.turrets.list.retain(|t| owners.contains(&t.owner));
+        let expired: Vec<u16> = self.turrets.expire(tick).iter().map(|t| t.id).collect();
+        for id in orphaned.into_iter().chain(expired) {
+            self.broadcast_event(&GameEvent::Streak(StreakEvent::TurretGone { id, by: None }));
+        }
+        let Some(mut space) = self
+            .base()
+            .get_world_3d()
+            .and_then(|world| world.get_direct_space_state())
+        else {
+            return;
+        };
+        let candidates: Vec<turret::Candidate> = self
+            .avatars
+            .iter()
+            .filter(|a| a.predicted.state.alive())
+            .map(|a| turret::Candidate {
+                id: a.id,
+                side: self.side(a),
+                feet: a.predicted.position,
+                ignored: false,
+            })
+            .collect();
+        let before: Vec<(u16, Option<u8>)> = self
+            .turrets
+            .list
+            .iter()
+            .map(|t| (t.id, t.target.map(|(id, _)| id)))
+            .collect();
+        let rounds = self.turrets.step(tick, &candidates, |from, to| {
+            world_hit(&mut space, to_godot(from), to_godot(to)).is_none()
+        });
+        let changed: Vec<(u16, Option<u8>)> = self
+            .turrets
+            .list
+            .iter()
+            .map(|t| (t.id, t.target.map(|(id, _)| id)))
+            .filter(|now| !before.contains(now))
+            .collect();
+        for (id, target) in changed {
+            self.broadcast_event(&GameEvent::Streak(StreakEvent::TurretTarget { id, target }));
+        }
+        for round in rounds {
+            let Some(side) = self
+                .turrets
+                .list
+                .iter()
+                .find(|t| t.id == round.turret)
+                .map(|t| t.side)
+            else {
+                continue;
+            };
+            let from = to_godot(round.from);
+            let to = from + to_godot(round.direction) * turret::RANGE;
+            let wall =
+                world_hit(&mut space, from, to).map_or(turret::RANGE, |hit| from.distance_to(hit));
+            let victim = candidates
+                .iter()
+                .filter(|c| c.side != side)
+                .filter_map(|c| {
+                    let distance = turret::round_meets_body(round.from, round.direction, c.feet)?;
+                    (distance < wall).then_some((c.id, distance))
+                })
+                .min_by(|a, b| a.1.total_cmp(&b.1));
+            let Some((victim, distance)) = victim else {
+                continue;
+            };
+            let owner_team = self
+                .avatars
+                .iter()
+                .find(|a| a.id == round.owner)
+                .map(|a| a.team);
+            let before = self
+                .avatars
+                .iter()
+                .find(|a| a.id == round.owner)
+                .map(|a| a.score.score);
+            self.hurt_players(
+                Some(round.owner),
+                owner_team,
+                round.from,
+                vec![(victim, distance, turret::DAMAGE)],
+                default_primary(),
+                protocol::KillCause::Streak(Streak::SentryGun),
+            );
+            // Streak kills count nothing toward streaks (Black Ops 2).
+            if let (Some(before), Some(owner)) = (
+                before,
+                self.avatars.iter_mut().find(|a| a.id == round.owner),
+            ) {
+                owner.streak_seen += owner.score.score.saturating_sub(before);
+            }
+        }
+    }
+
+    /// Sentry Gun `id` takes a `hit` of `damage` from player `by`: a hit
+    /// marker, and if that destroys it, it goes, everyone hears, and `by`
+    /// scores for it.
+    fn hurt_turret(&mut self, id: u16, hit: TurretHit, damage: f32, by: u8, shot: u32) {
+        if hit != TurretHit::Melee {
+            self.send_event(
+                by,
+                GameEvent::Hit {
+                    victim: u8::MAX,
+                    shot,
+                    damage,
+                    headshot: false,
+                    killed: false,
+                },
+            );
+        }
+        let Some(turret) = self.turrets.hurt(id, hit, damage) else {
+            return;
+        };
+        godot_print!(
+            "server: player {by} destroyed player {}'s Sentry Gun",
+            turret.owner
+        );
+        self.broadcast_event(&GameEvent::Streak(StreakEvent::TurretGone {
+            id,
+            by: Some(by),
+        }));
+        if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == by) {
+            let scored = avatar
+                .score
+                .award(Award::ShotDown(Streak::SentryGun), turret::DESTROY_POINTS);
+            let totals = avatar.score.totals();
+            self.send_event(
+                by,
+                GameEvent::Score {
+                    awards: vec![scored],
+                    totals,
+                },
+            );
+        }
     }
 
     /// The topmost surface under map point `mark` (x, z): where a bomb
@@ -8388,11 +8780,30 @@ fn pickup_in_reach(
 }
 
 /// The scorestreaks bots bring.
-const BOT_STREAKS: Loadout = Loadout([
-    Some(Streak::Uav),
-    Some(Streak::CarePackage),
-    Some(Streak::Airstrike),
-]);
+/// The streaks bot `id` brings: a UAV and two of the dearer ones, varied
+/// between bots so each kind turns up (Black Ops 2's bots bring theirs from
+/// the unlocked list, `_bot_loadout.gsc`).
+fn bot_streaks(id: u8) -> Loadout {
+    const SETS: [[Streak; 2]; 3] = [
+        [Streak::CarePackage, Streak::Airstrike],
+        [Streak::Airstrike, Streak::SentryGun],
+        [Streak::CarePackage, Streak::SentryGun],
+    ];
+    let [a, b] = SETS[usize::from(id) % SETS.len()];
+    Loadout([Some(Streak::Uav), Some(a), Some(b)]).sorted()
+}
+
+fn turret_event(t: &Turret) -> GameEvent {
+    GameEvent::Streak(StreakEvent::Turret(protocol::TurretView {
+        id: t.id,
+        owner: t.owner,
+        side: t.side,
+        at: t.at,
+        facing: t.facing,
+        placed: t.placed,
+        until: t.until,
+    }))
+}
 
 fn crate_incoming(c: &care_package::Crate) -> GameEvent {
     GameEvent::Streak(StreakEvent::CrateIncoming {

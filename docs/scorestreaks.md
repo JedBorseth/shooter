@@ -10,7 +10,7 @@ Rewards earned with score in one life, as in Black Ops 2 (kept in Black Ops 3 an
 - **Death** resets the count.
 - **Using:** the use key calls in the selected held streak. The next key selects another. Earning one selects it, as in Black Ops 2.
 - **Modes:** every mode but Gun Game and Zombies, as in Black Ops 2's party modes and Zombies. Search and Destroy keeps both the count and held streaks across rounds within a life, as Black Ops 2 does.
-- **Bots** bring the UAV, the Care Package, and the Airstrike, and call in what they earn at once.
+- **Bots** bring the UAV and two of the Care Package, the Airstrike, and the Sentry Gun, varied between bots, and call in what they earn at once (trying another if one cannot go there).
 - **Roofed maps:** a map roofed over from wall to wall (Warehouse) has no open sky for a crate or a strike to come down through. There the Care Package and the Airstrike are left out: they are greyed out in the streak column with "NO OPEN SKY" in place of the cost, the count runs on the other chosen streaks (the dearest of those closes the loop), and the server refuses to call one in. The radar streaks still work. Black Ops 2 has no roofed map, so there is no precedent; this stands until the owner decides on a skylight or roof hatch for Warehouse. A map is marked by `roofed = true` metadata on its scene's root (`Streak::needs_open_sky` lists the streaks it leaves out).
 
 | Streak | Cost | Black Ops 2 | Effect |
@@ -19,6 +19,7 @@ Rewards earned with score in one life, as in Black Ops 2 (kept in Black Ops 3 an
 | Counter-UAV | 475 | Counter-UAV; sources give 400 to 600 | jams the enemy's minimaps for 30 s |
 | Care Package | 550 | Care Package, 550 | a crate dropped from a flyover, with a random streak inside |
 | Airstrike | 750 | Lightning Strike, 750 | three strikes on points marked on the map |
+| Sentry Gun | 800 | Sentry Gun, 800 | an automated gun set down in front of the caller, firing on enemies in front of it for 4 minutes |
 
 ## UAV
 
@@ -93,6 +94,29 @@ Its kills score as usual and show as "Airstrike" in the kill feed, but add nothi
 
 `airstrike_test` plays it through on a server. Bots mark their nearest enemies.
 
+## Sentry Gun
+
+The Sentry Gun follows Black Ops 2's (`_turret_killstreak.gsc`). The rules are in `rust/sim/src/turret.rs`, the server's side in `update_turrets`, and the client's in `godot/scripts/net/sentry_view.gd`. The model is the training sentry's, built in Blender (`sentry_base`, `sentry_head`, `sentry_eye`).
+
+![A Sentry Gun set down](media/sentry-gun.jpg)
+
+- **Setting it down:** calling it in sets it down a step (1.2 m) in front of the caller, facing the way they face. It needs clear floor near the caller's feet with nothing in between, or the streak stays held. Black Ops 2 has the player carry it and choose the spot. We set it down where the player stands facing, as the Care Package lands where they aim.
+- **Limits:** four a side and eight in all, Black Ops 2's "turret" rule. A fifth on one side stays held.
+- **Arming:** it waits 1.6 s before it looks for targets (`turretinitdelay`).
+- **Firing:** it fires on the nearest enemy it can see in its field of fire: a half circle in front of the way it was set down, out to 40 m, up to about 50° above or below level. It slews onto them, takes a third of a second to spin up, then fires 600 rounds a minute at 25 damage, with a little spread. Rounds stop at walls and hurt the first enemy they meet. With no one to fire on, it turns back to watch its front. The arc, reach, rate, and damage are estimates: Black Ops 2 keeps them in the turret's weapon file, which its scripts do not carry.
+- **Its kills:** they are its owner's, shown as "Sentry Gun" in the feed. They score as usual but add nothing to the owner's streak count. It keeps firing after its owner dies, and goes if they leave the game.
+- **Lifetime:** 240 s (`level.auto_turret_timeout`), then it goes.
+- **Destroying it:** only enemies can. It has 650 health:
+  - bullets do 60% of their damage;
+  - blasts do double, so two RL-4 rockets (200 each) destroy it, and so does a frag thrown close;
+  - the knife does nothing.
+
+  Shots meet it in a sphere around its gun. Destroying one pays 100 points and the "Destroyed Sentry Gun" medal, and both sides hear "ENEMY SENTRY GUN DESTROYED" or "SENTRY GUN DESTROYED". It blows apart.
+- **Bots** set theirs down where they stand. With no enemy player in sight, they shoot an armed enemy Sentry Gun they can see within 45 m with whatever they hold. Black Ops 2's bots count an active one as a threat.
+- **Sounds:** none of its own yet. It fires with the AK's shot pitched up, as the training sentry does.
+
+`sentry_gun_test` plays it through on a server.
+
 ## On screen
 
 - **Streak column:** the three streaks, bottom right above the weapon cluster, the cheapest lowest, as Black Ops 2 stacks them. Each shows its cost and a thin bar filling with this life's score toward it. An earned streak is lit, with a count when more than one is held. The selected one carries the use key's cap (`godot/scripts/net/streaks_hud.gd`).
@@ -131,4 +155,5 @@ Blind Eye (with an AI streak to hide from), UAV assist points, and announcer lin
 - **Lightning Strike:** 750, three strikes on points picked on the map, in sequence.
 - **Streak kills:** do not count toward streaks.
 - **Ghost:** works while moving. **Hard Wired:** immune to Counter-UAV.
+- **Sentry Gun** (`_turret_killstreak.gsc`, `_killstreakrules.gsc`): 800, 650 health, bullets at 0.6 and explosives at 2 (a launcher counts 200), the knife nothing, 240 s placed, 1.6 s before it arms, four a team and eight in all. Bots treat an active one as a threat.
 - **UAV and Counter-UAV in the sky** (`_spyplane.gsc`, Black Ops 2's scripts as the Plutonium project publishes them): 700 health, bullets do their damage, any rocket downs one, the UAV rig turns clockwise once a minute and the Counter-UAV's the other way every 40 s, a downed one ends at once. Bots fire launchers only at aircraft, never at one more than 70° up (`_bot_combat.gsc`).
