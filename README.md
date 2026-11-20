@@ -178,6 +178,13 @@ pack of fast hounds (six a player, eight later) struck into the yard in a flash 
 cold light. They bite for 40% of your health and are almost as fast as your sprint.
 The last one killed leaves a Max Ammo.
 
+With the power on, the electric fence across the west gate costs 1000 to switch on:
+for 40 seconds any zombie that walks into it dies (and so would you), then it needs
+a minute to cool down. A weapon already upgraded at the forge can go back in for
+2500 to come out with alternate ammo: Arc (a hit sometimes electrocutes the zombie
+and jumps through those near it) or Cinder (a hit sometimes bursts it into flame
+and burns those round it).
+
 The T refill key is off in this mode. Esc opens the pause menu.
 
 ## Test

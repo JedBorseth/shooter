@@ -38,6 +38,7 @@ use shooter_sim::zombies::alt_ammo::{self, AltAmmo, Burn, Cooldowns};
 use shooter_sim::zombies::chase::{self, ChaseEvent, Chaser, Prey, Window, World};
 use shooter_sim::zombies::hounds;
 use shooter_sim::zombies::powerups::{self, DropContext, DropCycle};
+use shooter_sim::zombies::traps::{self, TrapState};
 use shooter_sim::zombies::{self, Phase, PowerUp, RoundEvent, Rounds, ZombieRules};
 use shooter_sim::{TICK_DT, Vec3};
 
@@ -91,6 +92,10 @@ pub enum HordeEvent {
     HoundStrike { at: Vec3 },
     /// A burn from `shooter`'s Cinder killed a zombie.
     BurnedToDeath { shooter: u8 },
+    /// Player `player` walked into a live trap.
+    Shocked { player: u8 },
+    /// Trap `trap` changed phase.
+    TrapChanged { trap: usize },
     /// A window's boards changed (torn off or put back).
     Boards { window: u8, boards: u8 },
     /// A kill dropped a power-up.
@@ -208,6 +213,10 @@ pub struct Horde {
     clock: f32,
     alt_cooldowns: Cooldowns,
     burns: Vec<Burn>,
+    /// Zombies a live trap caught, and seconds until each dies.
+    caught: Vec<(u8, f32)>,
+    /// Players a live trap shocked, and seconds until it can again.
+    shocked: Vec<(u8, f32)>,
     doors: Vec<MapDoor>,
     drops: Vec<PowerUpDrop>,
     next_drop_id: u8,
@@ -258,6 +267,8 @@ impl Horde {
             clock: 0.0,
             alt_cooldowns: Cooldowns::default(),
             burns: Vec::new(),
+            caught: Vec::new(),
+            shocked: Vec::new(),
             doors: map_doors(map),
             drops: Vec::new(),
             next_drop_id: 0,
@@ -285,6 +296,8 @@ impl Horde {
         self.clock = 0.0;
         self.alt_cooldowns = Cooldowns::default();
         self.burns.clear();
+        self.caught.clear();
+        self.shocked.clear();
         self.open_zones = vec![String::new()];
         self.gates.clear();
         self.history.clear();
@@ -539,8 +552,77 @@ impl Horde {
             self.update_power_ups(players, dt);
             self.step_carpenter(dt);
             self.step_burns(dt);
+            self.step_traps(players, dt);
         }
         self.clock += dt;
+    }
+
+    /// Runs the traps: their timers, the zombies in a live one (each dies
+    /// within 1.25 s, paying nobody), and the standing players who walk in.
+    fn step_traps(&mut self, players: &[HordePlayer], dt: f32) {
+        for (index, trap) in self.machines.traps.iter_mut().enumerate() {
+            if trap.state.step(dt) {
+                trap.show(trap.state.left());
+                self.pending.push(HordeEvent::TrapChanged { trap: index });
+            }
+        }
+        let live: Vec<usize> = (0..self.machines.traps.len())
+            .filter(|i| self.machines.traps[*i].state.active())
+            .collect();
+        if !live.is_empty() {
+            let clock_ms = (self.clock * 1000.0) as u32;
+            for zombie in self.zombies.iter().filter(|z| z.alive) {
+                let feet = zombie.feet();
+                let mid = feet + Vec3::Y * 0.8;
+                let inside = live.iter().any(|i| self.machines.traps[*i].covers(mid));
+                if inside && !self.caught.iter().any(|(id, _)| *id == zombie.id) {
+                    let delay =
+                        traps::zombie_death_delay(rng::hash(u32::from(zombie.id), clock_ms));
+                    self.caught.push((zombie.id, delay));
+                }
+            }
+            for player in players.iter().filter(|p| p.standing) {
+                let mid = player.feet + Vec3::Y * 0.9;
+                if self.shocked.iter().any(|(id, _)| *id == player.id) {
+                    continue;
+                }
+                if live.iter().any(|i| self.machines.traps[*i].covers(mid)) {
+                    self.shocked.push((player.id, traps::SHOCK_SECONDS));
+                    self.pending.push(HordeEvent::Shocked { player: player.id });
+                }
+            }
+        }
+        self.shocked.retain_mut(|(_, left)| {
+            *left -= dt;
+            *left > 0.0
+        });
+        let mut dying = Vec::new();
+        self.caught.retain_mut(|(id, left)| {
+            *left -= dt;
+            if *left <= 0.0 {
+                dying.push(*id);
+                return false;
+            }
+            true
+        });
+        for id in dying {
+            if let Some(health) = self.health(id) {
+                self.hurt_ex(id, health + 1.0, Vec3::Y, None, false, false);
+            }
+        }
+    }
+
+    /// Player `id` with `points` and the power `powered` switches trap
+    /// `trap` on: the price, if they may.
+    pub fn buy_trap(&mut self, trap: usize, id: u8, points: u32, powered: bool) -> Option<u32> {
+        let trap_ = self.machines.traps.get_mut(trap)?;
+        trap_.state.can_buy(points, powered).ok()?;
+        trap_.state = TrapState::Active {
+            by: id,
+            left: traps::ACTIVE_SECONDS,
+        };
+        trap_.show(Some(traps::ACTIVE_SECONDS));
+        Some(traps::PRICE)
     }
 
     /// Whether a hit by `shooter` with alternate ammo `kind`, rolling `roll`
@@ -1023,6 +1105,21 @@ impl Horde {
             .filter(|z| z.alive)
             .map(|z| (z.id, z.feet()))
             .collect()
+    }
+
+    /// Moves zombie `id` to `at` (tests).
+    pub fn place(&mut self, id: u8, at: Vec3) {
+        if let Some(zombie) = self.zombies.iter_mut().find(|z| z.id == id) {
+            zombie.body.set_global_position(to_godot(at));
+        }
+    }
+
+    /// Trap `index`'s phase as scripts and tests name it, or "".
+    pub fn trap_phase(&self, index: usize) -> &'static str {
+        self.machines
+            .traps
+            .get(index)
+            .map_or("", |t| t.phase().name())
     }
 
     /// Whether zombie `id` is a hound (tests).

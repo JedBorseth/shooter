@@ -21,11 +21,12 @@
 use godot::classes::Node3D;
 use godot::prelude::*;
 use shooter_sim::net::Tick;
-use shooter_sim::net::protocol::{CratePhase, ForgePhase, ZombiesEvent};
+use shooter_sim::net::protocol::{CratePhase, ForgePhase, TrapPhase, ZombiesEvent};
 use shooter_sim::rng;
 use shooter_sim::weapon::{CombatState, WeaponId};
 use shooter_sim::zombies::alt_ammo::AltAmmo;
 use shooter_sim::zombies::drinks::{self, Drink};
+use shooter_sim::zombies::traps::{self, TrapState};
 use shooter_sim::zombies::{forge, mystery};
 
 struct DrinkMachine {
@@ -44,6 +45,8 @@ pub struct Machines {
     solo_second_winds: u8,
     pub mystery: Option<MysteryCrate>,
     pub forge: Option<Forge>,
+    /// The map's traps (`Traps`' children).
+    pub traps: Vec<Trap>,
     /// Games played, to vary the crate's draws.
     games: u32,
 }
@@ -66,6 +69,13 @@ impl Machines {
             drink_machines,
             mystery,
             forge: Forge::new(map),
+            traps: map_traps(map)
+                .into_iter()
+                .map(|node| Trap {
+                    node,
+                    state: TrapState::Idle,
+                })
+                .collect(),
             ..Self::default()
         };
         machines.reset();
@@ -83,6 +93,10 @@ impl Machines {
         if let Some(forge) = &mut self.forge {
             forge.reset();
             forge.show();
+        }
+        for trap in &mut self.traps {
+            trap.state = TrapState::Idle;
+            trap.show(None);
         }
         self.set_power(false);
         self.solo_second_winds = 0;
@@ -110,6 +124,9 @@ impl Machines {
         }
         if let Some(forge) = &mut self.forge {
             forge.node.call("set_powered", &[powered.to_variant()]);
+        }
+        for trap in &mut self.traps {
+            trap.node.call("set_powered", &[powered.to_variant()]);
         }
         changed
     }
@@ -184,6 +201,22 @@ impl Machines {
         events
     }
 
+    /// The trap whose switch is `node`, if it is one.
+    pub fn trap_of(&self, node: &Gd<Node>) -> Option<usize> {
+        self.traps
+            .iter()
+            .position(|t| t.node.instance_id() == node.instance_id())
+    }
+
+    /// Every trap as clients are told it.
+    pub fn trap_events(&self, ticks_from_now: impl Fn(f32) -> Tick) -> Vec<ZombiesEvent> {
+        self.traps
+            .iter()
+            .enumerate()
+            .map(|(i, t)| t.event(i, &ticks_from_now))
+            .collect()
+    }
+
     /// Drink machine `index` as clients are told it.
     pub fn machine_event(&self, index: usize, solo: bool) -> Option<ZombiesEvent> {
         let machine = self.drink_machines.get(index)?;
@@ -194,6 +227,60 @@ impl Machines {
             needs_power: !machine.drink.works_without_power(solo),
         })
     }
+}
+
+/// A trap on the map (`shooter_sim::zombies::traps`): its node (the switch
+/// that buys it, at the fence's foot) and what it is doing.
+pub struct Trap {
+    pub node: Gd<Node3D>,
+    pub state: TrapState,
+}
+
+impl Trap {
+    /// Whether `point` (world) is in its live part.
+    pub fn covers(&self, point: shooter_sim::Vec3) -> bool {
+        let local =
+            self.node.get_global_transform().affine_inverse() * crate::convert::to_godot(point);
+        traps::inside(crate::convert::to_sim(local))
+    }
+
+    pub fn phase(&self) -> TrapPhase {
+        match self.state {
+            TrapState::Idle => TrapPhase::Idle,
+            TrapState::Active { .. } => TrapPhase::Active,
+            TrapState::Cooling { .. } => TrapPhase::Cooling,
+        }
+    }
+
+    /// Shows its phase on the server's own node; `left` seconds of it.
+    pub fn show(&mut self, left: Option<f32>) {
+        let phase = self.phase().name();
+        self.node.call(
+            "show_phase",
+            &[phase.to_variant(), left.unwrap_or(0.0).to_variant()],
+        );
+    }
+
+    pub fn event(&self, index: usize, ticks_from_now: impl Fn(f32) -> Tick) -> ZombiesEvent {
+        ZombiesEvent::Trap {
+            trap: index as u8,
+            phase: self.phase(),
+            until: self.state.left().map(ticks_from_now),
+        }
+    }
+}
+
+/// The map's traps in the order the server numbers them
+/// (`ZombiesEvent::Trap`): `Traps`' children.
+pub fn map_traps(map: &Gd<Node>) -> Vec<Gd<Node3D>> {
+    let Some(parent) = map.get_node_or_null("Traps") else {
+        return Vec::new();
+    };
+    parent
+        .get_children()
+        .iter_shared()
+        .filter_map(|child| child.try_cast::<Node3D>().ok())
+        .collect()
 }
 
 /// The map's drink machines in the order the server numbers them

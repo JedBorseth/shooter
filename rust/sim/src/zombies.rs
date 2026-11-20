@@ -18,6 +18,7 @@ pub mod hounds;
 pub mod laststand;
 pub mod mystery;
 pub mod powerups;
+pub mod traps;
 
 /// Tuning for a Zombies match.
 #[derive(Clone, Copy, Debug, PartialEq)]

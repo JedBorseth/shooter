@@ -42,6 +42,7 @@
 [ext_resource type="PackedScene" uid="uid://dha6or7eu21pl" path="res://assets/props/trash_can/trash_can.gltf" id="p_trash_can"]
 [ext_resource type="PackedScene" uid="uid://b1p1uago5j3cy" path="res://assets/props/tyre/tyre.gltf" id="p_tyre"]
 [ext_resource type="PackedScene" uid="uid://330cd5sbdyvp" path="res://assets/props/utility_box/utility_box.gltf" id="p_utility_box"]
+[ext_resource type="PackedScene" path="res://scenes/zombies/electric_trap.tscn" id="40_trap"]
 
 [sub_resource type="ShaderMaterial" id="SkyMat"]
 shader = ExtResource("22_sky")
@@ -1359,6 +1360,11 @@ metadata/via = Vector3(24.5, 0, 4)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 40, 0.05, 16)
 metadata/zone = "lot_east"
 metadata/via = Vector3(24.5, 0, 4)
+
+[node name="Traps" type="Node3D" parent="."]
+
+[node name="WestGateFence" parent="Traps" instance=ExtResource("40_trap")]
+transform = Transform3D(-3.6199901e-06, 0, 1, 0, 1, 0, -1, 0, -3.6199901e-06, -23.3, 0, 4)
 
 [node name="HoundSpawns" type="Node3D" parent="."]
 

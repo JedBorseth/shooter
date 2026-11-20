@@ -305,6 +305,8 @@ Done: rounds with a growing, toughening horde, zombies that walk straight at the
   - [ ] Reaching a hosted game behind a home router without forwarding port 27027 (NAT punch-through through the directory).
 - [x] Hound rounds ([docs/zombies.md](docs/zombies.md#hound-rounds), Black Ops III's dog-round numbers): every 4 or 5 rounds from round 5 to 7, a pack of Blender-built hounds struck into the arena, the last leaving a Max Ammo.
   - [ ] Hound sounds (breathing, snarls, bites, the strike's crack) from real CC0 recordings.
+- [x] An electric fence across the west gate ([docs/zombies.md](docs/zombies.md#the-electric-fence), Black Ops III's electric trap): 1000 points with the power on, live for 40 s, a minute to cool down; zombies in it die, players go down.
+  - [ ] Fence sounds (the switch, the hum, the zaps) from real CC0 recordings.
 - [ ] Playable versions of the menu's maps; today every map loads the one arena.
 - [x] A cheaper zombie for big hordes: two surfaces per character instead of eleven (a 24-zombie horde draws about 195 calls instead of 630).
 - [x] Animate distant zombies at a reduced rate: every second frame beyond 18 m and every fourth beyond 32 m, staggered across zombies.
