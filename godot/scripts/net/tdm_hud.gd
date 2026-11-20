@@ -637,7 +637,6 @@ func _refresh_board() -> void:
 						"tag": "BOT" if entry.bot else "",
 						"prestige": KillFeed.prestige_of(client, int(entry.id)),
 						"card": KillFeed.card_of(client, int(entry.id)),
-						"card": KillFeed.card_of(client, int(entry.id)),
 					}
 				)
 			)
