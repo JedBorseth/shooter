@@ -492,3 +492,107 @@ python3 tools/map_blockout/warehouse_photo_layout.py
 uv run --with numpy --with pillow --with scipy tools/build_warehouse_floor_masks.py
 xvfb-run -a godot --path godot --script res://tools/warehouse_build_headless.gd
 ```
+
+## Breakwater, November 2026
+
+Breakwater is the third 6v6 core map, built to contrast with Slamcity (a city
+at dusk) and Warehouse (an industrial interior): a coastal fuel terminal on a
+mole between two harbour basins, in late-morning sun. Its plan is
+[`breakwater_2026_11.py`](../tools/map_blockout/breakwater_2026_11.py), in the
+Black Ops 2 three-lane tradition. It takes structure, never a layout, from:
+
+- **BO2's compact loops** (Raid, Standoff, Slums): a nearly square footprint,
+  a central landmark with four ways in, and every route spawn to spawn about
+  the same length.
+- **A landmark with high ground each team climbs on its own side** (Slums'
+  plaza, Standoff's market): the truck loading rack, an island deck under a
+  canopy, set diagonally across the middle like Slamcity's derailed car, with
+  a tanker parked in the bay on each side. Each team's stair climbs onto its
+  own end of the deck; a crossing under the deck's middle joins the bays.
+- **Lanes that change character halfway**, as Slamcity's do: the north route
+  runs along Blue's quay (mid to long range, stacked containers and the
+  loading-arm berth for cover) and then through the pump house into Red's
+  tank farm (close quarters round the storage tanks); the south route is its
+  turned twin. The main road is the mid-range lane into the rack.
+- **Two-storey buildings near each team's side** that link the lanes: the
+  control house (Red: the laboratory) with an upper floor over the main road
+  and the quay, and the workshop (Red: the fire station) with a roof deck over
+  the tank farm.
+
+Each team's half is the other's turned 180 degrees about the centre, dressed
+differently (white block and blue cladding against sand block and cream;
+white tanks against silver; control room consoles against lab benches; a
+lathe against a foam unit).
+
+| Measure | Plan | Target |
+| --- | --- | --- |
+| Footprint | 84 × 74 m | 70 to 90 m a side |
+| Spawn to spawn | 78.6 m (10.6 s) | 75 to 90 m |
+| Spawn to the rack | 5.7 s and 5.8 s | 5 to 6 s, within 0.3 s |
+| Median longest eye-height line | 29.0 m | 32 m or less |
+| Floor that sees past 40 m | 7% | under 10% |
+| Longest line | 58 m | 60 m or less |
+
+### Building it
+
+Breakwater is built the way Slamcity is, and reuses Slamcity's kit:
+
+- [`tools/breakwater_layout.py`](../tools/breakwater_layout.py) describes the
+  map once with Slamcity's primitives (`shell`, `Wall`, `stair`, `roof`, ...).
+- [`tools/breakwater_models.py`](../tools/breakwater_models.py) models the
+  terminal: the tanker trucks, storage tanks with their spiral stairs, pipe
+  racks, pumps, switchgear, transformers, containers, the marine loading
+  arms, bollards and fenders, and the moored product tanker and far tank farm
+  beyond the boundary. Its `LOOKS` table adds the terminal's paints and
+  claddings to Slamcity's looks.
+- [`tools/build_breakwater_city.py`](../tools/build_breakwater_city.py) runs in
+  Blender and writes `godot/assets/maps/breakwater/city.gltf`, merged by chunk
+  and material with shadow-only proxies, as Slamcity's builder does.
+- [`tools/build_breakwater.py`](../tools/build_breakwater.py) writes
+  `godot/scenes/breakwater.tscn`. It refuses a layout that fails
+  [`tools/breakwater_checks.py`](../tools/breakwater_checks.py), which CI also
+  runs (`tools/test_breakwater_layout.py`): collision twinned; **no clear
+  eye-height line from anywhere in one spawn yard to anywhere in the other**;
+  no spawn point in sight of the enemy's spawns, upper floor, roof deck, or
+  half of the deck; no line over 55 m across the ground or 50 m between the
+  teams' high ground; Hardpoint moves of at least 16 m; and at least 15 spawn
+  points hidden from our own high ground and 8 from an enemy inside our half.
+
+The checks shaped the build: pipe bridges with clad screens cross the main
+road at the gate and where it meets the rack (they close the deck's and the
+far upper floors' lines down the road into the yard while the road stays open
+under them); the control house's upper floor has no windows on its east face;
+and a plant room and a louvred screen bound the workshop's roof deck, so it
+fights over the tank farm rather than across the map to the other roof.
+
+Rebuild:
+
+```sh
+uv run --with numpy --with matplotlib tools/map_blockout/blockout.py tools/map_blockout/breakwater_2026_11.py
+blender -b --python tools/build_breakwater_city.py
+python3 tools/build_breakwater.py
+tools/bake_lightmaps.sh res://scenes/breakwater.tscn
+MINIMAPS=breakwater godot --headless --path godot --script res://tools/build_minimaps.gd
+```
+
+### Playing Breakwater
+
+Breakwater is on the title screen as a free-roam route and in the local match
+setup for every mode, Search and Destroy included; servers load it with
+`--map breakwater`.
+
+- **Spawns:** 20 per team, the first ones in the gate yard, then the gate
+  road, the gate lane, and the ground floors of the control house and the
+  workshop.
+- **Bots** follow three lanes, west to east: the quay and the pump house; the
+  main road, through the crossing under the deck; and the tank farm and the
+  fire pumps.
+- **Capture the Flag:** each team's flag stands in its gate yard by the main
+  road's mouth.
+- **Domination:** A on Blue's main road between the pickup and the analyser
+  shelter, B in the crossing under the rack's deck (3 m circle), C A's twin
+  on Red's main road.
+- **Hardpoint** rotates through the Loading Rack (round the crossing), the
+  Pump House, the Rack Deck (a floor up), and the Fire Pumps.
+- **Search and Destroy:** Red defends. A is in the pump house's east room on
+  the north route; B is on Red's quay by the containers on the south route.

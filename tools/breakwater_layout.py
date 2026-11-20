@@ -1,0 +1,1025 @@
+"""Breakwater's layout: one description of the map that every generator reads.
+
+- `tools/build_breakwater_city.py` (Blender) turns `PARTS` and `PLACED` into the
+  map's merged meshes (godot/assets/maps/breakwater/city.gltf).
+- `tools/build_breakwater.py` writes godot/scenes/breakwater.tscn: the collision
+  in `COLLIDERS`, props, decals, baked lights, and markers.
+  `tools/breakwater_checks.py` checks the layout (also in CI).
+
+Breakwater is a coastal fuel terminal on a mole between two harbour basins, in
+late-morning sun. The plan is tools/map_blockout/breakwater_2026_11.py (see
+docs/map-design.md): Black Ops 2 style compact loops round a central landmark,
+84 x 74 m. Blue spawns at the truck gate on the west edge, Red at the gate on
+the east edge, and three routes run between them:
+
+- The main road, the middle: from the gate into the loading rack, a canopy
+  over an island deck with a tanker in the bay on each side. Each team has its
+  own stair onto the deck; a crossing under the deck's middle joins the bays.
+- The north route: up the gate road, along the quay past the loading arms and
+  the moored tanker, through the pump house, into the far tank farm.
+- The south route: down the gate lane, round the storage tanks in the tank
+  farm, through the fire pumps, onto the far quay.
+
+Between them, buildings you can enter join the routes: the control house (an
+upper floor over the main road and the quay), the meter shed, the workshop
+(a roof deck over the tank farm), the drum store, and the pump shed.
+
+The map is balanced by a half turn about the centre, like Slamcity: Blue's
+half is described once with `m=False` and turned to Red's with `m=True`. Red's
+buildings have the same shells and doors, dressed as different places
+(`Side`): the control house is the laboratory, the workshop the fire station.
+x runs west (-) to east (+), z north (-) to south (+), y up.
+
+The primitives (`box`, `solid`, `shell`, `Wall`, `stair`, ...) are Slamcity's
+(tools/slamcity_layout.py), used as a kit: they append to the same output
+lists, which this module re-exports, so a process builds one map or the other,
+never both. No dependencies, so Blender's Python can import it. Call `build()`
+once before reading the lists.
+"""
+
+from __future__ import annotations
+
+import math
+import random
+
+import slamcity_layout as K
+from slamcity_layout import (  # noqa: F401 (re-exported for the builders and checks)
+    COLLIDERS, DECALS, EFFECTS, LIGHTS, PARTS, PLACED, PROPS, SIGHT, T, TUBE, WARM, Wall, blocker, box, clip,
+    coping, cyl, deco, decal, floor, light, line_clear, oriented, place, prism, prop, railing, road_paint, roof,
+    segment_hits, shell, solid, stair, t3, text, tp, tspan, tube, tyaw,
+)
+
+PI = math.pi
+NAME = "breakwater"
+
+# --- Levels --------------------------------------------------------------------
+STREET = K.STREET  # yards, roads, the quay, the rack
+WALK = K.WALK  # every ground floor
+DECK = 3.6  # the loading rack's island deck
+UPPER = 3.8  # the control house's (and the lab's) upper floor
+CONTROL_TOP = 7.8  # its parapet
+ROOF_DECK = 4.4  # the workshop's (and fire station's) roof deck
+SEA = -2.2  # the water in the basins
+EYE = 1.6
+
+# --- The plan (Blue's half; Red's is its twin) -------------------------------------
+BOUNDS = (-42.0, 42.0, -37.0, 37.0)
+YARD = (-41.0, -33.0, -8.0, 14.0)  # the truck gate (spawn)
+GATE_ROAD = (-41.0, -35.0, -27.0, -8.0)  # yard -> quay
+GATE_LANE = (-37.0, -33.0, 14.0, 21.0)  # yard -> tank farm
+QUAY = (-41.0, -6.0, -36.0, -27.0)
+PIPE_ALLEY = (-21.0, -17.0, -27.0, -2.0)
+CORNER = (-13.0, 1.5, -27.0, -22.0)  # pump-house corner, quay -> north apron
+MAIN_ROAD = (-33.0, -13.0, -2.0, 6.0)
+TANK_FARM = (-41.0, -9.0, 21.0, 36.0)
+RACK = (-13.0, 13.0, -13.0, 13.0)
+APRON = (-9.0, 9.0, -22.0, -13.0)  # north of the rack (Red's twin: south)
+CONTROL = (-33.0, -21.0, -27.0, -2.0)
+CONTROL_SPLIT = -14.0  # wall between its north and south rooms (z)
+METER = (-17.0, -13.0, -13.0, -2.0)
+WORKSHOP = (-33.0, -21.0, 6.0, 21.0)
+DRUMS = (-21.0, -13.0, 6.0, 14.0)
+PUMP_SHED = (-21.0, -9.0, 14.0, 21.0)
+PUMP_W = (-6.0, 1.5, -36.0, -27.0)  # the pump house's two rooms (Red: the fire pumps)
+PUMP_E = (1.5, 9.0, -36.0, -22.0)
+PUMP_TOP = 5.2
+TANKS = [(-31.5, 28.5), (-19.5, 29.5)]
+TANK_R = 4.6
+TANK_H = 11.0
+# Rooms dressed differently on each half (Red's are their twins): collision
+# inside them need not match its twin's (breakwater_checks.check_twin).
+DRESSED: list[tuple] = []
+# The rack runs diagonally, south-west to north-east, across the middle. Its
+# axis turns `RACK_YAW` from +x toward -z: Godot's yaw for a model whose
+# length runs along local x.
+RACK_YAW = 0.62
+CA, SA = math.cos(RACK_YAW), math.sin(RACK_YAW)
+ISLAND_HALF = 1.4  # the island's half-width
+ISLAND = (1.5, 8.5)  # each half of the island runs from u = 1.5 to 8.5 (Blue's: -8.5 to -1.5)
+TRUCK = (-6.75, 3.0)  # the south bay's tanker: centre (u, v); the north bay's is its twin
+
+
+def along(u: float, v: float) -> tuple[float, float]:
+    """(x, z) of a point u metres along the rack's axis (north-east is +u) and
+    v across it (south-east is +v)."""
+    return (u * CA + v * SA, -u * SA + v * CA)
+
+
+class Side:
+    """What differs between the halves: names, colours, and dressing."""
+
+    def __init__(self, m: bool):
+        self.m = m
+        self.tag = "E" if m else "W"
+        self.block = "block_white" if not m else "block_sand"
+        self.clad = "clad_blue" if not m else "clad_cream"
+        self.trim = "steel_blue" if not m else "steel_red"
+        self.control = "CONTROL" if not m else "LABORATORY"
+        self.workshop = "WORKSHOP" if not m else "FIRE STATION"
+        self.meter = "METERING" if not m else "FOAM STORE"
+        self.drums = "DRUM STORE" if not m else "SPARES"
+        self.pumps = "PUMP HOUSE" if not m else "FIRE PUMPS"
+        self.tank = "tank_white" if not m else "tank_silver"
+        self.tank_ids = ("T-101", "T-102") if not m else ("T-201", "T-202")
+        self.container = ("container_blue", "container_orange") if not m else ("container_green", "container_red")
+        self.door = "door_steel" if not m else "steel_red"
+
+
+SIDES = (Side(False), Side(True))
+
+
+# --- Helpers ------------------------------------------------------------------------
+def turned_box(cx, cz, hx, hz, yaw, y0, y1, look=None, surface=None, m=False, detail=False):
+    """A box turned `yaw` about y (Godot's convention: local x runs along
+    (cos yaw, -sin yaw)): visual (`look`) and/or collision (`surface`, which
+    also blocks sight)."""
+    c, s = math.cos(yaw), math.sin(yaw)
+    pts = []
+    for y in (y0, y1):
+        for dx, dz in ((-hx, -hz), (hx, -hz), (hx, hz), (-hx, hz)):
+            pts.append(t3(cx + dx * c + dz * s, y, cz - dx * s + dz * c, m))
+    if look:
+        PARTS.append({"kind": "hull", "points": pts, "look": look, **({"detail": True} if detail else {})})
+    if surface:
+        oriented(cx, cz, hx, hz, yaw, y0, y1, m, surface)
+
+
+def rack_box(u0, u1, v0, v1, y0, y1, look=None, surface=None, m=False, detail=False):
+    """A box laid along the rack: u0..u1 along its axis, v0..v1 across it."""
+    cx, cz = along((u0 + u1) / 2, (v0 + v1) / 2)
+    turned_box(cx, cz, (u1 - u0) / 2, (v1 - v0) / 2, RACK_YAW, y0, y1, look, surface, m, detail)
+
+
+def round_solid(x, z, r, y0, y1, surface="metal", m=False, sides=16):
+    """Round collision (a tank): a `sides`-gon prism, which also blocks sight
+    (as two boxes, one turned 45 degrees, that together fill the circle)."""
+    pts = []
+    for y in (y0, y1):
+        for i in range(sides):
+            t = 2 * PI * (i + 0.5) / sides
+            pts.append(t3(x + r * math.cos(t), y, z + r * math.sin(t), m))
+    COLLIDERS.append(("convex", surface, pts))
+    cx, cz = tp(x, z, m)
+    h = r * 0.92
+    SIGHT.append((cx - h, cx + h, y0, y1, cz - h, cz + h))
+    SIGHT.append(("turned", cx, cz, h, h, PI / 4, y0, y1))
+
+
+def mass(x0, x1, z0, z1, top, look, m, roof_look="roof_tar"):
+    """A building you cannot enter: solid to its roof, with a coping."""
+    solid(x0, x1, STREET, top, z0, z1, look, m=m)
+    deco(x0 + 0.05, x1 - 0.05, top, top + 0.02, z0 + 0.05, z1 - 0.05, roof_look, m, faces="top")
+    coping(x0, x1, z0, z1, top, m, look="quay_edge")
+
+
+def name_board(body, x, y, z, yaw, m, size=0.42, look="sign_blue", width=None):
+    """A painted sign board with white letters, centred at (x, y, z), facing `yaw`."""
+    w = width or len(body) * size * 0.62 + 0.6
+    c, s = math.cos(yaw), math.sin(yaw)
+    # The board's face is at the given point; it stands 6 cm off the wall behind it.
+    hx, hz = w / 2, 0.03
+    cx, cz = x - s * 0.03, z - c * 0.03
+    turned_box(cx, cz, hx, hz, yaw, y - size * 0.8, y + size * 0.8, look, None, m)
+    text(body, x + s * 0.005, y - size * 0.45, z + c * 0.005, yaw, size, "sign_white", m, depth=0.02)
+
+
+def ladder_down(x, z, m, depth=2.4):
+    """A steel ladder down the quay face at (x, z), its stiles over the coping."""
+    for dx in (-0.22, 0.22):
+        tube([(x + dx, 0.9, z), (x + dx, 0.05, z), (x + dx, 0.0, z - 0.35), (x + dx, -depth, z - 0.35)], 0.025,
+             "steel_galv", m, sides=5)
+    for k in range(int(depth / 0.3)):
+        y = -0.25 - k * 0.3
+        tube([(x - 0.22, y, z - 0.35), (x + 0.22, y, z - 0.35)], 0.018, "steel_galv", m, sides=4)
+
+
+def lamp(x, z, yaw, m, y=STREET):
+    """A yard lamp (off in the day: no light)."""
+    place("yard_lamp", x, y, z, yaw, m)
+
+
+# --- Ground ---------------------------------------------------------------------------
+def ground():
+    x0, x1, z0, z1 = BOUNDS
+    clip(x0, x1, -3.0, STREET, z0, z1)
+    for side in SIDES:
+        m = side.m
+        for rect, look in ((YARD, "road"), ((-42.0, -41.0, -27.0, 21.0), "road"), (GATE_ROAD, "road"),
+                           (GATE_LANE, "road"), (QUAY, "quay"), ((-42.0, -41.0, -36.0, -27.0), "quay"),
+                           (PIPE_ALLEY, "slab_old"), (CORNER, "slab"), (MAIN_ROAD, "road"),
+                           ((-42.0, -9.0, 21.0, 37.0), "bund_gravel"), (APRON, "slab"),
+                           ((-13.0, -9.0, 13.0, 14.0), "slab"), ((-13.0, 0.0, -13.0, 13.0), "slab")):
+            a0, a1, b0, b1 = rect
+            deco(a0, a1, -0.1, STREET, b0, b1, look, m, faces="top")
+        # The quay apron runs out to the edge.
+        deco(-42.0, -6.0, -0.1, STREET, -36.6, -36.0, "quay", m, faces="top")
+        # Road markings: the yard's lanes, the main road's centre line, the
+        # quay's edge line and walkway, the rack's bay lines.
+        for z in (-2.0, 6.0):
+            road_paint(-41.0, -33.0, z - 0.06, z + 0.06, "paint_white", m)
+        for x in (-31.0, -26.0, -21.0, -16.0):
+            road_paint(x - 1.5, x + 1.5, 1.94, 2.06, "paint_yellow", m)
+        road_paint(-41.0, -6.0, -35.3, -35.15, "paint_yellow", m)
+        road_paint(-41.0, -6.0, -27.9, -27.75, "paint_yellow", m)
+        for k in range(8):
+            z = -25.0 + k * 2.2
+            road_paint(-38.9, -37.1, z, z + 0.6, "paint_white", m)
+    # Under the rack: a paved band along the bays (both halves at once: it
+    # crosses the centre).
+    for v0, v1 in ((1.4, 4.6), (-4.6, -1.4)):
+        rack_box(-12.5, 12.5, v0 + 0.02, v1 - 0.02, STREET, STREET + 0.004, "slab_old")
+    for v in (4.6, -4.6):
+        rack_box(-12.5, 12.5, v - 0.06, v + 0.06, STREET, STREET + 0.006, "paint_yellow")
+
+
+def boundary():
+    x0, x1, z0, z1 = BOUNDS
+    for m in (False, True):
+        clip(x0 - 1.0, x0 + 1.0, 0, 16, z0, z1, m=m)
+        clip(x0, 0.0, 0, 16, z0 - 1.0, z0 + 1.0, m=m)
+        clip(0.0, x1, 0, 16, z0 - 1.0, z0 + 1.0, m=m)
+
+
+# --- The basin, the quay's edge, and the moored tanker -------------------------------
+def basin(side: Side):
+    m = side.m
+    # The quay's face down to the water, its coping, and the water itself.
+    deco(-42.0, -4.0, SEA - 3.0, STREET, -37.6, -36.6, "quay_edge", m)
+    deco(-42.0, -4.0, STREET, 0.2, -36.95, -36.6, "safety_yellow", m, bevel=0.02)
+    deco(-160.0, -4.0, SEA - 0.05, SEA, -240.0, -37.6, "sea", m, faces="top", chunk="far")
+    # Where the basin ends east of the pump house: a rock revetment.
+    for k in range(9):
+        z = -38.0 - k * 4.0
+        r = 1.6 + (k % 3) * 0.5
+        PARTS.append({"kind": "hull", "look": "rock", "chunk": "far", "points": [
+            t3(x, y, zz, m) for x, y, zz in ((-4.0 - r, SEA - 1.0, z - r), (-4.0 + r, SEA - 1.0, z - r),
+                                             (-4.0 + r * 0.8, SEA - 1.0, z + r), (-4.0 - r, SEA - 1.0, z + r),
+                                             (-4.0, SEA + r * 0.9, z), (-4.0 + r * 0.5, SEA + r * 0.6, z - r * 0.5))]})
+    deco(-4.0, 60.0, SEA - 1.0, STREET, -120.0, -37.0, "grass_dry", m, faces="top", chunk="far")
+    # Fenders hung on the face, bollards along the edge, and ladders down.
+    for x in range(-40, -6, 5):
+        place("fender", x + 0.5, STREET, -37.6, PI, m)
+    for x in (-39.0, -33.0, -21.5, -15.0, -9.0):
+        place("bollard", x, STREET, -36.3, 0.0, m)
+        clip(x - 0.3, x + 0.3, STREET, 0.75, -36.6, -36.0, "metal", m, sight=False)
+    for x in (-36.0, -18.0):
+        ladder_down(x, -36.65, m)
+    # The tanker moored along the quay, bow to the east, its hull a wall over
+    # the quay's north side.
+    place("tanker_ship", -56.0, SEA, -49.5, 0.0, m, chunk="far", length=96.0, beam=18.0)
+    # Mooring lines from the bollards up to the tanker's deck.
+    for x, tx in ((-39.0, -44.0), (-21.5, -24.0), (-9.0, -12.0)):
+        tube([(x, 0.7, -36.3), (tx, 5.3, -40.4)], 0.04, "cable", m, sides=5, sag=0.6)
+
+
+# --- The truck gate (spawn) --------------------------------------------------------------
+def yard(side: Side):
+    m = side.m
+    # The gatehouse: a guard hut with windows on the gate and the yard.
+    shell(-41.0, -37.5, -8.0, -4.5, 3.0, side.block, m,
+          fakes={"S": [(-40.4, -38.0, 1.0, 2.2, "window_office")], "E": [(-7.4, -5.2, 1.0, 2.2, "window_office")]})
+    solid(-41.2, -37.3, 3.0, 3.25, -8.2, -4.3, "roof_sheet", m=m)
+    deco(-41.25, -37.25, 3.25, 3.35, -8.25, -4.25, side.trim, m, bevel=0.02)
+    name_board("GATE 1" if not m else "GATE 2", -39.25, 2.65, -4.48, 0.0, m, size=0.3)
+    # The boom gate across the way out to the west, and the fence beside it.
+    place("gate_barrier", -41.5, STREET, -2.0, -PI / 2, m, length=7.5)
+    for z0, z1 in ((-27.0, -8.0), (6.0, 21.0)):
+        place("fence", -41.8, STREET, (z0 + z1) / 2, PI / 2, m, length=z1 - z0)
+    # A tanker parked along the west side, waiting for the rack.
+    place("tanker_truck", -39.4, STREET, 5.0, 0.0, m, livery=0 if not m else 2)
+    blocker(-40.65, -38.15, STREET, 3.5, 0.0, 10.0, m)
+    # Barriers, pallets, cones, and a light mast.
+    for z in (12.4, 13.6):
+        prop("barrier", -35.8, STREET, z, PI / 2, m)
+    blocker(-36.1, -35.5, STREET, 1.1, 11.6, 14.4, m, "concrete")
+    place("pallet_stack", -40.2, STREET, 13.3, 0.2, m, count=6)
+    blocker(-40.9, -39.5, STREET, 1.2, 12.7, 13.9, m, "wood")
+    for x, z in ((-34.2, 0.6), (-34.2, 3.4), (-35.4, -6.8)):
+        place("cone", x, STREET, z, 0.0, m)
+    place("light_mast", -34.0, STREET, -7.3, 0.0, m)
+    clip(-34.4, -33.6, STREET, 14.0, -7.7, -6.9, "metal", m, sight=False)
+    # A pipe bridge over the main road's mouth, its side clad as a screen
+    # with the terminal's name: it closes the lines from the far high ground
+    # down the road into the yard, and leaves the road open under it.
+    for z in (-1.75, 5.75):
+        solid(-32.8, -32.3, STREET, 6.6, z - 0.25, z + 0.25, "steel_grey", "metal", m=m)
+        deco(-33.0, -32.1, STREET, 0.4, z - 0.4, z + 0.4, "quay_edge", m, bevel=0.03)
+    solid(-32.9, -32.2, 3.2, 6.6, -2.0, 6.0, side.clad, "metal", m=m)
+    for x, y, r, look in ((-32.75, 6.85, 0.22, "pipe_grey"), (-32.35, 6.85, 0.16, "insulation")):
+        cyl(x, -3.0, 7.0, y, r, look, m, axis="z")
+    # A parked 10 ft container in the yard's north-east corner screens the way
+    # to the gate road from the main road.
+    place("shipping_container", -34.0, STREET, -6.5, 0.0, m, look=side.container[1], length=3.0)
+    blocker(-35.2, -32.8, STREET, 2.6, -8.0, -5.0, m)
+    name_board("BREAKWATER TERMINAL", -32.18, 5.6, 2.0, PI / 2, m, size=0.42,
+               look="sign_blue" if not m else "sign_green")
+
+
+def gate_road(side: Side):
+    m = side.m
+    # The garage row along the east side: roller doors, never opened.
+    x0, x1, z0, z1 = -35.0, -33.0, -27.0, -8.0
+    mass(x0, x1, z0, z1, 4.0, "block_grey", m)
+    for k in range(4):
+        zc = z0 + 2.4 + k * 4.6
+        deco(x0 - 0.06, x0, 0.05, 3.2, zc - 1.6, zc + 1.6, "door_steel", m)
+        for j in range(16):
+            y = 0.15 + j * 0.19
+            deco(x0 - 0.08, x0 - 0.06, y, y + 0.03, zc - 1.6, zc + 1.6, "trim_dark", m, detail=True)
+        deco(x0 - 0.12, x0, 3.2, 3.5, zc - 1.75, zc + 1.75, "steel_grey", m)
+    # The weighbridge office, a cabin by the road.
+    place("portacabin", -36.9, STREET, -18.25, PI, m, length=5.5, width=3.4, look=side.clad)
+    blocker(-38.6, -35.2, STREET, 3.0, -21.0, -15.5, m)
+    deco(-40.6, -38.9, STREET, 0.03, -23.0, -13.5, "steel_plate", m, faces="top")
+    # A skip and bags by the road, a lamp.
+    place("skip", -40.0, STREET, -24.8, PI / 2, m)
+    blocker(-40.9, -39.1, STREET, 1.4, -26.4, -23.2, m)
+    lamp(-40.6, -12.0, PI / 2, m)
+
+
+def gate_lane(side: Side):
+    m = side.m
+    # The lube store on the west, a fuel bowser by the lane.
+    mass(-41.0, -37.0, 14.0, 21.0, 3.6, side.block, m)
+    deco(-37.06, -37.0, 0.05, 2.6, 16.5, 18.5, side.door, m)
+    name_board("LUBE OILS", -36.93, 3.0, 17.5, PI / 2, m, size=0.26)
+    place("fuel_bowser", -36.3, STREET, 17.5, 0.0, m)
+    blocker(-37.0, -35.6, STREET, 1.75, 16.0, 19.0, m)
+    place("drum_rack", -34.0, STREET, 20.3, 0.0, m, count=2)
+    blocker(-34.75, -33.25, STREET, 1.1, 19.5, 21.0, m)
+
+
+# --- The quay -------------------------------------------------------------------------------
+def quay(side: Side):
+    m = side.m
+    # The loading-arm berth: a raised plinth with two arms folded over the water
+    # and the manifold between them.
+    solid(-30.0, -24.0, STREET, 1.2, -36.0, -33.0, "quay_edge", "concrete", m=m, bevel=0.03)
+    for x in (-28.5, -25.5):
+        place("loading_arm", x, 1.2, -35.2, 0.0, m)
+        clip(x - 0.3, x + 0.3, 1.2, 5.5, -35.5, -34.9, "metal", m, sight=False)
+    blocker(-29.4, -24.6, 1.2, 2.5, -34.0, -33.2, m)
+    deco(-29.4, -24.6, 1.2, 2.5, -34.0, -33.2, "steel_grey", m, bevel=0.03)
+    for x in (-28.5, -27.0, -25.5):
+        tube([(x, 1.8, -33.1), (x, 1.8, -32.4), (x, 0.4, -32.2)], 0.14, "pipe_grey", m, sides=8)
+    for x in (-29.6, -24.4):
+        stair("z", x - 0.5, x + 0.5, -31.6, -33.0, STREET, 1.2, m, rails=(True, True), surface="metal")
+    railing([(-30.0, 1.2, -36.0), (-24.0, 1.2, -36.0)], m, bars=0.0, height=1.0)
+    # Containers waiting to be shipped: two side by side, one on top.
+    place("shipping_container", -14.5, STREET, -31.75, PI / 2, m, look=side.container[0])
+    place("shipping_container", -14.5, 2.59, -31.75, PI / 2 + 0.03, m, look=side.container[1])
+    blocker(-17.5, -11.5, STREET, 5.2, -33.0, -30.5, m)
+    # Low cover along the quay: a pallet stack, jersey barriers, a cable drum.
+    place("pallet_stack", -37.25, STREET, -32.25, 0.1, m, count=7)
+    blocker(-38.0, -36.5, STREET, 1.1, -33.5, -31.0, m, "wood")
+    for x in (-22.6, -21.9):
+        prop("barrier", x, STREET, -29.25, 0.0, m)
+    blocker(-23.0, -21.5, STREET, 1.0, -30.0, -28.5, m, "concrete")
+    place("cable_reel", -8.75, STREET, -34.25, PI / 2, m)
+    blocker(-9.5, -8.0, STREET, 1.2, -35.5, -33.0, m, "wood")
+    place("light_mast", -33.0, STREET, -28.0, 0.0, m)
+    clip(-33.4, -32.6, STREET, 14.0, -28.4, -27.6, "metal", m, sight=False)
+    place("windsock", -7.0, 5.2, -36.4, 0.0, m)
+    for x in (-38.5, -11.0):
+        place("cone", x, STREET, -28.6, 0.0, m)
+
+
+# --- Pipe alley -------------------------------------------------------------------------------
+def pipe_alley(side: Side):
+    m = side.m
+    # An overhead pipe rack along the alley, its legs inside the alley's walls.
+    place("pipe_rack", -19.0, STREET, -14.5, 0.0, m, length=24.0, bays=4, height=4.6, width=3.5)
+    for k in range(5):
+        z = -26.5 + k * 6.0
+        for x in (-20.75, -17.25):
+            clip(x - 0.15, x + 0.15, STREET, 4.8, z - 0.15, z + 0.15, "metal", m, sight=False)
+    # A metering skid half across the alley: low cover.
+    place("meter_skid", -19.75, STREET, -16.0, 0.0, m, length=2.0)
+    blocker(-20.5, -19.0, STREET, 1.1, -17.0, -15.0, m)
+
+
+# --- The control house (Red: the laboratory) --------------------------------------------------
+def control_house(side: Side):
+    m = side.m
+    x0, x1, z0, z1 = CONTROL
+    look = side.block
+    ceil = UPPER - 0.2
+    top = CONTROL_TOP
+    up = (UPPER + 0.95, UPPER + 2.25)
+    shell(x0, x1, z0, z1, top, look, m,
+          doors={"N": [(-28.0, -26.4)], "S": [(-30.0, -28.4)], "E": [(-8.0, -6.6)]},
+          windows={"S": [(-26.0, -22.0, 0.95, 2.6), (-31.6, -30.0, *up), (-27.6, -25.6, *up), (-24.6, -22.6, *up)],
+                   "N": [(-31.0, -29.6, *up), (-25.0, -23.6, *up)]},
+          inner="plaster_white", inner_top=7.4)
+    floor(x0 + T, x1 - T, z0 + T, CONTROL_SPLIT, "floor_epoxy_grey", "concrete", m)
+    floor(x0 + T, x1 - T, CONTROL_SPLIT, z1 - T, "floor_epoxy_grey" if not m else "floor_epoxy_green", "concrete", m)
+    # The upper floor's slab with the stair's opening (on the east wall), the roof.
+    hole = (x1 - T - 1.3, x1 - T, -24.5, -16.0)
+    for a0, a1, b0, b1 in ((x0 + T, hole[0], z0 + T, z1 - T), (hole[0], x1 - T, z0 + T, hole[2]),
+                           (hole[0], x1 - T, hole[3], z1 - T)):
+        solid(a0, a1, ceil, UPPER, b0, b1, "plaster_ceiling", "concrete", m=m)
+        deco(a0, a1, UPPER - 0.005, UPPER, b0, b1, "floor_epoxy_grey", m, faces="top")
+    railing([(hole[0], UPPER, hole[2]), (hole[0], UPPER, hole[3])], m, bars=0.12)
+    railing([(hole[0], UPPER, hole[3]), (hole[1], UPPER, hole[3])], m, bars=0.12)
+    stair("z", hole[0] + 0.05, hole[1] - 0.05, -16.0, -24.5, WALK, UPPER, m, tread="tread_plate",
+          frame="steel_dark", rails=(True, False), solid=True, fill=look)
+    roof(x0 + T, x1 - T, z0 + T, z1 - T, 7.4, m, look="plaster_ceiling", top="roof_gravel")
+    coping(x0, x1, z0, z1, top, m, look="quay_edge")
+    # The ground floor's wall between its two rooms, with a door.
+    wall = Wall("x", x0 + T, x1 - T, WALK, ceil, CONTROL_SPLIT - 0.12, CONTROL_SPLIT + 0.12, "plaster_white", m,
+                inner="plaster_white")
+    wall.door(-25.0, -23.4, 2.3)
+    wall.emit()
+    # Upstairs: a wall across with a wide opening (cover between the control
+    # room over the main road and the office over the quay).
+    wall = Wall("x", x0 + T, x1 - T, UPPER, 7.4, -12.12, -11.88, "plaster_white", m, inner="plaster_white")
+    wall.door(-29.0, -26.6, UPPER + 2.3)
+    wall.door(-24.6, -23.4, UPPER + 2.3)
+    wall.emit()
+    # Outside: a clad band at the upper floor, a canopy over the south door, the name.
+    for zf, d in ((z1, 1), (z0, -1)):
+        f0, f1 = sorted((zf, zf + d * 0.08))
+        deco(x0, x1, ceil, ceil + 0.3, f0, f1, side.clad, m)
+        f0, f1 = sorted((zf, zf + d * 0.12))
+        deco(x0 - 0.12, x1 + 0.12, top - 0.35, top, f0, f1, side.trim, m)
+    deco(x1, x1 + 0.08, ceil, ceil + 0.3, z0, z1, side.clad, m)
+    deco(x0 - 0.08, x0, ceil, ceil + 0.3, z0, z1, side.clad, m)
+    deco(-30.6, -27.8, 2.5, 2.62, z1, z1 + 1.2, "steel_grey", m, bevel=0.02)
+    name_board(side.control, -24.0, 6.6, z1 + 0.06, 0.0, m, size=0.45, look="sign_blue" if not m else "sign_green")
+    for x in (x0 + 0.3, x1 - 0.3):
+        tube([(x, 0.1, z1 + 0.12), (x, 7.4, z1 + 0.12)], 0.055, "steel_grey", m)
+    # Inside, downstairs: the switch room (north) and the mess (south).
+    for x, z, tint in ((-27.0, -20.0, TUBE), (-27.0, -8.0, TUBE)):
+        place("ceiling_tube", x, ceil, z, 0.0, m)
+        light(x, ceil - 0.3, z, 1.4, tint, 8.0, m)
+    place("switch_panel", -27.0, WALK, -26.3, 0.0, m, length=4.0, look="steel_grey")
+    blocker(-29.0, -25.0, WALK, 2.35, -26.65, -26.0, m)
+    place("switch_panel", -32.3, WALK, -20.0, PI / 2, m, length=3.0, look="steel_grey")
+    blocker(-32.65, -32.0, WALK, 2.35, -21.5, -18.5, m)
+    crate_stack(-29.0, -17.5, m, base=WALK)
+    place("table_chairs", -30.0, WALK, -7.0, 0.0, m)
+    blocker(-30.6, -29.4, WALK, 0.78, -7.45, -6.55, m, "wood")
+    place("kitchen_counter", -32.3, WALK, -10.0, PI / 2, m)
+    blocker(-32.65, -32.0, WALK, 0.95, -12.0, -8.0, m, "wood")
+    place("notice_board", -21.4, WALK + 1.4, -11.0, -PI / 2, m)
+    place("fire_extinguisher", -21.5, WALK + 1.0, -4.0, -PI / 2, m)
+    # Upstairs: the control room (Blue) or the test lab (Red), and the office.
+    for x, z in ((-27.0, -6.0), (-27.0, -19.0)):
+        place("ceiling_tube", x, 7.4, z, 0.0, m)
+        light(x, 7.1, z, 1.2, TUBE, 8.0, m)
+    if not m:
+        place("console", -27.5, UPPER, -4.2, PI, m, length=6.0)
+        place("console", -27.5, UPPER, -8.0, PI, m, length=4.0)
+    else:
+        place("lab_bench", -27.5, UPPER, -4.2, PI, m, length=6.0)
+        place("lab_bench", -27.5, UPPER, -8.0, PI, m, length=4.0)
+    blocker(-30.5, -24.5, UPPER, UPPER + 0.95, -4.7, -3.7, m, "wood")
+    blocker(-29.5, -25.5, UPPER, UPPER + 0.95, -8.5, -7.5, m, "wood")
+    place("table_chairs", -30.0, UPPER, -20.0, 0.0, m)
+    blocker(-30.6, -29.4, UPPER, UPPER + 0.78, -20.45, -19.55, m, "wood")
+    place("wardrobe", -32.3, UPPER, -24.0, PI / 2, m)
+    blocker(-32.65, -31.95, UPPER, UPPER + 2.0, -24.8, -23.2, m, "wood")
+    crate_stack(-26.0, -16.0, m, base=UPPER)
+    # The roof: plant and an antenna mast.
+    r = 7.65
+    for x, z in ((-30.0, -20.0), (-25.0, -9.0)):
+        K.roof_aircon(x, r, z, PI / 2, m)
+    tube([(-31.5, r, -4.0), (-31.5, r + 6.0, -4.0)], 0.06, "steel_galv", m, detail=False)
+    for y in (r + 2.0, r + 4.0, r + 5.6):
+        tube([(-32.1, y, -4.0), (-30.9, y, -4.0)], 0.02, "steel_galv", m)
+
+
+def crate_stack(x0, z0, m, base=STREET):
+    K.crate_stack(x0, z0, m, base)
+
+
+# --- The meter shed (Red: the foam store), the substation, the transformer compound ----------
+def meter_shed(side: Side):
+    m = side.m
+    x0, x1, z0, z1 = METER
+    shell(x0, x1, z0, z1, 3.6, side.block, m, doors={"W": [(-10.0, -8.4)], "E": [(-6.0, -4.4)]},
+          windows={"N": [(-16.0, -14.0, 1.1, 2.2)]}, inner="plaster_white", inner_top=3.2)
+    floor(x0 + T, x1 - T, z0 + T, z1 - T, "floor_epoxy_grey", "concrete", m)
+    roof(x0 + T, x1 - T, z0 + T, z1 - T, 3.2, m, look="plaster_ceiling", top="roof_sheet")
+    coping(x0, x1, z0, z1, 3.6, m, look="quay_edge")
+    name_board(side.meter, x1 + 0.06, 3.0, -7.5, PI / 2, m, size=0.3)
+    place("ceiling_tube", -15.0, 3.2, -7.5, PI / 2, m)
+    light(-15.0, 2.9, -7.5, 1.2, TUBE, 6.0, m)
+    if not m:
+        place("meter_skid", -15.0, WALK, -11.0, PI / 2, m, length=2.4)
+    else:
+        place("drum_rack", -15.0, WALK, -11.2, 0.0, m, count=4)
+    blocker(-16.3, -13.7, WALK, 1.1, -11.9, -10.3, m)
+    place("switch_panel", -16.6, WALK, -4.0, PI / 2, m, length=2.4)
+    blocker(-16.65, -16.0, WALK, 2.35, -5.2, -2.8, m)
+
+
+def substation(side: Side):
+    m = side.m
+    # The substation building between the pipe alley and the apron, and its
+    # walled transformer compound on the apron's west side.
+    mass(-17.0, -13.0, -27.0, -13.0, 5.0, side.block, m)
+    for z in (-24.0, -19.0):
+        deco(-13.0, -12.94, 2.0, 3.6, z - 0.8, z + 0.8, "grate", m)
+    name_board("SUBSTATION", -13.0 + 0.0, 4.2, -26.98 - 0.06, PI, m, size=0.28)
+    x0, x1, z0, z1 = -13.0, -9.0, -22.0, -13.0
+    for a0, a1, b0, b1 in ((x0, x1, z0, z0 + 0.3), (x0, x1, z1 - 0.3, z1), (x1 - 0.3, x1, z0, z1)):
+        solid(a0, a1, STREET, 3.0, b0, b1, "block_grey", m=m)
+        deco(a0 - 0.04, a1 + 0.04, 3.0, 3.1, b0 - 0.04, b1 + 0.04, "quay_edge", m, bevel=0.02)
+    clip(x0, x1 - 0.3, STREET, 3.0, z0 + 0.3, z1 - 0.3, m=m)
+    deco(x0, x1 - 0.3, STREET, 0.05, z0 + 0.3, z1 - 0.3, "bund_gravel", m, faces="top")
+    for z in (-19.5, -15.5):
+        place("transformer", -11.2, 0.05, z, PI / 2, m)
+    deco(x1, x1 + 0.03, 1.2, 2.0, -18.2, -16.8, "hazard_red", m)
+    text("DANGER", x1 + 0.035, 1.45, -17.5, PI / 2, 0.22, "sign_white", m, depth=0.01)
+    for z in (-20.5, -14.5):
+        tube([(-12.5, 3.1, z), (-12.5, 6.5, z)], 0.08, "steel_galv", m, detail=False)
+        tube([(-13.0, 6.3, z), (-17.0, 6.0, z)], 0.015, "cable", m, sides=4, sag=0.3)
+
+
+# --- The pump house (Red: the fire pumps) -------------------------------------------------------
+def pump_house(side: Side):
+    m = side.m
+    look = side.block
+    for (x0, x1, z0, z1), doors in ((PUMP_W, {"W": [(-33.0, -31.0)], "S": [(-4.0, -2.0)]}),
+                                    (PUMP_E, {"W": [(-31.0, -29.0)], "S": [(4.0, 6.0)], "E": [(-33.0, -31.0)]})):
+        shell(x0, x1, z0, z1, PUMP_TOP, look, m, doors=doors, door_h=2.8, inner="block_grey", inner_top=4.8)
+        floor(x0 + T, x1 - T, z0 + T, z1 - T, "slab_old", "concrete", m)
+        roof(x0 + T, x1 - T, z0 + T, z1 - T, 4.8, m, look="steel_grey", top="roof_sheet")
+        coping(x0, x1, z0, z1, PUMP_TOP, m, look="quay_edge")
+        for x in (x0 + 2.0, x1 - 2.0):
+            place("ceiling_tube", x, 4.8, (z0 + z1) / 2, PI / 2, m)
+            light(x, 4.5, (z0 + z1) / 2, 1.4, TUBE, 8.0, m)
+    # Louvres high on the walls.
+    for x in (-4.0, 0.0, 4.0, 7.0):
+        zf = -27.0 if x < 1.5 else -22.0
+        deco(x - 0.75, x + 0.75, 3.55, 4.45, zf, zf + 0.12, "steel_grey", m, bevel=0.02)
+        for k in range(5):
+            y = 3.65 + k * 0.16
+            deco(x - 0.68, x + 0.68, y, y + 0.08, zf + 0.12, zf + 0.16, "steel_dark", m, detail=True)
+    name_board(side.pumps, 5.0, 4.4, -21.94, 0.0, m, size=0.38, look="sign_blue" if not m else "hazard_red")
+    pump_look = "steel_blue" if not m else "steel_red"
+    # The export pumps (east room): two sets and their control panel, as one block.
+    for x in (4.4, 6.2):
+        place("pump_unit", x, WALK, -29.3, 0.0, m, look=pump_look, length=3.2)
+    place("switch_panel", 5.25, WALK, -27.85, PI, m, length=3.4)
+    blocker(3.5, 7.0, WALK, 2.4, -31.0, -27.5, m)
+    # Switch panels (west room).
+    place("switch_panel", -3.0, WALK, -33.5, 0.0, m, length=3.0)
+    blocker(-4.5, -1.5, WALK, 2.35, -34.5, -32.5, m)
+    if m:
+        place("foam_unit", 4.5, WALK, -34.2, 0.0, m)
+    else:
+        place("switch_panel", 4.5, WALK, -35.3, 0.0, m, length=3.0, look="steel_blue")
+        place("drum_rack", 4.5, WALK, -33.9, 0.0, m, count=3)
+    blocker(3.0, 6.0, WALK, 2.35, -35.6, -33.0, m)
+    place("fire_extinguisher", -5.6, WALK + 1.0, -28.0, PI / 2, m)
+
+
+# --- The main road ---------------------------------------------------------------------------
+def main_road(side: Side):
+    m = side.m
+    # A site pickup skewed across the road.
+    yaw = PI / 2 + 0.28
+    place("pickup", -24.5, STREET, 2.4, yaw, m, color=0 if not m else 1)
+    oriented(-24.5, 2.4, 0.95, 2.65, yaw, STREET, 1.8, m)
+    # An analyser shelter on the road's north side: cover from the yard.
+    solid(-18.5, -16.5, STREET, 2.6, -1.5, 0.5, side.clad, "metal", m=m, bevel=0.02)
+    deco(-18.7, -16.3, 2.6, 2.75, -1.7, 0.7, "roof_sheet", m, bevel=0.02)
+    deco(-16.5, -16.46, 0.1, 2.2, -1.1, 0.1, "door_steel", m)
+    place("meter_skid", -17.5, STREET, 1.4, PI / 2, m, length=1.6)
+    for x in (-30.0, -15.0):
+        lamp(x, -1.6, 0.0, m)
+    for x, z in ((-21.5, 5.2), (-14.0, 5.3)):
+        place("cone", x, STREET, z, 0.0, m)
+    # A pipe bridge over the road where it meets the rack: the rack's lines
+    # out of the terminal, carried over the road on a clad truss. It screens
+    # the deck's view down the road into the gate yard; the road stays open
+    # under it.
+    for z in (-1.75, 5.75):
+        solid(-14.3, -13.7, STREET, 6.2, z - 0.3, z + 0.3, "steel_grey", "metal", m=m)
+        deco(-14.5, -13.5, STREET, 0.4, z - 0.45, z + 0.45, "quay_edge", m, bevel=0.03)
+    solid(-14.4, -13.6, 3.2, 5.9, -2.05, 6.05, side.clad, "metal", m=m)
+    for x, y, r, look in ((-14.2, 6.15, 0.25, "pipe_grey"), (-13.75, 6.15, 0.18, "pipe_green")):
+        cyl(x, -13.0, 13.0, y, r, look, m, axis="z")
+    name_board("SPEED LIMIT 10", -14.42, 4.3, 2.0, -PI / 2, m, size=0.34, look="sign_blue")
+    place("water_barrier", -31.5, STREET, -1.2, 0.0, m)
+    blocker(-32.4, -30.6, STREET, 0.9, -1.6, -0.8, m, "concrete")
+
+
+# --- The workshop (Red: the fire station) ------------------------------------------------------
+def workshop(side: Side):
+    m = side.m
+    x0, x1, z0, z1 = WORKSHOP
+    top = ROOF_DECK + 1.05
+    hatch = (x1 - T - 1.35, x1 - T, 11.6, 16.2)
+    shell(x0, x1, z0, z1, top, side.clad, m,
+          doors={"N": [(-27.0, -25.4)], "W": [(9.0, 10.6)], "S": [(-24.0, -22.4)], "E": [(11.0, 12.6)]},
+          windows={"N": [(-30.5, -28.0, 0.9, 2.4)], "W": [(16.0, 19.0, 1.2, 2.4)]},
+          inner="block_grey", inner_top=4.0, door_h=2.8)
+    floor(x0 + T, x1 - T, z0 + T, z1 - T, "floor_epoxy_grey", "concrete", m)
+    roof(x0 + T, x1 - T, z0 + T, z1 - T, ROOF_DECK - 0.25, m, look="steel_grey", holes=(hatch,), top="roof_pavers")
+    coping(x0, x1, z0, z1, top, m, look="quay_edge")
+    railing([(hatch[0], ROOF_DECK, hatch[2] + 0.6), (hatch[0], ROOF_DECK, hatch[3])], m, bars=0.12)
+    railing([(hatch[0], ROOF_DECK, hatch[3]), (hatch[1], ROOF_DECK, hatch[3])], m, bars=0.12)
+    stair("z", hatch[0] + 0.05, hatch[1] - 0.05, 19.4, hatch[2] + 0.1, WALK, ROOF_DECK, m, tread="tread_plate",
+          frame="steel_dark", rails=(True, False))
+    # The roof deck's north half is screened by a plant room, so the deck
+    # fights over the tank farm, not down the main road.
+    solid(x0 + 0.4, x1 - T, ROOF_DECK, ROOF_DECK + 2.6, z0 + 0.4, 10.4, side.block, m=m)
+    deco(x0 + 0.35, x1 - T + 0.05, ROOF_DECK + 2.6, ROOF_DECK + 2.7, z0 + 0.35, 10.45, "quay_edge", m, bevel=0.02)
+    for x in (-30.0, -27.0, -24.0):
+        deco(x - 0.6, x + 0.6, ROOF_DECK + 0.8, ROOF_DECK + 2.0, 10.4, 10.46, "grate", m)
+    # A louvred plant screen along the east parapet beside the hatch: the deck
+    # looks over the tank farm, not across the rack to the far roofs.
+    solid(x1 - T, x1, ROOF_DECK, ROOF_DECK + 2.6, 10.4, 19.0, "grate", "metal", m=m)
+    deco(x1 - T - 0.05, x1 + 0.05, ROOF_DECK + 2.6, ROOF_DECK + 2.7, 10.4, 19.05, "quay_edge", m, bevel=0.02)
+    name_board(side.workshop, -27.5, ROOF_DECK + 1.9, z0 + 0.34, PI, m, size=0.5,
+               look="sign_blue" if not m else "hazard_red")
+    # Roof deck cover: a water tank on legs and vents.
+    r = ROOF_DECK
+    place("roof_vent", -31.0, r, 19.5, 0.0, m)
+    blocker(-31.5, -30.5, r, r + 1.0, 19.0, 20.0, m)
+    K.roof_aircon(-26.0, r, 19.6, 0.0, m)
+    place("pallet_stack", -29.0, r, 14.0, 0.3, m, count=7)
+    blocker(-29.7, -28.3, r, r + 1.1, 13.3, 14.7, m, "wood")
+    # Inside: the workbench, and the lathe (Red: a foam unit), shelving.
+    place("workbench", -26.5, WALK, 10.5, PI, m, length=7.0)
+    blocker(-30.0, -23.0, WALK, 1.0, 10.0, 11.0, m, "wood")
+    if not m:
+        place("lathe", -27.0, WALK, 16.25, 0.0, m)
+    else:
+        place("foam_unit", -27.0, WALK, 16.25, 0.0, m)
+    blocker(-28.5, -25.5, WALK, 2.5, 15.0, 17.5, m)
+    place("wall_shelf", -32.4, WALK, 14.0, PI / 2, m)
+    blocker(-32.65, -32.2, WALK, 2.2, 12.8, 15.2, m, "wood")
+    for x, z in ((-28.0, 8.5), (-28.0, 14.0), (-28.0, 19.0)):
+        place("ceiling_tube", x, ROOF_DECK - 0.25, z, 0.0, m)
+        light(x, ROOF_DECK - 0.55, z, 1.4, TUBE, 8.0, m)
+    place("fire_extinguisher", -21.5, WALK + 1.0, 8.0, -PI / 2, m)
+
+
+# --- The drum store (Red: spares) and the pump shed -----------------------------------------------
+def drum_store(side: Side):
+    m = side.m
+    x0, x1, z0, z1 = DRUMS
+    shell(x0, x1, z0, z1, 3.8, "block_grey", m, doors={"N": [(-17.0, -15.4)], "S": [(-18.0, -16.4)]},
+          inner="block_grey", inner_top=3.4)
+    floor(x0 + T, x1 - T, z0 + T, z1 - T, "slab_old", "concrete", m)
+    roof(x0 + T, x1 - T, z0 + T, z1 - T, 3.4, m, look="steel_grey", top="roof_sheet")
+    coping(x0, x1, z0, z1, 3.8, m, look="quay_edge")
+    name_board(side.drums, -17.0, 3.15, z0 - 0.06, PI, m, size=0.28)
+    place("drum_rack", -19.2, WALK, 8.2, PI / 2, m, count=4)
+    blocker(-20.0, -18.4, WALK, 1.1, 6.6, 9.8, m)
+    place("drum_rack", -14.6, WALK, 11.2, PI / 2, m, count=3)
+    blocker(-15.4, -13.8, WALK, 1.1, 10.1, 12.3, m)
+    place("ceiling_tube", -17.0, 3.4, 10.0, 0.0, m)
+    light(-17.0, 3.1, 10.0, 1.2, TUBE, 6.0, m)
+
+
+def pump_shed(side: Side):
+    m = side.m
+    x0, x1, z0, z1 = PUMP_SHED
+    shell(x0, x1, z0, z1, 4.2, side.clad, m, doors={"E": [(16.0, 17.6)], "S": [(-12.0, -10.4)]},
+          inner="block_grey", inner_top=3.8, door_h=2.6)
+    floor(x0 + T, x1 - T, z0 + T, z1 - T, "floor_epoxy_grey", "concrete", m)
+    roof(x0 + T, x1 - T, z0 + T, z1 - T, 3.8, m, look="steel_grey", top="roof_sheet")
+    coping(x0, x1, z0, z1, 4.2, m, look="quay_edge")
+    # The drum store's south door opens into the shed's north wall.
+    pump_look = "steel_green" if not m else "steel_grey"
+    for z in (16.0, 18.8):
+        place("pump_unit", -15.5, WALK, z, PI / 2, m, look=pump_look, length=2.4)
+    blocker(-16.8, -14.2, WALK, 1.2, 15.4, 19.4, m)
+    tube([(-14.2, 1.0, 16.0), (-12.0, 1.0, 16.0), (-12.0, 3.4, 16.0), (-20.6, 3.4, 16.0)], 0.12, "pipe_grey", m,
+         sides=8, detail=False)
+    place("switch_panel", -20.6, WALK, 19.0, PI / 2, m, length=2.0)
+    blocker(-20.65, -20.0, WALK, 2.35, 18.0, 20.0, m)
+    place("ceiling_tube", -15.0, 3.8, 17.5, PI / 2, m)
+    light(-15.0, 3.5, 17.5, 1.2, TUBE, 6.0, m)
+    # The plinth wall between the rack and the shed's corner.
+    solid(-13.0, -9.0, STREET, 1.0, 13.0, 14.0, "quay_edge", "concrete", m=m, bevel=0.03)
+
+
+# --- The tank farm ------------------------------------------------------------------------------
+def tank_farm(side: Side):
+    m = side.m
+    for i, (x, z) in enumerate(TANKS):
+        place("storage_tank", x, STREET, z, 0.0 if i == 0 else PI / 2, m, r=TANK_R, h=TANK_H, look=side.tank,
+              stair_from=-PI / 2)
+        round_solid(x, z, TANK_R + 0.12, STREET, TANK_H, "metal", m)
+        cx = x
+        text(side.tank_ids[i], cx, 7.5, z + TANK_R + 0.02, 0.0, 1.1, "trim_black", m, depth=0.02)
+    # Pipe runs along the farm's south edge, against the boundary.
+    for k, (y, r, look) in enumerate(((0.55, 0.22, "pipe_grey"), (0.55, 0.16, "pipe_green"), (1.2, 0.18, "pipe_brown"))):
+        zz = 36.4 + (k % 2) * 0.35
+        cyl(y + r, -41.0, -9.0, zz, r, look, m, sides=10, axis="x")
+    for x in range(-40, -9, 4):
+        deco(x - 0.15, x + 0.15, STREET, 0.5, 36.2, 37.0, "quay_edge", m)
+    # The step over the pipes by the bund (low cover).
+    solid(-26.5, -24.5, STREET, 1.0, 34.0, 36.0, "grate", "metal", m=m)
+    stair("x", 34.1, 35.9, -27.3, -26.5, STREET, 1.0, m, rails=(False, False), surface="metal")
+    # Lights, a fire hydrant monitor, and signs.
+    place("light_mast", -40.4, STREET, 36.2, 0.0, m)
+    place("foam_unit", -11.0, STREET, 34.6, PI / 2, m)
+    blocker(-12.2, -9.8, STREET, 2.5, 33.1, 36.1, m)
+    name_board("NO SMOKING", -36.98, 2.4, 22.0, PI / 2, m, size=0.24, look="hazard_red")
+
+
+# --- The loading rack ---------------------------------------------------------------------------
+def rack_stair(m: bool):
+    """Blue's stair onto the deck (Red's is its twin): from u = -12.7 on the
+    ground up the axis to the deck's west end at u = -8.5."""
+    u0, u1, hw = -12.7, -8.5, 0.6
+    n = round(DECK / 0.19)
+    pts = []
+    for v in (-hw, hw):
+        for u, y in ((u0, STREET), (u1, DECK), (u1, DECK - 0.3), (u0, STREET - 0.3)):
+            x, z = along(u, v)
+            pts.append(t3(x, y, z, m))
+    COLLIDERS.append(("convex", "metal", pts))
+    for k in range(4):
+        ua, ub = u0 + (u1 - u0) * k / 4, u0 + (u1 - u0) * (k + 1) / 4
+        rack_box(ua, ub, -hw, hw, STREET, STREET + DECK * (k + 1) / 4, None, None, m)
+        cx, cz = along((ua + ub) / 2, 0.0)
+        SIGHT.append(("turned", *tp(cx, cz, m), (ub - ua) / 2, hw, tyaw(RACK_YAW, m), STREET,
+                      STREET + DECK * (k + 1) / 4))
+    for i in range(n):
+        ua = u0 + (u1 - u0) * i / n
+        ub = ua + (u1 - u0) / n
+        y = DECK * (i + 1) / n
+        rack_box(ua, ub, -hw, hw, y - 0.05, y, "tread_plate", None, m)
+    for v in (-hw - 0.03, hw + 0.03):
+        a, b = along(u0, v), along(u1, v)
+        tube([(a[0], STREET + 1.0, a[1]), (b[0], DECK + 1.0, b[1])], 0.025, "steel_dark", m, sides=6, detail=False)
+        tube([(a[0], STREET - 0.05, a[1]), (b[0], DECK - 0.05, b[1])], 0.06, "steel_dark", m, sides=6, detail=False)
+        for k in range(4):
+            t = k / 3
+            px, pz = a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t
+            y = DECK * t
+            tube([(px, y, pz), (px, y + 1.0, pz)], 0.02, "steel_dark", m, sides=5, detail=False)
+
+
+def rack():
+    """The loading rack across the middle: the island deck with its two halves,
+    the canopy, the tankers in the bays, the booths and skids round it. Each
+    team's pieces are authored once and turned for the other."""
+    for m in (False, True):
+        # Each team's half of the island: metering cabinets under the deck.
+        u0, u1 = -ISLAND[1], -ISLAND[0]
+        rack_box(u0, u1, -ISLAND_HALF, ISLAND_HALF, STREET, DECK - 0.3, None, "metal", m)
+        rack_box(u0, u1, -ISLAND_HALF - 0.02, ISLAND_HALF + 0.02, STREET, 0.3, "quay_edge", None, m)
+        rack_box(u0, u1, -ISLAND_HALF + 0.05, ISLAND_HALF - 0.05, 0.3, DECK - 0.3, "steel_grey", None, m)
+        for k in range(5):
+            u = u0 + 0.6 + k * (u1 - u0 - 1.2) / 4
+            for v in (-ISLAND_HALF - 0.04, ISLAND_HALF + 0.04):
+                rack_box(u - 0.6, u + 0.6, v - 0.015, v + 0.015, 0.6, 2.6,
+                         "steel_blue" if not m else "steel_red", None, m, detail=True)
+                rack_box(u - 0.15, u + 0.15, v - 0.03, v + 0.03, 1.5, 1.9, "screen_blue", None, m, detail=True)
+        # The deck: grating over the whole island (both halves and the
+        # crossing between them), its rails, and the loading arms over the bays.
+        rack_box(-ISLAND[1], 0.0, -ISLAND_HALF - 0.1, ISLAND_HALF + 0.1, DECK - 0.3, DECK, "grate", "metal", m)
+        for v in (-ISLAND_HALF - 0.05, ISLAND_HALF + 0.05):
+            a, b = along(-ISLAND[1], v), along(0.0, v)
+            for y, r in ((DECK + 1.05, 0.028), (DECK + 0.52, 0.016)):
+                tube([(a[0], y, a[1]), (b[0], y, b[1])], r, "safety_yellow", m, sides=6, detail=False)
+            for k in range(7):
+                t = k / 6
+                px, pz = a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t
+                tube([(px, DECK, pz), (px, DECK + 1.05, pz)], 0.022, "safety_yellow", m, sides=5, detail=False)
+            cx, cz = along(-ISLAND[1] / 2, v)
+            turned_box(cx, cz, ISLAND[1] / 2, 0.04, RACK_YAW, DECK, DECK + 1.05, None, "metal", m)
+            SIGHT.pop()  # rails do not block sight
+        for u in (-7.0, -3.5):
+            for v, s in ((ISLAND_HALF, 1), (-ISLAND_HALF, -1)):
+                x, z = along(u, v)
+                place("loading_arm", x, DECK, z, RACK_YAW - PI if s > 0 else RACK_YAW, m, scale=0.55,
+                      reach=2.2, look="steel_grey")
+        # The crossing under the deck's middle: posts carry the deck there.
+        for u in (-1.45,):
+            for v in (-ISLAND_HALF + 0.15, ISLAND_HALF - 0.15):
+                x, z = along(u, v)
+                clip(x - 0.15, x + 0.15, STREET, DECK - 0.3, z - 0.15, z + 0.15, "metal", m)
+                deco(x - 0.14, x + 0.14, STREET, DECK - 0.3, z - 0.14, z + 0.14, "steel_grey", m)
+        # The tanker in the bay (Red's: the twin bay).
+        u, v = TRUCK
+        x, z = along(u, v)
+        place("tanker_truck", x, STREET, z, PI / 2 + RACK_YAW + PI, m, livery=1 if not m else 0)
+        turned_box(x, z, 5.25, 1.25, RACK_YAW, STREET, 3.5, None, "metal", m)
+        # Hoses from the arms down to the tanker's hatches.
+        # The meter booth beside the far bay.
+        x, z = along(5.0, 6.6)
+        turned_box(x, z, 1.6, 1.2, RACK_YAW, STREET, 2.7, "clad_cream" if not m else "clad_blue", "metal", m)
+        turned_box(x, z, 1.75, 1.35, RACK_YAW, 2.7, 2.85, "roof_sheet", None, m)
+        # Blue's stair onto the deck.
+        rack_stair(m)
+        # The canopy's columns (four per side) and the roof.
+        for u in (-11.0, -3.0):
+            for v in (-6.0, 6.0):
+                x, z = along(u, v)
+                clip(x - 0.25, x + 0.25, STREET, 8.0, z - 0.25, z + 0.25, "metal", m)
+                deco(x - 0.22, x + 0.22, STREET, 8.0, z - 0.22, z + 0.22, "steel_grey", m)
+                deco(x - 0.4, x + 0.4, STREET, 0.4, z - 0.4, z + 0.4, "quay_edge", m, bevel=0.03)
+    # The canopy: one roof over the whole rack, with its fascia and trusses.
+    rack_box(-13.0, 13.0, -7.2, 7.2, 8.0, 8.3, "roof_sheet", "metal")
+    SIGHT.pop()
+    rack_box(-13.0, 13.0, -7.2, 7.2, 7.98, 8.0, "steel_grey")
+    for v in (-7.25, 7.25):
+        rack_box(-13.1, 13.1, v - 0.08, v + 0.08, 7.4, 8.6, "appliance_white")
+    for u in (-13.15, 13.15):
+        rack_box(u - 0.08, u + 0.08, -7.3, 7.3, 7.4, 8.6, "appliance_white")
+    for u in range(-12, 13, 3):
+        rack_box(u - 0.1, u + 0.1, -7.0, 7.0, 7.4, 7.98, "steel_grey")
+    for v in (-6.0, 6.0):
+        rack_box(-12.5, 12.5, v - 0.12, v + 0.12, 7.6, 7.98, "steel_grey")
+    for u, v, yaw in ((0.0, 7.34, 0.0), (0.0, -7.34, PI)):
+        x, z = along(u, v)
+        text("BREAKWATER TERMINAL", x, 7.62, z, RACK_YAW + yaw, 0.62, "sign_blue", depth=0.03)
+    for u in (-9.0, -3.0, 3.0, 9.0):
+        x, z = along(u, 0.0)
+        place("ceiling_tube", x, 7.98, z, RACK_YAW + PI / 2, False)
+
+
+def rack_corners(side: Side):
+    m = side.m
+    # Additive skid (north-west corner): three tanks on a skid.
+    blocker(-10.5, -7.5, STREET, 2.6, -11.5, -9.0, m)
+    deco(-10.5, -7.5, STREET, 0.25, -11.5, -9.0, "steel_dark", m, bevel=0.02)
+    for x, z in ((-9.8, -10.6), (-8.3, -10.6), (-9.0, -9.6)):
+        cyl(x, 0.25, 2.5, z, 0.5, "tank_white" if not m else "tank_silver", m, sides=14)
+        cyl(x, 2.5, 2.6, z, 0.35, "steel_grey", m, sides=10)
+    tube([(-10.3, 0.6, -9.1), (-7.6, 0.6, -9.1)], 0.07, "pipe_grey", m, sides=6, detail=False)
+    # Foam monitor (north-east corner).
+    place("foam_unit", 7.75, STREET, -10.75, 0.0, m)
+    blocker(6.5, 9.0, STREET, 2.5, -12.0, -9.5, m)
+    # The rack's control booth (south-west, by the main road's mouth).
+    shell(-11.0, -8.5, 5.5, 8.5, 2.9, "clad_cream" if not m else "clad_blue", m,
+          windows={"N": [(-10.6, -8.9, 1.1, 2.2)]}, fakes={"E": [(6.0, 8.0, 1.1, 2.2, "window_office")]})
+    clip(-11.0, -8.5, STREET, 2.9, 5.5, 8.5, m=m)
+    solid(-11.15, -8.35, 2.9, 3.05, 5.35, 8.65, "roof_sheet", m=m)
+    # The spill kit by the pump shed: a short container (south apron).
+    place("shipping_container", -6.5, STREET, 14.75, PI / 2, m, look="container_grey", length=3.0)
+    blocker(-8.0, -5.0, STREET, 2.6, 13.6, 15.9, m)
+    text("SPILL KIT", -6.5, 1.3, 13.58, PI, 0.3, "sign_white", m, depth=0.01)
+    # The manifold on the north apron.
+    blocker(-7.5, -4.5, STREET, 2.0, -19.5, -17.0, m)
+    deco(-7.5, -4.5, STREET, 0.2, -19.5, -17.0, "steel_dark", m)
+    for x in (-7.0, -6.0, -5.0):
+        cyl(x, 0.2, 1.8, -18.25, 0.18, "pipe_grey", m, sides=8)
+        cyl(x, 1.1, 1.4, -18.25, 0.28, "valve_red", m, sides=10)
+    tube([(-7.6, 1.6, -19.0), (-4.4, 1.6, -19.0)], 0.2, "pipe_grey", m, sides=8, detail=False)
+    tube([(-7.6, 0.6, -17.5), (-4.4, 0.6, -17.5)], 0.16, "pipe_green", m, sides=8, detail=False)
+    lamp(-8.6, -21.6, 0.0, m)
+
+
+# --- Backdrops beyond the boundary ---------------------------------------------------------------
+def backdrops(side: Side):
+    m = side.m
+    # West of the gate: the access road and dry ground, a fence line, sheds.
+    deco(-160.0, -42.0, -0.1, STREET, -37.6, 160.0, "grass_dry", m, faces="top", chunk="far")
+    deco(-80.0, -42.0, STREET, 0.01, -3.0, 7.0, "road", m, faces="top", chunk="far")
+    for x, z, w, d, h, look in ((-52.0, -20.0, 14.0, 9.0, 6.0, "clad_green"), (-58.0, 18.0, 18.0, 10.0, 7.5,
+                                                                                 "clad_cream"),
+                                (-49.0, 28.0, 8.0, 6.0, 4.0, "block_grey")):
+        box(x - w / 2, x + w / 2, STREET, h, z - d / 2, z + d / 2, look, None, m, chunk="far")
+        box(x - w / 2 - 0.2, x + w / 2 + 0.2, h, h + 0.3, z - d / 2 - 0.2, z + d / 2 + 0.2, "roof_sheet", None, m,
+            chunk="far")
+    # South of the tank farm: the main tank farm, far bigger tanks.
+    deco(-160.0, 4.0, -0.1, STREET, 37.0, 160.0, "grass_dry", m, faces="top", chunk="far")
+    for x, z, r, h in ((-30.0, 62.0, 14.0, 16.0), (2.0, 66.0, 16.0, 18.0), (-62.0, 70.0, 12.0, 14.0),
+                       (-8.0, 100.0, 18.0, 20.0), (-48.0, 105.0, 15.0, 15.0)):
+        place("far_tank", x, STREET, z, 0.0, m, chunk="far", r=r, h=h, look="tank_white" if (x + z) % 3 else
+              "tank_silver")
+    # A bund wall in front of them, and the pipe bridge into the farm.
+    box(-60.0, 4.0, STREET, 1.6, 42.0, 42.6, "quay_edge", None, m, chunk="far")
+    # Hills on the far side of the basin (north-west, over the water).
+    for x, z, w, h in ((-150.0, -230.0, 220.0, 38.0), (-20.0, -260.0, 260.0, 52.0), (120.0, -240.0, 200.0, 30.0)):
+        PARTS.append({"kind": "hull", "look": "grass_dry", "chunk": "far", "points": [
+            t3(px, py, pz, m) for px, py, pz in ((x - w / 2, SEA, z + 20.0), (x + w / 2, SEA, z + 20.0),
+                                                 (x - w / 2, SEA, z - 40.0), (x + w / 2, SEA, z - 40.0),
+                                                 (x - w * 0.15, h, z - 10.0), (x + w * 0.2, h * 0.85, z - 15.0))]})
+
+
+def litter_pass():
+    """Litter on the ground in the open."""
+    rng = random.Random(7)
+    spots = []
+    for rect, n in ((YARD, 4), (GATE_ROAD, 3), (QUAY, 7), (PIPE_ALLEY, 4), (MAIN_ROAD, 5), (CORNER, 3),
+                    ((-36.0, -10.0, 22.0, 24.5), 4)):
+        for _ in range(n):
+            spots.append((rng.uniform(rect[0] + 0.6, rect[1] - 0.6), rng.uniform(rect[2] + 0.6, rect[3] - 0.6)))
+    for k, (x, z) in enumerate(spots):
+        for m in (False, True):
+            place("litter", x, STREET, z, rng.uniform(0, PI), m, seed=k % 6)
+
+
+def build():
+    """Fill COLLIDERS, PARTS, PLACED, PROPS, SIGHT, DECALS, and LIGHTS (once)."""
+    if COLLIDERS:
+        return
+    ground()
+    boundary()
+    for side in SIDES:
+        basin(side)
+        backdrops(side)
+        yard(side)
+        gate_road(side)
+        gate_lane(side)
+        quay(side)
+        pipe_alley(side)
+        control_house(side)
+        meter_shed(side)
+        substation(side)
+        pump_house(side)
+        main_road(side)
+        workshop(side)
+        drum_store(side)
+        pump_shed(side)
+        tank_farm(side)
+        rack_corners(side)
+    rack()
+    litter_pass()
+
+
+# --- Markers ---------------------------------------------------------------------------
+# Spawns: the server picks among these by safety (tdm::choose_spawn); the first
+# few of each team are its start positions. Blue's, as (x, z) on the ground or
+# (x, z, y) on a raised floor; Red's are their twins.
+SPAWN_ORDER = [(-37.0, 3.0), (-37.0, 0.0), (-36.5, 6.5), (-35.0, -1.5), (-35.0, 10.5), (-39.5, 11.4),
+               (-37.2, 12.6), (-36.0, -6.0), (-38.6, -11.0), (-39.6, -21.0), (-34.4, 16.0), (-34.6, 18.5),
+               (-40.0, -14.5), (-37.5, -12.5), (-37.0, -24.0), (-33.8, 3.0),
+               (-30.0, 13.0, WALK), (-31.5, 19.0, WALK), (-27.0, -22.0, WALK), (-29.5, -17.0, WALK)]
+
+
+def spawn_points():
+    """SPAWN_ORDER as (x, y, z) feet positions, for Blue (the west)."""
+    return [(p[0], p[2] if len(p) > 2 else STREET, p[1]) for p in SPAWN_ORDER]
+
+
+# Each team's flag: in its gate yard, by the gatehouse at the main road's mouth.
+FLAG = (-35.5, 1.6)
+# Lanes for bots, from Blue's spawn (west) to Red's (east).
+BOT_LANES = [
+    ("North", [(-37, -6), (-38.0, -14), (-38.0, -29.5), (-27, -29.5), (-19, -29.5), (-10, -29.0), (-5, -24.5),
+               (-3, -28.0), (0.5, -30.0), (5.5, -32.0), (12, -31.5), (24, -23.5), (35, -23), (35.5, -12),
+               (37, -6)]),
+    ("Middle", [(-37, 3), (-31, 0.6), (-21, 4.0), (-12, 2.0), (-7.5, -2.5), (0.0, 0.0), (7.5, 2.5), (12, -2.0),
+                (21, -4.0), (31, -0.6), (37, -3)]),
+    ("South", [(-37, 6), (-35, 13), (-35, 22.5), (-25, 23.0), (-14, 25.5), (-10.5, 23.0), (-5, 24.5), (-0.5, 30.0),
+               (3, 28.0), (10, 29.0), (19, 29.5), (27, 29.5), (38.0, 29.5), (38.0, 14), (37, 6)]),
+]
+# Practice targets for offline play (Red's half): name, position, yaw, weapon, extra.
+TARGETS = [
+    ("Deck", (*along(4.0, 0.0)[:1], DECK, along(4.0, 0.0)[1]), -PI / 2, "m4", {}),
+    ("Bay", (5.5, STREET, -5.5), PI / 2, "m870", {"crouching": "true"}),
+    ("MainRoad", (21.0, STREET, -2.0), PI / 2, "ak47", {"crouching": "true"}),
+    ("Lab", (27.0, UPPER, 6.0), PI / 2, "m40", {}),
+    ("Quay", (20.0, STREET, 30.5), PI / 2, "m4", {"crouching": "true"}),
+    ("FireStation", (27.0, WALK, -14.0), PI / 2, "m4", {}),
+    ("FirePumps", (-4.0, WALK, 31.5), PI, "m1911", {}),
+    ("TankFarm", (25.0, STREET, -23.5), PI / 2, "pdw9", {}),
+]
+# Rooms with their own reverb (Blue's; build_breakwater.py adds Red's twins):
+# name, centre, size, room_size, damping, wet, predelay.
+REVERB_ROOMS = [
+    ("Control", (-27.0, 1.9, -14.5), (11.3, 3.4, 24.3), 0.4, 0.55, 0.22, 12.0),
+    ("ControlUp", (-27.0, 5.6, -14.5), (11.3, 3.4, 24.3), 0.4, 0.6, 0.2, 12.0),
+    ("Meter", (-15.0, 1.9, -7.5), (3.3, 3.0, 10.3), 0.35, 0.5, 0.2, 10.0),
+    ("Workshop", (-27.0, 2.2, 13.5), (11.3, 4.0, 14.3), 0.55, 0.35, 0.26, 16.0),
+    ("Drums", (-17.0, 1.9, 10.0), (7.3, 3.2, 7.3), 0.4, 0.5, 0.22, 12.0),
+    ("PumpShed", (-15.0, 2.0, 17.5), (11.3, 3.6, 6.3), 0.5, 0.35, 0.25, 14.0),
+    ("PumpW", (-2.25, 2.4, -31.5), (6.8, 4.6, 8.3), 0.5, 0.3, 0.28, 14.0),
+    ("PumpE", (5.25, 2.4, -29.0), (6.8, 4.6, 13.3), 0.5, 0.3, 0.28, 14.0),
+]
+CENTRE_ROOMS = [
+    ("Crossing", (0, 1.6, 0), (3.0, 3.2, 3.0), 0.25, 0.4, 0.2, 6.0),
+]
+# Search and Destroy's charge sites (server: map_charge_sites), on the
+# defenders' (Red's, east) half, one to each flank: A in the pump house's east
+# room on the north route, B on Red's quay by the loading-arm berth on the
+# south route. Each: name, label, the plant zone's centre and size, and the
+# marker crate's feet position and yaw (gear_models.charge_site_a and _b).
+CHARGE_SITES = [
+    ("SiteA", "A", (5.25, 1.95, -25.0), (6.4, 3.6, 5.0), (7.6, WALK, -24.0), PI / 2),
+    ("SiteB", "B", (19.0, 1.6, 29.0), (6.0, 3.2, 5.0), (19.0, STREET, 30.6), 0.0),
+]
+# The marker crate's collision box: size and centre height above its feet.
+CHARGE_CRATE = ((1.16, 0.89, 0.76), 0.445)
+# Domination's flags (server: map_dom_points): name, letter, the circle's
+# floor centre, and radius. A and C are each other's twins on the main roads;
+# B is in the crossing under the rack's deck, its own twin.
+DOM_FLAGS = [
+    ("FlagA", "A", (-21.0, STREET, 3.0), 3.5),
+    ("FlagB", "B", (0.0, STREET, 0.0), 3.0),
+    ("FlagC", "C", (21.0, STREET, -3.0), 3.5),
+]
+# Hardpoint zones in rotation order: name, HUD label, centre, size. The rack
+# zones are their own twins (the deck's sits over the crossing, a floor up);
+# the pump house and the fire pumps are each other's. Each box is sized so
+# most of its footprint is floor a player can stand on (the deck runs
+# diagonally through its box).
+HARDPOINTS = [
+    ("P1_Rack", "Loading Rack", (0.0, 1.6, 0.0), (10.0, 3.2, 6.0)),
+    ("P2_PumpHouse", "Pump House", (1.5, 2.4, -29.0), (14.0, 4.6, 12.0)),
+    ("P3_Deck", "Rack Deck", (0.0, DECK + 1.3, 0.0), (6.0, 2.6, 4.0)),
+    ("P4_FirePumps", "Fire Pumps", (-1.5, 2.4, 29.0), (14.0, 4.6, 12.0)),
+]

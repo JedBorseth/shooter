@@ -37,6 +37,7 @@ const MAPS := {
 	"arena": {"scene": "res://scenes/main.tscn", "bounds": [0.0, 0.0, 70.0]},
 	"slamcity": {"scene": "res://scenes/slamcity.tscn"},
 	"warehouse": {"scene": "res://scenes/warehouse.tscn"},
+	"breakwater": {"scene": "res://scenes/breakwater.tscn"},
 	"nuketown": {"scene": "res://scenes/nuketown.tscn"},
 }
 

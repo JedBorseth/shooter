@@ -1,0 +1,10 @@
+[gd_resource type="ShaderMaterial" format=3]
+
+[ext_resource type="Shader" path="res://shaders/window_pane.gdshader" id="1_shader"]
+
+[resource]
+shader = ExtResource("1_shader")
+shader_parameter/room_light = 0.5
+shader_parameter/lit_rooms = 1
+shader_parameter/room_depth = 2.5
+shader_parameter/blinds = 0

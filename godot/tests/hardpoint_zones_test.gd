@@ -11,6 +11,7 @@ const MAPS := {
 	"Slamcity": "res://scenes/slamcity.tscn",
 	"Nuketown": "res://scenes/nuketown.tscn",
 	"Warehouse": "res://scenes/warehouse.tscn",
+	"Breakwater": "res://scenes/breakwater.tscn",
 }
 const MIN_HOP := 16.0
 ## Share of a zone's footprint where a player's feet on the floor are inside

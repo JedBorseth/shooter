@@ -98,3 +98,12 @@ def label(x, z, text, twin_text=None, color="#1f2937", size=9.5):
     if twin_text:
         tx, tz = twin_point(x, z)
         LABELS.append((tx, tz, twin_text, color, size))
+
+
+def tank(cx, cz, r, kind="solid", sides=16, twin=True):
+    """A round obstacle (a storage tank, a silo): a `sides`-gon of radius `r`."""
+    pts = [(cx + r * math.cos(2 * math.pi * k / sides), cz + r * math.sin(2 * math.pi * k / sides))
+           for k in range(sides)]
+    POLY.append((pts, kind))
+    if twin and twin_point(cx, cz) != (cx, cz):
+        POLY.append(([twin_point(x, z) for x, z in pts], kind))
