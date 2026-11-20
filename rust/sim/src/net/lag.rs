@@ -277,6 +277,32 @@ impl LagHistory {
             .map_or(newest, |t| t.clamp(oldest.min(newest), newest))
     }
 
+    /// Whether a view tick lies outside what the shooter's connection
+    /// explains: further back than its round trip plus [`VIEW_SLACK`], or
+    /// past the newest snapshot. The rewind cap is not counted: an honest
+    /// player on a very slow connection runs into it every shot. For the
+    /// integrity flags (`net::integrity`); the shot is clamped either way.
+    pub fn view_tick_unexplained(
+        &self,
+        now: Tick,
+        view_tick: Option<f64>,
+        rtt: Option<f32>,
+    ) -> bool {
+        let Some(tick) = view_tick.filter(|t| t.is_finite()) else {
+            return false;
+        };
+        let newest = f64::from(self.newest_tick().unwrap_or(now).min(now));
+        let slack = f64::from(super::integrity::VIEW_TICK_SLACK);
+        if tick > newest + slack {
+            return true;
+        }
+        rtt.filter(|r| r.is_finite() && *r >= 0.0)
+            .is_some_and(|rtt| {
+                let explained = f64::from((rtt + VIEW_SLACK) * TICK_RATE as f32);
+                tick < f64::from(now) - explained - slack
+            })
+    }
+
     /// Player `id` as clients drew them at `tick`, blended between the two
     /// snapshots around it. Matches
     /// [`InterpolationBuffer::sample`](super::interpolation::InterpolationBuffer::sample):
@@ -687,6 +713,25 @@ mod tests {
         assert_eq!(capped, f64::from(now - MAX_REWIND_TICKS));
         // Without a round trip, only the cap applies.
         assert_eq!(history.rewind_target(now, Some(tampered)), tampered);
+    }
+
+    #[test]
+    fn a_slow_connection_is_explained_and_a_tampered_view_tick_is_not() {
+        let mut history = LagHistory::default();
+        for tick in 0..=200 {
+            history.record(tick, vec![view(1, 0.0, 0.0, true)]);
+        }
+        let now = 200;
+        // 400 ms of ping: the view tick lies past the rewind cap, which
+        // clamps the shot but says nothing about the player.
+        let slow = f64::from(now) - (0.4 + 0.04) * f64::from(TICK_RATE);
+        assert!(!history.view_tick_unexplained(now, Some(slow), Some(0.4)));
+        assert!(!history.view_tick_unexplained(now, Some(f64::from(now) - 5.0), Some(0.03)));
+        assert!(!history.view_tick_unexplained(now, None, Some(0.03)));
+        // 30 ms of ping cannot explain a view half a second old, nor one not
+        // yet sent.
+        assert!(history.view_tick_unexplained(now, Some(f64::from(now) - 60.0), Some(0.03)));
+        assert!(history.view_tick_unexplained(now, Some(f64::from(now) + 10.0), Some(0.03)));
     }
 
     #[test]

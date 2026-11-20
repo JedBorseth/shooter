@@ -21,6 +21,7 @@ pub mod delta;
 pub mod discovery;
 pub mod horde;
 pub mod input_queue;
+pub mod integrity;
 pub mod interpolation;
 pub mod lag;
 pub mod prediction;

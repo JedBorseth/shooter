@@ -29,7 +29,9 @@ godot --headless --fixed-fps 120 --path godot --script res://tests/bandwidth_tes
 RTT_MS=30 BOTS=12 SECONDS=60 godot --headless --fixed-fps 120 --path godot --script res://tests/bandwidth_test.gd
 ```
 
-Runs vary by up to 10%, since the bots' match differs a little each time.
+Runs vary by up to 10%, since the bots' match differs a little each time, and
+move with the bots' behaviour: busier bots cost more. The budgets leave room
+for that (110 kbps down and 70 up in the 6v6, 80 down in Zombies).
 
 ## Results
 
@@ -44,6 +46,7 @@ first rows), payload kbps
 | Own state as changes | 80 ms | 92 to 97 (111 to 117) | 14 to 15 | 101 to 103 (139 to 142) |
 | Inputs as changes on a view-angle grid | 80 ms | 87 to 88 (107) | 14 | 37 (75 to 76) |
 | Other players field by field | 80 ms | 65 to 70 (84 to 89) | 14 | 36 to 37 (74 to 76) |
+| The same, after bots stopped getting stuck in rooms (#312) and fight more | 80 ms | 81 to 85 (100 to 104) | 15 to 16 | 39 to 41 (77 to 79) |
 
 Zombies, four players and 24 zombies, 20 s of play:
 
@@ -125,3 +128,65 @@ A packet's headers (IPv4, UDP, ENet: 40 bytes) now cost more than its
 contents at 120 packets a second. Sending inputs at 60 Hz, two ticks a
 packet, would halve that (about 19 kbps) at the price of up to 8 ms more
 input delay on every other tick; that is a design choice left open.
+
+## Server checks
+
+What the server does with what clients send (`shooter_sim::net::integrity`,
+checked in `godot/tests/integrity_test.gd`).
+
+Most cheats are impossible by construction, because the server never takes a
+client's word for an outcome:
+
+| A client could try to send | What the server does |
+| --- | --- |
+| A position, a speed, or a teleport | Nothing to send: the server moves every player itself from their inputs (`body::tick`), with its own collision. |
+| Inputs faster than the tick (speed hack) | Inputs cost credit that builds one a tick, a quarter second banked at most (`InputQueue`). |
+| A faster fire rate, more ammunition, a shorter reload | The server runs the weapon simulation itself. |
+| A lunge to dash, a weapon from afar, a press aim off its path | Lunges must point at a visible enemy, pickups are raycast, press aims must lie on the view's path since the last input (`subtick::check`). |
+| An older view tick, to shoot where a target was | Rewinds are clamped to what the round trip explains plus 0.25 s, and to 300 ms. |
+| A pitch past straight up | Inputs with a pitch past the limit do not decode. |
+| A chat flood | Rate-limited (`chat::ChatLimiter`). |
+
+What is left is watched, two ways:
+
+**Disconnects**, for abusing the protocol, which no honest client does:
+
+- **Packet floods.** A token bucket per client allows 300 packets a second
+  (an honest client sends 120 inputs a second and a few events) with a burst
+  of 300, enough for a second-long stall delivered at once. Packets over it
+  are ignored; 600 ignored within 10 s disconnects the client.
+- **Garbage.** A client that sends 10 packets that do not decode within 10 s
+  is disconnected. An honest client of the same version never sends one.
+
+**Flags**, logged for an operator (`server: integrity: player N "name"
+flagged for ...`), at most once a minute each, and never acted on. A
+heuristic can be wrong, so a person decides; Valve's VAC and Call of Duty's
+Ricochet likewise gather evidence on the server before anyone is banned.
+
+- **Aim snaps.** A hit whose shot came after the view turned 25 degrees or
+  more in the 3 ticks before it (1,000 degrees a second). A controller turns
+  at most about 400 degrees a second, and a hard 90-degree mouse flick in a
+  tenth of a second is 900. Flagged with at least 5 snap hits among the last
+  30 hits, making up at least 30% of them.
+- **View ticks.** Firing inputs whose view tick the connection does not
+  explain: further back than the round trip plus 0.25 s, or newer than the
+  newest snapshot. The 300 ms rewind cap is not counted, so a very slow
+  connection is never flagged. Flagged with at least 10 among the last 40
+  shots, making up half of them.
+- **Lag switching.** Inputs that stop for a fifth of a second or more and then
+  arrive in a burst, 10 times within a minute.
+
+The thresholds were checked against honest play: twelve hard bots (whose
+turn rate, 420 degrees a second, is a fast player's) play 45 s of Team
+Deathmatch with no flag and no snap hit; the netcode tests play through
+110 ms of round trip with 15 ms of jitter and 5% loss without a disconnect;
+and unit tests run a controller at full turn boost, repeated 900-degree-a-
+second flicks, jitter bursts every half second, a quarter-second stall every
+20 s, and a 440 ms round trip without a flag, against an aimbot snapping
+60 degrees onto its hits, a client claiming half-second-old view ticks, and
+a switch flipped every two seconds, which are flagged.
+
+Not covered: wallhacks (snapshots carry every player, which killcams and the
+minimap rely on; sending only what each player can see is a large change),
+and aim assistance subtle enough to look human. Both need data the server
+does not have, or review.

@@ -80,6 +80,7 @@ use shooter_sim::melee;
 use shooter_sim::net::bandwidth::Probe;
 use shooter_sim::net::discovery::{ServerInfo, query_port_for};
 use shooter_sim::net::input_queue::InputQueue;
+use shooter_sim::net::integrity::{self, Flag, PacketLimit, Verdict, Watch};
 use shooter_sim::net::lag::{self, LagHistory, Pellet, Target, TargetHit};
 use shooter_sim::net::protocol::{
     self, Baseline, BlipView, ChargeStatus, ChargeView, ClientMessage, DominationView, FlagPlay,
@@ -414,6 +415,10 @@ struct ClientSlot {
     class: Class,
     /// Chat rate limit.
     chat: ChatLimiter,
+    /// Packet rate and garbage limits (`integrity`).
+    limit: PacketLimit,
+    /// Disconnected for abuse: whatever it still sends is ignored.
+    kicked: bool,
 }
 
 struct Avatar {
@@ -454,6 +459,8 @@ struct Avatar {
     zombies: ZombiesStats,
     /// Zombies: down in last stand, waiting for a revive.
     last_stand: Option<LastStand>,
+    /// Aim, view tick, and input flow heuristics (`integrity`).
+    watch: Watch,
 }
 
 /// A player down in last stand.
@@ -827,6 +834,25 @@ impl NetServer {
             "seconds",
             probe.totals.client_ticks as f64 / f64::from(TICK_RATE),
         );
+        d
+    }
+
+    /// What the integrity heuristics saw of player `id` (tests and
+    /// operators): `snap_hits` of `hits`, `stretched` view ticks,
+    /// `stall_bursts`, and whether a flag was raised (`flagged`). Empty if
+    /// the player is absent.
+    #[func]
+    fn integrity_report(&self, id: i32) -> VarDictionary {
+        let mut d = VarDictionary::new();
+        let Some(avatar) = self.avatars.iter().find(|a| i32::from(a.id) == id) else {
+            return d;
+        };
+        let w = &avatar.watch;
+        d.set("snap_hits", w.snap_hits);
+        d.set("hits", w.hits_total);
+        d.set("stretched", w.stretched);
+        d.set("stall_bursts", w.stall_bursts);
+        d.set("flagged", !w.is_clear());
         d
     }
 
@@ -1864,6 +1890,8 @@ impl NetServer {
                     ready: false,
                     class: Class::default(),
                     chat: ChatLimiter::default(),
+                    limit: PacketLimit::new(self.tick),
+                    kicked: false,
                 });
             }
             NetEvent::Disconnect(peer) => {
@@ -1883,14 +1911,77 @@ impl NetServer {
                 let Some(index) = self.clients.iter().position(|c| c.peer == peer) else {
                     return;
                 };
+                let tick = self.tick;
+                if self.clients[index].kicked {
+                    return;
+                }
+                let limit = &mut self.clients[index].limit;
+                match limit.on_packet(tick) {
+                    Verdict::Accept => {}
+                    Verdict::Drop => return,
+                    Verdict::Kick(reason) => return self.kick(index, reason),
+                }
                 match ClientMessage::decode(&bytes) {
                     Ok(message) => self.handle_message(index, message),
                     Err(error) => {
-                        godot_warn!("server: bad packet: {error}");
+                        let limit = &mut self.clients[index].limit;
+                        // An honest client never sends one; say so only for
+                        // the first few.
+                        if limit.garbage_total < 3 {
+                            godot_warn!("server: bad packet: {error}");
+                        }
+                        if let Verdict::Kick(reason) = limit.on_garbage(tick) {
+                            self.kick(index, reason);
+                        }
                     }
                 }
             }
         }
+    }
+
+    /// Disconnects the client at `index` for abusing the protocol.
+    fn kick(&mut self, index: usize, reason: integrity::KickReason) {
+        let client = &mut self.clients[index];
+        let who = client.player.map_or("a client".to_owned(), |id| {
+            let name = self
+                .avatars
+                .iter()
+                .find(|a| a.id == id)
+                .map_or("", |a| a.name.as_str());
+            format!("player {id} \"{name}\"")
+        });
+        godot_warn!(
+            "server: integrity: disconnecting {who} ({}:{}) for {}",
+            client.peer.get_remote_address(),
+            client.peer.get_remote_port(),
+            reason.describe()
+        );
+        client.kicked = true;
+        client.peer.peer_disconnect_later();
+    }
+
+    /// Logs a heuristic flag for an operator to look at. Flags never kick.
+    fn log_flag(&self, id: u8, flag: Flag) {
+        let Some(avatar) = self.avatars.iter().find(|a| a.id == id) else {
+            return;
+        };
+        if avatar.bot {
+            godot_warn!(
+                "server: integrity: bot {id} flagged for {}",
+                flag.describe()
+            );
+            return;
+        }
+        let w = &avatar.watch;
+        godot_warn!(
+            "server: integrity: player {id} \"{}\" flagged for {} (snap hits {} of {}, stretched view ticks {}, stalls {})",
+            avatar.name,
+            flag.describe(),
+            w.snap_hits,
+            w.hits_total,
+            w.stretched,
+            w.stall_bursts
+        );
     }
 
     fn handle_message(&mut self, index: usize, message: ClientMessage) {
@@ -2163,6 +2254,7 @@ impl NetServer {
                 ..ZombiesStats::default()
             },
             last_stand: None,
+            watch: Watch::default(),
         });
         let event = joined_event(self.avatars.last().expect("just pushed"));
         self.broadcast_event(&event);
@@ -2436,6 +2528,7 @@ impl NetServer {
     /// they fired. Shots fired in the same tick all count, so two players who
     /// fire at each other in the same tick can trade kills.
     fn simulate(&mut self) {
+        let mut flags: Vec<(u8, Flag)> = Vec::new();
         let mut events = Vec::new();
         let mut shots = Vec::new();
         let mut strikes = Vec::new();
@@ -2584,6 +2677,12 @@ impl NetServer {
                     continue;
                 };
                 let inputs: Vec<PlayerInput> = client.inputs.take().map(|(_, i)| i).collect();
+                flags.extend(
+                    avatar
+                        .watch
+                        .on_tick(inputs.len(), tick)
+                        .map(|f| (avatar.id, f)),
+                );
                 let rtt = (transport::round_trip_ms(&client.peer) / 1000.0) as f32;
                 inputs
                     .into_iter()
@@ -2720,6 +2819,7 @@ impl NetServer {
                     forge_taken = true;
                 }
                 avatar.yaw = input.yaw;
+                avatar.watch.on_input(input.yaw, input.pitch);
                 avatar.pitch = input.pitch;
                 for event in &events {
                     match *event {
@@ -2863,6 +2963,9 @@ impl NetServer {
             self.update_last_stands(&revivers);
         }
         self.update_horde();
+        for (id, flag) in flags {
+            self.log_flag(id, flag);
+        }
     }
 
     /// Zombies: runs the horde one tick during a game, acts on what it did,
@@ -4154,6 +4257,18 @@ impl NetServer {
         let rewind = self
             .lag
             .rewind_target_for(self.tick, shot.view_tick, shot.rtt);
+        let tick = self.tick;
+        let stretched = self
+            .lag
+            .view_tick_unexplained(tick, shot.view_tick, shot.rtt);
+        let flag = self
+            .avatars
+            .iter_mut()
+            .find(|a| a.id == shot.shooter)
+            .and_then(|a| a.watch.on_shot(stretched, tick));
+        if let Some(flag) = flag {
+            self.log_flag(shot.shooter, flag);
+        }
         let targets: Vec<Target> = self
             .avatars
             .iter()
@@ -4209,6 +4324,17 @@ impl NetServer {
             melee: false,
             rewind: rewind_ticks(self.tick, rewind),
         };
+        if !hits.is_empty() {
+            let tick = self.tick;
+            let flag = self
+                .avatars
+                .iter_mut()
+                .find(|a| a.id == shot.shooter)
+                .and_then(|a| a.watch.on_hit(tick));
+            if let Some(flag) = flag {
+                self.log_flag(shot.shooter, flag);
+            }
+        }
         self.apply_hits(&attack, &hits);
         self.damage_props(shot.shooter, shot.weapon, &prop_hits, &hits);
     }

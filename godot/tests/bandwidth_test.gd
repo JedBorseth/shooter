@@ -21,9 +21,9 @@ const ZOMBIES_ARENA := "res://scenes/zombies_arena.tscn"
 ## Seconds of play before counting, after the countdown.
 const WARM_UP := 5
 ## Payload budgets per client, in kilobits per second (docs/netcode.md).
-const DOWN_BUDGET := 90.0
-const UP_BUDGET := 60.0
-const ZOMBIES_DOWN_BUDGET := 200.0
+const DOWN_BUDGET := 110.0
+const UP_BUDGET := 70.0
+const ZOMBIES_DOWN_BUDGET := 80.0
 ## The Zombies round to jump to: from round 5 on, 24 zombies are alive at once.
 const ZOMBIES_ROUND := 10
 

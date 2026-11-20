@@ -176,11 +176,12 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Chat: Enter to everyone, Y to your team (`shooter_sim::chat` cleans and rate-limits messages on the server).
 - [x] Hit reactions for third parties: `PlayerView` carries a wrapping hit count and the latest hit's heading, so everyone sees the flinch.
 - [x] Validate view ticks against the shooter's round trip: `LagHistory::rewind_target_for` rewinds no further than the ENet round trip plus 0.25 s of interpolation slack explains (and never past the 300 ms cap).
-- [ ] Bandwidth: send the owner's full state only when it differs from what the client predicted, or delta-compress it like remote players. Measured by `godot/tests/bandwidth_test.gd` (a 6v6 bot match, [docs/netcode.md](docs/netcode.md)): 168 kbps down (94 of it the receiver's own state) and 106 kbps up per client at an 80 ms round trip, with 60 Hz snapshots and 120 Hz inputs.
+- [x] Bandwidth: send the owner's full state only when it differs from what the client predicted, or delta-compress it like remote players. Measured by `godot/tests/bandwidth_test.gd` (a 6v6 bot match, [docs/netcode.md](docs/netcode.md)): 168 kbps down (94 of it the receiver's own state) and 106 kbps up per client at an 80 ms round trip, with 60 Hz snapshots and 120 Hz inputs.
   - [x] A reproducible bench: the server encodes every bot's snapshots and inputs as if it were a client and counts them; CI fails past a budget.
   - [x] The receiver's own state as field-by-field changes from the acknowledged snapshot's (generic `net::delta`): 94 kbps to 15.
   - [x] Inputs: view angles on a 2^-14 radian grid, and each input in a packet as changes from the one before: 106 kbps up to 37.
   - [x] Other players field by field through the same coder, and the Zombies horde as changes from the acknowledged one: about 68 kbps down in a 6v6, and 52 in Zombies with 24 zombies (83 before).
+  - [ ] Follow-ups: code a packet's first input against the newest input the client saw acknowledged (about 6 kbps up); send inputs at 60 Hz, two ticks a packet, to halve packet headers (about 19 kbps up, up to 8 ms more input delay on odd ticks: an owner decision); the own state as an "in sync" bit when it matches the client's prediction (about 13 kbps down, for 4 up).
 
 ## Phase 3: lag compensation
 
@@ -286,7 +287,8 @@ Rounds with one life each (`rust/sim/src/snd.rs`, `--mode snd`), on Slamcity. Cl
 - [ ] Nakama (self-hosted, Docker Compose) for accounts, parties, and matchmaking. Use the `nakama-godot` client.
 - [ ] Dockerfile for the headless server (Godot export + Rust extension).
 - [ ] Server allocation: Nakama match handler starts or assigns a dedicated server and hands its address to players. Agones on Kubernetes later.
-- [ ] Server-side validation and anti-cheat basics: speed and fire-rate checks, view-angle sanity checks. (Input rate limits are done: `InputQueue` credit. Fire rate already follows from the server running the weapon simulation itself.)
+- [x] Server-side validation and anti-cheat basics: packet floods and garbage disconnect; aim snaps onto hits, view ticks the round trip does not explain, and lag switching are flagged in the server log, never kicked ([docs/netcode.md](docs/netcode.md#server-checks), `shooter_sim::net::integrity`). Speed, teleports, and fire rate cannot be cheated: the server simulates them from inputs.
+  - [ ] Follow-ups: send each client only the enemies it could see or hear (against wallhacks; killcams and the minimap need a plan for the rest), and a way for an operator to see flags without reading the log (once there are accounts).
 
 ## Visual overhaul
 
