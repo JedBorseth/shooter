@@ -55,6 +55,11 @@ func _exit_tree() -> void:
 
 
 func _process(delta: float) -> void:
+	if client != null and is_instance_valid(client) and client.in_killcam():
+		# The round winning kill plays for everyone, the dead included.
+		_root.visible = false
+		_stop_spectating()
+		return
 	var on := _active()
 	_root.visible = on
 	if player != null and is_instance_valid(player):

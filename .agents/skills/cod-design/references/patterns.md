@@ -52,8 +52,11 @@ disagree, add it here in the same style.
 - Damage feedback: red edges, a direction indicator toward the shooter, the
   picture draining colour at low health, a heartbeat and hurt breathing. Never
   so strong it hides the screen centre.
-- Death: a short death camera, then a killcam showing the killer's view
-  (TODO.md), then respawn. The last kill of a match plays as a final killcam.
+- Death: a short death camera (2 s), then a killcam showing the killer's view
+  (2.5 s before the kill to 2 s after, skippable with the use key), then
+  respawn. The kill that ends a match, or wins a Search and Destroy round,
+  plays for everyone as a final killcam from 5 s before, slowed around the
+  kill (`rust/sim/src/killcam.rs`).
 
 ## Hit and kill feedback
 

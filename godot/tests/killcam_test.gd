@@ -24,6 +24,7 @@ func _initialize() -> void:
 
 
 func _run() -> void:
+	var snd := OS.get_cmdline_user_args().has("--snd")
 	var args := PackedStringArray(
 		[
 			"--headless",
@@ -40,8 +41,15 @@ func _run() -> void:
 			"--bot-skill",
 			"hard",
 			"--auto-start",
+			# The bot's fourth kill ends the match: the final killcam.
+			"--score-limit",
+			"4",
 		]
 	)
+	if snd:
+		# Two rounds to win: the bot wiping out our one-player team in round
+		# 1 wins it, and the round winning kill replays for everyone.
+		args.append_array(["--mode", "snd", "--rounds", "2"])
 	_server_pid = OS.create_process(OS.get_executable_path(), args)
 	_check(_server_pid > 0, "server process starts")
 	if _server_pid <= 0:
@@ -81,10 +89,117 @@ func _run() -> void:
 		await physics_frame
 	_check(String(client.match_info().get("phase", "")) == "playing", "the match starts")
 
+	if snd:
+		await _round_winning_kill(player, client)
+		_finish()
+		return
 	await _watch_death(main, player, client, false)
 	await _watch_death(main, player, client, true)
 	await _skip_by_setting(player, client)
+	await _final_killcam(main, player, client)
 	_finish()
+
+
+## Search and Destroy: no killcam on our death (we would spectate), but the
+## kill that wins the round replays for everyone once it is over, and the
+## next round waits for it.
+func _round_winning_kill(player: FpsPlayer, client: NetClient) -> void:
+	for i in 30 * Engine.physics_ticks_per_second:
+		if String(client.round_info().get("phase", "")) == "live":
+			break
+		await physics_frame
+	var died := await _wait_for_death(player, client)
+	_check(died, "round: the bot kills us")
+	if not died:
+		return
+	var death_at := Time.get_ticks_msec()
+	var info := {}
+	for i in 4 * Engine.physics_ticks_per_second:
+		if client.in_killcam():
+			info = client.killcam_info()
+			break
+		await physics_frame
+	var lead := (Time.get_ticks_msec() - death_at) / 1000.0
+	_check(
+		String(info.get("kind", "")) == "round",
+		"round: the round winning kill plays, not a respawn killcam: %s" % info
+	)
+	_check(lead < 1.6, "round: it starts after the short lead, %.2f s" % lead)
+	_check(not bool(info.get("skippable", true)), "round: it cannot be skipped")
+	var next_round := false
+	var capture := OS.get_environment("KILLCAM_CAPTURE")
+	for i in 15 * Engine.physics_ticks_per_second:
+		if not client.in_killcam():
+			break
+		if capture != "" and i % 120 == 60:
+			var image := root.get_viewport().get_texture().get_image()
+			image.save_png(capture.path_join("round_%d.png" % (i / 120)))
+		if String(client.round_info().get("phase", "")) == "freeze":
+			next_round = true
+		await physics_frame
+	var length := (Time.get_ticks_msec() - death_at) / 1000.0
+	_check(not next_round, "round: the next round waits for it")
+	_check(length > 9.5, "round: it plays out, %.2f s after the kill" % length)
+
+
+## The kill that ends the match plays for everyone as the final killcam:
+## after a short lead rather than the death delay, from 5 s before the kill,
+## slowed around it, not skippable, with the match HUD out of the way until
+## it has played, and the results shown after it.
+func _final_killcam(main: Node, player: FpsPlayer, client: NetClient) -> void:
+	var died := await _wait_for_death(player, client)
+	_check(died, "final: the bot's fourth kill")
+	if not died:
+		return
+	var death_at := Time.get_ticks_msec()
+	for i in 4 * Engine.physics_ticks_per_second:
+		if client.in_killcam():
+			break
+		await physics_frame
+	var lead := (Time.get_ticks_msec() - death_at) / 1000.0
+	var info := client.killcam_info()
+	_check(String(info.get("kind", "")) == "final", "final: the final killcam plays, %s" % info)
+	_check(lead > 0.7 and lead < 1.6, "final: it starts after a short lead, %.2f s" % lead)
+	_check(not bool(info.get("skippable", true)), "final: it cannot be skipped")
+	_check(String(client.match_info().get("phase", "")) == "ended", "final: the match is over")
+	Input.action_press("interact")
+	await _ticks(2)
+	Input.action_release("interact")
+	_check(client.in_killcam(), "final: the use key does not skip it")
+	var started := Time.get_ticks_msec()
+	# Replay speed over quarter-second windows: progress runs over 7 s.
+	var slowest := 10.0
+	var last_progress := 0.0
+	var window_at := started
+	var window_progress := float(client.killcam_info().get("progress", 0.0))
+	for i in 15 * Engine.physics_ticks_per_second:
+		if not client.in_killcam():
+			break
+		last_progress = float(client.killcam_info().get("progress", last_progress))
+		var now := Time.get_ticks_msec()
+		var capture := OS.get_environment("KILLCAM_CAPTURE")
+		if capture != "" and i % 240 == 120:
+			var image := root.get_viewport().get_texture().get_image()
+			image.save_png(capture.path_join("final_%d.png" % (i / 240)))
+		if now - window_at >= 250:
+			if last_progress < 0.99:
+				var speed := (last_progress - window_progress) * 7.0 / ((now - window_at) / 1000.0)
+				slowest = minf(slowest, speed)
+			window_at = now
+			window_progress = last_progress
+		await physics_frame
+	var length := (Time.get_ticks_msec() - started) / 1000.0
+	_check(
+		length > 9.0 and length < 11.5,
+		"final: 7 s of replay, slowed around the kill, then held, took %.2f s" % length
+	)
+	_check(slowest < 0.5, "final: it slows down around the kill, slowest %.2f" % slowest)
+	_check(last_progress >= 0.99, "final: it plays to the end")
+	_check(main.get_node_or_null("Killcam") == null, "final: the replay is taken away")
+	_check(
+		String(client.match_info().get("phase", "")) == "ended",
+		"final: the results are still up after it"
+	)
 
 
 ## With the "Skip killcams" setting on, a death plays no killcam and the
