@@ -860,9 +860,8 @@ impl SoldierPoser {
         let seats = [grips.seats[0] * on[0], grips.seats[1] * on[1]];
         let [mut firing, mut support] = grips.shapes(on);
         let index_off = grips.index_off.unwrap_or(INDEX_OFF_TRIGGER);
-        for joint in 0..3 {
-            let flex = &mut firing.flex[0][joint];
-            *flex += (index_off[joint] - *flex) * trigger_off;
+        for (flex, off) in firing.flex[0].iter_mut().zip(index_off) {
+            *flex += (off - *flex) * trigger_off;
         }
         support = support.lerp(held_shape, knife).lerp(&GRENADE_GRIP, grenade);
         let left_hand = [false, true];
@@ -871,10 +870,10 @@ impl SoldierPoser {
                 let Some((joints, chain)) = finger else {
                     continue;
                 };
-                for j in 0..3 {
+                for (j, &joint) in joints.iter().enumerate() {
                     let grip = chain.rests[j] * shape.joint(f, j, left_hand[h], shape.flex[f][j]);
-                    let pose = skel.get_bone_pose_rotation(joints[j]);
-                    skel.set_bone_pose_rotation(joints[j], pose.slerp(grip, weight));
+                    let pose = skel.get_bone_pose_rotation(joint);
+                    skel.set_bone_pose_rotation(joint, pose.slerp(grip, weight));
                 }
             }
         }
@@ -1364,10 +1363,10 @@ impl SoldierPoser {
                 let Some((joints, chain)) = bones else {
                     continue;
                 };
-                for j in 0..3 {
+                for (j, &joint) in joints.iter().enumerate() {
                     let grip = chain.rests[j] * shape.joint(f, j, left, shape.flex[f][j]);
-                    let pose = skel.get_bone_pose_rotation(joints[j]);
-                    skel.set_bone_pose_rotation(joints[j], pose.slerp(grip, weight));
+                    let pose = skel.get_bone_pose_rotation(joint);
+                    skel.set_bone_pose_rotation(joint, pose.slerp(grip, weight));
                 }
             }
         }

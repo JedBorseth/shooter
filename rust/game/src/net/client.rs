@@ -235,6 +235,8 @@ pub struct NetClient {
     streak_progress: u32,
     streak_held: Vec<Streak>,
     streak_loadout: Loadout,
+    /// The map is roofed over: the streaks that need open sky are out.
+    streak_roofed: bool,
     streak_selected: usize,
     sky: Vec<AirView>,
     /// Care Packages out (`shooter_sim::care_package`), as the server said.
@@ -978,6 +980,7 @@ impl NetClient {
         d.set("progress", self.streak_progress);
         let next = self
             .streak_loadout
+            .usable(self.streak_roofed)
             .streaks()
             .find(|s| s.cost() > self.streak_progress);
         d.set("next", next.map_or("", |s| s.key()));
@@ -987,6 +990,16 @@ impl NetClient {
         };
         d.set("loadout", &keys(&mut self.streak_loadout.streaks()));
         d.set("held", &keys(&mut self.streak_held.iter().copied()));
+        // Streaks this map cannot have, greyed out with the reason.
+        let roofed = self.streak_roofed;
+        d.set(
+            "unavailable",
+            &keys(&mut Streak::ALL.into_iter().filter(|s| !s.usable(roofed))),
+        );
+        d.set(
+            "unavailable_reason",
+            if roofed { "NO OPEN SKY" } else { "" },
+        );
         d.set(
             "selected",
             if self.streak_held.is_empty() {
@@ -1993,7 +2006,9 @@ impl NetClient {
                 progress,
                 held,
                 loadout,
+                roofed,
             }) => {
+                self.streak_roofed = roofed;
                 let earned = if held.len() > self.streak_held.len() {
                     held.last().map_or("", |s| s.key())
                 } else {

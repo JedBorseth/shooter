@@ -23699,6 +23699,7 @@ size = Vector3(63.4, 15, 1)
 
 [node name="Warehouse" type="Node3D" unique_id=400814235]
 script = ExtResource("1_7ejol")
+metadata/roofed = true
 
 [node name="Shell" type="Node3D" parent="." unique_id=1492719859]
 

@@ -11,6 +11,7 @@ Rewards earned with score in one life, as in Black Ops 2 (kept in Black Ops 3 an
 - **Using:** the use key calls in the selected held streak. The next key selects another. Earning one selects it, as in Black Ops 2.
 - **Modes:** every mode but Gun Game and Zombies, as in Black Ops 2's party modes and Zombies. Search and Destroy keeps both the count and held streaks across rounds within a life, as Black Ops 2 does.
 - **Bots** bring the UAV, the Care Package, and the Airstrike, and call in what they earn at once.
+- **Roofed maps:** a map roofed over from wall to wall (Warehouse) has no open sky for a crate or a strike to come down through. There the Care Package and the Airstrike are left out: they are greyed out in the streak column with "NO OPEN SKY" in place of the cost, the count runs on the other chosen streaks (the dearest of those closes the loop), and the server refuses to call one in. The radar streaks still work. Black Ops 2 has no roofed map, so there is no precedent; this stands until the owner decides on a skylight or roof hatch for Warehouse. A map is marked by `roofed = true` metadata on its scene's root (`Streak::needs_open_sky` lists the streaks it leaves out).
 
 | Streak | Cost | Black Ops 2 | Effect |
 | --- | --- | --- | --- |

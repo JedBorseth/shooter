@@ -373,6 +373,9 @@ pub struct NetServer {
     radar: Radar,
     /// The UAVs and Counter-UAVs up (`shooter_sim::streak`).
     sky: Sky,
+    /// The map is roofed over (its root's `roofed` metadata, Warehouse):
+    /// the streaks that need open sky are left out (`Streak::usable`).
+    roofed: bool,
     /// Care Packages called in and not yet taken (`shooter_sim::care_package`).
     crates: care_package::Crates,
     /// Airstrike strikes on their way (`shooter_sim::streak`).
@@ -2141,6 +2144,12 @@ impl NetServer {
             self.spawn = player.get_position();
         }
         self.spawn_points = map_spawns(&map);
+        self.roofed = map
+            .get_meta_ex("roofed")
+            .default(&false.to_variant())
+            .done()
+            .try_to::<bool>()
+            .unwrap_or(false);
         self.bot_lanes = map_lanes(&map);
         self.flag_homes = map_flags(&map);
         self.zones = map_zones(&map);
@@ -6428,7 +6437,7 @@ impl NetServer {
                 continue;
             }
             let hardline = avatar.predicted.state.perks.has(Perk::Hardline);
-            let loadout = avatar.streak_loadout;
+            let loadout = avatar.streak_loadout.usable(self.roofed);
             avatar.streaks.on_points(loadout, points, hardline);
             changed.push(avatar.id);
         }
@@ -6441,7 +6450,10 @@ impl NetServer {
             .avatars
             .iter()
             .filter(|a| a.brain.as_ref().is_some_and(|b| !b.passive) && a.predicted.state.alive())
-            .filter_map(|a| Some((a.id, *a.streaks.held.first()?)))
+            .filter_map(|a| {
+                let usable = a.streaks.held.iter().find(|s| s.usable(self.roofed))?;
+                Some((a.id, *usable))
+            })
             .collect();
         for (id, streak) in bot_calls {
             self.use_streak(id, streak, &[]);
@@ -6491,7 +6503,7 @@ impl NetServer {
             return;
         }
         let side = self.side(avatar);
-        if !avatar.streaks.held.contains(&streak) {
+        if !avatar.streaks.held.contains(&streak) || !streak.usable(self.roofed) {
             return;
         }
         // A Care Package needs open sky to land in; without it the streak
@@ -6756,6 +6768,7 @@ impl NetServer {
             progress: avatar.streaks.progress,
             held: avatar.streaks.held.clone(),
             loadout: avatar.streak_loadout,
+            roofed: self.roofed,
         });
         self.send_event(id, event);
     }
