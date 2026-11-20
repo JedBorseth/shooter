@@ -130,5 +130,6 @@ builds the gun's real `mid` and `far` recordings and skips its near layers;
 | AK-47 | Counter-Strike 2 AK-47 | Whole shot, approved 2026-11-19 (variant "K4") |
 | M4 | (ask) | Coherent real mix direction approved; needs the whole-shot treatment |
 | PDW-9, BR-3, LSW-6, M1911, M870, M40 | (ask) | Old layered build |
+| BP-9 | Counter-Strike 2's Tec-9 | Whole shot from the Walther PPQ, held for listening (`weapon-audio/bp9.wav`, variant A) |
 
 Update this table as guns ship.
