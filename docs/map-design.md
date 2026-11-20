@@ -434,18 +434,26 @@ in the repository. It fills the shift office's ground floor beside its stair:
   white-framed glass door to the back aisle, and a window over the plant.
 
 The partitions, door, and window collide for players but carry
-`surface = glass`, so rounds pass through and keep 95% of their damage, as
-Call of Duty's interior glass does. The way through jinks: the bay door
-(moved to the office's west end) into the south desk room, its partition door
-at the east end into the break area, then the north partition's door at the
-east end again. The glass draws with an unlit fresnel sheen
+`surface = glass`, so rounds pass through them as they do Call of Duty's
+interior glass: glass keeps up to 95% of a round's damage, less a share for
+the pane's thickness (`rust/sim/src/penetration.rs`), about 91% for an M4
+round through a partition straight on. Bots see, and are seen, through glass
+and never take it for cover (`clear_line` in `rust/game/src/net/bots.rs`).
+The way through jinks: the bay door (moved to the office's west end) into the
+south desk room, its partition door at the east end into the break area, then
+the north partition's door at the east end again. The partition doorways are
+1.6 m wide under a 2.3 m head and the glass door 1.7 m by 2.4 m, so the bots'
+navigation mesh (0.4 m radius, 1.8 m tall, baked in 0.25 m cells) runs through
+each; `warehouse_test.gd` bakes it with the bots' settings and walks every
+door and the stair. The glass draws with an unlit fresnel sheen
 (`shaders/office_glass.gdshader`, single-sided, no fog): lit, double-sided
 panes cost about 5 ms on Medium with a partition filling the screen. One lamp
 lights all three rooms through the glass. Litter and wall dressing keep out of
 the office (the layout's `clear` areas).
 
 **Measures** (the built scene through `warehouse_grid.gd` and
-`warehouse_measure.py`): start to start 75 m (10.1 s) both before and after;
+`warehouse_measure.py`, which sample collision, so the office glass counts as
+opaque there; the office is interior, off every long line): start to start 75 m (10.1 s) both before and after;
 median longest eye-height line 20.4 m before, 21.0 m after; floor seeing past
 40 m 2% before and after; longest line 50 m before, 48 m after.
 
@@ -453,18 +461,19 @@ median longest eye-height line 20.4 m before, 21.0 m after; floor seeing past
 
 | View | Low | Medium | High |
 | --- | --- | --- | --- |
-| Scanned office, break area | 5.87 / 6.30 | 10.21 / 10.90 | 13.13 / 14.16 |
-| Through the office glass | 6.23 / 6.91 | 10.77 / 11.89 | 14.12 / 15.46 |
-| Plate room ladder | 6.46 / 6.46 | 11.22 / 11.27 | 14.15 / 14.12 |
-| Charging bay | 5.37 / 5.47 | 9.38 / 9.55 | 11.99 / 12.18 |
-| Truck apron | 5.73 / 5.76 | 9.57 / 9.58 | 12.38 / 12.32 |
-| Hall, centre looking north | 6.29 / 6.55 | 10.19 / 10.34 | 13.34 / 13.33 |
+| Scanned office, break area | 5.87 / 6.18 | 10.21 / 10.88 | 13.13 / 14.11 |
+| Through the office glass | 6.23 / 6.79 | 10.77 / 11.81 | 14.12 / 15.44 |
+| Plate room ladder | 6.46 / 6.41 | 11.22 / 11.22 | 14.15 / 14.11 |
+| Charging bay | 5.37 / 5.43 | 9.38 / 9.54 | 11.99 / 12.15 |
+| Truck apron | 5.73 / 5.70 | 9.57 / 9.54 | 12.38 / 12.33 |
+| Hall, centre looking north | 6.29 / 6.46 | 10.19 / 10.28 | 13.34 / 13.41 |
 
 Rebuild:
 
 ```sh
 blender -b --python tools/build_warehouse_variation_props.py
 uv run --with trimesh --with numpy --with scipy tools/build_warehouse_clip.py shipping_container_blue qc_bench
+# The office glass material is set in the models' .gltf.import files.
 python3 tools/map_blockout/warehouse_photo_layout.py
 uv run --with numpy --with pillow --with scipy tools/build_warehouse_floor_masks.py
 xvfb-run -a godot --path godot --script res://tools/warehouse_build_headless.gd

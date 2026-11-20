@@ -1696,15 +1696,39 @@ fn horizontal_distance(a: Vector3, b: Vector3) -> f32 {
     Vector2::new(a.x - b.x, a.z - b.z).length()
 }
 
-/// Whether nothing on the map lies between `from` and `to`.
+/// The most glass panes a bot sees through on one line.
+const SEE_THROUGH_GLASS: usize = 3;
+
+/// Whether nothing on the map that blocks sight lies between `from` and `to`.
+/// Glass (colliders tagged `surface = "glass"`, such as Warehouse's office
+/// partitions) stops players but not eyes or rounds, so a bot sees, and is
+/// seen, through it; it is no cover either.
 fn clear_line(space: &mut Gd<PhysicsDirectSpaceState3D>, from: Vector3, to: Vector3) -> bool {
-    let Some(query) = godot::classes::PhysicsRayQueryParameters3D::create_ex(from, to)
-        .collision_mask(WORLD_LAYER)
-        .done()
-    else {
-        return false;
-    };
-    space.intersect_ray(&query).is_empty()
+    let mut exclude: Array<Rid> = Array::new();
+    for _ in 0..=SEE_THROUGH_GLASS {
+        let Some(mut query) = godot::classes::PhysicsRayQueryParameters3D::create_ex(from, to)
+            .collision_mask(WORLD_LAYER)
+            .done()
+        else {
+            return false;
+        };
+        query.set_exclude(&exclude);
+        let hit = space.intersect_ray(&query);
+        if hit.is_empty() {
+            return true;
+        }
+        let collider = hit
+            .get("collider")
+            .and_then(|c| c.try_to::<Gd<Node>>().ok());
+        if crate::player::surface_of(collider.as_ref()) != "glass" {
+            return false;
+        }
+        let Some(rid) = hit.get("rid").and_then(|r| r.try_to::<Rid>().ok()) else {
+            return false;
+        };
+        exclude.push(rid);
+    }
+    false
 }
 
 #[cfg(test)]

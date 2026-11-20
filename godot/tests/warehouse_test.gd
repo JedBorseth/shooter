@@ -74,7 +74,7 @@ func _run() -> void:
 		query.collision_mask = 1
 		_check(space.intersect_shape(query).is_empty(), "spawn %s has body clearance" % marker.name)
 
-	_check_prop_collision(current_scene)
+	await _check_prop_collision(current_scene)
 
 	var start_y := player.position.y
 	for i in 120:
@@ -213,7 +213,7 @@ func _check_prop_collision(map: Node) -> void:
 		"crates step 1.1, 2.2, then the ink room's roof at 3.4 m, got %s" % [steps]
 	)
 	_check_ladder(map, space)
-	_check_office(map, space)
+	await _check_office(map, space)
 	# Every stair rises steadily from floor to landing with standing room all
 	# the way up (a wall, slab, or rail across it would stop players).
 	for b in layout.boxes:
@@ -314,6 +314,60 @@ func _check_office(map: Node, space: PhysicsDirectSpaceState3D) -> void:
 	)
 	for p in [Vector3(40.5, 0.02, -24.0), Vector3(38.7, 0.02, -20.75), Vector3(39.5, 0.02, -17.0)]:
 		_check(_fits(space, p, 1.8), "standing room in the office at %s" % p)
+	# The header and transom over each partition doorway collide.
+	for z in [-23.17, -18.33]:
+		var ray := PhysicsRayQueryParameters3D.create(
+			Vector3(40.525, 2.6, z - 0.5), Vector3(40.525, 2.6, z + 0.5), 1
+		)
+		_check(not space.intersect_ray(ray).is_empty(), "the doorway at z %.1f has a header" % z)
+	await _check_office_navigation(map)
+
+
+## Bots walk through the office: a navigation mesh baked with the bots'
+## settings (BotNavigation::bake in rust/game/src/net/bots.rs: 0.4 m radius,
+## 1.8 m tall, 0.4 m climb) reaches every room through every door.
+func _check_office_navigation(map: Node) -> void:
+	var mesh := NavigationMesh.new()
+	mesh.agent_radius = 0.4
+	mesh.agent_height = 1.8
+	mesh.agent_max_climb = 0.4
+	mesh.agent_max_slope = 40.0
+	mesh.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
+	mesh.geometry_collision_mask = 1
+	var source := NavigationMeshSourceGeometryData3D.new()
+	NavigationServer3D.parse_source_geometry_data(mesh, source, map)
+	NavigationServer3D.bake_from_source_geometry_data(mesh, source)
+	var nav_map := NavigationServer3D.map_create()
+	NavigationServer3D.map_set_active(nav_map, true)
+	var region := NavigationServer3D.region_create()
+	NavigationServer3D.region_set_map(region, nav_map)
+	NavigationServer3D.region_set_navigation_mesh(region, mesh)
+	# A new map takes effect over the next few physics frames.
+	for i in 30:
+		await physics_frame
+	NavigationServer3D.map_force_update(nav_map)
+	var routes := {
+		"the bay door into the south desk room": [Vector3(37.4, 0, -14.0), Vector3(37.5, 0, -17.0)],
+		"the south partition's door": [Vector3(37.5, 0, -17.0), Vector3(38.7, 0, -20.0)],
+		"the north partition's door": [Vector3(38.7, 0, -20.0), Vector3(38.7, 0, -24.0)],
+		"the glass door from the back aisle": [Vector3(33.5, 0, -22.25), Vector3(37.5, 0, -22.5)],
+		"the stair up from the south desk room":
+		[Vector3(39.5, 0, -16.5), Vector3(43.0, 3.4, -25.0)],
+	}
+	for name in routes:
+		var a: Vector3 = routes[name][0]
+		var b: Vector3 = routes[name][1]
+		var path := NavigationServer3D.map_get_path(nav_map, a, b, true)
+		var reached := not path.is_empty() and path[-1].distance_to(b) < 0.6
+		var length := 0.0
+		for i in range(1, path.size()):
+			length += path[i].distance_to(path[i - 1])
+		_check(
+			reached and length < a.distance_to(b) * 2.0 + 2.0,
+			"bots walk through %s, path %.1f m" % [name, length]
+		)
+	NavigationServer3D.free_rid(region)
+	NavigationServer3D.free_rid(nav_map)
 
 
 ## The detail pass (tools/map_blockout/warehouse_detail_layout.py) keeps

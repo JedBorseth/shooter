@@ -369,7 +369,8 @@ def rail(name, x0, x1, z0, z1, y):
 # 2.84 m ceiling: a desk room at each end behind a black-framed glass
 # partition, a polished-concrete break area between. Here its long axis runs
 # north-south down the office's 10.5 m, beside the stair to the floor above.
-SCAN_DOOR = (-22.95, -21.65)    # glass door to the back aisle (world z)
+SCAN_DOOR = (-23.1, -21.4)      # glass door to the back aisle (world z), 1.7 m
+SCAN_DOOR_LEAF = 1.6            # its leaf, open 90 degrees into the break area
 SCAN_WINDOW = (-20.5, -18.7)    # window over the plant
 SCAN_ROOM_N = -23.2             # partition between the north desk room and the break area
 SCAN_ROOM_S = -18.36            # partition between the break area and the south desk room
@@ -397,8 +398,11 @@ def scan_office(x0, x1, z0, z1):
     # so the way through jinks: bay door (west) -> south room -> east door
     # -> break area -> east door -> north room. Glass stops players, not
     # rounds (surface "glass": rounds keep 95% of their damage).
-    glass_clip = [[-0.8125, 1.4, 0.03, 4.225, 2.8, 0.06], [2.6625, 1.4, 0.03, 0.525, 2.8, 0.06],
-                  [2.37, 1.05, 0.535, 0.05, 2.1, 0.95]]
+    # Partition clip in its own frame (back face at z 0): the glass either
+    # side of the 1.6 m doorway (1.05..2.65 along it), the header and transom
+    # over it (2.3 m up), and the open leaf on its hinge at 2.62.
+    glass_clip = [[-0.9375, 1.4, 0.03, 3.975, 2.8, 0.06], [2.7875, 1.4, 0.03, 0.275, 2.8, 0.06],
+                  [1.85, 2.575, 0.03, 1.6, 0.55, 0.06], [2.62, 1.15, 0.535, 0.05, 2.3, 0.95]]
     piece("office_partition", cx, 0.0, SCAN_ROOM_N, yaw=0, back=True, name="OfficePartitionN",
           clip=glass_clip)["surface"] = "glass"
     piece("office_partition", cx, 0.0, SCAN_ROOM_S, yaw=0, back=True, name="OfficePartitionS",
@@ -409,7 +413,9 @@ def scan_office(x0, x1, z0, z1):
     # The door to the back aisle (white frame, leaf open into the break area)
     # and the window beside it.
     piece("office_door_white", x0 - 0.26, 0.0, (SCAN_DOOR[0] + SCAN_DOOR[1]) / 2, yaw=90, back=True,
-          name="OfficeDoorWhite", clip=[[-0.6, 1.1, 0.855, 0.08, 2.2, 1.2]])["surface"] = "glass"
+          name="OfficeDoorWhite",
+          clip=[[-(SCAN_DOOR[1] - SCAN_DOOR[0]) / 2 + 0.05, 1.2, 0.255 + SCAN_DOOR_LEAF / 2, 0.08, 2.4,
+                 SCAN_DOOR_LEAF]])["surface"] = "glass"
     piece("office_window", x0 - 0.125, 1.0, (SCAN_WINDOW[0] + SCAN_WINDOW[1]) / 2, yaw=90, name="OfficeWindow",
           clip=[[0.0, 0.55, 0.0, 1.8, 1.1, 0.1]])["surface"] = "glass"
     # Break area: TV over the stainless table and printer, the fridge with
@@ -419,7 +425,7 @@ def scan_office(x0, x1, z0, z1):
     piece("office_tv", x1, 1.75, -21.35, yaw=-90, back=True)
     piece("office_fridge", x1 - 0.27, 0.0, -20.3, yaw=-90, name="OfficeFridge",
           clip=[[0.0, 0.57, 0.0, 0.48, 1.14, 0.48]])
-    piece("office_print_a", x0, 1.4, -21.07, yaw=90, back=True, shadow=False)
+    piece("office_print_a", x0, 1.4, -20.95, yaw=90, back=True, shadow=False)
     piece("office_print_b", x1, 1.45, -19.2, yaw=-90, back=True, shadow=False)
     piece("office_putting_mat", cx - 0.35, 0.0, -19.55, yaw=7, shadow=False)
     for x, z, yaw in [(cx - 0.4, -21.9, 120), (cx + 0.75, -22.35, 95)]:
@@ -569,7 +575,7 @@ def half(side):
         # door and a window onto the back aisle, the bay door into its south
         # desk room.
         wall_run(f"Office{tag}West", ox0, ox0 + t, oz0, oz1, 3.2,
-                 [(SCAN_DOOR[0], SCAN_DOOR[1], 0.0, 2.2), (SCAN_WINDOW[0], SCAN_WINDOW[1], 1.0, 2.1)], "panel_white")
+                 [(SCAN_DOOR[0], SCAN_DOOR[1], 0.0, 2.4), (SCAN_WINDOW[0], SCAN_WINDOW[1], 1.0, 2.1)], "panel_white")
         wall_run(f"Office{tag}Front", ox0, ox1, oz1 - t, oz1, 3.2,
                  [(ox0 + 0.9, ox0 + 2.9, 0.0, 2.4), (ox0 + 5.6, ox0 + 7.8, 1.0, 2.2)], "panel_white")
         hx0, hx1, hz0, hz1 = ox1 - 2.4, ox1, oz0 + 2.0, oz1     # stair well
@@ -622,7 +628,7 @@ def half(side):
             wx, wz = at(x, z, side)
             MACHINES.append(("office_files", round(wx, 3), round(wz, 3), turn(0, side), 0.95, 0.66, 1.67))
         piece("qc_compression_tester", ox1 - t - 0.5, 0.0, oz0 + 3.6, yaw=-90, name="CompressionTester",
-              clip=[[-0.2, 1.05, 0.0, 1.5, 2.1, 1.0], [0.75, 0.7, -0.2, 0.3, 1.4, 0.3]])
+              clip=[[-0.2, 1.05, 0.0, 1.5, 2.1, 1.0], [0.8, 0.7, 0.2, 0.3, 1.4, 0.3]])
 
     # Row north: racking on the west wall, the long line split by a crouch
     # tunnel, the die-cut (north) / folder-gluer (south) line, rolls end-on.

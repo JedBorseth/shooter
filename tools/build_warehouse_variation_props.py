@@ -46,9 +46,9 @@ finally:
 OFFICE_W = 5.85        # inside width across the office (the scan's 6.0 m depth)
 CEILING = 2.85         # suspended ceiling (the scan: 2.84 m)
 DOOR_X = 1.85          # partition doorway centre, from the partition's middle
-DOOR_W = 1.1           # partition doorway clear width
+DOOR_W = 1.6           # partition doorway width (bots navigate it: 0.4 m agents)
 LEAF_W = 0.95          # partition door leaf
-HEAD = 2.1             # door head height
+HEAD = 2.3             # door head height (bots' navmesh needs 2.0 m clear)
 
 
 def glass(name, color, alpha, rough=0.05):
@@ -148,11 +148,11 @@ def glass_partition(m):
 def white_door(m):
     """The scan's door out to the plant: a white aluminium frame round a full
     glass leaf with a lever, standing open 90 degrees. Built with the frame across X at Y = 0 and the leaf along -Y."""
-    ow, oh = 1.3, 2.2  # the wall opening
+    ow, oh = 1.7, 2.4  # the wall opening (wide and tall enough for the bots' navmesh)
     for x in (-ow / 2 - 0.04, ow / 2 + 0.04):
         box(m, "Door jamb", x, 0, oh / 2, 0.08, 0.27, oh, "frame_white")
     box(m, "Door head", 0, 0, oh + 0.04, ow + 0.16, 0.27, 0.08, "frame_white")
-    lw = 1.2
+    lw = ow - 0.1
     box(m, "Leaf stile", -ow / 2 + 0.05, -0.17, oh / 2, 0.1, 0.06, oh - 0.04, "frame_white")
     box(m, "Leaf stile", -ow / 2 + 0.05, -0.17 - lw + 0.1, oh / 2, 0.1, 0.06, oh - 0.04, "frame_white")
     for z in (0.12, oh - 0.08):

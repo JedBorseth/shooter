@@ -732,8 +732,6 @@ static func _build_detail(g: Node3D) -> void:
 		if not d.get("shadow", true):
 			for gi: GeometryInstance3D in inst.find_children("*", "GeometryInstance3D", true, false):
 				gi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		if d.get("surface", "") == "glass":
-			_glaze(inst)
 		var k := 0
 		for c2 in d.get("clip", []):
 			var shape := CollisionShape3D.new()
@@ -771,23 +769,6 @@ static func _build_detail(g: Node3D) -> void:
 			for mmi: MultiMeshInstance3D in _multimesh(g, "%s%s" % [String(model).to_pascal_case(), q], model, quarters[q]):
 				mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_log.append("detail: %d pieces, %d strewn" % [n, strewn])
-
-
-## Glass parts of a glass set piece (its blended materials) draw with the
-## cheap unlit office glazing (shaders/office_glass.gdshader).
-static func _glaze(inst: Node3D) -> void:
-	var glaze: Material = load(MATS + "office_glass.tres")
-	# Overrides inside an instanced model are only saved with the scene when
-	# the instance's children are editable.
-	_root.set_editable_instance(inst, true)
-	for m: MeshInstance3D in inst.find_children("*", "MeshInstance3D", true, false):
-		for k in m.mesh.get_surface_count():
-			var mat := m.mesh.surface_get_material(k) as BaseMaterial3D
-			if mat != null and mat.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED:
-				m.set_surface_override_material(k, glaze)
-				# Clear glass casts no shadow (the export gives it a mesh of its own).
-				if m.mesh.get_surface_count() == 1:
-					m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 ## A beam hung between two points (a joist torn loose at one end).
