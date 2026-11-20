@@ -408,6 +408,14 @@ The arena has target dummies at several ranges: enemy soldiers holding different
 | BR-3 | Burst rifle (bullpup) | Three-round bursts at 900 RPM; one burst kills up close; red dot |
 | LSW-6 | Light machine gun | 75 rounds at 650 RPM; slow to aim, sprint out of, and reload |
 | M1911 | Pistol | Semi-automatic sidearm |
+| CQ-10 | SMG | 1150 RPM, 4-shot kill to about 12 m then falls off fast, jumpy climb, red dot |
+| KR-12 | Battle rifle | 540 RPM, 3-shot kill to about 42 m, 20 rounds, heavy climb |
+| DM-7 | Marksman rifle | Semi-automatic, 2-shot chest kill at any range, 2.5x scope |
+| SG-12 | Semi-automatic shotgun | 8 pellets, one-shot kill to about 7.5 m, box magazine |
+| BP-9 | Burst pistol | Three-round bursts; one burst kills to about 11 m |
+| RL-4 | Rocket launcher | Sidearm slot; a rocket that goes off on what it meets, a kill within about 4 m |
+
+Every weapon belongs to a class (Black Ops 2's Create-a-Class groups), and a headless check holds each one's time to kill and handling to its class's band; see [docs/weapons.md](docs/weapons.md#class-bands).
 
 In Team Deathmatch the loadout menu (L) also fits one attachment to the primary. Each weapon file lists the ones it takes:
 

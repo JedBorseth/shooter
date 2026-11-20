@@ -106,10 +106,14 @@ XP, levels, and unlocks follow classic Call of Duty (Call of Duty 4 through Blac
   | 8 | M870 |
   | 10 | Extra Lethal |
   | 12 | BR-3 |
+  | 13 | BP-9 |
   | 16 | LSW-6 |
-  | 19 | Third Attachment |
+  | 19 | Third Attachment, RL-4 |
   | 22 | M40 |
-  | 28 | Two Primaries |
+  | 28 | Two Primaries, CQ-10 |
+  | 31 | KR-12 |
+  | 34 | SG-12 |
+  | 37 | DM-7 |
 
   Perks: Create-a-Class opens with one of each tier, as in Black Ops 2 (Lightweight, Toughness, Dexterity at 4), then Fast Hands 5, Flak Jacket 7, Tactical Mask 9, Sleight of Hand 11, Dead Silence 14, Scavenger 17, Awareness 20. Extra Perk 1 at 25, Extra Perk 2 at 31, Extra Perk 3 at 34 (`perk_level`, `wildcard_level`).
 
