@@ -14,7 +14,7 @@ images, and writes one ShaderMaterial per surface look:
                                              a tint, a texture size, and tuning
 
 Run it from the repository root, then let Godot import the images, then run it
-again with --fix-imports so every texture is VRAM compressed with mipmaps
+again with --fix-imports so the generated textures are VRAM compressed with mipmaps
 (Godot only does that by itself for textures it saw used in 3D in the editor):
 
     uv run tools/build_textures.py
@@ -39,6 +39,7 @@ import numpy as np
 from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from prop_library import PROPS, folder  # noqa: E402
 from world_detail import detail_for  # noqa: E402
 from world_looks import LOOKS, SETS  # noqa: E402
 
@@ -161,22 +162,28 @@ def write_look(name: str, look: dict) -> None:
     (MATERIALS / f"{name}.tres").write_text("\n".join(lines) + "\n")
 
 
-WEAPONS = REPO / "godot/assets/weapons"
+def fix_imports(assets: Path = REPO / "godot/assets") -> None:
+    """Compress world sets, generated world extras (decals, noise, Slamcity),
+    weapon PBR maps, and the registered Poly Haven prop textures with mipmaps.
+    Effects and Warehouse textures use their own import settings.
 
-
-def fix_imports() -> None:
-    """VRAM-compress every world, weapon, and prop texture with mipmaps, mark
-    normal maps, and point each weapon .glb at its material
-    (tools/build_weapons.py)."""
+    Set 0.1 m lightmap texels on registered prop meshes. Warehouse's separate
+    prop library was baked at 0.2 m. Disable light baking for movable weapons
+    and the soldier, and link weapon materials when a matching .tres exists.
+    """
     count = 0
-    props = REPO / "godot/assets/props"
-    paths = (
-        sorted(TEXTURES.glob("*/*.jpg.import"))
-        + sorted(TEXTURES.glob("*/*.png.import"))
-        + sorted(WEAPONS.glob("*/*_*.png.import"))
-        + sorted(props.glob("*/*.jpg.import"))
-        + sorted(props.glob("*/*.png.import"))
-    )
+    props = assets / "props"
+    weapons = assets / "weapons"
+    texture_dirs = [assets / "textures" / name for name in (*SETS, "decals", "noise", "slamcity")]
+    texture_dirs.extend(props / name for name in sorted({folder(name) for name in PROPS}))
+    paths = [
+        path
+        for directory in texture_dirs
+        for pattern in ("*.jpg.import", "*.png.import")
+        for path in sorted(directory.glob(pattern))
+    ]
+    for channel in ("albedo", "normal", "orm"):
+        paths.extend(sorted(weapons.glob(f"*/*_{channel}.png.import")))
     for path in paths:
         text = path.read_text()
         is_normal = (
@@ -202,25 +209,31 @@ def fix_imports() -> None:
             count += 1
     # Props get lightmap UVs at import (LightmapGI bakes them); weapons and
     # characters move, so they take no part in the bake.
-    for path in sorted(props.glob("*/*.gltf.import")):
+    for name in PROPS:
+        path = props / folder(name) / f"{name}.gltf.import"
+        if not path.is_file():
+            continue
         text = path.read_text()
         new = text.replace("meshes/light_baking=1", "meshes/light_baking=2").replace(
-            "meshes/lightmap_texel_size=0.2", "meshes/lightmap_texel_size=0.1"
+            "meshes/lightmap_texel_size=0.2\n", "meshes/lightmap_texel_size=0.1\n"
         )
         if new != text:
             path.write_text(new)
             count += 1
-    for path in sorted(WEAPONS.glob("*/*.glb.import")) + [
-        REPO / "godot/assets/characters/soldier/soldier.glb.import"
-    ]:
+    weapon_models = sorted(weapons.glob("*/*.glb.import"))
+    soldier = assets / "characters/soldier/soldier.glb.import"
+    for path in weapon_models + ([soldier] if soldier.is_file() else []):
         text = path.read_text()
         new = text.replace("meshes/light_baking=1", "meshes/light_baking=0")
         if new != text:
             path.write_text(new)
             count += 1
-    for path in sorted(WEAPONS.glob("*/*.glb.import")):
+    for path in weapon_models:
         key = path.name.removesuffix(".glb.import")
-        material = f"res://assets/weapons/{key}/{key}.tres"
+        material_path = path.with_name(f"{key}.tres")
+        if not material_path.is_file():
+            continue
+        material = f"res://assets/{material_path.relative_to(assets).as_posix()}"
         text = path.read_text()
         sub = (
             '_subresources={\n"materials": {\n"Weapon": {\n"use_external/enabled": true,\n'
