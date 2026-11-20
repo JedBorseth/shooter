@@ -194,6 +194,15 @@ func _zombies() -> void:
 
 
 func _tdm() -> void:
+	# A player some way in (level 8, 20 kills with the M4A1), on scratch
+	# files, so the class menu shows open and locked items alike.
+	ClassStore.use_file("user://capture_classes.cfg")
+	ProgressStore.use_file("user://capture_progress.cfg")
+	for file in [ClassStore.path(), ProgressStore.path()]:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(file))
+	ClassStore.reload()
+	ProgressStore.reload()
+	ProgressStore.add(16000, {"m4": 20})
 	await _open("res://scenes/title_screen.tscn")
 	await _frames(10)
 	var net := root.get_node("Net")

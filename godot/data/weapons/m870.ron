@@ -35,6 +35,8 @@
     ),
     tracer_every: 0,
     attachments: [Suppressor, Grip, ExtendedMag],
+    // The player level that unlocks it (Create-a-Class, docs/create-a-class.md).
+    unlock_level: 8,
     // Hands on the model: GripRight and GripLeft in m870_view.tscn.
     grips: Some((right: (0, -0.1147, 0.1601), left: (0, -0.0658, -0.2752), rake: 45, section: Some((centre: (0.0000, -0.0505), half: (0.0229, 0.0194))))),
     // Finger poses fitted to the model by tests/bake_hand_poses.gd:

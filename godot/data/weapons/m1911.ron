@@ -30,6 +30,8 @@
     ),
     tracer_every: 0,
     // Hands on the model: GripRight and GripLeft in pistol_view.tscn.
+    // The player level that unlocks it (Create-a-Class, docs/create-a-class.md).
+    unlock_level: 1,
     grips: Some((right: (0, -0.0833, 0.0098), left: (0, -0.102, 0.0217), rake: 16)),
     // Finger poses fitted to the model by tests/bake_hand_poses.gd:
     // curl in degrees per joint (index, middle, ring, little, thumb), each

@@ -14,11 +14,14 @@ const CUSTOM_SLOTS := 5
 ## Longest class name.
 const NAME_CHARS := 20
 
+## Tests and captures point the store at a scratch file with
+## `use_file`, so they never touch the player's. Kept as engine metadata,
+## which a reloaded script does not reset.
+const PATH_META := &"class_store_path"
+
 static var _custom: Array[Dictionary] = []
 static var _selected := "default:0"
 static var _loaded := false
-## Tests point this somewhere else so they never touch the real file.
-static var path := PATH
 
 
 ## The custom classes, loading them on first use.
@@ -59,9 +62,23 @@ static func selected_id() -> String:
 	return _selected
 
 
-## The class to spawn with.
+## The class to spawn with, as `usable` gives it.
 static func selected() -> Dictionary:
-	return by_id(selected_id())
+	return usable(selected_id())
+
+
+## A class as it can be played now: a default as it is; a custom class
+## with anything still locked taken out (`ProgressStore.unlocked_class`),
+## or the first default before Create-a-Class opens.
+static func usable(id: String) -> Dictionary:
+	if not id.begins_with("custom"):
+		return by_id(id)
+	if not ProgressStore.can_create_classes():
+		return by_id("default:0")
+	var entry := ProgressStore.unlocked_class(by_id(id), NetClient.class_items())
+	if String(NetClient.check_class(entry).error) != "":
+		return by_id("default:0")
+	return entry
 
 
 static func select(id: String) -> void:
@@ -82,14 +99,23 @@ static func set_custom(slot: int, value: Dictionary) -> void:
 	save()
 
 
+static func use_file(file: String) -> void:
+	Engine.set_meta(PATH_META, file)
+	reload()
+
+
+static func path() -> String:
+	return String(Engine.get_meta(PATH_META, PATH))
+
+
 static func save() -> void:
 	var config := ConfigFile.new()
 	for i in _custom.size():
 		config.set_value("custom", str(i), _custom[i])
 	config.set_value("class", "selected", _selected)
-	var err := config.save(path)
+	var err := config.save(path())
 	if err != OK:
-		push_warning("Could not save %s (%s)." % [path, error_string(err)])
+		push_warning("Could not save %s (%s)." % [path(), error_string(err)])
 
 
 ## Forgets what was loaded, so the next use reads `path` again (tests).
@@ -103,7 +129,7 @@ static func _load() -> void:
 		return
 	_loaded = true
 	var config := ConfigFile.new()
-	var err := config.load(path)
+	var err := config.load(path())
 	var defaults := NetClient.default_classes()
 	_custom.clear()
 	for i in CUSTOM_SLOTS:

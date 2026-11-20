@@ -413,6 +413,10 @@ pub struct WeaponDef {
     /// Attachments this weapon takes in a loadout.
     #[serde(default)]
     pub attachments: Vec<Attachment>,
+    /// The player level that unlocks it for custom classes
+    /// (`crate::progression`). Default classes carry it from level 1.
+    #[serde(default = "first_level")]
+    pub unlock_level: u8,
     /// Where a third-person soldier's hands hold the weapon: its scene's
     /// `GripRight` and `GripLeft` markers and grip rake. The arm hit zones
     /// follow them (`crate::hitbox`).
@@ -567,6 +571,10 @@ impl WeaponDef {
             left,
         )
     }
+}
+
+fn first_level() -> u8 {
+    1
 }
 
 fn one() -> u8 {
