@@ -172,6 +172,9 @@ pub struct NetClient {
     ghosts: VecDeque<(Gd<HitboxRig>, f32)>,
     /// Everyone in the game, ourselves included.
     roster: Vec<RosterEntry>,
+    /// Our stats this match, as the server last sent them
+    /// (`shooter_sim::stats`).
+    match_stats: shooter_sim::stats::Stats,
     match_phase: Option<Phase>,
     match_ends_at: Option<Tick>,
     /// Regulation, the second half, or overtime.
@@ -518,6 +521,10 @@ impl NetClient {
     /// Someone joined, left, or changed team or name.
     #[signal]
     fn roster_changed();
+
+    /// The server sent our match stats (`match_stats`).
+    #[signal]
+    fn stats_changed();
 
     /// The match phase or the team scores changed.
     #[signal]
@@ -1538,6 +1545,14 @@ impl NetClient {
         self.ranked
     }
 
+    /// Our stats this match so far (stat key to count), as the server
+    /// counts them; the server sends them every few seconds while they
+    /// change, and once more as the match ends.
+    #[func]
+    fn match_stats(&self) -> VarDictionary {
+        super::accounts::counts_dictionary(&self.match_stats)
+    }
+
     /// Why the server turned us away, or "".
     #[func]
     fn denied_reason(&self) -> GString {
@@ -1842,6 +1857,8 @@ impl NetClient {
             } => {
                 if phase == Phase::Playing && self.match_phase != Some(Phase::Playing) {
                     self.props.reset();
+                    // A new match counts its stats from nothing.
+                    self.match_stats.clear();
                 }
                 if matches!(phase, Phase::Lobby | Phase::Countdown) {
                     // Between matches there is no round, and no killcam.
@@ -2131,6 +2148,10 @@ impl NetClient {
                 self.signals()
                     .aircraft_downed()
                     .emit(streak.key(), ours, by_me, to_godot(at));
+            }
+            GameEvent::Stats(stats) => {
+                self.match_stats = stats;
+                self.signals().stats_changed().emit();
             }
             GameEvent::Streak(StreakEvent::Strike { owner, at }) => {
                 self.signals()

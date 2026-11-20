@@ -20,6 +20,7 @@ use std::collections::BTreeMap;
 use godot::prelude::*;
 use shooter_sim::net::{TICK_RATE, Tick};
 use shooter_sim::progression::{self, Earned, Outcome};
+use shooter_sim::stats::{self, Recorder};
 use shooter_sim::weapon::WeaponId;
 
 /// How long a joining player may wait on the account server.
@@ -62,17 +63,29 @@ impl AccountState {
 }
 
 /// One player's part of the current match, for their account: when they
-/// started playing it and their kills with each weapon (by plain key).
+/// started playing it, their kills with each weapon (by plain key), and
+/// their stats (`shooter_sim::stats`).
 #[derive(Clone, Debug, Default)]
 pub struct MatchShare {
     pub playing_since: Option<Tick>,
     pub weapon_kills: BTreeMap<String, u32>,
+    pub stats: Recorder,
+    /// When the stats were last sent to the player.
+    pub stats_sent: Tick,
 }
 
 impl MatchShare {
     pub fn start(&mut self, tick: Tick) {
         self.playing_since = Some(tick);
         self.weapon_kills.clear();
+        self.stats.clear();
+        self.stats_sent = tick;
+    }
+
+    /// Whole seconds played since the match started for them.
+    pub fn seconds(&self, now: Tick) -> u32 {
+        self.playing_since
+            .map_or(0, |since| now.saturating_sub(since) / TICK_RATE)
     }
 
     /// A kill with `weapon` (any variant counts for its plain weapon, as the
@@ -99,31 +112,60 @@ impl MatchShare {
 
     /// Whether there is anything to report.
     pub fn earned_anything(&self, score: u32) -> bool {
-        score > 0 || !self.weapon_kills.is_empty()
+        score > 0 || !self.weapon_kills.is_empty() || !self.stats.is_empty()
     }
+}
+
+/// A whole count from a dictionary value (JSON numbers arrive as floats).
+fn whole(value: Option<Variant>) -> u32 {
+    value
+        .and_then(|v| {
+            v.try_to::<i64>()
+                .ok()
+                .or_else(|| v.try_to::<f64>().ok().map(|f| f as i64))
+        })
+        .unwrap_or(0)
+        .clamp(0, i64::from(u32::MAX)) as u32
+}
+
+/// Counts by key (stat keys, or plain weapon keys) from a dictionary,
+/// keeping only well-formed keys.
+pub fn counts_from(d: &VarDictionary) -> BTreeMap<String, u32> {
+    let mut out = BTreeMap::new();
+    for (key, count) in d.iter_shared() {
+        let Ok(key) = key.try_to::<GString>() else {
+            continue;
+        };
+        let key = key.to_string();
+        if stats::valid_key(&key) {
+            out.insert(key, whole(Some(count)));
+        }
+    }
+    out
+}
+
+fn counts_at(progress: &VarDictionary, key: &str) -> BTreeMap<String, u32> {
+    progress
+        .get(key)
+        .and_then(|v| v.try_to::<VarDictionary>().ok())
+        .map_or_else(BTreeMap::new, |d| counts_from(&d))
 }
 
 /// What the account server says a player has earned, from the link's
-/// answer: total XP and a dictionary of plain weapon keys to kills.
-pub fn earned_from(xp: i64, weapon_kills: &VarDictionary) -> Earned {
-    let mut earned = Earned {
-        xp: xp.clamp(0, i64::from(u32::MAX)) as u32,
-        ..Earned::default()
-    };
-    for (key, count) in weapon_kills.iter_shared() {
-        let (Ok(key), Ok(count)) = (key.try_to::<GString>(), count.try_to::<i64>()) else {
-            continue;
-        };
-        earned
-            .weapon_kills
-            .insert(key.to_string(), count.clamp(0, i64::from(u32::MAX)) as u32);
+/// answer: `xp`, `prestige`, and dictionaries `weapon_kills` (plain weapon
+/// keys to kills) and `stats` (stat keys to counts).
+pub fn earned_from(progress: &VarDictionary) -> Earned {
+    Earned {
+        xp: whole(progress.get("xp")),
+        weapon_kills: counts_at(progress, "weapon_kills"),
+        stats: counts_at(progress, "stats"),
+        prestige: whole(progress.get("prestige")).min(u32::from(u8::MAX)) as u8,
     }
-    earned
 }
 
-pub fn kills_dictionary(kills: &BTreeMap<String, u32>) -> VarDictionary {
+pub fn counts_dictionary(counts: &BTreeMap<String, u32>) -> VarDictionary {
     let mut d = VarDictionary::new();
-    for (key, count) in kills {
+    for (key, count) in counts {
         d.set(key.as_str(), i64::from(*count));
     }
     d

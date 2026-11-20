@@ -27,6 +27,7 @@ func _run() -> void:
 	ProgressStore.reload()
 	_check_rules()
 	_check_match()
+	_check_challenges()
 	await _check_card()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(ProgressStore.path()))
 	print("Progression test: %d failure(s)" % _failures)
@@ -59,16 +60,22 @@ func _check_card() -> void:
 			{
 				"score": 1250,
 				"bonus": 1500,
+				"challenge_xp": 750,
+				"challenges": ["w.m4.0", "career.kills.0"],
 				"outcome": "win",
 				"xp_before": 500,
-				"xp_after": 3250,
+				"xp_after": 4000,
 				"kills": {"m4": 2},
 				"unlocks": Progression.unlocks_at(4),
 			}
 		)
 	)
 	var text := _texts(card)
-	_check("+2,750" in text, "the total is score plus bonus: %s" % [text])
+	_check("+3,500" in text, "the total is score, bonus, and challenges: %s" % [text])
+	_check(
+		text.any(func(t: String) -> bool: return t.begins_with("M4A1 Headshots I  ·  Gravel camo")),
+		"the challenges are listed with their camo: %s" % [text]
+	)
 	_check("Match bonus  ·  win" in text, "the bonus says it was a win")
 	_check("LEVEL 1" in text, "the bar starts where the match started")
 	_check(
@@ -82,6 +89,37 @@ func _check_card() -> void:
 		"and lists the unlocks"
 	)
 	card.queue_free()
+
+
+## Stats the server counted complete challenges, which pay their XP once
+## and unlock camos.
+func _check_challenges() -> void:
+	var before := ProgressStore.xp()
+	var gain := ProgressStore.add(0, {}, false, {"w.m4.hs": 6, "kills": 100})
+	_check(
+		gain.challenges.has("w.m4.0") and gain.challenges.has("career.kills.0"),
+		"5 M4A1 headshots and 100 kills complete their challenges: %s" % [gain.challenges]
+	)
+	_check(int(gain.challenge_xp) == 250 + 500, "they pay 750 XP, got %d" % gain.challenge_xp)
+	_check(ProgressStore.xp() == before + 750, "the XP is saved")
+	_check(ProgressStore.stat("w.m4.hs") == 6, "the stats are saved")
+	var again := ProgressStore.add(0, {}, false, {"w.m4.hs": 1})
+	_check(int(again.challenge_xp) == 0, "a challenge pays once")
+	var totals := ProgressStore.totals()
+	_check(Progression.camo_unlocked(totals, "m4", "gravel"), "the first M4A1 camo is unlocked")
+	_check(not Progression.camo_unlocked(totals, "m4", "dune"), "the second is not")
+	_check(not Progression.camo_unlocked(totals, "ak47", "gravel"), "nor the AK-47's")
+	var list := Progression.challenges(totals)
+	var second: Dictionary = {}
+	for challenge: Dictionary in list:
+		if challenge.id == "w.m4.1":
+			second = challenge
+	_check(
+		int(second.get("progress", -1)) == 7 and int(second.get("target", 0)) == 10,
+		"the next rung shows 7 of 10: %s" % second
+	)
+	ProgressStore.reload()
+	_check(ProgressStore.stat("w.m4.hs") == 7, "stats survive a restart")
 
 
 func _texts(node: Node) -> Array:

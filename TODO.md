@@ -407,6 +407,12 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
   - [x] Bots go for Scavenger packs nearby when low on ammunition.
 - [x] Progression: XP, levels, weapon unlocks: score is XP plus a match bonus, levels 1 to 55, Create-a-Class at level 4, weapons, tacticals, and wildcards by level, attachments by kills with the weapon, kept locally (`rust/sim/src/progression.rs`, `godot/scripts/progress_store.gd`).
 - [ ] Progression follow-ups: prestige; weapon levels shown in the menu. (Progress on the account, with unlocks checked by ranked servers, is done: [docs/online.md](docs/online.md).)
+- [ ] Long-term progression, Black Ops 2's ([docs/progression.md](docs/progression.md)):
+  - [x] Career stats counted by the server (`rust/sim/src/stats.rs`), challenges with XP (`rust/sim/src/challenge.rs`): each weapon's camo ladder, gold, class mastery, the final camo, and career, mode, and scorestreak challenges; kept on the account (ranked servers report them) or locally.
+  - [ ] A challenges screen and a combat record.
+  - [ ] Camos on the weapons (first person, third person, killcam), picked in Create-a-Class.
+  - [ ] Prestige: 10 and Master, with emblems and permanent unlock tokens; the icon on the scoreboard and in the kill feed.
+  - [ ] Calling cards, picked in the profile, on the scoreboard and the killcam card.
 - [x] Gun Game: free-for-all up a ladder of the eight weapons, with a local match button on the title screen (`rust/sim/src/gun_game.rs`).
 - [x] Capture the Flag: flags, takes, drops, returns, and captures on the server (`rust/sim/src/ctf.rs`), bots that attack, defend, return, and carry, flag markers and calls on the client (`godot/scripts/net/ctf_view.gd`), and a title screen button.
 - [ ] More modes: Domination, the Black Ops 2 way ([docs/domination.md](docs/domination.md)). (Free-for-all is done: `--mode ffa`, on Gun Game's teamless path. Search and Destroy has its own section.)

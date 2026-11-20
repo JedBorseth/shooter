@@ -95,7 +95,7 @@ use shooter_sim::net::subtick;
 use shooter_sim::net::{CHANNEL_COUNT, DEFAULT_PORT, MAX_PLAYERS, TICK_DT, TICK_RATE, Tick};
 use shooter_sim::perk::{self, Perk, Perks};
 use shooter_sim::player::{self, PlayerEvent, PlayerInput, PlayerParams, PlayerState};
-use shooter_sim::progression::Outcome;
+use shooter_sim::progression::{Earned, Outcome};
 use shooter_sim::radar::Radar;
 use shooter_sim::scavenger;
 use shooter_sim::score::{Award, Kill, ScoreRules, ScoreState, ScoreTotals, Scored};
@@ -104,6 +104,7 @@ use shooter_sim::snd::{
     Charge, ChargeContext, ChargeEvent, ChargePlayer, ChargeState, Headcount, RoundEnd, RoundPhase,
     RoundRecord, RoundState, RoundTransition, Site, SndRules, UseKind,
 };
+use shooter_sim::stats;
 use shooter_sim::streak::{self, Loadout, Sky, Streak, StreakState};
 use shooter_sim::tdm::{
     self, MatchRules, MatchState, Mode, Period, Phase, SpawnPoint, SpawnRules, Team, Threat,
@@ -150,6 +151,9 @@ const CLIENT_ONLY_NODES: [&str; 6] = [
 
 /// Seconds a new connection has to say hello.
 const HELLO_TIMEOUT_TICKS: Tick = 5 * TICK_RATE;
+/// How often a player's match stats go to their game while they change:
+/// often enough for a challenge's popup to follow the kill that finished it.
+const STATS_INTERVAL_TICKS: Tick = 2 * TICK_RATE;
 /// A little more than the client's weapon rack reach (`FpsPlayer::interact_distance`).
 const PICKUP_REACH: f32 = 3.0;
 /// Bots get ids from here up, so they never collide with client ids.
@@ -873,6 +877,7 @@ impl INode3D for NetServer {
         if self.tick >= self.next_scoreboard {
             self.broadcast_scoreboard();
         }
+        self.send_stats(false);
         self.send_events();
         host.flush();
         drop(net_out);
@@ -923,22 +928,23 @@ impl NetServer {
     #[signal]
     fn account_check(serial: i64, token: GString);
 
-    /// `accounts`: a player's match, to add to their account: total XP and
-    /// kills with each weapon (plain weapon key to count).
+    /// `accounts`: a player's match, to add to their account: `xp` (score,
+    /// bonus, and the challenges it completed), `weapon_kills` (plain weapon
+    /// key to count), and `stats` (stat key to count).
     #[signal]
-    fn account_award(user_id: GString, xp: i64, weapon_kills: VarDictionary);
+    fn account_award(user_id: GString, award: VarDictionary);
 
     /// The account server vouched for the player of check `serial`: their
-    /// account id, username (the name others see), total XP, and weapon
-    /// kills. Lets them in.
+    /// account id, username (the name others see), and progress (`xp`,
+    /// `prestige`, `weapon_kills`, `stats`, as the account server keeps
+    /// them). Lets them in.
     #[func]
     fn accept_account(
         &mut self,
         serial: i64,
         user_id: GString,
         username: GString,
-        xp: i64,
-        weapon_kills: VarDictionary,
+        progress: VarDictionary,
     ) {
         let Some(index) = self.pending_account(serial) else {
             return;
@@ -959,7 +965,7 @@ impl NetServer {
         let name = if username.is_empty() { name } else { username };
         self.clients[index].account = AccountState::Verified {
             user_id,
-            earned: accounts::earned_from(xp, &weapon_kills),
+            earned: accounts::earned_from(&progress),
         };
         // What they asked for while they waited, now that it can be checked.
         self.apply_wanted_class(index);
@@ -2265,6 +2271,14 @@ impl NetServer {
                     godot_print!("server: player {id} left");
                     // Leaving mid-match keeps the score, without the bonus.
                     if self.match_state.phase == Phase::Playing {
+                        if self.stats_on() {
+                            let tick = self.tick;
+                            let mode = self.game.key();
+                            if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) {
+                                let seconds = avatar.share.seconds(tick);
+                                avatar.share.stats.finish(mode, seconds, None);
+                            }
+                        }
                         self.award_account(&client.account, id, None);
                     }
                     self.despawn_avatar(id);
@@ -2625,48 +2639,127 @@ impl NetServer {
 
     /// Reports a player's match to their account (`account_award`):
     /// `outcome` when the match ended with them in it, `None` when they
-    /// left it early (score only).
-    fn award_account(&mut self, account: &AccountState, id: u8, outcome: Option<Outcome>) {
-        let Some(user_id) = account.user_id() else {
-            return;
-        };
-        let Some(avatar) = self.avatars.iter().find(|a| a.id == id) else {
-            return;
-        };
+    /// left it early (score only). The XP includes the challenges the match
+    /// completed, worked out from what the account had; returns the
+    /// account's totals with the match added.
+    fn award_account(
+        &mut self,
+        account: &AccountState,
+        id: u8,
+        outcome: Option<Outcome>,
+    ) -> Option<Earned> {
+        let user_id = account.user_id()?;
+        let avatar = self.avatars.iter().find(|a| a.id == id)?;
         let score = avatar.score.score;
         if !avatar.share.earned_anything(score) && outcome.is_none() {
-            return;
+            return None;
         }
-        let xp = avatar.share.xp(score, self.tick, outcome);
-        let kills = accounts::kills_dictionary(&avatar.share.weapon_kills);
-        godot_print!("server: player {id} earned {xp} XP for their account");
+        let mut earned = account.earned().cloned().unwrap_or_default();
+        let gain = earned.add_match(
+            avatar.share.xp(score, self.tick, outcome),
+            &avatar.share.weapon_kills,
+            avatar.share.stats.stats(),
+        );
+        let xp = gain.xp.saturating_add(gain.challenge_xp);
+        let mut award = VarDictionary::new();
+        award.set("xp", i64::from(xp));
+        award.set(
+            "weapon_kills",
+            &accounts::counts_dictionary(&avatar.share.weapon_kills),
+        );
+        award.set(
+            "stats",
+            &accounts::counts_dictionary(avatar.share.stats.stats()),
+        );
+        godot_print!(
+            "server: player {id} earned {xp} XP for their account ({} challenges)",
+            gain.challenges.len()
+        );
         self.signals()
             .account_award()
-            .emit(&GString::from(user_id), i64::from(xp), &kills);
+            .emit(&GString::from(user_id), &award);
+        Some(earned)
+    }
+
+    /// How the match that `winner` won ended for player `id`.
+    fn outcome_for(&self, id: u8, winner: Option<u8>) -> Outcome {
+        let won = if self.game.free_for_all() {
+            winner == Some(id)
+        } else {
+            self.avatars
+                .iter()
+                .find(|a| a.id == id)
+                .is_some_and(|a| winner == Some(a.team))
+        };
+        match winner {
+            None => Outcome::Draw,
+            Some(_) if won => Outcome::Win,
+            Some(_) => Outcome::Loss,
+        }
+    }
+
+    /// The match is over: each player's stats take its result and time, and
+    /// go to their game (which shows the challenges they finished).
+    fn finish_stats(&mut self, winner: Option<u8>) {
+        if !self.stats_on() {
+            return;
+        }
+        let ids: Vec<u8> = self.clients.iter().filter_map(|c| c.player).collect();
+        let mode = self.game.key();
+        for id in ids {
+            let outcome = self.outcome_for(id, winner);
+            let tick = self.tick;
+            if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) {
+                let seconds = avatar.share.seconds(tick);
+                avatar.share.stats.finish(mode, seconds, Some(outcome));
+            }
+        }
+        self.send_stats(true);
+    }
+
+    /// Sends each player their match stats when they changed: at most every
+    /// [`STATS_INTERVAL_TICKS`], or now with `now`.
+    fn send_stats(&mut self, now: bool) {
+        let tick = self.tick;
+        let mut out = Vec::new();
+        for avatar in &mut self.avatars {
+            if avatar.bot || (!now && tick < avatar.share.stats_sent + STATS_INTERVAL_TICKS) {
+                continue;
+            }
+            if avatar.share.stats.take_changed() {
+                avatar.share.stats_sent = tick;
+                out.push((avatar.id, avatar.share.stats.stats().clone()));
+            }
+        }
+        for (id, stats) in out {
+            self.send_event(id, GameEvent::Stats(stats));
+        }
+    }
+
+    /// Whether stats count now: while a match is played, outside Zombies
+    /// (Call of Duty keeps Zombies' stats apart).
+    fn stats_on(&self) -> bool {
+        self.game != Mode::Zombies
+            && matches!(self.match_state.phase, Phase::Playing | Phase::Ended { .. })
     }
 
     /// The match is over: every player with an account is paid for it.
     fn award_accounts(&mut self, winner: Option<u8>) {
-        let players: Vec<(AccountState, u8)> = self
+        let players: Vec<(usize, u8)> = self
             .clients
             .iter()
-            .filter_map(|c| c.player.map(|id| (c.account.clone(), id)))
+            .enumerate()
+            .filter_map(|(i, c)| c.player.map(|id| (i, id)))
             .collect();
-        for (account, id) in players {
-            let Some(avatar) = self.avatars.iter().find(|a| a.id == id) else {
-                continue;
-            };
-            let won = if self.game.free_for_all() {
-                winner == Some(id)
-            } else {
-                winner == Some(avatar.team)
-            };
-            let outcome = match winner {
-                None => Outcome::Draw,
-                Some(_) if won => Outcome::Win,
-                Some(_) => Outcome::Loss,
-            };
-            self.award_account(&account, id, Some(outcome));
+        for (index, id) in players {
+            let account = self.clients[index].account.clone();
+            let outcome = self.outcome_for(id, winner);
+            if let Some(earned) = self.award_account(&account, id, Some(outcome))
+                && let AccountState::Verified { earned: kept, .. } =
+                    &mut self.clients[index].account
+            {
+                *kept = earned;
+            }
         }
     }
 
@@ -4904,6 +4997,18 @@ impl NetServer {
             return;
         }
         let shooter_side = self.side(shooter);
+        let shooter_id = shooter.id;
+        if self.recording_stats()
+            && let Some(avatar) = self
+                .avatars
+                .iter_mut()
+                .find(|a| a.id == shooter_id && !a.bot)
+        {
+            avatar.share.stats.shot(shot.weapon);
+        }
+        let Some(shooter) = self.avatars.iter().find(|a| a.id == shot.shooter) else {
+            return;
+        };
         let Some(mut space) = shooter
             .parts
             .body
@@ -6114,6 +6219,7 @@ impl NetServer {
                         self.match_state.scores[1]
                     );
                 }
+                self.finish_stats(winner);
                 if self.accounts {
                     self.award_accounts(winner);
                 }
@@ -6533,6 +6639,7 @@ impl NetServer {
     /// streaks, runs the UAVs' sweeps, and sends off what has left.
     fn update_streaks(&mut self) {
         let on = self.streaks_on();
+        let record = self.recording_stats();
         let mut changed = Vec::new();
         for avatar in &mut self.avatars {
             let points = avatar.score.score.saturating_sub(avatar.streak_seen);
@@ -6542,7 +6649,12 @@ impl NetServer {
             }
             let hardline = avatar.predicted.state.perks.has(Perk::Hardline);
             let loadout = avatar.streak_loadout.usable(self.roofed);
-            avatar.streaks.on_points(loadout, points, hardline);
+            let earned = avatar.streaks.on_points(loadout, points, hardline);
+            if record && !avatar.bot {
+                for streak in earned {
+                    avatar.share.stats.streak_earned(streak);
+                }
+            }
             changed.push(avatar.id);
         }
         for id in changed {
@@ -7811,6 +7923,9 @@ impl NetServer {
 
     /// Queues an event for one player's client (bots have none).
     fn send_event(&mut self, id: u8, event: GameEvent) {
+        if self.recording_stats() {
+            self.record_sent(id, &event);
+        }
         if let Some(client) = self.clients.iter_mut().find(|c| c.player == Some(id)) {
             client.outbox.push(event);
         }
@@ -7832,9 +7947,75 @@ impl NetServer {
         {
             avatar.share.add_kill(*weapon);
         }
+        if let GameEvent::Kill {
+            killer,
+            victim,
+            weapon,
+            headshot,
+            cause,
+        } = *event
+            && self.recording_stats()
+        {
+            self.record_kill(killer, victim, weapon, headshot, cause);
+        }
         for client in &mut self.clients {
             if client.player.is_some() {
                 client.outbox.push(event.clone());
+            }
+        }
+    }
+
+    /// Whether players' stats count now: while a match is played, outside
+    /// Zombies (Call of Duty keeps Zombies' stats apart).
+    fn recording_stats(&self) -> bool {
+        self.match_state.phase == Phase::Playing && self.game != Mode::Zombies
+    }
+
+    /// Counts what an event to player `id` says about their match: their
+    /// hits, and the awards a score event paid.
+    fn record_sent(&mut self, id: u8, event: &GameEvent) {
+        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id && !a.bot) else {
+            return;
+        };
+        match event {
+            GameEvent::Hit {
+                victim,
+                damage,
+                killed,
+                ..
+            } if *victim != id => {
+                let held = avatar.predicted.state.combat.weapon().id;
+                avatar.share.stats.hit(held, *victim, *damage, *killed);
+            }
+            GameEvent::Score { awards, .. } => avatar.share.stats.awards(awards),
+            _ => {}
+        }
+    }
+
+    /// Counts a kill toward the killer's and the victim's stats.
+    fn record_kill(
+        &mut self,
+        killer: u8,
+        victim: u8,
+        weapon: WeaponId,
+        headshot: bool,
+        cause: protocol::KillCause,
+    ) {
+        for avatar in &mut self.avatars {
+            if avatar.bot {
+                continue;
+            }
+            if avatar.id == victim {
+                let held = avatar.predicted.state.combat.weapon().id;
+                avatar.share.stats.died(killer, victim, held);
+            } else if avatar.id == killer {
+                avatar.share.stats.kill(stats::KillFacts {
+                    victim,
+                    weapon,
+                    cause,
+                    headshot,
+                    perkless: avatar.class.perks.is_empty(),
+                });
             }
         }
     }

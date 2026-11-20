@@ -1,25 +1,32 @@
 --[[
 Player progression on the account: total XP and kills with each weapon, the
-two numbers every unlock follows (rust/sim/src/progression.rs). Players read
-their own progress; only this module writes it.
+two numbers levels and attachments follow (rust/sim/src/progression.rs), and
+career stats, which challenges, camos, and calling cards follow
+(rust/sim/src/stats.rs, rust/sim/src/challenge.rs). Players read their own
+progress; only this module writes it.
 
 Storage: collection "progress", key "progress", owned by the player, readable
 by the owner only, never writable by a client:
-  { xp = 0, weapon_kills = { m4 = 12 }, imported = false, award_at = <ms> }
+  { xp = 0, prestige = 0, weapon_kills = { m4 = 12 },
+    stats = { kills = 40, ["w.m4.hs"] = 6 }, imported = false, award_at = <ms> }
+
+The XP a match reports already includes the challenges it completed: the
+game (or the ranked server) works them out from the totals, so this module
+only adds.
 
 RPCs for the game (a signed-in session):
   progress_get       -> progress
-  progress_import    { xp, weapon_kills }  once, into an account with no
-                     progress yet: brings the progress a player earned before
-                     accounts existed (the game's user://progress.cfg).
-  progress_match     { xp, weapon_kills }  a match the game itself reports
-                     (local bot matches and servers that do not report to
-                     this stack). Capped by the time since the last award.
+  progress_import    { xp, weapon_kills, stats }  once, into an account with
+                     no progress yet: brings the progress a player earned
+                     before accounts existed (the game's user://progress.cfg).
+  progress_match     { xp, weapon_kills, stats }  a match the game itself
+                     reports (local bot matches and servers that do not report
+                     to this stack). Capped by the time since the last award.
 
 RPCs for trusted dedicated servers (called with the runtime HTTP key, never a
 session):
-  server_progress_get  { user_id }                     -> progress
-  server_progress_add  { user_id, xp, weapon_kills }   -> progress
+  server_progress_get  { user_id }                            -> progress
+  server_progress_add  { user_id, xp, weapon_kills, stats }   -> progress
 
 Call of Duty keeps rank and unlocks on its own servers (Demonware), so a game
 cannot hand itself unlocks; matches the game reports itself are capped the way
@@ -45,6 +52,17 @@ local MAX_ELAPSED_MINUTES = 30
 local MAX_SERVER_XP = 100000
 local MAX_SERVER_KILLS = 500
 local MAX_WEAPONS = 64
+-- Stats (rust/sim/src/stats.rs): keys of a-z, 0-9, "_" and "."; at most this
+-- many kept, and this many in one report.
+local MAX_STAT_KEY = 32
+local MAX_STATS = 1024
+local MAX_REPORT_STATS = 192
+-- A self-reported match: any counter at most this much a minute (shots fired
+-- run fastest, about ten a second), and seconds played at most the time
+-- itself.
+local STAT_PER_MINUTE = 600
+-- One trusted server report.
+local MAX_SERVER_STAT = 100000
 
 local function invalid(message)
   error({ message, 3 }) -- INVALID_ARGUMENT
@@ -90,6 +108,29 @@ local function clean_kills(kills, max_each)
   return out
 end
 
+-- Stats from a payload: stat keys to whole counts, `max_each` each (`time`,
+-- seconds played, at most `max_time`).
+local function clean_stats(stats, max_each, max_time)
+  local out = {}
+  if type(stats) ~= "table" then
+    return out
+  end
+  local count = 0
+  for key, n in pairs(stats) do
+    if type(key) == "string" and #key <= MAX_STAT_KEY and key:match("^[a-z0-9_.]+$") then
+      local amount = whole(n, key == "time" and (max_time or max_each) or max_each)
+      if amount > 0 then
+        count = count + 1
+        if count > MAX_REPORT_STATS then
+          break
+        end
+        out[key] = amount
+      end
+    end
+  end
+  return out
+end
+
 local function read(user_id)
   local objects = nk.storage_read({ { collection = COLLECTION, key = KEY, user_id = user_id } })
   local object = objects[1]
@@ -97,9 +138,23 @@ local function read(user_id)
   local progress = {
     xp = whole(value.xp, MAX_TOTAL_XP),
     weapon_kills = clean_kills(value.weapon_kills, MAX_TOTAL_XP),
+    stats = {},
+    prestige = whole(value.prestige, 11),
     imported = value.imported == true,
     award_at = whole(value.award_at, 2 ^ 53),
   }
+  if type(value.stats) == "table" then
+    local count = 0
+    for key, n in pairs(value.stats) do
+      if type(key) == "string" and #key <= MAX_STAT_KEY and key:match("^[a-z0-9_.]+$") then
+        count = count + 1
+        if count > MAX_STATS then
+          break
+        end
+        progress.stats[key] = whole(n, MAX_TOTAL_XP)
+      end
+    end
+  end
   return progress, object and object.version or "*"
 end
 
@@ -132,21 +187,42 @@ local function update(user_id, change)
   error({ "progress changed while saving; try again", 10 }) -- ABORTED
 end
 
-local function add(progress, xp, kills)
+local function add(progress, xp, kills, stats)
   progress.xp = math.min(progress.xp + xp, MAX_TOTAL_XP)
   for weapon, n in pairs(kills) do
     progress.weapon_kills[weapon] = math.min((progress.weapon_kills[weapon] or 0) + n, MAX_TOTAL_XP)
   end
+  local count = 0
+  for _ in pairs(progress.stats) do
+    count = count + 1
+  end
+  for key, n in pairs(stats or {}) do
+    local known = progress.stats[key] ~= nil
+    if known or count < MAX_STATS then
+      if not known then
+        count = count + 1
+      end
+      progress.stats[key] = math.min((progress.stats[key] or 0) + n, MAX_TOTAL_XP)
+    end
+  end
 end
 
--- What a client sees: no bookkeeping fields. An empty table encodes as a JSON
--- array in Lua, so weapon_kills is always sent as an object.
-local function public(progress)
-  local kills = progress.weapon_kills
-  if next(kills) == nil then
-    kills = nk.json_decode("{}")
+-- An empty table encodes as a JSON array in Lua; maps always go as objects.
+local function object(map)
+  if next(map) == nil then
+    return nk.json_decode("{}")
   end
-  return nk.json_encode({ xp = progress.xp, weapon_kills = kills })
+  return map
+end
+
+-- What a client sees: no bookkeeping fields.
+local function public(progress)
+  return nk.json_encode({
+    xp = progress.xp,
+    prestige = progress.prestige,
+    weapon_kills = object(progress.weapon_kills),
+    stats = object(progress.stats),
+  })
 end
 
 local function session_user(context)
@@ -183,12 +259,18 @@ function M.progress_import(context, payload)
   local request = decode(payload)
   local xp = whole(request.xp, MAX_IMPORT_XP)
   local kills = clean_kills(request.weapon_kills, 100000)
+  local stats = clean_stats(request.stats, 1000000)
   return public(update(user_id, function(progress)
-    if progress.imported or progress.xp > 0 or next(progress.weapon_kills) ~= nil then
+    if
+      progress.imported
+      or progress.xp > 0
+      or next(progress.weapon_kills) ~= nil
+      or next(progress.stats) ~= nil
+    then
       return
     end
     progress.imported = true
-    add(progress, xp, kills)
+    add(progress, xp, kills, stats)
   end))
 end
 
@@ -214,9 +296,14 @@ function M.progress_match(context, payload)
         kill_budget = kill_budget - amount
       end
     end
+    local stats = clean_stats(
+      request.stats,
+      math.floor(minutes * STAT_PER_MINUTE),
+      math.floor(minutes * 60)
+    )
     progress.imported = true
     progress.award_at = now
-    add(progress, xp, kills)
+    add(progress, xp, kills, stats)
   end))
 end
 
@@ -229,9 +316,10 @@ function M.server_progress_add(context, payload)
   local request = server_only(context, payload)
   local xp = whole(request.xp, MAX_SERVER_XP)
   local kills = clean_kills(request.weapon_kills, MAX_SERVER_KILLS)
+  local stats = clean_stats(request.stats, MAX_SERVER_STAT)
   return public(update(request.user_id, function(progress)
     progress.imported = true
-    add(progress, xp, kills)
+    add(progress, xp, kills, stats)
   end))
 end
 

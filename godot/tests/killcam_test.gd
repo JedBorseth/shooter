@@ -165,6 +165,17 @@ func _final_killcam(main: Node, player: FpsPlayer, client: NetClient) -> void:
 	_check(lead > 0.7 and lead < 1.6, "final: it starts after a short lead, %.2f s" % lead)
 	_check(not bool(info.get("skippable", true)), "final: it cannot be skipped")
 	_check(String(client.match_info().get("phase", "")) == "ended", "final: the match is over")
+	# The server's count of our match came just before its end (`GameEvent::Stats`).
+	var stats := client.match_stats()
+	_check(
+		(
+			int(stats.get("deaths", 0)) >= 1
+			and int(stats.get("matches", 0)) == 1
+			and int(stats.get("losses", 0)) == 1
+			and int(stats.get("time", 0)) > 0
+		),
+		"final: the match's stats arrived, %s" % stats
+	)
 	Input.action_press("interact")
 	await _ticks(2)
 	Input.action_release("interact")

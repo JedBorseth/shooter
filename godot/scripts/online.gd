@@ -265,7 +265,7 @@ func refresh_progress() -> void:
 		return
 	var result: Variant = await _rpc("progress_get", {})
 	if result != null:
-		ProgressStore.set_totals(int(result.get("xp", 0)), _kills(result))
+		ProgressStore.set_totals(result)
 
 
 ## Reads the account's progress again in a few seconds, once a ranked
@@ -316,7 +316,11 @@ func _start(name: String) -> bool:
 	var local := ProgressStore.totals()
 	if (
 		String(config.get_value("account", "imported", "")) != user_id
-		and (int(local.xp) > 0 or not (local.weapon_kills as Dictionary).is_empty())
+		and (
+			int(local.xp) > 0
+			or not (local.weapon_kills as Dictionary).is_empty()
+			or not (local.stats as Dictionary).is_empty()
+		)
 	):
 		if await _rpc("progress_import", local) == null:
 			return _sign_in_failed()
@@ -334,7 +338,7 @@ func _start(name: String) -> bool:
 	if ClassStore.path() != _classes_cache:
 		_local_classes = ClassStore.path()
 	ProgressStore.use_file(_progress_cache)
-	ProgressStore.set_totals(int(progress.get("xp", 0)), _kills(progress))
+	ProgressStore.set_totals(progress)
 	ProgressStore.on_added = _report_match
 	ClassStore.use_file(_classes_cache)
 	# A new account starts with the classes made on this machine.
@@ -372,10 +376,12 @@ func _note(text: String) -> bool:
 
 ## A match the game reports itself (local bots, or a server that does not
 ## report to the account server). The answer is the account's new totals.
-func _report_match(xp: int, kills: Dictionary) -> void:
-	var result: Variant = await _rpc("progress_match", {"xp": xp, "weapon_kills": kills})
+func _report_match(xp: int, kills: Dictionary, stats: Dictionary) -> void:
+	var result: Variant = await _rpc(
+		"progress_match", {"xp": xp, "weapon_kills": kills, "stats": stats}
+	)
 	if result != null and is_signed_in():
-		ProgressStore.set_totals(int(result.get("xp", 0)), _kills(result))
+		ProgressStore.set_totals(result)
 
 
 ## Saves the classes on the account. Writes go one at a time, newest last,
@@ -482,11 +488,6 @@ func _use_local() -> void:
 			ClassStore.use_default_file()
 		else:
 			ClassStore.use_file(_local_classes)
-
-
-static func _kills(progress: Dictionary) -> Dictionary:
-	var kills: Variant = progress.get("weapon_kills", {})
-	return kills if kills is Dictionary else {}
 
 
 static func _describe(error: NakamaException) -> String:
