@@ -78,3 +78,10 @@ These original game assets are not CC0 and retain their respective owners' right
 no separate redistribution license was supplied with the export. The converter
 and Godot scene integration are local implementations. See
 [the export and rebuild notes](../../docs/assets/nuketown.md) for provenance.
+
+## Editor add-ons
+
+| Add-on | Files | Source | License |
+| --- | --- | --- | --- |
+| ProtonScatter 4.0 by HungryProton (`ca624412c657d469147b4ce464cee290df738a40`) | `godot/addons/proton_scatter/` | [Release 4.0](https://github.com/HungryProton/scatter/releases/tag/4.0) | MIT |
+| FuncGodot 2025.12 by the func-godot contributors (`169f2dd1461c0f166c81bf7e8c4fd6bce8af3a8a`) | `godot/addons/func_godot/` | [Release 2025.12](https://github.com/func-godot/func_godot_plugin/releases/tag/2025.12) | MIT |
