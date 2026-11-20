@@ -158,6 +158,21 @@ towers stand where the photos show them. The high-bays are shadowed downlights
 with a faint uplight, over a polished slab with saw cuts and cracks. Tilt-up
 walls show lifting inserts, and the scene adds light haze and dust.
 
+The hall is lit by a baked lightmap (`scenes/warehouse.lmbake`), as the other
+maps are: the high-bays, their uplights, and the office lamps are bake-only
+lights (`BakedLights`, removed in the game), and the sun through the roof
+breach is baked too, with a live copy for players and the haze on High only.
+One failing high-bay stays live so it can flicker. The reflection probes are
+High-only. Drawn live (with SDFGI, SSIL, and screen-space reflections) the hall
+cost 23 to 29 ms a frame on Medium on the reference card; baked it costs 5.7
+(6.5 at the worst view). The builder keeps the setup, so after a rebuild bake
+again with `tools/bake_lightmaps.sh res://scenes/warehouse.tscn`. Two traps:
+a LightmapGI bakes only what is under its parent, so it sits at the scene's
+root, and the fixture housings are kept out of the bake, or each lamp, which
+sits inside its housing, is shadowed off the whole hall. The bake runs at
+0.7 of the meshes' texel density: at full density it runs the 3 GB reference
+card out of memory.
+
 - Layout source: [`tools/map_blockout/warehouse_photo_layout.py`](../tools/map_blockout/warehouse_photo_layout.py)
   writes `godot/tools/warehouse_photo_layout.json`.
 - Builder: [`godot/tools/warehouse_photo_build.gd`](../godot/tools/warehouse_photo_build.gd)

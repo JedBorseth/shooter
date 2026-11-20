@@ -32,6 +32,8 @@ const PRESETS := [
 		"ssao_quality": RenderingServer.ENV_SSAO_QUALITY_VERY_LOW,
 		"glow": false,
 		"volumetric_fog": false,
+		"screen_space_gi": false,
+		"high_only_nodes": false,
 		"shadow_atlas": 2048,
 		"shadow_filter": RenderingServer.SHADOW_QUALITY_SOFT_VERY_LOW,
 		"shadow_distance": 0.5,
@@ -53,6 +55,8 @@ const PRESETS := [
 		"ssao_quality": RenderingServer.ENV_SSAO_QUALITY_LOW,
 		"glow": true,
 		"volumetric_fog": false,
+		"screen_space_gi": false,
+		"high_only_nodes": false,
 		"shadow_atlas": 4096,
 		"shadow_filter": RenderingServer.SHADOW_QUALITY_SOFT_LOW,
 		"shadow_distance": 0.8,
@@ -74,6 +78,8 @@ const PRESETS := [
 		"ssao_quality": RenderingServer.ENV_SSAO_QUALITY_MEDIUM,
 		"glow": true,
 		"volumetric_fog": true,
+		"screen_space_gi": true,
+		"high_only_nodes": true,
 		"shadow_atlas": 4096,
 		"shadow_filter": RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM,
 		"shadow_distance": 1.0,
@@ -92,6 +98,10 @@ const PRESETS := [
 ## authored with, recorded while a preset was applied. `adopt` reads it once and
 ## removes it, so it is never saved again.
 const _STALE_AUTHORED := &"_graphics_authored"
+## Nodes in this group (saved with the scene) are shown on High only: a
+## map's live extras whose light is also baked, such as Warehouse's
+## reflection probes and the sun through its roof breach.
+const HIGH_ONLY := &"graphics_high_only"
 const MotionBlur := preload("res://scripts/motion_blur.gd")
 const Looks := preload("res://scripts/looks.gd")
 ## The world surface shaders (both include shaders/world.gdshaderinc).
@@ -278,6 +288,9 @@ static func adopt(node: Node, preset: int) -> void:
 				"ssao": env.ssao_enabled,
 				"glow": env.glow_enabled,
 				"volumetric_fog": env.volumetric_fog_enabled,
+				"sdfgi": env.sdfgi_enabled,
+				"ssil": env.ssil_enabled,
+				"ssr": env.ssr_enabled,
 			}
 			authored = _take_stale(env, authored)
 			# After the stale values: these two are not in old scenes' metadata.
@@ -292,7 +305,7 @@ static func adopt(node: Node, preset: int) -> void:
 			# Eye adaptation (scripts/eye_adaptation.gd) scales this.
 			authored["exposure"] = env.tonemap_exposure
 			_authored[id] = authored
-	elif node is DirectionalLight3D:
+	elif node is DirectionalLight3D and not node.is_in_group(HIGH_ONLY):
 		var light := node as DirectionalLight3D
 		var id := light.get_instance_id()
 		if not _authored.has(id):
@@ -300,7 +313,7 @@ static func adopt(node: Node, preset: int) -> void:
 			Looks.apply_sun(light, scene)
 			var authored := {"shadow_distance": light.directional_shadow_max_distance}
 			_authored[id] = _take_stale(light, authored)
-	else:
+	elif not node.is_in_group(HIGH_ONLY):
 		return
 	node.add_to_group(&"graphics_adopted")
 	_apply_node(node, PRESETS[clampi(preset, 0, PRESETS.size() - 1)])
@@ -331,6 +344,9 @@ static func _compositor() -> Compositor:
 static func _apply_node(node: Node, p: Dictionary) -> void:
 	if not is_instance_valid(node):
 		return
+	if node.is_in_group(HIGH_ONLY) and node is Node3D:
+		(node as Node3D).visible = p["high_only_nodes"]
+		return
 	if node is WorldEnvironment:
 		(node as WorldEnvironment).compositor = _compositor() if _motion_blur else null
 		var env := (node as WorldEnvironment).environment
@@ -340,6 +356,13 @@ static func _apply_node(node: Node, p: Dictionary) -> void:
 		env.ssao_enabled = authored["ssao"] and p["ssao"]
 		env.glow_enabled = authored["glow"] and p["glow"]
 		env.volumetric_fog_enabled = authored["volumetric_fog"] and p["volumetric_fog"]
+		# Live global illumination and reflections cost several milliseconds
+		# each on the reference card (Warehouse, Medium: SDFGI 5.1 ms, SSIL
+		# 2.6, SSR 1.9); maps bake their light instead. Only High keeps them.
+		var gi: bool = p["screen_space_gi"]
+		env.sdfgi_enabled = authored.get("sdfgi", false) and gi
+		env.ssil_enabled = authored.get("ssil", false) and gi
+		env.ssr_enabled = authored.get("ssr", false) and gi
 		env.tonemap_exposure = authored["exposure"] * pow(2.0, _adaptation)
 		_apply_vitality(env, authored)
 	elif node is DirectionalLight3D and _authored.has(node.get_instance_id()):

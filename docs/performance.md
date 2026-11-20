@@ -213,4 +213,14 @@ GPU time on Medium at 1080p on the reference card, average over viewpoints (wors
 | Zombies skyline rendered from tree, town, and pylon meshes into a horizon strip (two texture reads on sky pixels near the horizon, Medium and High), the moon drawn lower on the moonlight's bearing (free: no light moves); the sky behind the skyline is skipped, and Medium reads its cloud noise once instead of twice to pay for it; Low draws no skyline. `main` measured alongside, alternating, best of two runs per view: Low 3.59, 2.91, 2.89 ms against 3.60, 2.92, 2.91 here (`profile_frame.gd` with an identical-code control: 0.00 to 0.01 ms); Medium 6.12, 5.28, 5.19 against 6.01, 5.14, 5.06; High 8.70, 7.72, 7.66 against 8.73, 7.75, 7.69. Baseline not refreshed | | | 5.40 (6.01) ms |
 | A loaded soldier's build: a bulkier MakeHuman body, thicker plates, padded straps and belt, hip and first-aid pouches, and a hydration carrier (25.0k to 25.4k triangles; far mesh 5.0k to 5.1k; same surfaces and atlas size). `main`'s soldier assets swapped in on one build, alternating, best of two runs per side (average over views): Testing 2.64 / 5.51 / 8.31 ms against 2.63 / 5.51 / 8.36 here; Slamcity 3.75 / 7.58 / 10.78 against 3.75 / 7.58 / 10.87; Zombies (the horde wears the soldier) 4.11 / 5.18 / 7.86 against 4.02 / 5.17 / 7.82. Draw counts identical. Baseline not refreshed | 5.51 (5.70) ms | 7.58 (8.48) ms | 5.17 (5.23) ms |
 
+Warehouse (photo-matched and rebuilt for 6v6, #234 to #285) was never measured when it landed: lit live by 122 spot lights (61 with shadows), SDFGI, SSIL, screen-space reflections, and two reflection probes, it cost 22.9 ms on average on Medium (29.5 at the worst view; Low 8 to 10 ms) with 10,000 to 11,600 draws. Baked into a lightmap like the other maps, with the probes and the live breach sun on High only, it costs:
+
+| Warehouse | GPU ms (avg) | GPU ms (worst view) | Draws (worst view) |
+| --- | ---: | ---: | ---: |
+| Low | 3.03 | 3.42 | about 3,000 |
+| Medium | 5.71 | 6.46 | about 3,600 |
+| High | 12.28 | 13.72 | about 4,000 |
+
+What the live hall cost on Medium (`profile_frame.gd`, view 0, before the bake): live spot lights 13.7 ms (3.7 of it their shadows), SDFGI 5.1, multimeshes 2.9, SSIL 2.6, SSR 1.9, sun shadows 1.7, reflection probes 1.4. The presets now switch SDFGI, SSIL, and SSR off on Low and Medium wherever a map turns them on, and nodes in the `graphics_high_only` group show on High only.
+
 Slamcity's 7.0 ms on Medium is about 0.5 ms more than the old map, over the usual 5% step. It was accepted for the rebuild: the rest is the denser map's own shading (decals, the skyline, small detail, and props are about 0.15 ms each), and the next cut would remove visible detail.

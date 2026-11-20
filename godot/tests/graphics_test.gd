@@ -39,6 +39,7 @@ func _run() -> void:
 	_check_table_sampling()
 	_check_looks()
 	_check_stale_metadata()
+	_check_live_gi()
 	_check_tools_opt_out()
 	_check_vitality()
 	_check_lens(settings)
@@ -187,6 +188,42 @@ func _check_stale_metadata() -> void:
 	settings.set_graphics_preset(1)
 	world.free()
 	sun.free()
+
+
+## SDFGI, SSIL, and screen-space reflections cost several milliseconds each
+## on the reference card: Low and Medium switch them off, High keeps what the
+## map authored.
+func _check_live_gi() -> void:
+	var env := Environment.new()
+	env.sdfgi_enabled = true
+	env.ssil_enabled = true
+	env.ssr_enabled = true
+	var world := WorldEnvironment.new()
+	world.environment = env
+	root.add_child(world)
+	_check(
+		not env.sdfgi_enabled and not env.ssil_enabled and not env.ssr_enabled,
+		"Medium switches off live GI and screen-space reflections"
+	)
+	var settings: Node = root.get_node("Settings")
+	settings.set_graphics_preset(2)
+	_check(
+		env.sdfgi_enabled and env.ssil_enabled and env.ssr_enabled,
+		"High keeps the live GI and reflections the map authored"
+	)
+	settings.set_graphics_preset(0)
+	_check(not env.sdfgi_enabled, "Low switches off SDFGI")
+	settings.set_graphics_preset(1)
+	world.free()
+	# A map's live extras whose light is also baked show on High only.
+	var probe := ReflectionProbe.new()
+	probe.add_to_group(GraphicsQuality.HIGH_ONLY, true)
+	root.add_child(probe)
+	_check(not probe.visible, "a High-only node is hidden on Medium")
+	settings.set_graphics_preset(2)
+	_check(probe.visible, "and shown on High")
+	settings.set_graphics_preset(1)
+	probe.free()
 
 
 func _check_tools_opt_out() -> void:

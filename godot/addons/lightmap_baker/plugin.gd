@@ -35,14 +35,16 @@ func _bake(path: String) -> bool:
 	for i in 600:
 		await _frames(5)
 		root = EditorInterface.get_edited_scene_root()
-		if root != null and root.scene_file_path == path:
+		# A big map (Warehouse) can be the edited scene before it is in the
+		# editor's tree; baking then finds no world to bake in.
+		if root != null and root.scene_file_path == path and root.is_inside_tree():
 			break
 		# The editor can open the scene in a tab but stay on another (the
 		# project's main scene, or one restored from the last session):
 		# asking for an open scene again switches to its tab.
 		if path in EditorInterface.get_open_scenes():
 			EditorInterface.open_scene_from_path(path)
-	if root == null or root.scene_file_path != path:
+	if root == null or root.scene_file_path != path or not root.is_inside_tree():
 		push_error("lightmap baker: could not open %s" % path)
 		return false
 	var lightmaps := root.find_children("*", "LightmapGI", true, false)
