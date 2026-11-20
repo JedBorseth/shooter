@@ -29,7 +29,7 @@ REALTIME=(net_test server_browser_test local_pause_test killcam_test zombies_net
 # with no arguments.
 declare -A RUNS=(
   [server_browser_test]="-- --directory 127.0.0.1:27985|-- --nuketown --directory 127.0.0.1:27985"
-  [bots_test]="-- --slamcity|-- --warehouse"
+  [bots_test]="-- --slamcity|-- --warehouse|-- --nuketown"
   [domination_bots_test]="|-- --warehouse"
   [killcam_test]="-- --tdm|-- --snd"
 )

@@ -118,5 +118,5 @@ middle 13 m apart (the testing arena).
 ## Still to come
 
 An announcer voice for the calls, a flag pole model at each flag, overtime,
-and Nuketown bots (its navigation mesh does not bake on a headless server):
-see the Domination items in [TODO.md](../TODO.md).
+and better bot play on Nuketown, where one team tends to take all three flags
+and hold them: see the Domination items in [TODO.md](../TODO.md).
