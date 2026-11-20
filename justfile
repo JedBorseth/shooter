@@ -47,8 +47,9 @@ test-one name: build
 test *names: build
     GODOT={{godot}} .github/scripts/godot-tests.sh {{names}}
 
-# Everything CI checks, except the exports.
-ci: check-rust check-gd test
+# Everything CI checks, except the exports, plus the frame-budget gate when
+# this machine has an NVIDIA GPU (GitHub's runners have none).
+ci: check-rust check-gd test perf-gate-if-gpu
 
 # Capture reference screenshots into DIR (needs a GPU and a display, or Xvfb).
 screens dir="/tmp/shooter-screens": build
@@ -62,3 +63,21 @@ bench:
 # `just cpu-bench --map warehouse --bots 11`.
 cpu-bench *args: build
     tools/cpu_bench.sh {{args}}
+
+# Fail if any map's worst view is over its GPU budget (docs/perf/budgets.json)
+# or more than 5% slower than docs/perf/baseline.json, best of two runs per
+# view. Needs the reference GPU and a display or Xvfb. Medium only by default;
+# `just perf-gate low,medium,high` for every preset.
+perf-gate presets="medium":
+    BENCH_PRESETS={{presets}} tools/benchmark.sh --out benchmark.json
+    BENCH_PRESETS={{presets}} tools/benchmark.sh --out benchmark-2.json
+    python3 tools/perf_gate.py benchmark.json benchmark-2.json
+
+# The gate on machines with an NVIDIA GPU; skipped, with a note, elsewhere.
+perf-gate-if-gpu:
+    #!/usr/bin/env bash
+    if command -v nvidia-smi >/dev/null && nvidia-smi -L >/dev/null 2>&1; then
+        just perf-gate
+    else
+        echo "perf gate skipped: no NVIDIA GPU"
+    fi

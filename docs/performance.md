@@ -8,9 +8,13 @@ Measured at 1920×1080 on a GTX 1060 3GB, the reference card. The budget is GPU 
 
 | Preset | GPU budget | Leaves room for | Today (worst view) |
 | --- | --- | --- | --- |
-| Low | 4 ms | weaker cards and laptops at 60 fps | 4.4 ms (Slamcity; over budget since its block layout, #143) |
-| Medium (default) | 8 ms | 60 fps with plenty of headroom, 100+ fps on the reference card | 8.6 ms (Slamcity, the same view; every other map is under 6 ms) |
-| High | 12 ms | 60 fps | 11.8 ms |
+| Low | 4 ms | weaker cards and laptops at 60 fps | 5.8 ms (Breakwater); Slamcity 5.4, Zombies 4.7, Warehouse 3.9, Testing 2.8 |
+| Medium (default) | 6.5 ms (the gate; 8 ms is the hard ceiling) | 144 fps on the reference card with room for the CPU, 60 fps on much weaker cards | Slamcity 8.5 and Breakwater 6.4 to 7.1 over; Warehouse 6.4, Zombies 6.2, Testing 5.8 |
+| High | 12 ms | 60 fps | 12.1 ms (Warehouse, with its live sun and probes); Slamcity 11.8 |
+
+Per map on Medium, best of runs on 2026-11-20 (average over viewpoints, worst in brackets): Testing 5.61 (5.83), Slamcity 7.60 (8.46), its close-ups 7.56 (7.62), Breakwater 6.79 (7.11), Warehouse 5.60 (6.43), Zombies with 24 zombies 5.52 (6.16) ms.
+
+Slamcity and Breakwater are over the Medium gate because of Medium's own full-screen passes, measured at their worst views: ambient occlusion 1.35 to 1.43 ms (nearly all of it the normal and roughness prepass it makes every opaque surface render; its cheapest quality saves nothing), glow 0.72 to 0.78, SMAA 0.65 to 0.79 (FXAA would save 0.45), sun shadows 0.73 to 1.0 (no shorter reach, smaller atlas, or fewer splits moves it), fog 0.17 to 0.37. Nothing left in the maps themselves is worth more than 0.2 ms. Getting them under 6.5 ms means turning one of those passes down on Medium, which changes the default look; that waits for the owner.
 
 Rules for a pull request that changes visuals:
 
@@ -27,6 +31,7 @@ Rules of thumb for this renderer on this card, from the measurements below:
 - Decals cost per pixel they cover and per lighting cluster they touch: keep them few and small, and keep ground decals shallow (Slamcity projects them 0.4 m deep). Paint long road markings as thin geometry instead: Slamcity's 71 decals cost about 0.36 ms on Medium, and moving its markings into the mesh saved about 0.15 ms.
 - Combat effects come from fixed pools (`rust/game/src/effects.rs`), bounded per preset, and an impact hides once its particles are done, so an idle pool draws nothing. Big transparent puffs are the expensive part of a fight: the blood mist (three lit 0.55 m quads per hit) cost about 0.25 ms on Medium in the firefight before it was cut from five quads.
 - Transparent particles cost a lot up close: one steam vent filling the view cost 0.15–0.5 ms on Medium. Use few, small particles, and no proximity fade.
+- Big lit smoke costs through its lighting: Slamcity's plume (44 puffs of 9 to 13 m) cost 0.8 ms at the worst view, 0.64 ms of it per-pixel light, even standing mostly behind the station. Camera-facing puffs have one normal across the quad, so `smoke.gdshader` lights per vertex and skips shadow lookups: 0.34 ms less, no visible change.
 - Slamcity's city mesh is merged per chunk and material (about 50 materials), and each chunk casts its shadows through one merged shadow-only twin. Small things sit in a 16 m grid of chunks hidden beyond 40 m; a visibility range only works when a mesh's origin is near its geometry.
 - Reflection probes are expensive here: four small interior probes in Slamcity cost about 0.8 ms whenever a room filled the screen, and one probe over the whole block cost 0.7 ms everywhere. Baked lightmaps light the interiors instead (`tools/bake_lightmaps.sh`).
 - A full-screen pass is never free on this card. Measured on Medium in Slamcity: sun shadows 1.2 ms, glow 1.1 ms, SSAO 0.9 ms, SMAA 0.7 ms (FXAA would be 0.3 ms), fog 0.1 to 0.3 ms. A canvas pass over the whole screen costs about 0.13 ms when it only blends, and about 0.5 ms when it reads the screen (a copy, then five samples per pixel). That is why the lens sharpens on High only.
@@ -60,6 +65,10 @@ Narrow a run with `BENCH_MAPS=slamcity`, `BENCH_PRESETS=medium`, or `BENCH_FRAME
 **Read GPU time, not frames per second.** GPU time comes from the renderer's own timestamps. Under Xvfb, each frame is also copied through the CPU to the virtual display, which adds about 8 ms at 1080p. That caps the wall-clock numbers near 60–100 fps even when the GPU is idle half the frame. On a real display, the frame rate follows GPU time.
 
 When a PR changes the look on purpose, it updates `docs/perf/baseline.json` with its own run, so the next PR compares against it.
+
+### The gate
+
+`just perf-gate` runs the benchmark twice on Medium and `tools/perf_gate.py` fails if a map's worst view, each view at its better run, is over its budget in `docs/perf/budgets.json` or more than 5% slower than the baseline. `just perf-gate low,medium,high` checks every preset. `just ci` runs it after the other checks on a machine with an NVIDIA GPU and skips it, with a note, elsewhere: GitHub's runners have no GPU, so it never runs there. The budgets are the preset budgets above; a map over one while its fix waits for a decision has its own limit under `maps`, with the reason. Run it with the GPU otherwise idle (on Josh's dev box, under `flock ~/.cache/shooter-fidelity/gpu.lock`); another program rendering at the same time inflates GPU time.
 
 To see where a frame's time goes, run the cost breakdown. It holds one benchmark viewpoint and turns one thing off (or swaps it for a cheaper setting) at a time: antialiasing, ambient occlusion, glow, fog, the grade, sun shadows and their filter and splits, the lens pass, anisotropic filtering, and the render scale. Use it to find where a new effect can be paid back.
 
@@ -212,6 +221,7 @@ GPU time on Medium at 1080p on the reference card, average over viewpoints (wors
 | Zombie horde variety: zombie clothes pressed to a worn value and dirtied, skin drained to a lifted pallor (a few ALU ops in the character shader, zombies only), and each zombie's walk on its own stride phase. `main`'s shader measured alongside on one build, alternating, best of two runs: Low 3.13 / Medium 5.50 / High 8.05 ms against 3.15 / 5.43 / 8.04 here (one Low run disturbed); `profile_frame.gd` swapping the shader in the same run prices it at 0.01 ms on Low and Medium. Baseline not refreshed | | | 5.43 (6.06) ms |
 | Zombies skyline rendered from tree, town, and pylon meshes into a horizon strip (two texture reads on sky pixels near the horizon, Medium and High), the moon drawn lower on the moonlight's bearing (free: no light moves); the sky behind the skyline is skipped, and Medium reads its cloud noise once instead of twice to pay for it; Low draws no skyline. `main` measured alongside, alternating, best of two runs per view: Low 3.59, 2.91, 2.89 ms against 3.60, 2.92, 2.91 here (`profile_frame.gd` with an identical-code control: 0.00 to 0.01 ms); Medium 6.12, 5.28, 5.19 against 6.01, 5.14, 5.06; High 8.70, 7.72, 7.66 against 8.73, 7.75, 7.69. Baseline not refreshed | | | 5.40 (6.01) ms |
 | A loaded soldier's build: a bulkier MakeHuman body, thicker plates, padded straps and belt, hip and first-aid pouches, and a hydration carrier (25.0k to 25.4k triangles; far mesh 5.0k to 5.1k; same surfaces and atlas size). `main`'s soldier assets swapped in on one build, alternating, best of two runs per side (average over views): Testing 2.64 / 5.51 / 8.31 ms against 2.63 / 5.51 / 8.36 here; Slamcity 3.75 / 7.58 / 10.78 against 3.75 / 7.58 / 10.87; Zombies (the horde wears the soldier) 4.11 / 5.18 / 7.86 against 4.02 / 5.17 / 7.82. Draw counts identical. Baseline not refreshed | 5.51 (5.70) ms | 7.58 (8.48) ms | 5.17 (5.23) ms |
+| Warehouse lit by a lightmap instead of live lights, SDFGI, SSIL, and SSR (#354); smoke lit per vertex; presets switch live GI off on Low and Medium. Baseline refreshed with all maps, Warehouse included | 5.61 (5.83) ms | 7.60 (8.46) ms | 5.52 (6.16) ms |
 
 Warehouse (photo-matched and rebuilt for 6v6, #234 to #285) was never measured when it landed: lit live by 122 spot lights (61 with shadows), SDFGI, SSIL, screen-space reflections, and two reflection probes, it cost 22.9 ms on average on Medium (29.5 at the worst view; Low 8 to 10 ms) with 10,000 to 11,600 draws. Baked into a lightmap like the other maps, with the probes and the live breach sun on High only, it costs:
 
