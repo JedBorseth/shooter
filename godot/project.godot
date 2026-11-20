@@ -18,6 +18,7 @@ Settings="*res://scripts/settings.gd"
 Net="*res://scripts/net/bootstrap.gd"
 Nakama="*res://addons/com.heroiclabs.nakama/Nakama.gd"
 Online="*res://scripts/online.gd"
+Matchmaking="*res://scripts/matchmaking.gd"
 CyclopsAutoload="*res://addons/cyclops_level_builder/cyclops_autoload.tscn"
 
 [debug]

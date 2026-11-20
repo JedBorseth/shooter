@@ -9,3 +9,9 @@ session:
   refresh_token_expiry_sec: 2592000
 runtime:
   path: /nakama/data/modules
+matchmaker:
+  # Look for matches every 5 seconds. A ticket first waits for a full match
+  # (its max count); after 3 looks (15 seconds) it takes the best match it
+  # can, down to its min count, and bots fill the rest of the server.
+  interval_sec: 5
+  max_intervals: 3

@@ -74,9 +74,9 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 theme_override_constants/margin_left = 64
-theme_override_constants/margin_top = 40
+theme_override_constants/margin_top = 28
 theme_override_constants/margin_right = 64
-theme_override_constants/margin_bottom = 32
+theme_override_constants/margin_bottom = 24
 
 [node name="Layout" type="VBoxContainer" parent="Margin"]
 layout_mode = 2
@@ -107,7 +107,7 @@ mouse_filter = 2
 custom_minimum_size = Vector2(500, 0)
 layout_mode = 2
 size_flags_horizontal = 0
-theme_override_constants/separation = 4
+theme_override_constants/separation = 2
 
 [node name="MatchHeading" type="Label" parent="Margin/Layout/Menu"]
 custom_minimum_size = Vector2(0, 28)
@@ -192,6 +192,16 @@ layout_mode = 2
 theme_type_variation = &"Eyebrow"
 text = "ONLINE AND CO-OP"
 vertical_alignment = 2
+
+[node name="QuickPlay" type="Button" parent="Margin/Layout/Menu"]
+custom_minimum_size = Vector2(500, 40)
+layout_mode = 2
+mouse_default_cursor_shape = 2
+theme_type_variation = &"RouteButton"
+text = "Quick Play"
+icon = ExtResource("3_arrow")
+alignment = 0
+icon_alignment = 2
 
 [node name="Multiplayer" type="Button" parent="Margin/Layout/Menu"]
 custom_minimum_size = Vector2(500, 40)

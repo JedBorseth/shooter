@@ -301,17 +301,19 @@ Rounds with one life each (`rust/sim/src/snd.rs`, `--mode snd`), on Slamcity. Cl
 
 ## Phase 5: online services (all self-hosted)
 
-- [ ] Nakama (self-hosted, Docker Compose) for accounts, parties, and matchmaking. Use the `nakama-godot` client.
+- [x] Nakama (self-hosted, Docker Compose) for accounts, parties, and matchmaking. Use the `nakama-godot` client.
   - [x] The stack (`docker/online`), device sign-in with a username on the title screen, and progression and classes on the account ([docs/online.md](docs/online.md)).
   - [x] Ranked dedicated servers (`--accounts`): sign-in required, unlocks checked against the account, match XP reported by the server ([docs/online.md](docs/online.md#ranked-servers)).
-  - [ ] Parties and quick-play matchmaking per mode.
+  - [x] Parties (invite by name) and quick play per mode, with a match of the party's own and bots when nobody else is searching ([docs/online.md](docs/online.md#parties-and-quick-play)).
   - [ ] Sign in on another machine: link an email and password to the account.
+  - [ ] Party chat and a friends list (Nakama has both), and a party lobby that follows the leader into a server browser match.
+  - [ ] Matchmaking by skill and ping (Nakama matchmaker properties), once there are enough players to choose from.
   - [ ] Run the stack on the public host behind TLS, so `borseth.ddns.net:7350` answers.
 - [x] Dockerfile for the headless server (Godot export + Rust extension): `docker/server`, published to `ghcr.io/jedborseth/shooter-server` from `main` ([docs/server.md](docs/server.md)).
 - [ ] Strip textures from the server export (558 MB of the 693 MB pack is `.ctex` the server never draws): mark image files "Strip Visuals" in the Linux Server preset.
-- [ ] Server allocation: Nakama match handler starts or assigns a dedicated server and hands its address to players. Agones on Kubernetes later.
+- [x] Server allocation: Nakama match handler starts or assigns a dedicated server and hands its address to players. Agones on Kubernetes later.
   - [x] The allocator (`rust/allocator`): starts a ranked server container per match through the Docker socket, on its own port pair, which stops once empty ([docs/online.md](docs/online.md#server-allocation)).
-  - [ ] The Nakama match handler that calls it from the matchmaker and hands players the address.
+  - [x] The Nakama match handler (`shooter_match.lua`) that calls it for each match and hands players the address.
 - [x] Server-side validation and anti-cheat basics: packet floods and garbage disconnect; aim snaps onto hits, view ticks the round trip does not explain, and lag switching are flagged in the server log, never kicked ([docs/netcode.md](docs/netcode.md#server-checks), `shooter_sim::net::integrity`). Speed, teleports, and fire rate cannot be cheated: the server simulates them from inputs.
   - [ ] Follow-ups: send each client only the enemies it could see or hear (against wallhacks; killcams and the minimap need a plan for the rest), and a way for an operator to see flags without reading the log (once there are accounts).
 
@@ -391,7 +393,7 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
   - [x] Scavenger packs.
   - [x] Bots go for Scavenger packs nearby when low on ammunition.
 - [x] Progression: XP, levels, weapon unlocks: score is XP plus a match bonus, levels 1 to 55, Create-a-Class at level 4, weapons, tacticals, and wildcards by level, attachments by kills with the weapon, kept locally (`rust/sim/src/progression.rs`, `godot/scripts/progress_store.gd`).
-- [ ] Progression follow-ups: keep progress on the server once accounts exist (Phase 5), so it can check unlocks; prestige; weapon levels shown in the menu.
+- [ ] Progression follow-ups: prestige; weapon levels shown in the menu. (Progress on the account, with unlocks checked by ranked servers, is done: [docs/online.md](docs/online.md).)
 - [x] Gun Game: free-for-all up a ladder of the eight weapons, with a local match button on the title screen (`rust/sim/src/gun_game.rs`).
 - [x] Capture the Flag: flags, takes, drops, returns, and captures on the server (`rust/sim/src/ctf.rs`), bots that attack, defend, return, and carry, flag markers and calls on the client (`godot/scripts/net/ctf_view.gd`), and a title screen button.
 - [ ] More modes: Domination, the Black Ops 2 way ([docs/domination.md](docs/domination.md)). (Free-for-all is done: `--mode ffa`, on Gun Game's teamless path. Search and Destroy has its own section.)
