@@ -12,6 +12,7 @@ pub mod fmath;
 pub mod gun_game;
 pub mod hardpoint;
 pub mod hitbox;
+pub mod killcam;
 pub mod look;
 pub mod melee;
 pub mod mount;

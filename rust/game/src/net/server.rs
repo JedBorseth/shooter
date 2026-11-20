@@ -64,6 +64,7 @@ use shooter_sim::equipment;
 use shooter_sim::gun_game::{self, Progress, Step};
 use shooter_sim::hardpoint::{HardpointRules, HardpointState, HillTime, Holder, Zone};
 use shooter_sim::hitbox::clock::{BodyClock, BodyState};
+use shooter_sim::killcam::{self, KillRecord};
 use shooter_sim::melee;
 use shooter_sim::net::discovery::{ServerInfo, query_port_for};
 use shooter_sim::net::input_queue::InputQueue;
@@ -277,6 +278,9 @@ pub struct NetServer {
     /// only as far as they allow, and snapshots carry them so players who
     /// join after one popped still see it.
     smokes: Vec<HangingSmoke>,
+    /// The latest kill of the match (or the Search and Destroy round), for
+    /// the killcam that ends it.
+    last_kill: Option<KillRecord>,
 }
 
 /// A smoke cloud still hanging.
@@ -329,6 +333,8 @@ struct Avatar {
     /// A bot that plays the match decides its inputs here.
     brain: Option<BotBrain>,
     respawn_in: f32,
+    /// The tick this player died on, while a killcam holds their respawn.
+    killcam_since: Option<Tick>,
     /// Tick of the latest spawn: shots rewound to before it cannot hit this life.
     spawned_at: Tick,
     score: ScoreState,
@@ -386,6 +392,9 @@ struct Attack {
     /// The attacker's shot number, which the hit events echo.
     shot: u32,
     melee: bool,
+    /// Ticks the targets were rewound for it (lag compensation), which the
+    /// killcam replays them behind the attacker by.
+    rewind: u8,
 }
 
 /// A grenade that left a hand (or fell from a dead one) this tick.
@@ -1171,7 +1180,26 @@ impl NetServer {
                 }
             }
             ClientMessage::Chat { text, team } => self.relay_chat(index, &text, team),
+            ClientMessage::SkipKillcam => self.skip_killcam(index),
         }
+    }
+
+    /// The client skipped its killcam: it respawns as soon as the respawn
+    /// delay allows, as in Call of Duty (`_killcam.gsc` ends the killcam on
+    /// the use button, and the player spawns).
+    fn skip_killcam(&mut self, index: usize) {
+        let Some(id) = self.clients[index].player else {
+            return;
+        };
+        let (tick, delay) = (self.tick, self.respawn_delay);
+        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
+            return;
+        };
+        let Some(died) = avatar.killcam_since.take() else {
+            return;
+        };
+        let dead_for = tick.saturating_sub(died) as f32 / TICK_RATE as f32;
+        avatar.respawn_in = avatar.respawn_in.min((delay - dead_for).max(0.0));
     }
 
     /// Passes a chat message on, cleaned and rate limited: to everyone, or to
@@ -1259,6 +1287,7 @@ impl NetServer {
             tactical: equipment::Kind::Flash,
             brain,
             respawn_in: 0.0,
+            killcam_since: None,
             spawned_at: self.tick,
             score: ScoreState::default(),
             hits: 0,
@@ -1384,6 +1413,7 @@ impl NetServer {
         avatar.pitch = 0.0;
         avatar.spawned_at = tick;
         avatar.respawn_in = self.respawn_delay;
+        avatar.killcam_since = None;
         body::place(&mut avatar.parts, &self.params.movement, &avatar.predicted);
         self.send_event(id, GameEvent::Spawned { yaw: point.yaw });
     }
@@ -1942,6 +1972,15 @@ impl NetServer {
                 headshot: false,
                 cause: protocol::KillCause::Equipment(kind),
             });
+            self.note_kill(KillRecord {
+                killer: credited.unwrap_or(id),
+                victim: id,
+                tick: self.tick,
+                rewind: 0,
+                weapon,
+                cause: protocol::KillCause::Equipment(kind),
+                headshot: false,
+            });
             self.record_death(id);
             if credited.is_some() {
                 kills.push(Kill {
@@ -2084,6 +2123,7 @@ impl NetServer {
             weapon: strike.weapon,
             shot: strike.shot,
             melee: true,
+            rewind: rewind_ticks(self.tick, rewind),
         };
         self.apply_hits(&attack, &[hit]);
     }
@@ -2203,6 +2243,7 @@ impl NetServer {
             weapon: shot.weapon,
             shot: shot.shot,
             melee: false,
+            rewind: rewind_ticks(self.tick, rewind),
         };
         self.apply_hits(&attack, &hits);
         self.damage_props(shot.shooter, shot.weapon, &prop_hits, &hits);
@@ -2272,16 +2313,26 @@ impl NetServer {
                 {
                     carrier_kills += 1;
                 }
+                let cause = if attack.melee {
+                    protocol::KillCause::Knife
+                } else {
+                    protocol::KillCause::Weapon
+                };
                 self.broadcast_event(&GameEvent::Kill {
                     killer: attack.attacker,
                     victim: hit.id,
                     weapon: attack.weapon,
                     headshot: hit.headshot,
-                    cause: if attack.melee {
-                        protocol::KillCause::Knife
-                    } else {
-                        protocol::KillCause::Weapon
-                    },
+                    cause,
+                });
+                self.note_kill(KillRecord {
+                    killer: attack.attacker,
+                    victim: hit.id,
+                    tick: self.tick,
+                    rewind: attack.rewind,
+                    weapon: attack.weapon,
+                    cause,
+                    headshot: hit.headshot,
                 });
                 self.record_death(hit.id);
                 let victim = self
@@ -2540,6 +2591,15 @@ impl NetServer {
                     headshot: false,
                     cause: protocol::KillCause::Weapon,
                 });
+                self.note_kill(KillRecord {
+                    killer: credited.unwrap_or(id),
+                    victim: id,
+                    tick: self.tick,
+                    rewind: 0,
+                    weapon,
+                    cause: protocol::KillCause::Weapon,
+                    headshot: false,
+                });
                 self.record_death(id);
                 if credited.is_some() {
                     kills.push(Kill {
@@ -2578,6 +2638,28 @@ impl NetServer {
     }
 
     /// Counts a death and tells the player their new totals.
+    /// A kill happened: remembers it for the killcam that ends a round or
+    /// the match, and sends the victim the killcam to watch before they
+    /// respawn, when the mode gives one (`killcam::respawn_killcam`). Bots
+    /// watch nothing.
+    fn note_kill(&mut self, record: KillRecord) {
+        let phase = self.match_state.phase;
+        if phase == Phase::Playing && record.killer != record.victim {
+            self.last_kill = Some(record);
+        }
+        if !killcam::respawn_killcam(self.game, phase, record.killer, record.victim)
+            || self.client_of(record.victim).is_none()
+        {
+            return;
+        }
+        let killcam = record.killcam(killcam::Kind::Respawn);
+        let tick = self.tick;
+        if let Some(victim) = self.avatars.iter_mut().find(|a| a.id == record.victim) {
+            victim.killcam_since = Some(tick);
+        }
+        self.send_event(record.victim, GameEvent::Killcam(killcam));
+    }
+
     fn record_death(&mut self, id: u8) {
         let tick = self.tick;
         let scoring = self.match_state.scoring();
@@ -3565,6 +3647,13 @@ fn phase_name(phase: Phase) -> &'static str {
         Phase::Playing => "playing",
         Phase::Ended { .. } => "ended",
     }
+}
+
+/// Ticks between `now` and a shot's rewound tick, for its killcam.
+fn rewind_ticks(now: Tick, rewound: f64) -> u8 {
+    (f64::from(now) - rewound)
+        .round()
+        .clamp(0.0, f64::from(u8::MAX)) as u8
 }
 
 fn default_primary() -> WeaponId {
