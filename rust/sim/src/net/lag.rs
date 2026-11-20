@@ -217,6 +217,9 @@ impl RemoteSample {
                 crouch: Some(self.crouch),
                 hunch: 0.0,
                 throw: self.throw,
+                kneel: self
+                    .charge_use
+                    .map(|(kind, t)| hitbox::action::kneel(kind, t)),
             },
         })
     }
@@ -583,6 +586,7 @@ mod tests {
                 crouch: Some(0.0),
                 hunch: 0.0,
                 throw: None,
+                kneel: None,
                 progress: Progress {
                     stride: 0.25,
                     reload: 0.2,

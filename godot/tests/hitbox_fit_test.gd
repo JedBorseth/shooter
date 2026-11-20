@@ -2,8 +2,9 @@ extends SceneTree
 ## Headless test that the hit zones follow the animated soldier: "what you see
 ## is what you hit". A remote player is posed through every state another
 ## player can be seen in (idle, walking, running, sprinting, strafing, crouched,
-## sliding, aiming, reloading, mantling, vaulting, in the air, each weapon, looking up and
-## down, turning, throwing a grenade), and for each hit zone it measures:
+## sliding, aiming, reloading, mantling, vaulting, in the air, each weapon,
+## looking up and down, turning, throwing a grenade, kneeling to plant or
+## defuse), and for each hit zone it measures:
 ##
 ## - axis: how far the skeleton's bones are from the zone's capsule axes (the
 ##   larger of bone-to-axis and axis-to-bone, sampled along both), in cm;
@@ -187,6 +188,11 @@ func _states() -> Array[Dictionary]:
 	# Crouched, the cocked arm is drawn bent a little further than the zones'
 	# arm solve bends it (7.9 cm): the reach's allowance.
 	add.call("crouch_throw_cocked", {"stance": "crouching", "throw": 0.45}, {"phase": "reach"})
+	# Kneeling at Search and Destroy's charge (`PlayerView::charge_use`),
+	# planting and defusing. The 0.3 s on the way down is not measured: like
+	# any stance change partway, the blended legs stray past the bounds.
+	add.call("plant", {"action": "plant", "action_progress": 0.5, "crouch": 0.0})
+	add.call("defuse", {"action": "defuse", "action_progress": 0.5, "crouch": 0.0})
 	add.call("turning", {}, {"yaw_rate": 3.0})
 	add.call("turned", {"yaw": 2.2, "pitch": 0.4})
 	return states

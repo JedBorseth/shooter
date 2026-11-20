@@ -79,8 +79,9 @@ const FOOT_RAY_UP: f32 = 0.45;
 const FOOT_RAY_DOWN: f32 = 0.3;
 const FOOT_IK_RATE: f32 = 14.0;
 /// Where the support hand goes for a plant or defuse, in weapon space: low
-/// in front. A throw follows the grenade's path (`grenade_hold`).
-const PLANT_REACH: shooter_sim::Vec3 = shooter_sim::Vec3::new(-0.1, -0.55, -0.15);
+/// in front, as the hit zones pose it. A throw follows the grenade's path
+/// (`grenade_hold`).
+const PLANT_REACH: shooter_sim::Vec3 = shooter_sim::hitbox::action::KNEEL_REACH;
 /// A weapon switch lowers the old weapon over this long and raises the new
 /// one over this long (seconds).
 const SWITCH_LOWER_SECONDS: f32 = 0.22;
@@ -198,8 +199,7 @@ pub struct SoldierFrame {
     /// (offline) the rig turns its own feet.
     pub turn: Option<(f32, f32)>,
     /// Something done with the hands instead of the weapon, and how far
-    /// along it is (0..1). Nothing sets it yet: it is the hook for planting,
-    /// defusing, and throwing once snapshots carry them.
+    /// along it is (0..1): planting or defusing the charge, or a throw.
     pub action: Option<(ActionPose, f32)>,
     /// What a throw throws.
     pub throw_kind: shooter_sim::equipment::Kind,
@@ -212,7 +212,7 @@ pub struct SoldierFrame {
 }
 
 /// Things a soldier does with their hands instead of the weapon. The hit
-/// zones do not follow these poses (snapshots do not carry them yet).
+/// zones follow each (`Activity::kneel` and `Activity::throw`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ActionPose {
     /// Kneeling over a bomb site, the weapon lowered, both hands at the
@@ -245,7 +245,20 @@ impl SoldierFrame {
                 Some((ActionPose::Throw, t)) => Some(t),
                 _ => None,
             },
+            kneel: self.kneel(),
         }
+    }
+
+    /// How far down a plant or defuse has the body kneeling (0..1, the hit
+    /// zones' `action::kneel`), if it is one.
+    pub fn kneel(&self) -> Option<f32> {
+        let kind = match self.action? {
+            (ActionPose::Plant, _) => shooter_sim::snd::UseKind::Plant,
+            (ActionPose::Defuse, _) => shooter_sim::snd::UseKind::Defuse,
+            (ActionPose::Throw, _) => return None,
+        };
+        self.action
+            .map(|(_, t)| shooter_sim::hitbox::action::kneel(kind, t))
     }
 }
 
@@ -816,10 +829,8 @@ impl SoldierRig {
             (turn, self.own_turning.step)
         });
 
-        let kneeling = matches!(
-            frame.action,
-            Some((ActionPose::Plant | ActionPose::Defuse, _))
-        );
+        let kneel = frame.kneel();
+        let kneeling = kneel.is_some();
         let crouch_target = if frame.stance == Stance::Crouching || kneeling {
             1.0
         } else {
@@ -833,8 +844,8 @@ impl SoldierRig {
         self.crouch = match frame.crouch {
             // The body goes down and up on the simulation's own curve, the
             // one its capsule, eye, and hit zones follow.
-            Some(_) if kneeling => self.crouch + (1.0 - self.crouch) * smoothing(10.0, dt),
-            Some(blend) => shooter_sim::movement::crouch_ease(blend),
+            // Kneeling at the charge goes down on the hit zones' ease.
+            Some(blend) => shooter_sim::movement::crouch_ease(blend).max(kneel.unwrap_or(0.0)),
             None => self.crouch + (crouch_target - self.crouch) * smoothing(12.0, dt),
         };
         // A slide drops in with `Slide_Start` (sped up to be down as soon as
