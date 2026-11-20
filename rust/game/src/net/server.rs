@@ -176,6 +176,12 @@ const ZONE_SPOT_SECONDS: u32 = 4;
 /// How far out from a charge being planted or defused a bot pops its smoke,
 /// toward the other side, in metres.
 const COVER_SMOKE_OUT: f32 = 5.0;
+/// Chance a Hard bot fakes a plant, and a defuse, before the real one when
+/// an enemy is about. The fake defuse is the classic bait; a fake plant
+/// costs the attackers time at the site, and on the bench halved their
+/// plants on Warehouse at one in two.
+const FAKE_PLANT: f32 = 0.2;
+const FAKE_DEFUSE: f32 = 0.5;
 /// How far from a flag carrier its escorts keep, nearest and farthest, in
 /// metres (Black Ops 2: 64 to 512 units).
 const ESCORT_RING: (f32, f32) = (2.0, 10.0);
@@ -1410,6 +1416,7 @@ impl NetServer {
         d.set("tacticals", sum(|b| b.tacticals_thrown));
         d.set("flights", sum(|b| b.flights));
         d.set("flashed", sum(|b| b.flashed));
+        d.set("fakes", sum(|b| b.fakes));
         d
     }
 
@@ -6989,7 +6996,11 @@ impl NetServer {
                 let here = bot.predicted.position;
                 out.push((
                     id,
-                    Some(BotObjective::use_here(to_godot(here)).with_smoke(cover(here))),
+                    Some(
+                        BotObjective::use_here(to_godot(here))
+                            .with_smoke(cover(here))
+                            .with_bait(if attacking { FAKE_PLANT } else { FAKE_DEFUSE }),
+                    ),
                 ));
                 continue;
             }

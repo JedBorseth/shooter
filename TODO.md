@@ -211,7 +211,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [ ] Bots play like Black Ops 2's Combat Training bots (`docs/bots.md`):
   - [x] Search and Destroy: the carrier goes to plant as the clock runs down, escorts guard the plant spot, pushers gather and go in together, attackers switch sites when the target is held, a lurker takes the other site, and defenders rotate to a site under attack (`shooter_sim::snd::bots`, `SndPlan`).
   - [x] Grenades on the objective: an enemy seen near a site, flag, zone, or flag base is worth a frag on its own (flash if no frag), smoke covers a plant, a defuse, and a push onto an enemy flag, and Easy bots throw nothing (`BotObjective::area`, `smoke`).
-  - [ ] Search and Destroy: Hard bots fake a plant or defuse.
+  - [x] Search and Destroy: Hard bots fake a plant or defuse (`BotObjective::bait`).
   - [ ] Search and Destroy on Warehouse favours the defenders with bots (attackers won 5 to 8 rounds of 28 on the bench, before and after the plan): look at its sites' approaches.
   - [x] Domination: bots spread over the flags instead of one team piling onto one (the pile-up was bots trapped in a room the navigation bake shut off, #312), and a bot at a flag its team does not own takes it.
   - [x] Hardpoint: bots head for the next zone before the live one moves (`hardpoint::bots_rotating`).

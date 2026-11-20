@@ -89,6 +89,13 @@ const CROUCH_SHOT_RANGE: f32 = 15.0;
 /// many seconds of seeing it, slide.
 const SLIDE_RANGE: (f32, f32) = (5.0, 14.0);
 const SLIDE_WINDOW: f32 = 0.35;
+/// Hard bots' fake plant or defuse, when an enemy was seen in the last few
+/// seconds or is heard or on the minimap within the range: seconds of the
+/// tap, then of watching for whoever comes to stop it.
+const FAKE_THREAT_SECONDS: f32 = 5.0;
+const FAKE_THREAT_RANGE: f32 = 25.0;
+const FAKE_TAP: f32 = 0.8;
+const FAKE_WATCH: f32 = 1.6;
 /// Seconds a bot keeps hunting the spot where it last saw an enemy.
 const MEMORY_SECONDS: f32 = 4.0;
 /// Seconds of not getting anywhere before a bot jumps, and picks a new goal.
@@ -182,6 +189,9 @@ pub struct BotObjective {
     /// Where to pop smoke on the way, once (an enemy flag being attacked, a
     /// plant or defuse to cover).
     pub smoke: Option<Vector3>,
+    /// Chance a Hard bot fakes the plant or defuse here first
+    /// ([`BotBrain::fake_use`]); zero never.
+    pub bait: f32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -206,6 +216,7 @@ impl BotObjective {
             kind: ObjectiveKind::Run,
             area: None,
             smoke: None,
+            bait: 0.0,
         }
     }
 
@@ -215,6 +226,7 @@ impl BotObjective {
             kind: ObjectiveKind::Hunt,
             area: None,
             smoke: None,
+            bait: 0.0,
         }
     }
 
@@ -224,6 +236,7 @@ impl BotObjective {
             kind: ObjectiveKind::Hold,
             area: None,
             smoke: None,
+            bait: 0.0,
         }
     }
 
@@ -233,12 +246,19 @@ impl BotObjective {
             kind: ObjectiveKind::Use,
             area: None,
             smoke: None,
+            bait: 0.0,
         }
     }
 
     /// Enemies seen within `radius` of `center` are worth a grenade.
     pub fn with_area(mut self, center: Vector3, radius: f32) -> Self {
         self.area = Some((center, radius));
+        self
+    }
+
+    /// A Hard bot fakes the plant or defuse here first with chance `bait`.
+    pub fn with_bait(mut self, bait: f32) -> Self {
+        self.bait = bait;
         self
     }
 
@@ -468,6 +488,15 @@ pub struct BotWorld<'a> {
 /// An enemy on a bot's minimap: who, where, and since which tick.
 pub type RadarDot = (u8, Vector3, Tick);
 
+/// Where a Hard bot's fake plant or defuse is ([`BotBrain::fake_use`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum FakeUse {
+    /// Tapping interact, as if to plant or defuse.
+    Tap,
+    /// Let go, watching where the enemy was for whoever comes to stop it.
+    Watch(Vector3),
+}
+
 /// A live grenade, as bots know it.
 #[derive(Clone, Copy, Debug)]
 pub struct BotGrenade {
@@ -573,6 +602,12 @@ pub struct BotBrain {
     smoked: bool,
     /// Enemy steps heard out of sight: where, and when.
     heard: Option<(Vector3, Tick)>,
+    /// A fake plant or defuse under way: where, since when, and where to
+    /// watch; and the last spot one was considered, once a life per spot.
+    fake: Option<(Vector3, Tick, Vector3)>,
+    faked_at: Option<Vector3>,
+    /// Fake plants and defuses, over the bot's life on the server (tests).
+    pub fakes: u32,
     /// A minimap dot the bot is patrolling toward, since when; and no new
     /// patrol to a far dot before `next_patrol`.
     investigate: Option<(Vector3, Tick)>,
@@ -646,6 +681,9 @@ impl BotBrain {
             blind: None,
             smoked: false,
             heard: None,
+            fake: None,
+            faked_at: None,
+            fakes: 0,
             investigate: None,
             next_patrol: 0,
             danger: None,
@@ -749,6 +787,8 @@ impl BotBrain {
         self.blind = None;
         self.smoked = false;
         self.heard = None;
+        self.fake = None;
+        self.faked_at = None;
         self.investigate = None;
         self.danger = None;
         self.next_throw_check = tick + TICK_RATE;
@@ -852,6 +892,18 @@ impl BotBrain {
                 self.consider_smoke(me, state, world, objective);
             }
             want.interact = self.throwing.is_none();
+            // Hard bots with an enemy about bait it first: a tap of the
+            // plant or defuse, then a look for whoever comes to stop it.
+            if want.interact
+                && let Some(FakeUse::Watch(at)) =
+                    self.fake_use(me, world, objective.map_or(0.0, |o| o.bait))
+            {
+                want.interact = false;
+                let eye = to_sim(me.eye(world.params));
+                let mut view = look::bearing(eye, to_sim(at + Vector3::UP * 1.4));
+                view.y = view.y.clamp(-0.3, 0.3);
+                self.look = bot::turn_toward(look_before, view, skill.turn_rate, TICK_DT);
+            }
             self.keep_throwing(state, look_before, tick, &skill, &mut want);
             return self.press(want, state);
         }
@@ -1792,6 +1844,49 @@ impl BotBrain {
         let round = flat(after - next);
         (leg.length() > 0.0 && round.length() > 0.0 && leg.dot(round) < CORNER_ANGLE.cos())
             .then_some(round)
+    }
+
+    /// A Hard bot's fake plant or defuse at `me.feet`: once a life per spot,
+    /// with `chance` ([`BotObjective::bait`]), when an enemy is about (seen in the last few seconds,
+    /// heard, or on the minimap close by). `None` once it is over or not
+    /// done: hold interact for real.
+    fn fake_use(&mut self, me: &BotPlayer, world: &BotWorld, chance: f32) -> Option<FakeUse> {
+        let tick = world.tick;
+        let ticks = |seconds: f32| (seconds * TICK_RATE as f32) as Tick;
+        if let Some((spot, started, watch)) = self.fake {
+            if horizontal_distance(spot, me.feet) > 1.0 {
+                self.fake = None;
+                return None;
+            }
+            let age = tick.saturating_sub(started);
+            return if age < ticks(FAKE_TAP) {
+                Some(FakeUse::Tap)
+            } else if age < ticks(FAKE_TAP + FAKE_WATCH) {
+                Some(FakeUse::Watch(watch))
+            } else {
+                None
+            };
+        }
+        if self.skill != Skill::Hard
+            || self
+                .faked_at
+                .is_some_and(|at| horizontal_distance(at, me.feet) < 3.0)
+        {
+            return None;
+        }
+        let seen = self
+            .last_seen
+            .filter(|(_, t)| tick.saturating_sub(*t) < ticks(FAKE_THREAT_SECONDS))
+            .map(|(at, _)| at);
+        let threat = seen.or(self.alert(me, world, FAKE_THREAT_RANGE));
+        self.faked_at = Some(me.feet);
+        let at = threat?;
+        if self.random() >= chance {
+            return None;
+        }
+        self.fakes += 1;
+        self.fake = Some((me.feet, tick, at));
+        Some(FakeUse::Tap)
     }
 
     /// Where the bot should watch, if anywhere: steps it heard in the last
