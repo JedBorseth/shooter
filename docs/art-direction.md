@@ -445,7 +445,7 @@ The HUD follows the modern Call of Duty layout (Modern Warfare 2019 on and Black
 
 | Where | What | Script |
 | --- | --- | --- |
-| Top left | Match score block: the mode and clock, a row per side with the score and a bar filling toward the limit, and LEADING, TRAILING, or TIED beside the limit. Outside a match, your own score, kills, deaths, and streak | `net/score_block.gd`, `score_feed.gd` |
+| Top left | The minimap (see below), and under it the match score block: the mode and clock, a row per side with the score and a bar filling toward the limit, and LEADING, TRAILING, or TIED beside the limit. Outside a match, your own score, kills, deaths, and streak | `net/score_block.gd`, `score_feed.gd` |
 | Top centre | Mode pieces: Hardpoint's zone strip, the flags' status in Capture the Flag, and who is alive in Search and Destroy | the mode's view |
 | Top right | Frame rate, when turned on | `hud.gd` |
 | Bottom left | Health (cross, number, segmented bar with a trail after each hit), the kill feed above it (killer, weapon silhouette, headshot mark, victim), and chat above that | `hud_vitals.gd`, `net/kill_feed.gd`, `net/tdm_hud.gd` |
@@ -455,6 +455,14 @@ The HUD follows the modern Call of Duty layout (Modern Warfare 2019 on and Black
 | Lower third | The death card ("KILLED BY", the killer's name and weapon, the respawn countdown) and the hint under it | `hud_centre.gd`, `net/match_banner.gd` |
 | Bottom edge | The controls legend, from the live bindings, for 14 seconds after the first spawn (F1 toggles it) | `hud_centre.gd` |
 
-Deliberate differences from Call of Duty: health shows as a number and bar, because health here regenerates in steps worth reading; the match state reads LEADING or TRAILING rather than Call of Duty's wording; there is no minimap yet.
+Deliberate differences from Call of Duty: health shows as a number and bar, because health here regenerates in steps worth reading; the match state reads LEADING or TRAILING rather than Call of Duty's wording.
+
+### Minimap
+
+The minimap follows Black Ops 2's and every Call of Duty since: a square window, top left, centred on you, turning with you so you always face up. Settings, General, "Rotate minimap" turns that off and keeps north up instead, as Modern Warfare 2019's option does. It shows 64 metres across. You are a white arrow in the middle, teammates are blue arrows pointing where they look, and the mode's objectives sit on it in their holder's colour: Capture the Flag's flags, the live Hardpoint, Domination's lettered flags, and Search and Destroy's sites and dropped or planted charge. An objective out of the window is held at its edge. It hides in killcams and in Zombies, which has none in Call of Duty either.
+
+![The minimap on Warehouse in Domination, with the score block under it](media/minimap.jpg)
+
+Each map's plan is a top-down image rendered from its collision by `godot/tools/build_minimaps.gd` (`godot --headless --path godot --script res://tools/build_minimaps.gd`, or `MINIMAPS=slamcity` for one map). It casts rays down through every pixel: floors are graphite, lighter the higher they stand; walls and solid cover are pale, cut at 2.1 metres above the floor so building interiors show, as Call of Duty's do; floors under a roof are a shade darker, so buildings read as blocks; and a pale line marks every step taller than a kerb. Our plans are flat and colourless where Black Ops 2 painted its from the level's own textures, to keep the HUD quiet. Run the tool again after a map's layout changes. The images are in `godot/assets/minimaps/`, and each map's square in metres is in `godot/scripts/net/minimap_data.gd`.
 
 Weapon silhouettes in `assets/ui/weapons/` are rendered from the weapon models by `godot/tools/weapon_icons.gd`; run it again after a model changes.

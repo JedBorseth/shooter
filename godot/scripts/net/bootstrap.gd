@@ -62,6 +62,7 @@ const REMOTE_PLAYER_SCENE := "res://scenes/remote_player.tscn"
 const OVERLAY_SCRIPT := "res://scripts/net/net_overlay.gd"
 const STATUS_SCRIPT := "res://scripts/net/net_status.gd"
 const TDM_HUD_SCRIPT := "res://scripts/net/tdm_hud.gd"
+const MINIMAP_SCRIPT := "res://scripts/net/minimap.gd"
 const CTF_VIEW_SCRIPT := "res://scripts/net/ctf_view.gd"
 const HARDPOINT_VIEW_SCRIPT := "res://scripts/net/hardpoint_view.gd"
 const DOMINATION_VIEW_SCRIPT := "res://scripts/net/domination_view.gd"
@@ -359,6 +360,14 @@ func _attach_client(main: Node, target: String, options: Dictionary) -> void:
 	tdm_hud.set("client", client)
 	tdm_hud.set("player", player)
 	main.add_child(tdm_hud)
+	# The minimap, top left; it moves the score block down under itself.
+	var minimap := Control.new()
+	minimap.name = "Minimap"
+	minimap.set_script(load(MINIMAP_SCRIPT))
+	minimap.set("client", client)
+	minimap.set("player", player)
+	minimap.set("score_block", tdm_hud.find_child("ScoreBlock", true, false))
+	tdm_hud.add_child(minimap)
 	# Match stings: start, result, time warning, and rounds.
 	var stings := MatchStings.new()
 	stings.client = client

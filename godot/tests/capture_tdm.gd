@@ -4,7 +4,7 @@ extends SceneTree
 ## kill feed, the scoreboard, and the results screen. Starts its own server
 ## process. Needs a GPU and a display (or Xvfb):
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
-##     --script res://tests/capture_tdm.gd [-- --map slamcity --bots 5]
+##     --script res://tests/capture_tdm.gd [-- --map slamcity --bots 5 --mode dom]
 
 const PORT := 27997
 
@@ -45,6 +45,8 @@ func _run() -> void:
 			"3",
 		]
 	)
+	if options.has("mode"):
+		args.append_array(PackedStringArray(["--mode", String(options["mode"])]))
 	_server_pid = OS.create_process(OS.get_executable_path(), args)
 	net.join("127.0.0.1:%d" % PORT, {"map": map, "name": "Local server"})
 	var client: NetClient = null

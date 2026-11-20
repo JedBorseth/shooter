@@ -174,6 +174,7 @@ const DEFAULTS := {
 	&"master_server": DEFAULT_DIRECTORY,
 	&"player_name": "Player",
 	&"skip_killcams": false,
+	&"minimap_rotates": true,
 }
 
 ## Config file section for each setting.
@@ -211,7 +212,7 @@ const SECTIONS := {
 		&"ui_volume",
 		&"audio_mix",
 	],
-	"multiplayer": [&"player_name", &"skip_killcams"],
+	"multiplayer": [&"player_name", &"skip_killcams", &"minimap_rotates"],
 }
 
 ## Allowed values of each int setting.
@@ -310,6 +311,9 @@ var player_name: String = DEFAULTS[&"player_name"]
 ## killcams are skipped one at a time; this skips them all). The killcam
 ## that ends a round or the match still plays.
 var skip_killcams: bool = DEFAULTS[&"skip_killcams"]
+## The minimap turns with the player, who always faces up (Call of Duty's
+## default); off, north stays up and the player's arrow turns.
+var minimap_rotates: bool = DEFAULTS[&"minimap_rotates"]
 
 ## Keyboard and mouse bindings changed from the defaults: action to a
 ## serialized event (see `_event_to_value`).

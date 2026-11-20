@@ -1,9 +1,9 @@
 extends CanvasLayer
 ## Match HUD, added by `Net` when joining a server:
 ##
-## - the score block, top left (`score_block.gd`): the mode and clock, a row
-##   per side with the score and a bar filling toward the limit, and whether
-##   we lead, trail, or are tied (in Search and Destroy, rounds won and the
+## - the score block, top left under the minimap (`score_block.gd`): the
+##   mode and clock, a row per side with the score and a bar filling toward
+##   the limit, and whether we lead, trail, or are tied (in Search and Destroy, rounds won and the
 ##   round's clock). In Free-for-all and Gun Game: ours against the best of
 ##   everyone else's, with the kills to the next weapon in Gun Game;
 ## - the kill feed, bottom left above health (`kill_feed.gd`): killer, the
@@ -761,6 +761,7 @@ func _build() -> void:
 
 func _build_score_bar() -> void:
 	_score = _full_rect(ScoreBlock)
+	_score.name = "ScoreBlock"
 
 
 ## A full-screen drawn piece that lets the mouse through.
