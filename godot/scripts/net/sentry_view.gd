@@ -9,17 +9,17 @@ extends Node3D
 ## The server decides every round and its damage; this only draws
 ## `NetClient.turrets()`. Black Ops 2's turret slews fast and fires a light
 ## machine gun's stream; the numbers are in `turret.rs`.
+##
+## Sounds (`streak_audio.gd`): a motor's whine while the head slews, a light
+## machine gun's rounds, and a small blast with sparks and falling pieces
+## when it is destroyed.
 
 const BASE_MODEL := preload("res://assets/models/sentry_base/sentry_base.gltf")
 const HEAD_MODEL := preload("res://assets/models/sentry_head/sentry_head.gltf")
 const EYE_MODEL := preload("res://assets/models/sentry_eye/sentry_eye.gltf")
-## No sentry recording yet: the AK's shot, pitched up, as the training
-## sentry uses.
-const FIRE_SOUND := preload("res://assets/audio/weapons/ak47_fire.ogg")
-const BANGS := [
-	preload("res://assets/audio/ambience/explosion_far_1.ogg"),
-	preload("res://assets/audio/ambience/explosion_far_2.ogg"),
-]
+const StreakAudio := preload("res://scripts/net/streak_audio.gd")
+## The head is heard slewing while it turns faster than this, rad/s.
+const WHINE_TURN := 0.6
 ## `turret::MUZZLE_HEIGHT`, `TURN_RATE`, `FIRE_CONE`, `SPIN_UP_SECONDS`,
 ## and `ROUNDS_PER_MINUTE`.
 const MUZZLE_HEIGHT := 1.25
@@ -32,7 +32,8 @@ const MUZZLE := Vector3(0.0, -0.03, -0.68)
 
 var client: NetClient
 
-## Turret id -> {"root", "head", "flash", "sound", "on_since", "next", "rounds", "yaw", "pitch"}.
+## Turret id -> {"root", "head", "flash", "sound", "whine", "on_since", "next", "rounds",
+## "yaw", "pitch"}.
 var _drawn := {}
 
 
@@ -77,19 +78,16 @@ func _spawn(t: Dictionary) -> Dictionary:
 	flash.omni_range = 5.0
 	flash.position = MUZZLE
 	head.add_child(flash)
-	var sound := AudioStreamPlayer3D.new()
-	sound.stream = FIRE_SOUND
-	sound.bus = &"Weapons"
-	sound.volume_db = -2.0
-	sound.unit_size = 8.0
+	var sound := StreakAudio.player(head, "sentry_fire", 8.0, -2.0, 250.0, &"Weapons")
 	sound.max_polyphony = 4
-	sound.pitch_scale = 1.15
-	head.add_child(sound)
+	sound.position = MUZZLE
+	var whine := StreakAudio.player(head, "sentry_turn", 4.0, 0.0, 40.0)
 	return {
 		"root": root,
 		"head": head,
 		"flash": flash,
 		"sound": sound,
+		"whine": whine,
 		"on_since": -1.0,
 		"next": 0.0,
 		"rounds": 0,
@@ -117,8 +115,15 @@ func _update(d: Dictionary, t: Dictionary, delta: float) -> void:
 	else:
 		d.on_since = -1.0
 	var step := TURN_RATE * delta
-	d.yaw = float(d.yaw) + clampf(wrapf(goal_yaw - float(d.yaw), -PI, PI), -step, step)
+	var turn := clampf(wrapf(goal_yaw - float(d.yaw), -PI, PI), -step, step)
+	d.yaw = float(d.yaw) + turn
 	d.pitch = float(d.pitch) + clampf(goal_pitch - float(d.pitch), -step, step)
+	var whine: AudioStreamPlayer3D = d.whine
+	var slewing := delta > 0.0 and absf(turn) / delta > WHINE_TURN
+	if slewing and not whine.playing:
+		whine.play(randf() * 2.0)
+	elif not slewing and whine.playing:
+		whine.stop()
 	head.global_rotation = Vector3(float(d.pitch), float(d.yaw), 0.0)
 	if target == null or not bool(t.armed):
 		return
@@ -142,11 +147,4 @@ func _on_gone(destroyed: bool, _ours: bool, _by_me: bool, at: Vector3) -> void:
 	var effects := get_tree().get_first_node_in_group(&"combat_effects")
 	if effects != null:
 		effects.explosion(at + Vector3.UP * 0.8, Vector3.UP, 0.8)
-	var bang := AudioStreamPlayer3D.new()
-	bang.bus = &"Effects"
-	bang.stream = BANGS[randi() % BANGS.size()]
-	bang.unit_size = 20.0
-	add_child(bang)
-	bang.global_position = at
-	bang.play()
-	bang.finished.connect(bang.queue_free)
+	StreakAudio.play_at(self, at + Vector3.UP * 0.8, "sentry_destroyed", 15.0, 0.0, 300.0)

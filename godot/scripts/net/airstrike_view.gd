@@ -11,7 +11,9 @@ extends Node3D
 ##   tablet in Black Ops 2;
 ## - each strike: a jet (tools/gear_models.py `strike_jet`) passes low over
 ##   its point just before it lands, then the blast (`CombatEffects.explosion`
-##   at three times a frag's size) and its bang.
+##   at three times a frag's size) and its bang. The jet screams over on
+##   a real fighter's flyby, loudest as it crosses the point, and each bomb
+##   is a real blast recorded at a distance (`streak_audio.gd`).
 ##
 ## The server decides where and when each strike lands, and who it hurts.
 
@@ -21,11 +23,9 @@ const Paint := preload("res://scripts/ui/hud_paint.gd")
 const MinimapData := preload("res://scripts/net/minimap_data.gd")
 const Minimap := preload("res://scripts/net/minimap.gd")
 const JET_MODEL := preload("res://assets/models/strike_jet/strike_jet.gltf")
-const BANGS := [
-	preload("res://assets/audio/ambience/explosion_far_1.ogg"),
-	preload("res://assets/audio/ambience/explosion_far_2.ogg"),
-	preload("res://assets/audio/ambience/explosion_far_3.ogg"),
-]
+const StreakAudio := preload("res://scripts/net/streak_audio.gd")
+## Seconds into `jet_flyby` its jet is closest.
+const FLYBY_CLOSEST := 2.6
 ## `streak::AIRSTRIKE_TARGETS`.
 const TARGETS := 3
 ## The jets' pass: height over the point, speed, and how long before the
@@ -257,6 +257,7 @@ func _on_called(_owner: int, points: PackedVector3Array, seconds: PackedFloat32A
 		var jet := JET_MODEL.instantiate() as Node3D
 		jet.name = "StrikeJet"
 		add_child(jet)
+		var flyby := StreakAudio.player(jet, "jet_flyby", 40.0, 0.0, 600.0)
 		var heading := randf() * TAU
 		(
 			_jets
@@ -266,6 +267,8 @@ func _on_called(_owner: int, points: PackedVector3Array, seconds: PackedFloat32A
 					"over": points[i] + Vector3.UP * JET_HEIGHT,
 					"heading": heading,
 					"at": seconds[i] - JET_LEAD,
+					"sound": flyby,
+					"flown": false,
 				}
 			)
 		)
@@ -278,6 +281,11 @@ func _fly_jets(delta: float) -> void:
 		_fly(jet)
 	for jet: Dictionary in _jets.duplicate():
 		if float(jet.at) < -3.0:
+			# Its roar goes on fading after the jet is gone from view.
+			var sound: AudioStreamPlayer3D = jet.sound
+			if sound.playing:
+				sound.reparent(self)
+				sound.finished.connect(sound.queue_free)
 			(jet.node as Node3D).queue_free()
 			_jets.erase(jet)
 
@@ -290,19 +298,17 @@ func _fly(jet: Dictionary) -> void:
 	node.visible = absf(past) < 3.0
 	node.position = (jet.over as Vector3) + forward * JET_SPEED * past
 	node.rotation = Vector3(0.0, heading, 0.0)
+	# Loudest as it crosses its point.
+	var into := FLYBY_CLOSEST + past
+	var sound: AudioStreamPlayer3D = jet.sound
+	if not bool(jet.flown) and into >= 0.0:
+		jet.flown = true
+		if sound.stream != null and into < sound.stream.get_length():
+			sound.play(into)
 
 
 func _on_strike(_owner: int, at: Vector3) -> void:
 	var effects := get_tree().get_first_node_in_group(&"combat_effects")
 	if effects != null:
 		effects.explosion(at, Vector3.UP, BLAST_SIZE)
-	var bang := AudioStreamPlayer3D.new()
-	bang.bus = &"Effects"
-	bang.stream = BANGS[randi() % BANGS.size()]
-	bang.unit_size = 40.0
-	bang.volume_db = 6.0
-	bang.max_distance = 400.0
-	add_child(bang)
-	bang.global_position = at
-	bang.play()
-	bang.finished.connect(bang.queue_free)
+	StreakAudio.play_at(self, at, "strike_blast", 40.0, 4.0, 500.0)
