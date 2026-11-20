@@ -97,7 +97,10 @@ func _process(delta: float) -> void:
 	# The results screen clears the play HUD, as in Call of Duty.
 	var ended := String(client.match_info().get("phase", "")) == "ended"
 	# A custom game can turn scorestreaks off.
-	var off := bool(client.match_info().get("streaks_off", false))
+	var off := (
+		bool(client.match_info().get("streaks_off", false))
+		or bool(client.match_info().get("spectator", false))
+	)
 	visible = (
 		mode not in ["zombies", "gungame"]
 		and not off

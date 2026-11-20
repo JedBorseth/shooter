@@ -91,7 +91,10 @@ func _process(delta: float) -> void:
 	var ended: bool = client.match_info().phase == "ended"
 	# A custom game's radar off, or hardcore's bare HUD, takes it away.
 	var info := client.match_info()
-	var off: bool = info.get("radar_off", false) or info.get("hardcore", false)
+	# Spectators have the caster's view instead.
+	var off: bool = (
+		info.get("radar_off", false) or info.get("hardcore", false) or info.get("spectator", false)
+	)
 	visible = (
 		has_plan()
 		and not zombies

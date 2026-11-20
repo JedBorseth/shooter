@@ -69,7 +69,7 @@ use shooter_sim::weapon::{Slot, WeaponId};
 
 use super::class_dict::{class_from_dict, class_to_dict, error_text};
 use super::horde_view::HordeView;
-use super::killcam::{Playing, WeaponCue};
+use super::killcam::{KillcamView, Playing, ViewDriver, WeaponCue};
 use super::props::{PropSnapshot, PropsBridge};
 use super::remote::{RemotePlayer, RemoteSample};
 use super::transport::{self, NetEvent};
@@ -157,6 +157,10 @@ pub struct NetClient {
     /// setting); ending killcams still play.
     #[var]
     skip_killcams: bool,
+    /// Join as a spectator (docs/custom-games.md): on no team, watching
+    /// any player from their eyes or flying free.
+    #[export]
+    spectate: bool,
 
     host: Option<Gd<ENetConnection>>,
     server: Option<Gd<ENetPacketPeer>>,
@@ -202,6 +206,20 @@ pub struct NetClient {
     ranked: bool,
     /// The server's custom game settings (`shooter_sim::custom`).
     custom: custom::Settings,
+    /// The server let us in as a spectator.
+    spectator: bool,
+    /// As a spectator: the player we watch from their eyes, or none to fly
+    /// free; the weapon frames for their view; and the free camera.
+    follow: Option<u8>,
+    follow_driver: ViewDriver,
+    free_camera: Transform3D,
+    /// Whose body is hidden for being watched from inside it.
+    hidden_body: Option<u8>,
+    /// The newest snapshot acknowledged to the server as a spectator.
+    spectator_acked: Option<Tick>,
+    /// As a spectator: every player's class and scorestreaks
+    /// (`GameEvent::Caster`).
+    caster: Vec<protocol::CasterRow>,
     /// Why the server turned us away.
     denied_reason: String,
     /// Hardpoint: the map's zones, the live one, who holds it, and the
@@ -421,6 +439,7 @@ impl INode for NetClient {
                         version: PROTOCOL_VERSION,
                         name: self.player_name.to_string(),
                         account: self.account_token.to_string(),
+                        spectate: self.spectate,
                     };
                     transport::send_reliable(&mut peer, &hello.encode());
                     let class = ClientMessage::Class(self.current_class());
@@ -529,6 +548,7 @@ impl INode for NetClient {
             player.bind_mut().set_view_tick(render_tick);
         }
         self.age_ghosts(delta as f32);
+        self.update_spectator(render_tick, delta as f32);
         self.update_killcam(delta as f32);
         self.update_aimed();
     }
@@ -750,6 +770,7 @@ impl NetClient {
         d.set("hardcore", self.custom.hardcore);
         d.set("radar_off", self.custom.radar == custom::Radar::Off);
         d.set("streaks_off", !self.custom.streaks);
+        d.set("spectator", self.spectator);
         if let Mode::GunGame(rules) = self.mode {
             d.set("kills_per_weapon", i32::from(rules.kills_per_weapon));
         }
@@ -1778,6 +1799,141 @@ impl NetClient {
     /// `custom` (any differ from the normal rules), `text` (the text form),
     /// `hardcore`, `health` (percent), `regen`, `friendly_fire`, `killcam`,
     /// `radar` ("normal", "constant", or "off"), `streaks`, and `loadouts`.
+    /// Whether the server let us in as a spectator.
+    #[func]
+    fn is_spectator(&self) -> bool {
+        self.spectator
+    }
+
+    /// As a spectator, for the caster's view: every player, by team and
+    /// id, as dictionaries with `id`, `name`, `team`, `alive`, `weapon` (the
+    /// key in their hands) and `weapon_name`, `primary` and `secondary`
+    /// (weapon keys with attachments, "" for none) with `primary_name` and
+    /// `secondary_name`, `lethals`, `tactical` (a key, "" for none), `perks`
+    /// (labels), `streaks` (the keys they bring, cheapest first), `held`
+    /// (keys) and `held_names`, `progress`, and `next_cost` (the count their
+    /// next streak needs, 0 with none left). Empty for players.
+    #[func]
+    fn caster_rows(&self) -> Array<VarDictionary> {
+        let mut out = Array::new();
+        if !self.spectator {
+            return out;
+        }
+        for id in self.spectate_order() {
+            let mut d = VarDictionary::new();
+            d.set("id", i32::from(id));
+            d.set("name", &self.name_of(i32::from(id)));
+            d.set("team", self.team_of(i32::from(id)));
+            let remote = self.remotes.iter().find(|r| r.id == id);
+            d.set("alive", remote.is_some_and(|r| r.node.bind().is_alive()));
+            let weapon = remote
+                .and_then(|r| r.buffer.newest())
+                .map(|(_, s)| s.weapon);
+            let key = |w: Option<WeaponId>| w.map_or(String::new(), |w| w.def().key.clone());
+            let name = |w: Option<WeaponId>| w.map_or(String::new(), |w| w.def().name.clone());
+            d.set("weapon", &GString::from(key(weapon).as_str()));
+            d.set("weapon_name", &GString::from(name(weapon).as_str()));
+            if let Some(row) = self.caster.iter().find(|r| r.id == id) {
+                let [primary, secondary] = row.class.weapons();
+                d.set("primary", &GString::from(key(primary).as_str()));
+                d.set("primary_name", &GString::from(name(primary).as_str()));
+                d.set("secondary", &GString::from(key(secondary).as_str()));
+                d.set("secondary_name", &GString::from(name(secondary).as_str()));
+                d.set("lethals", i32::from(row.class.lethals));
+                let tactical = if row.class.tacticals > 0 {
+                    row.class.tactical.key()
+                } else {
+                    ""
+                };
+                d.set("tactical", tactical);
+                let perks: PackedStringArray = row
+                    .class
+                    .perks
+                    .iter()
+                    .map(|p| GString::from(p.label()))
+                    .collect();
+                d.set("perks", &perks);
+                let streaks: PackedStringArray = row
+                    .streaks
+                    .streaks()
+                    .map(|s| GString::from(s.key()))
+                    .collect();
+                d.set("streaks", &streaks);
+                let held: PackedStringArray =
+                    row.held.iter().map(|s| GString::from(s.key())).collect();
+                d.set("held", &held);
+                let held_names: PackedStringArray =
+                    row.held.iter().map(|s| GString::from(s.label())).collect();
+                d.set("held_names", &held_names);
+                d.set("progress", row.progress as i64);
+                let next = row.streaks.streaks().find(|s| s.cost() > row.progress);
+                d.set("next_cost", next.map_or(0, |s| s.cost()) as i64);
+            }
+            out.push(&d);
+        }
+        out
+    }
+
+    /// As a spectator: the player watched from their eyes, or -1 flying
+    /// free.
+    #[func]
+    fn spectate_target(&self) -> i32 {
+        self.follow.map_or(-1, i32::from)
+    }
+
+    /// As a spectator: watches player `id` from their eyes, or with -1 flies
+    /// free from where the camera is.
+    #[func]
+    fn spectate_follow(&mut self, id: i32) {
+        if !self.spectator {
+            return;
+        }
+        let target = u8::try_from(id)
+            .ok()
+            .filter(|id| self.remotes.iter().any(|r| r.id == *id));
+        if target.is_none()
+            && self.follow.is_some()
+            && let Some(player) = &self.player
+        {
+            self.free_camera = player.bind().camera_transform();
+        }
+        if target != self.follow {
+            self.follow_driver = ViewDriver::default();
+        }
+        self.follow = target;
+    }
+
+    /// As a spectator: watches the next player (`step` 1) or the one before
+    /// (-1), by team and then id, from their eyes.
+    #[func]
+    fn spectate_next(&mut self, step: i32) {
+        let order = self.spectate_order();
+        if order.is_empty() {
+            return;
+        }
+        let at = self
+            .follow
+            .and_then(|id| order.iter().position(|o| *o == id));
+        let next = match at {
+            Some(i) => (i as i32 + step).rem_euclid(order.len() as i32) as usize,
+            None if step < 0 => order.len() - 1,
+            None => 0,
+        };
+        self.spectate_follow(i32::from(order[next]));
+    }
+
+    /// As a spectator flying free: puts the camera at `camera`.
+    #[func]
+    fn set_free_camera(&mut self, camera: Transform3D) {
+        self.free_camera = camera;
+    }
+
+    /// As a spectator: where the camera is now.
+    #[func]
+    fn free_camera(&self) -> Transform3D {
+        self.free_camera
+    }
+
     #[func]
     fn custom_settings(&self) -> VarDictionary {
         custom_dict(&self.custom)
@@ -1928,6 +2084,7 @@ impl NetClient {
                 server_build,
                 ranked,
                 custom,
+                spectator,
                 ..
             } => {
                 if self.status != Status::Connecting {
@@ -1957,10 +2114,21 @@ impl NetClient {
                         );
                     }
                 }
+                self.spectator = spectator;
                 if let Some(player) = &mut self.player {
                     let mut player = player.bind_mut();
-                    player.start_prediction();
+                    if spectator {
+                        // No body of ours: the camera starts where it is,
+                        // flying free, until a player is picked.
+                        self.free_camera = player.camera_transform();
+                        player.set_spectator_camera(Some(self.free_camera));
+                    } else {
+                        player.start_prediction();
+                    }
                     player.set_health_params(custom.health_params(HealthParams::default()));
+                }
+                if spectator {
+                    godot_print!("net client: spectating as {player_id}");
                 }
                 if !custom.is_default() {
                     godot_print!("net client: custom game: {}", custom.to_text());
@@ -2512,6 +2680,9 @@ impl NetClient {
                     .turret_gone()
                     .emit(by.is_some(), ours, by_me, to_godot(view.at));
             }
+            GameEvent::Caster(rows) => {
+                self.caster = rows;
+            }
             GameEvent::Cosmetics { id, cosmetics } => {
                 if let Some(remote) = self.remotes.iter_mut().find(|r| r.id == id) {
                     remote.node.bind_mut().set_cosmetics(&cosmetics);
@@ -2791,6 +2962,11 @@ impl NetClient {
     }
 
     fn local_team(&self) -> Option<Team> {
+        // A spectator sees the match from the first team's side: its colours
+        // are ours, the other's the enemy's, as on a caster's screen.
+        if self.spectator {
+            return Some(0);
+        }
         let me = self.player_id?;
         self.roster.iter().find(|e| e.id == me).map(|e| e.team)
     }
@@ -3210,7 +3386,96 @@ impl NetClient {
         Some(node)
     }
 
+    /// Players in the order a spectator steps through them: team, then id.
+    fn spectate_order(&self) -> Vec<u8> {
+        let mut order: Vec<(u8, u8)> = self
+            .remotes
+            .iter()
+            .map(|r| (self.team_of(i32::from(r.id)).max(0) as u8, r.id))
+            .collect();
+        order.sort_unstable();
+        order.into_iter().map(|(_, id)| id).collect()
+    }
+
+    /// As a spectator: the watched player's eyes and weapon, or the free
+    /// camera, on the local player's camera, and the watched body hidden.
+    fn update_spectator(&mut self, render_tick: f64, dt: f32) {
+        if !self.spectator {
+            return;
+        }
+        if self
+            .follow
+            .is_some_and(|id| !self.remotes.iter().any(|r| r.id == id))
+        {
+            // They left: on to the next.
+            self.follow = None;
+            self.spectate_next(1);
+        }
+        let watched = self.follow;
+        if self.hidden_body != watched {
+            for remote in &mut self.remotes {
+                if Some(remote.id) == self.hidden_body {
+                    remote.node.bind_mut().set_first_person(false);
+                }
+                if Some(remote.id) == watched {
+                    remote.node.bind_mut().set_first_person(true);
+                }
+            }
+            self.hidden_body = watched;
+        }
+        let sample = watched.and_then(|id| {
+            let remote = self.remotes.iter_mut().find(|r| r.id == id)?;
+            remote.buffer.sample(render_tick)
+        });
+        let Some(player) = &mut self.player else {
+            return;
+        };
+        let mut player = player.bind_mut();
+        let Some(sample) = sample else {
+            player.set_killcam(None);
+            player.set_spectator_camera(Some(self.free_camera));
+            return;
+        };
+        let mut cues = Vec::new();
+        let frame = self.follow_driver.frame(&sample, dt, &mut cues);
+        let (camera, zoom) = super::killcam::eye(&sample);
+        player.set_spectator_camera(Some(camera));
+        player.set_killcam(Some(KillcamView {
+            camera,
+            zoom,
+            frame,
+            weapon: true,
+        }));
+        for cue in cues {
+            match cue {
+                WeaponCue::Fired(weapon) => player.killcam_fired(weapon),
+                WeaponCue::Melee => player.killcam_melee(),
+            }
+        }
+    }
+
     fn send_inputs(&mut self, now: f64) {
+        if self.spectator {
+            // Nothing to steer: only acknowledge snapshots, so they come as
+            // changes.
+            if self.newest == self.spectator_acked {
+                return;
+            }
+            self.spectator_acked = self.newest;
+            let bytes = ClientMessage::Input(InputPacket {
+                ack_snapshot: self.newest,
+                first_seq: 0,
+                inputs: Vec::new(),
+            })
+            .encode();
+            self.count_out(bytes.len());
+            match (&mut self.outgoing, &mut self.server) {
+                (Some(link), _) => link.send(now, bytes),
+                (None, Some(server)) => transport::send_unreliable(server, &bytes),
+                (None, None) => {}
+            }
+            return;
+        }
         let Some(player) = &self.player else { return };
         let Some((first_seq, inputs)) = player.bind().prediction().map(|p| p.unacked()) else {
             return;
