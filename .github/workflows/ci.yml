@@ -117,6 +117,11 @@ jobs:
         run: |
           test -f tools/test_breakwater_layout.py
           python -m unittest discover -s tools -p "test_breakwater_layout.py" -v
+      # Every prop in tools/prop_library.py is built, in catalog.json, and credited.
+      - name: Prop catalog tests
+        run: |
+          test -f tools/test_prop_catalog.py
+          python -m unittest discover -s tools -p "test_prop_catalog.py" -v
       - name: Server export filter tests
         run: |
           test -f tools/test_server_export_filter.py

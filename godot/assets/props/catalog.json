@@ -1,0 +1,2002 @@
+{
+ "about": "Every prop in godot/assets/props. Written by tools/prop_catalog.py --write from tools/prop_library.py; size is metres (x wide, y tall, z deep) about a bottom-centre origin.",
+ "props": {
+  "aircon": {
+   "path": "res://assets/props/aircon/aircon.gltf",
+   "size": [
+    0.8,
+    0.927,
+    0.375
+   ],
+   "triangles": 2000,
+   "tags": [
+    "wall",
+    "roof",
+    "building"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/exterior_aircon_unit",
+   "asset": "exterior_aircon_unit",
+   "authors": [
+    "Monsta3D"
+   ],
+   "license": "CC0"
+  },
+  "ammo_box": {
+   "path": "res://assets/props/ammo_box/ammo_box.gltf",
+   "size": [
+    0.087,
+    0.177,
+    0.258
+   ],
+   "triangles": 2000,
+   "tags": [
+    "military",
+    "storage"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/ammo_box",
+   "asset": "ammo_box",
+   "authors": [
+    "DanKit"
+   ],
+   "license": "CC0"
+  },
+  "bar_stool": {
+   "path": "res://assets/props/bar_stool/bar_stool.gltf",
+   "size": [
+    0.352,
+    0.882,
+    0.355
+   ],
+   "triangles": 2000,
+   "tags": [
+    "interior",
+    "seating",
+    "diner"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/metal_stool_01",
+   "asset": "metal_stool_01",
+   "authors": [
+    "Ulan Cabanilla"
+   ],
+   "license": "CC0"
+  },
+  "barrel_blue": {
+   "path": "res://assets/props/barrel_blue/barrel_blue.gltf",
+   "size": [
+    0.488,
+    0.88,
+    0.485
+   ],
+   "triangles": 2688,
+   "tags": [
+    "industrial",
+    "barrel"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/Barrel_02",
+   "asset": "Barrel_02",
+   "authors": [
+    "Jorge Camacho"
+   ],
+   "license": "CC0"
+  },
+  "barrel_red": {
+   "path": "res://assets/props/barrel_red/barrel_red.gltf",
+   "size": [
+    0.563,
+    0.88,
+    0.563
+   ],
+   "triangles": 2682,
+   "tags": [
+    "industrial",
+    "barrel"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/Barrel_01",
+   "asset": "Barrel_01",
+   "authors": [
+    "Jorge Camacho"
+   ],
+   "license": "CC0"
+  },
+  "barrel_steel": {
+   "path": "res://assets/props/barrel_steel/barrel_steel.gltf",
+   "size": [
+    0.634,
+    0.93,
+    0.639
+   ],
+   "triangles": 1473,
+   "tags": [
+    "industrial",
+    "barrel"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/barrel_03",
+   "asset": "barrel_03",
+   "authors": [
+    "Serhii Khromov"
+   ],
+   "license": "CC0"
+  },
+  "barrier": {
+   "path": "res://assets/props/barrier/barrier.gltf",
+   "size": [
+    1.564,
+    1.11,
+    0.44
+   ],
+   "triangles": 2499,
+   "tags": [
+    "street",
+    "cover",
+    "concrete"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/concrete_road_barrier_02",
+   "asset": "concrete_road_barrier_02",
+   "authors": [
+    "Amal Kumar"
+   ],
+   "license": "CC0"
+  },
+  "barrier_b": {
+   "path": "res://assets/props/barrier_b/barrier_b.gltf",
+   "size": [
+    1.544,
+    0.833,
+    0.636
+   ],
+   "triangles": 3000,
+   "tags": [
+    "street",
+    "cover",
+    "concrete"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/concrete_road_barrier",
+   "asset": "concrete_road_barrier",
+   "authors": [
+    "Amal Kumar"
+   ],
+   "license": "CC0"
+  },
+  "bench_seat": {
+   "path": "res://assets/props/bench_seat/bench_seat.gltf",
+   "size": [
+    1.165,
+    0.889,
+    0.497
+   ],
+   "triangles": 630,
+   "tags": [
+    "interior",
+    "seating",
+    "wood"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/painted_wooden_bench",
+   "asset": "painted_wooden_bench",
+   "authors": [
+    "Kirill Sannikov"
+   ],
+   "license": "CC0"
+  },
+  "boombox": {
+   "path": "res://assets/props/boombox/boombox.gltf",
+   "size": [
+    0.723,
+    0.47,
+    0.186
+   ],
+   "triangles": 2500,
+   "tags": [
+    "interior",
+    "street",
+    "electrical"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/boombox",
+   "asset": "boombox",
+   "authors": [
+    "Thomas Paul Mouilleron"
+   ],
+   "license": "CC0"
+  },
+  "cafe_set": {
+   "path": "res://assets/props/cafe_set/cafe_set.gltf",
+   "size": [
+    0.742,
+    0.859,
+    1.718
+   ],
+   "triangles": 3500,
+   "tags": [
+    "street",
+    "seating",
+    "table"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/outdoor_table_chair_set_01",
+   "asset": "outdoor_table_chair_set_01",
+   "authors": [
+    "James Ray Cock"
+   ],
+   "license": "CC0"
+  },
+  "caged_light": {
+   "path": "res://assets/props/caged_light/caged_light.gltf",
+   "size": [
+    1.167,
+    0.75,
+    0.315
+   ],
+   "triangles": 2999,
+   "tags": [
+    "ceiling",
+    "light",
+    "industrial"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/caged_hanging_light",
+   "asset": "caged_hanging_light",
+   "authors": [
+    "Ulan Cabanilla"
+   ],
+   "license": "CC0"
+  },
+  "cardboard_box": {
+   "path": "res://assets/props/cardboard_box/cardboard_box.gltf",
+   "size": [
+    0.387,
+    0.341,
+    0.515
+   ],
+   "triangles": 1499,
+   "tags": [
+    "storage",
+    "box"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/cardboard_box_01",
+   "asset": "cardboard_box_01",
+   "authors": [
+    "Rahul Chaudhary"
+   ],
+   "license": "CC0"
+  },
+  "cash_register": {
+   "path": "res://assets/props/cash_register/cash_register.gltf",
+   "size": [
+    0.6,
+    0.622,
+    0.623
+   ],
+   "triangles": 2999,
+   "tags": [
+    "interior",
+    "shop",
+    "counter"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/CashRegister_01",
+   "asset": "CashRegister_01",
+   "authors": [
+    "Joe Seabuhr"
+   ],
+   "license": "CC0"
+  },
+  "cement_bag": {
+   "path": "res://assets/props/cement_bag/cement_bag.gltf",
+   "size": [
+    0.462,
+    0.18,
+    0.7
+   ],
+   "triangles": 844,
+   "tags": [
+    "construction",
+    "storage"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/cement_bag",
+   "asset": "cement_bag",
+   "authors": [
+    "PierreB3D"
+   ],
+   "license": "CC0"
+  },
+  "compressor": {
+   "path": "res://assets/props/compressor/compressor.gltf",
+   "size": [
+    0.597,
+    1.181,
+    1.672
+   ],
+   "triangles": 5000,
+   "tags": [
+    "industrial",
+    "workshop",
+    "machine"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/old_military_compressor",
+   "asset": "old_military_compressor",
+   "authors": [
+    "Brian Speight"
+   ],
+   "license": "CC0"
+  },
+  "covered_car": {
+   "path": "res://assets/props/covered_car/covered_car.gltf",
+   "size": [
+    1.793,
+    1.413,
+    4.372
+   ],
+   "triangles": 6000,
+   "tags": [
+    "street",
+    "vehicle",
+    "cover"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/covered_car",
+   "asset": "covered_car",
+   "authors": [
+    "MP"
+   ],
+   "license": "CC0"
+  },
+  "crate": {
+   "path": "res://assets/props/crate/crate.gltf",
+   "size": [
+    0.529,
+    0.464,
+    1.167
+   ],
+   "triangles": 900,
+   "tags": [
+    "storage",
+    "crate",
+    "wood"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/wooden_crate_02",
+   "asset": "wooden_crate_02",
+   "authors": [
+    "James Ray Cock",
+    "Jurita Burger"
+   ],
+   "license": "CC0"
+  },
+  "drainpipe": {
+   "path": "res://assets/props/gutter/drainpipe.gltf",
+   "size": [
+    0.157,
+    1.0,
+    0.161
+   ],
+   "triangles": 894,
+   "tags": [
+    "wall",
+    "building",
+    "kit"
+   ],
+   "kit": "gutter",
+   "source": "https://polyhaven.com/a/modular_metal_gutter",
+   "asset": "modular_metal_gutter",
+   "authors": [
+    "Maxim Domnin"
+   ],
+   "license": "CC0"
+  },
+  "drainpipe_bend": {
+   "path": "res://assets/props/gutter/drainpipe_bend.gltf",
+   "size": [
+    0.158,
+    0.341,
+    0.346
+   ],
+   "triangles": 1500,
+   "tags": [
+    "wall",
+    "building",
+    "kit"
+   ],
+   "kit": "gutter",
+   "source": "https://polyhaven.com/a/modular_metal_gutter",
+   "asset": "modular_metal_gutter",
+   "authors": [
+    "Maxim Domnin"
+   ],
+   "license": "CC0"
+  },
+  "drainpipe_bracket": {
+   "path": "res://assets/props/gutter/drainpipe_bracket.gltf",
+   "size": [
+    0.198,
+    0.101,
+    0.283
+   ],
+   "triangles": 1500,
+   "tags": [
+    "wall",
+    "building",
+    "kit"
+   ],
+   "kit": "gutter",
+   "source": "https://polyhaven.com/a/modular_metal_gutter",
+   "asset": "modular_metal_gutter",
+   "authors": [
+    "Maxim Domnin"
+   ],
+   "license": "CC0"
+  },
+  "drainpipe_funnel": {
+   "path": "res://assets/props/gutter/drainpipe_funnel.gltf",
+   "size": [
+    0.343,
+    0.363,
+    0.344
+   ],
+   "triangles": 1856,
+   "tags": [
+    "wall",
+    "building",
+    "kit"
+   ],
+   "kit": "gutter",
+   "source": "https://polyhaven.com/a/modular_metal_gutter",
+   "asset": "modular_metal_gutter",
+   "authors": [
+    "Maxim Domnin"
+   ],
+   "license": "CC0"
+  },
+  "drainpipe_shoe": {
+   "path": "res://assets/props/gutter/drainpipe_shoe.gltf",
+   "size": [
+    0.153,
+    0.404,
+    0.261
+   ],
+   "triangles": 1399,
+   "tags": [
+    "wall",
+    "building",
+    "kit"
+   ],
+   "kit": "gutter",
+   "source": "https://polyhaven.com/a/modular_metal_gutter",
+   "asset": "modular_metal_gutter",
+   "authors": [
+    "Maxim Domnin"
+   ],
+   "license": "CC0"
+  },
+  "duct_bend": {
+   "path": "res://assets/props/air_duct/duct_bend.gltf",
+   "size": [
+    0.371,
+    0.384,
+    0.296
+   ],
+   "triangles": 514,
+   "tags": [
+    "wall",
+    "ceiling",
+    "industrial",
+    "kit"
+   ],
+   "kit": "air_duct",
+   "source": "https://polyhaven.com/a/modular_airduct_circular_01",
+   "asset": "modular_airduct_circular_01",
+   "authors": [
+    "Riley Queen"
+   ],
+   "license": "CC0"
+  },
+  "duct_bracket": {
+   "path": "res://assets/props/air_duct/duct_bracket.gltf",
+   "size": [
+    0.374,
+    1.239,
+    0.04
+   ],
+   "triangles": 900,
+   "tags": [
+    "wall",
+    "ceiling",
+    "industrial",
+    "kit"
+   ],
+   "kit": "air_duct",
+   "source": "https://polyhaven.com/a/modular_airduct_circular_01",
+   "asset": "modular_airduct_circular_01",
+   "authors": [
+    "Riley Queen"
+   ],
+   "license": "CC0"
+  },
+  "duct_fan": {
+   "path": "res://assets/props/air_duct/duct_fan.gltf",
+   "size": [
+    0.543,
+    0.543,
+    0.151
+   ],
+   "triangles": 1999,
+   "tags": [
+    "wall",
+    "roof",
+    "industrial",
+    "kit"
+   ],
+   "kit": "air_duct",
+   "source": "https://polyhaven.com/a/modular_airduct_circular_01",
+   "asset": "modular_airduct_circular_01",
+   "authors": [
+    "Riley Queen"
+   ],
+   "license": "CC0"
+  },
+  "duct_long": {
+   "path": "res://assets/props/air_duct/duct_long.gltf",
+   "size": [
+    0.37,
+    0.371,
+    1.422
+   ],
+   "triangles": 512,
+   "tags": [
+    "wall",
+    "ceiling",
+    "industrial",
+    "kit"
+   ],
+   "kit": "air_duct",
+   "source": "https://polyhaven.com/a/modular_airduct_circular_01",
+   "asset": "modular_airduct_circular_01",
+   "authors": [
+    "Riley Queen"
+   ],
+   "license": "CC0"
+  },
+  "duct_short": {
+   "path": "res://assets/props/air_duct/duct_short.gltf",
+   "size": [
+    0.37,
+    0.371,
+    0.474
+   ],
+   "triangles": 512,
+   "tags": [
+    "wall",
+    "ceiling",
+    "industrial",
+    "kit"
+   ],
+   "kit": "air_duct",
+   "source": "https://polyhaven.com/a/modular_airduct_circular_01",
+   "asset": "modular_airduct_circular_01",
+   "authors": [
+    "Riley Queen"
+   ],
+   "license": "CC0"
+  },
+  "duct_vent": {
+   "path": "res://assets/props/air_duct/duct_vent.gltf",
+   "size": [
+    0.552,
+    0.42,
+    0.111
+   ],
+   "triangles": 1998,
+   "tags": [
+    "wall",
+    "roof",
+    "industrial",
+    "kit"
+   ],
+   "kit": "air_duct",
+   "source": "https://polyhaven.com/a/modular_airduct_circular_01",
+   "asset": "modular_airduct_circular_01",
+   "authors": [
+    "Riley Queen"
+   ],
+   "license": "CC0"
+  },
+  "fence_corner_post": {
+   "path": "res://assets/props/chainlink_fence/fence_corner_post.gltf",
+   "size": [
+    0.151,
+    2.523,
+    0.149
+   ],
+   "triangles": 2000,
+   "tags": [
+    "fence",
+    "street",
+    "kit"
+   ],
+   "kit": "chainlink_fence",
+   "source": "https://polyhaven.com/a/modular_chainlink_fence",
+   "asset": "modular_chainlink_fence",
+   "authors": [
+    "Amal Kumar",
+    "James Ray Cock"
+   ],
+   "license": "CC0"
+  },
+  "fence_end_post": {
+   "path": "res://assets/props/chainlink_fence/fence_end_post.gltf",
+   "size": [
+    0.151,
+    2.523,
+    0.15
+   ],
+   "triangles": 2000,
+   "tags": [
+    "fence",
+    "street",
+    "kit"
+   ],
+   "kit": "chainlink_fence",
+   "source": "https://polyhaven.com/a/modular_chainlink_fence",
+   "asset": "modular_chainlink_fence",
+   "authors": [
+    "Amal Kumar",
+    "James Ray Cock"
+   ],
+   "license": "CC0"
+  },
+  "fence_gate": {
+   "path": "res://assets/props/chainlink_fence/fence_gate.gltf",
+   "size": [
+    1.911,
+    2.525,
+    0.158
+   ],
+   "triangles": 5000,
+   "tags": [
+    "fence",
+    "street",
+    "door",
+    "kit"
+   ],
+   "kit": "chainlink_fence",
+   "source": "https://polyhaven.com/a/modular_chainlink_fence",
+   "asset": "modular_chainlink_fence",
+   "authors": [
+    "Amal Kumar",
+    "James Ray Cock"
+   ],
+   "license": "CC0"
+  },
+  "fence_panel": {
+   "path": "res://assets/props/chainlink_fence/fence_panel.gltf",
+   "size": [
+    0.934,
+    2.37,
+    0.049
+   ],
+   "triangles": 3028,
+   "tags": [
+    "fence",
+    "street",
+    "kit"
+   ],
+   "kit": "chainlink_fence",
+   "source": "https://polyhaven.com/a/modular_chainlink_fence",
+   "asset": "modular_chainlink_fence",
+   "authors": [
+    "Amal Kumar",
+    "James Ray Cock"
+   ],
+   "license": "CC0"
+  },
+  "fence_panel_double": {
+   "path": "res://assets/props/chainlink_fence/fence_panel_double.gltf",
+   "size": [
+    1.914,
+    2.37,
+    0.049
+   ],
+   "triangles": 3054,
+   "tags": [
+    "fence",
+    "street",
+    "kit"
+   ],
+   "kit": "chainlink_fence",
+   "source": "https://polyhaven.com/a/modular_chainlink_fence",
+   "asset": "modular_chainlink_fence",
+   "authors": [
+    "Amal Kumar",
+    "James Ray Cock"
+   ],
+   "license": "CC0"
+  },
+  "fence_post": {
+   "path": "res://assets/props/chainlink_fence/fence_post.gltf",
+   "size": [
+    0.149,
+    2.523,
+    0.149
+   ],
+   "triangles": 1134,
+   "tags": [
+    "fence",
+    "street",
+    "kit"
+   ],
+   "kit": "chainlink_fence",
+   "source": "https://polyhaven.com/a/modular_chainlink_fence",
+   "asset": "modular_chainlink_fence",
+   "authors": [
+    "Amal Kumar",
+    "James Ray Cock"
+   ],
+   "license": "CC0"
+  },
+  "field_crate": {
+   "path": "res://assets/props/field_crate/field_crate.gltf",
+   "size": [
+    0.798,
+    0.255,
+    0.538
+   ],
+   "triangles": 4000,
+   "tags": [
+    "military",
+    "crate",
+    "storage"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/old_military_crate",
+   "asset": "old_military_crate",
+   "authors": [
+    "Jack Mava"
+   ],
+   "license": "CC0"
+  },
+  "fire_barrel": {
+   "path": "res://assets/props/fire_barrel/fire_barrel.gltf",
+   "size": [
+    0.593,
+    0.857,
+    0.59
+   ],
+   "triangles": 2500,
+   "tags": [
+    "street",
+    "alley",
+    "barrel",
+    "junk"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/barrel_stove",
+   "asset": "barrel_stove",
+   "authors": [
+    "MP"
+   ],
+   "license": "CC0"
+  },
+  "fire_extinguisher": {
+   "path": "res://assets/props/fire_extinguisher/fire_extinguisher.gltf",
+   "size": [
+    0.28,
+    0.659,
+    0.367
+   ],
+   "triangles": 2500,
+   "tags": [
+    "interior",
+    "wall",
+    "industrial"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/korean_fire_extinguisher_01",
+   "asset": "korean_fire_extinguisher_01",
+   "authors": [
+    "UM JOORIN"
+   ],
+   "license": "CC0"
+  },
+  "fluorescent_light": {
+   "path": "res://assets/props/fluorescent_light/fluorescent_light.gltf",
+   "size": [
+    0.912,
+    0.035,
+    0.04
+   ],
+   "triangles": 1496,
+   "tags": [
+    "ceiling",
+    "light",
+    "interior"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/mounted_fluorescent_lights",
+   "asset": "mounted_fluorescent_lights",
+   "authors": [
+    "Ulan Cabanilla"
+   ],
+   "license": "CC0"
+  },
+  "fuel_can": {
+   "path": "res://assets/props/fuel_can/fuel_can.gltf",
+   "size": [
+    0.268,
+    0.319,
+    0.341
+   ],
+   "triangles": 2000,
+   "tags": [
+    "garage",
+    "fuel"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/plastic_jerrycan",
+   "asset": "plastic_jerrycan",
+   "authors": [
+    "Ulan Cabanilla"
+   ],
+   "license": "CC0"
+  },
+  "gas_bottle": {
+   "path": "res://assets/props/gas_bottle/gas_bottle.gltf",
+   "size": [
+    0.41,
+    0.642,
+    0.41
+   ],
+   "triangles": 2500,
+   "tags": [
+    "industrial",
+    "gas",
+    "interior"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/small_lpg_tank",
+   "asset": "small_lpg_tank",
+   "authors": [
+    "Ulan Cabanilla"
+   ],
+   "license": "CC0"
+  },
+  "generator": {
+   "path": "res://assets/props/generator/generator.gltf",
+   "size": [
+    0.822,
+    0.577,
+    0.564
+   ],
+   "triangles": 3999,
+   "tags": [
+    "construction",
+    "industrial",
+    "machine"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/portable_generator",
+   "asset": "portable_generator",
+   "authors": [
+    "James Ray Cock"
+   ],
+   "license": "CC0"
+  },
+  "hand_truck": {
+   "path": "res://assets/props/hand_truck/hand_truck.gltf",
+   "size": [
+    0.593,
+    1.407,
+    0.693
+   ],
+   "triangles": 2500,
+   "tags": [
+    "industrial",
+    "storage",
+    "warehouse"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/hand_truck",
+   "asset": "hand_truck",
+   "authors": [
+    "Mutanzom3D"
+   ],
+   "license": "CC0"
+  },
+  "hydrant": {
+   "path": "res://assets/props/hydrant/hydrant.gltf",
+   "size": [
+    0.274,
+    0.8,
+    0.318
+   ],
+   "triangles": 2999,
+   "tags": [
+    "street"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/fire_hydrant",
+   "asset": "fire_hydrant",
+   "authors": [
+    "Gon\u00e7alo Fel\u00edcio"
+   ],
+   "license": "CC0"
+  },
+  "jerrycan": {
+   "path": "res://assets/props/jerrycan/jerrycan.gltf",
+   "size": [
+    0.361,
+    0.5,
+    0.172
+   ],
+   "triangles": 2000,
+   "tags": [
+    "military",
+    "fuel",
+    "garage"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/metal_jerrycan_green",
+   "asset": "metal_jerrycan_green",
+   "authors": [
+    "Ulan Cabanilla"
+   ],
+   "license": "CC0"
+  },
+  "ladder": {
+   "path": "res://assets/props/ladder/ladder.gltf",
+   "size": [
+    0.662,
+    2.131,
+    0.178
+   ],
+   "triangles": 3000,
+   "tags": [
+    "construction",
+    "industrial"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/ladder_sectioned_01",
+   "asset": "ladder_sectioned_01",
+   "authors": [
+    "MP"
+   ],
+   "license": "CC0"
+  },
+  "metal_rack": {
+   "path": "res://assets/props/metal_rack/metal_rack.gltf",
+   "size": [
+    0.915,
+    1.9,
+    0.6
+   ],
+   "triangles": 2500,
+   "tags": [
+    "interior",
+    "storage",
+    "shelves",
+    "industrial"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/worn_metal_rack",
+   "asset": "worn_metal_rack",
+   "authors": [
+    "Luca B"
+   ],
+   "license": "CC0"
+  },
+  "microwave": {
+   "path": "res://assets/props/microwave/microwave.gltf",
+   "size": [
+    1.073,
+    0.526,
+    0.746
+   ],
+   "triangles": 2500,
+   "tags": [
+    "interior",
+    "kitchen",
+    "electrical"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/vintage_microwave",
+   "asset": "vintage_microwave",
+   "authors": [
+    "Adam Nekola"
+   ],
+   "license": "CC0"
+  },
+  "military_crate": {
+   "path": "res://assets/props/military_crate/military_crate.gltf",
+   "size": [
+    1.241,
+    0.464,
+    0.519
+   ],
+   "triangles": 2999,
+   "tags": [
+    "military",
+    "crate",
+    "wood"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/wooden_military_crate",
+   "asset": "wooden_military_crate",
+   "authors": [
+    "Prabhjinder Singh"
+   ],
+   "license": "CC0"
+  },
+  "milk_crate": {
+   "path": "res://assets/props/milk_crate/milk_crate.gltf",
+   "size": [
+    0.299,
+    0.264,
+    0.412
+   ],
+   "triangles": 3000,
+   "tags": [
+    "street",
+    "storage",
+    "crate",
+    "plastic"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/plastic_crate_01",
+   "asset": "plastic_crate_01",
+   "authors": [
+    "PierreB3D"
+   ],
+   "license": "CC0"
+  },
+  "office_desk": {
+   "path": "res://assets/props/office_desk/office_desk.gltf",
+   "size": [
+    2.0,
+    0.788,
+    0.947
+   ],
+   "triangles": 3000,
+   "tags": [
+    "interior",
+    "office",
+    "table"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/metal_office_desk",
+   "asset": "metal_office_desk",
+   "authors": [
+    "Ulan Cabanilla"
+   ],
+   "license": "CC0"
+  },
+  "picnic_table": {
+   "path": "res://assets/props/picnic_table/picnic_table.gltf",
+   "size": [
+    2.241,
+    0.746,
+    3.022
+   ],
+   "triangles": 2499,
+   "tags": [
+    "street",
+    "seating",
+    "table",
+    "wood"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/wooden_picnic_table",
+   "asset": "wooden_picnic_table",
+   "authors": [
+    "Ulan Cabanilla"
+   ],
+   "license": "CC0"
+  },
+  "pipe_01": {
+   "path": "res://assets/props/industrial_pipes/pipe_01.gltf",
+   "size": [
+    0.207,
+    0.859,
+    0.206
+   ],
+   "triangles": 600,
+   "tags": [
+    "wall",
+    "industrial",
+    "pipe",
+    "kit"
+   ],
+   "kit": "industrial_pipes",
+   "source": "https://polyhaven.com/a/modular_industrial_pipes_01",
+   "asset": "modular_industrial_pipes_01",
+   "authors": [
+    "Jorge Camacho"
+   ],
+   "license": "CC0"
+  },
+  "pipe_02": {
+   "path": "res://assets/props/industrial_pipes/pipe_02.gltf",
+   "size": [
+    0.207,
+    1.955,
+    0.206
+   ],
+   "triangles": 648,
+   "tags": [
+    "wall",
+    "industrial",
+    "pipe",
+    "kit"
+   ],
+   "kit": "industrial_pipes",
+   "source": "https://polyhaven.com/a/modular_industrial_pipes_01",
+   "asset": "modular_industrial_pipes_01",
+   "authors": [
+    "Jorge Camacho"
+   ],
+   "license": "CC0"
+  },
+  "pipe_03": {
+   "path": "res://assets/props/industrial_pipes/pipe_03.gltf",
+   "size": [
+    0.599,
+    1.314,
+    0.206
+   ],
+   "triangles": 984,
+   "tags": [
+    "wall",
+    "industrial",
+    "pipe",
+    "kit"
+   ],
+   "kit": "industrial_pipes",
+   "source": "https://polyhaven.com/a/modular_industrial_pipes_01",
+   "asset": "modular_industrial_pipes_01",
+   "authors": [
+    "Jorge Camacho"
+   ],
+   "license": "CC0"
+  },
+  "pipe_04": {
+   "path": "res://assets/props/industrial_pipes/pipe_04.gltf",
+   "size": [
+    0.424,
+    0.445,
+    0.206
+   ],
+   "triangles": 840,
+   "tags": [
+    "wall",
+    "industrial",
+    "pipe",
+    "kit"
+   ],
+   "kit": "industrial_pipes",
+   "source": "https://polyhaven.com/a/modular_industrial_pipes_01",
+   "asset": "modular_industrial_pipes_01",
+   "authors": [
+    "Jorge Camacho"
+   ],
+   "license": "CC0"
+  },
+  "pipe_05": {
+   "path": "res://assets/props/industrial_pipes/pipe_05.gltf",
+   "size": [
+    0.598,
+    0.433,
+    0.206
+   ],
+   "triangles": 984,
+   "tags": [
+    "wall",
+    "industrial",
+    "pipe",
+    "kit"
+   ],
+   "kit": "industrial_pipes",
+   "source": "https://polyhaven.com/a/modular_industrial_pipes_01",
+   "asset": "modular_industrial_pipes_01",
+   "authors": [
+    "Jorge Camacho"
+   ],
+   "license": "CC0"
+  },
+  "pipe_06": {
+   "path": "res://assets/props/industrial_pipes/pipe_06.gltf",
+   "size": [
+    0.309,
+    0.358,
+    0.206
+   ],
+   "triangles": 1088,
+   "tags": [
+    "wall",
+    "industrial",
+    "pipe",
+    "kit"
+   ],
+   "kit": "industrial_pipes",
+   "source": "https://polyhaven.com/a/modular_industrial_pipes_01",
+   "asset": "modular_industrial_pipes_01",
+   "authors": [
+    "Jorge Camacho"
+   ],
+   "license": "CC0"
+  },
+  "pipe_07": {
+   "path": "res://assets/props/industrial_pipes/pipe_07.gltf",
+   "size": [
+    0.357,
+    0.411,
+    0.206
+   ],
+   "triangles": 1408,
+   "tags": [
+    "wall",
+    "industrial",
+    "pipe",
+    "kit"
+   ],
+   "kit": "industrial_pipes",
+   "source": "https://polyhaven.com/a/modular_industrial_pipes_01",
+   "asset": "modular_industrial_pipes_01",
+   "authors": [
+    "Jorge Camacho"
+   ],
+   "license": "CC0"
+  },
+  "pipe_08": {
+   "path": "res://assets/props/industrial_pipes/pipe_08.gltf",
+   "size": [
+    0.265,
+    0.379,
+    0.308
+   ],
+   "triangles": 1999,
+   "tags": [
+    "wall",
+    "industrial",
+    "pipe",
+    "kit"
+   ],
+   "kit": "industrial_pipes",
+   "source": "https://polyhaven.com/a/modular_industrial_pipes_01",
+   "asset": "modular_industrial_pipes_01",
+   "authors": [
+    "Jorge Camacho"
+   ],
+   "license": "CC0"
+  },
+  "plastic_chair": {
+   "path": "res://assets/props/plastic_chair/plastic_chair.gltf",
+   "size": [
+    0.645,
+    0.881,
+    0.628
+   ],
+   "triangles": 1500,
+   "tags": [
+    "street",
+    "interior",
+    "seating"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/plastic_monobloc_chair_01",
+   "asset": "plastic_monobloc_chair_01",
+   "authors": [
+    "Kuutti Siitonen"
+   ],
+   "license": "CC0"
+  },
+  "plastic_crate": {
+   "path": "res://assets/props/plastic_crate/plastic_crate.gltf",
+   "size": [
+    0.481,
+    0.267,
+    0.266
+   ],
+   "triangles": 3000,
+   "tags": [
+    "market",
+    "storage",
+    "crate",
+    "plastic"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/plastic_crate_03",
+   "asset": "plastic_crate_03",
+   "authors": [
+    "Pacific Penguin"
+   ],
+   "license": "CC0"
+  },
+  "power_box": {
+   "path": "res://assets/props/power_box/power_box.gltf",
+   "size": [
+    0.461,
+    0.504,
+    0.399
+   ],
+   "triangles": 3000,
+   "tags": [
+    "wall",
+    "electrical",
+    "industrial"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/power_box_01",
+   "asset": "power_box_01",
+   "authors": [
+    "Rico Cilliers",
+    "Yann Kervran"
+   ],
+   "license": "CC0"
+  },
+  "produce_crate": {
+   "path": "res://assets/props/produce_crate/produce_crate.gltf",
+   "size": [
+    0.506,
+    0.254,
+    0.405
+   ],
+   "triangles": 2500,
+   "tags": [
+    "market",
+    "storage",
+    "crate",
+    "plastic"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/plastic_crate_02",
+   "asset": "plastic_crate_02",
+   "authors": [
+    "Fabi_G"
+   ],
+   "license": "CC0"
+  },
+  "propane_tank": {
+   "path": "res://assets/props/propane_tank/propane_tank.gltf",
+   "size": [
+    0.337,
+    0.554,
+    0.336
+   ],
+   "triangles": 2500,
+   "tags": [
+    "industrial",
+    "gas"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/propane_tank",
+   "asset": "propane_tank",
+   "authors": [
+    "Slinc"
+   ],
+   "license": "CC0"
+  },
+  "roof_gutter": {
+   "path": "res://assets/props/gutter/roof_gutter.gltf",
+   "size": [
+    1.511,
+    0.137,
+    0.389
+   ],
+   "triangles": 740,
+   "tags": [
+    "roof",
+    "building",
+    "kit"
+   ],
+   "kit": "gutter",
+   "source": "https://polyhaven.com/a/modular_metal_gutter",
+   "asset": "modular_metal_gutter",
+   "authors": [
+    "Maxim Domnin"
+   ],
+   "license": "CC0"
+  },
+  "roof_gutter_corner": {
+   "path": "res://assets/props/gutter/roof_gutter_corner.gltf",
+   "size": [
+    1.508,
+    0.137,
+    1.515
+   ],
+   "triangles": 864,
+   "tags": [
+    "roof",
+    "building",
+    "kit"
+   ],
+   "kit": "gutter",
+   "source": "https://polyhaven.com/a/modular_metal_gutter",
+   "asset": "modular_metal_gutter",
+   "authors": [
+    "Maxim Domnin"
+   ],
+   "license": "CC0"
+  },
+  "security_camera": {
+   "path": "res://assets/props/security_camera/security_camera.gltf",
+   "size": [
+    0.17,
+    0.286,
+    0.554
+   ],
+   "triangles": 2500,
+   "tags": [
+    "wall",
+    "electrical"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/security_camera_01",
+   "asset": "security_camera_01",
+   "authors": [
+    "Alexander Otterbeck",
+    "Yann Kervran"
+   ],
+   "license": "CC0"
+  },
+  "security_light": {
+   "path": "res://assets/props/security_light/security_light.gltf",
+   "size": [
+    0.322,
+    0.531,
+    0.417
+   ],
+   "triangles": 2500,
+   "tags": [
+    "wall",
+    "light"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/security_light",
+   "asset": "security_light",
+   "authors": [
+    "Maximilian Schuster"
+   ],
+   "license": "CC0"
+  },
+  "shutter_door": {
+   "path": "res://assets/props/shutter_door/shutter_door.gltf",
+   "size": [
+    1.08,
+    2.4,
+    0.3
+   ],
+   "triangles": 552,
+   "tags": [
+    "wall",
+    "building",
+    "door"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/rollershutter_door",
+   "asset": "rollershutter_door",
+   "authors": [
+    "MP"
+   ],
+   "license": "CC0"
+  },
+  "shutter_window": {
+   "path": "res://assets/props/shutter_window/shutter_window.gltf",
+   "size": [
+    2.1,
+    1.851,
+    0.3
+   ],
+   "triangles": 552,
+   "tags": [
+    "wall",
+    "building",
+    "window"
+   ],
+   "kit": "shutter_window",
+   "source": "https://polyhaven.com/a/rollershutter_window_01",
+   "asset": "rollershutter_window_01",
+   "authors": [
+    "MP"
+   ],
+   "license": "CC0"
+  },
+  "shutter_window_graffiti": {
+   "path": "res://assets/props/shutter_window/shutter_window_graffiti.gltf",
+   "size": [
+    2.1,
+    1.851,
+    0.3
+   ],
+   "triangles": 552,
+   "tags": [
+    "wall",
+    "building",
+    "window"
+   ],
+   "kit": "shutter_window",
+   "source": "https://polyhaven.com/a/rollershutter_window_01",
+   "asset": "rollershutter_window_01",
+   "authors": [
+    "MP"
+   ],
+   "license": "CC0"
+  },
+  "steel_shelves": {
+   "path": "res://assets/props/steel_shelves/steel_shelves.gltf",
+   "size": [
+    0.923,
+    1.8,
+    0.422
+   ],
+   "triangles": 2000,
+   "tags": [
+    "interior",
+    "storage",
+    "shelves"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/steel_frame_shelves_01",
+   "asset": "steel_frame_shelves_01",
+   "authors": [
+    "James Ray Cock"
+   ],
+   "license": "CC0"
+  },
+  "storage_cart": {
+   "path": "res://assets/props/storage_cart/storage_cart.gltf",
+   "size": [
+    1.609,
+    1.381,
+    1.108
+   ],
+   "triangles": 3000,
+   "tags": [
+    "workshop",
+    "industrial"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/industrial_storage_cart",
+   "asset": "industrial_storage_cart",
+   "authors": [
+    "Jule Bielitz"
+   ],
+   "license": "CC0"
+  },
+  "storage_tote": {
+   "path": "res://assets/props/storage_tote/storage_tote.gltf",
+   "size": [
+    0.457,
+    0.421,
+    0.632
+   ],
+   "triangles": 2500,
+   "tags": [
+    "storage",
+    "plastic",
+    "industrial"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/industrial_pastic_container",
+   "asset": "industrial_pastic_container",
+   "authors": [
+    "Galo Benivegna"
+   ],
+   "license": "CC0"
+  },
+  "street_bench": {
+   "path": "res://assets/props/street_bench/street_bench.gltf",
+   "size": [
+    2.453,
+    0.867,
+    0.671
+   ],
+   "triangles": 3999,
+   "tags": [
+    "street",
+    "seating"
+   ],
+   "kit": "street_bench",
+   "source": "https://polyhaven.com/a/modular_street_seating",
+   "asset": "modular_street_seating",
+   "authors": [
+    "Stuart Attenborrow"
+   ],
+   "license": "CC0"
+  },
+  "street_lamp": {
+   "path": "res://assets/props/street_lamp/street_lamp.gltf",
+   "size": [
+    0.706,
+    3.87,
+    0.384
+   ],
+   "triangles": 2500,
+   "tags": [
+    "street",
+    "light"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/street_lamp_01",
+   "asset": "street_lamp_01",
+   "authors": [
+    "Josh Dean"
+   ],
+   "license": "CC0"
+  },
+  "tool_cart": {
+   "path": "res://assets/props/tool_cart/tool_cart.gltf",
+   "size": [
+    1.278,
+    0.965,
+    0.755
+   ],
+   "triangles": 3999,
+   "tags": [
+    "workshop",
+    "industrial",
+    "garage"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/tool_cart",
+   "asset": "tool_cart",
+   "authors": [
+    "Savva Zakharov"
+   ],
+   "license": "CC0"
+  },
+  "tool_chest": {
+   "path": "res://assets/props/tool_chest/tool_chest.gltf",
+   "size": [
+    0.685,
+    0.652,
+    0.407
+   ],
+   "triangles": 3000,
+   "tags": [
+    "workshop",
+    "garage"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/metal_tool_chest",
+   "asset": "metal_tool_chest",
+   "authors": [
+    "John Hutcheson",
+    "Yann Kervran"
+   ],
+   "license": "CC0"
+  },
+  "toolbox": {
+   "path": "res://assets/props/toolbox/toolbox.gltf",
+   "size": [
+    0.4,
+    0.305,
+    0.271
+   ],
+   "triangles": 2500,
+   "tags": [
+    "workshop",
+    "garage"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/metal_toolbox",
+   "asset": "metal_toolbox",
+   "authors": [
+    "Mateusz Sadek"
+   ],
+   "license": "CC0"
+  },
+  "trash_bag": {
+   "path": "res://assets/props/trash_bag/trash_bag.gltf",
+   "size": [
+    0.525,
+    0.575,
+    0.462
+   ],
+   "triangles": 1499,
+   "tags": [
+    "street",
+    "alley",
+    "junk"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/trashbag",
+   "asset": "trashbag",
+   "authors": [
+    "Benny Weimer"
+   ],
+   "license": "CC0"
+  },
+  "trash_can": {
+   "path": "res://assets/props/trash_can/trash_can.gltf",
+   "size": [
+    0.652,
+    0.906,
+    0.552
+   ],
+   "triangles": 1500,
+   "tags": [
+    "street",
+    "bin"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/metal_trash_can",
+   "asset": "metal_trash_can",
+   "authors": [
+    "GurJas Studios"
+   ],
+   "license": "CC0"
+  },
+  "tv": {
+   "path": "res://assets/props/tv/tv.gltf",
+   "size": [
+    0.6,
+    0.457,
+    0.471
+   ],
+   "triangles": 1918,
+   "tags": [
+    "interior",
+    "electrical"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/Television_01",
+   "asset": "Television_01",
+   "authors": [
+    "Gabriel Radi\u0107"
+   ],
+   "license": "CC0"
+  },
+  "tyre": {
+   "path": "res://assets/props/tyre/tyre.gltf",
+   "size": [
+    0.6,
+    0.6,
+    0.165
+   ],
+   "triangles": 2880,
+   "tags": [
+    "street",
+    "junk"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/old_tyre",
+   "asset": "old_tyre",
+   "authors": [
+    "MP"
+   ],
+   "license": "CC0"
+  },
+  "utility_box": {
+   "path": "res://assets/props/utility_box/utility_box.gltf",
+   "size": [
+    0.52,
+    1.12,
+    0.432
+   ],
+   "triangles": 4404,
+   "tags": [
+    "street",
+    "electrical"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/utility_box_01",
+   "asset": "utility_box_01",
+   "authors": [
+    "James Ray Cock"
+   ],
+   "license": "CC0"
+  },
+  "utility_cabinet": {
+   "path": "res://assets/props/utility_cabinet/utility_cabinet.gltf",
+   "size": [
+    0.92,
+    1.12,
+    0.432
+   ],
+   "triangles": 2999,
+   "tags": [
+    "street",
+    "electrical"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/utility_box_02",
+   "asset": "utility_box_02",
+   "authors": [
+    "James Ray Cock"
+   ],
+   "license": "CC0"
+  },
+  "wall_lamp": {
+   "path": "res://assets/props/wall_lamp/wall_lamp.gltf",
+   "size": [
+    0.274,
+    0.432,
+    0.14
+   ],
+   "triangles": 1500,
+   "tags": [
+    "wall",
+    "light",
+    "industrial"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/industrial_wall_lamp",
+   "asset": "industrial_wall_lamp",
+   "authors": [
+    "Kuutti Siitonen"
+   ],
+   "license": "CC0"
+  },
+  "welding_cart": {
+   "path": "res://assets/props/welding_cart/welding_cart.gltf",
+   "size": [
+    0.837,
+    1.563,
+    0.655
+   ],
+   "triangles": 4000,
+   "tags": [
+    "workshop",
+    "industrial"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/portable_welding_cart",
+   "asset": "portable_welding_cart",
+   "authors": [
+    "Georgii Gorbunov"
+   ],
+   "license": "CC0"
+  },
+  "wet_floor_sign": {
+   "path": "res://assets/props/wet_floor_sign/wet_floor_sign.gltf",
+   "size": [
+    0.3,
+    0.63,
+    0.359
+   ],
+   "triangles": 228,
+   "tags": [
+    "interior",
+    "sign"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/WetFloorSign_01",
+   "asset": "WetFloorSign_01",
+   "authors": [
+    "Fran Calvente"
+   ],
+   "license": "CC0"
+  },
+  "wheel_rim": {
+   "path": "res://assets/props/wheel_rim/wheel_rim.gltf",
+   "size": [
+    0.404,
+    0.404,
+    0.156
+   ],
+   "triangles": 2000,
+   "tags": [
+    "street",
+    "junk",
+    "garage"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/rusted_wheel_rim_01",
+   "asset": "rusted_wheel_rim_01",
+   "authors": [
+    "John Hutcheson"
+   ],
+   "license": "CC0"
+  },
+  "wheel_rim_b": {
+   "path": "res://assets/props/wheel_rim_b/wheel_rim_b.gltf",
+   "size": [
+    0.337,
+    0.337,
+    0.123
+   ],
+   "triangles": 1999,
+   "tags": [
+    "street",
+    "junk",
+    "garage"
+   ],
+   "kit": null,
+   "source": "https://polyhaven.com/a/rusted_wheel_rim_02",
+   "asset": "rusted_wheel_rim_02",
+   "authors": [
+    "John Hutcheson"
+   ],
+   "license": "CC0"
+  },
+  "work_light_floor": {
+   "path": "res://assets/props/work_lights/work_light_floor.gltf",
+   "size": [
+    0.685,
+    0.422,
+    0.224
+   ],
+   "triangles": 3999,
+   "tags": [
+    "construction",
+    "light"
+   ],
+   "kit": "work_lights",
+   "source": "https://polyhaven.com/a/flood_lights",
+   "asset": "flood_lights",
+   "authors": [
+    "James Ray Cock"
+   ],
+   "license": "CC0"
+  },
+  "work_light_single": {
+   "path": "res://assets/props/work_lights/work_light_single.gltf",
+   "size": [
+    0.782,
+    1.658,
+    1.225
+   ],
+   "triangles": 4000,
+   "tags": [
+    "construction",
+    "light"
+   ],
+   "kit": "work_lights",
+   "source": "https://polyhaven.com/a/flood_lights",
+   "asset": "flood_lights",
+   "authors": [
+    "James Ray Cock"
+   ],
+   "license": "CC0"
+  },
+  "work_light_tripod": {
+   "path": "res://assets/props/work_lights/work_light_tripod.gltf",
+   "size": [
+    0.78,
+    1.788,
+    1.283
+   ],
+   "triangles": 5000,
+   "tags": [
+    "construction",
+    "light"
+   ],
+   "kit": "work_lights",
+   "source": "https://polyhaven.com/a/flood_lights",
+   "asset": "flood_lights",
+   "authors": [
+    "James Ray Cock"
+   ],
+   "license": "CC0"
+  },
+  "work_light_wall": {
+   "path": "res://assets/props/work_lights/work_light_wall.gltf",
+   "size": [
+    0.273,
+    0.179,
+    0.28
+   ],
+   "triangles": 2000,
+   "tags": [
+    "wall",
+    "light"
+   ],
+   "kit": "work_lights",
+   "source": "https://polyhaven.com/a/flood_lights",
+   "asset": "flood_lights",
+   "authors": [
+    "James Ray Cock"
+   ],
+   "license": "CC0"
+  }
+ }
+}

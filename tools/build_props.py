@@ -1,21 +1,24 @@
 """Build the map props from CC0 Poly Haven models. Runs inside Blender:
 
     blender -b --python tools/build_props.py [-- name ...]
-    blender -b --python tools/build_props.py -- --inspect name ...
+    blender -b --python tools/build_props.py -- --inspect name-or-asset ...
 
-For each prop in PROPS it downloads the model's 1K glTF (cached in
-~/.cache/shooter-props), keeps the parts named in `keep`, joins them, cuts the
-triangle count to `tris` with a collapse decimate (the textures carry the fine
-detail), moves the origin to the bottom centre, and writes
-godot/assets/props/<name>/<name>.gltf with its .bin and 1K textures beside it.
-Run `uv run tools/build_textures.py --fix-imports` after the first import so
-the textures are VRAM compressed.
+The props are listed in tools/prop_library.py. For each one it downloads the
+model's 1K glTF (cached in ~/.cache/shooter-props), keeps the parts named in
+`keep`, joins them, cuts the triangle count to `tris` with a collapse
+decimate (the textures carry the fine detail), moves the origin to the bottom
+centre, and writes godot/assets/props/<folder>/<name>.gltf with its .bin and
+1K textures beside it (a kit's pieces share their folder and textures).
+Then run `uv run tools/build_textures.py --fix-imports` after the first
+import so the textures are VRAM compressed, and
+`python3 tools/prop_catalog.py --write` to update the catalog.
 
 Every prop is CC0; credit it in godot/assets/CREDITS.md. Needs Blender 4.2+.
 """
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import sys
 import urllib.request
@@ -23,39 +26,13 @@ from pathlib import Path
 
 import bpy
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from prop_library import PROPS, folder
+
 REPO = Path(__file__).resolve().parent.parent
 OUT = REPO / "godot/assets/props"
 CACHE = Path.home() / ".cache/shooter-props"
 USER_AGENT = "shooter-asset-pipeline"
-
-# name: Poly Haven asset, which parts to keep (exact object names; empty keeps
-# everything), and the triangle budget. `--inspect` lists an asset's parts.
-PROPS = {
-    "barrier": ("concrete_road_barrier_02", [], 2500),
-    "barrel_red": ("Barrel_01", [], 2700),
-    "barrel_blue": ("Barrel_02", [], 2700),
-    "barrel_steel": ("barrel_03", [], 1500),
-    "crate": ("wooden_crate_02", [], 900),
-    "military_crate": ("wooden_military_crate", [], 3000),
-    "cardboard_box": ("cardboard_box_01", [], 1500),
-    "tyre": ("old_tyre", [], 2900),
-    "trash_can": (
-        "metal_trash_can",
-        ["metal_trash_can", "metal_trash_can_handle_left", "metal_trash_can_handle_right"],
-        1500,
-    ),
-    "aircon": ("exterior_aircon_unit", ["exterior_aircon_unit"], 2000),
-    "hydrant": (
-        "fire_hydrant",
-        ["fire_hydrant", "fire_hydrant_cap_01", "fire_hydrant_cap_02", "fire_hydrant_cap_03"],
-        3000,
-    ),
-    "shutter_door": ("rollershutter_door", ["rollershutter_door"], 1200),
-    "street_lamp": ("street_lamp_01", [], 2500),
-    "utility_box": ("utility_box_01", [], 4500),
-    "covered_car": ("covered_car", [], 6000),
-    "security_light": ("security_light", [], 2500),
-}
 
 
 def log(*args):
@@ -97,19 +74,25 @@ def triangles(obj) -> int:
 
 def inspect(names):
     for name in names:
-        asset = PROPS[name][0] if name in PROPS else name
+        asset = PROPS[name].asset if name in PROPS else name
         for obj in load(asset):
             log(asset, obj.name, triangles(obj), tuple(round(d, 2) for d in obj.dimensions),
                 tuple(round(v, 2) for v in obj.matrix_world.translation))
 
 
 def build(name: str):
-    asset, keep, budget = PROPS[name]
+    prop = PROPS[name]
+    asset, keep, budget = prop.asset, prop.keep, prop.tris
     log(name, asset)
     meshes = load(asset)
-    kept = [o for o in meshes if not keep or o.name in keep]
+    kept = [o for o in meshes if not keep or any(fnmatch.fnmatchcase(o.name, k) for k in keep)]
     if not kept:
         raise SystemExit(f"{name}: no parts match {keep}")
+    # Unparent first, so a kept part keeps its place when the rest is deleted.
+    for obj in kept:
+        world = obj.matrix_world.copy()
+        obj.parent = None
+        obj.matrix_world = world
     for obj in bpy.data.objects:
         if obj not in kept:
             bpy.data.objects.remove(obj, do_unlink=True)
@@ -122,6 +105,8 @@ def build(name: str):
     obj = bpy.context.view_layer.objects.active
     bpy.ops.object.parent_clear(type="CLEAR_KEEP_TRANSFORM")
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+    if obj.data.shape_keys:
+        obj.shape_key_clear()  # keeps the rest shape; decimating needs none
     before = triangles(obj)
     if before > budget:
         modifier = obj.modifiers.new("Decimate", "DECIMATE")
@@ -141,8 +126,14 @@ def build(name: str):
         v.co.x += offset[0]
         v.co.y += offset[1]
         v.co.z += offset[2]
+    if prop.height:
+        # A few sources are authored at the wrong scale; set the real height.
+        factor = prop.height / obj.dimensions.z
+        for v in obj.data.vertices:
+            v.co *= factor
+        obj.data.update()
     log(f"  {before} -> {triangles(obj)} triangles, size {tuple(round(d, 2) for d in obj.dimensions)}")
-    target = OUT / name / f"{name}.gltf"
+    target = OUT / folder(name) / f"{name}.gltf"
     target.parent.mkdir(parents=True, exist_ok=True)
     bpy.ops.export_scene.gltf(
         filepath=str(target),
@@ -151,6 +142,77 @@ def build(name: str):
         export_tangents=True,
         export_image_format="AUTO",
     )
+    cut_out(target, asset)
+
+
+def alpha_map(asset: str, material: str) -> Path | None:
+    """The source's separate alpha map for a material, if it has one. Poly Haven
+    leaves alpha out of its glTF packages, so a chain-link fence or a crate's
+    holes come out solid without it. Maps are keyed `alpha` (or `opacity`) for
+    an asset's own material and `<part>_alpha` for a material named
+    `<asset>_<part>`."""
+    info = json.loads((CACHE / asset / "files.json").read_text())
+    part = material[len(asset) + 1 :].lower() if material.startswith(asset + "_") else ""
+    keys = {key.lower(): key for key in info}
+    for kind in ("alpha", "opacity"):
+        key = keys.get(f"{part}_{kind}" if part else kind)
+        maps = info.get(key, {})
+        if "1k" in maps and "png" in maps["1k"]:
+            url = maps["1k"]["png"]["url"]
+            path = CACHE / asset / "maps" / Path(url).name
+            fetch(url, path)
+            return path
+    return None
+
+
+def cut_out(target: Path, asset: str) -> None:
+    """Turns the see-through parts of a prop (wire mesh, crate holes, speaker
+    grilles) from alpha blending into an alpha cut-out at 0.5, with the alpha
+    map packed into the colour texture: cut-outs sort correctly, cast shadows,
+    and bake. Glass (a material with "glass" in its name or a colour alpha
+    below 1) stays blended."""
+    data = json.loads(target.read_text())
+    changed = False
+    for material in data.get("materials", []):
+        if material.get("alphaMode") not in ("BLEND", "MASK"):
+            continue
+        pbr = material.get("pbrMetallicRoughness", {})
+        if "glass" in material["name"].lower() or pbr.get("baseColorFactor", [1, 1, 1, 1])[3] < 1:
+            continue
+        mask = alpha_map(asset, material["name"])
+        colour = pbr.get("baseColorTexture")
+        if mask is None or colour is None:
+            continue
+        image = data["images"][data["textures"][colour["index"]]["source"]]
+        source = target.parent / image["uri"]
+        out = source.with_name(f"{source.stem}_cutout.png")
+        rgba = bpy.data.images.load(str(source))
+        alpha = bpy.data.images.load(str(mask))
+        alpha.scale(rgba.size[0], rgba.size[1])
+        pixels = list(rgba.pixels)
+        pixels[3::4] = list(alpha.pixels)[0::4]
+        packed = bpy.data.images.new(out.stem, rgba.size[0], rgba.size[1], alpha=True)
+        packed.pixels.foreach_set(pixels)
+        packed.filepath_raw = str(out)
+        packed.file_format = "PNG"
+        packed.save()
+        image["uri"] = out.name
+        image["mimeType"] = "image/png"
+        material["alphaMode"] = "MASK"
+        material["alphaCutoff"] = 0.5
+        changed = True
+        log(f"  cut out {material['name']} with {mask.name}")
+    if not changed:
+        return
+    target.write_text(json.dumps(data, indent=2))
+    # Drop images no glTF in the folder uses any more (the uncut colour map).
+    used = set()
+    for gltf in target.parent.glob("*.gltf"):
+        used |= {i.get("uri") for i in json.loads(gltf.read_text()).get("images", [])}
+    for path in target.parent.iterdir():
+        if path.suffix in (".png", ".jpg") and path.name not in used:
+            path.unlink()
+            Path(f"{path}.import").unlink(missing_ok=True)
 
 
 def main():
