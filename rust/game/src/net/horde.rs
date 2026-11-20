@@ -35,6 +35,7 @@ use shooter_sim::net::protocol::{
 };
 use shooter_sim::rng;
 use shooter_sim::zombies::chase::{self, ChaseEvent, Chaser, Prey, Window, World};
+use shooter_sim::zombies::powerups::{self, DropContext, DropCycle};
 use shooter_sim::zombies::{self, Phase, PowerUp, RoundEvent, Rounds, ZombieRules};
 use shooter_sim::{TICK_DT, Vec3};
 
@@ -94,6 +95,8 @@ pub enum HordeEvent {
     PowerUpExpired { id: u8 },
     /// Insta-Kill or Double Points started or ran out.
     TimersChanged,
+    /// The Carpenter put the last board back: every player is paid.
+    CarpenterDone,
 }
 
 /// What a hit did to a zombie.
@@ -169,9 +172,15 @@ pub struct Horde {
     history: HordeHistory,
     last_send: Option<Tick>,
     events: Vec<RoundEvent>,
-    /// Kills and power-up drops this round.
-    round_kills: u32,
-    round_drops: u32,
+    /// When kills drop power-ups, and which (Black Ops' cycle).
+    drop_cycle: DropCycle,
+    /// Points every player has earned this game, together.
+    earned: u32,
+    /// Games played, to vary the drop cycle.
+    games: u32,
+    /// The Carpenter at work: where it was picked up, and seconds to the
+    /// next board.
+    carpenter: Option<(Vec3, f32)>,
     doors: Vec<MapDoor>,
     drops: Vec<PowerUpDrop>,
     next_drop_id: u8,
@@ -210,8 +219,10 @@ impl Horde {
             history: HordeHistory::default(),
             last_send: None,
             events: Vec::new(),
-            round_kills: 0,
-            round_drops: 0,
+            drop_cycle: DropCycle::new(0),
+            earned: 0,
+            games: 0,
+            carpenter: None,
             doors: map_doors(map),
             drops: Vec::new(),
             next_drop_id: 0,
@@ -235,8 +246,10 @@ impl Horde {
         self.open_zones = vec![String::new()];
         self.gates.clear();
         self.history.clear();
-        self.round_kills = 0;
-        self.round_drops = 0;
+        self.games = self.games.wrapping_add(1);
+        self.drop_cycle = DropCycle::new(rng::hash(self.games, 0x504f_5745));
+        self.earned = 0;
+        self.carpenter = None;
         self.drops.clear();
         self.insta_kill_left = 0.0;
         self.double_points_left = 0.0;
@@ -339,8 +352,7 @@ impl Horde {
         for event in &events {
             match *event {
                 RoundEvent::RoundStarted { round } => {
-                    self.round_kills = 0;
-                    self.round_drops = 0;
+                    self.drop_cycle.round_started();
                     out.push(HordeEvent::RoundStarted(round));
                 }
                 RoundEvent::RoundCleared { .. } => {}
@@ -437,6 +449,56 @@ impl Horde {
         self.pending = out;
         if !over {
             self.update_power_ups(players, dt);
+            self.step_carpenter(dt);
+        }
+    }
+
+    /// Players earned `points` (after Double Points): the drop cycle counts
+    /// them towards the next power-up.
+    pub fn earned(&mut self, points: u32) {
+        self.earned = self.earned.saturating_add(points);
+        self.drop_cycle.earned(self.earned);
+    }
+
+    /// The Carpenter puts a board back every so often, on the window
+    /// nearest where it was picked up that still lacks one, until every
+    /// window is whole.
+    fn step_carpenter(&mut self, dt: f32) {
+        let Some((from, mut wait)) = self.carpenter else {
+            return;
+        };
+        wait -= dt;
+        while wait <= 0.0 {
+            let nearest = self
+                .windows
+                .iter()
+                .enumerate()
+                .filter(|(_, w)| w.boards < WINDOW_BOARDS)
+                .min_by(|(_, a), (_, b)| {
+                    a.position
+                        .distance(from)
+                        .total_cmp(&b.position.distance(from))
+                })
+                .map(|(i, w)| (i, w.boards));
+            let Some((index, boards)) = nearest else {
+                self.carpenter = None;
+                self.pending.push(HordeEvent::CarpenterDone);
+                return;
+            };
+            self.set_boards(index, boards + 1);
+            self.pending.push(HordeEvent::Boards {
+                window: index as u8,
+                boards: boards + 1,
+            });
+            wait += powerups::CARPENTER_BOARD_SECONDS;
+        }
+        self.carpenter = Some((from, wait));
+    }
+
+    /// What decides which power-ups can drop now.
+    fn drop_context(&self) -> DropContext {
+        DropContext {
+            bare_windows: self.windows.iter().filter(|w| w.boards == 0).count(),
         }
     }
 
@@ -463,7 +525,7 @@ impl Horde {
                     && (p.feet.y - drop.at.y).abs() < 2.5
             });
             if let Some(by) = by {
-                taken.push((drop.id, drop.kind, by.id));
+                taken.push((drop.id, drop.kind, by.id, drop.at));
                 return false;
             }
             if drop.left <= 0.0 {
@@ -473,15 +535,17 @@ impl Horde {
             }
             true
         });
-        for (id, kind, by) in taken {
-            self.collect(id, kind, by);
+        for (id, kind, by, at) in taken {
+            self.collect(id, kind, by, at);
         }
     }
 
-    fn collect(&mut self, id: u8, kind: PowerUp, by: u8) {
+    fn collect(&mut self, id: u8, kind: PowerUp, by: u8, at: Vec3) {
         let mut nuked = 0;
         match kind {
             PowerUp::MaxAmmo => {}
+            // A second one while the first works restarts it from here.
+            PowerUp::Carpenter => self.carpenter = Some((at, 0.0)),
             PowerUp::InstaKill => {
                 self.insta_kill_left = zombies::POWER_UP_SECONDS;
                 self.pending.push(HordeEvent::TimersChanged);
@@ -517,9 +581,7 @@ impl Horde {
     fn kill(&mut self, id: u8, direction: Vec3) -> Option<()> {
         let zombie = self.zombies.iter_mut().find(|z| z.id == id && z.alive)?;
         let damage = zombie.health + 1.0;
-        let drops = std::mem::replace(&mut self.round_drops, zombies::MAX_DROPS_PER_ROUND);
-        self.hurt(id, damage, direction, None, false);
-        self.round_drops = drops;
+        self.hurt_ex(id, damage, direction, None, false, false);
         Some(())
     }
 
@@ -723,6 +785,20 @@ impl Horde {
         part: Option<u8>,
         melee: bool,
     ) -> Option<ZombieHurt> {
+        self.hurt_ex(id, damage, direction, part, melee, true)
+    }
+
+    /// [`Self::hurt`], with whether a kill may drop a power-up.
+    fn hurt_ex(
+        &mut self,
+        id: u8,
+        damage: f32,
+        direction: Vec3,
+        part: Option<u8>,
+        melee: bool,
+        may_drop: bool,
+    ) -> Option<ZombieHurt> {
+        let context = self.drop_context();
         let insta_kill = self.insta_kill_left > 0.0;
         let zombie = self.zombies.iter_mut().find(|z| z.id == id && z.alive)?;
         // Insta-Kill: any hit kills.
@@ -740,10 +816,7 @@ impl Horde {
             zombie.body.set_collision_layer(0);
             zombie.body.set_collision_mask(0);
             self.rounds.on_killed();
-            let kill = self.round_kills;
-            self.round_kills += 1;
-            if let Some(kind) = zombies::power_up_drop(self.rounds.round, kill, self.round_drops) {
-                self.round_drops += 1;
+            if may_drop && let Some(kind) = self.drop_cycle.on_kill(&context) {
                 self.drop_power_up(kind, position);
             }
         } else if !melee && hit.force >= chase::STAGGER_FORCE {

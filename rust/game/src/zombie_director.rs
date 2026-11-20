@@ -704,6 +704,8 @@ impl ZombieDirector {
                 self.nuking = false;
                 self.award(i64::from(zombies::NUKE_POINTS));
             }
+            // Only the server's drop cycle deals it; the server rebuilds.
+            PowerUp::Carpenter => {}
         }
         self.signals()
             .power_up_collected()

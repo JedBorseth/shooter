@@ -4,21 +4,25 @@ extends Node3D
 ## it, and blinks in its last seconds. Each kind has its own shape.
 
 const GLOW := Color(0.45, 1.0, 0.35)
-## Seconds left when the token starts to blink.
-const BLINK_FROM := 5.0
+## Seconds left when the token starts to blink: Black Ops III lets it lie
+## still for 15 s, then blinks it for 11.5 s, faster as it runs out
+## (`powerup_timeout`; `shooter_sim::zombies::powerups`).
+const BLINK_FROM := 11.5
 ## Each kind's model (tools/gear_models.py, built in Blender): an ammo can,
-## a skull, "x2", and a bomb, glowing.
+## a skull, "x2", a bomb, and a carpenter's tote, glowing.
 const MODELS := {
 	"max_ammo": preload("res://assets/models/powerup_ammo/powerup_ammo.gltf"),
 	"insta_kill": preload("res://assets/models/powerup_skull/powerup_skull.gltf"),
 	"double_points": preload("res://assets/models/powerup_x2/powerup_x2.gltf"),
 	"nuke": preload("res://assets/models/powerup_bomb/powerup_bomb.gltf"),
+	"carpenter": preload("res://assets/models/powerup_tote/powerup_tote.gltf"),
 }
 const LABELS := {
 	"max_ammo": "MAX AMMO",
 	"insta_kill": "INSTA-KILL",
 	"double_points": "DOUBLE POINTS",
 	"nuke": "KABOOM",
+	"carpenter": "CARPENTER",
 }
 
 var kind := ""
@@ -66,9 +70,10 @@ func _process(delta: float) -> void:
 		return
 	_token.rotation.y += delta * 2.0
 	_token.position.y = sin(_age * 2.4) * 0.08
-	# Blink faster and faster as it is about to vanish.
+	# Blink faster and faster as it is about to vanish: half-second blinks,
+	# then quarter, then tenth.
 	if _time_left < BLINK_FROM:
-		var rate := lerpf(10.0, 3.0, _time_left / BLINK_FROM)
-		visible = fmod(_age * rate, 1.0) < 0.6
+		var period := 1.0 if _time_left > 4.0 else (0.5 if _time_left > 1.5 else 0.2)
+		visible = fmod(_age, period) < period * 0.5
 	else:
 		visible = true

@@ -574,8 +574,8 @@ struct ZombiesStats {
     headshots: u32,
     downs: u32,
     revives: u32,
-    /// Seconds into the board being put back on a window, and points paid
-    /// for rebuilding this round.
+    /// Seconds into the board being put back on a window, and what
+    /// rebuilding has earned this round, paid or past the cap.
     rebuild_for: f32,
     rebuilt: u32,
     /// The last tick they held use at a window.
@@ -1937,6 +1937,22 @@ impl NetServer {
             .map_or(-1, i32::from)
     }
 
+    /// Zombies: tears window `index` down to `boards` boards (tests).
+    #[func]
+    fn debug_set_boards(&mut self, index: i32, boards: i32) {
+        let Some(horde) = &mut self.horde else {
+            return;
+        };
+        let (Ok(index), Ok(boards)) = (usize::try_from(index), u8::try_from(boards)) else {
+            return;
+        };
+        horde.set_boards(index, boards);
+        self.broadcast_event(&GameEvent::Zombies(protocol::ZombiesEvent::Boards {
+            window: index as u8,
+            boards,
+        }));
+    }
+
     /// Zombies: windows on the map.
     #[func]
     fn window_count(&self) -> i32 {
@@ -2176,7 +2192,7 @@ impl NetServer {
     }
 
     /// Zombies: drops a power-up ("max_ammo", "insta_kill", "double_points",
-    /// "nuke") at `position` (tests).
+    /// "nuke", "carpenter") at `position` (tests).
     #[func]
     fn debug_drop_power_up(&mut self, kind: GString, position: Vector3) {
         let Some(kind) = zombies::PowerUp::from_key(&kind.to_string()) else {
@@ -4101,7 +4117,17 @@ impl NetServer {
                                 self.next_scoreboard = self.tick;
                             }
                         }
-                        zombies::PowerUp::InstaKill | zombies::PowerUp::DoublePoints => {}
+                        zombies::PowerUp::InstaKill
+                        | zombies::PowerUp::DoublePoints
+                        | zombies::PowerUp::Carpenter => {}
+                    }
+                }
+                // Every board is back: every player is paid, as in Black Ops.
+                HordeEvent::CarpenterDone => {
+                    godot_print!("server: the Carpenter finished");
+                    let ids: Vec<u8> = self.avatars.iter().map(|a| a.id).collect();
+                    for id in ids {
+                        self.award_points(id, zombies::powerups::CARPENTER_POINTS);
                     }
                 }
                 HordeEvent::TimersChanged => {
@@ -4185,13 +4211,14 @@ impl NetServer {
                 let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
                     continue;
                 };
-                // Letting go, or looking away, starts the board over.
+                // A board goes up as soon as use is held, then one a
+                // second; letting go, or looking away, starts over.
                 if avatar
                     .zombies
                     .rebuild_seen
                     .is_none_or(|seen| seen + 1 < tick)
                 {
-                    avatar.zombies.rebuild_for = 0.0;
+                    avatar.zombies.rebuild_for = zombies::REBUILD_SECONDS;
                 }
                 avatar.zombies.rebuild_seen = Some(tick);
                 avatar.zombies.rebuild_for += TICK_DT;
@@ -4199,9 +4226,8 @@ impl NetServer {
                     continue;
                 }
                 avatar.zombies.rebuild_for = 0.0;
-                let pay = zombies::REBUILD_POINTS
-                    .min(zombies::MAX_REBUILD_POINTS.saturating_sub(avatar.zombies.rebuilt));
-                avatar.zombies.rebuilt += pay;
+                let pay = zombies::rebuild_pay(horde.round(), avatar.zombies.rebuilt);
+                avatar.zombies.rebuilt += zombies::REBUILD_POINTS;
                 horde.set_boards(window, boards + 1);
                 self.broadcast_event(&GameEvent::Zombies(protocol::ZombiesEvent::Boards {
                     window: window as u8,
@@ -4742,6 +4768,9 @@ impl NetServer {
             return;
         };
         avatar.zombies.points = avatar.zombies.points.saturating_add(points);
+        if let Some(horde) = &mut self.horde {
+            horde.earned(points);
+        }
         self.send_points(id, points as i32);
     }
 

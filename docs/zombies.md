@@ -1,4 +1,4 @@
-# Zombies: power, drinks, the mystery crate, and the forge
+# Zombies: power-ups, power, drinks, the mystery crate, and the forge
 
 The systems that make a round-based Zombies run worth playing past the first
 few rounds, after Black Ops' power switch, perk machines, mystery box, and
@@ -16,6 +16,37 @@ We take the mechanics, never the property: the machines, drinks, crate, and
 forge have our own names, models (built in Blender,
 `tools/gear_models.py`), colours, and icons. No Call of Duty names, logos,
 or jingles.
+
+## Power-ups
+
+Kills drop glowing tokens any standing player walks over for the whole team
+(`rust/game/src/net/horde.rs`, rules in `rust/sim/src/zombies/powerups.rs`).
+When a drop comes, and which, follow Black Ops III's `_zm_powerups.gsc`:
+
+| Rule | Here | Black Ops III |
+| --- | --- | --- |
+| Earned drops | Once the team has earned 2000 points together, the next kill drops one; the step grows 14% each time and counts from the points earned then | `watch_for_drop`: `zombie_powerup_drop_increment` 2000, times 1.14 per drop |
+| Lucky drops | Any kill also drops one 3 times in 100 | `powerup_drop`: `randomint(100) <= 2` |
+| Per round | Four at most | `zombie_powerup_drop_max_per_round` 4 |
+| Which | Dealt in turn from a shuffled deck of every kind, shuffled again when it runs out; a kind that cannot drop now is passed over | `get_next_powerup`, `get_valid_powerup` |
+| On the ground | 15 s still, then 11.5 s blinking (half-second, then quarter, then tenth), then gone | `powerup_timeout` |
+| Max Ammo | Every standing player's weapons full | `full_ammo` |
+| Insta-Kill, Double Points | 30 s each | `zombie_powerup_insta_kill_time`, `..._double_points_time` |
+| Kaboom (the nuke) | Every zombie in play dies; every player gets 400 | `nuke` |
+| Carpenter | Drops only once five windows are bare. Boards go back on every window, nearest to where it was taken first, one every 0.1 s; then every player gets 200 | `func_should_drop_carpenter`, `start_carpenter` |
+
+Points earned count everything paid: hits, kills, boards, the nuke's and
+the Carpenter's pay, doubled under Double Points, as Black Ops'
+`score_total` does. Kills by the nuke drop nothing.
+
+The Carpenter's token is a carpenter's tote with a saw standing in it, built
+in Blender (`tools/gear_models.py`, `powerup_tote`).
+
+**Windows.** Holding use at a window puts a board back at once, then one a
+second (`do_post_chunk_repair_delay`'s `wait(1)`). Each pays 10 while the
+round's running total stays under 50 times the round number, at most 500
+(`rebuild_barrier_cap_per_round`); as in Black Ops, the board that reaches
+the cap is not paid.
 
 ## Power
 
@@ -137,7 +168,8 @@ sounds yet (real CC0 recordings only).
 
 ## Reference
 
-- Black Ops III: `_zm_pack_a_punch.gsc` and `_zm_pack_a_punch_util.gsc`
+- Black Ops III: `_zm_powerups.gsc`, `_zm_powerup_carpenter.gsc`,
+  `_zm_blockers.gsc` and `_zm.gsc` (rebuilding), `_zm_pack_a_punch.gsc` and `_zm_pack_a_punch_util.gsc`
   (cost, working time, timeout), `_zm_weapons.gsc` (upgraded ammo cost),
   `_zm_magicbox.gsc` (cost, cycle, timeout, move odds),
   `_zm_perks.gsc` (`perk_purchase_limit`, perk loss on going

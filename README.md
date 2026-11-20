@@ -147,8 +147,9 @@ way; ones that spawn in a side yard walk to its gate first, and ones that walk i
 a wall head for the open gate on the shortest way to you. Up to 24 are alive at once.
 
 Zombies spawn outside the walls and climb in through eight boarded windows, tearing
-off one board a second or so. Look at a damaged window and press F to put a board
-back: 10 points a board, up to 300 a round. Bullets pass between the boards. Zombies
+off one board a second or so. Look at a damaged window and hold F to put boards
+back, one at once and then one a second: 10 points a board, up to 50 a round per
+round number (500 at most). Bullets pass between the boards. Zombies
 groan as they come, snarl when they swing, and a sting marks each round.
 
 A zombie that reaches you swings. The first hit takes half your health and the
@@ -162,9 +163,12 @@ respawn: death ends the match and shows how many rounds you survived, with
   Ammo for a gun you carry costs half.
 - **Debris:** the gates in the west and east walls are piled with debris; clearing it
   (750 west, 1000 east) opens that yard, its wall weapon, and its zombie spawns.
-- **Power-ups:** a kill sometimes drops one (at most four a round), glowing green
-  for 30 seconds: Max Ammo, Insta-Kill (any hit kills for 30 seconds), Double Points
-  (30 seconds), and Kaboom (kills every zombie and pays 400).
+- **Power-ups:** a kill drops one each time the team has earned enough points (2000
+  for the first, 14% more each time after), and now and then by luck; at most four a
+  round. They glow green for 15 seconds, then blink for 11.5 before they go: Max
+  Ammo, Insta-Kill (any hit kills for 30 seconds), Double Points (30 seconds), Kaboom
+  (kills every zombie and pays 400), and the Carpenter (once five windows are bare:
+  boards every window back up and pays everyone 200).
 
 The T refill key is off in this mode. Esc opens the pause menu.
 
