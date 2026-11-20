@@ -25,7 +25,8 @@ extends Node
 ##                                    MINUTES (10), or Gun Game with N
 ##                                    kills per weapon (2), or Search and Destroy to
 ##                                    N rounds (6), or co-op Zombies for up to
-##                                    four players (on the zombies map);
+##                                    four players (on the zombies map; it has
+##                                    no bots, so --bots is ignored there);
 ##                                    --auto-start skips the lobby's ready-up.
 ##                                    --accounts URL admits only players signed
 ##                                    in to that account server, checks their
@@ -342,7 +343,7 @@ func _start_server(options: Dictionary) -> void:
 	server.map_scene = load(scene_path) as PackedScene
 	server.map_name = MAP_NAMES[selected_map.to_lower()]
 	server.port = int(options.get("port", DEFAULT_PORT))
-	server.bots = int(options.get("bots", 0))
+	server.bots = server_bots(options)
 	server.bots_deal_damage = options.has("bot-damage")
 	server.bot_skill = String(options.get("bot-skill", ""))
 	if String(options.get("name", "")) != "":
@@ -361,7 +362,7 @@ func _start_server(options: Dictionary) -> void:
 		server.rounds_to_win = maxi(int(options["rounds"]), 1)
 	server.auto_start = options.has("auto-start")
 	server.custom_settings = String(options.get("custom", ""))
-	server.team_bots = String(options.get("team-bots", ""))
+	server.team_bots = "" if is_zombies(options) else String(options.get("team-bots", ""))
 	server.team_bot_skill = String(options.get("team-bot-skill", ""))
 	var accounts := String(options.get("accounts", ""))
 	if not accounts.is_empty():
@@ -382,6 +383,24 @@ func _start_server(options: Dictionary) -> void:
 	tree.current_scene = server
 	if previous != null:
 		previous.queue_free()
+
+
+## Whether a dedicated server's `options` run co-op Zombies.
+static func is_zombies(options: Dictionary) -> bool:
+	return String(options.get("mode", "tdm")).strip_edges().to_lower() in ["zombies", "zm"]
+
+
+## Bots a dedicated server started with `options` spawns: `--bots`, except
+## in Zombies. Black Ops has no Zombies bots, and ours would join the co-op
+## team and all go down in round 1, so `--bots` and `--team-bots` are ignored
+## there with a log line.
+static func server_bots(options: Dictionary) -> int:
+	var bots := int(options.get("bots", 0))
+	if not is_zombies(options):
+		return bots
+	if bots > 0 or String(options.get("team-bots", "")) != "":
+		print("server: Zombies has no bots; --bots and --team-bots ignored")
+	return 0
 
 
 ## Quits once `server` has had no connections for `seconds`: a server the
