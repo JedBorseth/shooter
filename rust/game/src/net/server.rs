@@ -100,7 +100,7 @@ use shooter_sim::tdm::{
     Transition,
 };
 use shooter_sim::weapon::{self, CombatEvent, CombatState, WeaponId};
-use shooter_sim::zombies;
+use shooter_sim::zombies::{self, laststand};
 use shooter_sim::{Vec2, Vec3, rng};
 
 use super::bots::{
@@ -414,6 +414,22 @@ struct Avatar {
     interact: bool,
     /// Zombies: points, kills, and the rest of the co-op scoreboard.
     zombies: ZombiesStats,
+    /// Zombies: down in last stand, waiting for a revive.
+    last_stand: Option<LastStand>,
+}
+
+/// A player down in last stand.
+#[derive(Clone, Copy, Debug)]
+struct LastStand {
+    /// Seconds until they bleed out (the clock stops during a revive).
+    bleed_left: f32,
+    /// What they carried when they went down, given back on a revive.
+    stored: CombatState,
+    /// Points they lost going down, which their reviver earns.
+    lost: u32,
+    /// Who is reviving them, and for how long so far.
+    reviver: Option<u8>,
+    revived_for: f32,
 }
 
 /// One player's Zombies tallies.
@@ -423,12 +439,15 @@ struct ZombiesStats {
     kills: u32,
     headshots: u32,
     downs: u32,
+    revives: u32,
     /// Seconds into the board being put back on a window, and points paid
     /// for rebuilding this round.
     rebuild_for: f32,
     rebuilt: u32,
     /// The last tick they held use at a window.
     rebuild_seen: Option<Tick>,
+    /// Zombies ignore them until this tick (just revived).
+    ignored_until: Tick,
 }
 
 /// A shot fired this tick, waiting to be checked.
@@ -1285,6 +1304,31 @@ impl NetServer {
         self.drain_horde();
     }
 
+    /// Zombies: whether player `id` is down in last stand.
+    #[func]
+    fn player_downed(&self, id: i32) -> bool {
+        self.avatars
+            .iter()
+            .any(|a| i32::from(a.id) == id && a.last_stand.is_some())
+    }
+
+    /// Zombies: teammates player `id` has revived this game.
+    #[func]
+    fn player_revives(&self, id: i32) -> i32 {
+        self.avatars
+            .iter()
+            .find(|a| i32::from(a.id) == id)
+            .map_or(0, |a| a.zombies.revives as i32)
+    }
+
+    /// Zombies: puts player `id` down as a zombie's second hit would (tests).
+    #[func]
+    fn debug_down(&mut self, id: i32) {
+        if let Ok(id) = u8::try_from(id) {
+            self.go_down(id);
+        }
+    }
+
     /// Zombies: gives player `id` points outright (tests).
     #[func]
     fn debug_add_points(&mut self, id: i32, points: i32) {
@@ -1536,6 +1580,14 @@ impl NetServer {
                     events.extend(horde.door_events());
                     events.extend(horde.drop_events());
                     events.push(horde.timers_event(self.tick));
+                    for avatar in &self.avatars {
+                        if let Some(stand) = &avatar.last_stand {
+                            events.push(protocol::ZombiesEvent::Downed {
+                                player: avatar.id,
+                                bleeds_out_at: Some(self.ticks_from_now(stand.bleed_left)),
+                            });
+                        }
+                    }
                     for event in events {
                         self.send_event(id, GameEvent::Zombies(event));
                     }
@@ -1707,6 +1759,7 @@ impl NetServer {
                 points: zombies::START_POINTS,
                 ..ZombiesStats::default()
             },
+            last_stand: None,
         });
         let event = joined_event(self.avatars.last().expect("just pushed"));
         self.broadcast_event(&event);
@@ -1825,6 +1878,7 @@ impl NetServer {
         avatar.yaw = point.yaw;
         avatar.pitch = 0.0;
         avatar.spawned_at = tick;
+        avatar.last_stand = None;
         avatar.respawn_in = self.respawn_delay;
         avatar.killcam_since = None;
         body::place(&mut avatar.parts, &self.params.movement, &avatar.predicted);
@@ -1950,6 +2004,14 @@ impl NetServer {
         let mut respawns = Vec::new();
         let mut spent: Vec<(u8, u32)> = Vec::new();
         let mut uses: Vec<(u8, Gd<Node>, bool)> = Vec::new();
+        let mut revivers: Vec<(u8, u8)> = Vec::new();
+        // Zombies: who is down, and where, as of the start of the tick.
+        let downed: Vec<(u8, Vec3)> = self
+            .avatars
+            .iter()
+            .filter(|a| a.last_stand.is_some())
+            .map(|a| (a.id, a.predicted.position))
+            .collect();
         let zombies_mode = self.horde.is_some();
         let tick = self.tick;
         // What bots know about everyone this tick.
@@ -2102,8 +2164,16 @@ impl NetServer {
                 {
                     input = input.using_charge();
                 }
-                // Zombies: holding the use button at a door or a window.
-                if zombies_mode
+                // Zombies: holding the use button beside a teammate who is
+                // down revives them, held still with the weapon away (as
+                // the client predicts); otherwise at a door or a window.
+                let reviving = (zombies_mode && input.interact)
+                    .then(|| revive_target(avatar, &downed))
+                    .flatten();
+                if let Some(target) = reviving {
+                    revivers.push((avatar.id, target));
+                    input = input.using_charge();
+                } else if zombies_mode
                     && input.interact
                     && let Some(node) = looked_at(avatar, &input, &self.params)
                 {
@@ -2291,6 +2361,9 @@ impl NetServer {
             self.send_points(id, -(cost as i32));
         }
         self.zombies_uses(uses);
+        if zombies_mode && self.match_state.scoring() {
+            self.update_last_stands(&revivers);
+        }
         self.update_horde();
     }
 
@@ -2310,13 +2383,18 @@ impl NetServer {
             .map(|a| HordePlayer {
                 id: a.id,
                 feet: a.predicted.position,
-                standing: a.predicted.state.alive(),
+                standing: a.predicted.state.alive()
+                    && !a.predicted.state.downed
+                    && self.tick >= a.zombies.ignored_until,
             })
             .collect();
         horde.step(&players);
         self.drain_horde();
-        let everyone_down =
-            !self.avatars.is_empty() && self.avatars.iter().all(|a| !a.predicted.state.alive());
+        let everyone_down = !self.avatars.is_empty()
+            && self
+                .avatars
+                .iter()
+                .all(|a| !a.predicted.state.alive() || a.predicted.state.downed);
         if let Some(horde) = &mut self.horde
             && everyone_down
             && !horde.over()
@@ -2528,6 +2606,9 @@ impl NetServer {
         let mut back = Vec::new();
         for avatar in &mut self.avatars {
             avatar.zombies.rebuilt = 0;
+            if avatar.predicted.state.downed {
+                continue;
+            }
             if avatar.predicted.state.alive() {
                 if round > 1 {
                     let combat = &mut avatar.predicted.state.combat;
@@ -2560,19 +2641,25 @@ impl NetServer {
             return;
         }
         let state = &mut avatar.predicted.state;
+        if state.downed {
+            return;
+        }
         let damage = zombies::hit_damage(state.health, max);
-        let killed = player::apply_damage(state, damage, false, &mut Vec::new());
+        // The second hit downs instead of killing (last stand).
+        let downs = damage >= state.health;
+        let damage = if downs {
+            state.health - laststand::DOWNED_HEALTH
+        } else {
+            damage
+        };
+        player::apply_damage(state, damage, false, &mut Vec::new());
+        let killed = false;
         let travel = avatar.predicted.position - from;
         avatar.hits = avatar.hits.wrapping_add(1);
         avatar.hit_heading = protocol::heading_to_u8(travel.x, travel.z);
         avatar.hit_part =
             protocol::HitPart::new(Some(shooter_sim::hitbox::CHEST_SHAPE as u8), damage, false)
                 .to_u8();
-        if killed {
-            avatar.zombies.downs += 1;
-            avatar.score.deaths += 1;
-            self.next_scoreboard = self.tick;
-        }
         self.send_event(
             id,
             GameEvent::Hurt {
@@ -2582,6 +2669,178 @@ impl NetServer {
                 killed,
             },
         );
+        if downs {
+            self.go_down(id);
+        }
+    }
+
+    /// Zombies: player `id` goes down in last stand: the sidearm alone, a
+    /// crawl, 5% of their points lost (the reviver earns them), and 45 s to
+    /// be revived.
+    fn go_down(&mut self, id: u8) {
+        let bleeds_out_at = self.ticks_from_now(laststand::BLEED_OUT_SECONDS);
+        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
+            return;
+        };
+        let state = &mut avatar.predicted.state;
+        if state.downed || !state.alive() {
+            return;
+        }
+        let stored = state.combat;
+        state.downed = true;
+        state.health = laststand::DOWNED_HEALTH;
+        state.combat = laststand::pistol();
+        state.combat.shots_fired = stored.shots_fired;
+        let movement = &mut state.movement;
+        movement.stance = shooter_sim::movement::Stance::Crouching;
+        movement.sprinting = false;
+        movement.mounted = false;
+        movement.leave_ladder(&self.params.movement);
+        let lost = laststand::down_penalty(avatar.zombies.points);
+        avatar.zombies.points -= lost;
+        avatar.zombies.downs += 1;
+        avatar.score.deaths += 1;
+        avatar.last_stand = Some(LastStand {
+            bleed_left: laststand::BLEED_OUT_SECONDS,
+            stored,
+            lost,
+            reviver: None,
+            revived_for: 0.0,
+        });
+        godot_print!("server: player {id} is down");
+        self.send_points(id, -(lost as i32));
+        self.broadcast_event(&GameEvent::Zombies(protocol::ZombiesEvent::Downed {
+            player: id,
+            bleeds_out_at: Some(bleeds_out_at),
+        }));
+        self.next_scoreboard = self.tick;
+    }
+
+    /// Zombies: runs every last stand one tick: revives under way (the
+    /// teammates in `revivers` held use beside someone down this tick), and
+    /// the bleed-out clock, which stops during a revive.
+    fn update_last_stands(&mut self, revivers: &[(u8, u8)]) {
+        let tick = self.tick;
+        let mut revived = Vec::new();
+        let mut bled_out = Vec::new();
+        let mut events = Vec::new();
+        for avatar in &mut self.avatars {
+            let Some(stand) = &mut avatar.last_stand else {
+                continue;
+            };
+            let helpers: Vec<u8> = revivers
+                .iter()
+                .filter(|(_, target)| *target == avatar.id)
+                .map(|(by, _)| *by)
+                .collect();
+            let by = stand
+                .reviver
+                .filter(|r| helpers.contains(r))
+                .or_else(|| helpers.first().copied());
+            match by {
+                Some(by) => {
+                    if stand.reviver != Some(by) {
+                        stand.reviver = Some(by);
+                        stand.revived_for = 0.0;
+                        let left = (laststand::REVIVE_SECONDS * TICK_RATE as f32).ceil() as Tick;
+                        events.push(protocol::ZombiesEvent::Revive {
+                            player: avatar.id,
+                            by: Some(by),
+                            done_at: tick + left,
+                        });
+                    }
+                    stand.revived_for += TICK_DT;
+                    if stand.revived_for >= laststand::REVIVE_SECONDS {
+                        revived.push((avatar.id, by));
+                    }
+                }
+                None => {
+                    if stand.reviver.take().is_some() {
+                        stand.revived_for = 0.0;
+                        events.push(protocol::ZombiesEvent::Revive {
+                            player: avatar.id,
+                            by: None,
+                            done_at: tick,
+                        });
+                    }
+                    stand.bleed_left -= TICK_DT;
+                    if stand.bleed_left <= 0.0 {
+                        bled_out.push(avatar.id);
+                    }
+                }
+            }
+        }
+        for event in events {
+            self.broadcast_event(&GameEvent::Zombies(event));
+        }
+        for (id, by) in revived {
+            self.revive(id, by);
+        }
+        for id in bled_out {
+            self.bleed_out(id);
+        }
+    }
+
+    /// Player `by` brought player `id` back up: their weapons back, full
+    /// health, a moment before zombies notice them, and `by` earns the
+    /// points `id` lost going down.
+    fn revive(&mut self, id: u8, by: u8) {
+        let ignore = self.ticks_from_now(laststand::REVIVED_IGNORE_SECONDS);
+        let max = self.params.health.max_health;
+        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
+            return;
+        };
+        let Some(stand) = avatar.last_stand.take() else {
+            return;
+        };
+        let state = &mut avatar.predicted.state;
+        let shots = state.combat.shots_fired;
+        state.downed = false;
+        state.health = max;
+        state.since_damage = f32::MAX;
+        state.combat = stand.stored.raised();
+        state.combat.shots_fired = shots;
+        state.movement.stance = shooter_sim::movement::Stance::Standing;
+        avatar.zombies.ignored_until = ignore;
+        godot_print!("server: player {by} revived player {id}");
+        if let Some(reviver) = self.avatars.iter_mut().find(|a| a.id == by) {
+            reviver.zombies.revives += 1;
+            reviver.zombies.points = reviver.zombies.points.saturating_add(stand.lost);
+        }
+        self.send_points(by, stand.lost as i32);
+        self.broadcast_event(&GameEvent::Zombies(protocol::ZombiesEvent::Downed {
+            player: id,
+            bleeds_out_at: None,
+        }));
+        self.next_scoreboard = self.tick;
+    }
+
+    /// Player `id` bled out: dead until the next round, and every other
+    /// player loses 10% of their points.
+    fn bleed_out(&mut self, id: u8) {
+        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
+            return;
+        };
+        avatar.last_stand = None;
+        avatar.predicted.state.downed = false;
+        avatar.predicted.state.health = 0.0;
+        godot_print!("server: player {id} bled out");
+        let mut fined = Vec::new();
+        for other in &mut self.avatars {
+            if other.id != id {
+                let lost = laststand::no_revive_penalty(other.zombies.points);
+                other.zombies.points -= lost;
+                fined.push((other.id, lost));
+            }
+        }
+        for (other, lost) in fined {
+            self.send_points(other, -(lost as i32));
+        }
+        self.broadcast_event(&GameEvent::Zombies(protocol::ZombiesEvent::Downed {
+            player: id,
+            bleeds_out_at: None,
+        }));
+        self.next_scoreboard = self.tick;
     }
 
     /// Tells player `id` their points, which just changed by `change`.
@@ -2766,6 +3025,11 @@ impl NetServer {
             return;
         }
         self.blast_zombies(space, at, kind, blast.owner, blast.shot);
+        // Zombies: frags hurt only zombies, so a player is never killed
+        // outside the last-stand rules.
+        if self.horde.is_some() {
+            return;
+        }
         let attacker = blast
             .owner
             .filter(|id| self.avatars.iter().any(|a| a.id == *id));
@@ -4431,6 +4695,8 @@ impl NetServer {
                     hill_seconds: a.hill.whole_seconds(),
                     defends: a.score.defends,
                     alive: a.predicted.state.alive(),
+                    revives: a.zombies.revives,
+                    headshots: a.zombies.headshots,
                 }
             })
             .collect();
@@ -5219,6 +5485,23 @@ fn lunge_backed(
 /// True if the weapon rack the input claims is really under this player's
 /// crosshair and within reach, as the client saw it before the move. Without
 /// this check, a tampered client could take any weapon from anywhere.
+/// Zombies: the teammate down in last stand whom this player, standing,
+/// is close enough to revive ([`laststand::REVIVE_RADIUS`]), nearest first.
+fn revive_target(avatar: &Avatar, downed: &[(u8, Vec3)]) -> Option<u8> {
+    let state = &avatar.predicted.state;
+    if !state.alive() || state.downed {
+        return None;
+    }
+    let here = avatar.predicted.position;
+    downed
+        .iter()
+        .filter(|(id, _)| *id != avatar.id)
+        .map(|(id, feet)| (*id, feet.distance(here)))
+        .filter(|(_, distance)| *distance <= laststand::REVIVE_RADIUS)
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(id, _)| id)
+}
+
 /// The collider the player is looking at within reach (a rack, a door, a
 /// window's barrier), if any.
 fn looked_at(avatar: &Avatar, input: &PlayerInput, params: &PlayerParams) -> Option<Gd<Node>> {

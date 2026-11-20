@@ -18,6 +18,7 @@ extends SceneTree
 ## godot --headless --path godot --script res://tests/zombies_server_test.gd
 
 const BOT := 200
+const MATE := 201
 
 var _port := 30000 + OS.get_process_id() % 20000
 var _failures := 0
@@ -34,7 +35,7 @@ func _run() -> void:
 	_server.map_name = "Zombies Arena"
 	_server.port = _port
 	_server.query_port = -1
-	_server.bots = 1
+	_server.bots = 2
 	_server.mode = "zombies"
 	_server.auto_start = true
 	root.add_child(_server)
@@ -71,14 +72,14 @@ func _run() -> void:
 	_check(_server.player_kills(BOT) == 1, "the kill counts, got %d" % _server.player_kills(BOT))
 
 	await _economy()
+	await _last_stand()
 
-	_check(
-		await _wait_for(func() -> bool: return not _server.player_alive(BOT), 90.0),
-		"zombies reach the player and put them down"
-	)
+	_check(await _wait_for(_someone_down, 90.0), "zombies reach a player and put them down")
+	_server.debug_down(BOT)
+	_server.debug_down(MATE)
 	_check(
 		await _wait_for(func() -> bool: return _server.zombies_phase() == "over", 2.0),
-		"a lone player going down ends the game"
+		"everyone down ends the game"
 	)
 	_check(_server.match_phase() == "ended", "the match shows its results")
 
@@ -166,6 +167,86 @@ func _a_zombie() -> int:
 	await _wait_for(func() -> bool: return _server.zombie_count() > 0, 20.0)
 	var zombies := _server.zombies_alive()
 	return int(zombies[0]["id"]) if zombies.size() > 0 else -1
+
+
+func _last_stand() -> void:
+	var points := _server.player_points(BOT)
+	_server.debug_down(BOT)
+	_check(_server.player_downed(BOT), "a second hit downs instead of killing")
+	_check(_server.player_alive(BOT), "down is not dead")
+	# Black Ops truncates 5% to whole points, then rounds up to ten.
+	var lost := int(ceil(int(points * 0.05) / 10.0)) * 10
+	_check(
+		_server.player_points(BOT) == points - lost,
+		"going down loses 5%%, %d of %d" % [points - _server.player_points(BOT), points]
+	)
+	_check(_server.player_weapon(BOT) == "m1911", "the last-stand pistol")
+	_check(_server.zombies_phase() != "over", "the game goes on while a teammate stands")
+
+	var mate_points := _server.player_points(MATE)
+	# The scripted stand-in crawls on; the reviver keeps beside them.
+	_server.debug_interact(MATE, true)
+	for i in int(3.3 * Engine.physics_ticks_per_second):
+		if i % 10 == 0:
+			_server.debug_teleport(MATE, _server.player_position(BOT) + Vector3(1.0, 0.0, 0.0))
+		if i == 2 * Engine.physics_ticks_per_second:
+			_check(_server.player_downed(BOT), "still down two seconds into the revive")
+		await physics_frame
+	_server.debug_interact(MATE, false)
+	_check(not _server.player_downed(BOT), "a 3 s hold revives")
+	_check(_server.player_revives(MATE) == 1, "the revive counts")
+	_check(
+		_server.player_points(MATE) == mate_points + lost,
+		"the reviver earns the points lost (%d)" % (_server.player_points(MATE) - mate_points)
+	)
+
+	# Down again with nobody coming: bleed out in 45 s, nuking the horde so
+	# the teammate stays up.
+	_server.debug_down(BOT)
+	var before_fine := 0
+	for i in 47:
+		await _seconds(1.0)
+		if i % 3 == 0 and i < 40:
+			_nuke_near(MATE)
+		if i == 43:
+			before_fine = _server.player_points(MATE)
+	_check(not _server.player_alive(BOT), "45 s down without a revive bleeds out")
+	_check(not _server.player_downed(BOT), "bled out is dead, not down")
+	var fine := int(ceil(int(before_fine * 0.1) / 10.0)) * 10
+	_check(
+		_server.player_points(MATE) == before_fine - fine,
+		(
+			"the teammate loses 10%% when a player bleeds out (%d -> %d)"
+			% [before_fine, _server.player_points(MATE)]
+		)
+	)
+	var round := _server.zombies_round()
+	var moved := false
+	for i in 60:
+		_nuke_near(MATE)
+		if await _wait_for(func() -> bool: return _server.zombies_round() > round, 1.0):
+			moved = true
+			break
+	_check(moved, "the round moves on")
+	_check(
+		await _wait_for(func() -> bool: return _server.player_alive(BOT), 15.0),
+		"the bled-out player is back for the next round"
+	)
+
+
+## Clears the horde with a Nuke at a standing player's feet.
+func _nuke_near(id: int) -> void:
+	if _server.player_alive(id) and not _server.player_downed(id):
+		_server.debug_drop_power_up("nuke", _server.player_position(id))
+
+
+func _someone_down() -> bool:
+	return _server.player_downed(BOT) or _server.player_downed(MATE)
+
+
+func _seconds(seconds: float) -> void:
+	for _i in int(seconds * Engine.physics_ticks_per_second):
+		await physics_frame
 
 
 func _board_torn() -> bool:

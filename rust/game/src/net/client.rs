@@ -373,9 +373,19 @@ impl INode for NetClient {
         }
 
         if self.status == Status::Joined && !paused {
-            let spot = self.charge_spot().is_some();
+            let revive = self.revive_spot();
+            let spot = self.charge_spot().is_some() || revive.is_some();
             if let Some(player) = &mut self.player {
                 player.bind_mut().set_charge_spot(spot);
+            }
+            if self.horde.is_some() {
+                let name = revive.map(|id| self.name_of(i32::from(id)).to_string());
+                if let Some(horde) = &mut self.horde {
+                    horde
+                        .director()
+                        .bind_mut()
+                        .net_revive_prompt(name.as_deref().unwrap_or(""));
+                }
             }
             self.send_inputs(now);
             self.send_debug_request();
@@ -1464,6 +1474,7 @@ impl NetClient {
                         None => 0.0,
                     });
                 }
+                self.on_last_stand(&event);
             }
             GameEvent::Spawned { yaw } => {
                 if let Some(player) = &mut self.player {
@@ -1598,6 +1609,79 @@ impl NetClient {
     /// (carrying the charge, inside a site), defuse (a defender at the
     /// planted charge), or nothing. The same rule the server holds players
     /// still by (`Charge::spot`), from what it last told us.
+    /// Zombies: going down, getting up, and revives, for the HUD and the
+    /// markers over downed teammates.
+    fn on_last_stand(&mut self, event: &ZombiesEvent) {
+        let me = self.player_id;
+        match *event {
+            ZombiesEvent::Downed {
+                player,
+                bleeds_out_at,
+            } => {
+                let seconds = bleeds_out_at.map(|t| self.seconds_until(Some(t)));
+                if Some(player) == me {
+                    if let Some(horde) = &mut self.horde {
+                        horde.director().bind_mut().net_downed(seconds);
+                    }
+                } else if let Some(mut remote) = self.remote_player(i32::from(player)) {
+                    remote.bind_mut().set_downed_marker(seconds.is_some());
+                }
+                // A revive we were part of ends with them up (or gone).
+                if bleeds_out_at.is_none()
+                    && let Some(horde) = &mut self.horde
+                    && Some(player) != me
+                {
+                    horde.director().bind_mut().net_revive(None);
+                }
+            }
+            ZombiesEvent::Revive {
+                player,
+                by,
+                done_at,
+            } => {
+                let involved = Some(player) == me || (by.is_some() && by == me);
+                if !involved {
+                    return;
+                }
+                let revive = by.map(|by| {
+                    let reviving = Some(by) == me;
+                    let other = if reviving { player } else { by };
+                    let name = self.name_of(i32::from(other)).to_string();
+                    (name, reviving, self.seconds_until(Some(done_at)))
+                });
+                if let Some(horde) = &mut self.horde {
+                    horde.director().bind_mut().net_revive(revive);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Zombies: the teammate down in last stand close enough for us to
+    /// revive, by the server's rule (`laststand::REVIVE_RADIUS` between
+    /// feet), so holding use there is predicted as the server runs it.
+    fn revive_spot(&self) -> Option<u8> {
+        let horde = self.horde.as_ref()?;
+        let player = self.player.as_ref()?;
+        let player = player.bind();
+        if !player.is_alive() || player.is_downed() {
+            return None;
+        }
+        let here = player.feet_position();
+        horde
+            .downed()
+            .iter()
+            .filter(|id| Some(**id) != self.player_id)
+            .filter_map(|id| {
+                let remote = self.remotes.iter().find(|r| r.id == *id)?;
+                let feet = remote.node.get_global_position();
+                Some((*id, feet.distance_to(here)))
+            })
+            .filter(|(_, d)| *d <= shooter_sim::zombies::laststand::REVIVE_RADIUS)
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(id, _)| id)
+    }
+
     fn charge_spot(&self) -> Option<UseKind> {
         let view = self.charge?;
         let round = self.round?;

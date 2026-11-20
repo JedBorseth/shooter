@@ -8,7 +8,8 @@ extends SceneTree
 ##   their windows lose boards on this client too;
 ## - shooting a drawn zombie hits it on the server (lag compensation against
 ##   what this client drew), paying points;
-## - standing still, the horde puts us down, and the HUD's game over follows.
+## - standing still, the horde puts us down in last stand, and alone that
+##   is game over.
 ## Run from the repo root:
 ## godot --headless --path godot --script res://tests/zombies_net_test.gd
 
@@ -88,8 +89,12 @@ func _run() -> void:
 	_check(paid, "shooting a drawn zombie pays points (%d)" % director.points())
 
 	_check(
-		await _wait_for(func() -> bool: return not player.is_alive(), 120.0),
-		"the horde puts us down"
+		await _wait_for(func() -> bool: return player.is_downed(), 120.0),
+		"the horde puts us down (last stand)"
+	)
+	_check(
+		await _wait_for(func() -> bool: return director.last_stand_info()["downed"], 2.0),
+		"the HUD knows we are down"
 	)
 	_check(await _wait_for(func() -> bool: return game_over[0], 5.0), "the HUD hears game over")
 	_check(director.is_over(), "the director knows the game is over")

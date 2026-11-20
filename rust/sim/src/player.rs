@@ -180,6 +180,10 @@ pub struct PlayerState {
     pub lethal_held: bool,
     /// The tactical button was down last tick.
     pub tactical_held: bool,
+    /// Zombies: down in last stand ([`crate::zombies::laststand`]): crawling,
+    /// sidearm only, no regeneration, and no harm. The server downs and
+    /// revives; prediction only follows the rules here.
+    pub downed: bool,
 }
 
 impl PlayerState {
@@ -195,6 +199,7 @@ impl PlayerState {
             melee_held: false,
             lethal_held: false,
             tactical_held: false,
+            downed: false,
         }
     }
 
@@ -266,7 +271,8 @@ pub fn apply_damage(
     fall: bool,
     events: &mut Vec<PlayerEvent>,
 ) -> bool {
-    if !state.alive() || amount <= 0.0 {
+    // Nothing hurts a player down in last stand.
+    if !state.alive() || amount <= 0.0 || state.downed {
         return false;
     }
     let amount = amount.min(state.health);
@@ -325,8 +331,27 @@ pub fn step(
         }
     };
 
+    // Down in last stand: a crawl with the sidearm. No jumping, sprinting,
+    // standing up, mounting, or grenades (the server takes them away).
+    let input = if state.downed {
+        PlayerInput {
+            jump: false,
+            sprint: false,
+            crouch: false,
+            melee: false,
+            lunge: None,
+            lethal: false,
+            tactical: false,
+            pickup: None,
+            switch_to: None,
+            ..input
+        }
+    } else {
+        input
+    };
+
     state.since_damage += dt;
-    if state.alive() && state.since_damage >= params.health.regen_delay {
+    if state.alive() && !state.downed && state.since_damage >= params.health.regen_delay {
         state.health = (state.health + params.health.regen_rate * dt).min(params.health.max_health);
     }
 
@@ -409,7 +434,13 @@ pub fn step(
             || scoped
             || melee
             || state.combat.meleeing(),
-        speed_multiplier: def.move_scale * (1.0 + (def.ads_move_scale - 1.0) * ads),
+        speed_multiplier: def.move_scale
+            * (1.0 + (def.ads_move_scale - 1.0) * ads)
+            * if state.downed {
+                crate::zombies::laststand::CRAWL_SPEED_SCALE
+            } else {
+                1.0
+            },
         sprint_out_time: def.sprint_out_time,
         lunge,
     };
@@ -469,6 +500,40 @@ mod tests {
             step(s, &input, env, &params, DT, &mut events);
         }
         events
+    }
+
+    #[test]
+    fn a_downed_player_crawls_cannot_be_hurt_and_does_not_heal() {
+        let ground = MoveEnv {
+            on_floor: true,
+            ..AIRBORNE
+        };
+        let mut s = ready_state();
+        s.downed = true;
+        s.health = crate::zombies::laststand::DOWNED_HEALTH;
+        s.movement.stance = crate::movement::Stance::Crouching;
+        let crawl = PlayerInput {
+            wish: Vec2::new(0.0, 1.0),
+            sprint: true,
+            jump: true,
+            crouch: true,
+            ..Default::default()
+        };
+        run(&mut s, crawl, ground, 120);
+        let speed = Vec2::new(s.movement.velocity.x, s.movement.velocity.z).length();
+        assert!(
+            speed > 0.5 && speed < 1.2,
+            "crawls at about 1 m/s, got {speed}"
+        );
+        assert!(!s.movement.sprinting);
+        assert_eq!(s.movement.stance, crate::movement::Stance::Crouching);
+        assert_eq!(
+            s.health,
+            crate::zombies::laststand::DOWNED_HEALTH,
+            "no regeneration"
+        );
+        assert!(!apply_damage(&mut s, 500.0, false, &mut Vec::new()));
+        assert!(s.alive());
     }
 
     fn fired(events: &[PlayerEvent]) -> bool {

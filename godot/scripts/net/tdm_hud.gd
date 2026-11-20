@@ -195,7 +195,9 @@ func _process(delta: float) -> void:
 	if not results:
 		_xp_ready = false
 	_xp_card.visible = results and _xp_ready and not _menu.visible
-	_board.visible = results or (Input.is_action_pressed(&"scoreboard") and not _menu.visible)
+	_board.visible = (
+		(results and not zombies) or (Input.is_action_pressed(&"scoreboard") and not _menu.visible)
+	)
 	# The banner above says the result; the board keeps the mode, in its colour.
 	_board.title = String(info.get("mode_name", "")).to_upper()
 	_board.title_colour = _result_colour(info) if results else MenuStyle.TEXT
@@ -373,9 +375,16 @@ func _update_banner(phase: String, info: Dictionary) -> void:
 				_overlay.detail = "Domination  ·  first to %d points" % info.score_limit
 			elif info.mode == "snd":
 				_overlay.detail = "Search and Destroy  ·  first to %d rounds" % info.score_limit
+			elif info.mode == "zombies":
+				_overlay.title = "GAME STARTS IN %d" % int(ceil(info.seconds_left))
+				_overlay.detail = "Zombies  ·  survive as many rounds as you can"
+
 			else:
 				_overlay.detail = "Team Deathmatch  ·  first to %d kills" % info.score_limit
 		"ended":
+			# Zombies' own HUD shows its game over.
+			if info.mode == "zombies":
+				return
 			_overlay.title = _results_title(info)
 			_overlay.detail = "Next match in %d" % int(ceil(info.seconds_left))
 			_overlay.colour = _result_colour(info)

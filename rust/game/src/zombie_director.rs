@@ -88,6 +88,14 @@ pub struct ZombieDirector {
     /// Online: engine seconds Insta-Kill and Double Points end.
     net_insta_kill_ends: f64,
     net_double_points_ends: f64,
+    /// Online: engine seconds this player bleeds out, while down.
+    net_bleeds_out: Option<f64>,
+    /// Online: a revive under way that involves this player: the other
+    /// player's name, whether we are the one reviving, and the engine
+    /// seconds it is done.
+    net_revive: Option<(String, bool, f64)>,
+    /// Online: the teammate close enough to revive, if any.
+    net_revive_prompt: String,
 }
 
 /// Points for each board put back on a barrier.
@@ -410,6 +418,57 @@ impl ZombieDirector {
         let now = now_seconds();
         self.net_insta_kill_ends = now + insta_kill.max(0.0);
         self.net_double_points_ends = now + double_points.max(0.0);
+    }
+
+    /// Online: this player went down and bleeds out in `seconds`, or (None)
+    /// is no longer down.
+    pub fn net_downed(&mut self, seconds: Option<f64>) {
+        self.net_bleeds_out = seconds.map(|s| now_seconds() + s.max(0.0));
+        if seconds.is_none() {
+            self.net_revive = None;
+        }
+    }
+
+    /// Online: a revive involving this player started (done in `seconds`),
+    /// with `other` reviving us or being revived by us (`reviving`), or
+    /// stopped (None).
+    pub fn net_revive(&mut self, revive: Option<(String, bool, f64)>) {
+        self.net_revive = revive
+            .map(|(other, reviving, seconds)| (other, reviving, now_seconds() + seconds.max(0.0)));
+    }
+
+    /// Online: the teammate close enough to revive ("" for none).
+    pub fn net_revive_prompt(&mut self, name: &str) {
+        name.clone_into(&mut self.net_revive_prompt);
+    }
+
+    /// Last stand for the HUD: `downed` and `bleed_left` (seconds) while
+    /// this player is down; `revive_left` (seconds, -1 for none) and
+    /// `revive_seconds` (its whole length), `revive_name` (the other
+    /// player), and `reviving` (we are the one holding) during a revive;
+    /// and `prompt` (the teammate close enough to revive, or "").
+    #[func]
+    fn last_stand_info(&self) -> VarDictionary {
+        let now = now_seconds();
+        let mut d = VarDictionary::new();
+        d.set("downed", self.net_bleeds_out.is_some());
+        d.set(
+            "bleed_left",
+            self.net_bleeds_out.map_or(0.0, |end| (end - now).max(0.0)),
+        );
+        let (name, reviving, left) = match &self.net_revive {
+            Some((name, reviving, end)) => (name.clone(), *reviving, (end - now).max(0.0)),
+            None => (String::new(), false, -1.0),
+        };
+        d.set("revive_left", left);
+        d.set(
+            "revive_seconds",
+            f64::from(shooter_sim::zombies::laststand::REVIVE_SECONDS),
+        );
+        d.set("revive_name", &GString::from(&name));
+        d.set("reviving", reviving);
+        d.set("prompt", &GString::from(&self.net_revive_prompt));
+        d
     }
 
     /// Online: this player's kills and headshots, from the scoreboard.
