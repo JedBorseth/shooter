@@ -100,7 +100,19 @@ When the fuse runs out the charge goes off: everyone within 13 m with a clear
 line takes 200 damage at its heart, falling to 20 at the edge, as Call of
 Duty 4's `radiusDamage(origin, 512, 200, 20)`. Kills are credited to the
 planter (none to their own team, as with every blast) and show as "Charge"
-in the kill feed. Clients draw the frag grenade's blast for now.
+in the kill feed.
+
+It looks far bigger than a frag, as Call of Duty's bomb does: a fireball
+rolling up out of the site, dust and dirt thrown out across it, a dark smoke
+column climbing about 15 m and hanging for about 10 s, chips of rubble, a
+scorch mark, and a flash that lights 26 m round
+(`CombatEffects.charge_explosion`, `scenes/effects/charge_explosion.tscn`).
+It is the frag's explosion 2.5 times as big under the charge's own fireball,
+column, and ground skirt. The screen rattles out to about 50 m, hardest
+within 3 m. It rumbles a controller out to 50 m and rings in the ears inside
+18 m, twice a frag's reach. Clients draw it when the charge's status
+turns from planted to detonated, so nobody joining later sees it go off.
+Until the charge's own sound lands, it plays the frag's distant bang, louder.
 
 ## Still to come
 

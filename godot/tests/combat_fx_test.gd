@@ -157,6 +157,17 @@ func _run() -> void:
 	blast.position = Vector3(-4, 0.0, -4)
 	level.add_child(blast)
 	_check(effects.explosions_played() == played + 3, "a frag's blast plays the pooled explosion")
+	# Search and Destroy's charge: a big explosion under its own blast,
+	# which is made once and reused.
+	effects.charge_explosion(Vector3(6, 0.0, -8))
+	effects.charge_explosion(Vector3(6, 0.0, -8))
+	_check(effects.charges_played() == 2, "the charge's blast plays")
+	_check(effects.explosions_played() == played + 5, "the charge plays a scaled explosion")
+	var charges := 0
+	for child in effects.get_children():
+		if child.scene_file_path.ends_with("charge_explosion.tscn"):
+			charges += 1
+	_check(charges == 1, "the charge's blast is made once, got %d" % charges)
 	for i in 12:
 		effects.explosion(Vector3(i * 3.0 - 18.0, 0.0, -6), Vector3.UP, 1.0)
 	_check(
