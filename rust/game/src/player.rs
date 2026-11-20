@@ -324,6 +324,10 @@ pub struct FpsPlayer {
     #[export]
     #[init(val = 2.0)]
     stick_curve: f32,
+    /// Look stick response curve type: 0 Standard (the exponent above), 1
+    /// Linear, 2 Dynamic (an S-curve). See `look::StickResponse`.
+    #[export]
+    stick_response: i64,
     #[export]
     stick_invert_y: bool,
     /// Mouse up looks down.
@@ -1903,6 +1907,7 @@ impl FpsPlayer {
             inner_deadzone: self.stick_deadzone.clamp(0.0, 0.9),
             outer_deadzone: self.stick_outer_deadzone.clamp(0.0, 0.5),
             curve: self.stick_curve.max(0.1),
+            response: shooter_sim::look::StickResponse::from_index(self.stick_response),
             yaw_speed: self.stick_yaw_speed.to_radians(),
             pitch_speed: self.stick_pitch_speed.to_radians(),
             boost_yaw_speed: self.stick_turn_boost.max(0.0).to_radians(),

@@ -164,6 +164,8 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] An input device setting (Keyboard & mouse or Controller) that locks the other device out of play; menus and pause take both, a reminder shows when the locked device is used, and losing the controller pauses the game.
 - [x] Button prompts with controller glyph images instead of button names: Xbox and PlayStation sets (Settings → Controls → Button prompts: Auto, Xbox, PlayStation) and mouse buttons, with menu footers following the device used last (`godot/scripts/ui/glyphs.gd`).
 - [x] **good first task** Show the controls overlay only for the first minute, or toggle it with F1.
+- [x] Controller tuning as Call of Duty offers it: aim response curve type (Standard, Linear, Dynamic), right stick, left stick, and trigger deadzones (`docs/settings.md`).
+- [ ] Controller button remapping (Call of Duty's custom controller layouts, and its presets such as Tactical and Bumper Jumper).
 
 ## Phase 2: netcode core (in progress)
 

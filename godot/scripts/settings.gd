@@ -85,6 +85,12 @@ const STICK_YAW_SPEED := 200.0
 const STICK_PITCH_SPEED := 150.0
 
 const INPUT_DEVICES: Array[String] = ["Keyboard & mouse", "Controller"]
+## Aim response curve types, as Call of Duty names them (`look::StickResponse`).
+const STICK_RESPONSES: Array[String] = ["Standard", "Linear", "Dynamic"]
+## Actions the left stick and trigger deadzone settings set, with the
+## project's own deadzones as the defaults.
+const MOVE_ACTIONS: Array[StringName] = [&"move_forward", &"move_back", &"move_left", &"move_right"]
+const TRIGGER_ACTIONS: Array[StringName] = [&"fire", &"aim"]
 ## Controller button images: Auto follows the connected controller.
 const BUTTON_PROMPTS: Array[String] = ["Auto", "Xbox", "PlayStation"]
 ## Actions that keep both devices' bindings whichever is chosen: a way back to
@@ -121,6 +127,8 @@ const REBINDABLE := {
 	&"scoreboard": "Scoreboard",
 	&"chat": "Chat",
 	&"team_chat": "Team chat",
+	&"toggle_controls": "Show controls",
+	&"refill_ammo": "Refill ammo (Testing Area)",
 }
 
 const MOUSE_BUTTON_NAMES := {
@@ -142,6 +150,9 @@ const DEFAULTS := {
 	&"stick_sensitivity_level": 7,
 	&"stick_deadzone": 0.1,
 	&"stick_curve": 2.0,
+	&"stick_response": 0,
+	&"move_deadzone": 0.12,
+	&"trigger_deadzone": 0.25,
 	&"aim_assist": true,
 	&"rumble": true,
 	&"button_prompts": 0,
@@ -177,6 +188,9 @@ const SECTIONS := {
 		&"stick_sensitivity_level",
 		&"stick_deadzone",
 		&"stick_curve",
+		&"stick_response",
+		&"move_deadzone",
+		&"trigger_deadzone",
 		&"aim_assist",
 		&"rumble",
 		&"button_prompts",
@@ -215,6 +229,7 @@ const INT_OPTIONS := {
 	&"graphics_quality": [0, 1, 2],
 	&"audio_mix": [0, 1, 2],
 	&"button_prompts": [0, 1, 2],
+	&"stick_response": [0, 1, 2],
 }
 
 ## Look speed saved by builds before it became a level, as a multiplier.
@@ -228,6 +243,8 @@ const RANGES := {
 	&"ads_sensitivity": Vector2(0.3, 2.0),
 	&"stick_deadzone": Vector2(0.02, 0.3),
 	&"stick_curve": Vector2(1.0, 3.0),
+	&"move_deadzone": Vector2(0.02, 0.4),
+	&"trigger_deadzone": Vector2(0.0, 0.6),
 	&"fov": Vector2(80.0, 120.0),
 	&"master_volume": Vector2(0.0, 1.0),
 	&"weapons_volume": Vector2(0.0, 1.0),
@@ -264,6 +281,12 @@ var invert_stick_y: bool = DEFAULTS[&"invert_stick_y"]
 var stick_sensitivity_level: int = DEFAULTS[&"stick_sensitivity_level"]
 var stick_deadzone: float = DEFAULTS[&"stick_deadzone"]
 var stick_curve: float = DEFAULTS[&"stick_curve"]
+## An index into STICK_RESPONSES: the look stick's curve type.
+var stick_response: int = DEFAULTS[&"stick_response"]
+## Left stick (movement) deadzone, and how far a trigger must go to fire or
+## aim, set on the actions themselves.
+var move_deadzone: float = DEFAULTS[&"move_deadzone"]
+var trigger_deadzone: float = DEFAULTS[&"trigger_deadzone"]
 var aim_assist: bool = DEFAULTS[&"aim_assist"]
 var rumble: bool = DEFAULTS[&"rumble"]
 ## Which controller's button images prompts show: an index into
@@ -416,6 +439,7 @@ func apply_to_player(player: Node) -> void:
 	player.set(&"stick_pitch_speed", STICK_PITCH_SPEED * look_speed)
 	player.set(&"stick_deadzone", stick_deadzone)
 	player.set(&"stick_curve", stick_curve)
+	player.set(&"stick_response", stick_response)
 	player.set(&"aim_assist", aim_assist)
 	player.set(&"rumble", rumble)
 	player.set(&"controller_input", uses_controller())
@@ -592,7 +616,18 @@ func _rebuild_input_map() -> void:
 	for action: Variant in stored:
 		if REBINDABLE.has(action) and InputMap.has_action(action):
 			_set_binding(action, stored[action])
+	_apply_deadzones()
 	_lock_input_device()
+
+
+## Sets the movement and trigger actions' deadzones from the settings.
+func _apply_deadzones() -> void:
+	for action: StringName in MOVE_ACTIONS:
+		if InputMap.has_action(action):
+			InputMap.action_set_deadzone(action, move_deadzone)
+	for action: StringName in TRIGGER_ACTIONS:
+		if InputMap.has_action(action):
+			InputMap.action_set_deadzone(action, trigger_deadzone)
 
 
 func _lock_input_device() -> void:
@@ -736,6 +771,8 @@ func _apply(key: StringName) -> void:
 			_rebuild_input_map()
 		&"button_prompts":
 			_update_glyphs()
+		&"move_deadzone", &"trigger_deadzone":
+			_apply_deadzones()
 		&"audio_mix":
 			for volume_key: StringName in BUSES:
 				_apply(volume_key)
