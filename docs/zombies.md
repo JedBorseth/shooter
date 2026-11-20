@@ -113,7 +113,14 @@ The switch lights two lamps and every machine's sign when thrown.
 Five machines (`DrinkMachines` on the map), each a cabinet in its drink's
 colour with a lit header that comes on with the power
 (`scripts/zombies_drink_machine.gd`). A press of the use key buys the drink
-(the server decides). The weapon goes down and comes back up for the drink.
+(the server decides). The weapon goes down and the drink is drunk from its
+bottle in first person, as Black Ops' perk bottle plays (2.3 s, then the
+weapon is drawn; no fire meanwhile): the right hand brings the bottle up, the
+left thumb flicks its cap off, three gulps with it tipped to the mouth, and it
+is tossed away down to the right (`Raise::Drink`, `weapon::DRINK_SECONDS`;
+`viewmodel::drink_hands`; each drink's bottle is `drink_bottle_<key>` in its
+machine's colour, built in tools/gear_models.py). Frames:
+[zombies-drink.jpg](media/zombies-drink.jpg).
 
 | Drink | Effect | Price | Black Ops III |
 | --- | --- | --- | --- |
@@ -152,8 +159,8 @@ colour with a glyph: a shield, a cross, a magazine, a round, chevrons.
 
 **Differences from Black Ops, on purpose:**
 
-- No drinking animation yet: the weapon re-raises. Black Ops plays a bottle
-  in the hands for about three seconds.
+- Other players see no bottle yet: their weapon stays in hand while they
+  drink (third person).
 - No jingle or drink sound. These must come from real CC0 recordings; none
   suitable was found yet (see the report for candidates).
 - Long Stride does not lengthen sprint: this game's sprint is already

@@ -1232,3 +1232,32 @@ fn quickload_halves_a_reload() {
         "Quickload took {quick} ticks of {plain}"
     );
 }
+
+#[test]
+fn a_drink_keeps_the_weapon_down_for_the_bottle_then_draws_it() {
+    use crate::zombies::drinks::Drink;
+    let mut s = ready();
+    s.ads = 1.0;
+    s = s.drinking(Drink::Bulwark);
+    assert_eq!(s.ads, 0.0, "out of aim");
+    assert_eq!(s.drinking_now(), Some((Drink::Bulwark, 0.0)));
+    // No shots through the bottle and the draw.
+    let bottle_and_draw = DRINK_SECONDS + s.def().raise_time;
+    let ticks = (bottle_and_draw / DT).floor() as usize - 2;
+    let events = run(&mut s, fire(), CombatContext::default(), ticks);
+    assert_eq!(shots(&events), 0);
+    assert_eq!(
+        s.drinking_now(),
+        None,
+        "the bottle is done, the weapon coming up"
+    );
+    assert!(matches!(
+        s.action,
+        Action::Raising {
+            kind: Raise::Drink(Drink::Bulwark),
+            ..
+        }
+    ));
+    run(&mut s, CombatInput::default(), CombatContext::default(), 4);
+    assert_eq!(s.action, Action::Ready);
+}

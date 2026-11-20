@@ -653,10 +653,39 @@ pub struct LadderLimbs {
     /// The way the climber faces (world, horizontal). On the charge's
     /// keypad, the way the fingers point (world).
     pub facing: Vector3,
-    /// Not a ladder: the first-person hands on Search and Destroy's charge,
-    /// the right index finger on its keypad and the left hand flat on its
-    /// case, palms down (the legs are left alone).
-    pub keypad: bool,
+    /// What the hands are on: a ladder's rungs, or (the legs left alone)
+    /// something the first-person hands hold or work.
+    pub on: HandsOn,
+}
+
+/// What the two-hand IK's hands are on ([`LadderLimbs`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum HandsOn {
+    /// A ladder's rungs: fingers hooked over them, palms toward the ladder.
+    #[default]
+    Ladder,
+    /// Search and Destroy's charge: the right index finger on its keypad and
+    /// the left hand flat on its case, palms down, fingers along `facing`.
+    Keypad,
+    /// Each hand (right, left) with its fingers along `reach` and its palm
+    /// toward `palm` (world), in its own shape: a bottle, a tool, a hand on
+    /// a downed teammate.
+    Placed {
+        reach: [Vector3; 2],
+        palm: [Vector3; 2],
+        shape: [Grip; 2],
+    },
+}
+
+/// A hand's shape in [`HandsOn::Placed`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Grip {
+    /// Closed round a handle or a bottle.
+    Wrap,
+    /// Flat, fingers together.
+    Flat,
+    /// The index finger out, as on a key or a trigger.
+    Point,
 }
 
 #[derive(GodotClass)]
@@ -771,7 +800,10 @@ impl SoldierPoser {
         if let Some(lift) = input.feet {
             self.plant_feet(skel, bones, lift);
         }
-        if let Some(ladder) = input.ladder.filter(|l| l.weight > 0.0 && !l.keypad) {
+        if let Some(ladder) = input
+            .ladder
+            .filter(|l| l.weight > 0.0 && l.on == HandsOn::Ladder)
+        {
             self.climb_legs(skel, bones, &ladder);
         }
 
@@ -1346,18 +1378,29 @@ impl SoldierPoser {
         // The fingers point at the rungs and a little up, to hook over them,
         // the palm toward the ladder, curled round the rung. On the charge
         // they point where `facing` says, palms down onto it.
-        let (reach, palm_to) = if ladder.keypad {
-            (toward, side.cross(toward).normalized())
-        } else {
-            ((toward + Vector3::UP * 0.4).normalized(), toward)
+        // Each hand's fingers and palm, in the skeleton's space.
+        let aims: [(Vector3, Vector3); 2] = match ladder.on {
+            HandsOn::Ladder => [((toward + Vector3::UP * 0.4).normalized(), toward); 2],
+            HandsOn::Keypad => [(toward, side.cross(toward).normalized()); 2],
+            HandsOn::Placed { reach, palm, .. } => [0, 1].map(|h| {
+                (
+                    (to_skel.basis * reach[h]).normalized(),
+                    (to_skel.basis * palm[h]).normalized(),
+                )
+            }),
         };
         let weight = ladder.weight.clamp(0.0, 1.0);
         for (h, finger) in self.fingers.iter().enumerate() {
             let left = h == 1;
-            let shape = match (ladder.keypad, left) {
-                (false, _) => &RUNG_GRIP,
-                (true, false) => &KEY_PRESS,
-                (true, true) => &PLANTED,
+            let shape = match (ladder.on, left) {
+                (HandsOn::Ladder, _) => &RUNG_GRIP,
+                (HandsOn::Keypad, false) => &KEY_PRESS,
+                (HandsOn::Keypad, true) => &PLANTED,
+                (HandsOn::Placed { shape, .. }, _) => match shape[h] {
+                    Grip::Wrap => &KNIFE_FIST,
+                    Grip::Flat => &PLANTED,
+                    Grip::Point => &KEY_PRESS,
+                },
             };
             for (f, bones) in finger.iter().enumerate() {
                 let Some((joints, chain)) = bones else {
@@ -1371,6 +1414,7 @@ impl SoldierPoser {
             }
         }
         for (h, (chain, wrist, out)) in arms.into_iter().enumerate() {
+            let (reach, palm_to) = aims[h];
             let mid = skel.get_bone_global_pose(chain[1]).origin;
             let pole = mid + Vector3::DOWN * 0.5 + side * (0.3 * out) - toward * 0.1;
             let hand = skel.get_bone_global_pose(chain[2]).basis.orthonormalized();

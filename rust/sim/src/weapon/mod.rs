@@ -131,7 +131,16 @@ pub enum Raise {
     /// (`WeaponDef::first_raise_time`): the draw ends by working the action,
     /// as Call of Duty's first raise does.
     First,
+    /// Zombies: a drink bought from its machine ([`crate::zombies::drinks`]).
+    /// The weapon stays down while the bottle is drunk for [`DRINK_SECONDS`],
+    /// then is drawn: Black Ops' perk bottle, which takes the hands for
+    /// about three seconds in all.
+    Drink(crate::zombies::drinks::Drink),
 }
+
+/// Seconds a drink's bottle takes (cap off, drink, toss it), before the
+/// weapon is drawn again.
+pub const DRINK_SECONDS: f32 = 2.3;
 
 /// Player combat state: loadout, current action, aim, recoil, and breath.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -239,6 +248,34 @@ impl CombatState {
         self.burst_left = 0;
         self.action = draw(&mut self);
         self
+    }
+
+    /// This loadout with `drink` being drunk (Zombies): out of aim, the
+    /// weapon down for the bottle, then drawn (an ordinary draw, never a
+    /// first raise).
+    pub fn drinking(mut self, drink: crate::zombies::drinks::Drink) -> Self {
+        self.ads = 0.0;
+        self.burst_left = 0;
+        let def = self.def();
+        self.action = Action::Raising {
+            remaining: DRINK_SECONDS + def.raise_time,
+            kind: Raise::Drink(drink),
+        };
+        self
+    }
+
+    /// The drink being drunk and seconds into its bottle, while one is.
+    pub fn drinking_now(&self) -> Option<(crate::zombies::drinks::Drink, f32)> {
+        match self.action {
+            Action::Raising {
+                remaining,
+                kind: Raise::Drink(drink),
+            } => {
+                let left = remaining - self.def().raise_time;
+                (left > 0.0).then_some((drink, DRINK_SECONDS - left))
+            }
+            _ => None,
+        }
     }
 
     /// This loadout carrying `count` of the tactical `kind`.

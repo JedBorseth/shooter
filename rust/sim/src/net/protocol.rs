@@ -206,7 +206,9 @@ use crate::zombies::drinks::Drinks;
 // Version 86 added hound rounds: whether a zombie in snapshots is a hound
 // (`ZombieView::hound`), `ZombiesEvent::Round`'s `hounds`, and
 // `ZombiesEvent::HoundStrike`.
-pub const PROTOCOL_VERSION: u16 = 86;
+// Version 87 added `Raise::Drink`: a Zombies drink keeps the weapon down
+// while its bottle is drunk (the raise kind takes 2 bits).
+pub const PROTOCOL_VERSION: u16 = 87;
 /// Longest account session token a hello carries, in bytes.
 pub const MAX_ACCOUNT_TOKEN_BYTES: usize = 2048;
 /// Longest reason a denial carries, in bytes.
@@ -4385,7 +4387,14 @@ fn write_combat_state(w: &mut impl BitSink, c: &CombatState) {
         Action::Raising { remaining, kind } => {
             w.bits(5, 3);
             w.f32(remaining);
-            w.bool(kind == Raise::First);
+            match kind {
+                Raise::Draw => w.bits(0, 2),
+                Raise::First => w.bits(1, 2),
+                Raise::Drink(drink) => {
+                    w.bits(2, 2);
+                    w.bits(u32::from(drink.code()), 3);
+                }
+            }
         }
         Action::Meleeing {
             remaining,
@@ -4479,7 +4488,15 @@ fn read_combat_state(r: &mut impl BitSource) -> DecodeResult<CombatState> {
         }
         5 => Action::Raising {
             remaining: r.f32()?,
-            kind: if r.bool()? { Raise::First } else { Raise::Draw },
+            kind: match r.bits(2)? {
+                0 => Raise::Draw,
+                1 => Raise::First,
+                2 => Raise::Drink(
+                    crate::zombies::drinks::Drink::from_code(r.bits(3)? as u8)
+                        .ok_or(DecodeError::Invalid("drink"))?,
+                ),
+                _ => return Err(DecodeError::Invalid("raise")),
+            },
         },
         6 => Action::Meleeing {
             remaining: r.f32()?,
@@ -4960,6 +4977,23 @@ mod tests {
             bytes.len()
         );
         assert_eq!(ClientMessage::decode(&bytes).unwrap(), msg);
+    }
+
+    #[test]
+    fn a_drink_round_trips_with_its_bottle() {
+        let mut state = PlayerState::default();
+        state.combat = state
+            .combat
+            .drinking(crate::zombies::drinks::Drink::HairTrigger);
+        let p = Predicted {
+            state,
+            position: Vec3::ZERO,
+            on_floor: true,
+        };
+        let mut w = BitWriter::new();
+        write_predicted(&mut w, &p);
+        let bytes = w.finish();
+        assert_eq!(read_predicted(&mut BitReader::new(&bytes)).unwrap(), p);
     }
 
     #[test]

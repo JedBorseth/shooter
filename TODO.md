@@ -288,7 +288,8 @@ Done: rounds with a growing, toughening horde, zombies that walk straight at the
 - [x] Downed players crawl prone (Black Ops' last stand), at the prone crawl's 0.8 m/s, the pistol up through the crawl.
 - [ ] A revive animation for the reviver.
 - [x] Drinks and the power ([docs/zombies.md](docs/zombies.md), Black Ops III's perk numbers under our own names and machines): a power switch in the west yard; Bulwark (down on the fifth hit), Second Wind (half-time revives; alone, 500 points, no power needed, and back up by yourself after 10 s, three times a game), Quickload (half-time reloads), Hair Trigger (a third faster fire, double damage on zombies), and Long Stride (7% faster); four at most, all lost on going down; badges on the HUD.
-  - [ ] A drinking animation (a bottle in the hands for about 3 s) instead of the weapon's re-raise.
+  - [x] A drinking animation in first person: the bottle up, the cap flicked off, three gulps, tossed, then the weapon drawn; 2.3 s with no fire ([docs/zombies.md](docs/zombies.md)).
+  - [ ] Third-person drinking: other players still hold their weapon while they drink (the `Drank` event could pose the hand and show the bottle).
   - [ ] Drink and machine sounds from real CC0 recordings (a cap, a gulp, a machine hum); none suitable found yet.
 - [x] A mystery crate ([docs/zombies.md](docs/zombies.md#the-mystery-crate)): a random weapon for 950 points from a weighted pool, never one carried, cycling up out of it for 4 s and held out to the buyer for 12 s; after enough spins (Black Ops III's odds) the duck, a refund, and a move to another of three spots.
   - [ ] Crate sounds (the lid, the cycle, the duck) from real CC0 recordings.

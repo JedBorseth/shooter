@@ -123,6 +123,12 @@ pub enum ViewAction {
     /// (`equipment::throw_progress`), and what it throws; the weapon dips in
     /// the firing hand.
     Throwing(f32, shooter_sim::equipment::Kind),
+    /// Zombies: drinking `drink` from its bottle, `elapsed` seconds in (of
+    /// `weapon::DRINK_SECONDS`), the weapon down; it is drawn after.
+    Drinking {
+        elapsed: f32,
+        drink: shooter_sim::zombies::drinks::Drink,
+    },
 }
 
 /// One shot's kick on the weapon model, as peaks: (position in metres: `x`
@@ -2814,6 +2820,14 @@ pub struct ViewmodelRig {
     /// Planting or defusing: where the charge is drawn in the hands (world,
     /// as the viewmodel draws), or `None`.
     keypad_case: Option<Transform3D>,
+    /// Drinking (Zombies): where the bottle and its cap (until it is
+    /// flicked off) are drawn in the hands (world, as the viewmodel draws),
+    /// and which drink.
+    bottle: Option<(
+        Transform3D,
+        Option<Transform3D>,
+        shooter_sim::zombies::drinks::Drink,
+    )>,
     /// Game time (seconds) the keypad's taps run on: summed frame deltas, so
     /// they keep pace with the game rather than the wall clock (a
     /// fixed-rate test run steps frames faster than real time).
@@ -2859,6 +2873,15 @@ impl ViewmodelRig {
     fn ladder_hands(&mut self, frame: &ViewFrame) -> Option<LadderLimbs> {
         let weight = smoothstep(self.ladder_blend.min(1.0));
         self.keypad_case = None;
+        self.bottle = None;
+        if let ViewAction::Drinking { elapsed, drink } = frame.action {
+            // A Zombies drink: the bottle in the hands, the weapon down.
+            let camera = self.base().get_viewport()?.get_camera_3d()?;
+            let (bottle, cap, limbs) = drink_hands(camera.get_global_transform(), elapsed);
+            self.bottle = Some((bottle, cap, drink));
+            self.ladder_holds = None;
+            return Some(limbs);
+        }
         if weight < 0.01 {
             self.ladder_holds = None;
             return None;
@@ -2885,7 +2908,7 @@ impl ViewmodelRig {
                     hands,
                     ankles,
                     facing: Vector3::new(ladder.facing.x, 0.0, ladder.facing.y),
-                    keypad: false,
+                    on: crate::character::poser::HandsOn::Ladder,
                 });
             }
         }
@@ -3282,7 +3305,8 @@ impl ViewmodelRig {
             ViewAction::Raising(p) => (BeatClip::Raise, p),
             ViewAction::Meleeing { .. }
             | ViewAction::FirstRaise { .. }
-            | ViewAction::Throwing(..) => (BeatClip::Idle, 0.0),
+            | ViewAction::Throwing(..)
+            | ViewAction::Drinking { .. } => (BeatClip::Idle, 0.0),
             ViewAction::Ready => match self.inspect {
                 Some(t) => (BeatClip::Inspect, t),
                 None => (BeatClip::Idle, 0.0),
@@ -3553,7 +3577,8 @@ impl ViewmodelRig {
         // Wrapped well inside f32's precision; the taps' key pick only needs
         // a run of distinct tap numbers.
         self.keypad_clock = (self.keypad_clock + dt) % 3600.0;
-        if frame.on_ladder || frame.put_away {
+        if frame.on_ladder || frame.put_away || matches!(frame.action, ViewAction::Drinking { .. })
+        {
             self.ladder_blend += (1.0 - self.ladder_blend) * smoothing(10.0, dt);
         } else if frame.sprint_out > 0.0 {
             self.ladder_blend = self.ladder_blend.min(frame.sprint_out);
@@ -3940,6 +3965,7 @@ impl ViewmodelRig {
             arms.bind_mut()
                 .set_body_shift(Vector3::new(0.0, 0.0, iron_back * ads));
             arms.bind_mut().show_charge(self.keypad_case);
+            arms.bind_mut().show_bottle(self.bottle);
             arms.bind_mut().follow(hold, 0.0, None, item, throw, ladder);
         }
     }
@@ -4093,10 +4119,141 @@ fn keypad_hands(camera: Transform3D, weight: f32, seconds: f32) -> (Transform3D,
             hands: [right, left],
             ankles: [Vector3::ZERO; 2],
             facing: point,
-            keypad: true,
+            on: crate::character::poser::HandsOn::Keypad,
         },
     )
 }
+
+/// A Zombies drink in first person, `t` seconds into the bottle (of
+/// `weapon::DRINK_SECONDS`), as Black Ops' perk bottle plays: the right
+/// hand brings the bottle up from low right, the left thumb flicks its cap
+/// off, the bottle tips up to the mouth for three gulps, and is tossed away
+/// down to the right. Returns the bottle's and the cap's transforms (world,
+/// as the viewmodel draws; the cap's `None` once it has flown) and the
+/// hands. Bottle space: origin at the middle of its base, +y up its neck.
+fn drink_hands(camera: Transform3D, t: f32) -> (Transform3D, Option<Transform3D>, LadderLimbs) {
+    use crate::character::poser::{Grip, HandsOn};
+    use shooter_sim::weapon::DRINK_SECONDS;
+    // The bottle's base and its up axis in view space, keyed.
+    let low = (Vector3::new(0.16, -0.42, -0.3), Vector3::new(0.1, 0.9, 0.3));
+    let held = (
+        Vector3::new(0.07, -0.25, -0.36),
+        Vector3::new(-0.1, 0.95, 0.25),
+    );
+    // Tipped up, its neck toward the mouth (under the eye), its base high in
+    // the middle of the view.
+    let drink = (
+        Vector3::new(0.08, -0.1, -0.33),
+        Vector3::new(-0.15, -0.45, 1.0),
+    );
+    let tossed = (
+        Vector3::new(0.45, -0.55, -0.25),
+        Vector3::new(0.9, 0.2, -0.3),
+    );
+    let gulp = |t: f32| -> f32 {
+        let u = ((t - 0.95) / 0.3).clamp(0.0, 3.0);
+        0.012 * (u * std::f32::consts::TAU).sin().abs() * f32::from(t > 0.95 && t < 1.85)
+    };
+    let keys = [
+        (0.0, low),
+        (0.3, held),
+        (0.62, held),
+        (0.9, drink),
+        (1.85, drink),
+        (2.05, held),
+        (DRINK_SECONDS, tossed),
+    ];
+    let mut base = keys[0].1.0;
+    let mut up = keys[0].1.1;
+    for pair in keys.windows(2) {
+        let ((t0, a), (t1, b)) = (pair[0], pair[1]);
+        if t <= t1 {
+            let u = smoothstep(((t - t0) / (t1 - t0)).clamp(0.0, 1.0));
+            base = a.0.lerp(b.0, u);
+            up = a.1.normalized().slerp(b.1.normalized(), u);
+            break;
+        }
+        base = b.0;
+        up = b.1;
+    }
+    base.y += gulp(t);
+    let up = up.normalized();
+    // The label faces the eye: the bottle's +z toward the camera as far as
+    // its tilt allows.
+    let back = (Vector3::BACK - up * Vector3::BACK.dot(up))
+        .try_normalized()
+        .unwrap_or(Vector3::RIGHT);
+    let basis = Basis::from_cols(up.cross(back), up, back).scaled(Vector3::splat(BOTTLE_SCALE));
+    let bottle_in_view = Transform3D::new(basis, base);
+    let bottle = camera * bottle_in_view;
+    // The cap sits on the neck until the thumb flicks it off at 0.55 s; it
+    // spins away up and to the right for a third of a second.
+    let neck = base + up * BOTTLE_HEIGHT * BOTTLE_SCALE;
+    let cap = match t {
+        t if t < 0.55 => Some(Transform3D::new(basis, neck)),
+        t if t < 0.9 => {
+            let f = t - 0.55;
+            let fly = neck + Vector3::new(0.5 * f, 1.1 * f - 4.9 * f * f, -0.2 * f);
+            Some(Transform3D::new(
+                Basis::from_axis_angle(Vector3::FORWARD, 30.0 * f) * basis,
+                fly,
+            ))
+        }
+        _ => None,
+    }
+    .map(|c| camera * c);
+    // The right hand round the bottle's body, a little below its middle:
+    // from its right while it is upright, from under it while it is tipped
+    // up; it lets go as the bottle is tossed.
+    let tipped = keyed(&[(0.62, 0.0), (0.9, 1.0), (1.85, 1.0), (2.05, 0.0)], t);
+    let grip = base + up * 0.07;
+    let toward = Vector3::RIGHT.lerp(Vector3::new(0.45, -1.0, 0.0), tipped);
+    let side = toward - up * toward.dot(up);
+    let side = side.try_normalized().unwrap_or(Vector3::RIGHT);
+    // Palm on the bottle's right, the fingers round its front.
+    let fingers = up.cross(side).try_normalized().unwrap_or(Vector3::FORWARD);
+    let let_go = ((t - 2.12) / 0.15).clamp(0.0, 1.0);
+    let right = (grip + side * 0.035 - fingers * 0.06).lerp(Vector3::new(0.3, -0.6, -0.2), let_go);
+    // The left hand: up to the neck to flick the cap, then down out of view.
+    let flick = keyed(&[(0.25, 0.0), (0.45, 1.0), (0.6, 1.0), (0.85, 0.0)], t);
+    let left_rest = Vector3::new(-0.25, -0.55, -0.25);
+    let at_cap =
+        neck + Vector3::new(-0.03, -0.01, 0.02) - Vector3::new(0.4, -0.2, -0.6).normalized() * 0.06;
+    let left = left_rest.lerp(
+        at_cap + Vector3::new(0.015, 0.01, 0.0) * f32::from(t > 0.55),
+        flick,
+    );
+    let to_world = |v: Vector3| camera.basis * v;
+    (
+        bottle,
+        cap,
+        LadderLimbs {
+            weight: keyed(
+                &[
+                    (0.0, 0.0),
+                    (0.2, 1.0),
+                    (DRINK_SECONDS - 0.1, 1.0),
+                    (DRINK_SECONDS, 0.6),
+                ],
+                t,
+            ),
+            hands: [camera * right, camera * left],
+            ankles: [Vector3::ZERO; 2],
+            facing: to_world(Vector3::FORWARD),
+            on: HandsOn::Placed {
+                reach: [to_world(fingers), to_world(Vector3::new(0.4, 0.3, -0.6))],
+                palm: [to_world(-side), to_world(Vector3::new(0.3, -0.4, -0.2))],
+                shape: [Grip::Wrap, if t < 0.7 { Grip::Point } else { Grip::Flat }],
+            },
+        },
+    )
+}
+
+/// The drink bottle's height (its base to the top of its neck, m, as
+/// `drink_bottle_*` in tools/gear_models.py builds it) and the scale it is
+/// drawn at in first person.
+const BOTTLE_HEIGHT: f32 = 0.2;
+const BOTTLE_SCALE: f32 = 0.85;
 
 /// The charge in first person: where its middle sits in view space, how far
 /// its lid tilts up toward the eye (degrees), the top of its keys above its

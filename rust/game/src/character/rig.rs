@@ -1375,7 +1375,7 @@ impl SoldierRig {
                     hands,
                     ankles,
                     facing: Vector3::new(ladder.facing.x, 0.0, ladder.facing.y),
-                    keypad: false,
+                    on: super::poser::HandsOn::Ladder,
                 });
             }
             // Out of the ladder's reach (stepping off): the limbs keep their

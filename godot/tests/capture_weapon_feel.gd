@@ -68,6 +68,8 @@ const SCENARIOS := [
 	"crouch",
 	"crawl",
 	"crawl_m1911",
+	"drink",
+	"drink_m1911",
 	"vault",
 	"mantle",
 	"hit",
@@ -626,6 +628,21 @@ func _scenario_crawl() -> void:
 
 func _scenario_crawl_m1911() -> void:
 	await _crawl()
+
+
+## A Zombies drink (`Raise::Drink`): the weapon goes down, the bottle comes
+## up, the cap is flicked off, three gulps, the bottle is tossed, and the
+## weapon is drawn.
+func _scenario_drink() -> void:
+	_mark("drink")
+	_player.debug_drink("bulwark")
+	await _sixtieths(200)
+
+
+func _scenario_drink_m1911() -> void:
+	_mark("drink")
+	_player.debug_drink("long_stride")
+	await _sixtieths(200)
 
 
 func _scenario_switch() -> void:

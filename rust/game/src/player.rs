@@ -1391,6 +1391,16 @@ impl FpsPlayer {
         self.turn(yaw, pitch);
     }
 
+    /// Drinks `key`'s Zombies drink as a machine's sale does (the bottle, then
+    /// the weapon drawn), without a machine or a server. For tests and
+    /// captures.
+    #[func]
+    fn debug_drink(&mut self, key: GString) {
+        if let Some(drink) = shooter_sim::zombies::drinks::Drink::from_key(&key.to_string()) {
+            self.state.combat = self.state.combat.drinking(drink);
+        }
+    }
+
     /// Points the view: yaw and pitch in radians (spawns, tests, spectating).
     #[func]
     pub(crate) fn set_look(&mut self, yaw: f32, pitch: f32) {
@@ -3236,6 +3246,13 @@ impl FpsPlayer {
                         length,
                     }
                 }
+                // The bottle first, then the draw.
+                Raise::Drink(drink) if remaining > def.raise_time => ViewAction::Drinking {
+                    elapsed: (shooter_sim::weapon::DRINK_SECONDS - (remaining - def.raise_time))
+                        .max(0.0),
+                    drink,
+                },
+                Raise::Drink(_) => ViewAction::Raising(progress(remaining, def.raise_time)),
             },
             Action::Meleeing { strike_in, .. } => ViewAction::Meleeing { strike_in },
             Action::Throwing {
