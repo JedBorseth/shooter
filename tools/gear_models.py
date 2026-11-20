@@ -307,6 +307,36 @@ def powerup_ammo(b: Model):
            "powerup_glow", sides=8, detail=False)
 
 
+# --- Scavenger pack ---------------------------------------------------------------------
+@model
+def scavenger_pack(b: Model):
+    """The ammunition pouch a dead enemy drops for Scavenger players
+    (scripts/net/scavenger_view.gd): a canvas pouch 0.3 x 0.13 x 0.2 m lying
+    on its back, origin at the middle of its underside, with a buttoned flap,
+    a webbing strap, and two magazines showing at one end."""
+    rng = random.Random(11)
+    body = []
+    for x in (-0.15, -0.05, 0.05, 0.15):
+        for y, s in ((0.0, 0.86), (0.03, 1.0), (0.09, 0.96), (0.12, 0.8)):
+            for z in (-0.1, 0.1):
+                body.append((x * (0.94 if abs(x) > 0.1 else 1.0) + rng.uniform(-0.004, 0.004), y,
+                             z * s + rng.uniform(-0.004, 0.004)))
+    b.smooth_hull(body, "sandbag", levels=2)
+    # The flap folded over the top, a little proud of the body.
+    flap = [(x, y, z) for x in (-0.145, 0.145) for y in (0.115, 0.13) for z in (-0.09, 0.02)]
+    flap += [(x, 0.105, 0.06) for x in (-0.14, 0.14)]
+    b.smooth_hull(flap, "sandbag", levels=1)
+    b.box(-0.02, 0.02, 0.128, 0.138, 0.0, 0.03, "trim_black", bevel=0.004)
+    # A webbing strap round the middle and its buckle.
+    b.tube([(0.0, 0.0, -0.105), (0.0, 0.07, -0.108), (0.0, 0.135, -0.07), (0.0, 0.14, 0.0),
+            (0.0, 0.13, 0.07), (0.0, 0.06, 0.108), (0.0, 0.0, 0.105)], 0.012, "rubber", sides=4,
+           detail=False)
+    b.box(-0.022, 0.022, 0.06, 0.09, 0.104, 0.116, "charge_steel", bevel=0.003)
+    # Two magazines poking out of the open end.
+    for z, tilt in ((-0.04, 0.0), (0.035, 0.02)):
+        b.box(0.15, 0.2, 0.03 + tilt, 0.055 + tilt, z - 0.028, z + 0.028, "charge_steel", bevel=0.004)
+
+
 @model
 def powerup_skull(b: Model):
     """A skull, about 0.4 m tall, facing -z."""

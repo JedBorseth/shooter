@@ -335,7 +335,8 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
   - [x] Perks in the simulation and on the server: Black Ops 2's three tiers and Perk Greed in the class rules, Lightweight, Fast Hands, Sleight of Hand, and Dexterity predicted, Flak Jacket, Toughness, and Tactical Mask where they are decided, unlock levels, bots with a perk of each tier (`rust/sim/src/perk.rs`).
   - [ ] Perks in the class menu, with icons, and on the default classes.
   - [x] Dead Silence and Awareness footsteps.
-  - [ ] Scavenger packs.
+  - [x] Scavenger packs.
+  - [ ] Bots go for Scavenger packs they can see when low on ammunition.
 - [x] Progression: XP, levels, weapon unlocks: score is XP plus a match bonus, levels 1 to 55, Create-a-Class at level 4, weapons, tacticals, and wildcards by level, attachments by kills with the weapon, kept locally (`rust/sim/src/progression.rs`, `godot/scripts/progress_store.gd`).
 - [ ] Progression follow-ups: keep progress on the server once accounts exist (Phase 5), so it can check unlocks; prestige; weapon levels shown in the menu.
 - [x] Gun Game: free-for-all up a ladder of the eight weapons, with a local match button on the title screen (`rust/sim/src/gun_game.rs`).

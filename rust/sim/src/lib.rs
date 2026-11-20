@@ -25,6 +25,7 @@ pub mod perk;
 pub mod player;
 pub mod progression;
 pub mod rng;
+pub mod scavenger;
 pub mod score;
 pub mod snd;
 pub mod tdm;
