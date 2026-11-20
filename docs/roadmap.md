@@ -66,6 +66,7 @@ Each phase ends with something playable.
    - ✅ Determinism: a one-minute scripted run hashes the same in debug and release, and on Linux, Windows, and macOS in CI.
    - ✅ Remote players are drawn as the soldier: locomotion, aim, weapon in hand, reload, fire, and death from snapshot state.
    - ✅ Server-side shots: the server resolves every shot, applies damage, and keeps score (`rust/sim/src/score.rs` now runs on the server). Hits, damage taken, kills, and score go to clients as reliable game events on the reliable ENet channel.
+   - Bandwidth per client, its bench (`godot/tests/bandwidth_test.gd`), and what the server checks in what clients send: [netcode.md](netcode.md).
    - ✅ Input rate cap: draining a backlog is paid for with credit that builds up one input per tick, so no client applies more than one input per tick over time.
    - ✅ Server browser: LAN, Internet (master server), favorites, and direct connect, with name, map, players, and ping; join, connection status, and leaving return to the browser.
    - Next: Phase 4.
