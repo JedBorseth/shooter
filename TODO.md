@@ -234,7 +234,9 @@ Done: rounds with a growing, toughening horde, zombies that walk straight at the
 - [x] Drinks and the power ([docs/zombies.md](docs/zombies.md), Black Ops III's perk numbers under our own names and machines): a power switch in the west yard; Bulwark (down on the fifth hit), Second Wind (half-time revives; alone, 500 points, no power needed, and back up by yourself after 10 s, three times a game), Quickload (half-time reloads), Hair Trigger (a third faster fire, double damage on zombies), and Long Stride (7% faster); four at most, all lost on going down; badges on the HUD.
   - [ ] A drinking animation (a bottle in the hands for about 3 s) instead of the weapon's re-raise.
   - [ ] Drink and machine sounds from real CC0 recordings (a cap, a gulp, a machine hum); none suitable found yet.
-- [ ] A mystery crate: a random weapon for 950 points from a weighted pool, the cycling display, and a move to another spot after enough uses.
+- [x] A mystery crate ([docs/zombies.md](docs/zombies.md#the-mystery-crate)): a random weapon for 950 points from a weighted pool, never one carried, cycling up out of it for 4 s and held out to the buyer for 12 s; after enough spins (Black Ops III's odds) the duck, a refund, and a move to another of three spots.
+  - [ ] Crate sounds (the lid, the cycle, the duck) from real CC0 recordings.
+  - [ ] Fire Sale (every spot open at 10 points for 30 s), with its own power-up.
 - [ ] An upgrade machine (needs the power): more damage, magazine, and reserve, and a tint on the upgraded gun.
 - [x] The title screen's Zombies runs on a local dedicated server: Solo starts a private one that skips the ready-up and pauses; Co-op hosts one friends on the network find under Multiplayer, LAN (up to four players, ready-up, no pause). The scoreboard shows points, kills, downs, revives, and headshots.
 - [ ] Remove the offline `ZombieDirector` game once the benchmark and the capture scripts run Zombies on a server (they are its only users now).

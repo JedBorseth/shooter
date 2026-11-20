@@ -112,6 +112,7 @@ use super::bots::{
 };
 use super::discovery::QueryResponder;
 use super::horde::{Horde, HordeEvent, HordePlayer};
+use super::machines::CrateChange;
 use super::props::{PropExplosion, PropSnapshot, PropsBridge};
 use super::transport::{self, NetEvent};
 use crate::body::{self, BodyParts};
@@ -1343,6 +1344,7 @@ impl NetServer {
                 "door" => h.door_node(index),
                 "drink" => h.machines.drink_machine_node(index),
                 "power" => h.machines.power_switch_node(),
+                "crate" => h.machines.mystery.as_ref()?.spot_node(index),
                 _ => h.window_node(index),
             });
         if let Some(node) = node {
@@ -1354,6 +1356,69 @@ impl NetServer {
     #[func]
     fn power_on(&self) -> bool {
         self.horde.as_ref().is_some_and(|h| h.machines.power())
+    }
+
+    /// Zombies: the mystery crate's spot and phase ("idle", "cycling",
+    /// "offering", "duck", "away"), and the weapon it holds out, if any
+    /// (tests).
+    #[func]
+    fn mystery_crate(&self) -> VarDictionary {
+        let Some(crate_) = self
+            .horde
+            .as_ref()
+            .and_then(|h| h.machines.mystery.as_ref())
+        else {
+            return VarDictionary::new();
+        };
+        let at = crate_.at();
+        let offered = self
+            .avatars
+            .iter()
+            .find_map(|a| crate_.offered(at, a.id).map(|w| (a.id, w)));
+        vdict! {
+            "spot" => at as i64,
+            "spots" => crate_.spot_count() as i64,
+            "phase" => crate_.phase_name(),
+            "weapon" => &offered.map_or(GString::new(), |(_, w)| GString::from(&w.def().key)),
+            "for" => offered.map_or(-1, |(id, _)| i64::from(id)),
+        }
+    }
+
+    /// Zombies: player `id` takes what the mystery crate holds out to them,
+    /// as a press of use looking at it would (tests).
+    #[func]
+    fn debug_take_from_crate(&mut self, id: i32) -> bool {
+        let Ok(id) = u8::try_from(id) else {
+            return false;
+        };
+        let Some(crate_) = self
+            .horde
+            .as_mut()
+            .and_then(|h| h.machines.mystery.as_mut())
+        else {
+            return false;
+        };
+        let Some(weapon) = crate_.offered(crate_.at(), id) else {
+            return false;
+        };
+        crate_.taken();
+        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
+            return false;
+        };
+        let input = PlayerInput {
+            pickup: Some(weapon),
+            ..PlayerInput::default()
+        };
+        let mut events = Vec::new();
+        body::tick(
+            &mut avatar.parts,
+            &self.params,
+            &mut avatar.predicted,
+            &input,
+            &mut events,
+        );
+        self.broadcast_crate();
+        true
     }
 
     /// Zombies: drink machines on the map.
@@ -1705,6 +1770,7 @@ impl NetServer {
                     events.extend(horde.door_events());
                     events.extend(horde.drop_events());
                     events.push(horde.timers_event(self.tick));
+                    events.extend(self.crate_event());
                     for avatar in &self.avatars {
                         if let Some(stand) = &avatar.last_stand {
                             events.push(protocol::ZombiesEvent::Downed {
@@ -2165,6 +2231,7 @@ impl NetServer {
         let mut spent: Vec<(u8, u32)> = Vec::new();
         let mut uses: Vec<(u8, Gd<Node>, bool)> = Vec::new();
         let mut revivers: Vec<(u8, u8)> = Vec::new();
+        let mut crate_taken = false;
         // Zombies: who is down, and where, as of the start of the tick.
         let downed: Vec<(u8, Vec3)> = self
             .avatars
@@ -2345,12 +2412,21 @@ impl NetServer {
                 // Zombies: a wall weapon costs its price, and its ammo half
                 // that, paid when it is taken.
                 let mut cost = None;
+                let mut from_crate = false;
                 if let Some(weapon) = input.pickup {
                     let price = if racks {
                         pickup_in_reach(avatar, &input, weapon, &self.params)
                     } else {
                         None
                     };
+                    // Zombies: the mystery crate holding a weapon out to
+                    // its buyer gives it for nothing.
+                    let price = price.or_else(|| {
+                        let crate_ = self.horde.as_ref()?.machines.mystery.as_ref()?;
+                        let spot = crate_.spot_of(&looked_at(avatar, &input, &self.params)?)?;
+                        from_crate = crate_.offered(spot, avatar.id) == Some(weapon);
+                        from_crate.then_some(0)
+                    });
                     match price {
                         Some(price) if zombies_mode => {
                             let combat = &avatar.predicted.state.combat;
@@ -2396,13 +2472,17 @@ impl NetServer {
                     input,
                     &mut events,
                 );
+                let picked_up = events
+                    .iter()
+                    .any(|e| matches!(e, PlayerEvent::Combat(CombatEvent::PickedUp { .. })));
                 if let Some(cost) = cost
-                    && events
-                        .iter()
-                        .any(|e| matches!(e, PlayerEvent::Combat(CombatEvent::PickedUp { .. })))
+                    && picked_up
                 {
                     avatar.zombies.points -= cost;
                     spent.push((avatar.id, cost));
+                }
+                if from_crate && picked_up {
+                    crate_taken = true;
                 }
                 avatar.yaw = input.yaw;
                 avatar.pitch = input.pitch;
@@ -2522,6 +2602,16 @@ impl NetServer {
         for (id, cost) in spent {
             self.send_points(id, -(cost as i32));
         }
+        if crate_taken {
+            if let Some(crate_) = self
+                .horde
+                .as_mut()
+                .and_then(|h| h.machines.mystery.as_mut())
+            {
+                crate_.taken();
+            }
+            self.broadcast_crate();
+        }
         self.zombies_uses(uses);
         if zombies_mode && self.match_state.scoring() {
             self.update_last_stands(&revivers);
@@ -2552,6 +2642,7 @@ impl NetServer {
             .collect();
         horde.step(&players);
         self.drain_horde();
+        self.update_crate();
         let everyone_down = !self.avatars.is_empty()
             && self.avatars.iter().all(|a| {
                 !a.predicted.state.alive()
@@ -2591,6 +2682,7 @@ impl NetServer {
         events.extend(horde.door_events());
         events.push(horde.timers_event(self.tick));
         events.extend(horde.machines.events(self.avatars.len() == 1));
+        events.extend(self.crate_event());
         for event in events {
             self.broadcast_event(&GameEvent::Zombies(event));
         }
@@ -2700,6 +2792,17 @@ impl NetServer {
                 }
                 continue;
             }
+            if let Some(spot) = horde
+                .machines
+                .mystery
+                .as_ref()
+                .and_then(|c| c.spot_of(&node))
+            {
+                if pressed {
+                    self.open_crate(id, spot);
+                }
+                continue;
+            }
             if let Some(door) = horde.door_of(&node) {
                 let Some(price) = horde.door_price(door) else {
                     continue;
@@ -2801,6 +2904,80 @@ impl NetServer {
         }));
         if left {
             self.broadcast_machines();
+        }
+    }
+
+    /// Zombies: player `id` presses use at mystery crate spot `spot`: if the
+    /// crate is there and closed, they pay and it opens.
+    fn open_crate(&mut self, id: u8, spot: usize) {
+        let Some(crate_) = self
+            .horde
+            .as_mut()
+            .and_then(|h| h.machines.mystery.as_mut())
+        else {
+            return;
+        };
+        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
+            return;
+        };
+        let state = &avatar.predicted.state;
+        if !state.alive() || state.downed {
+            return;
+        }
+        let Some(price) = crate_.press(spot, id, &state.combat, avatar.zombies.points) else {
+            return;
+        };
+        avatar.zombies.points -= price;
+        godot_print!("server: player {id} opened the mystery crate");
+        self.send_points(id, -(price as i32));
+        self.broadcast_crate();
+    }
+
+    /// Zombies: the mystery crate as clients are told it.
+    fn crate_event(&self) -> Option<protocol::ZombiesEvent> {
+        let tick = self.tick;
+        let crate_ = self.horde.as_ref()?.machines.mystery.as_ref()?;
+        crate_.event(|seconds| tick + (seconds.max(0.0) * TICK_RATE as f32).ceil() as Tick)
+    }
+
+    /// Zombies: tells everyone what the mystery crate is doing, and shows it
+    /// on the server's own spots (their colliders follow it).
+    fn broadcast_crate(&mut self) {
+        if let Some(crate_) = self
+            .horde
+            .as_ref()
+            .and_then(|h| h.machines.mystery.as_ref())
+        {
+            crate_.show();
+        }
+        if let Some(event) = self.crate_event() {
+            self.broadcast_event(&GameEvent::Zombies(event));
+        }
+    }
+
+    /// Zombies: runs the mystery crate one tick: a duck refunds the buyer.
+    fn update_crate(&mut self) {
+        let mut changes = Vec::new();
+        if let Some(crate_) = self
+            .horde
+            .as_mut()
+            .and_then(|h| h.machines.mystery.as_mut())
+        {
+            crate_.step(TICK_DT, &mut changes);
+        }
+        for change in changes {
+            match change {
+                CrateChange::Changed => self.broadcast_crate(),
+                CrateChange::Refund { by, points } => {
+                    if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == by) {
+                        avatar.zombies.points = avatar.zombies.points.saturating_add(points);
+                        godot_print!(
+                            "server: the mystery crate moves; player {by} gets {points} back"
+                        );
+                        self.send_points(by, points as i32);
+                    }
+                }
+            }
         }
     }
 

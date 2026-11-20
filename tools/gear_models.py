@@ -1117,3 +1117,99 @@ def power_lamps(b: Model):
     dark lenses of power_switch."""
     for x in (-0.25, 0.25):
         b.cyl("z", 0.236, 0.244, (x, 1.42), 0.043, "lamp_on_green", sides=12)
+
+
+# --- Zombies: the mystery crate ----------------------------------------------------------
+# An olive supply crate (rust/game/src/mystery_crate.rs) with a die stencilled on its
+# faces, its lid a separate model hinged at the back, and the rubber duck that shows when
+# the crate is about to move. Front +z, origin on the ground at the middle.
+LOOKS["crate_body"] = {"color": (0.22, 0.25, 0.17), "rough": 0.8, "metal": 0.2}
+LOOKS["crate_band"] = {"color": (0.16, 0.16, 0.15), "rough": 0.5, "metal": 0.9}
+LOOKS["crate_stencil"] = {"color": (0.82, 0.72, 0.36), "rough": 0.7}
+LOOKS["crate_inside"] = {"color": (0.05, 0.05, 0.05), "rough": 0.9}
+LOOKS["duck_yellow"] = {"color": (0.95, 0.78, 0.12), "rough": 0.35}
+LOOKS["duck_orange"] = {"color": (0.95, 0.4, 0.06), "rough": 0.35}
+CRATE_L, CRATE_H, CRATE_D = 0.78, 0.74, 0.37  # half length, height, half depth
+
+
+def _die_face(b: Model, x, y, z, yaw, size, look):
+    """A die's five face stencilled flat on a face at (x, y, z) turned `yaw`:
+    a square outline and five pips."""
+    c, s = math.cos(yaw), math.sin(yaw)
+    t = 0.004
+
+    def at(u, v):
+        return (x + u * c, y + v, z - u * s)
+
+    def flat(points):
+        b.hull([(px + s * dz, py, pz + c * dz) for px, py, pz in points for dz in (0.0, t)], look)
+
+    h = size / 2
+    for u0, u1, v0, v1 in ((-h, h, h - 0.025, h), (-h, h, -h, -h + 0.025), (-h, -h + 0.025, -h, h),
+                           (h - 0.025, h, -h, h)):
+        flat([at(u, v) for u in (u0, u1) for v in (v0, v1)])
+    for u, v in ((-0.25, -0.25), (-0.25, 0.25), (0.25, -0.25), (0.25, 0.25), (0.0, 0.0)):
+        flat([at(u * size + math.cos(a) * size * 0.08, v * size + math.sin(a) * size * 0.08)
+              for a in (k * PI / 4 for k in range(8))])
+
+
+@model
+def mystery_crate(b: Model):
+    """The mystery crate's body, open at the top, 1.56 x 0.74 x 0.74 m."""
+    L, H, D = CRATE_L, CRATE_H, CRATE_D
+    w = 0.03
+    # Floor and four walls, so the open crate shows a dark inside.
+    b.box(-L, L, 0.04, 0.08, -D, D, "crate_body")
+    b.box(-L, L, 0.04, H, D - w, D, "crate_body", bevel=0.008)
+    b.box(-L, L, 0.04, H, -D, -D + w, "crate_body", bevel=0.008)
+    b.box(-L, -L + w, 0.04, H, -D, D, "crate_body", bevel=0.008)
+    b.box(L - w, L, 0.04, H, -D, D, "crate_body", bevel=0.008)
+    b.box(-L + w, L - w, 0.081, 0.09, -D + w, D - w, "crate_inside")
+    # Skids, steel bands and corners, and rope handles at the ends.
+    for z in (-D + 0.08, D - 0.08):
+        b.box(-L - 0.02, L + 0.02, 0.0, 0.05, z - 0.05, z + 0.05, "crate_body", bevel=0.006)
+    for x in (-L * 0.62, L * 0.62):
+        b.box(x - 0.035, x + 0.035, 0.05, H - 0.02, -D - 0.006, D + 0.006, "crate_band", bevel=0.004)
+    for x in (-L, L):
+        for z in (-D, D):
+            b.box(x - 0.03, x + 0.03, 0.05, H, z - 0.03, z + 0.03, "crate_band", bevel=0.006)
+    for side in (-1, 1):
+        x = side * (L + 0.01)
+        b.tube([(x, 0.45, -0.12), (x + side * 0.05, 0.4, -0.08), (x + side * 0.05, 0.4, 0.08), (x, 0.45, 0.12)],
+               0.014, "rubber", sides=6, detail=False)
+    # The die stencilled on the front and back.
+    for z, yaw in ((D + 0.007, 0.0), (-D - 0.007, PI)):
+        _die_face(b, 0.0, 0.4, z, yaw, 0.38, "crate_stencil")
+
+
+@model
+def mystery_crate_lid(b: Model):
+    """The crate's lid, origin on its hinge along the back top edge; it
+    covers +z from there. Turned about x to open."""
+    L, D = CRATE_L, CRATE_D
+    b.box(-L - 0.01, L + 0.01, 0.0, 0.07, -0.01, 2 * D + 0.01, "crate_body", bevel=0.01)
+    for x in (-L * 0.62, L * 0.62):
+        b.box(x - 0.035, x + 0.035, 0.0, 0.075, -0.015, 2 * D + 0.015, "crate_band", bevel=0.004)
+    for x in (-0.4, 0.4):
+        b.cyl("x", x - 0.08, x + 0.08, (0.0, 0.0), 0.022, "crate_band", sides=8)
+    b.box(-0.08, 0.08, -0.04, 0.05, 2 * D + 0.01, 2 * D + 0.03, "crate_band", bevel=0.005)
+
+
+@model
+def mystery_duck(b: Model):
+    """A rubber duck about 0.4 m tall, facing +z, origin under its middle:
+    the sign the crate is about to move."""
+    body = []
+    for k in range(12):
+        a = 2 * PI * k / 12
+        for y, rx, rz in ((0.0, 0.13, 0.17), (0.07, 0.17, 0.22), (0.15, 0.14, 0.2)):
+            body.append((math.cos(a) * rx, y, math.sin(a) * rz - 0.02))
+    body.append((0.0, 0.2, -0.24))  # the tail, up behind
+    b.smooth_hull(body, "duck_yellow", levels=2)
+    head = [(math.cos(a) * 0.1 * math.cos(e), 0.27 + 0.1 * math.sin(e), 0.07 + math.sin(a) * 0.1 * math.cos(e))
+            for a in (k * PI / 5 for k in range(10)) for e in (-1.2, -0.5, 0.3, 1.0)]
+    b.smooth_hull(head, "duck_yellow", levels=2)
+    b.smooth_hull([(x, y, z) for x in (-0.05, 0.05) for y in (0.24, 0.28) for z in (0.15, 0.17)]
+                  + [(0.0, 0.255, 0.25)], "duck_orange", levels=1)
+    for x in (-0.055, 0.055):
+        b.cyl("z", 0.14, 0.16, (x, 0.31), 0.016, "trim_black", sides=8)

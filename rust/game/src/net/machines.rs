@@ -5,6 +5,9 @@
 //!
 //! - `PowerSwitch`: the lever (`scripts/zombies_power_switch.gd`). A press
 //!   turns the power on for the rest of the game, free, as in Black Ops.
+//! - `MysteryCrates`: the spots the mystery crate can stand at
+//!   (`MysteryCrate`, `rust/game/src/mystery_crate.rs`); it starts at the
+//!   first.
 //! - `DrinkMachines`: one child per machine
 //!   (`scripts/zombies_drink_machine.gd`), each with a `drink` key
 //!   (`Drink::key`).
@@ -16,8 +19,12 @@
 
 use godot::classes::Node3D;
 use godot::prelude::*;
-use shooter_sim::net::protocol::ZombiesEvent;
+use shooter_sim::net::Tick;
+use shooter_sim::net::protocol::{CratePhase, ZombiesEvent};
+use shooter_sim::rng;
+use shooter_sim::weapon::{CombatState, WeaponId};
 use shooter_sim::zombies::drinks::{self, Drink};
+use shooter_sim::zombies::mystery;
 
 struct DrinkMachine {
     node: Gd<Node3D>,
@@ -33,6 +40,9 @@ pub struct Machines {
     drink_machines: Vec<DrinkMachine>,
     /// Second Winds a lone player has bought this game.
     solo_second_winds: u8,
+    pub mystery: Option<MysteryCrate>,
+    /// Games played, to vary the crate's draws.
+    games: u32,
 }
 
 impl Machines {
@@ -47,17 +57,25 @@ impl Machines {
                 available: true,
             })
             .collect();
+        let mystery = Some(MysteryCrate::new(map)).filter(|c| c.spot_count() > 0);
         let mut machines = Self {
             power_switch,
             drink_machines,
+            mystery,
             ..Self::default()
         };
         machines.reset();
         machines
     }
 
-    /// A fresh game: the power off and every machine back.
+    /// A fresh game: the power off, every machine back, and the crate at
+    /// its first spot.
     pub fn reset(&mut self) {
+        self.games = self.games.wrapping_add(1);
+        if let Some(mystery) = &mut self.mystery {
+            mystery.reset(rng::hash(self.games, 0x4352_4154));
+            mystery.show();
+        }
         self.set_power(false);
         self.solo_second_winds = 0;
         for index in 0..self.drink_machines.len() {
@@ -191,5 +209,269 @@ pub fn map_drink_machines(map: &Gd<Node>) -> Vec<(Gd<Node3D>, Drink)> {
                 }
             }
         })
+        .collect()
+}
+
+/// What the mystery crate is doing.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum CrateState {
+    Idle,
+    /// Weapons cycling for `by`; it lands on `weapon`, or the duck.
+    Cycling {
+        by: u8,
+        weapon: Option<WeaponId>,
+        left: f32,
+    },
+    Offering {
+        by: u8,
+        weapon: WeaponId,
+        left: f32,
+    },
+    Duck {
+        by: u8,
+        left: f32,
+    },
+    /// Gone; it shows up at spot `next`.
+    Away {
+        next: usize,
+        left: f32,
+    },
+}
+
+/// What the crate did this tick that the server acts on.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum CrateChange {
+    /// Its state changed: tell everyone.
+    Changed,
+    /// It landed on the duck: player `by` gets their points back.
+    Refund { by: u8, points: u32 },
+}
+
+/// The mystery crate (`shooter_sim::zombies::mystery`) and the map's spots
+/// for it: `MysteryCrates`' children (`MysteryCrate`), the first where a
+/// game starts.
+pub struct MysteryCrate {
+    spots: Vec<Gd<Node3D>>,
+    at: usize,
+    state: CrateState,
+    /// Spins at this spot, and moves this game.
+    uses: u32,
+    moves: u32,
+    seed: u32,
+}
+
+impl MysteryCrate {
+    pub fn new(map: &Gd<Node>) -> Self {
+        Self {
+            spots: map_crate_spots(map),
+            at: 0,
+            state: CrateState::Idle,
+            uses: 0,
+            moves: 0,
+            seed: 0,
+        }
+    }
+
+    /// A fresh game: the crate back at its first spot, closed; `seed`
+    /// varies the draws from game to game.
+    pub fn reset(&mut self, seed: u32) {
+        self.at = 0;
+        self.state = CrateState::Idle;
+        self.uses = 0;
+        self.moves = 0;
+        self.seed = seed;
+    }
+
+    pub fn spot_count(&self) -> usize {
+        self.spots.len()
+    }
+
+    /// The spot whose collider is `node`, if it is one.
+    pub fn spot_of(&self, node: &Gd<Node>) -> Option<usize> {
+        self.spots
+            .iter()
+            .position(|s| s.instance_id() == node.instance_id())
+    }
+
+    /// Spot `index`'s node (tests).
+    pub fn spot_node(&self, index: usize) -> Option<Gd<Node>> {
+        self.spots.get(index).map(|n| n.clone().upcast())
+    }
+
+    /// The spot the crate is at (or leaving).
+    pub fn at(&self) -> usize {
+        self.at
+    }
+
+    /// The crate's phase as scripts and tests name it.
+    pub fn phase_name(&self) -> &'static str {
+        match self.state {
+            CrateState::Idle => "idle",
+            CrateState::Cycling { .. } => "cycling",
+            CrateState::Offering { .. } => "offering",
+            CrateState::Duck { .. } => "duck",
+            CrateState::Away { .. } => "away",
+        }
+    }
+
+    /// Player `by`, carrying `combat` with `points`, presses use at spot
+    /// `spot`: if the crate is there and closed, it opens and they pay the
+    /// price (returned).
+    pub fn press(&mut self, spot: usize, by: u8, combat: &CombatState, points: u32) -> Option<u32> {
+        if spot != self.at || self.state != CrateState::Idle || points < mystery::PRICE {
+            return None;
+        }
+        let uses = self.uses + 1;
+        let roll = mystery::move_roll(self.seed, uses, self.moves);
+        let duck = self.spots.len() > 1 && mystery::should_move(uses, self.moves, roll);
+        let weapon = if duck {
+            None
+        } else {
+            let seed = self
+                .seed
+                .wrapping_add(uses.wrapping_mul(7919))
+                .wrapping_add(self.moves);
+            Some(mystery::draw(combat, seed)?)
+        };
+        self.uses = uses;
+        self.state = CrateState::Cycling {
+            by,
+            weapon,
+            left: mystery::CYCLE_SECONDS,
+        };
+        Some(mystery::PRICE)
+    }
+
+    /// The weapon spot `spot` holds out to player `by`, if it does.
+    pub fn offered(&self, spot: usize, by: u8) -> Option<WeaponId> {
+        match self.state {
+            CrateState::Offering {
+                by: buyer, weapon, ..
+            } if spot == self.at && buyer == by => Some(weapon),
+            _ => None,
+        }
+    }
+
+    /// The buyer took the weapon: the crate closes.
+    pub fn taken(&mut self) {
+        if matches!(self.state, CrateState::Offering { .. }) {
+            self.state = CrateState::Idle;
+        }
+    }
+
+    /// Runs the crate one tick.
+    pub fn step(&mut self, dt: f32, out: &mut Vec<CrateChange>) {
+        let next = match &mut self.state {
+            CrateState::Idle => None,
+            CrateState::Cycling { left, .. }
+            | CrateState::Offering { left, .. }
+            | CrateState::Duck { left, .. }
+            | CrateState::Away { left, .. } => {
+                *left -= dt;
+                (*left <= 0.0).then_some(self.state)
+            }
+        };
+        let Some(done) = next else {
+            return;
+        };
+        self.state = match done {
+            CrateState::Cycling {
+                by,
+                weapon: Some(weapon),
+                ..
+            } => CrateState::Offering {
+                by,
+                weapon,
+                left: mystery::TAKE_SECONDS,
+            },
+            CrateState::Cycling {
+                by, weapon: None, ..
+            } => {
+                out.push(CrateChange::Refund {
+                    by,
+                    points: mystery::PRICE,
+                });
+                CrateState::Duck {
+                    by,
+                    left: mystery::DUCK_SECONDS,
+                }
+            }
+            CrateState::Duck { .. } => {
+                // Any other spot, drawn from the game's seed.
+                let others = self.spots.len().saturating_sub(1).max(1);
+                let pick =
+                    rng::hash(self.seed, self.moves.wrapping_add(0x4d4f_5645)) as usize % others;
+                let next = if pick >= self.at { pick + 1 } else { pick } % self.spots.len().max(1);
+                CrateState::Away {
+                    next,
+                    left: mystery::AWAY_SECONDS,
+                }
+            }
+            CrateState::Away { next, .. } => {
+                self.at = next;
+                self.uses = 0;
+                self.moves += 1;
+                CrateState::Idle
+            }
+            CrateState::Offering { .. } | CrateState::Idle => CrateState::Idle,
+        };
+        out.push(CrateChange::Changed);
+    }
+
+    /// Shows the crate's state on the map's spots, so the server's
+    /// colliders follow it.
+    pub fn show(&self) {
+        let (phase, by, weapon, left) = self.view();
+        crate::mystery_crate::show_on_spots(
+            &self.spots,
+            self.at as u8,
+            phase,
+            by,
+            weapon,
+            left.unwrap_or(0.0),
+            None,
+        );
+    }
+
+    fn view(&self) -> (CratePhase, u8, Option<WeaponId>, Option<f32>) {
+        match self.state {
+            CrateState::Idle => (CratePhase::Idle, 0, None, None),
+            CrateState::Cycling { by, weapon, left } => {
+                (CratePhase::Cycling, by, weapon, Some(left))
+            }
+            CrateState::Offering { by, weapon, left } => {
+                (CratePhase::Offering, by, Some(weapon), Some(left))
+            }
+            CrateState::Duck { by, left } => (CratePhase::Duck, by, None, Some(left)),
+            CrateState::Away { left, .. } => (CratePhase::Away, 0, None, Some(left)),
+        }
+    }
+
+    /// The crate as clients are told it; `ticks_from_now` turns seconds into
+    /// a server tick.
+    pub fn event(&self, ticks_from_now: impl Fn(f32) -> Tick) -> Option<ZombiesEvent> {
+        if self.spots.is_empty() {
+            return None;
+        }
+        let (phase, by, weapon, left) = self.view();
+        Some(ZombiesEvent::Crate {
+            spot: self.at as u8,
+            phase,
+            by,
+            weapon,
+            until: left.map(ticks_from_now),
+        })
+    }
+}
+
+/// The map's mystery crate spots, in the order the server numbers them.
+pub fn map_crate_spots(map: &Gd<Node>) -> Vec<Gd<Node3D>> {
+    let Some(parent) = map.get_node_or_null("MysteryCrates") else {
+        return Vec::new();
+    };
+    parent
+        .get_children()
+        .iter_shared()
+        .filter_map(|child| child.try_cast::<Node3D>().ok())
         .collect()
 }

@@ -19,6 +19,7 @@ mod gunfire;
 mod hitbox_rig;
 mod knife;
 mod ladder;
+mod mystery_crate;
 mod net;
 mod penetration;
 mod pickup;

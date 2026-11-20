@@ -1,7 +1,7 @@
-# Zombies: power and drinks
+# Zombies: power, drinks, and the mystery crate
 
 The systems that make a round-based Zombies run worth playing past the first
-few rounds, after Black Ops' power switch and perk machines. The rounds, the horde, doors, windows, power-ups, and last
+few rounds, after Black Ops' power switch, perk machines, and mystery box. The rounds, the horde, doors, windows, power-ups, and last
 stand are in [roadmap.md](roadmap.md#decisions) (the Zombies row) and
 `TODO.md`.
 
@@ -11,8 +11,8 @@ are in `rust/sim/src/zombies/`. Numbers come from Black Ops III's decompiled
 scripts (`scripts/zm/*.gsc` in the community's t7-source dump); each constant
 names the script variable it follows.
 
-We take the mechanics, never the property: the machines and drinks have our
-own names, models (built in Blender,
+We take the mechanics, never the property: the machines, drinks, and crate
+have our own names, models (built in Blender,
 `tools/gear_models.py`), colours, and icons. No Call of Duty names, logos,
 or jingles.
 
@@ -77,9 +77,41 @@ colour with a glyph: a shield, a cross, a magazine, a round, chevrons.
 - Long Stride does not lengthen sprint: this game's sprint is already
   unlimited (a recorded decision).
 
+## The mystery crate
+
+An olive supply crate with a die stencilled on it
+(`rust/game/src/mystery_crate.rs`, rules in
+`rust/sim/src/zombies/mystery.rs`). It stands at one of the map's
+`MysteryCrates` spots (the main yard's at the start, then the west yard's
+and the east lot's) and needs no power.
+
+| Rule | Here | Black Ops III (`_zm_magicbox.gsc`) |
+| --- | --- | --- |
+| Price | 950 | `zombie_treasure_chest_cost` 950 |
+| Cycle | Weapons rise out of it and cycle for 4 s, slowing down: 20 at 0.05 s, 10 at 0.1 s, 5 at 0.2 s, 3 at 0.3 s | The same 40-step loop in `treasure_chest_weapon_spawn` |
+| Pool | M4A1, AK-47, PDW-9, M870, M40, BR-3, LSW-6, equally weighted (weights in `mystery::POOL`), never one the buyer carries in any form; not the starting sidearm | Every box weapon at weight 1 unless a map weights it; `treasure_chest_canplayerreceiveweapon` skips carried ones |
+| Taking it | Only the buyer, with the use key while looking at it, into its slot; it sinks back over 12 s and the crate closes if left | `treasure_chest_timeout` 12 s, buyer only |
+| Moving | Never in the first 3 spins at a spot; 15% from the 4th to the 7th; certain by the 8th the first time; after a move, 30% from the 8th to the 12th and 50% from the 13th. Then the duck floats up, the buyer gets the 950 back, the crate lifts away and shows up at another spot 6 s later | `treasure_chest_should_move`'s odds; the teddy bear, the refund, and the fly-away |
+
+The duck is our own sign for the move: a rubber duck, built in Blender.
+
+**Online.** The server runs the crate and sends `ZombiesEvent::Crate` (its
+spot, phase, buyer, the weapon it lands on, and when the phase ends) on
+every change and on joining; each client shows it on the map's spots. The
+weapon is sent when the cycle starts, so the display lands on it. Taking it
+is an ordinary predicted pickup: the client's prompt treats the crate
+holding a weapon out to this player as a free rack, and the server checks
+the crate is holding that weapon out to them.
+
+**Differences from Black Ops, on purpose:** the weapon goes into its own
+slot (primary or sidearm), as every pickup in this game does, instead of
+replacing the weapon in hand. No Fire Sale. No sounds yet (they must be real
+CC0 recordings).
+
 ## Reference
 
-- Black Ops III: `_zm_perks.gsc` (`perk_purchase_limit`, perk loss on going
+- Black Ops III: `_zm_magicbox.gsc` (cost, cycle, timeout, move odds),
+  `_zm_perks.gsc` (`perk_purchase_limit`, perk loss on going
   down), `_zm_perk_juggernaut.gsc`, `_zm_perk_quick_revive.gsc`,
   `_zm_perk_sleight_of_hand.gsc`, `_zm_perk_doubletap2.gsc`,
   `_zm_perk_staminup.gsc`, `_zm_laststand.gsc` (`revive_get_revive_time`),

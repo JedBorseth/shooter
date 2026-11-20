@@ -1804,7 +1804,20 @@ impl FpsPlayer {
                 self.look_target = pickup.weapon_id();
                 self.look_price = pickup.price();
             }
-            Err(node) => {
+            Err(mut node) => {
+                // The Zombies mystery crate holding a weapon out to this
+                // player gives it like a free rack.
+                if node.has_method("offered_weapon") {
+                    let key = node
+                        .call("offered_weapon", &[])
+                        .try_to::<GString>()
+                        .unwrap_or_default();
+                    if let Some(id) = WeaponId::by_key(&key.to_string()) {
+                        self.look_target = Some(id);
+                        self.look_price = 0;
+                        return;
+                    }
+                }
                 if node.has_method("interact") && node.has_method("interact_prompt") {
                     self.look_device = Some(node);
                 }
