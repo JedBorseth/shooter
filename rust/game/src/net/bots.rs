@@ -122,7 +122,8 @@ pub const THROW_CHECKS_PER_TICK: u32 = 1;
 /// most), plus the blast's line to the target.
 const THROW_CHECK_RAYS: usize = 200;
 
-/// What the server wants a bot to go for (Capture the Flag).
+/// What the server wants a bot to go for (Capture the Flag, Hardpoint, and
+/// Search and Destroy).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BotObjective {
     pub goal: Vector3,
@@ -138,6 +139,10 @@ pub enum ObjectiveKind {
     Hunt,
     /// Stand guard there.
     Hold,
+    /// Hold interact where it stands: it is where it plants or defuses the
+    /// charge (Search and Destroy). It looks about meanwhile, and fights
+    /// first when an enemy is in sight.
+    Use,
 }
 
 impl BotObjective {
@@ -162,13 +167,20 @@ impl BotObjective {
         }
     }
 
+    pub fn use_here(goal: Vector3) -> Self {
+        Self {
+            goal,
+            kind: ObjectiveKind::Use,
+        }
+    }
+
     /// Whether a bot at `feet` keeps moving to this objective through a
     /// fight: always when running, and when hunting once it is close.
     fn rushes(&self, feet: Vector3) -> bool {
         match self.kind {
             ObjectiveKind::Run => true,
             ObjectiveKind::Hunt => horizontal_distance(self.goal, feet) < RUSH_RADIUS,
-            ObjectiveKind::Hold => false,
+            ObjectiveKind::Hold | ObjectiveKind::Use => false,
         }
     }
 }
@@ -630,7 +642,8 @@ impl BotBrain {
         let mut want = Want::default();
         // Hurt and under fire: break off and get out of sight to heal. A
         // runner (a flag carrier) keeps running.
-        let running = objective.is_some_and(|o| o.kind == ObjectiveKind::Run);
+        let running =
+            objective.is_some_and(|o| matches!(o.kind, ObjectiveKind::Run | ObjectiveKind::Use));
         if self.cover.is_none() && self.skill != Skill::Easy && !running {
             self.consider_cover(me, state, target.as_ref(), world);
         }
@@ -645,6 +658,20 @@ impl BotBrain {
                 self.unstick(me, tick, &mut want);
                 return self.press(want, state);
             }
+        }
+        // Planting or defusing: hold interact and keep still, unless an enemy
+        // is in sight, who is fought first.
+        if objective.is_some_and(|o| o.kind == ObjectiveKind::Use)
+            && !(self.in_sight && target.is_some())
+        {
+            if target.is_none() {
+                self.engagement = None;
+            }
+            self.guard(me, world, &skill, me.feet, &mut want);
+            want.crouch = false;
+            want.interact = true;
+            self.keep_throwing(state, look_before, tick, &skill, &mut want);
+            return self.press(want, state);
         }
         match (self.engagement, target) {
             (Some(mut engagement), Some(target)) if self.in_sight => {
@@ -1277,7 +1304,7 @@ impl BotBrain {
         let chase = |spot: Vector3| match objective {
             None => true,
             Some(o) => match o.kind {
-                ObjectiveKind::Run => false,
+                ObjectiveKind::Run | ObjectiveKind::Use => false,
                 ObjectiveKind::Hold => o.goal.distance_to(spot) < DEFEND_CHASE,
                 ObjectiveKind::Hunt => me.feet.distance_to(spot) < ATTACK_CHASE,
             },
@@ -1611,6 +1638,7 @@ impl BotBrain {
             // Held, not tapped: holding cooks, letting go throws.
             lethal: want.lethal,
             tactical: want.tactical,
+            interact: want.interact,
             ..Default::default()
         }
         .quantized()
@@ -1635,6 +1663,8 @@ struct Want {
     lunge: Option<Vec2>,
     lethal: bool,
     tactical: bool,
+    /// Hold interact (plant or defuse the charge).
+    interact: bool,
 }
 
 /// The map as a grenade's world, casting no more than `left` rays: a throw

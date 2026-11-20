@@ -9,7 +9,7 @@ extends SceneTree
 
 const PORT := 27987
 ## Seconds to wait for a bot to plant before giving up on those shots.
-const PLANT_WAIT := 150.0
+const PLANT_WAIT := 300.0
 
 var _out := OS.get_environment("CAPTURE_DIR")
 var _server_pid := -1
@@ -93,8 +93,10 @@ func _run() -> void:
 	camera.clear_current()
 
 	# Wait for a plant, then look at the charge from above and from the player.
+	# Several rounds may pass (we may be carrying it ourselves, idle).
 	var planted := false
-	for i in int(PLANT_WAIT * 60.0):
+	var deadline := Time.get_ticks_msec() + int(PLANT_WAIT * 1000.0)
+	while Time.get_ticks_msec() < deadline:
 		if client.charge_info().status == "planted":
 			planted = true
 			break
