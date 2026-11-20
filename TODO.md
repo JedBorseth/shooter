@@ -171,7 +171,8 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] **good first task** Show the controls overlay only for the first minute, or toggle it with F1.
 - [x] Controller tuning as Call of Duty offers it: aim response curve type (Standard, Linear, Dynamic), right stick, left stick, and trigger deadzones (`docs/settings.md`).
 - [x] Interface settings: colour-blind team palettes (protanopia, deuteranopia, tritanopia), HUD size, and HUD opacity (`docs/settings.md`).
-- [ ] Zombies HUD and the mode views' top-centre strips under HUD size and opacity (they draw world markers on the same layer, so they need splitting first).
+- [x] Zombies HUD under HUD size and opacity: the round counter, points and their popups, zombies left, power-up timers, drink badges, last stand, and banners each scale about their corner (`zombies_hud.gd`).
+- [ ] The mode views' top-centre strips under HUD size and opacity (they draw world markers on the same layer, so they need splitting first).
 - [ ] Custom team colours by hue, as Black Ops 6 offers, and colour-blind palettes for the 3D team bands on soldiers.
 - [ ] Controller button remapping (Call of Duty's custom controller layouts, and its presets such as Tactical and Bumper Jumper).
 
