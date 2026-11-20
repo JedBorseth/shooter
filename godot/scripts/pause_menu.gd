@@ -87,6 +87,11 @@ const DESCRIPTIONS := {
 	&"player_name": "The name other players see in the kill feed and on the scoreboard.",
 	&"camera_motion": "Head bob and weapon sway while you move.",
 	&"show_fps": "Shows the frame rate in the corner of the screen.",
+	&"skip_killcams":
+	(
+		"Respawn without watching the replay of each death. The kill that ends a round or"
+		+ " the match still plays for everyone."
+	),
 	&"bindings":
 	(
 		"Choose a binding, then press a key or mouse button. A key used by another action"
@@ -461,6 +466,8 @@ func _build_settings() -> void:
 	_add_heading(general, "Interface")
 	_add_toggle(general, &"camera_motion", "Camera motion")
 	_add_toggle(general, &"show_fps", "Show FPS counter")
+	_add_heading(general, "Multiplayer")
+	_add_toggle(general, &"skip_killcams", "Skip killcams")
 	_record_defaults()
 	_select_tab(0)
 

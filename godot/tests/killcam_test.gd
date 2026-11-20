@@ -83,26 +83,40 @@ func _run() -> void:
 
 	await _watch_death(main, player, client, false)
 	await _watch_death(main, player, client, true)
+	await _skip_by_setting(player, client)
 	_finish()
+
+
+## With the "Skip killcams" setting on, a death plays no killcam and the
+## respawn follows the death camera.
+func _skip_by_setting(player: FpsPlayer, client: NetClient) -> void:
+	# Autoloads are not names in a test script: reach the node.
+	var settings := root.get_node("Settings")
+	settings.set(&"skip_killcams", true)
+	var died := await _wait_for_death(player, client)
+	_check(died, "skip setting: the bot kills us")
+	if died:
+		var death_at := Time.get_ticks_msec()
+		var played := false
+		for i in 6 * Engine.physics_ticks_per_second:
+			played = played or client.in_killcam()
+			if player.is_alive():
+				break
+			await physics_frame
+		var wait := (Time.get_ticks_msec() - death_at) / 1000.0
+		_check(not played, "skip setting: no killcam plays")
+		_check(
+			player.is_alive() and wait < 3.5,
+			"skip setting: we respawn after the death camera, %.2f s" % wait
+		)
+	settings.set(&"skip_killcams", false)
 
 
 ## Waits for the bot to kill us, then checks the killcam that follows.
 ## With `skip`, presses the use key once it starts.
 func _watch_death(main: Node, player: FpsPlayer, client: NetClient, skip: bool) -> void:
 	var label := "second death" if skip else "first death"
-	# Stand facing the bot so its bursts find us.
-	var ids := client.remote_ids()
-	var died := false
-	for i in DEATH_WAIT * Engine.physics_ticks_per_second:
-		if not player.is_alive():
-			died = true
-			break
-		if ids.size() > 0:
-			var bot := client.remote_player(ids[0])
-			if bot != null:
-				var to := bot.feet() - player.global_position
-				player.set_look(atan2(-to.x, -to.z), 0.0)
-		await physics_frame
+	var died := await _wait_for_death(player, client)
 	_check(died, "%s: the bot kills us" % label)
 	if not died:
 		return
@@ -191,6 +205,21 @@ func _watch_death(main: Node, player: FpsPlayer, client: NetClient, skip: bool) 
 	_check(main.get_node_or_null("Killcam") == null, "%s: the replay is taken away" % label)
 	_check(live != null and live.visible, "%s: the live bot shows again" % label)
 	_check(not player.in_killcam(), "%s: our own view is back" % label)
+
+
+## Faces the bot until it kills us; false if it does not in DEATH_WAIT.
+func _wait_for_death(player: FpsPlayer, client: NetClient) -> bool:
+	var ids := client.remote_ids()
+	for i in DEATH_WAIT * Engine.physics_ticks_per_second:
+		if not player.is_alive():
+			return true
+		if ids.size() > 0:
+			var bot := client.remote_player(ids[0])
+			if bot != null:
+				var to := bot.feet() - player.global_position
+				player.set_look(atan2(-to.x, -to.z), 0.0)
+		await physics_frame
+	return false
 
 
 func _ticks(count: int) -> void:

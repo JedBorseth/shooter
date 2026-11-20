@@ -124,6 +124,10 @@ pub struct NetClient {
     /// Simulated packet loss in each direction, in percent (testing only).
     #[export]
     loss_percent: f32,
+    /// Respawn without playing killcams after our deaths (the player's
+    /// setting); ending killcams still play.
+    #[var]
+    skip_killcams: bool,
 
     host: Option<Gd<ENetConnection>>,
     server: Option<Gd<ENetPacketPeer>>,
@@ -1578,7 +1582,16 @@ impl NetClient {
                 self.killcam = None;
             } else if now >= arrived + f64::from(lead) {
                 self.killcam = None;
-                self.start_killcam(&pending);
+                if !ending && self.skip_killcams {
+                    // Skipped by the setting: back in as soon as the respawn
+                    // delay allows, after the death camera as usual.
+                    self.send_reliable(&ClientMessage::SkipKillcam);
+                    if let Some(player) = &mut self.player {
+                        player.bind_mut().killcam_skipped();
+                    }
+                } else {
+                    self.start_killcam(&pending);
+                }
             }
         }
         let Some(playing) = &mut self.playing else {

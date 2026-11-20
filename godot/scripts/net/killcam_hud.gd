@@ -39,6 +39,8 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	if client != null and is_instance_valid(client):
+		client.skip_killcams = Settings.skip_killcams
 	_info = client.killcam_info() if client != null and is_instance_valid(client) else {}
 	_canvas.visible = not _info.is_empty()
 	if _canvas.visible:
