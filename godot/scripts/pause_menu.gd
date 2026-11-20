@@ -92,6 +92,8 @@ const DESCRIPTIONS := {
 		"Respawn without watching the replay of each death. The kill that ends a round or"
 		+ " the match still plays for everyone."
 	),
+	&"minimap_rotates":
+	"The minimap turns as you do, so you always face up. Off keeps north at the top.",
 	&"bindings":
 	(
 		"Choose a binding, then press a key or mouse button. A key used by another action"
@@ -468,6 +470,7 @@ func _build_settings() -> void:
 	_add_toggle(general, &"show_fps", "Show FPS counter")
 	_add_heading(general, "Multiplayer")
 	_add_toggle(general, &"skip_killcams", "Skip killcams")
+	_add_toggle(general, &"minimap_rotates", "Rotate minimap")
 	_record_defaults()
 	_select_tab(0)
 

@@ -1,5 +1,5 @@
 extends Control
-## The match score block, top left: the mode and the clock along the top, a
+## The match score block, top left under the minimap: the mode and the clock along the top, a
 ## row per side (big score, and a bar filling toward the limit in the side's
 ## colour), and under them whether we lead, trail, or are level, beside the
 ## limit. `tdm_hud.gd` fills it each frame; this only draws it.
@@ -17,6 +17,8 @@ var rows: Array = []
 var state := ""
 var state_colour := UiTheme.TEXT
 var footer := ""
+## Pixels from the screen's top: under the minimap where there is one.
+var top := 24.0
 
 
 func _process(_delta: float) -> void:
@@ -26,7 +28,7 @@ func _process(_delta: float) -> void:
 func _draw() -> void:
 	if rows.is_empty() and clock == "":
 		return
-	var at := Vector2(40.0, 24.0)
+	var at := Vector2(40.0, top)
 	var row_h := 34.0
 	var height := 34.0 + row_h * rows.size() + (26.0 if state != "" or footer != "" else 4.0)
 	Paint.plate(self, Rect2(at, Vector2(WIDTH, height)), Paint.PLATE, Color(1, 1, 1, 0.85))
