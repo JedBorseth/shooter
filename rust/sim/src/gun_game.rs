@@ -140,7 +140,7 @@ mod tests {
         for level in 0..LEVELS {
             let def = weapon(level).def();
             assert!(!def.beam, "the laser stays secret");
-            assert!(def.attachment.is_none(), "{} is a base weapon", def.key);
+            assert!(def.fitted.is_empty(), "{} is a base weapon", def.key);
         }
         assert_eq!(weapon(LEVELS - 1).def().slot, Slot::Secondary);
         assert_eq!(weapon(200), weapon(LEVELS - 1));

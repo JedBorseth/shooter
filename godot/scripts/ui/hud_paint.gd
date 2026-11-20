@@ -70,8 +70,8 @@ static func base_key(key: String) -> String:
 	return key.get_slice("+", 0)
 
 
-## Splits "M4A1 Suppressor" into ["M4A1", "Suppressor"] for a key with an
-## attachment ("m4+suppressor"); otherwise the attachment is "".
+## Splits "M4A1 Red Dot + Grip" into ["M4A1", "Red Dot + Grip"] for a key with
+## attachments ("m4+reddot+grip"); otherwise the attachment is "".
 static func split_weapon_name(key: String, name: String) -> PackedStringArray:
 	if not key.contains("+") or not name.contains(" "):
 		return PackedStringArray([name, ""])

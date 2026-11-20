@@ -219,7 +219,7 @@ impl Grips {
         });
         grips.hold = Hold::of(def);
         match grips.hold {
-            Hold::Handguard if def.attachment == Some(Attachment::Grip) => {
+            Hold::Handguard if def.fitted.has(Attachment::Grip) => {
                 // A fist round the foregrip, not a palm on the handguard.
                 grips.left += FOREGRIP_SHIFT;
                 grips.section = None;

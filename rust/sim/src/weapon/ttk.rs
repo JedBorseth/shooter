@@ -153,7 +153,7 @@ mod tests {
         println!("{header}");
         for id in WeaponId::all() {
             let d = id.def();
-            if d.attachment.is_some() || d.beam {
+            if !d.fitted.is_empty() || d.beam {
                 continue;
             }
             let mut row = format!("| {} |", d.key);

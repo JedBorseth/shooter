@@ -14,6 +14,7 @@ A class has 10 points. Every item costs one: a weapon, each attachment, each gre
 | Lethal | one frag | Extra Lethal: two |
 | Tactical | two of one kind (flashbang or smoke) | |
 
+- Every combination is its own weapon-table variant, built at load by applying each attachment's changes in turn (`m4+reddot+grip`, `weapon/def.rs::variants_of`): up to three attachments, one optic. The first-person model fits every part together (`WeaponView::set_attachments`).
 - A weapon takes only the attachments its file lists (`attachments:` in `godot/data/weapons/*.ron`), and one optic at most (red dot or ACOG).
 - Wildcards cost a point each. Their names describe what they do; Call of Duty's names are not used.
 - A primary carried with Two Primaries takes up to two attachments, as in Black Ops 2.
@@ -26,7 +27,7 @@ Deliberate differences from Black Ops 2:
 
 ## Default classes
 
-Six ready-made classes, one per weapon class: Assault (M4A1), Rifleman (AK-47), Close Quarters (PDW-9), Support (LSW-6), Breacher (M870), Marksman (M40). Each carries the M1911, a frag, and one tactical. A player who has not picked a class spawns with Assault. Bots take a random default class each life, as Call of Duty's bots use the default classes.
+Six ready-made classes, one per weapon class, each with two attachments: Assault (M4A1, red dot and grip), Rifleman (AK-47, red dot and extended magazine), Close Quarters (PDW-9, suppressor and grip), Support (LSW-6, grip and extended magazine), Breacher (M870, grip and extended magazine), Marksman (M40, suppressor and extended magazine). Each carries the M1911, a frag, and one tactical. A player who has not picked a class spawns with Assault. Bots take a random default class each life, as Call of Duty's bots use the default classes.
 
 ## Server authority
 

@@ -32,6 +32,7 @@
 //! player's level yet.
 
 use crate::equipment;
+pub use crate::weapon::Attachments;
 use crate::weapon::{Attachment, CombatState, Slot, WeaponId};
 
 /// Points a class can spend (Black Ops 2's Pick 10).
@@ -46,60 +47,6 @@ pub const DANGER_CLOSE_LETHALS: u8 = 2;
 pub const TACTICALS: u8 = 2;
 /// Custom class slots a player has (Black Ops 2's five, before prestige).
 pub const CUSTOM_CLASSES: usize = 5;
-
-/// A set of attachments, one bit per [`Attachment::ALL`] entry.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub struct Attachments(u8);
-
-impl Attachments {
-    pub const NONE: Attachments = Attachments(0);
-    /// Bits the set uses on the wire.
-    pub const BITS: u32 = Attachment::ALL.len() as u32;
-
-    pub fn from_bits(bits: u8) -> Option<Self> {
-        (u32::from(bits) < 1 << Self::BITS).then_some(Self(bits))
-    }
-
-    pub fn bits(self) -> u8 {
-        self.0
-    }
-
-    pub fn of(list: &[Attachment]) -> Self {
-        list.iter().fold(Self::NONE, |set, a| set.with(*a))
-    }
-
-    pub fn with(self, attachment: Attachment) -> Self {
-        Self(self.0 | 1 << index(attachment))
-    }
-
-    pub fn without(self, attachment: Attachment) -> Self {
-        Self(self.0 & !(1 << index(attachment)))
-    }
-
-    pub fn has(self, attachment: Attachment) -> bool {
-        self.0 & 1 << index(attachment) != 0
-    }
-
-    pub fn len(self) -> u8 {
-        self.0.count_ones() as u8
-    }
-
-    pub fn is_empty(self) -> bool {
-        self.0 == 0
-    }
-
-    /// The attachments in [`Attachment::ALL`] order.
-    pub fn iter(self) -> impl Iterator<Item = Attachment> {
-        Attachment::ALL.into_iter().filter(move |a| self.has(*a))
-    }
-}
-
-fn index(attachment: Attachment) -> u32 {
-    Attachment::ALL
-        .iter()
-        .position(|a| *a == attachment)
-        .unwrap_or_default() as u32
-}
 
 /// A wildcard: a point spent to bend one slot's rule.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -376,7 +323,7 @@ fn check_attachments(gun: Gun, limit: u8) -> Result<(), ClassError> {
 /// slot, and not the secret laser.
 pub fn is_class_weapon(id: WeaponId, slot: Slot) -> bool {
     let def = id.def();
-    def.slot == slot && def.attachment.is_none() && !def.beam
+    def.slot == slot && def.fitted.is_empty() && !def.beam
 }
 
 /// The plain weapons a class may carry in `slot`, in table order.
@@ -424,12 +371,12 @@ impl DefaultClass {
         use equipment::Kind::{Flash, Smoke};
         let pistol = Some(Gun::plain(WeaponId::expect("m1911")));
         let (primary, attachments, tactical, tacticals): (&str, &[Attachment], _, u8) = match self {
-            DefaultClass::Assault => ("m4", &[RedDot], Flash, 1),
-            DefaultClass::Rifleman => ("ak47", &[Grip], Flash, 1),
-            DefaultClass::CloseQuarters => ("pdw9", &[Suppressor], Flash, 1),
-            DefaultClass::Support => ("lsw6", &[ExtendedMag], Smoke, 1),
-            DefaultClass::Breacher => ("m870", &[Grip], Flash, 1),
-            DefaultClass::Marksman => ("m40", &[ExtendedMag], Smoke, 1),
+            DefaultClass::Assault => ("m4", &[RedDot, Grip], Flash, 1),
+            DefaultClass::Rifleman => ("ak47", &[RedDot, ExtendedMag], Flash, 1),
+            DefaultClass::CloseQuarters => ("pdw9", &[Suppressor, Grip], Flash, 1),
+            DefaultClass::Support => ("lsw6", &[Grip, ExtendedMag], Smoke, 1),
+            DefaultClass::Breacher => ("m870", &[Grip, ExtendedMag], Flash, 1),
+            DefaultClass::Marksman => ("m40", &[Suppressor, ExtendedMag], Smoke, 1),
         };
         Class {
             primary: Some(Gun::with(WeaponId::expect(primary), attachments)),
@@ -532,6 +479,15 @@ mod tests {
         assert_eq!(c.validate(), Err(ClassError::TooManyAttachments));
         let c = class(Some(Gun::with(m4(), &[RedDot, Acog])));
         assert_eq!(c.validate(), Err(ClassError::TwoOptics));
+        // Two attachments, or three with the wildcard.
+        let mut c = class(Some(Gun::with(m4(), &[Acog, Grip, ExtendedMag])));
+        assert_eq!(c.validate(), Err(ClassError::TooManyAttachments));
+        c.wildcards = Wildcards::of(&[Wildcard::PrimaryGunfighter]);
+        assert_eq!(c.validate(), Ok(()));
+        assert_eq!(
+            c.weapons()[0],
+            Some(WeaponId::expect("m4+acog+grip+extmag"))
+        );
         // The sniper takes no grip.
         let c = class(Some(Gun::with(WeaponId::expect("m40"), &[Grip])));
         assert_eq!(c.validate(), Err(ClassError::AttachmentNotOffered));
