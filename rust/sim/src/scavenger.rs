@@ -136,6 +136,27 @@ impl Packs {
     }
 }
 
+/// How far (metres) a bot low on ammunition goes out of its way for a pack.
+pub const BOT_DETOUR: f32 = 15.0;
+
+/// Whether the weapon in hand is low: under a magazine in reserve.
+pub fn low_on_ammo(combat: &CombatState) -> bool {
+    let slot = combat.weapon();
+    slot.reserve < slot.id.def().magazine
+}
+
+/// The nearest pack `taker` may take within `within` metres, if any: where
+/// a bot with Scavenger low on ammunition goes.
+pub fn nearest_for(taker: &Taker, packs: &[Pack], within: f32) -> Option<Vec3> {
+    packs
+        .iter()
+        .filter(|p| taker.may_take(p))
+        .map(|p| (p.at.distance(taker.feet), p.at))
+        .filter(|(d, _)| *d <= within)
+        .min_by(|a, b| a.0.total_cmp(&b.0))
+        .map(|(_, at)| at)
+}
+
 /// What a pack gives: a magazine's worth of reserve for every gun carried,
 /// up to its starting reserve, and a lethal and a tactical, up to
 /// `max_lethals` and `max_tacticals` (what the class started with). Returns
@@ -227,6 +248,23 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[test]
+    fn a_bot_goes_for_the_nearest_pack_it_may_take() {
+        let mut packs = Packs::default();
+        packs.drop_pack(Vec3::new(10.0, 0.0, 0.0), 1, Some(0), 0);
+        packs.drop_pack(Vec3::new(4.0, 0.0, 0.0), 2, Some(1), 0);
+        packs.drop_pack(Vec3::new(6.0, 0.0, 0.0), 3, Some(0), 0);
+        let bot = taker(9, Some(1), Vec3::ZERO, &[Perk::Scavenger]);
+        // Its own side's pack at 4 m is not for it.
+        assert_eq!(
+            nearest_for(&bot, packs.all(), 15.0),
+            Some(Vec3::new(6.0, 0.0, 0.0))
+        );
+        assert_eq!(nearest_for(&bot, packs.all(), 5.0), None);
+        let plain = taker(9, Some(1), Vec3::ZERO, &[]);
+        assert_eq!(nearest_for(&plain, packs.all(), 15.0), None);
     }
 
     #[test]

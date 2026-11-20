@@ -107,7 +107,7 @@ use shooter_sim::{Vec2, Vec3, rng};
 
 use super::bots::{
     BotBrain, BotGrenade, BotNavigation, BotObjective, BotPlayer, BotSmoke, BotWorld,
-    THROW_CHECKS_PER_TICK, bake_area,
+    ObjectiveKind, THROW_CHECKS_PER_TICK, bake_area,
 };
 use super::discovery::QueryResponder;
 use super::horde::{Horde, HordeEvent, HordePlayer};
@@ -2176,7 +2176,8 @@ impl NetServer {
             })
             .collect();
         let mut throw_checks = THROW_CHECKS_PER_TICK;
-        let objectives = self.bot_objectives();
+        let mut objectives = self.bot_objectives();
+        self.scavenger_objectives(&mut objectives);
         let frozen = self.frozen();
         // Planting and defusing hold the player still with the weapon away.
         let charge = self.charge;
@@ -5169,6 +5170,45 @@ impl NetServer {
         Some(GameEvent::Flags {
             flags: [view(0), view(1)],
         })
+    }
+
+    /// Bots with Scavenger low on ammunition go for a pack they may take
+    /// within `scavenger::BOT_DETOUR`, unless the mode has them running
+    /// somewhere or using something.
+    fn scavenger_objectives(&self, objectives: &mut Vec<(u8, Option<BotObjective>)>) {
+        if self.scavenger.all().is_empty() {
+            return;
+        }
+        for avatar in self.avatars.iter().filter(|a| a.brain.is_some()) {
+            let state = &avatar.predicted.state;
+            if !state.alive() || !scavenger::low_on_ammo(&state.combat) {
+                continue;
+            }
+            let current = objectives.iter().position(|(id, _)| *id == avatar.id);
+            let busy = current
+                .and_then(|i| objectives[i].1)
+                .is_some_and(|o| matches!(o.kind, ObjectiveKind::Run | ObjectiveKind::Use));
+            if busy {
+                continue;
+            }
+            let taker = scavenger::Taker {
+                id: avatar.id,
+                side: Some(self.side(avatar)),
+                feet: avatar.predicted.position,
+                perks: state.perks,
+                alive: true,
+            };
+            let Some(at) =
+                scavenger::nearest_for(&taker, self.scavenger.all(), scavenger::BOT_DETOUR)
+            else {
+                continue;
+            };
+            let objective = Some(BotObjective::hunt(to_godot(at)));
+            match current {
+                Some(i) => objectives[i].1 = objective,
+                None => objectives.push((avatar.id, objective)),
+            }
+        }
     }
 
     /// What each playing bot should go for in Capture the Flag (nothing in
