@@ -1098,7 +1098,7 @@ size = Vector3(1.16, 0.89, 0.76)
 
 [node name="Slamcity" type="Node3D" unique_id=841100774]
 script = ExtResource("20_level")
-metadata/layout_hash = "f801feab03f2f4c1"
+metadata/layout_hash = "70f73f6568d962a0"
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=79146977]
 environment = SubResource("Env")
@@ -6085,6 +6085,23 @@ metadata/label = "A"
 position = Vector3(2.25, 1.95, 29.75)
 metadata/size = Vector3(6.6, 3.6, 5.6)
 metadata/label = "B"
+
+[node name="DominationFlags" type="Node3D" parent="."]
+
+[node name="FlagA" type="Marker3D" parent="DominationFlags"]
+position = Vector3(-20, 0, 2.5)
+metadata/radius = 3.50
+metadata/label = "A"
+
+[node name="FlagB" type="Marker3D" parent="DominationFlags"]
+position = Vector3(0, 0, 0)
+metadata/radius = 4.50
+metadata/label = "B"
+
+[node name="FlagC" type="Marker3D" parent="DominationFlags"]
+position = Vector3(20, 0, -2.5)
+metadata/radius = 3.50
+metadata/label = "C"
 
 [node name="SiteCrates" type="Node3D" parent="."]
 

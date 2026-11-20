@@ -97,11 +97,26 @@ lines. The letter tiles are ours, not Black Ops 2's icons.
 
 A map marks its flags with `Node3D` children of a `DominationFlags` node,
 each placed at the circle's floor centre, with a `label` metadata (A, B, C)
-and an optional `radius` metadata. Maps without them get three on the line
-between the teams' spawns, A at 22%, B at 50%, C at 78%
-(`domination::fallback_points`).
+and an optional `radius` metadata. As in Call of Duty, A and C sit near
+each team's spawn and B in the middle:
+
+| Map | A (team 0's side) | B | C (team 1's side) |
+| --- | --- | --- | --- |
+| Slamcity | Slam Avenue between the west depot and the plaza, among the van, the crate, and the car | Junction Plaza round the kiosk (4.5 m circle) | A's twin on the east avenue |
+| Nuketown | The west house's side yard | The cul-de-sac road beside the bus | The east house's side yard, past the garage |
+| Warehouse | The north aisle inside the blue dock | The middle floor by the pallet stack | The south aisle inside the red dock |
+
+Slamcity's are in `DOM_FLAGS` in `tools/slamcity_layout.py` (A and C are
+twins, checked by `test_slamcity_layout.py`). Nuketown's yards are not the
+same size, so its A to B is about 37 m and B to C about 47 m.
+
+Maps without flags get three between the teams' spawns
+(`domination::fallback_points`): on the line between them (A at 22%, B at
+50%, C at 78%) when the sides are at least 40 m apart, otherwise across the
+middle 13 m apart (the testing arena).
 
 ## Still to come
 
-An announcer voice for the calls, and flags placed by hand on Slamcity, Nuketown, and Warehouse: see the
-Domination items in [TODO.md](../TODO.md).
+An announcer voice for the calls, a flag pole model at each flag, overtime,
+and Nuketown bots (its navigation mesh does not bake on a headless server):
+see the Domination items in [TODO.md](../TODO.md).

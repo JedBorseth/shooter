@@ -1988,6 +1988,17 @@ CHARGE_SITES = [
 ]
 # The marker crate's collision box: size and centre height above its feet.
 CHARGE_CRATE = ((1.16, 0.89, 0.76), 0.445)
+# Domination's flags (server: map_dom_points): name, letter, the circle's
+# floor centre, and radius. A and C are each other's twins on Slam Avenue,
+# between each depot and the plaza (A among the van, the crate, and the car
+# Blue's spawn looks down the avenue at); B stands in Junction Plaza round the
+# kiosk, with a wider circle so the kiosk does not crowd it. From each spawn its home flag is about 17 m and B about 37 m, as
+# Call of Duty lays out its A and C close to the spawns and B in the middle.
+DOM_FLAGS = [
+    ("FlagA", "A", (-20.0, STREET, 2.5), 3.5),
+    ("FlagB", "B", (0.0, STREET, 0.0), 4.5),
+    ("FlagC", "C", (20.0, STREET, -2.5), 3.5),
+]
 # Hardpoint zones in rotation order: name, HUD label, centre, size. The centre
 # zones are their own twins; the pawn shop and the ticket hall are each other's,
 # so their small leans to one team cancel over a rotation. Each move goes at
