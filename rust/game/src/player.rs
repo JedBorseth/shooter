@@ -874,7 +874,11 @@ impl ICharacterBody3D for FpsPlayer {
             }
             self.camera.set_global_transform(view.camera);
             self.camera.set_fov(self.base_fov * view.zoom);
-            self.viewmodel.bind_mut().update(&view.frame, dt);
+            // A streak's killcam has no weapon in view.
+            self.viewmodel.set_visible(view.weapon);
+            if view.weapon {
+                self.viewmodel.bind_mut().update(&view.frame, dt);
+            }
             return;
         }
         let transform = if alive {
@@ -1590,6 +1594,7 @@ impl FpsPlayer {
                 rig.set_visible(!view.is_some() && !self.state.alive());
             }
             if view.is_none() {
+                self.viewmodel.set_visible(true);
                 // Back to our own weapon: nothing of the killer's carries over.
                 self.fire_press = None;
                 self.latched = Default::default();

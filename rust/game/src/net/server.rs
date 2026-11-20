@@ -5517,6 +5517,7 @@ impl NetServer {
                 weapon,
                 cause,
                 headshot: false,
+                eye: None,
             });
             self.record_death(id);
             if credited.is_some() {
@@ -6043,6 +6044,7 @@ impl NetServer {
                     weapon: attack.weapon,
                     cause,
                     headshot: hit.headshot,
+                    eye: None,
                 });
                 self.record_death(hit.id);
                 let victim = self
@@ -6385,6 +6387,13 @@ impl NetServer {
                     weapon,
                     cause,
                     headshot: false,
+                    // A streak's kill is watched from the streak.
+                    eye: match cause {
+                        protocol::KillCause::Streak(streak) => {
+                            Some(killcam::streak_eye(streak, from))
+                        }
+                        _ => None,
+                    },
                 });
                 self.record_death(id);
                 if credited.is_some() {

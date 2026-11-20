@@ -211,7 +211,9 @@ use crate::zombies::drinks::Drinks;
 // Version 88 added alternate ammo for re-packed weapons
 // (`crate::zombies::alt_ammo`): `ZombiesEvent::AltAmmo` and `AltAmmoFired`.
 // Version 89 added traps: `ZombiesEvent::Trap`.
-pub const PROTOCOL_VERSION: u16 = 89;
+// Version 90 added `Killcam::eye`: a scorestreak's kill is watched from the
+// streak (`killcam::streak_eye`).
+pub const PROTOCOL_VERSION: u16 = 90;
 /// Longest account session token a hello carries, in bytes.
 pub const MAX_ACCOUNT_TOKEN_BYTES: usize = 2048;
 /// Longest reason a denial carries, in bytes.
@@ -2403,6 +2405,15 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
             write_weapon(w, k.weapon);
             write_cause(w, k.cause);
             w.bool(k.headshot);
+            match k.eye {
+                Some(eye) => {
+                    w.bool(true);
+                    for c in eye.to_array() {
+                        w.u32(c as u32);
+                    }
+                }
+                None => w.bool(false),
+            }
         }
         GameEvent::ChargeSites { sites } => {
             w.bits(19, EVENT_TAG_BITS);
@@ -3224,6 +3235,15 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
                 weapon: read_weapon(r)?,
                 cause: read_cause(r)?,
                 headshot: r.bool()?,
+                eye: if r.bool()? {
+                    let mut c = [0; 3];
+                    for v in &mut c {
+                        *v = r.u32()? as i32;
+                    }
+                    Some(glam::IVec3::from_array(c))
+                } else {
+                    None
+                },
             }))
         }
         19 => {
@@ -6349,6 +6369,20 @@ mod tests {
                     weapon: WeaponId::expect("m4"),
                     cause: KillCause::Equipment(equipment::Kind::Frag),
                     headshot: false,
+                    eye: None,
+                }
+                .killcam(killcam::Kind::Respawn),
+            ),
+            GameEvent::Killcam(
+                killcam::KillRecord {
+                    killer: 5,
+                    victim: 2,
+                    tick: 4_000,
+                    rewind: 0,
+                    weapon: WeaponId::expect("m4"),
+                    cause: KillCause::Streak(crate::streak::Streak::SentryGun),
+                    headshot: false,
+                    eye: Some(glam::IVec3::new(-1250, 180, 30_000)),
                 }
                 .killcam(killcam::Kind::Respawn),
             ),
@@ -6361,6 +6395,7 @@ mod tests {
                     weapon: WeaponId::expect("m40"),
                     cause: KillCause::Weapon,
                     headshot: true,
+                    eye: None,
                 }
                 .killcam(killcam::Kind::Final),
             ),
