@@ -208,7 +208,9 @@ a match is real.
 plays short drum, riser, and brass cues: when a match goes live, its result
 (win, loss, draw), a warning at 30 seconds left, and in Search and Destroy
 each round's start and result. Hardpoint calls its zone moves with a two-tone
-radio chirp of its own. There is no announcer voice: no CC0 recordings good
+radio chirp of its own. A challenge completed mid-match rings three quick glockenspiel
+notes, cut from a real recording (`tools/build_ui_audio.py`), 4 dB under a
+medal. There is no announcer voice: no CC0 recordings good
 enough were found.
 
 ## Reviewing sound without listening

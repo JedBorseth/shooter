@@ -50,7 +50,7 @@ A challenge is a target on a stat (`rust/sim/src/challenge.rs`).
 - It completes in the match that takes the stat past the target, and it pays its XP in that match.
 - Completion is never stored: it is worked out from the totals. The game, the ranked server, and the account always agree on it, and each challenge pays once.
 - The end-of-match card shows the challenges' XP on its own line and lists the challenges completed, with the camo or card each awarded.
-- During the match, each challenge is announced the moment it is done, as Black Ops 2 does: a quiet "CHALLENGE COMPLETE" plate near the top of the screen with its name, XP, and reward (`godot/scripts/net/challenge_popup.gd`). They queue one at a time, and at most four wait. `match_xp.gd` works them out from the stats the server sends every two seconds, as the match would pay them if it ended then.
+- During the match, each challenge is announced the moment it is done, as Black Ops 2 does: a quiet "CHALLENGE COMPLETE" plate near the top of the screen with its name, XP, and reward (`godot/scripts/net/challenge_popup.gd`). They queue one at a time, and at most four wait. Each plate comes up with a short sting: three quick glockenspiel notes rising, cut from a real recording (`tools/build_ui_audio.py`, `audio/ui/challenge_1.ogg`), 4 dB under a medal. `match_xp.gd` works them out from the stats the server sends every two seconds, as the match would pay them if it ended then.
 
 ![A challenge completed mid-match](media/challenge-popup.jpg)
 
