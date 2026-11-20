@@ -1040,6 +1040,46 @@ impl NetServer {
         }
     }
 
+    /// A player asks to change teams in the lobby (a private match's team
+    /// swap): they move to the other team and respawn there, and the bots
+    /// even out. Only before the countdown, and only in team modes.
+    fn switch_team(&mut self, index: usize) {
+        let client = &self.clients[index];
+        if !client.playing()
+            || self.match_state.phase != Phase::Lobby
+            || self.game.free_for_all()
+            || self.game == Mode::Zombies
+        {
+            return;
+        }
+        let Some(id) = client.player else { return };
+        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
+            return;
+        };
+        avatar.team = 1 - avatar.team.min(1);
+        let joined = joined_event(avatar);
+        godot_print!("server: player {id} switched to team {}", avatar.team + 1);
+        let team = avatar.team;
+        self.broadcast_event(&joined);
+        self.respawn(id, None, false);
+        if self.bots_per_team.is_none() {
+            // A bot of the team they joined makes way, and the bots refill
+            // the team they left.
+            let bot = self
+                .avatars
+                .iter()
+                .filter(|a| a.bot && a.team == team)
+                .map(|a| a.id)
+                .max();
+            if let Some(bot) = bot {
+                self.despawn_avatar(bot);
+                self.broadcast_event(&GameEvent::Left { id: bot });
+            }
+        }
+        self.balance_bots();
+        self.next_scoreboard = self.tick;
+    }
+
     /// Writes the CPU profile (see `profile_out`) with the tick count and
     /// how many players and bots are in, so a bench can turn totals into
     /// per-tick costs.
@@ -3040,6 +3080,7 @@ impl NetServer {
             }
             ClientMessage::Chat { text, team } => self.relay_chat(index, &text, team),
             ClientMessage::SkipKillcam => self.skip_killcam(index),
+            ClientMessage::SwitchTeam => self.switch_team(index),
         }
     }
 

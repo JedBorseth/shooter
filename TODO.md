@@ -414,7 +414,9 @@ Black Ops 2's Custom Games, CODcaster-style spectating, and a private match lobb
 - [x] Spectating: join as a spectator (on no team), a free-fly camera, and first-person follow of any player.
 - [ ] Spectating follow-ups: a third-person follow camera and an overhead map view (Black Ops 2's CODcaster has both), and spectators on the scoreboard and in chat by name.
 - [x] A caster overlay: both teams' loadouts, scores, streaks, and the objective.
-- [ ] Private matches: the party leader picks map, mode, and settings; a lobby screen with teams, team swap, and ready-up; the allocator or a local server starts it.
+- [x] Private matches: the party leader picks map, mode, and settings; a lobby with both teams, team swap, and ready-up; the allocator starts it (a local match without a party).
+- [ ] Private match follow-ups: the leader moving other players between teams, a LAN-hosted private match without accounts, and whether private matches pay XP (Black Ops 2's pay none; owner decision).
+- [ ] The match menu's Ready and Close buttons fall below the screen at 1600x900 when the class list is long (the lobby panel's Ready covers the lobby).
 
 ## Phase 6 and later: production polish
 

@@ -63,6 +63,20 @@ The server applies the rule to the class each life spawns with (`Loadouts::restr
 
 In team modes the match setup picks each team's size and its bots' difficulty: **Allies** (your team, you included), **Ally bots**, **Enemies**, and **Enemy bots**. This follows Black Ops 2's Combat Training and custom games, which set friendly and enemy bots apart. The server keeps exactly that many bots on each team (`--team-bots ALLIES,ENEMIES` with `--team-bot-skill SKILL,SKILL`, or `SHOOTER_TEAM_BOTS` and `SHOOTER_TEAM_BOT_SKILL` for the Docker image). Players take no bot's place, and they even out among themselves, the first on the allies. In free-for-all modes the two numbers add up to one bot count, at the first difficulty. Without `--team-bots`, the server fills both teams evenly from `--bots`, as before.
 
+## Private matches
+
+Friends play a match of their own, as in Black Ops 2's private matches. The party leader sets it up, the whole party gets a server, and everyone picks a team and readies up in its lobby.
+
+1. **Set up.** The party leader opens a mode's match setup on the title screen (signed in, with a party from Quick Play). They pick the map, each team's size and bot difficulty, and the game settings. Start reads **START PRIVATE MATCH**.
+2. **The server.** `Matchmaking.start_private` calls `private_match_start` on the account server (`docker/online/nakama/modules/matchmaking.lua`). It creates a match for the party (`shooter_match.lua`) and tells each member to join it. The match handler asks the allocator for a private server: unranked, with the host's custom settings and bots per team, and no auto-start, so it waits in its lobby. Every player gets its address (marked `private`) and joins. A leader who spectates joins as a spectator.
+3. **The lobby.** Beside the class menu, a panel lists both teams: who is ready, and the bots. Its **Switch team** button sends `ClientMessage::SwitchTeam`; the server moves the player and evens out the bots (a bot of the team they join makes way). Its **Ready** button readies up. The match counts down once every player is ready, as any lobby does. Team swaps work in any team mode's lobby, in a local match too.
+
+Without a party, or signed out, Start runs a local match as before.
+
+![The lobby: both teams beside the class menu, with Switch team and Ready](media/private-lobby.jpg)
+
+Black Ops 2 gives no XP in private matches. Here the game still reports a private match's XP itself, capped as for local matches; whether private matches should pay XP is an owner decision.
+
 ## Spectating
 
 A player can join a match as a spectator, as Black Ops 2's CODcaster lets casters do. A spectator is on no team, has no body, and takes no place: bots fill the teams as if nobody had joined. Up to eight can watch one server. Ranked servers turn spectators away ("Spectating is off on ranked servers."), since a second client could watch for its team.

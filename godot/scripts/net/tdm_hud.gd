@@ -34,6 +34,7 @@ extends CanvasLayer
 const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const ZombiesBoard := preload("res://scripts/net/zombies_board.gd")
 const MenuStyle := preload("res://scripts/ui/menu_style.gd")
+const LobbyTeams := preload("res://scripts/net/lobby_teams.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
 const ScoreBlock := preload("res://scripts/net/score_block.gd")
 const KillFeed := preload("res://scripts/net/kill_feed.gd")
@@ -120,7 +121,6 @@ func _unhandled_input(event: InputEvent) -> void:
 				get_viewport().set_input_as_handled()
 				open_chat(action == &"team_chat")
 				return
-	# A spectator has no class to pick.
 	if event.is_action_pressed(&"loadout") and not client.is_spectator():
 		get_viewport().set_input_as_handled()
 		_set_menu_open(not _menu.visible)
@@ -155,7 +155,6 @@ func _process(delta: float) -> void:
 	# Zombies has its own HUD (rounds and points); this keeps the menus,
 	# the banners, and the scoreboard.
 	var zombies: bool = info.mode == "zombies"
-	# Hardcore has no HUD: the score shows on the scoreboard only.
 	_score.visible = not zombies and not bool(info.get("hardcore", false))
 	_score.mode = String(info.get("mode_name", "Team Deathmatch"))
 	if ladder:
@@ -917,6 +916,10 @@ func _build_menu() -> void:
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_menu.add_child(center)
+	var lobby_teams := LobbyTeams.new()
+	lobby_teams.client = client
+	_menu.add_child(lobby_teams)
+	lobby_teams.ready_pressed.connect(_toggle_ready)
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = Vector2(560, 0)
 	panel.add_theme_stylebox_override("panel", MenuStyle.panel())

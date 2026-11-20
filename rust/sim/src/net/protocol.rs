@@ -217,7 +217,8 @@ use crate::zombies::drinks::Drinks;
 // Version 91 added custom game settings to the welcome (`crate::custom`).
 // Version 92 added spectators: `ClientMessage::Hello`'s `spectate`, the
 // welcome's `spectator`, and `GameEvent::Caster`.
-pub const PROTOCOL_VERSION: u16 = 92;
+// Version 93 added `ClientMessage::SwitchTeam`.
+pub const PROTOCOL_VERSION: u16 = 93;
 /// Longest account session token a hello carries, in bytes.
 pub const MAX_ACCOUNT_TOKEN_BYTES: usize = 2048;
 /// Longest reason a denial carries, in bytes.
@@ -310,6 +311,9 @@ pub enum ClientMessage {
     /// What we show others: prestige, calling card, and camos
     /// (`crate::cosmetics`). Sent with the class; the server checks it.
     Cosmetics(Cosmetics),
+    /// In the lobby: move us to the other team (a private match's team
+    /// swap). The server ignores it once the match counts down.
+    SwitchTeam,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1731,6 +1735,10 @@ impl ClientMessage {
                 w.bits(3, MORE_TAG_BITS);
                 write_cosmetics(&mut w, cosmetics);
             }
+            ClientMessage::SwitchTeam => {
+                w.bits(7, TAG_BITS);
+                w.bits(4, MORE_TAG_BITS);
+            }
         }
         w.finish()
     }
@@ -1819,6 +1827,7 @@ impl ClientMessage {
                     split: r.bool()?,
                 }),
                 3 => Ok(ClientMessage::Cosmetics(read_cosmetics(&mut r)?)),
+                4 => Ok(ClientMessage::SwitchTeam),
                 _ => Err(DecodeError::Invalid("client message tag")),
             },
             _ => Err(DecodeError::Invalid("client message tag")),
@@ -7011,6 +7020,7 @@ mod tests {
             }),
             ClientMessage::Class(Class::default()),
             ClientMessage::SkipKillcam,
+            ClientMessage::SwitchTeam,
             ClientMessage::Cosmetics(Cosmetics {
                 prestige: 11,
                 card: Card(5),

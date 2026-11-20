@@ -337,6 +337,12 @@ func _start_tdm(options: Dictionary) -> void:
 		start_free_roam(options.map)
 		return
 	_close_tdm()
+	# Leading a party: a private match for everyone, on a server of its own.
+	if bool(options.get("private", false)):
+		_status.text = "Starting the private match…"
+		if not await Matchmaking.start_private(options):
+			_status.text = Matchmaking.message
+		return
 	_loading = true
 	_set_buttons_disabled(true)
 	_status.text = "Starting a local server…"
