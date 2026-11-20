@@ -142,7 +142,9 @@ use crate::zombies::drinks::Drinks;
 // Version 58 added the mystery crate (`ZombiesEvent::Crate`).
 // Version 59 added the forge (`ZombiesEvent::Forge`) and upgraded weapons
 // (`<key>+forged`) to the weapon table.
-pub const PROTOCOL_VERSION: u16 = 59;
+// Version 60 added the kneel at Search and Destroy's charge to rewound hitbox
+// poses (`Activity::kneel`), so the hit zones follow the plant and defuse.
+pub const PROTOCOL_VERSION: u16 = 60;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -3507,6 +3509,10 @@ fn write_activity(w: &mut BitWriter, a: &Activity) {
     if let Some(throw) = a.throw {
         w.u8(clock::to_u8(throw));
     }
+    w.bool(a.kneel.is_some());
+    if let Some(kneel) = a.kneel {
+        w.u8(clock::to_u8(kneel));
+    }
 }
 
 fn read_activity(r: &mut BitReader) -> DecodeResult<Activity> {
@@ -3537,6 +3543,11 @@ fn read_activity(r: &mut BitReader) -> DecodeResult<Activity> {
         },
         hunch: 0.0,
         throw: if r.bool()? {
+            Some(clock::from_u8(r.u8()?))
+        } else {
+            None
+        },
+        kneel: if r.bool()? {
             Some(clock::from_u8(r.u8()?))
         } else {
             None
@@ -4675,6 +4686,7 @@ mod tests {
                             crouch: Some(clock::from_u8(clock::to_u8(0.5))),
                             hunch: 0.0,
                             throw: Some(clock::from_u8(clock::to_u8(0.62))),
+                            kneel: Some(clock::from_u8(clock::to_u8(0.4))),
                             progress: Progress {
                                 stride: 0.25,
                                 reload: 51.0 / 255.0,

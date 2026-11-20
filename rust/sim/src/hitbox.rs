@@ -132,6 +132,11 @@ pub struct Activity {
     /// How far along a grenade throw the body is (`PlayerView::throw`), if
     /// throwing: the support arm follows the grenade ([`action`]).
     pub throw: Option<f32>,
+    /// Kneeling at Search and Destroy's charge to plant or defuse it, and
+    /// how far down (0..1, [`action::kneel`]): the body goes as low as a
+    /// crouch, the weapon drops, and the support hand reaches for the
+    /// keypad ([`action::KNEEL_REACH`]), as the character draws it.
+    pub kneel: Option<f32>,
 }
 
 impl HitboxPose {
@@ -372,7 +377,8 @@ fn ground_pose(pose: &HitboxPose, speed: f32) -> BasePose {
     } else {
         0.0
     };
-    let down = crate::movement::crouch_ease(activity.crouch.unwrap_or(full));
+    let down = crate::movement::crouch_ease(activity.crouch.unwrap_or(full))
+        .max(activity.kneel.unwrap_or(0.0));
     if down <= 0.0 {
         standing()
     } else if down >= 1.0 {
@@ -396,10 +402,12 @@ fn carry_of(activity: &Activity) -> Carry {
         timing: def.map_or_else(Default::default, carry::ReloadTiming::of),
         // A throw, or a vault's hand plant, drops the weapon out of the
         // support hand's way.
+        // So does kneeling at the charge.
         swing: activity
             .throw
             .map_or(0.0, action::throw_weapon_drop)
-            .max(vault_progress(activity).map_or(0.0, action::vault_weapon_drop)),
+            .max(vault_progress(activity).map_or(0.0, action::vault_weapon_drop))
+            .max(if activity.kneel.is_some() { 1.0 } else { 0.0 }),
         ..Carry::default()
     }
 }
@@ -555,7 +563,12 @@ pub fn hitboxes(pose: &HitboxPose) -> [Hitbox; COUNT] {
     let grips = activity
         .weapon
         .map_or_else(Grips::default, |w| Grips::held(w.def()));
-    let targets = carry::hand_targets(weapon, &grips, carry.support_path(&grips));
+    // Kneeling at the charge, the support hand is on the keypad.
+    let support = match activity.kneel {
+        Some(_) => (action::KNEEL_REACH, 1.0),
+        None => carry.support_path(&grips),
+    };
+    let targets = carry::hand_targets(weapon, &grips, support);
     let pole = |p: Vec3| weapon.1 + weapon.0 * p;
     let arm = |(wrist_target, hand): (Vec3, Mat3), side: usize, hint: Vec3| {
         let (elbow, wrist) = solve_arm(shoulders[side], wrist_target, pole(hint));
@@ -951,6 +964,54 @@ mod tests {
             rifle[0].a,
             bare[0].a
         );
+    }
+
+    #[test]
+    fn kneeling_at_the_charge_goes_down_like_a_crouch_with_a_hand_on_the_keypad() {
+        use crate::snd::UseKind;
+        let standing = with(Activity {
+            weapon: m4(),
+            crouch: Some(0.0),
+            ..Activity::default()
+        });
+        let crouched = hitboxes(&HitboxPose {
+            activity: Activity {
+                weapon: m4(),
+                crouch: Some(1.0),
+                ..Activity::default()
+            },
+            ..pose(Stance::Crouching)
+        });
+        let kneel = |kind, p| {
+            with(Activity {
+                weapon: m4(),
+                crouch: Some(0.0),
+                kneel: Some(action::kneel(kind, p)),
+                ..Activity::default()
+            })
+        };
+        for kind in [UseKind::Plant, UseKind::Defuse] {
+            let down = kneel(kind, 0.5);
+            // As low as a crouch: the head and the legs where a crouch has them.
+            assert!(down[0].a.distance(crouched[0].a) < 0.02, "{kind:?} head");
+            for leg in 8..12 {
+                assert!(
+                    down[leg].b.distance(crouched[leg].b) < 0.02,
+                    "{kind:?} leg {leg}"
+                );
+            }
+            // The support hand reaches low in front, under the standing hand.
+            assert!(
+                down[LEFT_HAND].b.y < standing[LEFT_HAND].b.y - 0.4,
+                "{kind:?} hand {} against {}",
+                down[LEFT_HAND].b,
+                standing[LEFT_HAND].b
+            );
+        }
+        // At the very start it is still standing, and it kneels within 0.3 s.
+        assert_eq!(action::kneel(UseKind::Plant, 0.0), 0.0);
+        assert_eq!(action::kneel(UseKind::Plant, 0.3 / 4.0), 1.0);
+        assert!(kneel(UseKind::Plant, 0.0)[0].a.y > crouched[0].a.y + 0.3);
     }
 
     #[test]

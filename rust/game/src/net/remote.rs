@@ -262,7 +262,8 @@ impl RemotePlayer {
     /// `reloading`, `reload_empty`, `mantling`, `vaulting`, `alive`, `hits`, `hit_heading`, `hit_part`
     /// (the snapshot's hit fields), `crouch` (0..1, the crouch blend;
     /// missing is fully in the stance), and the animation progress
-    /// `stride`, `reload_progress`, and `mantle_progress` (0..1). Missing keys
+    /// `stride`, `reload_progress`, and `mantle_progress` (0..1), and
+    /// `action` ("plant" or "defuse") with `action_progress`. Missing keys
     /// take a standing, living M4 holder's values; missing progress runs as a
     /// server would run it. Velocity comes from how `feet` moves.
     #[func]
@@ -309,7 +310,13 @@ impl RemotePlayer {
             meleeing: b("meleeing", false),
             throw: f("throw"),
             throw_kind: Default::default(),
-            charge_use: None,
+            // `action` "plant" or "defuse" at `action_progress`: kneeling at
+            // the charge.
+            charge_use: match get("action").map(|v| v.to_string()).as_deref() {
+                Some("plant") => Some((UseKind::Plant, f("action_progress").unwrap_or(0.5))),
+                Some("defuse") => Some((UseKind::Defuse, f("action_progress").unwrap_or(0.5))),
+                _ => None,
+            },
             hits: get("hits")
                 .and_then(|v| v.try_to::<i64>().ok())
                 .unwrap_or(0) as u8,

@@ -1,7 +1,9 @@
 //! Actions that take the support hand off the weapon, keyed the same for the
 //! drawn body and its hit zones: a grenade throw, by its progress
 //! (`equipment::throw_progress`, `PlayerView::throw`), and a vault's hand
-//! plant, by the climb's progress (`Progress::mantle`).
+//! plant, by the climb's progress (`Progress::mantle`), and Search and
+//! Destroy's kneel over the charge, by the plant's or defuse's progress
+//! (`PlayerView::charge_use`).
 //!
 //! The third-person throw's path is kept here, engine free, so the soldier
 //! the game draws (`grenade_hold::third_person`) and the arm hit zones the
@@ -12,6 +14,7 @@ use glam::{Mat3, Vec3};
 
 use super::carry::HIP_OFFSET;
 use crate::equipment;
+use crate::snd::{SndRules, UseKind};
 
 /// `keys` (time, value) at `t`, eased between keys (smoothstep), held past
 /// the ends.
@@ -156,4 +159,21 @@ mod tests {
         assert!(reach.z < -0.3 && reach.x < 0.0, "{reach}");
         assert!(passed.z > reach.z + 0.1 && passed.y < reach.y, "{passed}");
     }
+}
+
+/// Seconds a body takes to kneel at the charge once a plant or defuse
+/// starts, eased (smoothstep). It stands straight back up when it lets go.
+pub const KNEEL_SECONDS: f32 = 0.3;
+
+/// Where the support hand goes while kneeling at the charge, in weapon
+/// space: low in front, on the keypad. The weapon drops out of its way, as
+/// for a knife swing (`carry::Carry::swing` 1).
+pub const KNEEL_REACH: Vec3 = Vec3::new(-0.1, -0.55, -0.15);
+
+/// How far down a body kneeling at the charge is (0 standing to 1 as low as
+/// a crouch), `progress` (0..1) into a plant or defuse of `kind` at the
+/// stock times (`SndRules::default`).
+pub fn kneel(kind: UseKind, progress: f32) -> f32 {
+    let seconds = progress.clamp(0.0, 1.0) * kind.duration(&SndRules::default());
+    keyed(&[(0.0, 0.0), (KNEEL_SECONDS, 1.0)], seconds)
 }

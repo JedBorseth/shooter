@@ -40,6 +40,13 @@ Call of Duty. Everyone sees the planted site. Only a player's own team hears
 of a plant or defuse under way (`GameEvent::Charge`), but everyone sees the
 kneeling pose (`PlayerView::charge_use`).
 
+The hit zones kneel with the body, as Call of Duty's hitboxes follow the
+third-person plant and defuse animations: over 0.3 s the body goes as low as
+a crouch, the weapon drops, and the support hand reaches for the keypad
+(`hitbox::action::kneel` and `KNEEL_REACH`, which the drawn character uses
+too). A shot at standing head height passes over a planter.
+`hitbox_fit_test` measures the kneel against the drawn soldier.
+
 The server decides every pickup, drop, plant, and defuse. Clients work out
 from what it last sent whether holding interact would plant or defuse where
 they stand (`Charge::spot`) and hold their own player still with the same
