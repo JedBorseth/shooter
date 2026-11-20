@@ -236,8 +236,26 @@ func _check_audio_mix(settings: Node) -> void:
 		"Headphones restores the footsteps level"
 	)
 	_check(not AudioServer.is_bus_effect_enabled(0, 0), "Headphones does not compress")
+	settings.set_setting(&"audio_mix", 3)
+	_check(AudioServer.is_bus_effect_enabled(0, 0), "Night compresses the Master bus")
+	var weapons := AudioServer.get_bus_index("Weapons")
+	_check(
+		is_equal_approx(
+			AudioServer.get_bus_volume_db(weapons), linear_to_db(settings.weapons_volume) - 6.0
+		),
+		"Night turns gunfire down 6 dB"
+	)
 	settings.set_setting(&"audio_mix", 7)
 	_check(settings.audio_mix == 0, "an unknown mix falls back to Headphones")
+	settings.caption("Time warning", "30 seconds left")
+	_check(settings.get_node("Captions").lines().is_empty(), "no subtitles while they are off")
+	settings.set_setting(&"subtitles", true)
+	settings.caption("Time warning", "30 seconds left")
+	_check(
+		settings.get_node("Captions").lines() == PackedStringArray(["30 seconds left"]),
+		"subtitles show a caption, got %s" % settings.get_node("Captions").lines()
+	)
+	settings.reset_to_defaults()
 
 
 func _check_aim_assist(settings: Node) -> void:
@@ -516,7 +534,7 @@ func _check_menu(settings: Node) -> void:
 	var sliders: Array[Node] = menu.find_children("*", "HSlider", true, false)
 	_check(sliders.size() == 16, "sixteen sliders, got %d" % sliders.size())
 	var toggle_count := menu.find_children("*", "CheckButton", true, false).size()
-	_check(toggle_count == 12, "twelve toggles, got %d" % toggle_count)
+	_check(toggle_count == 13, "thirteen toggles, got %d" % toggle_count)
 
 	# Drive a slider and a toggle like a player would.
 	var fov_slider: HSlider = menu._sliders[&"fov"]
@@ -610,9 +628,15 @@ func _check_bindings(settings: Node) -> void:
 	_check(Glyphs.family == Glyphs.Family.XBOX, "Auto with no controller shows Xbox glyphs")
 	settings.note_device(true)
 	_check(settings.menu_controller, "a controller press switches menu hints to the controller")
-	_check(settings.menu_key(&"ui_accept") == "pad:a", "menus then show A to select")
+	_check(
+		settings.key_label(&"ui_accept", settings.menu_controller) == "pad:a",
+		"menus then show A to select"
+	)
 	settings.note_device(false)
-	_check(settings.menu_key(&"ui_cancel") == "Escape", "and back to Escape on the keyboard")
+	_check(
+		settings.key_label(&"ui_cancel", settings.menu_controller) == "Escape",
+		"and back to Escape on the keyboard"
+	)
 	settings.rebind(&"jump", _key(KEY_J))
 	_check(_bound(&"jump") == KEY_J, "jump rebinds to J")
 	_check(settings.key_label(&"jump", true) == "pad:a", "the gamepad binding stays")

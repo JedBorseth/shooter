@@ -2,7 +2,7 @@ extends SceneTree
 ## Captures button prompts on each device for review: the testing arena's
 ## controls legend and pickup prompt, and the title and pause footers, with
 ## keyboard and mouse, an Xbox controller's glyphs, and a PlayStation
-## controller's. Needs a GPU and a display (or Xvfb).
+## controller's, and a subtitle line. Needs a GPU and a display (or Xvfb).
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
 ##     --audio-driver Dummy --script res://tests/capture_prompts.gd
 
@@ -44,6 +44,12 @@ func _run() -> void:
 		player.set_look(atan2(-to.x, -to.z), atan2(to.y, Vector2(to.x, to.z).length()))
 		await _seconds(1.0)
 		await _shot("prompts_%s_02_legend_pickup" % device[0])
+		if device[0] == "keyboard":
+			settings.set_setting(&"subtitles", true)
+			settings.caption("Time warning", "30 seconds left")
+			await _frames(10)
+			await _shot("prompts_keyboard_02b_caption")
+			settings.set_setting(&"subtitles", false)
 		var pause := main.get_node("PauseMenu")
 		pause.call("open")
 		await _frames(10)
