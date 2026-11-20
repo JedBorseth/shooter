@@ -23,6 +23,11 @@ run: build
 edit: build
     {{godot}} --editor --path godot
 
+# Start (or `stop`, `status`) an editor that agents drive through the editor
+# MCP bridge; see docs/editor-mcp.md. GODOT_MCP_PORT picks the port.
+agent-editor *args:
+    tools/agent_editor.sh {{args}}
+
 # Run a dedicated server, for example `just server --map slamcity --bots 5 --bot-skill normal`.
 server *args: build
     {{godot}} --headless --path godot -- --server {{args}}

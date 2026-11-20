@@ -1,0 +1,16 @@
+{
+  "name": "shooter-godot-mcp",
+  "private": true,
+  "version": "1.1.0-shooter.1",
+  "description": "MCP bridge to the Godot editor plugin in godot/addons/godot_ai_mcp, vendored from godot-ai-mcp 1.1.0 (MIT) with this project's changes. See docs/editor-mcp.md.",
+  "type": "module",
+  "main": "src/index.js",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.25.0"
+  }
+}

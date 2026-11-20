@@ -25,7 +25,7 @@ func _enter_tree() -> void:
 	_mcp_server.client_disconnected.connect(_status_panel.on_client_disconnected)
 	_mcp_server.request_handled.connect(_status_panel.on_request_handled)
 
-	print("[Godot AI MCP] Plugin enabled — listening on port %d" % _mcp_server.PORT)
+	print("[Godot AI MCP] Plugin enabled — listening on port %d" % _mcp_server.port)
 
 
 func _exit_tree() -> void:
