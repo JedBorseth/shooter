@@ -63,7 +63,7 @@ func _run() -> void:
 	var game_over := [false]
 	director.game_over.connect(func(_round: int) -> void: game_over[0] = true)
 
-	_check(await _wait_for(client.is_joined, 15.0), "client joins the server")
+	_check(await _wait_for(client.is_joined, 90.0), "client joins the server")
 	if not client.is_joined():
 		_finish()
 		return

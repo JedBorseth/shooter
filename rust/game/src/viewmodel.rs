@@ -2748,6 +2748,10 @@ pub struct ViewmodelRig {
     /// Planting or defusing: where the charge is drawn in the hands (world,
     /// as the viewmodel draws), or `None`.
     keypad_case: Option<Transform3D>,
+    /// Game time (seconds) the keypad's taps run on: summed frame deltas, so
+    /// they keep pace with the game rather than the wall clock (a
+    /// fixed-rate test run steps frames faster than real time).
+    keypad_clock: f32,
     /// Crouched, eased in and out rather than snapped (Black Ops 2's
     /// `posMoveRate`).
     crouch_blend: f32,
@@ -2795,8 +2799,8 @@ impl ViewmodelRig {
         }
         if frame.put_away && !frame.on_ladder {
             let camera = self.base().get_viewport()?.get_camera_3d()?;
-            let seconds = godot::classes::Time::singleton().get_ticks_msec() as f32 / 1000.0;
-            let (case, limbs) = keypad_hands(camera.get_global_transform(), weight, seconds);
+            let (case, limbs) =
+                keypad_hands(camera.get_global_transform(), weight, self.keypad_clock);
             self.keypad_case = Some(case);
             self.ladder_holds = None;
             return Some(limbs);
@@ -3447,6 +3451,9 @@ impl ViewmodelRig {
         // A ladder: the hands go to the rungs, so the weapon drops away as
         // for a switch, and comes back up over the sprint-out (classic IW
         // and Modern Warfare lower the weapon on ladders).
+        // Wrapped well inside f32's precision; the taps' key pick only needs
+        // a run of distinct tap numbers.
+        self.keypad_clock = (self.keypad_clock + dt) % 3600.0;
         if frame.on_ladder || frame.put_away {
             self.ladder_blend += (1.0 - self.ladder_blend) * smoothing(10.0, dt);
         } else if frame.sprint_out > 0.0 {
