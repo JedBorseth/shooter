@@ -56,6 +56,24 @@ contest, and capturer count whenever any of those but the progress changes
 (`GameEvent::Domination`). Clients run a capture on at its known speed
 between events (`NetClient::domination_info`).
 
+## On screen
+
+`godot/scripts/net/domination_view.gd`, in the calm HUD style:
+
+| Piece | Where | What |
+| --- | --- | --- |
+| Flag row | Top centre | A, B, C as small letter tiles: the owner's colour on the edge and letter (white while neutral), the capturing team's colour filling up from the bottom, pulsing yellow while contested |
+| Markers | Over each flag | The same tile with the distance under it, held at the screen's edge when off screen; none for the flag you stand in |
+| Capture bar | Under the crosshair, in a circle | CAPTURING B, CONTESTED, LOSING B (the enemy's capture of your flag; standing on it alone stops it), or B SECURED, over a bar filling with the capture |
+| World | Each flag | A ring decal at the circle's edge and a low wall of light around it, in the owner's colour (a pulse when it changes) |
+| Calls | Upper third | WE'VE TAKEN B, WE'VE LOST B, ENEMY TOOK B, and HALFTIME (Switching sides), each with a short sting until there is an announcer |
+| Scoreboard | Tab | CAPS and DEF columns |
+
+Black Ops 2 shows the same pieces: flag icons along the top of the HUD in
+the owner's colour, a world icon over each flag, a capture bar in the
+middle while you capture, and the announcer's "we've taken / we've lost"
+lines. The letter tiles are ours, not Black Ops 2's icons.
+
 ## Maps
 
 A map marks its flags with `Node3D` children of a `DominationFlags` node,
@@ -66,6 +84,5 @@ between the teams' spawns, A at 22%, B at 50%, C at 78%
 
 ## Still to come
 
-The flag markers and HUD, the calls, a title screen choice, objective bots,
-and flags placed by hand on Slamcity, Nuketown, and Warehouse: see the
+Objective bots, an announcer voice for the calls, and flags placed by hand on Slamcity, Nuketown, and Warehouse: see the
 Domination items in [TODO.md](../TODO.md).

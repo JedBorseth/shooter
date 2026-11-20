@@ -2,7 +2,8 @@ extends Control
 ## Local match setup on the title screen, for Team Deathmatch (`mode` "tdm":
 ## name, map, team size, bots, kill limit, and time limit), Capture the Flag
 ## ("ctf": the same, with a capture limit instead of a kill limit), Hardpoint
-## ("hardpoint": the same, with a points limit), or Gun Game
+## ("hardpoint": the same, with a points limit), Domination ("dom": the
+## same, with a points limit), or Gun Game
 ## ("gungame": name, map, player count, bots, kills per weapon, and time
 ## limit), Free-for-all ("ffa": name, map, player count, bots, kill limit,
 ## and time limit), or Search and Destroy ("snd": name, team size, bots, and
@@ -32,6 +33,8 @@ const SCORE_LIMITS := [25, 50, 75, 100]
 const CAPTURE_LIMITS := [1, 3, 5, 10]
 ## Hardpoint's limits, in points; 250 by default.
 const POINT_LIMITS := [150, 200, 250, 300]
+## Domination's limits, in points; 200 by default (Black Ops 2).
+const DOM_POINT_LIMITS := [100, 150, 200, 250]
 const TIME_LIMITS := [5, 10, 15, 20]
 const BOT_SKILLS := [["Easy", "easy"], ["Normal", "normal"], ["Hard", "hard"]]
 const PLAYER_COUNTS := [2, 4, 6, 8, 10, 12]
@@ -52,11 +55,34 @@ const MODE_NAMES := {
 	"ffa": "Free-for-all",
 	"ctf": "Capture the Flag",
 	"hardpoint": "Hardpoint",
+	"dom": "Domination",
 	"snd": "Search and Destroy",
+}
+## The line under the map picture, by mode.
+const DETAILS := {
+	"tdm": "Two teams race to the kill limit.",
+	"gungame":
+	(
+		"Every player for themselves, up eight weapons from the LSW-6 to the M1911."
+		+ " Kills move you up, a fall moves you down."
+	),
+	"ctf": "Take the enemy's flag and carry it to your own. Your flag must be home to score.",
+	"hardpoint": "Hold the live zone to score a point a second; it moves every minute.",
+	"dom":
+	(
+		"Take flags A, B, and C and hold them: every 5 seconds each flag scores a point."
+		+ " The teams swap sides at halftime."
+	),
+	"ffa": "Every player for themselves, with your own loadout: first to the kill limit wins.",
+	"snd":
+	(
+		"Rounds with one life each. The attackers wipe out the defenders, or the"
+		+ " defenders hold out until time runs out."
+	),
 }
 const CARD_WIDTH := 560.0
 
-## "tdm", "ctf", "hardpoint", "gungame", "ffa", or "snd".
+## "tdm", "ctf", "hardpoint", "dom", "gungame", "ffa", or "snd".
 var mode := "tdm"
 
 var _name: LineEdit
@@ -123,8 +149,10 @@ func options() -> Dictionary:
 		limits = CAPTURE_LIMITS
 	elif _hardpoint():
 		limits = POINT_LIMITS
+	elif _dom():
+		limits = DOM_POINT_LIMITS
 	return {
-		"mode": mode if _ctf() or _hardpoint() else "tdm",
+		"mode": mode if _ctf() or _hardpoint() or _dom() else "tdm",
 		"map": MAPS[_map.selected][1],
 		"bots": team_size * 2 - 1,
 		"bot_skill": BOT_SKILLS[_bot_skill.selected][1],
@@ -143,6 +171,10 @@ func _ctf() -> bool:
 
 func _hardpoint() -> bool:
 	return mode == "hardpoint"
+
+
+func _dom() -> bool:
+	return mode == "dom"
 
 
 func _snd() -> bool:
@@ -270,6 +302,10 @@ func _build() -> void:
 		_score_limit = _chips(
 			rows, "Points", POINT_LIMITS.map(func(n: int) -> String: return str(n)), 2
 		)
+	elif _dom():
+		_score_limit = _chips(
+			rows, "Points", DOM_POINT_LIMITS.map(func(n: int) -> String: return str(n)), 2
+		)
 	elif _ffa():
 		_score_limit = _chips(
 			rows, "Kills", FFA_SCORE_LIMITS.map(func(n: int) -> String: return str(n)), 2
@@ -317,32 +353,7 @@ func _build() -> void:
 
 
 func _detail() -> String:
-	if _gun_game():
-		return (
-			"Every player for themselves, up eight weapons from the LSW-6 to the M1911."
-			+ " Kills move you up, a fall moves you down. Bots fill the empty places."
-		)
-	if _ctf():
-		return (
-			"Take the enemy's flag and carry it to your own. Your flag must be home to"
-			+ " score. Bots fill the empty places."
-		)
-	if _hardpoint():
-		return (
-			"Hold the live zone to score a point a second; it moves every minute."
-			+ " Bots fill the empty places."
-		)
-	if _ffa():
-		return (
-			"Every player for themselves, with your own loadout: first to the kill limit"
-			+ " wins. Bots fill the empty places."
-		)
-	if _snd():
-		return (
-			"Rounds with one life each. The attackers wipe out the defenders, or the"
-			+ " defenders hold out until time runs out. Bots fill the empty places."
-		)
-	return "Two teams race to the kill limit. Bots fill the empty places."
+	return DETAILS.get(mode, DETAILS.tdm) + " Bots fill the empty places."
 
 
 func _row(rows: GridContainer, label_text: String, control: Control) -> void:

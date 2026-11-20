@@ -326,7 +326,7 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 - [x] Capture the Flag: flags, takes, drops, returns, and captures on the server (`rust/sim/src/ctf.rs`), bots that attack, defend, return, and carry, flag markers and calls on the client (`godot/scripts/net/ctf_view.gd`), and a title screen button.
 - [ ] More modes: Domination, the Black Ops 2 way ([docs/domination.md](docs/domination.md)). (Free-for-all is done: `--mode ffa`, on Gun Game's teamless path. Search and Destroy has its own section.)
   - [x] Rules on the server: three flags, 10 s captures sped up by more capturers, contests, a point a flag every 5 s, 200 to win, halftime side swap, flag spawns, capture, defence, and assault awards (`rust/sim/src/domination.rs`, `--mode dom`).
-  - [ ] Flag markers in the world and on the HUD, calls and stings, the scoreboard's columns, and a title screen choice.
+  - [x] Flag markers in the world and on the HUD, calls and stings, the scoreboard's columns, and a title screen choice (`godot/scripts/net/domination_view.gd`).
   - [ ] Objective bots: capture, defend, and take back flags.
   - [ ] Flags placed by hand on Slamcity, Nuketown, and Warehouse.
 - [x] Gun Game: a knife kill sets the victim back a weapon, as in the classic rules.

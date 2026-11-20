@@ -6,7 +6,8 @@ extends Node
 ##   --server [--port N] [--bots N] [--bot-skill easy|normal|hard] [--bot-damage]
 ##            [--name NAME] [--master HOST[:PORT]]
 ##            [--query-port N] [--map arena|nuketown|slamcity|warehouse]
-##            [--mode tdm|ctf|hardpoint|gungame|snd] [--kills-per-weapon N] [--rounds N]
+##            [--mode tdm|ctf|hardpoint|dom|gungame|snd] [--kills-per-weapon N]
+##            [--rounds N]
 ##            [--score-limit N] [--time-limit MINUTES] [--auto-start]
 ##                                    run as a dedicated server (use with --headless);
 ##                                    with --bot-skill the bots play the match; without
@@ -17,7 +18,8 @@ extends Node
 ##                                    Browsers query UDP port N+1 (or --query-port).
 ##                                    Team Deathmatch to N kills (75), Capture the
 ##                                    Flag to N captures (3), Hardpoint to N points
-##                                    (250), or MINUTES (10), or Gun Game with N
+##                                    (250), Domination to N points (200), or
+##                                    MINUTES (10), or Gun Game with N
 ##                                    kills per weapon (2), or Search and Destroy to
 ##                                    N rounds (6);
 ##                                    --auto-start skips the lobby's ready-up.
@@ -32,8 +34,8 @@ extends Node
 ##
 ## From the menus: the server browser calls `join`, and leaving a server or
 ## losing the connection calls `leave`, which returns to the server browser.
-## The title screen's Team Deathmatch, Capture the Flag, Hardpoint, Gun Game,
-## and Search and Destroy setups call `start_local_match`, which runs a
+## The title screen's Team Deathmatch, Capture the Flag, Hardpoint,
+## Domination, Gun Game, and Search and Destroy setups call `start_local_match`, which runs a
 ## dedicated server in a background process and joins it; leaving stops that
 ## server.
 
@@ -56,6 +58,7 @@ const STATUS_SCRIPT := "res://scripts/net/net_status.gd"
 const TDM_HUD_SCRIPT := "res://scripts/net/tdm_hud.gd"
 const CTF_VIEW_SCRIPT := "res://scripts/net/ctf_view.gd"
 const HARDPOINT_VIEW_SCRIPT := "res://scripts/net/hardpoint_view.gd"
+const DOMINATION_VIEW_SCRIPT := "res://scripts/net/domination_view.gd"
 const SND_HUD_SCRIPT := "res://scripts/net/snd_hud.gd"
 const KILLCAM_HUD_SCRIPT := "res://scripts/net/killcam_hud.gd"
 const SND_VIEW_SCRIPT := "res://scripts/net/snd_view.gd"
@@ -134,7 +137,7 @@ func join(target: String, options: Dictionary = {}, arena: PackedScene = null) -
 
 
 ## Starts a dedicated server in a background process with `options` (`mode`,
-## "tdm", "ctf", "hardpoint", "gungame", or "snd"; `map`, `bots`,
+## "tdm", "ctf", "hardpoint", "dom", "gungame", or "snd"; `map`, `bots`,
 ## `bot_skill`, `score_limit` (0 for the mode's usual limit),
 ## `kills_per_weapon`, `time_limit` in minutes, `rounds_to_win`) and joins it.
 ## The server does not answer server browsers.
@@ -350,6 +353,13 @@ func _attach_client(main: Node, target: String, options: Dictionary) -> void:
 	hardpoint.set("client", client)
 	hardpoint.set("player", player)
 	main.add_child(hardpoint)
+	# The flags' circles, their markers, and the calls; idle outside Domination.
+	var domination := Node3D.new()
+	domination.name = "DominationView"
+	domination.set_script(load(DOMINATION_VIEW_SCRIPT))
+	domination.set("client", client)
+	domination.set("player", player)
+	main.add_child(domination)
 	# Rounds, who is left alive, and spectating; idle outside Search and Destroy.
 	var snd_hud := CanvasLayer.new()
 	snd_hud.name = "SndHud"
