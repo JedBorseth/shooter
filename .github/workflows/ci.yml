@@ -191,7 +191,7 @@ jobs:
       # The account server (docker/online) for online_test.gd and the Nakama
       # module tests. It starts in the background while everything builds.
       - name: Start the online services
-        run: docker compose -f docker/online/compose.yml up -d
+        run: docker compose -f docker/online/compose.yml up -d nakama
       - uses: ./.github/actions/lfs-pull
         with:
           save: ${{ env.SAVE_CACHE }}
@@ -212,7 +212,7 @@ jobs:
           save: ${{ env.SAVE_CACHE }}
       - name: Nakama module tests
         run: |
-          docker compose -f docker/online/compose.yml up -d --wait
+          docker compose -f docker/online/compose.yml up -d --wait nakama
           python3 tools/test_online.py
       - name: Run Godot tests
         env:
@@ -310,6 +310,12 @@ jobs:
           NAME: ${{ steps.meta.outputs.name }}
           PUSH: ${{ github.ref_type == 'tag' && 'release' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')) && 'nightly' || '' }}
         run: .github/scripts/server-image.sh builds/server "${NAME#shooter-}"
+      # The allocator that starts servers for matchmaking (docker/online).
+      - name: Allocator image
+        env:
+          NAME: ${{ steps.meta.outputs.name }}
+          PUSH: ${{ github.ref_type == 'tag' && 'release' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')) && 'nightly' || '' }}
+        run: .github/scripts/allocator-image.sh "${NAME#shooter-}"
       - name: Write manifest
         run: .github/scripts/write-manifest.sh dist "${{ steps.meta.outputs.name }}"
       - uses: actions/upload-artifact@v7

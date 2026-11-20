@@ -42,6 +42,7 @@ Each option is an environment variable; any argument after the image name is pas
 | `SHOOTER_TIME_LIMIT` | 10 | `--time-limit`, in minutes |
 | `SHOOTER_ROUNDS` | 6 | `--rounds`: round wins in Search and Destroy |
 | `SHOOTER_AUTO_START` | off | `1` skips the lobby's ready-up (`--auto-start`) |
+| `SHOOTER_EXIT_WHEN_EMPTY` | off | `--exit-when-empty SECONDS`: stop once nobody has been connected that long (the allocator's servers) |
 | `SHOOTER_ACCOUNTS` | none | `--accounts URL`: admit only players signed in to this account server, check their unlocks, and report their match XP ([online.md](online.md#ranked-servers)) |
 | `SHOOTER_ACCOUNTS_KEY` | none | The account server's HTTP key, which `--accounts` needs; read from the environment only |
 
