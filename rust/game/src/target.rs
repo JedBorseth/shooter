@@ -63,6 +63,7 @@ impl IStaticBody3D for TargetDummy {
     }
 
     fn process(&mut self, delta: f64) {
+        let _profile = crate::profile::scope("targets");
         let dt = delta as f32;
         let alive = self.health > 0.0;
         let frame = self.frame(alive);

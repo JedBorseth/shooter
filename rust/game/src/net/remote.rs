@@ -678,6 +678,7 @@ impl RemotePlayer {
             ladder: s.ladder,
             mount: s.mount,
         };
+        let rig = crate::profile::scope("remotes/rig update");
         match (self.drawn_alive, s.alive) {
             // Dead: the body that died lies where it fell, in the scene's
             // corpse yard, and a fresh one waits hidden for the respawn.
@@ -697,8 +698,11 @@ impl RemotePlayer {
             self.rig.set_visible(false);
         }
         self.drawn_alive = Some(s.alive);
+        drop(rig);
         // The server rewinds exactly this pose when it checks our shots.
+        let hitboxes = crate::profile::scope("remotes/hitboxes");
         self.hitboxes.bind_mut().set_pose(s.hitbox_pose());
+        drop(hitboxes);
 
         if let Some(gunfire) = &mut self.gunfire {
             gunfire.update(delta);

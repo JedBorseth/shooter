@@ -111,6 +111,7 @@ pub struct CorpseYard {
 #[godot_api]
 impl INode3D for CorpseYard {
     fn process(&mut self, delta: f64) {
+        let _profile = crate::profile::scope("corpses");
         let dt = delta as f32;
         self.corpses.retain(|c| c.rig.is_instance_valid());
         // Make room: the oldest bodies sink first.

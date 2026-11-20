@@ -57,3 +57,8 @@ screens dir="/tmp/shooter-screens": build
 # Measure frame times and compare them with the baseline (see docs/perf).
 bench:
     tools/benchmark.sh --compare docs/perf/baseline.json
+
+# Measure CPU time per system on the client and server, for example
+# `just cpu-bench --map warehouse --bots 11`.
+cpu-bench *args: build
+    tools/cpu_bench.sh {{args}}

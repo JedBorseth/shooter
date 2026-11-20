@@ -626,6 +626,7 @@ impl ICharacterBody3D for FpsPlayer {
     }
 
     fn physics_process(&mut self, delta: f64) {
+        let _profile = crate::profile::scope("player (physics)");
         let dt = delta as f32;
         self.look_target = None;
         self.look_price = 0;
@@ -725,6 +726,7 @@ impl ICharacterBody3D for FpsPlayer {
     }
 
     fn process(&mut self, delta: f64) {
+        let _profile = crate::profile::scope("player (frame)");
         let dt = delta as f32;
         self.grenade_show.draw(dt);
         let fraction = Engine::singleton().get_physics_interpolation_fraction() as f32;
@@ -2305,6 +2307,7 @@ impl FpsPlayer {
             self.current_position + Vector3::UP,
         ));
         query.set_collision_mask(HITBOX_LAYER);
+        crate::hitbox_rig::sync_all();
         let eye = self.eye_position();
         let me = self.base().instance_id();
         let mut found: Vec<(Gd<Node>, Vec3)> = Vec::new();
@@ -3294,6 +3297,7 @@ impl FpsPlayer {
         query.set_shape(&sphere);
         query.set_transform(Transform3D::new(Basis::IDENTITY, center));
         query.set_collision_mask(HITBOX_LAYER | BODY_LAYER);
+        crate::hitbox_rig::sync_all();
         let me = self.base().instance_id();
         let mut targets: Vec<Gd<Node>> = Vec::new();
         for hit in space

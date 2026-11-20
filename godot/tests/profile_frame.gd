@@ -8,7 +8,8 @@ extends SceneTree
 ##     --audio-driver Dummy --script res://tests/profile_frame.gd
 ##
 ## Environment:
-##   PROFILE_MAP     testing, slamcity, or zombies (default slamcity).
+##   PROFILE_MAP     a map of tests/benchmark.gd (testing, slamcity, breakwater,
+##                   warehouse, zombies, ...; default slamcity).
 ##   PROFILE_VIEW    index of the benchmark viewpoint (default: the first).
 ##   PROFILE_PRESET  low, medium, or high (default medium).
 ##   PROFILE_FRAMES  frames measured per round (default 90).
@@ -97,6 +98,9 @@ func _run() -> void:
 		["glow without bicubic upscale", _glow_bicubic.bind(false)],
 		["no fog", _env_set.bind(&"fog_enabled", false)],
 		["no volumetric fog", _env_set.bind(&"volumetric_fog_enabled", false)],
+		["no SDFGI", _env_set.bind(&"sdfgi_enabled", false)],
+		["no screen-space indirect light (SSIL)", _env_set.bind(&"ssil_enabled", false)],
+		["no screen-space reflections", _env_set.bind(&"ssr_enabled", false)],
 		["no colour adjustments or grade", _env_set.bind(&"adjustment_enabled", false)],
 		["no sun shadows", _sun_set.bind(&"shadow_enabled", false)],
 		["sun shadows, hard filter", _shadow_filter.bind(RenderingServer.SHADOW_QUALITY_HARD)],
@@ -131,6 +135,12 @@ func _run() -> void:
 			_env_set.bind(&"glow_blend_mode", Environment.GLOW_BLEND_MODE_SCREEN)
 		],
 		["temporal antialiasing in place of SMAA", _taa],
+		# Live lights, probes, and particles (Warehouse lights its hall live).
+		["omni and spot lights cast no shadows", _light_shadows.bind(scene)],
+		["no omni or spot lights", _lights_off.bind(scene)],
+		["no reflection probes", _hide_class.bind(scene, "ReflectionProbe")],
+		["no GPU particles", _hide_class.bind(scene, "GPUParticles3D")],
+		["no multimeshes", _hide_class.bind(scene, "MultiMeshInstance3D")],
 		["nothing changed (noise check)", func() -> Variant: return func() -> void: pass],
 	]
 	for entry: String in OS.get_environment("PROFILE_SHADER").split(";", false):
@@ -382,6 +392,39 @@ func _visible(node: Node, on: bool) -> Variant:
 		return null
 	node.set("visible", on)
 	return func() -> void: node.set("visible", not on)
+
+
+## Turns off shadows on every live omni and spot light.
+func _light_shadows(scene: Node) -> Variant:
+	var changed: Array[Light3D] = []
+	for node in scene.find_children("*", "Light3D", true, false):
+		var light := node as Light3D
+		if not light is DirectionalLight3D and light.visible and light.shadow_enabled:
+			light.shadow_enabled = false
+			changed.append(light)
+	if changed.is_empty():
+		return null
+	return func() -> void:
+		for light in changed:
+			light.shadow_enabled = true
+
+
+## Hides every live omni and spot light.
+func _lights_off(scene: Node) -> Variant:
+	var hidden: Array[Node] = []
+	for node in scene.find_children("*", "Light3D", true, false):
+		if not node is DirectionalLight3D and (node as Light3D).visible:
+			hidden.append(node)
+	return _hide_nodes(hidden) if not hidden.is_empty() else null
+
+
+## Hides every visible node of a class.
+func _hide_class(scene: Node, type: String) -> Variant:
+	var hidden: Array[Node] = []
+	for node in scene.find_children("*", type, true, false):
+		if (node as Node3D).visible:
+			hidden.append(node)
+	return _hide_nodes(hidden) if not hidden.is_empty() else null
 
 
 ## Hides every mesh whose name contains `part` (the city's chunks).

@@ -53,7 +53,7 @@ tools/benchmark.sh --out after.json                    # all maps and presets
 tools/benchmark.sh --out after.json --compare docs/perf/baseline.json
 ```
 
-`tools/benchmark.sh` runs `godot/tests/benchmark.gd` at 1920×1080 (under `xvfb-run` when there is no display). It loads the Testing Area, Slamcity, and the Zombies arena with a 24-zombie horde walking at the player, holds each fixed viewpoint for 120 frames at each preset, and prints frame time, 99th-percentile frame time, GPU time, and draw calls. `tools/bench_compare.py` prints a Markdown table of two runs and exits non-zero if a map and preset got more than 5% slower, so a loop can stop on a regression.
+`tools/benchmark.sh` runs `godot/tests/benchmark.gd` at 1920×1080 (under `xvfb-run` when there is no display). It loads the Testing Area, Slamcity, Breakwater, Warehouse, and the Zombies arena with a 24-zombie horde walking at the player, holds each fixed viewpoint for 120 frames at each preset, and prints frame time, 99th-percentile frame time, GPU time, and draw calls (and how many of them went into shadow maps). `tools/bench_compare.py` prints a Markdown table of two runs and exits non-zero if a map and preset got more than 5% slower, so a loop can stop on a regression.
 
 Narrow a run with `BENCH_MAPS=slamcity`, `BENCH_PRESETS=medium`, or `BENCH_FRAMES=60`, and measure with motion blur on with `BENCH_MOTION_BLUR=1`. The script visits every map once before it measures, so shader compiles do not land in the first number. Set `BENCH_CAPTURE=<dir>` to save a screenshot of every viewpoint for before-and-after comparisons.
 
@@ -69,7 +69,7 @@ PROFILE_MAP=slamcity PROFILE_VIEW=1 PROFILE_PRESET=medium \
   --audio-driver Dummy --script res://tests/profile_frame.gd
 ```
 
-It measures each variant in several short rounds, each right beside a measurement of the full frame, and prints the median difference: GPU time drifts over a run, and other programs on the GPU inflate a stretch of frames now and then, which a single comparison would read as a cost. Within a round it takes the median frame, so a shader that compiles when a variant first draws does not skew it. The last line, "nothing changed", shows the noise left. `PROFILE_ROUNDS` (default 4) and `PROFILE_FRAMES` (per round, default 90) trade time for precision, and `PROFILE_ONLY` picks variants by label (several separated by `|`).
+It measures each variant in several short rounds, each right beside a measurement of the full frame, and prints the median difference: GPU time drifts over a run, and other programs on the GPU inflate a stretch of frames now and then, which a single comparison would read as a cost. Within a round it takes the median frame, so a shader that compiles when a variant first draws does not skew it. The last line, "nothing changed", shows the noise left. `PROFILE_ROUNDS` (default 4) and `PROFILE_FRAMES` (per round, default 90) trade time for precision, and `PROFILE_ONLY` picks variants by label (several separated by `|`). Besides the post effects it prices live omni and spot lights (their shadows, then the lights themselves), reflection probes, GPU particles, multimeshes, SDFGI, SSIL, and screen-space reflections, so a map that lights itself live shows what that costs.
 
 To price a shader change, `PROFILE_SHADER` also measures shaders with another file's code in their place, in the same run: `PROFILE_SHADER="res://shaders/a.gdshader=/path/a_new.gdshader,res://shaders/b.gdshader=/path/b_new.gdshader"` is one variant that swaps both (separate variants with `;`).
 
@@ -81,6 +81,36 @@ FX_BENCH=1 xvfb-run -a -s "-screen 0 1920x1080x24" godot --path godot --resoluti
 ```
 
 `godot/tests/capture_picture.gd` saves the screenshots the lighting and post-processing reviews use: views into the sun, surfaces at a grazing angle, soldiers on the ground, eight consecutive frames of a slow turn (for shimmer), and the screen feedback states. See its header for how to run it. `godot/tests/capture_viewmodel_light.gd` captures the first-person weapon in each kind of light (sun behind and ahead, shade it finds by rays, indoors, night) at the hip and aimed, and once more with the weapon hidden, so the weapon's brightness can be compared with the world's behind it.
+
+## CPU time per system
+
+The GPU benchmark holds still; the CPU cost of a match comes from what moves. `tools/cpu_bench.sh` starts a dedicated server with bots in a background process, joins it at 1920×1080 on Medium, plays for a while standing at the spawn, and prints each system's CPU time per frame on the client and per tick on the server:
+
+```sh
+tools/cpu_bench.sh --map slamcity --bots 11 --seconds 20 --out cpu.json   # a 6v6 with this client
+```
+
+- Rust systems time themselves with `crate::profile::scope("name")` (`rust/game/src/profile.rs`), and GDScript can wrap a block in `CpuProfile.begin(&"name")` and `CpuProfile.end()`. Profiling is off unless the bench (or `SHOOTER_CPU_PROFILE`) turns it on, so a scope costs one atomic load in play. Names under `body/` and `bots/` run inside others.
+- The client's totals are timed from the scene tree's own signals: the process step runs from `process_frame` to the renderer's `frame_pre_draw` (every `_process`, GDScript and Rust, animation trees, deferred calls), and the physics step from `physics_frame` to `process_frame` (every physics tick in that frame, `_physics_process` and the physics engine). Godot's `TIME_PROCESS` monitor is not used: it includes drawing and waiting on the display.
+- The process step is also split by subtree: the bench puts a marker node before each child of the root, the map, and the map's canvas layers, and Godot processes nodes of one priority in tree order, so the time from one marker to the next is what that subtree cost. What runs after every node (deferred calls, skeleton updates) is its own row.
+- The dedicated server writes the same report to the file named by `SHOOTER_CPU_PROFILE` every two seconds, with the tick count, so a server alone can be profiled: `SHOOTER_CPU_PROFILE=server.json godot --headless --path godot -- --server --map slamcity --bots 12 --bot-skill normal --auto-start`.
+- Each row gives the mean, the median and 95th percentile over frames (or ticks), calls per frame, and the longest call. Read the medians: this machine is shared, and one stalled frame moves a mean.
+
+Measure the build players run. The dev build (opt-level 1) is two to three times slower in Rust than the `ci` profile; to measure that, build `cargo build --profile ci` and swap `target/ci/libshooter_game.so` in for `target/debug/libshooter_game.so` for the run. Numbers below are the `ci` profile on Josh's dev box (a 20-thread desktop CPU, shared with other work), Slamcity Team Deathmatch, 11 bots and this client.
+
+| Where | Median per frame or tick | Notes |
+| --- | ---: | --- |
+| Client process step | 7.2 ms (was 9.1) | remote players 1.8 ms (was 3.6), local player 0.8, HUD and match UI 1.0, deferred calls and skeleton updates 2.4 |
+| Client physics step | 3.9 ms per frame at about 30 fps | four 120 Hz ticks a frame: about 1 ms a tick, half of it the physics engine |
+| Client render (CPU) | 3.1 ms | culling and command recording |
+| Server tick, 12 bots | 1.8 ms of 8.33 (p95 3.1) | character movement 1.4 (Godot's `move_and_slide` and step-up 0.95, the climb, ladder, and mount probes 0.36), bot thinking 0.16 (p95 1.3), path queries under 0.2, everything else under 0.1 |
+
+Warehouse and Breakwater servers measure the same within noise (1.7 to 1.8 ms a tick).
+
+Rules of thumb from these measurements:
+
+- Hit zones are posed lazily (`rust/game/src/hitbox_rig.rs`): a remote player's shapes move only when something is about to test against them (`hitbox_rig::sync_all`, called by every hitscan, melee, and blast query) or ten times a second. Placing every remote player's shapes each rendered frame cost about 1.1 ms of the median frame (3 ms in a busy one). A shape placed for a query this tick goes to the physics server directly: a node's transform reaches the server only when the tree flushes transform changes.
+- Characters animate by distance and visibility (`SoldierRig::animation_interval`), the way Call of Duty's engines animate distant characters less often: every frame within 20 m, 30 times a second to 40 m, 20 beyond, and 10 off screen. A skipped frame skips the animation tree, the poser, and the skeleton update together (the skeleton's modifiers are stepped by hand while it runs below the frame rate). Hit zones come from the simulation, never from this animation, so nothing a shot can hit changes. Deaths and revivals always draw at once.
 
 ## Graphics presets
 

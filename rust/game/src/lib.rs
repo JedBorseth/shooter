@@ -26,6 +26,7 @@ mod penetration;
 mod pickup;
 mod player;
 mod player_sounds;
+mod profile;
 mod progression;
 mod sentry;
 mod sights;

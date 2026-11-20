@@ -39,6 +39,9 @@ pub fn trace(
     exclude: &Array<Rid>,
     budget: f32,
 ) -> Trace {
+    if mask & crate::hitbox_rig::HITBOX_LAYER != 0 {
+        crate::hitbox_rig::sync_all();
+    }
     let far = from + direction * range;
     let mut round = Penetration::new(budget);
     let mut start = from;

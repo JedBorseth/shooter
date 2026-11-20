@@ -12,7 +12,8 @@ extends SceneTree
 ## Environment:
 ##   BENCH_OUT      JSON results file (optional; a table always prints).
 ##   BENCH_PRESETS  comma list of low, medium, high (default: all three).
-##   BENCH_MAPS     comma list of testing, slamcity, slamcity_closeups, breakwater, zombies
+##   BENCH_MAPS     comma list of testing, slamcity, slamcity_closeups, breakwater,
+##                  warehouse, zombies
 ##                  (default: all).
 ##   BENCH_FRAMES   frames measured per viewpoint (default 120).
 ##   BENCH_CAPTURE  directory for a screenshot of each viewpoint (optional).
@@ -61,6 +62,20 @@ const MAPS := {
 			[Vector3(-27, 3.85, -6), PI, -0.05],
 			[Vector3(-39, 0.05, -31), -PI / 2, 0.0],
 			[Vector3(-36, 0.05, 22.5), -PI / 2 + 0.2, 0.02],
+		],
+	},
+	# Warehouse's photo-matched views: the rotary's feed corner looking south,
+	# down the south aisle, the centre looking north, and the west wing.
+	"warehouse":
+	{
+		"scene": "res://scenes/warehouse.tscn",
+		"views":
+		[
+			[Vector3(30.6, 0.05, 7.6), -3.58, -0.05],
+			[Vector3(40.0, 0.05, 18.0), PI / 2, 0.0],
+			[Vector3(13.5, 0.05, 4.0), 0.0, 0.0],
+			[Vector3(-26.0, 0.05, -20.0), PI, 0.0],
+			[Vector3(8.5, 0.05, -30.5), PI, -0.05],
 		],
 	},
 	# Close-ups of the expensive cases on Slamcity (smoke filling the screen,
@@ -189,13 +204,25 @@ func _bench_map(map: String, preset: String) -> void:
 			"cpu_ms": cpu / _frames_per_view,
 			"gpu_ms": gpu / _frames_per_view,
 			"draw_calls": Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
+			# Of those, the draws into shadow maps (sun and live lights).
+			"shadow_draws":
+			RenderingServer.viewport_get_render_info(
+				root.get_viewport_rid(),
+				RenderingServer.VIEWPORT_RENDER_INFO_TYPE_SHADOW,
+				RenderingServer.VIEWPORT_RENDER_INFO_DRAW_CALLS_IN_FRAME
+			),
+			# CPU time of the process and physics steps (scripts, Rust, physics).
+			"process_ms": Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0,
 			"primitives": Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME),
 			"vram_mb": Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1048576.0,
 		}
 		_results.append(result)
 		print(
 			(
-				"%-9s %-6s view %d  %5.1f fps  frame %5.2f ms  p99 %5.2f ms  gpu %5.2f ms  %4d draws"
+				(
+					"%-9s %-6s view %d  %5.1f fps  frame %5.2f ms  p99 %5.2f ms  gpu %5.2f ms"
+					+ "  %4d draws (%d shadow)"
+				)
 				% [
 					map,
 					preset,
@@ -205,6 +232,7 @@ func _bench_map(map: String, preset: String) -> void:
 					result["p99_ms"],
 					result["gpu_ms"],
 					result["draw_calls"],
+					result["shadow_draws"],
 				]
 			)
 		)

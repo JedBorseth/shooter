@@ -141,6 +141,7 @@ pub struct Soundscape {
 #[godot_api]
 impl INode3D for Soundscape {
     fn process(&mut self, delta: f64) {
+        let _profile = crate::profile::scope("ambience");
         let Some(camera) = self.base().get_viewport().and_then(|v| v.get_camera_3d()) else {
             return;
         };
