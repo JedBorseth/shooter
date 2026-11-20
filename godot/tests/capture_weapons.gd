@@ -11,6 +11,7 @@ extends SceneTree
 const WEAPONS := [
 	"m4",
 	"ak47",
+	"kr12",
 	"pdw9",
 	"cq10",
 	"m870",

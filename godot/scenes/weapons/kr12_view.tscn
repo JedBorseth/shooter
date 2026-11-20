@@ -1,0 +1,61 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://assets/weapons/kr12/kr12.glb" id="1_model"]
+[ext_resource type="Material" path="res://materials/muzzle_flash.tres" id="5_flash"]
+
+[sub_resource type="QuadMesh" id="Quad_flash"]
+material = ExtResource("5_flash")
+size = Vector2(0.2, 0.2)
+
+[node name="KR12" type="WeaponView"]
+weapon = "kr12"
+sound_from = "ak47"
+grip_rake = 25.0
+hip_position = Vector3(0.130, -0.085, -0.235)
+hip_rotation = Vector3(0, 5, 4)
+ads_position = Vector3(0, 0, -0.14)
+iron_eye_back = 0.16
+sprint_position = Vector3(-0.04, 0.015, 0.03)
+sprint_rotation = Vector3(-4, 22, 24)
+pivot = Vector3(0, -0.126, 0.16)
+albedo_boost = 1.0
+shell_model = "Case762x39"
+kick_strength = 1.55
+camera_punch = Vector3(0.4, 0.15, 0.9)
+
+[node name="Model" type="Node3D" parent="."]
+
+[node name="Mesh" parent="Model" instance=ExtResource("1_model")]
+
+[node name="MagazineSpare" parent="Model/Mesh"]
+visible = false
+
+[node name="OpticRail" parent="Model/Mesh"]
+visible = false
+
+[node name="Muzzle" type="Marker3D" parent="."]
+position = Vector3(0.0000, -0.0412, -0.4129)
+
+[node name="Flash" type="MeshInstance3D" parent="Muzzle"]
+cast_shadow = 0
+mesh = SubResource("Quad_flash")
+
+[node name="FlashLight" type="OmniLight3D" parent="Muzzle"]
+light_color = Color(1, 0.72, 0.42, 1)
+light_energy = 4.0
+omni_range = 8.0
+
+[node name="Ejection" type="Marker3D" parent="."]
+position = Vector3(0.0120, -0.0305, 0.0579)
+
+[node name="GripRight" type="Marker3D" parent="."]
+position = Vector3(-0.0000, -0.1305, 0.1718)
+
+[node name="GripLeft" type="Marker3D" parent="."]
+position = Vector3(0.0000, -0.0607, -0.1475)
+
+[node name="OpticMount" type="Marker3D" parent="."]
+position = Vector3(-0.0000, -0.0060, 0.0424)
+
+[node name="ChargingHandle" type="Marker3D" parent="."]
+position = Vector3(0.0409, -0.0373, -0.0072)

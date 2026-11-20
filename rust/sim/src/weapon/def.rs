@@ -943,7 +943,7 @@ macro_rules! builtin_files {
 /// The weapon files in `godot/data/weapons`, compiled in.
 pub fn builtin() -> Vec<WeaponDef> {
     parse_all(builtin_files![
-        "ak47", "bp9", "br3", "cq10", "laser", "lsw6", "m1911", "m40", "m4", "m870", "pdw9"
+        "ak47", "bp9", "br3", "cq10", "kr12", "laser", "lsw6", "m1911", "m40", "m4", "m870", "pdw9"
     ])
     .expect("built-in weapon files are valid")
 }
@@ -993,7 +993,8 @@ mod tests {
         assert_eq!(
             keys,
             [
-                "ak47", "bp9", "br3", "cq10", "laser", "lsw6", "m1911", "m4", "m40", "m870", "pdw9"
+                "ak47", "bp9", "br3", "cq10", "kr12", "laser", "lsw6", "m1911", "m4", "m40",
+                "m870", "pdw9"
             ]
         );
         let all: Vec<_> = table().iter().map(|d| d.key.as_str()).collect();

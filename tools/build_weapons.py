@@ -309,6 +309,40 @@ WEAPONS = {
         "handle": "+x",
         "spare": True,
     },
+    "kr12": {
+        "dir": "kr12",
+        "scene": "kr12",
+        # A modernised AK in 7.62 mm, from the AK-47: the walnut stock,
+        # grip, and handguard refinished as black polymer.
+        "fbx": CLASSIC / "AK47/SKM_AK47.fbx",
+        "textures": [CLASSIC / f"AK47/T_AK47_{s}.png" for s in ("C", "N", "RMAO")],
+        "normal_dx": True,
+        "wood_to": {"color": (0.075, 0.075, 0.072), "roughness": 0.64, "keep": 0.9},
+        "scale": 0.855,
+        "sight": {"rear": (-0.218, 0.1472), "front": (-0.6723, 0.1441)},
+        "sight_edits": AK_SIGHT_EDITS,
+        "parts": {
+            "MAGAZINE": "Magazine",
+            "BULLET": "Magazine/Rounds",
+            "SLIDE": "ChargingHandle",
+            "SELECTOR": "Selector",
+            "TRIGGER": "Trigger",
+            "EJECTOR": "MagRelease",
+            None: "OpticRail",
+        },
+        "pivots": {"Selector": "SELECTOR", "Trigger": "TRIGGER", "MagRelease": "EJECTOR"},
+        "markers": {
+            "Muzzle": "FX_FIRE",
+            "Ejection": (-0.014, -0.15, 0.112),
+            "OpticMount": "ATTACH_SCOPE",
+            "GripRight": (-0.016, -0.004),
+            "GripLeft": (-0.39, 0.075),
+        },
+        "refinish": {"Selector": AK_COVER_FINISH, "ChargingHandle": AK_COVER_FINISH},
+        "thin": {"Selector": 0.4},
+        "handle": "+x",
+        "spare": True,
+    },
     "m1911": {
         "dir": "pistol",
         "scene": "pistol",
@@ -1473,6 +1507,38 @@ def derived_maps(color: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return normal.astype(np.float32), np.stack([occlusion, roughness, metallic], axis=2).astype(np.float32)
 
 
+def refinish_wood(
+    color: np.ndarray, normal: np.ndarray, orm: np.ndarray, finish: dict
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Recolours the source's wood texels (warm: red over blue, as
+    `weapon_finish.is_wood`) as another finish, keeping the source's
+    shading and wear as a little of its brightness, so the furniture keeps
+    its moulding and scuffs: an AK's walnut as black polymer. The grain
+    goes from the normal map too (moulded polymer has none), leaving a
+    fine stipple from the source's noise."""
+    r, g, b = color[..., 0], color[..., 1], color[..., 2]
+    wood = ((r - b) > 0.06) & (r >= g)
+    # Soften the mask's edge by a texel or two so seams do not ring.
+    soft = wood.astype(np.float32)
+    for axis in (0, 1):
+        soft = (soft + np.roll(soft, 1, axis) + np.roll(soft, -1, axis)) / 3.0
+    lum = color @ np.array([0.2126, 0.7152, 0.0722], np.float32)
+    mean = float(lum[wood].mean()) if wood.any() else 0.3
+    target = np.array(finish["color"], np.float32)
+    shade = np.clip(1.0 + (lum - mean) * finish.get("keep", 0.8), 0.6, 1.5)
+    new = target[None, None, :] * shade[..., None]
+    color = color * (1.0 - soft[..., None]) + new * soft[..., None]
+    orm = orm.copy()
+    orm[..., 1] = orm[..., 1] * (1.0 - soft) + finish["roughness"] * soft
+    orm[..., 2] = orm[..., 2] * (1.0 - soft)
+    flat = np.array([0.5, 0.5, 1.0], np.float32)
+    calm = soft[..., None] * finish.get("flatten", 0.8)
+    normal = normal * (1.0 - calm) + flat * calm
+    normal = (normal - 0.5) / np.maximum(np.linalg.norm(normal - 0.5, axis=2, keepdims=True), 1e-6) * 0.5 + 0.5
+    log(f"  refinished {wood.mean():.1%} of the texels from wood")
+    return color.astype(np.float32), normal.astype(np.float32), orm
+
+
 def build_textures(key: str, spec: dict, out: Path, mask=None):
     textures = spec["textures"]
     if isinstance(textures, list) and len(textures) == 1:
@@ -1508,6 +1574,8 @@ def build_textures(key: str, spec: dict, out: Path, mask=None):
     else:
         rmao = resize(load_pixels(rmao_path, False), TEXTURE_SIZE)
         orm = np.stack([rmao[..., 2], rmao[..., 0], rmao[..., 1]], axis=2)
+    if "wood_to" in spec:
+        color, normal, orm = refinish_wood(color, normal, orm, spec["wood_to"])
     # Weapon steel is blued, parkerised, or worn, never polished: below
     # this roughness bare edges read as chrome in first person.
     metal = orm[..., 2] > 0.5

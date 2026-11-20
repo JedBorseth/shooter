@@ -25,6 +25,7 @@ const PERK_ICON := "res://assets/ui/perks/%s.svg"
 const WEAPON_ROLES := {
 	"m4": "Assault rifle. Accurate, all-round.",
 	"ak47": "Assault rifle. Hits harder, kicks harder.",
+	"kr12": "Battle rifle. Three hits to long range; slow, heavy kick.",
 	"pdw9": "SMG. Fast fire and handling, short range.",
 	"cq10": "SMG. The fastest fire and the shortest reach.",
 	"br3": "Burst rifle. Three rounds a pull; one burst up close.",

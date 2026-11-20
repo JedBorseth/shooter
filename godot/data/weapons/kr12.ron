@@ -1,0 +1,68 @@
+// KR-12 battle rifle: slower and harder-hitting than either rifle. Three
+// hits to about 42 m and four beyond, 540 rpm, a 20-round magazine, a
+// heavy straight climb, and slower handling. Black Ops 2's SCAR-H: 625 rpm,
+// three to four hits, the class's long-range hitter.
+(
+    name: "KR-12",
+    class: AssaultRifle,
+    slot: Primary,
+    fire_mode: Auto,
+    rounds_per_minute: 540,
+    magazine: 20,
+    reserve: 100,
+    damage: (near: 40, far: 30, falloff_start: 25, falloff_end: 50, headshot: 1.35),
+    range: 400,
+    penetration: 0.42,
+    reload: Magazine(time: 2.5, empty_time: 3.0, mag_in: Some(1.65)),
+    ads_time: 0.29,
+    sprint_out_time: 0.27,
+    raise_time: 0.48,
+    // First raise: Black Ops 2's for the class, scaled to our quicker draws.
+    first_raise_time: 1.25,
+    lower_time: 0.3,
+    spread: (hip: 2.8, hip_moving: 4.8, air: 6.8, ads: 0.05, bloom: 0.35, bloom_max: 2.8, ads_sway: 0.13),
+    ads_fov_scale: 0.8,
+    ads_move_scale: 0.55,
+    move_scale: 0.95,
+    // Each round kicks harder than the AK's and mostly straight up, with a
+    // slow lean left then right: tap it, or pull down hard.
+    recoil: (
+        pattern: [
+            (0.5, 0.04), (0.6, 0.1), (0.66, 0.12), (0.68, 0.04),
+            (0.68, -0.08), (0.66, -0.14), (0.66, -0.06), (0.64, 0.08),
+        ],
+        jitter: (0.06, 0.14),
+        ads_scale: 0.7,
+        kick_return: 0.45,
+        recovery_delay: 0.02,
+        recovery_rate: 18.0,
+    ),
+    tracer_every: 3,
+    attachments: [RedDot, Acog, Suppressor, Grip, ExtendedMag],
+    // The player level that unlocks it (Create-a-Class, docs/create-a-class.md).
+    unlock_level: 31,
+    // Hands on the model: GripRight and GripLeft in kr12_view.tscn.
+    grips: Some((right: (0, -0.1305, 0.1718), left: (0, -0.0607, -0.1475), rake: 25, section: Some((centre: (0.0000, -0.0475), half: (0.0216, 0.0209))))),
+    // Finger poses fitted to the model by tests/bake_hand_poses.gd:
+    // curl in degrees per joint (index, middle, ring, little, thumb), each
+    // finger's spread, and the hand's seat off its marker (m). Re-run it
+    // after moving the grips or changing the model.
+    hands: Some((
+        right: (fingers: ((10.5, 61, 51.5), (74, 79, 49.5), (76, 80, 64.5), (74, 79, 51.5), (-32.5, 4.5, 5.5)), spread: Some((-4, -1.5, 3, 7, 48.5)), seat: (-0.006, -0.002, -0.01)),
+        index_off: (4, 6, 4),
+        left: (fingers: ((27.5, 45.5, 36.5), (10, 80, 55.5), (71, 74, 46.5), (65, 65, 38), (5.5, 22.5, 17)), spread: Some((-6, -1, 3.5, 9, 38)), seat: (0, 0, 0)),
+        left_foregrip: Some((fingers: ((38.5, 40, 23.5), (73, 81.5, 64.5), (80, 85, 45), (85, 85, 45), (21.5, 43, 65.5)), spread: Some((-2, 0, 2, 4, 40)), seat: (0.012, 0.01, -0.009))),
+    )),
+    // Set by hand after the fit, applied over `hands` (a re-bake keeps it):
+    // the support hand sits 17 mm below its fitted seat with the index bent
+    // at the tip, so the thumb and index stay below the red dot's window.
+    // The firing thumb lies forward along the receiver's right side and
+    // curls under its lower edge (fp-polish round 3): the fitted thumb
+    // stood up beside the dust cover, into the aimed picture once the eye
+    // sits behind the cover (`iron_eye_back`). Chosen by a search over
+    // thumb poses clear of the weapon, lowest from the aimed eye.
+    hand_tuning: Some((
+        right: Some((fingers: (None, None, None, None, Some((-20, 40, 45))), spread: (None, None, None, None, Some(50)))),
+        left: Some((fingers: (Some((20, 30, 60)), None, None, None, None), seat: Some((0, -0.017, 0)))),
+    )),
+)
