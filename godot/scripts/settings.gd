@@ -173,6 +173,7 @@ const DEFAULTS := {
 	&"audio_mix": 0,
 	&"master_server": DEFAULT_DIRECTORY,
 	&"player_name": "Player",
+	&"skip_killcams": false,
 }
 
 ## Config file section for each setting.
@@ -210,7 +211,7 @@ const SECTIONS := {
 		&"ui_volume",
 		&"audio_mix",
 	],
-	"multiplayer": [&"player_name"],
+	"multiplayer": [&"player_name", &"skip_killcams"],
 }
 
 ## Allowed values of each int setting.
@@ -305,6 +306,10 @@ var audio_mix: int = DEFAULTS[&"audio_mix"]
 var master_server: String = DEFAULTS[&"master_server"]
 ## The name other players see (the server cuts it to 16 characters).
 var player_name: String = DEFAULTS[&"player_name"]
+## Respawn without watching the killcam after each death (Call of Duty's
+## killcams are skipped one at a time; this skips them all). The killcam
+## that ends a round or the match still plays.
+var skip_killcams: bool = DEFAULTS[&"skip_killcams"]
 
 ## Keyboard and mouse bindings changed from the defaults: action to a
 ## serialized event (see `_event_to_value`).
