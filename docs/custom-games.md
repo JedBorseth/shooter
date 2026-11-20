@@ -2,7 +2,7 @@
 
 A host can change a match's rules before it starts, as in Black Ops 2's Custom Games. The rules live in `rust/sim/src/custom.rs` (`custom::Settings`). The server takes them on the command line, applies them, and sends them to every player in the welcome. Prediction (health and its regeneration) and the HUD follow the same rules.
 
-Loadout rules are carried but not yet applied by the server; they land next (TODO.md, Custom games). Hardcore's missing HUD lands with the setup screen.
+Hardcore's missing HUD lands with the setup screen (TODO.md, Custom games).
 
 Ranked servers (`--accounts`) ignore custom settings: ranked play always uses the default rules. Zombies keeps its own rules.
 
@@ -34,6 +34,14 @@ With friendly fire on, bullets, the knife, grenades, and every other blast (laun
 - **Shared:** each takes half (at least 1).
 
 A teamkill shows in the kill feed and counts as the victim's death, but scores nothing: no kill points, no team score, no streak count, and no objective bonus. Death by reflected damage is a suicide. Black Ops 2 also punishes repeat teamkillers (`teamKillPunishCount`: a respawn delay, then a kick); that is not built yet.
+
+## Loadout rules
+
+The server applies the rule to the class each life spawns with (`Loadouts::restrict`), players' and bots' alike; equipment and perks stay.
+
+- **Default classes:** a custom class becomes the first default class.
+- **Pistols only:** no primary; the class's pistol, or the M1911.
+- **Snipers only:** the class's sniper rifle, or the M40; the secondary only if it is a pistol.
 
 ## The text form
 
