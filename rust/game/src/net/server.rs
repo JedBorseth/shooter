@@ -84,13 +84,14 @@ use shooter_sim::net::protocol::{
     self, ChargeStatus, ChargeView, ClientMessage, DominationView, FlagPlay, FlagPointStatus,
     FlagPointView, FlagStatus, FlagView, GameEvent, MAX_CHARGE_SITES, MAX_DOMINATION_FLAGS,
     MAX_EVENTS_PER_MESSAGE, MAX_HARDPOINT_ZONES, OwnState, PROTOCOL_VERSION, PlayerView, Predicted,
-    ScoreRow, ServerMessage, Snapshot, UseView, ZoneView,
+    ScavengerEvent, ScoreRow, ServerMessage, Snapshot, UseView, ZoneView,
 };
 use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::subtick;
 use shooter_sim::net::{CHANNEL_COUNT, DEFAULT_PORT, MAX_PLAYERS, TICK_DT, TICK_RATE, Tick};
-use shooter_sim::perk::Perks;
+use shooter_sim::perk::{Perk, Perks};
 use shooter_sim::player::{self, PlayerEvent, PlayerInput, PlayerParams, PlayerState};
+use shooter_sim::scavenger;
 use shooter_sim::score::{Award, Kill, ScoreRules, ScoreState, ScoreTotals, Scored};
 use shooter_sim::snd::{
     Charge, ChargeContext, ChargeEvent, ChargePlayer, ChargeState, Headcount, RoundEnd, RoundPhase,
@@ -299,6 +300,8 @@ pub struct NetServer {
     spawn_rules: SpawnRules,
     /// Where players died recently, and when.
     recent_deaths: VecDeque<(Tick, Vec3)>,
+    /// Scavenger's packs on the ground (`shooter_sim::scavenger`).
+    scavenger: scavenger::Packs,
     /// The map's lanes for bots to follow (`BotLanes`), from one side to the other.
     bot_lanes: Vec<Vec<Vector3>>,
     /// Tick of the next scoreboard update.
@@ -718,6 +721,7 @@ impl INode3D for NetServer {
         self.update_flags();
         self.update_hardpoint();
         self.update_domination();
+        self.update_scavenger();
         self.update_match();
         self.update_props();
         self.tick += 1;
@@ -1009,6 +1013,57 @@ impl NetServer {
             .iter()
             .map(|s| to_godot(s.center - Vec3::new(0.0, s.half_extents.y, 0.0)))
             .collect()
+    }
+
+    /// Debug: gives a player these perks (by key) for the rest of this
+    /// life (tests).
+    #[func]
+    fn debug_give_perks(&mut self, id: i32, keys: PackedStringArray) {
+        let perks = keys
+            .as_slice()
+            .iter()
+            .filter_map(|k| Perk::by_key(&k.to_string()))
+            .fold(Perks::NONE, Perks::with);
+        if let Some(avatar) = self.avatars.iter_mut().find(|a| i32::from(a.id) == id) {
+            avatar.predicted.state.perks = perks;
+        }
+    }
+
+    /// Debug: empties a player's reserve ammunition and grenades (tests).
+    #[func]
+    fn debug_empty_pockets(&mut self, id: i32) {
+        if let Some(avatar) = self.avatars.iter_mut().find(|a| i32::from(a.id) == id) {
+            let combat = &mut avatar.predicted.state.combat;
+            for slot in &mut combat.slots {
+                slot.reserve = 0;
+            }
+            combat.lethals = 0;
+            combat.tacticals = 0;
+        }
+    }
+
+    /// A player's reserve ammunition for the weapon in hand, frags, and
+    /// tacticals, as [reserve, lethals, tacticals] (tests).
+    #[func]
+    fn player_pockets(&self, id: i32) -> PackedInt32Array {
+        self.avatars
+            .iter()
+            .find(|a| i32::from(a.id) == id)
+            .map(|a| {
+                let combat = &a.predicted.state.combat;
+                PackedInt32Array::from(&[
+                    i32::from(combat.weapon().reserve),
+                    i32::from(combat.lethals),
+                    i32::from(combat.tacticals),
+                ])
+            })
+            .unwrap_or_default()
+    }
+
+    /// Scavenger packs on the ground (tests).
+    #[func]
+    fn scavenger_pack_count(&self) -> i32 {
+        self.scavenger.all().len() as i32
     }
 
     /// Debug: kills a player where they stand (tests).
@@ -1844,6 +1899,10 @@ impl NetServer {
     /// somewhere away from the others.
     fn respawn_all_at_start(&mut self) {
         self.recent_deaths.clear();
+        // And no Scavenger packs.
+        for pack in self.scavenger.clear() {
+            self.broadcast_event(&GameEvent::Scavenger(ScavengerEvent::Gone { id: pack.id }));
+        }
         // A fresh match or round starts with no grenades about.
         self.grenades.clear();
         self.smokes.clear();
@@ -3938,15 +3997,68 @@ impl NetServer {
         self.broadcast_event(&GameEvent::Killcam(killcam));
     }
 
+    /// Scavenger: packs that lay too long go, and an enemy with the perk who
+    /// walks over one takes it and is resupplied (`scavenger::resupply`, up
+    /// to what their class started with).
+    fn update_scavenger(&mut self) {
+        for pack in self.scavenger.expire(self.tick) {
+            self.broadcast_event(&GameEvent::Scavenger(ScavengerEvent::Gone { id: pack.id }));
+        }
+        if self.scavenger.all().is_empty() {
+            return;
+        }
+        let takers: Vec<scavenger::Taker> = self
+            .avatars
+            .iter()
+            .map(|a| scavenger::Taker {
+                id: a.id,
+                side: Some(self.side(a)),
+                feet: a.predicted.position,
+                perks: a.predicted.state.perks,
+                alive: a.predicted.state.alive(),
+            })
+            .collect();
+        for (pack, by) in self.scavenger.take(&takers) {
+            if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == by) {
+                let class = avatar.class;
+                scavenger::resupply(
+                    &mut avatar.predicted.state.combat,
+                    class.lethals,
+                    class.tacticals,
+                );
+            }
+            self.broadcast_event(&GameEvent::Scavenger(ScavengerEvent::Taken {
+                id: pack.id,
+                by,
+            }));
+        }
+    }
+
     fn record_death(&mut self, id: u8) {
         let tick = self.tick;
         let scoring = self.match_state.scoring();
+        let Some(avatar) = self.avatars.iter().find(|a| a.id == id) else {
+            return;
+        };
+        let (at, side) = (avatar.predicted.position, self.side(avatar));
+        self.recent_deaths.push_back((tick, at));
+        self.next_scoreboard = tick;
+        // Everyone leaves a Scavenger pack, for their enemies with the perk
+        // (not in Zombies, which has no perks).
+        if self.horde.is_none() {
+            let (pack, pushed_out) = self.scavenger.drop_pack(at, id, Some(side), tick);
+            if let Some(old) = pushed_out {
+                self.broadcast_event(&GameEvent::Scavenger(ScavengerEvent::Gone { id: old.id }));
+            }
+            self.broadcast_event(&GameEvent::Scavenger(ScavengerEvent::Dropped {
+                id: pack.id,
+                at: pack.at,
+                dropped_by: id,
+            }));
+        }
         let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
             return;
         };
-        self.recent_deaths
-            .push_back((tick, avatar.predicted.position));
-        self.next_scoreboard = tick;
         if !scoring {
             return;
         }

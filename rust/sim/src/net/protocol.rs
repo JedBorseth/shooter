@@ -135,7 +135,8 @@ use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, Weapo
 // wildcards, and the perks in the predicted player state.
 // Version 55 added whether a player moves quietly (Dead Silence,
 // `PlayerView::quiet`).
-pub const PROTOCOL_VERSION: u16 = 55;
+// Version 56 added Scavenger's packs as events (`ScavengerEvent`).
+pub const PROTOCOL_VERSION: u16 = 56;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -367,6 +368,20 @@ pub enum GameEvent {
     Domination(DominationView),
     /// Zombies: rounds, hits on zombies, points, and windows' boards.
     Zombies(ZombiesEvent),
+    /// To everyone: Scavenger's packs dropped, taken, and gone
+    /// (`crate::scavenger`). Clients draw them only for a Scavenger player.
+    Scavenger(ScavengerEvent),
+}
+
+/// A Scavenger pack's comings and goings.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ScavengerEvent {
+    /// Player `dropped_by` died and left pack `id` at `at`.
+    Dropped { id: u16, at: Vec3, dropped_by: u8 },
+    /// Player `by` took pack `id`.
+    Taken { id: u16, by: u8 },
+    /// Pack `id` lay too long, or the round ended.
+    Gone { id: u16 },
 }
 
 /// One Domination flag's circle as clients see it.
@@ -1787,6 +1802,26 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
             w.bits(ZOMBIES_EVENT_TAG, EVENT_TAG_BITS);
             write_zombies_event(w, event);
         }
+        GameEvent::Scavenger(event) => {
+            w.bits(23, EVENT_TAG_BITS);
+            match *event {
+                ScavengerEvent::Dropped { id, at, dropped_by } => {
+                    w.bits(0, 2);
+                    w.u16(id);
+                    write_vec3(w, at);
+                    w.u8(dropped_by);
+                }
+                ScavengerEvent::Taken { id, by } => {
+                    w.bits(1, 2);
+                    w.u16(id);
+                    w.u8(by);
+                }
+                ScavengerEvent::Gone { id } => {
+                    w.bits(2, 2);
+                    w.u16(id);
+                }
+            }
+        }
     }
 }
 
@@ -2370,6 +2405,19 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
                 swapped,
             }))
         }
+        23 => Ok(GameEvent::Scavenger(match r.bits(2)? {
+            0 => ScavengerEvent::Dropped {
+                id: r.u16()?,
+                at: read_finite_vec3(r)?,
+                dropped_by: r.u8()?,
+            },
+            1 => ScavengerEvent::Taken {
+                id: r.u16()?,
+                by: r.u8()?,
+            },
+            2 => ScavengerEvent::Gone { id: r.u16()? },
+            _ => return Err(DecodeError::Invalid("scavenger event")),
+        })),
         ZOMBIES_EVENT_TAG => Ok(GameEvent::Zombies(read_zombies_event(r)?)),
         _ => Err(DecodeError::Invalid("event tag")),
     }
@@ -3496,6 +3544,23 @@ mod tests {
         let bytes = w.finish();
         let decoded = read_view_delta(&mut BitReader::new(&bytes), &view).unwrap();
         assert_eq!(decoded.mount, 255);
+    }
+
+    #[test]
+    fn scavenger_events_round_trip() {
+        let msg = ServerMessage::Events(vec![
+            GameEvent::Scavenger(ScavengerEvent::Dropped {
+                id: 65_000,
+                at: Vec3::new(-3.5, 0.25, 12.0),
+                dropped_by: 7,
+            }),
+            GameEvent::Scavenger(ScavengerEvent::Taken { id: 65_000, by: 2 }),
+            GameEvent::Scavenger(ScavengerEvent::Gone { id: 4 }),
+        ]);
+        assert_eq!(
+            ServerMessage::decode(&msg.encode(&[]), |_| None).unwrap(),
+            msg
+        );
     }
 
     #[test]

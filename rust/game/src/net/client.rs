@@ -49,11 +49,11 @@ use shooter_sim::net::prediction::Reconciled;
 use shooter_sim::net::protocol::{
     self as protocol, ChargeStatus, ChargeView, ClientMessage, DominationView, FlagPlay,
     FlagPointView, FlagStatus, FlagView, GameEvent, InputPacket, KillCause, MAX_BUILD_BYTES,
-    PROTOCOL_VERSION, ScoreRow, ServerMessage, Snapshot, ZombiesEvent, ZoneView,
+    PROTOCOL_VERSION, ScavengerEvent, ScoreRow, ServerMessage, Snapshot, ZombiesEvent, ZoneView,
 };
 use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::{CHANNEL_COUNT, CHANNEL_RELIABLE, DEFAULT_PORT, TICK_RATE, Tick};
-use shooter_sim::perk::Perks;
+use shooter_sim::perk::{Perk, Perks};
 use shooter_sim::snd::{
     Charge, ChargeContext, ChargePlayer, ChargeState, ChargeUse, RoundEnd, RoundPhase, Site,
     SndRules, UseKind,
@@ -210,6 +210,8 @@ pub struct NetClient {
     /// server last told us.
     charge_sites: Vec<ZoneView>,
     charge: Option<ChargeView>,
+    /// Scavenger's packs on the ground: id, where, and who dropped it.
+    scavenger_packs: Vec<(u16, shooter_sim::Vec3, u8)>,
     /// Zombies: the horde as drawn, and the map's director mirroring the
     /// server's game.
     horde: Option<HordeView>,
@@ -507,6 +509,11 @@ impl NetClient {
     /// defusing it (`charge_info`).
     #[signal]
     fn charge_changed();
+
+    /// Scavenger: a pack was dropped, taken, or went (`scavenger_packs`).
+    /// `taken_by` is who took one (-1 when none was).
+    #[signal]
+    fn scavenger_changed(taken_by: i32);
 
     /// Every player, ourselves included, as dictionaries with `id`, `name`,
     /// `team`, `bot`, `me`, `score`, `kills`, `deaths`, `ping`, `ready`,
@@ -852,6 +859,35 @@ impl NetClient {
     /// planting or defusing, -1 for nobody we are told of), `use_kind`
     /// ("plant" or "defuse"), `use_progress` (0 to 1), and `spot` ("plant",
     /// "defuse", or "": what holding interact would do where we stand).
+    /// Scavenger packs this player can see and take: none without the
+    /// perk; otherwise every enemy's (anyone else's without teams), as
+    /// dictionaries with `id` and `position` (the ground under it).
+    #[func]
+    fn scavenger_packs(&self) -> Array<VarDictionary> {
+        let mine = self
+            .player
+            .as_ref()
+            .map_or(Perks::NONE, |p| p.bind().perks());
+        if !mine.has(Perk::Scavenger) {
+            return Array::new();
+        }
+        let local = self.local_team();
+        self.scavenger_packs
+            .iter()
+            .filter(|(_, _, by)| {
+                let team = self.roster.iter().find(|e| e.id == *by).map(|e| e.team);
+                Some(*by) != self.player_id
+                    && (self.mode.free_for_all() || team.is_none() || team != local)
+            })
+            .map(|(id, at, _)| {
+                let mut d = VarDictionary::new();
+                d.set("id", i64::from(*id));
+                d.set("position", to_godot(*at));
+                d
+            })
+            .collect()
+    }
+
     #[func]
     fn charge_info(&self) -> VarDictionary {
         let mut d = VarDictionary::new();
@@ -1621,6 +1657,24 @@ impl NetClient {
             GameEvent::ChargeSites { sites } => {
                 self.charge_sites = sites;
                 self.signals().charge_changed().emit();
+            }
+            GameEvent::Scavenger(event) => {
+                let taken_by = match event {
+                    ScavengerEvent::Dropped { id, at, dropped_by } => {
+                        self.scavenger_packs.retain(|(p, _, _)| *p != id);
+                        self.scavenger_packs.push((id, at, dropped_by));
+                        -1
+                    }
+                    ScavengerEvent::Taken { id, by } => {
+                        self.scavenger_packs.retain(|(p, _, _)| *p != id);
+                        i32::from(by)
+                    }
+                    ScavengerEvent::Gone { id } => {
+                        self.scavenger_packs.retain(|(p, _, _)| *p != id);
+                        -1
+                    }
+                };
+                self.signals().scavenger_changed().emit(taken_by);
             }
             GameEvent::Charge(view) => {
                 let was_planted = self

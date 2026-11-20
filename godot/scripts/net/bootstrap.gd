@@ -68,6 +68,7 @@ const DOMINATION_VIEW_SCRIPT := "res://scripts/net/domination_view.gd"
 const SND_HUD_SCRIPT := "res://scripts/net/snd_hud.gd"
 const KILLCAM_HUD_SCRIPT := "res://scripts/net/killcam_hud.gd"
 const SND_VIEW_SCRIPT := "res://scripts/net/snd_view.gd"
+const SCAVENGER_VIEW_SCRIPT := "res://scripts/net/scavenger_view.gd"
 const DEFAULT_PORT := 27015
 ## Port of the server `start_local_match` runs, away from the default so it
 ## does not clash with a server already running on this machine.
@@ -407,3 +408,10 @@ func _attach_client(main: Node, target: String, options: Dictionary) -> void:
 	snd_view.set("client", client)
 	snd_view.set("player", player)
 	main.add_child(snd_view)
+	# Scavenger's packs, for a player with the perk.
+	var scavenger_view := Node3D.new()
+	scavenger_view.name = "ScavengerView"
+	scavenger_view.set_script(load(SCAVENGER_VIEW_SCRIPT))
+	scavenger_view.set("client", client)
+	scavenger_view.set("player", player)
+	main.add_child(scavenger_view)
