@@ -55,7 +55,7 @@ func _run() -> void:
 	var crate: Dictionary = crates[0]
 	var at: Vector3 = crate.position
 	var contents := String(crate.contents)
-	_check(contents in ["uav", "counter_uav"], "it holds a streak: %s" % contents)
+	_check(contents != "" and contents != "care_package", "it holds a streak: %s" % contents)
 	_check(not bool(crate.landed), "it is still in the air")
 
 	# Holding use under it in the air does nothing.

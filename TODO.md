@@ -261,7 +261,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Attack Chopper (Black Ops 2's Stealth Chopper, 1100): guards a point marked on the map for a minute, hopping between spots and firing bursts on the nearest enemy it sees; bullets do half and a rocket downs it; bots call theirs on an enemy and shoot enemy ones down ([docs/scorestreaks.md](docs/scorestreaks.md#attack-chopper)).
 - [ ] Attack Chopper follow-ups: rotor and gun sounds, evading when locked on (Black Ops 2's), and flares.
 - [ ] Guided Missile follow-ups: its launch, flight, and boost sounds, enemies shooting it down in flight (Black Ops 2 lets them), a warning to enemies under it, and restoring the pilot's view angle when it ends.
-- [ ] Sentry Gun follow-ups: its own firing sound, a minimap icon for our side's, carrying and moving it (Black Ops 2 lets the owner pick it up), and Care Packages holding one.
+- [ ] Sentry Gun follow-ups: its own firing sound, a minimap icon for our side's, and carrying and moving it (Black Ops 2 lets the owner pick it up). Care Packages hold one at Black Ops 2's weight.
 - [x] Blind Eye (the Attack Chopper passes them by), Cold-Blooded (no red name or crosshair when aimed at; Guided Missiles neither box nor target them), and Engineer (enemy Sentry Guns and Care Packages through walls), with Black Ops 2's red name and crosshair when aiming at an enemy ([create-a-class.md](docs/create-a-class.md#perks)).
 - [ ] Engineer's Care Package reroll and booby trap; Blind Eye's stand-still grace period once its value is known; a seventeenth perk needs wider perk sets on the wire (the sixteen bits are full).
 - [x] Player names: sent in the hello (`Settings.player_name`), cleaned by the server, and listed in the roster.

@@ -43,13 +43,17 @@ pub const CRATE_SECONDS: f32 = 90.0;
 /// Crates waiting at once; the oldest goes first.
 pub const MAX_CRATES: usize = 8;
 
-/// The streaks a crate may hold and their weights: Black Ops 2's shares for
-/// the UAV (10.6) and the Counter-UAV (9.4) among its contents, and the
-/// Airstrike rarer (4, an estimate for its Lightning Strike).
-pub const CONTENTS: [(Streak, u32); 3] = [
-    (Streak::Uav, 106),
-    (Streak::CounterUav, 94),
-    (Streak::Airstrike, 40),
+/// The streaks a crate may hold and their weights: Black Ops 2's own
+/// (`_supplydrop.gsc` `registercratetype`) for the streaks this game has:
+/// UAV 100, Counter-UAV 100, Hellstorm Missile 85, Lightning Strike 80,
+/// Sentry Gun 80, Stealth Chopper 20. A crate never holds a Care Package.
+pub const CONTENTS: [(Streak, u32); 6] = [
+    (Streak::Uav, 100),
+    (Streak::CounterUav, 100),
+    (Streak::GuidedMissile, 85),
+    (Streak::Airstrike, 80),
+    (Streak::SentryGun, 80),
+    (Streak::AttackChopper, 20),
 ];
 
 /// Rolls what a crate holds from `seed`.
@@ -325,12 +329,17 @@ mod tests {
     #[test]
     fn contents_follow_the_weights() {
         let mut uavs = 0;
-        for seed in 0..2000 {
-            if roll(seed) == Streak::Uav {
-                uavs += 1;
+        let mut choppers = 0;
+        for seed in 0..4000 {
+            match roll(seed) {
+                Streak::Uav => uavs += 1,
+                Streak::AttackChopper => choppers += 1,
+                Streak::CarePackage => panic!("a crate in a crate"),
+                _ => {}
             }
         }
-        // 106 of 240: about 44%.
-        assert!((780..990).contains(&uavs), "{uavs}");
+        // 100 of 465 (about 21.5%), and 20 of 465 (about 4.3%).
+        assert!((760..960).contains(&uavs), "{uavs}");
+        assert!((120..230).contains(&choppers), "{choppers}");
     }
 }

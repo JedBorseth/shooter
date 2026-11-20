@@ -61,7 +61,18 @@ Anyone holding use within 1.8 m of a landed crate captures it:
 - **Running out:** a crate nobody takes is gone after 90 s (an estimate).
 - **Limit:** at most 8 crates wait at once; the oldest goes first.
 
-**Contents:** the streak inside is rolled when the crate is called in, from the UAV (106) and the Counter-UAV (94), Black Ops 2's own weights for those two, and the Airstrike (40, an estimate: rare, as the dear streaks are in Black Ops 2). A crate never holds another Care Package. Black Ops 2's booby-trapped crates (Engineer, Black Hat) are left out: there is no Engineer.
+**Contents:** the streak inside is rolled when the crate is called in, with Black Ops 2's own weights from its crate table (`_supplydrop.gsc`) for the streaks this game has:
+
+| Streak | Weight | Share |
+| --- | ---: | ---: |
+| UAV | 100 | 21.5% |
+| Counter-UAV | 100 | 21.5% |
+| Guided Missile (Hellstorm) | 85 | 18.3% |
+| Airstrike (Lightning Strike) | 80 | 17.2% |
+| Sentry Gun | 80 | 17.2% |
+| Attack Chopper (Stealth Chopper) | 20 | 4.3% |
+
+A crate never holds another Care Package. Black Ops 2's booby-trapped and rerolled crates (Engineer, Black Hat) are left out; Engineer here only shows enemy crates through walls.
 
 **On screen:**
 
@@ -206,7 +217,7 @@ UAV assist points and announcer lines. Blind Eye, Cold-Blooded, and Engineer act
 
 - **Black Ops 2's scorestreak rules:** score earned in one life, objective score included; earned streaks kept after death; streak kills not counting toward streaks; the counter starting again after the last streak.
 - **Costs:** UAV 425 (raised from 350 in patch 1.04), Counter-UAV between 400 and 600 depending on the source (475 here), Care Package 550.
-- **Care Package:** a flyover drops a crate on the marked spot. The owner captures almost at once, others in about 3 s, and enemies may steal it. Contents are weighted toward cheap streaks (UAV 10.6%, Counter-UAV 9.4%).
+- **Care Package:** a flyover drops a crate on the marked spot. The owner captures almost at once, others in about 3 s, and enemies may steal it. Contents use Black Ops 2's crate weights (`_supplydrop.gsc`: UAV 100, Counter-UAV 100, Hellstorm 85, Lightning Strike 80, Sentry Gun 80, Stealth Chopper 20).
 - **Durations:** UAV and Counter-UAV 30 s.
 - **Hardline:** in Black Ops 2 it adds 20% to scorestreak score, per the Call of Duty wiki, about 16.7% off each cost. Guides that give "-25 points" or "15%" disagree with it.
 - **Lightning Strike:** 750, three strikes on points picked on the map, in sequence.
