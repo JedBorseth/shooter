@@ -265,6 +265,9 @@ pub struct NetServer {
     charge: Option<Charge>,
     /// The server tick the plant or defuse under way started.
     charge_use_started: Tick,
+    /// The site the attacking bots go for this round (an index into
+    /// `charge_sites`).
+    charge_target: usize,
     /// Players whose inputs hold interact whatever they send (tests).
     forced_interact: Vec<u8>,
     spawn_points: Vec<SpawnPoint>,
@@ -2893,6 +2896,8 @@ impl NetServer {
             .and_then(|i| self.spawn_points.get(i))
             .map_or(to_sim(self.spawn), |p| p.position);
         self.charge = Some(Charge::new(carrier, fallback));
+        self.charge_target = rng::hash(round.number, self.tick.wrapping_add(7)) as usize
+            % self.charge_sites.len().max(1);
         if let Some((id, _)) = carrier {
             godot_print!(
                 "server: player {id} carries the charge in round {}",
@@ -3517,6 +3522,9 @@ impl NetServer {
     ///   carrying it. The rest attack: they go for the enemy's flag, or
     ///   escort the teammate carrying it.
     fn bot_objectives(&self) -> Vec<(u8, Option<BotObjective>)> {
+        if let (Some(round), Some(charge)) = (self.round, self.charge) {
+            return self.charge_objectives(round, &charge);
+        }
         if let Some(zone) = self.zones.get(self.hardpoint.active) {
             return self.zone_objectives(zone);
         }
@@ -3577,6 +3585,127 @@ impl NetServer {
                 };
                 out.push((bot.id, Some(objective)));
             }
+        }
+        out
+    }
+
+    /// Search and Destroy: what each bot does about the charge.
+    ///
+    /// - A bot standing where holding interact would plant or defuse holds
+    ///   it (and fights first if an enemy shows).
+    /// - Attackers: the carrier runs to this round's target site; the
+    ///   others push into that site to clear it. A dropped charge sends the
+    ///   nearest attacker bot to pick it up. Once planted, they hold spots
+    ///   around it.
+    /// - Defenders: split between the sites, holding spots in them. Once the
+    ///   charge is planted, the nearest runs to defuse it and the rest clear
+    ///   the site around it.
+    fn charge_objectives(
+        &self,
+        round: RoundState,
+        charge: &Charge,
+    ) -> Vec<(u8, Option<BotObjective>)> {
+        let Some(target) = self
+            .charge_sites
+            .get(self.charge_target % self.charge_sites.len().max(1))
+        else {
+            return Vec::new();
+        };
+        let cx = ChargeContext {
+            rules: &self.snd_rules,
+            sites: &self.charge_sites,
+            attackers: round.attackers,
+            live: round.live(),
+        };
+        let period = self.tick / (ZONE_SPOT_SECONDS * TICK_RATE);
+        // A spot within `reach` of `center` (on the floor), changing every
+        // few seconds.
+        let spot = |id: u8, center: Vec3, reach: Vec2| {
+            let a = rng::unit(u32::from(id), period * 2);
+            let b = rng::unit(u32::from(id), period * 2 + 1);
+            to_godot(Vec3::new(
+                center.x + (a * 2.0 - 1.0) * reach.x,
+                center.y + 0.3,
+                center.z + (b * 2.0 - 1.0) * reach.y,
+            ))
+        };
+        let floor = |site: &Site| site.center - Vec3::new(0.0, site.half_extents.y, 0.0);
+        let inside = |site: &Site| {
+            Vec2::new(
+                (site.half_extents.x - 1.0).max(0.3),
+                (site.half_extents.z - 1.0).max(0.3),
+            )
+        };
+        let bots: Vec<&Avatar> = self
+            .avatars
+            .iter()
+            .filter(|a| a.brain.is_some() && a.predicted.state.alive())
+            .collect();
+        // The bot of `team` nearest `at`, sent to it.
+        let nearest = |team: Team, at: Vec3| {
+            bots.iter()
+                .filter(|a| a.team == team)
+                .min_by(|a, b| {
+                    a.predicted
+                        .position
+                        .distance_squared(at)
+                        .total_cmp(&b.predicted.position.distance_squared(at))
+                })
+                .map(|a| a.id)
+        };
+        let defenders: Vec<u8> = {
+            let mut ids: Vec<u8> = bots
+                .iter()
+                .filter(|a| a.team != round.attackers)
+                .map(|a| a.id)
+                .collect();
+            ids.sort_unstable();
+            ids
+        };
+        let fetcher = match charge.state {
+            ChargeState::Dropped { at } => nearest(round.attackers, at),
+            ChargeState::Planted { at, .. } => nearest(1 - round.attackers, at),
+            _ => None,
+        };
+        let mut out = Vec::new();
+        for bot in &bots {
+            let id = bot.id;
+            if charge.spot(&cx, &charge_player(bot, true)).is_some() {
+                out.push((
+                    id,
+                    Some(BotObjective::use_here(to_godot(bot.predicted.position))),
+                ));
+                continue;
+            }
+            let objective = if bot.team == round.attackers {
+                match charge.state {
+                    ChargeState::Carried { by } if by == id => BotObjective::run(to_godot(
+                        target.center - Vec3::Y * (target.half_extents.y - 0.3),
+                    )),
+                    ChargeState::Dropped { at } if fetcher == Some(id) => {
+                        BotObjective::run(to_godot(at))
+                    }
+                    ChargeState::Planted { at, .. } => {
+                        BotObjective::hold(spot(id, at, Vec2::splat(4.0)))
+                    }
+                    _ => BotObjective::hunt(spot(id, floor(target), inside(target))),
+                }
+            } else {
+                match charge.state {
+                    ChargeState::Planted { at, .. } if fetcher == Some(id) => {
+                        BotObjective::run(to_godot(at))
+                    }
+                    ChargeState::Planted { at, .. } => {
+                        BotObjective::hunt(spot(id, at, Vec2::splat(4.0)))
+                    }
+                    _ => {
+                        let i = defenders.iter().position(|d| *d == id).unwrap_or(0);
+                        let site = &self.charge_sites[i % self.charge_sites.len()];
+                        BotObjective::hold(spot(id, floor(site), inside(site)))
+                    }
+                }
+            };
+            out.push((id, Some(objective)));
         }
         out
     }

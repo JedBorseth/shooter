@@ -58,7 +58,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
   - [x] Players who join after a smoke popped see the cloud (snapshots list the hanging clouds).
   - [x] Bots blinded by flashbangs and unable to see through smoke (`equipment::smoke_blocks`).
   - [x] Bots throw grenades and run from live ones: frags at bunched or hiding enemies (cooked on Normal and Hard), flashbangs at a hiding enemy, smoke over a retreat to cover (`shooter_sim::bot::plan_throw`, `rust/game/src/net/bots.rs`).
-  - [ ] Bots bank grenades off walls on purpose (today a bounce counts only when the checked flight happens to take one), and pop smoke to cover a plant or defuse once Search and Destroy has a bomb.
+  - [ ] Bots bank grenades off walls on purpose (today a bounce counts only when the checked flight happens to take one), and pop smoke to cover a plant or defuse in Search and Destroy.
 - [x] Melee: a knife on its own button (V, R3) with a lunge at enemies within about 3 m, predicted and lag-compensated (`rust/sim/src/melee.rs`), swung in the support hand in first and third person (the knife modelled in Blender, `tools/build_knife.py`), knife kills in the feed, 130-point knife kills in Zombies, and bots that knife up close.
   - [x] Knife kills crumple where they stand, from the strike (the client drops the body on its own strike; the server confirms).
 
@@ -237,7 +237,8 @@ Rounds with one life each (`rust/sim/src/snd.rs`, `--mode snd`), on Slamcity. Cl
 - [x] The charge ([docs/search-and-destroy.md](docs/search-and-destroy.md)): a random attacker carries it, drops it on death, and any attacker picks it up by walking over it; a 4-second plant at site A (the pawn shop's back room) or B (the ticket hall), a 45-second fuse that replaces the round clock, and a 7-second defuse that starts over if interrupted. The interact button held rides in `PlayerInput`; planting or defusing holds the player still with the weapon away, on the server and in prediction (`PlayerInput::using_charge`). Site markers, a PICK UP or ESCORT marker for the attackers, the hold prompt, the plant and defuse bar, the charge model with a blinking lamp, the kneeling pose on other players, and calls (`scripts/net/snd_view.gd`).
   - [ ] Hit zones that follow the kneeling plant and defuse pose (`hitbox::action`; snapshots now carry it as `PlayerView::charge_use`).
   - [ ] First-person hands on the charge's keypad while planting or defusing (today the weapon is just put away).
-- [ ] Bots play the objective: attackers take the charge to a site and plant, defenders hold the sites and defuse.
+- [x] Bots play the objective (`NetServer::charge_objectives`, `ObjectiveKind::Use`): the carrier runs to the round's target site and plants, the other attackers push into that site, the nearest attacker fetches a dropped charge, and after the plant they hold round it; defenders split between the sites, and once it is planted the nearest runs to defuse while the rest clear round it. A bot fights an enemy in sight before planting or defusing (`tests/snd_bots_test.gd`).
+  - [ ] Bots that pick their site from what they see (switching when one is held), lurk on the flanks, and fake a plant or defuse to bait a shot.
 - [ ] Plant and defuse scores and medals (Clutch, Ace, Wire Cutter), round stings, and the charge's beeps.
 
 ## Phase 5: online services (all self-hosted)

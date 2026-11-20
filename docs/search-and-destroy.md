@@ -62,9 +62,28 @@ Each has a solid marker crate with its letter on every side
 every mode as set dressing. The defenders reach either site in about 7 s at a
 sprint, the attackers in about 11 s.
 
+## Bots
+
+Bots play the charge (`charge_objectives` in the server, through the bots'
+objectives, as in Capture the Flag and Hardpoint):
+
+- A bot standing where holding interact would plant or defuse holds it
+  (`ObjectiveKind::Use`), looking about, and fights first if an enemy is in
+  sight. The same filter as for players holds it still with its weapon away.
+- Attackers: the carrier runs to the round's target site (picked at random
+  each round) and plants; the others push into that site to clear it; the
+  nearest attacker bot fetches a dropped charge; after the plant they hold
+  spots round it.
+- Defenders: split between the sites, holding spots in each. Once the charge
+  is planted, the nearest runs to defuse it and the rest clear round it.
+
+Call of Duty's bots (Black Ops 2 and 3 combat training) play it the same
+way: the carrier goes to a site, the defence splits, and defenders rush the
+defuse.
+
 ## Still to come
 
-Objective bots, plant and defuse scores and medals (Clutch, Ace, Wire
+Plant and defuse scores and medals (Clutch, Ace, Wire
 Cutter), the charge's accelerating beeps, its explosion with a damage radius,
 and round stings for plants and defuses: see the Search and Destroy section of
 [TODO.md](../TODO.md).
