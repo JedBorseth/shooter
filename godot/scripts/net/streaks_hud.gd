@@ -88,7 +88,9 @@ func _process(delta: float) -> void:
 		visible = false
 		return
 	var mode := String(client.match_info().get("mode", ""))
-	visible = mode not in ["zombies", "gungame"] and not client.in_killcam()
+	# The results screen clears the play HUD, as in Call of Duty.
+	var ended := String(client.match_info().get("phase", "")) == "ended"
+	visible = mode not in ["zombies", "gungame"] and not client.in_killcam() and not ended
 	_info = client.streak_info()
 	# Under the HUD size setting the piece is scaled: keep it screen-sized.
 	size = get_viewport_rect().size / scale

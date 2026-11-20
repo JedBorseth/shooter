@@ -369,6 +369,8 @@ func _attach_client(main: Node, target: String, options: Dictionary, token := ""
 		var node := main.get_node_or_null(node_name)
 		if node != null:
 			node.queue_free()
+	# The server owns ammo online: no T refill, and none in the controls legend.
+	player.allow_refill = false
 
 	var client := NetClient.new()
 	client.name = "NetClient"
@@ -437,6 +439,9 @@ func _attach_client(main: Node, target: String, options: Dictionary, token := ""
 	streaks.set("player", player)
 	streaks.set("airstrike", airstrike)
 	tdm_hud.add_child(streaks)
+	# Under the match HUD's own pieces, so its menus and scoreboard cover them.
+	tdm_hud.move_child(streaks, 0)
+	tdm_hud.move_child(minimap, 0)
 	Settings.fit_hud(streaks)
 	# Care Packages: the flyover, the crate, and its capture prompt.
 	var crates := Node3D.new()

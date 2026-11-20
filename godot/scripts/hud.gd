@@ -31,7 +31,7 @@ const DEFAULT_CONTROLS := [
 	"lethal:Frag",
 	"tactical:Tactical",
 	"weapon_1:Switch weapon",
-	"interact:Take weapon",
+	"interact:Interact",
 	"refill_ammo:Refill ammo",
 	"pause:Menu",
 	"toggle_controls:Hide controls",
@@ -175,6 +175,10 @@ func _process(delta: float) -> void:
 	# A killcam draws its own overlay: the HUD steps aside (the killer's
 	# scope still shows, from `scope_amount`).
 	var killcam := _player.in_killcam()
+	# The results screen clears the play HUD, as in Call of Duty; the final
+	# killcam before it still needs the scope. Zombies keeps its own
+	# game-over screen, which lives on this layer.
+	visible = killcam or not _match_ended()
 	# The Zombies arena's HUD has no score feed.
 	for piece: Control in [_crosshair, _centre, _health, _weapon, _damage, _score_feed]:
 		if piece != null:
@@ -208,8 +212,10 @@ func _process(delta: float) -> void:
 	_centre.prompt = Paint.split_key(prompt, UiTheme.TEXT) if alive and prompt != "" else {}
 
 	# Without respawns (Zombies) the mode shows its own end screen.
-	_centre.dead = not alive and _player.auto_respawn
-	if _centre.dead:
+	var dead := not alive and _player.auto_respawn
+	# The held scoreboard covers the middle: the death card waits under it.
+	_centre.dead = dead and not Input.is_action_pressed(&"scoreboard")
+	if dead:
 		var left := _player.respawn_time_left()
 		_respawn_total = maxf(_respawn_total, left)
 		_centre.respawn_left = left
@@ -230,12 +236,24 @@ func _process(delta: float) -> void:
 	_crosshair.alpha = 0.0 if not alive else 1.0 - clampf(_player.ads_amount() * 1.5, 0.0, 1.0)
 
 
+## True on an online match's results screen.
+func _match_ended() -> bool:
+	var client := Net.client()
+	if client == null:
+		return false
+	var info := client.match_info()
+	return String(info.get("phase", "")) == "ended" and String(info.get("mode", "")) != "zombies"
+
+
 ## The legend's [key, label] pairs for the current device.
 func _legend(gamepad: bool) -> Array:
 	var pairs := []
 	for entry in controls if not controls.is_empty() else PackedStringArray(DEFAULT_CONTROLS):
 		var action := entry.get_slice(":", 0)
 		var label := entry.get_slice(":", 1)
+		# The ammo refill is the Testing Area's alone (off online and in Zombies).
+		if action == "refill_ammo" and not _player.get(&"allow_refill"):
+			continue
 		var key := ""
 		match action:
 			"move":

@@ -88,7 +88,8 @@ func _process(delta: float) -> void:
 	_find_plan()
 	# Zombies has no minimap, as in Call of Duty.
 	var zombies: bool = client.match_info().mode == "zombies"
-	visible = has_plan() and not zombies and not client.in_killcam()
+	var ended: bool = client.match_info().phase == "ended"
+	visible = has_plan() and not zombies and not client.in_killcam() and not ended
 	if score_block != null:
 		score_block.set(&"top", CORNER.y + SIZE + 10.0 if has_plan() and not zombies else CORNER.y)
 	if not visible:
