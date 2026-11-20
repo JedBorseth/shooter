@@ -201,7 +201,9 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Bots: take cover when hurt (a nearby spot the threat cannot see; they crouch, reload, and heal there), and follow the map's lanes (`BotLanes`), picking the one with the fewest teammates. They throw nothing yet.
 - [x] A bot match bench (`godot/tools/bot_bench.gd`): whole bot-only matches headless, written to JSON with the winner, scores, every bot's kills and deaths, tactics, and each mode's objective log (Search and Destroy rounds, Hardpoint zone arrivals, Domination flag time), so bot changes are compared by outcome (`docs/bots.md`).
 - [ ] Bots play like Black Ops 2's Combat Training bots (`docs/bots.md`):
-  - [ ] Search and Destroy: the carrier goes to plant as the clock runs down, escorts guard the plant spot, attackers switch sites when the target is held, a lurker takes the other route, defenders frag enemies near their site, smoke covers a plant or defuse, and Hard bots fake a plant or defuse.
+  - [x] Search and Destroy: the carrier goes to plant as the clock runs down, escorts guard the plant spot, pushers gather and go in together, attackers switch sites when the target is held, a lurker takes the other site, and defenders rotate to a site under attack (`shooter_sim::snd::bots`, `SndPlan`).
+  - [ ] Search and Destroy: defenders frag enemies near their site, smoke covers a plant or defuse, and Hard bots fake a plant or defuse.
+  - [ ] Search and Destroy on Warehouse favours the defenders with bots (attackers won 5 to 8 rounds of 28 on the bench, before and after the plan): look at its sites' approaches.
   - [ ] Domination: bots spread over the flags instead of one team piling onto one, and grenade flags they attack.
   - [ ] Hardpoint: bots head for the next zone before the live one moves, and grenade the enemy holding it.
   - [ ] Capture the Flag: escorts ring the carrier instead of chasing its heels.

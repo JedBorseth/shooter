@@ -633,6 +633,12 @@ impl BotBrain {
         (self.goal, self.path.len())
     }
 
+    /// The enemies the bot saw in the last few seconds: who, where their
+    /// feet were, and the tick.
+    pub fn sightings(&self) -> &[(u8, Vector3, Tick)] {
+        &self.seen
+    }
+
     /// The lane the bot is following, if any.
     pub fn lane(&self) -> Option<usize> {
         self.lane

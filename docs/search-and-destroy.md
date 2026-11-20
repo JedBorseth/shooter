@@ -77,16 +77,35 @@ objectives, as in Capture the Flag and Hardpoint):
 - A bot standing where holding interact would plant or defuse holds it
   (`ObjectiveKind::Use`), looking about, and fights first if an enemy is in
   sight. The same filter as for players holds it still with its weapon away.
-- Attackers: the carrier runs to the round's target site (picked at random
-  each round) and plants; the others push into that site to clear it; the
-  nearest attacker bot fetches a dropped charge; after the plant they hold
-  spots round it.
-- Defenders: split between the sites, holding spots in each. Once the charge
-  is planted, the nearest runs to defuse it and the rest clear round it.
+- Attackers (`shooter_sim::snd::bots`, `SndPlan` on the server): the round
+  starts with a target site picked at random. The carrier waits with the
+  team about 14 m short of it, and every 2.5 to 5 seconds decides to go and
+  plant with a chance equal to the share of the round gone (never under
+  30%, so the team does not wait at the site until it is found), always once
+  85% of it is gone. About three in ten of the other attackers escort it, then
+  guard spots within 6.5 m of the plant spot; with three or more attacker
+  bots one lurks at the other site; the rest gather with the carrier and
+  push into the target site to clear it as the carrier goes to plant. The nearest attacker bot fetches a dropped charge; after the
+  plant they hold spots round it.
+- Switching sites: what the attackers' bots have seen in the last 4 seconds
+  near each site (within 8 m), plus two for each attacker killed there in
+  the last 20 seconds, is the site's threat. At 5 or more, with the other
+  site at least 3 quieter, they switch, once a round and only in its first
+  60%: attackers pushing a site always see someone, and a late switch only
+  runs the clock down.
+- Defenders: split between the sites, holding spots in each. When the
+  defenders' bots see one site clearly under attack (threat 2 or more, and
+  more than the other), all but the first defender of the other site rotate
+  to it; that one anchors. Once the charge is planted, the nearest runs to
+  defuse it and the rest clear round it.
 
-Call of Duty's bots (Black Ops 2 and 3 combat training) play it the same
-way: the carrier goes to a site, the defence splits, and defenders rush the
-defuse.
+Black Ops 2's bots (`maps/mp/bots/_bot_sd.gsc`) are the reference for the
+carrier's timing (`sd_get_time_frac`: the chance to go and plant is the share
+of the round gone, checked every 2.5 to 5 s, forced past 85%) and the escort
+share (`protectcarrier`: three in ten, within 256 units of the plant spot).
+Their defenders take a random site and rush the defuse. Site switching, the
+lurker, and the defenders' rotation are what players do; Black Ops 2's bots
+do not. See [bots.md](bots.md).
 
 ## Scores and medals
 
