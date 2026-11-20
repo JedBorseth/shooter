@@ -80,7 +80,8 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Mounting the weapon on cover (aim and melee, as Modern Warfare 2019): ledges, barriers, sandbag walls, and windowsills from 0.82 m to 1.6 m; the eye rests the gun on the edge, kick and sway shrink, the view stops at a cone ([docs/movement.md](docs/movement.md)). The Testing Area's 1.2 m barriers and 0.84 m sandbags mount.
 - [ ] Mounting on a wall's side (the tall block walls' ends) and at prone height (the culvert's 0.44 m sandbags, once prone exists).
 - [x] Third-person mantle animation (UAL2's `ClimbUp_1m_RM`, played once as a mantle starts).
-- [ ] Prone (third stance, `MoveParams` heights, crawl speed). On hold until there is a CC0 crawl animation for third person.
+- [x] Prone (Black Ops 2's third stance): the prone button or a held crouch, 0.7 s down through a crouch, a 0.8 m/s crawl, eye 0.39 m, legs checked behind, weapon lowered crawling at the hip, steadier aim, pitch limits; an authored prone pose and low crawl for third person, hit zones measured from them ([docs/movement.md](docs/movement.md#prone)).
+- [ ] Prone follow-ups: the crawl plays forward whatever the direction (author backward and sideways crawls); the body lies flat on slopes instead of along them (IW tilts it to the ground); turning prone sweeps the legs through walls (IW stops the turn); a first-person crawl animation (the weapon uses the sprint's lowered pose).
 - [x] Footstep sounds, with surface types and a cadence tied to speed.
 - [x] Fall damage and a landing camera dip scaled by fall speed.
 - [x] Slide camera tilt and slide sound.

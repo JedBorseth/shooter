@@ -124,6 +124,13 @@ func _states() -> Array[Dictionary]:
 	add.call("crouch_back", {"stance": "crouching"}, moving.call(_toward(-135.0, 1.5)))
 	add.call("crouch_between", {"stance": "crouching"}, moving.call(_toward(67.5, 2.0)))
 	add.call("slide", {"stance": "sliding"}, {"velocity": Vector3(0, 0, -7.0)})
+	add.call("prone", {"stance": "prone"})
+	add.call("prone_crawl", {"stance": "prone"}, moving.call(Vector3(0, 0, -0.8)))
+	add.call("prone_crawl_side", {"stance": "prone"}, moving.call(Vector3(0.8, 0, 0)))
+	add.call("prone_ads", {"stance": "prone", "ads": 1.0})
+	add.call("prone_pitch_up", {"stance": "prone", "pitch": 0.8})
+	add.call("prone_pitch_down", {"stance": "prone", "pitch": -0.5})
+	add.call("prone_m1911", {"stance": "prone", "weapon": "m1911"})
 	add.call("ads", {"ads": 1.0})
 	add.call("ads_walk", {"ads": 1.0}, moving.call(Vector3(0, 0, -1.2)))
 	add.call("crouch_ads", {"stance": "crouching", "ads": 1.0})
@@ -515,6 +522,7 @@ func _generate(world: Node3D) -> void:
 	var bases := [
 		["STAND", {}, Vector3.ZERO, 60, 1],
 		["CROUCH", {"stance": "crouching"}, Vector3.ZERO, 60, 1],
+		["PRONE", {"stance": "prone"}, Vector3.ZERO, 60, 1],
 		["SLIDE", {"stance": "sliding"}, Vector3(0, 0, -7.0), 40, 1],
 		["AIR", {"on_floor": false}, Vector3.ZERO, 30, 20],
 	]
@@ -566,6 +574,14 @@ func _generate(world: Node3D) -> void:
 	for i in STRIDE_SAMPLES:
 		var state := {"stance": "crouching", "stride": float(i) / STRIDE_SAMPLES}
 		var pose := await _average_pose(world, state, Vector3(0, 0, -0.72), 60, 1, {}, extra)
+		out.append("%s," % _pose_literal(pose))
+	out.append("];")
+	out.append("")
+	out.append("/// The low crawl prone (`gait::PRONE_LOOP`).")
+	out.append("pub(super) const PRONE_CRAWL: [BasePose; STRIDE_SAMPLES] = [")
+	for i in STRIDE_SAMPLES:
+		var state := {"stance": "prone", "stride": float(i) / STRIDE_SAMPLES}
+		var pose := await _average_pose(world, state, Vector3(0, 0, -0.8), 60, 1, {}, extra)
 		out.append("%s," % _pose_literal(pose))
 	out.append("];")
 	out.append("")
@@ -729,6 +745,9 @@ func _average_pose(
 		if frame >= settle:
 			s.merge(then, true)
 		s["feet"] = feet
+		# Measured holding a pistol, which never blades: the hit zones blade
+		# the upper chest behind a long gun themselves (`carry::Carry::blade`).
+		s.merge({"weapon": "m1911"})
 		player.apply_test_state(s, DT)
 		await process_frame
 		if frame < settle:

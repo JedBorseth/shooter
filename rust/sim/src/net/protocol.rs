@@ -170,7 +170,10 @@ use crate::zombies::drinks::Drinks;
 // Version 70 added the KR-12 to the weapon table.
 // Version 71 added the DM-7 to the weapon table.
 // Version 72 added the SG-12 to the weapon table.
-pub const PROTOCOL_VERSION: u16 = 72;
+// Version 73 added prone: `Stance::Prone`, the input's prone button, the
+// crouch blend's range to 2 (`PlayerView::crouch` and the activity's), and
+// the crouch hold in the predicted move state.
+pub const PROTOCOL_VERSION: u16 = 73;
 /// Longest account session token a hello carries, in bytes.
 pub const MAX_ACCOUNT_TOKEN_BYTES: usize = 2048;
 /// Longest reason a denial carries, in bytes.
@@ -1059,8 +1062,9 @@ pub struct PlayerView {
     pub yaw: u16,
     pub pitch: u16,
     pub stance: Stance,
-    /// How far down the body is between standing and crouched, 0 to 255
-    /// (`MoveState::crouch`): the drawn body and its hit zones follow it.
+    /// How far down the body is, standing (0) to crouched (128) to prone
+    /// (255) (`MoveState::crouch`, [`crouch_to_u8`]): the drawn body and its
+    /// hit zones follow it.
     pub crouch: u8,
     pub sprinting: bool,
     pub on_floor: bool,
@@ -1195,7 +1199,7 @@ impl PlayerView {
             yaw: angle_to_u16(yaw),
             pitch: angle_to_u16(pitch),
             stance: p.state.movement.stance,
-            crouch: (p.state.movement.crouch.clamp(0.0, 1.0) * 255.0).round() as u8,
+            crouch: crouch_to_u8(p.state.movement.crouch),
             sprinting: p.state.movement.sprinting,
             on_floor: p.on_floor,
             ads: (combat.ads.clamp(0.0, 1.0) * 255.0).round() as u8,
@@ -1300,9 +1304,10 @@ impl PlayerView {
         f32::from(self.ads) / 255.0
     }
 
-    /// The crouch blend, 0 standing to 1 crouched (`MoveState::crouch`).
+    /// The crouch blend, 0 standing to 1 crouched to 2 prone
+    /// (`MoveState::crouch`).
     pub fn crouch(&self) -> f32 {
-        f32::from(self.crouch) / 255.0
+        crouch_from_u8(self.crouch)
     }
 }
 
@@ -1575,6 +1580,7 @@ fn write_input(w: &mut impl BitSink, input: &PlayerInput) {
         switch_to.is_some(),
         pickup.is_some(),
         view_tick.is_some(),
+        input.prone,
     ]
     .into_iter()
     .enumerate()
@@ -1610,7 +1616,7 @@ fn write_input(w: &mut impl BitSink, input: &PlayerInput) {
 }
 
 /// Bits of an input's button and optional-part mask.
-const INPUT_FLAG_BITS: u32 = 14;
+const INPUT_FLAG_BITS: u32 = 15;
 
 /// View ticks in wire steps. Only called on quantized ticks, which are exact.
 fn view_steps(tick: f64) -> i64 {
@@ -1724,6 +1730,7 @@ fn read_input(r: &mut impl BitSource) -> DecodeResult<PlayerInput> {
         jump,
         sprint,
         crouch,
+        prone: flag(14),
         fire,
         aim,
         reload,
@@ -3804,6 +3811,9 @@ fn write_move_state(w: &mut impl BitSink, m: &MoveState) {
     w.f32(m.mount_yaw);
     w.f32(m.mount_crouch);
     w.f32(m.mount_blend);
+    w.f32(m.crouch_hold);
+    w.bool(m.hold_from_prone);
+    w.bool(m.prone_held);
 }
 
 fn read_move_state(r: &mut impl BitSource) -> DecodeResult<MoveState> {
@@ -3838,6 +3848,9 @@ fn read_move_state(r: &mut impl BitSource) -> DecodeResult<MoveState> {
         mount_yaw: r.f32()?,
         mount_crouch: r.f32()?,
         mount_blend: r.f32()?,
+        crouch_hold: r.f32()?,
+        hold_from_prone: r.bool()?,
+        prone_held: r.bool()?,
     })
 }
 
@@ -4080,11 +4093,22 @@ fn read_vec3(r: &mut impl BitSource) -> DecodeResult<Vec3> {
     Ok(Vec3::new(r.f32()?, r.f32()?, r.f32()?))
 }
 
+/// A crouch blend (0 standing, 1 crouched, 2 prone) as a byte.
+pub fn crouch_to_u8(crouch: f32) -> u8 {
+    (crouch.clamp(0.0, 2.0) * 127.5).round() as u8
+}
+
+/// A byte from [`crouch_to_u8`] back to the blend.
+pub fn crouch_from_u8(value: u8) -> f32 {
+    f32::from(value) / 127.5
+}
+
 fn write_stance(w: &mut impl BitSink, stance: Stance) {
     let value = match stance {
         Stance::Standing => 0,
         Stance::Crouching => 1,
         Stance::Sliding => 2,
+        Stance::Prone => 3,
     };
     w.bits(value, 2);
 }
@@ -4094,6 +4118,7 @@ fn read_stance(r: &mut impl BitSource) -> DecodeResult<Stance> {
         0 => Ok(Stance::Standing),
         1 => Ok(Stance::Crouching),
         2 => Ok(Stance::Sliding),
+        3 => Ok(Stance::Prone),
         _ => Err(DecodeError::Invalid("stance")),
     }
 }
@@ -4120,7 +4145,7 @@ fn write_activity(w: &mut BitWriter, a: &Activity) {
     w.u8(clock::to_u8(a.progress.step));
     w.bool(a.crouch.is_some());
     if let Some(crouch) = a.crouch {
-        w.u8(clock::to_u8(crouch));
+        w.u8(crouch_to_u8(crouch));
     }
     w.bool(a.throw.is_some());
     if let Some(throw) = a.throw {
@@ -4154,7 +4179,7 @@ fn read_activity(r: &mut BitReader) -> DecodeResult<Activity> {
             step: clock::from_u8(r.u8()?),
         },
         crouch: if r.bool()? {
-            Some(clock::from_u8(r.u8()?))
+            Some(crouch_from_u8(r.u8()?))
         } else {
             None
         },

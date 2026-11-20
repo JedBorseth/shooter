@@ -28,8 +28,13 @@ pub struct MoveInput {
     /// Sprint button state. Sprint is a toggle: a press starts it, and it lasts
     /// until the player stops moving forward, crouches, or `block_sprint` is set.
     pub sprint: bool,
-    /// Crouch button state. Crouch toggles on each press (C), as on classic PC shooters.
+    /// Crouch button state. Crouch toggles on each press (C), as on classic PC
+    /// shooters; held for `prone_hold_time` it goes prone (or, held from
+    /// prone, stands up), as Black Ops' stance button does.
     pub crouch: bool,
+    /// Prone button state (its own bind): a press goes prone, and from prone
+    /// stands up.
+    pub prone: bool,
     /// Set while firing, aiming, or starting a reload: ends and prevents sprinting.
     pub block_sprint: bool,
     /// Scales every ground speed (weapon mobility, aiming down sights).
@@ -50,6 +55,7 @@ impl Default for MoveInput {
             jump: false,
             sprint: false,
             crouch: false,
+            prone: false,
             block_sprint: false,
             speed_multiplier: 1.0,
             sprint_out_time: 0.2,
@@ -64,6 +70,11 @@ pub struct MoveEnv {
     pub on_floor: bool,
     /// False when there is no headroom to stand up from a crouch.
     pub can_stand: bool,
+    /// False when there is no headroom to rise from prone to a crouch.
+    pub can_crouch: bool,
+    /// False when the body lying down would not fit: the legs, which trail
+    /// behind the player prone, would be in a wall.
+    pub can_prone: bool,
     /// Height above the feet of a ledge in front of the player that they could
     /// climb onto (with room on top), if there is one in reach.
     pub ledge: Option<f32>,
@@ -96,6 +107,8 @@ impl Default for MoveEnv {
         Self {
             on_floor: true,
             can_stand: true,
+            can_crouch: true,
+            can_prone: true,
             ledge: None,
             ledge_low: false,
             vault: None,
@@ -112,6 +125,9 @@ pub enum Stance {
     Standing,
     Crouching,
     Sliding,
+    /// Lying on the belly (Black Ops' third stance): a crawl, no sprint,
+    /// slide, jump, or climb.
+    Prone,
 }
 
 /// Per-player state carried from tick to tick. Small and `Copy` so prediction
@@ -143,10 +159,11 @@ pub struct MoveState {
     /// Horizontal velocity of the lunge (`x`, `z`). It stays set for the tick
     /// after the lunge ends, which takes the speed off.
     pub lunge_velocity: Vec2,
-    /// How far down the body is, 0 standing to 1 crouched (or sliding). The
-    /// stance flips at once; this follows it over `crouch_down_time` or
-    /// `stand_up_time`, and drives the capsule, the eye (camera and shot
-    /// origin), the hit zones, and the speed cap together.
+    /// How far down the body is, 0 standing to 1 crouched (or sliding) to 2
+    /// prone. The stance flips at once; this follows it over
+    /// `crouch_down_time` or `stand_up_time` (0 to 1) and `prone_down_time`
+    /// or `prone_up_time` (1 to 2), and drives the capsule, the eye (camera
+    /// and shot origin), the hit zones, and the speed cap together.
     pub crouch: f32,
     /// Seconds of unbroken sprint on the ground. A slide has to be earned
     /// with `slide_min_sprint` of it.
@@ -190,6 +207,14 @@ pub struct MoveState {
     /// How far the mount has settled in, 0 to 1 over `mount::SETTLE_TIME`:
     /// the kick and sway scales and the drawn rest follow it.
     pub mount_blend: f32,
+    /// Seconds the crouch button has been held (0 when up): held for
+    /// `prone_hold_time` it changes stance again.
+    pub crouch_hold: f32,
+    /// The held crouch press started prone: the hold stands up instead of
+    /// going prone.
+    pub hold_from_prone: bool,
+    /// Previous tick's prone button, for edge detection.
+    pub prone_held: bool,
 }
 
 impl MoveState {
@@ -221,6 +246,25 @@ impl MoveState {
 
     pub fn lunging(&self) -> bool {
         self.lunge_time > 0.0
+    }
+
+    /// How far the body is down from a crouch to prone, eased (0 to 1).
+    pub fn prone_amount(&self) -> f32 {
+        prone_ease(self.crouch)
+    }
+
+    /// Getting down to or up from prone: IW's weapons play their prone-in
+    /// and prone-out animations there and fire only once settled.
+    pub fn changing_prone(&self) -> bool {
+        self.crouch > 1.0 && self.crouch < 2.0
+    }
+
+    /// Crawling at the hip (not holding aim): the weapon goes down for the
+    /// crawl, as IW's crawl animation lowers it. Aiming, the body crawls
+    /// slower with the gun up.
+    pub fn crawling(&self, aim: bool) -> bool {
+        let speed = Vec2::new(self.velocity.x, self.velocity.z).length();
+        self.stance == Stance::Prone && !aim && speed > CRAWL_LOWERS_WEAPON
     }
 }
 
@@ -288,6 +332,17 @@ pub struct MoveParams {
     pub slide_slope_max_ratio: f32,
     pub stand_height: f32,
     pub crouch_height: f32,
+    /// The prone body's capsule (as wide as it is tall: it covers the upper
+    /// body; the legs trail behind it) and its eye height.
+    pub prone_height: f32,
+    pub prone_eye_height: f32,
+    /// Crawling speed prone.
+    pub prone_speed: f32,
+    /// Seconds from a crouch down to prone, and back up to a crouch.
+    pub prone_down_time: f32,
+    pub prone_up_time: f32,
+    /// Seconds the crouch button is held to go prone (or to stand from it).
+    pub prone_hold_time: f32,
     /// Seconds to go from standing to crouched, and back up.
     pub crouch_down_time: f32,
     pub stand_up_time: f32,
@@ -389,6 +444,16 @@ impl Default for MoveParams {
             slide_slope_max_ratio: 1.2,
             stand_height: 1.8,
             crouch_height: 1.1,
+            // As wide as the capsule's 0.35 m radius allows; the drawn
+            // body's eyes (`tools/build_gait_animations.py`'s prone pose).
+            prone_height: 0.72,
+            prone_eye_height: 0.39,
+            // IW's prone speed scale, 0.15 of a walk, a little quicker.
+            prone_speed: 0.8,
+            prone_down_time: 0.45,
+            prone_up_time: 0.5,
+            // Black Ops' `cl_stanceHoldTime` (300 ms).
+            prone_hold_time: 0.3,
             crouch_down_time: 0.25,
             stand_up_time: 0.3,
             slide_down_time: 0.15,
@@ -435,22 +500,46 @@ impl MoveParams {
         match stance {
             Stance::Standing => self.stand_height,
             Stance::Crouching | Stance::Sliding => self.crouch_height,
+            Stance::Prone => self.prone_height,
         }
     }
 
     /// Eye height above the feet for a stance, fully in it.
     pub fn eye_height(&self, stance: Stance) -> f32 {
-        self.height(stance) - self.eye_from_top
+        match stance {
+            Stance::Prone => self.prone_eye_height,
+            _ => self.height(stance) - self.eye_from_top,
+        }
     }
 
-    /// Capsule height partway down: `crouch` 0 standing to 1 crouched.
+    /// The crouch blend fully in a stance: 0 standing, 1 crouched or
+    /// sliding, 2 prone.
+    pub fn full_crouch(stance: Stance) -> f32 {
+        match stance {
+            Stance::Standing => 0.0,
+            Stance::Crouching | Stance::Sliding => 1.0,
+            Stance::Prone => 2.0,
+        }
+    }
+
+    /// Capsule height partway down: `crouch` 0 standing to 1 crouched to 2
+    /// prone.
     pub fn height_at(&self, crouch: f32) -> f32 {
+        if crouch > 1.0 {
+            let t = prone_ease(crouch);
+            return self.crouch_height + (self.prone_height - self.crouch_height) * t;
+        }
         let t = crouch_ease(crouch);
         self.stand_height + (self.crouch_height - self.stand_height) * t
     }
 
-    /// Eye height partway down: `crouch` 0 standing to 1 crouched.
+    /// Eye height partway down: `crouch` 0 standing to 1 crouched to 2 prone.
     pub fn eye_height_at(&self, crouch: f32) -> f32 {
+        if crouch > 1.0 {
+            let t = prone_ease(crouch);
+            let crouched = self.crouch_height - self.eye_from_top;
+            return crouched + (self.prone_eye_height - crouched) * t;
+        }
         self.height_at(crouch) - self.eye_from_top
     }
 }
@@ -462,6 +551,15 @@ pub fn crouch_ease(crouch: f32) -> f32 {
     let t = crouch.clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
 }
+
+/// How far a crouch blend (0 to 2) is from a crouch down to prone, on the
+/// same curve: 0 up to a crouch, 1 prone.
+pub fn prone_ease(crouch: f32) -> f32 {
+    crouch_ease(crouch - 1.0)
+}
+
+/// Crawling faster than this (m/s) at the hip lowers the weapon.
+pub const CRAWL_LOWERS_WEAPON: f32 = 0.3;
 
 /// Unit vectors for a yaw: (forward, right), on the horizontal plane.
 pub fn basis_from_yaw(yaw: f32) -> (Vec3, Vec3) {
@@ -498,21 +596,34 @@ fn step_crouch(state: &mut MoveState, env: MoveEnv, params: &MoveParams, dt: f32
     let target = if state.mounted {
         // Up or down until the gun rests on the cover.
         state.mount_crouch
-    } else if state.stance == Stance::Standing {
-        0.0
     } else {
-        1.0
+        match state.stance {
+            Stance::Standing => 0.0,
+            Stance::Crouching | Stance::Sliding => 1.0,
+            Stance::Prone => 2.0,
+        }
     };
+    // A crouch (0 to 1) and lying down (1 to 2) each take their own time; a
+    // tick that reaches a crouch stops there and goes on next tick.
     if target > state.crouch {
-        // Dropping into a slide or ducking through a window is quick.
-        let time = if state.stance == Stance::Sliding || state.vaulting {
-            params.slide_down_time
+        let (time, stop) = if state.crouch >= 1.0 {
+            (params.prone_down_time, target)
+        } else if state.stance == Stance::Sliding || state.vaulting {
+            // Dropping into a slide or ducking through a window is quick.
+            (params.slide_down_time, target.min(1.0))
         } else {
-            params.crouch_down_time
+            (params.crouch_down_time, target.min(1.0))
         };
-        state.crouch = (state.crouch + dt / time.max(1e-3)).min(target);
-    } else if target < state.crouch && (env.can_stand || state.mantling()) {
-        state.crouch = (state.crouch - dt / params.stand_up_time.max(1e-3)).max(target);
+        state.crouch = (state.crouch + dt / time.max(1e-3)).min(stop);
+    } else if target < state.crouch {
+        let (room, time, stop) = if state.crouch > 1.0 {
+            (env.can_crouch, params.prone_up_time, target.max(1.0))
+        } else {
+            (env.can_stand, params.stand_up_time, target)
+        };
+        if room || state.mantling() {
+            state.crouch = (state.crouch - dt / time.max(1e-3)).max(stop);
+        }
     }
 }
 
@@ -526,9 +637,20 @@ fn step_rules(
     let jump_pressed = input.jump && !state.jump_held;
     let crouch_pressed = input.crouch && !state.crouch_held;
     let sprint_pressed = input.sprint && !state.sprint_held;
+    let prone_pressed = input.prone && !state.prone_held;
     state.jump_held = input.jump;
     state.crouch_held = input.crouch;
     state.sprint_held = input.sprint;
+    state.prone_held = input.prone;
+    // A held crouch counts once, when it reaches the hold time.
+    let held_before = state.crouch_hold;
+    if crouch_pressed {
+        state.hold_from_prone = state.stance == Stance::Prone;
+    }
+    state.crouch_hold = if input.crouch { held_before + dt } else { 0.0 };
+    let crouch_long = input.crouch
+        && held_before < params.prone_hold_time
+        && state.crouch_hold >= params.prone_hold_time;
     // The cooldown runs only on the ground, so a jump cannot wait it out.
     if env.on_floor {
         state.slide_cooldown = (state.slide_cooldown - dt).max(0.0);
@@ -552,7 +674,10 @@ fn step_rules(
         return mantle(state, params, dt);
     }
 
-    if let Some(offset) = input.lunge {
+    if let Some(offset) = input.lunge
+        && state.stance != Stance::Prone
+    {
+        // Prone, the knife swings where the body lies.
         start_lunge(state, offset, params);
     }
     if state.lunging() {
@@ -592,11 +717,20 @@ fn step_rules(
         env,
         params,
         wish,
-        crouch_pressed,
-        sprint_pressed,
+        StancePresses {
+            crouch: crouch_pressed,
+            crouch_long,
+            prone: prone_pressed,
+            sprint: sprint_pressed,
+            jump: jump_pressed,
+        },
         horizontal_speed,
         forward,
     );
+    if state.stance == Stance::Prone {
+        // Prone, jump raises the stance (in `update_stance`) and never leaps.
+        state.jump_buffer = 0.0;
+    }
 
     // Jump cancels a crouch when the standing capsule has headroom. Keep the
     // jump buffer intact so the same press can also jump (or mantle).
@@ -617,7 +751,7 @@ fn step_rules(
     // at thin cover or a window vaults over it. In the air, holding jump is
     // enough: a jump at a wall climbs it as soon as the ledge is in reach.
     let climb = state.jump_buffer > 0.0 || (input.jump && !env.on_floor);
-    if climb && wish.y > 0.3 && state.stance != Stance::Crouching {
+    if climb && wish.y > 0.3 && state.stance != Stance::Crouching && state.stance != Stance::Prone {
         let reach = params.mantle_min..=params.mantle_max;
         if let Some(height) = env.ledge.filter(|h| reach.contains(h)) {
             let time = params.mantle_base_time + params.mantle_time_per_metre * height;
@@ -737,6 +871,17 @@ fn step_rules(
     state.velocity
 }
 
+/// This tick's stance button edges.
+#[derive(Clone, Copy)]
+struct StancePresses {
+    crouch: bool,
+    /// The crouch button has just been held for `prone_hold_time`.
+    crouch_long: bool,
+    prone: bool,
+    sprint: bool,
+    jump: bool,
+}
+
 #[allow(clippy::too_many_arguments)]
 fn update_stance(
     state: &mut MoveState,
@@ -744,12 +889,20 @@ fn update_stance(
     env: MoveEnv,
     params: &MoveParams,
     wish: Vec2,
-    crouch_pressed: bool,
-    sprint_pressed: bool,
+    presses: StancePresses,
     horizontal_speed: f32,
     forward: Vec3,
 ) {
+    let crouch_pressed = presses.crouch;
+    let sprint_pressed = presses.sprint;
     let moving_forward = wish.y >= params.sprint_min_forward;
+    // Lying down needs the ground under the body and room for the legs.
+    let can_prone = env.on_floor && env.can_prone && !state.mantling();
+    let go_prone = |state: &mut MoveState| {
+        state.stance = Stance::Prone;
+        state.sprinting = false;
+        state.slide_queued = false;
+    };
     // Toggle sprint, as in classic Call of Duty: a press starts it; it ends when
     // forward input stops, the player crouches, or a weapon action blocks it.
     let start_sprint = sprint_pressed && moving_forward && !input.block_sprint;
@@ -772,18 +925,46 @@ fn update_stance(
                 && state.slide_cooldown <= 0.0
             {
                 start_slide(state, input, params, forward);
+            } else if presses.prone && can_prone {
+                go_prone(state);
             } else if crouch_pressed {
                 state.stance = Stance::Crouching;
                 state.sprinting = false;
+            } else if presses.crouch_long && !state.hold_from_prone && can_prone {
+                // A crouch held from a crouch stood up on its press; held
+                // on, it goes prone.
+                go_prone(state);
             } else {
                 state.sprinting = start_sprint || keep_sprint;
             }
         }
         Stance::Crouching => {
-            // Crouch is a toggle too; sprinting out of a crouch stands the player up.
-            if (crouch_pressed || start_sprint) && env.can_stand {
+            if (presses.prone || (presses.crouch_long && !state.hold_from_prone)) && can_prone {
+                go_prone(state);
+            } else if (crouch_pressed || start_sprint) && env.can_stand {
+                // Crouch is a toggle too; sprinting out of a crouch stands
+                // the player up.
                 state.stance = Stance::Standing;
                 state.sprinting = start_sprint;
+            } else if presses.crouch_long && state.hold_from_prone && env.can_stand {
+                // Held from prone: the press rose to a crouch, the hold
+                // stands.
+                state.stance = Stance::Standing;
+            }
+        }
+        Stance::Prone => {
+            if !env.on_floor {
+                // Off a ledge: no lying in the air.
+                state.stance = Stance::Crouching;
+            } else if (presses.prone || start_sprint) && env.can_stand {
+                // The prone button stands up; so does a sprint, which runs.
+                state.stance = Stance::Standing;
+                state.sprinting = start_sprint;
+            } else if (crouch_pressed || presses.jump) && env.can_crouch {
+                // Crouch, or jump, raises the stance one step (the jump
+                // goes to it, not on to a leap).
+                state.stance = Stance::Crouching;
+                state.jump_buffer = 0.0;
             }
         }
         Stance::Sliding => {
@@ -1055,11 +1236,14 @@ fn max_speed(state: &MoveState, params: &MoveParams) -> f32 {
 fn gait_speed(state: &MoveState, params: &MoveParams) -> f32 {
     let run = crouch_ease(state.sprint_blend);
     let standing = params.walk_speed + (params.sprint_speed - params.walk_speed) * run;
-    if state.stance == Stance::Standing {
+    if state.stance == Stance::Standing && state.crouch <= 1.0 {
         return standing;
     }
     let t = crouch_ease(state.crouch);
-    standing + (params.crouch_speed - standing) * t
+    let crouched = standing + (params.crouch_speed - standing) * t;
+    // Lying down slows on to a crawl; rising from prone stays slow until
+    // the body is up to a crouch.
+    crouched + (params.prone_speed - crouched) * prone_ease(state.crouch)
 }
 
 /// The speed scale for a direction of input: full forward, `strafe_scale`
@@ -1300,6 +1484,8 @@ mod tests {
         let low_ceiling = MoveEnv {
             on_floor: true,
             can_stand: false,
+            can_crouch: true,
+            can_prone: true,
             ledge: None,
             ledge_low: false,
             vault: None,
@@ -1374,6 +1560,8 @@ mod tests {
             input,
             MoveEnv {
                 can_stand: false,
+                can_crouch: true,
+                can_prone: true,
                 ..MoveEnv::default()
             },
             1,
@@ -1463,6 +1651,8 @@ mod tests {
     const AIR: MoveEnv = MoveEnv {
         on_floor: false,
         can_stand: true,
+        can_crouch: true,
+        can_prone: true,
         ledge: None,
         ledge_low: false,
         vault: None,
@@ -1682,6 +1872,8 @@ mod tests {
         let air = MoveEnv {
             on_floor: false,
             can_stand: true,
+            can_crouch: true,
+            can_prone: true,
             ledge: None,
             ledge_low: false,
             vault: None,
@@ -1902,6 +2094,153 @@ mod tests {
         }
     }
 
+    fn press(state: &mut MoveState, input: MoveInput, env: MoveEnv) {
+        run(state, input, env, 1);
+        run(state, MoveInput::default(), env, 1);
+    }
+
+    fn prone_button() -> MoveInput {
+        MoveInput {
+            prone: true,
+            ..Default::default()
+        }
+    }
+
+    fn crouch_button() -> MoveInput {
+        MoveInput {
+            crouch: true,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn the_prone_button_lies_down_through_a_crouch_and_stands_back_up() {
+        let p = MoveParams::default();
+        let mut s = MoveState::default();
+        press(&mut s, prone_button(), MoveEnv::default());
+        assert_eq!(s.stance, Stance::Prone);
+        // Down through a crouch: 0.25 s to it, then 0.45 s on to prone.
+        let mut t = 2.0 * DT;
+        while s.crouch < 2.0 {
+            run(&mut s, MoveInput::default(), MoveEnv::default(), 1);
+            t += DT;
+            assert!(t < 2.0);
+        }
+        let expected = p.crouch_down_time + p.prone_down_time;
+        assert!((t - expected).abs() < 0.05, "down in {t} s");
+        assert!((s.eye_height(&p) - p.prone_eye_height).abs() < 1e-4);
+        assert!((s.height(&p) - p.prone_height).abs() < 1e-4);
+        // The prone button again stands all the way up.
+        press(&mut s, prone_button(), MoveEnv::default());
+        assert_eq!(s.stance, Stance::Standing);
+        let mut t = 2.0 * DT;
+        while s.crouch > 0.0 {
+            run(&mut s, MoveInput::default(), MoveEnv::default(), 1);
+            t += DT;
+            assert!(t < 2.0);
+        }
+        let expected = p.prone_up_time + p.stand_up_time;
+        assert!((t - expected).abs() < 0.05, "up in {t} s");
+    }
+
+    #[test]
+    fn holding_crouch_goes_prone_and_from_prone_stands() {
+        let p = MoveParams::default();
+        let mut s = MoveState::default();
+        let ticks = (p.prone_hold_time / DT) as usize;
+        // A tap crouches; the hold goes on to prone at the hold time.
+        run(&mut s, crouch_button(), MoveEnv::default(), ticks - 2);
+        assert_eq!(s.stance, Stance::Crouching);
+        run(&mut s, crouch_button(), MoveEnv::default(), 4);
+        assert_eq!(s.stance, Stance::Prone);
+        run(&mut s, MoveInput::default(), MoveEnv::default(), 120);
+        // From prone a tap rises to a crouch...
+        press(&mut s, crouch_button(), MoveEnv::default());
+        assert_eq!(s.stance, Stance::Crouching);
+        run(&mut s, MoveInput::default(), MoveEnv::default(), 120);
+        // ...and, from prone, a hold stands.
+        let mut s2 = MoveState::default();
+        press(&mut s2, prone_button(), MoveEnv::default());
+        run(&mut s2, MoveInput::default(), MoveEnv::default(), 120);
+        run(&mut s2, crouch_button(), MoveEnv::default(), ticks + 2);
+        assert_eq!(s2.stance, Stance::Standing);
+        // Holding on does not lie down again.
+        run(&mut s2, crouch_button(), MoveEnv::default(), 120);
+        assert_eq!(s2.stance, Stance::Standing);
+    }
+
+    #[test]
+    fn prone_crawls_and_never_sprints_jumps_or_slides() {
+        let p = MoveParams::default();
+        let mut s = MoveState::default();
+        press(&mut s, prone_button(), MoveEnv::default());
+        run(&mut s, forward(), MoveEnv::default(), 240);
+        assert!((speed(&s) - p.prone_speed).abs() < 0.05, "{}", speed(&s));
+        // Jump raises the stance to a crouch, without a leap.
+        press(
+            &mut s,
+            MoveInput {
+                jump: true,
+                ..forward()
+            },
+            MoveEnv::default(),
+        );
+        assert_eq!(s.stance, Stance::Crouching);
+        assert!(s.velocity.y <= 0.0);
+        // A sprint press from prone stands and runs.
+        let mut s = MoveState::default();
+        press(&mut s, prone_button(), MoveEnv::default());
+        run(&mut s, forward(), MoveEnv::default(), 120);
+        run(
+            &mut s,
+            MoveInput {
+                sprint: true,
+                ..forward()
+            },
+            MoveEnv::default(),
+            1,
+        );
+        assert_eq!(s.stance, Stance::Standing);
+        assert!(s.sprinting);
+        // Rising, the speed stays a crawl's until the body is up.
+        run(&mut s, forward(), MoveEnv::default(), 10);
+        assert!(speed(&s) < p.crouch_speed, "{}", speed(&s));
+    }
+
+    #[test]
+    fn prone_needs_room_and_ground() {
+        let mut s = MoveState::default();
+        let cramped = MoveEnv {
+            can_prone: false,
+            ..MoveEnv::default()
+        };
+        press(&mut s, prone_button(), cramped);
+        assert_eq!(s.stance, Stance::Standing);
+        let air = MoveEnv {
+            on_floor: false,
+            ..MoveEnv::default()
+        };
+        press(&mut s, prone_button(), air);
+        assert_ne!(s.stance, Stance::Prone);
+        // Lying under something low: no rising until there is room, and
+        // off a ledge the body comes up to a crouch.
+        let mut s = MoveState::default();
+        press(&mut s, prone_button(), MoveEnv::default());
+        run(&mut s, MoveInput::default(), MoveEnv::default(), 120);
+        let low = MoveEnv {
+            can_crouch: false,
+            can_stand: false,
+            ..MoveEnv::default()
+        };
+        press(&mut s, crouch_button(), low);
+        press(&mut s, prone_button(), low);
+        run(&mut s, MoveInput::default(), low, 60);
+        assert_eq!(s.stance, Stance::Prone);
+        assert!((s.crouch - 2.0).abs() < 1e-6);
+        run(&mut s, MoveInput::default(), air, 1);
+        assert_eq!(s.stance, Stance::Crouching);
+    }
+
     #[test]
     fn jumping_cancels_a_slide_without_leaping() {
         let mut s = MoveState::default();
@@ -1936,6 +2275,8 @@ mod tests {
         let low_ceiling = MoveEnv {
             on_floor: true,
             can_stand: false,
+            can_crouch: true,
+            can_prone: true,
             ledge: None,
             ledge_low: false,
             vault: None,
@@ -2045,6 +2386,8 @@ mod tests {
         };
         let low = MoveEnv {
             can_stand: false,
+            can_crouch: true,
+            can_prone: true,
             ..Default::default()
         };
         // Already standing (it left the crouch under open sky), then walked
@@ -2690,6 +3033,8 @@ mod tests {
         run_at(&mut s, crouch_forward(), MoveEnv::default(), TICK);
         let low_air = MoveEnv {
             can_stand: false,
+            can_crouch: true,
+            can_prone: true,
             ..AIR
         };
         run_at(&mut s, forward(), low_air, p.coyote_time * 2.0);

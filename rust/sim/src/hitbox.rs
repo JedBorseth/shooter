@@ -120,7 +120,7 @@ pub struct Activity {
     pub weapon: Option<WeaponId>,
     /// How far along the stride, a reload, and a mantle the body is.
     pub progress: clock::Progress,
-    /// How far down the body is between standing and crouched, 0 to 1
+    /// How far down the body is, 0 standing to 1 crouched to 2 prone
     /// (`MoveState::crouch`), while a stance change is under way. `None`
     /// takes it from the stance: fully in it.
     pub crouch: Option<f32>,
@@ -372,19 +372,35 @@ fn ground_pose(pose: &HitboxPose, speed: f32) -> BasePose {
     }
     // Partway through a stance change, the body is between the two, as the
     // drawn character blends them by the same eased amount.
-    let full = if pose.stance == Stance::Crouching {
-        1.0
-    } else {
-        0.0
+    let full = match pose.stance {
+        Stance::Crouching => 1.0,
+        Stance::Prone => 2.0,
+        _ => 0.0,
     };
-    let down = crate::movement::crouch_ease(activity.crouch.unwrap_or(full))
-        .max(activity.kneel.unwrap_or(0.0));
-    if down <= 0.0 {
+    let blend = activity.crouch.unwrap_or(full);
+    let down = crate::movement::crouch_ease(blend).max(activity.kneel.unwrap_or(0.0));
+    let upright = if down <= 0.0 {
         standing()
     } else if down >= 1.0 {
         crouched()
     } else {
         standing().lerp(&crouched(), down)
+    };
+    // From a crouch on down to prone: lying still, or the low crawl at the
+    // stride.
+    let prone = crate::movement::prone_ease(blend);
+    if prone <= 0.0 {
+        return upright;
+    }
+    let lying = if moving {
+        cycle(&poses::PRONE_CRAWL, stride)
+    } else {
+        poses::PRONE
+    };
+    if prone >= 1.0 {
+        lying
+    } else {
+        upright.lerp(&lying, prone)
     }
 }
 
@@ -467,7 +483,12 @@ pub fn hitboxes(pose: &HitboxPose) -> [Hitbox; COUNT] {
     // on the planted feet as the aim turns (`Progress::turn`), turning about
     // the feet, and the spine turns the rest.
     let moving = speed > gait::MOVING_SPEED && pose.stance != Stance::Sliding;
-    let (lower_yaw, pivot) = if moving {
+    // Lying down, the whole body turns with the aim about the eyes.
+    let lying = pose.stance == Stance::Prone
+        || activity
+            .crouch
+            .is_some_and(|c| crate::movement::prone_ease(c) > 0.0);
+    let (lower_yaw, pivot) = if moving || lying {
         (0.0, hips)
     } else {
         (-activity.progress.turn, Vec3::ZERO)

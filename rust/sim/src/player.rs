@@ -22,6 +22,8 @@ pub struct PlayerInput {
     /// Sprint toggle; while scoped it holds breath instead.
     pub sprint: bool,
     pub crouch: bool,
+    /// The prone button (its own bind; holding crouch goes prone too).
+    pub prone: bool,
     pub fire: bool,
     pub aim: bool,
     pub reload: bool,
@@ -79,6 +81,7 @@ impl PlayerInput {
             jump: false,
             sprint: false,
             crouch: false,
+            prone: false,
             fire: false,
             melee: false,
             lunge: None,
@@ -229,12 +232,16 @@ impl PlayerState {
     pub fn combat_context(&self, env: MoveEnv, params: &MoveParams) -> CombatContext {
         let speed = Vec2::new(self.movement.velocity.x, self.movement.velocity.z).length();
         CombatContext {
-            // The weapon is lowered while climbing, as while sprinting.
+            // The weapon is lowered while climbing, as while sprinting, and
+            // while getting down to or up from prone (and crawling at the
+            // hip, in `step`).
             sprinting: self.movement.sprinting
                 || self.movement.mantling()
-                || self.movement.on_ladder(),
+                || self.movement.on_ladder()
+                || self.movement.changing_prone(),
             airborne: !env.on_floor,
             crouched: self.movement.stance == crate::movement::Stance::Crouching,
+            prone: self.movement.stance == crate::movement::Stance::Prone,
             move_ratio: speed / params.walk_speed,
             mount: self.movement.mount_blend,
             handling: self.perks.handling(),
@@ -353,6 +360,7 @@ pub fn step(
             jump: false,
             sprint: false,
             crouch: false,
+            prone: false,
             melee: false,
             lunge: None,
             lethal: false,
@@ -459,6 +467,7 @@ pub fn step(
         // as a fresh sprint press.
         sprint: input.sprint,
         crouch: input.crouch,
+        prone: input.prone,
         block_sprint: input.fire
             || input.aim
             || reload_pressed
@@ -498,7 +507,8 @@ pub fn step(
         throw,
         throw_held,
     };
-    let ctx = state.combat_context(env, &params.movement);
+    let mut ctx = state.combat_context(env, &params.movement);
+    ctx.sprinting |= state.movement.crawling(input.aim);
     let mut combat = Vec::new();
     weapon::step(&mut state.combat, &combat_input, &ctx, dt, &mut combat);
     events.extend(combat.into_iter().map(PlayerEvent::Combat));
@@ -580,6 +590,8 @@ mod tests {
     const AIRBORNE: MoveEnv = MoveEnv {
         on_floor: false,
         can_stand: true,
+        can_crouch: true,
+        can_prone: true,
         ledge: None,
         ledge_low: false,
         vault: None,
@@ -1256,6 +1268,7 @@ mod tests {
             jump: true,
             sprint: true,
             crouch: true,
+            prone: true,
             fire: true,
             aim: true,
             reload: true,

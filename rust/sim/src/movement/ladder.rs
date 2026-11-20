@@ -157,7 +157,11 @@ fn grab(
     params: &MoveParams,
     into: f32,
 ) -> bool {
-    if state.ladder_cooldown > 0.0 || state.stance == Stance::Sliding || state.mantling() {
+    if state.ladder_cooldown > 0.0
+        || state.stance == Stance::Sliding
+        || state.stance == Stance::Prone
+        || state.mantling()
+    {
         return false;
     }
     if state.stance == Stance::Crouching && !env.can_stand {

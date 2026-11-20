@@ -71,6 +71,38 @@ the blend holds until the overhead is clear. The headroom cast is a sphere
 almost as wide as the capsule (0.34 m against 0.35 m), so a leaned-on wall is
 not a ceiling but an overhang's edge over the shoulders is.
 
+## Prone
+
+Black Ops 2's third stance. CMU's motion capture library has only a
+hands-and-knees crawl and lying-down clips, and no free animation pack has a
+belly crawl, so the prone pose and the low crawl are authored from the
+soldier's idle pose (`tools/build_gait_animations.py`: `gait/Prone`,
+`gait/Prone_Crawl`).
+
+| | Here | Reference |
+| --- | --- | --- |
+| Get down | the prone button (Ctrl), or crouch held 0.3 s (C, or B on a controller): down through a crouch, 0.25 s to it and 0.45 s on (0.7 s) | Black Ops' `cl_stanceHoldTime` 300 ms; IW stance changes pass through a crouch |
+| Get up | the prone button or a crouch held 0.3 s stands (0.5 s to a crouch, 0.3 s on); a crouch tap or jump rises to a crouch; a sprint press stands and runs | Black Ops: the held stance button stands from prone; jump raises the stance one step |
+| Eye, capsule | eye 0.39 m (the drawn body's eyes), capsule 0.72 m (as wide as it is tall: the upper body) | IW prone viewheight 11 units (0.28 m), on a 30-unit box; scaled to our taller body |
+| Body | lies along the aim with the eyes over the player's origin; the legs trail 1.45 m behind | IW's prone body: the box covers the upper body, the legs are checked behind it |
+| Crawl | 0.8 m/s, any direction; aiming, the ADS speed scale slows it more | IW `player_proneSpeedScale` about 0.15 of a walk |
+| Room | lying down needs nothing solid within 1.45 m behind the feet at 0.2 m up (two rays); rising waits for headroom (to a crouch, then to standing) | Call of Duty's "can't go prone here" |
+| Weapon | lowered while getting down or up, and while crawling at the hip; aimed, the crawl keeps the gun up | IW weapons' prone-in, prone-out, and crawl animations; no fire until settled |
+| Accuracy | hip cone 0.6 x (crouched 0.8 x), the crouch's steadier kick, aimed sway 0.4 x | IW `hipSpreadProneMin` under the ducked one; weapons' `idleProneFactor` about 0.4 |
+| View | pitch held between 30 degrees down and 50 up, eased in as the body goes down; the whole body turns with the aim | the ground and the neck bound the prone view |
+| Not allowed | sprint, slide, jump, mantle, vault, ladder grab, melee lunge (the knife still swings); off a ledge the body comes up to a crouch | |
+
+Black Ops 2 has no dive to prone (Black Ops 1's dolphin dive), so neither do
+we. The stance blend runs on from a crouch (`MoveState::crouch`: 0 standing,
+1 crouched, 2 prone), so the capsule, the camera, the shot origin, the hit
+zones (`hitbox::poses::PRONE`, `PRONE_CRAWL`), the third-person body, and
+the speed cap all follow one curve; snapshots carry it as a byte
+(`protocol::crouch_to_u8`). New state: `Stance::Prone`,
+`MoveState::crouch_hold`, `hold_from_prone`, and `prone_held`; the input
+carries the prone button. Footsteps prone use the crouched step's quiet
+level. `godot/tests/prone_test.gd` checks the timings, heights, crawl, holds,
+and room; `net_test.gd` predicts prone online with no corrections.
+
 ## Slide
 
 | | Here | Reference |

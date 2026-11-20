@@ -314,6 +314,8 @@ mod tests {
         let env = MoveEnv {
             on_floor: p.on_floor,
             can_stand: true,
+            can_crouch: true,
+            can_prone: true,
             ledge: None,
             ledge_low: false,
             vault: None,

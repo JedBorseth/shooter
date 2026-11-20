@@ -351,7 +351,8 @@ Export presets are in `godot/export_presets.cfg`. The Rust library for each plat
 | --- | --- |
 | Move / look | WASD / mouse |
 | Sprint (toggle; ends when you stop moving forward, fire, or aim) | Shift |
-| Crouch (toggle; slides while sprinting; again to cancel the slide) | C or Ctrl |
+| Crouch (toggle; slides while sprinting; again to cancel the slide; hold to go prone, or from prone to stand) | C |
+| Prone (again, or sprint, to stand; crouch or Space rises to a crouch) | Ctrl, or hold C |
 | Mantle (climb a ledge or low wall) | Space while walking at it |
 | Ladder: climb, climb down, slide down, jump off | walk into it (or off its top), W / S, crouch, Space |
 | Inspect weapon | I |
@@ -378,7 +379,7 @@ Gamepads work too (Xbox layout shown; PlayStation and others use the same positi
 | --- | --- |
 | Move / look | Left stick / right stick |
 | Sprint (toggle) | L3 (click the left stick) |
-| Crouch (toggle; slides while sprinting) | B |
+| Crouch (toggle; slides while sprinting; hold to go prone) | B |
 | Jump | A |
 | Fire / aim down sights | RT / LT |
 | Reload | X |

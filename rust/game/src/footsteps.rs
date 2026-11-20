@@ -79,7 +79,8 @@ impl Gait {
         }
         Some(match stance {
             Stance::Sliding => return None,
-            Stance::Crouching => Self::Crouch,
+            // A crawl rustles no louder than a crouched step.
+            Stance::Crouching | Stance::Prone => Self::Crouch,
             Stance::Standing if sprinting => Self::Sprint,
             Stance::Standing if speed < walk_speed * QUIET_SPEED_RATIO => Self::Quiet,
             Stance::Standing => Self::Walk,

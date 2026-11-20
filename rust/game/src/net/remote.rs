@@ -202,7 +202,7 @@ impl RemotePlayer {
     }
 
     /// Applies a made-up snapshot, as if the server sent it (tests): standing
-    /// at `feet` with an M4, `stance` 0 standing, 1 crouching, 2 sliding.
+    /// at `feet` with an M4, `stance` 0 standing, 1 crouching, 2 sliding, 3 prone.
     #[func]
     #[allow(clippy::too_many_arguments)]
     fn apply_test_sample(
@@ -221,6 +221,7 @@ impl RemotePlayer {
         let stance = match stance {
             1 => Stance::Crouching,
             2 => Stance::Sliding,
+            3 => Stance::Prone,
             _ => Stance::Standing,
         };
         let sample = RemoteSample {
@@ -230,7 +231,7 @@ impl RemotePlayer {
             yaw: 0.0,
             pitch: 0.0,
             stance,
-            crouch: if stance == Stance::Standing { 0.0 } else { 1.0 },
+            crouch: MoveParams::full_crouch(stance),
             sprinting,
             on_floor,
             ads: 0.0,
@@ -257,7 +258,7 @@ impl RemotePlayer {
     }
 
     /// Applies a made-up snapshot from a dictionary (tests): `feet`
-    /// (Vector3), `yaw`, `pitch`, `stance` ("standing", "crouching",
+    /// (Vector3), `yaw`, `pitch`, `stance` ("standing", "crouching", "prone",
     /// "sliding"), `sprinting`, `on_floor`, `ads`, `weapon` (file key),
     /// `reloading`, `reload_empty`, `mantling`, `vaulting`, `alive`, `hits`, `hit_heading`, `hit_part`
     /// (the snapshot's hit fields), `crouch` (0..1, the crouch blend;
@@ -287,6 +288,7 @@ impl RemotePlayer {
         let stance = match get("stance").map(|v| v.to_string()).as_deref() {
             Some("crouching") => Stance::Crouching,
             Some("sliding") => Stance::Sliding,
+            Some("prone") => Stance::Prone,
             _ => Stance::Standing,
         };
         let sample = RemoteSample {
@@ -296,7 +298,7 @@ impl RemotePlayer {
             yaw: f("yaw").unwrap_or(0.0),
             pitch: f("pitch").unwrap_or(0.0),
             stance,
-            crouch: f("crouch").unwrap_or(if stance == Stance::Standing { 0.0 } else { 1.0 }),
+            crouch: f("crouch").unwrap_or(MoveParams::full_crouch(stance)),
             sprinting: b("sprinting", false),
             on_floor: b("on_floor", true),
             ads: f("ads").unwrap_or(0.0),

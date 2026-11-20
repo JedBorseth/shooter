@@ -364,6 +364,8 @@ pub struct SoldierRig {
     /// positive right; `gait::direction`), eased round.
     direction: f32,
     crouch: f32,
+    /// How far down from a crouch to prone, eased (0 to 1).
+    prone: f32,
     slide: f32,
     air: f32,
     air_time: f32,
@@ -687,6 +689,7 @@ impl SoldierRig {
         let stance = match get("stance").map(|v| v.to_string()).as_deref() {
             Some("crouching") => Stance::Crouching,
             Some("sliding") => Stance::Sliding,
+            Some("prone") => Stance::Prone,
             _ => Stance::Standing,
         };
         let reload = f("reload", -1.0);
@@ -910,6 +913,7 @@ impl SoldierRig {
                 && frame.on_floor
                 && !frame.mantling
                 && frame.stance != Stance::Sliding
+                && frame.stance != Stance::Prone
                 && speed <= gait::MOVING_SPEED;
             let (turn, strides) = self.own_turning.tick(frame.yaw, still, dt);
             stepped = strides;
@@ -918,10 +922,20 @@ impl SoldierRig {
 
         let kneel = frame.kneel();
         let kneeling = kneel.is_some();
-        let crouch_target = if frame.stance == Stance::Crouching || kneeling {
+        let crouch_target =
+            if frame.stance == Stance::Crouching || frame.stance == Stance::Prone || kneeling {
+                1.0
+            } else {
+                0.0
+            };
+        let prone_target = if frame.stance == Stance::Prone {
             1.0
         } else {
             0.0
+        };
+        self.prone = match frame.crouch {
+            Some(blend) => shooter_sim::movement::prone_ease(blend),
+            None => self.prone + (prone_target - self.prone) * smoothing(8.0, dt),
         };
         let slide_target = if frame.stance == Stance::Sliding {
             1.0
@@ -1174,6 +1188,12 @@ impl SoldierRig {
                 // A leg hit dips the body toward a crouch for a moment.
                 let stance = (self.crouch + self.buckle.value).clamp(0.0, 1.0);
                 set(tree, "stance/blend_amount", stance.to_variant());
+                // Down from the crouch to prone; the crawl runs on the
+                // stride.
+                set(tree, "prone_seek/seek_request", self.stride.to_variant());
+                let crawl = if moving { 1.0f32 } else { 0.0 };
+                set(tree, "prone_move/blend_amount", crawl.to_variant());
+                set(tree, "prone/blend_amount", self.prone.to_variant());
 
                 set(tree, "slide/blend_amount", self.slide.to_variant());
                 let start = self.slide_for.map_or(1.0, |t| {
@@ -1239,6 +1259,7 @@ impl SoldierRig {
             && frame.ladder.is_none()
             && !frame.mantling
             && frame.stance != Stance::Sliding
+            && self.prone <= 0.0
             && self.air < 0.05;
         let mut target = [0.0f32; 2];
         if near && grounded && !moving {
@@ -2037,6 +2058,17 @@ impl SoldierRig {
         add("crouch_seek", AnimationNodeTimeSeek::new_gd().upcast(), 1.0);
         add("crouch", AnimationNodeBlend2::new_gd().upcast(), 1.5);
         add("stance", AnimationNodeBlend2::new_gd().upcast(), 2.0);
+        // Prone (`tools/build_gait_animations.py`): lying still, or the low
+        // crawl on the stride.
+        add("prone_idle", clip("gait/Prone").upcast(), 1.5);
+        add(
+            "prone_loop",
+            stride_clip(&gait::PRONE_LOOP, 0).upcast(),
+            1.5,
+        );
+        add("prone_seek", AnimationNodeTimeSeek::new_gd().upcast(), 1.75);
+        add("prone_move", AnimationNodeBlend2::new_gd().upcast(), 2.0);
+        add("prone", AnimationNodeBlend2::new_gd().upcast(), 2.25);
 
         add("slide_clip", clip("ual2/Slide").upcast(), 2.0);
         // Getting down into a slide and up out of it, each seeked by the rig.
@@ -2114,7 +2146,12 @@ impl SoldierRig {
             ("crouch", 1, "crouch_seek"),
             ("stance", 0, "stand"),
             ("stance", 1, "crouch"),
-            ("slide", 0, "stance"),
+            ("prone_seek", 0, "prone_loop"),
+            ("prone_move", 0, "prone_idle"),
+            ("prone_move", 1, "prone_seek"),
+            ("prone", 0, "stance"),
+            ("prone", 1, "prone_move"),
+            ("slide", 0, "prone"),
             ("slide_start_seek", 0, "slide_start_clip"),
             ("slide_in", 0, "slide_clip"),
             ("slide_in", 1, "slide_start_seek"),

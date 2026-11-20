@@ -79,6 +79,7 @@ impl BodyClock {
             && s.on_floor
             && !mantling
             && s.stance != Stance::Sliding
+            && s.stance != Stance::Prone
             && speed <= gait::MOVING_SPEED;
         let (turn, stepped, rate) = match s.ladder.filter(|_| s.alive) {
             // On a ladder the body faces the rungs, and the climb's hands

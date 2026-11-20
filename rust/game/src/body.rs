@@ -91,9 +91,12 @@ pub fn tick(
     let probes = crate::profile::scope("body/probes (headroom, climb, ladder, mount)");
     parts.headroom.force_shapecast_update();
     let climb = find_climb(parts, &params.movement, p, input.yaw);
+    let movement = &p.state.movement;
     let env = MoveEnv {
         on_floor: p.on_floor,
         can_stand: !parts.headroom.is_colliding(),
+        can_crouch: movement.crouch <= 1.0 || room_above(parts, &params.movement, movement.crouch),
+        can_prone: prone_room(parts, p, input),
         ledge: climb.ledge,
         ledge_low: climb.ledge_low,
         vault: climb.vault,
@@ -190,6 +193,53 @@ fn going_down(parts: &BodyParts, velocity: Vector3) -> bool {
         .get("position")
         .and_then(|p| p.try_to::<Vector3>().ok())
         .is_none_or(|p| p.y < feet.y - 0.02)
+}
+
+/// Room over the body to rise from prone to a crouch: the capsule sweeps
+/// up to a crouched one's height without touching anything.
+fn room_above(parts: &BodyParts, params: &MoveParams, crouch: f32) -> bool {
+    let rise = params.crouch_height - params.height_at(crouch);
+    let mut body = parts.body.clone();
+    let from = body.get_global_transform();
+    rise <= 0.0 || !body.test_move(from, Vector3::UP * rise)
+}
+
+/// How far behind the feet a prone body's legs reach, and how high above
+/// the ground they are checked (`tools/build_gait_animations.py`'s pose).
+const PRONE_LEGS: f32 = 1.45;
+const PRONE_LEGS_HEIGHT: f32 = 0.2;
+
+/// Room to lie down facing `yaw`, or to stay down: the legs trail behind
+/// the player prone, so nothing solid may be within their reach behind the
+/// body at their height (Call of Duty's "can't go prone here").
+fn prone_room(parts: &BodyParts, p: &Predicted, input: &PlayerInput) -> bool {
+    // Only asked while a stance button could take the body down.
+    let movement = &p.state.movement;
+    if !(input.prone || input.crouch) || movement.stance == Stance::Prone || !p.on_floor {
+        return true;
+    }
+    let yaw = input.yaw;
+    let body = &parts.body;
+    let Some(mut space) = body.get_world_3d().and_then(|w| w.get_direct_space_state()) else {
+        return true;
+    };
+    let (forward, right) = shooter_sim::movement::basis_from_yaw(yaw);
+    let back = -to_godot(forward);
+    let side = to_godot(right) * 0.15;
+    let feet = to_godot(p.position) + Vector3::UP * PRONE_LEGS_HEIGHT;
+    let exclude: Array<Rid> = array![body.get_rid()];
+    [side, -side].into_iter().all(|offset| {
+        let Some(query) = PhysicsRayQueryParameters3D::create_ex(
+            feet + offset,
+            feet + offset + back * PRONE_LEGS,
+        )
+        .collision_mask(WORLD_LAYER)
+        .exclude(&exclude)
+        .done() else {
+            return true;
+        };
+        space.intersect_ray(&query).is_empty()
+    })
 }
 
 /// The walkable floor's normal under a sliding body (`MoveEnv::floor_normal`;

@@ -2278,6 +2278,8 @@ mod tests {
         let env = MoveEnv {
             on_floor: true,
             can_stand: true,
+            can_crouch: true,
+            can_prone: true,
             ledge: None,
             ledge_low: false,
             vault: None,
