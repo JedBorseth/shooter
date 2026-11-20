@@ -130,5 +130,6 @@ builds the gun's real `mid` and `far` recordings and skips its near layers;
 | AK-47 | Counter-Strike 2 AK-47 | Whole shot, approved 2026-11-19 (variant "K4") |
 | M4 | (ask) | Coherent real mix direction approved; needs the whole-shot treatment |
 | PDW-9, BR-3, LSW-6, M1911, M870, M40 | (ask) | Old layered build |
+| DM-7 | Counter-Strike 2's SCAR-20 | Whole shot from the Marlin 336, held for listening (`weapon-audio/dm7.wav`, variant A) |
 
 Update this table as guns ship.
