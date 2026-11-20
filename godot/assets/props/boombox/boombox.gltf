@@ -1,0 +1,284 @@
+{
+  "asset": {
+    "generator": "Khronos glTF Blender I/O v4.3.47",
+    "version": "2.0"
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "name": "Scene",
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "mesh": 0,
+      "name": "boombox"
+    }
+  ],
+  "materials": [
+    {
+      "doubleSided": true,
+      "name": "boombox",
+      "normalTexture": {
+        "index": 0
+      },
+      "pbrMetallicRoughness": {
+        "baseColorTexture": {
+          "index": 1
+        },
+        "metallicRoughnessTexture": {
+          "index": 2
+        }
+      }
+    },
+    {
+      "alphaMode": "MASK",
+      "doubleSided": true,
+      "name": "boombox_speakers",
+      "pbrMetallicRoughness": {
+        "baseColorTexture": {
+          "index": 3
+        },
+        "metallicRoughnessTexture": {
+          "index": 4
+        }
+      },
+      "alphaCutoff": 0.5
+    }
+  ],
+  "meshes": [
+    {
+      "name": "Plane.095",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1,
+            "TEXCOORD_0": 2,
+            "TANGENT": 3
+          },
+          "indices": 4,
+          "material": 0
+        },
+        {
+          "attributes": {
+            "POSITION": 5,
+            "NORMAL": 6,
+            "TEXCOORD_0": 7,
+            "TANGENT": 8
+          },
+          "indices": 9,
+          "material": 1
+        }
+      ]
+    }
+  ],
+  "textures": [
+    {
+      "sampler": 0,
+      "source": 0
+    },
+    {
+      "sampler": 0,
+      "source": 1
+    },
+    {
+      "sampler": 0,
+      "source": 2
+    },
+    {
+      "sampler": 0,
+      "source": 3
+    },
+    {
+      "sampler": 0,
+      "source": 4
+    }
+  ],
+  "images": [
+    {
+      "mimeType": "image/jpeg",
+      "name": "boombox_nor_gl_1k",
+      "uri": "boombox_nor_gl_1k.jpg"
+    },
+    {
+      "mimeType": "image/jpeg",
+      "name": "boombox_diff_1k",
+      "uri": "boombox_diff_1k.jpg"
+    },
+    {
+      "mimeType": "image/jpeg",
+      "name": "boombox_arm_1k",
+      "uri": "boombox_arm_1k.jpg"
+    },
+    {
+      "mimeType": "image/png",
+      "name": "boombox_speakers_diff_1k",
+      "uri": "boombox_speakers_diff_1k_cutout.png"
+    },
+    {
+      "mimeType": "image/jpeg",
+      "name": "boombox_speakers_arm_1k",
+      "uri": "boombox_speakers_arm_1k.jpg"
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 3391,
+      "max": [
+        0.3615991771221161,
+        0.4701429605484009,
+        0.09323233366012573
+      ],
+      "min": [
+        -0.3615991771221161,
+        0,
+        -0.09323233366012573
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 3391,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5126,
+      "count": 3391,
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5126,
+      "count": 3391,
+      "type": "VEC4"
+    },
+    {
+      "bufferView": 4,
+      "componentType": 5123,
+      "count": 6897,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 5,
+      "componentType": 5126,
+      "count": 278,
+      "max": [
+        0.3503165543079376,
+        0.247953861951828,
+        0.09252771735191345
+      ],
+      "min": [
+        -0.349735289812088,
+        0.015516418032348156,
+        0.06371274590492249
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 6,
+      "componentType": 5126,
+      "count": 278,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 7,
+      "componentType": 5126,
+      "count": 278,
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 8,
+      "componentType": 5126,
+      "count": 278,
+      "type": "VEC4"
+    },
+    {
+      "bufferView": 9,
+      "componentType": 5123,
+      "count": 603,
+      "type": "SCALAR"
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteLength": 40692,
+      "byteOffset": 0,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 40692,
+      "byteOffset": 40692,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 27128,
+      "byteOffset": 81384,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 54256,
+      "byteOffset": 108512,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 13794,
+      "byteOffset": 162768,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteLength": 3336,
+      "byteOffset": 176564,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 3336,
+      "byteOffset": 179900,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 2224,
+      "byteOffset": 183236,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 4448,
+      "byteOffset": 185460,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 1206,
+      "byteOffset": 189908,
+      "target": 34963
+    }
+  ],
+  "samplers": [
+    {
+      "magFilter": 9729,
+      "minFilter": 9987
+    }
+  ],
+  "buffers": [
+    {
+      "byteLength": 191116,
+      "uri": "boombox.bin"
+    }
+  ]
+}
