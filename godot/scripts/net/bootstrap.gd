@@ -83,6 +83,7 @@ const SKY_VIEW_SCRIPT := "res://scripts/net/sky_view.gd"
 const SENTRY_VIEW_SCRIPT := "res://scripts/net/sentry_view.gd"
 const MISSILE_VIEW_SCRIPT := "res://scripts/net/missile_view.gd"
 const CHOPPER_VIEW_SCRIPT := "res://scripts/net/chopper_view.gd"
+const ENGINEER_VIEW_SCRIPT := "res://scripts/net/engineer_view.gd"
 const AIRSTRIKE_VIEW_SCRIPT := "res://scripts/net/airstrike_view.gd"
 const CTF_VIEW_SCRIPT := "res://scripts/net/ctf_view.gd"
 const HARDPOINT_VIEW_SCRIPT := "res://scripts/net/hardpoint_view.gd"
@@ -446,6 +447,13 @@ func _attach_client(main: Node, target: String, options: Dictionary, token := ""
 	tdm_hud.move_child(streaks, 0)
 	tdm_hud.move_child(minimap, 0)
 	Settings.fit_hud(streaks)
+	# Engineer: enemy Sentry Guns and Care Packages through walls.
+	var engineer := Control.new()
+	engineer.name = "EngineerView"
+	engineer.set_script(load(ENGINEER_VIEW_SCRIPT))
+	engineer.set("client", client)
+	tdm_hud.add_child(engineer)
+	tdm_hud.move_child(engineer, 0)
 	# Care Packages: the flyover, the crate, and its capture prompt.
 	var crates := Node3D.new()
 	crates.name = "CarePackageView"

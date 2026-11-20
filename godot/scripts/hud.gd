@@ -234,6 +234,15 @@ func _process(delta: float) -> void:
 		spread += _player.pellet_spread_radians()
 	_crosshair.gap = tan(spread) * pixels_per_unit
 	_crosshair.alpha = 0.0 if not alive else 1.0 - clampf(_player.ads_amount() * 1.5, 0.0, 1.0)
+	_crosshair.enemy = _aiming_at_enemy()
+
+
+## True online while the crosshair is on an enemy (found at run time,
+## untyped, as `_match_ended` is).
+func _aiming_at_enemy() -> bool:
+	var net := get_node_or_null(^"/root/Net")
+	var client: Object = net.call(&"client") if net != null else null
+	return client != null and bool(client.call(&"aiming_at_enemy"))
 
 
 ## True on an online match's results screen.

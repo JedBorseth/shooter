@@ -200,7 +200,7 @@ The server keeps every count and held streak and decides every use (`ClientMessa
 
 ## Still to come
 
-Blind Eye (with an AI streak to hide from), UAV assist points, and announcer lines. They are tracked in [TODO.md](../TODO.md).
+UAV assist points and announcer lines. Blind Eye, Cold-Blooded, and Engineer act on these streaks ([create-a-class.md](create-a-class.md#perks)). They are tracked in [TODO.md](../TODO.md).
 
 ## Call of Duty reference
 

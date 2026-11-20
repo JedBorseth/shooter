@@ -9,6 +9,7 @@ extends Control
 
 const EDGE := Color(0, 0, 0, 0.45)
 const KILL := Color(1.0, 0.24, 0.2)
+const ENEMY := Color(1.0, 0.3, 0.25)
 
 @export var length: float = 8.0
 @export var thickness: float = 2.0
@@ -20,6 +21,9 @@ const KILL := Color(1.0, 0.24, 0.2)
 @export var kill_pop: float = 1.7
 
 var gap: float = 8.0
+## The crosshair is on an enemy (online, `NetClient.aiming_at_enemy`): it
+## turns red, as Black Ops 2's does. Cold-Blooded enemies never turn it.
+var enemy := false
 var alpha: float = 1.0
 var _hit_left: float = 0.0
 var _hit_time: float = 0.22
@@ -47,7 +51,7 @@ func _process(delta: float) -> void:
 func _draw() -> void:
 	var centre := (size / 2.0).round()
 	if alpha > 0.01:
-		var c := Color(color, color.a * alpha)
+		var c := Color(ENEMY if enemy else color, color.a * alpha)
 		var edge := Color(EDGE, EDGE.a * alpha)
 		var reach := maxf(gap, min_gap)
 		for direction: Vector2 in [Vector2.RIGHT, Vector2.LEFT, Vector2.UP, Vector2.DOWN]:

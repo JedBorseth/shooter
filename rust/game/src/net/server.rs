@@ -7447,8 +7447,10 @@ impl NetServer {
                 id: a.id,
                 side: self.side(a),
                 feet: a.predicted.position,
-                // Black Ops 2's chopper leaves the newly spawned alone.
-                ignored: tick < a.spawned_at + protection,
+                // Black Ops 2's chopper leaves the newly spawned alone, and
+                // Blind Eye players (`cantargetplayerwithspecialty`).
+                ignored: tick < a.spawned_at + protection
+                    || a.predicted.state.perks.has(Perk::BlindEye),
             })
             .collect();
         let mut rounds = Vec::new();
@@ -7765,9 +7767,17 @@ impl NetServer {
                 let ahead = to_godot(m.position + dir * 400.0);
                 let aim = world_hit(&mut space, to_godot(m.position), ahead)
                     .map_or(m.position + dir * 200.0, to_sim);
+                // Cold-Blooded players get no bomblet of their own (Black
+                // Ops 2's `specialty_nokillstreakreticle`).
+                let unmarked: Vec<u8> = self
+                    .avatars
+                    .iter()
+                    .filter(|a| a.predicted.state.perks.has(Perk::ColdBlooded))
+                    .map(|a| a.id)
+                    .collect();
                 let targets: Vec<Vec3> = bodies
                     .iter()
-                    .filter(|(_, side, _)| *side != m.side)
+                    .filter(|(id, side, _)| *side != m.side && !unmarked.contains(id))
                     .map(|(_, _, feet)| *feet)
                     .collect();
                 let seed = rng::hash(u32::from(m.id), tick);

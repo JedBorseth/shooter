@@ -37,15 +37,18 @@ Perk names in the game are plain descriptions, as the wildcards' are; Call of Du
 | 1 | Flak Jacket (Blast Vest) | takes 35% of grenade damage | `perk_flakJacket` 35 |
 | 1 | Hardline (Fast Track) | score counts 20% more toward scorestreaks | +20% (Call of Duty wiki) |
 | 1 | Ghost (Low Profile) | hidden from enemy UAV sweeps while moving, planting, or defusing | moving: faster than 0.5 m/s (an estimate) |
+| 1 | Blind Eye (Cloud Cover) | an enemy Attack Chopper never targets them | `specialty_nottargetedbyairsupport` (`cantargetplayerwithspecialty`) |
 | 2 | Toughness (Unshaken) | a hit's aim flinch is a quarter as strong | flinch to 25% (`perk_damageKickReduction` 0.25) |
 | 2 | Fast Hands (Quick Hands) | switches weapons in half the time; a throw's wind-up and follow-through take 60% | `perk_weapSwitchMultiplier` 0.5, `perk_weapEquipmentUseMultiplier` 0.6 |
 | 2 | Scavenger (Scrounger) | refills ammo and grenades from packs dead enemies drop | one magazine, one lethal, one tactical per pack (`perk_scavenger_*`) |
 | 2 | Sleight of Hand (Fast Reload) | reloads in half the time | `perk_weapReloadMultiplier` 0.5 |
 | 2 | Hard Wired (Jam Proof) | an enemy Counter-UAV does not jam the minimap | |
+| 2 | Cold-Blooded (Unmarked) | an enemy aiming at them sees no red name or crosshair; an enemy Guided Missile neither boxes them nor sends a bomblet at them | `specialty_nokillstreakreticle` (`_remotemissile.gsc`) |
 | 3 | Dexterity (Climber) | mantles and vaults in 60% of the time, climbs ladders 75% faster, weapon up after a sprint in half the time | `perk_mantleReduction` 0.4, `perk_fastLadderClimbMultiplier` 1.75; the sprint-out share is an estimate |
 | 3 | Dead Silence (Soft Step) | movement 12 dB quieter, heard at a quarter of the range | none published; an estimate |
 | 3 | Awareness (Keen Ears) | enemy movement 6 dB louder, heard 1.5 times as far | none published; an estimate |
 | 3 | Tactical Mask (Flash Guard) | flashbangs blind for half as long | `perk_shellShockReduction` 0.5 |
+| 3 | Engineer (Field Tech) | sees enemy Sentry Guns and Care Packages through walls | |
 
 How each one is decided:
 
@@ -57,8 +60,16 @@ How each one is decided:
 - **Scavenger** (`rust/sim/src/scavenger.rs`): every player who dies, outside Zombies, leaves an ammunition pouch at their feet (a Blender model, `tools/gear_models.py` `scavenger_pack`). Only a player with Scavenger sees their enemies' pouches (anyone else's without teams), turning slowly on the ground, and walking over one (within 1 m) takes it: a magazine's worth of reserve for every gun carried and a frag and a tactical back, each up to what the class started with. The first Scavenger player to reach a pouch takes it; nobody else's is touched. A pouch nobody takes is gone after 30 s (an estimate), and a new round or match clears them. The server holds the pouches and decides every pickup; clients draw them from events (`ScavengerEvent`, protocol 56), and the taker hears the pouch foley and sees the perk's icon under the crosshair (`godot/scripts/net/scavenger_view.gd`). `scavenger_test` plays it through on a server. Bots with Scavenger go for a pouch within 15 m when the gun in hand has less than a magazine in reserve, unless their mode has them carrying, planting, or defusing.
 
 - **Hardline, Ghost, and Hard Wired** act on the server where scorestreaks are decided ([scorestreaks.md](scorestreaks.md)): Hardline on each player's streak count, Ghost on which enemies a UAV's sweep finds, and Hard Wired on whose minimap a Counter-UAV jams. Unlock levels: Hardline 8, Ghost 15, Hard Wired 18.
+- **Blind Eye** acts on the server: an Attack Chopper's gun passes the player by (`chopper::Candidate::ignored`). Black Ops 2's own descriptions name its AI air streaks (Stealth Chopper, Hunter Killer, Swarm, Escort Drone, Warthog), not the Sentry Gun, so a Sentry Gun still fires on them; sentry immunity comes with later games. Its script also lets a Blind Eye player who stays still too long be targeted (`perk_nottargetedbyai_graceperiod`); the dvar's value is not in the scripts, so that is left out. Unlock level 12.
+- **Cold-Blooded:** in Black Ops 2 it resists player-controlled aircraft and targeting systems, and an enemy aiming at the player sees no name or red crosshair. Here:
+  - every view of the player carries `PlayerView::unmarked` (protocol 81);
+  - an enemy's crosshair stays white on them and their name does not show;
+  - an enemy Guided Missile does not box them, and its cluster sends no bomblet at them (the server leaves them out of the split's targets).
 
-Left out, because their target does not exist here: Blind Eye (AI air support), Cold-Blooded (AI streaks and thermal), Engineer (enemy equipment and care packages), and Extreme Conditioning (sprint is unlimited, a recorded project decision against stamina). Sleight of Hand is not in Black Ops 2 (its Fast Mag attachment did the job); it takes Black Ops 1's Perk 2 slot here, since there is no Fast Mag.
+  The aim reveal it hides is Black Ops 2's too: aiming at any other enemy with no wall between turns the crosshair red and shows their name in red over them (`NetClient::update_aimed`, `RemotePlayer::set_marked`). Black Ops 2's thermal, sensor, and Target Finder immunities have no target here. Unlock level 23.
+- **Engineer:** a small red marker shows each enemy Sentry Gun and each landed Care Package not ours, through walls (`godot/scripts/net/engineer_view.gd`), as Black Ops 2's Engineer outlines enemy equipment and scorestreaks. Its booby-trapped and rerolled Care Packages and delayed enemy explosives are left out (no claymores or other placed explosives yet). Unlock level 26.
+
+Left out: Extreme Conditioning (sprint is unlimited, a recorded project decision against stamina). Sleight of Hand is not in Black Ops 2 (its Fast Mag attachment did the job); it takes Black Ops 1's Perk 2 slot here, since there is no Fast Mag.
 
 Bots take one random perk of each tier every life.
 

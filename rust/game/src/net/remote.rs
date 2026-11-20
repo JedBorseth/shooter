@@ -67,6 +67,10 @@ pub struct RemotePlayer {
     /// is listening (Awareness).
     quiet: bool,
     listener_perks: Perks,
+    /// Cold-Blooded (from its snapshot): no red name when aimed at.
+    unmarked: bool,
+    /// An enemy we are aiming at: its name shows red over it.
+    marked: bool,
     /// The roster has said which side this player is on.
     sided: bool,
     /// View angles and life from the last drawn sample, for spectating.
@@ -132,8 +136,20 @@ impl RemotePlayer {
     }
 
     #[func]
-    fn is_alive(&self) -> bool {
+    pub fn is_alive(&self) -> bool {
         self.alive
+    }
+
+    /// Cold-Blooded: enemies aiming at this player see no red name, and
+    /// enemy Guided Missiles do not box them.
+    #[func]
+    pub fn is_unmarked(&self) -> bool {
+        self.unmarked
+    }
+
+    /// Whether this player is on our side.
+    pub fn is_friendly(&self) -> bool {
+        self.friendly
     }
 
     #[func]
@@ -470,6 +486,24 @@ impl RemotePlayer {
     pub fn set_hearing(&mut self, quiet: bool, listener: Perks) {
         self.quiet = quiet;
         self.listener_perks = listener;
+    }
+
+    /// Whether this player is Cold-Blooded (from its snapshot).
+    pub fn set_unmarked(&mut self, unmarked: bool) {
+        self.unmarked = unmarked;
+    }
+
+    /// An enemy we aim at shows their name over them in red, as Black Ops
+    /// 2's does (the crosshair turns red with it); teammates' names show
+    /// anyway.
+    pub fn set_marked(&mut self, marked: bool) {
+        if self.friendly || marked == self.marked {
+            return;
+        }
+        self.marked = marked;
+        self.name_label
+            .set_modulate(Color::from_rgb(1.0, 0.3, 0.25));
+        self.name_label.set_visible(marked && !self.first_person);
     }
 
     pub fn set_friendly(&mut self, friendly: bool) {

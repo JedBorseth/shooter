@@ -32,7 +32,9 @@
 
 use std::collections::VecDeque;
 
-use godot::classes::{ENetConnection, ENetPacketPeer, INode, Input, PackedScene, Time};
+use godot::classes::{
+    ENetConnection, ENetPacketPeer, INode, Input, PackedScene, PhysicsRayQueryParameters3D, Time,
+};
 use godot::global::Error;
 use godot::prelude::*;
 use shooter_sim::class::{self, Class, DefaultClass, Gun, Wildcard};
@@ -257,6 +259,8 @@ pub struct NetClient {
     /// Attack Choppers called in (`shooter_sim::chopper`), rebuilt from
     /// what the server said, and the player each one's gun is on.
     choppers: Vec<(shooter_sim::chopper::Chopper, Option<u8>)>,
+    /// The enemy under our crosshair, shown by name in red (`update_aimed`).
+    aimed: Option<u8>,
     /// Care Packages out (`shooter_sim::care_package`), as the server said.
     crates: Vec<CrateView>,
     /// Zombies: the horde as drawn, and the map's director mirroring the
@@ -508,6 +512,7 @@ impl INode for NetClient {
         }
         self.age_ghosts(delta as f32);
         self.update_killcam(delta as f32);
+        self.update_aimed();
     }
 
     fn exit_tree(&mut self) {
@@ -1173,6 +1178,7 @@ impl NetClient {
                 d.set("id", i32::from(c.id));
                 d.set("owner", i32::from(c.owner));
                 d.set("mine", Some(c.owner) == self.player_id);
+                d.set("ours", self.owner_ours(c.owner));
                 d.set("position", to_godot(c.at));
                 d.set("heading", c.heading);
                 d.set("drop_seconds", since(c.drop_at));
@@ -1355,6 +1361,24 @@ impl NetClient {
                 split,
             });
         }
+    }
+
+    /// Whether the crosshair is on an enemy it may show as one: the
+    /// crosshair turns red (Black Ops 2; not on a Cold-Blooded enemy).
+    #[func]
+    fn aiming_at_enemy(&self) -> bool {
+        self.aimed.is_some()
+    }
+
+    /// Whether our own player carries the perk `key`.
+    #[func]
+    fn has_perk(&self, key: GString) -> bool {
+        let Some(perk) = shooter_sim::perk::Perk::by_key(&key.to_string()) else {
+            return false;
+        };
+        self.player
+            .as_ref()
+            .is_some_and(|p| p.bind().perks().has(perk))
     }
 
     /// Whether an enemy Counter-UAV jams our minimap.
@@ -2660,6 +2684,16 @@ impl NetClient {
         self.roster.iter().find(|e| i32::from(e.id) == id)
     }
 
+    /// Whether player `owner` is on our side (ourselves without teams).
+    fn owner_ours(&self, owner: u8) -> bool {
+        if self.mode.free_for_all() {
+            Some(owner) == self.player_id
+        } else {
+            self.entry(i32::from(owner))
+                .is_some_and(|e| Some(e.team) == self.local_team())
+        }
+    }
+
     /// Whether streak side `side` is ours: our team, or ourselves without
     /// teams.
     fn ours(&self, side: u8) -> bool {
@@ -2806,6 +2840,7 @@ impl NetClient {
                     .map_or(Perks::NONE, |p| p.bind().perks());
                 let mut node = self.remotes[index].node.clone();
                 node.bind_mut().set_hearing(view.quiet, listener);
+                node.bind_mut().set_unmarked(view.unmarked);
             }
         }
         if !newest {
@@ -2869,6 +2904,61 @@ impl NetClient {
     /// interact, or the controller's reload), or once we are alive again;
     /// one that ends a round or match starts after a short lead, cannot be
     /// skipped, and holds its last frame (Call of Duty's `_killcam.gsc`).
+    /// Finds the enemy under the crosshair, as Black Ops 2 shows them: the
+    /// nearest living enemy body the view's centre line meets within reach,
+    /// with no wall in front, and not Cold-Blooded. Their name shows over
+    /// them in red, and the crosshair turns red (`aiming_at_enemy`).
+    fn update_aimed(&mut self) {
+        const REACH: f32 = 120.0;
+        let camera = self
+            .player
+            .as_ref()
+            .filter(|p| p.bind().is_alive())
+            .and_then(|p| p.get_viewport())
+            .and_then(|v| v.get_camera_3d());
+        let mut aimed = None;
+        if let Some(camera) = camera
+            && !self.in_killcam()
+        {
+            let eye = camera.get_global_position();
+            let dir = -camera.get_global_basis().col_c();
+            let (from, to) = (to_sim(eye), to_sim(eye + dir * REACH));
+            let nearest = self
+                .remotes
+                .iter()
+                .filter_map(|r| {
+                    let node = r.node.bind();
+                    if node.is_friendly() || !node.is_alive() || node.is_unmarked() {
+                        return None;
+                    }
+                    let t = ray_meets_body(from, to - from, to_sim(node.feet()), 1.85, 0.45)?;
+                    (t <= 1.0).then_some((r.id, t * REACH))
+                })
+                .min_by(|a, b| a.1.total_cmp(&b.1));
+            if let Some((id, distance)) = nearest
+                && let Some(mut space) = camera
+                    .get_world_3d()
+                    .and_then(|w| w.get_direct_space_state())
+            {
+                let query = PhysicsRayQueryParameters3D::create_ex(eye, eye + dir * distance)
+                    .collision_mask(crate::target::WORLD_LAYER)
+                    .done();
+                let blocked = query.is_some_and(|q| !space.intersect_ray(&q).is_empty());
+                if !blocked {
+                    aimed = Some(id);
+                }
+            }
+        }
+        if aimed == self.aimed {
+            return;
+        }
+        self.aimed = aimed;
+        for remote in &mut self.remotes {
+            let marked = Some(remote.id) == aimed;
+            remote.node.bind_mut().set_marked(marked);
+        }
+    }
+
     fn update_killcam(&mut self, dt: f32) {
         let now = Time::singleton().get_ticks_usec() as f64 / 1e6;
         let alive = self
@@ -3147,4 +3237,61 @@ fn gun_of(key: &str) -> Option<Gun> {
         base,
         attachments: def.fitted,
     })
+}
+
+/// Where along `from + along * t` (t from 0) a ray first enters an upright
+/// body: a cylinder of `radius` from `feet` up `height`. None if it misses.
+fn ray_meets_body(
+    from: shooter_sim::Vec3,
+    along: shooter_sim::Vec3,
+    feet: shooter_sim::Vec3,
+    height: f32,
+    radius: f32,
+) -> Option<f32> {
+    let (dx, dz) = (along.x, along.z);
+    let (fx, fz) = (from.x - feet.x, from.z - feet.z);
+    let a = dx * dx + dz * dz;
+    if a <= f32::EPSILON {
+        return None;
+    }
+    let b = fx * dx + fz * dz;
+    let c = fx * fx + fz * fz - radius * radius;
+    let disc = b * b - a * c;
+    if disc < 0.0 {
+        return None;
+    }
+    let root = disc.sqrt();
+    let (t0, t1) = ((-b - root) / a, (-b + root) / a);
+    // Inside the circle across [t0, t1]; the body spans feet.y..+height.
+    let (lo, hi) = (feet.y - from.y, feet.y + height - from.y);
+    let (y0, y1) = if along.y.abs() <= f32::EPSILON {
+        if (lo..=hi).contains(&0.0) {
+            (f32::NEG_INFINITY, f32::INFINITY)
+        } else {
+            return None;
+        }
+    } else {
+        let (p, q) = (lo / along.y, hi / along.y);
+        (p.min(q), p.max(q))
+    };
+    let enter = t0.max(y0).max(0.0);
+    let leave = t1.min(y1);
+    (enter <= leave).then_some(enter)
+}
+
+#[cfg(test)]
+mod aim_tests {
+    use super::ray_meets_body;
+    use shooter_sim::Vec3;
+
+    #[test]
+    fn a_ray_meets_a_body_it_crosses_and_misses_one_beside_or_over_it() {
+        let feet = Vec3::new(0.0, 0.0, -50.0);
+        let from = Vec3::new(0.0, 1.6, 0.0);
+        let t = ray_meets_body(from, Vec3::new(0.0, 0.0, -100.0), feet, 1.85, 0.45).unwrap();
+        assert!((t * 100.0 - 49.55).abs() < 1e-3);
+        assert!(ray_meets_body(from, Vec3::new(1.0, 0.0, -100.0), feet, 1.85, 0.45).is_none());
+        assert!(ray_meets_body(from, Vec3::new(0.0, 1.0, -100.0), feet, 1.85, 0.45).is_none());
+        assert!(ray_meets_body(from, Vec3::new(0.0, 0.0, 100.0), feet, 1.85, 0.45).is_none());
+    }
 }
