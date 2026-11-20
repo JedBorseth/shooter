@@ -158,7 +158,7 @@ func _build() -> void:
 	server.text = (
 		"Account server: %s" % Online.address
 		if Online.address != ""
-		else "No account server in this launch (--offline)."
+		else "Playing offline: your level, unlocks, and classes stay on this computer."
 	)
 	server.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	layout.add_child(server)

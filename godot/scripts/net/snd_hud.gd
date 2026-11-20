@@ -262,15 +262,16 @@ func _build() -> void:
 	add_child(_root)
 
 	# Who is alive on each side, top centre, with the round under them.
-	_ally_pips = _pip_row(BoxContainer.ALIGNMENT_END)
-	_ally_pips.position = Vector2(-12 - 240, 24)
-	_enemy_pips = _pip_row(BoxContainer.ALIGNMENT_BEGIN)
-	_enemy_pips.position = Vector2(12, 24)
+	# Offsets from the centre anchor: `position` would place them from the
+	# left edge, which put the pips in the minimap's corner.
+	_ally_pips = _pip_row(BoxContainer.ALIGNMENT_END, -12.0 - 240.0)
+	_enemy_pips = _pip_row(BoxContainer.ALIGNMENT_BEGIN, 12.0)
 	_round_label = _label("", Color.WHITE, 14)
-	_round_label.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
-	_round_label.position = Vector2(-200, 50)
-	_round_label.custom_minimum_size = Vector2(400, 0)
 	_root.add_child(_round_label)
+	_round_label.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_round_label.offset_left = -200.0
+	_round_label.offset_right = 200.0
+	_round_label.offset_top = 50.0
 
 	_overlay = Control.new()
 	_overlay.set_script(MatchBanner)
@@ -279,14 +280,18 @@ func _build() -> void:
 	_root.add_child(_overlay)
 
 
-func _pip_row(alignment: BoxContainer.AlignmentMode) -> HBoxContainer:
+## A row of pips 240 wide, `left` from the top centre.
+func _pip_row(alignment: BoxContainer.AlignmentMode, left: float) -> HBoxContainer:
 	var row := HBoxContainer.new()
-	row.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
-	row.custom_minimum_size = Vector2(240, 20)
 	row.alignment = alignment
 	row.add_theme_constant_override("separation", 4)
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(row)
+	row.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	row.offset_left = left
+	row.offset_right = left + 240.0
+	row.offset_top = 24.0
+	row.offset_bottom = 44.0
 	return row
 
 

@@ -270,7 +270,7 @@ func _legend(gamepad: bool) -> Array:
 				key = (
 					Settings.key_label(&"weapon_next", true)
 					if gamepad
-					else _keys([&"weapon_1", &"weapon_2"], " ")
+					else _keys([&"weapon_1", &"weapon_2"], "/")
 				)
 			_:
 				key = Settings.key_label(StringName(action), gamepad)

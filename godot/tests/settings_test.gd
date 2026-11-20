@@ -634,8 +634,8 @@ func _check_bindings(settings: Node) -> void:
 	)
 	settings.note_device(false)
 	_check(
-		settings.key_label(&"ui_cancel", settings.menu_controller) == "Escape",
-		"and back to Escape on the keyboard"
+		settings.key_label(&"ui_cancel", settings.menu_controller) == "Esc",
+		"and back to Esc on the keyboard"
 	)
 	settings.rebind(&"jump", _key(KEY_J))
 	_check(_bound(&"jump") == KEY_J, "jump rebinds to J")
