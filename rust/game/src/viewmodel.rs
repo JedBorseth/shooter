@@ -69,6 +69,9 @@ pub struct ViewFrame {
     pub vaulting: bool,
     /// On a ladder: the hands are on the rungs, so the weapon is put away.
     pub on_ladder: bool,
+    /// The weapon is put away for something else the hands do (planting or
+    /// defusing the charge), as on a ladder but with the hands off screen.
+    pub put_away: bool,
     /// Where the player's feet are (world): the rungs the hands take are
     /// found from them.
     pub feet: Vector3,
@@ -3317,7 +3320,7 @@ impl ViewmodelRig {
         // A ladder: the hands go to the rungs, so the weapon drops away as
         // for a switch, and comes back up over the sprint-out (classic IW
         // and Modern Warfare lower the weapon on ladders).
-        if frame.on_ladder {
+        if frame.on_ladder || frame.put_away {
             self.ladder_blend += (1.0 - self.ladder_blend) * smoothing(10.0, dt);
         } else if frame.sprint_out > 0.0 {
             self.ladder_blend = self.ladder_blend.min(frame.sprint_out);

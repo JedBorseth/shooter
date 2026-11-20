@@ -823,3 +823,84 @@ def map_zombies_arena(b: Model):
 
 # The maps' set dressing and surface breakup register their models too.
 import map_dressing  # noqa: E402
+
+
+# --- Search and Destroy ----------------------------------------------------------------
+# Plain colours, not textured sets: a new texture-set variant would renumber
+# the shared painted-metal materials every other model uses.
+LOOKS["charge_case"] = {"color": (0.2, 0.22, 0.17), "rough": 0.75, "metal": 0.3}
+LOOKS["charge_panel"] = {"color": (0.05, 0.055, 0.06), "rough": 0.6, "metal": 0.2}
+LOOKS["charge_screen"] = {"color": (1.0, 0.55, 0.12), "glow": 1.6}
+LOOKS["charge_led"] = {"color": (1.0, 0.08, 0.05), "glow": 3.0}
+LOOKS["wire_red"] = {"color": (0.55, 0.04, 0.03), "rough": 0.5}
+LOOKS["wire_blue"] = {"color": (0.05, 0.12, 0.5), "rough": 0.5}
+LOOKS["crate_olive"] = {"color": (0.24, 0.26, 0.19), "rough": 0.85, "metal": 0.35}
+LOOKS["stencil"] = {"color": (0.85, 0.83, 0.74), "rough": 0.9}
+LOOKS["charge_steel"] = {"color": (0.16, 0.17, 0.18), "rough": 0.55, "metal": 0.8}
+LOOKS["charge_keys"] = {"color": (0.5, 0.52, 0.53), "rough": 0.45, "metal": 0.8}
+LOOKS["site_pallet"] = {"color": (0.3, 0.26, 0.2), "rough": 0.95}
+
+
+@model
+def charge(b: Model):
+    """The Search and Destroy charge: a hard case 0.42 x 0.13 x 0.3 m lying
+    flat, origin at the middle of its underside, front toward -z, with a
+    keypad and timer screen on its lid, two wires looping to a detonator
+    block, and a red lamp (scripts/net/snd_view.gd blinks a light over it)."""
+    b.box(-0.21, 0.21, 0.0, 0.11, -0.15, 0.15, "charge_case", bevel=0.012)
+    b.box(-0.205, 0.205, 0.105, 0.125, -0.145, 0.145, "charge_case", bevel=0.008)
+    # Latches and the carry handle on the front.
+    for x in (-0.15, 0.15):
+        b.box(x - 0.025, x + 0.025, 0.07, 0.115, -0.158, -0.148, "charge_steel", bevel=0.003)
+    b.tube([(-0.07, 0.06, -0.152), (-0.07, 0.06, -0.18), (0.07, 0.06, -0.18), (0.07, 0.06, -0.152)], 0.009,
+           "rubber", sides=6, detail=False)
+    # The lid: a dark panel with the timer screen and a keypad.
+    b.box(-0.17, 0.05, 0.125, 0.132, -0.11, 0.11, "charge_panel", bevel=0.003)
+    b.box(-0.15, 0.03, 0.131, 0.135, -0.09, -0.02, "charge_screen")
+    for row in range(3):
+        for col in range(4):
+            x = -0.14 + col * 0.045
+            z = 0.01 + row * 0.03
+            b.box(x - 0.015, x + 0.015, 0.131, 0.138, z - 0.01, z + 0.01, "charge_keys", bevel=0.002)
+    # The detonator block and the wires to it.
+    b.box(0.08, 0.18, 0.125, 0.175, -0.06, 0.06, "charge_panel", bevel=0.006)
+    b.cyl("y", 0.175, 0.19, (0.13, 0.0), 0.014, "charge_led", sides=10)
+    b.tube([(0.05, 0.13, -0.05), (0.06, 0.17, -0.07), (0.085, 0.15, -0.04)], 0.004, "wire_red", sides=5)
+    b.tube([(0.05, 0.13, 0.05), (0.06, 0.17, 0.08), (0.085, 0.15, 0.04)], 0.004, "wire_blue", sides=5)
+
+
+def _site_crate(b: Model, letter: str):
+    """A charge site's marker: a steel equipment crate 1.1 x 0.78 x 0.7 m on a
+    pallet, origin on the ground at its middle, its site letter stencilled on
+    all four sides."""
+    # The pallet: three runners and the deck.
+    for z in (-0.3, 0.0, 0.3):
+        b.box(-0.6, 0.6, 0.0, 0.08, z - 0.05, z + 0.05, "site_pallet", bevel=0.006)
+    for k in range(6):
+        x = -0.55 + k * 0.22
+        b.box(x - 0.08, x + 0.08, 0.08, 0.11, -0.4, 0.4, "site_pallet", bevel=0.004)
+    # The crate, its lid, ribs, and corner guards.
+    b.box(-0.55, 0.55, 0.11, 0.81, -0.35, 0.35, "crate_olive", bevel=0.02)
+    b.box(-0.56, 0.56, 0.81, 0.89, -0.36, 0.36, "crate_olive", bevel=0.015)
+    for x in (-0.3, 0.3):
+        b.box(x - 0.03, x + 0.03, 0.14, 0.8, -0.365, 0.365, "crate_olive", bevel=0.008)
+    for x in (-0.56, 0.56):
+        for z in (-0.36, 0.36):
+            b.box(x - 0.025, x + 0.025, 0.11, 0.89, z - 0.025, z + 0.025, "charge_steel", bevel=0.006)
+    for x in (-0.42, 0.42):
+        b.box(x - 0.04, x + 0.04, 0.6, 0.72, -0.37, -0.355, "charge_steel", bevel=0.004)
+    # The site letter, large, on each face.
+    for yaw, (x, z) in ((0.0, (0.0, 0.372)), (PI, (0.0, -0.372)), (PI / 2, (0.572, 0.0)), (-PI / 2, (-0.572, 0.0))):
+        b.text(letter, x, 0.22, z, yaw, 0.5, "stencil", depth=0.004, detail=False)
+
+
+@model
+def charge_site_a(b: Model):
+    """Site A's marker crate (see _site_crate)."""
+    _site_crate(b, "A")
+
+
+@model
+def charge_site_b(b: Model):
+    """Site B's marker crate (see _site_crate)."""
+    _site_crate(b, "B")

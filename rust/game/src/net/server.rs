@@ -34,7 +34,12 @@
 //! match is played in rounds with one life each. Every round starts with
 //! everyone back at their side of the map (attackers on side 0, defenders on
 //! side 1) and a freeze, when inputs are held still; the dead stay dead until
-//! the next round, and joiners wait for it too.
+//! the next round, and joiners wait for it too. The attackers carry the
+//! charge (`shooter_sim::snd::Charge`) to one of the map's `ChargeSites`: the
+//! server hands it to a random attacker each round, drops it where its
+//! carrier dies, holds still whoever is planting or defusing, turns the round
+//! clock into the fuse once it is planted, and ends the round when it goes
+//! off or is defused.
 //!
 //! With a bot skill set, its bots play the match (`super::bots`): they walk
 //! a navigation mesh baked from the map, look for enemies, and aim and shoot
@@ -71,16 +76,19 @@ use shooter_sim::net::discovery::{ServerInfo, query_port_for};
 use shooter_sim::net::input_queue::InputQueue;
 use shooter_sim::net::lag::{self, LagHistory, Pellet, Target, TargetHit};
 use shooter_sim::net::protocol::{
-    self, ClientMessage, FlagPlay, FlagStatus, FlagView, GameEvent, MAX_EVENTS_PER_MESSAGE,
-    MAX_HARDPOINT_ZONES, OwnState, PROTOCOL_VERSION, PlayerView, Predicted, ScoreRow,
-    ServerMessage, Snapshot, ZoneView,
+    self, ChargeStatus, ChargeView, ClientMessage, FlagPlay, FlagStatus, FlagView, GameEvent,
+    MAX_CHARGE_SITES, MAX_EVENTS_PER_MESSAGE, MAX_HARDPOINT_ZONES, OwnState, PROTOCOL_VERSION,
+    PlayerView, Predicted, ScoreRow, ServerMessage, Snapshot, UseView, ZoneView,
 };
 use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::subtick;
 use shooter_sim::net::{CHANNEL_COUNT, DEFAULT_PORT, MAX_PLAYERS, TICK_DT, TICK_RATE, Tick};
 use shooter_sim::player::{self, PlayerEvent, PlayerInput, PlayerParams, PlayerState};
 use shooter_sim::score::{Award, Kill, ScoreRules, ScoreState, Scored};
-use shooter_sim::snd::{Headcount, RoundPhase, RoundState, RoundTransition, SndRules};
+use shooter_sim::snd::{
+    Charge, ChargeContext, ChargeEvent, ChargePlayer, ChargeState, Headcount, RoundEnd, RoundPhase,
+    RoundState, RoundTransition, Site, SndRules, UseKind,
+};
 use shooter_sim::tdm::{
     self, MatchRules, MatchState, Mode, Phase, SpawnPoint, SpawnRules, Team, Threat, Transition,
 };
@@ -224,6 +232,11 @@ pub struct NetServer {
     #[export]
     #[init(val = 105.0)]
     round_seconds: f32,
+    /// Search and Destroy: seconds from the plant until the charge goes off
+    /// (tests shorten it).
+    #[export]
+    #[init(val = 45.0)]
+    fuse_seconds: f32,
 
     host: Option<Gd<ENetConnection>>,
     clients: Vec<ClientSlot>,
@@ -245,6 +258,15 @@ pub struct NetServer {
     snd_rules: SndRules,
     /// The current round, while a Search and Destroy match is on.
     round: Option<RoundState>,
+    /// Search and Destroy: the map's charge sites and their names (A, B).
+    charge_sites: Vec<Site>,
+    charge_site_names: Vec<String>,
+    /// The round's charge, while a round is on.
+    charge: Option<Charge>,
+    /// The server tick the plant or defuse under way started.
+    charge_use_started: Tick,
+    /// Players whose inputs hold interact whatever they send (tests).
+    forced_interact: Vec<u8>,
     spawn_points: Vec<SpawnPoint>,
     spawn_rules: SpawnRules,
     /// Where players died recently, and when.
@@ -349,6 +371,8 @@ struct Avatar {
     progress: Progress,
     /// Hardpoint: time in the live zone this match.
     hill: HillTime,
+    /// Holding interact, as of the last input applied.
+    interact: bool,
 }
 
 /// A shot fired this tick, waiting to be checked.
@@ -466,6 +490,7 @@ impl INode3D for NetServer {
             self.snd_rules = SndRules {
                 rounds_to_win: self.rounds_to_win.max(1) as u32,
                 round_time: self.round_seconds.max(5.0),
+                fuse: self.fuse_seconds.max(1.0),
                 ..SndRules::default()
             };
             self.rules.score_limit = self.snd_rules.rounds_to_win;
@@ -511,6 +536,15 @@ impl INode3D for NetServer {
         }
         if self.game != Mode::Hardpoint {
             self.zones.clear();
+        }
+        if self.game == Mode::SearchAndDestroy && self.charge_sites.is_empty() {
+            (self.charge_site_names, self.charge_sites) = fallback_charge_sites(&self.spawn_points)
+                .into_iter()
+                .unzip();
+        }
+        if self.game != Mode::SearchAndDestroy {
+            self.charge_sites.clear();
+            self.charge_site_names.clear();
         }
         godot_print!(
             "server: {} to {}{}",
@@ -588,6 +622,7 @@ impl INode3D for NetServer {
             self.navigation = map.and_then(|map| BotNavigation::bake(&mut parent, &map));
         }
         self.simulate();
+        self.update_charge();
         self.update_flags();
         self.update_hardpoint();
         self.update_match();
@@ -759,6 +794,59 @@ impl NetServer {
             avatar.predicted.position = to_sim(position);
             body::place(&mut avatar.parts, &params.movement, &avatar.predicted);
         }
+    }
+
+    /// Debug: player `id`'s inputs hold interact while `held`, whatever
+    /// they send (tests).
+    #[func]
+    fn debug_interact(&mut self, id: i32, held: bool) {
+        let Ok(id) = u8::try_from(id) else { return };
+        self.forced_interact.retain(|p| *p != id);
+        if held {
+            self.forced_interact.push(id);
+        }
+    }
+
+    /// Search and Destroy: where the charge is ("carried", "dropped",
+    /// "planted", "detonated", "defused", or "" with no round on).
+    #[func]
+    fn charge_status(&self) -> GString {
+        GString::from(match self.charge.map(|c| c.state) {
+            None => "",
+            Some(ChargeState::Carried { .. }) => "carried",
+            Some(ChargeState::Dropped { .. }) => "dropped",
+            Some(ChargeState::Planted { .. }) => "planted",
+            Some(ChargeState::Detonated { .. }) => "detonated",
+            Some(ChargeState::Defused { .. }) => "defused",
+        })
+    }
+
+    /// Search and Destroy: who carries the charge, or -1.
+    #[func]
+    fn charge_carrier(&self) -> i32 {
+        self.charge.and_then(|c| c.carrier()).map_or(-1, i32::from)
+    }
+
+    /// Search and Destroy: who is planting or defusing, or -1.
+    #[func]
+    fn charge_user(&self) -> i32 {
+        self.charge.and_then(|c| c.user()).map_or(-1, i32::from)
+    }
+
+    /// Search and Destroy: where the charge is (its carrier's feet, or where
+    /// it lies or stands).
+    #[func]
+    fn charge_position(&self) -> Vector3 {
+        self.charge.map_or(Vector3::ZERO, |c| to_godot(c.position))
+    }
+
+    /// Search and Destroy: the sites' centres at floor height, in order.
+    #[func]
+    fn charge_site_floors(&self) -> Array<Vector3> {
+        self.charge_sites
+            .iter()
+            .map(|s| to_godot(s.center - Vec3::new(0.0, s.half_extents.y, 0.0)))
+            .collect()
     }
 
     /// Debug: kills a player where they stand (tests).
@@ -995,6 +1083,7 @@ impl NetServer {
         self.bot_lanes = map_lanes(&map);
         self.flag_homes = map_flags(&map);
         self.zones = map_zones(&map);
+        (self.charge_site_names, self.charge_sites) = map_charge_sites(&map).into_iter().unzip();
         for name in CLIENT_ONLY_NODES {
             if let Some(node) = map.get_node_or_null(name) {
                 node.free();
@@ -1114,6 +1203,13 @@ impl NetServer {
                     self.send_event(id, prop_event(&state));
                 }
                 if let Some(event) = self.round_event() {
+                    self.send_event(id, event);
+                }
+                if !self.charge_sites.is_empty() {
+                    let sites = self.charge_sites_event();
+                    self.send_event(id, sites);
+                }
+                if let Some(event) = self.charge_event_for(id) {
                     self.send_event(id, event);
                 }
                 godot_print!("server: player {id} \"{name}\" joined");
@@ -1277,6 +1373,7 @@ impl NetServer {
             clock: BodyClock::default(),
             progress: Progress::default(),
             hill: HillTime::default(),
+            interact: false,
         });
         let event = joined_event(self.avatars.last().expect("just pushed"));
         self.broadcast_event(&event);
@@ -1567,6 +1664,14 @@ impl NetServer {
         let mut throw_checks = THROW_CHECKS_PER_TICK;
         let objectives = self.bot_objectives();
         let frozen = self.frozen();
+        // Planting and defusing hold the player still with the weapon away.
+        let charge = self.charge;
+        let charge_cx = ChargeContext {
+            rules: &self.snd_rules,
+            sites: &self.charge_sites,
+            attackers: self.round.map_or(0, |r| r.attackers),
+            live: self.round.is_some_and(|r| r.live()),
+        };
         let respawning = self.respawns();
         let mut space = self
             .base()
@@ -1635,6 +1740,18 @@ impl NetServer {
                 if frozen {
                     input = input.held_still();
                 }
+                if self.forced_interact.contains(&avatar.id) {
+                    input.interact = true;
+                }
+                if let Some(charge) = &charge
+                    && input.interact
+                    && charge
+                        .spot(&charge_cx, &charge_player(avatar, input.interact))
+                        .is_some()
+                {
+                    input = input.using_charge();
+                }
+                avatar.interact = input.interact;
                 if let Some(weapon) = input.pickup
                     && (!racks || !pickup_in_reach(avatar, &input, weapon, &self.params))
                 {
@@ -2672,6 +2789,7 @@ impl NetServer {
                 // Back in the lobby, put the map back the way it started.
                 self.reset_props();
                 self.round = None;
+                self.charge = None;
             }
             return;
         }
@@ -2721,17 +2839,7 @@ impl NetServer {
         match transition {
             RoundTransition::Live => {}
             RoundTransition::Over { winner, reason } => {
-                godot_print!(
-                    "server: round {} to team {} ({reason:?})",
-                    round.number,
-                    winner + 1
-                );
-                let end = self.match_state.add_point(&self.rules, winner);
-                self.broadcast_round();
-                match end {
-                    Some(end) => self.on_transition(end),
-                    None => self.broadcast_match(),
-                }
+                self.round_over(round.number, winner, reason);
                 return;
             }
             RoundTransition::Next { swapped } => {
@@ -2739,10 +2847,184 @@ impl NetServer {
                     godot_print!("server: halftime, the teams swap sides");
                 }
                 self.respawn_all_at_start();
+                self.new_charge();
                 self.next_scoreboard = self.tick;
             }
         }
         self.broadcast_round();
+    }
+
+    /// Scores a decided round for `winner` and tells everyone.
+    fn round_over(&mut self, number: u32, winner: Team, reason: RoundEnd) {
+        godot_print!("server: round {number} to team {} ({reason:?})", winner + 1);
+        if reason == RoundEnd::Detonated
+            && let Some(charge) = &mut self.charge
+        {
+            charge.detonate();
+            self.broadcast_charge();
+        }
+        let end = self.match_state.add_point(&self.rules, winner);
+        self.broadcast_round();
+        match end {
+            Some(end) => self.on_transition(end),
+            None => self.broadcast_match(),
+        }
+    }
+
+    /// Hands the round's charge to a random living attacker (or leaves it
+    /// at the attackers' side when there is none), and tells everyone.
+    fn new_charge(&mut self) {
+        let Some(round) = self.round else {
+            self.charge = None;
+            return;
+        };
+        let mut attackers: Vec<(u8, Vec3)> = self
+            .avatars
+            .iter()
+            .filter(|a| a.team == round.attackers && a.predicted.state.alive())
+            .map(|a| (a.id, a.predicted.position))
+            .collect();
+        attackers.sort_unstable_by_key(|(id, _)| *id);
+        let carrier = (!attackers.is_empty()).then(|| {
+            let pick = rng::hash(round.number, self.tick) as usize % attackers.len();
+            attackers[pick]
+        });
+        let fallback = tdm::start_spawn(&self.spawn_points, 0, 0)
+            .and_then(|i| self.spawn_points.get(i))
+            .map_or(to_sim(self.spawn), |p| p.position);
+        self.charge = Some(Charge::new(carrier, fallback));
+        if let Some((id, _)) = carrier {
+            godot_print!(
+                "server: player {id} carries the charge in round {}",
+                round.number
+            );
+        }
+        self.broadcast_charge();
+    }
+
+    /// Search and Destroy: drops, pickups, plants, and defuses, from what
+    /// each player holds this tick.
+    fn update_charge(&mut self) {
+        let Some(mut charge) = self.charge else {
+            return;
+        };
+        let Some(round) = self.round else {
+            return;
+        };
+        let players: Vec<ChargePlayer> = self
+            .avatars
+            .iter()
+            .map(|a| charge_player(a, a.interact))
+            .collect();
+        let cx = ChargeContext {
+            rules: &self.snd_rules,
+            sites: &self.charge_sites,
+            attackers: round.attackers,
+            live: self.match_state.phase == Phase::Playing && round.live(),
+        };
+        let before = charge_key(&charge);
+        let mut events = Vec::new();
+        charge.tick(&cx, TICK_DT, &players, &mut events);
+        self.charge = Some(charge);
+        for event in events {
+            match event {
+                ChargeEvent::Dropped { by, at } => {
+                    let floor = self.floor_below(to_godot(at) + Vector3::UP * 0.5);
+                    if let Some(charge) = &mut self.charge {
+                        charge.settle(to_sim(floor));
+                    }
+                    godot_print!("server: player {by} dropped the charge");
+                }
+                ChargeEvent::PickedUp { by } => {
+                    godot_print!("server: player {by} picked up the charge");
+                }
+                ChargeEvent::Started { .. } => self.charge_use_started = self.tick,
+                ChargeEvent::Stopped { .. } => {}
+                ChargeEvent::Planted { by, site, .. } => {
+                    godot_print!(
+                        "server: player {by} planted the charge at site {}",
+                        self.charge_site_names
+                            .get(usize::from(site))
+                            .map_or("?", String::as_str)
+                    );
+                    if let Some(round) = &mut self.round {
+                        round.plant(&self.snd_rules);
+                    }
+                    self.broadcast_round();
+                }
+                ChargeEvent::Defused { by, .. } => {
+                    godot_print!("server: player {by} defused the charge");
+                    let decided = self
+                        .round
+                        .as_mut()
+                        .and_then(|round| round.defuse(&self.snd_rules));
+                    if let (Some(RoundTransition::Over { winner, reason }), Some(round)) =
+                        (decided, self.round)
+                    {
+                        self.round_over(round.number, winner, reason);
+                    }
+                }
+            }
+        }
+        if self.charge.is_some_and(|c| charge_key(&c) != before) {
+            self.broadcast_charge();
+        }
+    }
+
+    /// The charge as player `id` may know it: defenders are not told who
+    /// carries it, and only a player's own team hears of a plant or defuse
+    /// under way.
+    fn charge_event_for(&self, id: u8) -> Option<GameEvent> {
+        let charge = self.charge?;
+        let round = self.round?;
+        let team = self.avatars.iter().find(|a| a.id == id)?.team;
+        let attacking = team == round.attackers;
+        let status = match charge.state {
+            ChargeState::Carried { by } => ChargeStatus::Carried {
+                by: attacking.then_some(by),
+            },
+            ChargeState::Dropped { at } => ChargeStatus::Dropped { at },
+            ChargeState::Planted { site, at } => ChargeStatus::Planted { site, at },
+            ChargeState::Detonated { site, at } => ChargeStatus::Detonated { site, at },
+            ChargeState::Defused { site, at } => ChargeStatus::Defused { site, at },
+        };
+        let using = charge.using.and_then(|u| {
+            let user_team = self.avatars.iter().find(|a| a.id == u.by)?.team;
+            (user_team == team).then(|| UseView {
+                by: u.by,
+                kind: u.kind,
+                started_at: self.charge_use_started,
+                done_at: self.charge_use_started
+                    + (u.kind.duration(&self.snd_rules) * TICK_RATE as f32).round() as Tick,
+            })
+        });
+        Some(GameEvent::Charge(ChargeView { status, using }))
+    }
+
+    fn broadcast_charge(&mut self) {
+        let ids: Vec<u8> = self.clients.iter().filter_map(|c| c.player).collect();
+        for id in ids {
+            if let Some(event) = self.charge_event_for(id) {
+                self.send_event(id, event);
+            }
+        }
+    }
+
+    /// Search and Destroy: the map's charge sites, for a client that just
+    /// joined.
+    fn charge_sites_event(&self) -> GameEvent {
+        GameEvent::ChargeSites {
+            sites: self
+                .charge_sites
+                .iter()
+                .zip(&self.charge_site_names)
+                .map(|(site, name)| ZoneView {
+                    name: name.clone(),
+                    center: site.center,
+                    half_extents: site.half_extents,
+                })
+                .collect(),
+        }
     }
 
     fn on_transition(&mut self, transition: Transition) {
@@ -2752,6 +3034,8 @@ impl NetServer {
                 self.reset_flags();
                 if self.game == Mode::SearchAndDestroy {
                     self.round = Some(RoundState::first(&self.snd_rules));
+                    let sites = self.charge_sites_event();
+                    self.broadcast_event(&sites);
                 }
                 // Everyone starts fresh on their own side, in join order;
                 // without teams, each somewhere away from the others.
@@ -2762,6 +3046,7 @@ impl NetServer {
                     avatar.hill = HillTime::default();
                 }
                 self.respawn_all_at_start();
+                self.new_charge();
                 self.broadcast_round();
                 let ids: Vec<u8> = self.avatars.iter().map(|a| a.id).collect();
                 for id in ids {
@@ -2798,7 +3083,10 @@ impl NetServer {
                 }
                 self.reset_flags();
             }
-            Transition::NextCountdown => self.round = None,
+            Transition::NextCountdown => {
+                self.round = None;
+                self.charge = None;
+            }
         }
         self.broadcast_match();
         if !self.zones.is_empty() {
@@ -3379,14 +3667,20 @@ impl NetServer {
 
     /// Sends every joined client its snapshot for this tick.
     fn broadcast(&mut self) {
+        let using = self.charge.and_then(|c| c.using);
         let mut views: Vec<PlayerView> = self
             .avatars
             .iter()
             .map(|a| {
+                let charge_use = using.filter(|u| u.by == a.id);
                 PlayerView {
                     hits: a.hits,
                     hit_heading: a.hit_heading,
                     hit_part: a.hit_part,
+                    charge_use: protocol::throw_to_u8(
+                        charge_use.map(|u| u.held / u.kind.duration(&self.snd_rules)),
+                    ),
+                    defusing: charge_use.is_some_and(|u| u.kind == UseKind::Defuse),
                     ..PlayerView::from_state(a.id, &a.predicted, a.yaw, a.pitch)
                 }
                 .with_progress(a.clock.progress())
@@ -3823,6 +4117,107 @@ fn map_zones(map: &Gd<Node>) -> Vec<Zone> {
                 center: to_sim(transform.origin),
                 half_extents: to_sim(size.abs() * 0.5),
             }
+        })
+        .collect()
+}
+
+/// What the charge needs to know about a player.
+fn charge_player(avatar: &Avatar, interact: bool) -> ChargePlayer {
+    ChargePlayer {
+        id: avatar.id,
+        team: avatar.team,
+        alive: avatar.predicted.state.alive(),
+        position: avatar.predicted.position,
+        interact,
+    }
+}
+
+/// What clients are told about the charge, to send them news only when it
+/// changes: where it is, and who is planting or defusing.
+fn charge_key(charge: &Charge) -> (ChargeState, Option<(u8, UseKind)>) {
+    (charge.state, charge.using.map(|u| (u.by, u.kind)))
+}
+
+/// The map's charge sites: `Node3D` children of a `ChargeSites` node, each a
+/// box centred on the node with its full size in a `size` metadata (default
+/// 5 x 3.6 x 5 m) and its name in a `label` metadata (default: A, B, ... in
+/// order).
+fn map_charge_sites(map: &Gd<Node>) -> Vec<(String, Site)> {
+    let Some(parent) = map
+        .get_node_or_null("ChargeSites")
+        .and_then(|n| n.try_cast::<Node3D>().ok())
+    else {
+        return Vec::new();
+    };
+    let base = parent.get_transform();
+    parent
+        .get_children()
+        .iter_shared()
+        .filter_map(|child| child.try_cast::<Node3D>().ok())
+        .take(MAX_CHARGE_SITES)
+        .enumerate()
+        .map(|(i, point)| {
+            let transform = base * point.get_transform();
+            let default_size = Vector3::new(5.0, 3.6, 5.0);
+            let size = point
+                .get_meta_ex("size")
+                .default(&default_size.to_variant())
+                .done()
+                .try_to::<Vector3>()
+                .unwrap_or(default_size);
+            let name = point
+                .get_meta_ex("label")
+                .default(&GString::from(site_letter(i).as_str()).to_variant())
+                .done()
+                .try_to::<GString>()
+                .map_or_else(|_| site_letter(i), |label| label.to_string());
+            (
+                name,
+                Site {
+                    center: to_sim(transform.origin),
+                    half_extents: to_sim(size.abs() * 0.5),
+                },
+            )
+        })
+        .collect()
+}
+
+/// A, B, C, ...
+fn site_letter(index: usize) -> String {
+    char::from(b'A' + (index % 26) as u8).to_string()
+}
+
+/// Two sites for maps without `ChargeSites`: on the defenders' side (side 1)
+/// of the middle, one to each flank, so the testing area and Nuketown play.
+fn fallback_charge_sites(spawns: &[SpawnPoint]) -> Vec<(String, Site)> {
+    let side = |team: Team| {
+        let points: Vec<Vec3> = spawns
+            .iter()
+            .filter(|p| p.team == Some(team))
+            .map(|p| p.position)
+            .collect();
+        (!points.is_empty()).then(|| points.iter().sum::<Vec3>() / points.len() as f32)
+    };
+    let Some((attack, defend)) = side(0).zip(side(1)) else {
+        return Vec::new();
+    };
+    let across = Vec3::new(defend.x - attack.x, 0.0, defend.z - attack.z);
+    let length = across.length();
+    if length < 1.0 {
+        return Vec::new();
+    }
+    let flank = Vec3::new(-across.z, 0.0, across.x) / length * (length * 0.3).min(14.0);
+    let middle = attack.lerp(defend, 0.65);
+    [("A", middle + flank), ("B", middle - flank)]
+        .into_iter()
+        .map(|(name, at)| {
+            (
+                name.to_owned(),
+                Site {
+                    center: at + Vec3::new(0.0, 1.5, 0.0),
+                    half_extents: Vec3::new(2.5, 1.8, 2.5),
+                },
+            )
         })
         .collect()
 }

@@ -55,6 +55,7 @@ fn raw_input(tick: u32) -> PlayerInput {
         lunge: (tick % 1000 == 450).then_some(Vec2::new(0.8, -2.6)),
         lethal: (800..860).contains(&(tick % 1200)),
         tactical: (1100..1110).contains(&(tick % 1500)),
+        interact: false,
         view_tick: None,
         fire_aim: None,
     }

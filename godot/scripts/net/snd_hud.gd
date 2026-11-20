@@ -95,9 +95,9 @@ func _update_banner(round: Dictionary, playing: bool) -> void:
 			"freeze":
 				_overlay.title = "ROUND %d" % round.number
 				var goal := (
-					"ATTACK  ·  Wipe out the defenders"
+					"ATTACK  ·  Plant the charge at a site"
 					if round.attacking
-					else "DEFEND  ·  Hold out, or wipe out the attackers"
+					else "DEFEND  ·  Stop the plant, or defuse the charge"
 				)
 				_overlay.detail = "%s  ·  %d" % [goal, int(ceil(round.seconds_left))]
 				_overlay.colour = ENEMY if round.attacking else ALLY
@@ -111,8 +111,13 @@ func _update_banner(round: Dictionary, playing: bool) -> void:
 
 
 func _reason_text(round: Dictionary, won: bool) -> String:
-	if round.reason == "time":
-		return "Time ran out" + ("" if won else " on the attack")
+	match String(round.reason):
+		"time":
+			return "Time ran out" + ("" if won else " on the attack")
+		"detonated":
+			return "The charge went off"
+		"defused":
+			return "The charge was defused"
 	return "Enemies eliminated" if won else "Your team was eliminated"
 
 

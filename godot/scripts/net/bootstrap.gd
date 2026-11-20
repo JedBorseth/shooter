@@ -58,6 +58,7 @@ const CTF_VIEW_SCRIPT := "res://scripts/net/ctf_view.gd"
 const HARDPOINT_VIEW_SCRIPT := "res://scripts/net/hardpoint_view.gd"
 const SND_HUD_SCRIPT := "res://scripts/net/snd_hud.gd"
 const KILLCAM_HUD_SCRIPT := "res://scripts/net/killcam_hud.gd"
+const SND_VIEW_SCRIPT := "res://scripts/net/snd_view.gd"
 const DEFAULT_PORT := 27015
 ## Port of the server `start_local_match` runs, away from the default so it
 ## does not clash with a server already running on this machine.
@@ -363,3 +364,10 @@ func _attach_client(main: Node, target: String, options: Dictionary) -> void:
 	killcam_hud.set("client", client)
 	killcam_hud.set("player", player)
 	main.add_child(killcam_hud)
+	# The charge, its sites' markers, and the plant and defuse prompts.
+	var snd_view := Node3D.new()
+	snd_view.name = "SndView"
+	snd_view.set_script(load(SND_VIEW_SCRIPT))
+	snd_view.set("client", client)
+	snd_view.set("player", player)
+	main.add_child(snd_view)

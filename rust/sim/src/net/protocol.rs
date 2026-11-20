@@ -32,7 +32,7 @@ use crate::look::PITCH_LIMIT;
 use crate::movement::{MoveState, Stance};
 use crate::player::{FireAim, PlayerInput, PlayerState};
 use crate::score::{Award, ScoreTotals, Scored};
-use crate::snd::{RoundEnd, RoundPhase};
+use crate::snd::{RoundEnd, RoundPhase, UseKind};
 use crate::tdm::{MAX_NAME_CHARS, Mode, Phase, TEAM_COUNT, Team};
 use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, WeaponState};
 
@@ -111,7 +111,11 @@ use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, Weapo
 // Version 46 holds a killcam victim's respawn until the client says the
 // killcam is over (`ClientMessage::SkipKillcam`, now also sent when it
 // finishes), so older clients would wait out the server's fallback.
-pub const PROTOCOL_VERSION: u16 = 46;
+// Version 47 added Search and Destroy's charge: the interact button held in
+// inputs, the charge sites and the charge's whereabouts, plants and defuses
+// as events, the two new round ends, and who is planting or defusing in
+// player views.
+pub const PROTOCOL_VERSION: u16 = 47;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -132,6 +136,8 @@ const MAX_REWOUND_POSES: usize = 32;
 const MAX_SCOREBOARD_ROWS: usize = 64;
 /// Cap on zones in one [`GameEvent::HardpointZones`].
 pub const MAX_HARDPOINT_ZONES: usize = 16;
+/// Cap on sites in one [`GameEvent::ChargeSites`].
+pub const MAX_CHARGE_SITES: usize = 4;
 /// Zone names are at most this many bytes of UTF-8 on the wire.
 const MAX_ZONE_NAME_BYTES: usize = 64;
 
@@ -309,6 +315,12 @@ pub enum GameEvent {
         attackers: Team,
         halftime_after: u32,
     },
+    /// To everyone (Search and Destroy): the map's charge sites, named A, B,
+    /// and so on. Sent on joining.
+    ChargeSites { sites: Vec<ZoneView> },
+    /// To each player (Search and Destroy), whenever it changes: where the
+    /// charge is, as that player may know it.
+    Charge(ChargeView),
     /// To everyone: a grenade went off at `at`. `owner` threw it (none once
     /// they have left) as their shot `shot`; clients draw the blast, and
     /// remove the grenade.
@@ -354,6 +366,48 @@ pub enum FlagPlay {
     Dropped,
     Returned,
     Captured,
+}
+
+/// The charge as one player sees it ([`GameEvent::Charge`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ChargeView {
+    pub status: ChargeStatus,
+    /// A plant or defuse under way, sent only to its player's team.
+    pub using: Option<UseView>,
+}
+
+/// Where the charge is ([`crate::snd::ChargeState`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ChargeStatus {
+    /// Carried: by `by` for the attackers; defenders do not learn who.
+    Carried {
+        by: Option<u8>,
+    },
+    Dropped {
+        at: Vec3,
+    },
+    Planted {
+        site: u8,
+        at: Vec3,
+    },
+    Detonated {
+        site: u8,
+        at: Vec3,
+    },
+    Defused {
+        site: u8,
+        at: Vec3,
+    },
+}
+
+/// A plant or defuse under way: `by` started it at server tick `started_at`,
+/// and it finishes at `done_at` if they keep holding.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct UseView {
+    pub by: u8,
+    pub kind: UseKind,
+    pub started_at: Tick,
+    pub done_at: Tick,
 }
 
 /// One Hardpoint zone as clients see it: a box around `center`.
@@ -564,6 +618,10 @@ pub struct PlayerView {
     /// How far the weapon is mounted on cover, 0 to 255
     /// (`MoveState::mount_blend`): the body leans onto the gun on the cover.
     pub mount: u8,
+    /// Planting or defusing the charge: 0 when not, otherwise how far along
+    /// as 1 to 255 ([`throw_to_u8`]); `defusing` says which.
+    pub charge_use: u8,
+    pub defusing: bool,
 }
 
 /// A throw's progress (0 to 1) as [`PlayerView::throw`]: 0 for none.
@@ -669,7 +727,21 @@ impl PlayerView {
                     p.state.movement.ladder_facing.y,
                 )
             }),
+            charge_use: 0,
+            defusing: false,
         }
+    }
+
+    /// Planting or defusing, and how far along (0 to 1), if either.
+    pub fn charge_progress(&self) -> Option<(UseKind, f32)> {
+        (self.charge_use > 0).then(|| {
+            let kind = if self.defusing {
+                UseKind::Defuse
+            } else {
+                UseKind::Plant
+            };
+            (kind, f32::from(self.charge_use - 1) / 254.0)
+        })
     }
 
     /// The way the ladder this body is on is climbed (`x`, `z`), if it is on one.
@@ -904,6 +976,7 @@ fn write_input(w: &mut BitWriter, input: &PlayerInput, previous_view: Option<f64
         input.melee,
         input.lethal,
         input.tactical,
+        input.interact,
     ] {
         w.bool(flag);
     }
@@ -1026,6 +1099,7 @@ fn read_input(r: &mut BitReader, previous_view: Option<f64>) -> DecodeResult<Pla
     let melee = r.bool()?;
     let lethal = r.bool()?;
     let tactical = r.bool()?;
+    let interact = r.bool()?;
     let lunge = if r.bool()? {
         let x = f32::from(r.u16()? as i16);
         let z = f32::from(r.u16()? as i16);
@@ -1065,6 +1139,7 @@ fn read_input(r: &mut BitReader, previous_view: Option<f64>) -> DecodeResult<Pla
         lunge,
         lethal,
         tactical,
+        interact,
         view_tick,
         fire_aim,
     })
@@ -1391,6 +1466,8 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
                         match reason {
                             RoundEnd::Eliminated => 0,
                             RoundEnd::Time => 1,
+                            RoundEnd::Detonated => 2,
+                            RoundEnd::Defused => 3,
                         },
                         2,
                     );
@@ -1431,7 +1508,96 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
             write_cause(w, k.cause);
             w.bool(k.headshot);
         }
+        GameEvent::ChargeSites { sites } => {
+            w.bits(19, EVENT_TAG_BITS);
+            let count = sites.len().min(MAX_CHARGE_SITES);
+            w.varint(count as u32);
+            for site in &sites[..count] {
+                write_string(w, &site.name, MAX_ZONE_NAME_BYTES);
+                write_vec3(w, site.center);
+                write_vec3(w, site.half_extents);
+            }
+        }
+        GameEvent::Charge(view) => {
+            w.bits(20, EVENT_TAG_BITS);
+            write_charge(w, view);
+        }
     }
+}
+
+fn write_charge(w: &mut BitWriter, view: &ChargeView) {
+    let site_at = |w: &mut BitWriter, tag: u32, site: u8, at: Vec3| {
+        w.bits(tag, 3);
+        w.bits(u32::from(site), 2);
+        write_vec3(w, at);
+    };
+    match view.status {
+        ChargeStatus::Carried { by } => {
+            w.bits(0, 3);
+            w.bool(by.is_some());
+            if let Some(by) = by {
+                w.u8(by);
+            }
+        }
+        ChargeStatus::Dropped { at } => {
+            w.bits(1, 3);
+            write_vec3(w, at);
+        }
+        ChargeStatus::Planted { site, at } => site_at(w, 2, site, at),
+        ChargeStatus::Detonated { site, at } => site_at(w, 3, site, at),
+        ChargeStatus::Defused { site, at } => site_at(w, 4, site, at),
+    }
+    w.bool(view.using.is_some());
+    if let Some(u) = view.using {
+        w.u8(u.by);
+        w.bool(u.kind == UseKind::Defuse);
+        w.u32(u.started_at);
+        w.u32(u.done_at);
+    }
+}
+
+fn read_charge(r: &mut BitReader) -> DecodeResult<ChargeView> {
+    let tag = r.bits(3)?;
+    let status = match tag {
+        0 => ChargeStatus::Carried {
+            by: if r.bool()? { Some(r.u8()?) } else { None },
+        },
+        1 => ChargeStatus::Dropped {
+            at: read_finite_vec3(r)?,
+        },
+        2..=4 => {
+            let site = r.bits(2)? as u8;
+            let at = read_finite_vec3(r)?;
+            match tag {
+                2 => ChargeStatus::Planted { site, at },
+                3 => ChargeStatus::Detonated { site, at },
+                _ => ChargeStatus::Defused { site, at },
+            }
+        }
+        _ => return Err(DecodeError::Invalid("charge status")),
+    };
+    let using = if r.bool()? {
+        let by = r.u8()?;
+        let kind = if r.bool()? {
+            UseKind::Defuse
+        } else {
+            UseKind::Plant
+        };
+        let started_at = r.u32()?;
+        let done_at = r.u32()?;
+        if done_at < started_at {
+            return Err(DecodeError::Invalid("charge use"));
+        }
+        Some(UseView {
+            by,
+            kind,
+            started_at,
+            done_at,
+        })
+    } else {
+        None
+    };
+    Ok(ChargeView { status, using })
 }
 
 fn write_cause(w: &mut BitWriter, cause: KillCause) {
@@ -1655,7 +1821,8 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
                     reason: match r.bits(2)? {
                         0 => RoundEnd::Eliminated,
                         1 => RoundEnd::Time,
-                        _ => return Err(DecodeError::Invalid("round end")),
+                        2 => RoundEnd::Detonated,
+                        _ => RoundEnd::Defused,
                     },
                 },
                 _ => return Err(DecodeError::Invalid("round phase")),
@@ -1698,6 +1865,22 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
                 headshot: r.bool()?,
             }))
         }
+        19 => {
+            let count = r.varint()? as usize;
+            if count > MAX_CHARGE_SITES {
+                return Err(DecodeError::Invalid("site count"));
+            }
+            let mut sites = Vec::with_capacity(count);
+            for _ in 0..count {
+                sites.push(ZoneView {
+                    name: read_string(r, MAX_ZONE_NAME_BYTES)?,
+                    center: read_finite_vec3(r)?,
+                    half_extents: read_finite_vec3(r)?,
+                });
+            }
+            Ok(GameEvent::ChargeSites { sites })
+        }
+        20 => Ok(GameEvent::Charge(read_charge(r)?)),
         _ => Err(DecodeError::Invalid("event tag")),
     }
 }
@@ -1996,6 +2179,12 @@ fn write_view_delta(w: &mut BitWriter, v: &PlayerView, base: &PlayerView) {
         w.u8(v.throw);
         w.bits(u32::from(v.throw_kind.code()), EQUIPMENT_BITS);
     }
+    let charge_changed = (v.charge_use, v.defusing) != (base.charge_use, base.defusing);
+    w.bool(charge_changed);
+    if charge_changed {
+        w.u8(v.charge_use);
+        w.bool(v.defusing);
+    }
     let shots = v.shots_fired.wrapping_sub(base.shots_fired);
     w.bool(shots != 0);
     if shots != 0 {
@@ -2061,6 +2250,10 @@ fn read_view_delta(r: &mut BitReader, base: &PlayerView) -> DecodeResult<PlayerV
     if r.bool()? {
         v.throw = r.u8()?;
         v.throw_kind = read_equipment(r)?;
+    }
+    if r.bool()? {
+        v.charge_use = r.u8()?;
+        v.defusing = r.bool()?;
     }
     if r.bool()? {
         v.shots_fired = base.shots_fired.wrapping_add(r.varint()?);
@@ -2958,6 +3151,54 @@ mod tests {
     }
 
     #[test]
+    fn the_held_interact_button_rides_in_inputs() {
+        let input = PlayerInput {
+            interact: true,
+            ..Default::default()
+        };
+        let msg = ClientMessage::Input(InputPacket {
+            ack_snapshot: None,
+            first_seq: 1,
+            inputs: vec![input, PlayerInput::default()],
+        });
+        let ClientMessage::Input(decoded) = ClientMessage::decode(&msg.encode()).unwrap() else {
+            panic!("expected input");
+        };
+        assert!(decoded.inputs[0].interact);
+        assert!(!decoded.inputs[1].interact);
+    }
+
+    #[test]
+    fn planting_and_defusing_ride_in_player_views() {
+        let base = PlayerView::default();
+        let planting = PlayerView {
+            charge_use: throw_to_u8(Some(0.5)),
+            ..base
+        };
+        let mut w = BitWriter::new();
+        write_view_delta(&mut w, &planting, &base);
+        let bytes = w.finish();
+        let decoded = read_view_delta(&mut BitReader::new(&bytes), &base).unwrap();
+        assert_eq!(decoded, planting);
+        let (kind, progress) = decoded.charge_progress().unwrap();
+        assert_eq!(kind, UseKind::Plant);
+        assert!((progress - 0.5).abs() < 0.01);
+        let defusing = PlayerView {
+            defusing: true,
+            ..planting
+        };
+        let mut w = BitWriter::new();
+        write_view_delta(&mut w, &defusing, &planting);
+        let bytes = w.finish();
+        let decoded = read_view_delta(&mut BitReader::new(&bytes), &planting).unwrap();
+        assert_eq!(
+            decoded.charge_progress().map(|(k, _)| k),
+            Some(UseKind::Defuse)
+        );
+        assert_eq!(base.charge_progress(), None);
+    }
+
+    #[test]
     fn the_lethal_button_rides_in_inputs() {
         let input = PlayerInput {
             lethal: true,
@@ -3696,6 +3937,85 @@ mod tests {
                 attackers: 0,
                 halftime_after: 5,
             },
+            GameEvent::Round {
+                number: 3,
+                phase: RoundPhase::Over {
+                    winner: 1,
+                    reason: RoundEnd::Detonated,
+                },
+                ends_at: 5,
+                attackers: 1,
+                halftime_after: 5,
+            },
+            GameEvent::Round {
+                number: 4,
+                phase: RoundPhase::Over {
+                    winner: 0,
+                    reason: RoundEnd::Defused,
+                },
+                ends_at: 5,
+                attackers: 1,
+                halftime_after: 5,
+            },
+            GameEvent::ChargeSites {
+                sites: vec![
+                    ZoneView {
+                        name: "A".to_owned(),
+                        center: Vec3::new(5.0, 1.9, -27.5),
+                        half_extents: Vec3::new(2.5, 1.8, 2.5),
+                    },
+                    ZoneView {
+                        name: "B".to_owned(),
+                        center: Vec3::new(2.0, 1.9, 29.75),
+                        half_extents: Vec3::new(2.5, 1.8, 2.5),
+                    },
+                ],
+            },
+            GameEvent::Charge(ChargeView {
+                status: ChargeStatus::Carried { by: Some(201) },
+                using: Some(UseView {
+                    by: 201,
+                    kind: UseKind::Plant,
+                    started_at: 1000,
+                    done_at: 1480,
+                }),
+            }),
+            GameEvent::Charge(ChargeView {
+                status: ChargeStatus::Carried { by: None },
+                using: None,
+            }),
+            GameEvent::Charge(ChargeView {
+                status: ChargeStatus::Dropped {
+                    at: Vec3::new(-3.0, 0.15, 7.5),
+                },
+                using: None,
+            }),
+            GameEvent::Charge(ChargeView {
+                status: ChargeStatus::Planted {
+                    site: 1,
+                    at: Vec3::new(2.0, 0.15, 30.0),
+                },
+                using: Some(UseView {
+                    by: 3,
+                    kind: UseKind::Defuse,
+                    started_at: 5000,
+                    done_at: 5840,
+                }),
+            }),
+            GameEvent::Charge(ChargeView {
+                status: ChargeStatus::Detonated {
+                    site: 0,
+                    at: Vec3::new(5.0, 0.15, -27.0),
+                },
+                using: None,
+            }),
+            GameEvent::Charge(ChargeView {
+                status: ChargeStatus::Defused {
+                    site: 1,
+                    at: Vec3::new(2.0, 0.15, 30.0),
+                },
+                using: None,
+            }),
         ]);
         let bytes = msg.encode(&[]);
         assert_eq!(ServerMessage::decode(&bytes, |_| None).unwrap(), msg);

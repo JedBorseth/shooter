@@ -95,6 +95,9 @@ pub struct RemoteSample {
     pub ladder: Option<glam::Vec2>,
     /// How far the weapon is mounted on cover, 0 to 1 (`PlayerView::mount`).
     pub mount: f32,
+    /// Planting or defusing the charge, and how far along
+    /// (`PlayerView::charge_progress`).
+    pub charge_use: Option<(crate::snd::UseKind, f32)>,
 }
 
 impl Interpolate for Progress {
@@ -150,6 +153,7 @@ impl RemoteSample {
             progress: v.progress(),
             ladder: v.ladder_facing(),
             mount: f32::from(v.mount) / 255.0,
+            charge_use: v.charge_progress(),
         }
     }
 }
@@ -179,6 +183,10 @@ impl Interpolate for RemoteSample {
             throw: match (self.throw, to.throw) {
                 (Some(a), Some(b)) if b >= a => Some(a + (b - a) * t),
                 _ => discrete.throw,
+            },
+            charge_use: match (self.charge_use, to.charge_use) {
+                (Some((k, a)), Some((l, b))) if k == l && b >= a => Some((k, a + (b - a) * t)),
+                _ => discrete.charge_use,
             },
             // Shots show once the snapshot that contains them is reached.
             shots_fired: self.shots_fired,
