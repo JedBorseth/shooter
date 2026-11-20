@@ -977,6 +977,12 @@ impl NetServer {
         self.avatars.len() as i32
     }
 
+    /// Connections from games, joined or still joining (no bots).
+    #[func]
+    fn connection_count(&self) -> i32 {
+        self.clients.len() as i32
+    }
+
     #[func]
     fn server_tick(&self) -> i64 {
         i64::from(self.tick)

@@ -310,6 +310,8 @@ Rounds with one life each (`rust/sim/src/snd.rs`, `--mode snd`), on Slamcity. Cl
 - [x] Dockerfile for the headless server (Godot export + Rust extension): `docker/server`, published to `ghcr.io/jedborseth/shooter-server` from `main` ([docs/server.md](docs/server.md)).
 - [ ] Strip textures from the server export (558 MB of the 693 MB pack is `.ctex` the server never draws): mark image files "Strip Visuals" in the Linux Server preset.
 - [ ] Server allocation: Nakama match handler starts or assigns a dedicated server and hands its address to players. Agones on Kubernetes later.
+  - [x] The allocator (`rust/allocator`): starts a ranked server container per match through the Docker socket, on its own port pair, which stops once empty ([docs/online.md](docs/online.md#server-allocation)).
+  - [ ] The Nakama match handler that calls it from the matchmaker and hands players the address.
 - [x] Server-side validation and anti-cheat basics: packet floods and garbage disconnect; aim snaps onto hits, view ticks the round trip does not explain, and lag switching are flagged in the server log, never kicked ([docs/netcode.md](docs/netcode.md#server-checks), `shooter_sim::net::integrity`). Speed, teleports, and fire rate cannot be cheated: the server simulates them from inputs.
   - [ ] Follow-ups: send each client only the enemies it could see or hear (against wallhacks; killcams and the minimap need a plan for the rest), and a way for an operator to see flags without reading the log (once there are accounts).
 

@@ -10,6 +10,7 @@ extends Node
 ##            [--rounds N]
 ##            [--score-limit N] [--time-limit MINUTES] [--auto-start]
 ##            [--accounts URL]
+##            [--exit-when-empty SECONDS]
 ##                                    run as a dedicated server (use with --headless);
 ##                                    with --bot-skill the bots play the match; without
 ##                                    it they are scripted targets, and --bot-damage
@@ -31,6 +32,9 @@ extends Node
 ##                                    server's HTTP key comes from the
 ##                                    SHOOTER_ACCOUNTS_KEY environment variable
 ##                                    (docs/online.md).
+##                                    --exit-when-empty quits once nobody has
+##                                    been connected for SECONDS (servers an
+##                                    allocator starts for one match).
 ##   --directory HOST[:PORT]          developer override for the Internet directory;
 ##                                    not saved between launches
 ##   --connect HOST[:PORT] [--lag MS] [--jitter MS] [--loss PERCENT]
@@ -323,6 +327,8 @@ func _start_server(options: Dictionary) -> void:
 		link.set("server", server)
 		link.set("address", accounts)
 		server.add_child(link)
+	if options.has("exit-when-empty"):
+		_exit_when_empty(server, maxf(float(options["exit-when-empty"]), 5.0))
 	server.pause_file = String(options.get("pause-file", ""))
 	if not server.pause_file.is_empty():
 		server.process_mode = Node.PROCESS_MODE_ALWAYS
@@ -331,6 +337,24 @@ func _start_server(options: Dictionary) -> void:
 	tree.current_scene = server
 	if previous != null:
 		previous.queue_free()
+
+
+## Quits once `server` has had no connections for `seconds`: a server the
+## allocator started for one match (docs/online.md) stops when its players
+## have gone, or if they never come.
+func _exit_when_empty(server: NetServer, seconds: float) -> void:
+	var timer := Timer.new()
+	timer.wait_time = 1.0
+	timer.autostart = true
+	var empty_for := [0.0]
+	timer.timeout.connect(
+		func() -> void:
+			empty_for[0] = 0.0 if server.connection_count() > 0 else empty_for[0] + 1.0
+			if empty_for[0] >= seconds:
+				print("server: nobody connected for %d s; stopping" % int(seconds))
+				get_tree().quit()
+	)
+	server.add_child(timer)
 
 
 func _attach_client(main: Node, target: String, options: Dictionary, token := "") -> void:

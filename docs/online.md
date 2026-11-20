@@ -65,6 +65,26 @@ A dedicated server started with `--accounts URL` (Docker: `SHOOTER_ACCOUNTS`) ch
 
 `rust/game/src/net/accounts.rs` holds the server's side; the server itself never makes HTTP calls (it emits `account_check` and `account_award`, and the link answers with `accept_account` or `deny_account`).
 
+## Server allocation
+
+Matchmade matches each get a dedicated server of their own, started on demand by the allocator (`rust/allocator`, the `allocator` service in the stack): a small Rust service with no dependencies past `serde_json`, in a 1.3 MB image.
+
+- Nakama's match handler calls `POST /allocate` with the match's mode and map (`Authorization: Bearer <ALLOCATOR_KEY>`).
+- The allocator picks a free game port from `SERVER_PORTS` (even ports from 27100; each server takes the next port for queries), starts the server image (`SHOOTER_SERVER_IMAGE`, the `nightly` image by default) through the Docker socket with both ports published on the same numbers, waits for its health check, and answers with `PUBLIC_HOST` and the port. A match starts at once (`--auto-start`) with eleven bots, each player taking a bot's place.
+- Allocated servers are ranked: they join the stack's network and check accounts with Nakama.
+- A server stops once nobody has been connected for two minutes (`--exit-when-empty 120`), and Docker removes it. At most `MAX_SERVERS` (8) run at once; past that, allocation fails and players are told to try again.
+- Only Nakama reaches the allocator: it publishes no port. It drives Docker through the socket, which is as good as root on the host, so keep `ALLOCATOR_KEY` secret.
+
+Open UDP `SERVER_PORTS` on the host's firewall for players outside it. Agones on Kubernetes would replace the allocator for fleets across machines; it is out of scope.
+
+Test an allocation by hand (publish the allocator's port first, for example with a Compose override):
+
+```sh
+curl -X POST -H "Authorization: Bearer localdevallocatorkey" \
+  -d '{"mode":"tdm","map":"slamcity"}' 127.0.0.1:7400/allocate
+# {"container":"6006c28ee619","host":"127.0.0.1","port":27100}
+```
+
 ## Server modules
 
 `docker/online/nakama/modules/progress.lua` (Lua, so the stack needs no build step):
