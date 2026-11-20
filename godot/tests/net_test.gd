@@ -272,8 +272,19 @@ func _play_match(client: NetClient) -> void:
 		"the bot is on the other team (%s, %s)" % [me.get("team"), bot.get("team")]
 	)
 	_check(client.match_info().phase == "lobby", "the match waits in the lobby")
+	# A class that breaks a rule is refused before it is sent.
+	var greedy: Dictionary = client.default_classes()[0]
+	greedy["lethals"] = 2
+	_check(client.set_class(greedy) != "", "a second frag needs its wildcard")
+	var priced := NetClient.check_class(greedy)
+	_check(priced.error != "" and priced.picks == 10, "check_class says why: %s" % priced)
 	_check(client.set_loadout("m4+grip"), "an attachment variant is a valid loadout")
 	_check(client.choose_tactical("smoke"), "smoke is a valid tactical")
+	var chosen := client.loadout_class()
+	_check(
+		chosen.primary == "m4" and Array(chosen.primary_attachments) == ["grip"],
+		"the class carries the chosen primary, got %s" % chosen
+	)
 	client.set_ready(true)
 	var saw_countdown := false
 	for i in 1200:

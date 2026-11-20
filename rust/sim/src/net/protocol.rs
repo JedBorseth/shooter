@@ -21,6 +21,7 @@ use super::Tick;
 use super::bits::{BitReader, BitWriter, DecodeError, DecodeResult};
 use super::subtick;
 use crate::chat;
+use crate::class::{Attachments, Class, Gun, Wildcards};
 use crate::equipment;
 use crate::gun_game;
 use crate::hardpoint::Holder;
@@ -105,7 +106,9 @@ use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, Weapo
 // other players draw, and the hit zones pose, a vault instead of a mantle.
 // Version 44 added killcams: the killcam event (which kill to replay, and
 // the ticks around it) and the client's skip.
-pub const PROTOCOL_VERSION: u16 = 44;
+// Version 45 replaced the loadout pick with a whole class (`crate::class`):
+// both weapons and their attachments, grenade counts, and wildcards.
+pub const PROTOCOL_VERSION: u16 = 45;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -148,12 +151,9 @@ pub enum ClientMessage {
     Ready {
         ready: bool,
     },
-    /// The primary weapon and the tactical to spawn with from the next spawn
-    /// on (the sidearm is always the M1911, the lethal a frag).
-    Loadout {
-        primary: WeaponId,
-        tactical: equipment::Kind,
-    },
+    /// The class to spawn with from the next spawn on. The server checks it
+    /// ([`Class::validate`]) and ignores one that breaks a rule.
+    Class(Class),
     /// A chat message, to everyone or only to our team.
     Chat {
         text: String,
@@ -814,10 +814,9 @@ impl ClientMessage {
                 w.bits(3, TAG_BITS);
                 w.bool(*ready);
             }
-            ClientMessage::Loadout { primary, tactical } => {
+            ClientMessage::Class(class) => {
                 w.bits(4, TAG_BITS);
-                write_weapon(&mut w, *primary);
-                w.bits(u32::from(tactical.code()), EQUIPMENT_BITS);
+                write_class(&mut w, class);
             }
             ClientMessage::Chat { text, team } => {
                 w.bits(5, TAG_BITS);
@@ -869,14 +868,7 @@ impl ClientMessage {
                 rewound_hitboxes: r.bool()?,
             }),
             3 => Ok(ClientMessage::Ready { ready: r.bool()? }),
-            4 => {
-                let primary = read_weapon(&mut r)?;
-                let tactical = read_equipment(&mut r)?;
-                if tactical.lethal() {
-                    return Err(DecodeError::Invalid("tactical"));
-                }
-                Ok(ClientMessage::Loadout { primary, tactical })
-            }
+            4 => Ok(ClientMessage::Class(read_class(&mut r)?)),
             5 => {
                 let team = r.bool()?;
                 Ok(ClientMessage::Chat {
@@ -2378,6 +2370,49 @@ fn read_combat_state(r: &mut BitReader) -> DecodeResult<CombatState> {
     })
 }
 
+/// Bits for a class's grenade counts (0 to 3).
+const CLASS_COUNT_BITS: u32 = 2;
+
+fn write_gun(w: &mut BitWriter, gun: Option<Gun>) {
+    w.bool(gun.is_some());
+    if let Some(gun) = gun {
+        write_weapon(w, gun.base);
+        w.bits(u32::from(gun.attachments.bits()), Attachments::BITS);
+    }
+}
+
+fn read_gun(r: &mut BitReader) -> DecodeResult<Option<Gun>> {
+    if !r.bool()? {
+        return Ok(None);
+    }
+    let base = read_weapon(r)?;
+    let attachments = Attachments::from_bits(r.bits(Attachments::BITS)? as u8)
+        .ok_or(DecodeError::Invalid("attachments"))?;
+    Ok(Some(Gun { base, attachments }))
+}
+
+/// Writes a class. Its rules are the server's to check, not the decoder's.
+fn write_class(w: &mut BitWriter, class: &Class) {
+    write_gun(w, class.primary);
+    write_gun(w, class.secondary);
+    w.bits(u32::from(class.lethals.min(3)), CLASS_COUNT_BITS);
+    w.bits(u32::from(class.tactical.code()), EQUIPMENT_BITS);
+    w.bits(u32::from(class.tacticals.min(3)), CLASS_COUNT_BITS);
+    w.bits(u32::from(class.wildcards.bits()), Wildcards::BITS);
+}
+
+fn read_class(r: &mut BitReader) -> DecodeResult<Class> {
+    Ok(Class {
+        primary: read_gun(r)?,
+        secondary: read_gun(r)?,
+        lethals: r.bits(CLASS_COUNT_BITS)? as u8,
+        tactical: read_equipment(r)?,
+        tacticals: r.bits(CLASS_COUNT_BITS)? as u8,
+        wildcards: Wildcards::from_bits(r.bits(Wildcards::BITS)? as u8)
+            .ok_or(DecodeError::Invalid("wildcards"))?,
+    })
+}
+
 /// Bits for an [`equipment::Kind`] on the wire: room for the tacticals.
 const EQUIPMENT_BITS: u32 = 2;
 
@@ -2541,6 +2576,7 @@ fn read_option_tick(r: &mut BitReader) -> DecodeResult<Option<Tick>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::class::Wildcard;
     use crate::movement::MoveEnv;
     use crate::player::{self, PlayerParams};
 
@@ -3744,10 +3780,18 @@ mod tests {
                 text: "gg ünïcode".to_owned(),
                 team: true,
             },
-            ClientMessage::Loadout {
-                primary: WeaponId::expect("ak47"),
+            ClientMessage::Class(Class {
+                primary: Some(Gun::with(
+                    WeaponId::expect("ak47"),
+                    &[weapon::Attachment::Grip, weapon::Attachment::Acog],
+                )),
+                secondary: None,
+                lethals: 2,
                 tactical: equipment::Kind::Smoke,
-            },
+                tacticals: 1,
+                wildcards: Wildcards::of(&[Wildcard::DangerClose, Wildcard::Overkill]),
+            }),
+            ClientMessage::Class(Class::default()),
             ClientMessage::SkipKillcam,
         ] {
             assert_eq!(ClientMessage::decode(&msg.encode()).unwrap(), msg);

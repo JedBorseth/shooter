@@ -6,6 +6,7 @@
 
 pub mod bot;
 pub mod chat;
+pub mod class;
 pub mod ctf;
 pub mod equipment;
 pub mod fmath;
