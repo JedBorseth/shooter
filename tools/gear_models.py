@@ -1523,3 +1523,64 @@ def guided_missile(b: Model):
         b.hull([(c * 0.15, s * 0.15, 0.95), (c * 0.15, s * 0.15, 1.28), (c * 0.38, s * 0.38, 1.2),
                 (c * 0.38, s * 0.38, 1.3), (c * 0.15 - s * 0.01, s * 0.15 + c * 0.01, 1.1)], "aircraft_dark")
     b.cyl("z", 1.3, 1.36, (0.0, 0.0), 0.1, "aircraft_dark", sides=12)
+
+
+@model
+def attack_chopper(b: Model):
+    """The Attack Chopper scorestreak's helicopter (scripts/net/chopper_view.gd):
+    a slim two-seat attack helicopter 11 m long, with a stepped tandem
+    canopy, stub wings with rocket pods, a chin gun, a tail boom with a
+    swept fin and its tail rotor, and skids. The main rotor is its own model
+    (chopper_rotor), turned on the mast at (0, 1.55, -0.4). Origin at the
+    middle of the cabin, nose toward -z."""
+    _loft_body(b, [(-5.2, 0.12, 0.05, 0.14), (-4.6, 0.55, 0.0, 0.45), (-3.6, 0.85, 0.15, 0.6),
+                   (-1.5, 1.05, 0.25, 0.72), (0.8, 1.0, 0.3, 0.7), (2.0, 0.6, 0.55, 0.42),
+                   (3.0, 0.3, 0.75, 0.22)], "aircraft_dark", ring=12)
+    # The tail boom out to the fin.
+    b.hull([(x, y, z) for x in (-0.18, 0.18) for y in (0.55, 0.95) for z in (2.8, 3.0)]
+           + [(x, y, z) for x in (-0.09, 0.09) for y in (0.75, 0.95) for z in (5.6, 5.8)], "aircraft_dark")
+    # The swept fin and the tail rotor's disc on its left.
+    b.hull([(0.0, 0.85, 5.1), (0.0, 0.85, 5.8), (0.0, 2.35, 6.15), (0.0, 2.35, 6.55),
+            (0.06, 0.85, 5.4), (-0.06, 0.85, 5.4)], "aircraft_dark")
+    b.cyl("x", -0.16, -0.12, (1.7, 5.95), 0.75, "aircraft_glass", sides=18)
+    b.hull([(x, y, z) for x in (-1.2, 1.2) for y in (0.82, 0.9) for z in (5.0, 5.45)], "aircraft_dark")
+    # The stepped tandem canopy.
+    b.smooth_hull([(x, y, z) for x in (-0.42, 0.42) for y in (0.65, 1.2) for z in (-4.3, -3.2)]
+                  + [(0.0, 0.7, -4.75), (0.0, 1.25, -2.9)], "aircraft_glass", levels=1)
+    b.smooth_hull([(x, y, z) for x in (-0.46, 0.46) for y in (0.95, 1.5) for z in (-3.1, -1.9)]
+                  + [(0.0, 1.55, -1.6)], "aircraft_glass", levels=1)
+    # The engine housing and mast under the rotor.
+    b.hull([(x, y, z) for x in (-0.55, 0.55) for y in (1.1, 1.45) for z in (-1.4, 1.6)]
+           + [(0.0, 1.4, 2.4)], "aircraft_skin")
+    b.cyl("y", 1.4, 1.58, (0.0, -0.4), 0.12, "aircraft_skin", sides=10)
+    # Stub wings, each with a rocket pod.
+    for side in (-1, 1):
+        b.hull([(side * 0.6, 0.15, -1.0), (side * 0.6, 0.15, 0.2), (side * 2.0, 0.05, -0.75),
+                (side * 2.0, 0.05, -0.05), (side * 0.6, 0.25, -1.0), (side * 0.6, 0.25, 0.2),
+                (side * 2.0, 0.13, -0.75), (side * 2.0, 0.13, -0.05)], "aircraft_dark")
+        b.cyl("z", -1.3, 0.3, (side * 1.6, -0.12), 0.18, "aircraft_skin", sides=10)
+        b.cyl("z", -1.32, -1.29, (side * 1.6, -0.12), 0.14, "aircraft_dark", sides=10)
+        # Skids on struts.
+        b.tube([(side * 0.95, -1.3, -2.4), (side * 0.95, -1.3, 1.6), (side * 0.95, -1.15, 2.0)], 0.05,
+               "aircraft_dark", sides=6, detail=False)
+        for z in (-1.4, 0.9):
+            b.tube([(side * 0.5, -0.6, z), (side * 0.95, -1.3, z)], 0.04, "aircraft_dark", sides=6,
+                   detail=False)
+    # The chin gun: a turret ball and its barrel.
+    b.cyl("y", -0.85, -0.6, (0.0, -4.0), 0.2, "aircraft_skin", sides=12)
+    b.cyl("z", -5.3, -4.0, (0.0, -0.85), 0.045, "aircraft_dark", sides=8)
+
+
+@model
+def chopper_rotor(b: Model):
+    """The Attack Chopper's main rotor (scripts/net/chopper_view.gd), turned
+    on the helicopter's mast: a hub and four blades 5.5 m long. Origin at
+    the hub, in the plane of the blades."""
+    b.cyl("y", -0.08, 0.12, (0.0, 0.0), 0.22, "aircraft_skin", sides=12)
+    for k in range(4):
+        a = k * PI / 2
+        c, s = math.cos(a), math.sin(a)
+        # A blade, chord 0.32 m, slightly twisted by a thin hull.
+        b.hull([(c * 0.2 - s * 0.16, 0.0, s * 0.2 + c * 0.16), (c * 0.2 + s * 0.16, 0.03, s * 0.2 - c * 0.16),
+                (c * 5.5 - s * 0.12, 0.05, s * 5.5 + c * 0.12), (c * 5.5 + s * 0.12, 0.07, s * 5.5 - c * 0.12),
+                (c * 3.0, 0.08, s * 3.0)], "aircraft_dark")

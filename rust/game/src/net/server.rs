@@ -69,6 +69,7 @@ use godot::prelude::*;
 use shooter_sim::bot::Skill;
 use shooter_sim::care_package;
 use shooter_sim::chat::{self, ChatLimiter};
+use shooter_sim::chopper::{self, Chopper};
 use shooter_sim::class::{self, Class};
 use shooter_sim::ctf::{self, FlagEvent, FlagPlayer, FlagRules, FlagState, Flags};
 use shooter_sim::domination::{self, BotGoal, DominationRules, DominationState, FlagPoint};
@@ -393,6 +394,9 @@ pub struct NetServer {
     missiles: Vec<Flight>,
     bomblets: Vec<Bomblet>,
     next_missile: u16,
+    /// Attack Choppers called in (`shooter_sim::chopper`), and the next id.
+    choppers: Vec<Chopper>,
+    next_chopper: u16,
     /// The map's lanes for bots to follow (`BotLanes`), from one side to the other.
     bot_lanes: Vec<Vec<Vector3>>,
     /// Tick of the next scoreboard update.
@@ -1680,6 +1684,30 @@ impl NetServer {
         }
     }
 
+    /// The Attack Choppers up (tests), as dictionaries with `id`, `owner`,
+    /// `position` now, `position_in_1s`, `damage`, and `target` (-1 for
+    /// none).
+    #[func]
+    fn choppers(&self) -> Array<VarDictionary> {
+        let now = f64::from(self.tick);
+        self.choppers
+            .iter()
+            .map(|c| {
+                let mut d = VarDictionary::new();
+                d.set("id", i32::from(c.id));
+                d.set("owner", i32::from(c.owner));
+                d.set("position", to_godot(c.position(now)));
+                d.set(
+                    "position_in_1s",
+                    to_godot(c.position(now + f64::from(TICK_RATE))),
+                );
+                d.set("damage", c.damage);
+                d.set("target", c.target.map_or(-1, |(id, _)| i32::from(id)));
+                d
+            })
+            .collect()
+    }
+
     /// The Guided Missiles in the air (tests), as dictionaries with `id`,
     /// `owner`, `position`, `split`, and `exploded`.
     #[func]
@@ -2504,6 +2532,18 @@ impl NetServer {
         self.send_streaks(id);
         let sky = self.sky_event();
         self.send_event(id, sky);
+        for c in self.choppers.clone() {
+            self.send_event(id, chopper_event(&c));
+            if let Some((target, _)) = c.target {
+                self.send_event(
+                    id,
+                    GameEvent::Streak(StreakEvent::ChopperTarget {
+                        id: c.id,
+                        target: Some(target),
+                    }),
+                );
+            }
+        }
         for turret in self.turrets.list.clone() {
             self.send_event(id, turret_event(&turret));
             if let Some((target, _)) = turret.target {
@@ -3367,6 +3407,16 @@ impl NetServer {
                     velocity: to_godot((later - at) * 10.0),
                 }
             })
+            .chain(self.choppers.iter().map(|c| {
+                let at = c.position(f64::from(tick));
+                let later = c.position(f64::from(tick + TICK_RATE / 10));
+                BotAircraft {
+                    id: 0x8000 | c.id,
+                    side: c.side,
+                    position: to_godot(at),
+                    velocity: to_godot((later - at) * 10.0),
+                }
+            }))
             .collect();
         // Sentry Guns that have armed, for bots to shoot at.
         let bot_turrets: Vec<(u16, u8, Vector3)> = self
@@ -4797,6 +4847,28 @@ impl NetServer {
         for (id, owner) in struck {
             self.hurt_aircraft(id, streak::AIRCRAFT_HEALTH + 1.0, owner, u32::MAX);
         }
+        // And on enemy Attack Choppers, any of which one rocket downs.
+        let choppers = &self.choppers;
+        let struck = self.grenades.strike_aircraft(TICK_DT, |owner, from, to| {
+            let side = sides.iter().find(|(id, _)| *id == owner)?.1;
+            choppers
+                .iter()
+                .filter(|c| c.side != side)
+                .filter_map(|c| {
+                    let at = c.position(f64::from(tick));
+                    let t = streak::segment_meets_sphere(
+                        from,
+                        to,
+                        at,
+                        equipment::ROCKET_AIRCRAFT_RADIUS,
+                    )?;
+                    Some((c.id, t))
+                })
+                .min_by(|a, b| a.1.total_cmp(&b.1))
+        });
+        for (id, owner) in struck {
+            self.hurt_chopper(id, chopper::HEALTH + 1.0, owner, u32::MAX);
+        }
         // And on enemy Sentry Guns, whose blast then does the damage.
         let turrets = &self.turrets;
         self.grenades.strike_aircraft(TICK_DT, |owner, from, to| {
@@ -5264,6 +5336,33 @@ impl NetServer {
         }
         for (id, damage) in aircraft_hits {
             self.hurt_aircraft(id, damage, shot.shooter, shot.shot);
+        }
+        // Enemy Attack Choppers: bullets do half (Black Ops 2's armour).
+        let mut chopper_hits: Vec<(u16, f32)> = Vec::new();
+        for pellet in &pellets {
+            let reach = pellet.max_distance.min(def.range);
+            let to = pellet.origin + pellet.direction * reach;
+            let hit = self
+                .choppers
+                .iter()
+                .filter(|c| c.side != shooter_side)
+                .filter_map(|c| {
+                    let at = c.position(rewind);
+                    let t =
+                        streak::segment_meets_sphere(pellet.origin, to, at, chopper::HIT_RADIUS)?;
+                    Some((c.id, t))
+                })
+                .min_by(|a, b| a.1.total_cmp(&b.1));
+            if let Some((id, t)) = hit {
+                let damage = def.damage_at(reach * t) * chopper::BULLET_SCALE;
+                match chopper_hits.iter_mut().find(|(hit, _)| *hit == id) {
+                    Some((_, total)) => *total += damage,
+                    None => chopper_hits.push((id, damage)),
+                }
+            }
+        }
+        for (id, damage) in chopper_hits {
+            self.hurt_chopper(id, damage, shot.shooter, shot.shot);
         }
         // Enemy Sentry Guns: a pellet that meets one short of a wall.
         let mut turret_hits: Vec<(u16, f32)> = Vec::new();
@@ -6422,6 +6521,13 @@ impl NetServer {
                 self.strikes.clear();
                 self.missiles.clear();
                 self.bomblets.clear();
+                for c in std::mem::take(&mut self.choppers) {
+                    self.broadcast_event(&GameEvent::Streak(StreakEvent::ChopperGone {
+                        id: c.id,
+                        by: None,
+                        at: c.position(f64::from(self.tick)),
+                    }));
+                }
                 for avatar in &mut self.avatars {
                     avatar.pilot = None;
                 }
@@ -6951,6 +7057,7 @@ impl NetServer {
         self.update_strikes();
         self.update_turrets();
         self.update_missiles();
+        self.update_choppers();
         for side in self.sky.sweeps(self.tick) {
             let found: Vec<(u8, Vec3)> = self
                 .avatars
@@ -7013,6 +7120,25 @@ impl NetServer {
                 Some(target) => Some(target),
                 None => return false,
             }
+        } else {
+            None
+        };
+        // An Attack Chopper guards the point marked on the map (a bot's: a
+        // random enemy's, as Black Ops 2's bots mark), one a side at once.
+        let chopper_guard = if streak == Streak::AttackChopper {
+            if self.choppers.iter().any(|c| c.side == side) {
+                return false;
+            }
+            let mark = if targets.is_empty() && avatar.brain.is_some() {
+                self.bot_chopper_mark(avatar)
+            } else {
+                targets.first().copied()
+            };
+            let Some(mark) = mark.filter(|m| m.is_finite()) else {
+                return false;
+            };
+            let floor = self.sky.orbit.centre.y - streak::Orbit::HEIGHT;
+            Some(Vec3::new(mark.x, floor + chopper::HEIGHT, mark.y))
         } else {
             None
         };
@@ -7099,6 +7225,15 @@ impl NetServer {
                         bot_split,
                     });
                     self.broadcast_event(&missile_event(&m, false));
+                }
+            }
+            (Streak::AttackChopper, _) => {
+                if let Some(guard) = chopper_guard {
+                    let seed = rng::hash(u32::from(id) << 8 | u32::from(self.next_chopper), tick);
+                    let c = Chopper::new(self.next_chopper, id, side, guard, tick, seed);
+                    self.next_chopper = self.next_chopper.wrapping_add(1);
+                    self.broadcast_event(&chopper_event(&c));
+                    self.choppers.push(c);
                 }
             }
             (Streak::SentryGun, _) => {
@@ -7255,6 +7390,181 @@ impl NetServer {
             ) {
                 owner.streak_seen += owner.score.score.saturating_sub(before);
             }
+        }
+    }
+
+    /// A bot's Attack Chopper mark: a random living enemy's spot.
+    fn bot_chopper_mark(&self, bot: &Avatar) -> Option<shooter_sim::Vec2> {
+        let enemies: Vec<&Avatar> = self
+            .avatars
+            .iter()
+            .filter(|a| a.predicted.state.alive() && self.hostile(bot, a))
+            .collect();
+        let pick = rng::hash(u32::from(bot.id), self.tick) as usize % enemies.len().max(1);
+        let at = enemies.get(pick)?.predicted.position;
+        Some(shooter_sim::Vec2::new(at.x, at.z))
+    }
+
+    /// Runs the Attack Choppers: those whose time is up go, and each one's
+    /// gun picks, turns onto, and fires on the nearest enemy it can see
+    /// (`chopper::Chopper::step`). Its rounds hurt the first enemy they
+    /// meet short of a wall; its kills are its owner's, shown as "Attack
+    /// Chopper", and count nothing toward streaks.
+    fn update_choppers(&mut self) {
+        if self.choppers.is_empty() {
+            return;
+        }
+        let tick = self.tick;
+        let owners: Vec<u8> = self.avatars.iter().map(|a| a.id).collect();
+        let gone: Vec<Chopper> = self
+            .choppers
+            .iter()
+            .filter(|c| tick >= c.gone_at() || !owners.contains(&c.owner))
+            .copied()
+            .collect();
+        self.choppers
+            .retain(|c| tick < c.gone_at() && owners.contains(&c.owner));
+        for c in gone {
+            self.broadcast_event(&GameEvent::Streak(StreakEvent::ChopperGone {
+                id: c.id,
+                by: None,
+                at: c.position(f64::from(tick)),
+            }));
+        }
+        let Some(mut space) = self
+            .base()
+            .get_world_3d()
+            .and_then(|world| world.get_direct_space_state())
+        else {
+            return;
+        };
+        let protection = streak::seconds_to_ticks(chopper::SPAWN_PROTECTION_SECONDS);
+        let candidates: Vec<chopper::Candidate> = self
+            .avatars
+            .iter()
+            .filter(|a| a.predicted.state.alive())
+            .map(|a| chopper::Candidate {
+                id: a.id,
+                side: self.side(a),
+                feet: a.predicted.position,
+                // Black Ops 2's chopper leaves the newly spawned alone.
+                ignored: tick < a.spawned_at + protection,
+            })
+            .collect();
+        let mut rounds = Vec::new();
+        let mut changed = Vec::new();
+        for c in &mut self.choppers {
+            let before = c.target.map(|(id, _)| id);
+            if let Some(round) = c.step(tick, &candidates, |from, to| {
+                world_hit(&mut space, to_godot(from), to_godot(to)).is_none()
+            }) {
+                rounds.push((round, c.side));
+            }
+            let after = c.target.map(|(id, _)| id);
+            if after != before {
+                changed.push((c.id, after));
+            }
+        }
+        for (id, target) in changed {
+            self.broadcast_event(&GameEvent::Streak(StreakEvent::ChopperTarget {
+                id,
+                target,
+            }));
+        }
+        for (round, side) in rounds {
+            let from = to_godot(round.from);
+            let to = from + to_godot(round.direction) * chopper::RANGE;
+            let wall =
+                world_hit(&mut space, from, to).map_or(chopper::RANGE, |hit| from.distance_to(hit));
+            let victim = candidates
+                .iter()
+                .filter(|c| c.side != side)
+                .filter_map(|c| {
+                    let distance = shooter_sim::equipment::segment_hits_body(
+                        round.from,
+                        round.from + round.direction * chopper::RANGE,
+                        c.feet,
+                        turret::BODY_HEIGHT,
+                        turret::BODY_RADIUS,
+                    )? * chopper::RANGE;
+                    (distance < wall).then_some((c.id, distance))
+                })
+                .min_by(|a, b| a.1.total_cmp(&b.1));
+            let Some((victim, distance)) = victim else {
+                continue;
+            };
+            let owner_team = self
+                .avatars
+                .iter()
+                .find(|a| a.id == round.owner)
+                .map(|a| a.team);
+            let before = self
+                .avatars
+                .iter()
+                .find(|a| a.id == round.owner)
+                .map(|a| a.score.score);
+            self.hurt_players(
+                Some(round.owner),
+                owner_team,
+                round.from,
+                vec![(victim, distance, chopper::DAMAGE)],
+                default_primary(),
+                protocol::KillCause::Streak(Streak::AttackChopper),
+            );
+            if let (Some(before), Some(owner)) = (
+                before,
+                self.avatars.iter_mut().find(|a| a.id == round.owner),
+            ) {
+                owner.streak_seen += owner.score.score.saturating_sub(before);
+            }
+        }
+    }
+
+    /// Attack Chopper `id` takes `damage` from player `by`: a hit marker,
+    /// and if that downs it (1000 health), it crashes, everyone hears, and
+    /// `by` scores for it.
+    fn hurt_chopper(&mut self, id: u16, damage: f32, by: u8, shot: u32) {
+        self.send_event(
+            by,
+            GameEvent::Hit {
+                victim: u8::MAX,
+                shot,
+                damage,
+                headshot: false,
+                killed: false,
+            },
+        );
+        let tick = self.tick;
+        let Some(index) = self.choppers.iter().position(|c| c.id == id) else {
+            return;
+        };
+        self.choppers[index].damage += damage;
+        if self.choppers[index].damage <= chopper::HEALTH {
+            return;
+        }
+        let c = self.choppers.remove(index);
+        godot_print!(
+            "server: player {by} shot down player {}'s Attack Chopper",
+            c.owner
+        );
+        self.broadcast_event(&GameEvent::Streak(StreakEvent::ChopperGone {
+            id,
+            by: Some(by),
+            at: c.position(f64::from(tick)),
+        }));
+        if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == by) {
+            let scored = avatar.score.award(
+                Award::ShotDown(Streak::AttackChopper),
+                chopper::SHOT_DOWN_POINTS,
+            );
+            let totals = avatar.score.totals();
+            self.send_event(
+                by,
+                GameEvent::Score {
+                    awards: vec![scored],
+                    totals,
+                },
+            );
         }
     }
 
@@ -9160,12 +9470,13 @@ fn pickup_in_reach(
 /// between bots so each kind turns up (Black Ops 2's bots bring theirs from
 /// the unlocked list, `_bot_loadout.gsc`).
 fn bot_streaks(id: u8) -> Loadout {
-    const SETS: [[Streak; 2]; 5] = [
+    const SETS: [[Streak; 2]; 6] = [
         [Streak::CarePackage, Streak::Airstrike],
         [Streak::Airstrike, Streak::SentryGun],
         [Streak::CarePackage, Streak::SentryGun],
         [Streak::GuidedMissile, Streak::SentryGun],
         [Streak::CarePackage, Streak::GuidedMissile],
+        [Streak::GuidedMissile, Streak::AttackChopper],
     ];
     let [a, b] = SETS[usize::from(id) % SETS.len()];
     Loadout([Some(Streak::Uav), Some(a), Some(b)]).sorted()
@@ -9211,6 +9522,17 @@ fn missile_event(m: &Missile, ended: bool) -> GameEvent {
         boosting: m.boosting,
         split: m.split,
         ended,
+    }))
+}
+
+fn chopper_event(c: &Chopper) -> GameEvent {
+    GameEvent::Streak(StreakEvent::Chopper(protocol::ChopperView {
+        id: c.id,
+        owner: c.owner,
+        side: c.side,
+        guard: c.guard,
+        called: c.called,
+        seed: c.seed,
     }))
 }
 

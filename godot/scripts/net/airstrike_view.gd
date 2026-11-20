@@ -42,6 +42,10 @@ var client: NetClient
 var player: FpsPlayer
 ## The picker is open.
 var picking := false
+## The streak the picker marks for ("airstrike", or "attack_chopper"'s one
+## point to guard), and how many marks it takes.
+var streak := "airstrike"
+var _needed := TARGETS
 
 var _layer: CanvasLayer
 var _picker: Control
@@ -69,10 +73,13 @@ func _ready() -> void:
 	client.strike_landed.connect(_on_strike)
 
 
-## Opens the target picker, if this map has a plan to pick on.
-func open_picker() -> void:
+## Opens the target picker for `for_streak`, if this map has a plan to
+## pick on: three marks for the Airstrike, one for the Attack Chopper.
+func open_picker(for_streak := "airstrike") -> void:
 	if _plan_key() == "" or player == null or not player.is_alive():
 		return
+	streak = for_streak
+	_needed = TARGETS if streak == "airstrike" else 1
 	picking = true
 	_marks.clear()
 	_cursor = get_viewport().get_visible_rect().size / 2.0
@@ -172,8 +179,11 @@ func _mark(at: Vector2) -> void:
 	if world == null:
 		return
 	_marks.append(world as Vector3)
-	if _marks.size() >= TARGETS:
-		client.use_airstrike(PackedVector3Array(_marks))
+	if _marks.size() >= _needed:
+		if streak == "airstrike":
+			client.use_airstrike(PackedVector3Array(_marks))
+		else:
+			client.use_streak_at(PackedVector3Array(_marks))
 		close_picker()
 
 
@@ -201,7 +211,9 @@ func _draw_picker() -> void:
 		_draw_mark(_to_screen(_marks[i]), str(i + 1), UiTheme.ACCENT)
 	if rect.has_point(_cursor):
 		_draw_mark(_cursor, "", Color(UiTheme.ACCENT, 0.7))
-	var title := "AIRSTRIKE  ·  MARK %d OF %d" % [mini(_marks.size() + 1, TARGETS), TARGETS]
+	var title := "AIRSTRIKE  ·  MARK %d OF %d" % [mini(_marks.size() + 1, _needed), _needed]
+	if streak == "attack_chopper":
+		title = "ATTACK CHOPPER  ·  MARK THE POINT TO GUARD"
 	Paint.text_centred(
 		_picker,
 		Paint.DISPLAY,

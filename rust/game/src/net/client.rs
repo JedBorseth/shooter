@@ -254,6 +254,9 @@ pub struct NetClient {
     missiles: Vec<(protocol::MissileView, f64)>,
     bomblets: Vec<shooter_sim::missile::Bomblet>,
     piloting: Option<u16>,
+    /// Attack Choppers called in (`shooter_sim::chopper`), rebuilt from
+    /// what the server said, and the player each one's gun is on.
+    choppers: Vec<(shooter_sim::chopper::Chopper, Option<u8>)>,
     /// Care Packages out (`shooter_sim::care_package`), as the server said.
     crates: Vec<CrateView>,
     /// Zombies: the horde as drawn, and the map's director mirroring the
@@ -604,6 +607,16 @@ impl NetClient {
     /// whether we did it, and where it stood.
     #[signal]
     fn turret_gone(destroyed: bool, ours: bool, by_me: bool, at: Vector3);
+
+    /// An Attack Chopper was called in, `ours` whether by our side.
+    #[signal]
+    fn chopper_called(ours: bool);
+
+    /// An Attack Chopper went: `destroyed` whether shot down rather than
+    /// left, `ours` whether it was our side's, `by_me` whether we did it,
+    /// and where it was.
+    #[signal]
+    fn chopper_gone(destroyed: bool, ours: bool, by_me: bool, at: Vector3);
 
     /// We started (`flying`) or stopped flying a Guided Missile.
     #[signal]
@@ -1232,6 +1245,53 @@ impl NetClient {
                 d
             })
             .collect()
+    }
+
+    /// The Attack Choppers as drawn now, as dictionaries with `id`, `ours`,
+    /// `position`, `heading` (the way it moves, as a yaw), and `target`
+    /// (the chest of the player its gun is on, or null).
+    #[func]
+    fn choppers(&self) -> Array<VarDictionary> {
+        let now = self.render_tick;
+        self.choppers
+            .iter()
+            .map(|(c, on)| {
+                let at = c.position(now);
+                let ahead = c.position(now + f64::from(TICK_RATE) * 0.25) - at;
+                let mut d = VarDictionary::new();
+                d.set("id", i32::from(c.id));
+                d.set("ours", self.ours(c.side));
+                d.set("position", to_godot(at));
+                let heading = if ahead.length() > 0.05 {
+                    (-ahead.x).atan2(-ahead.z)
+                } else {
+                    f32::NAN
+                };
+                d.set("heading", heading);
+                let target = on
+                    .and_then(|id| self.carrier_feet(id))
+                    .map(|feet| feet + Vector3::UP * 1.2);
+                match target {
+                    Some(at) => d.set("target", at),
+                    None => d.set("target", &Variant::nil()),
+                }
+                d
+            })
+            .collect()
+    }
+
+    /// Calls in the selected held streak on `targets` (points on the map;
+    /// their y is ignored): an Attack Chopper's one mark.
+    #[func]
+    fn use_streak_at(&mut self, targets: PackedVector3Array) {
+        if let Some(streak) = self.streak_held.get(self.streak_selected).copied() {
+            let targets = targets
+                .as_slice()
+                .iter()
+                .map(|t| shooter_sim::Vec2::new(t.x, t.z))
+                .collect();
+            self.send_reliable(&ClientMessage::UseStreak { streak, targets });
+        }
     }
 
     /// The Guided Missiles in the air as drawn now, as dictionaries with
@@ -2308,6 +2368,36 @@ impl NetClient {
                     }
                 }
                 self.signals().missile_blast().emit(to_godot(at), bomblet);
+            }
+            GameEvent::Streak(StreakEvent::Chopper(view)) => {
+                self.choppers.retain(|(c, _)| c.id != view.id);
+                let chopper = shooter_sim::chopper::Chopper::new(
+                    view.id,
+                    view.owner,
+                    view.side,
+                    view.guard,
+                    view.called,
+                    view.seed,
+                );
+                self.choppers.push((chopper, None));
+                let ours = self.ours(view.side);
+                self.signals().chopper_called().emit(ours);
+            }
+            GameEvent::Streak(StreakEvent::ChopperTarget { id, target }) => {
+                if let Some((_, on)) = self.choppers.iter_mut().find(|(c, _)| c.id == id) {
+                    *on = target;
+                }
+            }
+            GameEvent::Streak(StreakEvent::ChopperGone { id, by, at }) => {
+                let Some(index) = self.choppers.iter().position(|(c, _)| c.id == id) else {
+                    return;
+                };
+                let (c, _) = self.choppers.remove(index);
+                let ours = self.ours(c.side);
+                let by_me = by.is_some() && by == self.player_id;
+                self.signals()
+                    .chopper_gone()
+                    .emit(by.is_some(), ours, by_me, to_godot(at));
             }
             GameEvent::Streak(StreakEvent::Turret(view)) => {
                 self.turrets.retain(|(t, _)| t.id != view.id);

@@ -65,6 +65,8 @@ func _ready() -> void:
 	client.sky_changed.connect(_on_sky)
 	client.aircraft_downed.connect(_on_downed)
 	client.turret_gone.connect(_on_turret_gone)
+	client.chopper_called.connect(_on_chopper_called)
+	client.chopper_gone.connect(_on_chopper_gone)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -74,9 +76,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		var held: PackedStringArray = _info.get("held", PackedStringArray())
 		var selected := int(_info.get("selected", -1))
-		if selected >= 0 and selected < held.size() and held[selected] == "airstrike":
+		var key := held[selected] if selected >= 0 and selected < held.size() else ""
+		if key in ["airstrike", "attack_chopper"]:
 			if airstrike != null and not airstrike.get(&"picking"):
-				airstrike.call(&"open_picker")
+				airstrike.call(&"open_picker", key)
 		else:
 			client.use_streak()
 	elif event.is_action_pressed(&"streak_next"):
@@ -135,6 +138,22 @@ func _on_turret_gone(destroyed: bool, ours: bool, _by_me: bool, _at: Vector3) ->
 		_say("SENTRY GUN DESTROYED", "", UiTheme.ENEMY)
 	else:
 		_say("ENEMY SENTRY GUN DESTROYED", "", UiTheme.ALLY)
+
+
+func _on_chopper_called(ours: bool) -> void:
+	if ours:
+		_say("ATTACK CHOPPER INBOUND", "", UiTheme.ALLY)
+	else:
+		_say("ENEMY ATTACK CHOPPER INBOUND", "", UiTheme.ENEMY)
+
+
+func _on_chopper_gone(destroyed: bool, ours: bool, _by_me: bool, _at: Vector3) -> void:
+	if not destroyed:
+		return
+	if ours:
+		_say("ATTACK CHOPPER SHOT DOWN", "", UiTheme.ENEMY)
+	else:
+		_say("ENEMY ATTACK CHOPPER DESTROYED", "", UiTheme.ALLY)
 
 
 func _say(text: String, sub: String, colour: Color) -> void:

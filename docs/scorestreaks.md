@@ -10,8 +10,8 @@ Rewards earned with score in one life, as in Black Ops 2 (kept in Black Ops 3 an
 - **Death** resets the count.
 - **Using:** the use key calls in the selected held streak. The next key selects another. Earning one selects it, as in Black Ops 2.
 - **Modes:** every mode but Gun Game and Zombies, as in Black Ops 2's party modes and Zombies. Search and Destroy keeps both the count and held streaks across rounds within a life, as Black Ops 2 does.
-- **Bots** bring the UAV and two of the Care Package, the Guided Missile, the Airstrike, and the Sentry Gun, varied between bots, and call in what they earn at once (trying another if one cannot go there).
-- **Roofed maps:** a map roofed over from wall to wall (Warehouse) has no open sky for a crate, a strike, or a missile to come down through. There the Care Package, the Guided Missile, and the Airstrike are left out: they are greyed out in the streak column with "NO OPEN SKY" in place of the cost, the count runs on the other chosen streaks (the dearest of those closes the loop), and the server refuses to call one in. The radar streaks still work. Black Ops 2 has no roofed map, so there is no precedent; this stands until the owner decides on a skylight or roof hatch for Warehouse. A map is marked by `roofed = true` metadata on its scene's root (`Streak::needs_open_sky` lists the streaks it leaves out).
+- **Bots** bring the UAV and two of the Care Package, the Guided Missile, the Airstrike, the Sentry Gun, and the Attack Chopper, varied between bots, and call in what they earn at once (trying another if one cannot go there).
+- **Roofed maps:** a map roofed over from wall to wall (Warehouse) has no open sky for a crate, a strike, a missile, or a helicopter's gun to come down through. There the Care Package, the Guided Missile, the Airstrike, and the Attack Chopper are left out: they are greyed out in the streak column with "NO OPEN SKY" in place of the cost, the count runs on the other chosen streaks (the dearest of those closes the loop), and the server refuses to call one in. The radar streaks still work. Black Ops 2 has no roofed map, so there is no precedent; this stands until the owner decides on a skylight or roof hatch for Warehouse. A map is marked by `roofed = true` metadata on its scene's root (`Streak::needs_open_sky` lists the streaks it leaves out).
 
 | Streak | Cost | Black Ops 2 | Effect |
 | --- | --- | --- | --- |
@@ -21,6 +21,7 @@ Rewards earned with score in one life, as in Black Ops 2 (kept in Black Ops 3 an
 | Guided Missile | 700 | Hellstorm Missile, 700 | a missile flown down from its nose camera, boosted, and split into bomblets |
 | Airstrike | 750 | Lightning Strike, 750 | three strikes on points marked on the map |
 | Sentry Gun | 800 | Sentry Gun, 800 | an automated gun set down in front of the caller, firing on enemies in front of it for 4 minutes |
+| Attack Chopper | 1100 | Stealth Chopper, 1100 | an AI helicopter guarding a point marked on the map for a minute |
 
 ## UAV
 
@@ -124,6 +125,32 @@ The Guided Missile follows Black Ops 2's Hellstorm Missile (`_remotemissile.gsc`
 
 `guided_missile_test` plays it through on a server.
 
+## Attack Chopper
+
+The Attack Chopper follows Black Ops 2's Stealth Chopper (`_helicopter.gsc`, `helicopter_comlink`), under a generic name. Of the two AI helicopters Black Ops 2 has, the Stealth Chopper guards a point with its gun; the Hunter Killer is a homing drone. The rules are in `rust/sim/src/chopper.rs`, the server's side in `update_choppers`, and the client's in `godot/scripts/net/chopper_view.gd`. Its body and rotor are Blender models (`attack_chopper`, `chopper_rotor`).
+
+![An Attack Chopper guarding its point](media/attack-chopper.jpg)
+
+- **Calling it in:** it opens the Airstrike's map picker for one mark, the point to guard, as Black Ops 2 has the player pick it on the map. Bots mark a random enemy's spot, as Black Ops 2's bots do. Only one a side flies at once (the "chopper" rule); a second stays held.
+- **Its flight:**
+  - it flies in from 90 m out at 25 m/s, 22 m over the map's highest floor (Black Ops 2's air support height is about 850 units);
+  - it hovers 12 s at a spot (`heli_protect_pos_time`), then moves at 10 m/s to another random spot 4 to 20 m from the point (Black Ops 2's 20% to 100% of 2,000 units, scaled to our maps);
+  - after 60 s (`heli_protect_time`) it flies back out.
+
+  Both ends compute the whole path from the call's tick and a seed.
+- **Its gun:**
+  - it picks a target at most every 0.6 s: the nearest enemy it can see within 89 m (3,500 units);
+  - it turns onto them, spins up for 0.7 s, then fires bursts of 20 with 1.5 s between;
+  - players spawned in the last 5 s are left alone (`heli_target_spawnprotection`).
+
+  The rate (600 rounds a minute) and damage (40 a round, three to kill) are estimates: Black Ops 2 keeps them in the gun's weapon file. Its kills show as "Attack Chopper" and count nothing toward streaks.
+- **Shooting it down:** it has 1000 health (`heli_maxhealth`). Bullets do half their damage (`heli_armor_bulletdamage`), checked where the shooter saw it, and any rocket passing within 6 m downs it. The shooter scores 100 and the "Destroyed Attack Chopper" medal; both sides hear the call, and its wreck spins down. Bots carrying a launcher go after it as they do UAVs (Black Ops 2's `threat_requires_rocket` covers helicopters).
+- **Minimap:** it never shows on the enemy's minimap, as the Stealth Chopper's name says. No streak draws there yet.
+- **Calls:** "ATTACK CHOPPER INBOUND" and "ENEMY ATTACK CHOPPER INBOUND" when it is called.
+- **Roofed maps** leave it out.
+
+`attack_chopper_test` plays it through on a server.
+
 ## Sentry Gun
 
 The Sentry Gun follows Black Ops 2's (`_turret_killstreak.gsc`). The rules are in `rust/sim/src/turret.rs`, the server's side in `update_turrets`, and the client's in `godot/scripts/net/sentry_view.gd`. The model is the training sentry's, built in Blender (`sentry_base`, `sentry_head`, `sentry_eye`).
@@ -185,6 +212,7 @@ Blind Eye (with an AI streak to hide from), UAV assist points, and announcer lin
 - **Lightning Strike:** 750, three strikes on points picked on the map, in sequence.
 - **Streak kills:** do not count toward streaks.
 - **Ghost:** works while moving. **Hard Wired:** immune to Counter-UAV.
+- **Stealth Chopper** (`_helicopter.gsc`): 1100, the player picks the point on the map, `heli_protect_time` 60, `heli_protect_pos_time` 12, spots 20% to 100% of `heli_protect_radius` 2,000 from the point, `heli_maxhealth` 1000, bullets × `heli_armor_bulletdamage` 0.5, a rocket downs it, `heli_targeting_delay` 0.6, `heli_turret_spinup_delay` 0.7, `heli_turretclipsize` 20, `heli_turretreloadtime` 1.5, `heli_visual_range` 3,500, `heli_target_spawnprotection` 5, it goes for the nearest target, one a team (`_killstreakrules.gsc`). Blind Eye hides players from it (`cantargetplayerwithspecialty`).
 - **Hellstorm Missile** (`_remotemissile.gsc`): 700, launched 18,000 units up and 7,000 back from a point 1,500 units ahead, a 9.95 s flight, aim boosts until the split, fire splits it into a bomblet for each enemy within 600 units of the aim point (not Cold-Blooded players) then random ones 200 to 550 units out up to nine, plus one straight on, a frame apart; the camera stays a second after the first bomblet lands. Bots fire it 1.5 s in.
 - **Sentry Gun** (`_turret_killstreak.gsc`, `_killstreakrules.gsc`): 800, 650 health, bullets at 0.6 and explosives at 2 (a launcher counts 200), the knife nothing, 240 s placed, 1.6 s before it arms, four a team and eight in all. Bots treat an active one as a threat.
 - **UAV and Counter-UAV in the sky** (`_spyplane.gsc`, Black Ops 2's scripts as the Plutonium project publishes them): 700 health, bullets do their damage, any rocket downs one, the UAV rig turns clockwise once a minute and the Counter-UAV's the other way every 40 s, a downed one ends at once. Bots fire launchers only at aircraft, never at one more than 70° up (`_bot_combat.gsc`).

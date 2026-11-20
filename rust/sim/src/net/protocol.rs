@@ -188,7 +188,9 @@ use crate::zombies::drinks::Drinks;
 // Version 79 added the Guided Missile: `Streak::GuidedMissile`,
 // `ClientMessage::SteerMissile`, and `StreakEvent::Missile`, `Cluster`, and
 // `MissileBlast`; streak events take five tag bits.
-pub const PROTOCOL_VERSION: u16 = 79;
+// Version 80 added the Attack Chopper: `Streak::AttackChopper`, and
+// `StreakEvent::Chopper`, `ChopperTarget`, and `ChopperGone`.
+pub const PROTOCOL_VERSION: u16 = 80;
 /// Longest account session token a hello carries, in bytes.
 pub const MAX_ACCOUNT_TOKEN_BYTES: usize = 2048;
 /// Longest reason a denial carries, in bytes.
@@ -543,6 +545,15 @@ pub enum StreakEvent {
     /// To everyone: a scorestreak blast went off at `at`: a Guided
     /// Missile's (`bomblet`: one of its bomblets).
     MissileBlast { at: Vec3, bomblet: bool },
+    /// To everyone, and on joining for each one up: an Attack Chopper was
+    /// called in (`crate::chopper`). Its whole flight follows from these.
+    Chopper(ChopperView),
+    /// To everyone: Attack Chopper `id`'s gun turned onto player `target`
+    /// (none: it has no one).
+    ChopperTarget { id: u16, target: Option<u8> },
+    /// To everyone: Attack Chopper `id` was shot down by player `by` at
+    /// `at` (none: it left).
+    ChopperGone { id: u16, by: Option<u8>, at: Vec3 },
     /// To everyone: player `by` shot down aircraft `id` (`owner`'s
     /// `streak`) at `at`.
     Downed {
@@ -552,6 +563,19 @@ pub enum StreakEvent {
         by: u8,
         at: Vec3,
     },
+}
+
+/// An Attack Chopper: which, whose, on which side, the point it guards (at
+/// its flying height), when it was called, and the seed its spots and
+/// heading come from (`crate::chopper::Chopper::new`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ChopperView {
+    pub id: u16,
+    pub owner: u8,
+    pub side: u8,
+    pub guard: Vec3,
+    pub called: Tick,
+    pub seed: u32,
 }
 
 /// A Guided Missile in flight: which, whose, on which side, where, its nose
@@ -3273,6 +3297,26 @@ fn write_streak_event(w: &mut BitWriter, event: &StreakEvent) {
             write_vec3(w, *at);
             w.bool(*bomblet);
         }
+        StreakEvent::Chopper(c) => {
+            w.bits(15, STREAK_TAG_BITS);
+            w.u16(c.id);
+            w.u8(c.owner);
+            w.u8(c.side);
+            write_vec3(w, c.guard);
+            w.u32(c.called);
+            w.u32(c.seed);
+        }
+        StreakEvent::ChopperTarget { id, target } => {
+            w.bits(16, STREAK_TAG_BITS);
+            w.u16(*id);
+            write_option_u8(w, *target);
+        }
+        StreakEvent::ChopperGone { id, by, at } => {
+            w.bits(17, STREAK_TAG_BITS);
+            w.u16(*id);
+            write_option_u8(w, *by);
+            write_vec3(w, *at);
+        }
     }
 }
 
@@ -3405,6 +3449,23 @@ fn read_streak_event(r: &mut BitReader) -> DecodeResult<StreakEvent> {
         14 => Ok(StreakEvent::MissileBlast {
             at: read_finite_vec3(r)?,
             bomblet: r.bool()?,
+        }),
+        15 => Ok(StreakEvent::Chopper(ChopperView {
+            id: r.u16()?,
+            owner: r.u8()?,
+            side: r.u8()?,
+            guard: read_finite_vec3(r)?,
+            called: r.u32()?,
+            seed: r.u32()?,
+        })),
+        16 => Ok(StreakEvent::ChopperTarget {
+            id: r.u16()?,
+            target: read_option_u8(r)?,
+        }),
+        17 => Ok(StreakEvent::ChopperGone {
+            id: r.u16()?,
+            by: read_option_u8(r)?,
+            at: read_finite_vec3(r)?,
         }),
         _ => Err(DecodeError::Invalid("streak event")),
     }
@@ -4909,6 +4970,23 @@ mod tests {
             GameEvent::Streak(StreakEvent::MissileBlast {
                 at: Vec3::new(2.0, 0.0, 1.0),
                 bomblet: true,
+            }),
+            GameEvent::Streak(StreakEvent::Chopper(ChopperView {
+                id: 1,
+                owner: 9,
+                side: 1,
+                guard: Vec3::new(4.0, 26.0, -10.5),
+                called: 12_000,
+                seed: 0xdead_beef,
+            })),
+            GameEvent::Streak(StreakEvent::ChopperTarget {
+                id: 1,
+                target: Some(3),
+            }),
+            GameEvent::Streak(StreakEvent::ChopperGone {
+                id: 1,
+                by: None,
+                at: Vec3::new(0.0, 26.0, 1.0),
             }),
             GameEvent::Streak(StreakEvent::CrateIncoming {
                 id: 600,
