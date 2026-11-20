@@ -305,7 +305,7 @@ Rounds with one life each (`rust/sim/src/snd.rs`, `--mode snd`), on Slamcity. Cl
   - [x] The stack (`docker/online`), device sign-in with a username on the title screen, and progression and classes on the account ([docs/online.md](docs/online.md)).
   - [x] Ranked dedicated servers (`--accounts`): sign-in required, unlocks checked against the account, match XP reported by the server ([docs/online.md](docs/online.md#ranked-servers)).
   - [x] Parties (invite by name) and quick play per mode, with a match of the party's own and bots when nobody else is searching ([docs/online.md](docs/online.md#parties-and-quick-play)).
-  - [ ] Sign in on another machine: link an email and password to the account.
+  - [x] Sign in on another machine: an email and password linked to the account, then name or email and password there.
   - [ ] Party chat and a friends list (Nakama has both), and a party lobby that follows the leader into a server browser match.
   - [ ] Matchmaking by skill and ping (Nakama matchmaker properties), once there are enough players to choose from.
   - [ ] Run the stack on the public host behind TLS, so `borseth.ddns.net:7350` answers.

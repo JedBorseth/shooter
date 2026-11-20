@@ -30,7 +30,7 @@ Every secret has a development default. Copy `docker/online/.env.example` to `do
 
 The title screen's top-right corner shows who is signed in and their level, or **Sign in**. The account card takes the name other players see. Signing in makes an account tied to this machine's device id (a random id in `user://account.cfg`) with that name as its username; a taken name is refused. Typing a new name later renames the account. The session's tokens are saved, so the game signs in again at the next launch, refreshing them when they run out (sessions last a day, refresh tokens 30 days). Signing out goes back to the machine's own progress and classes.
 
-Signing in on a second machine with the same account is not possible yet: device sign-in identifies the machine. Linking an email and password (Nakama supports both) is a follow-up.
+To play on another computer, the account card's **Play on another computer** section adds an email and a password to the account (Nakama's email link; 8 or more characters). On the other computer, **I have a password** signs in with the account's name or email and that password, and that game then stays signed in like any other. Call of Duty works the same way: the same account, and the same rank and classes, on any machine you sign in on.
 
 Signed in, the local match setup's name is the account's name.
 
