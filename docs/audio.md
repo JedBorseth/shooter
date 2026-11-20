@@ -86,7 +86,7 @@ the view scene, `audio::shot_source`):
 | CQ-10 | PDW-9 |
 | BP-9 | M1911 |
 | DM-7 | BR-3 |
-| SG-12, RL-4 | M870 |
+| SG-12 | M870 |
 
 A borrowing gun still uses its own folder for any layer it has (`mech`,
 `hollow`, foley), and its own `mid` and `far` first. Once a `snap` exists in its
@@ -149,6 +149,20 @@ per doubling past its own reference (40 and 120 m), on WeaponsDistant
 (`gunfire::layer_weights`).
 
 The sentry fires with `weapons/ak47_fire.ogg`.
+
+### The RL-4 (`tools/build_launcher_audio.py`)
+
+The launcher is Black Ops 2's RPG, and it sounds like one: three real RPG
+firings (klangfabrik's, recorded outside at medium range), each with a
+rocket motor's ignition from US Government footage laid under it, written
+whole as `weapons/rl4/snap_N` (so the game plays them as whole shots). Its
+`mid` and `far` takes are the same firings band-limited as heard down range,
+so other players' launches far off are a launcher, not the M870 that lent
+its shot before. The view scene still names the M870 in `sound_from` for
+the handling and the last-round ring. Every rocket in flight carries a
+motor loop (`equipment/rocket_flight`, the rocket's roar with its fade
+evened out) on `scenes/equipment/rocket.tscn`'s `Motor`, 6 m unit size.
+Nothing is synthesized; the shared processing is `tools/recorded_audio.py`.
 
 ## Weapon handling (foley)
 
