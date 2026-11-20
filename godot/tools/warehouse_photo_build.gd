@@ -672,7 +672,18 @@ static func _build_boxes(g: Node3D) -> void:
 		shape.shape = bs
 		body.add_child(shape)
 		shape.owner = _root
-	_log.append("boxes: %d" % n)
+	# Climbable ladders (rust/game/src/ladder.rs): a LadderVolume at each
+	# ladder's foot on its rungs' face, its -Z pointing the way a climber faces.
+	for l in _data.get("ladders", []):
+		var volume: Node3D = ClassDB.instantiate("LadderVolume")
+		volume.name = l.name
+		volume.position = _v(l.pos)
+		volume.rotation_degrees.y = l.yaw
+		volume.set("length", l.length)
+		volume.set("width", l.width)
+		g.add_child(volume)
+		volume.owner = _root
+	_log.append("boxes: %d, ladders: %d" % [n, _data.get("ladders", []).size()])
 
 
 # --- detail pass ------------------------------------------------------------------
@@ -695,6 +706,9 @@ static func _build_detail(g: Node3D) -> void:
 		var collides: bool = d.has("clip") or d.has("hull")
 		var holder: Node3D = StaticBody3D.new() if collides else Node3D.new()
 		holder.name = d.get("name", "%s%02d" % [String(d.model).to_pascal_case(), n])
+		# Glass partitions, doors, and windows stop players, not rounds.
+		if d.has("surface"):
+			holder.set_meta("surface", d.surface)
 		g.add_child(holder)
 		holder.owner = _root
 		var inst: Node3D = ps.instantiate()
@@ -718,6 +732,8 @@ static func _build_detail(g: Node3D) -> void:
 		if not d.get("shadow", true):
 			for gi: GeometryInstance3D in inst.find_children("*", "GeometryInstance3D", true, false):
 				gi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if d.get("surface", "") == "glass":
+			_glaze(inst)
 		var k := 0
 		for c2 in d.get("clip", []):
 			var shape := CollisionShape3D.new()
@@ -755,6 +771,23 @@ static func _build_detail(g: Node3D) -> void:
 			for mmi: MultiMeshInstance3D in _multimesh(g, "%s%s" % [String(model).to_pascal_case(), q], model, quarters[q]):
 				mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_log.append("detail: %d pieces, %d strewn" % [n, strewn])
+
+
+## Glass parts of a glass set piece (its blended materials) draw with the
+## cheap unlit office glazing (shaders/office_glass.gdshader).
+static func _glaze(inst: Node3D) -> void:
+	var glaze: Material = load(MATS + "office_glass.tres")
+	# Overrides inside an instanced model are only saved with the scene when
+	# the instance's children are editable.
+	_root.set_editable_instance(inst, true)
+	for m: MeshInstance3D in inst.find_children("*", "MeshInstance3D", true, false):
+		for k in m.mesh.get_surface_count():
+			var mat := m.mesh.surface_get_material(k) as BaseMaterial3D
+			if mat != null and mat.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED:
+				m.set_surface_override_material(k, glaze)
+				# Clear glass casts no shadow (the export gives it a mesh of its own).
+				if m.mesh.get_surface_count() == 1:
+					m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 ## A beam hung between two points (a joist torn loose at one end).
@@ -821,10 +854,11 @@ static func _build_effects(g: Node3D) -> void:
 				var lamp := OmniLight3D.new()
 				lamp.name = "OfficeLamp%02d" % n
 				lamp.position = Vector3(e.pos[0], e.pos[1], e.pos[2])
-				lamp.light_color = Color(0.95, 0.97, 1.0)
-				lamp.light_energy = 1.6
-				lamp.omni_range = 7.5
-				lamp.shadow_enabled = true
+				var tint: Array = e.get("color", [0.95, 0.97, 1.0])
+				lamp.light_color = Color(tint[0], tint[1], tint[2])
+				lamp.light_energy = e.get("energy", 1.6)
+				lamp.omni_range = e.get("range", 7.5)
+				lamp.shadow_enabled = e.get("shadow", true)
 				g.add_child(lamp)
 				lamp.owner = _root
 			"sparks", "steam", "beacon", "smolder", "embers", "arc", "wisp", "drip", "dangle":

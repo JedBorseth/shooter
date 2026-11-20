@@ -89,6 +89,25 @@ func _run() -> void:
 	_check(player.position.distance_to(start) > 1.0, "player can walk through Warehouse")
 	_check(player.position.y > start_y - 2.0, "walking does not fall through the floor")
 
+	# Climb the plate room's ladder: walk into its rungs from the back aisle
+	# and keep going until the player steps off onto the roof.
+	var climb := current_scene.get_node("PhotoPass/Boxes/PlateRoomLadderClimb") as Node3D
+	var into := -climb.global_basis.z
+	player.teleport(climb.global_position - into * 0.9 + Vector3.UP * 0.02, PI)
+	player.set_look(PI, 0.0)
+	for i in 10:
+		await physics_frame
+	Input.action_press("move_forward")
+	for i in 360:
+		await physics_frame
+	Input.action_release("move_forward")
+	for i in 30:
+		await physics_frame
+	_check(
+		player.is_on_floor() and absf(player.position.y - 3.4) < 0.15,
+		"a player climbs the ladder onto the plate room's roof, ended at %s" % player.position
+	)
+
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	await _click(current_scene.get_node("HUD/ReturnToMenu") as Button)
 	await process_frame
@@ -184,23 +203,17 @@ func _check_prop_collision(map: Node) -> void:
 				var size := ((top.get_node("Shape") as CollisionShape3D).shape as BoxShape3D).size
 				var feet := top.global_position + Vector3(0, size.y / 2 + 0.02, 0)
 				_check(_fits(space, feet, 1.8), "players can stand on %s" % path)
-	# The crate steps up to each room roof: floor, 1.1 m, 2.2 m, roof, each
-	# rise within the 1.35 m mantle (layout: half(), the ink and plate rooms).
-	for steps in [
-		[Vector3(2.6, 0, -19.9), Vector3(4.0, 0, -19.9), Vector3(4.0, 0, -21.5)],
-		[Vector3(24.4, 0, 26.9), Vector3(23.0, 0, 26.9), Vector3(23.0, 0, 28.5)]
-	]:
-		var heights := []
-		for p: Vector3 in steps:
-			heights.append(snappedf(_ground(space, p), 0.01))
-		_check(
-			(
-				absf(heights[0] - 1.1) < 0.15
-				and absf(heights[1] - 2.2) < 0.15
-				and absf(heights[2] - 3.4) < 0.1
-			),
-			"crates step 1.1, 2.2, then the roof at 3.4 m, got %s" % [heights]
-		)
+	# The crate steps up to the ink room's roof: floor, 1.1 m, 2.2 m, roof,
+	# each rise within the 1.35 m mantle (layout: half(), the ink room).
+	var steps := []
+	for p: Vector3 in [Vector3(2.6, 0, -19.9), Vector3(4.0, 0, -19.9), Vector3(4.0, 0, -21.5)]:
+		steps.append(snappedf(_ground(space, p), 0.01))
+	_check(
+		absf(steps[0] - 1.1) < 0.15 and absf(steps[1] - 2.2) < 0.15 and absf(steps[2] - 3.4) < 0.1,
+		"crates step 1.1, 2.2, then the ink room's roof at 3.4 m, got %s" % [steps]
+	)
+	_check_ladder(map, space)
+	_check_office(map, space)
 	# Every stair rises steadily from floor to landing with standing room all
 	# the way up (a wall, slab, or rail across it would stop players).
 	for b in layout.boxes:
@@ -234,6 +247,73 @@ func _check_prop_collision(map: Node) -> void:
 		_check(steady and heights[-1] > hi.y - 0.5, "%s climbs steadily: %s" % [b.name, heights])
 		_check(room, "%s has standing room from foot to head" % b.name)
 	_check_detail(map, space)
+
+
+## The plate room's roof (south half) is reached by a fixed ladder, not
+## crates: a ladder volume of the roof's height stands on the wall's hall
+## face, a climber at its foot is in its reach, the roof is right behind its
+## top, and nothing to mantle stands in front of it.
+func _check_ladder(map: Node, space: PhysicsDirectSpaceState3D) -> void:
+	var ladder := map.get_node_or_null("PhotoPass/Boxes/PlateRoomLadderClimb") as Node3D
+	_check(ladder != null and ladder.is_class("LadderVolume"), "the plate room has a ladder")
+	if ladder == null:
+		return
+	_check(
+		absf(float(ladder.get("length")) - 3.4) < 0.05,
+		"the ladder reaches the plate room's roof (3.4 m), got %.2f" % float(ladder.get("length"))
+	)
+	# -Z is the way a climber faces: into the rungs, toward the wall.
+	var into := -ladder.global_basis.z
+	var foot := ladder.global_position - into * 0.6
+	_check(absf(_ground(space, foot)) < 0.05, "the ladder's foot is on the floor")
+	_check(_fits(space, foot, 1.8), "a player can stand at the ladder's foot")
+	var reach := PhysicsPointQueryParameters3D.new()
+	reach.position = foot + Vector3.UP * 0.9
+	reach.collide_with_areas = true
+	reach.collide_with_bodies = false
+	reach.collision_mask = 1 << 8
+	_check(
+		not space.intersect_point(reach).is_empty(), "a player at its foot is in the ladder's reach"
+	)
+	var top := ladder.global_position + into * 0.8
+	_check(
+		absf(_ground(space, top, 6.0) - 3.4) < 0.05, "the roof is behind the ladder's top at 3.4 m"
+	)
+	_check(_fits(space, Vector3(top.x, 3.42, top.z), 1.8), "a player stepping off the ladder fits")
+	for side in [-1.0, 1.0]:
+		var beside: Vector3 = foot + ladder.global_basis.x * side * 0.9
+		_check(_ground(space, beside) < 0.3, "nothing to mantle stands beside the ladder")
+
+
+## The north half's shift office downstairs is the scanned office: two glass
+## partitions that stop players but not rounds, a doorway through each, the
+## glass door and window to the back aisle, and standing room under its
+## suspended ceiling.
+func _check_office(map: Node, space: PhysicsDirectSpaceState3D) -> void:
+	var detail := map.get_node_or_null("PhotoPass/Detail")
+	for name in ["OfficePartitionN", "OfficePartitionS", "OfficeDoorWhite", "OfficeWindow"]:
+		var glass := detail.get_node_or_null(name) as StaticBody3D
+		_check(
+			glass != null and glass.get_meta("surface", "") == "glass",
+			"%s is glass that rounds pass through" % name
+		)
+	for z in [-23.17, -18.33]:
+		_check(
+			not _fits(space, Vector3(37.0, 0.02, z), 1.8),
+			"the partition at z %.1f stops players" % z
+		)
+		_check(
+			_fits(space, Vector3(40.525, 0.02, z), 1.8), "the partition at z %.1f has a doorway" % z
+		)
+	_check(
+		_fits(space, Vector3(35.62, 0.02, -22.3), 1.8), "the glass door to the back aisle is open"
+	)
+	_check(
+		not _fits(space, Vector3(35.62, 1.05, -19.6), 0.9),
+		"the office window's glass stops players climbing through"
+	)
+	for p in [Vector3(40.5, 0.02, -24.0), Vector3(38.7, 0.02, -20.75), Vector3(39.5, 0.02, -17.0)]:
+		_check(_fits(space, p, 1.8), "standing room in the office at %s" % p)
 
 
 ## The detail pass (tools/map_blockout/warehouse_detail_layout.py) keeps

@@ -92,6 +92,9 @@ def occupancy(data) -> Occupancy:
             occ.add_box(b["lo"][0], b["hi"][0], b["lo"][2], b["hi"][2])
     for w in data["walls"]:
         occ.add_box(w[1], w[2], w[3], w[4])
+    # Rooms dressed by hand (the scanned office) take no litter or wall dressing.
+    for x0, x1, z0, z1 in data.get("clear", []):
+        occ.add_box(x0, x1, z0, z1)
     return occ
 
 

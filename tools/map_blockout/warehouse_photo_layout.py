@@ -23,6 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import warehouse_detail_layout  # noqa: E402
+from warehouse_detail_layout import piece  # noqa: E402
 
 OUT = Path(__file__).resolve().parents[2] / "godot/tools/warehouse_photo_layout.json"
 rng = random.Random(1118)
@@ -160,10 +161,16 @@ FALLBACK = {"forklift": "res://assets/props/warehouse/forklift.glb",
             "office_chair": "res://assets/props/warehouse/office_chair.glb",
             "delivery_truck": "res://assets/props/warehouse/delivery_truck.glb",
             "jersey_barrier": "res://assets/props/barrier/barrier.gltf",
-            "service_door": "res://assets/props/warehouse/warehouse_service_door.glb"}
+            "service_door": "res://assets/props/warehouse/warehouse_service_door.glb",
+            "covered_car": "res://assets/props/covered_car/covered_car.gltf"}
 props: list[dict] = []
 BOXES: list[dict] = []  # plain boxes: rooms, slabs, stairs, rails, curtains
 EFFECTS: list[dict] = []  # sun, sparks, flickering lights, beacons, steam
+LADDERS: list[dict] = []  # climbable ladders: their LadderVolume markup
+# How far out from the wall fixed_ladder's rungs face (its back is on the wall).
+LADDER_RUNG_FACE = 0.196
+# Floor areas that stay clear of the detail pass's litter and wall dressing.
+CLEAR: list[tuple] = []
 
 WALL_MODELS = ["stack_wide_b", "stack_wide_bowed", "stack_wide_c", "stack_tall_b"]
 TALL_MODELS = ["stack_wide_a", "stack_tall_a", "stack_wide_bowed"]
@@ -357,30 +364,138 @@ def rail(name, x0, x1, z0, z1, y):
     box(f"{name}Clip", x0, x1, y, y + 1.05, z0, z1, "yellow", True, visible=False)
 
 
+# The scanned office (the north team's shift office, ground floor). The user's
+# phone scan of a real in-plant office measures 10.6 x 6.0 m inside with a
+# 2.84 m ceiling: a desk room at each end behind a black-framed glass
+# partition, a polished-concrete break area between. Here its long axis runs
+# north-south down the office's 10.5 m, beside the stair to the floor above.
+SCAN_DOOR = (-22.95, -21.65)    # glass door to the back aisle (world z)
+SCAN_WINDOW = (-20.5, -18.7)    # window over the plant
+SCAN_ROOM_N = -23.2             # partition between the north desk room and the break area
+SCAN_ROOM_S = -18.36            # partition between the break area and the south desk room
+
+
+def scan_office(x0, x1, z0, z1):
+    """The scanned office's rooms and furniture inside x0..x1, z0..z1 (world;
+    x1 is the stairwell wall)."""
+    cx = (x0 + x1) / 2
+    ceiling = 2.85
+    # The stairwell wall (open at its south end, where the stair starts) and
+    # the suspended ceiling with its LED strips.
+    box("OfficeNStairWall", x1, x1 + 0.15, 0.0, 3.2, z0, z1 - 1.55, "panel_white")
+    box("OfficeNCeiling", x0, x1, ceiling, ceiling + 0.05, z0, z1, "panel_white")
+    # The scan's white panel walls line the hall's tilt-up wall inside.
+    box("OfficeNLining", x0, x1, 0.0, ceiling, z0, z0 + 0.04, "panel_white", collide=False)
+    for x, z in [(cx - 1.4, -24.6), (cx + 1.4, -24.6), (cx, -22.2), (cx, -20.75), (cx, -19.3),
+                 (cx - 1.4, -17.1), (cx + 1.4, -17.1)]:
+        piece("office_led_strip", x, ceiling - 0.05, z, shadow=False)
+    # One lamp lights all three rooms through the glass (a lamp per room cost
+    # about 0.5 ms more with the office on screen).
+    EFFECTS.append(dict(kind="lamp", pos=[round(cx, 2), 2.55, -20.75], energy=1.6, range=6.8))
+    # Glass partitions: their door near the east end, the leaf open into the
+    # break area (north partition) and into the south desk room (south one),
+    # so the way through jinks: bay door (west) -> south room -> east door
+    # -> break area -> east door -> north room. Glass stops players, not
+    # rounds (surface "glass": rounds keep 95% of their damage).
+    glass_clip = [[-0.8125, 1.4, 0.03, 4.225, 2.8, 0.06], [2.6625, 1.4, 0.03, 0.525, 2.8, 0.06],
+                  [2.37, 1.05, 0.535, 0.05, 2.1, 0.95]]
+    piece("office_partition", cx, 0.0, SCAN_ROOM_N, yaw=0, back=True, name="OfficePartitionN",
+          clip=glass_clip)["surface"] = "glass"
+    piece("office_partition", cx, 0.0, SCAN_ROOM_S, yaw=0, back=True, name="OfficePartitionS",
+          clip=glass_clip)["surface"] = "glass"
+    # Plank vinyl in the desk rooms; the break area keeps the polished slab.
+    piece("office_lvp_north", cx, 0.0, (z0 + SCAN_ROOM_N) / 2, yaw=0, shadow=False)
+    piece("office_lvp_south", cx, 0.0, (SCAN_ROOM_S + 0.06 + z1) / 2, yaw=180, shadow=False)
+    # The door to the back aisle (white frame, leaf open into the break area)
+    # and the window beside it.
+    piece("office_door_white", x0 - 0.26, 0.0, (SCAN_DOOR[0] + SCAN_DOOR[1]) / 2, yaw=90, back=True,
+          name="OfficeDoorWhite", clip=[[-0.6, 1.1, 0.855, 0.08, 2.2, 1.2]])["surface"] = "glass"
+    piece("office_window", x0 - 0.125, 1.0, (SCAN_WINDOW[0] + SCAN_WINDOW[1]) / 2, yaw=90, name="OfficeWindow",
+          clip=[[0.0, 0.55, 0.0, 1.8, 1.1, 0.1]])["surface"] = "glass"
+    # Break area: TV over the stainless table and printer, the fridge with
+    # the microwave on it, two chairs, prints, the putting mat.
+    piece("office_prep_table", x1 - 0.31, 0.0, -21.35, yaw=-90, name="OfficePrepTable",
+          clip=[[0.0, 0.45, 0.0, 1.18, 0.9, 0.58]])
+    piece("office_tv", x1, 1.75, -21.35, yaw=-90, back=True)
+    piece("office_fridge", x1 - 0.27, 0.0, -20.3, yaw=-90, name="OfficeFridge",
+          clip=[[0.0, 0.57, 0.0, 0.48, 1.14, 0.48]])
+    piece("office_print_a", x0, 1.4, -21.07, yaw=90, back=True, shadow=False)
+    piece("office_print_b", x1, 1.45, -19.2, yaw=-90, back=True, shadow=False)
+    piece("office_putting_mat", cx - 0.35, 0.0, -19.55, yaw=7, shadow=False)
+    for x, z, yaw in [(cx - 0.4, -21.9, 120), (cx + 0.75, -22.35, 95)]:
+        MACHINES.append(("office_chair", round(x, 3), round(z, 3), yaw, 0.62, 0.62, 1.05))
+    # North desk room: the L desk in the corner, a desk on the north wall,
+    # files by the door, a print.
+    piece("office_desk_l", x0 + 0.8, 0.0, z0 + 0.8, yaw=180, name="OfficeDeskL",
+          clip=[[0.0, 0.375, 0.425, 1.6, 0.75, 0.75], [-0.525, 0.375, -0.375, 0.55, 0.75, 0.85]])
+    piece("office_desk_straight", x0 + 2.75, 0.0, z0 + 0.36, yaw=180, name="OfficeDeskN",
+          clip=[[0.0, 0.375, 0.0, 1.4, 0.75, 0.7]])
+    MACHINES.append(("office_chair", round(x0 + 0.9, 3), round(z0 + 1.9, 3), 200, 0.62, 0.62, 1.05))
+    MACHINES.append(("office_chair", round(x0 + 2.8, 3), round(z0 + 1.15, 3), 170, 0.62, 0.62, 1.05))
+    MACHINES.append(("office_files", round(x1 - 0.5, 3), round(z0 + 0.35, 3), 270, 0.95, 0.66, 1.67))
+    piece("office_print_b", x0 + 2.75, 1.45, z0, yaw=0, back=True, shadow=False)
+    # South desk room: a desk on the west wall, the coats on the front wall.
+    piece("office_desk_straight", x0 + 0.36, 0.0, SCAN_ROOM_S + 1.0, yaw=90, name="OfficeDeskS",
+          clip=[[0.0, 0.375, 0.0, 1.4, 0.75, 0.7]])
+    MACHINES.append(("office_chair", round(x0 + 1.15, 3), round(SCAN_ROOM_S + 1.1, 3), 300, 0.62, 0.62, 1.05))
+    piece("office_coat_hooks", x0 + 3.6, 0.8, z1, yaw=180, back=True, shadow=False)
+    CLEAR.append((x0, x1, z0, z1))
+
+
 def half(side):
     """Everything authored once, for the north (0) or south (1) half."""
     tag = "N" if side == 0 else "S"
 
     # Yard: two gates of a vehicle along the fence and a pallet wall off the
     # building, 3 m apart and overlapping; jersey barriers by the gate.
+    # The parking lot parks two box trucks; the truck apron keeps one and a
+    # shipping container stands in the other's place (Shipment's and Crash's
+    # container yards), its far end where the truck's was so the gate overlaps
+    # the same way.
     for k, (x, z) in enumerate([(-19.5, -37.1), (12.5, -37.1)]):
+        if side == 1 and k == 1:
+            wx, wz = at(12.95, -37.1, side)
+            MACHINES.append(("shipping_container_blue", round(wx, 3), round(wz, 3), 90, 6.06, 2.44, 2.59))
+            continue
         wx, wz = at(x, z, side)
         MACHINES.append(("delivery_truck", round(wx, 3), round(wz, 3), turn(0, side), 2.43, 6.91, 3.34))
-    for r in [(-13, -11, -36.3, -30.2), (19, 21, -36.3, -30.2)]:
-        stock_block(world(r, side), 3.0)
+    stock_block(world((-13, -11, -36.3, -30.2), side), 3.0)
+    if side == 0:
+        # The parking lot has a car in it, under its cover.
+        cx_, cz_ = at(6.3, -37.2, side)
+        MACHINES.append(("covered_car", round(cx_, 3), round(cz_, 3), 0, 1.79, 4.37, 1.41))
+        stock_block(world((19, 21, -36.3, -30.2), side), 3.0)
+    else:
+        # The apron's second gate is a wall of baled scrap from the trim
+        # duct, three bales high (2.3 m) where the lot has pallet stock.
+        bx0, bx1, bz0, bz1 = world((19, 21, -36.3, -30.2), side)
+        for layer in range(3):
+            for k in range(4):
+                bz = bz0 + (k + 0.5) * (bz1 - bz0) / 4 + rng.uniform(-0.05, 0.05)
+                place("scrap_bale", (bx0 + bx1) / 2 + rng.uniform(-0.06, 0.06), bz, 90, 2.0, 1.48, 0.76,
+                      y=layer * 0.76, jitter_yaw=2.5)
     for (x, z, length) in [(-0.75, -36.7, 4.5), (27, -34, 3.0), (-27, -35.5, 3.0)]:
         n = round(length / 2.0)
         for k in range(n):
             wx, wz = at(x - length / 2 + (k + 0.5) * length / n, z, side)
             MACHINES.append(("jersey_barrier", round(wx, 3), round(wz, 3), turn(90, side), length / n * 0.98, 0.6, 1.0))
     wx, wz = at(-6.5, -36.0, side)
-    MACHINES.append(("forklift", round(wx, 3), round(wz, 3), turn(20, side), 1.2, 2.45, 2.3))
-    EFFECTS.append(dict(kind="beacon", pos=[round(wx, 2), 2.45, round(wz, 2)]))
+    if side == 0:
+        MACHINES.append(("forklift", round(wx, 3), round(wz, 3), turn(20, side), 1.2, 2.45, 2.3))
+        EFFECTS.append(dict(kind="beacon", pos=[round(wx, 2), 2.45, round(wz, 2)]))
+    else:
+        # The apron's forklift is inside on charge (the charging bay); empty
+        # pallets wait where it would stand.
+        for k, (dx, dz) in enumerate([(-0.7, 0.0), (0.65, 0.2)]):
+            place("pallet_tower_short", wx + dx, wz + dz, 90, 1.27, 1.08, 1.07, jitter_yaw=6)
 
     # Doors from the yard: a pallet baffle just inside each, strip curtains in it.
-    for a, b in ((-27.5, -25), (-15, -12.5), (1.5, 4.5), (16.7, 19.2)):
+    for k, (a, b) in enumerate(((-27.5, -25), (-15, -12.5), (1.5, 4.5), (16.7, 19.2))):
         m = (a + b) / 2
-        stock_block(world((m - 2.3, m + 2.3, -27.4, -26.0), side), 2.4)
+        if side == 1 and k in (1, 3):
+            roll_block(world((m - 2.3, m + 2.3, -27.4, -26.0), side))
+        else:
+            stock_block(world((m - 2.3, m + 2.3, -27.4, -26.0), side), 2.4)
         x0, x1, z0, z1 = world((a, b, -29.95, -29.85), side)
         strips = round((x1 - x0) / 0.3)
         for k in range(strips):
@@ -405,18 +520,44 @@ def half(side):
     dx, dz = at(-6.0, -27.0, side)
     MACHINES.append(("service_door", round(dx + (0.08 if side == 0 else -0.08), 3), round(dz, 3),
                      turn(0, side), 1.08, 0.21, 2.16))
-    for k, (x, h) in enumerate([(-10.9, 1.1), (-9.5, 1.1), (-9.5, 2.2)]):
-        cx, cz = at(x, -23.4, side)
-        base = 1.1 if h > 1.5 else 0.0
-        place("stack_single", cx, cz, 90, 1.38, 1.18, 1.1, y=base)
-    del inner_wall
+    if side == 0:
+        # The ink room: two crates step up 1.1 m and 2.2 m to the roof.
+        for k, (x, h) in enumerate([(-10.9, 1.1), (-9.5, 1.1), (-9.5, 2.2)]):
+            cx, cz = at(x, -23.4, side)
+            base = 1.1 if h > 1.5 else 0.0
+            place("stack_single", cx, cz, 90, 1.38, 1.18, 1.1, y=base)
+    else:
+        # The plate room: a fixed ladder up its hall-facing wall is the only
+        # way onto its roof (Crash's courtyard ladder onto a rooftop, Rust's
+        # ladder up from Maintenance). Slower than the ink room's crates and
+        # the climber's weapon is down, so the roof is a riskier perch.
+        lx, _ = at(-10.2, 0, side)
+        face = inner_wall
+        piece("fixed_ladder", lx, 0.0, face, yaw=180, back=True, name="PlateRoomLadder",
+              clip=[[0.0, 1.7, 0.1, 0.62, 3.4, 0.2]])
+        LADDERS.append(dict(name="PlateRoomLadderClimb", pos=[round(lx, 3), 0.0, round(face - LADDER_RUNG_FACE, 3)],
+                            yaw=180.0, length=3.4, width=0.5))
 
-    # Maintenance shop (north) / tooling crib (south): one storey, no way up.
     mx0, mx1, mz0, mz1 = world((9, 13, -29.5, -24), side)
-    box(f"Shop{tag}West", mx0, mx0 + t, 0, 3.2, mz0, mz1, "panel_white")
-    box(f"Shop{tag}East", mx1 - t, mx1, 0, 3.2, mz0, mz1, "panel_white")
-    box(f"Shop{tag}Front", mx0, mx1, 0, 3.2, *((mz1 - t, mz1) if side == 0 else (mz0, mz0 + t)), "panel_white")
-    box(f"Shop{tag}Roof", mx0, mx1, 3.2, 3.4, mz0, mz1, "cap")
+    if side == 0:
+        # Maintenance shop: one storey, no way up.
+        box(f"Shop{tag}West", mx0, mx0 + t, 0, 3.2, mz0, mz1, "panel_white")
+        box(f"Shop{tag}East", mx1 - t, mx1, 0, 3.2, mz0, mz1, "panel_white")
+        box(f"Shop{tag}Front", mx0, mx1, 0, 3.2, mz1 - t, mz1, "panel_white")
+        box(f"Shop{tag}Roof", mx0, mx1, 3.2, 3.4, mz0, mz1, "cap")
+    else:
+        # In place of a second walled room, an open forklift charging bay:
+        # chargers on the wall, the apron's forklift parked nose-in on charge,
+        # a spare battery in front. Low and broken cover where the north half
+        # has a solid room, so the front aisle plays differently from the back.
+        cxm = (mx0 + mx1) / 2
+        piece("charging_station", cxm, 0.0, mz1, yaw=180, back=True, name="ChargingStation",
+              clip=[[0.0, 0.75, 0.175, 2.2, 1.5, 0.35], [0.0, 0.47, 0.825, 0.95, 0.94, 0.62],
+                    [0.0, 0.29, 1.275, 2.3, 0.58, 0.1]])
+        MACHINES.append(("forklift", round(cxm + 0.15, 3), round(mz1 - 3.0, 3), 92, 1.2, 2.45, 2.3))
+        EFFECTS.append(dict(kind="lamp", pos=[round(cxm, 2), 2.9, round(mz1 - 1.2, 2)], shadow=False,
+                            energy=0.6, range=4.0, color=[0.55, 1.0, 0.6]))
+        place("pallet_tower_short", mx0 + 0.2, mz1 - 2.6, 90, 1.27, 1.08, 1.07, jitter_yaw=8)
 
     # Two-storey office in the team's corner: shift office (north-east) and QC
     # lab (south-west). Ground floor: a door from the back aisle and one to the
@@ -424,9 +565,13 @@ def half(side):
     # walls and window band look over the racking and the bay.
     ox0, ox1, oz0, oz1 = world((22, 30.5, -29.5, -19), side)
     if side == 0:
-        wall_run(f"Office{tag}West", ox0, ox0 + t, oz0, oz1, 3.2, [(oz0 + 2.0, oz0 + 4.5, 0.0, 2.4)], "panel_white")
+        # The ground floor is the scanned office (scan_office below): a glass
+        # door and a window onto the back aisle, the bay door into its south
+        # desk room.
+        wall_run(f"Office{tag}West", ox0, ox0 + t, oz0, oz1, 3.2,
+                 [(SCAN_DOOR[0], SCAN_DOOR[1], 0.0, 2.2), (SCAN_WINDOW[0], SCAN_WINDOW[1], 1.0, 2.1)], "panel_white")
         wall_run(f"Office{tag}Front", ox0, ox1, oz1 - t, oz1, 3.2,
-                 [(ox0 + 3.0, ox0 + 5.0, 0.0, 2.4), (ox0 + 5.6, ox0 + 7.8, 1.0, 2.2)], "panel_white")
+                 [(ox0 + 0.9, ox0 + 2.9, 0.0, 2.4), (ox0 + 5.6, ox0 + 7.8, 1.0, 2.2)], "panel_white")
         hx0, hx1, hz0, hz1 = ox1 - 2.4, ox1, oz0 + 2.0, oz1     # stair well
         stair(f"Stair{tag}", hx0 + 0.3, hx1 - 0.2, hz0, hz1 - 0.2, 0.0, 3.4, "n")
         box(f"Office{tag}FloorA", ox0, hx0, 3.2, 3.4, oz0, oz1, "cap")
@@ -457,14 +602,27 @@ def half(side):
             else:
                 box(f"Office{tag}Mullion{k}_{j}", x0, x1, 4.4, 5.6, z0 + p, z0 + p + 0.08, "steel", False)
     box(f"Office{tag}Roof", ox0, ox1, 6.2, 6.4, oz0, oz1, "cap")
-    for y in (2.9, 6.0):  # office ceiling lights, downstairs and up
+    # Office ceiling lights, downstairs and up (the scanned office lights its
+    # own rooms).
+    for y in ((6.0,) if side == 0 else (2.9, 6.0)):
         EFFECTS.append(dict(kind="lamp", pos=[round((ox0 + ox1) / 2, 2), y, round((oz0 + oz1) / 2, 2)]))
-    for k, (x, z, yaw) in enumerate([(24.0, -27.5, 90), (27.0, -22.5, 0)]):
-        wx, wz = at(x, z, side)
-        MACHINES.append(("office_desk", round(wx, 3), round(wz, 3), turn(yaw, side), 1.8, 0.73, 0.75, 3.4))
-    for k, (x, z) in enumerate([(23.0, -21.0), (24.6, -21.0)]):
-        wx, wz = at(x, z, side)
-        MACHINES.append(("office_files", round(wx, 3), round(wz, 3), turn(0, side), 0.95, 0.66, 1.67))
+    if side == 0:
+        # The shift office upstairs: desks.
+        for k, (x, z, yaw) in enumerate([(24.0, -27.5, 90), (27.0, -22.5, 0)]):
+            wx, wz = at(x, z, side)
+            MACHINES.append(("office_desk", round(wx, 3), round(wz, 3), turn(yaw, side), 1.8, 0.73, 0.75, 3.4))
+        scan_office(ox0 + t, ox1 - 2.4, oz0, oz1 - t)
+    else:
+        # The QC lab: test benches upstairs, a box compression tester and the
+        # sample files downstairs.
+        for k, (x, z, yaw) in enumerate([(24.0, -27.5, 90), (27.0, -22.5, 0)]):
+            wx, wz = at(x, z, side)
+            MACHINES.append(("qc_bench", round(wx, 3), round(wz, 3), turn(yaw, side), 2.0, 0.75, 1.345, 3.4))
+        for k, (x, z) in enumerate([(23.0, -21.0), (24.6, -21.0)]):
+            wx, wz = at(x, z, side)
+            MACHINES.append(("office_files", round(wx, 3), round(wz, 3), turn(0, side), 0.95, 0.66, 1.67))
+        piece("qc_compression_tester", ox1 - t - 0.5, 0.0, oz0 + 3.6, yaw=-90, name="CompressionTester",
+              clip=[[-0.2, 1.05, 0.0, 1.5, 2.1, 1.0], [0.75, 0.7, -0.2, 0.3, 1.4, 0.3]])
 
     # Row north: racking on the west wall, the long line split by a crouch
     # tunnel, the die-cut (north) / folder-gluer (south) line, rolls end-on.
@@ -485,7 +643,7 @@ def half(side):
     stock_block(world((5, 9, -24, -21.5), side), 2.7)
     roll_block(world((16.5, 21, -19, -10), side))
     stock_block(world((25, 28, -15.5, -14), side), 1.1, LOW_MODELS)
-    for k in range(3):  # a toppled rack's spilled sheets
+    for k in range(3 if side == 0 else 0):  # a toppled rack's spilled sheets (north only)
         x, z = at(24.5 + k * 1.3, -9.8 + k * 0.4, side)
         place("cut_sheets_low", x, z, turn(30 + k * 25, side), 1.9, 1.12, 0.46, jitter_yaw=15)
 
@@ -518,8 +676,9 @@ def half(side):
     else:
         stair(f"Crossover{tag}Stair", px1, px1 + 5.0, pz1 - 1.5, pz1 - 0.1, 0.0, 2.75, "w")
     # A torn cable tray over the crossover spits sparks.
-    sx, sz = at(8.5, -9.5, side)  # over the deck's middle
-    EFFECTS.append(dict(kind="sparks", pos=[round(sx, 2), 5.6, round(sz, 2)]))
+    if side == 0:  # (the south half's sparks come from its burnt switchboard)
+        sx, sz = at(8.5, -9.5, side)  # over the deck's middle
+        EFFECTS.append(dict(kind="sparks", pos=[round(sx, 2), 5.6, round(sz, 2)]))
     stock_block(world((17, 25, -9, -3), side), 3.0)
     stock_block(world((27, 29, -6, -3), side), 1.1, LOW_MODELS)
     # The trim-scrap duct (photo 10) runs along the wall: waist-high cover.
@@ -622,7 +781,7 @@ def main():
         light_y=LIGHT_Y, windows=WINDOWS, doors=DOORS, trays=TRAYS, pipes=PIPES, drops=DROPS, lines=LINES,
         machines=MACHINES, fallback=FALLBACK, props=props,
         spawns=SPAWNS, reverb=REVERB, boundary=BOUNDARY, lanes=LANES, patches=PATCHES,
-        boxes=BOXES, effects=EFFECTS, roof_holes=ROOF_HOLES,
+        boxes=BOXES, effects=EFFECTS, roof_holes=ROOF_HOLES, ladders=LADDERS, clear=CLEAR,
     )
     warehouse_detail_layout.dress(data)
     OUT.write_text(json.dumps(data, indent=1))
