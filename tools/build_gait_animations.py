@@ -596,6 +596,16 @@ def author_vault(skel: Skeleton, base: Clip) -> tuple[list[dict], float]:
 # second of its timeline (left knee drawn up at phase 0): each knee in turn
 # draws up and out to the side, digs in, and pushes the body forward while
 # the other leg straightens behind, the hips rolling up on the drawn side.
+#
+# The other directions, as the IW engine's prone has a crawl for each
+# (`prone_crawl_forward`, `_back`, `_left`, `_right`), on the same stride
+# phase so they blend:
+# - `Prone_Crawl_B` is the forward crawl run backward: each knee draws up
+#   with its toes dug in and pulls the body back over them.
+# - `Prone_Crawl_R` hitches the body to its right: the right knee draws up
+#   and out to the side twice a stride and pushes the hips over it, while
+#   the left leg drags straight behind and swings back in under the body,
+#   the hips fishtailing toward the drawn knee. `Prone_Crawl_L` mirrors it.
 PRONE_FRAMES = 33
 # Torso: the hips' forward pitch (90 is flat), and how far the spine bends
 # back up over its three bones and the neck and head lift to look ahead,
@@ -624,7 +634,21 @@ CRAWL_YAW = 6.0
 CRAWL_SWAY = 0.035
 
 
-def crawl_leg(phase: float) -> tuple[np.ndarray, float]:
+# The side crawl: the leading knee drawn up this far out, up, and back from
+# the hips (the right leg's, as x is +left), the trailing ankle's sweep
+# across (out from its rest at the push's end, m), and the hips' fishtail
+# yaw, roll up on the leading side (degrees), and sway along the travel (m).
+SIDE_DRAWN = np.array([-0.4, -0.02, -0.52])
+SIDE_TRAIL_SWEEP = 0.12
+SIDE_YAW = 10.0
+SIDE_ROLL = 7.0
+SIDE_SWAY = 0.04
+# Directions of the prone crawl: name suffix (forward has none), and the
+# travel's angle from forward toward the character's right (degrees).
+PRONE_DIRECTIONS = (("", 0.0), ("_R", 90.0), ("_B", 180.0), ("_L", -90.0))
+
+
+def crawl_leg(phase: float, drawn: np.ndarray = CRAWL_DRAWN) -> tuple[np.ndarray, float]:
     """One leg's ankle target relative to the hips (left side; the right
     mirrors x) and its turn-out at `phase` of the stride: drawn up at 0,
     pushing back along the ground to straight by 0.5 (planted, so it moves
@@ -632,20 +656,64 @@ def crawl_leg(phase: float) -> tuple[np.ndarray, float]:
     phase %= 1.0
     if phase < 0.5:
         u = phase / 0.5
-        ankle = CRAWL_DRAWN + (PRONE_ANKLE - CRAWL_DRAWN) * u
+        ankle = drawn + (PRONE_ANKLE - drawn) * u
         out = CRAWL_TURN_OUT * (1.0 - u) ** 1.5
     else:
         u = (phase - 0.5) / 0.5
         e = u * u * (3.0 - 2.0 * u)
-        ankle = PRONE_ANKLE + (CRAWL_DRAWN - PRONE_ANKLE) * e + np.array([0.0, 0.05 * math.sin(math.pi * u), 0.0])
+        ankle = PRONE_ANKLE + (drawn - PRONE_ANKLE) * e + np.array([0.0, 0.05 * math.sin(math.pi * u), 0.0])
         out = CRAWL_TURN_OUT * e
     return ankle, out
 
 
-def author_prone(skel: Skeleton, base: Clip, crawl: bool) -> tuple[list[dict], float, np.ndarray]:
-    """The prone pose (`crawl` False) or the low crawl, from the idle's first
-    pose. Returns one pose per frame, the worst IK miss (m), and the eyes'
-    mean position."""
+MIRROR = np.array([-1.0, 1.0, 1.0])
+
+
+def crawl_targets(t: float, direction: float) -> tuple[dict, float, float, np.ndarray]:
+    """The crawl at phase `t` travelling `direction` degrees right of
+    forward (0, 90, 180, or -90): each leg's ankle target relative to the
+    hips and turn-out, the hips' roll (left side up) and yaw (to the right),
+    degrees, and their sway (m, character space)."""
+    if direction in (0.0, 180.0):
+        # Backward, the forward crawl runs in reverse.
+        p = t if direction == 0.0 else -t
+        left, left_out = crawl_leg(p)
+        right, right_out = crawl_leg(p + 0.5)
+        side = math.cos(math.tau * t)  # 1: left drawn up, -1: right
+        sway = np.array([CRAWL_SWAY * side, 0.0, 0.0])
+        return {"L": (left, left_out), "R": (right * MIRROR, right_out)}, CRAWL_ROLL * side, -CRAWL_YAW * side, sway
+    # Sideways (worked out for the right; the left mirrors it): two hitches
+    # a stride, the leading knee drawn up at each one's start.
+    h = (2.0 * t) % 1.0
+    lead, lead_out = crawl_leg(h, SIDE_DRAWN * MIRROR)
+    lead = lead * MIRROR
+    # The trailing leg drags out from under the body while the hips push
+    # over, then swings back in, lifted a little.
+    if h < 0.5:
+        across = SIDE_TRAIL_SWEEP * (h / 0.5)
+        lift = 0.0
+    else:
+        u = (h - 0.5) / 0.5
+        across = SIDE_TRAIL_SWEEP * (1.0 - u * u * (3.0 - 2.0 * u))
+        lift = 0.04 * math.sin(math.pi * u)
+    trail = PRONE_ANKLE + np.array([across - 0.06, lift, 0.04])
+    drawn = math.cos(math.tau * h)  # 1: the leading knee drawn up
+    roll, yaw_r = -SIDE_ROLL * drawn, -SIDE_YAW * drawn
+    sway = np.array([SIDE_SWAY * drawn, 0.0, 0.0])
+    legs = {"R": (lead, lead_out), "L": (trail, 0.0)}
+    if direction < 0.0:
+        legs = {"L": (legs["R"][0] * MIRROR, legs["R"][1]), "R": (legs["L"][0] * MIRROR, legs["L"][1])}
+        roll, yaw_r, sway = -roll, -yaw_r, sway * MIRROR
+    return legs, roll, yaw_r, sway
+
+
+def author_prone(
+    skel: Skeleton, base: Clip, crawl: bool, direction: float = 0.0
+) -> tuple[list[dict], float, np.ndarray]:
+    """The prone pose (`crawl` False) or the low crawl travelling
+    `direction` degrees right of forward, from the idle's first pose.
+    Returns one pose per frame, the worst IK miss (m), and the eyes' mean
+    position."""
     hips_i = skel.index["DEF-hips"]
     legs = {s: [skel.index[f"DEF-thigh.{s}"], skel.index[f"DEF-shin.{s}"], skel.index[f"DEF-foot.{s}"]] for s in "LR"}
     spine = [skel.index[n] for n in ("DEF-spine.001", "DEF-spine.002", "DEF-spine.003")]
@@ -658,20 +726,15 @@ def author_prone(skel: Skeleton, base: Clip, crawl: bool) -> tuple[list[dict], f
     def pose_at(t: float, hips_z: float) -> tuple[dict, float, np.ndarray]:
         pose = dict(start)
         if crawl:
-            left, left_out = crawl_leg(t)
-            right, right_out = crawl_leg(t + 0.5)
-            right = right * np.array([-1.0, 1.0, 1.0])
-            side = math.cos(math.tau * t)  # 1: left drawn up, -1: right
-            roll, yaw_r, sway = CRAWL_ROLL * side, -CRAWL_YAW * side, CRAWL_SWAY * side
+            ankles, roll, yaw_r, sway = crawl_targets(t, direction)
         else:
-            left, right = PRONE_ANKLE.copy(), PRONE_ANKLE * np.array([-1.0, 1.0, 1.0])
-            left_out = right_out = 0.0
-            roll = yaw_r = sway = 0.0
-        ankles = {"L": (left, left_out), "R": (right, right_out)}
+            ankles = {"L": (PRONE_ANKLE.copy(), 0.0), "R": (PRONE_ANKLE * MIRROR, 0.0)}
+            roll = yaw_r = 0.0
+            sway = np.zeros(3)
         # Roll the drawn side's hip up (left up tips the top toward -X).
         turn = yaw(math.radians(yaw_r)) @ axis_angle(x, math.radians(PRONE_HIPS_PITCH)) @ axis_angle(y, math.radians(-roll))
         new_rot: dict[int, np.ndarray] = {hips_i: turn @ g[hips_i][0]}
-        hips_t = np.array([sway, PRONE_HIPS_HEIGHT, hips_z])
+        hips_t = np.array([0.0, PRONE_HIPS_HEIGHT, hips_z]) + sway
         pose[(hips_i, "translation")] = parent_r.T @ (hips_t - parent_t)
         # The spine lifts the chest back up and turns back against the
         # hips' yaw, so the shoulders stay square to the aim.
@@ -779,8 +842,9 @@ def main(argv: list[str] | None = None) -> None:
     if args.report:
         print(f"Vault miss {worst * 100:.1f} cm")
     clips.append(("Vault", frames, Authored(idle.order, 1.0)))
-    for name, crawl in (("Prone", False), ("Prone_Crawl", True)):
-        frames, worst, eyes = author_prone(skel, idle, crawl)
+    prone = [("Prone", False, 0.0)] + [(f"Prone_Crawl{suffix}", True, d) for suffix, d in PRONE_DIRECTIONS]
+    for name, crawl, direction in prone:
+        frames, worst, eyes = author_prone(skel, idle, crawl, direction)
         if worst > 0.005 and not args.report:
             raise SystemExit(f"{name}: IK misses its foot target by {worst * 100:.1f} cm")
         if args.report:

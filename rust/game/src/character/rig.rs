@@ -1190,6 +1190,11 @@ impl SoldierRig {
                 set(tree, "stance/blend_amount", stance.to_variant());
                 // Down from the crouch to prone; the crawl runs on the
                 // stride.
+                set(
+                    tree,
+                    "prone_loop/blend_position",
+                    self.direction.to_variant(),
+                );
                 set(tree, "prone_seek/seek_request", self.stride.to_variant());
                 let crawl = if moving { 1.0f32 } else { 0.0 };
                 set(tree, "prone_move/blend_amount", crawl.to_variant());
@@ -2059,13 +2064,25 @@ impl SoldierRig {
         add("crouch", AnimationNodeBlend2::new_gd().upcast(), 1.5);
         add("stance", AnimationNodeBlend2::new_gd().upcast(), 2.0);
         // Prone (`tools/build_gait_animations.py`): lying still, or the low
-        // crawl on the stride.
+        // crawl on the stride, by the travel's direction (forward, the
+        // sides, and backward at both ends).
         add("prone_idle", clip("gait/Prone").upcast(), 1.5);
-        add(
-            "prone_loop",
-            stride_clip(&gait::PRONE_LOOP, 0).upcast(),
-            1.5,
-        );
+        let mut prone_loops = AnimationNodeBlendSpace1D::new_gd();
+        prone_loops.set_min_space(-PI);
+        prone_loops.set_max_space(PI);
+        for (index, name, at) in DIRECTION_POINTS {
+            if index % 2 == 1 {
+                continue;
+            }
+            prone_loops
+                .add_blend_point_ex(
+                    &stride_clip(&gait::PRONE_LOOP, index).upcast::<AnimationRootNode>(),
+                    at,
+                )
+                .name(name)
+                .done();
+        }
+        add("prone_loop", prone_loops.upcast(), 1.5);
         add("prone_seek", AnimationNodeTimeSeek::new_gd().upcast(), 1.75);
         add("prone_move", AnimationNodeBlend2::new_gd().upcast(), 2.0);
         add("prone", AnimationNodeBlend2::new_gd().upcast(), 2.25);
@@ -2225,6 +2242,8 @@ fn directed_clip(l: &gait::Loop, index: usize) -> (String, f32) {
         "ual1/Walk" => "Walk",
         "ual1/Jog_Fwd" => "Jog",
         "ual1/Sprint" => "Sprint",
+        // The crawl's other directions are authored on its own phase.
+        "gait/Prone_Crawl" => return (format!("{}_{}", l.clip, gait::DIRECTIONS[index]), l.offset),
         _ => "Crouch",
     };
     (format!("gait/{base}_{}", gait::DIRECTIONS[index]), 0.0)

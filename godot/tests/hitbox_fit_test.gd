@@ -127,6 +127,11 @@ func _states() -> Array[Dictionary]:
 	add.call("prone", {"stance": "prone"})
 	add.call("prone_crawl", {"stance": "prone"}, moving.call(Vector3(0, 0, -0.8)))
 	add.call("prone_crawl_side", {"stance": "prone"}, moving.call(Vector3(0.8, 0, 0)))
+	add.call("prone_crawl_left", {"stance": "prone"}, moving.call(Vector3(-0.8, 0, 0)))
+	add.call("prone_crawl_back", {"stance": "prone"}, moving.call(Vector3(0, 0, 0.8)))
+	add.call("prone_crawl_diagonal", {"stance": "prone"}, moving.call(Vector3(0.57, 0, -0.57)))
+	add.call("prone_crawl_back_left", {"stance": "prone"}, moving.call(Vector3(-0.57, 0, 0.57)))
+	add.call("prone_crawl_between", {"stance": "prone"}, moving.call(Vector3(0.31, 0, -0.74)))
 	add.call("prone_ads", {"stance": "prone", "ads": 1.0})
 	add.call("prone_pitch_up", {"stance": "prone", "pitch": 0.8})
 	add.call("prone_pitch_down", {"stance": "prone", "pitch": -0.5})
@@ -578,12 +583,17 @@ func _generate(world: Node3D) -> void:
 		out.append("%s," % _pose_literal(pose))
 	out.append("];")
 	out.append("")
-	out.append("/// The low crawl prone (`gait::PRONE_LOOP`).")
-	out.append("pub(super) const PRONE_CRAWL: [BasePose; STRIDE_SAMPLES] = [")
-	for i in STRIDE_SAMPLES:
-		var state := {"stance": "prone", "stride": float(i) / STRIDE_SAMPLES}
-		var pose := await _average_pose(world, state, Vector3(0, 0, -0.8), 60, 1, {}, extra)
-		out.append("%s," % _pose_literal(pose))
+	out.append("/// The low crawl prone (`gait::PRONE_LOOP`) every 45° clockwise from forward")
+	out.append("/// (`gait::PRONE_POSE_DIRECTIONS`).")
+	out.append("#[rustfmt::skip]")
+	out.append("pub(super) static PRONE_CRAWLS: [[BasePose; STRIDE_SAMPLES]; 8] = [")
+	for k in 8:
+		out.append("[")
+		for i in STRIDE_SAMPLES:
+			var state := {"stance": "prone", "stride": float(i) / STRIDE_SAMPLES}
+			var pose := await _average_pose(world, state, _toward(k * 45.0, 0.8), 60, 1, {}, extra)
+			out.append("%s," % _pose_literal(pose))
+		out.append("],")
 	out.append("];")
 	out.append("")
 	# Every measured direction but forward (`gait::POSE_DIRECTIONS`), at the

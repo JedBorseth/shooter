@@ -18,6 +18,12 @@ const HOLD_WEAPONS := ["m4", "lsw6", "m1911", "m870"]
 const GAIT_MOMENTS := [0.0, 0.07, 0.14, 0.21, 0.28, 0.35, 0.42, 0.49]
 const GAIT_SLOW_MOMENTS := [0.0, 0.12, 0.24, 0.36, 0.48, 0.6, 0.72, 0.84]
 const SPRINT_MOMENTS := [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35]
+## Moments through a stride of the low crawl (0.7 m at 0.8 m/s), and a view
+## of the lying body from above and to its right.
+const PRONE_MOMENTS := [0.0, 0.11, 0.22, 0.33, 0.44, 0.55, 0.66, 0.77]
+const PRONE_SEEN := {
+	"stance": "prone", "camera": SPOT + Vector3(1.9, 2.2, 0.9), "look": SPOT + Vector3(0, 0.1, 0.6)
+}
 
 var _out := OS.get_environment("CAPTURE_DIR")
 var _sets := OS.get_environment("CAPTURE_SETS")
@@ -114,6 +120,13 @@ func _moves() -> Dictionary:
 			[0.0, 0.11, 0.22, 0.33, 0.44, 0.55, 0.66, 0.77],
 			_gait.bind(0.0, 0.8, {"stance": "prone"})
 		],
+		# The other crawls (`gait/Prone_Crawl_R`, `_B`, `_L`), seen from above
+		# and to the right so the legs' work shows.
+		"prone_crawl_right": [0.875, PRONE_MOMENTS, _gait.bind(90.0, 0.8, PRONE_SEEN)],
+		"prone_crawl_left": [0.875, PRONE_MOMENTS, _gait.bind(-90.0, 0.8, PRONE_SEEN)],
+		"prone_crawl_back": [0.875, PRONE_MOMENTS, _gait.bind(180.0, 0.8, PRONE_SEEN)],
+		"prone_crawl_diagonal": [0.875, PRONE_MOMENTS, _gait.bind(45.0, 0.8, PRONE_SEEN)],
+		"prone_crawl_above": [0.875, PRONE_MOMENTS, _gait.bind(0.0, 0.8, PRONE_SEEN)],
 	}
 
 
