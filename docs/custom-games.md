@@ -2,7 +2,7 @@
 
 A host can change a match's rules before it starts, as in Black Ops 2's Custom Games. The rules live in `rust/sim/src/custom.rs` (`custom::Settings`). The server takes them on the command line, applies them, and sends them to every player in the welcome. Prediction (health and its regeneration) and the HUD follow the same rules.
 
-Friendly fire and loadout rules are carried and shown but not yet applied by the server; they land next (TODO.md, Custom games). Hardcore's missing HUD lands with the setup screen.
+Loadout rules are carried but not yet applied by the server; they land next (TODO.md, Custom games). Hardcore's missing HUD lands with the setup screen.
 
 Ranked servers (`--accounts`) ignore custom settings: ranked play always uses the default rules. Zombies keeps its own rules.
 
@@ -24,6 +24,16 @@ Each setting follows a Black Ops 2 game type setting (the `getgametypesetting` k
 | Scorestreaks (`custom_killstreak_mode`) | On, Off | Off: points earn no scorestreaks. |
 | Loadouts (`disableCAC` and party restrictions) | Any, Default classes, Pistols only, Snipers only | Which classes players may use. |
 | Hardcore (`hardcoreMode`) | Off, On | No HUD. Turning it on sets health to 30% and friendly fire to On, Black Ops 2's hardcore rules; either can still be changed. |
+
+## Friendly fire
+
+With friendly fire on, bullets, the knife, grenades, and every other blast (launchers, scorestreaks, props) hurt teammates too; bullets no longer pass through them. What a hit on a teammate does depends on the setting (`FriendlyFire::split`):
+
+- **On:** the teammate takes it all.
+- **Reflect:** the teammate takes nothing, and the attacker takes half (at least 1).
+- **Shared:** each takes half (at least 1).
+
+A teamkill shows in the kill feed and counts as the victim's death, but scores nothing: no kill points, no team score, no streak count, and no objective bonus. Death by reflected damage is a suicide. Black Ops 2 also punishes repeat teamkillers (`teamKillPunishCount`: a respawn delay, then a kick); that is not built yet.
 
 ## The text form
 

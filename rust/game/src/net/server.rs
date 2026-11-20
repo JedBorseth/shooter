@@ -5462,7 +5462,10 @@ impl NetServer {
                 continue;
             }
             let own = Some(avatar.id) == attacker;
-            if !own && attacker_side.is_some_and(|side| side == self.side(avatar)) {
+            if !own
+                && attacker_side.is_some_and(|side| side == self.side(avatar))
+                && !self.friendly_fire_on()
+            {
                 continue;
             }
             let feet = to_godot(avatar.predicted.position);
@@ -5523,7 +5526,9 @@ impl NetServer {
             attacker.and_then(|id| self.avatars.iter().find(|a| a.id == id).map(|a| a.team));
         let scoring = self.match_state.scoring();
         let mut kills = Vec::new();
+        let victims = self.split_friendly_damage(attacker, victims);
         for (id, distance, damage) in victims {
+            let teamkill = attacker.is_some_and(|attacker| self.teammates(attacker, id));
             let Some(victim) = self.avatars.iter_mut().find(|a| a.id == id) else {
                 continue;
             };
@@ -5583,13 +5588,13 @@ impl NetServer {
                 eye: None,
             });
             self.record_death(id);
-            if credited.is_some() {
+            if credited.is_none() {
+                self.on_suicide(id);
+            } else if !teamkill {
                 kills.push(Kill {
                     distance,
                     headshot: false,
                 });
-            } else {
-                self.on_suicide(id);
             }
             let victim_team = self.avatars.iter().find(|a| a.id == id).map(|a| a.team);
             let end = match (self.game, credited) {
@@ -5715,7 +5720,7 @@ impl NetServer {
             .iter()
             .filter(|a| {
                 a.id != strike.attacker
-                    && self.side(a) != side
+                    && self.can_hurt(side, a)
                     && a.predicted.state.alive()
                     && f64::from(a.spawned_at) <= rewind
             })
@@ -5950,10 +5955,10 @@ impl NetServer {
         let targets: Vec<Target> = self
             .avatars
             .iter()
-            // No friendly fire: bullets pass through teammates.
+            // Without friendly fire, bullets pass through teammates.
             .filter(|a| {
                 a.id != shot.shooter
-                    && self.side(a) != shooter_side
+                    && self.can_hurt(shooter_side, a)
                     && a.predicted.state.alive()
                     && f64::from(a.spawned_at) <= rewind
             })
@@ -6026,6 +6031,25 @@ impl NetServer {
     /// Applies the hits decided for one attack (a shot's pellets or a knife
     /// strike): damage, hit and kill events, the mode's rules, and score.
     fn apply_hits(&mut self, attack: &Attack, hits: &[TargetHit]) {
+        // Friendly fire: a teammate takes their share, and the rest
+        // reflects onto the attacker after the hits.
+        let mut reflected = 0.0;
+        let mut split = Vec::with_capacity(hits.len());
+        for hit in hits {
+            if !self.teammates(attack.attacker, hit.id) {
+                split.push(*hit);
+                continue;
+            }
+            let (kept, back) = self.custom.friendly_fire.split(hit.damage);
+            reflected += back;
+            if kept > 0.0 {
+                split.push(TargetHit {
+                    damage: kept,
+                    ..*hit
+                });
+            }
+        }
+        let hits = &split[..];
         let Some(attacker) = self.avatars.iter().find(|a| a.id == attack.attacker) else {
             return;
         };
@@ -6073,17 +6097,21 @@ impl NetServer {
                     killed,
                 },
             );
-            if killed {
+            let teamkill = self.teammates(attack.attacker, hit.id);
+            if killed && !teamkill {
                 kills.push(Kill {
                     distance: hit.distance,
                     headshot: hit.headshot,
                 });
+            }
+            if killed {
                 // The flag drops on the next flag update; it is still on them.
-                if self
-                    .flags
-                    .as_ref()
-                    .and_then(|f| f.carried_by(hit.id))
-                    .is_some_and(|flag| flag == shooter_team)
+                if !teamkill
+                    && self
+                        .flags
+                        .as_ref()
+                        .and_then(|f| f.carried_by(hit.id))
+                        .is_some_and(|flag| flag == shooter_team)
                 {
                     carrier_kills += 1;
                 }
@@ -6115,7 +6143,7 @@ impl NetServer {
                     .iter()
                     .find(|a| a.id == hit.id)
                     .map(|a| (a.team, a.predicted.position));
-                if let Some((_, victim_feet)) = victim
+                if let Some((_, victim_feet)) = victim.filter(|_| !teamkill)
                     && let Some(zone) = self.zones.get(self.hardpoint.active)
                     && let Some(shooter_feet) = self
                         .avatars
@@ -6132,7 +6160,7 @@ impl NetServer {
                 {
                     objective_kills.push(award);
                 }
-                if let Some((_, victim_feet)) = victim
+                if let Some((_, victim_feet)) = victim.filter(|_| !teamkill)
                     && !self.dom_points.is_empty()
                     && let Some(shooter_feet) = self
                         .avatars
@@ -6178,6 +6206,21 @@ impl NetServer {
                     self.broadcast_match();
                 }
             }
+        }
+        if reflected > 0.0 {
+            let cause = if attack.melee {
+                protocol::KillCause::Knife
+            } else {
+                protocol::KillCause::Weapon
+            };
+            self.hurt_players(
+                Some(attack.attacker),
+                Some(shooter_team),
+                origin,
+                vec![(attack.attacker, 0.0, reflected)],
+                attack.weapon,
+                cause,
+            );
         }
         // Points only count in a match, not in the lobby's warm-up. The kill
         // that ends a match still counts.
@@ -6334,9 +6377,12 @@ impl NetServer {
                 continue;
             }
             let self_hit = Some(avatar.id) == attacker;
-            // No friendly fire, but the player who set it off can hurt
-            // themselves.
-            if !self_hit && attacker_team.is_some_and(|team| team == avatar.team) {
+            // Without friendly fire teammates are spared, but the player who
+            // set it off can hurt themselves.
+            if !self_hit
+                && attacker_team.is_some_and(|team| team == avatar.team)
+                && !self.friendly_fire_on()
+            {
                 continue;
             }
             let chest = to_godot(avatar.predicted.position) + Vector3::UP * EXPLOSION_TARGET_HEIGHT;
@@ -6386,6 +6432,7 @@ impl NetServer {
             }
         }
         let weapon = blast.weapon.unwrap_or_else(default_primary);
+        let victims = self.split_friendly_damage(attacker, victims);
         self.hurt_players(
             attacker,
             attacker_team,
@@ -6434,6 +6481,7 @@ impl NetServer {
                 },
             );
             if killed {
+                let teamkill = attacker.is_some_and(|attacker| self.teammates(attacker, id));
                 let credited = attacker.filter(|attacker| *attacker != id);
                 self.broadcast_event(&GameEvent::Kill {
                     killer: credited.unwrap_or(id),
@@ -6459,7 +6507,7 @@ impl NetServer {
                     },
                 });
                 self.record_death(id);
-                if credited.is_some() {
+                if credited.is_some() && !teamkill {
                     kills.push(Kill {
                         distance,
                         headshot: false,
@@ -7558,6 +7606,65 @@ impl NetServer {
         } else {
             avatar.team
         }
+    }
+
+    /// Whether a custom game's friendly fire lets teammates hurt each other
+    /// (free-for-all modes have no teammates).
+    fn friendly_fire_on(&self) -> bool {
+        self.custom.friendly_fire != custom::FriendlyFire::Off
+            && !self.game.free_for_all()
+            && self.horde.is_none()
+    }
+
+    /// Whether an attack from `side` can hurt `avatar`: an enemy, or a
+    /// teammate with friendly fire on.
+    fn can_hurt(&self, side: u8, avatar: &Avatar) -> bool {
+        self.side(avatar) != side || self.friendly_fire_on()
+    }
+
+    /// Whether players `a` and `b` are different players on one team, in a
+    /// team mode.
+    fn teammates(&self, a: u8, b: u8) -> bool {
+        if a == b || self.game.free_for_all() {
+            return false;
+        }
+        let team = |id: u8| self.avatars.iter().find(|p| p.id == id).map(|p| p.team);
+        matches!((team(a), team(b)), (Some(x), Some(y)) if x == y)
+    }
+
+    /// Friendly fire for a blast's `victims` (id, distance, damage): each
+    /// teammate of `attacker` keeps their share, and what reflects lands on
+    /// the attacker.
+    fn split_friendly_damage(
+        &self,
+        attacker: Option<u8>,
+        victims: Vec<(u8, f32, f32)>,
+    ) -> Vec<(u8, f32, f32)> {
+        let Some(attacker) = attacker else {
+            return victims;
+        };
+        let mut reflected = 0.0;
+        let mut out = Vec::with_capacity(victims.len() + 1);
+        for (id, distance, damage) in victims {
+            if !self.teammates(attacker, id) {
+                out.push((id, distance, damage));
+                continue;
+            }
+            let (kept, back) = self.custom.friendly_fire.split(damage);
+            reflected += back;
+            if kept > 0.0 {
+                out.push((id, distance, kept));
+            }
+        }
+        if reflected > 0.0
+            && self
+                .avatars
+                .iter()
+                .any(|a| a.id == attacker && a.predicted.state.alive())
+        {
+            out.push((attacker, 0.0, reflected));
+        }
+        out
     }
 
     /// Whether `a` and `b` are enemies.
