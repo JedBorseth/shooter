@@ -1532,7 +1532,7 @@ impl FpsPlayer {
     /// flashes, and sounds.
     pub(crate) fn killcam_fired(&mut self, weapon: WeaponId) {
         let def = weapon.def();
-        let eject = def.cycle_time <= 0.0 && !def.beam;
+        let eject = def.cycle_time <= 0.0 && !def.beam && !def.rocket;
         self.viewmodel
             .bind_mut()
             .on_fired(weapon, eject, def.magazine.max(1));
@@ -2131,6 +2131,8 @@ impl FpsPlayer {
                             self.state.movement.velocity * 0.5,
                             fuse,
                         ),
+                        weapon: None,
+                        struck: None,
                     });
                 }
             }
@@ -2180,12 +2182,32 @@ impl FpsPlayer {
             } => {
                 let def = weapon.def();
                 self.pending_climb += climb;
-                self.fire_shot(weapon, (yaw, pitch), aim_offset, shot);
+                if def.rocket {
+                    // A launcher's rocket flies: offline this world's grenade
+                    // sim is its authority; online it is drawn until the
+                    // server's arrives, as a throw is.
+                    let eye = self.eye_position();
+                    let owner = if self.prediction.is_some() {
+                        self.net_id
+                    } else {
+                        None
+                    };
+                    if let Some(mut space) = self
+                        .base()
+                        .get_world_3d()
+                        .and_then(|world| world.get_direct_space_state())
+                    {
+                        self.grenades
+                            .launch(&mut space, owner, shot, weapon, eye, (yaw, pitch));
+                    }
+                } else {
+                    self.fire_shot(weapon, (yaw, pitch), aim_offset, shot);
+                }
                 self.rumble_on_fire(weapon);
                 let ads = self.state.combat.ads;
                 let rounds_left = self.state.combat.weapon().magazine;
                 let mut rig = self.viewmodel.bind_mut();
-                let eject = def.cycle_time <= 0.0 && !def.beam;
+                let eject = def.cycle_time <= 0.0 && !def.beam && !def.rocket;
                 // The last rounds ring hollow in the gunshot itself (`hollow`).
                 let punch = rig.on_fired(weapon, eject, rounds_left);
                 drop(rig);
@@ -3302,7 +3324,7 @@ impl FpsPlayer {
                 .blast(&mut parent, (None, blast.shot), kind, center);
         }
         match kind {
-            Kind::Frag => self.feel_blast(center),
+            Kind::Frag | Kind::Rocket => self.feel_blast(center),
             Kind::Flash => {
                 self.flash_me(space, center);
                 return;
@@ -3450,7 +3472,7 @@ impl FpsPlayer {
                 .blast(&mut parent, (owner, shot), kind, to_godot(at));
         }
         match kind {
-            Kind::Frag => self.feel_blast(to_godot(at)),
+            Kind::Frag | Kind::Rocket => self.feel_blast(to_godot(at)),
             Kind::Flash => {
                 if let Some(mut space) = self
                     .base()

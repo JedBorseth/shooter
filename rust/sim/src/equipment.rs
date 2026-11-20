@@ -41,6 +41,10 @@ pub enum Kind {
     Frag,
     Flash,
     Smoke,
+    /// A launcher's rocket (`WeaponDef::rocket`): it flies straight from the
+    /// tube and goes off on whatever it meets, or at the end of its flight.
+    /// Not a class item; it rides the grenades' flight, snapshots, and blast.
+    Rocket,
 }
 
 impl Kind {
@@ -53,6 +57,7 @@ impl Kind {
             Kind::Frag => 0,
             Kind::Flash => 1,
             Kind::Smoke => 2,
+            Kind::Rocket => 3,
         }
     }
 
@@ -61,6 +66,7 @@ impl Kind {
             0 => Some(Kind::Frag),
             1 => Some(Kind::Flash),
             2 => Some(Kind::Smoke),
+            3 => Some(Kind::Rocket),
             _ => None,
         }
     }
@@ -71,6 +77,7 @@ impl Kind {
             Kind::Frag => "frag",
             Kind::Flash => "flash",
             Kind::Smoke => "smoke",
+            Kind::Rocket => "rocket",
         }
     }
 
@@ -86,6 +93,7 @@ impl Kind {
             Kind::Frag => "Frag",
             Kind::Flash => "Flashbang",
             Kind::Smoke => "Smoke",
+            Kind::Rocket => "Rocket",
         }
     }
 
@@ -106,9 +114,32 @@ impl Kind {
             Kind::Frag => FRAG_FUSE,
             Kind::Flash => FLASH_FUSE,
             Kind::Smoke => SMOKE_FUSE,
+            Kind::Rocket => ROCKET_FLIGHT,
         }
     }
 }
+
+/// A rocket's speed out of the tube (m/s), how fast it falls (m/s², a
+/// slow sag), and the most seconds it flies before it goes off in the air
+/// (Black Ops 2's RPG self-destructs at the end of its flight).
+pub const ROCKET_SPEED: f32 = 65.0;
+pub const ROCKET_DROP: f32 = 1.5;
+pub const ROCKET_FLIGHT: f32 = 4.0;
+/// How near a body's axis (metres) a rocket passing it strikes it, and the
+/// body's height from the feet.
+pub const ROCKET_BODY_RADIUS: f32 = 0.4;
+pub const ROCKET_BODY_HEIGHT: f32 = 1.8;
+/// A rocket's blast: full damage within the inner radius (a direct hit kills
+/// through Flak Jacket's share as well), falling to the edge's, none beyond.
+/// Black Ops 2's RPG kills outright near the blast and wounds further out;
+/// a full-health player dies within about 4.1 m.
+pub const ROCKET_INNER_RADIUS: f32 = 1.5;
+pub const ROCKET_RADIUS: f32 = 6.0;
+pub const ROCKET_MAX_DAMAGE: f32 = 200.0;
+pub const ROCKET_MIN_DAMAGE: f32 = 30.0;
+/// How near a scorestreak aircraft's centre (metres) a rocket passing it
+/// brings it down: one hit downs any of them, as in Black Ops 2.
+pub const ROCKET_AIRCRAFT_RADIUS: f32 = 6.0;
 
 /// Seconds from leaving the hand to a flashbang's bang.
 pub const FLASH_FUSE: f32 = 1.5;
@@ -281,18 +312,55 @@ pub fn frag_damage(distance: f32) -> f32 {
     FRAG_MAX_DAMAGE + (FRAG_MIN_DAMAGE - FRAG_MAX_DAMAGE) * t
 }
 
+/// Damage a rocket's blast does `distance` metres away: full within
+/// [`ROCKET_INNER_RADIUS`], falling straight to [`ROCKET_MIN_DAMAGE`] at
+/// [`ROCKET_RADIUS`], none beyond.
+pub fn rocket_damage(distance: f32) -> f32 {
+    if !distance.is_finite() || distance > ROCKET_RADIUS {
+        return 0.0;
+    }
+    if distance <= ROCKET_INNER_RADIUS {
+        return ROCKET_MAX_DAMAGE;
+    }
+    let t = (distance - ROCKET_INNER_RADIUS) / (ROCKET_RADIUS - ROCKET_INNER_RADIUS);
+    ROCKET_MAX_DAMAGE + (ROCKET_MIN_DAMAGE - ROCKET_MAX_DAMAGE) * t
+}
+
 /// Damage `kind` does at `distance`.
 pub fn blast_damage(kind: Kind, distance: f32) -> f32 {
     match kind {
         Kind::Frag => frag_damage(distance),
+        Kind::Rocket => rocket_damage(distance),
         Kind::Flash | Kind::Smoke => 0.0,
     }
+}
+
+/// The share of the way along `from`..`to` where a moving point first comes
+/// within `radius` of the upright segment `base`..`base + height` (a body),
+/// if it does.
+pub fn segment_hits_body(
+    from: Vec3,
+    to: Vec3,
+    base: Vec3,
+    height: f32,
+    radius: f32,
+) -> Option<f32> {
+    // Sample the move finely: rockets cover at most a metre a tick.
+    let steps = ((from.distance(to) / 0.05).ceil() as usize).clamp(1, 64);
+    (0..=steps).find_map(|i| {
+        let t = i as f32 / steps as f32;
+        let p = from.lerp(to, t);
+        let y = (p.y - base.y).clamp(0.0, height);
+        let axis = Vec3::new(base.x, base.y + y, base.z);
+        (p.distance(axis) <= radius).then_some(t)
+    })
 }
 
 /// How far `kind`'s blast reaches.
 pub fn blast_radius(kind: Kind) -> f32 {
     match kind {
         Kind::Frag => FRAG_RADIUS,
+        Kind::Rocket => ROCKET_RADIUS,
         Kind::Flash => FLASH_RANGE,
         Kind::Smoke => SMOKE_RADIUS,
     }
@@ -399,6 +467,20 @@ impl Grenade {
         }
     }
 
+    /// A rocket leaving a launcher's tube at `muzzle` along the view (`yaw`,
+    /// `pitch`): it flies straight at [`ROCKET_SPEED`], sagging slowly, and
+    /// does not carry the firer's own movement.
+    pub fn launched(muzzle: Vec3, yaw: f32, pitch: f32) -> Self {
+        Self {
+            kind: Kind::Rocket,
+            position: muzzle,
+            velocity: look::view_direction(yaw, pitch) * ROCKET_SPEED,
+            fuse: ROCKET_FLIGHT,
+            resting: false,
+            rolling: false,
+        }
+    }
+
     /// A grenade let go of where it is, with no throw: dropped by a player
     /// who died cooking it, or cooked off in the hand.
     pub fn dropped(kind: Kind, at: Vec3, carrier: Vec3, fuse: f32) -> Self {
@@ -422,6 +504,21 @@ impl Grenade {
             return flight;
         }
         if self.resting {
+            return flight;
+        }
+        if self.kind == Kind::Rocket {
+            // Straight on until it meets something, and goes off there.
+            self.velocity.y -= ROCKET_DROP * dt;
+            let target = self.position + self.velocity * dt;
+            match world.sweep(self.position, target) {
+                Some(contact) => {
+                    let fraction = contact.fraction.clamp(0.0, 1.0);
+                    self.position += (target - self.position) * fraction + contact.normal * 0.05;
+                    self.fuse = 0.0;
+                    flight.exploded = true;
+                }
+                None => self.position = target,
+            }
             return flight;
         }
         if self.rolling {
@@ -499,6 +596,63 @@ mod tests {
     fn fly(grenade: &mut Grenade, world: &mut impl Collide, seconds: f32) -> Vec<Flight> {
         let ticks = (seconds / TICK_DT).round() as usize;
         (0..ticks).map(|_| grenade.step(world, TICK_DT)).collect()
+    }
+
+    #[test]
+    fn a_rocket_flies_straight_and_goes_off_on_what_it_meets() {
+        let mut r = Grenade::launched(Vec3::new(0.0, 1.6, 0.0), 0.0, 0.0);
+        assert_eq!(r.kind, Kind::Rocket);
+        // In open air it flies its whole flight, sagging under 2 m by
+        // 100 m, then goes off where it is.
+        let flights = fly(&mut r, &mut OpenAir, 1.54);
+        assert!(flights.iter().all(|f| !f.exploded));
+        assert!((-r.position.z - 100.0).abs() < 1.5, "{}", r.position.z);
+        assert!(1.6 - r.position.y < 2.0, "{}", r.position.y);
+        let flights = fly(&mut r, &mut OpenAir, ROCKET_FLIGHT);
+        assert!(flights.iter().any(|f| f.exploded));
+        // Aimed down at a floor, it goes off on it rather than bouncing.
+        let mut r = Grenade::launched(Vec3::new(0.0, 1.6, 0.0), 0.0, -0.5);
+        let flights = fly(&mut r, &mut Floor(0.0), 1.0);
+        assert!(flights.iter().any(|f| f.exploded && f.bounce.is_none()));
+        assert!(r.position.y < 0.2 && r.fuse == 0.0);
+    }
+
+    #[test]
+    fn a_rocket_kills_near_its_blast_and_wounds_further_out() {
+        assert_eq!(rocket_damage(0.0), ROCKET_MAX_DAMAGE);
+        assert!(rocket_damage(4.0) >= 100.0);
+        assert!(rocket_damage(4.3) < 100.0);
+        assert_eq!(rocket_damage(ROCKET_RADIUS + 0.1), 0.0);
+        assert_eq!(blast_damage(Kind::Rocket, 1.0), ROCKET_MAX_DAMAGE);
+    }
+
+    #[test]
+    fn a_rocket_strikes_a_body_it_passes_close_to() {
+        let base = Vec3::new(0.0, 0.0, -10.0);
+        let hit = segment_hits_body(
+            Vec3::new(0.0, 1.5, -9.0),
+            Vec3::new(0.0, 1.5, -11.0),
+            base,
+            1.8,
+            0.4,
+        );
+        assert!(hit.is_some_and(|t| (0.2..0.4).contains(&t)), "{hit:?}");
+        let over = segment_hits_body(
+            Vec3::new(0.0, 2.6, -9.0),
+            Vec3::new(0.0, 2.6, -11.0),
+            base,
+            1.8,
+            0.4,
+        );
+        assert!(over.is_none());
+        let wide = segment_hits_body(
+            Vec3::new(0.6, 1.0, -9.0),
+            Vec3::new(0.6, 1.0, -11.0),
+            base,
+            1.8,
+            0.4,
+        );
+        assert!(wide.is_none());
     }
 
     #[test]

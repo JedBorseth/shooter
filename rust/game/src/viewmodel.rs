@@ -308,6 +308,15 @@ impl KickFeel {
                 aim_roll: 0.8,
                 zeta: 0.62,
             },
+            // A heavy shove back into the shoulder, little lift.
+            "rl4" => Self {
+                hip_lift: 1.6,
+                hip_back: 2.0,
+                aim_lift: 0.45,
+                aim_yaw: 0.1,
+                aim_roll: 0.6,
+                zeta: 0.7,
+            },
             "m870" | "m40" => Self {
                 hip_lift: 2.6,
                 hip_back: 1.5,
@@ -1050,8 +1059,10 @@ impl WeaponView {
         let rest_hand = self.hand_rest.unwrap_or_default();
         let mut hand = clip.hand;
         let mut right_hand = None;
+        // A launcher's loaded rocket is gone from the tube once fired.
+        let spent_rocket = frame.empty && frame.weapon.def().rocket;
         if let Some(mag) = &mut parts.magazine {
-            let shown = clip.old_mag.is_some();
+            let shown = clip.old_mag.is_some() && !spent_rocket;
             if mag.node.is_visible() != shown {
                 mag.node.set_visible(shown);
             }

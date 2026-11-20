@@ -26,6 +26,7 @@ fn blast_scene(kind: Kind) -> &'static str {
         Kind::Frag => "res://scenes/equipment/frag_blast.tscn",
         Kind::Flash => "res://scenes/equipment/flash_pop.tscn",
         Kind::Smoke => "res://scenes/equipment/smoke_cloud.tscn",
+        Kind::Rocket => "res://scenes/equipment/rocket_blast.tscn",
     }
 }
 
@@ -48,6 +49,8 @@ struct Shown {
     seen: bool,
     /// Rolled so far, about the axis it rolls on.
     spin: Basis,
+    /// A rocket: it points along its flight instead of rolling.
+    rocket: bool,
 }
 
 /// A smoke cloud on screen.
@@ -144,6 +147,7 @@ impl GrenadeShow {
             interval: interval.max(1e-3),
             seen: true,
             spin: Basis::IDENTITY,
+            rocket: kind == Kind::Rocket,
         });
     }
 
@@ -176,7 +180,20 @@ impl GrenadeShow {
             let moved = at - before;
             let ground = Vector3::new(moved.x, 0.0, moved.z);
             let distance = moved.length();
-            if distance > 1e-4 {
+            if shown.rocket {
+                // Nose first along the flight (the model's -Z).
+                let heading = shown.to - shown.from;
+                if heading.length() > 1e-4 {
+                    let up = if heading.normalized().dot(Vector3::UP).abs() > 0.99 {
+                        Vector3::BACK
+                    } else {
+                        Vector3::UP
+                    };
+                    let back = -heading.normalized();
+                    let right = up.cross(back).normalized();
+                    shown.spin = Basis::from_cols(right, back.cross(right), back);
+                }
+            } else if distance > 1e-4 {
                 // Roll about the horizontal axis across the motion; a lob
                 // tumbles about the same axis.
                 let axis = if ground.length() > 1e-4 {

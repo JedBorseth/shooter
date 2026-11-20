@@ -11,6 +11,7 @@ use godot::prelude::*;
 use shooter_sim::Vec3;
 use shooter_sim::equipment::{self, Collide, Contact, Grenade, Kind};
 use shooter_sim::net::protocol::MAX_GRENADES;
+use shooter_sim::weapon::WeaponId;
 
 use crate::convert::{to_godot, to_sim};
 use crate::target::{BODY_LAYER, WORLD_LAYER};
@@ -80,6 +81,27 @@ pub fn blast_reaches(
         .any(|&height| clear_line(space, from, feet + Vector3::UP * height))
 }
 
+/// How far ahead of the eye (metres, along the view) a rocket leaves the
+/// tube: a shoulder-fired launcher's muzzle, ahead of the head.
+const MUZZLE_AHEAD: f32 = 0.6;
+
+/// Where a rocket fired from `eye` along the view leaves the tube: ahead of
+/// the eye if there is room, at the eye otherwise (so it never starts on
+/// the far side of a wall).
+pub fn muzzle_point(
+    space: &mut Gd<PhysicsDirectSpaceState3D>,
+    eye: Vector3,
+    view: (f32, f32),
+) -> Vector3 {
+    let direction = to_godot(shooter_sim::look::view_direction(view.0, view.1));
+    let muzzle = eye + direction * MUZZLE_AHEAD;
+    let mut world = SpaceCollide { space };
+    match world.sweep(to_sim(eye), to_sim(muzzle)) {
+        Some(_) => eye,
+        None => muzzle,
+    }
+}
+
 /// Where a throw from `eye` along `yaw` leaves the hand: beside the eye if
 /// there is room, at the eye otherwise.
 pub fn hand_point(space: &mut Gd<PhysicsDirectSpaceState3D>, eye: Vector3, yaw: f32) -> Vector3 {
@@ -100,6 +122,12 @@ pub struct LiveGrenade {
     /// The thrower's shot number for the throw.
     pub shot: u32,
     pub grenade: Grenade,
+    /// For a rocket, the launcher that fired it (its kills are the
+    /// launcher's); `None` for thrown equipment.
+    pub weapon: Option<WeaponId>,
+    /// The player a rocket struck, who takes its full blast as an impact
+    /// (Flak Jacket does not save them).
+    pub struck: Option<u8>,
 }
 
 /// What a tick of grenades did.
@@ -140,7 +168,9 @@ impl GrenadeSim {
         carrier: Vec3,
         fuse: f32,
     ) {
-        let grenade = if fuse <= 0.0 {
+        let grenade = if kind == Kind::Rocket {
+            Grenade::launched(to_sim(muzzle_point(space, eye, view)), view.0, view.1)
+        } else if fuse <= 0.0 {
             Grenade::dropped(kind, to_sim(eye), Vec3::ZERO, 0.0)
         } else {
             let from = hand_point(space, eye, view.0);
@@ -150,7 +180,62 @@ impl GrenadeSim {
             owner,
             shot,
             grenade,
+            weapon: None,
+            struck: None,
         });
+    }
+
+    /// Fires a rocket from `weapon` (a launcher) at `eye` along `view`.
+    pub fn launch(
+        &mut self,
+        space: &mut Gd<PhysicsDirectSpaceState3D>,
+        owner: Option<u8>,
+        shot: u32,
+        weapon: WeaponId,
+        eye: Vector3,
+        view: (f32, f32),
+    ) {
+        let grenade = Grenade::launched(to_sim(muzzle_point(space, eye, view)), view.0, view.1);
+        self.add(LiveGrenade {
+            owner,
+            shot,
+            grenade,
+            weapon: Some(weapon),
+            struck: None,
+        });
+    }
+
+    /// Sets off every rocket whose next move (`dt` seconds) passes close to
+    /// one of `bodies` (player id and feet), other than its firer's: the
+    /// rocket stops where it meets the body. Rockets fly through the map's
+    /// collision only, so the server checks the players itself.
+    pub fn strike_bodies(&mut self, bodies: &[(u8, Vec3)], dt: f32) {
+        for live in &mut self.live {
+            let g = &mut live.grenade;
+            if g.kind != Kind::Rocket || g.fuse <= 0.0 {
+                continue;
+            }
+            let to = g.position + g.velocity * dt;
+            let hit = bodies
+                .iter()
+                .filter(|(id, _)| Some(*id) != live.owner)
+                .filter_map(|(id, feet)| {
+                    equipment::segment_hits_body(
+                        g.position,
+                        to,
+                        *feet,
+                        equipment::ROCKET_BODY_HEIGHT,
+                        equipment::ROCKET_BODY_RADIUS,
+                    )
+                    .map(|t| (t, *id))
+                })
+                .min_by(|a, b| a.0.total_cmp(&b.0));
+            if let Some((t, id)) = hit {
+                g.position = g.position.lerp(to, t);
+                g.fuse = 0.0;
+                live.struck = Some(id);
+            }
+        }
     }
 
     /// Flies every grenade one tick and takes out the ones that went off.

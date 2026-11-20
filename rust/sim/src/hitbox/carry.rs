@@ -88,6 +88,8 @@ impl CarryClass {
     pub fn of(def: &WeaponDef) -> Self {
         match def.reload {
             Reload::PerRound { .. } => CarryClass::Shotgun,
+            // A launcher rides the shoulder like a long gun, sidearm or not.
+            _ if def.rocket => CarryClass::Rifle,
             _ if def.slot == Slot::Secondary => CarryClass::Pistol,
             _ if def.cycle_time > 0.0 => CarryClass::Bolt,
             _ if def.magazine > 50 => CarryClass::Heavy,
@@ -153,9 +155,13 @@ pub enum Hold {
 }
 
 impl Hold {
-    /// The hold for a weapon: sidearms are pistols, multi-pellet guns pumps.
+    /// The hold for a weapon: sidearms are pistols (a launcher, carried in
+    /// the sidearm slot, is held by its forward grip like a long gun),
+    /// multi-pellet guns pumps.
     pub fn of(def: &WeaponDef) -> Self {
-        if def.slot == Slot::Secondary {
+        if def.rocket {
+            Hold::Handguard
+        } else if def.slot == Slot::Secondary {
             Hold::Pistol
         } else if def.pellets > 1 {
             Hold::Pump

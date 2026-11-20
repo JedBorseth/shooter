@@ -1,0 +1,35 @@
+{
+  "triangles": 9644,
+  "world_triangles": 1396,
+  "nodes": [
+    "Body",
+    "Magazine",
+    "MagazineSpare",
+    "Trigger",
+    "World",
+    "WorldBody",
+    "WorldMagazine"
+  ],
+  "markers": {
+    "Muzzle": [
+      0.0,
+      -0.07,
+      -0.61
+    ],
+    "Ejection": [
+      0.0,
+      -0.07,
+      0.54
+    ],
+    "GripRight": [
+      0.0,
+      -0.155,
+      -0.06
+    ],
+    "GripLeft": [
+      0.0,
+      -0.1,
+      -0.25
+    ]
+  }
+}

@@ -187,6 +187,7 @@ func _states() -> Array[Dictionary]:
 		"sg12",
 		"m1911",
 		"bp9",
+		"rl4",
 	]
 	for weapon in weapons:
 		add.call(weapon, {"weapon": weapon})
