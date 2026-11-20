@@ -43,7 +43,9 @@ services:
           --session.refresh_encryption_key "$$NAKAMA_REFRESH_KEY" \
           --console.username "$$NAKAMA_CONSOLE_USER" \
           --console.password "$$NAKAMA_CONSOLE_PASSWORD" \
-          --console.signing_key "$$NAKAMA_CONSOLE_KEY"
+          --console.signing_key "$$NAKAMA_CONSOLE_KEY" \
+          --runtime.env "ALLOCATOR_URL=$$ALLOCATOR_URL" \
+          --runtime.env "ALLOCATOR_KEY=$$ALLOCATOR_KEY"
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-localdev}
       # Clients send the server key; it is public, built into every game.
@@ -55,6 +57,12 @@ services:
       NAKAMA_CONSOLE_USER: ${NAKAMA_CONSOLE_USER:-admin}
       NAKAMA_CONSOLE_PASSWORD: ${NAKAMA_CONSOLE_PASSWORD:-localdevpassword}
       NAKAMA_CONSOLE_KEY: ${NAKAMA_CONSOLE_KEY:-localdevconsolekey}
+      # The match handler asks the allocator for each match's server.
+      ALLOCATOR_URL: ${ALLOCATOR_URL:-http://allocator:7400}
+      ALLOCATOR_KEY: ${ALLOCATOR_KEY:-localdevallocatorkey}
+    # Tests point ALLOCATOR_URL at a stand-in on the host.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./nakama/shooter.yml:/nakama/data/shooter.yml:ro
       - ./nakama/modules:/nakama/data/modules:ro

@@ -190,7 +190,10 @@ jobs:
       - uses: actions/checkout@v7
       # The account server (docker/online) for online_test.gd and the Nakama
       # module tests. It starts in the background while everything builds.
+      # Nakama calls a stand-in allocator that matchmaking_test.gd serves.
       - name: Start the online services
+        env:
+          ALLOCATOR_URL: http://host.docker.internal:7499
         run: docker compose -f docker/online/compose.yml up -d nakama
       - uses: ./.github/actions/lfs-pull
         with:
@@ -212,11 +215,13 @@ jobs:
           save: ${{ env.SAVE_CACHE }}
       - name: Nakama module tests
         run: |
-          docker compose -f docker/online/compose.yml up -d --wait nakama
+          ALLOCATOR_URL=http://host.docker.internal:7499 \
+            docker compose -f docker/online/compose.yml up -d --wait nakama
           python3 tools/test_online.py
       - name: Run Godot tests
         env:
           NAKAMA_URL: http://127.0.0.1:7350
+          MATCHMAKING_TEST: "1"
         run: .github/scripts/godot-tests.sh
       - name: Online services log
         if: failure()

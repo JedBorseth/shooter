@@ -31,7 +31,8 @@ const ROUTES := {
 	"Hardpoint": ["OBJECTIVE", "Hold the moving zone to score."],
 	"Domination": ["OBJECTIVE", "Take and hold flags A, B, and C."],
 	"SearchAndDestroy": ["ONE LIFE", "Rounds with one life each."],
-	"Multiplayer": ["ONLINE", "Join a dedicated server on the internet or your network."],
+	"QuickPlay": ["MATCHMAKING", "Find a match online, alone or with your party."],
+	"Multiplayer": ["SERVERS", "Join a dedicated server on the internet or your network."],
 	"Zombies": ["CO-OP", "Survive the rounds, alone or with up to three friends."],
 	"TestingArea": ["EVERY WEAPON", "Movement, weapons, and target practice."],
 	"Slamcity": ["FREE ROAM", "Walk the three lanes of Slamcity on your own."],
@@ -48,6 +49,7 @@ var _destination := "testing arena"
 var _zombies_menu: Node
 var _tdm_setup: Node
 var _account_card: Node
+var _quick_play_card: Node
 var _account_badge: Button
 ## The menu button that opened the match setup, focused again when it closes.
 var _setup_button := "TeamDeathmatch"
@@ -78,6 +80,12 @@ func _ready() -> void:
 	for mode: String in SETUP_BUTTONS:
 		_menu.get_node(SETUP_BUTTONS[mode]).pressed.connect(_open_setup.bind(mode))
 	_menu.get_node("Multiplayer").pressed.connect(_open_multiplayer)
+	_menu.get_node("QuickPlay").pressed.connect(_open_quick_play)
+	Matchmaking.invited.connect(
+		func(from: String, _party: String) -> void:
+			if not _loading:
+				_status.text = "%s invited you to their party: open Quick Play." % from
+	)
 	_menu.get_node("Zombies").pressed.connect(_open_zombies)
 	for button: Button in _buttons():
 		_add_route_tag(button)
@@ -163,12 +171,45 @@ func _open_account() -> void:
 		_close_account()
 		return
 	_close_tdm(false)
+	_close_quick_play(false)
 	var card := Control.new()
 	card.set_script(load("res://scripts/ui/account_card.gd"))
 	card.name = "AccountCard"
 	_account_card = card
 	add_child(card)
 	card.back_requested.connect(_close_account)
+
+
+## Quick play: a card for the mode, the party, invites, and the search.
+func _open_quick_play() -> void:
+	if _loading:
+		return
+	_close_tdm(false)
+	_close_account(false)
+	_close_quick_play(false)
+	var card := Control.new()
+	card.set_script(load("res://scripts/ui/quick_play_card.gd"))
+	card.name = "QuickPlayCard"
+	_quick_play_card = card
+	add_child(card)
+	_set_current("QuickPlay")
+	card.back_requested.connect(_close_quick_play)
+	card.account_requested.connect(
+		func() -> void:
+			_close_quick_play(false)
+			_open_account()
+	)
+
+
+func _close_quick_play(refocus := true) -> void:
+	if _quick_play_card == null:
+		return
+	_quick_play_card.queue_free()
+	remove_child(_quick_play_card)
+	_quick_play_card = null
+	_set_current("")
+	if refocus:
+		($Margin/Layout/Menu/QuickPlay as Button).grab_focus()
 
 
 func _close_account(refocus := true) -> void:
@@ -186,6 +227,7 @@ func _open_options() -> void:
 		return
 	_close_tdm(false)
 	_close_account(false)
+	_close_quick_play(false)
 	var options := (load("res://scenes/ui/pause_menu.tscn") as PackedScene).instantiate()
 	options.title_menu = true
 	$Margin.hide()
@@ -208,6 +250,7 @@ func _open_multiplayer(message := "") -> void:
 		return
 	_close_tdm(false)
 	_close_account(false)
+	_close_quick_play(false)
 	var browser := scene.instantiate()
 	$Margin.hide()
 	add_child(browser)
@@ -228,6 +271,7 @@ func _open_setup(mode: String) -> void:
 		return
 	_close_tdm(false)
 	_close_account(false)
+	_close_quick_play(false)
 	var setup := Control.new()
 	setup.set_script(load("res://scripts/tdm_setup.gd"))
 	setup.set("mode", mode)
@@ -261,6 +305,10 @@ func _set_current(button_name: String) -> void:
 		button.theme_type_variation = (
 			&"RouteButtonCurrent" if SETUP_BUTTONS[mode] == button_name else &"RouteButton"
 		)
+	var quick_play := _menu.get_node("QuickPlay") as Button
+	quick_play.theme_type_variation = (
+		&"RouteButtonCurrent" if button_name == "QuickPlay" else &"RouteButton"
+	)
 
 
 func _start_tdm(options: Dictionary) -> void:
@@ -284,6 +332,7 @@ func _open_zombies() -> void:
 		return
 	_close_tdm(false)
 	_close_account(false)
+	_close_quick_play(false)
 	var zombies := scene.instantiate()
 	_zombies_menu = zombies
 	$Background.hide()

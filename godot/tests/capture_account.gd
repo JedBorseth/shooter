@@ -1,6 +1,6 @@
 extends SceneTree
-## Captures the title screen's account badge and card, signed out and signed in
-## (needs NAKAMA_URL for the signed-in shots). CAPTURE_DIR picks the folder.
+## Captures the title screen's account badge and card, signed out and signed in,
+## and the quick play card (needs NAKAMA_URL for the signed-in shots). CAPTURE_DIR picks the folder.
 ## NAKAMA_URL=http://127.0.0.1:7350 CAPTURE_DIR=/tmp/shots godot --path godot \
 ##   --resolution 1600x900 --script res://tests/capture_account.gd
 
@@ -39,6 +39,24 @@ func _run() -> void:
 		title.call("_close_account")
 		await _frames(5)
 		await _shot("account_badge_signed_in")
+		# Quick play with a party of two and an invite waiting.
+		var matchmaking: Node = root.get_node("Matchmaking")
+		await matchmaking.ensure_socket()
+		matchmaking.party_id = "capture"
+		matchmaking.leader_id = online.user_id
+		matchmaking.members = {online.user_id: online.username, "friend": "Rook"}
+		matchmaking.invites.clear()
+		matchmaking.invites.append({"from": "Vega", "party_id": "other"})
+		title.call("_open_quick_play")
+		await _frames(10)
+		await _shot("quick_play")
+		matchmaking.state = matchmaking.State.SEARCHING
+		matchmaking.searching_since = Time.get_ticks_msec() / 1000.0 - 12.0
+		matchmaking.invites.clear()
+		matchmaking.changed.emit()
+		await _frames(10)
+		await _shot("quick_play_searching")
+		matchmaking.state = matchmaking.State.IDLE
 		online.sign_out()
 	quit(0)
 

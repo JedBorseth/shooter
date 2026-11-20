@@ -222,6 +222,15 @@ func refresh_progress_soon(delay := 3.0) -> void:
 	await refresh_progress()
 
 
+## The Nakama client and session, for the realtime socket (`Matchmaking`).
+func nakama_client() -> NakamaClient:
+	return _nakama()
+
+
+func session() -> NakamaSession:
+	return _session
+
+
 ## The current session token, for a game server to check who we are, or "".
 func session_token() -> String:
 	return _session.token if is_signed_in() and _session != null else ""
