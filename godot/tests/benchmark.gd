@@ -18,6 +18,9 @@ extends SceneTree
 ##   BENCH_FRAMES   frames measured per viewpoint (default 120).
 ##   BENCH_CAPTURE  directory for a screenshot of each viewpoint (optional).
 ##   BENCH_MOTION_BLUR  1 to measure with motion blur on (off by default).
+##   BENCH_HOUNDS   hounds galloping in front of a horde (default 0, as the
+##                  baseline): 8, a four-player hound round's most at once,
+##                  checks a full horde plus hounds against the budget.
 ##
 ## GPU time comes from the renderer's own timestamps, so it is the most stable
 ## number under Xvfb. Frame time is wall clock and includes Xvfb's copy.
@@ -167,6 +170,9 @@ func _bench_map(map: String, preset: String) -> void:
 	current_scene = scene
 	var player := scene.get_node("Player") as FpsPlayer
 	var horde := _spawn_horde(scene, spec.get("horde", 0))
+	var hounds: Array[Node3D] = []
+	if not horde.is_empty():
+		hounds = _spawn_hounds(scene, int(OS.get_environment("BENCH_HOUNDS")))
 	await _frames(90)
 
 	var view_index := 0
@@ -175,6 +181,7 @@ func _bench_map(map: String, preset: String) -> void:
 		player.velocity = Vector3.ZERO
 		player.set_look(view[1], view[2])
 		_place_horde(horde, player)
+		_place_hounds(hounds, player)
 		for i in WARMUP_FRAMES:
 			_drive_horde(horde, player)
 			await process_frame
@@ -244,6 +251,29 @@ func _bench_map(map: String, preset: String) -> void:
 		view_index += 1
 	scene.queue_free()
 	await _frames(10)
+
+
+## Hounds galloping on the spot in a row ahead of the player
+## (`scenes/zombies/hound.tscn`, drawn as clients draw the server's).
+func _spawn_hounds(scene: Node, count: int) -> Array[Node3D]:
+	var hounds: Array[Node3D] = []
+	var packed := load("res://scenes/zombies/hound.tscn") as PackedScene
+	for i in count:
+		var hound := packed.instantiate() as Node3D
+		scene.add_child(hound)
+		hounds.append(hound)
+	return hounds
+
+
+func _place_hounds(hounds: Array[Node3D], player: FpsPlayer) -> void:
+	var forward := -player.global_basis.z
+	forward.y = 0
+	forward = forward.normalized()
+	var right := forward.cross(Vector3.UP)
+	var yaw := atan2(forward.x, forward.z)
+	for i in hounds.size():
+		var at := player.global_position + forward * 4.0 + right * (i - hounds.size() / 2.0) * 1.1
+		hounds[i].call("net_apply", at, yaw, -forward * 6.2)
 
 
 ## Soldiers in the zombie palette, driven like a horde: a walking crowd is what
