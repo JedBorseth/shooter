@@ -8,6 +8,12 @@
 //! (`scenes/zombies/forge.tscn`) has `Body`, `Lit` (the glowing parts, shown
 //! while powered), `Display` (where the weapon rests in the mouth), and
 //! `Light`.
+//!
+//! Working it sounds like a smithy (`forge_work`, real anvil and steam
+//! recordings by `tools/build_zombies_machine_audio.py`, timed to the
+//! 3.35 s of work): a hammer on the anvil while the weapon glows, and a
+//! quench's hiss with a last ringing strike as the upgrade comes out. A
+//! phase joined late is silent.
 
 use godot::classes::{IStaticBody3D, Node3D, OmniLight3D, StaticBody3D};
 use godot::prelude::*;
@@ -15,6 +21,7 @@ use shooter_sim::net::protocol::ForgePhase;
 use shooter_sim::weapon::WeaponId;
 use shooter_sim::zombies::forge;
 
+use crate::audio;
 use crate::pickup::INTERACT_LAYER;
 use crate::player::FpsPlayer;
 use crate::viewmodel::instantiate_world_weapon;
@@ -35,6 +42,7 @@ pub struct Forge {
     weapon: Option<WeaponId>,
     elapsed: f32,
     shown: Option<(WeaponId, Gd<Node3D>)>,
+    sound: Option<Gd<godot::classes::AudioStreamPlayer3D>>,
 }
 
 #[godot_api]
@@ -43,6 +51,8 @@ impl IStaticBody3D for Forge {
         let layer = self.base().get_collision_layer();
         self.base_mut().set_collision_layer(layer | INTERACT_LAYER);
         self.apply_power();
+        let mut node = self.base().clone().upcast::<Node3D>();
+        self.sound = Some(audio::attach_3d(&mut node, "Sound", 6.0, 60.0));
     }
 
     fn process(&mut self, delta: f64) {
@@ -153,7 +163,8 @@ impl Forge {
             "offering" => ForgePhase::Offering,
             _ => ForgePhase::Idle,
         };
-        self.show(phase, true, 0, WeaponId::by_key(&weapon.to_string()), 0.0);
+        let left = (phase_length(phase) - seconds).max(0.0);
+        self.show(phase, true, 0, WeaponId::by_key(&weapon.to_string()), left);
         self.elapsed = seconds;
     }
 }
@@ -170,12 +181,14 @@ impl Forge {
         seconds: f32,
     ) {
         if phase != self.phase {
-            let length = match phase {
-                ForgePhase::Working => forge::WORK_SECONDS,
-                ForgePhase::Offering => forge::TAKE_SECONDS,
-                ForgePhase::Idle => 0.0,
-            };
+            let length = phase_length(phase);
             self.elapsed = (length - seconds).clamp(0.0, length);
+            if phase == ForgePhase::Working
+                && self.elapsed < 0.3
+                && let Some(player) = &mut self.sound
+            {
+                audio::play_on(player, "res://assets/audio/zombies/forge_work", 0.0);
+            }
         }
         self.phase = phase;
         self.mine = mine;
@@ -222,6 +235,15 @@ impl Forge {
         if let Some(mut light) = self.base().try_get_node_as::<Node3D>("Light") {
             light.set_visible(powered);
         }
+    }
+}
+
+/// How long the forge stays in `phase` (seconds; 0 for as long as it likes).
+fn phase_length(phase: ForgePhase) -> f32 {
+    match phase {
+        ForgePhase::Working => forge::WORK_SECONDS,
+        ForgePhase::Offering => forge::TAKE_SECONDS,
+        ForgePhase::Idle => 0.0,
     }
 }
 

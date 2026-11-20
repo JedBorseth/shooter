@@ -4,7 +4,7 @@
 [ext_resource type="PackedScene" path="res://assets/models/power_switch/power_switch.gltf" id="2_cabinet"]
 [ext_resource type="PackedScene" path="res://assets/models/power_lever/power_lever.gltf" id="3_lever"]
 [ext_resource type="PackedScene" path="res://assets/models/power_lamps/power_lamps.gltf" id="4_lamps"]
-[ext_resource type="AudioStream" path="res://assets/audio/impacts/metal_3.ogg" id="5_sound"]
+[ext_resource type="AudioStream" path="res://assets/audio/zombies/power_on_1.ogg" id="5_sound"]
 
 [sub_resource type="BoxShape3D" id="Shape_cabinet"]
 size = Vector3(0.9, 1.66, 0.5)

@@ -8,6 +8,18 @@ extends StaticBody3D
 ## it is still there (`set_available`: Second Wind's leaves once a lone
 ## player has bought it three times), and whether the power is on
 ## (`set_powered`), which lights its sign. `sold` plays when someone drinks.
+##
+## Sounds (real recordings, `zombies_sounds.gd`): a lit machine hums, and
+## now and then plays its jingle, as Black Ops' machines do; a sale is a
+## vending machine's clunk and the jingle. Each drink has its own short
+## jingle, our own tunes picked out on a real music box's notes.
+
+const ZombiesSounds := preload("res://scripts/zombies_sounds.gd")
+## Seconds between a lit machine's jingles when nobody buys.
+const IDLE_JINGLE_MIN := 90.0
+const IDLE_JINGLE_MAX := 200.0
+## The jingle follows the sale's clunk by this long.
+const JINGLE_AFTER := 0.7
 
 ## The name players see, by key.
 const NAMES := {
@@ -48,6 +60,11 @@ var _available := true
 var _flash := 0.0
 var _sign: Node3D
 var _light: OmniLight3D
+var _hum: AudioStreamPlayer3D
+var _clunk: AudioStreamPlayer3D
+var _jingle: AudioStreamPlayer3D
+## Seconds to its next jingle (a sale's, or an idle one).
+var _jingle_in := 0.0
 
 
 func _ready() -> void:
@@ -68,10 +85,22 @@ func _ready() -> void:
 	_light.position = Vector3(0.0, 1.9, 0.9)
 	_light.shadow_enabled = false
 	add_child(_light)
+	_hum = ZombiesSounds.player(self, "machine_hum", 2.0, -6.0, 20.0)
+	_hum.position = Vector3(0.0, 1.0, 0.0)
+	_clunk = ZombiesSounds.player(self, "drink_buy", 5.0, 0.0, 50.0)
+	_clunk.position = Vector3(0.0, 0.6, 0.5)
+	_jingle = ZombiesSounds.player(self, "jingle_%s" % drink, 6.0, -2.0, 60.0)
+	_jingle.position = Vector3(0.0, 1.8, 0.5)
+	_jingle_in = randf_range(IDLE_JINGLE_MIN * 0.3, IDLE_JINGLE_MAX)
 	_show()
 
 
 func _process(delta: float) -> void:
+	if _lit():
+		_jingle_in -= delta
+		if _jingle_in <= 0.0:
+			_jingle_in = randf_range(IDLE_JINGLE_MIN, IDLE_JINGLE_MAX)
+			_jingle.play()
 	if _flash <= 0.0:
 		return
 	_flash = maxf(_flash - delta, 0.0)
@@ -126,12 +155,23 @@ func set_available(available: bool) -> void:
 ## Someone bought a drink here: the sign flares.
 func sold(_player: int) -> void:
 	_flash = 1.0
+	_clunk.play()
+	_jingle_in = JINGLE_AFTER
+
+
+func _lit() -> bool:
+	return _available and (_powered or not _needs_power)
 
 
 func _show() -> void:
 	visible = _available
 	collision_layer = (1 | 1 << 3) if _available else 0
 	var lit := _powered or not _needs_power
+	if _hum != null:
+		if _lit() and not _hum.playing:
+			_hum.play(randf() * 2.0)
+		elif not _lit():
+			_hum.stop()
 	if _sign != null:
 		_sign.visible = lit
 	if _light != null:

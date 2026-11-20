@@ -293,22 +293,22 @@ Done: rounds with a growing, toughening horde, zombies that walk straight at the
 - [x] Drinks and the power ([docs/zombies.md](docs/zombies.md), Black Ops III's perk numbers under our own names and machines): a power switch in the west yard; Bulwark (down on the fifth hit), Second Wind (half-time revives; alone, 500 points, no power needed, and back up by yourself after 10 s, three times a game), Quickload (half-time reloads), Hair Trigger (a third faster fire, double damage on zombies), and Long Stride (7% faster); four at most, all lost on going down; badges on the HUD.
   - [x] A drinking animation in first person: the bottle up, the cap flicked off, three gulps, tossed, then the weapon drawn; 2.3 s with no fire ([docs/zombies.md](docs/zombies.md)).
   - [ ] Third-person drinking: other players still hold their weapon while they drink (the `Drank` event could pose the hand and show the bottle).
-  - [ ] Drink and machine sounds from real CC0 recordings (a cap, a gulp, a machine hum); none suitable found yet.
+  - [x] Drink and machine sounds from real CC0 recordings: a hum, a sale's clunk, a jingle per drink on a real music box, and the bottle's cap, gulps, and toss in first person ([docs/zombies.md](docs/zombies.md#sounds)).
 - [x] A mystery crate ([docs/zombies.md](docs/zombies.md#the-mystery-crate)): a random weapon for 950 points from a weighted pool, never one carried, cycling up out of it for 4 s and held out to the buyer for 12 s; after enough spins (Black Ops III's odds) the duck, a refund, and a move to another of three spots.
-  - [ ] Crate sounds (the lid, the cycle, the duck) from real CC0 recordings.
+  - [x] Crate sounds (the lid, the cycle, the landing, the duck, leaving and arriving) from real CC0 recordings.
   - [x] Fire Sale ([docs/zombies.md](docs/zombies.md#power-ups)): once the crate has moved, a power-up that puts a crate at every spot for 30 s at 10 points a spin; sale spins never land on the duck.
 - [x] The forge, an upgrade machine ([docs/zombies.md](docs/zombies.md#the-forge)): with the power on, 5000 points upgrades the weapon in hand in 3.35 s (twice the damage, half again the magazine, twice the reserve, a blue sheen), taken within 15 s or lost; its wall ammo costs 4500.
   - [x] Re-forging an upgraded weapon for an alternate ammo type ([docs/zombies.md](docs/zombies.md#re-forging-for-alternate-ammo), Black Ops III's 2500-point AAT): Arc (Dead Wire's chain) and Cinder (Blast Furnace's burst and burn).
   - [ ] More alternate ammo types (Black Ops III's Thunder Wall knock-back, Fireworks, Turned).
-  - [ ] Forge sounds from real CC0 recordings.
+  - [x] Forge sounds from real CC0 recordings (anvil, quench).
 - [x] The title screen's Zombies runs on a local dedicated server: Solo starts a private one that skips the ready-up and pauses; Co-op hosts one friends on the network find under Multiplayer, LAN (up to four players, ready-up, no pause). The scoreboard shows points, kills, downs, revives, and headshots.
 - [x] Remove the offline `ZombieDirector` game: the director only mirrors the server for the HUD, `Zombie` is only drawn, and the captures pose drawn zombies (`tests/zombie_puppets.gd`; the benchmark already drove plain rigs).
 - [x] Zombies on the Internet tab: a hosted co-op game listed on the Internet registers with the server directory (Co-op setup, Listed: LAN or Internet), as dedicated servers do with `--master`.
   - [ ] Reaching a hosted game behind a home router without forwarding port 27027 (NAT punch-through through the directory).
 - [x] Hound rounds ([docs/zombies.md](docs/zombies.md#hound-rounds), Black Ops III's dog-round numbers): every 4 or 5 rounds from round 5 to 7, a pack of Blender-built hounds struck into the arena, the last leaving a Max Ammo.
-  - [ ] Hound sounds (breathing, snarls, bites, the strike's crack) from real CC0 recordings.
+  - [x] Hound sounds (growls, barks, paws, bites, death, the strike's crack) from real CC0 recordings. Breathing and panting while it stands are not in yet.
 - [x] An electric fence across the west gate ([docs/zombies.md](docs/zombies.md#the-electric-fence), Black Ops III's electric trap): 1000 points with the power on, live for 40 s, a minute to cool down; zombies in it die, players go down.
-  - [ ] Fence sounds (the switch, the hum, the zaps) from real CC0 recordings.
+  - [x] Fence sounds (the switch, the hum, the zaps) from real CC0 recordings. A zap on the zombie or player it kills needs the server to say the fence did it.
 - [ ] Playable versions of the menu's maps; today every map loads the one arena.
 - [x] A cheaper zombie for big hordes: two surfaces per character instead of eleven (a 24-zombie horde draws about 195 calls instead of 630).
 - [x] Animate distant zombies at a reduced rate: every second frame beyond 18 m and every fourth beyond 32 m, staggered across zombies.

@@ -11,6 +11,14 @@
 //! The scene (`scenes/zombies/mystery_crate.tscn`) has `Body` (the crate),
 //! `Lid` (hinged at its back edge, opening about x), `Display` (where the
 //! weapons rise, inside the crate), `Duck`, and `Light`.
+//!
+//! Sounds (real recordings, `tools/build_zombies_machine_audio.py`): the
+//! latches and lid as a spin starts, with a wind-up mechanism ratcheting
+//! down as the weapons slow (`crate_spin`, timed to the cycle); a bell when
+//! a weapon lands (`crate_ding`); a creak and rattling chains for the duck
+//! (`crate_duck`); chains hauling it up as it leaves (`crate_away`); and a
+//! heavy thud where it turns up next (`crate_arrive`). A phase joined late
+//! is silent.
 
 use std::collections::HashMap;
 
@@ -21,6 +29,7 @@ use shooter_sim::rng;
 use shooter_sim::weapon::WeaponId;
 use shooter_sim::zombies::mystery;
 
+use crate::audio;
 use crate::pickup::INTERACT_LAYER;
 use crate::viewmodel::instantiate_world_weapon;
 
@@ -31,6 +40,9 @@ const LID_SECONDS: f32 = 0.35;
 /// How high the weapon rises over the crate's floor while cycling.
 const RISE: f32 = 0.75;
 const SOLID_LAYERS: u32 = 1 | INTERACT_LAYER;
+/// A phase change heard only when it is this fresh (s), not one joined late.
+const FRESH: f32 = 0.3;
+const SOUNDS: &str = "res://assets/audio/zombies";
 
 #[derive(GodotClass)]
 #[class(init, base = StaticBody3D)]
@@ -52,6 +64,10 @@ pub struct MysteryCrate {
     lid: f32,
     views: HashMap<WeaponId, Gd<Node3D>>,
     shown: Option<WeaponId>,
+    sound: Option<Gd<godot::classes::AudioStreamPlayer3D>>,
+    /// The server has told us about this spot before (its first word is
+    /// where things already stood, not news).
+    told: bool,
 }
 
 #[godot_api]
@@ -62,6 +78,8 @@ impl IStaticBody3D for MysteryCrate {
         if let Some(mut duck) = self.base().try_get_node_as::<Node3D>("Duck") {
             duck.hide();
         }
+        let mut node = self.base().clone().upcast::<Node3D>();
+        self.sound = Some(audio::attach_3d(&mut node, "Sound", 6.0, 60.0));
     }
 
     fn process(&mut self, delta: f64) {
@@ -144,7 +162,8 @@ impl MysteryCrate {
             _ => CratePhase::Idle,
         };
         let weapon = WeaponId::by_key(&weapon.to_string());
-        self.show(phase, true, weapon, 0.0, mystery::PRICE);
+        let left = (phase_length(phase) - seconds).max(0.0);
+        self.show(phase, true, weapon, left, mystery::PRICE);
         self.elapsed = seconds;
         self.lid = if phase == CratePhase::Idle { 0.0 } else { 1.0 };
     }
@@ -188,26 +207,40 @@ impl MysteryCrate {
         let present = phase != CratePhase::Hidden;
         self.price = price;
         let changed = phase != self.phase || present != self.present;
+        let was = (self.phase, self.present);
         self.present = present;
         self.mine = mine;
         self.weapon = weapon;
         if changed {
             self.phase = phase;
             self.elapsed = 0.0;
-            self.length = match phase {
-                CratePhase::Cycling => mystery::CYCLE_SECONDS,
-                CratePhase::Offering => mystery::TAKE_SECONDS,
-                CratePhase::Duck => mystery::DUCK_SECONDS,
-                CratePhase::Away => mystery::AWAY_SECONDS,
-                CratePhase::Idle | CratePhase::Hidden => 0.0,
-            };
+            self.length = phase_length(phase);
             // A late joiner sees the phase partway through.
             self.elapsed = (self.length - seconds).clamp(0.0, self.length);
             if phase == CratePhase::Idle && present {
                 self.lid = 0.0;
             }
+            if self.told && self.elapsed < FRESH {
+                self.sound_change(was, phase, present);
+            }
         }
+        self.told = true;
         self.apply_presence();
+    }
+
+    /// What a fresh phase change sounds like.
+    fn sound_change(&mut self, was: (CratePhase, bool), phase: CratePhase, present: bool) {
+        let (sound, db) = match (was.0, phase) {
+            (CratePhase::Idle, CratePhase::Cycling) => ("crate_spin", 0.0),
+            (CratePhase::Cycling, CratePhase::Offering) => ("crate_ding", -2.0),
+            (CratePhase::Cycling, CratePhase::Duck) => ("crate_duck", 0.0),
+            (_, CratePhase::Away) => ("crate_away", 0.0),
+            (_, CratePhase::Idle) if present && !was.1 => ("crate_arrive", 0.0),
+            _ => return,
+        };
+        if let Some(player) = &mut self.sound {
+            audio::play_on(player, &format!("{SOUNDS}/{sound}"), db);
+        }
     }
 
     fn apply_presence(&mut self) {
@@ -321,6 +354,17 @@ impl MysteryCrate {
 
 /// Height of the lid's hinge over the crate's base (`CRATE_H` in
 /// tools/gear_models.py).
+/// How long the crate stays in `phase` (seconds; 0 for as long as it likes).
+fn phase_length(phase: CratePhase) -> f32 {
+    match phase {
+        CratePhase::Cycling => mystery::CYCLE_SECONDS,
+        CratePhase::Offering => mystery::TAKE_SECONDS,
+        CratePhase::Duck => mystery::DUCK_SECONDS,
+        CratePhase::Away => mystery::AWAY_SECONDS,
+        CratePhase::Idle | CratePhase::Hidden => 0.0,
+    }
+}
+
 fn crate_lid_height() -> f32 {
     0.74
 }

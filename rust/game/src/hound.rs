@@ -8,12 +8,21 @@
 //! snapshots' pace, bites when the server's swing counter moves, flinches
 //! when hit, and on death flares and crumbles to ash where it fell, as Black
 //! Ops' hounds burst (no ragdoll).
+//!
+//! Its sounds are real dog recordings (`tools/build_zombies_machine_audio.py`,
+//! `assets/audio/zombies/hound_*`): a growl or bark every few seconds, its
+//! paws while it runs (faster with its speed), a snarl on each bite, and a
+//! whine as it dies. The body stays (empty) until the whine ends.
 
-use godot::classes::{AnimationPlayer, INode3D, Node3D, OmniLight3D, animation::LoopMode};
+use godot::classes::{
+    AnimationPlayer, AudioStream, AudioStreamPlayer3D, INode3D, Node3D, OmniLight3D,
+    animation::LoopMode,
+};
 use godot::prelude::*;
 use shooter_sim::zombies::hounds;
 
 use crate::aim_assist::AimAssistTarget;
+use crate::audio;
 use crate::convert::to_sim;
 use crate::hitbox_rig::HitboxRig;
 
@@ -29,6 +38,12 @@ const FLINCH_DISTANCE: f32 = 0.12;
 const FLINCH_RECOVERY: f32 = 8.0;
 /// The flare's colour, the hound's cold glow.
 const GLOW: Color = Color::from_rgb(0.55, 0.85, 1.0);
+/// Seconds between growls or barks while it hunts.
+const GROWL_MIN: f32 = 1.8;
+const GROWL_MAX: f32 = 4.5;
+/// One call in this many is a bark rather than a growl.
+const BARK_EVERY: u32 = 3;
+const SOUNDS: &str = "res://assets/audio/zombies";
 
 #[derive(GodotClass)]
 #[class(init, base = Node3D)]
@@ -52,6 +67,16 @@ pub struct Hound {
     /// When the local player's hit last flinched it (engine seconds), so the
     /// server's report of that hit does not flinch it again.
     flinched_at: Option<f64>,
+    /// Its voice (growls, barks, bites, the death whine) and its paws.
+    voice: Option<Gd<AudioStreamPlayer3D>>,
+    feet: Option<Gd<AudioStreamPlayer3D>>,
+    growls: Option<Gd<AudioStream>>,
+    barks: Option<Gd<AudioStream>>,
+    bites: Option<Gd<AudioStream>>,
+    deaths: Option<Gd<AudioStream>>,
+    /// Seconds to its next growl, and how many it has made.
+    growl_in: f32,
+    calls: u32,
 }
 
 #[godot_api]
@@ -71,6 +96,20 @@ impl INode3D for Hound {
             }
             anim.play_ex().name("idle").done();
         }
+        let load = |name: &str| {
+            audio::variations(&format!("{SOUNDS}/hound_{name}"), 1.08).map(|s| s.upcast())
+        };
+        self.growls = load("growl");
+        self.barks = load("bark");
+        self.bites = load("bite");
+        self.deaths = load("death");
+        self.voice = Some(self.player("Voice", 5.0, 0.0, 45.0));
+        let mut feet = self.player("Feet", 3.0, -4.0, 30.0);
+        if let Some(run) = load("run") {
+            feet.set_stream(&run);
+        }
+        self.feet = Some(feet);
+        self.growl_in = GROWL_MIN * godot::global::randf() as f32 + 0.5;
     }
 
     fn process(&mut self, delta: f64) {
@@ -87,10 +126,22 @@ impl INode3D for Hound {
         let yaw = self.yaw;
         self.base_mut().set_rotation(Vector3::new(0.0, yaw, 0.0));
         self.biting = (self.biting - dt).max(0.0);
+        let speed = Vector3::new(self.moved.x, 0.0, self.moved.z).length();
+        self.sound_paws(speed);
+        self.growl_in -= dt;
+        if self.growl_in <= 0.0 && self.biting <= 0.0 {
+            self.calls += 1;
+            let call = if self.calls.is_multiple_of(BARK_EVERY) {
+                self.barks.clone()
+            } else {
+                self.growls.clone()
+            };
+            self.say(call);
+            self.growl_in = GROWL_MIN + (GROWL_MAX - GROWL_MIN) * godot::global::randf() as f32;
+        }
         if self.biting > 0.0 {
             return;
         }
-        let speed = Vector3::new(self.moved.x, 0.0, self.moved.z).length();
         let Some(anim) = &mut self.anim else {
             return;
         };
@@ -154,6 +205,8 @@ impl Hound {
     /// The server's hound bit (or snapped at nothing).
     #[func]
     pub fn net_swing(&mut self) {
+        let bite = self.bites.clone();
+        self.say(bite);
         if let Some(anim) = &mut self.anim {
             anim.set_speed_scale(1.0);
             anim.play_ex().name("bite").custom_blend(0.08).done();
@@ -177,6 +230,11 @@ impl Hound {
         if let Some(anim) = &mut self.anim {
             anim.pause();
         }
+        if let Some(feet) = &mut self.feet {
+            feet.stop();
+        }
+        let death = self.deaths.clone();
+        self.say(death);
         let mut flare = OmniLight3D::new_alloc();
         flare.set_color(GLOW);
         flare.set_param(godot::classes::light_3d::Param::ENERGY, 4.0);
@@ -216,8 +274,48 @@ impl Hound {
         if let Some(flare) = &mut self.flare {
             flare.set_param(godot::classes::light_3d::Param::ENERGY, 4.0 * (1.0 - t));
         }
-        if t >= 1.0 {
+        // Gone once crumbled and its whine is over.
+        let calling = self.voice.as_ref().is_some_and(|v| v.is_playing());
+        if t >= 1.0 && !calling {
             self.base_mut().queue_free();
+        }
+    }
+
+    /// A positional player on the hound (Effects bus).
+    fn player(&mut self, name: &str, unit: f32, db: f32, reach: f32) -> Gd<AudioStreamPlayer3D> {
+        let mut player = AudioStreamPlayer3D::new_alloc();
+        player.set_name(name);
+        player.set_bus("Effects");
+        player.set_unit_size(unit);
+        player.set_volume_db(db);
+        player.set_max_distance(reach);
+        player.set_position(Vector3::UP * 0.5);
+        self.base_mut().add_child(&player);
+        player
+    }
+
+    fn say(&mut self, sound: Option<Gd<AudioStream>>) {
+        if let (Some(voice), Some(sound)) = (&mut self.voice, sound) {
+            voice.set_stream(&sound);
+            voice.play();
+        }
+    }
+
+    /// Its paws drum while it runs, at the gallop's pace.
+    fn sound_paws(&mut self, speed: f32) {
+        let Some(feet) = &mut self.feet else {
+            return;
+        };
+        if feet.get_stream().is_none() {
+            return;
+        }
+        if speed > STILL_SPEED {
+            feet.set_pitch_scale((speed / RUN_SPEED).clamp(0.7, 1.3));
+            if !feet.is_playing() {
+                feet.play();
+            }
+        } else if feet.is_playing() {
+            feet.stop();
         }
     }
 }

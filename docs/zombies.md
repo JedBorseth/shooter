@@ -55,9 +55,9 @@ four-legged hit zones (`hitbox::hound_hitboxes`: head, chest, belly,
 forelegs, hind legs, haunches), and are drawn as `Hound`
 (`rust/game/src/hound.rs`). Strikes are `ZombiesEvent::HoundStrike`.
 
-**Differences from Black Ops, on purpose:** no hound sounds yet (they must
-be real CC0 recordings; none found), no fog change for the round, and
-hound spots only in the main yard.
+**Differences from Black Ops, on purpose:** no fog change for the round,
+and hound spots only in the main yard. Their sounds are real dog
+recordings (see [Sounds](#sounds)).
 
 ## Power-ups
 
@@ -117,9 +117,8 @@ in Black Ops. Its wires glow and flicker while it is on. The models are
 ours, built in Blender (`tools/gear_models.py`: `trap_fence`,
 `trap_fence_lit`, `trap_switch`).
 
-**Differences from Black Ops, on purpose:** no trap sounds yet (real CC0
-recordings only), and the fence does not shake the screen of a player it
-shocks.
+**Differences from Black Ops, on purpose:** the fence does not shake the
+screen of a player it shocks. Its sounds are in [Sounds](#sounds).
 
 ## Power
 
@@ -192,8 +191,8 @@ colour with a glyph: a shield, a cross, a magazine, a round, chevrons.
 
 - Other players see no bottle yet: their weapon stays in hand while they
   drink (third person).
-- No jingle or drink sound. These must come from real CC0 recordings; none
-  suitable was found yet (see the report for candidates).
+- Each machine's jingle is our own tune on a real music box, not Black
+  Ops' (see [Sounds](#sounds)).
 - Long Stride does not lengthen sprint: this game's sprint is already
   unlimited (a recorded decision).
 
@@ -225,8 +224,7 @@ the crate is holding that weapon out to them.
 
 **Differences from Black Ops, on purpose:** the weapon goes into its own
 slot (primary or sidearm), as every pickup in this game does, instead of
-replacing the weapon in hand. No sounds yet (they must be real
-CC0 recordings).
+replacing the weapon in hand. Its sounds are in [Sounds](#sounds).
 
 ## The forge
 
@@ -273,6 +271,43 @@ five (no Fireworks, Thunder Wall, or Turned), under our own names. No lone
 sidearm upgrade (it
 would leave the player with nothing in this game's two slots), and no
 sounds yet (real CC0 recordings only).
+
+## Sounds
+
+Every machine, the hounds, and two power-ups have their own sounds, all cut
+from real CC0 recordings and processed in code by
+`tools/build_zombies_machine_audio.py` (on the shared
+`tools/recorded_audio.py`). Nothing is synthesized, and no tune is Call of
+Duty's. Black Ops III decides when each plays; the sounds are our own.
+
+| What | When | Sound |
+| --- | --- | --- |
+| Drink machine | Lit (power on, or no power needed) | A fridge's hum (loop), quiet, 2 m unit size |
+| | A sale | A vending machine's clunk as the bottle drops, then the machine's jingle |
+| | Now and then while lit (every 90–200 s) | Its jingle, as Black Ops' machines play theirs |
+| Jingles | | Five original tunes, one per drink, picked out on a real music box: each note is one recorded music-box note, played faster or slower (as a sampler does) to reach its pitch |
+| The bottle (first person) | The 2.3 s drink | Timed to the hands: the cap flicked off at 0.55 s, three gulps 0.3 s apart from 0.95 s, the bottle tossed at 2.15 s; joined late, it starts where the hands are |
+| Mystery crate | A spin starts | The lid and latches, then a wind-up mechanism ratcheting slower and slower as the weapons slow (3.9 s) |
+| | A weapon lands | A small bell |
+| | The duck | An old creak and rattling chains |
+| | It leaves, and turns up elsewhere | Chains hauling it up; a heavy thud where it lands |
+| Forge | Working (3.35 s) | Hammer on the anvil while the weapon glows, then a quench's hiss and a last ringing strike as the upgrade comes out |
+| Power switch | Thrown | The lever, a heavy breaker, and big lights clunking on and humming |
+| Hounds | Every 1.8–4.5 s while it hunts | A growl, or (one call in three) a bark |
+| | Running | Its paws (loop), faster with its speed |
+| | A bite | A snarl |
+| | Death | A whine; the body waits, empty, until it ends |
+| | The strike that brings one | Arcs crackling up for 1.5 s, then a close thunder crack as the bolt lands (played from the arena, so the rumble outlasts the flash) |
+| Electric fence | Bought | The switch thrown and the wires coming alive |
+| | Live | The wires' hum (loop), and an arc snapping somewhere along them every 0.25–1.1 s |
+| | Cooling | The switch dropping out |
+| Carpenter | Picked up | A hand saw and a hammer (on the UI bus with the banner) |
+| Fire Sale | Picked up | An old till's bell and drawer |
+
+A phase a client joins late (a crate already spinning, the forge already
+working, the fence already on) is silent, so a joiner does not hear news
+that is not new. The files are in `assets/audio/zombies/`; GDScript loads
+them with `scripts/zombies_sounds.gd`, Rust with `audio::variations`.
 
 ## Reference
 
