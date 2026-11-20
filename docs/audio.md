@@ -211,6 +211,16 @@ each round's start and result. Hardpoint calls its zone moves with a two-tone
 radio chirp of its own. There is no announcer voice: no CC0 recordings good
 enough were found.
 
+Search and Destroy's charge (`scripts/net/snd_view.gd`, synthesized by
+`tools/build_world_audio.py charge`): a tense sting when it is planted (two
+drum hits under an unresolved brass cluster, the charge's beep on top); its
+beep from where it stands, a dry 2.6 kHz piezo chirp every second, then faster
+as the fuse runs down (the fuse left divided by 25 s, between 1 s and 0.12 s,
+as Call of Duty's bomb ticks faster to the end), heard by everyone within
+45 m on the Effects bus; and a close explosion when it goes off (a falling
+thump, a roar, and debris), heard across the map, over the frag's blast. A
+defuse has no sting of its own: it ends the round, whose sting plays.
+
 ## Reviewing sound without listening
 
 `tools/audio_report.py files OUT <paths>` writes a waveform and spectrogram

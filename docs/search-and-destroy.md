@@ -100,11 +100,14 @@ When the fuse runs out the charge goes off: everyone within 13 m with a clear
 line takes 200 damage at its heart, falling to 20 at the edge, as Call of
 Duty 4's `radiusDamage(origin, 512, 200, 20)`. Kills are credited to the
 planter (none to their own team, as with every blast) and show as "Charge"
-in the kill feed. Clients draw the frag grenade's blast for now.
+in the kill feed. Clients draw the frag grenade's blast, under the charge's
+own explosion sound.
+
+## Sound
+
+A sting when the charge is planted, its beep speeding up as the fuse runs
+down, and a close explosion: see [audio.md](audio.md).
 
 ## Still to come
 
-The charge's accelerating beeps, its own explosion sound and effect, and
-stings for plants, defuses, and the explosion (held for the owner's
-listening approval): see the Search and Destroy section of
-[TODO.md](../TODO.md).
+See the Search and Destroy section of [TODO.md](../TODO.md).
