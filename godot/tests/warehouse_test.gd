@@ -233,6 +233,89 @@ func _check_prop_collision(map: Node) -> void:
 			steady = steady and heights[k] > heights[k - 1] and heights[k] - heights[k - 1] < 0.6
 		_check(steady and heights[-1] > hi.y - 0.5, "%s climbs steadily: %s" % [b.name, heights])
 		_check(room, "%s has standing room from foot to head" % b.name)
+	_check_detail(map, space)
+
+
+## The detail pass (tools/map_blockout/warehouse_detail_layout.py) keeps
+## collision clean, as Call of Duty keeps clutter out of player clip: strewn
+## litter and debris never collide, every set piece that does is one simple
+## shape a player can mantle or walk over, and the rubble under the breach is
+## a low mound a sprinting or sliding player rides over without a step.
+func _check_detail(map: Node, space: PhysicsDirectSpaceState3D) -> void:
+	var detail := map.get_node_or_null("PhotoPass/Detail")
+	_check(detail != null, "the detail pass is built")
+	if detail == null:
+		return
+	var strewn := 0
+	for mmi: MultiMeshInstance3D in detail.find_children("*", "MultiMeshInstance3D", false, false):
+		if mmi.name.begins_with("HangingJoist"):
+			continue
+		strewn += mmi.multimesh.instance_count
+		_check(
+			mmi.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF,
+			"strewn clutter %s casts no shadow" % mmi.name
+		)
+	_check(strewn > 100, "clutter is strewn across the map, got %d pieces" % strewn)
+	for body: StaticBody3D in detail.find_children("*", "StaticBody3D", false, false):
+		for s: CollisionShape3D in body.find_children("*", "CollisionShape3D", false, false):
+			if s.shape is BoxShape3D:
+				var size := (s.shape as BoxShape3D).size
+				# Anything shorter than a step would snag a slide; anything a
+				# player stands on top of stays within a mantle (1.35 m).
+				_check(size.y >= 0.25, "%s's clip is no ankle-high snag" % body.name)
+	# The fallen forklift blocks like the low stock it replaced, and players
+	# can mantle onto it.
+	var wreck := detail.get_node_or_null("FallenForklift") as Node3D
+	_check(wreck != null, "the fallen forklift is built")
+	if wreck != null:
+		var top := _ground(space, wreck.global_position + Vector3(0, 0, -0.6))
+		_check(
+			top > 0.9 and top < 1.35, "the fallen forklift is mantle-height cover, got %.2f m" % top
+		)
+		_check(
+			not _fits(space, wreck.global_position + Vector3(0, 0.05, -0.6), 1.8),
+			"players cannot walk through the fallen forklift"
+		)
+		# On the aisle side its clip stands flush with the chassis, not out in
+		# the air past it (rounds and players stop where the wreck is).
+		var chassis := AABB()
+		for m: MeshInstance3D in wreck.find_children("*", "MeshInstance3D", true, false):
+			if m.name.begins_with("Safety yellow"):
+				chassis = (
+					(wreck.global_transform.affine_inverse() * m.global_transform) * m.get_aabb()
+				)
+		var reach := -INF
+		for c: CollisionShape3D in wreck.find_children("*", "CollisionShape3D", false, false):
+			var size := (c.shape as BoxShape3D).size
+			reach = maxf(reach, c.position.x + size.x / 2.0)
+		_check(
+			chassis.size.x > 0.0 and reach <= chassis.end.x + 0.1,
+			(
+				"the wreck's clip is flush with its chassis on the aisle side: clip %.2f, chassis %.2f"
+				% [reach, chassis.end.x]
+			)
+		)
+	# The rubble mound: a smooth rise, never more than a step at a time.
+	var rubble := detail.get_node_or_null("BreachRubble") as Node3D
+	_check(rubble != null, "the breach rubble is built")
+	if rubble != null:
+		for axis in [Vector3.RIGHT, Vector3.BACK]:
+			var heights := []
+			for k in 17:
+				var p: Vector3 = rubble.global_position + axis * ((k / 16.0 - 0.5) * 4.0)
+				heights.append(_ground(space, p))
+			var steady := true
+			for k in range(1, heights.size()):
+				steady = steady and absf(heights[k] - heights[k - 1]) < 0.12
+			_check(
+				steady and heights.max() < 0.4,
+				"the rubble mound rises smoothly along %s: %s" % [axis, heights]
+			)
+	for fx in ["Smolder", "Embers", "Arc", "Wisp", "Drip", "Dangle"]:
+		var found := false
+		for n in map.get_node("PhotoPass/Effects").get_children():
+			found = found or String(n.name).begins_with(fx)
+		_check(found, "the %s effect is built" % fx.to_lower())
 
 
 ## The height of the first walkable surface under `p`, looking down from

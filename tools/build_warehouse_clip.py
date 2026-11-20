@@ -32,7 +32,14 @@ DIRS = ["assets/props/warehouse_photo", "assets/props/warehouse", "assets/props/
 SKIP = {"cable_tray_6", "deck_panel", "floor_line", "girder_10", "hanger_rod", "high_bay_led",
         "joist_10", "pipe_black", "pipe_conduit", "pipe_copper", "window_3x2", "window_4x3",
         "clerestory_window", "office_ceiling", "production_overhead", "jumbo_crawl_hood",
-        "packing_slips", "storage_overhead", "warehouse_floor_marks"}
+        "packing_slips", "storage_overhead", "warehouse_floor_marks",
+        # The detail pass (tools/build_warehouse_detail_props.py): clutter that
+        # never collides, or set pieces that carry their own simple clip.
+        "rubble_pile", "rubble_scatter", "deck_sheet_bent", "insulation_flaps", "broken_pallet",
+        "litter_cardboard", "litter_wrap", "litter_mixed", "traffic_cone", "traffic_cone_down",
+        "caution_tape", "wet_floor_sign", "mop_bucket", "switchgear_burnt", "extinguisher_down",
+        "extinguisher_station", "junction_box", "notice_board", "dumpster", "trash_bags", "weeds",
+        "oil_drip_tray"}
 
 PITCH = 0.08  # voxel size (m)
 CELL = 0.16  # clip column size (m)
