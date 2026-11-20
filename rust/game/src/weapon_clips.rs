@@ -95,9 +95,16 @@ fn posed(keys: &[(f32, Pose)], t: f32) -> Pose {
 pub enum ClipKind {
     /// A box magazine under the receiver. `charge`: the empty reload ends by
     /// pulling the charging handle; otherwise by slapping the bolt release.
-    Rifle { charge: bool, heavy: bool },
-    /// A magazine in the grip; the empty reload ends by dropping the slide.
-    Pistol,
+    /// `feed`: how this rifle's own magazine and action work.
+    Rifle {
+        charge: bool,
+        heavy: bool,
+        feed: Feed,
+    },
+    /// A magazine in or before the grip; the empty reload ends by dropping
+    /// the slide, or, `knob`, on a slideless pistol (the BP-9's Tec-9
+    /// pattern), by pulling the cocking knob on its left side.
+    Pistol { knob: bool },
     /// A bolt action fed from a magazine; the empty reload ends by working
     /// the bolt.
     BoltAction,
@@ -108,20 +115,83 @@ pub enum ClipKind {
     Launcher,
 }
 
+/// How a rifle's magazine goes in, and what else its reload does: each
+/// gun's real mechanism, as Call of Duty animates every weapon's own.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Feed {
+    /// The magazine rocks out and in on its front lip (the AK, M14, and
+    /// Saiga patterns); otherwise it goes straight up the well (an AR).
+    pub rock: bool,
+    /// The magazine is in the pistol grip (the CQ-10's MAC pattern): it goes
+    /// straight up the grip, and the gun is held close, as a pistol is.
+    pub grip: bool,
+    /// The bolt locks open on the last round until the release is slapped
+    /// (an AR) or the handle is pulled (the DM-7's M14 operating rod).
+    pub lock: bool,
+    /// A reload with rounds left knocks the old magazine out with the fresh
+    /// one's front edge, the AK speed reload (the KR-12).
+    pub knock: bool,
+    /// A fat box magazine (the SG-12's) is hooked in and slapped home from
+    /// below with the palm.
+    pub slap: bool,
+}
+
 impl ClipKind {
+    /// A plain pistol, its slide dropped on an empty reload.
+    pub const PISTOL: ClipKind = ClipKind::Pistol { knob: false };
+
+    /// A rifle with an AR's (`charge` false) or an AK's (`charge`) magazine
+    /// and action.
+    pub const fn rifle(charge: bool, heavy: bool) -> ClipKind {
+        ClipKind::Rifle {
+            charge,
+            heavy,
+            feed: Feed {
+                rock: charge,
+                grip: false,
+                lock: !charge,
+                knock: false,
+                slap: false,
+            },
+        }
+    }
+
     pub fn of(def: &WeaponDef) -> ClipKind {
+        let key = def.model_key();
         match def.reload {
             Reload::PerRound { .. } => ClipKind::Shotgun,
             _ if def.rocket => ClipKind::Launcher,
             _ if def.cycle_time > 0.0 => ClipKind::BoltAction,
-            _ if def.slot == Slot::Secondary => ClipKind::Pistol,
-            _ => ClipKind::Rifle {
+            _ if def.slot == Slot::Secondary => ClipKind::Pistol { knob: key == "bp9" },
+            _ => {
                 // AR-pattern rifles lock open on empty and close with the
                 // bolt release; the rest are charged.
-                charge: def.model_key() != "m4",
-                heavy: def.magazine > 50,
-            },
+                let ClipKind::Rifle {
+                    charge,
+                    heavy,
+                    feed,
+                } = ClipKind::rifle(key != "m4", def.magazine > 50)
+                else {
+                    unreachable!("a rifle")
+                };
+                ClipKind::Rifle {
+                    charge,
+                    heavy,
+                    feed: Feed {
+                        rock: feed.rock && key != "cq10",
+                        grip: key == "cq10",
+                        lock: feed.lock || key == "dm7",
+                        knock: key == "kr12",
+                        slap: key == "sg12",
+                    },
+                }
+            }
         }
+    }
+
+    /// A pistol, slide or knob.
+    pub fn is_pistol(self) -> bool {
+        matches!(self, ClipKind::Pistol { .. })
     }
 }
 
@@ -177,7 +247,7 @@ impl Anchors {
         // Without a magazine part, the magazine's base is under the grip area
         // (a pistol's grip, a rifle's well).
         let mag_rest = mag_rest.unwrap_or(match kind {
-            ClipKind::Pistol => Vector3::new(0.0, -0.1, 0.06),
+            ClipKind::Pistol { .. } => Vector3::new(0.0, -0.1, 0.06),
             _ => Vector3::new(0.0, -0.08, -0.06),
         });
         let mag_base = mag_rest + Vector3::new(0.0, -MAG_BASE_DROP, 0.0);
@@ -210,6 +280,23 @@ const MAG_ROCK: f32 = 16.0;
 const DRUM_ROCK: f32 = 10.0;
 /// How much harder a drum's beats jolt the weapon than a box magazine's.
 const DRUM_HEFT: f32 = 1.6;
+/// How much harder a box magazine slapped home from below jolts the weapon,
+/// and how far below its seat the palm starts the slap (metres).
+const SLAP_HEFT: f32 = 1.4;
+const SLAP_DROP: f32 = 0.07;
+/// How much of its way in a slapped box hangs before the strike, and how
+/// long the strike takes (seconds).
+const SLAP_HANG: f32 = 0.3;
+const SLAP_STRIKE: f32 = 0.06;
+/// Seconds from lining a slapped box up under the well to its seat.
+const SLAP_ENTRY: f32 = 0.45;
+/// The AK speed reload: where the fresh magazine sits against the release
+/// paddle behind the old one (an offset from the magazine's rest), and its
+/// shove forward that knocks the old one out (metres, view space).
+const KNOCK_PADDLE: Vector3 = Vector3::new(0.0, -0.09, 0.03);
+const KNOCK_SHOVE: Vector3 = Vector3::new(0.0, 0.02, -0.04);
+/// Seconds before the seat that the old magazine is knocked out.
+const KNOCK_LEAD: f32 = 0.5;
 
 /// How much further from the eye an AK-pattern rifle is held for its
 /// magazine change than an AR (metres, view space).
@@ -299,6 +386,8 @@ enum Hand {
     Release,
     /// On the charging handle, pulled back by this far (metres).
     Charge(f32),
+    /// Palm under the hanging magazine's base, ready to slap it home.
+    Slap,
     Port(f32),
 }
 
@@ -351,14 +440,36 @@ impl MagazineReload {
         // magazine is slower to fetch and spends longer lining up.
         let seat = self.mag_in;
         let heavy = matches!(self.kind, ClipKind::Rifle { heavy: true, .. });
+        let knock = matches!(self.kind, ClipKind::Rifle { feed, .. } if feed.knock) && !self.empty;
         let out = (seat * 0.3).clamp(0.18, 0.42);
         let tilt = (out * 0.75).min(0.3);
+        // The speed reload fetches the fresh magazine first and knocks the
+        // old one out with it just before it rocks in.
+        let out = if knock {
+            (seat - KNOCK_LEAD).max(out)
+        } else {
+            out
+        };
         let free = out + 0.12;
-        let grab = (free + if heavy { 0.5 } else { 0.35 }).min(seat - 0.35);
-        let entry = seat - if heavy { 0.3 } else { 0.18 };
+        let grab = if knock {
+            (out - 0.45).max(0.12)
+        } else {
+            (free + if heavy { 0.5 } else { 0.35 }).min(seat - 0.35)
+        };
+        let slap = matches!(self.kind, ClipKind::Rifle { feed, .. } if feed.slap);
+        // A box slapped home is hooked in, hangs while the palm drops under
+        // it, and is struck up into the seat.
+        let entry = seat
+            - if heavy {
+                0.3
+            } else if slap {
+                SLAP_ENTRY
+            } else {
+                0.18
+            };
         let (finish, finish_end) = match (self.empty, self.kind) {
             (true, ClipKind::BoltAction) => (seat + 0.3, self.total - 0.25),
-            (true, ClipKind::Rifle { charge: true, .. }) => {
+            (true, ClipKind::Rifle { charge: true, .. } | ClipKind::Pistol { knob: true }) => {
                 let on = seat + 0.3;
                 (on, on + 0.16)
             }
@@ -398,9 +509,11 @@ impl MagazineReload {
                 },
             ];
         }
-        // A drum is heavy: it seats with a heave the whole weapon feels.
+        // A drum is heavy: it seats with a heave the whole weapon feels. A
+        // fat box slapped home from below knocks the weapon up.
         let heft = match self.kind {
             ClipKind::Rifle { heavy: true, .. } => DRUM_HEFT,
+            ClipKind::Rifle { feed, .. } if feed.slap => SLAP_HEFT,
             _ => 1.0,
         };
         let mut beats = vec![
@@ -419,12 +532,13 @@ impl MagazineReload {
         ];
         if self.empty {
             match self.kind {
-                ClipKind::Rifle { charge: true, .. } => beats.push(Beat {
-                    at: t.finish_end,
-                    name: "charge",
-                    jolt_pos: Vector3::new(0.0, 0.0, 0.006),
-                    jolt_rot: Vector3::new(1.2, -0.8, 1.5),
-                }),
+                ClipKind::Rifle { charge: true, .. } | ClipKind::Pistol { knob: true } => beats
+                    .push(Beat {
+                        at: t.finish_end,
+                        name: "charge",
+                        jolt_pos: Vector3::new(0.0, 0.0, 0.006),
+                        jolt_rot: Vector3::new(1.2, -0.8, 1.5),
+                    }),
                 ClipKind::BoltAction => {
                     let span = t.finish_end - t.finish;
                     for (p, name) in [
@@ -458,7 +572,16 @@ impl MagazineReload {
             // into the lower middle of the frame, muzzle up and right, and
             // canted clockwise, so the well faces the eye while the support
             // hand works.
-            ClipKind::Rifle { heavy, charge } => {
+            // A machine pistol with its magazine in the grip: held out from
+            // the eye and canted clockwise, so the grip's heel turns toward
+            // the support hand, as Black Ops Cold War's MAC-10 is reloaded;
+            // then rolled back level for the knob on top.
+            ClipKind::Rifle { feed, .. } if feed.grip => (
+                Pose::new(6.0, -8.0, -36.0, -0.07, 0.11, -0.08),
+                Pose::new(8.0, -10.0, -42.0, -0.075, 0.12, -0.08),
+                Pose::new(2.0, 6.0, 12.0, -0.03, 0.05, -0.04),
+            ),
+            ClipKind::Rifle { heavy, charge, .. } => {
                 let k = if heavy { 1.1 } else { 1.0 };
                 // An AK-pattern rifle's deep receiver and long magazine fill
                 // the frame from an AR's distance, with the well below its
@@ -486,7 +609,15 @@ impl MagazineReload {
                     },
                 )
             }
-            ClipKind::Pistol => (
+            // A slideless pistol with its magazine ahead of the grip (the
+            // Tec-9 pattern) is turned and canted like a rifle, so the well
+            // and the knob on its left side face the eye.
+            ClipKind::Pistol { knob: true } => (
+                Pose::new(8.0, 15.0, -28.0, -0.06, 0.09, 0.0),
+                Pose::new(10.0, 13.0, -34.0, -0.065, 0.1, 0.0),
+                Pose::new(6.0, 30.0, -20.0, -0.05, 0.05, 0.0),
+            ),
+            ClipKind::Pistol { .. } => (
                 Pose::new(16.0, 0.0, 16.0, -0.04, 0.06, 0.04),
                 Pose::new(12.0, -4.0, 22.0, -0.045, 0.065, 0.04),
                 Pose::new(6.0, 6.0, -6.0, -0.02, 0.05, 0.035),
@@ -506,12 +637,14 @@ impl MagazineReload {
                 Pose::new(4.0, 6.0, 12.0, -0.02, 0.045, 0.025),
             ),
             // Off the shoulder, the muzzle tipped up and in toward the
-            // middle of the frame so the support hand feeds the rocket in
-            // where the eye sees it.
+            // middle of the frame and the tube drawn back, so the muzzle
+            // comes within the support arm's reach and the hand feeds the
+            // rocket in where the eye sees it (the tube is turned about the
+            // loaded rocket, near its muzzle).
             ClipKind::Launcher => (
-                Pose::new(22.0, 12.0, -10.0, -0.07, 0.06, 0.1),
-                Pose::new(25.0, 14.0, -12.0, -0.075, 0.065, 0.11),
-                Pose::new(22.0, 12.0, -10.0, -0.07, 0.06, 0.1),
+                Pose::new(28.0, 18.0, -10.0, -0.12, 0.02, 0.36),
+                Pose::new(30.0, 20.0, -12.0, -0.125, 0.03, 0.37),
+                Pose::new(28.0, 18.0, -10.0, -0.12, 0.02, 0.36),
             ),
         }
     }
@@ -601,6 +734,18 @@ impl MagazineReload {
             done,
         } = times;
         let (held, watch, action) = self.poses();
+        let feed = match self.kind {
+            ClipKind::Rifle { feed, .. } => feed,
+            _ => Feed::default(),
+        };
+        // The AK speed reload: the fresh magazine comes first, its front edge
+        // pushes the release paddle and knocks the old one out forward, then
+        // it rocks in.
+        let knock = feed.knock && !self.empty;
+        // A box slapped home: hooked in on its lip and left hanging part way
+        // while the palm drops under it, then struck up into the seat.
+        let hooked = entry + (seat - entry) * 0.55;
+        let strike = seat - SLAP_STRIKE;
 
         // The whole weapon.
         let reshoulder = if self.empty {
@@ -629,13 +774,16 @@ impl MagazineReload {
             (tilt, held),
             ((out - 0.03).max(tilt + 0.01), held),
             (out + 0.08, pull),
-            (grab, drift),
+            // (A speed reload fetches before it knocks the old one out.)
+            (grab.max(out + 0.12).min(entry - 0.02), drift),
             (entry, watch),
             (seat, watch),
         ];
         let works_action = matches!(
             self.kind,
-            ClipKind::Rifle { charge: true, .. } | ClipKind::BoltAction
+            ClipKind::Rifle { charge: true, .. }
+                | ClipKind::BoltAction
+                | ClipKind::Pistol { knob: true }
         );
         if self.empty && works_action {
             // Turned over to reach the charging handle or the bolt.
@@ -688,7 +836,7 @@ impl MagazineReload {
         // An AK-pattern magazine rocks: base forward about its front lip to
         // come out, and in on its front lip, then back to lock. A heavy drum
         // rocks less and seats with a heave.
-        let rocks = matches!(self.kind, ClipKind::Rifle { charge: true, .. });
+        let rocks = matches!(self.kind, ClipKind::Rifle { feed, .. } if feed.rock);
         let rock = match self.kind {
             ClipKind::Rifle { heavy: true, .. } => DRUM_ROCK,
             _ => MAG_ROCK,
@@ -699,7 +847,9 @@ impl MagazineReload {
         } else {
             0.0
         };
-        let fresh_mag_rock = if rocks {
+        let fresh_mag_rock = if rocks && feed.slap {
+            rock * keyed(&[(hooked, 1.0), (strike, 0.35), (seat, 0.0)], t)
+        } else if rocks {
             let hooked = entry + (seat - entry) * 0.45;
             rock * keyed(&[(hooked, 1.0), (seat, 0.0)], t)
         } else {
@@ -712,11 +862,37 @@ impl MagazineReload {
             // accelerating into the seat.
             let hover = dir * 0.1;
             let rise_end = (grab + 0.35).min(entry);
-            Some(if t < rise_end {
+            Some(if knock && t < out + 0.2 {
+                // Up behind the old magazine against the paddle, a shove
+                // forward that knocks it out, then under the well.
+                let shove = KNOCK_PADDLE + KNOCK_SHOVE;
+                if t < out - 0.06 {
+                    pouch.lerp(
+                        KNOCK_PADDLE,
+                        smoothstep((t - grab) / (out - 0.06 - grab).max(1e-3)),
+                    )
+                } else if t < out {
+                    KNOCK_PADDLE.lerp(shove, smoothstep((t - out + 0.06) / 0.06))
+                } else {
+                    shove.lerp(hover, smoothstep((t - out) / 0.2))
+                }
+            } else if t < rise_end {
                 pouch.lerp(hover, smoothstep((t - grab) / (rise_end - grab).max(1e-3)))
             } else if t < entry {
                 let w = (t - rise_end) * 9.0;
                 hover + Vector3::new(0.004 * w.sin(), 0.003 * (w * 1.3).cos() - 0.003, 0.0)
+            } else if feed.slap {
+                // Hooked and left hanging, then struck home.
+                let hang = 1.0 - SLAP_HANG;
+                if t < hooked {
+                    let push = (t - entry) / (hooked - entry).max(1e-3);
+                    hover * (1.0 - hang * push * push)
+                } else if t < strike {
+                    hover * SLAP_HANG
+                } else {
+                    let u = (t - strike) / SLAP_STRIKE;
+                    hover * SLAP_HANG * (1.0 - u * u)
+                }
             } else {
                 let push = ((t - entry) / (seat - entry).max(1e-3)).clamp(0.0, 1.0);
                 hover * (1.0 - push * push)
@@ -726,18 +902,35 @@ impl MagazineReload {
         };
 
         // The support hand.
-        let mut hand_keys = vec![
-            (0.0, Hand::Rest),
-            ((out - 0.16).max(0.05), Hand::OldMag),
-            (free - 0.02, Hand::OldMag),
-            (free, Hand::LetGo),
-            (grab, Hand::Pouch),
-            (grab + 0.01, Hand::FreshMag),
-            (seat + 0.06, Hand::FreshMag),
-        ];
+        let mut hand_keys = if knock {
+            // Straight to the pouch; the fresh magazine does the knocking.
+            // It leaves the handguard as the weapon tilts, which would
+            // otherwise swing the arm up across the eye.
+            vec![
+                (0.0, Hand::Rest),
+                (grab, Hand::Pouch),
+                (grab + 0.01, Hand::FreshMag),
+            ]
+        } else {
+            vec![
+                (0.0, Hand::Rest),
+                ((out - 0.16).max(0.05), Hand::OldMag),
+                (free - 0.02, Hand::OldMag),
+                (free, Hand::LetGo),
+                (grab, Hand::Pouch),
+                (grab + 0.01, Hand::FreshMag),
+            ]
+        };
+        if feed.slap {
+            // Off the hanging magazine, down under it, and up into its base.
+            hand_keys.push((hooked, Hand::FreshMag));
+            hand_keys.push((hooked + 0.08, Hand::Slap));
+            hand_keys.push((strike, Hand::Slap));
+        }
+        hand_keys.push((seat + 0.06, Hand::FreshMag));
         let back_at = if self.empty {
             match self.kind {
-                ClipKind::Rifle { charge: true, .. } => {
+                ClipKind::Rifle { charge: true, .. } | ClipKind::Pistol { knob: true } => {
                     hand_keys.push((finish, Hand::Charge(0.0)));
                     hand_keys.push((finish_end, Hand::Charge(HANDLE_PULL)));
                     finish_end + 0.22
@@ -751,6 +944,10 @@ impl MagazineReload {
                 // hand goes back to the weapon.
                 _ => (seat + 0.3).min(finish + 0.1),
             }
+        } else if feed.slap {
+            // The long gun's handguard is far out and up while it is still
+            // canted: the hand stays on the box until it is nearly back.
+            back.min(done - 0.02)
         } else {
             (seat + 0.3).min(reshoulder + 0.15)
         };
@@ -767,7 +964,7 @@ impl MagazineReload {
         } else {
             0.0
         };
-        let slide = (self.kind == ClipKind::Pistol && self.empty).then(|| {
+        let slide = (self.kind == ClipKind::PISTOL && self.empty).then(|| {
             if t < finish {
                 1.0
             } else {
@@ -777,22 +974,32 @@ impl MagazineReload {
         // An empty reload's charge: the handle drawn back with the hand, then
         // let go to slam home.
         let handle = match self.kind {
-            ClipKind::Rifle { charge: true, .. } if self.empty => keyed(
-                &[
-                    (finish, 0.0),
-                    (finish_end, HANDLE_PULL),
-                    (finish_end + SLAM, 0.0),
-                ],
-                t,
-            ),
+            ClipKind::Rifle { charge: true, .. } | ClipKind::Pistol { knob: true }
+                if self.empty =>
+            {
+                keyed(
+                    &[
+                        (finish, 0.0),
+                        (finish_end, HANDLE_PULL),
+                        (finish_end + SLAM, 0.0),
+                    ],
+                    t,
+                )
+            }
             _ => 0.0,
         };
-        // An AR's bolt stays locked open until the release is slapped.
-        let carrier = (matches!(self.kind, ClipKind::Rifle { charge: false, .. }) && self.empty)
-            .then(|| 1.0 - ((t - finish) / SLAM).clamp(0.0, 1.0));
+        // An AR's bolt stays locked open until the release is slapped; an
+        // M14's until the operating rod handle is drawn and let go.
+        let carrier = match self.kind {
+            ClipKind::Rifle { feed, charge, .. } if feed.lock && self.empty => {
+                let free = if charge { finish_end } else { finish };
+                Some(1.0 - ((t - free) / SLAM).clamp(0.0, 1.0))
+            }
+            _ => None,
+        };
         // The release pressed as the magazine is pulled.
         let mag_release = match self.kind {
-            ClipKind::Rifle { .. } | ClipKind::Pistol => keyed(
+            ClipKind::Rifle { .. } | ClipKind::Pistol { .. } => keyed(
                 &[
                     (out - 0.14, 0.0),
                     (out - 0.08, 1.0),
@@ -837,6 +1044,11 @@ impl MagazineReload {
                 Hand::LetGo => anchors.mag_base + mag_dir() * 0.102,
                 Hand::Regrip => anchors.hand_rest + Vector3::new(0.0, -0.015, 0.035),
                 Hand::FreshMag => anchors.mag_base + fresh_mag.unwrap_or(Vector3::ZERO),
+                Hand::Slap => {
+                    anchors.mag_base
+                        + fresh_mag.unwrap_or(Vector3::ZERO)
+                        + Vector3::new(0.0, -SLAP_DROP, 0.01)
+                }
                 Hand::Pouch => anchors.pouch,
                 Hand::Release => anchors.release,
                 Hand::Charge(pull) => anchors.charge + Vector3::new(0.0, 0.0, pull),
@@ -1055,7 +1267,7 @@ pub fn draw_keys(kind: ClipKind) -> &'static [(f32, Pose)] {
         (1.0, Pose::ZERO),
     ];
     match kind {
-        ClipKind::Pistol => &PISTOL,
+        ClipKind::Pistol { .. } => &PISTOL,
         ClipKind::Rifle { heavy: false, .. } => &RIFLE,
         ClipKind::Shotgun => &SHOTGUN,
         ClipKind::BoltAction => &BOLT,
@@ -1081,7 +1293,7 @@ pub fn holster_keys(kind: ClipKind) -> &'static [(f32, Pose)] {
         (1.0, PISTOL_DOWN),
     ];
     match kind {
-        ClipKind::Pistol => &PISTOL,
+        ClipKind::Pistol { .. } => &PISTOL,
         _ => &RIFLE,
     }
 }
@@ -1111,7 +1323,7 @@ pub fn pose_at(keys: &[(f32, Pose)], t: f32) -> Pose {
 /// heavy one's slower, a bolt action's has the bolt to work.
 pub fn inspect_length(kind: ClipKind) -> f32 {
     match kind {
-        ClipKind::Pistol => PISTOL_INSPECT,
+        ClipKind::Pistol { .. } => PISTOL_INSPECT,
         ClipKind::Shotgun => 3.0,
         ClipKind::BoltAction => 3.4,
         ClipKind::Rifle { heavy: true, .. } | ClipKind::Launcher => RIFLE_INSPECT * HEAVY_INSPECT,
@@ -1140,7 +1352,7 @@ const HEAVY_INSPECT: f32 = 1.12;
 /// Held poses drift a little (no frozen holds).
 pub fn inspect_pose(t: f32, kind: ClipKind, anchors: &Anchors) -> ClipPose {
     let pose = match kind {
-        ClipKind::Pistol => pistol_inspect(t, anchors),
+        ClipKind::Pistol { knob } => pistol_inspect(t, knob, anchors),
         ClipKind::Shotgun => shotgun_inspect(t, anchors),
         ClipKind::BoltAction => bolt_inspect(t, anchors),
         ClipKind::Rifle { heavy, .. } => {
@@ -1182,7 +1394,7 @@ pub fn inspect_jolts(kind: ClipKind) -> Vec<(f32, Vector3, Vector3)> {
             let k = if heavy { HEAVY_INSPECT } else { 1.0 };
             vec![(1.0 * k, slap.0, slap.1), (2.45 * k, home.0, home.1)]
         }
-        ClipKind::Pistol => vec![(0.86, home.0, home.1)],
+        ClipKind::Pistol { .. } => vec![(0.86, home.0, home.1)],
         ClipKind::Launcher => vec![(2.45 * HEAVY_INSPECT, home.0, home.1)],
         ClipKind::Shotgun => vec![
             (
@@ -1259,7 +1471,7 @@ fn rifle_inspect(t: f32, anchors: &Anchors) -> ClipPose {
     }
 }
 
-fn pistol_inspect(t: f32, anchors: &Anchors) -> ClipPose {
+fn pistol_inspect(t: f32, knob: bool, anchors: &Anchors) -> ClipPose {
     let keys = [
         (0.0, Pose::ZERO),
         // Turned in and up toward the support hand for the press check, as
@@ -1294,6 +1506,26 @@ fn pistol_inspect(t: f32, anchors: &Anchors) -> ClipPose {
         (0.86, Hand::Charge(0.0)),
         (1.1, Hand::Rest),
     ];
+    if knob {
+        // No slide: the left side, where the cocking knob is, turned up to
+        // the eye, and the support hand eases the knob back to see the
+        // round in the chamber, as the rifles' chamber check does.
+        let mut keys = keys;
+        keys[1].1 = Pose::new(6.0, 30.0, -22.0, -0.05, 0.04, 0.0);
+        keys[2].1 = Pose::new(7.0, 32.0, -23.0, -0.05, 0.042, 0.0);
+        let pull = slide * KNOB_CHECK;
+        let place = |hand: Hand| match hand {
+            Hand::Charge(_) => anchors.charge + Vector3::new(0.0, 0.0, pull),
+            _ => anchors.hand_rest,
+        };
+        return ClipPose {
+            weapon: posed(&keys, t),
+            hand: hand_position(&hand_keys, t, place),
+            handle: pull,
+            focus: Some(anchors.well()),
+            ..ClipPose::rest()
+        };
+    }
     ClipPose {
         weapon: posed(&keys, t),
         hand: hand_position(&hand_keys, t, place),
@@ -1302,6 +1534,10 @@ fn pistol_inspect(t: f32, anchors: &Anchors) -> ClipPose {
         ..ClipPose::rest()
     }
 }
+
+/// How far a slideless pistol's knob is eased back to check the chamber, in
+/// metres (a full charge is `HANDLE_PULL`).
+const KNOB_CHECK: f32 = 0.07;
 
 /// A pistol's inspect, in seconds.
 const PISTOL_INSPECT: f32 = 2.85;
@@ -1435,7 +1671,7 @@ pub fn first_raise_present(kind: ClipKind, p: f32) -> Pose {
             Pose::new(4.0, 8.0, -6.0, -0.015, 0.015, -0.03)
         }
         // Turned in and up, the slide toward the support hand.
-        ClipKind::Pistol => Pose::new(8.0, 10.0, 16.0, -0.03, 0.025, 0.02),
+        ClipKind::Pistol { .. } => Pose::new(8.0, 10.0, 16.0, -0.03, 0.025, 0.02),
         // Rolled right, the bolt or the ejection port up toward the eye.
         ClipKind::BoltAction => Pose::new(4.0, 3.0, -10.0, -0.01, 0.015, 0.01),
         ClipKind::Shotgun => Pose::new(4.0, 4.0, -8.0, -0.015, 0.015, 0.01),
@@ -1450,7 +1686,7 @@ mod tests {
 
     #[test]
     fn a_racked_slide_runs_back_and_slams_home() {
-        let a = anchors(ClipKind::Pistol);
+        let a = anchors(ClipKind::PISTOL);
         assert_eq!(slide_rack_pose(0.0, &a).slide, Some(0.0));
         assert_eq!(slide_rack_pose(0.5, &a).slide, Some(1.0));
         assert_eq!(slide_rack_pose(0.6, &a).slide, Some(0.0));
@@ -1461,11 +1697,8 @@ mod tests {
     #[test]
     fn a_first_raise_shows_the_action_and_settles() {
         for kind in [
-            ClipKind::Rifle {
-                charge: true,
-                heavy: false,
-            },
-            ClipKind::Pistol,
+            ClipKind::rifle(true, false),
+            ClipKind::PISTOL,
             ClipKind::BoltAction,
             ClipKind::Shotgun,
         ] {
@@ -1514,6 +1747,106 @@ mod tests {
             let p = m4.pose(m4.total * i as f32 / 40.0, &a);
             assert_eq!((p.old_mag_rock, p.fresh_mag_rock), (0.0, 0.0));
         }
+    }
+
+    #[test]
+    fn each_new_gun_reloads_with_its_own_mechanism() {
+        let feed = |key: &str| match ClipKind::of(WeaponId::expect(key).def()) {
+            ClipKind::Rifle { feed, .. } => feed,
+            other => panic!("{key} is {other:?}"),
+        };
+        // The CQ-10's magazine goes straight up its grip.
+        assert!(feed("cq10").grip && !feed("cq10").rock);
+        assert!(feed("kr12").knock && feed("kr12").rock);
+        assert!(feed("dm7").lock && feed("dm7").rock);
+        assert!(feed("sg12").slap && feed("sg12").rock);
+        assert!(feed("m4").lock && !feed("ak47").lock);
+        assert_eq!(
+            ClipKind::of(WeaponId::expect("bp9").def()),
+            ClipKind::Pistol { knob: true }
+        );
+        let cq = reload("cq10", true);
+        let a = anchors(cq.kind);
+        for i in 0..40 {
+            let p = cq.pose(cq.total * i as f32 / 40.0, &a);
+            assert_eq!((p.old_mag_rock, p.fresh_mag_rock), (0.0, 0.0));
+        }
+    }
+
+    #[test]
+    fn a_slideless_pistol_charges_its_knob_after_an_empty_reload() {
+        let r = reload("bp9", true);
+        let a = anchors(r.kind);
+        let t = r.times();
+        let pulled = r.pose(t.finish_end, &a);
+        assert!((pulled.handle - HANDLE_PULL).abs() < 1e-4);
+        assert_eq!(pulled.slide, None, "no slide to drop");
+        let hand = pulled.hand.expect("on the knob");
+        assert!(hand.distance_to(a.charge + Vector3::new(0.0, 0.0, HANDLE_PULL)) < 1e-3);
+        assert!(r.beats().iter().any(|b| b.name == "charge"));
+        assert!(
+            !reload("bp9", false)
+                .beats()
+                .iter()
+                .any(|b| b.name == "charge")
+        );
+        // Its inspect eases the knob back instead of a slide.
+        let check = inspect_pose(0.7, r.kind, &a);
+        assert!(check.handle > 0.01 && check.slide.is_none());
+    }
+
+    #[test]
+    fn an_m14_stays_open_until_its_operating_rod_is_worked() {
+        let r = reload("dm7", true);
+        let a = anchors(r.kind);
+        let t = r.times();
+        assert_eq!(r.pose(t.seat, &a).carrier, Some(1.0));
+        assert_eq!(r.pose(t.finish_end - 0.01, &a).carrier, Some(1.0));
+        assert_eq!(r.pose(t.finish_end + 0.1, &a).carrier, Some(0.0));
+        assert_eq!(reload("dm7", false).pose(t.seat, &a).carrier, None);
+        assert_eq!(reload("ak47", true).pose(t.seat, &a).carrier, None);
+    }
+
+    #[test]
+    fn the_speed_reload_knocks_the_old_magazine_out_with_the_fresh_one() {
+        let r = reload("kr12", false);
+        let a = anchors(r.kind);
+        let t = r.times();
+        assert!(t.grab < t.out, "the fresh magazine comes first");
+        let fetched = r.pose(t.grab + 0.05, &a);
+        assert_eq!(fetched.old_mag, Some(Vector3::ZERO), "still in");
+        assert!(fetched.fresh_mag.is_some());
+        let knocked = r.pose(t.out, &a);
+        let fresh = knocked.fresh_mag.expect("in hand");
+        assert!(fresh.distance_to(KNOCK_PADDLE + KNOCK_SHOVE) < 1e-3);
+        assert!(knocked.old_mag_rock > 0.1, "rocked out");
+        assert_eq!(r.pose(t.seat, &a).fresh_mag_rock, 0.0, "locked");
+        // An empty one is the ordinary AK reload.
+        let empty = reload("kr12", true);
+        assert!(empty.times().grab > empty.times().out);
+    }
+
+    #[test]
+    fn a_box_magazine_hangs_on_its_lip_until_the_palm_slaps_it_home() {
+        let r = reload("sg12", false);
+        let a = anchors(r.kind);
+        let t = r.times();
+        let hooked = t.entry + (t.seat - t.entry) * 0.55;
+        let hanging = r.pose(t.seat - SLAP_STRIKE - 0.01, &a);
+        let mag = hanging.fresh_mag.expect("hanging");
+        assert!((mag - mag_dir() * 0.1 * SLAP_HANG).length() < 1e-4);
+        let palm = hanging.hand.expect("under it");
+        assert!(palm.y < (a.mag_base + mag).y - 0.05, "the palm is below");
+        assert!(r.pose(hooked - 0.05, &a).fresh_mag_rock > 0.0);
+        assert_eq!(r.pose(t.seat, &a).fresh_mag, None, "seated");
+        let seat = |key: &str| {
+            reload(key, false)
+                .beats()
+                .into_iter()
+                .find(|b| b.name == "mag_in")
+                .expect("a seat")
+        };
+        assert!(seat("sg12").jolt_pos.length() > seat("ak47").jolt_pos.length());
     }
 
     #[test]
@@ -1577,37 +1910,13 @@ mod tests {
     #[test]
     fn classes_follow_the_weapon() {
         let kind = |k: &str| ClipKind::of(WeaponId::expect(k).def());
-        assert_eq!(
-            kind("m4"),
-            ClipKind::Rifle {
-                charge: false,
-                heavy: false
-            }
-        );
-        assert_eq!(
-            kind("ak47"),
-            ClipKind::Rifle {
-                charge: true,
-                heavy: false
-            }
-        );
-        assert_eq!(
-            kind("lsw6"),
-            ClipKind::Rifle {
-                charge: true,
-                heavy: true
-            }
-        );
-        assert_eq!(kind("m1911"), ClipKind::Pistol);
+        assert_eq!(kind("m4"), ClipKind::rifle(false, false));
+        assert_eq!(kind("ak47"), ClipKind::rifle(true, false));
+        assert_eq!(kind("lsw6"), ClipKind::rifle(true, true));
+        assert_eq!(kind("m1911"), ClipKind::PISTOL);
         assert_eq!(kind("m40"), ClipKind::BoltAction);
         assert_eq!(kind("m870"), ClipKind::Shotgun);
-        assert_eq!(
-            kind("m4+extmag"),
-            ClipKind::Rifle {
-                charge: false,
-                heavy: false
-            }
-        );
+        assert_eq!(kind("m4+extmag"), ClipKind::rifle(false, false));
     }
 
     #[test]
@@ -1831,14 +2140,8 @@ mod tests {
 
     #[test]
     fn inspect_checks_the_magazine_and_the_chamber() {
-        let a = anchors(ClipKind::Rifle {
-            charge: false,
-            heavy: false,
-        });
-        let kind = ClipKind::Rifle {
-            charge: false,
-            heavy: false,
-        };
+        let a = anchors(ClipKind::rifle(false, false));
+        let kind = ClipKind::rifle(false, false);
         let tug = inspect_pose(0.8, kind, &a);
         assert!(tug.old_mag.unwrap().length() > 0.02);
         assert!(tug.hand.is_some());
@@ -1852,18 +2155,12 @@ mod tests {
 
     #[test]
     fn each_class_inspects_what_its_owner_checks() {
-        let rifle = ClipKind::Rifle {
-            charge: true,
-            heavy: false,
-        };
-        let heavy = ClipKind::Rifle {
-            charge: true,
-            heavy: true,
-        };
+        let rifle = ClipKind::rifle(true, false);
+        let heavy = ClipKind::rifle(true, true);
         let kinds = [
             rifle,
             heavy,
-            ClipKind::Pistol,
+            ClipKind::PISTOL,
             ClipKind::Shotgun,
             ClipKind::BoltAction,
         ];
@@ -1888,8 +2185,8 @@ mod tests {
                 assert!(at > 0.0 && at < length, "{kind:?}");
             }
         }
-        let a = anchors(ClipKind::Pistol);
-        let press = inspect_pose(0.7, ClipKind::Pistol, &a);
+        let a = anchors(ClipKind::PISTOL);
+        let press = inspect_pose(0.7, ClipKind::PISTOL, &a);
         assert!(press.slide.is_some_and(|s| s > 0.3), "press check");
         assert!(press.hand.is_some());
         let a = anchors(ClipKind::Shotgun);
@@ -1904,21 +2201,15 @@ mod tests {
         );
         assert!(bolt.bolt_hand > 0.9, "the firing hand works it");
         assert!(inspect_length(heavy) > inspect_length(rifle));
-        assert!(inspect_length(ClipKind::Pistol) < inspect_length(rifle));
+        assert!(inspect_length(ClipKind::PISTOL) < inspect_length(rifle));
     }
 
     #[test]
     fn each_class_draws_its_own_way() {
         let kinds = [
-            ClipKind::Pistol,
-            ClipKind::Rifle {
-                charge: true,
-                heavy: false,
-            },
-            ClipKind::Rifle {
-                charge: true,
-                heavy: true,
-            },
+            ClipKind::PISTOL,
+            ClipKind::rifle(true, false),
+            ClipKind::rifle(true, true),
             ClipKind::Shotgun,
             ClipKind::BoltAction,
         ];

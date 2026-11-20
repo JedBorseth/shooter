@@ -35,6 +35,16 @@ const SCENARIOS := [
 	"reload_lsw6",
 	"reload_m1911_empty",
 	"reload_m870",
+	"reload_cq10",
+	"reload_cq10_empty",
+	"reload_bp9",
+	"reload_bp9_empty",
+	"reload_kr12",
+	"reload_kr12_empty",
+	"reload_dm7_empty",
+	"reload_sg12",
+	"reload_sg12_empty",
+	"reload_rl4",
 	"reload_ads_m4",
 	"ads_acog",
 	"spray_ads_acog",
@@ -47,6 +57,8 @@ const SCENARIOS := [
 	"inspect_m870",
 	"inspect_m40",
 	"inspect_lsw6",
+	"inspect_cq10",
+	"inspect_bp9",
 	"first_raise",
 	"first_raise_bolt",
 	"first_raise_pump",
@@ -57,6 +69,24 @@ const SCENARIOS := [
 	"vault",
 	"mantle",
 	"hit",
+]
+
+## Weapon keys a scenario's name may contain.
+const WEAPONS := [
+	"m4",
+	"ak47",
+	"br3",
+	"m40",
+	"m870",
+	"lsw6",
+	"pdw9",
+	"m1911",
+	"cq10",
+	"bp9",
+	"kr12",
+	"dm7",
+	"sg12",
+	"rl4"
 ]
 
 var _out := OS.get_environment("TRACE_DIR")
@@ -138,7 +168,7 @@ func _start(scenario: String) -> void:
 	# The weapon is whichever weapon key the scenario name contains.
 	var weapon := "m4"
 	for part in scenario.split("_"):
-		if part in ["m4", "ak47", "br3", "m40", "m870", "lsw6", "pdw9", "m1911"]:
+		if part in WEAPONS:
 			weapon = part
 	if "acog" in scenario.split("_"):
 		weapon += "+acog"
@@ -503,6 +533,50 @@ func _scenario_reload_m870() -> void:
 	await _sixtieths(150)
 
 
+## The newer guns' own reloads (`weapon_clips::Feed`): the CQ-10's magazine
+## up the grip and its top knob, the BP-9's knob, the KR-12's magazine
+## knocking the old one out, the DM-7's operating rod, the SG-12's box
+## slapped home, and the RL-4's rocket.
+func _scenario_reload_cq10() -> void:
+	await _reload(false, false, 150)
+
+
+func _scenario_reload_cq10_empty() -> void:
+	await _reload(true, false, 180)
+
+
+func _scenario_reload_bp9() -> void:
+	await _reload(false, false, 130)
+
+
+func _scenario_reload_bp9_empty() -> void:
+	await _reload(true, false, 160)
+
+
+func _scenario_reload_kr12() -> void:
+	await _reload(false, false, 180)
+
+
+func _scenario_reload_kr12_empty() -> void:
+	await _reload(true, false, 210)
+
+
+func _scenario_reload_dm7_empty() -> void:
+	await _reload(true, false, 220)
+
+
+func _scenario_reload_sg12() -> void:
+	await _reload(false, false, 170)
+
+
+func _scenario_reload_sg12_empty() -> void:
+	await _reload(true, false, 200)
+
+
+func _scenario_reload_rl4() -> void:
+	await _reload(true, false, 220)
+
+
 func _scenario_reload_ads_m4() -> void:
 	await _reload(false, true, 160)
 
@@ -548,6 +622,16 @@ func _scenario_inspect_m870() -> void:
 func _scenario_inspect_m40() -> void:
 	await _hold("inspect", 2, "inspect")
 	await _sixtieths(220)
+
+
+func _scenario_inspect_cq10() -> void:
+	await _hold("inspect", 2, "inspect")
+	await _sixtieths(220)
+
+
+func _scenario_inspect_bp9() -> void:
+	await _hold("inspect", 2, "inspect")
+	await _sixtieths(200)
 
 
 func _scenario_inspect_lsw6() -> void:

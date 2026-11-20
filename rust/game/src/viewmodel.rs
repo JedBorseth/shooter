@@ -1193,16 +1193,16 @@ impl WeaponView {
         let kind = ClipKind::of(def);
         let cycle = 60.0 / def.rounds_per_minute.max(1.0);
         // Pump and bolt guns are worked by hand; only self-loaders cycle.
-        let self_loading = matches!(kind, ClipKind::Rifle { .. } | ClipKind::Pistol);
+        let self_loading = matches!(kind, ClipKind::Rifle { .. } | ClipKind::Pistol { .. });
         let stroke = if self_loading {
             carrier_stroke(self.since_shot, cycle)
         } else {
             0.0
         };
         let reloading = matches!(frame.action, ViewAction::Reloading { .. });
-        // An AR's bolt locks open on the last round.
+        // An AR's bolt (and an M14's) locks open on the last round.
         let locked =
-            matches!(kind, ClipKind::Rifle { charge: false, .. }) && frame.empty && !reloading;
+            matches!(kind, ClipKind::Rifle { feed, .. } if feed.lock) && frame.empty && !reloading;
         let held = clip.carrier.unwrap_or(if locked { 1.0 } else { 0.0 });
         let charged = clip.handle / weapon_clips::HANDLE_PULL;
         let has_carrier = parts.carrier.is_some();
@@ -3226,11 +3226,16 @@ impl ViewmodelRig {
                 )
             }
             // A self-loader charged after its empty reload was cut off.
-            ViewAction::Cycling(p) if matches!(kind, ClipKind::Rifle { .. }) => {
+            ViewAction::Cycling(p)
+                if matches!(
+                    kind,
+                    ClipKind::Rifle { .. } | ClipKind::Pistol { knob: true }
+                ) =>
+            {
                 weapon_clips::charge_pose(p, &anchors)
             }
             // A pistol only cycles by hand in a first raise: the slide racked.
-            ViewAction::Cycling(p) if kind == ClipKind::Pistol => {
+            ViewAction::Cycling(p) if kind == ClipKind::PISTOL => {
                 weapon_clips::slide_rack_pose(p, &anchors)
             }
             _ => match self.inspect {
@@ -3761,7 +3766,7 @@ impl ViewmodelRig {
                 iron_back,
             )
         };
-        let (sprint_pos, sprint_rot, hip, hip_rot) = if kind == ClipKind::Pistol {
+        let (sprint_pos, sprint_rot, hip, hip_rot) = if kind.is_pistol() {
             (sprint_pos, sprint_rot, hip, hip_rot)
         } else {
             (
