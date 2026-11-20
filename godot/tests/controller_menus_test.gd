@@ -109,6 +109,11 @@ func _match_setup() -> void:
 	_check(_name(_focused()) == "Start", "the setup starts on START MATCH")
 	await _press(JOY_BUTTON_DPAD_UP)
 	_check(
+		_focused() is Button and _focused().get_parent().name == "CustomLine",
+		"up reaches the game settings line"
+	)
+	await _press(JOY_BUTTON_DPAD_UP)
+	_check(
 		_focused() is Button and _focused().get_parent().name == "Minutes", "up reaches the rules"
 	)
 	var minutes := _focused().get_parent()

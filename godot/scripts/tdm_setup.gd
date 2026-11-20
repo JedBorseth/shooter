@@ -22,6 +22,8 @@ signal start_requested(options: Dictionary)
 
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const ChipRow := preload("res://scripts/ui/chip_row.gd")
+const CustomPresets := preload("res://scripts/custom_presets.gd")
+const CustomSettingsPage := preload("res://scripts/ui/custom_settings_page.gd")
 const MAPS := [
 	["Slamcity", "slamcity"],
 	["Nuketown", "nuketown"],
@@ -124,6 +126,15 @@ var _bot_skill: ChipRow
 var _start: Button
 var _picture: TextureRect
 var _map_title: Label
+## The card's layout, and the Game Settings page shown in place of the rules
+## (`custom_settings_page.gd`), with the line that sums the custom rules up.
+var _layout: VBoxContainer
+var _custom_page: Control
+var _custom_summary: Label
+var _custom_button: Button
+## The custom rules chosen (`CustomPresets`), for every mode but Zombies and
+## Free Roam.
+var _custom := CustomPresets.last()
 
 
 func _ready() -> void:
@@ -139,11 +150,29 @@ func _ready() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed(&"ui_cancel"):
 		get_viewport().set_input_as_handled()
+		if _custom_page != null and _custom_page.visible:
+			_show_custom_page(false)
+			return
 		back_requested.emit()
 
 
-## The chosen rules, as `Net.start_local_match` takes them.
+## The chosen rules, as `Net.start_local_match` takes them, with the custom
+## game settings in their text form (`custom`).
 func options() -> Dictionary:
+	var chosen := _base_options()
+	if _has_custom():
+		var custom := CustomPresets.to_text(_custom)
+		if not custom.is_empty():
+			chosen["custom"] = custom
+	return chosen
+
+
+## Whether this mode takes custom game settings (not Zombies or Free Roam).
+func _has_custom() -> bool:
+	return not _zombies() and not _free_roam()
+
+
+func _base_options() -> Dictionary:
 	if _free_roam():
 		return {"mode": "freeroam", "map": FREE_ROAM_MAPS[_map.selected][1]}
 	if _zombies():
@@ -270,6 +299,7 @@ func _build() -> void:
 	card.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	margin.add_child(card)
 	var layout := VBoxContainer.new()
+	_layout = layout
 	layout.add_theme_constant_override("separation", 10)
 	card.add_child(layout)
 
@@ -392,7 +422,66 @@ func _build() -> void:
 		_time_limit = _chips(
 			rows, "Minutes", TIME_LIMITS.map(func(n: int) -> String: return str(n)), 1
 		)
+	if _has_custom():
+		_build_custom_line(layout)
 	_build_actions(layout)
+
+
+## The custom rules in one line, and the button that opens Game Settings.
+func _build_custom_line(layout: VBoxContainer) -> void:
+	var line := HBoxContainer.new()
+	line.name = "CustomLine"
+	line.add_theme_constant_override("separation", 8)
+	layout.add_child(line)
+	_custom_summary = Label.new()
+	_custom_summary.theme_type_variation = &"DimLabel"
+	_custom_summary.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_custom_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	line.add_child(_custom_summary)
+	_custom_button = Button.new()
+	_custom_button.name = "GameSettings"
+	_custom_button.text = "Game settings"
+	_custom_button.theme_type_variation = &"QuietButton"
+	_custom_button.custom_minimum_size = Vector2(150, 38)
+	_custom_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	_custom_button.pressed.connect(_show_custom_page.bind(true))
+	line.add_child(_custom_button)
+	_update_custom_summary()
+
+
+func _update_custom_summary() -> void:
+	if _custom_summary == null:
+		return
+	var summary := CustomPresets.summary(_custom)
+	_custom_summary.text = "Standard rules" if summary.is_empty() else summary
+	_custom_summary.theme_type_variation = &"DimLabel" if summary.is_empty() else &""
+
+
+## Shows the Game Settings page in place of the card's rules, or goes back.
+func _show_custom_page(show: bool) -> void:
+	if show and _custom_page == null:
+		var page := CustomSettingsPage.new()
+		page.name = "GameSettingsPage"
+		page.changed.connect(
+			func() -> void:
+				_custom = page.settings()
+				_update_custom_summary()
+		)
+		page.done.connect(_show_custom_page.bind(false))
+		_layout.add_child(page)
+		_custom_page = page
+	if show:
+		# Keep the card's width: the page's rows are narrower than the map chips.
+		_custom_page.custom_minimum_size.x = _layout.size.x
+	for child: Node in _layout.get_children():
+		if child is Control and child != _custom_page:
+			(child as Control).visible = not show
+	if _custom_page != null:
+		_custom_page.visible = show
+	if show:
+		_custom_page.call(&"focus")
+	elif _custom_button != null:
+		_custom_button.grab_focus()
 
 
 ## Back and the primary button along the card's foot.

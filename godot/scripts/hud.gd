@@ -226,8 +226,11 @@ func _process(delta: float) -> void:
 		_centre.respawn_total = _respawn_total
 	else:
 		_respawn_total = 0.0
-	_health.visible = alive or not _player.auto_respawn
-	_weapon.visible = alive
+	# Hardcore has no HUD: no crosshair, health, or ammo (Black Ops 2's
+	# `hud_hardcore`). Hit markers, prompts, and the death card stay.
+	var hardcore := _hardcore()
+	_health.visible = (alive or not _player.auto_respawn) and not hardcore
+	_weapon.visible = alive and not hardcore
 
 	# Convert the spread cone to pixels so the crosshair shows where shots can land.
 	# Shotguns add their pellet cone, so the crosshair matches the pattern.
@@ -237,7 +240,9 @@ func _process(delta: float) -> void:
 	if _player.pellet_count() > 1:
 		spread += _player.pellet_spread_radians()
 	_crosshair.gap = tan(spread) * pixels_per_unit
-	_crosshair.alpha = 0.0 if not alive else 1.0 - clampf(_player.ads_amount() * 1.5, 0.0, 1.0)
+	_crosshair.alpha = (
+		0.0 if not alive or hardcore else 1.0 - clampf(_player.ads_amount() * 1.5, 0.0, 1.0)
+	)
 	_crosshair.enemy = _aiming_at_enemy()
 
 
@@ -247,6 +252,16 @@ func _aiming_at_enemy() -> bool:
 	var net := get_node_or_null(^"/root/Net")
 	var client: Object = net.call(&"client") if net != null else null
 	return client != null and bool(client.call(&"aiming_at_enemy"))
+
+
+## True in an online custom game with hardcore's bare HUD (found at run
+## time, untyped, as `_match_ended` is).
+func _hardcore() -> bool:
+	var net := get_node_or_null(^"/root/Net")
+	var client: Object = net.call(&"client") if net != null else null
+	return (
+		client != null and bool((client.call(&"match_info") as Dictionary).get("hardcore", false))
+	)
 
 
 ## True on an online match's results screen.

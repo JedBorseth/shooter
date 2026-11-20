@@ -746,6 +746,10 @@ impl NetClient {
         d.set("mode", self.mode.key());
         d.set("mode_name", self.mode.label());
         d.set("free_for_all", self.mode.free_for_all());
+        // The custom game rules the HUD follows (`custom_settings` has all).
+        d.set("hardcore", self.custom.hardcore);
+        d.set("radar_off", self.custom.radar == custom::Radar::Off);
+        d.set("streaks_off", !self.custom.streaks);
         if let Mode::GunGame(rules) = self.mode {
             d.set("kills_per_weapon", i32::from(rules.kills_per_weapon));
         }

@@ -407,8 +407,8 @@ Black Ops 2's Custom Games, CODcaster-style spectating, and a private match lobb
 - [ ] Black Ops 2's teamkill punishment (`teamKillPunishCount`, `teamKillSpawnDelay`): a longer respawn after repeat teamkills, then a kick.
 - [x] Loadout rules: default classes only, pistols only, snipers only.
 - [ ] Grey out what a loadout rule bars in the class menu, as Black Ops 2's restricted items show.
-- [ ] Hardcore's HUD (none) and the minimap off on the client.
-- [ ] A Game Settings page in the local match setup, with named presets saved locally.
+- [x] Hardcore's HUD (none) and the minimap off on the client.
+- [x] A Game Settings page in the local match setup, with named presets saved locally.
 - [ ] Bots per team, each team with its own difficulty.
 - [ ] Spectating: join as a spectator (on no team), a free-fly camera, and first-person follow of any player.
 - [ ] A caster overlay: both teams' loadouts, scores, streaks, and the objective.

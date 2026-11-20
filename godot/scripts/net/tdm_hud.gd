@@ -154,7 +154,8 @@ func _process(delta: float) -> void:
 	# Zombies has its own HUD (rounds and points); this keeps the menus,
 	# the banners, and the scoreboard.
 	var zombies: bool = info.mode == "zombies"
-	_score.visible = not zombies
+	# Hardcore has no HUD: the score shows on the scoreboard only.
+	_score.visible = not zombies and not bool(info.get("hardcore", false))
 	_score.mode = String(info.get("mode_name", "Team Deathmatch"))
 	if ladder:
 		_update_ladder_bar(info)
