@@ -2085,6 +2085,10 @@ impl NetServer {
         }
         map.set_process_mode(godot::classes::node::ProcessMode::PAUSABLE);
         self.base_mut().add_child(&map);
+        // The map is the server's first child (`get_child(0)` finds it for
+        // the bots' navigation and the props), even when helpers such as the
+        // account link were added before the server entered the tree.
+        self.base_mut().move_child(&map, 0);
         if self.game == Mode::Zombies {
             let parent = self.base().clone().upcast::<Node3D>();
             self.horde = Horde::new(&map, parent);
