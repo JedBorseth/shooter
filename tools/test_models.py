@@ -2,6 +2,9 @@
 tools/build_models.py into godot/assets/models/), for CI:
 
 - every model is built, and the built set matches the sources (models.hash);
+- no look is defined twice, in gear_models.py or over world_looks.py's: a
+  redefinition recolours every earlier model that uses the look, so a rebuild
+  changes models nobody touched;
 - props, Zombies pieces, and weapons are not built from Godot primitive
   meshes (BoxMesh, CylinderMesh, ...): visible geometry is modelled in Blender.
   Effects, contact shadows, debug shapes, and collision shapes may still use
@@ -17,6 +20,7 @@ import unittest
 from pathlib import Path
 
 import gear_models as G
+import world_looks as W
 
 TOOLS = Path(__file__).resolve().parent
 GODOT = TOOLS.parent / "godot"
@@ -47,6 +51,15 @@ class ModelTests(unittest.TestCase):
     def test_models_match_their_sources(self):
         self.assertEqual(HASH.read_text().strip(), sources_hash(),
                          "the models are stale: run blender -b --python tools/build_models.py")
+
+    def test_looks_are_defined_once(self):
+        G.LOOKS["wire_red"] = dict(G.LOOKS["wire_red"])
+        with self.assertRaises(ValueError):
+            G.LOOKS["wire_red"] = {**G.LOOKS["wire_red"], "rough": 0.1}
+        with self.assertRaises(ValueError):
+            G.LOOKS.update({"wire_red": {"color": (1, 1, 1)}})
+        clashes = sorted(k for k in G.LOOKS if W.SLAMCITY_LOOKS.get(k, G.LOOKS[k]) != G.LOOKS[k])
+        self.assertEqual(clashes, [], "gear_models.py redefines these world_looks.py looks")
 
     def test_no_primitive_meshes(self):
         for path in MODELLED:
