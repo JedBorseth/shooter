@@ -30,6 +30,7 @@ use std::collections::VecDeque;
 use godot::classes::{ENetConnection, ENetPacketPeer, INode, PackedScene, Time};
 use godot::global::Error;
 use godot::prelude::*;
+use shooter_sim::class::{self, Class, DefaultClass, Gun};
 use shooter_sim::equipment::Kind;
 use shooter_sim::gun_game;
 use shooter_sim::hardpoint::Holder;
@@ -47,8 +48,9 @@ use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::{CHANNEL_COUNT, CHANNEL_RELIABLE, DEFAULT_PORT, TICK_RATE, Tick};
 use shooter_sim::snd::{RoundEnd, RoundPhase};
 use shooter_sim::tdm::{Mode, Phase, TEAM_COUNT, Team};
-use shooter_sim::weapon::WeaponId;
+use shooter_sim::weapon::{Slot, WeaponId};
 
+use super::class_dict::{class_from_dict, class_to_dict, error_text};
 use super::props::{PropSnapshot, PropsBridge};
 use super::remote::{RemotePlayer, RemoteSample};
 use super::transport::{self, NetEvent};
@@ -87,8 +89,9 @@ pub struct NetClient {
     /// The name other players see.
     #[export]
     player_name: GString,
-    /// Primary weapon to ask for when joining (a weapon key), or empty for
-    /// the server's default.
+    /// Primary weapon to ask for when joining (a weapon key, attachment
+    /// variants included), or empty for the default class's. Ignored once a
+    /// whole class is set (`set_class`).
     #[export]
     primary: GString,
     /// The tactical to ask for ("flash" or "smoke"); anything else is a
@@ -96,6 +99,9 @@ pub struct NetClient {
     #[export]
     #[init(val = GString::from("flash"))]
     tactical: GString,
+    /// The class asked for with `set_class`; until then one is built from
+    /// `primary` and `tactical`.
+    class: Option<Class>,
     /// The local `FpsPlayer` to predict.
     #[export]
     player_path: NodePath,
@@ -300,15 +306,8 @@ impl INode for NetClient {
                         name: self.player_name.to_string(),
                     };
                     transport::send_reliable(&mut peer, &hello.encode());
-                    if let Some(primary) = WeaponId::by_key(&self.primary.to_string())
-                        && crate::net::server::is_loadout_primary(primary)
-                    {
-                        let loadout = ClientMessage::Loadout {
-                            primary,
-                            tactical: self.tactical_kind(),
-                        };
-                        transport::send_reliable(&mut peer, &loadout.encode());
-                    }
+                    let class = ClientMessage::Class(self.current_class());
+                    transport::send_reliable(&mut peer, &class.encode());
                 }
                 NetEvent::Disconnect(_) => self.on_disconnected(),
                 NetEvent::Receive(_, bytes, channel) => {
@@ -648,21 +647,15 @@ impl NetClient {
         d
     }
 
-    /// The weapons a loadout may use as its primary, as dictionaries with
+    /// The weapons a class may use as its primary, as dictionaries with
     /// `key`, `name`, and `attachments` (each a dictionary with `key`, the
     /// variant's weapon key such as "m4+grip", and `name`), in table order.
     #[func]
     fn loadout_weapons() -> Array<VarDictionary> {
-        let table = shooter_sim::weapon::table();
-        table
-            .iter()
-            .enumerate()
-            .filter(|(i, def)| {
-                def.attachment.is_none()
-                    && u8::try_from(*i)
-                        .is_ok_and(|i| crate::net::server::is_loadout_primary(WeaponId(i)))
-            })
-            .map(|(_, def)| {
+        class::class_weapons(Slot::Primary)
+            .into_iter()
+            .map(|id| id.def())
+            .map(|def| {
                 let mut d = VarDictionary::new();
                 d.set("key", &GString::from(def.key.as_str()));
                 d.set("name", &GString::from(def.name.as_str()));
@@ -690,10 +683,67 @@ impl NetClient {
             .collect()
     }
 
-    /// The primary weapon key we spawn with.
+    /// The primary weapon key we spawn with (an attachment variant's key
+    /// for a single attachment), or "" for none.
     #[func]
     fn loadout(&self) -> GString {
-        self.primary.clone()
+        let primary = self.current_class().primary.and_then(Gun::weapon);
+        primary.map_or_else(GString::new, |id| GString::from(id.def().key.as_str()))
+    }
+
+    /// The class we spawn with, as a dictionary (`class_dict`).
+    #[func]
+    fn loadout_class(&self) -> VarDictionary {
+        class_to_dict(&self.current_class())
+    }
+
+    /// Asks for a class (a dictionary, see `class_dict`) from our next
+    /// spawn on. Returns "" when sent, or why it breaks a rule (and then
+    /// nothing is sent; the server would refuse it too).
+    #[func]
+    fn set_class(&mut self, class: VarDictionary) -> GString {
+        let Some(class) = class_from_dict(&class) else {
+            return GString::from("Unknown item");
+        };
+        if let Err(error) = class.validate() {
+            return GString::from(error_text(error));
+        }
+        self.class = Some(class);
+        self.send_reliable(&ClientMessage::Class(class));
+        GString::new()
+    }
+
+    /// What a class (a dictionary) costs, and whether it is allowed:
+    /// `cost` (points), `picks` (the budget), and `error` ("" when valid).
+    #[func]
+    fn check_class(class: VarDictionary) -> VarDictionary {
+        let mut d = VarDictionary::new();
+        d.set("picks", i64::from(class::PICKS));
+        match class_from_dict(&class) {
+            Some(class) => {
+                d.set("cost", i64::from(class.cost()));
+                let error = class.validate().err().map_or("", error_text);
+                d.set("error", error);
+            }
+            None => {
+                d.set("cost", 0);
+                d.set("error", "Unknown item");
+            }
+        }
+        d
+    }
+
+    /// The ready-made classes, each a class dictionary with its `name`.
+    #[func]
+    fn default_classes() -> Array<VarDictionary> {
+        DefaultClass::ALL
+            .iter()
+            .map(|default| {
+                let mut d = class_to_dict(&default.class());
+                d.set("name", default.name());
+                d
+            })
+            .collect()
     }
 
     /// A player's name, or "" if unknown.
@@ -726,20 +776,22 @@ impl NetClient {
         self.send_reliable(&ClientMessage::Ready { ready });
     }
 
-    /// Picks the primary weapon (a weapon key) for our next spawn. Returns
-    /// false for a weapon that cannot be a loadout primary.
+    /// Picks the primary weapon (a weapon key, attachment variants
+    /// included) for our next spawn, keeping the rest of the class. Returns
+    /// false for a weapon that cannot be a class's primary.
     #[func]
     fn set_loadout(&mut self, primary: GString) -> bool {
-        let Some(id) = WeaponId::by_key(&primary.to_string())
-            .filter(|id| crate::net::server::is_loadout_primary(*id))
-        else {
+        let Some(gun) = gun_of(&primary.to_string()) else {
             return false;
         };
+        let mut class = self.current_class();
+        class.primary = Some(gun);
+        if class.validate().is_err() {
+            return false;
+        }
         self.primary = primary;
-        self.send_reliable(&ClientMessage::Loadout {
-            primary: id,
-            tactical: self.tactical_kind(),
-        });
+        self.class = Some(class);
+        self.send_reliable(&ClientMessage::Class(class));
         true
     }
 
@@ -751,14 +803,10 @@ impl NetClient {
             return false;
         };
         self.tactical = key;
-        let primary = WeaponId::by_key(&self.primary.to_string())
-            .filter(|id| crate::net::server::is_loadout_primary(*id));
-        if let Some(primary) = primary {
-            self.send_reliable(&ClientMessage::Loadout {
-                primary,
-                tactical: kind,
-            });
-        }
+        let mut class = self.current_class();
+        class.tactical = kind;
+        self.class = Some(class);
+        self.send_reliable(&ClientMessage::Class(class));
         true
     }
 
@@ -1429,6 +1477,27 @@ impl NetClient {
             .unwrap_or(Kind::Flash)
     }
 
+    /// The class to spawn with: the one set, or one built from `primary`
+    /// and `tactical` (the M1911, a frag, and one tactical).
+    fn current_class(&self) -> Class {
+        if let Some(class) = self.class {
+            return class;
+        }
+        let mut class = Class::default();
+        if let Some(gun) = gun_of(&self.primary.to_string()) {
+            class.primary = Some(gun);
+            class.secondary = Some(Gun::plain(WeaponId::expect("m1911")));
+            class.lethals = 1;
+            class.tacticals = 1;
+        }
+        class.tactical = self.tactical_kind();
+        if class.validate().is_ok() {
+            class
+        } else {
+            Class::default()
+        }
+    }
+
     fn on_disconnected(&mut self) {
         if self.status != Status::Rejected {
             godot_warn!("net client: disconnected from the server");
@@ -1481,4 +1550,21 @@ impl NetClient {
             self.stats.window_start = now;
         }
     }
+}
+
+/// A weapon key as a class's primary: the plain weapon, or an attachment
+/// variant split into its weapon and attachment. `None` for a weapon a class
+/// cannot carry as its primary.
+fn gun_of(key: &str) -> Option<Gun> {
+    let id = WeaponId::by_key(key)?;
+    let def = id.def();
+    let base = WeaponId::by_key(if def.attachment.is_some() {
+        &def.base_key
+    } else {
+        &def.key
+    })?;
+    class::is_class_weapon(base, Slot::Primary).then(|| Gun {
+        base,
+        attachments: class::Attachments::of(def.attachment.as_slice()),
+    })
 }

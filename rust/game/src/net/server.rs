@@ -59,6 +59,7 @@ use godot::global::Error;
 use godot::prelude::*;
 use shooter_sim::bot::Skill;
 use shooter_sim::chat::{self, ChatLimiter};
+use shooter_sim::class::{Class, DefaultClass};
 use shooter_sim::ctf::{FlagEvent, FlagPlayer, FlagRules, FlagState, Flags};
 use shooter_sim::equipment;
 use shooter_sim::gun_game::{self, Progress, Step};
@@ -83,7 +84,7 @@ use shooter_sim::snd::{Headcount, RoundPhase, RoundState, RoundTransition, SndRu
 use shooter_sim::tdm::{
     self, MatchRules, MatchState, Mode, Phase, SpawnPoint, SpawnRules, Team, Threat, Transition,
 };
-use shooter_sim::weapon::{self, CombatEvent, CombatState, Slot, WeaponId};
+use shooter_sim::weapon::{self, CombatEvent, CombatState, WeaponId};
 use shooter_sim::{Vec2, Vec3, rng};
 
 use super::bots::{
@@ -310,9 +311,8 @@ struct ClientSlot {
     outbox: Vec<GameEvent>,
     /// Ready to start the match (lobby).
     ready: bool,
-    /// The primary weapon and the tactical for the next spawn.
-    primary: WeaponId,
-    tactical: equipment::Kind,
+    /// The class for the next spawn, checked when it arrived.
+    class: Class,
     /// Chat rate limit.
     chat: ChatLimiter,
 }
@@ -327,9 +327,8 @@ struct Avatar {
     bot: bool,
     name: String,
     team: Team,
-    /// The primary weapon and the tactical this player spawns with.
-    primary: WeaponId,
-    tactical: equipment::Kind,
+    /// The class this player spawns with.
+    class: Class,
     /// A bot that plays the match decides its inputs here.
     brain: Option<BotBrain>,
     respawn_in: f32,
@@ -545,13 +544,7 @@ impl INode3D for NetServer {
         for i in 0..self.bots.clamp(0, 50) {
             let id = FIRST_BOT_ID + i as u8;
             let brain = skill.map(|skill| BotBrain::new(skill, rng::hash(u32::from(id), 77)));
-            self.spawn_avatar(
-                id,
-                true,
-                &format!("Bot {}", i + 1),
-                default_primary(),
-                brain,
-            );
+            self.spawn_avatar(id, true, &format!("Bot {}", i + 1), Class::default(), brain);
         }
         self.start_query_responder();
     }
@@ -1034,8 +1027,7 @@ impl NetServer {
                     debug_rewound: false,
                     outbox: Vec::new(),
                     ready: false,
-                    primary: default_primary(),
-                    tactical: equipment::Kind::Flash,
+                    class: Class::default(),
                     chat: ChatLimiter::default(),
                 });
             }
@@ -1089,7 +1081,7 @@ impl NetServer {
                 };
                 self.clients[index].player = Some(id);
                 let name = tdm::clean_name(&name, &format!("Player {}", id + 1));
-                let primary = self.clients[index].primary;
+                let class = self.clients[index].class;
                 // The welcome goes first, so the client knows its id before
                 // the roster arrives.
                 let welcome = ServerMessage::Welcome {
@@ -1103,11 +1095,7 @@ impl NetServer {
                 // Everyone already here, then the newcomer for everyone.
                 let roster: Vec<GameEvent> = self.avatars.iter().map(joined_event).collect();
                 self.clients[index].outbox.extend(roster);
-                self.spawn_avatar(id, false, &name, primary, None);
-                let tactical = self.clients[index].tactical;
-                if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) {
-                    avatar.tactical = tactical;
-                }
+                self.spawn_avatar(id, false, &name, class, None);
                 self.balance_bots();
                 let event = self.match_event();
                 self.send_event(id, event);
@@ -1150,32 +1138,26 @@ impl NetServer {
                 self.clients[index].ready = ready;
                 self.next_scoreboard = self.tick;
             }
-            ClientMessage::Loadout { primary, tactical } => {
-                if !is_loadout_primary(primary) || tactical.lethal() {
+            ClientMessage::Class(class) => {
+                // Never trust the client: a class that breaks a rule is
+                // ignored, and the player keeps the one they had.
+                if let Err(error) = class.validate() {
+                    godot_warn!("server: refused a class ({error:?})");
                     return;
                 }
-                self.clients[index].primary = primary;
-                self.clients[index].tactical = tactical;
+                self.clients[index].class = class;
                 let freeze = self.round.is_some_and(|r| r.phase == RoundPhase::Freeze);
+                let gun_game = matches!(self.game, Mode::GunGame(_));
                 if let Some(id) = self.clients[index].player
                     && let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id)
                 {
-                    avatar.primary = primary;
-                    avatar.tactical = tactical;
-                    // During a round's freeze a new loadout applies at once.
-                    if freeze && avatar.predicted.state.alive() {
+                    avatar.class = class;
+                    // During a round's freeze a new class applies at once.
+                    if freeze && !gun_game && avatar.predicted.state.alive() {
                         let movement = avatar.predicted.state.movement;
-                        let combat = avatar.predicted.state.combat;
-                        let (lethals, tacticals) = (combat.lethals, combat.tacticals);
-                        avatar.predicted.state = PlayerState::new(loadout_for(primary));
+                        avatar.predicted.state = PlayerState::new(loadout_for(&class));
                         avatar.predicted.state.movement = movement;
-                        avatar.predicted.state.combat = avatar
-                            .predicted
-                            .state
-                            .combat
-                            .with_lethals(lethals)
-                            .with_tacticals(tactical, tacticals)
-                            .first_draw();
+                        avatar.predicted.state.combat = class.combat().first_draw();
                     }
                 }
             }
@@ -1253,7 +1235,7 @@ impl NetServer {
         id: u8,
         bot: bool,
         name: &str,
-        primary: WeaponId,
+        class: Class,
         brain: Option<BotBrain>,
     ) {
         let mut counts = [0; tdm::TEAM_COUNT];
@@ -1283,8 +1265,7 @@ impl NetServer {
             bot,
             name: name.to_owned(),
             team,
-            primary,
-            tactical: equipment::Kind::Flash,
+            class,
             brain,
             respawn_in: 0.0,
             killcam_since: None,
@@ -1373,34 +1354,23 @@ impl NetServer {
         let gun_game = matches!(self.game, Mode::GunGame(_));
         let avatar = &mut self.avatars[index];
         if let Some(brain) = &mut avatar.brain {
-            // Bots pick a new primary every life.
-            let options = loadout_primaries();
-            let pick = rng::hash(u32::from(avatar.id), tick) as usize % options.len().max(1);
-            if let Some(primary) = options.get(pick) {
-                avatar.primary = *primary;
-            }
-            // And a tactical: a flashbang or smoke, about half each.
-            avatar.tactical = if rng::unit(u32::from(avatar.id), tick) < 0.5 {
-                equipment::Kind::Flash
-            } else {
-                equipment::Kind::Smoke
-            };
+            // Bots pick a default class every life, as Call of Duty's
+            // bots do.
+            let pick = rng::hash(u32::from(avatar.id), tick) as usize % DefaultClass::ALL.len();
+            avatar.class = DefaultClass::ALL[pick].class();
             brain.on_spawn(point.yaw, tick);
         }
-        let loadout = if gun_game {
-            gun_game::weapon(avatar.progress.level)
-        } else {
-            avatar.primary
-        };
-        let mut state = PlayerState::new([loadout, WeaponId::expect("m1911")]);
-        if gun_game {
+        let mut state = if gun_game {
             // Gun Game: the ladder's weapon and nothing else.
-            state.combat = CombatState::only(loadout);
-        }
-        state.combat = state
-            .combat
-            .with_lethals(equipment::spawn_lethals(self.game))
-            .with_tacticals(avatar.tactical, equipment::spawn_tacticals(self.game));
+            let weapon = gun_game::weapon(avatar.progress.level);
+            let mut state = PlayerState::new([weapon, weapon]);
+            state.combat = CombatState::only(weapon);
+            state
+        } else {
+            let mut state = PlayerState::new(loadout_for(&avatar.class));
+            state.combat = avatar.class.combat();
+            state
+        };
         if first {
             state.combat = state.combat.first_draw();
         }
@@ -1508,7 +1478,7 @@ impl NetServer {
                 };
                 let brain = BotBrain::new(skill, rng::hash(u32::from(id), self.tick));
                 let name = format!("Bot {}", id - FIRST_BOT_ID + 1);
-                self.spawn_avatar(id, true, &name, default_primary(), Some(brain));
+                self.spawn_avatar(id, true, &name, Class::default(), Some(brain));
             } else {
                 return;
             }
@@ -3660,24 +3630,12 @@ fn default_primary() -> WeaponId {
     WeaponId::expect("m4")
 }
 
-/// A spawn loadout: the chosen primary and the M1911.
-fn loadout_for(primary: WeaponId) -> [WeaponId; 2] {
-    [primary, WeaponId::expect("m1911")]
-}
-
-/// Every weapon a loadout may use as its primary.
-fn loadout_primaries() -> Vec<WeaponId> {
-    (0..weapon::table().len())
-        .filter_map(|i| u8::try_from(i).ok().map(WeaponId))
-        .filter(|id| is_loadout_primary(*id))
-        .collect()
-}
-
-/// Whether players may choose this weapon as their primary: any primary but
-/// the secret laser.
-pub(crate) fn is_loadout_primary(id: WeaponId) -> bool {
-    let def = id.def();
-    def.slot == Slot::Primary && !def.beam
+/// The two weapon slots a class fills, for `PlayerState::new` (whose
+/// combat state is then replaced by the class's own).
+fn loadout_for(class: &Class) -> [WeaponId; 2] {
+    let [primary, secondary] = class.weapons();
+    let fallback = primary.or(secondary).unwrap_or_else(default_primary);
+    [primary.unwrap_or(fallback), secondary.unwrap_or(fallback)]
 }
 
 /// The map's spawn points: `Node3D` children of a `SpawnPoints` node, each

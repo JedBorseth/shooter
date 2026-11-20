@@ -35,6 +35,23 @@ impl WeaponId {
         Self::by_key(key).unwrap_or_else(|| panic!("weapon `{key}` is not in the table"))
     }
 
+    /// The plain weapon `self` with `attachments` fitted: itself for none,
+    /// or the table's variant with exactly those, in any order.
+    pub fn with_attachments(self, attachments: &[Attachment]) -> Option<WeaponId> {
+        let base = self.def();
+        if base.attachment.is_some() {
+            return None;
+        }
+        let mut key = base.key.clone();
+        for attachment in Attachment::ALL {
+            if attachments.contains(&attachment) {
+                key.push('+');
+                key.push_str(attachment.key());
+            }
+        }
+        Self::by_key(&key)
+    }
+
     pub fn all() -> impl Iterator<Item = WeaponId> {
         (0..table().len()).map(|i| WeaponId(i as u8))
     }
@@ -256,6 +273,11 @@ impl Attachment {
 
     pub fn from_key(key: &str) -> Option<Attachment> {
         Attachment::ALL.into_iter().find(|a| a.key() == key)
+    }
+
+    /// Whether it is a sight: a weapon takes one at most.
+    pub fn optic(self) -> bool {
+        matches!(self, Attachment::RedDot | Attachment::Acog)
     }
 
     /// The name players see.

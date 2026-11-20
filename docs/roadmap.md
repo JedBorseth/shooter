@@ -73,7 +73,7 @@ Each phase ends with something playable.
    - ✅ The netcode test kills a strafing bot through a 110 ms, 5% loss link.
 4. **Game loop.** Team Deathmatch: spawns, health and damage falloff, kill feed, scoreboard, respawn, match timer, first real map.
    - ✅ Rules on the server (`rust/sim/src/tdm.rs`): two balanced teams, 75 kills or 10 minutes, no friendly fire, lobby with ready-up, countdown, results, and the next match. Kills only score during a match; the lobby is warm-up.
-   - ✅ Spawns: weighted spawn points (`SpawnPoints` in a map) that avoid enemies, their sightlines, and recent deaths. Loadouts: the client picks a primary (`ClientMessage::Loadout`), used from the next spawn.
+   - ✅ Spawns: weighted spawn points (`SpawnPoints` in a map) that avoid enemies, their sightlines, and recent deaths. Classes: the client sends a Pick 10 class (`ClientMessage::Class`), which the server validates and uses from the next spawn ([create-a-class.md](create-a-class.md)).
    - ✅ Protocol 5: names in the hello; the roster (`Joined`, `Left`), match phase and clock (`Match`), scoreboard rows, and spawn facing as reliable events. Teammates are drawn in the allies' colours with their names; enemies in the enemies' colours.
    - ✅ HUD: score bar and clock, kill feed, scoreboard, countdown and results, and the loadout and ready menu. The title screen's Team Deathmatch runs a local server with bots.
    - ✅ Slamcity rebuilt as a three-lane map: the back alley with a fire escape to the flats' roof, Market Street around the skate bowl, and joined interiors, with spawn yards at each end.

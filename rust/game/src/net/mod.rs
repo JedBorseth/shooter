@@ -4,6 +4,7 @@
 //! logic live in `shooter_sim::net`.
 
 mod bots;
+mod class_dict;
 mod client;
 mod discovery;
 mod props;
