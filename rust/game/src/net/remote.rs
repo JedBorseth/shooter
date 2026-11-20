@@ -42,6 +42,9 @@ pub struct RemotePlayer {
     rig: OnReady<Gd<SoldierRig>>,
     #[init(node = "Hitboxes")]
     hitboxes: OnReady<Gd<HitboxRig>>,
+    /// Zombies: reviving a downed teammate (their id) and seconds into it:
+    /// the body kneels over them, hands down, as at the charge.
+    reviving: Option<(u8, f32)>,
     #[init(node = "Name")]
     name_label: OnReady<Gd<Label3D>>,
     #[init(node = "AimAssist")]
@@ -152,6 +155,16 @@ impl RemotePlayer {
     /// Whether this player is on our side.
     pub fn is_friendly(&self) -> bool {
         self.friendly
+    }
+
+    /// Zombies: this player started reviving `whom` (the server's `Revive`
+    /// event), or stopped reviving them (`None`).
+    pub fn set_reviving(&mut self, whom: u8, reviving: bool) {
+        match (reviving, self.reviving) {
+            (true, _) => self.reviving = Some((whom, 0.0)),
+            (false, Some((w, _))) if w == whom => self.reviving = None,
+            _ => {}
+        }
     }
 
     #[func]
@@ -680,6 +693,12 @@ impl RemotePlayer {
         for age in &mut self.predicted {
             *age += delta;
         }
+        if let Some((_, t)) = &mut self.reviving {
+            *t += delta;
+        }
+        if !s.alive {
+            self.reviving = None;
+        }
         while self
             .predicted
             .front()
@@ -710,7 +729,7 @@ impl RemotePlayer {
             mantle_progress: s.mantling.then_some(s.progress.mantle),
             crouch: Some(s.crouch),
             turn: Some((s.progress.turn, s.progress.step)),
-            // Kneeling over the charge, or a throw.
+            // Kneeling over the charge or a downed teammate, or a throw.
             action: s
                 .charge_use
                 .map(|(kind, t)| {
@@ -719,6 +738,12 @@ impl RemotePlayer {
                         UseKind::Defuse => ActionPose::Defuse,
                     };
                     (pose, t)
+                })
+                .or_else(|| {
+                    // A revive kneels as a defuse does, on its own clock.
+                    let defuse = UseKind::Defuse.duration(&shooter_sim::snd::SndRules::default());
+                    self.reviving
+                        .map(|(_, t)| (ActionPose::Defuse, (t / defuse).min(1.0)))
                 })
                 .or_else(|| s.throw.map(|t| (ActionPose::Throw, t)))
                 .filter(|_| s.alive),

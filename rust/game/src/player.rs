@@ -386,10 +386,18 @@ pub struct FpsPlayer {
     /// Search and Destroy: holding interact here would plant or defuse the
     /// charge (`NetClient` works it out each tick as the server does).
     charge_spot: bool,
+    /// The charge spot is a downed teammate (`set_revive_spot`).
+    revive_spot: bool,
+    /// The charge spot is a planted charge to defuse (`set_defuse_spot`).
+    defuse_spot: bool,
     /// The last input planted or defused: held still, the weapon put away.
     using_charge: bool,
     /// Tests: draw the first-person hands on the charge as if planting.
     debug_keypad: bool,
+    /// Tests and captures: the revive's hands without a downed teammate.
+    debug_revive: bool,
+    /// Tests and captures: the defuse's hands without a match.
+    debug_defuse: bool,
     env: MoveEnv,
     /// Floor contact after the last move; the next tick's `MoveEnv::on_floor`.
     on_floor: bool,
@@ -1349,6 +1357,20 @@ impl FpsPlayer {
         self.charge_spot = spot;
     }
 
+    /// Zombies: the use spot is a downed teammate to revive (as opposed to
+    /// Search and Destroy's charge): holding use there shows the revive's
+    /// hands rather than the keypad's.
+    pub fn set_revive_spot(&mut self, revive: bool) {
+        self.revive_spot = revive;
+    }
+
+    /// Search and Destroy: the charge spot is a planted charge to defuse:
+    /// holding use there works its wires with cutters rather than typing
+    /// on its keypad.
+    pub fn set_defuse_spot(&mut self, defuse: bool) {
+        self.defuse_spot = defuse;
+    }
+
     /// Planting or defusing the charge right now.
     #[func]
     pub fn is_using_charge(&self) -> bool {
@@ -1360,6 +1382,20 @@ impl FpsPlayer {
     #[func]
     pub fn debug_keypad(&mut self, on: bool) {
         self.debug_keypad = on;
+    }
+
+    /// Tests and captures: draws the first-person hands reviving a downed
+    /// teammate, as while holding use over one, without one.
+    #[func]
+    pub fn debug_revive(&mut self, on: bool) {
+        self.debug_revive = on;
+    }
+
+    /// Tests and captures: draws the first-person hands defusing the charge
+    /// (cutters on its wires), as while holding use over a planted one.
+    #[func]
+    pub fn debug_defuse(&mut self, on: bool) {
+        self.debug_defuse = on;
     }
 
     /// Moves the player instantly and points them along `yaw`, keeping weapons,
@@ -3290,7 +3326,12 @@ impl FpsPlayer {
             mantle_left: self.state.movement.mantle_time,
             vaulting: self.state.movement.vaulting,
             on_ladder: self.state.movement.on_ladder(),
-            put_away: self.using_charge || self.debug_keypad,
+            put_away: self.using_charge
+                || self.debug_keypad
+                || self.debug_revive
+                || self.debug_defuse,
+            reviving: (self.using_charge && self.revive_spot) || self.debug_revive,
+            defusing: (self.using_charge && self.defuse_spot) || self.debug_defuse,
             feet: self.base().get_global_position(),
             mount: self.state.movement.mount_blend,
             weapon: combat.weapon().id,
