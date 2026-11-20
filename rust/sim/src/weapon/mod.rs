@@ -564,6 +564,9 @@ pub struct CombatContext {
     /// How far the weapon is mounted on cover, 0 to 1 (`MoveState::mount_blend`):
     /// the kick and the aimed sway shrink with it ([`crate::mount`]).
     pub mount: f32,
+    /// How fast reloads, switches, throws, and the sprint-out run, from the
+    /// player's perks ([`crate::perk::Perks::handling`]).
+    pub handling: crate::perk::Handling,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -694,12 +697,12 @@ pub fn step(
         state.sprint_out = state.def().sprint_out_time;
         state.burst_left = 0;
     } else {
-        state.sprint_out = (state.sprint_out - dt).max(0.0);
+        state.sprint_out = (state.sprint_out - dt * ctx.handling.sprint_out).max(0.0);
     }
 
     request_switch(state, input);
-    advance_throw(state, input, dt, events);
-    advance_action(state, dt, events);
+    advance_throw(state, input, dt, ctx.handling.throw, events);
+    advance_action(state, dt, &ctx.handling, events);
     if let Some((strike_in, lunge)) = input.melee
         && state.can_melee()
     {
@@ -856,13 +859,21 @@ fn request_switch(state: &mut CombatState, input: &CombatInput) {
     };
 }
 
-fn advance_action(state: &mut CombatState, dt: f32, events: &mut Vec<CombatEvent>) {
+/// Advances the action in progress. Perks run some timers faster
+/// (`handling`): a reload at `reload` times real time, a switch's lowering
+/// and raising at `switch`.
+fn advance_action(
+    state: &mut CombatState,
+    dt: f32,
+    handling: &crate::perk::Handling,
+    events: &mut Vec<CombatEvent>,
+) {
     match state.action {
         // Advanced by `advance_throw`, which needs the button.
         Action::Ready | Action::Throwing { .. } => {}
         Action::Reloading { remaining, empty } => {
             let was_seated = state.magazine_seated();
-            let remaining = remaining - dt;
+            let remaining = remaining - dt * handling.reload;
             state.action = Action::Reloading { remaining, empty };
             if !was_seated && (remaining <= 0.0 || state.magazine_seated()) {
                 // The fresh magazine is in: its rounds count from here, even
@@ -887,7 +898,7 @@ fn advance_action(state: &mut CombatState, dt: f32, events: &mut Vec<CombatEvent
             }
         }
         Action::Loading { remaining, stage } => {
-            let remaining = remaining - dt;
+            let remaining = remaining - dt * handling.reload;
             if remaining > 0.0 {
                 state.action = Action::Loading { remaining, stage };
                 return;
@@ -937,7 +948,7 @@ fn advance_action(state: &mut CombatState, dt: f32, events: &mut Vec<CombatEvent
             };
         }
         Action::Lowering { remaining, to } => {
-            let remaining = remaining - dt;
+            let remaining = remaining - dt * handling.switch;
             if remaining > 0.0 {
                 state.action = Action::Lowering { remaining, to };
                 return;
@@ -953,7 +964,7 @@ fn advance_action(state: &mut CombatState, dt: f32, events: &mut Vec<CombatEvent
             });
         }
         Action::Raising { remaining, kind } => {
-            let remaining = remaining - dt;
+            let remaining = remaining - dt * handling.switch;
             state.action = if remaining > 0.0 {
                 Action::Raising { remaining, kind }
             } else if kind == Raise::First {
@@ -1025,10 +1036,13 @@ fn start_throw(state: &mut CombatState, kind: equipment::Kind, events: &mut Vec<
 /// Cooks the grenade in hand while the button is held, winds up once it is
 /// let go (never before the pin is out), and throws it. A grenade cooked to
 /// the end of its fuse goes off in the hand.
+/// Advances a throw. The wind-up and follow-through run at `rate` times real
+/// time (Fast Hands); the pin and the fuse keep real time.
 fn advance_throw(
     state: &mut CombatState,
     input: &CombatInput,
     dt: f32,
+    rate: f32,
     events: &mut Vec<CombatEvent>,
 ) {
     let Action::Throwing {
@@ -1042,7 +1056,7 @@ fn advance_throw(
     let was_thrown = release_in.is_some_and(|left| left <= 0.0);
     let cooked = cooked + dt;
     let mut release_in = match release_in {
-        Some(left) => Some(left - dt),
+        Some(left) => Some(left - dt * rate),
         None if !input.throw_held && cooked >= equipment::PIN_TIME => Some(equipment::WIND_UP),
         None => None,
     };

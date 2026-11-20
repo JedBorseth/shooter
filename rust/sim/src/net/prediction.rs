@@ -150,6 +150,7 @@ pub fn diverged(a: &Predicted, b: &Predicted) -> bool {
         || a.state.lethal_held != b.state.lethal_held
         || a.state.tactical_held != b.state.tactical_held
         || a.state.airborne != b.state.airborne
+        || a.state.perks != b.state.perks
         || (a.state.health - b.state.health).abs() > 0.01
         || (a.state.fall_speed - b.state.fall_speed).abs() > VELOCITY_TOLERANCE
         || (a.state.since_damage - b.state.since_damage).abs() > TIME_TOLERANCE
@@ -403,6 +404,97 @@ mod tests {
         assert_eq!(client.corrections, 1);
         // Replaying the remaining inputs lands exactly where the server will be.
         let later = client.reconcile(40, &server_states[39], |_, _| panic!("no replay"));
+        assert_eq!(later, Reconciled::InSync);
+    }
+
+    /// Handling and movement inputs the perks change: a sprint and its
+    /// sprint-out, reloads, weapon switches, and a grenade throw.
+    fn perk_input(i: u32) -> PlayerInput {
+        PlayerInput {
+            wish: Vec2::new(0.0, 1.0),
+            yaw: i as f32 * 0.01,
+            sprint: i % 60 == 5,
+            reload: i % 90 == 30,
+            fire: (40..48).contains(&(i % 90)),
+            switch_to: match i % 120 {
+                70 => Some(1),
+                100 => Some(0),
+                _ => None,
+            },
+            lethal: (150..170).contains(&i),
+            ..Default::default()
+        }
+        .quantized()
+    }
+
+    fn perked() -> Predicted {
+        use crate::perk::{Perk, Perks};
+        let mut p = start();
+        p.state.perks = Perks::of(&[
+            Perk::Lightweight,
+            Perk::FastHands,
+            Perk::SleightOfHand,
+            Perk::Dexterity,
+        ]);
+        p.state.combat.action = crate::weapon::Action::Ready;
+        p
+    }
+
+    #[test]
+    fn perks_predict_exactly_what_the_server_runs() {
+        let mut client = Prediction::default();
+        let mut local = perked();
+        let mut server = perked();
+        let mut server_states = Vec::new();
+        for i in 0..240 {
+            let seq = client.next_seq();
+            step(&mut local, &perk_input(i));
+            client.record(seq, perk_input(i), local);
+            step(&mut server, &perk_input(i));
+            server_states.push(server);
+        }
+        // Every acknowledgement agrees: the perks never mispredict.
+        for ack in (10..=240).step_by(10) {
+            let result = client.reconcile(ack, &server_states[ack as usize - 1], |_, _| {
+                panic!("no replay at {ack}")
+            });
+            assert_eq!(result, Reconciled::InSync, "ack {ack}");
+        }
+        assert_eq!(client.corrections, 0);
+        // And they did change the run: the same inputs without perks end
+        // somewhere else.
+        let mut plain = start();
+        plain.state.combat.action = crate::weapon::Action::Ready;
+        for i in 0..240 {
+            step(&mut plain, &perk_input(i));
+        }
+        assert!(diverged(&plain, &server));
+        assert!(server.position.z.abs() > plain.position.z.abs());
+    }
+
+    #[test]
+    fn a_client_without_its_perks_takes_them_from_the_server() {
+        let mut client = Prediction::default();
+        // The client predicted without perks (it had not heard of the new
+        // class); the server spawned it with them.
+        let mut local = start();
+        local.state.combat.action = crate::weapon::Action::Ready;
+        let mut server = perked();
+        let mut server_states = Vec::new();
+        for i in 0..60 {
+            let seq = client.next_seq();
+            step(&mut local, &perk_input(i));
+            client.record(seq, perk_input(i), local);
+            step(&mut server, &perk_input(i));
+            server_states.push(server);
+        }
+        let result = client.reconcile(20, &server_states[19], step);
+        let Reconciled::Corrected { current, .. } = result else {
+            panic!("expected a correction, got {result:?}");
+        };
+        assert_eq!(current.state.perks, server.state.perks);
+        // From the replay on, the prediction matches the server.
+        let later = client.reconcile(60, &server_states[59], |_, _| panic!("no replay"));
         assert_eq!(later, Reconciled::InSync);
     }
 

@@ -66,7 +66,8 @@ static func attachment_lock(weapon: String, attachment: String) -> String:
 
 ## A custom class with everything still locked taken out: a locked weapon
 ## becomes the first unlocked one of its slot, and locked attachments,
-## tacticals, and wildcards come off. Default classes are never filtered.
+## tacticals, perks, and wildcards come off. Default classes are never
+## filtered.
 static func unlocked_class(entry: Dictionary, items: Dictionary) -> Dictionary:
 	var out := entry.duplicate(true)
 	for slot: Array in [
@@ -94,6 +95,18 @@ static func unlocked_class(entry: Dictionary, items: Dictionary) -> Dictionary:
 	# Without its wildcard, a second frag goes too.
 	if not "danger_close" in wildcards:
 		out["lethals"] = mini(int(out.get("lethals", 0)), 1)
+	# Locked perks come off, and a tier's second perk without its wildcard.
+	var perks := []
+	var per_tier := {}
+	for perk: String in Array(out.get("perks", [])):
+		if lock_reason("perk", perk) != "":
+			continue
+		var tier := NetClient.perk_tier(perk)
+		var limit := 2 if "perk%d_greed" % tier in wildcards else 1
+		if int(per_tier.get(tier, 0)) < limit:
+			perks.append(perk)
+			per_tier[tier] = int(per_tier.get(tier, 0)) + 1
+	out["perks"] = perks
 	return out
 
 

@@ -77,7 +77,10 @@ func _check_card() -> void:
 	await create_timer(XpSummary.FILL_DELAY + XpSummary.FILL_SECONDS + 0.3).timeout
 	text = _texts(card)
 	_check("LEVEL 4" in text and "LEVEL UP" in text, "it fills to level 4: %s" % [text])
-	_check("Create-a-Class, AK-47" in text, "and lists the unlocks")
+	_check(
+		text.any(func(t: String) -> bool: return t.begins_with("Create-a-Class, AK-47")),
+		"and lists the unlocks"
+	)
 	card.queue_free()
 
 

@@ -1004,7 +1004,8 @@ impl NetClient {
 
     /// Everything a class can hold, for the create-a-class menu:
     /// `primaries` and `secondaries` (each `key`, `name`, and `attachments`,
-    /// a list of `key` and `name`), `tacticals` (`key`, `name`), and
+    /// a list of `key` and `name`), `tacticals` (`key`, `name`), `perks`
+    /// (`key`, `name`, `summary`, and `tier`, 1 to 3, in tier order), and
     /// `wildcards` (`key`, `name`, `summary`).
     #[func]
     fn class_items() -> VarDictionary {
@@ -1047,7 +1048,27 @@ impl NetClient {
             })
             .collect();
         d.set("wildcards", &wildcards);
+        let perks: Array<VarDictionary> = shooter_sim::perk::Tier::ALL
+            .into_iter()
+            .flat_map(shooter_sim::perk::Perk::of_tier)
+            .map(|p| {
+                let mut entry = VarDictionary::new();
+                entry.set("key", p.key());
+                entry.set("name", p.label());
+                entry.set("summary", p.summary());
+                entry.set("tier", i64::from(p.tier().number()));
+                entry
+            })
+            .collect();
+        d.set("perks", &perks);
         d
+    }
+
+    /// A perk's tier (1 to 3) by key, or 0 for an unknown key.
+    #[func]
+    fn perk_tier(key: GString) -> i32 {
+        shooter_sim::perk::Perk::by_key(&key.to_string())
+            .map_or(0, |p| i32::from(p.tier().number()))
     }
 
     /// The ready-made classes, each a class dictionary with its `name`.

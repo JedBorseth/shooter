@@ -31,6 +31,7 @@ use crate::hitbox::{Activity, HitboxPose};
 use crate::killcam::{self, Killcam};
 use crate::look::PITCH_LIMIT;
 use crate::movement::{MoveState, Stance};
+use crate::perk::Perks;
 use crate::player::{FireAim, PlayerInput, PlayerState};
 use crate::score::{Award, ScoreTotals, Scored};
 use crate::snd::{RoundEnd, RoundPhase, UseKind};
@@ -130,7 +131,9 @@ use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, Weapo
 // Version 53 added Zombies' last stand: whether a player is down in the
 // predicted state and player views, going down and reviving as events, and
 // revives and headshots on the scoreboard.
-pub const PROTOCOL_VERSION: u16 = 53;
+// Version 54 added perks (`crate::perk`): a class's perks and the Perk Greed
+// wildcards, and the perks in the predicted player state.
+pub const PROTOCOL_VERSION: u16 = 54;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -2861,6 +2864,7 @@ fn write_predicted(w: &mut BitWriter, p: &Predicted) {
     w.f32(s.since_damage);
     w.f32(s.fall_speed);
     w.bool(s.airborne);
+    w.bits(u32::from(s.perks.bits()), Perks::BITS);
     write_move_state(w, &s.movement);
     write_combat_state(w, &s.combat);
 }
@@ -2877,6 +2881,7 @@ fn read_predicted(r: &mut BitReader) -> DecodeResult<Predicted> {
     let since_damage = r.f32()?;
     let fall_speed = r.f32()?;
     let airborne = r.bool()?;
+    let perks = read_perks(r)?;
     let movement = read_move_state(r)?;
     let combat = read_combat_state(r)?;
     Ok(Predicted {
@@ -2892,6 +2897,7 @@ fn read_predicted(r: &mut BitReader) -> DecodeResult<Predicted> {
             lethal_held,
             tactical_held,
             downed,
+            perks,
         },
         position,
         on_floor,
@@ -3169,7 +3175,12 @@ fn write_class(w: &mut BitWriter, class: &Class) {
     w.bits(u32::from(class.lethals.min(3)), CLASS_COUNT_BITS);
     w.bits(u32::from(class.tactical.code()), EQUIPMENT_BITS);
     w.bits(u32::from(class.tacticals.min(3)), CLASS_COUNT_BITS);
+    w.bits(u32::from(class.perks.bits()), Perks::BITS);
     w.bits(u32::from(class.wildcards.bits()), Wildcards::BITS);
+}
+
+fn read_perks(r: &mut BitReader) -> DecodeResult<Perks> {
+    Perks::from_bits(r.bits(Perks::BITS)? as u16).ok_or(DecodeError::Invalid("perks"))
 }
 
 fn read_class(r: &mut BitReader) -> DecodeResult<Class> {
@@ -3179,6 +3190,7 @@ fn read_class(r: &mut BitReader) -> DecodeResult<Class> {
         lethals: r.bits(CLASS_COUNT_BITS)? as u8,
         tactical: read_equipment(r)?,
         tacticals: r.bits(CLASS_COUNT_BITS)? as u8,
+        perks: read_perks(r)?,
         wildcards: Wildcards::from_bits(r.bits(Wildcards::BITS)? as u8)
             .ok_or(DecodeError::Invalid("wildcards"))?,
     })
@@ -3353,7 +3365,10 @@ mod tests {
 
     fn sample_state(ticks: usize) -> Predicted {
         let params = PlayerParams::default();
-        let mut state = PlayerState::default();
+        let mut state = PlayerState {
+            perks: Perks::of(&[crate::perk::Perk::Lightweight, crate::perk::Perk::Dexterity]),
+            ..PlayerState::default()
+        };
         let mut events = Vec::new();
         for i in 0..ticks {
             let input = PlayerInput {
@@ -4768,7 +4783,16 @@ mod tests {
                 lethals: 2,
                 tactical: equipment::Kind::Smoke,
                 tacticals: 1,
-                wildcards: Wildcards::of(&[Wildcard::DangerClose, Wildcard::Overkill]),
+                perks: crate::perk::Perks::of(&[
+                    crate::perk::Perk::FlakJacket,
+                    crate::perk::Perk::Lightweight,
+                    crate::perk::Perk::TacticalMask,
+                ]),
+                wildcards: Wildcards::of(&[
+                    Wildcard::DangerClose,
+                    Wildcard::Overkill,
+                    Wildcard::Perk1Greed,
+                ]),
             }),
             ClientMessage::Class(Class::default()),
             ClientMessage::SkipKillcam,

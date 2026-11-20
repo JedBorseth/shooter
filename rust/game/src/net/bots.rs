@@ -534,8 +534,10 @@ impl BotBrain {
     /// A flashbang landed `amount` (0 to 1, `equipment::flash_amount`) on
     /// the bot at `tick`: it sees nothing for a while, and sprays where its
     /// target was.
-    pub fn on_flashed(&mut self, amount: f32, tick: Tick) {
-        let seconds = bot::blinded_for(amount);
+    /// Blinded by a flash of `amount`, for `scale` of the usual time
+    /// (Tactical Mask).
+    pub fn on_flashed(&mut self, amount: f32, scale: f32, tick: Tick) {
+        let seconds = bot::blinded_for(amount) * scale;
         if seconds <= 0.0 {
             return;
         }
