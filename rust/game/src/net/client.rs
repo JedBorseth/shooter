@@ -34,13 +34,14 @@ use shooter_sim::equipment::Kind;
 use shooter_sim::gun_game;
 use shooter_sim::hardpoint::Holder;
 use shooter_sim::hitbox::HitboxPose;
+use shooter_sim::killcam::{Killcam, OwnRecorder, Tape};
 use shooter_sim::net::conditioner::{LinkConditioner, LinkSettings};
 use shooter_sim::net::discovery::clean_text;
 use shooter_sim::net::interpolation::{InterpolationBuffer, SnapshotClock};
 use shooter_sim::net::prediction::Reconciled;
 use shooter_sim::net::protocol::{
-    ClientMessage, FlagPlay, FlagStatus, FlagView, GameEvent, InputPacket, KillCause,
-    MAX_BUILD_BYTES, PROTOCOL_VERSION, ScoreRow, ServerMessage, Snapshot, ZoneView,
+    self as protocol, ClientMessage, FlagPlay, FlagStatus, FlagView, GameEvent, InputPacket,
+    KillCause, MAX_BUILD_BYTES, PROTOCOL_VERSION, ScoreRow, ServerMessage, Snapshot, ZoneView,
 };
 use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::{CHANNEL_COUNT, CHANNEL_RELIABLE, DEFAULT_PORT, TICK_RATE, Tick};
@@ -162,6 +163,13 @@ pub struct NetClient {
     props_population: Option<i32>,
     /// The current Search and Destroy round, while a match is being played.
     round: Option<Round>,
+    /// The last few seconds of snapshots, ourselves included, for killcams.
+    tape: Tape,
+    own_recorder: OwnRecorder,
+    /// Our view angles in the latest snapshot, for one whose input is gone.
+    own_angles: (f32, f32),
+    /// The killcam the server sent last, with the time it arrived.
+    killcam: Option<(Killcam, f64)>,
 }
 
 #[derive(Clone, Copy)]
@@ -942,6 +950,18 @@ impl NetClient {
                 if killed {
                     self.stats.deaths += 1;
                 }
+                // Recorded on our own body for killcams: the flinch, and the
+                // fall's push.
+                let recorder = &mut self.own_recorder;
+                recorder.hits = recorder.hits.wrapping_add(1);
+                let travel = self.stats.server_position - to_godot(from);
+                recorder.hit_heading = protocol::heading_to_u8(travel.x, travel.z);
+                recorder.hit_part = protocol::HitPart::new(
+                    Some(shooter_sim::hitbox::CHEST_SHAPE as u8),
+                    damage,
+                    false,
+                )
+                .to_u8();
                 if let Some(player) = &mut self.player {
                     player
                         .bind_mut()
@@ -1115,6 +1135,18 @@ impl NetClient {
                     player.bind_mut().on_server_blast(owner, shot, kind, at);
                 }
             }
+            GameEvent::Killcam(killcam) => {
+                // A killcam that ends a round or the match replaces one
+                // still waiting to play after a death.
+                let replaces = match &self.killcam {
+                    Some((current, _)) => killcam.kind.ending() || !current.kind.ending(),
+                    None => true,
+                };
+                if replaces && self.tape.covers(&killcam) {
+                    let now = Time::singleton().get_ticks_usec() as f64 / 1e6;
+                    self.killcam = Some((killcam, now));
+                }
+            }
         }
     }
 
@@ -1267,6 +1299,9 @@ impl NetClient {
         self.history.insert(tick, snapshot.players.clone());
         let newest = self.newest.is_none_or(|n| tick > n);
         if newest {
+            self.record_tape(&snapshot);
+        }
+        if newest {
             self.newest = Some(tick);
             if let Some(clock) = &mut self.clock {
                 clock.on_snapshot(tick);
@@ -1329,6 +1364,26 @@ impl NetClient {
         }
     }
 
+    /// Records the snapshot on the killcam tape, with ourselves in it as
+    /// everyone else sees us. Called before the snapshot reconciles our
+    /// prediction, while the input it acknowledges is still remembered.
+    fn record_tape(&mut self, snapshot: &Snapshot) {
+        let mut views = snapshot.players.clone();
+        if let (Some(id), Some(own)) = (self.player_id, &snapshot.own) {
+            let angles = self
+                .player
+                .as_ref()
+                .and_then(|p| p.bind().prediction().and_then(|p| p.input(own.last_input)))
+                .map_or(self.own_angles, |input| (input.yaw, input.pitch));
+            self.own_angles = angles;
+            let view =
+                self.own_recorder
+                    .view(id, snapshot.tick, &own.predicted, angles.0, angles.1);
+            views.push(view);
+        }
+        self.tape.record(snapshot.tick, views);
+    }
+
     fn spawn_remote(&mut self, id: u8) -> Option<Gd<RemotePlayer>> {
         let scene = self.remote_player_scene.as_ref()?;
         let mut node = scene.instantiate()?.try_cast::<RemotePlayer>().ok()?;
@@ -1389,6 +1444,8 @@ impl NetClient {
             ghost.upcast::<Node>().queue_free();
         }
         self.roster.clear();
+        self.tape.clear();
+        self.killcam = None;
         self.match_phase = None;
         self.flags = None;
         self.zones.clear();

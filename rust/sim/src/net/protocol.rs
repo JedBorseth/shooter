@@ -26,6 +26,7 @@ use crate::gun_game;
 use crate::hardpoint::Holder;
 use crate::hitbox::clock::{self, Progress};
 use crate::hitbox::{Activity, HitboxPose};
+use crate::killcam::{self, Killcam};
 use crate::look::PITCH_LIMIT;
 use crate::movement::{MoveState, Stance};
 use crate::player::{FireAim, PlayerInput, PlayerState};
@@ -102,7 +103,9 @@ use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, Weapo
 // its yaw, crouch, and blend; `PlayerView::mount`).
 // Version 43 added whether a climb is a vault (`PlayerView::vaulting`), so
 // other players draw, and the hit zones pose, a vault instead of a mantle.
-pub const PROTOCOL_VERSION: u16 = 43;
+// Version 44 added killcams: the killcam event (which kill to replay, and
+// the ticks around it) and the client's skip.
+pub const PROTOCOL_VERSION: u16 = 44;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -156,6 +159,9 @@ pub enum ClientMessage {
         text: String,
         team: bool,
     },
+    /// Skip the killcam playing after our death: respawn as soon as the
+    /// respawn delay allows (`killcam`).
+    SkipKillcam,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -309,6 +315,11 @@ pub enum GameEvent {
         kind: equipment::Kind,
         at: Vec3,
     },
+    /// A killcam to play: to the victim of a kill, after their death
+    /// (`killcam::Kind::Respawn`), or to everyone after the kill that ended
+    /// a round or the match. Clients replay it from their own recording of
+    /// the snapshots (`killcam::Tape`).
+    Killcam(Killcam),
 }
 
 /// One flag as clients see it.
@@ -813,6 +824,7 @@ impl ClientMessage {
                 w.bool(*team);
                 write_string(&mut w, text, chat::MAX_BYTES);
             }
+            ClientMessage::SkipKillcam => w.bits(6, TAG_BITS),
         }
         w.finish()
     }
@@ -872,6 +884,7 @@ impl ClientMessage {
                     team,
                 })
             }
+            6 => Ok(ClientMessage::SkipKillcam),
             _ => Err(DecodeError::Invalid("client message tag")),
         }
     }
@@ -1195,14 +1208,7 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
             w.u8(*victim);
             write_weapon(w, *weapon);
             w.bool(*headshot);
-            match cause {
-                KillCause::Weapon => w.bits(0, 2),
-                KillCause::Knife => w.bits(1, 2),
-                KillCause::Equipment(kind) => {
-                    w.bits(2, 2);
-                    w.bits(u32::from(kind.code()), EQUIPMENT_BITS);
-                }
-            }
+            write_cause(w, *cause);
         }
         GameEvent::Score { awards, totals } => {
             w.bits(3, EVENT_TAG_BITS);
@@ -1417,7 +1423,40 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
             w.bits(u32::from(kind.code()), EQUIPMENT_BITS);
             write_vec3(w, *at);
         }
+        GameEvent::Killcam(k) => {
+            w.bits(18, EVENT_TAG_BITS);
+            w.bits(u32::from(k.kind.code()), 2);
+            w.u8(k.killer);
+            w.u8(k.victim);
+            w.u32(k.kill_tick);
+            w.u16(k.before);
+            w.u16(k.after);
+            w.u8(k.rewind);
+            write_weapon(w, k.weapon);
+            write_cause(w, k.cause);
+            w.bool(k.headshot);
+        }
     }
+}
+
+fn write_cause(w: &mut BitWriter, cause: KillCause) {
+    match cause {
+        KillCause::Weapon => w.bits(0, 2),
+        KillCause::Knife => w.bits(1, 2),
+        KillCause::Equipment(kind) => {
+            w.bits(2, 2);
+            w.bits(u32::from(kind.code()), EQUIPMENT_BITS);
+        }
+    }
+}
+
+fn read_cause(r: &mut BitReader) -> DecodeResult<KillCause> {
+    Ok(match r.bits(2)? {
+        0 => KillCause::Weapon,
+        1 => KillCause::Knife,
+        2 => KillCause::Equipment(read_equipment(r)?),
+        _ => return Err(DecodeError::Invalid("kill cause")),
+    })
 }
 
 fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
@@ -1440,12 +1479,7 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
             victim: r.u8()?,
             weapon: read_weapon(r)?,
             headshot: r.bool()?,
-            cause: match r.bits(2)? {
-                0 => KillCause::Weapon,
-                1 => KillCause::Knife,
-                2 => KillCause::Equipment(read_equipment(r)?),
-                _ => return Err(DecodeError::Invalid("kill cause")),
-            },
+            cause: read_cause(r)?,
         }),
         3 => {
             let count = r.varint()? as usize;
@@ -1645,6 +1679,30 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
             kind: read_equipment(r)?,
             at: read_finite_vec3(r)?,
         }),
+        18 => {
+            let kind = killcam::Kind::from_code(r.bits(2)? as u8)
+                .ok_or(DecodeError::Invalid("killcam kind"))?;
+            let killer = r.u8()?;
+            let victim = r.u8()?;
+            let kill_tick = r.u32()?;
+            let before = r.u16()?;
+            let after = r.u16()?;
+            if u32::from(before) + u32::from(after) > killcam::MAX_TICKS {
+                return Err(DecodeError::Invalid("killcam length"));
+            }
+            Ok(GameEvent::Killcam(Killcam {
+                kind,
+                killer,
+                victim,
+                kill_tick,
+                before,
+                after,
+                rewind: r.u8()?,
+                weapon: read_weapon(r)?,
+                cause: read_cause(r)?,
+                headshot: r.bool()?,
+            }))
+        }
         _ => Err(DecodeError::Invalid("event tag")),
     }
 }
@@ -3338,6 +3396,30 @@ mod tests {
                 kind: equipment::Kind::Frag,
                 at: Vec3::new(2.5, 0.05, -7.125),
             },
+            GameEvent::Killcam(
+                killcam::KillRecord {
+                    killer: 3,
+                    victim: 0,
+                    tick: 123_456,
+                    rewind: 9,
+                    weapon: WeaponId::expect("m4"),
+                    cause: KillCause::Equipment(equipment::Kind::Frag),
+                    headshot: false,
+                }
+                .killcam(killcam::Kind::Respawn),
+            ),
+            GameEvent::Killcam(
+                killcam::KillRecord {
+                    killer: 201,
+                    victim: 4,
+                    tick: 99,
+                    rewind: 0,
+                    weapon: WeaponId::expect("m40"),
+                    cause: KillCause::Weapon,
+                    headshot: true,
+                }
+                .killcam(killcam::Kind::Final),
+            ),
             GameEvent::Score {
                 awards: vec![
                     Scored {
@@ -3666,6 +3748,7 @@ mod tests {
                 primary: WeaponId::expect("ak47"),
                 tactical: equipment::Kind::Smoke,
             },
+            ClientMessage::SkipKillcam,
         ] {
             assert_eq!(ClientMessage::decode(&msg.encode()).unwrap(), msg);
         }

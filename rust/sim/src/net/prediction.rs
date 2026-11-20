@@ -90,6 +90,11 @@ impl Prediction {
         (first, pending[start..].iter().map(|e| e.input).collect())
     }
 
+    /// The input numbered `seq`, while it is still remembered.
+    pub fn input(&self, seq: u32) -> Option<PlayerInput> {
+        self.history.iter().find(|e| e.seq == seq).map(|e| e.input)
+    }
+
     /// Number of inputs predicted ahead of the server.
     pub fn pending(&self) -> usize {
         self.history.iter().filter(|e| e.seq > self.acked).count()
