@@ -9,8 +9,15 @@ extends SceneTree
 
 const BOTS := 6
 const ROUND_SECONDS := 25.0
-## Long enough for three full rounds (a 1-1 decider) and the match result.
-const SECONDS := 120
+## A planted charge's fuse, shortened from 45 s so a round with a late plant
+## still fits the budget.
+const FUSE_SECONDS := 15.0
+## The most game time the match may take: three rounds (a 1-1 decider) at
+## their longest, each a 5 s freeze, the 25 s clock, a plant at its end
+## burning the fuse, the 6 s result, and the round-winning killcam, plus the
+## match result. The test stops as soon as the match ends, which is usually
+## far sooner. Under the CI's 300 s limit when the run is retried in real time.
+const SECONDS := 200
 
 ## A port per process, so test runs in parallel on one machine don't meet.
 var _port := 30000 + OS.get_process_id() % 20000
@@ -32,6 +39,7 @@ func _run() -> void:
 	server.mode = "snd"
 	server.rounds_to_win = 2
 	server.round_seconds = ROUND_SECONDS
+	server.fuse_seconds = FUSE_SECONDS
 	server.auto_start = true
 	root.add_child(server)
 	_check(server.game_mode() == "snd", "the server plays Search and Destroy")
