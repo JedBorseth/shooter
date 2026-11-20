@@ -53,6 +53,16 @@ Hardened, Hard between Hardened and Veteran (`Skill::params`).
   9.75 m of a site (`bot_sd_grenade`); Domination bots smoke an enemy flag on
   the way in and frag a contested one (`bot_flag_grenade`); Hardpoint bots frag
   the enemy nearest a contested zone (`bot_hill_grenade`).
+- Recruits throw nothing (`bot_AllowGrenades 0`).
+
+Ours: each mode hands a bot its objective's ground (`BotObjective::area`): a
+Search and Destroy site or the planted charge, a Domination flag, the live
+Hardpoint zone, a Capture the Flag base, each widened by 9.75 m. An enemy seen
+there in the last second is worth a frag on its own (a flashbang without one),
+not only in a group. Smoke (`BotObjective::smoke`) goes onto an enemy flag a
+bot heads to take, and 5 m out from a charge being planted or defused, toward
+the other side; once a life, and not where a cloud already hangs (none within
+6.5 m in the last 12 s, as `bot_combat_throw_smoke`). Easy bots throw nothing.
 
 ### Bench
 

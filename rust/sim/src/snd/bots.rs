@@ -199,6 +199,10 @@ pub fn rotating(defenders: &[(u8, usize)], hot: usize) -> Vec<u8> {
     out
 }
 
+/// Enemies this close to a site (or the planted charge), in metres, are
+/// worth a grenade (Black Ops 2: 384 units, `bot_sd_grenade`).
+pub const GRENADE_REACH: f32 = 9.75;
+
 /// Where the carrier waits before it decides to plant: [`STAGING`] metres
 /// short of `site`'s centre on the way from `from` (the attackers' side),
 /// on the site's floor.
