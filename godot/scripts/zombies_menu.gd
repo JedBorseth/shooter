@@ -4,6 +4,8 @@ extends Control
 
 signal back_requested
 signal play_requested(map_name: String)
+## Co-op chosen: the title screen sets up a game friends can join.
+signal coop_requested
 
 const ASSETS := "res://assets/zombies/"
 const ORANGE := Color("e88b36")
@@ -83,9 +85,11 @@ func _build_landing() -> void:
 	_solo = _button(_landing, "SOLO", Vector2(110, 250), Vector2(360, 64), 42)
 	_solo.name = "Solo"
 	_solo.pressed.connect(open_solo)
-	for entry: Array in [
-		["CUSTOM GAMES", 350], ["THEATRE", 414], ["LEADERBOARDS", 510], ["OPTIONS", 606]
-	]:
+	# Co-op: a local server friends on the network can join.
+	var coop := _button(_landing, "CO-OP", Vector2(110, 350), Vector2(360, 56), 32)
+	coop.name = "Coop"
+	coop.pressed.connect(func() -> void: coop_requested.emit())
+	for entry: Array in [["THEATRE", 414], ["LEADERBOARDS", 510], ["OPTIONS", 606]]:
 		var placeholder := _button(_landing, entry[0], Vector2(110, entry[1]), Vector2(360, 56), 32)
 		placeholder.disabled = true
 		placeholder.focus_mode = Control.FOCUS_NONE

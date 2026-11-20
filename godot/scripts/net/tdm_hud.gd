@@ -31,6 +31,7 @@ extends CanvasLayer
 ## adds CAPS and DEF columns. Search and Destroy
 ## adds its round HUD beside this one (`snd_hud.gd`).
 
+const ZombiesBoard := preload("res://scripts/net/zombies_board.gd")
 const MenuStyle := preload("res://scripts/ui/menu_style.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
 const ScoreBlock := preload("res://scripts/net/score_block.gd")
@@ -176,10 +177,11 @@ func _process(delta: float) -> void:
 		_score.clock = _clock_text(phase, round.seconds_left) if round.phase == "live" else ""
 	_update_banner(phase, info)
 	_age_callout(delta)
-	_loadout_box.visible = not ladder
+	# Zombies starts everyone on the sidearm: the lobby only readies up.
+	_loadout_box.visible = not ladder and not zombies
 	_ladder_box.visible = ladder
 	_menu_eyebrow.text = String(info.get("mode_name", "Team Deathmatch")).to_upper()
-	_menu_title.text = "Weapon ladder" if ladder else "Choose class"
+	_menu_title.text = "Weapon ladder" if ladder else ("Ready up" if zombies else "Choose class")
 	_menu_panel.custom_minimum_size.x = 560.0 if ladder else 900.0
 	_age_chat(delta)
 
@@ -215,8 +217,16 @@ func _process(delta: float) -> void:
 	if phase == "lobby":
 		if show_hint:
 			_overlay.hint = (
-				"[%s] %s and ready  ·  %s"
-				% [key, "Weapon ladder" if ladder else "Choose class", _ready_count()]
+				"[%s] %s  ·  %s"
+				% [
+					key,
+					(
+						"Weapon ladder and ready"
+						if ladder
+						else ("Ready up" if zombies else "Choose class and ready")
+					),
+					_ready_count()
+				]
 			)
 		_menu_status.text = _ready_count()
 	else:
@@ -587,6 +597,9 @@ func _refresh_board() -> void:
 	_check_levels(info)
 	if info.get("free_for_all", false):
 		_refresh_ladder_board()
+		return
+	if info.mode == "zombies":
+		_board.sections = ZombiesBoard.sections(client.roster(), ALLY)
 		return
 	var my_team: int = info.my_team
 	var ctf: bool = info.mode == "ctf"
