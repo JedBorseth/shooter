@@ -38,19 +38,52 @@ pub const WEAPON_SECONDS: f32 = 15.0;
 const WEAPON_MASS: f32 = 3.5;
 
 const GROUP: &str = "corpse_yard";
+/// A killcam's replay is drawn under a node in this group: guns its bodies
+/// drop belong to the replay and go when it ends.
+pub const REPLAY_GROUP: &str = "killcam_replay";
 
 thread_local! {
     /// Guns let go of and waiting for the yard to take them (a corpse the
     /// yard is stepping drops its gun while the yard is busy).
-    static DROPS: RefCell<Vec<(Gd<Node3D>, Vector3, Vector3)>> = const { RefCell::new(Vec::new()) };
+    static DROPS: RefCell<Vec<Drop>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Lets go of a held gun: the scene's yard picks it up on its next frame, and
 /// it falls as a rigid body moving at `velocity` and turning at `spin`
 /// (radians a second).
+/// A gun dropped from under a killcam's replay ([`REPLAY_GROUP`]) is freed
+/// with the replay ([`CorpseYard::clear_replay_weapons`]).
 pub fn drop_weapon(tree: &Gd<SceneTree>, view: Gd<Node3D>, velocity: Vector3, spin: Vector3) {
     CorpseYard::of(tree);
-    DROPS.with_borrow_mut(|drops| drops.push((view, velocity, spin)));
+    let replay = in_replay(&view);
+    DROPS.with_borrow_mut(|drops| {
+        drops.push(Drop {
+            view,
+            velocity,
+            spin,
+            replay,
+        })
+    });
+}
+
+/// Whether `node` is drawn under a killcam's replay, or held by a body the
+/// replay left in the yard.
+fn in_replay(node: &Gd<Node3D>) -> bool {
+    let mut at = node.get_parent();
+    while let Some(parent) = at {
+        if parent.is_in_group(REPLAY_GROUP) {
+            return true;
+        }
+        at = parent.get_parent();
+    }
+    false
+}
+
+struct Drop {
+    view: Gd<Node3D>,
+    velocity: Vector3,
+    spin: Vector3,
+    replay: bool,
 }
 
 struct Corpse {
@@ -63,6 +96,8 @@ struct Corpse {
 struct Dropped {
     body: Gd<RigidBody3D>,
     age: f32,
+    /// Dropped in a killcam's replay.
+    replay: bool,
 }
 
 #[derive(GodotClass)]
@@ -114,9 +149,9 @@ impl INode3D for CorpseYard {
         self.corpses
             .retain(|c| c.sinking.is_none_or(|t| t < SINK_SECONDS));
 
-        for (view, velocity, spin) in DROPS.with_borrow_mut(std::mem::take) {
-            if view.is_instance_valid() {
-                self.take_weapon(view, velocity, spin);
+        for drop in DROPS.with_borrow_mut(std::mem::take) {
+            if drop.view.is_instance_valid() {
+                self.take_weapon(drop);
             }
         }
         self.weapons.retain(|w| w.body.is_instance_valid());
@@ -147,6 +182,13 @@ impl CorpseYard {
     #[func]
     pub fn weapon_count(&self) -> i64 {
         self.weapons.len() as i64
+    }
+
+    /// Guns lying that a killcam's replay dropped (tests).
+    #[func]
+    pub fn replay_weapon_count(&self) -> i64 {
+        let waiting = DROPS.with_borrow(|drops| drops.iter().filter(|d| d.replay).count());
+        (self.weapons.iter().filter(|w| w.replay).count() + waiting) as i64
     }
 
     /// The bodies, oldest first (tests).
@@ -205,7 +247,13 @@ impl CorpseYard {
         rig.queue_free();
     }
 
-    fn take_weapon(&mut self, mut view: Gd<Node3D>, velocity: Vector3, spin: Vector3) {
+    fn take_weapon(&mut self, drop: Drop) {
+        let Drop {
+            mut view,
+            velocity,
+            spin,
+            replay,
+        } = drop;
         let place = view.get_global_transform();
         let bounds = shown_bounds(&view);
         let mut body = RigidBody3D::new_alloc();
@@ -235,7 +283,30 @@ impl CorpseYard {
         }
         body.set_linear_velocity(velocity);
         body.set_angular_velocity(spin);
-        self.weapons.push_back(Dropped { body, age: 0.0 });
+        self.weapons.push_back(Dropped {
+            body,
+            age: 0.0,
+            replay,
+        });
+    }
+
+    /// Frees the guns a killcam's replay dropped, including any still
+    /// waiting to be taken: the replay is over.
+    pub fn clear_replay_weapons(&mut self) {
+        DROPS.with_borrow_mut(|drops| {
+            drops.retain_mut(|drop| {
+                if drop.replay && drop.view.is_instance_valid() {
+                    drop.view.queue_free();
+                }
+                !drop.replay
+            })
+        });
+        self.weapons.retain_mut(|dropped| {
+            if dropped.replay && dropped.body.is_instance_valid() {
+                dropped.body.queue_free();
+            }
+            !dropped.replay
+        });
     }
 }
 

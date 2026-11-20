@@ -18,9 +18,10 @@ use shooter_sim::net::lag::RemoteSample;
 use shooter_sim::weapon::{LoadStage, Reload, WeaponId};
 
 use super::remote::RemotePlayer;
-use crate::character::corpses::CorpseYard;
+use crate::character::corpses::{CorpseYard, REPLAY_GROUP};
 use crate::character::rig::SoldierRig;
 use crate::convert::to_godot;
+use crate::grenade_view::{GrenadeShow, HangingCloud};
 use crate::viewmodel::{ViewAction, ViewFrame};
 
 /// One frame of a killcam as the local player draws it.
@@ -211,6 +212,10 @@ pub struct Playing {
     hidden_corpses: Vec<Gd<SoldierRig>>,
     /// Wall-clock seconds the last frame has been held after the end.
     held: f32,
+    /// The replay's grenades in flight, their blasts, and smoke clouds.
+    grenades: GrenadeShow,
+    /// The replay tick grenades were last drawn at (blasts after it play).
+    grenades_tick: f64,
 }
 
 impl Playing {
@@ -224,6 +229,8 @@ impl Playing {
     ) -> Self {
         let mut root = Node3D::new_alloc();
         root.set_name("Killcam");
+        // Guns the replay's bodies drop go with it (`CorpseYard`).
+        root.add_to_group(REPLAY_GROUP);
         parent.add_child(&root);
         let mut bodies = Vec::new();
         for id in tape.ids_between(killcam.start_tick(), killcam.end_tick()) {
@@ -252,6 +259,8 @@ impl Playing {
             driver: ViewDriver::default(),
             hidden_corpses,
             held: 0.0,
+            grenades: GrenadeShow::default(),
+            grenades_tick: Playback::new(killcam).others_tick(),
         }
     }
 
@@ -279,6 +288,7 @@ impl Playing {
                 body.bind_mut().apply(&sample, replay_dt);
             }
         }
+        self.draw_grenades(tape, replay_dt);
         let sample = tape.sample(killer, self.playback.tick())?;
         let frame = self.driver.frame(&sample, replay_dt, cues);
         let (camera, zoom) = eye(&sample);
@@ -287,6 +297,44 @@ impl Playing {
             zoom,
             frame,
         })
+    }
+
+    /// The grenades on the tape at the replay's moment, drawn as the other
+    /// players are (behind the killer by the shot's rewind): models in
+    /// flight, a frag's or flashbang's blast as each goes off, and smoke
+    /// clouds aged to the moment.
+    fn draw_grenades(&mut self, tape: &Tape, dt: f32) {
+        let tick = self.playback.others_tick();
+        let mut parent = self.root.clone().upcast::<Node>();
+        self.grenades.begin();
+        for g in tape.grenades_at(tick) {
+            let key = (Some(g.owner), g.shot);
+            self.grenades
+                .place(&mut parent, key, g.kind, to_godot(g.position), 1e-3);
+        }
+        self.grenades.end();
+        self.grenades.draw(dt.max(1e-3));
+        if tick > self.grenades_tick {
+            for blast in tape.blasts_between(self.grenades_tick, tick) {
+                // Smoke clouds come from the tape's list of hanging clouds.
+                if blast.kind != shooter_sim::equipment::Kind::Smoke {
+                    let key = (Some(blast.owner), blast.shot);
+                    self.grenades
+                        .blast(&mut parent, key, blast.kind, to_godot(blast.position));
+                }
+            }
+            self.grenades_tick = tick;
+        }
+        let hanging: Vec<HangingCloud> = tape
+            .smokes_at(tick)
+            .into_iter()
+            .map(|s| HangingCloud {
+                key: (s.owner, s.shot),
+                at: to_godot(s.position),
+                age: s.age,
+            })
+            .collect();
+        self.grenades.sync_clouds(&mut parent, &hanging);
     }
 
     /// Wall-clock seconds the replay has held its last frame.
@@ -300,6 +348,9 @@ impl Playing {
         for (_, body) in &mut self.bodies {
             body.bind_mut().release_bodies();
         }
+        self.grenades.clear();
+        let tree = self.root.get_tree();
+        CorpseYard::of(&tree).bind_mut().clear_replay_weapons();
         self.root.queue_free();
         for corpse in &mut self.hidden_corpses {
             if corpse.is_instance_valid() {

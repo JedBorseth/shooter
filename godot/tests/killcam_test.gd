@@ -5,7 +5,8 @@ extends SceneTree
 ## have watched our own death for about two seconds, it replays the bot's
 ## kill from the bot's eyes (the camera at its eye, its live body hidden, a
 ## card naming it), the server holds the respawn until it is over, and
-## everything the replay drew is gone afterwards. A second death is skipped
+## everything the replay drew is gone afterwards, the guns its bodies dropped
+## included. A second death is skipped
 ## with the use key, and the respawn follows at once.
 ## Run from the repo root: godot --headless --path godot --script res://tests/killcam_test.gd
 
@@ -302,12 +303,15 @@ func _watch_death(main: Node, player: FpsPlayer, client: NetClient, skip: bool) 
 		_check(wait < 1.5, "%s: the respawn follows the skip at once, %.2f s" % [label, wait])
 	else:
 		var respawned_in_killcam := false
+		var replay_guns := 0
 		for i in 10 * Engine.physics_ticks_per_second:
 			if not client.in_killcam():
 				break
 			if player.is_alive():
 				respawned_in_killcam = true
+			replay_guns = maxi(replay_guns, _replay_guns())
 			await physics_frame
+		_check(replay_guns > 0, "%s: our body in the replay drops its gun" % label)
 		var length := (Time.get_ticks_msec() - started_at) / 1000.0
 		_check(not respawned_in_killcam, "%s: the server holds the respawn" % label)
 		_check(length > 4.0 and length < 5.5, "%s: it plays 4.5 s, played %.2f s" % [label, length])
@@ -318,8 +322,15 @@ func _watch_death(main: Node, player: FpsPlayer, client: NetClient, skip: bool) 
 		_check(player.is_alive(), "%s: we respawn once it is over" % label)
 	await _ticks(10)
 	_check(main.get_node_or_null("Killcam") == null, "%s: the replay is taken away" % label)
+	_check(_replay_guns() == 0, "%s: the guns the replay dropped go with it" % label)
 	_check(live != null and live.visible, "%s: the live bot shows again" % label)
 	_check(not player.in_killcam(), "%s: our own view is back" % label)
+
+
+## Guns lying that a killcam's replay dropped.
+func _replay_guns() -> int:
+	var yard := get_first_node_in_group(&"corpse_yard")
+	return 0 if yard == null else int(yard.call(&"replay_weapon_count"))
 
 
 ## Faces the bot until it kills us; false if it does not in DEATH_WAIT.
