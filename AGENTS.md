@@ -7,3 +7,7 @@ Before you build or change any feature a player can see, hear, or feel, or the s
 ## Land every change
 
 When a task changes files in this repository, finish it with the [ship-pr](.agents/skills/ship-pr/SKILL.md) skill: open a pull request, wait for every CI check to pass, fix any failures, and squash-merge it into `main`. Do this without being asked. Skip it only for read-only work, or when the user says not to push, not to merge, draft only, or local only.
+
+## Working on maps
+
+To see or edit a map, use the editor through its MCP bridge ([docs/editor-mcp.md](docs/editor-mcp.md)): `just agent-editor` starts an editor, `.mcp.json` connects you, and `godot_render_view` shows the open scene from any eye position. Pick props from `godot/assets/props/catalog.json` (`python3 tools/prop_catalog.py --find <tags>`), and follow the [map-design](.agents/skills/map-design/SKILL.md) skill for layouts.

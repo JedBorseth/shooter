@@ -7,13 +7,17 @@ signal client_connected()
 signal client_disconnected()
 signal request_handled(method: String)
 
+## The default port; GODOT_MCP_PORT overrides it (and the bridge reads the same
+## variable), so several editors, one per checkout, can serve agents at once.
 const PORT := 6505
 const BIND_HOST := "127.0.0.1"
 const MAX_REQUEST_SIZE := 1_048_576  # 1 MB safety limit
 
+var port := PORT
 var _server := TCPServer.new()
 var _clients: Array[StreamPeerTCP] = []
 var _client_buffers: Dictionary = {}  # StreamPeerTCP -> String (partial message buffer)
+var _busy: Dictionary = {}  # StreamPeerTCP -> true while a request waits on a frame
 
 # Handlers — lazy-loaded on first request
 var _editor_handler: RefCounted = null
@@ -26,9 +30,12 @@ var _resource_handler: RefCounted = null
 
 
 func _ready() -> void:
-	var err := _server.listen(PORT, BIND_HOST)
+	var from_env := OS.get_environment("GODOT_MCP_PORT")
+	if from_env.is_valid_int():
+		port = from_env.to_int()
+	var err := _server.listen(port, BIND_HOST)
 	if err != OK:
-		push_error("[Godot AI MCP] Failed to listen on %s:%d — error %d. Is another instance running?" % [BIND_HOST, PORT, err])
+		push_error("[Godot AI MCP] Failed to listen on %s:%d — error %d. Is another instance running? Set GODOT_MCP_PORT to use another port." % [BIND_HOST, port, err])
 		return
 	_init_handlers()
 
@@ -77,36 +84,37 @@ func _process(_delta: float) -> void:
 				var raw_bytes: PackedByteArray = data[1]
 				var text: String = raw_bytes.get_string_from_utf8()
 				_client_buffers[peer] += text
-				_process_buffer(peer)
+		if not _busy.has(peer):
+			_process_buffer(peer)
 
 		i -= 1
 
 
 func _process_buffer(peer: StreamPeerTCP) -> void:
-	## Extracts complete JSON lines from the buffer and processes them.
-	var buffer: String = _client_buffers[peer]
-
-	while true:
+	## Extracts complete JSON lines from the buffer and processes them, one at a
+	## time per client: a request may wait for a rendered frame (render_view).
+	_busy[peer] = true
+	while _client_buffers.has(peer):
+		var buffer: String = _client_buffers[peer]
 		var newline_pos := buffer.find("\n")
 		if newline_pos == -1:
 			# No complete message yet — check safety limit
 			if buffer.length() > MAX_REQUEST_SIZE:
 				push_warning("[Godot AI MCP] Buffer exceeded max size, clearing")
-				buffer = ""
+				_client_buffers[peer] = ""
 			break
 
 		var line := buffer.substr(0, newline_pos).strip_edges()
-		buffer = buffer.substr(newline_pos + 1)
+		_client_buffers[peer] = buffer.substr(newline_pos + 1)
 
 		if line.is_empty():
 			continue
 
-		var response := _handle_request(line)
-		if not response.is_empty():
+		var response: String = await _handle_request(line)
+		if not response.is_empty() and peer.get_status() == StreamPeerTCP.STATUS_CONNECTED:
 			var response_bytes := (response + "\n").to_utf8_buffer()
 			peer.put_data(response_bytes)
-
-	_client_buffers[peer] = buffer
+	_busy.erase(peer)
 
 
 func _handle_request(json_line: String) -> String:
@@ -130,7 +138,7 @@ func _handle_request(json_line: String) -> String:
 			"error": {"code": -32600, "message": "Missing 'method' field"}
 		})
 
-	var result = _dispatch(method, params)
+	var result = await _dispatch(method, params)
 
 	request_handled.emit(method)
 
@@ -204,6 +212,8 @@ func _dispatch(method: String, params: Dictionary) -> Variant:
 		# Viewport tools
 		"get_viewport_screenshot":
 			return _viewport_handler.get_viewport_screenshot(params)
+		"render_view":
+			return await _viewport_handler.render_view(params, self)
 
 		# Reflection tools
 		"api_lookup":
@@ -218,6 +228,7 @@ func _dispatch(method: String, params: Dictionary) -> Variant:
 func _remove_client(index: int) -> void:
 	var peer := _clients[index]
 	_client_buffers.erase(peer)
+	_busy.erase(peer)
 	peer.disconnect_from_host()
 	_clients.remove_at(index)
 	client_disconnected.emit()
