@@ -24,6 +24,7 @@ pub mod penetration;
 pub mod perk;
 pub mod player;
 pub mod progression;
+pub mod radar;
 pub mod rng;
 pub mod scavenger;
 pub mod score;

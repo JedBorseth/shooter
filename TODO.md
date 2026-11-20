@@ -216,7 +216,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Hardpoint zones for the testing arena (4), Nuketown (4), and Warehouse (5), checked on every map by `hardpoint_zones_test.gd` ([modes.md](docs/modes.md)).
 - [ ] Hardpoint follow-ups: announcer voice lines; on Nuketown only one of six bots reached the Cul-de-sac in a minute's test (its navigation mesh never baked on a headless server; fixed, worth re-checking the Cul-de-sac).
 - [x] Minimap, top left (`godot/scripts/net/minimap.gd`): each map's plan rendered from its collision by `godot/tools/build_minimaps.gd`, turning with the player (or north up), with teammates and the mode's objectives ([art-direction.md](docs/art-direction.md#minimap)).
-- [ ] Enemies on the minimap: red dots from unsuppressed fire, decided by the server.
+- [x] Enemies on the minimap: red dots where an unsuppressed weapon fired, for 3 seconds, decided by the server and sent only to the shooter's enemies (`rust/sim/src/radar.rs`).
 - [ ] Scorestreaks (Black Ops 2): earned from score within a life, three chosen in Create-a-Class; UAV, Counter-UAV, Care Package, and a lethal streak; bots earn and use them.
 - [ ] Perks that need streaks: Ghost, Blind Eye, Hardline, Hard Wired.
 - [x] Player names: sent in the hello (`Settings.player_name`), cleaned by the server, and listed in the roster.
