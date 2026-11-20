@@ -118,6 +118,12 @@ CS_AK = (
     ),
 )
 
+# Counter-Strike 2's XM1014, measured from in-game clips, for the SG-12.
+CS_XM1014 = (
+    "cs",
+    (("CA-6wHU0mNI.wav", 3.8, 5.6), ("CA-6wHU0mNI.wav", 6.5, 7.2), ("Ge6Ty0clcU4.wav", 24.2, 26.1)),
+)
+
 RECIPES = {
     "ak47": Recipe(
         sessions=(("C_25", "C_45", "C_39"), ("C_28", "C_48", "C_42")),
@@ -158,6 +164,45 @@ RECIPES = {
             -4.1,
         ),
         reference=CS_AK,
+    ),
+    # The SG-12: the Winchester Model 12 (12 gauge), near and behind the shooter,
+    # matched to Counter-Strike 2's XM1014. Held for listening (variant A).
+    "sg12": Recipe(
+        sessions=(("K_20", "K_19"), ("K_22", "K_21")),
+        weights=(0.0, -3.0),
+        wet_db=0.0, dense=1.4, drive=3.5, shave_db=13.0, seconds=1.3,
+        room=Room(t60_low=0.75, t60_high=0.5),
+        eq=(
+            1.3,
+            -3.1,
+            -12.1,
+            -15.0,
+            -15.0,
+            -15.0,
+            -15.0,
+            -15.0,
+            -15.0,
+            -15.0,
+            -15.0,
+            -12.0,
+            -5.6,
+            5.1,
+            6.2,
+            -1.1,
+            -0.3,
+            5.5,
+            8.2,
+            8.3,
+            8.7,
+            11.7,
+            12.0,
+            12.0,
+            12.0,
+            12.0,
+            12.0,
+        ),
+        reference=CS_XM1014,
+        lufs=-20.0,
     ),
 }
 
