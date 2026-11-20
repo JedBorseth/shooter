@@ -116,7 +116,7 @@ use shooter_sim::{Vec2, Vec3, rng};
 
 use super::bots::{
     BotBrain, BotGrenade, BotNavigation, BotObjective, BotPlayer, BotSmoke, BotWorld,
-    ObjectiveKind, THROW_CHECKS_PER_TICK, bake_area,
+    ObjectiveKind, RadarDot, THROW_CHECKS_PER_TICK, bake_area,
 };
 use super::discovery::QueryResponder;
 use super::horde::{Horde, HordeEvent, HordePlayer};
@@ -2793,6 +2793,29 @@ impl NetServer {
             })
             .collect();
         let mut throw_checks = THROW_CHECKS_PER_TICK;
+        // What each bot's minimap shows, as a player's would (jamming too).
+        let bot_radar: Vec<(u8, Vec<RadarDot>)> = self
+            .avatars
+            .iter()
+            .filter(|a| a.brain.is_some() && a.predicted.state.alive())
+            .map(|a| {
+                let floor = a.predicted.position.y;
+                let dots = self
+                    .radar_view(a)
+                    .blips
+                    .iter()
+                    .map(|b| {
+                        let at = b.position();
+                        (
+                            b.id,
+                            Vector3::new(at.x, floor, at.y),
+                            tick.saturating_sub(b.age),
+                        )
+                    })
+                    .collect();
+                (a.id, dots)
+            })
+            .collect();
         self.update_snd_plan();
         let mut objectives = self.bot_objectives();
         self.scavenger_objectives(&mut objectives);
@@ -2833,6 +2856,10 @@ impl NetServer {
                             grenades: &bot_grenades,
                             smokes: &smokes,
                             throw_checks: &mut throw_checks,
+                            radar: bot_radar
+                                .iter()
+                                .find(|(id, _)| *id == avatar.id)
+                                .map_or(&[], |(_, dots)| dots.as_slice()),
                         };
                         let objective = objectives
                             .iter()

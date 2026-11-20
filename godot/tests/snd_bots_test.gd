@@ -8,9 +8,12 @@ extends SceneTree
 ## godot --headless --path godot --script res://tests/snd_bots_test.gd
 
 const BOTS := 8
-## Rounds a team needs; the match is long enough for several plants.
-const ROUNDS := 3
-const SECONDS := 900
+## Rounds a team needs; the match is long enough for several plants. Bots
+## wait short of a site before they plant (Black Ops 2's carrier timing), so
+## some rounds end in a wipe-out first: four rounds at least keeps a match
+## without a plant rare (about one in a hundred on the bench's plant rate).
+const ROUNDS := 4
+const SECONDS := 1200
 
 var _port := 30000 + OS.get_process_id() % 20000
 var _failures := 0

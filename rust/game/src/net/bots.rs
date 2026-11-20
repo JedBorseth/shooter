@@ -60,6 +60,35 @@ const HEARING_RANGE: f32 = 7.0;
 const WAYPOINT_RADIUS: f32 = 0.8;
 /// Seconds between path updates.
 const REPATH_SECONDS: f32 = 2.0;
+/// An enemy on the minimap this close (metres) draws a patrol at once;
+/// farther ones (up to [`RADAR_PATROL_RANGE`]) every 5 to 10 seconds (Black
+/// Ops 2: 512 units, and 5 to 10 s, `bot_update_patrol`).
+const RADAR_RUSH: f32 = 13.0;
+const RADAR_PATROL: (f32, f32) = (5.0, 10.0);
+const RADAR_PATROL_RANGE: f32 = 60.0;
+/// Seconds a bot patrols toward a minimap dot before it gives up.
+const INVESTIGATE_SECONDS: f32 = 6.0;
+/// Seconds steps a bot heard keep its eyes that way.
+const HEARD_SECONDS: f32 = 2.0;
+/// How near (metres) something heard or on the minimap turns a bot's eyes
+/// while it walks, and while it guards a spot.
+const ALERT_WALKING: f32 = 20.0;
+const ALERT_GUARDING: f32 = 40.0;
+/// A path turning more than this (radians) within this many metres ahead
+/// is a corner the bot aims round before it steps out.
+const CORNER_ANGLE: f32 = 0.6;
+const CORNER_LOOK: f32 = 4.0;
+/// Health a bot in cover needs before it peeks out; seconds of each peek and
+/// of the cycle it repeats in.
+const PEEK_HEALTH: f32 = 60.0;
+const PEEK_SECONDS: f32 = 0.7;
+const PEEK_CYCLE: f32 = 2.0;
+/// Hard bots: enemies this close crouch them now and then mid-fight.
+const CROUCH_SHOT_RANGE: f32 = 15.0;
+/// Hard bots sprinting into an enemy this far away (metres), within this
+/// many seconds of seeing it, slide.
+const SLIDE_RANGE: (f32, f32) = (5.0, 14.0);
+const SLIDE_WINDOW: f32 = 0.35;
 /// Seconds a bot keeps hunting the spot where it last saw an enemy.
 const MEMORY_SECONDS: f32 = 4.0;
 /// Seconds of not getting anywhere before a bot jumps, and picks a new goal.
@@ -430,7 +459,14 @@ pub struct BotWorld<'a> {
     /// Throw checks left this tick ([`THROW_CHECKS_PER_TICK`]), shared by
     /// every bot.
     pub throw_checks: &'a mut u32,
+    /// The enemies on this bot's side's minimap (`shooter_sim::radar`): who,
+    /// where, and since when. Firing without a suppressor puts a player
+    /// there for a few seconds, a UAV everyone it sweeps.
+    pub radar: &'a [RadarDot],
 }
+
+/// An enemy on a bot's minimap: who, where, and since which tick.
+pub type RadarDot = (u8, Vector3, Tick);
 
 /// A live grenade, as bots know it.
 #[derive(Clone, Copy, Debug)]
@@ -535,6 +571,12 @@ pub struct BotBrain {
     blind: Option<Blind>,
     /// Already popped an objective's smoke this life.
     smoked: bool,
+    /// Enemy steps heard out of sight: where, and when.
+    heard: Option<(Vector3, Tick)>,
+    /// A minimap dot the bot is patrolling toward, since when; and no new
+    /// patrol to a far dot before `next_patrol`.
+    investigate: Option<(Vector3, Tick)>,
+    next_patrol: Tick,
     /// A frag that can reach the bot: when the bot noticed it, and the spot
     /// on the navigation mesh to run to.
     danger: Option<(Tick, Vector3)>,
@@ -603,6 +645,9 @@ impl BotBrain {
             seen: Vec::new(),
             blind: None,
             smoked: false,
+            heard: None,
+            investigate: None,
+            next_patrol: 0,
             danger: None,
             frags_thrown: 0,
             tacticals_thrown: 0,
@@ -703,6 +748,8 @@ impl BotBrain {
         self.seen.clear();
         self.blind = None;
         self.smoked = false;
+        self.heard = None;
+        self.investigate = None;
         self.danger = None;
         self.next_throw_check = tick + TICK_RATE;
     }
@@ -773,7 +820,13 @@ impl BotBrain {
             self.consider_cover(me, state, target.as_ref(), world);
         }
         if let Some((spot, until)) = self.cover {
-            if tick >= until || state.state.health >= 90.0 || running {
+            // Reloaded and healed enough, with the enemy in sight from the
+            // spot (a peek shows it): come out and fight from cover.
+            let weapon = state.state.combat.weapon();
+            let ready = u32::from(weapon.magazine) * 2 >= u32::from(weapon.id.def().magazine)
+                && state.state.health >= PEEK_HEALTH;
+            let peeked = ready && self.in_sight && target.is_some();
+            if tick >= until || state.state.health >= 90.0 || running || peeked {
                 self.cover = None;
                 self.goal = None;
             } else {
@@ -1237,11 +1290,15 @@ impl BotBrain {
             let flat = Vector3::new(to.x, 0.0, to.z).normalized_or_zero();
             let in_view = flat.dot(facing) >= (skill.fov * 0.5).cos();
             let hearing = perk::heard(enemy.perks, me.perks, true).range;
-            let noticed = in_view
-                || distance < HEARING_RANGE * hearing
-                || Some(enemy.id) == attacker
-                || Some(enemy.id) == current;
+            let heard = distance < HEARING_RANGE * hearing;
+            let noticed =
+                in_view || heard || Some(enemy.id) == attacker || Some(enemy.id) == current;
             if !noticed || world.smoke_between(eye, point) || !clear_line(world.space, eye, point) {
+                // Steps heard through a wall or round a corner: turn to
+                // where they come from. Crouched steps are too quiet.
+                if heard && enemy.crouch < 0.5 {
+                    self.heard = Some((enemy.feet, tick));
+                }
                 continue;
             }
             match self.seen.iter_mut().find(|(id, _, _)| *id == enemy.id) {
@@ -1300,8 +1357,28 @@ impl BotBrain {
             let seconds = 0.6 + self.random() * 0.9;
             self.strafe_until = tick + (seconds * TICK_RATE as f32) as Tick;
             want.crouch = distance > 18.0 && self.random() < 0.25;
+            // Hard bots crouch mid-gunfight up close, dropping their head out
+            // of the line of fire (there is no prone to drop-shot from).
+            if self.skill == Skill::Hard
+                && distance < CROUCH_SHOT_RANGE
+                && engagement.reacted(skill)
+                && self.random() < 0.5
+            {
+                want.crouch = true;
+            }
         } else {
             want.crouch = state.state.movement.stance == Stance::Crouching;
+        }
+        // Hard bots that run into a fight at a sprint slide into it.
+        if self.skill == Skill::Hard
+            && state.state.movement.sprinting
+            && engagement.seen_for < SLIDE_WINDOW
+            && (SLIDE_RANGE.0..SLIDE_RANGE.1).contains(&distance)
+        {
+            want.slide = true;
+            want.crouch = true;
+            want.wish = Vec2::new(self.strafe * 0.4, 1.0);
+            return;
         }
         // Close in on far targets, back off from very near ones.
         let forward = if distance > 35.0 {
@@ -1457,7 +1534,17 @@ impl BotBrain {
             want.sprint = want.wish.y > 0.8;
         } else {
             want.wish = Vec2::ZERO;
-            want.crouch = true;
+            // Crouched behind cover; once reloaded and patched up, stand
+            // and look over it now and then (above Easy), so a threat still
+            // there is seen and fought from cover.
+            let ready = u32::from(weapon.magazine) * 2 >= u32::from(def.magazine)
+                && state.state.health >= PEEK_HEALTH;
+            let cycle = (PEEK_CYCLE * TICK_RATE as f32) as Tick;
+            let peeking = self.skill != Skill::Easy
+                && ready
+                && (world.tick + u32::from(me.id) * 7) % cycle
+                    >= cycle - (PEEK_SECONDS * TICK_RATE as f32) as Tick;
+            want.crouch = !peeking;
             // Face where the threat would come from.
             let from = target.map(|t| t.feet).or(self.hurt_from.map(|(_, f, _)| f));
             if let Some(from) = from {
@@ -1502,10 +1589,30 @@ impl BotBrain {
                 ObjectiveKind::Hunt => me.feet.distance_to(spot) < ATTACK_CHASE,
             },
         };
-        let hunting = if let Some((spot, seen)) = self.last_seen
-            && tick.saturating_sub(seen) < memory
+        // Otherwise, above Easy, patrol toward an enemy on the minimap: at
+        // once when one is close, else every 5 to 10 seconds (Black Ops 2's
+        // `bot_update_patrol`).
+        if self.skill != Skill::Easy
+            && self.investigate.is_none()
+            && let Some((spot, distance)) = self.nearest_blip(me, world)
+            && (distance < RADAR_RUSH || tick >= self.next_patrol)
             && chase(spot)
         {
+            self.investigate = Some((spot, tick));
+            let wait = RADAR_PATROL.0 + self.random() * (RADAR_PATROL.1 - RADAR_PATROL.0);
+            self.next_patrol = tick + (wait * TICK_RATE as f32) as Tick;
+        }
+        let investigating = (INVESTIGATE_SECONDS * TICK_RATE as f32) as Tick;
+        if self.investigate.is_some_and(|(spot, since)| {
+            tick.saturating_sub(since) > investigating || horizontal_distance(spot, me.feet) < 2.0
+        }) {
+            self.investigate = None;
+        }
+        let lead = match self.last_seen {
+            Some((spot, seen)) if tick.saturating_sub(seen) < memory && chase(spot) => Some(spot),
+            _ => self.investigate.map(|(spot, _)| spot),
+        };
+        let hunting = if let Some(spot) = lead {
             if self.goal.is_none_or(|g| g.distance_to(spot) > 3.0) {
                 self.set_goal(spot, tick);
             }
@@ -1550,6 +1657,15 @@ impl BotBrain {
             .filter(|(_, _, t)| tick.saturating_sub(*t) < TICK_RATE * 2);
         if let Some((_, from, _)) = recently_hurt {
             goal_view = look::bearing(to_sim(me.eye(world.params)), to_sim(from));
+        } else if let Some(at) = self.alert(me, world, ALERT_WALKING) {
+            // Something heard or on the minimap close by: watch that way.
+            goal_view = look::bearing(to_sim(me.eye(world.params)), to_sim(at + Vector3::UP * 1.4));
+        } else if self.skill != Skill::Easy
+            && let Some(round) = self.corner_ahead(me)
+        {
+            // A turn just ahead: aim round it before stepping out.
+            goal_view = look::bearing(Vec3::ZERO, Vec3::new(round.x, 0.0, round.z));
+            goal_view.y = 0.0;
         }
         self.look = bot::turn_toward(self.look, goal_view, skill.turn_rate * 0.7, TICK_DT);
         want.wish = bot::wish_toward(self.look.x, direction);
@@ -1661,6 +1777,48 @@ impl BotBrain {
         Some(to_sim(waypoint - me.feet))
     }
 
+    /// The way round a corner the bot's path turns just ahead, if it does:
+    /// the direction of the leg after the next waypoint, when that waypoint
+    /// is within [`CORNER_LOOK`] metres and the path bends more than
+    /// [`CORNER_ANGLE`] there.
+    fn corner_ahead(&self, me: &BotPlayer) -> Option<Vec3> {
+        let next = *self.path.get(self.next_waypoint)?;
+        let after = *self.path.get(self.next_waypoint + 1)?;
+        if horizontal_distance(next, me.feet) > CORNER_LOOK {
+            return None;
+        }
+        let flat = |v: Vector3| Vec3::new(v.x, 0.0, v.z).normalize_or_zero();
+        let leg = flat(next - me.feet);
+        let round = flat(after - next);
+        (leg.length() > 0.0 && round.length() > 0.0 && leg.dot(round) < CORNER_ANGLE.cos())
+            .then_some(round)
+    }
+
+    /// Where the bot should watch, if anywhere: steps it heard in the last
+    /// couple of seconds, or the nearest enemy on its minimap within
+    /// `reach` metres.
+    fn alert(&self, me: &BotPlayer, world: &BotWorld, reach: f32) -> Option<Vector3> {
+        let recent = (HEARD_SECONDS * TICK_RATE as f32) as Tick;
+        if let Some((at, t)) = self.heard
+            && world.tick.saturating_sub(t) < recent
+        {
+            return Some(at);
+        }
+        self.nearest_blip(me, world)
+            .filter(|(_, d)| *d < reach)
+            .map(|(at, _)| at)
+    }
+
+    /// The nearest enemy on the bot's minimap, and how far it is.
+    fn nearest_blip(&self, me: &BotPlayer, world: &BotWorld) -> Option<(Vector3, f32)> {
+        world
+            .radar
+            .iter()
+            .map(|(_, at, _)| (*at, horizontal_distance(*at, me.feet)))
+            .filter(|(_, d)| *d < RADAR_PATROL_RANGE)
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+    }
+
     /// Stands guard at a held spot: crouched now and then, looking around
     /// slowly, and turning toward a shot.
     fn guard(
@@ -1683,6 +1841,10 @@ impl BotBrain {
             && tick.saturating_sub(t) < TICK_RATE * 2
         {
             goal_view = look::bearing(to_sim(me.eye(world.params)), to_sim(from));
+        } else if let Some(at) = self.alert(me, world, ALERT_GUARDING) {
+            // Watch where the enemy was heard or shows on the minimap.
+            goal_view = look::bearing(to_sim(me.eye(world.params)), to_sim(at + Vector3::UP * 1.4));
+            goal_view.y = goal_view.y.clamp(-0.3, 0.3);
         }
         self.look = bot::turn_toward(self.look, goal_view, skill.turn_rate * 0.4, TICK_DT);
         let _ = spot;
@@ -1854,12 +2016,13 @@ impl BotBrain {
     /// between presses.
     fn press(&mut self, mut want: Want, state: &Predicted) -> PlayerInput {
         let movement = &state.state.movement;
-        // A bot never means to slide. A slide counts as down, so a bot that
-        // wants to crouch doesn't press again and cancel it.
+        // A bot slides only when it means to (Hard). A slide counts as down,
+        // so a bot that wants to crouch doesn't press again and cancel it.
         let crouched = movement.stance != Stance::Standing;
-        // Crouching while sprinting would slide. Let go of the stick for a
-        // tick instead, which ends the sprint, and crouch on the next one.
-        let ends_sprint = want.crouch && !crouched && movement.sprinting;
+        // Otherwise crouching while sprinting would slide. Let go of the
+        // stick for a tick instead, which ends the sprint, and crouch on the
+        // next one.
+        let ends_sprint = want.crouch && !crouched && movement.sprinting && !want.slide;
         if ends_sprint {
             want.wish = Vec2::ZERO;
             want.sprint = false;
@@ -1920,6 +2083,8 @@ struct Want {
     tactical: bool,
     /// Hold interact (plant or defuse the charge).
     interact: bool,
+    /// Crouch at a sprint on purpose: slide.
+    slide: bool,
 }
 
 /// The map as a grenade's world, casting no more than `left` rays: a throw
@@ -2071,5 +2236,18 @@ mod tests {
         let stances = run(&mut brain, &mut p, crouch_running, 120);
         assert!(!stances.contains(&Stance::Sliding), "{stances:?}");
         assert_eq!(p.state.movement.stance, Stance::Crouching);
+    }
+
+    #[test]
+    fn a_hard_bot_meaning_to_slide_slides() {
+        let (mut brain, mut p) = sprinting_bot();
+        let slide_in = || Want {
+            wish: Vec2::new(0.0, 1.0),
+            crouch: true,
+            slide: true,
+            ..Default::default()
+        };
+        let stances = run(&mut brain, &mut p, slide_in, 10);
+        assert!(stances.contains(&Stance::Sliding), "{stances:?}");
     }
 }

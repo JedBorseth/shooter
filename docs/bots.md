@@ -43,6 +43,42 @@ Hardened, Hard between Hardened and Veteran (`Skill::params`).
 - **Being shot**: a bot turns to where the shot came from, and (above Easy)
   patrols toward the attacker (`bot_patrol_near_enemy`).
 
+### Minimap, footsteps, and gunfire
+
+Black Ops 2's bots know two sets of enemies (`bot_get_enemies`): all of them
+for some choices, and "on radar" ones for others: enemies who fired in the
+last 2 seconds, or everyone while the team has a UAV. Above Recruit they
+patrol toward the nearest enemy on radar every 5 to 10 seconds, at once when
+one is within 512 units (`bot_update_patrol`, `bot_patrol_near_enemy`); a
+Recruit only looks at whoever hurt it. Standing still, they look toward the
+nearest radar enemy (`bot_update_lookat`).
+
+Ours read the same minimap a player on their side sees (`shooter_sim::radar`:
+unsuppressed fire for 3 seconds, the team's UAV sweeps, nothing while an
+enemy Counter-UAV jams it):
+
+- Normal and Hard bots patrol toward the nearest dot within 60 m: at once
+  inside 13 m, otherwise every 5 to 10 seconds, giving up after 6 seconds.
+  Objectives still come first: a defender only chases near its spot, an
+  attacker near itself, a runner never.
+- Every skill turns its eyes to a dot within 20 m while walking, or 40 m
+  while guarding, and to enemy steps heard round a corner or through a wall
+  (within the 7 m hearing range, Dead Silence and Awareness applied;
+  crouched steps are too quiet).
+
+### Combat feel
+
+- **Corners** (Normal and Hard): where the path turns more than about 35°
+  within 4 m, the bot aims round the corner before stepping out.
+- **Cover**: a bot hiding to heal crouches, reloads, and, once its magazine is
+  half full and its health at 60, stands to look over its cover for 0.7 s in
+  every 2 s (not on Easy). If the threat is in sight then, it fights from
+  there instead of waiting to heal fully.
+- **Hard only**: a bot sprinting into an enemy 5 to 14 m away slides into the
+  fight, and up close (under 15 m) it crouches now and then mid-fight. This
+  game has no prone, so there is no drop shot; the crouch stands in for it.
+  Black Ops 2's bots do neither; the owner asked for them on Hard.
+
 ### Grenades
 
 - After losing sight of an enemy, a bot above Recruit throws its lethal and
