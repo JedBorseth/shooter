@@ -25,7 +25,7 @@
 //! player has not unlocked ([`Earned::check_class`]), as Call of Duty's
 //! servers do; others check only the class rules (`crate::class`).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::challenge;
 use crate::class::{Class, DefaultClass, Wildcard};
@@ -178,6 +178,48 @@ pub struct Earned {
     pub stats: Stats,
     /// Times the player has prestiged (0 before the first).
     pub prestige: u8,
+    /// Permanent unlock tokens not yet spent: one for each prestige.
+    pub tokens: u8,
+    /// Items unlocked for good with a token, whatever the level: "kind:key"
+    /// ("weapon:m40", "perk:ghost"); kinds as [`unlock_key`] gives them.
+    pub permanent: BTreeSet<String>,
+}
+
+/// Why the player cannot prestige or spend a token.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PrestigeError {
+    /// Prestige needs the top level.
+    NotTopLevel,
+    /// The master's prestige is the last.
+    Master,
+    NoToken,
+    /// The item is already unlocked, for good or by level.
+    AlreadyUnlocked,
+    /// Not an item a token unlocks.
+    Unknown,
+}
+
+/// The key a permanent unlock is kept under: "weapon:m40".
+pub fn unlock_key(kind: &str, key: &str) -> String {
+    format!("{kind}:{key}")
+}
+
+/// The level that unlocks an item, by kind ("weapon", "tactical", "perk",
+/// "wildcard", "streak") and key; none for anything a token cannot unlock.
+pub fn item_level(kind: &str, key: &str) -> Option<u8> {
+    match kind {
+        "weapon" => WeaponId::by_key(key)
+            .map(|id| id.def())
+            .filter(|def| def.plain() && def.unlock_level > 0)
+            .map(|def| def.unlock_level),
+        "tactical" => equipment::Kind::by_key(key)
+            .filter(|kind| !kind.lethal())
+            .map(tactical_level),
+        "perk" => Perk::by_key(key).map(perk_level),
+        "wildcard" => Wildcard::by_key(key).map(wildcard_level),
+        "streak" => Streak::by_key(key).map(Streak::unlock_level),
+        _ => None,
+    }
 }
 
 /// What one match added to a player's [`Earned`].
@@ -208,6 +250,60 @@ pub enum Locked {
 impl Earned {
     pub fn level(&self) -> u8 {
         rank(self.xp).level
+    }
+
+    /// At the master's prestige every item is unlocked, as Black Ops 2's
+    /// Prestige Master unlocks them all.
+    pub fn master(&self) -> bool {
+        self.prestige >= MAX_PRESTIGE
+    }
+
+    /// Whether an item needing `level` (of `kind` and `key`) is unlocked:
+    /// by level, by a token, or at the master's prestige.
+    pub fn has(&self, level: u8, kind: &str, key: &str) -> bool {
+        self.level() >= level || self.master() || self.permanent.contains(&unlock_key(kind, key))
+    }
+
+    /// Whether the player may prestige: at the top level, before the
+    /// master's.
+    pub fn can_prestige(&self) -> Result<(), PrestigeError> {
+        if self.master() {
+            return Err(PrestigeError::Master);
+        }
+        if self.level() < MAX_LEVEL {
+            return Err(PrestigeError::NotTopLevel);
+        }
+        Ok(())
+    }
+
+    /// Prestiges, as Black Ops 2 does: back to level 1, so level unlocks
+    /// lock again (Create-a-Class included), for the next prestige's emblem
+    /// and calling card and one permanent unlock token (none at the
+    /// master's, which unlocks everything). Kills with each weapon (its
+    /// attachments), stats, challenges, camos, cards, and items unlocked
+    /// with tokens are kept.
+    pub fn prestige_up(&mut self) -> Result<(), PrestigeError> {
+        self.can_prestige()?;
+        self.xp = 0;
+        self.prestige += 1;
+        if !self.master() {
+            self.tokens = self.tokens.saturating_add(1);
+        }
+        Ok(())
+    }
+
+    /// Spends a token to unlock an item for good.
+    pub fn unlock_permanent(&mut self, kind: &str, key: &str) -> Result<(), PrestigeError> {
+        let level = item_level(kind, key).ok_or(PrestigeError::Unknown)?;
+        if self.has(level, kind, key) {
+            return Err(PrestigeError::AlreadyUnlocked);
+        }
+        if self.tokens == 0 {
+            return Err(PrestigeError::NoToken);
+        }
+        self.tokens -= 1;
+        self.permanent.insert(unlock_key(kind, key));
+        Ok(())
     }
 
     /// Adds a match: its XP (score and bonus), kills with each weapon, and
@@ -248,13 +344,12 @@ impl Earned {
         if DefaultClass::ALL.iter().any(|d| d.class() == *class) {
             return Ok(());
         }
-        let level = self.level();
-        if level < CREATE_A_CLASS_LEVEL {
+        if self.level() < CREATE_A_CLASS_LEVEL && !self.master() {
             return Err(Locked::CreateAClass);
         }
         for gun in [class.primary, class.secondary].into_iter().flatten() {
             let def = gun.base.def();
-            if def.unlock_level > level {
+            if !self.has(def.unlock_level, "weapon", &def.key) {
                 return Err(Locked::Weapon(gun.base));
             }
             let kills = self.kills(&def.key);
@@ -266,13 +361,27 @@ impl Earned {
                 return Err(Locked::Attachment(gun.base, attachment));
             }
         }
-        if class.tacticals > 0 && tactical_level(class.tactical) > level {
+        if class.tacticals > 0
+            && !self.has(
+                tactical_level(class.tactical),
+                "tactical",
+                class.tactical.key(),
+            )
+        {
             return Err(Locked::Tactical(class.tactical));
         }
-        if let Some(perk) = class.perks.iter().find(|p| perk_level(*p) > level) {
+        if let Some(perk) = class
+            .perks
+            .iter()
+            .find(|p| !self.has(perk_level(*p), "perk", p.key()))
+        {
             return Err(Locked::Perk(perk));
         }
-        if let Some(wildcard) = class.wildcards.iter().find(|w| wildcard_level(*w) > level) {
+        if let Some(wildcard) = class
+            .wildcards
+            .iter()
+            .find(|w| !self.has(wildcard_level(*w), "wildcard", w.key()))
+        {
             return Err(Locked::Wildcard(wildcard));
         }
         Ok(())
@@ -280,8 +389,10 @@ impl Earned {
 
     /// Whether every streak in `loadout` is unlocked.
     pub fn check_streaks(&self, loadout: streak::Loadout) -> Result<(), Locked> {
-        let level = self.level();
-        match loadout.streaks().find(|s| s.unlock_level() > level) {
+        match loadout
+            .streaks()
+            .find(|s| !self.has(s.unlock_level(), "streak", s.key()))
+        {
             Some(streak) => Err(Locked::Streak(streak)),
             None => Ok(()),
         }
@@ -291,6 +402,72 @@ impl Earned {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prestige_resets_the_level_and_pays_a_token() {
+        let mut earned = Earned {
+            xp: xp_for_level(MAX_LEVEL),
+            ..Earned::default()
+        };
+        earned.weapon_kills.insert("m4".to_owned(), 40);
+        earned.stats.insert("w.m4.hs".to_owned(), 7);
+        assert_eq!(
+            Earned::default().can_prestige(),
+            Err(PrestigeError::NotTopLevel)
+        );
+        earned.prestige_up().expect("at the top level");
+        assert_eq!((earned.xp, earned.prestige, earned.tokens), (0, 1, 1));
+        // Kept: weapon kills and stats.
+        assert_eq!(earned.kills("m4"), 40);
+        assert_eq!(earned.stats.get("w.m4.hs"), Some(&7));
+        // The M40 is locked again, until a token unlocks it for good.
+        let m40 = WeaponId::expect("m40").def();
+        assert!(!earned.has(m40.unlock_level, "weapon", "m40"));
+        earned.unlock_permanent("weapon", "m40").expect("a token");
+        assert!(earned.has(m40.unlock_level, "weapon", "m40"));
+        assert_eq!(earned.tokens, 0);
+        assert_eq!(
+            earned.unlock_permanent("perk", "ghost"),
+            Err(PrestigeError::NoToken)
+        );
+        assert_eq!(
+            earned.unlock_permanent("weapon", "m4"),
+            Err(PrestigeError::AlreadyUnlocked)
+        );
+        assert_eq!(
+            earned.unlock_permanent("weapon", "nope"),
+            Err(PrestigeError::Unknown)
+        );
+    }
+
+    #[test]
+    fn the_masters_prestige_is_the_last_and_unlocks_everything() {
+        let mut earned = Earned {
+            prestige: MAX_PRESTIGE - 1,
+            xp: xp_for_level(MAX_LEVEL),
+            tokens: 3,
+            ..Earned::default()
+        };
+        earned.prestige_up().expect("the last prestige");
+        assert!(earned.master());
+        // No token for the master's prestige.
+        assert_eq!(earned.tokens, 3);
+        assert!(earned.has(MAX_LEVEL, "weapon", "dm7"));
+        earned.xp = xp_for_level(MAX_LEVEL);
+        assert_eq!(earned.prestige_up(), Err(PrestigeError::Master));
+        let custom = Class {
+            primary: Some(crate::class::Gun::plain(WeaponId::expect("m40"))),
+            ..Class::default()
+        };
+        assert!(
+            Earned {
+                prestige: MAX_PRESTIGE,
+                ..Earned::default()
+            }
+            .check_class(&custom)
+            .is_ok()
+        );
+    }
 
     #[test]
     fn a_match_adds_its_challenges_xp_once() {

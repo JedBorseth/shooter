@@ -25,6 +25,10 @@ static var _xp := 0
 static var _weapon_kills := {}
 static var _stats := {}
 static var _prestige := 0
+## Permanent unlock tokens not yet spent, and the items unlocked for good
+## ("weapon:m40").
+static var _tokens := 0
+static var _permanent := PackedStringArray()
 static var _loaded := false
 ## Called with (xp, kills, stats) after each `add` while signed in, to
 ## report it to the account.
@@ -56,6 +60,31 @@ static func stat(key: String) -> int:
 static func prestige() -> int:
 	_load()
 	return _prestige
+
+
+## Permanent unlock tokens not yet spent.
+static func tokens() -> int:
+	_load()
+	return _tokens
+
+
+## Prestiges here, signed out (`Progression.prestige_up`); signed in, the
+## account does it (`Online.prestige_up`). "" when done, otherwise why not.
+static func prestige_up() -> String:
+	var block := String(Progression.prestige_block(totals()))
+	if block != "":
+		return block
+	set_totals(Progression.prestige_up(totals()))
+	return ""
+
+
+## Spends a token on an item, signed out (`Online.unlock_permanent` signed
+## in). "" when done, otherwise why not.
+static func unlock_permanent(kind: String, key: String) -> String:
+	var result := Progression.unlock_permanent(totals(), kind, key)
+	if String(result.error) == "":
+		set_totals(result.totals)
+	return String(result.error)
 
 
 ## Adds a match: XP (score and bonus), weapon kills (plain weapon key to
@@ -93,6 +122,8 @@ static func totals() -> Dictionary:
 	return {
 		"xp": _xp,
 		"prestige": _prestige,
+		"tokens": _tokens,
+		"permanent": _permanent.duplicate(),
 		"weapon_kills": _weapon_kills.duplicate(),
 		"stats": _stats.duplicate(),
 	}
@@ -100,9 +131,20 @@ static func totals() -> Dictionary:
 
 static func _apply(progress: Dictionary) -> void:
 	_xp = maxi(int(progress.get("xp", 0)), 0)
-	_prestige = maxi(int(progress.get("prestige", 0)), 0)
+	_prestige = clampi(int(progress.get("prestige", 0)), 0, Progression.max_prestige())
+	_tokens = maxi(int(progress.get("tokens", 0)), 0)
+	_permanent = _strings(progress.get("permanent", []))
 	_weapon_kills = _counts(progress.get("weapon_kills", {}))
 	_stats = _counts(progress.get("stats", {}))
+
+
+static func _strings(value: Variant) -> PackedStringArray:
+	var out := PackedStringArray()
+	if value is Array or value is PackedStringArray:
+		for item: Variant in value:
+			if item is String:
+				out.append(item)
+	return out
 
 
 ## Whole counts by string key from a stored or received dictionary.
@@ -118,14 +160,19 @@ static func _counts(value: Variant) -> Dictionary:
 
 
 static func can_create_classes() -> bool:
-	return level() >= Progression.create_a_class_level()
+	return level() >= Progression.create_a_class_level() or prestige() >= Progression.max_prestige()
 
 
-## "" when the item is unlocked, otherwise what unlocks it ("Level 12").
+## "" when the item is unlocked (by level, for good with a token, or at the
+## master's prestige), otherwise what unlocks it ("Level 12").
 ## `kind` is "weapon", "tactical", "perk", "wildcard", or "streak".
 static func lock_reason(kind: String, key: String) -> String:
-	var needed := Progression.unlock_level(kind, key)
-	return "" if level() >= needed else "Level %d" % needed
+	_load()
+	# Only what unlocks follow, not the stats: menus ask this per item.
+	var unlocks := {"xp": _xp, "prestige": _prestige, "permanent": _permanent}
+	if Progression.has_item(unlocks, kind, key):
+		return ""
+	return "Level %d" % Progression.unlock_level(kind, key)
 
 
 ## "" when the attachment is unlocked on the weapon, otherwise how many
@@ -207,6 +254,8 @@ static func save() -> void:
 	config.set_value("progress", "weapon_kills", _weapon_kills)
 	config.set_value("progress", "stats", _stats)
 	config.set_value("progress", "prestige", _prestige)
+	config.set_value("progress", "tokens", _tokens)
+	config.set_value("progress", "permanent", _permanent)
 	var err := config.save(path())
 	if err != OK:
 		push_warning("Could not save %s (%s)." % [path(), error_string(err)])
@@ -223,6 +272,8 @@ static func _load() -> void:
 	_loaded = true
 	_xp = 0
 	_prestige = 0
+	_tokens = 0
+	_permanent = PackedStringArray()
 	_weapon_kills = {}
 	_stats = {}
 	var config := ConfigFile.new()
@@ -232,6 +283,9 @@ static func _load() -> void:
 	_xp = maxi(int(stored_xp), 0) if stored_xp is int else 0
 	var stored_prestige: Variant = config.get_value("progress", "prestige", 0)
 	_prestige = maxi(int(stored_prestige), 0) if stored_prestige is int else 0
+	var stored_tokens: Variant = config.get_value("progress", "tokens", 0)
+	_tokens = maxi(int(stored_tokens), 0) if stored_tokens is int else 0
+	_permanent = _strings(config.get_value("progress", "permanent", []))
 	_weapon_kills = _counts(config.get_value("progress", "weapon_kills", {}))
 	_stats = _counts(config.get_value("progress", "stats", {}))
 

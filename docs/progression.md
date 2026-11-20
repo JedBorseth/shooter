@@ -138,6 +138,32 @@ Each weapon has 14 ladder camos, Gold, Mastery, and Nebula, our own designs (`ru
 
 ![Create-a-Class: the M4A1's earned camos, with their patterns](media/camo-picker.jpg)
 
+## Prestige
+
+Black Ops 2's prestige (`rust/sim/src/progression.rs`):
+
+- **When.** At level 55, the player may enter the next prestige from the career screen's Prestige tab, after confirming.
+- **What resets.** The level goes back to 1. Everything a level unlocks locks again until it is reached, Create-a-Class (level 4) included, as in Black Ops 2.
+- **What it earns.**
+  - The next prestige's emblem and calling card.
+  - A permanent unlock token. A token unlocks one weapon, perk, wildcard, tactical, or scorestreak for good: it stays unlocked through every later prestige.
+- **What is kept.** Kills with each weapon (its attachments), stats, challenges, camos, calling cards, the combat record, and everything unlocked with a token.
+- **How many.** Ten prestiges, then **Master**, the last.
+  - At Master every item unlocks for good, as Black Ops 2's Prestige Master does, and no token comes with it.
+  - The level keeps counting XP to 55 and stays there.
+- **Where it is done.**
+  - Signed in, the account does it (`progress_prestige`, `progress_unlock` in `progress.lua`). It checks the level itself, so a game cannot prestige early.
+  - Signed out, the game does it (`ProgressStore.prestige_up`).
+  - Ranked servers check classes against the account's prestige and permanent unlocks.
+  - Prestige earned before accounts comes along with the one-time import, with no more tokens than prestiges.
+- **Emblems** (our own designs; `godot/scripts/ui/prestige_emblem.gd`, drawn as vector shapes).
+  - A hexagonal badge whose metal climbs with the prestige: steel for 1 to 3, bronze 4 to 6, gold 7 to 9 (one to three chevrons in each band), platinum with a star for 10, and crimson with a ringed star for Master.
+  - It shows beside the name on the scoreboard and in the kill feed, from the cosmetics each player shows (#368), and on the career screen.
+
+![The Prestige tab: every emblem, entering the next prestige, and spending a token](media/prestige-tab.jpg)
+
+![Prestige emblems beside names on the scoreboard and in the kill feed](media/prestige-scoreboard.jpg)
+
 ## Career screen
 
 **Career**, beside Options on the title screen, opens the player's challenges and combat record (`godot/scripts/ui/career_menu.gd`). Black Ops 2 keeps these in the Barracks.
@@ -180,4 +206,6 @@ The account stores `stats` beside `xp` and `weapon_kills` (`docker/online/nakama
   - Diamond is Gold on every weapon of a class (Call of Duty wiki, "Diamond Camouflage").
   - Dark Matter is Black Ops 3's camo for every class.
 - **Camos:** a camo is chosen per weapon in Create-a-Class, costs no point, sits under the weapon's wear, and shows for other players and in killcams, as Black Ops 2's do.
+- **Prestige:** Black Ops 2 has ten prestiges and Prestige Master, reached at level 55. Prestiging resets the level and what it unlocks, and earns the prestige's emblem and an unlock token for one permanent unlock; at Master everything unlocks (Activision support, "Achieving Prestige Master in Call of Duty: Black Ops II"; boostmatch.gg, "Black Ops 2 Prestige System"). Camos, challenges, and the combat record carry over. The prestige icon shows beside the name in lobbies, on the scoreboard, and in the kill feed.
+  - Deliberate differences: Black Ops 2 also offered a stat reset or an extra class slot for a token; here a token is only a permanent unlock. Weapon kills (attachments) are kept, so attachments need not be earned again.
 - **Names and designs** are our own. None of Black Ops 2's camo, challenge, or calling card names are used.

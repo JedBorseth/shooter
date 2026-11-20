@@ -9,13 +9,17 @@ extends Control
 ## challenges with their progress, XP, and what each awards.
 ## Combat record: career totals (K/D, win rate, accuracy, time played) and a
 ## line for each weapon.
+## Prestige: the emblems, entering the next prestige, and permanent unlock
+## tokens (`prestige_page.gd`).
 
 signal back_requested
 
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const MenuStyle := preload("res://scripts/ui/menu_style.gd")
+const PrestigeEmblem := preload("res://scripts/ui/prestige_emblem.gd")
+const PrestigePage := preload("res://scripts/ui/prestige_page.gd")
 
-const TABS := ["Challenges", "Combat Record"]
+const TABS := ["Challenges", "Combat Record", "Prestige"]
 ## Challenge categories, by `group.kind` of the challenges they hold.
 const CATEGORIES := [
 	["Weapons", ["weapon", "mastery"]],
@@ -41,6 +45,26 @@ var _rows_scroll: ScrollContainer
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_build()
+	show_tab(0)
+	show_category(0)
+
+
+## Builds the screen again from the player's totals (after a prestige or an
+## unlock), on tab `tab`.
+func rebuild(tab: int) -> void:
+	for child in get_children():
+		remove_child(child)
+		child.queue_free()
+	_tab_buttons.clear()
+	_pages.clear()
+	_category_buttons.clear()
+	_build()
+	show_tab(tab)
+	show_category(_category)
+
+
+func _build() -> void:
 	_totals = ProgressStore.totals()
 	_challenges = Progression.challenges(_totals)
 	var shade := ColorRect.new()
@@ -63,7 +87,10 @@ func _ready() -> void:
 	var pages := Control.new()
 	pages.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	layout.add_child(pages)
-	for page: Control in [_challenges_page(), _record_page()]:
+	var prestige: VBoxContainer = PrestigePage.new()
+	prestige.name = "Prestige"
+	prestige.changed.connect(rebuild.bind(2))
+	for page: Control in [_challenges_page(), _record_page(), prestige]:
 		page.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		pages.add_child(page)
 		_pages.append(page)
@@ -76,8 +103,6 @@ func _ready() -> void:
 	back.pressed.connect(func() -> void: back_requested.emit())
 	footer.add_child(back)
 	layout.add_child(footer)
-	show_tab(0)
-	show_category(0)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -86,7 +111,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		back_requested.emit()
 
 
-## Opens tab `index` (0 challenges, 1 combat record).
+## Opens tab `index` (0 challenges, 1 combat record, 2 prestige).
 func show_tab(index: int) -> void:
 	for i in _pages.size():
 		_pages[i].visible = i == index
@@ -267,12 +292,22 @@ func _challenge_row(challenge: Dictionary, with_group: bool) -> Control:
 
 func _header() -> Control:
 	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 16)
+	var prestige := int(_totals.get("prestige", 0))
+	if prestige > 0:
+		var emblem: Control = PrestigeEmblem.new()
+		emblem.prestige = prestige
+		emblem.custom_minimum_size = Vector2(64, 64)
+		emblem.size_flags_vertical = Control.SIZE_SHRINK_END
+		header.add_child(emblem)
 	var titles := VBoxContainer.new()
 	titles.add_theme_constant_override("separation", -4)
 	titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(titles)
 	var eyebrow := Label.new()
 	eyebrow.text = "CAREER"
+	if prestige > 0:
+		eyebrow.text += "  ·  " + String(Progression.prestige_name(prestige)).to_upper()
 	eyebrow.theme_type_variation = &"Eyebrow"
 	titles.add_child(eyebrow)
 	var name := Label.new()

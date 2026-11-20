@@ -9,7 +9,7 @@ use shooter_sim::challenge::{self, Challenge, Group, Reward};
 use shooter_sim::class::{self, Wildcard};
 use shooter_sim::equipment::Kind;
 use shooter_sim::perk::Perk;
-use shooter_sim::progression::{self, Earned, Outcome};
+use shooter_sim::progression::{self, Earned, Outcome, PrestigeError};
 use shooter_sim::tdm::Mode;
 
 use crate::net::accounts;
@@ -93,6 +93,64 @@ impl Progression {
         let ids: PackedStringArray = gain.challenges.iter().map(GString::from).collect();
         d.set("challenges", &ids);
         d
+    }
+
+    /// The last prestige (the master's).
+    #[func]
+    fn max_prestige() -> i32 {
+        i32::from(progression::MAX_PRESTIGE)
+    }
+
+    /// "" when `totals` may prestige, otherwise why not.
+    #[func]
+    fn prestige_block(totals: VarDictionary) -> GString {
+        match earned(&totals).can_prestige() {
+            Ok(()) => GString::new(),
+            Err(error) => GString::from(prestige_error(error)),
+        }
+    }
+
+    /// `totals` after prestiging (`Earned::prestige_up`), or `totals`
+    /// unchanged when it may not.
+    #[func]
+    fn prestige_up(totals: VarDictionary) -> VarDictionary {
+        let mut earned = earned(&totals);
+        match earned.prestige_up() {
+            Ok(()) => totals_dictionary(&earned),
+            Err(_) => totals,
+        }
+    }
+
+    /// Spends a token on an item (`kind`, `key`): `totals` (changed or
+    /// not) and `error` ("" when it worked).
+    #[func]
+    fn unlock_permanent(totals: VarDictionary, kind: GString, key: GString) -> VarDictionary {
+        let mut earned = earned(&totals);
+        let result = earned.unlock_permanent(&kind.to_string(), &key.to_string());
+        let mut d = VarDictionary::new();
+        d.set("totals", &totals_dictionary(&earned));
+        d.set("error", result.err().map_or("", prestige_error));
+        d
+    }
+
+    /// Whether `totals` has an item (`kind`, `key`) unlocked: by level, for
+    /// good with a token, or at the master's prestige.
+    #[func]
+    fn has_item(totals: VarDictionary, kind: GString, key: GString) -> bool {
+        let (kind, key) = (kind.to_string(), key.to_string());
+        progression::item_level(&kind, &key)
+            .is_none_or(|level| earned(&totals).has(level, &kind, &key))
+    }
+
+    /// The prestige's name: "" before the first, "Prestige 3", or "Master".
+    #[func]
+    fn prestige_name(prestige: i32) -> GString {
+        let name = match prestige {
+            p if p <= 0 => String::new(),
+            p if p >= i32::from(progression::MAX_PRESTIGE) => "Master".to_owned(),
+            p => format!("Prestige {p}"),
+        };
+        GString::from(&name)
     }
 
     /// Every challenge, with `progress` and `done` for `totals`: `id`,
@@ -226,7 +284,20 @@ fn totals_dictionary(earned: &Earned) -> VarDictionary {
         &accounts::counts_dictionary(&earned.weapon_kills),
     );
     d.set("stats", &accounts::counts_dictionary(&earned.stats));
+    d.set("tokens", i64::from(earned.tokens));
+    let permanent: PackedStringArray = earned.permanent.iter().map(GString::from).collect();
+    d.set("permanent", &permanent);
     d
+}
+
+fn prestige_error(error: PrestigeError) -> &'static str {
+    match error {
+        PrestigeError::NotTopLevel => "Prestige opens at the top level.",
+        PrestigeError::Master => "Master is the last prestige.",
+        PrestigeError::NoToken => "No unlock tokens left.",
+        PrestigeError::AlreadyUnlocked => "Already unlocked.",
+        PrestigeError::Unknown => "Not something a token unlocks.",
+    }
 }
 
 fn group_dictionary(group: Group) -> VarDictionary {

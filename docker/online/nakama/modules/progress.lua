@@ -7,7 +7,8 @@ progress; only this module writes it.
 
 Storage: collection "progress", key "progress", owned by the player, readable
 by the owner only, never writable by a client:
-  { xp = 0, prestige = 0, weapon_kills = { m4 = 12 },
+  { xp = 0, prestige = 0, tokens = 0, permanent = { "weapon:m40" },
+    weapon_kills = { m4 = 12 },
     stats = { kills = 40, ["w.m4.hs"] = 6 }, imported = false, award_at = <ms> }
 
 The XP a match reports already includes the challenges it completed: the
@@ -16,12 +17,19 @@ only adds.
 
 RPCs for the game (a signed-in session):
   progress_get       -> progress
-  progress_import    { xp, weapon_kills, stats }  once, into an account with
-                     no progress yet: brings the progress a player earned
-                     before accounts existed (the game's user://progress.cfg).
+  progress_import    { xp, weapon_kills, stats, prestige, tokens, permanent }
+                     once, into an account with no progress yet: brings the
+                     progress a player earned before accounts existed (the
+                     game's user://progress.cfg).
   progress_match     { xp, weapon_kills, stats }  a match the game itself
                      reports (local bot matches and servers that do not report
                      to this stack). Capped by the time since the last award.
+  progress_prestige  {}  at level 55, before the master's prestige: XP back
+                     to 0, the next prestige, and a permanent unlock token
+                     (none for the master's). Black Ops 2's prestige.
+  progress_unlock    { item = "weapon:m40" }  spends a token on an item, kept
+                     unlocked through every later prestige. The game checks
+                     the item is one a token unlocks and still locked.
 
 RPCs for trusted dedicated servers (called with the runtime HTTP key, never a
 session):
@@ -63,6 +71,9 @@ local MAX_REPORT_STATS = 192
 local STAT_PER_MINUTE = 600
 -- One trusted server report.
 local MAX_SERVER_STAT = 100000
+-- Prestige (rust/sim/src/progression.rs): ten, then the master's.
+local MAX_PRESTIGE = 11
+local MAX_PERMANENT = 64
 
 local function invalid(message)
   error({ message, 3 }) -- INVALID_ARGUMENT
@@ -139,10 +150,19 @@ local function read(user_id)
     xp = whole(value.xp, MAX_TOTAL_XP),
     weapon_kills = clean_kills(value.weapon_kills, MAX_TOTAL_XP),
     stats = {},
-    prestige = whole(value.prestige, 11),
+    prestige = whole(value.prestige, MAX_PRESTIGE),
+    tokens = whole(value.tokens, 255),
+    permanent = {},
     imported = value.imported == true,
     award_at = whole(value.award_at, 2 ^ 53),
   }
+  if type(value.permanent) == "table" then
+    for _, item in ipairs(value.permanent) do
+      if type(item) == "string" and item:match("^[a-z_]+:[a-z0-9_]+$") and #progress.permanent < MAX_PERMANENT then
+        table.insert(progress.permanent, item)
+      end
+    end
+  end
   if type(value.stats) == "table" then
     local count = 0
     for key, n in pairs(value.stats) do
@@ -217,12 +237,21 @@ end
 
 -- What a client sees: no bookkeeping fields.
 local function public(progress)
-  return nk.json_encode({
+  -- Lua cannot tell an empty list from an empty object; an empty list is
+  -- written as a placeholder and swapped for [] in the JSON.
+  local permanent = progress.permanent
+  if next(permanent) == nil then
+    permanent = "__empty_list__"
+  end
+  local json = nk.json_encode({
     xp = progress.xp,
     prestige = progress.prestige,
+    tokens = progress.tokens,
+    permanent = permanent,
     weapon_kills = object(progress.weapon_kills),
     stats = object(progress.stats),
   })
+  return (json:gsub('"__empty_list__"', "[]"))
 end
 
 local function session_user(context)
@@ -271,6 +300,20 @@ function M.progress_import(context, payload)
     end
     progress.imported = true
     add(progress, xp, kills, stats)
+    -- Prestige earned before accounts: its tokens and their unlocks come
+    -- along, no more of them than prestiges.
+    progress.prestige = whole(request.prestige, MAX_PRESTIGE)
+    local earned = math.min(progress.prestige, MAX_PRESTIGE - 1)
+    local spent = 0
+    if type(request.permanent) == "table" then
+      for _, item in ipairs(request.permanent) do
+        if type(item) == "string" and item:match("^[a-z_]+:[a-z0-9_]+$") and spent < earned then
+          table.insert(progress.permanent, item)
+          spent = spent + 1
+        end
+      end
+    end
+    progress.tokens = math.min(whole(request.tokens, 255), earned - spent)
   end))
 end
 
@@ -307,6 +350,45 @@ function M.progress_match(context, payload)
   end))
 end
 
+function M.progress_prestige(context, _payload)
+  local user_id = session_user(context)
+  return public(update(user_id, function(progress)
+    if progress.prestige >= MAX_PRESTIGE then
+      error({ "master is the last prestige", 9 }) -- FAILED_PRECONDITION
+    end
+    if progress.xp < MAX_IMPORT_XP then
+      error({ "prestige opens at level 55", 9 })
+    end
+    progress.xp = 0
+    progress.prestige = progress.prestige + 1
+    if progress.prestige < MAX_PRESTIGE then
+      progress.tokens = progress.tokens + 1
+    end
+    progress.imported = true
+  end))
+end
+
+function M.progress_unlock(context, payload)
+  local user_id = session_user(context)
+  local request = decode(payload)
+  local item = request.item
+  if type(item) ~= "string" or #item > 40 or not item:match("^[a-z_]+:[a-z0-9_]+$") then
+    invalid("item must look like weapon:m40")
+  end
+  return public(update(user_id, function(progress)
+    for _, owned in ipairs(progress.permanent) do
+      if owned == item then
+        error({ "already unlocked", 6 }) -- ALREADY_EXISTS
+      end
+    end
+    if progress.tokens < 1 or #progress.permanent >= MAX_PERMANENT then
+      error({ "no unlock tokens left", 9 })
+    end
+    progress.tokens = progress.tokens - 1
+    table.insert(progress.permanent, item)
+  end))
+end
+
 function M.server_progress_get(context, payload)
   local request = server_only(context, payload)
   return public((read(request.user_id)))
@@ -340,6 +422,8 @@ nk.register_req_before(refuse_progress, "DeleteStorageObjects")
 nk.register_rpc(M.progress_get, "progress_get")
 nk.register_rpc(M.progress_import, "progress_import")
 nk.register_rpc(M.progress_match, "progress_match")
+nk.register_rpc(M.progress_prestige, "progress_prestige")
+nk.register_rpc(M.progress_unlock, "progress_unlock")
 nk.register_rpc(M.server_progress_get, "server_progress_get")
 nk.register_rpc(M.server_progress_add, "server_progress_add")
 

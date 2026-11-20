@@ -590,7 +590,11 @@ func _gamepad(main: Node, player: FpsPlayer) -> void:
 	Input.action_press("look_right", 1.0)
 	await _sixtieths(30)
 	Input.action_release("look_right")
-	_check(player.view_yaw() == 0.0, "the right stick is locked out on keyboard and mouse")
+	# Within float noise: a turn is radians, not 1e-17.
+	_check(
+		absf(player.view_yaw()) < 1e-6,
+		"the right stick is locked out on keyboard and mouse, yaw %.3f" % player.view_yaw()
+	)
 
 	player.controller_input = true
 	_check(player.using_gamepad(), "the input device setting picks the controller")
@@ -626,7 +630,8 @@ func _gamepad(main: Node, player: FpsPlayer) -> void:
 			)
 		else:
 			_check(
-				player.view_yaw() == 0.0, "no rotation without assist, yaw %.3f" % player.view_yaw()
+				absf(player.view_yaw()) < 1e-6,
+				"no rotation without assist, yaw %.3f" % player.view_yaw()
 			)
 		dummy.global_position = player.global_position + Vector3(0, 0, -10)
 	player.aim_assist = true

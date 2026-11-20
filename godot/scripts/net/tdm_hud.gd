@@ -225,10 +225,10 @@ func _process(delta: float) -> void:
 						if ladder
 						else ("Ready up" if zombies else "Choose class and ready")
 					),
-					_ready_count()
+					Scoreboard.ready_count(client.roster())
 				]
 			)
-		_menu_status.text = _ready_count()
+		_menu_status.text = Scoreboard.ready_count(client.roster())
 	else:
 		if show_hint:
 			_overlay.hint = "[%s] Choose class for your next spawn" % key
@@ -428,18 +428,6 @@ func _results_title(info: Dictionary) -> String:
 	return "DEFEAT"
 
 
-func _ready_count() -> String:
-	var humans := 0
-	var ready := 0
-	for entry: Dictionary in client.roster():
-		if entry.bot:
-			continue
-		humans += 1
-		if entry.ready:
-			ready += 1
-	return "%d / %d ready" % [ready, humans]
-
-
 # --- Kill feed ---------------------------------------------------------------
 
 
@@ -458,12 +446,12 @@ func feed_lines() -> PackedStringArray:
 func _on_kill(killer: int, victim: int, weapon: String, headshot: bool) -> void:
 	var parts := []
 	if killer != victim and killer >= 0:
-		parts.append([client.name_of(killer), _team_colour(killer)])
+		parts.append_array(KillFeed.named(client, killer, _team_colour(killer)))
 	var key := _weapon_key(weapon)
 	parts.append({"icon": key, "name": weapon.to_upper()})
 	if headshot:
 		parts.append({"headshot": true})
-	parts.append([client.name_of(victim), _team_colour(victim)])
+	parts.append_array(KillFeed.named(client, victim, _team_colour(victim)))
 	var me := client.player_id()
 	_feed.add(parts, killer == me or victim == me)
 	if victim == me and killer != victim and killer >= 0:
@@ -647,6 +635,7 @@ func _refresh_board() -> void:
 						# In Search and Destroy the dead sit out the round.
 						"faint": snd and not entry.alive,
 						"tag": "BOT" if entry.bot else "",
+						"prestige": KillFeed.prestige_of(client, int(entry.id)),
 					}
 				)
 			)
@@ -706,6 +695,7 @@ func _refresh_ladder_board() -> void:
 					],
 					"me": entry.me,
 					"tag": "BOT" if entry.bot else "",
+					"prestige": KillFeed.prestige_of(client, int(entry.id)),
 				}
 			)
 		)

@@ -7,6 +7,7 @@ extends Control
 
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
+const PrestigeEmblem := preload("res://scripts/ui/prestige_emblem.gd")
 
 const WIDTH := 820.0
 const ROW_H := 32.0
@@ -20,8 +21,22 @@ var title_colour := UiTheme.TEXT
 var clock := ""
 ## Each section: {"name", "score" (String, may be empty), "colour",
 ## "headings": Array[String] (the first is the name column), "rows": Array of
-## {"cells": Array[String], "me": bool, "faint": bool, "tag": String}}.
+## {"cells": Array[String], "me": bool, "faint": bool, "tag": String,
+## "prestige": int (the emblem before the name; 0 for none)}}.
 var sections: Array = []
+
+
+## "3 / 5 ready": the players (not bots) of `roster` ready for the match.
+static func ready_count(roster: Array) -> String:
+	var humans := 0
+	var ready := 0
+	for entry: Dictionary in roster:
+		if entry.bot:
+			continue
+		humans += 1
+		if entry.ready:
+			ready += 1
+	return "%d / %d ready" % [ready, humans]
 
 
 func _process(_delta: float) -> void:
@@ -117,8 +132,15 @@ func _draw_section(section: Dictionary, left: float, right: float, y: float) -> 
 			var cell := String(cells[i])
 			if i == 0:
 				var font := Paint.DISPLAY if row.get("me", false) else Paint.LABEL
+				var name_x := left + 16.0
+				var prestige := int(row.get("prestige", 0))
+				if prestige > 0:
+					PrestigeEmblem.draw_emblem(
+						self, prestige, Vector2(name_x + 10.0, y + ROW_H / 2.0 - 1.0), 20.0
+					)
+					name_x += 26.0
 				var name_w := Paint.text(
-					self, font, cell, Vector2(left + 16.0, baseline), 16, text_colour, 0.0, false
+					self, font, cell, Vector2(name_x, baseline), 16, text_colour, 0.0, false
 				)
 				var tag: String = row.get("tag", "")
 				if tag != "":
@@ -126,7 +148,7 @@ func _draw_section(section: Dictionary, left: float, right: float, y: float) -> 
 						self,
 						Paint.LABEL,
 						tag,
-						Vector2(left + 16.0 + name_w + 10.0, baseline - 1.0),
+						Vector2(name_x + name_w + 10.0, baseline - 1.0),
 						11,
 						UiTheme.TEXT_FAINT,
 						1.5,

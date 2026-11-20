@@ -89,10 +89,52 @@ func _run() -> void:
 	_check(texts.has("13h 00m"), "13 hours played")
 	_check(texts.has("25.7%"), "the M4A1's accuracy")
 	await _shot("career_record")
+	await _check_prestige(career)
 	career.emit_signal("back_requested")
 	await _frames(5)
 	_check(title.get_node_or_null("CareerMenu") == null, "Back closes it")
 	_finish()
+
+
+## At the top level, entering prestige (after confirming) goes back to level
+## 1 with a token, which unlocks an item for good.
+func _check_prestige(career: Node) -> void:
+	career.call("show_tab", 2)
+	await _frames(3)
+	var enter := career.find_child("EnterPrestige", true, false) as Button
+	_check(enter != null and enter.disabled, "below the top level, prestige waits")
+	var totals := ProgressStore.totals()
+	totals["xp"] = 650000
+	ProgressStore.set_totals(totals)
+	career.call("rebuild", 2)
+	await _frames(3)
+	enter = career.find_child("EnterPrestige", true, false) as Button
+	_check(enter != null and not enter.disabled, "at the top level it opens")
+	if enter == null:
+		return
+	enter.pressed.emit()
+	await _frames(2)
+	_check(ProgressStore.prestige() == 0, "it asks first")
+	(career.find_child("Confirm", true, false) as Button).pressed.emit()
+	await _frames(5)
+	_check(
+		ProgressStore.prestige() == 1 and ProgressStore.xp() == 0 and ProgressStore.tokens() == 1,
+		"prestige 1: level 1 and a token"
+	)
+	_check(ProgressStore.lock_reason("weapon", "m40") != "", "the M40 locks again")
+	_check(ProgressStore.weapon_kills("m4") == 640, "weapon kills are kept")
+	_check(_texts(career).has("CAREER  ·  PRESTIGE 1"), "the header names the prestige")
+	await _shot("career_prestige")
+	var chip: Button = null
+	for button: Button in career.find_children("*", "Button", true, false):
+		if button.text.begins_with("M40"):
+			chip = button
+	_check(chip != null and not chip.disabled, "a token can unlock the M40")
+	if chip != null:
+		chip.pressed.emit()
+		await _frames(5)
+	_check(ProgressStore.lock_reason("weapon", "m40") == "", "the M40 is unlocked for good")
+	_check(ProgressStore.tokens() == 0, "the token is spent")
 
 
 func _finish() -> void:

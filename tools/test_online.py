@@ -78,7 +78,7 @@ class ProgressTest(unittest.TestCase):
     def test_new_account_starts_empty(self):
         self.assertEqual(
             rpc(self.token, "progress_get", {}),
-            {"xp": 0, "prestige": 0, "weapon_kills": {}, "stats": {}},
+            {"xp": 0, "prestige": 0, "tokens": 0, "permanent": [], "weapon_kills": {}, "stats": {}},
         )
 
     def test_import_once_into_an_empty_account(self):
@@ -88,7 +88,15 @@ class ProgressTest(unittest.TestCase):
             {"xp": 5000, "weapon_kills": {"m4": 12, "Bad Key": 3}, "stats": {"w.m4.hs": 4, "Bad Key": 1}},
         )
         self.assertEqual(
-            got, {"xp": 5000, "prestige": 0, "weapon_kills": {"m4": 12}, "stats": {"w.m4.hs": 4}}
+            got,
+            {
+                "xp": 5000,
+                "prestige": 0,
+                "tokens": 0,
+                "permanent": [],
+                "weapon_kills": {"m4": 12},
+                "stats": {"w.m4.hs": 4},
+            },
         )
         again = rpc(self.token, "progress_import", {"xp": 90000, "weapon_kills": {"m4": 99}})
         self.assertEqual(again["xp"], 5000, "a second import changes nothing")
@@ -134,7 +142,14 @@ class ProgressTest(unittest.TestCase):
         )
         self.assertEqual(
             got,
-            {"xp": 2400, "prestige": 0, "weapon_kills": {"ak47": 7}, "stats": {"kills": 9, "w.ak47.hs": 2}},
+            {
+                "xp": 2400,
+                "prestige": 0,
+                "tokens": 0,
+                "permanent": [],
+                "weapon_kills": {"ak47": 7},
+                "stats": {"kills": 9, "w.ak47.hs": 2},
+            },
         )
         server_rpc(
             "server_progress_add",
@@ -145,6 +160,8 @@ class ProgressTest(unittest.TestCase):
             {
                 "xp": 3000,
                 "prestige": 0,
+                "tokens": 0,
+                "permanent": [],
                 "weapon_kills": {"ak47": 8, "m870": 2},
                 "stats": {"kills": 12, "w.ak47.hs": 2},
             },
@@ -152,6 +169,23 @@ class ProgressTest(unittest.TestCase):
         self.assertEqual(rpc(self.token, "progress_get", {})["xp"], 3000)
         # Progress the server awarded closes the one-time import.
         self.assertEqual(rpc(self.token, "progress_import", {"xp": 1})["xp"], 3000)
+
+    def test_prestige_needs_the_top_level_and_pays_a_token(self):
+        with self.assertRaises(NakamaError):
+            rpc(self.token, "progress_prestige", {})
+        uid = user_id(self.token)
+        server_rpc("server_progress_add", {"user_id": uid, "xp": 100000})
+        server_rpc("server_progress_add", {"user_id": uid, "xp": 100000})
+        for _ in range(5):
+            server_rpc("server_progress_add", {"user_id": uid, "xp": 90000})
+        got = rpc(self.token, "progress_prestige", {})
+        self.assertEqual((got["xp"], got["prestige"], got["tokens"]), (0, 1, 1))
+        got = rpc(self.token, "progress_unlock", {"item": "weapon:m40"})
+        self.assertEqual((got["tokens"], got["permanent"]), (0, ["weapon:m40"]))
+        with self.assertRaises(NakamaError):
+            rpc(self.token, "progress_unlock", {"item": "perk:ghost"})
+        with self.assertRaises(NakamaError):
+            rpc(self.token, "progress_unlock", {"item": "Bad Item"})
 
     def test_server_rpcs_reject_unknown_players(self):
         with self.assertRaises(NakamaError):
