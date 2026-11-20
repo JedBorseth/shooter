@@ -303,7 +303,7 @@ Rounds with one life each (`rust/sim/src/snd.rs`, `--mode snd`), on Slamcity. Cl
 
 - [ ] Nakama (self-hosted, Docker Compose) for accounts, parties, and matchmaking. Use the `nakama-godot` client.
   - [x] The stack (`docker/online`), device sign-in with a username on the title screen, and progression and classes on the account ([docs/online.md](docs/online.md)).
-  - [ ] Dedicated servers check unlocks against the account and report match XP themselves (`server_progress_get`, `server_progress_add`).
+  - [x] Ranked dedicated servers (`--accounts`): sign-in required, unlocks checked against the account, match XP reported by the server ([docs/online.md](docs/online.md#ranked-servers)).
   - [ ] Parties and quick-play matchmaking per mode.
   - [ ] Sign in on another machine: link an email and password to the account.
   - [ ] Run the stack on the public host behind TLS, so `borseth.ddns.net:7350` answers.

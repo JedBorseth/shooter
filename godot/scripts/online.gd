@@ -213,9 +213,31 @@ func refresh_progress() -> void:
 		ProgressStore.set_totals(int(result.get("xp", 0)), _kills(result))
 
 
+## Reads the account's progress again in a few seconds, once a ranked
+## server has reported the match (its totals replace the game's own sum).
+func refresh_progress_soon(delay := 3.0) -> void:
+	if not is_signed_in():
+		return
+	await get_tree().create_timer(delay, true).timeout
+	await refresh_progress()
+
+
 ## The current session token, for a game server to check who we are, or "".
 func session_token() -> String:
 	return _session.token if is_signed_in() and _session != null else ""
+
+
+## The session token, refreshed first when it runs out within ten minutes
+## (a game left open past a day), or "" signed out.
+func fresh_session_token() -> String:
+	if not is_signed_in() or _session == null:
+		return ""
+	if _session.would_expire_in(600) and not _session.is_refresh_expired():
+		var refreshed: NakamaSession = await _nakama().session_refresh_async(_session)
+		if not refreshed.is_exception():
+			_session = refreshed
+			_save_session()
+	return _session.token
 
 
 func _start(name: String) -> bool:

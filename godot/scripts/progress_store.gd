@@ -42,14 +42,16 @@ static func weapon_kills(weapon: String) -> int:
 	return int(_weapon_kills.get(weapon, 0))
 
 
-## Adds XP and weapon kills (plain weapon key to count) and saves.
-static func add(xp_gained: int, kills: Dictionary = {}) -> void:
+## Adds XP and weapon kills (plain weapon key to count) and saves. Signed
+## in, `report` sends it to the account (`on_added`); a ranked server
+## reports the match itself, so its matches pass false.
+static func add(xp_gained: int, kills: Dictionary = {}, report := true) -> void:
 	_load()
 	_xp = maxi(_xp + maxi(xp_gained, 0), 0)
 	for weapon: String in kills:
 		_weapon_kills[weapon] = weapon_kills(weapon) + int(kills[weapon])
 	save()
-	if on_added.is_valid():
+	if report and on_added.is_valid():
 		on_added.call(maxi(xp_gained, 0), kills.duplicate())
 
 

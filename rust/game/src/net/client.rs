@@ -89,6 +89,8 @@ enum Status {
     Connecting,
     Joined,
     Rejected,
+    /// The server turned us away (`denied_reason`).
+    Denied,
     Disconnected,
 }
 
@@ -106,6 +108,10 @@ pub struct NetClient {
     /// The name other players see.
     #[export]
     player_name: GString,
+    /// Our account session token (`Online.session_token()`), or empty when
+    /// not signed in. A server that checks accounts needs it.
+    #[export]
+    account_token: GString,
     /// Primary weapon to ask for when joining (a weapon key, attachment
     /// variants included), or empty for the default class's. Ignored once a
     /// whole class is set (`set_class`).
@@ -178,6 +184,10 @@ pub struct NetClient {
     mode: Mode,
     /// The server's build, from its welcome.
     server_build: String,
+    /// The server reports our match XP to our account (its welcome).
+    ranked: bool,
+    /// Why the server turned us away.
+    denied_reason: String,
     /// Hardpoint: the map's zones, the live one, who holds it, and the
     /// server tick it moves on.
     zones: Vec<ZoneView>,
@@ -374,6 +384,7 @@ impl INode for NetClient {
                     let hello = ClientMessage::Hello {
                         version: PROTOCOL_VERSION,
                         name: self.player_name.to_string(),
+                        account: self.account_token.to_string(),
                     };
                     transport::send_reliable(&mut peer, &hello.encode());
                     let class = ClientMessage::Class(self.current_class());
@@ -1472,6 +1483,19 @@ impl NetClient {
         self.server_build.as_str().into()
     }
 
+    /// Whether the server reports our match XP to our account itself
+    /// (so the game must not report it too).
+    #[func]
+    fn is_ranked(&self) -> bool {
+        self.ranked
+    }
+
+    /// Why the server turned us away, or "".
+    #[func]
+    fn denied_reason(&self) -> GString {
+        self.denied_reason.as_str().into()
+    }
+
     /// True once the server accepted us.
     #[func]
     fn is_joined(&self) -> bool {
@@ -1512,6 +1536,7 @@ impl NetClient {
             Status::Connecting => "connecting",
             Status::Joined => "joined",
             Status::Rejected => "rejected (version mismatch)",
+            Status::Denied => "denied",
             Status::Disconnected => "disconnected",
         };
         d.set("status", status);
@@ -1578,11 +1603,13 @@ impl NetClient {
                 snapshot_interval,
                 mode,
                 server_build,
+                ranked,
                 ..
             } => {
                 if self.status != Status::Connecting {
                     return;
                 }
+                self.ranked = ranked;
                 self.server_build = clean_text(&server_build, MAX_BUILD_BYTES);
                 godot_print!(
                     "net client: joined as player {player_id} (server build {}, ours {})",
@@ -1613,6 +1640,14 @@ impl NetClient {
                     "net client: server speaks protocol {server_version}, this client {PROTOCOL_VERSION}"
                 );
                 self.status = Status::Rejected;
+                if let Some(server) = &mut self.server {
+                    server.peer_disconnect();
+                }
+            }
+            ServerMessage::Denied { reason } => {
+                godot_print!("net client: the server turned us away: {reason}");
+                self.denied_reason = clean_text(&reason, protocol::MAX_DENIED_BYTES);
+                self.status = Status::Denied;
                 if let Some(server) = &mut self.server {
                     server.peer_disconnect();
                 }
@@ -2672,7 +2707,7 @@ impl NetClient {
     }
 
     fn on_disconnected(&mut self) {
-        if self.status != Status::Rejected {
+        if !matches!(self.status, Status::Rejected | Status::Denied) {
             godot_warn!("net client: disconnected from the server");
             self.status = Status::Disconnected;
         }

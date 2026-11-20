@@ -56,7 +56,9 @@ func _process(_delta: float) -> void:
 func _exit_tree() -> void:
 	# Leaving mid-match: keep what we made, without the bonus.
 	if _playing_since >= 0.0 and (_score > 0 or not _kills.is_empty()):
-		ProgressStore.add(_score, _kills)
+		ProgressStore.add(_score, _kills, not _ranked())
+		if _ranked():
+			Online.refresh_progress_soon()
 	_reset()
 
 
@@ -86,7 +88,11 @@ func _finish(info: Dictionary) -> void:
 	var bonus := Progression.match_bonus(seconds, outcome)
 	var before := ProgressStore.xp()
 	var level_before := ProgressStore.level()
-	ProgressStore.add(_score + bonus, _kills)
+	# A ranked server reports the match to the account itself; the game
+	# shows the same sum now and takes the account's totals once it has.
+	ProgressStore.add(_score + bonus, _kills, not _ranked())
+	if _ranked():
+		Online.refresh_progress_soon()
 	var level_after := ProgressStore.level()
 	var unlocks := []
 	for level in range(level_before + 1, level_after + 1):
@@ -103,6 +109,10 @@ func _finish(info: Dictionary) -> void:
 	}
 	match_finished.emit(summary)
 	_reset()
+
+
+func _ranked() -> bool:
+	return client != null and is_instance_valid(client) and client.is_ranked()
 
 
 func _outcome(info: Dictionary) -> String:

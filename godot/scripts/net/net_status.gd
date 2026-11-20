@@ -95,7 +95,9 @@ func _process(delta: float) -> void:
 			_set_player_input(true)
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		return
-	if status.begins_with("rejected"):
+	if status == "denied":
+		_leave(String(client.denied_reason()))
+	elif status.begins_with("rejected"):
 		_leave(
 			(
 				"%s runs a different version of the game. Restart the Shooter launcher to update."

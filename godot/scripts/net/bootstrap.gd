@@ -9,6 +9,7 @@ extends Node
 ##            [--mode tdm|ctf|hardpoint|dom|gungame|snd|zombies] [--kills-per-weapon N]
 ##            [--rounds N]
 ##            [--score-limit N] [--time-limit MINUTES] [--auto-start]
+##            [--accounts URL]
 ##                                    run as a dedicated server (use with --headless);
 ##                                    with --bot-skill the bots play the match; without
 ##                                    it they are scripted targets, and --bot-damage
@@ -24,6 +25,12 @@ extends Node
 ##                                    N rounds (6), or co-op Zombies for up to
 ##                                    four players (on the zombies map);
 ##                                    --auto-start skips the lobby's ready-up.
+##                                    --accounts URL admits only players signed
+##                                    in to that account server, checks their
+##                                    unlocks, and reports their match XP; the
+##                                    server's HTTP key comes from the
+##                                    SHOOTER_ACCOUNTS_KEY environment variable
+##                                    (docs/online.md).
 ##   --directory HOST[:PORT]          developer override for the Internet directory;
 ##                                    not saved between launches
 ##   --connect HOST[:PORT] [--lag MS] [--jitter MS] [--loss PERCENT]
@@ -63,6 +70,7 @@ const TITLE_SCENE := "res://scenes/title_screen.tscn"
 const REMOTE_PLAYER_SCENE := "res://scenes/remote_player.tscn"
 const OVERLAY_SCRIPT := "res://scripts/net/net_overlay.gd"
 const STATUS_SCRIPT := "res://scripts/net/net_status.gd"
+const ACCOUNT_LINK_SCRIPT := "res://scripts/net/account_link.gd"
 const TDM_HUD_SCRIPT := "res://scripts/net/tdm_hud.gd"
 const MINIMAP_SCRIPT := "res://scripts/net/minimap.gd"
 const STREAKS_HUD_SCRIPT := "res://scripts/net/streaks_hud.gd"
@@ -152,7 +160,8 @@ func join(target: String, options: Dictionary = {}, arena: PackedScene = null) -
 		await tree.scene_changed
 		main = tree.current_scene
 	print("net join: scene ready; attaching client")
-	_attach_client(main, target, options)
+	var token: String = await Online.fresh_session_token()
+	_attach_client(main, target, options, token)
 
 
 ## Starts a dedicated server in a background process with `options` (`mode`,
@@ -305,6 +314,15 @@ func _start_server(options: Dictionary) -> void:
 	if options.has("rounds"):
 		server.rounds_to_win = maxi(int(options["rounds"]), 1)
 	server.auto_start = options.has("auto-start")
+	var accounts := String(options.get("accounts", ""))
+	if not accounts.is_empty():
+		server.accounts = true
+		var link := Node.new()
+		link.name = "AccountLink"
+		link.set_script(load(ACCOUNT_LINK_SCRIPT))
+		link.set("server", server)
+		link.set("address", accounts)
+		server.add_child(link)
 	server.pause_file = String(options.get("pause-file", ""))
 	if not server.pause_file.is_empty():
 		server.process_mode = Node.PROCESS_MODE_ALWAYS
@@ -315,7 +333,7 @@ func _start_server(options: Dictionary) -> void:
 		previous.queue_free()
 
 
-func _attach_client(main: Node, target: String, options: Dictionary) -> void:
+func _attach_client(main: Node, target: String, options: Dictionary, token := "") -> void:
 	var player := main.get_node_or_null("Player") as FpsPlayer
 	if player == null:
 		push_error("Net.join needs the arena's Player")
@@ -336,6 +354,7 @@ func _attach_client(main: Node, target: String, options: Dictionary) -> void:
 	client.player_path = player.get_path()
 	client.remote_player_scene = load(REMOTE_PLAYER_SCENE)
 	client.player_name = Settings.player_name
+	client.account_token = token
 	client.set_class(ClassStore.selected())
 	client.latency_ms = float(options.get("lag", 0))
 	client.jitter_ms = float(options.get("jitter", 0))

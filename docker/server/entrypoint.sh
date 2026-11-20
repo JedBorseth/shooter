@@ -22,6 +22,8 @@ set -- --port "$port" --query-port "$query_port" \
 [ -n "${SHOOTER_SCORE_LIMIT:-}" ] && set -- --score-limit "$SHOOTER_SCORE_LIMIT" "$@"
 [ -n "${SHOOTER_TIME_LIMIT:-}" ] && set -- --time-limit "$SHOOTER_TIME_LIMIT" "$@"
 [ -n "${SHOOTER_ROUNDS:-}" ] && set -- --rounds "$SHOOTER_ROUNDS" "$@"
+# Accounts: the HTTP key stays in SHOOTER_ACCOUNTS_KEY (read by the server).
+[ -n "${SHOOTER_ACCOUNTS:-}" ] && set -- --accounts "$SHOOTER_ACCOUNTS" "$@"
 case "${SHOOTER_AUTO_START:-}" in
 1 | true | yes) set -- --auto-start "$@" ;;
 esac
