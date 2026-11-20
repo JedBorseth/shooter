@@ -16,6 +16,7 @@ extends Node3D
 ## The server decides everything; this only draws `NetClient.flag_info()` and
 ## reacts to `NetClient.flag_played`.
 
+const Paint := preload("res://scripts/ui/hud_paint.gd")
 const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const CLOTH_SHADER := preload("res://shaders/flag_cloth.gdshader")
 const MatchBanner := preload("res://scripts/net/match_banner.gd")
@@ -428,7 +429,7 @@ func _draw_marker(camera: Camera3D, font: Font, size: Vector2, marker: Dictionar
 		if distance < MARKER_HIDE_DISTANCE:
 			return
 	var world: Vector3 = marker.position + Vector3.UP * MARKER_LIFT
-	var point := camera.unproject_position(world)
+	var point := Paint.screen_point(camera, world)
 	var behind := camera.is_position_behind(world)
 	var bounds := Rect2(Vector2.ONE * SCREEN_MARGIN, size - Vector2.ONE * SCREEN_MARGIN * 2.0)
 	var on_screen := not behind and bounds.has_point(point)

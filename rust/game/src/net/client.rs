@@ -530,7 +530,10 @@ impl INode for NetClient {
     }
 
     fn exit_tree(&mut self) {
-        if let Some(server) = &mut self.server {
+        // A server that already went away has no peer left to tell.
+        if let Some(server) = &mut self.server
+            && server.is_active()
+        {
             server.peer_disconnect_now();
         }
         // The player may already be gone when the whole scene is torn down.

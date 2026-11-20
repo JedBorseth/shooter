@@ -64,12 +64,19 @@ pub fn send_reliable(peer: &mut Gd<ENetPacketPeer>, bytes: &[u8]) {
     );
 }
 
-/// ENet's smoothed round-trip time in milliseconds.
+/// ENet's smoothed round-trip time in milliseconds (0 once the peer has
+/// gone: Godot errors on statistics of a disconnected peer).
 pub fn round_trip_ms(peer: &Gd<ENetPacketPeer>) -> f64 {
+    if !peer.is_active() {
+        return 0.0;
+    }
     peer.get_statistic(PeerStatistic::ROUND_TRIP_TIME)
 }
 
-/// ENet's packet loss estimate, 0 to 1.
+/// ENet's packet loss estimate, 0 to 1 (0 once the peer has gone).
 pub fn packet_loss(peer: &Gd<ENetPacketPeer>) -> f64 {
+    if !peer.is_active() {
+        return 0.0;
+    }
     peer.get_statistic(PeerStatistic::PACKET_LOSS) / f64::from(ENetPacketPeer::PACKET_LOSS_SCALE)
 }
