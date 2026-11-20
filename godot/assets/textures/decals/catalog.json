@@ -1,0 +1,895 @@
+{
+ "about": "Written by tools/decal_catalog.py --write from tools/decal_library.py. Sizes are suggested projection footprints in metres (image width by height).",
+ "decals": {
+  "asphalt_broken_joint": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/asphalt_broken_joint_albedo.png",
+    "normal": "res://assets/textures/decals/asphalt_broken_joint_normal.png",
+    "orm": "res://assets/textures/decals/asphalt_broken_joint_orm.png"
+   },
+   "size": [
+    2,
+    0.5
+   ],
+   "tags": [
+    "floor",
+    "road",
+    "damage",
+    "asphalt",
+    "crack"
+   ],
+   "source": "https://ambientcg.com/a/AsphaltDamageSet001",
+   "asset": "AsphaltDamageSet001",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "asphalt_damage": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/asphalt_damage_albedo.png",
+    "normal": "res://assets/textures/decals/asphalt_damage_normal.png"
+   },
+   "size": [
+    1.2,
+    1.2
+   ],
+   "tags": [
+    "floor",
+    "road",
+    "damage",
+    "crack"
+   ],
+   "source": "https://ambientcg.com/a/AsphaltDamage001",
+   "asset": "AsphaltDamage001",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "asphalt_failed_patch": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/asphalt_failed_patch_albedo.png",
+    "normal": "res://assets/textures/decals/asphalt_failed_patch_normal.png",
+    "orm": "res://assets/textures/decals/asphalt_failed_patch_orm.png"
+   },
+   "size": [
+    2,
+    0.48
+   ],
+   "tags": [
+    "floor",
+    "road",
+    "damage",
+    "asphalt",
+    "crack"
+   ],
+   "source": "https://ambientcg.com/a/AsphaltDamageSet001",
+   "asset": "AsphaltDamageSet001",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "asphalt_hairline_cracks": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/asphalt_hairline_cracks_albedo.png",
+    "normal": "res://assets/textures/decals/asphalt_hairline_cracks_normal.png",
+    "orm": "res://assets/textures/decals/asphalt_hairline_cracks_orm.png"
+   },
+   "size": [
+    2,
+    0.5
+   ],
+   "tags": [
+    "floor",
+    "road",
+    "damage",
+    "asphalt",
+    "crack"
+   ],
+   "source": "https://ambientcg.com/a/AsphaltDamageSet001",
+   "asset": "AsphaltDamageSet001",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "asphalt_spalled_seam": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/asphalt_spalled_seam_albedo.png",
+    "normal": "res://assets/textures/decals/asphalt_spalled_seam_normal.png",
+    "orm": "res://assets/textures/decals/asphalt_spalled_seam_orm.png"
+   },
+   "size": [
+    2,
+    0.5
+   ],
+   "tags": [
+    "floor",
+    "road",
+    "damage",
+    "asphalt"
+   ],
+   "source": "https://ambientcg.com/a/AsphaltDamageSet001",
+   "asset": "AsphaltDamageSet001",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "brick_gutter": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/brick_gutter_albedo.png",
+    "normal": "res://assets/textures/decals/brick_gutter_normal.png",
+    "orm": "res://assets/textures/decals/brick_gutter_orm.png"
+   },
+   "size": [
+    0.5,
+    2
+   ],
+   "tags": [
+    "floor",
+    "road",
+    "paving",
+    "brick",
+    "drain"
+   ],
+   "source": "https://ambientcg.com/a/PavingEdge001",
+   "asset": "PavingEdge001",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "brown_runoff": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/brown_runoff_albedo.png",
+    "normal": "res://assets/textures/decals/brown_runoff_normal.png",
+    "orm": "res://assets/textures/decals/brown_runoff_orm.png"
+   },
+   "size": [
+    0.4,
+    1.6
+   ],
+   "tags": [
+    "wall",
+    "grime",
+    "water",
+    "stain"
+   ],
+   "source": "https://ambientcg.com/a/Leaking006",
+   "asset": "Leaking006",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "bullet_hole": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/bullet_hole_albedo.png",
+    "normal": "res://assets/textures/decals/bullet_hole_normal.png"
+   },
+   "size": [
+    0.18,
+    0.18
+   ],
+   "tags": [
+    "wall",
+    "floor",
+    "damage",
+    "impact"
+   ],
+   "source": "https://github.com/JedBorseth/shooter/blob/main/tools/build_decals.py",
+   "asset": null,
+   "authors": [
+    "This project"
+   ],
+   "license": "CC0"
+  },
+  "cardboard_folded_flap": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/cardboard_folded_flap_albedo.png",
+    "normal": "res://assets/textures/decals/cardboard_folded_flap_normal.png",
+    "orm": "res://assets/textures/decals/cardboard_folded_flap_orm.png"
+   },
+   "size": [
+    0.42,
+    0.53
+   ],
+   "tags": [
+    "floor",
+    "warehouse",
+    "litter",
+    "cardboard"
+   ],
+   "source": "https://ambientcg.com/a/CardboardSet001",
+   "asset": "CardboardSet001",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "cardboard_printed_scrap": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/cardboard_printed_scrap_albedo.png",
+    "normal": "res://assets/textures/decals/cardboard_printed_scrap_normal.png",
+    "orm": "res://assets/textures/decals/cardboard_printed_scrap_orm.png"
+   },
+   "size": [
+    0.43,
+    0.42
+   ],
+   "tags": [
+    "floor",
+    "warehouse",
+    "litter",
+    "cardboard"
+   ],
+   "source": "https://ambientcg.com/a/CardboardSet001",
+   "asset": "CardboardSet001",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "cardboard_taped_scrap": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/cardboard_taped_scrap_albedo.png",
+    "normal": "res://assets/textures/decals/cardboard_taped_scrap_normal.png",
+    "orm": "res://assets/textures/decals/cardboard_taped_scrap_orm.png"
+   },
+   "size": [
+    0.38,
+    0.46
+   ],
+   "tags": [
+    "floor",
+    "warehouse",
+    "litter",
+    "cardboard"
+   ],
+   "source": "https://ambientcg.com/a/CardboardSet001",
+   "asset": "CardboardSet001",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "cardboard_torn_corner": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/cardboard_torn_corner_albedo.png",
+    "normal": "res://assets/textures/decals/cardboard_torn_corner_normal.png",
+    "orm": "res://assets/textures/decals/cardboard_torn_corner_orm.png"
+   },
+   "size": [
+    0.45,
+    0.47
+   ],
+   "tags": [
+    "floor",
+    "warehouse",
+    "litter",
+    "cardboard"
+   ],
+   "source": "https://ambientcg.com/a/CardboardSet001",
+   "asset": "CardboardSet001",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "cracked_manhole": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/cracked_manhole_albedo.png",
+    "normal": "res://assets/textures/decals/cracked_manhole_normal.png",
+    "orm": "res://assets/textures/decals/cracked_manhole_orm.png"
+   },
+   "size": [
+    0.9,
+    0.9
+   ],
+   "tags": [
+    "floor",
+    "road",
+    "manhole",
+    "concrete",
+    "damage",
+    "crack"
+   ],
+   "source": "https://ambientcg.com/a/ManholeCover008",
+   "asset": "ManholeCover008",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "crosswalk": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/crosswalk_albedo.png",
+    "normal": "res://assets/textures/decals/crosswalk_normal.png"
+   },
+   "size": [
+    4,
+    4
+   ],
+   "tags": [
+    "floor",
+    "road",
+    "marking"
+   ],
+   "source": "https://ambientcg.com/a/RoadLines020C",
+   "asset": "RoadLines020C",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "dirt_litter_patch": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/dirt_litter_patch_albedo.png",
+    "normal": "res://assets/textures/decals/dirt_litter_patch_normal.png",
+    "orm": "res://assets/textures/decals/dirt_litter_patch_orm.png"
+   },
+   "size": [
+    0.64,
+    0.6
+   ],
+   "tags": [
+    "floor",
+    "road",
+    "dirt",
+    "grime",
+    "litter"
+   ],
+   "source": "https://ambientcg.com/a/AsphaltDamageSet002",
+   "asset": "AsphaltDamageSet002",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "dirt_round_patch": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/dirt_round_patch_albedo.png",
+    "normal": "res://assets/textures/decals/dirt_round_patch_normal.png",
+    "orm": "res://assets/textures/decals/dirt_round_patch_orm.png"
+   },
+   "size": [
+    0.65,
+    0.65
+   ],
+   "tags": [
+    "floor",
+    "road",
+    "dirt",
+    "grime",
+    "scuff"
+   ],
+   "source": "https://ambientcg.com/a/AsphaltDamageSet002",
+   "asset": "AsphaltDamageSet002",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "dirt_scattered_patch": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/dirt_scattered_patch_albedo.png",
+    "normal": "res://assets/textures/decals/dirt_scattered_patch_normal.png",
+    "orm": "res://assets/textures/decals/dirt_scattered_patch_orm.png"
+   },
+   "size": [
+    0.8,
+    0.8
+   ],
+   "tags": [
+    "floor",
+    "road",
+    "dirt",
+    "grime",
+    "gravel"
+   ],
+   "source": "https://ambientcg.com/a/AsphaltDamageSet002",
+   "asset": "AsphaltDamageSet002",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "dirt_swept_patch": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/dirt_swept_patch_albedo.png",
+    "normal": "res://assets/textures/decals/dirt_swept_patch_normal.png",
+    "orm": "res://assets/textures/decals/dirt_swept_patch_orm.png"
+   },
+   "size": [
+    0.71,
+    0.87
+   ],
+   "tags": [
+    "floor",
+    "road",
+    "dirt",
+    "grime",
+    "scuff"
+   ],
+   "source": "https://ambientcg.com/a/AsphaltDamageSet002",
+   "asset": "AsphaltDamageSet002",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "dirt_tyre_tracks": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/dirt_tyre_tracks_albedo.png",
+    "normal": "res://assets/textures/decals/dirt_tyre_tracks_normal.png",
+    "orm": "res://assets/textures/decals/dirt_tyre_tracks_orm.png"
+   },
+   "size": [
+    1.8,
+    0.45
+   ],
+   "tags": [
+    "floor",
+    "dirt",
+    "tyre",
+    "tracks"
+   ],
+   "source": "https://ambientcg.com/a/TireTracks001",
+   "asset": "TireTracks001",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "drips": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/drips_albedo.png",
+    "normal": "res://assets/textures/decals/drips_normal.png"
+   },
+   "size": [
+    1,
+    1
+   ],
+   "tags": [
+    "wall",
+    "grime",
+    "water"
+   ],
+   "source": "https://ambientcg.com/a/Leaking016B",
+   "asset": "Leaking016B",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "edge_lines": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/edge_lines_albedo.png",
+    "normal": "res://assets/textures/decals/edge_lines_normal.png"
+   },
+   "size": [
+    4,
+    4
+   ],
+   "tags": [
+    "floor",
+    "road",
+    "marking"
+   ],
+   "source": "https://ambientcg.com/a/RoadLines023C",
+   "asset": "RoadLines023C",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "graffiti_angular_tag": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/graffiti_angular_tag_albedo.png",
+    "normal": "res://assets/textures/decals/graffiti_angular_tag_normal.png",
+    "orm": "res://assets/textures/decals/graffiti_angular_tag_orm.png"
+   },
+   "size": [
+    0.72,
+    0.68
+   ],
+   "tags": [
+    "wall",
+    "graffiti",
+    "paint"
+   ],
+   "source": "https://ambientcg.com/a/GraffitiSet001",
+   "asset": "GraffitiSet001",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "graffiti_blue_bubble": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/graffiti_blue_bubble_albedo.png",
+    "normal": "res://assets/textures/decals/graffiti_blue_bubble_normal.png",
+    "orm": "res://assets/textures/decals/graffiti_blue_bubble_orm.png"
+   },
+   "size": [
+    0.75,
+    0.73
+   ],
+   "tags": [
+    "wall",
+    "graffiti",
+    "paint"
+   ],
+   "source": "https://ambientcg.com/a/GraffitiSet001",
+   "asset": "GraffitiSet001",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "graffiti_orange_letters": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/graffiti_orange_letters_albedo.png",
+    "normal": "res://assets/textures/decals/graffiti_orange_letters_normal.png",
+    "orm": "res://assets/textures/decals/graffiti_orange_letters_orm.png"
+   },
+   "size": [
+    0.85,
+    0.8
+   ],
+   "tags": [
+    "wall",
+    "graffiti",
+    "paint"
+   ],
+   "source": "https://ambientcg.com/a/GraffitiSet001",
+   "asset": "GraffitiSet001",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "graffiti_pink_script": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/graffiti_pink_script_albedo.png",
+    "normal": "res://assets/textures/decals/graffiti_pink_script_normal.png",
+    "orm": "res://assets/textures/decals/graffiti_pink_script_orm.png"
+   },
+   "size": [
+    0.8,
+    0.51
+   ],
+   "tags": [
+    "wall",
+    "graffiti",
+    "paint"
+   ],
+   "source": "https://ambientcg.com/a/GraffitiSet001",
+   "asset": "GraffitiSet001",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "graffiti_yellow_outline": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/graffiti_yellow_outline_albedo.png",
+    "normal": "res://assets/textures/decals/graffiti_yellow_outline_normal.png",
+    "orm": "res://assets/textures/decals/graffiti_yellow_outline_orm.png"
+   },
+   "size": [
+    0.75,
+    0.68
+   ],
+   "tags": [
+    "wall",
+    "graffiti",
+    "paint"
+   ],
+   "source": "https://ambientcg.com/a/GraffitiSet001",
+   "asset": "GraffitiSet001",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "lane_dashes": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/lane_dashes_albedo.png",
+    "normal": "res://assets/textures/decals/lane_dashes_normal.png"
+   },
+   "size": [
+    4,
+    4
+   ],
+   "tags": [
+    "floor",
+    "road",
+    "marking"
+   ],
+   "source": "https://ambientcg.com/a/RoadLines028C",
+   "asset": "RoadLines028C",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "manhole": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/manhole_albedo.png",
+    "normal": "res://assets/textures/decals/manhole_normal.png"
+   },
+   "size": [
+    1,
+    1
+   ],
+   "tags": [
+    "floor",
+    "road",
+    "manhole"
+   ],
+   "source": "https://ambientcg.com/a/ManholeCover010",
+   "asset": "ManholeCover010",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "oil_stain": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/oil_stain_albedo.png",
+    "normal": "res://assets/textures/decals/oil_stain_normal.png",
+    "orm": "res://assets/textures/decals/oil_stain_orm.png"
+   },
+   "size": [
+    2,
+    1.6
+   ],
+   "tags": [
+    "floor",
+    "road",
+    "grime",
+    "oil"
+   ],
+   "source": "https://github.com/JedBorseth/shooter/blob/main/tools/build_decals.py",
+   "asset": null,
+   "authors": [
+    "This project"
+   ],
+   "license": "CC0"
+  },
+  "parking_lines": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/parking_lines_albedo.png",
+    "normal": "res://assets/textures/decals/parking_lines_normal.png"
+   },
+   "size": [
+    4,
+    4
+   ],
+   "tags": [
+    "floor",
+    "road",
+    "marking"
+   ],
+   "source": "https://ambientcg.com/a/RoadLines019B",
+   "asset": "RoadLines019B",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "perforated_drain": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/perforated_drain_albedo.png",
+    "normal": "res://assets/textures/decals/perforated_drain_normal.png",
+    "orm": "res://assets/textures/decals/perforated_drain_orm.png"
+   },
+   "size": [
+    0.8,
+    0.8
+   ],
+   "tags": [
+    "floor",
+    "road",
+    "drain",
+    "metal"
+   ],
+   "source": "https://ambientcg.com/a/ManholeCover005",
+   "asset": "ManholeCover005",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "puddle": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/puddle_albedo.png",
+    "normal": "res://assets/textures/decals/puddle_normal.png",
+    "orm": "res://assets/textures/decals/puddle_orm.png"
+   },
+   "size": [
+    2.4,
+    1.6
+   ],
+   "tags": [
+    "floor",
+    "road",
+    "water"
+   ],
+   "source": "https://github.com/JedBorseth/shooter/blob/main/tools/build_decals.py",
+   "asset": null,
+   "authors": [
+    "This project"
+   ],
+   "license": "CC0"
+  },
+  "recessed_manhole": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/recessed_manhole_albedo.png",
+    "normal": "res://assets/textures/decals/recessed_manhole_normal.png",
+    "orm": "res://assets/textures/decals/recessed_manhole_orm.png"
+   },
+   "size": [
+    0.8,
+    0.8
+   ],
+   "tags": [
+    "floor",
+    "road",
+    "manhole",
+    "metal"
+   ],
+   "source": "https://ambientcg.com/a/ManholeCover006",
+   "asset": "ManholeCover006",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "rusted_drain": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/rusted_drain_albedo.png",
+    "normal": "res://assets/textures/decals/rusted_drain_normal.png",
+    "orm": "res://assets/textures/decals/rusted_drain_orm.png"
+   },
+   "size": [
+    0.9,
+    0.9
+   ],
+   "tags": [
+    "floor",
+    "road",
+    "drain",
+    "metal",
+    "rust"
+   ],
+   "source": "https://ambientcg.com/a/ManholeCover009",
+   "asset": "ManholeCover009",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "stone_paving_edge": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/stone_paving_edge_albedo.png",
+    "normal": "res://assets/textures/decals/stone_paving_edge_normal.png",
+    "orm": "res://assets/textures/decals/stone_paving_edge_orm.png"
+   },
+   "size": [
+    2.6,
+    0.081
+   ],
+   "tags": [
+    "floor",
+    "road",
+    "paving",
+    "stone"
+   ],
+   "source": "https://ambientcg.com/a/PavingEdge002",
+   "asset": "PavingEdge002",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "twin_utility_hatch": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/twin_utility_hatch_albedo.png",
+    "normal": "res://assets/textures/decals/twin_utility_hatch_normal.png",
+    "orm": "res://assets/textures/decals/twin_utility_hatch_orm.png"
+   },
+   "size": [
+    1.4,
+    0.7
+   ],
+   "tags": [
+    "floor",
+    "road",
+    "manhole",
+    "concrete"
+   ],
+   "source": "https://ambientcg.com/a/ManholeCover007",
+   "asset": "ManholeCover007",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "utility_hatch": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/utility_hatch_albedo.png",
+    "normal": "res://assets/textures/decals/utility_hatch_normal.png",
+    "orm": "res://assets/textures/decals/utility_hatch_orm.png"
+   },
+   "size": [
+    0.9,
+    0.9
+   ],
+   "tags": [
+    "floor",
+    "road",
+    "manhole",
+    "metal",
+    "rust"
+   ],
+   "source": "https://ambientcg.com/a/ManholeCover011",
+   "asset": "ManholeCover011",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "worn_cycle_symbol": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/worn_cycle_symbol_albedo.png",
+    "normal": "res://assets/textures/decals/worn_cycle_symbol_normal.png",
+    "orm": "res://assets/textures/decals/worn_cycle_symbol_orm.png"
+   },
+   "size": [
+    1.55,
+    1.55
+   ],
+   "tags": [
+    "floor",
+    "road",
+    "marking",
+    "paint",
+    "bicycle"
+   ],
+   "source": "https://ambientcg.com/a/RoadLines005",
+   "asset": "RoadLines005",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  },
+  "worn_road_stripe": {
+   "textures": {
+    "albedo": "res://assets/textures/decals/worn_road_stripe_albedo.png",
+    "normal": "res://assets/textures/decals/worn_road_stripe_normal.png",
+    "orm": "res://assets/textures/decals/worn_road_stripe_orm.png"
+   },
+   "size": [
+    0.35,
+    1.4
+   ],
+   "tags": [
+    "floor",
+    "road",
+    "marking",
+    "paint"
+   ],
+   "source": "https://ambientcg.com/a/RoadLines003",
+   "asset": "RoadLines003",
+   "authors": [
+    "Lennart Demes"
+   ],
+   "license": "CC0"
+  }
+ }
+}
