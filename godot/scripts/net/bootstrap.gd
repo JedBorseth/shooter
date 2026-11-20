@@ -63,6 +63,7 @@ const OVERLAY_SCRIPT := "res://scripts/net/net_overlay.gd"
 const STATUS_SCRIPT := "res://scripts/net/net_status.gd"
 const TDM_HUD_SCRIPT := "res://scripts/net/tdm_hud.gd"
 const MINIMAP_SCRIPT := "res://scripts/net/minimap.gd"
+const STREAKS_HUD_SCRIPT := "res://scripts/net/streaks_hud.gd"
 const CTF_VIEW_SCRIPT := "res://scripts/net/ctf_view.gd"
 const HARDPOINT_VIEW_SCRIPT := "res://scripts/net/hardpoint_view.gd"
 const DOMINATION_VIEW_SCRIPT := "res://scripts/net/domination_view.gd"
@@ -368,6 +369,13 @@ func _attach_client(main: Node, target: String, options: Dictionary) -> void:
 	minimap.set("player", player)
 	minimap.set("score_block", tdm_hud.find_child("ScoreBlock", true, false))
 	tdm_hud.add_child(minimap)
+	# Scorestreaks: the chosen three, calls, and the use and next keys.
+	var streaks := Control.new()
+	streaks.name = "StreaksHud"
+	streaks.set_script(load(STREAKS_HUD_SCRIPT))
+	streaks.set("client", client)
+	streaks.set("player", player)
+	tdm_hud.add_child(streaks)
 	# Match stings: start, result, time warning, and rounds.
 	var stings := MatchStings.new()
 	stings.client = client

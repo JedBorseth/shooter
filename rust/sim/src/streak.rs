@@ -1,0 +1,470 @@
+//! Scorestreaks: rewards earned with score in one life.
+//!
+//! Black Ops 2's scorestreaks (kept in Black Ops 3 and Black Ops 4):
+//!
+//! - A player picks three streaks ([`Loadout`]), shared by every class, as
+//!   Black Ops 2's Scorestreaks menu is.
+//! - Score earned since the last spawn counts toward them: kills, their
+//!   bonuses, and objective play alike ([`StreakState::on_points`]). Kills
+//!   made with a streak score points but do not count toward streaks
+//!   (Black Ops 2's rule).
+//! - Each streak is earned once the life's score reaches its cost. After the
+//!   dearest one is earned the count starts again from nothing, so a long
+//!   life earns them all again.
+//! - Earned streaks are kept until used, death included, and are used one at
+//!   a time from the selected one ([`StreakState::take`]).
+//! - Dying resets the count.
+//! - Hardline (Perk 1): score counts 20% more toward streaks, about 16.7%
+//!   off every cost (Black Ops 2's Hardline, as the Call of Duty wiki gives it).
+//!
+//! The streaks this game has, Call of Duty's names kept in the code for
+//! reference (in-game names are the generic military terms):
+//!
+//! | Streak | Cost | Black Ops 2 | What it does |
+//! | --- | --- | --- | --- |
+//! | UAV | 425 | UAV, 425 after patch 1.04 (350 at launch) | sweeps enemies onto the team's minimaps every 3 s for 30 s |
+//! | Counter-UAV | 475 | Counter-UAV (sources give 400 to 600) | jams enemy minimaps for 30 s |
+//!
+//! Every number here is an estimate where Black Ops 2's own files give none;
+//! the docs list which (`docs/scorestreaks.md`).
+
+use crate::TICK_RATE;
+use crate::net::Tick;
+
+/// A scorestreak.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Streak {
+    Uav,
+    CounterUav,
+}
+
+/// UAV: seconds it stays up, and seconds between its sweeps (Black Ops 2's
+/// UAV lasts 30 s; the sweep interval is an estimate of its refresh).
+pub const UAV_SECONDS: f32 = 30.0;
+pub const UAV_SWEEP_SECONDS: f32 = 3.0;
+/// Counter-UAV: seconds enemy minimaps stay jammed.
+pub const COUNTER_UAV_SECONDS: f32 = 30.0;
+/// Hardline: score counts this many tenths toward streaks (Black Ops 2:
+/// +20%).
+pub const HARDLINE_TENTHS: u32 = 12;
+/// Most streaks a player holds at once; one earned beyond it is lost.
+pub const MAX_HELD: usize = 8;
+
+impl Streak {
+    pub const ALL: [Streak; 2] = [Streak::Uav, Streak::CounterUav];
+
+    /// Score to earn it.
+    pub fn cost(self) -> u32 {
+        match self {
+            Streak::Uav => 425,
+            Streak::CounterUav => 475,
+        }
+    }
+
+    /// The level it unlocks at: the UAV and Counter-UAV from the start, as
+    /// Black Ops 2 hands every new player a set of streaks.
+    pub fn unlock_level(self) -> u8 {
+        match self {
+            Streak::Uav | Streak::CounterUav => 1,
+        }
+    }
+
+    /// The key settings, scripts, and the wire use.
+    pub fn key(self) -> &'static str {
+        match self {
+            Streak::Uav => "uav",
+            Streak::CounterUav => "counter_uav",
+        }
+    }
+
+    pub fn by_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|s| s.key() == key)
+    }
+
+    /// The name players see.
+    pub fn label(self) -> &'static str {
+        match self {
+            Streak::Uav => "UAV",
+            Streak::CounterUav => "Counter-UAV",
+        }
+    }
+
+    /// One line on what it does.
+    pub fn summary(self) -> &'static str {
+        match self {
+            Streak::Uav => "Shows enemies on your team's minimap for 30 seconds.",
+            Streak::CounterUav => "Jams enemy minimaps for 30 seconds.",
+        }
+    }
+
+    /// Its index in [`Streak::ALL`], for the wire.
+    pub fn code(self) -> u8 {
+        self as u8
+    }
+
+    pub fn from_code(code: u8) -> Option<Self> {
+        Self::ALL.get(usize::from(code)).copied()
+    }
+
+    /// Ticks it stays up once used (0 for streaks that act once).
+    pub fn duration(self) -> Tick {
+        let seconds = match self {
+            Streak::Uav => UAV_SECONDS,
+            Streak::CounterUav => COUNTER_UAV_SECONDS,
+        };
+        seconds_to_ticks(seconds)
+    }
+}
+
+pub fn seconds_to_ticks(seconds: f32) -> Tick {
+    (seconds * TICK_RATE as f32).round() as Tick
+}
+
+/// The three streaks a player brings, in order of cost.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Loadout(pub [Option<Streak>; 3]);
+
+impl Default for Loadout {
+    /// A new player's: the UAV and the Counter-UAV.
+    fn default() -> Self {
+        Self([Some(Streak::Uav), Some(Streak::CounterUav), None])
+    }
+}
+
+impl Loadout {
+    pub const NONE: Loadout = Loadout([None; 3]);
+
+    /// The loadout with the same streak listed once, sorted by cost; empty
+    /// slots last.
+    pub fn sorted(self) -> Self {
+        let mut list: Vec<Streak> = Vec::new();
+        for streak in self.0.into_iter().flatten() {
+            if !list.contains(&streak) {
+                list.push(streak);
+            }
+        }
+        list.sort_by_key(|s| s.cost());
+        let mut slots = [None; 3];
+        for (slot, streak) in slots.iter_mut().zip(list) {
+            *slot = Some(streak);
+        }
+        Self(slots)
+    }
+
+    /// The streaks, cheapest first.
+    pub fn streaks(self) -> impl Iterator<Item = Streak> {
+        self.sorted().0.into_iter().flatten()
+    }
+}
+
+/// One player's streak count and earned streaks.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StreakState {
+    /// Score toward the next streak this life (after Hardline's boost).
+    pub progress: u32,
+    /// Streaks earned and not yet used, oldest first.
+    pub held: Vec<Streak>,
+    /// Which of `held` the use button calls in.
+    pub selected: usize,
+    /// Hardline's boost not yet paid out as whole points, in tenths.
+    remainder: u32,
+}
+
+impl StreakState {
+    /// `points` of score earned this life (none from streak kills): counts
+    /// toward `loadout`'s streaks. Returns the streaks earned, in order.
+    pub fn on_points(&mut self, loadout: Loadout, points: u32, hardline: bool) -> Vec<Streak> {
+        let mut earned = Vec::new();
+        let streaks: Vec<Streak> = loadout.streaks().collect();
+        let Some(top) = streaks.last().map(|s| s.cost()) else {
+            return earned;
+        };
+        let tenths = points * if hardline { HARDLINE_TENTHS } else { 10 } + self.remainder;
+        self.remainder = tenths % 10;
+        let mut left = tenths / 10;
+        // Reach each cost in turn; past the dearest, start again.
+        while left > 0 {
+            let before = self.progress;
+            let step = (top - before).min(left);
+            self.progress += step;
+            left -= step;
+            for streak in &streaks {
+                if before < streak.cost() && self.progress >= streak.cost() {
+                    earned.push(*streak);
+                }
+            }
+            if self.progress >= top {
+                self.progress = 0;
+            }
+        }
+        for streak in &earned {
+            self.hold(*streak);
+        }
+        earned
+    }
+
+    /// Adds an earned streak (or one from a care package) and selects it,
+    /// as Black Ops 2 moves the selection to the newest.
+    pub fn hold(&mut self, streak: Streak) {
+        if self.held.len() >= MAX_HELD {
+            return;
+        }
+        self.held.push(streak);
+        self.selected = self.held.len() - 1;
+    }
+
+    /// The streak the use button would call in.
+    pub fn selected(&self) -> Option<Streak> {
+        self.held.get(self.selected).copied()
+    }
+
+    /// Moves the selection to the next held streak.
+    pub fn cycle(&mut self) {
+        if !self.held.is_empty() {
+            self.selected = (self.selected + 1) % self.held.len();
+        }
+    }
+
+    /// Selects held streak `index`, if there is one.
+    pub fn select(&mut self, index: usize) {
+        if index < self.held.len() {
+            self.selected = index;
+        }
+    }
+
+    /// Takes the selected streak out to call it in.
+    pub fn take(&mut self) -> Option<Streak> {
+        let streak = self.selected()?;
+        self.held.remove(self.selected);
+        self.selected = self.held.len().saturating_sub(1);
+        Some(streak)
+    }
+
+    /// Death: the count starts again; earned streaks stay.
+    pub fn on_death(&mut self) {
+        self.progress = 0;
+        self.remainder = 0;
+    }
+
+    /// The next streak the count is heading for, and its cost.
+    pub fn next(&self, loadout: Loadout) -> Option<Streak> {
+        loadout.streaks().find(|s| s.cost() > self.progress)
+    }
+}
+
+/// A streak up in the sky: a UAV or a Counter-UAV.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Airborne {
+    pub streak: Streak,
+    /// Who called it in, and their side (their team, or their own id
+    /// without teams).
+    pub owner: u8,
+    pub side: u8,
+    /// The tick it leaves.
+    pub until: Tick,
+    /// The tick a UAV sweeps next.
+    next_sweep: Tick,
+}
+
+/// Every UAV and Counter-UAV up. Several of one kind on a side overlap,
+/// each with its own clock: the side's minimap shows the effect while any
+/// is up, as in Black Ops 2.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Sky {
+    pub up: Vec<Airborne>,
+}
+
+impl Sky {
+    /// Calls in `streak` (a UAV or Counter-UAV) for `owner` on `side` at
+    /// `now`. Streaks that do not stay up are ignored.
+    pub fn call(&mut self, streak: Streak, owner: u8, side: u8, now: Tick) {
+        if streak.duration() == 0 {
+            return;
+        }
+        self.up.push(Airborne {
+            streak,
+            owner,
+            side,
+            until: now + streak.duration(),
+            next_sweep: now,
+        });
+    }
+
+    /// Drops what has left by `now`. Returns whether anything did.
+    pub fn expire(&mut self, now: Tick) -> bool {
+        let before = self.up.len();
+        self.up.retain(|a| a.until > now);
+        self.up.len() != before
+    }
+
+    /// The sides whose UAV sweeps at `now`, each once however many UAVs it
+    /// has up. Advances the sweep clocks.
+    pub fn sweeps(&mut self, now: Tick) -> Vec<u8> {
+        let interval = seconds_to_ticks(UAV_SWEEP_SECONDS);
+        let mut sides = Vec::new();
+        for air in self.up.iter_mut().filter(|a| a.streak == Streak::Uav) {
+            if now >= air.next_sweep {
+                air.next_sweep = now + interval;
+                if !sides.contains(&air.side) {
+                    sides.push(air.side);
+                }
+            }
+        }
+        sides
+    }
+
+    /// Whether `side` has a UAV up.
+    pub fn uav(&self, side: u8) -> bool {
+        self.up
+            .iter()
+            .any(|a| a.streak == Streak::Uav && a.side == side)
+    }
+
+    /// Whether an enemy Counter-UAV jams `side`'s minimaps.
+    pub fn jammed(&self, side: u8) -> bool {
+        self.up
+            .iter()
+            .any(|a| a.streak == Streak::CounterUav && a.side != side)
+    }
+
+    /// Everything up leaves (a new match or round).
+    pub fn clear(&mut self) {
+        self.up.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn score_in_one_life_earns_each_streak_at_its_cost() {
+        let loadout = Loadout::default();
+        let mut state = StreakState::default();
+        assert!(state.on_points(loadout, 400, false).is_empty());
+        assert_eq!(state.next(loadout), Some(Streak::Uav));
+        assert_eq!(state.on_points(loadout, 30, false), vec![Streak::Uav]);
+        assert_eq!(state.progress, 430);
+        assert_eq!(state.next(loadout), Some(Streak::CounterUav));
+        assert_eq!(
+            state.on_points(loadout, 100, false),
+            vec![Streak::CounterUav]
+        );
+        // Past the dearest, the count starts again: 530 is 55 into the next lap.
+        assert_eq!(state.progress, 55);
+        assert_eq!(state.held, vec![Streak::Uav, Streak::CounterUav]);
+        assert_eq!(state.selected(), Some(Streak::CounterUav));
+    }
+
+    #[test]
+    fn one_big_award_can_earn_several_and_carry_over() {
+        let loadout = Loadout([Some(Streak::CounterUav), Some(Streak::Uav), None]);
+        let mut state = StreakState::default();
+        let earned = state.on_points(loadout, 1000, false);
+        // Two laps of 475, and 50 into a third.
+        assert_eq!(
+            earned,
+            vec![
+                Streak::Uav,
+                Streak::CounterUav,
+                Streak::Uav,
+                Streak::CounterUav
+            ]
+        );
+        assert_eq!(state.progress, 50);
+    }
+
+    #[test]
+    fn death_resets_the_count_but_keeps_what_was_earned() {
+        let loadout = Loadout::default();
+        let mut state = StreakState::default();
+        state.on_points(loadout, 450, false);
+        state.on_death();
+        assert_eq!(state.progress, 0);
+        assert_eq!(state.held, vec![Streak::Uav]);
+        assert_eq!(state.on_points(loadout, 300, false), vec![]);
+    }
+
+    #[test]
+    fn hardline_counts_a_fifth_more() {
+        let loadout = Loadout::default();
+        let mut state = StreakState::default();
+        // 355 * 1.2 = 426: a UAV a kill sooner.
+        assert_eq!(state.on_points(loadout, 355, true), vec![Streak::Uav]);
+        let mut slow = StreakState::default();
+        assert!(slow.on_points(loadout, 355, false).is_empty());
+        // Fractions carry over rather than being lost.
+        let mut bits = StreakState::default();
+        for _ in 0..10 {
+            bits.on_points(loadout, 1, true);
+        }
+        assert_eq!(bits.progress, 12);
+    }
+
+    #[test]
+    fn using_takes_the_selected_streak() {
+        let mut state = StreakState::default();
+        state.hold(Streak::Uav);
+        state.hold(Streak::CounterUav);
+        assert_eq!(state.selected(), Some(Streak::CounterUav));
+        state.cycle();
+        assert_eq!(state.selected(), Some(Streak::Uav));
+        assert_eq!(state.take(), Some(Streak::Uav));
+        assert_eq!(state.selected(), Some(Streak::CounterUav));
+        assert_eq!(state.take(), Some(Streak::CounterUav));
+        assert_eq!(state.take(), None);
+    }
+
+    #[test]
+    fn a_loadout_sorts_by_cost_and_lists_each_streak_once() {
+        let loadout = Loadout([
+            Some(Streak::CounterUav),
+            Some(Streak::Uav),
+            Some(Streak::Uav),
+        ]);
+        assert_eq!(
+            loadout.sorted(),
+            Loadout([Some(Streak::Uav), Some(Streak::CounterUav), None])
+        );
+        let mut state = StreakState::default();
+        assert!(state.on_points(Loadout::NONE, 1000, false).is_empty());
+    }
+
+    #[test]
+    fn a_uav_sweeps_every_few_seconds_until_it_leaves() {
+        let mut sky = Sky::default();
+        sky.call(Streak::Uav, 3, 1, 1000);
+        assert!(sky.uav(1) && !sky.uav(0));
+        assert_eq!(sky.sweeps(1000), vec![1]);
+        assert!(sky.sweeps(1001).is_empty());
+        let interval = seconds_to_ticks(UAV_SWEEP_SECONDS);
+        assert_eq!(sky.sweeps(1000 + interval), vec![1]);
+        // A second UAV on the side does not sweep twice.
+        sky.call(Streak::Uav, 4, 1, 1000 + interval);
+        assert_eq!(sky.sweeps(1000 + interval), vec![1]);
+        assert!(!sky.expire(1000 + Streak::Uav.duration() - 1));
+        assert!(sky.expire(1000 + Streak::Uav.duration()));
+        assert!(sky.uav(1));
+        assert!(sky.expire(1000 + interval + Streak::Uav.duration()));
+        assert!(!sky.uav(1));
+    }
+
+    #[test]
+    fn a_counter_uav_jams_only_the_other_sides() {
+        let mut sky = Sky::default();
+        sky.call(Streak::CounterUav, 3, 1, 0);
+        assert!(sky.jammed(0));
+        assert!(!sky.jammed(1));
+        sky.expire(Streak::CounterUav.duration());
+        assert!(!sky.jammed(0));
+    }
+
+    #[test]
+    fn keys_and_codes_round_trip() {
+        for streak in Streak::ALL {
+            assert_eq!(Streak::by_key(streak.key()), Some(streak));
+            assert_eq!(Streak::from_code(streak.code()), Some(streak));
+        }
+        assert_eq!(Streak::Uav.duration(), 3600);
+    }
+}

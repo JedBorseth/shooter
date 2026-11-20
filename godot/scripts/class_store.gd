@@ -22,7 +22,21 @@ const PATH_META := &"class_store_path"
 
 static var _custom: Array[Dictionary] = []
 static var _selected := "default:0"
+## The scorestreaks to bring (keys), shared by every class as in Black Ops 2.
+static var _streaks := PackedStringArray()
 static var _loaded := false
+
+
+## The chosen scorestreaks' keys (up to three; the server sorts them).
+static func streaks() -> PackedStringArray:
+	_load()
+	return _streaks
+
+
+static func set_streaks(keys: PackedStringArray) -> void:
+	_load()
+	_streaks = keys.slice(0, 3)
+	save()
 
 
 ## The custom classes, loading them on first use.
@@ -118,6 +132,7 @@ static func save() -> void:
 	for i in _custom.size():
 		config.set_value("custom", str(i), _custom[i])
 	config.set_value("class", "selected", _selected)
+	config.set_value("class", "streaks", _streaks)
 	var err := config.save(path())
 	if err != OK:
 		push_warning("Could not save %s (%s)." % [path(), error_string(err)])
@@ -151,6 +166,16 @@ static func _load() -> void:
 			entry["name"] = "Custom %d" % (i + 1)
 		_custom.append(entry)
 	_selected = String(config.get_value("class", "selected", "default:0")) if err == OK else ""
+	var known := PackedStringArray()
+	for item: Dictionary in NetClient.streak_items():
+		known.append(String(item.key))
+	_streaks = PackedStringArray(["uav", "counter_uav"])
+	var stored_streaks: Variant = config.get_value("class", "streaks", null) if err == OK else null
+	if stored_streaks is PackedStringArray:
+		_streaks = PackedStringArray()
+		for key in stored_streaks as PackedStringArray:
+			if key in known and not key in _streaks:
+				_streaks.append(key)
 	if not _valid_id(_selected):
 		_selected = "default:0"
 

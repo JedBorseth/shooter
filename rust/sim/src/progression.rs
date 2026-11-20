@@ -107,6 +107,9 @@ pub fn perk_level(perk: Perk) -> u8 {
         Perk::DeadSilence => 14,
         Perk::Scavenger => 17,
         Perk::Awareness => 20,
+        Perk::Hardline => 8,
+        Perk::Ghost => 15,
+        Perk::HardWired => 18,
     }
 }
 

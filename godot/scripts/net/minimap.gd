@@ -14,9 +14,11 @@ extends Control
 ##   in their holder's colour. One out of the window is held at its edge, as
 ##   Call of Duty holds objective icons;
 ## - enemies only where the server reveals them (`NetClient.radar_blips`):
-##   red dots where they fired an unsuppressed weapon, fading out
-##   (`shooter_sim::radar`). Jammed by an enemy Counter-UAV, static covers
-##   the plan and it shows nobody but us.
+##   red dots where they fired an unsuppressed weapon, or where our UAV's
+##   sweep found them, fading out (`shooter_sim::radar`). Jammed by an enemy
+##   Counter-UAV, static covers the plan and it shows nobody but us;
+## - tags along its foot for every UAV and Counter-UAV up, ours blue and
+##   the enemy's red.
 ## It hides during killcams, in Zombies, and on maps without a plan. `Net`
 ## adds it to the match HUD.
 
@@ -177,6 +179,32 @@ func _draw_icons() -> void:
 				_arrow(at, window_angle(remote.view_angles().x), ALLY)
 	if player.is_alive():
 		_arrow(size / 2.0, window_angle(player.view_yaw()), UiTheme.TEXT)
+	_draw_sky()
+
+
+## Tags along the window's foot for the UAVs and Counter-UAVs up: ours in
+## blue, the enemy's in red, as Black Ops 2 marks them on its minimap.
+func _draw_sky() -> void:
+	var sky := client.sky_info()
+	var x := 6.0
+	for tag: Array in [
+		["uav", "UAV", ALLY],
+		["counter_uav", "C-UAV", ALLY],
+		["enemy_uav", "UAV", ENEMY],
+		["enemy_counter_uav", "C-UAV", ENEMY],
+	]:
+		if float(sky.get(tag[0], 0.0)) <= 0.0:
+			continue
+		var label: String = tag[1]
+		var colour: Color = tag[2]
+		var width := Paint.text_width(Paint.LABEL, label, 11, 1.0) + 8.0
+		var rect := Rect2(x, size.y - 18.0, width, 14.0)
+		_icons.draw_rect(rect, Color(0, 0, 0, 0.55))
+		_icons.draw_rect(rect, colour, false, 1.0)
+		Paint.text(
+			_icons, Paint.LABEL, label, rect.position + Vector2(4, 11), 11, colour, 1.0, false
+		)
+		x += width + 4.0
 
 
 func _inside(at: Vector2) -> bool:

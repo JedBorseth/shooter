@@ -7,6 +7,7 @@ use shooter_sim::class::{self, Wildcard};
 use shooter_sim::equipment::Kind;
 use shooter_sim::perk::Perk;
 use shooter_sim::progression::{self, Outcome};
+use shooter_sim::streak::Streak;
 use shooter_sim::weapon::{Attachment, Slot, WeaponId};
 
 #[derive(GodotClass)]
@@ -101,6 +102,11 @@ impl Progression {
                 out.push(&entry("wildcard", wildcard.key(), wildcard.label()));
             }
         }
+        for streak in Streak::ALL {
+            if i32::from(streak.unlock_level()) == level && level > 1 {
+                out.push(&entry("streak", streak.key(), streak.label()));
+            }
+        }
         out
     }
 }
@@ -111,6 +117,7 @@ fn unlock_level(kind: &str, key: &str) -> Option<u8> {
         "tactical" => Kind::by_key(key).map(progression::tactical_level),
         "perk" => Perk::by_key(key).map(progression::perk_level),
         "wildcard" => Wildcard::by_key(key).map(progression::wildcard_level),
+        "streak" => Streak::by_key(key).map(Streak::unlock_level),
         _ => None,
     }
 }

@@ -10,6 +10,9 @@ extends VBoxContainer
 ## (over ten points, a third attachment without its wildcard, two optics)
 ## is greyed out: the menu asks `NetClient.check_class` about the class the
 ## chip would make, the same rules the server checks.
+##
+## Under the list, the scorestreaks: up to three, shared by every class as
+## in Black Ops 2 (`ClassStore.streaks`), applied from the next spawn.
 
 signal class_equipped(id: String)
 
@@ -40,6 +43,7 @@ var _list_page: HBoxContainer
 var _edit_page: VBoxContainer
 var _class_list: VBoxContainer
 var _class_buttons := {}
+var _streak_row: HFlowContainer
 var _detail: VBoxContainer
 var _detail_name: Label
 var _detail_lines: VBoxContainer
@@ -73,6 +77,8 @@ func _ready() -> void:
 	_build_list_page()
 	_build_edit_page()
 	show_list()
+	if client != null:
+		client.set_streaks(_usable_streaks())
 
 
 ## Back to the class list, the equipped class highlighted.
@@ -83,6 +89,7 @@ func show_list() -> void:
 	_list_page.visible = true
 	_level_row.visible = true
 	_rebuild_list()
+	_rebuild_streaks()
 	_show_detail(ClassStore.selected_id())
 
 
@@ -144,10 +151,18 @@ func _build_list_page() -> void:
 	_list_page = HBoxContainer.new()
 	_list_page.add_theme_constant_override("separation", 18)
 	add_child(_list_page)
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 10)
+	column.custom_minimum_size = Vector2(250, 0)
+	_list_page.add_child(column)
 	_class_list = VBoxContainer.new()
 	_class_list.add_theme_constant_override("separation", 3)
-	_class_list.custom_minimum_size = Vector2(250, 0)
-	_list_page.add_child(_class_list)
+	column.add_child(_class_list)
+	column.add_child(_section_label("SCORESTREAKS"))
+	_streak_row = HFlowContainer.new()
+	_streak_row.add_theme_constant_override("h_separation", 6)
+	_streak_row.add_theme_constant_override("v_separation", 6)
+	column.add_child(_streak_row)
 
 	var card := PanelContainer.new()
 	card.add_theme_stylebox_override("panel", UiTheme.plate(UiTheme.PLATE, 20.0, 16.0))
@@ -213,6 +228,54 @@ func _rebuild_list() -> void:
 		button.focus_entered.connect(_show_detail.bind(id))
 		_class_list.add_child(button)
 		_class_buttons[id] = button
+
+
+## The scorestreak chips: each with its cost; three at most, locked ones
+## marked with their level.
+func _rebuild_streaks() -> void:
+	_clear(_streak_row)
+	var chosen := ClassStore.streaks()
+	for item: Dictionary in NetClient.streak_items():
+		var key := String(item.key)
+		var on := key in chosen
+		var lock := ProgressStore.lock_reason("streak", key)
+		var button := Button.new()
+		button.text = "%s  ·  %d" % [String(item.name), int(item.cost)]
+		button.toggle_mode = true
+		button.button_pressed = on
+		button.tooltip_text = String(item.summary)
+		button.custom_minimum_size = Vector2(0, 32)
+		button.add_theme_font_size_override("font_size", 14)
+		MenuStyle.style_button(button, true)
+		if lock != "" and not on:
+			button.text += "  ·  " + lock
+			button.disabled = true
+		elif not on and chosen.size() >= 3:
+			button.disabled = true
+		button.pressed.connect(_toggle_streak.bind(key))
+		_streak_row.add_child(button)
+
+
+func _toggle_streak(key: String) -> void:
+	var chosen := ClassStore.streaks()
+	var index := chosen.find(key)
+	if index >= 0:
+		chosen.remove_at(index)
+	elif chosen.size() < 3:
+		chosen.append(key)
+	ClassStore.set_streaks(chosen)
+	if client != null:
+		client.set_streaks(_usable_streaks())
+	_rebuild_streaks()
+
+
+## The chosen scorestreaks that are unlocked.
+func _usable_streaks() -> PackedStringArray:
+	var keys := PackedStringArray()
+	for key in ClassStore.streaks():
+		if ProgressStore.lock_reason("streak", key) == "":
+			keys.append(key)
+	return keys
 
 
 ## Spawn with this class from now on.

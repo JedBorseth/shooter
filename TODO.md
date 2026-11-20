@@ -229,8 +229,10 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [ ] Hardpoint follow-ups: announcer voice lines; on Nuketown only one of six bots reached the Cul-de-sac in a minute's test (its navigation mesh never baked on a headless server; fixed, worth re-checking the Cul-de-sac).
 - [x] Minimap, top left (`godot/scripts/net/minimap.gd`): each map's plan rendered from its collision by `godot/tools/build_minimaps.gd`, turning with the player (or north up), with teammates and the mode's objectives ([art-direction.md](docs/art-direction.md#minimap)).
 - [x] Enemies on the minimap: red dots where an unsuppressed weapon fired, for 3 seconds, decided by the server and sent only to the shooter's enemies (`rust/sim/src/radar.rs`).
-- [ ] Scorestreaks (Black Ops 2): earned from score within a life, three chosen in Create-a-Class; UAV, Counter-UAV, Care Package, and a lethal streak; bots earn and use them.
-- [ ] Perks that need streaks: Ghost, Blind Eye, Hardline, Hard Wired.
+- [x] Scorestreaks (Black Ops 2): earned from score within a life (objective score counts, the count resets on death and loops after the dearest), three chosen in the class menu, held through death; UAV and Counter-UAV, a streak column and calls on the HUD, minimap tags, and bots calling theirs in ([docs/scorestreaks.md](docs/scorestreaks.md)).
+- [ ] Scorestreaks follow-ups: Care Package (a crate from a flyover, random streak inside), a lethal streak, streak kills not counting toward streaks, UAV assist points, announcer lines.
+- [x] Perks that need streaks: Hardline, Ghost, and Hard Wired ([create-a-class.md](docs/create-a-class.md#perks)).
+- [ ] Blind Eye, once there is an AI air streak to hide from.
 - [x] Player names: sent in the hello (`Settings.player_name`), cleaned by the server, and listed in the roster.
 - [x] Names in the kill feed and scoreboard.
 
