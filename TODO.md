@@ -211,7 +211,8 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] A Team Deathmatch button on the title screen that runs a local server with bots and joins it.
 - [x] Hardpoint (`--mode hardpoint`, and a title-screen button): one live zone at a time, moving every 60 seconds through the map's `Hardpoints` in a fixed order; a team alone in it scores a point a second, a contested zone scores nothing, first to 250. Capture, securing, defense, and assault awards, time on the hill on the scoreboard, objective bots, spawns kept off the hill, and a zone outline, wall of light, marker, and calls on the client (`rust/sim/src/hardpoint.rs`, `godot/scripts/net/hardpoint_view.gd`). Slamcity's five zones sit on its mirror line: the roadworks pit, under the El, the stalled train, the ticket hall, and the back alley.
 - [x] Hardpoint overtime: when the clock runs out with the team behind in the zone (holding or contesting), play goes on until no team that is not ahead stands in it ([modes.md](docs/modes.md)).
-- [ ] Hardpoint follow-ups: announcer voice lines, and zones for the testing arena, Nuketown, and Warehouse (they fall back to one zone halfway between the spawns).
+- [x] Hardpoint zones for the testing arena (4), Nuketown (4), and Warehouse (5), checked on every map by `hardpoint_zones_test.gd` ([modes.md](docs/modes.md)).
+- [ ] Hardpoint follow-ups: announcer voice lines; on Nuketown only one of six bots reached the Cul-de-sac in a minute's test, worth a look at its navigation.
 - [x] Player names: sent in the hello (`Settings.player_name`), cleaned by the server, and listed in the roster.
 - [x] Names in the kill feed and scoreboard.
 

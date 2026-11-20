@@ -217,3 +217,25 @@ indoor_db = -14.0
 
 [node name="Props" type="Node3D" parent="."]
 script = ExtResource("10_props")
+
+[node name="Hardpoints" type="Node3D" parent="."]
+
+[node name="P1_CulDeSac" type="Marker3D" parent="Hardpoints"]
+position = Vector3(0, 0, -5)
+metadata/size = Vector3(14, 4.4, 12)
+metadata/label = "Cul-de-sac"
+
+[node name="P2_WestHouse" type="Marker3D" parent="Hardpoints"]
+position = Vector3(-19, -1.6, -11)
+metadata/size = Vector3(10, 6.4, 10)
+metadata/label = "West House"
+
+[node name="P3_FrontLot" type="Marker3D" parent="Hardpoints"]
+position = Vector3(1, 0, 14)
+metadata/size = Vector3(14, 4.4, 10)
+metadata/label = "Front Lot"
+
+[node name="P4_EastHouse" type="Marker3D" parent="Hardpoints"]
+position = Vector3(24, -1.6, -12)
+metadata/size = Vector3(10, 6.4, 10)
+metadata/label = "East House"
