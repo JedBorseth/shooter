@@ -2,8 +2,6 @@
 
 A host can change a match's rules before it starts, as in Black Ops 2's Custom Games. The rules live in `rust/sim/src/custom.rs` (`custom::Settings`). The server takes them on the command line, applies them, and sends them to every player in the welcome. Prediction (health and its regeneration) and the HUD follow the same rules.
 
-Hardcore's missing HUD lands with the setup screen (TODO.md, Custom games).
-
 Ranked servers (`--accounts`) ignore custom settings: ranked play always uses the default rules. Zombies keeps its own rules.
 
 ## Settings
@@ -24,6 +22,24 @@ Each setting follows a Black Ops 2 game type setting (the `getgametypesetting` k
 | Scorestreaks (`custom_killstreak_mode`) | On, Off | Off: points earn no scorestreaks. |
 | Loadouts (`disableCAC` and party restrictions) | Any, Default classes, Pistols only, Snipers only | Which classes players may use. |
 | Hardcore (`hardcoreMode`) | Off, On | No HUD. Turning it on sets health to 30% and friendly fire to On, Black Ops 2's hardcore rules; either can still be changed. |
+
+## Setting them up
+
+The local match setup (the title screen's mode routes) shows the custom rules in one line above Start, with a **Game settings** button. It opens a page in the same card: a preset list, one chip row per rule, and a name to save the rules under as a preset (`godot/scripts/ui/custom_settings_page.gd`). The built-in presets are Standard, Hardcore, Pistols only, Snipers only, and No streaks; saved presets follow them, up to twelve, in `user://custom_games.cfg` with the rules used last (`godot/scripts/custom_presets.gd`). Turning Hardcore on sets health to 30% and friendly fire to On; either can be changed after. Zombies and Free Roam have no custom rules.
+
+![Game settings in the match setup, on the Hardcore preset](media/custom-game-settings.jpg)
+
+![The match setup with custom rules summed up above Start](media/custom-match-setup.jpg)
+
+## On the HUD
+
+![Hardcore's bare HUD: no crosshair, health, ammo, minimap, or score](media/hardcore-hud.jpg)
+
+- **Hardcore:** no crosshair (hit markers still show), no health, no ammo or weapon panel, no minimap, and no score block; the scoreboard still shows the score. Prompts, the death card, the kill feed, and scorestreak calls stay. This follows Black Ops 2's `hud_hardcore` match flag.
+- **Radar off:** no minimap.
+- **Scorestreaks off:** no scorestreak panel.
+
+The client reads `hardcore`, `radar_off`, and `streaks_off` from `NetClient.match_info()`.
 
 ## Friendly fire
 
