@@ -18,6 +18,16 @@ var _action: Button
 var _title: Label
 var _detail: Label
 var _message: Label
+## Signing in with a password (an account made on another machine), or
+## adding one to this account.
+var _password_box: VBoxContainer
+var _password_heading: Label
+var _password_note: Label
+var _login: LineEdit
+var _password: LineEdit
+var _password_action: Button
+var _password_toggle: Button
+var _show_password := false
 
 
 func _ready() -> void:
@@ -100,6 +110,49 @@ func _build() -> void:
 	back.pressed.connect(back_requested.emit)
 	buttons.add_child(back)
 
+	_password_toggle = Button.new()
+	_password_toggle.name = "PasswordToggle"
+	_password_toggle.text = "I have a password"
+	_password_toggle.theme_type_variation = &"QuietButton"
+	_password_toggle.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	_password_toggle.pressed.connect(
+		func() -> void:
+			_show_password = not _show_password
+			_refresh()
+	)
+	layout.add_child(_password_toggle)
+	_password_box = VBoxContainer.new()
+	_password_box.name = "Password"
+	_password_box.add_theme_constant_override("separation", 8)
+	layout.add_child(_password_box)
+	_password_heading = Label.new()
+	_password_heading.theme_type_variation = &"Eyebrow"
+	_password_box.add_child(_password_heading)
+	_password_note = Label.new()
+	_password_note.theme_type_variation = &"DimLabel"
+	_password_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_password_box.add_child(_password_note)
+	_login = LineEdit.new()
+	_login.name = "Login"
+	_login.custom_minimum_size = Vector2(0, 40)
+	_password_box.add_child(_login)
+	_password = LineEdit.new()
+	_password.name = "PasswordField"
+	_password.secret = true
+	_password.placeholder_text = "Password (8 or more characters)"
+	_password.custom_minimum_size = Vector2(0, 40)
+	_password.text_submitted.connect(func(_t: String) -> void: _on_password())
+	_password_box.add_child(_password)
+	_password_action = Button.new()
+	_password_action.name = "PasswordAction"
+	_password_action.theme_type_variation = &"SecondaryButton"
+	_password_action.custom_minimum_size = Vector2(200, 40)
+	_password_action.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	_password_action.pressed.connect(_on_password)
+	_password_box.add_child(_password_action)
+	# The card's own buttons stay last, under the password section.
+	layout.move_child(buttons, -1)
+
 	var server := Label.new()
 	server.theme_type_variation = &"FaintLabel"
 	server.text = (
@@ -139,13 +192,63 @@ func _refresh() -> void:
 			_name.editable = true
 			_action.text = "Sign in"
 			_action.disabled = Online.address.is_empty()
+	_refresh_password()
 	_message.text = Online.message
 	_message.visible = Online.message != ""
+
+
+## Signed in: add an email and password for other machines, or say how to
+## sign in there. Signed out: sign in with a password, behind a toggle.
+func _refresh_password() -> void:
+	var signed_in: bool = Online.is_signed_in()
+	_password_toggle.visible = not signed_in and Online.state != Online.State.SIGNING_IN
+	_password_toggle.text = "Back to a new account" if _show_password else "I have a password"
+	if signed_in:
+		_password_box.visible = true
+		_password_heading.text = "PLAY ON ANOTHER COMPUTER"
+		var linked: bool = Online.email != ""
+		_password_note.text = (
+			"Sign in there with %s or %s and your password." % [Online.username, Online.email]
+			if linked
+			else "Add an email and a password, then sign in with them on any computer."
+		)
+		_login.visible = not linked
+		_password.visible = not linked
+		_password_action.visible = not linked
+		_login.placeholder_text = "Email"
+		_password_action.text = "Add password"
+		_action.visible = true
+	else:
+		_password_box.visible = _show_password and Online.state != Online.State.SIGNING_IN
+		_password_heading.text = "SIGN IN WITH A PASSWORD"
+		_password_note.text = "For an account you made on another computer."
+		_login.visible = true
+		_password.visible = true
+		_password_action.visible = true
+		_login.placeholder_text = "Name or email"
+		_password_action.text = "Sign in"
+		# The new-account sign-in hides while the password one shows.
+		_name.visible = _name.visible and not _show_password
+		_action.visible = not _show_password
+
+
+func _on_password() -> void:
+	var ok: bool
+	if Online.is_signed_in():
+		ok = await Online.link_password(_login.text, _password.text)
+	else:
+		ok = await Online.sign_in_with_password(_login.text, _password.text)
+		if ok:
+			_show_password = false
+	if ok:
+		_password.text = ""
+		_refresh()
 
 
 func _on_action() -> void:
 	if Online.is_signed_in():
 		Online.sign_out()
+		_action.visible = true
 		_name.text = Settings.player_name
 		_name.grab_focus.call_deferred()
 		return

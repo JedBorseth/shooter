@@ -12,6 +12,10 @@ extends Node
 ## A signed-in player stays signed in between launches: the session's tokens
 ## are saved in `user://account.cfg` and refreshed at the next start.
 ##
+## To play on another machine, a player adds an email and a password to the
+## account (`link_password`); the other machine then signs in with the name
+## (or the email) and the password (`sign_in_with_password`).
+##
 ## From the command line, after `--`:
 ##   --online URL     the account server for this launch ("host:7350",
 ##                    "https://accounts.example.com"); not saved
@@ -43,6 +47,8 @@ var user_id := ""
 var message := ""
 ## The account server ("" for none).
 var address := ""
+## The email linked to the account (for signing in elsewhere), or "".
+var email := ""
 
 var _client: NakamaClient
 var _session: NakamaSession
@@ -157,6 +163,54 @@ func sign_in(player_name: String) -> bool:
 	return await _start(wanted)
 
 
+## Signs in on this machine with an account made elsewhere: `login` is its
+## name or its email, with the password linked to it. This machine's game
+## stays signed in afterwards, as with any sign-in.
+func sign_in_with_password(login: String, password: String) -> bool:
+	var who := login.strip_edges()
+	if who.is_empty() or password.is_empty():
+		return _fail("Enter your name or email and your password.")
+	if address.is_empty():
+		return _fail("No account server is set.")
+	if state == State.SIGNING_IN:
+		return false
+	state = State.SIGNING_IN
+	message = ""
+	changed.emit()
+	# Nakama signs in by username when the email is empty.
+	var by_email := who.contains("@")
+	var session: NakamaSession = await _nakama().authenticate_email_async(
+		who if by_email else "", password, null if by_email else who, false
+	)
+	if session.is_exception():
+		var error := session.get_exception()
+		if error.grpc_status_code in [3, 5, 16] or error.status_code in [400, 401, 404]:
+			return _fail("Wrong name, email, or password.")
+		return _fail(_describe(error))
+	_session = session
+	return await _start(session.username)
+
+
+## Adds an email and a password to the account, so it can sign in on other
+## machines. Nakama asks for 8 or more characters.
+func link_password(new_email: String, password: String) -> bool:
+	if not is_signed_in():
+		return _note("Sign in first.")
+	var mail := new_email.strip_edges()
+	if not mail.contains("@") or password.length() < 8:
+		return _note("Use a valid email and a password of 8 or more characters.")
+	var result: NakamaAsyncResult = await _nakama().link_email_async(_session, mail, password)
+	if result.is_exception():
+		var error := result.get_exception()
+		if error.grpc_status_code == 6 or error.status_code == 409:
+			return _note("That email belongs to another account.")
+		return _note("Use a valid email and a password of 8 or more characters.")
+	email = mail
+	message = ""
+	changed.emit()
+	return true
+
+
 ## Signs in again with the tokens saved last time, refreshing them when
 ## they have run out. Quietly stays signed out without them.
 func resume() -> bool:
@@ -200,6 +254,7 @@ func sign_out() -> void:
 	state = State.SIGNED_OUT
 	username = ""
 	user_id = ""
+	email = ""
 	message = ""
 	changed.emit()
 
@@ -253,6 +308,8 @@ func _start(name: String) -> bool:
 	username = name
 	user_id = _session.user_id
 	_save_session()
+	var account: NakamaAPI.ApiAccount = await _nakama().get_account_async(_session)
+	email = "" if account.is_exception() else String(account.email)
 	# Progress earned before signing in comes along once, into an empty account.
 	var config := ConfigFile.new()
 	config.load(_account_path)
@@ -301,6 +358,13 @@ func _sign_in_failed() -> bool:
 
 func _fail(text: String) -> bool:
 	state = State.SIGNED_OUT
+	message = text
+	changed.emit()
+	return false
+
+
+## A failure that leaves the sign-in as it is.
+func _note(text: String) -> bool:
 	message = text
 	changed.emit()
 	return false

@@ -3,8 +3,9 @@ extends SceneTree
 ## docs/online.md): signing in brings local progress and classes into a new
 ## account, progress then follows the account, classes save to it, a taken
 ## name is refused, the saved session signs in again at the next launch,
-## progress a dedicated server awards shows up, and signing out goes back to
-## the local files.
+## progress a dedicated server awards shows up, a linked password signs the
+## account in on another machine, and signing out goes back to the local
+## files.
 ##
 ## Needs NAKAMA_URL (for example http://127.0.0.1:7350) and NAKAMA_HTTP_KEY
 ## (the stack's runtime key); without NAKAMA_URL it skips. CI starts the
@@ -106,6 +107,31 @@ func _run() -> void:
 	await online.refresh_progress()
 	_check(ProgressStore.xp() == before + 900, "the award shows up, got %d" % ProgressStore.xp())
 	_check(ProgressStore.weapon_kills("ak47") == 3, "with its kills")
+
+	# A password, then the same account on another machine.
+	var mail := "%s@example.com" % name
+	_check(not await online.link_password("not-an-email", "longenough"), "a bad email is refused")
+	_check(online.is_signed_in(), "and the player stays signed in")
+	_check(await online.link_password(mail, "correct horse"), "adds an email and password")
+	_check(online.email == mail, "the account has the email")
+	var account_id: String = online.user_id
+	online.configure(url, SCRATCH + "account_c.cfg", SCRATCH + "cache_c_")
+	_check(
+		not await online.sign_in_with_password(name, "wrong horse"),
+		"a wrong password is refused: %s" % online.message
+	)
+	_check(
+		await online.sign_in_with_password(name, "correct horse"),
+		"signs in on another machine with the name and password (%s)" % online.message
+	)
+	_check(online.user_id == account_id, "as the same account")
+	_check(ProgressStore.xp() == before + 900, "with its progress, got %d" % ProgressStore.xp())
+	_check(ClassStore.custom()[0].name == "Anchor", "and its classes")
+	online.configure(url, SCRATCH + "account_d.cfg", SCRATCH + "cache_d_")
+	_check(
+		await online.sign_in_with_password(mail, "correct horse"),
+		"or with the email (%s)" % online.message
+	)
 
 	# Another machine cannot take the name.
 	online.configure(url, SCRATCH + "account_b.cfg", SCRATCH + "cache_b_")
