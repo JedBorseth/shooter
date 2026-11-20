@@ -5,8 +5,11 @@
 //! the receiver already has) to list its fields, then again against a
 //! [`DeltaWriter`] on the new value. Each field is compared with the
 //! baseline's field at the same position: an unchanged field costs one bit,
-//! a changed 32-bit field (a float, a counter) is sent as its XOR with the
-//! baseline's, leading zeros dropped, and anything else is sent raw. The
+//! a changed 16- or 32-bit field (a float, a counter, an angle) is sent as
+//! its XOR with the baseline's, leading zeros dropped, and anything else is
+//! sent raw. A field written as a number ([`BitSink::number`]: a position,
+//! an angle, a counter) changes by a small amount rather than a few bits, so
+//! it goes as the zigzagged difference, leading zeros dropped. The
 //! decoder runs the matching reader against a [`DeltaReader`] over the same
 //! baseline. Nothing here knows what the fields mean, so a field added to an
 //! encoder is delta-compressed with no further work, and the result is
@@ -60,8 +63,11 @@ pub fn record(encode: impl FnOnce(&mut Recorder)) -> Vec<Field> {
 
 /// Fields this narrow go raw: a flag would cost as much as the field.
 const RAW_BITS: u32 = 2;
-/// Bits for the leading-zero count of a changed 32-bit field's XOR.
-const ZEROS_BITS: u32 = 5;
+/// Bits for the leading-zero count of a changed field's XOR: enough for
+/// `count - 1` zeros.
+fn zeros_bits(count: u32) -> u32 {
+    32 - (count - 1).leading_zeros()
+}
 
 /// How field number `index` of width `count` is coded against `base`.
 enum Coding {
@@ -69,14 +75,15 @@ enum Coding {
     Raw,
     /// A "changed" flag, then the value raw if it changed.
     Flagged(u32),
-    /// A "changed" flag, then the XOR with the baseline, leading zeros dropped.
+    /// A "changed" flag, then the XOR with the baseline, leading zeros
+    /// dropped, for 16- and 32-bit fields.
     Xor(u32),
 }
 
 fn coding(base: &[Field], index: usize, count: u32) -> Coding {
     match base.get(index) {
         Some(f) if u32::from(f.count) == count && count > RAW_BITS => {
-            if count == 32 {
+            if count == 16 || count == 32 {
                 Coding::Xor(f.value)
             } else {
                 Coding::Flagged(f.value)
@@ -84,6 +91,58 @@ fn coding(base: &[Field], index: usize, count: u32) -> Coding {
         }
         _ => Coding::Raw,
     }
+}
+
+/// The difference `value - base` in `count` bits, zigzagged so small changes
+/// either way have many leading zeros.
+fn zigzag(value: u32, base: u32, count: u32) -> u32 {
+    let shift = 32 - count;
+    // Sign-extend the wrapped difference from `count` bits.
+    let d = ((value.wrapping_sub(base) << shift) as i32) >> shift;
+    let z = ((d << 1) ^ (d >> 31)) as u32;
+    if count == 32 {
+        z
+    } else {
+        z & ((1 << count) - 1)
+    }
+}
+
+fn unzigzag(z: u32, base: u32, count: u32) -> u32 {
+    let d = ((z >> 1) as i32) ^ -((z & 1) as i32);
+    let v = base.wrapping_add(d as u32);
+    if count == 32 {
+        v
+    } else {
+        v & ((1 << count) - 1)
+    }
+}
+
+/// Writes `x` (not zero) as its leading-zero count within `count` bits and
+/// the bits below them.
+fn write_trimmed(out: &mut BitWriter, x: u32, count: u32) {
+    let zeros = x.leading_zeros() - (32 - count);
+    out.bits(zeros, zeros_bits(count));
+    out.bits(x, count - zeros);
+}
+
+fn read_trimmed(input: &mut BitReader, count: u32) -> DecodeResult<u32> {
+    let zeros = input.bits(zeros_bits(count))?;
+    if zeros >= count {
+        return Err(DecodeError::Invalid("delta field"));
+    }
+    let x = input.bits(count - zeros)?;
+    // A real value has exactly `zeros` leading zeros.
+    if x.leading_zeros() != zeros + (32 - count) {
+        return Err(DecodeError::Invalid("delta field"));
+    }
+    Ok(x)
+}
+
+/// A field written as a number, against the baseline's field at `index`.
+fn number_base(base: &[Field], index: usize, count: u32) -> Option<u32> {
+    base.get(index)
+        .filter(|f| u32::from(f.count) == count && count > RAW_BITS)
+        .map(|f| f.value)
 }
 
 /// Writes fields to `out` as changes from `base` (see the module docs).
@@ -119,10 +178,21 @@ impl BitSink for DeltaWriter<'_> {
                 let xor = value ^ base;
                 self.out.bool(xor != 0);
                 if xor != 0 {
-                    // Not zero, so at most 31 leading zeros.
-                    let zeros = xor.leading_zeros();
-                    self.out.bits(zeros, ZEROS_BITS);
-                    self.out.bits(xor, 32 - zeros);
+                    write_trimmed(self.out, xor, count);
+                }
+            }
+        }
+    }
+
+    fn number(&mut self, value: u32, count: u32) {
+        let base = number_base(self.base, self.index, count);
+        self.index += 1;
+        match base {
+            None => self.out.bits(value, count),
+            Some(base) => {
+                self.out.bool(value != base);
+                if value != base {
+                    write_trimmed(self.out, zigzag(value, base, count), count);
                 }
             }
         }
@@ -163,13 +233,21 @@ impl BitSource for DeltaReader<'_, '_> {
                 if !self.input.bool()? {
                     return Ok(base);
                 }
-                let zeros = self.input.bits(ZEROS_BITS)?;
-                let xor = self.input.bits(32 - zeros)?;
-                // A real XOR has exactly `zeros` leading zeros.
-                if xor.leading_zeros() != zeros {
-                    return Err(DecodeError::Invalid("delta field"));
+                Ok(base ^ read_trimmed(self.input, count)?)
+            }
+        }
+    }
+
+    fn number(&mut self, count: u32) -> DecodeResult<u32> {
+        let base = number_base(self.base, self.index, count);
+        self.index += 1;
+        match base {
+            None => self.input.bits(count),
+            Some(base) => {
+                if !self.input.bool()? {
+                    return Ok(base);
                 }
-                Ok(base ^ xor)
+                Ok(unzigzag(read_trimmed(self.input, count)?, base, count))
             }
         }
     }
@@ -238,6 +316,33 @@ mod tests {
         round_trip(&a, &b);
         round_trip(&b, &a);
         round_trip(&b, &(f32::INFINITY, 0, false, Some(1e30), 0));
+    }
+
+    #[test]
+    fn numbers_change_by_their_difference() {
+        let cases: [(u32, u32, u32); 7] = [
+            (0x8000, 0x7FFF, 16),
+            (0, 0xFFFF, 16),
+            (0xFFFF, 0, 16),
+            (5, 1_000_000, 32),
+            (u32::MAX, 0, 32),
+            (0x8000_0000, 0x7FFF_FFFF, 32),
+            (300, 7, 9),
+        ];
+        for (base, value, count) in cases {
+            let fields = record(|r| r.number(base, count));
+            let mut out = BitWriter::new();
+            DeltaWriter::new(&mut out, &fields).number(value, count);
+            let bits = out.len_bits();
+            let bytes = out.finish();
+            let mut input = BitReader::new(&bytes);
+            let got = DeltaReader::new(&mut input, &fields).number(count).unwrap();
+            assert_eq!(got, value, "{base} -> {value} in {count} bits");
+            // A step of one across a power of two stays a few bits.
+            if value.abs_diff(base) == 1 {
+                assert!(bits <= 1 + 5 + 2, "{bits} bits");
+            }
+        }
     }
 
     #[test]

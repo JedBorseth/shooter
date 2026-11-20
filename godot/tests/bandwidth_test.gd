@@ -16,7 +16,7 @@ const SLAMCITY := "res://scenes/slamcity.tscn"
 const WARM_UP := 5
 ## Payload budgets per client, in kilobits per second (docs/netcode.md).
 const DOWN_BUDGET := 130.0
-const UP_BUDGET := 130.0
+const UP_BUDGET := 60.0
 
 var _port := 30000 + OS.get_process_id() % 20000
 var _failures := 0

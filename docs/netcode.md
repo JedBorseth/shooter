@@ -36,7 +36,8 @@ first rows), payload kbps
 | --- | --- | --- | --- | --- |
 | Before (protocol 57) | 80 ms | 168 (188) | 94 | 106 (144) |
 | Before (protocol 57) | 30 ms | 170 (189) | 94 | 53 (91) |
-| Own state as changes (protocol 62) | 80 ms | 92 to 97 (111 to 117) | 14 to 15 | 101 to 103 (139 to 142) |
+| Own state as changes | 80 ms | 92 to 97 (111 to 117) | 14 to 15 | 101 to 103 (139 to 142) |
+| Inputs as changes on a view-angle grid | 80 ms | 87 to 88 (107) | 14 | 37 (75 to 76) |
 
 Where it goes, before any change:
 
@@ -52,7 +53,7 @@ Where it goes, before any change:
 ## Own state as changes
 
 The receiver's own state is the whole simulation state, bit-exact, because
-prediction restarts from it. Since protocol 62 it is sent as changes from the
+prediction restarts from it. Now it is sent as changes from the
 own state in the snapshot the client acknowledged, like the other players
 (`shooter_sim::net::delta`). The encoder (`write_predicted`) runs once to list
 the baseline's fields and again to write the new state against them: an
@@ -69,3 +70,29 @@ state the client acknowledged, and the field only when it changed (ideas only;
 Quake III is GPL and no code was copied). Quake lists its fields in a table;
 here the encoder's call order is the table. The float XOR is the float
 compression of Facebook's Gorilla (Pelkonen et al., VLDB 2015).
+
+## Inputs as changes
+
+Every input packet resends every input the server has not acknowledged, so a
+lost packet costs nothing; at an 80 ms round trip that is about ten inputs a
+packet. Now the first input in a packet is sent whole and each
+later one as changes from the one before it, with the same field coder as
+the own state. Three things make consecutive inputs differ in few bits:
+
+- View angles are snapped to whole steps of 2^-14 radians (about 0.0035
+  degrees) before the client predicts with them (`PlayerInput::quantized`),
+  and travel as step counts, so a turn is a small change instead of a new
+  32-bit float. Quake III and Call of Duty send user command angles as 16-bit
+  shorts (`ANGLE2SHORT`, 0.0055 degrees); this grid is finer, and yaw is not
+  wrapped, because the client lets it run past a full turn. The camera keeps
+  the unsnapped angle; shots leave from the snapped one, at most 0.0017
+  degrees away (1.5 mm at 50 m).
+- Every button and which optional parts follow are one 14-bit field, so an
+  input whose buttons did not change spends one bit on them.
+- The view tick an attacking input carries goes as its whole tick and its
+  fraction, so from one input to the next only the whole tick moves, by one.
+
+A packet's headers (IPv4, UDP, ENet: 40 bytes) now cost more than its
+contents at 120 packets a second. Sending inputs at 60 Hz, two ticks a
+packet, would halve that (about 19 kbps) at the price of up to 8 ms more
+input delay on every other tick; that is a design choice left open.

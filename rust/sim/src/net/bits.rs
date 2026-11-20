@@ -118,6 +118,13 @@ pub trait BitSink {
     /// Writes the low `count` bits of `value` (`count` ≤ 32) as one field.
     fn bits(&mut self, value: u32, count: u32);
 
+    /// Like [`BitSink::bits`], for a field that is a count or a position
+    /// rather than a bit pattern: a delta coder sends its change as a small
+    /// signed difference instead of a bitwise XOR.
+    fn number(&mut self, value: u32, count: u32) {
+        self.bits(value, count);
+    }
+
     fn bool(&mut self, value: bool) {
         self.bits(u32::from(value), 1);
     }
@@ -162,6 +169,11 @@ pub trait BitSink {
 pub trait BitSource {
     /// Reads one field of `count` bits (`count` ≤ 32).
     fn bits(&mut self, count: u32) -> DecodeResult<u32>;
+
+    /// Reads a field written with [`BitSink::number`].
+    fn number(&mut self, count: u32) -> DecodeResult<u32> {
+        self.bits(count)
+    }
 
     fn bool(&mut self) -> DecodeResult<bool> {
         Ok(self.bits(1)? == 1)

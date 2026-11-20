@@ -179,6 +179,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [ ] Bandwidth: send the owner's full state only when it differs from what the client predicted, or delta-compress it like remote players. Measured by `godot/tests/bandwidth_test.gd` (a 6v6 bot match, [docs/netcode.md](docs/netcode.md)): 168 kbps down (94 of it the receiver's own state) and 106 kbps up per client at an 80 ms round trip, with 60 Hz snapshots and 120 Hz inputs.
   - [x] A reproducible bench: the server encodes every bot's snapshots and inputs as if it were a client and counts them; CI fails past a budget.
   - [x] The receiver's own state as field-by-field changes from the acknowledged snapshot's (generic `net::delta`): 94 kbps to 15.
+  - [x] Inputs: view angles on a 2^-14 radian grid, and each input in a packet as changes from the one before: 106 kbps up to 37.
 
 ## Phase 3: lag compensation
 
