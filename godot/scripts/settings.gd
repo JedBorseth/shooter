@@ -138,6 +138,16 @@ const REBINDABLE := {
 	&"refill_ammo": "Refill ammo (Testing Area)",
 }
 
+## Keys whose full names crowd a key cap, shortened as keyboards print them.
+const KEY_SHORT_NAMES := {
+	"Escape": "Esc",
+	"Control": "Ctrl",
+	"PageUp": "PgUp",
+	"PageDown": "PgDn",
+	"BackSpace": "Backspace",
+	"CapsLock": "Caps",
+}
+
 const MOUSE_BUTTON_NAMES := {
 	MOUSE_BUTTON_LEFT: "LMB",
 	MOUSE_BUTTON_RIGHT: "RMB",
@@ -568,7 +578,8 @@ func event_label(event: InputEvent) -> String:
 			var label := DisplayServer.keyboard_get_label_from_physical(key.physical_keycode)
 			if label != KEY_NONE:
 				code = label
-		return OS.get_keycode_string(code)
+		var name := OS.get_keycode_string(code)
+		return KEY_SHORT_NAMES.get(name, name)
 	return "?"
 
 
