@@ -102,6 +102,7 @@ use shooter_sim::tdm::{
     Transition,
 };
 use shooter_sim::weapon::{self, CombatEvent, CombatState, WeaponId};
+use shooter_sim::zombies::drinks::{self, Drink, Drinks};
 use shooter_sim::zombies::{self, laststand};
 use shooter_sim::{Vec2, Vec3, rng};
 
@@ -434,6 +435,9 @@ struct LastStand {
     /// Who is reviving them, and for how long so far.
     reviver: Option<u8>,
     revived_for: f32,
+    /// A lone player with Second Wind: they get back up by themselves after
+    /// `drinks::SELF_REVIVE_SECONDS`, and the game goes on meanwhile.
+    self_revive: bool,
 }
 
 /// One player's Zombies tallies.
@@ -1323,9 +1327,10 @@ impl NetServer {
             .is_some_and(|(h, i)| h.door_open(i))
     }
 
-    /// Zombies: player `id` uses door (`kind` "door") or window ("window")
-    /// `index` this tick, as if looking at it with the use button held;
-    /// `pressed` on the first tick (tests).
+    /// Zombies: player `id` uses door (`kind` "door"), window ("window"),
+    /// drink machine ("drink") `index`, or the power switch ("power") this
+    /// tick, as if looking at it with the use button held; `pressed` on the
+    /// first tick (tests).
     #[func]
     fn debug_use(&mut self, id: i32, kind: GString, index: i32, pressed: bool) {
         let (Ok(id), Ok(index)) = (u8::try_from(id), usize::try_from(index)) else {
@@ -1336,11 +1341,64 @@ impl NetServer {
             .as_ref()
             .and_then(|h| match kind.to_string().as_str() {
                 "door" => h.door_node(index),
+                "drink" => h.machines.drink_machine_node(index),
+                "power" => h.machines.power_switch_node(),
                 _ => h.window_node(index),
             });
         if let Some(node) = node {
             self.zombies_uses(vec![(id, node, pressed)]);
         }
+    }
+
+    /// Zombies: whether the power is on.
+    #[func]
+    fn power_on(&self) -> bool {
+        self.horde.as_ref().is_some_and(|h| h.machines.power())
+    }
+
+    /// Zombies: drink machines on the map.
+    #[func]
+    fn drink_machine_count(&self) -> i32 {
+        self.horde
+            .as_ref()
+            .map_or(0, |h| h.machines.drink_machine_count() as i32)
+    }
+
+    /// Zombies: the index of the machine selling `drink` (a `Drink::key`),
+    /// or -1.
+    #[func]
+    fn drink_machine_for(&self, drink: GString) -> i32 {
+        Drink::from_key(&drink.to_string())
+            .and_then(|d| self.horde.as_ref()?.machines.machine_for(d))
+            .map_or(-1, |i| i as i32)
+    }
+
+    /// Zombies: whether drink machine `index` is still there.
+    #[func]
+    fn drink_machine_available(&self, index: i32) -> bool {
+        usize::try_from(index).ok().is_some_and(|i| {
+            self.horde
+                .as_ref()
+                .and_then(|h| h.machines.drink_machine(i))
+                .is_some_and(|(_, available)| available)
+        })
+    }
+
+    /// Zombies: the keys of the drinks player `id` holds.
+    #[func]
+    fn player_drinks(&self, id: i32) -> PackedStringArray {
+        self.avatars
+            .iter()
+            .find(|a| i32::from(a.id) == id)
+            .map(|a| {
+                a.predicted
+                    .state
+                    .drinks
+                    .iter()
+                    .map(|d| GString::from(d.key()))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// Zombies: power-ups on the ground, and seconds of Insta-Kill and
@@ -1659,6 +1717,7 @@ impl NetServer {
                         self.send_event(id, GameEvent::Zombies(event));
                     }
                     self.send_points(id, 0);
+                    self.broadcast_machines();
                 }
                 godot_print!("server: player {id} \"{name}\" joined");
             }
@@ -2089,6 +2148,7 @@ impl NetServer {
         if let Some(index) = self.avatars.iter().position(|a| a.id == id) {
             let avatar = self.avatars.swap_remove(index);
             avatar.parts.body.upcast::<Node>().queue_free();
+            self.broadcast_machines();
         }
     }
 
@@ -2492,10 +2552,10 @@ impl NetServer {
         horde.step(&players);
         self.drain_horde();
         let everyone_down = !self.avatars.is_empty()
-            && self
-                .avatars
-                .iter()
-                .all(|a| !a.predicted.state.alive() || a.predicted.state.downed);
+            && self.avatars.iter().all(|a| {
+                !a.predicted.state.alive()
+                    || (a.predicted.state.downed && !a.last_stand.is_some_and(|s| s.self_revive))
+            });
         if let Some(horde) = &mut self.horde
             && everyone_down
             && !horde.over()
@@ -2529,6 +2589,7 @@ impl NetServer {
         events.extend(horde.window_events());
         events.extend(horde.door_events());
         events.push(horde.timers_event(self.tick));
+        events.extend(horde.machines.events(self.avatars.len() == 1));
         for event in events {
             self.broadcast_event(&GameEvent::Zombies(event));
         }
@@ -2622,6 +2683,22 @@ impl NetServer {
             if !self.match_state.scoring() || horde.over() {
                 return;
             }
+            if horde.machines.is_power_switch(&node) {
+                // A press turns the power on, free, for the rest of the game.
+                if pressed && horde.machines.set_power(true) {
+                    godot_print!("server: player {id} turned the power on");
+                    self.broadcast_event(&GameEvent::Zombies(protocol::ZombiesEvent::Power {
+                        on: true,
+                    }));
+                }
+                continue;
+            }
+            if let Some(machine) = horde.machines.drink_machine_of(&node) {
+                if pressed {
+                    self.buy_drink(id, machine);
+                }
+                continue;
+            }
             if let Some(door) = horde.door_of(&node) {
                 let Some(price) = horde.door_price(door) else {
                     continue;
@@ -2675,6 +2752,66 @@ impl NetServer {
                     self.award_points(id, pay);
                 }
             }
+        }
+    }
+
+    /// Zombies: player `id` presses use at drink machine `machine`: if they
+    /// may buy it (`drinks::can_buy`), they pay, drink it, and bring their
+    /// weapon back up.
+    fn buy_drink(&mut self, id: u8, machine: usize) {
+        let solo = self.avatars.len() == 1;
+        let Some(horde) = &mut self.horde else {
+            return;
+        };
+        let Some((drink, available)) = horde.machines.drink_machine(machine) else {
+            return;
+        };
+        let powered = horde.machines.power();
+        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
+            return;
+        };
+        let state = &mut avatar.predicted.state;
+        if !state.alive() || state.downed {
+            return;
+        }
+        let Ok(price) = drinks::can_buy(
+            drink,
+            state.drinks,
+            avatar.zombies.points,
+            powered,
+            solo,
+            available,
+        ) else {
+            return;
+        };
+        avatar.zombies.points -= price;
+        state.drinks = state.drinks.with(drink);
+        // The drink: the weapon goes down and comes back up.
+        let shots = state.combat.shots_fired;
+        state.combat = state.combat.raised();
+        state.combat.shots_fired = shots;
+        godot_print!("server: player {id} drank {}", drink.label());
+        let left =
+            drink == Drink::SecondWind && solo && horde.machines.sold_solo_second_wind(machine);
+        self.send_points(id, -(price as i32));
+        self.broadcast_event(&GameEvent::Zombies(protocol::ZombiesEvent::Drank {
+            player: id,
+            drink,
+        }));
+        if left {
+            self.broadcast_machines();
+        }
+    }
+
+    /// Zombies: the power and every drink machine, to everyone: on a
+    /// machine leaving, and when players join or leave (a game for one
+    /// prices Second Wind lower and runs it without power).
+    fn broadcast_machines(&mut self) {
+        let Some(horde) = &self.horde else {
+            return;
+        };
+        for event in horde.machines.events(self.avatars.len() == 1) {
+            self.broadcast_event(&GameEvent::Zombies(event));
         }
     }
 
@@ -2745,8 +2882,8 @@ impl NetServer {
         if state.downed {
             return;
         }
-        let damage = zombies::hit_damage(state.health, max);
-        // The second hit downs instead of killing (last stand).
+        let damage = drinks::hit_damage(state.health, max, state.drinks);
+        // The hit that would kill downs instead (last stand).
         let downs = damage >= state.health;
         let damage = if downs {
             state.health - laststand::DOWNED_HEALTH
@@ -2780,6 +2917,8 @@ impl NetServer {
     /// be revived.
     fn go_down(&mut self, id: u8) {
         let bleeds_out_at = self.ticks_from_now(laststand::BLEED_OUT_SECONDS);
+        let self_revive_at = self.ticks_from_now(drinks::SELF_REVIVE_SECONDS);
+        let solo = self.avatars.len() == 1;
         let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
             return;
         };
@@ -2788,6 +2927,10 @@ impl NetServer {
             return;
         }
         let stored = state.combat;
+        // A lone player with Second Wind gets back up by themselves; every
+        // drink is lost either way, as in Black Ops.
+        let self_revive = solo && state.drinks.has(Drink::SecondWind);
+        state.drinks = Drinks::NONE;
         state.downed = true;
         state.health = laststand::DOWNED_HEALTH;
         state.combat = laststand::pistol();
@@ -2807,6 +2950,7 @@ impl NetServer {
             lost,
             reviver: None,
             revived_for: 0.0,
+            self_revive,
         });
         godot_print!("server: player {id} is down");
         self.send_points(id, -(lost as i32));
@@ -2814,6 +2958,13 @@ impl NetServer {
             player: id,
             bleeds_out_at: Some(bleeds_out_at),
         }));
+        if self_revive {
+            self.broadcast_event(&GameEvent::Zombies(protocol::ZombiesEvent::Revive {
+                player: id,
+                by: Some(id),
+                done_at: self_revive_at,
+            }));
+        }
         self.next_scoreboard = self.tick;
     }
 
@@ -2825,10 +2976,23 @@ impl NetServer {
         let mut revived = Vec::new();
         let mut bled_out = Vec::new();
         let mut events = Vec::new();
+        // How long each player takes to revive: half with Second Wind.
+        let revive_seconds: Vec<(u8, f32)> = self
+            .avatars
+            .iter()
+            .map(|a| (a.id, a.predicted.state.drinks.revive_seconds()))
+            .collect();
         for avatar in &mut self.avatars {
             let Some(stand) = &mut avatar.last_stand else {
                 continue;
             };
+            if stand.self_revive {
+                stand.revived_for += TICK_DT;
+                if stand.revived_for >= drinks::SELF_REVIVE_SECONDS {
+                    revived.push((avatar.id, avatar.id));
+                }
+                continue;
+            }
             let helpers: Vec<u8> = revivers
                 .iter()
                 .filter(|(_, target)| *target == avatar.id)
@@ -2840,10 +3004,14 @@ impl NetServer {
                 .or_else(|| helpers.first().copied());
             match by {
                 Some(by) => {
+                    let seconds = revive_seconds
+                        .iter()
+                        .find(|(id, _)| *id == by)
+                        .map_or(laststand::REVIVE_SECONDS, |(_, s)| *s);
                     if stand.reviver != Some(by) {
                         stand.reviver = Some(by);
                         stand.revived_for = 0.0;
-                        let left = (laststand::REVIVE_SECONDS * TICK_RATE as f32).ceil() as Tick;
+                        let left = (seconds * TICK_RATE as f32).ceil() as Tick;
                         events.push(protocol::ZombiesEvent::Revive {
                             player: avatar.id,
                             by: Some(by),
@@ -2851,7 +3019,7 @@ impl NetServer {
                         });
                     }
                     stand.revived_for += TICK_DT;
-                    if stand.revived_for >= laststand::REVIVE_SECONDS {
+                    if stand.revived_for >= seconds {
                         revived.push((avatar.id, by));
                     }
                 }
@@ -2903,6 +3071,16 @@ impl NetServer {
         state.combat.shots_fired = shots;
         state.movement.stance = shooter_sim::movement::Stance::Standing;
         avatar.zombies.ignored_until = ignore;
+        if by == id {
+            // Second Wind alone: nobody earns the points lost going down.
+            godot_print!("server: player {id} got back up");
+            self.broadcast_event(&GameEvent::Zombies(protocol::ZombiesEvent::Downed {
+                player: id,
+                bleeds_out_at: None,
+            }));
+            self.next_scoreboard = self.tick;
+            return;
+        }
         godot_print!("server: player {by} revived player {id}");
         if let Some(reviver) = self.avatars.iter_mut().find(|a| a.id == by) {
             reviver.zombies.revives += 1;
@@ -3516,7 +3694,17 @@ impl NetServer {
         if self.horde.is_some() {
             let zombie_tick = self.zombie_rewind(rewind);
             let zombie_targets = self.horde.as_ref().map(|h| h.targets(zombie_tick));
-            let zombie_hits = lag::resolve_shot(def, &pellets, &zombie_targets.unwrap_or_default());
+            let mut zombie_hits =
+                lag::resolve_shot(def, &pellets, &zombie_targets.unwrap_or_default());
+            // Hair Trigger: every round hits twice.
+            let scale = self
+                .avatars
+                .iter()
+                .find(|a| a.id == shot.shooter)
+                .map_or(1.0, |a| a.predicted.state.drinks.zombie_damage_scale());
+            for hit in &mut zombie_hits {
+                hit.damage *= scale;
+            }
             self.hurt_zombies(shot.shooter, shot.shot, &zombie_hits, false);
         }
         let hits = lag::resolve_shot(def, &pellets, &targets);

@@ -14,7 +14,7 @@ use shooter_sim::net::Tick;
 use shooter_sim::net::horde::HordeHistory;
 use shooter_sim::net::protocol::{self, ZombieView, ZombiesEvent, ZombiesPhase};
 
-use super::horde;
+use super::{horde, machines};
 use crate::convert::to_godot;
 use crate::zombie::Zombie;
 use crate::zombie_director::ZombieDirector;
@@ -35,6 +35,9 @@ pub struct HordeView {
     scene: Gd<PackedScene>,
     windows: Vec<Gd<Node3D>>,
     doors: Vec<Gd<Node3D>>,
+    /// The power switch and the drink machines, in the server's order.
+    power_switch: Option<Gd<Node3D>>,
+    drink_machines: Vec<Gd<Node3D>>,
     history: HordeHistory,
     puppets: Vec<Puppet>,
     lag: f64,
@@ -60,11 +63,23 @@ impl HordeView {
         let map = director.get_parent();
         let windows = map.as_ref().map(horde::map_windows).unwrap_or_default();
         let doors = map.as_ref().map(horde::map_door_nodes).unwrap_or_default();
+        let power_switch = map
+            .as_ref()
+            .and_then(|m| m.try_get_node_as::<Node3D>("PowerSwitch"));
+        let drink_machines = map
+            .as_ref()
+            .map(machines::map_drink_machines)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(node, _)| node)
+            .collect();
         Some(Self {
             director,
             scene,
             windows,
             doors,
+            power_switch,
+            drink_machines,
             history: HordeHistory::default(),
             puppets: Vec::new(),
             downed: Vec::new(),
@@ -222,6 +237,37 @@ impl HordeView {
                 self.downed.retain(|id| *id != player);
                 if downed {
                     self.downed.push(player);
+                }
+            }
+            ZombiesEvent::Power { on } => {
+                self.director.bind_mut().net_power(on);
+                if let Some(lever) = &mut self.power_switch {
+                    lever.call("set_on", &[on.to_variant()]);
+                }
+                for machine in &mut self.drink_machines {
+                    machine.call("set_powered", &[on.to_variant()]);
+                }
+            }
+            ZombiesEvent::Machine {
+                machine,
+                available,
+                price,
+                needs_power,
+            } => {
+                if let Some(node) = self.drink_machines.get_mut(usize::from(machine)) {
+                    node.call("set_available", &[available.to_variant()]);
+                    node.call(
+                        "set_terms",
+                        &[i64::from(price).to_variant(), needs_power.to_variant()],
+                    );
+                }
+            }
+            ZombiesEvent::Drank { player, drink } => {
+                // The machine that sold it answers (its light and sound).
+                for machine in &mut self.drink_machines {
+                    if machine.get("drink").to_string() == drink.key() {
+                        machine.call("sold", &[i64::from(player).to_variant()]);
+                    }
                 }
             }
             // Last stand on the HUD is `NetClient`'s, which knows names.

@@ -44,6 +44,7 @@ var _summary: Label
 var _again: Button
 var _last_stand: Label
 var _revive_bar: ProgressBar
+var _drinks: Control
 
 
 func _ready() -> void:
@@ -80,6 +81,11 @@ func _ready() -> void:
 	add_child(_revive_bar)
 	_place(_revive_bar, Vector2(0.5, 0.5), Rect2(-160, 118, 320, 8))
 	_revive_bar.hide()
+	_drinks = preload("res://scripts/zombies_drinks_row.gd").new()
+	_drinks.name = "Drinks"
+	_drinks.player = _player
+	add_child(_drinks)
+	_place(_drinks, Vector2(0, 1), Rect2(40, -350, 260, 40))
 	_build_game_over()
 	_sting = AudioStreamPlayer.new()
 	_sting.bus = &"UI"
@@ -159,7 +165,10 @@ func _update_last_stand() -> void:
 	var revive_left: float = info.revive_left
 	if revive_left >= 0.0:
 		var who: String = info.revive_name
-		text = ("REVIVING  %s" if info.reviving else "BEING REVIVED BY  %s") % who.to_upper()
+		if who == "":
+			text = "GETTING BACK UP"
+		else:
+			text = ("REVIVING  %s" if info.reviving else "BEING REVIVED BY  %s") % who.to_upper()
 		_revive_bar.value = 1.0 - revive_left / maxf(float(info.revive_seconds), 0.01)
 	elif info.downed:
 		text = "BLEEDING OUT  %d" % ceili(float(info.bleed_left))

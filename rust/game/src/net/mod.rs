@@ -10,6 +10,7 @@ mod discovery;
 mod horde;
 mod horde_view;
 pub(crate) mod killcam;
+mod machines;
 mod props;
 mod remote;
 mod server;

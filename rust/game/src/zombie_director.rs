@@ -91,11 +91,14 @@ pub struct ZombieDirector {
     /// Online: engine seconds this player bleeds out, while down.
     net_bleeds_out: Option<f64>,
     /// Online: a revive under way that involves this player: the other
-    /// player's name, whether we are the one reviving, and the engine
-    /// seconds it is done.
-    net_revive: Option<(String, bool, f64)>,
+    /// player's name ("" for getting back up by ourselves), whether we are
+    /// the one reviving, the engine seconds it is done, and how long it
+    /// takes in all.
+    net_revive: Option<(String, bool, f64, f64)>,
     /// Online: the teammate close enough to revive, if any.
     net_revive_prompt: String,
+    /// Online: the power is on (drink machines and the upgrade machine).
+    net_power: bool,
 }
 
 /// Points for each board put back on a barrier.
@@ -433,8 +436,22 @@ impl ZombieDirector {
     /// with `other` reviving us or being revived by us (`reviving`), or
     /// stopped (None).
     pub fn net_revive(&mut self, revive: Option<(String, bool, f64)>) {
-        self.net_revive = revive
-            .map(|(other, reviving, seconds)| (other, reviving, now_seconds() + seconds.max(0.0)));
+        self.net_revive = revive.map(|(other, reviving, seconds)| {
+            let seconds = seconds.max(0.0);
+            (other, reviving, now_seconds() + seconds, seconds.max(0.01))
+        });
+    }
+
+    /// Online: the power went on (or off for a new game).
+    pub fn net_power(&mut self, on: bool) {
+        self.net_power = on;
+    }
+
+    /// Whether the power is on. Offline there is no power switch to throw,
+    /// so it always is.
+    #[func]
+    fn power_on(&self) -> bool {
+        self.net_power || !self.networked
     }
 
     /// Online: the teammate close enough to revive ("" for none).
@@ -456,15 +473,19 @@ impl ZombieDirector {
             "bleed_left",
             self.net_bleeds_out.map_or(0.0, |end| (end - now).max(0.0)),
         );
-        let (name, reviving, left) = match &self.net_revive {
-            Some((name, reviving, end)) => (name.clone(), *reviving, (end - now).max(0.0)),
-            None => (String::new(), false, -1.0),
+        let (name, reviving, left, total) = match &self.net_revive {
+            Some((name, reviving, end, total)) => {
+                (name.clone(), *reviving, (end - now).max(0.0), *total)
+            }
+            None => (
+                String::new(),
+                false,
+                -1.0,
+                f64::from(shooter_sim::zombies::laststand::REVIVE_SECONDS),
+            ),
         };
         d.set("revive_left", left);
-        d.set(
-            "revive_seconds",
-            f64::from(shooter_sim::zombies::laststand::REVIVE_SECONDS),
-        );
+        d.set("revive_seconds", total);
         d.set("revive_name", &GString::from(&name));
         d.set("reviving", reviving);
         d.set("prompt", &GString::from(&self.net_revive_prompt));

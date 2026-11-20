@@ -1120,6 +1120,24 @@ impl FpsPlayer {
         self.state.movement.mount_blend
     }
 
+    /// Zombies: the keys of the drinks this player holds
+    /// (`shooter_sim::zombies::drinks::Drink::key`), for machine prompts
+    /// and the HUD.
+    #[func]
+    fn zombie_drinks(&self) -> PackedStringArray {
+        self.state
+            .drinks
+            .iter()
+            .map(|d| GString::from(d.key()))
+            .collect()
+    }
+
+    /// Zombies: whether this player is down in last stand.
+    #[func]
+    fn zombie_downed(&self) -> bool {
+        self.state.downed
+    }
+
     /// Prompt for the pickup or device in front of the player, or empty.
     /// Devices write `{key}` where the interact key goes.
     #[func]

@@ -567,6 +567,9 @@ pub struct CombatContext {
     /// How fast reloads, switches, throws, and the sprint-out run, from the
     /// player's perks ([`crate::perk::Perks::handling`]).
     pub handling: crate::perk::Handling,
+    /// Zombies drinks held ([`crate::zombies::drinks`]): Quickload speeds
+    /// reloads and Hair Trigger shortens the time between shots.
+    pub drinks: crate::zombies::drinks::Drinks,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -702,7 +705,12 @@ pub fn step(
 
     request_switch(state, input);
     advance_throw(state, input, dt, ctx.handling.throw, events);
-    advance_action(state, dt, &ctx.handling, events);
+    // Quickload speeds reloads on top of any perk.
+    let handling = crate::perk::Handling {
+        reload: ctx.handling.reload * ctx.drinks.reload_rate(),
+        ..ctx.handling
+    };
+    advance_action(state, dt, &handling, events);
     if let Some((strike_in, lunge)) = input.melee
         && state.can_melee()
     {
@@ -1274,7 +1282,7 @@ fn fire(
     let slot = &mut state.slots[usize::from(state.active)];
     slot.magazine -= 1;
     // Accumulate so the average fire rate is exact even when the interval is not a whole number of ticks.
-    state.cooldown += def.fire_interval();
+    state.cooldown += def.fire_interval() * ctx.drinks.fire_interval_scale();
     if let FireMode::Burst { delay, .. } = def.fire_mode {
         state.burst_left = state.burst_left.saturating_sub(1);
         if state.burst_left == 0 || slot.magazine == 0 {
