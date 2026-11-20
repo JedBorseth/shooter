@@ -258,6 +258,8 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Perks that need streaks: Hardline, Ghost, and Hard Wired ([create-a-class.md](docs/create-a-class.md#perks)).
 - [x] Sentry Gun (Black Ops 2's, 800): set down in front of its caller, a half-circle field of fire, 650 health that bullets wear at 60% and blasts at double, 240 s; bots place theirs and shoot enemy ones ([docs/scorestreaks.md](docs/scorestreaks.md#sentry-gun)).
 - [x] Guided Missile (Black Ops 2's Hellstorm, 700): flown from its nose camera, boosted, split into a cluster over enemies near the aim; bots fly theirs at their nearest enemy ([docs/scorestreaks.md](docs/scorestreaks.md#guided-missile)).
+- [x] Attack Chopper (Black Ops 2's Stealth Chopper, 1100): guards a point marked on the map for a minute, hopping between spots and firing bursts on the nearest enemy it sees; bullets do half and a rocket downs it; bots call theirs on an enemy and shoot enemy ones down ([docs/scorestreaks.md](docs/scorestreaks.md#attack-chopper)).
+- [ ] Attack Chopper follow-ups: rotor and gun sounds, evading when locked on (Black Ops 2's), and flares.
 - [ ] Guided Missile follow-ups: its launch, flight, and boost sounds, enemies shooting it down in flight (Black Ops 2 lets them), a warning to enemies under it, and restoring the pilot's view angle when it ends.
 - [ ] Sentry Gun follow-ups: its own firing sound, a minimap icon for our side's, carrying and moving it (Black Ops 2 lets the owner pick it up), and Care Packages holding one.
 - [ ] Blind Eye, once there is an AI air streak to hide from.

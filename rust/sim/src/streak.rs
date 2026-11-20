@@ -28,6 +28,7 @@
 //! | Guided Missile | 700 | Hellstorm Missile, 700 | a missile flown down from its nose camera that splits into bomblets ([`crate::missile`]) |
 //! | Airstrike | 750 | Lightning Strike, 750 | three strikes on points marked on the map ([`Strikes`]) |
 //! | Sentry Gun | 800 | Sentry Gun, 800 | an automated gun set down in front of the caller ([`crate::turret`]) |
+//! | Attack Chopper | 1100 | Stealth Chopper, 1100 | an AI helicopter guarding a marked point for a minute ([`crate::chopper`]) |
 //!
 //! Every number here is an estimate where Black Ops 2's own files give none;
 //! the docs list which (`docs/scorestreaks.md`).
@@ -44,6 +45,7 @@ pub enum Streak {
     Airstrike,
     SentryGun,
     GuidedMissile,
+    AttackChopper,
 }
 
 /// UAV: seconds it stays up, and seconds between its sweeps (Black Ops 2's
@@ -59,13 +61,14 @@ pub const HARDLINE_TENTHS: u32 = 12;
 pub const MAX_HELD: usize = 8;
 
 impl Streak {
-    pub const ALL: [Streak; 6] = [
+    pub const ALL: [Streak; 7] = [
         Streak::Uav,
         Streak::CounterUav,
         Streak::CarePackage,
         Streak::Airstrike,
         Streak::SentryGun,
         Streak::GuidedMissile,
+        Streak::AttackChopper,
     ];
 
     /// Score to earn it.
@@ -77,6 +80,7 @@ impl Streak {
             Streak::Airstrike => 750,
             Streak::SentryGun => 800,
             Streak::GuidedMissile => 700,
+            Streak::AttackChopper => 1100,
         }
     }
 
@@ -89,6 +93,7 @@ impl Streak {
             Streak::Airstrike => 13,
             Streak::SentryGun => 16,
             Streak::GuidedMissile => 10,
+            Streak::AttackChopper => 22,
         }
     }
 
@@ -101,6 +106,7 @@ impl Streak {
             Streak::Airstrike => "airstrike",
             Streak::SentryGun => "sentry_gun",
             Streak::GuidedMissile => "guided_missile",
+            Streak::AttackChopper => "attack_chopper",
         }
     }
 
@@ -117,6 +123,7 @@ impl Streak {
             Streak::Airstrike => "Airstrike",
             Streak::SentryGun => "Sentry Gun",
             Streak::GuidedMissile => "Guided Missile",
+            Streak::AttackChopper => "Attack Chopper",
         }
     }
 
@@ -133,6 +140,9 @@ impl Streak {
             Streak::GuidedMissile => {
                 "Fly a missile down from above; boost it, then split it into bomblets over your targets."
             }
+            Streak::AttackChopper => {
+                "A helicopter guards a point you mark on the map for a minute, firing on enemies near it."
+            }
         }
     }
 
@@ -143,14 +153,17 @@ impl Streak {
     pub fn needs_open_sky(self) -> bool {
         matches!(
             self,
-            Streak::CarePackage | Streak::Airstrike | Streak::GuidedMissile
+            Streak::CarePackage | Streak::Airstrike | Streak::GuidedMissile | Streak::AttackChopper
         )
     }
 
     /// Whether it flies: what shooting one down counts toward the
     /// "aircraft" career stat (a Sentry Gun stands on the ground).
     pub fn is_aircraft(self) -> bool {
-        matches!(self, Streak::Uav | Streak::CounterUav)
+        matches!(
+            self,
+            Streak::Uav | Streak::CounterUav | Streak::AttackChopper
+        )
     }
 
     /// Whether it can be earned and called in on a map, `roofed` or not.
@@ -172,9 +185,11 @@ impl Streak {
         let seconds = match self {
             Streak::Uav => UAV_SECONDS,
             Streak::CounterUav => COUNTER_UAV_SECONDS,
-            Streak::CarePackage | Streak::Airstrike | Streak::SentryGun | Streak::GuidedMissile => {
-                0.0
-            }
+            Streak::CarePackage
+            | Streak::Airstrike
+            | Streak::SentryGun
+            | Streak::GuidedMissile
+            | Streak::AttackChopper => 0.0,
         };
         seconds_to_ticks(seconds)
     }

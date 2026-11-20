@@ -82,6 +82,7 @@ const CARE_PACKAGE_VIEW_SCRIPT := "res://scripts/net/care_package_view.gd"
 const SKY_VIEW_SCRIPT := "res://scripts/net/sky_view.gd"
 const SENTRY_VIEW_SCRIPT := "res://scripts/net/sentry_view.gd"
 const MISSILE_VIEW_SCRIPT := "res://scripts/net/missile_view.gd"
+const CHOPPER_VIEW_SCRIPT := "res://scripts/net/chopper_view.gd"
 const AIRSTRIKE_VIEW_SCRIPT := "res://scripts/net/airstrike_view.gd"
 const CTF_VIEW_SCRIPT := "res://scripts/net/ctf_view.gd"
 const HARDPOINT_VIEW_SCRIPT := "res://scripts/net/hardpoint_view.gd"
@@ -471,6 +472,12 @@ func _attach_client(main: Node, target: String, options: Dictionary, token := ""
 	missiles.set("client", client)
 	missiles.set("player", player)
 	main.add_child(missiles)
+	# Attack Choppers guarding their points, and their wrecks.
+	var choppers := Node3D.new()
+	choppers.name = "ChopperView"
+	choppers.set_script(load(CHOPPER_VIEW_SCRIPT))
+	choppers.set("client", client)
+	main.add_child(choppers)
 	# Match stings: start, result, time warning, and rounds.
 	var stings := MatchStings.new()
 	stings.client = client

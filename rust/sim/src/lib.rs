@@ -10,6 +10,7 @@ pub mod card;
 pub mod care_package;
 pub mod challenge;
 pub mod chat;
+pub mod chopper;
 pub mod class;
 pub mod ctf;
 pub mod domination;

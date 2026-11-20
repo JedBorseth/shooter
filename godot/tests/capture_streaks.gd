@@ -4,8 +4,8 @@ extends SceneTree
 ## server's debug hooks, and capture the streak column with a held UAV, a
 ## UAV's sweep on the minimap, an enemy Counter-UAV's static, the Airstrike's
 ## target picker with its marks, a Care Package on its way down and
-## landed, each drone circling overhead, a Sentry Gun set down, and the
-## Guided Missile's camera. Needs
+## landed, each drone circling overhead, a Sentry Gun set down, the
+## Guided Missile's camera, and an Attack Chopper. Needs
 ## a GPU and a display (or Xvfb):
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
 ##     --script res://tests/capture_streaks.gd
@@ -115,6 +115,26 @@ func _run() -> void:
 	await _frames(70)
 	await _shot("10_guided_missile")
 	await _frames(60 * 8)
+
+	# A teammate's Attack Chopper, guarding a point near an enemy.
+	for id in client.remote_ids():
+		if client.team_of(id) == client.team_of(me):
+			_server.debug_give_streak(id, "attack_chopper")
+			_server.debug_use_streak(id, "attack_chopper")
+			break
+	await _frames(60 * 6)
+	var choppers := _server.choppers()
+	if not choppers.is_empty():
+		var camera := Camera3D.new()
+		camera.fov = 55.0
+		current_scene.add_child(camera)
+		camera.make_current()
+		for i in 3:
+			var at: Vector3 = _server.choppers()[0].position
+			camera.look_at_from_position(at + Vector3(9.0, -6.0, 9.0), at)
+			await _frames(1)
+		await _shot("11_attack_chopper")
+		camera.queue_free()
 	_server.queue_free()
 	quit(0)
 

@@ -241,8 +241,8 @@ func _enemies() -> Array[Vector3]:
 		if not free_for_all and client.team_of(id) == team:
 			continue
 		var remote := client.remote_player(id)
-		if remote != null and remote.visible:
-			out.append(remote.global_position)
+		if remote != null and remote.is_alive():
+			out.append(remote.feet())
 	return out
 
 
