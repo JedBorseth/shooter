@@ -99,8 +99,9 @@ const DETAILS := {
 	"freeroam": "Walk the map on your own: no bots, no clock.",
 	"zombies":
 	(
-		"Co-op against rounds of zombies, up to four players. Friends on your network"
-		+ " find it under Multiplayer, LAN; it starts once everyone is ready."
+		"Co-op against rounds of zombies, up to four players. Friends find it under"
+		+ " Multiplayer, LAN, or Internet when listed there (players outside your"
+		+ " network need port 27027 forwarded to you); it starts once everyone is ready."
 	),
 }
 const CARD_WIDTH := 560.0
@@ -110,6 +111,8 @@ const CARD_WIDTH := 560.0
 var mode := "tdm"
 
 var _name: LineEdit
+## Zombies co-op: listed on the local network only, or on the Internet too.
+var _listing: ChipRow
 var _map: ChipRow
 var _team_size: ChipRow
 var _score_limit: ChipRow
@@ -150,6 +153,8 @@ func options() -> Dictionary:
 			"map": ZOMBIES_MAPS[_map.selected][1],
 			"name": "%s's Zombies" % (host if host != "" else "Player"),
 			"shared": true,
+			# Listed on the server directory too: Multiplayer, Internet.
+			"master": Settings.master_server if _listing.selected == 1 else "",
 		}
 	if _gun_game():
 		return {
@@ -342,7 +347,7 @@ func _build() -> void:
 	_map.item_selected.connect(_show_map)
 	_show_map(0)
 	if _zombies():
-		pass
+		_listing = _chips(rows, "Listed", ["LAN", "Internet"], 0)
 	elif _gun_game() or _ffa():
 		_players = _chips(
 			rows, "Players", PLAYER_COUNTS.map(func(n: int) -> String: return str(n)), 3

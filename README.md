@@ -134,7 +134,9 @@ opens a Black Ops 2 inspired menu: **Solo** leads to a rotating globe with five
 selectable map locations. Use the list, map markers, or arrow buttons to select;
 drag the globe to rotate, and use Back or Esc to return. **START GAME** loads the
 Zombies arena; every map plays in that arena for now. Zombies assets load only on
-menu entry. Use the mouse or press Enter to select the focused menu option.
+menu entry. **Co-op** hosts a Zombies game for up to four: listed on **LAN**, friends on
+your network find it under Multiplayer, LAN; listed on **Internet**, it also shows under
+Multiplayer, Internet (players outside your network need UDP port 27027 forwarded to you). Use the mouse or press Enter to select the focused menu option.
 
 ### Zombies
 
