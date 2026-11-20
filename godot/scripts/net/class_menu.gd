@@ -1,7 +1,8 @@
 extends VBoxContainer
 ## Create-a-Class, inside the match menu (L, or D-pad up): the class list,
 ## and an editor for the five custom classes under Pick 10's rules (ten
-## points, one per item; see `docs/create-a-class.md`).
+## points, one per item; see `docs/create-a-class.md`), perks in Black Ops
+## 2's three tiers among them.
 ##
 ## The list shows the custom classes, then the defaults. Choosing one equips
 ## it from the next spawn; hovering or focusing one shows what it carries.
@@ -14,6 +15,8 @@ signal class_equipped(id: String)
 
 const MenuStyle := preload("res://scripts/ui/menu_style.gd")
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
+## Each perk's icon, by key.
+const PERK_ICON := "res://assets/ui/perks/%s.svg"
 
 ## A line for each primary weapon; others show only their name.
 const WEAPON_ROLES := {
@@ -244,7 +247,8 @@ func _show_detail(id: String) -> void:
 		_detail_lines.add_child(note)
 	else:
 		for line: Array in _describe(entry):
-			_detail_lines.add_child(_detail_line(line[0], line[1], line[2]))
+			var icons: Array = line[3] if line.size() > 3 else []
+			_detail_lines.add_child(_detail_line(line[0], line[1], line[2], icons))
 	_edit_button.disabled = not custom or locked
 	_edit_button.text = (
 		"Default classes cannot be changed"
@@ -283,6 +287,15 @@ func _describe(entry: Dictionary) -> Array:
 	var tacticals := int(entry.get("tacticals", 0))
 	var tactical := _tactical_name(String(entry.get("tactical", "flash")))
 	rows.append(["TACTICAL", "%s ×%d" % [tactical, tacticals] if tacticals > 0 else "None", ""])
+	for tier in [1, 2, 3]:
+		var names := []
+		var icons := []
+		for key: String in entry.get("perks", []):
+			if int(_perk(key).get("tier", 0)) == tier:
+				names.append(String(_perk(key).get("name", key)))
+				icons.append(PERK_ICON % key)
+		var item := ", ".join(names) if not names.is_empty() else "None"
+		rows.append(["PERK %d" % tier, item, "", icons])
 	var wildcards := []
 	for key: String in entry.get("wildcards", []):
 		wildcards.append(_wildcard_name(key))
@@ -290,7 +303,7 @@ func _describe(entry: Dictionary) -> Array:
 	return rows
 
 
-func _detail_line(slot: String, item: String, detail: String) -> Control:
+func _detail_line(slot: String, item: String, detail: String, icons := []) -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 12)
 	var label := Label.new()
@@ -299,6 +312,14 @@ func _detail_line(slot: String, item: String, detail: String) -> Control:
 	label.add_theme_color_override("font_color", MenuStyle.TEXT_FAINT)
 	label.add_theme_font_size_override("font_size", 13)
 	row.add_child(label)
+	for path: String in icons:
+		var icon := TextureRect.new()
+		icon.texture = load(path) as Texture2D
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.custom_minimum_size = Vector2(18, 18)
+		icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		row.add_child(icon)
 	var value := Label.new()
 	value.text = item
 	value.add_theme_font_size_override("font_size", 18)
@@ -488,6 +509,9 @@ func _rebuild_editor() -> void:
 			)
 	_section("TACTICAL", chips, "")
 
+	for tier in [1, 2, 3]:
+		_perk_section(tier)
+
 	chips = []
 	var notes := []
 	for item: Dictionary in _items.wildcards:
@@ -509,9 +533,44 @@ func _rebuild_editor() -> void:
 	_section("WILDCARDS", chips, " ".join(notes) if not notes.is_empty() else "A point each.")
 
 
-## A row of chips: each [text, change, chosen, lock]. A chip whose change
-## would break a rule is disabled, and so is one still locked (`lock` says
-## what unlocks it: "Level 12", "8 kills").
+## A tier's perks as chips with their icons. Picking another perk in a full
+## slot swaps it in; the note says what the chosen perks do.
+func _perk_section(tier: int) -> void:
+	var chips := []
+	var notes := []
+	var chosen: Array = Array(_draft.get("perks", []))
+	for item: Dictionary in _items.perks:
+		if int(item.tier) != tier:
+			continue
+		var key := String(item.key)
+		var on := key in chosen
+		(
+			chips
+			. append(
+				[
+					String(item.name),
+					_toggle_perk.bind(key),
+					on,
+					ProgressStore.lock_reason("perk", key),
+					PERK_ICON % key,
+					String(item.summary),
+				]
+			)
+		)
+		if on:
+			notes.append(String(item.summary))
+	var hint := (
+		" ".join(notes)
+		if not notes.is_empty()
+		else "One perk, or two with Extra Perk %d. A point each." % tier
+	)
+	_section("PERK %d" % tier, chips, hint)
+
+
+## A row of chips: each [text, change, chosen, lock, icon, tooltip], the
+## last two optional. A chip whose change would break a rule is disabled,
+## and so is one still locked (`lock` says what unlocks it: "Level 12",
+## "8 kills").
 func _section(title: String, chips: Array, note: String) -> void:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 4)
@@ -541,6 +600,12 @@ func _section(title: String, chips: Array, note: String) -> void:
 		button.custom_minimum_size = Vector2(0, 34)
 		button.add_theme_font_size_override("font_size", 15)
 		MenuStyle.style_button(button, true)
+		if chip.size() > 4 and String(chip[4]) != "":
+			button.icon = load(String(chip[4])) as Texture2D
+			button.add_theme_constant_override("icon_max_width", 18)
+			button.add_theme_constant_override("h_separation", 8)
+		if chip.size() > 5:
+			button.tooltip_text = String(chip[5])
 		var after: Dictionary = change.call(_draft.duplicate(true))
 		button.disabled = not chosen and String(NetClient.check_class(after).error) != ""
 		if lock != "" and not chosen:
@@ -631,9 +696,40 @@ func _toggle_wildcard(draft: Dictionary, key: String) -> Dictionary:
 					draft["secondary_attachments"] = []
 			"danger_close":
 				draft["lethals"] = mini(int(draft.get("lethals", 0)), 1)
+			"perk1_greed", "perk2_greed", "perk3_greed":
+				# Keep the tier's first perk.
+				var tier := int(key.substr(4, 1))
+				var kept := []
+				var seen := false
+				for perk: String in Array(draft.get("perks", [])):
+					if int(_perk(perk).get("tier", 0)) == tier:
+						if seen:
+							continue
+						seen = true
+					kept.append(perk)
+				draft["perks"] = kept
 	else:
 		wildcards.append(key)
 	draft["wildcards"] = wildcards
+	return draft
+
+
+## Takes a perk off, or puts it on. A full slot gives up its first perk
+## to the new one.
+func _toggle_perk(draft: Dictionary, key: String) -> Dictionary:
+	var perks: Array = Array(draft.get("perks", []))
+	if key in perks:
+		perks.erase(key)
+	else:
+		var tier := int(_perk(key).get("tier", 0))
+		var limit := 2 if "perk%d_greed" % tier in Array(draft.get("wildcards", [])) else 1
+		var in_tier := perks.filter(
+			func(p: String) -> bool: return int(_perk(p).get("tier", 0)) == tier
+		)
+		if in_tier.size() >= limit:
+			perks.erase(in_tier[0])
+		perks.append(key)
+	draft["perks"] = perks
 	return draft
 
 
@@ -642,6 +738,13 @@ func _toggle_wildcard(draft: Dictionary, key: String) -> Dictionary:
 
 func _has_wildcard(key: String) -> bool:
 	return key in Array(_draft.get("wildcards", []))
+
+
+func _perk(key: String) -> Dictionary:
+	for item: Dictionary in _items.perks:
+		if item.key == key:
+			return item
+	return {}
 
 
 func _weapon(key: String) -> Dictionary:

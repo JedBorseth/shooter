@@ -57,9 +57,24 @@ Left out, because their target does not exist here: Hardline (scorestreaks), Bli
 
 Bots take one random perk of each tier every life.
 
+In the class menu, Perk 1, Perk 2, and Perk 3 are rows of chips with their icons (`godot/assets/ui/perks/`, white line icons drawn for this game), between the tactical and the wildcards. The row's note says what the chosen perks do; a chip's tooltip says what it would do. Picking another perk in a full slot swaps it in, as Black Ops 2's menu does. Taking an Extra Perk wildcard off keeps the tier's first perk. The class card lists each tier's perks with their icons.
+
+![The editor's perk tiers](media/perks-editor.jpg)
+
 ## Default classes
 
-Six ready-made classes, one per weapon class, each with two attachments: Assault (M4A1, red dot and grip), Rifleman (AK-47, red dot and extended magazine), Close Quarters (PDW-9, suppressor and grip), Support (LSW-6, grip and extended magazine), Breacher (M870, grip and extended magazine), Marksman (M40, suppressor and extended magazine). Each carries the M1911, a frag, and one tactical. A player who has not picked a class spawns with Assault. Bots take a random default class each life, as Call of Duty's bots use the default classes.
+Six ready-made classes, one per weapon class, each with two attachments and a perk of each tier (in-game names in brackets):
+
+| Class | Weapon and attachments | Tactical | Perks |
+| --- | --- | --- | --- |
+| Assault | M4A1, red dot and grip | flashbang | Lightweight, Fast Hands, Dexterity (Light Load, Quick Hands, Climber) |
+| Rifleman | AK-47, red dot and extended magazine | flashbang | Flak Jacket, Toughness, Tactical Mask (Blast Vest, Unshaken, Flash Guard) |
+| Close Quarters | PDW-9, suppressor and grip | flashbang | Lightweight, Sleight of Hand, Dead Silence (Light Load, Fast Reload, Soft Step) |
+| Support | LSW-6, grip and extended magazine | smoke | Flak Jacket, Sleight of Hand, Awareness (Blast Vest, Fast Reload, Keen Ears) |
+| Breacher | M870, grip and extended magazine | flashbang | Lightweight, Fast Hands, Dexterity (Light Load, Quick Hands, Climber) |
+| Marksman | M40, suppressor and extended magazine | smoke | Flak Jacket, Toughness, Tactical Mask (Blast Vest, Unshaken, Flash Guard) |
+
+Each carries the M1911 and a frag: nine points, as Black Ops 2's defaults leave room. A player who has not picked a class spawns with Assault. Bots take a random default class each life, as Call of Duty's bots use the default classes.
 
 ## The class menu
 
