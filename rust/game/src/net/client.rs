@@ -30,7 +30,7 @@ use std::collections::VecDeque;
 use godot::classes::{ENetConnection, ENetPacketPeer, INode, PackedScene, Time};
 use godot::global::Error;
 use godot::prelude::*;
-use shooter_sim::class::{self, Class, DefaultClass, Gun};
+use shooter_sim::class::{self, Class, DefaultClass, Gun, Wildcard};
 use shooter_sim::equipment::Kind;
 use shooter_sim::gun_game;
 use shooter_sim::hardpoint::Holder;
@@ -730,6 +730,54 @@ impl NetClient {
                 d.set("error", "Unknown item");
             }
         }
+        d
+    }
+
+    /// Everything a class can hold, for the create-a-class menu:
+    /// `primaries` and `secondaries` (each `key`, `name`, and `attachments`,
+    /// a list of `key` and `name`), `tacticals` (`key`, `name`), and
+    /// `wildcards` (`key`, `name`, `summary`).
+    #[func]
+    fn class_items() -> VarDictionary {
+        let weapons = |slot: Slot| -> Array<VarDictionary> {
+            class::class_weapons(slot)
+                .into_iter()
+                .map(|id| {
+                    let def = id.def();
+                    let mut d = VarDictionary::new();
+                    d.set("key", &GString::from(def.key.as_str()));
+                    d.set("name", &GString::from(def.name.as_str()));
+                    let attachments: Array<VarDictionary> = def
+                        .attachments
+                        .iter()
+                        .map(|a| {
+                            let mut entry = VarDictionary::new();
+                            entry.set("key", a.key());
+                            entry.set("name", a.label());
+                            entry.set("optic", a.optic());
+                            entry
+                        })
+                        .collect();
+                    d.set("attachments", &attachments);
+                    d
+                })
+                .collect()
+        };
+        let mut d = VarDictionary::new();
+        d.set("primaries", &weapons(Slot::Primary));
+        d.set("secondaries", &weapons(Slot::Secondary));
+        d.set("tacticals", &Self::tacticals());
+        let wildcards: Array<VarDictionary> = Wildcard::ALL
+            .iter()
+            .map(|w| {
+                let mut entry = VarDictionary::new();
+                entry.set("key", w.key());
+                entry.set("name", w.label());
+                entry.set("summary", w.summary());
+                entry
+            })
+            .collect();
+        d.set("wildcards", &wildcards);
         d
     }
 

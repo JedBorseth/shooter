@@ -29,6 +29,14 @@ Deliberate differences from Black Ops 2:
 
 Six ready-made classes, one per weapon class, each with two attachments: Assault (M4A1, red dot and grip), Rifleman (AK-47, red dot and extended magazine), Close Quarters (PDW-9, suppressor and grip), Support (LSW-6, grip and extended magazine), Breacher (M870, grip and extended magazine), Marksman (M40, suppressor and extended magazine). Each carries the M1911, a frag, and one tactical. A player who has not picked a class spawns with Assault. Bots take a random default class each life, as Call of Duty's bots use the default classes.
 
+## The class menu
+
+The match menu (L, or D-pad up) opens on the class list (`godot/scripts/net/class_menu.gd`): five custom classes, then the defaults, as in Black Ops 2. Choosing one equips it from the next spawn; hovering or focusing one shows what it carries and its points. The death screen's hint opens the same menu. A custom class opens in the editor: every item is a chip, grouped by slot, with ten pips for the points spent. A chip that would break a rule is greyed out; the menu asks `NetClient.check_class` about the class the chip would make, which runs the server's own rules. Changing weapon keeps the attachments the new one takes; taking a wildcard off drops what only it allowed. Back leaves the editor without saving.
+
+Classes are saved in `user://classes.cfg` (`godot/scripts/class_store.gd`), with which one is equipped. A custom slot starts as a copy of the default in its place. A saved class that no longer passes the rules (a weapon removed, say) goes back to its default.
+
+![The class list and the editor](media/create-a-class.jpg)
+
 ## Server authority
 
 The client sends its whole class (`ClientMessage::Class`, protocol 45). The server checks it with `Class::validate` and ignores one that breaks a rule; the player keeps their previous class. A new class applies from the next spawn. In Search and Destroy it applies at once during a round's freeze. Gun Game ignores classes.

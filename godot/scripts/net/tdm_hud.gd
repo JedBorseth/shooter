@@ -17,10 +17,11 @@ extends CanvasLayer
 ## - the countdown and results banners, a call for each new weapon in Gun
 ##   Game, and the loadout hint under the death card (`match_banner.gd`);
 ## - chat, bottom left: Enter to talk to everyone, Y to your team;
-## - the loadout menu (L, or D-pad up), which also holds the Ready button in
-##   the lobby. It opens by itself when we join a lobby. A new primary applies
-##   from the next spawn (in Search and Destroy, at once during a round's
-##   freeze). Gun Game has no loadouts: the menu shows the ladder.
+## - the class menu (L, or D-pad up; `class_menu.gd`), which also holds the
+##   Ready button in the lobby. It opens by itself when we join a lobby. A
+##   new class applies from the next spawn (in Search and Destroy, at once
+##   during a round's freeze). Gun Game has no classes: the menu shows the
+##   ladder.
 ##
 ## Hardpoint's own pieces (the zone, its marker, and the calls) are in
 ## `hardpoint_view.gd`; here it adds a TIME column (seconds on the hill) to
@@ -33,6 +34,7 @@ const ScoreBlock := preload("res://scripts/net/score_block.gd")
 const KillFeed := preload("res://scripts/net/kill_feed.gd")
 const MatchBanner := preload("res://scripts/net/match_banner.gd")
 const Scoreboard := preload("res://scripts/net/scoreboard.gd")
+const ClassMenu := preload("res://scripts/net/class_menu.gd")
 
 const ALLY := Color("7cc4ff")
 const ENEMY := Color("ff7a5c")
@@ -40,16 +42,6 @@ const CALLOUT_SECONDS := 2.2
 ## Seconds a chat line stays up, and how many show at once.
 const CHAT_SECONDS := 10.0
 const CHAT_LINES := 6
-## A line for each loadout weapon; weapons not listed show only their name.
-const WEAPON_ROLES := {
-	"m4": "Assault rifle. Accurate, all-round.",
-	"ak47": "Assault rifle. Hits harder, kicks harder.",
-	"pdw9": "SMG. Fast fire and handling, short range.",
-	"br3": "Burst rifle. Three rounds a pull; one burst up close.",
-	"lsw6": "Light machine gun. 75 rounds, slow to aim.",
-	"m870": "Pump shotgun. One shot up close.",
-	"m40": "Bolt-action sniper. One shot to the chest.",
-}
 
 var client: NetClient
 var player: FpsPlayer
@@ -62,12 +54,9 @@ var _overlay: Control
 var _feed: Control
 var _board: Control
 var _menu: Control
-var _weapon_buttons := {}
-## Each base weapon's attachment choices (dictionaries with `key` and `name`).
-var _attachments := {}
-var _attachment_row: HBoxContainer
-## The tactical choices (flashbang or smoke), by key.
-var _tactical_buttons := {}
+var _menu_panel: PanelContainer
+## Create-a-Class: the class list and editor (`class_menu.gd`).
+var _class_menu: VBoxContainer
 var _ready_button: Button
 var _menu_status: Label
 var _menu_eyebrow: Label
@@ -120,7 +109,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		and (event.is_action_pressed(&"pause") or event.is_action_pressed(&"ui_cancel"))
 	):
 		get_viewport().set_input_as_handled()
-		_set_menu_open(false)
+		# Back leaves the class editor first, without saving.
+		if _class_menu.editing():
+			_class_menu.close_editor()
+		else:
+			_set_menu_open(false)
 
 
 func _process(delta: float) -> void:
@@ -154,7 +147,8 @@ func _process(delta: float) -> void:
 	_loadout_box.visible = not ladder
 	_ladder_box.visible = ladder
 	_menu_eyebrow.text = String(info.get("mode_name", "Team Deathmatch")).to_upper()
-	_menu_title.text = "Weapon ladder" if ladder else "Loadout"
+	_menu_title.text = "Weapon ladder" if ladder else "Choose class"
+	_menu_panel.custom_minimum_size.x = 560.0 if ladder else 900.0
 	_age_chat(delta)
 
 	if phase == "lobby" and not _opened_for_lobby:
@@ -185,12 +179,12 @@ func _process(delta: float) -> void:
 		if show_hint:
 			_overlay.hint = (
 				"[%s] %s and ready  ·  %s"
-				% [key, "Weapon ladder" if ladder else "Loadout", _ready_count()]
+				% [key, "Weapon ladder" if ladder else "Choose class", _ready_count()]
 			)
 		_menu_status.text = _ready_count()
 	else:
 		if show_hint:
-			_overlay.hint = "[%s] Change loadout for your next spawn" % key
+			_overlay.hint = "[%s] Choose class for your next spawn" % key
 		if snd:
 			_menu_status.text = "Applies at once before a round starts, otherwise next round."
 		else:
@@ -623,69 +617,16 @@ func _refresh_ladder_board() -> void:
 
 func _set_menu_open(open: bool) -> void:
 	_menu.visible = open
-	_highlight_loadout()
+	if open and _loadout_box.visible:
+		_class_menu.show_list()
 	if player != null and is_instance_valid(player):
 		player.set_input_enabled(not open)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open else Input.MOUSE_MODE_CAPTURED
 	if open:
-		var current: Button = _weapon_buttons.get(String(client.loadout()))
-		if _loadout_box.visible and current != null:
-			current.grab_focus.call_deferred()
+		if _loadout_box.visible:
+			_class_menu.focus_first()
 		elif _ready_button.visible:
 			_ready_button.grab_focus.call_deferred()
-
-
-func _choose(key: String) -> void:
-	if client.set_loadout(key):
-		Settings.set_setting(&"loadout_primary", key)
-	_highlight_loadout()
-
-
-func _choose_tactical(key: String) -> void:
-	if client.choose_tactical(key):
-		Settings.set_setting(&"loadout_tactical", key)
-	_highlight_loadout()
-
-
-## The base weapon of a loadout key ("m4+grip" -> "m4").
-func _base(key: String) -> String:
-	return key.get_slice("+", 0)
-
-
-func _highlight_loadout() -> void:
-	var current := String(client.loadout()) if client != null else ""
-	for key: String in _weapon_buttons:
-		var button: Button = _weapon_buttons[key]
-		button.button_pressed = key == _base(current)
-	var tactical := String(client.tactical) if client != null else ""
-	for key: String in _tactical_buttons:
-		var button: Button = _tactical_buttons[key]
-		button.button_pressed = key == tactical
-	_build_attachment_row(current)
-
-
-## Buttons for the chosen weapon's attachments: none, or one of them.
-func _build_attachment_row(current: String) -> void:
-	if _attachment_row == null:
-		return
-	for child in _attachment_row.get_children():
-		child.queue_free()
-	var base := _base(current)
-	var options: Array = _attachments.get(base, [])
-	if options.is_empty():
-		return
-	var choices := [{"key": base, "name": "No attachment"}]
-	choices.append_array(options)
-	for choice: Dictionary in choices:
-		var button := Button.new()
-		button.text = String(choice.name)
-		button.toggle_mode = true
-		button.button_pressed = String(choice.key) == current
-		button.custom_minimum_size = Vector2(0, 38)
-		button.add_theme_font_size_override("font_size", 15)
-		MenuStyle.style_button(button, true)
-		button.pressed.connect(_choose.bind(String(choice.key)))
-		_attachment_row.add_child(button)
 
 
 func _toggle_ready() -> void:
@@ -860,6 +801,7 @@ func _build_menu() -> void:
 	panel.custom_minimum_size = Vector2(560, 0)
 	panel.add_theme_stylebox_override("panel", MenuStyle.panel())
 	center.add_child(panel)
+	_menu_panel = panel
 	var layout := VBoxContainer.new()
 	layout.add_theme_constant_override("separation", 10)
 	panel.add_child(layout)
@@ -870,14 +812,16 @@ func _build_menu() -> void:
 	_menu_eyebrow.add_theme_font_size_override("font_size", 15)
 	layout.add_child(_menu_eyebrow)
 	_menu_title = Label.new()
-	_menu_title.text = "Loadout"
+	_menu_title.text = "Choose class"
 	_menu_title.add_theme_font_size_override("font_size", 34)
 	layout.add_child(_menu_title)
 	_build_ladder(layout)
 	_loadout_box = VBoxContainer.new()
 	_loadout_box.add_theme_constant_override("separation", 10)
 	layout.add_child(_loadout_box)
-	_build_loadout(_loadout_box)
+	_class_menu = ClassMenu.new()
+	_class_menu.client = client
+	_loadout_box.add_child(_class_menu)
 
 	var spacer := Control.new()
 	spacer.custom_minimum_size = Vector2(0, 8)
@@ -905,60 +849,6 @@ func _build_menu() -> void:
 	MenuStyle.style_button(close)
 	close.pressed.connect(_set_menu_open.bind(false))
 	buttons.add_child(close)
-
-
-## The loadout choices: a primary weapon, its attachment, and the sidearm.
-func _build_loadout(layout: VBoxContainer) -> void:
-	var group := ButtonGroup.new()
-	# Weapons with a description first, in that order, then any others.
-	var weapons := NetClient.loadout_weapons()
-	var order := WEAPON_ROLES.keys()
-	weapons.sort_custom(
-		func(a: Dictionary, b: Dictionary) -> bool:
-			var ia := order.find(String(a.key))
-			var ib := order.find(String(b.key))
-			ia = ia if ia >= 0 else order.size()
-			ib = ib if ib >= 0 else order.size()
-			return ia < ib
-	)
-	for weapon: Dictionary in weapons:
-		var key := String(weapon.key)
-		var button := Button.new()
-		button.toggle_mode = true
-		button.button_group = group
-		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		button.custom_minimum_size = Vector2(0, 50)
-		button.add_theme_font_size_override("font_size", 19)
-		var role: String = WEAPON_ROLES.get(key, "")
-		button.text = String(weapon.name) + ("    " + role if role != "" else "")
-		MenuStyle.style_button(button)
-		button.pressed.connect(_choose.bind(key))
-		layout.add_child(button)
-		_weapon_buttons[key] = button
-		_attachments[key] = weapon.get("attachments", [])
-	_attachment_row = HBoxContainer.new()
-	_attachment_row.add_theme_constant_override("separation", 6)
-	layout.add_child(_attachment_row)
-	var sidearm := Label.new()
-	sidearm.text = "Sidearm: M1911    Lethal: Frag"
-	sidearm.add_theme_color_override("font_color", MenuStyle.TEXT_DIM)
-	sidearm.add_theme_font_size_override("font_size", 16)
-	layout.add_child(sidearm)
-	var tactical_row := HBoxContainer.new()
-	tactical_row.add_theme_constant_override("separation", 6)
-	layout.add_child(tactical_row)
-	var tactical_group := ButtonGroup.new()
-	for tactical: Dictionary in NetClient.tacticals():
-		var button := Button.new()
-		button.text = "Tactical: " + String(tactical.name)
-		button.toggle_mode = true
-		button.button_group = tactical_group
-		button.custom_minimum_size = Vector2(0, 38)
-		button.add_theme_font_size_override("font_size", 15)
-		MenuStyle.style_button(button, true)
-		button.pressed.connect(_choose_tactical.bind(String(tactical.key)))
-		tactical_row.add_child(button)
-		_tactical_buttons[String(tactical.key)] = button
 
 
 ## Gun Game's ladder, top to bottom, with our weapon marked as it changes.
