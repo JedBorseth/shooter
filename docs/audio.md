@@ -321,8 +321,14 @@ in a match is real.
 `MatchStings` (`godot/scripts/net/match_stings.gd`, on UI) plays short drum,
 riser, and brass cues: when a match goes live, its result (win, loss, draw), a
 warning at 30 seconds left (captioned when Subtitles is on), and in Search and
-Destroy each round's start and result. Halftime replays the round-start sting
-and overtime the time warning. Hardpoint's zone moves, Domination's flag calls,
+Destroy each round's start and result. Halftime (Capture the Flag, Domination)
+gets two drum hits under a held open fifth, and overtime a riser into a double
+hit, a tense brass cluster, and three warning pulses. In Gun Game, each new
+weapon plays a bolt click and two bright brass stabs stepping up (about 2 dB
+under the round stings, since it plays every couple of kills), and being set
+back plays a thud and two dark stabs stepping down: the stings stand in for
+Call of Duty's announcer lines ("weapon upgraded", "humiliation") until there
+is a voice (`tools/build_world_audio.py mode-stings`). Hardpoint's zone moves, Domination's flag calls,
 and scorestreak calls play a two-tone radio chirp (`ui/hardpoint_call.ogg`;
 Domination pitches it down for bad news). Capture the Flag's calls are chimes
 synthesized in `ctf_view.gd`: rising for good news, falling for bad, a fanfare
