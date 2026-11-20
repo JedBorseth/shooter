@@ -409,7 +409,7 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 - [ ] Progression follow-ups: prestige; weapon levels shown in the menu. (Progress on the account, with unlocks checked by ranked servers, is done: [docs/online.md](docs/online.md).)
 - [ ] Long-term progression, Black Ops 2's ([docs/progression.md](docs/progression.md)):
   - [x] Career stats counted by the server (`rust/sim/src/stats.rs`), challenges with XP (`rust/sim/src/challenge.rs`): each weapon's camo ladder, gold, class mastery, the final camo, and career, mode, and scorestreak challenges; kept on the account (ranked servers report them) or locally.
-  - [ ] A challenges screen and a combat record.
+  - [x] A challenges screen and a combat record (Career, on the title screen).
   - [ ] Camos on the weapons (first person, third person, killcam), picked in Create-a-Class.
   - [ ] Prestige: 10 and Master, with emblems and permanent unlock tokens; the icon on the scoreboard and in the kill feed.
   - [ ] Calling cards, picked in the profile, on the scoreboard and the killcam card.

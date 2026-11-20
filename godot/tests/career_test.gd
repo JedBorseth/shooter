@@ -1,0 +1,125 @@
+extends SceneTree
+## Career screen test: opens it from the title screen with a made-up career
+## and checks the challenges and the combat record show it. With
+## CAPTURE_DIR set (and a display), saves screenshots of each page.
+## godot --headless --path godot --script res://tests/career_test.gd
+## CAPTURE_DIR=/tmp/shots godot --path godot --resolution 1600x900 \
+##   --script res://tests/career_test.gd
+
+var _failures := 0
+var _dir := ""
+
+
+func _initialize() -> void:
+	_run.call_deferred()
+
+
+func _check(ok: bool, what: String) -> void:
+	print(("PASS " if ok else "FAIL ") + what)
+	if not ok:
+		_failures += 1
+
+
+func _run() -> void:
+	_dir = OS.get_environment("CAPTURE_DIR")
+	ProgressStore.use_file("user://career_test.cfg")
+	(
+		ProgressStore
+		. set_totals(
+			{
+				"xp": 120000,
+				"weapon_kills": {"m4": 640, "ak47": 210, "pdw9": 95, "m870": 40},
+				"stats":
+				{
+					"kills": 985,
+					"deaths": 702,
+					"headshots": 188,
+					"longshots": 31,
+					"shots": 21400,
+					"hits": 5350,
+					"score": 141000,
+					"time": 46800,
+					"matches": 96,
+					"wins": 55,
+					"w.m4.hs": 120,
+					"w.m4.long": 12,
+					"w.m4.bare": 80,
+					"w.m4.shots": 14000,
+					"w.m4.hits": 3600,
+					"w.m4.deaths": 400,
+					"w.ak47.hs": 33,
+					"w.ak47.shots": 4000,
+					"w.ak47.hits": 980,
+					"w.m870.ohk": 22,
+					"m.tdm.wins": 30,
+					"a.plant": 12,
+					"s.uav.earned": 14,
+				},
+			}
+		)
+	)
+	change_scene_to_file("res://scenes/title_screen.tscn")
+	await _frames(20)
+	var title := current_scene
+	title.call("open_career")
+	await _frames(10)
+	var career: Node = title.get_node_or_null("CareerMenu")
+	_check(career != null, "the Career button opens the career screen")
+	if career == null:
+		return _finish()
+	var texts := _texts(career)
+	_check("LEVEL %d" % int(Progression.rank(120000).level) in texts, "it shows the level")
+	_check(texts.has("M4A1"), "the weapons list starts with the M4A1: %s" % [texts.slice(0, 12)])
+	_check(texts.has("COMPLETE"), "done challenges say so")
+	_check(texts.has("Headshots IX"), "the M4A1's ladder is listed")
+	_check(texts.has("12 / 20") or texts.has("80 / 150"), "progress shows as a count")
+	await _shot("career_weapons")
+	career.call("show_category", 2)
+	await _frames(5)
+	texts = _texts(career)
+	_check(texts.has("Team Deathmatch"), "modes list each mode")
+	_check(texts.has("30 / 100"), "TDM wins show 30 of 100")
+	await _shot("career_modes")
+	career.call("show_tab", 1)
+	await _frames(5)
+	texts = _texts(career)
+	_check(texts.has("1.40"), "K/D is 985 / 702 = 1.40: %s" % [texts.slice(0, 20)])
+	_check(texts.has("57.3%"), "win rate 55 of 96")
+	_check(texts.has("25.0%"), "accuracy 5,350 of 21,400")
+	_check(texts.has("13h 00m"), "13 hours played")
+	_check(texts.has("25.7%"), "the M4A1's accuracy")
+	await _shot("career_record")
+	career.emit_signal("back_requested")
+	await _frames(5)
+	_check(title.get_node_or_null("CareerMenu") == null, "Back closes it")
+	_finish()
+
+
+func _finish() -> void:
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(ProgressStore.path()))
+	print("Career test: %d failure(s)" % _failures)
+	quit(1 if _failures > 0 else 0)
+
+
+func _texts(node: Node) -> Array:
+	var out := []
+	for found in node.find_children("*", "", true, false):
+		if found is Label and (found as Label).is_visible_in_tree():
+			out.append((found as Label).text)
+		elif found is Button and (found as Button).is_visible_in_tree():
+			out.append((found as Button).text)
+	return out
+
+
+func _frames(count: int) -> void:
+	for i in count:
+		await process_frame
+
+
+func _shot(name: String) -> void:
+	if _dir.is_empty() or DisplayServer.get_name() == "headless":
+		return
+	await RenderingServer.frame_post_draw
+	var path := _dir.path_join(name + ".png")
+	root.get_texture().get_image().save_png(path)
+	print("saved ", path)
