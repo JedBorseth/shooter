@@ -31,7 +31,7 @@ def _link(name: str, bm) -> bpy.types.Object:
     bm.free()
     obj = bpy.data.objects.new(name, mesh)
     bpy.context.scene.collection.objects.link(obj)
-    return obj
+    return canonical(obj)
 
 
 def lathe(name: str, loop, segments: int = 48, axis: str = "Y", at=(0.0, 0.0, 0.0), turn: float = 0.0):
@@ -89,7 +89,7 @@ def bevel(obj, width: float, segments: int = 2):
     mod.angle_limit = np.radians(BEVEL_ANGLE)
     mod.harden_normals = False
     _apply(obj, mod)
-    return obj
+    return canonical(obj)
 
 
 def _apply(obj, mod):
@@ -106,6 +106,57 @@ def boolean(obj, other, operation: str):
     mod.object = other
     _apply(obj, mod)
     bpy.data.objects.remove(other)
+    canonical(obj)
+    return obj
+
+
+def _key(co) -> tuple:
+    return tuple(round(c, 6) for c in co)
+
+
+def canonical(obj):
+    """Puts `obj`'s vertices and faces in an order that depends only on the
+    geometry. BMesh operators (extrude, bevel, the exact boolean) hand back
+    their new faces in an order that follows memory addresses, so the same
+    mesh came out in a different order on each run, and that reshuffled
+    everything built from it (UV islands, the decimated `World`, the baked
+    maps): a rebuild changed models nobody touched. Every helper here ends
+    with this. Vertices sort by
+    position (then by their neighbours'), each face starts at its lowest
+    vertex with its winding kept, and faces sort by their vertices. Keeps
+    each face's material and smoothing and each vertex's groups."""
+    mesh = obj.data
+    verts = mesh.vertices
+    neighbours = [[] for _ in verts]
+    for e in mesh.edges:
+        a, b = e.vertices
+        neighbours[a].append(_key(verts[b].co))
+        neighbours[b].append(_key(verts[a].co))
+    order = sorted(range(len(verts)), key=lambda i: (_key(verts[i].co), sorted(neighbours[i])))
+    new_index = {old: new for new, old in enumerate(order)}
+    faces = []
+    for poly in mesh.polygons:
+        ring = [new_index[v] for v in poly.vertices]
+        start = ring.index(min(ring))
+        faces.append((ring[start:] + ring[:start], poly.material_index, poly.use_smooth))
+    faces.sort(key=lambda f: f[0])
+    weights = {g.index: g.name for g in obj.vertex_groups}
+    groups = [[(weights[w.group], w.weight) for w in verts[i].groups] for i in order]
+    coords = [verts[i].co.copy() for i in order]
+    names = [g.name for g in obj.vertex_groups]
+    mesh.clear_geometry()
+    # Vertex groups live on the mesh, so clearing it drops them: put them
+    # back in their order.
+    for name in names:
+        if obj.vertex_groups.get(name) is None:
+            obj.vertex_groups.new(name=name)
+    mesh.from_pydata(coords, [], [f[0] for f in faces])
+    mesh.polygons.foreach_set("material_index", [f[1] for f in faces])
+    mesh.polygons.foreach_set("use_smooth", [f[2] for f in faces])
+    mesh.update()
+    for i, entries in enumerate(groups):
+        for name, weight in entries:
+            obj.vertex_groups[name].add([i], weight, "REPLACE")
     return obj
 
 
@@ -130,6 +181,7 @@ def join(name: str, parts: list) -> bpy.types.Object:
     bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if len(f.verts) > 4])
     bm.to_mesh(obj.data)
     bm.free()
+    canonical(obj)
     for poly in obj.data.polygons:
         poly.use_smooth = True
     obj.data.set_sharp_from_angle(angle=np.radians(SHARP_ANGLE))
