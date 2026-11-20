@@ -4,7 +4,8 @@ extends SceneTree
 ## server's debug hooks, and capture the streak column with a held UAV, a
 ## UAV's sweep on the minimap, an enemy Counter-UAV's static, the Airstrike's
 ## target picker with its marks, a Care Package on its way down and
-## landed, each drone circling overhead, and a Sentry Gun set down. Needs
+## landed, each drone circling overhead, a Sentry Gun set down, and the
+## Guided Missile's camera. Needs
 ## a GPU and a display (or Xvfb):
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
 ##     --script res://tests/capture_streaks.gd
@@ -108,6 +109,12 @@ func _run() -> void:
 		await _frames(3)
 		await _shot("09_sentry_gun")
 		camera.queue_free()
+
+	_server.debug_give_streak(me, "guided_missile")
+	_server.debug_use_streak(me, "guided_missile")
+	await _frames(70)
+	await _shot("10_guided_missile")
+	await _frames(60 * 8)
 	_server.queue_free()
 	quit(0)
 

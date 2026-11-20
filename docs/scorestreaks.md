@@ -10,14 +10,15 @@ Rewards earned with score in one life, as in Black Ops 2 (kept in Black Ops 3 an
 - **Death** resets the count.
 - **Using:** the use key calls in the selected held streak. The next key selects another. Earning one selects it, as in Black Ops 2.
 - **Modes:** every mode but Gun Game and Zombies, as in Black Ops 2's party modes and Zombies. Search and Destroy keeps both the count and held streaks across rounds within a life, as Black Ops 2 does.
-- **Bots** bring the UAV and two of the Care Package, the Airstrike, and the Sentry Gun, varied between bots, and call in what they earn at once (trying another if one cannot go there).
-- **Roofed maps:** a map roofed over from wall to wall (Warehouse) has no open sky for a crate or a strike to come down through. There the Care Package and the Airstrike are left out: they are greyed out in the streak column with "NO OPEN SKY" in place of the cost, the count runs on the other chosen streaks (the dearest of those closes the loop), and the server refuses to call one in. The radar streaks still work. Black Ops 2 has no roofed map, so there is no precedent; this stands until the owner decides on a skylight or roof hatch for Warehouse. A map is marked by `roofed = true` metadata on its scene's root (`Streak::needs_open_sky` lists the streaks it leaves out).
+- **Bots** bring the UAV and two of the Care Package, the Guided Missile, the Airstrike, and the Sentry Gun, varied between bots, and call in what they earn at once (trying another if one cannot go there).
+- **Roofed maps:** a map roofed over from wall to wall (Warehouse) has no open sky for a crate, a strike, or a missile to come down through. There the Care Package, the Guided Missile, and the Airstrike are left out: they are greyed out in the streak column with "NO OPEN SKY" in place of the cost, the count runs on the other chosen streaks (the dearest of those closes the loop), and the server refuses to call one in. The radar streaks still work. Black Ops 2 has no roofed map, so there is no precedent; this stands until the owner decides on a skylight or roof hatch for Warehouse. A map is marked by `roofed = true` metadata on its scene's root (`Streak::needs_open_sky` lists the streaks it leaves out).
 
 | Streak | Cost | Black Ops 2 | Effect |
 | --- | --- | --- | --- |
 | UAV | 425 | UAV, 425 after patch 1.04 (350 at launch) | sweeps every enemy onto the team's minimaps every 3 s for 30 s |
 | Counter-UAV | 475 | Counter-UAV; sources give 400 to 600 | jams the enemy's minimaps for 30 s |
 | Care Package | 550 | Care Package, 550 | a crate dropped from a flyover, with a random streak inside |
+| Guided Missile | 700 | Hellstorm Missile, 700 | a missile flown down from its nose camera, boosted, and split into bomblets |
 | Airstrike | 750 | Lightning Strike, 750 | three strikes on points marked on the map |
 | Sentry Gun | 800 | Sentry Gun, 800 | an automated gun set down in front of the caller, firing on enemies in front of it for 4 minutes |
 
@@ -94,6 +95,35 @@ Its kills score as usual and show as "Airstrike" in the kill feed, but add nothi
 
 `airstrike_test` plays it through on a server. Bots mark their nearest enemies.
 
+## Guided Missile
+
+The Guided Missile follows Black Ops 2's Hellstorm Missile (`_remotemissile.gsc`), under a generic name. The rules are in `rust/sim/src/missile.rs`, the server's side in `update_missiles`, and the client's in `godot/scripts/net/missile_view.gd`. The missile is a Blender model (`tools/gear_models.py` `guided_missile`) with the RL-4 rocket's flame and smoke trail.
+
+![Flying the Guided Missile](media/guided-missile.jpg)
+
+- **Launch:** it starts high over a point 38 m ahead of its caller, 110 m up and 43 m back, diving at the point. Black Ops 2 aims 1,500 units ahead and starts 18,000 units up and 7,000 back. We keep that 69° dive and scale the height to our maps. The caller's view goes to the missile's nose camera, and their body stands where it was, still open to fire.
+- **Flying:**
+  - the look controls (mouse or right stick) turn its nose at up to 1.4 rad/s;
+  - it only ever dives, between 10° and 89° below level;
+  - it flies at 26 m/s, and holding aim boosts it to 65 m/s until it splits;
+  - it goes off after 9.95 s in the air if it meets nothing (`missile_timeout_watch`).
+
+  The client sends its steering about thirty times a second (`ClientMessage::SteerMissile`). The server flies the missile and decides every blast.
+- **The split:** fire splits it, as in Black Ops 2:
+  - one bomblet goes to each enemy within 15 m (600 units) of where the nose points;
+  - random ones fill to nine, 5 to 14 m out (200 to 550 units) in sixths of a circle;
+  - one more goes straight ahead;
+  - each leaves a frame (50 ms) after the one before and flies straight at 70 m/s.
+
+  The missile itself coasts on, unseen, and still goes off where it lands. Enemies near the middle of the view are boxed in red, brighter within the cluster's reach.
+- **Blasts:** the missile does 300 damage at its centre, falling to 50 at 9 m. A bomblet does 160, falling to 30 at 4.5 m. Both go off on the map or on an enemy they meet. Their kills show as "Guided Missile" and count nothing toward streaks.
+- **The camera** comes back a second after the first bomblet lands (Black Ops 2's `bomblet_camera_waiter`), or half a second after an unsplit missile goes off. It comes back at once if the pilot dies; the missile flies on unsteered.
+- **Bots:** a bot aims it at its nearest enemy within 80 m, steers it at them, and splits it a second and a half in, as Black Ops 2's bots press fire 1.5 s into theirs. It stands still meanwhile.
+- **Roofed maps** leave it out.
+- **Estimates:** the speeds, turn rate, blasts, and bomblet speed are estimates. Black Ops 2 keeps them in weapon files its scripts do not carry.
+
+`guided_missile_test` plays it through on a server.
+
 ## Sentry Gun
 
 The Sentry Gun follows Black Ops 2's (`_turret_killstreak.gsc`). The rules are in `rust/sim/src/turret.rs`, the server's side in `update_turrets`, and the client's in `godot/scripts/net/sentry_view.gd`. The model is the training sentry's, built in Blender (`sentry_base`, `sentry_head`, `sentry_eye`).
@@ -155,5 +185,6 @@ Blind Eye (with an AI streak to hide from), UAV assist points, and announcer lin
 - **Lightning Strike:** 750, three strikes on points picked on the map, in sequence.
 - **Streak kills:** do not count toward streaks.
 - **Ghost:** works while moving. **Hard Wired:** immune to Counter-UAV.
+- **Hellstorm Missile** (`_remotemissile.gsc`): 700, launched 18,000 units up and 7,000 back from a point 1,500 units ahead, a 9.95 s flight, aim boosts until the split, fire splits it into a bomblet for each enemy within 600 units of the aim point (not Cold-Blooded players) then random ones 200 to 550 units out up to nine, plus one straight on, a frame apart; the camera stays a second after the first bomblet lands. Bots fire it 1.5 s in.
 - **Sentry Gun** (`_turret_killstreak.gsc`, `_killstreakrules.gsc`): 800, 650 health, bullets at 0.6 and explosives at 2 (a launcher counts 200), the knife nothing, 240 s placed, 1.6 s before it arms, four a team and eight in all. Bots treat an active one as a threat.
 - **UAV and Counter-UAV in the sky** (`_spyplane.gsc`, Black Ops 2's scripts as the Plutonium project publishes them): 700 health, bullets do their damage, any rocket downs one, the UAV rig turns clockwise once a minute and the Counter-UAV's the other way every 40 s, a downed one ends at once. Bots fire launchers only at aircraft, never at one more than 70° up (`_bot_combat.gsc`).

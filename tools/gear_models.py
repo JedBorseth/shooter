@@ -1500,3 +1500,26 @@ def counter_uav_drone(b: Model):
     for z in (-1.6, -1.25, 1.1):
         b.hull([(0.0, 0.3, z - 0.1), (0.0, 0.3, z + 0.12), (0.0, 0.62, z + 0.06), (0.02, 0.3, z),
                 (-0.02, 0.3, z)], "aircraft_skin")
+
+
+@model
+def guided_missile(b: Model):
+    """The Guided Missile scorestreak's missile (scripts/net/missile_view.gd):
+    a 2.6 m air-to-ground missile with an ogive nose, a seeker window, mid
+    wings and tail fins in a cross, and its motor's nozzle. Origin at the
+    middle of its body, nose toward -z."""
+    _loft_body(b, [(-1.3, 0.02, 0.0, 0.02), (-1.18, 0.09, 0.0, 0.09), (-0.98, 0.15, 0.0, 0.15),
+                   (-0.75, 0.17, 0.0, 0.17), (1.15, 0.17, 0.0, 0.17), (1.3, 0.14, 0.0, 0.14)],
+               "aircraft_skin", ring=12)
+    # The seeker's dark window in the nose, and a band at the warhead's end.
+    b.cyl("z", -1.22, -1.16, (0.0, 0.0), 0.075, "aircraft_glass", sides=12)
+    b.cyl("z", -0.62, -0.56, (0.0, 0.0), 0.175, "aircraft_dark", sides=14)
+    # Mid wings and tail fins, in a cross.
+    for k in range(4):
+        a = k * PI / 2 + PI / 4
+        c, s = math.cos(a), math.sin(a)
+        b.hull([(c * 0.16, s * 0.16, -0.25), (c * 0.16, s * 0.16, 0.35), (c * 0.42, s * 0.42, 0.25),
+                (c * 0.42, s * 0.42, 0.35), (c * 0.16 - s * 0.01, s * 0.16 + c * 0.01, 0.0)], "aircraft_dark")
+        b.hull([(c * 0.15, s * 0.15, 0.95), (c * 0.15, s * 0.15, 1.28), (c * 0.38, s * 0.38, 1.2),
+                (c * 0.38, s * 0.38, 1.3), (c * 0.15 - s * 0.01, s * 0.15 + c * 0.01, 1.1)], "aircraft_dark")
+    b.cyl("z", 1.3, 1.36, (0.0, 0.0), 0.1, "aircraft_dark", sides=12)

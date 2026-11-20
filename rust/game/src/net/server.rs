@@ -78,6 +78,7 @@ use shooter_sim::hardpoint::{self, HardpointRules, HardpointState, HillTime, Hol
 use shooter_sim::hitbox::clock::{BodyClock, BodyState};
 use shooter_sim::killcam::{self, KillRecord};
 use shooter_sim::melee;
+use shooter_sim::missile::{self, Bomblet, Missile};
 use shooter_sim::net::bandwidth::Probe;
 use shooter_sim::net::discovery::{ServerInfo, query_port_for};
 use shooter_sim::net::input_queue::InputQueue;
@@ -387,6 +388,11 @@ pub struct NetServer {
     strikes: streak::Strikes,
     /// Sentry Guns set down (`shooter_sim::turret`).
     turrets: Turrets,
+    /// Guided Missiles in the air and their bomblets
+    /// (`shooter_sim::missile`), and the next missile's id.
+    missiles: Vec<Flight>,
+    bomblets: Vec<Bomblet>,
+    next_missile: u16,
     /// The map's lanes for bots to follow (`BotLanes`), from one side to the other.
     bot_lanes: Vec<Vec<Vector3>>,
     /// Tick of the next scoreboard update.
@@ -528,6 +534,8 @@ struct Avatar {
     streak_wanted: Loadout,
     streaks: StreakState,
     streak_seen: u32,
+    /// Flying a Guided Missile: which, and the pilot's last steering.
+    pilot: Option<Pilot>,
     /// This match's playing time and weapon kills, for the account.
     share: MatchShare,
 }
@@ -1672,6 +1680,50 @@ impl NetServer {
         }
     }
 
+    /// The Guided Missiles in the air (tests), as dictionaries with `id`,
+    /// `owner`, `position`, `split`, and `exploded`.
+    #[func]
+    fn missiles(&self) -> Array<VarDictionary> {
+        self.missiles
+            .iter()
+            .map(|f| {
+                let mut d = VarDictionary::new();
+                d.set("id", i32::from(f.missile.id));
+                d.set("owner", i32::from(f.missile.owner));
+                d.set("position", to_godot(f.missile.position));
+                d.set("split", f.missile.split);
+                d.set("exploded", f.exploded);
+                d
+            })
+            .collect()
+    }
+
+    /// Whether player `id` is flying a Guided Missile (tests).
+    #[func]
+    fn player_piloting(&self, id: i32) -> bool {
+        self.avatars
+            .iter()
+            .any(|a| i32::from(a.id) == id && a.pilot.is_some())
+    }
+
+    /// Debug: player `id` steers their Guided Missile toward `at`
+    /// (boosting if `boost`, splitting it if `split`), as their client's
+    /// steering would (tests).
+    #[func]
+    fn debug_steer_missile(&mut self, id: i32, at: Vector3, boost: bool, split: bool) {
+        let Some(avatar) = self.avatars.iter_mut().find(|a| i32::from(a.id) == id) else {
+            return;
+        };
+        let Some(pilot) = &mut avatar.pilot else {
+            return;
+        };
+        if let Some(flight) = self.missiles.iter().find(|f| f.missile.id == pilot.missile) {
+            pilot.view = shooter_sim::look::bearing(flight.missile.position, to_sim(at));
+        }
+        pilot.boost = boost;
+        pilot.split |= split;
+    }
+
     /// The Sentry Guns set down (tests), as dictionaries with `id`,
     /// `owner`, `position` (its feet), `centre` (where shots meet it),
     /// `damage`, and `target` (the player it is on, -1 for none).
@@ -2612,6 +2664,19 @@ impl NetServer {
                     let _ = self.use_streak(id, streak, &targets);
                 }
             }
+            ClientMessage::SteerMissile { view, boost, split } => {
+                let id = self.clients[index].player;
+                if let Some(pilot) = self
+                    .avatars
+                    .iter_mut()
+                    .find(|a| Some(a.id) == id)
+                    .and_then(|a| a.pilot.as_mut())
+                {
+                    pilot.view = view;
+                    pilot.boost = boost;
+                    pilot.split |= split;
+                }
+            }
             ClientMessage::Chat { text, team } => self.relay_chat(index, &text, team),
             ClientMessage::SkipKillcam => self.skip_killcam(index),
         }
@@ -2961,6 +3026,7 @@ impl NetServer {
             },
             streaks: StreakState::default(),
             streak_seen: 0,
+            pilot: None,
             share: MatchShare::default(),
         });
         if self.match_state.phase == Phase::Playing
@@ -3435,7 +3501,16 @@ impl NetServer {
                             .find(|(id, _)| *id == avatar.id)
                             .and_then(|(_, o)| *o);
                         let _think = profile::scope("server/simulate/avatars/bots think");
-                        let input = brain.think(&me, &avatar.predicted, &mut world, objective);
+                        let mut input = brain.think(&me, &avatar.predicted, &mut world, objective);
+                        // Flying a Guided Missile, a bot stands where it is,
+                        // as Black Ops 2's do in the missile's camera.
+                        if avatar.pilot.is_some() {
+                            input = PlayerInput {
+                                yaw: input.yaw,
+                                pitch: input.pitch,
+                                ..Default::default()
+                            };
+                        }
                         // Bots that think later this tick see the lane this
                         // one just took.
                         if let Some(p) = players.iter_mut().find(|p| p.id == avatar.id) {
@@ -6345,6 +6420,11 @@ impl NetServer {
                 }
                 self.sky.clear();
                 self.strikes.clear();
+                self.missiles.clear();
+                self.bomblets.clear();
+                for avatar in &mut self.avatars {
+                    avatar.pilot = None;
+                }
                 for turret in std::mem::take(&mut self.turrets.list) {
                     self.broadcast_event(&GameEvent::Streak(StreakEvent::TurretGone {
                         id: turret.id,
@@ -6870,6 +6950,7 @@ impl NetServer {
         self.update_crates();
         self.update_strikes();
         self.update_turrets();
+        self.update_missiles();
         for side in self.sky.sweeps(self.tick) {
             let found: Vec<(u8, Vec3)> = self
                 .avatars
@@ -6921,6 +7002,19 @@ impl NetServer {
                 None => return false,
             },
             _ => None,
+        };
+        // A Guided Missile dives at a point on the ground ahead of its
+        // caller (a bot's at its nearest enemy in reach), one at a time.
+        let missile_target = if streak == Streak::GuidedMissile {
+            if avatar.pilot.is_some() {
+                return false;
+            }
+            match self.missile_target(avatar) {
+                Some(target) => Some(target),
+                None => return false,
+            }
+        } else {
+            None
         };
         // A Sentry Gun needs floor in front of the caller, and room under
         // Black Ops 2's limits (four a side, eight in all).
@@ -6981,6 +7075,31 @@ impl NetServer {
                     self.broadcast_event(&GameEvent::Streak(StreakEvent::CrateGone { id: old.id }));
                 }
                 self.broadcast_event(&crate_incoming(&crate_));
+            }
+            (Streak::GuidedMissile, _) => {
+                if let Some((target, yaw, bot_target)) = missile_target {
+                    let m = Missile::launch(self.next_missile, id, side, target, yaw, tick);
+                    self.next_missile = self.next_missile.wrapping_add(1);
+                    if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) {
+                        avatar.pilot = Some(Pilot {
+                            missile: m.id,
+                            view: m.view,
+                            boost: false,
+                            split: false,
+                        });
+                    }
+                    // Black Ops 2's bots split it a second and a half in.
+                    let bot_split = bot_target
+                        .map(|_| tick + streak::seconds_to_ticks(BOT_MISSILE_SPLIT_SECONDS));
+                    self.missiles.push(Flight {
+                        missile: m,
+                        exploded: false,
+                        pilot_until: None,
+                        bot_target,
+                        bot_split,
+                    });
+                    self.broadcast_event(&missile_event(&m, false));
+                }
             }
             (Streak::SentryGun, _) => {
                 if let Some((at, facing)) = sentry {
@@ -7221,11 +7340,6 @@ impl NetServer {
                 owner: strike.owner,
                 at: strike.at,
             }));
-            let before = self
-                .avatars
-                .iter()
-                .find(|a| a.id == strike.owner)
-                .map(|a| a.score.score);
             let blast = PropExplosion {
                 position: strike.at + Vec3::Y * 0.3,
                 radius: streak::STRIKE_RADIUS,
@@ -7234,13 +7348,275 @@ impl NetServer {
                 attacker: Some(strike.owner),
                 weapon: None,
             };
-            self.resolve_explosion(&blast, protocol::KillCause::Streak(Streak::Airstrike));
-            if let (Some(before), Some(owner)) = (
-                before,
-                self.avatars.iter_mut().find(|a| a.id == strike.owner),
-            ) {
-                owner.streak_seen += owner.score.score.saturating_sub(before);
+            self.streak_blast(&blast, Streak::Airstrike);
+        }
+    }
+
+    /// A scorestreak's blast: hurts as any explosion does, its kills shown
+    /// as `streak`'s, and the score it earns its owner counts nothing toward
+    /// their streaks (Black Ops 2).
+    fn streak_blast(&mut self, blast: &PropExplosion, streak: Streak) {
+        let owner = blast.attacker;
+        let before = self
+            .avatars
+            .iter()
+            .find(|a| Some(a.id) == owner)
+            .map(|a| a.score.score);
+        self.resolve_explosion(blast, protocol::KillCause::Streak(streak));
+        if let (Some(before), Some(avatar)) = (
+            before,
+            self.avatars.iter_mut().find(|a| Some(a.id) == owner),
+        ) {
+            avatar.streak_seen += avatar.score.score.saturating_sub(before);
+        }
+    }
+
+    /// Where `avatar`'s Guided Missile dives: the ground 38 m ahead of them
+    /// (Black Ops 2's 1500 units), or a bot's nearest enemy within reach.
+    /// Returns the point, the yaw it comes in along, and the bot's target.
+    fn missile_target(&self, avatar: &Avatar) -> Option<(Vec3, f32, Option<u8>)> {
+        let feet = avatar.predicted.position;
+        // Bots fly theirs themselves; passive test bots are flown by tests.
+        if avatar.brain.as_ref().is_some_and(|b| !b.passive) {
+            let enemy = self
+                .avatars
+                .iter()
+                .filter(|a| a.predicted.state.alive() && self.hostile(avatar, a))
+                .min_by(|a, b| {
+                    a.predicted
+                        .position
+                        .distance(feet)
+                        .total_cmp(&b.predicted.position.distance(feet))
+                })
+                .filter(|a| a.predicted.position.distance(feet) <= BOT_MISSILE_REACH)?;
+            let at = enemy.predicted.position;
+            let ground = self.strike_ground(shooter_sim::Vec2::new(at.x, at.z))?;
+            let yaw = shooter_sim::look::bearing(feet, at).x;
+            return Some((ground, yaw, Some(enemy.id)));
+        }
+        let forward = Vec3::new(-avatar.yaw.sin(), 0.0, -avatar.yaw.cos());
+        let ahead = feet + forward * missile::TARGET_AHEAD;
+        let ground = self.strike_ground(shooter_sim::Vec2::new(ahead.x, ahead.z))?;
+        Some((ground, avatar.yaw, None))
+    }
+
+    /// Flies the Guided Missiles and their bomblets one tick. A missile
+    /// steers where its pilot looks (a bot's at its target) and boosts
+    /// while they ask; splitting it fires the cluster (`missile::Missile::
+    /// split`). Missile and bomblets go off on the map or an enemy they
+    /// meet, the missile also when its time is up. The pilot's camera
+    /// stays until a second after the first bomblet lands (Black Ops 2), or
+    /// half a second after an unsplit missile goes off.
+    fn update_missiles(&mut self) {
+        if self.missiles.is_empty() && self.bomblets.is_empty() {
+            return;
+        }
+        let tick = self.tick;
+        let Some(mut space) = self
+            .base()
+            .get_world_3d()
+            .and_then(|world| world.get_direct_space_state())
+        else {
+            return;
+        };
+        let bodies: Vec<(u8, u8, Vec3)> = self
+            .avatars
+            .iter()
+            .filter(|a| a.predicted.state.alive())
+            .map(|a| (a.id, self.side(a), a.predicted.position))
+            .collect();
+        let mut blasts: Vec<(u16, u8, Vec3, bool)> = Vec::new();
+        for i in 0..self.missiles.len() {
+            let mut flight = self.missiles[i];
+            if flight.exploded {
+                continue;
             }
+            let mut m = flight.missile;
+            let owner = self.avatars.iter().find(|a| a.id == m.owner);
+            let pilot = owner
+                .filter(|a| a.predicted.state.alive())
+                .and_then(|a| a.pilot)
+                .filter(|p| p.missile == m.id);
+            let (steer, boost, split) = match (flight.bot_target, pilot) {
+                (Some(target), Some(_)) => {
+                    let goal = bodies
+                        .iter()
+                        .find(|(id, _, _)| *id == target)
+                        .map_or(m.view, |(_, _, feet)| {
+                            shooter_sim::look::bearing(m.position, *feet)
+                        });
+                    (goal, false, flight.bot_split.is_some_and(|at| tick >= at))
+                }
+                (None, Some(p)) => (p.view, p.boost, p.split),
+                _ => (m.view, false, false),
+            };
+            if split && !m.split {
+                let dir = m.direction();
+                let ahead = to_godot(m.position + dir * 400.0);
+                let aim = world_hit(&mut space, to_godot(m.position), ahead)
+                    .map_or(m.position + dir * 200.0, to_sim);
+                let targets: Vec<Vec3> = bodies
+                    .iter()
+                    .filter(|(_, side, _)| *side != m.side)
+                    .map(|(_, _, feet)| *feet)
+                    .collect();
+                let seed = rng::hash(u32::from(m.id), tick);
+                let bomblets = m.split(aim, &targets, tick, seed);
+                self.broadcast_event(&GameEvent::Streak(StreakEvent::Cluster {
+                    id: m.id,
+                    from: m.position,
+                    bomblets: bomblets.iter().map(|b| (b.to, b.fire_at)).collect(),
+                }));
+                self.bomblets.extend(bomblets);
+            }
+            let (from, to) = m.step(steer, boost);
+            let hit = self.first_meeting(&mut space, &bodies, m.side, from, to);
+            if hit.is_some() || m.spent(tick) {
+                let at = hit.unwrap_or(m.position);
+                m.position = at;
+                flight.exploded = true;
+                blasts.push((m.id, m.owner, at, false));
+                if !m.split {
+                    flight.pilot_until =
+                        Some(tick + streak::seconds_to_ticks(MISSILE_CAMERA_AFTER_BLAST));
+                }
+            }
+            flight.missile = m;
+            self.missiles[i] = flight;
+            if (tick + u32::from(m.id)).is_multiple_of(MISSILE_STATE_TICKS) {
+                self.broadcast_event(&missile_event(&m, false));
+            }
+        }
+        // The bomblets: each flies straight from its firing; it goes off on
+        // what it meets, at its point, or (the straight one) on the map.
+        let mut kept = Vec::with_capacity(self.bomblets.len());
+        for b in std::mem::take(&mut self.bomblets) {
+            if tick < b.fire_at {
+                kept.push(b);
+                continue;
+            }
+            let from = b.at(f64::from(tick - 1)).unwrap_or(b.from);
+            let reached = tick >= b.lands_at();
+            let to = if reached {
+                b.to
+            } else {
+                b.at(f64::from(tick)).unwrap_or(b.to)
+            };
+            let hit = self.first_meeting(&mut space, &bodies, b.side, from, to);
+            let lost = tick > b.fire_at + streak::seconds_to_ticks(4.0);
+            match hit {
+                Some(at) => blasts.push((b.missile, b.owner, at, true)),
+                None if reached && !lost => blasts.push((b.missile, b.owner, b.to, true)),
+                None if lost => {}
+                None => kept.push(b),
+            }
+        }
+        self.bomblets = kept;
+        for (id, owner, at, bomblet) in blasts {
+            self.broadcast_event(&GameEvent::Streak(StreakEvent::MissileBlast {
+                at,
+                bomblet,
+            }));
+            let (radius, damage, outer) = if bomblet {
+                (
+                    missile::BOMBLET_RADIUS,
+                    missile::BOMBLET_DAMAGE,
+                    missile::BOMBLET_OUTER_DAMAGE,
+                )
+            } else {
+                (
+                    missile::BLAST_RADIUS,
+                    missile::BLAST_DAMAGE,
+                    missile::BLAST_OUTER_DAMAGE,
+                )
+            };
+            let blast = PropExplosion {
+                position: at + Vec3::Y * 0.3,
+                radius,
+                damage,
+                outer_damage: outer,
+                attacker: Some(owner),
+                weapon: None,
+            };
+            self.streak_blast(&blast, Streak::GuidedMissile);
+            if bomblet
+                && let Some(flight) = self.missiles.iter_mut().find(|f| f.missile.id == id)
+                && flight.pilot_until.is_none()
+            {
+                flight.pilot_until =
+                    Some(tick + streak::seconds_to_ticks(missile::CAMERA_LINGER_SECONDS));
+            }
+        }
+        // Pilots whose camera time is up, or who died, come back; flights
+        // that are over go.
+        let mut ended = Vec::new();
+        for flight in &mut self.missiles {
+            let m = flight.missile;
+            let pilot_dead = self
+                .avatars
+                .iter()
+                .find(|a| a.id == m.owner)
+                .is_none_or(|a| !a.predicted.state.alive());
+            let done = flight.pilot_until.is_some_and(|at| tick >= at)
+                || (flight.exploded && !m.split && flight.pilot_until.is_none())
+                || pilot_dead;
+            if done && !ended.iter().any(|(id, _)| *id == m.id) {
+                ended.push((m.id, m.owner));
+            }
+        }
+        for (id, owner) in &ended {
+            let Some(flight) = self.missiles.iter().find(|f| f.missile.id == *id).copied() else {
+                continue;
+            };
+            if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == *owner)
+                && avatar.pilot.is_some_and(|p| p.missile == *id)
+            {
+                avatar.pilot = None;
+                self.broadcast_event(&missile_event(&flight.missile, true));
+            }
+        }
+        let piloted: Vec<u16> = self
+            .avatars
+            .iter()
+            .filter_map(|a| a.pilot.map(|p| p.missile))
+            .collect();
+        let bomblets_out: Vec<u16> = self.bomblets.iter().map(|b| b.missile).collect();
+        self.missiles.retain(|f| {
+            !(f.exploded
+                && !piloted.contains(&f.missile.id)
+                && !bomblets_out.contains(&f.missile.id))
+        });
+    }
+
+    /// Where the move `from` to `to` first meets the map or the body of
+    /// anyone not on `side` (`bodies`: id, side, feet), if it does.
+    fn first_meeting(
+        &self,
+        space: &mut Gd<PhysicsDirectSpaceState3D>,
+        bodies: &[(u8, u8, Vec3)],
+        side: u8,
+        from: Vec3,
+        to: Vec3,
+    ) -> Option<Vec3> {
+        let wall = world_hit(space, to_godot(from), to_godot(to)).map(to_sim);
+        let wall_t = wall.map_or(f32::INFINITY, |w| from.distance(w));
+        let body = bodies
+            .iter()
+            .filter(|(_, s, _)| *s != side)
+            .filter_map(|(_, _, feet)| {
+                equipment::segment_hits_body(
+                    from,
+                    to,
+                    *feet,
+                    equipment::ROCKET_BODY_HEIGHT,
+                    equipment::ROCKET_BODY_RADIUS,
+                )
+            })
+            .map(|t| from.lerp(to, t))
+            .min_by(|a, b| from.distance(*a).total_cmp(&from.distance(*b)));
+        match body {
+            Some(b) if from.distance(b) < wall_t => Some(b),
+            _ => wall,
         }
     }
 
@@ -8784,13 +9160,58 @@ fn pickup_in_reach(
 /// between bots so each kind turns up (Black Ops 2's bots bring theirs from
 /// the unlocked list, `_bot_loadout.gsc`).
 fn bot_streaks(id: u8) -> Loadout {
-    const SETS: [[Streak; 2]; 3] = [
+    const SETS: [[Streak; 2]; 5] = [
         [Streak::CarePackage, Streak::Airstrike],
         [Streak::Airstrike, Streak::SentryGun],
         [Streak::CarePackage, Streak::SentryGun],
+        [Streak::GuidedMissile, Streak::SentryGun],
+        [Streak::CarePackage, Streak::GuidedMissile],
     ];
     let [a, b] = SETS[usize::from(id) % SETS.len()];
     Loadout([Some(Streak::Uav), Some(a), Some(b)]).sorted()
+}
+
+/// A Guided Missile in the air, the server's side: the missile, whether it
+/// has gone off, when its pilot's camera goes back to them, and a bot
+/// pilot's target and when it splits it.
+#[derive(Clone, Copy, Debug)]
+struct Flight {
+    missile: Missile,
+    exploded: bool,
+    pilot_until: Option<Tick>,
+    bot_target: Option<u8>,
+    bot_split: Option<Tick>,
+}
+
+/// A Guided Missile's pilot: which missile, and their latest steering.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Pilot {
+    missile: u16,
+    view: shooter_sim::Vec2,
+    boost: bool,
+    split: bool,
+}
+
+/// Ticks between a Guided Missile's states to everyone (twenty a second).
+const MISSILE_STATE_TICKS: Tick = 6;
+/// Seconds a pilot's camera stays after an unsplit missile goes off.
+const MISSILE_CAMERA_AFTER_BLAST: f32 = 0.5;
+/// Black Ops 2's bots press fire a second and a half into the missile
+/// (`bot_update_killstreak`), and ours aim it at an enemy this near.
+const BOT_MISSILE_SPLIT_SECONDS: f32 = 1.5;
+const BOT_MISSILE_REACH: f32 = 80.0;
+
+fn missile_event(m: &Missile, ended: bool) -> GameEvent {
+    GameEvent::Streak(StreakEvent::Missile(protocol::MissileView {
+        id: m.id,
+        owner: m.owner,
+        side: m.side,
+        at: m.position,
+        view: m.view,
+        boosting: m.boosting,
+        split: m.split,
+        ended,
+    }))
 }
 
 fn turret_event(t: &Turret) -> GameEvent {
