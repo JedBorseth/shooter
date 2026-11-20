@@ -51,6 +51,14 @@ const EXPLOSION_SCENE: &str = "res://scenes/effects/explosion.tscn";
 const FIRE_SCENE: &str = "res://scenes/effects/fire.tscn";
 const SMOKE_SCENE: &str = "res://scenes/effects/smoke_screen.tscn";
 const FLASH_SCENE: &str = "res://scenes/effects/flashbang.tscn";
+const CHARGE_SCENE: &str = "res://scenes/effects/charge_explosion.tscn";
+/// Search and Destroy's charge going off, against a frag: the frag's
+/// explosion this many times as big under the charge's own fireball and
+/// smoke column (`charge_explosion.tscn`), and a camera shake that reaches
+/// [`SHAKE_RADIUS`] times the square root of `CHARGE_SHAKE_SIZE`: about
+/// 50 m, as far as Call of Duty's bomb rattles the screen.
+pub const CHARGE_BLAST_SIZE: f32 = 2.5;
+pub const CHARGE_SHAKE_SIZE: f32 = 5.2;
 /// Flashbang pops playing at once; a third reuses the older.
 const FLASHES: usize = 2;
 /// Explosions playing at once; a fourth reuses the oldest.
@@ -464,6 +472,11 @@ pub struct CombatEffects {
     scorch_textures: Option<[Gd<Texture2D>; 2]>,
     /// Explosions played so far (tests).
     explosions_played: u32,
+    charge_scene: Option<Gd<PackedScene>>,
+    /// The charge's own blast, made on first use and reused.
+    charge_blast: Option<Gd<Node3D>>,
+    /// Charge blasts played so far (tests).
+    charges_played: u32,
     /// Flashbang pops played so far (tests).
     flashes_played: u32,
     fire_scene: Option<Gd<PackedScene>>,
@@ -514,6 +527,7 @@ impl INode3D for CombatEffects {
         }
         self.scene = try_load::<PackedScene>(IMPACT_SCENE).ok();
         self.explosion_scene = try_load::<PackedScene>(EXPLOSION_SCENE).ok();
+        self.charge_scene = try_load::<PackedScene>(CHARGE_SCENE).ok();
         self.fire_scene = try_load::<PackedScene>(FIRE_SCENE).ok();
         self.smoke_scene = try_load::<PackedScene>(SMOKE_SCENE).ok();
         self.flash_scene = try_load::<PackedScene>(FLASH_SCENE).ok();
@@ -600,6 +614,44 @@ impl CombatEffects {
     /// this; anything else that blows up can too. The caller plays the bang.
     #[func]
     pub fn explosion(&mut self, position: Vector3, normal: Vector3, size: f32) {
+        self.explode(position, normal, size, size);
+    }
+
+    /// Search and Destroy's charge going off at `position`: the frag's
+    /// explosion [`CHARGE_BLAST_SIZE`] times as big, with its scorch, under
+    /// the charge's own fireball, smoke column, ground skirt, and flash, and
+    /// a camera shake out to about 50 m.
+    #[func]
+    pub fn charge_explosion(&mut self, position: Vector3) {
+        self.explode(position, Vector3::UP, CHARGE_BLAST_SIZE, CHARGE_SHAKE_SIZE);
+        if self.charge_blast.is_none() {
+            let node = self
+                .charge_scene
+                .as_ref()
+                .and_then(|scene| scene.instantiate())
+                .and_then(|n| n.try_cast::<Node3D>().ok());
+            if let Some(node) = &node {
+                self.base_mut().add_child(node);
+            }
+            self.charge_blast = node;
+        }
+        let floor = self.floor_below(position + Vector3::UP * 0.3);
+        if let Some(blast) = &mut self.charge_blast {
+            blast.set_global_position(position);
+            blast.call("setup", &[floor.unwrap_or(-1000.0).to_variant()]);
+            self.charges_played = self.charges_played.wrapping_add(1);
+        }
+    }
+
+    /// Charge blasts played so far (tests).
+    #[func]
+    fn charges_played(&self) -> i64 {
+        i64::from(self.charges_played)
+    }
+
+    /// An explosion `size` times a frag's, shaking the camera as one
+    /// `shake` times a frag's would.
+    fn explode(&mut self, position: Vector3, normal: Vector3, size: f32, shake: f32) {
         let normal = if normal.length_squared() > 0.0 {
             normal.normalized()
         } else {
@@ -638,7 +690,7 @@ impl CombatEffects {
         );
         self.explosions_played = self.explosions_played.wrapping_add(1);
         self.place_scorch(position, normal, size);
-        self.shake_camera(position, size);
+        self.shake_camera(position, shake);
     }
 
     /// A fire at `position`, `size` times a metre-wide patch, burning for

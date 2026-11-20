@@ -4979,15 +4979,10 @@ impl NetServer {
         self.next_scoreboard = self.tick;
     }
 
-    /// The charge goes off at `at`: everyone sees the blast, and it hurts
-    /// everyone in reach as Call of Duty's does, credited to the planter.
+    /// The charge goes off at `at`: it hurts everyone in reach as Call of
+    /// Duty's does, credited to the planter. Clients draw its own blast when
+    /// the charge's status turns detonated (`GameEvent::Charge`).
     fn detonate_charge(&mut self, at: Vec3) {
-        self.broadcast_event(&GameEvent::Blast {
-            owner: None,
-            shot: 0,
-            kind: equipment::Kind::Frag,
-            at: at + Vec3::Y * 0.2,
-        });
         let planter = self
             .charge_planter
             .filter(|id| self.avatars.iter().any(|a| a.id == *id));

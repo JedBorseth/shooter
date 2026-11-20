@@ -3416,10 +3416,21 @@ impl FpsPlayer {
     /// a close one rings in the ears for a moment. The camera's rattle comes
     /// from the explosion effect (`blast_shake`).
     fn feel_blast(&mut self, at: Vector3) {
+        self.feel_blast_scaled(at, 1.0);
+    }
+
+    /// Search and Destroy's charge going off at `at`: felt as a blast twice
+    /// as far as a frag's.
+    pub(crate) fn feel_charge_blast(&mut self, at: Vector3) {
+        self.feel_blast_scaled(at, 2.0);
+    }
+
+    /// A blast felt out to `reach` times a frag's distances.
+    fn feel_blast_scaled(&mut self, at: Vector3, reach: f32) {
         if !self.state.alive() {
             return;
         }
-        let distance = at.distance_to(self.eye_position());
+        let distance = at.distance_to(self.eye_position()) / reach;
         let shake = (1.0 - distance / BLAST_SHAKE_RANGE).clamp(0.0, 1.0);
         let shake = shake * shake;
         if self.rumble && self.controller_input && shake > 0.05 {

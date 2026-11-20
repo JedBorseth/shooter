@@ -1622,6 +1622,14 @@ impl NetClient {
                 self.signals().charge_changed().emit();
             }
             GameEvent::Charge(view) => {
+                let was_planted = self
+                    .charge
+                    .is_some_and(|c| matches!(c.status, ChargeStatus::Planted { .. }));
+                if let ChargeStatus::Detonated { at, .. } = view.status
+                    && was_planted
+                {
+                    self.charge_blast(to_godot(at));
+                }
                 self.charge = Some(view);
                 self.signals().charge_changed().emit();
             }
@@ -1703,6 +1711,18 @@ impl NetClient {
             .filter(|(_, d)| *d <= shooter_sim::zombies::laststand::REVIVE_RADIUS)
             .min_by(|a, b| a.1.total_cmp(&b.1))
             .map(|(id, _)| id)
+    }
+
+    /// The charge went off at `at`: its own big blast, a rattle by distance,
+    /// and, close by, the controller's rumble and ringing ears.
+    fn charge_blast(&mut self, at: Vector3) {
+        let tree = self.base().get_tree();
+        if let Some(mut effects) = crate::effects::CombatEffects::find(&tree) {
+            effects.bind_mut().charge_explosion(at);
+        }
+        if let Some(player) = &mut self.player {
+            player.bind_mut().feel_charge_blast(at);
+        }
     }
 
     fn charge_spot(&self) -> Option<UseKind> {

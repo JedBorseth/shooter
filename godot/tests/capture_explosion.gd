@@ -1,5 +1,7 @@
 extends SceneTree
-## Captures an explosion (`CombatEffects.explosion`, a frag's size), a smoke
+## Captures an explosion (`CombatEffects.explosion`, a frag's size), Search
+## and Destroy's charge going off (`CombatEffects.charge_explosion`, 15 m
+## further off and looking a little up, to fit its smoke column), a smoke
 ## grenade's cloud (`CombatEffects.smoke`), or a flashbang's pop
 ## (`CombatEffects.flash_pop`) as a frame strip in three lights: the
 ## Testing Area in the sun (10 m off, and 5 m off looking down at the chips
@@ -14,13 +16,14 @@ extends SceneTree
 ##   CAPTURE_DIR     output directory (required).
 ##   CAPTURE_PRESET  low, medium, or high (default medium).
 ##   CAPTURE_ONLY    comma list of lights: sun, close, shade, night (default: all).
-##   CAPTURE_EFFECT  explosion (default), smoke, or flash.
+##   CAPTURE_EFFECT  explosion (default), charge, smoke, or flash.
 
 const Benchmark := preload("res://tests/benchmark.gd")
 ## Per effect, sixtieths of a second after it starts for each frame of the
 ## strip.
 const MOMENTS := {
 	"explosion": [2, 5, 9, 15, 24, 40, 70, 120, 200, 320, 600],
+	"charge": [2, 6, 12, 24, 45, 90, 180, 360, 600],
 	"smoke": [20, 60, 150, 300, 600, 900],
 	"flash": [1, 3, 6, 10, 20, 40, 90],
 }
@@ -62,7 +65,10 @@ func _run() -> void:
 	for light: String in LIGHTS:
 		if not _only.is_empty() and not light in _only.split(","):
 			continue
-		var spec: Array = LIGHTS[light]
+		var spec: Array = LIGHTS[light].duplicate()
+		if _effect == "charge":
+			spec[3] += 0.2
+			spec[4] += Vector3(0, 0, -15)
 		await _load(spec[0])
 		await _hold(spec[1], spec[2], spec[3], 60)
 		var effects := get_first_node_in_group("combat_effects")
@@ -74,6 +80,8 @@ func _run() -> void:
 					effects.smoke(spec[4], 0.0)
 				"flash":
 					effects.flash_pop(spec[4] + Vector3.UP * 0.1)
+				"charge":
+					effects.charge_explosion(spec[4])
 				_:
 					effects.explosion(spec[4], Vector3.UP, 1.0)
 			var shown := 0
