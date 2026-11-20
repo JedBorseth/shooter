@@ -218,13 +218,17 @@ use crate::zombies::drinks::Drinks;
 // Version 92 added spectators: `ClientMessage::Hello`'s `spectate`, the
 // welcome's `spectator`, and `GameEvent::Caster`.
 // Version 93 added `ClientMessage::SwitchTeam`.
-pub const PROTOCOL_VERSION: u16 = 93;
+// Version 94 added the map to the welcome, so a client that joined without
+// knowing it loads the server's.
+pub const PROTOCOL_VERSION: u16 = 94;
 /// Longest account session token a hello carries, in bytes.
 pub const MAX_ACCOUNT_TOKEN_BYTES: usize = 2048;
 /// Longest reason a denial carries, in bytes.
 pub const MAX_DENIED_BYTES: usize = 160;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
+/// Longest map name a welcome carries, in bytes.
+pub const MAX_MAP_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
 pub const MAX_INPUTS_PER_PACKET: usize = 24;
 /// Wish vectors are sent as signed bytes; prediction must use the same values.
@@ -346,6 +350,9 @@ pub enum ServerMessage {
         /// The player joined as a spectator: `player_id` is theirs, but
         /// they have no body and are on no team.
         spectator: bool,
+        /// The map the server runs, as server browsers show it ("Zombies
+        /// Arena"), so a client that joined without knowing it loads it.
+        map: String,
     },
     Reject {
         server_version: u16,
@@ -2063,6 +2070,7 @@ impl ServerMessage {
                 ranked,
                 custom,
                 spectator,
+                map,
             } => {
                 w.bits(0, TAG_BITS);
                 w.u16(PROTOCOL_VERSION);
@@ -2074,6 +2082,7 @@ impl ServerMessage {
                 w.bool(*ranked);
                 custom.write(&mut w);
                 w.bool(*spectator);
+                write_string(&mut w, map, MAX_MAP_BYTES);
             }
             ServerMessage::Reject { server_version } => {
                 w.bits(1, TAG_BITS);
@@ -2143,6 +2152,7 @@ impl ServerMessage {
                     ranked: r.bool()?,
                     custom: custom::Settings::read(&mut r)?,
                     spectator: r.bool()?,
+                    map: read_string(&mut r, MAX_MAP_BYTES)?,
                 })
             }
             1 => Ok(ServerMessage::Reject {
@@ -6931,6 +6941,7 @@ mod tests {
                     custom::Settings::default()
                 },
                 spectator: mode == Mode::CaptureTheFlag,
+                map: "Slamcity".to_owned(),
             };
             assert_eq!(
                 ServerMessage::decode(&msg.encode(&[]), |_| None).unwrap(),
@@ -7253,6 +7264,7 @@ mod tests {
             ranked: false,
             custom: custom::Settings::default(),
             spectator: false,
+            map: "Zombies Arena".into(),
         };
         assert_eq!(
             ServerMessage::decode(&welcome.encode(&[]), |_| None).unwrap(),

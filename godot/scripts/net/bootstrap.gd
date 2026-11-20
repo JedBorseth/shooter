@@ -45,9 +45,11 @@ extends Node
 ##                                    allocator starts for one match).
 ##   --directory HOST[:PORT]          developer override for the Internet directory;
 ##                                    not saved between launches
-##   --connect HOST[:PORT] [--spectate] [--lag MS] [--jitter MS] [--loss PERCENT]
+##   --connect HOST[:PORT] [--map MAP] [--spectate] [--lag MS] [--jitter MS] [--loss PERCENT]
 ##                                    join a server (as a spectator with
-##                                    --spectate); lag, jitter, and loss are
+##                                    --spectate) on MAP, or, without --map, on
+##                                    whatever map its welcome names; lag,
+##                                    jitter, and loss are
 ##                                    simulated in each direction for testing
 ##
 ## A dedicated server export (feature "dedicated_server") always runs as a server.
@@ -132,6 +134,9 @@ func _ready() -> void:
 	elif options.has("connect"):
 		if options.has("spectate"):
 			options["spectate"] = true
+		if not options.has("map"):
+			# Load whatever the server's welcome names (`_load_server_map`).
+			options["map_from_server"] = true
 		join.call_deferred(String(options["connect"]), options)
 
 
@@ -384,6 +389,31 @@ func _start_server(options: Dictionary) -> void:
 		previous.queue_free()
 
 
+## A `--connect` without `--map` joins on the arena; once `client` is
+## welcomed, if the server runs another map, leave, load that map, and join
+## again on it.
+func _load_server_map(client: NetClient, target: String, options: Dictionary) -> void:
+	if client != _client:
+		return
+	var server_map := String(client.server_map())
+	var path := map_path(server_map)
+	var main := get_tree().current_scene
+	if path.is_empty() or main == null or main.scene_file_path == path:
+		return
+	print("net join: the server runs %s; loading it" % server_map)
+	var again := options.duplicate()
+	again.erase("map_from_server")
+	again["map"] = server_map
+	_client.queue_free()
+	_client = null
+	var tree := get_tree()
+	if tree.change_scene_to_file(path) != OK:
+		push_error("Net: cannot load the server's map %s" % server_map)
+		return
+	await tree.scene_changed
+	join(target, again)
+
+
 ## Quits once `server` has had no connections for `seconds`: a server the
 ## allocator started for one match (docs/online.md) stops when its players
 ## have gone, or if they never come.
@@ -434,6 +464,10 @@ func _attach_client(main: Node, target: String, options: Dictionary, token := ""
 	client.spectate = bool(options.get("spectate", false))
 	main.add_child(client)
 	_client = client
+	if bool(options.get("map_from_server", false)):
+		client.welcomed.connect(
+			_load_server_map.bind(client, target, options), CONNECT_DEFERRED | CONNECT_ONE_SHOT
+		)
 
 	var layer := CanvasLayer.new()
 	layer.name = "NetOverlay"

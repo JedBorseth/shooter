@@ -202,6 +202,8 @@ pub struct NetClient {
     mode: Mode,
     /// The server's build, from its welcome.
     server_build: String,
+    /// The map the server runs, from its welcome ("Zombies Arena").
+    server_map: String,
     /// The server reports our match XP to our account (its welcome).
     ranked: bool,
     /// The server's custom game settings (`shooter_sim::custom`).
@@ -574,6 +576,10 @@ impl NetClient {
     /// A player killed another (both ids as in `player_id`; bots from 200).
     #[signal]
     fn kill_reported(killer: i32, victim: i32, weapon: GString, headshot: bool);
+
+    /// The server welcomed us (`server_map` and `match_info` are set).
+    #[signal]
+    fn welcomed();
 
     /// Someone joined, left, or changed team or name.
     #[signal]
@@ -1788,6 +1794,13 @@ impl NetClient {
         self.server_build.as_str().into()
     }
 
+    /// The map the server runs, as browsers show it ("Zombies Arena"), once
+    /// it welcomes us; "" before.
+    #[func]
+    fn server_map(&self) -> GString {
+        self.server_map.as_str().into()
+    }
+
     /// Whether the server reports our match XP to our account itself
     /// (so the game must not report it too).
     #[func]
@@ -2094,11 +2107,13 @@ impl NetClient {
                 ranked,
                 custom,
                 spectator,
+                map,
                 ..
             } => {
                 if self.status != Status::Connecting {
                     return;
                 }
+                self.server_map = clean_text(&map, protocol::MAX_MAP_BYTES);
                 self.ranked = ranked;
                 self.custom = custom;
                 self.server_build = clean_text(&server_build, MAX_BUILD_BYTES);
@@ -2142,6 +2157,7 @@ impl NetClient {
                 if !custom.is_default() {
                     godot_print!("net client: custom game: {}", custom.to_text());
                 }
+                self.signals().welcomed().emit();
             }
             ServerMessage::Reject { server_version } => {
                 godot_error!(

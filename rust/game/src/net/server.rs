@@ -2835,6 +2835,7 @@ impl NetServer {
             ranked: self.accounts,
             custom: self.custom,
             spectator,
+            map: self.map_name.to_string(),
         };
         transport::send_reliable(&mut peer, &welcome.encode(&[]));
         // Everyone already here, then the newcomer for everyone.
