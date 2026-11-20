@@ -104,6 +104,14 @@ func _check_editor() -> void:
 	menu.call("_open_editor", "custom:0")
 	await process_frame
 	_check(menu.editing(), "the editor opens on a custom class")
+	# Custom 1 starts as the Assault default, with a perk of each tier.
+	_check(
+		Array(_draft(menu).get("perks", [])) == ["lightweight", "fast_hands", "dexterity"],
+		"the default's perks come along, got %s" % [_draft(menu).get("perks")]
+	)
+	for perk in ["Light Load", "Quick Hands", "Climber"]:
+		_select(menu, perk)
+	_check(Array(_draft(menu).perks).is_empty(), "a chosen perk comes off when picked again")
 	_select(menu, "PDW-9")
 	_check(_draft(menu).primary == "pdw9", "the primary changes")
 	# The grip carries over from the M4A1; the red dot, which the PDW-9 does
@@ -140,6 +148,7 @@ func _check_editor() -> void:
 		Array(_draft(menu).primary_attachments).size() == 2,
 		"the third attachment goes with its wildcard"
 	)
+	await _check_perks(menu)
 	(menu.get("_name_edit") as LineEdit).text = "Rush"
 	menu.call("_save_draft")
 	await process_frame
@@ -148,6 +157,39 @@ func _check_editor() -> void:
 	_check(saved.name == "Rush" and saved.primary == "pdw9", "the class is saved: %s" % saved)
 	_check(String(NetClient.check_class(saved).error) == "", "the saved class is valid")
 	menu.queue_free()
+	await process_frame
+
+
+## Perks: a point each, one per tier, a swap in a full slot, and a second
+## with the tier's Extra Perk wildcard. Starts from eight points spent.
+func _check_perks(menu: Node) -> void:
+	var cost := func() -> int: return int(NetClient.check_class(_draft(menu)).cost)
+	_check(cost.call() == 8, "eight points before perks, got %d" % cost.call())
+	var light := _chip(menu, "Light Load")
+	_check(light != null and light.icon != null, "perks show their icons")
+	_select(menu, "Light Load")
+	_check(cost.call() == 9, "a perk costs a point")
+	_select(menu, "Blast Vest")
+	_check(
+		Array(_draft(menu).perks) == ["flak_jacket"],
+		"another perk of a full tier swaps in, got %s" % [_draft(menu).perks]
+	)
+	_select(menu, "Extra Perk 1")
+	_check(cost.call() == 10, "the wildcard costs a point")
+	light = _chip(menu, "Light Load")
+	_check(light != null and light.disabled, "no point left for a second perk")
+	_select(menu, "Smoke ×1")
+	_select(menu, "Light Load")
+	_check(
+		Array(_draft(menu).perks) == ["flak_jacket", "lightweight"],
+		"Extra Perk 1 takes two Perk 1 perks, got %s" % [_draft(menu).perks]
+	)
+	_check(String(NetClient.check_class(_draft(menu)).error) == "", "and the class is valid")
+	_select(menu, "Extra Perk 1")
+	_check(
+		Array(_draft(menu).perks) == ["flak_jacket"],
+		"the second perk goes with its wildcard, got %s" % [_draft(menu).perks]
+	)
 	await process_frame
 
 

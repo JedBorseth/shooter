@@ -414,23 +414,56 @@ impl DefaultClass {
 
     pub fn class(self) -> Class {
         use Attachment::*;
+        use Perk::*;
         use equipment::Kind::{Flash, Smoke};
+        // One perk of each tier, as Black Ops 2's default classes carry.
         let pistol = Some(Gun::plain(WeaponId::expect("m1911")));
-        let (primary, attachments, tactical, tacticals): (&str, &[Attachment], _, u8) = match self {
-            DefaultClass::Assault => ("m4", &[RedDot, Grip], Flash, 1),
-            DefaultClass::Rifleman => ("ak47", &[RedDot, ExtendedMag], Flash, 1),
-            DefaultClass::CloseQuarters => ("pdw9", &[Suppressor, Grip], Flash, 1),
-            DefaultClass::Support => ("lsw6", &[Grip, ExtendedMag], Smoke, 1),
-            DefaultClass::Breacher => ("m870", &[Grip, ExtendedMag], Flash, 1),
-            DefaultClass::Marksman => ("m40", &[Suppressor, ExtendedMag], Smoke, 1),
-        };
+        let (primary, attachments, tactical, perks): (&str, &[Attachment], _, [Perk; 3]) =
+            match self {
+                DefaultClass::Assault => (
+                    "m4",
+                    &[RedDot, Grip],
+                    Flash,
+                    [Lightweight, FastHands, Dexterity],
+                ),
+                DefaultClass::Rifleman => (
+                    "ak47",
+                    &[RedDot, ExtendedMag],
+                    Flash,
+                    [FlakJacket, Toughness, TacticalMask],
+                ),
+                DefaultClass::CloseQuarters => (
+                    "pdw9",
+                    &[Suppressor, Grip],
+                    Flash,
+                    [Lightweight, SleightOfHand, DeadSilence],
+                ),
+                DefaultClass::Support => (
+                    "lsw6",
+                    &[Grip, ExtendedMag],
+                    Smoke,
+                    [FlakJacket, SleightOfHand, Awareness],
+                ),
+                DefaultClass::Breacher => (
+                    "m870",
+                    &[Grip, ExtendedMag],
+                    Flash,
+                    [Lightweight, FastHands, Dexterity],
+                ),
+                DefaultClass::Marksman => (
+                    "m40",
+                    &[Suppressor, ExtendedMag],
+                    Smoke,
+                    [FlakJacket, Toughness, TacticalMask],
+                ),
+            };
         Class {
             primary: Some(Gun::with(WeaponId::expect(primary), attachments)),
             secondary: pistol,
             lethals: 1,
             tactical,
-            tacticals,
-            perks: Perks::NONE,
+            tacticals: 1,
+            perks: Perks::of(&perks),
             wildcards: Wildcards::NONE,
         }
     }
@@ -623,5 +656,15 @@ mod tests {
         c.perks = Perks::of(&[Perk::Toughness, Perk::FastHands, Perk::Scavenger]);
         c.wildcards = Wildcards::of(&[Wildcard::Perk2Greed]);
         assert_eq!(c.validate(), Err(ClassError::TooManyPerks));
+    }
+
+    #[test]
+    fn default_classes_carry_a_perk_of_each_tier() {
+        for default in DefaultClass::ALL {
+            let perks = default.class().perks;
+            for tier in Tier::ALL {
+                assert_eq!(perks.in_tier(tier), 1, "{} {tier:?}", default.name());
+            }
+        }
     }
 }
