@@ -21,12 +21,19 @@ func _check(ok: bool, what: String) -> void:
 
 
 func _run() -> void:
-	ClassStore.path = "user://class_menu_test.cfg"
-	DirAccess.remove_absolute(ProjectSettings.globalize_path(ClassStore.path))
+	ClassStore.use_file("user://class_menu_test.cfg")
+	ProgressStore.use_file("user://class_menu_test_progress.cfg")
+	for file in [ClassStore.path(), ProgressStore.path()]:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(file))
 	ClassStore.reload()
+	ProgressStore.reload()
 	_check_store()
+	await _check_locks()
+	# Far enough along for everything the editor test picks.
+	ProgressStore.add(400000, {"pdw9": 100, "m4": 100})
 	await _check_editor()
-	DirAccess.remove_absolute(ProjectSettings.globalize_path(ClassStore.path))
+	for file in [ClassStore.path(), ProgressStore.path()]:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(file))
 	print("Class menu test: %d failure(s)" % _failures)
 	quit(1 if _failures > 0 else 0)
 
@@ -43,7 +50,51 @@ func _check_store() -> void:
 	ClassStore.select("custom:3")
 	ClassStore.reload()
 	_check(ClassStore.selected_id() == "custom:3", "the chosen class survives a restart")
-	_check(ClassStore.selected().name == "Custom 4", "and is the right one")
+	_check(ClassStore.by_id("custom:3").name == "Custom 4", "and is the right one")
+
+
+## A new player: custom classes wait for level 4, and once open, items
+## above the player's level or kills are locked.
+func _check_locks() -> void:
+	_check(ProgressStore.level() == 1, "a new player is level 1")
+	_check(not ProgressStore.can_create_classes(), "Create-a-Class waits for level 4")
+	ClassStore.select("custom:1")
+	_check(ClassStore.selected().name == "Assault", "a locked custom class plays the first default")
+	var menu: VBoxContainer = ClassMenu.new()
+	root.add_child(menu)
+	await process_frame
+	var custom := _chip(menu, "Custom 1  ·  Level 4")
+	_check(custom != null and custom.disabled, "custom classes show the level that opens them")
+	menu.call("_open_editor", "custom:0")
+	_check(not menu.editing(), "a locked custom class does not open")
+	menu.queue_free()
+	await process_frame
+	# Level 4: Create-a-Class, the AK-47; the LSW-6 still locked.
+	ProgressStore.add(600 + 1000 + 1400)
+	_check(ProgressStore.level() == 4, "level 4, got %d" % ProgressStore.level())
+	# Custom 4 starts as the Support default (an LSW-6): the locked weapon
+	# and attachments come off until they unlock.
+	var support := ClassStore.usable("custom:3")
+	_check(
+		support.primary in ["m4", "pdw9", "ak47"],
+		"a locked weapon falls back to an unlocked one, got %s" % support.primary
+	)
+	_check(Array(support.primary_attachments).is_empty(), "locked attachments come off")
+	menu = ClassMenu.new()
+	root.add_child(menu)
+	await process_frame
+	menu.call("_open_editor", "custom:0")
+	await process_frame
+	_check(menu.editing(), "Create-a-Class opens at level 4")
+	var lsw := _chip(menu, "LSW-6  ·  Level 16")
+	_check(lsw != null and lsw.disabled, "the LSW-6 waits for level 16")
+	var ak := _chip(menu, "AK-47")
+	_check(ak != null and not ak.disabled, "the AK-47 unlocks at level 4")
+	var dot := _chip(menu, "Red Dot  ·  5 kills")
+	_check(dot != null and dot.disabled, "the red dot waits for 5 kills with the weapon")
+	menu.close_editor()
+	menu.queue_free()
+	await process_frame
 
 
 func _check_editor() -> void:

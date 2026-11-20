@@ -35,6 +35,7 @@ const KillFeed := preload("res://scripts/net/kill_feed.gd")
 const MatchBanner := preload("res://scripts/net/match_banner.gd")
 const Scoreboard := preload("res://scripts/net/scoreboard.gd")
 const ClassMenu := preload("res://scripts/net/class_menu.gd")
+const MatchXp := preload("res://scripts/net/match_xp.gd")
 
 const ALLY := Color("7cc4ff")
 const ENEMY := Color("ff7a5c")
@@ -57,6 +58,8 @@ var _menu: Control
 var _menu_panel: PanelContainer
 ## Create-a-Class: the class list and editor (`class_menu.gd`).
 var _class_menu: VBoxContainer
+## Earns the match's XP (`match_xp.gd`).
+var _match_xp: Node
 var _ready_button: Button
 var _menu_status: Label
 var _menu_eyebrow: Label
@@ -85,6 +88,10 @@ func _ready() -> void:
 	_build()
 	if client == null:
 		return
+	_match_xp = MatchXp.new()
+	_match_xp.name = "MatchXp"
+	_match_xp.client = client
+	add_child(_match_xp)
 	client.kill_reported.connect(_on_kill)
 	client.chat_received.connect(_on_chat)
 	client.match_changed.connect(_refresh_board)

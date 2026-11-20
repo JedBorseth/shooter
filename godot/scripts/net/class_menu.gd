@@ -29,6 +29,10 @@ const WEAPON_ROLES := {
 var client: NetClient
 
 var _items := {}
+var _level_row: HBoxContainer
+var _level_label: Label
+var _level_bar: ProgressBar
+var _xp_label: Label
 var _list_page: HBoxContainer
 var _edit_page: VBoxContainer
 var _class_list: VBoxContainer
@@ -62,6 +66,7 @@ func _ready() -> void:
 			var ib := order.find(String(b.key))
 			return (ia if ia >= 0 else order.size()) < (ib if ib >= 0 else order.size())
 	)
+	_build_level_row()
 	_build_list_page()
 	_build_edit_page()
 	show_list()
@@ -69,9 +74,11 @@ func _ready() -> void:
 
 ## Back to the class list, the equipped class highlighted.
 func show_list() -> void:
+	_refresh_level()
 	_editing = -1
 	_edit_page.visible = false
 	_list_page.visible = true
+	_level_row.visible = true
 	_rebuild_list()
 	_show_detail(ClassStore.selected_id())
 
@@ -85,6 +92,46 @@ func focus_first() -> void:
 	var button: Button = _class_buttons.get(ClassStore.selected_id())
 	if _list_page.visible and button != null:
 		button.grab_focus.call_deferred()
+
+
+# --- Level -----------------------------------------------------------------------
+
+
+func _build_level_row() -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 14)
+	add_child(row)
+	_level_row = row
+	_level_label = Label.new()
+	_level_label.add_theme_font_size_override("font_size", 18)
+	row.add_child(_level_label)
+	_level_bar = ProgressBar.new()
+	_level_bar.show_percentage = false
+	_level_bar.custom_minimum_size = Vector2(220, 4)
+	_level_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_level_bar.add_theme_stylebox_override("background", UiTheme.plate(UiTheme.HAIRLINE, 0, 0))
+	_level_bar.add_theme_stylebox_override("fill", UiTheme.plate(UiTheme.ROUTE_LIGHT, 0, 0))
+	row.add_child(_level_bar)
+	_xp_label = Label.new()
+	_xp_label.add_theme_color_override("font_color", MenuStyle.TEXT_DIM)
+	_xp_label.add_theme_font_size_override("font_size", 14)
+	row.add_child(_xp_label)
+
+
+func _refresh_level() -> void:
+	var rank := Progression.rank(ProgressStore.xp())
+	_level_label.text = "LEVEL %d" % int(rank.level)
+	var span := int(rank.level_span)
+	if span > 0:
+		_level_bar.max_value = span
+		_level_bar.value = int(rank.into_level)
+		_xp_label.text = (
+			"%d / %d XP to level %d" % [int(rank.into_level), span, int(rank.level) + 1]
+		)
+	else:
+		_level_bar.max_value = 1
+		_level_bar.value = 1
+		_xp_label.text = "Top level"
 
 
 # --- Class list ------------------------------------------------------------------
@@ -148,6 +195,9 @@ func _rebuild_list() -> void:
 			_class_list.add_child(_section_label("DEFAULT CLASSES"))
 		var button := Button.new()
 		button.text = String(entry.name)
+		if custom and not ProgressStore.can_create_classes():
+			button.text += "  ·  Level %d" % Progression.create_a_class_level()
+			button.disabled = true
 		button.toggle_mode = true
 		button.button_group = group
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -175,16 +225,32 @@ func _equip(id: String) -> void:
 
 func _show_detail(id: String) -> void:
 	_shown_id = id
-	var entry := ClassStore.by_id(id)
+	var custom := id.begins_with("custom")
+	var locked := custom and not ProgressStore.can_create_classes()
+	var entry := ClassStore.by_id(id) if locked else ClassStore.usable(id)
 	var equipped := id == ClassStore.selected_id()
 	_detail_name.text = String(entry.name) + ("   ·   EQUIPPED" if equipped else "")
 	_set_pips(_detail_pips, int(NetClient.check_class(entry).cost))
 	_clear(_detail_lines)
-	for line: Array in _describe(entry):
-		_detail_lines.add_child(_detail_line(line[0], line[1], line[2]))
-	var custom := id.begins_with("custom")
-	_edit_button.disabled = not custom
-	_edit_button.text = "Edit class" if custom else "Default classes cannot be changed"
+	if locked:
+		var note := Label.new()
+		note.text = (
+			"Create-a-Class unlocks at level %d. Until then, pick a default class."
+			% Progression.create_a_class_level()
+		)
+		note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		note.add_theme_color_override("font_color", MenuStyle.TEXT_DIM)
+		note.add_theme_font_size_override("font_size", 16)
+		_detail_lines.add_child(note)
+	else:
+		for line: Array in _describe(entry):
+			_detail_lines.add_child(_detail_line(line[0], line[1], line[2]))
+	_edit_button.disabled = not custom or locked
+	_edit_button.text = (
+		"Default classes cannot be changed"
+		if not custom
+		else ("Locked" if locked else "Edit class")
+	)
 
 
 ## Rows of [slot, item, detail] describing a class.
@@ -295,12 +361,13 @@ func _build_edit_page() -> void:
 
 
 func _open_editor(id: String) -> void:
-	if not id.begins_with("custom"):
+	if not id.begins_with("custom") or not ProgressStore.can_create_classes():
 		return
 	_editing = int(id.get_slice(":", 1))
-	_draft = ClassStore.by_id(id)
+	_draft = ClassStore.usable(id)
 	_name_edit.text = String(_draft.get("name", ""))
 	_list_page.visible = false
+	_level_row.visible = false
 	_edit_page.visible = true
 	_rebuild_editor()
 	_name_edit.grab_focus.call_deferred()
@@ -341,8 +408,16 @@ func _rebuild_editor() -> void:
 	var primary := String(_draft.get("primary", ""))
 	var chips := []
 	for weapon: Dictionary in _items.primaries:
-		chips.append(
-			[String(weapon.name), _with_primary.bind(String(weapon.key)), primary == weapon.key]
+		(
+			chips
+			. append(
+				[
+					String(weapon.name),
+					_with_primary.bind(String(weapon.key)),
+					primary == weapon.key,
+					ProgressStore.lock_reason("weapon", String(weapon.key)),
+				]
+			)
 		)
 	chips.append(["None", _with_primary.bind(""), primary == ""])
 	_section("PRIMARY", chips, WEAPON_ROLES.get(primary, ""))
@@ -357,17 +432,29 @@ func _rebuild_editor() -> void:
 	chips = []
 	var overkill := _has_wildcard("overkill")
 	for weapon: Dictionary in _items.secondaries:
-		chips.append(
-			[String(weapon.name), _with_secondary.bind(String(weapon.key)), secondary == weapon.key]
-		)
-	if overkill:
-		for weapon: Dictionary in _items.primaries:
-			chips.append(
+		(
+			chips
+			. append(
 				[
 					String(weapon.name),
 					_with_secondary.bind(String(weapon.key)),
-					secondary == weapon.key
+					secondary == weapon.key,
+					ProgressStore.lock_reason("weapon", String(weapon.key)),
 				]
+			)
+		)
+	if overkill:
+		for weapon: Dictionary in _items.primaries:
+			(
+				chips
+				. append(
+					[
+						String(weapon.name),
+						_with_secondary.bind(String(weapon.key)),
+						secondary == weapon.key,
+						ProgressStore.lock_reason("weapon", String(weapon.key)),
+					]
+				)
 			)
 	chips.append(["None", _with_secondary.bind(""), secondary == ""])
 	_section("SECONDARY", chips, "Any primary, with Two Primaries." if not overkill else "")
@@ -395,6 +482,7 @@ func _rebuild_editor() -> void:
 						"%s ×%d" % [String(item.name), count],
 						_with_tactical.bind(key, count),
 						tactical == key and tacticals == count,
+						ProgressStore.lock_reason("tactical", key),
 					]
 				)
 			)
@@ -405,14 +493,25 @@ func _rebuild_editor() -> void:
 	for item: Dictionary in _items.wildcards:
 		var key := String(item.key)
 		var on := _has_wildcard(key)
-		chips.append([String(item.name), _toggle_wildcard.bind(key), on])
+		(
+			chips
+			. append(
+				[
+					String(item.name),
+					_toggle_wildcard.bind(key),
+					on,
+					ProgressStore.lock_reason("wildcard", key),
+				]
+			)
+		)
 		if on:
 			notes.append(String(item.summary))
 	_section("WILDCARDS", chips, " ".join(notes) if not notes.is_empty() else "A point each.")
 
 
-## A row of chips: each [text, change, chosen]. A chip whose change would
-## break a rule is disabled.
+## A row of chips: each [text, change, chosen, lock]. A chip whose change
+## would break a rule is disabled, and so is one still locked (`lock` says
+## what unlocks it: "Level 12", "8 kills").
 func _section(title: String, chips: Array, note: String) -> void:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 4)
@@ -434,6 +533,7 @@ func _section(title: String, chips: Array, note: String) -> void:
 	for chip: Array in chips:
 		var change: Callable = chip[1]
 		var chosen: bool = chip[2]
+		var lock: String = chip[3] if chip.size() > 3 else ""
 		var button := Button.new()
 		button.text = String(chip[0])
 		button.toggle_mode = true
@@ -443,6 +543,9 @@ func _section(title: String, chips: Array, note: String) -> void:
 		MenuStyle.style_button(button, true)
 		var after: Dictionary = change.call(_draft.duplicate(true))
 		button.disabled = not chosen and String(NetClient.check_class(after).error) != ""
+		if lock != "" and not chosen:
+			button.text += "  ·  " + lock
+			button.disabled = true
 		button.pressed.connect(_apply_change.bind(change))
 		row.add_child(button)
 
@@ -457,7 +560,17 @@ func _attachment_chips(weapon: String, field: String) -> Array:
 	var fitted: Array = Array(_draft.get(field, []))
 	for item: Dictionary in _weapon(weapon).get("attachments", []):
 		var key := String(item.key)
-		chips.append([String(item.name), _toggle_attachment.bind(field, key), key in fitted])
+		(
+			chips
+			. append(
+				[
+					String(item.name),
+					_toggle_attachment.bind(field, key),
+					key in fitted,
+					ProgressStore.attachment_lock(weapon, key),
+				]
+			)
+		)
 	return chips
 
 
@@ -554,11 +667,12 @@ func _is_optic(key: String) -> bool:
 	return false
 
 
-## The attachments of `fitted` that `weapon` takes.
+## The attachments of `fitted` that `weapon` takes and has unlocked.
 func _offered(weapon: String, fitted: Array) -> Array:
 	var keys := []
 	for item: Dictionary in _weapon(weapon).get("attachments", []):
-		keys.append(String(item.key))
+		if ProgressStore.attachment_lock(weapon, String(item.key)) == "":
+			keys.append(String(item.key))
 	return fitted.filter(func(key: String) -> bool: return key in keys)
 
 

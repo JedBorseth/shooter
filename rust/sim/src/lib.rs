@@ -21,6 +21,7 @@ pub mod movement;
 pub mod net;
 pub mod penetration;
 pub mod player;
+pub mod progression;
 pub mod rng;
 pub mod score;
 pub mod snd;

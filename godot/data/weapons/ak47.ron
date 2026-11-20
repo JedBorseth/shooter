@@ -36,6 +36,8 @@
     ),
     tracer_every: 3,
     attachments: [RedDot, Acog, Suppressor, Grip, ExtendedMag],
+    // The player level that unlocks it (Create-a-Class, docs/create-a-class.md).
+    unlock_level: 4,
     // Hands on the model: GripRight and GripLeft in ak47_view.tscn.
     grips: Some((right: (0, -0.1305, 0.1718), left: (0, -0.0607, -0.1475), rake: 25, section: Some((centre: (0.0000, -0.0475), half: (0.0216, 0.0209))))),
     // Finger poses fitted to the model by tests/bake_hand_poses.gd:

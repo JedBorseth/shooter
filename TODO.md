@@ -315,7 +315,8 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 - [ ] Performance budget and profiling: target 144 FPS on a mid-range GPU, CPU frame time per system.
 - [x] Loadouts and a create-a-class screen: Pick 10 classes (two weapons with up to three attachments, frags, tacticals, wildcards), checked by the server, five custom classes saved locally and six defaults, picked in the match menu ([docs/create-a-class.md](docs/create-a-class.md)).
 - [ ] Create-a-Class follow-ups: perks and their slots (with Perk Greed), pistol attachments (with Secondary Gunfighter), and Tactician (a tactical on the lethal button).
-- [ ] Progression: XP, levels, weapon unlocks.
+- [x] Progression: XP, levels, weapon unlocks: score is XP plus a match bonus, levels 1 to 55, Create-a-Class at level 4, weapons, tacticals, and wildcards by level, attachments by kills with the weapon, kept locally (`rust/sim/src/progression.rs`, `godot/scripts/progress_store.gd`).
+- [ ] Progression follow-ups: keep progress on the server once accounts exist (Phase 5), so it can check unlocks; prestige; weapon levels shown in the menu.
 - [x] Gun Game: free-for-all up a ladder of the eight weapons, with a local match button on the title screen (`rust/sim/src/gun_game.rs`).
 - [x] Capture the Flag: flags, takes, drops, returns, and captures on the server (`rust/sim/src/ctf.rs`), bots that attack, defend, return, and carry, flag markers and calls on the client (`godot/scripts/net/ctf_view.gd`), and a title screen button.
 - [ ] More modes: Domination. (Free-for-all is done: `--mode ffa`, on Gun Game's teamless path. Search and Destroy has its own section.)
