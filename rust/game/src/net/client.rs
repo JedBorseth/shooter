@@ -18,7 +18,11 @@
 //! In Hardpoint it also keeps the map's zones, the live one, and who holds it
 //! (`hardpoint_info`).
 //! In Search and Destroy it also keeps the round (`round_info`), and holds
-//! the local player still during a round's freeze, as the server does.
+//! the local player still during a round's freeze, as the server does, and
+//! the charge (`charge_info`): its sites, where it is, and who is planting or
+//! defusing. It works out each tick whether holding interact would plant or
+//! defuse where the local player stands, which holds them still as the server
+//! does (`FpsPlayer::set_charge_spot`).
 //! With the F4 hitbox overlay on, it also draws, in white, the hitboxes the
 //! server rewound for each of our shots, next to the ones drawn here.
 //!
@@ -41,12 +45,16 @@ use shooter_sim::net::discovery::clean_text;
 use shooter_sim::net::interpolation::{InterpolationBuffer, SnapshotClock};
 use shooter_sim::net::prediction::Reconciled;
 use shooter_sim::net::protocol::{
-    self as protocol, ClientMessage, FlagPlay, FlagStatus, FlagView, GameEvent, InputPacket,
-    KillCause, MAX_BUILD_BYTES, PROTOCOL_VERSION, ScoreRow, ServerMessage, Snapshot, ZoneView,
+    self as protocol, ChargeStatus, ChargeView, ClientMessage, FlagPlay, FlagStatus, FlagView,
+    GameEvent, InputPacket, KillCause, MAX_BUILD_BYTES, PROTOCOL_VERSION, ScoreRow, ServerMessage,
+    Snapshot, ZoneView,
 };
 use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::{CHANNEL_COUNT, CHANNEL_RELIABLE, DEFAULT_PORT, TICK_RATE, Tick};
-use shooter_sim::snd::{RoundEnd, RoundPhase};
+use shooter_sim::snd::{
+    Charge, ChargeContext, ChargePlayer, ChargeState, ChargeUse, RoundEnd, RoundPhase, Site,
+    SndRules, UseKind,
+};
 use shooter_sim::tdm::{Mode, Phase, TEAM_COUNT, Team};
 use shooter_sim::weapon::{Slot, WeaponId};
 
@@ -55,7 +63,7 @@ use super::killcam::{Playing, WeaponCue};
 use super::props::{PropSnapshot, PropsBridge};
 use super::remote::{RemotePlayer, RemoteSample};
 use super::transport::{self, NetEvent};
-use crate::convert::to_godot;
+use crate::convert::{to_godot, to_sim};
 use crate::hitbox_rig::{self, HitboxRig};
 use crate::player::FpsPlayer;
 
@@ -182,6 +190,10 @@ pub struct NetClient {
     playing: Option<Playing>,
     /// The kind of the killcam playing, for the HUD.
     playing_kind: Option<killcam::Kind>,
+    /// Search and Destroy: the map's charge sites, and the charge as the
+    /// server last told us.
+    charge_sites: Vec<ZoneView>,
+    charge: Option<ChargeView>,
 }
 
 #[derive(Clone, Copy)]
@@ -343,6 +355,10 @@ impl INode for NetClient {
         }
 
         if self.status == Status::Joined && !paused {
+            let spot = self.charge_spot().is_some();
+            if let Some(player) = &mut self.player {
+                player.bind_mut().set_charge_spot(spot);
+            }
             self.send_inputs(now);
             self.send_debug_request();
         }
@@ -449,6 +465,11 @@ impl NetClient {
     /// The killcam ended (finished, skipped, or cut short by a respawn).
     #[signal]
     fn killcam_ended();
+    /// Search and Destroy: the charge changed hands, was dropped, planted,
+    /// defused, or went off, or someone started or stopped planting or
+    /// defusing it (`charge_info`).
+    #[signal]
+    fn charge_changed();
 
     /// Every player, ourselves included, as dictionaries with `id`, `name`,
     /// `team`, `bot`, `me`, `score`, `kills`, `deaths`, `ping`, `ready`,
@@ -624,8 +645,9 @@ impl NetClient {
 
     /// The Search and Destroy round as a dictionary: `number` (0 when no
     /// round is on), `phase` ("freeze", "live", "over", or ""),
-    /// `seconds_left`, `attacking` (whether our team attacks), `winner` (the
-    /// team that took the round, or -1), `reason` ("eliminated" or "time"),
+    /// `seconds_left` (the fuse, once the charge is planted), `attacking`
+    /// (whether our team attacks), `winner` (the team that took the round,
+    /// or -1), `reason` ("eliminated", "time", "detonated", or "defused"),
     /// and `halftime` (whether the teams swap sides after this round).
     #[func]
     fn killcam_info(&self) -> VarDictionary {
@@ -700,6 +722,8 @@ impl NetClient {
                 match reason {
                     RoundEnd::Eliminated => "eliminated",
                     RoundEnd::Time => "time",
+                    RoundEnd::Detonated => "detonated",
+                    RoundEnd::Defused => "defused",
                 },
             ),
         };
@@ -710,6 +734,81 @@ impl NetClient {
         d.set("winner", winner);
         d.set("reason", reason);
         d.set("halftime", round.number == round.halftime_after);
+        d
+    }
+
+    /// Search and Destroy's charge as a dictionary: `sites` (each with
+    /// `name`, `center`, and `size`; empty in other modes), `status` ("",
+    /// "carried", "dropped", "planted", "detonated", or "defused"),
+    /// `carrier` (who carries it, -1 for nobody or someone we are not told
+    /// of), `carrying` (we do), `position` (where it lies or stands, or its
+    /// carrier's feet when we can see them; `has_position` says whether
+    /// there is one), `site` (where it was planted, or -1), `user` (who is
+    /// planting or defusing, -1 for nobody we are told of), `use_kind`
+    /// ("plant" or "defuse"), `use_progress` (0 to 1), and `spot` ("plant",
+    /// "defuse", or "": what holding interact would do where we stand).
+    #[func]
+    fn charge_info(&self) -> VarDictionary {
+        let mut d = VarDictionary::new();
+        let sites: Array<VarDictionary> = self
+            .charge_sites
+            .iter()
+            .map(|site| {
+                let mut entry = VarDictionary::new();
+                entry.set("name", &GString::from(site.name.as_str()));
+                entry.set("center", to_godot(site.center));
+                entry.set("size", to_godot(site.half_extents * 2.0));
+                entry
+            })
+            .collect();
+        d.set("sites", &sites);
+        let (status, carrier, at, site) = match self.charge.map(|c| c.status) {
+            None => ("", None, None, -1),
+            Some(ChargeStatus::Carried { by }) => {
+                ("carried", by, by.and_then(|id| self.carrier_feet(id)), -1)
+            }
+            Some(ChargeStatus::Dropped { at }) => ("dropped", None, Some(to_godot(at)), -1),
+            Some(ChargeStatus::Planted { site, at }) => {
+                ("planted", None, Some(to_godot(at)), i32::from(site))
+            }
+            Some(ChargeStatus::Detonated { site, at }) => {
+                ("detonated", None, Some(to_godot(at)), i32::from(site))
+            }
+            Some(ChargeStatus::Defused { site, at }) => {
+                ("defused", None, Some(to_godot(at)), i32::from(site))
+            }
+        };
+        d.set("status", status);
+        d.set("carrier", carrier.map_or(-1, i32::from));
+        d.set("carrying", carrier.is_some() && carrier == self.player_id);
+        d.set("has_position", at.is_some());
+        d.set("position", at.unwrap_or(Vector3::ZERO));
+        d.set("site", site);
+        let using = self.charge.and_then(|c| c.using);
+        d.set("user", using.map_or(-1, |u| i32::from(u.by)));
+        d.set(
+            "use_kind",
+            match using.map(|u| u.kind) {
+                Some(UseKind::Plant) => "plant",
+                Some(UseKind::Defuse) => "defuse",
+                None => "",
+            },
+        );
+        let progress = match (using, self.newest) {
+            (Some(u), Some(now)) if u.done_at > u.started_at => {
+                f64::from(now.saturating_sub(u.started_at)) / f64::from(u.done_at - u.started_at)
+            }
+            _ => 0.0,
+        };
+        d.set("use_progress", progress.clamp(0.0, 1.0));
+        d.set(
+            "spot",
+            match self.charge_spot() {
+                Some(UseKind::Plant) => "plant",
+                Some(UseKind::Defuse) => "defuse",
+                None => "",
+            },
+        );
         d
     }
 
@@ -1316,7 +1415,72 @@ impl NetClient {
                     self.killcam = Some((killcam, now));
                 }
             }
+            GameEvent::ChargeSites { sites } => {
+                self.charge_sites = sites;
+                self.signals().charge_changed().emit();
+            }
+            GameEvent::Charge(view) => {
+                self.charge = Some(view);
+                self.signals().charge_changed().emit();
+            }
         }
+    }
+
+    /// What holding interact would do where the local player stands: plant
+    /// (carrying the charge, inside a site), defuse (a defender at the
+    /// planted charge), or nothing. The same rule the server holds players
+    /// still by (`Charge::spot`), from what it last told us.
+    fn charge_spot(&self) -> Option<UseKind> {
+        let view = self.charge?;
+        let round = self.round?;
+        let me = self.player_id?;
+        let team = self.local_team()?;
+        let player = self.player.as_ref()?;
+        let state = match view.status {
+            // Defenders are not told who carries it; they cannot plant anyway.
+            ChargeStatus::Carried { by } => ChargeState::Carried {
+                by: by.unwrap_or(u8::MAX),
+            },
+            ChargeStatus::Dropped { at } => ChargeState::Dropped { at },
+            ChargeStatus::Planted { site, at } => ChargeState::Planted { site, at },
+            ChargeStatus::Detonated { site, at } => ChargeState::Detonated { site, at },
+            ChargeStatus::Defused { site, at } => ChargeState::Defused { site, at },
+        };
+        let charge = Charge {
+            state,
+            using: view.using.map(|u| ChargeUse {
+                by: u.by,
+                kind: u.kind,
+                held: 0.0,
+            }),
+            position: shooter_sim::Vec3::ZERO,
+        };
+        let sites: Vec<Site> = self
+            .charge_sites
+            .iter()
+            .map(|z| Site {
+                center: z.center,
+                half_extents: z.half_extents,
+            })
+            .collect();
+        let rules = SndRules::default();
+        let cx = ChargeContext {
+            rules: &rules,
+            sites: &sites,
+            attackers: round.attackers,
+            live: round.phase == RoundPhase::Live,
+        };
+        let player = player.bind();
+        charge.spot(
+            &cx,
+            &ChargePlayer {
+                id: me,
+                team,
+                alive: player.is_alive(),
+                position: to_sim(player.base().get_global_position()),
+                interact: true,
+            },
+        )
     }
 
     /// Finds the props manager if the map has one and it is not loaded yet,
@@ -1772,9 +1936,15 @@ impl NetClient {
             self.props_population = Some(0);
         }
         self.set_round(None);
+        self.charge_sites.clear();
+        self.charge = None;
+        if let Some(player) = &mut self.player {
+            player.bind_mut().set_charge_spot(false);
+        }
         self.signals().roster_changed().emit();
         self.signals().match_changed().emit();
         self.signals().hardpoint_changed().emit();
+        self.signals().charge_changed().emit();
     }
 
     fn count_in(&mut self, bytes: usize) {

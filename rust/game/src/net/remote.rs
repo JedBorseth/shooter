@@ -19,6 +19,7 @@ use shooter_sim::look;
 use shooter_sim::movement::{MoveParams, Stance};
 pub use shooter_sim::net::lag::RemoteSample;
 use shooter_sim::net::protocol;
+use shooter_sim::snd::UseKind;
 use shooter_sim::weapon::WeaponId;
 
 use crate::acoustics::zone_at;
@@ -236,6 +237,7 @@ impl RemotePlayer {
             meleeing: false,
             throw: None,
             throw_kind: Default::default(),
+            charge_use: None,
             hits: 0,
             hit_heading: 0,
             hit_part: 0,
@@ -300,6 +302,7 @@ impl RemotePlayer {
             meleeing: b("meleeing", false),
             throw: f("throw"),
             throw_kind: Default::default(),
+            charge_use: None,
             hits: get("hits")
                 .and_then(|v| v.try_to::<i64>().ok())
                 .unwrap_or(0) as u8,
@@ -619,8 +622,18 @@ impl RemotePlayer {
             mantle_progress: s.mantling.then_some(s.progress.mantle),
             crouch: Some(s.crouch),
             turn: Some((s.progress.turn, s.progress.step)),
-            // Snapshots do not say who is planting yet.
-            action: s.throw.filter(|_| s.alive).map(|t| (ActionPose::Throw, t)),
+            // Kneeling over the charge, or a throw.
+            action: s
+                .charge_use
+                .map(|(kind, t)| {
+                    let pose = match kind {
+                        UseKind::Plant => ActionPose::Plant,
+                        UseKind::Defuse => ActionPose::Defuse,
+                    };
+                    (pose, t)
+                })
+                .or_else(|| s.throw.map(|t| (ActionPose::Throw, t)))
+                .filter(|_| s.alive),
             throw_kind: s.throw_kind,
             ladder: s.ladder,
             mount: s.mount,

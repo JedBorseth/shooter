@@ -1972,6 +1972,22 @@ CENTRE_ROOMS = [
     ("Train", (0, 7.75, 0), (2.8, 2.3, 18.8), 0.25, 0.3, 0.3, 6.0),
     ("Wreck", (0, 1.8, 0), (8.0, 3.0, 8.0), 0.25, 0.4, 0.25, 6.0),
 ]
+# Search and Destroy's charge sites (server: map_charge_sites), on the
+# defenders' (Red's, east) half of the El, one to each flank, as the TODO
+# picked: A in the pawn shop's back room on the north street, B in the ticket
+# hall's front room on the market side. Neither room is the other's twin, but
+# each sits within a few metres of the centre line, and the routes to them
+# from each spawn are the twins of each other's (north street and market). A
+# defender reaches either in about 7 s at a sprint, an attacker in about 11 s,
+# Call of Duty's usual lead for the defence. Each: name, label, the plant
+# zone's centre and size, and the marker crate's feet position and yaw
+# (gear_models.charge_site_a and _b).
+CHARGE_SITES = [
+    ("SiteA", "A", (5.2, 1.95, -29.5), (6.4, 3.6, 5.6), (5.0, WALK, -30.0), 0.0),
+    ("SiteB", "B", (2.25, 1.95, 29.75), (6.6, 3.6, 5.6), (2.3, WALK, 30.3), 0.0),
+]
+# The marker crate's collision box: size and centre height above its feet.
+CHARGE_CRATE = ((1.16, 0.89, 0.76), 0.445)
 # Hardpoint zones in rotation order: name, HUD label, centre, size. The centre
 # zones are their own twins; the pawn shop and the ticket hall are each other's,
 # so their small leans to one team cancel over a rotation. Each move goes at

@@ -39,6 +39,10 @@ pub struct PlayerInput {
     /// The tactical button: a press pulls the tactical's pin, letting go
     /// throws it (tacticals do not cook).
     pub tactical: bool,
+    /// The interact (use) button, held: Search and Destroy's plant and
+    /// defuse take a held press ([`crate::snd::Charge`]). A press also takes
+    /// a weapon from a rack, through [`Self::pickup`].
+    pub interact: bool,
     /// Online only: the server tick (fractional) this client was drawing other
     /// players at when the input was read. The server rewinds their hitboxes to
     /// it to check this input's shots (`net::lag`). Sent while firing; the
@@ -83,6 +87,21 @@ impl PlayerInput {
             view_tick: None,
             fire_aim: None,
             ..self
+        }
+    }
+
+    /// This input while planting or defusing the charge
+    /// ([`crate::snd::Charge::spot`]): as [`Self::held_still`], and the
+    /// weapon is put away, so no aiming, reloading, or switching either. The
+    /// interact button stays, since holding it is what keeps the plant or
+    /// defuse going. The server and the predicting client apply the same
+    /// filter.
+    pub fn using_charge(self) -> Self {
+        Self {
+            aim: false,
+            reload: false,
+            switch_to: None,
+            ..self.held_still()
         }
     }
 
@@ -1145,6 +1164,7 @@ mod tests {
             lunge: Some(Vec2::new(0.5, -2.0)),
             lethal: true,
             tactical: true,
+            interact: true,
             view_tick: Some(12.5),
             fire_aim: Some(FireAim {
                 yaw: 0.01,
@@ -1159,6 +1179,18 @@ mod tests {
                 aim: true,
                 reload: true,
                 switch_to: Some(1),
+                interact: true,
+                ..Default::default()
+            }
+        );
+        // Planting or defusing puts the weapon away as well; holding
+        // interact is what keeps it going.
+        assert_eq!(
+            input.using_charge(),
+            PlayerInput {
+                yaw: 1.25,
+                pitch: -0.3,
+                interact: true,
                 ..Default::default()
             }
         );

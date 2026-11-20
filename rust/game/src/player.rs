@@ -376,6 +376,11 @@ pub struct FpsPlayer {
     /// Held still by the match (a Search and Destroy round's freeze): the
     /// player can look and aim but not move or fire.
     movement_locked: bool,
+    /// Search and Destroy: holding interact here would plant or defuse the
+    /// charge (`NetClient` works it out each tick as the server does).
+    charge_spot: bool,
+    /// The last input planted or defused: held still, the weapon put away.
+    using_charge: bool,
     env: MoveEnv,
     /// Floor contact after the last move; the next tick's `MoveEnv::on_floor`.
     on_floor: bool,
@@ -1277,6 +1282,20 @@ impl FpsPlayer {
         self.movement_locked
     }
 
+    /// Search and Destroy: whether holding interact where the player stands
+    /// would plant or defuse the charge. While it does, the input is held
+    /// still with the weapon away (`PlayerInput::using_charge`), as the
+    /// server holds it.
+    pub fn set_charge_spot(&mut self, spot: bool) {
+        self.charge_spot = spot;
+    }
+
+    /// Planting or defusing the charge right now.
+    #[func]
+    pub fn is_using_charge(&self) -> bool {
+        self.using_charge
+    }
+
     /// Moves the player instantly and points them along `yaw`, keeping weapons,
     /// health, and score (map secrets, tests). Offline only: online, the server
     /// owns the player's position.
@@ -1591,14 +1610,15 @@ impl FpsPlayer {
         let slot_2 = held("weapon_2");
         let mut interact_down = held("interact");
         // On a gamepad the reload button uses whatever is in front of the
-        // player (a rack, a door), and reloads otherwise.
+        // player (a rack, a door, the charge), and reloads otherwise.
         if self.controller_input
             && reload
-            && (self.look_device.is_some() || self.look_target.is_some())
+            && (self.look_device.is_some() || self.look_target.is_some() || self.charge_spot)
         {
             interact_down = true;
             reload = false;
         }
+        let interact_held = interact_down;
         let mut interact = interact_down && !self.interact_held;
         self.interact_held = interact_down;
         if interact && let Some(device) = &self.look_device {
@@ -1661,6 +1681,7 @@ impl FpsPlayer {
             lunge,
             lethal,
             tactical,
+            interact: interact_held,
             // A press since the last tick: the server rewinds others to the
             // frame it was clicked on. A knife strike uses the latest view.
             view_tick: match press {
@@ -1680,8 +1701,14 @@ impl FpsPlayer {
                 pitch: press.pitch - self.pitch,
             }),
         };
-        if self.movement_locked {
+        let input = if self.movement_locked {
             input.held_still()
+        } else {
+            input
+        };
+        self.using_charge = self.charge_spot && interact_held && self.state.alive();
+        if self.using_charge {
+            input.using_charge()
         } else {
             input
         }
@@ -3045,6 +3072,7 @@ impl FpsPlayer {
             mantle_left: self.state.movement.mantle_time,
             vaulting: self.state.movement.vaulting,
             on_ladder: self.state.movement.on_ladder(),
+            put_away: self.using_charge,
             feet: self.base().get_global_position(),
             mount: self.state.movement.mount_blend,
             weapon: combat.weapon().id,

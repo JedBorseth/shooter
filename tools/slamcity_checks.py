@@ -266,8 +266,9 @@ def check_incursions(minimum=6):
 
 def layout_hash() -> str:
     """A hash of everything the scene takes from the layout but the meshes:
-    collision, spawns, flags, lanes, zones, targets, and effects."""
-    data = [L.COLLIDERS, L.spawn_points(), L.FLAG, L.BOT_LANES, L.HARDPOINTS, L.TARGETS, L.EFFECTS]
+    collision, spawns, flags, lanes, zones, charge sites, targets, and effects."""
+    data = [L.COLLIDERS, L.spawn_points(), L.FLAG, L.BOT_LANES, L.HARDPOINTS, L.TARGETS, L.EFFECTS,
+            L.CHARGE_SITES, L.CHARGE_CRATE]
     blob = json.dumps(data, sort_keys=True, default=list, separators=(",", ":"))
     return hashlib.sha256(blob.encode()).hexdigest()[:16]
 

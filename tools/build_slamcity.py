@@ -216,6 +216,25 @@ for name, label, (x, y, z), size in L.HARDPOINTS:
     node(name, "Marker3D", "Hardpoints", {
         "position": vec(x, y, z), "metadata/size": vec(*size), "metadata/label": f'"{label}"'})
 
+# Search and Destroy's charge sites (server: map_charge_sites): a plant zone
+# each, and a solid marker crate with its letter on it. The crates stand in
+# every mode, as set dressing outside Search and Destroy.
+node("ChargeSites", "Node3D", ".")
+for name, label, (x, y, z), size, _crate, _yaw in L.CHARGE_SITES:
+    node(name, "Marker3D", "ChargeSites", {
+        "position": vec(x, y, z), "metadata/size": vec(*size), "metadata/label": f'"{label}"'})
+node("SiteCrates", "Node3D", ".")
+crate_size, crate_mid = L.CHARGE_CRATE
+subs.append(f'[sub_resource type="BoxShape3D" id="SiteCrate"]\nsize = {vec(*crate_size)}')
+for name, label, _zone, _size, (x, y, z), yaw in L.CHARGE_SITES:
+    p = {"position": vec(x, y, z)}
+    if yaw:
+        p["rotation"] = vec(0, yaw, 0)
+    node(name, "StaticBody3D", "SiteCrates", {**p, "metadata/surface": '"metal"'})
+    node("Crate", None, f"SiteCrates/{name}", {}, instance=f"site_{label.lower()}")
+    node("Shape", "CollisionShape3D", f"SiteCrates/{name}", {
+        "position": vec(0, crate_mid, 0), "shape": 'SubResource("SiteCrate")'})
+
 node("Spawns", "Node3D", ".")
 x0, _, z0 = L.spawn_points()[0]
 node("West", "Marker3D", "Spawns", {"position": vec(x0, 0.05, z0), "rotation": vec(0, -PI / 2, 0)})
@@ -278,6 +297,8 @@ ext = [
     '[ext_resource type="Texture2D" path="res://assets/skies/slamcity_dusk.hdr" id="21_sky"]',
     '[ext_resource type="Script" path="res://scripts/baked_lights.gd" id="22_baked"]',
 ]
+ext += [f'[ext_resource type="PackedScene" path="res://assets/models/charge_site_{k}/charge_site_{k}.gltf" '
+        f'id="site_{k}"]' for k in ("a", "b")]
 ext += [f'[ext_resource type="PackedScene" path="res://assets/props/{n}/{n}.gltf" id="p_{n}"]'
         for n in sorted(props_used)]
 ext += [f'[ext_resource type="PackedScene" path="res://scenes/effects/{n}.tscn" id="fx_{n}"]'
