@@ -45,6 +45,9 @@ pub enum Mode {
     /// Every player for themselves, with their own loadout: the first to
     /// the kill limit wins, or whoever has the most kills when time runs out.
     FreeForAll,
+    /// Two teams score by owning flags A, B, and C; kills do not score
+    /// ([`crate::domination`]).
+    Domination,
 }
 
 impl Mode {
@@ -60,6 +63,7 @@ impl Mode {
             "hardpoint" | "hp" => Some(Self::Hardpoint),
             "snd" | "searchanddestroy" | "search_and_destroy" => Some(Self::SearchAndDestroy),
             "ffa" | "freeforall" | "free_for_all" | "free-for-all" => Some(Self::FreeForAll),
+            "dom" | "domination" => Some(Self::Domination),
             _ => None,
         }
     }
@@ -73,6 +77,7 @@ impl Mode {
             Self::Hardpoint => "hardpoint",
             Self::SearchAndDestroy => "snd",
             Self::FreeForAll => "ffa",
+            Self::Domination => "dom",
         }
     }
 
@@ -85,6 +90,7 @@ impl Mode {
             Self::Hardpoint => "Hardpoint",
             Self::SearchAndDestroy => "Search and Destroy",
             Self::FreeForAll => "Free-for-all",
+            Self::Domination => "Domination",
         }
     }
 
@@ -102,6 +108,8 @@ impl Mode {
         match self {
             Self::CaptureTheFlag => 3,
             Self::Hardpoint => 250,
+            // Black Ops 2: 200 points.
+            Self::Domination => 200,
             Self::FreeForAll => 30,
             _ => 75,
         }
@@ -424,6 +432,15 @@ impl SpawnRules {
                 own_side_only: true,
                 ..Self::default()
             },
+            // Domination spawns follow the flags
+            // (`domination::DominationState::spawn_threats`): the side of the
+            // map only breaks ties, so taking the enemy's home flag flips
+            // the spawns.
+            Mode::Domination => Self {
+                side_bonus: 4.0,
+                enemy_side_penalty: 8.0,
+                ..Self::default()
+            },
             _ => Self::default(),
         }
     }
@@ -735,7 +752,13 @@ mod tests {
         assert_eq!(Mode::parse(gun_game.key()), Some(gun_game));
         assert_eq!(gun_game.label(), "Gun Game");
         assert!(!Mode::TeamDeathmatch.free_for_all());
-        assert_eq!(Mode::parse("domination"), None);
+        assert_eq!(Mode::parse("domination"), Some(Mode::Domination));
+        assert_eq!(Mode::parse("DOM"), Some(Mode::Domination));
+        assert_eq!(Mode::Domination.key(), "dom");
+        assert_eq!(Mode::Domination.label(), "Domination");
+        assert_eq!(Mode::Domination.default_score_limit(), 200);
+        assert!(!Mode::Domination.free_for_all());
+        assert!(!Mode::Domination.kills_score());
         assert_eq!(Mode::parse("hardpoint"), Some(Mode::Hardpoint));
         assert_eq!(Mode::parse("HP"), Some(Mode::Hardpoint));
         assert_eq!(Mode::Hardpoint.key(), "hardpoint");

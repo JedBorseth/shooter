@@ -16,7 +16,8 @@
 //! In Capture the Flag it also keeps where both flags are (`flag_info`), and
 //! emits `flag_played` for every take, drop, return, and capture.
 //! In Hardpoint it also keeps the map's zones, the live one, and who holds it
-//! (`hardpoint_info`).
+//! (`hardpoint_info`), and in Domination the flags and their captures
+//! (`domination_info`).
 //! In Search and Destroy it also keeps the round (`round_info`), and holds
 //! the local player still during a round's freeze, as the server does, and
 //! the charge (`charge_info`): its sites, where it is, and who is planting or
@@ -35,6 +36,7 @@ use godot::classes::{ENetConnection, ENetPacketPeer, INode, Input, PackedScene, 
 use godot::global::Error;
 use godot::prelude::*;
 use shooter_sim::class::{self, Class, DefaultClass, Gun, Wildcard};
+use shooter_sim::domination::DominationRules;
 use shooter_sim::equipment::Kind;
 use shooter_sim::gun_game;
 use shooter_sim::hardpoint::Holder;
@@ -45,9 +47,9 @@ use shooter_sim::net::discovery::clean_text;
 use shooter_sim::net::interpolation::{InterpolationBuffer, SnapshotClock};
 use shooter_sim::net::prediction::Reconciled;
 use shooter_sim::net::protocol::{
-    self as protocol, ChargeStatus, ChargeView, ClientMessage, FlagPlay, FlagStatus, FlagView,
-    GameEvent, InputPacket, KillCause, MAX_BUILD_BYTES, PROTOCOL_VERSION, ScoreRow, ServerMessage,
-    Snapshot, ZoneView,
+    self as protocol, ChargeStatus, ChargeView, ClientMessage, DominationView, FlagPlay,
+    FlagPointView, FlagStatus, FlagView, GameEvent, InputPacket, KillCause, MAX_BUILD_BYTES,
+    PROTOCOL_VERSION, ScoreRow, ServerMessage, Snapshot, ZoneView,
 };
 use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::{CHANNEL_COUNT, CHANNEL_RELIABLE, DEFAULT_PORT, TICK_RATE, Tick};
@@ -176,6 +178,10 @@ pub struct NetClient {
     active_zone: u8,
     holder: Holder,
     zone_moves_at: Option<Tick>,
+    /// Domination: the map's flags, and who owns each as the server last
+    /// said.
+    dom_points: Vec<FlagPointView>,
+    dom: Option<DominationView>,
     /// The map's interactive props manager, when the map has one.
     props: PropsBridge,
     /// Physics ticks until trying to find the props manager again.
@@ -460,6 +466,11 @@ impl NetClient {
     #[signal]
     fn hardpoint_changed();
 
+    /// Domination: a flag changed owner, or a capture started, stalled, or
+    /// changed speed.
+    #[signal]
+    fn domination_changed();
+
     /// A Search and Destroy round changed phase.
     #[signal]
     fn round_changed();
@@ -646,6 +657,60 @@ impl NetClient {
             _ => -1.0,
         };
         d.set("seconds_to_move", seconds);
+        d
+    }
+
+    /// Domination, as a dictionary: `flags` (empty in other modes), each with
+    /// `name`, `center`, `floor` (the circle's floor height), `radius`,
+    /// `owner` and `claim` ("ally", "enemy", or "neutral"), `progress` (the
+    /// capture, 0 to 1, run on from the server's last word at its speed),
+    /// `contested`, and `capturers`; and `swapped` (halftime has passed).
+    #[func]
+    fn domination_info(&self) -> VarDictionary {
+        let mut d = VarDictionary::new();
+        let rules = DominationRules::default();
+        let local = self.local_team();
+        let side = |team: Option<Team>| match team {
+            None => "neutral",
+            Some(t) if Some(t) == local => "ally",
+            Some(_) => "enemy",
+        };
+        let since = match (&self.dom, self.newest) {
+            (Some(view), Some(now)) => {
+                f32::from(u16::try_from(now.saturating_sub(view.tick)).unwrap_or(u16::MAX))
+                    / TICK_RATE as f32
+            }
+            _ => 0.0,
+        };
+        let flags: Array<VarDictionary> = self
+            .dom_points
+            .iter()
+            .enumerate()
+            .map(|(i, point)| {
+                let status = self
+                    .dom
+                    .as_ref()
+                    .and_then(|v| v.flags.get(i))
+                    .copied()
+                    .unwrap_or_default();
+                let progress = (f32::from(status.progress) / 255.0
+                    + since * f32::from(status.capturers) / rules.capture_seconds)
+                    .clamp(0.0, 1.0);
+                let mut entry = VarDictionary::new();
+                entry.set("name", &GString::from(point.name.as_str()));
+                entry.set("center", to_godot(point.center));
+                entry.set("floor", point.center.y - point.half_height);
+                entry.set("radius", point.radius);
+                entry.set("owner", side(status.owner));
+                entry.set("claim", side(status.claim));
+                entry.set("progress", progress);
+                entry.set("contested", status.contested);
+                entry.set("capturers", i32::from(status.capturers));
+                entry
+            })
+            .collect();
+        d.set("flags", &flags);
+        d.set("swapped", self.dom.as_ref().is_some_and(|v| v.swapped));
         d
     }
 
@@ -1369,6 +1434,14 @@ impl NetClient {
                 self.zone_moves_at = moves_at;
                 self.signals().hardpoint_changed().emit();
             }
+            GameEvent::DominationFlags { flags } => {
+                self.dom_points = flags;
+                self.signals().domination_changed().emit();
+            }
+            GameEvent::Domination(view) => {
+                self.dom = Some(view);
+                self.signals().domination_changed().emit();
+            }
             GameEvent::Round {
                 number,
                 phase,
@@ -1969,6 +2042,8 @@ impl NetClient {
         self.zones.clear();
         self.holder = Holder::Neutral;
         self.zone_moves_at = None;
+        self.dom_points.clear();
+        self.dom = None;
         if self.props.is_active() {
             self.props.set_population(0);
             self.props_population = Some(0);
@@ -1982,6 +2057,7 @@ impl NetClient {
         self.signals().roster_changed().emit();
         self.signals().match_changed().emit();
         self.signals().hardpoint_changed().emit();
+        self.signals().domination_changed().emit();
         self.signals().charge_changed().emit();
     }
 

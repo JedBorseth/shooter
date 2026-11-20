@@ -24,6 +24,10 @@
 //! rotates the live zone through the map's `Hardpoints`, scores the team that
 //! holds it, pays objective awards, and tells everyone which zone is live and
 //! who has it.
+//! In Domination (`shooter_sim::domination`) kills do not score either: it
+//! runs the captures on the map's `DominationFlags` (A, B, C), scores each
+//! team a point per owned flag every few seconds, pays objective awards,
+//! spawns players near their team's flags, and swaps sides at halftime.
 //!
 //! Or it runs Gun Game (`shooter_sim::gun_game`, `mode = "gungame"`): every
 //! player for themselves on the same match clock, everyone carrying only
@@ -66,6 +70,7 @@ use shooter_sim::bot::Skill;
 use shooter_sim::chat::{self, ChatLimiter};
 use shooter_sim::class::{Class, DefaultClass};
 use shooter_sim::ctf::{FlagEvent, FlagPlayer, FlagRules, FlagState, Flags};
+use shooter_sim::domination::{self, DominationRules, DominationState, FlagPoint};
 use shooter_sim::equipment;
 use shooter_sim::gun_game::{self, Progress, Step};
 use shooter_sim::hardpoint::{HardpointRules, HardpointState, HillTime, Holder, Zone};
@@ -76,15 +81,16 @@ use shooter_sim::net::discovery::{ServerInfo, query_port_for};
 use shooter_sim::net::input_queue::InputQueue;
 use shooter_sim::net::lag::{self, LagHistory, Pellet, Target, TargetHit};
 use shooter_sim::net::protocol::{
-    self, ChargeStatus, ChargeView, ClientMessage, FlagPlay, FlagStatus, FlagView, GameEvent,
-    MAX_CHARGE_SITES, MAX_EVENTS_PER_MESSAGE, MAX_HARDPOINT_ZONES, OwnState, PROTOCOL_VERSION,
-    PlayerView, Predicted, ScoreRow, ServerMessage, Snapshot, UseView, ZoneView,
+    self, ChargeStatus, ChargeView, ClientMessage, DominationView, FlagPlay, FlagPointStatus,
+    FlagPointView, FlagStatus, FlagView, GameEvent, MAX_CHARGE_SITES, MAX_DOMINATION_FLAGS,
+    MAX_EVENTS_PER_MESSAGE, MAX_HARDPOINT_ZONES, OwnState, PROTOCOL_VERSION, PlayerView, Predicted,
+    ScoreRow, ServerMessage, Snapshot, UseView, ZoneView,
 };
 use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::subtick;
 use shooter_sim::net::{CHANNEL_COUNT, DEFAULT_PORT, MAX_PLAYERS, TICK_DT, TICK_RATE, Tick};
 use shooter_sim::player::{self, PlayerEvent, PlayerInput, PlayerParams, PlayerState};
-use shooter_sim::score::{Award, Kill, ScoreRules, ScoreState, Scored};
+use shooter_sim::score::{Award, Kill, ScoreRules, ScoreState, ScoreTotals, Scored};
 use shooter_sim::snd::{
     Charge, ChargeContext, ChargeEvent, ChargePlayer, ChargeState, Headcount, RoundEnd, RoundPhase,
     RoundRecord, RoundState, RoundTransition, Site, SndRules, UseKind,
@@ -210,7 +216,8 @@ pub struct NetServer {
     #[export]
     master_server: GString,
     /// Points a team needs to win: kills in Team Deathmatch, captures in
-    /// Capture the Flag, points in Hardpoint. 0 uses the mode's usual limit.
+    /// Capture the Flag, points in Hardpoint and Domination. 0 uses the
+    /// mode's usual limit.
     #[export]
     score_limit: i32,
     /// Minutes of play before the team ahead wins.
@@ -222,7 +229,8 @@ pub struct NetServer {
     #[export]
     auto_start: bool,
     /// The game: "tdm" (Team Deathmatch), "ctf" (Capture the Flag),
-    /// "hardpoint", "gungame", or "snd" (Search and Destroy).
+    /// "hardpoint", "dom" (Domination), "gungame", or "snd" (Search and
+    /// Destroy).
     #[export]
     #[init(val = GString::from("tdm"))]
     mode: GString,
@@ -301,6 +309,10 @@ pub struct NetServer {
     zones: Vec<Zone>,
     hardpoint_rules: HardpointRules,
     hardpoint: HardpointState,
+    /// Domination: the map's flags (A, B, C), and who owns each.
+    dom_points: Vec<FlagPoint>,
+    dom_rules: DominationRules,
+    dom: DominationState,
     /// The map's interactive props manager, when the map has one.
     props: PropsBridge,
     /// Population last sent to the props manager, to avoid redundant calls.
@@ -550,6 +562,14 @@ impl INode3D for NetServer {
         if self.game != Mode::Hardpoint {
             self.zones.clear();
         }
+        if self.game == Mode::Domination && self.dom_points.is_empty() {
+            self.dom_points = fallback_dom_points(&self.spawn_points);
+        }
+        if self.game != Mode::Domination {
+            self.dom_points.clear();
+        }
+        self.dom_rules = DominationRules::default();
+        self.dom = DominationState::new(self.dom_points.len());
         if self.game == Mode::SearchAndDestroy && self.charge_sites.is_empty() {
             (self.charge_site_names, self.charge_sites) = fallback_charge_sites(&self.spawn_points)
                 .into_iter()
@@ -563,10 +583,12 @@ impl INode3D for NetServer {
             "server: {} to {}{}",
             self.game.label(),
             self.rules.score_limit,
-            if self.zones.is_empty() {
-                String::new()
-            } else {
+            if !self.zones.is_empty() {
                 format!(", {} zones", self.zones.len())
+            } else if !self.dom_points.is_empty() {
+                format!(", {} flags", self.dom_points.len())
+            } else {
+                String::new()
             }
         );
 
@@ -638,6 +660,7 @@ impl INode3D for NetServer {
         self.update_charge();
         self.update_flags();
         self.update_hardpoint();
+        self.update_domination();
         self.update_match();
         self.update_props();
         self.tick += 1;
@@ -771,6 +794,46 @@ impl NetServer {
             .iter()
             .find(|a| i32::from(a.id) == id)
             .map_or(-1.0, |a| f64::from(a.hill.seconds))
+    }
+
+    /// Domination (tests): how many flags the map has (0 in other modes).
+    #[func]
+    fn dom_flag_count(&self) -> i32 {
+        self.dom_points.len() as i32
+    }
+
+    /// Domination (tests): the team that owns flag `index`, or -1.
+    #[func]
+    fn dom_flag_owner(&self, index: i32) -> i32 {
+        usize::try_from(index)
+            .ok()
+            .and_then(|i| self.dom.flags.get(i))
+            .and_then(|f| f.owner)
+            .map_or(-1, i32::from)
+    }
+
+    /// Domination (tests): each flag's centre at floor height, in order.
+    #[func]
+    fn dom_flag_floors(&self) -> Array<Vector3> {
+        self.dom_points
+            .iter()
+            .map(|p| to_godot(p.center - Vec3::Y * p.half_height))
+            .collect()
+    }
+
+    /// Domination (tests): whether halftime has swapped the sides.
+    #[func]
+    fn dom_swapped(&self) -> bool {
+        self.dom.swapped
+    }
+
+    /// Debug: jumps the match clock to `seconds` left (tests).
+    #[func]
+    fn debug_match_time_left(&mut self, seconds: f32) {
+        if self.match_state.phase == Phase::Playing {
+            self.match_state.time_left = seconds.max(0.0);
+            self.broadcast_match();
+        }
     }
 
     /// Capture the Flag (tests and debugging): where team `team`'s flag is,
@@ -1096,6 +1159,7 @@ impl NetServer {
         self.bot_lanes = map_lanes(&map);
         self.flag_homes = map_flags(&map);
         self.zones = map_zones(&map);
+        self.dom_points = map_dom_points(&map);
         (self.charge_site_names, self.charge_sites) = map_charge_sites(&map).into_iter().unzip();
         for name in CLIENT_ONLY_NODES {
             if let Some(node) = map.get_node_or_null(name) {
@@ -1208,6 +1272,12 @@ impl NetServer {
                     let zones = self.zones_event();
                     self.send_event(id, zones);
                     let status = self.hardpoint_event();
+                    self.send_event(id, status);
+                }
+                if !self.dom_points.is_empty() {
+                    let flags = self.dom_flags_event();
+                    self.send_event(id, flags);
+                    let status = self.domination_event();
                     self.send_event(id, status);
                 }
                 // A late joiner needs the props as they are now: everyone
@@ -1408,9 +1478,14 @@ impl NetServer {
     }
 
     /// The side of the map `team` plays from: their own, except in Search
-    /// and Destroy, where the attackers take side 0.
+    /// and Destroy, where the attackers take side 0, and in Domination's
+    /// second half, when the teams have swapped.
     fn side_of(&self, team: Team) -> Team {
-        self.round.map_or(team, |r| r.side_of(team))
+        match self.round {
+            Some(round) => round.side_of(team),
+            None if self.dom.swapped => 1 - team.min(1),
+            None => team,
+        }
     }
 
     /// Whether the dead come back on their own: always, except while a
@@ -1517,6 +1592,8 @@ impl NetServer {
                 enemy: true,
             }));
         }
+        // Domination: spawn behind the team's own flags, away from the enemy's.
+        threats.extend(self.dom.spawn_threats(&self.dom_points, me.team));
         let eyes: Vec<Vector3> = self
             .avatars
             .iter()
@@ -2457,6 +2534,23 @@ impl NetServer {
                 {
                     objective_kills.push(award);
                 }
+                if let Some((_, victim_feet)) = victim
+                    && !self.dom_points.is_empty()
+                    && let Some(shooter_feet) = self
+                        .avatars
+                        .iter()
+                        .find(|a| a.id == attack.attacker)
+                        .map(|a| a.predicted.position)
+                    && let Some(award) = self.dom.objective_kill(
+                        &self.dom_rules,
+                        &self.dom_points,
+                        shooter_team,
+                        shooter_feet,
+                        victim_feet,
+                    )
+                {
+                    objective_kills.push(award);
+                }
                 let victim_team = victim.map(|(team, _)| team);
                 let end = match self.game {
                     // A knife kill sets the victim back a weapon instead
@@ -2474,8 +2568,8 @@ impl NetServer {
                     }),
                     // Only captures score for the team.
                     Mode::CaptureTheFlag => None,
-                    // Only holding the zone scores for the team.
-                    Mode::Hardpoint => None,
+                    // Only holding the zone (or the flags) scores for the team.
+                    Mode::Hardpoint | Mode::Domination => None,
                     Mode::FreeForAll => self.free_for_all_end(attack.attacker, kills.len()),
                 };
                 if let Some(end) = end {
@@ -2496,12 +2590,17 @@ impl NetServer {
             for _ in 0..carrier_kills {
                 awards.extend(shooter.score.on_flag_play(&rules, Award::CarrierKill));
             }
-            let points = self.hardpoint_rules.objective_kill_points;
-            awards.extend(
-                objective_kills
-                    .into_iter()
-                    .map(|award| shooter.score.award(award, points)),
+            let (zone_points, flag_points) = (
+                self.hardpoint_rules.objective_kill_points,
+                self.dom_rules.objective_kill_points,
             );
+            awards.extend(objective_kills.into_iter().map(|award| {
+                let points = match award {
+                    Award::DominationDefend | Award::DominationAssault => flag_points,
+                    _ => zone_points,
+                };
+                shooter.score.award(award, points)
+            }));
             let totals = shooter.score.totals();
             self.send_event(attack.attacker, GameEvent::Score { awards, totals });
         }
@@ -2840,6 +2939,7 @@ impl NetServer {
             Mode::TeamDeathmatch
             | Mode::CaptureTheFlag
             | Mode::Hardpoint
+            | Mode::Domination
             | Mode::SearchAndDestroy => self.match_state.team_leader(),
             Mode::GunGame(_) => gun_game::leader(self.avatars.iter().map(|a| (a.id, a.progress))),
             Mode::FreeForAll => {
@@ -3131,6 +3231,7 @@ impl NetServer {
                 // Everyone starts fresh on their own side, in join order;
                 // without teams, each somewhere away from the others.
                 self.hardpoint = HardpointState::new(&self.hardpoint_rules);
+                self.dom = DominationState::new(self.dom_points.len());
                 for avatar in &mut self.avatars {
                     avatar.score = ScoreState::default();
                     avatar.progress = Progress::default();
@@ -3189,7 +3290,148 @@ impl NetServer {
             let event = self.hardpoint_event();
             self.broadcast_event(&event);
         }
+        if !self.dom_points.is_empty() {
+            let event = self.domination_event();
+            self.broadcast_event(&event);
+        }
         self.next_scoreboard = self.tick;
+    }
+
+    /// Domination: counts who stands on each flag, runs the captures, pays
+    /// capture awards, scores each team a point per owned flag every few
+    /// seconds, and swaps sides at halftime. Flags change hands in the lobby
+    /// too, for practice, but nothing scores there; they stop through the
+    /// countdown and the results.
+    fn update_domination(&mut self) {
+        if self.dom_points.is_empty() {
+            return;
+        }
+        let phase = self.match_state.phase;
+        if !matches!(phase, Phase::Lobby | Phase::Playing) {
+            return;
+        }
+        let scoring = self.match_state.scoring();
+        if scoring
+            && domination::halftime_due(
+                self.match_state.time_left,
+                self.rules.time_limit,
+                self.dom.swapped,
+            )
+        {
+            godot_print!(
+                "server: halftime ({} to {}), the teams swap sides",
+                self.match_state.scores[0],
+                self.match_state.scores[1]
+            );
+            self.dom.halftime();
+            self.respawn_all_at_start();
+            let event = self.domination_event();
+            self.broadcast_event(&event);
+            return;
+        }
+        // Which flag each living player stands on, if any.
+        let on_flag: Vec<Option<usize>> = self
+            .avatars
+            .iter()
+            .map(|a| {
+                let feet = a.predicted.position;
+                a.predicted
+                    .state
+                    .alive()
+                    .then(|| self.dom_points.iter().position(|p| p.contains(feet)))
+                    .flatten()
+            })
+            .collect();
+        let mut presence = vec![[0u32; tdm::TEAM_COUNT]; self.dom_points.len()];
+        for (avatar, flag) in self.avatars.iter().zip(&on_flag) {
+            if let Some(flag) = flag {
+                presence[*flag][usize::from(avatar.team.min(1))] += 1;
+            }
+        }
+        let step = self.dom.tick(&self.dom_rules, TICK_DT, &presence, scoring);
+        for capture in &step.captures {
+            godot_print!(
+                "server: team {} captured {}",
+                capture.team + 1,
+                self.dom_points[capture.flag].name
+            );
+        }
+        if scoring && !step.captures.is_empty() {
+            let points = self.dom_rules.capture_points;
+            let mut payouts: Vec<(u8, Vec<Scored>, ScoreTotals)> = Vec::new();
+            for (avatar, flag) in self.avatars.iter_mut().zip(&on_flag) {
+                let took = step
+                    .captures
+                    .iter()
+                    .any(|c| Some(c.flag) == *flag && c.team == avatar.team);
+                if took {
+                    let award = avatar.score.award(Award::DominationCapture, points);
+                    payouts.push((avatar.id, vec![award], avatar.score.totals()));
+                }
+            }
+            for (id, awards, totals) in payouts {
+                self.send_event(id, GameEvent::Score { awards, totals });
+            }
+            self.next_scoreboard = self.tick;
+        }
+        if step.changed {
+            let event = self.domination_event();
+            self.broadcast_event(&event);
+        }
+        let mut ended = None;
+        for (team, points) in step.points.iter().enumerate() {
+            let end = self
+                .match_state
+                .add_points(&self.rules, team as Team, *points);
+            ended = ended.or(end);
+        }
+        if let Some(end) = ended {
+            self.on_transition(end);
+        } else if step.points.iter().any(|p| *p > 0) {
+            self.broadcast_match();
+        }
+    }
+
+    /// Domination: the map's flags, for a client that just joined.
+    fn dom_flags_event(&self) -> GameEvent {
+        GameEvent::DominationFlags {
+            flags: self
+                .dom_points
+                .iter()
+                .map(|p| FlagPointView {
+                    name: p.name.clone(),
+                    center: p.center,
+                    radius: p.radius,
+                    half_height: p.half_height,
+                })
+                .collect(),
+        }
+    }
+
+    /// Domination: who owns each flag and the captures under way.
+    fn domination_event(&self) -> GameEvent {
+        let running = matches!(self.match_state.phase, Phase::Lobby | Phase::Playing);
+        GameEvent::Domination(DominationView {
+            tick: self.tick,
+            swapped: self.dom.swapped,
+            flags: self
+                .dom
+                .flags
+                .iter()
+                .map(|f| FlagPointStatus {
+                    owner: f.owner,
+                    claim: f.claim,
+                    progress: (f.fraction(&self.dom_rules) * 255.0).round() as u8,
+                    contested: f.contested,
+                    // Captures stand still while the clock is stopped.
+                    capturers: if running {
+                        f.capturers.min(255) as u8
+                    } else {
+                        0
+                    },
+                })
+                .collect(),
+        })
     }
 
     /// Hardpoint: counts who is in the live zone, scores the team holding
@@ -3325,6 +3567,7 @@ impl NetServer {
                 Mode::TeamDeathmatch
                 | Mode::CaptureTheFlag
                 | Mode::Hardpoint
+                | Mode::Domination
                 | Mode::SearchAndDestroy
                 | Mode::FreeForAll => self.rules.score_limit,
                 Mode::GunGame(_) => u32::from(gun_game::LEVELS),
@@ -3381,6 +3624,7 @@ impl NetServer {
                     captures: a.score.captures,
                     returns: a.score.returns,
                     hill_seconds: a.hill.whole_seconds(),
+                    defends: a.score.defends,
                     alive: a.predicted.state.alive(),
                 }
             })
@@ -4383,6 +4627,63 @@ fn map_zones(map: &Gd<Node>) -> Vec<Zone> {
             }
         })
         .collect()
+}
+
+/// The map's Domination flags: `Node3D` children of a `DominationFlags`
+/// node, each a circle centred on the node's floor position, with its radius
+/// in a `radius` metadata (default `domination::DEFAULT_RADIUS`) and its
+/// letter in a `label` metadata (default: A, B, C in order).
+fn map_dom_points(map: &Gd<Node>) -> Vec<FlagPoint> {
+    let Some(parent) = map
+        .get_node_or_null("DominationFlags")
+        .and_then(|n| n.try_cast::<Node3D>().ok())
+    else {
+        return Vec::new();
+    };
+    let base = parent.get_transform();
+    parent
+        .get_children()
+        .iter_shared()
+        .filter_map(|child| child.try_cast::<Node3D>().ok())
+        .take(MAX_DOMINATION_FLAGS)
+        .enumerate()
+        .map(|(i, point)| {
+            let transform = base * point.get_transform();
+            let radius = point
+                .get_meta_ex("radius")
+                .default(&domination::DEFAULT_RADIUS.to_variant())
+                .done()
+                .try_to::<f32>()
+                .unwrap_or(domination::DEFAULT_RADIUS);
+            let name = point
+                .get_meta_ex("label")
+                .default(&GString::from(site_letter(i).as_str()).to_variant())
+                .done()
+                .try_to::<GString>()
+                .map_or_else(|_| site_letter(i), |label| label.to_string());
+            FlagPoint {
+                radius: radius.clamp(1.0, 12.0),
+                ..FlagPoint::new(&name, to_sim(transform.origin))
+            }
+        })
+        .collect()
+}
+
+/// Three flags for maps without `DominationFlags`: A by side 0's spawns, B
+/// in the middle, C by side 1's (`domination::fallback_points`).
+fn fallback_dom_points(spawns: &[SpawnPoint]) -> Vec<FlagPoint> {
+    let side = |team: Team| {
+        let points: Vec<Vec3> = spawns
+            .iter()
+            .filter(|p| p.team == Some(team))
+            .map(|p| p.position)
+            .collect();
+        (!points.is_empty()).then(|| points.iter().sum::<Vec3>() / points.len() as f32)
+    };
+    match side(0).zip(side(1)) {
+        Some((a, b)) => domination::fallback_points(a, b),
+        None => Vec::new(),
+    }
 }
 
 /// What the charge needs to know about a player.
