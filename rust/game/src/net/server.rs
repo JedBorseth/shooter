@@ -73,7 +73,7 @@ use shooter_sim::ctf::{FlagEvent, FlagPlayer, FlagRules, FlagState, Flags};
 use shooter_sim::domination::{self, DominationRules, DominationState, FlagPoint};
 use shooter_sim::equipment;
 use shooter_sim::gun_game::{self, Progress, Step};
-use shooter_sim::hardpoint::{HardpointRules, HardpointState, HillTime, Holder, Zone};
+use shooter_sim::hardpoint::{self, HardpointRules, HardpointState, HillTime, Holder, Zone};
 use shooter_sim::hitbox::clock::{BodyClock, BodyState};
 use shooter_sim::killcam::{self, KillRecord};
 use shooter_sim::melee;
@@ -96,7 +96,8 @@ use shooter_sim::snd::{
     RoundRecord, RoundState, RoundTransition, Site, SndRules, UseKind,
 };
 use shooter_sim::tdm::{
-    self, MatchRules, MatchState, Mode, Phase, SpawnPoint, SpawnRules, Team, Threat, Transition,
+    self, MatchRules, MatchState, Mode, Period, Phase, SpawnPoint, SpawnRules, Team, Threat,
+    Transition,
 };
 use shooter_sim::weapon::{self, CombatEvent, CombatState, WeaponId};
 use shooter_sim::{Vec2, Vec3, rng};
@@ -313,6 +314,9 @@ pub struct NetServer {
     dom_points: Vec<FlagPoint>,
     dom_rules: DominationRules,
     dom: DominationState,
+    /// Hardpoint: living players of each team in the live zone, as of the
+    /// last tick (for overtime).
+    hill_presence: [u32; tdm::TEAM_COUNT],
     /// The map's interactive props manager, when the map has one.
     props: PropsBridge,
     /// Population last sent to the props manager, to avoid redundant calls.
@@ -784,6 +788,25 @@ impl NetServer {
     #[func]
     fn active_zone(&self) -> i32 {
         self.hardpoint.active as i32
+    }
+
+    /// Hardpoint (tests): the floor centre of each zone, in rotation order.
+    #[func]
+    fn zone_floors(&self) -> Array<Vector3> {
+        self.zones
+            .iter()
+            .map(|zone| to_godot(Vec3::new(zone.center.x, zone.floor(), zone.center.z)))
+            .collect()
+    }
+
+    /// "regulation", "second_half", or "overtime" (tests and debugging).
+    #[func]
+    fn match_period(&self) -> GString {
+        GString::from(match self.match_state.period {
+            Period::Regulation => "regulation",
+            Period::SecondHalf => "second_half",
+            Period::Overtime { .. } => "overtime",
+        })
     }
 
     /// Hardpoint: seconds a player has spent in the live zone this match
@@ -2946,6 +2969,12 @@ impl NetServer {
                 tdm::kill_leader(self.avatars.iter().map(|a| (a.id, a.score.kills)))
             }
         };
+        if self.game == Mode::Hardpoint
+            && let Some(end) = self.hardpoint_overtime(leader)
+        {
+            self.on_transition(end);
+            return;
+        }
         let transition = self
             .match_state
             .tick(&self.rules, TICK_DT, all_ready, leader);
@@ -2955,6 +2984,40 @@ impl NetServer {
             self.broadcast_match();
         }
         self.update_round();
+    }
+
+    /// Hardpoint overtime: when the clock is about to run out with the team
+    /// behind in the live zone, play goes on; once no team that is not ahead
+    /// stands in it, the match ends with `leader` the winner. Returns that
+    /// end.
+    fn hardpoint_overtime(&mut self, leader: Option<u8>) -> Option<Transition> {
+        let state = self.match_state;
+        if state.phase != Phase::Playing || self.rules.time_limit.is_none() {
+            return None;
+        }
+        let holds = hardpoint::overtime_holds(state.scores, self.hill_presence);
+        if state.overtime() {
+            if holds {
+                return None;
+            }
+            godot_print!(
+                "server: overtime over ({} to {})",
+                state.scores[0],
+                state.scores[1]
+            );
+            return Some(self.match_state.finish(&self.rules, leader));
+        }
+        if state.time_left - TICK_DT > 0.0 || !holds {
+            return None;
+        }
+        godot_print!(
+            "server: overtime ({} to {}), the team behind is on the hill",
+            state.scores[0],
+            state.scores[1]
+        );
+        self.match_state.start_overtime(None);
+        self.broadcast_match();
+        None
     }
 
     /// Runs a Search and Destroy round: its clock, wipe-outs, the round's
@@ -3458,6 +3521,7 @@ impl NetServer {
                 presence[usize::from(avatar.team.min(1))] += 1;
             }
         }
+        self.hill_presence = presence;
         let step = self
             .hardpoint
             .tick(&self.hardpoint_rules, self.zones.len(), TICK_DT, presence);
@@ -3563,6 +3627,7 @@ impl NetServer {
             phase: state.phase,
             ends_at,
             scores: state.scores,
+            period: state.period,
             score_limit: match self.game {
                 Mode::TeamDeathmatch
                 | Mode::CaptureTheFlag

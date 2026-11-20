@@ -8,6 +8,12 @@
 //! is neutral. The match runs on [`crate::tdm::MatchState`]: the first team to
 //! the score limit wins, or the team ahead when the clock runs out.
 //!
+//! When the clock runs out while the team behind has a living player in the
+//! live zone (holding it or contesting it), the match goes to overtime
+//! ([`overtime_holds`]): play goes on, the zone still scores, and the match
+//! ends the moment no team that is not ahead stands in the zone. A trailing
+//! team that holds the zone alone can score its way past the leader and win.
+//!
 //! Players earn points too: for taking the zone ([`Award::HardpointCapture`]),
 //! for every few seconds spent holding it ([`Award::HardpointSecure`]), and for
 //! kills on or near it ([`Award::HardpointDefend`] when their team held it
@@ -242,6 +248,17 @@ impl HardpointState {
     }
 }
 
+/// Whether Hardpoint overtime goes on (or starts, at the buzzer): some team
+/// that is not ahead on `scores` has a living player in the live zone,
+/// holding or contesting it (`presence[t]` counts team `t`'s). With the
+/// scores level, either team in the zone keeps it going.
+pub fn overtime_holds(scores: [u32; TEAM_COUNT], presence: [u32; TEAM_COUNT]) -> bool {
+    (0..TEAM_COUNT).any(|team| {
+        let other = 1 - team;
+        presence[team] > 0 && scores[team] <= scores[other]
+    })
+}
+
 /// One player's time on the hill, for [`Award::HardpointSecure`] and the
 /// scoreboard.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -402,6 +419,25 @@ mod tests {
             state.objective_kill(&rules, &zone, 1, on, on),
             Some(Award::HardpointAssault)
         );
+    }
+
+    #[test]
+    fn overtime_lasts_while_the_team_behind_is_in_the_zone() {
+        // The leader alone in the zone: no overtime.
+        assert!(!overtime_holds([100, 90], [2, 0]));
+        // The team behind holding, or contesting, keeps it going.
+        assert!(overtime_holds([100, 90], [0, 1]));
+        assert!(overtime_holds([100, 90], [3, 1]));
+        // Nobody in the zone ends it.
+        assert!(!overtime_holds([100, 90], [0, 0]));
+        // Level: anyone in the zone keeps it going.
+        assert!(overtime_holds([90, 90], [1, 0]));
+        assert!(overtime_holds([90, 90], [0, 1]));
+        assert!(!overtime_holds([90, 90], [0, 0]));
+        // The trailing team scored past the leader: now the other team is
+        // behind, and it has to be in the zone to keep the match alive.
+        assert!(!overtime_holds([100, 101], [0, 2]));
+        assert!(overtime_holds([100, 101], [1, 2]));
     }
 
     #[test]
