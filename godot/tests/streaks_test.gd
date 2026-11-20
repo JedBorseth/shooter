@@ -1,7 +1,7 @@
 extends SceneTree
 ## Headless test of scorestreaks (`shooter_sim::streak`) on a Team
 ## Deathmatch server in this process on Slamcity with four passive bots:
-## score in one life earns the UAV and Counter-UAV at their costs, a UAV
+## score in one life earns each streak at its cost, a UAV
 ## sweeps both enemies onto its team's radars (a standing Ghost included),
 ## a Counter-UAV jams the other team's minimaps but not a Hard Wired
 ## player's, death resets the count but keeps what was earned, and Hardline
@@ -67,12 +67,14 @@ func _run() -> void:
 		)
 	_check(_server.radar_ids(blues[0]).is_empty(), "the enemy's radar shows nobody")
 
-	_server.debug_score(blues[1], 480)
+	# Bots bring the UAV, the Care Package, and the Airstrike.
+	_server.debug_score(blues[1], 560)
 	await _ticks(2)
 	_check(
-		_server.streaks_held(blues[1]) == PackedStringArray(["uav", "counter_uav"]),
-		"480 earns the UAV and the Counter-UAV: %s" % [_server.streaks_held(blues[1])]
+		_server.streaks_held(blues[1]) == PackedStringArray(["uav", "care_package"]),
+		"560 earns the UAV and the Care Package: %s" % [_server.streaks_held(blues[1])]
 	)
+	_server.debug_give_streak(blues[1], "counter_uav")
 	_server.debug_give_perks(reds[1], PackedStringArray(["hard_wired"]))
 	_server.debug_use_streak(blues[1], "counter_uav")
 	await _ticks(2)
@@ -88,7 +90,8 @@ func _run() -> void:
 	await _ticks(2)
 	_check(_server.streak_progress(blues[0]) == 0, "death resets the count")
 	_check(
-		_server.streaks_held(blues[1]) == PackedStringArray(["uav"]), "the unused UAV is still held"
+		_server.streaks_held(blues[1]) == PackedStringArray(["uav", "care_package"]),
+		"the unused streaks are still held"
 	)
 
 	# Hardline: 355 counts as 426.

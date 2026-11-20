@@ -159,7 +159,9 @@ use crate::zombies::drinks::Drinks;
 // as client messages, `StreakEvent`, UAV sweep dots, and the Hardline,
 // Ghost, and Hard Wired perks (perk sets now take 16 bits).
 // Version 66 added the Care Package (`StreakEvent::Crate*`).
-pub const PROTOCOL_VERSION: u16 = 66;
+// Version 67 added the Airstrike: targets on `UseStreak`,
+// `StreakEvent::Airstrike` and `Strike`, and `KillCause::Streak`.
+pub const PROTOCOL_VERSION: u16 = 67;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -225,9 +227,11 @@ pub enum ClientMessage {
     /// The scorestreaks to bring from the next spawn on (`crate::streak`).
     /// The server keeps each streak once and sorts them by cost.
     Streaks(streak::Loadout),
-    /// Call in a held `streak` (the first held one of its kind).
+    /// Call in a held `streak` (the first held one of its kind). An
+    /// Airstrike carries the points (x, z) marked on the map.
     UseStreak {
         streak: Streak,
+        targets: Vec<Vec2>,
     },
 }
 
@@ -448,6 +452,14 @@ pub enum StreakEvent {
     CrateTaken { id: u16, by: u8, contents: Streak },
     /// To everyone: crate `id` ran out.
     CrateGone { id: u16 },
+    /// To everyone: player `owner` called an Airstrike: a strike lands on
+    /// each point at its tick.
+    Airstrike {
+        owner: u8,
+        strikes: Vec<(Vec3, Tick)>,
+    },
+    /// To everyone: a strike of `owner`'s Airstrike went off at `at`.
+    Strike { owner: u8, at: Vec3 },
 }
 
 /// A UAV or Counter-UAV up: whose, on which side, and until when.
@@ -991,6 +1003,8 @@ pub enum KillCause {
     Equipment(equipment::Kind),
     /// Search and Destroy's charge going off.
     Charge,
+    /// A scorestreak (the Airstrike).
+    Streak(Streak),
 }
 
 /// Everything client prediction needs to restart from the server's result.
@@ -1399,10 +1413,16 @@ impl ClientMessage {
                 w.bits(0, MORE_TAG_BITS);
                 write_loadout(&mut w, *loadout);
             }
-            ClientMessage::UseStreak { streak } => {
+            ClientMessage::UseStreak { streak, targets } => {
                 w.bits(7, TAG_BITS);
                 w.bits(1, MORE_TAG_BITS);
                 write_streak(&mut w, *streak);
+                let count = targets.len().min(streak::AIRSTRIKE_TARGETS);
+                w.varint(count as u32);
+                for t in &targets[..count] {
+                    w.f32(t.x);
+                    w.f32(t.y);
+                }
             }
         }
         w.finish()
@@ -1464,9 +1484,18 @@ impl ClientMessage {
             6 => Ok(ClientMessage::SkipKillcam),
             7 => match r.bits(MORE_TAG_BITS)? {
                 0 => Ok(ClientMessage::Streaks(read_loadout(&mut r)?)),
-                1 => Ok(ClientMessage::UseStreak {
-                    streak: read_streak(&mut r)?,
-                }),
+                1 => {
+                    let streak = read_streak(&mut r)?;
+                    let count = r.varint()? as usize;
+                    if count > streak::AIRSTRIKE_TARGETS {
+                        return Err(DecodeError::Invalid("streak targets"));
+                    }
+                    let mut targets = Vec::with_capacity(count);
+                    for _ in 0..count {
+                        targets.push(Vec2::new(read_finite(&mut r)?, read_finite(&mut r)?));
+                    }
+                    Ok(ClientMessage::UseStreak { streak, targets })
+                }
                 _ => Err(DecodeError::Invalid("client message tag")),
             },
             _ => Err(DecodeError::Invalid("client message tag")),
@@ -2501,7 +2530,15 @@ fn write_cause(w: &mut BitWriter, cause: KillCause) {
             w.bits(2, 2);
             w.bits(u32::from(kind.code()), EQUIPMENT_BITS);
         }
-        KillCause::Charge => w.bits(3, 2),
+        KillCause::Charge => {
+            w.bits(3, 2);
+            w.bool(false);
+        }
+        KillCause::Streak(streak) => {
+            w.bits(3, 2);
+            w.bool(true);
+            write_streak(w, streak);
+        }
     }
 }
 
@@ -2510,6 +2547,7 @@ fn read_cause(r: &mut BitReader) -> DecodeResult<KillCause> {
         0 => KillCause::Weapon,
         1 => KillCause::Knife,
         2 => KillCause::Equipment(read_equipment(r)?),
+        _ if r.bool()? => KillCause::Streak(read_streak(r)?),
         _ => KillCause::Charge,
     })
 }
@@ -2942,6 +2980,21 @@ fn write_streak_event(w: &mut BitWriter, event: &StreakEvent) {
             w.bits(5, MORE_TAG_BITS);
             w.u16(*id);
         }
+        StreakEvent::Airstrike { owner, strikes } => {
+            w.bits(6, MORE_TAG_BITS);
+            w.u8(*owner);
+            let count = strikes.len().min(streak::AIRSTRIKE_TARGETS);
+            w.varint(count as u32);
+            for (at, tick) in &strikes[..count] {
+                write_vec3(w, *at);
+                w.u32(*tick);
+            }
+        }
+        StreakEvent::Strike { owner, at } => {
+            w.bits(7, MORE_TAG_BITS);
+            w.u8(*owner);
+            write_vec3(w, *at);
+        }
         StreakEvent::Sky { up } => {
             w.bits(1, MORE_TAG_BITS);
             let count = up.len().min(MAX_AIRBORNE);
@@ -3011,6 +3064,22 @@ fn read_streak_event(r: &mut BitReader) -> DecodeResult<StreakEvent> {
             contents: read_streak(r)?,
         }),
         5 => Ok(StreakEvent::CrateGone { id: r.u16()? }),
+        6 => {
+            let owner = r.u8()?;
+            let count = r.varint()? as usize;
+            if count > streak::AIRSTRIKE_TARGETS {
+                return Err(DecodeError::Invalid("strikes"));
+            }
+            let mut strikes = Vec::with_capacity(count);
+            for _ in 0..count {
+                strikes.push((read_finite_vec3(r)?, r.u32()?));
+            }
+            Ok(StreakEvent::Airstrike { owner, strikes })
+        }
+        7 => Ok(StreakEvent::Strike {
+            owner: r.u8()?,
+            at: read_finite_vec3(r)?,
+        }),
         _ => Err(DecodeError::Invalid("streak event")),
     }
 }
@@ -4444,6 +4513,17 @@ mod tests {
                 contents: Streak::Uav,
             }),
             GameEvent::Streak(StreakEvent::CrateGone { id: 1 }),
+            GameEvent::Streak(StreakEvent::Airstrike {
+                owner: 2,
+                strikes: vec![
+                    (Vec3::new(1.0, 2.0, 3.0), 500),
+                    (Vec3::new(-4.0, 0.0, 9.5), 620),
+                ],
+            }),
+            GameEvent::Streak(StreakEvent::Strike {
+                owner: 2,
+                at: Vec3::new(1.0, 2.0, 3.0),
+            }),
         ]);
         assert_eq!(
             ServerMessage::decode(&msg.encode(&[]), |_| None).unwrap(),
@@ -5914,6 +5994,11 @@ mod tests {
             ClientMessage::Streaks(streak::Loadout([None, Some(Streak::CounterUav), None])),
             ClientMessage::UseStreak {
                 streak: Streak::CounterUav,
+                targets: Vec::new(),
+            },
+            ClientMessage::UseStreak {
+                streak: Streak::Airstrike,
+                targets: vec![Vec2::new(1.5, -20.0), Vec2::new(30.25, 4.0)],
             },
         ] {
             assert_eq!(ClientMessage::decode(&msg.encode()).unwrap(), msg);

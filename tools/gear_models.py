@@ -1382,3 +1382,38 @@ def cargo_aircraft(b: Model):
     # Landing gear blisters along the belly.
     for x in (-1.45, 1.45):
         b.hull([(x * k, y, z) for k in (0.95, 1.08) for y in (-1.2, -0.6) for z in (-2.0, 2.0)], "aircraft_dark")
+
+
+@model
+def strike_jet(b: Model):
+    """The jet that flies an Airstrike's pass (scripts/net/airstrike_view.gd):
+    a single-seat attack jet 15 m long with a 10 m span, seen from below
+    at speed. Origin at the middle of its fuselage, nose toward -z."""
+    sections = [(-7.5, 0.05, 0.0, 0.05), (-6.2, 0.45, 0.05, 0.45), (-3.5, 0.75, 0.15, 0.7),
+                (2.5, 0.75, 0.15, 0.85), (5.8, 0.55, 0.2, 0.6), (7.5, 0.4, 0.2, 0.42)]
+    for (z0, r0, y0, w0), (z1, r1, y1, w1) in zip(sections, sections[1:]):
+        pts = []
+        for z, r, yc, w in ((z0, r0, y0, w0), (z1, r1, y1, w1)):
+            for k in range(10):
+                a = 2 * PI * k / 10
+                pts.append((w * math.cos(a), yc + r * math.sin(a), z))
+        b.hull(pts, "aircraft_skin")
+    # The canopy.
+    b.smooth_hull([(x, y, z) for x in (-0.38, 0.38) for y in (0.55, 1.05) for z in (-4.6, -2.6)]
+                  + [(0.0, 0.7, -5.4), (0.0, 0.85, -1.8)], "aircraft_glass", levels=1)
+    # Swept wings with stores under them, and the tailplanes.
+    for side in (-1, 1):
+        b.hull([(side * 0.6, 0.0, -1.5), (side * 0.6, 0.0, 2.6), (side * 5.0, -0.05, 1.6), (side * 5.0, -0.05, 2.6),
+                (side * 0.6, 0.18, -1.5), (side * 0.6, 0.18, 2.6), (side * 5.0, 0.07, 1.6),
+                (side * 5.0, 0.07, 2.6)], "aircraft_skin")
+        b.cyl("z", 0.2, 2.2, (side * 2.6, -0.32), 0.17, "aircraft_dark", sides=8)
+        b.hull([(side * 0.5, 0.1, 5.4), (side * 0.5, 0.1, 7.4), (side * 2.7, 0.05, 6.9), (side * 2.7, 0.05, 7.5),
+                (side * 0.5, 0.2, 5.4), (side * 0.5, 0.2, 7.4), (side * 2.7, 0.12, 6.9),
+                (side * 2.7, 0.12, 7.5)], "aircraft_skin")
+        # Twin fins, canted out.
+        b.hull([(side * 0.45, 0.6, 4.6), (side * 0.45, 0.6, 7.2), (side * 1.2, 2.6, 6.6), (side * 1.2, 2.6, 7.6),
+                (side * 0.35, 0.6, 5.6), (side * 1.1, 2.6, 7.1)], "aircraft_skin")
+    # Intakes and the exhaust.
+    for side in (-1, 1):
+        b.box(side * 0.6, side * 1.05, -0.25, 0.4, -3.0, -0.5, "aircraft_dark", bevel=0.05)
+    b.cyl("z", 7.4, 7.6, (0.0, 0.2), 0.32, "aircraft_dark", sides=12)

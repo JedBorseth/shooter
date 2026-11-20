@@ -10,13 +10,14 @@ Rewards earned with score in one life, as in Black Ops 2 (kept in Black Ops 3 an
 - **Death** resets the count.
 - **Using:** the use key calls in the selected held streak. The next key selects another. Earning one selects it, as in Black Ops 2.
 - **Modes:** every mode but Gun Game and Zombies, as in Black Ops 2's party modes and Zombies. Search and Destroy keeps both the count and held streaks across rounds within a life, as Black Ops 2 does.
-- **Bots** bring the UAV, the Counter-UAV, and the Care Package, and call in what they earn at once.
+- **Bots** bring the UAV, the Care Package, and the Airstrike, and call in what they earn at once.
 
 | Streak | Cost | Black Ops 2 | Effect |
 | --- | --- | --- | --- |
 | UAV | 425 | UAV, 425 after patch 1.04 (350 at launch) | sweeps every enemy onto the team's minimaps every 3 s for 30 s |
 | Counter-UAV | 475 | Counter-UAV; sources give 400 to 600 | jams the enemy's minimaps for 30 s |
 | Care Package | 550 | Care Package, 550 | a crate dropped from a flyover, with a random streak inside |
+| Airstrike | 750 | Lightning Strike, 750 | three strikes on points marked on the map |
 
 ## UAV
 
@@ -44,7 +45,7 @@ Anyone holding use within 1.8 m of a landed crate captures it:
 - **Running out:** a crate nobody takes is gone after 90 s (an estimate).
 - **Limit:** at most 8 crates wait at once; the oldest goes first.
 
-**Contents:** the streak inside is rolled when the crate is called in, from the UAV (106) and the Counter-UAV (94), Black Ops 2's own weights for those two. A crate never holds another Care Package. Black Ops 2's booby-trapped crates (Engineer, Black Hat) are left out: there is no Engineer.
+**Contents:** the streak inside is rolled when the crate is called in, from the UAV (106) and the Counter-UAV (94), Black Ops 2's own weights for those two, and the Airstrike (40, an estimate: rare, as the dear streaks are in Black Ops 2). A crate never holds another Care Package. Black Ops 2's booby-trapped crates (Engineer, Black Hat) are left out: there is no Engineer.
 
 **On screen:**
 
@@ -53,12 +54,42 @@ Anyone holding use within 1.8 m of a landed crate captures it:
 
 **Bots** call theirs in where they aim, run to a landed crate (their own within 40 m, anyone else's within 15 m), and hold use on it. `care_package_test` plays it through on a server.
 
+## Airstrike
+
+The lethal streak, after Black Ops 2's Lightning Strike, under a generic name.
+
+![The Airstrike's target picker with two marks and the cursor](media/airstrike-picker.jpg)
+
+**Picking targets:** calling it in opens the whole map's plan full screen (`godot/scripts/net/airstrike_view.gd`). The player stands still meanwhile, as with Black Ops 2's tablet. The plan shows us and our teammates. Each mark picks a point, and the third mark calls the strike in.
+
+| Action | Mouse | Controller |
+| --- | --- | --- |
+| Mark | left click | A, moving the cursor with the left stick |
+| Undo the last mark | right click | X |
+| Close (the streak stays held) | Escape | B |
+
+**Strikes:**
+
+- **Timing:** strikes land in turn, the first 3 s after the call and the rest 1 s apart.
+- **Where:** each hits the topmost surface under its mark. A roof shields the people under it, because the blast needs a clear line, as grenades' do.
+- **Blast:** 250 damage at the centre, falling to 40 at 9 m.
+- **Friendly fire:** none, but the caller can hit themselves.
+- **Visuals:** a jet (`tools/gear_models.py` `strike_jet`) passes low over each mark just before its blast, three times a frag's size, with its bang.
+
+Its kills score as usual and show as "Airstrike" in the kill feed, but add nothing to the caller's streak count. Black Ops 2's rule is that streak kills do not count toward streaks. The timings and blast size are estimates: Black Ops 2 publishes none.
+
+`airstrike_test` plays it through on a server. Bots mark their nearest enemies.
+
 ## On screen
 
 - **Streak column:** the three streaks, bottom right above the weapon cluster, the cheapest lowest, as Black Ops 2 stacks them. Each shows its cost and a thin bar filling with this life's score toward it. An earned streak is lit, with a count when more than one is held. The selected one carries the use key's cap (`godot/scripts/net/streaks_hud.gd`).
 - **"UAV READY"** shows in the upper third with the key to call it in.
 - **Calls** when a UAV or Counter-UAV goes up: "UAV ONLINE", "ENEMY UAV OVERHEAD", "COUNTER-UAV ONLINE", "ENEMY COUNTER-UAV". These stand in for Black Ops 2's announcer until there are voice lines.
 - **Minimap tags:** small tags along the minimap's foot show every UAV and Counter-UAV up, ours blue and the enemy's red.
+
+![The streak column with a held Airstrike and the UAV's bar filling](media/scorestreaks-hud.jpg)
+
+![The minimap jammed by an enemy Counter-UAV](media/counter-uav-jammed.jpg)
 
 ## Controls
 
@@ -75,7 +106,7 @@ The server keeps every count and held streak and decides every use (`ClientMessa
 
 ## Still to come
 
-A lethal streak, Blind Eye (with an AI streak to hide from), UAV assist points, and announcer lines. They are tracked in [TODO.md](../TODO.md).
+Blind Eye (with an AI streak to hide from), UAV assist points, and announcer lines. They are tracked in [TODO.md](../TODO.md).
 
 ## Call of Duty reference
 
@@ -84,4 +115,6 @@ A lethal streak, Blind Eye (with an AI streak to hide from), UAV assist points, 
 - **Care Package:** a flyover drops a crate on the marked spot. The owner captures almost at once, others in about 3 s, and enemies may steal it. Contents are weighted toward cheap streaks (UAV 10.6%, Counter-UAV 9.4%).
 - **Durations:** UAV and Counter-UAV 30 s.
 - **Hardline:** in Black Ops 2 it adds 20% to scorestreak score, per the Call of Duty wiki, about 16.7% off each cost. Guides that give "-25 points" or "15%" disagree with it.
+- **Lightning Strike:** 750, three strikes on points picked on the map, in sequence.
+- **Streak kills:** do not count toward streaks.
 - **Ghost:** works while moving. **Hard Wired:** immune to Counter-UAV.

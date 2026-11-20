@@ -233,7 +233,8 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Enemies on the minimap: red dots where an unsuppressed weapon fired, for 3 seconds, decided by the server and sent only to the shooter's enemies (`rust/sim/src/radar.rs`).
 - [x] Scorestreaks (Black Ops 2): earned from score within a life (objective score counts, the count resets on death and loops after the dearest), three chosen in the class menu, held through death; UAV and Counter-UAV, a streak column and calls on the HUD, minimap tags, and bots calling theirs in ([docs/scorestreaks.md](docs/scorestreaks.md)).
 - [x] Care Package: a crate from a flyover onto the spot aimed at, captured in 0.5 s by its caller and 3 s by anyone else, with a UAV or Counter-UAV inside; bots call and take them ([docs/scorestreaks.md](docs/scorestreaks.md#care-package)).
-- [ ] Scorestreaks follow-ups: a lethal streak, the aircraft's and crate's sounds, streak kills not counting toward streaks, UAV assist points, announcer lines.
+- [x] Airstrike: three strikes on points marked on the map's plan, after Black Ops 2's Lightning Strike; its kills count nothing toward streaks; bots mark their nearest enemies ([docs/scorestreaks.md](docs/scorestreaks.md#airstrike)).
+- [ ] Scorestreaks follow-ups: the aircraft's, jets', and crate's sounds, UAV assist points, announcer lines, a full-map view for the dead or spectating. Warehouse is roofed over: a Care Package cannot be called there (no open sky; the streak stays held) and an Airstrike hits the roof. Decide whether Warehouse's crates come through a skylight or roof hatch, or the streaks are left out there.
 - [x] Perks that need streaks: Hardline, Ghost, and Hard Wired ([create-a-class.md](docs/create-a-class.md#perks)).
 - [ ] Blind Eye, once there is an AI air streak to hide from.
 - [x] Player names: sent in the hello (`Settings.player_name`), cleaned by the server, and listed in the roster.

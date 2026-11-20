@@ -25,6 +25,7 @@
 //! | UAV | 425 | UAV, 425 after patch 1.04 (350 at launch) | sweeps enemies onto the team's minimaps every 3 s for 30 s |
 //! | Counter-UAV | 475 | Counter-UAV (sources give 400 to 600) | jams enemy minimaps for 30 s |
 //! | Care Package | 550 | Care Package, 550 | a crate from a flyover with a random streak inside ([`crate::care_package`]) |
+//! | Airstrike | 750 | Lightning Strike, 750 | three strikes on points marked on the map ([`Strikes`]) |
 //!
 //! Every number here is an estimate where Black Ops 2's own files give none;
 //! the docs list which (`docs/scorestreaks.md`).
@@ -38,6 +39,7 @@ pub enum Streak {
     Uav,
     CounterUav,
     CarePackage,
+    Airstrike,
 }
 
 /// UAV: seconds it stays up, and seconds between its sweeps (Black Ops 2's
@@ -53,7 +55,12 @@ pub const HARDLINE_TENTHS: u32 = 12;
 pub const MAX_HELD: usize = 8;
 
 impl Streak {
-    pub const ALL: [Streak; 3] = [Streak::Uav, Streak::CounterUav, Streak::CarePackage];
+    pub const ALL: [Streak; 4] = [
+        Streak::Uav,
+        Streak::CounterUav,
+        Streak::CarePackage,
+        Streak::Airstrike,
+    ];
 
     /// Score to earn it.
     pub fn cost(self) -> u32 {
@@ -61,6 +68,7 @@ impl Streak {
             Streak::Uav => 425,
             Streak::CounterUav => 475,
             Streak::CarePackage => 550,
+            Streak::Airstrike => 750,
         }
     }
 
@@ -70,6 +78,7 @@ impl Streak {
         match self {
             Streak::Uav | Streak::CounterUav => 1,
             Streak::CarePackage => 7,
+            Streak::Airstrike => 13,
         }
     }
 
@@ -79,6 +88,7 @@ impl Streak {
             Streak::Uav => "uav",
             Streak::CounterUav => "counter_uav",
             Streak::CarePackage => "care_package",
+            Streak::Airstrike => "airstrike",
         }
     }
 
@@ -92,6 +102,7 @@ impl Streak {
             Streak::Uav => "UAV",
             Streak::CounterUav => "Counter-UAV",
             Streak::CarePackage => "Care Package",
+            Streak::Airstrike => "Airstrike",
         }
     }
 
@@ -101,6 +112,7 @@ impl Streak {
             Streak::Uav => "Shows enemies on your team's minimap for 30 seconds.",
             Streak::CounterUav => "Jams enemy minimaps for 30 seconds.",
             Streak::CarePackage => "Drops a crate where you aim, with a random scorestreak inside.",
+            Streak::Airstrike => "Calls three air strikes on points you mark on the map.",
         }
     }
 
@@ -118,7 +130,7 @@ impl Streak {
         let seconds = match self {
             Streak::Uav => UAV_SECONDS,
             Streak::CounterUav => COUNTER_UAV_SECONDS,
-            Streak::CarePackage => 0.0,
+            Streak::CarePackage | Streak::Airstrike => 0.0,
         };
         seconds_to_ticks(seconds)
     }
@@ -257,6 +269,66 @@ impl StreakState {
     /// The next streak the count is heading for, and its cost.
     pub fn next(&self, loadout: Loadout) -> Option<Streak> {
         loadout.streaks().find(|s| s.cost() > self.progress)
+    }
+}
+
+/// Airstrike: how many points the caller marks, seconds from the call to
+/// the first strike and between strikes, and each blast's reach and damage
+/// (Black Ops 2's Lightning Strike drops three strikes in turn; the
+/// timings and blast are estimates sized to kill anyone in the open near a
+/// mark).
+pub const AIRSTRIKE_TARGETS: usize = 3;
+pub const STRIKE_FIRST_SECONDS: f32 = 3.0;
+pub const STRIKE_GAP_SECONDS: f32 = 1.0;
+pub const STRIKE_RADIUS: f32 = 9.0;
+pub const STRIKE_DAMAGE: f32 = 250.0;
+pub const STRIKE_OUTER_DAMAGE: f32 = 40.0;
+
+/// One strike coming.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Strike {
+    pub owner: u8,
+    pub at: crate::Vec3,
+    pub tick: Tick,
+}
+
+/// The strikes called in and not yet landed.
+#[derive(Clone, Debug, Default)]
+pub struct Strikes {
+    pending: Vec<Strike>,
+}
+
+impl Strikes {
+    /// `owner` calls strikes onto `targets` (the first
+    /// [`AIRSTRIKE_TARGETS`]) at `now`. Returns them, in the order they land.
+    pub fn call(&mut self, owner: u8, targets: &[crate::Vec3], now: Tick) -> Vec<Strike> {
+        let first = now + seconds_to_ticks(STRIKE_FIRST_SECONDS);
+        let gap = seconds_to_ticks(STRIKE_GAP_SECONDS);
+        let called: Vec<Strike> = targets
+            .iter()
+            .take(AIRSTRIKE_TARGETS)
+            .enumerate()
+            .map(|(i, &at)| Strike {
+                owner,
+                at,
+                tick: first + gap * i as Tick,
+            })
+            .collect();
+        self.pending.extend(&called);
+        called
+    }
+
+    /// The strikes landing by `now`, taken off the list.
+    pub fn due(&mut self, now: Tick) -> Vec<Strike> {
+        let (due, later): (Vec<Strike>, Vec<Strike>) =
+            self.pending.iter().partition(|s| s.tick <= now);
+        self.pending = later;
+        due
+    }
+
+    /// Every strike still coming is called off (a new match).
+    pub fn clear(&mut self) {
+        self.pending.clear();
     }
 }
 
@@ -465,6 +537,25 @@ mod tests {
         assert!(!sky.jammed(1));
         sky.expire(Streak::CounterUav.duration());
         assert!(!sky.jammed(0));
+    }
+
+    #[test]
+    fn strikes_land_in_turn_after_the_call() {
+        let mut strikes = Strikes::default();
+        let targets = [
+            crate::Vec3::X,
+            crate::Vec3::Y,
+            crate::Vec3::Z,
+            crate::Vec3::ONE,
+        ];
+        let called = strikes.call(4, &targets, 100);
+        assert_eq!(called.len(), AIRSTRIKE_TARGETS);
+        assert_eq!(called[0].tick, 100 + 360);
+        assert_eq!(called[2].tick, 100 + 360 + 240);
+        assert!(strikes.due(459).is_empty());
+        assert_eq!(strikes.due(460), vec![called[0]]);
+        assert_eq!(strikes.due(1000).len(), 2);
+        assert!(strikes.due(2000).is_empty());
     }
 
     #[test]

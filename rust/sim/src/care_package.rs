@@ -44,8 +44,13 @@ pub const CRATE_SECONDS: f32 = 90.0;
 pub const MAX_CRATES: usize = 8;
 
 /// The streaks a crate may hold and their weights: Black Ops 2's shares for
-/// the UAV (10.6) and the Counter-UAV (9.4) among its contents.
-pub const CONTENTS: [(Streak, u32); 2] = [(Streak::Uav, 106), (Streak::CounterUav, 94)];
+/// the UAV (10.6) and the Counter-UAV (9.4) among its contents, and the
+/// Airstrike rarer (4, an estimate for its Lightning Strike).
+pub const CONTENTS: [(Streak, u32); 3] = [
+    (Streak::Uav, 106),
+    (Streak::CounterUav, 94),
+    (Streak::Airstrike, 40),
+];
 
 /// Rolls what a crate holds from `seed`.
 pub fn roll(seed: u32) -> Streak {
@@ -325,7 +330,7 @@ mod tests {
                 uavs += 1;
             }
         }
-        // 106 of 200: about 53%.
-        assert!((950..1170).contains(&uavs), "{uavs}");
+        // 106 of 240: about 44%.
+        assert!((780..990).contains(&uavs), "{uavs}");
     }
 }
