@@ -116,6 +116,19 @@ impl Streak {
         }
     }
 
+    /// Whether it comes down from the sky onto a point on the map: a crate
+    /// from a flyover or strikes from a jet. A map roofed over (Warehouse)
+    /// has nowhere for these to land, so they are left out there
+    /// ([`Loadout::usable`]); the radar streaks still work.
+    pub fn needs_open_sky(self) -> bool {
+        matches!(self, Streak::CarePackage | Streak::Airstrike)
+    }
+
+    /// Whether it can be earned and called in on a map, `roofed` or not.
+    pub fn usable(self, roofed: bool) -> bool {
+        !(roofed && self.needs_open_sky())
+    }
+
     /// Its index in [`Streak::ALL`], for the wire.
     pub fn code(self) -> u8 {
         self as u8
@@ -174,6 +187,19 @@ impl Loadout {
     /// The streaks, cheapest first.
     pub fn streaks(self) -> impl Iterator<Item = Streak> {
         self.sorted().0.into_iter().flatten()
+    }
+
+    /// The loadout without the streaks a map, `roofed` or not, cannot
+    /// have: the count runs on the rest, so the dearest usable one closes
+    /// the loop.
+    pub fn usable(self, roofed: bool) -> Self {
+        let mut slots = self.sorted().0;
+        for slot in &mut slots {
+            if slot.is_some_and(|s| !s.usable(roofed)) {
+                *slot = None;
+            }
+        }
+        Self(slots).sorted()
     }
 }
 
@@ -556,6 +582,27 @@ mod tests {
         assert_eq!(strikes.due(460), vec![called[0]]);
         assert_eq!(strikes.due(1000).len(), 2);
         assert!(strikes.due(2000).is_empty());
+    }
+
+    #[test]
+    fn a_roofed_map_leaves_out_the_streaks_that_need_open_sky() {
+        let loadout = Loadout([
+            Some(Streak::Uav),
+            Some(Streak::CarePackage),
+            Some(Streak::Airstrike),
+        ]);
+        assert_eq!(loadout.usable(false), loadout);
+        let roofed = loadout.usable(true);
+        assert_eq!(roofed, Loadout([Some(Streak::Uav), None, None]));
+        // The count loops on the UAV alone.
+        let mut state = StreakState::default();
+        assert_eq!(
+            state.on_points(roofed, 900, false),
+            vec![Streak::Uav, Streak::Uav]
+        );
+        assert_eq!(state.progress, 50);
+        assert!(Streak::CounterUav.usable(true));
+        assert!(!Streak::Airstrike.usable(true));
     }
 
     #[test]

@@ -175,7 +175,9 @@ use crate::zombies::drinks::Drinks;
 // the crouch hold in the predicted move state.
 // Version 74 added rockets: the RL-4 to the weapon table, and
 // `equipment::Kind::Rocket` (code 3) to grenades, blasts, and kill causes.
-pub const PROTOCOL_VERSION: u16 = 74;
+// Version 75 added `roofed` to `StreakEvent::State`: a map roofed over
+// leaves out the streaks that need open sky.
+pub const PROTOCOL_VERSION: u16 = 75;
 /// Longest account session token a hello carries, in bytes.
 pub const MAX_ACCOUNT_TOKEN_BYTES: usize = 2048;
 /// Longest reason a denial carries, in bytes.
@@ -447,12 +449,14 @@ pub enum GameEvent {
 #[derive(Clone, Debug, PartialEq)]
 pub enum StreakEvent {
     /// To one player, whenever it changes: their count toward the next
-    /// streak this life, the streaks they hold (oldest first), and the
-    /// loadout the count runs on.
+    /// streak this life, the streaks they hold (oldest first), the loadout
+    /// they chose, and whether the map is roofed over, which leaves out the
+    /// streaks that need open sky ([`Streak::usable`]).
     State {
         progress: u32,
         held: Vec<Streak>,
         loadout: streak::Loadout,
+        roofed: bool,
     },
     /// To everyone, whenever it changes and on joining: every UAV and
     /// Counter-UAV up.
@@ -2981,6 +2985,7 @@ fn write_streak_event(w: &mut BitWriter, event: &StreakEvent) {
             progress,
             held,
             loadout,
+            roofed,
         } => {
             w.bits(0, MORE_TAG_BITS);
             w.varint(*progress);
@@ -2990,6 +2995,7 @@ fn write_streak_event(w: &mut BitWriter, event: &StreakEvent) {
                 write_streak(w, *streak);
             }
             write_loadout(w, *loadout);
+            w.bool(*roofed);
         }
         StreakEvent::CrateIncoming {
             id,
@@ -3082,6 +3088,7 @@ fn read_streak_event(r: &mut BitReader) -> DecodeResult<StreakEvent> {
                 progress,
                 held,
                 loadout: read_loadout(r)?,
+                roofed: r.bool()?,
             })
         }
         1 => {
@@ -4543,6 +4550,7 @@ mod tests {
                 progress: 310,
                 held: vec![Streak::Uav, Streak::CounterUav, Streak::Uav],
                 loadout: streak::Loadout::default(),
+                roofed: true,
             }),
             GameEvent::Streak(StreakEvent::Sky {
                 up: vec![
