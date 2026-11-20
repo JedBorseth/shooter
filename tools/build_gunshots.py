@@ -118,6 +118,12 @@ CS_AK = (
     ),
 )
 
+# Counter-Strike 2's SCAR-20, measured from in-game clips, for the DM-7.
+CS_SCAR20 = (
+    "cs",
+    (("2V0EqQWrb4g.wav", 14.5, 16.8), ("nek_T_qGM1Q.wav", 5.8, 6.9), ("nek_T_qGM1Q.wav", 26.9, 27.6)),
+)
+
 RECIPES = {
     "ak47": Recipe(
         sessions=(("C_25", "C_45", "C_39"), ("C_28", "C_48", "C_42")),
@@ -158,6 +164,45 @@ RECIPES = {
             -4.1,
         ),
         reference=CS_AK,
+    ),
+    # The DM-7: the Marlin 336 (.30-30), near and behind the shooter,
+    # matched to Counter-Strike 2's SCAR-20. Held for listening (variant A).
+    "dm7": Recipe(
+        sessions=(("I_20", "I_19"), ("I_22", "I_21")),
+        weights=(0.0, -3.0),
+        wet_db=1.0, dense=1.4, drive=3.5, shave_db=13.0, seconds=1.4,
+        room=Room(t60_low=0.8, t60_high=0.55),
+        eq=(
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            4.3,
+            -2.6,
+            -2.8,
+            -7.0,
+            -13.3,
+            -15.0,
+            -15.0,
+            -15.0,
+            -15.0,
+            -15.0,
+            -11.0,
+            -5.7,
+            -3.0,
+            2.7,
+            5.7,
+            4.4,
+            5.5,
+            9.2,
+            11.4,
+            12.0,
+            12.0,
+            12.0,
+            11.0,
+        ),
+        reference=CS_SCAR20,
+        lufs=-20.0,
     ),
 }
 
