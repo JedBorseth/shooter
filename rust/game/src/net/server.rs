@@ -173,6 +173,12 @@ const ZONE_SPAWN_THREATS: usize = 2;
 const DOM_HOLD_REACH: f32 = 8.0;
 /// Seconds a Hardpoint bot holds one spot in the zone.
 const ZONE_SPOT_SECONDS: u32 = 4;
+/// How far out from a charge being planted or defused a bot pops its smoke,
+/// toward the other side, in metres.
+const COVER_SMOKE_OUT: f32 = 5.0;
+/// Enemies this far past an objective's edge (a flag's circle, a zone's
+/// box) are worth a grenade, in metres (Black Ops 2: 384 units).
+const OBJECTIVE_GRENADE_REACH: f32 = 9.75;
 /// Height above a player's feet that an explosion is checked against.
 const EXPLOSION_TARGET_HEIGHT: f32 = 1.0;
 /// How far short of a player a wall or prop must be to absorb an explosion.
@@ -6709,7 +6715,8 @@ impl NetServer {
                         FlagState::Carried { by } => {
                             BotObjective::hunt(position(by).unwrap_or(to_godot(own.home)))
                         }
-                        _ => BotObjective::hold(self.defend_spot(bot.id, own.home)),
+                        _ => BotObjective::hold(self.defend_spot(bot.id, own.home))
+                            .with_area(to_godot(own.home), OBJECTIVE_GRENADE_REACH),
                     }
                 } else {
                     match enemy.state {
@@ -6718,7 +6725,8 @@ impl NetServer {
                         }
                         // Attackers grab a dropped flag as urgently as a returner.
                         FlagState::Dropped { at, .. } => BotObjective::run(to_godot(at)),
-                        FlagState::Home => BotObjective::hunt(to_godot(enemy.home)),
+                        FlagState::Home => BotObjective::hunt(to_godot(enemy.home))
+                            .with_area(to_godot(enemy.home), OBJECTIVE_GRENADE_REACH),
                     }
                 };
                 out.push((bot.id, Some(objective)));
@@ -6888,6 +6896,11 @@ impl NetServer {
             ChargeState::Planted { at, .. } => nearest(1 - round.attackers, at),
             _ => None,
         };
+        let defend_side = self
+            .side_centroid(1 - round.attackers)
+            .unwrap_or(target.center);
+        let site_reach =
+            |site: &Site| site.half_extents.x.max(site.half_extents.z) + snd_bots::GRENADE_REACH;
         // The attackers' side, for where the carrier waits; the other site,
         // for the lurker; the carrier, for its escorts.
         let attack_side = self.side_centroid(round.attackers).unwrap_or(target.center);
@@ -6921,10 +6934,19 @@ impl NetServer {
         let mut out = Vec::new();
         for bot in &bots {
             let id = bot.id;
+            let attacking = bot.team == round.attackers;
+            // Smoke between the charge and the other side covers a plant or
+            // a defuse.
+            let cover = |at: Vec3| {
+                let from = if attacking { defend_side } else { attack_side };
+                let flat = Vec3::new(from.x - at.x, 0.0, from.z - at.z).normalize_or_zero();
+                to_godot(at + flat * COVER_SMOKE_OUT)
+            };
             if charge.spot(&cx, &charge_player(bot, true)).is_some() {
+                let here = bot.predicted.position;
                 out.push((
                     id,
-                    Some(BotObjective::use_here(to_godot(bot.predicted.position))),
+                    Some(BotObjective::use_here(to_godot(here)).with_smoke(cover(here))),
                 ));
                 continue;
             }
@@ -6933,7 +6955,7 @@ impl NetServer {
                 match charge.state {
                     ChargeState::Carried { by } if by == id => {
                         if self.snd_plan.planting {
-                            BotObjective::run(to_godot(plant_spot))
+                            BotObjective::run(to_godot(plant_spot)).with_smoke(cover(plant_spot))
                         } else {
                             BotObjective::hunt(to_godot(snd_bots::staging_point(
                                 target,
@@ -6974,7 +6996,7 @@ impl NetServer {
             } else {
                 match charge.state {
                     ChargeState::Planted { at, .. } if fetcher == Some(id) => {
-                        BotObjective::run(to_godot(at))
+                        BotObjective::run(to_godot(at)).with_smoke(cover(at))
                     }
                     ChargeState::Planted { at, .. } => {
                         BotObjective::hunt(spot(id, at, Vec2::splat(4.0)))
@@ -6987,13 +7009,28 @@ impl NetServer {
                                 &self.charge_sites[i % self.charge_sites.len()]
                             }
                         };
-                        if rotating.contains(&id) {
+                        let guard = if rotating.contains(&id) {
                             BotObjective::hunt(spot(id, floor(site), inside(site)))
                         } else {
                             BotObjective::hold(spot(id, floor(site), inside(site)))
-                        }
+                        };
+                        // Black Ops 2's defenders frag (or flash) enemies
+                        // within about 10 m of their site (`bot_sd_grenade`).
+                        guard.with_area(to_godot(floor(site)), site_reach(site))
                     }
                 }
+            };
+            // Whoever holds the charge's ground is worth a grenade: the
+            // planted charge, or the attackers' target site.
+            let objective = match (objective.area, charge.state) {
+                (Some(_), _) => objective,
+                (None, ChargeState::Planted { at, .. }) => {
+                    objective.with_area(to_godot(at), snd_bots::GRENADE_REACH)
+                }
+                (None, _) if attacking => {
+                    objective.with_area(to_godot(floor(target)), site_reach(target))
+                }
+                (None, _) => objective,
             };
             out.push((id, Some(objective)));
         }
@@ -7036,6 +7073,13 @@ impl NetServer {
                         zone.center.z + (b * 2.0 - 1.0) * reach_z,
                     )))
                 };
+                // Black Ops 2's bots frag the enemy nearest a contested hill
+                // (`bot_hill_grenade`).
+                let reach = zone.half_extents.x.max(zone.half_extents.z) + OBJECTIVE_GRENADE_REACH;
+                let objective = objective.with_area(
+                    to_godot(Vec3::new(zone.center.x, floor, zone.center.z)),
+                    reach,
+                );
                 out.push((id, Some(objective)));
             }
         }
@@ -7081,6 +7125,16 @@ impl NetServer {
                     )))
                 } else {
                     BotObjective::hunt(to_godot(Vec3::new(point.center.x, floor, point.center.z)))
+                };
+                // Black Ops 2's bots smoke a flag they go to take and frag a
+                // contested one (`bot_flag_grenade`).
+                let center = to_godot(Vec3::new(point.center.x, floor, point.center.z));
+                let objective = objective.with_area(center, point.radius + OBJECTIVE_GRENADE_REACH);
+                let objective = match goal {
+                    BotGoal::Capture(_) if self.dom.flags[flag].owner.is_some() => {
+                        objective.with_smoke(center)
+                    }
+                    _ => objective,
                 };
                 out.push((id, Some(objective)));
             }

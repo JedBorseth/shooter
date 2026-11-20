@@ -121,6 +121,11 @@ const THROW_AIM: f32 = 0.03;
 /// How far ahead of the thrower a smoke goes, in metres (between it and the
 /// threat).
 const SMOKE_THROW: (f32, f32) = (4.0, 9.0);
+/// How far from an objective's smoke spot a bot throws it, in metres.
+const OBJECTIVE_SMOKE_RANGE: (f32, f32) = (3.0, 25.0);
+/// A cloud this close to the spot, this young (seconds), already covers it.
+const SMOKE_REUSE_RADIUS: f32 = 6.5;
+const SMOKE_REUSE_SECONDS: f32 = 12.0;
 /// Throw checks the server allows each tick, for all bots together. Each
 /// costs at most [`THROW_CHECK_RAYS`] rays.
 pub const THROW_CHECKS_PER_TICK: u32 = 1;
@@ -140,6 +145,14 @@ const CELL_HEIGHT: f32 = 0.1;
 pub struct BotObjective {
     pub goal: Vector3,
     pub kind: ObjectiveKind,
+    /// The ground the objective is about (a site, a flag, a zone): its
+    /// middle and reach. An enemy seen there is worth a frag on its own,
+    /// not only in a group (Black Ops 2's bots grenade enemies at a site, a
+    /// contested flag, or the hill).
+    pub area: Option<(Vector3, f32)>,
+    /// Where to pop smoke on the way, once (an enemy flag being attacked, a
+    /// plant or defuse to cover).
+    pub smoke: Option<Vector3>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -162,6 +175,8 @@ impl BotObjective {
         Self {
             goal,
             kind: ObjectiveKind::Run,
+            area: None,
+            smoke: None,
         }
     }
 
@@ -169,6 +184,8 @@ impl BotObjective {
         Self {
             goal,
             kind: ObjectiveKind::Hunt,
+            area: None,
+            smoke: None,
         }
     }
 
@@ -176,6 +193,8 @@ impl BotObjective {
         Self {
             goal,
             kind: ObjectiveKind::Hold,
+            area: None,
+            smoke: None,
         }
     }
 
@@ -183,7 +202,21 @@ impl BotObjective {
         Self {
             goal,
             kind: ObjectiveKind::Use,
+            area: None,
+            smoke: None,
         }
+    }
+
+    /// Enemies seen within `radius` of `center` are worth a grenade.
+    pub fn with_area(mut self, center: Vector3, radius: f32) -> Self {
+        self.area = Some((center, radius));
+        self
+    }
+
+    /// Pop smoke at `at` on the way, if the bot carries it.
+    pub fn with_smoke(mut self, at: Vector3) -> Self {
+        self.smoke = Some(at);
+        self
     }
 
     /// Whether a bot at `feet` keeps moving to this objective through a
@@ -500,6 +533,8 @@ pub struct BotBrain {
     seen: Vec<(u8, Vector3, Tick)>,
     /// Blinded by a flashbang.
     blind: Option<Blind>,
+    /// Already popped an objective's smoke this life.
+    smoked: bool,
     /// A frag that can reach the bot: when the bot noticed it, and the spot
     /// on the navigation mesh to run to.
     danger: Option<(Tick, Vector3)>,
@@ -567,6 +602,7 @@ impl BotBrain {
             next_throw_check: 0,
             seen: Vec::new(),
             blind: None,
+            smoked: false,
             danger: None,
             frags_thrown: 0,
             tacticals_thrown: 0,
@@ -666,6 +702,7 @@ impl BotBrain {
         self.throwing = None;
         self.seen.clear();
         self.blind = None;
+        self.smoked = false;
         self.danger = None;
         self.next_throw_check = tick + TICK_RATE;
     }
@@ -757,7 +794,11 @@ impl BotBrain {
             }
             self.guard(me, world, &skill, me.feet, &mut want);
             want.crouch = false;
-            want.interact = true;
+            // Smoke first, if the objective asks for it, then plant or defuse.
+            if self.throwing.is_none() {
+                self.consider_smoke(me, state, world, objective);
+            }
+            want.interact = self.throwing.is_none();
             self.keep_throwing(state, look_before, tick, &skill, &mut want);
             return self.press(want, state);
         }
@@ -785,10 +826,12 @@ impl BotBrain {
         }
         if self.throwing.is_none()
             && self.danger.is_none()
-            && !running
             && (tick + u32::from(me.id)).is_multiple_of(PERCEPTION_INTERVAL)
         {
-            self.consider_throw(me, state, world, &skill);
+            self.consider_smoke(me, state, world, objective);
+            if self.throwing.is_none() && !running {
+                self.consider_throw(me, state, world, &skill, objective);
+            }
         }
         self.flee(me, world, &skill, &mut want);
         self.keep_throwing(state, look_before, tick, &skill, &mut want);
@@ -807,6 +850,7 @@ impl BotBrain {
         state: &Predicted,
         world: &mut BotWorld,
         skill: &SkillParams,
+        objective: Option<BotObjective>,
     ) {
         let tick = world.tick;
         if tick < self.next_throw_check || *world.throw_checks == 0 {
@@ -834,15 +878,34 @@ impl BotBrain {
             let age = tick.saturating_sub(*t) as f32 * TICK_DT;
             !self.in_sight && (HIDDEN_FOR.0..=HIDDEN_FOR.1).contains(&age)
         });
+        // The nearest enemy seen lately on the objective's ground.
+        let on_objective = |range: (f32, f32)| {
+            let (center, radius) = objective?.area?;
+            self.seen
+                .iter()
+                .filter(|(_, p, t)| {
+                    tick.saturating_sub(*t) <= recent
+                        && horizontal_distance(*p, center) <= radius
+                        && in_range(*p, range)
+                })
+                .min_by(|a, b| {
+                    horizontal_distance(a.1, feet).total_cmp(&horizontal_distance(b.1, feet))
+                })
+                .map(|(_, p, _)| *p)
+        };
         let chance = if frag {
             bot::cluster(&group)
                 .map(|(center, _)| (Kind::Frag, to_godot(center)))
+                .or(on_objective(FRAG_RANGE).map(|p| (Kind::Frag, p)))
                 .or(hidden
                     .filter(|(p, _)| in_range(*p, FRAG_RANGE))
                     .map(|(p, _)| (Kind::Frag, p)))
         } else {
             None
         }
+        .or(on_objective(FLASH_THROW_RANGE)
+            .filter(|_| flash)
+            .map(|p| (Kind::Flash, p)))
         .or(hidden
             .filter(|(p, _)| flash && in_range(*p, FLASH_THROW_RANGE))
             .map(|(p, _)| (Kind::Flash, p)));
@@ -912,6 +975,47 @@ impl BotBrain {
             pressed: None,
             carried: 0,
         });
+    }
+
+    /// Pops the smoke an objective asks for ([`BotObjective::smoke`]), once a
+    /// life: from [`OBJECTIVE_SMOKE_RANGE`], not on Easy (Black Ops 2's
+    /// Recruits throw nothing), and not where a cloud already hangs (Black
+    /// Ops 2: none within 6.5 m in the last 12 s, `bot_combat_throw_smoke`).
+    fn consider_smoke(
+        &mut self,
+        me: &BotPlayer,
+        state: &Predicted,
+        world: &mut BotWorld,
+        objective: Option<BotObjective>,
+    ) {
+        let Some(at) = objective.and_then(|o| o.smoke) else {
+            return;
+        };
+        let combat = &state.state.combat;
+        if self.skill == Skill::Easy
+            || self.smoked
+            || combat.tactical != Kind::Smoke
+            || !combat.can_throw(Kind::Smoke)
+        {
+            return;
+        }
+        let distance = horizontal_distance(at, me.feet);
+        if !(OBJECTIVE_SMOKE_RANGE.0..=OBJECTIVE_SMOKE_RANGE.1).contains(&distance) {
+            return;
+        }
+        let covered = world.smokes.iter().any(|cloud| {
+            cloud.age < SMOKE_REUSE_SECONDS
+                && horizontal_distance(to_godot(cloud.center), at) < SMOKE_REUSE_RADIUS
+        });
+        if covered {
+            return;
+        }
+        let eye = me.eye(world.params);
+        let plans = bot::plan_throw(Kind::Smoke, to_sim(eye), to_sim(at), None);
+        if let Some(plan) = plans.first() {
+            self.start_throw(Kind::Smoke, plan, world.tick);
+            self.smoked = true;
+        }
     }
 
     /// Pops smoke between the bot and `threat` as it breaks for cover.

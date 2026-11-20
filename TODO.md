@@ -202,13 +202,14 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] A bot match bench (`godot/tools/bot_bench.gd`): whole bot-only matches headless, written to JSON with the winner, scores, every bot's kills and deaths, tactics, and each mode's objective log (Search and Destroy rounds, Hardpoint zone arrivals, Domination flag time), so bot changes are compared by outcome (`docs/bots.md`).
 - [ ] Bots play like Black Ops 2's Combat Training bots (`docs/bots.md`):
   - [x] Search and Destroy: the carrier goes to plant as the clock runs down, escorts guard the plant spot, pushers gather and go in together, attackers switch sites when the target is held, a lurker takes the other site, and defenders rotate to a site under attack (`shooter_sim::snd::bots`, `SndPlan`).
-  - [ ] Search and Destroy: defenders frag enemies near their site, smoke covers a plant or defuse, and Hard bots fake a plant or defuse.
+  - [x] Grenades on the objective: an enemy seen near a site, flag, zone, or flag base is worth a frag on its own (flash if no frag), smoke covers a plant, a defuse, and a push onto an enemy flag, and Easy bots throw nothing (`BotObjective::area`, `smoke`).
+  - [ ] Search and Destroy: Hard bots fake a plant or defuse.
   - [ ] Search and Destroy on Warehouse favours the defenders with bots (attackers won 5 to 8 rounds of 28 on the bench, before and after the plan): look at its sites' approaches.
-  - [ ] Domination: bots spread over the flags instead of one team piling onto one, and grenade flags they attack.
-  - [ ] Hardpoint: bots head for the next zone before the live one moves, and grenade the enemy holding it.
+  - [ ] Domination: bots spread over the flags instead of one team piling onto one.
+  - [ ] Hardpoint: bots head for the next zone before the live one moves.
   - [ ] Capture the Flag: escorts ring the carrier instead of chasing its heels.
   - [ ] Awareness: enemies who fire unsuppressed (the minimap's red dots) draw bots' eyes and patrols; footsteps and gunfire turn them.
-  - [ ] Combat feel: pre-aim the angles enemies come from, check corners, peek from cover, and slide or drop-shot on Hard only. Easy bots throw nothing (Black Ops 2's Recruit).
+  - [ ] Combat feel: pre-aim the angles enemies come from, check corners, peek from cover, and slide or drop-shot on Hard only.
 - [x] Team Deathmatch rules on the server: two teams (new players join the smaller), 75 kills or 10 minutes, no friendly fire, a lobby that waits for everyone to ready up, a countdown, and a results phase before the next match (`rust/sim/src/tdm.rs`).
 - [x] Round end screen: VICTORY, DEFEAT, or DRAW with the scoreboard, then the next match's countdown.
 - [x] Team colours from the match: teammates wear the allies' colours and show their name; enemies wear the enemies' colours and show none.

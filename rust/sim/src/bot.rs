@@ -39,8 +39,9 @@ pub struct SkillParams {
     pub burst_pause: f32,
     /// Field of view, in radians, inside which the bot notices enemies.
     pub fov: f32,
-    /// Chance a bot takes a grenade opportunity (enemies bunched up, or one
-    /// hiding where it was just seen) when it comes up.
+    /// Chance a bot takes a grenade opportunity (enemies bunched up, one
+    /// hiding where it was just seen, or one on the objective) when it comes
+    /// up. Zero never throws.
     pub grenade_chance: f32,
     /// How long a frag is left to burn after it should have reached the
     /// target, in seconds: the bot cooks it for the rest. `None` never cooks.
@@ -70,7 +71,8 @@ impl Skill {
                 burst: 0.3,
                 burst_pause: 0.45,
                 fov: deg(90.0),
-                grenade_chance: 0.3,
+                // Black Ops 2's Recruits throw nothing (`bot_AllowGrenades 0`).
+                grenade_chance: 0.0,
                 cook_margin: None,
             },
             Skill::Normal => SkillParams {
@@ -420,6 +422,8 @@ mod tests {
             Skill::Hard.params(),
         );
         assert!(e.reaction > n.reaction && n.reaction > h.reaction);
+        assert_eq!(e.grenade_chance, 0.0, "Easy throws nothing, as Recruits");
+        assert!(n.grenade_chance < h.grenade_chance);
         assert!(e.turn_rate < n.turn_rate && n.turn_rate < h.turn_rate);
         assert_eq!(Skill::parse("HARD"), Some(Skill::Hard));
         assert_eq!(Skill::parse("insane"), None);
