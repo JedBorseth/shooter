@@ -24,6 +24,8 @@ use crate::zombie::Zombie;
 const HOUND_SCENE: &str = "res://scenes/zombies/hound.tscn";
 /// The strike that brings a hound in (`scripts/zombies_hound_strike.gd`).
 const STRIKE_SCRIPT: &str = "res://scripts/zombies_hound_strike.gd";
+/// Alternate ammo going off (`scripts/zombies_alt_ammo_fx.gd`).
+const ALT_AMMO_SCRIPT: &str = "res://scripts/zombies_alt_ammo_fx.gd";
 use crate::zombie_director::ZombieDirector;
 
 /// Seconds after the local player's own hit during which the server's
@@ -227,6 +229,17 @@ impl HordeView {
         });
     }
 
+    /// Alternate ammo `kind` went off through `points` (the first where).
+    fn alt_ammo_fired(&mut self, kind: &str, points: PackedVector3Array) {
+        let Ok(script) = godot::tools::try_load::<godot::classes::Script>(ALT_AMMO_SCRIPT) else {
+            return;
+        };
+        let mut node = Node3D::new_alloc();
+        node.set_script(&script);
+        self.director.add_child(&node);
+        node.call("setup", &[kind.to_variant(), points.to_variant()]);
+    }
+
     /// A strike lands at `at`: a hound is on its way.
     fn strike(&mut self, at: Vector3) {
         let Ok(script) = godot::tools::try_load::<godot::classes::Script>(STRIKE_SCRIPT) else {
@@ -414,6 +427,33 @@ impl HordeView {
                 }
             }
             ZombiesEvent::HoundStrike { at } => self.strike(to_godot(at)),
+            ZombiesEvent::AltAmmo {
+                player,
+                weapon,
+                kind,
+            } => {
+                if me == Some(player) {
+                    self.director
+                        .bind_mut()
+                        .net_alt_ammo(&weapon.def().key, kind.map(|k| k.label()));
+                }
+            }
+            ZombiesEvent::AltAmmoFired {
+                kind,
+                at,
+                struck,
+                count,
+            } => {
+                // The Arc runs through where the struck stand (as drawn).
+                let mut points = PackedVector3Array::new();
+                points.push(to_godot(at) + Vector3::UP);
+                for id in &struck[..usize::from(count).min(struck.len())] {
+                    if let Some(p) = self.puppets.iter().find(|p| p.id == *id && p.node.valid()) {
+                        points.push(p.node.position() + Vector3::UP);
+                    }
+                }
+                self.alt_ammo_fired(kind.key(), points);
+            }
             // Last stand on the HUD is `NetClient`'s, which knows names.
             ZombiesEvent::Hit { .. } | ZombiesEvent::Revive { .. } => {}
         }

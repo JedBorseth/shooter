@@ -208,7 +208,9 @@ use crate::zombies::drinks::Drinks;
 // `ZombiesEvent::HoundStrike`.
 // Version 87 added `Raise::Drink`: a Zombies drink keeps the weapon down
 // while its bottle is drunk (the raise kind takes 2 bits).
-pub const PROTOCOL_VERSION: u16 = 87;
+// Version 88 added alternate ammo for re-packed weapons
+// (`crate::zombies::alt_ammo`): `ZombiesEvent::AltAmmo` and `AltAmmoFired`.
+pub const PROTOCOL_VERSION: u16 = 88;
 /// Longest account session token a hello carries, in bytes.
 pub const MAX_ACCOUNT_TOKEN_BYTES: usize = 2048;
 /// Longest reason a denial carries, in bytes.
@@ -967,6 +969,22 @@ pub enum ZombiesEvent {
     /// To everyone: a strike lands at `at`, and a hound stands there
     /// [`crate::zombies::hounds::STRIKE_SECONDS`] later.
     HoundStrike { at: Vec3 },
+    /// To everyone, when it changes: player `player`'s `weapon` (an
+    /// upgraded one) has alternate ammo `kind` (none: no longer).
+    AltAmmo {
+        player: u8,
+        weapon: WeaponId,
+        kind: Option<crate::zombies::alt_ammo::AltAmmo>,
+    },
+    /// To everyone: alternate ammo `kind` went off at `at`: the Arc struck
+    /// the first `count` of `struck` in turn (zombie ids), Cinder burst
+    /// there.
+    AltAmmoFired {
+        kind: crate::zombies::alt_ammo::AltAmmo,
+        at: Vec3,
+        struck: [u8; crate::zombies::alt_ammo::ARC_KILLS],
+        count: u8,
+    },
     /// To a shooter: their shot (or knife, or grenade) number `shot` hit
     /// zombie `zombie`.
     Hit {
@@ -2499,6 +2517,34 @@ fn write_zombies_event(w: &mut BitWriter, event: &ZombiesEvent) {
             w.bits(15, ZOMBIES_TAG_BITS);
             write_vec3(w, at);
         }
+        ZombiesEvent::AltAmmo {
+            player,
+            weapon,
+            kind,
+        } => {
+            w.bits(16, ZOMBIES_TAG_BITS);
+            w.u8(player);
+            write_weapon(w, weapon);
+            w.bool(kind.is_some());
+            if let Some(kind) = kind {
+                w.bits(u32::from(kind.code()), 2);
+            }
+        }
+        ZombiesEvent::AltAmmoFired {
+            kind,
+            at,
+            struck,
+            count,
+        } => {
+            w.bits(17, ZOMBIES_TAG_BITS);
+            w.bits(u32::from(kind.code()), 2);
+            write_vec3(w, at);
+            let count = count.min(struck.len() as u8);
+            w.bits(u32::from(count), 4);
+            for id in &struck[..usize::from(count)] {
+                w.u8(*id);
+            }
+        }
         ZombiesEvent::Hit {
             zombie,
             shot,
@@ -2636,6 +2682,11 @@ fn write_zombies_event(w: &mut BitWriter, event: &ZombiesEvent) {
     }
 }
 
+fn read_alt_ammo(r: &mut BitReader) -> DecodeResult<crate::zombies::alt_ammo::AltAmmo> {
+    crate::zombies::alt_ammo::AltAmmo::from_code(r.bits(2)? as u8)
+        .ok_or(DecodeError::Invalid("alt ammo"))
+}
+
 fn read_zombies_event(r: &mut BitReader) -> DecodeResult<ZombiesEvent> {
     Ok(match r.bits(ZOMBIES_TAG_BITS)? {
         0 => ZombiesEvent::Round {
@@ -2653,6 +2704,33 @@ fn read_zombies_event(r: &mut BitReader) -> DecodeResult<ZombiesEvent> {
         15 => ZombiesEvent::HoundStrike {
             at: read_finite_vec3(r)?,
         },
+        16 => ZombiesEvent::AltAmmo {
+            player: r.u8()?,
+            weapon: read_weapon(r)?,
+            kind: if r.bool()? {
+                Some(read_alt_ammo(r)?)
+            } else {
+                None
+            },
+        },
+        17 => {
+            let kind = read_alt_ammo(r)?;
+            let at = read_finite_vec3(r)?;
+            let count = r.bits(4)? as u8;
+            let mut struck = [0u8; crate::zombies::alt_ammo::ARC_KILLS];
+            if usize::from(count) > struck.len() {
+                return Err(DecodeError::Invalid("arc count"));
+            }
+            for id in struck.iter_mut().take(usize::from(count)) {
+                *id = r.u8()?;
+            }
+            ZombiesEvent::AltAmmoFired {
+                kind,
+                at,
+                struck,
+                count,
+            }
+        }
         1 => ZombiesEvent::Hit {
             zombie: r.u8()?,
             shot: r.varint()?,
@@ -6857,6 +6935,17 @@ mod tests {
             }),
             GameEvent::Zombies(ZombiesEvent::HoundStrike {
                 at: Vec3::new(-4.0, 0.25, 12.5),
+            }),
+            GameEvent::Zombies(ZombiesEvent::AltAmmo {
+                player: 2,
+                weapon: WeaponId::expect("m4").upgraded().unwrap(),
+                kind: Some(crate::zombies::alt_ammo::AltAmmo::Cinder),
+            }),
+            GameEvent::Zombies(ZombiesEvent::AltAmmoFired {
+                kind: crate::zombies::alt_ammo::AltAmmo::Arc,
+                at: Vec3::new(3.0, 0.0, -2.0),
+                struck: [4, 9, 200, 0, 0, 0, 0, 0, 0],
+                count: 3,
             }),
             GameEvent::Zombies(ZombiesEvent::Hit {
                 zombie: 250,

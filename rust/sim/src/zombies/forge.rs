@@ -13,11 +13,17 @@
 //! `_zm_pack_a_punch_util.gsc` (cost 5000, `wait(0.35)` and `wait(3)` while
 //! it works, a 15 s `timeout`) and `_zm_weapons.gsc`
 //! (`get_upgraded_ammo_cost`, 4500).
+//!
+//! An upgraded weapon can go back in for [`REPACK_PRICE`]: it comes out
+//! the same weapon, full, with a new alternate ammo type
+//! ([`super::alt_ammo`]), as Black Ops III's re-pack (`aat_cost`, 2500).
 
 use crate::weapon::{CombatState, WeaponId};
 
 /// Points an upgrade costs (`vending_weapon_upgrade_cost`, 5000).
 pub const PRICE: u32 = 5000;
+/// Points a re-pack of an upgraded weapon costs (`aat_cost`, 2500).
+pub const REPACK_PRICE: u32 = 2500;
 /// Seconds the forge works the weapon (0.35 + 3).
 pub const WORK_SECONDS: f32 = 3.35;
 /// Seconds the upgraded weapon waits to be taken (`pack_a_punch.timeout`).
@@ -39,22 +45,37 @@ pub enum Refusal {
     NoPower,
     /// The forge is working or holding someone's weapon.
     Busy,
-    /// The weapon in hand has no upgrade, or is upgraded already.
+    /// The weapon in hand has no upgrade.
     NoUpgrade,
     /// It is the only weapon they carry: they would be left with nothing.
     OnlyWeapon,
     Points,
 }
 
-/// The upgrade of the weapon in `combat`'s hands, if a player with
-/// `points` may have it forged now (with the power `powered` and the forge
-/// `free`).
+/// What the forge would do with the weapon in hand.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Job {
+    /// The weapon that comes out.
+    pub weapon: WeaponId,
+    /// An upgraded weapon going back in for a new alternate ammo type.
+    pub repack: bool,
+}
+
+impl Job {
+    pub fn price(&self) -> u32 {
+        if self.repack { REPACK_PRICE } else { PRICE }
+    }
+}
+
+/// What the forge would do with the weapon in `combat`'s hands, if a player
+/// with `points` may have it done now (with the power `powered` and the
+/// forge `free`): an upgrade, or a re-pack of a weapon already upgraded.
 pub fn can_forge(
     combat: &CombatState,
     points: u32,
     powered: bool,
     free: bool,
-) -> Result<WeaponId, Refusal> {
+) -> Result<Job, Refusal> {
     if !powered {
         return Err(Refusal::NoPower);
     }
@@ -62,17 +83,27 @@ pub fn can_forge(
         return Err(Refusal::Busy);
     }
     let weapon = combat.weapon();
-    let upgrade = weapon.id.upgraded().filter(|_| weapon.carried);
-    let Some(upgrade) = upgrade else {
+    if !weapon.carried {
         return Err(Refusal::NoUpgrade);
+    }
+    let job = match weapon.id.upgraded() {
+        Some(upgrade) => Job {
+            weapon: upgrade,
+            repack: false,
+        },
+        None if weapon.id.def().upgraded => Job {
+            weapon: weapon.id,
+            repack: true,
+        },
+        None => return Err(Refusal::NoUpgrade),
     };
     if combat.slots.iter().filter(|s| s.carried).count() < 2 {
         return Err(Refusal::OnlyWeapon);
     }
-    if points < PRICE {
+    if points < job.price() {
         return Err(Refusal::Points);
     }
-    Ok(upgrade)
+    Ok(job)
 }
 
 /// Takes the weapon in hand away for the forge and brings the other one up.
@@ -129,7 +160,8 @@ mod tests {
         assert_eq!(can_forge(&combat, 9000, true, false), Err(Refusal::Busy));
         assert_eq!(can_forge(&combat, 4999, true, true), Err(Refusal::Points));
         let up = can_forge(&combat, 5000, true, true).unwrap();
-        assert_eq!(up.def().key, "ak47+forged");
+        assert_eq!(up.weapon.def().key, "ak47+forged");
+        assert!(!up.repack);
         hand_over(&mut combat);
         assert!(!combat.slots[0].carried);
         assert_eq!(combat.weapon().id, WeaponId::expect("m1911"));
@@ -142,6 +174,17 @@ mod tests {
             can_forge(&alone, 9000, true, true),
             Err(Refusal::OnlyWeapon)
         );
+    }
+
+    #[test]
+    fn an_upgraded_weapon_goes_back_in_for_2500() {
+        let up = WeaponId::expect("m4").upgraded().unwrap();
+        let combat = CombatState::new([up, WeaponId::expect("m1911")]);
+        assert_eq!(can_forge(&combat, 2499, true, true), Err(Refusal::Points));
+        let job = can_forge(&combat, 2500, true, true).unwrap();
+        assert!(job.repack);
+        assert_eq!(job.weapon, up, "the same weapon comes out");
+        assert_eq!(job.price(), 2500);
     }
 
     #[test]

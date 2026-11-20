@@ -10,6 +10,7 @@ use glam::Vec3;
 use crate::rng;
 use crate::weapon::{CombatState, WeaponId};
 
+pub mod alt_ammo;
 pub mod chase;
 pub mod drinks;
 pub mod forge;

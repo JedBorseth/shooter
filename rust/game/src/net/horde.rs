@@ -34,6 +34,7 @@ use shooter_sim::net::protocol::{
     self, MAX_ZOMBIES, ZOMBIE_SEND_TICKS, ZombieView, ZombiesEvent, ZombiesPhase,
 };
 use shooter_sim::rng;
+use shooter_sim::zombies::alt_ammo::{self, AltAmmo, Burn, Cooldowns};
 use shooter_sim::zombies::chase::{self, ChaseEvent, Chaser, Prey, Window, World};
 use shooter_sim::zombies::hounds;
 use shooter_sim::zombies::powerups::{self, DropContext, DropCycle};
@@ -88,6 +89,8 @@ pub enum HordeEvent {
     Bitten { player: u8, from: Vec3 },
     /// A strike landed at `at`: a hound stands there shortly.
     HoundStrike { at: Vec3 },
+    /// A burn from `shooter`'s Cinder killed a zombie.
+    BurnedToDeath { shooter: u8 },
     /// A window's boards changed (torn off or put back).
     Boards { window: u8, boards: u8 },
     /// A kill dropped a power-up.
@@ -201,6 +204,10 @@ pub struct Horde {
     last_hound_spawn: Option<usize>,
     strikes: Vec<(Vec3, f32, f32)>,
     hound_rules: ZombieRules,
+    /// Seconds into the game, for alternate ammo's cooldowns.
+    clock: f32,
+    alt_cooldowns: Cooldowns,
+    burns: Vec<Burn>,
     doors: Vec<MapDoor>,
     drops: Vec<PowerUpDrop>,
     next_drop_id: u8,
@@ -248,6 +255,9 @@ impl Horde {
             last_hound_spawn: None,
             strikes: Vec::new(),
             hound_rules: hounds::rules(),
+            clock: 0.0,
+            alt_cooldowns: Cooldowns::default(),
+            burns: Vec::new(),
             doors: map_doors(map),
             drops: Vec::new(),
             next_drop_id: 0,
@@ -272,6 +282,9 @@ impl Horde {
         self.rounds = Rounds::new(FIRST_BREAK).with_hounds(rng::hash(self.games, 0x484f_554e));
         self.strikes.clear();
         self.last_hound_spawn = None;
+        self.clock = 0.0;
+        self.alt_cooldowns = Cooldowns::default();
+        self.burns.clear();
         self.open_zones = vec![String::new()];
         self.gates.clear();
         self.history.clear();
@@ -525,7 +538,60 @@ impl Horde {
         if !over {
             self.update_power_ups(players, dt);
             self.step_carpenter(dt);
+            self.step_burns(dt);
         }
+        self.clock += dt;
+    }
+
+    /// Whether a hit by `shooter` with alternate ammo `kind`, rolling `roll`
+    /// (0..1), sets it off (its chance and cooldowns).
+    pub fn try_alt_ammo(&mut self, shooter: u8, kind: AltAmmo, roll: f32) -> bool {
+        self.alt_cooldowns.try_fire(shooter, kind, self.clock, roll)
+    }
+
+    /// Sets `zombies` on fire from `shooter`'s Cinder.
+    pub fn ignite(&mut self, zombies: &[u8], shooter: u8) {
+        for &id in zombies {
+            let Some(health) = self.health(id) else {
+                continue;
+            };
+            self.burns.retain(|b| b.zombie != id);
+            self.burns.push(Burn::new(id, shooter, health));
+        }
+    }
+
+    /// Burns the zombies on fire.
+    fn step_burns(&mut self, dt: f32) {
+        let mut due = Vec::new();
+        self.burns.retain_mut(|burn| {
+            if let Some(damage) = burn.step(dt) {
+                due.push((burn.zombie, burn.shooter, damage));
+            }
+            burn.left > 0
+        });
+        for (zombie, shooter, damage) in due {
+            if let Some(hurt) = self.hurt(zombie, damage, Vec3::Y, None, false)
+                && hurt.killed
+            {
+                self.pending.push(HordeEvent::BurnedToDeath { shooter });
+                self.burns.retain(|b| b.zombie != zombie);
+            }
+        }
+    }
+
+    /// The Arc's path from zombie `start`, which stood at `at` (struck
+    /// though it may have just died), through the living.
+    pub fn arc_path(&self, start: u8, at: Vec3) -> Vec<u8> {
+        let mut zombies = self.living();
+        if !zombies.iter().any(|(id, _)| *id == start) {
+            zombies.push((start, at));
+        }
+        alt_ammo::arc_path(start, &zombies)
+    }
+
+    /// Living zombies Cinder sets on fire round `start`, at `at`.
+    pub fn cinder_targets(&self, start: u8, at: Vec3) -> Vec<u8> {
+        alt_ammo::cinder_targets(start, at, &self.living())
     }
 
     /// Players earned `points` (after Double Points): the drop cycle counts

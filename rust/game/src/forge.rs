@@ -99,12 +99,21 @@ impl Forge {
             });
         let player = player.bind();
         let combat = &player.sim_state().combat;
-        let price = i64::from(forge::PRICE);
+        let repack = combat.def().upgraded;
+        let price = i64::from(if repack {
+            forge::REPACK_PRICE
+        } else {
+            forge::PRICE
+        });
         match forge::can_forge(combat, u32::try_from(points).unwrap_or(0), true, true) {
-            Ok(up) => GString::from(&format!(
+            Ok(job) if job.repack => GString::from(&format!(
+                "[{{key}}] Forge new ammo into {}: {price}",
+                combat.def().name
+            )),
+            Ok(job) => GString::from(&format!(
                 "[{{key}}] Forge {} into {}: {price}",
                 combat.def().name,
-                up.def().name
+                job.weapon.def().name
             )),
             Err(forge::Refusal::Points) => GString::from(&format!("Forge: {price} points")),
             Err(forge::Refusal::OnlyWeapon) => {

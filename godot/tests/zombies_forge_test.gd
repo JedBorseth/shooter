@@ -9,6 +9,10 @@ extends SceneTree
 ##   with twice the plain weapon's damage and a bigger magazine;
 ## - wall ammo for the upgraded weapon costs 4500 and refills it, not the
 ##   plain one;
+## - an upgraded weapon goes back in for 2500 and comes out with alternate
+##   ammo, a different type each time;
+## - hits with the Arc sometimes kill the zombie hit and those near it, and
+##   with Cinder kill it and set its neighbours burning to death;
 ## - an upgrade left untaken for 15 s is lost.
 ## godot --headless --path godot --script res://tests/zombies_forge_test.gd
 
@@ -73,6 +77,8 @@ func _run() -> void:
 	_check(_server.debug_buy_wall_weapon(BOT, "m4", 1200), "wall ammo for it")
 	_check(_server.player_points(BOT) == points - 4500, "costs 4500")
 	_check(_server.player_weapon(BOT) == "m4+forged", "and keeps the upgrade")
+	await _repack()
+	await _alt_ammo()
 
 	_check(_server.debug_buy_wall_weapon(BOT, "ak47", 1200), "an AK-47 in its place")
 	await _seconds(1.5)
@@ -82,6 +88,50 @@ func _run() -> void:
 	_check(_server.forge_phase() == "idle", "left untaken for 15 s, the upgrade is lost")
 	_check(not _server.debug_take_from_forge(BOT), "and cannot be taken")
 	_finish()
+
+
+func _repack() -> void:
+	_check(_server.alt_ammo_of(BOT, "m4+forged") == "", "a first upgrade has no alternate ammo")
+	await _seconds(1.5)
+	var points := _server.player_points(BOT)
+	_server.debug_use(BOT, "forge", 0, true)
+	_check(_server.forge_phase() == "working", "an upgraded weapon goes back in")
+	_check(_server.player_points(BOT) == points - 2500, "for 2500")
+	await _wait_for(func() -> bool: return _server.forge_phase() == "offering", 4.0)
+	_check(_server.debug_take_from_forge(BOT), "and comes out")
+	_check(_server.player_weapon(BOT) == "m4+forged", "the same weapon")
+	var first := _server.alt_ammo_of(BOT, "m4+forged")
+	_check(first in ["arc", "cinder"], "with alternate ammo, %s" % first)
+	await _seconds(1.5)
+	_server.debug_use(BOT, "forge", 0, true)
+	await _wait_for(func() -> bool: return _server.forge_phase() == "offering", 4.0)
+	_server.debug_take_from_forge(BOT)
+	var second := _server.alt_ammo_of(BOT, "m4+forged")
+	_check(second != first and second != "", "a re-pack never gives the same (%s)" % second)
+
+
+## Hits with each alternate ammo until it goes off.
+func _alt_ammo() -> void:
+	_server.zombies_harmless = true
+	_server.debug_skip_zombie_break()
+	for kind in ["arc", "cinder"]:
+		_server.debug_set_alt_ammo(BOT, "m4+forged", kind)
+		await _wait_for(func() -> bool: return _server.zombies_alive().size() >= 3, 30.0)
+		var fired := false
+		for i in 300:
+			var zombies := _server.zombies_alive()
+			if zombies.is_empty():
+				await physics_frame
+				continue
+			var target: Dictionary = zombies[0]
+			_server.debug_hurt_zombie(BOT, int(target.id), 1.0, false)
+			var after := _server.zombies_alive()
+			if after.size() < zombies.size():
+				fired = true
+				break
+			await physics_frame
+		_check(fired, "a 1-damage hit with %s ammo sets it off and kills" % kind)
+		await _seconds(15.5)
 
 
 func _seconds(seconds: float) -> void:

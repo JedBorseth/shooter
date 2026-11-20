@@ -295,7 +295,8 @@ Done: rounds with a growing, toughening horde, zombies that walk straight at the
   - [ ] Crate sounds (the lid, the cycle, the duck) from real CC0 recordings.
   - [x] Fire Sale ([docs/zombies.md](docs/zombies.md#power-ups)): once the crate has moved, a power-up that puts a crate at every spot for 30 s at 10 points a spin; sale spins never land on the duck.
 - [x] The forge, an upgrade machine ([docs/zombies.md](docs/zombies.md#the-forge)): with the power on, 5000 points upgrades the weapon in hand in 3.35 s (twice the damage, half again the magazine, twice the reserve, a blue sheen), taken within 15 s or lost; its wall ammo costs 4500.
-  - [ ] Re-forging an upgraded weapon for an alternate ammo type (Black Ops III's 2500-point AAT).
+  - [x] Re-forging an upgraded weapon for an alternate ammo type ([docs/zombies.md](docs/zombies.md#re-forging-for-alternate-ammo), Black Ops III's 2500-point AAT): Arc (Dead Wire's chain) and Cinder (Blast Furnace's burst and burn).
+  - [ ] More alternate ammo types (Black Ops III's Thunder Wall knock-back, Fireworks, Turned).
   - [ ] Forge sounds from real CC0 recordings.
 - [x] The title screen's Zombies runs on a local dedicated server: Solo starts a private one that skips the ready-up and pauses; Co-op hosts one friends on the network find under Multiplayer, LAN (up to four players, ready-up, no pause). The scoreboard shows points, kills, downs, revives, and headshots.
 - [ ] Remove the offline `ZombieDirector` game once the benchmark and the capture scripts run Zombies on a server (they are its only users now).

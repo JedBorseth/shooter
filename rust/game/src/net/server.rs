@@ -115,6 +115,7 @@ use shooter_sim::tdm::{
 };
 use shooter_sim::turret::{self, Turret, TurretHit, Turrets};
 use shooter_sim::weapon::{self, CombatEvent, CombatState, WeaponId};
+use shooter_sim::zombies::alt_ammo::{self, AltAmmo};
 use shooter_sim::zombies::drinks::{self, Drink, Drinks};
 use shooter_sim::zombies::forge;
 use shooter_sim::zombies::{self, laststand};
@@ -567,7 +568,7 @@ struct LastStand {
 }
 
 /// One player's Zombies tallies.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 struct ZombiesStats {
     points: u32,
     kills: u32,
@@ -580,6 +581,8 @@ struct ZombiesStats {
     rebuilt: u32,
     /// The last tick they held use at a window.
     rebuild_seen: Option<Tick>,
+    /// Their re-packed weapons' alternate ammo.
+    alt_ammo: Vec<(WeaponId, AltAmmo)>,
     /// Zombies ignore them until this tick (just revived).
     ignored_until: Tick,
 }
@@ -2100,10 +2103,40 @@ impl NetServer {
         let Some(weapon) = forge_.offered(id) else {
             return false;
         };
-        forge_.taken();
+        let taken = forge_.taken();
         self.debug_pick_up(id, weapon);
         self.broadcast_forge();
+        if let Some((by, weapon, repack)) = taken {
+            self.set_alt_ammo(by, weapon, repack);
+        }
         true
+    }
+
+    /// Zombies: the alternate ammo on player `id`'s `weapon` (a key), or ""
+    /// (tests).
+    #[func]
+    fn alt_ammo_of(&self, id: i32, weapon: GString) -> GString {
+        let Some(weapon) = WeaponId::by_key(&weapon.to_string()) else {
+            return GString::new();
+        };
+        self.avatars
+            .iter()
+            .find(|a| i32::from(a.id) == id)
+            .and_then(|a| a.zombies.alt_ammo.iter().find(|(w, _)| *w == weapon))
+            .map_or(GString::new(), |(_, kind)| GString::from(kind.key()))
+    }
+
+    /// Zombies: gives player `id`'s `weapon` (a key) alternate ammo `kind`
+    /// ("arc", "cinder", or "" for none) (tests).
+    #[func]
+    fn debug_set_alt_ammo(&mut self, id: i32, weapon: GString, kind: GString) {
+        let (Ok(id), Some(weapon)) = (u8::try_from(id), WeaponId::by_key(&weapon.to_string()))
+        else {
+            return;
+        };
+        let kind = kind.to_string();
+        let kind = AltAmmo::ALL.into_iter().find(|a| a.key() == kind);
+        self.set_alt_ammo(id, weapon, kind);
     }
 
     /// Zombies: player `id` takes `weapon` (a key) from a wall rack priced
@@ -2313,7 +2346,13 @@ impl NetServer {
             direction: Vec3::NEG_Z,
             part: shooter_sim::hitbox::CHEST_SHAPE as u8,
         };
-        self.hurt_zombies(attacker, 0, &[hit], false);
+        // As a shot of the weapon in hand.
+        let weapon = self
+            .avatars
+            .iter()
+            .find(|a| a.id == attacker)
+            .map(|a| a.predicted.state.combat.weapon().id);
+        self.hurt_zombies(attacker, 0, &[hit], false, weapon);
     }
 }
 
@@ -4015,10 +4054,15 @@ impl NetServer {
             self.send_points(id, -(cost as i32));
         }
         if forge_taken {
-            if let Some(forge_) = self.horde.as_mut().and_then(|h| h.machines.forge.as_mut()) {
-                forge_.taken();
-            }
+            let taken = self
+                .horde
+                .as_mut()
+                .and_then(|h| h.machines.forge.as_mut())
+                .and_then(|f| f.taken());
             self.broadcast_forge();
+            if let Some((by, weapon, repack)) = taken {
+                self.set_alt_ammo(by, weapon, repack);
+            }
         }
         if !crate_taken.is_empty() {
             if let Some(crate_) = self
@@ -4135,6 +4179,7 @@ impl NetServer {
                 HordeEvent::RoundStarted(round) => self.on_zombies_round(round),
                 HordeEvent::Struck { player, from } => self.zombie_strike(player, from, false),
                 HordeEvent::Bitten { player, from } => self.zombie_strike(player, from, true),
+                HordeEvent::BurnedToDeath { shooter } => self.pay_kills(shooter, 1),
                 HordeEvent::HoundStrike { at } => {
                     self.broadcast_event(&GameEvent::Zombies(
                         protocol::ZombiesEvent::HoundStrike { at },
@@ -4402,19 +4447,30 @@ impl NetServer {
         if !state.alive() || state.downed {
             return;
         }
-        let Ok(upgrade) =
+        let Ok(job) =
             forge::can_forge(&state.combat, avatar.zombies.points, powered, forge_.free())
         else {
             return;
         };
-        avatar.zombies.points -= forge::PRICE;
+        let price = job.price();
+        // A re-pack comes out with alternate ammo it does not have now.
+        let repack = job.repack.then(|| {
+            let current = avatar
+                .zombies
+                .alt_ammo
+                .iter()
+                .find(|(w, _)| *w == job.weapon)
+                .map(|(_, a)| *a);
+            AltAmmo::repack(current, rng::hash(u32::from(id), self.tick))
+        });
+        avatar.zombies.points -= price;
         forge::hand_over(&mut state.combat);
-        forge_.start(id, upgrade);
+        forge_.start(id, job.weapon, repack);
         godot_print!(
             "server: player {id} handed the forge {}",
-            upgrade.plain().def().key
+            job.weapon.def().key
         );
-        self.send_points(id, -(forge::PRICE as i32));
+        self.send_points(id, -(price as i32));
         self.broadcast_forge();
     }
 
@@ -4854,9 +4910,118 @@ impl NetServer {
         self.send_points(id, points as i32);
     }
 
+    /// Zombies: player `id`'s `weapon` comes out of the forge: a re-pack
+    /// gives it alternate ammo `kind`; a first upgrade has none.
+    fn set_alt_ammo(&mut self, id: u8, weapon: WeaponId, kind: Option<AltAmmo>) {
+        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
+            return;
+        };
+        let list = &mut avatar.zombies.alt_ammo;
+        list.retain(|(w, _)| *w != weapon);
+        if let Some(kind) = kind {
+            list.push((weapon, kind));
+            godot_print!(
+                "server: player {id}'s {} has {} ammo",
+                weapon.def().key,
+                kind.key()
+            );
+        }
+        self.broadcast_event(&GameEvent::Zombies(protocol::ZombiesEvent::AltAmmo {
+            player: id,
+            weapon,
+            kind,
+        }));
+    }
+
+    /// Zombies: the alternate ammo of the weapon player `id` shot with, if
+    /// they still carry it.
+    fn alt_ammo_for(&self, id: u8, weapon: WeaponId) -> Option<AltAmmo> {
+        let avatar = self.avatars.iter().find(|a| a.id == id)?;
+        if !avatar
+            .predicted
+            .state
+            .combat
+            .carries_upgraded(weapon.plain())
+        {
+            return None;
+        }
+        avatar
+            .zombies
+            .alt_ammo
+            .iter()
+            .find(|(w, _)| *w == weapon)
+            .map(|(_, kind)| *kind)
+    }
+
+    /// Zombies: a hit with alternate ammo `kind` on zombie `zombie`, which
+    /// was at `at`, may set it off: the Arc kills down a chain, Cinder
+    /// kills it and sets those round it on fire. Kills pay `attacker`.
+    fn fire_alt_ammo(&mut self, attacker: u8, shot: u32, kind: AltAmmo, zombie: u8, at: Vec3) {
+        let roll = rng::unit(
+            shot.wrapping_mul(131)
+                .wrapping_add(u32::from(attacker))
+                .wrapping_add(self.tick.wrapping_mul(7)),
+            u32::from(zombie),
+        );
+        let Some(horde) = &mut self.horde else {
+            return;
+        };
+        if !horde.try_alt_ammo(attacker, kind, roll) {
+            return;
+        }
+        let (struck, burning) = match kind {
+            AltAmmo::Arc => (horde.arc_path(zombie, at), Vec::new()),
+            AltAmmo::Cinder => (vec![zombie], horde.cinder_targets(zombie, at)),
+        };
+        let mut kills = 0;
+        for &id in &struck {
+            if let Some(health) = horde.health(id)
+                && horde
+                    .hurt(id, health + 1.0, Vec3::Y, None, false)
+                    .is_some_and(|h| h.killed)
+            {
+                kills += 1;
+            }
+        }
+        horde.ignite(&burning, attacker);
+        let mut ids = [0u8; alt_ammo::ARC_KILLS];
+        let count = struck.len().min(ids.len());
+        ids[..count].copy_from_slice(&struck[..count]);
+        self.broadcast_event(&GameEvent::Zombies(protocol::ZombiesEvent::AltAmmoFired {
+            kind,
+            at,
+            struck: ids,
+            count: count as u8,
+        }));
+        self.pay_kills(attacker, kills);
+    }
+
+    /// Zombies: `attacker` killed `kills` zombies by other means than a
+    /// hit of their own (alternate ammo): each counts and pays as a kill.
+    fn pay_kills(&mut self, attacker: u8, kills: u32) {
+        if kills == 0 {
+            return;
+        }
+        if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == attacker) {
+            avatar.zombies.kills += kills;
+            avatar.score.kills += kills;
+        }
+        self.award_points(attacker, kills * zombies::points::KILL);
+        self.next_scoreboard = self.tick;
+    }
+
     /// Applies one attack's hits on zombies: damage, the attacker's hit
-    /// markers, and points.
-    fn hurt_zombies(&mut self, attacker: u8, shot: u32, hits: &[TargetHit], melee: bool) {
+    /// markers, and points. `weapon` is the gun that fired, for its
+    /// alternate ammo.
+    fn hurt_zombies(
+        &mut self,
+        attacker: u8,
+        shot: u32,
+        hits: &[TargetHit],
+        melee: bool,
+        weapon: Option<WeaponId>,
+    ) {
+        let alt = weapon.and_then(|w| self.alt_ammo_for(attacker, w));
         for hit in hits {
             let Some(horde) = &mut self.horde else {
                 return;
@@ -4887,6 +5052,9 @@ impl NetServer {
             self.award_points(attacker, points);
             if hurt.killed {
                 self.next_scoreboard = self.tick;
+            }
+            if let Some(kind) = alt {
+                self.fire_alt_ammo(attacker, shot, kind, hit.id, hurt.position);
             }
         }
     }
@@ -4932,7 +5100,7 @@ impl NetServer {
             })
             .collect();
         if let Some(owner) = owner {
-            self.hurt_zombies(owner, shot, &hits, false);
+            self.hurt_zombies(owner, shot, &hits, false, None);
         } else if let Some(horde) = &mut self.horde {
             for hit in hits {
                 horde.hurt(hit.id, hit.damage, hit.direction, Some(hit.part), false);
@@ -5359,7 +5527,7 @@ impl NetServer {
                 direction: (feet - strike.feet).normalize_or_zero(),
                 part: shooter_sim::hitbox::CHEST_SHAPE as u8,
             };
-            self.hurt_zombies(strike.attacker, strike.shot, &[hit], true);
+            self.hurt_zombies(strike.attacker, strike.shot, &[hit], true, None);
             return;
         }
         let candidates: Vec<(u8, Vec3)> = self
@@ -5643,7 +5811,13 @@ impl NetServer {
             for hit in &mut zombie_hits {
                 hit.damage *= scale;
             }
-            self.hurt_zombies(shot.shooter, shot.shot, &zombie_hits, false);
+            self.hurt_zombies(
+                shot.shooter,
+                shot.shot,
+                &zombie_hits,
+                false,
+                Some(shot.weapon),
+            );
         }
         let hits = lag::resolve_shot(def, &pellets, &targets);
         let attack = Attack {

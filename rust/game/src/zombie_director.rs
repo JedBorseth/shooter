@@ -92,6 +92,9 @@ pub struct ZombieDirector {
     net_fire_sale_ends: f64,
     /// Online: this round is a hound round.
     net_hounds: bool,
+    /// Online: this player's re-packed weapons (keys) and their alternate
+    /// ammo's name.
+    net_alt_ammo: Vec<(String, &'static str)>,
     /// Online: engine seconds this player bleeds out, while down.
     net_bleeds_out: Option<f64>,
     /// Online: a revive under way that involves this player: the other
@@ -306,6 +309,17 @@ impl ZombieDirector {
         self.double_points_left
     }
 
+    /// The name of the alternate ammo on this player's weapon `key` (an
+    /// upgraded one), or "" (online only).
+    #[func]
+    fn alt_ammo_label(&self, key: GString) -> GString {
+        let key = key.to_string();
+        self.net_alt_ammo
+            .iter()
+            .find(|(k, _)| *k == key)
+            .map_or(GString::new(), |(_, label)| GString::from(*label))
+    }
+
     /// Whether this round is a hound round (online only).
     #[func]
     fn hound_round(&self) -> bool {
@@ -447,6 +461,15 @@ impl ZombieDirector {
 
     /// Online: seconds of Insta-Kill and Double Points left. Held as the
     /// engine times they end, so the HUD counts them down.
+    /// Online: this player's weapon `key` has alternate ammo `label` now
+    /// (none: no longer).
+    pub fn net_alt_ammo(&mut self, key: &str, label: Option<&'static str>) {
+        self.net_alt_ammo.retain(|(k, _)| k != key);
+        if let Some(label) = label {
+            self.net_alt_ammo.push((key.to_string(), label));
+        }
+    }
+
     pub fn net_timers(&mut self, insta_kill: f64, double_points: f64, fire_sale: f64) {
         let now = now_seconds();
         self.net_insta_kill_ends = now + insta_kill.max(0.0);

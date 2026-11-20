@@ -218,8 +218,28 @@ snapshots, and drawn with the plain weapon's model and sounds plus the
 sheen (`shaders/forged.gdshader`, a material overlay set by
 `WeaponView::set_forged`).
 
-**Differences from Black Ops, on purpose:** no re-pack for an alternate
-ammo type (Black Ops III's 2500-point AAT), no lone sidearm upgrade (it
+### Re-forging for alternate ammo
+
+An upgraded weapon can go back in for 2500 points (Black Ops III's re-pack,
+`aat_cost`): the same weapon comes out, full, with an alternate ammo type
+drawn at random, never the one it had (`rust/sim/src/zombies/alt_ammo.rs`).
+A first upgrade has none, as in Black Ops III. The HUD names it after the
+weapon, where an attachment goes ("M4A1 MK II · ARC").
+
+| Ammo | Here | Black Ops III |
+| --- | --- | --- |
+| Arc | A hit sets it off 20% of the time: the zombie hit is electrocuted, and the charge jumps to the nearest zombie in reach, and on: up to 8 jumps and 9 kills, its reach 3.05 m at first and 0.51 m less each jump. 5 s before the same player's weapon can set it off again, 2 s before anyone's | Dead Wire (`_zm_aat_dead_wire.gsc`): `aat::register(…, 0.2, 0, 5, 2, 1, …)`, `create_lightning_chain_params(8, 9, 120)`, radius decay 20 units |
+| Cinder | 15% of the time: the zombie hit bursts into flame and dies, and every zombie within 3.05 m burns, losing a sixth of its health every 0.5 s from 0.25 s on, seven times. 15 s before the same player's weapon can set it off again | Blast Furnace (`_zm_aat_blast_furnace.gsc`): `aat::register(…, 0.15, 0, 15, 0, 1, …)`, 120 units, `self.health / 6` seven times |
+
+Either can go off on the killing hit, and only from shots (not the knife or
+grenades). Everything it kills counts and pays the shooter as a kill (60).
+The server decides; clients see the Arc as a cold bolt jumping between the
+struck and Cinder as a burst of flame (`scripts/zombies_alt_ammo_fx.gd`,
+`ZombiesEvent::AltAmmoFired`).
+
+**Differences from Black Ops, on purpose:** two alternate ammo types, not
+five (no Fireworks, Thunder Wall, or Turned), under our own names. No lone
+sidearm upgrade (it
 would leave the player with nothing in this game's two slots), and no
 sounds yet (real CC0 recordings only).
 
