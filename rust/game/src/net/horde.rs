@@ -317,9 +317,14 @@ impl Horde {
 
     /// Ends the current break now (tests).
     pub fn skip_break(&mut self) {
+        self.skip_break_to(self.rounds.round);
+    }
+
+    /// Ends the break now and starts round `round` (tests and benches).
+    pub fn skip_break_to(&mut self, round: u32) {
         if self.rounds.phase == Phase::Break {
             let mut fresh = Rounds::new(0.0);
-            fresh.round = self.rounds.round;
+            fresh.round = round.max(1);
             self.rounds = fresh;
         }
     }

@@ -1341,6 +1341,7 @@ impl NetClient {
             Some(Baseline {
                 players: history.get(tick)?,
                 own: history.own(tick, id),
+                zombies: history.zombies(tick).map(|z| (tick, z)),
             })
         }) {
             Ok(message) => message,
@@ -2042,6 +2043,9 @@ impl NetClient {
             .map(|own| (self.player_id.unwrap_or(0), own.predicted));
         self.history
             .insert_with_own(tick, snapshot.players.clone(), owns.into_iter().collect());
+        if let Some(zombies) = &snapshot.zombies {
+            self.history.insert_zombies(tick, zombies.clone());
+        }
         let newest = self.newest.is_none_or(|n| tick > n);
         if newest {
             self.record_tape(&snapshot);

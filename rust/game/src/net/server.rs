@@ -275,6 +275,10 @@ pub struct NetServer {
     /// away, and counted (`bandwidth_report`).
     #[export]
     bandwidth_probe_rtt_ms: f32,
+    /// Zombies: zombies swing but their strikes do no harm, so a bench keeps
+    /// its players up through a long round.
+    #[export]
+    zombies_harmless: bool,
 
     host: Option<Gd<ENetConnection>>,
     clients: Vec<ClientSlot>,
@@ -394,6 +398,8 @@ struct ClientSlot {
     inputs: InputQueue,
     /// Newest snapshot the client has acknowledged.
     ack: Option<Tick>,
+    /// Zombies: newest acknowledged snapshot that carried the horde.
+    zombie_ack: Option<Tick>,
     connected_at: Tick,
     /// The newest view tick the client sent, for shots fired by inputs
     /// without one.
@@ -1728,6 +1734,14 @@ impl NetServer {
         }
     }
 
+    /// Zombies: ends the break now and starts round `round` (benches).
+    #[func]
+    fn debug_skip_zombie_break_to(&mut self, round: i32) {
+        if let Some(horde) = &mut self.horde {
+            horde.skip_break_to(round.max(1) as u32);
+        }
+    }
+
     /// Zombies: player `attacker` deals `damage` to zombie `zombie` as if
     /// shot, with the points it pays (tests).
     #[func]
@@ -1842,6 +1856,7 @@ impl NetServer {
                     player: None,
                     inputs: InputQueue::default(),
                     ack: None,
+                    zombie_ack: None,
                     connected_at: self.tick,
                     view_tick: None,
                     debug_rewound: false,
@@ -1990,6 +2005,9 @@ impl NetServer {
                     && client.ack.is_none_or(|current| ack > current)
                 {
                     client.ack = Some(ack);
+                    if self.history.zombies(ack).is_some() {
+                        client.zombie_ack = Some(ack);
+                    }
                 }
             }
             ClientMessage::Debug { rewound_hitboxes } => {
@@ -3343,6 +3361,9 @@ impl NetServer {
 
     /// A zombie's swing landed on player `id`: the two-hit rule.
     fn zombie_strike(&mut self, id: u8, from: Vec3) {
+        if self.zombies_harmless {
+            return;
+        }
         let max = self.params.health.max_health;
         let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
             return;
@@ -6310,6 +6331,9 @@ impl NetServer {
         self.lag.record(self.tick, views.clone());
         let tick = self.tick;
         let zombie_views = self.horde.as_mut().and_then(|h| h.views_for(tick));
+        if let Some(zombies) = &zombie_views {
+            self.history.insert_zombies(tick, zombies.clone());
+        }
         self.radar.expire(tick);
         let radars: Vec<(u8, RadarView)> = self
             .avatars
@@ -6333,7 +6357,7 @@ impl NetServer {
             let outgoing = parts.for_player(
                 &self.history,
                 avatar,
-                client.ack,
+                (client.ack, client.zombie_ack),
                 client.inputs.last_applied(),
             );
             transport::send_unreliable(&mut client.peer, &outgoing.encode());
@@ -6343,7 +6367,10 @@ impl NetServer {
             let ack = probe.ack(tick);
             for avatar in self.avatars.iter().filter(|a| a.bot) {
                 let last_input = probe.last_input(avatar.id, tick);
-                let mut outgoing = parts.for_player(&self.history, avatar, ack, last_input);
+                // The probe's client receives every snapshot.
+                let zombie_ack = ack.and_then(|t| self.history.zombies_by(t)).map(|(t, _)| t);
+                let mut outgoing =
+                    parts.for_player(&self.history, avatar, (ack, zombie_ack), last_input);
                 let bytes = outgoing.encode().len();
                 let own = outgoing.snapshot.own.take();
                 let without_own = outgoing.encode().len();
@@ -6367,15 +6394,17 @@ struct SnapshotParts<'a> {
 }
 
 impl SnapshotParts<'_> {
-    /// The snapshot for `avatar`'s client, delta-encoded against `ack` if the
-    /// server still has it.
+    /// The snapshot for `avatar`'s client, delta-encoded against what it
+    /// acknowledged (`acks`: its newest snapshot, and its newest that
+    /// carried the horde) if the server still has it.
     fn for_player(
         &self,
         history: &SnapshotHistory,
         avatar: &Avatar,
-        ack: Option<Tick>,
+        acks: (Option<Tick>, Option<Tick>),
         last_input: u32,
     ) -> Outgoing {
+        let (ack, zombie_ack) = acks;
         let id = avatar.id;
         let others: Vec<PlayerView> = self.views.iter().filter(|v| v.id != id).copied().collect();
         let baseline: Option<(Tick, Vec<PlayerView>)> = ack.and_then(|tick| {
@@ -6407,6 +6436,7 @@ impl SnapshotParts<'_> {
             },
             base_players: baseline.map(|(_, views)| views).unwrap_or_default(),
             base_own,
+            base_zombies: zombie_ack.and_then(|tick| Some((tick, history.zombies(tick)?.to_vec()))),
         }
     }
 }
@@ -6416,6 +6446,7 @@ struct Outgoing {
     snapshot: Snapshot,
     base_players: Vec<PlayerView>,
     base_own: Option<Predicted>,
+    base_zombies: Option<(Tick, Vec<protocol::ZombieView>)>,
 }
 
 impl Outgoing {
@@ -6424,6 +6455,10 @@ impl Outgoing {
         ServerMessage::Snapshot(self.snapshot.clone()).encode_with(Baseline {
             players: &self.base_players,
             own: self.base_own.as_ref(),
+            zombies: self
+                .base_zombies
+                .as_ref()
+                .map(|(tick, zombies)| (*tick, zombies.as_slice())),
         })
     }
 }

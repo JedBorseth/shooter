@@ -180,6 +180,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
   - [x] A reproducible bench: the server encodes every bot's snapshots and inputs as if it were a client and counts them; CI fails past a budget.
   - [x] The receiver's own state as field-by-field changes from the acknowledged snapshot's (generic `net::delta`): 94 kbps to 15.
   - [x] Inputs: view angles on a 2^-14 radian grid, and each input in a packet as changes from the one before: 106 kbps up to 37.
+  - [x] Other players field by field through the same coder, and the Zombies horde as changes from the acknowledged one: about 68 kbps down in a 6v6, and 52 in Zombies with 24 zombies (83 before).
 
 ## Phase 3: lag compensation
 
