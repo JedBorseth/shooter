@@ -611,3 +611,33 @@ setup for every mode, Search and Destroy included; servers load it with
   Pump House, the Rack Deck (a floor up), and the Fire Pumps.
 - **Search and Destroy:** Red defends. A is in the pump house's east room on
   the north route; B is on Red's quay by the containers on the south route.
+
+## Editor add-ons for dressing
+
+- Use **ProtonScatter** to distribute clutter along paths or across areas in
+  Godot. Choose props from the [prop catalog](../godot/assets/props/catalog.json).
+- Use **FuncGodot** to build TrenchBroom `.map` brush geometry into a Godot scene.
+  New FuncGodotMap nodes use `trenchbroom/shooter_map_settings.tres`, which shares
+  the entity definitions used by TrenchBroom. It uses FuncGodot's default inverse
+  scale of 32, so one Quake unit is 1/32 meter and player-sized spaces have a
+  texture density similar to Quake. [FuncGodot build guide](https://func-godot.github.io/func_godot_docs/FuncGodot%20Manual/pages/guide_building_maps.html#inverse-scale-factor)
+
+On Linux x86-64, download the TrenchBroom 2025.1 AppImage, make it executable with
+`chmod +x TrenchBroom-Linux-x86_64-v2025.1-Release.AppImage`, and launch it from
+outside the checkout. [TrenchBroom 2025.1 release](https://github.com/TrenchBroom/TrenchBroom/releases/tag/v2025.1)
+
+1. In Godot, open `addons/func_godot/func_godot_local_config.tres`. Set
+   **TrenchBroom Game Config Folder** to the absolute path to your TrenchBroom
+   user games folder plus `Shooter` (on Linux, `~/.TrenchBroom/games/Shooter`).
+   Set **Map Editor Game Path** to the checkout's `godot/` directory and click
+   **Export func_godot settings**.
+2. Open `trenchbroom/shooter_game_config.tres` and click **Export GameConfig**.
+   This writes `GameConfig.cfg`, `Shooter.fgd`, and the game icon to the user
+   games folder. [FuncGodot configuration guide](https://func-godot.github.io/func_godot_docs/FuncGodot%20Manual/pages/guide_map_editor_config.html)
+3. Restart TrenchBroom, select **Shooter** from its game list, and set its
+   **Game Path** in Preferences to the same `godot/` directory so it finds
+   `assets/textures`.
+
+Before shipping a dressed scene, keep the generated geometry and prop instances
+as ordinary Godot resources and nodes. The export presets exclude both add-ons
+and the TrenchBroom configuration.
