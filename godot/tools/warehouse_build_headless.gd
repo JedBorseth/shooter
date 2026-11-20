@@ -6,11 +6,11 @@ extends SceneTree
 ## only rebuilt from the editor (Cyclops needs it to regenerate its meshes).
 ## Run it with a real renderer (a display, or Xvfb), not --headless: the
 ## headless renderer keeps no MultiMesh instances, so the girders, joists,
-## rods, trays, and fixtures would be saved empty. It refuses to.
+## rods, trays, fixtures, and strewn clutter would be saved empty. It refuses to.
 
 const LEVEL := "res://scenes/warehouse.tscn"
 const Builder := preload("res://tools/warehouse_photo_build.gd")
-const MULTIMESH_PARTS := ["structure", "lighting", "utilities"]
+const MULTIMESH_PARTS := ["structure", "lighting", "utilities", "detail"]
 
 
 func _initialize() -> void:

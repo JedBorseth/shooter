@@ -151,11 +151,14 @@ WRECK_AREA = (-17.2, -14.3, -6.8, -3.2)
 
 def fallen_forklift():
     # The model's forks point +Z, its counterweight -Z; 3.35 m long, 1.2 m
-    # wide, 2.3 m to the top of the guard. Rolled onto its left side, the guard
-    # toward the aisle and the wheels toward the wall it skidded into.
+    # wide, 2.3 m to the top of the guard. Rolled onto its side, its open
+    # guard against the wall it tipped into and its chassis and wheels toward
+    # the aisle. One box clips it: flush with the chassis on the aisle side
+    # (the wheels stand a few centimetres proud), back to the wall over the
+    # guard, so nothing stops a player or a round in empty air.
     x, z = -15.55, -5.0
-    piece("forklift", x, 0.0, z, yaw=7.0, roll=-86.0, name="FallenForklift",
-          clip=[[0.0, 0.56, -0.62, 2.2, 1.1, 2.1]])
+    piece("forklift", x, 0.0, z, yaw=7.0, roll=86.0, name="FallenForklift",
+          clip=[[-0.24, 0.575, -0.78, 1.96, 1.15, 1.76]])
     # Its load went over with it: a broken pallet, sheets and board blanks.
     strew("broken_pallet", -13.6, -2.7, 35)
     strew("litter_cardboard", -13.9, -3.4, 80)
@@ -171,17 +174,20 @@ def fallen_forklift():
     # The scrape it left skidding over from the aisle.
     for k in range(3):
         stain("scrape", -12.4 + k * 0.25, -7.9 + k * 0.6, 2.6, 0.06, -38, 0.9)
-    effects.append(dict(kind="smolder", pos=[-15.55, 1.05, -6.15]))
-    effects.append(dict(kind="embers", pos=[-15.75, 0.75, -6.35]))
-    effects.append(dict(kind="arc", pos=[-14.9, 0.55, -5.6]))
+    effects.append(dict(kind="smolder", pos=[-15.15, 1.05, -6.15]))
+    effects.append(dict(kind="embers", pos=[-15.25, 0.75, -6.35]))
+    effects.append(dict(kind="arc", pos=[-14.85, 0.55, -5.5]))
 
 
 def burnt_switchboard():
     # East wall, south half, where the cross aisle meets the wall between the
     # low stock and the racking. Its back stands on the wall's face.
     x, z = 44.0, 15.25
+    # Clip follows the cabinet: the two closed sections (the left one with
+    # the blown door swung flat against it) and the burnt-out bay's back.
     piece("switchgear_burnt", x, 0.0, z, yaw=-90, back=True, name="BurntSwitchboard",
-          clip=[[0.0, 1.15, 0.3, 2.38, 2.3, 0.6]])
+          clip=[[-0.8, 1.15, 0.375, 0.8, 2.3, 0.75], [0.8, 1.15, 0.3, 0.8, 2.3, 0.6],
+                [0.0, 1.15, 0.1, 0.8, 2.3, 0.2]])
     # Cordoned off: two cones and tape in front, a third knocked over, and
     # the extinguisher someone emptied at it dropped in its powder.
     for dz in (-1.75, 1.75):

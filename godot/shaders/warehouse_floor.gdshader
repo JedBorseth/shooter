@@ -79,9 +79,18 @@ float broken(vec2 p, float mask) {
 // A slab's own patch of a texture: shifted and turned a quarter turn at a
 // time, sampled with the unshifted coordinate's derivatives so the seams at
 // the joints never pick a blurry mip.
+vec2 slab_turn(vec2 v, float turn) {
+	return turn < 0.25 ? v : turn < 0.5 ? vec2(-v.y, v.x) : turn < 0.75 ? -v : vec2(v.y, -v.x);
+}
+
+// The quarter turn undone: brings a normal sampled in a turned patch back
+// into the slab's own frame.
+vec2 slab_unturn(vec2 v, float turn) {
+	return turn < 0.25 ? v : turn < 0.5 ? vec2(v.y, -v.x) : turn < 0.75 ? -v : vec2(-v.y, v.x);
+}
+
 vec2 slab_uv(vec2 uv, float turn, vec2 shift) {
-	vec2 r = turn < 0.25 ? uv : turn < 0.5 ? vec2(-uv.y, uv.x) : turn < 0.75 ? -uv : vec2(uv.y, -uv.x);
-	return r + shift;
+	return slab_turn(uv, turn) + shift;
 }
 
 void fragment() {
@@ -116,7 +125,10 @@ void fragment() {
 		float before = broken(prev, la.a) - (layer - 1.0 / steps);
 		float w = after / (after - before + 1e-4);
 		pp = mix(pp, prev, clamp(w, 0.0, 1.0));
-		spall = broken(pp, la.a) * (1.0 - smoothstep(parallax_distance * 0.7, parallax_distance, dist));
+		// Far off the relief flattens into the plain damage sample, which is
+		// what lies beyond the parallax range, so nothing pops at its edge.
+		pp = mix(pp, p, smoothstep(parallax_distance * 0.7, parallax_distance, dist));
+		spall = broken(pp, la.a);
 	} else if (la.a > 0.02) {
 		spall = broken(p, la.a);
 	}
@@ -130,14 +142,17 @@ void fragment() {
 	float is_patch = step(1.0 - patch_fraction, h3);
 	vec2 duv = pp / detail_size;
 	vec2 suv = slab_uv(duv, h2, shift);
-	vec2 gx = dFdx(slab_uv(p / detail_size, h2, vec2(0.0)));
-	vec2 gy = dFdy(slab_uv(p / detail_size, h2, vec2(0.0)));
+	// Gradients of the continuous world mapping, turned with the slab: a
+	// difference across a joint never straddles two turns.
+	vec2 gx = slab_turn(dFdx(p / detail_size), h2);
+	vec2 gy = slab_turn(dFdy(p / detail_size), h2);
 	vec3 det = textureGrad(detail_albedo, suv, gx, gy).rgb;
 	vec3 nmap = textureGrad(detail_normal, suv, gx, gy).xyz;
+	nmap.xy = slab_unturn(nmap.xy * 2.0 - 1.0, h2) * 0.5 + 0.5;
 	float lum = dot(det, vec3(0.299, 0.587, 0.114));
 	vec2 muv = slab_uv(pp / mask_size, h1, shift * 0.37);
-	vec2 mgx = dFdx(slab_uv(p / mask_size, h1, vec2(0.0)));
-	vec2 mgy = dFdy(slab_uv(p / mask_size, h1, vec2(0.0)));
+	vec2 mgx = slab_turn(dFdx(p / mask_size), h1);
+	vec2 mgy = slab_turn(dFdy(p / mask_size), h1);
 	vec4 m = textureGrad(masks, muv, mgx, mgy);
 	float macro = texture(masks, p / (mask_size * 3.7) + vec2(0.31, 0.17)).b;
 	float joint = joint_line(pp, joint_spacing, joint_width * (0.7 + 0.8 * h1));

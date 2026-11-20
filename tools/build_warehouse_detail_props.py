@@ -524,15 +524,17 @@ def switchgear_burnt(m):
         if k == 2:
             scorch(m, "Scorch on the next door", x - sec / 2 + 0.12, -d / 2 - 0.042, h - 0.45, 0.18, 0.5,
                    random.Random(54), "scorched")
-    # The door, blown open and hanging off its lower hinge.
+    # The door, blown open and swung right round against the next section,
+    # hanging a little off its lower hinge, its burnt inside facing out (and
+    # inside the cabinet's cover, so it never stops a player in the aisle).
     objs = list(scene_objects())
     box(m, "Blown door", sec / 2 - 0.02, 0, 1.2, sec - 0.04, 0.03, 1.9, "grey")
     drng = random.Random(55)
     scorch(m, "Door scorch", sec / 2 + 0.12, -0.017, 1.85, 0.32, 0.5, drng)
     scorch(m, "Door scorch inside", sec / 2 - 0.02, 0.017, 1.5, sec - 0.2, 1.0, drng)
     new = scene_objects().difference(objs)
-    transform(new, Matrix.Translation((-sec / 2, -d / 2 - 0.03, 0)) @ Matrix.Rotation(radians(-112), 4, "Z")
-              @ Matrix.Rotation(radians(5), 4, "Y"))
+    transform(new, Matrix.Translation((-sec / 2, -d / 2 - 0.075, 0)) @ Matrix.Rotation(radians(-176), 4, "Z")
+              @ Matrix.Rotation(radians(3), 4, "Y"))
     # Conduits up out of the top to the cable tray.
     for k in range(4):
         cx = -0.6 + k * 0.4

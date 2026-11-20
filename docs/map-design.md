@@ -331,10 +331,13 @@ clutter in player clip.
     smouldering. A dark smoke column rises, slows, and spreads into a haze
     under the roof; small flames lick in the engine bay; a cable arcs; oil and
     scorch spread on the slab and soot up the wall; its load, a broken pallet,
-    and a knocked-over cone lie round it. It collides as one box 1.1 m high,
-    the same cover the low stock gave, and players mantle onto it.
+    and a knocked-over cone lie round it. It lies with its guard against the
+    wall and its chassis to the aisle, and collides as one box 1.15 m high,
+    flush with the chassis: the same cover the low stock gave, and players
+    mantle onto it.
   - South, east wall: a switchboard that arced and burnt out, its middle door
-    blown open, breakers charred, cables spilled, blue-white arcing and a wisp
+    blown open and swung flat against the next section, breakers charred,
+    cables spilled, blue-white arcing and a wisp
     of smoke, soot up the wall, cordoned with cones and barrier tape, an
     emptied extinguisher in its powder.
   - Middle: the roofing that came down through the breach: a rubble mound, a
@@ -357,7 +360,8 @@ never collide. A set piece that blocks has one simple shape: the wreck's box,
 the switchboard's cabinet, the drums, the dumpster, the bucket. The rubble
 mound is one low convex hull (0.3 m crown, slopes under 20 degrees), so
 sprinting or sliding players ride over it. `warehouse_test.gd` checks the
-wreck is mantle-height cover, the mound rises smoothly, no clip box is an
+wreck is mantle-height cover clipped flush with its chassis, the mound rises
+smoothly, no clip box is an
 ankle-high snag, and clutter casts no shadow.
 
 **Cost** (GTX 1660 Ti, 1080p, GPU ms, before / after, six views): Low

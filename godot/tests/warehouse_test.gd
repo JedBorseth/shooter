@@ -276,6 +276,25 @@ func _check_detail(map: Node, space: PhysicsDirectSpaceState3D) -> void:
 			not _fits(space, wreck.global_position + Vector3(0, 0.05, -0.6), 1.8),
 			"players cannot walk through the fallen forklift"
 		)
+		# On the aisle side its clip stands flush with the chassis, not out in
+		# the air past it (rounds and players stop where the wreck is).
+		var chassis := AABB()
+		for m: MeshInstance3D in wreck.find_children("*", "MeshInstance3D", true, false):
+			if m.name.begins_with("Safety yellow"):
+				chassis = (
+					(wreck.global_transform.affine_inverse() * m.global_transform) * m.get_aabb()
+				)
+		var reach := -INF
+		for c: CollisionShape3D in wreck.find_children("*", "CollisionShape3D", false, false):
+			var size := (c.shape as BoxShape3D).size
+			reach = maxf(reach, c.position.x + size.x / 2.0)
+		_check(
+			chassis.size.x > 0.0 and reach <= chassis.end.x + 0.1,
+			(
+				"the wreck's clip is flush with its chassis on the aisle side: clip %.2f, chassis %.2f"
+				% [reach, chassis.end.x]
+			)
+		)
 	# The rubble mound: a smooth rise, never more than a step at a time.
 	var rubble := detail.get_node_or_null("BreachRubble") as Node3D
 	_check(rubble != null, "the breach rubble is built")

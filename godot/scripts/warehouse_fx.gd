@@ -161,6 +161,9 @@ func _build_sparks(hot: Color, glow: Color, parent: Node3D = self) -> void:
 	parent.add_child(deck)
 	deck.global_position = Vector3(global_position.x, floor_y - 0.15, global_position.z)
 	_burst.process_material = pm
+	# Draw them all the way down to where they land and bounce.
+	var fall := maxf(global_position.y - floor_y, 1.0)
+	_burst.visibility_aabb = AABB(Vector3(-5.0, -fall - 0.5, -5.0), Vector3(10.0, fall + 2.0, 10.0))
 	var quad := QuadMesh.new()
 	quad.size = Vector2(0.012, 0.1)
 	var mat := ShaderMaterial.new()
