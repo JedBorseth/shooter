@@ -182,7 +182,7 @@ The Sentry Gun follows Black Ops 2's (`_turret_killstreak.gsc`). The rules are i
 
   Shots meet it in a sphere around its gun. Destroying one pays 100 points and the "Destroyed Sentry Gun" medal, and both sides hear "ENEMY SENTRY GUN DESTROYED" or "SENTRY GUN DESTROYED". It blows apart.
 - **Bots** set theirs down where they stand. With no enemy player in sight, they shoot an armed enemy Sentry Gun they can see within 45 m with whatever they hold. Black Ops 2's bots count an active one as a threat.
-- **Sounds:** none of its own yet. It fires with the AK's shot pitched up, as the training sentry does.
+- **Sounds:** a motor's whine while it slews, a light machine gun's rounds, and a small blast with sparks when destroyed, all from real recordings (docs/audio.md, "Scorestreaks").
 
 `sentry_gun_test` plays it through on a server.
 

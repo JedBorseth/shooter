@@ -211,6 +211,38 @@ each round's start and result. Hardpoint calls its zone moves with a two-tone
 radio chirp of its own. There is no announcer voice: no CC0 recordings good
 enough were found.
 
+## Scorestreaks
+
+Every scorestreak has its own sounds, cut from real CC0 recordings and
+processed in code by `tools/build_streak_audio.py` (sources, cut times, and
+levels in its `SOURCES` and `SOUNDS`; the shared cutting, filtering,
+compression, limiting, and loudness code is `tools/recorded_audio.py`).
+Nothing is synthesized. Most of the military recordings are US Government
+footage released as public domain on Freesound by qubodup. The files are in
+`assets/audio/streaks/`; `godot/scripts/net/streak_audio.gd` loads them (a
+loop is `<name>.ogg`, takes are `<name>_N.ogg`) and places them.
+
+Black Ops 2 is the reference: each streak is heard where it is, from the
+moment it shows up until it leaves or is shot down.
+
+| Streak | What plays | Where |
+| --- | --- | --- |
+| UAV | A prop plane's drone (loop) | On each drone, 30 m unit size |
+| Counter-UAV | Fighter jets' distant roar (loop), harsher than the UAV | On each drone |
+| Shot down (UAV, Counter-UAV, Attack Chopper) | A real blast recorded at a distance, debris raining down; the wreck falls silent (a chopper's rotor winds down as it spins out) | At the blast |
+| Care Package | A twin turboprop's pass, started so it is loudest over the spot; the crate slams down (a steel door's slam over a heavy bag hitting dirt) | On the aircraft; at the crate |
+| Airstrike | A fighter's flyby on each jet, loudest as it crosses its point and fading out after the jet is gone; each bomb a real blast | On the jet; at the blast |
+| Guided Missile | A rocket's launch where it appears; an anti-tank missile's roar riding on it (×1.15 pitch and +3 dB while boosted); a firework rocket's whoosh over a launcher's pop at the split; real blasts for the warhead and smaller, quicker ones for the bomblets | Positional; the pilot hears their own missile from its nose |
+| Attack Chopper | A military helicopter's rotor (loop) the whole time; a .50 cal's rounds for its gun | On the chopper; at its muzzle (Weapons bus) |
+| Sentry Gun | A motor's whine while the head slews faster than 0.6 rad/s; a light machine gun's rounds; a small blast, sparks, and falling pieces when destroyed | On the head; at its muzzle (Weapons bus) |
+
+The training sentry in the Testing Area fires the Sentry Gun's rounds too.
+
+Guns that fire every 0.1 s play one round per shot: each take is one round
+cut out of a real burst, with the burst's own ring-out laid under it, so a
+stream of them keeps every round distinct (5 to 6 dB between rounds) rather
+than smearing into a wall.
+
 ## Reviewing sound without listening
 
 `tools/audio_report.py files OUT <paths>` writes a waveform and spectrogram

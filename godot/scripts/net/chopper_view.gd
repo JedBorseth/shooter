@@ -10,16 +10,14 @@ extends Node3D
 ## Both models are built in Blender (tools/gear_models.py `attack_chopper`,
 ## `chopper_rotor`). The server decides every round; the bursts drawn here
 ## follow Black Ops 2's rhythm (`chopper.rs`), not each round.
+##
+## Sounds (`streak_audio.gd`): a military helicopter's rotor thudding on it
+## the whole time (winding down as a downed one spins out), a .50 cal's
+## rounds for its gun, and the blast when it is shot down.
 
 const BODY_MODEL := preload("res://assets/models/attack_chopper/attack_chopper.gltf")
 const ROTOR_MODEL := preload("res://assets/models/chopper_rotor/chopper_rotor.gltf")
-## No chopper gun recording yet: the AK's shot, pitched down.
-const FIRE_SOUND := preload("res://assets/audio/weapons/ak47_fire.ogg")
-const BANGS := [
-	preload("res://assets/audio/ambience/explosion_far_1.ogg"),
-	preload("res://assets/audio/ambience/explosion_far_2.ogg"),
-	preload("res://assets/audio/ambience/explosion_far_3.ogg"),
-]
+const StreakAudio := preload("res://scripts/net/streak_audio.gd")
 const MAST := Vector3(0.0, 1.55, -0.4)
 const MUZZLE := Vector3(0.0, -0.85, -5.3)
 ## `chopper::SPIN_UP_SECONDS`, `BURST`, `RELOAD_SECONDS`, and
@@ -78,15 +76,10 @@ func _spawn() -> Dictionary:
 	flash.omni_range = 8.0
 	flash.position = MUZZLE
 	root.add_child(flash)
-	var sound := AudioStreamPlayer3D.new()
-	sound.stream = FIRE_SOUND
-	sound.bus = &"Weapons"
-	sound.unit_size = 20.0
-	sound.max_distance = 300.0
+	StreakAudio.attach_loop(root, "chopper_rotor", 30.0, 0.0, 500.0)
+	var sound := StreakAudio.player(root, "chopper_gun", 20.0, 0.0, 300.0, &"Weapons")
 	sound.max_polyphony = 4
-	sound.pitch_scale = 0.75
 	sound.position = MUZZLE
-	root.add_child(sound)
 	return {
 		"root": root,
 		"rotor": rotor,
@@ -160,16 +153,7 @@ func _on_gone(destroyed: bool, _ours: bool, _by_me: bool, at: Vector3) -> void:
 	var effects := get_tree().get_first_node_in_group(&"combat_effects")
 	if effects != null:
 		effects.explosion(at, Vector3.UP, 2.6)
-	var bang := AudioStreamPlayer3D.new()
-	bang.bus = &"Effects"
-	bang.stream = BANGS[randi() % BANGS.size()]
-	bang.unit_size = 45.0
-	bang.volume_db = 6.0
-	bang.max_distance = 400.0
-	add_child(bang)
-	bang.global_position = at
-	bang.play()
-	bang.finished.connect(bang.queue_free)
+	StreakAudio.play_at(self, at, "shootdown", 45.0, 4.0, 500.0)
 
 
 func _fall(delta: float) -> void:
@@ -186,3 +170,8 @@ func _fall(delta: float) -> void:
 		node.position += w.velocity * delta
 		node.rotate_y(4.0 * delta)
 		node.rotate_object_local(Vector3.FORWARD, 0.5 * delta)
+		# The rotor winds down as it falls.
+		var rotor := node.get_node_or_null(^"ChopperRotorSound") as AudioStreamPlayer3D
+		if rotor != null:
+			rotor.pitch_scale = maxf(rotor.pitch_scale - 0.12 * delta, 0.55)
+			rotor.volume_db -= 3.0 * delta

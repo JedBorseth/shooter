@@ -10,6 +10,10 @@ extends Node3D
 ##   we capture it. The caller takes it in half a second, anyone else in
 ##   three.
 ##
+## The aircraft drones over on a real turboprop's pass, loudest as it
+## crosses the spot, and the crate slams down when it lands
+## (`streak_audio.gd`).
+##
 ## The server decides every capture; this draws `NetClient.crates()`.
 ## Both models are built in Blender (tools/gear_models.py `care_package`,
 ## `cargo_aircraft`).
@@ -18,6 +22,9 @@ const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
 const CRATE_MODEL := preload("res://assets/models/care_package/care_package.gltf")
 const AIRCRAFT_MODEL := preload("res://assets/models/cargo_aircraft/cargo_aircraft.gltf")
+const StreakAudio := preload("res://scripts/net/streak_audio.gd")
+## Seconds into `cargo_flyby` its aircraft is closest.
+const FLYBY_CLOSEST := 6.0
 ## `care_package::FLY_HEIGHT`, `FLY_SPEED`, and `CAPTURE_RADIUS`.
 const FLY_HEIGHT := 40.0
 const FLY_SPEED := 45.0
@@ -61,8 +68,8 @@ func _process(_delta: float) -> void:
 		_check_prompt(c)
 	for id: int in _drawn.keys():
 		if not seen.has(id):
-			for node: Node3D in _drawn[id].values():
-				node.queue_free()
+			for key: String in ["crate", "aircraft"]:
+				(_drawn[id][key] as Node3D).queue_free()
 			_drawn.erase(id)
 	_hud.visible = not client.in_killcam()
 	_hud.queue_redraw()
@@ -83,7 +90,8 @@ func _spawn() -> Dictionary:
 	var aircraft := AIRCRAFT_MODEL.instantiate() as Node3D
 	aircraft.name = "CargoAircraft"
 	add_child(aircraft)
-	return {"crate": crate, "aircraft": aircraft}
+	var flyby := StreakAudio.player(aircraft, "cargo_flyby", 35.0, 0.0, 500.0)
+	return {"crate": crate, "aircraft": aircraft, "flyby": flyby, "falling": false}
 
 
 ## Places the aircraft along its pass and the crate on its fall.
@@ -98,6 +106,14 @@ func _place(nodes: Dictionary, c: Dictionary) -> void:
 	aircraft.visible = absf(since_drop) < FLY_SHOWN
 	aircraft.position = over + forward * FLY_SPEED * since_drop
 	aircraft.rotation = Vector3(0.0, heading, 0.0)
+	# The pass is timed so it is loudest over the spot; a late joiner who
+	# missed the start hears the rest of it.
+	var into := since_drop + FLYBY_CLOSEST
+	var flyby: AudioStreamPlayer3D = nodes.flyby
+	if not flyby.playing and not bool(nodes.get("flown", false)) and into >= 0.0:
+		nodes.flown = true
+		if flyby.stream != null and into < flyby.stream.get_length():
+			flyby.play(into)
 	var crate: Node3D = nodes.crate
 	crate.visible = since_drop >= 0.0
 	if land > 0.0:
@@ -106,9 +122,14 @@ func _place(nodes: Dictionary, c: Dictionary) -> void:
 		var t := clampf(since_drop / maxf(fall, 0.01), 0.0, 1.0)
 		crate.position = over.lerp(at, t * t) + forward * FLY_SPEED * 0.15 * (1.0 - t)
 		crate.rotation = Vector3(0.0, heading + (1.0 - t) * 0.6, 0.0)
+		nodes.falling = true
 	else:
 		crate.position = at
 		crate.rotation = Vector3(0.0, heading, 0.0)
+		# Landed this frame (not one already down when we joined).
+		if bool(nodes.falling):
+			nodes.falling = false
+			StreakAudio.play_at(self, at, "crate_land", 10.0, 0.0, 150.0)
 	(crate.get_node(^"Beacon") as OmniLight3D).visible = land <= 0.0
 
 

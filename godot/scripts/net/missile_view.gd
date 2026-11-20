@@ -6,6 +6,9 @@ extends Node3D
 ##   `guided_missile`) with its motor's flame and smoke trail (the rocket's,
 ##   `scripts/equipment/rocket.gd`), and each bomblet of a split one as a
 ##   small flame and trail. Blasts are the combat effects' explosions.
+## - Its sounds (`streak_audio.gd`): the launch high above, the motor's
+##   roar riding on it (higher and louder while boosted), the pop and
+##   whoosh of the split, and each blast.
 ## - Flying our own: the view goes to the missile's nose, our player stands
 ##   still, and we steer with the look controls. Aim boosts it until it
 ##   splits; fire splits it into the cluster over the enemies near the
@@ -19,11 +22,10 @@ const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
 const MODEL := preload("res://assets/models/guided_missile/guided_missile.gltf")
 const ROCKET_SCRIPT := preload("res://scripts/equipment/rocket.gd")
-const BANGS := [
-	preload("res://assets/audio/ambience/explosion_far_1.ogg"),
-	preload("res://assets/audio/ambience/explosion_far_2.ogg"),
-	preload("res://assets/audio/ambience/explosion_far_3.ogg"),
-]
+const StreakAudio := preload("res://scripts/net/streak_audio.gd")
+## The motor while boosted: pitch and level over its cruise.
+const BOOST_PITCH := 1.15
+const BOOST_DB := 3.0
 ## `missile::MAX_PITCH` and `MIN_PITCH`, and `CLUSTER_TARGET_RADIUS`.
 const MAX_PITCH := -0.17
 const MIN_PITCH := -1.55
@@ -80,11 +82,16 @@ func _process(delta: float) -> void:
 	for m: Dictionary in client.missiles():
 		var id := int(m.id)
 		seen[id] = true
-		if not _drawn.has(id):
+		var fresh := not _drawn.has(id)
+		if fresh:
 			_drawn[id] = _spawn()
 		var node: Node3D = _drawn[id]
 		node.position = m.position
 		node.rotation = Vector3(float(m.pitch), float(m.yaw), 0.0)
+		# One already split when we first see it (we joined late) is silent.
+		if fresh and not bool(m.split):
+			StreakAudio.play_at(self, node.global_position, "missile_launch", 30.0, 0.0, 500.0)
+		_sound(node, m, fresh)
 		if id == client.piloting():
 			mine = m
 		# A split missile coasts on unseen, as in Black Ops 2.
@@ -106,7 +113,23 @@ func _spawn() -> Node3D:
 	model.position = MODEL_OFFSET
 	node.add_child(model)
 	add_child(node)
+	StreakAudio.attach_loop(node, "missile_loop", 25.0, 0.0, 400.0)
 	return node
+
+
+## The motor follows the boost; the split pops once and the motor stops.
+func _sound(node: Node3D, m: Dictionary, fresh: bool) -> void:
+	var motor := node.get_node_or_null(^"MissileLoopSound") as AudioStreamPlayer3D
+	if motor == null:
+		return
+	if bool(m.split):
+		motor.queue_free()
+		if not fresh:
+			StreakAudio.play_at(self, node.global_position, "missile_split", 25.0, 0.0, 400.0)
+		return
+	var boosting := bool(m.get("boosting", false))
+	motor.pitch_scale = BOOST_PITCH if boosting else 1.0
+	motor.volume_db = BOOST_DB if boosting else 0.0
 
 
 func _draw_bomblets() -> void:
@@ -251,13 +274,7 @@ func _on_blast(at: Vector3, bomblet: bool) -> void:
 	var effects := get_tree().get_first_node_in_group(&"combat_effects")
 	if effects != null:
 		effects.explosion(at, Vector3.UP, 1.4 if bomblet else 3.0)
-	var bang := AudioStreamPlayer3D.new()
-	bang.bus = &"Effects"
-	bang.stream = BANGS[randi() % BANGS.size()]
-	bang.unit_size = 30.0 if bomblet else 45.0
-	bang.volume_db = 0.0 if bomblet else 6.0
-	bang.max_distance = 400.0
-	add_child(bang)
-	bang.global_position = at
-	bang.play()
-	bang.finished.connect(bang.queue_free)
+	if bomblet:
+		StreakAudio.play_at(self, at, "bomblet_blast", 30.0, 0.0, 400.0)
+	else:
+		StreakAudio.play_at(self, at, "strike_blast", 45.0, 4.0, 500.0)
