@@ -49,6 +49,10 @@ pub struct ViewFrame {
     /// False while the player is dead.
     pub visible: bool,
     pub sprinting: bool,
+    /// Crawling prone at the hip: the weapon rolls onto its side and rocks
+    /// with each elbow pull, and the support hand reaches out to drag the
+    /// body along (`MoveState::crawling`).
+    pub crawling: bool,
     pub on_floor: bool,
     pub action: ViewAction,
     /// The magazine is empty (a pistol's slide locks back).
@@ -2797,6 +2801,10 @@ pub struct ViewmodelRig {
     /// pose's blend, which hands over to the sprint-out like the sprint pose.
     mantle_total: f32,
     mantle_blend: f32,
+    /// How far into the crawl pose the weapon is, and how far through a
+    /// stride of the crawl (0..1, two elbow pulls) the body is.
+    crawl_blend: f32,
+    crawl_phase: f32,
     /// How far the weapon is put away for a ladder; it comes back up over
     /// the sprint-out once off it.
     ladder_blend: f32,
@@ -3523,6 +3531,22 @@ impl ViewmodelRig {
         };
         let mantle = self.mantle_blend * hip_amount;
 
+        // The low crawl: the weapon rolls onto its side, low, and rocks
+        // forward with each elbow pull, the support hand reaching out on
+        // its pull (Black Ops' `crawlForwardAnim` weapon slots; Modern
+        // Warfare's crawl). It runs on the crawl's own stride: two pulls a
+        // `gait::PRONE_STRIDE` of ground.
+        if frame.crawling {
+            self.crawl_blend += (1.0 - self.crawl_blend) * smoothing(8.0, dt);
+        } else {
+            self.crawl_blend *= 1.0 - smoothing(10.0, dt);
+        }
+        let travel = Vector2::new(frame.velocity.x, frame.velocity.z).length();
+        self.crawl_phase =
+            (self.crawl_phase + travel * dt / shooter_sim::hitbox::gait::PRONE_STRIDE).fract();
+        let crawl = self.crawl_blend * hip_amount;
+        let (crawl_pos, crawl_rot) = crawl_motion(self.crawl_phase);
+
         // A ladder: the hands go to the rungs, so the weapon drops away as
         // for a switch, and comes back up over the sprint-out (classic IW
         // and Modern Warfare lower the weapon on ladders).
@@ -3791,6 +3815,7 @@ impl ViewmodelRig {
         position += STAND_MOVE_POS * (self.walk_blend * hip_amount);
         position += SLIDE_POS * slide + MANTLE_POS * mantle;
         position += cycle_pos * cycle + Vector3::new(0.0, -0.02 * bump, 0.01 * bump);
+        position += crawl_pos * crawl;
         // A clip cut short (firing out of a reload's settle) eases out over
         // about 100 ms instead of snapping to rest.
         let (clip_pos, clip_rot) = (clip_pose.pos * clip_scale, clip_pose.rot * clip_scale);
@@ -3820,6 +3845,7 @@ impl ViewmodelRig {
             + deg(STAND_MOVE_ROT.x) * self.walk_blend * hip_amount
             + deg(SLIDE_ROT.x) * slide
             + deg(MANTLE_ROT.x) * mantle
+            + deg(crawl_rot.x) * crawl
             + deg(damage_rot.x);
         let yaw = deg(ins_rot.y)
             + deg(hip_rot.y) * hip_amount
@@ -3830,6 +3856,7 @@ impl ViewmodelRig {
             + deg(cycle_rot.y) * cycle
             + deg(SLIDE_ROT.y) * slide
             + deg(MANTLE_ROT.y) * mantle
+            + deg(crawl_rot.y) * crawl
             + deg(damage_rot.y);
         let roll = deg(ins_rot.z)
             + deg(hip_rot.z) * hip_amount
@@ -3843,6 +3870,7 @@ impl ViewmodelRig {
             + deg(STAND_MOVE_ROT.z) * self.walk_blend * hip_amount
             + deg(SLIDE_ROT.z) * slide
             + deg(MANTLE_ROT.z) * mantle
+            + deg(crawl_rot.z) * crawl
             + deg(damage_rot.z);
 
         // Rotate around the pivot (the firing hand) at the hip. Aimed, turn
@@ -3874,15 +3902,21 @@ impl ViewmodelRig {
             let (blend, local) = crate::knife::first_person(t, strike);
             Some((blend, weapon_in_rig * local, Held::Knife))
         } else {
-            // The support hand plants on the ledge through a mantle or vault.
-            mantle_progress.map(|m| {
-                let plant = keyed(&[(0.0, 0.0), (0.22, 1.0), (0.78, 1.0), (1.0, 0.0)], m);
-                (
-                    plant * hip_amount,
-                    weapon_in_rig * plant_hand(m, frame.vaulting),
-                    Held::Plant,
-                )
-            })
+            // The support hand plants on the ledge through a mantle or vault,
+            // or on the ground ahead through its pull of the crawl.
+            mantle_progress
+                .map(|m| {
+                    let plant = keyed(&[(0.0, 0.0), (0.22, 1.0), (0.78, 1.0), (1.0, 0.0)], m);
+                    (
+                        plant * hip_amount,
+                        weapon_in_rig * plant_hand(m, frame.vaulting),
+                        Held::Plant,
+                    )
+                })
+                .or_else(|| {
+                    let (reach, at) = crawl_hand(self.crawl_phase);
+                    (reach * crawl > 0.01).then(|| (reach * crawl, weapon_in_rig * at, Held::Plant))
+                })
         };
         let ladder = self.ladder_hands(frame);
         if let Some(arms) = &mut self.arms {
@@ -3935,6 +3969,47 @@ fn plant_hand(m: f32, vault: bool) -> Transform3D {
     let z = (palm - fingers * palm.dot(fingers)).normalized() * PLANT_PALM;
     let y = fingers;
     Transform3D::new(Basis::from_cols(y.cross(z), y, z), at)
+}
+
+/// The weapon through the low crawl, `p` 0..1 through a stride (metres and
+/// degrees, at the full crawl pose): rolled onto its left side, low and
+/// turned in across the body, as both elbows are down; it is pushed forward
+/// and dips with each pull, rocking toward the pulling arm (the support arm
+/// in the first half, the firing arm in the second).
+fn crawl_motion(p: f32) -> (Vector3, Vector3) {
+    let u = (2.0 * p).fract();
+    let push = (PI * u).sin();
+    let side = if p < 0.5 { 1.0 } else { -1.0 };
+    (
+        CRAWL_POS + Vector3::new(0.004 * side, -0.008, -0.025) * push,
+        CRAWL_ROT + Vector3::new(-2.0, 3.0 * side, 6.0 * side) * push,
+    )
+}
+
+/// The crawl's rest pose at the hip (metres, degrees: pitch, yaw, roll).
+const CRAWL_POS: Vector3 = Vector3::new(-0.012, -0.012, 0.0);
+const CRAWL_ROT: Vector3 = Vector3::new(-3.0, 6.0, 20.0);
+
+/// The support hand through the crawl, `p` 0..1 through a stride: how far
+/// it is off the weapon (0..1) and where (the left hand bone's frame in the
+/// view's space). Through the first pull it reaches out ahead, low and
+/// left, plants palm down, and drags back as the body comes over it.
+fn crawl_hand(p: f32) -> (f32, Transform3D) {
+    let u = (p / 0.5).min(1.0);
+    let reach = if p < 0.5 {
+        keyed(&[(0.0, 0.0), (0.15, 1.0), (0.8, 1.0), (1.0, 0.0)], u)
+    } else {
+        0.0
+    };
+    let at =
+        Vector3::new(-0.16, -0.13, -0.42).lerp(Vector3::new(-0.14, -0.17, -0.25), smoothstep(u));
+    let fingers = Vector3::new(0.2, -0.2, -1.0).normalized();
+    let palm = Vector3::new(0.1, -1.0, 0.1);
+    let z = (palm - fingers * palm.dot(fingers)).normalized() * PLANT_PALM;
+    (
+        reach,
+        Transform3D::new(Basis::from_cols(fingers.cross(z), fingers, z), at),
+    )
 }
 
 /// Which way the left hand bone's +Z (`PoseInput` hands) faces from the
@@ -4144,6 +4219,24 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn the_crawl_rocks_toward_each_pulling_arm_and_the_support_hand_drags() {
+        // Rest at the start of each pull, pushed forward mid-pull.
+        let (rest, _) = crawl_motion(0.0);
+        let (pushed, roll) = crawl_motion(0.25);
+        assert!(pushed.z < rest.z - 0.02);
+        let (_, other) = crawl_motion(0.625);
+        assert!(
+            roll.z > CRAWL_ROT.z && other.z < CRAWL_ROT.z,
+            "rocks each way"
+        );
+        // The support hand is out through its own pull only, and drags back.
+        let (out, ahead) = crawl_hand(0.2);
+        let (_, dragged) = crawl_hand(0.38);
+        assert!(out > 0.99 && dragged.origin.z > ahead.origin.z);
+        assert_eq!(crawl_hand(0.7).0, 0.0);
+    }
 
     /// Peak of one shot's kick on the weapon, simulated with the kick springs.
     fn kick_peak(shot: u32, strength: f32, ads: f32) -> (Vector3, Vector3) {

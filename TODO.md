@@ -86,7 +86,8 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Directional crawls: forward, backward, and to each side, blended by the travel's direction, with the hit zones measured every 45° ([docs/movement.md](docs/movement.md#prone)).
 - [x] Lying along slopes: the server measures the ground under the chest and knees and sends the slope with the body; the drawn body and its hit zones lie along it ([docs/movement.md](docs/movement.md#prone)).
   - [ ] The killcam's own recorded body (`killcam::OwnRecorder`, the local player's body on its tape) still lies flat: it is built from the predicted state, which has no slope; it would need the client's own two rays.
-- [ ] Prone follow-ups: turning prone sweeps the legs through walls (IW stops the turn); a first-person crawl animation (the weapon uses the sprint's lowered pose).
+- [x] Turning prone stops before the legs sweep into a wall, and a first-person crawl: the weapon rolls on its side and rocks with each pull while the support hand drags the body along ([docs/movement.md](docs/movement.md#prone)).
+- [ ] Prone follow-ups: the turn stop is the client's (the server takes the view it is sent, so a modified client could still sweep its own legs into a wall); bots turn prone without the check. The body turns about the eyes, as before; the IW engine's turns about the body's middle.
 - [x] Footstep sounds, with surface types and a cadence tied to speed.
 - [x] Fall damage and a landing camera dip scaled by fall speed.
 - [x] Slide camera tilt and slide sound.

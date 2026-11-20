@@ -86,6 +86,8 @@ const DEFAULT_SURFACE: &str = "concrete";
 /// How far (radians, about 11 degrees) the player pushes the view past a
 /// mount's cone edge before it goes through and the mount lets go.
 const MOUNT_PUSH_OUT: f32 = 0.2;
+/// The steps (radians) a prone turn is checked in for room for the legs.
+const PRONE_TURN_STEP: f32 = 0.12;
 
 /// Camera punch spring: stiff and well damped. A shot's punch peaks after about
 /// 35 ms and is roughly half gone by the next M4 round (80 ms), so during a spray
@@ -419,6 +421,9 @@ pub struct FpsPlayer {
     /// edge: past [`MOUNT_PUSH_OUT`] the view goes through and the mount
     /// lets go.
     mount_push: f32,
+    /// Lying prone: the last view yaw the trailing legs had room at
+    /// (`hold_prone_turn`).
+    prone_turn_yaw: Option<f32>,
     previous_ads: f32,
     /// Aim pitch, aim yaw, and look pitch from the last rendered frame.
     aim_angles: Vector3,
@@ -1378,6 +1383,14 @@ impl FpsPlayer {
         self.pitch = 0.0;
     }
 
+    /// Turns the view by `yaw` and `pitch` (radians) as the player's own look
+    /// does, through its holds (a mount's cone, prone's pitch range and leg
+    /// room). For tests.
+    #[func]
+    fn look_by(&mut self, yaw: f32, pitch: f32) {
+        self.turn(yaw, pitch);
+    }
+
     /// Points the view: yaw and pitch in radians (spawns, tests, spectating).
     #[func]
     pub(crate) fn set_look(&mut self, yaw: f32, pitch: f32) {
@@ -2024,6 +2037,8 @@ impl FpsPlayer {
         // Prone, the neck and the ground bound the pitch.
         let (down, up) = shooter_sim::look::pitch_range(movement.prone_amount());
         self.pitch = self.pitch.clamp(-down, up);
+        self.hold_prone_turn();
+        let movement = &self.state.movement;
         if !movement.mounted {
             self.mount_push = 0.0;
             return;
@@ -2045,6 +2060,54 @@ impl FpsPlayer {
         // Back to the edge without jumping a whole turn.
         self.yaw -= off - held;
         self.pitch = pitch;
+    }
+
+    /// Prone, the legs trail behind the body: a turn that would sweep them
+    /// into a wall stops at the last way they had room (the IW engine checks
+    /// the prone body as it turns and holds the view, `BG_CheckProneTurned`).
+    /// The arc is checked in steps, so a quick flick cannot pass through a
+    /// thin wall; legs already in one (crawled sideways along it) turn
+    /// freely, so the body can never be stuck.
+    fn hold_prone_turn(&mut self) {
+        let movement = &self.state.movement;
+        let lying = movement.stance == Stance::Prone
+            && movement.crouch > 1.0
+            && self.env.on_floor
+            && self.state.alive();
+        let Some(last) = self.prone_turn_yaw.filter(|_| lying) else {
+            self.prone_turn_yaw = lying.then_some(self.yaw);
+            return;
+        };
+        let turn = shooter_sim::hitbox::gait::wrap_angle(self.yaw - last);
+        if turn.abs() < 1e-5 {
+            return;
+        }
+        let Some(mut space) = self
+            .base()
+            .get_world_3d()
+            .and_then(|w| w.get_direct_space_state())
+        else {
+            return;
+        };
+        let feet = self.base().get_global_position();
+        let rid = self.base().get_rid();
+        if !body::legs_clear(&mut space, feet, last, rid) {
+            self.prone_turn_yaw = Some(self.yaw);
+            return;
+        }
+        let steps = (turn.abs() / PRONE_TURN_STEP).ceil().max(1.0) as i32;
+        let mut clear = last;
+        for k in 1..=steps {
+            let yaw = last + turn * k as f32 / steps as f32;
+            if !body::legs_clear(&mut space, feet, yaw, rid) {
+                // Held where the legs last had room.
+                self.yaw -= shooter_sim::hitbox::gait::wrap_angle(self.yaw - clear);
+                self.prone_turn_yaw = Some(self.yaw);
+                return;
+            }
+            clear = yaw;
+        }
+        self.prone_turn_yaw = Some(self.yaw);
     }
 
     /// Enabled aim assist targets in range with a clear line of sight.
@@ -3217,11 +3280,10 @@ impl FpsPlayer {
             ads,
             scope: combat.scope_amount(),
             visible: self.state.alive(),
-            // Crawling at the hip and getting down to or up from prone
-            // lower the weapon as a sprint does.
-            sprinting: self.state.movement.sprinting
-                || (self.state.movement.crawling(ads > 0.0) && !self.state.downed)
-                || self.state.movement.changing_prone(),
+            // Getting down to or up from prone lowers the weapon as a sprint
+            // does; crawling at the hip has its own pose.
+            sprinting: self.state.movement.sprinting || self.state.movement.changing_prone(),
+            crawling: self.state.movement.crawling(ads > 0.0) && !self.state.downed,
             on_floor: self.env.on_floor,
             action,
             empty: combat.weapon().magazine == 0,
