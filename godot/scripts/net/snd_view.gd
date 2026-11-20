@@ -16,6 +16,10 @@ extends Node3D
 ##   time. A teammate planting or defusing shows as a smaller bar.
 ## - Calls in the middle of the screen: the charge planted, defused, dropped,
 ##   or picked up.
+## - Sounds: a sting for a plant (a defuse ends the round, whose own sting
+##   says so); the planted charge beeps
+##   from where it stands, once a second and faster as the fuse runs down
+##   (every 0.12 s at the end); and it goes off with a close explosion.
 ##
 ## The server decides everything; this only draws `NetClient.charge_info()`
 ## and reacts to `NetClient.charge_changed`.
@@ -39,6 +43,14 @@ const SITE_HIDE_DISTANCE := 3.0
 const MARKER_LIFT := 1.6
 ## The planted charge's lamp blinks this many times a second.
 const BLINK_RATE := 1.0
+## `tools/build_world_audio.py charge`.
+const BEEP_SOUND := preload("res://assets/audio/world/charge_beep.ogg")
+const EXPLOSION_SOUND := preload("res://assets/audio/world/charge_explosion.ogg")
+const PLANTED_STING := preload("res://assets/audio/ui/charge_planted.ogg")
+## Seconds between beeps: the fuse left divided by this, between the limits.
+const BEEP_SPREAD := 25.0
+const BEEP_SLOWEST := 1.0
+const BEEP_FASTEST := 0.12
 
 var client: NetClient
 var player: FpsPlayer
@@ -55,6 +67,10 @@ var _last_carrier := -1
 ## Seconds we have been planting or defusing, for our own bar.
 var _using_for := 0.0
 var _blink := 0.0
+var _beep: AudioStreamPlayer3D
+var _boom: AudioStreamPlayer3D
+var _sting: AudioStreamPlayer
+var _next_beep := 0.0
 
 
 func _ready() -> void:
@@ -68,6 +84,27 @@ func _ready() -> void:
 	_lamp.light_energy = 0.0
 	_lamp.position = Vector3(0.13, 0.25, 0.0)
 	_charge.add_child(_lamp)
+	_beep = AudioStreamPlayer3D.new()
+	_beep.name = "Beep"
+	_beep.stream = BEEP_SOUND
+	_beep.bus = &"Effects"
+	_beep.volume_db = -4.0
+	_beep.unit_size = 6.0
+	_beep.max_distance = 45.0
+	add_child(_beep)
+	_boom = AudioStreamPlayer3D.new()
+	_boom.name = "Boom"
+	_boom.stream = EXPLOSION_SOUND
+	_boom.bus = &"Effects"
+	_boom.volume_db = 4.0
+	_boom.unit_size = 18.0
+	_boom.max_distance = 220.0
+	add_child(_boom)
+	_sting = AudioStreamPlayer.new()
+	_sting.name = "Sting"
+	_sting.bus = &"UI"
+	_sting.volume_db = -6.0
+	add_child(_sting)
 
 	_layer = CanvasLayer.new()
 	_layer.layer = 4
@@ -139,12 +176,21 @@ func _place_charge(info: Dictionary, delta: float) -> void:
 		_lamp.light_energy = 0.0
 		return
 	_charge.global_position = info.position
-	# Planted, its lamp blinks; defused or lying dropped, it is dark.
+	# Planted, its lamp blinks with each beep; defused or lying dropped, it
+	# is dark and quiet.
 	if status == "planted":
 		_blink = fmod(_blink + delta * BLINK_RATE, 1.0)
-		_lamp.light_energy = 1.6 if _blink < 0.18 else 0.0
+		_next_beep -= delta
+		if _next_beep <= 0.0:
+			var left: float = client.round_info().seconds_left
+			_next_beep = clampf(left / BEEP_SPREAD, BEEP_FASTEST, BEEP_SLOWEST)
+			_beep.global_position = _charge.global_position + Vector3.UP * 0.2
+			_beep.play()
+			_blink = 0.0
+		_lamp.light_energy = 1.6 if _blink < 0.12 else 0.0
 	else:
 		_blink = 0.0
+		_next_beep = 0.0
 		_lamp.light_energy = 0.0
 
 
@@ -157,7 +203,12 @@ func _on_charge_changed() -> void:
 	var attacking := _attacking()
 	if status != _last_status:
 		match status:
+			"detonated":
+				if info.has_position:
+					_boom.global_position = info.position + Vector3.UP * 0.5
+					_boom.play()
 			"planted":
+				_play_sting(PLANTED_STING)
 				var site := _site_name(info, info.site)
 				_say(
 					"CHARGE PLANTED" + ("  ·  SITE %s" % site if site != "" else ""),
@@ -175,6 +226,11 @@ func _on_charge_changed() -> void:
 		_say("YOU HAVE THE CHARGE", CHARGE)
 	_last_status = status
 	_last_carrier = carrier
+
+
+func _play_sting(stream: AudioStream) -> void:
+	_sting.stream = stream
+	_sting.play()
 
 
 func _say(text: String, colour: Color) -> void:
