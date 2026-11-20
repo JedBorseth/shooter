@@ -212,7 +212,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Hardpoint (`--mode hardpoint`, and a title-screen button): one live zone at a time, moving every 60 seconds through the map's `Hardpoints` in a fixed order; a team alone in it scores a point a second, a contested zone scores nothing, first to 250. Capture, securing, defense, and assault awards, time on the hill on the scoreboard, objective bots, spawns kept off the hill, and a zone outline, wall of light, marker, and calls on the client (`rust/sim/src/hardpoint.rs`, `godot/scripts/net/hardpoint_view.gd`). Slamcity's five zones sit on its mirror line: the roadworks pit, under the El, the stalled train, the ticket hall, and the back alley.
 - [x] Hardpoint overtime: when the clock runs out with the team behind in the zone (holding or contesting), play goes on until no team that is not ahead stands in it ([modes.md](docs/modes.md)).
 - [x] Hardpoint zones for the testing arena (4), Nuketown (4), and Warehouse (5), checked on every map by `hardpoint_zones_test.gd` ([modes.md](docs/modes.md)).
-- [ ] Hardpoint follow-ups: announcer voice lines; on Nuketown only one of six bots reached the Cul-de-sac in a minute's test, worth a look at its navigation.
+- [ ] Hardpoint follow-ups: announcer voice lines; on Nuketown only one of six bots reached the Cul-de-sac in a minute's test (its navigation mesh never baked on a headless server; fixed, worth re-checking the Cul-de-sac).
 - [x] Player names: sent in the hello (`Settings.player_name`), cleaned by the server, and listed in the roster.
 - [x] Names in the kill feed and scoreboard.
 
@@ -337,7 +337,8 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
   - [x] Flag markers in the world and on the HUD, calls and stings, the scoreboard's columns, and a title screen choice (`godot/scripts/net/domination_view.gd`).
   - [x] Objective bots: capture, defend, and take back flags (`domination::bot_goals`).
   - [x] Flags placed by hand on Slamcity, Nuketown, and Warehouse, and fallback flags laid across the middle on maps whose sides are close (the testing arena).
-  - [ ] Follow-ups: an announcer voice for the calls, a flag pole model at each flag (Blender), overtime on a draw (Black Ops 3 onward), and Nuketown bots: its navigation mesh does not bake on a headless server ("Baking interrupted"), so bots stand still there in every mode.
+  - [ ] Follow-ups: an announcer voice for the calls, a flag pole model at each flag (Blender), overtime on a draw (Black Ops 3 onward), and Nuketown bot play: its bots move now (the navigation mesh bakes inside the playable area), but in `domination_bots_test -- --nuketown` one team takes all three flags in the first half minute and holds them, so only two of six bots capture (the test wants three). Bots that push back for a lost flag when the team owns none would fix it.
+  - [ ] Testing arena bots barely play objectives: its fallback spawns stand 14 m apart on one open floor. Real `SpawnPoints` at the north and south walls would fix it, but nine server tests (net, killcam, bot equipment, Domination, CTF halves, Hardpoint overtime, local pause, Zombies) are written around the fallback layout, so moving the spawns means reworking them.
 - [x] Gun Game: a knife kill sets the victim back a weapon, as in the classic rules.
 - [x] Gun Game: a sound for each new weapon and for a set-back (`match_stings.gd`; the sting files are in their own PR, held for a listen).
 - [x] Capture the Flag: halftime side swap and a sudden-death overtime round on a draw, as in Black Ops 2 ([modes.md](docs/modes.md)).

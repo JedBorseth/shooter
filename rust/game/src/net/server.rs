@@ -105,7 +105,7 @@ use shooter_sim::{Vec2, Vec3, rng};
 
 use super::bots::{
     BotBrain, BotGrenade, BotNavigation, BotObjective, BotPlayer, BotSmoke, BotWorld,
-    THROW_CHECKS_PER_TICK,
+    THROW_CHECKS_PER_TICK, bake_area,
 };
 use super::discovery::QueryResponder;
 use super::horde::{Horde, HordeEvent, HordePlayer};
@@ -709,7 +709,8 @@ impl INode3D for NetServer {
             self.navigation_pending = false;
             let mut parent = self.base().clone().upcast::<Node>();
             let map = self.base().get_child(0);
-            self.navigation = map.and_then(|map| BotNavigation::bake(&mut parent, &map));
+            let area = self.bot_bake_area();
+            self.navigation = map.and_then(|map| BotNavigation::bake(&mut parent, &map, area));
         }
         self.simulate();
         self.update_charge();
@@ -1805,6 +1806,26 @@ impl NetServer {
 
     /// Whether the dead come back on their own: always, except while a
     /// Search and Destroy match is being played or shows its results.
+    /// Where the bots' navigation mesh bakes: around every spawn, lane, and
+    /// objective, so far-off scenery stays out of the bake.
+    fn bot_bake_area(&self) -> Option<Aabb> {
+        let spawns = self.spawn_points.iter().map(|s| to_godot(s.position));
+        let lanes = self.bot_lanes.iter().flatten().copied();
+        let flags = self.flag_homes.iter().flatten().map(|p| to_godot(*p));
+        let zones = self.zones.iter().map(|z| to_godot(z.center));
+        let dom = self.dom_points.iter().map(|f| to_godot(f.center));
+        let sites = self.charge_sites.iter().map(|s| to_godot(s.center));
+        bake_area(
+            std::iter::once(self.spawn)
+                .chain(spawns)
+                .chain(lanes)
+                .chain(flags)
+                .chain(zones)
+                .chain(dom)
+                .chain(sites),
+        )
+    }
+
     fn respawns(&self) -> bool {
         // Zombies: the dead come back when the next round starts.
         !matches!(self.game, Mode::SearchAndDestroy | Mode::Zombies)

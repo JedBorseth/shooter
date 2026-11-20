@@ -56,6 +56,17 @@ agree):
 line from every metre of floor, where the teams meet, and a minimap in the
 style of the references. The skill lists the targets.
 
+## Bot navigation
+
+The server bakes the bots' navigation mesh from the map's static colliders on
+the world layer when it loads the map (`BotNavigation::bake` in
+`rust/game/src/net/bots.rs`), inside a box around every spawn point, bot lane,
+and objective, widened by 40 m sideways, 20 m down, and 40 m up. Far scenery
+can keep its collision: without the box, Nuketown's backdrop mountains, more
+than a kilometre across, made Godot's crash check stop the bake ("Baking
+interrupted"), and bots stood still there in every mode. Keep spawns and
+objectives inside the playable space and the box covers it.
+
 ## Slamcity, November 2026
 
 The first rebuild (#97) laid Slamcity out as three parallel strips, 124 × 61 m

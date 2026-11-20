@@ -6,8 +6,9 @@ extends SceneTree
 ## flags, most of them stand in a circle for a capture, the teams score by
 ## owning flags (never more than three points every five seconds between
 ## them), and kills alone score nothing. CI runs it on Slamcity and
-## Warehouse. Nuketown is left out (its navigation mesh does not bake on a
-## headless server yet), and so is the testing arena: its fallback spawns
+## Warehouse. Nuketown is left out: its bots move and capture, but one team
+## usually takes all three flags early and holds them, so only two or three
+## bots ever capture. So is the testing arena: its fallback spawns
 ## stand 14 m apart on one open floor, so its bots fight far more than they
 ## capture (`domination_test` checks the arena's rules).
 ## godot --headless --path godot --script res://tests/domination_bots_test.gd [-- --warehouse]

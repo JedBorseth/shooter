@@ -194,7 +194,13 @@ pub struct BotNavigation {
 impl BotNavigation {
     /// Bakes a navigation mesh from `map`'s static colliders on the world
     /// layer and adds its region under `parent`. Both must be in the tree.
-    pub fn bake(parent: &mut Gd<Node>, map: &Gd<Node>) -> Option<Self> {
+    ///
+    /// `area` limits the bake to the part of the map players use (see
+    /// [`bake_area`]). Without it, a backdrop with collision kilometres away
+    /// (Nuketown's mountains) makes the voxel grid so large that Godot's
+    /// crash check stops the bake ("Baking interrupted") and the bots get
+    /// no mesh at all.
+    pub fn bake(parent: &mut Gd<Node>, map: &Gd<Node>, area: Option<Aabb>) -> Option<Self> {
         let mut server = Engine::singleton().get_singleton("NavigationServer3D")?;
         let db = ClassDb::singleton();
         let mut mesh = db
@@ -215,6 +221,9 @@ impl BotNavigation {
         ];
         for (key, value) in settings {
             mesh.set(key, &value);
+        }
+        if let Some(area) = area {
+            mesh.set("filter_baking_aabb", &area.to_variant());
         }
         let source = db
             .instantiate("NavigationMeshSourceGeometryData3D")
@@ -283,6 +292,27 @@ impl BotNavigation {
             .try_to::<Vector3>()
             .unwrap_or(Vector3::ZERO)
     }
+}
+
+/// How far past the outermost spawn or lane point the navigation mesh
+/// reaches, sideways, below, and above. Generous: spawns sit inside the
+/// map, and the mesh is only clipped to keep out far-off scenery.
+const BAKE_MARGIN: f32 = 40.0;
+const BAKE_BELOW: f32 = 20.0;
+const BAKE_ABOVE: f32 = 40.0;
+
+/// The box the navigation mesh bakes in: every point players or bots are
+/// placed at or walk through (spawns, lanes, objectives), widened by
+/// [`BAKE_MARGIN`]. `None` when there are no points.
+pub fn bake_area(points: impl IntoIterator<Item = Vector3>) -> Option<Aabb> {
+    let mut points = points.into_iter();
+    let first = points.next()?;
+    let (min, max) = points.fold((first, first), |(min, max), p| {
+        (min.coord_min(p), max.coord_max(p))
+    });
+    let min = min - Vector3::new(BAKE_MARGIN, BAKE_BELOW, BAKE_MARGIN);
+    let max = max + Vector3::new(BAKE_MARGIN, BAKE_ABOVE, BAKE_MARGIN);
+    Some(Aabb::new(min, max - min))
 }
 
 /// What a bot knows about every player this tick.
@@ -1736,6 +1766,18 @@ mod tests {
     use super::*;
     use shooter_sim::movement::MoveEnv;
     use shooter_sim::player::{self, PlayerState};
+
+    #[test]
+    fn bake_area_wraps_the_points_with_a_margin() {
+        assert!(bake_area(std::iter::empty()).is_none());
+        let area = bake_area([
+            Vector3::new(-10.0, 0.0, 5.0),
+            Vector3::new(20.0, 3.0, -15.0),
+        ])
+        .expect("an area");
+        assert_eq!(area.position, Vector3::new(-50.0, -20.0, -55.0));
+        assert_eq!(area.end(), Vector3::new(60.0, 43.0, 45.0));
+    }
 
     /// Steps a bot that holds `want` through the players' rules on open, flat
     /// ground, and returns every stance it passed through.
