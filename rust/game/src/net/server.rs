@@ -2960,6 +2960,7 @@ impl NetServer {
             && let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id)
         {
             avatar.class = class;
+            let class = self.custom.loadouts.restrict(class);
             // During a round's freeze a new class applies at once.
             if freeze && !gun_game && avatar.predicted.state.alive() {
                 let movement = avatar.predicted.state.movement;
@@ -3433,6 +3434,7 @@ impl NetServer {
         };
         let tick = self.tick;
         let max_health = self.params.health.max_health;
+        let loadouts = self.custom.loadouts;
         let gun_game = matches!(self.game, Mode::GunGame(_));
         let avatar = &mut self.avatars[index];
         if let Some(brain) = &mut avatar.brain {
@@ -3447,6 +3449,8 @@ impl NetServer {
             });
             brain.on_spawn(point.yaw, tick);
         }
+        // A custom game's loadout rule (pistols only, say).
+        let class = loadouts.restrict(avatar.class);
         let mut state = if self.game == Mode::Zombies {
             // Zombies: the sidearm and two frags; the rest is bought.
             let mut state = PlayerState::new(loadout_for(&avatar.class));
@@ -3459,10 +3463,10 @@ impl NetServer {
             state.combat = CombatState::only(weapon);
             state
         } else {
-            let mut state = PlayerState::new(loadout_for(&avatar.class));
-            state.combat = avatar.class.combat();
+            let mut state = PlayerState::new(loadout_for(&class));
+            state.combat = class.combat();
             // Perks come with the class; Zombies and Gun Game carry none.
-            state.perks = avatar.class.perks;
+            state.perks = class.perks;
             state
         };
         if first {

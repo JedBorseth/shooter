@@ -32,6 +32,8 @@ func _run() -> void:
 	await _server_side()
 	for ff in ["off", "on", "reflect", "shared"]:
 		await _friendly_fire(ff)
+	await _loadouts("pistols", ["m1911", "bp9"])
+	await _loadouts("snipers", ["m40"])
 	await _ranked_ignores()
 	_finish()
 
@@ -191,6 +193,22 @@ func _friendly_fire(ff: String) -> void:
 				mate_health < 100.0 and mate_health > 0.0 and thrower_health < 100.0,
 				"shared: both take half (%s)" % note
 			)
+	server.queue_free()
+	await process_frame
+
+
+## Every player, bots included, spawns with what the loadout rule allows.
+func _loadouts(rule: String, allowed: Array) -> void:
+	var server := _start_server("loadouts=%s" % rule)
+	await _wait_for(func() -> bool: return server.match_phase() == "playing", 30.0)
+	await _seconds(1.5)
+	var held := []
+	for id in server.player_ids():
+		held.append(server.player_weapon(id))
+	var ok := not held.is_empty()
+	for key: String in held:
+		ok = ok and allowed.has(key.get_slice("+", 0))
+	_check(ok, "%s only: everyone holds %s (%s)" % [rule, allowed, held])
 	server.queue_free()
 	await process_frame
 

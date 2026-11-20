@@ -405,7 +405,8 @@ Black Ops 2's Custom Games, CODcaster-style spectating, and a private match lobb
 - [x] Custom game settings on the server (`shooter_sim::custom`, `--custom`): score, time, and round limits, respawn delay, health and regeneration, killcam, radar (normal, constant, off), scorestreaks, and hardcore's health and friendly fire, sent in the welcome; ranked servers ignore them.
 - [x] Friendly fire on, reflect, and shared on the server (bullets, the knife, grenades, blasts), with teamkills scoring nothing.
 - [ ] Black Ops 2's teamkill punishment (`teamKillPunishCount`, `teamKillSpawnDelay`): a longer respawn after repeat teamkills, then a kick.
-- [ ] Loadout rules: default classes only, pistols only, snipers only.
+- [x] Loadout rules: default classes only, pistols only, snipers only.
+- [ ] Grey out what a loadout rule bars in the class menu, as Black Ops 2's restricted items show.
 - [ ] Hardcore's HUD (none) and the minimap off on the client.
 - [ ] A Game Settings page in the local match setup, with named presets saved locally.
 - [ ] Bots per team, each team with its own difficulty.

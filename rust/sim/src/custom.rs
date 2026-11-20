@@ -12,9 +12,11 @@
 //! on the game rules"): 30% health, friendly fire on, and no HUD. Turning it
 //! on in the text form sets the first two; later keys can still change them.
 
+use crate::class::{Class, DefaultClass, Gun};
 use crate::net::bits::{BitSink, BitSource, DecodeError, DecodeResult};
 use crate::player::HealthParams;
 use crate::tdm::{MatchRules, Mode};
+use crate::weapon::{WeaponClass, WeaponId};
 
 /// Health a hardcore match starts players with, in percent of normal
 /// (Black Ops 2's hardcore `playerMaxHealth` 30).
@@ -98,6 +100,49 @@ pub enum Loadouts {
     /// Sniper rifles only, with a pistol as the secondary.
     SnipersOnly,
 }
+
+impl Loadouts {
+    /// The class a player spawns with under this rule. A gun the rule bars
+    /// gives way to the rule's default one (the M1911, or the M40); a
+    /// class the rule bars entirely becomes the first default class.
+    /// Equipment and perks stay.
+    pub fn restrict(self, class: Class) -> Class {
+        let of =
+            |gun: Option<Gun>, wanted: WeaponClass| gun.filter(|g| g.base.def().class == wanted);
+        match self {
+            Self::Any => class,
+            Self::DefaultClasses => {
+                if DefaultClass::ALL.iter().any(|d| d.class() == class) {
+                    class
+                } else {
+                    Class::default()
+                }
+            }
+            Self::PistolsOnly => {
+                let pistol = of(class.secondary, WeaponClass::Pistol)
+                    .or(of(class.primary, WeaponClass::Pistol))
+                    .unwrap_or_else(|| Gun::plain(WeaponId::expect(DEFAULT_PISTOL)));
+                Class {
+                    primary: None,
+                    secondary: Some(pistol),
+                    ..class
+                }
+            }
+            Self::SnipersOnly => Class {
+                primary: Some(
+                    of(class.primary, WeaponClass::Sniper)
+                        .unwrap_or_else(|| Gun::plain(WeaponId::expect(DEFAULT_SNIPER))),
+                ),
+                secondary: of(class.secondary, WeaponClass::Pistol),
+                ..class
+            },
+        }
+    }
+}
+
+/// The pistol and sniper rifle a restricted class falls back to.
+pub const DEFAULT_PISTOL: &str = "m1911";
+pub const DEFAULT_SNIPER: &str = "m40";
 
 /// A custom game's rules. The defaults are the normal game.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -562,6 +607,49 @@ mod tests {
         assert_eq!(FriendlyFire::Shared.split(41.0), (20.0, 20.0));
         // At least 1.
         assert_eq!(FriendlyFire::Shared.split(1.0), (1.0, 1.0));
+    }
+
+    #[test]
+    fn loadout_rules_restrict_the_class() {
+        let class = DefaultClass::ALL[0].class();
+        assert_eq!(Loadouts::Any.restrict(class), class);
+        assert_eq!(Loadouts::DefaultClasses.restrict(class), class);
+        let custom = Class {
+            lethals: class.lethals.saturating_sub(1),
+            ..class
+        };
+        assert_ne!(custom, class);
+        assert_eq!(Loadouts::DefaultClasses.restrict(custom), Class::default());
+
+        let pistols = Loadouts::PistolsOnly.restrict(class);
+        assert_eq!(pistols.primary, None);
+        let pistol = pistols.secondary.unwrap();
+        assert_eq!(pistol.base.def().class, WeaponClass::Pistol);
+        // Equipment and perks stay.
+        assert_eq!(pistols.lethals, class.lethals);
+        assert_eq!(pistols.perks, class.perks);
+
+        let snipers = Loadouts::SnipersOnly.restrict(class);
+        assert_eq!(
+            snipers.primary.unwrap().base.def().class,
+            WeaponClass::Sniper
+        );
+        assert!(
+            snipers
+                .secondary
+                .is_none_or(|g| g.base.def().class == WeaponClass::Pistol)
+        );
+        // A class that already fits keeps its guns.
+        let marksman = DefaultClass::ALL.iter().map(|d| d.class()).find(|c| {
+            c.primary
+                .is_some_and(|g| g.base.def().class == WeaponClass::Sniper)
+        });
+        if let Some(marksman) = marksman {
+            assert_eq!(
+                Loadouts::SnipersOnly.restrict(marksman).primary,
+                marksman.primary
+            );
+        }
     }
 
     #[test]
