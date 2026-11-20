@@ -2626,6 +2626,8 @@ impl NetServer {
         let tick = self.tick;
         if let Some(victim) = self.avatars.iter_mut().find(|a| a.id == record.victim) {
             victim.killcam_since = Some(tick);
+            // Held until the killcam is over, unless they skip it.
+            victim.respawn_in = victim.respawn_in.max(killcam::respawn_wait(&killcam));
         }
         self.send_event(record.victim, GameEvent::Killcam(killcam));
     }

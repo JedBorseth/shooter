@@ -57,6 +57,7 @@ const TDM_HUD_SCRIPT := "res://scripts/net/tdm_hud.gd"
 const CTF_VIEW_SCRIPT := "res://scripts/net/ctf_view.gd"
 const HARDPOINT_VIEW_SCRIPT := "res://scripts/net/hardpoint_view.gd"
 const SND_HUD_SCRIPT := "res://scripts/net/snd_hud.gd"
+const KILLCAM_HUD_SCRIPT := "res://scripts/net/killcam_hud.gd"
 const DEFAULT_PORT := 27015
 ## Port of the server `start_local_match` runs, away from the default so it
 ## does not clash with a server already running on this machine.
@@ -355,3 +356,10 @@ func _attach_client(main: Node, target: String, options: Dictionary) -> void:
 	snd_hud.set("client", client)
 	snd_hud.set("player", player)
 	main.add_child(snd_hud)
+	# The killcam's title, killer card, and skip prompt; idle until one plays.
+	var killcam_hud := CanvasLayer.new()
+	killcam_hud.name = "KillcamHud"
+	killcam_hud.set_script(load(KILLCAM_HUD_SCRIPT))
+	killcam_hud.set("client", client)
+	killcam_hud.set("player", player)
+	main.add_child(killcam_hud)

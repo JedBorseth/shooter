@@ -133,8 +133,12 @@ func _process(delta: float) -> void:
 	var alive := true
 	if player != null:
 		aim = player.ads_amount()
-		alive = player.is_alive()
-		if alive:
+		# A killcam shows the killer's view in full colour, alive and well.
+		var killcam: bool = player.has_method("in_killcam") and player.in_killcam()
+		alive = player.is_alive() or killcam
+		if killcam:
+			target = 1.0
+		elif alive:
 			target = vitality_at(player.health() / maxf(player.max_health(), 1.0))
 		else:
 			target = 0.0

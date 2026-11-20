@@ -230,7 +230,7 @@ Engine side, in `body::tick`:
 | Walk bob | 2.2 cm, lowest just after each footfall, 1.2 cm sway and 0.23 degree roll alternating feet | a few cm, a dip at each step |
 | Jump landing | 5 cm dip and a 1.4 degree nod, back in about 0.35 s | about 4 to 6 cm and 1 to 2 degrees over about 0.3 s |
 | Hit flinch | away from the shot: a hit from the right turns the head left and rolls it; from in front tips it up, from behind down | directional |
-| Death | our own body falls as a ragdoll; the camera pulls back and up from the eyes to 1.6 m high and 2.6 m behind it, watching it fall for 1.1 s, then turns to the killer with the body in the bottom of the frame | third-person death showing your own body, then a killcam |
+| Death | our own body falls as a ragdoll; the camera pulls back and up from the eyes to 1.6 m high and 2.6 m behind it, watching it fall for 1.1 s, then turns to the killer with the body in the bottom of the frame | third-person death showing your own body, then a killcam (ours: 2 s after the death, from the killer's eyes, `shooter_sim::killcam`) |
 
 The bob runs on the footstep stride phase (`footsteps::Stride`), with the
 foot alternating each step so the sway and roll are continuous. Changing gait

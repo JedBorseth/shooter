@@ -108,7 +108,10 @@ use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, Weapo
 // the ticks around it) and the client's skip.
 // Version 45 replaced the loadout pick with a whole class (`crate::class`):
 // both weapons and their attachments, grenade counts, and wildcards.
-pub const PROTOCOL_VERSION: u16 = 45;
+// Version 46 holds a killcam victim's respawn until the client says the
+// killcam is over (`ClientMessage::SkipKillcam`, now also sent when it
+// finishes), so older clients would wait out the server's fallback.
+pub const PROTOCOL_VERSION: u16 = 46;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -159,8 +162,8 @@ pub enum ClientMessage {
         text: String,
         team: bool,
     },
-    /// Skip the killcam playing after our death: respawn as soon as the
-    /// respawn delay allows (`killcam`).
+    /// The killcam playing after our death is over, skipped or finished:
+    /// respawn as soon as the respawn delay allows (`killcam`).
     SkipKillcam,
 }
 
