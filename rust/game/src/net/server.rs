@@ -97,6 +97,7 @@ use shooter_sim::player::{self, PlayerEvent, PlayerInput, PlayerParams, PlayerSt
 use shooter_sim::radar::Radar;
 use shooter_sim::scavenger;
 use shooter_sim::score::{Award, Kill, ScoreRules, ScoreState, ScoreTotals, Scored};
+use shooter_sim::snd::bots::{self as snd_bots, AttackRole};
 use shooter_sim::snd::{
     Charge, ChargeContext, ChargeEvent, ChargePlayer, ChargeState, Headcount, RoundEnd, RoundPhase,
     RoundRecord, RoundState, RoundTransition, Site, SndRules, UseKind,
@@ -121,6 +122,7 @@ use super::horde::{Horde, HordeEvent, HordePlayer};
 use super::machines::CrateChange;
 use super::match_log::{MatchLog, RoundLog};
 use super::props::{PropExplosion, PropSnapshot, PropsBridge};
+use super::snd_plan::{Intel, SndPlan};
 use super::transport::{self, NetEvent};
 use crate::body::{self, BodyParts};
 use crate::convert::{to_godot, to_sim};
@@ -320,6 +322,8 @@ pub struct NetServer {
     charge_switched: bool,
     /// Round results and zone arrivals, for the bot bench.
     match_log: MatchLog,
+    /// The Search and Destroy bots' plan for the round.
+    snd_plan: SndPlan,
     /// Who planted the charge this round (the explosion's kills are theirs).
     charge_planter: Option<u8>,
     /// The round's kills and last ones standing, for its medals.
@@ -2717,6 +2721,7 @@ impl NetServer {
             })
             .collect();
         let mut throw_checks = THROW_CHECKS_PER_TICK;
+        self.update_snd_plan();
         let mut objectives = self.bot_objectives();
         self.scavenger_objectives(&mut objectives);
         let frozen = self.frozen();
@@ -4954,12 +4959,16 @@ impl NetServer {
             return;
         };
         let (at, side) = (avatar.predicted.position, self.side(avatar));
+        let team = avatar.team;
         self.recent_deaths.push_back((tick, at));
         self.radar.forget(id);
         if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) {
             avatar.streaks.on_death();
         }
         self.send_streaks(id);
+        if self.round.is_some() {
+            self.snd_plan.on_death(team, at, tick);
+        }
         self.next_scoreboard = tick;
         // Everyone leaves a Scavenger pack, for their enemies with the perk
         // (not in Zombies, which has no perks).
@@ -5269,6 +5278,7 @@ impl NetServer {
             % self.charge_sites.len().max(1);
         self.charge_first_target = self.charge_target;
         self.charge_switched = false;
+        self.snd_plan.start_round(round.number, self.tick);
         if let Some((id, _)) = carrier {
             godot_print!(
                 "server: player {id} carries the charge in round {}",
@@ -6406,17 +6416,100 @@ impl NetServer {
         out
     }
 
+    /// The middle of `team`'s side's spawns this round, if it has any.
+    fn side_centroid(&self, team: Team) -> Option<Vec3> {
+        let side = self.side_of(team);
+        let points: Vec<Vec3> = self
+            .spawn_points
+            .iter()
+            .filter(|p| p.team.is_some_and(|t| t.min(1) == side))
+            .map(|p| p.position)
+            .collect();
+        (!points.is_empty()).then(|| points.iter().copied().sum::<Vec3>() / points.len() as f32)
+    }
+
+    /// Search and Destroy: brings the bots' round plan up to date with what
+    /// they have seen (`SndPlan`), and switches the attackers' target site
+    /// when they see it held.
+    fn update_snd_plan(&mut self) {
+        let (Some(round), Some(charge)) = (self.round, self.charge) else {
+            return;
+        };
+        let recent = (snd_bots::SIGHTING_SECONDS * TICK_RATE as f32) as Tick;
+        // The latest sighting of each enemy, by each side's bots.
+        let mut seen: [Vec<(u8, Vec3, Tick)>; 2] = [Vec::new(), Vec::new()];
+        for avatar in self.avatars.iter().filter(|a| a.predicted.state.alive()) {
+            let Some(brain) = &avatar.brain else {
+                continue;
+            };
+            let side = usize::from(avatar.team != round.attackers);
+            for (id, at, t) in brain.sightings() {
+                if self.tick.saturating_sub(*t) >= recent {
+                    continue;
+                }
+                match seen[side].iter_mut().find(|(e, _, _)| e == id) {
+                    Some(entry) if entry.2 < *t => *entry = (*id, to_sim(*at), *t),
+                    Some(_) => {}
+                    None => seen[side].push((*id, to_sim(*at), *t)),
+                }
+            }
+        }
+        let positions = |v: &[(u8, Vec3, Tick)]| v.iter().map(|(_, p, _)| *p).collect::<Vec<_>>();
+        let (by_attackers, by_defenders) = (positions(&seen[0]), positions(&seen[1]));
+        let attackers: Vec<u8> = self
+            .avatars
+            .iter()
+            .filter(|a| a.brain.is_some() && a.team == round.attackers && a.predicted.state.alive())
+            .map(|a| a.id)
+            .collect();
+        let carrier = match charge.state {
+            ChargeState::Carried { by } => Some(by),
+            _ => None,
+        };
+        let intel = Intel {
+            seen_by_attackers: &by_attackers,
+            seen_by_defenders: &by_defenders,
+        };
+        let mut target = self.charge_target;
+        let switched = self.snd_plan.update(
+            self.tick,
+            &round,
+            &self.snd_rules,
+            &self.charge_sites,
+            &attackers,
+            carrier,
+            &intel,
+            &mut target,
+        );
+        if switched {
+            self.charge_target = target;
+            self.charge_switched = true;
+            godot_print!(
+                "server: the attacking bots switch to site {}",
+                self.charge_site_names
+                    .get(target)
+                    .map_or("?", String::as_str)
+            );
+        }
+    }
+
     /// Search and Destroy: what each bot does about the charge.
     ///
     /// - A bot standing where holding interact would plant or defuse holds
     ///   it (and fights first if an enemy shows).
-    /// - Attackers: the carrier runs to this round's target site; the
-    ///   others push into that site to clear it. A dropped charge sends the
-    ///   nearest attacker bot to pick it up. Once planted, they hold spots
-    ///   around it.
-    /// - Defenders: split between the sites, holding spots in them. Once the
-    ///   charge is planted, the nearest runs to defuse it and the rest clear
-    ///   the site around it.
+    /// - Attackers (`shooter_sim::snd::bots`, as Black Ops 2's bots): the
+    ///   carrier waits with the team short of the target site until it
+    ///   decides to plant (more likely as the clock runs down), then runs to
+    ///   the site. Escorts follow it, then guard the plant spot; pushers
+    ///   gather with it, then clear the target site as it goes to plant; one
+    ///   lurker goes to the other site. The target
+    ///   switches when the attackers see it held (`SndPlan`). A dropped
+    ///   charge sends the nearest attacker bot to pick it up. Once planted,
+    ///   they hold spots around it.
+    /// - Defenders: split between the sites, holding spots in them; when one
+    ///   site is clearly under attack, all but one defender of each other
+    ///   site rotate to it. Once the charge is planted, the nearest runs to
+    ///   defuse it and the rest clear the site around it.
     fn charge_objectives(
         &self,
         round: RoundState,
@@ -6484,6 +6577,36 @@ impl NetServer {
             ChargeState::Planted { at, .. } => nearest(1 - round.attackers, at),
             _ => None,
         };
+        // The attackers' side, for where the carrier waits; the other site,
+        // for the lurker; the carrier, for its escorts.
+        let attack_side = self.side_centroid(round.attackers).unwrap_or(target.center);
+        let target_index = self.charge_target % self.charge_sites.len().max(1);
+        let other = self
+            .charge_sites
+            .iter()
+            .enumerate()
+            .find(|(i, _)| *i != target_index)
+            .map(|(_, s)| s);
+        let carrier_at = match charge.state {
+            ChargeState::Carried { by } => self
+                .avatars
+                .iter()
+                .find(|a| a.id == by)
+                .map(|a| a.predicted.position),
+            _ => None,
+        };
+        // Each defender's own site, and those rotating to the hot one.
+        let rotating: Vec<u8> = match self.snd_plan.hot {
+            Some(hot) => {
+                let guards: Vec<(u8, usize)> = defenders
+                    .iter()
+                    .enumerate()
+                    .map(|(i, id)| (*id, i % self.charge_sites.len().max(1)))
+                    .collect();
+                snd_bots::rotating(&guards, hot)
+            }
+            None => Vec::new(),
+        };
         let mut out = Vec::new();
         for bot in &bots {
             let id = bot.id;
@@ -6495,17 +6618,47 @@ impl NetServer {
                 continue;
             }
             let objective = if bot.team == round.attackers {
+                let plant_spot = target.center - Vec3::Y * (target.half_extents.y - 0.3);
                 match charge.state {
-                    ChargeState::Carried { by } if by == id => BotObjective::run(to_godot(
-                        target.center - Vec3::Y * (target.half_extents.y - 0.3),
-                    )),
+                    ChargeState::Carried { by } if by == id => {
+                        if self.snd_plan.planting {
+                            BotObjective::run(to_godot(plant_spot))
+                        } else {
+                            BotObjective::hunt(to_godot(snd_bots::staging_point(
+                                target,
+                                attack_side,
+                            )))
+                        }
+                    }
                     ChargeState::Dropped { at } if fetcher == Some(id) => {
                         BotObjective::run(to_godot(at))
                     }
                     ChargeState::Planted { at, .. } => {
                         BotObjective::hold(spot(id, at, Vec2::splat(4.0)))
                     }
-                    _ => BotObjective::hunt(spot(id, floor(target), inside(target))),
+                    _ => match self.snd_plan.role(id) {
+                        AttackRole::Escort if self.snd_plan.planting => BotObjective::hold(spot(
+                            id,
+                            plant_spot,
+                            Vec2::splat(snd_bots::ESCORT_RADIUS),
+                        )),
+                        AttackRole::Escort => match carrier_at {
+                            Some(at) => BotObjective::hunt(spot(id, at, Vec2::splat(3.0))),
+                            None => BotObjective::hunt(spot(id, floor(target), inside(target))),
+                        },
+                        AttackRole::Lurk => match other {
+                            Some(site) => BotObjective::hunt(spot(id, floor(site), inside(site))),
+                            None => BotObjective::hunt(spot(id, floor(target), inside(target))),
+                        },
+                        // Pushers gather with the carrier short of the
+                        // site, then go in together once it goes to plant.
+                        _ if !self.snd_plan.planting => BotObjective::hunt(spot(
+                            id,
+                            snd_bots::staging_point(target, attack_side),
+                            Vec2::splat(snd_bots::GATHER_RADIUS),
+                        )),
+                        _ => BotObjective::hunt(spot(id, floor(target), inside(target))),
+                    },
                 }
             } else {
                 match charge.state {
@@ -6516,9 +6669,18 @@ impl NetServer {
                         BotObjective::hunt(spot(id, at, Vec2::splat(4.0)))
                     }
                     _ => {
-                        let i = defenders.iter().position(|d| *d == id).unwrap_or(0);
-                        let site = &self.charge_sites[i % self.charge_sites.len()];
-                        BotObjective::hold(spot(id, floor(site), inside(site)))
+                        let site = match self.snd_plan.hot {
+                            Some(hot) if rotating.contains(&id) => &self.charge_sites[hot],
+                            _ => {
+                                let i = defenders.iter().position(|d| *d == id).unwrap_or(0);
+                                &self.charge_sites[i % self.charge_sites.len()]
+                            }
+                        };
+                        if rotating.contains(&id) {
+                            BotObjective::hunt(spot(id, floor(site), inside(site)))
+                        } else {
+                            BotObjective::hold(spot(id, floor(site), inside(site)))
+                        }
                     }
                 }
             };

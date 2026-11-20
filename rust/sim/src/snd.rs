@@ -31,6 +31,8 @@ use glam::Vec3;
 use crate::score::Award;
 use crate::tdm::{TEAM_COUNT, Team};
 
+pub mod bots;
+
 /// Tunable round rules.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SndRules {
