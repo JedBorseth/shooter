@@ -710,6 +710,7 @@ impl RemotePlayer {
             sprinting: s.sprinting,
             alive: s.alive,
             mantling: s.mantling,
+            vaulting: s.vaulting,
             reloading: s.reloading,
             walk_speed: MoveParams::default().walk_speed,
             ladder: s.ladder.is_some() && s.alive,

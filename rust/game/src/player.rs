@@ -703,6 +703,7 @@ impl ICharacterBody3D for FpsPlayer {
                     on_floor: self.env.on_floor,
                     rising: movement.velocity.y,
                     mantling: movement.mantling(),
+                    vaulting: movement.vaulting,
                     holding_breath: self.state.combat.holding_breath,
                 },
                 dt,

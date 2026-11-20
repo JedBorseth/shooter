@@ -3,7 +3,7 @@ extends SceneTree
 ## a long sprint brings breathing, low health brings a heartbeat but never
 ## muffles the world's buses or rings the ears, a shot
 ## ducks footsteps and distant fire and lets go, and the hit, headshot, and
-## kill markers exist.
+## kill markers and the movement sounds (jump, landing, mantle, vault) exist.
 ## Run from the repo root: godot --headless --path godot --script res://tests/player_sounds_test.gd
 
 const PLAYER_SCENE := preload("res://scenes/player.tscn")
@@ -27,6 +27,11 @@ func _run() -> void:
 	var env := player.get_node("AudioEnvironment") as AudioEnvironment
 	for bus in ["Player", "WeaponFoley", "WeaponsDistant"]:
 		_check(AudioServer.get_bus_index(bus) >= 0, "the %s bus exists" % bus)
+	# Each movement sound has several takes, so repeats vary.
+	for sound in ["jump", "land", "mantle", "vault"]:
+		for take in [1, 2, 3]:
+			var path := "res://assets/audio/player/%s_%d.ogg" % [sound, take]
+			_check(ResourceLoader.exists(path), "%s has take %d" % [sound, take])
 
 	# Healthy and rested: no breath, no heart, the world open.
 	_check(body.breaths_heard() == 0, "no breathing at rest")
