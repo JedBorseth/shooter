@@ -48,6 +48,9 @@ pub enum Mode {
     /// Two teams score by owning flags A, B, and C; kills do not score
     /// ([`crate::domination`]).
     Domination,
+    /// Co-op against rounds of zombies (`crate::zombies`): every player on
+    /// one team, no friendly fire, and the game ends when everyone is down.
+    Zombies,
 }
 
 impl Mode {
@@ -64,6 +67,7 @@ impl Mode {
             "snd" | "searchanddestroy" | "search_and_destroy" => Some(Self::SearchAndDestroy),
             "ffa" | "freeforall" | "free_for_all" | "free-for-all" => Some(Self::FreeForAll),
             "dom" | "domination" => Some(Self::Domination),
+            "zombies" | "zm" => Some(Self::Zombies),
             _ => None,
         }
     }
@@ -78,6 +82,7 @@ impl Mode {
             Self::SearchAndDestroy => "snd",
             Self::FreeForAll => "ffa",
             Self::Domination => "dom",
+            Self::Zombies => "zombies",
         }
     }
 
@@ -91,6 +96,7 @@ impl Mode {
             Self::SearchAndDestroy => "Search and Destroy",
             Self::FreeForAll => "Free-for-all",
             Self::Domination => "Domination",
+            Self::Zombies => "Zombies",
         }
     }
 

@@ -224,7 +224,10 @@ Done: rounds with a growing, toughening horde, zombies that walk straight at the
 - [x] Start Zombies with only the M1911 (`WeaponState::carried`; an empty slot cannot be drawn until a weapon is bought).
 - [x] Zombie sounds (groans, attacks, deaths; CC0, `tools/build_zombie_audio.py`) and round stings (synthesized).
 - [x] Barriers: zombies spawn outside and tear the boards off their window; players rebuild them for points (`scripts/zombies_barrier.gd`).
-- [ ] Downed state and revives for co-op, once Zombies runs on the dedicated server.
+- [x] Zombies on the dedicated server (`--mode zombies`, `--map zombies`): the server runs the horde, rounds, points, wall-weapon prices, and windows' boards (`rust/game/src/net/horde.rs`); zombies are sent in every other snapshot, quantized (about ten bytes each), and hit with lag compensation; clients draw them as puppets and the map's director mirrors the server for the HUD.
+- [ ] Doors, rebuilding windows, and power-ups on the server.
+- [ ] Downed state and revives for co-op (Black Ops rules: 45 s bleed-out, 3 s revive, 5% of points lost on going down and paid to the reviver, 10% from everyone else when a player bleeds out).
+- [ ] The title screen's Zombies runs a local server; co-op setup, the server browser, a co-op scoreboard (kills, downs, revives, headshots); then drop the offline director.
 - [ ] Playable versions of the menu's maps; today every map loads the one arena.
 - [x] A cheaper zombie for big hordes: two surfaces per character instead of eleven (a 24-zombie horde draws about 195 calls instead of 630).
 - [x] Animate distant zombies at a reduced rate: every second frame beyond 18 m and every fourth beyond 32 m, staggered across zombies.

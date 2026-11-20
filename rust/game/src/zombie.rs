@@ -13,6 +13,11 @@
 //! barrier (`scripts/zombies_barrier.gd`), one board at a time, then climbs
 //! through. It groans now and then, snarls when it swings, and cries out when
 //! it dies. Far from the camera its animation updates less often.
+//!
+//! Online the server runs every zombie (`net::horde`) and this node is only
+//! drawn ([`Zombie::set_puppet`]): `NetClient` places it from snapshots and
+//! plays its swings, flinches, and death; it has no body to bump into, and
+//! the local player's hits only predict a flinch.
 
 use godot::classes::{AudioStream, AudioStreamPlayer3D, CharacterBody3D, ICharacterBody3D, Node3D};
 use godot::prelude::*;
@@ -62,11 +67,6 @@ const GROAN_MAX: f32 = 9.0;
 /// second and every fourth frame.
 const HALF_RATE_DISTANCE: f32 = 18.0;
 const QUARTER_RATE_DISTANCE: f32 = 32.0;
-/// Each zombie walks up to this share faster or slower than its round's
-/// speed (evenly spread, so the horde's average is the round's), and its
-/// shamble's cadence follows its speed: a crowd spreads out and falls out of
-/// step instead of marching in a block.
-const SPEED_JITTER: f32 = 0.08;
 
 #[derive(GodotClass)]
 #[class(init, base = CharacterBody3D)]
@@ -131,6 +131,11 @@ pub struct Zombie {
     body_left: bool,
     /// Seconds left of a stagger from a heavy hit.
     stagger_for: f32,
+    /// Drawn for the server's zombie: no mind, no body, no health of its own.
+    puppet: bool,
+    /// Online: when the local player's hit last flinched it (engine
+    /// seconds), so the server's report of that hit does not flinch it again.
+    flinched_at: Option<f64>,
 }
 
 #[godot_api]
@@ -140,14 +145,19 @@ impl ICharacterBody3D for Zombie {
         self.health = self.max_health;
         self.yaw = self.base().get_global_rotation().y;
         self.base_mut().set_rotation(Vector3::ZERO);
-        self.base_mut().set_collision_layer(BODY_LAYER);
-        self.base_mut()
-            .set_collision_mask(WORLD_LAYER | BODY_LAYER | PLAYER_LAYER | BARRIER_LAYER);
+        if self.puppet {
+            self.base_mut().set_collision_layer(0);
+            self.base_mut().set_collision_mask(0);
+        } else {
+            self.base_mut().set_collision_layer(BODY_LAYER);
+            self.base_mut()
+                .set_collision_mask(WORLD_LAYER | BODY_LAYER | PLAYER_LAYER | BARRIER_LAYER);
+        }
         self.base_mut().add_to_group("zombies");
         self.voice = self.base().try_get_node_as::<AudioStreamPlayer3D>("Voice");
         self.seed = self.base().instance_id().to_i64() as u32;
         self.groan_in = GROAN_MIN + rng::unit(self.seed, 0) * (GROAN_MAX - GROAN_MIN);
-        self.speed *= speed_factor(self.seed);
+        self.speed *= shooter_sim::zombies::chase::speed_factor(self.seed);
     }
 
     /// Animation runs per rendered frame (less often far away); movement and
@@ -192,6 +202,10 @@ impl ICharacterBody3D for Zombie {
             return;
         }
 
+        if self.puppet {
+            self.groan(dt);
+            return;
+        }
         let position = self.base().get_global_position();
         self.groan(dt);
         // A heavy hit stops it in its tracks for a moment.
@@ -308,7 +322,8 @@ impl Zombie {
     }
 
     fn take_damage(&mut self, amount: f32, headshot: bool, melee: bool) -> bool {
-        if !self.is_alive() {
+        // Online the server owns health; the kill arrives from it.
+        if !self.is_alive() || self.puppet {
             return false;
         }
         let amount = if self.insta_kill { self.health } else { amount };
@@ -337,6 +352,31 @@ impl Zombie {
     /// with the killing shot's push.
     #[func]
     pub fn react_to_hit(
+        &mut self,
+        direction: Vector3,
+        killed: bool,
+        point: Vector3,
+        part: i64,
+        force: f32,
+    ) {
+        if self.puppet && !killed {
+            self.flinched_at = Some(now_seconds());
+        }
+        self.flinch(direction, killed, point, part, force);
+    }
+
+    /// Whether the local player's own hit flinched it in the last `seconds`;
+    /// answers yes once per hit.
+    pub fn predicted_flinch(&mut self, seconds: f32) -> bool {
+        let recent = self
+            .flinched_at
+            .is_some_and(|at| now_seconds() - at < f64::from(seconds));
+        self.flinched_at = None;
+        recent
+    }
+
+    /// The flinch, or the fall, from a hit.
+    pub fn flinch(
         &mut self,
         direction: Vector3,
         killed: bool,
@@ -407,6 +447,47 @@ impl Zombie {
 }
 
 impl Zombie {
+    /// Online: drawn for the server's zombie. Call before it enters the tree.
+    pub fn set_puppet(&mut self) {
+        self.puppet = true;
+    }
+
+    /// Online: places the drawn zombie where the server's was, facing `yaw`
+    /// and moving at `velocity`, with its hit zones posed to match.
+    pub fn net_apply(&mut self, feet: Vector3, yaw: f32, velocity: Vector3, walking: bool) {
+        self.base_mut().set_global_position(feet);
+        self.yaw = yaw;
+        self.moved = velocity;
+        if self.is_alive() {
+            let pose = shooter_sim::zombies::chase::hitbox_pose(to_sim(feet), yaw, walking);
+            self.hitboxes.bind_mut().set_pose(Some(pose));
+        }
+    }
+
+    /// Online: the server's zombie swung (at a player or a window's boards).
+    pub fn net_swing(&mut self) {
+        self.rig.bind_mut().attack();
+        let sound = self.attack_sounds.clone();
+        self.say(sound);
+    }
+
+    /// Online: the server's zombie died from a hit travelling along
+    /// `direction` that landed on hit shape `part` with force level `force`.
+    pub fn net_die(&mut self, direction: Vector3, part: i64, force: f32) {
+        if !self.is_alive() {
+            return;
+        }
+        self.health = 0.0;
+        let sound = self.death_sounds.clone();
+        self.say(sound);
+        self.hitboxes.bind_mut().set_pose(None);
+        if let Some(mut assist) = self.base().try_get_node_as::<AimAssistTarget>("AimAssist") {
+            assist.bind_mut().set_active(false);
+        }
+        let point = self.base().get_global_position() + Vector3::UP * 1.2;
+        self.flinch(direction, true, point, part, force);
+    }
+
     /// Health and speed for a spawn; call before the zombie enters the tree.
     pub fn configure(&mut self, max_health: f32, speed: f32) {
         self.max_health = max_health;
@@ -595,25 +676,7 @@ impl Zombie {
     }
 }
 
-/// This zombie's share of its round's speed, from its seed: 1 ± [`SPEED_JITTER`].
-fn speed_factor(seed: u32) -> f32 {
-    1.0 + SPEED_JITTER * (rng::unit(seed, 2) * 2.0 - 1.0)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn speeds_spread_round_the_rounds_speed() {
-        let factors: Vec<f32> = (0..400).map(speed_factor).collect();
-        let mean = factors.iter().sum::<f32>() / factors.len() as f32;
-        assert!((mean - 1.0).abs() < 0.01, "mean {mean}");
-        assert!(factors.iter().all(|f| (f - 1.0).abs() <= SPEED_JITTER));
-        let spread = factors
-            .iter()
-            .copied()
-            .fold(0.0f32, |m, f| m.max((f - 1.0).abs()));
-        assert!(spread > SPEED_JITTER * 0.8, "spread {spread}");
-    }
+/// Engine time in seconds.
+fn now_seconds() -> f64 {
+    godot::classes::Time::singleton().get_ticks_usec() as f64 / 1e6
 }

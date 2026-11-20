@@ -7,6 +7,9 @@ extends StaticBody3D
 ## The boards collide on the "barriers" layer, which only zombies collide
 ## with; bullets pass between them. A separate blocker in the window keeps
 ## players inside.
+##
+## Online the dedicated server owns the boards: it sets them with
+## `set_boards`, and clients show its count with `show_boards`.
 
 const BOARDS := 6
 ## Seconds between boards the player can put back.
@@ -57,7 +60,7 @@ func interact_prompt() -> String:
 
 
 func interact(_player: Node) -> void:
-	if _boards >= BOARDS or _cooldown > 0.0:
+	if _boards >= BOARDS or _cooldown > 0.0 or _networked():
 		return
 	_cooldown = REBUILD_COOLDOWN
 	var plank := _planks[_boards] as Node3D
@@ -69,6 +72,37 @@ func interact(_player: Node) -> void:
 	var wallet := get_tree().get_first_node_in_group("zombies_wallet")
 	if wallet != null:
 		wallet.rebuild_reward()
+
+
+## Puts up exactly `count` boards at once, with no sound (the server, and a
+## new game).
+func set_boards(count: int) -> void:
+	_boards = clampi(count, 0, BOARDS)
+	for i in _planks.size():
+		var plank := _planks[i] as Node3D
+		plank.transform = _rest[i]
+		plank.visible = i < _boards
+	_update_collision()
+
+
+## Online: shows the server's count, tearing boards off or putting them
+## back one at a time with their sounds.
+func show_boards(count: int) -> void:
+	count = clampi(count, 0, BOARDS)
+	while _boards > count:
+		tear()
+	while _boards < count:
+		var plank := _planks[_boards] as Node3D
+		plank.transform = _rest[_boards]
+		plank.show()
+		_boards += 1
+		_play()
+	_update_collision()
+
+
+func _networked() -> bool:
+	var wallet := get_tree().get_first_node_in_group("zombies_wallet")
+	return wallet != null and wallet.is_networked()
 
 
 func _update_collision() -> void:

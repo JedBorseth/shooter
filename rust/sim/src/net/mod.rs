@@ -17,6 +17,7 @@
 pub mod bits;
 pub mod conditioner;
 pub mod discovery;
+pub mod horde;
 pub mod input_queue;
 pub mod interpolation;
 pub mod lag;

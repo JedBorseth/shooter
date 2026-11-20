@@ -49,7 +49,7 @@ use shooter_sim::net::prediction::Reconciled;
 use shooter_sim::net::protocol::{
     self as protocol, ChargeStatus, ChargeView, ClientMessage, DominationView, FlagPlay,
     FlagPointView, FlagStatus, FlagView, GameEvent, InputPacket, KillCause, MAX_BUILD_BYTES,
-    PROTOCOL_VERSION, ScoreRow, ServerMessage, Snapshot, ZoneView,
+    PROTOCOL_VERSION, ScoreRow, ServerMessage, Snapshot, ZombiesEvent, ZoneView,
 };
 use shooter_sim::net::snapshot_history::SnapshotHistory;
 use shooter_sim::net::{CHANNEL_COUNT, CHANNEL_RELIABLE, DEFAULT_PORT, TICK_RATE, Tick};
@@ -61,6 +61,7 @@ use shooter_sim::tdm::{Mode, Period, Phase, TEAM_COUNT, Team};
 use shooter_sim::weapon::{Slot, WeaponId};
 
 use super::class_dict::{class_from_dict, class_to_dict, error_text};
+use super::horde_view::HordeView;
 use super::killcam::{Playing, WeaponCue};
 use super::props::{PropSnapshot, PropsBridge};
 use super::remote::{RemotePlayer, RemoteSample};
@@ -208,6 +209,9 @@ pub struct NetClient {
     /// server last told us.
     charge_sites: Vec<ZoneView>,
     charge: Option<ChargeView>,
+    /// Zombies: the horde as drawn, and the map's director mirroring the
+    /// server's game.
+    horde: Option<HordeView>,
 }
 
 #[derive(Clone, Copy)]
@@ -414,6 +418,9 @@ impl INode for NetClient {
             if let Some(held) = held {
                 remote.node.bind_mut().hold_hitboxes(&held);
             }
+        }
+        if let Some(horde) = &mut self.horde {
+            horde.draw(render_tick);
         }
         // Shots fired before the next frame aim at what was just drawn.
         if let Some(player) = &mut self.player {
@@ -1141,6 +1148,12 @@ impl NetClient {
         self.player_id.map_or(-1, i32::from)
     }
 
+    /// Zombies: zombies drawn now (0 outside Zombies).
+    #[func]
+    fn drawn_zombies(&self) -> i32 {
+        self.horde.as_ref().map_or(0, |h| h.drawn() as i32)
+    }
+
     /// Ids of the other players currently shown.
     #[func]
     fn remote_ids(&self) -> PackedInt32Array {
@@ -1238,6 +1251,15 @@ impl NetClient {
                 self.mode = mode;
                 if let Some(clock) = &mut self.clock {
                     clock.set_interval(u32::from(snapshot_interval));
+                }
+                if mode == Mode::Zombies {
+                    let tree = self.base().get_tree();
+                    self.horde = HordeView::attach(&tree, snapshot_interval);
+                    if self.horde.is_none() {
+                        godot_error!(
+                            "net client: the server runs Zombies on a map without a director"
+                        );
+                    }
                 }
                 if let Some(player) = &mut self.player {
                     player.bind_mut().start_prediction();
@@ -1407,12 +1429,41 @@ impl NetClient {
                 self.signals().match_changed().emit();
             }
             GameEvent::Scoreboard { rows } => {
+                if let (Some(horde), Some(me)) = (&mut self.horde, self.player_id)
+                    && let Some(row) = rows.iter().find(|r| r.id == me)
+                {
+                    horde.set_tallies(row.kills, 0);
+                }
                 for row in rows {
                     if let Some(entry) = self.roster.iter_mut().find(|e| e.id == row.id) {
                         entry.row = row;
                     }
                 }
                 self.signals().scoreboard_changed().emit();
+            }
+            GameEvent::Zombies(event) => {
+                if let ZombiesEvent::Hit {
+                    shot,
+                    headshot,
+                    killed,
+                    ..
+                } = event
+                {
+                    self.stats.hits_confirmed += 1;
+                    if killed {
+                        self.stats.kills_confirmed += 1;
+                    }
+                    if let Some(player) = &mut self.player {
+                        player.bind_mut().on_server_hit(shot, headshot, killed);
+                    }
+                }
+                let newest = self.newest;
+                if let Some(horde) = &mut self.horde {
+                    horde.on_event(&event, |end| match newest {
+                        Some(now) => f64::from(end.saturating_sub(now)) / f64::from(TICK_RATE),
+                        None => 0.0,
+                    });
+                }
             }
             GameEvent::Spawned { yaw } => {
                 if let Some(player) = &mut self.player {
@@ -1755,6 +1806,9 @@ impl NetClient {
             self.newest = Some(tick);
             if let Some(clock) = &mut self.clock {
                 clock.on_snapshot(tick);
+            }
+            if let (Some(horde), Some(zombies)) = (&mut self.horde, &snapshot.zombies) {
+                horde.on_snapshot(tick, zombies.clone());
             }
         }
 

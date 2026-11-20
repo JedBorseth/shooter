@@ -11,6 +11,12 @@
 //! them. Spawn points behind a window name its `barrier`; zombies spawned
 //! there tear it down first, and players board it back up for points
 //! ([`ZombieDirector::rebuild_reward`]).
+//!
+//! Online the dedicated server runs the horde (`net::horde`): the client
+//! switches the map's director to [`ZombieDirector::set_networked`], and it
+//! only mirrors what the server says (the round, this player's points) so
+//! the HUD and the wallet keep working, while `NetClient` draws the zombies
+//! as its children.
 
 use godot::classes::{INode3D, Node3D, PackedScene};
 use godot::prelude::*;
@@ -74,6 +80,11 @@ pub struct ZombieDirector {
     nuking: bool,
     /// Points paid this round for rebuilding barriers.
     rebuild_points: i64,
+    /// Online: the server runs the game, and this only mirrors it.
+    networked: bool,
+    /// Online: seconds (engine time) the break ends, and zombies left.
+    net_break_ends: f64,
+    net_remaining: u32,
 }
 
 /// Points for each board put back on a barrier.
@@ -104,6 +115,9 @@ impl INode3D for ZombieDirector {
     }
 
     fn physics_process(&mut self, delta: f64) {
+        if self.networked {
+            return;
+        }
         let dt = delta as f32;
         // Before the round copy below: a Nuke's kills count toward the round.
         if self.rounds.is_some_and(|r| r.phase != Phase::Over) {
@@ -194,11 +208,15 @@ impl ZombieDirector {
     fn points_spent(points: i64, total: i64);
 
     /// Takes `amount` points if the player has them. Wall weapons and doors
-    /// pay through this.
+    /// pay through this. Online it only says whether they can: the server
+    /// takes the points and says what is left.
     #[func]
     fn spend(&mut self, amount: i64) -> bool {
         if amount < 0 || self.points < amount {
             return false;
+        }
+        if self.networked {
+            return true;
         }
         self.points -= amount;
         let total = self.points;
@@ -219,6 +237,21 @@ impl ZombieDirector {
         for mut zombie in self.zombies().iter_shared() {
             zombie.bind_mut().set_gates(gates.clone());
         }
+    }
+
+    /// Online: stops running the game here; the server's word comes in
+    /// through `net_round` and `net_points`.
+    #[func]
+    pub fn set_networked(&mut self) {
+        self.networked = true;
+        self.points = 0;
+        self.kills = 0;
+        self.headshots = 0;
+    }
+
+    #[func]
+    pub fn is_networked(&self) -> bool {
+        self.networked
     }
 
     /// Whether a zone is open ("" is the starting area).
@@ -275,6 +308,68 @@ impl ZombieDirector {
         true
     }
 
+    /// The zombie every spawn instances (online, the drawn ones too).
+    pub fn zombie_scene(&self) -> Gd<PackedScene> {
+        (*self.zombie_scene).clone()
+    }
+
+    /// Online: the server's round. `phase` 0 is a break ending in
+    /// `break_left` seconds, 1 the fight with `remaining` zombies left, 2 the
+    /// end. Emits the round signals on the changes, as offline.
+    pub fn net_round(&mut self, round: u32, phase: u8, break_left: f64, remaining: u32) {
+        let phase = match phase {
+            0 => Phase::Break,
+            1 => Phase::Fighting,
+            _ => Phase::Over,
+        };
+        let before = self.rounds;
+        let mut rounds = Rounds::new(0.0);
+        rounds.round = round;
+        rounds.phase = phase;
+        self.rounds = Some(rounds);
+        self.net_remaining = remaining;
+        self.net_break_ends = now_seconds() + break_left.max(0.0);
+        let changed = before.is_none_or(|b| b.round != round || b.phase != phase);
+        if !changed {
+            return;
+        }
+        match phase {
+            Phase::Fighting => {
+                self.signals().round_started().emit(i64::from(round));
+            }
+            Phase::Break => {
+                if before.is_some_and(|b| b.phase == Phase::Fighting) {
+                    let cleared = i64::from(round.saturating_sub(1));
+                    self.signals().round_cleared().emit(cleared);
+                }
+            }
+            Phase::Over => {
+                self.signals().game_over().emit(i64::from(round));
+            }
+        }
+    }
+
+    /// Online: this player's points, which just changed by `change`.
+    pub fn net_points(&mut self, total: u32, change: i32) {
+        self.points = i64::from(total);
+        let total = self.points;
+        if change > 0 {
+            self.signals()
+                .points_awarded()
+                .emit(i64::from(change), total);
+        } else if change < 0 {
+            self.signals()
+                .points_spent()
+                .emit(i64::from(-change), total);
+        }
+    }
+
+    /// Online: this player's kills and headshots, from the scoreboard.
+    pub fn net_tallies(&mut self, kills: u32, headshots: u32) {
+        self.kills = i64::from(kills);
+        self.headshots = i64::from(headshots);
+    }
+
     #[func]
     fn round(&self) -> i64 {
         self.rounds.map(|r| i64::from(r.round)).unwrap_or(0)
@@ -294,12 +389,21 @@ impl ZombieDirector {
     /// Seconds left before the next round, or 0 during one.
     #[func]
     fn break_left(&self) -> f32 {
+        if self.networked {
+            if !self.rounds.is_some_and(|r| r.phase == Phase::Break) {
+                return 0.0;
+            }
+            return (self.net_break_ends - now_seconds()).max(0.0) as f32;
+        }
         self.rounds.map(|r| r.break_left()).unwrap_or(0.0)
     }
 
     /// Zombies still to kill this round, spawned or not.
     #[func]
     fn remaining(&self) -> i64 {
+        if self.networked {
+            return i64::from(self.net_remaining);
+        }
         self.rounds.map(|r| i64::from(r.remaining())).unwrap_or(0)
     }
 
@@ -320,7 +424,7 @@ impl ZombieDirector {
 
     /// Zombies of the round in play, alive or dead (tests).
     #[func]
-    fn zombies(&self) -> Array<Gd<Zombie>> {
+    pub fn zombies(&self) -> Array<Gd<Zombie>> {
         let mut out = Array::new();
         for child in self.base().get_children().iter_shared() {
             if let Ok(zombie) = child.try_cast::<Zombie>() {
@@ -579,4 +683,9 @@ impl ZombieDirector {
         self.base_mut().add_child(&zombie);
         zombie.set_global_position(position);
     }
+}
+
+/// Engine time in seconds.
+fn now_seconds() -> f64 {
+    godot::classes::Time::singleton().get_ticks_usec() as f64 / 1e6
 }

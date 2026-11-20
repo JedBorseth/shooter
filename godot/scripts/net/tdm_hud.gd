@@ -150,6 +150,10 @@ func _process(delta: float) -> void:
 	# Gun Game's weapon ladder; plain Free-for-all keeps loadouts.
 	var ladder: bool = info.mode == "gungame"
 	var snd: bool = info.mode == "snd"
+	# Zombies has its own HUD (rounds and points); this keeps the menus,
+	# the banners, and the scoreboard.
+	var zombies: bool = info.mode == "zombies"
+	_score.visible = not zombies
 	_score.mode = String(info.get("mode_name", "Team Deathmatch"))
 	if ladder:
 		_update_ladder_bar(info)
@@ -202,7 +206,7 @@ func _process(delta: float) -> void:
 	var alive := player == null or not is_instance_valid(player) or player.is_alive()
 	# Gun Game has no loadout to change between lives, and Search and
 	# Destroy's own HUD says what to do while dead in a match.
-	var dead_hint := not alive and not ladder and not snd
+	var dead_hint := not alive and not ladder and not snd and not zombies
 	var show_hint := not _menu.visible and not _board.visible and (phase == "lobby" or dead_hint)
 	var key := Settings.prompt_key(&"loadout")
 	_overlay.hint = ""

@@ -7,6 +7,8 @@ mod bots;
 mod class_dict;
 mod client;
 mod discovery;
+mod horde;
+mod horde_view;
 pub(crate) mod killcam;
 mod props;
 mod remote;
