@@ -249,6 +249,11 @@ pub struct NetClient {
     /// Sentry Guns set down (`shooter_sim::turret`), and the player each is
     /// on, as the server said.
     turrets: Vec<(protocol::TurretView, Option<u8>)>,
+    /// Guided Missiles in the air (`shooter_sim::missile`), each with the
+    /// draw tick its state came at; their bomblets; and the one we fly.
+    missiles: Vec<(protocol::MissileView, f64)>,
+    bomblets: Vec<shooter_sim::missile::Bomblet>,
+    piloting: Option<u16>,
     /// Care Packages out (`shooter_sim::care_package`), as the server said.
     crates: Vec<CrateView>,
     /// Zombies: the horde as drawn, and the map's director mirroring the
@@ -599,6 +604,14 @@ impl NetClient {
     /// whether we did it, and where it stood.
     #[signal]
     fn turret_gone(destroyed: bool, ours: bool, by_me: bool, at: Vector3);
+
+    /// We started (`flying`) or stopped flying a Guided Missile.
+    #[signal]
+    fn missile_piloting(flying: bool);
+
+    /// A Guided Missile or one of its bomblets went off at `at`.
+    #[signal]
+    fn missile_blast(at: Vector3, bomblet: bool);
 
     /// A Care Package was called in, captured, taken, or ran out
     /// (`crates`). `taken_by` is who took one and `contents` the streak's
@@ -1219,6 +1232,69 @@ impl NetClient {
                 d
             })
             .collect()
+    }
+
+    /// The Guided Missiles in the air as drawn now, as dictionaries with
+    /// `id`, `mine`, `ours`, `position` (carried on from its last state),
+    /// `yaw` and `pitch` (its nose), `boosting`, and `split`.
+    #[func]
+    fn missiles(&self) -> Array<VarDictionary> {
+        self.missiles
+            .iter()
+            .map(|(m, at)| {
+                let dir = shooter_sim::look::view_direction(m.view.x, m.view.y);
+                let speed = if m.boosting && !m.split {
+                    shooter_sim::missile::BOOST_SPEED
+                } else {
+                    shooter_sim::missile::SPEED
+                };
+                let seconds = ((self.render_tick - at) / f64::from(TICK_RATE)).clamp(0.0, 0.4);
+                let position = m.at + dir * speed * seconds as f32;
+                let mut d = VarDictionary::new();
+                d.set("id", i32::from(m.id));
+                d.set("mine", Some(m.owner) == self.player_id);
+                d.set("ours", self.ours(m.side));
+                d.set("position", to_godot(position));
+                d.set("yaw", m.view.x);
+                d.set("pitch", m.view.y);
+                d.set("boosting", m.boosting);
+                d.set("split", m.split);
+                d
+            })
+            .collect()
+    }
+
+    /// Where the bomblets in flight are drawn now.
+    #[func]
+    fn bomblets(&mut self) -> PackedVector3Array {
+        let now = self.render_tick;
+        self.bomblets
+            .retain(|b| f64::from(b.lands_at()) + f64::from(TICK_RATE) > now);
+        self.bomblets
+            .iter()
+            .filter(|b| f64::from(b.lands_at()) >= now)
+            .filter_map(|b| b.at(now))
+            .map(to_godot)
+            .collect()
+    }
+
+    /// The Guided Missile we fly, or -1.
+    #[func]
+    fn piloting(&self) -> i32 {
+        self.piloting.map_or(-1, i32::from)
+    }
+
+    /// Steers the Guided Missile we fly: toward `yaw` and `pitch`,
+    /// boosting while `boost`, and splitting it if `split`.
+    #[func]
+    fn steer_missile(&mut self, yaw: f32, pitch: f32, boost: bool, split: bool) {
+        if self.piloting.is_some() {
+            self.send_reliable(&ClientMessage::SteerMissile {
+                view: shooter_sim::Vec2::new(yaw, pitch),
+                boost,
+                split,
+            });
+        }
     }
 
     /// Whether an enemy Counter-UAV jams our minimap.
@@ -2191,6 +2267,47 @@ impl NetClient {
             GameEvent::Stats(stats) => {
                 self.match_stats = stats;
                 self.signals().stats_changed().emit();
+            }
+            GameEvent::Streak(StreakEvent::Missile(view)) => {
+                let mine = Some(view.owner) == self.player_id;
+                self.missiles.retain(|(m, _)| m.id != view.id);
+                if view.ended {
+                    if mine && self.piloting == Some(view.id) {
+                        self.piloting = None;
+                        self.signals().missile_piloting().emit(false);
+                    }
+                } else {
+                    self.missiles.push((view, self.render_tick));
+                    if mine && self.piloting.is_none() && !view.split {
+                        self.piloting = Some(view.id);
+                        self.signals().missile_piloting().emit(true);
+                    }
+                }
+            }
+            GameEvent::Streak(StreakEvent::Cluster { id, from, bomblets }) => {
+                for (to, fire_at) in bomblets {
+                    self.bomblets.push(shooter_sim::missile::Bomblet {
+                        missile: id,
+                        owner: 0,
+                        side: 0,
+                        from,
+                        to,
+                        fire_at,
+                    });
+                }
+            }
+            GameEvent::Streak(StreakEvent::MissileBlast { at, bomblet }) => {
+                if !bomblet {
+                    // The missile itself went off: it is drawn no more.
+                    let near = self
+                        .missiles
+                        .iter()
+                        .position(|(m, _)| m.at.distance(at) < 20.0 && !m.split);
+                    if let Some(i) = near {
+                        self.missiles.remove(i);
+                    }
+                }
+                self.signals().missile_blast().emit(to_godot(at), bomblet);
             }
             GameEvent::Streak(StreakEvent::Turret(view)) => {
                 self.turrets.retain(|(t, _)| t.id != view.id);

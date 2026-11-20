@@ -21,6 +21,7 @@ pub mod hitbox;
 pub mod killcam;
 pub mod look;
 pub mod melee;
+pub mod missile;
 pub mod mount;
 pub mod movement;
 pub mod net;

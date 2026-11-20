@@ -25,6 +25,7 @@
 //! | UAV | 425 | UAV, 425 after patch 1.04 (350 at launch) | sweeps enemies onto the team's minimaps every 3 s for 30 s |
 //! | Counter-UAV | 475 | Counter-UAV (sources give 400 to 600) | jams enemy minimaps for 30 s |
 //! | Care Package | 550 | Care Package, 550 | a crate from a flyover with a random streak inside ([`crate::care_package`]) |
+//! | Guided Missile | 700 | Hellstorm Missile, 700 | a missile flown down from its nose camera that splits into bomblets ([`crate::missile`]) |
 //! | Airstrike | 750 | Lightning Strike, 750 | three strikes on points marked on the map ([`Strikes`]) |
 //! | Sentry Gun | 800 | Sentry Gun, 800 | an automated gun set down in front of the caller ([`crate::turret`]) |
 //!
@@ -42,6 +43,7 @@ pub enum Streak {
     CarePackage,
     Airstrike,
     SentryGun,
+    GuidedMissile,
 }
 
 /// UAV: seconds it stays up, and seconds between its sweeps (Black Ops 2's
@@ -57,12 +59,13 @@ pub const HARDLINE_TENTHS: u32 = 12;
 pub const MAX_HELD: usize = 8;
 
 impl Streak {
-    pub const ALL: [Streak; 5] = [
+    pub const ALL: [Streak; 6] = [
         Streak::Uav,
         Streak::CounterUav,
         Streak::CarePackage,
         Streak::Airstrike,
         Streak::SentryGun,
+        Streak::GuidedMissile,
     ];
 
     /// Score to earn it.
@@ -73,6 +76,7 @@ impl Streak {
             Streak::CarePackage => 550,
             Streak::Airstrike => 750,
             Streak::SentryGun => 800,
+            Streak::GuidedMissile => 700,
         }
     }
 
@@ -84,6 +88,7 @@ impl Streak {
             Streak::CarePackage => 7,
             Streak::Airstrike => 13,
             Streak::SentryGun => 16,
+            Streak::GuidedMissile => 10,
         }
     }
 
@@ -95,6 +100,7 @@ impl Streak {
             Streak::CarePackage => "care_package",
             Streak::Airstrike => "airstrike",
             Streak::SentryGun => "sentry_gun",
+            Streak::GuidedMissile => "guided_missile",
         }
     }
 
@@ -110,6 +116,7 @@ impl Streak {
             Streak::CarePackage => "Care Package",
             Streak::Airstrike => "Airstrike",
             Streak::SentryGun => "Sentry Gun",
+            Streak::GuidedMissile => "Guided Missile",
         }
     }
 
@@ -123,15 +130,21 @@ impl Streak {
             Streak::SentryGun => {
                 "Sets down an automated gun that fires at enemies in front of it for four minutes."
             }
+            Streak::GuidedMissile => {
+                "Fly a missile down from above; boost it, then split it into bomblets over your targets."
+            }
         }
     }
 
     /// Whether it comes down from the sky onto a point on the map: a crate
-    /// from a flyover or strikes from a jet. A map roofed over (Warehouse)
+    /// from a flyover, strikes from a jet, or a missile from above. A map roofed over (Warehouse)
     /// has nowhere for these to land, so they are left out there
     /// ([`Loadout::usable`]); the radar streaks still work.
     pub fn needs_open_sky(self) -> bool {
-        matches!(self, Streak::CarePackage | Streak::Airstrike)
+        matches!(
+            self,
+            Streak::CarePackage | Streak::Airstrike | Streak::GuidedMissile
+        )
     }
 
     /// Whether it flies: what shooting one down counts toward the
@@ -159,7 +172,9 @@ impl Streak {
         let seconds = match self {
             Streak::Uav => UAV_SECONDS,
             Streak::CounterUav => COUNTER_UAV_SECONDS,
-            Streak::CarePackage | Streak::Airstrike | Streak::SentryGun => 0.0,
+            Streak::CarePackage | Streak::Airstrike | Streak::SentryGun | Streak::GuidedMissile => {
+                0.0
+            }
         };
         seconds_to_ticks(seconds)
     }

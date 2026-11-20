@@ -185,7 +185,10 @@ use crate::zombies::drinks::Drinks;
 // Version 77 added `GameEvent::Stats`, a player's match stats.
 // Version 78 added the Sentry Gun: `Streak::SentryGun`, and
 // `StreakEvent::Turret`, `TurretTarget`, and `TurretGone`.
-pub const PROTOCOL_VERSION: u16 = 78;
+// Version 79 added the Guided Missile: `Streak::GuidedMissile`,
+// `ClientMessage::SteerMissile`, and `StreakEvent::Missile`, `Cluster`, and
+// `MissileBlast`; streak events take five tag bits.
+pub const PROTOCOL_VERSION: u16 = 79;
 /// Longest account session token a hello carries, in bytes.
 pub const MAX_ACCOUNT_TOKEN_BYTES: usize = 2048;
 /// Longest reason a denial carries, in bytes.
@@ -264,6 +267,14 @@ pub enum ClientMessage {
     UseStreak {
         streak: Streak,
         targets: Vec<Vec2>,
+    },
+    /// Flying a Guided Missile (`crate::missile`): where the pilot looks
+    /// (yaw, pitch), whether they boost, and whether they split it. Sent
+    /// about thirty times a second while they fly it.
+    SteerMissile {
+        view: Vec2,
+        boost: bool,
+        split: bool,
     },
 }
 
@@ -518,6 +529,20 @@ pub enum StreakEvent {
     /// To everyone: Sentry Gun `id` is gone, destroyed by player `by` (none:
     /// it ran out).
     TurretGone { id: u16, by: Option<u8> },
+    /// To everyone, at launch and twenty times a second in flight: a
+    /// Guided Missile (`crate::missile`). `ended` is the last: its pilot's
+    /// camera goes back to them.
+    Missile(MissileView),
+    /// To everyone: Guided Missile `id` split into bomblets, each from
+    /// `from` to its point, fired at its tick.
+    Cluster {
+        id: u16,
+        from: Vec3,
+        bomblets: Vec<(Vec3, Tick)>,
+    },
+    /// To everyone: a scorestreak blast went off at `at`: a Guided
+    /// Missile's (`bomblet`: one of its bomblets).
+    MissileBlast { at: Vec3, bomblet: bool },
     /// To everyone: player `by` shot down aircraft `id` (`owner`'s
     /// `streak`) at `at`.
     Downed {
@@ -527,6 +552,21 @@ pub enum StreakEvent {
         by: u8,
         at: Vec3,
     },
+}
+
+/// A Guided Missile in flight: which, whose, on which side, where, its nose
+/// (yaw, pitch), whether it is boosting, whether it has split, and whether
+/// its flight (and its pilot's camera) is over.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MissileView {
+    pub id: u16,
+    pub owner: u8,
+    pub side: u8,
+    pub at: Vec3,
+    pub view: Vec2,
+    pub boosting: bool,
+    pub split: bool,
+    pub ended: bool,
 }
 
 /// A Sentry Gun set down: which, whose, on which side, its feet and the way
@@ -1516,6 +1556,14 @@ impl ClientMessage {
                     w.f32(t.y);
                 }
             }
+            ClientMessage::SteerMissile { view, boost, split } => {
+                w.bits(7, TAG_BITS);
+                w.bits(2, MORE_TAG_BITS);
+                w.f32(view.x);
+                w.f32(view.y);
+                w.bool(*boost);
+                w.bool(*split);
+            }
         }
         w.finish()
     }
@@ -1596,6 +1644,11 @@ impl ClientMessage {
                     }
                     Ok(ClientMessage::UseStreak { streak, targets })
                 }
+                2 => Ok(ClientMessage::SteerMissile {
+                    view: Vec2::new(read_finite(&mut r)?, read_finite(&mut r)?),
+                    boost: r.bool()?,
+                    split: r.bool()?,
+                }),
                 _ => Err(DecodeError::Invalid("client message tag")),
             },
             _ => Err(DecodeError::Invalid("client message tag")),
@@ -3024,12 +3077,14 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
 
 const STREAK_EVENT_TAG: u32 = 24;
 const STATS_EVENT_TAG: u32 = 25;
-/// Bits for a [`StreakEvent`]'s tag; room for sixteen.
-const STREAK_TAG_BITS: u32 = 4;
+/// Bits for a [`StreakEvent`]'s tag; room for thirty-two.
+const STREAK_TAG_BITS: u32 = 5;
 /// Most streaks one [`StreakEvent::State`] lists, and airborne streaks one
 /// [`StreakEvent::Sky`] does.
 const MAX_HELD_STREAKS: usize = streak::MAX_HELD;
 const MAX_AIRBORNE: usize = 32;
+/// Most bomblets one [`StreakEvent::Cluster`] lists.
+const MAX_BOMBLETS: usize = crate::missile::CLUSTER_SIZE + 1;
 
 fn write_streak(w: &mut BitWriter, streak: Streak) {
     w.bits(u32::from(streak.code()), STREAK_BITS);
@@ -3190,6 +3245,34 @@ fn write_streak_event(w: &mut BitWriter, event: &StreakEvent) {
             w.u16(*id);
             write_option_u8(w, *by);
         }
+        StreakEvent::Missile(m) => {
+            w.bits(12, STREAK_TAG_BITS);
+            w.u16(m.id);
+            w.u8(m.owner);
+            w.u8(m.side);
+            write_vec3(w, m.at);
+            w.f32(m.view.x);
+            w.f32(m.view.y);
+            w.bool(m.boosting);
+            w.bool(m.split);
+            w.bool(m.ended);
+        }
+        StreakEvent::Cluster { id, from, bomblets } => {
+            w.bits(13, STREAK_TAG_BITS);
+            w.u16(*id);
+            write_vec3(w, *from);
+            let count = bomblets.len().min(MAX_BOMBLETS);
+            w.varint(count as u32);
+            for (to, tick) in &bomblets[..count] {
+                write_vec3(w, *to);
+                w.u32(*tick);
+            }
+        }
+        StreakEvent::MissileBlast { at, bomblet } => {
+            w.bits(14, STREAK_TAG_BITS);
+            write_vec3(w, *at);
+            w.bool(*bomblet);
+        }
     }
 }
 
@@ -3295,6 +3378,33 @@ fn read_streak_event(r: &mut BitReader) -> DecodeResult<StreakEvent> {
         11 => Ok(StreakEvent::TurretGone {
             id: r.u16()?,
             by: read_option_u8(r)?,
+        }),
+        12 => Ok(StreakEvent::Missile(MissileView {
+            id: r.u16()?,
+            owner: r.u8()?,
+            side: r.u8()?,
+            at: read_finite_vec3(r)?,
+            view: Vec2::new(read_finite(r)?, read_finite(r)?),
+            boosting: r.bool()?,
+            split: r.bool()?,
+            ended: r.bool()?,
+        })),
+        13 => {
+            let id = r.u16()?;
+            let from = read_finite_vec3(r)?;
+            let count = r.varint()? as usize;
+            if count > MAX_BOMBLETS {
+                return Err(DecodeError::Invalid("bomblets"));
+            }
+            let mut bomblets = Vec::with_capacity(count);
+            for _ in 0..count {
+                bomblets.push((read_finite_vec3(r)?, r.u32()?));
+            }
+            Ok(StreakEvent::Cluster { id, from, bomblets })
+        }
+        14 => Ok(StreakEvent::MissileBlast {
+            at: read_finite_vec3(r)?,
+            bomblet: r.bool()?,
         }),
         _ => Err(DecodeError::Invalid("streak event")),
     }
@@ -4778,6 +4888,28 @@ mod tests {
             }),
             GameEvent::Streak(StreakEvent::TurretGone { id: 3, by: Some(8) }),
             GameEvent::Streak(StreakEvent::TurretGone { id: 4, by: None }),
+            GameEvent::Streak(StreakEvent::Missile(MissileView {
+                id: 2,
+                owner: 5,
+                side: 0,
+                at: Vec3::new(1.0, 110.0, -4.0),
+                view: Vec2::new(0.5, -1.2),
+                boosting: true,
+                split: false,
+                ended: false,
+            })),
+            GameEvent::Streak(StreakEvent::Cluster {
+                id: 2,
+                from: Vec3::new(1.0, 30.0, -4.0),
+                bomblets: vec![
+                    (Vec3::new(3.0, 0.5, 2.0), 900),
+                    (Vec3::new(-5.0, 0.0, 9.0), 906),
+                ],
+            }),
+            GameEvent::Streak(StreakEvent::MissileBlast {
+                at: Vec3::new(2.0, 0.0, 1.0),
+                bomblet: true,
+            }),
             GameEvent::Streak(StreakEvent::CrateIncoming {
                 id: 600,
                 owner: 4,
@@ -6303,6 +6435,11 @@ mod tests {
             ClientMessage::UseStreak {
                 streak: Streak::Airstrike,
                 targets: vec![Vec2::new(1.5, -20.0), Vec2::new(30.25, 4.0)],
+            },
+            ClientMessage::SteerMissile {
+                view: Vec2::new(-2.5, -1.25),
+                boost: true,
+                split: false,
             },
         ] {
             assert_eq!(ClientMessage::decode(&msg.encode()).unwrap(), msg);
