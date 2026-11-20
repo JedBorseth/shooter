@@ -123,6 +123,23 @@ pub fn third_person_grenade(eyes: Vec3, pitch: f32, p: f32) -> Vec3 {
     eyes + Mat3::from_axis_angle(Vec3::X, pitch) * (HIP_OFFSET + third_person_throw_point(p))
 }
 
+/// Seconds a body takes to kneel at the charge once a plant or defuse
+/// starts, eased (smoothstep). It stands straight back up when it lets go.
+pub const KNEEL_SECONDS: f32 = 0.3;
+
+/// Where the support hand goes while kneeling at the charge, in weapon
+/// space: low in front, on the keypad. The weapon drops out of its way, as
+/// for a knife swing (`carry::Carry::swing` 1).
+pub const KNEEL_REACH: Vec3 = Vec3::new(-0.1, -0.55, -0.15);
+
+/// How far down a body kneeling at the charge is (0 standing to 1 as low as
+/// a crouch), `progress` (0..1) into a plant or defuse of `kind` at the
+/// stock times (`SndRules::default`).
+pub fn kneel(kind: UseKind, progress: f32) -> f32 {
+    let seconds = progress.clamp(0.0, 1.0) * kind.duration(&SndRules::default());
+    keyed(&[(0.0, 0.0), (KNEEL_SECONDS, 1.0)], seconds)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -159,21 +176,4 @@ mod tests {
         assert!(reach.z < -0.3 && reach.x < 0.0, "{reach}");
         assert!(passed.z > reach.z + 0.1 && passed.y < reach.y, "{passed}");
     }
-}
-
-/// Seconds a body takes to kneel at the charge once a plant or defuse
-/// starts, eased (smoothstep). It stands straight back up when it lets go.
-pub const KNEEL_SECONDS: f32 = 0.3;
-
-/// Where the support hand goes while kneeling at the charge, in weapon
-/// space: low in front, on the keypad. The weapon drops out of its way, as
-/// for a knife swing (`carry::Carry::swing` 1).
-pub const KNEEL_REACH: Vec3 = Vec3::new(-0.1, -0.55, -0.15);
-
-/// How far down a body kneeling at the charge is (0 standing to 1 as low as
-/// a crouch), `progress` (0..1) into a plant or defuse of `kind` at the
-/// stock times (`SndRules::default`).
-pub fn kneel(kind: UseKind, progress: f32) -> f32 {
-    let seconds = progress.clamp(0.0, 1.0) * kind.duration(&SndRules::default());
-    keyed(&[(0.0, 0.0), (KNEEL_SECONDS, 1.0)], seconds)
 }
