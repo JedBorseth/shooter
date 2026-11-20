@@ -42,6 +42,10 @@ func _process(delta: float) -> void:
 
 
 func _draw() -> void:
+	# A held scoreboard on a layer above covers the mode's calls; its plates
+	# are see-through, so they would show through it.
+	if _under_board():
+		return
 	if title != "":
 		_draw_banner(title, detail, colour, size.y * banner_y, 46, _title_age, 1.0)
 	if callout != "":
@@ -52,6 +56,15 @@ func _draw() -> void:
 		Paint.prompt(
 			self, Paint.split_key(hint, hint_colour), size.x / 2.0, size.y * 0.68 + 92.0, 16
 		)
+
+
+func _under_board() -> bool:
+	var board := get_tree().get_first_node_in_group(&"scoreboard") as CanvasItem
+	if board == null or not board.is_visible_in_tree():
+		return false
+	var mine := get_canvas_layer_node()
+	var theirs := board.get_canvas_layer_node()
+	return mine != null and theirs != null and mine.layer < theirs.layer
 
 
 func _draw_banner(
