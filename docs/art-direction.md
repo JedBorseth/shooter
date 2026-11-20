@@ -447,13 +447,23 @@ The HUD follows the modern Call of Duty layout (Modern Warfare 2019 on and Black
 | --- | --- | --- |
 | Top left | The minimap (see below), and under it the match score block: the mode and clock, a row per side with the score and a bar filling toward the limit, and LEADING, TRAILING, or TIED beside the limit. Outside a match, your own score, kills, deaths, and streak | `net/score_block.gd`, `score_feed.gd` |
 | Top centre | Mode pieces: Hardpoint's zone strip, the flags' status in Capture the Flag, and who is alive in Search and Destroy | the mode's view |
-| Top right | Frame rate, when turned on | `hud.gd` |
+| Top right | Frame rate, when turned on (off by default, as Call of Duty's FPS counter is) | `hud.gd` |
 | Bottom left | Health (cross, number, segmented bar with a trail after each hit), the kill feed above it (killer, weapon silhouette, headshot mark, victim), and chat above that | `hud_vitals.gd`, `net/kill_feed.gd`, `net/tdm_hud.gd` |
 | Bottom right | Weapon name and attachment, silhouette, big magazine count, smaller reserve, and a tick per round | `hud_weapon.gd` |
 | Centre | Crosshair, hit markers, damage crescents, ammo warnings and prompts with key caps, points and medals | `crosshair.gd`, `damage_overlay.gd`, `hud_centre.gd`, `score_feed.gd` |
 | Upper third | Announcement banners: the title on a dark band with thin wings in the call's colour | `net/match_banner.gd` |
 | Lower third | The death card ("KILLED BY", the killer's name and weapon, the respawn countdown) and the hint under it | `hud_centre.gd`, `net/match_banner.gd` |
 | Bottom edge | The controls legend, from the live bindings, for 14 seconds after the first spawn (F1 toggles it) | `hud_centre.gd` |
+
+### Button prompts
+
+Prompts show the button to press as Call of Duty's do: a keyboard key in a light key cap, and a mouse or controller button as its image (Kenney's Input Prompts, CC0, in `godot/assets/ui/glyphs/`). Controller images come in an Xbox and a PlayStation set. Settings, Controls, "Button prompts" picks Auto (the connected controller's set, PlayStation when its name or USB vendor says Sony), Xbox, or PlayStation, as Black Ops 6 and Modern Warfare III do on PC.
+
+![The controls legend with keyboard and mouse, an Xbox controller, and a PlayStation controller](media/button-prompts.jpg)
+
+Prompt strings name their key in square brackets ("[F] Take M870", "Hold [pad:x] to plant the charge"). `Settings.key_label` and `prompt_key` write a keyboard key by name and a controller or mouse button as a token (`pad:a`, `pad:rt`, `mouse:left`; pad tokens use the Xbox position names on any controller), and `hud_paint.gd` draws each bracketed key, anywhere in the line, as a cap or image (`godot/scripts/ui/glyphs.gd`). The few Labels that cannot draw images write the button in words (`Glyphs.plain_text`: "Square").
+
+In play, prompts follow the input device that plays (Settings, Controls, "Input device"). Menus take both devices, so their footers follow the device used last and switch the moment the other is touched, as Call of Duty's menus do (`footer_keys.gd`).
 
 Deliberate differences from Call of Duty: health shows as a number and bar, because health here regenerates in steps worth reading; the match state reads LEADING or TRAILING rather than Call of Duty's wording.
 

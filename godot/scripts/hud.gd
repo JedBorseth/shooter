@@ -234,7 +234,7 @@ func _legend(gamepad: bool) -> Array:
 		match action:
 			"move":
 				key = (
-					"LS"
+					"pad:stick_l"
 					if gamepad
 					else _keys([&"move_forward", &"move_left", &"move_back", &"move_right"], "")
 				)
@@ -250,7 +250,7 @@ func _legend(gamepad: bool) -> Array:
 			continue
 		pairs.append([key, label])
 	if gamepad:
-		pairs.insert(1, ["RS", "Look"])
+		pairs.insert(1, ["pad:stick_r", "Look"])
 	return pairs
 
 

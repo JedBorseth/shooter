@@ -41,6 +41,7 @@ const Scoreboard := preload("res://scripts/net/scoreboard.gd")
 const ClassMenu := preload("res://scripts/net/class_menu.gd")
 const MatchXp := preload("res://scripts/net/match_xp.gd")
 const XpSummary := preload("res://scripts/net/xp_summary.gd")
+const Glyphs := preload("res://scripts/ui/glyphs.gd")
 
 const ALLY := Color("7cc4ff")
 const ENEMY := Color("ff7a5c")
@@ -963,7 +964,7 @@ func _build_menu() -> void:
 	_ready_button.pressed.connect(_toggle_ready)
 	buttons.add_child(_ready_button)
 	var close := Button.new()
-	close.text = "Close  [%s]" % Settings.prompt_key(&"loadout")
+	Glyphs.key_button(close, "Close", Settings.prompt_key(&"loadout"))
 	close.custom_minimum_size = Vector2(0, 52)
 	close.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	close.add_theme_font_size_override("font_size", 20)

@@ -11,6 +11,7 @@ extends RefCounted
 ## Load it with `preload`; everything here is static.
 
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
+const Glyphs := preload("res://scripts/ui/glyphs.gd")
 
 const DISPLAY: Font = preload("res://assets/fonts/ChakraPetch-Bold.ttf")
 const LABEL: Font = preload("res://assets/fonts/ChakraPetch-SemiBold.ttf")
@@ -25,6 +26,11 @@ const PLATE := Color(0.05, 0.06, 0.07, 0.5)
 const PLATE_LIGHT := Color(0.16, 0.18, 0.2, 0.62)
 const TRACK := Color(1, 1, 1, 0.16)
 const SHADOW := Color(0, 0, 0, 0.55)
+
+## Glyph images are drawn this much taller than a key cap, and their button
+## fills this share of the image (Kenney's prompts keep a margin round it).
+const GLYPH_SCALE := 1.3
+const GLYPH_INK := 0.75
 
 static var _icons := {}
 static var _corner: GradientTexture2D
@@ -158,11 +164,24 @@ static func _text_raw(
 		x += font.get_string_size(glyph, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x + spacing
 
 
-## A key or button cap: a light square with the key in dark type, the way
-## console prompts show a button. Returns its width. `at` is the top left.
+## How wide `key_cap` draws `key` at `height`.
+static func cap_width(key: String, height: float) -> float:
+	if Glyphs.is_glyph(key) and Glyphs.texture(key) != null:
+		return height * GLYPH_SCALE * GLYPH_INK
+	return maxf(height, text_width(DISPLAY, key, int(height * 0.62)) + height * 0.55)
+
+
+## A key cap: a light square with a keyboard key in dark type, or a
+## controller or mouse button's glyph (see `Glyphs`). Returns its width. `at`
+## is the top left.
 static func key_cap(
 	item: CanvasItem, key: String, at: Vector2, height: float, alpha := 1.0
 ) -> float:
+	if Glyphs.is_glyph(key):
+		var glyph := Glyphs.texture(key)
+		if glyph != null:
+			return _glyph(item, glyph, at, height, alpha)
+		key = Glyphs.plain(key)
 	var size := int(height * 0.62)
 	var label_w := text_width(DISPLAY, key, size)
 	var width := maxf(height, label_w + height * 0.55)
@@ -180,6 +199,23 @@ static func key_cap(
 		0.0
 	)
 	return width
+
+
+## A glyph image sized so its button matches a key cap `height` tall. The
+## images keep a margin round the button: draw past it so the button itself
+## starts at `at`.
+static func _glyph(
+	item: CanvasItem, glyph: Texture2D, at: Vector2, height: float, alpha: float
+) -> float:
+	var side := height * GLYPH_SCALE
+	var margin := side * (1.0 - GLYPH_INK) / 2.0
+	# Left edge of the button at `at.x`; centred on the cap's middle.
+	var rect := Rect2(at.x - margin, at.y + (height - side) / 2.0, side, side)
+	item.draw_texture_rect(
+		glyph, Rect2(rect.position + Vector2(0, 1.5), rect.size), false, Color(SHADOW, 0.5 * alpha)
+	)
+	item.draw_texture_rect(glyph, rect, false, Color(1, 1, 1, 0.96 * alpha))
+	return side * GLYPH_INK
 
 
 ## A flat plate; `tab` draws a white keyline down its left edge.
@@ -267,33 +303,51 @@ static func band(item: CanvasItem, rect: Rect2, alpha: float) -> void:
 	fade(item, Rect2(rect.end.x - edge, rect.position.y, edge, rect.size.y), colour)
 
 
-## A prompt row centred on `centre_x`: an optional key cap, then the text, on
-## a band. `row` holds "text", and optionally "key" and "colour".
+## A prompt row centred on `centre_x`: key caps or glyphs and text, on a
+## band. `row` holds "text", and optionally "key" (drawn first) and "colour".
+## A "[KEY]" anywhere in the text draws as a cap too ("Hold [F] to plant").
 static func prompt(
 	item: CanvasItem,
 	row: Dictionary,
 	centre_x: float,
 	baseline: float,
 	text_size: int,
-	alpha := 1.0
+	alpha := 1.0,
+	with_band := true
 ) -> void:
-	var value: String = row.text
-	var key: String = row.get("key", "")
 	var colour: Color = row.get("colour", UiTheme.TEXT)
 	colour.a *= alpha
 	var cap_h := text_size + 7.0
 	var gap := 9.0
-	var cap_w := 0.0
-	if key != "":
-		cap_w = maxf(cap_h, text_width(DISPLAY, key, int(cap_h * 0.62)) + cap_h * 0.55)
-	var text_w := text_width(LABEL, value, text_size, 1.0)
-	var total := text_w + (cap_w + gap if key != "" else 0.0)
+	var parts: Array = []
+	if String(row.get("key", "")) != "":
+		parts.append([true, String(row.key)])
+	for part: Array in Glyphs.segments(String(row.text)):
+		var piece: String = part[1] if part[0] else String(part[1]).strip_edges()
+		if piece != "":
+			parts.append([part[0], piece])
+	var widths: Array[float] = []
+	var total := 0.0
+	for part: Array in parts:
+		var width := (
+			cap_width(part[1], cap_h) if part[0] else text_width(LABEL, part[1], text_size, 1.0)
+		)
+		widths.append(width)
+		total += width
+	total += gap * maxi(parts.size() - 1, 0)
 	var left := centre_x - total / 2.0
-	band(item, Rect2(left - 26.0, baseline - cap_h + 2.0, total + 52.0, cap_h + 8.0), 0.34 * alpha)
-	if key != "":
-		key_cap(item, key, Vector2(left, baseline - cap_h + 5.0), cap_h, alpha)
-		left += cap_w + gap
-	text(item, LABEL, value, Vector2(left, baseline), text_size, colour, 1.0)
+	if with_band:
+		band(
+			item,
+			Rect2(left - 26.0, baseline - cap_h + 2.0, total + 52.0, cap_h + 8.0),
+			0.34 * alpha
+		)
+	for i in parts.size():
+		if parts[i][0]:
+			key_cap(item, parts[i][1], Vector2(left, baseline - cap_h + 5.0), cap_h, alpha)
+		else:
+			text(item, LABEL, parts[i][1], Vector2(left, baseline), text_size, colour, 1.0)
+		left += widths[i] + gap
 
 
 ## Splits a leading "[KEY]" off `value` into a prompt row: {"text", "key", "colour"}.

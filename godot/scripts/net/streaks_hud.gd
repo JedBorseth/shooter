@@ -132,14 +132,14 @@ func _draw() -> void:
 		var centre := Vector2(size.x / 2.0, size.y * 0.3)
 		Paint.text_centred(self, Paint.DISPLAY, _call, centre, 26, Color(_call_colour, alpha), 3.0)
 		if _call_sub != "":
-			Paint.text_centred(
+			Paint.prompt(
 				self,
-				Paint.LABEL,
-				_call_sub,
-				centre + Vector2(0, 26),
+				{"text": _call_sub, "colour": Color(UiTheme.TEXT, 0.85)},
+				centre.x,
+				centre.y + 26.0,
 				14,
-				Color(UiTheme.TEXT, 0.85 * alpha),
-				2.0
+				alpha,
+				false
 			)
 
 

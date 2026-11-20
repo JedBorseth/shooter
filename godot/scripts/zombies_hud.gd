@@ -10,6 +10,8 @@ extends Control
 ## game-over screen there waits for the server's next game instead of
 ## reloading.
 
+const Glyphs := preload("res://scripts/ui/glyphs.gd")
+
 const TITLE_SCENE := "res://scenes/title_screen.tscn"
 const FONT_PATH := "res://assets/zombies/agency_bold.ttf"
 const BLOOD := Color(0.62, 0.05, 0.03)
@@ -173,7 +175,9 @@ func _update_last_stand() -> void:
 	elif info.downed:
 		text = "BLEEDING OUT  %d" % ceili(float(info.bleed_left))
 	elif String(info.prompt) != "":
-		text = "Hold [%s] to revive %s" % [Settings.prompt_key(&"interact"), info.prompt]
+		text = Glyphs.plain_text(
+			"Hold [%s] to revive %s" % [Settings.prompt_key(&"interact"), info.prompt]
+		)
 	_last_stand.text = text
 	_revive_bar.visible = revive_left >= 0.0
 

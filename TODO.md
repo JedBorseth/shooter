@@ -162,7 +162,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Gamepad settings in the settings menu: look speed, deadzone, curve, invert Y, aim assist toggle, vibration.
 - [x] D-pad left and right pick the weapon slots, and the reload button (X) interacts when something is in front of the player. Prompts name the bound key or button.
 - [x] An input device setting (Keyboard & mouse or Controller) that locks the other device out of play; menus and pause take both, a reminder shows when the locked device is used, and losing the controller pauses the game.
-- [ ] Button prompts with controller glyph images instead of button names.
+- [x] Button prompts with controller glyph images instead of button names: Xbox and PlayStation sets (Settings → Controls → Button prompts: Auto, Xbox, PlayStation) and mouse buttons, with menu footers following the device used last (`godot/scripts/ui/glyphs.gd`).
 - [x] **good first task** Show the controls overlay only for the first minute, or toggle it with F1.
 
 ## Phase 2: netcode core (in progress)

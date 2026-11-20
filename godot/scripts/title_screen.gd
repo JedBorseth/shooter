@@ -4,6 +4,7 @@ extends Control
 ## server browser, Zombies, and Options take the whole screen.
 ## Keep the arena as a path, never a preload or scene dependency: launch is UI only.
 
+const FooterKeys := preload("res://scripts/ui/footer_keys.gd")
 const ARENA_PATH := "res://scenes/main.tscn"
 const NUKETOWN_PATH := "res://scenes/nuketown.tscn"
 const SLAMCITY_PATH := "res://scenes/slamcity.tscn"
@@ -86,6 +87,11 @@ func _ready() -> void:
 		button.mouse_entered.connect(_describe.bind(button))
 	_menu.get_node("TeamDeathmatch").grab_focus()
 	$Margin/Layout/Footer/Build.text = "Build %s" % GameBuild.label()
+	var footer_keys := FooterKeys.new()
+	footer_keys.name = "FooterKeys"
+	add_child(footer_keys)
+	footer_keys.bind($Margin/Layout/Footer/SelectKey, &"ui_accept")
+	footer_keys.bind($Margin/Layout/Footer/BackKey, &"ui_cancel")
 	_add_account_badge()
 	# Back from a server (left, or the connection failed): straight to the browser.
 	if Net.return_to_browser:

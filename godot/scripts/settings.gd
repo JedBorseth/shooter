@@ -13,6 +13,9 @@ extends Node
 
 ## Emitted after any setting changes, including on load and reset.
 signal changed
+## Emitted when button prompts should redraw: the device the menus answer to
+## (`menu_controller`) or the controller glyph set changed.
+signal prompts_changed
 
 ## What plays the game, by index into INPUT_DEVICES.
 enum InputDevice { KEYBOARD_MOUSE, CONTROLLER }
@@ -23,6 +26,7 @@ const ViewmodelLight := preload("res://scripts/viewmodel_light.gd")
 const EyeAdaptation := preload("res://scripts/eye_adaptation.gd")
 const Grounding := preload("res://scripts/grounding.gd")
 const InputNotice := preload("res://scripts/ui/input_notice.gd")
+const Glyphs := preload("res://scripts/ui/glyphs.gd")
 
 ## Radians of view rotation per screen pixel at 1× sensitivity.
 const BASE_MOUSE_SENSITIVITY := 0.0022
@@ -81,6 +85,8 @@ const STICK_YAW_SPEED := 200.0
 const STICK_PITCH_SPEED := 150.0
 
 const INPUT_DEVICES: Array[String] = ["Keyboard & mouse", "Controller"]
+## Controller button images: Auto follows the connected controller.
+const BUTTON_PROMPTS: Array[String] = ["Auto", "Xbox", "PlayStation"]
 ## Actions that keep both devices' bindings whichever is chosen: a way back to
 ## the menu from either, and typing, which needs the keyboard. `ui_*` actions
 ## (menu navigation) also keep both.
@@ -117,25 +123,6 @@ const REBINDABLE := {
 	&"team_chat": "Team chat",
 }
 
-## Xbox-style names of gamepad buttons, by `JoyButton`.
-const JOY_BUTTON_NAMES := {
-	JOY_BUTTON_A: "A",
-	JOY_BUTTON_B: "B",
-	JOY_BUTTON_X: "X",
-	JOY_BUTTON_Y: "Y",
-	JOY_BUTTON_BACK: "View",
-	JOY_BUTTON_GUIDE: "Guide",
-	JOY_BUTTON_START: "Menu",
-	JOY_BUTTON_LEFT_STICK: "LS",
-	JOY_BUTTON_RIGHT_STICK: "RS",
-	JOY_BUTTON_LEFT_SHOULDER: "LB",
-	JOY_BUTTON_RIGHT_SHOULDER: "RB",
-	JOY_BUTTON_DPAD_UP: "D-pad up",
-	JOY_BUTTON_DPAD_DOWN: "D-pad down",
-	JOY_BUTTON_DPAD_LEFT: "D-pad left",
-	JOY_BUTTON_DPAD_RIGHT: "D-pad right",
-}
-
 const MOUSE_BUTTON_NAMES := {
 	MOUSE_BUTTON_LEFT: "LMB",
 	MOUSE_BUTTON_RIGHT: "RMB",
@@ -157,6 +144,7 @@ const DEFAULTS := {
 	&"stick_curve": 2.0,
 	&"aim_assist": true,
 	&"rumble": true,
+	&"button_prompts": 0,
 	&"fov": 102.0,
 	&"camera_motion": true,
 	&"fullscreen": false,
@@ -191,6 +179,7 @@ const SECTIONS := {
 		&"stick_curve",
 		&"aim_assist",
 		&"rumble",
+		&"button_prompts",
 	],
 	"video":
 	[
@@ -225,6 +214,7 @@ const INT_OPTIONS := {
 	&"max_fps": MAX_FPS_OPTIONS,
 	&"graphics_quality": [0, 1, 2],
 	&"audio_mix": [0, 1, 2],
+	&"button_prompts": [0, 1, 2],
 }
 
 ## Look speed saved by builds before it became a level, as a multiplier.
@@ -276,6 +266,13 @@ var stick_deadzone: float = DEFAULTS[&"stick_deadzone"]
 var stick_curve: float = DEFAULTS[&"stick_curve"]
 var aim_assist: bool = DEFAULTS[&"aim_assist"]
 var rumble: bool = DEFAULTS[&"rumble"]
+## Which controller's button images prompts show: an index into
+## BUTTON_PROMPTS (Auto, Xbox, PlayStation).
+var button_prompts: int = DEFAULTS[&"button_prompts"]
+## True when the controller was the last device used. Menus take both
+## devices, and their key hints follow this; gameplay prompts follow
+## `input_device`, the device that plays.
+var menu_controller := false
 ## Horizontal field of view in degrees at 16:9. See `vertical_fov`.
 var fov: float = DEFAULTS[&"fov"]
 ## Head bob and strafe tilt.
@@ -327,6 +324,8 @@ var key_bindings := {}
 var _all_events: Dictionary[StringName, Array] = {}
 
 var _dirty := false
+## The controller used last, for Auto button prompts; -1 for none yet.
+var _joy_device := -1
 var _save_timer := Timer.new()
 ## The full-screen lens pass; none on a dedicated server.
 var _lens: Lens
@@ -342,6 +341,9 @@ func _init() -> void:
 
 func _ready() -> void:
 	get_tree().node_added.connect(_on_node_added)
+	Input.joy_connection_changed.connect(
+		func(_device: int, _connected: bool) -> void: _update_glyphs()
+	)
 	if not _headless():
 		_lens = Lens.new()
 		add_child(_lens)
@@ -419,9 +421,44 @@ func apply_to_player(player: Node) -> void:
 	player.set(&"controller_input", uses_controller())
 
 
-## The key or button bound to `action` on the device that plays, for prompts.
+## The key or button bound to `action` on the device that plays, for prompts:
+## a key name or a glyph token (see `Glyphs`).
 func prompt_key(action: StringName) -> String:
 	return key_label(action, uses_controller())
+
+
+## The key or button for a menu action (`ui_accept`, `ui_cancel`, ...) on the
+## device used last, for menu footers.
+func menu_key(action: StringName) -> String:
+	return key_label(action, menu_controller)
+
+
+## Records which device was used last (the `InputNotice` layer reports every
+## deliberate press). `device` is the controller's id.
+func note_device(controller: bool, device := -1) -> void:
+	if controller and device >= 0 and device != _joy_device:
+		_joy_device = device
+		_update_glyphs()
+	if controller != menu_controller:
+		menu_controller = controller
+		prompts_changed.emit()
+
+
+## Picks the controller glyph set: the setting, or under Auto the controller
+## used last (or the first connected).
+func _update_glyphs() -> void:
+	var family := Glyphs.Family.XBOX
+	match button_prompts:
+		2:
+			family = Glyphs.Family.PLAYSTATION
+		0:
+			var pads := Input.get_connected_joypads()
+			var device := _joy_device if _joy_device in pads else (pads[0] if pads else -1)
+			if device >= 0:
+				family = Glyphs.family_of(device)
+	if family != Glyphs.family:
+		Glyphs.family = family
+		prompts_changed.emit()
 
 
 ## True when a controller plays and keyboard and mouse are locked out.
@@ -441,18 +478,24 @@ func action_events(action: StringName) -> Array:
 	return InputMap.action_get_events(action) if InputMap.has_action(action) else []
 
 
-## The key or button bound to `action`, for prompts ("F", "LMB", or with
-## `gamepad`, "X"). On a gamepad, interact shares the reload button.
+## The key or button bound to `action`, for prompts: a key's name ("F"), or
+## a glyph token for a mouse button ("mouse:left") or, with `gamepad`, a
+## controller input ("pad:x"). `Glyphs.plain` turns a token into words. On a
+## gamepad, interact shares the reload button.
 func key_label(action: StringName, gamepad := false) -> String:
 	if gamepad and action == &"interact":
 		action = &"reload"
 	if not InputMap.has_action(action):
 		return "?"
 	for event: InputEvent in action_events(action):
-		if gamepad and event is InputEventJoypadButton:
-			var button := (event as InputEventJoypadButton).button_index
-			return JOY_BUTTON_NAMES.get(button, "Button %d" % button)
-		if not gamepad and (event is InputEventKey or event is InputEventMouseButton):
+		if gamepad:
+			var token := Glyphs.pad_token(event)
+			if token != "":
+				return token
+		elif event is InputEventMouseButton:
+			var mouse := Glyphs.mouse_token((event as InputEventMouseButton).button_index)
+			return mouse if mouse != "" else event_label(event)
+		elif event is InputEventKey:
 			return event_label(event)
 	return "?"
 
@@ -691,6 +734,8 @@ func _apply(key: StringName) -> void:
 	match key:
 		&"input_device":
 			_rebuild_input_map()
+		&"button_prompts":
+			_update_glyphs()
 		&"audio_mix":
 			for volume_key: StringName in BUSES:
 				_apply(volume_key)

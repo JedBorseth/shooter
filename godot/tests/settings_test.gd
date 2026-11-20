@@ -5,6 +5,7 @@ extends SceneTree
 
 const TEST_PATH := "user://settings_test.cfg"
 const SETTINGS_SCRIPT := preload("res://scripts/settings.gd")
+const Glyphs := preload("res://scripts/ui/glyphs.gd")
 
 var _failures: PackedStringArray = []
 
@@ -513,11 +514,31 @@ func _check_menu(settings: Node) -> void:
 ## restores the project's keys.
 func _check_bindings(settings: Node) -> void:
 	_check(settings.key_label(&"interact") == "F", "interact is F")
-	_check(settings.key_label(&"interact", true) == "X", "on a gamepad, interact is X")
-	_check(settings.key_label(&"fire") == "LMB", "fire is the left mouse button")
+	_check(settings.key_label(&"interact", true) == "pad:x", "on a gamepad, interact is X")
+	_check(settings.key_label(&"fire") == "mouse:left", "fire is the left mouse button")
+	_check(settings.key_label(&"fire", true) == "pad:rt", "on a gamepad, fire is the right trigger")
+	_check(Glyphs.plain("pad:x") == "X", "an Xbox pad names X in words")
+	Glyphs.family = Glyphs.Family.PLAYSTATION
+	_check(Glyphs.plain("pad:x") == "Square", "a PlayStation pad calls it Square")
+	_check(Glyphs.texture("pad:rt") != null, "the PlayStation set has R2")
+	_check(
+		Glyphs.plain_text("Hold [pad:x] to revive") == "Hold [Square] to revive",
+		"labels get the button in words"
+	)
+	Glyphs.family = Glyphs.Family.XBOX
+	_check(Glyphs.texture("pad:a") != null and Glyphs.texture("mouse:left") != null, "glyphs load")
+	settings.set_setting(&"button_prompts", 2)
+	_check(Glyphs.family == Glyphs.Family.PLAYSTATION, "the setting picks PlayStation glyphs")
+	settings.set_setting(&"button_prompts", 0)
+	_check(Glyphs.family == Glyphs.Family.XBOX, "Auto with no controller shows Xbox glyphs")
+	settings.note_device(true)
+	_check(settings.menu_controller, "a controller press switches menu hints to the controller")
+	_check(settings.menu_key(&"ui_accept") == "pad:a", "menus then show A to select")
+	settings.note_device(false)
+	_check(settings.menu_key(&"ui_cancel") == "Escape", "and back to Escape on the keyboard")
 	settings.rebind(&"jump", _key(KEY_J))
 	_check(_bound(&"jump") == KEY_J, "jump rebinds to J")
-	_check(settings.key_label(&"jump", true) == "A", "the gamepad binding stays")
+	_check(settings.key_label(&"jump", true) == "pad:a", "the gamepad binding stays")
 	settings.rebind(&"crouch", _key(KEY_J))
 	_check(_bound(&"crouch") == KEY_J, "crouch takes J")
 	_check(_bound(&"jump") == KEY_C, "and jump gets crouch's C, got %d" % _bound(&"jump"))
