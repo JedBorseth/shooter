@@ -310,7 +310,7 @@ Rounds with one life each (`rust/sim/src/snd.rs`, `--mode snd`), on Slamcity. Cl
   - [ ] Matchmaking by skill and ping (Nakama matchmaker properties), once there are enough players to choose from.
   - [ ] Run the stack on the public host behind TLS, so `borseth.ddns.net:7350` answers.
 - [x] Dockerfile for the headless server (Godot export + Rust extension): `docker/server`, published to `ghcr.io/jedborseth/shooter-server` from `main` ([docs/server.md](docs/server.md)).
-- [ ] Strip textures from the server export (558 MB of the 693 MB pack is `.ctex` the server never draws): mark image files "Strip Visuals" in the Linux Server preset.
+- [x] Strip textures from the server export (558 MB of the 693 MB pack is `.ctex` the server never draws): every image is marked "Strip Visuals" in the Linux Server preset at export time (`tools/server_export_filter.py`).
 - [x] Server allocation: Nakama match handler starts or assigns a dedicated server and hands its address to players. Agones on Kubernetes later.
   - [x] The allocator (`rust/allocator`): starts a ranked server container per match through the Docker socket, on its own port pair, which stops once empty ([docs/online.md](docs/online.md#server-allocation)).
   - [x] The Nakama match handler (`shooter_match.lua`) that calls it for each match and hands players the address.

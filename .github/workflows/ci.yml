@@ -117,6 +117,10 @@ jobs:
         run: |
           test -f tools/test_breakwater_layout.py
           python -m unittest discover -s tools -p "test_breakwater_layout.py" -v
+      - name: Server export filter tests
+        run: |
+          test -f tools/test_server_export_filter.py
+          python -m unittest discover -s tools -p "test_server_export_filter.py" -v
       # The standalone Blender models: built, current, and no primitive meshes
       # standing in for them.
       - name: Model tests
@@ -289,7 +293,9 @@ jobs:
           # Each zip runs in the background while Godot exports the next platform.
           export_preset "Linux" "$PWD/builds/linux/shooter.x86_64"
           (cd builds/linux && zip -qr "../../dist/${NAME}-linux-x86_64.zip" .) & pids+=($!)
-          # Headless dedicated server: runs as a server on start, no rendering or audio.
+          # Headless dedicated server: runs as a server on start, no rendering or
+          # audio, and its pack carries placeholders instead of textures.
+          python3 tools/server_export_filter.py
           export_preset "Linux Server" "$PWD/builds/server/shooter-server.x86_64"
           cp master/shooter-master master/shooter-query builds/server/
           (cd builds/server && zip -qr "../../dist/${NAME}-server-linux-x86_64.zip" .) & pids+=($!)
