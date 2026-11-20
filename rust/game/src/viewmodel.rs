@@ -2762,6 +2762,12 @@ pub struct ViewmodelRig {
     melee: Option<(f32, f32)>,
     knife_swing: Option<Gd<AudioStreamPlayer>>,
     knife_hit: Option<Gd<AudioStreamPlayer>>,
+    /// A Zombies drink in the hands (`zombies/drink_bottle`, real
+    /// recordings timed to `drink_hands`: the cap flicked off at 0.55 s,
+    /// three gulps from 0.95 s, the bottle tossed at 2.15 s), and whether
+    /// one is playing.
+    drink_sound: Option<Gd<AudioStreamPlayer>>,
+    drinking: bool,
     time: f32,
     bob_blend: f32,
     /// Which foot the stride is on (0 or 1), and the stride phase last frame,
@@ -2874,6 +2880,13 @@ impl INode3D for ViewmodelRig {
         self.shell_sound = self.make_player("res://assets/audio/player/shell", -16.0);
         self.knife_swing = self.make_player("res://assets/audio/foley/knife_swing", -4.0);
         self.knife_hit = self.make_player("res://assets/audio/foley/knife_hit", -1.0);
+        self.drink_sound = self.make_player("res://assets/audio/zombies/drink_bottle", -2.0);
+        if let Some(player) = &mut self.drink_sound
+            && let Some(stream) = audio::variations("res://assets/audio/zombies/drink_bottle", 1.0)
+        {
+            // Timed to the hands: no pitch change, which would move the beats.
+            player.set_stream(&stream);
+        }
     }
 }
 
@@ -2889,6 +2902,19 @@ impl ViewmodelRig {
         self.bottle = None;
         self.syrette = None;
         self.cutters = None;
+        let drinking = matches!(frame.action, ViewAction::Drinking { .. });
+        if drinking != self.drinking {
+            self.drinking = drinking;
+            if let Some(player) = &mut self.drink_sound {
+                match frame.action {
+                    // Joined late (latency): the sound picks up where the hands are.
+                    ViewAction::Drinking { elapsed, .. } => {
+                        player.play_ex().from_position(elapsed).done()
+                    }
+                    _ => player.stop(),
+                }
+            }
+        }
         if let ViewAction::Drinking { elapsed, drink } = frame.action {
             // A Zombies drink: the bottle in the hands, the weapon down.
             let camera = self.base().get_viewport()?.get_camera_3d()?;

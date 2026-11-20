@@ -18,6 +18,10 @@ const SPEND_COLOR := Color(0.95, 0.4, 0.3)
 const POWER_UP_COLOR := Color(0.55, 1.0, 0.45)
 const DOWN_COLOR := Color(1.0, 0.45, 0.3)
 const ROUND_START_SOUND := "res://assets/audio/zombies/round_start.ogg"
+const ZombiesSounds := preload("res://scripts/zombies_sounds.gd")
+## Power-ups with a sting of their own (real recordings): the Carpenter's
+## saw and hammer, the Fire Sale's old till.
+const POWER_UP_STINGS := {"carpenter": "carpenter", "fire_sale": "fire_sale"}
 const ROUND_END_SOUND := "res://assets/audio/zombies/round_end.ogg"
 ## Seconds each "+N" popup floats.
 const POPUP_TIME := 0.9
@@ -36,6 +40,7 @@ var _banner: Label
 var _banner_time := 0.0
 var _power_ups: Label
 var _sting: AudioStreamPlayer
+var _power_sting: AudioStreamPlayer
 var _round_flash := 0.0
 ## Each popup: {"label": Label, "age": float}.
 var _popups: Array[Dictionary] = []
@@ -98,6 +103,10 @@ func _ready() -> void:
 	_sting.bus = &"UI"
 	_sting.volume_db = -3.0
 	add_child(_sting)
+	_power_sting = AudioStreamPlayer.new()
+	_power_sting.bus = &"UI"
+	_power_sting.volume_db = -4.0
+	add_child(_power_sting)
 	if _director == null:
 		return
 	_director.round_started.connect(_on_round_started)
@@ -230,9 +239,12 @@ func _on_spent(points: int, _total: int) -> void:
 	_popups.append({"label": popup, "age": 0.0})
 
 
-func _on_power_up(_kind: String, label: String) -> void:
+func _on_power_up(kind: String, label: String) -> void:
 	_banner.add_theme_color_override("font_color", POWER_UP_COLOR)
 	_show_banner(label, 2.5)
+	if POWER_UP_STINGS.has(kind):
+		_power_sting.stream = ZombiesSounds.stream(POWER_UP_STINGS[kind])
+		_power_sting.play()
 
 
 func _on_game_over(round_number: int) -> void:

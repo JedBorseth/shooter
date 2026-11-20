@@ -5,6 +5,11 @@ extends Node3D
 ## then; `shooter_sim::zombies::hounds::STRIKE_SECONDS`). Black Ops' dog
 ## spawn lightning, in the hounds' own cold blue-white rather than its
 ## orange. An effect, so its bolt is a plain unshaded quad, not a model.
+## It sounds like one too (`hound_strike`, real recordings): arcs crackling
+## up for 1.5 s, then a close thunder crack as the bolt lands. The sound
+## plays from the parent, so its rumble outlasts the flash.
+
+const ZombiesSounds := preload("res://scripts/zombies_sounds.gd")
 
 const GLOW := Color(0.62, 0.86, 1.0)
 ## Seconds of crackle before the bolt (the server's strike delay).
@@ -41,6 +46,8 @@ func _ready() -> void:
 	_bolt.position = Vector3(0, BOLT_HEIGHT * 0.5, 0)
 	_bolt.visible = false
 	add_child(_bolt)
+	if get_parent() != null:
+		ZombiesSounds.play_at(get_parent(), global_position, "hound_strike", 12.0)
 
 
 func _process(delta: float) -> void:

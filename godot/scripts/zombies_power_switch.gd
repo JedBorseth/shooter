@@ -3,7 +3,8 @@ extends StaticBody3D
 ## power on for the rest of the game, free, as in Black Ops; drink machines
 ## and the upgrade machine need it. The dedicated server decides; every
 ## client shows it with `set_on`, which throws the lever and lights the
-## lamps.
+## lamps, with its sound (`zombies/power_on`, real recordings): the lever
+## pulled, a heavy breaker closing, and big lights clunking on and humming.
 
 ## Degrees the lever swings down when thrown.
 const THROW := 140.0

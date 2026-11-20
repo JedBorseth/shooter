@@ -59,3 +59,31 @@ fn find(loader: &mut Gd<ResourceLoader>, stem: &str) -> Option<String> {
         .map(|ext| format!("{stem}.{ext}"))
         .find(|path| loader.exists(path))
 }
+
+/// A positional player under `node` on the Effects bus, for the sounds
+/// [`play_on`] gives it.
+pub fn attach_3d(
+    node: &mut Gd<godot::classes::Node3D>,
+    name: &str,
+    unit_size: f32,
+    max_distance: f32,
+) -> Gd<godot::classes::AudioStreamPlayer3D> {
+    let mut player = godot::classes::AudioStreamPlayer3D::new_alloc();
+    player.set_name(name);
+    player.set_bus("Effects");
+    player.set_unit_size(unit_size);
+    player.set_max_distance(max_distance);
+    player.set_max_polyphony(2);
+    node.add_child(&player);
+    player
+}
+
+/// Plays one take of `<base>` (see [`variations`]) on `player`, at
+/// `volume_db`; nothing when the files are missing.
+pub fn play_on(player: &mut Gd<godot::classes::AudioStreamPlayer3D>, base: &str, volume_db: f32) {
+    if let Some(stream) = variations(base, 1.02) {
+        player.set_stream(&stream);
+        player.set_volume_db(volume_db);
+        player.play();
+    }
+}
