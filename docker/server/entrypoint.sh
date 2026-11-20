@@ -23,6 +23,8 @@ set -- --port "$port" --query-port "$query_port" \
 [ -n "${SHOOTER_TIME_LIMIT:-}" ] && set -- --time-limit "$SHOOTER_TIME_LIMIT" "$@"
 [ -n "${SHOOTER_ROUNDS:-}" ] && set -- --rounds "$SHOOTER_ROUNDS" "$@"
 [ -n "${SHOOTER_CUSTOM:-}" ] && set -- --custom "$SHOOTER_CUSTOM" "$@"
+[ -n "${SHOOTER_TEAM_BOTS:-}" ] && set -- --team-bots "$SHOOTER_TEAM_BOTS" "$@"
+[ -n "${SHOOTER_TEAM_BOT_SKILL:-}" ] && set -- --team-bot-skill "$SHOOTER_TEAM_BOT_SKILL" "$@"
 # Accounts: the HTTP key stays in SHOOTER_ACCOUNTS_KEY (read by the server).
 [ -n "${SHOOTER_ACCOUNTS:-}" ] && set -- --accounts "$SHOOTER_ACCOUNTS" "$@"
 [ -n "${SHOOTER_EXIT_WHEN_EMPTY:-}" ] && set -- --exit-when-empty "$SHOOTER_EXIT_WHEN_EMPTY" "$@"

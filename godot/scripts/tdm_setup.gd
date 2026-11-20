@@ -116,7 +116,11 @@ var _name: LineEdit
 ## Zombies co-op: listed on the local network only, or on the Internet too.
 var _listing: ChipRow
 var _map: ChipRow
-var _team_size: ChipRow
+## Team modes: each team's size (ours counts us) and its bots' difficulty.
+var _allies: ChipRow
+var _enemies: ChipRow
+var _ally_skill: ChipRow
+var _enemy_skill: ChipRow
 var _score_limit: ChipRow
 var _players: ChipRow
 var _kills_per_weapon: ChipRow
@@ -207,15 +211,14 @@ func _base_options() -> Dictionary:
 			"score_limit": FFA_SCORE_LIMITS[_score_limit.selected],
 			"time_limit": TIME_LIMITS[_time_limit.selected],
 		}
-	var team_size: int = TEAM_SIZES[_team_size.selected]
 	if _snd():
-		return {
-			"mode": "snd",
-			"map": SND_MAPS[_map.selected][1],
-			"bots": team_size * 2 - 1,
-			"bot_skill": BOT_SKILLS[_bot_skill.selected][1],
-			"rounds_to_win": ROUNDS_TO_WIN[_rounds.selected],
-		}
+		return _with_teams(
+			{
+				"mode": "snd",
+				"map": SND_MAPS[_map.selected][1],
+				"rounds_to_win": ROUNDS_TO_WIN[_rounds.selected],
+			}
+		)
 	var limits := SCORE_LIMITS
 	if _ctf():
 		limits = CAPTURE_LIMITS
@@ -223,14 +226,30 @@ func _base_options() -> Dictionary:
 		limits = POINT_LIMITS
 	elif _dom():
 		limits = DOM_POINT_LIMITS
-	return {
-		"mode": mode if _ctf() or _hardpoint() or _dom() else "tdm",
-		"map": MAPS[_map.selected][1],
-		"bots": team_size * 2 - 1,
-		"bot_skill": BOT_SKILLS[_bot_skill.selected][1],
-		"score_limit": limits[_score_limit.selected],
-		"time_limit": TIME_LIMITS[_time_limit.selected],
-	}
+	return _with_teams(
+		{
+			"mode": mode if _ctf() or _hardpoint() or _dom() else "tdm",
+			"map": MAPS[_map.selected][1],
+			"score_limit": limits[_score_limit.selected],
+			"time_limit": TIME_LIMITS[_time_limit.selected],
+		}
+	)
+
+
+## A team mode's options with each team's bots: our team's size counts us
+## (unless we spectate), and each team's bots play at their own difficulty.
+func _with_teams(chosen: Dictionary) -> Dictionary:
+	var allies: int = TEAM_SIZES[_allies.selected]
+	var enemies: int = TEAM_SIZES[_enemies.selected]
+	var spectating := _spectate != null and _spectate.button_pressed
+	var ally_bots := allies if spectating else allies - 1
+	chosen["bots"] = ally_bots + enemies
+	chosen["bot_skill"] = BOT_SKILLS[_enemy_skill.selected][1]
+	chosen["team_bots"] = "%d,%d" % [ally_bots, enemies]
+	chosen["team_bot_skill"] = (
+		"%s,%s" % [BOT_SKILLS[_ally_skill.selected][1], BOT_SKILLS[_enemy_skill.selected][1]]
+	)
+	return chosen
 
 
 func _gun_game() -> bool:
@@ -309,7 +328,7 @@ func _build() -> void:
 
 	# Map picture with the mode and map name over its lower edge.
 	var header := Control.new()
-	header.custom_minimum_size = Vector2(0, 236)
+	header.custom_minimum_size = Vector2(0, 180)
 	header.clip_contents = true
 	layout.add_child(header)
 	_picture = TextureRect.new()
@@ -387,10 +406,13 @@ func _build() -> void:
 			rows, "Players", PLAYER_COUNTS.map(func(n: int) -> String: return str(n)), 3
 		)
 	else:
-		_team_size = _chips(
-			rows, "Teams", TEAM_SIZES.map(func(n: int) -> String: return "%dv%d" % [n, n]), 5
-		)
-	if not _zombies():
+		var sizes := TEAM_SIZES.map(func(n: int) -> String: return str(n))
+		var skills := BOT_SKILLS.map(func(s: Array) -> String: return s[0])
+		_allies = _chips(rows, "Allies", sizes, 5)
+		_ally_skill = _chips(rows, "Ally bots", skills, 1)
+		_enemies = _chips(rows, "Enemies", sizes, 5)
+		_enemy_skill = _chips(rows, "Enemy bots", skills, 1)
+	if _gun_game() or _ffa():
 		_bot_skill = _chips(rows, "Bots", BOT_SKILLS.map(func(s: Array) -> String: return s[0]), 1)
 	if _zombies():
 		pass

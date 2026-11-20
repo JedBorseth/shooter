@@ -97,6 +97,8 @@ func _run() -> void:
 					"map": "slamcity",
 					"bots": 11,
 					"bot_skill": "normal",
+					"team_bots": "5,6",
+					"team_bot_skill": "normal,normal",
 					"score_limit": 75,
 					"time_limit": 10
 				}
@@ -210,6 +212,8 @@ func _run() -> void:
 					"map": "slamcity",
 					"bots": 11,
 					"bot_skill": "normal",
+					"team_bots": "5,6",
+					"team_bot_skill": "normal,normal",
 					"score_limit": 3,
 					"time_limit": 10
 				}
@@ -250,6 +254,8 @@ func _run() -> void:
 					"map": "slamcity",
 					"bots": 11,
 					"bot_skill": "normal",
+					"team_bots": "5,6",
+					"team_bot_skill": "normal,normal",
 					"score_limit": 200,
 					"time_limit": 10
 				}
@@ -275,6 +281,8 @@ func _run() -> void:
 					"map": "slamcity",
 					"bots": 11,
 					"bot_skill": "normal",
+					"team_bots": "5,6",
+					"team_bot_skill": "normal,normal",
 					"rounds_to_win": 6
 				}
 			),

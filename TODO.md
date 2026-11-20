@@ -409,7 +409,7 @@ Black Ops 2's Custom Games, CODcaster-style spectating, and a private match lobb
 - [ ] Grey out what a loadout rule bars in the class menu, as Black Ops 2's restricted items show.
 - [x] Hardcore's HUD (none) and the minimap off on the client.
 - [x] A Game Settings page in the local match setup, with named presets saved locally.
-- [ ] Bots per team, each team with its own difficulty.
+- [x] Bots per team, each team with its own difficulty.
 - [x] Spectating: join as a spectator (on no team), a free-fly camera, and first-person follow of any player.
 - [ ] Spectating follow-ups: a third-person follow camera and an overhead map view (Black Ops 2's CODcaster has both), and spectators on the scoreboard and in chat by name.
 - [x] A caster overlay: both teams' loadouts, scores, streaks, and the objective.

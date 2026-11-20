@@ -59,6 +59,10 @@ The server applies the rule to the class each life spawns with (`Loadouts::restr
 - **Pistols only:** no primary; the class's pistol, or the M1911.
 - **Snipers only:** the class's sniper rifle, or the M40; the secondary only if it is a pistol.
 
+## Bots per team
+
+In team modes the match setup picks each team's size and its bots' difficulty: **Allies** (your team, you included), **Ally bots**, **Enemies**, and **Enemy bots**. This follows Black Ops 2's Combat Training and custom games, which set friendly and enemy bots apart. The server keeps exactly that many bots on each team (`--team-bots ALLIES,ENEMIES` with `--team-bot-skill SKILL,SKILL`, or `SHOOTER_TEAM_BOTS` and `SHOOTER_TEAM_BOT_SKILL` for the Docker image). Players take no bot's place, and they even out among themselves, the first on the allies. In free-for-all modes the two numbers add up to one bot count, at the first difficulty. Without `--team-bots`, the server fills both teams evenly from `--bots`, as before.
+
 ## Spectating
 
 A player can join a match as a spectator, as Black Ops 2's CODcaster lets casters do. A spectator is on no team, has no body, and takes no place: bots fill the teams as if nobody had joined. Up to eight can watch one server. Ranked servers turn spectators away ("Spectating is off on ranked servers."), since a second client could watch for its team.

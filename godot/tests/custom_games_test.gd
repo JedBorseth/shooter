@@ -10,6 +10,7 @@ extends SceneTree
 
 const REMOTE_PLAYER_SCENE := preload("res://scenes/remote_player.tscn")
 const ARENA_SCENE := preload("res://scenes/main.tscn")
+const SERVER_SCENE := preload("res://scenes/server.tscn")
 const CUSTOM := "hardcore=on,respawn=0,killcam=off,radar=constant,streaks=off,regen=off"
 ## Seconds of wall time the server process gets to start and let us join.
 const JOIN_SECONDS := 90.0
@@ -34,6 +35,7 @@ func _run() -> void:
 		await _friendly_fire(ff)
 	await _loadouts("pistols", ["m1911", "bp9"])
 	await _loadouts("snipers", ["m40"])
+	await _team_bots()
 	await _ranked_ignores()
 	_finish()
 
@@ -93,7 +95,7 @@ func _client_side() -> void:
 
 
 func _start_server(custom: String, ranked := false) -> NetServer:
-	var server := (load("res://scenes/server.tscn") as PackedScene).instantiate() as NetServer
+	var server := SERVER_SCENE.instantiate() as NetServer
 	server.map_scene = ARENA_SCENE
 	_servers += 1
 	server.port = _port + _servers
@@ -209,6 +211,27 @@ func _loadouts(rule: String, allowed: Array) -> void:
 	for key: String in held:
 		ok = ok and allowed.has(key.get_slice("+", 0))
 	_check(ok, "%s only: everyone holds %s (%s)" % [rule, allowed, held])
+	server.queue_free()
+	await process_frame
+
+
+## Bots per team: each team gets exactly its own number.
+func _team_bots() -> void:
+	var server := SERVER_SCENE.instantiate() as NetServer
+	server.map_scene = ARENA_SCENE
+	_servers += 1
+	server.port = _port + _servers
+	server.query_port = -1
+	server.bot_skill = "normal"
+	server.team_bots = "1,3"
+	server.team_bot_skill = "easy,hard"
+	server.auto_start = true
+	root.add_child(server)
+	await _ticks(5)
+	var per_team := [0, 0]
+	for id in server.player_ids():
+		per_team[server.player_team(id)] += 1
+	_check(per_team == [1, 3], "bots per team: one ally, three enemies, %s" % [per_team])
 	server.queue_free()
 	await process_frame
 
