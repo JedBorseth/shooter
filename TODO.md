@@ -216,8 +216,8 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
   - [x] Domination: bots spread over the flags instead of one team piling onto one (the pile-up was bots trapped in a room the navigation bake shut off, #312), and a bot at a flag its team does not own takes it.
   - [x] Hardpoint: bots head for the next zone before the live one moves (`hardpoint::bots_rotating`).
   - [x] Capture the Flag: escorts ring the carrier instead of chasing its heels.
-  - [ ] Awareness: enemies who fire unsuppressed (the minimap's red dots) draw bots' eyes and patrols; footsteps and gunfire turn them.
-  - [ ] Combat feel: pre-aim the angles enemies come from, check corners, peek from cover, and slide or drop-shot on Hard only.
+  - [x] Awareness: enemies on the minimap (unsuppressed fire, UAV sweeps) draw bots' eyes and patrols, and footsteps heard round a corner turn them.
+  - [x] Combat feel: aim round corners on the path, peek from cover and fight from it, and on Hard slide into fights and crouch up close (no prone, so no drop shot).
 - [x] Team Deathmatch rules on the server: two teams (new players join the smaller), 75 kills or 10 minutes, no friendly fire, a lobby that waits for everyone to ready up, a countdown, and a results phase before the next match (`rust/sim/src/tdm.rs`).
 - [x] Round end screen: VICTORY, DEFEAT, or DRAW with the scoreboard, then the next match's countdown.
 - [x] Team colours from the match: teammates wear the allies' colours and show their name; enemies wear the enemies' colours and show none.
