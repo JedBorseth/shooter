@@ -118,7 +118,7 @@ process_material = SubResource("Process_jet")
 draw_pass_1 = SubResource("Mesh_streak")
 cast_shadow = 0
 
-[node name="Mist" type="GPUParticles3D" parent="."]
+[node name="Mist" type="GPUParticles3D" parent="." groups=["graphics_ambient_puffs"]]
 position = Vector3(0, 1.2, 0)
 amount = 8
 lifetime = 3.5

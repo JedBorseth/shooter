@@ -75,11 +75,12 @@ cpu-bench *args: build
 
 # Fail if any map's worst view is over its GPU budget (docs/perf/budgets.json)
 # or more than 5% slower than docs/perf/baseline.json, best of two runs per
-# view. Needs the reference GPU and a display or Xvfb. Medium only by default;
+# view. Needs the reference GPU and a display or Xvfb. Both runs go through
+# tools/steady.sh, which holds the card's clock up and renders on its own
+# display where it can, as the baseline was measured. Medium only by default;
 # `just perf-gate low,medium,high` for every preset.
 perf-gate presets="medium":
-    BENCH_PRESETS={{presets}} tools/benchmark.sh --out benchmark.json
-    BENCH_PRESETS={{presets}} tools/benchmark.sh --out benchmark-2.json
+    tools/steady.sh env BENCH_PRESETS={{presets}} bash -c 'tools/benchmark.sh --out benchmark.json && tools/benchmark.sh --out benchmark-2.json'
     python3 tools/perf_gate.py benchmark.json benchmark-2.json
 
 # The gate on machines with an NVIDIA GPU; skipped, with a note, elsewhere.
