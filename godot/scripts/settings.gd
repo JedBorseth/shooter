@@ -751,16 +751,24 @@ func load_settings() -> void:
 ## becomes the nearest level, and mouse sensitivity saved as a level becomes its
 ## multiplier. Either old default becomes the current default.
 func _migrate_sensitivity(config: ConfigFile) -> void:
-	if not config.has_section_key("gamepad", &"stick_sensitivity_level"):
-		var old: Variant = config.get_value("gamepad", LEGACY_STICK_SENSITIVITY, null)
+	# `get_value` with a null default errors when the key is missing, so
+	# each old key is read only when it is there.
+	if (
+		not config.has_section_key("gamepad", &"stick_sensitivity_level")
+		and config.has_section_key("gamepad", LEGACY_STICK_SENSITIVITY)
+	):
+		var old: Variant = config.get_value("gamepad", LEGACY_STICK_SENSITIVITY)
 		if (old is int or old is float) and not is_nan(float(old)):
 			stick_sensitivity_level = (
 				DEFAULTS[&"stick_sensitivity_level"]
 				if is_equal_approx(float(old), 1.0)
 				else sensitivity_level(float(old))
 			)
-	if not config.has_section_key("controls", &"mouse_sensitivity"):
-		var level: Variant = config.get_value("controls", LEGACY_MOUSE_LEVEL, null)
+	if (
+		not config.has_section_key("controls", &"mouse_sensitivity")
+		and config.has_section_key("controls", LEGACY_MOUSE_LEVEL)
+	):
+		var level: Variant = config.get_value("controls", LEGACY_MOUSE_LEVEL)
 		if level is int and level in SENSITIVITY_LEVEL_OPTIONS:
 			mouse_sensitivity = (
 				DEFAULTS[&"mouse_sensitivity"] if level == 7 else sensitivity_scale(level)
