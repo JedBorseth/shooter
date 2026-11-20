@@ -28,6 +28,7 @@
 
 use glam::Vec3;
 
+use crate::score::Award;
 use crate::tdm::{TEAM_COUNT, Team};
 
 /// Tunable round rules.
@@ -578,6 +579,83 @@ impl Charge {
     }
 }
 
+/// What happened in a round, for its medals: who started it, who killed
+/// whom, and who was left alone alive on a team (the server keeps it).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RoundRecord {
+    /// Everyone alive when the round went live, with their team.
+    pub roster: Vec<(u8, Team)>,
+    /// Kills this round: (killer, victim).
+    pub kills: Vec<(u8, u8)>,
+    /// Per team: the player who was left the last one alive while an enemy
+    /// still lived, if that happened.
+    pub last_alive: [Option<u8>; TEAM_COUNT],
+}
+
+/// Enemies an Ace needs: killing a one- or two-player team alone is common.
+pub const ACE_MIN_ENEMIES: usize = 3;
+
+impl RoundRecord {
+    /// A record for a round going live with `roster` (living players and
+    /// their teams).
+    pub fn start(roster: Vec<(u8, Team)>) -> Self {
+        Self {
+            roster,
+            ..Self::default()
+        }
+    }
+
+    pub fn on_kill(&mut self, killer: u8, victim: u8) {
+        if killer != victim {
+            self.kills.push((killer, victim));
+        }
+    }
+
+    /// Notes who is alive (`alive`: everyone's id, team, and whether they
+    /// live): a team down to one player while an enemy lives has its last
+    /// one standing, if the team started the round with more than one.
+    pub fn on_headcount(&mut self, alive: &[(u8, Team, bool)]) {
+        for team in 0..TEAM_COUNT as Team {
+            if self.last_alive[usize::from(team)].is_some() {
+                continue;
+            }
+            let started = self.roster.iter().filter(|(_, t)| *t == team).count();
+            let mut living = alive.iter().filter(|(_, t, a)| *t == team && *a);
+            let enemies = alive.iter().filter(|(_, t, a)| *t != team && *a).count();
+            if let (Some((id, _, _)), None) = (living.next(), living.next())
+                && started >= 2
+                && enemies >= 1
+            {
+                self.last_alive[usize::from(team)] = Some(*id);
+            }
+        }
+    }
+
+    /// The round's medals once `winner` takes it: Clutch for the winning
+    /// team's last one standing, and Ace for a player who killed every enemy
+    /// who started the round (at least [`ACE_MIN_ENEMIES`]).
+    pub fn medals(&self, winner: Team) -> Vec<(u8, Award)> {
+        let mut out = Vec::new();
+        if let Some(id) = self.last_alive[usize::from(winner)] {
+            out.push((id, Award::Clutch));
+        }
+        for &(id, team) in &self.roster {
+            let enemies: Vec<u8> = self
+                .roster
+                .iter()
+                .filter(|(_, t)| *t != team)
+                .map(|(e, _)| *e)
+                .collect();
+            if enemies.len() >= ACE_MIN_ENEMIES
+                && enemies.iter().all(|e| self.kills.contains(&(id, *e)))
+            {
+                out.push((id, Award::Ace));
+            }
+        }
+        out
+    }
+}
+
 /// Horizontal distance squared.
 fn flat(v: Vec3) -> f32 {
     v.x * v.x + v.z * v.z
@@ -1074,5 +1152,72 @@ mod tests {
                 at: Vec3::new(-30.0, 0.0, 0.0)
             }
         );
+    }
+    // --- Round medals -----------------------------------------------------------
+
+    fn roster() -> Vec<(u8, Team)> {
+        vec![(1, 0), (2, 0), (3, 0), (11, 1), (12, 1), (13, 1)]
+    }
+
+    #[test]
+    fn the_last_one_standing_who_wins_gets_a_clutch() {
+        let mut record = RoundRecord::start(roster());
+        record.on_headcount(&[
+            (1, 0, true),
+            (2, 0, true),
+            (3, 0, false),
+            (11, 1, true),
+            (12, 1, true),
+            (13, 1, true),
+        ]);
+        assert_eq!(record.last_alive, [None, None]);
+        record.on_headcount(&[
+            (1, 0, true),
+            (2, 0, false),
+            (3, 0, false),
+            (11, 1, true),
+            (12, 1, true),
+            (13, 1, false),
+        ]);
+        assert_eq!(record.last_alive, [Some(1), None]);
+        assert_eq!(record.medals(0), vec![(1, Award::Clutch)]);
+        assert!(record.medals(1).is_empty(), "no clutch for a round lost");
+    }
+
+    #[test]
+    fn a_team_of_one_never_clutches_and_nobody_clutches_without_an_enemy_left() {
+        let mut record = RoundRecord::start(vec![(1, 0), (11, 1), (12, 1)]);
+        record.on_headcount(&[(1, 0, true), (11, 1, true), (12, 1, true)]);
+        assert_eq!(record.last_alive[0], None);
+        let mut record = RoundRecord::start(roster());
+        record.on_headcount(&[
+            (1, 0, true),
+            (2, 0, false),
+            (3, 0, false),
+            (11, 1, false),
+            (12, 1, false),
+            (13, 1, false),
+        ]);
+        assert_eq!(record.last_alive[0], None);
+    }
+
+    #[test]
+    fn killing_the_whole_enemy_team_alone_is_an_ace() {
+        let mut record = RoundRecord::start(roster());
+        for victim in [11, 12, 13] {
+            record.on_kill(1, victim);
+        }
+        assert_eq!(record.medals(0), vec![(1, Award::Ace)]);
+        // One of them killed by someone else: no ace.
+        let mut record = RoundRecord::start(roster());
+        record.on_kill(1, 11);
+        record.on_kill(1, 12);
+        record.on_kill(2, 13);
+        assert!(record.medals(0).is_empty());
+        // Two enemies are not enough.
+        let mut record = RoundRecord::start(vec![(1, 0), (11, 1), (12, 1)]);
+        record.on_kill(1, 11);
+        record.on_kill(1, 12);
+        assert!(record.medals(0).is_empty());
     }
 }

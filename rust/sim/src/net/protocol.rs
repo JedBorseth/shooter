@@ -115,7 +115,9 @@ use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, Weapo
 // inputs, the charge sites and the charge's whereabouts, plants and defuses
 // as events, the two new round ends, and who is planting or defusing in
 // player views.
-pub const PROTOCOL_VERSION: u16 = 47;
+// Version 48 added Search and Destroy's scores and medals (award tags grew
+// to 5 bits) and kills by the charge going off.
+pub const PROTOCOL_VERSION: u16 = 48;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -535,6 +537,8 @@ pub enum KillCause {
     Knife,
     /// Thrown equipment.
     Equipment(equipment::Kind),
+    /// Search and Destroy's charge going off.
+    Charge,
 }
 
 /// Everything client prediction needs to restart from the server's result.
@@ -1608,6 +1612,7 @@ fn write_cause(w: &mut BitWriter, cause: KillCause) {
             w.bits(2, 2);
             w.bits(u32::from(kind.code()), EQUIPMENT_BITS);
         }
+        KillCause::Charge => w.bits(3, 2),
     }
 }
 
@@ -1616,7 +1621,7 @@ fn read_cause(r: &mut BitReader) -> DecodeResult<KillCause> {
         0 => KillCause::Weapon,
         1 => KillCause::Knife,
         2 => KillCause::Equipment(read_equipment(r)?),
-        _ => return Err(DecodeError::Invalid("kill cause")),
+        _ => KillCause::Charge,
     })
 }
 
@@ -1916,7 +1921,7 @@ fn read_mode(r: &mut BitReader) -> DecodeResult<Mode> {
     }
 }
 
-const AWARD_TAG_BITS: u32 = 4;
+const AWARD_TAG_BITS: u32 = 5;
 
 fn write_award(w: &mut BitWriter, award: Award) {
     let (tag, count) = match award {
@@ -1935,6 +1940,11 @@ fn write_award(w: &mut BitWriter, award: Award) {
         Award::HardpointSecure => (12, None),
         Award::HardpointDefend => (13, None),
         Award::HardpointAssault => (14, None),
+        Award::ChargePlanted => (15, None),
+        Award::ChargeDefused => (16, None),
+        Award::WireCutter => (17, None),
+        Award::Clutch => (18, None),
+        Award::Ace => (19, None),
     };
     w.bits(tag, AWARD_TAG_BITS);
     if let Some(n) = count {
@@ -1959,6 +1969,11 @@ fn read_award(r: &mut BitReader) -> DecodeResult<Award> {
         12 => Award::HardpointSecure,
         13 => Award::HardpointDefend,
         14 => Award::HardpointAssault,
+        15 => Award::ChargePlanted,
+        16 => Award::ChargeDefused,
+        17 => Award::WireCutter,
+        18 => Award::Clutch,
+        19 => Award::Ace,
         _ => return Err(DecodeError::Invalid("award")),
     })
 }

@@ -87,7 +87,7 @@ use shooter_sim::player::{self, PlayerEvent, PlayerInput, PlayerParams, PlayerSt
 use shooter_sim::score::{Award, Kill, ScoreRules, ScoreState, Scored};
 use shooter_sim::snd::{
     Charge, ChargeContext, ChargeEvent, ChargePlayer, ChargeState, Headcount, RoundEnd, RoundPhase,
-    RoundState, RoundTransition, Site, SndRules, UseKind,
+    RoundRecord, RoundState, RoundTransition, Site, SndRules, UseKind,
 };
 use shooter_sim::tdm::{
     self, MatchRules, MatchState, Mode, Phase, SpawnPoint, SpawnRules, Team, Threat, Transition,
@@ -152,6 +152,12 @@ const EXPLOSION_TARGET_HEIGHT: f32 = 1.0;
 /// How far short of a player a wall or prop must be to absorb an explosion.
 /// Keeps the exploding prop's own surface from blocking the blast.
 const BLAST_CLEARANCE: f32 = 0.15;
+/// Search and Destroy's charge going off: Call of Duty 4's `radiusDamage`
+/// of 512 units (about 13 m), 200 damage at its heart falling to 20 at the
+/// edge, credited to the planter.
+const CHARGE_BLAST_RADIUS: f32 = 13.0;
+const CHARGE_BLAST_DAMAGE: f32 = 200.0;
+const CHARGE_BLAST_EDGE_DAMAGE: f32 = 20.0;
 
 #[derive(GodotClass)]
 #[class(init, base = Node3D)]
@@ -268,6 +274,10 @@ pub struct NetServer {
     /// The site the attacking bots go for this round (an index into
     /// `charge_sites`).
     charge_target: usize,
+    /// Who planted the charge this round (the explosion's kills are theirs).
+    charge_planter: Option<u8>,
+    /// The round's kills and last ones standing, for its medals.
+    round_record: RoundRecord,
     /// Players whose inputs hold interact whatever they send (tests).
     forced_interact: Vec<u8>,
     spawn_points: Vec<SpawnPoint>,
@@ -2565,7 +2575,7 @@ impl NetServer {
             self.broadcast_event(&prop_event(&state));
         }
         for blast in self.props.drain_explosions() {
-            self.resolve_explosion(&blast);
+            self.resolve_explosion(&blast, protocol::KillCause::Weapon);
         }
     }
 
@@ -2593,7 +2603,7 @@ impl NetServer {
     /// by the map, no friendly fire (but self-damage counts), kill credit, and
     /// the same scoring paths as gunfire. Prop-to-prop damage stays in the
     /// manager's chain reaction, so this never feeds back into it.
-    fn resolve_explosion(&mut self, blast: &PropExplosion) {
+    fn resolve_explosion(&mut self, blast: &PropExplosion, cause: protocol::KillCause) {
         if matches!(
             self.match_state.phase,
             Phase::Countdown | Phase::Ended { .. }
@@ -2679,7 +2689,7 @@ impl NetServer {
                     victim: id,
                     weapon,
                     headshot: false,
-                    cause: protocol::KillCause::Weapon,
+                    cause,
                 });
                 self.note_kill(KillRecord {
                     killer: credited.unwrap_or(id),
@@ -2687,7 +2697,7 @@ impl NetServer {
                     tick: self.tick,
                     rewind: 0,
                     weapon,
-                    cause: protocol::KillCause::Weapon,
+                    cause,
                     headshot: false,
                 });
                 self.record_death(id);
@@ -2699,12 +2709,16 @@ impl NetServer {
                 }
                 let victim_team = self.avatars.iter().find(|a| a.id == id).map(|a| a.team);
                 let killer_team = credited.and(attacker_team);
+                // Only Team Deathmatch scores kills for the team, as with
+                // shots and grenades: Search and Destroy scores rounds,
+                // Capture the Flag captures, Hardpoint the zone.
                 let end = match (self.game, credited) {
                     (Mode::FreeForAll, Some(killer)) => self.free_for_all_end(killer, kills.len()),
-                    _ => victim_team.and_then(|victim_team| {
+                    (Mode::TeamDeathmatch, _) => victim_team.and_then(|victim_team| {
                         self.match_state
                             .on_kill(&self.rules, killer_team, victim_team)
                     }),
+                    _ => None,
                 };
                 if let Some(end) = end {
                     self.on_transition(end);
@@ -2734,6 +2748,9 @@ impl NetServer {
     /// watch nothing.
     fn note_kill(&mut self, record: KillRecord) {
         let phase = self.match_state.phase;
+        if self.round.is_some_and(|r| r.live()) {
+            self.round_record.on_kill(record.killer, record.victim);
+        }
         if phase == Phase::Playing && record.killer != record.victim {
             self.last_kill = Some(record);
         }
@@ -2855,13 +2872,29 @@ impl NetServer {
             count.players += 1;
             count.alive += u32::from(avatar.predicted.state.alive());
         }
+        if round.live() {
+            let alive: Vec<(u8, Team, bool)> = self
+                .avatars
+                .iter()
+                .map(|a| (a.id, a.team, a.predicted.state.alive()))
+                .collect();
+            self.round_record.on_headcount(&alive);
+        }
         let transition = round.tick(&self.snd_rules, TICK_DT, teams);
         self.round = Some(round);
         let Some(transition) = transition else {
             return;
         };
         match transition {
-            RoundTransition::Live => {}
+            RoundTransition::Live => {
+                let roster = self
+                    .avatars
+                    .iter()
+                    .filter(|a| a.predicted.state.alive())
+                    .map(|a| (a.id, a.team))
+                    .collect();
+                self.round_record = RoundRecord::start(roster);
+            }
             RoundTransition::Over { winner, reason } => {
                 self.round_over(round.number, winner, reason);
                 return;
@@ -2886,7 +2919,13 @@ impl NetServer {
             && let Some(charge) = &mut self.charge
         {
             charge.detonate();
+            let at = charge.position;
             self.broadcast_charge();
+            self.detonate_charge(at);
+        }
+        for (id, award) in self.round_record.medals(winner) {
+            godot_print!("server: player {id} earned {}", award.label());
+            self.pay_charge_play(id, award);
         }
         let end = self.match_state.add_point(&self.rules, winner);
         // A round won by wiping the other team out replays its last kill for
@@ -2929,6 +2968,8 @@ impl NetServer {
             .and_then(|i| self.spawn_points.get(i))
             .map_or(to_sim(self.spawn), |p| p.position);
         self.charge = Some(Charge::new(carrier, fallback));
+        self.charge_planter = None;
+        self.round_record = RoundRecord::default();
         self.charge_target = rng::hash(round.number, self.tick.wrapping_add(7)) as usize
             % self.charge_sites.len().max(1);
         if let Some((id, _)) = carrier {
@@ -2979,6 +3020,8 @@ impl NetServer {
                 ChargeEvent::Started { .. } => self.charge_use_started = self.tick,
                 ChargeEvent::Stopped { .. } => {}
                 ChargeEvent::Planted { by, site, .. } => {
+                    self.charge_planter = Some(by);
+                    self.pay_charge_play(by, Award::ChargePlanted);
                     godot_print!(
                         "server: player {by} planted the charge at site {}",
                         self.charge_site_names
@@ -2992,6 +3035,15 @@ impl NetServer {
                 }
                 ChargeEvent::Defused { by, .. } => {
                     godot_print!("server: player {by} defused the charge");
+                    self.pay_charge_play(by, Award::ChargeDefused);
+                    // A defuse with an attacker still alive to stop it.
+                    if self
+                        .avatars
+                        .iter()
+                        .any(|a| a.team == round.attackers && a.predicted.state.alive())
+                    {
+                        self.pay_charge_play(by, Award::WireCutter);
+                    }
                     let decided = self
                         .round
                         .as_mut()
@@ -3489,6 +3541,50 @@ impl NetServer {
             }
         }
         self.next_scoreboard = self.tick;
+    }
+
+    /// Search and Destroy: scores a plant, defuse, or round medal for a
+    /// player and tells them.
+    fn pay_charge_play(&mut self, id: u8, award: Award) {
+        let rules = self.score_rules;
+        let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
+            return;
+        };
+        let Some(scored) = avatar.score.on_charge_play(&rules, award) else {
+            return;
+        };
+        let totals = avatar.score.totals();
+        self.send_event(
+            id,
+            GameEvent::Score {
+                awards: vec![scored],
+                totals,
+            },
+        );
+        self.next_scoreboard = self.tick;
+    }
+
+    /// The charge goes off at `at`: everyone sees the blast, and it hurts
+    /// everyone in reach as Call of Duty's does, credited to the planter.
+    fn detonate_charge(&mut self, at: Vec3) {
+        self.broadcast_event(&GameEvent::Blast {
+            owner: None,
+            shot: 0,
+            kind: equipment::Kind::Frag,
+            at: at + Vec3::Y * 0.2,
+        });
+        let planter = self
+            .charge_planter
+            .filter(|id| self.avatars.iter().any(|a| a.id == *id));
+        let blast = PropExplosion {
+            position: at + Vec3::Y * 0.3,
+            radius: CHARGE_BLAST_RADIUS,
+            damage: CHARGE_BLAST_DAMAGE,
+            outer_damage: CHARGE_BLAST_EDGE_DAMAGE,
+            attacker: planter,
+            weapon: None,
+        };
+        self.resolve_explosion(&blast, protocol::KillCause::Charge);
     }
 
     /// Scores a flag play for a player and tells them.

@@ -531,6 +531,9 @@ func _refresh_board() -> void:
 	var headings := ["NAME", "SCORE", "K", "D", "PING"]
 	if ctf:
 		headings = ["NAME", "SCORE", "CAPS", "RET", "K", "D", "PING"]
+	if snd:
+		# Plants and defuses ride in the captures and returns columns.
+		headings = ["NAME", "SCORE", "PLANT", "DEF", "K", "D", "PING"]
 	if hardpoint:
 		headings.insert(headings.size() - 1, "TIME")
 	# Our team on top.
@@ -543,7 +546,7 @@ func _refresh_board() -> void:
 			if entry.team != team:
 				continue
 			var cells := [entry.name, str(entry.score)]
-			if ctf:
+			if ctf or snd:
 				cells.append(str(entry.get("captures", 0)))
 				cells.append(str(entry.get("returns", 0)))
 			cells.append(str(entry.kills))
