@@ -54,6 +54,10 @@ The image's health check runs `shooter-query` against the server's own query por
 
 The server needs about 350 MB of memory with a few bots and one core.
 
+## Size
+
+The server never draws, so its export carries no textures: `tools/server_export_filter.py` marks every image "Strip Visuals" in the Linux Server preset before CI exports it, and Godot packs a placeholder (the texture's size only) in place of each. Meshes, collision, sounds, and data stay. CI runs it; run it yourself before exporting a server by hand (it changes only that preset, and running it again changes nothing).
+
 ## Build it yourself
 
 The image is built from an exported server directory, which comes in as the build context named `server`. With a CI server zip (`shooter-<build>-server-linux-x86_64.zip`, from a run's artifacts or the `nightly` release) unzipped into `builds/server`, add `shooter-query` and build:
