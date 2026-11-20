@@ -585,8 +585,9 @@ pub struct WeaponView {
     #[export]
     #[init(val = -8.0)]
     hollow_db: f32,
-    /// Borrow another weapon's gunshot layers (its key), for a weapon without
-    /// its own recordings; empty uses this weapon's.
+    /// Borrow another weapon's sounds (its key) for any this weapon has no
+    /// recordings of yet: its shot, until it has its own (`snap`), and its
+    /// handling and last-rounds ring. Empty uses only this weapon's.
     #[export]
     sound_from: GString,
     /// Pitch of the gunshot, 1 as recorded (lower sounds heavier).
@@ -1971,11 +1972,7 @@ impl WeaponView {
     }
 
     fn load_gunshot(&mut self) -> Option<Gunshot> {
-        let key = if self.sound_from.is_empty() {
-            &self.weapon
-        } else {
-            &self.sound_from
-        };
+        let key = audio::shot_source(&self.weapon.to_string(), &self.sound_from.to_string());
         let dir = format!("res://assets/audio/weapons/{key}");
         let pitch = self.fire_pitch;
         let (snap_db, body_db, tail_db) = (self.snap_db, self.body_db, self.tail_db);
@@ -2008,9 +2005,18 @@ impl WeaponView {
         // Optional layers live with the weapon's own model key first (a gun
         // that borrows another's shot still has its own action).
         let own = format!("res://assets/audio/weapons/{}", self.weapon);
+        // The last-rounds ring is the magazine's, not the shot's: a weapon
+        // whose own (whole) shot has landed still takes its lender's ring
+        // until it has its own. Its mechanical layer never mixes in (a whole
+        // shot has none).
+        let lent = format!("res://assets/audio/weapons/{}", self.sound_from);
         let (mech_db, hollow_db) = (self.mech_db, self.hollow_db);
-        let mut optional = |name: &str, node: &str, offset_db: f32| {
-            [&own, &dir].into_iter().find_map(|d| {
+        let mut optional = |name: &str, node: &str, offset_db: f32, lend: bool| {
+            let mut sources = vec![&own, &dir];
+            if lend && !self.sound_from.is_empty() {
+                sources.push(&lent);
+            }
+            sources.into_iter().find_map(|d| {
                 let stream = audio::variations(&format!("{d}/{name}"), 1.03)?;
                 let mut player = AudioStreamPlayer::new_alloc();
                 player.set_name(node);
@@ -2022,8 +2028,8 @@ impl WeaponView {
                 Some(player)
             })
         };
-        let mech = optional("mech", "GunshotMech", mech_db);
-        let hollow = optional("hollow", "GunshotHollow", hollow_db).map(|player| {
+        let mech = optional("mech", "GunshotMech", mech_db, false);
+        let hollow = optional("hollow", "GunshotHollow", hollow_db, true).map(|player| {
             let volume = player.get_volume_db();
             (player, volume)
         });

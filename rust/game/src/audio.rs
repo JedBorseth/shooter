@@ -12,6 +12,19 @@ pub const WHOLE_SHOT_VOICES: i32 = 14;
 /// that never repeats the same file twice in a row. `.wav` files work too; short
 /// transient sounds use them because Vorbis smears sharp attacks. Returns `None`
 /// when no file exists, so missing optional sounds are skipped silently.
+/// Whose shot a weapon plays (its key under `assets/audio/weapons/`): its
+/// own once it has one (`snap` takes), or else the weapon it borrows from
+/// (`lender`, the view's `sound_from`; empty for none). A new weapon ships
+/// on a close one's shot, and its own takes over as soon as its files land.
+pub fn shot_source(own: &str, lender: &str) -> String {
+    let has_own = variations(&format!("res://assets/audio/weapons/{own}/snap"), 1.0).is_some();
+    if has_own || lender.is_empty() {
+        own.to_owned()
+    } else {
+        lender.to_owned()
+    }
+}
+
 pub fn variations(base: &str, pitch: f32) -> Option<Gd<AudioStreamRandomizer>> {
     let mut loader = ResourceLoader::singleton();
     let mut paths = Vec::new();

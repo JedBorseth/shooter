@@ -270,11 +270,18 @@ fn load(weapon: WeaponId) -> Option<GunSounds> {
     let borrowed = read("sound_from")
         .and_then(|v| v.try_to::<GString>().ok())
         .map(|s| s.to_string())
-        .filter(|s| !s.is_empty());
+        .unwrap_or_default();
     let own = weapon.def().model_key().to_owned();
-    let key = borrowed.unwrap_or(own);
+    let key = audio::shot_source(&own, &borrowed);
     let dir = format!("res://assets/audio/weapons/{key}");
     let layer = |name: &str| audio::variations(&format!("{dir}/{name}"), 1.0);
+    // The distant recordings, the gun's own first.
+    let distant = |name: &str| {
+        [&own, &borrowed]
+            .into_iter()
+            .filter(|k| !k.is_empty())
+            .find_map(|k| audio::variations(&format!("res://assets/audio/weapons/{k}/{name}"), 1.0))
+    };
     // `WeaponView`'s defaults, for scenes that leave them unset.
     let volume = float("fire_volume_db", -6.0) + REMOTE_DB;
     Some(GunSounds {
@@ -282,8 +289,8 @@ fn load(weapon: WeaponId) -> Option<GunSounds> {
         body: layer("body"),
         tail: layer("tail"),
         tail_indoor: layer("tail_indoor"),
-        mid: layer("mid"),
-        far: layer("far"),
+        mid: distant("mid"),
+        far: distant("far"),
         levels: [
             volume + float("snap_db", 2.0),
             volume + float("body_db", 0.0),
