@@ -81,9 +81,30 @@ Call of Duty's bots (Black Ops 2 and 3 combat training) play it the same
 way: the carrier goes to a site, the defence splits, and defenders rush the
 defuse.
 
+## Scores and medals
+
+| Play | Points | Call of Duty |
+| --- | --- | --- |
+| Plant | 200 | Plant and defuse pay a few kills' worth in every era (Black Ops 2: Bomb Planted and Bomb Defused medals) |
+| Defuse | 200 | as above |
+| Wire Cutter | +100: a defuse with an attacker still alive | Call of Duty 4 and Black Ops 2's Ninja Defuse is for a defuse with enemies alive near it; ours is any attacker alive |
+| Clutch | +200: win the round as your team's last one standing, against at least one enemy, from a team of two or more | the Last Man Standing / Clutch medals |
+| Ace | +300: kill every enemy who started the round yourself (at least three) | the Ace of later titles and esports |
+
+Kills score personal points as usual, but never a team point: only rounds
+do. Plants and defuses show on the scoreboard in the PLANT and DEF columns.
+
+## The explosion
+
+When the fuse runs out the charge goes off: everyone within 13 m with a clear
+line takes 200 damage at its heart, falling to 20 at the edge, as Call of
+Duty 4's `radiusDamage(origin, 512, 200, 20)`. Kills are credited to the
+planter (none to their own team, as with every blast) and show as "Charge"
+in the kill feed. Clients draw the frag grenade's blast for now.
+
 ## Still to come
 
-Plant and defuse scores and medals (Clutch, Ace, Wire
-Cutter), the charge's accelerating beeps, its explosion with a damage radius,
-and round stings for plants and defuses: see the Search and Destroy section of
+The charge's accelerating beeps, its own explosion sound and effect, and
+stings for plants, defuses, and the explosion (held for the owner's
+listening approval): see the Search and Destroy section of
 [TODO.md](../TODO.md).

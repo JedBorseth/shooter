@@ -6,7 +6,8 @@ extends Control
 ##
 ## Medals are drawn here, not loaded as images: each family has its own emblem
 ## shape (hexagon for multi-kills, a starred disc for streaks, a diamond for
-## collaterals, a shield with a flag on a zone for Hardpoint captures) and the
+## collaterals, a shield with a flag on a zone for Hardpoint captures, a
+## charge with its fuse for Search and Destroy's plays and round medals) and the
 ## colour climbs a tier ladder as the feat gets rarer.
 
 ## Seconds after the last award before the running "+N" total fades.
@@ -348,6 +349,8 @@ func _draw_emblem(
 			var cloth := PackedVector2Array([Vector2(-11, -21), Vector2(18, -13), Vector2(-11, -4)])
 			draw_polygon(cloth, _vertical_gradient(cloth, tier.lightened(0.6), tier, alpha))
 			draw_circle(Vector2(-12, -23), 2.5, light, true, -1.0, true)
+		"charge":
+			_draw_charge_emblem(label, tier, alpha)
 		"hardpoint":
 			# A flag planted in a zone seen from above at an angle.
 			var light := Color(tier.lightened(0.4), alpha)
@@ -362,6 +365,34 @@ func _draw_emblem(
 		_:
 			var star := _star(5, EMBLEM_R * 0.45, EMBLEM_R * 0.19, Vector2.ZERO)
 			draw_colored_polygon(star, Color(tier, alpha))
+
+
+## Search and Destroy: a charge case for a plant or defuse (a cut wire for
+## Wire Cutter), a lone figure for Clutch, an "A" for Ace.
+func _draw_charge_emblem(label: String, tier: Color, alpha: float) -> void:
+	var light := Color(tier.lightened(0.45), alpha)
+	var white := Color(1, 1, 1, alpha)
+	match label:
+		"Clutch":
+			draw_circle(Vector2(0, -14), 7.0, light, true, -1.0, true)
+			var body := PackedVector2Array(
+				[Vector2(-10, 20), Vector2(-7, -4), Vector2(7, -4), Vector2(10, 20)]
+			)
+			draw_colored_polygon(body, light)
+			_draw_laurels(tier, alpha)
+		"Ace":
+			_text_centered(FONT_HEAVY, "A", Vector2(0, 16), 46, white, alpha, 0.0)
+			_draw_laurels(tier, alpha)
+		_:
+			var case := Rect2(-20, -10, 40, 22)
+			draw_rect(case, light)
+			draw_rect(Rect2(-14, -5, 16, 8), Color(INK, alpha))
+			draw_circle(Vector2(11, -1), 3.0, Color(1.0, 0.25, 0.15, alpha), true, -1.0, true)
+			if label == "Wire Cutter":
+				draw_line(Vector2(-18, 22), Vector2(-3, 16), white, 2.5, true)
+				draw_line(Vector2(3, 18), Vector2(18, 24), white, 2.5, true)
+			elif label == "Charge Defused":
+				draw_line(Vector2(-18, -18), Vector2(18, 22), white, 3.0, true)
 
 
 func _draw_laurels(tier: Color, alpha: float) -> void:
@@ -382,34 +413,52 @@ func _draw_laurels(tier: Color, alpha: float) -> void:
 
 
 func _emblem_shape(family: String, r: float) -> PackedVector2Array:
+	var sides := 8
+	var scale := 1.0
+	var turn := PI / 8.0
 	match family:
 		"multi":
-			return _regular(6, r, -PI / 2.0)
+			sides = 6
+			turn = -PI / 2.0
 		"streak":
-			return _regular(24, r * 0.98, 0.0)
+			sides = 24
+			scale = 0.98
+			turn = 0.0
 		"collateral":
-			return _regular(4, r * 1.12, -PI / 2.0)
+			sides = 4
+			scale = 1.12
+			turn = -PI / 2.0
 		"flag":
-			return _regular(5, r * 1.04, -PI / 2.0)
+			sides = 5
+			scale = 1.04
+			turn = -PI / 2.0
 		"hardpoint":
-			return _regular(5, r * 1.04, PI / 2.0)
-		_:
-			return _regular(8, r, PI / 8.0)
+			sides = 5
+			scale = 1.04
+			turn = PI / 2.0
+		"charge":
+			sides = 6
+			scale = 1.02
+			turn = 0.0
+	return _regular(sides, r * scale, turn)
 
 
 func _family(label: String) -> String:
+	var family := "other"
 	# Before "multi": "Carrier Kill" ends with "Kill" but is a flag play.
 	if label.begins_with("Flag ") or label == "Carrier Kill":
-		return "flag"
-	if label.ends_with("Streak"):
-		return "streak"
-	if label.ends_with("Kill"):
-		return "multi"
-	if label == "Collateral":
-		return "collateral"
-	if label.begins_with("Hardpoint"):
-		return "hardpoint"
-	return "other"
+		family = "flag"
+	elif label.ends_with("Streak"):
+		family = "streak"
+	elif label.ends_with("Kill"):
+		family = "multi"
+	elif label == "Collateral":
+		family = "collateral"
+	elif label.begins_with("Hardpoint"):
+		family = "hardpoint"
+	elif label in ["Charge Planted", "Charge Defused", "Wire Cutter", "Clutch", "Ace"]:
+		family = "charge"
+	return family
 
 
 func _multi_count(label: String) -> int:
@@ -425,18 +474,21 @@ func _multi_count(label: String) -> int:
 
 ## The colour ladder: rarer feats climb from silver to amber, ember and violet.
 func _tier_color(label: String) -> Color:
+	var colour := GOLD
 	match _family(label):
 		"multi":
 			var n := _multi_count(label)
-			return SILVER if n <= 2 else (AMBER if n == 3 else (EMBER if n == 4 else VIOLET))
+			colour = SILVER if n <= 2 else (AMBER if n == 3 else (EMBER if n == 4 else VIOLET))
 		"streak":
 			var n := label.to_int()
-			return AMBER if n < 10 else (EMBER if n < 15 else VIOLET)
+			colour = AMBER if n < 10 else (EMBER if n < 15 else VIOLET)
 		"collateral":
-			return TEAL
+			colour = TEAL
 		"hardpoint":
-			return SKY
-	return GOLD
+			colour = SKY
+		"charge":
+			colour = {"Ace": VIOLET, "Clutch": EMBER, "Wire Cutter": AMBER}.get(label, SILVER)
+	return colour
 
 
 # --- Scoreboard ------------------------------------------------------------

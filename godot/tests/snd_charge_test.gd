@@ -82,8 +82,13 @@ func _run() -> void:
 	await _seconds(1.5)
 	_check(_server.charge_status() == "carried", "the plant takes longer than 3.5 s")
 	_check(_server.player_position(taker).distance_to(held) < 0.05, "the planter is held still")
+	var before_plant := _server.player_score(taker)
 	await _seconds(0.8)
 	_check(_server.charge_status() == "planted", "the plant finishes after 4 s")
+	_check(
+		_server.player_score(taker) == before_plant + 200,
+		"a plant scores 200 (%d -> %d)" % [before_plant, _server.player_score(taker)]
+	)
 	_server.debug_interact(taker, false)
 
 	var defuser: int = defenders[0]
@@ -100,8 +105,17 @@ func _run() -> void:
 		_server.charge_status() == "planted",
 		"letting go starts the defuse over: 5 s more does not finish it"
 	)
+	var before_defuse := _server.player_score(defuser)
 	await _seconds(2.3)
 	_check(_server.charge_status() == "defused", "a 7 s hold defuses it")
+	# An attacker is still alive: the defuse earns Wire Cutter on top.
+	_check(
+		_server.player_score(defuser) == before_defuse + 300,
+		(
+			"a defuse with an attacker alive scores 200 + 100 (%d -> %d)"
+			% [before_defuse, _server.player_score(defuser)]
+		)
+	)
 	_server.debug_interact(defuser, false)
 	await _ticks(2)
 	var defending_team := 1 - _server.attackers()
@@ -125,6 +139,9 @@ func _run() -> void:
 	await _seconds(4.3)
 	_check(_server.charge_status() == "planted", "the charge plants at site B")
 	_server.debug_interact(carrier, false)
+	# A defender standing beside the charge dies when it goes off.
+	var bystander: int = _team(1 - _server.attackers())[0]
+	_server.debug_teleport(bystander, _server.charge_position() + Vector3(2.5, 0, 0))
 	for id in attackers:
 		_server.debug_kill(id)
 	await _seconds(1.0)
@@ -136,6 +153,7 @@ func _run() -> void:
 	var before := _server.team_score(attacking_team)
 	await _seconds(FUSE)
 	_check(_server.charge_status() == "detonated", "the charge goes off when its fuse runs out")
+	_check(not _server.player_alive(bystander), "the blast kills a defender beside the charge")
 	_check(
 		_server.team_score(attacking_team) == before + 1,
 		"the charge going off wins the round for the attackers"

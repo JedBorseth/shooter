@@ -34,6 +34,15 @@ pub struct ScoreRules {
     pub flag_capture: u32,
     pub flag_return: u32,
     pub carrier_kill: u32,
+    /// Search and Destroy: points for planting and for defusing the charge,
+    /// and the bonuses for a defuse with an attacker still alive (Wire
+    /// Cutter), winning a round as the last one alive (Clutch), and killing
+    /// the whole enemy team in one round (Ace).
+    pub charge_plant: u32,
+    pub charge_defuse: u32,
+    pub wire_cutter: u32,
+    pub clutch: u32,
+    pub ace: u32,
 }
 
 impl Default for ScoreRules {
@@ -54,6 +63,13 @@ impl Default for ScoreRules {
             flag_capture: 500,
             flag_return: 100,
             carrier_kill: 100,
+            // The project's choice (docs/search-and-destroy.md): Call of
+            // Duty pays a plant or defuse as a few kills' worth.
+            charge_plant: 200,
+            charge_defuse: 200,
+            wire_cutter: 100,
+            clutch: 200,
+            ace: 300,
         }
     }
 }
@@ -94,6 +110,16 @@ pub enum Award {
     HardpointDefend,
     /// Hardpoint: a kill on or near a zone the team did not hold.
     HardpointAssault,
+    /// Search and Destroy: planted the charge.
+    ChargePlanted,
+    /// Defused the charge.
+    ChargeDefused,
+    /// Defused it with an attacker still alive.
+    WireCutter,
+    /// Won the round as the last one alive on the team.
+    Clutch,
+    /// Killed the whole enemy team in one round.
+    Ace,
 }
 
 impl Award {
@@ -110,6 +136,11 @@ impl Award {
                 | Award::FlagReturn
                 | Award::CarrierKill
                 | Award::HardpointCapture
+                | Award::ChargePlanted
+                | Award::ChargeDefused
+                | Award::WireCutter
+                | Award::Clutch
+                | Award::Ace
         )
     }
 
@@ -134,6 +165,11 @@ impl Award {
             Award::HardpointSecure => "Securing Hardpoint".to_owned(),
             Award::HardpointDefend => "Hardpoint Defense".to_owned(),
             Award::HardpointAssault => "Hardpoint Assault".to_owned(),
+            Award::ChargePlanted => "Charge Planted".to_owned(),
+            Award::ChargeDefused => "Charge Defused".to_owned(),
+            Award::WireCutter => "Wire Cutter".to_owned(),
+            Award::Clutch => "Clutch".to_owned(),
+            Award::Ace => "Ace".to_owned(),
         }
     }
 }
@@ -233,6 +269,28 @@ impl ScoreState {
     /// Scores a Capture the Flag play: [`Award::FlagTaken`],
     /// [`Award::FlagCapture`], [`Award::FlagReturn`], or
     /// [`Award::CarrierKill`]. Other awards score nothing.
+    /// Search and Destroy: a plant, a defuse, or a round medal. Plants and
+    /// defuses count on the scoreboard (`captures` and `returns`, as Capture
+    /// the Flag's plays do).
+    pub fn on_charge_play(&mut self, rules: &ScoreRules, award: Award) -> Option<Scored> {
+        let points = match award {
+            Award::ChargePlanted => {
+                self.captures += 1;
+                rules.charge_plant
+            }
+            Award::ChargeDefused => {
+                self.returns += 1;
+                rules.charge_defuse
+            }
+            Award::WireCutter => rules.wire_cutter,
+            Award::Clutch => rules.clutch,
+            Award::Ace => rules.ace,
+            _ => return None,
+        };
+        self.score += points;
+        Some(Scored { award, points })
+    }
+
     pub fn on_flag_play(&mut self, rules: &ScoreRules, award: Award) -> Option<Scored> {
         let points = match award {
             Award::FlagTaken => rules.flag_taken,
@@ -285,6 +343,29 @@ impl ScoreState {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn plants_and_defuses_score_and_count_and_round_medals_pay() {
+        let rules = ScoreRules::default();
+        let mut state = ScoreState::default();
+        let planted = state.on_charge_play(&rules, Award::ChargePlanted).unwrap();
+        assert_eq!(planted.points, 200);
+        assert_eq!(state.captures, 1);
+        let defused = state.on_charge_play(&rules, Award::ChargeDefused).unwrap();
+        assert_eq!(defused.points, 200);
+        assert_eq!(state.returns, 1);
+        for (award, points) in [
+            (Award::WireCutter, 100),
+            (Award::Clutch, 200),
+            (Award::Ace, 300),
+        ] {
+            assert_eq!(state.on_charge_play(&rules, award).unwrap().points, points);
+            assert!(award.is_medal());
+        }
+        assert_eq!(state.score, 1000);
+        assert_eq!(state.on_charge_play(&rules, Award::Kill), None);
+        assert_eq!(Award::WireCutter.label(), "Wire Cutter");
+    }
+
     use super::*;
 
     const BODY: Kill = Kill {

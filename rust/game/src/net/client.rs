@@ -69,6 +69,8 @@ use crate::player::FpsPlayer;
 
 /// What the kill feed calls a knife kill.
 const KNIFE_NAME: &str = "Knife";
+/// What the kill feed calls a kill by Search and Destroy's charge going off.
+const CHARGE_NAME: &str = "Charge";
 
 /// Seconds the server's rewound hitboxes stay drawn after a shot.
 const GHOST_SECONDS: f32 = 1.5;
@@ -671,6 +673,7 @@ impl NetClient {
         let weapon = match k.cause {
             KillCause::Knife => KNIFE_NAME.to_owned(),
             KillCause::Equipment(kind) => kind.name().to_owned(),
+            KillCause::Charge => CHARGE_NAME.to_owned(),
             KillCause::Weapon => base,
         };
         let attachment = match k.cause {
@@ -1243,6 +1246,7 @@ impl NetClient {
                 let name = match cause {
                     KillCause::Knife => GString::from(KNIFE_NAME),
                     KillCause::Equipment(kind) => GString::from(kind.name()),
+                    KillCause::Charge => GString::from(CHARGE_NAME),
                     KillCause::Weapon => GString::from(&weapon.def().name),
                 };
                 self.signals().kill_reported().emit(

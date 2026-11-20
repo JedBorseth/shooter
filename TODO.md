@@ -240,7 +240,8 @@ Rounds with one life each (`rust/sim/src/snd.rs`, `--mode snd`), on Slamcity. Cl
   - [ ] First-person hands on the charge's keypad while planting or defusing (today the weapon is just put away).
 - [x] Bots play the objective (`NetServer::charge_objectives`, `ObjectiveKind::Use`): the carrier runs to the round's target site and plants, the other attackers push into that site, the nearest attacker fetches a dropped charge, and after the plant they hold round it; defenders split between the sites, and once it is planted the nearest runs to defuse while the rest clear round it. A bot fights an enemy in sight before planting or defusing (`tests/snd_bots_test.gd`).
   - [ ] Bots that pick their site from what they see (switching when one is held), lurk on the flanks, and fake a plant or defuse to bait a shot.
-- [ ] Plant and defuse scores and medals (Clutch, Ace, Wire Cutter), round stings, and the charge's beeps.
+- [x] Plant and defuse scores (+200 each) and medals: Wire Cutter (+100, a defuse with an attacker alive), Clutch (+200, winning a round as your team's last one standing against at least one enemy), and Ace (+300, killing every enemy who started the round, at least three), with their own emblems and plants and defuses on the scoreboard (`snd::RoundRecord`, `score::Award`). The charge going off kills within 13 m (200 damage falling to 20, Call of Duty 4's), credited to the planter, with a "Charge" kill feed line and the frag blast's effect.
+- [ ] The charge's accelerating beeps, its own (larger) explosion sound and effect, and plant, defuse, and detonation stings: synthesized clips need the owner's listening approval before merging (docs/audio.md).
 
 ## Phase 5: online services (all self-hosted)
 
