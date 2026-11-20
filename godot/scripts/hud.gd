@@ -10,6 +10,7 @@ extends CanvasLayer
 ## and the frame rate top right. Match HUDs add their own pieces on top and
 ## tell this one who killed us (`set_killer`).
 
+const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
 
@@ -83,6 +84,11 @@ func _ready() -> void:
 	_health.player = _player
 	_weapon.player = _player
 	_add_grenade_danger()
+	Settings.fit_hud(_health, true)
+	Settings.fit_hud(_weapon)
+	Settings.fit_hud(_centre)
+	if _score_feed != null:
+		Settings.fit_hud(_score_feed)
 
 
 ## The grenade danger indicator round the crosshair (`ui/grenade_danger.gd`).
@@ -120,7 +126,7 @@ func set_killer(killer_name: String, colour: Color, weapon_key := "") -> void:
 
 func _on_respawned() -> void:
 	_controls_left = 0.0
-	set_killer("", UiTheme.ENEMY)
+	set_killer("", TeamColours.enemy)
 
 
 func _on_hit(killed: bool, headshot: bool) -> void:
@@ -195,7 +201,7 @@ func _process(delta: float) -> void:
 		elif low and reserve > 0:
 			warning = Paint.split_key("[%s] RELOAD" % Settings.prompt_key(&"reload"), UiTheme.TEXT)
 		elif low:
-			warning = {"text": "LOW AMMO", "colour": UiTheme.ENEMY}
+			warning = {"text": "LOW AMMO", "colour": TeamColours.enemy}
 	_centre.warning = warning
 
 	var prompt := _player.interact_prompt()

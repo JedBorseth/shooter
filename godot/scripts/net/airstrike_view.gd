@@ -15,6 +15,7 @@ extends Node3D
 ##
 ## The server decides where and when each strike lands, and who it hurts.
 
+const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
 const MinimapData := preload("res://scripts/net/minimap_data.gd")
@@ -193,7 +194,7 @@ func _draw_picker() -> void:
 	for id in client.remote_ids():
 		var remote := client.remote_player(id)
 		if teams and remote != null and remote.is_alive() and client.team_of(id) == my_team:
-			_picker.draw_circle(_to_screen(remote.feet()), 5.0, UiTheme.ALLY)
+			_picker.draw_circle(_to_screen(remote.feet()), 5.0, TeamColours.ally)
 	_picker.draw_circle(_to_screen(player.global_position), 6.0, UiTheme.TEXT)
 	# The marks so far, and the cursor.
 	for i in _marks.size():

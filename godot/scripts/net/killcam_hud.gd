@@ -15,6 +15,7 @@ extends CanvasLayer
 ## with the weapon and its attachments, and "Press [Use] to skip"
 ## (`_killcam.gsc`). The look is our own calm HUD (`hud_paint.gd`).
 
+const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
 
@@ -62,7 +63,7 @@ func _colour_of(id: int) -> Color:
 	if client == null:
 		return UiTheme.TEXT
 	if id == client.player_id():
-		return UiTheme.ALLY
+		return TeamColours.ally
 	var match_info := client.match_info()
 	var team := client.team_of(id)
 	if (
@@ -70,8 +71,8 @@ func _colour_of(id: int) -> Color:
 		and team == int(match_info.get("my_team", -1))
 		and not match_info.get("free_for_all", false)
 	):
-		return UiTheme.ALLY
-	return UiTheme.ENEMY
+		return TeamColours.ally
+	return TeamColours.enemy
 
 
 func _draw_overlay() -> void:

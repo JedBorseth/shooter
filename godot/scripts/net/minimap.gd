@@ -23,6 +23,7 @@ extends Control
 ## It hides during killcams, in Zombies, and on maps without a plan. `Net`
 ## adds it to the match HUD.
 
+const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
 const MinimapData := preload("res://scripts/net/minimap_data.gd")
@@ -35,8 +36,6 @@ const CORNER := Vector2(40.0, 24.0)
 ## Metres across the window.
 const VIEW_METRES := 64.0
 const ARROW := 7.0
-const ALLY := UiTheme.ALLY
-const ENEMY := UiTheme.ENEMY
 
 var client: NetClient
 var player: FpsPlayer
@@ -167,7 +166,7 @@ func _draw_icons() -> void:
 			if _inside(dot):
 				var fade: float = blip.alpha
 				_icons.draw_circle(dot, 4.6, Color(0, 0, 0, 0.45 * fade), true, -1.0, true)
-				_icons.draw_circle(dot, 3.6, Color(ENEMY, fade), true, -1.0, true)
+				_icons.draw_circle(dot, 3.6, Color(TeamColours.enemy, fade), true, -1.0, true)
 		for id in client.remote_ids():
 			var remote := client.remote_player(id)
 			if remote == null or not remote.is_alive():
@@ -177,7 +176,7 @@ func _draw_icons() -> void:
 			var feet := remote.feet()
 			var at := to_window(Vector2(feet.x, feet.z))
 			if _inside(at):
-				_arrow(at, window_angle(remote.view_angles().x), ALLY)
+				_arrow(at, window_angle(remote.view_angles().x), TeamColours.ally)
 	_draw_crates()
 	if player.is_alive():
 		_arrow(size / 2.0, window_angle(player.view_yaw()), UiTheme.TEXT)
@@ -193,7 +192,7 @@ func _draw_crates() -> void:
 		var at := to_window(Vector2(p.x, p.z))
 		if not _inside(at):
 			continue
-		var colour := ALLY if bool(c.mine) else UiTheme.TEXT
+		var colour := TeamColours.ally if bool(c.mine) else UiTheme.TEXT
 		var rect := Rect2(at - Vector2(4.5, 3.5), Vector2(9, 7))
 		_icons.draw_rect(rect.grow(1.0), Color(0, 0, 0, 0.55))
 		_icons.draw_rect(rect, colour)
@@ -208,10 +207,10 @@ func _draw_sky() -> void:
 	var sky := client.sky_info()
 	var x := 6.0
 	for tag: Array in [
-		["uav", "UAV", ALLY],
-		["counter_uav", "C-UAV", ALLY],
-		["enemy_uav", "UAV", ENEMY],
-		["enemy_counter_uav", "C-UAV", ENEMY],
+		["uav", "UAV", TeamColours.ally],
+		["counter_uav", "C-UAV", TeamColours.ally],
+		["enemy_uav", "UAV", TeamColours.enemy],
+		["enemy_counter_uav", "C-UAV", TeamColours.enemy],
 	]:
 		if float(sky.get(tag[0], 0.0)) <= 0.0:
 			continue
@@ -260,7 +259,7 @@ func _draw_objectives() -> void:
 	for flag: Dictionary in flags:
 		var ours: bool = int(flag.team) == client.team_of(client.player_id())
 		var p: Vector3 = flag.position
-		_flag(_held(to_window(Vector2(p.x, p.z))), ALLY if ours else ENEMY)
+		_flag(_held(to_window(Vector2(p.x, p.z))), TeamColours.of(ours))
 	var hardpoint := client.hardpoint_info()
 	var zones: Array = hardpoint.get("zones", [])
 	if not zones.is_empty():
@@ -284,16 +283,20 @@ func _draw_objectives() -> void:
 func _holder_colour(holder: String) -> Color:
 	match holder:
 		"ally":
-			return ALLY
+			return TeamColours.ally
 		"enemy":
-			return ENEMY
+			return TeamColours.enemy
 		"contested":
 			return UiTheme.ACCENT
 	return UiTheme.TEXT
 
 
 func _side_colour(side: String) -> Color:
-	return ALLY if side == "ally" else (ENEMY if side == "enemy" else UiTheme.TEXT)
+	return (
+		TeamColours.ally
+		if side == "ally"
+		else (TeamColours.enemy if side == "enemy" else UiTheme.TEXT)
+	)
 
 
 ## A square plate with a letter (or a blank square for a zone).

@@ -12,8 +12,6 @@ extends Node3D
 ##   screen when the zone comes online, changes hands, or is about to move.
 ##   In the last seconds before a move, a dim marker shows where it goes next.
 
-const ALLY := Color("7cc4ff")
-const ENEMY := Color("ff7a5c")
 const CONTESTED := Color("ffd34d")
 const NEUTRAL := Color("e8eef2")
 ## Seconds before a move when the next zone is announced and marked.
@@ -22,6 +20,7 @@ const WARN_SECONDS := 10.0
 const WALL_HEIGHT := 1.4
 ## Seconds each call stays up.
 const CALL_SECONDS := 2.6
+const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const FONT_BOLD := preload("res://assets/fonts/ChakraPetch-SemiBold.ttf")
 const MatchBanner := preload("res://scripts/net/match_banner.gd")
 const CALL_SOUND := preload("res://assets/audio/ui/hardpoint_call.ogg")
@@ -171,9 +170,9 @@ func _set_visible(on: bool) -> void:
 static func holder_colour(holder: String) -> Color:
 	match holder:
 		"ally":
-			return ALLY
+			return TeamColours.ally
 		"enemy":
-			return ENEMY
+			return TeamColours.enemy
 		"contested":
 			return CONTESTED
 	return NEUTRAL
@@ -290,14 +289,14 @@ func _announce(info: Dictionary) -> void:
 		if playing:
 			match holder:
 				"ally":
-					_say("WE HAVE THE HARDPOINT", ALLY)
+					_say("WE HAVE THE HARDPOINT", TeamColours.ally)
 				"enemy":
-					_say("ENEMY HAS THE HARDPOINT", ENEMY)
+					_say("ENEMY HAS THE HARDPOINT", TeamColours.enemy)
 				"contested":
 					_say("HARDPOINT CONTESTED", CONTESTED)
 				"neutral":
 					if _last_holder == "ally":
-						_say("HARDPOINT LOST", ENEMY)
+						_say("HARDPOINT LOST", TeamColours.enemy)
 		_last_holder = holder
 	var left: float = info.seconds_to_move
 	if playing and left > 0.0 and left <= WARN_SECONDS and _warned_for != active:

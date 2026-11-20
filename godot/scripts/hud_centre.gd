@@ -6,6 +6,7 @@ extends Control
 ## Prompts show their key as a cap ("[F] Take M870" draws an F cap, then the
 ## text), on a band that fades out at both ends.
 
+const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
 
@@ -19,7 +20,7 @@ var prompt := {}
 ## who it was.
 var dead := false
 var killer := ""
-var killer_colour := UiTheme.ENEMY
+var killer_colour := TeamColours.enemy
 var killer_weapon := ""
 var respawn_left := 0.0
 var respawn_total := 0.0

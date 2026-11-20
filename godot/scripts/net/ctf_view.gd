@@ -16,11 +16,10 @@ extends Node3D
 ## The server decides everything; this only draws `NetClient.flag_info()` and
 ## reacts to `NetClient.flag_played`.
 
+const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const CLOTH_SHADER := preload("res://shaders/flag_cloth.gdshader")
 const MatchBanner := preload("res://scripts/net/match_banner.gd")
 const LABEL_FONT := preload("res://assets/fonts/ChakraPetch-SemiBold.ttf")
-const ALLY := Color("7cc4ff")
-const ENEMY := Color("ff7a5c")
 const POLE_HEIGHT := 2.7
 ## Models built in Blender (tools/gear_models.py), POLE_HEIGHT tall.
 const POLE_MODEL := preload("res://assets/models/flag_pole/flag_pole.gltf")
@@ -92,7 +91,7 @@ func _process(delta: float) -> void:
 	for flag: Dictionary in flags:
 		var team: int = flag.team
 		var ours := team == my_team or (my_team < 0 and team == 0)
-		var colour := ALLY if ours else ENEMY
+		var colour := TeamColours.of(ours)
 		_cloths[team].set_shader_parameter(&"colour", colour)
 		_base_materials[team].albedo_color = Color(colour, 0.18)
 		_ring_materials[team].albedo_color = colour.lightened(0.25)
@@ -131,13 +130,15 @@ func _process(delta: float) -> void:
 	_banner.hint = ""
 	if carrying:
 		var own: Dictionary = flags[my_team] if my_team >= 0 else flags[0]
-		_markers.append({"position": own.home, "label": "CAPTURE", "colour": ALLY, "pulse": true})
+		_markers.append(
+			{"position": own.home, "label": "CAPTURE", "colour": TeamColours.ally, "pulse": true}
+		)
 		if own.status == "home":
 			_banner.hint = "YOU HAVE THE FLAG  ·  TAKE IT TO YOUR BASE"
-			_banner.hint_colour = ALLY
+			_banner.hint_colour = TeamColours.ally
 		else:
 			_banner.hint = "YOUR FLAG MUST BE AT YOUR BASE TO SCORE"
-			_banner.hint_colour = ENEMY
+			_banner.hint_colour = TeamColours.enemy
 	if _announce_left > 0.0:
 		_announce_left -= delta
 		_banner.callout_alpha = clampf(_announce_left / 0.5, 0.0, 1.0)
@@ -205,31 +206,31 @@ func _on_flag_played(flag: int, play: String, player_id: int) -> void:
 			if ours:
 				title = "YOUR FLAG HAS BEEN TAKEN"
 				sub = "%s has it. Kill them to drop it." % who
-				colour = ENEMY
+				colour = TeamColours.enemy
 				sound = "bad"
 			else:
 				title = "YOU HAVE THE ENEMY FLAG" if mine else "WE HAVE THE ENEMY FLAG"
 				sub = "Take it to your base." if mine else "%s has it. Cover them." % who
-				colour = ALLY
+				colour = TeamColours.ally
 				sound = "good"
 		"dropped":
 			title = "YOUR FLAG WAS DROPPED" if ours else "ENEMY FLAG DROPPED"
 			sub = "Touch it to return it." if ours else "Pick it up before it returns."
-			colour = ALLY if ours else Color(1, 0.92, 0.75)
+			colour = TeamColours.ally if ours else Color(1, 0.92, 0.75)
 		"returned":
 			title = "YOUR FLAG WAS RETURNED" if ours else "ENEMY FLAG RETURNED"
-			colour = ALLY if ours else ENEMY
+			colour = TeamColours.of(ours)
 			sound = "good" if ours else "bad"
 			if who != "":
 				sub = "Returned by %s." % who
 		"captured":
 			if ours:
 				title = "THE ENEMY CAPTURED YOUR FLAG"
-				colour = ENEMY
+				colour = TeamColours.enemy
 				sound = "bad"
 			else:
 				title = "YOU CAPTURED THE FLAG" if mine else "WE CAPTURED THE FLAG"
-				colour = ALLY
+				colour = TeamColours.ally
 				sound = "capture"
 			sub = "%s scores." % who if who != "" else ""
 	_show_call(title, sub, colour)
@@ -248,14 +249,14 @@ func _feed(play: String, player_id: int, ours: bool) -> void:
 	if hud == null or not is_instance_valid(hud) or not hud.has_method("add_feed_line"):
 		return
 	var flag_name := "OUR FLAG" if ours else "ENEMY FLAG"
-	var flag_colour := ALLY if ours else ENEMY
+	var flag_colour := TeamColours.of(ours)
 	var verb := play.to_upper()
 	var grey := Color(0.85, 0.88, 0.9, 0.85)
 	var parts: Array = []
 	if player_id >= 0:
 		var team := client.team_of(player_id)
 		var mine_team: int = client.match_info().my_team
-		var name_colour := ALLY if team == mine_team else ENEMY
+		var name_colour := TeamColours.of(team == mine_team)
 		parts.append([client.name_of(player_id), name_colour])
 		parts.append([{"taken": "TOOK", "dropped": "DROPPED"}.get(play, verb), grey, true])
 		parts.append([flag_name, flag_colour])

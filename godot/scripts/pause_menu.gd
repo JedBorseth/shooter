@@ -13,6 +13,7 @@ const GraphicsQuality := preload("res://scripts/graphics.gd")
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Glyphs := preload("res://scripts/ui/glyphs.gd")
 const FooterKeys := preload("res://scripts/ui/footer_keys.gd")
+const TeamColours := preload("res://scripts/ui/team_colours.gd")
 
 const PAUSE_ACTION := &"pause"
 const CLICK_SOUND := "res://assets/audio/ui/click.ogg"
@@ -108,6 +109,13 @@ const DESCRIPTIONS := {
 		"Respawn without watching the replay of each death. The kill that ends a round or"
 		+ " the match still plays for everyone."
 	),
+	&"team_colours":
+	(
+		"Your side and the enemy's on the HUD, minimap, kill feed, and objectives. The"
+		+ " palettes for protanopia, deuteranopia, and tritanopia keep the two apart."
+	),
+	&"hud_scale": "Size of the HUD's corner pieces: health, ammo, score, minimap, and feeds.",
+	&"hud_opacity": "How solid the HUD is. The crosshair and hit markers stay as they are.",
 	&"minimap_rotates":
 	"The minimap turns as you do, so you always face up. Off keeps north at the top.",
 	&"bindings":
@@ -494,6 +502,9 @@ func _build_settings() -> void:
 	_add_heading(general, "Interface")
 	_add_toggle(general, &"camera_motion", "Camera motion")
 	_add_toggle(general, &"show_fps", "Show FPS counter")
+	_add_choice(general, &"team_colours", "Team colours", TeamColours.NAMES)
+	_add_slider(general, &"hud_scale", "HUD size", 0.05, percent)
+	_add_slider(general, &"hud_opacity", "HUD opacity", 0.05, percent)
 	_add_heading(general, "Multiplayer")
 	_add_toggle(general, &"skip_killcams", "Skip killcams")
 	_add_toggle(general, &"minimap_rotates", "Rotate minimap")

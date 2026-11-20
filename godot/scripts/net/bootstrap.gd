@@ -416,6 +416,11 @@ func _attach_client(main: Node, target: String, options: Dictionary, token := ""
 	minimap.set("player", player)
 	minimap.set("score_block", tdm_hud.find_child("ScoreBlock", true, false))
 	tdm_hud.add_child(minimap)
+	# The corner pieces follow the HUD size and opacity settings.
+	for piece: Control in [
+		minimap, tdm_hud.find_child("ScoreBlock", true, false), tdm_hud.get("_feed")
+	]:
+		Settings.fit_hud(piece)
 	# The Airstrike: its target picker, jets, and blasts.
 	var airstrike := Node3D.new()
 	airstrike.name = "AirstrikeView"
@@ -431,6 +436,7 @@ func _attach_client(main: Node, target: String, options: Dictionary, token := ""
 	streaks.set("player", player)
 	streaks.set("airstrike", airstrike)
 	tdm_hud.add_child(streaks)
+	Settings.fit_hud(streaks)
 	# Care Packages: the flyover, the crate, and its capture prompt.
 	var crates := Node3D.new()
 	crates.name = "CarePackageView"

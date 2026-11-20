@@ -17,6 +17,7 @@ extends Control
 ## (5, or D-pad left) selects another held one. The server decides
 ## everything; this only draws what `NetClient.streak_info` says.
 
+const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
 const CALL_SOUND := preload("res://assets/audio/ui/hardpoint_call.ogg")
@@ -85,7 +86,8 @@ func _process(delta: float) -> void:
 	var mode := String(client.match_info().get("mode", ""))
 	visible = mode not in ["zombies", "gungame"] and not client.in_killcam()
 	_info = client.streak_info()
-	size = get_viewport_rect().size
+	# Under the HUD size setting the piece is scaled: keep it screen-sized.
+	size = get_viewport_rect().size / scale
 	_call_left = maxf(_call_left - delta, 0.0)
 	queue_redraw()
 
@@ -100,13 +102,13 @@ func _on_streaks(earned: String) -> void:
 func _on_sky(called: String, ours: bool) -> void:
 	match [called, ours]:
 		["uav", true]:
-			_say("UAV ONLINE", "", UiTheme.ALLY)
+			_say("UAV ONLINE", "", TeamColours.ally)
 		["uav", false]:
-			_say("ENEMY UAV OVERHEAD", "", UiTheme.ENEMY)
+			_say("ENEMY UAV OVERHEAD", "", TeamColours.enemy)
 		["counter_uav", true]:
-			_say("COUNTER-UAV ONLINE", "", UiTheme.ALLY)
+			_say("COUNTER-UAV ONLINE", "", TeamColours.ally)
 		["counter_uav", false]:
-			_say("ENEMY COUNTER-UAV", "", UiTheme.ENEMY)
+			_say("ENEMY COUNTER-UAV", "", TeamColours.enemy)
 
 
 func _say(text: String, sub: String, colour: Color) -> void:

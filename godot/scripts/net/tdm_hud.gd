@@ -31,6 +31,7 @@ extends CanvasLayer
 ## adds CAPS and DEF columns. Search and Destroy
 ## adds its round HUD beside this one (`snd_hud.gd`).
 
+const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const ZombiesBoard := preload("res://scripts/net/zombies_board.gd")
 const MenuStyle := preload("res://scripts/ui/menu_style.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
@@ -43,8 +44,6 @@ const MatchXp := preload("res://scripts/net/match_xp.gd")
 const XpSummary := preload("res://scripts/net/xp_summary.gd")
 const Glyphs := preload("res://scripts/ui/glyphs.gd")
 
-const ALLY := Color("7cc4ff")
-const ENEMY := Color("ff7a5c")
 const CALLOUT_SECONDS := 2.2
 ## Seconds a chat line stays up, and how many show at once.
 const CHAT_SECONDS := 10.0
@@ -260,8 +259,8 @@ func _update_team_bar(info: Dictionary) -> void:
 	var theirs := scores[1 - my_team]
 	var limit := float(maxi(int(info.score_limit), 1))
 	_score.rows = [
-		{"value": str(ours), "fill": ours / limit, "colour": ALLY, "ours": true},
-		{"value": str(theirs), "fill": theirs / limit, "colour": ENEMY},
+		{"value": str(ours), "fill": ours / limit, "colour": TeamColours.ally, "ours": true},
+		{"value": str(theirs), "fill": theirs / limit, "colour": TeamColours.enemy},
 	]
 	_set_state(info.phase, ours, theirs)
 	_score.footer = ""
@@ -279,10 +278,10 @@ func _set_state(phase: String, ours: int, theirs: int) -> void:
 		_score.state = ""
 	elif ours > theirs:
 		_score.state = "LEADING"
-		_score.state_colour = ALLY
+		_score.state_colour = TeamColours.ally
 	elif ours < theirs:
 		_score.state = "TRAILING"
-		_score.state_colour = ENEMY
+		_score.state_colour = TeamColours.enemy
 	else:
 		_score.state = "TIED"
 		_score.state_colour = MenuStyle.TEXT
@@ -314,7 +313,7 @@ func _update_ladder_bar(info: Dictionary) -> void:
 		{
 			"value": "%d" % (level + 1),
 			"fill": (level + 1.0) / levels,
-			"colour": ALLY,
+			"colour": TeamColours.ally,
 			"ours": true,
 			"label": "YOU",
 		},
@@ -326,7 +325,7 @@ func _update_ladder_bar(info: Dictionary) -> void:
 				{
 					"value": "%d" % (best_other + 1),
 					"fill": (best_other + 1.0) / levels,
-					"colour": ENEMY,
+					"colour": TeamColours.enemy,
 					"label": "BEST",
 				}
 			)
@@ -406,8 +405,8 @@ func _update_banner(phase: String, info: Dictionary) -> void:
 ## Blue for a win, red for a loss, white for a draw.
 func _result_colour(info: Dictionary) -> Color:
 	if _we_won(info):
-		return ALLY
-	return ENEMY if info.winner >= 0 else MenuStyle.TEXT
+		return TeamColours.ally
+	return TeamColours.enemy if info.winner >= 0 else MenuStyle.TEXT
 
 
 ## Whether the match's winner is our team, or in Gun Game us.
@@ -495,8 +494,8 @@ func _weapon_key(weapon_name: String) -> String:
 func _team_colour(id: int) -> Color:
 	var info := client.match_info()
 	if info.get("free_for_all", false):
-		return ALLY if id == client.player_id() else ENEMY
-	return ALLY if client.team_of(id) == info.my_team else ENEMY
+		return TeamColours.of(id == client.player_id())
+	return TeamColours.of(client.team_of(id) == info.my_team)
 
 
 ## A line in the kill feed that is not a kill.
@@ -533,10 +532,10 @@ func _check_levels(info: Dictionary) -> void:
 					String(entry.weapon).to_upper(), "WEAPON %d / %d" % [level + 1, last + 1]
 				)
 			else:
-				_show_callout("SET BACK", String(entry.weapon).to_upper(), ENEMY)
+				_show_callout("SET BACK", String(entry.weapon).to_upper(), TeamColours.enemy)
 		if level == last and before < last:
 			var who := "YOU ARE" if entry.me else "%s IS" % String(entry.name).to_upper()
-			_feed_notice("%s ON THE FINAL WEAPON" % who, ALLY if entry.me else ENEMY)
+			_feed_notice("%s ON THE FINAL WEAPON" % who, TeamColours.of(entry.me))
 
 
 # --- Halftime and overtime -------------------------------------------------------
@@ -600,7 +599,7 @@ func _refresh_board() -> void:
 		_refresh_ladder_board()
 		return
 	if info.mode == "zombies":
-		_board.sections = ZombiesBoard.sections(client.roster(), ALLY)
+		_board.sections = ZombiesBoard.sections(client.roster(), TeamColours.ally)
 		return
 	var my_team: int = info.my_team
 	var ctf: bool = info.mode == "ctf"
@@ -657,7 +656,7 @@ func _refresh_board() -> void:
 				{
 					"name": "YOUR TEAM" if team == my_team else "ENEMY",
 					"score": str(scores[team]) if scores.size() == 2 else "",
-					"colour": ALLY if team == my_team else ENEMY,
+					"colour": TeamColours.of(team == my_team),
 					"headings": headings,
 					"rows": rows,
 				}
@@ -676,9 +675,11 @@ func _update_kills_bar(info: Dictionary) -> void:
 		else:
 			best_other = maxi(best_other, int(entry.kills))
 	var limit := float(maxi(int(info.score_limit), 1))
+	var ally := TeamColours.ally
+	var enemy := TeamColours.enemy
 	_score.rows = [
-		{"value": str(mine), "fill": mine / limit, "colour": ALLY, "ours": true, "label": "YOU"},
-		{"value": str(best_other), "fill": best_other / limit, "colour": ENEMY, "label": "BEST"},
+		{"value": str(mine), "fill": mine / limit, "colour": ally, "ours": true, "label": "YOU"},
+		{"value": str(best_other), "fill": best_other / limit, "colour": enemy, "label": "BEST"},
 	]
 	_set_state(info.phase, mine, best_other)
 	_score.footer = "FIRST TO %d KILLS" % info.score_limit if info.score_limit > 0 else ""
@@ -867,7 +868,8 @@ func _on_chat(from: int, name: String, text: String, team: bool) -> void:
 	line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	line.custom_minimum_size.x = 520
 	var ffa: bool = client.match_info().get("free_for_all", false)
-	var colour := ALLY if from == client.player_id() or (team and not ffa) else Color.WHITE
+	var ours := from == client.player_id() or (team and not ffa)
+	var colour := TeamColours.ally if ours else Color.WHITE
 	line.add_theme_color_override("font_color", colour)
 	line.add_theme_font_size_override("font_size", 17)
 	line.add_theme_constant_override("outline_size", 6)

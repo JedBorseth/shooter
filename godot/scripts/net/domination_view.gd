@@ -19,12 +19,11 @@ extends Node3D
 ##
 ## The server decides everything; this only draws what it says.
 
+const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
 const MatchBanner := preload("res://scripts/net/match_banner.gd")
 const CALL_SOUND := preload("res://assets/audio/ui/hardpoint_call.ogg")
-const ALLY := UiTheme.ALLY
-const ENEMY := UiTheme.ENEMY
 const CONTESTED := UiTheme.ACCENT
 const NEUTRAL := UiTheme.TEXT
 ## Height of the wall of light around a circle, in metres.
@@ -158,9 +157,9 @@ static func flag_colour(flag: Dictionary) -> Color:
 static func side_colour(side: String) -> Color:
 	match side:
 		"ally":
-			return ALLY
+			return TeamColours.ally
 		"enemy":
-			return ENEMY
+			return TeamColours.enemy
 	return NEUTRAL
 
 
@@ -309,11 +308,11 @@ func _announce(info: Dictionary) -> void:
 				continue
 			var letter: String = flags[i].name
 			if now == "ally":
-				_say("WE'VE TAKEN %s" % letter, "", ALLY)
+				_say("WE'VE TAKEN %s" % letter, "", TeamColours.ally)
 			elif was == "ally":
-				_say("WE'VE LOST %s" % letter, "", ENEMY, 0.85)
+				_say("WE'VE LOST %s" % letter, "", TeamColours.enemy, 0.85)
 			else:
-				_say("ENEMY TOOK %s" % letter, "", ENEMY, 0.85)
+				_say("ENEMY TOOK %s" % letter, "", TeamColours.enemy, 0.85)
 	_last_owners = owners
 
 
@@ -458,13 +457,13 @@ func _draw_capture_bar(flag: Dictionary, size: Vector2, ui: float) -> void:
 		colour = CONTESTED
 	elif flag.claim == "ally":
 		text = "CAPTURING %s" % letter
-		colour = ALLY
+		colour = TeamColours.ally
 	elif flag.claim == "enemy":
 		text = "LOSING %s" % letter
-		colour = ENEMY
+		colour = TeamColours.enemy
 	elif flag.owner == "ally":
 		text = "%s SECURED" % letter
-		colour = ALLY
+		colour = TeamColours.ally
 		progress = 1.0
 	else:
 		return
@@ -482,5 +481,5 @@ func _draw_capture_bar(flag: Dictionary, size: Vector2, ui: float) -> void:
 	)
 	_overlay.draw_rect(bar, Paint.TRACK)
 	if flag.claim != "neutral" or flag.owner == "ally":
-		var fill_colour := side_colour(flag.claim) if flag.claim != "neutral" else ALLY
+		var fill_colour := side_colour(flag.claim) if flag.claim != "neutral" else TeamColours.ally
 		_overlay.draw_rect(Rect2(bar.position, Vector2(width * progress, bar.size.y)), fill_colour)

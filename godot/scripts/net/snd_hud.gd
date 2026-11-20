@@ -10,12 +10,11 @@ extends CanvasLayer
 ## - spectating: once we die, a camera follows a living teammate over the
 ##   shoulder until the next round. Fire switches to the next teammate.
 
+const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const MenuStyle := preload("res://scripts/ui/menu_style.gd")
 const MatchBanner := preload("res://scripts/net/match_banner.gd")
 const LABEL_FONT := preload("res://assets/fonts/ChakraPetch-SemiBold.ttf")
 
-const ALLY := Color("7cc4ff")
-const ENEMY := Color("ff7a5c")
 const DEAD := Color(0.35, 0.38, 0.4, 0.55)
 ## Seconds after dying before the camera moves to a teammate.
 const SPECTATE_DELAY := 1.5
@@ -77,7 +76,7 @@ func _process(delta: float) -> void:
 		_round_label.text = (
 			"ROUND %d  ·  %s" % [round.number, "ATTACKING" if round.attacking else "DEFENDING"]
 		)
-		_round_label.modulate = ENEMY if round.attacking else ALLY
+		_round_label.modulate = TeamColours.enemy if round.attacking else TeamColours.ally
 	_update_banner(round, playing)
 	_update_spectating(delta, playing and has_round)
 
@@ -105,11 +104,11 @@ func _update_banner(round: Dictionary, playing: bool) -> void:
 					else "DEFEND  ·  Stop the plant, or defuse the charge"
 				)
 				_overlay.detail = "%s  ·  %d" % [goal, int(ceil(round.seconds_left))]
-				_overlay.colour = ENEMY if round.attacking else ALLY
+				_overlay.colour = TeamColours.enemy if round.attacking else TeamColours.ally
 			"over":
 				var won: bool = round.winner == client.match_info().my_team
 				_overlay.title = "ROUND WON" if won else "ROUND LOST"
-				_overlay.colour = ALLY if won else ENEMY
+				_overlay.colour = TeamColours.of(won)
 				_overlay.detail = _reason_text(round, won)
 				if round.halftime:
 					_overlay.detail += "  ·  Halftime: switching sides"
@@ -145,7 +144,7 @@ func _refresh_pips() -> void:
 		# No team yet (my_team -1) leaves both rows empty; 1 - -1 would be 2.
 		if team < 0 or team > 1:
 			continue
-		var colour := ALLY if i == 0 else ENEMY
+		var colour := TeamColours.of(i == 0)
 		# The living first, nearest the score.
 		var entries: Array = rows[team]
 		entries.sort_custom(

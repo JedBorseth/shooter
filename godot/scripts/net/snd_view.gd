@@ -20,13 +20,12 @@ extends Node3D
 ## The server decides everything; this only draws `NetClient.charge_info()`
 ## and reacts to `NetClient.charge_changed`.
 
+const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const MatchBanner := preload("res://scripts/net/match_banner.gd")
 const FONT_BOLD := preload("res://assets/fonts/ChakraPetch-SemiBold.ttf")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
 ## Built in Blender (tools/gear_models.py `charge`), origin at its underside.
 const CHARGE_MODEL := preload("res://assets/models/charge/charge.gltf")
-const ALLY := Color("7cc4ff")
-const ENEMY := Color("ff7a5c")
 const CHARGE := Color("ffb347")
 const NEUTRAL := Color("e8eef2")
 ## Matches `snd::SndRules::plant_time` and `defuse_time`: the local bar fills
@@ -162,10 +161,10 @@ func _on_charge_changed() -> void:
 				var site := _site_name(info, info.site)
 				_say(
 					"CHARGE PLANTED" + ("  ·  SITE %s" % site if site != "" else ""),
-					ENEMY if not attacking else ALLY
+					TeamColours.enemy if not attacking else TeamColours.ally
 				)
 			"defused":
-				_say("CHARGE DEFUSED", ALLY if not attacking else ENEMY)
+				_say("CHARGE DEFUSED", TeamColours.of(not attacking))
 			"dropped":
 				if attacking and _last_status == "carried":
 					_say("CHARGE DROPPED", CHARGE)
@@ -211,17 +210,17 @@ func _draw_overlay() -> void:
 	for i in sites.size():
 		var site: Dictionary = sites[i]
 		var label := ""
-		var colour := ALLY
+		var colour := TeamColours.ally
 		if status == "planted" or status == "defused" or status == "detonated":
 			if i != int(info.site):
 				continue
 			label = "DEFEND" if attacking else "DEFUSE"
-			colour = ENEMY if not attacking else ALLY
+			colour = TeamColours.enemy if not attacking else TeamColours.ally
 			if status != "planted":
 				label = ""
 		else:
 			label = "PLANT" if attacking else "DEFEND"
-			colour = ENEMY if attacking else ALLY
+			colour = TeamColours.enemy if attacking else TeamColours.ally
 		var center: Vector3 = site.center
 		var size: Vector3 = site.size
 		var ground := Vector3(center.x, center.y - size.y / 2.0, center.z)
@@ -319,7 +318,7 @@ func _draw_use(info: Dictionary, alive: bool) -> void:
 			centre + Vector2(0, 70) * ui,
 			"DEFUSING" if defusing else "PLANTING",
 			clampf(_using_for / seconds, 0.0, 1.0),
-			ALLY if defusing else CHARGE,
+			TeamColours.ally if defusing else CHARGE,
 			ui,
 			1.0
 		)
@@ -340,7 +339,7 @@ func _draw_use(info: Dictionary, alive: bool) -> void:
 			centre + Vector2(0, 110) * ui,
 			"%s %s" % [client.name_of(user).to_upper(), "DEFUSING" if defuse else "PLANTING"],
 			float(info.use_progress),
-			ALLY if defuse else CHARGE,
+			TeamColours.ally if defuse else CHARGE,
 			ui,
 			0.7
 		)
