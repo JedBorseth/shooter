@@ -130,6 +130,14 @@ machine's colour, built in tools/gear_models.py). Frames:
 | Hair Trigger | A third more rounds a minute, and every round hits zombies twice | 2000 | `specialty_doubletap2`: `perk_weapRateMultiplier` 0.75, each bullet fired twice |
 | Long Stride | Move 7% faster | 2000 | `specialty_staminup` (7% faster movement) |
 
+**Reviving a teammate.** Holding use over a downed teammate puts the weapon
+away, as Black Ops' revive does: in first person the left hand goes flat on
+them and the right jabs a syrette in beside it and holds it there, pressing
+its plunger (`viewmodel::revive_hands`, `revive_syrette` in
+tools/gear_models.py); other players see the reviver kneel over them, hands
+down, from the server's `Revive` events. Frames:
+[zombies-revive.jpg](media/zombies-revive.jpg).
+
 Rules (`rust/sim/src/zombies/drinks.rs`):
 
 - **Four at most** (`level.perk_purchase_limit` 4). A drink already held is

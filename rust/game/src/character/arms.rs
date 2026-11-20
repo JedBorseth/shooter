@@ -26,6 +26,10 @@ const CHARGE_MODEL: &str = "res://assets/models/charge/charge.gltf";
 /// (`drink_cap`), built in tools/gear_models.py.
 const BOTTLE_MODEL: &str = "res://assets/models/drink_bottle_{key}/drink_bottle_{key}.gltf";
 const CAP_MODEL: &str = "res://assets/models/drink_cap/drink_cap.gltf";
+/// The syrette a Zombies revive is given with (`revive_syrette`).
+const SYRETTE_MODEL: &str = "res://assets/models/revive_syrette/revive_syrette.gltf";
+/// The wire cutters a Search and Destroy defuse works with (`wire_cutters`).
+const CUTTERS_MODEL: &str = "res://assets/models/wire_cutters/wire_cutters.gltf";
 
 #[derive(GodotClass)]
 #[class(init, base = Node3D)]
@@ -79,6 +83,10 @@ pub struct FpArms {
     /// the arms while a drink is drunk ([`FpArms::show_bottle`]).
     bottles: Vec<Option<Gd<Node3D>>>,
     cap: Option<Gd<Node3D>>,
+    /// The revive's syrette ([`FpArms::show_syrette`]).
+    syrette: Option<Gd<Node3D>>,
+    /// The defuse's wire cutters ([`FpArms::show_cutters`]).
+    cutters: Option<Gd<Node3D>>,
     /// The scale the body is drawn at now.
     drawn_scale: f32,
 
@@ -205,8 +213,12 @@ impl INode3D for FpArms {
             .map(|drink| viewmodel_model(&BOTTLE_MODEL.replace("{key}", drink.key()), "Bottle"))
             .collect();
         let cap = viewmodel_model(CAP_MODEL, "Cap");
+        let syrette = viewmodel_model(SYRETTE_MODEL, "Syrette");
+        let cutters = viewmodel_model(CUTTERS_MODEL, "Cutters");
+        self.cutters = cutters;
         self.bottles = bottles;
         self.cap = cap;
+        self.syrette = syrette;
         self.poser = Some(poser);
         crate::effects::keep_decals_off(&self.base().clone().upcast());
     }
@@ -587,6 +599,18 @@ impl FpArms {
         }
     }
 
+    /// Shows the revive's syrette at `at` (world, as the viewmodel draws), or
+    /// hides it.
+    pub fn show_syrette(&mut self, at: Option<Transform3D>) {
+        show_at(self.syrette.as_mut(), at);
+    }
+
+    /// Shows the defuse's wire cutters at `at` (world, as the viewmodel
+    /// draws), or hides them.
+    pub fn show_cutters(&mut self, at: Option<Transform3D>) {
+        show_at(self.cutters.as_mut(), at);
+    }
+
     /// Moves the body from `body_offset` by `shift` (view space, m), as the
     /// aimed weapon or a throw asks; the shoulders go with it.
     pub fn set_body_shift(&mut self, shift: Vector3) {
@@ -718,5 +742,22 @@ fn light_charge_glow(root: &Gd<Node3D>) {
                 material.set_shader_parameter("emission_energy", &0.7.to_variant());
             }
         }
+    }
+}
+
+/// Puts `node` at `at` (world) and shows it, or hides it.
+fn show_at(node: Option<&mut Gd<Node3D>>, at: Option<Transform3D>) {
+    let Some(node) = node else {
+        return;
+    };
+    match at {
+        Some(at) => {
+            node.set_global_transform(at);
+            if !node.is_visible() {
+                node.set_visible(true);
+            }
+        }
+        None if node.is_visible() => node.set_visible(false),
+        None => {}
     }
 }

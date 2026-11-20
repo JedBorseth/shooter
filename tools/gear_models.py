@@ -1138,11 +1138,45 @@ for _key in DRINKS:
 
 
 @model
+def revive_syrette(b: Model):
+    """The auto-injector a Zombies revive is given with, as Black Ops' revive
+    syrette (rust/game/src/viewmodel.rs `revive_hands`): origin at the middle
+    of its grip, +y up to the plunger, the needle down -y. 11 cm long."""
+    b.cyl("y", -0.03, 0.045, (0.0, 0.0), 0.0105, "charge_case", sides=12)
+    b.cyl("y", 0.0, 0.025, (0.0, 0.0), 0.0112, "bottle_label", sides=12)
+    b.cyl("y", 0.045, 0.06, (0.0, 0.0), 0.0075, "charge_steel", sides=10)
+    b.cyl("y", 0.06, 0.066, (0.0, 0.0), 0.012, "wire_red", sides=12)
+    b.cyl("y", -0.04, -0.03, (0.0, 0.0), 0.008, "charge_steel", sides=10)
+    b.cyl("y", -0.068, -0.04, (0.0, 0.0), 0.0012, "charge_steel", sides=6)
+
+
+LOOKS["wire_red"] = {"color": (0.62, 0.06, 0.05), "rough": 0.5}
+
+
+@model
+def wire_cutters(b: Model):
+    """Side cutters a Search and Destroy defuse snips the charge's wires with
+    (rust/game/src/viewmodel.rs `defuse_hands`): origin at the jaws' tip, the
+    jaws along -z, the red-sleeved handles spreading back along +z; 17 cm."""
+    # The jaws: two steel blades meeting at the tip, and the pivot.
+    for side in (-1, 1):
+        b.hull([(side * x, y, z) for x, z in ((0.0005, 0.0), (0.006, 0.012), (0.009, 0.03), (0.002, 0.03))
+                for y in (-0.004, 0.004)], "charge_steel")
+    b.cyl("y", -0.006, 0.006, (0.0, 0.034), 0.006, "charge_steel", sides=10)
+    # The handles: steel, then red rubber sleeves, splayed apart.
+    for side in (-1, 1):
+        b.hull([(side * x, y, z) for x, z in ((0.003, 0.036), (0.009, 0.036), (0.013, 0.065), (0.007, 0.065))
+                for y in (-0.004, 0.004)], "charge_steel")
+        b.hull([(side * x, y, z) for x, z in ((0.006, 0.065), (0.019, 0.065), (0.03, 0.17), (0.015, 0.17))
+                for y in (-0.007, 0.007)], "wire_red")
+
+
+@model
 def drink_cap(b: Model):
     """A drink bottle's crown cap, origin at the middle of its underside (on
     the bottle's neck), +y up: a crimped steel disc 1.2 cm tall."""
-    b.cyl("y", 0.0, 0.008, (0.0, 0.0), 0.0165, "machine_steel", sides=14)
-    b.cyl("y", 0.006, 0.012, (0.0, 0.0), 0.015, "machine_steel", sides=14)
+    b.cyl("y", 0.0, 0.008, (0.0, 0.0), 0.0165, "charge_steel", sides=14)
+    b.cyl("y", 0.006, 0.012, (0.0, 0.0), 0.015, "charge_steel", sides=14)
 
 
 LOOKS["pad_concrete"] = {"color": (0.45, 0.44, 0.42), "rough": 0.9}

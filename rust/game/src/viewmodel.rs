@@ -79,6 +79,12 @@ pub struct ViewFrame {
     /// The weapon is put away for something else the hands do (planting or
     /// defusing the charge), as on a ladder but with the hands off screen.
     pub put_away: bool,
+    /// Zombies: reviving a downed teammate (the hands put away for it are
+    /// on them, not on the charge).
+    pub reviving: bool,
+    /// Search and Destroy: defusing the charge (cutters on its wires rather
+    /// than the plant's typing on its keypad).
+    pub defusing: bool,
     /// Where the player's feet are (world): the rungs the hands take are
     /// found from them.
     pub feet: Vector3,
@@ -2832,6 +2838,13 @@ pub struct ViewmodelRig {
     /// they keep pace with the game rather than the wall clock (a
     /// fixed-rate test run steps frames faster than real time).
     keypad_clock: f32,
+    /// Reviving (Zombies): where the syrette is drawn in the right hand
+    /// (world, as the viewmodel draws), and seconds into the revive.
+    syrette: Option<Transform3D>,
+    revive_time: f32,
+    /// Defusing: where the wire cutters are drawn in the right hand (world,
+    /// as the viewmodel draws).
+    cutters: Option<Transform3D>,
     /// Crouched, eased in and out rather than snapped (Black Ops 2's
     /// `posMoveRate`).
     crouch_blend: f32,
@@ -2874,6 +2887,8 @@ impl ViewmodelRig {
         let weight = smoothstep(self.ladder_blend.min(1.0));
         self.keypad_case = None;
         self.bottle = None;
+        self.syrette = None;
+        self.cutters = None;
         if let ViewAction::Drinking { elapsed, drink } = frame.action {
             // A Zombies drink: the bottle in the hands, the weapon down.
             let camera = self.base().get_viewport()?.get_camera_3d()?;
@@ -2885,6 +2900,23 @@ impl ViewmodelRig {
         if weight < 0.01 {
             self.ladder_holds = None;
             return None;
+        }
+        if frame.put_away && frame.reviving && !frame.on_ladder {
+            let camera = self.base().get_viewport()?.get_camera_3d()?;
+            let (syrette, limbs) =
+                revive_hands(camera.get_global_transform(), weight, self.revive_time);
+            self.syrette = Some(syrette);
+            self.ladder_holds = None;
+            return Some(limbs);
+        }
+        if frame.put_away && frame.defusing && !frame.on_ladder {
+            let camera = self.base().get_viewport()?.get_camera_3d()?;
+            let (case, cutters, limbs) =
+                defuse_hands(camera.get_global_transform(), weight, self.keypad_clock);
+            self.keypad_case = Some(case);
+            self.cutters = Some(cutters);
+            self.ladder_holds = None;
+            return Some(limbs);
         }
         if frame.put_away && !frame.on_ladder {
             let camera = self.base().get_viewport()?.get_camera_3d()?;
@@ -3577,6 +3609,11 @@ impl ViewmodelRig {
         // Wrapped well inside f32's precision; the taps' key pick only needs
         // a run of distinct tap numbers.
         self.keypad_clock = (self.keypad_clock + dt) % 3600.0;
+        self.revive_time = if frame.reviving && frame.put_away {
+            self.revive_time + dt
+        } else {
+            0.0
+        };
         if frame.on_ladder || frame.put_away || matches!(frame.action, ViewAction::Drinking { .. })
         {
             self.ladder_blend += (1.0 - self.ladder_blend) * smoothing(10.0, dt);
@@ -3966,6 +4003,8 @@ impl ViewmodelRig {
                 .set_body_shift(Vector3::new(0.0, 0.0, iron_back * ads));
             arms.bind_mut().show_charge(self.keypad_case);
             arms.bind_mut().show_bottle(self.bottle);
+            arms.bind_mut().show_syrette(self.syrette);
+            arms.bind_mut().show_cutters(self.cutters);
             arms.bind_mut().follow(hold, 0.0, None, item, throw, ladder);
         }
     }
@@ -4070,16 +4109,7 @@ const SLIDE_ROT: Vector3 = Vector3::new(5.0, -3.0, 10.0);
 /// hands working the bomb's keypad. Returns the case's transform and the
 /// hands (world, as the viewmodel draws), `seconds` being any running clock.
 fn keypad_hands(camera: Transform3D, weight: f32, seconds: f32) -> (Transform3D, LadderLimbs) {
-    // The case in view space: below and ahead of the eye, turned so its
-    // handle faces the viewer, the lid tilted up toward the eye.
-    let rise = (1.0 - weight) * 0.25;
-    let case_in_view = Transform3D::new(
-        (Basis::from_axis_angle(Vector3::RIGHT, KEYPAD_TILT.to_radians())
-            * Basis::from_axis_angle(Vector3::UP, std::f32::consts::PI))
-        .scaled(Vector3::splat(KEYPAD_SCALE)),
-        KEYPAD_CASE - Vector3::UP * rise,
-    );
-    let case = camera * case_in_view;
+    let case = camera * charge_in_view(weight);
     let lid = case.basis.col_b().normalized();
     // Along the lid away from the viewer (the case's local +z, turned).
     let away = (case.basis * Vector3::BACK).normalized();
@@ -4249,11 +4279,149 @@ fn drink_hands(camera: Transform3D, t: f32) -> (Transform3D, Option<Transform3D>
     )
 }
 
+/// Reviving a downed teammate in first person (Zombies), `t` seconds into
+/// the hold, as Black Ops' revive shows: the weapon down, the left hand
+/// flat on the teammate low in front, and the right hand jabbing the
+/// syrette into them beside it and holding it there, pressing the plunger
+/// in pulses. Returns the syrette's transform and the hands (world, as the
+/// viewmodel draws). Syrette space: origin at its grip, needle down -y.
+fn revive_hands(camera: Transform3D, weight: f32, t: f32) -> (Transform3D, LadderLimbs) {
+    use crate::character::poser::{Grip, HandsOn};
+    let rise = (1.0 - weight) * 0.25;
+    // The left palm on the teammate's back, fingers forward.
+    let palm = Vector3::new(-0.1, -0.13 - rise, -0.5);
+    // The syrette: brought down and jabbed in at 0.35 s, then held with a
+    // squeeze on the plunger every 0.6 s.
+    let jab = keyed(&[(0.0, 0.0), (0.25, 0.4), (0.35, 1.0)], t);
+    let squeeze = 0.006 * (((t - 0.35).max(0.0) / 0.6).fract() * std::f32::consts::PI).sin();
+    let above = Vector3::new(0.16, -0.05, -0.38);
+    let pressed = Vector3::new(0.11, -0.13, -0.44);
+    let grip = above.lerp(pressed, jab) - Vector3::new(0.0, squeeze, 0.0) - Vector3::UP * rise;
+    // Needle down and a little forward: the syrette's +y up and back.
+    let up = Vector3::new(0.25, 0.75, 0.6).normalized();
+    let side = Vector3::RIGHT - up * Vector3::RIGHT.dot(up);
+    let side = side.normalized();
+    let basis = Basis::from_cols(side, up, side.cross(up));
+    let syrette = camera * Transform3D::new(basis, grip);
+    // The right hand round the syrette's grip from its right, fingers
+    // round its front, the thumb on the plunger.
+    let fingers = up.cross(side).normalized();
+    let right = grip + side * 0.03 - fingers * 0.035 - up * 0.01;
+    let left = palm - Vector3::new(0.0, 0.0, -0.08);
+    let to_world = |v: Vector3| camera.basis * v;
+    (
+        syrette,
+        LadderLimbs {
+            weight,
+            hands: [camera * right, camera * left],
+            ankles: [Vector3::ZERO; 2],
+            facing: to_world(Vector3::FORWARD),
+            on: HandsOn::Placed {
+                reach: [to_world(fingers), to_world(Vector3::new(0.1, -0.25, -1.0))],
+                palm: [to_world(-side), to_world(Vector3::DOWN)],
+                shape: [Grip::Wrap, Grip::Flat],
+            },
+        },
+    )
+}
+
 /// The drink bottle's height (its base to the top of its neck, m, as
 /// `drink_bottle_*` in tools/gear_models.py builds it) and the scale it is
 /// drawn at in first person.
 const BOTTLE_HEIGHT: f32 = 0.2;
 const BOTTLE_SCALE: f32 = 0.85;
+
+/// The charge in view space, held low in front with its handle toward the
+/// viewer and its lid tilted up to the eye, rising into view as the weapon
+/// drops away (`weight`).
+fn charge_in_view(weight: f32) -> Transform3D {
+    let rise = (1.0 - weight) * 0.25;
+    Transform3D::new(
+        (Basis::from_axis_angle(Vector3::RIGHT, KEYPAD_TILT.to_radians())
+            * Basis::from_axis_angle(Vector3::UP, std::f32::consts::PI))
+        .scaled(Vector3::splat(KEYPAD_SCALE)),
+        KEYPAD_CASE - Vector3::UP * rise,
+    )
+}
+
+/// Defusing Search and Destroy's charge in first person, as Black Ops 2's
+/// defuse works the bomb's wires rather than its keypad: the same case low
+/// in front, turned so its detonator block is on the right, the left hand
+/// flat on it and the right hand bringing wire cutters in to snip one wire,
+/// then the other, one
+/// cut every [`SNIP_SECONDS`] (`seconds` being any running clock). Returns
+/// the case's and the cutters' transforms and the hands (world, as the
+/// viewmodel draws). Cutters space: origin at the jaws' tip, the jaws along
+/// -z, the handles back along +z.
+fn defuse_hands(
+    camera: Transform3D,
+    weight: f32,
+    seconds: f32,
+) -> (Transform3D, Transform3D, LadderLimbs) {
+    use crate::character::poser::{Grip, HandsOn};
+    // Turned the other way round from the plant, so the detonator block and
+    // its wires are on the right, where the cutters' hand reaches them.
+    let plant = charge_in_view(weight);
+    let case_in_view = Transform3D::new(
+        plant.basis * Basis::from_axis_angle(Vector3::UP, std::f32::consts::PI),
+        plant.origin,
+    );
+    let case = camera * case_in_view;
+    // The two wire loops (`charge` in tools/gear_models.py: red at -z, blue
+    // at +z, from the panel up over to the block), in view space.
+    let wire = |side: f32| case_in_view * Vector3::new(0.06, 0.168, 0.065 * side);
+    let cut = (seconds / SNIP_SECONDS).floor();
+    let phase = seconds / SNIP_SECONDS - cut;
+    let side = if (cut as i64).rem_euclid(2) == 0 {
+        -1.0
+    } else {
+        1.0
+    };
+    let target = wire(side);
+    // In from the right and above, onto the wire, the snip, and back out.
+    let reach = keyed(&[(0.0, 0.0), (0.4, 1.0), (0.75, 1.0), (1.0, 0.0)], phase);
+    let snip = keyed(&[(0.45, 0.0), (0.55, 1.0), (0.65, 0.0)], phase);
+    let away = Vector3::new(0.08, 0.05, 0.05);
+    let tip = target + away * (1.0 - reach) + Vector3::new(0.0, -0.004, 0.0) * snip;
+    // The jaws point down onto the wire and in toward the middle; the
+    // handles come back up toward the right hand, closing on a snip.
+    let jaws = Vector3::new(-0.3, -0.45, -0.85).normalized();
+    let up = Vector3::new(0.0, 1.0, 0.0);
+    let x = up.cross(-jaws).normalized();
+    let y = (-jaws).cross(x).normalized();
+    let squeeze = Basis::from_axis_angle(x, -0.08 * snip);
+    let basis = squeeze * Basis::from_cols(x, y, -jaws);
+    let cutters = camera * Transform3D::new(basis, tip);
+    // The right hand round the handles, 9 cm back from the tip; the left
+    // pinches the wire loop up off the block, beside the cut.
+    let handles = tip - jaws * CUTTER_GRIP;
+    let fingers = x;
+    let right = handles + y * 0.02 - fingers * 0.04;
+    // The left hand steadies the case flat on its far left corner.
+    let left =
+        case_in_view * Vector3::new(-0.16, KEY_TOP + 0.03, 0.0) + Vector3::new(0.0, 0.0, 0.08);
+    let to_world = |v: Vector3| camera.basis * v;
+    (
+        case,
+        cutters,
+        LadderLimbs {
+            weight,
+            hands: [camera * right, camera * left],
+            ankles: [Vector3::ZERO; 2],
+            facing: to_world(Vector3::FORWARD),
+            on: HandsOn::Placed {
+                reach: [to_world(fingers), to_world(Vector3::new(0.2, -0.4, -1.0))],
+                palm: [to_world(-y), to_world(Vector3::DOWN)],
+                shape: [Grip::Wrap, Grip::Flat],
+            },
+        },
+    )
+}
+
+/// Seconds a wire takes to cut (one reach, snip, and back), and how far
+/// back from the cutters' tip the hand holds their handles (m).
+pub const SNIP_SECONDS: f32 = 1.4;
+const CUTTER_GRIP: f32 = 0.11;
 
 /// The charge in first person: where its middle sits in view space, how far
 /// its lid tilts up toward the eye (degrees), the top of its keys above its
@@ -4376,6 +4544,34 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn a_defuse_snips_one_wire_then_the_other() {
+        let (case, at_red, _) = defuse_hands(Transform3D::IDENTITY, 1.0, SNIP_SECONDS * 0.5);
+        let (_, at_blue, _) = defuse_hands(Transform3D::IDENTITY, 1.0, SNIP_SECONDS * 1.5);
+        // At each snip the cutters' tip is on a wire, the two wires apart.
+        let wire = |side: f32| {
+            let plant = charge_in_view(1.0);
+            Transform3D::new(
+                plant.basis * Basis::from_axis_angle(Vector3::UP, std::f32::consts::PI),
+                plant.origin,
+            ) * Vector3::new(0.06, 0.168, 0.065 * side)
+        };
+        assert!(at_red.origin.distance_to(wire(-1.0)) < 0.01);
+        assert!(at_blue.origin.distance_to(wire(1.0)) < 0.01);
+        assert!(case.origin.distance_to(charge_in_view(1.0).origin) < 1e-5);
+    }
+
+    #[test]
+    fn a_revive_jabs_the_syrette_in_and_holds_it() {
+        let (start, _) = revive_hands(Transform3D::IDENTITY, 1.0, 0.0);
+        let (held, limbs) = revive_hands(Transform3D::IDENTITY, 1.0, 0.5);
+        assert!(held.origin.y < start.origin.y - 0.05, "jabbed down");
+        assert!(matches!(
+            limbs.on,
+            crate::character::poser::HandsOn::Placed { .. }
+        ));
+    }
 
     #[test]
     fn the_crawl_rocks_toward_each_pulling_arm_and_the_support_hand_drags() {

@@ -455,9 +455,14 @@ impl INode for NetClient {
 
         if self.status == Status::Joined && !paused {
             let revive = self.revive_spot();
-            let spot = self.charge_spot().is_some() || revive.is_some();
+            let charge = self.charge_spot();
+            let spot = charge.is_some() || revive.is_some();
             if let Some(player) = &mut self.player {
                 player.bind_mut().set_charge_spot(spot);
+                player.bind_mut().set_revive_spot(revive.is_some());
+                player
+                    .bind_mut()
+                    .set_defuse_spot(charge == Some(UseKind::Defuse));
             }
             if self.horde.is_some() {
                 let name = revive.map(|id| self.name_of(i32::from(id)).to_string());
@@ -2556,6 +2561,12 @@ impl NetClient {
                 by,
                 done_at,
             } => {
+                // Everyone sees the reviver kneel over the downed player (or
+                // get up when the revive stops).
+                for remote in &mut self.remotes {
+                    let reviving = by == Some(remote.id) && by != Some(player);
+                    remote.node.bind_mut().set_reviving(player, reviving);
+                }
                 let involved = Some(player) == me || (by.is_some() && by == me);
                 if !involved {
                     return;
