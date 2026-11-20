@@ -565,6 +565,15 @@ impl NetClient {
     #[signal]
     fn crates_changed(taken_by: i32, contents: GString);
 
+    /// Player `owner` called an Airstrike: a strike lands on each of
+    /// `points` in `seconds`.
+    #[signal]
+    fn airstrike_called(owner: i32, points: PackedVector3Array, seconds: PackedFloat32Array);
+
+    /// A strike of `owner`'s Airstrike went off at `at`.
+    #[signal]
+    fn strike_landed(owner: i32, at: Vector3);
+
     /// Every player, ourselves included, as dictionaries with `id`, `name`,
     /// `team`, `bot`, `me`, `score`, `kills`, `deaths`, `ping`, `ready`,
     /// `alive`, for Capture the Flag `captures` and `returns` (Domination:
@@ -829,6 +838,7 @@ impl NetClient {
             KillCause::Knife => KNIFE_NAME.to_owned(),
             KillCause::Equipment(kind) => kind.name().to_owned(),
             KillCause::Charge => CHARGE_NAME.to_owned(),
+            KillCause::Streak(streak) => streak.label().to_owned(),
             KillCause::Weapon => base,
         };
         let attachment = match k.cause {
@@ -979,7 +989,27 @@ impl NetClient {
     #[func]
     fn use_streak(&mut self) {
         if let Some(streak) = self.streak_held.get(self.streak_selected).copied() {
-            self.send_reliable(&ClientMessage::UseStreak { streak });
+            self.send_reliable(&ClientMessage::UseStreak {
+                streak,
+                targets: Vec::new(),
+            });
+        }
+    }
+
+    /// Calls in the selected held Airstrike on `targets` (points on the
+    /// map; their y is ignored, and only the first three count).
+    #[func]
+    fn use_airstrike(&mut self, targets: PackedVector3Array) {
+        if self.streak_held.get(self.streak_selected) == Some(&Streak::Airstrike) {
+            let targets = targets
+                .as_slice()
+                .iter()
+                .map(|t| shooter_sim::Vec2::new(t.x, t.z))
+                .collect();
+            self.send_reliable(&ClientMessage::UseStreak {
+                streak: Streak::Airstrike,
+                targets,
+            });
         }
     }
 
@@ -1657,6 +1687,7 @@ impl NetClient {
                     KillCause::Knife => GString::from(KNIFE_NAME),
                     KillCause::Equipment(kind) => GString::from(kind.name()),
                     KillCause::Charge => GString::from(CHARGE_NAME),
+                    KillCause::Streak(streak) => GString::from(streak.label()),
                     KillCause::Weapon => GString::from(&weapon.def().name),
                 };
                 self.signals().kill_reported().emit(
@@ -1984,6 +2015,22 @@ impl NetClient {
             GameEvent::Streak(StreakEvent::CrateGone { id }) => {
                 self.crates.retain(|c| c.id != id);
                 self.signals().crates_changed().emit(-1, "");
+            }
+            GameEvent::Streak(StreakEvent::Airstrike { owner, strikes }) => {
+                let points: PackedVector3Array =
+                    strikes.iter().map(|(at, _)| to_godot(*at)).collect();
+                let seconds: PackedFloat32Array = strikes
+                    .iter()
+                    .map(|(_, tick)| self.seconds_until(Some(*tick)) as f32)
+                    .collect();
+                self.signals()
+                    .airstrike_called()
+                    .emit(i32::from(owner), &points, &seconds);
+            }
+            GameEvent::Streak(StreakEvent::Strike { owner, at }) => {
+                self.signals()
+                    .strike_landed()
+                    .emit(i32::from(owner), to_godot(at));
             }
             GameEvent::Streak(StreakEvent::Sky { up }) => {
                 let new = up.iter().find(|a| !self.sky.contains(a)).copied();

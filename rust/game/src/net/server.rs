@@ -103,7 +103,7 @@ use shooter_sim::snd::{
     Charge, ChargeContext, ChargeEvent, ChargePlayer, ChargeState, Headcount, RoundEnd, RoundPhase,
     RoundRecord, RoundState, RoundTransition, Site, SndRules, UseKind,
 };
-use shooter_sim::streak::{Loadout, Sky, Streak, StreakState};
+use shooter_sim::streak::{self, Loadout, Sky, Streak, StreakState};
 use shooter_sim::tdm::{
     self, MatchRules, MatchState, Mode, Period, Phase, SpawnPoint, SpawnRules, Team, Threat,
     Transition,
@@ -345,6 +345,8 @@ pub struct NetServer {
     sky: Sky,
     /// Care Packages called in and not yet taken (`shooter_sim::care_package`).
     crates: care_package::Crates,
+    /// Airstrike strikes on their way (`shooter_sim::streak`).
+    strikes: streak::Strikes,
     /// The map's lanes for bots to follow (`BotLanes`), from one side to the other.
     bot_lanes: Vec<Vec<Vector3>>,
     /// Tick of the next scoreboard update.
@@ -1167,6 +1169,19 @@ impl NetServer {
             .map_or(0, |a| a.streaks.progress as i32)
     }
 
+    /// Debug: player `id` calls in their held Airstrike on `points` (tests).
+    #[func]
+    fn debug_airstrike(&mut self, id: i32, points: PackedVector3Array) {
+        let marks: Vec<shooter_sim::Vec2> = points
+            .as_slice()
+            .iter()
+            .map(|p| shooter_sim::Vec2::new(p.x, p.z))
+            .collect();
+        if let Ok(id) = u8::try_from(id) {
+            self.use_streak(id, Streak::Airstrike, &marks);
+        }
+    }
+
     /// Debug: player `id` holds scorestreak `key` as if earned (tests).
     #[func]
     fn debug_give_streak(&mut self, id: i32, key: GString) {
@@ -1201,7 +1216,7 @@ impl NetServer {
     #[func]
     fn debug_use_streak(&mut self, id: i32, key: GString) {
         if let (Ok(id), Some(streak)) = (u8::try_from(id), Streak::by_key(&key.to_string())) {
-            self.use_streak(id, streak);
+            self.use_streak(id, streak, &[]);
         }
     }
 
@@ -2271,9 +2286,9 @@ impl NetServer {
                     avatar.streak_wanted = loadout;
                 }
             }
-            ClientMessage::UseStreak { streak } => {
+            ClientMessage::UseStreak { streak, targets } => {
                 if let Some(id) = self.clients[index].player {
-                    self.use_streak(id, streak);
+                    self.use_streak(id, streak, &targets);
                 }
             }
             ClientMessage::Chat { text, team } => self.relay_chat(index, &text, team),
@@ -5499,6 +5514,7 @@ impl NetServer {
                     avatar.streak_seen = 0;
                 }
                 self.sky.clear();
+                self.strikes.clear();
                 let sky = self.sky_event();
                 self.broadcast_event(&sky);
                 for change in self.crates.clear() {
@@ -5982,13 +5998,14 @@ impl NetServer {
             .filter_map(|a| Some((a.id, *a.streaks.held.first()?)))
             .collect();
         for (id, streak) in bot_calls {
-            self.use_streak(id, streak);
+            self.use_streak(id, streak, &[]);
         }
         if self.sky.expire(self.tick) {
             let sky = self.sky_event();
             self.broadcast_event(&sky);
         }
         self.update_crates();
+        self.update_strikes();
         for side in self.sky.sweeps(self.tick) {
             let found: Vec<(u8, Vec3)> = self
                 .avatars
@@ -6016,7 +6033,7 @@ impl NetServer {
     }
 
     /// Calls in `id`'s first held `streak`, if they hold one and may.
-    fn use_streak(&mut self, id: u8, streak: Streak) {
+    fn use_streak(&mut self, id: u8, streak: Streak, targets: &[shooter_sim::Vec2]) {
         if !self.streaks_on() {
             return;
         }
@@ -6040,6 +6057,26 @@ impl NetServer {
             },
             _ => None,
         };
+        // An Airstrike needs a marked point that is on the map; a bot marks
+        // where it last saw its enemies.
+        let strike_points = if streak == Streak::Airstrike {
+            let marks: Vec<shooter_sim::Vec2> = if targets.is_empty() && avatar.brain.is_some() {
+                self.bot_strike_marks(avatar)
+            } else {
+                targets.to_vec()
+            };
+            let points: Vec<Vec3> = marks
+                .iter()
+                .take(streak::AIRSTRIKE_TARGETS)
+                .filter_map(|m| self.strike_ground(*m))
+                .collect();
+            if points.is_empty() {
+                return;
+            }
+            points
+        } else {
+            Vec::new()
+        };
         let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == id) else {
             return;
         };
@@ -6049,6 +6086,13 @@ impl NetServer {
         avatar.streaks.select(index);
         avatar.streaks.take();
         match (streak, drop) {
+            (Streak::Airstrike, _) => {
+                let called = self.strikes.call(id, &strike_points, tick);
+                self.broadcast_event(&GameEvent::Streak(StreakEvent::Airstrike {
+                    owner: id,
+                    strikes: called.iter().map(|s| (s.at, s.tick)).collect(),
+                }));
+            }
             (Streak::CarePackage, Some(at)) => {
                 let seed = rng::hash(
                     u32::from(id) << 16 | u32::from(self.crates.list.len() as u8),
@@ -6066,6 +6110,69 @@ impl NetServer {
         self.send_streaks(id);
         let sky = self.sky_event();
         self.broadcast_event(&sky);
+    }
+
+    /// The topmost surface under map point `mark` (x, z): where a bomb
+    /// from above lands. None off the map.
+    fn strike_ground(&self, mark: shooter_sim::Vec2) -> Option<Vec3> {
+        let mut space = self
+            .base()
+            .get_world_3d()
+            .and_then(|world| world.get_direct_space_state())?;
+        let top = Vector3::new(mark.x, 150.0, mark.y);
+        world_hit(&mut space, top, top - Vector3::UP * 300.0).map(to_sim)
+    }
+
+    /// A bot's Airstrike marks: its living enemies, nearest first.
+    fn bot_strike_marks(&self, bot: &Avatar) -> Vec<shooter_sim::Vec2> {
+        let mut enemies: Vec<&Avatar> = self
+            .avatars
+            .iter()
+            .filter(|a| a.predicted.state.alive() && self.hostile(bot, a))
+            .collect();
+        let from = bot.predicted.position;
+        enemies.sort_by(|a, b| {
+            a.predicted
+                .position
+                .distance(from)
+                .total_cmp(&b.predicted.position.distance(from))
+        });
+        enemies
+            .iter()
+            .take(streak::AIRSTRIKE_TARGETS)
+            .map(|a| shooter_sim::Vec2::new(a.predicted.position.x, a.predicted.position.z))
+            .collect()
+    }
+
+    /// Sets off the Airstrike strikes due this tick. Their kills score as
+    /// usual but count nothing toward the caller's streaks (Black Ops 2).
+    fn update_strikes(&mut self) {
+        for strike in self.strikes.due(self.tick) {
+            self.broadcast_event(&GameEvent::Streak(StreakEvent::Strike {
+                owner: strike.owner,
+                at: strike.at,
+            }));
+            let before = self
+                .avatars
+                .iter()
+                .find(|a| a.id == strike.owner)
+                .map(|a| a.score.score);
+            let blast = PropExplosion {
+                position: strike.at + Vec3::Y * 0.3,
+                radius: streak::STRIKE_RADIUS,
+                damage: streak::STRIKE_DAMAGE,
+                outer_damage: streak::STRIKE_OUTER_DAMAGE,
+                attacker: Some(strike.owner),
+                weapon: None,
+            };
+            self.resolve_explosion(&blast, protocol::KillCause::Streak(Streak::Airstrike));
+            if let (Some(before), Some(owner)) = (
+                before,
+                self.avatars.iter_mut().find(|a| a.id == strike.owner),
+            ) {
+                owner.streak_seen += owner.score.score.saturating_sub(before);
+            }
+        }
     }
 
     /// Where `avatar`'s Care Package lands: the floor where they aim, up to
@@ -7379,8 +7486,8 @@ fn pickup_in_reach(
 /// The scorestreaks bots bring.
 const BOT_STREAKS: Loadout = Loadout([
     Some(Streak::Uav),
-    Some(Streak::CounterUav),
     Some(Streak::CarePackage),
+    Some(Streak::Airstrike),
 ]);
 
 fn crate_incoming(c: &care_package::Crate) -> GameEvent {

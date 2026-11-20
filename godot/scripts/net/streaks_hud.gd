@@ -12,7 +12,8 @@ extends Control
 ## - calls when a UAV or Counter-UAV goes up, ours or the enemy's ("UAV
 ##   ONLINE", "ENEMY UAV OVERHEAD", "ENEMY COUNTER-UAV").
 ##
-## The use key (4, or D-pad right) calls in the selected streak; the next key
+## The use key (4, or D-pad right) calls in the selected streak (an
+## Airstrike opens its target picker, `airstrike_view.gd`); the next key
 ## (5, or D-pad left) selects another held one. The server decides
 ## everything; this only draws what `NetClient.streak_info` says.
 
@@ -29,6 +30,9 @@ const CALL_SECONDS := 2.4
 
 var client: NetClient
 var player: FpsPlayer
+## The Airstrike's target picker (`airstrike_view.gd`), opened instead of
+## calling one straight in.
+var airstrike: Node
 ## Calls made, in order (tests).
 var calls: PackedStringArray = []
 
@@ -62,7 +66,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event.is_action_pressed(&"streak_use"):
 		get_viewport().set_input_as_handled()
-		client.use_streak()
+		var held: PackedStringArray = _info.get("held", PackedStringArray())
+		var selected := int(_info.get("selected", -1))
+		if selected >= 0 and selected < held.size() and held[selected] == "airstrike":
+			if airstrike != null and not airstrike.get(&"picking"):
+				airstrike.call(&"open_picker")
+		else:
+			client.use_streak()
 	elif event.is_action_pressed(&"streak_next"):
 		get_viewport().set_input_as_handled()
 		client.cycle_streak()

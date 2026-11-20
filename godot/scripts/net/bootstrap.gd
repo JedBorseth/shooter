@@ -65,6 +65,7 @@ const TDM_HUD_SCRIPT := "res://scripts/net/tdm_hud.gd"
 const MINIMAP_SCRIPT := "res://scripts/net/minimap.gd"
 const STREAKS_HUD_SCRIPT := "res://scripts/net/streaks_hud.gd"
 const CARE_PACKAGE_VIEW_SCRIPT := "res://scripts/net/care_package_view.gd"
+const AIRSTRIKE_VIEW_SCRIPT := "res://scripts/net/airstrike_view.gd"
 const CTF_VIEW_SCRIPT := "res://scripts/net/ctf_view.gd"
 const HARDPOINT_VIEW_SCRIPT := "res://scripts/net/hardpoint_view.gd"
 const DOMINATION_VIEW_SCRIPT := "res://scripts/net/domination_view.gd"
@@ -370,12 +371,20 @@ func _attach_client(main: Node, target: String, options: Dictionary) -> void:
 	minimap.set("player", player)
 	minimap.set("score_block", tdm_hud.find_child("ScoreBlock", true, false))
 	tdm_hud.add_child(minimap)
+	# The Airstrike: its target picker, jets, and blasts.
+	var airstrike := Node3D.new()
+	airstrike.name = "AirstrikeView"
+	airstrike.set_script(load(AIRSTRIKE_VIEW_SCRIPT))
+	airstrike.set("client", client)
+	airstrike.set("player", player)
+	main.add_child(airstrike)
 	# Scorestreaks: the chosen three, calls, and the use and next keys.
 	var streaks := Control.new()
 	streaks.name = "StreaksHud"
 	streaks.set_script(load(STREAKS_HUD_SCRIPT))
 	streaks.set("client", client)
 	streaks.set("player", player)
+	streaks.set("airstrike", airstrike)
 	tdm_hud.add_child(streaks)
 	# Care Packages: the flyover, the crate, and its capture prompt.
 	var crates := Node3D.new()
