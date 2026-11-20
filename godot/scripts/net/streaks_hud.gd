@@ -12,7 +12,8 @@ extends Control
 ## - "UAV READY" in the upper third when one is earned, with the key to call
 ##   it in;
 ## - calls when a UAV or Counter-UAV goes up, ours or the enemy's ("UAV
-##   ONLINE", "ENEMY UAV OVERHEAD", "ENEMY COUNTER-UAV").
+##   ONLINE", "ENEMY UAV OVERHEAD", "ENEMY COUNTER-UAV"), and when one is
+##   shot down ("ENEMY UAV DESTROYED", "UAV SHOT DOWN").
 ##
 ## The use key (4, or D-pad right) calls in the selected streak (an
 ## Airstrike opens its target picker, `airstrike_view.gd`); the next key
@@ -62,6 +63,7 @@ func _ready() -> void:
 		return
 	client.streaks_changed.connect(_on_streaks)
 	client.sky_changed.connect(_on_sky)
+	client.aircraft_downed.connect(_on_downed)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -111,6 +113,16 @@ func _on_sky(called: String, ours: bool) -> void:
 			_say("COUNTER-UAV ONLINE", "", TeamColours.ally)
 		["counter_uav", false]:
 			_say("ENEMY COUNTER-UAV", "", TeamColours.enemy)
+
+
+## Black Ops 2's announcer calls a UAV shot down for both sides; the
+## medal for the one who did it comes with the score.
+func _on_downed(streak: String, ours: bool, _by_me: bool, _at: Vector3) -> void:
+	var name := _name(streak).to_upper()
+	if ours:
+		_say("%s SHOT DOWN" % name, "", UiTheme.ENEMY)
+	else:
+		_say("ENEMY %s DESTROYED" % name, "", UiTheme.ALLY)
 
 
 func _say(text: String, sub: String, colour: Color) -> void:

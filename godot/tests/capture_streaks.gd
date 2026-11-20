@@ -64,6 +64,7 @@ func _run() -> void:
 	_server.debug_use_streak(me, "uav")
 	await _frames(40)
 	await _shot("02_uav_sweep")
+	await _aircraft_shots("uav", "07")
 
 	var picker := current_scene.get_node("AirstrikeView")
 	picker.call("open_picker")
@@ -90,8 +91,42 @@ func _run() -> void:
 			break
 	await _frames(60)
 	await _shot("06_jammed")
+	await _aircraft_shots("counter_uav", "08")
 	_server.queue_free()
 	quit(0)
+
+
+## The drone circling overhead: from the ground under its ring, and close up
+## from below and to the side.
+func _aircraft_shots(streak: String, prefix: String) -> void:
+	var sky := current_scene.get_node_or_null("SkyView")
+	var drone: Node3D = null
+	if sky != null:
+		for child in sky.get_children():
+			if child is Node3D and child.name.to_snake_case() == streak:
+				drone = child
+	if drone == null:
+		push_error("no %s in the sky" % streak)
+		return
+	var camera := Camera3D.new()
+	camera.fov = 60.0
+	current_scene.add_child(camera)
+	camera.make_current()
+	var at := drone.global_position
+	var ground := Vector3(at.x * 0.4, at.y - 44.0, at.z * 0.4)
+	camera.look_at_from_position(ground, at)
+	await _frames(2)
+	await _shot("%s_%s_from_ground" % [prefix, streak])
+	for i in 2:
+		at = drone.global_position
+		var side := drone.global_transform.basis.x * 7.0
+		camera.look_at_from_position(
+			at + side + Vector3.DOWN * 5.0 + drone.global_transform.basis.z * 4.0, at
+		)
+		await _frames(1)
+	await _shot("%s_%s_close" % [prefix, streak])
+	camera.queue_free()
+	await _frames(2)
 
 
 func _shot(name: String) -> void:

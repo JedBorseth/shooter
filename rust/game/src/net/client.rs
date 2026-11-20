@@ -59,7 +59,7 @@ use shooter_sim::snd::{
     Charge, ChargeContext, ChargePlayer, ChargeState, ChargeUse, RoundEnd, RoundPhase, Site,
     SndRules, UseKind,
 };
-use shooter_sim::streak::{Loadout, Streak};
+use shooter_sim::streak::{self, Loadout, Streak};
 use shooter_sim::tdm::{Mode, Period, Phase, TEAM_COUNT, Team};
 use shooter_sim::weapon::{Slot, WeaponId};
 
@@ -239,6 +239,10 @@ pub struct NetClient {
     streak_roofed: bool,
     streak_selected: usize,
     sky: Vec<AirView>,
+    /// The ring the UAVs and Counter-UAVs fly (`streak::Orbit`), and the
+    /// tick the world is drawn at, where they are drawn.
+    sky_orbit: streak::Orbit,
+    render_tick: f64,
     /// Care Packages out (`shooter_sim::care_package`), as the server said.
     crates: Vec<CrateView>,
     /// Zombies: the horde as drawn, and the map's director mirroring the
@@ -461,6 +465,7 @@ impl INode for NetClient {
             return;
         };
         let render_tick = clock.advance(delta as f32);
+        self.render_tick = render_tick;
         // A fire press that no tick has acted on yet aims at the frame it was
         // clicked on, and the server rewinds hitboxes to that frame's tick.
         // Until the tick fires it, hitboxes stay posed there (bodies still
@@ -573,6 +578,11 @@ impl NetClient {
     /// false when one left).
     #[signal]
     fn sky_changed(called: GString, ours: bool);
+
+    /// Player `by` shot down a UAV or Counter-UAV (`streak`, its key) at
+    /// `at`: `ours` whether it was our side's, `by_me` whether we did it.
+    #[signal]
+    fn aircraft_downed(streak: GString, ours: bool, by_me: bool, at: Vector3);
 
     /// A Care Package was called in, captured, taken, or ran out
     /// (`crates`). `taken_by` is who took one and `contents` the streak's
@@ -1137,6 +1147,29 @@ impl NetClient {
                 };
                 d.set("capture_by", by);
                 d.set("capture_progress", progress);
+                d
+            })
+            .collect()
+    }
+
+    /// The UAVs and Counter-UAVs in the sky as drawn now, as dictionaries
+    /// with `id`, `streak` (its key), `ours` (our side's), `position`, and
+    /// `yaw` (its nose toward -z at 0), each on the ring both ends fly them
+    /// round (`streak::Orbit`).
+    #[func]
+    fn sky_aircraft(&self) -> Array<VarDictionary> {
+        self.sky
+            .iter()
+            .map(|a| {
+                let (at, yaw) =
+                    self.sky_orbit
+                        .aircraft_at(a.streak, a.from, a.phase, self.render_tick);
+                let mut d = VarDictionary::new();
+                d.set("id", i32::from(a.id));
+                d.set("streak", a.streak.key());
+                d.set("ours", self.ours(a.side));
+                d.set("position", to_godot(at));
+                d.set("yaw", yaw);
                 d
             })
             .collect()
@@ -2083,14 +2116,34 @@ impl NetClient {
                     .airstrike_called()
                     .emit(i32::from(owner), &points, &seconds);
             }
+            GameEvent::Streak(StreakEvent::Downed {
+                id,
+                streak,
+                owner,
+                by,
+                at,
+            }) => {
+                let side = self.sky.iter().find(|a| a.id == id).map(|a| a.side);
+                self.sky.retain(|a| a.id != id);
+                let ours = side.is_some_and(|side| self.ours(side))
+                    || (self.mode.free_for_all() && Some(owner) == self.player_id);
+                let by_me = Some(by) == self.player_id;
+                self.signals()
+                    .aircraft_downed()
+                    .emit(streak.key(), ours, by_me, to_godot(at));
+            }
             GameEvent::Streak(StreakEvent::Strike { owner, at }) => {
                 self.signals()
                     .strike_landed()
                     .emit(i32::from(owner), to_godot(at));
             }
-            GameEvent::Streak(StreakEvent::Sky { up }) => {
-                let new = up.iter().find(|a| !self.sky.contains(a)).copied();
+            GameEvent::Streak(StreakEvent::Sky { orbit, up }) => {
+                let new = up
+                    .iter()
+                    .find(|a| !self.sky.iter().any(|b| b.id == a.id))
+                    .copied();
                 self.sky = up;
+                self.sky_orbit = orbit;
                 let (called, ours) =
                     new.map_or(("", false), |a| (a.streak.key(), self.ours(a.side)));
                 self.signals().sky_changed().emit(called, ours);

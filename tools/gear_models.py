@@ -1417,3 +1417,86 @@ def strike_jet(b: Model):
     for side in (-1, 1):
         b.box(side * 0.6, side * 1.05, -0.25, 0.4, -3.0, -0.5, "aircraft_dark", bevel=0.05)
     b.cyl("z", 7.4, 7.6, (0.0, 0.2), 0.32, "aircraft_dark", sides=12)
+
+
+def _loft_body(b: Model, sections, look, ring=10):
+    """A fuselage lofted through sections (z, half-height, centre y,
+    half-width), nose toward -z."""
+    for (z0, r0, y0, w0), (z1, r1, y1, w1) in zip(sections, sections[1:]):
+        pts = []
+        for z, r, yc, w in ((z0, r0, y0, w0), (z1, r1, y1, w1)):
+            for k in range(ring):
+                a = 2 * PI * k / ring
+                pts.append((w * math.cos(a), yc + r * math.sin(a), z))
+        b.hull(pts, look)
+
+
+@model
+def uav_drone(b: Model):
+    """The UAV scorestreak's aircraft (scripts/net/sky_view.gd): a
+    long-endurance surveillance drone 6 m long with a 9 m straight wing, a
+    bulbous satcom nose, a sensor turret under the chin, an inverted-V tail,
+    and a pusher propeller. Seen from below as it circles the map. Origin at
+    the middle of its fuselage, nose toward -z."""
+    _loft_body(b, [(-3.0, 0.08, 0.0, 0.08), (-2.75, 0.34, 0.05, 0.3), (-2.3, 0.42, 0.06, 0.36),
+                   (-1.2, 0.36, 0.0, 0.32), (0.8, 0.28, 0.0, 0.26), (2.4, 0.16, 0.04, 0.15),
+                   (3.0, 0.1, 0.05, 0.1)], "aircraft_skin")
+    # The sensor turret under the chin: a ball on a short neck.
+    b.cyl("y", -0.42, -0.3, (0.0, -2.0), 0.12, "aircraft_dark", sides=10)
+    b.smooth_hull([(x, y, z) for x in (-0.17, 0.17) for y in (-0.62, -0.38) for z in (-2.17, -1.83)],
+                  "aircraft_glass", levels=1)
+    # The long straight wing on top, tapering to its tips, with a slight
+    # dihedral.
+    for side in (-1, 1):
+        b.hull([(side * 0.2, 0.22, -0.55), (side * 0.2, 0.22, 0.25), (side * 4.5, 0.42, -0.35),
+                (side * 4.5, 0.42, 0.0), (side * 0.2, 0.3, -0.55), (side * 0.2, 0.3, 0.25),
+                (side * 4.5, 0.46, -0.35), (side * 4.5, 0.46, 0.0)], "aircraft_skin")
+        # Wingtip fairings.
+        b.cyl("z", -0.4, 0.05, (side * 4.52, 0.44), 0.035, "aircraft_dark", sides=6)
+        # The inverted-V tail, canted down and out.
+        b.hull([(side * 0.08, 0.0, 2.0), (side * 0.08, 0.0, 2.75), (side * 1.25, -0.75, 2.5),
+                (side * 1.25, -0.75, 2.85), (side * 0.12, 0.06, 2.3), (side * 1.25, -0.7, 2.7)],
+               "aircraft_skin")
+    # An antenna blade on the spine and the pusher propeller behind.
+    b.hull([(0.0, 0.3, -1.4), (0.0, 0.3, -1.0), (0.0, 0.58, -1.12), (0.02, 0.3, -1.2),
+            (-0.02, 0.3, -1.2)], "aircraft_dark")
+    b.cyl("z", 3.0, 3.18, (0.0, 0.05), 0.07, "aircraft_dark", sides=8)
+    # The spinning blades read as a dark disc.
+    b.cyl("z", 3.18, 3.2, (0.0, 0.05), 0.75, "aircraft_dark", sides=20)
+
+
+@model
+def counter_uav_drone(b: Model):
+    """The Counter-UAV scorestreak's aircraft (scripts/net/sky_view.gd): a
+    jet-powered flying-wing jammer, a 7 m swept delta with emitter pods
+    under each wing, a dorsal intake, and a row of antenna blades. Darker
+    than the UAV, so the two read apart from the ground. Origin at the
+    middle of the wing, nose toward -z."""
+    # The centre body, blended into the wing.
+    _loft_body(b, [(-2.6, 0.05, 0.0, 0.08), (-2.2, 0.26, 0.02, 0.42), (-1.0, 0.36, 0.04, 0.62),
+                   (0.8, 0.3, 0.04, 0.6), (1.9, 0.2, 0.04, 0.42), (2.3, 0.12, 0.05, 0.3)],
+               "aircraft_dark")
+    # The swept wing: leading edge back to the tips, a straight trailing edge.
+    for side in (-1, 1):
+        b.hull([(side * 0.5, -0.06, -1.6), (side * 0.5, -0.06, 1.7), (side * 3.5, -0.02, 1.1),
+                (side * 3.5, -0.02, 1.55), (side * 0.5, 0.1, -1.6), (side * 0.5, 0.1, 1.7),
+                (side * 3.5, 0.03, 1.1), (side * 3.5, 0.03, 1.55)], "aircraft_dark")
+        # Jamming pods under the wing, pointed both ends.
+        x = side * 1.9
+        b.cyl("z", -0.4, 1.0, (x, -0.2), 0.13, "aircraft_skin", sides=10)
+        b.hull([(x, -0.2, -0.75)] + [(x + 0.13 * math.cos(a), -0.2 + 0.13 * math.sin(a), -0.4)
+                                       for a in (k * PI / 4 for k in range(8))], "aircraft_skin")
+        b.hull([(x, -0.2, 1.3)] + [(x + 0.13 * math.cos(a), -0.2 + 0.13 * math.sin(a), 1.0)
+                                     for a in (k * PI / 4 for k in range(8))], "aircraft_skin")
+        b.box(x - 0.02, x + 0.02, -0.1, -0.02, 0.1, 0.6, "aircraft_skin")
+        # Small canted fins at the tips.
+        b.hull([(side * 3.35, 0.0, 1.0), (side * 3.35, 0.0, 1.55), (side * 3.55, 0.45, 1.45),
+                (side * 3.55, 0.45, 1.65), (side * 3.4, 0.03, 1.3)], "aircraft_dark")
+    # The dorsal intake and the exhaust.
+    b.hull([(x, y, z) for x in (-0.24, 0.24) for y in (0.32, 0.48) for z in (-0.6, 0.4)]
+           + [(0.0, 0.3, -1.1)], "aircraft_skin")
+    b.cyl("z", 2.2, 2.38, (0.0, 0.06), 0.16, "aircraft_glass", sides=10)
+    # A row of antenna blades along the spine.
+    for z in (-1.6, -1.25, 1.1):
+        b.hull([(0.0, 0.3, z - 0.1), (0.0, 0.3, z + 0.12), (0.0, 0.62, z + 0.06), (0.02, 0.3, z),
+                (-0.02, 0.3, z)], "aircraft_skin")

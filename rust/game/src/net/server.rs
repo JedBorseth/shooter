@@ -117,7 +117,7 @@ use shooter_sim::{Vec2, Vec3, rng};
 
 use super::accounts::{self, AccountState, MatchShare};
 use super::bots::{
-    BotBrain, BotGrenade, BotNavigation, BotObjective, BotPlayer, BotSmoke, BotWorld,
+    BotAircraft, BotBrain, BotGrenade, BotNavigation, BotObjective, BotPlayer, BotSmoke, BotWorld,
     ObjectiveKind, RadarDot, THROW_CHECKS_PER_TICK, bake_area,
 };
 use super::discovery::QueryResponder;
@@ -1633,6 +1633,43 @@ impl NetServer {
         }
     }
 
+    /// Debug: bot `id` looks at `point`, pitch and all, from standing eye
+    /// height (tests).
+    #[func]
+    fn debug_bot_look(&mut self, id: i32, point: Vector3) {
+        let eye_height = self.params.movement.eye_height_at(0.0);
+        if let Some(avatar) = self.avatars.iter_mut().find(|a| i32::from(a.id) == id)
+            && let Some(brain) = &mut avatar.brain
+        {
+            let eye = avatar.predicted.position + Vec3::Y * eye_height;
+            brain.face(shooter_sim::look::bearing(eye, to_sim(point)));
+        }
+    }
+
+    /// The UAVs and Counter-UAVs up (tests), as dictionaries with `id`,
+    /// `streak`, `owner`, `side`, `position` now, `position_in_1s`, and
+    /// `damage`.
+    #[func]
+    fn aircraft(&self) -> Array<VarDictionary> {
+        self.sky
+            .aircraft(self.tick)
+            .map(|(a, at)| {
+                let mut d = VarDictionary::new();
+                d.set("id", i32::from(a.id));
+                d.set("streak", a.streak.key());
+                d.set("owner", i32::from(a.owner));
+                d.set("side", i32::from(a.side));
+                d.set("position", to_godot(at));
+                d.set(
+                    "position_in_1s",
+                    to_godot(self.sky.position(a, self.tick + TICK_RATE)),
+                );
+                d.set("damage", a.damage);
+                d
+            })
+            .collect()
+    }
+
     /// Debug: turns a bot to face `point` level (tests).
     #[func]
     fn debug_bot_face(&mut self, id: i32, point: Vector3) {
@@ -2155,6 +2192,15 @@ impl NetServer {
         self.zones = map_zones(&map);
         self.dom_points = map_dom_points(&map);
         (self.charge_site_names, self.charge_sites) = map_charge_sites(&map).into_iter().unzip();
+        // The UAVs and Counter-UAVs circle over everywhere players spawn,
+        // walk, and fight (as the bots' navigation does).
+        let points = self.play_points();
+        if let Some(first) = points.first() {
+            let (min, max) = points.iter().fold((*first, *first), |(min, max), p| {
+                (min.coord_min(*p), max.coord_max(*p))
+            });
+            self.sky.orbit = streak::Orbit::over(to_sim(min), to_sim(max));
+        }
         for name in CLIENT_ONLY_NODES {
             if let Some(node) = map.get_node_or_null(name) {
                 node.free();
@@ -2805,21 +2851,26 @@ impl NetServer {
     /// Where the bots' navigation mesh bakes: around every spawn, lane, and
     /// objective, so far-off scenery stays out of the bake.
     fn bot_bake_area(&self) -> Option<Aabb> {
+        bake_area(self.play_points())
+    }
+
+    /// Every point players or bots are placed at or walk through: the
+    /// spawns, lanes, and objectives.
+    fn play_points(&self) -> Vec<Vector3> {
         let spawns = self.spawn_points.iter().map(|s| to_godot(s.position));
         let lanes = self.bot_lanes.iter().flatten().copied();
         let flags = self.flag_homes.iter().flatten().map(|p| to_godot(*p));
         let zones = self.zones.iter().map(|z| to_godot(z.center));
         let dom = self.dom_points.iter().map(|f| to_godot(f.center));
         let sites = self.charge_sites.iter().map(|s| to_godot(s.center));
-        bake_area(
-            std::iter::once(self.spawn)
-                .chain(spawns)
-                .chain(lanes)
-                .chain(flags)
-                .chain(zones)
-                .chain(dom)
-                .chain(sites),
-        )
+        std::iter::once(self.spawn)
+            .chain(spawns)
+            .chain(lanes)
+            .chain(flags)
+            .chain(zones)
+            .chain(dom)
+            .chain(sites)
+            .collect()
     }
 
     fn respawns(&self) -> bool {
@@ -3083,6 +3134,20 @@ impl NetServer {
                 perks: a.predicted.state.perks,
             })
             .collect();
+        // Scorestreak aircraft, and how each moves, for bots with launchers.
+        let bot_aircraft: Vec<BotAircraft> = self
+            .sky
+            .aircraft(tick)
+            .map(|(a, at)| {
+                let later = self.sky.position(a, tick + TICK_RATE / 10);
+                BotAircraft {
+                    id: a.id,
+                    side: a.side,
+                    position: to_godot(at),
+                    velocity: to_godot((later - at) * 10.0),
+                }
+            })
+            .collect();
         // Each team's own side, for bots' goals on the enemy's side.
         let mut team_spawns: [Vec<Vector3>; 2] = [Vec::new(), Vec::new()];
         for point in &self.spawn_points {
@@ -3200,6 +3265,7 @@ impl NetServer {
                                 .iter()
                                 .find(|(id, _)| *id == avatar.id)
                                 .map_or(&[], |(_, dots)| dots.as_slice()),
+                            aircraft: &bot_aircraft,
                         };
                         let objective = objectives
                             .iter()
@@ -4479,6 +4545,20 @@ impl NetServer {
             .map(|a| (a.id, a.predicted.position))
             .collect();
         self.grenades.strike_bodies(&bodies, TICK_DT);
+        // And on the enemy's scorestreak aircraft, any of which one rocket
+        // downs (Black Ops 2's `rocketdamageoneshot`).
+        let sky = &self.sky;
+        let tick = self.tick;
+        let sides: Vec<(u8, u8)> = self.avatars.iter().map(|a| (a.id, self.side(a))).collect();
+        let struck = self.grenades.strike_aircraft(TICK_DT, |owner, from, to| {
+            let side = sides.iter().find(|(id, _)| *id == owner)?.1;
+            sky.first_on_segment(from, to, equipment::ROCKET_AIRCRAFT_RADIUS, tick, |a| {
+                a.side != side
+            })
+        });
+        for (id, owner) in struck {
+            self.hurt_aircraft(id, streak::AIRCRAFT_HEALTH + 1.0, owner, u32::MAX);
+        }
         let outcome = self.grenades.step(&mut space, TICK_DT);
         for blast in outcome.blasts {
             self.resolve_grenade(&mut space, &blast);
@@ -4879,10 +4959,34 @@ impl NetServer {
                 pellet
             })
             .collect();
-
         let rewind = self
             .lag
             .rewind_target_for(self.tick, shot.view_tick, shot.rtt);
+        // Aircraft where the shooter saw them, as players are.
+        let air_tick = rewind.round().max(0.0) as Tick;
+        // Scorestreak aircraft overhead: a pellet that meets one before any
+        // wall does its damage there (Black Ops 2: bullets wear a UAV down).
+        let mut aircraft_hits: Vec<(u16, f32)> = Vec::new();
+        for pellet in &pellets {
+            let reach = pellet.max_distance.min(def.range);
+            let to = pellet.origin + pellet.direction * reach;
+            if let Some((id, t)) = self.sky.first_on_segment(
+                pellet.origin,
+                to,
+                streak::AIRCRAFT_HIT_RADIUS,
+                air_tick,
+                |a| a.side != shooter_side,
+            ) {
+                let damage = def.damage_at(reach * t);
+                match aircraft_hits.iter_mut().find(|(hit, _)| *hit == id) {
+                    Some((_, total)) => *total += damage,
+                    None => aircraft_hits.push((id, damage)),
+                }
+            }
+        }
+        for (id, damage) in aircraft_hits {
+            self.hurt_aircraft(id, damage, shot.shooter, shot.shot);
+        }
         let tick = self.tick;
         let stretched = self
             .lag
@@ -6562,7 +6666,10 @@ impl NetServer {
                 }
                 self.broadcast_event(&crate_incoming(&crate_));
             }
-            _ => self.sky.call(streak, id, side, tick),
+            _ => {
+                let phase = rng::hash(u32::from(id) << 8 | streak.code() as u32, tick) as u16;
+                self.sky.call(streak, id, side, tick, phase);
+            }
         }
         godot_print!("server: player {id} called in a {}", streak.label());
         self.send_streaks(id);
@@ -6775,18 +6882,69 @@ impl NetServer {
 
     fn sky_event(&self) -> GameEvent {
         GameEvent::Streak(StreakEvent::Sky {
+            orbit: self.sky.orbit,
             up: self
                 .sky
                 .up
                 .iter()
                 .map(|a| AirView {
+                    id: a.id,
                     streak: a.streak,
                     owner: a.owner,
                     side: a.side,
+                    from: a.from,
+                    phase: a.phase,
                     until: a.until,
                 })
                 .collect(),
         })
+    }
+
+    /// Aircraft `id` takes `damage` from player `by` (a rocket's is its
+    /// whole health): a hit marker for them, and if that downs it, it falls
+    /// out of the sky, everyone hears of it, and `by` scores for it (Black
+    /// Ops 2's `plane_damage_monitor`).
+    fn hurt_aircraft(&mut self, id: u16, damage: f32, by: u8, shot: u32) {
+        self.send_event(
+            by,
+            GameEvent::Hit {
+                victim: u8::MAX,
+                shot,
+                damage,
+                headshot: false,
+                killed: false,
+            },
+        );
+        let Some(downed) = self.sky.hurt(id, damage, self.tick) else {
+            return;
+        };
+        godot_print!(
+            "server: player {by} shot down player {}'s {}",
+            downed.air.owner,
+            downed.air.streak.label()
+        );
+        self.broadcast_event(&GameEvent::Streak(StreakEvent::Downed {
+            id,
+            streak: downed.air.streak,
+            owner: downed.air.owner,
+            by,
+            at: downed.at,
+        }));
+        let sky = self.sky_event();
+        self.broadcast_event(&sky);
+        if let Some(avatar) = self.avatars.iter_mut().find(|a| a.id == by) {
+            let scored = avatar
+                .score
+                .award(Award::ShotDown(downed.air.streak), streak::SHOT_DOWN_POINTS);
+            let totals = avatar.score.totals();
+            self.send_event(
+                by,
+                GameEvent::Score {
+                    awards: vec![scored],
+                    totals,
+                },
+            );
+        }
     }
 
     /// What `viewer`'s minimap shows of the enemy: only the dots their radar

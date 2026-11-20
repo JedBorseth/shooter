@@ -177,7 +177,11 @@ use crate::zombies::drinks::Drinks;
 // `equipment::Kind::Rocket` (code 3) to grenades, blasts, and kill causes.
 // Version 75 added `roofed` to `StreakEvent::State`: a map roofed over
 // leaves out the streaks that need open sky.
-pub const PROTOCOL_VERSION: u16 = 75;
+// Version 76 flies the UAVs and Counter-UAVs round a ring over the map
+// (`StreakEvent::Sky` carries the ring and each one's id, call tick, and
+// phase), lets them be shot down (`StreakEvent::Downed`,
+// `Award::ShotDown`), and gives streak events four tag bits.
+pub const PROTOCOL_VERSION: u16 = 76;
 /// Longest account session token a hello carries, in bytes.
 pub const MAX_ACCOUNT_TOKEN_BYTES: usize = 2048;
 /// Longest reason a denial carries, in bytes.
@@ -458,9 +462,12 @@ pub enum StreakEvent {
         loadout: streak::Loadout,
         roofed: bool,
     },
-    /// To everyone, whenever it changes and on joining: every UAV and
-    /// Counter-UAV up.
-    Sky { up: Vec<AirView> },
+    /// To everyone, whenever it changes and on joining: the ring they fly
+    /// over the map, and every UAV and Counter-UAV up.
+    Sky {
+        orbit: streak::Orbit,
+        up: Vec<AirView>,
+    },
     /// To everyone, and on joining for each crate still out: a Care
     /// Package is coming (`crate::care_package`). The aircraft lets it go
     /// over `at` at `drop_at`, flying along `heading` (radians), and it
@@ -494,14 +501,28 @@ pub enum StreakEvent {
     },
     /// To everyone: a strike of `owner`'s Airstrike went off at `at`.
     Strike { owner: u8, at: Vec3 },
+    /// To everyone: player `by` shot down aircraft `id` (`owner`'s
+    /// `streak`) at `at`.
+    Downed {
+        id: u16,
+        streak: Streak,
+        owner: u8,
+        by: u8,
+        at: Vec3,
+    },
 }
 
-/// A UAV or Counter-UAV up: whose, on which side, and until when.
+/// A UAV or Counter-UAV up: which, whose, on which side, when it was
+/// called in and where round the ring it started (`streak::Orbit`), and
+/// until when.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AirView {
+    pub id: u16,
     pub streak: Streak,
     pub owner: u8,
     pub side: u8,
+    pub from: Tick,
+    pub phase: u16,
     pub until: Tick,
 }
 
@@ -2944,6 +2965,8 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
 }
 
 const STREAK_EVENT_TAG: u32 = 24;
+/// Bits for a [`StreakEvent`]'s tag; room for sixteen.
+const STREAK_TAG_BITS: u32 = 4;
 /// Most streaks one [`StreakEvent::State`] lists, and airborne streaks one
 /// [`StreakEvent::Sky`] does.
 const MAX_HELD_STREAKS: usize = streak::MAX_HELD;
@@ -2987,7 +3010,7 @@ fn write_streak_event(w: &mut BitWriter, event: &StreakEvent) {
             loadout,
             roofed,
         } => {
-            w.bits(0, MORE_TAG_BITS);
+            w.bits(0, STREAK_TAG_BITS);
             w.varint(*progress);
             let count = held.len().min(MAX_HELD_STREAKS);
             w.varint(count as u32);
@@ -3006,7 +3029,7 @@ fn write_streak_event(w: &mut BitWriter, event: &StreakEvent) {
             lands_at,
             contents,
         } => {
-            w.bits(2, MORE_TAG_BITS);
+            w.bits(2, STREAK_TAG_BITS);
             w.u16(*id);
             w.u8(*owner);
             write_vec3(w, *at);
@@ -3021,7 +3044,7 @@ fn write_streak_event(w: &mut BitWriter, event: &StreakEvent) {
             started,
             done_at,
         } => {
-            w.bits(3, MORE_TAG_BITS);
+            w.bits(3, STREAK_TAG_BITS);
             w.u16(*id);
             match by {
                 Some(by) => {
@@ -3034,17 +3057,17 @@ fn write_streak_event(w: &mut BitWriter, event: &StreakEvent) {
             w.u32(*done_at);
         }
         StreakEvent::CrateTaken { id, by, contents } => {
-            w.bits(4, MORE_TAG_BITS);
+            w.bits(4, STREAK_TAG_BITS);
             w.u16(*id);
             w.u8(*by);
             write_streak(w, *contents);
         }
         StreakEvent::CrateGone { id } => {
-            w.bits(5, MORE_TAG_BITS);
+            w.bits(5, STREAK_TAG_BITS);
             w.u16(*id);
         }
         StreakEvent::Airstrike { owner, strikes } => {
-            w.bits(6, MORE_TAG_BITS);
+            w.bits(6, STREAK_TAG_BITS);
             w.u8(*owner);
             let count = strikes.len().min(streak::AIRSTRIKE_TARGETS);
             w.varint(count as u32);
@@ -3054,26 +3077,45 @@ fn write_streak_event(w: &mut BitWriter, event: &StreakEvent) {
             }
         }
         StreakEvent::Strike { owner, at } => {
-            w.bits(7, MORE_TAG_BITS);
+            w.bits(7, STREAK_TAG_BITS);
             w.u8(*owner);
             write_vec3(w, *at);
         }
-        StreakEvent::Sky { up } => {
-            w.bits(1, MORE_TAG_BITS);
+        StreakEvent::Sky { orbit, up } => {
+            w.bits(1, STREAK_TAG_BITS);
+            write_vec3(w, orbit.centre);
+            w.f32(orbit.radius);
             let count = up.len().min(MAX_AIRBORNE);
             w.varint(count as u32);
             for air in &up[..count] {
+                w.u16(air.id);
                 write_streak(w, air.streak);
                 w.u8(air.owner);
                 w.u8(air.side);
+                w.u32(air.from);
+                w.u16(air.phase);
                 w.u32(air.until);
             }
+        }
+        StreakEvent::Downed {
+            id,
+            streak,
+            owner,
+            by,
+            at,
+        } => {
+            w.bits(8, STREAK_TAG_BITS);
+            w.u16(*id);
+            write_streak(w, *streak);
+            w.u8(*owner);
+            w.u8(*by);
+            write_vec3(w, *at);
         }
     }
 }
 
 fn read_streak_event(r: &mut BitReader) -> DecodeResult<StreakEvent> {
-    match r.bits(MORE_TAG_BITS)? {
+    match r.bits(STREAK_TAG_BITS)? {
         0 => {
             let progress = r.varint()?;
             let count = r.varint()? as usize;
@@ -3092,6 +3134,10 @@ fn read_streak_event(r: &mut BitReader) -> DecodeResult<StreakEvent> {
             })
         }
         1 => {
+            let orbit = streak::Orbit {
+                centre: read_finite_vec3(r)?,
+                radius: read_finite(r)?,
+            };
             let count = r.varint()? as usize;
             if count > MAX_AIRBORNE {
                 return Err(DecodeError::Invalid("airborne streaks"));
@@ -3099,13 +3145,16 @@ fn read_streak_event(r: &mut BitReader) -> DecodeResult<StreakEvent> {
             let mut up = Vec::with_capacity(count);
             for _ in 0..count {
                 up.push(AirView {
+                    id: r.u16()?,
                     streak: read_streak(r)?,
                     owner: r.u8()?,
                     side: r.u8()?,
+                    from: r.u32()?,
+                    phase: r.u16()?,
                     until: r.u32()?,
                 });
             }
-            Ok(StreakEvent::Sky { up })
+            Ok(StreakEvent::Sky { orbit, up })
         }
         2 => Ok(StreakEvent::CrateIncoming {
             id: r.u16()?,
@@ -3142,6 +3191,13 @@ fn read_streak_event(r: &mut BitReader) -> DecodeResult<StreakEvent> {
         }
         7 => Ok(StreakEvent::Strike {
             owner: r.u8()?,
+            at: read_finite_vec3(r)?,
+        }),
+        8 => Ok(StreakEvent::Downed {
+            id: r.u16()?,
+            streak: read_streak(r)?,
+            owner: r.u8()?,
+            by: r.u8()?,
             at: read_finite_vec3(r)?,
         }),
         _ => Err(DecodeError::Invalid("streak event")),
@@ -3211,6 +3267,7 @@ fn write_award(w: &mut BitWriter, award: Award) {
         Award::DominationCapture => (20, None),
         Award::DominationDefend => (21, None),
         Award::DominationAssault => (22, None),
+        Award::ShotDown(streak) => (23, Some(u32::from(streak.code()))),
     };
     w.bits(tag, AWARD_TAG_BITS);
     if let Some(n) = count {
@@ -3243,6 +3300,12 @@ fn read_award(r: &mut BitReader) -> DecodeResult<Award> {
         20 => Award::DominationCapture,
         21 => Award::DominationDefend,
         22 => Award::DominationAssault,
+        23 => Award::ShotDown(
+            u8::try_from(r.varint()?)
+                .ok()
+                .and_then(Streak::from_code)
+                .ok_or(DecodeError::Invalid("award"))?,
+        ),
         _ => return Err(DecodeError::Invalid("award")),
     })
 }
@@ -4553,22 +4616,42 @@ mod tests {
                 roofed: true,
             }),
             GameEvent::Streak(StreakEvent::Sky {
+                orbit: streak::Orbit {
+                    centre: Vec3::new(1.0, 50.0, -3.0),
+                    radius: 32.0,
+                },
                 up: vec![
                     AirView {
+                        id: 7,
                         streak: Streak::Uav,
                         owner: 3,
                         side: 1,
+                        from: 80_000,
+                        phase: 40_000,
                         until: 90_000,
                     },
                     AirView {
+                        id: 65_535,
                         streak: Streak::CounterUav,
                         owner: 200,
                         side: 200,
+                        from: 0,
+                        phase: 0,
                         until: 4,
                     },
                 ],
             }),
-            GameEvent::Streak(StreakEvent::Sky { up: Vec::new() }),
+            GameEvent::Streak(StreakEvent::Sky {
+                orbit: streak::Orbit::default(),
+                up: Vec::new(),
+            }),
+            GameEvent::Streak(StreakEvent::Downed {
+                id: 7,
+                streak: Streak::Uav,
+                owner: 3,
+                by: 9,
+                at: Vec3::new(20.0, 50.5, -4.0),
+            }),
             GameEvent::Streak(StreakEvent::CrateIncoming {
                 id: 600,
                 owner: 4,
@@ -5624,6 +5707,10 @@ mod tests {
                     Scored {
                         award: Award::DominationDefend,
                         points: 50,
+                    },
+                    Scored {
+                        award: Award::ShotDown(Streak::CounterUav),
+                        points: 100,
                     },
                 ],
                 totals: ScoreTotals {

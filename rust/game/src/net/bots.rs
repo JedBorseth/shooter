@@ -489,7 +489,29 @@ pub struct BotWorld<'a> {
     /// where, and since when. Firing without a suppressor puts a player
     /// there for a few seconds, a UAV everyone it sweeps.
     pub radar: &'a [RadarDot],
+    /// Scorestreak aircraft overhead (`shooter_sim::streak::Sky`).
+    pub aircraft: &'a [BotAircraft],
 }
+
+/// A UAV or Counter-UAV overhead, as bots know it: which, whose side, where,
+/// and how it moves (m/s).
+#[derive(Clone, Copy, Debug)]
+pub struct BotAircraft {
+    pub id: u16,
+    pub side: u8,
+    pub position: Vector3,
+    pub velocity: Vector3,
+}
+
+/// Bots turn a launcher on an aircraft no more than this far above the
+/// horizon (Black Ops 2's bots let one past 70° go, `_bot_combat.gsc`), and
+/// no further off than a rocket flies before it goes off.
+const AIR_MAX_ELEVATION: f32 = 70.0 * std::f32::consts::PI / 180.0;
+const AIR_RANGE: f32 = equipment::ROCKET_SPEED * equipment::ROCKET_FLIGHT * 0.9;
+/// How near the lead a bot's view must be to fire (radians), and seconds
+/// between its rockets beyond the reload.
+const AIR_FIRE_CONE: f32 = 0.03;
+const AIR_FIRE_GAP: f32 = 1.0;
 
 /// An enemy on a bot's minimap: who, where, and since which tick.
 pub type RadarDot = (u8, Vector3, Tick);
@@ -561,6 +583,8 @@ pub struct BotBrain {
     engagement: Option<Engagement>,
     /// Whether the engaged target was in sight at the last check.
     in_sight: bool,
+    /// The enemy aircraft it is turning a launcher on (`anti_air`).
+    air_target: Option<u16>,
     /// An enemy's position when last seen, and the tick.
     last_seen: Option<(Vector3, Tick)>,
     /// Where the last shot that hurt this bot came from, and the tick.
@@ -657,6 +681,7 @@ impl BotBrain {
             look: Vec2::ZERO,
             engagement: None,
             in_sight: false,
+            air_target: None,
             last_seen: None,
             hurt_from: None,
             goal: None,
@@ -913,6 +938,11 @@ impl BotBrain {
                 self.look = bot::turn_toward(look_before, view, skill.turn_rate, TICK_DT);
             }
             self.keep_throwing(state, look_before, tick, &skill, &mut want);
+            return self.press(want, state);
+        }
+        if self.anti_air(me, state, world, &skill, &mut want) {
+            self.flee(me, world, &skill, &mut want);
+            self.unstick(me, world, &mut want);
             return self.press(want, state);
         }
         match (self.engagement, target) {
@@ -1508,6 +1538,85 @@ impl BotBrain {
                 }
             }
         }
+    }
+
+    /// Black Ops 2's bots turn a launcher on enemy aircraft
+    /// (`threat_requires_rocket` in `_bot_combat.gsc`): only when they carry
+    /// one, only with no enemy player in sight, and never at one more than
+    /// 70° overhead. The bot switches to it, stands, aims ahead of the
+    /// aircraft for the rocket's flight, fires once on it, reloads, and
+    /// switches back when the sky is clear or an enemy shows. Returns
+    /// whether it is busy with an aircraft.
+    fn anti_air(
+        &mut self,
+        me: &BotPlayer,
+        state: &Predicted,
+        world: &mut BotWorld,
+        skill: &SkillParams,
+        want: &mut Want,
+    ) -> bool {
+        let combat = &state.state.combat;
+        let Some(slot) = combat.slots.iter().position(|w| {
+            w.carried && w.id.def().rocket && u32::from(w.magazine) + u32::from(w.reserve) > 0
+        }) else {
+            self.air_target = None;
+            return false;
+        };
+        let holding = usize::from(combat.active) == slot;
+        let back = (slot + 1) % combat.slots.len();
+        let fighting = self.in_sight && self.engagement.is_some();
+        let eye = me.eye(world.params);
+        if fighting {
+            self.air_target = None;
+        } else if (world.tick + u32::from(me.id)).is_multiple_of(PERCEPTION_INTERVAL) {
+            let space = &mut *world.space;
+            self.air_target = world
+                .aircraft
+                .iter()
+                .filter(|a| a.side != me.team)
+                .filter(|a| {
+                    let d = a.position - eye;
+                    let level = Vector2::new(d.x, d.z).length();
+                    d.y.atan2(level) <= AIR_MAX_ELEVATION && d.length() <= AIR_RANGE
+                })
+                .filter(|a| clear_line(space, eye, a.position))
+                .min_by(|a, b| {
+                    eye.distance_to(a.position)
+                        .total_cmp(&eye.distance_to(b.position))
+                })
+                .map(|a| a.id);
+        }
+        let air = self
+            .air_target
+            .and_then(|id| world.aircraft.iter().find(|a| a.id == id));
+        let Some(air) = air else {
+            self.air_target = None;
+            if holding {
+                want.switch_to = Some(back as u8);
+            }
+            return false;
+        };
+        if !holding {
+            want.switch_to = Some(slot as u8);
+            return true;
+        }
+        let flight = eye.distance_to(air.position) / equipment::ROCKET_SPEED;
+        let lead = air.position
+            + air.velocity * flight
+            + Vector3::UP * (0.5 * equipment::ROCKET_DROP * flight * flight);
+        let bearing = look::bearing(to_sim(eye), to_sim(lead));
+        self.look = bot::turn_toward(self.look, bearing, skill.turn_rate, TICK_DT);
+        want.aim = true;
+        if combat.weapon().magazine == 0 {
+            want.reload = true;
+            return true;
+        }
+        let on = bot::view_gap(self.look, bearing) <= AIR_FIRE_CONE;
+        if on && combat.ads >= 0.95 && world.tick >= self.pause_until {
+            want.fire = true;
+            self.pause_until = world.tick + (AIR_FIRE_GAP * TICK_RATE as f32) as Tick;
+        }
+        true
     }
 
     /// Starts taking cover when hurt badly and recently shot, picking a spot
@@ -2178,6 +2287,7 @@ impl BotBrain {
             lethal: want.lethal,
             tactical: want.tactical,
             interact: want.interact,
+            switch_to: want.switch_to,
             ..Default::default()
         }
         .quantized()
@@ -2208,6 +2318,8 @@ struct Want {
     slide: bool,
     /// Lie prone (Hard bots' drop shot).
     prone: bool,
+    /// Change to the weapon in this slot (the launcher, for aircraft).
+    switch_to: Option<u8>,
 }
 
 /// The map as a grenade's world, casting no more than `left` rays: a throw

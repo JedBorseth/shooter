@@ -238,6 +238,34 @@ impl GrenadeSim {
         }
     }
 
+    /// Sets off every rocket whose next move (`dt` seconds) meets an
+    /// aircraft: `meets` gets the rocket's firer and the move, and gives the
+    /// aircraft's id and how far along the move (0 to 1) it is met. The
+    /// rocket stops there. Returns each aircraft struck and who fired.
+    pub fn strike_aircraft(
+        &mut self,
+        dt: f32,
+        meets: impl Fn(u8, Vec3, Vec3) -> Option<(u16, f32)>,
+    ) -> Vec<(u16, u8)> {
+        let mut struck = Vec::new();
+        for live in &mut self.live {
+            let g = &mut live.grenade;
+            let Some(owner) = live.owner else {
+                continue;
+            };
+            if g.kind != Kind::Rocket || g.fuse <= 0.0 {
+                continue;
+            }
+            let to = g.position + g.velocity * dt;
+            if let Some((id, t)) = meets(owner, g.position, to) {
+                g.position = g.position.lerp(to, t);
+                g.fuse = 0.0;
+                struck.push((id, owner));
+            }
+        }
+        struck
+    }
+
     /// Flies every grenade one tick and takes out the ones that went off.
     pub fn step(&mut self, space: &mut Gd<PhysicsDirectSpaceState3D>, dt: f32) -> GrenadeTick {
         let mut out = GrenadeTick::default();

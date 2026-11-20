@@ -358,42 +358,226 @@ impl Strikes {
     }
 }
 
+/// The UAV's and Counter-UAV's health: Black Ops 2's `level.u2_maxhealth`
+/// (`_spyplane.gsc`). Bullets take off their damage; any rocket downs one
+/// outright (its `rocketdamageoneshot` is the health plus one).
+pub const AIRCRAFT_HEALTH: f32 = 700.0;
+/// Radius of the sphere around an aircraft that shots and rockets meet, in
+/// metres: about the drones' 7 m span, so a hit on the model counts.
+pub const AIRCRAFT_HIT_RADIUS: f32 = 3.2;
+/// Seconds an orbit takes: Black Ops 2 turns the UAV's rig clockwise once
+/// a minute and the Counter-UAV's the other way every 40 s.
+pub const UAV_LAP_SECONDS: f32 = 60.0;
+pub const COUNTER_UAV_LAP_SECONDS: f32 = 40.0;
+/// Score for shooting one down (Black Ops 2 publishes no figure; earlier
+/// games paid 100, and one Black Ops 2 source gives 75).
+pub const SHOT_DOWN_POINTS: u32 = 100;
+
+/// The ring the UAVs and Counter-UAVs fly over a map: its centre (at the
+/// UAVs' height) and the UAVs' radius. Black Ops 2 flies them round a rig
+/// over the minimap's centre, the UAV about 4,000 to 5,000 units out and
+/// the Counter-UAV a fifth closer in and higher; on our smaller maps the
+/// ring is scaled to the map so a launcher reaches it.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Orbit {
+    pub centre: crate::Vec3,
+    pub radius: f32,
+}
+
+impl Orbit {
+    /// Metres the UAVs fly over the highest floor, and how much higher the
+    /// Counter-UAVs fly (Black Ops 2's Counter-UAV rig is 400 units, 10 m,
+    /// above the UAV's).
+    pub const HEIGHT: f32 = 45.0;
+    pub const COUNTER_RISE: f32 = 10.0;
+
+    /// The ring over a map whose floor spans `min` to `max` (its spawn
+    /// points, say): centred over it, the UAVs four fifths of the way to its
+    /// far edge.
+    pub fn over(min: crate::Vec3, max: crate::Vec3) -> Self {
+        let half = (max.x - min.x).max(max.z - min.z) * 0.5;
+        Self {
+            centre: crate::Vec3::new(
+                (min.x + max.x) * 0.5,
+                max.y + Self::HEIGHT,
+                (min.z + max.z) * 0.5,
+            ),
+            radius: (half * 0.8).clamp(20.0, 60.0),
+        }
+    }
+
+    /// Where `streak`'s aircraft is at `tick` (fractional for drawing),
+    /// called in at `from` and starting `phase` (a 16-bit angle) round the
+    /// ring, and the yaw it faces (its nose toward Godot's -z at yaw 0).
+    /// The UAV circles clockwise seen from above, the Counter-UAV the other
+    /// way, closer in and higher.
+    pub fn aircraft_at(
+        &self,
+        streak: Streak,
+        from: Tick,
+        phase: u16,
+        tick: f64,
+    ) -> (crate::Vec3, f32) {
+        let (radius, rise, lap, turn) = match streak {
+            Streak::CounterUav => (
+                self.radius * 0.8,
+                Self::COUNTER_RISE,
+                COUNTER_UAV_LAP_SECONDS,
+                1.0,
+            ),
+            _ => (self.radius, 0.0, UAV_LAP_SECONDS, -1.0),
+        };
+        let seconds = ((tick - f64::from(from)) / f64::from(crate::TICK_RATE)) as f32;
+        let angle = f32::from(phase) / 65536.0 * std::f32::consts::TAU
+            + turn * std::f32::consts::TAU * seconds / lap;
+        let (sin, cos) = angle.sin_cos();
+        let at = self.centre + crate::Vec3::new(cos * radius, rise, sin * radius);
+        // Moving along the ring: turn * (-sin, cos).
+        let (fx, fz) = (-turn * sin, turn * cos);
+        (at, (-fx).atan2(-fz))
+    }
+}
+
+/// Where along `from` to `to` (0 to 1) a segment first enters the sphere
+/// at `centre` of `radius`, if it does.
+pub fn segment_meets_sphere(
+    from: crate::Vec3,
+    to: crate::Vec3,
+    centre: crate::Vec3,
+    radius: f32,
+) -> Option<f32> {
+    let d = to - from;
+    let f = from - centre;
+    let a = d.length_squared();
+    let c = f.length_squared() - radius * radius;
+    if c <= 0.0 {
+        return Some(0.0);
+    }
+    if a <= f32::EPSILON {
+        return None;
+    }
+    let b = f.dot(d);
+    let disc = b * b - a * c;
+    if disc < 0.0 {
+        return None;
+    }
+    let t = (-b - disc.sqrt()) / a;
+    (0.0..=1.0).contains(&t).then_some(t)
+}
+
 /// A streak up in the sky: a UAV or a Counter-UAV.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Airborne {
+    /// Which one, for shots and the wire.
+    pub id: u16,
     pub streak: Streak,
     /// Who called it in, and their side (their team, or their own id
     /// without teams).
     pub owner: u8,
     pub side: u8,
-    /// The tick it leaves.
+    /// The tick it was called in, where round the ring it started (a
+    /// 16-bit angle), and the tick it leaves.
+    pub from: Tick,
+    pub phase: u16,
     pub until: Tick,
+    /// Damage taken ([`AIRCRAFT_HEALTH`] downs it).
+    pub damage: f32,
     /// The tick a UAV sweeps next.
     next_sweep: Tick,
 }
 
+/// One downed by a hit ([`Sky::hurt`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Downed {
+    pub air: Airborne,
+    /// Where it was when it went down.
+    pub at: crate::Vec3,
+}
+
 /// Every UAV and Counter-UAV up. Several of one kind on a side overlap,
 /// each with its own clock: the side's minimap shows the effect while any
-/// is up, as in Black Ops 2.
+/// is up, as in Black Ops 2. Each flies the map's [`Orbit`] and can be shot
+/// down.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Sky {
     pub up: Vec<Airborne>,
+    pub orbit: Orbit,
+    next_id: u16,
 }
 
 impl Sky {
     /// Calls in `streak` (a UAV or Counter-UAV) for `owner` on `side` at
-    /// `now`. Streaks that do not stay up are ignored.
-    pub fn call(&mut self, streak: Streak, owner: u8, side: u8, now: Tick) {
+    /// `now`, starting `phase` round the ring. Streaks that do not stay up
+    /// are ignored. Returns its id.
+    pub fn call(
+        &mut self,
+        streak: Streak,
+        owner: u8,
+        side: u8,
+        now: Tick,
+        phase: u16,
+    ) -> Option<u16> {
         if streak.duration() == 0 {
-            return;
+            return None;
         }
+        let id = self.next_id;
+        self.next_id = self.next_id.wrapping_add(1);
         self.up.push(Airborne {
+            id,
             streak,
             owner,
             side,
+            from: now,
+            phase,
             until: now + streak.duration(),
+            damage: 0.0,
             next_sweep: now,
         });
+        Some(id)
+    }
+
+    /// Where aircraft `air` is at `tick`.
+    pub fn position(&self, air: &Airborne, tick: Tick) -> crate::Vec3 {
+        self.orbit
+            .aircraft_at(air.streak, air.from, air.phase, f64::from(tick))
+            .0
+    }
+
+    /// The first aircraft `hostile` picks that the segment `from` to `to`
+    /// passes within `radius` of at `tick` ([`AIRCRAFT_HIT_RADIUS`] for a
+    /// bullet, `equipment::ROCKET_AIRCRAFT_RADIUS` for a rocket's proximity
+    /// fuse): its id and how far along (0 to 1).
+    pub fn first_on_segment(
+        &self,
+        from: crate::Vec3,
+        to: crate::Vec3,
+        radius: f32,
+        tick: Tick,
+        hostile: impl Fn(&Airborne) -> bool,
+    ) -> Option<(u16, f32)> {
+        self.up
+            .iter()
+            .filter(|a| hostile(a))
+            .filter_map(|a| {
+                let t = segment_meets_sphere(from, to, self.position(a, tick), radius)?;
+                Some((a.id, t))
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+    }
+
+    /// Aircraft `id` takes `damage` at `tick` (a rocket's is its whole
+    /// health). Returns it, taken out of the sky, if that downs it.
+    pub fn hurt(&mut self, id: u16, damage: f32, tick: Tick) -> Option<Downed> {
+        let index = self.up.iter().position(|a| a.id == id)?;
+        self.up[index].damage += damage;
+        if self.up[index].damage <= AIRCRAFT_HEALTH {
+            return None;
+        }
+        let air = self.up.remove(index);
+        Some(Downed {
+            at: self.position(&air, tick),
+            air,
+        })
     }
 
     /// Drops what has left by `now`. Returns whether anything did.
@@ -436,6 +620,11 @@ impl Sky {
     /// Everything up leaves (a new match or round).
     pub fn clear(&mut self) {
         self.up.clear();
+    }
+
+    /// The aircraft up at `tick`: each one's id, side, and position.
+    pub fn aircraft(&self, tick: Tick) -> impl Iterator<Item = (&Airborne, crate::Vec3)> {
+        self.up.iter().map(move |a| (a, self.position(a, tick)))
     }
 }
 
@@ -539,14 +728,14 @@ mod tests {
     #[test]
     fn a_uav_sweeps_every_few_seconds_until_it_leaves() {
         let mut sky = Sky::default();
-        sky.call(Streak::Uav, 3, 1, 1000);
+        sky.call(Streak::Uav, 3, 1, 1000, 0);
         assert!(sky.uav(1) && !sky.uav(0));
         assert_eq!(sky.sweeps(1000), vec![1]);
         assert!(sky.sweeps(1001).is_empty());
         let interval = seconds_to_ticks(UAV_SWEEP_SECONDS);
         assert_eq!(sky.sweeps(1000 + interval), vec![1]);
         // A second UAV on the side does not sweep twice.
-        sky.call(Streak::Uav, 4, 1, 1000 + interval);
+        sky.call(Streak::Uav, 4, 1, 1000 + interval, 0);
         assert_eq!(sky.sweeps(1000 + interval), vec![1]);
         assert!(!sky.expire(1000 + Streak::Uav.duration() - 1));
         assert!(sky.expire(1000 + Streak::Uav.duration()));
@@ -558,11 +747,85 @@ mod tests {
     #[test]
     fn a_counter_uav_jams_only_the_other_sides() {
         let mut sky = Sky::default();
-        sky.call(Streak::CounterUav, 3, 1, 0);
+        sky.call(Streak::CounterUav, 3, 1, 0, 0);
         assert!(sky.jammed(0));
         assert!(!sky.jammed(1));
         sky.expire(Streak::CounterUav.duration());
         assert!(!sky.jammed(0));
+    }
+
+    #[test]
+    fn aircraft_circle_the_map_each_its_own_way() {
+        let orbit = Orbit::over(
+            crate::Vec3::new(-40.0, 0.0, -30.0),
+            crate::Vec3::new(40.0, 4.0, 30.0),
+        );
+        assert_eq!(orbit.centre, crate::Vec3::new(0.0, 49.0, 0.0));
+        assert_eq!(orbit.radius, 32.0);
+        let lap = f64::from(seconds_to_ticks(UAV_LAP_SECONDS));
+        let (start, _) = orbit.aircraft_at(Streak::Uav, 0, 0, 0.0);
+        assert!((start - crate::Vec3::new(32.0, 49.0, 0.0)).length() < 1e-3);
+        // A quarter lap on, clockwise seen from above (y up): toward -z.
+        let (quarter, yaw) = orbit.aircraft_at(Streak::Uav, 0, 0, lap / 4.0);
+        assert!((quarter - crate::Vec3::new(0.0, 49.0, -32.0)).length() < 1e-2);
+        // Heading toward -x there: nose (-sin yaw, -cos yaw).
+        assert!((-yaw.sin() + 1.0).abs() < 1e-3 && yaw.cos().abs() < 1e-3);
+        let (back, _) = orbit.aircraft_at(Streak::Uav, 0, 0, lap);
+        assert!((back - start).length() < 1e-2);
+        // The Counter-UAV flies closer in, higher, and the other way.
+        let cuav_lap = f64::from(seconds_to_ticks(COUNTER_UAV_LAP_SECONDS));
+        let (c, _) = orbit.aircraft_at(Streak::CounterUav, 0, 0, cuav_lap / 4.0);
+        assert!((c - crate::Vec3::new(0.0, 59.0, 25.6)).length() < 1e-2);
+        // A phase of half a turn starts on the far side.
+        let (far, _) = orbit.aircraft_at(Streak::Uav, 0, 32768, 0.0);
+        assert!((far - crate::Vec3::new(-32.0, 49.0, 0.0)).length() < 1e-3);
+    }
+
+    #[test]
+    fn bullets_wear_an_aircraft_down_and_a_rocket_downs_it() {
+        let mut sky = Sky {
+            orbit: Orbit {
+                centre: crate::Vec3::new(0.0, 50.0, 0.0),
+                radius: 30.0,
+            },
+            ..Sky::default()
+        };
+        let uav = sky.call(Streak::Uav, 3, 1, 0, 0).unwrap();
+        let cuav = sky.call(Streak::CounterUav, 4, 1, 0, 32768).unwrap();
+        let at = sky.position(&sky.up[0], 0);
+        // A shot from the ground straight up at it meets it; one wide does not.
+        let eye = crate::Vec3::new(at.x, 0.0, at.z);
+        let up = crate::Vec3::new(at.x, 100.0, at.z);
+        assert_eq!(
+            sky.first_on_segment(eye, up, AIRCRAFT_HIT_RADIUS, 0, |_| true)
+                .map(|h| h.0),
+            Some(uav)
+        );
+        let wide = crate::Vec3::new(at.x + 5.0, 100.0, at.z);
+        assert!(
+            sky.first_on_segment(
+                eye + crate::Vec3::X * 5.0,
+                wide,
+                AIRCRAFT_HIT_RADIUS,
+                0,
+                |_| true
+            )
+            .is_none()
+        );
+        assert!(
+            sky.first_on_segment(eye, up, AIRCRAFT_HIT_RADIUS, 0, |a| a.side != 1)
+                .is_none()
+        );
+        // 700 health: 23 bullets of 30 leave it up, the 24th downs it.
+        for _ in 0..23 {
+            assert!(sky.hurt(uav, 30.0, 0).is_none());
+        }
+        let downed = sky.hurt(uav, 30.0, 10).unwrap();
+        assert_eq!(downed.air.owner, 3);
+        assert!(!sky.uav(1));
+        // A rocket's damage is the whole health plus one.
+        assert!(sky.hurt(cuav, AIRCRAFT_HEALTH + 1.0, 0).is_some());
+        assert!(sky.up.is_empty());
     }
 
     #[test]

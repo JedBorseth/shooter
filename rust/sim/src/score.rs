@@ -126,6 +126,9 @@ pub enum Award {
     DominationDefend,
     /// Domination: a kill on or near a flag the team does not own.
     DominationAssault,
+    /// Shot down an enemy's scorestreak aircraft (Black Ops 2's "Destroyed
+    /// UAV" and the like).
+    ShotDown(crate::streak::Streak),
 }
 
 impl Award {
@@ -148,6 +151,7 @@ impl Award {
                 | Award::Clutch
                 | Award::Ace
                 | Award::DominationCapture
+                | Award::ShotDown(_)
         )
     }
 
@@ -180,6 +184,7 @@ impl Award {
             Award::DominationCapture => "Flag Captured".to_owned(),
             Award::DominationDefend => "Flag Defense".to_owned(),
             Award::DominationAssault => "Flag Assault".to_owned(),
+            Award::ShotDown(streak) => format!("Destroyed {}", streak.label()),
         }
     }
 }

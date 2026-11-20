@@ -53,8 +53,8 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
   - [x] SG-12 semi-automatic shotgun (the S12's role), box-fed, modelled by `tools/weapon_sg12.py` on the M870's receiver. Its own firing sound is held for listening; it fires with the M870's until then.
   - [x] DM-7 marksman rifle (the SVU-AS's role), the M14 with a riflescope and an olive glass-fibre stock. Its own firing sound is held for listening; it fires with the BR-3's until then.
   - [x] RL-4 launcher (the RPG's role): a free-flight rocket that goes off on what it meets, modelled by `tools/weapon_rl4.py`. Its own launch sound is held for listening; it fires with the M870's until then.
-  - [ ] Rockets bring down scorestreak aircraft (Black Ops 2: one hit downs any). Needs the UAV and Counter-UAV to fly a path over the map that both ends know.
-  - [ ] Bots carry and fire launchers.
+  - [x] Rockets bring down scorestreak aircraft (Black Ops 2: one hit downs any): the UAV and Counter-UAV fly a ring over the map that both ends compute, and bullets wear them down ([docs/scorestreaks.md](docs/scorestreaks.md#in-the-sky)).
+  - [x] Bots carry launchers (one in four) and fire them at enemy aircraft. They still never turn one on players, as Black Ops 2's do (aimed at the feet).
 - [x] LMG (LSW-6: 75 rounds, slow aim and reload) and a burst-fire rifle (BR-3: `FireMode::Burst`, three rounds a pull, one burst kills up close).
 - [x] Attachments: red dot, ACOG, suppressor, grip, and extended magazine, as weapon variants (`Attachment::apply`), chosen in the loadout menu, with their parts on the first- and third-person models. The ACOG aims through its own eyepiece, with a lit chevron and the zoomed world inside it, instead of the sniper's overlay.
 - [x] Hold-breath sway for scoped weapons.
@@ -253,7 +253,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
 - [x] Scorestreaks (Black Ops 2): earned from score within a life (objective score counts, the count resets on death and loops after the dearest), three chosen in the class menu, held through death; UAV and Counter-UAV, a streak column and calls on the HUD, minimap tags, and bots calling theirs in ([docs/scorestreaks.md](docs/scorestreaks.md)).
 - [x] Care Package: a crate from a flyover onto the spot aimed at, captured in 0.5 s by its caller and 3 s by anyone else, with a UAV or Counter-UAV inside; bots call and take them ([docs/scorestreaks.md](docs/scorestreaks.md#care-package)).
 - [x] Airstrike: three strikes on points marked on the map's plan, after Black Ops 2's Lightning Strike; its kills count nothing toward streaks; bots mark their nearest enemies ([docs/scorestreaks.md](docs/scorestreaks.md#airstrike)).
-- [ ] Scorestreaks follow-ups: the aircraft's, jets', and crate's sounds, UAV assist points, announcer lines, a full-map view for the dead or spectating. Warehouse is roofed over, so for now it leaves out the Care Package and the Airstrike (greyed out with "NO OPEN SKY"; `roofed` map metadata). Decide whether Warehouse gets a skylight or roof hatch so they can come back.
+- [ ] Scorestreaks follow-ups: the aircraft's, drones', jets', and crate's sounds (engine loops, the shoot-down), a UAV's damage smoke trail, UAV assist points, announcer lines, a full-map view for the dead or spectating. Warehouse is roofed over, so for now it leaves out the Care Package and the Airstrike (greyed out with "NO OPEN SKY"; `roofed` map metadata). Decide whether Warehouse gets a skylight or roof hatch so they can come back.
 - [x] Perks that need streaks: Hardline, Ghost, and Hard Wired ([create-a-class.md](docs/create-a-class.md#perks)).
 - [ ] Blind Eye, once there is an AI air streak to hide from.
 - [x] Player names: sent in the hello (`Settings.player_name`), cleaned by the server, and listed in the roster.
