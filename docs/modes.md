@@ -61,4 +61,23 @@ To do: halves and overtime (TODO.md).
 
 ## Gun Game
 
-To do: the weapon sting (TODO.md).
+| Rule | Here | Call of Duty |
+| --- | --- | --- |
+| Ladder | Eight weapons (`gun_game::LADDER`), two kills with each | Black Ops: 20 weapons, one kill each; Modern Warfare (2019) onward: 18 to 20. Shorter here because the game has eight guns |
+| Knife | A knife kill sets the victim back a weapon and does not move the killer up | Black Ops "Humiliation": a melee or ballistic knife kill sets the victim back |
+| Suicide | Dying by your own hand (a fall) sets you back a weapon | Same in Black Ops |
+| Calls | A new weapon shows its name in the middle of the screen with a step-up sting; a set-back shows SET BACK with a step-down sting; anyone reaching the last weapon is called in the kill feed | Call of Duty's announcer calls each upgrade and each humiliation; the stings stand in until there is a voice |
+| End | The last weapon's kills win; at the buzzer, the player furthest up wins | Same |
+
+**Differences.** Black Ops ends its ladder on the crossbow and the ballistic
+knife, and later games on a melee weapon; here the last weapon is the M1911,
+because the game has no crossbow or throwing knife yet.
+
+## Calls across modes
+
+Every mode calls the same moments the same way: the countdown banner names
+the mode and its limit, halftime (Capture the Flag, Domination) and overtime
+(Hardpoint, Capture the Flag) come from the match period through the match
+HUD with their stings, round results in Search and Destroy use the same
+banner, and the result is VICTORY, DEFEAT, or DRAW (a player's name in a
+free-for-all) with the win, loss, or draw sting.
