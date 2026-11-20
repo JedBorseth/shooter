@@ -154,6 +154,7 @@ const WEAPONS := {
 		"Trigger",
 		"MagRelease"
 	],
+	"rl4": ["Body", "Magazine", "MagazineSpare", "Trigger"],
 	"m40":
 	["Body", "Scope", "Bolt", "BoltStop", "Magazine", "Magazine/Rounds", "Safety", "Trigger"],
 }
@@ -164,15 +165,19 @@ const FOREGRIP := "res://assets/weapons/foregrip/foregrip.glb"
 const M4_VIEW := "res://scenes/weapons/m4_view.tscn"
 ## Weapons aimed with their own iron sights; the others carry a reflex sight
 ## (the scene's IronSights node) or, the M40, a scope on the sight line.
-const IRON_SIGHTS := ["m4", "m870", "lsw6", "ak47", "kr12", "pistol"]
+const IRON_SIGHTS := ["m4", "m870", "lsw6", "ak47", "kr12", "pistol", "rl4"]
 ## Weapons whose own sights are unusable, aimed with iron sights the scene's
 ## IronSights node builds instead (its style).
 const BUILT_IRON_SIGHTS := {"bp9": "pistol", "sg12": "shotgun"}
+## Shoulder-fired launchers: the tube runs back past the eye over the
+## shoulder, so only what is ahead of the eye must clear it, and they eject
+## no case.
+const SHOULDERED := ["rl4"]
 ## Weapons aimed through a riflescope on the sight line.
 const SCOPED := ["m40", "dm7"]
 ## How far behind the muzzle the front sight sits, at most (the M4A1's post
 ## stands on the gas block, well back from its flash hider).
-const FRONT_SIGHT_REACH := {"m4": 0.23}
+const FRONT_SIGHT_REACH := {"m4": 0.23, "rl4": 0.16}
 ## How far (metres) the front sight's tip may sit off the sight line.
 const SIGHT_TOLERANCE := 0.0006
 ## Seen from the eye, how far below the front sight's tip (metres, at the
@@ -323,8 +328,11 @@ func _check_sight_picture(key: String, view: Node3D, front_z: float) -> void:
 	var tris := _view_triangles(view)
 	var eye := -(view.get("ads_position") as Vector3) + Vector3(0.0, 0.0, view.get("iron_eye_back"))
 	var nearest := INF
+	var behind_ok := key in SHOULDERED
 	for i in tris.size():
 		var p := tris[i] / 1000.0 - eye
+		if behind_ok and p.z > 0.0:
+			continue
 		if absf(p.x) < EYE_CLEAR_SIDE and absf(p.y) < EYE_CLEAR_SIDE:
 			nearest = minf(nearest, -p.z)
 	_check(
@@ -515,6 +523,8 @@ func _check_surface_detail(key: String) -> void:
 func _check_casings() -> void:
 	var casings := (load(CASINGS) as PackedScene).instantiate()
 	for key: String in WEAPONS:
+		if key in SHOULDERED:
+			continue  # A launcher's rocket leaves no case.
 		var view := (load("res://scenes/weapons/%s_view.tscn" % key) as PackedScene).instantiate()
 		var case_name: String = view.get("shell_model")
 		var mesh := casings.find_child(case_name) as MeshInstance3D

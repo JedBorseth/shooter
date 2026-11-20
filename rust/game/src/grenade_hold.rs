@@ -213,6 +213,9 @@ pub fn model(kind: Kind) -> &'static str {
         Kind::Frag => "res://assets/equipment/frag/frag.glb",
         Kind::Flash => "res://assets/equipment/flash/flash.glb",
         Kind::Smoke => "res://assets/equipment/smoke/smoke.glb",
+        // The launcher's rocket (`tools/weapon_rl4.py`) with its motor's
+        // flame and smoke trail.
+        Kind::Rocket => "res://scenes/equipment/rocket.tscn",
     }
 }
 

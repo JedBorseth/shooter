@@ -20,6 +20,7 @@ const WEAPONS := [
 	"m40",
 	"m1911",
 	"bp9",
+	"rl4",
 	"lsw6",
 	"br3",
 	"m4+reddot",

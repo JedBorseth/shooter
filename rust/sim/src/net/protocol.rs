@@ -173,7 +173,9 @@ use crate::zombies::drinks::Drinks;
 // Version 73 added prone: `Stance::Prone`, the input's prone button, the
 // crouch blend's range to 2 (`PlayerView::crouch` and the activity's), and
 // the crouch hold in the predicted move state.
-pub const PROTOCOL_VERSION: u16 = 73;
+// Version 74 added rockets: the RL-4 to the weapon table, and
+// `equipment::Kind::Rocket` (code 3) to grenades, blasts, and kill causes.
+pub const PROTOCOL_VERSION: u16 = 74;
 /// Longest account session token a hello carries, in bytes.
 pub const MAX_ACCOUNT_TOKEN_BYTES: usize = 2048;
 /// Longest reason a denial carries, in bytes.

@@ -615,6 +615,8 @@ struct Throw {
     fuse: f32,
     /// Fell from a dead player's hand rather than thrown.
     dropped: bool,
+    /// A launcher's rocket: the launcher that fired it.
+    launcher: Option<WeaponId>,
 }
 
 /// What lunge checks need to know about each player this tick.
@@ -1265,6 +1267,22 @@ impl NetServer {
         self.match_log.to_dictionary(TICK_RATE as f32)
     }
 
+    /// The latest kill of the match by one player of another (tests):
+    /// `killer`, `victim`, the `weapon` key, and whether it was the weapon in
+    /// hand (`by_weapon`, false for equipment, the knife, and streaks).
+    /// Empty before any.
+    #[func]
+    fn last_kill(&self) -> VarDictionary {
+        let mut d = VarDictionary::new();
+        if let Some(kill) = &self.last_kill {
+            d.set("killer", i64::from(kill.killer));
+            d.set("victim", i64::from(kill.victim));
+            d.set("weapon", &GString::from(kill.weapon.def().key.as_str()));
+            d.set("by_weapon", kill.cause == protocol::KillCause::Weapon);
+        }
+        d
+    }
+
     /// Debug: moves a player's feet to `position` (tests).
     #[func]
     fn debug_teleport(&mut self, id: i32, position: Vector3) {
@@ -1638,6 +1656,8 @@ impl NetServer {
             owner: u8::try_from(owner).ok(),
             shot: u32::MAX - self.grenades.live.len() as u32,
             grenade,
+            weapon: None,
+            struck: None,
         });
     }
 
@@ -3352,6 +3372,30 @@ impl NetServer {
                             weapon,
                             yaw,
                             pitch,
+                            shot,
+                            ..
+                        }) if weapon.def().rocket => {
+                            // A rocket flies; it is no hitscan shot.
+                            let p = &avatar.predicted;
+                            let eye = to_godot(p.position)
+                                + Vector3::UP * p.state.movement.eye_height(&self.params.movement);
+                            throws.push(Throw {
+                                owner: avatar.id,
+                                shot,
+                                kind: equipment::Kind::Rocket,
+                                eye,
+                                yaw,
+                                pitch,
+                                carrier: Vec3::ZERO,
+                                fuse: equipment::ROCKET_FLIGHT,
+                                dropped: false,
+                                launcher: Some(weapon),
+                            });
+                        }
+                        PlayerEvent::Combat(CombatEvent::Fired {
+                            weapon,
+                            yaw,
+                            pitch,
                             aim_offset,
                             shot,
                             ..
@@ -3406,6 +3450,7 @@ impl NetServer {
                                 carrier: p.state.movement.velocity,
                                 fuse,
                                 dropped: false,
+                                launcher: None,
                             });
                         }
                         PlayerEvent::GrenadeDropped { kind, fuse, shot } => {
@@ -3420,6 +3465,7 @@ impl NetServer {
                                 carrier: p.state.movement.velocity * 0.5,
                                 fuse,
                                 dropped: true,
+                                launcher: None,
                             });
                         }
                         // Only falls kill inside the step; shots are resolved below.
@@ -4380,7 +4426,16 @@ impl NetServer {
             return;
         };
         for throw in throws {
-            if throw.dropped {
+            if let Some(launcher) = throw.launcher {
+                self.grenades.launch(
+                    &mut space,
+                    Some(throw.owner),
+                    throw.shot,
+                    launcher,
+                    throw.eye,
+                    (throw.yaw, throw.pitch),
+                );
+            } else if throw.dropped {
                 self.grenades.add(LiveGrenade {
                     owner: Some(throw.owner),
                     shot: throw.shot,
@@ -4390,6 +4445,8 @@ impl NetServer {
                         throw.carrier,
                         throw.fuse,
                     ),
+                    weapon: None,
+                    struck: None,
                 });
             } else {
                 self.grenades.throw(
@@ -4404,6 +4461,15 @@ impl NetServer {
                 );
             }
         }
+        // Rockets go off on the players they meet (the map stops them in
+        // the step).
+        let bodies: Vec<(u8, Vec3)> = self
+            .avatars
+            .iter()
+            .filter(|a| a.predicted.state.alive())
+            .map(|a| (a.id, a.predicted.position))
+            .collect();
+        self.grenades.strike_bodies(&bodies, TICK_DT);
         let outcome = self.grenades.step(&mut space, TICK_DT);
         for blast in outcome.blasts {
             self.resolve_grenade(&mut space, &blast);
@@ -4430,7 +4496,7 @@ impl NetServer {
                 at,
                 popped: self.tick,
             }),
-            equipment::Kind::Frag => {}
+            equipment::Kind::Frag | equipment::Kind::Rocket => {}
         }
         if !self.attacks_hurt() {
             return;
@@ -4468,16 +4534,31 @@ impl NetServer {
                 continue;
             }
             // Flak Jacket lets through a share of explosive damage.
-            let damage = equipment::blast_damage(kind, distance)
-                * avatar.predicted.state.perks.explosive_scale();
+            // A rocket's direct hit is an impact: Flak Jacket does not save
+            // its target (Black Ops 2: only a direct impact kills through it).
+            let scale = if blast.struck == Some(avatar.id) {
+                1.0
+            } else {
+                avatar.predicted.state.perks.explosive_scale()
+            };
+            let damage = equipment::blast_damage(kind, distance) * scale;
             if damage > 0.0 {
                 victims.push((avatar.id, distance, damage));
             }
         }
-        // The weapon the thrower holds names nothing in the feed; the grenade does.
-        let weapon = attacker
-            .and_then(|id| self.avatars.iter().find(|a| a.id == id))
-            .map_or_else(default_primary, |a| a.predicted.state.combat.weapon().id);
+        // The weapon the thrower holds names nothing in the feed; the grenade
+        // does. A rocket's kill is its launcher's, as Black Ops 2's feed
+        // shows the launcher.
+        let weapon = blast.weapon.unwrap_or_else(|| {
+            attacker
+                .and_then(|id| self.avatars.iter().find(|a| a.id == id))
+                .map_or_else(default_primary, |a| a.predicted.state.combat.weapon().id)
+        });
+        let cause = if blast.weapon.is_some() {
+            protocol::KillCause::Weapon
+        } else {
+            protocol::KillCause::Equipment(kind)
+        };
         let attacker_team =
             attacker.and_then(|id| self.avatars.iter().find(|a| a.id == id).map(|a| a.team));
         let scoring = self.match_state.scoring();
@@ -4529,7 +4610,7 @@ impl NetServer {
                 victim: id,
                 weapon,
                 headshot: false,
-                cause: protocol::KillCause::Equipment(kind),
+                cause,
             });
             self.note_kill(KillRecord {
                 killer: credited.unwrap_or(id),
@@ -4537,7 +4618,7 @@ impl NetServer {
                 tick: self.tick,
                 rewind: 0,
                 weapon,
-                cause: protocol::KillCause::Equipment(kind),
+                cause,
                 headshot: false,
             });
             self.record_death(id);

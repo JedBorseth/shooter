@@ -732,7 +732,9 @@ impl RemotePlayer {
             // carries more than one; at most three are traced.
             let eye = position + Vector3::UP * self.stance_eye;
             let direction = to_godot(look::view_direction(s.yaw, s.pitch));
-            if let Some(mut tracer) = ShotTracer::find(&self.base().get_tree()) {
+            // A rocket is no round: it flies in the snapshots' grenades.
+            let rounds = !s.weapon.def().rocket;
+            if rounds && let Some(mut tracer) = ShotTracer::find(&self.base().get_tree()) {
                 for _ in 0..fired.min(3) {
                     tracer.bind_mut().trace(s.weapon, eye, direction, muzzle);
                 }

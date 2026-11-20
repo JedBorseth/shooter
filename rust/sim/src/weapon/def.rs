@@ -484,6 +484,11 @@ pub struct WeaponDef {
     /// of tracers, and no shell casings come out.
     #[serde(default)]
     pub beam: bool,
+    /// A launcher: each shot fires a rocket (`equipment::Kind::Rocket`)
+    /// that flies and goes off instead of a hitscan round; `damage` and
+    /// `range` are unused.
+    #[serde(default)]
+    pub rocket: bool,
     /// Attachments this weapon takes in a loadout.
     #[serde(default)]
     pub attachments: Vec<Attachment>,
@@ -733,9 +738,14 @@ impl WeaponDef {
         }
     }
 
-    /// Rounds below which the HUD warns and the weapon clicks.
+    /// Rounds below which the HUD warns and the weapon clicks. A weapon that
+    /// holds one or two (a launcher) warns only when empty.
     pub fn low_ammo(&self) -> u16 {
-        (self.magazine / 4).max(1)
+        if self.magazine <= 2 {
+            0
+        } else {
+            (self.magazine / 4).max(1)
+        }
     }
 
     fn validate(&self) -> Result<(), String> {
@@ -944,7 +954,7 @@ macro_rules! builtin_files {
 pub fn builtin() -> Vec<WeaponDef> {
     parse_all(builtin_files![
         "ak47", "bp9", "br3", "cq10", "dm7", "kr12", "laser", "lsw6", "m1911", "m40", "m4", "m870",
-        "pdw9", "sg12"
+        "pdw9", "rl4", "sg12"
     ])
     .expect("built-in weapon files are valid")
 }
@@ -995,7 +1005,7 @@ mod tests {
             keys,
             [
                 "ak47", "bp9", "br3", "cq10", "dm7", "kr12", "laser", "lsw6", "m1911", "m4", "m40",
-                "m870", "pdw9", "sg12"
+                "m870", "pdw9", "rl4", "sg12"
             ]
         );
         let all: Vec<_> = table().iter().map(|d| d.key.as_str()).collect();

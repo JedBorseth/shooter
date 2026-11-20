@@ -103,12 +103,16 @@ pub enum ClipKind {
     BoltAction,
     /// Shells loaded one at a time through the loading port.
     Shotgun,
+    /// A rocket launcher: the next rocket comes up from the pouch and slides
+    /// into the muzzle, its warhead left standing out.
+    Launcher,
 }
 
 impl ClipKind {
     pub fn of(def: &WeaponDef) -> ClipKind {
         match def.reload {
             Reload::PerRound { .. } => ClipKind::Shotgun,
+            _ if def.rocket => ClipKind::Launcher,
             _ if def.cycle_time > 0.0 => ClipKind::BoltAction,
             _ if def.slot == Slot::Secondary => ClipKind::Pistol,
             _ => ClipKind::Rifle {
@@ -381,6 +385,19 @@ impl MagazineReload {
     /// The beats, in order, with their foley events.
     pub fn beats(&self) -> Vec<Beat> {
         let t = self.times();
+        if self.kind == ClipKind::Launcher {
+            // The rocket out of the pouch, and home in the tube with a knock
+            // as its catch takes it.
+            return vec![
+                Beat::quiet(t.grab, "pickup"),
+                Beat {
+                    at: t.seat,
+                    name: "mag_in",
+                    jolt_pos: Vector3::new(0.0, 0.0, 0.008),
+                    jolt_rot: Vector3::new(-1.8, 0.0, -0.8),
+                },
+            ];
+        }
         // A drum is heavy: it seats with a heave the whole weapon feels.
         let heft = match self.kind {
             ClipKind::Rifle { heavy: true, .. } => DRUM_HEFT,
@@ -488,10 +505,89 @@ impl MagazineReload {
                 Pose::new(8.0, -6.0, 24.0, -0.05, 0.055, 0.025),
                 Pose::new(4.0, 6.0, 12.0, -0.02, 0.045, 0.025),
             ),
+            // Off the shoulder, the muzzle tipped up and in toward the
+            // middle of the frame so the support hand feeds the rocket in
+            // where the eye sees it.
+            ClipKind::Launcher => (
+                Pose::new(22.0, 12.0, -10.0, -0.07, 0.06, 0.1),
+                Pose::new(25.0, 14.0, -12.0, -0.075, 0.065, 0.11),
+                Pose::new(22.0, 12.0, -10.0, -0.07, 0.06, 0.1),
+            ),
+        }
+    }
+
+    /// A launcher's reload: the tube comes off the shoulder muzzle up, the
+    /// support hand brings the next rocket up from the pouch to the muzzle,
+    /// lines it up, and slides it in until its catch takes it (when the
+    /// round counts), then the tube goes back on the shoulder. The loaded
+    /// rocket stays hidden while the tube is empty (`ViewFrame::empty`).
+    fn launcher_pose(&self, t: f32, anchors: &Anchors) -> ClipPose {
+        let Times {
+            tilt,
+            grab,
+            entry,
+            seat,
+            done,
+            ..
+        } = self.times();
+        let (held, watch, _) = self.poses();
+        let back = self.ready.clamp(seat + 0.2, done);
+        let keys = [
+            (0.0, Pose::ZERO),
+            (tilt.max(0.25), held),
+            (entry, watch),
+            (seat + 0.08, watch),
+            (back, Pose::ZERO.lerp(watch, 0.1)),
+            (done, Pose::ZERO),
+        ];
+        let weapon = posed(&keys, t);
+        // Into the muzzle along the bore (view -Z), from out in front of it.
+        let along = Vector3::new(0.0, 0.0, -1.0);
+        let hover = along * 0.3 + Vector3::new(0.0, 0.02, 0.0);
+        let pouch = anchors.hand_rest + Vector3::new(-0.1, -0.32, 0.3) - anchors.mag_base;
+        let fresh_mag = if t >= grab && t < seat {
+            let rise_end = (grab + 0.4).min(entry);
+            Some(if t < rise_end {
+                pouch.lerp(hover, smoothstep((t - grab) / (rise_end - grab).max(1e-3)))
+            } else if t < entry {
+                let w = (t - rise_end) * 8.0;
+                hover + Vector3::new(0.004 * w.sin(), 0.003 * (w * 1.3).cos(), 0.0)
+            } else {
+                let push = ((t - entry) / (seat - entry).max(1e-3)).clamp(0.0, 1.0);
+                hover * (1.0 - push * push)
+            })
+        } else {
+            None
+        };
+        let hand_keys = [
+            (0.0, Hand::Rest),
+            ((grab - 0.25).max(0.05), Hand::Pouch),
+            (grab, Hand::Pouch),
+            (grab + 0.01, Hand::FreshMag),
+            (seat + 0.05, Hand::FreshMag),
+            ((seat + 0.35).min(done - 0.02), Hand::Rest),
+        ];
+        let place = |hand: Hand| -> Vector3 {
+            match hand {
+                Hand::Pouch => anchors.mag_base + pouch,
+                Hand::FreshMag => anchors.mag_base + fresh_mag.unwrap_or(Vector3::ZERO),
+                _ => anchors.hand_rest,
+            }
+        };
+        ClipPose {
+            weapon,
+            old_mag: Some(Vector3::ZERO),
+            fresh_mag,
+            hand: hand_position(&hand_keys, t, place),
+            focus: Some(anchors.well()),
+            ..ClipPose::default()
         }
     }
 
     pub fn pose(&self, t: f32, anchors: &Anchors) -> ClipPose {
+        if self.kind == ClipKind::Launcher {
+            return self.launcher_pose(t, anchors);
+        }
         let times = self.times();
         let Times {
             tilt,
@@ -963,7 +1059,7 @@ pub fn draw_keys(kind: ClipKind) -> &'static [(f32, Pose)] {
         ClipKind::Rifle { heavy: false, .. } => &RIFLE,
         ClipKind::Shotgun => &SHOTGUN,
         ClipKind::BoltAction => &BOLT,
-        ClipKind::Rifle { heavy: true, .. } => &HEAVY,
+        ClipKind::Rifle { heavy: true, .. } | ClipKind::Launcher => &HEAVY,
     }
 }
 
@@ -1018,7 +1114,7 @@ pub fn inspect_length(kind: ClipKind) -> f32 {
         ClipKind::Pistol => PISTOL_INSPECT,
         ClipKind::Shotgun => 3.0,
         ClipKind::BoltAction => 3.4,
-        ClipKind::Rifle { heavy: true, .. } => RIFLE_INSPECT * HEAVY_INSPECT,
+        ClipKind::Rifle { heavy: true, .. } | ClipKind::Launcher => RIFLE_INSPECT * HEAVY_INSPECT,
         ClipKind::Rifle { .. } => RIFLE_INSPECT,
     }
 }
@@ -1051,6 +1147,15 @@ pub fn inspect_pose(t: f32, kind: ClipKind, anchors: &Anchors) -> ClipPose {
             let t = if heavy { t / HEAVY_INSPECT } else { t };
             rifle_inspect(t, anchors)
         }
+        // A heavy rifle's turns, with the rocket left in the tube and the
+        // hand on the tube instead of a magazine.
+        ClipKind::Launcher => ClipPose {
+            old_mag: Some(Vector3::ZERO),
+            hand: None,
+            handle: 0.0,
+            mag_release: 0.0,
+            ..rifle_inspect(t / HEAVY_INSPECT, anchors)
+        },
     };
     let length = inspect_length(kind);
     let hold = smoothstep((t - 0.3) / 0.3) * (1.0 - smoothstep((t - (length - 0.5)) / 0.3));
@@ -1078,6 +1183,7 @@ pub fn inspect_jolts(kind: ClipKind) -> Vec<(f32, Vector3, Vector3)> {
             vec![(1.0 * k, slap.0, slap.1), (2.45 * k, home.0, home.1)]
         }
         ClipKind::Pistol => vec![(0.86, home.0, home.1)],
+        ClipKind::Launcher => vec![(2.45 * HEAVY_INSPECT, home.0, home.1)],
         ClipKind::Shotgun => vec![
             (
                 0.8,
@@ -1325,7 +1431,9 @@ pub fn first_raise_present(kind: ClipKind, p: f32) -> Pose {
     let shown = keyed(&[(0.0, 0.0), (0.2, 1.0), (0.75, 1.0), (1.0, 0.0)], p);
     let pose = match kind {
         // Rolled left, toward the support hand reaching over the top.
-        ClipKind::Rifle { .. } => Pose::new(4.0, 8.0, -6.0, -0.015, 0.015, -0.03),
+        ClipKind::Rifle { .. } | ClipKind::Launcher => {
+            Pose::new(4.0, 8.0, -6.0, -0.015, 0.015, -0.03)
+        }
         // Turned in and up, the slide toward the support hand.
         ClipKind::Pistol => Pose::new(8.0, 10.0, 16.0, -0.03, 0.025, 0.02),
         // Rolled right, the bolt or the ejection port up toward the eye.

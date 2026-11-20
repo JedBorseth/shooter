@@ -54,6 +54,7 @@ from mathutils import Matrix, Vector
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import weapon_finish
 import weapon_m870
+import weapon_rl4
 import weapon_sg12
 import weapon_shapes
 import weapon_optics
@@ -231,6 +232,14 @@ WEAPONS = {
         "scene": "sg12",
         "model": "sg12",
         "spare": True,
+    },
+    # A shoulder-fired rocket launcher and its rocket, modelled by
+    # tools/weapon_rl4.py.
+    "rl4": {
+        "dir": "rl4",
+        "scene": "rl4",
+        "model": "rl4",
+        "spare": False,
     },
     "ak47": {
         "dir": "ak47",
@@ -1795,7 +1804,7 @@ def handle_point(obj, origin: Vector, side: str) -> Vector:
 
 
 # Weapons modelled by a tool instead of imported from a pack.
-MODELLED = {"m870": weapon_m870, "sg12": weapon_sg12}
+MODELLED = {"m870": weapon_m870, "sg12": weapon_sg12, "rl4": weapon_rl4}
 
 
 def militarize(source: Source, spec: dict):

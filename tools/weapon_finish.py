@@ -188,6 +188,19 @@ FINISHES = {
         "bump": 0.00001,
         "tint": 0.02,
     },
+    # A rocket's warhead: olive drab paint over steel, chipped on its rim
+    # and nose from the tube and the bag.
+    "warhead": {
+        "id": 11,
+        "color": (0.205, 0.215, 0.15),
+        "roughness": 0.62,
+        "metallic": 0.1,
+        "bare": ((0.45, 0.45, 0.43), 0.38, 1.0),
+        "wear": 0.6,
+        "grime": 0.5,
+        "bump": 0.00002,
+        "tint": 0.012,
+    },
     # Brass: a shotgun's bead. Polished by handling, never coated.
     "brass": {
         "id": 8,

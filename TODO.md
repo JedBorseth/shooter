@@ -52,7 +52,9 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
   - [x] KR-12 battle rifle (the SCAR-H's role: slower, harder-hitting), the AK-47 model with its walnut refinished as black polymer. Its own firing sound is held for listening; it fires with the AK-47's until then.
   - [x] SG-12 semi-automatic shotgun (the S12's role), box-fed, modelled by `tools/weapon_sg12.py` on the M870's receiver. Its own firing sound is held for listening; it fires with the M870's until then.
   - [x] DM-7 marksman rifle (the SVU-AS's role), the M14 with a riflescope and an olive glass-fibre stock. Its own firing sound is held for listening; it fires with the BR-3's until then.
-  - [ ] Launcher: a free-flight rocket that also brings down scorestreak aircraft (the RPG's role).
+  - [x] RL-4 launcher (the RPG's role): a free-flight rocket that goes off on what it meets, modelled by `tools/weapon_rl4.py`. Its own launch sound is held for listening; it fires with the M870's until then.
+  - [ ] Rockets bring down scorestreak aircraft (Black Ops 2: one hit downs any). Needs the UAV and Counter-UAV to fly a path over the map that both ends know.
+  - [ ] Bots carry and fire launchers.
 - [x] LMG (LSW-6: 75 rounds, slow aim and reload) and a burst-fire rifle (BR-3: `FireMode::Burst`, three rounds a pull, one burst kills up close).
 - [x] Attachments: red dot, ACOG, suppressor, grip, and extended magazine, as weapon variants (`Attachment::apply`), chosen in the loadout menu, with their parts on the first- and third-person models. The ACOG aims through its own eyepiece, with a lit chevron and the zoomed world inside it, instead of the sniper's overlay.
 - [x] Hold-breath sway for scoped weapons.

@@ -86,6 +86,8 @@ pub fn tactical_level(kind: equipment::Kind) -> u8 {
     match kind {
         equipment::Kind::Frag | equipment::Kind::Flash => 1,
         equipment::Kind::Smoke => 6,
+        // Not a class item: a launcher fires it.
+        equipment::Kind::Rocket => u8::MAX,
     }
 }
 
@@ -287,7 +289,7 @@ mod tests {
             assert_eq!(level(key), 1, "{key}");
         }
         let mut order: Vec<u8> = [
-            "ak47", "m870", "br3", "bp9", "lsw6", "m40", "cq10", "kr12", "sg12", "dm7",
+            "ak47", "m870", "br3", "bp9", "lsw6", "rl4", "m40", "cq10", "kr12", "sg12", "dm7",
         ]
         .iter()
         .map(|k| level(k))
