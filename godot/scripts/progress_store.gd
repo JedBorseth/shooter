@@ -9,6 +9,7 @@ extends RefCounted
 ## only the class rules, not unlocks.
 
 const PATH := "user://progress.cfg"
+const HEADLESS_PATH := "user://headless_progress.cfg"
 
 ## Tests and captures point the store at a scratch file with
 ## `use_file`, so they never touch the player's. Kept as engine metadata,
@@ -101,8 +102,12 @@ static func use_file(file: String) -> void:
 	reload()
 
 
+## The file in use: the one `use_file` set, or the player's. Headless runs
+## (tests, dedicated servers) default to a file of their own, so a test
+## that plays a match never adds to a player's.
 static func path() -> String:
-	return String(Engine.get_meta(PATH_META, PATH))
+	var fallback := PATH if DisplayServer.get_name() != "headless" else HEADLESS_PATH
+	return String(Engine.get_meta(PATH_META, fallback))
 
 
 static func save() -> void:
