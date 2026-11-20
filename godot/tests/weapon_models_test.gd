@@ -107,6 +107,16 @@ const WEAPONS := {
 		"MagRelease",
 		"OpticRail"
 	],
+	"bp9":
+	[
+		"Body",
+		"Magazine",
+		"Magazine/Rounds",
+		"MagazineSpare",
+		"ChargingHandle",
+		"Trigger",
+		"MagRelease"
+	],
 	"m40":
 	["Body", "Scope", "Bolt", "BoltStop", "Magazine", "Magazine/Rounds", "Safety", "Trigger"],
 }
@@ -118,6 +128,9 @@ const M4_VIEW := "res://scenes/weapons/m4_view.tscn"
 ## Weapons aimed with their own iron sights; the others carry a reflex sight
 ## (the scene's IronSights node) or, the M40, a scope on the sight line.
 const IRON_SIGHTS := ["m4", "m870", "lsw6", "ak47", "pistol"]
+## Weapons whose own sights are unusable, aimed with iron sights the scene's
+## IronSights node builds instead (its style).
+const BUILT_IRON_SIGHTS := {"bp9": "pistol"}
 ## How far behind the muzzle the front sight sits, at most (the M4A1's post
 ## stands on the gas block, well back from its flash hider).
 const FRONT_SIGHT_REACH := {"m4": 0.23}
@@ -214,6 +227,12 @@ func _check_view(key: String, view: Node3D) -> void:
 	if key in IRON_SIGHTS:
 		_check(
 			view.get_node_or_null("Sights") == null, "%s: aims with the model's own sights" % key
+		)
+	elif key in BUILT_IRON_SIGHTS:
+		var built := view.get_node_or_null("Sights")
+		_check(
+			built != null and built.get("style") == BUILT_IRON_SIGHTS[key],
+			"%s: builds %s sights" % [key, BUILT_IRON_SIGHTS[key]]
 		)
 	elif key != "m40":
 		var sights := view.get_node_or_null("Sights")

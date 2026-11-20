@@ -6,6 +6,7 @@
 [ext_resource type="PackedScene" path="res://scenes/weapons/ak47_view.tscn" id="5_ak47"]
 [ext_resource type="PackedScene" path="res://scenes/weapons/pdw9_view.tscn" id="6_pdw9"]
 [ext_resource type="PackedScene" path="res://scenes/weapons/cq10_view.tscn" id="20_cq10"]
+[ext_resource type="PackedScene" path="res://scenes/weapons/bp9_view.tscn" id="21_bp9"]
 [ext_resource type="PackedScene" path="res://scenes/weapons/m870_view.tscn" id="7_m870"]
 [ext_resource type="PackedScene" path="res://scenes/weapons/m40_view.tscn" id="8_m40"]
 [ext_resource type="PackedScene" path="res://scenes/characters/fp_arms.tscn" id="9_arms"]
@@ -107,6 +108,8 @@ near = 0.03
 [node name="PDW9" parent="Camera/Viewmodel" instance=ExtResource("6_pdw9")]
 
 [node name="CQ10" parent="Camera/Viewmodel" instance=ExtResource("20_cq10")]
+
+[node name="BP9" parent="Camera/Viewmodel" instance=ExtResource("21_bp9")]
 
 [node name="M870" parent="Camera/Viewmodel" instance=ExtResource("7_m870")]
 

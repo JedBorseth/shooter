@@ -17,7 +17,19 @@ extends SceneTree
 ## so a re-bake keeps them (check that their reason still holds).
 
 ## The weapon files to fit.
-const WEAPONS := ["m4", "ak47", "br3", "lsw6", "pdw9", "cq10", "m40", "m870", "m1911", "laser"]
+const WEAPONS := [
+	"m4",
+	"ak47",
+	"br3",
+	"lsw6",
+	"pdw9",
+	"cq10",
+	"m40",
+	"m870",
+	"m1911",
+	"bp9",
+	"laser",
+]
 ## How far (mm) a finger or a palm may go into its weapon. A glove gives a
 ## little; the palm is tested as a flat plate, which a fist wrapped round a
 ## narrow foregrip is not (those read about 5 mm in).
@@ -133,8 +145,8 @@ func _run() -> void:
 func _hold(player: FpsPlayer, arms: Node, key: String, query: String) -> Dictionary:
 	if not player.give_weapon(key):
 		return {}
-	# A pickup fills its slot; switch to it (the pistol is the second slot).
-	var slot := "weapon_2" if key.begins_with("m1911") else "weapon_1"
+	# A pickup fills its slot; switch to it (sidearms are the second slot).
+	var slot := "weapon_2" if _secondary(key) else "weapon_1"
 	Input.action_press(slot)
 	await _frames(2)
 	Input.action_release(slot)
@@ -155,6 +167,13 @@ func _hold(player: FpsPlayer, arms: Node, key: String, query: String) -> Diction
 	if settled < 10:
 		return {}
 	return arms.call(query)
+
+
+## Whether the weapon (`bp9`, or a variant such as `bp9+reddot`) is a
+## sidearm, from its file.
+func _secondary(key: String) -> bool:
+	var path := "res://data/weapons/%s.ron" % key.get_slice("+", 0)
+	return FileAccess.get_file_as_string(path).contains("slot: Secondary")
 
 
 ## Whether the weapon file lists the foregrip among its attachments.

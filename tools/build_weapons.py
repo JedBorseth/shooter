@@ -416,6 +416,46 @@ WEAPONS = {
         },
         "spare": True,
     },
+    "bp9": {
+        "dir": "bp9",
+        "scene": "bp9",
+        # A TEC-9 pattern: a ventilated barrel shroud, a 32-round magazine
+        # ahead of the trigger guard, and a scope mount on the receiver.
+        # The pack ships only its colour map; the rest is derived from it.
+        "fbx": CLASSIC / "Tec9/SKM_Tec9.fbx",
+        "textures": [CLASSIC / "Tec9/T_Tec9_C.png"],
+        # A TEC-9 is 317 mm long with its 127 mm barrel; 9x19 mm rounds.
+        "scale": 1.0,
+        "cartridge": 1,
+        # The pack's sights stand flush with the receiver's rear cap, which
+        # hides the post: the scene's IronSights node builds a notched rear
+        # blade over the back of the receiver and a post on the shroud's
+        # front, their line 6.4 mm over the receiver.
+        "sight": {"rear": (0.0, 0.1205), "front": (-0.2525, 0.1205)},
+        "parts": {
+            "MAGAZINE": "Magazine",
+            "BULLET": "Magazine/Rounds",
+            "SLIDE": "ChargingHandle",
+            "TRIGGER": "Trigger",
+            "MAG_RELEASE": "MagRelease",
+            None: "OpticRail",
+        },
+        "pivots": {"Trigger": "TRIGGER", "MagRelease": "MAG_RELEASE"},
+        # The scope mount's block would stand in the sight picture; a red
+        # dot brings its own riser.
+        "drop": ["OpticRail"],
+        "markers": {
+            "Muzzle": "FX_FIRE",
+            "Ejection": (-0.012, -0.1159, 0.0928),
+            "OpticMount": "ATTACH_SCOPE",
+            # The middle of the pistol grip, and the support hand round the
+            # magazine well.
+            "GripRight": (0.040, -0.030),
+            "GripLeft": (-0.123, -0.005),
+        },
+        "handle": "-x",
+        "spare": True,
+    },
     "br3": {
         "dir": "br3",
         "scene": "br3",
@@ -1404,8 +1444,49 @@ def pad_islands(pixels: np.ndarray, mask: np.ndarray, steps: int) -> np.ndarray:
     return out
 
 
+def derived_maps(color: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """A normal and an ORM map for a source that ships only its colour map
+    (the Classic Weapons Pack's Tec-9). Its colour carries the wear: bright,
+    grey texels are steel worn bare at the edges, the rest dark parkerised
+    steel and polymer. Height is the colour's luminance with its broad
+    shading taken out (a 33 px box blur), so stamped and cast detail stands
+    up from the surface; the normal is its slope. Worn steel is metallic
+    and smoother, the dark finish matte."""
+    lum = color @ np.array([0.2126, 0.7152, 0.0722], np.float32)
+    def box(img, r):
+        c = np.cumsum(np.cumsum(np.pad(img, r + 1, mode="edge"), 0), 1)
+        n = 2 * r + 1
+        return (c[n:, n:] - c[:-n, n:] - c[n:, :-n] + c[:-n, :-n])[: img.shape[0], : img.shape[1]] / (n * n)
+    height = lum - box(lum, 16)
+    height = box(height, 1)
+    strength = 6.0
+    dx = (np.roll(height, -1, 1) - np.roll(height, 1, 1)) * strength
+    dy = (np.roll(height, -1, 0) - np.roll(height, 1, 0)) * strength
+    normal = np.stack([-dx, dy, np.ones_like(dx)], axis=2)
+    normal /= np.linalg.norm(normal, axis=2, keepdims=True)
+    normal = normal * 0.5 + 0.5
+    grey = color.max(axis=2) - color.min(axis=2) < 0.08
+    worn = np.clip((lum - 0.22) / 0.2, 0.0, 1.0) * grey
+    metallic = 0.15 + 0.85 * worn
+    roughness = 0.7 - 0.3 * worn
+    occlusion = np.clip(0.75 + lum - box(lum, 16), 0.6, 1.0)
+    return normal.astype(np.float32), np.stack([occlusion, roughness, metallic], axis=2).astype(np.float32)
+
+
 def build_textures(key: str, spec: dict, out: Path, mask=None):
     textures = spec["textures"]
+    if isinstance(textures, list) and len(textures) == 1:
+        color = resize(load_pixels(textures[0], True), TEXTURE_SIZE)[..., :3]
+        normal, orm = derived_maps(color)
+        metal = orm[..., 2] > 0.5
+        orm[..., 1] = np.where(metal, np.maximum(orm[..., 1], METAL_ROUGHNESS_MIN), orm[..., 1])
+        color = np.where(metal[..., None], np.minimum(color, BARE_STEEL_MAX), color)
+        if mask is not None:
+            color, normal, orm = (pad_islands(m, mask, ISLAND_PADDING) for m in (color, normal, orm))
+        save_png(out / f"{key}_albedo.png", color, srgb=True)
+        save_png(out / f"{key}_normal.png", normal, srgb=False)
+        save_png(out / f"{key}_orm.png", orm, srgb=False)
+        return
     if isinstance(textures, dict):
         # Separate maps: colour, normal, metallic, roughness, and occlusion
         # if the pack has one.

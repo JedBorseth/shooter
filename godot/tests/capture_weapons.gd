@@ -16,6 +16,7 @@ const WEAPONS := [
 	"m870",
 	"m40",
 	"m1911",
+	"bp9",
 	"lsw6",
 	"br3",
 	"m4+reddot",
@@ -73,17 +74,19 @@ func _run() -> void:
 
 func _first_person(player: FpsPlayer, weapon: String) -> void:
 	var tag := "%s_%s" % [_map, weapon.replace("+", "_")]
-	if weapon == "m1911":
-		Input.action_press("weapon_2")
-		await _sixtieths(2)
-		Input.action_release("weapon_2")
-	else:
-		if not player.give_weapon(weapon):
-			push_error("capture_weapons: no weapon `%s`" % weapon)
-			return
-		Input.action_press("weapon_1")
-		await _sixtieths(2)
-		Input.action_release("weapon_1")
+	# Sidearms go in the second slot (the M1911 is already there).
+	var path := "res://data/weapons/%s.ron" % weapon.get_slice("+", 0)
+	var slot := (
+		"weapon_2"
+		if FileAccess.get_file_as_string(path).contains("slot: Secondary")
+		else "weapon_1"
+	)
+	if weapon != "m1911" and not player.give_weapon(weapon):
+		push_error("capture_weapons: no weapon `%s`" % weapon)
+		return
+	Input.action_press(slot)
+	await _sixtieths(2)
+	Input.action_release(slot)
 	player.refill_all_ammo()
 	await _sixtieths(80)
 	if player.weapon_key() != weapon:

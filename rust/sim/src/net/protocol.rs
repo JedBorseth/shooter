@@ -161,7 +161,9 @@ use crate::zombies::drinks::Drinks;
 // Version 66 added the Care Package (`StreakEvent::Crate*`).
 // Version 67 added the Airstrike: targets on `UseStreak`,
 // `StreakEvent::Airstrike` and `Strike`, and `KillCause::Streak`.
-pub const PROTOCOL_VERSION: u16 = 67;
+// Version 68 added the CQ-10 and the BP-9 (and their variants) to the
+// weapon table, which moves the index of every weapon after them.
+pub const PROTOCOL_VERSION: u16 = 68;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
