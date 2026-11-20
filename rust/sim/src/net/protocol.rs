@@ -203,7 +203,10 @@ use crate::zombies::drinks::Drinks;
 // whether a sale is on).
 // Version 85 added `PlayerView::prone_slope`: a prone body lies along the
 // ground, drawn and hit there.
-pub const PROTOCOL_VERSION: u16 = 85;
+// Version 86 added hound rounds: whether a zombie in snapshots is a hound
+// (`ZombieView::hound`), `ZombiesEvent::Round`'s `hounds`, and
+// `ZombiesEvent::HoundStrike`.
+pub const PROTOCOL_VERSION: u16 = 86;
 /// Longest account session token a hello carries, in bytes.
 pub const MAX_ACCOUNT_TOKEN_BYTES: usize = 2048;
 /// Longest reason a denial carries, in bytes.
@@ -905,6 +908,8 @@ pub struct ZombieView {
     /// Hits taken so far, wrapping at 8: an increase plays the flinch, and
     /// the death falls from the latest one.
     pub hits: u8,
+    /// A hound ([`crate::zombies::hounds`]), not a zombie.
+    pub hound: bool,
     /// The horizontal direction the latest hit travelled (1/256 turns), and
     /// where it landed and how hard ([`HitPart`]).
     pub hit_heading: u8,
@@ -949,12 +954,17 @@ pub enum ZombiesEvent {
     /// To everyone, whenever it changes and on joining: round `round` is
     /// counting down (`Break`, until server tick `starts_at`), being fought
     /// with `remaining` zombies still to kill, or was the last (`Over`).
+    /// `hounds`: it is a hound round ([`crate::zombies::hounds`]).
     Round {
         round: u32,
         phase: ZombiesPhase,
         starts_at: Option<Tick>,
         remaining: u32,
+        hounds: bool,
     },
+    /// To everyone: a strike lands at `at`, and a hound stands there
+    /// [`crate::zombies::hounds::STRIKE_SECONDS`] later.
+    HoundStrike { at: Vec3 },
     /// To a shooter: their shot (or knife, or grenade) number `shot` hit
     /// zombie `zombie`.
     Hit {
@@ -2467,6 +2477,7 @@ fn write_zombies_event(w: &mut BitWriter, event: &ZombiesEvent) {
             phase,
             starts_at,
             remaining,
+            hounds,
         } => {
             w.bits(0, ZOMBIES_TAG_BITS);
             w.varint(round);
@@ -2480,6 +2491,11 @@ fn write_zombies_event(w: &mut BitWriter, event: &ZombiesEvent) {
             );
             write_option_tick(w, starts_at);
             w.varint(remaining);
+            w.bool(hounds);
+        }
+        ZombiesEvent::HoundStrike { at } => {
+            w.bits(15, ZOMBIES_TAG_BITS);
+            write_vec3(w, at);
         }
         ZombiesEvent::Hit {
             zombie,
@@ -2630,6 +2646,10 @@ fn read_zombies_event(r: &mut BitReader) -> DecodeResult<ZombiesEvent> {
             },
             starts_at: read_option_tick(r)?,
             remaining: r.varint()?,
+            hounds: r.bool()?,
+        },
+        15 => ZombiesEvent::HoundStrike {
+            at: read_finite_vec3(r)?,
         },
         1 => ZombiesEvent::Hit {
             zombie: r.u8()?,
@@ -3883,8 +3903,9 @@ fn write_zombie(w: &mut impl BitSink, z: &ZombieView) {
     let flags = u32::from(z.alive)
         | u32::from(hit) << 1
         | u32::from(z.swings & counter) << 2
-        | u32::from(z.hits & counter) << (2 + ZOMBIE_COUNTER_BITS);
-    w.bits(flags, 2 + 2 * ZOMBIE_COUNTER_BITS);
+        | u32::from(z.hits & counter) << (2 + ZOMBIE_COUNTER_BITS)
+        | u32::from(z.hound) << (2 + 2 * ZOMBIE_COUNTER_BITS);
+    w.bits(flags, 3 + 2 * ZOMBIE_COUNTER_BITS);
     if hit {
         w.u8(z.hit_heading);
         w.u8(z.hit_part);
@@ -3898,8 +3919,9 @@ fn read_zombie(r: &mut impl BitSource, id: u8) -> DecodeResult<ZombieView> {
     }
     let yaw = r.u8()?;
     let counter = (1 << ZOMBIE_COUNTER_BITS) - 1;
-    let flags = r.bits(2 + 2 * ZOMBIE_COUNTER_BITS)?;
+    let flags = r.bits(3 + 2 * ZOMBIE_COUNTER_BITS)?;
     let alive = flags & 1 != 0;
+    let hound = flags >> (2 + 2 * ZOMBIE_COUNTER_BITS) & 1 != 0;
     let swings = ((flags >> 2) & counter) as u8;
     let hits = ((flags >> (2 + ZOMBIE_COUNTER_BITS)) & counter) as u8;
     let (hit_heading, hit_part) = if flags & 2 != 0 {
@@ -3916,6 +3938,7 @@ fn read_zombie(r: &mut impl BitSource, id: u8) -> DecodeResult<ZombieView> {
         hits,
         hit_heading,
         hit_part,
+        hound,
     })
 }
 
@@ -4654,6 +4677,7 @@ fn read_activity(r: &mut BitReader) -> DecodeResult<Activity> {
             None
         },
         hunch: 0.0,
+        hound: false,
         throw: if r.bool()? {
             Some(clock::from_u8(r.u8()?))
         } else {
@@ -6258,6 +6282,7 @@ mod tests {
                             weapon: Some(WeaponId(3)),
                             crouch: Some(clock::from_u8(clock::to_u8(0.5))),
                             hunch: 0.0,
+                            hound: false,
                             throw: Some(clock::from_u8(clock::to_u8(0.62))),
                             kneel: Some(clock::from_u8(clock::to_u8(0.4))),
                             slope: f32::from(PlayerView::slope_to_i8(-0.2)) * 0.5_f32.to_radians(),
@@ -6741,6 +6766,7 @@ mod tests {
         hit.hits = 3;
         hit.hit_heading = 200;
         hit.hit_part = 0x83;
+        hit.hound = true;
         let zombies = vec![ZombieView::new(1, Vec3::ZERO, 0.0, true), hit];
         let msg = ServerMessage::Snapshot(Snapshot {
             tick: 400,
@@ -6786,12 +6812,17 @@ mod tests {
                 phase: ZombiesPhase::Break,
                 starts_at: Some(9000),
                 remaining: 0,
+                hounds: false,
             }),
             GameEvent::Zombies(ZombiesEvent::Round {
                 round: 3,
                 phase: ZombiesPhase::Over,
                 starts_at: None,
                 remaining: 7,
+                hounds: true,
+            }),
+            GameEvent::Zombies(ZombiesEvent::HoundStrike {
+                at: Vec3::new(-4.0, 0.25, 12.5),
             }),
             GameEvent::Zombies(ZombiesEvent::Hit {
                 zombie: 250,

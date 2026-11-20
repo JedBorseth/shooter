@@ -17,7 +17,13 @@ use shooter_sim::zombies::mystery;
 
 use super::{horde, machines};
 use crate::convert::to_godot;
+use crate::hound::Hound;
 use crate::zombie::Zombie;
+
+/// The hound clients draw (`tools/build_hound.py`).
+const HOUND_SCENE: &str = "res://scenes/zombies/hound.tscn";
+/// The strike that brings a hound in (`scripts/zombies_hound_strike.gd`).
+const STRIKE_SCRIPT: &str = "res://scripts/zombies_hound_strike.gd";
 use crate::zombie_director::ZombieDirector;
 
 /// Seconds after the local player's own hit during which the server's
@@ -26,14 +32,51 @@ const PREDICTED_FLINCH_SECONDS: f32 = 0.4;
 
 struct Puppet {
     id: u8,
-    node: Gd<Zombie>,
+    node: PuppetNode,
     swings: u8,
     hits: u8,
+}
+
+/// What a puppet draws: a zombie or a hound.
+enum PuppetNode {
+    Zombie(Gd<Zombie>),
+    Hound(Gd<Hound>),
+}
+
+impl PuppetNode {
+    fn valid(&self) -> bool {
+        match self {
+            PuppetNode::Zombie(z) => z.is_instance_valid(),
+            PuppetNode::Hound(h) => h.is_instance_valid(),
+        }
+    }
+
+    fn alive(&self) -> bool {
+        match self {
+            PuppetNode::Zombie(z) => z.bind().is_alive(),
+            PuppetNode::Hound(h) => h.bind().is_alive(),
+        }
+    }
+
+    fn free(&mut self) {
+        match self {
+            PuppetNode::Zombie(z) => z.queue_free(),
+            PuppetNode::Hound(h) => h.queue_free(),
+        }
+    }
+
+    fn position(&self) -> Vector3 {
+        match self {
+            PuppetNode::Zombie(z) => z.get_global_position(),
+            PuppetNode::Hound(h) => h.get_global_position(),
+        }
+    }
 }
 
 pub struct HordeView {
     director: Gd<ZombieDirector>,
     scene: Gd<PackedScene>,
+    hound_scene: Option<Gd<PackedScene>>,
     windows: Vec<Gd<Node3D>>,
     doors: Vec<Gd<Node3D>>,
     /// The power switch and the drink machines, in the server's order.
@@ -87,6 +130,7 @@ impl HordeView {
             forge,
             director,
             scene,
+            hound_scene: godot::tools::try_load::<PackedScene>(HOUND_SCENE).ok(),
             windows,
             doors,
             power_switch,
@@ -108,20 +152,19 @@ impl HordeView {
     /// leave, and swings, hits, and deaths play.
     pub fn on_snapshot(&mut self, tick: Tick, zombies: Vec<ZombieView>) {
         self.puppets.retain_mut(|puppet| {
-            let keep = puppet.node.is_instance_valid() && zombies.iter().any(|z| z.id == puppet.id);
-            // A dead one lies on in the corpse yard and frees itself.
-            if !keep && puppet.node.is_instance_valid() && puppet.node.bind().is_alive() {
-                puppet.node.queue_free();
+            let keep = puppet.node.valid() && zombies.iter().any(|z| z.id == puppet.id);
+            // A dead one lies on in the corpse yard (or crumbles) and frees
+            // itself.
+            if !keep && puppet.node.valid() && puppet.node.alive() {
+                puppet.node.free();
             }
             keep
         });
         for view in &zombies {
             match self.puppets.iter_mut().find(|p| p.id == view.id) {
                 Some(puppet) => {
-                    if view.swings != puppet.swings {
-                        puppet.swings = view.swings;
-                        puppet.node.bind_mut().net_swing();
-                    }
+                    let swung = view.swings != puppet.swings;
+                    puppet.swings = view.swings;
                     let hit = view.hits != puppet.hits;
                     puppet.hits = view.hits;
                     let (x, z) = protocol::hit_direction(view.hit_heading);
@@ -129,26 +172,70 @@ impl HordeView {
                     let direction = Vector3::new(x, 0.0, z);
                     let part_index = part.part.map_or(-1, i64::from);
                     let force = f32::from(part.force);
-                    if !view.alive {
-                        puppet.node.bind_mut().net_die(direction, part_index, force);
-                    } else if hit
-                        && !puppet
-                            .node
-                            .bind_mut()
-                            .predicted_flinch(PREDICTED_FLINCH_SECONDS)
-                    {
-                        let at = puppet.node.get_global_position() + Vector3::UP * 1.2;
-                        puppet
-                            .node
-                            .bind_mut()
-                            .flinch(direction, false, at, part_index, force);
+                    let at = puppet.node.position() + Vector3::UP * 1.2;
+                    match &mut puppet.node {
+                        PuppetNode::Zombie(node) => {
+                            let mut node = node.bind_mut();
+                            if swung {
+                                node.net_swing();
+                            }
+                            if !view.alive {
+                                node.net_die(direction, part_index, force);
+                            } else if hit && !node.predicted_flinch(PREDICTED_FLINCH_SECONDS) {
+                                node.flinch(direction, false, at, part_index, force);
+                            }
+                        }
+                        PuppetNode::Hound(node) => {
+                            let mut node = node.bind_mut();
+                            if swung {
+                                node.net_swing();
+                            }
+                            if !view.alive {
+                                node.net_die();
+                            } else if hit && !node.predicted_flinch(PREDICTED_FLINCH_SECONDS) {
+                                node.flinch_along(direction);
+                            }
+                        }
                     }
                 }
+                None if view.alive && view.hound => self.spawn_hound(view),
                 None if view.alive => self.spawn(view),
                 None => {}
             }
         }
         self.history.record(tick, zombies);
+    }
+
+    fn spawn_hound(&mut self, view: &ZombieView) {
+        let Some(node) = self.hound_scene.as_ref().and_then(|s| s.instantiate()) else {
+            return;
+        };
+        let Ok(mut hound) = node.try_cast::<Hound>() else {
+            godot_error!("net client: {HOUND_SCENE} is not a Hound");
+            return;
+        };
+        hound.set_name(&format!("NetHound{}", view.id));
+        self.director.add_child(&hound);
+        hound
+            .bind_mut()
+            .net_apply(to_godot(view.position()), view.yaw(), Vector3::ZERO);
+        self.puppets.push(Puppet {
+            id: view.id,
+            node: PuppetNode::Hound(hound),
+            swings: view.swings,
+            hits: view.hits,
+        });
+    }
+
+    /// A strike lands at `at`: a hound is on its way.
+    fn strike(&mut self, at: Vector3) {
+        let Ok(script) = godot::tools::try_load::<godot::classes::Script>(STRIKE_SCRIPT) else {
+            return;
+        };
+        let mut node = Node3D::new_alloc();
+        node.set_script(&script);
+        self.director.add_child(&node);
+        node.set_global_position(at);
     }
 
     fn spawn(&mut self, view: &ZombieView) {
@@ -166,7 +253,7 @@ impl HordeView {
         zombie.set_global_position(to_godot(view.position()));
         self.puppets.push(Puppet {
             id: view.id,
-            node: zombie,
+            node: PuppetNode::Zombie(zombie),
             swings: view.swings,
             hits: view.hits,
         });
@@ -177,19 +264,20 @@ impl HordeView {
     pub fn draw(&mut self, render_tick: f64) {
         let tick = render_tick - self.lag;
         for puppet in &mut self.puppets {
-            if !puppet.node.is_instance_valid() || !puppet.node.bind().is_alive() {
+            if !puppet.node.valid() || !puppet.node.alive() {
                 continue;
             }
             let Some(sample) = self.history.sample(puppet.id, tick) else {
                 continue;
             };
             let walking = sample.walking();
-            puppet.node.bind_mut().net_apply(
-                to_godot(sample.position),
-                sample.yaw,
-                to_godot(sample.velocity),
-                walking,
-            );
+            let (feet, velocity) = (to_godot(sample.position), to_godot(sample.velocity));
+            match &mut puppet.node {
+                PuppetNode::Zombie(node) => node
+                    .bind_mut()
+                    .net_apply(feet, sample.yaw, velocity, walking),
+                PuppetNode::Hound(node) => node.bind_mut().net_apply(feet, sample.yaw, velocity),
+            }
         }
     }
 
@@ -209,6 +297,7 @@ impl HordeView {
                 phase,
                 starts_at,
                 remaining,
+                hounds,
             } => {
                 let phase = match phase {
                     ZombiesPhase::Break => 0,
@@ -218,7 +307,7 @@ impl HordeView {
                 let left = starts_at.map_or(0.0, seconds_until);
                 self.director
                     .bind_mut()
-                    .net_round(round, phase, left, remaining);
+                    .net_round(round, phase, left, remaining, hounds);
             }
             ZombiesEvent::Points { total, change } => {
                 self.director.bind_mut().net_points(total, change);
@@ -324,6 +413,7 @@ impl HordeView {
                         .show(phase, me == Some(by), by, weapon, seconds);
                 }
             }
+            ZombiesEvent::HoundStrike { at } => self.strike(to_godot(at)),
             // Last stand on the HUD is `NetClient`'s, which knows names.
             ZombiesEvent::Hit { .. } | ZombiesEvent::Revive { .. } => {}
         }

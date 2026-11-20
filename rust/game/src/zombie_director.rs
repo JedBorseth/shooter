@@ -90,6 +90,8 @@ pub struct ZombieDirector {
     net_double_points_ends: f64,
     /// Online: engine seconds the Fire Sale ends.
     net_fire_sale_ends: f64,
+    /// Online: this round is a hound round.
+    net_hounds: bool,
     /// Online: engine seconds this player bleeds out, while down.
     net_bleeds_out: Option<f64>,
     /// Online: a revive under way that involves this player: the other
@@ -171,7 +173,7 @@ impl INode3D for ZombieDirector {
         self.rounds = Some(rounds);
         for event in &events {
             match *event {
-                RoundEvent::RoundStarted { round } => {
+                RoundEvent::RoundStarted { round, .. } => {
                     // Two more frags a round after the first, up to four.
                     if round > 1
                         && let Some(mut player) = self.player()
@@ -195,6 +197,8 @@ impl INode3D for ZombieDirector {
                     let round = rounds.round;
                     self.spawn(round, index, health, gait.speed(&self.rules));
                 }
+                // The offline game has no hound rounds.
+                RoundEvent::SpawnHound { .. } => {}
             }
         }
         self.events = events;
@@ -302,6 +306,12 @@ impl ZombieDirector {
         self.double_points_left
     }
 
+    /// Whether this round is a hound round (online only).
+    #[func]
+    fn hound_round(&self) -> bool {
+        self.networked && self.net_hounds
+    }
+
     /// Seconds of Fire Sale left (online only).
     #[func]
     fn fire_sale_left(&self) -> f32 {
@@ -355,7 +365,15 @@ impl ZombieDirector {
     /// Online: the server's round. `phase` 0 is a break ending in
     /// `break_left` seconds, 1 the fight with `remaining` zombies left, 2 the
     /// end. Emits the round signals on the changes, as offline.
-    pub fn net_round(&mut self, round: u32, phase: u8, break_left: f64, remaining: u32) {
+    pub fn net_round(
+        &mut self,
+        round: u32,
+        phase: u8,
+        break_left: f64,
+        remaining: u32,
+        hounds: bool,
+    ) {
+        self.net_hounds = hounds;
         let phase = match phase {
             0 => Phase::Break,
             1 => Phase::Fighting,

@@ -119,7 +119,8 @@ func _process(delta: float) -> void:
 	_round_label.add_theme_color_override("font_color", BLOOD.lerp(Color.WHITE, flash))
 	_points_label.text = str(_director.points())
 	if _director.is_fighting():
-		_left_label.text = "ZOMBIES LEFT  %d" % _director.remaining()
+		var what := "HOUNDS" if _director.hound_round() else "ZOMBIES"
+		_left_label.text = "%s LEFT  %d" % [what, _director.remaining()]
 	elif not _director.is_over():
 		_left_label.text = "NEXT ROUND IN  %d" % ceili(_director.break_left())
 	_left_label.visible = not _director.is_over()
@@ -194,7 +195,9 @@ func _on_round_started(round_number: int) -> void:
 	_play_sting(ROUND_START_SOUND)
 	_round_label.text = _tally(round_number)
 	_round_flash = 2.0
-	_show_banner("ROUND %d" % round_number, 2.5)
+	# A hound round says so (Black Ops' dog round announcement).
+	var hounds: bool = _director.hound_round()
+	_show_banner("ROUND %d  HOUNDS" % round_number if hounds else "ROUND %d" % round_number, 2.5)
 
 
 func _play_sting(path: String) -> void:

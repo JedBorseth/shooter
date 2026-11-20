@@ -19,6 +19,7 @@ mod grenade_view;
 mod grenades;
 mod gunfire;
 mod hitbox_rig;
+mod hound;
 mod knife;
 mod ladder;
 mod mystery_crate;

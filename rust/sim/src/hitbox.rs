@@ -129,6 +129,9 @@ pub struct Activity {
     /// sides instead of holding a weapon, as the shamble is drawn. Zombies
     /// are not networked; snapshots never carry it.
     pub hunch: f32,
+    /// A Zombies hound ([`crate::zombies::hounds`]): four-legged hit zones
+    /// ([`hound_hitboxes`]) instead of a person's. Snapshots never carry it.
+    pub hound: bool,
     /// How far along a grenade throw the body is (`PlayerView::throw`), if
     /// throwing: the support arm follows the grenade ([`action`]).
     pub throw: Option<f32>,
@@ -489,6 +492,9 @@ fn solve_arm(root: Vec3, target: Vec3, pole: Vec3) -> (Vec3, Vec3) {
 /// The shapes for a pose, in world space.
 pub fn hitboxes(pose: &HitboxPose) -> [Hitbox; COUNT] {
     let activity = &pose.activity;
+    if activity.hound {
+        return hound_hitboxes(pose.feet, pose.yaw);
+    }
     let (right, forward) = gait::local_velocity(activity.velocity, pose.yaw);
     let speed = (right * right + forward * forward).sqrt();
     let base = base_pose(pose, speed);
@@ -720,6 +726,56 @@ pub fn hitboxes(pose: &HitboxPose) -> [Hitbox; COUNT] {
     ]
 }
 
+/// A hound's hit zones (the model in `tools/build_hound.py`: 0.72 m at
+/// the shoulder, 1.3 m nose to tail), in [`SHAPE_PARTS`]' order so hits
+/// and reactions read alike: the head and muzzle, the chest, the belly,
+/// the forelegs where a person's arms are, the hind legs where their legs
+/// are, and the haunches as the hips.
+pub fn hound_hitboxes(feet: Vec3, yaw: f32) -> [Hitbox; COUNT] {
+    let (s, c) = fmath::sin_cos(yaw);
+    // Body space: x right, y up, forward along -z.
+    let world = |x: f32, y: f32, forward: f32| {
+        let z = -forward;
+        feet + Vec3::new(x * c + z * s, y, -x * s + z * c)
+    };
+    let shape = |zone, a: (f32, f32, f32), b: (f32, f32, f32), radius| Hitbox {
+        zone,
+        a: world(a.0, a.1, a.2),
+        b: world(b.0, b.1, b.2),
+        radius,
+    };
+    let leg = |x: f32, forward: f32, zone, upper: f32, lower: f32| {
+        [
+            shape(zone, (x, 0.52, forward), (x, 0.27, forward), upper),
+            shape(zone, (x, 0.27, forward), (x, 0.04, forward), lower),
+        ]
+    };
+    let [fl_upper, fl_lower] = leg(-0.11, 0.36, HitZone::Arm, 0.065, 0.045);
+    let [fr_upper, fr_lower] = leg(0.11, 0.36, HitZone::Arm, 0.065, 0.045);
+    let [hl_upper, hl_lower] = leg(-0.12, -0.36, HitZone::Leg, 0.08, 0.05);
+    let [hr_upper, hr_lower] = leg(0.12, -0.36, HitZone::Leg, 0.08, 0.05);
+    [
+        shape(HitZone::Head, (0.0, 0.72, 0.6), (0.0, 0.72, 0.6), 0.13),
+        shape(HitZone::Head, (0.0, 0.66, 0.68), (0.0, 0.64, 0.86), 0.07),
+        shape(HitZone::Chest, (0.0, 0.56, 0.22), (0.0, 0.58, 0.46), 0.2),
+        shape(HitZone::Stomach, (0.0, 0.55, -0.18), (0.0, 0.55, 0.2), 0.17),
+        fl_upper,
+        fl_lower,
+        fr_upper,
+        fr_lower,
+        hl_upper,
+        hl_lower,
+        hr_upper,
+        hr_lower,
+        shape(
+            HitZone::Stomach,
+            (0.0, 0.56, -0.42),
+            (0.0, 0.56, -0.2),
+            0.17,
+        ),
+    ]
+}
+
 /// The nearest shape a ray hits.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RayHit {
@@ -834,6 +890,29 @@ mod tests {
     fn zone_at(pose: &HitboxPose, x: f32, y: f32) -> Option<HitZone> {
         let origin = pose.feet + Vec3::new(x, y, 10.0);
         raycast(&hitboxes(pose), origin, Vec3::NEG_Z, 100.0).map(|h| h.zone)
+    }
+
+    #[test]
+    fn a_hound_is_hit_where_it_stands_and_low() {
+        let feet = Vec3::new(2.0, 0.0, -3.0);
+        let pose = HitboxPose {
+            activity: Activity {
+                hound: true,
+                ..Activity::default()
+            },
+            ..HitboxPose::new(feet, 0.0, 0.0, Stance::Standing)
+        };
+        let boxes = hitboxes(&pose);
+        // Facing -Z: the head is ahead (more negative z) of the haunches.
+        assert!(boxes[0].a.z < boxes[12].a.z);
+        assert!(boxes.iter().all(|b| b.a.y < 1.0 && b.b.y < 1.0));
+        // A shot across at shoulder height hits the body, one over it misses.
+        let across = |y: f32| raycast(&boxes, Vec3::new(-3.0, y, -3.1), Vec3::X, 10.0);
+        assert!(across(0.55).is_some());
+        assert!(across(1.2).is_none());
+        // Straight at the face from in front: the head.
+        let face = raycast(&boxes, Vec3::new(2.0, 0.72, -10.0), Vec3::Z, 20.0).unwrap();
+        assert_eq!(face.zone, HitZone::Head);
     }
 
     #[test]

@@ -32,6 +32,8 @@ pub struct ZombieSample {
     pub velocity: Vec3,
     pub yaw: f32,
     pub alive: bool,
+    /// A hound, not a zombie.
+    pub hound: bool,
 }
 
 impl ZombieSample {
@@ -42,6 +44,7 @@ impl ZombieSample {
             velocity: Vec3::ZERO,
             yaw: view.yaw(),
             alive: view.alive,
+            hound: view.hound,
         }
     }
 
@@ -52,8 +55,13 @@ impl ZombieSample {
 
     /// Its hit zones, or `None` once dead.
     pub fn hitbox_pose(&self) -> Option<HitboxPose> {
-        self.alive
-            .then(|| chase::hitbox_pose(self.position, self.yaw, self.walking()))
+        self.alive.then(|| {
+            if self.hound {
+                crate::zombies::hounds::hitbox_pose(self.position, self.yaw)
+            } else {
+                chase::hitbox_pose(self.position, self.yaw, self.walking())
+            }
+        })
     }
 }
 
@@ -121,6 +129,7 @@ impl HordeHistory {
                     velocity: (b - a) / (span as f32 * TICK_DT),
                     yaw: lerp_angle(from.yaw(), to.yaw(), t),
                     alive: from.alive,
+                    hound: from.hound,
                 })
             }
             (Some((_, only)), None) | (None, Some((_, only))) => Some(ZombieSample::at(only)),
