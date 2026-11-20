@@ -12,7 +12,7 @@ func _initialize() -> void:
 func _run() -> void:
 	var net: Node = root.get_node("Net")
 	net.start_local_match({"map": "arena", "bots": 1})
-	var deadline := Time.get_ticks_msec() + 30000
+	var deadline := Time.get_ticks_msec() + 90000
 	while Time.get_ticks_msec() < deadline:
 		if net.client() != null and net.client().is_joined():
 			break

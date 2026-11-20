@@ -77,7 +77,7 @@ func _run() -> void:
 
 	# Signed out: turned away, with the reason.
 	net.join("127.0.0.1:%d" % PORT, {"map": "arena"})
-	var deadline := Time.get_ticks_msec() + 20000
+	var deadline := Time.get_ticks_msec() + 90000
 	var reason := ""
 	while reason == "" and Time.get_ticks_msec() < deadline:
 		var denied: NetClient = net.client()
@@ -100,7 +100,7 @@ func _run() -> void:
 	ProgressStore.on_added = func(_xp: int, _kills: Dictionary) -> void: _self_reports += 1
 
 	net.join("127.0.0.1:%d" % PORT, {"map": "arena", "name": "Ranked"})
-	deadline = Time.get_ticks_msec() + 20000
+	deadline = Time.get_ticks_msec() + 90000
 	while Time.get_ticks_msec() < deadline:
 		if net.client() != null and net.client().is_joined():
 			break

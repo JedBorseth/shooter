@@ -48,7 +48,7 @@ func _run() -> void:
 	await process_frame
 	menu = title.get_node_or_null("ZombiesMenu")
 	menu.play_requested.emit("GREEN RUN")
-	var deadline := Time.get_ticks_msec() + 45000
+	var deadline := Time.get_ticks_msec() + 90000
 	while Time.get_ticks_msec() < deadline:
 		if net.client() != null and net.client().is_joined():
 			break
@@ -75,7 +75,7 @@ func _run() -> void:
 	net.start_local_match(
 		{"mode": "zombies", "map": "zombies", "name": "Test Zombies", "shared": true}
 	)
-	deadline = Time.get_ticks_msec() + 45000
+	deadline = Time.get_ticks_msec() + 90000
 	while Time.get_ticks_msec() < deadline:
 		if net.client() != null and net.client().is_joined():
 			break

@@ -9,6 +9,8 @@ extends SceneTree
 ## Run from the repo root: godot --headless --path godot --script res://tests/net_test.gd
 
 const REMOTE_PLAYER_SCENE := preload("res://scenes/remote_player.tscn")
+## Seconds of wall time the server process gets to start and let us join.
+const JOIN_SECONDS := 90.0
 
 ## A port per process, so test runs in parallel on one machine don't meet.
 var _port := 30000 + OS.get_process_id() % 20000
@@ -30,6 +32,9 @@ func _run() -> void:
 			"--server",
 			"--port",
 			str(_port),
+			# No LAN answers: its port (ours + 1) could be another test's.
+			"--query-port",
+			"-1",
 			"--bots",
 			"1",
 		]
@@ -57,10 +62,9 @@ func _run() -> void:
 	main.add_child(client)
 
 	# The server process needs a few seconds to start; ENet retries the connect.
-	for i in 900:
-		if client.is_joined() and client.stats().snapshots > 30:
-			break
-		await physics_frame
+	await _wait_until(
+		func() -> bool: return client.is_joined() and client.stats().snapshots > 30, JOIN_SECONDS
+	)
 	_check(client.is_joined(), "client joins the server, status %s" % client.stats().status)
 	if not client.is_joined():
 		_finish()
@@ -81,9 +85,17 @@ func _run() -> void:
 	_check(client.remote_ids().size() == 1, "the bot appears, ids %s" % client.remote_ids())
 	if client.remote_ids().size() == 1:
 		var bot := client.remote_player(client.remote_ids()[0])
+		# Bots stand still for a while now and then: to throw a grenade, to
+		# peek from cover, or to turn on a sound. Give it a few seconds to
+		# move rather than a fixed half second.
 		var from := bot.feet()
-		await _ticks(60)
-		_check(bot.feet().distance_to(from) > 0.5, "the bot moves on this client")
+		var moved := 0.0
+		for i in 4 * Engine.physics_ticks_per_second:
+			moved = maxf(moved, bot.feet().distance_to(from))
+			if moved > 0.5:
+				break
+			await physics_frame
+		_check(moved > 0.5, "the bot moves on this client, %.2f m" % moved)
 		var soldier := bot.soldier()
 		_check(
 			soldier != null and soldier.weapon_node() != null,
@@ -498,6 +510,19 @@ func _stomach(bot: RemotePlayer) -> Vector3:
 		if shape[0] == "stomach":
 			return (shape[1] + shape[2]) * 0.5
 	return Vector3.INF
+
+
+## Waits up to `seconds` of wall time for `done`. The server is another
+## process on the wall clock, and on a loaded machine it takes a while to
+## load the map and bake its navigation, so these waits are long ceilings
+## that end as soon as `done` holds.
+func _wait_until(done: Callable, seconds: float) -> bool:
+	var until := Time.get_ticks_msec() + int(seconds * 1000.0)
+	while not done.call():
+		if Time.get_ticks_msec() >= until:
+			return false
+		await physics_frame
+	return true
 
 
 func _ticks(count: int) -> void:

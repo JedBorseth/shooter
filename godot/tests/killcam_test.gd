@@ -11,8 +11,12 @@ extends SceneTree
 ## Run from the repo root: godot --headless --path godot --script res://tests/killcam_test.gd
 
 const REMOTE_PLAYER_SCENE := preload("res://scenes/remote_player.tscn")
+## Seconds of wall time the server process gets to start and let us join.
+const JOIN_SECONDS := 90.0
 ## Seconds to wait for the bot to kill us.
 const DEATH_WAIT := 120
+## Seconds unfound before we draw the bot with shots (`_wait_for_death`).
+const LURE_AFTER := 8
 
 ## A port per process, so test runs in parallel on one machine don't meet.
 var _port := 30000 + OS.get_process_id() % 20000
@@ -76,18 +80,16 @@ func _run() -> void:
 	hud.set("player", player)
 	main.add_child(hud)
 
-	for i in 900:
-		if client.is_joined() and client.stats().snapshots > 30:
-			break
-		await physics_frame
+	await _wait_until(
+		func() -> bool: return client.is_joined() and client.stats().snapshots > 30, JOIN_SECONDS
+	)
 	_check(client.is_joined(), "client joins the server")
 	if not client.is_joined():
 		_finish()
 		return
-	for i in 1200:
-		if String(client.match_info().get("phase", "")) == "playing":
-			break
-		await physics_frame
+	await _wait_until(
+		func() -> bool: return String(client.match_info().get("phase", "")) == "playing", 30.0
+	)
 	_check(String(client.match_info().get("phase", "")) == "playing", "the match starts")
 
 	if snd:
@@ -334,18 +336,47 @@ func _replay_guns() -> int:
 
 
 ## Faces the bot until it kills us; false if it does not in DEATH_WAIT.
+## A bot that has not found us in LURE_AFTER seconds may be roaming the far
+## side of the map, so we fire a round into the sky every couple of seconds:
+## an unsuppressed shot shows on the bot's minimap and it comes to look
+## (Black Ops 2's `bot_update_patrol`), rather than the test waiting on
+## where the bot happens to wander.
 func _wait_for_death(player: FpsPlayer, client: NetClient) -> bool:
 	var ids := client.remote_ids()
-	for i in DEATH_WAIT * Engine.physics_ticks_per_second:
+	var rate := Engine.physics_ticks_per_second
+	var died := false
+	for i in DEATH_WAIT * rate:
 		if not player.is_alive():
-			return true
+			died = true
+			break
+		var luring := i >= LURE_AFTER * rate
 		if ids.size() > 0:
 			var bot := client.remote_player(ids[0])
 			if bot != null:
 				var to := bot.feet() - player.global_position
-				player.set_look(atan2(-to.x, -to.z), 0.0)
+				player.set_look(atan2(-to.x, -to.z), 1.2 if luring else 0.0)
+		var firing := luring and i % (2 * rate) < 2
+		if firing != Input.is_action_pressed("fire"):
+			if firing:
+				Input.action_press("fire")
+			else:
+				Input.action_release("fire")
 		await physics_frame
-	return false
+	Input.action_release("fire")
+	return died
+
+
+## Waits up to `seconds` of wall time for `done`. The server is another
+## process on the wall clock, and on a loaded machine it takes a while to
+## load the map and bake its navigation, so these waits are long ceilings
+## that end as soon as `done` holds.
+func _wait_until(done: Callable, seconds: float) -> bool:
+	var until := Time.get_ticks_msec() + int(seconds * 1000.0)
+	while not done.call():
+		if Time.get_ticks_msec() >= until:
+			return false
+		await physics_frame
+	return true
 
 
 func _ticks(count: int) -> void:
