@@ -269,6 +269,14 @@ mod tests {
             }
         }
         assert!(at("br3", 25.0) > 0.3);
+        // The CQ-10 out-kills the PDW-9 to about 12 m and loses from 13 to
+        // 20 m; past that its kick, not its damage, loses it the fight.
+        for d in [5.0, 10.0] {
+            assert!(at("cq10", d) < at("pdw9", d), "{d} m");
+        }
+        for d in [15.0, 20.0] {
+            assert!(at("cq10", d) > at("pdw9", d), "{d} m");
+        }
         // The LMG kills in four to about 49 m, five beyond.
         assert_eq!(at("lsw6", 5.0), at("lsw6", 45.0));
         assert!(at("lsw6", 55.0) > at("lsw6", 45.0));

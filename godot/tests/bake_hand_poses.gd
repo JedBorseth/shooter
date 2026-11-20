@@ -17,7 +17,7 @@ extends SceneTree
 ## so a re-bake keeps them (check that their reason still holds).
 
 ## The weapon files to fit.
-const WEAPONS := ["m4", "ak47", "br3", "lsw6", "pdw9", "m40", "m870", "m1911", "laser"]
+const WEAPONS := ["m4", "ak47", "br3", "lsw6", "pdw9", "cq10", "m40", "m870", "m1911", "laser"]
 ## How far (mm) a finger or a palm may go into its weapon. A glove gives a
 ## little; the palm is tested as a flat plate, which a fist wrapped round a
 ## narrow foregrip is not (those read about 5 mm in).

@@ -202,7 +202,7 @@ mod tests {
         for key in ["m4", "pdw9", "m1911"] {
             assert_eq!(level(key), 1, "{key}");
         }
-        let mut order: Vec<u8> = ["ak47", "m870", "br3", "lsw6", "m40"]
+        let mut order: Vec<u8> = ["ak47", "m870", "br3", "lsw6", "m40", "cq10"]
             .iter()
             .map(|k| level(k))
             .collect();

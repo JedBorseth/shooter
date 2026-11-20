@@ -166,6 +166,11 @@ pub struct WeaponFoley {
     /// Weapon key, such as `m4`: whose recordings to play.
     #[export]
     pub(crate) weapon: GString,
+    /// The weapon whose recordings stand in for any this one lacks (the
+    /// view's `sound_from`: a new weapon borrows a close one's handling until
+    /// it has its own).
+    #[export]
+    pub(crate) lender: GString,
     voices: Vec<Gd<AudioStreamPlayer>>,
     next_voice: usize,
     sounds: HashMap<String, Option<Gd<AudioStreamRandomizer>>>,
@@ -266,9 +271,16 @@ impl WeaponFoley {
 }
 
 impl WeaponFoley {
+    /// The weapon's own recordings of `event`, or, for a weapon that has
+    /// none yet, those of the weapon it borrows its sound from.
     fn weapon_sound(&mut self, event: &str) -> Option<Gd<AudioStreamRandomizer>> {
         let weapon = self.weapon.to_string();
-        self.sound(&path(&weapon, event, false))
+        let lender = self.lender.to_string();
+        self.sound(&path(&weapon, event, false)).or_else(|| {
+            (!lender.is_empty())
+                .then(|| self.sound(&path(&lender, event, false)))
+                .flatten()
+        })
     }
 
     fn sound(&mut self, base: &str) -> Option<Gd<AudioStreamRandomizer>> {

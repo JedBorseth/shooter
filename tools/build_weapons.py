@@ -379,6 +379,43 @@ WEAPONS = {
         "handle": "-x",
         "spare": True,
     },
+    "cq10": {
+        "dir": "cq10",
+        "scene": "cq10",
+        # A MAC-11 pattern in a rail cage, with a wire stock and a 32-round
+        # magazine; scaled so its rounds are 9x19 mm.
+        "fbx": CLASSIC / "Mac10/SKM_Mac10.fbx",
+        "textures": [CLASSIC / f"Mac10/T_Mac10_{s}" for s in ("C.png", "N.png", "RMAO.PNG")],
+        "normal_dx": True,
+        "scale": 1.08,
+        "cartridge": 1,
+        # A reflex sight on the cage's top rail (the scene's IronSights
+        # node): the sight line runs 18 mm over the rail, level, from over
+        # the optic mount.
+        "sight": {"rear": (-0.0324, 0.1200), "front": (-0.25, 0.1200)},
+        "parts": {
+            "MAGAZINE": "Magazine",
+            "BULLET": "Magazine/Rounds",
+            "SLIDE": "ChargingHandle",
+            "SELECTOR": "Selector",
+            "MAG_RELEASE": "MagRelease",
+            None: "OpticRail",
+        },
+        "pivots": {"Selector": "SELECTOR", "MagRelease": "MAG_RELEASE"},
+        "markers": {
+            "Muzzle": "FX_FIRE",
+            # The port on the right side, over the magazine.
+            "Ejection": (-0.013, -0.005, 0.0665),
+            "OpticMount": "ATTACH_SCOPE",
+            # The middle of the pistol grip (the magazine well).
+            "GripRight": (0.004, -0.012),
+            # The support hand under the cage's front rail.
+            "GripLeft": (-0.118, 0.028),
+            # The cocking knob on top, left of the rail's window.
+            "ChargingHandle": (-0.013, 0.09),
+        },
+        "spare": True,
+    },
     "br3": {
         "dir": "br3",
         "scene": "br3",

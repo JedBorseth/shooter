@@ -96,6 +96,17 @@ const WEAPONS := {
 		"MagRelease",
 		"OpticRail"
 	],
+	"cq10":
+	[
+		"Body",
+		"Magazine",
+		"Magazine/Rounds",
+		"MagazineSpare",
+		"ChargingHandle",
+		"Selector",
+		"MagRelease",
+		"OpticRail"
+	],
 	"m40":
 	["Body", "Scope", "Bolt", "BoltStop", "Magazine", "Magazine/Rounds", "Safety", "Trigger"],
 }

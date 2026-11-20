@@ -69,7 +69,7 @@ use godot::prelude::*;
 use shooter_sim::bot::Skill;
 use shooter_sim::care_package;
 use shooter_sim::chat::{self, ChatLimiter};
-use shooter_sim::class::{Class, DefaultClass};
+use shooter_sim::class::{self, Class};
 use shooter_sim::ctf::{self, FlagEvent, FlagPlayer, FlagRules, FlagState, Flags};
 use shooter_sim::domination::{self, BotGoal, DominationRules, DominationState, FlagPoint};
 use shooter_sim::equipment;
@@ -2540,8 +2540,7 @@ impl NetServer {
         if let Some(brain) = &mut avatar.brain {
             // Bots pick a default class every life, as Call of Duty's
             // bots do.
-            let pick = rng::hash(u32::from(avatar.id), tick) as usize % DefaultClass::ALL.len();
-            avatar.class = DefaultClass::ALL[pick].class();
+            avatar.class = class::bot_class(rng::hash(u32::from(avatar.id), tick));
             // And one perk of each tier.
             let (id, mut roll) = (u32::from(avatar.id), 0);
             avatar.class.perks = Perks::one_per_tier(|n| {
