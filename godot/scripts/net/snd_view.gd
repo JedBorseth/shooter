@@ -22,6 +22,7 @@ extends Node3D
 
 const MatchBanner := preload("res://scripts/net/match_banner.gd")
 const FONT_BOLD := preload("res://assets/fonts/ChakraPetch-SemiBold.ttf")
+const Paint := preload("res://scripts/ui/hud_paint.gd")
 ## Built in Blender (tools/gear_models.py `charge`), origin at its underside.
 const CHARGE_MODEL := preload("res://assets/models/charge/charge.gltf")
 const ALLY := Color("7cc4ff")
@@ -326,22 +327,9 @@ func _draw_use(info: Dictionary, alive: bool) -> void:
 	if alive and spot != "":
 		var key := Settings.prompt_key(&"interact")
 		var text := "Hold [%s] to %s the charge" % [key, "defuse" if spot == "defuse" else "plant"]
-		var font_size := int(16 * ui)
-		var at := centre + Vector2(0, 80) * ui
-		var width := FONT_BOLD.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
-		var pos := at + Vector2(-width / 2.0, 0)
-		_overlay.draw_string_outline(
-			FONT_BOLD,
-			pos,
-			text,
-			HORIZONTAL_ALIGNMENT_LEFT,
-			-1,
-			font_size,
-			int(5 * ui),
-			Color(0, 0, 0, 0.75)
-		)
-		_overlay.draw_string(
-			FONT_BOLD, pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, NEUTRAL
+		# Where and how every interact prompt draws (`hud_centre.gd`).
+		Paint.prompt(
+			_overlay, {"text": text, "colour": NEUTRAL}, centre.x, centre.y + 104.0 * ui, 19
 		)
 		return
 	# A teammate at it: a smaller bar with their name.

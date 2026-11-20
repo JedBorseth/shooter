@@ -642,7 +642,7 @@ func _gamepad(main: Node, player: FpsPlayer) -> void:
 	player.set_look(atan2(-to.x, -to.z), atan2(to.y, Vector2(to.x, to.z).length()))
 	await _sixtieths(3)
 	_check(
-		player.interact_prompt() == "[X] Take PDW-9",
+		player.interact_prompt() == "[pad:x] Take PDW-9",
 		"gamepad prompts name the button, got '%s'" % player.interact_prompt()
 	)
 	await _tap("reload")

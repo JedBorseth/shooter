@@ -11,6 +11,8 @@ signal closed
 
 const GraphicsQuality := preload("res://scripts/graphics.gd")
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
+const Glyphs := preload("res://scripts/ui/glyphs.gd")
+const FooterKeys := preload("res://scripts/ui/footer_keys.gd")
 
 const PAUSE_ACTION := &"pause"
 const CLICK_SOUND := "res://assets/audio/ui/click.ogg"
@@ -55,6 +57,11 @@ const DESCRIPTIONS := {
 		+ " Mouse aiming never gets aim assist."
 	),
 	&"rumble": "Controller vibration for shots, hits, and explosions.",
+	&"button_prompts":
+	(
+		"Which controller's buttons prompts show. Auto matches the connected controller;"
+		+ " keyboard keys and mouse buttons always show as they are."
+	),
 	&"fov":
 	(
 		"How much of the world you see across the screen. Wider shows more at the edges"
@@ -128,7 +135,8 @@ var _value_formats: Dictionary[StringName, Callable] = {}
 var _toggles: Dictionary[StringName, CheckButton] = {}
 var _fps_option: OptionButton
 var _quality_option: OptionButton
-var _mix_option: OptionButton
+## Option buttons for int settings picked from a list, by setting.
+var _choices: Dictionary[StringName, OptionButton] = {}
 var _scale_option: OptionButton
 var _click: AudioStreamPlayer
 var _hover: AudioStreamPlayer
@@ -154,6 +162,11 @@ var _owns_pause := false
 func _ready() -> void:
 	_player = _find_player()
 	_build_settings()
+	var footer_keys := FooterKeys.new()
+	footer_keys.name = "FooterKeys"
+	add_child(footer_keys)
+	footer_keys.bind($Root/Margin/Layout/Footer/SelectKey, &"ui_accept")
+	footer_keys.bind($Root/Margin/Layout/Footer/BackKey, &"ui_cancel")
 	_setup_sounds()
 
 	_resume_button.pressed.connect(close)
@@ -195,9 +208,9 @@ func _open_input(event: InputEvent, pause: bool) -> void:
 		return
 	if not (pause or event.is_action_pressed(&"ui_cancel")):
 		return
-	for option: OptionButton in [
-		_input_option, _fps_option, _quality_option, _scale_option, _mix_option
-	]:
+	for option: OptionButton in (
+		[_input_option, _fps_option, _quality_option, _scale_option] + _choices.values()
+	):
 		if option.get_popup().visible:
 			return  # Let the dropdown close itself.
 	get_viewport().set_input_as_handled()
@@ -425,6 +438,7 @@ func _build_settings() -> void:
 	_add_toggle(controls, &"invert_stick_y", "Invert Y axis")
 	_add_toggle(controls, &"aim_assist", "Aim assist")
 	_add_toggle(controls, &"rumble", "Vibration")
+	_add_choice(controls, &"button_prompts", "Button prompts", Settings.BUTTON_PROMPTS)
 
 	var keybinds := _add_section("Keybinds")
 	_binding_hint = Label.new()
@@ -454,7 +468,7 @@ func _build_settings() -> void:
 	_add_slider(audio, &"ambience_volume", "Ambience", 0.01, percent)
 	_add_slider(audio, &"ui_volume", "Interface", 0.01, percent)
 	_add_heading(audio, "Output")
-	_add_mix_option(audio)
+	_add_choice(audio, &"audio_mix", "Audio mix", Settings.AUDIO_MIXES)
 
 	var general := _add_section("General")
 	_add_heading(general, "Profile")
@@ -613,7 +627,7 @@ func _gamepad_label(action: StringName) -> String:
 				JOY_AXIS_TRIGGER_RIGHT:
 					return "RT"
 	var label := Settings.key_label(action, true)
-	return "—" if label == "?" else label
+	return "—" if label == "?" else Glyphs.plain(label)
 
 
 func _start_capture(action: StringName) -> void:
@@ -720,16 +734,18 @@ func _add_fps_option(section: VBoxContainer) -> void:
 	_add_row(section, "Frame rate limit", _fps_option, null, &"max_fps")
 
 
-func _add_mix_option(section: VBoxContainer) -> void:
-	_mix_option = OptionButton.new()
-	_mix_option.custom_minimum_size = Vector2(220, 34)
-	_mix_option.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	for i in Settings.AUDIO_MIXES.size():
-		_mix_option.add_item(Settings.AUDIO_MIXES[i], i)
-	_mix_option.item_selected.connect(
-		func(index: int) -> void: Settings.set_setting(&"audio_mix", _mix_option.get_item_id(index))
+## A dropdown for an int setting whose values are indexes into `names`.
+func _add_choice(section: VBoxContainer, key: StringName, label: String, names: Array) -> void:
+	var option := OptionButton.new()
+	option.custom_minimum_size = Vector2(220, 34)
+	option.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	for i in names.size():
+		option.add_item(names[i], i)
+	option.item_selected.connect(
+		func(index: int) -> void: Settings.set_setting(key, option.get_item_id(index))
 	)
-	_add_row(section, "Audio mix", _mix_option, null, &"audio_mix")
+	_choices[key] = option
+	_add_row(section, label, option, null, key)
 
 
 func _add_graphics_options(section: VBoxContainer) -> void:
@@ -820,7 +836,8 @@ func _sync_controls() -> void:
 	_show_controller_status()
 	_fps_option.select(_fps_option.get_item_index(Settings.max_fps))
 	_quality_option.select(_quality_option.get_item_index(Settings.graphics_quality))
-	_mix_option.select(_mix_option.get_item_index(Settings.audio_mix))
+	for key: StringName in _choices:
+		_choices[key].select(_choices[key].get_item_index(Settings.get(key)))
 	_scale_option.select(_closest_scale(Settings.render_scale))
 
 

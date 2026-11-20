@@ -80,7 +80,12 @@ func _on_joy_changed(device: int, connected: bool) -> void:
 
 
 ## Play with the locked-out device (in game, not in menus) gets a reminder.
+## Every deliberate press also tells `Settings` which device was used last,
+## so menu hints follow it.
 func _input(event: InputEvent) -> void:
+	if settings != null and _deliberate(event):
+		var pad: bool = settings.is_controller_event(event)
+		settings.note_device(pad, event.device if pad else -1)
 	if _locked_cooldown > 0.0 or Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		return
 	if settings == null or not _deliberate(event) or _shared(event):

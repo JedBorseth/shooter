@@ -10,6 +10,7 @@ signal back_requested
 
 enum Tab { INTERNET, LAN, FAVORITES }
 
+const Glyphs := preload("res://scripts/ui/glyphs.gd")
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const ServerListScript := preload("res://scripts/ui/server_list.gd")
 ## Kept as a path so opening the browser does not load the arena.
@@ -61,6 +62,8 @@ func _ready() -> void:
 	for button: Button in [%Back, _refresh, _connect, _favorite, _join] + _tabs:
 		button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	%Eyebrow.text = "MULTIPLAYER  /  BUILD %s" % GameBuild.build()
+	Settings.prompts_changed.connect(_update_hint)
+	_update_hint()
 
 	%Back.pressed.connect(_back)
 	_refresh.pressed.connect(_refresh_tab)
@@ -78,6 +81,25 @@ func _ready() -> void:
 		_browser.add_favorite(address)
 	_set_tab(Tab.INTERNET)
 	_list.grab_focus.call_deferred()
+
+
+## The key hints along the bottom, for the device used last.
+func _update_hint() -> void:
+	if Settings.menu_controller:
+		%Hint.text = (
+			(
+				"%s  JOIN      %s %s  TABS      %s  BACK"
+				% [
+					Glyphs.plain("pad:a"),
+					Glyphs.plain("pad:lb"),
+					Glyphs.plain("pad:rb"),
+					Glyphs.plain("pad:b"),
+				]
+			)
+			. to_upper()
+		)
+	else:
+		%Hint.text = "DOUBLE-CLICK OR ENTER TO JOIN      F5  REFRESH      ESC  BACK"
 
 
 ## F5 refreshes, LB and RB switch tabs, and Esc or B goes back.

@@ -135,9 +135,7 @@ func _draw_legend() -> void:
 	var widths: Array[float] = [0.0]
 	for pair: Array in legend:
 		var key: String = pair[0]
-		var cap_w := maxf(
-			cap_h, Paint.text_width(Paint.DISPLAY, key, int(cap_h * 0.62)) + cap_h * 0.55
-		)
+		var cap_w := Paint.cap_width(key, cap_h)
 		var width := cap_w + 7.0 + Paint.text_width(Paint.LABEL_LIGHT, pair[1], text_size)
 		var row_w: float = widths[-1]
 		if row_w > 0.0 and row_w + item_gap + width > LEGEND_WIDTH:
