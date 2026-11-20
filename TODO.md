@@ -452,6 +452,7 @@ Black Ops 2's Custom Games, CODcaster-style spectating, and a private match lobb
   - [x] Camos on the weapons (first person, third person, killcam), picked in Create-a-Class; cosmetics (prestige, card, camos) on the wire, checked by ranked servers.
   - [x] Prestige: 10 and Master, with emblems and permanent unlock tokens; the icon on the scoreboard and in the kill feed.
   - [x] Calling cards, picked on the career screen, on the scoreboard and the killcam card.
+  - [x] Mid-match challenge popups with a sting of their own, from a real glockenspiel recording (`tools/build_ui_audio.py`).
 - [x] Gun Game: free-for-all up a ladder of the eight weapons, with a local match button on the title screen (`rust/sim/src/gun_game.rs`).
 - [x] Capture the Flag: flags, takes, drops, returns, and captures on the server (`rust/sim/src/ctf.rs`), bots that attack, defend, return, and carry, flag markers and calls on the client (`godot/scripts/net/ctf_view.gd`), and a title screen button.
 - [ ] More modes: Domination, the Black Ops 2 way ([docs/domination.md](docs/domination.md)). (Free-for-all is done: `--mode ffa`, on Gun Game's teamless path. Search and Destroy has its own section.)

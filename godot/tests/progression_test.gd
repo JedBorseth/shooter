@@ -130,6 +130,11 @@ func _check_popup() -> void:
 	root.add_child(popup)
 	popup.announce(Progression.challenge("w.m4.0"))
 	popup.announce(Progression.challenge("career.kills.0"))
+	# The plate goes up in the popup's next `_process`.
+	await process_frame
+	await process_frame
+	var sting := popup.get_node_or_null(^"Sting") as AudioStreamPlayer
+	_check(sting != null and sting.playing, "a plate comes up with its sting")
 	await process_frame
 	var names: PackedStringArray = popup.names()
 	_check(names.size() == 2 and names[0] == "Headshots I", "challenges queue in order: %s" % names)

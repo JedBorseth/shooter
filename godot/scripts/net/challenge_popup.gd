@@ -4,6 +4,9 @@ extends Control
 ## screen naming the challenge, its XP, and what it awarded (a camo or a
 ## calling card). Queued, one at a time. Fed by `match_xp.gd` from the stats
 ## the server sends (`NetClient.stats_changed`); docs/progression.md.
+## Each plate comes up with a short sting (`ui/challenge`: three quick
+## glockenspiel notes from a real recording, tools/build_ui_audio.py), 4 dB
+## under a medal so it never covers the fight.
 
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
@@ -14,15 +17,22 @@ const FADE := 0.25
 ## Plates waiting beyond this are dropped, oldest first, so a match that
 ## finishes many at once does not lag behind.
 const MAX_WAITING := 4
+const STING := preload("res://assets/audio/ui/challenge_1.ogg")
 
 var _queue: Array[Dictionary] = []
 var _current := {}
 var _age := 0.0
+var _sting: AudioStreamPlayer
 
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_sting = AudioStreamPlayer.new()
+	_sting.name = "Sting"
+	_sting.stream = STING
+	_sting.bus = &"UI"
+	add_child(_sting)
 
 
 ## Announces a challenge (as `Progression.challenge` gives it).
@@ -46,6 +56,7 @@ func _process(delta: float) -> void:
 			return
 		_current = _queue.pop_front()
 		_age = 0.0
+		_sting.play()
 	_age += delta
 	if _age >= SHOW_SECONDS:
 		_current = {}
