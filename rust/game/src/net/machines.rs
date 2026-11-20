@@ -24,6 +24,7 @@ use shooter_sim::net::Tick;
 use shooter_sim::net::protocol::{CratePhase, ForgePhase, ZombiesEvent};
 use shooter_sim::rng;
 use shooter_sim::weapon::{CombatState, WeaponId};
+use shooter_sim::zombies::alt_ammo::AltAmmo;
 use shooter_sim::zombies::drinks::{self, Drink};
 use shooter_sim::zombies::{forge, mystery};
 
@@ -605,6 +606,8 @@ enum ForgeState {
 pub struct Forge {
     node: Gd<Node3D>,
     state: ForgeState,
+    /// A re-pack: the alternate ammo the weapon comes out with.
+    repack: Option<AltAmmo>,
 }
 
 impl Forge {
@@ -612,6 +615,7 @@ impl Forge {
         Some(Self {
             node: map.try_get_node_as::<Node3D>("Forge")?,
             state: ForgeState::Idle,
+            repack: None,
         })
     }
 
@@ -639,8 +643,10 @@ impl Forge {
         }
     }
 
-    /// Starts upgrading into `weapon` for player `by`.
-    pub fn start(&mut self, by: u8, weapon: WeaponId) {
+    /// Starts upgrading into `weapon` for player `by`, or re-packing it
+    /// with alternate ammo `repack`.
+    pub fn start(&mut self, by: u8, weapon: WeaponId, repack: Option<AltAmmo>) {
+        self.repack = repack;
         self.state = ForgeState::Working {
             by,
             weapon,
@@ -658,10 +664,14 @@ impl Forge {
         }
     }
 
-    pub fn taken(&mut self) {
-        if matches!(self.state, ForgeState::Offering { .. }) {
-            self.state = ForgeState::Idle;
-        }
+    /// The weapon was taken: who took what, and the alternate ammo it
+    /// comes with if it was a re-pack.
+    pub fn taken(&mut self) -> Option<(u8, WeaponId, Option<AltAmmo>)> {
+        let ForgeState::Offering { by, weapon, .. } = self.state else {
+            return None;
+        };
+        self.state = ForgeState::Idle;
+        Some((by, weapon, self.repack.take()))
     }
 
     /// Runs the forge one tick; true when its state changed (left untaken,
