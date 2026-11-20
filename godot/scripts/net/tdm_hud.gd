@@ -138,7 +138,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func _process(delta: float) -> void:
 	# A killcam has its own overlay; the match HUD comes back after it (the
 	# results board after the final killcam, as in Call of Duty).
-	_root.visible = _joined() and not client.in_killcam()
+	_root.visible = _joined() and not client.in_killcam() and client.piloting() < 0
 	if not _root.visible:
 		return
 	var info := client.match_info()
@@ -884,6 +884,8 @@ func _age_chat(delta: float) -> void:
 
 func _build_board() -> void:
 	_board = _full_rect(Scoreboard)
+	# Banners on lower layers hide under it (`match_banner.gd`).
+	_board.add_to_group(&"scoreboard")
 	_board.visible = false
 	_xp_card = XpSummary.new()
 	_xp_card.visible = false

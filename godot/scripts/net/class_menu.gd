@@ -52,6 +52,8 @@ var _class_buttons := {}
 var _streak_row: HFlowContainer
 var _detail: VBoxContainer
 var _detail_name: Label
+## "EQUIPPED" under the class name, for the class in use.
+var _detail_tag: Label
 var _detail_lines: VBoxContainer
 var _detail_pips: Control
 var _edit_button: Button
@@ -188,10 +190,18 @@ func _build_list_page() -> void:
 	_detail_name = Label.new()
 	_detail_name.add_theme_font_size_override("font_size", 24)
 	_detail_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_detail_name.clip_text = true
+	_detail_name.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	head.add_child(_detail_name)
 	_detail_pips = _pips()
 	_detail_pips.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	head.add_child(_detail_pips)
+	# On its own line: beside a long name it ran into the pips.
+	_detail_tag = Label.new()
+	_detail_tag.text = "EQUIPPED"
+	_detail_tag.add_theme_font_size_override("font_size", 13)
+	_detail_tag.add_theme_color_override("font_color", UiTheme.ACCENT)
+	_detail.add_child(_detail_tag)
 	_detail_lines = VBoxContainer.new()
 	_detail_lines.add_theme_constant_override("separation", 8)
 	_detail_lines.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -308,7 +318,8 @@ func _show_detail(id: String) -> void:
 	var locked := custom and not ProgressStore.can_create_classes()
 	var entry := ClassStore.by_id(id) if locked else ClassStore.usable(id)
 	var equipped := id == ClassStore.selected_id()
-	_detail_name.text = String(entry.name) + ("   ·   EQUIPPED" if equipped else "")
+	_detail_name.text = String(entry.name)
+	_detail_tag.visible = equipped
 	_set_pips(_detail_pips, int(NetClient.check_class(entry).cost))
 	_clear(_detail_lines)
 	if locked:

@@ -23,6 +23,8 @@ extends Control
 const TeamColours := preload("res://scripts/ui/team_colours.gd")
 const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const Paint := preload("res://scripts/ui/hud_paint.gd")
+## Where streak calls sit, as a share of the screen height.
+const CALL_Y := 0.39
 const CALL_SOUND := preload("res://assets/audio/ui/hardpoint_call.ogg")
 
 const ROW_H := 26.0
@@ -94,7 +96,12 @@ func _process(delta: float) -> void:
 	var mode := String(client.match_info().get("mode", ""))
 	# The results screen clears the play HUD, as in Call of Duty.
 	var ended := String(client.match_info().get("phase", "")) == "ended"
-	visible = mode not in ["zombies", "gungame"] and not client.in_killcam() and not ended
+	visible = (
+		mode not in ["zombies", "gungame"]
+		and not client.in_killcam()
+		and client.piloting() < 0
+		and not ended
+	)
 	_info = client.streak_info()
 	# Under the HUD size setting the piece is scaled: keep it screen-sized.
 	size = get_viewport_rect().size / scale
@@ -176,7 +183,9 @@ func _draw() -> void:
 	_draw_column()
 	if _call_left > 0.0:
 		var alpha := clampf(_call_left / 0.4, 0.0, 1.0)
-		var centre := Vector2(size.x / 2.0, size.y * 0.3)
+		# Under the mode views' calls (`match_banner.gd`, at 0.3), which
+		# often come at the same moment: an enemy UAV as the Hardpoint moves.
+		var centre := Vector2(size.x / 2.0, size.y * CALL_Y)
 		Paint.text_centred(self, Paint.DISPLAY, _call, centre, 26, Color(_call_colour, alpha), 3.0)
 		if _call_sub != "":
 			Paint.prompt(
