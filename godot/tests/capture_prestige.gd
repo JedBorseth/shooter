@@ -115,4 +115,18 @@ func _run() -> void:
 	await RenderingServer.frame_post_draw
 	root.get_texture().get_image().save_png(_out.path_join("prestige_scoreboard.png"))
 	print("saved prestige_scoreboard")
+	# The in-match challenge popup, over the match itself.
+	layer.visible = false
+	var level: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	root.add_child(level)
+	var top := CanvasLayer.new()
+	root.add_child(top)
+	var popup: Control = (load("res://scripts/net/challenge_popup.gd") as GDScript).new()
+	top.add_child(popup)
+	popup.call("announce", Progression.challenge("w.m4.6"))
+	for i in 90:
+		await process_frame
+	await RenderingServer.frame_post_draw
+	root.get_texture().get_image().save_png(_out.path_join("challenge_popup.png"))
+	print("saved challenge_popup")
 	quit(0)

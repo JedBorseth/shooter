@@ -4,7 +4,8 @@ extends Node
 ## win (`Progression.match_bonus`). Kills count toward each weapon's
 ## attachments, and the stats the server counts for us
 ## (`NetClient.match_stats`) toward challenges, each paying its XP in the
-## match that completes it. Added by the match HUD (`tdm_hud.gd`).
+## match that completes it, announced as it happens (`challenge_popup.gd`).
+## Added by the match HUD (`tdm_hud.gd`).
 ##
 ## The match's score, kills, and stats go into `ProgressStore` when it
 ## ends, with the bonus. Leaving early keeps the score and kills made so
@@ -18,6 +19,8 @@ extends Node
 ## lists them).
 signal match_finished(summary: Dictionary)
 
+const ChallengePopup := preload("res://scripts/net/challenge_popup.gd")
+
 var client: NetClient
 
 var _phase := ""
@@ -29,6 +32,9 @@ var _kills := {}
 var _score_stale := true
 ## Plain weapon key for each weapon's name, to count kills by.
 var _weapon_names := {}
+## Challenges this match has completed and announced (ids).
+var _announced := {}
+var _popup: Control
 
 
 func _ready() -> void:
@@ -36,7 +42,14 @@ func _ready() -> void:
 	for list: String in ["primaries", "secondaries"]:
 		for weapon: Dictionary in items[list]:
 			_weapon_names[String(weapon.name)] = String(weapon.key)
+	var layer := CanvasLayer.new()
+	layer.layer = 5
+	add_child(layer)
+	_popup = ChallengePopup.new()
+	_popup.name = "ChallengePopup"
+	layer.add_child(_popup)
 	if client != null:
+		client.stats_changed.connect(_on_stats)
 		client.kill_reported.connect(_on_kill)
 		client.scoreboard_changed.connect(func() -> void: _score_stale = true)
 		client.roster_changed.connect(func() -> void: _score_stale = true)
@@ -78,6 +91,18 @@ func _on_kill(killer: int, victim: int, weapon: String, _headshot: bool) -> void
 	var key := weapon_key(weapon)
 	if key != "":
 		_kills[key] = int(_kills.get(key, 0)) + 1
+
+
+## The server sent our stats: announce each challenge they complete, as
+## the match would pay it if it ended now.
+func _on_stats() -> void:
+	if _playing_since < 0.0 or client == null:
+		return
+	var gain := Progression.add_match(ProgressStore.totals(), 0, _kills, client.match_stats())
+	for id: String in gain.challenges:
+		if not _announced.has(id):
+			_announced[id] = true
+			_popup.announce(Progression.challenge(id))
 
 
 ## The plain weapon key for a weapon's name ("M4A1 Red Dot + Grip" -> "m4"),
@@ -160,6 +185,7 @@ func _my_score() -> int:
 
 
 func _reset() -> void:
+	_announced = {}
 	_playing_since = -1.0
 	_score = 0
 	_score_stale = true

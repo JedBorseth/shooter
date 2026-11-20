@@ -50,6 +50,9 @@ A challenge is a target on a stat (`rust/sim/src/challenge.rs`).
 - It completes in the match that takes the stat past the target, and it pays its XP in that match.
 - Completion is never stored: it is worked out from the totals. The game, the ranked server, and the account always agree on it, and each challenge pays once.
 - The end-of-match card shows the challenges' XP on its own line and lists the challenges completed, with the camo or card each awarded.
+- During the match, each challenge is announced the moment it is done, as Black Ops 2 does: a quiet "CHALLENGE COMPLETE" plate near the top of the screen with its name, XP, and reward (`godot/scripts/net/challenge_popup.gd`). They queue one at a time, and at most four wait. `match_xp.gd` works them out from the stats the server sends every two seconds, as the match would pay them if it ended then.
+
+![A challenge completed mid-match](media/challenge-popup.jpg)
 
 ### Weapon challenges: the camo ladder
 
@@ -225,6 +228,7 @@ The account stores `stats` beside `xp` and `weapon_kills` (`docker/online/nakama
 ## Call of Duty reference
 
 - **Career screen:** Black Ops 2's Barracks holds the challenges (by weapon, career, mode, and scorestreak, each with its progress and reward) and the combat record (K/D, win/loss, accuracy, time played, and per-weapon kills, deaths, headshots, and accuracy).
+- **Challenge popups:** Black Ops 2 announces each challenge mid-match as it completes, with its name and reward.
 - **Stats and challenges:** Black Ops 2's challenge tables are targets on its player and weapon stats, kept by the game server. A challenge completes, and its XP is paid, in the match that crosses it.
 - **The camo ladder:**
   - The numbers for each class follow games.gg, "Black Ops 2: All Weapon Camos & Challenges", and gamerant.com, "Black Ops 2 camo challenges guide": the headshot ladder 5 to 100; then longshots or revenge kills, 150 kills with no attachments, 150 with no perks, 20 double kills, and 10 Bloodthirsty medals.
