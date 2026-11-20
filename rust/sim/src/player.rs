@@ -585,6 +585,7 @@ mod tests {
         vault: None,
         ladder: None,
         mount: None,
+        floor_normal: glam::Vec3::Y,
     };
 
     fn at_cover(height: f32) -> MoveEnv {

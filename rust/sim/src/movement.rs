@@ -78,6 +78,9 @@ pub struct MoveEnv {
     /// weapon on (a ledge, a barrier's top, a windowsill), if there is one
     /// in reach ([`crate::mount`]). Looked for while aiming or mounted.
     pub mount: Option<f32>,
+    /// The floor's normal under the feet (straight up off the floor or when
+    /// unknown). A slide reads its slope ([`MoveParams::slide_slope_friction`]).
+    pub floor_normal: Vec3,
 }
 
 /// Something to vault over: its top's height above the feet, and whether
@@ -98,6 +101,7 @@ impl Default for MoveEnv {
             vault: None,
             ladder: None,
             mount: None,
+            floor_normal: Vec3::Y,
         }
     }
 }
@@ -273,6 +277,15 @@ pub struct MoveParams {
     /// A slide queued in the air starts on landing only if the velocity's
     /// heading is this close to the view (cosine of the widest angle).
     pub air_slide_min_alignment: f32,
+    /// How a slope changes a slide (IW8's `Slide_FrictionScale`): friction
+    /// scales by `1 - slide_slope_friction * s`, where `s` is the sine of the
+    /// slope along the slide (positive downhill), and gravity pulls along it
+    /// at `slide_slope_gravity` of its share. Downhill a slide runs on,
+    /// uphill it dies early. Its speed stays under `slide_slope_max_ratio` of
+    /// the entry speed.
+    pub slide_slope_friction: f32,
+    pub slide_slope_gravity: f32,
+    pub slide_slope_max_ratio: f32,
     pub stand_height: f32,
     pub crouch_height: f32,
     /// Seconds to go from standing to crouched, and back up.
@@ -371,6 +384,9 @@ impl Default for MoveParams {
             slide_out_time: 0.5,
             slide_out_friction_scale: 0.3,
             air_slide_min_alignment: 0.7,
+            slide_slope_friction: 2.5,
+            slide_slope_gravity: 0.3,
+            slide_slope_max_ratio: 1.2,
             stand_height: 1.8,
             crouch_height: 1.1,
             crouch_down_time: 0.25,
@@ -676,10 +692,18 @@ fn step_rules(
         } else {
             params.slide_friction
         };
-        apply_friction(&mut state.velocity, friction, params.stop_speed, dt);
         if state.stance == Stance::Sliding {
+            let along = slope_along(state.velocity, env.floor_normal);
+            apply_friction(
+                &mut state.velocity,
+                friction * (1.0 - params.slide_slope_friction * along).clamp(0.0, 3.0),
+                params.stop_speed,
+                dt,
+            );
+            slide_on_slope(state, input, params, along, dt);
             steer_slide(state, wish, right, params, dt);
         } else {
+            apply_friction(&mut state.velocity, friction, params.stop_speed, dt);
             let wish_speed = wish_amount * max_speed(state, params) * input.speed_multiplier;
             // Scale acceleration by at least `stop_speed`, so slow stances (crouch,
             // aiming) still reach their speed against the stronger low-speed friction.
@@ -964,6 +988,44 @@ fn land_queued_slide(
     }
 }
 
+/// The sine of the floor's slope along the way `velocity` heads on the
+/// flat: positive going downhill, negative uphill, 0 on level ground.
+fn slope_along(velocity: Vec3, floor_normal: Vec3) -> f32 {
+    let downhill = horizontal(floor_normal);
+    if downhill == Vec3::ZERO {
+        return 0.0;
+    }
+    let dir = horizontal(velocity).normalize_or_zero();
+    // The normal's horizontal part is as long as the slope's sine.
+    dir.dot(downhill)
+}
+
+/// Gravity's pull along a slope during a slide: on downhill, back uphill.
+/// The slide never gets faster than `slide_slope_max_ratio` of its entry.
+fn slide_on_slope(
+    state: &mut MoveState,
+    input: &MoveInput,
+    params: &MoveParams,
+    along: f32,
+    dt: f32,
+) {
+    if along == 0.0 {
+        return;
+    }
+    let h = horizontal(state.velocity);
+    let speed = h.length();
+    if speed < 1e-3 {
+        return;
+    }
+    let entry = params.sprint_speed * input.speed_multiplier * params.slide_speed_ratio;
+    let cap = entry * params.slide_slope_max_ratio;
+    let pull = params.gravity * params.slide_slope_gravity * along * dt;
+    let new_speed = (speed + pull).min(cap.max(speed)).max(0.0);
+    let scale = new_speed / speed;
+    state.velocity.x *= scale;
+    state.velocity.z *= scale;
+}
+
 /// Strafing turns a slide toward that side of the view, keeping its speed.
 /// The view itself never steers it, so the player can look around freely.
 fn steer_slide(state: &mut MoveState, wish: Vec2, right: Vec3, params: &MoveParams, dt: f32) {
@@ -1243,6 +1305,7 @@ mod tests {
             vault: None,
             ladder: None,
             mount: None,
+            floor_normal: glam::Vec3::Y,
         };
         run(&mut s, crouch, low_ceiling, 1);
         run(&mut s, MoveInput::default(), low_ceiling, 1);
@@ -1405,6 +1468,7 @@ mod tests {
         vault: None,
         ladder: None,
         mount: None,
+        floor_normal: glam::Vec3::Y,
     };
 
     fn jump() -> MoveInput {
@@ -1623,6 +1687,7 @@ mod tests {
             vault: None,
             ladder: None,
             mount: None,
+            floor_normal: glam::Vec3::Y,
         };
         run(
             &mut s,
@@ -1770,6 +1835,73 @@ mod tests {
         assert_eq!(s.stance, Stance::Sliding);
     }
 
+    /// Slides on a 25-degree ramp (the Testing Area's), facing -Z: how far
+    /// (along the flat) and how long each runs, from the same sprint.
+    fn slide_on(slope_deg: f32) -> (f32, f32) {
+        let params = MoveParams::default();
+        let mut s = MoveState::default();
+        let sprint = MoveInput {
+            sprint: true,
+            ..forward()
+        };
+        run(&mut s, sprint, MoveEnv::default(), 180);
+        // Positive slopes fall away ahead (-Z): the normal leans that way.
+        let (sin, cos) = crate::fmath::sin_cos(slope_deg.to_radians());
+        let env = MoveEnv {
+            floor_normal: Vec3::new(0.0, cos, -sin),
+            ..MoveEnv::default()
+        };
+        let crouch = MoveInput {
+            crouch: true,
+            ..forward()
+        };
+        let mut distance = 0.0;
+        let mut time = 0.0;
+        step(&mut s, &crouch, env, &params, DT);
+        while s.stance == Stance::Sliding {
+            distance += speed(&s) * DT;
+            time += DT;
+            step(&mut s, &forward(), env, &params, DT);
+        }
+        (distance, time)
+    }
+
+    #[test]
+    fn a_slide_runs_on_downhill_and_dies_uphill() {
+        let (flat, flat_time) = slide_on(0.0);
+        let (down, down_time) = slide_on(25.0);
+        let (up, up_time) = slide_on(-25.0);
+        let (gentle, _) = slide_on(8.0);
+        assert!((3.5..4.5).contains(&flat), "flat {flat}");
+        // Downhill it keeps its speed for the whole slide and goes further.
+        assert!(
+            down > flat * 1.2 && down < flat * 1.5,
+            "down {down} flat {flat}"
+        );
+        assert!(down_time >= flat_time, "{down_time} {flat_time}");
+        // Uphill it dies early, short of a flat one.
+        assert!(up < flat * 0.85 && up > flat * 0.4, "up {up} flat {flat}");
+        assert!(up_time < flat_time, "{up_time} {flat_time}");
+        // A gentle slope changes it a little.
+        assert!(gentle > flat && gentle < down, "gentle {gentle}");
+    }
+
+    #[test]
+    fn a_downhill_slide_never_runs_away() {
+        let p = MoveParams::default();
+        let mut s = MoveState::default();
+        start_slide(&mut s);
+        let env = MoveEnv {
+            floor_normal: Vec3::new(0.0, 0.7, -0.71).normalize(),
+            ..MoveEnv::default()
+        };
+        let cap = p.sprint_speed * p.slide_speed_ratio * p.slide_slope_max_ratio;
+        for _ in 0..120 {
+            step(&mut s, &forward(), env, &p, DT);
+            assert!(speed(&s) <= cap + 1e-3, "{}", speed(&s));
+        }
+    }
+
     #[test]
     fn jumping_cancels_a_slide_without_leaping() {
         let mut s = MoveState::default();
@@ -1809,6 +1941,7 @@ mod tests {
             vault: None,
             ladder: None,
             mount: None,
+            floor_normal: glam::Vec3::Y,
         };
         let jump = MoveInput {
             wish: Vec2::Y,

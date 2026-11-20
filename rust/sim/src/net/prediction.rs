@@ -319,6 +319,7 @@ mod tests {
             vault: None,
             ladder: None,
             mount: None,
+            floor_normal: glam::Vec3::Y,
         };
         let mut events = Vec::new();
         let v = player::step(

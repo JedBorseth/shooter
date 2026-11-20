@@ -101,6 +101,7 @@ fn run(ticks: u32) -> Run {
             vault: None,
             ladder: None,
             mount: None,
+            floor_normal: glam::Vec3::Y,
         };
         events.clear();
         let v = player::step(&mut p.state, &input, env, &params, TICK_DT, &mut events);
@@ -203,6 +204,7 @@ fn press_aim_changes_no_state() {
             vault: None,
             ladder: None,
             mount: None,
+            floor_normal: glam::Vec3::Y,
         };
         let mut q = p;
         events.clear();
