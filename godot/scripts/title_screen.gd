@@ -45,6 +45,7 @@ const ROUTES := {
 	"Zombies": ["CO-OP", "Survive the rounds, alone or with up to three friends."],
 	"TestingArea": ["EVERY WEAPON", "Movement, weapons, and target practice."],
 	"FreeRoam": ["ANY MAP", "Walk Slamcity, Nuketown, Warehouse, or Breakwater on your own."],
+	"Career": ["", "Challenges, camos, and your combat record."],
 	"Options": ["", "Controls, video, audio, and gameplay."],
 	"Quit": ["", "Close the game."],
 }
@@ -70,6 +71,7 @@ func _ready() -> void:
 	set_process(false)
 	_testing.pressed.connect(_start_testing)
 	%Options.pressed.connect(_open_options)
+	%Career.pressed.connect(open_career)
 	%Quit.pressed.connect(get_tree().quit)
 	for mode: String in SETUP_BUTTONS:
 		_menu.get_node(SETUP_BUTTONS[mode]).pressed.connect(_open_setup.bind(mode))
@@ -238,6 +240,26 @@ func _open_options() -> void:
 			%Options.grab_focus()
 	)
 	options.open_options()
+
+
+## Opens the career screen (challenges and the combat record) over the menu.
+func open_career() -> void:
+	if _loading:
+		return
+	_close_tdm(false)
+	_close_account(false)
+	_close_quick_play(false)
+	var career := Control.new()
+	career.name = "CareerMenu"
+	career.set_script(load("res://scripts/ui/career_menu.gd"))
+	$Margin.hide()
+	add_child(career)
+	career.back_requested.connect(
+		func() -> void:
+			career.queue_free()
+			$Margin.show()
+			%Career.grab_focus()
+	)
 
 
 func _open_multiplayer(message := "") -> void:

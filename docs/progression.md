@@ -100,6 +100,27 @@ Black Ops 2's challenges pay 250 to 5,000 XP each. A weapon's whole ladder comes
 | Mastery and Nebula | none, as Black Ops 2's Diamond paid none |
 | Career, mode, and scorestreak tiers | 500 to 5,000, as Black Ops 2's |
 
+## Career screen
+
+**Career**, beside Options on the title screen, opens the player's challenges and combat record (`godot/scripts/ui/career_menu.gd`). Black Ops 2 keeps these in the Barracks.
+
+- **Challenges.** Four categories: Weapons, Career, Modes, and Scorestreaks.
+  - The list on the left picks a weapon (grouped by class, with Mastery last) or a mode, each with how many of its challenges are done.
+  - The panel lists that section's challenges: name, what to do, progress ("12 / 20", or COMPLETE), what it awards (a camo or a calling card), and its XP.
+- **Combat record.** Career totals, as Call of Duty's combat record shows them:
+  - K/D;
+  - win rate;
+  - accuracy (hits over shots fired);
+  - time played in matches;
+  - score per minute;
+  - headshots.
+
+  Below them is a line for each weapon: kills, deaths while holding it, K/D, headshots, accuracy, and camos earned, most kills first.
+
+![The career screen's weapon challenges: the M4A1's camo ladder with its progress and rewards](media/career-weapons.jpg)
+
+![The combat record: career totals and each weapon's line](media/career-record.jpg)
+
 ## Account and caps
 
 The account stores `stats` beside `xp` and `weapon_kills` (`docker/online/nakama/modules/progress.lua`). A match's report already includes its challenges' XP: the game or the ranked server works it out from the totals, and the account only adds.
@@ -112,6 +133,7 @@ The account stores `stats` beside `xp` and `weapon_kills` (`docker/online/nakama
 
 ## Call of Duty reference
 
+- **Career screen:** Black Ops 2's Barracks holds the challenges (by weapon, career, mode, and scorestreak, each with its progress and reward) and the combat record (K/D, win/loss, accuracy, time played, and per-weapon kills, deaths, headshots, and accuracy).
 - **Stats and challenges:** Black Ops 2's challenge tables are targets on its player and weapon stats, kept by the game server. A challenge completes, and its XP is paid, in the match that crosses it.
 - **The camo ladder:**
   - The numbers for each class follow games.gg, "Black Ops 2: All Weapon Camos & Challenges", and gamerant.com, "Black Ops 2 camo challenges guide": the headshot ladder 5 to 100; then longshots or revenge kills, 150 kills with no attachments, 150 with no perks, 20 double kills, and 10 Bloodthirsty medals.
