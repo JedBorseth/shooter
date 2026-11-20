@@ -45,6 +45,17 @@ class LayoutTests(unittest.TestCase):
         for name, _label, (x, _y, z), _size in L.HARDPOINTS:
             self.assertIn((round(-x, 3) + 0.0, round(-z, 3) + 0.0), {(a + 0.0, b + 0.0) for a, b in centres}, name)
 
+    def test_domination_flags_are_balanced(self):
+        """A and C are each other's twins and B is its own, so neither team's
+        home flag or the middle flag is nearer one side."""
+        flags = {label: (x, y, z, r) for _n, label, (x, y, z), r in L.DOM_FLAGS}
+        self.assertEqual(sorted(flags), ["A", "B", "C"])
+        ax, ay, az, ar = flags["A"]
+        cx, cy, cz, cr = flags["C"]
+        self.assertEqual((round(-ax, 3), ay, round(-az, 3), ar), (round(cx, 3), cy, round(cz, 3), cr))
+        bx, _by, bz, _br = flags["B"]
+        self.assertEqual((bx, bz), (0.0, 0.0))
+
     def test_build_is_idempotent(self):
         before = len(L.COLLIDERS)
         L.build()

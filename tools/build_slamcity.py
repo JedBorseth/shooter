@@ -223,6 +223,11 @@ node("ChargeSites", "Node3D", ".")
 for name, label, (x, y, z), size, _crate, _yaw in L.CHARGE_SITES:
     node(name, "Marker3D", "ChargeSites", {
         "position": vec(x, y, z), "metadata/size": vec(*size), "metadata/label": f'"{label}"'})
+# Domination's flags (server: map_dom_points): the floor centre of each circle.
+node("DominationFlags", "Node3D", ".")
+for name, label, (x, y, z), radius in L.DOM_FLAGS:
+    node(name, "Marker3D", "DominationFlags", {
+        "position": vec(x, y, z), "metadata/radius": f"{radius:.2f}", "metadata/label": f'"{label}"'})
 node("SiteCrates", "Node3D", ".")
 crate_size, crate_mid = L.CHARGE_CRATE
 subs.append(f'[sub_resource type="BoxShape3D" id="SiteCrate"]\nsize = {vec(*crate_size)}')

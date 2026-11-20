@@ -179,6 +179,23 @@ position = Vector3(0, 0.05, 20)
 [node name="HUD" parent="." instance=ExtResource("2_hud")]
 controls = PackedStringArray("move:Move", "sprint:Sprint", "crouch:Crouch / slide", "jump:Jump", "fire:Fire", "aim:Aim", "reload:Reload", "melee:Knife", "weapon_1:Switch weapon", "interact:Take weapon", "pause:Release mouse")
 
+[node name="DominationFlags" type="Node3D" parent="."]
+
+[node name="FlagA" type="Marker3D" parent="DominationFlags"]
+position = Vector3(-40, -1.65, -8)
+metadata/radius = 3.50
+metadata/label = "A"
+
+[node name="FlagB" type="Marker3D" parent="DominationFlags"]
+position = Vector3(-3, -1.8, -9)
+metadata/radius = 3.50
+metadata/label = "B"
+
+[node name="FlagC" type="Marker3D" parent="DominationFlags"]
+position = Vector3(44, -1.65, -7)
+metadata/radius = 3.50
+metadata/label = "C"
+
 [node name="SecretLaser" type="Node3D" parent="."]
 script = ExtResource("7_secret")
 

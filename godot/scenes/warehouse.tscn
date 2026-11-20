@@ -50019,6 +50019,23 @@ shape = SubResource("BoxShape3D_hok12")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 13.7, 4.5, 42.5)
 shape = SubResource("BoxShape3D_se7uq")
 
+[node name="DominationFlags" type="Node3D" parent="."]
+
+[node name="FlagA" type="Marker3D" parent="DominationFlags"]
+position = Vector3(10, 0, -20)
+metadata/radius = 3.50
+metadata/label = "A"
+
+[node name="FlagB" type="Marker3D" parent="DominationFlags"]
+position = Vector3(10, 0, -1)
+metadata/radius = 3.50
+metadata/label = "B"
+
+[node name="FlagC" type="Marker3D" parent="DominationFlags"]
+position = Vector3(13, 0, 28)
+metadata/radius = 3.50
+metadata/label = "C"
+
 [node name="BotLanes" type="Node3D" parent="." unique_id=203707540]
 
 [node name="West" type="Node3D" parent="BotLanes" unique_id=263852390]

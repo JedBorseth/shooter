@@ -431,15 +431,39 @@ pub fn halftime_due(time_left: f32, time_limit: Option<f32>, swapped: bool) -> b
     !swapped && time_limit.is_some_and(|limit| time_left <= limit * 0.5)
 }
 
-/// Three flags for maps without their own, on the line between the teams'
-/// sides (`side0` and `side1`, at floor height): A near team 0's spawn, B in
-/// the middle, and C near team 1's, as Domination maps lay them out.
+/// Three flags for maps without their own, between the teams' sides
+/// (`side0` and `side1`, at floor height). With room, they lie on the line
+/// between the sides: A near team 0's spawn, B in the middle, and C near
+/// team 1's, as Domination maps lay them out. With the sides closer than
+/// [`FALLBACK_LINE_LENGTH`] (the testing arena's are 14 m apart) the circles
+/// would overlap, so they lie across the middle instead, [`FALLBACK_SPACING`]
+/// apart, the same distance from both sides.
 pub fn fallback_points(side0: Vec3, side1: Vec3) -> Vec<FlagPoint> {
-    [("A", 0.22), ("B", 0.5), ("C", 0.78)]
+    let along = Vec3::new(side1.x - side0.x, 0.0, side1.z - side0.z);
+    let length = along.length();
+    if length >= FALLBACK_LINE_LENGTH {
+        return [("A", 0.22), ("B", 0.5), ("C", 0.78)]
+            .into_iter()
+            .map(|(name, t)| FlagPoint::new(name, side0.lerp(side1, t)))
+            .collect();
+    }
+    let middle = side0.lerp(side1, 0.5);
+    let across = if length > 0.01 {
+        Vec3::new(-along.z, 0.0, along.x) / length
+    } else {
+        Vec3::X
+    };
+    [("A", -1.0), ("B", 0.0), ("C", 1.0)]
         .into_iter()
-        .map(|(name, t)| FlagPoint::new(name, side0.lerp(side1, t)))
+        .map(|(name, side)| FlagPoint::new(name, middle + across * side * FALLBACK_SPACING))
         .collect()
 }
+
+/// Shortest distance between the sides for fallback flags on the line
+/// between them: their circles then stand at least 2 m apart.
+pub const FALLBACK_LINE_LENGTH: f32 = 40.0;
+/// Metres between fallback flags laid across the middle.
+pub const FALLBACK_SPACING: f32 = 13.0;
 
 #[cfg(test)]
 mod tests {
@@ -709,6 +733,18 @@ mod tests {
         state.flags[2].owner = Some(0);
         let goals = bot_goals(&points, &state, 0, &bots);
         assert!(goals.iter().all(|(_, g)| matches!(g, BotGoal::Defend(_))));
+    }
+
+    #[test]
+    fn close_sides_get_their_flags_across_the_middle() {
+        let points = fallback_points(Vec3::new(0.0, 0.0, 20.0), Vec3::new(0.0, 0.0, 6.0));
+        let centres: Vec<Vec3> = points.iter().map(|p| p.center).collect();
+        for c in &centres {
+            assert!((c.z - 13.0).abs() < 0.01, "{centres:?}");
+        }
+        assert!((centres[0].x.abs() - FALLBACK_SPACING).abs() < 0.01);
+        assert!(centres[1].x.abs() < 0.01);
+        assert!(centres[0].x * centres[2].x < 0.0);
     }
 
     #[test]

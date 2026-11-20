@@ -334,7 +334,8 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
   - [x] Rules on the server: three flags, 10 s captures sped up by more capturers, contests, a point a flag every 5 s, 200 to win, halftime side swap, flag spawns, capture, defence, and assault awards (`rust/sim/src/domination.rs`, `--mode dom`).
   - [x] Flag markers in the world and on the HUD, calls and stings, the scoreboard's columns, and a title screen choice (`godot/scripts/net/domination_view.gd`).
   - [x] Objective bots: capture, defend, and take back flags (`domination::bot_goals`).
-  - [ ] Flags placed by hand on Slamcity, Nuketown, and Warehouse.
+  - [x] Flags placed by hand on Slamcity, Nuketown, and Warehouse, and fallback flags laid across the middle on maps whose sides are close (the testing arena).
+  - [ ] Follow-ups: an announcer voice for the calls, a flag pole model at each flag (Blender), overtime on a draw (Black Ops 3 onward), and Nuketown bots: its navigation mesh does not bake on a headless server ("Baking interrupted"), so bots stand still there in every mode.
 - [x] Gun Game: a knife kill sets the victim back a weapon, as in the classic rules.
 - [x] Gun Game: a sound for each new weapon and for a set-back (`match_stings.gd`; the sting files are in their own PR, held for a listen).
 - [x] Capture the Flag: halftime side swap and a sudden-death overtime round on a draw, as in Black Ops 2 ([modes.md](docs/modes.md)).
