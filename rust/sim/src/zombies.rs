@@ -345,13 +345,6 @@ pub fn rebuild_pay(round: u32, rebuilt: u32) -> u32 {
 }
 /// Points a Nuke pays (the zombies it kills pay nothing themselves).
 pub const NUKE_POINTS: u32 = 400;
-/// Most power-ups that drop in one round.
-pub const MAX_DROPS_PER_ROUND: u32 = powerups::MAX_DROPS_PER_ROUND;
-/// Chance that a kill drops a power-up in the offline game
-/// ([`power_up_drop`]), while the round has drops left. Online games use
-/// Black Ops' drop cycle ([`powerups::DropCycle`]).
-pub const DROP_CHANCE: f32 = 0.035;
-
 impl PowerUp {
     pub const ALL: [PowerUp; 6] = [
         PowerUp::MaxAmmo,
@@ -360,14 +353,6 @@ impl PowerUp {
         PowerUp::Nuke,
         PowerUp::Carpenter,
         PowerUp::FireSale,
-    ];
-
-    /// The kinds the offline game drops.
-    pub const OFFLINE: [PowerUp; 4] = [
-        PowerUp::MaxAmmo,
-        PowerUp::InstaKill,
-        PowerUp::DoublePoints,
-        PowerUp::Nuke,
     ];
 
     /// Its number on the wire.
@@ -414,17 +399,6 @@ impl PowerUp {
             PowerUp::InstaKill | PowerUp::DoublePoints | PowerUp::FireSale
         )
     }
-}
-
-/// The power-up the `kill`th kill of `round` drops, if any. `dropped` is how
-/// many this round has dropped already. Deterministic: the same match drops
-/// the same way.
-pub fn power_up_drop(round: u32, kill: u32, dropped: u32) -> Option<PowerUp> {
-    if dropped >= MAX_DROPS_PER_ROUND || rng::unit(round.wrapping_mul(7919), kill) >= DROP_CHANCE {
-        return None;
-    }
-    let pick = rng::hash(round, kill.wrapping_add(31)) as usize % PowerUp::OFFLINE.len();
-    Some(PowerUp::OFFLINE[pick])
 }
 
 /// Where a round is.
@@ -633,27 +607,6 @@ impl Rounds {
 #[cfg(test)]
 mod power_up_tests {
     use super::*;
-
-    #[test]
-    fn drops_are_rare_capped_and_varied() {
-        let mut total = 0;
-        let mut kinds = std::collections::HashSet::new();
-        for round in 1..=50 {
-            let mut dropped = 0;
-            for kill in 0..zombies_in_round(round) {
-                if let Some(power_up) = power_up_drop(round, kill, dropped) {
-                    dropped += 1;
-                    kinds.insert(power_up);
-                }
-            }
-            assert!(dropped <= MAX_DROPS_PER_ROUND);
-            total += dropped;
-        }
-        // About 3.5% of some 6,000 kills, capped per round.
-        assert!((100..=220).contains(&total), "{total} drops");
-        assert_eq!(kinds.len(), PowerUp::OFFLINE.len());
-        assert_eq!(power_up_drop(3, 5, 1), power_up_drop(3, 5, 1));
-    }
 
     #[test]
     fn power_ups_round_trip_their_keys() {

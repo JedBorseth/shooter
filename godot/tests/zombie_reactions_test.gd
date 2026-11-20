@@ -35,11 +35,12 @@ func _run() -> void:
 	_finish()
 
 
+## A zombie standing at `at`, placed as the client places the server's.
 func _zombie(at: Vector3) -> Zombie:
 	var zombie := ZOMBIE.instantiate() as Zombie
 	_world.add_child(zombie)
-	zombie.global_position = at
 	for i in 30:
+		zombie.net_apply(at, 0.0, Vector3.ZERO, false)
 		await physics_frame
 	return zombie
 
@@ -76,10 +77,9 @@ func _stagger() -> void:
 func _mid_air_death() -> void:
 	var zombie := await _zombie(Vector3(-4, 0, 0))
 	var rig := zombie.get_node("Soldier") as SoldierRig
-	zombie.global_position = Vector3(-4, 1.5, 0)
+	zombie.net_apply(Vector3(-4, 1.5, 0), 0.0, Vector3.ZERO, false)
 	await physics_frame
-	zombie.apply_damage(10000.0, false)
-	zombie.react_to_hit(Vector3(0, 0, -1), true, Vector3.ZERO, 2, 3.0)
+	zombie.net_die(Vector3(0, 0, -1), 2, 3.0)
 	for i in 240:
 		await physics_frame
 	var hips := rig.bone_global_transform("Hips").origin
@@ -110,8 +110,7 @@ func _limbs_rest_down() -> void:
 		var at := Vector3(-15 + i * 6, 0, 10)
 		var zombie := await _zombie(at)
 		var rig := zombie.get_node("Soldier") as SoldierRig
-		zombie.apply_damage(10000.0, false)
-		zombie.react_to_hit(hits[i][0], true, Vector3.ZERO, hits[i][1], hits[i][2])
+		zombie.net_die(hits[i][0], hits[i][1], hits[i][2])
 		for t in 900:
 			await physics_frame
 			if t > 120 and rig.is_still():

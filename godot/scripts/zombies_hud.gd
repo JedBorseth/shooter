@@ -1,14 +1,12 @@
 extends Control
 ## Zombies HUD: the round number, points with "+N" popups (and "-N" when
 ## spending), the countdown between rounds, zombies left, power-up
-## announcements and the timers of the active ones, and the game-over screen. Driven by
-## ZombieDirector signals; the rules live in Rust (rust/sim/src/zombies.rs).
-##
-## Online (the director mirrors the dedicated server's game) it also shows
-## last stand: the bleed-out clock while down, the revive bar for both the
-## reviver and the revived, and the prompt beside a downed teammate. The
-## game-over screen there waits for the server's next game instead of
-## reloading.
+## announcements and the timers of the active ones, last stand (the bleed-out
+## clock while down, the revive bar for both the reviver and the revived,
+## and the prompt beside a downed teammate), and the game-over screen, which
+## waits for the server's next game. Driven by ZombieDirector signals, which
+## mirror the dedicated server's game; the rules live in Rust
+## (rust/sim/src/zombies.rs).
 
 const Glyphs := preload("res://scripts/ui/glyphs.gd")
 
@@ -43,7 +41,7 @@ var _round_flash := 0.0
 var _popups: Array[Dictionary] = []
 var _game_over: Control
 var _summary: Label
-var _again: Button
+var _home: Button
 var _last_stand: Label
 var _revive_bar: ProgressBar
 var _drinks: Control
@@ -166,12 +164,8 @@ func _tally(round_number: int) -> String:
 	return str(round_number)
 
 
-## Online: down, reviving, or beside someone to revive.
+## Down, reviving, or beside someone to revive.
 func _update_last_stand() -> void:
-	if not _director.is_networked():
-		_last_stand.text = ""
-		_revive_bar.hide()
-		return
 	var info: Dictionary = _director.last_stand_info()
 	var text := ""
 	var revive_left: float = info.revive_left
@@ -193,8 +187,8 @@ func _update_last_stand() -> void:
 
 
 func _on_round_started(round_number: int) -> void:
-	# Online the server starts the next game by itself.
-	if _game_over.visible and _director.is_networked():
+	# The server starts the next game by itself.
+	if _game_over.visible:
 		_game_over.hide()
 		if _player != null:
 			_player.set_input_enabled(true)
@@ -257,23 +251,16 @@ func _on_game_over(round_number: int) -> void:
 	# Nothing announced before the end stays over the results.
 	_banner_time = 0.0
 	_banner.text = ""
-	# Online the next game starts by itself after the results.
-	_again.visible = not _director.is_networked()
-	if _director.is_networked():
-		_summary.text += "\n\nNEXT GAME SOON"
+	# The next game starts by itself after the results.
+	_summary.text += "\n\nNEXT GAME SOON"
 	if _player != null:
 		_player.set_input_enabled(false)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	if _again.visible:
-		_again.grab_focus()
+	_home.grab_focus()
 
 
 func is_game_over_shown() -> bool:
 	return _game_over.visible
-
-
-func play_again() -> void:
-	get_tree().reload_current_scene()
 
 
 func go_home() -> void:
@@ -327,12 +314,9 @@ func _build_game_over() -> void:
 	buttons.alignment = BoxContainer.ALIGNMENT_CENTER
 	buttons.add_theme_constant_override("separation", 24)
 	column.add_child(buttons)
-	_again = _button("PLAY AGAIN", buttons)
-	_again.name = "PlayAgain"
-	_again.pressed.connect(play_again)
-	var home := _button("MAIN MENU", buttons)
-	home.name = "MainMenu"
-	home.pressed.connect(go_home)
+	_home = _button("MAIN MENU", buttons)
+	_home.name = "MainMenu"
+	_home.pressed.connect(go_home)
 	_game_over.hide()
 
 

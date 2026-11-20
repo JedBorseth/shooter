@@ -263,7 +263,6 @@ impl HordeView {
             return;
         };
         zombie.set_name(&format!("NetZombie{}", view.id));
-        zombie.bind_mut().set_puppet();
         zombie.set_rotation(Vector3::new(0.0, view.yaw(), 0.0));
         self.director.add_child(&zombie);
         zombie.set_global_position(to_godot(view.position()));
