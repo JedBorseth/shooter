@@ -176,6 +176,8 @@ Modern Warfare (2019) and its successors' weapon mount (`rust/sim/src/mount.rs`)
 | --- | --- | --- |
 | Mount | aim at cover and press melee (V, or the controller's melee) | ADS + Melee, the default activation |
 | Cover | a level top 0.55 m ahead, from 0.82 m (a crouched body's gun) to 1.60 m (a standing body's) above the feet, its face within 0.65 m of the body, clear air 6 cm over it for 1.2 m: ledges, barriers, sandbag walls, windowsills | flat surfaces at crouching or standing height |
+| Prone | prone, low cover from 0.23 m (a prone body's gun) to 0.90 m (a crouched one's): the body props itself up onto it on the crouch blend's prone half, and lies back down on letting go | MWII's prone mount on low cover |
+| A wall's side | with no top in reach, a face square to the aim 0.3 m to one side within 0.65 m, and the line of fire past it clear for 1.85 m: the gun rests against the wall's edge at the height it is at | mounting on the vertical edge of a wall or a corner |
 | Cue | `[V] Mount` in the interaction prompt while aimed at cover | an icon on the crosshair |
 | Height | the eye moves to 8 cm over the cover (`REST`) on the crouch blend, so the gun rests on the edge: the body rises from a crouch or sinks from standing | the view lowers or rises onto the surface |
 | Effect | kick 35% (`KICK_SCALE`), aimed sway 15% (`SWAY_SCALE`), both settling in over 0.18 s; the first-person weapon thumps onto the edge and its idle breathing and look lag nearly stop | most recoil removed (players measure 70 to 90% less) and nearly all idle sway |
@@ -192,9 +194,9 @@ shot origin, the capsule, and the hit zones agree. New state:
 snapshots carry the blend (`PlayerView::mount`), and other players' bodies
 lean 4 degrees onto the gun (cosmetic, inside the hit zones' fit).
 The Testing Area's 1.2 m concrete barriers, its 0.84 m sandbag walls (mounted
-crouched), and windowsills mount; the culvert's 0.44 m sandbags are prone
-height, and the tall walls' ends would need a mount on a wall's side (left
-for later). `godot/tests/weapon_mount_test.gd` checks each case.
+crouched), windowsills, the culvert's 0.44 m sandbags (mounted prone), and
+the tall walls' ends (on their sides) mount. `godot/tests/weapon_mount_test.gd`
+checks each case.
 
 ## Ladders
 

@@ -85,6 +85,11 @@ const PEEK_SECONDS: f32 = 0.7;
 const PEEK_CYCLE: f32 = 2.0;
 /// Hard bots: enemies this close crouch them now and then mid-fight.
 const CROUCH_SHOT_RANGE: f32 = 15.0;
+/// Hard bots: in the first this many seconds of a fight with an enemy within
+/// `CROUCH_SHOT_RANGE`, each strafe change may drop-shot (go prone) with
+/// this chance; down, they fight on prone.
+const DROP_SHOT_WINDOW: f32 = 1.0;
+const DROP_SHOT_CHANCE: f32 = 0.3;
 /// Hard bots sprinting into an enemy this far away (metres), within this
 /// many seconds of seeing it, slide.
 const SLIDE_RANGE: (f32, f32) = (5.0, 14.0);
@@ -637,6 +642,7 @@ pub struct BotBrain {
 struct Held {
     sprint: bool,
     crouch: bool,
+    prone: bool,
     jump: bool,
     fire: bool,
     reload: bool,
@@ -1411,17 +1417,25 @@ impl BotBrain {
             let seconds = 0.6 + self.random() * 0.9;
             self.strafe_until = tick + (seconds * TICK_RATE as f32) as Tick;
             want.crouch = distance > 18.0 && self.random() < 0.25;
-            // Hard bots crouch mid-gunfight up close, dropping their head out
-            // of the line of fire (there is no prone to drop-shot from).
+            // Hard bots up close drop-shot early in a fight, going prone as
+            // they fire, or crouch mid-gunfight, dropping their head out of
+            // the line of fire. Down, they stay down.
+            let prone = state.state.movement.stance == Stance::Prone;
             if self.skill == Skill::Hard
                 && distance < CROUCH_SHOT_RANGE
                 && engagement.reacted(skill)
-                && self.random() < 0.5
             {
-                want.crouch = true;
+                if prone
+                    || (engagement.seen_for < DROP_SHOT_WINDOW && self.random() < DROP_SHOT_CHANCE)
+                {
+                    want.prone = true;
+                } else if self.random() < 0.5 {
+                    want.crouch = true;
+                }
             }
         } else {
             want.crouch = state.state.movement.stance == Stance::Crouching;
+            want.prone = state.state.movement.stance == Stance::Prone;
         }
         // Hard bots that run into a fight at a sprint slide into it.
         if self.skill == Skill::Hard
@@ -2124,7 +2138,15 @@ impl BotBrain {
             want.wish = Vec2::ZERO;
             want.sprint = false;
         }
-        let crouch = want.crouch != crouched && !self.held.crouch && !ends_sprint;
+        // Prone has its own button: down when wanted, and up (standing)
+        // before any crouch is pressed.
+        let prone_now = movement.stance == Stance::Prone;
+        let prone = want.prone != prone_now && !self.held.prone;
+        let crouch = want.crouch != crouched
+            && !self.held.crouch
+            && !ends_sprint
+            && !want.prone
+            && !prone_now;
         let sprint = want.sprint && !movement.sprinting && !self.held.sprint;
         let jump = want.jump && !self.held.jump;
         let fire = want.fire && !(self.held.fire && is_semi(state));
@@ -2133,6 +2155,7 @@ impl BotBrain {
         self.held = Held {
             sprint,
             crouch,
+            prone,
             jump,
             fire,
             reload,
@@ -2145,6 +2168,7 @@ impl BotBrain {
             jump,
             sprint,
             crouch,
+            prone,
             fire,
             aim: want.aim,
             reload,
@@ -2182,6 +2206,8 @@ struct Want {
     interact: bool,
     /// Crouch at a sprint on purpose: slide.
     slide: bool,
+    /// Lie prone (Hard bots' drop shot).
+    prone: bool,
 }
 
 /// The map as a grenade's world, casting no more than `left` rays: a throw
@@ -2349,5 +2375,28 @@ mod tests {
         };
         let stances = run(&mut brain, &mut p, slide_in, 10);
         assert!(stances.contains(&Stance::Sliding), "{stances:?}");
+    }
+
+    #[test]
+    fn a_bot_drop_shots_prone_and_gets_back_up() {
+        let mut brain = BotBrain::new(Skill::Hard, 7);
+        let mut p = Predicted {
+            state: PlayerState::spawned(&PlayerParams::default()),
+            position: Vec3::ZERO,
+            on_floor: true,
+        };
+        let drop = || Want {
+            prone: true,
+            fire: true,
+            ..Default::default()
+        };
+        run(&mut brain, &mut p, drop, 120);
+        assert_eq!(p.state.movement.stance, Stance::Prone);
+        let stances = run(&mut brain, &mut p, Want::default, 240);
+        assert_eq!(p.state.movement.stance, Stance::Standing, "{stances:?}");
+        assert!(
+            !stances.contains(&Stance::Crouching),
+            "straight up: {stances:?}"
+        );
     }
 }

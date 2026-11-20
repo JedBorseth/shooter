@@ -4067,7 +4067,8 @@ impl NetServer {
         state.combat = laststand::pistol();
         state.combat.shots_fired = stored.shots_fired;
         let movement = &mut state.movement;
-        movement.stance = shooter_sim::movement::Stance::Crouching;
+        // Down on the belly, crawling prone, as Black Ops' last stand.
+        movement.stance = shooter_sim::movement::Stance::Prone;
         movement.sprinting = false;
         movement.mounted = false;
         movement.leave_ladder(&self.params.movement);

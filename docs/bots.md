@@ -75,9 +75,11 @@ enemy Counter-UAV jams it):
   every 2 s (not on Easy). If the threat is in sight then, it fights from
   there instead of waiting to heal fully.
 - **Hard only**: a bot sprinting into an enemy 5 to 14 m away slides into the
-  fight, and up close (under 15 m) it crouches now and then mid-fight. This
-  game has no prone, so there is no drop shot; the crouch stands in for it.
-  Black Ops 2's bots do neither; the owner asked for them on Hard.
+  fight. Up close (under 15 m), in its first second of a fight, each strafe
+  change drop-shots (goes prone, firing) three times in ten; down, it fights
+  on prone and stands straight up once the fight ends. Otherwise it crouches
+  now and then mid-fight. Black Ops 2's bots go prone only to plant, defuse,
+  and hold a Domination flag; the owner asked for these on Hard.
 
 ### Grenades
 

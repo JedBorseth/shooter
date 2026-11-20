@@ -3187,7 +3187,7 @@ impl FpsPlayer {
             // Crawling at the hip and getting down to or up from prone
             // lower the weapon as a sprint does.
             sprinting: self.state.movement.sprinting
-                || self.state.movement.crawling(ads > 0.0)
+                || (self.state.movement.crawling(ads > 0.0) && !self.state.downed)
                 || self.state.movement.changing_prone(),
             on_floor: self.env.on_floor,
             action,
