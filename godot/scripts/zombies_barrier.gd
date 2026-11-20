@@ -1,24 +1,19 @@
 extends StaticBody3D
 ## A boarded-up window in the Zombies arena. Zombies that spawn outside it
-## tear the boards off one at a time (`tear`, called by `Zombie`), then climb
-## through. The player puts boards back with the interact key, one per
-## press, for points (`ZombieDirector.rebuild_reward`).
+## tear the boards off one at a time, then climb through; a player holding
+## the interact key puts them back, for points. The dedicated server owns
+## the boards (`net/horde.rs`): it sets them with `set_boards`, and clients
+## show its count with `show_boards`.
 ##
-## The boards collide on the "barriers" layer, which only zombies collide
-## with; bullets pass between them. A separate blocker in the window keeps
-## players inside.
-##
-## Online the dedicated server owns the boards: it sets them with
-## `set_boards`, and clients show its count with `show_boards`.
+## The boards collide on the "barriers" layer, which only the server's
+## zombies collide with; bullets pass between them. A separate blocker in
+## the window keeps players inside.
 
 const BOARDS := 6
-## Seconds between boards the player can put back.
-const REBUILD_COOLDOWN := 0.35
 const BARRIER_LAYER := 1 << 5
 const INTERACT_LAYER := 1 << 3
 
 var _boards := BOARDS
-var _cooldown := 0.0
 var _rest: Array[Transform3D] = []
 @onready var _planks: Array[Node] = $Boards.get_children()
 @onready var _sound: AudioStreamPlayer3D = $Sound
@@ -31,16 +26,12 @@ func _ready() -> void:
 		_rest.append(plank.transform)
 
 
-func _process(delta: float) -> void:
-	_cooldown = maxf(_cooldown - delta, 0.0)
-
-
 ## Boards still up.
 func boards() -> int:
 	return _boards
 
 
-## A zombie pulls a board off. Returns false when none are left.
+## A board comes off. Returns false when none are left.
 func tear() -> bool:
 	if _boards <= 0:
 		return false
@@ -56,22 +47,12 @@ func tear() -> bool:
 
 
 func interact_prompt() -> String:
-	return "[{key}] Rebuild barrier" if _boards < BOARDS else ""
+	return "Hold [{key}] to rebuild the barrier" if _boards < BOARDS else ""
 
 
+## The server rebuilds while use is held; nothing happens here on a press.
 func interact(_player: Node) -> void:
-	if _boards >= BOARDS or _cooldown > 0.0 or _networked():
-		return
-	_cooldown = REBUILD_COOLDOWN
-	var plank := _planks[_boards] as Node3D
-	plank.transform = _rest[_boards]
-	plank.show()
-	_boards += 1
-	_play()
-	_update_collision()
-	var wallet := get_tree().get_first_node_in_group("zombies_wallet")
-	if wallet != null:
-		wallet.rebuild_reward()
+	pass
 
 
 ## Puts up exactly `count` boards at once, with no sound (the server, and a
@@ -98,11 +79,6 @@ func show_boards(count: int) -> void:
 		_boards += 1
 		_play()
 	_update_collision()
-
-
-func _networked() -> bool:
-	var wallet := get_tree().get_first_node_in_group("zombies_wallet")
-	return wallet != null and wallet.is_networked()
 
 
 func _update_collision() -> void:

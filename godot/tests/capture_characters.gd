@@ -14,6 +14,7 @@ extends SceneTree
 
 const SOLDIER := preload("res://scenes/characters/soldier.tscn")
 const ZOMBIE_BODY := preload("res://scenes/characters/zombie_body.tscn")
+const Puppets := preload("res://tests/zombie_puppets.gd")
 const DISTANCES := [2.0, 10.0, 30.0, 60.0]
 const TEAMS := ["ally", "enemy"]
 
@@ -398,15 +399,13 @@ func _horde() -> void:
 		layer.visible = false
 	player.set_look(0.0, -0.06)
 	await _sixtieths(30)
-	director.skip_break()
-	await _sixtieths(60 * 9)
-	var i := 0
-	for zombie: Zombie in director.zombies():
-		zombie.global_position = (
-			player.global_position + Vector3(-3.0 + i * 1.5, 0, -6.0 - (i % 3) * 2.0)
-		)
-		i += 1
-	await _sixtieths(40)
+	var spots := []
+	for i in 6:
+		spots.append(player.global_position + Vector3(-3.0 + i * 1.5, 0, -8.0 - (i % 3) * 2.0))
+	var horde := Puppets.spawn(director, spots, player.global_position)
+	for f in 40:
+		Puppets.walk(horde, player.global_position, 1.0 / 60.0)
+		await physics_frame
 	await _shot("horde_01")
 	player.set_input_enabled(false)
 	player.get_node("Camera/Viewmodel").visible = false

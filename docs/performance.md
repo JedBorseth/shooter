@@ -14,6 +14,8 @@ Measured at 1920×1080 on a GTX 1060 3GB, the reference card. The budget is GPU 
 
 Per map on Medium, best of runs on 2026-11-20 (average over viewpoints, worst in brackets): Testing 5.61 (5.83), Slamcity 7.60 (8.46), its close-ups 7.56 (7.62), Breakwater 6.79 (7.11), Warehouse 5.60 (6.43), Zombies with 24 zombies 5.52 (6.16) ms.
 
+Zombies hounds (`BENCH_HOUNDS=8`: a four-player hound round's most at once, galloping in front of the 24-zombie horde, which a real game never has together): Medium 5.59 (6.35) ms against 5.55 (6.17) without them, Low 3.21 (3.76) against 3.24 (3.71), on 2026-11-20. The gate itself runs without hounds, as the baseline was measured.
+
 Slamcity and Breakwater are over the Medium gate because of Medium's own full-screen passes, measured at their worst views: ambient occlusion 1.35 to 1.43 ms (nearly all of it the normal and roughness prepass it makes every opaque surface render; its cheapest quality saves nothing), glow 0.72 to 0.78, SMAA 0.65 to 0.79 (FXAA would save 0.45), sun shadows 0.73 to 1.0 (no shorter reach, smaller atlas, or fewer splits moves it), fog 0.17 to 0.37. Nothing left in the maps themselves is worth more than 0.2 ms. Getting them under 6.5 ms means turning one of those passes down on Medium, which changes the default look; that waits for the owner.
 
 Rules for a pull request that changes visuals:

@@ -1,65 +1,34 @@
-//! `Zombie`: walks in a straight line at the nearest living player, swings
-//! when in reach, and takes damage per hit zone. Two hits down a player
-//! (`shooter_sim::zombies::hit_damage`).
+//! `Zombie`: a zombie as clients draw it, for the dedicated server's zombie
+//! (`net::horde`, rules in `shooter_sim::zombies`). `NetClient` places it from
+//! snapshots (`net::horde_view`) and plays its swings, flinches, and death;
+//! it has no body to bump into, and the local player's hits only predict a
+//! flinch (the server owns its health).
 //!
-//! There is no pathfinding on purpose: each tick the zombie heads straight for
-//! its target, and `move_and_slide` slides it along whatever is in the way.
-//! Two exceptions keep the straight lines from pinning zombies to walls once
-//! the map has more than one yard: a zombie spawned in a side yard first walks
-//! straight to that yard's gate (`waypoint`), and a zombie that stops getting
-//! anywhere walks straight to the open gate that best leads to its target.
-//!
-//! A zombie that spawns behind a window first tears down the window's
-//! barrier (`scripts/zombies_barrier.gd`), one board at a time, then climbs
-//! through. It groans now and then, snarls when it swings, and cries out when
-//! it dies. Far from the camera its animation updates less often.
-//!
-//! Online the server runs every zombie (`net::horde`) and this node is only
-//! drawn ([`Zombie::set_puppet`]): `NetClient` places it from snapshots and
-//! plays its swings, flinches, and death; it has no body to bump into, and
-//! the local player's hits only predict a flinch.
+//! It groans now and then, snarls when it swings, and cries out when it
+//! dies, then falls as a ragdoll into the scene's corpse yard. Far from the
+//! camera its animation updates less often. Its hit zones (`HitboxRig`) are
+//! posed hunched, as the server rewinds them
+//! (`shooter_sim::zombies::chase::hitbox_pose`).
 
-use godot::classes::{AudioStream, AudioStreamPlayer3D, CharacterBody3D, ICharacterBody3D, Node3D};
+use godot::classes::{AudioStream, AudioStreamPlayer3D, CharacterBody3D, ICharacterBody3D};
 use godot::prelude::*;
-use shooter_sim::hitbox::HitboxPose;
-use shooter_sim::movement::Stance;
 use shooter_sim::rng;
-use shooter_sim::zombies::{self, Attack, AttackEvent, ZombieRules};
 
 use crate::aim_assist::AimAssistTarget;
 use crate::character::corpses::{self, CorpseYard};
-use crate::character::rig::{SoldierFrame, SoldierRig, wrap_angle};
-use crate::convert::{to_godot, to_sim};
+use crate::character::rig::{SoldierFrame, SoldierRig};
+use crate::convert::to_sim;
 use crate::hitbox_rig::HitboxRig;
-use crate::target::{BODY_LAYER, WORLD_LAYER};
 
-/// A zombie standing still is drawn lower on bent knees and less far
-/// forward than one walking: its hit zones take this much of the walking
-/// hunch and this much of a crouch.
-const IDLE_HUNCH: f32 = 0.65;
-const IDLE_CROUCH: f32 = 0.36;
 /// A hit this hard (force level, about a tenth of the damage) staggers a
 /// zombie for this long: it stops, rocks back, then comes on again.
 const STAGGER_FORCE: f32 = 8.0;
 const STAGGER_SECONDS: f32 = 0.5;
 
-/// Collision layer 6 ("barriers"): window boards only zombies bump into.
+/// Collision layer 6 ("barriers"): window boards only the server's zombies
+/// bump into.
 pub const BARRIER_LAYER: u32 = 1 << 5;
 
-/// Collision layer 2 ("players"), as a bit mask.
-const PLAYER_LAYER: u32 = 1 << 1;
-const GRAVITY: f32 = 20.0;
-/// Radians per second the body turns toward its target (visual only; the
-/// walk direction is always the straight line).
-const TURN_RATE: f32 = 10.0;
-/// A waypoint counts as reached within this many metres.
-const WAYPOINT_REACH: f32 = 1.5;
-/// Seconds of moving under a quarter of its speed before a zombie heads for a gate.
-const STUCK_SECONDS: f32 = 1.0;
-/// A zombie this close to its barrier tears at it.
-const BARRIER_REACH: f32 = 1.7;
-/// Seconds per board torn off.
-const TEAR_SECONDS: f32 = 1.1;
 /// Seconds between groans, at least and at most.
 const GROAN_MIN: f32 = 3.0;
 const GROAN_MAX: f32 = 9.0;
@@ -73,14 +42,6 @@ const QUARTER_RATE_DISTANCE: f32 = 32.0;
 pub struct Zombie {
     base: Base<CharacterBody3D>,
 
-    /// Set before the zombie enters the tree (the director scales it per round).
-    #[export]
-    #[init(val = 150.0)]
-    max_health: f32,
-    /// Ground speed in m/s.
-    #[export]
-    #[init(val = 1.4)]
-    speed: f32,
     /// Seconds before a dead zombie is removed (its voice finishes). Its body
     /// lies on in the scene's corpse yard.
     #[export]
@@ -102,26 +63,13 @@ pub struct Zombie {
     hitboxes: OnReady<Gd<HitboxRig>>,
     voice: Option<Gd<AudioStreamPlayer3D>>,
 
-    rules: ZombieRules,
-    attack: Attack,
-    health: f32,
+    #[init(val = true)]
+    alive: bool,
     yaw: f32,
-    fall_speed: f32,
-    /// Ground velocity after the last move, for the animation.
+    /// Ground velocity from the snapshots, for the animation.
     moved: Vector3,
     dead_for: f32,
-    hits_landed: u32,
     visuals: bool,
-    /// Walk here before chasing (a gate).
-    waypoint: Option<Vector3>,
-    /// The open gates between the map's yards.
-    gates: Vec<Vector3>,
-    stuck_for: f32,
-    /// Any hit kills (the Insta-Kill power-up).
-    insta_kill: bool,
-    /// The window barrier between this zombie and the arena, until it is through.
-    barrier: Option<Gd<Node3D>>,
-    tear_for: f32,
     groan_in: f32,
     /// Rendered frames since the last animation update, and their time.
     anim_frames: u32,
@@ -131,10 +79,8 @@ pub struct Zombie {
     body_left: bool,
     /// Seconds left of a stagger from a heavy hit.
     stagger_for: f32,
-    /// Drawn for the server's zombie: no mind, no body, no health of its own.
-    puppet: bool,
-    /// Online: when the local player's hit last flinched it (engine
-    /// seconds), so the server's report of that hit does not flinch it again.
+    /// When the local player's hit last flinched it (engine seconds), so the
+    /// server's report of that hit does not flinch it again.
     flinched_at: Option<f64>,
 }
 
@@ -142,26 +88,17 @@ pub struct Zombie {
 impl ICharacterBody3D for Zombie {
     fn ready(&mut self) {
         self.visuals = crate::character::rig::visuals_enabled();
-        self.health = self.max_health;
         self.yaw = self.base().get_global_rotation().y;
         self.base_mut().set_rotation(Vector3::ZERO);
-        if self.puppet {
-            self.base_mut().set_collision_layer(0);
-            self.base_mut().set_collision_mask(0);
-        } else {
-            self.base_mut().set_collision_layer(BODY_LAYER);
-            self.base_mut()
-                .set_collision_mask(WORLD_LAYER | BODY_LAYER | PLAYER_LAYER | BARRIER_LAYER);
-        }
+        self.base_mut().set_collision_layer(0);
+        self.base_mut().set_collision_mask(0);
         self.base_mut().add_to_group("zombies");
         self.voice = self.base().try_get_node_as::<AudioStreamPlayer3D>("Voice");
         self.seed = self.base().instance_id().to_i64() as u32;
         self.groan_in = GROAN_MIN + rng::unit(self.seed, 0) * (GROAN_MAX - GROAN_MIN);
-        self.speed *= shooter_sim::zombies::chase::speed_factor(self.seed);
     }
 
-    /// Animation runs per rendered frame (less often far away); movement and
-    /// attacks per tick.
+    /// Animation runs per rendered frame (less often far away).
     fn process(&mut self, delta: f64) {
         let _profile = crate::profile::scope("zombies (frame)");
         if !self.visuals {
@@ -171,7 +108,7 @@ impl ICharacterBody3D for Zombie {
         self.anim_time += delta as f32;
         let every = self.animation_interval();
         // Spread the zombies over the frames, so they do not all update at once.
-        if !(self.anim_frames + self.seed).is_multiple_of(every) && self.is_alive() {
+        if !(self.anim_frames + self.seed).is_multiple_of(every) && self.alive {
             return;
         }
         if self.body_left {
@@ -181,7 +118,7 @@ impl ICharacterBody3D for Zombie {
         let dt = std::mem::take(&mut self.anim_time);
         self.anim_frames = 0;
         self.rig.bind_mut().update(&frame, dt);
-        if !self.is_alive() {
+        if !self.alive {
             // The body falls and lies in the scene's yard, past this node's
             // own removal.
             self.body_left = true;
@@ -195,7 +132,8 @@ impl ICharacterBody3D for Zombie {
     fn physics_process(&mut self, delta: f64) {
         let _profile = crate::profile::scope("zombies (physics)");
         let dt = delta as f32;
-        if !self.is_alive() {
+        self.stagger_for = (self.stagger_for - dt).max(0.0);
+        if !self.alive {
             self.moved = Vector3::ZERO;
             self.dead_for += dt;
             if self.dead_for >= self.corpse_time {
@@ -203,155 +141,27 @@ impl ICharacterBody3D for Zombie {
             }
             return;
         }
-
-        if self.puppet {
-            self.groan(dt);
-            return;
-        }
-        let position = self.base().get_global_position();
         self.groan(dt);
-        // A heavy hit stops it in its tracks for a moment.
-        if self.stagger_for > 0.0 {
-            self.stagger_for -= dt;
-            self.moved = Vector3::ZERO;
-            self.fall(dt);
-            return;
-        }
-        if self.tear_barrier(position, dt) {
-            self.moved = Vector3::ZERO;
-            return;
-        }
-        let target = self.nearest_player(position);
-        let distance = target
-            .as_ref()
-            .map(|t| zombies::flat_distance(to_sim(position), to_sim(t.get_global_position())));
-        match self.attack.step(&self.rules, distance, dt) {
-            Some(AttackEvent::Swung) => {
-                self.rig.bind_mut().attack();
-                let sound = self.attack_sounds.clone();
-                self.say(sound);
-            }
-            Some(AttackEvent::Hit) => {
-                if let Some(target) = &target {
-                    self.strike(target.clone());
-                }
-            }
-            Some(AttackEvent::Missed) | None => {}
-        }
-
-        if self
-            .waypoint
-            .is_some_and(|w| zombies::flat_distance(to_sim(position), to_sim(w)) < WAYPOINT_REACH)
-        {
-            self.waypoint = None;
-        }
-        let mut horizontal = Vector3::ZERO;
-        if let Some(target) = &target {
-            let goal = self
-                .waypoint
-                .unwrap_or_else(|| target.get_global_position());
-            let direction = to_godot(zombies::chase_direction(to_sim(position), to_sim(goal)));
-            if direction != Vector3::ZERO {
-                let want = (-direction.x).atan2(-direction.z);
-                let turn = TURN_RATE * dt;
-                self.yaw += wrap_angle(want - self.yaw).clamp(-turn, turn);
-            }
-            // Stand still to swing, and stop just inside reach instead of
-            // pushing into the player.
-            let close = distance.is_some_and(|d| d <= self.rules.attack_reach * 0.8);
-            if !self.attack.swinging() && !close {
-                horizontal = direction * self.speed;
-            }
-        }
-
-        self.update_fall(dt);
-        let velocity = horizontal + Vector3::DOWN * self.fall_speed;
-        let mut body = self.base_mut();
-        body.set_velocity(velocity);
-        body.move_and_slide();
-        let moved = body.get_velocity();
-        drop(body);
-        self.moved = moved;
-        self.check_stuck(horizontal, moved, dt, target.as_ref());
-
-        // Hunched as the shamble is drawn, so a headshot aims at the head:
-        // walking, bent forward with the head out; standing, lower on bent
-        // knees.
-        let walking = Vector3::new(self.moved.x, 0.0, self.moved.z).length() > 0.3;
-        let (hunch, crouch) = if walking {
-            (1.0, 0.0)
-        } else {
-            (IDLE_HUNCH, IDLE_CROUCH)
-        };
-        let pose = HitboxPose {
-            activity: shooter_sim::hitbox::Activity {
-                hunch,
-                crouch: Some(crouch),
-                ..Default::default()
-            },
-            ..HitboxPose::new(
-                to_sim(self.base().get_global_position()),
-                self.yaw,
-                0.0,
-                Stance::Standing,
-            )
-        };
-        self.hitboxes.bind_mut().set_pose(Some(pose));
     }
 }
 
 #[godot_api]
 impl Zombie {
-    /// Emitted for every damaging hit, before the zombie reacts.
-    #[signal]
-    pub fn hurt(killed: bool, headshot: bool, melee: bool, position: Vector3);
-
-    /// Emitted when one of this zombie's swings lands on a player.
-    #[signal]
-    pub fn struck();
-
-    /// Applies damage and returns true if this hit killed the zombie.
+    /// The server owns its health: a hit here only predicts the marker.
     #[func]
-    pub fn apply_damage(&mut self, amount: f32, headshot: bool) -> bool {
-        self.take_damage(amount, headshot, false)
+    pub fn apply_damage(&mut self, _amount: f32, _headshot: bool) -> bool {
+        false
     }
 
-    /// A knife strike: damage like [`apply_damage`](Self::apply_damage), and
-    /// a kill pays the knife's points.
+    /// A knife strike: as [`apply_damage`](Self::apply_damage).
     #[func]
-    pub fn apply_melee(&mut self, amount: f32) -> bool {
-        self.take_damage(amount, false, true)
+    pub fn apply_melee(&mut self, _amount: f32) -> bool {
+        false
     }
 
-    fn take_damage(&mut self, amount: f32, headshot: bool, melee: bool) -> bool {
-        // Online the server owns health; the kill arrives from it.
-        if !self.is_alive() || self.puppet {
-            return false;
-        }
-        let amount = if self.insta_kill { self.health } else { amount };
-        self.health -= amount;
-        let killed = self.health <= 0.0;
-        if killed {
-            self.health = 0.0;
-            let sound = self.death_sounds.clone();
-            self.say(sound);
-            self.base_mut().set_collision_layer(0);
-            self.base_mut().set_collision_mask(WORLD_LAYER);
-            self.hitboxes.bind_mut().set_pose(None);
-            if let Some(mut assist) = self.base().try_get_node_as::<AimAssistTarget>("AimAssist") {
-                assist.bind_mut().set_active(false);
-            }
-        }
-        let position = self.base().get_global_position();
-        self.signals()
-            .hurt()
-            .emit(killed, headshot, melee, position);
-        killed
-    }
-
-    /// Flinch from a hit travelling along `direction` that landed at `point`
-    /// on hit shape `part` (-1 unknown) with force level `force`, or fall
-    /// with the killing shot's push.
+    /// The local player's hit, travelling along `direction`, landed at
+    /// `point` on hit shape `part` (-1 unknown) with force level `force`: a
+    /// flinch now, before the server's word.
     #[func]
     pub fn react_to_hit(
         &mut self,
@@ -361,22 +171,71 @@ impl Zombie {
         part: i64,
         force: f32,
     ) {
-        if self.puppet && !killed {
+        if !killed {
             self.flinched_at = Some(now_seconds());
         }
         self.flinch(direction, killed, point, part, force);
     }
 
-    /// Whether the local player's own hit flinched it in the last `seconds`;
-    /// answers yes once per hit.
-    pub fn predicted_flinch(&mut self, seconds: f32) -> bool {
-        let recent = self
-            .flinched_at
-            .is_some_and(|at| now_seconds() - at < f64::from(seconds));
-        self.flinched_at = None;
-        recent
+    /// Seconds left of a stagger, for tests.
+    #[func]
+    pub fn staggered_for(&self) -> f32 {
+        self.stagger_for
     }
 
+    #[func]
+    pub fn is_alive(&self) -> bool {
+        self.alive
+    }
+
+    /// Facing yaw in radians (0 faces -Z), for tests and captures.
+    #[func]
+    pub fn facing(&self) -> f32 {
+        self.yaw
+    }
+
+    /// Places the drawn zombie where the server's was, facing `yaw` and
+    /// moving at `velocity`, with its hit zones posed to match (also how
+    /// captures pose one).
+    #[func]
+    pub fn net_apply(&mut self, feet: Vector3, yaw: f32, velocity: Vector3, walking: bool) {
+        self.base_mut().set_global_position(feet);
+        self.yaw = yaw;
+        self.moved = velocity;
+        if self.alive {
+            let pose = shooter_sim::zombies::chase::hitbox_pose(to_sim(feet), yaw, walking);
+            self.hitboxes.bind_mut().set_pose(Some(pose));
+        }
+    }
+
+    /// The server's zombie swung (at a player or a window's boards).
+    #[func]
+    pub fn net_swing(&mut self) {
+        self.rig.bind_mut().attack();
+        let sound = self.attack_sounds.clone();
+        self.say(sound);
+    }
+
+    /// The server's zombie died from a hit travelling along `direction` that
+    /// landed on hit shape `part` with force level `force`.
+    #[func]
+    pub fn net_die(&mut self, direction: Vector3, part: i64, force: f32) {
+        if !self.alive {
+            return;
+        }
+        self.alive = false;
+        let sound = self.death_sounds.clone();
+        self.say(sound);
+        self.hitboxes.bind_mut().set_pose(None);
+        if let Some(mut assist) = self.base().try_get_node_as::<AimAssistTarget>("AimAssist") {
+            assist.bind_mut().set_active(false);
+        }
+        let point = self.base().get_global_position() + Vector3::UP * 1.2;
+        self.flinch(direction, true, point, part, force);
+    }
+}
+
+impl Zombie {
     /// The flinch, or the fall, from a hit.
     pub fn flinch(
         &mut self,
@@ -395,139 +254,14 @@ impl Zombie {
         }
     }
 
-    /// Seconds left of a stagger, for tests.
-    #[func]
-    pub fn staggered_for(&self) -> f32 {
-        self.stagger_for.max(0.0)
-    }
-
-    #[func]
-    pub fn health(&self) -> f32 {
-        self.health
-    }
-
-    #[func]
-    pub fn is_alive(&self) -> bool {
-        self.health > 0.0
-    }
-
-    /// Swings that have landed on a player, for tests.
-    #[func]
-    pub fn hits_landed(&self) -> i64 {
-        i64::from(self.hits_landed)
-    }
-
-    /// Facing yaw in radians (0 faces -Z), for tests.
-    #[func]
-    pub fn facing(&self) -> f32 {
-        self.yaw
-    }
-
-    /// Walks straight here before chasing (a side yard's gate).
-    #[func]
-    pub fn set_waypoint(&mut self, waypoint: Vector3) {
-        self.waypoint = Some(waypoint);
-    }
-
-    /// While on, any hit kills (Insta-Kill).
-    #[func]
-    pub fn set_insta_kill(&mut self, on: bool) {
-        self.insta_kill = on;
-    }
-
-    /// The window barrier this zombie must tear down to get in.
-    #[func]
-    pub fn set_barrier(&mut self, barrier: Gd<Node3D>) {
-        self.barrier = Some(barrier);
-    }
-
-    /// Whether it is still outside, at or on its way to a barrier (tests).
-    #[func]
-    pub fn behind_barrier(&self) -> bool {
-        self.barrier.is_some()
-    }
-}
-
-impl Zombie {
-    /// Online: drawn for the server's zombie. Call before it enters the tree.
-    pub fn set_puppet(&mut self) {
-        self.puppet = true;
-    }
-
-    /// Online: places the drawn zombie where the server's was, facing `yaw`
-    /// and moving at `velocity`, with its hit zones posed to match.
-    pub fn net_apply(&mut self, feet: Vector3, yaw: f32, velocity: Vector3, walking: bool) {
-        self.base_mut().set_global_position(feet);
-        self.yaw = yaw;
-        self.moved = velocity;
-        if self.is_alive() {
-            let pose = shooter_sim::zombies::chase::hitbox_pose(to_sim(feet), yaw, walking);
-            self.hitboxes.bind_mut().set_pose(Some(pose));
-        }
-    }
-
-    /// Online: the server's zombie swung (at a player or a window's boards).
-    pub fn net_swing(&mut self) {
-        self.rig.bind_mut().attack();
-        let sound = self.attack_sounds.clone();
-        self.say(sound);
-    }
-
-    /// Online: the server's zombie died from a hit travelling along
-    /// `direction` that landed on hit shape `part` with force level `force`.
-    pub fn net_die(&mut self, direction: Vector3, part: i64, force: f32) {
-        if !self.is_alive() {
-            return;
-        }
-        self.health = 0.0;
-        let sound = self.death_sounds.clone();
-        self.say(sound);
-        self.hitboxes.bind_mut().set_pose(None);
-        if let Some(mut assist) = self.base().try_get_node_as::<AimAssistTarget>("AimAssist") {
-            assist.bind_mut().set_active(false);
-        }
-        let point = self.base().get_global_position() + Vector3::UP * 1.2;
-        self.flinch(direction, true, point, part, force);
-    }
-
-    /// Health and speed for a spawn; call before the zombie enters the tree.
-    pub fn configure(&mut self, max_health: f32, speed: f32) {
-        self.max_health = max_health;
-        self.speed = speed;
-    }
-
-    /// Tears at the barrier while next to it and boards remain. Returns true
-    /// while the zombie is busy with it (and should not move).
-    fn tear_barrier(&mut self, position: Vector3, dt: f32) -> bool {
-        let Some(mut barrier) = self.barrier.clone() else {
-            return false;
-        };
-        if !barrier.is_instance_valid() {
-            self.barrier = None;
-            return false;
-        }
-        let boards = barrier.call("boards", &[]).try_to::<i64>().unwrap_or(0);
-        let at = barrier.get_global_position();
-        let near = zombies::flat_distance(to_sim(position), to_sim(at)) < BARRIER_REACH;
-        if boards == 0 {
-            // Through the window once past it: chase from here on.
-            if self.waypoint.is_none() {
-                self.barrier = None;
-            }
-            return false;
-        }
-        if !near {
-            return false;
-        }
-        let to = at - position;
-        self.yaw = (-to.x).atan2(-to.z);
-        self.tear_for += dt;
-        if self.tear_for >= TEAR_SECONDS {
-            self.tear_for = 0.0;
-            self.rig.bind_mut().attack();
-            barrier.call("tear", &[]);
-        }
-        true
+    /// Whether the local player's own hit flinched it in the last `seconds`;
+    /// answers yes once per hit.
+    pub fn predicted_flinch(&mut self, seconds: f32) -> bool {
+        let recent = self
+            .flinched_at
+            .is_some_and(|at| now_seconds() - at < f64::from(seconds));
+        self.flinched_at = None;
+        recent
     }
 
     fn groan(&mut self, dt: f32) {
@@ -535,14 +269,10 @@ impl Zombie {
         if self.groan_in > 0.0 {
             return;
         }
-        self.counter_groan();
-        let sound = self.groans.clone();
-        self.say(sound);
-    }
-
-    fn counter_groan(&mut self) {
         self.seed = self.seed.wrapping_add(1);
         self.groan_in = GROAN_MIN + rng::unit(self.seed, 1) * (GROAN_MAX - GROAN_MIN);
+        let sound = self.groans.clone();
+        self.say(sound);
     }
 
     fn say(&mut self, sound: Option<Gd<AudioStream>>) {
@@ -570,111 +300,14 @@ impl Zombie {
         }
     }
 
-    /// The gates a stuck zombie may head for.
-    pub fn set_gates(&mut self, gates: Vec<Vector3>) {
-        self.gates = gates;
-    }
-
-    /// A zombie walking into a wall heads for the open gate on the shortest
-    /// way to its target, then chases again.
-    fn check_stuck(
-        &mut self,
-        wanted: Vector3,
-        moved: Vector3,
-        dt: f32,
-        target: Option<&Gd<Node3D>>,
-    ) {
-        let want = Vector2::new(wanted.x, wanted.z).length();
-        let got = Vector2::new(moved.x, moved.z).length();
-        if want < 0.1 || got > want * 0.25 || self.waypoint.is_some() {
-            self.stuck_for = 0.0;
-            return;
-        }
-        self.stuck_for += dt;
-        if self.stuck_for < STUCK_SECONDS {
-            return;
-        }
-        self.stuck_for = 0.0;
-        let Some(target) = target.map(|t| t.get_global_position()) else {
-            return;
-        };
-        let here = self.base().get_global_position();
-        self.waypoint = self
-            .gates
-            .iter()
-            .copied()
-            .filter(|g| g.distance_to(here) > WAYPOINT_REACH * 2.0)
-            .min_by(|a, b| {
-                let cost = |g: &Vector3| g.distance_to(here) + g.distance_to(target);
-                cost(a).total_cmp(&cost(b))
-            });
-    }
-
     fn frame(&self, velocity: Vector3) -> SoldierFrame {
         SoldierFrame {
             velocity,
             on_floor: true,
             yaw: self.yaw,
-            alive: self.is_alive(),
+            alive: self.alive,
             ..SoldierFrame::default()
         }
-    }
-
-    /// Gravity on the fall speed this tick.
-    fn update_fall(&mut self, dt: f32) {
-        if self.base().is_on_floor() {
-            self.fall_speed = 0.0;
-        } else {
-            self.fall_speed += GRAVITY * dt;
-        }
-    }
-
-    /// Standing in place (staggered): only falling moves it.
-    fn fall(&mut self, dt: f32) {
-        self.update_fall(dt);
-        let velocity = Vector3::DOWN * self.fall_speed;
-        let mut body = self.base_mut();
-        body.set_velocity(velocity);
-        body.move_and_slide();
-    }
-
-    /// The closest living player, by straight-line distance.
-    fn nearest_player(&self, from: Vector3) -> Option<Gd<Node3D>> {
-        let tree = self.base().get_tree();
-        let mut best: Option<(Gd<Node3D>, f32)> = None;
-        for node in tree.get_nodes_in_group("players").iter_shared() {
-            let Ok(mut player) = node.try_cast::<Node3D>() else {
-                continue;
-            };
-            let alive = player
-                .call("is_alive", &[])
-                .try_to::<bool>()
-                .unwrap_or(false);
-            if !alive {
-                continue;
-            }
-            let distance = from.distance_squared_to(player.get_global_position());
-            if best.as_ref().is_none_or(|(_, d)| distance < *d) {
-                best = Some((player, distance));
-            }
-        }
-        best.map(|(player, _)| player)
-    }
-
-    fn strike(&mut self, mut target: Gd<Node3D>) {
-        let health = target.call("health", &[]).try_to::<f32>().unwrap_or(0.0);
-        let max = target
-            .call("max_health", &[])
-            .try_to::<f32>()
-            .unwrap_or(100.0);
-        let damage = zombies::hit_damage(health, max);
-        if damage <= 0.0 {
-            return;
-        }
-        let from = self.base().get_global_position() + Vector3::UP * 1.3;
-        target.call("take_damage", &[damage.to_variant(), from.to_variant()]);
-        self.hits_landed += 1;
-        self.signals().struck().emit();
     }
 }
 

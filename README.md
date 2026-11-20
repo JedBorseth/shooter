@@ -22,7 +22,7 @@ The plan, decisions, and reference projects are in [docs/roadmap.md](docs/roadma
 - `godot/assets/characters/`: the soldier model and its texture atlas, the first-person arms, the animation sets (all built by `tools/build_character_assets.py`), and the bone maps that retarget them to Godot's humanoid skeleton. `godot/scenes/characters/` holds the third-person soldier and the first-person arms.
 - `godot/data/weapons/`: one RON file per weapon (damage, fire rate, recoil pattern, spread, reload style, pellets, scope). Edit a file while the game runs from a debug build and it reloads.
 - `rust/sim/`: engine-independent, deterministic simulation: Zombies rules (`zombies.rs`: rounds, horde size and health, gaits, the straight-line chase, attacks, the two-hit rule, points), movement, weapons (fire rate, falloff, recoil patterns, spread, pellets, bolt and pump cycling, magazine and shell-by-shell reloads, ADS, scope sway and hold breath, switching, pickups), health (regeneration, fall damage, death), equipment (`equipment.rs`: the frag grenade's cook and throw, its flight, bounces, and blast, the flashbang's blinding and the smoke cloud's growth and what it hides, and counts per mode), hit zones (head, chest, stomach, arms, legs, posed from stance and view angles, with damage multipliers), the combined per-player step that the client predicts and the server runs, and gamepad look (stick shaping, aim assist). `rust/sim/src/net/` holds the netcode core: the bit-packed wire protocol with delta compression, the server's input queue (with an input rate cap), client prediction and reconciliation, snapshot interpolation, lag compensation (hitbox history, rewind, and shot resolution), a network condition simulator, and server discovery (`discovery.rs`: the query and master server packets, and the browser's logic). No Godot types, so the client and the dedicated server share it and it can be unit-tested on its own.
-- `rust/game/`: the GDExtension that exposes the simulation to Godot: `FpsPlayer` (input, gamepad look and aim assist, hitscan, tracers, footsteps, camera, prediction), `AimAssistTarget`, `ViewmodelRig` and `WeaponView` (procedural weapon motion, muzzle flash, ejected shells, sounds), `WeaponPickup` (weapon racks), `Sentry` (a turret that shoots back), `TargetDummy` (an armed soldier), `Zombie` and `ZombieDirector` (Zombies mode), the characters in `rust/game/src/character/` (`SoldierRig` with its animation tree, `SoldierPoser` for aim and hand IK, the hand-pose fitter in `grasp.rs`, ragdoll deaths and the `CorpseYard` where bodies and dropped guns lie, `FpArms`, team palettes), `HitboxRig` (hit zones as physics shapes, F4 overlay), and networking in `rust/game/src/net/`: `NetServer` (the dedicated server, which also resolves every shot, applies damage, and keeps score), `NetClient`, `RemotePlayer` (other players, interpolated), and `ServerBrowser` (finds servers for the server browser; the server side answers its queries). Sound: see [Sound](#sound).
+- `rust/game/`: the GDExtension that exposes the simulation to Godot: `FpsPlayer` (input, gamepad look and aim assist, hitscan, tracers, footsteps, camera, prediction), `AimAssistTarget`, `ViewmodelRig` and `WeaponView` (procedural weapon motion, muzzle flash, ejected shells, sounds), `WeaponPickup` (weapon racks), `Sentry` (a turret that shoots back), `TargetDummy` (an armed soldier), `Zombie` and `ZombieDirector` (Zombies, drawn and mirrored from the server), the characters in `rust/game/src/character/` (`SoldierRig` with its animation tree, `SoldierPoser` for aim and hand IK, the hand-pose fitter in `grasp.rs`, ragdoll deaths and the `CorpseYard` where bodies and dropped guns lie, `FpArms`, team palettes), `HitboxRig` (hit zones as physics shapes, F4 overlay), and networking in `rust/game/src/net/`: `NetServer` (the dedicated server, which also resolves every shot, applies damage, and keeps score), `NetClient`, `RemotePlayer` (other players, interpolated), and `ServerBrowser` (finds servers for the server browser; the server side answers its queries). Sound: see [Sound](#sound).
 - `rust/master/`: `shooter-master`, the master server that lists dedicated servers for the in-game server browser.
 - `rust/launcher/`: `shooter-launcher`, which keeps the latest nightly build installed and starts it, and keeps a dedicated server on the latest build (see [Play the latest build](#play-the-latest-build)).
 - `godot/shaders/`: viewmodel projection (own FOV, never clips walls), muzzle flash, damage vignette, the lens pass, and the blockout grid.
@@ -155,10 +155,12 @@ round number (500 at most). Bullets pass between the boards. Zombies
 groan as they come, snarl when they swing, and a sting marks each round.
 
 A zombie that reaches you swings. The first hit takes half your health and the
-second kills you, unless your health has fully regenerated in between. There is no
-respawn: death ends the match and shows how many rounds you survived, with
-**Play again** and **Main menu**. Hits pay 10 points, kills 60, and headshot kills
-100; you start with 500 and an M4. Spend points with F:
+second puts you down, unless your health has fully regenerated in between; a
+teammate can revive you (see [docs/zombies.md](docs/zombies.md)). When everyone is
+down the game ends and shows how many rounds you survived, then a new game starts
+(**Main menu** leaves). Hits pay 10 points, kills 60, and headshot kills 100; you
+start with 500 and the M1911. Every game runs on a dedicated server, a private local
+one for Solo. Spend points with F:
 
 - **Wall weapons:** the tables on the north wall sell the M1911 (500), M870 (900),
   PDW-9 (1000), and M4A1 (1200); the side yards add the AK-47 (1400) and M40 (1500).
@@ -201,7 +203,7 @@ godot --headless --path godot --script res://tests/slamcity_test.gd
 godot --headless --path godot --script res://tests/settings_test.gd
 godot --headless --path godot --script res://tests/title_screen_test.gd
 godot --headless --path godot --script res://tests/zombies_menu_test.gd
-godot --headless --path godot --script res://tests/zombies_test.gd
+godot --headless --path godot --script res://tests/zombies_server_test.gd
 ```
 
 The Zombies test loads the arena and checks that zombies spawn, walk straight at the player at their round's speed, can be shot for points, that clearing round 1 starts round 2, and that exactly two zombie hits end the match with no respawn. `godot/tests/zombies_capture.gd` takes reference screenshots on a GPU (set `CAPTURE_DIR`).

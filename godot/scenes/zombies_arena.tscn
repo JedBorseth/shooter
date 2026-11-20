@@ -1394,8 +1394,6 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 19.5, 0.05, 19)
 
 [node name="Director" type="ZombieDirector" parent="." unique_id=1377428754]
 zombie_scene = ExtResource("20_zombie")
-player_path = NodePath("../Player")
-spawns_path = NodePath("../Spawns")
 power_up_scene = ExtResource("25_power_up")
 
 [node name="Player" parent="." unique_id=637251143 instance=ExtResource("1_player")]

@@ -11,6 +11,8 @@ extends SceneTree
 ##   CAPTURE_DIR=/path/to/out godot --path godot --resolution 1600x900 \
 ##     --audio-driver Dummy --script res://tests/capture_ui.gd
 
+const Puppets := preload("res://tests/zombie_puppets.gd")
+
 var _out := OS.get_environment("CAPTURE_DIR")
 var _phase := OS.get_environment("CAPTURE_PHASE")
 
@@ -182,12 +184,13 @@ func _zombies() -> void:
 	await _shot("zombies_01_get_ready")
 	var director := arena.get_node("Director") as ZombieDirector
 	var hud := arena.get_node("HUD/Zombies")
-	director.add_points(950)
+	director.net_round(1, 0, 4.0, 0, false)
+	director.add_points(1450)
 	hud.call("_on_points", 50, director.points())
 	hud.call("_on_points", 100, director.points())
 	await _frames(12)
 	await _shot("zombies_02_points")
-	director.skip_break()
+	director.net_round(1, 1, 0.0, 6, false)
 	await _seconds(4.0)
 	await _shot("zombies_03_round")
 	hud.call("_on_power_up", "double_points", "DOUBLE POINTS")
@@ -389,12 +392,16 @@ func _art() -> void:
 	# A Zombies round with the horde closing in.
 	var arena := await _open("res://scenes/zombies_arena.tscn")
 	var director := arena.get_node("Director") as ZombieDirector
-	director.skip_break()
-	await _seconds(9.0)
 	for layer: CanvasLayer in root.find_children("*", "CanvasLayer", true, false):
 		layer.visible = false
 	var zp := arena.get_node("Player") as FpsPlayer
-	var zombies := director.zombies()
+	var spots := []
+	for i in 6:
+		spots.append(zp.global_position + Vector3(-5.0 + i * 2.0, 0, -8.0 - (i % 3) * 2.0))
+	var zombies := Puppets.spawn(director, spots, zp.global_position)
+	for f in 60:
+		Puppets.walk(zombies, zp.global_position, 1.0 / 60.0)
+		await physics_frame
 	for i in mini(zombies.size(), 3):
 		_look_at(zp, (zombies[i] as Node3D).global_position + Vector3(0, 1.2, 0))
 		await _frames(6)
