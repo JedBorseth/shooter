@@ -27,7 +27,8 @@ extends CanvasLayer
 ##
 ## Hardpoint's own pieces (the zone, its marker, and the calls) are in
 ## `hardpoint_view.gd`; here it adds a TIME column (seconds on the hill) to
-## the scoreboard. Search and Destroy
+## the scoreboard. Domination's pieces are in `domination_view.gd`; here it
+## adds CAPS and DEF columns. Search and Destroy
 ## adds its round HUD beside this one (`snd_hud.gd`).
 
 const MenuStyle := preload("res://scripts/ui/menu_style.gd")
@@ -238,8 +239,9 @@ func _update_team_bar(info: Dictionary) -> void:
 	_set_state(info.phase, ours, theirs)
 	_score.footer = ""
 	if info.score_limit > 0:
-		var goal: String = {"ctf": "CAPTURES", "hardpoint": "POINTS", "snd": "ROUNDS"}.get(
-			info.mode, "KILLS"
+		var goal: String = (
+			{"ctf": "CAPTURES", "hardpoint": "POINTS", "dom": "POINTS", "snd": "ROUNDS"}
+			. get(info.mode, "KILLS")
 		)
 		_score.footer = "FIRST TO %d %s" % [info.score_limit, goal]
 
@@ -353,6 +355,8 @@ func _update_banner(phase: String, info: Dictionary) -> void:
 				_overlay.detail = "Capture the Flag  ·  first to %d captures" % info.score_limit
 			elif info.mode == "hardpoint":
 				_overlay.detail = "Hardpoint  ·  first to %d points" % info.score_limit
+			elif info.mode == "dom":
+				_overlay.detail = "Domination  ·  first to %d points" % info.score_limit
 			elif info.mode == "snd":
 				_overlay.detail = "Search and Destroy  ·  first to %d rounds" % info.score_limit
 			else:
@@ -527,6 +531,7 @@ func _refresh_board() -> void:
 	var my_team: int = info.my_team
 	var ctf: bool = info.mode == "ctf"
 	var hardpoint: bool = info.mode == "hardpoint"
+	var dom: bool = info.mode == "dom"
 	var snd: bool = info.mode == "snd"
 	var headings := ["NAME", "SCORE", "K", "D", "PING"]
 	if ctf:
@@ -536,6 +541,8 @@ func _refresh_board() -> void:
 		headings = ["NAME", "SCORE", "PLANT", "DEF", "K", "D", "PING"]
 	if hardpoint:
 		headings.insert(headings.size() - 1, "TIME")
+	if dom:
+		headings = ["NAME", "SCORE", "CAPS", "DEF", "K", "D", "PING"]
 	# Our team on top.
 	var order := [my_team, 1 - my_team] if my_team >= 0 else [0, 1]
 	var scores: PackedInt32Array = info.scores
@@ -549,6 +556,9 @@ func _refresh_board() -> void:
 			if ctf or snd:
 				cells.append(str(entry.get("captures", 0)))
 				cells.append(str(entry.get("returns", 0)))
+			if dom:
+				cells.append(str(entry.get("captures", 0)))
+				cells.append(str(entry.get("defends", 0)))
 			cells.append(str(entry.kills))
 			cells.append(str(entry.deaths))
 			if hardpoint:

@@ -490,7 +490,8 @@ impl NetClient {
 
     /// Every player, ourselves included, as dictionaries with `id`, `name`,
     /// `team`, `bot`, `me`, `score`, `kills`, `deaths`, `ping`, `ready`,
-    /// `alive`, for Capture the Flag `captures` and `returns`, for Hardpoint
+    /// `alive`, for Capture the Flag `captures` and `returns` (Domination:
+    /// `captures` and `defends`), for Hardpoint
     /// `hill_seconds`, and for Gun Game `level`, `level_kills`, and `weapon`
     /// (the name of the weapon on their level). Sorted by team and then by
     /// score, or in Gun Game by how far up the ladder, with the winner first
@@ -530,6 +531,7 @@ impl NetClient {
                 d.set("deaths", e.row.deaths);
                 d.set("captures", e.row.captures);
                 d.set("returns", e.row.returns);
+                d.set("defends", e.row.defends);
                 d.set("ping", i32::from(e.row.ping_ms));
                 d.set("ready", e.row.ready);
                 d.set("level", i32::from(e.row.level));

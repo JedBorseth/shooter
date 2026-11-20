@@ -15,6 +15,7 @@ const SETUP_BUTTONS := {
 	"tdm": "TeamDeathmatch",
 	"ctf": "CaptureTheFlag",
 	"hardpoint": "Hardpoint",
+	"dom": "Domination",
 	"gungame": "GunGame",
 	"ffa": "FreeForAll",
 	"snd": "SearchAndDestroy",
@@ -27,6 +28,7 @@ const ROUTES := {
 	"FreeForAll": ["FREE FOR ALL", "Every player for themselves, first to the kill limit."],
 	"CaptureTheFlag": ["OBJECTIVE", "Bring the enemy flag home to your own."],
 	"Hardpoint": ["OBJECTIVE", "Hold the moving zone to score."],
+	"Domination": ["OBJECTIVE", "Take and hold flags A, B, and C."],
 	"SearchAndDestroy": ["ONE LIFE", "Rounds with one life each."],
 	"Multiplayer": ["ONLINE", "Join a dedicated server on the internet or your network."],
 	"Zombies": ["SOLO", "Survive the rounds."],
@@ -152,7 +154,7 @@ func _open_multiplayer(message := "") -> void:
 	)
 
 
-## Opens the local match setup for `mode` ("tdm", "ctf", "hardpoint", "gungame",
+## Opens the local match setup for `mode` ("tdm", "ctf", "hardpoint", "dom", "gungame",
 ## "ffa", or "snd") as a card beside the menu, closing any card already open.
 func _open_setup(mode: String) -> void:
 	if _loading:

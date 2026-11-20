@@ -212,8 +212,33 @@ func _run() -> void:
 		setup.back_requested.emit()
 		await process_frame
 		_check(hardpoint.has_focus(), "closing the setup focuses Hardpoint again")
+	var dom := menu.get_node("Domination") as Button
+	_check(routes[5] == dom and not dom.disabled, "Domination is the sixth route")
+	dom.pressed.emit()
+	await process_frame
+	setup = title.get_node_or_null("TdmSetup")
+	_check(setup != null, "Domination opens the setup")
+	if setup != null:
+		var options: Dictionary = setup.options()
+		_check(
+			(
+				options
+				== {
+					"mode": "dom",
+					"map": "slamcity",
+					"bots": 11,
+					"bot_skill": "normal",
+					"score_limit": 200,
+					"time_limit": 10
+				}
+			),
+			"the default Domination is 6v6 on Slamcity to 200 points, got %s" % options
+		)
+		setup.back_requested.emit()
+		await process_frame
+		_check(dom.has_focus(), "closing the setup focuses Domination again")
 	var snd := menu.get_node("SearchAndDestroy") as Button
-	_check(routes[5] == snd and not snd.disabled, "Search and Destroy is the sixth route")
+	_check(routes[6] == snd and not snd.disabled, "Search and Destroy is the seventh route")
 	snd.pressed.emit()
 	await process_frame
 	setup = title.get_node_or_null("TdmSetup")
