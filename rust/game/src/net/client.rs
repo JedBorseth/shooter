@@ -1528,8 +1528,9 @@ impl NetClient {
                     }
                 }
                 let newest = self.newest;
+                let me = self.player_id;
                 if let Some(horde) = &mut self.horde {
-                    horde.on_event(&event, |end| match newest {
+                    horde.on_event(&event, me, |end| match newest {
                         Some(now) => f64::from(end.saturating_sub(now)) / f64::from(TICK_RATE),
                         None => 0.0,
                     });

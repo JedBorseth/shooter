@@ -38,6 +38,7 @@ pub struct HordeView {
     /// The power switch and the drink machines, in the server's order.
     power_switch: Option<Gd<Node3D>>,
     drink_machines: Vec<Gd<Node3D>>,
+    crate_spots: Vec<Gd<Node3D>>,
     history: HordeHistory,
     puppets: Vec<Puppet>,
     lag: f64,
@@ -73,6 +74,10 @@ impl HordeView {
             .into_iter()
             .map(|(node, _)| node)
             .collect();
+        let crate_spots = map
+            .as_ref()
+            .map(machines::map_crate_spots)
+            .unwrap_or_default();
         Some(Self {
             director,
             scene,
@@ -80,6 +85,7 @@ impl HordeView {
             doors,
             power_switch,
             drink_machines,
+            crate_spots,
             history: HordeHistory::default(),
             puppets: Vec::new(),
             downed: Vec::new(),
@@ -184,7 +190,13 @@ impl HordeView {
     /// A Zombies event: the round, points, and boards go to the director
     /// and the windows. `seconds_until` turns a server tick into seconds
     /// from now.
-    pub fn on_event(&mut self, event: &ZombiesEvent, seconds_until: impl Fn(Tick) -> f64) {
+    /// `me` is the local player.
+    pub fn on_event(
+        &mut self,
+        event: &ZombiesEvent,
+        me: Option<u8>,
+        seconds_until: impl Fn(Tick) -> f64,
+    ) {
         match *event {
             ZombiesEvent::Round {
                 round,
@@ -269,6 +281,24 @@ impl HordeView {
                         machine.call("sold", &[i64::from(player).to_variant()]);
                     }
                 }
+            }
+            ZombiesEvent::Crate {
+                spot,
+                phase,
+                by,
+                weapon,
+                until,
+            } => {
+                let seconds = until.map_or(0.0, &seconds_until) as f32;
+                crate::mystery_crate::show_on_spots(
+                    &self.crate_spots,
+                    spot,
+                    phase,
+                    by,
+                    weapon,
+                    seconds,
+                    me,
+                );
             }
             // Last stand on the HUD is `NetClient`'s, which knows names.
             ZombiesEvent::Hit { .. } | ZombiesEvent::Revive { .. } => {}

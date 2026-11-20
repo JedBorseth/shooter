@@ -13,6 +13,7 @@ use crate::weapon::{CombatState, WeaponId};
 pub mod chase;
 pub mod drinks;
 pub mod laststand;
+pub mod mystery;
 
 /// Tuning for a Zombies match.
 #[derive(Clone, Copy, Debug, PartialEq)]

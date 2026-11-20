@@ -139,7 +139,8 @@ use crate::zombies::drinks::Drinks;
 // Version 56 added Scavenger's packs as events (`ScavengerEvent`).
 // Version 57 added Zombies' drinks (`crate::zombies::drinks`) in the
 // predicted state, and the power, drink machines, and drinking as events.
-pub const PROTOCOL_VERSION: u16 = 57;
+// Version 58 added the mystery crate (`ZombiesEvent::Crate`).
+pub const PROTOCOL_VERSION: u16 = 58;
 /// Longest build name a welcome carries, in bytes.
 pub const MAX_BUILD_BYTES: usize = 32;
 /// Cap on redundant inputs per packet (200 ms at 120 Hz).
@@ -701,6 +702,51 @@ pub enum ZombiesEvent {
         player: u8,
         drink: crate::zombies::drinks::Drink,
     },
+    /// To everyone, when it changes and on joining: the mystery crate
+    /// ([`crate::zombies::mystery`]) at spot `spot` (the map's
+    /// `MysteryCrates` in order) is in `phase`, for player `by` (the buyer),
+    /// landing on or offering `weapon` (none for the duck), until server
+    /// tick `until`.
+    Crate {
+        spot: u8,
+        phase: CratePhase,
+        by: u8,
+        weapon: Option<WeaponId>,
+        until: Option<Tick>,
+    },
+}
+
+/// What the mystery crate is doing ([`ZombiesEvent::Crate`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CratePhase {
+    /// Closed, waiting for a buyer.
+    Idle,
+    /// Open, weapons cycling; it lands on `weapon` (or the duck).
+    Cycling,
+    /// Holding `weapon` out for the buyer to take.
+    Offering,
+    /// The duck: the crate is about to leave.
+    Duck,
+    /// Gone from this spot; it shows up at another at `until`.
+    Away,
+}
+
+impl CratePhase {
+    const ALL: [CratePhase; 5] = [
+        CratePhase::Idle,
+        CratePhase::Cycling,
+        CratePhase::Offering,
+        CratePhase::Duck,
+        CratePhase::Away,
+    ];
+
+    pub fn code(self) -> u32 {
+        Self::ALL.iter().position(|p| *p == self).unwrap_or(0) as u32
+    }
+
+    pub fn from_code(code: u32) -> Option<Self> {
+        Self::ALL.get(code as usize).copied()
+    }
 }
 
 /// Where a Zombies round is ([`crate::zombies::Phase`]).
@@ -1980,6 +2026,23 @@ fn write_zombies_event(w: &mut BitWriter, event: &ZombiesEvent) {
             w.u8(player);
             w.bits(u32::from(drink.code()), 3);
         }
+        ZombiesEvent::Crate {
+            spot,
+            phase,
+            by,
+            weapon,
+            until,
+        } => {
+            w.bits(13, ZOMBIES_TAG_BITS);
+            w.u8(spot);
+            w.bits(phase.code(), 3);
+            w.u8(by);
+            w.bool(weapon.is_some());
+            if let Some(weapon) = weapon {
+                write_weapon(w, weapon);
+            }
+            write_option_tick(w, until);
+        }
     }
 }
 
@@ -2043,6 +2106,17 @@ fn read_zombies_event(r: &mut BitReader) -> DecodeResult<ZombiesEvent> {
             available: r.bool()?,
             price: r.varint()?,
             needs_power: r.bool()?,
+        },
+        13 => ZombiesEvent::Crate {
+            spot: r.u8()?,
+            phase: CratePhase::from_code(r.bits(3)?).ok_or(DecodeError::Invalid("crate phase"))?,
+            by: r.u8()?,
+            weapon: if r.bool()? {
+                Some(read_weapon(r)?)
+            } else {
+                None
+            },
+            until: read_option_tick(r)?,
         },
         12 => ZombiesEvent::Drank {
             player: r.u8()?,
@@ -5100,6 +5174,20 @@ mod tests {
             GameEvent::Zombies(ZombiesEvent::Drank {
                 player: 1,
                 drink: crate::zombies::drinks::Drink::LongStride,
+            }),
+            GameEvent::Zombies(ZombiesEvent::Crate {
+                spot: 1,
+                phase: CratePhase::Offering,
+                by: 2,
+                weapon: Some(WeaponId::expect("ak47")),
+                until: Some(9000),
+            }),
+            GameEvent::Zombies(ZombiesEvent::Crate {
+                spot: 0,
+                phase: CratePhase::Away,
+                by: 0,
+                weapon: None,
+                until: None,
             }),
         ]);
         assert_eq!(

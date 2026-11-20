@@ -1,0 +1,35 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://assets/models/mystery_crate/mystery_crate.gltf" id="1_body"]
+[ext_resource type="PackedScene" path="res://assets/models/mystery_crate_lid/mystery_crate_lid.gltf" id="2_lid"]
+[ext_resource type="PackedScene" path="res://assets/models/mystery_duck/mystery_duck.gltf" id="3_duck"]
+
+[sub_resource type="BoxShape3D" id="Shape_crate"]
+size = Vector3(1.6, 0.85, 0.8)
+
+[node name="MysteryCrate" type="MysteryCrate"]
+metadata/surface = "wood"
+
+[node name="Collision" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.425, 0)
+shape = SubResource("Shape_crate")
+
+[node name="Body" parent="." instance=ExtResource("1_body")]
+
+[node name="Lid" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.74, -0.37)
+
+[node name="Model" parent="Lid" instance=ExtResource("2_lid")]
+
+[node name="Display" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.2, 0)
+
+[node name="Duck" parent="." instance=ExtResource("3_duck")]
+transform = Transform3D(1.6, 0, 0, 0, 1.6, 0, 0, 0, 1.6, 0, 0.9, 0)
+visible = false
+
+[node name="Light" type="OmniLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1, 0.9)
+light_color = Color(1, 0.86, 0.55, 1)
+light_energy = 0.6
+omni_range = 3.5
