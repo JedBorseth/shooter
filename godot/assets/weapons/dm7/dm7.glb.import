@@ -1,0 +1,72 @@
+[remap]
+
+importer="scene"
+importer_version=1
+type="PackedScene"
+uid="uid://cilc4otfm3fk8"
+path="res://.godot/imported/dm7.glb-3e4d847559b62977cfc15ed28e2b8db3.scn"
+
+[deps]
+
+source_file="res://assets/weapons/dm7/dm7.glb"
+dest_files=["res://.godot/imported/dm7.glb-3e4d847559b62977cfc15ed28e2b8db3.scn"]
+
+[params]
+
+nodes/root_type=""
+nodes/root_name=""
+nodes/root_script=null
+mesh_library/use_node_names_as_mesh_names=false
+array_mesh/deduplicate_surfaces=true
+nodes/apply_root_scale=true
+nodes/root_scale=1.0
+nodes/import_as_skeleton_bones=false
+nodes/use_name_suffixes=true
+nodes/use_node_type_suffixes=true
+meshes/ensure_tangents=true
+meshes/generate_lods=true
+meshes/create_shadow_meshes=true
+meshes/light_baking=0
+meshes/lightmap_texel_size=0.2
+meshes/force_disable_compression=false
+skins/use_named_skins=true
+animation/import=false
+animation/fps=30
+animation/trimming=false
+animation/remove_immutable_tracks=true
+animation/import_rest_as_RESET=false
+import_script/path=""
+materials/extract=0
+materials/extract_format=0
+materials/extract_path=""
+_subresources={
+"materials": {
+"Cartridge": {
+"use_external/enabled": true,
+"use_external/fallback_path": "res://assets/weapons/shared/cartridge.tres",
+"use_external/path": "res://assets/weapons/shared/cartridge.tres"
+},
+"Glow": {
+"use_external/enabled": true,
+"use_external/path": "res://assets/weapons/shared/glow_tritium.tres"
+},
+"Lens": {
+"use_external/enabled": true,
+"use_external/fallback_path": "res://assets/weapons/shared/lens.tres",
+"use_external/path": "res://assets/weapons/shared/lens.tres"
+},
+"Optics": {
+"use_external/enabled": true,
+"use_external/fallback_path": "res://assets/weapons/shared/optics.tres",
+"use_external/path": "res://assets/weapons/shared/optics.tres"
+},
+"Weapon": {
+"use_external/enabled": true,
+"use_external/fallback_path": "res://assets/weapons/dm7/dm7.tres",
+"use_external/path": "res://assets/weapons/dm7/dm7.tres"
+}
+}
+}
+gltf/naming_version=2
+gltf/embedded_image_handling=1
+gltf/texture_map_mode=0

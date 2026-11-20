@@ -35,7 +35,7 @@ use crate::equipment;
 pub use crate::perk::{Perk, Perks, Tier};
 use crate::rng;
 pub use crate::weapon::Attachments;
-use crate::weapon::{Attachment, CombatState, Slot, WeaponDef, WeaponId};
+use crate::weapon::{Attachment, CombatState, Slot, WeaponClass, WeaponDef, WeaponId};
 
 /// Points a class can spend (Black Ops 2's Pick 10).
 pub const PICKS: u8 = 10;
@@ -474,16 +474,17 @@ impl DefaultClass {
 /// Call of Duty's bots take, with its primary swapped for any weapon of the
 /// same weapon class (so bots carry every SMG, not only the default's) and
 /// its sidearm for any of the secondaries a default class could carry.
-/// Attachments the new weapon does not take are left off.
+/// Attachments the new weapon does not take are left off. The Marksman
+/// class's bots take marksman rifles as well as snipers.
 pub fn bot_class(roll: u32) -> Class {
     let default = DefaultClass::ALL[roll as usize % DefaultClass::ALL.len()];
     let mut class = default.class();
     let swap = |gun: Option<Gun>, salt: u32, allowed: &dyn Fn(&WeaponDef) -> bool| {
         let gun = gun?;
-        let kind = gun.base.def().class;
+        let kind = bot_group(gun.base.def().class);
         let pool: Vec<WeaponId> = class_weapons(gun.base.def().slot)
             .into_iter()
-            .filter(|id| id.def().class == kind && allowed(id.def()))
+            .filter(|id| bot_group(id.def().class) == kind && allowed(id.def()))
             .collect();
         let Some(&base) = pool.get((rng::hash(roll, salt) as usize) % pool.len().max(1)) else {
             return Some(gun);
@@ -499,6 +500,14 @@ pub fn bot_class(roll: u32) -> Class {
     class.primary = swap(class.primary, 0x5eed_0001, &|_| true);
     class.secondary = swap(class.secondary, 0x5eed_0002, &|_| true);
     class
+}
+
+/// The weapon classes a bot's default class may swap among.
+fn bot_group(class: WeaponClass) -> WeaponClass {
+    match class {
+        WeaponClass::Marksman => WeaponClass::Sniper,
+        other => other,
+    }
 }
 
 #[cfg(test)]
@@ -517,9 +526,9 @@ mod tests {
             }
         }
         for default in DefaultClass::ALL {
-            let kind = default.class().primary.unwrap().base.def().class;
+            let kind = bot_group(default.class().primary.unwrap().base.def().class);
             for id in class_weapons(Slot::Primary) {
-                if id.def().class == kind {
+                if bot_group(id.def().class) == kind {
                     assert!(seen.contains(&id.def().key), "{}", id.def().key);
                 }
             }

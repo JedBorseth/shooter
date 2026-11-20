@@ -286,10 +286,12 @@ mod tests {
         for key in ["m4", "pdw9", "m1911"] {
             assert_eq!(level(key), 1, "{key}");
         }
-        let mut order: Vec<u8> = ["ak47", "m870", "br3", "bp9", "lsw6", "m40", "cq10", "kr12"]
-            .iter()
-            .map(|k| level(k))
-            .collect();
+        let mut order: Vec<u8> = [
+            "ak47", "m870", "br3", "bp9", "lsw6", "m40", "cq10", "kr12", "dm7",
+        ]
+        .iter()
+        .map(|k| level(k))
+        .collect();
         assert!(order.windows(2).all(|w| w[0] < w[1]), "{order:?}");
         order.push(MAX_LEVEL);
         assert!(order.iter().all(|l| *l <= MAX_LEVEL));

@@ -1,0 +1,49 @@
+{
+  "triangles": 18942,
+  "world_triangles": 3483,
+  "nodes": [
+    "Body",
+    "BoltCarrier",
+    "BoltStop",
+    "ChargingHandle",
+    "MagRelease",
+    "Magazine",
+    "Magazine/Rounds",
+    "MagazineSpare",
+    "MagazineSpare/RoundsSpare",
+    "Safety",
+    "Scope",
+    "Selector",
+    "Trigger",
+    "World",
+    "WorldBody",
+    "WorldMagazine"
+  ],
+  "markers": {
+    "Muzzle": [
+      0.0,
+      -0.0574,
+      -0.7999
+    ],
+    "Ejection": [
+      0.0122,
+      -0.05,
+      -0.1071
+    ],
+    "GripRight": [
+      -0.0,
+      -0.1316,
+      0.1067
+    ],
+    "GripLeft": [
+      0.0,
+      -0.0908,
+      -0.3009
+    ],
+    "ChargingHandle": [
+      0.0043,
+      -0.071,
+      -0.3428
+    ]
+  }
+}

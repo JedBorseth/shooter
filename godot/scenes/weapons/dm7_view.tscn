@@ -1,0 +1,59 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://assets/weapons/dm7/dm7.glb" id="1_model"]
+[ext_resource type="Material" path="res://materials/muzzle_flash.tres" id="5_flash"]
+
+[sub_resource type="QuadMesh" id="Quad_flash"]
+material = ExtResource("5_flash")
+size = Vector2(0.25, 0.25)
+
+[node name="DM7" type="WeaponView"]
+weapon = "dm7"
+sound_from = "br3"
+grip_rake = 32.0
+fire_volume_db = -2.5
+tail_db = 0.0
+hip_position = Vector3(0.145, -0.100, -0.16)
+hip_rotation = Vector3(0, 5, 4)
+ads_position = Vector3(0, 0, -0.07)
+scope_eyepiece = Vector2(0.013, 0.0165)
+sprint_position = Vector3(-0.04, 0.015, 0.03)
+sprint_rotation = Vector3(-4, 22, 24)
+pivot = Vector3(0, -0.132, 0.107)
+albedo_boost = 1.0
+shell_model = "Case762x51"
+kick_strength = 2.0
+camera_punch = Vector3(0.7, 0.2, 1.1)
+shell_color = Color(0.85, 0.62, 0.25, 1)
+shell_size = Vector2(0.006, 0.032)
+
+[node name="Model" type="Node3D" parent="."]
+
+[node name="Mesh" parent="Model" instance=ExtResource("1_model")]
+
+[node name="MagazineSpare" parent="Model/Mesh"]
+visible = false
+
+[node name="Muzzle" type="Marker3D" parent="."]
+position = Vector3(0.0000, -0.0574, -0.7999)
+
+[node name="Flash" type="MeshInstance3D" parent="Muzzle"]
+cast_shadow = 0
+mesh = SubResource("Quad_flash")
+
+[node name="FlashLight" type="OmniLight3D" parent="Muzzle"]
+light_color = Color(1, 0.72, 0.42, 1)
+light_energy = 4.5
+omni_range = 9.0
+
+[node name="Ejection" type="Marker3D" parent="."]
+position = Vector3(0.0122, -0.0500, -0.1071)
+
+[node name="GripRight" type="Marker3D" parent="."]
+position = Vector3(-0.0000, -0.1316, 0.1067)
+
+[node name="GripLeft" type="Marker3D" parent="."]
+position = Vector3(0.0000, -0.0908, -0.3009)
+
+[node name="ChargingHandle" type="Marker3D" parent="."]
+position = Vector3(0.0043, -0.0710, -0.3428)
