@@ -3,7 +3,7 @@
 //! the client, and remote players. Protocol, prediction, and interpolation
 //! logic live in `shooter_sim::net`.
 
-mod accounts;
+pub mod accounts;
 mod bots;
 mod class_dict;
 mod client;

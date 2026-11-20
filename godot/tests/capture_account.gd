@@ -31,7 +31,7 @@ func _run() -> void:
 	await _frames(10)
 	await _shot("account_card_signed_out")
 	if not url.is_empty():
-		ProgressStore.set_totals(0, {})
+		ProgressStore.set_totals({})
 		ProgressStore.add(9000)
 		await online.sign_in("Slam%d" % (randi() % 1000))
 		await _frames(10)

@@ -1,9 +1,11 @@
 class_name ProgressStore
 extends RefCounted
 ## The player's progress, saved in `user://progress.cfg`: total XP (score
-## is XP, plus each match's bonus) and kills with each weapon, which unlock
-## its attachments. The rules (the level curve, what each level unlocks) are
-## `Progression`, from `rust/sim/src/progression.rs`.
+## is XP, plus each match's bonus and the challenges it completed), kills
+## with each weapon, which unlock its attachments, and career stats, which
+## challenges, camos, and calling cards follow (`rust/sim/src/stats.rs`,
+## `rust/sim/src/challenge.rs`). The rules are `Progression`, from
+## `rust/sim/src/progression.rs`.
 ##
 ## Signed out, progress lives in this file. Signed in (`Online`), the
 ## account on the Nakama server keeps it: the store then reads a cache of
@@ -21,9 +23,11 @@ const PATH_META := &"progress_store_path"
 
 static var _xp := 0
 static var _weapon_kills := {}
+static var _stats := {}
+static var _prestige := 0
 static var _loaded := false
-## Called with (xp, kills) after each `add` while signed in, to report it
-## to the account.
+## Called with (xp, kills, stats) after each `add` while signed in, to
+## report it to the account.
 static var on_added := Callable()
 
 
@@ -42,35 +46,75 @@ static func weapon_kills(weapon: String) -> int:
 	return int(_weapon_kills.get(weapon, 0))
 
 
-## Adds XP and weapon kills (plain weapon key to count) and saves. Signed
-## in, `report` sends it to the account (`on_added`); a ranked server
-## reports the match itself, so its matches pass false.
-static func add(xp_gained: int, kills: Dictionary = {}, report := true) -> void:
+## A career stat (`rust/sim/src/stats.rs`: "kills", "w.m4.hs").
+static func stat(key: String) -> int:
 	_load()
-	_xp = maxi(_xp + maxi(xp_gained, 0), 0)
-	for weapon: String in kills:
-		_weapon_kills[weapon] = weapon_kills(weapon) + int(kills[weapon])
+	return int(_stats.get(key, 0))
+
+
+## Times the player has prestiged.
+static func prestige() -> int:
+	_load()
+	return _prestige
+
+
+## Adds a match: XP (score and bonus), weapon kills (plain weapon key to
+## count), and stats (stat key to count), then the XP of the challenges it
+## completed (`Progression.add_match`), and saves. Signed in, `report`
+## sends it to the account (`on_added`); a ranked server reports the match
+## itself, so its matches pass false. Returns `challenge_xp` and
+## `challenges` (the ids of those completed).
+static func add(
+	xp_gained: int, kills: Dictionary = {}, report := true, stats: Dictionary = {}
+) -> Dictionary:
+	_load()
+	var gain: Dictionary = Progression.add_match(totals(), maxi(xp_gained, 0), kills, stats)
+	_apply(gain.totals)
 	save()
+	var total_xp := maxi(xp_gained, 0) + int(gain.challenge_xp)
 	if report and on_added.is_valid():
-		on_added.call(maxi(xp_gained, 0), kills.duplicate())
+		on_added.call(total_xp, kills.duplicate(), stats.duplicate())
+	return {"challenge_xp": int(gain.challenge_xp), "challenges": Array(gain.challenges)}
 
 
-## Replaces the totals with the account's and saves them to the file in use
-## (the account's cache).
-static func set_totals(total_xp: int, kills: Dictionary) -> void:
+## Replaces the totals with the account's (`xp`, `prestige`,
+## `weapon_kills`, `stats`) and saves them to the file in use (the
+## account's cache).
+static func set_totals(progress: Dictionary) -> void:
 	_loaded = true
-	_xp = maxi(total_xp, 0)
-	_weapon_kills = {}
-	for key: Variant in kills:
-		if key is String:
-			_weapon_kills[key] = maxi(int(kills[key]), 0)
+	_apply(progress)
 	save()
 
 
-## Totals as the account server takes them: `xp` and `weapon_kills`.
+## Totals as the account server keeps them: `xp`, `prestige`,
+## `weapon_kills`, and `stats`.
 static func totals() -> Dictionary:
 	_load()
-	return {"xp": _xp, "weapon_kills": _weapon_kills.duplicate()}
+	return {
+		"xp": _xp,
+		"prestige": _prestige,
+		"weapon_kills": _weapon_kills.duplicate(),
+		"stats": _stats.duplicate(),
+	}
+
+
+static func _apply(progress: Dictionary) -> void:
+	_xp = maxi(int(progress.get("xp", 0)), 0)
+	_prestige = maxi(int(progress.get("prestige", 0)), 0)
+	_weapon_kills = _counts(progress.get("weapon_kills", {}))
+	_stats = _counts(progress.get("stats", {}))
+
+
+## Whole counts by string key from a stored or received dictionary.
+static func _counts(value: Variant) -> Dictionary:
+	var out := {}
+	if not value is Dictionary:
+		return out
+	for key: Variant in value:
+		var count: Variant = value[key]
+		if key is String and (count is int or count is float):
+			out[key] = maxi(int(count), 0)
+	return out
 
 
 static func can_create_classes() -> bool:
@@ -161,6 +205,8 @@ static func save() -> void:
 	var config := ConfigFile.new()
 	config.set_value("progress", "xp", _xp)
 	config.set_value("progress", "weapon_kills", _weapon_kills)
+	config.set_value("progress", "stats", _stats)
+	config.set_value("progress", "prestige", _prestige)
 	var err := config.save(path())
 	if err != OK:
 		push_warning("Could not save %s (%s)." % [path(), error_string(err)])
@@ -176,18 +222,18 @@ static func _load() -> void:
 		return
 	_loaded = true
 	_xp = 0
+	_prestige = 0
 	_weapon_kills = {}
+	_stats = {}
 	var config := ConfigFile.new()
 	if config.load(path()) != OK:
 		return
 	var stored_xp: Variant = config.get_value("progress", "xp", 0)
 	_xp = maxi(int(stored_xp), 0) if stored_xp is int else 0
-	var kills: Variant = config.get_value("progress", "weapon_kills", {})
-	if kills is Dictionary:
-		for key: Variant in kills:
-			var count: Variant = kills[key]
-			if key is String and count is int:
-				_weapon_kills[key] = maxi(count, 0)
+	var stored_prestige: Variant = config.get_value("progress", "prestige", 0)
+	_prestige = maxi(int(stored_prestige), 0) if stored_prestige is int else 0
+	_weapon_kills = _counts(config.get_value("progress", "weapon_kills", {}))
+	_stats = _counts(config.get_value("progress", "stats", {}))
 
 
 static func _in(list: Array, key: String) -> bool:

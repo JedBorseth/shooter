@@ -97,7 +97,8 @@ func _run() -> void:
 	var name := "r%d" % (randi() % 100000000)
 	var signed_in: bool = await online.sign_in(name)
 	_check(signed_in, "signs in as %s (%s)" % [name, online.message])
-	ProgressStore.on_added = func(_xp: int, _kills: Dictionary) -> void: _self_reports += 1
+	ProgressStore.on_added = func(_xp: int, _kills: Dictionary, _stats: Dictionary) -> void:
+		_self_reports += 1
 
 	net.join("127.0.0.1:%d" % PORT, {"map": "arena", "name": "Ranked"})
 	deadline = Time.get_ticks_msec() + 90000

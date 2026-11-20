@@ -37,6 +37,7 @@ use crate::player::{FireAim, PlayerInput, PlayerState};
 use crate::radar;
 use crate::score::{Award, ScoreTotals, Scored};
 use crate::snd::{RoundEnd, RoundPhase, UseKind};
+use crate::stats::{self, Stats};
 use crate::streak::{self, Streak};
 use crate::tdm::{MAX_NAME_CHARS, Mode, Period, Phase, TEAM_COUNT, Team};
 use crate::weapon::{self, Action, CombatState, LoadStage, Raise, WeaponId, WeaponState};
@@ -181,7 +182,8 @@ use crate::zombies::drinks::Drinks;
 // (`StreakEvent::Sky` carries the ring and each one's id, call tick, and
 // phase), lets them be shot down (`StreakEvent::Downed`,
 // `Award::ShotDown`), and gives streak events four tag bits.
-pub const PROTOCOL_VERSION: u16 = 76;
+// Version 77 added `GameEvent::Stats`, a player's match stats.
+pub const PROTOCOL_VERSION: u16 = 77;
 /// Longest account session token a hello carries, in bytes.
 pub const MAX_ACCOUNT_TOKEN_BYTES: usize = 2048;
 /// Longest reason a denial carries, in bytes.
@@ -447,6 +449,10 @@ pub enum GameEvent {
     Scavenger(ScavengerEvent),
     /// Scorestreaks (`crate::streak`).
     Streak(StreakEvent),
+    /// To one player, every couple of seconds while they change and at the
+    /// end of the match: their stats this match (`crate::stats`), which
+    /// their game adds to their career and checks challenges against.
+    Stats(Stats),
 }
 
 /// Scorestreaks' news.
@@ -2231,6 +2237,19 @@ fn write_event(w: &mut BitWriter, event: &GameEvent) {
             w.bits(STREAK_EVENT_TAG, EVENT_TAG_BITS);
             write_streak_event(w, event);
         }
+        GameEvent::Stats(stats) => {
+            w.bits(STATS_EVENT_TAG, EVENT_TAG_BITS);
+            let entries: Vec<(&String, &u32)> = stats
+                .iter()
+                .filter(|(key, _)| stats::valid_key(key))
+                .take(stats::MAX_MATCH_KEYS)
+                .collect();
+            w.varint(entries.len() as u32);
+            for (key, count) in entries {
+                write_string(w, key, stats::MAX_KEY_LEN);
+                w.varint(*count);
+            }
+        }
         GameEvent::Zombies(event) => {
             w.bits(ZOMBIES_EVENT_TAG, EVENT_TAG_BITS);
             write_zombies_event(w, event);
@@ -2960,11 +2979,27 @@ fn read_event(r: &mut BitReader) -> DecodeResult<GameEvent> {
         })),
         ZOMBIES_EVENT_TAG => Ok(GameEvent::Zombies(read_zombies_event(r)?)),
         STREAK_EVENT_TAG => Ok(GameEvent::Streak(read_streak_event(r)?)),
+        STATS_EVENT_TAG => {
+            let len = r.varint()? as usize;
+            if len > stats::MAX_MATCH_KEYS {
+                return Err(DecodeError::Invalid("stats length"));
+            }
+            let mut out = Stats::new();
+            for _ in 0..len {
+                let key = read_string(r, stats::MAX_KEY_LEN)?;
+                if !stats::valid_key(&key) {
+                    return Err(DecodeError::Invalid("stat key"));
+                }
+                out.insert(key, r.varint()?);
+            }
+            Ok(GameEvent::Stats(out))
+        }
         _ => Err(DecodeError::Invalid("event tag")),
     }
 }
 
 const STREAK_EVENT_TAG: u32 = 24;
+const STATS_EVENT_TAG: u32 = 25;
 /// Bits for a [`StreakEvent`]'s tag; room for sixteen.
 const STREAK_TAG_BITS: u32 = 4;
 /// Most streaks one [`StreakEvent::State`] lists, and airborne streaks one
@@ -5632,6 +5667,12 @@ mod tests {
                 headshot: false,
                 cause: KillCause::Equipment(equipment::Kind::Frag),
             },
+            GameEvent::Stats(
+                [("kills", 12), ("w.m4.hs", 3), ("time", 600)]
+                    .into_iter()
+                    .map(|(k, v)| (k.to_owned(), v))
+                    .collect(),
+            ),
             GameEvent::Blast {
                 owner: Some(3),
                 shot: 41,

@@ -76,11 +76,20 @@ class ProgressTest(unittest.TestCase):
         self.token = self.session["token"]
 
     def test_new_account_starts_empty(self):
-        self.assertEqual(rpc(self.token, "progress_get", {}), {"xp": 0, "weapon_kills": {}})
+        self.assertEqual(
+            rpc(self.token, "progress_get", {}),
+            {"xp": 0, "prestige": 0, "weapon_kills": {}, "stats": {}},
+        )
 
     def test_import_once_into_an_empty_account(self):
-        got = rpc(self.token, "progress_import", {"xp": 5000, "weapon_kills": {"m4": 12, "Bad Key": 3}})
-        self.assertEqual(got, {"xp": 5000, "weapon_kills": {"m4": 12}})
+        got = rpc(
+            self.token,
+            "progress_import",
+            {"xp": 5000, "weapon_kills": {"m4": 12, "Bad Key": 3}, "stats": {"w.m4.hs": 4, "Bad Key": 1}},
+        )
+        self.assertEqual(
+            got, {"xp": 5000, "prestige": 0, "weapon_kills": {"m4": 12}, "stats": {"w.m4.hs": 4}}
+        )
         again = rpc(self.token, "progress_import", {"xp": 90000, "weapon_kills": {"m4": 99}})
         self.assertEqual(again["xp"], 5000, "a second import changes nothing")
 
@@ -100,9 +109,15 @@ class ProgressTest(unittest.TestCase):
 
     def test_a_reported_match_is_capped_by_time(self):
         # The account is seconds old: almost nothing may be awarded yet.
-        got = rpc(self.token, "progress_match", {"xp": 50000, "weapon_kills": {"m4": 40}})
+        got = rpc(
+            self.token,
+            "progress_match",
+            {"xp": 50000, "weapon_kills": {"m4": 40}, "stats": {"kills": 5000, "time": 5000}},
+        )
         self.assertLess(got["xp"], 1500)
         self.assertLessEqual(sum(got["weapon_kills"].values()), 20)
+        self.assertLess(got["stats"].get("kills", 0), 600)
+        self.assertLess(got["stats"].get("time", 0), 60)
 
     def test_server_rpcs_need_the_http_key(self):
         uid = user_id(self.token)
@@ -113,12 +128,26 @@ class ProgressTest(unittest.TestCase):
 
     def test_server_awards_and_reads_progress(self):
         uid = user_id(self.token)
-        got = server_rpc("server_progress_add", {"user_id": uid, "xp": 2400, "weapon_kills": {"ak47": 7}})
-        self.assertEqual(got, {"xp": 2400, "weapon_kills": {"ak47": 7}})
-        server_rpc("server_progress_add", {"user_id": uid, "xp": 600, "weapon_kills": {"ak47": 1, "m870": 2}})
+        got = server_rpc(
+            "server_progress_add",
+            {"user_id": uid, "xp": 2400, "weapon_kills": {"ak47": 7}, "stats": {"kills": 9, "w.ak47.hs": 2}},
+        )
+        self.assertEqual(
+            got,
+            {"xp": 2400, "prestige": 0, "weapon_kills": {"ak47": 7}, "stats": {"kills": 9, "w.ak47.hs": 2}},
+        )
+        server_rpc(
+            "server_progress_add",
+            {"user_id": uid, "xp": 600, "weapon_kills": {"ak47": 1, "m870": 2}, "stats": {"kills": 3}},
+        )
         self.assertEqual(
             server_rpc("server_progress_get", {"user_id": uid}),
-            {"xp": 3000, "weapon_kills": {"ak47": 8, "m870": 2}},
+            {
+                "xp": 3000,
+                "prestige": 0,
+                "weapon_kills": {"ak47": 8, "m870": 2},
+                "stats": {"kills": 12, "w.ak47.hs": 2},
+            },
         )
         self.assertEqual(rpc(self.token, "progress_get", {})["xp"], 3000)
         # Progress the server awarded closes the one-time import.

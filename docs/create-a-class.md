@@ -91,6 +91,8 @@ Classes are saved in `user://classes.cfg` (`godot/scripts/class_store.gd`), with
 
 ## Progression
 
+Challenges, camos, calling cards, prestige, and the combat record are in [progression.md](progression.md).
+
 XP, levels, and unlocks follow classic Call of Duty (Call of Duty 4 through Black Ops 3). The rules are in `rust/sim/src/progression.rs`; the player's progress is kept in `user://progress.cfg` (`godot/scripts/progress_store.gd`), on this machine until accounts exist (Phase 5).
 
 - **Score is XP.** Every point scored in a match counts: a kill's 100, headshot and multi-kill bonuses, objective awards. At the end of a match a bonus pays 100 XP a minute played, and half again for a win (`match_bonus`). Black Ops 2 based its match bonus on time and mode, not kills; Modern Warfare (2019) onward pays more for a win. A player who leaves early keeps the score and kills made so far but gets no bonus (`godot/scripts/net/match_xp.gd`).

@@ -36,7 +36,7 @@ Signed in, the local match setup's name is the account's name.
 
 ## Progression on the account
 
-The account keeps the player's XP and kills with each weapon, the two numbers every unlock follows ([create-a-class.md](create-a-class.md)), and the five custom classes, the selected class, and the scorestreaks.
+The account keeps the player's XP and kills with each weapon, the two numbers every unlock follows ([create-a-class.md](create-a-class.md)), their career stats, which challenges, camos, and calling cards follow ([progression.md](progression.md)), and the five custom classes, the selected class, and the scorestreaks.
 
 - **Progress** lives in the storage object `progress/progress`, readable by its owner and written only by the server module (`progress.lua`). The storage API refuses any client write or delete in that collection, including the first one, which storage permissions alone cannot stop.
 - **Classes** live in `loadout/classes`, written by the game whenever the player saves a class. A new account starts with the classes made on that machine.

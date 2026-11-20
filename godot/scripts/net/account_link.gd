@@ -61,18 +61,14 @@ func _check(serial: int, token: String) -> void:
 	if progress == null:
 		server.deny_account(serial, "The account server did not answer. Try again.")
 		return
-	var kills: Variant = progress.get("weapon_kills", {})
-	server.accept_account(
-		serial,
-		user_id,
-		String(account.user.username),
-		int(progress.get("xp", 0)),
-		kills if kills is Dictionary else {}
-	)
+	server.accept_account(serial, user_id, String(account.user.username), progress)
 
 
-func _award(user_id: String, xp: int, weapon_kills: Dictionary) -> void:
-	var payload := {"user_id": user_id, "xp": xp, "weapon_kills": weapon_kills}
+## Reports a match: `award` has `xp`, `weapon_kills`, and `stats`.
+func _award(user_id: String, award: Dictionary) -> void:
+	var payload := award.duplicate()
+	payload["user_id"] = user_id
+	var xp := int(award.get("xp", 0))
 	for attempt in AWARD_TRIES:
 		if await _server_rpc("server_progress_add", payload) != null:
 			return

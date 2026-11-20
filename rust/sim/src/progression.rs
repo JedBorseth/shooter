@@ -27,9 +27,11 @@
 
 use std::collections::BTreeMap;
 
+use crate::challenge;
 use crate::class::{Class, DefaultClass, Wildcard};
 use crate::equipment;
 use crate::perk::Perk;
+use crate::stats::Stats;
 use crate::streak::{self, Streak};
 use crate::weapon::{Attachment, WeaponId};
 
@@ -159,12 +161,28 @@ pub fn match_bonus(seconds_played: f32, outcome: Outcome) -> u32 {
     total.round() as u32
 }
 
-/// What a player has earned: total XP and kills with each weapon, by the
-/// weapon's plain key ("m4"). Every unlock follows from these two.
+/// What a player has earned: XP, kills with each weapon by the weapon's
+/// plain key ("m4"), and their career stats (`crate::stats`). Levels and
+/// attachments follow from the first two; challenges, camos, and calling
+/// cards from the stats (`crate::challenge`).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Earned {
     pub xp: u32,
     pub weapon_kills: BTreeMap<String, u32>,
+    pub stats: Stats,
+    /// Times the player has prestiged (0 before the first).
+    pub prestige: u8,
+}
+
+/// What one match added to a player's [`Earned`].
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct MatchGain {
+    /// The match's XP before challenges: score and the match bonus.
+    pub xp: u32,
+    /// The XP of the challenges the match completed.
+    pub challenge_xp: u32,
+    /// The ids of those challenges, in list order.
+    pub challenges: Vec<String>,
 }
 
 /// Something a class or streak loadout uses that the player has not
@@ -184,6 +202,32 @@ pub enum Locked {
 impl Earned {
     pub fn level(&self) -> u8 {
         rank(self.xp).level
+    }
+
+    /// Adds a match: its XP (score and bonus), kills with each weapon, and
+    /// stats, then the XP of every challenge the match completed, as Call
+    /// of Duty pays a challenge in the match that finishes it.
+    pub fn add_match(
+        &mut self,
+        xp: u32,
+        weapon_kills: &BTreeMap<String, u32>,
+        stats: &Stats,
+    ) -> MatchGain {
+        let before = self.clone();
+        self.xp = self.xp.saturating_add(xp);
+        for (weapon, kills) in weapon_kills {
+            let entry = self.weapon_kills.entry(weapon.clone()).or_default();
+            *entry = entry.saturating_add(*kills);
+        }
+        crate::stats::merge(&mut self.stats, stats);
+        let completed = challenge::completed_between(&before, self);
+        let challenge_xp = completed.iter().map(|c| c.xp).fold(0, u32::saturating_add);
+        self.xp = self.xp.saturating_add(challenge_xp);
+        MatchGain {
+            xp,
+            challenge_xp,
+            challenges: completed.iter().map(|c| c.id.clone()).collect(),
+        }
     }
 
     /// Kills with a weapon (its plain key).
@@ -241,6 +285,26 @@ impl Earned {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_match_adds_its_challenges_xp_once() {
+        let mut earned = Earned::default();
+        let kills = BTreeMap::from([("m4".to_owned(), 6)]);
+        let stats = BTreeMap::from([("w.m4.hs".to_owned(), 5), ("kills".to_owned(), 6)]);
+        let gain = earned.add_match(1000, &kills, &stats);
+        assert_eq!(gain.challenges, ["w.m4.0"]);
+        assert_eq!(gain.challenge_xp, 250);
+        assert_eq!(earned.xp, 1250);
+        assert_eq!(earned.kills("m4"), 6);
+        // The next headshot completes nothing new.
+        let gain = earned.add_match(
+            0,
+            &BTreeMap::new(),
+            &BTreeMap::from([("w.m4.hs".to_owned(), 1)]),
+        );
+        assert!(gain.challenges.is_empty());
+        assert_eq!(earned.xp, 1250);
+    }
 
     #[test]
     fn levels_take_a_little_more_xp_each() {
