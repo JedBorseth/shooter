@@ -2,8 +2,8 @@ extends SceneTree
 ## Captures every UI screen for design review: the title screen, Team
 ## Deathmatch setup, server browser, Zombies menus, the pause and settings
 ## menu, the testing-arena HUD states, the Zombies HUD and game-over screen,
-## and a local Team Deathmatch match (connecting, lobby and loadout, countdown,
-## in-match HUD, scoreboard, kill feed, results).
+## and a local Team Deathmatch match (connecting, the lobby's class menu and
+## editor, countdown, in-match HUD, scoreboard, kill feed, results).
 ## Needs a GPU and a display (or Xvfb). CAPTURE_PHASE picks one group
 ## (menus, arena, zombies, tdm, clean, art); without it every group runs.
 ## CAPTURE_PHASE=stills shoots each map from its spawn instead, to pick the
@@ -222,11 +222,13 @@ func _tdm() -> void:
 		net.call("stop_local_server")
 		return
 	await _seconds(2.0)
-	await _shot("tdm_02_lobby_loadout")
+	await _shot("tdm_02_lobby_classes")
 	var client := hud.get("client") as NetClient
-	hud.call("_choose", "ak47")
+	var classes: Node = hud.get("_class_menu")
+	classes.call("_open_editor", "custom:0")
 	await _frames(10)
-	await _shot("tdm_03_loadout_attachments")
+	await _shot("tdm_03_class_editor")
+	classes.call("close_editor")
 	hud.call("_set_menu_open", false)
 	await _frames(10)
 	await _shot("tdm_04_lobby_hud")

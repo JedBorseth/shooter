@@ -313,7 +313,8 @@ Grounded stylized realism: real materials and props on simple shapes, inside the
 - [ ] Picture fidelity, next (see the round 11 review): contact-hardening sun shadows, daytime volumetric light on High, moving clouds, self-shadowing on the first-person weapon (the weapon and arms cast no shadow: in the sun's shadow map they would also throw a floating gun's shadow on the ground, since the local player has no body shadow).
 - [ ] Lighting pass: baked lightmaps or SDFGI tuning per map, volumetric fog, reflection probes.
 - [ ] Performance budget and profiling: target 144 FPS on a mid-range GPU, CPU frame time per system.
-- [ ] Loadouts and a create-a-class screen.
+- [x] Loadouts and a create-a-class screen: Pick 10 classes (two weapons with up to three attachments, frags, tacticals, wildcards), checked by the server, five custom classes saved locally and six defaults, picked in the match menu ([docs/create-a-class.md](docs/create-a-class.md)).
+- [ ] Create-a-Class follow-ups: perks and their slots (with Perk Greed), pistol attachments (with Secondary Gunfighter), and Tactician (a tactical on the lethal button).
 - [ ] Progression: XP, levels, weapon unlocks.
 - [x] Gun Game: free-for-all up a ladder of the eight weapons, with a local match button on the title screen (`rust/sim/src/gun_game.rs`).
 - [x] Capture the Flag: flags, takes, drops, returns, and captures on the server (`rust/sim/src/ctf.rs`), bots that attack, defend, return, and carry, flag markers and calls on the client (`godot/scripts/net/ctf_view.gd`), and a title screen button.
