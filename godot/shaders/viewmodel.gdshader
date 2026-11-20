@@ -20,6 +20,9 @@ uniform sampler2D normal_texture : hint_normal, filter_linear_mipmap_anisotropic
 uniform sampler2D orm_texture : hint_default_white, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform vec4 emission : source_color = vec4(0.0, 0.0, 0.0, 1.0);
 uniform float emission_energy = 1.0;
+// Models coloured by their vertices (Blender gear, such as the charge).
+uniform bool use_vertex_color = false;
+uniform bool vertex_color_srgb = false;
 
 void vertex() {
 	POSITION = viewmodel_position(PROJECTION_MATRIX, MODELVIEW_MATRIX, VERTEX);
@@ -27,6 +30,17 @@ void vertex() {
 
 void fragment() {
 	ALBEDO = albedo.rgb * texture(albedo_texture, UV).rgb;
+	if (use_vertex_color) {
+		vec3 c = COLOR.rgb;
+		if (vertex_color_srgb) {
+			c = mix(pow((c + 0.055) / 1.055, vec3(2.4)), c / 12.92, lessThan(c, vec3(0.04045)));
+		}
+		ALBEDO *= c;
+	}
+	vec3 glow = emission.rgb * emission_energy;
+	if (use_vertex_color) {
+		glow *= COLOR.rgb;
+	}
 	vec3 n = NORMAL;
 	float occlusion = 1.0;
 	if (use_maps) {
@@ -43,7 +57,7 @@ void fragment() {
 		METALLIC = metallic;
 	}
 	SPECULAR = 0.5;
-	EMISSION = emission.rgb * emission_energy;
+	EMISSION = glow;
 	if (viewmodel_key.w > 0.0) {
 		EMISSION += viewmodel_key_light(n, VIEW, VIEW_MATRIX, ALBEDO, ROUGHNESS, METALLIC, occlusion);
 	}

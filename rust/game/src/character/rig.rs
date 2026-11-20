@@ -1210,6 +1210,7 @@ impl SoldierRig {
                     hands,
                     ankles,
                     facing: Vector3::new(ladder.facing.x, 0.0, ladder.facing.y),
+                    keypad: false,
                 });
             }
             // Out of the ladder's reach (stepping off): the limbs keep their
