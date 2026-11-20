@@ -52,7 +52,7 @@ Done: movement (toggle sprint, toggle crouch, slide, jump), gamepad support with
   - [x] KR-12 battle rifle (the SCAR-H's role: slower, harder-hitting), the AK-47 model with its walnut refinished as black polymer. Its own firing sound is held for listening; it fires with the AK-47's until then.
   - [x] SG-12 semi-automatic shotgun (the S12's role), box-fed, modelled by `tools/weapon_sg12.py` on the M870's receiver. Its own firing sound is held for listening; it fires with the M870's until then.
   - [x] DM-7 marksman rifle (the SVU-AS's role), the M14 with a riflescope and an olive glass-fibre stock. Its own firing sound is held for listening; it fires with the BR-3's until then.
-  - [x] RL-4 launcher (the RPG's role): a free-flight rocket that goes off on what it meets, modelled by `tools/weapon_rl4.py`. Its own launch sound is held for listening; it fires with the M870's until then.
+  - [x] RL-4 launcher (the RPG's role): a free-flight rocket that goes off on what it meets, modelled by `tools/weapon_rl4.py`. It launches with real RPG recordings, and its rocket roars in flight (`tools/build_launcher_audio.py`).
   - [x] Rockets bring down scorestreak aircraft (Black Ops 2: one hit downs any): the UAV and Counter-UAV fly a ring over the map that both ends compute, and bullets wear them down ([docs/scorestreaks.md](docs/scorestreaks.md#in-the-sky)).
   - [x] Bots carry launchers (one in four) and fire them at enemy aircraft. They still never turn one on players, as Black Ops 2's do (aimed at the feet).
 - [x] LMG (LSW-6: 75 rounds, slow aim and reload) and a burst-fire rifle (BR-3: `FireMode::Burst`, three rounds a pull, one burst kills up close).

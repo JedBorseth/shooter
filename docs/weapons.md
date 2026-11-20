@@ -59,7 +59,7 @@ The frag grenade is the lethal: G, or RB on a gamepad. Rules are in `rust/sim/sr
 
 ## Launchers
 
-The RL-4 is Black Ops 2's RPG: a shoulder-fired tube in the sidearm slot (`class: Launcher`), one rocket loaded and two spare. A weapon file with `rocket: true` fires a rocket instead of a round; the rocket rides the grenades' machinery as `equipment::Kind::Rocket` (flight, snapshots, blast, and the drawn model), so the rules are in `rust/sim/src/equipment.rs`.
+The RL-4 is Black Ops 2's RPG: a shoulder-fired tube in the sidearm slot (`class: Launcher`), one rocket loaded and two spare. A weapon file with `rocket: true` fires a rocket instead of a round; the rocket rides the grenades' machinery as `equipment::Kind::Rocket` (flight, snapshots, blast, and the drawn model), so the rules are in `rust/sim/src/equipment.rs`. It launches with real RPG recordings and its rocket roars in flight ([docs/audio.md](audio.md#the-rl-4-toolsbuild_launcher_audiopy)).
 
 - The rocket leaves the tube 0.6 m ahead of the eye (at the eye if a wall is closer) along the view, at 65 m/s, sagging at 1.5 m/s² (under 2 m by 100 m). It does not carry the firer's movement.
 - It goes off on whatever it meets: the map (and solid props) through the same sweep as a grenade, or a player whose body it passes within 0.4 m of (feet to 1.8 m; the firer excepted). Players are not in the map's collision, so the server checks their bodies itself (`GrenadeSim::strike_bodies`). With nothing in the way it goes off in the air after 4 s, as Black Ops 2's rockets do at the end of their flight.

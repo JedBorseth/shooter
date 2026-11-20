@@ -76,6 +76,13 @@ func _gunshots(player: FpsPlayer) -> void:
 	for view in views:
 		var snap := view.get_node_or_null("GunshotSnap") as AudioStreamPlayer
 		_check(snap != null and snap.stream != null, "%s gunshot has a snap layer" % view.name)
+		# The RL-4 launches with its own recordings (a real RPG), not its lender's.
+		if String(view.get("weapon")) == "rl4" and snap != null:
+			var takes := snap.stream as AudioStreamRandomizer
+			_check(
+				takes != null and takes.get_stream(0).resource_path.contains("/rl4/"),
+				"the RL-4 launches with its own sound"
+			)
 		# A gun built whole (tools/build_gunshots.py) is its snap alone, the
 		# recording's own action included, with voices for shots to overlap.
 		var whole := view.get_node_or_null("GunshotTail") == null

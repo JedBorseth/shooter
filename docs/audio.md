@@ -102,6 +102,20 @@ from microphones down the range and cross-faded by distance
 
 The Weapons bus has no engine reverb: the tails are baked.
 
+### The RL-4 (`tools/build_launcher_audio.py`)
+
+The launcher is Black Ops 2's RPG, and it sounds like one: three real RPG
+firings (klangfabrik's, recorded outside at medium range), each with a
+rocket motor's ignition from US Government footage laid under it, written
+whole as `weapons/rl4/snap_N` (so the game plays them as whole shots). Its
+`mid` and `far` takes are the same firings band-limited as heard down range,
+so other players' launches far off are a launcher, not the M870 that lent
+its shot before. The view scene still names the M870 in `sound_from` for
+the handling and the last-round ring. Every rocket in flight carries a
+motor loop (`equipment/rocket_flight`, the rocket's roar with its fade
+evened out) on `scenes/equipment/rocket.tscn`'s `Motor`, 6 m unit size.
+Nothing is synthesized; the shared processing is `tools/recorded_audio.py`.
+
 ## Weapon handling (foley)
 
 `WeaponView` (`viewmodel.rs`) emits `foley_event(name: StringName)` at each
