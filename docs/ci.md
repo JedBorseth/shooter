@@ -24,7 +24,7 @@ Merge queue runs skip the release library builds and the export: the pull reques
 - **Pull request builds skip LTO.** The `ci` Cargo profile is the release profile without link-time optimization and with parallel code generation. Tagged releases still use `release`.
 - **Fewer, fuller jobs.** Each OS has one job that builds its library first, uploads it, then runs its tests. The free plan runs a limited number of jobs at once (macOS especially), so fewer jobs means less time queued when several pull requests run together. The macOS library builds both architectures in one `cargo` run.
 - **The export does not wait for whole jobs.** It starts with everything else, prepares Godot, the LFS files, and the import, and exports each platform as soon as that platform's library is uploaded (`.github/scripts/wait-for-artifact.sh`).
-- **Godot tests run side by side.** Fixed-rate tests run several at a time; real-time tests run one after another in their own lane.
+- **Godot tests run side by side.** Fixed-rate tests run several at a time (two on the four-CPU runners). Real-time tests run beside them in two lanes: one for tests that share fixed ports, LAN discovery, or the account server, and one for tests that use only a port of their own. Before the split, the single real-time lane (about 290 s) was the Godot job's critical path, and the Godot job was CI's.
 - **No double compression.** The export zips the builds while Godot exports macOS, and uploads the zips without compressing them again.
 
 ## Godot tests
@@ -40,7 +40,7 @@ just test smoke_test bots_test  # only these
 
 `just test` calls `.github/scripts/godot-tests.sh`. Set `GODOT_TEST_JOBS=1` to run the fixed-rate tests one at a time.
 
-A test that starts another process, such as a dedicated or master server, must run in real time, because that process keeps wall-clock time. Add it to `REALTIME` in `.github/scripts/godot-tests.sh`. That includes tests that call `Net.start_local_match`, which starts a child server. If a test fails at the fixed frame rate, the script runs it again in real time; when that passes, CI passes with a warning that names the test. A test that needs several argument sets goes in `RUNS` in the same file.
+A test that starts another process, such as a dedicated or master server, must run in real time, because that process keeps wall-clock time. Add it to `REALTIME` in `.github/scripts/godot-tests.sh`. If its server takes a port from the process id with no query port, and it uses no fixed port, LAN discovery, or account server, add it to `REALTIME_OWN_PORT` instead, so it runs in the second lane. That includes tests that call `Net.start_local_match`, which starts a child server. If a test fails at the fixed frame rate, the script runs it again in real time; when that passes, CI passes with a warning that names the test. A test that needs several argument sets goes in `RUNS` in the same file.
 
 ## Writing tests that do not flake
 
