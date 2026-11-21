@@ -13,6 +13,7 @@ import random
 import sys
 from urllib.request import Request, urlopen
 
+import bmesh
 import bpy
 from mathutils import Matrix, Vector
 
@@ -37,7 +38,7 @@ PLANTS = {
     "field_grass": ("grass_medium_01", 120, 0.39),
     "field_weed": ("weed_plant_02", 210, 0.63),
     "field_shrub": ("shrub_sorrel_01", 550, 0.72),
-    "field_sapling": ("pine_sapling_small", 950, 2.10),
+    "field_sapling": ("pine_sapling_small", 3500, 2.10),
 }
 
 
@@ -89,6 +90,31 @@ def decimate(obj, budget):
         modifier.use_collapse_triangulate = True
         bpy.context.view_layer.objects.active = obj
         bpy.ops.object.modifier_apply(modifier=modifier.name)
+
+
+def remove_loose_verts(obj):
+    mesh = bmesh.new()
+    mesh.from_mesh(obj.data)
+    bmesh.ops.delete(mesh, geom=[v for v in mesh.verts if not v.link_faces], context="VERTS")
+    mesh.to_mesh(obj.data)
+    mesh.free()
+
+
+def decimate_sapling(obj, budget):
+    # Needles make up almost every face. A single collapse budget can erase
+    # the entire trunk, including its contact with the soil.
+    bpy.ops.object.select_all(action="DESELECT")
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.mesh.separate(type="MATERIAL")
+    bpy.ops.object.mode_set(mode="OBJECT")
+    parts = list(bpy.context.scene.objects)
+    bark, = (part for part in parts if "bark" in part.data.materials[0].name.lower())
+    twigs, = (part for part in parts if part != bark)
+    decimate(twigs, budget - sum(len(p.vertices) - 2 for p in bark.data.polygons))
+    return parts
 
 
 def attach_opacity(mat, mask_path, compact=False):
@@ -143,12 +169,19 @@ def plant(name):
             continue
         key = "twig_alpha" if asset == "pine_sapling_small" else "Alpha"
         attach_opacity(mat, map_file(asset, key, "png"), compact=name in ("field_grass", "field_weed"))
-    decimate(obj, budget)
-    x, y, z = zip(*(tuple(v.co) for v in obj.data.vertices))
+    if name == "field_sapling":
+        parts = decimate_sapling(obj, budget)
+    else:
+        decimate(obj, budget)
+        parts = [obj]
+    for part in parts:
+        remove_loose_verts(part)
+    x, y, z = zip(*(tuple(v.co) for part in parts for v in part.data.vertices))
     vertical = height / (max(z) - min(z))
     spread = max(max(x) - min(x), max(y) - min(y))
     horizontal = min(vertical, 0.78 / spread) if name == "field_weed" else vertical
-    obj.scale = (horizontal, horizontal, vertical)
+    for part in parts:
+        part.scale = (horizontal, horizontal, vertical)
     if name == "field_shrub":
         obj.scale.x *= 1.55
         obj.scale.y *= 1.55

@@ -45,6 +45,7 @@ FENCE_RUNS = (
     ("x", -8.30, -35.5, -17.2, 0, 0.65),
     ("x", 42.91, -17.2, 44.4, -1.25, 0.62),
 )
+BACKDROP_PROFILE = ((-8.5, -0.05), (43.1, -1.39))
 TRUCK_MARKS = (
     ("oil", -14.05, -11.78, 2.15, 0.69, -6, 1),
     ("oil", -18.60, -11.56, 1.64, 0.59, -6, 0.64),
@@ -65,10 +66,17 @@ OUTDOOR_MODELS = (
     "dock_leveler",
     "dock_bollard",
     "dock_chock",
+    "yard_light_pole",
     "field_straw_clump",
     "field_short_clump",
     "field_weed_clump",
 )
+
+
+def backdrop_height(z):
+    (field_z, field_y), (dock_z, dock_y) = BACKDROP_PROFILE
+    grade = max(0, min(1, (z - field_z) / (dock_z - field_z)))
+    return field_y + (dock_y - field_y) * grade
 
 
 def distance_to_paths(x, z):
@@ -188,13 +196,12 @@ def dress_field(piece, strew, stain, track):
         else:
             x, z = (rng.uniform(-42, -37.3), -37 + (i - 24) * 2.24)
         model = "field_sapling" if i % 5 == 0 else "field_shrub"
-        grade = max(0, min(1, (z + 37.9) / 81))
         strew(
             model,
             x,
             z,
             rng.uniform(0, 360),
-            y=-0.10 - 1.29 * grade,
+            y=backdrop_height(z),
             scale=rng.uniform(1.15, 2.25)
             if model == "field_sapling"
             else rng.uniform(1.05, 1.85),
@@ -203,13 +210,12 @@ def dress_field(piece, strew, stain, track):
         ((-14, 46), (4.5, 46.7), (26, 47), (44.2, 45.6), (-27.8, -42.8))
     ):
         piece(
-            "street_lamp",
+            "yard_light_pole",
             x,
-            -0.10 if i == 4 else -1.39,
+            backdrop_height(z),
             z,
             yaw=20 if i == 4 else 175,
             shadow=False,
-            scale=[1, 1, 1],
             name=f"PerimeterLamp{i}",
         )["gi_disabled"] = True
     for i, (x, z) in enumerate(
@@ -247,7 +253,7 @@ def dress_field(piece, strew, stain, track):
             scale=[scale, 1, 1],
             name=f"RoofScar{i}",
         )
-    piece("dumpster", -34.2, 0, -11.5, yaw=90, shadow=True, name="DemolitionSkip")
+    skip(piece, -34.2, 0, -11.5, yaw=90, name="DemolitionSkip")
     strew("rubble_scatter", -33.8, -10.6, 67, scale=0.83)
     for x, z, yaw, scale in (
         (-18.15, -14.45, -12, 0.76),
@@ -277,6 +283,11 @@ def dress_field(piece, strew, stain, track):
     )
 
 
+def skip(piece, x, y, z, yaw, name):
+    # The main bin is solid. Leave the raised lid and hinge overhang out of clip.
+    piece("dumpster", x, y, z, yaw=yaw, name=name, clip=[[0, 0.70, -0.05, 2.08, 1.4, 1.60]])
+
+
 def dress_docks(piece, strew, stain, effects):
     for bay, x in ((1, -4.25), (2, 18.5), (3, 33.95)):
         # The latch and lamp set the model's centre slightly right of its bay.
@@ -303,7 +314,7 @@ def dress_docks(piece, strew, stain, effects):
                     name=f"WheelChock{bay}_{side + 1}",
                 )
         for side in (-1, 1):
-            # Set well clear of the solid clip and the ramp/player capsule.
+            # Slender bay markers sit outside the player routes and stay cosmetic.
             piece(
                 "dock_bollard",
                 x + side * (2.65 if bay == 2 else 1.94),
@@ -341,8 +352,11 @@ def dress_docks(piece, strew, stain, effects):
             scale=[0.84, 1, 1],
             name=f"ApronDrain{i}",
         )
-    piece("dumpster", 41.6, -1.25, 41.55, yaw=5, name="DockWasteSkip")
-    piece("pallet_jack", 42.7, -1.25, 40.3, yaw=25, shadow=True, name="DockPalletJack")
+    skip(piece, 41.6, -1.25, 41.55, yaw=5, name="DockWasteSkip")
+    piece(
+        "pallet_jack", 42.7, -1.25, 40.3, yaw=25, name="DockPalletJack",
+        clip=[[0, 0.14, 0, 0.60, 0.26, 1.3]],
+    )
     piece("pallet_single", 40.1, -1.25, 41.55, yaw=18, name="ApronEmptyPallet")
     for x in (-12, 0, 12, 24, 36, 43):
         # Bounce from the open apron in the hall's shadow.

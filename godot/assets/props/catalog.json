@@ -877,11 +877,11 @@
   "field_sapling": {
    "path": "res://assets/props/warehouse_field/field_sapling.gltf",
    "size": [
-    1.028,
-    1.585,
-    1.426
+    1.032,
+    2.1,
+    1.445
    ],
-   "triangles": 950,
+   "triangles": 3500,
    "tags": [
     "tree",
     "plant",

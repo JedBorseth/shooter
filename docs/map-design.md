@@ -792,6 +792,29 @@ same five viewpoints before and after the refresh:
 | Medium | 3.66 / 3.80 | 3.95 / 4.15 | 6.50 |
 | High | 6.29 / 6.60 | 6.72 / 6.92 | 12.00 |
 
+### Warehouse review fixes
+
+The Dock 1 and Dock 3 seals now fill the space between the trailer and the
+concrete jambs and header. The cargo passages stay open. Bots use the personnel
+stair or ramp to reach the apron. The west lane jogs around the storage rack
+ends. Neutral spawns with nearby cover ahead now face along the open aisles.
+
+Quality Control moved into the aisle just south of the test cell. The Catwalk
+hill is centred at deck height. Each hill extends 20 cm below the hall floor,
+and the standing-clearance test checks both a floor hit and room for a 1.8 m
+capsule. Quality Control went from 45% to 87% standable under that check.
+
+The skips and dock pallet jack have simple fitted collision. The small bay
+bollards stay clear of the passage as visual markers. The Field saplings have
+grounded trunks, and Low thins each grass batch using a deterministic shuffle.
+The far ground stays level along the Field before it grades down toward the
+Docks. Galvanized cobra-head lights continue the industrial road lighting from
+the horizon strip.
+
+The rebuilt scene still measures 87 m between team starts (11.7 s), with
+5.8 s and 6.0 s approaches to mid. Median and maximum sightlines are 24.2 m and
+53 m, with 6.5% of floor seeing past 40 m. No team start sees the opposite half.
+
 ## Breakwater, November 2026
 
 Breakwater is the third 6v6 core map, built to contrast with Slamcity (a city

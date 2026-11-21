@@ -373,18 +373,36 @@ def dock_hardware(m):
     export("dock_chock", OUT)
 
 
+def yard_light_pole(m):
+    # Steel arm and shallow road-light head, in the same industrial style as
+    # the poles in the Warehouse horizon. A sculpted base keeps it grounded.
+    box(m, "Concrete footing", 0, 0, 0.10, 0.45, 0.45, 0.20, "concrete")
+    round_bar(m, "Galvanized column", (0, 0, 0.18), (0, 0, 5.40), 0.085, "metal", 10)
+    round_bar(m, "Outreach arm", (0, 0, 5.37), (0, 0.89, 5.72), 0.045, "metal", 8)
+    box(m, "Cobra head", 0, 0.96, 5.72, 0.24, 0.47, 0.13, "metal")
+    box(m, "Recessed lens", 0, 0.99, 5.652, 0.17, 0.30, 0.035, "glass")
+    export("yard_light_pole", OUT)
+
+
 def main():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     m = finish()
     requested = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
-    if requested == ["delivery_truck_crashed"]:
-        crash_truck(m)
+    straw = ("field_grass", "field_straw_clump", 7, 1.40)
+    if requested:
+        builds = {
+            "delivery_truck_crashed": lambda: crash_truck(m),
+            "yard_light_pole": lambda: yard_light_pole(m),
+            "field_straw_clump": lambda: clump(*straw),
+        }
+        for name in requested:
+            builds[name]()
         return
-    for maker in (footing, flashing, breach, crash_truck, dock_hardware):
+    for maker in (footing, flashing, breach, crash_truck, dock_hardware, yard_light_pole):
         maker(m)
     for bay in (1, 2, 3):
         dock_portal(m, bay)
-    clump("field_grass", "field_straw_clump", 9, 1.40)
+    clump(*straw)
     clump("field_weed", "field_weed_clump", 4, 1.12)
     clump("field_grass", "field_short_clump", 5, 0.67)
 

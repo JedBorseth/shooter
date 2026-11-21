@@ -82,12 +82,12 @@
     "field_sapling": {
       "path": "res://assets/props/warehouse_field/field_sapling.gltf",
       "size": [
-        1.028,
-        1.585,
-        1.426
+        1.032,
+        2.1,
+        1.445
       ],
-      "triangles": 950,
-      "origin": "Bottom centre; Godot +Y up",
+      "triangles": 3500,
+      "origin": "Bottom centre at the first trunk face, after removing loose vertices; Godot +Y up",
       "clip": "None",
       "use": "Small pine for the fence line; use sparingly",
       "tags": [

@@ -662,6 +662,14 @@ def docks():
         pitch=math.degrees(math.atan2(-APRON_Y, z1 - z0)), fill=True)
     for name, x in (("DockOneTrailer", -4.25), ("DockThreeTrailer", 33.95)):
         warehouse_walkways.trailer(box, pup_trailer_piece, name, x, 37.10, 0)
+        # The rubber shelter covers the gap between the concrete portal and
+        # the trailer. Overlap both clips without narrowing the cargo aisle.
+        for side in (-1, 1):
+            a, b = sorted((x + side * 1.28, x + side * 1.47))
+            box(f"{name}Seal{side + 1}", a, b, -0.02, 2.78, 33.0, 33.48,
+                "dock_seal")
+        box(f"{name}SealHead", x - 1.47, x + 1.47, 2.73, 3.64, 33.0, 33.48,
+            "dock_seal")
         for z in (35.5, 38.8):
             EFFECTS.append(dict(kind="lamp", pos=[x, 2.42, z], energy=0.76, range=3.6))
     for i, (a, b, top) in enumerate(SOUTH_DOORS):
@@ -761,16 +769,21 @@ def facing(x, z, tx, tz):
     return round(math.degrees(math.atan2(-(tx - x), -(tz - z))), 1)
 
 
-def spawn(x, z, team=-1, y=0.0):
+def spawn(x, z, team=-1, y=0.0, yaw=None):
     wx, wz = at(x, z)
-    return (round(wx, 2), y, round(wz, 2), facing(wx, wz, *CENTRE), team)
+    return (round(wx, 2), y, round(wz, 2), facing(wx, wz, *CENTRE) if yaw is None else yaw, team)
 
 
 FIELD_STARTS = [(-7, -36), (-9.3, -36.4), (-7.2, -38.6), (-4.65, -35.7), (-10.8, -38.5), (-4.9, -37)]
 DOCK_STARTS = [(13, 37.5), (10.8, 37.4), (15.1, 37.8), (12.7, 35.6), (8.8, 37.5), (15.2, 35.6)]
 SPAWNS = [spawn(x, z, 0) for x, z in FIELD_STARTS]
 SPAWNS.extend(spawn(x, z, 1, APRON_Y) for x, z in DOCK_STARTS)
-SPAWNS.extend(spawn(x, z) for x, z in [
+NEUTRAL_FACING = {
+    (-26, -28.9): -90, (-2.5, -28.6): -90, (21.8, -10.1): -90,
+    (27.8, -3.5): 120, (-15, 23.35): -90, (5.4, 17): 60,
+    (20.8, 17.15): 0, (20.6, 24.2): 0, (28.2, 16.5): 0,
+}
+SPAWNS.extend(spawn(x, z, yaw=NEUTRAL_FACING.get((x, z))) for x, z in [
     (-26, -28.9), (-2.5, -28.6), (-13, -22.15), (-15.4, -13.3), (-3, -14.1),
     (4, -24), (15, -20.6), (21.8, -10.1), (27.8, -3.5), (-25, -11), (-20.5, -0.5),
     (4.7, -7), (-32.5, -34.2), (-43, -24.5),
@@ -779,29 +792,32 @@ SPAWNS.extend(spawn(x, z) for x, z in [
 ])
 SPAWNS.extend(spawn(x, z, y=APRON_Y) for x, z in [(-23.2, 36.3), (1.1, 37.4), (25.8, 36.7)])
 
-# Two of the dock lanes use the trailers. The personnel stair and ramp offer
-# step-free navmesh alternatives from the apron if a bot cannot mantle.
-_LANES_LOCAL = {
-    "West": [(-27, -36, 0), (-36, -25, 0), (-33, -17.5, 0), (-24.8, -14.7, 0),
-             (-21.2, 0.6, 0), (-20, 9.3, 0), (-20, 16.6, 0), (-17.75, 24.8, 0),
-             (-17.75, 29.8, 0), (-17.75, 33.2, 0)],
-    "Centre": [(-3, -35.5, 0), (-2.5, -28.7, 0), (-13, -22.15, 0), (-14.2, -13.25, 0),
-               (-6, -3, 0), (3, 3, 0), (1.8, 13, 0), (5.3, 23.5, 0), (5, 29.8, 0),
-               (5, 33.1, -0.77), (5, 36.7, APRON_Y)],
-    "East": [(-25, -36, 0), (-25.5, -28.8, 0), (4, -23.5, 0), (15, -20, 0),
-             (22, -10, 0), (28, 0, 0), (21, 9, 0), (21, 17, 0), (20.5, 24.65, 0),
-             (20.5, 29.8, 0), (20.5, 33.2, 0)],
+# World-space waypoints. The west route skirts the rack ends and descends
+# the personnel stair. Both other routes use the ramp, with separate apron
+# endpoints. Trailers remain reachable from the hall and have a mantle at the apron.
+LANES = {
+    "West": [(-13.5, 0, -32.5), (-22.5, 0, -21.5), (-19.5, 0, -14), (-11.3, 0, -11.2),
+             (-7.7, 0, 4.1), (-13.25, 0, 9.75), (-16.05, 0, 11.05), (-16.05, 0, 14.1),
+             (-13.15, 0, 17.8), (-6.0, 0, 20.1), (-5.6, 0, 27.9), (-8.65, 0, 30.65),
+             (-13.24, 0, 31.8), (-13.24, -0.61, 35.1), (-11.8, APRON_Y, 37.4)],
+    "Centre": [(10.5, 0, -32), (11, 0, -25.2), (0.5, 0, -18.65), (-0.7, 0, -9.75),
+               (7.5, 0, 0.5), (16.5, 0, 6.5), (15.3, 0, 16.5), (18.8, 0, 27),
+               (21.2, 0, 29.1), (21.2, 0, 31.3), (18.5, 0, 32.3), (18.5, -0.65, 36.1),
+               (18.5, APRON_Y, 39.6)],
+    "East": [(-11.5, 0, -32.5), (-12, 0, -25.3), (17.5, 0, -20), (28.5, 0, -16.5),
+             (35.5, 0, -6.5), (41.5, 0, 3.5), (34.5, 0, 12.5), (33.75, 0, 16.75),
+             (29.75, 0, 16.75), (24.75, 0, 21.75), (21.75, 0, 21.75), (19.75, 0, 25.75),
+             (21.2, 0, 29.1), (21.2, 0, 31.3), (18.5, 0, 32.3), (18.5, -0.65, 36.1),
+             (18.5, APRON_Y, 39.3), (25.5, APRON_Y, 39.8)],
 }
-LANES = {name: [(round(x + CX, 2), y, round(z + CZ, 2)) for x, z, y in pts]
-         for name, pts in _LANES_LOCAL.items()}
 
 # Zones are ordered, with the two interior levels contestable at the walks.
 HARDPOINTS = [
-    ("Mid Stockpile", [13.5, 1.9, 4.5], [11, 3.8, 10]),
-    ("Receiving", [-11, 1.6, -12.5], [7.4, 3.2, 9.2]),
-    ("Pick Mezzanine", [13, 2.25, 12.5], [8.6, 4.5, 11.5]),
-    ("Catwalk", [23.3, 2.25, -12.4], [7.4, 4.5, 11]),
-    ("Quality Control", [-13.8, 1.6, 27.25], [7.5, 3.2, 6.5]),
+    ("Mid Stockpile", [13.5, 1.8, 4.5], [11, 4.0, 10]),
+    ("Receiving", [-11, 1.5, -12.5], [7.4, 3.4, 9.2]),
+    ("Pick Mezzanine", [13, 2.15, 12.5], [8.6, 4.7, 11.5]),
+    ("Catwalk", [23.6, 2.8, -9.7], [6.5, 6.0, 7.9]),
+    ("Quality Control", [-12.9, 1.5, 31.55], [7.0, 3.4, 2.5]),
 ]
 DOMINATION = [
     ("A", [5, 0, -23], 3.5),
@@ -834,7 +850,7 @@ def main():
         machines=MACHINES, fallback=FALLBACK, props=props,
         spawns=SPAWNS, reverb=REVERB, boundary=BOUNDARY, lanes=LANES, patches=PATCHES,
         boxes=BOXES, effects=EFFECTS, roof_holes=ROOF_HOLES, ladders=LADDERS, clear=CLEAR,
-        hardpoints=HARDPOINTS, domination=DOMINATION,
+        hardpoints=HARDPOINTS, domination=DOMINATION, yard_backdrop_profile=warehouse_outdoors.BACKDROP_PROFILE,
     )
     warehouse_detail_layout.dress(data)
     warehouse_outdoors.screen_yards(box, piece)

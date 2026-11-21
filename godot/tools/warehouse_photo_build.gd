@@ -93,7 +93,8 @@ static func _own(node: Node) -> void:
 static func _mat(key: String) -> Material:
 	var names := {"slab": "slab_polished", "tiltup": "tiltup_wall", "panel_white": "panel_white",
 		"steel": "steel_deck", "yellow": "safety_yellow", "curtain": "strip_curtain",
-		"field": "field_ground", "yard": "yard", "cmu": "cmu", "cap": "cap", "deck": "roof_deck"}
+		"field": "field_ground", "yard": "yard", "cmu": "cmu", "cap": "cap", "deck": "roof_deck",
+		"dock_seal": "dock_seal"}
 	var path: String = MATS + names[key] + ".tres"
 	if key == "field":
 		var grass := load(path) as ShaderMaterial
@@ -738,14 +739,18 @@ static func _build_patches(g: Node3D) -> void:
 
 
 static func _build_yard_backdrop(g: Node3D) -> void:
-	# Five rectangles form one visible mesh. The inner edges meet the fence
+	# Rectangles form one visible mesh. The inner edges meet the fence
 	# footings and the south-west notch sits outside the HallWest slab.
+	var profile: Array = _data.yard_backdrop_profile
+	var field_end := Vector2(profile[0][0], profile[0][1])
+	var dock_edge := Vector2(profile[1][0], profile[1][1])
 	var extents := [
 		Rect2(-125, -128, 259, 90.1),
-		Rect2(-125, 43.1, 259, 90),
-		Rect2(-125, -37.9, 89.5, 81),
-		Rect2(44.4, -37.9, 89.6, 81),
-		Rect2(-35.5, -8.5, 18.3, 51.6),
+		Rect2(-125, dock_edge.x, 259, 90),
+		Rect2(-125, -37.9, 89.5, field_end.x + 37.9),
+		Rect2(44.4, -37.9, 89.6, field_end.x + 37.9),
+		Rect2(-125, field_end.x, 107.8, dock_edge.x - field_end.x),
+		Rect2(44.4, field_end.x, 89.6, dock_edge.x - field_end.x),
 	]
 	var surface := SurfaceTool.new()
 	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -757,8 +762,8 @@ static func _build_yard_backdrop(g: Node3D) -> void:
 		for index in [0, 1, 2, 0, 2, 3]:
 			surface.set_normal(Vector3.UP)
 			var point: Vector2 = corners[index]
-			var grade := clampf((point.y + 37.9) / 81.0, 0.0, 1.0)
-			surface.add_vertex(Vector3(point.x, lerpf(-0.10, -1.39, grade), point.y))
+			var grade := clampf(inverse_lerp(field_end.x, dock_edge.x, point.y), 0.0, 1.0)
+			surface.add_vertex(Vector3(point.x, lerpf(field_end.y, dock_edge.y, grade), point.y))
 	var material := ShaderMaterial.new()
 	material.shader = preload("res://shaders/warehouse_yard_backdrop.gdshader")
 	material.set_shader_parameter("dry_grass", load("res://assets/props/warehouse_field/textures/field_track_albedo.jpg"))
@@ -796,10 +801,11 @@ static func _build_boxes(g: Node3D) -> void:
 			bm.add_uv2 = true
 			mesh.mesh = bm
 		if not b.collide:
-			mesh.name = b.name
-			mesh.position = centre
-			g.add_child(mesh)
-			mesh.owner = _root
+			if mesh != null:
+				mesh.name = b.name
+				mesh.position = centre
+				g.add_child(mesh)
+				mesh.owner = _root
 			continue
 		var body := StaticBody3D.new()
 		body.name = b.name
@@ -813,6 +819,7 @@ static func _build_boxes(g: Node3D) -> void:
 		var shape := CollisionShape3D.new()
 		shape.name = "Shape"
 		var bs := BoxShape3D.new()
+		shape.shape = bs
 		var pitch: float = b.get("pitch", 0.0)
 		if is_zero_approx(pitch):
 			bs.size = size
@@ -829,24 +836,23 @@ static func _build_boxes(g: Node3D) -> void:
 			body.position = Vector3(centre.x, lo.y + 0.1 + rise / 2.0 - 0.15 / cos(atan2(rise, run)), centre.z)
 			shape.rotation = (Basis(axis, angle)).get_euler()
 			if b.get("fill", false):
-				# Fill the dock ramp to apron level. The original sloped clip
-				# stays the walking surface, shared with the stair ramps.
+				# Fill the dock ramp to apron level. The same prism supplies
+				# both the render mesh (when visible) and the convex clip.
 				var fill := PrismMesh.new()
 				fill.left_to_right = 0.0
 				fill.size = Vector3(run, rise, size.x)
-				fill.material = _mat(b.mat)
-				fill.add_uv2 = true
-				mesh.mesh = fill
-				mesh.rotation.y = -PI / 2.0
-				mesh.position.y = (lo.y + hi.y + 0.1) / 2.0 - body.position.y
+				var lift := (lo.y + hi.y + 0.1) / 2.0 - body.position.y
+				var xf := Transform3D(Basis(Vector3.UP, -PI / 2.0), Vector3(0, lift, 0))
+				if mesh != null:
+					fill.material = _mat(b.mat)
+					fill.add_uv2 = true
+					mesh.mesh = fill
+					mesh.transform = xf
+				shape.shape = fill.create_convex_shape()
+				shape.transform = xf
 			elif mesh != null:
 				(mesh.mesh as BoxMesh).size = bs.size
 				mesh.rotation = shape.rotation
-		if b.get("fill", false):
-			shape.shape = mesh.mesh.create_convex_shape()
-			shape.transform = mesh.transform
-		else:
-			shape.shape = bs
 		body.add_child(shape)
 		shape.owner = _root
 	# Climbable ladders (rust/game/src/ladder.rs): a LadderVolume at each
@@ -953,7 +959,17 @@ static func _build_detail(g: Node3D) -> void:
 			strewn += 1
 		for batch in batches:
 			var name := "%sBatch%d" % [model.to_pascal_case(), batches.keys().find(batch)]
-			for mmi: MultiMeshInstance3D in _multimesh(g, name, model, batches[batch]):
+			var transforms: Array = batches[batch]
+			if field_plant:
+				# Low shows a prefix. Distribute those instances across the cell.
+				var rng := RandomNumberGenerator.new()
+				rng.seed = hash([model, batch])
+				for i in range(transforms.size() - 1, 0, -1):
+					var j := rng.randi_range(0, i)
+					var swap: Transform3D = transforms[i]
+					transforms[i] = transforms[j]
+					transforms[j] = swap
+			for mmi: MultiMeshInstance3D in _multimesh(g, name, model, transforms):
 				mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 				if field_plant:
 					mmi.position = Vector3(batch.x * 8.0 + 4.0, 0, batch.y * 8.0 + 4.0)

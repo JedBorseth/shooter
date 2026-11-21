@@ -80,6 +80,7 @@ func _run() -> void:
 	var player := current_scene.get_node("Player") as FpsPlayer
 	await physics_frame
 	await physics_frame
+	_check_ambience(current_scene, player)
 	var space := player.get_world_3d().direct_space_state
 	for marker: Node3D in current_scene.get_node("SpawnPoints").get_children():
 		var floor_ray := PhysicsRayQueryParameters3D.create(
@@ -106,6 +107,9 @@ func _run() -> void:
 		query.transform.origin = marker.global_position + Vector3.UP * 0.95
 		query.collision_mask = 1
 		_check(space.intersect_shape(query).is_empty(), "spawn %s has body clearance" % marker.name)
+		var eye := marker.global_position + Vector3.UP * 1.6
+		var facing := PhysicsRayQueryParameters3D.create(eye, eye - marker.global_basis.z * 4, 1)
+		_check(space.intersect_ray(facing).is_empty(), "%s faces 4 m of open space" % marker.name)
 
 	await _check_prop_collision(current_scene)
 
@@ -312,6 +316,50 @@ func _check_dock_trailers(space: PhysicsDirectSpaceState3D) -> void:
 		var inside := Vector3(x, 1.2, 37.1)
 		var side := PhysicsRayQueryParameters3D.create(inside, inside + Vector3.RIGHT * 1.6, 1)
 		_check(not space.intersect_ray(side).is_empty(), "trailer sides block shots and players")
+		for y in [0.1, 1.55, 2.66, 2.85, 3.25, 3.60]:
+			for offset in [-1.43, -1.34, 1.34, 1.43]:
+				_check(
+					_mouth_blocks(space, x + offset, y),
+					"dock jamb sealed at %s" % [Vector2(x + offset, y)]
+				)
+		for y in [2.85, 3.25, 3.60]:
+			for offset in [-1.18, -0.6, 0.0, 0.6, 1.18]:
+				_check(
+					_mouth_blocks(space, x + offset, y),
+					"dock header sealed at %s" % [Vector2(x + offset, y)]
+				)
+		_check(not _mouth_blocks(space, x, 1.55), "the passage through the trailer is open")
+
+
+func _mouth_blocks(space: PhysicsDirectSpaceState3D, x: float, y: float) -> bool:
+	var ray := PhysicsRayQueryParameters3D.create(Vector3(x, y, 33.7), Vector3(x, y, 32.7), 1)
+	return not space.intersect_ray(ray).is_empty()
+
+
+func _check_ambience(map: Node, player: FpsPlayer) -> void:
+	var environment := player.get_node_or_null("AudioEnvironment") as AudioEnvironment
+	_check(environment != null, "Warehouse player has AudioEnvironment")
+	if environment == null:
+		return
+	# Changing the tracked-source mix lets us distinguish a skipped emitter
+	# from a tracked one that happens to be unoccluded at this position.
+	var mix := float(root.get_node("Settings").call("panning_strength"))
+	var probe := AudioStreamPlayer3D.new()
+	map.add_child(probe)
+	var test_mix := 0.37 if not is_equal_approx(mix, 0.37) else 0.73
+	for name in ["IndustrialOffMap", "Debris"]:
+		var emitter := map.get_node_or_null("Soundscape/" + name) as AudioStreamPlayer3D
+		_check(emitter != null, "live Warehouse starts " + name)
+		if emitter == null:
+			continue
+		_check(emitter.get_meta("skip_occlusion", false) == true, name + " skips occlusion")
+		_check(emitter.bus == &"Ambience (outdoor)", name + " uses the outdoor ambience bus")
+		var previous := emitter.panning_strength
+		environment.set_panning_strength(test_mix)
+		_check(is_equal_approx(probe.panning_strength, test_mix), "control emitter is tracked")
+		_check(is_equal_approx(emitter.panning_strength, previous), name + " stays untracked")
+		environment.set_panning_strength(mix)
+	probe.queue_free()
 
 
 ## Every climb volume stands in the rungs' approach and reaches its landing.
@@ -424,6 +472,18 @@ func _check_navigation(map: Node) -> void:
 		"the Catwalk stair": [Vector3(26.3, 0, -21.8), Vector3(25.8, 2.8, -13.6)],
 		"the Pick Mezzanine stair": [Vector3(11.9, 0, 25.85), Vector3(11.9, 3, 16.8)],
 	}
+	var space := (map as Node3D).get_world_3d().direct_space_state
+	for lane: Node3D in map.get_node("BotLanes").get_children():
+		var apron := (lane.get_child(-1) as Marker3D).global_position
+		_check(is_equal_approx(apron.y, -1.25), "%s ends at apron level" % lane.name)
+		_check(_fits(space, apron, 1.8), "%s ends with standing clearance" % lane.name)
+		var hall := Vector3(-13.24, 0, 31.8) if lane.name == &"West" else Vector3(18.5, 0, 32.3)
+		routes["the %s lane's dock exit" % lane.name] = [hall, apron]
+	var west := map.get_node("BotLanes/West")
+	for i in range(5, 10):
+		var a := (west.get_child(i - 1) as Marker3D).global_position
+		var b := (west.get_child(i) as Marker3D).global_position
+		routes["the West lane between P%d and P%d" % [i - 1, i]] = [a, b]
 	for name in routes:
 		var a: Vector3 = routes[name][0]
 		var b: Vector3 = routes[name][1]
@@ -450,6 +510,7 @@ func _check_detail(map: Node, space: PhysicsDirectSpaceState3D) -> void:
 	_check(detail != null, "the detail pass is built")
 	if detail == null:
 		return
+	_check_outdoor_props(detail)
 	var strewn := 0
 	for mmi: MultiMeshInstance3D in detail.find_children("*", "MultiMeshInstance3D", false, false):
 		if mmi.name.begins_with("HangingJoist"):
@@ -521,6 +582,45 @@ func _check_detail(map: Node, space: PhysicsDirectSpaceState3D) -> void:
 		for n in map.get_node("PhotoPass/Effects").get_children():
 			found = found or String(n.name).begins_with(fx)
 		_check(found, "the %s effect is built" % fx.to_lower())
+
+
+func _check_outdoor_props(detail: Node) -> void:
+	# The hall and trailer bodies supply the seals' collision. Bollards are
+	# below the footprint cutoff and are kept clear of the walkable mouths.
+	const MOUNTED := [&"DockShelter1", &"DockShelter2", &"DockShelter3"]
+	var missing := PackedStringArray()
+	for piece: Node3D in detail.get_children():
+		var p := piece.position
+		if p.x < -35.5 or p.x > 44.4 or p.z < -37.9 or p.z > 43.1:
+			continue
+		if p.x > -17.2 and p.z >= -26.0 and p.z <= 33.0:
+			continue
+		if piece.name in MOUNTED or piece is MultiMeshInstance3D:
+			continue
+		var meshes := piece.find_children("*", "MeshInstance3D", true, false)
+		var bounds := _visible_bounds(meshes, piece)
+		if not bounds.has_volume():
+			continue
+		var size := bounds.grow(-0.1).size
+		if size.y <= 0.5 or minf(size.x, size.z) < 0.6:
+			continue
+		if (
+			not piece is StaticBody3D
+			or piece.find_children("*", "CollisionShape3D", false).is_empty()
+		):
+			missing.append(piece.name)
+	_check(missing.is_empty(), "large outdoor pieces have clip: %s" % [missing])
+	for model in [
+		"FieldSapling", "FieldShrub", "FieldShortClump", "FieldStrawClump", "FieldWeedClump"
+	]:
+		var batch := detail.get_node_or_null("%sBatch00" % model) as MultiMeshInstance3D
+		_check(batch != null, "%s is scattered" % model)
+		if batch == null:
+			continue
+		var bottom := INF
+		for vertex: Vector3 in batch.multimesh.mesh.get_faces():
+			bottom = minf(bottom, vertex.y)
+		_check(absf(bottom) < 0.03, "%s has faces at its ground origin (%.3f m)" % [model, bottom])
 
 
 ## The height of the first walkable surface under `p`, looking down from

@@ -8,20 +8,23 @@ Measured at 1920×1080 on a GTX 1060 3GB, the reference card. The budget is GPU 
 
 | Preset | GPU budget | Leaves room for | Today (worst view) |
 | --- | --- | --- | --- |
-| Low | 4 ms | weaker cards and laptops at 60 fps | 3.96 ms (Slamcity, the railway platform); Zombies 3.7, Slamcity's close-ups 3.7, Breakwater 3.4, Warehouse 3.3, Testing 2.8 |
-| Medium (default) | 6.5 ms (the gate; 8 ms is the hard ceiling) | 144 fps on the reference card with room for the CPU, 60 fps on much weaker cards | Slamcity 8.3 and Breakwater 7.3 over; Warehouse 6.3, Zombies 6.2, Testing 5.8 |
-| High | 12 ms | 60 fps | 11.95 ms (Warehouse, with its live sun and probes); Slamcity 11.6 |
+| Low | 4 ms | weaker cards and laptops at 60 fps | 3.96 ms (Slamcity, the railway platform) |
+| Medium (default) | 6.5 ms (the gate; 8 ms is the hard ceiling) | 144 fps on the reference card with room for the CPU, 60 fps on much weaker cards | Slamcity 8.3 and Breakwater 7.3 |
+| High | 12 ms | 60 fps | 11.61 ms (Slamcity) |
 
-Per map, best of two steady runs (see below) on 2026-11-20, average over viewpoints with the worst in brackets:
+GPU milliseconds per map, averaged over viewpoints with the worst in brackets.
+Each viewpoint uses the lower GPU time from two steady runs. The GTX 1060
+results were recorded on 2026-11-20. The five current Warehouse viewpoints were
+measured on a GTX 1660 Ti on 2026-11-21 and still need a run on the reference card.
 
-| Map | Low | Medium | High |
-| --- | ---: | ---: | ---: |
-| Testing Area | 2.71 (2.83) | 5.66 (5.83) | 8.57 (9.02) |
-| Slamcity | 3.71 (3.96) | 7.66 (8.27) | 10.95 (11.61) |
-| Slamcity close-ups | 3.65 (3.67) | 7.53 (7.54) | 10.95 (11.03) |
-| Breakwater | 3.23 (3.42) | 6.90 (7.30) | 9.78 (10.24) |
-| Warehouse | 2.92 (3.29) | 5.61 (6.26) | 10.77 (11.95) |
-| Zombies, 24 zombies | 3.20 (3.70) | 5.58 (6.17) | 8.15 (8.81) |
+| Map | GPU | Low | Medium | High |
+| --- | --- | ---: | ---: | ---: |
+| Testing Area | GTX 1060 | 2.71 (2.83) | 5.66 (5.83) | 8.57 (9.02) |
+| Slamcity | GTX 1060 | 3.71 (3.96) | 7.66 (8.27) | 10.95 (11.61) |
+| Slamcity close-ups | GTX 1060 | 3.65 (3.67) | 7.53 (7.54) | 10.95 (11.03) |
+| Breakwater | GTX 1060 | 3.23 (3.42) | 6.90 (7.30) | 9.78 (10.24) |
+| Warehouse | GTX 1660 Ti | 1.90 (1.96) | 3.94 (4.13) | 6.70 (6.89) |
+| Zombies, 24 zombies | GTX 1060 | 3.20 (3.70) | 5.58 (6.17) | 8.15 (8.81) |
 
 With a hound round's eight hounds galloping ahead of the horde (`BENCH_HOUNDS=8`), Zombies' worst views are 3.80, 6.32, and 9.09 ms.
 
@@ -88,7 +91,7 @@ flock ~/.cache/shooter-fidelity/gpu.lock tools/steady.sh env PROFILE_MAP=slamcit
 
 **Read GPU time, not frames per second.** GPU time comes from the renderer's own timestamps. Under Xvfb, each frame is also copied through the CPU to the virtual display, which adds about 8 ms at 1080p. That caps the wall-clock numbers near 60–100 fps even when the GPU is idle half the frame. On a real display, the frame rate follows GPU time.
 
-When a PR changes the look on purpose, it updates `docs/perf/baseline.json` with its own run, so the next PR compares against it.
+When a PR changes the look on purpose, it updates `docs/perf/baseline.json` with its own run, so the next PR compares against it. A row with an `adapter` overrides the file's default card. Comparisons use only baseline rows measured on the card that produced the new run.
 
 ### The gate
 
@@ -249,7 +252,7 @@ GPU time on Medium at 1080p on the reference card, average over viewpoints (wors
 | Warehouse lit by a lightmap instead of live lights, SDFGI, SSIL, and SSR (#354); smoke lit per vertex; presets switch live GI off on Low and Medium. Baseline refreshed with all maps, Warehouse included | 5.61 (5.83) ms | 7.60 (8.46) ms | 5.52 (6.16) ms |
 | Steady measurement (`tools/steady.sh`: the card held in its performance state, frames presented on its own display), and the baseline re-measured that way with everything since #359 (streaks, hounds, prone, camos, custom games); Low caps every map's sun at two shadow splits and halves a map's ambient smoke, steam, and mist. Medium and High are unchanged; Low's worst views went from 4.05 to 3.96 ms on Slamcity and moved by −0.07 to +0.01 ms elsewhere against `main` measured the same way | 5.66 (5.83) ms | 7.66 (8.27) ms | 5.58 (6.17) ms |
 
-Warehouse (photo-matched and rebuilt for 6v6, #234 to #285) was never measured when it landed: lit live by 122 spot lights (61 with shadows), SDFGI, SSIL, screen-space reflections, and two reflection probes, it cost 22.9 ms on average on Medium (29.5 at the worst view; Low 8 to 10 ms) with 10,000 to 11,600 draws. Baked into a lightmap like the other maps, with the probes and the live breach sun on High only, it costs:
+Warehouse (photo-matched and rebuilt for 6v6, #234 to #285) was never measured when it landed: lit live by 122 spot lights (61 with shadows), SDFGI, SSIL, screen-space reflections, and two reflection probes, it cost 22.9 ms on average on Medium (29.5 at the worst view; Low 8 to 10 ms) with 10,000 to 11,600 draws. The original layout measured as follows after it was baked into a lightmap, with the probes and the live breach sun on High only:
 
 | Warehouse | GPU ms (avg) | GPU ms (worst view) | Draws (worst view) |
 | --- | ---: | ---: | ---: |
@@ -263,7 +266,7 @@ Slamcity's 7.0 ms on Medium is about 0.5 ms more than the old map, over the usua
 
 
 Warehouse's asymmetric rework uses five benchmark views covering the Field,
-Docks, Catwalk, Pick Mezzanine, and mid stockpile. On the GTX 1660 Ti at
-1920 × 1080 under `tools/steady.sh`, its worst views cost 1.83 ms on Low,
-3.80 ms on Medium, and 6.60 ms on High. The paired desktop measurements use
-1440 × 849 and are recorded in [the map design notes](map-design.md#asymmetric-rework-november-2026).
+Docks, Catwalk, Pick Mezzanine, and mid stockpile. After the outdoor refresh,
+the worst views cost 1.96 ms on Low, 4.15 ms on Medium, and 6.92 ms on High on
+the GTX 1660 Ti at 1920 × 1080 under `tools/steady.sh`. The paired desktop
+measurements use 1440 × 849 and are recorded in [the map design notes](map-design.md#asymmetric-rework-november-2026).

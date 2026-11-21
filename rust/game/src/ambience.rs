@@ -305,8 +305,9 @@ impl Soundscape {
                 self.breach_player = self.bed(breach.bed, BUS, "BreachWind");
             }
             if preset.industrial_off_map {
-                let mut player = self.positional_on("IndustrialOffMap", OUTDOOR_BUS, 1);
-                player.set_meta(SKIP_OCCLUSION_META, &true.to_variant());
+                // Off-map: the boundary collider must not muffle it (set before
+                // add_child, when AudioEnvironment decides whether to track it).
+                let player = self.positional_on("IndustrialOffMap", OUTDOOR_BUS, 1, true);
                 self.industrial_player = Some(player);
                 self.industrial_scheduler =
                     Some(IndustrialScheduler::new(randf_range(0.0, 1.0) as f32));
@@ -326,7 +327,11 @@ impl Soundscape {
             gust.set_bus(OUTDOOR_BUS);
             self.base_mut().add_child(&gust);
             self.gust_player = Some(gust);
-            self.debris_player = Some(self.positional("Debris", 2));
+            // An area preset places its one-shots beyond the play space's
+            // boundary collider, so occlusion would muffle every one of them.
+            let off_map = self.active_preset.is_some();
+            let bus = if off_map { OUTDOOR_BUS } else { BUS };
+            self.debris_player = Some(self.positional_on("Debris", bus, 2, off_map));
             self.next_one_shot = randf_range(4.0, 10.0) as f32;
         }
         if self.distant_battle {
@@ -343,11 +348,20 @@ impl Soundscape {
     }
 
     fn positional(&mut self, name: &str, polyphony: i32) -> Gd<AudioStreamPlayer3D> {
-        self.positional_on(name, BUS, polyphony)
+        self.positional_on(name, BUS, polyphony, false)
     }
 
-    fn positional_on(&mut self, name: &str, bus: &str, polyphony: i32) -> Gd<AudioStreamPlayer3D> {
+    fn positional_on(
+        &mut self,
+        name: &str,
+        bus: &str,
+        polyphony: i32,
+        skip_occlusion: bool,
+    ) -> Gd<AudioStreamPlayer3D> {
         let mut player = AudioStreamPlayer3D::new_alloc();
+        if skip_occlusion {
+            player.set_meta(SKIP_OCCLUSION_META, &true.to_variant());
+        }
         player.set_name(name);
         player.set_bus(bus);
         player.set_as_top_level(true);

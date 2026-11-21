@@ -21,7 +21,7 @@
     "warehouse": {
       "high": 12.8,
       "medium": 7.0,
-      "reason": "High keeps the live breach sun and reflection probes (11.95 ms at the worst view, too close to 12 to gate on); Medium's worst view (wall filling the screen) pays about 5% for the tilt-up walls' bumps, spalls, and cracks, accepted by the owner (November 2026)"
+      "reason": "GTX 1060 allowances from the prior Warehouse layout. The current viewpoints have a GTX 1660 Ti baseline and await a run on the reference card (docs/performance.md)."
     }
   }
 }

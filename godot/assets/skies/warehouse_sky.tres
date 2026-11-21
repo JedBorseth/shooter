@@ -14,11 +14,11 @@ shader_parameter/horizon_depth = ExtResource("4_horizon_depth")
 shader_parameter/depth_range = 3000.0
 shader_parameter/strip_min = -0.0610865
 shader_parameter/strip_span = 0.3436117
-shader_parameter/land_light = 1.12
+shader_parameter/land_light = 0.92
 shader_parameter/sky_turn = -1.14
 shader_parameter/sun_azimuth = -2.18166
-shader_parameter/haze_density = 0.00085
-shader_parameter/haze_start = 0.0
+shader_parameter/haze_density = 0.0007
+shader_parameter/haze_start = 165.0
 
 [resource]
 sky_material = SubResource("SkyMat")
