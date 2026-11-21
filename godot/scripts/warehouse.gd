@@ -13,6 +13,9 @@ func prepare_server() -> void:
 
 
 func _ready() -> void:
+	# Repeated stock differs load to load; a dedicated server draws nothing.
+	if DisplayServer.get_name() != "headless":
+		PropVariation.apply([$PhotoPass/Stock, $PhotoPass/Machines] as Array[Node])
 	if not has_node("Player"):
 		set_physics_process(false)
 		return

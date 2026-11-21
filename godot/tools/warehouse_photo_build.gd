@@ -629,11 +629,44 @@ static func _build_machines(g: Node3D) -> void:
 
 static func _build_stock(g: Node3D) -> void:
 	var n := 0
+	var varied := 0
 	for p in _data.props:
 		n += 1
-		_place(g, "%s%03d" % [String(p.model).to_pascal_case(), n], p.model, Vector3(p.x, p.y, p.z), p.rot, p.fit,
+		var model := _stock_variant(p.model, n, p.fit)
+		if model != p.model:
+			varied += 1
+		# Named for the layout's model, so a placement keeps its name (and the
+		# runtime colour variation keyed on it) whichever variant it gets.
+		_place(g, "%s%03d" % [String(p.model).to_pascal_case(), n], model, Vector3(p.x, p.y, p.z), p.rot, p.fit,
 			0.7, 1.4, p.collide)
-	_log.append("stock: %d" % n)
+	_log.append("stock: %d, %d of them variants" % [n, varied])
+
+
+## The busiest stock has variants (tools/build_warehouse_photo_props.py):
+## sheet stacks "picked" (the top bundle opened, half its sheets gone, loose
+## sheets on the low half) and "knocked" (a crushed corner, the top bundle
+## slumped); roll stacks "torn" (a peeled outer layer) and "crushed" (a
+## dropped, out-of-round roll). Each keeps its base's outer size, so a
+## placement's fit and cover stand. Half the placements keep the base, a
+## quarter take each variant, chosen by a hash so a rebuild gives the same.
+## A picked stack's low half must stay above eye height, so only stacks 2.4 m
+## and taller are picked; the low stacks players mantle are never knocked.
+const STOCK_VARIANTS := {"stack": ["picked", "knocked"], "roll_stack": ["torn", "crushed"]}
+const PICKED_MIN_HEIGHT := 2.4
+const KNOCKED_MIN_HEIGHT := 1.5
+
+
+static func _stock_variant(model: String, n: int, fit: Array) -> String:
+	var kinds: Array = STOCK_VARIANTS["roll_stack" if model.begins_with("roll_stack") else "stack"]
+	var k := absi(("%s:%d" % [model, n]).hash()) % 8
+	if k < 4:
+		return model
+	var kind: String = kinds[0] if k < 6 else kinds[1]
+	var height := float(fit[2]) if fit.size() == 3 else 0.0
+	if (kind == "picked" and height < PICKED_MIN_HEIGHT) or (kind == "knocked" and height < KNOCKED_MIN_HEIGHT):
+		return model
+	var variant := "%s_%s" % [model, kind]
+	return variant if ResourceLoader.exists(PHOTO + variant + ".gltf") else model
 
 
 ## Plain floor slabs that fill gaps the Cyclops shell leaves.

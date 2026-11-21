@@ -291,19 +291,51 @@ def pallet(x, y, z, w, d, p, old=False, rot=0.0):
 
 
 def sheet_unit(x, y, z, w, d, h, p, rng, bowing=0.0, white=False, caps=True, labels=1, straps=2,
-               overhang=0.06, pallet_w=None, rot=0.0, old_pallet=False):
-    """One palletized bundle of sheets. Returns the top z."""
+               overhang=0.06, pallet_w=None, rot=0.0, old_pallet=False, picked=0.0, loose=0, dent=0.0,
+               lean=0.0):
+    """One palletized bundle of sheets. Returns the top z.
+
+    Variants (tools' `_picked` and `_knocked` stacks): `picked` takes that share
+    of the sheets off one half, so the top steps down, with the straps cut and
+    the cap gone and `loose` sheets left skewed on the low half; `dent` crushes
+    a bottom corner in by up to that many metres (a forklift tine); `lean`
+    slumps the bundle (not its pallet) by that many radians.
+    """
     pw = pallet_w or min(w - 0.1, 1.22)
     pd = min(d - 0.1, 1.22) if d > 1.3 else d - 0.05
     top = pallet(x, y, z, pw, pd, p, old_pallet, rot)
+    before = set(bpy.context.scene.objects)
     side = p["white_edge"] if white else rng.choice([p["stack"], p["stack"], p["stack_dark"]])
     top_mat = p["white"] if white else p["kraft"]
-    seg = (8, 8, 4) if bowing else (1, 1, 1)
-    body = uv_box("sheets", (x, y, top + h / 2), (w, d, h), {"side": side, "top": top_mat, "bottom": top_mat},
-                  tile=1.0, top_tile=2.0, rot=0, segments=seg)
-    if bowing:
-        bow(body, bowing, axis=0 if w >= d else 1, falloff_from=0.15)
-    body.rotation_euler = (0, 0, rot)
+    mats = {"side": side, "top": top_mat, "bottom": top_mat}
+    if picked:
+        # Opened to be picked from: no cap, the straps cut.
+        caps, straps, bowing = False, 0, 0.0
+        low = h * (1 - picked)
+        along = w >= d
+        half = (w / 2, d) if along else (w, d / 2)
+        off = (w / 4, 0) if along else (0, d / 4)
+        uv_box("sheets", (x - off[0], y - off[1], top + h / 2), (*half, h), mats, tile=1.0, top_tile=2.0)
+        uv_box("sheets", (x + off[0], y + off[1], top + low / 2), (*half, low), mats, tile=1.0, top_tile=2.0)
+        lz = top + low
+        for k in range(loose):
+            sw = half[0] * rng.uniform(0.7, 1.05)
+            sd = half[1] * rng.uniform(0.85, 1.05)
+            sx = x + off[0] + rng.uniform(-0.12, 0.14)
+            sy = y + off[1] + rng.uniform(-0.1, 0.1)
+            uv_box("loose", (sx, sy, lz + 0.005), (sw, sd, 0.01), mats, tile=1.0, top_tile=2.0,
+                   rot=rng.uniform(-0.18, 0.18))
+            lz += 0.01
+        body = None
+    else:
+        seg = (8, 8, 4) if bowing else ((6, 6, 4) if dent else (1, 1, 1))
+        body = uv_box("sheets", (x, y, top + h / 2), (w, d, h), mats,
+                      tile=1.0, top_tile=2.0, rot=0, segments=seg)
+        if bowing:
+            bow(body, bowing, axis=0 if w >= d else 1, falloff_from=0.15)
+        if dent:
+            crush(body, dent, rng)
+        body.rotation_euler = (0, 0, rot)
     c, s = cos(rot), sin(rot)
 
     def at(px, py):
@@ -338,20 +370,61 @@ def sheet_unit(x, y, z, w, d, h, p, rng, bowing=0.0, white=False, caps=True, lab
         ex, ey = at(lx, -(d / 2 + 0.018))
         uv_box("label", (ex, ey, top + h * rng.uniform(0.55, 0.8)), (0.21, 0.002, 0.28),
                {"side": p["label"]}, 0.28, rot=rot).data.uv_layers[0]
+    if lean:
+        # Slump the bundle (everything made after its pallet) about its foot.
+        bpy.context.view_layer.update()
+        pivot = Vector((x, y, top))
+        turn = Matrix.Translation(pivot) @ Matrix.Rotation(lean, 4, "X" if w >= d else "Y") \
+            @ Matrix.Translation(-pivot)
+        for obj in set(bpy.context.scene.objects) - before:
+            obj.matrix_world = turn @ obj.matrix_world
     # The next tier sits on the cap sheet, not inside it.
     return top + h + max(bowing, 0) * 0.65 + (0.04 if caps and not white else 0.0)
 
 
-def sheet_stack(name, units, w, d, seed, bowing=0.0, white=False, jitter=0.04):
+def crush(obj, depth, rng):
+    """Push one bottom corner of a subdivided box in, as a forklift tine does,
+    the sheets there crumpled and sagging."""
+    mesh = obj.data
+    xs = [v.co.x for v in mesh.vertices]
+    ys = [v.co.y for v in mesh.vertices]
+    zs = [v.co.z for v in mesh.vertices]
+    corner = Vector((rng.choice((min(xs), max(xs))), rng.choice((min(ys), max(ys))), min(zs)))
+    radius = 0.55
+    middle = Vector((sum(xs) / len(xs), sum(ys) / len(ys), corner.z))
+    inward = (middle - corner).normalized()
+    for v in mesh.vertices:
+        dist = (v.co - corner).length
+        if dist < radius:
+            k = (1 - dist / radius) ** 2
+            v.co += inward * depth * k
+            v.co.z -= depth * 0.4 * k * (v.co.z - corner.z > 0.02)
+
+
+def sheet_stack(name, units, w, d, seed, bowing=0.0, white=False, jitter=0.04, variant=None):
+    """A stack of palletized sheet bundles. `variant` "picked" opens the top
+    bundle to be picked from; "knocked" crushes a corner of the bottom bundle
+    and slumps the top one. Both keep the stack's outer size, so a placement's
+    fit (and its cover) stays the same whichever it gets."""
     p = palette()
     rng = random.Random(seed)
+    vrng = random.Random(f"{seed}:{variant}")
     z = 0.0
+    last = len(units) - 1
     for i, h in enumerate(units):
         jx, jy = rng.uniform(-jitter, jitter), rng.uniform(-jitter, jitter)
+        extra = {}
+        if variant == "picked" and i == last:
+            extra = dict(picked=vrng.uniform(0.25, 0.4), loose=vrng.randint(3, 6))
+        elif variant == "knocked":
+            if i == 0:
+                extra["dent"] = vrng.uniform(0.15, 0.2)
+            if i == last and last > 0:
+                extra["lean"] = vrng.choice((-1, 1)) * vrng.uniform(0.06, 0.09)
         z = sheet_unit(jx, jy, z, w, d, h, p, rng, bowing=bowing * rng.uniform(0.6, 1.2) if bowing else 0,
                        white=white, labels=1 if i < 2 else 0, rot=rng.uniform(-0.02, 0.02),
-                       old_pallet=rng.random() < 0.4)
-    export(name)
+                       old_pallet=rng.random() < 0.4, **extra)
+    export(name if not variant else f"{name}_{variant}")
 
 
 def cut_sheets(name, w, d, h, seed, white=False, labels=1):
@@ -372,7 +445,10 @@ def pallet_tower(name, count, seed, w=1.2, d=1.0):
     export(name)
 
 
-def roll(x, y, z, r, h, p, white=False, label=True, rng=None):
+def roll(x, y, z, r, h, p, white=False, label=True, rng=None, squash=1.0, tilt=0.0, flap=False):
+    """One paper roll on end. `squash` makes it out of round (dropped on its
+    side once), `tilt` leans it, and `flap` peels its outer layer into a flap."""
+    before = set(bpy.context.scene.objects)
     side = p["roll_white"] if white else p["roll_kraft"]
     end = p["roll_end_white"] if white else p["roll_end_kraft"]
     cylinder("roll", (x, y, z), r, h, side, end, verts=40, tile_u=2.0)
@@ -382,19 +458,84 @@ def roll(x, y, z, r, h, p, white=False, label=True, rng=None):
         a = (rng or random).uniform(0, 2 * pi)
         lab = uv_box("label", (x + cos(a) * (r + 0.004), y + sin(a) * (r + 0.004), z + h * 0.62),
                      (0.002, 0.21, 0.28), {"side": p["label"]}, 0.28, rot=a)
+    if flap:
+        peel(x, y, z, r, h, side, rng or random)
+    if squash != 1.0 or tilt:
+        bpy.context.view_layer.update()
+        foot = Vector((x, y, z))
+        shape = Matrix.Translation(foot) @ Matrix.Rotation(tilt, 4, "X") \
+            @ Matrix.Diagonal((squash, 1 / squash, 1.0, 1.0)) @ Matrix.Translation(-foot)
+        for obj in set(bpy.context.scene.objects) - before:
+            obj.matrix_world = shape @ obj.matrix_world
     return z + h
 
 
-def roll_stack(name, layout, seed):
-    """layout: list of (x, y, radius, [heights...], white)"""
+def peel(x, y, z, r, h, side, rng):
+    """The outer layer torn from the top of a roll and hanging away from it: a
+    sheet that leaves the roll at a tear and curls outward as it falls."""
+    a0 = rng.uniform(0, 2 * pi)
+    span = rng.uniform(0.45, 0.7)
+    length = rng.uniform(0.6, min(1.0, h * 0.8))
+    mesh = bpy.data.meshes.new("peel")
+    obj = bpy.data.objects.new("peel", mesh)
+    bpy.context.collection.objects.link(obj)
+    obj.data.materials.append(side)
+    bm = bmesh.new()
+    uv = bm.loops.layers.uv.new("UVMap")
+    cols, rows = 8, 10
+    grid = []
+    for j in range(rows + 1):
+        t = j / rows
+        row = []
+        for i in range(cols + 1):
+            a = a0 + span * (i / cols - 0.5)
+            # Hangs from the tear and swings out, its free corner lower.
+            out = 0.006 + 0.32 * t * t + 0.05 * t * (i / cols)
+            zz = z + h - 0.04 - length * t * (1 - 0.25 * (i / cols) * t)
+            row.append(bm.verts.new((x + cos(a) * (r + out), y + sin(a) * (r + out), zz)))
+        grid.append(row)
+    for j in range(rows):
+        for i in range(cols):
+            f = bm.faces.new((grid[j][i], grid[j][i + 1], grid[j + 1][i + 1], grid[j + 1][i]))
+            f.smooth = True
+            for loop, (u, v) in zip(f.loops, ((i, j), (i + 1, j), (i + 1, j + 1), (i, j + 1))):
+                loop[uv].uv = (u / cols * span * r / 2.0, 1 - v / rows * length / 2.0)
+    bm.normal_update()
+    bm.to_mesh(mesh)
+    bm.free()
+    # Both faces show: the sheet is thin.
+    mod = obj.modifiers.new("thick", "SOLIDIFY")
+    mod.thickness = 0.004
+
+
+def roll_stack(name, layout, seed, variant=None):
+    """layout: list of (x, y, radius, [heights...], white). `variant` "torn"
+    peels the top kraft roll's outer layer and knocks a roll off centre;
+    "crushed" has a dropped, out-of-round roll with the next one shifted and
+    leaning on it. Both keep the stack's outer size."""
     p = palette()
     rng = random.Random(seed)
-    for x, y, r, heights, white in layout:
+    vrng = random.Random(f"{seed}:{variant}")
+    for s, (x, y, r, heights, white) in enumerate(layout):
         # Rolls stand on a wood skid, as in photos 4 and 5.
         z = pallet(x, y, 0.0, min(2 * r + 0.1, 1.4), min(2 * r, 1.2), p, old=rng.random() < 0.5)
-        for h in heights:
-            z = roll(x + rng.uniform(-0.03, 0.03), y + rng.uniform(-0.03, 0.03), z, r, h, p, white, True, rng)
-    export(name)
+        last = len(heights) - 1
+        for i, h in enumerate(heights):
+            ox, oy = rng.uniform(-0.03, 0.03), rng.uniform(-0.03, 0.03)
+            shape = {}
+            if s == 0 and variant == "torn":
+                if i == last and not white:
+                    shape["flap"] = True
+                if i == 1:
+                    ox += vrng.choice((-1, 1)) * vrng.uniform(0.05, 0.08)
+            elif s == 0 and variant == "crushed":
+                if i == 0:
+                    shape["squash"] = vrng.uniform(1.1, 1.14)
+                if i == 1:
+                    ox += vrng.uniform(0.08, 0.12)
+                    shape["tilt"] = vrng.choice((-1, 1)) * vrng.uniform(0.035, 0.05)
+            z = roll(x + ox, y + oy, z, r, h, p, white, True, rng, **shape)
+    export(name if not variant else f"{name}_{variant}")
 
 
 def tilt_hopper(name):
@@ -663,14 +804,6 @@ BUILDS = {
     "pipe_copper": lambda: pipe("pipe_copper", "copper", 0.02),
     "pipe_black": lambda: pipe("pipe_black", "steel_black", 0.06),
     "scrap_bale": lambda: bale_unit("scrap_bale"),
-    "stack_tall_a": lambda: sheet_stack("stack_tall_a", [1.0, 0.95, 0.9], 1.6, 1.25, 1, bowing=0.06),
-    "stack_tall_b": lambda: sheet_stack("stack_tall_b", [1.15, 1.1], 2.2, 1.5, 2, bowing=0.08),
-    "stack_wide_bowed": lambda: sheet_stack("stack_wide_bowed", [0.75, 0.7, 0.65], 2.6, 1.6, 3, bowing=0.16),
-    "stack_wide_a": lambda: sheet_stack("stack_wide_a", [1.15, 1.05, 1.1], 2.4, 1.5, 21, bowing=0.12),
-    "stack_wide_b": lambda: sheet_stack("stack_wide_b", [0.9, 0.85], 2.8, 1.8, 22, bowing=0.2),
-    "stack_wide_c": lambda: sheet_stack("stack_wide_c", [1.25, 1.2], 2.2, 1.4, 23, bowing=0.1),
-    "stack_wide_low": lambda: sheet_stack("stack_wide_low", [1.1], 2.5, 1.6, 24, bowing=0.14),
-    "stack_single": lambda: sheet_stack("stack_single", [1.05], 1.6, 1.25, 4, bowing=0.03),
     "stack_double": lambda: sheet_stack("stack_double", [0.95, 0.85], 1.5, 1.3, 5, bowing=0.05),
     "stack_white": lambda: sheet_stack("stack_white", [0.45, 0.42, 0.45, 0.4], 1.3, 1.0, 6, white=True),
     "cut_sheets_low": lambda: cut_sheets("cut_sheets_low", 1.9, 1.1, 0.28, 7),
@@ -679,9 +812,6 @@ BUILDS = {
     "pallet_single": lambda: pallet_tower("pallet_single", 1, 10),
     "pallet_tower_short": lambda: pallet_tower("pallet_tower_short", 8, 11),
     "pallet_tower_tall": lambda: pallet_tower("pallet_tower_tall", 22, 12),
-    "roll_stack_kraft": lambda: roll_stack("roll_stack_kraft", [(0, 0, 0.75, [1.25, 1.25, 1.1], False)], 13),
-    "roll_stack_mixed": lambda: roll_stack("roll_stack_mixed", [
-        (0, 0, 0.7, [1.3, 1.2], False), (1.5, 0.05, 0.68, [1.3, 1.2, 0.9], True)], 14),
     "roll_single_white": lambda: roll_stack("roll_single_white", [(0, 0, 0.62, [1.4], True)], 15),
     "tilt_hopper_red": lambda: tilt_hopper("tilt_hopper_red"),
     "joist_10": lambda: joist("joist_10", 10.0),
@@ -693,6 +823,33 @@ BUILDS = {
     "steel_column_10": lambda: steel_column("steel_column_10", 10.0),
     "bollard_loop": lambda: bollard_loop("bollard_loop"),
 }
+
+
+# Variants of the stock placed most often, so a row is never copies: the
+# builder (godot/tools/warehouse_photo_build.gd) picks one per placement.
+STACK_SPECS = {
+    "stack_tall_a": ([1.0, 0.95, 0.9], 1.6, 1.25, 1, 0.06),
+    "stack_tall_b": ([1.15, 1.1], 2.2, 1.5, 2, 0.08),
+    "stack_wide_bowed": ([0.75, 0.7, 0.65], 2.6, 1.6, 3, 0.16),
+    "stack_wide_a": ([1.15, 1.05, 1.1], 2.4, 1.5, 21, 0.12),
+    "stack_wide_b": ([0.9, 0.85], 2.8, 1.8, 22, 0.2),
+    "stack_wide_c": ([1.25, 1.2], 2.2, 1.4, 23, 0.1),
+    "stack_wide_low": ([1.1], 2.5, 1.6, 24, 0.14),
+    "stack_single": ([1.05], 1.6, 1.25, 4, 0.03),
+}
+ROLL_SPECS = {
+    "roll_stack_kraft": ([(0, 0, 0.75, [1.25, 1.25, 1.1], False)], 13),
+    "roll_stack_mixed": ([(0, 0, 0.7, [1.3, 1.2], False), (1.5, 0.05, 0.68, [1.3, 1.2, 0.9], True)], 14),
+}
+for _name, (_units, _w, _d, _seed, _bow) in STACK_SPECS.items():
+    for _variant in (None, "picked", "knocked"):
+        BUILDS[_name if not _variant else f"{_name}_{_variant}"] = (
+            lambda n=_name, u=_units, w=_w, d=_d, sd=_seed, b=_bow, v=_variant:
+            sheet_stack(n, u, w, d, sd, bowing=b, variant=v))
+for _name, (_layout, _seed) in ROLL_SPECS.items():
+    for _variant in (None, "torn", "crushed"):
+        BUILDS[_name if not _variant else f"{_name}_{_variant}"] = (
+            lambda n=_name, lay=_layout, sd=_seed, v=_variant: roll_stack(n, lay, sd, variant=v))
 
 
 def main():

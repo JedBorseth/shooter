@@ -46,6 +46,10 @@ func _run() -> void:
 		)
 		quit(1)
 		return
+	# The bake-only lights free themselves outside the editor
+	# (scripts/baked_lights.gd); keep them, or the saved scene loses them and
+	# the next bake comes out black.
+	Engine.set_meta(&"keep_baked_lights", true)
 	var scene: Node3D = (load(LEVEL) as PackedScene).instantiate()
 	# Keep the player and everything else still while the builder works: the
 	# scene is saved as it stands.
@@ -70,11 +74,17 @@ func _run() -> void:
 
 ## A script run writes no UIDs, so the scene would lose its own and every
 ## external resource's. Put them back so the editor keeps resolving moved files.
+## It also writes each instanced scene's root type, which the editor leaves out
+## (the instance gives it): drop it, so a rebuild's diff is only what changed.
 func _restore_uids(scene_uid: int) -> void:
 	var lines := FileAccess.get_file_as_string(LEVEL).split("\n")
 	var path_re := RegEx.create_from_string('path="([^"]+)"')
+	var type_re := RegEx.create_from_string(' type="[A-Za-z0-9_]+"')
 	for i in lines.size():
 		var line := lines[i]
+		if line.begins_with("[node ") and line.contains(" instance=ExtResource("):
+			line = type_re.sub(line, "")
+			lines[i] = line
 		if i == 0 and scene_uid != ResourceUID.INVALID_ID and not line.contains("uid="):
 			lines[i] = line.trim_suffix("]") + ' uid="%s"]' % ResourceUID.id_to_text(scene_uid)
 		elif line.begins_with("[ext_resource") and not line.contains("uid="):

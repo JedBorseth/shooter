@@ -20,7 +20,8 @@
     },
     "warehouse": {
       "high": 12.8,
-      "reason": "High keeps the live breach sun and reflection probes (11.95 ms at the worst view, too close to 12 to gate on)"
+      "medium": 7.0,
+      "reason": "High keeps the live breach sun and reflection probes (11.95 ms at the worst view, too close to 12 to gate on); Medium's worst view (wall filling the screen) pays about 5% for the tilt-up walls' bumps, spalls, and cracks, accepted by the owner (November 2026)"
     }
   }
 }
