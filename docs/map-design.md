@@ -529,6 +529,140 @@ uv run --with numpy --with pillow --with scipy tools/build_warehouse_floor_masks
 xvfb-run -a godot --path godot --script res://tools/warehouse_build_headless.gd
 ```
 
+### Wall damage pass (November 2026)
+
+The user's direction: another detail pass on Warehouse's walls, adding bumps
+and cracks. The target is the project's graphics target (Black Ops 2 and 3's
+readable shapes with modern Modern Warfare's scanned surfaces): concrete that
+reads as cast and used, with damage that tells where things hit it, rather than
+a flat painted panel.
+
+Everything is in the tilt-up wall material
+(`godot/shaders/warehouse_tiltup.gdshader`, `materials/warehouse/tiltup_wall.tres`),
+so no geometry, collision, or lightmap changed: the damage is purely visual,
+like the slab's broken concrete.
+
+- **Bumps.** The cast face is a scan, ambientCG's `Concrete042A`: bug holes and
+  a gentle undulation. The hall is lit by a lightmap without direction, so a
+  normal map alone barely shows; the builder bakes the light the relief would
+  take from the high-bays above (bumps lit on top, shaded beneath, the bug
+  holes dark) into one grey shade map with the face's tone. Its normal map still
+  serves the live sun and the failing high-bay.
+- **Spalls.** Corners knocked off at panel feet by forklift tines and pallets
+  (most panels, at the joints), a strike higher up at mast height on some, and
+  a few spalls round lifting inserts. Their broken face is the same scan broken
+  back to its mesh (`Concrete042D`): shallow at the rim, the rusted mesh
+  showing only at the heart. Parallax occlusion mapping cuts them in within
+  14 m, and their slopes are shaded as if lit from above. Some joints have
+  short runs of chipped arris.
+- **Cracks.** Hairline cracks rise from the panel feet, often from a strike;
+  some run down from the roof line; and cracks run out diagonally, up and away
+  from the opening, from the top corners of every doorway in the tilt-up
+  walls, where a real panel cracks first. Each has a dark open core, chipped
+  lips, and a damp halo that weeps below it, some with a pale salt bloom. No
+  CC0 scan has wall hairlines (the scanned slab cracks are 4 to 8 cm of rubble),
+  so the four crack strips are drawn by the builder.
+- **Repairs.** Some panels have a trowelled grout patch over an old spall:
+  paler, smoother, its raised rim lit along the top.
+
+Each panel's damage comes from its own hash, so the halves differ and nothing
+repeats panel to panel; it fades out between 36 and 45 m, where a spall is a
+few pixels. The doorway corners come from the layout's openings:
+`tools/build_warehouse_wall_damage.py` writes them into the material
+(`opening_corners`, 16 at most), so run it again when the openings change.
+
+**Cost** (GTX 1660 Ti at 1440 x 849, GPU ms, the benchmark's five Warehouse
+views, best of two 300-frame runs, before / after): Low 2.20 / 2.22 average,
+worst view 2.93 / 2.66; Medium 3.52 / 3.55, worst 4.09 / 4.28 (+4.8%); High
+4.90 / 4.94, worst 5.45 / 5.52. The cost is in the worst view, the parking
+lot looking at the north wall from 4 m, where wall fills the screen: about
+0.2 ms of per-pixel work deciding each panel's damage. To keep it there, the
+damage changes only the wall's colour (shading the slopes as if lit, rather
+than changing its normal and roughness, which the depth prepass would also
+pay for), and the soot code now skips its texture reads on walls with no fire
+below them, which paid for the new surface itself.
+
+Rebuild:
+
+```sh
+uv run tools/build_warehouse_wall_damage.py
+godot --headless --path godot --import
+```
+
+### Prop variation pass (November 2026)
+
+The user's direction: the same props were spammed round the map; make slight
+changes so they are not identical. The pallet stock alone is about 170 sheet
+stacks from six models and 47 roll stacks from two.
+
+Call of Duty's warehouse and stockyard maps dress repeated stock this way:
+one model's variants and per-instance colour and wear, so a row never reads as
+copies. The layout already turns each piece a little and varies its height;
+`godot/scripts/prop_variation.gd` (`PropVariation`, called by
+`scripts/warehouse.gd` when the map loads) varies the rest:
+
+- **Board** in six shades (as made, bleached, recycled grey-brown, dark,
+  yellowed, dusty), with a white-top liner on some; **pallets** in pine as
+  made, fresh, weathered grey, or dark; **straps** grey-green, black, white,
+  blue, or yellow; **paper rolls** in four grades; **scrap bales** in the board
+  shades; the **racks' loads** too; **concrete barriers** in four tones.
+- Some loads are **opened**: straps cut (a fifth), the cap board lifted off (a
+  fifth, taking its straps with it), the label torn away (a third), the
+  stretch wrap stripped from a roll stack (a third).
+
+Only materials and part visibility change, never a transform: collision, the
+measured sightlines, and the baked lighting stand, and nothing is saved into
+the scene (variants marked editable in the scene embedded every model's mesh
+in it). Each prop's choices come from a hash of its node name, so every
+player sees the same loads; a dedicated server skips it.
+
+The busiest stock also has **variant models**
+(`tools/build_warehouse_photo_props.py`, `STACK_SPECS` and `ROLL_SPECS`):
+every sheet stack the layout places has a `_picked` variant (the top bundle
+opened, straps cut and cap gone, a quarter to two fifths of one half's sheets
+picked so the top steps down, three to six loose sheets skewed on the low
+half) and a `_knocked` one (a bottom corner crushed in 15 to 20 cm by a
+forklift tine, the top bundle slumped 3.5 to 5 degrees); both roll stacks
+have `_torn` (the top roll's outer layer peeled into a hanging flap, a roll
+knocked off centre) and `_crushed` (a dropped, out-of-round roll with the next
+one shoved off centre and leaning). Each keeps its base's outer size, so the
+builder's fit, and the cover a placement gives, stay the same. The builder
+(`_stock_variant` in `godot/tools/warehouse_photo_build.gd`) keeps the base on
+half the placements and gives a quarter each variant, by a hash of the
+placement, so the layout and its measures are untouched; a placement keeps
+its node name whichever it gets. Only stacks 2.4 m or taller are picked, so
+the low half stays above eye height, and nothing under 1.5 m is knocked, so the
+stacks players mantle are as they were. 102 of the 261 placements are
+variants. Their clip boxes are fitted like every model's. Measured on the
+built scene (`warehouse_grid.gd`, `warehouse_measure.py`), nothing moved:
+start to start 75 m (10.1 s), median longest line 21.0 m, 2% of floor seeing
+past 40 m, longest line 48 m, before and after.
+
+**Not yet baked.** The lightmap is still the one baked before the variants:
+the 102 variant props, whose models changed, are lit by the lightmap's probes
+until Warehouse is baked again (`tools/bake_lightmaps.sh
+res://scenes/warehouse.tscn`; with all 127 bake-only lights it ran past two
+hours on a GTX 1660 Ti without finishing). A few read flatter or darker than
+their neighbours until then.
+
+`tools/warehouse_build_headless.gd` used to drop the bake-only lights when it
+saved (they free themselves outside the editor unless `keep_baked_lights` is
+set on Engine), so the next bake came out black; it now keeps them, and saves
+instanced nodes without the root type the editor leaves out.
+
+`tests/prop_variation_test.gd` checks the variety, that no strap floats over
+a load without its cap, that nothing moves or loses collision, that the same
+names give the same loads, and that variants keep to those heights.
+
+Rebuild:
+
+```sh
+blender -b --python tools/build_warehouse_photo_props.py -- stack_tall_b_picked roll_stack_kraft_torn  # ...
+uv run --with trimesh --with numpy --with scipy tools/build_warehouse_clip.py stack_tall_b_picked  # ...
+WAREHOUSE_PARTS=stock xvfb-run -a godot --path godot --script res://tools/warehouse_build_headless.gd
+tools/bake_lightmaps.sh res://scenes/warehouse.tscn
+```
+
 ## Breakwater, November 2026
 
 Breakwater is the third 6v6 core map, built to contrast with Slamcity (a city
