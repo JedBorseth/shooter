@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import math
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -189,6 +190,61 @@ def track_field(canvas, tracks):
     return np.clip(np.maximum(acc, polish * 0.4), 0, 1)
 
 
+def field_splat(canvas, marks, tracks, water, oil):
+    """The yard mix in world space. RGB is green/dirt/slab and alpha is wet."""
+    sys.path.insert(0, str(ROOT / "tools/map_blockout"))
+    from warehouse_outdoors import PATHS, SLAB_JOINTS_X, SLAB_JOINTS_Z
+
+    x, z = canvas.X, canvas.Z
+    broad = fbm(canvas.h, canvas.w, 57, 5, seed=419)
+    grain = fbm(canvas.h, canvas.w, 11, 4, seed=618)
+    green = smoothstep(.34, .74, broad * .79 + grain * .21)
+    bare = smoothstep(.50, .79, broad * .55 + grain * .45) * .78
+    for path in PATHS:
+        for (ax, az), (bx, bz) in zip(path, path[1:]):
+            dx, dz = bx - ax, bz - az
+            t = np.clip(((x-ax)*dx + (z-az)*dz) / (dx*dx + dz*dz), 0, 1)
+            distance = np.hypot(x-ax-t*dx, z-az-t*dz)
+            bare = np.maximum(bare, smoothstep(1.54, .36, distance + canvas.edge*.73) * .89)
+
+    # The west wing's slab survives in fractured pours. Weeds interrupt
+    # the seams and damp settles where the old concrete has broken away.
+    wings = np.minimum.reduce([x + 34.7, -17.2 - x, z + 25.62, -9.1 - z])
+    slab = smoothstep(-.53,.45,wings + (grain-.49)*2.6)
+    slab *= smoothstep(.28,.46,grain + broad*.13)
+    joints = np.minimum(
+        np.min([np.abs(x-i + canvas.edge*.25) for i in SLAB_JOINTS_X],axis=0),
+        np.min([np.abs(z-i + canvas.edge*.19) for i in SLAB_JOINTS_Z],axis=0),
+    )
+    in_joint = 1.0 - smoothstep(.03,.16,joints)
+    slab *= (1 - in_joint)
+    green = np.maximum(green, in_joint * smoothstep(-.1,.4,wings) * .64)
+    bare *= (1 - in_joint * smoothstep(-.1,.4,wings) * .32)
+    for damage in marks["stains"]:
+        if damage["kind"]=="damage" and damage["z"] < -8.5:
+            slab = np.maximum(slab,canvas.blob(damage,hard=True)*.59)
+    bare = np.maximum(bare, tracks * .91)
+    wet = np.maximum(water,oil * .92)
+    for px,pz,rx,rz in ((-30,-19.8,2.7,.93),(-22.8,-24.8,1.42,.68),
+                        (-4.2,-34,1.9,.77),(13.5,-32.1,1.1,.52),(-28.4,-11.6,1.8,.55)):
+        pool = dict(x=px,z=pz,rx=rx,rz=rz,rot=17,strength=.93)
+        wet = np.maximum(wet,canvas.blob(pool,hard=True,rough=.63))
+        bare = np.maximum(bare,canvas.blob(dict(pool,rx=rx*1.5,rz=rz*1.7))*.85)
+    mix = np.stack((green, bare, slab, wet),-1)
+    Image.fromarray((np.clip(mix,0,1)*255+.5).astype(np.uint8),"RGBA").save(OUT / "field_splat.png")
+
+
+def dock_paint(canvas):
+    paint = np.zeros((canvas.h, canvas.w), dtype=np.float32)
+    for centre, half in ((-4.25,1.58),(18.5,2.18),(33.95,1.58)):
+        for x in (centre-half, centre+half):
+            line = (np.abs(canvas.X-x) < .095) & (canvas.Z > 34.0) & (canvas.Z < 42.38)
+            paint = np.maximum(paint,line*smoothstep(.15,.52,canvas.patch)*.87)
+        stop = (np.abs(canvas.Z-41.75)<.10) & (np.abs(canvas.X-centre)<half)
+        paint = np.maximum(paint,stop*smoothstep(.19,.52,canvas.patch)*.83)
+    return paint
+
+
 def floor_layout(data):
     marks = data["floor_marks"]
     canvas = Canvas(marks["bounds"])
@@ -210,7 +266,9 @@ def floor_layout(data):
     # Water runs off the oil's edges; soot and powder never float on puddles.
     layers["soot"] *= 1 - 0.6 * layers["water"]
     a = np.stack([grime, tracks, layers["water"], layers["damage"]], -1)
+    layers["powder"] = np.maximum(layers["powder"], dock_paint(canvas))
     b = np.stack([layers["oil"], layers["soot"], layers["powder"], layers["damp"]], -1)
+    field_splat(canvas, marks, tracks, layers["water"], layers["oil"])
     for name, arr in (("floor_layout_a.png", a), ("floor_layout_b.png", b)):
         Image.fromarray((np.clip(arr, 0, 1) * 255 + 0.5).astype(np.uint8), "RGBA").save(OUT / name)
         print("wrote", OUT / name, arr.shape)

@@ -23,7 +23,7 @@ use shooter_sim::perk::{self, Perk, Perks};
 use shooter_sim::snd::UseKind;
 use shooter_sim::weapon::WeaponId;
 
-use crate::acoustics::zone_at;
+use crate::acoustics::is_indoors_at;
 use crate::aim_assist::AimAssistTarget;
 use crate::bullets::ShotTracer;
 use crate::character::corpses::{self, CorpseYard};
@@ -793,7 +793,7 @@ impl RemotePlayer {
                 .get_viewport()
                 .and_then(|v| v.get_camera_3d())
                 .map(|c| c.get_global_position());
-            let indoors = zone_at(&self.base().get_tree(), muzzle).is_some();
+            let indoors = is_indoors_at(&self.base().get_tree(), muzzle);
             if let Some(gunfire) = &mut self.gunfire
                 && !self.first_person
             {

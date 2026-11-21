@@ -2,8 +2,7 @@ extends SceneTree
 ## Runs the Warehouse builder without the editor and saves the scene:
 ##   WAREHOUSE_PARTS=machines,stock,clip xvfb-run -a godot --path godot \
 ##     --script res://tools/warehouse_build_headless.gd
-## WAREHOUSE_PARTS defaults to every part except the Cyclops shell, which is
-## only rebuilt from the editor (Cyclops needs it to regenerate its meshes).
+## WAREHOUSE_PARTS defaults to the entire generated layout.
 ## Run it with a real renderer (a display, or Xvfb), not --headless: the
 ## headless renderer keeps no MultiMesh instances, so the girders, joists,
 ## rods, trays, fixtures, and strewn clutter would be saved empty. It refuses to.
@@ -23,6 +22,7 @@ func _run() -> void:
 		Array(text.split(",", false))
 		if not text.is_empty()
 		else [
+			"shell",
 			"structure",
 			"lighting",
 			"utilities",
@@ -50,7 +50,12 @@ func _run() -> void:
 	# (scripts/baked_lights.gd); keep them, or the saved scene loses them and
 	# the next bake comes out black.
 	Engine.set_meta(&"keep_baked_lights", true)
-	var scene: Node3D = (load(LEVEL) as PackedScene).instantiate()
+	var source := load(LEVEL) as PackedScene
+	if source == null:
+		push_error("could not load the Warehouse scene")
+		quit(1)
+		return
+	var scene: Node3D = source.instantiate()
 	# Keep the player and everything else still while the builder works: the
 	# scene is saved as it stands.
 	scene.process_mode = Node.PROCESS_MODE_DISABLED

@@ -1,8 +1,7 @@
 @tool
 extends RefCounted
 ## Rebuilds Warehouse from res://tools/warehouse_photo_layout.json, which
-## tools/map_blockout/warehouse_photo_layout.py writes from the reference
-## photo measurements. Run it in the editor (for example through the Godot AI
+## tools/map_blockout/warehouse_photo_layout.py writes from the approved layout. Run it in the editor (for example through the Godot AI
 ## MCP bridge's execute_gdscript):
 ##
 ##     load("res://tools/warehouse_photo_build.gd").build(EditorInterface.get_edited_scene_root())
@@ -17,8 +16,6 @@ const CLIP := "res://assets/props/warehouse_photo/clip.json"
 const PHOTO := "res://assets/props/warehouse_photo/"
 const BLOCK := preload("res://addons/cyclops_level_builder/nodes/cyclops_block.gd")
 const MATS := "res://materials/warehouse/"
-## The baked lightmap (tools/bake_lightmaps.sh res://scenes/warehouse.tscn).
-const LIGHTMAP := "res://scenes/warehouse.lmbake"
 const BAKED_LIGHTS := "res://scripts/baked_lights.gd"
 const KEEP_SHELL := []
 
@@ -43,6 +40,9 @@ static func build(root: Node3D, parts: Array = ["shell", "structure", "lighting"
 	if "effects" in parts and not "lighting" in parts:
 		parts = parts + ["lighting"]
 	if "shell" in parts:
+		var lightmap := root.get_node_or_null("LightmapGI") as LightmapGI
+		if lightmap != null:
+			lightmap.light_data = null
 		_clear_old()
 		_build_shell()
 	var pass_node := _group(root, "PhotoPass")
@@ -93,14 +93,29 @@ static func _own(node: Node) -> void:
 static func _mat(key: String) -> Material:
 	var names := {"slab": "slab_polished", "tiltup": "tiltup_wall", "panel_white": "panel_white",
 		"steel": "steel_deck", "yellow": "safety_yellow", "curtain": "strip_curtain",
-		"yard": "yard", "cmu": "cmu", "cap": "cap", "deck": "roof_deck"}
-	return load(MATS + names[key] + ".tres")
+		"field": "field_ground", "yard": "yard", "cmu": "cmu", "cap": "cap", "deck": "roof_deck"}
+	var path: String = MATS + names[key] + ".tres"
+	if key == "field":
+		var grass := load(path) as ShaderMaterial
+		var track := load(MATS + "field_track.tres") as ShaderMaterial
+		var slab := load(MATS + "field_slab.tres") as ShaderMaterial
+		var field := ShaderMaterial.new()
+		field.shader = preload("res://shaders/warehouse_field.gdshader")
+		field.set_shader_parameter("grass_albedo", grass.get_shader_parameter("albedo_tex"))
+		field.set_shader_parameter("grass_normal", grass.get_shader_parameter("normal_tex"))
+		var tint: Color = grass.get_shader_parameter("tint")
+		field.set_shader_parameter("grass_tint", Vector3(tint.r, tint.g, tint.b))
+		field.set_shader_parameter("track_albedo", track.get_shader_parameter("albedo_tex"))
+		field.set_shader_parameter("slab_albedo", slab.get_shader_parameter("albedo_tex"))
+		field.set_shader_parameter("dirt_albedo", load("res://assets/textures/dirt/albedo.jpg"))
+		field.set_shader_parameter("gravel_albedo", load("res://assets/textures/gravel/albedo.jpg"))
+		field.set_shader_parameter("splat", load("res://assets/textures/warehouse/field_splat.png"))
+		return field
+	return load(path)
 
 
 static func _block(parent: Node, name: String, a: Vector3, b: Vector3, mat: Material) -> Node3D:
 	var block = BLOCK.new()
-	parent.add_child(block)
-	block.owner = _root
 	block.name = name
 	block.materials.append(mat)
 	var bounds := AABB(a, b - a)
@@ -108,7 +123,9 @@ static func _block(parent: Node, name: String, a: Vector3, b: Vector3, mat: Mate
 	vol.init_block(bounds, Transform2D.IDENTITY, 0)
 	vol.translate(-bounds.position)
 	block.mesh_vector_data = vol.to_mesh_vector_data()
-	block.global_transform = Transform3D(Basis(), bounds.position)
+	block.position = bounds.position
+	parent.add_child(block)
+	block.owner = _root
 	return block
 
 
@@ -139,7 +156,7 @@ static func _local_aabb(node: Node3D) -> AABB:
 ## Instance `model` fitted to the envelope `fit` (w, d, h) with its footprint
 ## centred on (x, z), its base at y, turned `rot` degrees about Y.
 static func _place(parent: Node, name: String, model: String, pos: Vector3, rot: float, fit: Array,
-		clamp_lo := 0.7, clamp_hi := 1.4, collide := true) -> Node3D:
+		clamp_lo := 0.7, clamp_hi := 1.4, collide := true, visual_model := "") -> Node3D:
 	var ps := _scene(model)
 	if ps == null:
 		return null
@@ -168,6 +185,21 @@ static func _place(parent: Node, name: String, model: String, pos: Vector3, rot:
 		shape.position = Vector3(0, bs.size.y / 2, 0)
 		holder.add_child(shape)
 		shape.owner = _root
+	if not visual_model.is_empty():
+		var ps_visual := _scene(visual_model)
+		if ps_visual != null:
+			var visual: Node3D = ps_visual.instantiate()
+			holder.add_child(visual)
+			var bounds := _local_aabb(visual)
+			# The crash variant twists within the approved collision envelope.
+			# Centre the replacement like the original body and leave clip fitted.
+			visual.scale = box.size * s / bounds.size
+			var centre := bounds.get_center() * visual.scale
+			visual.position = Vector3(-centre.x, -bounds.position.y * visual.scale.y, -centre.z)
+			holder.remove_child(inst)
+			inst.free()
+			holder.move_child(visual, 0)
+			visual.owner = _root
 	return holder
 
 
@@ -453,13 +485,14 @@ static func _build_lighting(g: Node3D) -> void:
 	# Half the texel density the meshes ask for: the full hall at full
 	# density runs the reference card out of memory while baking.
 	lightmap.texel_scale = 0.7
+	# Denoised sampling retains the atlas density and keeps a full rebake
+	# practical on the reference card.
+	lightmap.quality = LightmapGI.BAKE_QUALITY_LOW
 	# The kraft paper and cardboard bounce a strong orange; SDFGI, which lit
 	# the hall before, gave the bounce half its weight.
 	lightmap.bounce_indirect_energy = 0.6
 	# Finer probes, for the strewn clutter and players between the stacks.
 	lightmap.generate_probes_subdiv = LightmapGI.GENERATE_PROBES_SUBDIV_16
-	if lightmap.light_data == null and ResourceLoader.exists(LIGHTMAP):
-		lightmap.light_data = load(LIGHTMAP)
 	for p in _data.lights:
 		n += 1
 		fixtures.append(Transform3D(Basis(), Vector3(p[0], y, p[1])))
@@ -638,7 +671,7 @@ static func _build_stock(g: Node3D) -> void:
 		# Named for the layout's model, so a placement keeps its name (and the
 		# runtime colour variation keyed on it) whichever variant it gets.
 		_place(g, "%s%03d" % [String(p.model).to_pascal_case(), n], model, Vector3(p.x, p.y, p.z), p.rot, p.fit,
-			0.7, 1.4, p.collide)
+			0.7, 1.4, p.collide, p.get("visual_model", ""))
 	_log.append("stock: %d, %d of them variants" % [n, varied])
 
 
@@ -674,12 +707,17 @@ static func _build_patches(g: Node3D) -> void:
 	for p in _data.get("patches", []):
 		var body := StaticBody3D.new()
 		body.name = p[0]
+		if p.size() > 8:
+			body.set_meta("surface", p[8])
 		var size := Vector3(p[2] - p[1], p[6] - p[5], p[4] - p[3])
 		body.position = Vector3((p[1] + p[2]) / 2.0, (p[5] + p[6]) / 2.0, (p[3] + p[4]) / 2.0)
 		g.add_child(body)
 		body.owner = _root
 		var mesh := MeshInstance3D.new()
 		mesh.name = "Mesh"
+		# Flat yard ground receives shadows, including the hall's,
+		# and does not need to cast its own at grazing sun angles.
+		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		var bm := BoxMesh.new()
 		bm.size = size
 		bm.material = _mat(p[7])
@@ -695,7 +733,45 @@ static func _build_patches(g: Node3D) -> void:
 		shape.shape = bs
 		body.add_child(shape)
 		shape.owner = _root
+	_build_yard_backdrop(g)
 	_log.append("patches: %d" % _data.get("patches", []).size())
+
+
+static func _build_yard_backdrop(g: Node3D) -> void:
+	# Five rectangles form one visible mesh. The inner edges meet the fence
+	# footings and the south-west notch sits outside the HallWest slab.
+	var extents := [
+		Rect2(-125, -128, 259, 90.1),
+		Rect2(-125, 43.1, 259, 90),
+		Rect2(-125, -37.9, 89.5, 81),
+		Rect2(44.4, -37.9, 89.6, 81),
+		Rect2(-35.5, -8.5, 18.3, 51.6),
+	]
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for rect: Rect2 in extents:
+		var corners := [
+			rect.position, Vector2(rect.end.x, rect.position.y),
+			rect.end, Vector2(rect.position.x, rect.end.y),
+		]
+		for index in [0, 1, 2, 0, 2, 3]:
+			surface.set_normal(Vector3.UP)
+			var point: Vector2 = corners[index]
+			var grade := clampf((point.y + 37.9) / 81.0, 0.0, 1.0)
+			surface.add_vertex(Vector3(point.x, lerpf(-0.10, -1.39, grade), point.y))
+	var material := ShaderMaterial.new()
+	material.shader = preload("res://shaders/warehouse_yard_backdrop.gdshader")
+	material.set_shader_parameter("dry_grass", load("res://assets/props/warehouse_field/textures/field_track_albedo.jpg"))
+	material.set_shader_parameter("gravel", load("res://assets/textures/gravel/albedo.jpg"))
+	material.set_shader_parameter("asphalt", load("res://assets/textures/asphalt/albedo.jpg"))
+	var ground := MeshInstance3D.new()
+	ground.name = "YardBackdrop"
+	ground.mesh = surface.commit()
+	ground.material_override = material
+	ground.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	ground.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
+	g.add_child(ground)
+	ground.owner = _root
 
 
 ## Rooms, slabs, stairs, rails, and curtains from the layout's plain boxes. A
@@ -752,7 +828,25 @@ static func _build_boxes(g: Node3D) -> void:
 			var angle := atan2(rise, run) * signf(pitch)
 			body.position = Vector3(centre.x, lo.y + 0.1 + rise / 2.0 - 0.15 / cos(atan2(rise, run)), centre.z)
 			shape.rotation = (Basis(axis, angle)).get_euler()
-		shape.shape = bs
+			if b.get("fill", false):
+				# Fill the dock ramp to apron level. The original sloped clip
+				# stays the walking surface, shared with the stair ramps.
+				var fill := PrismMesh.new()
+				fill.left_to_right = 0.0
+				fill.size = Vector3(run, rise, size.x)
+				fill.material = _mat(b.mat)
+				fill.add_uv2 = true
+				mesh.mesh = fill
+				mesh.rotation.y = -PI / 2.0
+				mesh.position.y = (lo.y + hi.y + 0.1) / 2.0 - body.position.y
+			elif mesh != null:
+				(mesh.mesh as BoxMesh).size = bs.size
+				mesh.rotation = shape.rotation
+		if b.get("fill", false):
+			shape.shape = mesh.mesh.create_convex_shape()
+			shape.transform = mesh.transform
+		else:
+			shape.shape = bs
 		body.add_child(shape)
 		shape.owner = _root
 	# Climbable ladders (rust/game/src/ladder.rs): a LadderVolume at each
@@ -789,6 +883,7 @@ static func _build_detail(g: Node3D) -> void:
 		var collides: bool = d.has("clip") or d.has("hull")
 		var holder: Node3D = StaticBody3D.new() if collides else Node3D.new()
 		holder.name = d.get("name", "%s%02d" % [String(d.model).to_pascal_case(), n])
+		holder.visible = d.get("visible", true)
 		# Glass partitions, doors, and windows stop players, not rounds.
 		if d.has("surface"):
 			holder.set_meta("surface", d.surface)
@@ -815,6 +910,8 @@ static func _build_detail(g: Node3D) -> void:
 		if not d.get("shadow", true):
 			for gi: GeometryInstance3D in inst.find_children("*", "GeometryInstance3D", true, false):
 				gi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				if d.get("gi_disabled", false):
+					gi.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 		var k := 0
 		for c2 in d.get("clip", []):
 			var shape := CollisionShape3D.new()
@@ -838,19 +935,29 @@ static func _build_detail(g: Node3D) -> void:
 			holder.add_child(shape)
 			shape.owner = _root
 	var strewn := 0
-	for model in _data.get("scatter", {}):
-		var quarters := {}
+	for model: String in _data.get("scatter", {}):
+		var field_plant := model.begins_with("field_")
+		var batches := {}
 		for t in _data.scatter[model]:
 			var xf := Transform3D(
 				Basis.from_euler(Vector3(deg_to_rad(t[4]), deg_to_rad(t[3]), deg_to_rad(t[5])), EULER_ORDER_YXZ)
 					* Basis.from_scale(Vector3.ONE * t[6]),
 				Vector3(t[0], t[1], t[2]))
-			var q := ("N" if t[2] < 3.5 else "S") + ("W" if t[0] < 13.5 else "E")
-			quarters.get_or_add(q, []).append(xf)
+			var batch: Variant = (
+				Vector2i(floori(t[0] / 8.0), floori(t[2] / 8.0)) if field_plant
+				else ("N" if t[2] < 3.5 else "S") + ("W" if t[0] < 13.5 else "E")
+			)
+			if field_plant:
+				xf.origin -= Vector3(batch.x * 8.0 + 4.0, 0, batch.y * 8.0 + 4.0)
+			batches.get_or_add(batch, []).append(xf)
 			strewn += 1
-		for q in quarters:
-			for mmi: MultiMeshInstance3D in _multimesh(g, "%s%s" % [String(model).to_pascal_case(), q], model, quarters[q]):
+		for batch in batches:
+			var name := "%sBatch%d" % [model.to_pascal_case(), batches.keys().find(batch)]
+			for mmi: MultiMeshInstance3D in _multimesh(g, name, model, batches[batch]):
 				mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				if field_plant:
+					mmi.position = Vector3(batch.x * 8.0 + 4.0, 0, batch.y * 8.0 + 4.0)
+					mmi.set_script(preload("res://assets/props/warehouse_field/scatter.gd"))
 	_log.append("detail: %d pieces, %d strewn" % [n, strewn])
 
 
@@ -888,7 +995,7 @@ static func _build_effects(g: Node3D) -> void:
 				sun.name = "BreachSun"
 				# Low enough in the west that its shaft slants across the stockpile.
 				sun.rotation_degrees = Vector3(-62.0, -125.0, 0.0)
-				sun.light_color = Color(1.0, 0.93, 0.8)
+				sun.light_color = Color(1.0, 0.962, 0.875)
 				sun.light_energy = 2.2
 				sun.light_volumetric_fog_energy = 3.0
 				sun.shadow_enabled = true
@@ -930,7 +1037,7 @@ static func _build_effects(g: Node3D) -> void:
 					best.set("kind", "flicker")
 			"lamp":
 				var lamp := OmniLight3D.new()
-				lamp.name = "OfficeLamp%02d" % n
+				lamp.name = "LocalLamp%02d" % n
 				lamp.position = Vector3(e.pos[0], e.pos[1], e.pos[2])
 				var tint: Array = e.get("color", [0.95, 0.97, 1.0])
 				lamp.light_color = Color(tint[0], tint[1], tint[2])
@@ -970,7 +1077,7 @@ static func _build_effects(g: Node3D) -> void:
 # --- gameplay ----------------------------------------------------------------
 
 const GAMEPLAY_NODES := ["Walkthrough", "StartMarkers", "Player", "HUD", "PauseMenu", "SpawnPoints",
-	"ReverbZones", "Boundary", "BotLanes"]
+	"ReverbZones", "Boundary", "BotLanes", "Hardpoints", "DominationFlags", "Soundscape"]
 const HUD_CONTROLS := ["move:Move", "sprint:Sprint", "crouch:Crouch / slide", "jump:Jump", "fire:Fire",
 	"aim:Aim", "reload:Reload", "melee:Knife", "weapon_1:Switch weapon", "interact:Take weapon",
 	"pause:Release mouse"]
@@ -985,6 +1092,11 @@ static func _build_gameplay() -> void:
 			_root.remove_child(old)
 			old.free()
 	_root.set_script(load("res://scripts/warehouse.gd"))
+	var soundscape := Soundscape.new()
+	soundscape.name = "Soundscape"
+	soundscape.set("preset", "warehouse")
+	_root.add_child(soundscape)
+	soundscape.owner = _root
 	# The editor's physics space does not answer queries, so floor and body
 	# clearance for every point is checked by godot/tests/warehouse_test.gd.
 	var spawns := Node3D.new()
@@ -1048,6 +1160,7 @@ static func _build_gameplay() -> void:
 		zone.set("damping", r[8])
 		zone.set("wet", r[9])
 		zone.set("predelay_ms", r[10])
+		zone.set("outdoor", r[0] in ["FieldNorth", "FieldWest"])
 		zones.add_child(zone)
 		zone.owner = _root
 	var boundary := StaticBody3D.new()
@@ -1079,4 +1192,24 @@ static func _build_gameplay() -> void:
 			lane.add_child(point)
 			point.owner = _root
 			k += 1
+	var hills := _group(_root, "Hardpoints")
+	var order := 0
+	for h in _data.hardpoints:
+		order += 1
+		var hill := Marker3D.new()
+		hill.name = "P%d_%s" % [order, String(h[0]).to_pascal_case()]
+		hill.position = _v(h[1])
+		hill.set_meta("label", h[0])
+		hill.set_meta("size", _v(h[2]))
+		hills.add_child(hill)
+		hill.owner = _root
+	var flags := _group(_root, "DominationFlags")
+	for f in _data.domination:
+		var flag := Marker3D.new()
+		flag.name = "Flag" + String(f[0])
+		flag.position = _v(f[1])
+		flag.set_meta("label", f[0])
+		flag.set_meta("radius", f[2])
+		flags.add_child(flag)
+		flag.owner = _root
 	_log.append("gameplay: %d team 0, %d team 1, %d neutral spawns" % counts)

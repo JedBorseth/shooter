@@ -1,0 +1,25 @@
+[gd_resource type="Sky" format=3 uid="uid://b5j7p56ffmga7"]
+
+[ext_resource type="Shader" uid="uid://cg0wji0m4cgxn" path="res://shaders/day_sky.gdshader" id="1_shader"]
+[ext_resource type="Texture2D" uid="uid://c21lj1e3rpr52" path="res://assets/skies/range_day.hdr" id="2_panorama"]
+[ext_resource type="Texture2D" uid="uid://b75q4vans5oxb" path="res://assets/skies/warehouse_horizon.png" id="3_horizon"]
+[ext_resource type="Texture2D" uid="uid://c5l8yd6kxm33f" path="res://assets/skies/warehouse_horizon_depth.png" id="4_horizon_depth"]
+
+[sub_resource type="ShaderMaterial" id="SkyMat"]
+shader = ExtResource("1_shader")
+shader_parameter/panorama = ExtResource("2_panorama")
+shader_parameter/energy = 0.74
+shader_parameter/horizon = ExtResource("3_horizon")
+shader_parameter/horizon_depth = ExtResource("4_horizon_depth")
+shader_parameter/depth_range = 3000.0
+shader_parameter/strip_min = -0.0610865
+shader_parameter/strip_span = 0.3436117
+shader_parameter/land_light = 1.12
+shader_parameter/sky_turn = -1.14
+shader_parameter/sun_azimuth = -2.18166
+shader_parameter/haze_density = 0.00085
+shader_parameter/haze_start = 0.0
+
+[resource]
+sky_material = SubResource("SkyMat")
+radiance_size = 2

@@ -13,6 +13,13 @@ func prepare_server() -> void:
 
 
 func _ready() -> void:
+	# Attach Warehouse's area-aware Soundscape if the scene does not carry one yet.
+	# Soundscape stays idle until a camera exists, so dedicated servers play nothing.
+	if not has_node("Soundscape"):
+		var scape := Soundscape.new()
+		scape.name = "Soundscape"
+		scape.preset = "warehouse"
+		add_child(scape)
 	# Repeated stock differs load to load; a dedicated server draws nothing.
 	if DisplayServer.get_name() != "headless":
 		PropVariation.apply([$PhotoPass/Stock, $PhotoPass/Machines] as Array[Node])

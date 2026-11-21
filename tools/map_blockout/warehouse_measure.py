@@ -92,23 +92,29 @@ def main():
     d1 = distances(move, floor, free_near(starts[1]), x0, z0, cell)
     ci, cj = cellof(free_near(centre))
     i1, j1 = cellof(free_near(starts[1]))
-    print(f"footprint (walkable bounds): {nx * cell:.0f} x {nz * cell:.0f} m")
     print(f"start to start: {d0[i1, j1]:.0f} m walk, {d0[i1, j1] / SPRINT:.1f} s sprinting")
     print(f"start to centre {centre}: team 0 {d0[ci, cj] / SPRINT:.1f} s, team 1 {d1[ci, cj] / SPRINT:.1f} s")
     reach = np.isfinite(d0) & ~move
+    iz, ix = np.where(reach)
+    if ix.size:
+        print(f"footprint (walkable bounds): {np.ptp(ix) * cell + cell:.1f} x "
+              f"{np.ptp(iz) * cell + cell:.1f} m")
     print(f"unreachable floor from team 0: {(~move & ~np.isfinite(d0)).sum() * cell * cell:.0f} m²")
 
     # Sightlines from the floor players can reach (yard and building).
     sight_grid = sight | ~reach
     ii, jj, best, heading = sightlines(~reach, sight_grid, stride=2, longest=120.0)
     print(f"median longest line: {np.median(best):.1f} m (target ≤ 32)")
-    print(f"floor seeing past 40 m: {(best > 40).mean() * 100:.0f}% (target < 10)")
+    print(f"floor seeing past 40 m: {(best > 40).mean() * 100:.1f}% (target < 10)")
     print(f"longest line: {best.max():.0f} m (target ≤ 60)")
     px, pz = x0 + (jj + .5) * cell, z0 + (ii + .5) * cell
     for t, (sx, sz) in starts.items():
         near = np.hypot(px - sx, pz - sz) < 6
         if near.any():
             print(f"team {t} start area: longest line {best[near].max():.0f} m")
+    if "enemy_half_visible_samples" in g:
+        north, south = g["enemy_half_visible_samples"]
+        print(f"enemy-half floor samples visible from starts: {north} north, {south} south (target 0)")
     top = np.argsort(best)[::-1][:12]
     print("longest lines from:", ", ".join(f"({px[k]:.0f},{pz[k]:.0f}) {best[k]:.0f} m" for k in top))
 

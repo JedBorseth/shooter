@@ -260,3 +260,10 @@ Warehouse (photo-matched and rebuilt for 6v6, #234 to #285) was never measured w
 What the live hall cost on Medium (`profile_frame.gd`, view 0, before the bake): live spot lights 13.7 ms (3.7 of it their shadows), SDFGI 5.1, multimeshes 2.9, SSIL 2.6, SSR 1.9, sun shadows 1.7, reflection probes 1.4. The presets now switch SDFGI, SSIL, and SSR off on Low and Medium wherever a map turns them on, and nodes in the `graphics_high_only` group show on High only.
 
 Slamcity's 7.0 ms on Medium is about 0.5 ms more than the old map, over the usual 5% step. It was accepted for the rebuild: the rest is the denser map's own shading (decals, the skyline, small detail, and props are about 0.15 ms each), and the next cut would remove visible detail.
+
+
+Warehouse's asymmetric rework uses five benchmark views covering the Field,
+Docks, Catwalk, Pick Mezzanine, and mid stockpile. On the GTX 1660 Ti at
+1920 × 1080 under `tools/steady.sh`, its worst views cost 1.83 ms on Low,
+3.80 ms on Medium, and 6.60 ms on High. The paired desktop measurements use
+1440 × 849 and are recorded in [the map design notes](map-design.md#asymmetric-rework-november-2026).

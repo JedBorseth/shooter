@@ -31,6 +31,33 @@ func _run() -> void:
 		server_map.get_node("BotLanes").get_child_count() == 3,
 		"bots get three lanes across the map"
 	)
+	var daylight := (
+		server_map.get_node("PhotoPass/Lighting/WarehouseEnvironment") as WorldEnvironment
+	)
+	_check(
+		(
+			daylight.environment.background_mode == Environment.BG_SKY
+			and daylight.environment.sky != null
+			and daylight.environment.sky.resource_path == "res://assets/skies/warehouse_sky.tres"
+			and is_equal_approx(daylight.environment.sky_rotation.y, -1.14)
+		),
+		"the Warehouse scene uses its horizon and the authored sky bearing"
+	)
+	_check(
+		(
+			daylight.environment.ambient_light_source == Environment.AMBIENT_SOURCE_COLOR
+			and is_equal_approx(daylight.environment.ambient_light_energy, 0.12)
+		),
+		"the Warehouse sky preserves the hall's ambient fill"
+	)
+	var soundscape := server_map.get_node_or_null("Soundscape")
+	_check(
+		soundscape != null and str(soundscape.get("preset")) == "warehouse",
+		"warehouse soundscape is authored"
+	)
+	for zone in ["FieldNorth", "FieldWest"]:
+		var field_zone := server_map.get_node_or_null("ReverbZones/" + zone)
+		_check(field_zone != null and field_zone.get("outdoor"), "%s is flagged outdoor" % zone)
 	server_map.free()
 
 	change_scene_to_file("res://scenes/title_screen.tscn")
@@ -60,10 +87,17 @@ func _run() -> void:
 			marker.global_position + Vector3.DOWN * 0.6,
 			1
 		)
+		var hit := space.intersect_ray(floor_ray)
 		_check(
-			not space.intersect_ray(floor_ray).is_empty(),
-			"spawn %s has floor beneath it" % marker.name
+			not hit.is_empty() and absf(hit.position.y - marker.global_position.y) < 0.12,
+			"spawn %s sits on the floor" % marker.name
 		)
+		if marker.get_meta("team", -1) == 0 and not hit.is_empty():
+			_check(hit.collider.get_meta("surface", "") == "grass", "Field spawns stand on grass")
+		if marker.get_meta("team", -1) == 1:
+			_check(
+				is_equal_approx(marker.global_position.y, -1.25), "Dock spawns are below the hall"
+			)
 		var capsule := CapsuleShape3D.new()
 		capsule.radius = 0.35
 		capsule.height = 1.8
@@ -78,7 +112,7 @@ func _run() -> void:
 	var start_y := player.position.y
 	for i in 120:
 		await physics_frame
-	_check(player.is_on_floor(), "player lands on the parking lot")
+	_check(player.is_on_floor(), "player lands in the Field")
 	_check(absf(player.position.y - start_y) < 0.3, "player starts on the floor, not above it")
 	var start := player.position
 	Input.action_press("move_forward")
@@ -107,6 +141,26 @@ func _run() -> void:
 		"a player climbs the ladder onto the plate room's roof, ended at %s" % player.position
 	)
 
+	for x in [-4.25, 33.95]:
+		player.teleport(Vector3(x, -1.23, 41.7), 0.0)
+		player.set_look(0.0, 0.0)
+		for i in 12:
+			await physics_frame
+		Input.action_press("move_forward")
+		Input.action_press("jump")
+		var climbed := false
+		for i in 320:
+			await physics_frame
+			climbed = climbed or player.movement_state() == "Mantling"
+			if player.position.z < 33.2:
+				break
+		Input.action_release("jump")
+		Input.action_release("move_forward")
+		_check(
+			climbed and player.position.z < 33.2,
+			"player mantles through trailer at x=%s, ended at %s" % [x, player.position]
+		)
+
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	await _click(current_scene.get_node("HUD/ReturnToMenu") as Button)
 	await process_frame
@@ -125,7 +179,7 @@ func _run() -> void:
 ## prop's box reaches past its model. Then the places the 6v6 layout builds for
 ## players: the crouch tunnels fit a crouching player but not a standing one,
 ## and players can stand on the room roofs, the office floors upstairs, and
-## the crossover decks.
+## the catwalk and pick mezzanine.
 func _check_prop_collision(map: Node) -> void:
 	var invisible := PackedStringArray()
 	var oversized := PackedStringArray()
@@ -139,19 +193,25 @@ func _check_prop_collision(map: Node) -> void:
 			continue
 		var meshes := body.find_children("*", "MeshInstance3D", true, false)
 		if meshes.is_empty():
+			# The access kits put their deck/ramp meshes in Detail and clip in Boxes.
 			var reach := AABB()
-			for s: CollisionShape3D in shapes:
-				var size := (s.shape as BoxShape3D).size if s.shape is BoxShape3D else Vector3.ONE
-				reach = s.global_transform * AABB(-size / 2, size)
-			for c in body.get_parent().get_children():
-				if c == body or not c is Node3D:
+			for shape: CollisionShape3D in shapes:
+				var size := (shape.shape as BoxShape3D).size
+				var bounds := shape.global_transform * AABB(-size / 2, size)
+				reach = bounds if reach.size == Vector3.ZERO else reach.merge(bounds)
+			var nearby := body.get_parent().get_children()
+			nearby.append_array(map.get_node("PhotoPass/Detail").get_children())
+			for candidate in nearby:
+				if candidate == body:
 					continue
-				for m: MeshInstance3D in (
-					c.find_children("*", "MeshInstance3D", true, false)
-					+ ([c] if c is MeshInstance3D else [])
-				):
-					if reach.grow(0.1).intersects(m.global_transform * m.get_aabb()):
-						meshes.append(m)
+				var visuals := candidate.find_children("*", "MeshInstance3D", true, false)
+				if candidate is MeshInstance3D:
+					visuals.append(candidate)
+				for visual: MeshInstance3D in visuals:
+					if reach.grow(0.12).intersects(visual.global_transform * visual.get_aabb()):
+						meshes.append(visual)
+				if not meshes.is_empty():
+					break
 			if meshes.is_empty():
 				invisible.append(str(map.get_path_to(body)))
 			continue
@@ -180,37 +240,31 @@ func _check_prop_collision(map: Node) -> void:
 	)
 	var space := (map as Node3D).get_world_3d().direct_space_state
 	var layout: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(LAYOUT_JSON))
-	for tag in ["N", "S"]:
-		var tunnel := map.get_node_or_null("PhotoPass/Boxes/Tunnel%sConveyor" % tag) as Node3D
-		_check(tunnel != null, "the %s line has a crouch tunnel" % tag)
-		if tunnel != null:
-			# Crouch through the whole tunnel, mouth to mouth.
-			var length := (
-				((tunnel.get_node("Shape") as CollisionShape3D).shape as BoxShape3D).size.z
-			)
-			var clear := true
-			for k in 9:
-				var z := tunnel.global_position.z + (k / 8.0 - 0.5) * (length + 1.0)
-				clear = clear and _fits(space, Vector3(tunnel.global_position.x, 0.0, z), 1.1)
-			_check(clear, "a crouching player gets through tunnel %s, mouth to mouth" % tag)
-			var under := Vector3(tunnel.global_position.x, 0.0, tunnel.global_position.z)
-			_check(not _fits(space, under, 1.8), "a standing player does not fit tunnel %s" % tag)
-		for path in ["Room%sRoof" % tag, "Office%sFloorA" % tag, "Crossover%sDeck" % tag]:
-			var top := map.get_node_or_null("PhotoPass/Boxes/" + path) as StaticBody3D
-			_check(top != null, "%s is built" % path)
-			if top != null:
-				var size := ((top.get_node("Shape") as CollisionShape3D).shape as BoxShape3D).size
-				var feet := top.global_position + Vector3(0, size.y / 2 + 0.02, 0)
-				_check(_fits(space, feet, 1.8), "players can stand on %s" % path)
-	# The crate steps up to the ink room's roof: floor, 1.1 m, 2.2 m, roof,
-	# each rise within the 1.35 m mantle (layout: half(), the ink room).
-	var steps := []
-	for p: Vector3 in [Vector3(2.6, 0, -19.9), Vector3(4.0, 0, -19.9), Vector3(4.0, 0, -21.5)]:
-		steps.append(snappedf(_ground(space, p), 0.01))
+	var tunnel := map.get_node("PhotoPass/Boxes/FlexoTunnelConveyor") as StaticBody3D
+	var tunnel_size := (tunnel.get_node("Shape").shape as BoxShape3D).size
+	var tunnel_mid := tunnel.global_position
+	for k in 9:
+		var x := tunnel_mid.x + (k / 8.0 - 0.5) * (tunnel_size.x + 0.8)
+		_check(_fits(space, Vector3(x, 0, tunnel_mid.z), 1.1), "Flexo tunnel clears crouch")
 	_check(
-		absf(steps[0] - 1.1) < 0.15 and absf(steps[1] - 2.2) < 0.15 and absf(steps[2] - 3.4) < 0.1,
-		"crates step 1.1, 2.2, then the ink room's roof at 3.4 m, got %s" % [steps]
+		not _fits(space, Vector3(tunnel_mid.x, 0, tunnel_mid.z), 1.8),
+		"Flexo tunnel stops standing players"
 	)
+	for name in [
+		"InkRoomRoof", "PlateRoomRoof", "OfficeNFloorA", "CatwalkDeckClip", "PickMezzDeckClip"
+	]:
+		var top := map.get_node("PhotoPass/Boxes/" + name) as StaticBody3D
+		var size := (top.get_node("Shape").shape as BoxShape3D).size
+		var feet := top.global_position + Vector3.UP * (size.y / 2 + 0.02)
+		_check(_fits(space, feet, 1.8), "players can stand on %s" % name)
+	# The two crate levels and roof stay within successive 1.35 m mantles.
+	var steps := []
+	for p: Vector3 in [
+		Vector3(-2.5, 0, -19.88), Vector3(-0.95, 0, -19.88), Vector3(-0.95, 0, -21.5)
+	]:
+		steps.append(snappedf(_ground(space, p), 0.01))
+	_check(steps == [1.1, 2.2, 3.4], "ink room crate and roof heights are %s" % [steps])
+	_check_dock_trailers(space)
 	_check_ladder(map, space)
 	await _check_office(map, space)
 	# Every stair rises steadily from floor to landing with standing room all
@@ -248,40 +302,44 @@ func _check_prop_collision(map: Node) -> void:
 	_check_detail(map, space)
 
 
-## The plate room's roof (south half) is reached by a fixed ladder, not
-## crates: a ladder volume of the roof's height stands on the wall's hall
-## face, a climber at its foot is in its reach, the roof is right behind its
-## top, and nothing to mantle stands in front of it.
+func _check_dock_trailers(space: PhysicsDirectSpaceState3D) -> void:
+	for x in [-4.25, 33.95]:
+		_check(absf(_ground(space, Vector3(x, 0, 41.5)) + 1.25) < 0.05, "apron is at -1.25 m")
+		for z in [32.8, 33.55, 35.0, 37.1, 39.5, 40.5]:
+			var feet := Vector3(x, 0.02, z)
+			_check(absf(_ground(space, feet, 1.0)) < 0.08, "trailer floor meets hall at %s" % feet)
+			_check(_fits(space, feet, 1.8), "trailer has standing clearance at %s" % feet)
+		var inside := Vector3(x, 1.2, 37.1)
+		var side := PhysicsRayQueryParameters3D.create(inside, inside + Vector3.RIGHT * 1.6, 1)
+		_check(not space.intersect_ray(side).is_empty(), "trailer sides block shots and players")
+
+
+## Every climb volume stands in the rungs' approach and reaches its landing.
 func _check_ladder(map: Node, space: PhysicsDirectSpaceState3D) -> void:
-	var ladder := map.get_node_or_null("PhotoPass/Boxes/PlateRoomLadderClimb") as Node3D
-	_check(ladder != null and ladder.is_class("LadderVolume"), "the plate room has a ladder")
-	if ladder == null:
-		return
-	_check(
-		absf(float(ladder.get("length")) - 3.4) < 0.05,
-		"the ladder reaches the plate room's roof (3.4 m), got %.2f" % float(ladder.get("length"))
-	)
-	# -Z is the way a climber faces: into the rungs, toward the wall.
-	var into := -ladder.global_basis.z
-	var foot := ladder.global_position - into * 0.6
-	_check(absf(_ground(space, foot)) < 0.05, "the ladder's foot is on the floor")
-	_check(_fits(space, foot, 1.8), "a player can stand at the ladder's foot")
-	var reach := PhysicsPointQueryParameters3D.new()
-	reach.position = foot + Vector3.UP * 0.9
-	reach.collide_with_areas = true
-	reach.collide_with_bodies = false
-	reach.collision_mask = 1 << 8
-	_check(
-		not space.intersect_point(reach).is_empty(), "a player at its foot is in the ladder's reach"
-	)
-	var top := ladder.global_position + into * 0.8
-	_check(
-		absf(_ground(space, top, 6.0) - 3.4) < 0.05, "the roof is behind the ladder's top at 3.4 m"
-	)
-	_check(_fits(space, Vector3(top.x, 3.42, top.z), 1.8), "a player stepping off the ladder fits")
-	for side in [-1.0, 1.0]:
-		var beside: Vector3 = foot + ladder.global_basis.x * side * 0.9
-		_check(_ground(space, beside) < 0.3, "nothing to mantle stands beside the ladder")
+	for spec in [
+		["PlateRoomLadderClimb", 3.4], ["CatwalkLadderClimb", 2.8], ["PickMezzLadderClimb", 3.0]
+	]:
+		var ladder := map.get_node_or_null("PhotoPass/Boxes/" + spec[0]) as Node3D
+		_check(ladder != null and ladder.is_class("LadderVolume"), "%s exists" % spec[0])
+		if ladder == null:
+			continue
+		var height: float = spec[1]
+		_check(absf(float(ladder.get("length")) - height) < 0.05, "%s reaches its deck" % spec[0])
+		var into := -ladder.global_basis.z
+		var foot := ladder.global_position - into * 0.6
+		_check(absf(_ground(space, foot, height - 0.1)) < 0.05, "%s foot is on the floor" % spec[0])
+		_check(_fits(space, foot, 1.8), "a player can stand at %s" % spec[0])
+		var reach := PhysicsPointQueryParameters3D.new()
+		reach.position = foot + Vector3.UP * 0.9
+		reach.collide_with_areas = true
+		reach.collide_with_bodies = false
+		reach.collision_mask = 1 << 8
+		_check(not space.intersect_point(reach).is_empty(), "%s reachable at its foot" % spec[0])
+		var top := ladder.global_position + into * 0.8
+		_check(
+			absf(_ground(space, top, height + 0.5) - height) < 0.05, "%s has a landing" % spec[0]
+		)
+		_check(_fits(space, Vector3(top.x, height + 0.02, top.z), 1.8), "%s exit clears" % spec[0])
 
 
 ## The north half's shift office downstairs is the scanned office: two glass
@@ -319,15 +377,16 @@ func _check_office(map: Node, space: PhysicsDirectSpaceState3D) -> void:
 			Vector3(40.525, 2.6, z - 0.5), Vector3(40.525, 2.6, z + 0.5), 1
 		)
 		_check(not space.intersect_ray(ray).is_empty(), "the doorway at z %.1f has a header" % z)
-	await _check_office_navigation(map)
+	await _check_navigation(map)
 
 
-## Bots walk through the office: a navigation mesh baked with the bots'
-## settings (BotNavigation::bake in rust/game/src/net/bots.rs: 0.4 m radius,
-## 1.8 m tall, 0.4 m climb) reaches every room through every door.
-func _check_office_navigation(map: Node) -> void:
+## Bake with BotNavigation::bake's settings. Door clearance depends on the
+## voxel size, particularly at the glass leaves and the truck breach.
+func _check_navigation(map: Node) -> void:
 	var mesh := NavigationMesh.new()
-	mesh.agent_radius = 0.4
+	mesh.agent_radius = 0.375
+	mesh.cell_size = 0.125
+	mesh.cell_height = 0.1
 	mesh.agent_height = 1.8
 	mesh.agent_max_climb = 0.4
 	mesh.agent_max_slope = 40.0
@@ -338,6 +397,8 @@ func _check_office_navigation(map: Node) -> void:
 	NavigationServer3D.bake_from_source_geometry_data(mesh, source)
 	var nav_map := NavigationServer3D.map_create()
 	NavigationServer3D.map_set_active(nav_map, true)
+	NavigationServer3D.map_set_cell_size(nav_map, mesh.cell_size)
+	NavigationServer3D.map_set_cell_height(nav_map, mesh.cell_height)
 	var region := NavigationServer3D.region_create()
 	NavigationServer3D.region_set_map(region, nav_map)
 	NavigationServer3D.region_set_navigation_mesh(region, mesh)
@@ -348,10 +409,20 @@ func _check_office_navigation(map: Node) -> void:
 	var routes := {
 		"the bay door into the south desk room": [Vector3(37.4, 0, -14.0), Vector3(37.5, 0, -17.0)],
 		"the south partition's door": [Vector3(37.5, 0, -17.0), Vector3(38.7, 0, -20.0)],
-		"the north partition's door": [Vector3(38.7, 0, -20.0), Vector3(38.7, 0, -24.0)],
+		"the north partition's door": [Vector3(39.7, 0, -20.5), Vector3(40.4, 0, -24.1)],
 		"the glass door from the back aisle": [Vector3(33.5, 0, -22.25), Vector3(37.5, 0, -22.5)],
 		"the stair up from the south desk room":
 		[Vector3(39.5, 0, -16.5), Vector3(43.0, 3.4, -25.0)],
+		"the Field personnel door": [Vector3(-12, 0, -28), Vector3(-12, 0, -24.65)],
+		"the Field roll-up door": [Vector3(11, 0, -28.5), Vector3(11, 0, -24.55)],
+		"the west dock": [Vector3(-19, 0, -21.4), Vector3(-15.9, 0, -21.4)],
+		"the truck breach": [Vector3(-18.5, 0, -14.0), Vector3(-15.2, 0, -14.0)],
+		"the Docks personnel stair": [Vector3(-13.2, -1.25, 37.7), Vector3(-13.2, 0, 32.15)],
+		"the Docks ramp": [Vector3(18.5, -1.25, 39.4), Vector3(18.5, 0, 31.9)],
+		"Dock 1 trailer from the hall": [Vector3(-4.25, 0, 32), Vector3(-4.25, 0, 39.6)],
+		"Dock 3 trailer from the hall": [Vector3(33.95, 0, 32), Vector3(33.95, 0, 39.6)],
+		"the Catwalk stair": [Vector3(26.3, 0, -21.8), Vector3(25.8, 2.8, -13.6)],
+		"the Pick Mezzanine stair": [Vector3(11.9, 0, 25.85), Vector3(11.9, 3, 16.8)],
 	}
 	for name in routes:
 		var a: Vector3 = routes[name][0]
@@ -395,7 +466,8 @@ func _check_detail(map: Node, space: PhysicsDirectSpaceState3D) -> void:
 				var size := (s.shape as BoxShape3D).size
 				# Anything shorter than a step would snag a slide; anything a
 				# player stands on top of stays within a mantle (1.35 m).
-				_check(size.y >= 0.25, "%s's clip is no ankle-high snag" % body.name)
+				var above_floor := s.position.y - size.y / 2.0 >= 0.25
+				_check(above_floor or size.y >= 0.25, "%s's clip is no ankle-high snag" % body.name)
 	# The fallen forklift blocks like the low stock it replaced, and players
 	# can mantle onto it.
 	var wreck := detail.get_node_or_null("FallenForklift") as Node3D
@@ -455,7 +527,7 @@ func _check_detail(map: Node, space: PhysicsDirectSpaceState3D) -> void:
 ## `from` (by default just under the hall's joists).
 func _ground(space: PhysicsDirectSpaceState3D, p: Vector3, from := 8.0) -> float:
 	var ray := PhysicsRayQueryParameters3D.create(
-		Vector3(p.x, from, p.z), Vector3(p.x, -1.0, p.z), 1
+		Vector3(p.x, from, p.z), Vector3(p.x, -3.0, p.z), 1
 	)
 	var hit := space.intersect_ray(ray)
 	return hit.position.y if hit else -9.0

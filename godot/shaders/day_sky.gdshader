@@ -26,19 +26,26 @@ uniform float land_light = 1.3;
 // The Environment's sky_rotation.y: the view direction turns with the sky,
 // the sun's direction does not.
 uniform float sky_turn = 0.0;
-// The haze's density, as the map's fog (Environment.fog_density) sees it.
+// Fallback sun azimuth atan(sun.x, sun.z) in radians when no DirectionalLight3D
+// is visible (e.g. a map whose live sun is High-only).
+uniform float sun_azimuth = 0.0;
+// The haze's density, as the map's fog (Environment.fog_density) sees it,
+// and the distance in metres before haze begins (0 = fog from the camera).
 uniform float haze_density = 0.0024;
+uniform float haze_start = 0.0;
 
 void sky() {
 	vec3 col = texture(panorama, SKY_COORDS).rgb * energy;
 	vec3 dir = normalize(EYEDIR);
 	float el = asin(clamp(dir.y, -1.0, 1.0));
 	float v = (el - strip_min) / strip_span;
-	if (v < 1.0 && !AT_CUBEMAP_PASS) {
+	// Stop just shy of v = 1.0 (top row is alpha 0) so linear/mipmap filtering
+	// never wraps across V=0 into the solid bottom row.
+	if (v < 0.99 && !AT_CUBEMAP_PASS) {
 		// The strip's middle column faces the sun, and it runs clockwise
 		// (seen from above) from left to right.
-		vec3 sun = LIGHT0_DIRECTION;
-		float az = atan(dir.x, dir.z) - atan(sun.x, sun.z) + sky_turn;
+		float sun_az = LIGHT0_ENABLED ? atan(LIGHT0_DIRECTION.x, LIGHT0_DIRECTION.z) : sun_azimuth;
+		float az = atan(dir.x, dir.z) - sun_az + sky_turn;
 		float u = fract(0.5 - az / TAU);
 		// Mip selection from a version of u that has no jump at the seam.
 		float u2 = fract(u + 0.5);
@@ -50,13 +57,19 @@ void sky() {
 			dx = dx2;
 			dy = dy2;
 		}
-		// Below the strip is near country; repeat its bottom row.
-		vec2 uv = vec2(u, 1.0 - max(v, 0.002));
+		// Below the strip is near country; repeat a texel-safe bottom row and
+		// zero vertical derivatives so mipmaps never bleed from the top row.
+		float v_clamped = max(v, 0.012);
+		if (v < 0.012) {
+			dx.y = 0.0;
+			dy.y = 0.0;
+		}
+		vec2 uv = vec2(u, 1.0 - v_clamped);
 		vec4 land = textureGrad(horizon, uv, dx, dy);
 		float dist = textureGrad(horizon_depth, uv, dx, dy).r * depth_range;
 		// The haze colour: the sky image just above the horizon.
 		vec3 haze = texture(panorama, vec2(SKY_COORDS.x, 0.49)).rgb * energy;
-		float fog = 1.0 - exp(-haze_density * dist * 1.4);
+		float fog = 1.0 - exp(-haze_density * max(dist - haze_start, 0.0) * 1.4);
 		col = col * (1.0 - land.a) + mix(land.rgb * land_light, haze * land.a, fog);
 	}
 	COLOR = col;

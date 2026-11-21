@@ -1,11 +1,21 @@
 //! A map's background sound: a bed for outdoors and one for indoors, and the
 //! hum and buzz of props that make noise.
 //!
-//! Indoors is wherever the listener is inside a `ReverbZone`, the same boxes
-//! that give rooms their reverb. Stepping inside fades the outdoor bed down and
-//! closes a low-pass over it (heard through the walls), and fades the room
-//! tone in. Air conditioners hum and lamps buzz from where they stand, found by
-//! the prop they were instanced from, so a map gets them without placing any.
+//! Indoors is wherever the listener is inside an enclosed `ReverbZone`, the
+//! same boxes that give rooms their reverb (outdoor reflection zones such as
+//! Warehouse's Field zones keep the listener outdoors). Stepping inside fades
+//! the outdoor bed down and closes a low-pass over it (heard through the
+//! walls), and fades the room tone in. Air conditioners hum and lamps buzz
+//! from where they stand, found by the prop they were instanced from, so a map
+//! gets them without placing any.
+//!
+//! Maps with contrasting outdoor halves (such as Warehouse's overgrown Field
+//! and concrete Docks) can set `preset` (for example `"warehouse"`): each
+//! outdoor area gets its own bed and area-specific one-shots that cross-fade
+//! smoothly by listener position, a roof breach lets faint sky wind bleed into
+//! the hall beneath it, and an optional sparse off-map industrial layer plays
+//! distant plant noises 30–80 m beyond the perimeter walls on one voice with
+//! per-category cooldowns.
 //!
 //! On top of the beds, the world moves: wind gusts sweep past and loose metal
 //! rattles somewhere nearby every so often (outdoors; muffled like the bed
@@ -26,7 +36,11 @@ use godot::classes::{
 use godot::global::randf_range;
 use godot::prelude::*;
 
-use crate::acoustics::zone_at;
+use crate::acoustics::{SKIP_OCCLUSION_META, is_indoors_at};
+use crate::ambience_areas::{
+    INDUSTRIAL_INDOOR_ATTEN_DB, IndustrialScheduler, MapSoundscapePreset,
+    outdoor_cutoff_with_breach, preset_by_name,
+};
 use crate::audio;
 
 const AMBIENCE_DIR: &str = "res://assets/audio/ambience";
@@ -38,7 +52,7 @@ const INDOOR_CUTOFF_HZ: f32 = 650.0;
 const OPEN_CUTOFF_HZ: f32 = 20_000.0;
 /// How much quieter the outdoor bed is from indoors, in dB.
 const INDOOR_OUTDOOR_DB: f32 = 9.0;
-/// How fast indoors and outdoors cross-fade, per second.
+/// How fast indoors, outdoors, area beds, and roof breach cross-fade, per second.
 const BLEND_RATE: f32 = 1.8;
 /// Silence, in dB, for a bed faded all the way out.
 const SILENT_DB: f32 = -60.0;
@@ -88,15 +102,21 @@ const PROP_SOUNDS: &[(&str, &str, f32, f32)] = &[
 #[derive(GodotClass)]
 #[class(init, base = Node3D)]
 pub struct Soundscape {
+    /// Optional area-aware map preset (e.g. `"warehouse"`). When set, drives
+    /// per-area outdoor beds, area-specific outdoor one-shots, roof-breach
+    /// wind bleed, and sparse off-map industrial one-shots.
+    #[export]
+    #[init(val = GString::new())]
+    preset: GString,
     /// Outdoor bed: a loop in `assets/audio/ambience` (`day`, `city`, `night`),
-    /// or empty for none.
+    /// or empty for none. Ignored when `preset` defines per-area outdoor beds.
     #[export]
     #[init(val = GString::from("day"))]
     outdoor: GString,
     #[export]
     #[init(val = -16.0)]
     outdoor_db: f32,
-    /// Indoor bed, while the listener is in a reverb zone.
+    /// Indoor bed, while the listener is in an indoor reverb zone.
     #[export]
     #[init(val = GString::from("interior"))]
     indoor: GString,
@@ -107,7 +127,7 @@ pub struct Soundscape {
     #[export]
     #[init(val = true)]
     prop_sounds: bool,
-    /// Wind gusts and loose debris now and then, outdoors.
+    /// Wind gusts and loose debris (or area one-shots) now and then, outdoors.
     #[export]
     #[init(val = true)]
     one_shots: bool,
@@ -115,19 +135,32 @@ pub struct Soundscape {
     #[export]
     distant_battle: bool,
 
-    /// One-shot players: a gust (non-positional, on the outdoor bus), debris
-    /// and the distant battle (positional), and when each plays next.
+    /// One-shot players: a gust (non-positional, on the outdoor bus), debris /
+    /// area one-shots and the distant battle (positional), and when each plays next.
     gust_player: Option<Gd<AudioStreamPlayer>>,
     debris_player: Option<Gd<AudioStreamPlayer3D>>,
     battle_player: Option<Gd<AudioStreamPlayer3D>>,
     next_one_shot: f32,
     next_battle: f32,
+    /// Last positional area one-shot index played, so it never repeats back to back.
+    last_area_shot: Option<(usize, usize)>,
     /// A burst in progress: rounds left, seconds between them, and the gun.
     burst: Option<(u32, f32, usize)>,
     battle_guns: Vec<Option<Gd<AudioStreamRandomizer>>>,
-    /// One-shots and battle sounds played (tests).
+    /// One-shots, battle sounds, and off-map industrial sounds played (tests).
     one_shots_played: u32,
     battle_played: u32,
+    industrial_played: u32,
+
+    /// Area-aware preset state.
+    active_preset: Option<&'static MapSoundscapePreset>,
+    area_players: Vec<Option<Gd<AudioStreamPlayer>>>,
+    area_weights: Vec<f32>,
+    active_area_idx: usize,
+    breach_player: Option<Gd<AudioStreamPlayer>>,
+    breach: f32,
+    industrial_player: Option<Gd<AudioStreamPlayer3D>>,
+    industrial_scheduler: Option<IndustrialScheduler>,
 
     started: bool,
     /// 0 outdoors, 1 indoors, blended.
@@ -145,20 +178,37 @@ impl INode3D for Soundscape {
         let Some(camera) = self.base().get_viewport().and_then(|v| v.get_camera_3d()) else {
             return;
         };
-        if !self.started {
-            self.start();
-        }
         let listener = camera.get_global_position();
-        let target = if zone_at(&self.base().get_tree(), listener).is_some() {
+        if !self.started {
+            self.start(listener);
+        }
+        let dt = delta as f32;
+        let target = if is_indoors_at(&self.base().get_tree(), listener) {
             1.0
         } else {
             0.0
         };
-        let t = 1.0 - (-BLEND_RATE * delta as f32).exp();
+        let t = 1.0 - (-BLEND_RATE * dt).exp();
         self.indoors += (target - self.indoors) * t;
+        if let Some(preset) = self.active_preset {
+            self.active_area_idx = preset.select_area(listener.x, listener.z);
+            for (idx, weight) in self.area_weights.iter_mut().enumerate() {
+                let goal = if idx == self.active_area_idx {
+                    1.0
+                } else {
+                    0.0
+                };
+                *weight += (goal - *weight) * t;
+            }
+            let breach_target = preset
+                .roof_breach
+                .map_or(0.0, |b| b.weight(listener.x, listener.z, self.indoors));
+            self.breach += (breach_target - self.breach) * t;
+        }
         self.apply_blend();
-        self.update_one_shots(listener, delta as f32);
-        self.update_battle(listener, delta as f32);
+        self.update_one_shots(listener, dt);
+        self.update_industrial(listener, dt);
+        self.update_battle(listener, dt);
     }
 
     fn exit_tree(&mut self) {
@@ -175,20 +225,43 @@ impl Soundscape {
         self.indoors
     }
 
-    /// The beds' players (tests): outdoor, then indoor.
+    /// Active outdoor area id for preset maps (e.g. `"field"`, `"docks"`),
+    /// or empty for single-bed maps (tests).
+    #[func]
+    fn active_area(&self) -> GString {
+        self.active_preset
+            .and_then(|p| p.areas.get(self.active_area_idx))
+            .map_or_else(GString::new, |a| GString::from(a.id))
+    }
+
+    /// 0 away from roof breach or outdoors, 1 directly beneath it indoors (tests).
+    #[func]
+    fn breach_amount(&self) -> f32 {
+        self.breach
+    }
+
+    /// The beds' players (tests): outdoor(s), then indoor, then optional breach.
     #[func]
     fn beds(&self) -> Array<Gd<AudioStreamPlayer>> {
         self.outdoor_player
             .iter()
+            .chain(self.area_players.iter().flatten())
             .chain(self.indoor_player.iter())
+            .chain(self.breach_player.iter())
             .cloned()
             .collect()
     }
 
-    /// One-shots (gusts and debris) and distant battle sounds played (tests).
+    /// One-shots (gusts, debris, or area one-shots) played (tests).
     #[func]
     fn one_shots_heard(&self) -> u32 {
         self.one_shots_played
+    }
+
+    /// Off-map industrial one-shots played (tests).
+    #[func]
+    fn industrial_heard(&self) -> u32 {
+        self.industrial_played
     }
 
     #[func]
@@ -204,13 +277,46 @@ impl Soundscape {
 }
 
 impl Soundscape {
-    fn start(&mut self) {
+    fn start(&mut self, listener: Vector3) {
         self.started = true;
         ensure_outdoor_bus();
-        let outdoor = self.outdoor.to_string();
-        let indoor = self.indoor.to_string();
-        self.outdoor_player = self.bed(&outdoor, OUTDOOR_BUS, "OutdoorBed");
-        self.indoor_player = self.bed(&indoor, BUS, "IndoorBed");
+        let preset_name = self.preset.to_string();
+        self.active_preset = preset_by_name(&preset_name);
+        if let Some(preset) = self.active_preset {
+            self.active_area_idx = preset.select_area(listener.x, listener.z);
+            self.area_players = preset
+                .areas
+                .iter()
+                .map(|area| self.bed(area.bed, OUTDOOR_BUS, &format!("OutdoorBed_{}", area.id)))
+                .collect();
+            self.area_weights = (0..preset.areas.len())
+                .map(|i| if i == self.active_area_idx { 1.0 } else { 0.0 })
+                .collect();
+            // Use the preset's indoor bed unless the scene explicitly overrode it.
+            let indoor = self.indoor.to_string();
+            let indoor_name = if indoor == "interior" || indoor.is_empty() {
+                self.indoor_db = preset.indoor_db;
+                preset.indoor_bed.to_owned()
+            } else {
+                indoor
+            };
+            self.indoor_player = self.bed(&indoor_name, BUS, "IndoorBed");
+            if let Some(breach) = preset.roof_breach {
+                self.breach_player = self.bed(breach.bed, BUS, "BreachWind");
+            }
+            if preset.industrial_off_map {
+                let mut player = self.positional_on("IndustrialOffMap", OUTDOOR_BUS, 1);
+                player.set_meta(SKIP_OCCLUSION_META, &true.to_variant());
+                self.industrial_player = Some(player);
+                self.industrial_scheduler =
+                    Some(IndustrialScheduler::new(randf_range(0.0, 1.0) as f32));
+            }
+        } else {
+            let outdoor = self.outdoor.to_string();
+            let indoor = self.indoor.to_string();
+            self.outdoor_player = self.bed(&outdoor, OUTDOOR_BUS, "OutdoorBed");
+            self.indoor_player = self.bed(&indoor, BUS, "IndoorBed");
+        }
         if self.prop_sounds {
             self.attach_prop_sounds();
         }
@@ -237,9 +343,13 @@ impl Soundscape {
     }
 
     fn positional(&mut self, name: &str, polyphony: i32) -> Gd<AudioStreamPlayer3D> {
+        self.positional_on(name, BUS, polyphony)
+    }
+
+    fn positional_on(&mut self, name: &str, bus: &str, polyphony: i32) -> Gd<AudioStreamPlayer3D> {
         let mut player = AudioStreamPlayer3D::new_alloc();
         player.set_name(name);
-        player.set_bus(BUS);
+        player.set_bus(bus);
         player.set_as_top_level(true);
         // Levels are set per sound; distance is in the recordings.
         player.set_attenuation_model(AttenuationModel::DISABLED);
@@ -248,7 +358,7 @@ impl Soundscape {
         player
     }
 
-    /// A gust or a rattle of debris every 7-18 s, outdoors.
+    /// A gust or area-appropriate outdoor one-shot every 7-18 s, outdoors.
     fn update_one_shots(&mut self, listener: Vector3, dt: f32) {
         if self.gust_player.is_none() {
             return;
@@ -259,6 +369,10 @@ impl Soundscape {
         }
         self.next_one_shot = randf_range(7.0, 18.0) as f32;
         if self.indoors > 0.7 {
+            return;
+        }
+        if let Some(preset) = self.active_preset {
+            self.play_area_one_shot(preset, listener);
             return;
         }
         if randf_range(0.0, 1.0) < 0.7 {
@@ -278,6 +392,111 @@ impl Soundscape {
             player.play();
         }
         self.one_shots_played += 1;
+    }
+
+    fn play_area_one_shot(&mut self, preset: &'static MapSoundscapePreset, listener: Vector3) {
+        let area_idx = self.active_area_idx;
+        let Some(area) = preset.areas.get(area_idx) else {
+            return;
+        };
+        if let Some(gust_stem) = area.gust_stem
+            && randf_range(0.0, 1.0) < f64::from(area.gust_probability)
+        {
+            let level = area.bed_db + area.gust_offset_db;
+            if let (Some(stream), Some(player)) = (one_shot(gust_stem), self.gust_player.as_mut()) {
+                player.set_stream(&stream);
+                player.set_volume_db(level);
+                player.play();
+                self.one_shots_played += 1;
+            }
+            return;
+        }
+        let eligible: Vec<usize> = area
+            .positional_one_shots
+            .iter()
+            .enumerate()
+            .filter(|&(i, shot)| {
+                if self.last_area_shot == Some((area_idx, i)) && area.positional_one_shots.len() > 1
+                {
+                    return false;
+                }
+                if let (Some(cat), Some(sched)) =
+                    (shot.shared_category, self.industrial_scheduler.as_ref())
+                {
+                    if !sched.can_play(cat) {
+                        return false;
+                    }
+                    if self
+                        .industrial_player
+                        .as_ref()
+                        .is_some_and(|p| p.is_playing())
+                    {
+                        return false;
+                    }
+                }
+                true
+            })
+            .map(|(i, _)| i)
+            .collect();
+        if eligible.is_empty() {
+            return;
+        }
+        let pick_idx =
+            eligible[(randf_range(0.0, eligible.len() as f64) as usize).min(eligible.len() - 1)];
+        let shot = area.positional_one_shots[pick_idx];
+        if let (Some(stream), Some(player)) = (one_shot(shot.stem), self.debris_player.as_mut()) {
+            let dist =
+                randf_range(f64::from(shot.min_distance), f64::from(shot.max_distance)) as f32;
+            let at = listener + around(dist, shot.rise_y);
+            player.set_global_position(at);
+            player.set_stream(&stream);
+            player.set_volume_db(shot.volume_db);
+            player.play();
+            self.last_area_shot = Some((area_idx, pick_idx));
+            if let (Some(cat), Some(sched)) =
+                (shot.shared_category, self.industrial_scheduler.as_mut())
+            {
+                sched.record_played(cat);
+            }
+            self.one_shots_played += 1;
+        }
+    }
+
+    /// Sparse off-map working-industrial one-shots (30–80 m beyond the walls,
+    /// single voice, strict cooldowns so they stay atmosphere rather than noise).
+    fn update_industrial(&mut self, listener: Vector3, dt: f32) {
+        let (Some(sched), Some(player)) = (
+            self.industrial_scheduler.as_mut(),
+            self.industrial_player.as_mut(),
+        ) else {
+            return;
+        };
+        let busy = player.is_playing();
+        let on_dock_side = self
+            .active_preset
+            .and_then(|p| p.areas.get(self.active_area_idx))
+            .is_some_and(|a| a.id == "docks");
+        let cue = sched.tick(
+            dt,
+            busy,
+            on_dock_side,
+            randf_range(0.0, 1.0) as f32,
+            randf_range(0.0, 1.0) as f32,
+            randf_range(0.0, 1.0) as f32,
+            randf_range(0.0, 1.0) as f32,
+        );
+        let Some(cue) = cue else {
+            return;
+        };
+        let Some(stream) = one_shot(cue.category.stem()) else {
+            return;
+        };
+        let at = listener + Vector3::new(cue.offset_x, cue.offset_y, cue.offset_z);
+        player.set_global_position(at);
+        player.set_stream(&stream);
+        player.set_volume_db(cue.category.volume_db() - INDUSTRIAL_INDOOR_ATTEN_DB * self.indoors);
+        player.play();
+        self.industrial_played += 1;
     }
 
     /// The distant battle: a burst from one gun every 4-15 s, sometimes an
@@ -355,14 +574,34 @@ impl Soundscape {
 
     fn apply_blend(&mut self) {
         let indoors = self.indoors.clamp(0.0, 1.0);
-        if let Some(player) = &mut self.outdoor_player {
+        if let Some(preset) = self.active_preset {
+            for (idx, area) in preset.areas.iter().enumerate() {
+                if let Some(Some(player)) = self.area_players.get_mut(idx) {
+                    let weight = self.area_weights.get(idx).copied().unwrap_or(0.0);
+                    let base_db = area.bed_db - INDOOR_OUTDOOR_DB * indoors;
+                    player.set_volume_db(fade_db(base_db, weight));
+                }
+            }
+            if let (Some(breach), Some(player)) = (preset.roof_breach, &mut self.breach_player) {
+                player.set_volume_db(fade_db(breach.bed_db, self.breach));
+            }
+        } else if let Some(player) = &mut self.outdoor_player {
             player.set_volume_db(self.outdoor_db - INDOOR_OUTDOOR_DB * indoors);
         }
         if let Some(player) = &mut self.indoor_player {
             player.set_volume_db(fade_db(self.indoor_db, indoors));
         }
-        // Exponential, so the muffling sounds even across the fade.
-        let cutoff = OPEN_CUTOFF_HZ * (INDOOR_CUTOFF_HZ / OPEN_CUTOFF_HZ).powf(indoors);
+        let lift_hz = self
+            .active_preset
+            .and_then(|p| p.roof_breach)
+            .map_or(INDOOR_CUTOFF_HZ, |b| b.cutoff_lift_hz);
+        let cutoff = outdoor_cutoff_with_breach(
+            OPEN_CUTOFF_HZ,
+            INDOOR_CUTOFF_HZ,
+            indoors,
+            self.breach,
+            lift_hz,
+        );
         set_outdoor_cutoff(cutoff);
     }
 

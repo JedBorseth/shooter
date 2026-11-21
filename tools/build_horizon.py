@@ -1,9 +1,10 @@
 """Render the country beyond a map's walls into a horizon strip.
 
-    blender -b --factory-startup --python tools/build_horizon.py [-- --night] [--preview]
+    blender -b --factory-startup --python tools/build_horizon.py [-- --night | --warehouse] [--preview]
 
 By day (the default) it renders the Testing Area's country; with --night, the
-Zombies arena's surroundings at night (see `night_main`).
+Zombies arena's surroundings at night (see `night_main`); with --warehouse,
+Warehouse's industrial outskirts by day (see `warehouse_main`).
 
 Writes two images that shaders/day_sky.gdshader lays round the horizon:
 
@@ -67,6 +68,7 @@ SAMPLES = 96
 
 PREVIEW = "--preview" in sys.argv
 NIGHT = "--night" in sys.argv
+WAREHOUSE = "--warehouse" in sys.argv
 # A full-resolution preview of the 60 degrees toward the sun and away.
 SECTOR = "--sector" in sys.argv
 
@@ -1046,7 +1048,1216 @@ def main() -> None:
     pack("testing")
 
 
+# --- Warehouse: industrial outskirts by day ----------------------------------
+#
+# Warehouse sits at the edge of an industrial park (CoD4 Vacant / MW Scrapyard
+# outskirts contrast, Treyarch Black Ops 2/3 readability with Modern Warfare
+# weathered materials). The north team spawns in THE FIELD (an overgrown lot
+# wrapping the hall's north-west corner) and the south team at THE DOCKS (a
+# lowered concrete truck apron). Beyond the low screen walls and chain-link
+# substation fence lie:
+#   - neighbouring low tilt-up and corrugated warehouses and metal storage
+#     sheds with gable/monitor roofs, loading canopies, and rooftop plant;
+#   - an elevated steel water tower (WNW, the Field's main orientation
+#     landmark);
+#   - a line of tapered steel lattice transmission pylons with sagging
+#     catenary power lines sweeping across the north/north-east corridor
+#     beyond the substation;
+#   - a raised gravel rail embankment with a parked string of freight cars
+#     to the north/north-west;
+#   - a concrete highway overpass with piers, jersey parapets, and light
+#     standards sweeping across the south/south-west beyond the Docks;
+#   - an older brick/steel plant with exhaust stacks and silos to the east;
+#   - scrub, volunteer trees, mixed treeline belts, and a gentle wooded ridge
+#     fading into daytime haze.
+#
+# Lit by a warm daytime sun matching Warehouse's BreachSun azimuth (world
+# compass 305 deg WNW, light colour 1.0, 0.93, 0.80) at 50 deg elevation
+# (matching range_day.hdr's 47.9 deg sun and keeping crisp sunlit-vs-shaded
+# separation on vertical industrial facades) against a cool daylight sky.
+# Distant building surfaces use the repo's existing CC0 ambientCG PBR textures
+# (corrugated, concrete_panels, concrete_stained, brick, asphalt, gravel,
+# painted_metal).
+
+WH_SUN_ELEVATION = 50.0
+# World compass bearing toward BreachSun (0 = North/-Z, 90 = East/+X,
+# 180 = South/+Z, 270 = West/-X). BreachSun rotation_degrees = (-62, -125, 0)
+# -> +basis.z = (-0.3846, 0.8829, -0.2693) -> atan2(x, -z) = 305 deg WNW.
+WH_SUN_COMPASS = 305.0
+WH_CLEAR = 88.0
+WH_FAR = 3000.0
+TEXTURES = ROOT / "godot" / "assets" / "textures"
+FIELD_TEXTURES = ROOT / "godot" / "assets" / "props" / "warehouse_field" / "textures"
+
+
+def wh_bearing(compass_deg: float) -> float:
+    """Blender strip bearing (0 = toward sun/+Y, clockwise) for a Warehouse
+    world compass heading (0 = North, 90 = East, 180 = South, 270 = West)."""
+    return (compass_deg - WH_SUN_COMPASS) % 360.0
+
+
+def wh_xy(compass_deg: float, r: float) -> tuple[float, float]:
+    return bearing_xy(wh_bearing(compass_deg), r)
+
+
+def wh_compass(x: float, y: float) -> float:
+    return (bearing_of(x, y) + WH_SUN_COMPASS) % 360.0
+
+
+def wh_height(x: float, y: float) -> float:
+    """Flat dry-grass/gravel verge out past the perimeter fence (blending cleanly
+    with the exterior ground plane), a shallow drainage ditch before the access
+    road (r = 56..68 m), a level road bench (70..86 m), and a gentle industrial
+    valley rim beyond so roofs, overpass, rail bridge, water tower, pylons, and
+    treeline read clearly."""
+    r = math.hypot(x, y)
+    # Shallow drainage ditch alongside the perimeter access road.
+    ditch = -1.05 * math.exp(-((r - 62.5) / 4.2) ** 2)
+    # Gentle rise starting outside the access road bench.
+    rise = 0.086 * max(r - 92.0, 0.0) * smoothstep(92.0, 210.0, r)
+    rise -= 0.034 * max(r - 920.0, 0.0)
+    p = Vector((x / 520.0, y / 520.0, 1.41))
+    hills = noise.fractal(p, 1.0, 2.0, 4, noise_basis="PERLIN_NEW")
+    detail = noise.noise(Vector((x / 95.0, y / 95.0, 3.2)), noise_basis="PERLIN_NEW")
+    amp = 30.0 * smoothstep(210.0, 640.0, r)
+    return ditch + rise + amp * hills + 1.8 * detail * smoothstep(95.0, 220.0, r)
+
+
+def wh_pbr_material(
+    name: str,
+    tex_set: str,
+    tint: tuple[float, float, float],
+    scale: float = 0.12,
+    rough: float = 0.8,
+    metal: float = 0.0,
+    normal_strength: float = 0.45,
+) -> bpy.types.Material:
+    """Box-projected CC0 ambientCG texture set from godot/assets/textures/."""
+    mat = bpy.data.materials.new(name)
+    mat.use_nodes = True
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    bsdf = nodes["Principled BSDF"]
+    bsdf.inputs["Roughness"].default_value = rough
+    bsdf.inputs["Metallic"].default_value = metal
+
+    coord = nodes.new("ShaderNodeTexCoord")
+    mapping = nodes.new("ShaderNodeMapping")
+    mapping.inputs["Scale"].default_value = (scale, scale, scale)
+    links.new(coord.outputs["Object"], mapping.inputs["Vector"])
+
+    albedo_path = TEXTURES / tex_set / "albedo.jpg"
+    if albedo_path.exists():
+        img = bpy.data.images.load(str(albedo_path), check_existing=True)
+        tex = nodes.new("ShaderNodeTexImage")
+        tex.image = img
+        tex.projection = "BOX"
+        tex.projection_blend = 0.2
+        links.new(mapping.outputs["Vector"], tex.inputs["Vector"])
+        mix = nodes.new("ShaderNodeMix")
+        mix.data_type = "RGBA"
+        mix.blend_type = "MULTIPLY"
+        mix.inputs["Factor"].default_value = 1.0
+        links.new(tex.outputs["Color"], mix.inputs["A"])
+        mix.inputs["B"].default_value = (*tint, 1.0)
+        links.new(mix.outputs["Result"], bsdf.inputs["Base Color"])
+    else:
+        bsdf.inputs["Base Color"].default_value = (*tint, 1.0)
+
+    normal_path = TEXTURES / tex_set / "normal.jpg"
+    if normal_path.exists() and normal_strength > 0.0:
+        nimg = bpy.data.images.load(str(normal_path), check_existing=True)
+        nimg.colorspace_settings.name = "Non-Color"
+        ntex = nodes.new("ShaderNodeTexImage")
+        ntex.image = nimg
+        ntex.projection = "BOX"
+        ntex.projection_blend = 0.2
+        links.new(mapping.outputs["Vector"], ntex.inputs["Vector"])
+        nmap = nodes.new("ShaderNodeNormalMap")
+        nmap.inputs["Strength"].default_value = normal_strength
+        links.new(ntex.outputs["Color"], nmap.inputs["Color"])
+        links.new(nmap.outputs["Normal"], bsdf.inputs["Normal"])
+    return mat
+
+
+def wh_lighting() -> None:
+    scene = bpy.context.scene
+    world = bpy.data.worlds.new("WarehouseSky")
+    world.use_nodes = True
+    bg = world.node_tree.nodes["Background"]
+    # Restrained cool sky fill so horizontal ground stays warm dry-grass/earth
+    # at the Field's daylight value (never pale mint) while vertical shaded
+    # facades still pick up cool daylight fill.
+    bg.inputs["Color"].default_value = (0.40, 0.48, 0.66, 1.0)
+    bg.inputs["Strength"].default_value = 0.36
+    world.mist_settings.start = 0.0
+    world.mist_settings.depth = MIST_DEPTH
+    world.mist_settings.falloff = "LINEAR"
+    scene.world = world
+    sun_data = bpy.data.lights.new("Sun", "SUN")
+    sun_data.energy = 3.1
+    sun_data.color = (1.0, 0.93, 0.79)
+    sun_data.angle = math.radians(0.8)
+    sun = bpy.data.objects.new("Sun", sun_data)
+    sun.rotation_euler = (-math.radians(90.0 - WH_SUN_ELEVATION), 0.0, 0.0)
+    scene.collection.objects.link(sun)
+
+
+def wh_woods(x: float, y: float) -> float:
+    """Woodland density: thicker treeline belts around the industrial valley,
+    with open scrub/yard pockets near the map."""
+    r = math.hypot(x, y)
+    near = smoothstep(WH_CLEAR, 320.0, r)
+    wood = noise.fractal(Vector((x / 460.0, y / 460.0, 4.3)), 1.0, 2.0, 3, noise_basis="PERLIN_NEW")
+    ridge = 0.16 * smoothstep(550.0, 1300.0, r)
+    return wood + ridge - 0.24 * (1.0 - near)
+
+
+def wh_land_material() -> bpy.types.Material:
+    """Grounded daylight terrain shader blending vertex lot/road colours with
+    Warehouse's own CC0 dry-grass/dirt scan (field_ground_albedo) and broad
+    organic mottling so near ground matches the Field's value and warmth."""
+    mat = bpy.data.materials.new("WhLand")
+    mat.use_nodes = True
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    bsdf = nodes["Principled BSDF"]
+    bsdf.inputs["Roughness"].default_value = 0.96
+    bsdf.inputs["Specular IOR Level"].default_value = 0.12
+
+    col = nodes.new("ShaderNodeVertexColor")
+    col.layer_name = "Col"
+    coord = nodes.new("ShaderNodeTexCoord")
+
+    # Broad organic mottling (worn earth, dry grass patches, damp swales).
+    mottle = nodes.new("ShaderNodeTexNoise")
+    mottle.inputs["Scale"].default_value = 0.045
+    mottle.inputs["Detail"].default_value = 9.0
+    mottle.inputs["Roughness"].default_value = 0.65
+    links.new(coord.outputs["Object"], mottle.inputs["Vector"])
+    mottle_ramp = nodes.new("ShaderNodeMapRange")
+    mottle_ramp.inputs["From Min"].default_value = 0.28
+    mottle_ramp.inputs["From Max"].default_value = 0.72
+    mottle_ramp.inputs["To Min"].default_value = 0.68
+    mottle_ramp.inputs["To Max"].default_value = 1.24
+    links.new(mottle.outputs["Fac"], mottle_ramp.inputs["Value"])
+
+    # Fine gritty turf/gravel detail from Poly Haven's grass_ground (same scan
+    # used in Warehouse's Field) normalized around 1.0 as a texture modulator.
+    fine_mul = mottle_ramp.outputs["Result"]
+    field_tex_path = FIELD_TEXTURES / "field_ground_albedo.jpg"
+    if field_tex_path.exists():
+        mapping = nodes.new("ShaderNodeMapping")
+        mapping.inputs["Scale"].default_value = (0.11, 0.11, 0.11)
+        links.new(coord.outputs["Object"], mapping.inputs["Vector"])
+        tex = nodes.new("ShaderNodeTexImage")
+        tex.image = bpy.data.images.load(str(field_tex_path), check_existing=True)
+        tex.projection = "BOX"
+        tex.projection_blend = 0.25
+        links.new(mapping.outputs["Vector"], tex.inputs["Vector"])
+        # Convert scanned texture brightness to a ~0.72..1.25 detail multiplier
+        # so dark asphalt stays dark while grass/gravel picks up real turf grit.
+        bw = nodes.new("ShaderNodeRGBToBW")
+        links.new(tex.outputs["Color"], bw.inputs["Color"])
+        det_ramp = nodes.new("ShaderNodeMapRange")
+        det_ramp.inputs["From Min"].default_value = 0.04
+        det_ramp.inputs["From Max"].default_value = 0.28
+        det_ramp.inputs["To Min"].default_value = 0.72
+        det_ramp.inputs["To Max"].default_value = 1.25
+        links.new(bw.outputs["Val"], det_ramp.inputs["Value"])
+        comb = nodes.new("ShaderNodeMath")
+        comb.operation = "MULTIPLY"
+        links.new(mottle_ramp.outputs["Result"], comb.inputs[0])
+        links.new(det_ramp.outputs["Result"], comb.inputs[1])
+        fine_mul = comb.outputs["Value"]
+
+    mix = nodes.new("ShaderNodeMix")
+    mix.data_type = "RGBA"
+    mix.blend_type = "MULTIPLY"
+    mix.inputs["Factor"].default_value = 1.0
+    links.new(col.outputs["Color"], mix.inputs["A"])
+    links.new(fine_mul, mix.inputs["B"])
+    links.new(mix.outputs["Result"], bsdf.inputs["Base Color"])
+
+    bump = nodes.new("ShaderNodeBump")
+    bump.inputs["Strength"].default_value = 0.45
+    links.new(mottle.outputs["Fac"], bump.inputs["Height"])
+    links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
+    return mat
+
+
+def wh_ground() -> None:
+    rings = [2.0, 8.0, 16.0, 24.0, 32.0, 42.0, 50.0, 55.0, 58.0, 61.0, 62.5, 64.0, 67.0, 70.0, 72.0, 77.0, 82.0, 84.5, 88.0, 94.0]
+    r = 100.0
+    while r < WH_FAR:
+        rings.append(r)
+        r *= 1.012
+    rings.append(WH_FAR)
+    segments = 2048 if not PREVIEW else 768
+    verts, colours, faces = [], [], []
+    # Warm, grounded daylight albedos calibrated to Warehouse's Field grass
+    # (linear ~0.16, 0.13, 0.055) and Docks concrete/asphalt so ground values
+    # sit well below the sky.
+    dry_grass = Vector((0.155, 0.128, 0.054))
+    scrub_grass = Vector((0.135, 0.118, 0.050))
+    dirt_verge = Vector((0.145, 0.112, 0.068))
+    gravel_lot = Vector((0.155, 0.145, 0.122))
+    asphalt_yard = Vector((0.068, 0.067, 0.065))
+    ditch_earth = Vector((0.068, 0.062, 0.036))
+    wood_floor = Vector((0.048, 0.056, 0.026))
+    lot_colours = [dry_grass, scrub_grass, gravel_lot, asphalt_yard, dirt_verge, scrub_grass]
+
+    for r in rings:
+        for s in range(segments):
+            a = 2.0 * math.pi * s / segments
+            x, y = r * math.cos(a), r * math.sin(a)
+            z = wh_height(x, y)
+            verts.append((x, y, z))
+            comp = wh_compass(x, y)
+            edge, cell = fields(x, y)
+
+            # Inner verge (r < 56 m): warm dry grass & sparse gravel matching
+            # the Field's exterior ground plane so the lowest band blends cleanly.
+            if r < 56.0:
+                n_patch = 0.5 + 0.5 * noise.noise(Vector((x / 22.0, y / 22.0, 2.1)))
+                base = dry_grass.lerp(dirt_verge, smoothstep(0.55, 0.85, n_patch) * 0.45)
+                # Slightly grittier gravel edge south of the Docks (compass 145..235).
+                south = smoothstep(135.0, 160.0, comp) * (1.0 - smoothstep(225.0, 250.0, comp))
+                base = base.lerp(gravel_lot, south * 0.42 * smoothstep(18.0, 48.0, r))
+            else:
+                industrial = 1.0 - smoothstep(260.0, 620.0, r)
+                idx = cell % len(lot_colours) if industrial > 0.35 else (cell % 2)
+                base = lot_colours[idx].copy()
+                if industrial < 0.35:
+                    base = base.lerp(Vector((0.125, 0.135, 0.058)), 0.55)
+
+            # Dark earthy drainage ditch (r = 57..68 m).
+            ditch_f = math.exp(-((r - 62.5) / 4.2) ** 2)
+            base = base.lerp(ditch_earth, ditch_f * 0.85)
+
+            # Cracked asphalt perimeter access road (r = 71..83 m) with pale
+            # gravel shoulders at 69..71 and 83..85.
+            shoulder = smoothstep(68.0, 70.5, r) * (1.0 - smoothstep(83.5, 86.5, r))
+            base = base.lerp(gravel_lot, shoulder * 0.75)
+            road = smoothstep(70.5, 71.5, r) * (1.0 - smoothstep(82.5, 83.5, r))
+            # Subtle darker tyre ruts and weathered asphalt variation along the road.
+            rut = 0.82 + 0.18 * math.cos((r - 77.0) * 1.1)
+            base = base.lerp(asphalt_yard * rut, road)
+
+            # Paved employee parking lot pad (NW/North, compass 305..348, r = 87..128 m).
+            in_lot = (
+                smoothstep(302.0, 307.0, comp)
+                * (1.0 - smoothstep(344.0, 350.0, comp))
+                * smoothstep(85.0, 88.0, r)
+                * (1.0 - smoothstep(126.0, 131.0, r))
+            )
+            base = base.lerp(asphalt_yard * 1.12, in_lot * 0.92)
+
+            # Gravel/asphalt freight yard pads on the West & South sides (r = 86..142 m).
+            in_south_yard = (
+                smoothstep(145.0, 155.0, comp)
+                * (1.0 - smoothstep(220.0, 232.0, comp))
+                * smoothstep(85.0, 90.0, r)
+                * (1.0 - smoothstep(138.0, 148.0, r))
+            )
+            base = base.lerp(gravel_lot * 0.92, in_south_yard * 0.75)
+
+            if r > 86.0:
+                margin = smoothstep(5.5, 1.5, edge)
+                base = base.lerp(Vector((0.09, 0.105, 0.042)), margin * 0.65)
+                wood = smoothstep(0.08, 0.22, wh_woods(x, y))
+                base = base.lerp(wood_floor, wood * 0.85)
+            colours.append((base.x, base.y, base.z, 1.0))
+    for i in range(len(rings) - 1):
+        for s in range(segments):
+            a = i * segments + s
+            b = i * segments + (s + 1) % segments
+            faces.append((a, b, b + segments, a + segments))
+    mesh = bpy.data.meshes.new("Land")
+    mesh.from_pydata(verts, [], faces)
+    mesh.shade_smooth()
+    attr = mesh.color_attributes.new("Col", "FLOAT_COLOR", "POINT")
+    attr.data.foreach_set("color", [c for col in colours for c in col])
+    obj = bpy.data.objects.new("Land", mesh)
+    bpy.context.scene.collection.objects.link(obj)
+    obj.data.materials.append(wh_land_material())
+
+
+def _wh_strut(parts: Parts, mat: str, a: Vector, b: Vector, thickness: float) -> None:
+    """Thin structural member between two 3D points."""
+    axis = b - a
+    length = axis.length
+    if length < 1e-4:
+        return
+    verts, faces = parts.parts.setdefault(mat, ([], []))
+    base = len(verts)
+    up = Vector((0.0, 0.0, 1.0)) if abs(axis.normalized().z) < 0.95 else Vector((1.0, 0.0, 0.0))
+    u = axis.cross(up).normalized() * (thickness * 0.5)
+    v = axis.cross(u).normalized() * (thickness * 0.5)
+    for end in (a, b):
+        for su, sv in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+            verts.append(tuple(end + u * su + v * sv))
+    for i in range(4):
+        j = (i + 1) % 4
+        faces.append((base + i, base + j, base + 4 + j, base + 4 + i))
+
+
+def _wh_cylinder(
+    parts: Parts,
+    mat: str,
+    centre: Vector,
+    r0: float,
+    r1: float,
+    height_z: float,
+    segments: int = 16,
+    cap_top: bool = True,
+) -> None:
+    verts, faces = parts.parts.setdefault(mat, ([], []))
+    base = len(verts)
+    for k in range(segments):
+        a = 2.0 * math.pi * k / segments
+        ca, sa = math.cos(a), math.sin(a)
+        verts.append((centre.x + r0 * ca, centre.y + r0 * sa, centre.z))
+        verts.append((centre.x + r1 * ca, centre.y + r1 * sa, centre.z + height_z))
+    for k in range(segments):
+        nk = (k + 1) % segments
+        faces.append((base + 2 * k, base + 2 * nk, base + 2 * nk + 1, base + 2 * k + 1))
+    if cap_top:
+        top_c = len(verts)
+        verts.append((centre.x, centre.y, centre.z + height_z))
+        for k in range(segments):
+            nk = (k + 1) % segments
+            faces.append((base + 2 * k + 1, base + 2 * nk + 1, top_c))
+
+
+def _wh_gable_warehouse(
+    parts: Parts,
+    rng: random.Random,
+    centre: Vector,
+    length: float,
+    width: float,
+    eaves: float,
+    turn: float,
+    wall_mat: str,
+    roof_mat: str,
+    trim_mat: str,
+    monitor: bool = False,
+    canopy: bool = False,
+    windows: bool = False,
+) -> None:
+    """Industrial warehouse or shed with pitched roof, rooftop plant, optional
+    clerestory monitor, loading canopy, and window band."""
+    rot = Matrix.Rotation(turn, 3, "Z")
+
+    def pt(lx: float, ly: float, lz: float) -> Vector:
+        return centre + rot @ Vector((lx, ly, lz))
+
+    # Main wall hull (extended 5 m below ground anchor so downhill corners never
+    # float on sloped industrial terraces).
+    sink = 5.0
+    parts.box(wall_mat, pt(0.0, 0.0, -sink), (length, width, eaves + sink), turn)
+    # Low gable roof (realistic 1:6 industrial pitch).
+    ridge = eaves + width * 0.16
+    hl, hw = length * 0.5 + 0.35, width * 0.5 + 0.45
+    verts, faces = parts.parts.setdefault(roof_mat, ([], []))
+    b = len(verts)
+    for p in (
+        (-hl, -hw, eaves - 0.1), (hl, -hw, eaves - 0.1), (hl, 0.0, ridge), (-hl, 0.0, ridge),
+        (-hl, hw, eaves - 0.1), (hl, hw, eaves - 0.1),
+    ):
+        verts.append(tuple(pt(*p)))
+    faces.append((b, b + 1, b + 2, b + 3))
+    faces.append((b + 3, b + 2, b + 5, b + 4))
+    # Gable end triangles in wall material.
+    wverts, wfaces = parts.parts.setdefault(wall_mat, ([], []))
+    wb = len(wverts)
+    for p in (
+        (-length * 0.5, -width * 0.5, eaves), (-length * 0.5, width * 0.5, eaves), (-length * 0.5, 0.0, ridge),
+        (length * 0.5, -width * 0.5, eaves), (length * 0.5, 0.0, ridge), (length * 0.5, width * 0.5, eaves),
+    ):
+        wverts.append(tuple(pt(*p)))
+    wfaces.append((wb, wb + 1, wb + 2))
+    wfaces.append((wb + 3, wb + 4, wb + 5))
+
+    # Optional raised clerestory monitor along the ridge.
+    if monitor:
+        ml = length * 0.68
+        mw = width * 0.24
+        mh = 1.9
+        parts.box(trim_mat, pt(0.0, 0.0, ridge - 0.4), (ml, mw, mh), turn)
+        parts.box("window_dark", pt(0.0, 0.0, ridge + 0.15), (ml * 0.94, mw + 0.16, 0.9), turn)
+        parts.box(roof_mat, pt(0.0, 0.0, ridge - 0.4 + mh), (ml + 0.5, mw + 0.7, 0.28), turn)
+
+    # Rooftop HVAC units & exhaust stacks.
+    for _ in range(rng.randint(2, 4)):
+        hx = rng.uniform(-length * 0.35, length * 0.35)
+        hy = rng.uniform(-width * 0.3, width * 0.3)
+        hz = eaves + (1.0 - abs(hy) / (width * 0.5)) * (ridge - eaves) - 0.2
+        parts.box(trim_mat, pt(hx, hy, hz), (rng.uniform(2.0, 3.8), rng.uniform(1.6, 2.8), rng.uniform(1.1, 1.9)), turn)
+    if rng.random() < 0.65:
+        vx = rng.uniform(-length * 0.3, length * 0.3)
+        _wh_cylinder(parts, "steel_pylon", pt(vx, width * 0.18, eaves + 0.6), 0.45, 0.4, rng.uniform(3.2, 5.5), 10)
+
+    # Loading canopy and dark dock doors along one long side.
+    if canopy:
+        parts.box(trim_mat, pt(0.0, -width * 0.5 - 1.6, 4.1), (length * 0.75, 3.2, 0.35), turn)
+        n_bays = max(2, int(length / 9.5))
+        for k in range(n_bays):
+            bx = -length * 0.36 + (k + 0.5) * (length * 0.72 / n_bays)
+            parts.box("window_dark", pt(bx, -width * 0.5 - 0.05, 0.4), (3.4, 0.25, 3.4), turn)
+
+    # Clerestory window band near eaves.
+    if windows:
+        for side in (-1.0, 1.0):
+            parts.box("window_dark", pt(0.0, side * (width * 0.5 + 0.05), eaves - 2.2), (length * 0.82, 0.18, 1.25), turn)
+
+
+def _wh_flat_warehouse(
+    parts: Parts,
+    rng: random.Random,
+    centre: Vector,
+    length: float,
+    width: float,
+    height_z: float,
+    turn: float,
+    wall_mat: str,
+    trim_mat: str,
+) -> None:
+    """Modern tilt-up concrete warehouse with parapet coping, dark clerestory
+    strip, and rooftop HVAC boxes."""
+    rot = Matrix.Rotation(turn, 3, "Z")
+
+    def pt(lx: float, ly: float, lz: float) -> Vector:
+        return centre + rot @ Vector((lx, ly, lz))
+
+    sink = 5.0
+    parts.box(wall_mat, pt(0.0, 0.0, -sink), (length, width, height_z + sink), turn)
+    parts.box(trim_mat, pt(0.0, 0.0, height_z), (length + 0.4, width + 0.4, 0.35), turn)
+    parts.box("roof_dark", pt(0.0, 0.0, height_z - 0.15), (length - 0.6, width - 0.6, 0.2), turn)
+    for side in (-1.0, 1.0):
+        parts.box("window_dark", pt(0.0, side * (width * 0.5 + 0.05), height_z - 2.6), (length * 0.84, 0.18, 1.15), turn)
+    for _ in range(rng.randint(3, 5)):
+        hx = rng.uniform(-length * 0.38, length * 0.38)
+        hy = rng.uniform(-width * 0.32, width * 0.32)
+        parts.box(trim_mat, pt(hx, hy, height_z), (rng.uniform(2.4, 4.5), rng.uniform(1.8, 3.0), rng.uniform(1.2, 2.1)), turn)
+
+
+def _wh_water_tower(parts: Parts, x: float, y: float) -> None:
+    """Elevated North American steel water tower: 4 battered legs with X-bracing,
+    central riser, catwalk ring, cylindrical tank, and conical roof."""
+    z0 = wh_height(x, y) - 0.5
+    leg_h = 25.0
+    r_bot = 6.2
+    r_top = 4.5
+    legs = []
+    for k in range(4):
+        a = k * math.pi * 0.5 + 0.35
+        ca, sa = math.cos(a), math.sin(a)
+        p0 = Vector((x + r_bot * ca, y + r_bot * sa, z0))
+        p1 = Vector((x + r_top * ca, y + r_top * sa, z0 + leg_h))
+        legs.append((p0, p1))
+        # Extend footing underground so legs anchor cleanly on any slope.
+        foot = Vector((x + (r_bot + 0.3) * ca, y + (r_bot + 0.3) * sa, z0 - 4.0))
+        _wh_strut(parts, "steel_tower", foot, p1, 0.72)
+    # 3 tiers of horizontal struts and X-bracing.
+    tiers = [0.28, 0.62, 0.95]
+    for ti in range(len(tiers)):
+        t1 = tiers[ti]
+        t0 = 0.02 if ti == 0 else tiers[ti - 1]
+        for k in range(4):
+            nk = (k + 1) % 4
+            a0 = legs[k][0].lerp(legs[k][1], t0)
+            a1 = legs[k][0].lerp(legs[k][1], t1)
+            b0 = legs[nk][0].lerp(legs[nk][1], t0)
+            b1 = legs[nk][0].lerp(legs[nk][1], t1)
+            _wh_strut(parts, "steel_tower", a1, b1, 0.36)
+            _wh_strut(parts, "steel_tower", a0, b1, 0.26)
+            _wh_strut(parts, "steel_tower", b0, a1, 0.26)
+    # Central insulated riser pipe (anchored into slope).
+    _wh_cylinder(parts, "steel_tower", Vector((x, y, z0 - 4.0)), 1.15, 1.05, leg_h + 4.5, 12, cap_top=False)
+    # Tapered tank bottom, cylinder body, catwalk, conical cap.
+    _wh_cylinder(parts, "steel_tower", Vector((x, y, z0 + leg_h - 1.8)), 3.4, 5.6, 2.4, 18, cap_top=False)
+    _wh_cylinder(parts, "steel_tower", Vector((x, y, z0 + leg_h + 0.6)), 5.6, 5.6, 8.2, 18, cap_top=False)
+    _wh_cylinder(parts, "steel_pylon", Vector((x, y, z0 + leg_h + 0.4)), 6.5, 6.5, 0.4, 18, cap_top=True)
+    # Catwalk handrail posts and top rail.
+    for k in range(12):
+        a = 2.0 * math.pi * k / 12
+        na = 2.0 * math.pi * ((k + 1) % 12) / 12
+        p0 = Vector((x + 6.4 * math.cos(a), y + 6.4 * math.sin(a), z0 + leg_h + 0.75))
+        p1 = p0 + Vector((0.0, 0.0, 1.25))
+        np1 = Vector((x + 6.4 * math.cos(na), y + 6.4 * math.sin(na), z0 + leg_h + 2.0))
+        _wh_strut(parts, "steel_pylon", p0, p1, 0.14)
+        _wh_strut(parts, "steel_pylon", p1, np1, 0.14)
+    # Conical roof + finial vent.
+    _wh_cylinder(parts, "corrugated_grey", Vector((x, y, z0 + leg_h + 8.8)), 5.85, 0.5, 3.6, 18, cap_top=True)
+    _wh_cylinder(parts, "steel_pylon", Vector((x, y, z0 + leg_h + 12.3)), 0.38, 0.14, 1.8, 8, cap_top=True)
+
+
+def _wh_pylons(parts: Parts) -> list[tuple[float, float, float]]:
+    """Line of tapered lattice steel transmission towers with catenary power
+    lines sweeping across the north/north-east industrial corridor (tying into
+    Warehouse's north-east substation). Returns exclusion points (x, y, rad)."""
+    # Closest point at compass 22 deg (NNE), r = 190 m; runs along compass 112 deg
+    # (ESE to WNW across the northern horizon).
+    cx, cy = wh_xy(22.0, 190.0)
+    dx, dy = wh_xy(112.0, 1.0)
+    # Crossarm axis perpendicular to the line direction.
+    perp = Vector((-dy, dx, 0.0)).normalized()
+    along = Vector((dx, dy, 0.0)).normalized()
+
+    towers: list[tuple[Vector, list[Vector]]] = []
+    clear_pts: list[tuple[float, float, float]] = []
+    for n in range(-7, 8):
+        t = n * 185.0
+        px, py = cx + dx * t, cy + dy * t
+        r = math.hypot(px, py)
+        if r < WH_CLEAR + 35.0 or r > 1750.0:
+            continue
+        pz = wh_height(px, py) - 0.5
+        clear_pts.append((px, py, 24.0))
+        # Tapered 4-leg truss profile (z_frac, half_width).
+        total_h = 35.0
+        profile = [
+            (0.0, 3.8),
+            (0.24, 2.65),
+            (0.48, 1.75),
+            (0.68, 1.32),
+            (0.86, 1.0),
+            (1.0, 0.28),
+        ]
+        rings: list[list[Vector]] = []
+        for frac, hw in profile:
+            z = pz + frac * total_h
+            ring = []
+            for sa, sp in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+                ring.append(Vector((px, py, z)) + along * (sa * hw) + perp * (sp * hw))
+            rings.append(ring)
+        for ti in range(len(rings) - 1):
+            r0, r1 = rings[ti], rings[ti + 1]
+            leg_t = 0.46 if ti < 2 else 0.34
+            brace_t = 0.24 if ti < 3 else 0.18
+            for k in range(4):
+                nk = (k + 1) % 4
+                _wh_strut(parts, "steel_pylon", r0[k], r1[k], leg_t)
+                _wh_strut(parts, "steel_pylon", r1[k], r1[nk], brace_t)
+                _wh_strut(parts, "steel_pylon", r0[k], r1[nk], brace_t)
+                _wh_strut(parts, "steel_pylon", r0[nk], r1[k], brace_t)
+        # Peak finial.
+        peak = Vector((px, py, pz + total_h + 2.4))
+        for p in rings[-1]:
+            _wh_strut(parts, "steel_pylon", p, peak, 0.20)
+
+        # 3 pairs of tapered crossarms with hanging insulators.
+        attach: list[Vector] = [peak]
+        for arm_z, span in ((22.0, 7.2), (27.2, 8.8), (32.2, 6.6)):
+            arm_c = Vector((px, py, pz + arm_z))
+            top_c = Vector((px, py, pz + arm_z + 1.5))
+            for side in (-1.0, 1.0):
+                tip = arm_c + perp * (side * span)
+                root_a = arm_c + along * 0.95
+                root_b = arm_c - along * 0.95
+                _wh_strut(parts, "steel_pylon", root_a, tip, 0.30)
+                _wh_strut(parts, "steel_pylon", root_b, tip, 0.30)
+                _wh_strut(parts, "steel_pylon", top_c, tip, 0.24)
+                ins_bot = tip - Vector((0.0, 0.0, 1.7))
+                _wh_strut(parts, "concrete_tiltup", tip, ins_bot, 0.28)
+                attach.append(ins_bot)
+        towers.append((Vector((px, py, pz)), attach))
+
+    # Catenary sagging cables between adjacent towers.
+    for i in range(len(towers) - 1):
+        a_pts = towers[i][1]
+        b_pts = towers[i + 1][1]
+        for ci in range(len(a_pts)):
+            p0, p1 = a_pts[ci], b_pts[ci]
+            sag = 4.4 if ci == 0 else 6.0
+            segs = 12
+            thick = 0.12 if ci == 0 else 0.16
+            prev = p0
+            for s in range(1, segs + 1):
+                f = s / segs
+                cur = p0.lerp(p1, f) - Vector((0.0, 0.0, 4.0 * sag * f * (1.0 - f)))
+                _wh_strut(parts, "cable", prev, cur, thick)
+                prev = cur
+    return clear_pts
+
+
+def _wh_overpass(parts: Parts) -> list[tuple[float, float, float]]:
+    """Smooth continuous concrete highway overpass sweeping across the south /
+    south-west beyond the Docks, with concrete T-piers, girder deck, solid
+    parapets, overhead sign gantry, and highway light standards."""
+    # Closest point due south-southwest (compass 192 deg, r = 165 m), running
+    # roughly WNW-ESE (along compass 102 deg).
+    cx, cy = wh_xy(192.0, 165.0)
+    dx, dy = wh_xy(102.0, 1.0)
+    perp = Vector((-dy, dx, 0.0)).normalized()
+
+    clear_pts: list[tuple[float, float, float]] = []
+    deck_w = 14.5
+    # Engineered level bridge elevation anchored to the midpoint ground height
+    # so the viaduct deck is razor-smooth rather than stepping with terrain.
+    base_deck_z = wh_height(cx, cy) + 14.2
+    step = 24.0
+    stations: list[tuple[int, float, Vector, Vector, float]] = []
+    for n in range(-11, 12):
+        t = n * step
+        curve = 0.00024 * t * t
+        px = cx + dx * t - perp.x * curve
+        py = cy + dy * t - perp.y * curve
+        if math.hypot(px, py) > 640.0:
+            continue
+        gz = wh_height(px, py)
+        # Gentle vertical crest curve dipping smoothly into approaches at ends.
+        deck_z = base_deck_z - 0.00008 * t * t + 0.004 * t
+        deck_z = max(deck_z, gz + 3.2)
+        tan = Vector((dx - perp.x * 0.00048 * t, dy - perp.y * 0.00048 * t, 0.0)).normalized()
+        side_v = Vector((-tan.y, tan.x, 0.0))
+        stations.append((n, t, Vector((px, py, deck_z)), side_v, gz))
+        clear_pts.append((px, py, 24.0))
+
+    # Build continuous girder deck + twin jersey parapets between consecutive stations.
+    def add_extruded(mat: str, profile_pts: list[tuple[float, float]]) -> None:
+        verts, faces = parts.parts.setdefault(mat, ([], []))
+        m = len(profile_pts)
+        prev_b = None
+        for _, _, pos, sv, _ in stations:
+            b = len(verts)
+            for s_off, z_off in profile_pts:
+                p = pos + sv * s_off + Vector((0.0, 0.0, z_off))
+                verts.append(tuple(p))
+            if prev_b is not None:
+                for k in range(m):
+                    nk = (k + 1) % m
+                    faces.append((prev_b + k, prev_b + nk, b + nk, b + k))
+            prev_b = b
+
+    hw = deck_w * 0.5
+    add_extruded("concrete_dark", [(-hw, -1.7), (hw, -1.7), (hw, 0.0), (-hw, 0.0)])
+    for sgn in (-1.0, 1.0):
+        inner = sgn * (hw - 0.72)
+        outer = sgn * hw
+        lo, hi = (inner, outer) if inner < outer else (outer, inner)
+        add_extruded("concrete_tiltup", [(lo, -0.05), (hi, -0.05), (hi, 1.35), (lo, 1.35)])
+
+    # Piers, light standards, and motorway sign gantry at stations.
+    for n, t, pos, sv, gz in stations:
+        turn = math.atan2(-sv.x, sv.y)
+        pier_bot = gz - 3.0
+        pier_h = pos.z - 1.7 - pier_bot
+        if pier_h > 4.5:
+            parts.box("concrete_dark", (pos.x, pos.y, pier_bot), (2.4, 4.4, pier_h), turn)
+            parts.box("concrete_dark", (pos.x, pos.y, pos.z - 2.9), (2.6, deck_w * 0.84, 1.25), turn)
+        if n % 2 == 0 and abs(t) < 215.0:
+            pole_base = pos + Vector((0.0, 0.0, 0.1))
+            _wh_strut(parts, "steel_pylon", pole_base, pole_base + Vector((0, 0, 10.4)), 0.30)
+            for side in (-1.0, 1.0):
+                arm_a = pole_base + Vector((0, 0, 10.2))
+                arm_b = arm_a + sv * (side * 2.8) + Vector((0, 0, 0.55))
+                _wh_strut(parts, "steel_pylon", arm_a, arm_b, 0.20)
+                parts.box("corrugated_grey", arm_b - Vector((0, 0, 0.15)), (0.8, 1.25, 0.28), turn)
+        if n == -1:
+            g_left = pos - sv * (hw - 0.3)
+            g_right = pos + sv * (hw - 0.3)
+            _wh_strut(parts, "steel_pylon", g_left, g_left + Vector((0, 0, 7.8)), 0.40)
+            _wh_strut(parts, "steel_pylon", g_right, g_right + Vector((0, 0, 7.8)), 0.40)
+            _wh_strut(parts, "steel_pylon", g_left + Vector((0, 0, 6.5)), g_right + Vector((0, 0, 6.5)), 0.32)
+            _wh_strut(parts, "steel_pylon", g_left + Vector((0, 0, 7.6)), g_right + Vector((0, 0, 7.6)), 0.32)
+            parts.box("sign_green", pos + sv * 2.0 + Vector((0, 0, 5.2)), (0.35, 6.2, 2.8), turn)
+            parts.box("sign_green", pos - sv * 3.4 + Vector((0, 0, 5.4)), (0.35, 3.6, 2.3), turn)
+    return clear_pts
+
+
+def _wh_rail_embankment(parts: Parts) -> list[tuple[float, float, float]]:
+    """Engineered level raised gravel rail embankment across the north /
+    north-west industrial edge with a steel truss bridge span, weathered
+    freight boxcars, and wooden trackside utility poles."""
+    cx, cy = wh_xy(348.0, 185.0)
+    dx, dy = wh_xy(78.0, 1.0)
+    perp = Vector((-dy, dx, 0.0)).normalized()
+    turn = math.atan2(dy, dx)
+
+    clear_pts: list[tuple[float, float, float]] = []
+    # Smooth gentle rail grade across the valley rather than undulating with terrain.
+    rail_z0 = wh_height(cx, cy) + 6.0
+    rail_slope = 0.008
+
+    def rail_z(t: float) -> float:
+        return rail_z0 + rail_slope * t
+
+    seg_len = 22.0
+    verts, faces = parts.parts.setdefault("gravel", ([], []))
+    prev_ring = None
+    for n in range(-11, 12):
+        t = n * seg_len
+        px, py = cx + dx * t, cy + dy * t
+        gz = wh_height(px, py) - 2.5
+        clear_pts.append((px, py, 19.0))
+        top_z = max(rail_z(t), gz + 3.0)
+        ring = [
+            Vector((px, py, gz)) - perp * 12.0,
+            Vector((px, py, top_z)) - perp * 4.4,
+            Vector((px, py, top_z)) + perp * 4.4,
+            Vector((px, py, gz)) + perp * 12.0,
+        ]
+        b = len(verts)
+        for p in ring:
+            verts.append(tuple(p))
+        if prev_ring is not None:
+            for k in range(3):
+                faces.append((prev_ring + k, prev_ring + k + 1, b + k + 1, b + k))
+        prev_ring = b
+        if n % 2 == 0 and -8 <= n <= 8:
+            pole = Vector((px, py, top_z - 0.3)) + perp * 3.8
+            _wh_strut(parts, "corrugated_rust", pole, pole + Vector((0, 0, 9.0)), 0.30)
+            _wh_strut(
+                parts,
+                "corrugated_rust",
+                pole + Vector((0, 0, 8.3)) - perp * 1.6,
+                pole + Vector((0, 0, 8.3)) + perp * 1.6,
+                0.20,
+            )
+
+    # Steel through-truss rail bridge span across the north-northeast gap (t = +20..+68 m).
+    span_n = 6
+    span_len = 48.0
+    span_w = 5.4
+    span_h = 7.2
+    for side in (-1.0, 1.0):
+        off = perp * (side * span_w * 0.5)
+        for k in range(span_n):
+            t0 = 20.0 + k * (span_len / span_n)
+            t1 = 20.0 + (k + 1) * (span_len / span_n)
+            p0 = Vector((cx + dx * t0, cy + dy * t0, rail_z(t0))) + off
+            p1 = Vector((cx + dx * t1, cy + dy * t1, rail_z(t1))) + off
+            u0 = p0 + Vector((0, 0, span_h))
+            u1 = p1 + Vector((0, 0, span_h))
+            _wh_strut(parts, "steel_pylon", p0, p1, 0.48)
+            _wh_strut(parts, "steel_pylon", u0, u1, 0.40)
+            _wh_strut(parts, "steel_pylon", p0, u0, 0.34)
+            _wh_strut(parts, "steel_pylon", p0, u1, 0.26)
+            _wh_strut(parts, "steel_pylon", p1, u0, 0.26)
+            if side < 0:
+                _wh_strut(parts, "steel_pylon", u0, u0 + perp * span_w, 0.30)
+        t_end = 20.0 + span_len
+        pe = Vector((cx + dx * t_end, cy + dy * t_end, rail_z(t_end))) + off
+        _wh_strut(parts, "steel_pylon", pe, pe + Vector((0, 0, span_h)), 0.34)
+
+    # Parked string of 6 weathered freight boxcars along the north-west siding.
+    car_mats = [
+        "corrugated_rust",
+        "corrugated_slate",
+        "corrugated_rust",
+        "corrugated_tan",
+        "corrugated_grey",
+        "corrugated_rust",
+    ]
+    for ci, mat in enumerate(car_mats):
+        t = -98.0 + ci * 17.0
+        px, py = cx + dx * t, cy + dy * t
+        top_z = rail_z(t)
+        parts.box("steel_pylon", (px, py, top_z - 0.1), (15.0, 2.9, 1.1), turn)
+        parts.box(mat, (px, py, top_z + 1.0), (15.8, 3.3, 4.1), turn)
+        parts.box("roof_dark", (px, py, top_z + 5.1), (15.9, 3.2, 0.28), turn)
+    return clear_pts
+
+
+def _wh_car(parts: Parts, x: float, y: float, turn: float, paint_mat: str) -> None:
+    """Grounded sedan/hatchback silhouette parked in an industrial lot."""
+    z = wh_height(x, y) - 0.05
+    rot = Matrix.Rotation(turn, 3, "Z")
+
+    def pt(lx: float, ly: float, lz: float) -> Vector:
+        return Vector((x, y, z)) + rot @ Vector((lx, ly, lz))
+
+    # Undercarriage/wheels, lower body, greenhouse cabin.
+    parts.box("cable", pt(0.0, 0.0, 0.0), (4.2, 1.72, 0.42), turn)
+    parts.box(paint_mat, pt(0.0, 0.0, 0.36), (4.45, 1.82, 0.62), turn)
+    parts.box("window_dark", pt(-0.15, 0.0, 0.96), (2.25, 1.56, 0.50), turn)
+    parts.box(paint_mat, pt(-0.15, 0.0, 1.44), (2.05, 1.50, 0.12), turn)
+
+
+def _wh_trailer(parts: Parts, x: float, y: float, turn: float, body_mat: str) -> None:
+    """Parked 53-ft industrial semi-trailer on landing gear and rear tandem."""
+    z = wh_height(x, y) - 0.1
+    rot = Matrix.Rotation(turn, 3, "Z")
+
+    def pt(lx: float, ly: float, lz: float) -> Vector:
+        return Vector((x, y, z)) + rot @ Vector((lx, ly, lz))
+
+    # Rear axle bogie & front landing legs.
+    parts.box("cable", pt(-4.8, 0.0, 0.0), (3.1, 2.35, 1.25), turn)
+    parts.box("steel_pylon", pt(4.6, 0.0, 0.0), (0.35, 2.1, 1.25), turn)
+    parts.box("steel_pylon", pt(0.0, 0.0, 1.15), (13.6, 2.45, 0.22), turn)
+    parts.box(body_mat, pt(0.0, 0.0, 1.35), (13.8, 2.55, 2.75), turn)
+    parts.box("roof_dark", pt(0.0, 0.0, 4.10), (13.85, 2.58, 0.12), turn)
+
+
+def _wh_near_dressing(parts: Parts, rng: random.Random) -> list[tuple[float, float, float]]:
+    """Near/mid-ground industrial dressing (r = 70..145 m) so the view through
+    Warehouse's chain-link fences reads as lived-in industrial outskirts:
+    access road kerbs, street light poles, perimeter fences/guardrails, a
+    parking lot with parked cars, parked semi-trailers, and a roadside
+    billboard."""
+    clear: list[tuple[float, float, float]] = []
+
+    # 1. Access road concrete kerbs (inner r = 70.8 m, outer r = 83.2 m) and
+    # perimeter post-and-rail fence + steel guardrail along the outer road edge.
+    n_seg = 96
+    for k in range(n_seg):
+        a0 = 2.0 * math.pi * k / n_seg
+        a1 = 2.0 * math.pi * (k + 1) / n_seg
+        am = 0.5 * (a0 + a1)
+        for r_k in (70.8, 83.2):
+            p0 = Vector((r_k * math.cos(a0), r_k * math.sin(a0), wh_height(r_k * math.cos(a0), r_k * math.sin(a0)) + 0.12))
+            p1 = Vector((r_k * math.cos(a1), r_k * math.sin(a1), wh_height(r_k * math.cos(a1), r_k * math.sin(a1)) + 0.12))
+            _wh_strut(parts, "concrete_tiltup", p0, p1, 0.28)
+        # Outer steel road guardrail / industrial lot fence (r = 86.2 m).
+        rf = 86.2
+        fx0, fy0 = rf * math.cos(a0), rf * math.sin(a0)
+        fx1, fy1 = rf * math.cos(a1), rf * math.sin(a1)
+        fz0 = wh_height(fx0, fy0)
+        fz1 = wh_height(fx1, fy1)
+        _wh_strut(parts, "steel_pylon", Vector((fx0, fy0, fz0 - 0.3)), Vector((fx0, fy0, fz0 + 1.85)), 0.12)
+        _wh_strut(parts, "steel_pylon", Vector((fx0, fy0, fz0 + 1.8)), Vector((fx1, fy1, fz1 + 1.8)), 0.09)
+        _wh_strut(parts, "steel_pylon", Vector((fx0, fy0, fz0 + 0.9)), Vector((fx1, fy1, fz1 + 0.9)), 0.12)
+
+        # Cobra-head street light poles every ~35 m along the outer road verge.
+        if k % 6 == 2:
+            rp = 84.8
+            px, py = rp * math.cos(am), rp * math.sin(am)
+            pz = wh_height(px, py) - 0.2
+            inward = Vector((-math.cos(am), -math.sin(am), 0.0))
+            _wh_strut(parts, "steel_pylon", Vector((px, py, pz)), Vector((px, py, pz + 8.6)), 0.22)
+            arm_tip = Vector((px, py, pz + 8.9)) + inward * 2.3
+            _wh_strut(parts, "steel_pylon", Vector((px, py, pz + 8.4)), arm_tip, 0.14)
+            parts.box("corrugated_grey", arm_tip - Vector((0, 0, 0.14)), (0.95, 0.45, 0.22), am)
+
+    # 2. Employee parking lot (NW/North, compass 310..344 deg, r = 93..122 m)
+    # with parked cars in two neat rows and two twin-head lot light poles.
+    car_mats = ["car_charcoal", "car_navy", "car_silver", "car_white", "car_burgundy", "car_olive"]
+    lot_rows = [
+        (312.0, 342.0, 96.0, 7),
+        (314.0, 341.0, 110.0, 6),
+    ]
+    for c0, c1, rad, count in lot_rows:
+        for i in range(count):
+            if rng.random() < 0.22:
+                continue  # leave realistic empty parking stalls
+            comp = c0 + (i + 0.5) * (c1 - c0) / count + rng.uniform(-0.8, 0.8)
+            cx, cy = wh_xy(comp, rad + rng.uniform(-0.8, 0.8))
+            turn = math.radians(wh_bearing(comp)) + rng.uniform(-0.08, 0.08)
+            _wh_car(parts, cx, cy, turn, car_mats[(i * 3 + int(rad)) % len(car_mats)])
+            clear.append((cx, cy, 8.0))
+    for comp in (320.0, 336.0):
+        lx, ly = wh_xy(comp, 103.0)
+        lz = wh_height(lx, ly) - 0.2
+        _wh_strut(parts, "steel_pylon", Vector((lx, ly, lz)), Vector((lx, ly, lz + 10.5)), 0.24)
+        parts.box("steel_pylon", (lx, ly, lz + 10.4), (2.2, 0.4, 0.35), math.radians(wh_bearing(comp)))
+        clear.append((lx, ly, 12.0))
+
+    # 3. Parked semi-trailers & shipping containers along the West and South yards.
+    trailers = [
+        # West yard (visible from Field west wing)
+        (254.0, 106.0, 0.2, "trailer_white"),
+        (261.0, 112.0, 0.2, "corrugated_grey"),
+        (271.0, 118.0, -0.15, "trailer_white"),
+        (281.0, 104.0, 0.1, "corrugated_slate"),
+        # North-East yard (visible past guard hut / substation)
+        (16.0, 114.0, 0.35, "trailer_white"),
+        (24.0, 118.0, 0.35, "corrugated_rust"),
+        # South freight staging (visible from Docks looking south/SW/SE)
+        (156.0, 108.0, 0.1, "trailer_white"),
+        (164.0, 112.0, 0.1, "corrugated_slate"),
+        (178.0, 106.0, -0.2, "trailer_white"),
+        (206.0, 112.0, 0.15, "corrugated_tan"),
+        (214.0, 118.0, 0.15, "trailer_white"),
+        (225.0, 108.0, -0.1, "corrugated_rust"),
+    ]
+    for comp, dist, turn_off, mat in trailers:
+        tx, ty = wh_xy(comp, dist)
+        turn = math.radians(wh_bearing(comp)) + math.pi * 0.5 + turn_off
+        _wh_trailer(parts, tx, ty, turn, mat)
+        clear.append((tx, ty, 12.0))
+
+    # 4. Weathered industrial highway billboard beside the SW road/overpass
+    # approach (compass 218 deg, r = 132 m) — blank/geometric faded panel.
+    bx, by = wh_xy(218.0, 132.0)
+    bz = wh_height(bx, by) - 0.5
+    b_turn = math.radians(wh_bearing(218.0)) + 0.18
+    rot = Matrix.Rotation(b_turn, 3, "Z")
+
+    def bpt(lx: float, ly: float, lz: float) -> Vector:
+        return Vector((bx, by, bz)) + rot @ Vector((lx, ly, lz))
+
+    for sx in (-4.4, 4.4):
+        _wh_strut(parts, "steel_pylon", bpt(sx, 0.0, -2.0), bpt(sx, 0.0, 10.2), 0.45)
+    _wh_strut(parts, "steel_pylon", bpt(-6.2, -0.35, 7.6), bpt(6.2, -0.35, 7.6), 0.24)
+    parts.box("steel_pylon", bpt(0.0, 0.0, 7.9), (13.6, 0.55, 4.9), b_turn)
+    parts.box("billboard_face", bpt(0.0, -0.30, 8.2), (12.8, 0.12, 4.3), b_turn)
+    parts.box("corrugated_slate", bpt(-3.2, -0.37, 8.2), (4.6, 0.06, 4.3), b_turn)
+    clear.append((bx, by, 14.0))
+
+    return clear
+
+
+def wh_structures() -> list[tuple[float, float, float]]:
+    """Place near-yard dressing, neighbouring warehouses, sheds, water tower,
+    pylons, overpass, rail embankment, and east-side industrial plant. Returns
+    (x, y, radius) keep-out zones for tree scattering."""
+    rng = random.Random(73)
+    parts = Parts()
+    clear: list[tuple[float, float, float]] = []
+
+    # 0. Near/mid-ground access road kerbs, street lights, fences, parking lot
+    # with cars, parked trailers, and roadside billboard.
+    clear.extend(_wh_near_dressing(parts, rng))
+
+    # 1. Hero Water Tower (WNW, Field vista landmark).
+    wx, wy = wh_xy(294.0, 212.0)
+    _wh_water_tower(parts, wx, wy)
+    clear.append((wx, wy, 44.0))
+
+    # 2. Power Pylons & sagging power lines across NNE -> NNW corridor.
+    clear.extend(_wh_pylons(parts))
+
+    # 3. South/SW Concrete Highway Overpass beyond the Docks.
+    clear.extend(_wh_overpass(parts))
+
+    # 4. North/NW Raised Rail Embankment & freight cars beyond the Field.
+    clear.extend(_wh_rail_embankment(parts))
+
+    # 5. Neighbouring industrial warehouses & sheds around the 360 perimeter.
+    # (compass_deg, dist, length, width, eaves, style, wall_mat, roof_mat, trim_mat, extra_turn)
+    buildings = [
+        # West & WSW (Field west wing vista)
+        (264.0, 148.0, 46.0, 24.0, 10.5, "gable_mon", "corrugated_grey", "corrugated_slate", "steel_pylon", 0.15),
+        (244.0, 185.0, 38.0, 20.0, 9.2, "flat", "concrete_tiltup", "roof_dark", "corrugated_grey", -0.2),
+        (279.0, 178.0, 26.0, 14.0, 7.2, "shed", "corrugated_tan", "corrugated_rust", "steel_pylon", 0.35),
+        (256.0, 275.0, 56.0, 28.0, 12.2, "flat", "concrete_tiltup", "roof_dark", "corrugated_slate", 0.05),
+        (285.0, 315.0, 48.0, 24.0, 11.0, "gable", "corrugated_slate", "corrugated_grey", "steel_pylon", -0.1),
+        # NW & North (Field north vista, framing rail embankment & water tower)
+        (316.0, 175.0, 38.0, 18.0, 8.8, "gable_can", "corrugated_tan", "corrugated_grey", "steel_pylon", 0.25),
+        (332.0, 280.0, 58.0, 26.0, 11.5, "gable_mon", "concrete_tiltup", "corrugated_grey", "corrugated_slate", 0.08),
+        (10.0, 172.0, 34.0, 16.0, 7.8, "shed", "corrugated_grey", "corrugated_rust", "steel_pylon", -0.15),
+        (28.0, 295.0, 52.0, 24.0, 11.5, "flat", "concrete_tiltup", "roof_dark", "corrugated_grey", 0.1),
+        # NE & East (beyond the Substation)
+        (56.0, 205.0, 44.0, 22.0, 10.2, "gable_mon", "corrugated_slate", "corrugated_grey", "steel_pylon", 0.2),
+        (84.0, 235.0, 56.0, 28.0, 12.0, "brick_plant", "brick", "corrugated_rust", "concrete_dark", -0.1),
+        (114.0, 195.0, 40.0, 20.0, 9.4, "flat", "concrete_tiltup", "roof_dark", "corrugated_tan", 0.15),
+        # SE, South & SW (beyond the Docks & overpass)
+        (146.0, 205.0, 46.0, 22.0, 10.6, "gable_can", "corrugated_grey", "corrugated_slate", "steel_pylon", -0.2),
+        (168.0, 260.0, 56.0, 26.0, 12.5, "flat", "concrete_tiltup", "roof_dark", "corrugated_grey", 0.12),
+        (206.0, 270.0, 52.0, 24.0, 12.0, "gable_mon", "corrugated_tan", "corrugated_grey", "steel_pylon", -0.08),
+        (228.0, 235.0, 34.0, 16.0, 8.5, "shed", "corrugated_rust", "corrugated_grey", "steel_pylon", 0.25),
+        # Far industrial park clusters (420..650 m) for depth layering into haze
+        (305.0, 440.0, 72.0, 32.0, 13.5, "flat", "concrete_tiltup", "roof_dark", "corrugated_grey", 0.05),
+        (182.0, 410.0, 68.0, 30.0, 13.0, "gable", "corrugated_grey", "corrugated_slate", "steel_pylon", 0.2),
+        (355.0, 450.0, 64.0, 28.0, 12.5, "flat", "concrete_tiltup", "roof_dark", "corrugated_slate", -0.1),
+    ]
+    for comp, dist, length, width, eaves, style, wmat, rmat, tmat, extra_turn in buildings:
+        bx, by = wh_xy(comp, dist)
+        bz = wh_height(bx, by) - 0.8
+        turn = math.radians(wh_bearing(comp)) + extra_turn
+        clear.append((bx, by, max(length, width) * 0.65 + 10.0))
+        if style == "flat":
+            _wh_flat_warehouse(parts, rng, Vector((bx, by, bz)), length, width, eaves, turn, wmat, tmat)
+        elif style == "brick_plant":
+            _wh_gable_warehouse(parts, rng, Vector((bx, by, bz)), length, width, eaves, turn, wmat, rmat, tmat, monitor=True, windows=True)
+            rot = Matrix.Rotation(turn, 3, "Z")
+            for sx, sy, ch in ((-12.0, 19.0, 33.0), (4.0, 21.0, 25.0)):
+                cp = Vector((bx, by, bz)) + rot @ Vector((sx, sy, 0.0))
+                _wh_cylinder(parts, "brick", cp - Vector((0, 0, 4.0)), 2.2, 1.3, ch, 14, cap_top=False)
+                _wh_cylinder(parts, "aviation_red", cp + Vector((0, 0, ch - 4.0)), 1.3, 1.2, 2.0, 14, cap_top=False)
+                _wh_cylinder(parts, "concrete_tiltup", cp + Vector((0, 0, ch - 2.0)), 1.2, 1.12, 2.0, 14, cap_top=True)
+            for k in range(3):
+                sp = Vector((bx, by, bz)) + rot @ Vector((22.0 + k * 7.2, -10.0, 0.0))
+                _wh_cylinder(parts, "corrugated_grey", sp - Vector((0, 0, 4.0)), 3.2, 3.2, 21.0, 14, cap_top=False)
+                _wh_cylinder(parts, "steel_pylon", sp + Vector((0, 0, 17.0)), 3.3, 0.45, 2.2, 14, cap_top=True)
+        else:
+            _wh_gable_warehouse(
+                parts,
+                rng,
+                Vector((bx, by, bz)),
+                length,
+                width,
+                eaves,
+                turn,
+                wmat,
+                rmat,
+                tmat,
+                monitor=(style == "gable_mon"),
+                canopy=(style in ("gable_can", "gable_mon")),
+                windows=(style != "shed"),
+            )
+
+    # 6. Communications / cell lattice mast in the SW industrial distance.
+    mx, my = wh_xy(236.0, 295.0)
+    mz = wh_height(mx, my) - 0.6
+    clear.append((mx, my, 20.0))
+    mast_h = 40.0
+    m_rings = []
+    for f, hw in ((0.0, 2.2), (0.35, 1.45), (0.7, 0.9), (1.0, 0.45)):
+        z = mz + f * mast_h
+        m_rings.append([Vector((mx + sx * hw, my + sy * hw, z)) for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))])
+    for ti in range(len(m_rings) - 1):
+        mat_s = "aviation_red" if ti == 2 else "concrete_tiltup" if ti == 1 else "steel_pylon"
+        for k in range(4):
+            nk = (k + 1) % 4
+            _wh_strut(parts, mat_s, m_rings[ti][k], m_rings[ti + 1][k], 0.28)
+            _wh_strut(parts, mat_s, m_rings[ti][k], m_rings[ti + 1][nk], 0.16)
+    parts.box("concrete_tiltup", (mx, my, mz + mast_h - 3.6), (3.0, 3.0, 1.7), 0.3)
+    _wh_strut(parts, "steel_pylon", Vector((mx, my, mz + mast_h)), Vector((mx, my, mz + mast_h + 4.8)), 0.18)
+
+    mats = {
+        "corrugated_grey": wh_pbr_material("WhCorrugatedGrey", "corrugated", (0.64, 0.67, 0.70), 0.14, 0.66, 0.22),
+        "corrugated_tan": wh_pbr_material("WhCorrugatedTan", "corrugated", (0.70, 0.63, 0.51), 0.14, 0.74, 0.12),
+        "corrugated_rust": wh_pbr_material("WhCorrugatedRust", "corrugated", (0.44, 0.27, 0.19), 0.14, 0.80, 0.16),
+        "corrugated_slate": wh_pbr_material("WhCorrugatedSlate", "corrugated", (0.34, 0.42, 0.50), 0.14, 0.68, 0.20),
+        "concrete_tiltup": wh_pbr_material("WhConcreteTiltup", "concrete_panels", (0.70, 0.68, 0.64), 0.08, 0.88, 0.0),
+        "concrete_dark": wh_pbr_material("WhConcreteDark", "concrete_stained", (0.46, 0.45, 0.43), 0.10, 0.90, 0.0),
+        "brick": wh_pbr_material("WhBrick", "brick", (0.46, 0.33, 0.27), 0.18, 0.92, 0.0),
+        "roof_dark": wh_pbr_material("WhRoofDark", "asphalt", (0.21, 0.21, 0.22), 0.12, 0.92, 0.0),
+        "steel_tower": wh_pbr_material("WhSteelTower", "painted_metal", (0.56, 0.63, 0.65), 0.12, 0.62, 0.28),
+        "steel_pylon": wh_pbr_material("WhSteelPylon", "painted_metal", (0.34, 0.36, 0.39), 0.16, 0.60, 0.50),
+        "cable": solid_material("WhCable", (0.07, 0.07, 0.08), 0.7, 0.2),
+        "window_dark": solid_material("WhWindowDark", (0.07, 0.10, 0.14), 0.18, 0.12),
+        "gravel": wh_pbr_material("WhGravel", "gravel", (0.50, 0.47, 0.41), 0.10, 0.95, 0.0, 0.35),
+        "aviation_red": solid_material("WhAviationRed", (0.62, 0.17, 0.12), 0.68, 0.05),
+        "sign_green": solid_material("WhSignGreen", (0.12, 0.32, 0.20), 0.60, 0.05),
+        "trailer_white": wh_pbr_material("WhTrailerWhite", "painted_metal", (0.58, 0.57, 0.54), 0.16, 0.72, 0.12),
+        "billboard_face": wh_pbr_material("WhBillboardFace", "concrete_panels", (0.62, 0.58, 0.49), 0.12, 0.80, 0.0),
+        "car_charcoal": solid_material("WhCarCharcoal", (0.09, 0.095, 0.10), 0.35, 0.35),
+        "car_navy": solid_material("WhCarNavy", (0.07, 0.11, 0.20), 0.35, 0.35),
+        "car_silver": solid_material("WhCarSilver", (0.38, 0.40, 0.42), 0.32, 0.45),
+        "car_white": solid_material("WhCarWhite", (0.52, 0.51, 0.48), 0.38, 0.15),
+        "car_burgundy": solid_material("WhCarBurgundy", (0.24, 0.07, 0.07), 0.35, 0.30),
+        "car_olive": solid_material("WhCarOlive", (0.14, 0.16, 0.10), 0.40, 0.25),
+    }
+    parts.build(mats)
+    return clear
+
+
+def wh_scatter(
+    first_conifer: int, first_bush: int, clear: list[tuple[float, float, float]]
+) -> list[tuple[Vector, int, float, float, float]]:
+    """Overgrown scrub along the drainage ditch and road verge, a broken tree
+    row along the lot edges, mixed treeline belts, and distant wooded hills,
+    keeping clear of the road, buildings, overpass, rail, and tower pads."""
+    rng = random.Random(37)
+    out = []
+    # 1. Scrub bushes & weeds along the drainage ditch (r = 56..68 m) and
+    # broken lot-edge treeline row (r = 90..118 m) so the lower band reads
+    # rich and grounded without blocking hero landmarks.
+    for k in range(260):
+        comp = (k * 1.3846 + rng.uniform(-0.5, 0.5)) % 360.0
+        # Bushes along the drainage ditch bank.
+        rb = rng.uniform(57.0, 68.5)
+        bx, by = wh_xy(comp, rb)
+        out.append(
+            (
+                Vector((bx, by, wh_height(bx, by) - 0.2)),
+                first_bush + rng.randrange(2),
+                rng.uniform(1.4, 3.0),
+                rng.uniform(0.0, 2.0 * math.pi),
+                rng.uniform(0.35, 0.95),
+            )
+        )
+    # Broken row of lot-edge trees & tall scrub at r = 90..118 m, leaving
+    # clear sightline gaps toward the water tower (290..300), parking lot
+    # (310..344), overpass centre (172..204), and substation pylons (20..50).
+    for k in range(110):
+        comp = (k * 3.27 + rng.uniform(-1.0, 1.0)) % 360.0
+        if (
+            (287.0 <= comp <= 303.0)
+            or (308.0 <= comp <= 346.0)
+            or (170.0 <= comp <= 204.0)
+            or (18.0 <= comp <= 44.0)
+        ):
+            continue
+        rt = rng.uniform(90.0, 118.0)
+        tx, ty = wh_xy(comp, rt)
+        blocked = any((tx - cx) ** 2 + (ty - cy) ** 2 < (rad + 4.0) ** 2 for cx, cy, rad in clear)
+        if blocked:
+            continue
+        if rng.random() < 0.45:
+            kind = first_bush + rng.randrange(2)
+            size = rng.uniform(2.4, 4.6)
+        elif rng.random() < 0.35:
+            kind = first_conifer + rng.randrange(4)
+            size = rng.uniform(9.0, 15.0)
+        else:
+            kind = rng.randrange(first_conifer)
+            size = rng.uniform(7.5, 13.5)
+        tint = rng.uniform(0.10, 0.45) if first_conifer <= kind < first_bush else rng.uniform(0.42, 0.95)
+        out.append((Vector((tx, ty, wh_height(tx, ty) - 0.3)), kind, size, rng.uniform(0.0, 2.0 * math.pi), tint))
+
+    step = 7.5
+    n = int(WH_FAR / step)
+    for i in range(-n, n + 1):
+        for j in range(-n, n + 1):
+            x = (i + rng.random()) * step
+            y = (j + rng.random()) * step
+            r = math.hypot(x, y)
+            if r < WH_CLEAR or r > WH_FAR - 50.0:
+                continue
+            blocked = False
+            for cx, cy, rad in clear:
+                if (x - cx) * (x - cx) + (y - cy) * (y - cy) < rad * rad:
+                    blocked = True
+                    break
+            if blocked:
+                continue
+            near = smoothstep(WH_CLEAR, 260.0, r)
+            thin = 1.0 if r < 950.0 else 0.48
+            edge, _ = fields(x, y)
+            wood = wh_woods(x, y)
+            p = 0.012
+            if edge < 3.5:
+                p = 0.30 + 0.28 * near
+            elif edge < 6.0:
+                p = 0.11 * near
+            if wood > 0.14:
+                p = 0.88
+            elif wood > 0.06:
+                p = max(p, 0.34)
+            if r < 195.0 and edge < 11.0:
+                p = max(p, 0.24)
+            if rng.random() > p * thin:
+                continue
+            conif = noise.noise(Vector((x / 280.0, y / 280.0, 11.0))) > 0.18
+            if r < 175.0 and wood <= 0.12 and rng.random() < 0.65:
+                kind = first_bush + rng.randrange(2)
+                size = rng.uniform(2.0, 4.6)
+            elif edge < 3.5 and wood <= 0.12 and rng.random() < 0.35:
+                kind = first_bush + rng.randrange(2)
+                size = rng.uniform(2.5, 5.0)
+            elif conif and rng.random() < 0.8:
+                kind = first_conifer + rng.randrange(4)
+                size = rng.uniform(12.0, 22.0)
+            else:
+                kind = rng.randrange(first_conifer)
+                size = rng.uniform(9.5, 19.5)
+            max_top = EYE + 0.255 * r
+            size = min(size, max(2.0, max_top - wh_height(x, y)))
+            tint = rng.uniform(0.08, 0.45) if first_conifer <= kind < first_bush else rng.uniform(0.45, 1.0)
+            out.append((Vector((x, y, wh_height(x, y) - 0.35)), kind, size, rng.uniform(0, 2 * math.pi), tint))
+    return out
+
+
+def warehouse_main() -> None:
+    reset()
+    wh_lighting()
+    camera()
+    wh_ground()
+    clear = wh_structures()
+    coll, first_conifer, first_bush = tree_kinds()
+    trees = wh_scatter(first_conifer, first_bush, clear)
+    print(f"horizon: {len(trees)} trees (warehouse)")
+    plant(coll, trees)
+    pack("warehouse")
+
+
 if NIGHT:
     night_main()
+elif WAREHOUSE:
+    warehouse_main()
 else:
     main()
